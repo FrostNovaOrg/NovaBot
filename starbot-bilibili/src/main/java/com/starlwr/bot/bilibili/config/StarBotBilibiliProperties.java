@@ -1,5 +1,6 @@
 package com.starlwr.bot.bilibili.config;
 
+import com.starlwr.bot.core.config.ConfigLevel;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import lombok.Getter;
 import lombok.Setter;
@@ -79,8 +80,10 @@ public class StarBotBilibiliProperties {
     public static class Network {
         /**
          * 请求哔哩哔哩接口时使用的 User-Agent
+         * <p>
+         * 声称的浏览器版本长期停在很旧的版本上容易被判定为非正常客户端，升级时应一并跟进。
          */
-        private String userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36";
+        private String userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36";
 
         /**
          * 接口请求失败后的最大重试次数
@@ -119,6 +122,28 @@ public class StarBotBilibiliProperties {
          * 密钥与密文分离存放，便于将密钥置于权限更严格的位置，或替换为由外部密钥管理服务注入。
          */
         private String keyPath = "cookies.key";
+
+        /**
+         * 登录态复检间隔，单位：秒，设为 0 或负数可关闭复检
+         * <p>
+         * 凭据有其有效期，长期运行后可能在无人察觉的情况下失效，届时动态推送会静默停摆。
+         * 定期复检可将其转为显式告警并在配置界面上体现。复检本身只是一次轻量接口调用，
+         * 默认十分钟一次，开销可忽略。
+         */
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        private int verifyInterval = 600;
+
+        /**
+         * 是否自动续期登录凭据
+         * <p>
+         * 哔哩哔哩自 2023 年起会随敏感接口的调用逐步作废 Web 端凭据，官方页面为此提供了续期链路。
+         * 关闭后凭据会在某天突然失效、动态推送静默停摆，只能重新扫码。
+         * <p>
+         * 续期仅在服务端明确提示需要时才执行，检查随登录态复检一并进行，因此同样受 verify-interval
+         * 控制；复检关闭时续期也不会执行。
+         */
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        private boolean autoRefreshCookie = true;
     }
 
     /**
@@ -130,11 +155,13 @@ public class StarBotBilibiliProperties {
         /**
          * 是否启用直播间连接，若连接直播间已被风控，可关闭此开关，仅使用备用直播推送
          */
+        @ConfigLevel(ConfigLevel.Level.COMMON)
         private boolean enableConnectLiveRoom = true;
 
         /**
          * 是否仅连接到启用了直播推送的直播间
          */
+        @ConfigLevel(ConfigLevel.Level.COMMON)
         private boolean onlyConnectNecessaryRooms = false;
 
         /**
@@ -175,11 +202,13 @@ public class StarBotBilibiliProperties {
         /**
          * 是否启用备用直播推送，通过轮询接口而非长连接判断开播状态
          */
+        @ConfigLevel(ConfigLevel.Level.COMMON)
         private boolean backupLivePush = true;
 
         /**
          * 备用直播推送检测间隔，单位：秒
          */
+        @ConfigLevel(ConfigLevel.Level.COMMON)
         private int backupLivePushInterval = 10;
     }
 
@@ -190,8 +219,15 @@ public class StarBotBilibiliProperties {
     @Setter
     public static class Dynamic {
         /**
-         * 是否自动关注开启了动态推送的 UP 主
+         * 是否用登录账号自动关注「被监听的 UP 主」
+         * <p>
+         * 关注的是推送配置中要监听的那些 UP 主，<b>不是</b>回关粉丝。哔哩哔哩的动态流接口只返回
+         * 已关注账号的动态，不关注就收不到，因此动态推送依赖本开关。关闭后需自行手动关注，
+         * 否则对应 UP 主的动态不会被推送。
+         * <p>
+         * 本开关会修改登录账号的关注列表，这也是建议使用专用小号而非个人主号的原因之一。
          */
+        @ConfigLevel(ConfigLevel.Level.COMMON)
         private boolean autoFollow = true;
 
         /**
@@ -202,12 +238,18 @@ public class StarBotBilibiliProperties {
         /**
          * 动态接口请求间隔，单位：秒
          */
+        @ConfigLevel(ConfigLevel.Level.COMMON)
         private int apiRequestInterval = 10;
 
         /**
-         * 是否在动态图片底部绘制 StarBot logo
+         * 动态图片底部标识的图片路径，留空则不绘制
+         * <p>
+         * 本项目不再内置标识图片：图形资产是独立于代码许可证的著作权客体，字标还额外涉及商标属性，
+         * 沿用上游标识并随每张推送图片对外分发并不妥当。需要打自己社群的标时，
+         * 在此填入本地图片路径即可，图片会按固定高度等比缩放。
          */
-        private boolean drawLogo = true;
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        private String logoPath = "";
 
         /**
          * 是否自动保存绘制出的动态图片
@@ -217,6 +259,7 @@ public class StarBotBilibiliProperties {
         /**
          * 动态发布时间早于此分钟数时不再推送，避免首次启动时补推大量历史动态
          */
+        @ConfigLevel(ConfigLevel.Level.COMMON)
         private int pushMinutes = 1440;
     }
 }

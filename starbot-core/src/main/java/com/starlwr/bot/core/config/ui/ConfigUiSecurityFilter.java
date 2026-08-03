@@ -121,7 +121,7 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
 
         response.setContentType(MediaType.TEXT_HTML_VALUE);
         response.getWriter().write("""
-                <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>StarBot 配置</title>
+                <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>NovaBot 控制台</title>
                 <style>body{font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
                 display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f6f7f9;color:#333}
                 div{text-align:center}h1{font-size:20px;margin:0 0 12px}p{color:#888;font-size:14px;margin:0}</style>

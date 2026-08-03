@@ -139,32 +139,32 @@ public class OneBotAdapterPluginProperties {
     public static class Detect {
         /**
          * 是否启用 HTTP 服务可用性检测
+         * <p>
+         * 关闭后运行状态页只能显示启动时那一次检查的结果，OneBot 实现中途挂掉不会被察觉，
+         * 表现为「消息就是发不出去且无人告知」。检测本身只是一次轻量接口调用，默认开启。
          */
-        private boolean enableHttpDetect = false;
+        private boolean enableHttpDetect = true;
 
         /**
          * HTTP 服务可用性检测周期，单位: 秒
          */
         private int httpDetectInterval = 300;
 
-        /**
-         * HTTP 告警邮件发送最短间隔时间，用于防止短时间内发送大量告警邮件，单位: 秒
-         */
-        private int httpAlarmMailInterval = 3600;
+        // 告警收敛间隔原本在此按通道各配一份，现已统一由 starbot.core.alert.convergence-interval
+        // 管理：同一个故障不该因为出口不同而各有一套抑制规则
 
         /**
          * 是否启用 Websocket 消息接收检测
+         * <p>
+         * 长连接可能在 TCP 层看似存活却已收不到任何消息，仅靠连接状态判断不出来，
+         * 需借助「多久没收到消息」来发现。默认开启。
          */
-        private boolean enableWebsocketDetect = false;
+        private boolean enableWebsocketDetect = true;
 
         /**
          * 指定时间内未从 Websocket 接收到消息时发送告警邮件，单位: 秒
          */
         private int websocketDetectInterval = 1800;
 
-        /**
-         * Websocket 告警邮件发送最短间隔时间，用于防止短时间内发送大量告警邮件，单位: 秒
-         */
-        private int websocketAlarmMailInterval = 3600;
     }
 }

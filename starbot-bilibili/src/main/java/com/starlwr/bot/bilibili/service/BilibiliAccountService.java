@@ -1,18 +1,25 @@
 package com.starlwr.bot.bilibili.service;
 
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.exception.ResponseCodeException;
 import com.starlwr.bot.bilibili.model.Cookies;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
+import com.starlwr.bot.bilibili.util.BilibiliCookieRefreshUtil;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.util.QrCodeUtil;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.event.ContextClosedEvent;
+import org.springframework.context.event.EventListener;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 哔哩哔哩账号服务
@@ -44,6 +51,8 @@ public class BilibiliAccountService {
 
     private final BilibiliCredentialStore store;
 
+    private final StarBotBilibiliProperties.Account properties;
+
     /**
      * 当前待扫描的二维码内容，供登录页面展示
      */
@@ -62,18 +71,229 @@ public class BilibiliAccountService {
     @Getter
     private volatile Long loginUid;
 
+    /**
+     * 停机信号
+     * <p>
+     * 扫码登录是一个可能持续数分钟的轮询循环，若不感知停机就会一直占着调度线程。
+     * Spring 在停止各生命周期 Bean 之前会先发布 {@link ContextClosedEvent}，此处借该事件
+     * 放行闭锁，使循环中的等待立即返回，从而在收到 SIGTERM 后迅速退出。
+     */
+    private final CountDownLatch shutdownSignal = new CountDownLatch(1);
+
+    /**
+     * 是否已有扫码登录流程在进行
+     */
+    private final AtomicBoolean loginInProgress = new AtomicBoolean();
+
     @Autowired
-    public BilibiliAccountService(BilibiliApiUtil api, BilibiliCredentialStore store) {
+    public BilibiliAccountService(BilibiliApiUtil api, BilibiliCredentialStore store,
+                                  StarBotBilibiliProperties properties) {
         this.api = api;
         this.store = store;
+        this.properties = properties.getAccount();
+    }
+
+    /**
+     * 上次成功完成登录态复检的时间，从未复检成功时为空
+     */
+    @Getter
+    private volatile Instant lastVerifiedAt;
+
+    /**
+     * 是否正在停机
+     * @return 是否正在停机
+     */
+    public boolean isStopping() {
+        return shutdownSignal.getCount() == 0;
+    }
+
+    /**
+     * 复检登录态
+     * <p>
+     * 凭据有其有效期，进程长时间运行后可能在无人察觉的情况下失效。此前登录态只在启动时判定一次，
+     * 且没有任何地方会将其置回，导致凭据过期后动态推送静默停摆——本方法即为消除该静默失败而设。
+     * <p>
+     * 仅在服务端明确返回「账号未登录」时才判定为失效。网络故障一律维持原状态，
+     * 否则一次抖动就会触发误报，反而稀释了告警的价值。
+     * @return 复检后的登录态
+     */
+    public boolean verify() {
+        if (isStopping()) {
+            return loggedIn;
+        }
+
+        try {
+            Long uid = api.fetchLoginUid();
+            lastVerifiedAt = Instant.now();
+
+            if (uid == null) {
+                markLoggedOut();
+                return false;
+            }
+
+            this.loginUid = uid;
+            if (!loggedIn) {
+                this.loggedIn = true;
+                log.info("哔哩哔哩登录态已恢复, uid: {}", uid);
+            }
+            return true;
+        } catch (ResponseCodeException e) {
+            if (e.getCode() == BilibiliApiUtil.CODE_NOT_LOGGED_IN) {
+                lastVerifiedAt = Instant.now();
+                markLoggedOut();
+                return false;
+            }
+
+            log.warn("登录态复检返回未预期的错误代码 {}, 暂维持原状态: {}", e.getCode(), e.getMessage());
+            return loggedIn;
+        } catch (Exception e) {
+            log.debug("登录态复检失败, 疑为网络故障, 暂维持原状态: {}", e.getMessage());
+            return loggedIn;
+        }
+    }
+
+    /**
+     * 当前凭据是否具备自动续期的条件
+     * <p>
+     * 刷新口令只在登录成功那一刻由服务端下发一次，实测确有下发空值的情况。缺失时自动续期会
+     * 一直静默跳过，凭据到期后表现为「某天突然掉登录」，因此该状态需要能被健康探针读到。
+     * @return 是否可自动续期
+     */
+    public boolean isRefreshable() {
+        return api.getCookies().isRefreshable();
+    }
+
+    /**
+     * 例行维护：先复检登录态，登录态正常时再按需续期 Cookie
+     * <p>
+     * 两件事共用一个周期：续期只在登录态正常时才有意义，掉登录后再怎么续也是徒劳。
+     * @return 复检后的登录态
+     */
+    public boolean maintain() {
+        boolean alive = verify();
+        if (alive) {
+            refreshCookiesIfNeeded();
+        }
+        return alive;
+    }
+
+    /**
+     * 按需续期 Cookie
+     * <p>
+     * 哔哩哔哩自 2023 年起会随敏感接口调用逐步作废 Web 端凭据，官方页面为此提供了续期链路。
+     * 不续期的结果是凭据某天突然失效、动态推送静默停摆，只能重新扫码。
+     * <p>
+     * <b>整条链路按「失败即维持原状」设计</b>，因为续期不可回退：
+     * <ol>
+     *   <li>服务端说不需要续期就直接返回，不主动多做</li>
+     *   <li>换到新凭据后先做一次真实调用验证，验证不过立刻换回旧凭据</li>
+     *   <li>只有验证通过、且新凭据已成功落盘之后，才去作废旧凭据</li>
+     * </ol>
+     * 因此中途任一步失败，账号都仍持有一份可用的旧凭据。
+     * @return 是否完成了一次续期
+     */
+    public boolean refreshCookiesIfNeeded() {
+        if (isStopping() || !properties.isAutoRefreshCookie()) {
+            return false;
+        }
+
+        Cookies current = api.getCookies();
+        if (!current.isRefreshable()) {
+            // 旧版本保存的凭据里没有刷新口令，只能等下次扫码时补上，不必反复告警
+            log.debug("当前凭据缺少持久化刷新口令, 跳过 Cookie 续期");
+            return false;
+        }
+
+        BilibiliApiUtil.CookieRefreshHint hint;
+        try {
+            hint = api.checkCookieRefresh();
+        } catch (Exception e) {
+            log.debug("查询 Cookie 续期状态失败: {}", e.getMessage());
+            return false;
+        }
+
+        if (!hint.needed()) {
+            return false;
+        }
+
+        log.info("哔哩哔哩提示当前凭据需要续期, 开始续期");
+        return doRefresh(current, hint.timestamp());
+    }
+
+    /**
+     * 执行一次续期
+     * @param current 当前凭据
+     * @param timestamp 服务端返回的毫秒时间戳
+     * @return 是否续期成功
+     */
+    private boolean doRefresh(Cookies current, long timestamp) {
+        String oldRefreshToken = current.getRefreshToken();
+
+        Cookies refreshed;
+        try {
+            String correspondPath = BilibiliCookieRefreshUtil.correspondPath(timestamp);
+            String refreshCsrf = api.getRefreshCsrf(correspondPath);
+            refreshed = api.refreshCookies(refreshCsrf, oldRefreshToken);
+        } catch (Exception e) {
+            // 走到这里旧凭据尚未被动过，仍然可用
+            log.warn("Cookie 续期失败, 继续使用原凭据: {}", e.getMessage());
+            return false;
+        }
+
+        api.setCookies(refreshed);
+        try {
+            if (api.fetchLoginUid() == null) {
+                throw new IllegalStateException("新凭据无法取得账号信息");
+            }
+        } catch (Exception e) {
+            // 新凭据不可用，换回旧的。此时旧凭据尚未被作废，账号不会因此掉登录
+            api.setCookies(current);
+            log.error("Cookie 续期后的新凭据验证失败, 已回退至原凭据: {}", e.getMessage());
+            return false;
+        }
+
+        // 先落盘再作废旧凭据：反过来的话，一旦此刻进程退出，新凭据没存下、旧凭据又已失效，只能重新扫码
+        store.save(refreshed);
+
+        try {
+            api.confirmCookieRefresh(oldRefreshToken);
+            log.info("Cookie 续期完成");
+        } catch (Exception e) {
+            // 新凭据已生效，只是旧凭据没能及时作废。如实说明而不是笼统报失败
+            log.warn("Cookie 续期已生效, 但作废旧凭据失败, 旧凭据将保持有效直至自然过期: {}", e.getMessage());
+        }
+
+        return true;
+    }
+
+    /**
+     * 标记为已掉登录，仅在状态发生翻转时告警，避免每个复检周期重复刷屏
+     */
+    private void markLoggedOut() {
+        if (!loggedIn) {
+            return;
+        }
+
+        this.loggedIn = false;
+        this.loginUid = null;
+        log.warn("哔哩哔哩登录凭据已失效, 动态推送与自动关注将停止; 直播推送不依赖登录态, 不受影响。请重新扫码登录");
+    }
+
+    /**
+     * 接收停机信号，中止仍在进行的登录流程
+     */
+    @EventListener(ContextClosedEvent.class)
+    public void onContextClosed() {
+        shutdownSignal.countDown();
     }
 
     /**
      * 登录
      * <p>
      * 优先使用已保存的凭据，凭据缺失或已失效时转为扫码登录。
+     * @return 是否登录成功，因停机而中止时返回 false
      */
-    public void login() {
+    public boolean login() {
         api.init();
 
         Optional<Cookies> saved = store.load();
@@ -85,27 +305,51 @@ public class BilibiliAccountService {
                 this.loginUid = uid;
                 this.loggedIn = true;
                 log.info("已使用保存的登录凭据登录, uid: {}", uid);
-                return;
+                return true;
             }
 
             log.warn("保存的登录凭据已失效, 需要重新扫码登录");
             store.clear();
         }
 
-        loginByQrCode();
+        return loginByQrCode();
     }
 
     /**
      * 扫码登录
+     * <p>
+     * 同一时刻只允许一个扫码流程：退出登录后会重新发起登录，若此时已有流程在跑，
+     * 两个流程会各自申请二维码并互相覆盖 {@link #pendingQrCodeContent}，界面上就会出现
+     * 扫了却不生效的二维码。
+     * @return 是否登录成功，因停机或已有流程在进行而中止时返回 false
      */
-    public void loginByQrCode() {
-        while (!loggedIn) {
+    public boolean loginByQrCode() {
+        if (!loginInProgress.compareAndSet(false, true)) {
+            log.debug("已有扫码登录流程正在进行, 忽略本次请求");
+            return loggedIn;
+        }
+
+        try {
+            return doLoginByQrCode();
+        } finally {
+            loginInProgress.set(false);
+        }
+    }
+
+    /**
+     * 执行扫码登录
+     * @return 是否登录成功
+     */
+    private boolean doLoginByQrCode() {
+        while (!loggedIn && !isStopping()) {
             BilibiliApiUtil.QrCodeLogin qrCode;
             try {
                 qrCode = api.getQrCodeLoginInfo();
             } catch (Exception e) {
                 log.error("获取登录二维码失败, 将在 10 秒后重试: {}", e.getMessage());
-                sleep(Duration.ofSeconds(10));
+                if (!sleep(Duration.ofSeconds(10))) {
+                    return false;
+                }
                 continue;
             }
 
@@ -115,11 +359,17 @@ public class BilibiliAccountService {
             QrCodeUtil.generateQrCodeAndPrint(qrCode.url(), QR_CODE_SIZE);
 
             if (pollUntilLoggedIn(qrCode.key())) {
-                return;
+                return true;
+            }
+
+            if (isStopping()) {
+                return false;
             }
 
             log.info("登录二维码已过期, 正在重新获取");
         }
+
+        return loggedIn;
     }
 
     /**
@@ -131,7 +381,9 @@ public class BilibiliAccountService {
         Instant deadline = Instant.now().plus(QR_CODE_TTL);
 
         while (Instant.now().isBefore(deadline)) {
-            sleep(POLL_INTERVAL);
+            if (!sleep(POLL_INTERVAL)) {
+                return false;
+            }
 
             if (!api.getQrCodeLoginStatus(key)) {
                 continue;
@@ -162,15 +414,18 @@ public class BilibiliAccountService {
     }
 
     /**
-     * 休眠指定时长
+     * 休眠指定时长，期间若收到停机信号或线程中断则提前结束
      * @param duration 时长
+     * @return 是否应继续登录流程，收到停机信号或被中断时返回 false
      */
-    private void sleep(Duration duration) {
+    private boolean sleep(Duration duration) {
         try {
-            Thread.sleep(duration.toMillis());
+            // 闭锁被放行意味着收到了停机信号，此时 await 立即返回 true，据此提前结束等待
+            return !shutdownSignal.await(duration.toMillis(), TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
+            // 中断同样意味着要求停止，恢复标志后交由调用方结束循环
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("登录流程被中断", e);
+            return false;
         }
     }
 

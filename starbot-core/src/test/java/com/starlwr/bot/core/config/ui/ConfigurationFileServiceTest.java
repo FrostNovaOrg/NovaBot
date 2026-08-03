@@ -12,9 +12,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * 配置文件读写测试
@@ -23,6 +21,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @DisplayName("配置文件读写")
 class ConfigurationFileServiceTest {
+    /**
+     * 测试用配置文件内容
+     * <p>
+     * <b>请勿向本模板添加 {@code starbot.bilibili.dynamic.auto-save-image}</b>：
+     * {@link #insertsMissingProperty()} 依赖该键「不存在」来验证插入逻辑，一旦加入该用例即失效。
+     * 需要新的样例配置项时，请另选一个本模板与该用例都未使用的键。
+     */
     private static final String TEMPLATE = """
             server:
               port: 7827                # 服务端口
@@ -43,7 +48,7 @@ class ConfigurationFileServiceTest {
                       delay: 1000
               bilibili:
                 dynamic:
-                  draw-logo: true       # 是否绘制 logo
+                  auto-follow: true     # 是否自动关注
                   push-minutes: 1440    # 超时不推送
             """;
 
@@ -102,18 +107,18 @@ class ConfigurationFileServiceTest {
     @Test
     @DisplayName("修改后行尾注释仍然保留")
     void keepsTrailingComment() throws IOException {
-        service.write(Map.of("starbot.bilibili.dynamic.draw-logo", "false"));
+        service.write(Map.of("starbot.bilibili.dynamic.auto-follow", "false"));
 
-        String line = content().lines().filter(l -> l.contains("draw-logo")).findFirst().orElseThrow();
+        String line = content().lines().filter(l -> l.contains("auto-follow")).findFirst().orElseThrow();
         assertTrue(line.contains("false"), "值应已更新: " + line);
-        assertTrue(line.contains("# 是否绘制 logo"), "行尾注释应保留: " + line);
+        assertTrue(line.contains("# 是否自动关注"), "行尾注释应保留: " + line);
     }
 
     @Test
     @DisplayName("仅改动目标行，其余内容逐行不变")
     void touchesOnlyTargetLines() throws IOException {
         List<String> before = content().lines().toList();
-        service.write(Map.of("starbot.bilibili.dynamic.draw-logo", "false"));
+        service.write(Map.of("starbot.bilibili.dynamic.auto-follow", "false"));
         List<String> after = content().lines().toList();
 
         assertEquals(before.size(), after.size());
@@ -166,9 +171,88 @@ class ConfigurationFileServiceTest {
     void createsBackup() throws IOException {
         service.write(Map.of("starbot.bilibili.dynamic.push-minutes", "30"));
 
-        Path backup = dir.resolve("application.yml.bak");
-        assertTrue(Files.exists(backup));
-        assertTrue(Files.readString(backup, StandardCharsets.UTF_8).contains("push-minutes: 1440"));
+        List<String> backups = service.listBackups();
+        assertEquals(1, backups.size(), "应生成一份备份");
+        assertTrue(service.readBackup(backups.get(0)).contains("push-minutes: 1440"), "备份应保有修改前的内容");
+    }
+
+    @Test
+    @DisplayName("多次保存应各留一份备份, 而非互相覆盖")
+    void keepsBackupPerSave() throws IOException {
+        service.write(Map.of("starbot.bilibili.dynamic.push-minutes", "30"));
+        // 备份名精确到秒，同秒内的两次保存会落到同一文件名，因此此处跨秒再保存一次
+        sleepPastSecond();
+        service.write(Map.of("starbot.bilibili.dynamic.push-minutes", "60"));
+
+        List<String> backups = service.listBackups();
+        assertEquals(2, backups.size(), "两次保存应留下两份备份");
+        assertTrue(service.readBackup(backups.get(0)).contains("push-minutes: 30"), "最新备份应是上一次保存后的内容");
+        assertTrue(service.readBackup(backups.get(1)).contains("push-minutes: 1440"), "较早的备份应是最初的内容");
+    }
+
+    @Test
+    @DisplayName("可回滚至指定备份, 且回滚本身也会先备份")
+    void restoresBackup() throws IOException {
+        service.write(Map.of("starbot.bilibili.dynamic.push-minutes", "30"));
+        String original = service.listBackups().get(0);
+
+        sleepPastSecond();
+        service.restoreBackup(original);
+
+        assertEquals("1440", service.read().get("starbot.bilibili.dynamic.push-minutes"), "内容应已回到备份中的取值");
+        assertTrue(service.listBackups().size() >= 2, "回滚前应先把当前内容也备份下来, 以便再滚回去");
+    }
+
+    @Test
+    @DisplayName("可修改列表元素内部的字段")
+    void writesFieldsInsideListItem() throws IOException {
+        int changed = service.writeListItemFields("starbot.adapter.onebot.senders", 0,
+                Map.of("api", "/push", "delay", "2000"));
+
+        assertEquals(2, changed);
+        String content = content();
+        assertTrue(content.contains("api: /push"), content);
+        assertTrue(content.contains("delay: 2000"), content);
+        // 同一元素内未指定的字段不应被动到
+        assertTrue(content.contains("name: qq-onebot"), content);
+    }
+
+    @Test
+    @DisplayName("修改列表元素字段时不应影响列表之外的同名键")
+    void doesNotTouchSameKeyOutsideList() throws IOException {
+        service.writeListItemFields("starbot.adapter.onebot.senders", 0, Map.of("port", "9999"));
+
+        // server.port 与列表元素无关，不得被改写
+        assertEquals("7827", service.read().get("server.port"));
+    }
+
+    @Test
+    @DisplayName("列表或元素不存在时应明确报错, 而非静默无操作")
+    void failsWhenListItemMissing() {
+        assertThrows(IOException.class,
+                () -> service.writeListItemFields("starbot.adapter.onebot.senders", 5, Map.of("api", "/x")));
+        assertThrows(IOException.class,
+                () -> service.writeListItemFields("starbot.not.exist", 0, Map.of("api", "/x")));
+    }
+
+    @Test
+    @DisplayName("非法的备份文件名应被拒绝, 防止越权读写")
+    void rejectsIllegalBackupName() {
+        assertThrows(IOException.class, () -> service.readBackup("../../etc/passwd"));
+        assertThrows(IOException.class, () -> service.readBackup("application.yml"));
+        assertThrows(IOException.class, () -> service.readBackup(null));
+    }
+
+    /**
+     * 等到下一秒，使相邻两次保存产生不同的备份文件名
+     */
+    private void sleepPastSecond() {
+        try {
+            Thread.sleep(1100);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            fail("等待被中断");
+        }
     }
 
     @Test
@@ -197,6 +281,6 @@ class ConfigurationFileServiceTest {
         service.writeRaw("starbot:\n  core:\n    config-ui:\n      enabled: false\n");
 
         assertEquals("false", service.read().get("starbot.core.config-ui.enabled"));
-        assertTrue(Files.exists(dir.resolve("application.yml.bak")));
+        assertEquals(1, service.listBackups().size(), "整体覆盖前同样应先备份");
     }
 }

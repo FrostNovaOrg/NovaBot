@@ -274,11 +274,15 @@ public class BilibiliCredentialStore {
         json.put("sessData", cookies.getSessData());
         json.put("biliJct", cookies.getBiliJct());
         json.put("buvid3", cookies.getBuvid3());
+        json.put("refreshToken", cookies.getRefreshToken());
         return json;
     }
 
     /**
      * JSON 转凭据，兼容驼峰与下划线两种字段命名
+     * <p>
+     * refreshToken 还额外兼容 ac_time_value：那是官方 Web 端在 localStorage 里用的键名，
+     * 从浏览器手工导出凭据时照抄下来的就是这个名字。
      * @param json JSON
      * @return 凭据
      */
@@ -286,7 +290,8 @@ public class BilibiliCredentialStore {
         return new Cookies(
                 firstNonNull(json, "sessData", "SESSDATA"),
                 firstNonNull(json, "biliJct", "bili_jct"),
-                firstNonNull(json, "buvid3", "BUVID3")
+                firstNonNull(json, "buvid3", "BUVID3"),
+                firstNonNull(json, "refreshToken", "refresh_token", "ac_time_value")
         );
     }
 

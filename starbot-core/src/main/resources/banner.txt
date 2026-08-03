@@ -1,10 +1,12 @@
 ${AnsiColor.YELLOW}
-     _____ _             ____        _
-    / ____| |           |  _ \      | |
-   | (___ | |_ __ _ _ __| |_) | ___ | |_
-    \___ \| __/ _` | '__|  _ < / _ \| __|
-    ____) | || (_| | |  | |_) | (_) | |_
-   |_____/ \__\__,_|_|  |____/ \___/ \__|${AnsiColor.CYAN}${AnsiStyle.ITALIC}
-       StarBot - (v3.0.0)  2025-07-06${AnsiStyle.NORMAL}
- Github: https://github.com/Starlwr/StarBot
+    _   _                 ____        _
+   | \ | |               |  _ \      | |
+   |  \| | _____   ____ _| |_) | ___ | |_
+   | . ` |/ _ \ \ / / _` |  _ < / _ \| __|
+   | |\  | (_) \ V / (_| | |_) | (_) | |_
+   |_| \_|\___/ \_/ \__,_|____/ \___/ \__|${AnsiColor.CYAN}${AnsiStyle.ITALIC}
+      NovaBot - (v3.0.0)${AnsiStyle.NORMAL}
+ 本程序是 StarBot 的修改版本，依 AGPL-3.0 发布，改动说明见 NOTICE 与 CHANGELOG.md
+ 项目地址: https://github.com/rossinova/NovaBot
+ 上游项目: https://github.com/Starlwr/StarBot  (原作者 LWR)
 

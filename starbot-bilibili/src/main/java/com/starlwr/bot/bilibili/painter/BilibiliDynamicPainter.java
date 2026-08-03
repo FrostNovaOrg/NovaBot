@@ -17,7 +17,8 @@ import javax.imageio.ImageIO;
 import java.awt.Color;
 import java.awt.Point;
 import java.awt.image.BufferedImage;
-import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -123,7 +124,7 @@ public class BilibiliDynamicPainter {
 
             painter.movePos(0, 20);
 
-            if (properties.getDynamic().isDrawLogo()) {
+            if (StringUtil.isNotBlank(properties.getDynamic().getLogoPath())) {
                 drawLogo(painter);
             }
 
@@ -399,9 +400,7 @@ public class BilibiliDynamicPainter {
     }
 
     /**
-     * 绘制底部 logo
-     * <p>
-     * logo 图片只在首次绘制时从类路径读取一次并缓存，避免每条动态都重复解码。
+     * 绘制底部标识
      */
     private void drawLogo(CommonPainter painter) {
         BufferedImage logo = logo();
@@ -415,8 +414,11 @@ public class BilibiliDynamicPainter {
     }
 
     /**
-     * 读取并缓存 logo 图片
-     * @return logo 图片，读取失败时返回 null
+     * 读取并缓存底部标识图片
+     * <p>
+     * 图片只在首次绘制时读取一次并缓存，避免每条动态都重复解码；读取失败时同样置为已加载，
+     * 以免路径写错导致每条动态都重复尝试读盘。
+     * @return 标识图片，未配置或读取失败时返回 null
      */
     private BufferedImage logo() {
         if (logoLoaded) {
@@ -425,14 +427,16 @@ public class BilibiliDynamicPainter {
 
         synchronized (this) {
             if (!logoLoaded) {
-                try (InputStream stream = getClass().getResourceAsStream("/logo.png")) {
-                    if (stream != null) {
-                        logo = ImageUtil.resizeByHeight(ImageIO.read(stream), LOGO_HEIGHT);
+                String path = properties.getDynamic().getLogoPath();
+                try {
+                    Path file = Path.of(path);
+                    if (Files.isReadable(file)) {
+                        logo = ImageUtil.resizeByHeight(ImageIO.read(file.toFile()), LOGO_HEIGHT);
                     } else {
-                        log.warn("类路径下未找到 logo.png, 已跳过 logo 绘制");
+                        log.warn("底部标识图片 {} 不存在或不可读, 已跳过绘制", path);
                     }
                 } catch (Exception e) {
-                    log.warn("读取 logo.png 失败, 已跳过 logo 绘制: {}", e.getMessage());
+                    log.warn("读取底部标识图片 {} 失败, 已跳过绘制: {}", path, e.getMessage());
                 }
                 logoLoaded = true;
             }

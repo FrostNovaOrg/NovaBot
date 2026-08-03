@@ -72,6 +72,22 @@ public class HttpUtil {
      * @param <T> 返回值类型
      */
     private <T> T request(String url, HttpMethod method, HttpEntity<?> httpEntity, Class<T> responseType) {
+        return requestForEntity(url, method, httpEntity, responseType).getBody();
+    }
+
+    /**
+     * 发起 HTTP 请求，返回包含响应头在内的完整响应
+     * <p>
+     * 绝大多数调用只关心响应体，因此对外只暴露返回响应体的重载。个别接口把结果放在响应头里
+     * （例如哔哩哔哩的 Cookie 刷新把新凭据放在 Set-Cookie 中），才需要用到本方法。
+     * @param url URL
+     * @param method 请求方法
+     * @param httpEntity 请求实体
+     * @param responseType 响应类型
+     * @return 完整响应
+     * @param <T> 返回值类型
+     */
+    private <T> ResponseEntity<T> requestForEntity(String url, HttpMethod method, HttpEntity<?> httpEntity, Class<T> responseType) {
         long startTime = System.currentTimeMillis();
         if (properties.getLog().isNetworkLog()) {
             networkLogger.info("{} -> {}", method.name(), url);
@@ -80,7 +96,7 @@ public class HttpUtil {
         ResponseEntity<T> response = null;
         try {
             response = restTemplate.exchange(url, method, httpEntity, responseType);
-            return response.getBody();
+            return response;
         } catch (Exception e) {
             if (properties.getLog().isNetworkLog()) {
                 long cost = System.currentTimeMillis() - startTime;
@@ -127,12 +143,26 @@ public class HttpUtil {
      * @return 请求结果
      */
     public String get(String url, Map<String, String> headers) {
+        return getForEntity(url, headers).getBody();
+    }
+
+    /**
+     * 自定义请求头的同步 HTTP GET 请求，返回含响应头的完整响应
+     * <p>
+     * 与 {@link #get(String, Map)} 的差别仅在于保留响应头。个别接口把结果放在 Set-Cookie 等
+     * 响应头中（例如哔哩哔哩扫码登录的凭据），只读响应体会拿不到。
+     *
+     * @param url URL
+     * @param headers   HTTP 请求头
+     * @return 完整响应
+     */
+    public ResponseEntity<String> getForEntity(String url, Map<String, String> headers) {
         HttpHeaders httpHeaders = new HttpHeaders();
         headers.forEach(httpHeaders::add);
 
         HttpEntity<Void> httpEntity = new HttpEntity<>(httpHeaders);
 
-        return request(url, HttpMethod.GET, httpEntity, String.class);
+        return requestForEntity(url, HttpMethod.GET, httpEntity, String.class);
     }
 
     /**
@@ -535,6 +565,21 @@ public class HttpUtil {
      * @return 请求结果
      */
     public String postAsForm(String url, Map<String, String> headers, Map<String, Object> params) {
+        return postAsFormForEntity(url, headers, params).getBody();
+    }
+
+    /**
+     * 自定义请求头和请求参数以 form-urlencoded 格式提交的同步 HTTP POST 请求，返回含响应头的完整响应
+     * <p>
+     * 与 {@link #postAsForm(String, Map, Map)} 的差别仅在于保留响应头。个别接口把结果放在
+     * Set-Cookie 等响应头中，只读响应体会拿不到。
+     *
+     * @param url URL
+     * @param headers   HTTP 请求头
+     * @param params    HTTP 请求参数
+     * @return 完整响应
+     */
+    public ResponseEntity<String> postAsFormForEntity(String url, Map<String, String> headers, Map<String, Object> params) {
         HttpHeaders httpHeaders = new HttpHeaders();
         headers.forEach(httpHeaders::add);
         httpHeaders.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
@@ -543,7 +588,7 @@ public class HttpUtil {
         params.forEach((key, value) -> formData.add(key, value.toString()));
         HttpEntity<MultiValueMap<String, String>> httpEntity = new HttpEntity<>(formData, httpHeaders);
 
-        return request(url, HttpMethod.POST, httpEntity, String.class);
+        return requestForEntity(url, HttpMethod.POST, httpEntity, String.class);
     }
 
     /**

@@ -1,5 +1,6 @@
 package com.starlwr.bot.adapter.onebot.model;
 
+import com.starlwr.bot.core.config.ConfigLevel;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -35,11 +36,13 @@ public class OneBotSender {
     /**
      * OneBot 地址
      */
+    @ConfigLevel(ConfigLevel.Level.BASIC)
     private String oneBotAddress;
 
     /**
      * OneBot HTTP 端口号
      */
+    @ConfigLevel(ConfigLevel.Level.BASIC)
     private int oneBotHttpPort;
 
     /**
@@ -50,11 +53,13 @@ public class OneBotSender {
     /**
      * OneBot HTTP Token
      */
+    @ConfigLevel(ConfigLevel.Level.BASIC)
     private String oneBotHttpToken;
 
     /**
      * OneBot Websocket Token
      */
+    @ConfigLevel(ConfigLevel.Level.BASIC)
     private String oneBotWebsocketToken;
 
     /**

@@ -5,6 +5,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.event.dynamic.BilibiliDynamicUpdateEvent;
 import com.starlwr.bot.bilibili.painter.BilibiliDynamicPainter;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
+import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
 import com.starlwr.bot.core.handler.StarBotEventHandler;
 import com.starlwr.bot.core.model.PushMessage;
@@ -111,5 +112,25 @@ public class BilibiliDynamicPushHandler implements StarBotEventHandler {
         params.put("black_list", List.of());
         params.put("only_self_origin", false);
         return params;
+    }
+
+    @Override
+    public String displayName() {
+        return "动态通知";
+    }
+
+    @Override
+    public String description() {
+        return "主播发布新动态时推送";
+    }
+
+    @Override
+    public String platform() {
+        return LivePlatform.BILIBILI.getName();
+    }
+
+    @Override
+    public List<String> placeholders() {
+        return List.of("{uname}", "{action}", "{url}", "{picture}", "{next}", "{at=all}");
     }
 }

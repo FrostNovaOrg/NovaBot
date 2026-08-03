@@ -1,0 +1,36 @@
+<!--
+  NovaBot 组合标（图标 + 字标）
+  本项目原创，非衍生自上游 StarBot 的任何图形资产。
+
+  字标用的是系统字体栈而非嵌入字体轮廓：
+  一是避免引入字体授权问题，二是几十 KB 的轮廓数据对一个 README 里的标识并不划算。
+  代价是不同系统上字形会有细微差异——这对本项目的用途可以接受。
+  需要像素级一致的场合（如印刷）请改用 icon.svg 加另行排版的文字。
+
+  「Bot」用中性灰而非纯黑：GitHub 的浅色与深色主题都会直接内联本文件，
+  纯黑在深色主题下几乎看不见。
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 268 64" width="268" height="64" role="img" aria-label="NovaBot">
+  <defs>
+    <linearGradient id="novaGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7C5CFF"/>
+      <stop offset="1" stop-color="#FF5F9E"/>
+    </linearGradient>
+    <linearGradient id="novaText" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#7C5CFF"/>
+      <stop offset="1" stop-color="#FF5F9E"/>
+    </linearGradient>
+  </defs>
+
+  <path fill="url(#novaGrad)"
+        d="M16 4h32a12 12 0 0 1 12 12v18a12 12 0 0 1-12 12H32L20.4 55.4a1.5 1.5 0 0 1-2.4-1.5L20.6 46H16A12 12 0 0 1 4 34V16A12 12 0 0 1 16 4Z"/>
+  <path fill="#fff"
+        d="M28 11C28 20.8 31.6 25 40 25 31.6 25 28 29.2 28 39 28 29.2 24.4 25 16 25 24.4 25 28 20.8 28 11Z"/>
+  <path fill="#fff" fill-opacity=".85"
+        d="M45 29.5C45 34.05 46.5 36 50 36 46.5 36 45 37.95 45 42.5 45 37.95 43.5 36 40 36 43.5 36 45 34.05 45 29.5Z"/>
+
+  <text x="76" y="41" font-size="30" letter-spacing="-.4"
+        font-family="system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif">
+    <tspan fill="url(#novaText)" font-weight="700">Nova</tspan><tspan fill="#8A8F98" font-weight="400">Bot</tspan>
+  </text>
+</svg>

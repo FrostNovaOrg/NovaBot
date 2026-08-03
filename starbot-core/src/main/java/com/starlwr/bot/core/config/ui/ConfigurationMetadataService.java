@@ -18,6 +18,7 @@ import java.util.jar.JarFile;
 import java.util.stream.Stream;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -62,7 +63,16 @@ public class ConfigurationMetadataService {
     private volatile List<ConfigurationField> fields;
 
     /**
-     * 获取全部可配置项
+     * 全部配置项的名称与类型，<b>不受展示前缀限制</b>，含 Spring 等框架自身的配置项
+     * <p>
+     * 供保存前的类型校验使用：界面只展示 starbot 的配置项，但使用者在「配置文件」页签里能改到
+     * server.port 之类的框架配置，这些同样写错就起不来，因此校验不能只覆盖 starbot 前缀。
+     * 此处只保留名称与类型，不保留说明与默认值——框架的配置项数以千计，全量驻留并不划算。
+     */
+    private volatile Map<String, String> knownTypes;
+
+    /**
+     * 获取界面中展示的可配置项
      * @return 配置项列表
      */
     public List<ConfigurationField> getFields() {
@@ -75,6 +85,16 @@ public class ConfigurationMetadataService {
         }
 
         return fields;
+    }
+
+    /**
+     * 获取全部配置项的名称与类型，含框架自身的配置项
+     * @return 配置项名到类型的映射
+     */
+    public Map<String, String> getKnownTypes() {
+        // 类型表与展示字段在同一次加载中产出
+        getFields();
+        return knownTypes;
     }
 
     /**
@@ -101,6 +121,7 @@ public class ConfigurationMetadataService {
      */
     private List<ConfigurationField> load() {
         Map<String, ConfigurationField> merged = new LinkedHashMap<>();
+        Map<String, String> types = new HashMap<>();
 
         // 核心自身的元数据来自当前类路径
         try {
@@ -109,7 +130,7 @@ public class ConfigurationMetadataService {
 
             for (Resource resource : resources) {
                 try (InputStream stream = resource.getInputStream()) {
-                    parse(new String(stream.readAllBytes(), StandardCharsets.UTF_8), merged);
+                    parse(new String(stream.readAllBytes(), StandardCharsets.UTF_8), merged, types);
                 } catch (Exception e) {
                     log.debug("解析配置元数据 {} 失败: {}", resource, e.getMessage());
                 }
@@ -119,12 +140,14 @@ public class ConfigurationMetadataService {
         }
 
         // 插件由独立的类加载器加载，其元数据不在当前类路径上，需直接从插件 jar 中读取
-        loadFromPluginJars(merged);
+        loadFromPluginJars(merged, types);
 
         List<ConfigurationField> result = new ArrayList<>(merged.values());
         result.sort(Comparator.comparing(ConfigurationField::name));
 
-        log.info("配置界面已加载 {} 个可配置项", result.size());
+        this.knownTypes = Map.copyOf(types);
+
+        log.info("配置界面已加载 {} 个可配置项, 另有 {} 个配置项可参与保存前校验", result.size(), types.size());
 
         return result;
     }
@@ -132,8 +155,9 @@ public class ConfigurationMetadataService {
     /**
      * 从插件目录下的 jar 中读取配置元数据
      * @param merged 合并结果
+     * @param types 类型表
      */
-    private void loadFromPluginJars(Map<String, ConfigurationField> merged) {
+    private void loadFromPluginJars(Map<String, ConfigurationField> merged, Map<String, String> types) {
         Path directory = Path.of(PLUGIN_DIRECTORY);
         if (!Files.isDirectory(directory)) {
             return;
@@ -148,7 +172,7 @@ public class ConfigurationMetadataService {
                     }
 
                     try (InputStream stream = jar.getInputStream(entry)) {
-                        parse(new String(stream.readAllBytes(), StandardCharsets.UTF_8), merged);
+                        parse(new String(stream.readAllBytes(), StandardCharsets.UTF_8), merged, types);
                     }
                 } catch (Exception e) {
                     log.debug("读取插件 {} 的配置元数据失败: {}", path.getFileName(), e.getMessage());
@@ -164,7 +188,7 @@ public class ConfigurationMetadataService {
      * @param content 文件内容
      * @param merged 合并结果
      */
-    private void parse(String content, Map<String, ConfigurationField> merged) {
+    private void parse(String content, Map<String, ConfigurationField> merged, Map<String, String> types) {
         JSONArray properties = JSON.parseObject(content).getJSONArray("properties");
         if (properties == null) {
             return;
@@ -174,7 +198,19 @@ public class ConfigurationMetadataService {
             JSONObject property = properties.getJSONObject(i);
 
             String name = property.getString("name");
-            if (name == null || VISIBLE_PREFIXES.stream().noneMatch(name::startsWith)) {
+            if (name == null) {
+                continue;
+            }
+
+            String type = property.getString("type");
+
+            // 类型表不做前缀过滤：使用者能在「配置文件」页签改到框架自身的配置项，
+            // 那些同样写错就起不来，校验必须覆盖
+            if (type != null) {
+                types.putIfAbsent(name, type);
+            }
+
+            if (VISIBLE_PREFIXES.stream().noneMatch(name::startsWith)) {
                 continue;
             }
 
@@ -183,12 +219,9 @@ public class ConfigurationMetadataService {
                 continue;
             }
 
-            merged.put(name, new ConfigurationField(
-                    name,
-                    property.getString("type"),
+            merged.put(name, new ConfigurationField(name, type,
                     cleanDescription(property.getString("description")),
-                    property.get("defaultValue")
-            ));
+                    property.get("defaultValue")));
         }
     }
 

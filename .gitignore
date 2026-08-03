@@ -7,11 +7,18 @@ dist/build/
 # ---- 运行期数据（含凭据，务必不要提交）----
 cookies.json
 cookies.enc
+# 加密密钥。它与 cookies.json 合起来等同于账号密码，同样不能进仓库
+cookies.key
+# 明文凭据迁移为加密存储时留下的备份
+cookies.json.plain.bak
 datasource.json
 application-local.yml
 application-dev.yml
 logs/
 *.log
+
+# ---- 本机工作备忘（含本机路径，不对外）----
+docs/WORK-STATE.md
 
 # ---- IDE ----
 .idea/

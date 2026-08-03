@@ -5,7 +5,8 @@ import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.adapter.onebot.config.OneBotAdapterPluginProperties;
 import com.starlwr.bot.adapter.onebot.model.OneBotSender;
 import com.starlwr.bot.core.plugin.StarBotComponent;
-import com.starlwr.bot.core.service.StarBotMailService;
+import com.starlwr.bot.adapter.onebot.health.OneBotConnectionState;
+import com.starlwr.bot.core.alert.AlertService;
 import com.starlwr.bot.core.util.StringUtil;
 import jakarta.websocket.ContainerProvider;
 import jakarta.websocket.WebSocketContainer;
@@ -42,18 +43,21 @@ public class OneBotWebsocketService {
 
     private final OneBotAdapterPluginProperties properties;
 
-    private final StarBotMailService mailService;
+    private final AlertService alertService;
+
+    private final OneBotConnectionState state;
 
     private final Map<String, ScheduledFuture<?>> detectTasks = new HashMap<>();
 
     private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
 
     @Autowired
-    public OneBotWebsocketService(TaskScheduler taskScheduler, @Qualifier("oneBotThreadPool") ThreadPoolTaskExecutor executor, OneBotAdapterPluginProperties properties, StarBotMailService mailService) {
+    public OneBotWebsocketService(TaskScheduler taskScheduler, @Qualifier("oneBotThreadPool") ThreadPoolTaskExecutor executor, OneBotAdapterPluginProperties properties, AlertService alertService, OneBotConnectionState state) {
         this.taskScheduler = taskScheduler;
         this.executor = executor;
         this.properties = properties;
-        this.mailService = mailService;
+        this.alertService = alertService;
+        this.state = state;
     }
 
     /**
@@ -66,10 +70,13 @@ public class OneBotWebsocketService {
             if (sender.isWebsocket()) {
                 if (StringUtil.isBlank(sender.getOneBotWebsocketToken())) {
                     log.error("推送平台 {} 未配置 OneBot Websocket Token, 请完善配置", sender.getName());
+                    state.websocketDisconnected(sender.getName(), "未配置 Websocket Token");
                     continue;
                 }
 
                 connect(sender);
+            } else {
+                state.websocketDisabled(sender.getName());
             }
         }
     }
@@ -111,11 +118,13 @@ public class OneBotWebsocketService {
 
                     if (e instanceof TimeoutException) {
                         log.warn("连接 {} 的 OneBot Websocket 服务超时, 将在 {} 秒后进行第 {} 次重试", sender.getName(), retryInterval, retryCount);
+                        state.websocketDisconnected(sender.getName(), "连接超时，正在重试（第 " + retryCount + " 次）");
                         // 该 Future 的任务就运行在当前线程上，以 true 取消会把自己的中断标志置位，
                         // 使随后的退避等待立刻抛出 InterruptedException，退化为满核空转的重试循环
                         sessionFuture.cancel(false);
                     } else {
                         log.error("{} 的 OneBot Websocket 服务不可用, 请检查配置和服务状态, 将在 {} 秒后进行第 {} 次重试", sender.getName(), retryInterval, retryCount, e);
+                        state.websocketDisconnected(sender.getName(), "连接失败，正在重试（第 " + retryCount + " 次）: " + e.getMessage());
                     }
 
                     try {
@@ -145,22 +154,18 @@ public class OneBotWebsocketService {
         }
 
         int detectInterval = properties.getDetect().getWebsocketDetectInterval();
-        int alarmInterval = properties.getDetect().getWebsocketAlarmMailInterval();
 
         ScheduledFuture<?> detectTask = taskScheduler.scheduleAtFixedRate(() -> executor.submit(() -> {
             if (Instant.now().minusSeconds(detectInterval).isBefore(handler.lastReceiveTime)) {
+                alertService.resolve("onebot-ws:" + platformName);
                 return;
             }
 
             String alarm = "推送平台 " + platformName + " 的 OneBot Websocket 在 " + formatter.format(handler.lastReceiveTime) + " ~ " + formatter.format(Instant.now()) + " 期间未收到任何消息, 请检查服务状态及连接情况";
             log.warn(alarm);
 
-            if (handler.lastAlarmTime != null && Instant.now().minusSeconds(alarmInterval).isBefore(handler.lastAlarmTime)) {
-                return;
-            }
-
-            mailService.sendMail("StarBot OneBot Websocket 连接异常告警", alarm);
-            handler.lastAlarmTime = Instant.now();
+            // 收敛交由告警服务统一处理，此处不再各自维护一套间隔逻辑
+            alertService.alert("onebot-ws:" + platformName, "StarBot OneBot Websocket 连接异常告警", alarm);
         }), Instant.now().plusSeconds(detectInterval), Duration.ofSeconds(detectInterval));
 
         detectTasks.put(platformName, detectTask);
@@ -185,8 +190,6 @@ public class OneBotWebsocketService {
         private Boolean tokenVerify = null;
 
         private Instant lastReceiveTime = Instant.now();
-
-        private Instant lastAlarmTime = null;
 
         private OneBotWebSocketHandler(OneBotWebsocketService service, OneBotSender sender) {
             this.service = service;
@@ -232,6 +235,7 @@ public class OneBotWebsocketService {
                 }
             }
 
+            service.state.websocketConnected(sender.getName());
             executor.submit(() -> log.info("已连接到 {} 的 OneBot Websocket 服务", sender.getName()));
         }
 
@@ -331,8 +335,12 @@ public class OneBotWebsocketService {
             }
 
             if (Boolean.FALSE.equals(tokenVerify)) {
+                service.state.websocketDisconnected(sender.getName(), "Token 校验失败");
                 return;
             }
+
+            service.state.websocketDisconnected(sender.getName(),
+                    "连接断开（" + closeStatus.getCode() + "），正在重连");
 
             executor.submit(() -> {
                 log.warn("与 {} 的 Websocket 连接断开 ({}: {}), 将在 1 秒后重新连接", sender.getName(), closeStatus.getCode(), closeStatus.getReason());

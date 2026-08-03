@@ -1,5 +1,6 @@
 package com.starlwr.bot.bilibili.util;
 
+import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
@@ -16,6 +17,8 @@ import lombok.NonNull;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
 
 import java.awt.image.BufferedImage;
 import java.net.URLEncoder;
@@ -40,12 +43,19 @@ public class BilibiliApiUtil {
 
     private static final String BUVID_API = "https://api.bilibili.com/x/web-frontend/getbuvid";
 
+    /**
+     * 网页端使用的设备指纹接口，一次返回 buvid3 与 buvid4
+     */
+    private static final String FINGER_SPI_API = "https://api.bilibili.com/x/frontend/finger/spi";
+
     private static final String NAV_API = "https://api.bilibili.com/x/web-interface/nav";
 
     private static final String MY_INFO_API = "https://api.bilibili.com/x/space/v2/myinfo";
 
     private static final String QR_CODE_GENERATE_API = "https://passport.bilibili.com/x/passport-login/web/qrcode/generate";
 
+    // 曾试过按官方登录页补上 source=main-fe-header，以为服务端据此判断该不该下发持久化刷新口令，
+    // 实测无效（refresh_token 仍为空串），故未保留——不留只有猜想支撑的参数
     private static final String QR_CODE_POLL_API = "https://passport.bilibili.com/x/passport-login/web/qrcode/poll?qrcode_key=";
 
     private static final String MASTER_INFO_API = "https://api.live.bilibili.com/live_user/v1/Master/info?uid=";
@@ -68,10 +78,25 @@ public class BilibiliApiUtil {
 
     private static final String RELATION_MODIFY_API = "https://api.bilibili.com/x/relation/modify";
 
+    private static final String COOKIE_INFO_API = "https://passport.bilibili.com/x/passport-login/web/cookie/info";
+
+    private static final String CORRESPOND_PAGE = "https://www.bilibili.com/correspond/1/";
+
+    private static final String COOKIE_REFRESH_API = "https://passport.bilibili.com/x/passport-login/web/cookie/refresh";
+
+    private static final String CONFIRM_REFRESH_API = "https://passport.bilibili.com/x/passport-login/web/confirm/refresh";
+
     /**
      * 单页关注列表的最大条目数
      */
     private static final int FOLLOWING_PAGE_SIZE = 50;
+
+    /**
+     * 「账号未登录」的业务错误代码
+     * <p>
+     * 需要登录态的接口在凭据失效时统一返回该代码，据此可把「确实掉登录」与网络故障区分开。
+     */
+    public static final int CODE_NOT_LOGGED_IN = -101;
 
     private final HttpUtil http;
 
@@ -91,6 +116,22 @@ public class BilibiliApiUtil {
     private String buvid3;
 
     /**
+     * 设备标识（新版），与 buvid3 由同一个指纹接口一并下发
+     */
+    @Getter
+    private String buvid4;
+
+    /**
+     * 会话级设备标识，网页端由前端本地生成
+     */
+    private String uuid;
+
+    /**
+     * 首次访问时间戳（秒），网页端随设备标识一同写入 Cookie
+     */
+    private String bNut;
+
+    /**
      * 接口签名凭据，按需刷新
      */
     private volatile WebSign webSign;
@@ -106,6 +147,7 @@ public class BilibiliApiUtil {
      */
     public void init() {
         try {
+            generateDeviceIds();
             this.buvid3 = fetchBuvid3();
             this.webSign = generateWebSign();
             log.info("哔哩哔哩接口凭据初始化完成");
@@ -149,6 +191,18 @@ public class BilibiliApiUtil {
         String effectiveBuvid = StringUtil.isNotBlank(cookies.getBuvid3()) ? cookies.getBuvid3() : buvid3;
         if (StringUtil.isNotBlank(effectiveBuvid)) {
             joiner.add("buvid3=" + effectiveBuvid);
+        }
+
+        // 网页端还会带上这几项设备标识，补齐它们是为了让请求更接近真实浏览器。
+        // 注意：这并不能让扫码登录拿到持久化刷新口令，那件事已实测排除
+        if (StringUtil.isNotBlank(buvid4)) {
+            joiner.add("buvid4=" + buvid4);
+        }
+        if (StringUtil.isNotBlank(uuid)) {
+            joiner.add("_uuid=" + uuid);
+        }
+        if (StringUtil.isNotBlank(bNut)) {
+            joiner.add("b_nut=" + bNut);
         }
 
         WebSign sign = webSign;
@@ -400,6 +454,12 @@ public class BilibiliApiUtil {
 
     /**
      * 获取设备标识
+     * <p>
+     * 优先用网页端同款的指纹接口，它一次返回 buvid3 与 buvid4 两个标识；失败时退回旧接口，
+     * 旧接口只有 buvid3。改用前者是为了让请求更接近真实网页端，减少被风控判定的机会。
+     * <p>
+     * 注：曾以为补齐设备标识能让扫码登录拿到持久化刷新口令，<b>实测无效</b>，
+     * 详见 {@link #getQrCodeLoginStatus} 的说明。保留本改动只是因为它本身更贴近网页端行为。
      * @return 设备标识
      */
     private String fetchBuvid3() {
@@ -407,7 +467,31 @@ public class BilibiliApiUtil {
         headers.put("User-Agent", properties.getNetwork().getUserAgent());
         headers.put("Referer", MAIN_SITE);
 
+        try {
+            JSONObject finger = extractData(http.getJson(FINGER_SPI_API, headers));
+            String b3 = finger.getString("b_3");
+            String b4 = finger.getString("b_4");
+            if (StringUtil.isNotBlank(b3)) {
+                this.buvid4 = b4;
+                return b3;
+            }
+        } catch (Exception e) {
+            log.debug("指纹接口获取设备标识失败, 退回旧接口: {}", e.getMessage());
+        }
+
         return extractData(http.getJson(BUVID_API, headers)).getString("buvid");
+    }
+
+    /**
+     * 生成会话级的设备补充标识
+     * <p>
+     * 网页端由前端在本地生成后写入 Cookie，服务端不校验其内容，只看有没有。
+     * 与 buvid 不同，这些值每个会话重新生成即可，不需要持久化。
+     */
+    private void generateDeviceIds() {
+        this.uuid = UUID.randomUUID().toString().toUpperCase(Locale.ROOT)
+                + String.format("%05d", System.currentTimeMillis() % 100000) + "infoc";
+        this.bNut = String.valueOf(System.currentTimeMillis() / 1000);
     }
 
     /**
@@ -429,15 +513,16 @@ public class BilibiliApiUtil {
     public boolean getQrCodeLoginStatus(String key) {
         Map<String, String> headers = getBilibiliHeaders();
 
-        JSONObject response;
+        ResponseEntity<String> response;
         try {
-            response = http.getJson(QR_CODE_POLL_API + URLEncoder.encode(key, StandardCharsets.UTF_8), headers);
+            response = http.getForEntity(QR_CODE_POLL_API + URLEncoder.encode(key, StandardCharsets.UTF_8), headers);
         } catch (Exception e) {
             log.debug("轮询扫码登录状态失败: {}", e.getMessage());
             return false;
         }
 
-        JSONObject data = response == null ? null : response.getJSONObject("data");
+        JSONObject body = response.getBody() == null ? null : JSON.parseObject(response.getBody());
+        JSONObject data = body == null ? null : body.getJSONObject("data");
         if (data == null) {
             return false;
         }
@@ -448,18 +533,135 @@ public class BilibiliApiUtil {
             return false;
         }
 
-        Cookies logged = parseLoginUrl(data.getString("url"));
+        Cookies logged = extractLoginCookies(response, data);
         if (logged == null) {
-            log.error("扫码登录成功但未能解析出登录凭据");
+            // 只列字段名与参数名，绝不输出取值：这里面就有等同于账号密码的 SESSDATA。
+            // 早先这里只说「未能解析出登录凭据」，等于把排查成本全推给了使用者
+            log.error("扫码登录成功但未能解析出登录凭据; 响应字段: {}; 响应头 Set-Cookie 项: {}; 跳转地址参数: {}",
+                    data.keySet(), cookieNames(response), describeQuery(data.getString("url")));
             return false;
         }
 
         if (StringUtil.isBlank(logged.getBuvid3())) {
             logged.setBuvid3(buvid3);
         }
+
+        // 持久化刷新口令只在登录成功这一刻返回一次，错过就只能重新扫码，因此必须就地取走。
+        //
+        // 已知限制：实测扫码登录时服务端会把该字段返回为空串（字段存在、值为空），
+        // 而同一账号在浏览器里登录则拿得到（localStorage.ac_time_value 有值），
+        // 说明机制本身是活的，只是走扫码这条路拿不到。已实测排除的猜想：
+        //   1. 轮询未带 source=main-fe-header —— 补上后仍为空串
+        //   2. 设备标识不全（缺 buvid4/_uuid/b_nut）、User-Agent 过旧 —— 补齐后仍为空串
+        // 后果是 Cookie 自动续期会一直静默跳过，凭据到期后只能重新扫码；
+        // 该状态已由登录健康探针展示出来，不会悄无声息。
+        logged.setRefreshToken(data.getString("refresh_token"));
+        if (StringUtil.isBlank(logged.getRefreshToken())) {
+            // 附上响应结构：只说字段类型与长度，不输出任何取值。
+            // 「字段不存在」与「字段存在但为空」的排查方向完全不同，笼统一句话等于没说
+            log.warn("登录响应中没有持久化刷新口令, Cookie 自动续期将不可用; 响应结构: {}", describeJson(data));
+        }
+
         this.cookies = logged;
 
         return true;
+    }
+
+    /**
+     * 从扫码登录的轮询响应中取出登录凭据
+     * <p>
+     * 服务端<b>现行</b>的做法是把凭据放在轮询响应的 Set-Cookie 响应头里，响应体中的 url 只是
+     * 一个用于跨域同步的 crossDomain 地址（参数为 ticket / gourl / first_domain），其中并没有凭据。
+     * <p>
+     * 早先的做法则是把 SESSDATA、bili_jct 直接拼在那个 url 的查询串里。本方法两条路都走：
+     * 先读响应头，读不到再退回解析 url——真实环境中已经观察到接口从后者切换到了前者，
+     * 保留兼容分支是为了不假定服务端只会朝一个方向变。
+     * @param response 轮询响应
+     * @param data 响应体中的 data 字段
+     * @return 登录凭据，两条路都取不到时返回 null
+     */
+    private Cookies extractLoginCookies(ResponseEntity<String> response, JSONObject data) {
+        Cookies fromHeaders = BilibiliCookieRefreshUtil.applySetCookies(new Cookies(),
+                response.getHeaders().get(HttpHeaders.SET_COOKIE));
+
+        if (StringUtil.isNotBlank(fromHeaders.getSessData()) && StringUtil.isNotBlank(fromHeaders.getBiliJct())) {
+            return fromHeaders;
+        }
+
+        return parseLoginUrl(data.getString("url"));
+    }
+
+    /**
+     * 描述 JSON 的结构，供排查用
+     * <p>
+     * <b>只描述字段名、类型与长度，绝不输出取值。</b>登录相关的响应里就有等同于账号密码的内容，
+     * 而排查时真正需要知道的往往只是「这个字段到底是不存在、为 null、还是空串」。
+     * @param json JSON
+     * @return 结构描述
+     */
+    private String describeJson(JSONObject json) {
+        if (json == null) {
+            return "null";
+        }
+
+        StringJoiner joiner = new StringJoiner(", ", "{", "}");
+        json.forEach((name, value) -> {
+            String described;
+            if (value == null) {
+                described = "null";
+            } else if (value instanceof String text) {
+                described = text.isEmpty() ? "空串" : "字符串(长度 " + text.length() + ")";
+            } else if (value instanceof Number) {
+                described = "数字";
+            } else {
+                described = value.getClass().getSimpleName();
+            }
+            joiner.add(name + "=" + described);
+        });
+        return joiner.toString();
+    }
+
+    /**
+     * 列出响应头中下发的 Cookie 名，供解析失败时排查
+     * <p>
+     * <b>只返回名字，绝不返回取值。</b>
+     * @param response 响应
+     * @return Cookie 名列表
+     */
+    private List<String> cookieNames(ResponseEntity<String> response) {
+        List<String> headers = response.getHeaders().get(HttpHeaders.SET_COOKIE);
+        if (headers == null) {
+            return List.of();
+        }
+
+        return headers.stream()
+                .map(header -> header.split("[=;]", 2)[0].trim())
+                .toList();
+    }
+
+    /**
+     * 描述跳转地址的结构，供解析失败时排查
+     * <p>
+     * <b>只返回参数名，绝不返回取值</b>——这些参数里就有等同于账号密码的 SESSDATA。
+     * @param url 跳转地址
+     * @return 结构描述
+     */
+    private String describeQuery(String url) {
+        if (StringUtil.isBlank(url)) {
+            return "地址为空";
+        }
+        if (!url.contains("?")) {
+            return "地址不含查询串, 长度 " + url.length();
+        }
+
+        List<String> names = new ArrayList<>();
+        for (String pair : url.substring(url.indexOf('?') + 1).split("&")) {
+            int equals = pair.indexOf('=');
+            if (equals > 0) {
+                names.add(pair.substring(0, equals));
+            }
+        }
+        return names.toString();
     }
 
     /**
@@ -491,15 +693,117 @@ public class BilibiliApiUtil {
 
     /**
      * 获取当前登录账号的 uid
-     * @return uid，未登录时返回 null
+     * <p>
+     * 任何失败都返回 null，无法区分「确实未登录」与「网络故障」。登录态复检等需要区分二者的场景
+     * 请改用 {@link #fetchLoginUid()}：把网络抖动误判为掉登录会造成无谓的告警。
+     * @return uid，未登录或请求失败时返回 null
      */
     public Long getLoginUid() {
         try {
-            return requestBilibiliApi(MY_INFO_API).getJSONObject("profile").getLong("mid");
+            return fetchLoginUid();
         } catch (Exception e) {
             log.debug("获取登录账号 uid 失败: {}", e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * 查询当前登录账号的 uid，不吞异常
+     * <p>
+     * 未登录时服务端返回业务错误代码 {@link #CODE_NOT_LOGGED_IN}，据此抛出
+     * {@link com.starlwr.bot.bilibili.exception.ResponseCodeException}；网络故障则抛出其他异常。
+     * 调用方可借异常类型区分这两种情况。
+     * @return uid
+     */
+    public Long fetchLoginUid() {
+        JSONObject profile = requestBilibiliApi(MY_INFO_API).getJSONObject("profile");
+        if (profile == null) {
+            throw new NetworkException("账号信息接口未返回 profile 字段");
+        }
+        return profile.getLong("mid");
+    }
+
+    /**
+     * 查询是否需要续期 Cookie
+     * <p>
+     * 服务端自 2023 年起会随敏感接口的调用逐步作废 Web 端 Cookie，官方页面靠本接口判断是否该续期。
+     * 只有该接口说需要时才应该续期：续期是一次性且不可回退的操作，主动多做没有好处。
+     * @return 续期判断结果
+     */
+    public CookieRefreshHint checkCookieRefresh() {
+        Map<String, Object> params = new LinkedHashMap<>();
+        if (StringUtil.isNotBlank(cookies.getBiliJct())) {
+            params.put("csrf", cookies.getBiliJct());
+        }
+
+        // 该接口不接受 WBI 签名参数，因此手工拼查询串而非走 requestBilibiliApi 的签名分支
+        String url = COOKIE_INFO_API + (params.isEmpty() ? ""
+                : "?csrf=" + URLEncoder.encode(cookies.getBiliJct(), StandardCharsets.UTF_8));
+
+        JSONObject data = extractData(http.getJson(url, getBilibiliHeaders()));
+        return new CookieRefreshHint(Boolean.TRUE.equals(data.getBoolean("refresh")),
+                data.getLongValue("timestamp"));
+    }
+
+    /**
+     * 获取实时刷新口令
+     * @param correspondPath 由服务端时间戳生成的签名
+     * @return 实时刷新口令
+     */
+    public String getRefreshCsrf(@NonNull String correspondPath) {
+        String html = http.get(CORRESPOND_PAGE + correspondPath, getBilibiliHeaders());
+        return BilibiliCookieRefreshUtil.parseRefreshCsrf(html)
+                .orElseThrow(() -> new NetworkException("correspond 页面中未找到实时刷新口令"));
+    }
+
+    /**
+     * 续期 Cookie
+     * <p>
+     * 成功后<b>新旧凭据会同时有效</b>，直到调用 {@link #confirmCookieRefresh(String)} 为止。
+     * 这个中间态是有意保留的安全余量：调用方应当先用新凭据验证确实可用，再去作废旧凭据。
+     * @param refreshCsrf 实时刷新口令
+     * @param refreshToken 当前的持久化刷新口令
+     * @return 新的凭据，其中已包含新的持久化刷新口令
+     */
+    public Cookies refreshCookies(@NonNull String refreshCsrf, @NonNull String refreshToken) {
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("csrf", cookies.getBiliJct());
+        params.put("refresh_csrf", refreshCsrf);
+        params.put("source", "main_web");
+        params.put("refresh_token", refreshToken);
+
+        ResponseEntity<String> response = http.postAsFormForEntity(COOKIE_REFRESH_API, getBilibiliHeaders(), params);
+        JSONObject data = extractData(JSON.parseObject(response.getBody()));
+
+        String newRefreshToken = data.getString("refresh_token");
+        if (StringUtil.isBlank(newRefreshToken)) {
+            throw new NetworkException("续期接口未返回新的持久化刷新口令");
+        }
+
+        Cookies refreshed = BilibiliCookieRefreshUtil.applySetCookies(cookies,
+                response.getHeaders().get(HttpHeaders.SET_COOKIE));
+        refreshed.setRefreshToken(newRefreshToken);
+
+        if (Objects.equals(refreshed.getSessData(), cookies.getSessData())) {
+            throw new NetworkException("续期接口未在响应头中下发新的 SESSDATA");
+        }
+
+        return refreshed;
+    }
+
+    /**
+     * 确认续期，作废旧凭据
+     * <p>
+     * 必须在切换到新凭据之后调用，且传入的是<b>旧</b>的持久化刷新口令。不调用则旧凭据会一直有效，
+     * 等于每续期一次就多留下一份可用凭据。
+     * @param oldRefreshToken 续期前的持久化刷新口令
+     */
+    public void confirmCookieRefresh(@NonNull String oldRefreshToken) {
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("csrf", cookies.getBiliJct());
+        params.put("refresh_token", oldRefreshToken);
+
+        extractData(http.postJsonAsForm(CONFIRM_REFRESH_API, getBilibiliHeaders(), params));
     }
 
     /**
@@ -901,5 +1205,15 @@ public class BilibiliApiUtil {
      * @param key 轮询令牌
      */
     public record QrCodeLogin(String url, String key) {
+    }
+
+    /**
+     * Cookie 续期判断结果
+     *
+     * @param needed 是否需要续期
+     * @param timestamp 服务端返回的毫秒时间戳，用于生成 CorrespondPath；
+     *                  须原样使用服务端的值，本机时钟有偏差时用本地时间会算出无效签名
+     */
+    public record CookieRefreshHint(boolean needed, long timestamp) {
     }
 }

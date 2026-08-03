@@ -1,10 +1,16 @@
-# StarBot 3.0
+<img src="docs/assets/logo.svg" alt="NovaBot" height="56">
 
 哔哩哔哩直播与动态推送机器人。监听 UP 主的开播、下播与动态更新，通过 OneBot 协议推送到 QQ。
 
 本仓库是 [StarBot](https://github.com/Starlwr/StarBot)（作者 [LWR](https://github.com/Starlwr)）的整理版本，遵循 AGPL-3.0
 发布。相对上游的改动见 [NOTICE](NOTICE) 与 [CHANGELOG.md](CHANGELOG.md)，其中包含一项**推送接口鉴权的安全修复**，
 详见 [SECURITY.md](SECURITY.md)。
+
+> 包名、构件坐标与配置键仍沿用 `starbot` / `com.starlwr`，以保持与上游生态第三方插件的兼容；
+> NovaBot 只是本仓库对外的名称。两者的取舍见 [NOTICE](NOTICE)。
+
+**文档**：[用户手册](docs/user-guide.md) · [排障与 FAQ](docs/troubleshooting.md) ·
+[架构说明](docs/architecture.md) · [安全说明](SECURITY.md) · [性能实测](docs/performance.md)
 
 ## 与上游的关系
 
@@ -58,9 +64,10 @@ sudo systemctl start starbot && sudo journalctl -u starbot -f
 ```
 
 日志中会输出两样东西：**配置界面地址**（含一次性访问令牌）和**登录二维码**。
-用浏览器打开前者完成配置，用哔哩哔哩客户端扫描后者完成登录，即可开始推送。
+用浏览器打开前者，总览页顶部的四步向导会带着你完成机器人连接、扫码登录、添加主播、
+发一条测试消息——每步都当场验证，不必配完再猜哪里错了。
 
-若 StarBot 装在远程服务器上，先在本机建立隧道再访问配置界面：
+若 NovaBot 装在远程服务器上，先在本机建立隧道再访问配置界面：
 
 ```bash
 ssh -L 7827:127.0.0.1:7827 用户名@服务器地址
@@ -71,20 +78,33 @@ ssh -L 7827:127.0.0.1:7827 用户名@服务器地址
 
 ## 配置界面
 
-启动后访问日志中输出的地址即可打开内置配置界面，包含四个页签：
+启动后访问日志中输出的地址即可打开内置配置界面，五个页签按「此刻想干什么」划分：
 
-| 页签 | 作用 |
+| 页签 | 回答什么问题 |
 |---|---|
-| 常规配置 | 逐项修改配置，带中文说明与默认值 |
-| 推送配置 | 编辑 `datasource.json`，保存前校验 JSON 格式 |
-| 配置文件 | 直接编辑 `application.yml`，适用于复杂结构 |
-| 运行状态 | 查看已加载的主播、内存与线程占用 |
+| 总览 | 系统现在好不好？健康自检、最近推送、暂停推送；未配置完时顶部是四步向导 |
+| 推送规则 | 我要推谁、推到哪、推什么内容 |
+| 机器人 | QQ 这一侧连通吗？连接参数、连通性测试、发送测试消息 |
+| 哔哩哔哩 | 账号还在线吗？登录状态、扫码登录、监听中的直播间 |
+| 设置 | 调参数。分层展示，原始配置文件编辑收在「高级」内 |
 
-界面上的字段**不是手工维护的**，而是由程序读取编译期生成的配置元数据自动生成。因此：
+**推送规则不必手写 JSON**：输入 uid 或直接粘贴个人空间链接，界面会先拉取昵称与直播间号
+让你确认是不是要的那个人，再勾选「开播 / 下播 / 动态」并填写推送目标即可。
+消息模板的占位符做成了可点击插入的标签，右侧实时预览。
+
+**设置页的字段不是手工维护的**，而是由程序读取编译期生成的配置元数据自动生成。因此：
 代码里新增配置项，界面自动出现；删除配置项，界面自动消失；配置项的说明直接取自代码里的 Javadoc。
-保存时改动逐行写入 `application.yml`，**原有的注释、顺序与格式完整保留**。
+保存时改动逐行写入 `application.yml`，**原有的注释、顺序与格式完整保留**，
+并在保存前校验 YAML 语法与字段类型，同时保留最近 10 份带时间戳的备份可供回滚。
+配置写坏导致启动失败时会自动进入安全模式，仍可在浏览器里改回来。
+
+**能当场验证配置是否正确**：健康自检逐项给出状态与修复建议，「发送测试消息」直接发一条
+并回显接口原始响应——群号写错、Token 不匹配、OneBot 未启动、机器人不在群里这四类错误，
+否则表现完全一样：什么都不发生。
 
 配置界面默认仅监听本机回环地址并要求访问令牌，安全说明见 [SECURITY.md](SECURITY.md)。
+
+界面各页的详细用法见[用户手册](docs/user-guide.md)。
 
 ## 手动部署
 
@@ -94,9 +114,11 @@ ssh -L 7827:127.0.0.1:7827 用户名@服务器地址
 2. **一个 OneBot 实现**，例如 [NapCat](https://github.com/NapNeko/NapCatQQ)，用于实际收发 QQ 消息
 3. **一个哔哩哔哩账号**，用于读取动态流（建议使用小号，原因见 [SECURITY.md](SECURITY.md)）
 
+> 只推直播不推动态时，哔哩哔哩账号可以不登录——直播状态是公开信息。
+
 ### 配置
 
-编辑 `application.yml`：
+绝大多数情况下用配置界面即可，以下是手工编辑的对照。编辑 `application.yml`：
 
 ```yaml
 server:
@@ -145,7 +167,10 @@ starbot:
 > 改为按处理器指定，本仓库跟随该设计，因此需填 `handler`（处理器类的全限定名）。
 > 从旧版升级时需要相应调整 `datasource.json`。
 
-`type` 为 `1` 表示群聊、`2` 表示私聊，`num` 为对应的群号或 QQ 号。
+`type` 为 `1` 表示群聊、`0` 表示私聊，`num` 为对应的群号或 QQ 号。
+
+> 该取值对应代码中的 `PushTargetType`（`GROUP(1)`、`FRIEND(0)`）。填入其他数字会被解析为「未知」，
+> 运行期直接丢弃对应消息，因此配置界面在保存时即会拦下。
 
 ### 运行
 
@@ -201,8 +226,8 @@ starbot:
 ## 插件开发
 
 复制 [templates/starbot-example-plugin](templates/starbot-example-plugin) 作为起点。插件通过
-`@StarBotComponent` 注册组件，通过 `@EventListener` 监听事件；实现 `StarBotEventHandler`
-即可作为推送处理器，在 `datasource.json` 的 `handler` 字段中按全限定类名引用。
+`@StarBotComponent` 注册组件（**不是** Spring 的 `@Component`），通过 `@EventListener` 监听事件；
+实现 `StarBotEventHandler` 即可作为推送处理器，在 `datasource.json` 的 `handler` 字段中按全限定类名引用。
 
 构建插件前需先安装本工程：
 
@@ -210,9 +235,11 @@ starbot:
 ./build.sh --skip-tests
 ```
 
+模块划分、事件流、并发与生命周期约定、配置体系与测试约定见[架构说明](docs/architecture.md)。
+
 ## 资源占用
 
-空载实测常驻内存 53–66 MB。默认 JVM 参数已针对小内存机器调校（见 `start.sh`），
+空载实测常驻内存 105–110 MB。默认 JVM 参数已针对小内存机器调校（见 `start.sh`），
 完整的实测数据、测量条件与调优手段见 [docs/performance.md](docs/performance.md)。
 
 ## 许可证

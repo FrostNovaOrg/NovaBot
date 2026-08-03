@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -47,6 +48,17 @@ public class StarBotSenderService {
      */
     public Optional<Sender> getSender(String name) {
         return Optional.ofNullable(senders.get(name));
+    }
+
+    /**
+     * 获取全部已注册的推送平台名称
+     * <p>
+     * 供推送配置的保存前校验使用：平台名写错时应在保存时就指出来，而不是运行期才以
+     * 「未找到推送平台配置, 已丢弃消息」的形式表现出来。
+     * @return 已注册的推送平台名称
+     */
+    public Set<String> getSenderNames() {
+        return Set.copyOf(senders.keySet());
     }
 
     /**

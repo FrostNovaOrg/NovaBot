@@ -11,7 +11,10 @@ import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.service.StarBotEventHandlerService;
 import com.starlwr.bot.core.util.CollectionUtil;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+
+import java.io.IOException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Profile;
@@ -39,6 +42,11 @@ public class JsonDataSource extends AbstractDataSource {
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
 
     private ScheduledFuture<?> pendingTask;
+
+    /**
+     * 文件监听服务，停机时需主动关闭
+     */
+    private volatile WatchService watchService;
 
     private final AtomicLong lastTriggeredTime = new AtomicLong(0);
 
@@ -86,6 +94,7 @@ public class JsonDataSource extends AbstractDataSource {
     private void watchFileUpdate() {
         try {
             WatchService watchService = FileSystems.getDefault().newWatchService();
+            this.watchService = watchService;
             Path jsonPath = Paths.get(properties.getDatasource().getJsonPath()).toAbsolutePath();
             Path parentPath = jsonPath.getParent();
             parentPath.register(watchService, StandardWatchEventKinds.ENTRY_MODIFY, StandardWatchEventKinds.ENTRY_CREATE);
@@ -235,5 +244,27 @@ public class JsonDataSource extends AbstractDataSource {
         }
 
         return users;
+    }
+
+    /**
+     * 停止文件监听并关闭线程池
+     * <p>
+     * 这两个线程池此前既非 Spring 托管也无人关闭。必须主动关闭监听服务，
+     * 才能让阻塞在 take() 上的线程退出——WatchService 的等待不响应中断，
+     * 单靠 shutdownNow() 是叫不醒它的。
+     */
+    @PreDestroy
+    public void shutdown() {
+        WatchService service = watchService;
+        if (service != null) {
+            try {
+                service.close();
+            } catch (IOException e) {
+                log.debug("关闭数据源文件监听失败: {}", e.getMessage());
+            }
+        }
+
+        scheduler.shutdownNow();
+        executor.shutdownNow();
     }
 }

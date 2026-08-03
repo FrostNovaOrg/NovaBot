@@ -193,4 +193,23 @@ public class BilibiliLiveRoomService {
                 .filter(connector -> connector.getStatus() == ConnectStatus.CONNECTED)
                 .count();
     }
+
+    /**
+     * 按连接状态统计各状态下的直播间数量
+     * <p>
+     * 供健康探针读取：只看「已连接几个」不足以判断问题所在，被风控与连不上需要区分对待。
+     * @return 连接状态到数量的映射
+     */
+    public Map<ConnectStatus, Long> countByStatus() {
+        return connectors.values().stream()
+                .collect(Collectors.groupingBy(BilibiliLiveRoomConnector::getStatus, Collectors.counting()));
+    }
+
+    /**
+     * 获取当前纳入连接管理的直播间总数
+     * @return 直播间总数
+     */
+    public int getManagedRoomCount() {
+        return connectors.size();
+    }
 }

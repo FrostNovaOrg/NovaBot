@@ -9,11 +9,15 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 /**
  * 配置文件读写服务
@@ -43,6 +47,29 @@ public class ConfigurationFileService {
     private static final String INDICATOR_START = "-?:,[]{}#&*!|>'\"%@`";
 
     private static final Pattern OBJECT_ITEM = Pattern.compile("^[A-Za-z_][A-Za-z0-9_.-]*\\s*:(\\s|$)");
+
+    /**
+     * 备份文件名后缀
+     */
+    private static final String BACKUP_SUFFIX = ".bak";
+
+    /**
+     * 备份保留份数
+     */
+    private static final int BACKUP_KEEP = 10;
+
+    /**
+     * 备份文件名的时间戳格式，形如 20260803-172530
+     */
+    private static final DateTimeFormatter BACKUP_STAMP =
+            DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").withZone(ZoneId.systemDefault());
+
+    /**
+     * 备份文件名的判定模式
+     * <p>
+     * 备份名来自接口入参，必须严格校验：直接拿它拼路径的话，传入 ../ 即可读取或覆盖任意文件。
+     */
+    private static final Pattern BACKUP_NAME = Pattern.compile("^[A-Za-z0-9_.-]+\\.\\d{8}-\\d{6}\\.bak$");
 
     /**
      * 主配置文件路径
@@ -162,6 +189,127 @@ public class ConfigurationFileService {
     }
 
     /**
+     * 修改列表中某一元素内部的字段
+     * <p>
+     * 列表元素内部的键不属于配置树的一级路径，{@link #write(Map)} 按设计会整段跳过。
+     * 但机器人连接信息（地址、端口、Token）恰恰位于 {@code senders} 列表的元素内，
+     * 且是唯一一批「不配置就跑不起来」的配置项，引导流程必须能写入它们。
+     * <p>
+     * 仍采用逐行定位替换：配置模板中的中文注释是使用者理解配置项的主要依据，
+     * 用 YAML 库反序列化再写回会把注释、空行与顺序全部丢失。
+     * @param listPath 列表的完整路径，例如 starbot.adapter.onebot.senders
+     * @param index 元素下标，从 0 开始
+     * @param fields 待修改的字段名到取值，字段名为元素内部的键
+     * @return 实际修改的字段数
+     * @throws IOException 读写失败时抛出
+     */
+    public synchronized int writeListItemFields(String listPath, int index, Map<String, String> fields) throws IOException {
+        if (fields.isEmpty()) {
+            return 0;
+        }
+
+        List<String> lines = Files.readAllLines(configPath, StandardCharsets.UTF_8);
+        int[] range = locateListItem(lines, listPath, index);
+        if (range == null) {
+            throw new IOException("未在配置文件中找到 " + listPath + " 的第 " + (index + 1) + " 个元素");
+        }
+
+        int changed = 0;
+        for (int i = range[0]; i < range[1]; i++) {
+            String stripped = lines.get(i).strip();
+            // 元素首行形如 "- name: xxx"，其键同样需要参与匹配
+            String candidate = stripped.startsWith("-") ? stripped.substring(1).strip() : stripped;
+
+            int colon = candidate.indexOf(':');
+            if (colon < 0) {
+                continue;
+            }
+
+            String key = candidate.substring(0, colon).strip();
+            if (!fields.containsKey(key)) {
+                continue;
+            }
+
+            String replaced = replaceValue(lines.get(i), fields.get(key));
+            if (!replaced.equals(lines.get(i))) {
+                lines.set(i, replaced);
+                changed++;
+            }
+        }
+
+        if (changed > 0) {
+            backup();
+            Files.write(configPath, lines, StandardCharsets.UTF_8);
+            log.info("配置界面已更新 {} 第 {} 个元素的 {} 个字段, 重启后生效", listPath, index + 1, changed);
+        }
+
+        return changed;
+    }
+
+    /**
+     * 定位列表中某一元素所占的行范围
+     * @return 长度为 2 的数组，分别为起始行（含）与结束行（不含）；未找到时返回 null
+     */
+    private int[] locateListItem(List<String> lines, String listPath, int index) {
+        List<String> segments = List.of(listPath.split("\\."));
+        List<String> stack = new ArrayList<>();
+
+        int listIndent = -1;
+        // 列表项的缩进由第一个 "-" 决定，通常比列表键本身更深，不能假定二者相等
+        int itemIndent = -1;
+        int seen = -1;
+        int start = -1;
+
+        for (int i = 0; i < lines.size(); i++) {
+            String raw = lines.get(i);
+            if (raw.isBlank() || raw.strip().startsWith("#")) {
+                continue;
+            }
+
+            int indent = indentOf(raw);
+            String stripped = raw.strip();
+
+            if (listIndent >= 0) {
+                if (stripped.startsWith("-") && (itemIndent < 0 || indent == itemIndent)) {
+                    itemIndent = indent;
+                    if (start >= 0) {
+                        return new int[]{start, i};
+                    }
+                    if (++seen == index) {
+                        start = i;
+                    }
+                    continue;
+                }
+
+                // 缩进退回到列表键层级或更浅，说明列表已结束
+                if (indent <= listIndent) {
+                    return start >= 0 ? new int[]{start, i} : null;
+                }
+                continue;
+            }
+
+            int colon = stripped.indexOf(':');
+            if (colon <= 0) {
+                // 冒号缺失或位于行首都不是键定义，例如列表中的 IPv6 字面量
+                continue;
+            }
+
+            String key = stripped.substring(0, colon).strip();
+            int depth = indent / INDENT;
+            while (stack.size() > depth) {
+                stack.remove(stack.size() - 1);
+            }
+            stack.add(key);
+
+            if (stack.equals(segments)) {
+                listIndent = indent;
+            }
+        }
+
+        return start >= 0 ? new int[]{start, lines.size()} : null;
+    }
+
+    /**
      * 读取配置文件原始文本
      * @return 原始文本
      * @throws IOException 读取失败时抛出
@@ -183,12 +331,128 @@ public class ConfigurationFileService {
 
     /**
      * 备份当前配置文件
+     * <p>
+     * 每次保存生成一份带时间戳的独立备份并保留最近若干份。此前只有单个 .bak 文件且每次覆盖，
+     * 一旦连续保存两次，第一次保存前的内容就再也找不回来了。
      * @throws IOException 备份失败时抛出
      */
     private void backup() throws IOException {
-        Path backup = configPath.resolveSibling("application.yml.bak");
-        Files.copy(configPath, backup, StandardCopyOption.REPLACE_EXISTING);
-        log.debug("已备份原配置至 {} ({})", backup, Instant.now());
+        if (!Files.exists(configPath)) {
+            return;
+        }
+
+        String name = configPath.getFileName() + "." + BACKUP_STAMP.format(Instant.now()) + BACKUP_SUFFIX;
+        Files.copy(configPath, configPath.resolveSibling(name), StandardCopyOption.REPLACE_EXISTING);
+        log.debug("已备份原配置至 {}", name);
+
+        pruneBackups();
+    }
+
+    /**
+     * 删除超出保留数量的旧备份
+     */
+    private void pruneBackups() {
+        try (Stream<Path> files = Files.list(directory())) {
+            files.filter(this::isBackup)
+                    // 备份名内含形如 20260803-172530 的时间戳，字典序即时间序
+                    .sorted(Comparator.comparing((Path p) -> p.getFileName().toString()).reversed())
+                    .skip(BACKUP_KEEP)
+                    .forEach(path -> {
+                        try {
+                            Files.deleteIfExists(path);
+                        } catch (IOException e) {
+                            log.debug("删除旧备份 {} 失败: {}", path, e.getMessage());
+                        }
+                    });
+        } catch (IOException e) {
+            // 备份清理失败不应影响保存本身
+            log.debug("清理旧备份失败: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 列出全部可用备份，按时间倒序
+     * @return 备份文件名列表
+     */
+    public synchronized List<String> listBackups() {
+        try (Stream<Path> files = Files.list(directory())) {
+            return files.filter(this::isBackup)
+                    .map(path -> path.getFileName().toString())
+                    .sorted(Comparator.reverseOrder())
+                    .toList();
+        } catch (IOException e) {
+            log.error("列出配置备份失败", e);
+            return List.of();
+        }
+    }
+
+    /**
+     * 读取指定备份的内容
+     * @param name 备份文件名
+     * @return 备份内容
+     * @throws IOException 读取失败或文件名非法时抛出
+     */
+    public synchronized String readBackup(String name) throws IOException {
+        Path path = resolveBackup(name);
+        return Files.readString(path, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * 回滚至指定备份
+     * <p>
+     * 回滚本身也会先备份当前内容，因此误回滚同样可以再滚回来。
+     * @param name 备份文件名
+     * @throws IOException 读取或写入失败时抛出
+     */
+    public synchronized void restoreBackup(String name) throws IOException {
+        String content = readBackup(name);
+        backup();
+        Files.writeString(configPath, content, StandardCharsets.UTF_8);
+        log.info("配置界面已回滚 application.yml 至备份 {}, 重启后生效", name);
+    }
+
+    /**
+     * 解析备份文件名为路径
+     * <p>
+     * 只接受本目录下符合命名规则的备份文件：文件名来自接口入参，若直接拼接路径，
+     * 传入 ../ 即可读取或覆盖任意文件。
+     * @param name 备份文件名
+     * @return 备份文件路径
+     * @throws IOException 文件名非法或文件不存在时抛出
+     */
+    private Path resolveBackup(String name) throws IOException {
+        if (name == null || !isBackupName(name)) {
+            throw new IOException("非法的备份文件名: " + name);
+        }
+
+        Path path = directory().resolve(name).normalize();
+        if (!path.getParent().equals(directory()) || !Files.isRegularFile(path)) {
+            throw new IOException("备份文件不存在: " + name);
+        }
+
+        return path;
+    }
+
+    /**
+     * 配置文件所在目录
+     */
+    private Path directory() {
+        Path parent = configPath.toAbsolutePath().getParent();
+        return parent == null ? Path.of(".").toAbsolutePath().normalize() : parent;
+    }
+
+    /**
+     * 判断是否为本服务生成的备份文件
+     */
+    private boolean isBackup(Path path) {
+        return Files.isRegularFile(path) && isBackupName(path.getFileName().toString());
+    }
+
+    /**
+     * 判断文件名是否符合备份命名规则
+     */
+    private boolean isBackupName(String name) {
+        return BACKUP_NAME.matcher(name).matches();
     }
 
     /**

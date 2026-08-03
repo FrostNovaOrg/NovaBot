@@ -2,6 +2,7 @@ package com.starlwr.bot.bilibili.service;
 
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.event.dynamic.BilibiliDynamicUpdateEvent;
+import com.starlwr.bot.bilibili.exception.ResponseCodeException;
 import com.starlwr.bot.bilibili.model.Dynamic;
 import com.starlwr.bot.bilibili.model.Up;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
@@ -104,8 +105,17 @@ public class BilibiliDynamicService {
         List<Dynamic> dynamics;
         try {
             dynamics = api.getDynamicUpdateList();
+        } catch (ResponseCodeException e) {
+            if (e.getCode() == BilibiliApiUtil.CODE_NOT_LOGGED_IN) {
+                // 立即复检以更新登录态并发出告警，不必干等到下一个复检周期。
+                // 复检会把登录态置回未登录，本方法开头的判断随即拦下后续轮询，因此不会反复触发
+                accountService.verify();
+            } else {
+                log.warn("获取动态列表失败, 接口返回错误代码 {}: {}", e.getCode(), e.getMessage());
+            }
+            return;
         } catch (Exception e) {
-            log.debug("获取动态列表失败: {}", e.getMessage());
+            log.debug("获取动态列表失败, 疑为网络故障: {}", e.getMessage());
             return;
         }
 

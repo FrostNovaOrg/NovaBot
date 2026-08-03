@@ -32,11 +32,34 @@ public class Cookies {
     private String buvid3;
 
     /**
+     * 持久化刷新口令
+     * <p>
+     * 官方 Web 端将其存于 localStorage 的 ac_time_value 字段，登录成功时随响应一并返回。
+     * 它是 Cookie 续期链路的唯一入口：丢失后只能重新扫码，因此必须与其余凭据一起持久化。
+     */
+    private String refreshToken;
+
+    public Cookies(String sessData, String biliJct, String buvid3) {
+        this(sessData, biliJct, buvid3, null);
+    }
+
+    /**
      * 判断凭据是否完整可用
+     * <p>
+     * 有意不要求 refreshToken：它只决定能否自动续期，缺失时登录态本身依然可用，
+     * 且旧版本保存下来的凭据文件中并没有该字段。
      * @return 凭据是否完整
      */
     public boolean isComplete() {
         return isNotBlank(sessData) && isNotBlank(biliJct) && isNotBlank(buvid3);
+    }
+
+    /**
+     * 判断是否具备自动续期所需的条件
+     * @return 是否可自动续期
+     */
+    public boolean isRefreshable() {
+        return isComplete() && isNotBlank(refreshToken);
     }
 
     private static boolean isNotBlank(String value) {

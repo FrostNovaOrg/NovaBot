@@ -46,6 +46,91 @@ public class StarBotCoreProperties {
     @Getter
     private final ConfigUi configUi = new ConfigUi();
 
+    @Getter
+    private final Alert alert = new Alert();
+
+    @Getter
+    private final Push push = new Push();
+
+    /**
+     * 推送开关相关
+     */
+    @Getter
+    @Setter
+    public static class Push {
+        /**
+         * 全局推送开关
+         * <p>
+         * 关闭后所有推送都会被丢弃，用于调试或临时静音，无需逐条改推送配置。
+         */
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        private boolean enabled = true;
+
+        /**
+         * 静音时段开始时间，格式 HH:mm，与结束时间任一为空即视为不启用
+         * <p>
+         * 半夜被机器人吵醒是这类通知产品被投诉最多的点，因此内置该能力而不是让使用者自行想办法。
+         */
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        private String quietStart = "";
+
+        /**
+         * 静音时段结束时间，格式 HH:mm
+         * <p>
+         * 允许跨零点：开始 23:00、结束 08:00 表示当晚 23 点至次日 8 点。
+         */
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        private String quietEnd = "";
+    }
+
+    /**
+     * 告警相关
+     */
+    @Getter
+    @Setter
+    public static class Alert {
+        /**
+         * 是否启用告警
+         * <p>
+         * 关闭后登录失效、连接中断、队列积压等问题只会写进日志，不会主动通知。
+         */
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        private boolean enabled = true;
+
+        /**
+         * 同一问题的最短告警间隔，单位：秒
+         * <p>
+         * 故障往往持续存在，不做收敛就会反复推送同一条消息，最终使人对告警彻底脱敏。
+         */
+        private int convergenceInterval = 3600;
+
+        /**
+         * 接收告警的推送平台名，留空则不通过 QQ 告警
+         * <p>
+         * 对本项目的使用者而言，告警直接推到管理员 QQ 远比邮件实用——大多数人并不会为
+         * 一个机器人专门配置发件邮箱。
+         */
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        private String qqPlatform = "";
+
+        /**
+         * 接收告警的目标类型，1 为群聊，0 为私聊
+         * <p>
+         * 取值必须与 {@link com.starlwr.bot.core.enums.PushTargetType} 的 code 一致：
+         * {@code GROUP(1)}、{@code FRIEND(0)}。此处曾误写为「2 为私聊」，而 2 会被解析为
+         * {@code UNKNOWN}，告警在发送阶段被直接丢弃，且不留任何痕迹——与 datasource.json 中
+         * 推送目标的 type 是同一套编码，不要凭直觉另立一套。
+         */
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        private int qqType = 0;
+
+        /**
+         * 接收告警的群号或 QQ 号
+         */
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        private Long qqNum;
+    }
+
     /**
      * 非插件实现的推送平台配置
      */
@@ -61,6 +146,7 @@ public class StarBotCoreProperties {
         /**
          * 是否启用配置界面
          */
+        @ConfigLevel(ConfigLevel.Level.COMMON)
         private boolean enabled = true;
 
         /**

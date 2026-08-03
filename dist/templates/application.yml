@@ -47,6 +47,14 @@ starbot:
           delay: 1000                       # 消息发送间隔，单位：毫秒
           debug-log-max-length: 0           # 原始日志输出长度限制，0 为不限制
 
+      detect:
+        enable-http-detect: true            # 是否定期检测 OneBot HTTP 可用性。关闭后 OneBot
+                                            # 中途挂掉不会被察觉，表现为「消息发不出去且无人告知」
+        http-detect-interval: 300           # HTTP 检测周期，单位：秒
+        enable-websocket-detect: true       # 是否检测 Websocket 是否仍在收消息。长连接可能
+                                            # 在 TCP 层看似存活却已收不到任何消息
+        websocket-detect-interval: 1800     # 多久未收到消息即判定异常，单位：秒
+
       extension:
         napcat:
           enable-backup-at-all: true        # @全体成员 次数不足时是否改用群待办
@@ -56,6 +64,10 @@ starbot:
       cookie-path: cookies.json     # 登录凭据存储路径
       encrypt: true                 # 是否加密存储登录凭据。凭据等同于账号密码，强烈建议保持开启
       key-path: cookies.key         # 加密密钥存储路径
+      verify-interval: 600          # 登录态复检间隔，单位：秒，设为 0 关闭。
+                                    # 凭据失效后动态推送会静默停摆，复检可将其转为显式告警
+      auto-refresh-cookie: true     # 是否自动续期登录凭据。哔哩哔哩会随接口调用逐步作废 Web 端凭据，
+                                    # 关闭后凭据会某天突然失效、只能重新扫码。随复检一并执行
 
     debug:
       live-room-raw-message-log: false    # 直播间原始消息调试日志，会输出大量内容且可能含用户信息
@@ -80,14 +92,32 @@ starbot:
       backup-live-push-interval: 10       # 备用推送检测间隔，单位：秒
 
     dynamic:
-      auto-follow: true             # 是否自动关注配置中的 UP 主。动态流仅含已关注 UP 主的动态
+      auto-follow: true             # 是否用登录账号自动关注「被监听的 UP 主」（不是回关粉丝）。
+                                    # 动态流接口只返回已关注账号的动态，关掉就需自行手动关注，
+                                    # 否则收不到动态。该开关会修改登录账号的关注列表
       auto-follow-interval: 30      # 自动关注检查间隔，单位：秒
       api-request-interval: 10      # 动态接口请求间隔，单位：秒
-      draw-logo: true               # 是否在动态图片底部绘制 logo
+      logo-path:                    # 动态图片底部标识的图片路径，留空则不绘制。
+                                    # 本项目不内置标识图片，需要打自己社群的标时填入本地图片路径
       auto-save-image: false        # 是否把绘制出的动态图片保存到本地
       push-minutes: 1440            # 发布时间早于此分钟数的动态不再推送，避免启动时补推历史动态
 
   core:
+    push:
+      enabled: true                 # 全局推送开关。关闭后所有推送都被丢弃，用于调试或临时静音
+      quiet-start:                  # 静音时段，格式 HH:mm，两者任一留空即不启用。
+      quiet-end:                    # 可跨零点：23:00 ~ 08:00 表示当晚 23 点至次日 8 点。
+                                    # 静音期间的消息直接丢弃而非攒着——攒下来会在解除的瞬间集中轰炸
+
+    alert:
+      enabled: true                 # 是否启用告警。关闭后登录失效、连接中断等问题只写日志，不主动通知
+      convergence-interval: 3600    # 同一问题的最短告警间隔，单位：秒。
+                                    # 故障往往持续存在，不收敛会反复推送同一条消息，最终使人对告警脱敏
+      qq-platform:                  # 接收告警的推送平台名，填 senders 中的某个 name，留空则不用 QQ 告警。
+                                    # 相比邮件，直接推到管理员 QQ 无需另配发件服务，更实用
+      qq-type: 0                    # 1 为群聊，0 为私聊。与 datasource.json 中推送目标的 type 同一套编码
+      qq-num:                       # 接收告警的群号或 QQ 号
+
     config-ui:
       enabled: true                 # 是否启用配置界面
       token:                        # 访问令牌。留空则每次启动自动生成并输出到日志，

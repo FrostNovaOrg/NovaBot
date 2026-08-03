@@ -63,6 +63,9 @@ public class DefaultLiveDataService implements LiveDataService {
     @Order(0)
     @EventListener(ContextClosedEvent.class)
     public void onContextClosedEvent() {
+        // 先停掉自动保存，避免与此处的收尾保存同时写同一个文件
+        scheduler.shutdownNow();
+
         if (cache.isEmpty()) {
             return;
         }

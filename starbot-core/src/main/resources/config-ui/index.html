@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>StarBot 配置</title>
+<title>NovaBot 控制台</title>
 <style>
 :root{
   --bg:#f5f6f8; --panel:#fff; --border:#e3e5e9; --text:#1f2328; --muted:#6b7280;
@@ -77,41 +77,209 @@ tr:last-child td{border-bottom:none}
 .card .l{color:var(--muted);font-size:12px;margin-top:2px}
 .hint{color:var(--muted);font-size:12.5px;margin:0 0 14px}
 .empty{color:var(--muted);text-align:center;padding:40px 0}
+.health{background:var(--panel);border:1px solid var(--border);border-radius:10px;margin-bottom:18px}
+.health .row{display:flex;align-items:baseline;gap:10px;padding:11px 16px;border-bottom:1px solid var(--border);font-size:13px}
+.health .row:last-child{border-bottom:none}
+.health .dot{width:8px;height:8px;border-radius:50%;flex:none;align-self:center}
+.health .dot.OK{background:var(--ok)}
+.health .dot.DEGRADED{background:#d98e00}
+.health .dot.DOWN{background:var(--err)}
+.health .who{flex:none;min-width:120px;color:var(--muted)}
+.health .advice{flex-basis:100%;margin:4px 0 0 138px;color:var(--muted);font-size:12.5px}
+.issues{display:none;background:var(--panel);border:1px solid var(--err);border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:13px}
+.issues ul{margin:6px 0 0;padding-left:20px}
+.issues li{margin:3px 0;color:var(--err)}
+.backups{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;font-size:12.5px;color:var(--muted)}
+.backups select{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:6px 9px;font-size:12.5px}
+.backups button{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:6px 12px;font-size:12.5px;cursor:pointer}
+.backups button:hover{border-color:var(--muted)}
+.backups input{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:6px 9px;font-size:12.5px;width:140px}
+.issues.ok{border-color:var(--ok)}
+.issues.ok li,.issues.ok b{color:var(--ok)}
+.account{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:18px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.account .who{font-size:13px}
+.account .who b{display:block;margin-bottom:2px}
+.account .who span{color:var(--muted);font-size:12.5px}
+.account img{width:240px;height:240px;background:#fff;border-radius:6px;padding:8px}
+.account button{margin-left:auto;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:6px 12px;font-size:12.5px;cursor:pointer}
+.account button:hover{border-color:var(--err);color:var(--err)}
+.streamer{background:var(--panel);border:1px solid var(--border);border-radius:10px;margin-bottom:14px;overflow:hidden}
+.streamer>.head{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--accent-soft)}
+.streamer>.head img{width:34px;height:34px;border-radius:50%;flex:none;background:var(--border)}
+.streamer>.head .name{font-weight:600}
+.streamer>.head .id{color:var(--muted);font-size:12px;font-weight:400;margin-left:8px}
+.streamer .body{padding:12px 16px}
+.streamer .events{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px}
+.streamer .events label{display:inline-flex;align-items:center;gap:6px;font-size:13px;cursor:pointer}
+.streamer .events input{margin:0;cursor:pointer}
+.streamer .events small{color:var(--muted);font-size:11.5px}
+.target{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 0;border-top:1px dashed var(--border);font-size:13px}
+.target select,.target input{background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:5px 8px;font-size:12.5px}
+.target input{width:150px}
+.target .rm{margin-left:auto;background:none;border:none;color:var(--muted);cursor:pointer;font-size:12.5px}
+.target .rm:hover{color:var(--err)}
+.streamer .add-target{margin-top:10px;background:none;border:1px dashed var(--border);color:var(--muted);border-radius:7px;padding:6px 12px;font-size:12.5px;cursor:pointer;width:100%}
+.streamer .add-target:hover{border-color:var(--accent);color:var(--accent)}
+.tpl{flex-basis:100%;margin:8px 0 0;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px}
+.tpl .chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.tpl .chips button{background:var(--panel);border:1px solid var(--border);border-radius:999px;padding:2px 10px;
+  font-size:11.5px;cursor:pointer;color:var(--muted);font-family:ui-monospace,Menlo,monospace}
+.tpl .chips button:hover{border-color:var(--accent);color:var(--accent)}
+.tpl textarea{width:100%;min-height:56px;background:var(--panel);color:var(--text);border:1px solid var(--border);
+  border-radius:6px;padding:7px 9px;font-size:12.5px;font-family:ui-monospace,Menlo,monospace;resize:vertical}
+.tpl .preview{margin-top:8px;font-size:12.5px;color:var(--muted);white-space:pre-wrap;word-break:break-all}
+.tpl .preview b{color:var(--text);font-weight:500}
+.tpl-toggle{background:none;border:none;color:var(--accent);cursor:pointer;font-size:11.5px;padding:0 0 0 4px}
+.step{background:var(--panel);border:1px solid var(--border);border-radius:10px;margin-bottom:14px;overflow:hidden}
+.step>h3{margin:0;padding:12px 16px;font-size:14px;font-weight:600;border-bottom:1px solid var(--border);
+  background:var(--accent-soft);display:flex;align-items:center;gap:10px}
+.step>h3 .no{width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;
+  display:inline-flex;align-items:center;justify-content:center;font-size:12px;flex:none}
+.step>h3 .done{background:var(--ok)}
+/* .fbox 与 .step 共用同一套表单样式：机器人连接表单在向导与「机器人」页签下各出现一次 */
+.step .body,.group .body{padding:14px 16px}
+.step .row,.fbox .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+.step label,.fbox label{font-size:12.5px;color:var(--muted);min-width:88px}
+.step input,.fbox input{background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;
+  padding:6px 9px;font-size:12.5px;width:190px}
+.step button,.fbox button{background:var(--accent);color:#fff;border:none;border-radius:7px;padding:7px 16px;
+  font-size:13px;cursor:pointer}
+.step button:disabled,.fbox button:disabled{opacity:.45;cursor:not-allowed}
+.step .out,.fbox .out{margin-top:10px;font-size:12.5px;white-space:pre-wrap}
+.step .out.ok,.fbox .out.ok{color:var(--ok)}
+.step .out.err,.fbox .out.err{color:var(--err)}
+details.adv{background:var(--panel);border:1px solid var(--border);border-radius:10px;margin-top:22px}
+details.adv>summary{padding:12px 16px;cursor:pointer;font-size:14px;font-weight:600;list-style:none}
+details.adv>summary::-webkit-details-marker{display:none}
+details.adv>summary::before{content:"▸";color:var(--muted);margin-right:8px;display:inline-block}
+details.adv[open]>summary::before{transform:rotate(90deg)}
+details.adv .inner{padding:0 16px 16px}
+.warn{background:var(--accent-soft);border:1px solid var(--accent);border-radius:8px;
+  padding:10px 12px;font-size:12.5px;margin-bottom:12px}
+#history td{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#history .bad{color:var(--err)}
+#history .good{color:var(--ok)}
 @media (max-width:680px){.field{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <header>
-  <h1>StarBot 配置</h1>
+  <h1>NovaBot 控制台</h1>
   <span class="sub" id="head-sub">加载中…</span>
 </header>
 
 <main>
+  <!--
+    页签按「用户此刻想干什么」划分，而不是按数据存在哪个文件里。
+    早先的常规配置/推送配置/配置文件/运行状态是后者：使用者得先知道
+    「登录态属于运行状态、机器人端口属于配置文件」才找得到入口。
+  -->
   <nav>
-    <button data-tab="general" class="on">常规配置</button>
-    <button data-tab="push">推送配置</button>
-    <button data-tab="raw">配置文件</button>
-    <button data-tab="status">运行状态</button>
+    <button data-tab="overview" class="on">总览</button>
+    <button data-tab="push">推送规则</button>
+    <button data-tab="bot">机器人</button>
+    <button data-tab="bilibili">哔哩哔哩</button>
+    <button data-tab="settings">设置</button>
   </nav>
 
-  <section id="general" class="on">
-    <p class="hint">字段由程序在编译期自动生成，与代码中的配置项始终一致。修改后点击保存，改动会写入 application.yml，重启生效。</p>
-    <div id="groups"></div>
+  <!-- 校验问题在多个页签下都可能出现，故置于页签之外共用 -->
+  <div class="issues" id="issues"></div>
+
+  <section id="overview" class="on">
+    <div id="wizard-box">
+      <div class="backups">
+        <span id="wizard-title">首次配置</span>
+        <button id="wizard-toggle" type="button">收起</button>
+      </div>
+      <div id="wizard"></div>
+    </div>
+
+    <div class="health" id="health"></div>
+
+    <div class="backups" id="quickbar">
+      <button id="selftest-run" type="button">立即自检</button>
+      <button id="toggle-push" type="button">…</button>
+      <span id="push-hint"></span>
+    </div>
+
+    <div class="cards" id="runtime"></div>
+
+    <p class="hint" style="margin:20px 0 10px">最近推送</p>
+    <table id="history"><thead><tr><th>时间</th><th>目标</th><th>内容</th><th>结果</th></tr></thead><tbody></tbody></table>
   </section>
 
   <section id="push">
-    <p class="hint">推送配置 datasource.json：配置要监听的 UP 主与推送目标。保存前会校验 JSON 格式。</p>
-    <textarea class="full" id="datasource" spellcheck="false"></textarea>
+    <p class="hint">配置要监听的主播与推送目标。保存前会校验格式，并检查处理器与推送平台是否存在。</p>
+
+    <div class="backups" id="push-toolbar">
+      <input id="add-uid" placeholder="输入 uid 或粘贴个人空间链接">
+      <button id="add-streamer" type="button">添加主播</button>
+      <button id="toggle-advanced" type="button" style="margin-left:auto">高级：编辑原始 JSON</button>
+    </div>
+
+    <div id="streamers"></div>
+
+    <div id="advanced" style="display:none">
+      <p class="hint">直接编辑 datasource.json。自定义插件提供的处理器可在此配置。</p>
+      <textarea class="full" id="datasource" spellcheck="false"></textarea>
+    </div>
   </section>
 
-  <section id="raw">
-    <p class="hint">直接编辑 application.yml。适用于常规配置未覆盖的场景，例如列表类配置项。保存前会自动备份原文件。</p>
-    <textarea class="full" id="rawyml" spellcheck="false"></textarea>
+  <section id="bot">
+    <p class="hint">机器人指 NapCat、Lagrange 等 OneBot 实现。NovaBot 通过它把消息发到 QQ，本页负责确认这条链路是通的。</p>
+    <div class="health" id="bot-health"></div>
+
+    <div class="group fbox">
+      <h2>连接参数</h2>
+      <div class="body" id="bot-form"></div>
+    </div>
+
+    <div class="group">
+      <h2>发送测试消息</h2>
+      <div class="body">
+        <p class="hint">群号填错、Token 不对、机器人不在群里，表现都是「什么都不发生」。发一条真消息是最直接的验证方式。</p>
+        <div class="backups" id="selftest">
+          <select id="test-platform"></select>
+          <!-- 取值须与 PushTargetType 的 code 一致：GROUP(1)、FRIEND(0) -->
+          <select id="test-type"><option value="1">群聊</option><option value="0">私聊</option></select>
+          <input id="test-num" placeholder="群号 / QQ 号" inputmode="numeric">
+          <button id="test-send" type="button">发送</button>
+        </div>
+        <div class="issues" id="test-result"></div>
+      </div>
+    </div>
   </section>
 
-  <section id="status">
-    <div class="cards" id="runtime"></div>
+  <section id="bilibili">
+    <p class="hint">哔哩哔哩登录态用于拉取动态与直播间信息。登录态失效时推送会静默停止，本页可随时查看与重新扫码。</p>
+    <div class="health" id="bili-health"></div>
+    <div id="accounts"></div>
+    <p class="hint" style="margin:20px 0 10px">监听中的主播与直播间</p>
     <table id="users"><thead><tr><th>UID</th><th>昵称</th><th>直播间</th><th>平台</th><th>推送目标</th><th>状态</th></tr></thead><tbody></tbody></table>
+  </section>
+
+  <section id="settings">
+    <p class="hint">字段由程序在编译期自动生成，与代码中的配置项始终一致。修改后点击保存，改动会写入 application.yml，重启生效。</p>
+    <div class="backups" id="levelbar">
+      <span>显示</span>
+      <label class="switch"><input type="checkbox" id="show-advanced"><span>包含高级选项</span></label>
+      <span id="level-hint"></span>
+    </div>
+    <div id="groups"></div>
+
+    <details class="adv" id="rawbox">
+      <summary>高级：直接编辑配置文件</summary>
+      <div class="inner">
+        <div class="warn">直接编辑 application.yml，适用于上方表单未覆盖的场景（例如列表类配置项）。
+          保存前会校验 YAML 语法与字段类型，并自动备份原文件；改坏了可用下方的历史备份回滚。</div>
+        <div class="backups" id="backups"></div>
+        <textarea class="full" id="rawyml" spellcheck="false"></textarea>
+        <div class="backups" style="margin-top:12px">
+          <button id="raw-save" type="button">保存配置文件</button>
+          <span>与底部的保存按钮相互独立，避免误把整份文件覆盖出去</span>
+        </div>
+      </div>
+    </details>
   </section>
 </main>
 
@@ -125,8 +293,10 @@ tr:last-child td{border-bottom:none}
 const api = (p, o) => fetch('/config/api' + p, o).then(r => r.json());
 const $ = s => document.querySelector(s);
 const el = (t, c) => { const e = document.createElement(t); if (c) e.className = c; return e; };
+// 主播昵称等内容来自哔哩哔哩接口，属于外部数据，拼进 innerHTML 前必须转义
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-let schema = [], values = {}, dirty = {}, tab = 'general';
+let schema = [], values = {}, dirty = {}, tab = 'overview';
 
 function say(text, kind) {
   const s = $('#status-text');
@@ -135,23 +305,46 @@ function say(text, kind) {
   if (text && kind === 'ok') setTimeout(() => { if (s.textContent === text) say(''); }, 4000);
 }
 
-function markDirty() {
-  const n = Object.keys(dirty).length;
-  $('#save').disabled = tab === 'status' || (tab === 'general' && n === 0);
-  if (tab === 'general') say(n ? n + ' 项待保存' : '');
+// 底部的保存按钮只服务于有「草稿态」的两个页签。原始配置文件与机器人连接参数
+// 各自带独立的保存入口——它们改的是整份文件或一批关联字段，混进同一个按钮容易误触
+function saveTarget() {
+  if (tab === 'settings') return 'values';
+  if (tab === 'push') return 'push';
+  return null;
 }
 
+function markDirty() {
+  const target = saveTarget();
+  const n = Object.keys(dirty).length;
+  $('#save').style.display = target ? '' : 'none';
+  $('#save').disabled = !target || (target === 'values' && n === 0);
+  if (target === 'values') say(n ? n + ' 项待保存' : '');
+}
+
+// 配置项有数十项，但真正决定系统能否跑起来的只有寥寥几项。
+// 默认只显示必填与常用，高级项收起来——问题不在项多，而在没有区分「必须懂」与「可以不管」
 function renderGeneral() {
   const box = $('#groups');
   box.innerHTML = '';
 
+  const showAdvanced = $('#show-advanced').checked;
+  const visible = f => showAdvanced || f.level !== 'ADVANCED';
+
+  let shown = 0;
+  let hidden = 0;
+
   for (const g of schema) {
+    const fields = g.fields.filter(visible);
+    hidden += g.fields.length - fields.length;
+    if (!fields.length) continue;
+    shown += fields.length;
+
     const group = el('div', 'group');
     const title = el('h2');
     title.textContent = g.title;
     group.appendChild(title);
 
-    for (const f of g.fields) {
+    for (const f of fields) {
       const row = el('div', 'field');
       row.dataset.name = f.name;
 
@@ -173,8 +366,10 @@ function renderGeneral() {
       row.appendChild(meta);
 
       const cell = el('div');
-      const current = values[f.name] !== undefined ? values[f.name]
+      const saved = values[f.name] !== undefined ? values[f.name]
         : (f.defaultValue !== null && f.defaultValue !== undefined ? String(f.defaultValue) : '');
+      // 切换显示范围会整体重绘，此时未保存的改动要接着显示出来，否则看起来像被悄悄还原了
+      const current = dirty[f.name] !== undefined ? dirty[f.name] : saved;
 
       let input;
       if (f.widget === 'boolean') {
@@ -188,9 +383,9 @@ function renderGeneral() {
         label.append(input, txt);
         cell.appendChild(label);
       } else if (f.widget === 'complex') {
-        // 元素为对象的列表无法用简单控件表达，此处只读展示并引导到配置文件页签
+        // 元素为对象的列表无法用简单控件表达，此处只读展示并引导到原始文件编辑器
         const note = el('div', 'readonly');
-        note.textContent = '结构较复杂，请在「配置文件」页签中编辑';
+        note.textContent = '结构较复杂，请展开页面底部的「高级：直接编辑配置文件」修改';
         cell.appendChild(note);
         row.appendChild(cell);
         group.appendChild(row);
@@ -208,7 +403,12 @@ function renderGeneral() {
       }
 
       const read = () => f.widget === 'boolean' ? String(input.checked) : input.value;
-      const original = read();
+      // 基准是已保存的值，而非当前显示值——后者可能是尚未保存的改动
+      const original = String(saved);
+
+      if (dirty[f.name] !== undefined) {
+        row.classList.add('changed');
+      }
 
       const onChange = () => {
         const now = read();
@@ -225,9 +425,698 @@ function renderGeneral() {
 
     box.appendChild(group);
   }
+
+  $('#level-hint').textContent = hidden
+    ? '共 ' + shown + ' 项，另有 ' + hidden + ' 项高级选项已折叠'
+    : '共 ' + shown + ' 项';
+}
+
+// ============ 机器人连接表单 ============
+// 同一份表单在「首次配置」向导与「机器人」页签下各出现一次。
+// 同一文档里不能有两个相同 id，因此按前缀生成 DOM，逻辑仍只写一份。
+function botFormHtml(p) {
+  return '<div class="row"><label>地址</label><input id="' + p + '-addr" value="127.0.0.1"></div>'
+    + '<div class="row"><label>HTTP 端口</label><input id="' + p + '-hport" value="3000" inputmode="numeric"></div>'
+    + '<div class="row"><label>HTTP Token</label><input id="' + p + '-htoken" placeholder="与 OneBot 实现中配置的一致"></div>'
+    + '<div class="row"><label>WS 端口</label><input id="' + p + '-wport" value="3001" inputmode="numeric"></div>'
+    + '<div class="row"><label>WS Token</label><input id="' + p + '-wtoken" placeholder="与 OneBot 实现中配置的一致"></div>'
+    + '<div class="row"><button id="' + p + '-test" type="button">测试连接</button>'
+    + '<button id="' + p + '-save" type="button" disabled>保存</button></div>'
+    + '<div class="out" id="' + p + '-out"></div>';
+}
+
+function bindBotForm(p) {
+  $('#' + p + '-test').addEventListener('click', () => testBotConnection(p));
+  $('#' + p + '-save').addEventListener('click', () => saveBotConnection(p));
+}
+
+// 回填已配置的地址与端口，免得改一个字段要把整套重敲一遍。
+// 两个 token 有意不回填：回填只省几次输入，却让凭据白白多经过一次浏览器；
+// 保存端对空白字段是「保持原值」语义，留空不会把已有 token 抹掉。
+const BOT_FORMS = ['s1', 'bot'];
+
+async function fillBotForms() {
+  try {
+    const current = await api('/setup/bot');
+    if (!current.configured) return;
+    BOT_FORMS.forEach(p => {
+      if (!$('#' + p + '-addr')) return;
+      if (current.address) $('#' + p + '-addr').value = current.address;
+      if (current.httpPort) $('#' + p + '-hport').value = current.httpPort;
+      if (current.websocketPort) $('#' + p + '-wport').value = current.websocketPort;
+    });
+  } catch (e) {
+    // 回填只是便利，失败时保留默认值即可
+  }
+}
+
+async function testBotConnection(p) {
+  const out = $('#' + p + '-out');
+  $('#' + p + '-test').disabled = true;
+  out.className = 'out';
+  out.textContent = '测试中…';
+
+  try {
+    const res = await api('/setup/test-bot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        address: $('#' + p + '-addr').value.trim(),
+        httpPort: Number($('#' + p + '-hport').value.trim()),
+        httpToken: $('#' + p + '-htoken').value.trim()
+      })
+    });
+
+    out.className = 'out ' + (res.success ? 'ok' : 'err');
+    out.textContent = res.message + (res.advice ? '\n' + res.advice : '');
+    // 只有连通了才允许保存：把错误配置写进文件毫无意义
+    $('#' + p + '-save').disabled = !res.success;
+  } catch (e) {
+    out.className = 'out err';
+    out.textContent = '测试失败：' + e.message;
+  }
+
+  $('#' + p + '-test').disabled = false;
+}
+
+async function saveBotConnection(p) {
+  const out = $('#' + p + '-out');
+  $('#' + p + '-save').disabled = true;
+
+  try {
+    const res = await api('/setup/bot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        address: $('#' + p + '-addr').value.trim(),
+        httpPort: $('#' + p + '-hport').value.trim(),
+        websocketPort: $('#' + p + '-wport').value.trim(),
+        httpToken: $('#' + p + '-htoken').value.trim(),
+        websocketToken: $('#' + p + '-wtoken').value.trim()
+      })
+    });
+
+    out.className = 'out ' + (res.success ? 'ok' : 'err');
+    out.textContent = res.message;
+  } catch (e) {
+    out.className = 'out err';
+    out.textContent = '保存失败：' + e.message;
+  }
+
+  $('#' + p + '-save').disabled = false;
+}
+
+// ============ 首次配置向导 ============
+// 每步都当场验证：若填完只能「保存并重启看看」，配错了不会有任何提示，
+// 等于把排障成本全推给了使用者。
+// 向导嵌在总览页顶部而非独立页签：新用户打开界面第一眼就该看到它，
+// 而不是先猜哪个页签是入口。四步都完成后自动收起。
+let wizardTouched = false;   // 使用者手动展开或收起过，此后不再自动折叠
+
+function renderWizard() {
+  $('#wizard').innerHTML = `
+    <div class="step">
+      <h3><span class="no" id="s1-no">1</span>连接机器人</h3>
+      <div class="body">` + botFormHtml('s1') + `</div>
+    </div>
+
+    <div class="step">
+      <h3><span class="no" id="s2-no">2</span>登录哔哩哔哩</h3>
+      <div class="body">
+        <div class="out" id="s2-out">读取中…</div>
+        <div id="s2-qr"></div>
+      </div>
+    </div>
+
+    <div class="step">
+      <h3><span class="no" id="s3-no">3</span>添加第一个主播</h3>
+      <div class="body">
+        <div class="out" id="s3-out"></div>
+        <div class="row"><button id="s3-go" type="button">前往「推送规则」</button></div>
+      </div>
+    </div>
+
+    <div class="step">
+      <h3><span class="no" id="s4-no">4</span>发送测试消息</h3>
+      <div class="body">
+        <div class="out">在「机器人」页选择目标并发送一条测试消息，群里收到即表示全链路正常。</div>
+        <div class="row"><button id="s4-go" type="button">前往「机器人」</button></div>
+      </div>
+    </div>`;
+
+  bindBotForm('s1');
+  $('#s3-go').addEventListener('click', () => switchTab('push'));
+  $('#s4-go').addEventListener('click', () => switchTab('bot'));
+
+  refreshWizardState();
+}
+
+function stepDone(no, done) {
+  const badge = $('#s' + no + '-no');
+  badge.classList.toggle('done', !!done);
+  badge.textContent = done ? '✓' : String(no);
+}
+
+function setWizardCollapsed(collapsed) {
+  $('#wizard').style.display = collapsed ? 'none' : 'block';
+  $('#wizard-toggle').textContent = collapsed ? '展开' : '收起';
+}
+
+async function refreshWizardState() {
+  try {
+    const [login, st] = await Promise.all([api('/login'), api('/status')]);
+
+    const account = (login.accounts || [])[0];
+    const loggedIn = !!(account && account.loggedIn);
+    stepDone(2, loggedIn);
+    $('#s2-out').textContent = account
+      ? (loggedIn ? '已登录，账号 ' + (account.accountId || '未知') : '请使用哔哩哔哩客户端扫描下方二维码')
+      : '未找到可登录的平台';
+    $('#s2-out').className = 'out' + (loggedIn ? ' ok' : '');
+    $('#s2-qr').innerHTML = (account && !loggedIn && account.qrCode)
+      ? '<img referrerpolicy="no-referrer" style="width:240px;height:240px;background:#fff;border-radius:6px;padding:8px" src="data:image/png;base64,' + esc(account.qrCode) + '">'
+      : '';
+
+    const count = (st.users || []).length;
+    stepDone(3, count > 0);
+    $('#s3-out').textContent = count ? '已配置 ' + count + ' 位主播' : '尚未配置任何主播';
+    $('#s3-out').className = 'out' + (count ? ' ok' : '');
+
+    const bot = (st.health || []).find(h => h.scope === 'BOT');
+    const botOk = !!(bot && bot.level === 'OK');
+    stepDone(1, botOk);
+
+    // 第四步没有独立的判定依据：能把消息推出去的前提正是前三步都成立
+    const ready = botOk && loggedIn && count > 0;
+    stepDone(4, ready);
+
+    const remaining = [botOk, loggedIn, count > 0, ready].filter(x => !x).length;
+    $('#wizard-title').textContent = remaining
+      ? '首次配置 · 还有 ' + remaining + ' 步未完成'
+      : '首次配置已完成';
+    if (!wizardTouched) setWizardCollapsed(remaining === 0);
+  } catch (e) {
+    // 向导只是引导，拉取失败不影响其余功能
+  }
+}
+
+// ============ 推送规则表单 ============
+// 处理器的全限定类名属于实现细节，不该要求使用者手抄。此处由 /api/handlers 驱动渲染，
+// 插件新增处理器时勾选项自动出现，前端不硬编码任何类名。
+let pushData = [];      // datasource.json 解析结果，改动直接作用其上以保留表单未覆盖的字段
+let handlerList = [];   // 已注册的推送处理器
+let senderList = [];    // 已配置的机器人平台
+let advancedMode = false;
+const openTemplates = new Set();   // 已展开的模板编辑器，卡片重绘后据此恢复展开状态
+
+function renderStreamers() {
+  const box = $('#streamers');
+
+  if (!pushData.length) {
+    box.innerHTML = '<div class="empty">尚未配置任何主播。在上方输入 uid 或粘贴个人空间链接来添加。</div>';
+    return;
+  }
+
+  box.innerHTML = '';
+  pushData.forEach((user, ui) => box.appendChild(streamerCard(user, ui)));
+}
+
+function streamerCard(user, ui) {
+  const card = el('div', 'streamer');
+
+  const head = el('div', 'head');
+  head.innerHTML =
+    (user._face ? '<img referrerpolicy="no-referrer" src="' + esc(user._face) + '" alt="">' : '<img alt="">')
+    + '<div><span class="name">' + esc(user._uname || ('uid ' + user.uid)) + '</span>'
+    + '<span class="id">uid ' + esc(user.uid) + (user._roomId ? ' · 直播间 ' + esc(user._roomId) : '') + '</span></div>'
+    + '<label class="switch" style="margin-left:auto"><input type="checkbox"' + (user.enabled === false ? '' : ' checked')
+    + ' data-enable="' + ui + '"><span>启用</span></label>'
+    + '<button class="rm" type="button" data-del-user="' + ui + '">删除</button>';
+  card.appendChild(head);
+
+  const body = el('div', 'body');
+  (user.targets || []).forEach((target, ti) => body.appendChild(targetRow(user, ui, target, ti)));
+
+  const add = el('button', 'add-target');
+  add.type = 'button';
+  add.textContent = '+ 添加推送目标';
+  add.addEventListener('click', () => {
+    user.targets = user.targets || [];
+    user.targets.push({ platform: senderList[0] || '', type: 1, num: null, enabled: true, messages: [] });
+    renderStreamers();
+    markDirty();
+  });
+  body.appendChild(add);
+
+  card.appendChild(body);
+  return card;
+}
+
+function targetRow(user, ui, target, ti) {
+  const row = el('div', 'target');
+
+  const platformOpts = senderList.length
+    ? senderList.map(s => '<option value="' + esc(s) + '"' + (s === target.platform ? ' selected' : '') + '>' + esc(s) + '</option>').join('')
+    : '<option value="">（尚无可用的机器人）</option>';
+
+  // 取值须与 PushTargetType 的 code 一致：GROUP(1)、FRIEND(0)
+  row.innerHTML = '<select data-t-platform="' + ui + ',' + ti + '">' + platformOpts + '</select>'
+    + '<select data-t-type="' + ui + ',' + ti + '">'
+    + '<option value="1"' + (Number(target.type) === 1 ? ' selected' : '') + '>群聊</option>'
+    + '<option value="0"' + (Number(target.type) === 0 ? ' selected' : '') + '>私聊</option></select>'
+    + '<input data-t-num="' + ui + ',' + ti + '" inputmode="numeric" placeholder="群号 / QQ 号" value="'
+    + esc(target.num == null ? '' : target.num) + '">'
+    + '<button class="rm" type="button" data-del-target="' + ui + ',' + ti + '">移除</button>';
+
+  const events = el('div', 'events');
+  events.style.cssText = 'flex-basis:100%;margin:8px 0 0';
+  const chosen = new Set((target.messages || []).map(m => m.handler));
+
+  handlerList.forEach(h => {
+    const label = el('label');
+    label.innerHTML = '<input type="checkbox" data-h="' + ui + ',' + ti + ',' + esc(h.className) + '"'
+      + (chosen.has(h.className) ? ' checked' : '') + '>'
+      + '<span>' + esc(h.displayName) + '</span>'
+      + (h.description ? '<small>' + esc(h.description) + '</small>' : '')
+      + (chosen.has(h.className)
+        ? '<button class="tpl-toggle" type="button" data-tpl="' + ui + ',' + ti + ',' + esc(h.className) + '">编辑模板</button>'
+        : '');
+    events.appendChild(label);
+  });
+
+  if (!handlerList.length) {
+    events.innerHTML = '<small>尚未加载到任何推送处理器，请确认对应插件已加载</small>';
+  }
+
+  row.appendChild(events);
+
+  // 已展开的模板编辑器在重绘后需要保持展开，否则每改一个字就会收起来
+  handlerList.forEach(h => {
+    if (chosen.has(h.className) && openTemplates.has(ui + ',' + ti + ',' + h.className)) {
+      row.appendChild(templateEditor(ui, ti, h));
+    }
+  });
+
+  return row;
+}
+
+// 占位符要查文档才知道有哪些，模板里写了什么效果也全靠脑补。
+// 做成可点击插入的标签加实时预览，把这两件事都摆到眼前
+function templateEditor(ui, ti, handler) {
+  const message = pushData[ui].targets[ti].messages.find(m => m.handler === handler.className);
+  const value = (message.params && message.params.message) != null
+    ? message.params.message
+    : (handler.defaultParams && handler.defaultParams.message) || '';
+
+  const box = el('div', 'tpl');
+  box.innerHTML = '<div class="chips">'
+    + handler.placeholders.map(p => '<button type="button" data-ins="' + esc(p) + '">' + esc(p) + '</button>').join('')
+    + '</div><textarea data-tpl-input="' + ui + ',' + ti + ',' + esc(handler.className) + '">' + esc(value) + '</textarea>'
+    + '<div class="preview"></div>';
+
+  const input = box.querySelector('textarea');
+  const preview = box.querySelector('.preview');
+
+  const refresh = () => { preview.innerHTML = '预览：<b>' + esc(previewTemplate(input.value)) + '</b>'; };
+  refresh();
+
+  input.addEventListener('input', () => {
+    message.params = message.params || {};
+    message.params.message = input.value;
+    refresh();
+    markDirty();
+  });
+
+  box.querySelectorAll('[data-ins]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const token = btn.getAttribute('data-ins');
+      const at = input.selectionStart;
+      input.value = input.value.slice(0, at) + token + input.value.slice(input.selectionEnd);
+      input.selectionStart = input.selectionEnd = at + token.length;
+      input.focus();
+      input.dispatchEvent(new Event('input'));
+    });
+  });
+
+  return box;
+}
+
+// 用假数据渲染，让人在配置时就看到大致效果，不必等真事件发生
+const PREVIEW_VALUES = {
+  '{uname}': '示例主播', '{title}': '示例直播间标题', '{action}': '投稿了视频',
+  '{url}': 'https://live.bilibili.com/123456', '{time}': '1 小时 23 分钟',
+  '{cover}': '［直播间封面］', '{picture}': '［动态图片］',
+  '{next}': '\n──────\n', '{at=all}': '@全体成员'
+};
+
+function previewTemplate(text) {
+  let out = String(text || '');
+  Object.keys(PREVIEW_VALUES).forEach(k => { out = out.split(k).join(PREVIEW_VALUES[k]); });
+  return out || '（模板为空，将不推送内容）';
+}
+
+// 事件委托：卡片会整体重绘，逐个绑定监听器既繁琐又容易漏
+$('#streamers').addEventListener('change', e => {
+  const t = e.target;
+  const enable = t.getAttribute('data-enable');
+  const tPlatform = t.getAttribute('data-t-platform');
+  const tType = t.getAttribute('data-t-type');
+  const tNum = t.getAttribute('data-t-num');
+  const h = t.getAttribute('data-h');
+
+  if (enable !== null) {
+    pushData[+enable].enabled = t.checked;
+  } else if (tPlatform) {
+    const [ui, ti] = tPlatform.split(',').map(Number);
+    pushData[ui].targets[ti].platform = t.value;
+  } else if (tType) {
+    const [ui, ti] = tType.split(',').map(Number);
+    pushData[ui].targets[ti].type = Number(t.value);
+  } else if (tNum) {
+    const [ui, ti] = tNum.split(',').map(Number);
+    pushData[ui].targets[ti].num = t.value.trim() === '' ? null : Number(t.value.trim());
+  } else if (h) {
+    const parts = h.split(',');
+    const target = pushData[+parts[0]].targets[+parts[1]];
+    const className = parts.slice(2).join(',');
+    target.messages = target.messages || [];
+    if (t.checked) {
+      // 已存在则不重复添加，以免覆盖既有的 params
+      if (!target.messages.some(m => m.handler === className)) {
+        target.messages.push({ handler: className });
+      }
+    } else {
+      target.messages = target.messages.filter(m => m.handler !== className);
+      openTemplates.delete(h);
+    }
+    // 勾选状态决定是否显示「编辑模板」入口，需重绘
+    renderStreamers();
+  } else {
+    return;
+  }
+
+  markDirty();
+});
+
+$('#streamers').addEventListener('click', e => {
+  const delUser = e.target.getAttribute('data-del-user');
+  const delTarget = e.target.getAttribute('data-del-target');
+  const tpl = e.target.getAttribute('data-tpl');
+
+  if (tpl) {
+    if (openTemplates.has(tpl)) openTemplates.delete(tpl); else openTemplates.add(tpl);
+    renderStreamers();
+    return;
+  }
+
+  if (delUser !== null) {
+    const user = pushData[+delUser];
+    if (!confirm('确定删除主播 ' + (user._uname || user.uid) + ' 吗？')) return;
+    pushData.splice(+delUser, 1);
+    renderStreamers();
+    markDirty();
+  } else if (delTarget) {
+    const [ui, ti] = delTarget.split(',').map(Number);
+    pushData[ui].targets.splice(ti, 1);
+    renderStreamers();
+    markDirty();
+  }
+});
+
+async function addStreamer() {
+  const input = $('#add-uid').value.trim();
+  if (!input) {
+    say('请先输入 uid 或个人空间链接', 'err');
+    return;
+  }
+
+  $('#add-streamer').disabled = true;
+  say('查询中…');
+
+  try {
+    // 先把昵称显示出来让人确认，避免 uid 打错一位却配了个陌生人
+    const res = await api('/streamer/lookup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ platform: 'bilibili', uid: input })
+    });
+
+    if (!res.success) {
+      say(res.message, 'err');
+      return;
+    }
+
+    if (pushData.some(u => Number(u.uid) === Number(res.uid))) {
+      say('主播 ' + res.uname + ' 已在列表中', 'err');
+      return;
+    }
+
+    if (!confirm('确认添加「' + res.uname + '」（uid ' + res.uid + '）吗？')) return;
+
+    pushData.push({
+      uid: res.uid, platform: 'bilibili', enabled: true, targets: [],
+      _uname: res.uname, _roomId: res.roomId, _face: res.face
+    });
+    $('#add-uid').value = '';
+    renderStreamers();
+    markDirty();
+    say('已添加 ' + res.uname + '，请为其配置推送目标后保存', 'ok');
+  } catch (e) {
+    say('查询失败：' + e.message, 'err');
+  } finally {
+    $('#add-streamer').disabled = false;
+  }
+}
+
+// 下划线开头的字段仅供界面展示（昵称、头像等），不应写进配置文件
+function serializePush() {
+  return JSON.stringify(pushData, (key, value) => key.startsWith('_') ? undefined : value, 2);
+}
+
+function toggleAdvanced() {
+  if (!advancedMode) {
+    $('#datasource').value = serializePush();
+  } else {
+    try {
+      pushData = JSON.parse($('#datasource').value);
+      renderStreamers();
+    } catch (e) {
+      say('原始 JSON 格式有误，无法切回表单：' + e.message, 'err');
+      return;
+    }
+  }
+
+  advancedMode = !advancedMode;
+  $('#advanced').style.display = advancedMode ? 'block' : 'none';
+  $('#streamers').style.display = advancedMode ? 'none' : 'block';
+  $('#push-toolbar').querySelectorAll('input,button').forEach(elm => {
+    if (elm.id !== 'toggle-advanced') elm.disabled = advancedMode;
+  });
+  $('#toggle-advanced').textContent = advancedMode ? '返回表单编辑' : '高级：编辑原始 JSON';
+}
+
+// 配置文件里只有 uid，昵称需要另行补全才能在界面上显示
+async function decoratePushData() {
+  await Promise.all(pushData.map(async user => {
+    if (user._uname || user.platform !== 'bilibili') return;
+    try {
+      const res = await api('/streamer/lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platform: user.platform, uid: String(user.uid) })
+      });
+      if (res.success) {
+        user._uname = res.uname;
+        user._roomId = res.roomId;
+        user._face = res.face;
+      }
+    } catch (e) {
+      // 补全失败不影响配置本身，仍以 uid 展示
+    }
+  }));
+  renderStreamers();
+}
+
+// 「刚才那条推了吗」「为什么没推」此前只能翻 journalctl
+function renderHistory(records) {
+  const body = $('#history tbody');
+  if (!records || !records.length) {
+    body.innerHTML = '<tr><td colspan="4" class="empty">尚无推送记录</td></tr>';
+    return;
+  }
+
+  body.innerHTML = records.map(r => {
+    const result = r.success
+      ? '<span class="good">成功</span>'
+      : '<span class="bad">失败：' + esc(r.reason || '未知原因') + '</span>';
+    return '<tr><td>' + esc(r.at) + '</td><td>' + esc(r.target) + '</td>'
+      + '<td title="' + esc(r.summary) + '">' + esc(r.summary) + '</td><td>' + result + '</td></tr>';
+  }).join('');
+}
+
+async function loadHistory() {
+  try {
+    renderHistory((await api('/push-history')).records);
+  } catch (e) {
+    // 推送记录拉取失败不影响其余状态展示
+  }
+}
+
+// 二维码原本只打印在启动日志里，systemd 部署时得翻 journalctl，
+// 且终端字符画在字体或宽度不合适时根本扫不出来
+let accountTimer = null;
+
+function renderAccounts(accounts) {
+  const box = $('#accounts');
+  box.innerHTML = (accounts || []).map(a => {
+    const who = a.loggedIn
+      ? '<b>' + esc(a.displayName) + '　已登录</b><span>账号 ' + esc(a.accountId || '未知') + '</span>'
+      : '<b>' + esc(a.displayName) + '　未登录</b><span>'
+        + (a.qrCode ? '请使用手机客户端扫描右侧二维码' : '尚未生成二维码，请稍候') + '</span>';
+    const qr = a.qrCode ? '<img alt="登录二维码" src="data:image/png;base64,' + esc(a.qrCode) + '">' : '';
+    const action = a.loggedIn
+      ? '<button type="button" data-logout="' + esc(a.platform) + '">退出登录</button>'
+      : '';
+    return '<div class="account"><div class="who">' + who + '</div>' + qr + action + '</div>';
+  }).join('');
+
+  box.querySelectorAll('[data-logout]').forEach(btn => {
+    btn.addEventListener('click', () => logout(btn.getAttribute('data-logout')));
+  });
+
+  // 等待扫码时轮询刷新，扫完页面自动变为已登录，不必手动刷新。
+  // 二维码在「哔哩哔哩」页与总览页的向导里各有一处，两处都要跟着刷新
+  const waiting = (accounts || []).some(a => !a.loggedIn);
+  clearTimeout(accountTimer);
+  if (waiting && (tab === 'bilibili' || tab === 'overview')) {
+    accountTimer = setTimeout(() => {
+      loadAccounts();
+      if (tab === 'overview') refreshWizardState();
+    }, 3000);
+  }
+}
+
+async function loadAccounts() {
+  try {
+    renderAccounts((await api('/login')).accounts);
+  } catch (e) {
+    // 登录信息拉取失败不影响其余状态展示，静默重试即可
+  }
+}
+
+async function logout(platform) {
+  if (!confirm('确定退出 ' + platform + ' 的登录吗？退出后需重新扫码。')) return;
+  say('正在退出…');
+  try {
+    const res = await api('/login/logout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ platform })
+    });
+    say(res.message || (res.success ? '已退出' : '退出失败'), res.success ? 'ok' : 'err');
+    if (res.success) setTimeout(loadAccounts, 500);
+  } catch (e) {
+    say('退出失败：' + e.message, 'err');
+  }
+}
+
+// 配错了群号、Token、或机器人不在群里，表现全都是「什么都不发生」。
+// 让使用者当场发一条真消息，是最直接的验证手段
+function renderTestMessage(senders) {
+  const pick = $('#test-platform');
+  pick.innerHTML = (senders || []).length
+    ? senders.map(s => '<option value="' + esc(s) + '">' + esc(s) + '</option>').join('')
+    : '<option value="">（尚无可用的机器人）</option>';
+  $('#test-send').disabled = !(senders || []).length;
+}
+
+async function sendTestMessage() {
+  const box = $('#test-result');
+  const platform = $('#test-platform').value;
+  const num = $('#test-num').value.trim();
+
+  if (!platform || !num) {
+    box.style.display = 'block';
+    box.className = 'issues';
+    box.innerHTML = '<b>请先选择机器人并填写群号或 QQ 号</b>';
+    return;
+  }
+
+  $('#test-send').disabled = true;
+  box.style.display = 'block';
+  box.className = 'issues';
+  box.innerHTML = '<b>发送中…</b>';
+
+  try {
+    const res = await api('/test-message', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ platform, type: Number($('#test-type').value), num: Number(num) })
+    });
+
+    box.className = 'issues' + (res.success ? ' ok' : '');
+    let html = '<b>' + esc(res.message) + '</b>';
+    if (res.advice) html += '<ul><li>' + esc(res.advice) + '</li></ul>';
+    if (res.raw) html += '<ul><li>接口原始响应：' + esc(JSON.stringify(res.raw)) + '</li></ul>';
+    box.innerHTML = html;
+  } catch (e) {
+    box.className = 'issues';
+    box.innerHTML = '<b>发送失败：' + esc(e.message) + '</b>';
+  }
+
+  $('#test-send').disabled = false;
+}
+
+// 「临时静音」要求立即生效，因此后端会同时改内存与配置文件
+let pushEnabled = true;
+
+function renderPushSwitch(enabled) {
+  pushEnabled = enabled !== false;
+  $('#toggle-push').textContent = pushEnabled ? '暂停全部推送' : '恢复推送';
+  $('#push-hint').textContent = pushEnabled ? '当前正常推送' : '已暂停，所有推送都会被丢弃';
+  $('#push-hint').style.color = pushEnabled ? '' : 'var(--err)';
+}
+
+async function togglePush() {
+  const next = !pushEnabled;
+  $('#toggle-push').disabled = true;
+  try {
+    const res = await api('/push/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: next })
+    });
+    renderPushSwitch(next);
+    say(res.message, res.success ? 'ok' : 'err');
+  } catch (e) {
+    say('切换失败：' + e.message, 'err');
+  }
+  $('#toggle-push').disabled = false;
+}
+
+function healthRows(list, emptyText) {
+  return list.length
+    ? list.map(h =>
+        '<div class="row"><span class="dot ' + esc(h.level) + '"></span>' +
+        '<span class="who">' + esc(h.name) + '</span>' +
+        '<span>' + esc(h.summary) + '</span>' +
+        (h.advice ? '<span class="advice">' + esc(h.advice) + '</span>' : '') +
+        '</div>').join('')
+    : '<div class="row"><span class="who">健康检查</span><span>' + esc(emptyText) + '</span></div>';
 }
 
 function renderStatus(data) {
+  renderPushSwitch(data.pushEnabled);
+  renderTestMessage(data.senders);
+
+  // 总览展示全部探针；另两个页签只展示与自己相关的，由探针自报 scope 决定归属
+  const health = data.health || [];
+  $('#health').innerHTML = healthRows(health, '暂无可用探针');
+  $('#bot-health').innerHTML = healthRows(health.filter(h => h.scope === 'BOT'),
+    '未找到机器人适配器，请确认对应插件已加载');
+  $('#bili-health').innerHTML = healthRows(health.filter(h => h.scope === 'PLATFORM'),
+    '未找到哔哩哔哩模块的健康探针');
+
   const r = data.runtime || {};
   $('#runtime').innerHTML = [
     ['堆内存', r.heapUsedMb + ' / ' + r.heapMaxMb + ' MB'],
@@ -240,7 +1129,7 @@ function renderStatus(data) {
   body.innerHTML = '';
 
   if (!data.users || !data.users.length) {
-    body.innerHTML = '<tr><td colspan="6" class="empty">尚未配置任何主播，请在「推送配置」中添加</td></tr>';
+    body.innerHTML = '<tr><td colspan="6" class="empty">尚未配置任何主播，请在「推送规则」中添加</td></tr>';
     return;
   }
 
@@ -248,7 +1137,7 @@ function renderStatus(data) {
     const tr = el('tr');
     tr.innerHTML = [u.uid, u.uname || '—', u.roomId || '—', u.platform,
       u.targets, u.enabled === false ? '已停用' : '正常']
-      .map(v => '<td>' + v + '</td>').join('');
+      .map(v => '<td>' + esc(v) + '</td>').join('');
     body.appendChild(tr);
   }
 }
@@ -262,10 +1151,30 @@ async function load() {
     dirty = {};
     renderGeneral();
 
-    const [d, y, st] = await Promise.all([api('/datasource'), api('/raw'), api('/status')]);
+    const [d, y, st, b, h] = await Promise.all([
+      api('/datasource'), api('/raw'), api('/status'), api('/backups'), api('/handlers')]);
     $('#datasource').value = d.content || '[]';
     $('#rawyml').value = y.content || '';
     renderStatus(st);
+
+    handlerList = h.handlers || [];
+    senderList = st.senders || [];
+    try {
+      pushData = JSON.parse(d.content || '[]');
+    } catch (e) {
+      // 文件内容不合法时退回高级模式，让使用者直接修，而不是把错误内容悄悄吞掉
+      pushData = [];
+      if (!advancedMode) toggleAdvanced();
+      say('推送配置不是合法 JSON，已切换到高级模式供你修正', 'err');
+    }
+    renderStreamers();
+    decoratePushData();
+    renderBackups(b.backups);
+    loadAccounts();
+    loadHistory();
+    renderWizard();
+    // 向导渲染完成后两份表单才都在 DOM 里，此时统一回填
+    fillBotForms();
 
     const count = schema.reduce((n, g) => n + g.fields.length, 0);
     $('#head-sub').textContent = count + ' 个配置项 · ' + schema.length + ' 个分组';
@@ -276,35 +1185,78 @@ async function load() {
   markDirty();
 }
 
+// 每次保存都会留一份带时间戳的备份，改坏了可以直接滚回去
+function renderBackups(names) {
+  const box = $('#backups');
+  if (!names || !names.length) {
+    box.innerHTML = '<span>暂无历史备份，每次保存会自动生成一份</span>';
+    return;
+  }
+
+  box.innerHTML = '<span>历史备份</span>'
+    + '<select id="backup-pick">'
+    + names.map(n => '<option value="' + esc(n) + '">' + esc(n) + '</option>').join('')
+    + '</select><button id="backup-restore" type="button">回滚到此版本</button>';
+
+  $('#backup-restore').addEventListener('click', async () => {
+    const name = $('#backup-pick').value;
+    if (!confirm('确定回滚至 ' + name + ' 吗？当前内容会先备份一份。')) return;
+    say('回滚中…');
+    try {
+      const res = await api('/backups/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      });
+      say(res.message || (res.success ? '已回滚' : '回滚失败'), res.success ? 'ok' : 'err');
+      if (res.success) await load();
+    } catch (e) {
+      say('回滚失败：' + e.message, 'err');
+    }
+  });
+}
+
+// 校验不通过时逐条列出问题：只说「保存失败」而不说哪里错，使用者无从下手
+function showIssues(issues) {
+  const box = $('#issues');
+  if (!issues || !issues.length) {
+    box.style.display = 'none';
+    box.innerHTML = '';
+    return;
+  }
+  box.style.display = 'block';
+  box.innerHTML = '<b>请先修正以下问题：</b><ul>'
+    + issues.map(i => '<li>' + esc(i) + '</li>').join('') + '</ul>';
+}
+
 async function save() {
+  const target = saveTarget();
+  if (!target) return;
+
   $('#save').disabled = true;
+  showIssues(null);
   say('保存中…');
 
   try {
     let res;
-    if (tab === 'general') {
+    if (target === 'values') {
       res = await api('/values', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(dirty)
       });
       if (res.success) { dirty = {}; document.querySelectorAll('.field.changed').forEach(e => e.classList.remove('changed')); }
-    } else if (tab === 'push') {
+    } else {
       res = await api('/datasource', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: $('#datasource').value })
-      });
-    } else if (tab === 'raw') {
-      res = await api('/raw', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: $('#rawyml').value })
+        body: JSON.stringify({ content: advancedMode ? $('#datasource').value : serializePush() })
       });
     }
 
+    showIssues(res.issues);
     say(res.message || (res.success ? '已保存' : '保存失败'), res.success ? 'ok' : 'err');
-    if (res.success && tab !== 'general') await load();
+    if (res.success && target !== 'values') await load();
   } catch (e) {
     say('保存失败：' + e.message, 'err');
   }
@@ -312,20 +1264,88 @@ async function save() {
   markDirty();
 }
 
+// 整份 YAML 的保存单独成一个按钮：它覆盖的是文件全文，
+// 与表单里逐项改动不是一回事，混用同一个按钮迟早会误把旧内容盖回去
+async function saveRaw() {
+  $('#raw-save').disabled = true;
+  showIssues(null);
+  say('保存中…');
+
+  try {
+    const res = await api('/raw', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: $('#rawyml').value })
+    });
+
+    showIssues(res.issues);
+    say(res.message || (res.success ? '已保存' : '保存失败'), res.success ? 'ok' : 'err');
+    if (res.success) {
+      const open = $('#rawbox').open;
+      await load();
+      $('#rawbox').open = open;   // 重新载入会重建内容，但展开状态是使用者的选择
+    }
+  } catch (e) {
+    say('保存失败：' + e.message, 'err');
+  }
+
+  $('#raw-save').disabled = false;
+}
+
+function switchTab(name) {
+  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x.dataset.tab === name));
+  document.querySelectorAll('section').forEach(x => x.classList.toggle('on', x.id === name));
+  tab = name;
+
+  clearTimeout(accountTimer);
+  if (tab === 'overview') { api('/status').then(renderStatus); loadHistory(); loadAccounts(); refreshWizardState(); }
+  else if (tab === 'bot') api('/status').then(renderStatus);
+  else if (tab === 'bilibili') { api('/status').then(renderStatus); loadAccounts(); }
+
+  markDirty();
+}
+
+// 「运行自检」把探针再跑一遍并给出结论。异常项本就在下方逐条列着，
+// 这里只回答「现在到底有没有问题」，省得使用者自己数
+async function runSelfTest() {
+  $('#selftest-run').disabled = true;
+  say('自检中…');
+  try {
+    const st = await api('/status');
+    renderStatus(st);
+    const health = st.health || [];
+    const bad = health.filter(h => h.level !== 'OK');
+    say(bad.length
+      ? bad.length + ' 项异常：' + bad.map(h => h.name).join('、')
+      : '自检完成，' + health.length + ' 项全部正常', bad.length ? 'err' : 'ok');
+  } catch (e) {
+    say('自检失败：' + e.message, 'err');
+  }
+  $('#selftest-run').disabled = false;
+}
+
 document.querySelectorAll('nav button').forEach(b => {
-  b.addEventListener('click', () => {
-    document.querySelectorAll('nav button').forEach(x => x.classList.remove('on'));
-    document.querySelectorAll('section').forEach(x => x.classList.remove('on'));
-    b.classList.add('on');
-    tab = b.dataset.tab;
-    $('#' + tab).classList.add('on');
-    if (tab === 'status') api('/status').then(renderStatus);
-    markDirty();
-  });
+  b.addEventListener('click', () => switchTab(b.dataset.tab));
 });
 
 $('#save').addEventListener('click', save);
+$('#raw-save').addEventListener('click', saveRaw);
+$('#test-send').addEventListener('click', sendTestMessage);
+$('#selftest-run').addEventListener('click', runSelfTest);
+// 切换显示范围时保留已改动的字段：重绘只影响可见性，不该丢掉未保存的编辑
+$('#show-advanced').addEventListener('change', () => { renderGeneral(); markDirty(); });
+$('#toggle-push').addEventListener('click', togglePush);
+$('#add-streamer').addEventListener('click', addStreamer);
+$('#toggle-advanced').addEventListener('click', toggleAdvanced);
+$('#add-uid').addEventListener('keydown', e => { if (e.key === 'Enter') addStreamer(); });
+$('#wizard-toggle').addEventListener('click', () => {
+  wizardTouched = true;
+  setWizardCollapsed($('#wizard').style.display !== 'none');
+});
 $('#reload').addEventListener('click', load);
+// 先注入 DOM 再绑定，否则 bindBotForm 取到的是 null
+$('#bot-form').innerHTML = botFormHtml('bot');
+bindBotForm('bot');
 load();
 </script>
 </body>
