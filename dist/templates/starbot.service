@@ -1,0 +1,52 @@
+# StarBot systemd 单元文件
+#
+# 安装：
+#   sudo useradd --system --home-dir /opt/starbot --shell /usr/sbin/nologin starbot
+#   sudo cp -r dist/build /opt/starbot && sudo chown -R starbot:starbot /opt/starbot
+#   sudo cp dist/templates/starbot.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now starbot
+#
+# 首次启动需要扫码登录，先用 journalctl -u starbot -f 查看二维码。
+
+[Unit]
+Description=StarBot - 哔哩哔哩推送机器人
+Documentation=https://github.com/Starlwr/StarBot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=starbot
+Group=starbot
+WorkingDirectory=/opt/starbot
+ExecStart=/opt/starbot/start.sh
+Restart=on-failure
+RestartSec=10s
+
+# 凭据文件需保持仅属主可读写
+UMask=0077
+
+# 安全加固：限制服务对系统其余部分的访问
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+ReadWritePaths=/opt/starbot
+
+# 内存上限，超出后由 systemd 终止并重启
+MemoryMax=768M
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=starbot
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,24 @@
+[
+  {
+    "uid": 12345678,
+    "platform": "bilibili",
+    "targets": [
+      {
+        "platform": "qq-onebot",
+        "type": 1,
+        "num": 987654321,
+        "messages": [
+          {
+            "handler": "com.starlwr.bot.bilibili.handler.BilibiliLiveOnPushHandler"
+          },
+          {
+            "handler": "com.starlwr.bot.bilibili.handler.BilibiliLiveOffPushHandler"
+          },
+          {
+            "handler": "com.starlwr.bot.bilibili.handler.BilibiliDynamicPushHandler"
+          }
+        ]
+      }
+    ]
+  }
+]

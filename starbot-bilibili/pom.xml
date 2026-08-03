@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.starlwr</groupId>
+        <artifactId>starbot-parent</artifactId>
+        <version>3.0.0</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>starbot-bilibili</artifactId>
+    <version>1.0.0</version>
+    <name>StarBotBilibili</name>
+    <description>StarBot For Bilibili</description>
+
+    <!--
+        本模块为依据哔哩哔哩公开接口独立编写的实现，不含任何来自上游二进制的反编译代码。
+        对外暴露的事件类型与配置项命名与上游保持兼容，既有 datasource.json 与
+        application.yml 可直接沿用。
+    -->
+    <dependencies>
+        <dependency>
+            <groupId>com.starlwr</groupId>
+            <artifactId>starbot-core</artifactId>
+        </dependency>
+
+        <!-- 直播间弹幕流的数据包可能使用 brotli 压缩 -->
+        <dependency>
+            <groupId>org.brotli</groupId>
+            <artifactId>dec</artifactId>
+        </dependency>
+
+        <!-- 主播信息、礼物配置等的本地缓存 -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
+
+        <!-- 扫码登录页面 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-thymeleaf</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <finalName>${project.artifactId}-${project.version}</finalName>
+        <plugins>
+            <plugin>
+                <groupId>com.starlwr</groupId>
+                <artifactId>starbot-plugin-processor</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>plugin-info-process</goal>
+                            <goal>dependency-process</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <artifactId>maven-resources-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>copy-dependencies</id>
+                        <phase>process-resources</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.outputDirectory}</outputDirectory>
+                            <resources>
+                                <!-- 仅取插件描述文件，避免 test-classes 被打入 jar，详见 starbot-onebot-adapter 中的说明 -->
+                                <resource>
+                                    <directory>${project.build.directory}</directory>
+                                    <includes>
+                                        <include>plugin.json</include>
+                                        <include>dependency.json</include>
+                                    </includes>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+                <configuration>
+                    <resources>
+                        <resource>
+                            <directory>src/main/resources</directory>
+                            <excludes>
+                                <exclude>application.yml</exclude>
+                                <exclude>application.properties</exclude>
+                                <exclude>application-dev.yml</exclude>
+                                <exclude>application-dev.properties</exclude>
+                            </excludes>
+                        </resource>
+                    </resources>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

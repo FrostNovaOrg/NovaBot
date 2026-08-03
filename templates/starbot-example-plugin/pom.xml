@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- 依赖的 Spring Boot 版本，建议与 StarBotCore 项目使用的版本保持一致 -->
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>4.0.0</version>
+        <relativePath/>
+    </parent>
+
+    <!-- 组名，通常使用反向域名，必填，与 artifactId 共同构成插件唯一标识 -->
+    <groupId>com.example</groupId>
+    <!-- 插件 ID，必填，与 groupId 共同构成插件唯一标识 -->
+    <artifactId>starbot-example-plugin</artifactId>
+    <!-- 插件版本，必填，会在插件加载时输出至 StarBot 日志中 -->
+    <version>1.0.0</version>
+    <!-- 插件名称，必填，会在插件加载时输出至 StarBot 日志中 -->
+    <name>StarBotExamplePlugin</name>
+    <!-- 插件描述，必填，会在插件加载时输出至 StarBot 日志中 -->
+    <description>Example Plugin For StarBot</description>
+    <!-- 插件主页 URL -->
+    <url>https://www.example.com</url>
+
+    <!-- 插件作者信息 -->
+    <developers>
+        <developer>
+            <!-- 插件作者 ID，必填，可与名称保持一致 -->
+            <id>Author</id>
+            <!-- 插件作者名称，必填，会在插件加载时输出至 StarBot 日志中 -->
+            <name>Author</name>
+            <!-- 插件作者邮箱 -->
+            <email>example@example.com</email>
+        </developer>
+    </developers>
+
+    <!-- 插件开源许可证，StarBot 及其衍生项目默认使用 AGPLv3 开源许可证 -->
+    <licenses>
+        <license>
+            <name>GNU Affero General Public License v3.0</name>
+            <url>https://www.gnu.org/licenses/agpl-3.0.html</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <!-- Java 版本配置 -->
+    <properties>
+        <java.version>17</java.version>
+    </properties>
+
+    <!-- StarBot Maven 仓库 -->
+    <repositories>
+        <repository>
+            <id>starbot-maven-repository</id>
+            <url>https://maven.starlwr.com/</url>
+        </repository>
+    </repositories>
+
+    <!-- StarBot Maven 插件仓库 -->
+    <pluginRepositories>
+        <pluginRepository>
+            <id>starbot-maven-plugin-repository</id>
+            <url>https://maven.starlwr.com/</url>
+        </pluginRepository>
+    </pluginRepositories>
+
+    <!-- 插件依赖 -->
+    <dependencies>
+        <!-- StarBot 核心依赖，必需，建议开发时使用最新版本 -->
+        <dependency>
+            <groupId>com.starlwr</groupId>
+            <artifactId>starbot-core</artifactId>
+            <version>3.0.0</version>
+        </dependency>
+
+        <!-- 以下为可选依赖，在下方按需引入所需的其他依赖 -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <!-- 构建配置，请不要修改以下内容，修改后可能会造成插件无法被正常加载 -->
+    <build>
+        <finalName>${project.artifactId}-${project.version}</finalName>
+        <plugins>
+            <plugin>
+                <groupId>com.starlwr</groupId>
+                <artifactId>starbot-plugin-processor</artifactId>
+                <version>1.0.0</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>plugin-info-process</goal>
+                            <goal>dependency-process</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <artifactId>maven-resources-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>copy-dependencies</id>
+                        <phase>process-resources</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.outputDirectory}</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>${project.build.directory}</directory>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+                <configuration>
+                    <resources>
+                        <resource>
+                            <directory>src/main/resources</directory>
+                            <excludes>
+                                <exclude>application.yml</exclude>
+                                <exclude>application.properties</exclude>
+                                <exclude>application-dev.yml</exclude>
+                                <exclude>application-dev.properties</exclude>
+                            </excludes>
+                        </resource>
+                    </resources>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

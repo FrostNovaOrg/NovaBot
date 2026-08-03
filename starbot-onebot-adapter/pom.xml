@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.starlwr</groupId>
+        <artifactId>starbot-parent</artifactId>
+        <version>3.0.0</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>starbot-onebot-adapter</artifactId>
+    <version>1.0.0</version>
+    <name>StarBotOneBotAdapterPlugin</name>
+    <description>OneBot Adapter Plugin For StarBot</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.starlwr</groupId>
+            <artifactId>starbot-core</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <finalName>${project.artifactId}-${project.version}</finalName>
+        <plugins>
+            <plugin>
+                <groupId>com.starlwr</groupId>
+                <artifactId>starbot-plugin-processor</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>plugin-info-process</goal>
+                            <goal>dependency-process</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <artifactId>maven-resources-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>copy-dependencies</id>
+                        <phase>process-resources</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.outputDirectory}</outputDirectory>
+                            <resources>
+                                <!--
+                                    只取 starbot-plugin-processor 生成的两个描述文件。
+                                    若照搬整个 target 目录，test-classes 也会被打进插件 jar，
+                                    插件加载器扫描到测试类时会因类名不匹配抛出 NoClassDefFoundError，
+                                    导致整个应用无法启动。
+                                -->
+                                <resource>
+                                    <directory>${project.build.directory}</directory>
+                                    <includes>
+                                        <include>plugin.json</include>
+                                        <include>dependency.json</include>
+                                    </includes>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+                <configuration>
+                    <resources>
+                        <resource>
+                            <directory>src/main/resources</directory>
+                            <excludes>
+                                <exclude>application.yml</exclude>
+                                <exclude>application.properties</exclude>
+                                <exclude>application-dev.yml</exclude>
+                                <exclude>application-dev.properties</exclude>
+                            </excludes>
+                        </resource>
+                    </resources>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

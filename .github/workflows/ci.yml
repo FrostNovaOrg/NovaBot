@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: 构建与测试
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 配置 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+          cache: maven
+
+      # starbot-plugin-processor 是各插件模块在 build 阶段调用的 Maven 插件，
+      # Maven 无法在同一 reactor 内构建并使用同一个插件，因此需先单独安装
+      - name: 安装构建插件
+        run: mvn -B -f build-tools/starbot-plugin-processor/pom.xml install -DskipTests
+
+      - name: 构建与测试
+        run: mvn -B -Pinstall install
+
+      - name: 打包发行产物
+        run: mvn -B -f starbot-core/pom.xml -Ppackage package
+
+      - name: 上传测试报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: '**/target/surefire-reports/*'
+          if-no-files-found: ignore
+
+  dependency-check:
+    name: 依赖漏洞扫描
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 配置 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+          cache: maven
+
+      - name: 安装构建插件
+        run: mvn -B -f build-tools/starbot-plugin-processor/pom.xml install -DskipTests
+
+      - name: 扫描已知漏洞
+        # 扫描结果仅作提示，不阻断构建：上游依赖的修复节奏不受本仓库控制
+        continue-on-error: true
+        run: mvn -B -Pinstall org.owasp:dependency-check-maven:check -DfailBuildOnCVSS=8 -DskipTests

@@ -1,0 +1,72 @@
+StarBot 3.0
+Copyright (C) LWR <lwr1104@qq.com>
+
+本项目是 StarBot 的一个整理版本，遵循 GNU Affero General Public License v3.0 发布。
+完整许可证文本见同目录下的 LICENSE 文件。
+
+================================================================================
+上游来源
+================================================================================
+
+本仓库的绝大部分代码来自 StarBot 原作者 LWR 的以下上游仓库，版权归原作者所有：
+
+  starbot-core
+    上游: https://github.com/Starlwr/StarBotCore
+    许可: AGPL-3.0
+
+  starbot-onebot-adapter
+    上游: https://github.com/Starlwr/StarBotOneBotAdapterPlugin
+    许可: AGPL-3.0
+
+  starbot-onebot-adapter-napcat-extension
+    上游: https://github.com/Starlwr/StarBotOneBotAdapterNapcatExtensionPlugin
+    许可: AGPL-3.0
+
+  build-tools/starbot-plugin-processor
+    上游: https://github.com/Starlwr/StarBotPluginProcessor
+    许可: AGPL-3.0
+
+  templates/starbot-example-plugin
+    上游: https://github.com/Starlwr/StarBotExamplePlugin
+    许可: AGPL-3.0
+
+StarBot 官方站点: https://bot.starlwr.com
+StarBot Python 版（1.x / 2.x，自 2025-06-09 起仅修复缺陷）: https://github.com/Starlwr/StarBot
+
+================================================================================
+本仓库所做的修改
+================================================================================
+
+依据 AGPL-3.0 第 5 条，以下为相对上游的修改说明。逐版本明细见 CHANGELOG.md。
+
+1. 工程结构
+   将上游分散的多个仓库整合为单一 Maven 多模块工程，新增聚合 pom 统一管理依赖版本；
+   构建期使用的 Maven 插件移至 build-tools/，第三方插件开发模板移至 templates/。
+
+2. 推送接口鉴权（安全修复）
+   上游 OneBotController 注册的推送接口未做任何身份校验，任何可访问该端口的程序
+   均可借由 StarBot 发送任意消息。本仓库补全了核心中已预留但未实现的 Token 校验契约
+   （见 com.starlwr.bot.core.model.Sender#token 的原始注释），并增加来源 IP 白名单、
+   频率限制与审计日志。
+
+3. 凭据保护
+   哔哩哔哩登录凭据由明文落盘改为加密存储，并收紧文件权限。
+
+4. starbot-bilibili 模块
+   上游未公开该模块源码，仅以二进制形式分发。本仓库中的该模块为依据哔哩哔哩公开接口
+   独立编写的全新实现，不包含任何来自上游二进制的反编译代码。其对外暴露的事件模型与
+   配置项命名与上游保持兼容，以便既有配置文件和第三方插件可以直接沿用。
+
+5. 关于二进制发行版与公开源码的版本差异
+   上游 3.0-beta8 二进制发行版构建于 2025-12-09，而公开源码仓库的最新提交在其之后。
+   两者存在设计差异，最显著的是推送配置格式：二进制按事件类名（event 字段）指定推送内容，
+   公开源码改为按处理器类名（handler 字段）指定。本仓库以公开源码为准。
+
+   因此二进制中存在而公开源码中没有的若干类（DefaultHandlerForEvent、Command、
+   StarBotDefaultDanmuEventListener）属于旧设计的遗留，公开源码已不再需要，本仓库未予保留。
+
+================================================================================
+第三方依赖
+================================================================================
+
+本项目依赖的第三方组件各自遵循其自身许可证，详见各依赖的 pom 声明。

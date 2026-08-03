@@ -1,0 +1,28 @@
+# ---- 构建产物 ----
+target/
+dist/build/
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+# ---- 运行期数据（含凭据，务必不要提交）----
+cookies.json
+cookies.enc
+datasource.json
+application-local.yml
+application-dev.yml
+logs/
+*.log
+
+# ---- IDE ----
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.project
+.classpath
+
+# ---- 系统 ----
+.DS_Store
+Thumbs.db

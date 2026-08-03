@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>4.0.0</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.starlwr</groupId>
+    <artifactId>starbot-parent</artifactId>
+    <version>3.0.0</version>
+    <packaging>pom</packaging>
+
+    <name>StarBot</name>
+    <description>StarBot 3.0 聚合构建 — 哔哩哔哩推送机器人</description>
+    <url>https://bot.starlwr.com</url>
+
+    <licenses>
+        <license>
+            <name>GNU Affero General Public License v3.0</name>
+            <url>https://www.gnu.org/licenses/agpl-3.0.html</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <id>LWR</id>
+            <name>LWR</name>
+            <email>lwr1104@qq.com</email>
+            <roles>
+                <role>StarBot 原作者</role>
+            </roles>
+        </developer>
+    </developers>
+
+    <!--
+        build-tools/starbot-plugin-processor 是本工程各插件模块在 build 阶段调用的 Maven 插件。
+        Maven 无法在同一 reactor 内构建并使用同一个插件，因此它不在此处的模块列表中，
+        需先单独安装（执行 ./build.sh 会自动完成）。
+        templates/starbot-example-plugin 是提供给第三方插件开发者的模板，同样不参与本工程构建。
+    -->
+    <modules>
+        <module>starbot-core</module>
+        <module>starbot-onebot-adapter</module>
+        <module>starbot-onebot-adapter-napcat-extension</module>
+        <module>starbot-bilibili</module>
+    </modules>
+
+    <properties>
+        <java.version>17</java.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+        <!-- StarBot 自身构件版本 -->
+        <starbot-core.version>3.0.0</starbot-core.version>
+        <starbot-plugin-processor.version>1.0.0</starbot-plugin-processor.version>
+
+        <!-- 第三方依赖版本，集中在此管理，模块内不再各写各的 -->
+        <fastjson2.version>2.0.56</fastjson2.version>
+        <reflections.version>0.10.2</reflections.version>
+        <mysql-connector.version>9.5.0</mysql-connector.version>
+        <imageio-webp.version>3.12.0</imageio-webp.version>
+        <zxing.version>3.5.3</zxing.version>
+        <spring-retry.version>2.0.12</spring-retry.version>
+        <!-- org.brotli:dec 在 Maven Central 上仅发布过 0.1.2 这一个版本 -->
+        <brotli.version>0.1.2</brotli.version>
+        <caffeine.version>3.2.0</caffeine.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.starlwr</groupId>
+                <artifactId>starbot-core</artifactId>
+                <version>${starbot-core.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.alibaba.fastjson2</groupId>
+                <artifactId>fastjson2</artifactId>
+                <version>${fastjson2.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.reflections</groupId>
+                <artifactId>reflections</artifactId>
+                <version>${reflections.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.mysql</groupId>
+                <artifactId>mysql-connector-j</artifactId>
+                <version>${mysql-connector.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.twelvemonkeys.imageio</groupId>
+                <artifactId>imageio-webp</artifactId>
+                <version>${imageio-webp.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.google.zxing</groupId>
+                <artifactId>core</artifactId>
+                <version>${zxing.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.google.zxing</groupId>
+                <artifactId>javase</artifactId>
+                <version>${zxing.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework.retry</groupId>
+                <artifactId>spring-retry</artifactId>
+                <version>${spring-retry.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.brotli</groupId>
+                <artifactId>dec</artifactId>
+                <version>${brotli.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.ben-manes.caffeine</groupId>
+                <artifactId>caffeine</artifactId>
+                <version>${caffeine.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- 全模块统一引入：Lombok（编译期）与测试栈 -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>com.starlwr</groupId>
+                    <artifactId>starbot-plugin-processor</artifactId>
+                    <version>${starbot-plugin-processor.version}</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+</project>

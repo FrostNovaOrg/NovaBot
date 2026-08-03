@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.starlwr</groupId>
+        <artifactId>starbot-parent</artifactId>
+        <version>3.0.0</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>starbot-onebot-adapter-napcat-extension</artifactId>
+    <version>1.0.0</version>
+    <name>StarBotOneBotAdapterNapcatExtensionPlugin</name>
+    <description>OneBot Adapter Napcat Extension Plugin For StarBot</description>
+
+    <!--
+        上游此模块还声明了对 starbot-bilibili 的依赖，但其源码中对该模块零引用，
+        属于多余依赖，已移除，使本模块不再与哔哩哔哩插件耦合。
+    -->
+    <dependencies>
+        <!-- 本模块源码直接引用了核心的类型，显式声明而不依赖 onebot-adapter 的传递依赖 -->
+        <dependency>
+            <groupId>com.starlwr</groupId>
+            <artifactId>starbot-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.starlwr</groupId>
+            <artifactId>starbot-onebot-adapter</artifactId>
+            <version>1.0.0</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <finalName>${project.artifactId}-${project.version}</finalName>
+        <plugins>
+            <plugin>
+                <groupId>com.starlwr</groupId>
+                <artifactId>starbot-plugin-processor</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>plugin-info-process</goal>
+                            <goal>dependency-process</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <artifactId>maven-resources-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>copy-dependencies</id>
+                        <phase>process-resources</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.outputDirectory}</outputDirectory>
+                            <resources>
+                                <!-- 仅取插件描述文件，避免 test-classes 被打入 jar，详见 starbot-onebot-adapter 中的说明 -->
+                                <resource>
+                                    <directory>${project.build.directory}</directory>
+                                    <includes>
+                                        <include>plugin.json</include>
+                                        <include>dependency.json</include>
+                                    </includes>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+                <configuration>
+                    <resources>
+                        <resource>
+                            <directory>src/main/resources</directory>
+                            <excludes>
+                                <exclude>application.yml</exclude>
+                                <exclude>application.properties</exclude>
+                                <exclude>application-dev.yml</exclude>
+                                <exclude>application-dev.properties</exclude>
+                            </excludes>
+                        </resource>
+                    </resources>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

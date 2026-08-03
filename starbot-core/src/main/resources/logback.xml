@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+    <springProperty name="consoleLogLevel" source="starbot.core.log.console"/>
+    <springProperty name="fileLogLevel" source="starbot.core.log.file"/>
+
+    <logger name="org.reflections.Reflections" level="OFF"/>
+    <logger name="org.apache.catalina.loader.WebappLoader" level="OFF"/>
+
+    <appender name="Console" class="ch.qos.logback.core.ConsoleAppender">
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>${consoleLogLevel}</level>
+        </filter>
+        <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+            <pattern>
+                %clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(%5p) %clr(${PID:- }){magenta} --- [%clr(%20.20t)] %clr(%-40.40logger{39}){cyan} : %msg%n%ex
+            </pattern>
+            <charset>utf-8</charset>
+        </encoder>
+    </appender>
+
+    <appender name="ConsoleQrCode" class="ch.qos.logback.core.ConsoleAppender">
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>${consoleLogLevel}</level>
+        </filter>
+        <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+            <pattern>
+                %msg%n
+            </pattern>
+            <charset>utf-8</charset>
+        </encoder>
+    </appender>
+
+    <appender name="RollingFile" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>${fileLogLevel}</level>
+        </filter>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>logs/%d{yyyy-MM,aux}/starbot-%d{yyyy-MM-dd}.log</fileNamePattern>
+        </rollingPolicy>
+        <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %5p ${PID:- } --- [%20.20t] %-40.40logger{39} : %msg%n</pattern>
+            <charset>utf-8</charset>
+        </encoder>
+    </appender>
+
+    <appender name="AsyncRollingFile" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="RollingFile"/>
+        <includeCallerData>true</includeCallerData>
+    </appender>
+
+    <appender name="EventRollingFile" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>DEBUG</level>
+        </filter>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>EventDebug/%d{yyyy-MM,aux}/starbot-event-%d{yyyy-MM-dd}.log</fileNamePattern>
+        </rollingPolicy>
+        <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} : %msg%n</pattern>
+            <charset>utf-8</charset>
+        </encoder>
+    </appender>
+
+    <appender name="EventAsyncRollingFile" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="EventRollingFile"/>
+        <includeCallerData>true</includeCallerData>
+    </appender>
+
+    <appender name="NetworkRollingFile" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>DEBUG</level>
+        </filter>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>NetworkDebug/%d{yyyy-MM,aux}/starbot-network-%d{yyyy-MM-dd}.log</fileNamePattern>
+        </rollingPolicy>
+        <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %5p --- [%20.20t] : %msg%n</pattern>
+            <charset>utf-8</charset>
+        </encoder>
+    </appender>
+
+    <appender name="NetworkAsyncRollingFile" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="NetworkRollingFile"/>
+        <includeCallerData>true</includeCallerData>
+    </appender>
+
+    <logger name="com.starlwr.bot.core.util.QrCodeUtil" level="INFO" additivity="false">
+        <appender-ref ref="ConsoleQrCode"/>
+        <appender-ref ref="AsyncRollingFile"/>
+    </logger>
+
+    <logger name="EventLogger" level="DEBUG" additivity="false">
+        <appender-ref ref="EventAsyncRollingFile"/>
+    </logger>
+
+    <logger name="NetworkLogger" level="DEBUG" additivity="false">
+        <appender-ref ref="NetworkAsyncRollingFile"/>
+    </logger>
+
+    <logger name="com.starlwr.bot" level="DEBUG" additivity="false">
+        <appender-ref ref="Console"/>
+        <appender-ref ref="AsyncRollingFile"/>
+    </logger>
+
+    <root level="INFO">
+        <appender-ref ref="Console"/>
+        <appender-ref ref="AsyncRollingFile"/>
+    </root>
+</configuration>

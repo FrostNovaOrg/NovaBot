@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>StarBot 配置</title>
+<style>
+:root{
+  --bg:#f5f6f8; --panel:#fff; --border:#e3e5e9; --text:#1f2328; --muted:#6b7280;
+  --accent:#fb7299; --accent-soft:#fff1f5; --ok:#16a34a; --err:#dc2626; --code:#f6f8fa;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#15171a; --panel:#1c1f23; --border:#2c3036; --text:#e6e8eb; --muted:#9aa1ab;
+    --accent:#fb7299; --accent-soft:#2a1d22; --code:#111316;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);
+  font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;font-size:14px;line-height:1.6}
+header{background:var(--panel);border-bottom:1px solid var(--border);padding:14px 24px;
+  display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:10}
+header h1{margin:0;font-size:16px;font-weight:600}
+header .sub{color:var(--muted);font-size:12px}
+main{max-width:960px;margin:0 auto;padding:20px 24px 80px}
+nav{display:flex;gap:4px;margin-bottom:20px;border-bottom:1px solid var(--border)}
+nav button{background:none;border:none;padding:9px 16px;cursor:pointer;color:var(--muted);
+  font-size:14px;font-family:inherit;border-bottom:2px solid transparent;margin-bottom:-1px}
+nav button.on{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
+section{display:none}
+section.on{display:block}
+.group{background:var(--panel);border:1px solid var(--border);border-radius:10px;margin-bottom:14px;overflow:hidden}
+.group>h2{margin:0;padding:12px 16px;font-size:14px;font-weight:600;
+  border-bottom:1px solid var(--border);background:var(--accent-soft)}
+.field{padding:12px 16px;border-bottom:1px solid var(--border);display:grid;
+  grid-template-columns:minmax(180px,1fr) minmax(200px,280px);gap:16px;align-items:start}
+.field:last-child{border-bottom:none}
+.field .meta code{font-size:12px;color:var(--text);background:var(--code);
+  padding:1px 6px;border-radius:4px;font-family:ui-monospace,Menlo,Consolas,monospace}
+.field .desc{color:var(--muted);font-size:12.5px;margin-top:3px;white-space:pre-line}
+.field .dflt{color:var(--muted);font-size:11.5px;margin-top:3px}
+.field input[type=text],.field input[type=number],.field textarea{width:100%;padding:6px 9px;
+  border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);
+  font-family:inherit;font-size:13px}
+.field textarea{min-height:60px;font-family:ui-monospace,Menlo,Consolas,monospace;resize:vertical}
+.field input:focus,.field textarea:focus{outline:none;border-color:var(--accent)}
+.field.changed{background:var(--accent-soft)}
+.readonly{color:var(--muted);font-size:12.5px;padding:6px 0;font-style:italic}
+.switch{display:inline-flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
+.switch input{appearance:none;width:38px;height:22px;border-radius:11px;background:var(--border);
+  position:relative;cursor:pointer;transition:background .15s;margin:0}
+.switch input:checked{background:var(--accent)}
+.switch input::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;
+  border-radius:50%;background:#fff;transition:transform .15s}
+.switch input:checked::after{transform:translateX(16px)}
+.switch span{font-size:13px;color:var(--muted)}
+textarea.full{width:100%;min-height:420px;padding:12px;border:1px solid var(--border);border-radius:8px;
+  background:var(--code);color:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;
+  font-size:12.5px;line-height:1.55;resize:vertical}
+.bar{position:fixed;left:0;right:0;bottom:0;background:var(--panel);border-top:1px solid var(--border);
+  padding:12px 24px;display:flex;align-items:center;gap:12px;justify-content:flex-end}
+.bar .status{margin-right:auto;font-size:13px}
+.bar .status.ok{color:var(--ok)}
+.bar .status.err{color:var(--err)}
+button.primary{background:var(--accent);color:#fff;border:none;padding:8px 20px;border-radius:6px;
+  cursor:pointer;font-size:14px;font-family:inherit;font-weight:500}
+button.primary:disabled{opacity:.45;cursor:not-allowed}
+button.ghost{background:none;border:1px solid var(--border);color:var(--text);padding:8px 16px;
+  border-radius:6px;cursor:pointer;font-size:14px;font-family:inherit}
+table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--border);border-radius:10px}
+th,td{padding:9px 14px;text-align:left;border-bottom:1px solid var(--border);font-size:13px}
+th{color:var(--muted);font-weight:500}
+tr:last-child td{border-bottom:none}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:18px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px 16px}
+.card .n{font-size:22px;font-weight:600}
+.card .l{color:var(--muted);font-size:12px;margin-top:2px}
+.hint{color:var(--muted);font-size:12.5px;margin:0 0 14px}
+.empty{color:var(--muted);text-align:center;padding:40px 0}
+@media (max-width:680px){.field{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <h1>StarBot 配置</h1>
+  <span class="sub" id="head-sub">加载中…</span>
+</header>
+
+<main>
+  <nav>
+    <button data-tab="general" class="on">常规配置</button>
+    <button data-tab="push">推送配置</button>
+    <button data-tab="raw">配置文件</button>
+    <button data-tab="status">运行状态</button>
+  </nav>
+
+  <section id="general" class="on">
+    <p class="hint">字段由程序在编译期自动生成，与代码中的配置项始终一致。修改后点击保存，改动会写入 application.yml，重启生效。</p>
+    <div id="groups"></div>
+  </section>
+
+  <section id="push">
+    <p class="hint">推送配置 datasource.json：配置要监听的 UP 主与推送目标。保存前会校验 JSON 格式。</p>
+    <textarea class="full" id="datasource" spellcheck="false"></textarea>
+  </section>
+
+  <section id="raw">
+    <p class="hint">直接编辑 application.yml。适用于常规配置未覆盖的场景，例如列表类配置项。保存前会自动备份原文件。</p>
+    <textarea class="full" id="rawyml" spellcheck="false"></textarea>
+  </section>
+
+  <section id="status">
+    <div class="cards" id="runtime"></div>
+    <table id="users"><thead><tr><th>UID</th><th>昵称</th><th>直播间</th><th>平台</th><th>推送目标</th><th>状态</th></tr></thead><tbody></tbody></table>
+  </section>
+</main>
+
+<div class="bar">
+  <span class="status" id="status-text"></span>
+  <button class="ghost" id="reload">重新载入</button>
+  <button class="primary" id="save" disabled>保存</button>
+</div>
+
+<script>
+const api = (p, o) => fetch('/config/api' + p, o).then(r => r.json());
+const $ = s => document.querySelector(s);
+const el = (t, c) => { const e = document.createElement(t); if (c) e.className = c; return e; };
+
+let schema = [], values = {}, dirty = {}, tab = 'general';
+
+function say(text, kind) {
+  const s = $('#status-text');
+  s.textContent = text || '';
+  s.className = 'status' + (kind ? ' ' + kind : '');
+  if (text && kind === 'ok') setTimeout(() => { if (s.textContent === text) say(''); }, 4000);
+}
+
+function markDirty() {
+  const n = Object.keys(dirty).length;
+  $('#save').disabled = tab === 'status' || (tab === 'general' && n === 0);
+  if (tab === 'general') say(n ? n + ' 项待保存' : '');
+}
+
+function renderGeneral() {
+  const box = $('#groups');
+  box.innerHTML = '';
+
+  for (const g of schema) {
+    const group = el('div', 'group');
+    const title = el('h2');
+    title.textContent = g.title;
+    group.appendChild(title);
+
+    for (const f of g.fields) {
+      const row = el('div', 'field');
+      row.dataset.name = f.name;
+
+      const meta = el('div', 'meta');
+      const code = el('code');
+      code.textContent = f.name;
+      meta.appendChild(code);
+
+      if (f.description) {
+        const d = el('div', 'desc');
+        d.textContent = f.description;
+        meta.appendChild(d);
+      }
+      if (f.defaultValue !== null && f.defaultValue !== undefined && f.defaultValue !== '') {
+        const d = el('div', 'dflt');
+        d.textContent = '默认值：' + f.defaultValue;
+        meta.appendChild(d);
+      }
+      row.appendChild(meta);
+
+      const cell = el('div');
+      const current = values[f.name] !== undefined ? values[f.name]
+        : (f.defaultValue !== null && f.defaultValue !== undefined ? String(f.defaultValue) : '');
+
+      let input;
+      if (f.widget === 'boolean') {
+        const label = el('label', 'switch');
+        input = el('input');
+        input.type = 'checkbox';
+        input.checked = String(current) === 'true';
+        const txt = el('span');
+        txt.textContent = input.checked ? '已启用' : '已关闭';
+        input.addEventListener('change', () => { txt.textContent = input.checked ? '已启用' : '已关闭'; });
+        label.append(input, txt);
+        cell.appendChild(label);
+      } else if (f.widget === 'complex') {
+        // 元素为对象的列表无法用简单控件表达，此处只读展示并引导到配置文件页签
+        const note = el('div', 'readonly');
+        note.textContent = '结构较复杂，请在「配置文件」页签中编辑';
+        cell.appendChild(note);
+        row.appendChild(cell);
+        group.appendChild(row);
+        continue;
+      } else if (f.widget === 'list') {
+        input = el('textarea');
+        input.value = current;
+        input.placeholder = '每行一项';
+        cell.appendChild(input);
+      } else {
+        input = el('input');
+        input.type = (f.widget === 'integer' || f.widget === 'number') ? 'number' : 'text';
+        input.value = current;
+        cell.appendChild(input);
+      }
+
+      const read = () => f.widget === 'boolean' ? String(input.checked) : input.value;
+      const original = read();
+
+      const onChange = () => {
+        const now = read();
+        if (now === original) { delete dirty[f.name]; row.classList.remove('changed'); }
+        else { dirty[f.name] = now; row.classList.add('changed'); }
+        markDirty();
+      };
+      input.addEventListener('input', onChange);
+      input.addEventListener('change', onChange);
+
+      row.appendChild(cell);
+      group.appendChild(row);
+    }
+
+    box.appendChild(group);
+  }
+}
+
+function renderStatus(data) {
+  const r = data.runtime || {};
+  $('#runtime').innerHTML = [
+    ['堆内存', r.heapUsedMb + ' / ' + r.heapMaxMb + ' MB'],
+    ['线程数', r.threads],
+    ['CPU 核心', r.processors],
+    ['监听主播', (data.users || []).length]
+  ].map(([l, n]) => '<div class="card"><div class="n">' + n + '</div><div class="l">' + l + '</div></div>').join('');
+
+  const body = $('#users tbody');
+  body.innerHTML = '';
+
+  if (!data.users || !data.users.length) {
+    body.innerHTML = '<tr><td colspan="6" class="empty">尚未配置任何主播，请在「推送配置」中添加</td></tr>';
+    return;
+  }
+
+  for (const u of data.users) {
+    const tr = el('tr');
+    tr.innerHTML = [u.uid, u.uname || '—', u.roomId || '—', u.platform,
+      u.targets, u.enabled === false ? '已停用' : '正常']
+      .map(v => '<td>' + v + '</td>').join('');
+    body.appendChild(tr);
+  }
+}
+
+async function load() {
+  say('载入中…');
+  try {
+    const [s, v] = await Promise.all([api('/schema'), api('/values')]);
+    schema = s.groups || [];
+    values = v.values || {};
+    dirty = {};
+    renderGeneral();
+
+    const [d, y, st] = await Promise.all([api('/datasource'), api('/raw'), api('/status')]);
+    $('#datasource').value = d.content || '[]';
+    $('#rawyml').value = y.content || '';
+    renderStatus(st);
+
+    const count = schema.reduce((n, g) => n + g.fields.length, 0);
+    $('#head-sub').textContent = count + ' 个配置项 · ' + schema.length + ' 个分组';
+    say('');
+  } catch (e) {
+    say('载入失败：' + e.message, 'err');
+  }
+  markDirty();
+}
+
+async function save() {
+  $('#save').disabled = true;
+  say('保存中…');
+
+  try {
+    let res;
+    if (tab === 'general') {
+      res = await api('/values', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dirty)
+      });
+      if (res.success) { dirty = {}; document.querySelectorAll('.field.changed').forEach(e => e.classList.remove('changed')); }
+    } else if (tab === 'push') {
+      res = await api('/datasource', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: $('#datasource').value })
+      });
+    } else if (tab === 'raw') {
+      res = await api('/raw', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: $('#rawyml').value })
+      });
+    }
+
+    say(res.message || (res.success ? '已保存' : '保存失败'), res.success ? 'ok' : 'err');
+    if (res.success && tab !== 'general') await load();
+  } catch (e) {
+    say('保存失败：' + e.message, 'err');
+  }
+
+  markDirty();
+}
+
+document.querySelectorAll('nav button').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('nav button').forEach(x => x.classList.remove('on'));
+    document.querySelectorAll('section').forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    tab = b.dataset.tab;
+    $('#' + tab).classList.add('on');
+    if (tab === 'status') api('/status').then(renderStatus);
+    markDirty();
+  });
+});
+
+$('#save').addEventListener('click', save);
+$('#reload').addEventListener('click', load);
+load();
+</script>
+</body>
+</html>
