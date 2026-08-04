@@ -129,6 +129,42 @@ public class StarBotCoreProperties {
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
         private Long qqNum;
+
+        /**
+         * Webhook 告警地址，留空则不启用
+         * <p>
+         * <b>QQ 与邮件之外唯一不依赖机器人自身链路的通道。</b>QQ 告警走的是机器人的推送链路，
+         * 一旦 OneBot 实现掉线或 QQ 掉登录，需要告警的正是这种时候，而告警本身也一并失效了。
+         * Webhook 只需一个地址，适配 Bark、Server 酱、钉钉、飞书、Telegram 等常见服务。
+         */
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        private String webhookUrl = "";
+
+        /**
+         * Webhook 请求方式：POST 或 GET
+         * <p>
+         * POST 提交 JSON（字段名见 webhook-title-field 与 webhook-content-field）；
+         * GET 把标题与内容拼进查询串，适配 Bark 这类以路径或查询参数接收的服务。
+         */
+        private String webhookMethod = "POST";
+
+        /**
+         * Webhook JSON 中承载标题的字段名
+         * <p>
+         * 各服务字段名不统一：Server 酱用 title/desp，钉钉与飞书用嵌套结构，
+         * 自建接口则各有各的约定，因此做成可配置而非写死。
+         */
+        private String webhookTitleField = "title";
+
+        /**
+         * Webhook JSON 中承载内容的字段名
+         */
+        private String webhookContentField = "content";
+
+        /**
+         * Webhook 附加请求头，用于需要鉴权的服务，如 {@code Authorization: Bearer xxx}
+         */
+        private final java.util.Map<String, String> webhookHeaders = new java.util.LinkedHashMap<>();
     }
 
     /**

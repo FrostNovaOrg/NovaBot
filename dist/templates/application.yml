@@ -15,8 +15,12 @@ spring:
                             # 第三方插件可自带数据源实现并在此指定对应的 profile 名
   thymeleaf:
     check-template-location: false
-  mail:
-    username:               # 告警邮件发件账号，不需要告警可留空
+  mail:                     # 邮件告警的发件服务。不用邮件告警时整段留空即可
+    host:                   # SMTP 服务器地址，如 smtp.qq.com
+    port:                   # SMTP 端口，如 465（SSL）或 587（STARTTLS）
+    username:               # 发件账号
+    password:               # 发件账号的授权码（多数邮箱服务需在网页端单独申请，不是登录密码）
+    # 收件地址填在下方的 starbot.core.alert.mail.default-to，四项发件配置与收件地址缺一不可
 
 starbot:
   adapter:
@@ -118,6 +122,28 @@ starbot:
                                     # 相比邮件，直接推到管理员 QQ 无需另配发件服务，更实用
       qq-type: 0                    # 1 为群聊，0 为私聊。与 datasource.json 中推送目标的 type 同一套编码
       qq-num:                       # 接收告警的群号或 QQ 号
+
+      # ⚠️ QQ 告警走的是机器人自身的推送链路：OneBot 掉线或 QQ 掉登录时，
+      #    需要告警的正是这种时候，而 QQ 告警本身也一并失效了。
+      #    强烈建议同时配置下面两者之一，它们不经过机器人链路。
+
+      webhook-url:                  # Webhook 告警地址，留空则不启用。只需一个地址，无需密码
+      webhook-method: POST          # POST 提交 JSON；GET 把标题与内容拼进查询串（Bark 等用 GET）
+      webhook-title-field: title    # JSON 中承载标题的字段名。各服务约定不同，故做成可配置
+      webhook-content-field: content   # JSON 中承载内容的字段名
+      webhook-headers: {}           # 附加请求头，如 { Authorization: "Bearer xxx" }
+      # 常见服务的配法：
+      #   Bark（iOS 锁屏推送）：webhook-url 填 https://api.day.app/<你的key>
+      #                        webhook-method 填 GET，字段名保持 title/content 即可
+      #   Server 酱：webhook-url 填 https://sctapi.ftqq.com/<你的key>.send
+      #             webhook-content-field 改为 desp
+      #   钉钉/飞书群机器人：需要嵌套结构，当前的扁平字段不适用，建议改用 Bark 或 Server 酱
+
+    # 邮件告警。同样不经过机器人链路，可与 Webhook 并存。
+    # 注意：仅填下面的 default-to 还不够，发件服务需在文件顶部的 spring.mail 中配置
+    # （host / port / username / password 四项缺一不可），否则本通道不会生效
+    mail:
+      default-to:                   # 接收告警的收件邮箱，留空则不启用邮件告警
 
     config-ui:
       enabled: true                 # 是否启用配置界面
