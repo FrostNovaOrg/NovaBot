@@ -10,6 +10,7 @@ import com.starlwr.bot.core.sender.StarBotMessageSender;
 import com.starlwr.bot.core.util.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -22,7 +23,90 @@ final class PushHandlerSupport {
      */
     private static final String AT_ALL = "{at=all}";
 
+    /**
+     * 分条发送的分隔符，与 {@link com.starlwr.bot.core.model.Message#create} 的切分规则一致
+     */
+    private static final String NEXT = "{next}";
+
+    /**
+     * 分句分隔符：中英文标点与换行
+     */
+    private static final String CLAUSE_DELIMITERS = "，。！？；,.!?;\n";
+
     private PushHandlerSupport() {
+    }
+
+    /**
+     * 替换占位符；取值为空时改为移除占位符所在的整个分句
+     * <p>
+     * 「本场直播时长 {time}」这类修饰性片段在取值缺失时若只以空串替换，
+     * 会渲染出「……，本场直播时长 」这样的悬空半句。此处以中英文标点与换行为界
+     * 定位占位符所在分句，随分句一并移除其前导分隔符（分句位于句首时移除其后继分隔符）。
+     * {next} 是分条边界，分句不会跨越它；移除后变为空白的分条会被整条去掉。
+     * @param template 消息模板
+     * @param placeholder 占位符
+     * @param value 占位符取值
+     * @return 处理后的消息内容
+     */
+    static String replaceOrDropClause(String template, String placeholder, String value) {
+        if (StringUtil.isNotBlank(value)) {
+            return template.replace(placeholder, value);
+        }
+
+        List<String> kept = new ArrayList<>();
+        for (String part : template.split("\\{next}", -1)) {
+            String cleaned = dropClause(part, placeholder);
+            if (part.contains(placeholder) && StringUtil.isBlank(cleaned)) {
+                continue;
+            }
+            kept.add(cleaned);
+        }
+
+        return String.join(NEXT, kept);
+    }
+
+    /**
+     * 移除文本中包含指定占位符的分句
+     * @param text 单个分条内的文本
+     * @param placeholder 占位符
+     * @return 处理后的文本
+     */
+    private static String dropClause(String text, String placeholder) {
+        int index;
+        while ((index = text.indexOf(placeholder)) >= 0) {
+            int leadingDelimiter = -1;
+            int clauseStart = 0;
+            for (int i = index - 1; i >= 0; i--) {
+                if (CLAUSE_DELIMITERS.indexOf(text.charAt(i)) >= 0) {
+                    leadingDelimiter = i;
+                    clauseStart = i + 1;
+                    break;
+                }
+            }
+
+            int clauseEnd = text.length();
+            boolean hasTrailingDelimiter = false;
+            for (int i = index + placeholder.length(); i < text.length(); i++) {
+                if (CLAUSE_DELIMITERS.indexOf(text.charAt(i)) >= 0) {
+                    clauseEnd = i;
+                    hasTrailingDelimiter = true;
+                    break;
+                }
+            }
+
+            if (leadingDelimiter >= 0) {
+                // 连同前导分隔符一起移除，保留后继分隔符维持与下一分句的衔接
+                text = text.substring(0, leadingDelimiter) + text.substring(clauseEnd);
+            } else if (hasTrailingDelimiter) {
+                // 分句位于句首，改为移除后继分隔符
+                text = text.substring(clauseEnd + 1);
+            } else {
+                // 整段文本就是这一个分句
+                text = "";
+            }
+        }
+
+        return text;
     }
 
     /**

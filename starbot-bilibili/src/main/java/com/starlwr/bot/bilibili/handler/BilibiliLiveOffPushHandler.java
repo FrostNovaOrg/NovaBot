@@ -43,9 +43,10 @@ public class BilibiliLiveOffPushHandler implements StarBotEventHandler {
         JSONObject params = pushMessage.getParamsJsonObject();
         PushTarget target = pushMessage.getTarget();
 
-        String content = params.getString("message")
+        // 时长取不到时（如程序在开播后才启动，未记录到开播时间）移除 {time} 所在分句，
+        // 避免渲染出「……，本场直播时长 」这样的悬空半句
+        String content = PushHandlerSupport.replaceOrDropClause(params.getString("message"), "{time}", formatDuration(event))
                 .replace("{uname}", PushHandlerSupport.resolveUname(api, event.getSource()))
-                .replace("{time}", formatDuration(event))
                 .replace("{url}", "https://live.bilibili.com/" + event.getSource().getRoomId());
 
         PushHandlerSupport.send(sender, target, PushHandlerSupport.withAtAll(params, target, content));
@@ -96,7 +97,7 @@ public class BilibiliLiveOffPushHandler implements StarBotEventHandler {
     public JSONObject getDefaultParams() {
         JSONObject params = new JSONObject();
         params.put("at_all", false);
-        params.put("message", "{uname} 直播结束了");
+        params.put("message", "{uname} 直播结束了，本场直播时长 {time}");
         return params;
     }
 
