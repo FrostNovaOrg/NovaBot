@@ -15,10 +15,12 @@ import com.starlwr.bot.bilibili.event.live.BilibiliRandomGiftEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliShareEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliSuperChatEvent;
 import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
+import com.starlwr.bot.bilibili.util.DanmuWordUtil;
 import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
 import com.starlwr.bot.core.model.UserInfo;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.service.LiveDataService;
+import com.starlwr.bot.core.util.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
@@ -43,6 +45,12 @@ public class BilibiliLiveStatsAggregator {
     @Autowired
     public BilibiliLiveStatsAggregator(LiveDataService liveDataService) {
         this.liveDataService = liveDataService;
+
+        // jieba 词典首次加载约一秒，事件在直播间消息线程上同步分发，
+        // 放到后台线程预热，避免首条弹幕把消息处理卡住
+        Thread warmUp = new Thread(DanmuWordUtil::warmUp, "jieba-warm-up");
+        warmUp.setDaemon(true);
+        warmUp.start();
     }
 
     /**
@@ -52,6 +60,7 @@ public class BilibiliLiveStatsAggregator {
     public void onDanmu(BilibiliDanmuEvent event) {
         increment(event, BilibiliLiveMetric.DANMU_COUNT, 1);
         recordUser(event, BilibiliLiveMetric.DANMU_USERS, event.getSender());
+        recordWords(event, StringUtil.isNotBlank(event.getContentText()) ? event.getContentText() : event.getContent());
     }
 
     /**
@@ -201,5 +210,17 @@ public class BilibiliLiveStatsAggregator {
             return;
         }
         liveDataService.recordLiveMetricUser(event.getPlatform(), event.getSource().getUid(), metric, sender.getUid());
+    }
+
+    /**
+     * 弹幕分词入词频表，供弹幕词云绘制
+     */
+    private void recordWords(StarBotBaseLiveEvent event, String text) {
+        if (event.getSource() == null || event.getSource().getUid() == null) {
+            return;
+        }
+        for (String word : DanmuWordUtil.extractWords(text)) {
+            liveDataService.incrementLiveWordFrequency(event.getPlatform(), event.getSource().getUid(), word);
+        }
     }
 }

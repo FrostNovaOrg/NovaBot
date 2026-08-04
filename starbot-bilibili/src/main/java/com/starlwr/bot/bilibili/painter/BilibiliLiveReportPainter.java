@@ -1,30 +1,50 @@
 package com.starlwr.bot.bilibili.painter;
 
+import com.kennycason.kumo.CollisionMode;
+import com.kennycason.kumo.WordCloud;
+import com.kennycason.kumo.WordFrequency;
+import com.kennycason.kumo.bg.RectangleBackground;
+import com.kennycason.kumo.font.KumoFont;
+import com.kennycason.kumo.font.scale.SqrtFontScalar;
+import com.kennycason.kumo.image.AngleGenerator;
+import com.kennycason.kumo.palette.ColorPalette;
 import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
+import com.starlwr.bot.bilibili.model.Room;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.bilibili.util.DurationFormatUtil;
 import com.starlwr.bot.core.factory.StarBotCommonPainterFactory;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
+import com.starlwr.bot.core.model.TextWithStyle;
 import com.starlwr.bot.core.painter.CommonPainter;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.service.LiveDataService;
+import com.starlwr.bot.core.util.FontUtil;
 import com.starlwr.bot.core.util.ImageUtil;
 import com.starlwr.bot.core.util.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.awt.Color;
+import java.awt.Dimension;
+import java.awt.Font;
+import java.awt.Graphics2D;
 import java.awt.Point;
+import java.awt.image.BufferedImage;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
  * 下播报告绘制器
  * <p>
- * 把本场直播累计的统计指标绘制为报告图片。指标由 {@code BilibiliLiveStatsAggregator}
- * 在直播期间累计，为零的条目自动省略，不产生数据的冷清场次也能得到一张干净的报告。
+ * 把本场直播累计的统计指标绘制为报告图片：直播间封面横幅、头像、时长与收益概览、
+ * 数据卡片栅格与弹幕词云。为零的条目自动省略，封面或词云不可得时对应区块整体跳过，
+ * 冷清场次也能得到一张干净的报告。
  */
 @Slf4j
 @StarBotComponent
@@ -37,7 +57,7 @@ public class BilibiliLiveReportPainter {
     /**
      * 初始画布高度，绘制过程中按需自动扩展
      */
-    private static final int INITIAL_HEIGHT = 1200;
+    private static final int INITIAL_HEIGHT = 1600;
 
     /**
      * 画布圆角半径
@@ -50,25 +70,68 @@ public class BilibiliLiveReportPainter {
     private static final int MARGIN = 35;
 
     /**
-     * 头像尺寸
+     * 内容区宽度
+     */
+    private static final int CONTENT_WIDTH = WIDTH - MARGIN * 2;
+
+    /**
+     * 封面横幅高度
+     */
+    private static final int COVER_HEIGHT = 260;
+
+    /**
+     * 头像尺寸与白色描边宽度
      */
     private static final int AVATAR_SIZE = 100;
 
-    /**
-     * 数据行的行高
-     */
-    private static final int ROW_HEIGHT = 52;
+    private static final int AVATAR_RING = 5;
 
     /**
-     * 数据行取值列的横坐标
+     * 数据卡片：每行三张
      */
-    private static final int VALUE_X = MARGIN + 240;
+    private static final int CARD_COLUMNS = 3;
+
+    private static final int CARD_GAP = 18;
+
+    private static final int CARD_WIDTH = (CONTENT_WIDTH - CARD_GAP * (CARD_COLUMNS - 1)) / CARD_COLUMNS;
+
+    private static final int CARD_HEIGHT = 112;
+
+    private static final int CARD_RADIUS = 16;
+
+    /**
+     * 词云绘制尺寸
+     */
+    private static final int CLOUD_HEIGHT = 380;
+
+    /**
+     * 词云最多收录的词数
+     */
+    private static final int CLOUD_MAX_WORDS = 72;
+
+    /**
+     * 词云至少需要的独立词数，低于此数画出来只有零星几个词，不如不画
+     */
+    private static final int CLOUD_MIN_WORDS = 8;
 
     private static final Color COLOR_NAME = new Color(251, 114, 153);
 
     private static final Color COLOR_TIP = new Color(153, 162, 170);
 
     private static final Color COLOR_TEXT = new Color(51, 51, 51);
+
+    private static final Color COLOR_CARD = new Color(246, 247, 249);
+
+    /**
+     * 词云配色：哔哩哔哩粉蓝系
+     */
+    private static final List<Color> CLOUD_PALETTE = List.of(
+            new Color(251, 114, 153),
+            new Color(0, 174, 236),
+            new Color(255, 168, 61),
+            new Color(110, 199, 122),
+            new Color(120, 120, 130)
+    );
 
     private static final DateTimeFormatter TIME_FORMATTER =
             DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(ZoneId.of("Asia/Shanghai"));
@@ -79,11 +142,15 @@ public class BilibiliLiveReportPainter {
 
     private final LiveDataService liveDataService;
 
+    private final FontUtil fontUtil;
+
     @Autowired
-    public BilibiliLiveReportPainter(StarBotCommonPainterFactory factory, BilibiliApiUtil api, LiveDataService liveDataService) {
+    public BilibiliLiveReportPainter(StarBotCommonPainterFactory factory, BilibiliApiUtil api,
+                                     LiveDataService liveDataService, FontUtil fontUtil) {
         this.factory = factory;
         this.api = api;
         this.liveDataService = liveDataService;
+        this.fontUtil = fontUtil;
     }
 
     /**
@@ -98,7 +165,9 @@ public class BilibiliLiveReportPainter {
             painter.setPos(MARGIN, MARGIN);
 
             drawHeader(painter, platform, source);
-            drawRows(painter, platform, source.getUid());
+            drawOverview(painter, platform, source.getUid());
+            drawCards(painter, platform, source.getUid());
+            drawWordCloud(painter, platform, source.getUid());
 
             painter.movePos(0, 20);
             painter.drawCopyright(MARGIN);
@@ -115,27 +184,71 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
-     * 绘制头部：头像、昵称与直播起止时间
+     * 绘制头部：封面横幅、压在横幅下沿的圆形头像、昵称与直播起止时间。
+     * 封面不可得时退化为「头像 + 昵称」的简单头部
      */
     private void drawHeader(CommonPainter painter, String platform, LiveStreamerInfo source) {
-        int textX = MARGIN + AVATAR_SIZE + 25;
         int top = painter.getY();
+        BufferedImage cover = loadCover(source);
 
-        Optional.ofNullable(resolveFace(source))
+        BufferedImage face = Optional.ofNullable(resolveFace(source))
                 .flatMap(url -> api.getBilibiliImage(atSize(url)))
-                .map(face -> ImageUtil.maskToCircle(ImageUtil.resize(face, AVATAR_SIZE, AVATAR_SIZE)))
-                .ifPresent(face -> painter.drawImage(face, new Point(MARGIN, top)));
+                .map(image -> ImageUtil.maskToCircle(ImageUtil.resize(image, AVATAR_SIZE, AVATAR_SIZE)))
+                .orElse(null);
 
+        if (cover != null) {
+            painter.drawImage(cover, new Point(MARGIN, top));
+
+            // 头像叠在封面下沿，加白色描边与封面区隔
+            int avatarX = MARGIN + 28;
+            int avatarY = top + COVER_HEIGHT - AVATAR_SIZE / 2;
+            if (face != null) {
+                drawRingedAvatar(painter, face, avatarX, avatarY);
+            }
+
+            int textX = avatarX + AVATAR_SIZE + 22;
+            painter.drawSection(Optional.ofNullable(source.getUname()).orElse("未知主播"), COLOR_NAME, new Point(textX, top + COVER_HEIGHT + 4));
+            painter.drawTip("直播报告 · " + timeRange(platform, source.getUid()), COLOR_TIP, new Point(textX, top + COVER_HEIGHT + 52));
+
+            painter.setPos(MARGIN, top + COVER_HEIGHT + AVATAR_SIZE + 16);
+            return;
+        }
+
+        int textX = MARGIN + AVATAR_SIZE + 25;
+        if (face != null) {
+            painter.drawImage(face, new Point(MARGIN, top));
+        }
         painter.drawSection(Optional.ofNullable(source.getUname()).orElse("未知主播"), COLOR_NAME, new Point(textX, top + 8));
         painter.drawTip("直播报告 · " + timeRange(platform, source.getUid()), COLOR_TIP, new Point(textX, top + 58));
-
         painter.setPos(MARGIN, top + AVATAR_SIZE + 30);
     }
 
     /**
-     * 绘制统计数据行
+     * 绘制概览行：直播时长与本场收益
      */
-    private void drawRows(CommonPainter painter, String platform, Long uid) {
+    private void drawOverview(CommonPainter painter, String platform, Long uid) {
+        String duration = Optional.of(durationText(platform, uid)).filter(StringUtil::isNotBlank).orElse("未知");
+
+        double revenue = liveDataService.getLiveMetric(platform, uid, BilibiliLiveMetric.GIFT_VALUE)
+                + liveDataService.getLiveMetric(platform, uid, BilibiliLiveMetric.SUPER_CHAT_VALUE)
+                + liveDataService.getLiveMetric(platform, uid, BilibiliLiveMetric.GUARD_VALUE);
+
+        List<TextWithStyle> line = new ArrayList<>();
+        line.add(new TextWithStyle("直播时长 ", CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN));
+        line.add(new TextWithStyle(duration, CommonPainter.TEXT_FONT_SIZE, COLOR_TEXT, Font.BOLD));
+        if (revenue > 0) {
+            line.add(new TextWithStyle("    本场收益 ", CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN));
+            line.add(new TextWithStyle("¥" + yuan(revenue), CommonPainter.TEXT_FONT_SIZE, COLOR_NAME, Font.BOLD));
+        }
+
+        painter.drawTextWithStyle(line);
+        painter.movePos(0, 18);
+    }
+
+    /**
+     * 绘制数据卡片栅格，为零的卡片自动省略
+     */
+    private void drawCards(CommonPainter painter, String platform, Long uid) {
         long danmu = count(platform, uid, BilibiliLiveMetric.DANMU_COUNT);
         int danmuUsers = liveDataService.getLiveMetricUserCount(platform, uid, BilibiliLiveMetric.DANMU_USERS);
         double giftValue = liveDataService.getLiveMetric(platform, uid, BilibiliLiveMetric.GIFT_VALUE);
@@ -152,62 +265,146 @@ public class BilibiliLiveReportPainter {
         long follow = count(platform, uid, BilibiliLiveMetric.FOLLOW_COUNT);
         int enterUsers = liveDataService.getLiveMetricUserCount(platform, uid, BilibiliLiveMetric.ENTER_USERS);
         long likeTotal = count(platform, uid, BilibiliLiveMetric.LIKE_TOTAL);
-        int likeUsers = liveDataService.getLiveMetricUserCount(platform, uid, BilibiliLiveMetric.LIKE_USERS);
         long share = count(platform, uid, BilibiliLiveMetric.SHARE_COUNT);
 
-        drawRow(painter, "直播时长", Optional.of(durationText(platform, uid)).filter(StringUtil::isNotBlank).orElse("未知"));
-        drawRow(painter, "弹幕", danmu + " 条 · " + danmuUsers + " 人参与");
-
+        List<Card> cards = new ArrayList<>();
+        cards.add(new Card(String.valueOf(danmu), "弹幕 · " + danmuUsers + " 人参与"));
         if (giftValue > 0 || giftUsers > 0) {
-            drawRow(painter, "礼物", "¥" + yuan(giftValue) + " · " + giftUsers + " 人送出");
+            cards.add(new Card("¥" + yuan(giftValue), "礼物 · " + giftUsers + " 人送出"));
         }
-        if (freeGift > 0) {
-            drawRow(painter, "免费礼物", freeGift + " 个");
+        if (likeTotal > 0) {
+            cards.add(new Card(String.valueOf(likeTotal), "点赞"));
+        }
+        if (enterUsers > 0) {
+            cards.add(new Card(enterUsers + " 人", "进入直播间"));
+        }
+        if (follow > 0) {
+            cards.add(new Card("+" + follow, "新增关注"));
+        }
+        if (superChat > 0) {
+            cards.add(new Card(superChat + " 条", "醒目留言 · ¥" + yuan(superChatValue)));
+        }
+        if (captain > 0 || commander > 0 || governor > 0) {
+            cards.add(new Card("+" + (captain + commander + governor), "大航海 · ¥" + yuan(guardValue)));
         }
         if (box > 0) {
             String direction = boxProfit >= 0 ? "盈利" : "亏损";
-            drawRow(painter, "盲盒", box + " 个 · " + direction + " ¥" + yuan(Math.abs(boxProfit)));
+            cards.add(new Card(box + " 个", "盲盒 · " + direction + " ¥" + yuan(Math.abs(boxProfit))));
         }
-        if (superChat > 0) {
-            drawRow(painter, "醒目留言", superChat + " 条 · ¥" + yuan(superChatValue));
-        }
-        if (captain > 0 || commander > 0 || governor > 0) {
-            StringBuilder guard = new StringBuilder();
-            if (governor > 0) {
-                guard.append("总督 +").append(governor).append("  ");
-            }
-            if (commander > 0) {
-                guard.append("提督 +").append(commander).append("  ");
-            }
-            if (captain > 0) {
-                guard.append("舰长 +").append(captain).append("  ");
-            }
-            guard.append("· ¥").append(yuan(guardValue));
-            drawRow(painter, "大航海", guard.toString());
-        }
-        if (follow > 0) {
-            drawRow(painter, "新增关注", "+" + follow);
-        }
-        if (enterUsers > 0) {
-            drawRow(painter, "进入直播间", enterUsers + " 人");
-        }
-        if (likeTotal > 0 || likeUsers > 0) {
-            String value = likeTotal > 0 ? likeTotal + (likeUsers > 0 ? " · " + likeUsers + " 人参与" : "") : likeUsers + " 人参与";
-            drawRow(painter, "点赞", value);
+        if (freeGift > 0) {
+            cards.add(new Card(freeGift + " 个", "免费礼物"));
         }
         if (share > 0) {
-            drawRow(painter, "分享", share + " 次");
+            cards.add(new Card(share + " 次", "分享"));
+        }
+
+        int startY = painter.getY();
+        for (int i = 0; i < cards.size(); i++) {
+            int row = i / CARD_COLUMNS;
+            int column = i % CARD_COLUMNS;
+            int x = MARGIN + column * (CARD_WIDTH + CARD_GAP);
+            int y = startY + row * (CARD_HEIGHT + CARD_GAP);
+            drawCard(painter, cards.get(i), x, y);
+        }
+
+        int rows = (cards.size() + CARD_COLUMNS - 1) / CARD_COLUMNS;
+        painter.setPos(MARGIN, startY + rows * (CARD_HEIGHT + CARD_GAP) + 8);
+    }
+
+    /**
+     * 绘制单张数据卡片
+     */
+    private void drawCard(CommonPainter painter, Card card, int x, int y) {
+        painter.drawRoundedRectangle(x, y, CARD_WIDTH, CARD_HEIGHT, CARD_RADIUS, COLOR_CARD);
+        painter.drawTextWithStyle(
+                List.of(new TextWithStyle(card.value, 34, COLOR_TEXT, Font.BOLD)),
+                new Point(x + 20, y + 16));
+        painter.drawTextWithStyle(
+                List.of(new TextWithStyle(card.label, 22, COLOR_TIP, Font.PLAIN)),
+                new Point(x + 20, y + 68));
+    }
+
+    /**
+     * 绘制弹幕词云，词数不足或渲染失败时整体跳过
+     */
+    private void drawWordCloud(CommonPainter painter, String platform, Long uid) {
+        Map<String, Integer> frequencies = liveDataService.getLiveWordFrequencies(platform, uid);
+        if (frequencies.size() < CLOUD_MIN_WORDS) {
+            return;
+        }
+
+        try {
+            List<WordFrequency> words = frequencies.entrySet().stream()
+                    .sorted(Map.Entry.<String, Integer>comparingByValue(Comparator.reverseOrder()))
+                    .limit(CLOUD_MAX_WORDS)
+                    .map(entry -> new WordFrequency(entry.getKey(), entry.getValue()))
+                    .toList();
+
+            WordCloud cloud = new WordCloud(new Dimension(CONTENT_WIDTH, CLOUD_HEIGHT), CollisionMode.PIXEL_PERFECT);
+            cloud.setPadding(3);
+            cloud.setBackground(new RectangleBackground(new Dimension(CONTENT_WIDTH, CLOUD_HEIGHT)));
+            cloud.setBackgroundColor(new Color(0, 0, 0, 0));
+            cloud.setColorPalette(new ColorPalette(CLOUD_PALETTE));
+            cloud.setKumoFont(new KumoFont(fontUtil.findFontForCharacter('云')));
+            cloud.setFontScalar(new SqrtFontScalar(16, 62));
+            // 中文竖排可读性差，词一律横排
+            cloud.setAngleGenerator(new AngleGenerator(0));
+            cloud.build(new ArrayList<>(words));
+
+            painter.movePos(0, 6);
+            painter.drawTextWithStyle(List.of(new TextWithStyle("弹幕词云", CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN)));
+            painter.movePos(0, 8);
+            painter.drawImage(ImageUtil.maskToRoundedRectangle(cloud.getBufferedImage(), CARD_RADIUS));
+        } catch (Exception e) {
+            log.warn("绘制弹幕词云失败, 报告将不含词云: {}", e.getMessage());
         }
     }
 
     /**
-     * 绘制一行「标签 + 取值」
+     * 绘制带白色描边的圆形头像
      */
-    private void drawRow(CommonPainter painter, String label, String value) {
-        int y = painter.getY();
-        painter.drawText(label, COLOR_TIP, new Point(MARGIN, y));
-        painter.drawText(value, COLOR_TEXT, new Point(VALUE_X, y));
-        painter.setPos(MARGIN, y + ROW_HEIGHT);
+    private void drawRingedAvatar(CommonPainter painter, BufferedImage face, int x, int y) {
+        int ringSize = AVATAR_SIZE + AVATAR_RING * 2;
+        BufferedImage ring = new BufferedImage(ringSize, ringSize, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D graphics = ring.createGraphics();
+        graphics.setColor(Color.WHITE);
+        graphics.fillRect(0, 0, ringSize, ringSize);
+        graphics.dispose();
+        painter.drawImage(ImageUtil.maskToCircle(ring), new Point(x - AVATAR_RING, y - AVATAR_RING));
+        painter.drawImage(face, new Point(x, y));
+    }
+
+    /**
+     * 获取直播间封面并裁剪为横幅：不可得时返回 null，头部退化为简单版式
+     */
+    private BufferedImage loadCover(LiveStreamerInfo source) {
+        if (source.getRoomId() == null) {
+            return null;
+        }
+
+        try {
+            Room room = api.getLiveInfoByRoomId(source.getRoomId());
+            if (room == null || StringUtil.isBlank(room.getCover())) {
+                return null;
+            }
+
+            return api.getBilibiliImage(room.getCover())
+                    .map(cover -> {
+                        BufferedImage scaled = ImageUtil.resizeByWidth(cover, CONTENT_WIDTH);
+                        if (scaled.getHeight() < COVER_HEIGHT) {
+                            scaled = ImageUtil.resizeByHeight(cover, COVER_HEIGHT);
+                        }
+                        int cropX = Math.max(0, (scaled.getWidth() - CONTENT_WIDTH) / 2);
+                        int cropY = Math.max(0, (scaled.getHeight() - COVER_HEIGHT) / 2);
+                        BufferedImage banner = scaled.getSubimage(cropX, cropY,
+                                Math.min(CONTENT_WIDTH, scaled.getWidth()), Math.min(COVER_HEIGHT, scaled.getHeight()));
+                        return ImageUtil.maskToRoundedRectangle(banner, CANVAS_RADIUS - 5);
+                    })
+                    .orElse(null);
+        } catch (Exception e) {
+            log.debug("获取直播间 {} 的封面失败: {}", source.getRoomId(), e.getMessage());
+            return null;
+        }
     }
 
     /**
@@ -276,5 +473,11 @@ public class BilibiliLiveReportPainter {
             return url;
         }
         return url + "@" + AVATAR_SIZE + "w.webp";
+    }
+
+    /**
+     * 数据卡片：取值与标签
+     */
+    private record Card(String value, String label) {
     }
 }

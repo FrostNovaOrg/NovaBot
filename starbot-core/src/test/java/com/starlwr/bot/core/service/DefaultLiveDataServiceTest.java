@@ -96,4 +96,25 @@ class DefaultLiveDataServiceTest {
 
         assertEquals(123456L, service.getLiveStartTime(PLATFORM, UID).orElseThrow());
     }
+
+    @Test
+    @DisplayName("词频应逐次累计")
+    void wordFrequencyAccumulates() {
+        service.incrementLiveWordFrequency(PLATFORM, UID, "唱歌");
+        service.incrementLiveWordFrequency(PLATFORM, UID, "唱歌");
+        service.incrementLiveWordFrequency(PLATFORM, UID, "好听");
+
+        assertEquals(2, service.getLiveWordFrequencies(PLATFORM, UID).get("唱歌"));
+        assertEquals(1, service.getLiveWordFrequencies(PLATFORM, UID).get("好听"));
+    }
+
+    @Test
+    @DisplayName("重置直播数据应一并清空词频")
+    void resetClearsWordFrequencies() {
+        service.incrementLiveWordFrequency(PLATFORM, UID, "唱歌");
+
+        service.resetLiveData(PLATFORM, UID);
+
+        assertEquals(0, service.getLiveWordFrequencies(PLATFORM, UID).size());
+    }
 }

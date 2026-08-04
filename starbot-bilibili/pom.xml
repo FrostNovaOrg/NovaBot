@@ -38,6 +38,16 @@
             <artifactId>caffeine</artifactId>
         </dependency>
 
+        <!-- 弹幕词云：jieba 分词 + kumo 渲染 -->
+        <dependency>
+            <groupId>com.huaban</groupId>
+            <artifactId>jieba-analysis</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.kennycason</groupId>
+            <artifactId>kumo-core</artifactId>
+        </dependency>
+
         <!-- 扫码登录页面 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

@@ -8,6 +8,8 @@
 
     <logger name="org.reflections.Reflections" level="OFF"/>
     <logger name="org.apache.catalina.loader.WebappLoader" level="OFF"/>
+    <!-- 词云渲染每放置一个词就输出一行 INFO，一张报告能刷几十行 -->
+    <logger name="com.kennycason.kumo" level="WARN"/>
 
     <appender name="Console" class="ch.qos.logback.core.ConsoleAppender">
         <filter class="ch.qos.logback.classic.filter.ThresholdFilter">

@@ -331,6 +331,63 @@ public class DefaultLiveDataService implements LiveDataService {
         return byUid.getJSONObject(String.valueOf(uid));
     }
 
+    /**
+     * 词频表的词汇量上限，超过后不再收录新词（已收录的词仍会累计）
+     */
+    private static final int WORD_FREQUENCY_LIMIT = 5_000;
+
+    /**
+     * 累计本场直播的词频
+     *
+     * @param platform 直播平台
+     * @param uid      UID
+     * @param word     词语
+     */
+    @Override
+    public void incrementLiveWordFrequency(@NonNull String platform, @NonNull Long uid, @NonNull String word) {
+        synchronized (metricLock) {
+            String key = "LiveWordFrequency:" + platform;
+            cache.putIfAbsent(key, new JSONObject());
+            JSONObject byUid = cache.getJSONObject(key);
+            byUid.putIfAbsent(String.valueOf(uid), new JSONObject());
+            JSONObject words = byUid.getJSONObject(String.valueOf(uid));
+
+            Integer current = words.getInteger(word);
+            if (current == null && words.size() >= WORD_FREQUENCY_LIMIT) {
+                return;
+            }
+            words.put(word, current == null ? 1 : current + 1);
+        }
+    }
+
+    /**
+     * 获取本场直播的词频表
+     *
+     * @param platform 直播平台
+     * @param uid      UID
+     * @return 词语到出现次数的映射，未记录时为空表
+     */
+    @Override
+    public java.util.Map<String, Integer> getLiveWordFrequencies(@NonNull String platform, @NonNull Long uid) {
+        synchronized (metricLock) {
+            JSONObject words = Optional.ofNullable(cache.getJSONObject("LiveWordFrequency:" + platform))
+                    .map(data -> data.getJSONObject(String.valueOf(uid)))
+                    .orElse(null);
+            if (words == null) {
+                return java.util.Map.of();
+            }
+
+            java.util.Map<String, Integer> result = new java.util.HashMap<>();
+            for (String word : words.keySet()) {
+                Integer count = words.getInteger(word);
+                if (count != null) {
+                    result.put(word, count);
+                }
+            }
+            return result;
+        }
+    }
+
     // ================ 其他操作 ================
 
     /**
@@ -347,6 +404,8 @@ public class DefaultLiveDataService implements LiveDataService {
             Optional.ofNullable(cache.getJSONObject("LiveMetric:" + platform))
                     .ifPresent(data -> data.remove(String.valueOf(uid)));
             Optional.ofNullable(cache.getJSONObject("LiveMetricUser:" + platform))
+                    .ifPresent(data -> data.remove(String.valueOf(uid)));
+            Optional.ofNullable(cache.getJSONObject("LiveWordFrequency:" + platform))
                     .ifPresent(data -> data.remove(String.valueOf(uid)));
         }
     }

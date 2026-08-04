@@ -125,4 +125,25 @@ public interface LiveDataService {
     default int getLiveMetricUserCount(@NonNull String platform, @NonNull Long uid, @NonNull String metric) {
         return 0;
     }
+
+    /**
+     * 累计本场直播的词频，用于绘制弹幕词云
+     * <p>
+     * 存储的是分词后的词频而非弹幕原文：体积有上界，且能随直播数据一并持久化
+     * @param platform 直播平台
+     * @param uid UID
+     * @param word 词语
+     */
+    default void incrementLiveWordFrequency(@NonNull String platform, @NonNull Long uid, @NonNull String word) {
+    }
+
+    /**
+     * 获取本场直播的词频表
+     * @param platform 直播平台
+     * @param uid UID
+     * @return 词语到出现次数的映射，未记录时为空表
+     */
+    default java.util.Map<String, Integer> getLiveWordFrequencies(@NonNull String platform, @NonNull Long uid) {
+        return java.util.Map.of();
+    }
 }

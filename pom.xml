@@ -69,6 +69,9 @@
         <!-- org.brotli:dec 在 Maven Central 上仅发布过 0.1.2 这一个版本 -->
         <brotli.version>0.1.2</brotli.version>
         <caffeine.version>3.2.0</caffeine.version>
+        <!-- 弹幕词云：jieba 的 Java 移植负责分词，kumo 负责词云渲染 -->
+        <jieba-analysis.version>1.0.2</jieba-analysis.version>
+        <kumo.version>1.28</kumo.version>
     </properties>
 
     <dependencyManagement>
@@ -118,6 +121,16 @@
                 <groupId>com.github.ben-manes.caffeine</groupId>
                 <artifactId>caffeine</artifactId>
                 <version>${caffeine.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.huaban</groupId>
+                <artifactId>jieba-analysis</artifactId>
+                <version>${jieba-analysis.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.kennycason</groupId>
+                <artifactId>kumo-core</artifactId>
+                <version>${kumo.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

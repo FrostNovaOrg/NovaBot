@@ -1,6 +1,7 @@
 package com.starlwr.bot.bilibili.painter;
 
 import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
+import com.starlwr.bot.bilibili.model.Room;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.factory.StarBotCommonPainterFactory;
@@ -25,6 +26,7 @@ import java.util.Properties;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -68,16 +70,24 @@ class BilibiliLiveReportPainterTest {
         StarBotCommonPainterFactory factory =
                 new StarBotCommonPainterFactory(new BuildProperties(buildInfo), coreProperties, fontUtil);
 
-        BufferedImage placeholder = new BufferedImage(200, 200, BufferedImage.TYPE_INT_ARGB);
+        BufferedImage placeholder = new BufferedImage(640, 360, BufferedImage.TYPE_INT_ARGB);
         Graphics2D graphics = placeholder.createGraphics();
         graphics.setColor(new Color(120, 170, 220));
-        graphics.fillRect(0, 0, 200, 200);
+        graphics.fillRect(0, 0, 640, 360);
+        graphics.setColor(new Color(90, 140, 190));
+        graphics.fillOval(180, 60, 280, 240);
         graphics.dispose();
         BilibiliApiUtil api = mock(BilibiliApiUtil.class);
         when(api.getBilibiliImage(anyString())).thenReturn(Optional.of(placeholder));
 
+        // 直播间信息返回带封面的房间，覆盖封面横幅版式
+        Room room = new Room();
+        room.setTitle("测试直播间");
+        room.setCover("https://pic.example/cover.jpg");
+        when(api.getLiveInfoByRoomId(anyLong())).thenReturn(room);
+
         liveDataService = new DefaultLiveDataService(new StarBotCoreProperties());
-        painter = new BilibiliLiveReportPainter(factory, api, liveDataService);
+        painter = new BilibiliLiveReportPainter(factory, api, liveDataService, fontUtil);
     }
 
     @Test
@@ -100,6 +110,14 @@ class BilibiliLiveReportPainterTest {
         liveDataService.recordLiveMetricUser(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.ENTER_USERS, 3L);
         liveDataService.maxLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.LIKE_TOTAL, 1024);
         liveDataService.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.SHARE_COUNT, 3);
+
+        // 词频喂满词云的最低词数门槛，覆盖词云版式
+        String[] words = {"晚上好", "唱歌", "好听", "打游戏", "厉害", "加油", "可爱", "再来一首", "笑死", "太强了", "岁月史书", "下次一定"};
+        for (int i = 0; i < words.length; i++) {
+            for (int j = 0; j <= i * 2; j++) {
+                liveDataService.incrementLiveWordFrequency(PLATFORM, STREAMER.getUid(), words[i]);
+            }
+        }
 
         Optional<String> base64 = painter.paint(PLATFORM, STREAMER);
 
