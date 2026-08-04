@@ -10,6 +10,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 默认直播数据服务测试
@@ -199,5 +200,49 @@ class DefaultLiveDataServiceTest {
         service.resetLiveData(PLATFORM, UID);
 
         assertEquals(0, service.getLiveWordFrequencies(PLATFORM, UID).size());
+    }
+
+    @Test
+    @DisplayName("指标快照应含全部本场指标，供并入累计")
+    void snapshotsLiveMetrics() {
+        service.incrementLiveMetric(PLATFORM, UID, "danmu_count", 144);
+        service.incrementLiveMetric(PLATFORM, UID, "gift_value", 0.4);
+
+        java.util.Map<String, Double> snapshot = service.liveMetrics(PLATFORM, UID);
+
+        assertEquals(2, snapshot.size());
+        assertEquals(144.0, snapshot.get("danmu_count"));
+        assertEquals(0.4, snapshot.get("gift_value"));
+    }
+
+    @Test
+    @DisplayName("用户计分快照应按指标分组保留每个用户的得分")
+    void snapshotsLiveUserMetrics() {
+        service.incrementLiveUserMetric(PLATFORM, UID, "danmu_users", 1L, 3);
+        service.incrementLiveUserMetric(PLATFORM, UID, "danmu_users", 2L, 5);
+        service.incrementLiveUserMetric(PLATFORM, UID, "gift_users", 1L, 52.5);
+
+        java.util.Map<String, java.util.Map<Long, Double>> snapshot = service.liveUserMetrics(PLATFORM, UID);
+
+        assertEquals(2, snapshot.size());
+        assertEquals(3.0, snapshot.get("danmu_users").get(1L));
+        assertEquals(5.0, snapshot.get("danmu_users").get(2L));
+        assertEquals(52.5, snapshot.get("gift_users").get(1L));
+    }
+
+    @Test
+    @DisplayName("昵称快照应可用于累计存储的展示")
+    void snapshotsLiveUserNames() {
+        service.recordLiveUserName(PLATFORM, UID, 1L, "甲乙丙");
+
+        assertEquals("甲乙丙", service.liveUserNames(PLATFORM, UID).get(1L));
+    }
+
+    @Test
+    @DisplayName("无数据时快照应为空表而非报错")
+    void snapshotsEmptyWhenNoData() {
+        assertTrue(service.liveMetrics(PLATFORM, UID).isEmpty());
+        assertTrue(service.liveUserMetrics(PLATFORM, UID).isEmpty());
+        assertTrue(service.liveUserNames(PLATFORM, UID).isEmpty());
     }
 }
