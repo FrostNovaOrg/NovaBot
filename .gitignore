@@ -33,3 +33,6 @@ docs/WORK-STATE.md
 # ---- 系统 ----
 .DS_Store
 Thumbs.db
+
+# 本机运维备忘，含服务器与账号信息，不进仓库
+docs/OPS-NOTES.md

@@ -249,7 +249,8 @@ docker run -d --name starbot --restart unless-stopped \
 
 ## 资源占用
 
-空载实测常驻内存 105–110 MB。默认 JVM 参数已针对小内存机器调校（见 `start.sh`），
+空载实测常驻内存 105–110 MB；**实际带负载**（监听 1 位主播、直播间长连接与 OneBot 双通道均已建立）
+实测约 302 MB，规划容量请以后者为准。默认 JVM 参数已针对小内存机器调校（见 `start.sh`），
 完整的实测数据、测量条件与调优手段见 [docs/performance.md](docs/performance.md)。
 
 ## 许可证
