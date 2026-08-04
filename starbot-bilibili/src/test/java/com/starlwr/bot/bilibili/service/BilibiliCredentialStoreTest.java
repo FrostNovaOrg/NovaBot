@@ -74,6 +74,26 @@ class BilibiliCredentialStoreTest {
     }
 
     @Test
+    @DisplayName("TV 端登录的续期令牌也应完整存回")
+    void keepsAppTokensAcrossRoundTrip() {
+        // 本类的读写是逐字段显式映射，Cookies 新增字段若忘了同步就会被静默丢弃，
+        // 表现为重启后自动续期能力凭空消失——真机上已经踩过一次
+        Cookies cookies = sample();
+        cookies.setRefreshToken("refresh-token-value");
+        cookies.setAccessToken("access-token-value");
+        cookies.setAccessTokenExpiresAt(1900000000000L);
+
+        store().save(cookies);
+
+        Cookies loaded = store().load().orElseThrow();
+        assertRoundTrip(loaded);
+        assertEquals("refresh-token-value", loaded.getRefreshToken());
+        assertEquals("access-token-value", loaded.getAccessToken());
+        assertEquals(1900000000000L, loaded.getAccessTokenExpiresAt());
+        assertTrue(loaded.isAppRefreshable(), "读回的凭据应仍具备 oauth2 续期能力");
+    }
+
+    @Test
     @DisplayName("落盘内容不含任何明文凭据")
     void storedContentHasNoPlaintext() throws Exception {
         store().save(sample());

@@ -275,6 +275,10 @@ public class BilibiliCredentialStore {
         json.put("biliJct", cookies.getBiliJct());
         json.put("buvid3", cookies.getBuvid3());
         json.put("refreshToken", cookies.getRefreshToken());
+        // TV 端登录取得的续期令牌。本方法是逐字段显式映射，Cookies 新增字段时必须同步补在这里，
+        // 否则字段会在落盘时被静默丢弃——表现为重启后自动续期能力莫名消失
+        json.put("accessToken", cookies.getAccessToken());
+        json.put("accessTokenExpiresAt", cookies.getAccessTokenExpiresAt());
         return json;
     }
 
@@ -287,12 +291,16 @@ public class BilibiliCredentialStore {
      * @return 凭据
      */
     private Cookies toCookies(JSONObject json) {
-        return new Cookies(
+        Cookies cookies = new Cookies(
                 firstNonNull(json, "sessData", "SESSDATA"),
                 firstNonNull(json, "biliJct", "bili_jct"),
                 firstNonNull(json, "buvid3", "BUVID3"),
                 firstNonNull(json, "refreshToken", "refresh_token", "ac_time_value")
         );
+
+        cookies.setAccessToken(firstNonNull(json, "accessToken", "access_token", "access_key"));
+        cookies.setAccessTokenExpiresAt(json.getLong("accessTokenExpiresAt"));
+        return cookies;
     }
 
     private String firstNonNull(JSONObject json, String... keys) {

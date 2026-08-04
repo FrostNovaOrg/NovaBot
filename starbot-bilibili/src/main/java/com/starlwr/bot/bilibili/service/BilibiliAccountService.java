@@ -16,6 +16,8 @@ import org.springframework.context.event.EventListener;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -364,6 +366,7 @@ public class BilibiliAccountService {
                 this.loginUid = uid;
                 this.loggedIn = true;
                 log.info("已使用保存的登录凭据登录, uid: {}", uid);
+                logCredentialCapability(api.getCookies());
                 return true;
             }
 
@@ -462,16 +465,42 @@ public class BilibiliAccountService {
                 continue;
             }
 
-            store.save(api.getCookies());
+            Cookies logged = api.getCookies();
+            store.save(logged);
             this.pendingQrCodeContent = null;
             this.loginUid = api.getLoginUid();
             this.loggedIn = true;
 
             log.info("登录成功, uid: {}", loginUid);
+            logCredentialCapability(logged);
             return true;
         }
 
         return false;
+    }
+
+    /**
+     * 说明本次取得的凭据具备何种续期能力
+     * <p>
+     * 「能不能自动续期」直接决定使用者要不要每月重新扫码，登录当下就该讲清楚，
+     * 而不是等某天掉登录才发现。遵循本项目既有约定：<b>只输出结构与有效期，不输出任何凭据取值</b>。
+     * @param cookies 本次登录取得的凭据
+     */
+    private void logCredentialCapability(Cookies cookies) {
+        // 这只是一条说明性日志，任何情况下都不该影响登录本身
+        if (cookies == null) {
+            return;
+        }
+
+        if (cookies.isAppRefreshable()) {
+            Long expiresAt = cookies.getAccessTokenExpiresAt();
+            log.info("已取得可自动续期的登录令牌{}", expiresAt == null ? ""
+                    : ", 有效期至 " + LocalDate.ofInstant(Instant.ofEpochMilli(expiresAt), ZoneId.systemDefault()));
+        } else if (cookies.isRefreshable()) {
+            log.info("已取得网页端刷新口令, 续期将走网页端链路");
+        } else {
+            log.warn("本次登录未取得任何刷新口令, 凭据到期后需要重新扫码");
+        }
     }
 
     /**
