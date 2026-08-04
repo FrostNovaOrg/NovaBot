@@ -2,6 +2,7 @@ package com.starlwr.bot.core.service;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.model.UserScore;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,7 +15,14 @@ import org.springframework.stereotype.Service;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -217,6 +225,13 @@ public class DefaultLiveDataService implements LiveDataService {
     private static final int METRIC_USER_LIMIT = 100_000;
 
     /**
+     * 已就用户数上限告警过的「主播 + 指标」，用于每种组合只警告一次
+     * <p>
+     * 达到上限后每条弹幕都会走到该分支，不去重会瞬间刷屏
+     */
+    private final Set<String> userLimitWarned = ConcurrentHashMap.newKeySet();
+
+    /**
      * 统计指标的写锁
      * <p>
      * 指标随直播间消息高频写入（弹幕高峰可达每秒数百条），与自动保存的序列化并发时
@@ -275,17 +290,20 @@ public class DefaultLiveDataService implements LiveDataService {
     }
 
     /**
-     * 记录参与某项互动的用户
+     * 累加某个用户在本场直播的得分
      * <p>
-     * 以「用户 UID → 1」的映射而非数组存储，含判重的写入是 O(1)
+     * 以「用户 UID → 得分」的映射而非数组存储，含判重的写入是 O(1)。
+     * 独立人数即该映射的大小，因此计分与计人数共用同一份数据。
      *
      * @param platform 直播平台
-     * @param uid      UID
+     * @param uid      主播 UID
      * @param metric   指标名
-     * @param userUid  参与用户的 UID
+     * @param userUid  用户 UID
+     * @param delta    增量
      */
     @Override
-    public void recordLiveMetricUser(@NonNull String platform, @NonNull Long uid, @NonNull String metric, @NonNull Long userUid) {
+    public void incrementLiveUserMetric(@NonNull String platform, @NonNull Long uid, @NonNull String metric,
+                                        @NonNull Long userUid, double delta) {
         synchronized (metricLock) {
             String key = "LiveMetricUser:" + platform;
             cache.putIfAbsent(key, new JSONObject());
@@ -295,10 +313,90 @@ public class DefaultLiveDataService implements LiveDataService {
             byMetric.putIfAbsent(metric, new JSONObject());
             JSONObject users = byMetric.getJSONObject(metric);
 
-            if (users.size() < METRIC_USER_LIMIT) {
-                users.put(String.valueOf(userUid), 1);
+            String userKey = String.valueOf(userUid);
+            Double current = users.getDouble(userKey);
+            if (current == null) {
+                // 已达上限时不再收录新用户，但已在表内的继续累加：
+                // 丢弃新用户只影响长尾，而中断已有用户的累加会让其数据凭空变小
+                if (users.size() >= METRIC_USER_LIMIT) {
+                    if (userLimitWarned.add(uid + ":" + metric)) {
+                        log.warn("主播 {} 的 {} 计分表已达 {} 人上限, 后续新用户不再收录, 排行榜与人数统计会偏小",
+                                uid, metric, METRIC_USER_LIMIT);
+                    }
+                    return;
+                }
+                users.put(userKey, delta);
+            } else {
+                users.put(userKey, current + delta);
             }
         }
+    }
+
+    /**
+     * 获取某个用户在本场直播的得分
+     *
+     * @param platform 直播平台
+     * @param uid      主播 UID
+     * @param metric   指标名
+     * @param userUid  用户 UID
+     * @return 得分，未记录时为 0
+     */
+    @Override
+    public double getLiveUserMetric(@NonNull String platform, @NonNull Long uid, @NonNull String metric,
+                                    @NonNull Long userUid) {
+        synchronized (metricLock) {
+            return Optional.ofNullable(users(platform, uid, metric))
+                    .map(users -> users.getDoubleValue(String.valueOf(userUid)))
+                    .orElse(0.0);
+        }
+    }
+
+    /**
+     * 获取本场直播某项指标的用户排行
+     *
+     * @param platform 直播平台
+     * @param uid      主播 UID
+     * @param metric   指标名
+     * @param limit    取前多少名
+     * @return 按得分降序排列的用户
+     */
+    @Override
+    public List<UserScore> getLiveUserRanking(@NonNull String platform, @NonNull Long uid, @NonNull String metric, int limit) {
+        if (limit <= 0) {
+            return List.of();
+        }
+
+        synchronized (metricLock) {
+            JSONObject users = users(platform, uid, metric);
+            if (users == null) {
+                return List.of();
+            }
+
+            // JSON 结构不像 Redis 的 zset 那样自带排序，只能取出后在内存里排。
+            // 单直播间的用户数有上限，这个开销可以接受，且排行榜只在下播与查询时才取
+            List<UserScore> scores = new ArrayList<>(users.size());
+            for (String userKey : users.keySet()) {
+                try {
+                    scores.add(new UserScore(Long.parseLong(userKey), users.getDoubleValue(userKey)));
+                } catch (NumberFormatException e) {
+                    // 手工编辑数据文件等情况下可能混入非法键，跳过即可，不必让整个排行榜失败
+                    log.debug("跳过计分表中的非法用户键: {}", userKey);
+                }
+            }
+
+            scores.sort(Comparator.comparingDouble(UserScore::score).reversed());
+            return scores.size() <= limit ? scores : List.copyOf(scores.subList(0, limit));
+        }
+    }
+
+    /**
+     * 取出某项指标的用户计分表，调用方需持有 {@link #metricLock}
+     */
+    private JSONObject users(String platform, Long uid, String metric) {
+        return Optional.ofNullable(cache.getJSONObject("LiveMetricUser:" + platform))
+                .map(data -> data.getJSONObject(String.valueOf(uid)))
+                .map(byMetric -> byMetric.getJSONObject(metric))
+                .orElse(null);
     }
 
     /**
@@ -368,16 +466,16 @@ public class DefaultLiveDataService implements LiveDataService {
      * @return 词语到出现次数的映射，未记录时为空表
      */
     @Override
-    public java.util.Map<String, Integer> getLiveWordFrequencies(@NonNull String platform, @NonNull Long uid) {
+    public Map<String, Integer> getLiveWordFrequencies(@NonNull String platform, @NonNull Long uid) {
         synchronized (metricLock) {
             JSONObject words = Optional.ofNullable(cache.getJSONObject("LiveWordFrequency:" + platform))
                     .map(data -> data.getJSONObject(String.valueOf(uid)))
                     .orElse(null);
             if (words == null) {
-                return java.util.Map.of();
+                return Map.of();
             }
 
-            java.util.Map<String, Integer> result = new java.util.HashMap<>();
+            Map<String, Integer> result = new HashMap<>();
             for (String word : words.keySet()) {
                 Integer count = words.getInteger(word);
                 if (count != null) {

@@ -1,7 +1,10 @@
 package com.starlwr.bot.core.service;
 
+import com.starlwr.bot.core.model.UserScore;
 import lombok.NonNull;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -107,12 +110,16 @@ public interface LiveDataService {
 
     /**
      * 记录参与某项互动的用户，用于独立人数统计
+     * <p>
+     * 等价于以增量 1 调用 {@link #incrementLiveUserMetric}：独立人数就是「计分表里有几个人」。
+     * 保留本方法是因为它的调用点语义更直白（只关心「有没有参与」而非「参与了多少」）。
      * @param platform 直播平台
      * @param uid UID
      * @param metric 指标名
      * @param userUid 参与用户的 UID
      */
     default void recordLiveMetricUser(@NonNull String platform, @NonNull Long uid, @NonNull String metric, @NonNull Long userUid) {
+        incrementLiveUserMetric(platform, uid, metric, userUid, 1);
     }
 
     /**
@@ -124,6 +131,106 @@ public interface LiveDataService {
      */
     default int getLiveMetricUserCount(@NonNull String platform, @NonNull Long uid, @NonNull String metric) {
         return 0;
+    }
+
+    // ================ 按用户计分（排行榜与个人数据） ================
+    // 与上面的「本场指标」是两个维度：那边记总量，这边记「每个用户各贡献了多少」。
+    // 排行榜取前 N 名，个人数据查单个用户，独立人数即计分表的大小。
+
+    /**
+     * 累加某个用户在本场直播的得分
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @param metric 指标名
+     * @param userUid 用户 UID
+     * @param delta 增量
+     */
+    default void incrementLiveUserMetric(@NonNull String platform, @NonNull Long uid, @NonNull String metric,
+                                         @NonNull Long userUid, double delta) {
+    }
+
+    /**
+     * 获取某个用户在本场直播的得分
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @param metric 指标名
+     * @param userUid 用户 UID
+     * @return 得分，未记录时为 0
+     */
+    default double getLiveUserMetric(@NonNull String platform, @NonNull Long uid, @NonNull String metric,
+                                     @NonNull Long userUid) {
+        return 0;
+    }
+
+    /**
+     * 获取本场直播某项指标的用户排行
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @param metric 指标名
+     * @param limit 取前多少名
+     * @return 按得分降序排列的用户，不足时返回实际数量
+     */
+    default List<UserScore> getLiveUserRanking(
+            @NonNull String platform, @NonNull Long uid, @NonNull String metric, int limit) {
+        return List.of();
+    }
+
+    // ================ 累计数据 ================
+    // 跨场次累计，数据量随时间无限增长，因此只有配置了外部存储（如 Redis）的实现才支持。
+    // 未配置时一律返回「不支持」，由调用方明确告知使用者，不可静默返回 0——
+    // 那会让人以为是数据丢了，而不是没开这个能力。
+
+    /**
+     * 当前实现是否支持累计数据
+     * @return 是否支持
+     */
+    default boolean supportsTotalData() {
+        return false;
+    }
+
+    /**
+     * 把本场数据并入累计，在下播时调用
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     */
+    default void mergeLiveDataIntoTotal(@NonNull String platform, @NonNull Long uid) {
+    }
+
+    /**
+     * 获取累计的统计指标
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @param metric 指标名
+     * @return 指标值，不支持或未记录时为 0
+     */
+    default double getTotalMetric(@NonNull String platform, @NonNull Long uid, @NonNull String metric) {
+        return 0;
+    }
+
+    /**
+     * 获取某个用户的累计得分
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @param metric 指标名
+     * @param userUid 用户 UID
+     * @return 得分，不支持或未记录时为 0
+     */
+    default double getTotalUserMetric(@NonNull String platform, @NonNull Long uid, @NonNull String metric,
+                                      @NonNull Long userUid) {
+        return 0;
+    }
+
+    /**
+     * 获取累计的用户排行
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @param metric 指标名
+     * @param limit 取前多少名
+     * @return 按得分降序排列的用户，不支持时为空
+     */
+    default List<UserScore> getTotalUserRanking(
+            @NonNull String platform, @NonNull Long uid, @NonNull String metric, int limit) {
+        return List.of();
     }
 
     /**
@@ -143,7 +250,7 @@ public interface LiveDataService {
      * @param uid UID
      * @return 词语到出现次数的映射，未记录时为空表
      */
-    default java.util.Map<String, Integer> getLiveWordFrequencies(@NonNull String platform, @NonNull Long uid) {
-        return java.util.Map.of();
+    default Map<String, Integer> getLiveWordFrequencies(@NonNull String platform, @NonNull Long uid) {
+        return Map.of();
     }
 }
