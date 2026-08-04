@@ -12,12 +12,12 @@
 
     <groupId>com.starlwr</groupId>
     <artifactId>starbot-parent</artifactId>
-    <version>3.0.0</version>
+    <version>4.0.0</version>
     <packaging>pom</packaging>
 
-    <name>StarBot</name>
-    <description>StarBot 3.0 聚合构建 — 哔哩哔哩推送机器人</description>
-    <url>https://bot.starlwr.com</url>
+    <name>NovaBot</name>
+    <description>NovaBot 聚合构建 — 哔哩哔哩直播与动态推送机器人</description>
+    <url>https://github.com/rossinova/NovaBot</url>
 
     <licenses>
         <license>
@@ -57,7 +57,7 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
         <!-- StarBot 自身构件版本 -->
-        <starbot-core.version>3.0.0</starbot-core.version>
+        <starbot-core.version>4.0.0</starbot-core.version>
         <starbot-plugin-processor.version>1.0.0</starbot-plugin-processor.version>
 
         <!-- 第三方依赖版本，集中在此管理，模块内不再各写各的 -->

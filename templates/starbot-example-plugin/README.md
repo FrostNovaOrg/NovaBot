@@ -99,7 +99,7 @@ StarBot 插件使用 Maven 进行依赖管理, 插件可以依赖其他第三方
 <dependency>
     <groupId>com.starlwr</groupId>
     <artifactId>starbot-core</artifactId>
-    <version>3.0.0</version>
+    <version>4.0.0</version>
 </dependency>
 ```
 

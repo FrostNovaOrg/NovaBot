@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# StarBot 启动脚本
+# NovaBot 启动脚本
 #
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
@@ -13,7 +13,7 @@ JVM_OPTS=""
 # 实测把 128m 降到 64m 可使稳态常驻内存从 130~155 MB 降到 105~110 MB，且读数更稳定
 JVM_OPTS="$JVM_OPTS -Xms64m -Xmx512m"
 JVM_OPTS="$JVM_OPTS -XX:+UseSerialGC"
-# 线程栈 256K：StarBot 的调用栈很浅，默认 1M 在几十个线程下白白占掉数十兆
+# 线程栈 256K：NovaBot 的调用栈很浅，默认 1M 在几十个线程下白白占掉数十兆
 JVM_OPTS="$JVM_OPTS -Xss256k"
 JVM_OPTS="$JVM_OPTS -XX:MaxMetaspaceSize=192m"
 JVM_OPTS="$JVM_OPTS -XX:+ExitOnOutOfMemoryError"

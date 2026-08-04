@@ -1,4 +1,4 @@
-# StarBot 运行镜像
+# NovaBot 运行镜像
 #
 # 构建：
 #   ./build.sh

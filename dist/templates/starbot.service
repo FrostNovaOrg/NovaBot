@@ -1,4 +1,4 @@
-# StarBot systemd 单元文件
+# NovaBot systemd 单元文件
 #
 # 安装：
 #   sudo useradd --system --home-dir /opt/starbot --shell /usr/sbin/nologin starbot
@@ -9,7 +9,7 @@
 # 首次启动需要扫码登录，先用 journalctl -u starbot -f 查看二维码。
 
 [Unit]
-Description=StarBot - 哔哩哔哩直播与动态推送机器人
+Description=NovaBot - 哔哩哔哩直播与动态推送机器人
 Documentation=https://github.com/rossinova/NovaBot
 After=network-online.target
 Wants=network-online.target

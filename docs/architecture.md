@@ -194,6 +194,26 @@ META-INF/spring-configuration-metadata.json
 不在程序内部 fork 子进程重启：父进程得一直驻留等子进程结束，白占一份内存，
 systemd 下的进程树也不正确。
 
+### 可监听的事件类型
+
+内置推送处理器只覆盖开播、下播、动态三类。**弹幕、礼物等事件不带默认处理器**，
+需要自己写插件用 `@EventListener` 监听。
+
+直播事件在 `com.starlwr.bot.bilibili.event.live` 包下：
+
+| 事件 | 触发时机 |
+|---|---|
+| `BilibiliLiveOnEvent` / `BilibiliLiveOffEvent` | 开播 / 下播 |
+| `BilibiliDanmuEvent` / `BilibiliEmojiEvent` | 弹幕 / 表情弹幕 |
+| `BilibiliEnterRoomEvent` / `BilibiliFollowEvent` / `BilibiliShareEvent` | 进入直播间 / 关注 / 分享 |
+| `BilibiliLikeEvent` / `BilibiliLikeUpdateEvent` | 点赞 / 点赞数更新 |
+| `BilibiliFreeGiftEvent` / `BilibiliPaidGiftEvent` / `BilibiliRandomGiftEvent` | 免费礼物 / 付费礼物 / 盲盒 |
+| `BilibiliSuperChatEvent` | 醒目留言 |
+| `BilibiliGovernorEvent` / `BilibiliCommanderEvent` / `BilibiliCaptainEvent` | 总督 / 提督 / 舰长 |
+| `BilibiliConnectedEvent` / `BilibiliDisconnectedEvent` | 直播间长连接建立 / 断开 |
+
+动态事件只有一个：`com.starlwr.bot.bilibili.event.dynamic.BilibiliDynamicUpdateEvent`。
+
 ## 6. 反射相关的坑
 
 一处**只有踩过才知道**的行为：标注了 `@Configuration` 的类会被 CGLIB 代理，

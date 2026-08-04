@@ -72,7 +72,7 @@
         <dependency>
             <groupId>com.starlwr</groupId>
             <artifactId>starbot-core</artifactId>
-            <version>3.0.0</version>
+            <version>4.0.0</version>
         </dependency>
 
         <!-- 以下为可选依赖，在下方按需引入所需的其他依赖 -->

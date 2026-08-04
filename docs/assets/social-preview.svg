@@ -1,0 +1,57 @@
+<!--
+  NovaBot 社交预览图（GitHub Settings → Social preview，要求 1280×640）
+  本项目原创，非衍生自上游 StarBot 的任何图形资产。
+
+  图标部分与 icon.svg 同源（纯几何构造，无字体轮廓）；文字用系统字体栈渲染，
+  因此本文件在不同系统上导出的 PNG 会有细微字形差异——重新导出时以仓库内的 PNG 为准。
+
+  导出命令（需要 cairosvg，qlmanage 会把画布补成正方形导致缩放错误）：
+    python -c "import cairosvg; cairosvg.svg2png(url='social-preview.svg', \
+      write_to='social-preview.png', output_width=1280, output_height=640)"
+-->
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7C5CFF"/>
+      <stop offset="1" stop-color="#FF5F9E"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#7C5CFF" stop-opacity=".35"/>
+      <stop offset="1" stop-color="#7C5CFF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FF5F9E" stop-opacity=".28"/>
+      <stop offset="1" stop-color="#FF5F9E" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1280" height="640" fill="#0B0B11"/>
+  <ellipse cx="250" cy="180" rx="520" ry="420" fill="url(#glow)"/>
+  <ellipse cx="1080" cy="560" rx="480" ry="380" fill="url(#glow2)"/>
+
+  <!-- 图标：icon.svg 原样放大到 176，置于左侧 -->
+  <g transform="translate(150 196) scale(2.75)">
+    <path fill="url(#g)"
+          d="M16 4h32a12 12 0 0 1 12 12v18a12 12 0 0 1-12 12H32L20.4 55.4a1.5 1.5 0 0 1-2.4-1.5L20.6 46H16A12 12 0 0 1 4 34V16A12 12 0 0 1 16 4Z"/>
+    <path fill="#fff"
+          d="M28 11C28 20.8 31.6 25 40 25 31.6 25 28 29.2 28 39 28 29.2 24.4 25 16 25 24.4 25 28 20.8 28 11Z"/>
+    <path fill="#fff" fill-opacity=".85"
+          d="M45 29.5C45 34.05 46.5 36 50 36 46.5 36 45 37.95 45 42.5 45 37.95 43.5 36 40 36 43.5 36 45 34.05 45 29.5Z"/>
+  </g>
+
+  <g font-family="PingFang SC, Hiragino Sans GB, Noto Sans CJK SC, Helvetica Neue, Arial, sans-serif">
+    <text x="400" y="272" font-size="92" font-weight="700" fill="#FFFFFF" letter-spacing="-1">Nova<tspan fill="#9AA0AE">Bot</tspan></text>
+    <text x="404" y="340" font-size="36" font-weight="500" fill="#E6E7EB">哔哩哔哩直播与动态推送机器人</text>
+    <text x="404" y="396" font-size="26" fill="#8B90A0">监听开播 · 下播 · 动态更新，经 OneBot 协议推送到 QQ</text>
+    <g font-size="23" fill="#6F7484">
+      <text x="404" y="462">内置配置界面</text>
+      <text x="560" y="462">·</text>
+      <text x="584" y="462">凭据加密存储</text>
+      <text x="740" y="462">·</text>
+      <text x="764" y="462">健康自检</text>
+      <text x="884" y="462">·</text>
+      <text x="908" y="462">面向小内存 VPS</text>
+    </g>
+  </g>
+
+  <rect x="0" y="632" width="1280" height="8" fill="url(#g)"/>
+</svg>

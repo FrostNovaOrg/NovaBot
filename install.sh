@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# StarBot 一键安装脚本（Linux）
+# NovaBot 一键安装脚本（Linux）
 #
 # 用法：
 #   ./install.sh                        从当前源码构建并安装到 /opt/starbot
@@ -257,7 +257,7 @@ if [ -f "$INSTALL_DIR/StarBotCore.jar" ]; then
         $SUDO find "$INSTALL_DIR/plugins" -maxdepth 1 -type f -name "$artifact-[0-9]*.jar" -delete
     done
 elif [ -e "$INSTALL_DIR/lib" ] || [ -e "$INSTALL_DIR/plugins" ]; then
-    die "$INSTALL_DIR 下已有 lib/ 或 plugins/，但没有 StarBotCore.jar，不像 StarBot 的安装目录。
+    die "$INSTALL_DIR 下已有 lib/ 或 plugins/，但没有 StarBotCore.jar，不像 NovaBot 的安装目录。
      为免误删，请换一个目录，或先自行确认该目录内容"
 fi
 
@@ -316,7 +316,7 @@ cat <<EOF
   3. 在浏览器中打开日志里输出的配置界面地址完成配置
        该地址形如 http://127.0.0.1:$EFFECTIVE_PORT/config?token=xxxxx
 
-     若 StarBot 装在远程服务器上，先在本机建立隧道再访问：
+     若 NovaBot 装在远程服务器上，先在本机建立隧道再访问：
        ssh -L $EFFECTIVE_PORT:127.0.0.1:$EFFECTIVE_PORT 用户名@服务器地址
 
   4. 使用哔哩哔哩客户端扫描日志中的二维码完成登录

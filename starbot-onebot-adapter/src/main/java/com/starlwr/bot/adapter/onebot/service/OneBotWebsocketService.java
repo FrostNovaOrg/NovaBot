@@ -15,6 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.boot.info.BuildProperties;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
 import org.springframework.scheduling.TaskScheduler;
@@ -47,17 +48,26 @@ public class OneBotWebsocketService {
 
     private final OneBotConnectionState state;
 
+    /**
+     * 构建信息，用于回复 status 指令时取真实版本号
+     * <p>
+     * 不要写死版本字符串：写死的那份不会随 pom 的版本变化，升版本后仍报旧号，
+     * 而这类偏差没有任何测试会发现
+     */
+    private final BuildProperties buildProperties;
+
     private final Map<String, ScheduledFuture<?>> detectTasks = new HashMap<>();
 
     private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
 
     @Autowired
-    public OneBotWebsocketService(TaskScheduler taskScheduler, @Qualifier("oneBotThreadPool") ThreadPoolTaskExecutor executor, OneBotAdapterPluginProperties properties, AlertService alertService, OneBotConnectionState state) {
+    public OneBotWebsocketService(TaskScheduler taskScheduler, @Qualifier("oneBotThreadPool") ThreadPoolTaskExecutor executor, OneBotAdapterPluginProperties properties, AlertService alertService, OneBotConnectionState state, BuildProperties buildProperties) {
         this.taskScheduler = taskScheduler;
         this.executor = executor;
         this.properties = properties;
         this.alertService = alertService;
         this.state = state;
+        this.buildProperties = buildProperties;
     }
 
     /**
@@ -279,7 +289,7 @@ public class OneBotWebsocketService {
 
                                 if ("status".equalsIgnoreCase(rawMessage.getString("raw_message"))) {
                                     JSONObject operation = new JSONObject();
-                                    operation.put("reply", "Running on StarBot v3.0.0");
+                                    operation.put("reply", "Running on NovaBot v" + service.buildProperties.getVersion());
 
                                     JSONObject params = new JSONObject();
                                     params.put("context", rawMessage);
