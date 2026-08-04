@@ -814,15 +814,14 @@ public class CommonPainter {
      * @return 当前绘图器实例
      */
     public CommonPainter drawCopyright(List<List<TextWithStyle>> extraMiddle, List<List<TextWithStyle>> extraBottom, int marginRight) {
-        // 底部默认版权信息，请务必保留此处
-        drawTextRight("Running on StarBot v" + buildProperties.getVersion(), Color.LIGHT_GRAY, marginRight);
+        // 底部默认版权信息。上游项目的致谢见 README 与 banner
+        drawTextRight("Running on NovaBot v" + buildProperties.getVersion(), Color.LIGHT_GRAY, marginRight);
 
         for (List<TextWithStyle> line : extraMiddle) {
             drawTextRightWithStyle(line, marginRight);
         }
 
-        // 底部默认版权信息，请务必保留此处
-        drawTextRight("https://github.com/Starlwr/StarBot", COLOR_LINK, marginRight);
+        drawTextRight("https://github.com/rossinova/NovaBot", COLOR_LINK, marginRight);
 
         for (List<TextWithStyle> line : extraBottom) {
             drawTextRightWithStyle(line, marginRight);
