@@ -228,6 +228,8 @@ public class BilibiliLiveStatsAggregator {
             return;
         }
         liveDataService.incrementLiveUserMetric(event.getPlatform(), event.getSource().getUid(), metric, sender.getUid(), delta);
+        // 昵称在事件里现成带着，此时记下，绘制榜单时便不必再逐个请求接口
+        liveDataService.recordLiveUserName(event.getPlatform(), event.getSource().getUid(), sender.getUid(), sender.getUname());
     }
 
     /**

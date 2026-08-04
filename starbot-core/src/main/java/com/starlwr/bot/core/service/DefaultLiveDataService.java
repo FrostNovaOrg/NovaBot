@@ -360,6 +360,35 @@ public class DefaultLiveDataService implements LiveDataService {
      * @param limit    取前多少名
      * @return 按得分降序排列的用户
      */
+    /**
+     * 记录用户昵称
+     *
+     * @param platform 直播平台
+     * @param uid      主播 UID
+     * @param userUid  用户 UID
+     * @param userName 用户昵称
+     */
+    @Override
+    public void recordLiveUserName(@NonNull String platform, @NonNull Long uid, @NonNull Long userUid, String userName) {
+        if (userName == null || userName.isBlank()) {
+            return;
+        }
+
+        synchronized (metricLock) {
+            String key = "LiveUserName:" + platform;
+            cache.putIfAbsent(key, new JSONObject());
+            JSONObject byUid = cache.getJSONObject(key);
+            byUid.putIfAbsent(String.valueOf(uid), new JSONObject());
+            JSONObject names = byUid.getJSONObject(String.valueOf(uid));
+
+            String userKey = String.valueOf(userUid);
+            // 与计分表同样的容量约束：昵称表只为已计分的用户服务，不应比它更大
+            if (names.containsKey(userKey) || names.size() < METRIC_USER_LIMIT) {
+                names.put(userKey, userName);
+            }
+        }
+    }
+
     @Override
     public List<UserScore> getLiveUserRanking(@NonNull String platform, @NonNull Long uid, @NonNull String metric, int limit) {
         if (limit <= 0) {
@@ -374,10 +403,14 @@ public class DefaultLiveDataService implements LiveDataService {
 
             // JSON 结构不像 Redis 的 zset 那样自带排序，只能取出后在内存里排。
             // 单直播间的用户数有上限，这个开销可以接受，且排行榜只在下播与查询时才取
+            JSONObject names = Optional.ofNullable(cache.getJSONObject("LiveUserName:" + platform))
+                    .map(data -> data.getJSONObject(String.valueOf(uid)))
+                    .orElseGet(JSONObject::new);
+
             List<UserScore> scores = new ArrayList<>(users.size());
             for (String userKey : users.keySet()) {
                 try {
-                    scores.add(new UserScore(Long.parseLong(userKey), users.getDoubleValue(userKey)));
+                    scores.add(new UserScore(Long.parseLong(userKey), names.getString(userKey), users.getDoubleValue(userKey)));
                 } catch (NumberFormatException e) {
                     // 手工编辑数据文件等情况下可能混入非法键，跳过即可，不必让整个排行榜失败
                     log.debug("跳过计分表中的非法用户键: {}", userKey);
@@ -504,6 +537,8 @@ public class DefaultLiveDataService implements LiveDataService {
             Optional.ofNullable(cache.getJSONObject("LiveMetricUser:" + platform))
                     .ifPresent(data -> data.remove(String.valueOf(uid)));
             Optional.ofNullable(cache.getJSONObject("LiveWordFrequency:" + platform))
+                    .ifPresent(data -> data.remove(String.valueOf(uid)));
+            Optional.ofNullable(cache.getJSONObject("LiveUserName:" + platform))
                     .ifPresent(data -> data.remove(String.valueOf(uid)));
         }
     }

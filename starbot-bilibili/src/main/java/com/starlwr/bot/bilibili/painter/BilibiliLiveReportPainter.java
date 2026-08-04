@@ -9,12 +9,14 @@ import com.kennycason.kumo.font.scale.SqrtFontScalar;
 import com.kennycason.kumo.image.AngleGenerator;
 import com.kennycason.kumo.palette.ColorPalette;
 import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
+import com.starlwr.bot.bilibili.model.BilibiliLiveReportOptions;
 import com.starlwr.bot.bilibili.model.Room;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.bilibili.util.DurationFormatUtil;
 import com.starlwr.bot.core.factory.StarBotCommonPainterFactory;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.TextWithStyle;
+import com.starlwr.bot.core.model.UserScore;
 import com.starlwr.bot.core.painter.CommonPainter;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.service.LiveDataService;
@@ -38,6 +40,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.DoubleFunction;
 
 /**
  * 下播报告绘制器
@@ -100,6 +103,26 @@ public class BilibiliLiveReportPainter {
     private static final int CARD_RADIUS = 16;
 
     /**
+     * 排行榜每行的行高
+     */
+    private static final int RANKING_ROW_HEIGHT = 44;
+
+    /**
+     * 排行榜比例条的高度
+     */
+    private static final int RANKING_BAR_HEIGHT = 14;
+
+    /**
+     * 大航海名单最多展示的人数
+     */
+    private static final int GUARD_LIST_LIMIT = 10;
+
+    /**
+     * 昵称最多展示的字符数，超出截断
+     */
+    private static final int MAX_NAME_LENGTH = 12;
+
+    /**
      * 词云绘制尺寸
      */
     private static final int CLOUD_HEIGHT = 380;
@@ -160,14 +183,30 @@ public class BilibiliLiveReportPainter {
      * @return 报告图片的 Base64 编码，绘制失败时为空
      */
     public Optional<String> paint(String platform, LiveStreamerInfo source) {
+        return paint(platform, source, new BilibiliLiveReportOptions());
+    }
+
+    /**
+     * 按指定版式绘制本场直播报告
+     * @param platform 直播平台
+     * @param source 主播信息
+     * @param options 版式选项，决定展示哪些区块
+     * @return 报告图片的 Base64 编码，绘制失败时为空
+     */
+    public Optional<String> paint(String platform, LiveStreamerInfo source, BilibiliLiveReportOptions options) {
         try {
             CommonPainter painter = factory.create(WIDTH, INITIAL_HEIGHT, true);
             painter.setPos(MARGIN, MARGIN);
 
-            drawHeader(painter, platform, source);
+            drawHeader(painter, platform, source, options);
             drawOverview(painter, platform, source.getUid());
-            drawCards(painter, platform, source.getUid());
-            drawWordCloud(painter, platform, source.getUid());
+            if (options.isCards()) {
+                drawCards(painter, platform, source.getUid());
+            }
+            drawRankings(painter, platform, source.getUid(), options);
+            if (options.isDanmuCloud()) {
+                drawWordCloud(painter, platform, source.getUid());
+            }
 
             painter.movePos(0, 20);
             painter.drawCopyright(MARGIN);
@@ -187,9 +226,9 @@ public class BilibiliLiveReportPainter {
      * 绘制头部：封面横幅、压在横幅下沿的圆形头像、昵称与直播起止时间。
      * 封面不可得时退化为「头像 + 昵称」的简单头部
      */
-    private void drawHeader(CommonPainter painter, String platform, LiveStreamerInfo source) {
+    private void drawHeader(CommonPainter painter, String platform, LiveStreamerInfo source, BilibiliLiveReportOptions options) {
         int top = painter.getY();
-        BufferedImage cover = loadCover(source);
+        BufferedImage cover = options.isCover() ? loadCover(source) : null;
 
         BufferedImage face = Optional.ofNullable(resolveFace(source))
                 .flatMap(url -> api.getBilibiliImage(atSize(url)))
@@ -322,6 +361,109 @@ public class BilibiliLiveReportPainter {
         painter.drawTextWithStyle(
                 List.of(new TextWithStyle(card.label, 22, COLOR_TIP, Font.PLAIN)),
                 new Point(x + 20, y + 68));
+    }
+
+    /**
+     * 绘制各类排行榜与大航海名单，无数据的榜自动跳过
+     */
+    private void drawRankings(CommonPainter painter, String platform, Long uid, BilibiliLiveReportOptions options) {
+        drawRanking(painter, platform, uid, "弹幕排行", BilibiliLiveMetric.DANMU_USERS,
+                options.getDanmuRanking(), score -> Math.round(score) + " 条");
+        drawRanking(painter, platform, uid, "礼物排行", BilibiliLiveMetric.GIFT_USERS,
+                options.getGiftRanking(), score -> "¥" + yuan(score));
+        drawRanking(painter, platform, uid, "醒目留言排行", BilibiliLiveMetric.SUPER_CHAT_USERS,
+                options.getSuperChatRanking(), score -> "¥" + yuan(score));
+        drawRanking(painter, platform, uid, "盲盒排行", BilibiliLiveMetric.BOX_USERS,
+                options.getBoxRanking(), score -> Math.round(score) + " 个");
+        // 盲盒盈亏可正可负，正数补个加号，让盈亏方向一眼可辨
+        drawRanking(painter, platform, uid, "盲盒盈亏排行", BilibiliLiveMetric.BOX_PROFIT_USERS,
+                options.getBoxProfitRanking(), score -> (score >= 0 ? "+¥" : "-¥") + yuan(Math.abs(score)));
+
+        if (options.isGuardList()) {
+            drawRanking(painter, platform, uid, "本场开通大航海", BilibiliLiveMetric.GUARD_USERS,
+                    GUARD_LIST_LIMIT, score -> Math.round(score) + " 次");
+        }
+    }
+
+    /**
+     * 绘制一张排行榜
+     * @param title 榜单标题
+     * @param metric 用户计分表指标名
+     * @param limit 展示前多少名，0 为不展示
+     * @param scoreText 得分的展示文案
+     */
+    private void drawRanking(CommonPainter painter, String platform, Long uid, String title,
+                             String metric, int limit, DoubleFunction<String> scoreText) {
+        if (limit <= 0) {
+            return;
+        }
+
+        List<UserScore> ranking = liveDataService.getLiveUserRanking(platform, uid, metric, limit);
+        if (ranking.isEmpty()) {
+            return;
+        }
+
+        painter.movePos(0, 10);
+        painter.drawTextWithStyle(List.of(new TextWithStyle(title, CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN)));
+        painter.movePos(0, 6);
+
+        // 条形长度按榜首归一化：榜首满格，其余按比例，一眼能看出差距
+        double top = ranking.get(0).score();
+        for (int i = 0; i < ranking.size(); i++) {
+            drawRankingRow(painter, i + 1, ranking.get(i), top, scoreText);
+        }
+        painter.movePos(0, 8);
+    }
+
+    /**
+     * 绘制排行榜的一行：名次、昵称、比例条与得分
+     */
+    private void drawRankingRow(CommonPainter painter, int rank, UserScore user, double topScore, DoubleFunction<String> scoreText) {
+        int y = painter.getY();
+
+        painter.drawTextWithStyle(List.of(new TextWithStyle(String.valueOf(rank), 24, rankColor(rank), Font.BOLD)),
+                new Point(MARGIN + 4, y + 6));
+
+        int nameX = MARGIN + 44;
+        painter.drawTextWithStyle(List.of(new TextWithStyle(truncate(user.displayName()), 24, COLOR_TEXT, Font.PLAIN)),
+                new Point(nameX, y + 6));
+
+        // 比例条画在昵称右侧的固定区域，与得分文字对齐
+        int barX = MARGIN + 300;
+        int barWidth = CONTENT_WIDTH - 300 - 150;
+        painter.drawRoundedRectangle(barX, y + 12, barWidth, RANKING_BAR_HEIGHT, RANKING_BAR_HEIGHT / 2, COLOR_CARD);
+
+        // 盈亏榜可能出现负分或榜首为 0 的情况，按绝对值取比例并留一段最小可见长度
+        double ratio = topScore == 0 ? 0 : Math.abs(user.score()) / Math.abs(topScore);
+        int filled = (int) Math.round(barWidth * Math.max(0, Math.min(1, ratio)));
+        if (filled > 0) {
+            painter.drawRoundedRectangle(barX, y + 12, Math.max(filled, RANKING_BAR_HEIGHT),
+                    RANKING_BAR_HEIGHT, RANKING_BAR_HEIGHT / 2, rankColor(rank));
+        }
+
+        painter.drawTextWithStyle(List.of(new TextWithStyle(scoreText.apply(user.score()), 24, COLOR_TEXT, Font.PLAIN)),
+                new Point(barX + barWidth + 16, y + 6));
+
+        painter.setPos(MARGIN, y + RANKING_ROW_HEIGHT);
+    }
+
+    /**
+     * 名次配色：前三名依次为金、银、铜，其余用主题粉
+     */
+    private Color rankColor(int rank) {
+        return switch (rank) {
+            case 1 -> new Color(240, 173, 78);
+            case 2 -> new Color(160, 174, 192);
+            case 3 -> new Color(205, 133, 96);
+            default -> new Color(251, 168, 193);
+        };
+    }
+
+    /**
+     * 截断过长的昵称，避免顶到比例条
+     */
+    private String truncate(String name) {
+        return name.length() <= MAX_NAME_LENGTH ? name : name.substring(0, MAX_NAME_LENGTH) + "…";
     }
 
     /**

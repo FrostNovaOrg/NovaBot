@@ -48,7 +48,7 @@ class BilibiliLiveReportPushHandlerTest {
     @Test
     @DisplayName("绘制成功时应推送报告图片")
     void pushesReportImage() {
-        when(painter.paint(anyString(), any())).thenReturn(Optional.of("QUJD"));
+        when(painter.paint(anyString(), any(), any())).thenReturn(Optional.of("QUJD"));
 
         handler.handle(event(), pushMessage());
 
@@ -60,7 +60,7 @@ class BilibiliLiveReportPushHandlerTest {
     @Test
     @DisplayName("绘制失败时默认模板应整条跳过而非推送空消息")
     void skipsWhenPaintFails() {
-        when(painter.paint(anyString(), any())).thenReturn(Optional.empty());
+        when(painter.paint(anyString(), any(), any())).thenReturn(Optional.empty());
 
         handler.handle(event(), pushMessage());
 

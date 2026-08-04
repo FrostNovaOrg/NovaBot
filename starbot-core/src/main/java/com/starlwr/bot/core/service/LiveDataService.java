@@ -150,6 +150,19 @@ public interface LiveDataService {
     }
 
     /**
+     * 记录用户昵称，供排行榜展示
+     * <p>
+     * 昵称与计分分开存放：同一用户可能出现在多张计分表里，昵称只需存一份。
+     * 榜单动辄数十人，绘制时逐个请求接口既慢又容易触发风控，故在事件到达时顺手记下。
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @param userUid 用户 UID
+     * @param userName 用户昵称
+     */
+    default void recordLiveUserName(@NonNull String platform, @NonNull Long uid, @NonNull Long userUid, String userName) {
+    }
+
+    /**
      * 获取某个用户在本场直播的得分
      * @param platform 直播平台
      * @param uid 主播 UID

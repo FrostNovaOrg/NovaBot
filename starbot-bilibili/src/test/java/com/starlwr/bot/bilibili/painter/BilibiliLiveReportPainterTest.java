@@ -1,6 +1,7 @@
 package com.starlwr.bot.bilibili.painter;
 
 import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
+import com.starlwr.bot.bilibili.model.BilibiliLiveReportOptions;
 import com.starlwr.bot.bilibili.model.Room;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
@@ -133,6 +134,54 @@ class BilibiliLiveReportPainterTest {
 
         assertTrue(base64.isPresent(), "无数据也应生成报告图片");
         dump("empty", base64.get());
+    }
+
+    @Test
+    @DisplayName("有排行榜数据时应画出榜单")
+    void paintsRankings() {
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), 1_700_000_000_000L);
+        liveDataService.setLiveEndTime(PLATFORM, STREAMER.getUid(), 1_700_000_000_000L + 3600_000);
+
+        String[] names = {"甲乙丙", "丁戊己", "庚辛壬", "癸子丑", "寅卯辰", "巳午未"};
+        for (int i = 0; i < names.length; i++) {
+            long uid = 100L + i;
+            double weight = names.length - i;
+            liveDataService.recordLiveUserName(PLATFORM, STREAMER.getUid(), uid, names[i]);
+            liveDataService.incrementLiveUserMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.DANMU_USERS, uid, weight * 7);
+            liveDataService.incrementLiveUserMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.GIFT_USERS, uid, weight * 13.5);
+            liveDataService.incrementLiveUserMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.SUPER_CHAT_USERS, uid, weight * 30);
+        }
+        liveDataService.incrementLiveUserMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.GUARD_USERS, 100L, 1);
+        // 总量与按用户计分要一起喂：生产中聚合器同时写两者，样张也应自洽
+        liveDataService.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.DANMU_COUNT, 147);
+        liveDataService.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.GIFT_VALUE, 283.5);
+        liveDataService.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.SUPER_CHAT_COUNT, 6);
+        liveDataService.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.SUPER_CHAT_VALUE, 630.0);
+        liveDataService.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.CAPTAIN_COUNT, 1);
+        liveDataService.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.GUARD_VALUE, 138.0);
+
+        Optional<String> base64 = painter.paint(PLATFORM, STREAMER, BilibiliLiveReportOptions.of(null));
+
+        assertTrue(base64.isPresent());
+        dump("rankings", base64.get());
+    }
+
+    @Test
+    @DisplayName("关闭全部区块时应只剩概览，不应绘制失败")
+    void paintsWithAllSectionsDisabled() {
+        com.alibaba.fastjson2.JSONObject params = new com.alibaba.fastjson2.JSONObject();
+        params.put("cover", false);
+        params.put("cards", false);
+        params.put("danmu_ranking", 0);
+        params.put("gift_ranking", 0);
+        params.put("super_chat_ranking", 0);
+        params.put("guard_list", false);
+        params.put("danmu_cloud", false);
+
+        Optional<String> base64 = painter.paint(PLATFORM, STREAMER, BilibiliLiveReportOptions.of(params));
+
+        assertTrue(base64.isPresent(), "全部关闭也应能出图");
+        dump("minimal", base64.get());
     }
 
     /**

@@ -2,6 +2,7 @@ package com.starlwr.bot.bilibili.handler;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.event.live.BilibiliLiveOffEvent;
+import com.starlwr.bot.bilibili.model.BilibiliLiveReportOptions;
 import com.starlwr.bot.bilibili.painter.BilibiliLiveReportPainter;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.enums.LivePlatform;
@@ -45,7 +46,7 @@ public class BilibiliLiveReportPushHandler implements StarBotEventHandler {
         PushTarget target = pushMessage.getTarget();
 
         // 绘制失败时占位符替换为空串；默认模板只含 {report}，此时消息为空白，发送环节会直接跳过
-        String report = painter.paint(event.getPlatform(), event.getSource())
+        String report = painter.paint(event.getPlatform(), event.getSource(), BilibiliLiveReportOptions.of(params))
                 .map(base64 -> "{image_base64=" + base64 + "}")
                 .orElse("");
 
@@ -67,6 +68,18 @@ public class BilibiliLiveReportPushHandler implements StarBotEventHandler {
         JSONObject params = new JSONObject();
         params.put("at_all", false);
         params.put("message", "{report}");
+
+        // 版式选项：排行榜类填「展示前多少名」，0 为不展示；其余为开关
+        params.put("cover", true);
+        params.put("cards", true);
+        params.put("danmu_ranking", 5);
+        params.put("gift_ranking", 5);
+        params.put("super_chat_ranking", 5);
+        // 盲盒两榜默认关闭：多数直播间没有盲盒数据，开着只会让报告多两块空白
+        params.put("box_ranking", 0);
+        params.put("box_profit_ranking", 0);
+        params.put("guard_list", true);
+        params.put("danmu_cloud", true);
         return params;
     }
 
