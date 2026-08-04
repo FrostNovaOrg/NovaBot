@@ -7,6 +7,7 @@ import com.starlwr.bot.adapter.onebot.model.OneBotSender;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.adapter.onebot.health.OneBotConnectionState;
 import com.starlwr.bot.core.alert.AlertService;
+import com.starlwr.bot.core.event.remote.StarBotRemoteMessageEvent;
 import com.starlwr.bot.core.util.StringUtil;
 import jakarta.websocket.ContainerProvider;
 import jakarta.websocket.WebSocketContainer;
@@ -15,6 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.boot.info.BuildProperties;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
@@ -56,18 +58,24 @@ public class OneBotWebsocketService {
      */
     private final BuildProperties buildProperties;
 
+    /**
+     * 收到聊天消息时发布远程消息事件，供各平台模块实现消息命令
+     */
+    private final ApplicationEventPublisher publisher;
+
     private final Map<String, ScheduledFuture<?>> detectTasks = new HashMap<>();
 
     private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
 
     @Autowired
-    public OneBotWebsocketService(TaskScheduler taskScheduler, @Qualifier("oneBotThreadPool") ThreadPoolTaskExecutor executor, OneBotAdapterPluginProperties properties, AlertService alertService, OneBotConnectionState state, BuildProperties buildProperties) {
+    public OneBotWebsocketService(TaskScheduler taskScheduler, @Qualifier("oneBotThreadPool") ThreadPoolTaskExecutor executor, OneBotAdapterPluginProperties properties, AlertService alertService, OneBotConnectionState state, BuildProperties buildProperties, ApplicationEventPublisher publisher) {
         this.taskScheduler = taskScheduler;
         this.executor = executor;
         this.properties = properties;
         this.alertService = alertService;
         this.state = state;
         this.buildProperties = buildProperties;
+        this.publisher = publisher;
     }
 
     /**
@@ -285,6 +293,17 @@ public class OneBotWebsocketService {
 
                                 if (service.properties.getDetect().isEnableWebsocketDetect() && "message".equals(rawMessage.getString("post_type"))) {
                                     lastReceiveTime = Instant.now();
+                                }
+
+                                if ("message".equals(rawMessage.getString("post_type"))
+                                        && StringUtil.isNotBlank(rawMessage.getString("raw_message"))) {
+                                    String messageType = rawMessage.getString("message_type");
+                                    Long num = "group".equals(messageType)
+                                            ? rawMessage.getLong("group_id")
+                                            : rawMessage.getLong("user_id");
+                                    service.publisher.publishEvent(new StarBotRemoteMessageEvent(
+                                            sender.getName(), messageType, num,
+                                            rawMessage.getLong("user_id"), rawMessage.getString("raw_message")));
                                 }
 
                                 if ("status".equalsIgnoreCase(rawMessage.getString("raw_message"))) {

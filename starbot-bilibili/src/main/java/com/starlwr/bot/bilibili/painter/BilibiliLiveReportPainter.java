@@ -415,11 +415,11 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
-     * 本场直播的时长描述
+     * 本场直播的时长描述。直播中（消息命令实时拉取）以当前时刻为终点
      */
     private String durationText(String platform, Long uid) {
         Optional<Long> start = liveDataService.getLiveStartTime(platform, uid);
-        Optional<Long> end = liveDataService.getLiveEndTime(platform, uid);
+        Optional<Long> end = effectiveEndTime(platform, uid, start);
         if (start.isEmpty() || end.isEmpty()) {
             return "";
         }
@@ -427,16 +427,46 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
-     * 本场直播的起止时间描述
+     * 本场直播的起止时间描述。直播中显示「起点 起 · 直播中」
      */
     private String timeRange(String platform, Long uid) {
         Optional<Long> start = liveDataService.getLiveStartTime(platform, uid);
-        Optional<Long> end = liveDataService.getLiveEndTime(platform, uid);
-        if (start.isEmpty() || end.isEmpty()) {
+        if (start.isEmpty()) {
             return TIME_FORMATTER.format(Instant.now());
+        }
+
+        if (isLiving(platform, uid)) {
+            return TIME_FORMATTER.format(Instant.ofEpochMilli(start.get())) + " 起 · 直播中";
+        }
+
+        Optional<Long> end = effectiveEndTime(platform, uid, start);
+        if (end.isEmpty()) {
+            return TIME_FORMATTER.format(Instant.ofEpochMilli(start.get()));
         }
         return TIME_FORMATTER.format(Instant.ofEpochMilli(start.get()))
                 + " ~ " + TIME_FORMATTER.format(Instant.ofEpochMilli(end.get()));
+    }
+
+    /**
+     * 本场直播的有效终点：已下播用记录的结束时间；直播中用当前时刻。
+     * 上一场遗留的结束时间早于本场开始时间，视为无效
+     */
+    private Optional<Long> effectiveEndTime(String platform, Long uid, Optional<Long> start) {
+        Optional<Long> end = liveDataService.getLiveEndTime(platform, uid);
+        if (end.isPresent() && (start.isEmpty() || end.get() >= start.get())) {
+            return end;
+        }
+        if (isLiving(platform, uid)) {
+            return Optional.of(System.currentTimeMillis());
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * 是否正在直播
+     */
+    private boolean isLiving(String platform, Long uid) {
+        return liveDataService.getLiveStatus(platform, uid).orElse(false);
     }
 
     /**
