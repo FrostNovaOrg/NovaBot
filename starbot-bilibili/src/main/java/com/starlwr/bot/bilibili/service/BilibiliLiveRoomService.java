@@ -51,6 +51,8 @@ public class BilibiliLiveRoomService {
 
     private final TaskScheduler scheduler;
 
+    private final BilibiliLiveStateGate stateGate;
+
     /**
      * 直播间号到连接器的映射
      */
@@ -69,12 +71,14 @@ public class BilibiliLiveRoomService {
                                    BilibiliEventParser parser,
                                    StarBotBilibiliProperties properties,
                                    ApplicationEventPublisher publisher,
-                                   @Qualifier("bilibiliTaskScheduler") TaskScheduler scheduler) {
+                                   @Qualifier("bilibiliTaskScheduler") TaskScheduler scheduler,
+                                   BilibiliLiveStateGate stateGate) {
         this.api = api;
         this.parser = parser;
         this.properties = properties;
         this.publisher = publisher;
         this.scheduler = scheduler;
+        this.stateGate = stateGate;
     }
 
     /**
@@ -139,7 +143,7 @@ public class BilibiliLiveRoomService {
     private void connect(Up up) {
         connectors.computeIfAbsent(up.getRoomId(), roomId -> {
             BilibiliLiveRoomConnector connector =
-                    new BilibiliLiveRoomConnector(up, api, parser, properties, publisher, scheduler, webSocketClient);
+                    new BilibiliLiveRoomConnector(up, api, parser, properties, publisher, scheduler, webSocketClient, stateGate);
             connector.connect();
             return connector;
         });

@@ -45,8 +45,13 @@ public class BilibiliBackupLivePushService {
 
     private final TaskScheduler scheduler;
 
+    private final BilibiliLiveStateGate stateGate;
+
     /**
      * uid 到上次已知开播状态的映射
+     * <p>
+     * 只用于识别「轮询自己看到的状态变了」，不能用作与长连接之间的去重依据——
+     * 它对长连接推过什么一无所知。跨路径的去重由 {@link BilibiliLiveStateGate} 负责
      */
     private final Map<Long, Boolean> livingStates = new ConcurrentHashMap<>();
 
@@ -63,11 +68,13 @@ public class BilibiliBackupLivePushService {
     public BilibiliBackupLivePushService(BilibiliApiUtil api,
                                          StarBotBilibiliProperties properties,
                                          ApplicationEventPublisher publisher,
-                                         @Qualifier("bilibiliTaskScheduler") TaskScheduler scheduler) {
+                                         @Qualifier("bilibiliTaskScheduler") TaskScheduler scheduler,
+                                         BilibiliLiveStateGate stateGate) {
         this.api = api;
         this.properties = properties;
         this.publisher = publisher;
         this.scheduler = scheduler;
+        this.stateGate = stateGate;
     }
 
     /**
@@ -136,6 +143,13 @@ public class BilibiliBackupLivePushService {
 
         // 首轮或状态未变化时不推送
         if (!initialized || previous == null || previous == living) {
+            return;
+        }
+
+        // 同一次变化长连接可能已经推过。上面的 previous 只反映轮询自己的观测，
+        // 跨路径的去重必须过共享闸门
+        if (!stateGate.admit(up.getUid(), living)) {
+            log.debug("备用直播推送检测到 {} 状态变化, 但长连接已推送, 跳过", up.getUname());
             return;
         }
 

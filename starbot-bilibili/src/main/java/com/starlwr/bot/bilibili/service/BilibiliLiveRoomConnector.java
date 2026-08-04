@@ -8,6 +8,8 @@ import com.starlwr.bot.bilibili.enums.DataHeaderType;
 import com.starlwr.bot.bilibili.enums.DataPackType;
 import com.starlwr.bot.bilibili.event.live.BilibiliConnectedEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliDisconnectedEvent;
+import com.starlwr.bot.bilibili.event.live.BilibiliLiveOffEvent;
+import com.starlwr.bot.bilibili.event.live.BilibiliLiveOnEvent;
 import com.starlwr.bot.bilibili.model.ConnectAddress;
 import com.starlwr.bot.bilibili.model.ConnectInfo;
 import com.starlwr.bot.bilibili.protocol.BilibiliPacket;
@@ -80,6 +82,8 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
      */
     private final WebSocketClient client;
 
+    private final BilibiliLiveStateGate stateGate;
+
     /**
      * 当前连接状态
      */
@@ -121,7 +125,8 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
                                      @NonNull StarBotBilibiliProperties properties,
                                      @NonNull ApplicationEventPublisher publisher,
                                      @NonNull TaskScheduler scheduler,
-                                     @NonNull WebSocketClient client) {
+                                     @NonNull WebSocketClient client,
+                                     @NonNull BilibiliLiveStateGate stateGate) {
         this.source = source;
         this.api = api;
         this.parser = parser;
@@ -129,6 +134,7 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
         this.publisher = publisher;
         this.scheduler = scheduler;
         this.client = client;
+        this.stateGate = stateGate;
     }
 
     /**
@@ -310,6 +316,17 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
      * @param event 事件
      */
     private void publish(StarBotBaseLiveEvent event) {
+        // 开播与下播另有备用轮询这条发现路径，同一次状态变化只应推送一次，
+        // 因此两条路径都要先过共享闸门。弹幕、礼物等事件只有长连接一条来源，不需要
+        if (event instanceof BilibiliLiveOnEvent && !stateGate.admit(source.getUid(), true)) {
+            log.debug("直播间 {} 的开播事件已由备用轮询推送, 跳过", source.getRoomId());
+            return;
+        }
+        if (event instanceof BilibiliLiveOffEvent && !stateGate.admit(source.getUid(), false)) {
+            log.debug("直播间 {} 的下播事件已由备用轮询推送, 跳过", source.getRoomId());
+            return;
+        }
+
         try {
             publisher.publishEvent(event);
         } catch (Exception e) {
