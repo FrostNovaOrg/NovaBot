@@ -74,7 +74,7 @@ public class DefaultLiveDataService implements LiveDataService {
             String liveDataPath = properties.getLive().getLiveDataPath();
             log.info("开始保存直播数据至 {}", liveDataPath);
             try {
-                Files.writeString(Path.of(liveDataPath), cache.toJSONString());
+                Files.writeString(Path.of(liveDataPath), snapshot());
             } catch (Exception e) {
                 log.error("保存直播数据至 {} 异常", liveDataPath, e);
             }
@@ -90,12 +90,24 @@ public class DefaultLiveDataService implements LiveDataService {
             Thread.currentThread().setName("auto-save-data");
 
             try {
-                Files.writeString(path, cache.toJSONString());
+                Files.writeString(path, snapshot());
             } catch (Exception e) {
                 log.error("自动保存直播数据异常", e);
             }
 
         }, interval, interval, TimeUnit.SECONDS);
+    }
+
+    /**
+     * 生成缓存的 JSON 快照
+     * <p>
+     * 统计指标随直播间消息高频写入，序列化遍历期间若结构变化会直接抛异常，
+     * 故拿锁序列化；文件写入在锁外进行，避免磁盘慢时阻塞指标写入。
+     */
+    private String snapshot() {
+        synchronized (metricLock) {
+            return cache.toJSONString();
+        }
     }
 
     // ================ 直播间状态 ================
@@ -197,15 +209,145 @@ public class DefaultLiveDataService implements LiveDataService {
         Optional.ofNullable(cache.getJSONObject(key)).ifPresent(data -> data.remove(String.valueOf(uid)));
     }
 
+    // ================ 本场直播统计指标 ================
+
+    /**
+     * 独立用户集合的容量上限，防止超大直播间把用户列表撑到不可收拾
+     */
+    private static final int METRIC_USER_LIMIT = 100_000;
+
+    /**
+     * 统计指标的写锁
+     * <p>
+     * 指标随直播间消息高频写入（弹幕高峰可达每秒数百条），与自动保存的序列化并发时
+     * 会让 fastjson2 在遍历中途遇到结构变化。开关播状态等低频写入维持原状不加锁。
+     */
+    private final Object metricLock = new Object();
+
+    /**
+     * 累加本场直播的统计指标
+     *
+     * @param platform 直播平台
+     * @param uid      UID
+     * @param metric   指标名
+     * @param delta    增量
+     */
+    @Override
+    public void incrementLiveMetric(@NonNull String platform, @NonNull Long uid, @NonNull String metric, double delta) {
+        synchronized (metricLock) {
+            JSONObject metrics = metricsOf(platform, uid);
+            metrics.put(metric, metrics.getDoubleValue(metric) + delta);
+        }
+    }
+
+    /**
+     * 以取最大值的方式更新本场直播的统计指标
+     *
+     * @param platform 直播平台
+     * @param uid      UID
+     * @param metric   指标名
+     * @param value    候选值
+     */
+    @Override
+    public void maxLiveMetric(@NonNull String platform, @NonNull Long uid, @NonNull String metric, double value) {
+        synchronized (metricLock) {
+            JSONObject metrics = metricsOf(platform, uid);
+            metrics.put(metric, Math.max(metrics.getDoubleValue(metric), value));
+        }
+    }
+
+    /**
+     * 获取本场直播的统计指标
+     *
+     * @param platform 直播平台
+     * @param uid      UID
+     * @param metric   指标名
+     * @return 指标值，未记录时为 0
+     */
+    @Override
+    public double getLiveMetric(@NonNull String platform, @NonNull Long uid, @NonNull String metric) {
+        synchronized (metricLock) {
+            return Optional.ofNullable(cache.getJSONObject("LiveMetric:" + platform))
+                    .map(data -> data.getJSONObject(String.valueOf(uid)))
+                    .map(metrics -> metrics.getDoubleValue(metric))
+                    .orElse(0.0);
+        }
+    }
+
+    /**
+     * 记录参与某项互动的用户
+     * <p>
+     * 以「用户 UID → 1」的映射而非数组存储，含判重的写入是 O(1)
+     *
+     * @param platform 直播平台
+     * @param uid      UID
+     * @param metric   指标名
+     * @param userUid  参与用户的 UID
+     */
+    @Override
+    public void recordLiveMetricUser(@NonNull String platform, @NonNull Long uid, @NonNull String metric, @NonNull Long userUid) {
+        synchronized (metricLock) {
+            String key = "LiveMetricUser:" + platform;
+            cache.putIfAbsent(key, new JSONObject());
+            JSONObject byUid = cache.getJSONObject(key);
+            byUid.putIfAbsent(String.valueOf(uid), new JSONObject());
+            JSONObject byMetric = byUid.getJSONObject(String.valueOf(uid));
+            byMetric.putIfAbsent(metric, new JSONObject());
+            JSONObject users = byMetric.getJSONObject(metric);
+
+            if (users.size() < METRIC_USER_LIMIT) {
+                users.put(String.valueOf(userUid), 1);
+            }
+        }
+    }
+
+    /**
+     * 获取参与某项互动的独立用户数
+     *
+     * @param platform 直播平台
+     * @param uid      UID
+     * @param metric   指标名
+     * @return 独立用户数，未记录时为 0
+     */
+    @Override
+    public int getLiveMetricUserCount(@NonNull String platform, @NonNull Long uid, @NonNull String metric) {
+        synchronized (metricLock) {
+            return Optional.ofNullable(cache.getJSONObject("LiveMetricUser:" + platform))
+                    .map(data -> data.getJSONObject(String.valueOf(uid)))
+                    .map(byMetric -> byMetric.getJSONObject(metric))
+                    .map(JSONObject::size)
+                    .orElse(0);
+        }
+    }
+
+    /**
+     * 取出（必要时创建）指定主播的指标容器，调用方需持有 {@link #metricLock}
+     */
+    private JSONObject metricsOf(String platform, Long uid) {
+        String key = "LiveMetric:" + platform;
+        cache.putIfAbsent(key, new JSONObject());
+        JSONObject byUid = cache.getJSONObject(key);
+        byUid.putIfAbsent(String.valueOf(uid), new JSONObject());
+        return byUid.getJSONObject(String.valueOf(uid));
+    }
+
     // ================ 其他操作 ================
 
     /**
      * 重置最近一场直播数据
+     * <p>
+     * 在开播时被调用，清空上一场直播累计的统计指标，让新一场从零开始
      *
      * @param platform 直播平台
      * @param uid      UID
      */
     @Override
     public void resetLiveData(@NonNull String platform, @NonNull Long uid) {
+        synchronized (metricLock) {
+            Optional.ofNullable(cache.getJSONObject("LiveMetric:" + platform))
+                    .ifPresent(data -> data.remove(String.valueOf(uid)));
+            Optional.ofNullable(cache.getJSONObject("LiveMetricUser:" + platform))
+                    .ifPresent(data -> data.remove(String.valueOf(uid)));
+        }
     }
 }
