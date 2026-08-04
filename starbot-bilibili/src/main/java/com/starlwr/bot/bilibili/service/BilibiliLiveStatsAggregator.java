@@ -77,8 +77,10 @@ public class BilibiliLiveStatsAggregator {
      */
     @EventListener(BilibiliPaidGiftEvent.class)
     public void onPaidGift(BilibiliPaidGiftEvent event) {
-        increment(event, BilibiliLiveMetric.GIFT_VALUE, Optional.ofNullable(event.getValue()).orElse(0.0));
-        recordUser(event, BilibiliLiveMetric.GIFT_USERS, event.getSender());
+        double value = Optional.ofNullable(event.getValue()).orElse(0.0);
+        increment(event, BilibiliLiveMetric.GIFT_VALUE, value);
+        // 计分表记价值而非次数：礼物排行榜比的是送了多少钱，而人数仍是表的大小
+        scoreUser(event, BilibiliLiveMetric.GIFT_USERS, event.getSender(), value);
     }
 
     /**
@@ -108,7 +110,9 @@ public class BilibiliLiveStatsAggregator {
         increment(event, BilibiliLiveMetric.BOX_COUNT, count);
         increment(event, BilibiliLiveMetric.BOX_PROFIT, value - price);
         increment(event, BilibiliLiveMetric.GIFT_VALUE, value);
-        recordUser(event, BilibiliLiveMetric.GIFT_USERS, event.getSender());
+        scoreUser(event, BilibiliLiveMetric.GIFT_USERS, event.getSender(), value);
+        scoreUser(event, BilibiliLiveMetric.BOX_USERS, event.getSender(), count);
+        scoreUser(event, BilibiliLiveMetric.BOX_PROFIT_USERS, event.getSender(), value - price);
     }
 
     /**
@@ -116,8 +120,10 @@ public class BilibiliLiveStatsAggregator {
      */
     @EventListener(BilibiliSuperChatEvent.class)
     public void onSuperChat(BilibiliSuperChatEvent event) {
+        double value = Optional.ofNullable(event.getValue()).orElse(0.0);
         increment(event, BilibiliLiveMetric.SUPER_CHAT_COUNT, 1);
-        increment(event, BilibiliLiveMetric.SUPER_CHAT_VALUE, Optional.ofNullable(event.getValue()).orElse(0.0));
+        increment(event, BilibiliLiveMetric.SUPER_CHAT_VALUE, value);
+        scoreUser(event, BilibiliLiveMetric.SUPER_CHAT_USERS, event.getSender(), value);
     }
 
     /**
@@ -127,6 +133,7 @@ public class BilibiliLiveStatsAggregator {
     public void onCaptain(BilibiliCaptainEvent event) {
         increment(event, BilibiliLiveMetric.CAPTAIN_COUNT, 1);
         increment(event, BilibiliLiveMetric.GUARD_VALUE, Optional.ofNullable(event.getValue()).orElse(0.0));
+        scoreUser(event, BilibiliLiveMetric.GUARD_USERS, event.getSender(), 1);
     }
 
     /**
@@ -136,6 +143,7 @@ public class BilibiliLiveStatsAggregator {
     public void onCommander(BilibiliCommanderEvent event) {
         increment(event, BilibiliLiveMetric.COMMANDER_COUNT, 1);
         increment(event, BilibiliLiveMetric.GUARD_VALUE, Optional.ofNullable(event.getValue()).orElse(0.0));
+        scoreUser(event, BilibiliLiveMetric.GUARD_USERS, event.getSender(), 1);
     }
 
     /**
@@ -145,6 +153,7 @@ public class BilibiliLiveStatsAggregator {
     public void onGovernor(BilibiliGovernorEvent event) {
         increment(event, BilibiliLiveMetric.GOVERNOR_COUNT, 1);
         increment(event, BilibiliLiveMetric.GUARD_VALUE, Optional.ofNullable(event.getValue()).orElse(0.0));
+        scoreUser(event, BilibiliLiveMetric.GUARD_USERS, event.getSender(), 1);
     }
 
     /**
@@ -205,11 +214,20 @@ public class BilibiliLiveStatsAggregator {
     }
 
     private void recordUser(StarBotBaseLiveEvent event, String metric, UserInfo sender) {
+        scoreUser(event, metric, sender, 1);
+    }
+
+    /**
+     * 为用户在某项指标上计分，供排行榜与个人数据查询使用
+     * <p>
+     * 计分表的大小即独立人数，因此计人数与计分共用同一份数据。
+     */
+    private void scoreUser(StarBotBaseLiveEvent event, String metric, UserInfo sender, double delta) {
         if (event.getSource() == null || event.getSource().getUid() == null
                 || sender == null || sender.getUid() == null) {
             return;
         }
-        liveDataService.recordLiveMetricUser(event.getPlatform(), event.getSource().getUid(), metric, sender.getUid());
+        liveDataService.incrementLiveUserMetric(event.getPlatform(), event.getSource().getUid(), metric, sender.getUid(), delta);
     }
 
     /**

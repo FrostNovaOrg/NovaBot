@@ -1,6 +1,9 @@
 package com.starlwr.bot.bilibili.service;
 
 import com.starlwr.bot.bilibili.event.live.BilibiliCaptainEvent;
+import com.starlwr.bot.bilibili.event.live.BilibiliCommanderEvent;
+import com.starlwr.bot.bilibili.event.live.BilibiliEmojiEvent;
+import com.starlwr.bot.bilibili.event.live.BilibiliGovernorEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliDanmuEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliEnterRoomEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliFollowEvent;
@@ -12,11 +15,14 @@ import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.model.GiftInfo;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
+import com.starlwr.bot.core.model.UserScore;
 import com.starlwr.bot.core.model.UserInfo;
 import com.starlwr.bot.core.service.DefaultLiveDataService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -60,6 +66,73 @@ class BilibiliLiveStatsAggregatorTest {
 
         assertEquals(10.0, metric(BilibiliLiveMetric.GIFT_VALUE));
         assertEquals(2, users(BilibiliLiveMetric.GIFT_USERS));
+    }
+
+    @Test
+    @DisplayName("礼物计分表应记价值而非次数，供排行榜按金额排序")
+    void giftScoreIsValueNotCount() {
+        // 用户 1 送两次共 3 元，用户 2 送一次 10 元：按次数排是用户 1 在前，按价值排应是用户 2
+        aggregator.onPaidGift(new BilibiliPaidGiftEvent(STREAMER, user(1L), gift(1.5, 1), 1.5));
+        aggregator.onPaidGift(new BilibiliPaidGiftEvent(STREAMER, user(1L), gift(1.5, 1), 1.5));
+        aggregator.onPaidGift(new BilibiliPaidGiftEvent(STREAMER, user(2L), gift(10.0, 1), 10.0));
+
+        List<UserScore> ranking = liveDataService.getLiveUserRanking(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.GIFT_USERS, 10);
+
+        assertEquals(2L, ranking.get(0).userUid(), "金额高者应排在前");
+        assertEquals(10.0, ranking.get(0).score());
+        assertEquals(3.0, ranking.get(1).score());
+    }
+
+    @Test
+    @DisplayName("醒目留言应按用户计分，供 SC 排行榜使用")
+    void superChatScoresUsers() {
+        aggregator.onSuperChat(new BilibiliSuperChatEvent(STREAMER, user(1L), "加油", 30.0));
+        aggregator.onSuperChat(new BilibiliSuperChatEvent(STREAMER, user(1L), "再来", 20.0));
+        aggregator.onSuperChat(new BilibiliSuperChatEvent(STREAMER, user(2L), "好耶", 100.0));
+
+        List<UserScore> ranking = liveDataService.getLiveUserRanking(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.SUPER_CHAT_USERS, 10);
+
+        assertEquals(2, ranking.size());
+        assertEquals(100.0, ranking.get(0).score());
+        assertEquals(50.0, ranking.get(1).score());
+    }
+
+    @Test
+    @DisplayName("盲盒应同时按个数与盈亏两个维度计分")
+    void randomGiftScoresCountAndProfit() {
+        // 亏 3.3
+        aggregator.onRandomGift(new BilibiliRandomGiftEvent(STREAMER, user(1L), gift(9.9, 1), gift(6.6, 1), 9.9, 6.6));
+        // 赚 5.0
+        aggregator.onRandomGift(new BilibiliRandomGiftEvent(STREAMER, user(2L), gift(5.0, 1), gift(10.0, 1), 5.0, 10.0));
+
+        assertEquals(1.0, liveDataService.getLiveUserMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.BOX_USERS, 1L));
+        assertEquals(-3.3, liveDataService.getLiveUserMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.BOX_PROFIT_USERS, 1L), 0.0001);
+        assertEquals(5.0, liveDataService.getLiveUserMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.BOX_PROFIT_USERS, 2L), 0.0001);
+
+        // 盈亏排行榜：赚的排在亏的前面
+        List<UserScore> ranking = liveDataService.getLiveUserRanking(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.BOX_PROFIT_USERS, 10);
+        assertEquals(2L, ranking.get(0).userUid());
+    }
+
+    @Test
+    @DisplayName("三种大航海应汇入同一份用户计分表")
+    void guardLevelsShareOneScoreTable() {
+        aggregator.onCaptain(new BilibiliCaptainEvent(STREAMER, user(1L), 138.0, 1, "月"));
+        aggregator.onCommander(new BilibiliCommanderEvent(STREAMER, user(1L), 1998.0, 1, "月"));
+        aggregator.onGovernor(new BilibiliGovernorEvent(STREAMER, user(2L), 19998.0, 1, "月"));
+
+        assertEquals(2.0, liveDataService.getLiveUserMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.GUARD_USERS, 1L));
+        assertEquals(2, users(BilibiliLiveMetric.GUARD_USERS));
+    }
+
+    @Test
+    @DisplayName("弹幕计分表的得分即该用户的弹幕条数")
+    void danmuScoreIsMessageCount() {
+        aggregator.onDanmu(new BilibiliDanmuEvent(STREAMER, user(1L), "一", "一"));
+        aggregator.onDanmu(new BilibiliDanmuEvent(STREAMER, user(1L), "二", "二"));
+        aggregator.onEmoji(new BilibiliEmojiEvent(STREAMER, user(1L), null));
+
+        assertEquals(3.0, liveDataService.getLiveUserMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.DANMU_USERS, 1L));
     }
 
     @Test

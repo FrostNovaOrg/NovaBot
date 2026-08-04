@@ -7,17 +7,32 @@ package com.starlwr.bot.bilibili.model;
  * 存放于 {@link com.starlwr.bot.core.service.LiveDataService}，开播时清零。
  */
 public final class BilibiliLiveMetric {
+    // 带 _USERS 后缀的指标是「按用户计分」表：表的大小即独立人数，
+    // 每个用户的得分含义见各自注释，用于排行榜与个人数据查询
+
     /** 弹幕条数（含表情包弹幕） */
     public static final String DANMU_COUNT = "danmu_count";
 
-    /** 发送过弹幕的独立用户数 */
+    /** 弹幕用户计分表，得分为该用户发送的弹幕条数 */
     public static final String DANMU_USERS = "danmu_users";
 
     /** 付费礼物价值，单位：元（含盲盒开出的礼物价值） */
     public static final String GIFT_VALUE = "gift_value";
 
-    /** 送出过付费礼物的独立用户数 */
+    /** 礼物用户计分表，得分为该用户送出的礼物价值（元） */
     public static final String GIFT_USERS = "gift_users";
+
+    /** 醒目留言用户计分表，得分为该用户的醒目留言总额（元） */
+    public static final String SUPER_CHAT_USERS = "super_chat_users";
+
+    /** 盲盒用户计分表，得分为该用户开出的盲盒个数 */
+    public static final String BOX_USERS = "box_users";
+
+    /** 盲盒盈亏用户计分表，得分为该用户的盲盒盈亏（元），可为负 */
+    public static final String BOX_PROFIT_USERS = "box_profit_users";
+
+    /** 大航海用户计分表，得分为该用户开通大航海的次数 */
+    public static final String GUARD_USERS = "guard_users";
 
     /** 免费礼物个数 */
     public static final String FREE_GIFT_COUNT = "free_gift_count";
