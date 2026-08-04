@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# StarBot 3.0 构建脚本
+# NovaBot 构建脚本
 #
 # Maven 不支持在同一 reactor 内构建并使用同一个插件，因此需要分两步：
 #   1. 先安装 build-tools/starbot-plugin-processor（各插件模块在 build 阶段会调用它）

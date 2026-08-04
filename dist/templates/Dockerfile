@@ -2,14 +2,14 @@
 #
 # 构建：
 #   ./build.sh
-#   docker build -f dist/templates/Dockerfile -t starbot:3.0 dist/build
+#   docker build -f dist/templates/Dockerfile -t starbot:4.0.0 dist/build
 #
 # 运行：
 #   docker run -d --name starbot \
 #     --restart unless-stopped \
 #     -v starbot-data:/app \
 #     -p 127.0.0.1:7827:7827 \
-#     starbot:3.0
+#     starbot:4.0.0
 #
 # 卷必须挂在 /app。程序把配置、登录凭据、推送规则、插件依赖全部写在工作目录下，
 # 挂到 /app/data 之类的子目录等于什么都没持久化，容器一重建就要重新扫码。

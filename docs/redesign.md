@@ -540,7 +540,7 @@ AGPL-3.0 覆盖的是**代码**。图形资产是独立的著作权客体，字�
 
 重构过程中保持：
 
-- **构件坐标不变**（`com.starlwr:starbot-core:3.0.0` 等），上游生态的第三方插件继续可用
+- **构件坐标不变**（`com.starlwr:starbot-core` 等），上游生态的第三方插件继续可用
 - **配置键不变**，仅新增。界面文案改名不影响 `application.yml` 中的键
 - **`datasource.json` 格式不变**，表单化只是换了编辑方式，文件仍可手工编辑
 - **插件 API 不变**，`@StarBotComponent` / `StarBotEventHandler` 保持现状
