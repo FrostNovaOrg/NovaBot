@@ -68,7 +68,7 @@ public class HealthAlertMonitor {
         if (status.level() == HealthStatus.Level.OK) {
             if (previous != null && previous != HealthStatus.Level.OK) {
                 alertService.resolve(key);
-                alertService.alert(key + ":恢复", "StarBot 状态恢复：" + key, status.summary());
+                alertService.alert(key + ":恢复", "NovaBot 状态恢复：" + key, status.summary());
             }
             return;
         }
@@ -78,7 +78,7 @@ public class HealthAlertMonitor {
             return;
         }
 
-        String subject = "StarBot 异常告警：" + key;
+        String subject = "NovaBot 异常告警：" + key;
         String content = status.summary()
                 + (status.advice().isBlank() ? "" : "\n处理建议：" + status.advice());
 

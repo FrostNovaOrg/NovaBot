@@ -132,11 +132,11 @@ starbot:
       webhook-title-field: title    # JSON 中承载标题的字段名。各服务约定不同，故做成可配置
       webhook-content-field: content   # JSON 中承载内容的字段名
       webhook-headers: {}           # 附加请求头，如 { Authorization: "Bearer xxx" }
-      # 常见服务的配法：
-      #   Bark（iOS 锁屏推送）：webhook-url 填 https://api.day.app/<你的key>
-      #                        webhook-method 填 GET，字段名保持 title/content 即可
-      #   Server 酱：webhook-url 填 https://sctapi.ftqq.com/<你的key>.send
-      #             webhook-content-field 改为 desp
+      # 常见服务的配法（字段名各家不同，照抄下面即可）：
+      #   Bark（iOS 锁屏推送）：url 填 https://api.day.app/<你的key>
+      #                        method 填 GET，content-field 改为 body（Bark 的正文字段叫 body）
+      #   Server 酱：url 填 https://sctapi.ftqq.com/<你的key>.send
+      #             content-field 改为 desp
       #   钉钉/飞书群机器人：需要嵌套结构，当前的扁平字段不适用，建议改用 Bark 或 Server 酱
 
     # 邮件告警。同样不经过机器人链路，可与 Webhook 并存。

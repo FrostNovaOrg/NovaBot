@@ -183,7 +183,7 @@ public class OneBotWebsocketService {
             log.warn(alarm);
 
             // 收敛交由告警服务统一处理，此处不再各自维护一套间隔逻辑
-            alertService.alert("onebot-ws:" + platformName, "StarBot OneBot Websocket 连接异常告警", alarm);
+            alertService.alert("onebot-ws:" + platformName, "NovaBot OneBot Websocket 连接异常告警", alarm);
         }), Instant.now().plusSeconds(detectInterval), Duration.ofSeconds(detectInterval));
 
         detectTasks.put(platformName, detectTask);

@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
@@ -53,8 +54,10 @@ public class WebhookAlertChannel implements AlertChannel {
         Map<String, String> headers = new LinkedHashMap<>(alert.getWebhookHeaders());
 
         if ("GET".equalsIgnoreCase(alert.getWebhookMethod())) {
-            http.get(appendQuery(url, alert.getWebhookTitleField(), subject,
-                    alert.getWebhookContentField(), content), headers);
+            // 必须以 URI 传入：传字符串会被 RestTemplate 当作模板再编码一次，
+            // 接收方收到的就是一串字面的百分号转义而非中文
+            http.get(URI.create(appendQuery(url, alert.getWebhookTitleField(), subject,
+                    alert.getWebhookContentField(), content)), headers);
             return;
         }
 

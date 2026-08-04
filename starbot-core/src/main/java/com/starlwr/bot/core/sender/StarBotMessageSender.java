@@ -272,7 +272,7 @@ public class StarBotMessageSender {
 
         for (Predicate<Message> interceptor : message.getOnBeforeSendInterceptors()) {
             if (!interceptor.test(message)) {
-                log.info("已取消发送消息: StarBot -> {} ([{}] {}) [{}]: {}", sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(), message.getDisplay());
+                log.info("已取消发送消息: NovaBot -> {} ([{}] {}) [{}]: {}", sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(), message.getDisplay());
                 return null;
             }
         }
@@ -293,7 +293,7 @@ public class StarBotMessageSender {
         if (Integer.valueOf(0).equals(result.getInteger("code"))) {
             message.setId(result.getString("id"));
             activityRecorder.recordSuccess(sender.getName(), describeTarget(message), message.getDisplay());
-            log.info("StarBot -> {} ([{}] {}) [{}]: {}", sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(), message.getDisplay());
+            log.info("NovaBot -> {} ([{}] {}) [{}]: {}", sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(), message.getDisplay());
 
             for (Runnable callback : message.getOnSuccessCallbacks()) {
                 try {
@@ -304,7 +304,7 @@ public class StarBotMessageSender {
             }
         } else {
             activityRecorder.recordFailure(sender.getName(), describeTarget(message), message.getDisplay(), result.getString("message"));
-            log.error("消息发送失败 ({}): StarBot -> {} ([{}] {}) [{}]: {}", result.getString("message"), sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(), message.getDisplay());
+            log.error("消息发送失败 ({}): NovaBot -> {} ([{}] {}) [{}]: {}", result.getString("message"), sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(), message.getDisplay());
 
             for (Runnable callback : message.getOnFailureCallbacks()) {
                 try {

@@ -186,7 +186,7 @@ public class OneBotHttpService {
 
             log.warn(alarm);
             // 收敛交由告警服务统一处理，此处不再各自维护一套间隔逻辑
-            alertService.alert("onebot-http:" + sender.getName(), "StarBot OneBot 服务异常告警", alarm);
+            alertService.alert("onebot-http:" + sender.getName(), "NovaBot OneBot 服务异常告警", alarm);
         }), Instant.now().plusSeconds(detectInterval), Duration.ofSeconds(detectInterval));
     }
 }

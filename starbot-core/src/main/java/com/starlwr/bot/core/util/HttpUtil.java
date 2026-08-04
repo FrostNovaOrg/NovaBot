@@ -18,6 +18,7 @@ import org.springframework.web.client.RestTemplate;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
+import java.net.URI;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 
@@ -87,6 +88,23 @@ public class HttpUtil {
      * @return 完整响应
      * @param <T> 返回值类型
      */
+    private <T> ResponseEntity<T> requestForEntity(URI uri, HttpMethod method, HttpEntity<?> httpEntity, Class<T> responseType) {
+        long startTime = System.currentTimeMillis();
+        if (properties.getLog().isNetworkLog()) {
+            networkLogger.info("{} -> {}", method.name(), uri);
+        }
+
+        try {
+            return restTemplate.exchange(uri, method, httpEntity, responseType);
+        } catch (Exception e) {
+            if (properties.getLog().isNetworkLog()) {
+                long cost = System.currentTimeMillis() - startTime;
+                networkLogger.error("{} <- [{}]({} ms): {}", method.name(), e.getMessage(), cost, uri, e);
+            }
+            throw e;
+        }
+    }
+
     private <T> ResponseEntity<T> requestForEntity(String url, HttpMethod method, HttpEntity<?> httpEntity, Class<T> responseType) {
         long startTime = System.currentTimeMillis();
         if (properties.getLog().isNetworkLog()) {
@@ -156,6 +174,23 @@ public class HttpUtil {
      * @param headers   HTTP 请求头
      * @return 完整响应
      */
+    /**
+     * 自定义请求头的同步 HTTP GET 请求，URL 以 {@link URI} 传入
+     * <p>
+     * 传字符串时 RestTemplate 会把它当作 URI 模板再编码一次，已编码好的查询参数会被二次编码
+     * （{@code %E5} 变成 {@code %25E5}），接收方解出来就是一串字面的百分号转义。
+     * 调用方自行拼好查询串时应改用本方法。
+     * @param uri URI
+     * @param headers HTTP 请求头
+     * @return 请求结果
+     */
+    public String get(URI uri, Map<String, String> headers) {
+        HttpHeaders httpHeaders = new HttpHeaders();
+        headers.forEach(httpHeaders::add);
+
+        return requestForEntity(uri, HttpMethod.GET, new HttpEntity<>(httpHeaders), String.class).getBody();
+    }
+
     public ResponseEntity<String> getForEntity(String url, Map<String, String> headers) {
         HttpHeaders httpHeaders = new HttpHeaders();
         headers.forEach(httpHeaders::add);
