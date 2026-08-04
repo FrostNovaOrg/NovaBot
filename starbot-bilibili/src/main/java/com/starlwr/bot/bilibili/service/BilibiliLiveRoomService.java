@@ -26,6 +26,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 /**
@@ -57,6 +58,12 @@ public class BilibiliLiveRoomService {
      * 直播间号到连接器的映射
      */
     private final Map<Long, BilibiliLiveRoomConnector> connectors = new ConcurrentHashMap<>();
+
+    /**
+     * 风控检测周期任务是否已注册。sync 会随推送配置热重载被反复调用，
+     * 若不加守卫，每次调用都会再注册一个周期任务
+     */
+    private final AtomicBoolean riskDetectionStarted = new AtomicBoolean(false);
 
     /**
      * 全部直播间共享的长连接客户端
@@ -115,7 +122,7 @@ public class BilibiliLiveRoomService {
             delay += Math.max(0, properties.getLive().getLiveRoomConnectInterval());
         }
 
-        if (properties.getLive().isAutoDetectLiveRoomRisk()) {
+        if (properties.getLive().isAutoDetectLiveRoomRisk() && riskDetectionStarted.compareAndSet(false, true)) {
             scheduler.scheduleAtFixedRate(this::detectRisk,
                     Duration.ofSeconds(Math.max(10, properties.getLive().getAutoDetectLiveRoomRiskInterval())));
         }

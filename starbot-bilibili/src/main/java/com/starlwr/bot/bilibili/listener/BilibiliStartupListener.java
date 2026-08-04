@@ -6,6 +6,7 @@ import com.starlwr.bot.bilibili.service.BilibiliBackupLivePushService;
 import com.starlwr.bot.bilibili.service.BilibiliDynamicService;
 import com.starlwr.bot.bilibili.service.BilibiliLiveRoomService;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
+import com.starlwr.bot.core.event.datasource.base.StarBotDataSourceChangeEvent;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,6 +18,7 @@ import org.springframework.scheduling.TaskScheduler;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * StarBotBilibili 启动监听器
@@ -40,6 +42,22 @@ public class BilibiliStartupListener {
     private final TaskScheduler scheduler;
 
     private final StarBotBilibiliProperties properties;
+
+    /**
+     * 各项服务是否已完成启动。启动完成前收到的数据源变更事件来自初始化加载本身，无需响应
+     */
+    private final AtomicBoolean servicesStarted = new AtomicBoolean(false);
+
+    /**
+     * 是否已有待执行的重新同步任务。一次热重载会对每个用户各发一个变更事件，
+     * 以此把短时间内的连发事件合并为一次同步
+     */
+    private final AtomicBoolean resyncPending = new AtomicBoolean(false);
+
+    /**
+     * 重新同步的合并窗口
+     */
+    private static final Duration RESYNC_DEBOUNCE = Duration.ofSeconds(2);
 
     @Autowired
     public BilibiliStartupListener(BilibiliAccountService accountService,
@@ -112,7 +130,38 @@ public class BilibiliStartupListener {
 
         startLoginStateVerification();
 
+        servicesStarted.set(true);
         log.info("StarBotBilibili 已就绪");
+    }
+
+    /**
+     * 数据源内容变更后重新同步直播间连接
+     * <p>
+     * 推送配置支持热重载，但直播间长连接不会自己跟着变：为既有用户补配直播事件后，
+     * 新房间要到下次重启才会建立连接。此处监听数据源变更事件补上这一环。
+     * 启动完成前的变更事件一律忽略——彼时登录尚未完成，提前建连会以匿名身份取令牌，
+     * 与登录态身份不符，认证会被服务端拒绝。
+     */
+    @EventListener(StarBotDataSourceChangeEvent.class)
+    public void onDataSourceChangeEvent() {
+        if (!servicesStarted.get() || accountService.isStopping()) {
+            return;
+        }
+
+        if (!resyncPending.compareAndSet(false, true)) {
+            return;
+        }
+
+        scheduler.schedule(() -> {
+            // 先复位再同步：同步期间又有变更进来时，能再触发一轮而不是被吞掉
+            resyncPending.set(false);
+            log.info("推送配置已变更, 重新同步直播间连接");
+            try {
+                liveRoomService.sync(dataSource);
+            } catch (Exception e) {
+                log.error("重新同步直播间连接失败", e);
+            }
+        }, Instant.now().plus(RESYNC_DEBOUNCE));
     }
 
     /**
