@@ -142,6 +142,25 @@ final class PushHandlerSupport {
     }
 
     /**
+     * 把订阅了「@我」的成员拼成 @ 串
+     * <p>
+     * 无人订阅时返回空串，模板里的 {at} 会因此消失，不会留下多余空行。
+     * @param subscribers 订阅者账号
+     * @return @ 串
+     */
+    static String atSubscribers(List<Long> subscribers) {
+        if (subscribers == null || subscribers.isEmpty()) {
+            return "";
+        }
+
+        StringBuilder text = new StringBuilder();
+        for (Long uid : subscribers) {
+            text.append("{at=").append(uid).append("}");
+        }
+        return text.toString();
+    }
+
+    /**
      * 获取主播的最新昵称
      * <p>
      * 事件中携带的昵称来自推送配置，可能已过时，因此优先请求接口获取最新昵称，失败时回退到事件中的值。

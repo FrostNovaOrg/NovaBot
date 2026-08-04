@@ -12,6 +12,7 @@ import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.service.AtSubscriptionService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -30,11 +31,14 @@ public class BilibiliDynamicPushHandler implements StarBotEventHandler {
 
     private final StarBotMessageSender sender;
 
+    private final AtSubscriptionService subscriptions;
+
     @Autowired
-    public BilibiliDynamicPushHandler(BilibiliApiUtil api, BilibiliDynamicPainter painter, StarBotMessageSender sender) {
+    public BilibiliDynamicPushHandler(BilibiliApiUtil api, BilibiliDynamicPainter painter, StarBotMessageSender sender, AtSubscriptionService subscriptions) {
         this.api = api;
         this.painter = painter;
         this.sender = sender;
+        this.subscriptions = subscriptions;
     }
 
     @Override
@@ -55,7 +59,9 @@ public class BilibiliDynamicPushHandler implements StarBotEventHandler {
                 .replace("{uname}", PushHandlerSupport.resolveUname(api, event.getSource()))
                 .replace("{action}", Optional.ofNullable(event.getAction()).orElse("发布了动态"))
                 .replace("{url}", Optional.ofNullable(event.getUrl()).orElse(""))
-                .replace("{picture}", picture);
+                .replace("{picture}", picture)
+                .replace("{at}", PushHandlerSupport.atSubscribers(subscriptions.list(
+                        target.getPlatform(), target.getNum(), event.getSource().getUid(), "dynamic")));
 
         PushHandlerSupport.send(sender, target, PushHandlerSupport.withAtAll(params, target, content));
     }
@@ -107,7 +113,7 @@ public class BilibiliDynamicPushHandler implements StarBotEventHandler {
     public JSONObject getDefaultParams() {
         JSONObject params = new JSONObject();
         params.put("at_all", false);
-        params.put("message", "{uname} {action}\n{url}{next}{picture}");
+        params.put("message", "{at}{uname} {action}\n{url}{next}{picture}");
         params.put("white_list", List.of());
         params.put("black_list", List.of());
         params.put("only_self_origin", false);
@@ -131,6 +137,6 @@ public class BilibiliDynamicPushHandler implements StarBotEventHandler {
 
     @Override
     public List<String> placeholders() {
-        return List.of("{uname}", "{action}", "{url}", "{picture}", "{next}", "{at=all}");
+        return List.of("{uname}", "{action}", "{url}", "{picture}", "{at}", "{next}", "{at=all}");
     }
 }

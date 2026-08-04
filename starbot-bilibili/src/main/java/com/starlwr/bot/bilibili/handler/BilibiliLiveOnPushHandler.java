@@ -13,6 +13,7 @@ import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.service.AtSubscriptionService;
 import com.starlwr.bot.core.util.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,10 +30,13 @@ public class BilibiliLiveOnPushHandler implements StarBotEventHandler {
 
     private final StarBotMessageSender sender;
 
+    private final AtSubscriptionService subscriptions;
+
     @Autowired
-    public BilibiliLiveOnPushHandler(BilibiliApiUtil api, StarBotMessageSender sender) {
+    public BilibiliLiveOnPushHandler(BilibiliApiUtil api, StarBotMessageSender sender, AtSubscriptionService subscriptions) {
         this.api = api;
         this.sender = sender;
+        this.subscriptions = subscriptions;
     }
 
     @Override
@@ -65,7 +69,9 @@ public class BilibiliLiveOnPushHandler implements StarBotEventHandler {
                 .replace("{uname}", uname)
                 .replace("{title}", title)
                 .replace("{url}", "https://live.bilibili.com/" + event.getSource().getRoomId())
-                .replace("{cover}", cover);
+                .replace("{cover}", cover)
+                .replace("{at}", PushHandlerSupport.atSubscribers(subscriptions.list(
+                        target.getPlatform(), target.getNum(), event.getSource().getUid(), "live")));
 
         PushHandlerSupport.send(sender, target, PushHandlerSupport.withAtAll(params, target, content));
     }
@@ -79,7 +85,7 @@ public class BilibiliLiveOnPushHandler implements StarBotEventHandler {
     public JSONObject getDefaultParams() {
         JSONObject params = new JSONObject();
         params.put("at_all", false);
-        params.put("message", "{uname} 正在直播 {title}\n{url}{next}{cover}");
+        params.put("message", "{at}{uname} 正在直播 {title}\n{url}{next}{cover}");
         params.put("reconnect_message", "检测到下播后短时间内重新开播,本次开播不再重复通知");
         return params;
     }
@@ -101,6 +107,6 @@ public class BilibiliLiveOnPushHandler implements StarBotEventHandler {
 
     @Override
     public List<String> placeholders() {
-        return List.of("{uname}", "{title}", "{cover}", "{url}", "{next}", "{at=all}");
+        return List.of("{uname}", "{title}", "{cover}", "{url}", "{at}", "{next}", "{at=all}");
     }
 }
