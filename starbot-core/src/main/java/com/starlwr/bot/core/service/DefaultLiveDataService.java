@@ -361,6 +361,91 @@ public class DefaultLiveDataService implements LiveDataService {
      * @return 按得分降序排列的用户
      */
     /**
+     * 取得本场全部指标的快照，供并入累计存储
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @return 指标名到取值的映射
+     */
+    public java.util.Map<String, Double> liveMetrics(@NonNull String platform, @NonNull Long uid) {
+        synchronized (metricLock) {
+            JSONObject metrics = Optional.ofNullable(cache.getJSONObject("LiveMetric:" + platform))
+                    .map(data -> data.getJSONObject(String.valueOf(uid)))
+                    .orElse(null);
+            if (metrics == null) {
+                return java.util.Map.of();
+            }
+
+            java.util.Map<String, Double> result = new java.util.HashMap<>();
+            for (String metric : metrics.keySet()) {
+                result.put(metric, metrics.getDoubleValue(metric));
+            }
+            return result;
+        }
+    }
+
+    /**
+     * 取得本场全部用户计分表的快照，供并入累计存储
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @return 指标名到「用户 UID → 得分」的映射
+     */
+    public java.util.Map<String, java.util.Map<Long, Double>> liveUserMetrics(@NonNull String platform, @NonNull Long uid) {
+        synchronized (metricLock) {
+            JSONObject byMetric = Optional.ofNullable(cache.getJSONObject("LiveMetricUser:" + platform))
+                    .map(data -> data.getJSONObject(String.valueOf(uid)))
+                    .orElse(null);
+            if (byMetric == null) {
+                return java.util.Map.of();
+            }
+
+            java.util.Map<String, java.util.Map<Long, Double>> result = new java.util.HashMap<>();
+            for (String metric : byMetric.keySet()) {
+                JSONObject users = byMetric.getJSONObject(metric);
+                if (users == null) {
+                    continue;
+                }
+                java.util.Map<Long, Double> scores = new java.util.HashMap<>();
+                for (String userKey : users.keySet()) {
+                    try {
+                        scores.put(Long.parseLong(userKey), users.getDoubleValue(userKey));
+                    } catch (NumberFormatException ignored) {
+                        // 非法用户键跳过即可，不必让整次并入失败
+                    }
+                }
+                result.put(metric, scores);
+            }
+            return result;
+        }
+    }
+
+    /**
+     * 取得本场记录到的用户昵称快照，供并入累计存储
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @return 用户 UID 到昵称的映射
+     */
+    public java.util.Map<Long, String> liveUserNames(@NonNull String platform, @NonNull Long uid) {
+        synchronized (metricLock) {
+            JSONObject names = Optional.ofNullable(cache.getJSONObject("LiveUserName:" + platform))
+                    .map(data -> data.getJSONObject(String.valueOf(uid)))
+                    .orElse(null);
+            if (names == null) {
+                return java.util.Map.of();
+            }
+
+            java.util.Map<Long, String> result = new java.util.HashMap<>();
+            for (String userKey : names.keySet()) {
+                try {
+                    result.put(Long.parseLong(userKey), names.getString(userKey));
+                } catch (NumberFormatException ignored) {
+                    // 同上
+                }
+            }
+            return result;
+        }
+    }
+
+    /**
      * 记录用户昵称
      *
      * @param platform 直播平台
