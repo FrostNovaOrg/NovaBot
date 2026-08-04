@@ -277,7 +277,11 @@ public class StarBotPluginLoader implements EnvironmentAware, ResourceLoaderAwar
         try {
             File pluginDir = new File(path);
             if (pluginDir.exists() && pluginDir.isDirectory()) {
-                File[] jars = pluginDir.listFiles((dir, name) -> name.endsWith(".jar"));
+                // 跳过以点开头的文件：它们从来不是插件，却都以 .jar 结尾，
+                // 当成插件加载只会抛 ZipException 并刷一屏堆栈。常见来源有
+                // macOS 打包/拷贝产生的 AppleDouble 元数据（._xxx.jar，实测装包时必然出现）、
+                // 编辑器临时文件，以及下载中途的半成品
+                File[] jars = pluginDir.listFiles((dir, name) -> name.endsWith(".jar") && !name.startsWith("."));
                 if (jars != null) {
                     return Arrays.asList(jars);
                 }

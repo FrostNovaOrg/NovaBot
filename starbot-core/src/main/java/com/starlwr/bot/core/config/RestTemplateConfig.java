@@ -39,6 +39,13 @@ public class RestTemplateConfig {
                 .connectTimeout(Duration.of(properties.getNetwork().getConnectTimeout(), ChronoUnit.SECONDS))
                 // 跟随重定向：哔哩哔哩的部分接口会在鉴权后跳转
                 .followRedirects(HttpClient.Redirect.NORMAL)
+                // 固定 HTTP/1.1。JDK 默认是 HTTP_2，对明文 http:// 会先发一个带
+                // Connection: Upgrade, HTTP2-Settings 与 Upgrade: h2c 的升级请求。
+                // OneBot 实现都是 HTTP/1.1，且 NapCat 若在 HTTP 端口上同时开了 WebSocket，
+                // 其 ws 库会接管所有带 Upgrade 头的请求，并对非 GET 一律回 405 Invalid HTTP method——
+                // 表现为「curl 手测正常、程序却报 OneBot HTTP 服务不可用」。真机实测复现并确认。
+                // HTTPS 走 ALPN 协商不受此影响，但本项目请求量很小，统一 1.1 更省心
+                .version(HttpClient.Version.HTTP_1_1)
                 .build();
 
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(client);

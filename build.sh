@@ -32,7 +32,9 @@ if ! command -v mvn > /dev/null 2>&1; then
     exit 1
 fi
 
-JAVA_MAJOR="$(java -version 2>&1 | head -1 | sed -E 's/.*version "([0-9]+).*/\1/')"
+# 不用 head -1：它读够一行就关闭管道，上游 java 随即 SIGPIPE，
+# 而本脚本开了 pipefail，会把整条管道判为失败
+JAVA_MAJOR="$(java -version 2>&1 | sed -nE '1s/.*version "([0-9]+).*/\1/p')"
 if [ "${JAVA_MAJOR:-0}" -lt 17 ]; then
     echo "需要 Java 17 或更高版本，当前为 ${JAVA_MAJOR:-未知}" >&2
     exit 1

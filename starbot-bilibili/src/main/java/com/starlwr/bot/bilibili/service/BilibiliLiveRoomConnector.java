@@ -185,7 +185,12 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
      */
     private void sendVerify(String token) throws IOException {
         JSONObject verify = new JSONObject();
-        verify.put("uid", 0);
+        // uid 必须与取 token 时的身份一致。token 由 getDanmuInfo 取得，已登录时该请求带着
+        // SESSDATA，服务端签发的是与该账号绑定的 token；此处若仍声称 uid=0（匿名），
+        // 服务端会在握手完成后立刻切断连接且不发关闭帧——表现为 1006，且重连会拿到新的
+        // 绑定 token 再次被拒，形成死循环。未登录时保持 0 即可
+        Long loginUid = api.getLoginUid();
+        verify.put("uid", loginUid == null ? 0L : loginUid);
         verify.put("roomid", source.getRoomId());
         verify.put("protover", DataHeaderType.BROTLI_JSON.getCode());
         verify.put("platform", "web");
@@ -241,7 +246,6 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
 
         this.status = ConnectStatus.CONNECTED;
         this.lastMessageTime = Instant.now();
-        this.reconnectAttempts.set(0);
 
         startHeartbeat();
         publisher.publishEvent(new BilibiliConnectedEvent(source));
@@ -250,6 +254,11 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
     @Override
     protected void handleBinaryMessage(@NonNull WebSocketSession session, BinaryMessage message) {
         lastMessageTime = Instant.now();
+        // 退避计数在此清零而非握手完成时。握手成功不代表连接可用：认证被拒时服务端会
+        // 握手后立刻切断，若在握手处清零，每次重连都从最短间隔重来，指数退避形同虚设——
+        // 实测曾因此每秒重连约 10 次，最终把 getDanmuInfo 打成 -352 限流。
+        // 服务端只在认证通过后才会下发数据包，故「收到消息」才是连接确实可用的证据
+        reconnectAttempts.set(0);
 
         byte[] data = new byte[message.getPayload().remaining()];
         message.getPayload().get(data);

@@ -111,7 +111,9 @@ install_java() {
 java_major() {
     local version
     command -v java > /dev/null 2>&1 || { echo 0; return; }
-    version="$(java -version 2>&1 | head -1 | sed -nE 's/.*version "([0-9]+).*/\1/p')"
+    # 不用 head -1：它读够一行就关闭管道，上游随即 SIGPIPE，pipefail 会把整条管道判为失败。
+    # sed 会读完全部输入，只是仅对第一行做替换
+    version="$(java -version 2>&1 | sed -nE '1s/.*version "([0-9]+).*/\1/p')"
     echo "${version:-0}"
 }
 
@@ -131,17 +133,69 @@ if [ "$NEED_JAVA" = "JDK" ] && ! command -v javac > /dev/null 2>&1; then
     install_java JDK
     command -v javac > /dev/null 2>&1 || die "从源码构建需要 javac，安装 JDK 后仍未找到"
 fi
-info "Java 版本：$(java -version 2>&1 | head -1)"
+info "Java 版本：$(java -version 2>&1 | sed -n 1p)"
+
+# 用 grep -c 而非 grep -q：本脚本开了 pipefail，而 grep -q 一匹配到就退出并关闭管道，
+# 上游的 fc-list 随即收到 SIGPIPE 以 141 结束，pipefail 便把整条管道判为失败——
+# 于是字体明明装好了也会被判成没装（实测 45 条 CJK 字体仍返回 141）。
+# grep -c 会读完全部输入，不会产生 SIGPIPE
+has_cjk_font() {
+    local matches
+    matches="$(fc-list 2>/dev/null | grep -ciE 'cjk|noto sans sc|wqy|source han' || true)"
+    [ "${matches:-0}" -gt 0 ]
+}
+
+# 中文字体的包名各发行版不一，同一发行版的不同版本也会变
+# （RHEL 9 是 google-noto-sans-cjk-ttc-fonts，Fedora 才是 google-noto-sans-cjk-fonts），
+# 写死一个名字必然在某些机器上装不上，故逐个尝试候选
+font_packages() {
+    case "$1" in
+        apt-get)     echo "fonts-noto-cjk" ;;
+        dnf|yum)     echo "google-noto-sans-cjk-ttc-fonts google-noto-sans-cjk-fonts wqy-zenhei-fonts" ;;
+        zypper)      echo "google-noto-sans-sc-fonts noto-sans-cjk-fonts wqy-zenhei-fonts" ;;
+        pacman)      echo "noto-fonts-cjk wqy-zenhei" ;;
+        apk)         echo "font-noto-cjk" ;;
+    esac
+}
+
+install_font() {
+    local pm pkg
+    pm="$(detect_pkg_manager)"
+    if [ -z "$pm" ]; then
+        warn "未识别的包管理器，请手动安装 Noto Sans CJK 或文泉驿字体"
+        return
+    fi
+
+    for pkg in $(font_packages "$pm"); do
+        info "正在安装中文字体 $pkg"
+        case "$pm" in
+            apt-get)        $SUDO apt-get install -y -qq "$pkg" > /dev/null 2>&1 || true ;;
+            dnf|yum|zypper) $SUDO "$pm" install -y "$pkg" > /dev/null 2>&1 || true ;;
+            pacman)         $SUDO pacman -Sy --noconfirm "$pkg" > /dev/null 2>&1 || true ;;
+            apk)            $SUDO apk add --no-cache "$pkg" > /dev/null 2>&1 || true ;;
+        esac
+
+        # 刚装上的字体不会立刻出现在 fc-list 里——它读的是 fontconfig 缓存，
+        # 包的安装脚本重建缓存有延迟。不刷新的话这里会误判成装失败，
+        # 继续去试后面的候选包，最后报一句「安装失败」，而字体其实已经装好了
+        $SUDO fc-cache -f > /dev/null 2>&1 || true
+
+        # 以 fc-list 的实际结果为准，而非包管理器的退出码：
+        # 包名不存在时它也会失败，但换个候选名就能装上
+        if has_cjk_font; then
+            info "中文字体已就绪"
+            return
+        fi
+    done
+
+    warn "中文字体安装失败，动态图片中的中文会显示为方块。
+     可手动安装后重启服务，本发行版的候选包名：$(font_packages "$pm")"
+}
 
 # 绘制动态图片需要中文字体，缺失时图片中的中文会变成方块
-if ! fc-list 2>/dev/null | grep -qiE 'cjk|noto sans sc|wqy|source han'; then
-    warn "未检测到中文字体，动态图片中的中文可能显示为方块"
-    pm="$(detect_pkg_manager)"
-    case "$pm" in
-        apt-get) info "正在安装中文字体"; $SUDO apt-get install -y -qq fonts-noto-cjk > /dev/null 2>&1 || warn "字体安装失败，可稍后手动安装 fonts-noto-cjk" ;;
-        dnf|yum) info "正在安装中文字体"; $SUDO "$pm" install -y google-noto-sans-cjk-fonts > /dev/null 2>&1 || warn "字体安装失败" ;;
-        *)       warn "请手动安装 Noto Sans CJK 或文泉驿字体" ;;
-    esac
+if ! has_cjk_font; then
+    warn "未检测到中文字体"
+    install_font
 fi
 
 # ---------------------------------------------------------------- 构建
@@ -222,7 +276,7 @@ fi
 
 # 升级时保留的是旧 application.yml，其中的端口未必是 7827，上面的替换会静默落空。
 # 结尾提示的地址以文件里的实际取值为准，否则会给出一个打不开的地址
-EFFECTIVE_PORT="$($SUDO sed -nE 's/^  port: ([0-9]+).*/\1/p' "$INSTALL_DIR/application.yml" | head -1)"
+EFFECTIVE_PORT="$($SUDO awk 'match($0, /^  port: [0-9]+/) { gsub(/[^0-9]/, "", $0); print; exit }' "$INSTALL_DIR/application.yml")"
 EFFECTIVE_PORT="${EFFECTIVE_PORT:-$PORT}"
 if [ "$EFFECTIVE_PORT" != "$PORT" ]; then
     warn "application.yml 中的端口是 $EFFECTIVE_PORT，与 --port $PORT 不一致（升级时保留了原有配置）。
