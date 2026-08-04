@@ -144,6 +144,18 @@ public class StarBotBilibiliProperties {
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
         private boolean autoRefreshCookie = true;
+
+        /**
+         * 扫码登录方式：tv 或 web
+         * <p>
+         * <b>tv</b>（默认）走 TV 端登录接口，会连同 Cookie 一并返回可续期的令牌（有效期 180 天），
+         * 凭据能长期自动续期；<b>web</b> 走网页端接口，实测服务端返回的刷新口令恒为空串，
+         * 自动续期不可用，凭据到期后只能重新扫码。
+         * <p>
+         * 除非 TV 端接口出现异常，否则不建议改为 web。
+         */
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        private String qrCodeLoginMode = "tv";
     }
 
     /**

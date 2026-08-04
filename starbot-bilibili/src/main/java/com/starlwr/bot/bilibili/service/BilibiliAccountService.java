@@ -47,6 +47,19 @@ public class BilibiliAccountService {
      */
     private static final Duration QR_CODE_TTL = Duration.ofMinutes(3);
 
+    /**
+     * TV 端登录令牌的提前续期时长
+     * <p>
+     * 令牌默认有效 180 天，提前 30 天续期留足冗余：即便程序停机数周，
+     * 回来后也仍在可续期的窗口内，不至于沦落到重新扫码。
+     */
+    private static final Duration APP_TOKEN_REFRESH_AHEAD = Duration.ofDays(30);
+
+    /**
+     * TV 端扫码登录方式的配置取值
+     */
+    private static final String LOGIN_MODE_TV = "tv";
+
     private final BilibiliApiUtil api;
 
     private final BilibiliCredentialStore store;
@@ -204,6 +217,11 @@ public class BilibiliAccountService {
             return false;
         }
 
+        // TV 端登录取得的凭据走 oauth2 续期，与 Web 端的接口和参数完全不同
+        if (current.isAppRefreshable()) {
+            return refreshAppTokenIfNeeded(current);
+        }
+
         BilibiliApiUtil.CookieRefreshHint hint;
         try {
             hint = api.checkCookieRefresh();
@@ -218,6 +236,47 @@ public class BilibiliAccountService {
 
         log.info("哔哩哔哩提示当前凭据需要续期, 开始续期");
         return doRefresh(current, hint.timestamp());
+    }
+
+    /**
+     * TV 端凭据的 oauth2 续期
+     * <p>
+     * 令牌默认有效 180 天，在到期前一段时间提前续期即可，无须每次复检都请求接口。
+     * 与 Web 端续期一样遵循「验证通过再落盘」的顺序，中途失败不会让账号失去可用凭据。
+     * @param current 当前凭据
+     * @return 是否完成了一次续期
+     */
+    private boolean refreshAppTokenIfNeeded(Cookies current) {
+        Long expiresAt = current.getAccessTokenExpiresAt();
+        if (expiresAt != null && Instant.now().isBefore(Instant.ofEpochMilli(expiresAt).minus(APP_TOKEN_REFRESH_AHEAD))) {
+            return false;
+        }
+
+        log.info("哔哩哔哩登录令牌即将到期, 开始续期");
+
+        Cookies refreshed;
+        try {
+            refreshed = api.refreshAppToken();
+        } catch (Exception e) {
+            // 走到这里旧凭据尚未被动过，仍然可用
+            log.warn("登录令牌续期失败, 继续使用原凭据: {}", e.getMessage());
+            return false;
+        }
+
+        api.setCookies(refreshed);
+        try {
+            if (api.fetchLoginUid() == null) {
+                throw new IllegalStateException("新凭据无法取得账号信息");
+            }
+        } catch (Exception e) {
+            api.setCookies(current);
+            log.error("登录令牌续期后的新凭据验证失败, 已回退至原凭据: {}", e.getMessage());
+            return false;
+        }
+
+        store.save(refreshed);
+        log.info("登录令牌续期完成");
+        return true;
     }
 
     /**
@@ -337,14 +396,28 @@ public class BilibiliAccountService {
     }
 
     /**
+     * 当前是否使用 TV 端扫码登录
+     * @return 是否为 TV 端方式
+     */
+    private boolean isTvLoginMode() {
+        return !"web".equalsIgnoreCase(properties.getQrCodeLoginMode());
+    }
+
+    /**
      * 执行扫码登录
      * @return 是否登录成功
      */
     private boolean doLoginByQrCode() {
+        boolean tvMode = isTvLoginMode();
+        if (!tvMode) {
+            log.warn("扫码登录方式为 web, 服务端不会下发可用的刷新口令, 凭据到期后需重新扫码; "
+                    + "如需自动续期请将 starbot.bilibili.account.qr-code-login-mode 改回 tv");
+        }
+
         while (!loggedIn && !isStopping()) {
             BilibiliApiUtil.QrCodeLogin qrCode;
             try {
-                qrCode = api.getQrCodeLoginInfo();
+                qrCode = tvMode ? api.getTvQrCodeLoginInfo() : api.getQrCodeLoginInfo();
             } catch (Exception e) {
                 log.error("获取登录二维码失败, 将在 10 秒后重试: {}", e.getMessage());
                 if (!sleep(Duration.ofSeconds(10))) {
@@ -358,7 +431,7 @@ public class BilibiliAccountService {
             log.info("请使用哔哩哔哩客户端扫描以下二维码登录");
             QrCodeUtil.generateQrCodeAndPrint(qrCode.url(), QR_CODE_SIZE);
 
-            if (pollUntilLoggedIn(qrCode.key())) {
+            if (pollUntilLoggedIn(qrCode.key(), tvMode)) {
                 return true;
             }
 
@@ -377,7 +450,7 @@ public class BilibiliAccountService {
      * @param key 轮询令牌
      * @return 是否登录成功
      */
-    private boolean pollUntilLoggedIn(String key) {
+    private boolean pollUntilLoggedIn(String key, boolean tvMode) {
         Instant deadline = Instant.now().plus(QR_CODE_TTL);
 
         while (Instant.now().isBefore(deadline)) {
@@ -385,7 +458,7 @@ public class BilibiliAccountService {
                 return false;
             }
 
-            if (!api.getQrCodeLoginStatus(key)) {
+            if (!(tvMode ? api.getTvQrCodeLoginStatus(key) : api.getQrCodeLoginStatus(key))) {
                 continue;
             }
 

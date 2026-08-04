@@ -16,6 +16,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
@@ -42,9 +43,9 @@ class BilibiliAccountServiceTest {
         BilibiliCredentialStore store = mock(BilibiliCredentialStore.class);
 
         when(store.load()).thenReturn(Optional.empty());
-        when(api.getQrCodeLoginInfo()).thenReturn(new BilibiliApiUtil.QrCodeLogin("https://example.invalid/qr", "test-key"));
+        when(api.getTvQrCodeLoginInfo()).thenReturn(new BilibiliApiUtil.QrCodeLogin("https://example.invalid/qr", "test-key"));
         // 始终未扫码，使登录停在轮询循环中
-        when(api.getQrCodeLoginStatus(anyString())).thenReturn(false);
+        when(api.getTvQrCodeLoginStatus(anyString())).thenReturn(false);
 
         BilibiliAccountService service = newService(api, store);
 
@@ -76,7 +77,7 @@ class BilibiliAccountServiceTest {
         service.onContextClosed();
 
         assertFalse(service.loginByQrCode(), "停机状态下扫码登录应直接返回 false");
-        verify(api, never()).getQrCodeLoginInfo();
+        verify(api, never()).getTvQrCodeLoginInfo();
     }
 
     @Test
@@ -93,7 +94,7 @@ class BilibiliAccountServiceTest {
         assertTrue(service.login(), "凭据有效时应登录成功");
         assertTrue(service.isLoggedIn());
         assertEquals(200000001L, service.getLoginUid());
-        verify(api, never()).getQrCodeLoginInfo();
+        verify(api, never()).getTvQrCodeLoginInfo();
     }
 
     @Test
@@ -121,8 +122,8 @@ class BilibiliAccountServiceTest {
         BilibiliCredentialStore store = mock(BilibiliCredentialStore.class);
 
         when(store.load()).thenReturn(Optional.empty());
-        when(api.getQrCodeLoginInfo()).thenReturn(new BilibiliApiUtil.QrCodeLogin("https://example.invalid/qr", "test-key"));
-        when(api.getQrCodeLoginStatus(anyString())).thenReturn(false);
+        when(api.getTvQrCodeLoginInfo()).thenReturn(new BilibiliApiUtil.QrCodeLogin("https://example.invalid/qr", "test-key"));
+        when(api.getTvQrCodeLoginStatus(anyString())).thenReturn(false);
 
         BilibiliAccountService service = newService(api, store);
 
@@ -132,7 +133,7 @@ class BilibiliAccountServiceTest {
         // 退出登录会再次发起扫码，若不加约束，两个流程会各自申请二维码并互相覆盖待扫码内容，
         // 界面上便会出现扫了却不生效的二维码
         assertFalse(service.loginByQrCode(), "已有流程在进行时应直接返回");
-        verify(api, times(1)).getQrCodeLoginInfo();
+        verify(api, times(1)).getTvQrCodeLoginInfo();
 
         service.onContextClosed();
         first.get(ABORT_LIMIT.toMillis(), TimeUnit.MILLISECONDS);
@@ -234,6 +235,89 @@ class BilibiliAccountServiceTest {
 
         assertFalse(service.refreshCookiesIfNeeded());
         verify(api, never()).checkCookieRefresh();
+    }
+
+    // ============ TV 端登录与 oauth2 续期 ============
+
+    @Test
+    @DisplayName("TV 端凭据未临近到期时不应续期")
+    void shouldNotRefreshAppTokenLongBeforeExpiry() {
+        BilibiliApiUtil api = mock(BilibiliApiUtil.class);
+        BilibiliAccountService service = loggedInService(api);
+
+        when(api.getCookies()).thenReturn(appCookies(Duration.ofDays(180)));
+
+        assertFalse(service.refreshCookiesIfNeeded());
+        verify(api, never()).refreshAppToken();
+        // 走的是 oauth2 分支，不应触碰 Web 端续期链路
+        verify(api, never()).checkCookieRefresh();
+    }
+
+    @Test
+    @DisplayName("TV 端凭据临近到期时应经 oauth2 续期并保存新凭据")
+    void shouldRefreshAppTokenNearExpiry() {
+        BilibiliApiUtil api = mock(BilibiliApiUtil.class);
+        BilibiliCredentialStore store = mock(BilibiliCredentialStore.class);
+        when(store.load()).thenReturn(Optional.of(new Cookies("sess", "jct", "buvid")));
+        when(api.getLoginUid()).thenReturn(200000001L);
+
+        BilibiliAccountService service = newService(api, store);
+        assertTrue(service.login(), "前置条件: 应先处于已登录状态");
+
+        Cookies refreshed = appCookies(Duration.ofDays(180));
+        when(api.getCookies()).thenReturn(appCookies(Duration.ofDays(3)));
+        when(api.refreshAppToken()).thenReturn(refreshed);
+        when(api.fetchLoginUid()).thenReturn(200000001L);
+
+        assertTrue(service.refreshCookiesIfNeeded());
+        verify(api).refreshAppToken();
+        verify(store).save(refreshed);
+        // oauth2 一次性换回全套凭据，没有「作废旧口令」这一步
+        verify(api, never()).confirmCookieRefresh(anyString());
+    }
+
+    @Test
+    @DisplayName("oauth2 续期失败时应保持原凭据不变")
+    void shouldKeepOldCookiesWhenAppRefreshFails() {
+        BilibiliApiUtil api = mock(BilibiliApiUtil.class);
+        BilibiliCredentialStore store = mock(BilibiliCredentialStore.class);
+        when(store.load()).thenReturn(Optional.of(new Cookies("sess", "jct", "buvid")));
+        when(api.getLoginUid()).thenReturn(200000001L);
+
+        BilibiliAccountService service = newService(api, store);
+        assertTrue(service.login(), "前置条件: 应先处于已登录状态");
+
+        when(api.getCookies()).thenReturn(appCookies(Duration.ofDays(3)));
+        when(api.refreshAppToken()).thenThrow(new RuntimeException("接口不可用"));
+
+        // login() 自身也会调 setCookies，先清掉调用记录，否则下面的断言会误判
+        clearInvocations(api);
+
+        assertFalse(service.refreshCookiesIfNeeded());
+        // 续期请求失败在前，凭据自然维持原状
+        verify(api, never()).setCookies(any());
+        verify(store, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("oauth2 续期后的新凭据不可用时应回退至原凭据")
+    void shouldRollBackWhenRefreshedAppCookiesInvalid() {
+        BilibiliApiUtil api = mock(BilibiliApiUtil.class);
+        BilibiliCredentialStore store = mock(BilibiliCredentialStore.class);
+        when(store.load()).thenReturn(Optional.of(new Cookies("sess", "jct", "buvid")));
+        when(api.getLoginUid()).thenReturn(200000001L);
+
+        BilibiliAccountService service = newService(api, store);
+        assertTrue(service.login(), "前置条件: 应先处于已登录状态");
+
+        Cookies current = appCookies(Duration.ofDays(3));
+        when(api.getCookies()).thenReturn(current);
+        when(api.refreshAppToken()).thenReturn(appCookies(Duration.ofDays(180)));
+        when(api.fetchLoginUid()).thenThrow(new RuntimeException("凭据无效"));
+
+        assertFalse(service.refreshCookiesIfNeeded());
+        verify(api).setCookies(current);
+        verify(store, never()).save(any());
     }
 
     @Test
@@ -341,6 +425,18 @@ class BilibiliAccountServiceTest {
      */
     private BilibiliAccountService newService(BilibiliApiUtil api, BilibiliCredentialStore store) {
         return new BilibiliAccountService(api, store, new StarBotBilibiliProperties());
+    }
+
+    /**
+     * 构造一份 TV 端登录取得的凭据
+     * @param remaining 距令牌到期还剩多久
+     * @return 凭据
+     */
+    private Cookies appCookies(Duration remaining) {
+        Cookies cookies = new Cookies("sess", "jct", "buvid", "refresh-token");
+        cookies.setAccessToken("access-token");
+        cookies.setAccessTokenExpiresAt(System.currentTimeMillis() + remaining.toMillis());
+        return cookies;
     }
 
     /**

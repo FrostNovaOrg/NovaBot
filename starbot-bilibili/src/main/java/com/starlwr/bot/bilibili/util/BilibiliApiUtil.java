@@ -58,6 +58,19 @@ public class BilibiliApiUtil {
     // 实测无效（refresh_token 仍为空串），故未保留——不留只有猜想支撑的参数
     private static final String QR_CODE_POLL_API = "https://passport.bilibili.com/x/passport-login/web/qrcode/poll?qrcode_key=";
 
+    /**
+     * TV 端扫码登录接口
+     * <p>
+     * Web 端扫码返回的持久化刷新口令实测恒为空串，导致 Cookie 无法自动续期；
+     * TV 端登录则会连同 Cookie 一并返回 access_token 与 refresh_token（有效期 180 天），
+     * 可经 oauth2 接口续期，是目前唯一能让凭据长期存活的扫码路径。
+     */
+    private static final String TV_QR_CODE_GENERATE_API = "https://passport.bilibili.com/x/passport-tv-login/qrcode/auth_code";
+
+    private static final String TV_QR_CODE_POLL_API = "https://passport.bilibili.com/x/passport-tv-login/qrcode/poll";
+
+    private static final String OAUTH2_REFRESH_TOKEN_API = "https://passport.bilibili.com/api/v2/oauth2/refresh_token";
+
     private static final String MASTER_INFO_API = "https://api.live.bilibili.com/live_user/v1/Master/info?uid=";
 
     private static final String ROOM_INFO_API = "https://api.live.bilibili.com/room/v1/Room/get_info?room_id=";
@@ -501,6 +514,180 @@ public class BilibiliApiUtil {
     public QrCodeLogin getQrCodeLoginInfo() {
         JSONObject data = requestBilibiliApi(QR_CODE_GENERATE_API);
         return new QrCodeLogin(data.getString("url"), data.getString("qrcode_key"));
+    }
+
+    /**
+     * 获取 TV 端扫码登录所需的二维码内容与轮询令牌
+     * @return 扫码登录信息
+     */
+    public QrCodeLogin getTvQrCodeLoginInfo() {
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("local_id", 0);
+        params.put("ts", System.currentTimeMillis() / 1000);
+
+        JSONObject body = JSON.parseObject(http.postAsForm(TV_QR_CODE_GENERATE_API,
+                getBilibiliHeaders(), BilibiliAppSignUtil.signWithTvKey(params)));
+
+        Integer code = body == null ? null : body.getInteger("code");
+        if (code == null || code != 0) {
+            throw new ResponseCodeException(code == null ? -1 : code,
+                    body == null ? "响应为空" : body.getString("message"));
+        }
+
+        JSONObject data = body.getJSONObject("data");
+        return new QrCodeLogin(data.getString("url"), data.getString("auth_code"));
+    }
+
+    /**
+     * 轮询 TV 端扫码登录状态
+     * <p>
+     * 登录成功时会直接将取得的凭据写入当前实例。与 Web 端的区别在于：凭据放在响应体的
+     * cookie_info 中（无需解析 Set-Cookie），且会一并返回可续期的 access_token 与 refresh_token。
+     * @param authCode 轮询令牌
+     * @return 是否已登录成功
+     */
+    public boolean getTvQrCodeLoginStatus(String authCode) {
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("auth_code", authCode);
+        params.put("local_id", 0);
+        params.put("ts", System.currentTimeMillis() / 1000);
+
+        JSONObject body;
+        try {
+            body = JSON.parseObject(http.postAsForm(TV_QR_CODE_POLL_API,
+                    getBilibiliHeaders(), BilibiliAppSignUtil.signWithTvKey(params)));
+        } catch (Exception e) {
+            log.debug("轮询 TV 端扫码登录状态失败: {}", e.getMessage());
+            return false;
+        }
+
+        Integer code = body == null ? null : body.getInteger("code");
+        if (code == null || code != 0) {
+            // 86038 二维码失效、86039 尚未确认、86090 已扫码待确认
+            return false;
+        }
+
+        JSONObject data = body.getJSONObject("data");
+        if (data == null) {
+            return false;
+        }
+
+        Cookies logged = extractTvLoginCookies(data);
+        if (logged == null) {
+            // 只列字段名，绝不输出取值：这里面就有等同于账号密码的 SESSDATA
+            log.error("TV 端扫码登录成功但未能解析出登录凭据; 响应字段: {}", data.keySet());
+            return false;
+        }
+
+        if (StringUtil.isBlank(logged.getBuvid3())) {
+            logged.setBuvid3(buvid3);
+        }
+
+        this.cookies = logged;
+        return true;
+    }
+
+    /**
+     * 从 TV 端登录响应中取出登录凭据与续期令牌
+     * @param data 响应中的 data 对象
+     * @return 登录凭据，缺少必要字段时为 null
+     */
+    private Cookies extractTvLoginCookies(JSONObject data) {
+        JSONObject cookieInfo = data.getJSONObject("cookie_info");
+        JSONArray items = cookieInfo == null ? null : cookieInfo.getJSONArray("cookies");
+        if (items == null) {
+            return null;
+        }
+
+        Cookies logged = new Cookies();
+        for (int i = 0; i < items.size(); i++) {
+            JSONObject item = items.getJSONObject(i);
+            if (item == null) {
+                continue;
+            }
+
+            String name = item.getString("name");
+            String value = item.getString("value");
+            if (name == null || value == null) {
+                continue;
+            }
+
+            switch (name) {
+                case "SESSDATA" -> logged.setSessData(value);
+                case "bili_jct" -> logged.setBiliJct(value);
+                case "buvid3" -> logged.setBuvid3(value);
+                default -> { }
+            }
+        }
+
+        if (StringUtil.isBlank(logged.getSessData()) || StringUtil.isBlank(logged.getBiliJct())) {
+            return null;
+        }
+
+        // 登录响应把令牌放在 data 顶层，续期响应放在 token_info 内，两处都要认
+        JSONObject tokenInfo = data.getJSONObject("token_info");
+        logged.setAccessToken(firstNotBlank(data.getString("access_token"),
+                tokenInfo == null ? null : tokenInfo.getString("access_token")));
+        logged.setRefreshToken(firstNotBlank(data.getString("refresh_token"),
+                tokenInfo == null ? null : tokenInfo.getString("refresh_token")));
+
+        Long expiresIn = data.getLong("expires_in");
+        if (expiresIn == null && tokenInfo != null) {
+            expiresIn = tokenInfo.getLong("expires_in");
+        }
+        if (expiresIn != null) {
+            logged.setAccessTokenExpiresAt(System.currentTimeMillis() + expiresIn * 1000);
+        }
+
+        return logged;
+    }
+
+    /**
+     * 取第一个非空白的字符串
+     */
+    private String firstNotBlank(String first, String second) {
+        return StringUtil.isNotBlank(first) ? first : second;
+    }
+
+    /**
+     * 经 oauth2 接口续期 TV 端登录取得的凭据
+     * <p>
+     * 一次性换回全新的 Cookie、access_token 与 refresh_token，旧令牌随即失效，
+     * 因此调用方必须在成功后立刻持久化新凭据。
+     * @return 续期后的凭据
+     */
+    public Cookies refreshAppToken() {
+        Cookies current = this.cookies;
+        if (current == null || !current.isAppRefreshable()) {
+            throw new IllegalStateException("当前凭据不具备 oauth2 续期条件");
+        }
+
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("access_key", current.getAccessToken());
+        params.put("refresh_token", current.getRefreshToken());
+        params.put("ts", System.currentTimeMillis() / 1000);
+
+        JSONObject body = JSON.parseObject(http.postAsForm(OAUTH2_REFRESH_TOKEN_API,
+                getBilibiliHeaders(), BilibiliAppSignUtil.signWithTvKey(params)));
+
+        Integer code = body == null ? null : body.getInteger("code");
+        if (code == null || code != 0) {
+            throw new ResponseCodeException(code == null ? -1 : code,
+                    body == null ? "响应为空" : body.getString("message"));
+        }
+
+        JSONObject data = body.getJSONObject("data");
+        Cookies refreshed = data == null ? null : extractTvLoginCookies(data);
+        if (refreshed == null) {
+            throw new IllegalStateException("续期响应中未能解析出登录凭据, 响应字段: "
+                    + (data == null ? "无 data" : data.keySet().toString()));
+        }
+
+        if (StringUtil.isBlank(refreshed.getBuvid3())) {
+            refreshed.setBuvid3(current.getBuvid3());
+        }
+
+        return refreshed;
     }
 
     /**

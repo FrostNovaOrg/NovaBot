@@ -34,13 +34,32 @@ public class Cookies {
     /**
      * 持久化刷新口令
      * <p>
-     * 官方 Web 端将其存于 localStorage 的 ac_time_value 字段，登录成功时随响应一并返回。
+     * Web 端登录时存于 localStorage 的 ac_time_value；TV 端登录时为 oauth2 的 refresh_token。
      * 它是 Cookie 续期链路的唯一入口：丢失后只能重新扫码，因此必须与其余凭据一起持久化。
      */
     private String refreshToken;
 
+    /**
+     * APP 访问令牌
+     * <p>
+     * 仅 TV 端扫码登录会返回。它的存在同时也是「续期该走 oauth2 路径而非 Web 路径」的标志：
+     * 两条续期链路的接口与参数完全不同，不能混用。
+     */
+    private String accessToken;
+
+    /**
+     * APP 访问令牌的到期时间戳（毫秒）
+     * <p>
+     * TV 端登录默认给 180 天。续期判断以此为准，不必每次都请求接口探测。
+     */
+    private Long accessTokenExpiresAt;
+
     public Cookies(String sessData, String biliJct, String buvid3) {
-        this(sessData, biliJct, buvid3, null);
+        this(sessData, biliJct, buvid3, null, null, null);
+    }
+
+    public Cookies(String sessData, String biliJct, String buvid3, String refreshToken) {
+        this(sessData, biliJct, buvid3, refreshToken, null, null);
     }
 
     /**
@@ -60,6 +79,14 @@ public class Cookies {
      */
     public boolean isRefreshable() {
         return isComplete() && isNotBlank(refreshToken);
+    }
+
+    /**
+     * 判断是否为 TV 端登录取得的凭据，决定走哪条续期链路
+     * @return 是否可经 oauth2 续期
+     */
+    public boolean isAppRefreshable() {
+        return isNotBlank(accessToken) && isNotBlank(refreshToken);
     }
 
     private static boolean isNotBlank(String value) {
