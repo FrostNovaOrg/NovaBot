@@ -65,26 +65,32 @@ public abstract class AbstractDataSource {
      * @param users 推送用户列表
      */
     public synchronized void add(@NonNull List<PushUser> users) {
-        users.removeIf(user -> !user.getEnabled());
+        // 先复制一份再筛选。直接在入参上 removeIf 有两个问题：
+        // 一是 List.of / Collections.singletonList 这类不可变列表会抛 UnsupportedOperationException
+        // （上面的 add(PushUser) 正是传的 singletonList，插件按 Javadoc 逐个添加时必然踩到）；
+        // 二是调用方通常不预期自己的列表被就地改掉
+        List<PushUser> pending = new ArrayList<>(users);
 
-        if (new HashSet<>(users).size() != users.size()) {
+        pending.removeIf(user -> !user.getEnabled());
+
+        if (new HashSet<>(pending).size() != pending.size()) {
             throw new DataSourceException("推送用户列表中存在重复的用户");
         }
 
-        for (PushUser user: users) {
+        for (PushUser user: pending) {
             if (this.userMap.containsKey(user.getPlatform()) && this.userMap.get(user.getPlatform()).containsKey(user.getUid())) {
                 throw new DataSourceException("数据源中已存在该推送用户 (平台: " + user.getPlatform() + ", UID: " + user.getUid() + "), 无法重复添加");
             }
         }
 
-        for (PushUser user: users) {
+        for (PushUser user: pending) {
             user.getTargets().removeIf(target -> !target.getEnabled());
             for (PushTarget target: user.getTargets()) {
                 target.getMessages().removeIf(message -> !message.getEnabled());
             }
         }
 
-        Map<String, List<PushUser>> platformMap = users.stream().collect(Collectors.groupingBy(PushUser::getPlatform));
+        Map<String, List<PushUser>> platformMap = pending.stream().collect(Collectors.groupingBy(PushUser::getPlatform));
         Set<String> notSupportedPlatforms = new HashSet<>();
         for (String platform: platformMap.keySet()) {
             dataSourceServiceRegistry.getDataSourceService(platform).ifPresentOrElse(
@@ -96,10 +102,10 @@ public abstract class AbstractDataSource {
             );
         }
 
-        users.removeIf(user -> notSupportedPlatforms.contains(user.getPlatform()));
+        pending.removeIf(user -> notSupportedPlatforms.contains(user.getPlatform()));
 
-        this.users.addAll(users);
-        for (PushUser user: users) {
+        this.users.addAll(pending);
+        for (PushUser user: pending) {
             this.userMap.computeIfAbsent(user.getPlatform(), k -> new HashMap<>()).put(user.getUid(), user);
 
             initPushMessageParams(user);
@@ -201,6 +207,13 @@ public abstract class AbstractDataSource {
             }
 
             this.userMap.get(user.getPlatform()).put(user.getUid(), user);
+            // 索引与列表必须一起换。只换索引的话，getUser / getUsers 拿到的是新配置、
+            // getAllUsers 拿到的还是旧的，配置界面「当前已加载的推送用户」会一直显示改动前的内容，
+            // 使用者据此以为配置没生效，实际推送用的已经是新配置
+            int index = this.users.indexOf(oldUser);
+            if (index >= 0) {
+                this.users.set(index, user);
+            }
 
             initPushMessageParams(user);
 

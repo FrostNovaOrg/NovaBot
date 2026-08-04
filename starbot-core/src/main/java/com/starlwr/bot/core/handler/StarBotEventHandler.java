@@ -26,6 +26,10 @@ public interface StarBotEventHandler {
 
     /**
      * 获取事件处理器默认参数
+     * <p>
+     * <b>每次调用都必须返回新的实例。</b>数据源加载推送配置时会把使用者自定义的参数
+     * 直接写进该返回值，此处若返回缓存或静态实例，一个推送目标的自定义参数会串到其他
+     * 目标上，且重载配置后依然残留。
      * @return 默认参数
      */
     JSONObject getDefaultParams();
