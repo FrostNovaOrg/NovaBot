@@ -228,17 +228,28 @@ public class ConfigurationMetadataService {
     /**
      * 清理配置项说明
      * <p>
-     * 元数据中的说明直接取自 Javadoc，含有 &lt;p&gt; 等 HTML 标签，直接展示在界面上会出现标签文本。
+     * 元数据中的说明直接取自 Javadoc，含有 &lt;p&gt; 等 HTML 标签与 {@code @link}、
+     * {@code @code} 等内联标记，直接展示在界面上会出现标签文本与全限定类名。
      * @param description 原始说明
      * @return 清理后的说明
      */
-    private String cleanDescription(String description) {
+    // 包级可见而非私有：说明文字的清理规则直接决定界面观感，值得单独覆盖，
+    // 而走公开入口需要构造完整的元数据文件，代价与收益不成比例
+    String cleanDescription(String description) {
         if (description == null) {
             return null;
         }
 
         return description
                 .replaceAll("<[^>]+>", "")
+                // {@code X} / {@literal X} 取其内容
+                .replaceAll("\\{@(?:code|literal)\\s+([^}]*)}", "$1")
+                // {@link 目标 说明文字} 取说明文字，必须先于下一条，否则会被当成无说明的形式处理
+                .replaceAll("\\{@(?:link|linkplain)\\s+[^}\\s]+\\s+([^}]*)}", "$1")
+                // {@link 目标} 取目标本身
+                .replaceAll("\\{@(?:link|linkplain|value)\\s+([^}]*)}", "$1")
+                // 全限定类名只保留简单名：使用者不关心包路径
+                .replaceAll("(?<![\\w.])(?:[a-z][\\w]*\\.)+([A-Z][\\w]*)", "$1")
                 .replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
                 .replaceAll("[ \\t]+", " ")
                 .strip();
@@ -277,6 +288,11 @@ public class ConfigurationMetadataService {
                 // 元素为自定义类型的列表结构复杂，界面无法用简单控件表达，
                 // 标记为只读并引导使用者到配置文件页签编辑，避免出现「改了界面却不生效」的假象
                 return type.contains("com.starlwr.") ? "complex" : "list";
+            }
+            // 映射类型同样无法用单行输入表达。此前落进了下面的 string 分支，界面会给出一个
+            // 普通文本框，填进去的内容既不会生效也不会报错——这正是上面要避免的那种假象
+            if (type.startsWith("java.util.Map")) {
+                return "complex";
             }
 
             return "string";
