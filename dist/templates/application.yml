@@ -11,7 +11,8 @@ server:
 
 spring:
   profiles:
-    active: json            # 数据源类型，json：读取 datasource.json，mysql：读取 MySQL
+    active: json            # 数据源类型。目前只有 json（读取 datasource.json）一种，
+                            # 第三方插件可自带数据源实现并在此指定对应的 profile 名
   thymeleaf:
     check-template-location: false
   mail:

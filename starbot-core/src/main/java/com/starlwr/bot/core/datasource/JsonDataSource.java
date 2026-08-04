@@ -127,7 +127,13 @@ public class JsonDataSource extends AbstractDataSource {
                         }
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
+                    } catch (ClosedWatchServiceException e) {
+                        // 停机时会关闭 WatchService，阻塞中的 take() 随即抛出该异常。
+                        // 这是正常终止而非故障，既不该记 ERROR，也必须跳出循环：
+                        // 继续循环的话 take() 会立即再抛，变成边空转边刷 ERROR 直到进程退出
+                        break;
                     } catch (Exception e) {
+                        // 此处的异常来自事件处理而非 take()，属可恢复情况，记录后继续监听
                         log.error("监听数据源 JSON 文件更新异常", e);
                     }
                 }

@@ -307,6 +307,12 @@
 - **`build.sh` 吞掉了模板拷贝的失败**。`cp -R dist/templates/. "$OUT/" 2>/dev/null || true`
   失败时构建仍报成功，产物里却没有 `application.yml`，要到运行时才暴露成一句莫名其妙的启动失败。
 - **systemd 单元的 `Documentation` 指向了别的项目**——上游 StarBot 的 Python 版仓库。
+- **文件监听线程在停机时空转刷 ERROR**。停机会关闭 `WatchService`，阻塞中的 `take()`
+  随即抛出 `ClosedWatchServiceException`，而 catch 分支记完 ERROR 与完整堆栈后继续循环，
+  下一次 `take()` 立刻再抛——正常停机变成边空转边刷错误日志，直到进程退出才停。
+  本次实跑停机时被抓到（停机只用 0.5 秒，所以仅刷出一行，停得慢就会刷满日志）。
+  现将其识别为正常终止并跳出循环。这是与「停机耗时 31 秒」同一类的问题：
+  **正常路径不该报错**。
 
 ### 安全（续）
 
@@ -321,6 +327,36 @@
   要到下次启动加载时才暴露为难以理解的类加载错误。
 
 ### 移除
+
+- **移除 MySQL 数据源与全部 JPA 依赖**。
+
+  该数据源存的只有推送配置本身（监听谁、推给谁、推什么），而非运行时数据。
+  `LoadDataSourceListener` 在应用就绪时调用一次 `load()`，此后全部在内存中，
+  `add` / `remove` / `update` 也只改内存——**运行期一条 SQL 不发，且没有任何写回路径**。
+
+  它在本仓库中不可用，也不该继续留着：
+
+  - **配置界面完全不认它**。`/api/datasource` 读写的固定是 `datasource.json`，
+    界面导航不区分 profile。选用 MySQL 后「推送规则」页照常显示、照常保存，
+    改的却是一个没人读的文件——比不支持更糟，是静默地改错东西。
+  - **按现状根本启动不起来**。全仓库没有任何 `spring.datasource` 配置
+    （`DataSourceConfig` 原为 `@Profile("!mysql")` 才排除数据源自动配置，切到 mysql
+    反而使其生效却无 url 可读），且 `ddl-auto: none` 而仓库中零个建表 SQL。
+  - **没有自动重载**。JSON 数据源有文件监听，改完即刻生效；MySQL 改了行必须重启。
+  - **代价与收益不成比例**。仅为它引入的依赖使发行包 `lib/` 从 62 MB 降到 30 MB
+    （整包 71 MB → 39 MB），而目标部署环境是 1 GB 内存的 VPS。
+
+  数据源本身仍是可扩展点：实现按 `spring.profiles.active` 选取，
+  第三方插件可自带实现并指定对应的 profile 名。
+
+  **不兼容变更**：删除了 `MySQLDataSource`、三个 JPA Repository 接口，
+  以及 `PushUser` / `PushTarget` / `PushMessage` 上的 JPA 注解与仅供数据库使用的
+  `id` 字段（`getId()` / `setId()` 随之移除；该字段在 JSON 数据源下始终为 null，
+  仓库内无任何调用点）。三个模型类的其余方法签名未变。
+
+  `org.springframework.data.util.Pair` 出现在 `FontUtil` 与 `CommonPainter`
+  的公开方法签名中（返回文本宽高），原先随 JPA 间接引入。为不破坏第三方绘图插件，
+  改为显式声明 `spring-data-commons`（1.6 MB）而非替换该类型。
 
 - **移除内置的 StarBot 标识图片**。上游在类路径中内置了一张带 "StarBot" 字样的标识
   （`starbot-core/src/main/resources/logo.png`），并默认绘制在每一张推送出去的动态图片底部。

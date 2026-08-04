@@ -63,7 +63,6 @@
         <!-- 第三方依赖版本，集中在此管理，模块内不再各写各的 -->
         <fastjson2.version>2.0.56</fastjson2.version>
         <reflections.version>0.10.2</reflections.version>
-        <mysql-connector.version>9.5.0</mysql-connector.version>
         <imageio-webp.version>3.12.0</imageio-webp.version>
         <zxing.version>3.5.3</zxing.version>
         <spring-retry.version>2.0.12</spring-retry.version>
@@ -89,11 +88,6 @@
                 <groupId>org.reflections</groupId>
                 <artifactId>reflections</artifactId>
                 <version>${reflections.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.mysql</groupId>
-                <artifactId>mysql-connector-j</artifactId>
-                <version>${mysql-connector.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.twelvemonkeys.imageio</groupId>
