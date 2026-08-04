@@ -85,7 +85,9 @@ for module in "${PLUGIN_MODULES[@]}"; do
 done
 rm -f "$OUT"/plugins-lib/starbot-core-*.jar
 
-cp -R dist/templates/. "$OUT/" 2>/dev/null || true
+# 不吞错误：模板拷贝失败时产物里会没有 application.yml，
+# 而那要到运行时才暴露成一句莫名其妙的启动失败
+cp -R dist/templates/. "$OUT/"
 
 echo
 echo "构建完成，产物位于 dist/build"

@@ -63,7 +63,18 @@ sudo systemctl start starbot && sudo journalctl -u starbot -f
 
 ### 容器部署
 
-见 [dist/templates/Dockerfile](../dist/templates/Dockerfile)。
+```bash
+./build.sh
+docker build -f dist/templates/Dockerfile -t starbot:3.0 dist/build
+docker run -d --name starbot --restart unless-stopped \
+  -v starbot-data:/app -p 127.0.0.1:7827:7827 starbot:3.0
+```
+
+**卷必须挂在 `/app`。** 配置、登录凭据、推送规则、插件依赖全都写在工作目录下，
+挂到 `/app/data` 之类的子目录等于什么都没持久化，容器一重建就得重新扫码。
+
+升级换新镜像即可，卷里的配置与登录态会保留。其余说明见
+[dist/templates/Dockerfile](../dist/templates/Dockerfile) 顶部的注释。
 
 ## 3. 首次配置
 
@@ -200,11 +211,15 @@ starbot:
 
 ### 从本项目的旧版本升级
 
+用 `install.sh` 或容器部署时下面这些都由脚本处理，手工升级才需要照做：
+
 1. 停止服务
 2. **备份 `application.yml`、`datasource.json`、`cookies.json`、`cookies.key`**
-3. 用新版本的产物替换 `StarBotCore.jar`、`lib/`、`plugins/`
-4. 保留原有的 `application.yml` 与 `datasource.json`
-5. 启动，看日志有没有「未知配置项」之类的告警
+3. 用新版本的产物替换 `StarBotCore.jar` 与 `lib/`
+4. `plugins/` **不要整个替换**——里面可能有你自己放的第三方插件，覆盖等于把它们卸载。
+   只替换内置的那三个插件，并删掉它们的旧版本文件（同一插件留下两个版本会被同时加载）
+5. 保留原有的 `application.yml` 与 `datasource.json`
+6. 启动，看日志有没有「未知配置项」之类的告警
 
 配置项若有删改，构建时的一致性测试会拦住，因此升级后配置一般可以直接沿用。
 

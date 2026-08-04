@@ -182,7 +182,17 @@ starbot:
 后续启动无需重复登录。
 
 生产环境建议使用 systemd 托管，配置见 [dist/templates/starbot.service](dist/templates/starbot.service)。
-容器部署见 [dist/templates/Dockerfile](dist/templates/Dockerfile)。
+
+容器部署：
+
+```bash
+docker build -f dist/templates/Dockerfile -t starbot:3.0 dist/build
+docker run -d --name starbot --restart unless-stopped \
+  -v starbot-data:/app -p 127.0.0.1:7827:7827 starbot:3.0
+```
+
+卷必须挂在 `/app`——配置与登录凭据都写在工作目录下，挂到子目录不会持久化任何东西。
+详见[用户手册](docs/user-guide.md#容器部署)。
 
 ## 消息模板
 

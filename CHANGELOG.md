@@ -254,6 +254,60 @@
 - **弹幕消息数组越界**。上游直接读取 `info[16]` 获取荣耀等级，该下标不存在时抛出
   `IndexOutOfBoundsException`。改为越界返回空。
 
+以下几项来自对部署路径的复核。`install.sh` 与 `Dockerfile` 此前从未被真正执行过，
+问题都是静态审查发现的：
+
+- **容器部署完全没有持久化**（严重）。`Dockerfile` 注释里给出的 `-v "$PWD/data:/app/data"`
+  一个字节都没存下来：程序读写的文件——`application.yml`、`cookies.json`、`cookies.key`、
+  `datasource.json`、配置备份、`plugins-lib`——全部使用相对工作目录的路径，都落在 `/app`。
+  照注释部署的话，**每次重建容器都要重新扫码登录，推送规则也全部丢失**。
+  改为程序文件放镜像内的 `/opt/starbot`、启动时由入口脚本同步到 `/app`，`/app` 整个挂卷：
+  配置与登录态跟着卷走，换新镜像即完成升级。
+- **升级会静默卸载第三方插件**。`install.sh` 升级时 `rm -rf plugins/` 再整个复制，
+  使用者自己放进去的插件就此消失——而兼容上游生态的第三方插件是本仓库明确宣传的能力。
+  改为只按构件名清理内置插件的旧版本。匹配式里版本位限定数字开头，
+  否则 `starbot-onebot-adapter-*` 会连带匹配 `starbot-onebot-adapter-napcat-extension-*`，
+  以内置插件名为前缀的第三方插件也会被误删。
+- **`install.sh --dir ""` 会以 root 执行 `rm -rf /lib`**（严重）。安装目录直接取自命令行且未经校验，
+  空值或 `/usr` 之类的路径足以毁掉系统。现校验其为绝对路径且非根目录，
+  并且只在目标目录确实是既有安装（存在 `StarBotCore.jar`）时才执行清理，认不出来就中止并提示。
+  `--port`、`--user` 同样补上了取值校验。
+- **升级过程中登录凭据会短暂暴露**。`install.sh` 原先把 `cookies.json` / `cookies.key`
+  复制到 `/tmp/starbot-keep-*` 中转：root 的默认 umask 会让它们对同机所有用户可读，
+  可预测的路径还能被抢先创建的同名软链劫持，脚本中途失败时更会一直留在那里。
+  实际上这两个文件根本不在构建产物中，复制回来的步骤不会覆盖它们——中转本身就是多余的。
+  现只中转确实会被覆盖的 `application.yml` 与 `datasource.json`，且改用 `mktemp -d`。
+- **`systemd` 的内存上限低于 JVM 自己的上限**。`MemoryMax=768M`，而 `start.sh` 允许
+  `-Xmx512m` 加 `MaxMetaspaceSize=192m`，再计入线程栈与代码缓存已超出该值。
+  堆真涨起来时进程会先被内核 SIGKILL——不给优雅停机的机会，可能停在写 `cookies.json` 的中途，
+  再配合 `Restart=on-failure` 就成了崩溃循环。改为 `MemoryHigh=768M` + `MemoryMax=1G`，
+  并写明想要更低的硬上限应当同步调低 `-Xmx`。
+- **停机信号在容器里传不到 JVM**。原 `ENTRYPOINT` 直接 `exec java`，尚可收到信号；
+  但一旦经由 `start.sh`（它才有插件依赖重启逻辑），bash 不转发 SIGTERM，
+  `docker stop` 只能等超时后 SIGKILL。现由 `start.sh` 捕获 SIGTERM 转发给 java，
+  并在 `wait` 被信号打断后继续等待其真正退出。实测：改前 0.03 秒即退出、留下一个孤儿 java 进程；
+  改后完整等满子进程的停机流程，无残留。
+- **`JAVA_OPTS` 环境变量形同虚设**。`start.sh` 把外部传入的 `JAVA_OPTS` 拼在默认值**之前**，
+  而 JVM 对同类参数取后出现的那个，于是 `JAVA_OPTS="-Xmx1g" ./start.sh` 会被默认的
+  `-Xmx512m` 悄悄盖掉。改为拼在末尾，覆盖真正生效。
+- **镜像里的 JVM 参数已与 `start.sh` 漂移**。`Dockerfile` 抄了一份 `JAVA_OPTS`，
+  其中 `-Xms128m` 是实测已被淘汰的取值（降到 64m 可使稳态常驻内存从 130~155 MB 降到 105~110 MB），
+  另外还漏了 `-Dfile.encoding=UTF-8` 与 `-Duser.timezone`。
+  现镜像改为经 `start.sh` 启动，JVM 参数全项目只有一份。
+- **`install.sh` 声称安装 JDK 实则安装 JRE**。从源码构建需要 `javac`，
+  而脚本装的是 `*-jre-headless`；机器上恰好没有 Maven 自带的 JDK 时构建会失败。
+  现按是否需要构建分别安装 JDK 或 JRE，并显式检查 `javac`。
+- **`install.sh --help` 会把代码当成用法打印**。用法说明按写死的行号 `2,16p` 截取，
+  脚本增删几行后就连 `set -euo pipefail` 与 `INSTALL_DIR="/opt/starbot"` 一起输出了。
+  改为读到第一行非注释为止。
+- **`--port` 在升级时会静默失效**。该参数靠替换 `application.yml` 里的 `port: 7827` 实现，
+  而升级时保留的是使用者原有的配置文件，其中端口未必是 7827，替换便落空，
+  脚本结尾却仍按 `--port` 的取值打印访问地址——给出一个打不开的地址。
+  现结尾提示以文件中的实际取值为准，不一致时明确告警。
+- **`build.sh` 吞掉了模板拷贝的失败**。`cp -R dist/templates/. "$OUT/" 2>/dev/null || true`
+  失败时构建仍报成功，产物里却没有 `application.yml`，要到运行时才暴露成一句莫名其妙的启动失败。
+- **systemd 单元的 `Documentation` 指向了别的项目**——上游 StarBot 的 Python 版仓库。
+
 ### 安全（续）
 
 - **插件依赖下载增加完整性校验**。`auto-download-dependency` 默认开启，下载的 jar 会在下次启动时

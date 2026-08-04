@@ -9,8 +9,8 @@
 # 首次启动需要扫码登录，先用 journalctl -u starbot -f 查看二维码。
 
 [Unit]
-Description=StarBot - 哔哩哔哩推送机器人
-Documentation=https://github.com/Starlwr/StarBot
+Description=StarBot - 哔哩哔哩直播与动态推送机器人
+Documentation=https://github.com/rossinova/NovaBot
 After=network-online.target
 Wants=network-online.target
 
@@ -41,8 +41,14 @@ LockPersonality=true
 MemoryDenyWriteExecute=false
 ReadWritePaths=/opt/starbot
 
-# 内存上限，超出后由 systemd 终止并重启
-MemoryMax=768M
+# 内存上限必须高于 JVM 自己的上限之和，否则堆真涨到 -Xmx 时会先被 cgroup 杀掉：
+# SIGKILL 不给优雅停机的机会（可能停在写 cookies.json 的中途），
+# 再配合上面的 Restart=on-failure 就成了崩溃循环。
+# start.sh 的设置是 -Xmx512m + MaxMetaspaceSize=192m，加上线程栈、代码缓存与
+# 直接内存约 150M，故取 1G；先由 MemoryHigh 施加回收压力，实在压不住再由 MemoryMax 兜底。
+# 想要更低的硬上限，应当同步调低 start.sh 里的 -Xmx，而不是只压这里
+MemoryHigh=768M
+MemoryMax=1G
 
 StandardOutput=journal
 StandardError=journal
