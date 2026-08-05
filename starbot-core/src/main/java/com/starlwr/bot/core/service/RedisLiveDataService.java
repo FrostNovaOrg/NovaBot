@@ -1,6 +1,7 @@
 package com.starlwr.bot.core.service;
 
 import com.starlwr.bot.core.model.UserScore;
+import com.starlwr.bot.core.util.FaceUrlCodec;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -155,7 +156,7 @@ public class RedisLiveDataService implements LiveDataService {
                     Object name = redis.opsForHash().get(nameKey(platform, uid), member);
                     Object face = redis.opsForHash().get(faceKey(platform, uid), member);
                     result.add(new UserScore(userUid, name == null ? null : String.valueOf(name),
-                            face == null ? null : String.valueOf(face),
+                            face == null ? null : FaceUrlCodec.expand(String.valueOf(face)),
                             Optional.ofNullable(tuple.getScore()).orElse(0.0)));
                 } catch (NumberFormatException ignored) {
                     // 手工写入等情况下可能混入非法成员，跳过即可

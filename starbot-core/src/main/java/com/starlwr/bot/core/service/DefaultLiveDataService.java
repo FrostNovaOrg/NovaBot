@@ -3,6 +3,7 @@ package com.starlwr.bot.core.service;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.model.UserScore;
+import com.starlwr.bot.core.util.FaceUrlCodec;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -462,10 +463,14 @@ public class DefaultLiveDataService implements LiveDataService {
     }
 
     /**
-     * 取得本场记录到的用户头像地址快照，供并入累计存储
+     * 取得本场记录到的用户头像快照，供并入累计存储
+     * <p>
+     * <b>返回的是存储态（压缩形态），不是可直接下载的地址。</b>它只用于原样搬运到
+     * 累计存储，两边保持同一种形态，读取时统一由 {@link FaceUrlCodec#expand} 还原。
+     * 若要拿去下载图片，必须先自行还原。
      * @param platform 直播平台
      * @param uid 主播 UID
-     * @return 用户 UID 到头像地址的映射
+     * @return 用户 UID 到头像存储态的映射
      */
     public java.util.Map<Long, String> liveUserFaces(@NonNull String platform, @NonNull Long uid) {
         synchronized (metricLock) {
@@ -572,7 +577,8 @@ public class DefaultLiveDataService implements LiveDataService {
             String userKey = String.valueOf(userUid);
             // 与昵称表同样的容量约束：头像表只为已计分的用户服务，不该比计分表更大
             if (faces.containsKey(userKey) || faces.size() < METRIC_USER_LIMIT) {
-                faces.put(userKey, userFace);
+                // 存压缩形态，读取时还原，详见 FaceUrlCodec
+                faces.put(userKey, FaceUrlCodec.compact(userFace));
             }
         }
     }
@@ -602,7 +608,7 @@ public class DefaultLiveDataService implements LiveDataService {
             for (String userKey : users.keySet()) {
                 try {
                     scores.add(new UserScore(Long.parseLong(userKey), names.getString(userKey),
-                            faces.getString(userKey), users.getDoubleValue(userKey)));
+                            FaceUrlCodec.expand(faces.getString(userKey)), users.getDoubleValue(userKey)));
                 } catch (NumberFormatException e) {
                     // 手工编辑数据文件等情况下可能混入非法键，跳过即可，不必让整个排行榜失败
                     log.debug("跳过计分表中的非法用户键: {}", userKey);

@@ -324,6 +324,42 @@ class DefaultLiveDataServiceTest {
     }
 
     @Test
+    @DisplayName("头像应以压缩态存储，但排行榜里拿到的是可直接下载的完整地址")
+    void faceIsStoredCompactButReadBackWhole() {
+        String url = "https://i0.hdslb.com/bfs/face/00112233445566778899aabbccddeeff00112233.jpg";
+        service.incrementLiveUserMetric(PLATFORM, UID, "gift_users", 1L, 5);
+        service.recordLiveUserFace(PLATFORM, UID, 1L, url);
+
+        // 存进去的是压缩态，省的正是那段重复前缀
+        assertEquals("0:00112233445566778899aabbccddeeff00112233.jpg",
+                service.liveUserFaces(PLATFORM, UID).get(1L));
+
+        // 但排行榜拿到的必须是能直接下载的完整地址
+        assertEquals(url, service.getLiveUserRanking(PLATFORM, UID, "gift_users", 1).get(0).userFace());
+    }
+
+    @Test
+    @DisplayName("升级前存下的完整地址仍读得回来，不必迁移数据")
+    void legacyWholeUrlStillReadable() {
+        // 模拟升级前的数据：压缩逻辑上线前，库里存的是完整地址
+        String url = "https://i0.hdslb.com/bfs/face/legacy.jpg";
+        service.incrementLiveUserMetric(PLATFORM, UID, "gift_users", 1L, 5);
+        service.recordLiveUserFace(PLATFORM, UID, 1L, url);
+
+        assertEquals(url, service.getLiveUserRanking(PLATFORM, UID, "gift_users", 1).get(0).userFace());
+    }
+
+    @Test
+    @DisplayName("重置直播数据应一并清空头像表")
+    void resetClearsFaces() {
+        service.recordLiveUserFace(PLATFORM, UID, 1L, "https://i0.hdslb.com/bfs/face/a.jpg");
+
+        service.resetLiveData(PLATFORM, UID);
+
+        assertTrue(service.liveUserFaces(PLATFORM, UID).isEmpty());
+    }
+
+    @Test
     @DisplayName("昵称快照应可用于累计存储的展示")
     void snapshotsLiveUserNames() {
         service.recordLiveUserName(PLATFORM, UID, 1L, "甲乙丙");
