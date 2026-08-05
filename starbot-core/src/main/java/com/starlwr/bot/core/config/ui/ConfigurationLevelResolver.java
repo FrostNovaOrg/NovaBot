@@ -59,6 +59,9 @@ public class ConfigurationLevelResolver {
     private Map<String, ConfigLevel.Level> resolve() {
         Map<String, ConfigLevel.Level> result = new HashMap<>();
 
+        // 界面额外展示的框架配置项没有 @ConfigurationProperties 类可反射，等级在那边直接声明
+        result.putAll(ExternalConfigurationFields.levels());
+
         Collection<Object> beans = context.getBeansWithAnnotation(ConfigurationProperties.class).values();
         for (Object bean : beans) {
             ConfigurationProperties annotation = AnnotationUtils.findAnnotation(bean.getClass(), ConfigurationProperties.class);

@@ -141,6 +141,7 @@ public class ConfigurationMetadataService {
 
         // 插件由独立的类加载器加载，其元数据不在当前类路径上，需直接从插件 jar 中读取
         loadFromPluginJars(merged, types);
+        mergeExternalFields(merged);
 
         List<ConfigurationField> result = new ArrayList<>(merged.values());
         result.sort(Comparator.comparing(ConfigurationField::name));
@@ -222,6 +223,18 @@ public class ConfigurationMetadataService {
             merged.put(name, new ConfigurationField(name, type,
                     cleanDescription(property.getString("description")),
                     property.get("defaultValue")));
+        }
+    }
+
+    /**
+     * 把界面额外展示的框架配置项并入
+     * <p>
+     * 放在最后覆盖式写入：这几项的说明是自己写的中文，讲的是「配了它 NovaBot 会多出什么」，
+     * 比框架自带的英文说明更有用，因此即使框架元数据里也有同名项，也以此处为准。
+     */
+    private void mergeExternalFields(Map<String, ConfigurationField> merged) {
+        for (ConfigurationField field : ExternalConfigurationFields.fields()) {
+            merged.put(field.name(), field);
         }
     }
 

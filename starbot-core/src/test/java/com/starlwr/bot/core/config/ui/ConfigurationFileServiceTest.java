@@ -33,8 +33,14 @@ class ConfigurationFileServiceTest {
               port: 7827                # 服务端口
               address: 127.0.0.1        # 监听地址
 
+            spring:
+              mail:
+                host:                   # SMTP 服务器地址
+
             starbot:
               core:
+                push:
+                  quiet-start:          # 静音时段开始
                 config-ui:
                   enabled: true         # 是否启用配置界面
                   allow-ips:
@@ -282,5 +288,49 @@ class ConfigurationFileServiceTest {
 
         assertEquals("false", service.read().get("starbot.core.config-ui.enabled"));
         assertEquals(1, service.listBackups().size(), "整体覆盖前同样应先备份");
+    }
+
+    // ============ 清空即移除（否则程序起不来） ============
+
+    @Test
+    @DisplayName("清空 Redis 地址应删掉整行，而不是留下一个空值")
+    void clearingRedisHostRemovesTheLine() throws Exception {
+        // 留下「host: 」会让 Spring 启动时直接抛 'host' must not be empty，
+        // 连配置界面都起不来，只能去手改文件——这个坑真踩过
+        service.write(Map.of("spring.data.redis.host", "127.0.0.1"));
+        assertTrue(Files.readString(config).contains("host: 127.0.0.1"));
+
+        service.write(Map.of("spring.data.redis.host", ""));
+
+        String content = Files.readString(config);
+        assertFalse(content.contains("spring.data.redis.host"), content);
+        for (String line : content.lines().toList()) {
+            assertFalse(line.strip().equals("host:") || line.strip().startsWith("host: #"),
+                    "不应残留空的 host 行: " + line);
+        }
+    }
+
+    @Test
+    @DisplayName("本就没配过 Redis 时清空应什么都不做，不要凭空插入一个空值")
+    void clearingAbsentRedisHostInsertsNothing() throws Exception {
+        String before = Files.readString(config);
+
+        int changed = service.write(Map.of("spring.data.redis.host", ""));
+
+        assertEquals(0, changed);
+        assertEquals(before, Files.readString(config));
+    }
+
+    @Test
+    @DisplayName("其余配置项留空仍是有意义的取值，不能一并删掉")
+    void clearingOtherPropertiesKeepsTheLine() throws Exception {
+        service.write(Map.of("starbot.core.push.quiet-start", "23:00"));
+        assertTrue(Files.readString(config).contains("quiet-start: 23:00"));
+
+        // 静音时段留空表示不启用，这一行必须留着
+        service.write(Map.of("starbot.core.push.quiet-start", ""));
+
+        assertTrue(Files.readString(config).contains("quiet-start"),
+                "留空是有效取值的配置项不该被删行");
     }
 }

@@ -16,6 +16,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
@@ -123,6 +124,19 @@ public class ConfigurationFileService {
      * @return 实际发生变更的配置项数量
      * @throws IOException 写入失败时抛出
      */
+    /**
+     * 清空即视为「不配置」的配置项
+     * <p>
+     * 多数配置项留空是有意义的——静音时段留空表示不启用，Token 留空表示自动生成。
+     * 但少数框架配置写成空值会让程序<b>根本起不来</b>：
+     * {@code spring.data.redis.host} 写成空串时，Spring 在启动时直接抛
+     * 「'host' must not be empty」，连界面都起不来，只能去手改配置文件。
+     * <p>
+     * 这个坑是把该配置项搬上界面时踩到的：界面上把地址清空 → 写出 {@code host: } →
+     * 下次启动失败。对这类配置项，清空的语义必须是<b>删掉这一行</b>而不是写一个空值。
+     */
+    private static final Set<String> BLANK_MEANS_ABSENT = Set.of("spring.data.redis.host");
+
     public synchronized int write(Map<String, String> changes) throws IOException {
         if (changes.isEmpty()) {
             return 0;
@@ -151,6 +165,18 @@ public class ConfigurationFileService {
 
         for (Map.Entry<String, String> change : ordered) {
             Line line = index.get(change.getKey());
+
+            // 这类配置项清空等于「不配置」，要把整行删掉而不是留一个空值——
+            // 留空会让程序下次启动直接失败。自下而上处理，删行不会让后续行号失效
+            if (BLANK_MEANS_ABSENT.contains(change.getKey())
+                    && (change.getValue() == null || change.getValue().isBlank())) {
+                if (line != null) {
+                    lines.remove(line.index);
+                    changed++;
+                }
+                continue;
+            }
+
             if (line == null) {
                 missing.add(change);
                 continue;

@@ -928,7 +928,11 @@ public class ConfigUiController {
                 Map.entry("starbot.bilibili.network", "哔哩哔哩 · 网络"),
                 Map.entry("starbot.bilibili.account", "哔哩哔哩 · 账号与凭据"),
                 Map.entry("starbot.bilibili.live", "哔哩哔哩 · 直播"),
-                Map.entry("starbot.bilibili.dynamic", "哔哩哔哩 · 动态")
+                Map.entry("starbot.bilibili.dynamic", "哔哩哔哩 · 动态"),
+                // 以下两组不属于 starbot 命名空间，但 NovaBot 的功能依赖它们，
+                // 详见 ExternalConfigurationFields
+                Map.entry("spring.data.redis", "累计数据存储（Redis）"),
+                Map.entry("spring.mail", "邮件告警 · 发件服务")
         );
 
         return titles.getOrDefault(group, group);
