@@ -83,4 +83,45 @@ class OneBotHealthProbeTest {
 
         assertEquals(HealthStatus.Level.OK, new OneBotHealthProbe(state).check().level());
     }
+
+    @Test
+    @DisplayName("接口全通但账号掉线仍应判定为不可用")
+    void reportsDownWhenAccountOffline() {
+        OneBotConnectionState state = new OneBotConnectionState();
+        state.httpOk("qq", "服务正常");
+        state.websocketConnected("qq");
+        state.accountOffline("qq", "QQ 账号已掉线");
+
+        HealthStatus status = new OneBotHealthProbe(state).check();
+
+        // 这一条最容易被漏掉：连接、端口、Token 全对，接口也返回 200，消息却谁都收不到
+        assertEquals(HealthStatus.Level.DOWN, status.level());
+        assertTrue(status.advice().contains("扫码"), "应指明要重新登录: " + status.advice());
+    }
+
+    @Test
+    @DisplayName("账号在线状态未知不应被当成故障")
+    void treatsUnknownAccountAsNormal() {
+        OneBotConnectionState state = new OneBotConnectionState();
+        state.httpOk("qq", "正常");
+        state.websocketConnected("qq");
+        state.accountUnknown("qq", "该 OneBot 实现未上报登录状态");
+
+        assertEquals(HealthStatus.Level.OK, new OneBotHealthProbe(state).check().level());
+    }
+
+    @Test
+    @DisplayName("概览应分别列出 HTTP、账号与 Websocket 三项")
+    void summaryListsEachDimension() {
+        OneBotConnectionState state = new OneBotConnectionState();
+        state.httpOk("qq", "服务正常");
+        state.accountOnline("qq", "在线");
+        state.websocketConnected("qq");
+
+        String summary = new OneBotHealthProbe(state).check().summary();
+
+        assertTrue(summary.contains("HTTP 正常"), summary);
+        assertTrue(summary.contains("账号 在线"), summary);
+        assertTrue(summary.contains("WS 正常"), summary);
+    }
 }

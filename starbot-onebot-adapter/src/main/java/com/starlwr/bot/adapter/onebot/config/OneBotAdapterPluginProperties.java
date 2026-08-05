@@ -154,17 +154,21 @@ public class OneBotAdapterPluginProperties {
         // 管理：同一个故障不该因为出口不同而各有一套抑制规则
 
         /**
-         * 是否启用 Websocket 消息接收检测
+         * 是否启用 Websocket 存活检测
          * <p>
-         * 长连接可能在 TCP 层看似存活却已收不到任何消息，仅靠连接状态判断不出来，
-         * 需借助「多久没收到消息」来发现。默认开启。
+         * 长连接可能在 TCP 层看似存活却已收不到任何数据，仅靠连接状态判断不出来，
+         * 需借助「多久没收到心跳」来发现。默认开启。
          */
         private boolean enableWebsocketDetect = true;
 
         /**
-         * 指定时间内未从 Websocket 接收到消息时发送告警邮件，单位: 秒
+         * Websocket 静默多久判定为连接失效，单位: 秒
+         * <p>
+         * 判据是 OneBot 实现推送的心跳，与群里有没有人说话无关：按「多久没人发言」判断的话，
+         * 半夜必然误报。实际超时不会小于三个心跳周期，因此配得比心跳间隔短也不会误报；
+         * OneBot 实现关闭心跳时本项不生效，静默将不再作为判据。
          */
-        private int websocketDetectInterval = 1800;
+        private int websocketSilenceTimeout = 120;
 
     }
 }

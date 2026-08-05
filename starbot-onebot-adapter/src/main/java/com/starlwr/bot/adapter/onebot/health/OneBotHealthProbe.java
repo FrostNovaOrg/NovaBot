@@ -54,14 +54,21 @@ public class OneBotHealthProbe implements HealthProbe {
         for (Map.Entry<String, OneBotConnectionState.Entry> item : all.entrySet()) {
             String sender = item.getKey();
             OneBotConnectionState.Status http = item.getValue().getHttp();
+            OneBotConnectionState.Status account = item.getValue().getAccount();
             OneBotConnectionState.Status websocket = item.getValue().getWebsocket();
 
-            summaries.add(sender + "：HTTP " + brief(http) + " / WS " + brief(websocket));
+            summaries.add(sender + "：HTTP " + brief(http)
+                    + " / 账号 " + briefAccount(account)
+                    + " / WS " + brief(websocket));
 
             // HTTP 不通即无法推送消息，属于致命；Websocket 只用于接收事件，断开仅影响插件功能
             if (http.kind() != OneBotConnectionState.Kind.OK) {
                 worst = HealthStatus.Level.DOWN;
                 advices.add(sender + " " + advise(sender, http));
+            } else if (account.kind() == OneBotConnectionState.Kind.SERVICE_ABNORMAL) {
+                // 接口调得通不代表消息发得出去：账号掉线时一切看起来都正常，消息却无人收到
+                worst = HealthStatus.Level.DOWN;
+                advices.add(sender + " 的 QQ 账号已掉线，接口仍可调用但消息不会送达，请到 OneBot 实现的界面重新扫码登录");
             } else if (websocket.kind() != OneBotConnectionState.Kind.OK
                     && websocket.kind() != OneBotConnectionState.Kind.DISABLED
                     && worst == HealthStatus.Level.OK) {
@@ -84,6 +91,19 @@ public class OneBotHealthProbe implements HealthProbe {
             case SERVICE_ABNORMAL -> "服务异常";
             case DISABLED -> "未启用";
             case UNKNOWN -> "尚未检查";
+        };
+    }
+
+    /**
+     * 账号在线状态的简短描述
+     * <p>
+     * 账号状态只有「在线 / 掉线 / 还不知道」三种，沿用通用描述会出现「账号 服务异常」这种读不通的话。
+     */
+    private String briefAccount(OneBotConnectionState.Status status) {
+        return switch (status.kind()) {
+            case OK -> "在线";
+            case SERVICE_ABNORMAL -> "已掉线";
+            default -> "未知";
         };
     }
 

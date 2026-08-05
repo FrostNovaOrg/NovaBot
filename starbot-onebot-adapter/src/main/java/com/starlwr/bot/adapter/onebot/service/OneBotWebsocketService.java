@@ -6,7 +6,7 @@ import com.starlwr.bot.adapter.onebot.config.OneBotAdapterPluginProperties;
 import com.starlwr.bot.adapter.onebot.model.OneBotSender;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.adapter.onebot.health.OneBotConnectionState;
-import com.starlwr.bot.core.alert.AlertService;
+import com.starlwr.bot.adapter.onebot.health.OneBotLivenessTracker;
 import com.starlwr.bot.core.event.remote.StarBotRemoteMessageEvent;
 import com.starlwr.bot.core.util.StringUtil;
 import jakarta.websocket.ContainerProvider;
@@ -28,10 +28,8 @@ import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
-import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.*;
 
 /**
@@ -40,13 +38,16 @@ import java.util.concurrent.*;
 @Slf4j
 @StarBotComponent
 public class OneBotWebsocketService {
+    /**
+     * 存活检测的执行周期
+     */
+    private static final Duration CHECK_INTERVAL = Duration.ofSeconds(30);
+
     private final TaskScheduler taskScheduler;
 
     private final ThreadPoolTaskExecutor executor;
 
     private final OneBotAdapterPluginProperties properties;
-
-    private final AlertService alertService;
 
     private final OneBotConnectionState state;
 
@@ -63,16 +64,23 @@ public class OneBotWebsocketService {
      */
     private final ApplicationEventPublisher publisher;
 
-    private final Map<String, ScheduledFuture<?>> detectTasks = new HashMap<>();
+    /**
+     * 各推送平台的存活检测任务
+     * <p>
+     * 连接、重连与断开分别发生在不同线程上，注册与取消都可能并发发生，因此不能用普通 HashMap
+     */
+    private final Map<String, ScheduledFuture<?>> detectTasks = new ConcurrentHashMap<>();
 
-    private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
+    /**
+     * 已提示过「未推送心跳」的推送平台
+     */
+    private final Set<String> noHeartbeatWarned = ConcurrentHashMap.newKeySet();
 
     @Autowired
-    public OneBotWebsocketService(TaskScheduler taskScheduler, @Qualifier("oneBotThreadPool") ThreadPoolTaskExecutor executor, OneBotAdapterPluginProperties properties, AlertService alertService, OneBotConnectionState state, BuildProperties buildProperties, ApplicationEventPublisher publisher) {
+    public OneBotWebsocketService(TaskScheduler taskScheduler, @Qualifier("oneBotThreadPool") ThreadPoolTaskExecutor executor, OneBotAdapterPluginProperties properties, OneBotConnectionState state, BuildProperties buildProperties, ApplicationEventPublisher publisher) {
         this.taskScheduler = taskScheduler;
         this.executor = executor;
         this.properties = properties;
-        this.alertService = alertService;
         this.state = state;
         this.buildProperties = buildProperties;
         this.publisher = publisher;
@@ -160,33 +168,69 @@ public class OneBotWebsocketService {
     }
 
     /**
-     * Websocket 消息接收检测
+     * Websocket 存活检测
+     * <p>
+     * 检测周期与判定超时是两件事：判定超时按心跳间隔取（见 {@link OneBotLivenessTracker}），
+     * 而检查本身只是读两个时间戳，足够便宜，因此固定按 {@link #CHECK_INTERVAL} 频繁地查，
+     * 以免超时早已到达却要等到下一个检测周期才被发现。
      * @param handler WebSocket 处理器
      */
     private void startDetect(OneBotWebSocketHandler handler) {
         String platformName = handler.sender.getName();
+        stopDetect(platformName);
 
-        if (detectTasks.containsKey(platformName)) {
-            detectTasks.get(platformName).cancel(false);
-            detectTasks.remove(platformName);
-        }
-
-        int detectInterval = properties.getDetect().getWebsocketDetectInterval();
+        Duration timeout = Duration.ofSeconds(properties.getDetect().getWebsocketSilenceTimeout());
 
         ScheduledFuture<?> detectTask = taskScheduler.scheduleAtFixedRate(() -> executor.submit(() -> {
-            if (Instant.now().minusSeconds(detectInterval).isBefore(handler.lastReceiveTime)) {
-                alertService.resolve("onebot-ws:" + platformName);
-                return;
+            OneBotLivenessTracker.Verdict verdict = handler.liveness.evaluate(Instant.now(), timeout);
+
+            switch (verdict.state()) {
+                case ALIVE -> state.websocketConnected(platformName);
+                case SILENT -> {
+                    String silence = formatSilence(verdict.silence());
+                    log.warn("推送平台 {} 的 OneBot Websocket 已 {} 未收到任何数据帧（含心跳）, 连接很可能已失效", platformName, silence);
+                    // 告警统一由健康探针与 HealthAlertMonitor 发出，此处只记录状态
+                    state.websocketDisconnected(platformName, "已 " + silence + " 未收到任何数据帧（含心跳）");
+                }
+                case NO_HEARTBEAT -> warnNoHeartbeat(platformName);
             }
-
-            String alarm = "推送平台 " + platformName + " 的 OneBot Websocket 在 " + formatter.format(handler.lastReceiveTime) + " ~ " + formatter.format(Instant.now()) + " 期间未收到任何消息, 请检查服务状态及连接情况";
-            log.warn(alarm);
-
-            // 收敛交由告警服务统一处理，此处不再各自维护一套间隔逻辑
-            alertService.alert("onebot-ws:" + platformName, "NovaBot OneBot Websocket 连接异常告警", alarm);
-        }), Instant.now().plusSeconds(detectInterval), Duration.ofSeconds(detectInterval));
+        }), Instant.now().plus(CHECK_INTERVAL), CHECK_INTERVAL);
 
         detectTasks.put(platformName, detectTask);
+    }
+
+    /**
+     * 停止某推送平台的存活检测
+     * <p>
+     * 连接断开后必须停掉：检测任务持有的是旧连接的计时器，留着会在重连期间按旧数据把状态改回「已连接」，
+     * 覆盖掉「正在重连」的真实状态。
+     * @param platformName 推送平台名
+     */
+    private void stopDetect(String platformName) {
+        ScheduledFuture<?> previous = detectTasks.remove(platformName);
+        if (previous != null) {
+            previous.cancel(false);
+        }
+    }
+
+    /**
+     * 提示该实现未推送心跳
+     * <p>
+     * 每个周期都喊一遍只会淹没日志，这里每个推送平台只提示一次。
+     */
+    private void warnNoHeartbeat(String platformName) {
+        if (noHeartbeatWarned.add(platformName)) {
+            log.warn("推送平台 {} 的 OneBot 实现未推送心跳, 无法据此判断长连接是否已静默失效; " +
+                    "请在 OneBot 实现中开启心跳（NapCat 为 heartInterval），否则只能依赖 HTTP 检测", platformName);
+        }
+    }
+
+    /**
+     * 把静默时长写成人话
+     */
+    private String formatSilence(Duration silence) {
+        long minutes = silence.toMinutes();
+        return minutes > 0 ? minutes + " 分钟" : silence.toSeconds() + " 秒";
     }
 
     /**
@@ -207,7 +251,7 @@ public class OneBotWebsocketService {
 
         private Boolean tokenVerify = null;
 
-        private Instant lastReceiveTime = Instant.now();
+        private final OneBotLivenessTracker liveness = new OneBotLivenessTracker(Instant.now());
 
         private OneBotWebSocketHandler(OneBotWebsocketService service, OneBotSender sender) {
             this.service = service;
@@ -264,6 +308,10 @@ public class OneBotWebsocketService {
          */
         @Override
         public void handleMessage(@NonNull WebSocketSession session, @NonNull WebSocketMessage<?> webSocketRawMessage) {
+            // 收到任何东西都说明链路是通的，因此在解析之前就先计时：内容能不能解析、是不是聊天消息，
+            // 与「连接还活着吗」是两个问题
+            liveness.frameReceived(Instant.now());
+
             try {
                 if (webSocketRawMessage instanceof TextMessage webSocketMessage) {
                     messageBuffer.append(webSocketMessage.getPayload());
@@ -285,14 +333,14 @@ public class OneBotWebsocketService {
                                         log.info("{} 的 OneBot Websocket Token 认证成功", sender.getName());
 
                                         if (service.properties.getDetect().isEnableWebsocketDetect()) {
-                                            lastReceiveTime = Instant.now();
                                             service.startDetect(this);
                                         }
                                     }
                                 }
 
-                                if (service.properties.getDetect().isEnableWebsocketDetect() && "message".equals(rawMessage.getString("post_type"))) {
-                                    lastReceiveTime = Instant.now();
+                                if ("meta_event".equals(rawMessage.getString("post_type"))
+                                        && "heartbeat".equals(rawMessage.getString("meta_event_type"))) {
+                                    handleHeartbeat(rawMessage);
                                 }
 
                                 if ("message".equals(rawMessage.getString("post_type"))
@@ -340,6 +388,31 @@ public class OneBotWebsocketService {
         }
 
         /**
+         * 处理心跳
+         * <p>
+         * 心跳除了证明链路还在，还顺带捎了一份 {@code status.online}：账号掉线时 OneBot 实现本身一切正常，
+         * 接口照常返回，只是消息谁也收不到。靠这个字段能在半分钟内发现，而定时轮询接口最长要等一个检测周期。
+         * @param rawMessage 心跳消息
+         */
+        private void handleHeartbeat(JSONObject rawMessage) {
+            Long interval = rawMessage.getLong("interval");
+            liveness.heartbeatReceived(Instant.now(), interval == null ? 0L : interval);
+
+            JSONObject status = rawMessage.getJSONObject("status");
+            Boolean online = status == null ? null : status.getBoolean("online");
+            if (online == null) {
+                // 字段缺失只说明这个实现不上报，不能据此断定账号掉线
+                return;
+            }
+
+            if (online) {
+                service.state.accountOnline(sender.getName(), "在线");
+            } else {
+                service.state.accountOffline(sender.getName(), "QQ 账号已掉线");
+            }
+        }
+
+        /**
          * 传输错误
          * @param session WebSocket 会话
          * @param exception 异常
@@ -365,6 +438,9 @@ public class OneBotWebsocketService {
          */
         @Override
         public void afterConnectionClosed(@NonNull WebSocketSession session, @NonNull CloseStatus closeStatus) {
+            // 存活检测认的是这个连接的计时器，连接没了就得停，否则它会拿旧数据把状态改回「已连接」
+            service.stopDetect(sender.getName());
+
             if (connectTimeout) {
                 return;
             }

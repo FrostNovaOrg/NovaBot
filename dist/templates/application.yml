@@ -68,9 +68,11 @@ starbot:
         enable-http-detect: true            # 是否定期检测 OneBot HTTP 可用性。关闭后 OneBot
                                             # 中途挂掉不会被察觉，表现为「消息发不出去且无人告知」
         http-detect-interval: 300           # HTTP 检测周期，单位：秒
-        enable-websocket-detect: true       # 是否检测 Websocket 是否仍在收消息。长连接可能
-                                            # 在 TCP 层看似存活却已收不到任何消息
-        websocket-detect-interval: 1800     # 多久未收到消息即判定异常，单位：秒
+        enable-websocket-detect: true       # 是否检测 Websocket 是否仍在收心跳。长连接可能
+                                            # 在 TCP 层看似存活却已收不到任何数据
+        websocket-silence-timeout: 120      # 多久没收到心跳即判定连接失效，单位：秒。判据是
+                                            # OneBot 实现推送的心跳，与群里有没有人说话无关；
+                                            # 实际超时不会小于三个心跳周期，配短了也不会误报
 
       extension:
         napcat:

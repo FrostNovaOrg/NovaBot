@@ -12,8 +12,6 @@ import com.starlwr.bot.adapter.onebot.dto.MessageDTO;
 import com.starlwr.bot.adapter.onebot.model.OneBotSender;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.plugin.StarBotComponent;
-import com.starlwr.bot.core.alert.AlertService;
-import com.starlwr.bot.core.util.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -41,8 +39,6 @@ public class OneBotHttpService {
 
     private final OneBotAdapterPluginProperties properties;
 
-    private final AlertService alertService;
-
     private final OneBotHttpAdapter http;
 
     private final OneBotMessageConverter converter;
@@ -52,11 +48,10 @@ public class OneBotHttpService {
     private final Map<String, OneBotSender> senders = new HashMap<>();
 
     @Autowired
-    public OneBotHttpService(TaskScheduler taskScheduler, @Qualifier("oneBotThreadPool") ThreadPoolTaskExecutor executor, OneBotAdapterPluginProperties properties, AlertService alertService, OneBotHttpAdapter http, OneBotMessageConverter converter, OneBotConnectionState state) {
+    public OneBotHttpService(TaskScheduler taskScheduler, @Qualifier("oneBotThreadPool") ThreadPoolTaskExecutor executor, OneBotAdapterPluginProperties properties, OneBotHttpAdapter http, OneBotMessageConverter converter, OneBotConnectionState state) {
         this.taskScheduler = taskScheduler;
         this.executor = executor;
         this.properties = properties;
-        this.alertService = alertService;
         this.http = http;
         this.converter = converter;
         this.state = state;
@@ -158,35 +153,34 @@ public class OneBotHttpService {
         int detectInterval = properties.getDetect().getHttpDetectInterval();
 
         taskScheduler.scheduleAtFixedRate(() -> executor.submit(() -> {
-            String alarm = "";
             try {
                 JSONObject status = http.getStatus(sender, new JSONObject());
-                if (!Boolean.TRUE.equals(status.getBoolean("good"))) {
-                    alarm = sender.getName() + " 的 OneBot 服务状态异常, 请检查服务状态";
-                }
 
-                if (!Boolean.TRUE.equals(status.getBoolean("online"))) {
-                    alarm = sender.getName() + " 的 OneBot 服务登录状态异常, 请检查账号是否已掉线";
-                }
-
-                if (StringUtil.isBlank(alarm)) {
+                // good 是「实现自身跑得好不好」，online 是「QQ 账号还在不在线」，分开记：
+                // 两者的处理方式完全不同，前者重启服务，后者要重新扫码登录
+                if (Boolean.TRUE.equals(status.getBoolean("good"))) {
                     state.httpOk(sender.getName(), "服务正常");
                 } else {
-                    state.httpFailed(sender.getName(), OneBotConnectionState.Kind.SERVICE_ABNORMAL, alarm);
+                    state.httpFailed(sender.getName(), OneBotConnectionState.Kind.SERVICE_ABNORMAL, "实现自身状态异常");
+                }
+
+                Boolean online = status.getBoolean("online");
+                if (online == null) {
+                    // 并非所有实现都上报该字段，取不到时不要臆断成掉线
+                    state.accountUnknown(sender.getName(), "该 OneBot 实现未上报登录状态");
+                } else if (online) {
+                    state.accountOnline(sender.getName(), "在线");
+                } else {
+                    state.accountOffline(sender.getName(), "QQ 账号已掉线");
                 }
             } catch (Exception e) {
-                alarm = sender.getName() + " 的 OneBot HTTP 服务不可用, 请检查服务状态";
+                log.warn("{} 的 OneBot HTTP 服务不可用: {}", sender.getName(), e.getMessage());
                 state.httpFailed(sender.getName(), OneBotConnectionState.Kind.UNREACHABLE, e.getMessage());
+                state.accountUnknown(sender.getName(), "连不上 OneBot 实现，无法判断");
             }
 
-            if (StringUtil.isBlank(alarm)) {
-                alertService.resolve("onebot-http:" + sender.getName());
-                return;
-            }
-
-            log.warn(alarm);
-            // 收敛交由告警服务统一处理，此处不再各自维护一套间隔逻辑
-            alertService.alert("onebot-http:" + sender.getName(), "NovaBot OneBot 服务异常告警", alarm);
+            // 告警不在此处发出：写进连接状态后，由健康探针与 HealthAlertMonitor 统一告警。
+            // 两条路都发的话，同一次 OneBot 故障会收到两条内容雷同、标识不同的告警
         }), Instant.now().plusSeconds(detectInterval), Duration.ofSeconds(detectInterval));
     }
 }

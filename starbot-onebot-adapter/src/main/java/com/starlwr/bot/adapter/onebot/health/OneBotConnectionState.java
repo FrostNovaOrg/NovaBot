@@ -39,6 +39,40 @@ public class OneBotConnectionState {
     }
 
     /**
+     * 记录账号在线
+     * <p>
+     * 账号是否在线与 HTTP 是否调得通是两件事：QQ 掉线时 OneBot 实现本身完全正常，
+     * 接口照样返回 200，只是发出去的消息没人收得到。混在一起记会报成「HTTP 异常」，
+     * 让人去查一个根本没坏的东西。
+     * @param sender 推送平台名
+     * @param detail 补充信息，例如信息来源
+     */
+    public void accountOnline(String sender, String detail) {
+        entry(sender).account = new Status(Kind.OK, detail, Instant.now());
+    }
+
+    /**
+     * 记录账号已掉线
+     * @param sender 推送平台名
+     * @param detail 详情
+     */
+    public void accountOffline(String sender, String detail) {
+        entry(sender).account = new Status(Kind.SERVICE_ABNORMAL, detail, Instant.now());
+    }
+
+    /**
+     * 记录账号在线状态已无从判断
+     * <p>
+     * 连不上 OneBot 实现时，上一次记录的「在线」会一直挂在界面上，看起来像是还好着。
+     * 与其展示一个过期的结论，不如明说现在不知道。
+     * @param sender 推送平台名
+     * @param detail 无法判断的原因
+     */
+    public void accountUnknown(String sender, String detail) {
+        entry(sender).account = new Status(Kind.UNKNOWN, detail, Instant.now());
+    }
+
+    /**
      * 记录 Websocket 已连接
      * @param sender 推送平台名
      */
@@ -134,6 +168,8 @@ public class OneBotConnectionState {
     @Getter
     public static class Entry {
         private volatile Status http = new Status(Kind.UNKNOWN, "尚未检查", null);
+
+        private volatile Status account = new Status(Kind.UNKNOWN, "尚未检查", null);
 
         private volatile Status websocket = new Status(Kind.UNKNOWN, "尚未检查", null);
     }
