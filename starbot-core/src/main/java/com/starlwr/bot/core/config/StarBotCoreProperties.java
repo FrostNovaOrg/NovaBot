@@ -100,15 +100,27 @@ public class StarBotCoreProperties {
         private boolean enabled = true;
 
         /**
-         * 每个会话每日最多 @全体成员 的次数，0 或负数表示不限制
+         * 机器人账号每日最多 @全体成员 的次数，0 或负数表示不限制
          * <p>
          * QQ 本身有每日上限，用超之后**平台会静默忽略**——消息照发但 @ 不生效，
          * 配置的人往往过很久才发现「怎么没人被 @ 到」。因此在自己这一侧先记账，
          * 超额时主动退化为普通消息并记日志，而不是把额度花在注定无效的调用上。
-         * 默认 10 与 QQ 当前的上限一致。
+         * <p>
+         * <b>这份额度由该账号推送的全部会话共享</b>（实测：往一个群发一次，
+         * 其他群看到的账号剩余次数同步减一）。默认 10 与 QQ 实测值一致，
+         * <b>它才是真正会先卡住的那一道</b>。
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
         private int atAllDailyLimit = 10;
+
+        /**
+         * 单个会话每日最多 @全体成员 的次数，0 或负数表示不限制
+         * <p>
+         * 与账号额度是两个维度：群的额度由群里所有有权限的人共用，机器人只是其中之一。
+         * 默认 20 与 QQ 实测值一致。通常先撞到的是账号额度，本项是第二道保险。
+         */
+        @ConfigLevel(ConfigLevel.Level.ADVANCED)
+        private int atAllSessionDailyLimit = 20;
 
         /**
          * 静音时段开始时间，格式 HH:mm，与结束时间任一为空即视为不启用

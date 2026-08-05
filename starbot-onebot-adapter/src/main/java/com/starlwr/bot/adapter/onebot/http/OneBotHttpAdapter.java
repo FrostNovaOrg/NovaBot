@@ -17,6 +17,9 @@ public interface OneBotHttpAdapter {
     @OneBotApi(name = "获取状态信息", url = "/get_status")
     JSONObject getStatus(OneBotSender sender, JSONObject params);
 
+    @OneBotApi(name = "获取群成员信息", url = "/get_group_member_info")
+    JSONObject getGroupMemberInfo(OneBotSender sender, JSONObject params);
+
     @OneBotApi(name = "发送私聊消息", url = "/send_private_msg")
     JSONObject sendPrivateMsg(OneBotSender sender, JSONObject params);
 

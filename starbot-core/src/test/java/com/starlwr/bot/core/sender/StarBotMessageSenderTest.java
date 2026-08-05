@@ -11,6 +11,7 @@ import com.starlwr.bot.core.util.HttpUtil;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.beans.factory.ObjectProvider;
 
 import java.time.Instant;
 import java.util.List;
@@ -161,6 +162,70 @@ class StarBotMessageSenderTest {
         assertTrue(String.valueOf(captor.getAllValues().get(1).get("content")).contains("{at=all}"));
     }
 
+    @Test
+    @DisplayName("机器人没有 @全体成员 权限时应摘掉占位符")
+    void stripsAtAllWithoutPermission() {
+        // 实测过：无权限的账号经 OneBot 接口发 at:all 竟能真的 @ 到全体，
+        // 那是 QQ 的漏洞。钻这个空子有风控风险，因此自己先拦下
+        HttpUtil http = okHttp();
+        StarBotMessageSender sender = sender(http, new StarBotCoreProperties(), false);
+
+        sender.sendNow(inlineAtAll());
+
+        ArgumentCaptor<Map<String, Object>> captor = paramsCaptor();
+        verify(http).postJson(anyString(), any(), captor.capture());
+        assertFalse(String.valueOf(captor.getValue().get("content")).contains("{at=all}"));
+        assertTrue(String.valueOf(captor.getValue().get("content")).contains("开播啦"), "正文必须保留");
+    }
+
+    @Test
+    @DisplayName("没有权限时不应消耗配额——那份额度是全账号共享的")
+    void noPermissionDoesNotConsumeQuota() {
+        StarBotCoreProperties properties = new StarBotCoreProperties();
+        properties.getPush().setAtAllDailyLimit(1);
+
+        HttpUtil http = okHttp();
+        // 无权限的会话连发两次，都应只是被摘掉，而不该把那 1 次额度吃掉
+        StarBotMessageSender denied = sender(http, properties, false);
+        denied.sendNow(inlineAtAll());
+        denied.sendNow(inlineAtAll());
+
+        // 换一个有权限的发送器共用同一份配置，若额度已被吃掉这里就会被摘
+        StarBotMessageSender allowed = sender(http, properties, true);
+        allowed.sendNow(inlineAtAll());
+
+        ArgumentCaptor<Map<String, Object>> captor = paramsCaptor();
+        verify(http, times(3)).postJson(anyString(), any(), captor.capture());
+        assertTrue(String.valueOf(captor.getAllValues().get(2).get("content")).contains("{at=all}"),
+                "有权限的那条应仍保有额度");
+    }
+
+    @Test
+    @DisplayName("有权限时应照常发出 @全体成员")
+    void keepsAtAllWithPermission() {
+        HttpUtil http = okHttp();
+        StarBotMessageSender sender = sender(http, new StarBotCoreProperties(), true);
+
+        sender.sendNow(inlineAtAll());
+
+        ArgumentCaptor<Map<String, Object>> captor = paramsCaptor();
+        verify(http).postJson(anyString(), any(), captor.capture());
+        assertTrue(String.valueOf(captor.getValue().get("content")).contains("{at=all}"));
+    }
+
+    @Test
+    @DisplayName("没有任何适配器认领该平台时应放行，保持原有行为")
+    void allowsWhenNoResolver() {
+        HttpUtil http = okHttp();
+        StarBotMessageSender sender = sender(http, new StarBotCoreProperties(), null);
+
+        sender.sendNow(inlineAtAll());
+
+        ArgumentCaptor<Map<String, Object>> captor = paramsCaptor();
+        verify(http).postJson(anyString(), any(), captor.capture());
+        assertTrue(String.valueOf(captor.getValue().get("content")).contains("{at=all}"));
+    }
+
     private HttpUtil okHttp() {
         HttpUtil http = mock(HttpUtil.class);
         when(http.postJson(anyString(), any(), any())).thenReturn(
@@ -190,7 +255,37 @@ class StarBotMessageSenderTest {
         StarBotSenderService senderService = mock(StarBotSenderService.class);
         when(senderService.getSender(PLATFORM)).thenReturn(Optional.of(target));
 
+        return sender(http, properties, null);
+    }
+
+    /**
+     * 造一个带指定权限判定的发送器；resolver 为 null 表示没有任何适配器认领该平台
+     */
+    private StarBotMessageSender sender(HttpUtil http, StarBotCoreProperties properties, Boolean canAtAll) {
+        Sender target = new Sender();
+        target.setName(PLATFORM);
+        target.setUrl("http://127.0.0.1:7827/onebot/send");
+        target.setDelay(0);
+
+        StarBotSenderService senderService = mock(StarBotSenderService.class);
+        when(senderService.getSender(PLATFORM)).thenReturn(Optional.of(target));
+
+        @SuppressWarnings("unchecked")
+        ObjectProvider<AtAllPermissionResolver> resolvers = mock(ObjectProvider.class);
+        List<AtAllPermissionResolver> list = canAtAll == null ? List.of() : List.of(new AtAllPermissionResolver() {
+            @Override
+            public boolean supports(String platform) {
+                return PLATFORM.equals(platform);
+            }
+
+            @Override
+            public boolean canAtAll(String platform, Long num) {
+                return canAtAll;
+            }
+        });
+        when(resolvers.iterator()).thenAnswer(invocation -> list.iterator());
+
         return new StarBotMessageSender(http, senderService, new PushActivityRecorder(), new PushGate(properties),
-                new com.starlwr.bot.core.service.AtAllQuotaService(properties));
+                new com.starlwr.bot.core.service.AtAllQuotaService(properties), resolvers);
     }
 }

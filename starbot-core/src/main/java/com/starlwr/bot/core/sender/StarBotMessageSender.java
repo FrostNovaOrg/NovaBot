@@ -11,6 +11,7 @@ import com.starlwr.bot.core.service.StarBotSenderService;
 import com.starlwr.bot.core.util.HttpUtil;
 import com.starlwr.bot.core.util.StringUtil;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -49,6 +50,11 @@ public class StarBotMessageSender {
     private final AtAllQuotaService atAllQuota;
 
     /**
+     * @全体成员 的权限判定，由推送平台适配器提供；没有实现时一律放行
+     */
+    private final ObjectProvider<AtAllPermissionResolver> atAllPermissionResolvers;
+
+    /**
      * 单个平台的发送队列容量
      * <p>
      * 取值需容得下一次开播高峰（数十个主播同时开播、每人多条分段消息），
@@ -82,12 +88,14 @@ public class StarBotMessageSender {
     @Autowired
     public StarBotMessageSender(HttpUtil http, StarBotSenderService senderService,
                                 PushActivityRecorder activityRecorder, PushGate pushGate,
-                                AtAllQuotaService atAllQuota) {
+                                AtAllQuotaService atAllQuota,
+                                ObjectProvider<AtAllPermissionResolver> atAllPermissionResolvers) {
         this.http = http;
         this.senderService = senderService;
         this.activityRecorder = activityRecorder;
         this.pushGate = pushGate;
         this.atAllQuota = atAllQuota;
+        this.atAllPermissionResolvers = atAllPermissionResolvers;
     }
 
     /**
@@ -184,13 +192,35 @@ public class StarBotMessageSender {
             return true;
         }
 
-        if (atAllQuota.tryConsume(message.getPlatform(), message.getNum())) {
-            return true;
+        // 权限判定必须排在配额之前：没权限的那次本就发不出 @，
+        // 若先扣配额，等于让一个注定被摘掉的 @ 吃掉账号那份全局额度
+        if (!canAtAll(message) || !atAllQuota.tryConsume(message.getPlatform(), message.getNum())) {
+            return stripAtAll(message);
         }
+        return true;
+    }
 
+    /**
+     * 询问平台适配器：机器人在这个会话里能不能 @全体成员
+     * <p>
+     * 没有任何适配器认领该平台时放行，保持没有这层判定之前的行为。
+     */
+    private boolean canAtAll(Message message) {
+        for (AtAllPermissionResolver resolver : atAllPermissionResolvers) {
+            if (resolver.supports(message.getPlatform())) {
+                return resolver.canAtAll(message.getPlatform(), message.getNum());
+            }
+        }
+        return true;
+    }
+
+    /**
+     * 摘掉 @全体成员；摘完为空则整条不发
+     */
+    private boolean stripAtAll(Message message) {
         String stripped = message.getContent().replace(AT_ALL, "").trim();
         if (StringUtil.isBlank(stripped)) {
-            log.info("会话 {} 今日的 @全体成员 已超配额, 该条只有 @全体成员, 整条跳过", message.getNum());
+            log.info("会话 {} 的 @全体成员 未发出（无权限或超配额）, 该条只有 @全体成员, 整条跳过", message.getNum());
             return false;
         }
 

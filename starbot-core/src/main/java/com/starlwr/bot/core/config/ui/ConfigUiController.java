@@ -674,23 +674,46 @@ public class ConfigUiController {
 
         try {
             JSONObject raw = null;
-            boolean ok = true;
+            JSONObject failure = null;
+            int sent = 0;
+            int skipped = 0;
+
             for (Message message : messages) {
-                raw = messageSender.sendNow(message);
-                ok = raw != null && Integer.valueOf(0).equals(raw.getInteger("code"));
-                if (!ok) {
+                JSONObject current = messageSender.sendNow(message);
+
+                // 返回 null 表示这一条被**有意跳过**，不是失败：拦截器取消，
+                // 或 @全体成员 因无权限、超配额被摘掉后整条为空。
+                // 此时必须继续发后面的分条——{next} 会把「{at=all}」与正文拆成两条，
+                // 跳过前者就中断的话，正文会一起没了（这个坑真踩过）
+                if (current == null) {
+                    skipped++;
+                    continue;
+                }
+
+                raw = current;
+                if (!Integer.valueOf(0).equals(current.getInteger("code"))) {
+                    failure = current;
                     break;
                 }
+                sent++;
             }
 
+            boolean ok = failure == null && sent > 0;
             result.put("success", ok);
-            result.put("message", ok ? "已发送，请到对应会话中确认是否收到"
-                    : "发送失败：" + (raw == null ? "消息被拦截器取消" : raw.getString("message")));
             result.put("raw", raw);
 
-            if (!ok) {
+            if (ok) {
+                result.put("message", skipped == 0
+                        ? "已发送，请到对应会话中确认是否收到"
+                        : "已发送（有 " + skipped + " 条被跳过，多为 @全体成员 无权限或超出每日配额），请到对应会话中确认");
+            } else if (failure != null) {
+                result.put("message", "发送失败：" + failure.getString("message"));
                 result.put("advice", "常见原因：群号或 QQ 号填错、机器人不在该群、OneBot 实现未启动、Token 不匹配。"
                         + "可对照「运行状态」页的机器人连接项排查");
+            } else {
+                result.put("message", "消息全部被跳过，未实际发出");
+                result.put("advice", "可能是推送被拦截器取消，或消息只含 @全体成员 而机器人没有该权限。"
+                        + "详情见日志");
             }
         } catch (Exception e) {
             log.error("发送测试消息失败", e);
