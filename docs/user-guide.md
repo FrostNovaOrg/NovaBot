@@ -65,9 +65,9 @@ sudo systemctl start starbot && sudo journalctl -u starbot -f
 
 ```bash
 ./build.sh
-docker build -f dist/templates/Dockerfile -t starbot:4.0.0 dist/build
+docker build -f dist/templates/Dockerfile -t starbot:4.1.0-beta1 dist/build
 docker run -d --name starbot --restart unless-stopped \
-  -v starbot-data:/app -p 127.0.0.1:7827:7827 starbot:4.0.0
+  -v starbot-data:/app -p 127.0.0.1:7827:7827 starbot:4.1.0-beta1
 ```
 
 **卷必须挂在 `/app`。** 配置、登录凭据、推送规则、插件依赖全都写在工作目录下，
