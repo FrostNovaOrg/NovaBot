@@ -36,3 +36,9 @@ Thumbs.db
 
 # 本机运维备忘，含服务器与账号信息，不进仓库
 docs/OPS-NOTES.md
+
+# 本地开发用的启动配置，含本机路径
+.claude/
+
+# 产品需求文档，暂不公开
+docs/PRD-5.0.md

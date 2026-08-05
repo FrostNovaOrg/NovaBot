@@ -24,9 +24,11 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -63,6 +65,23 @@ public class ConfigUiController {
      * 配置界面根路径
      */
     public static final String BASE_PATH = "/config";
+
+    /**
+     * 允许的静态资源文件名
+     * <p>
+     * 只接受字母数字、下划线、连字符与一个扩展名。**不含点号序列**，
+     * 因此 {@code ../} 这类路径穿越根本匹配不上——把请求路径映射到类路径资源时，
+     * 校验必须写成白名单，写成黑名单迟早会漏。
+     */
+    private static final Pattern ASSET_NAME = Pattern.compile("[A-Za-z0-9_-]+\\.[A-Za-z0-9]+");
+
+    /**
+     * 静态资源的扩展名到内容类型的映射，未列出的扩展名一律不提供
+     */
+    private static final Map<String, MediaType> ASSET_TYPES = Map.of(
+            "css", MediaType.valueOf("text/css;charset=UTF-8"),
+            "js", MediaType.valueOf("text/javascript;charset=UTF-8"),
+            "svg", MediaType.valueOf("image/svg+xml;charset=UTF-8"));
 
     /**
      * 界面上展示的二维码边长，单位：像素
@@ -167,6 +186,48 @@ public class ConfigUiController {
             return ResponseEntity.ok()
                     .contentType(MediaType.valueOf("text/html;charset=UTF-8"))
                     .body(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
+        }
+    }
+
+    /**
+     * 配置界面的静态资源
+     * <p>
+     * 界面拆成多个文件之后需要这个出口。它与页面走同一个安全过滤器：
+     * 地址栏里带过一次令牌后过滤器会写下 Cookie，浏览器取这些子资源时自动携带，
+     * 因此不需要在每个资源地址上再挂令牌。
+     * <p>
+     * <b>文件名必须严格校验。</b>这个方法把请求路径直接映射到类路径资源，
+     * 放任 {@code ../} 进来等于把整个 jar 的内容开放出去。此处只接受
+     * 「字母数字、下划线、连字符 + 已知扩展名」，不做任何路径拼接以外的解释。
+     * @param name 资源文件名
+     * @return 资源内容，不存在或文件名非法时返回 404
+     */
+    @GetMapping("/assets/{name}")
+    public ResponseEntity<byte[]> asset(@PathVariable String name) {
+        if (!ASSET_NAME.matcher(name).matches()) {
+            log.warn("配置界面拒绝了非法的静态资源名: {}", name);
+            return ResponseEntity.notFound().build();
+        }
+
+        MediaType type = ASSET_TYPES.get(name.substring(name.lastIndexOf('.') + 1));
+        if (type == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        ClassPathResource resource = new ClassPathResource("config-ui/" + name);
+        if (!resource.exists()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        try (var stream = resource.getInputStream()) {
+            return ResponseEntity.ok()
+                    .contentType(type)
+                    // 内容随版本走，升级后必须立刻生效，因此不缓存
+                    .cacheControl(CacheControl.noCache())
+                    .body(stream.readAllBytes());
+        } catch (IOException e) {
+            log.error("读取配置界面静态资源 {} 失败", name, e);
+            return ResponseEntity.notFound().build();
         }
     }
 
