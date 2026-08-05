@@ -4,7 +4,10 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
-## [未发布]
+## [4.1.0-beta2] - 2026-08-05
+
+> 预发布版本。**修掉了 beta1 里一个有风控风险的行为**，若已下载 beta1 请换用本版。
+
 
 ### 安全
 
