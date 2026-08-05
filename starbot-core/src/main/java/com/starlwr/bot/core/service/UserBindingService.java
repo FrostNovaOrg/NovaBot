@@ -1,9 +1,14 @@
 package com.starlwr.bot.core.service;
 
+import com.alibaba.fastjson2.JSONObject;
 import lombok.NonNull;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -70,7 +75,54 @@ public class UserBindingService {
         }
     }
 
+    /**
+     * 列出全部绑定关系
+     * <p>
+     * 供管理后台查看与解绑。绑定既然无法验证归属，就必须留一条**事后纠正**的通道：
+     * 有人绑错了 uid 又不在群里、或有人冒用他人 uid 时，机器人的主人得能处理。
+     * @return 绑定关系，按推送平台账号排序
+     */
+    public List<Binding> all() {
+        JSONObject data = store.namespace(NAMESPACE);
+        List<Binding> result = new ArrayList<>();
+
+        for (String key : data.keySet()) {
+            // 键为「推送平台:直播平台:账号」。平台名本身不含冒号，但也不必假设——
+            // 后两段的位置是固定的，从右侧数即可，剩下的整段都是推送平台名
+            String[] parts = key.split(":");
+            if (parts.length < 3) {
+                continue;
+            }
+
+            try {
+                Long liveUid = data.getLong(key);
+                if (liveUid == null) {
+                    continue;
+                }
+                result.add(new Binding(String.join(":", Arrays.copyOf(parts, parts.length - 2)),
+                        parts[parts.length - 2], Long.parseLong(parts[parts.length - 1]), liveUid));
+            } catch (Exception ignored) {
+                // 手工编辑状态文件时可能混入非法键，跳过即可
+            }
+        }
+
+        result.sort(Comparator.comparing(Binding::pushPlatform)
+                .thenComparing(Binding::livePlatform)
+                .thenComparingLong(Binding::senderUid));
+        return result;
+    }
+
     private String key(String pushPlatform, String livePlatform, Long senderUid) {
         return pushPlatform + ":" + livePlatform + ":" + senderUid;
+    }
+
+    /**
+     * 一条绑定关系
+     * @param pushPlatform 推送平台
+     * @param livePlatform 直播平台
+     * @param senderUid 推送平台的账号
+     * @param liveUid 直播平台的 UID
+     */
+    public record Binding(String pushPlatform, String livePlatform, long senderUid, long liveUid) {
     }
 }

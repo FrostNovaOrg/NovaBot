@@ -90,4 +90,80 @@ class AtSubscriptionServiceTest {
     void listsEmptyWhenNoSubscription() {
         assertTrue(service.list(PLATFORM, GROUP, STREAMER, "live").isEmpty());
     }
+
+    @Test
+    @DisplayName("清空名单应移除全部订阅并返回人数")
+    void clearRemovesEveryone() {
+        service.subscribe(PLATFORM, GROUP, STREAMER, "live", 1L);
+        service.subscribe(PLATFORM, GROUP, STREAMER, "live", 2L);
+        service.subscribe(PLATFORM, GROUP, STREAMER, "dynamic", 3L);
+
+        assertEquals(2, service.clear(PLATFORM, GROUP, STREAMER, "live"));
+
+        assertTrue(service.list(PLATFORM, GROUP, STREAMER, "live").isEmpty());
+        assertEquals(List.of(3L), service.list(PLATFORM, GROUP, STREAMER, "dynamic"),
+                "清空一份名单不该波及同一主播的另一种订阅");
+    }
+
+    @Test
+    @DisplayName("清空不存在的名单应返回 0 而非报错")
+    void clearIsSafeWhenAbsent() {
+        assertEquals(0, service.clear(PLATFORM, GROUP, STREAMER, "live"));
+    }
+
+    @Test
+    @DisplayName("全量列出时应把键还原成平台、会话、主播与类型")
+    void listsAllWithFieldsRestored() {
+        service.subscribe(PLATFORM, GROUP, STREAMER, "live", 1L);
+
+        List<AtSubscriptionService.Subscription> all = service.all();
+
+        assertEquals(1, all.size());
+        AtSubscriptionService.Subscription item = all.get(0);
+        // 平台名含连字符，若切分方式写错会把 qq 与 onebot 拆开
+        assertEquals(PLATFORM, item.platform());
+        assertEquals(GROUP.longValue(), item.num());
+        assertEquals(STREAMER.longValue(), item.streamerUid());
+        assertEquals("live", item.type());
+        assertEquals(List.of(1L), item.users());
+    }
+
+    @Test
+    @DisplayName("全量列出的结果应能直接拿去取消订阅")
+    void listedItemsCanBeUnsubscribed() {
+        service.subscribe(PLATFORM, GROUP, STREAMER, "live", 1L);
+        service.subscribe(PLATFORM, 40004L, 20002L, "dynamic", 2L);
+
+        // 管理后台正是这么用的：把列出来的字段原样回传。一旦某个字段错位，
+        // 界面上点「移除」会删掉另一份名单里的人，且当事人毫不知情
+        for (AtSubscriptionService.Subscription item : service.all()) {
+            for (Long user : item.users()) {
+                assertEquals(AtSubscriptionService.Result.OK, service.unsubscribe(
+                        item.platform(), item.num(), item.streamerUid(), item.type(), user));
+            }
+        }
+
+        assertTrue(service.all().isEmpty());
+    }
+
+    @Test
+    @DisplayName("人走光后残留的空名单不应出现在全量列表里")
+    void skipsEmptyLeftovers() {
+        service.subscribe(PLATFORM, GROUP, STREAMER, "live", 1L);
+        service.unsubscribe(PLATFORM, GROUP, STREAMER, "live", 1L);
+
+        // 取消订阅只移除人，空对象会留在状态文件里
+        assertTrue(service.all().isEmpty(), "界面上不该出现一份 0 人的名单");
+    }
+
+    @Test
+    @DisplayName("多份名单应按会话与主播排序")
+    void sortsBySessionAndStreamer() {
+        service.subscribe(PLATFORM, 40004L, STREAMER, "live", 1L);
+        service.subscribe(PLATFORM, GROUP, 20002L, "live", 1L);
+        service.subscribe(PLATFORM, GROUP, STREAMER, "live", 1L);
+
+        assertEquals(List.of(GROUP + ":" + STREAMER, GROUP + ":20002", "40004:" + STREAMER),
+                service.all().stream().map(s -> s.num() + ":" + s.streamerUid()).toList());
+    }
 }

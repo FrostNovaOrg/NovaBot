@@ -6,6 +6,10 @@ import lombok.NonNull;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+
 /**
  * 命令开关
  * <p>
@@ -79,7 +83,52 @@ public class CommandSettingsService {
         return true;
     }
 
+    /**
+     * 列出各会话被禁用的命令
+     * <p>
+     * 命令开关只能在群里改，而**改动的痕迹此前只留在状态文件里**：群管理员关掉一条命令后，
+     * 机器人的主人在界面上完全看不出来，只会觉得「这个群的机器人怎么不吭声了」。
+     * @return 各会话的禁用清单，按平台与会话号排序
+     */
+    public List<Disabled> all() {
+        JSONObject data = store.namespace(NAMESPACE);
+        List<Disabled> result = new ArrayList<>();
+
+        for (String key : data.keySet()) {
+            // 键为「平台:会话号」。平台名可能含连字符（qq-onebot）但不含冒号，
+            // 会话号必为数字，因此从右侧切一刀即可还原
+            int split = key.lastIndexOf(':');
+            if (split <= 0) {
+                continue;
+            }
+
+            try {
+                JSONObject commands = data.getJSONObject(key);
+                if (commands == null || commands.isEmpty()) {
+                    // 启用命令只是移除键，空对象会留下，此时该会话没有任何禁用项
+                    continue;
+                }
+                result.add(new Disabled(key.substring(0, split),
+                        Long.parseLong(key.substring(split + 1)), List.copyOf(commands.keySet())));
+            } catch (Exception ignored) {
+                // 手工编辑状态文件时可能混入非法键，跳过即可
+            }
+        }
+
+        result.sort(Comparator.comparing(Disabled::platform).thenComparingLong(Disabled::num));
+        return result;
+    }
+
     private String key(String platform, Long num) {
         return platform + ":" + num;
+    }
+
+    /**
+     * 某个会话中被禁用的命令
+     * @param platform 推送平台
+     * @param num 会话号
+     * @param commands 被禁用的命令名
+     */
+    public record Disabled(String platform, long num, List<String> commands) {
     }
 }

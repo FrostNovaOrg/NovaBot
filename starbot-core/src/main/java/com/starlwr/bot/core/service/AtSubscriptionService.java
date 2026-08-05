@@ -6,6 +6,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -114,8 +116,76 @@ public class AtSubscriptionService {
         return users != null && users.containsKey(String.valueOf(userUid));
     }
 
+    /**
+     * 清空某份订阅名单
+     * @return 被移除的人数
+     */
+    public int clear(@NonNull String platform, @NonNull Long num, @NonNull Long streamerUid, @NonNull String type) {
+        int size = list(platform, num, streamerUid, type).size();
+        if (size == 0) {
+            return 0;
+        }
+
+        store.write(NAMESPACE, data -> data.remove(key(platform, num, streamerUid, type)));
+        return size;
+    }
+
+    /**
+     * 列出全部订阅名单
+     * <p>
+     * 供管理后台查看。群里的「开播@名单」只能查本群、本主播的一份，
+     * 机器人的主人要通盘了解「哪些群、哪些主播下积了多少人」，此前只能去读状态文件。
+     * @return 订阅名单，按会话与主播排序
+     */
+    public List<Subscription> all() {
+        JSONObject data = store.namespace(NAMESPACE);
+        List<Subscription> result = new ArrayList<>();
+
+        for (String key : data.keySet()) {
+            // 键为「平台:会话号:主播 UID:类型」。平台名本身不含冒号，但也不必假设——
+            // 后三段的位置是固定的，从右侧数即可，剩下的整段都是平台名
+            String[] parts = key.split(":");
+            if (parts.length < 4) {
+                continue;
+            }
+
+            try {
+                String platform = String.join(":", Arrays.copyOf(parts, parts.length - 3));
+                long num = Long.parseLong(parts[parts.length - 3]);
+                long streamerUid = Long.parseLong(parts[parts.length - 2]);
+                String type = parts[parts.length - 1];
+
+                List<Long> users = list(platform, num, streamerUid, type);
+                if (users.isEmpty()) {
+                    // 取消订阅只是移除键，人走光后空对象会留下，不必展示
+                    continue;
+                }
+                result.add(new Subscription(platform, num, streamerUid, type, users));
+            } catch (Exception ignored) {
+                // 手工编辑状态文件时可能混入非法键，跳过即可
+            }
+        }
+
+        result.sort(Comparator.comparing(Subscription::platform)
+                .thenComparingLong(Subscription::num)
+                .thenComparingLong(Subscription::streamerUid)
+                .thenComparing(Subscription::type));
+        return result;
+    }
+
     private String key(String platform, Long num, Long streamerUid, String type) {
         return platform + ":" + num + ":" + streamerUid + ":" + type;
+    }
+
+    /**
+     * 一份订阅名单
+     * @param platform 推送平台
+     * @param num 会话号
+     * @param streamerUid 主播 UID
+     * @param type 订阅类型
+     * @param users 订阅者账号
+     */
+    public record Subscription(String platform, long num, long streamerUid, String type, List<Long> users) {
     }
 
     /**
