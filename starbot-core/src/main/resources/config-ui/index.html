@@ -83,13 +83,17 @@ tr:last-child td{border-bottom:none}
 .hint{color:var(--muted);font-size:12.5px;margin:0 0 14px}
 .empty{color:var(--muted);text-align:center;padding:40px 0}
 .health{background:var(--panel);border:1px solid var(--border);border-radius:10px;margin-bottom:18px}
-.health .row{display:flex;align-items:baseline;gap:10px;padding:11px 16px;border-bottom:1px solid var(--border);font-size:13px}
+/* 必须 wrap：建议文字用 flex-basis:100% 独占一行，不换行的话它会挤在同一行里，
+   把结论那一列压到几十像素宽、一个字一折行 */
+.health .row{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px;padding:11px 16px;
+  border-bottom:1px solid var(--border);font-size:13px}
 .health .row:last-child{border-bottom:none}
 .health .dot{width:8px;height:8px;border-radius:50%;flex:none;align-self:center}
 .health .dot.OK{background:var(--ok)}
 .health .dot.DEGRADED{background:#d98e00}
 .health .dot.DOWN{background:var(--err)}
 .health .who{flex:none;min-width:120px;color:var(--muted)}
+.health .sum{flex:1;min-width:0}
 .health .advice{flex-basis:100%;margin:4px 0 0 138px;color:var(--muted);font-size:12.5px}
 .issues{display:none;background:var(--panel);border:1px solid var(--err);border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:13px}
 .issues ul{margin:6px 0 0;padding-left:20px}
@@ -98,7 +102,12 @@ tr:last-child td{border-bottom:none}
 .backups select{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:6px 9px;font-size:12.5px}
 .backups button{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:6px 12px;font-size:12.5px;cursor:pointer}
 .backups button:hover{border-color:var(--muted)}
-.backups input{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:6px 9px;font-size:12.5px;width:140px}
+/* 只管文本框。写成 .backups input 会连开关和勾选框一起撑成 140px——
+   同样的坑在 .target input 上踩过一次，这里从根上避开 */
+.backups input:not([type=checkbox]){background:var(--panel);color:var(--text);
+  border:1px solid var(--border);border-radius:7px;padding:6px 9px;font-size:12.5px;width:140px}
+/* 添加主播是本页的主入口，140px 连提示语都放不下 */
+#push-toolbar #add-uid{width:260px}
 .issues.ok{border-color:var(--ok)}
 .issues.ok li,.issues.ok b{color:var(--ok)}
 .account{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:18px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
@@ -773,8 +782,14 @@ function streamerCard(user, ui) {
 function targetRow(user, ui, target, ti) {
   const row = el('div', 'target');
 
-  const platformOpts = senderList.length
-    ? senderList.map(s => '<option value="' + esc(s) + '"' + (s === target.platform ? ' selected' : '') + '>' + esc(s) + '</option>').join('')
+  // 机器人适配器没起来时 senderList 是空的，但配置里的推送平台仍然在。
+  // 此时若只给一个空选项，界面就在说「这条规则没有配机器人」——而实际上配了，
+  // 保存也不会把它写没（serializePush 用的是 pushData 而不是 DOM）。
+  // 与其显示一句与事实不符的话，不如把配置里的值原样列出并标注它当前不可用
+  const known = senderList.length ? senderList : (target.platform ? [target.platform] : []);
+  const platformOpts = known.length
+    ? known.map(s => '<option value="' + esc(s) + '"' + (s === target.platform ? ' selected' : '') + '>'
+        + esc(s) + (senderList.length ? '' : '（当前不可用）') + '</option>').join('')
     : '<option value="">（尚无可用的机器人）</option>';
 
   // 取值须与 PushTargetType 的 code 一致：GROUP(1)、FRIEND(0)
@@ -1249,7 +1264,7 @@ function healthRows(list, emptyText) {
     ? list.map(h =>
         '<div class="row"><span class="dot ' + esc(h.level) + '"></span>' +
         '<span class="who">' + esc(h.name) + '</span>' +
-        '<span>' + esc(h.summary) + '</span>' +
+        '<span class="sum">' + esc(h.summary) + '</span>' +
         (h.advice ? '<span class="advice">' + esc(h.advice) + '</span>' : '') +
         '</div>').join('')
     : '<div class="row"><span class="who">健康检查</span><span>' + esc(emptyText) + '</span></div>';
