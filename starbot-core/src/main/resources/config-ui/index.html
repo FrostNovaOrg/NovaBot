@@ -23,9 +23,14 @@ header{background:var(--panel);border-bottom:1px solid var(--border);padding:14p
 header h1{margin:0;font-size:16px;font-weight:600}
 header .sub{color:var(--muted);font-size:12px}
 main{max-width:960px;margin:0 auto;padding:20px 24px 80px}
-nav{display:flex;gap:4px;margin-bottom:20px;border-bottom:1px solid var(--border)}
+/* 窄屏上横向滚动而不是把每个页签挤成竖排的单字：页签一多（现在 7 个），
+   flex 默认的收缩会让「群与成员」变成四行一列，认不出来也点不准 */
+nav{display:flex;gap:4px;margin-bottom:20px;border-bottom:1px solid var(--border);
+  overflow-x:auto;scrollbar-width:none}
+nav::-webkit-scrollbar{display:none}
 nav button{background:none;border:none;padding:9px 16px;cursor:pointer;color:var(--muted);
-  font-size:14px;font-family:inherit;border-bottom:2px solid transparent;margin-bottom:-1px}
+  font-size:14px;font-family:inherit;border-bottom:2px solid transparent;margin-bottom:-1px;
+  white-space:nowrap;flex:none}
 nav button.on{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
 section{display:none}
 section.on{display:block}
@@ -191,6 +196,20 @@ details.adv .inner{padding:0 16px 16px}
 .uids button:hover{border-color:var(--err);color:var(--err)}
 td.act button{background:none;border:none;color:var(--muted);cursor:pointer;font-size:12.5px;padding:0}
 td.act button:hover{color:var(--err)}
+/* 数据分析：趋势图用内联 SVG 画，页面刻意不引入任何外部依赖 */
+.chart{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:18px}
+.chart h4{margin:0 0 10px;font-size:13px;font-weight:600}
+.chart .plot{position:relative;padding-top:16px}
+.chart svg{display:block;width:100%;height:110px}
+.chart .bar{fill:var(--accent)}
+.chart .bar.zero{fill:var(--border)}
+/* 峰值标注是 HTML 而非 SVG 文字：SVG 那边会被横向拉伸 */
+.chart .peak{position:absolute;top:0;transform:translateX(-50%);font-size:11px;color:var(--muted);white-space:nowrap}
+.chart .xlab{display:flex;justify-content:space-between;margin-top:6px;font-size:11px;color:var(--muted)}
+#ana-table{overflow-x:auto}
+#ana-table table{min-width:100%;width:max-content}
+#ana-table td.n,#ana-table th.n{text-align:right;font-variant-numeric:tabular-nums}
+#ana-table tr.empty-row td{color:var(--muted)}
 @media (max-width:680px){.field{grid-template-columns:1fr}}
 </style>
 </head>
@@ -212,6 +231,7 @@ td.act button:hover{color:var(--err)}
     <button data-tab="bot">机器人</button>
     <button data-tab="bilibili">哔哩哔哩</button>
     <button data-tab="sessions">群与成员</button>
+    <button data-tab="analytics">数据分析</button>
     <button data-tab="settings">设置</button>
   </nav>
 
@@ -312,6 +332,28 @@ td.act button:hover{color:var(--err)}
     <p class="hint">成员用「绑定」把自己的 QQ 号对应到直播平台 UID，个人数据查询据此认人。
       <b>绑定无法验证归属</b>，只能核对昵称防打错，因此这里只提供解绑、不提供代人绑定。</p>
     <table id="binds"><thead><tr><th>推送平台</th><th>账号</th><th>直播平台</th><th>UID</th><th></th></tr></thead><tbody></tbody></table>
+  </section>
+
+  <!--
+    运营分析。数据源是 sessions.jsonl，每场下播追加一条，
+    聚合在服务端完成——跨零点归属、按本地时区分周、空周期补零这几条规则
+    只该有一份实现，见 LiveSessionAnalytics。
+  -->
+  <section id="analytics">
+    <p class="hint">按周或月看趋势，数据来自每场直播下播时的归档。<b>只在这里看得到，不会发到群里。</b></p>
+
+    <div class="backups" id="ana-bar">
+      <span>周期</span>
+      <select id="ana-period"><option value="week">按周</option><option value="month">按月</option></select>
+      <span>主播</span>
+      <select id="ana-uid"></select>
+      <span id="ana-scope"></span>
+    </div>
+
+    <div class="cards" id="ana-cards"></div>
+    <div id="ana-chart"></div>
+    <div id="ana-table"></div>
+    <p class="hint" id="ana-note" style="margin-top:12px"></p>
   </section>
 
   <section id="settings">
@@ -1451,6 +1493,143 @@ function renderBinds(binds) {
   }
 }
 
+// ---- 数据分析 ----
+// 聚合全在服务端做，这里只负责画。周期归属、时区、空周期补零那几条规则
+// 若在前端再实现一遍，两边迟早对不上
+let anaData = null;
+
+function fmtDuration(seconds) {
+  if (!seconds) return '0 分';
+  const h = Math.floor(seconds / 3600), m = Math.round((seconds % 3600) / 60);
+  return h ? h + ' 时 ' + m + ' 分' : m + ' 分';
+}
+
+function fmtMetric(value, metric) {
+  if (value === undefined || value === null) return '—';
+  return metric.money ? value.toFixed(2) : Math.round(value).toLocaleString('en-US');
+}
+
+async function loadAnalytics() {
+  const period = $('#ana-period').value;
+  const uid = $('#ana-uid').value;
+  try {
+    anaData = await api('/analytics?period=' + period + (uid ? '&uid=' + encodeURIComponent(uid) : ''));
+    renderAnalytics(anaData);
+  } catch (e) {
+    say('载入数据分析失败：' + e.message, 'err');
+  }
+}
+
+function renderAnalyticsStreamers(list, keep) {
+  const sel = $('#ana-uid');
+  sel.innerHTML = '<option value="">全部主播</option>'
+    + list.map(s => '<option value="' + esc(s.uid) + '">'
+        + esc(s.uname || s.uid) + '（' + s.sessions + ' 场）</option>').join('');
+  if (keep) sel.value = keep;
+}
+
+function renderAnalytics(d) {
+  renderAnalyticsStreamers(d.streamers || [], d.uid ? String(d.uid) : '');
+
+  const buckets = d.buckets || [];
+  const metrics = d.metrics || [];
+  const periodName = d.period === 'month' ? '月' : '周';
+
+  $('#ana-scope').textContent = '共归档 ' + (d.archive?.count || 0) + ' 场，当前口径 ' + d.sessionCount + ' 场';
+
+  if (!buckets.length) {
+    $('#ana-cards').innerHTML = '';
+    $('#ana-chart').innerHTML = '';
+    $('#ana-table').innerHTML = '<table><tbody><tr><td class="empty">还没有归档数据。'
+      + '每场直播下播时会自动追加一条，播过一场之后这里就有内容了</td></tr></tbody></table>';
+    $('#ana-note').textContent = '';
+    return;
+  }
+
+  // 汇总卡片统计的是当前展示的全部周期，与下方表格同一口径
+  const total = buckets.reduce((a, b) => ({
+    sessions: a.sessions + b.sessions,
+    duration: a.duration + b.durationSeconds
+  }), {sessions: 0, duration: 0});
+  const active = buckets.filter(b => b.sessions > 0).length;
+
+  $('#ana-cards').innerHTML = [
+    ['总场次', total.sessions],
+    ['总时长', fmtDuration(total.duration)],
+    ['场均时长', fmtDuration(total.sessions ? Math.round(total.duration / total.sessions) : 0)],
+    ['有播的' + periodName, active + ' / ' + buckets.length]
+  ].map(([l, n]) => '<div class="card"><div class="n">' + esc(n) + '</div><div class="l">'
+    + esc(l) + '</div></div>').join('');
+
+  $('#ana-chart').innerHTML = chartHtml('每' + periodName + '直播时长', buckets,
+    b => b.durationSeconds / 3600, v => v.toFixed(1) + ' 时')
+    + (metrics.length
+        ? chartHtml('每' + periodName + '弹幕数', buckets,
+            b => b.metrics[metrics[0].key] || 0, v => Math.round(v).toLocaleString('en-US'))
+        : '');
+
+  // 表格：周期 + 场次 + 时长 + 各指标。指标顺序由插件的指标说明决定
+  const head = '<tr><th>' + esc(periodName === '月' ? '月份' : '周') + '</th><th class="n">场次</th>'
+    + '<th class="n">时长</th>'
+    + metrics.map(m => '<th class="n">' + esc(m.name) + (m.unit ? '<br><small>' + esc(m.unit) + '</small>' : '')
+        + '</th>').join('') + '</tr>';
+
+  const rows = buckets.slice().reverse().map(b =>
+    '<tr' + (b.sessions ? '' : ' class="empty-row"') + '><td>' + esc(b.label) + '</td>'
+    + '<td class="n">' + b.sessions + '</td>'
+    + '<td class="n">' + esc(fmtDuration(b.durationSeconds)) + '</td>'
+    + metrics.map(m => '<td class="n">' + esc(b.sessions ? fmtMetric(b.metrics[m.key] || 0, m) : '—')
+        + '</td>').join('') + '</tr>').join('');
+
+  $('#ana-table').innerHTML = '<table><thead>' + head + '</thead><tbody>' + rows + '</tbody></table>';
+
+  const notes = [];
+  if (!d.metricsKnown) {
+    notes.push('未找到该平台的指标说明，只能统计场次与时长。');
+  }
+  if (d.droppedPeriods) {
+    notes.push('更早的 ' + d.droppedPeriods + ' 个' + periodName + '未显示。');
+  }
+  notes.push('时长与各项指标按开播时刻归入周期，跨零点的直播整场算在开播那一天。');
+  // 一项指标都没展示时，这句「哪些指标不参与累加」纯属噪音
+  if (metrics.length) {
+    notes.push('开播时的粉丝数等「快照」指标不参与累加——把十场的粉丝数加起来不是任何一个真实数字。');
+  }
+  $('#ana-note').textContent = notes.join('');
+}
+
+// 柱状图。画之前先算好最大值，全零时不缩放（否则 0/0 出 NaN，整张图消失）。
+//
+// 柱子用 SVG（preserveAspectRatio="none" 才能横向铺满），但**文字一律放在 SVG 外面**：
+// 同一个属性会把文字一起横向拉伸，宽屏上只是略胖，窄屏上会挤成一团认不出来。
+function chartHtml(title, buckets, pick, fmt) {
+  const values = buckets.map(pick);
+  const max = Math.max(...values, 0);
+  const h = 100, bw = 1000 / buckets.length;
+
+  const bars = values.map((v, i) => {
+    const bh = max > 0 ? h * (v / max) : 0;
+    // 零值也留 2px 的痕迹，否则「这周没播」和「这周没有这项数据」在图上长得一样
+    return '<rect class="bar' + (v ? '' : ' zero') + '" x="' + (i * bw + bw * 0.15).toFixed(1)
+      + '" y="' + (h - Math.max(bh, v ? 1 : 2)).toFixed(1) + '" width="' + (bw * 0.7).toFixed(1)
+      + '" height="' + Math.max(bh, v ? 1 : 2).toFixed(1) + '"><title>'
+      + esc(buckets[i].label + '：' + fmt(v)) + '</title></rect>';
+  }).join('');
+
+  const peak = values.indexOf(max);
+  const peakLabel = max > 0
+    ? '<span class="peak" style="left:' + ((peak + 0.5) / buckets.length * 100).toFixed(2) + '%">'
+      + esc(fmt(max)) + '</span>'
+    : '';
+
+  // 横轴只标首尾，柱子一多全标会糊成一片；具体数值靠悬停看 tooltip
+  return '<div class="chart"><h4>' + esc(title) + '</h4>'
+    + '<div class="plot"><svg viewBox="0 0 1000 ' + h + '" preserveAspectRatio="none">' + bars
+    + '</svg>' + peakLabel + '</div>'
+    + '<div class="xlab"><span>' + esc(buckets[0].label) + '</span><span>'
+    + esc(buckets[buckets.length - 1].label) + '</span></div></div>';
+}
+
 async function load() {
   say('载入中…');
   try {
@@ -1607,12 +1786,17 @@ function switchTab(name) {
   document.querySelectorAll('section').forEach(x => x.classList.toggle('on', x.id === name));
   tab = name;
 
+  // 窄屏上页签栏是横向滚动的，靠右的页签会落在视野外。选中却看不见等于没有选中标记，
+  // 因此把当前页签滚进来。block:'nearest' 防止它顺带把整页往下拉
+  $('nav button.on')?.scrollIntoView({inline: 'center', block: 'nearest'});
+
   clearTimeout(accountTimer);
   if (tab === 'overview') { api('/status').then(renderStatus); loadHistory(); loadAccounts(); refreshWizardState(); }
   else if (tab === 'bot') api('/status').then(renderStatus);
   else if (tab === 'bilibili') { api('/status').then(renderStatus); loadAccounts(); }
   // 每次进入都重取：群里随时可能有人订阅或关掉命令，缓存的画面会误导人
   else if (tab === 'sessions') loadState();
+  else if (tab === 'analytics') loadAnalytics();
 
   markDirty();
 }
@@ -1654,6 +1838,8 @@ $('#wizard-toggle').addEventListener('click', () => {
   wizardTouched = true;
   setWizardCollapsed($('#wizard').style.display !== 'none');
 });
+$('#ana-period').addEventListener('change', loadAnalytics);
+$('#ana-uid').addEventListener('change', loadAnalytics);
 $('#reload').addEventListener('click', load);
 // 先注入 DOM 再绑定，否则 bindBotForm 取到的是 null
 $('#bot-form').innerHTML = botFormHtml('bot');
