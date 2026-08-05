@@ -39,8 +39,22 @@
 | `AccountLoginProvider` | `core.account` | 哔哩哔哩 | 界面内扫码登录、退出登录 |
 | `BotConnectionTester` | `core.account` | OneBot 适配器 | 连通性测试与连接参数回填 |
 | `AlertChannel` | `core.alert` | 核心（邮件、QQ） | 告警投递 |
+| `StarBotCommand` | `core.command` | 各模块 | 群内聊天命令 |
+| `AtAllPermissionResolver` | `core.sender` | OneBot 适配器 | 机器人在某会话能否 @全体成员 |
+| `LiveMetricCatalog` | `core.analytics` | 哔哩哔哩 | 直播指标的中文名与**能否累加** |
 
 新增一个跨模块能力时，先问「核心需不需要 import 插件的类」。需要，就说明该抽成 SPI。
+
+后两个 SPI 的划分方式值得单说，它们都是**核心定策略、插件供事实**：
+
+- `AtAllPermissionResolver` —— 核心不知道「群管理员」是什么，那是推送平台的概念；
+  但「没权限就把 @全体成员 摘掉」是核心的策略。所以核心只问「能不能」，适配器回答。
+  **查不出来时约定返回 true**：宁可保持原有行为，也不要因为一次接口抖动就悄悄吞掉
+  使用者明确配置过的 @全体成员
+- `LiveMetricCatalog` —— 归档里的指标是 `danmu_count` 这样的裸键，核心既不知道它叫什么，
+  **也不知道它能不能相加**。后者不是格式问题而是对错问题：把「开播时的粉丝数」在一个月里
+  累加十次，得到的数字纯属无中生有。因此聚合只处理明确声明为可累加的指标，
+  没有对应实现时降级为只统计场次与时长——这两项核心自己就算得出，且永远正确
 
 ## 2. 事件流
 
@@ -67,7 +81,7 @@
 - **处理器抛异常只记日志，不会中断其他处理器**。一个目标配置有误不应连累其他目标。
 - **`datasource.json` 里写的是处理器全限定类名**，由 `StarBotEventHandlerService` 在
   `ContextRefreshedEvent` 时建立 `类名 → 实例` 的映射。类名写错在运行期表现为
-  「不存在的事件处理器」日志，因此保存配置时就会校验（见第 4 节）。
+  「不存在的事件处理器」日志，因此保存配置时就会校验（见第 6 节）。
 
 ## 3. 并发与生命周期
 
@@ -117,7 +131,50 @@ lifecycleProcessor.onClose()     ← 停 SmartLifecycle，默认最多等 30 秒
 跨线程读写的字段一律 `volatile`（登录态、uid、待扫码内容等）。这些字段由调度线程写、
 由 Web 线程（配置界面）读，不加 `volatile` 时界面可能长时间读到旧值。
 
-## 4. 配置体系
+## 4. 运行期状态与数据
+
+配置之外还有几份**运行期产生**的数据，都不该混进 `application.yml`：
+
+| 文件 | 谁写 | 内容 | 丢了会怎样 |
+|---|---|---|---|
+| `state.json` | `StarBotStateStore` | 各群禁用了哪些命令、`@我` 订阅名单、账号绑定 | 群成员的设置全部回到默认 |
+| `sessions.jsonl` | `LiveSessionArchive` | 每场直播的时长与全部指标 | **运营分析的历史永久消失，补不回来** |
+| `data.json` | `DefaultLiveDataService` | 本场与累计的直播数据 | 累计数据归零 |
+
+三者的写入时机与取舍：
+
+- **`state.json` 改动立即落盘**。它由群成员的聊天命令产生，随时可能变；
+  攒着批量写的话，一次意外重启就会让人发现「我明明订阅过」
+- **`sessions.jsonl` 只追加，不改写**。选每行一条 JSON 而非放进 Redis，是因为
+  追加写没有读改写周期，程序崩在中途也毁不掉既有记录；而且体量很小、人能直接看
+- **归档必须发生在下播那一刻**。本场数据会在**下次开播时清零**，
+  拖到别处做就晚了。同一个原因，累计合并也放在下播而不是开播前——
+  程序可能在两场之间重启
+
+`LiveDataService` 有两个实现：`DefaultLiveDataService` 写 `data.json`，
+`RedisLiveDataService` 在配置了 Redis 时接管。**累计数据只有后者支持**——
+那类数据随时间无限增长，放在单个 JSON 文件里迟早撑不住。没配 Redis 时
+「总数据」类查询会明说不可用，而不是回一堆 0 让人误以为数据丢了。
+
+## 5. 群内命令
+
+`CommandDispatcher` 收到消息事件后按「命令名开头」匹配，因此群里正常聊天时
+随口说到某个命令名不会触发。**机器人只在已配置推送的群里应答**，其他群一律沉默。
+
+命令实现 `StarBotCommand`，用 `@StarBotComponent` 注册（插件模块）或 `@Component`（核心）。
+接口上有两个决定行为的方法：
+
+- `category()` —— `菜单` 据此分组，按首次出现顺序排列
+- `requiresAdmin()` —— 是否只有管理员能用
+
+**管理员 = 群主 / 群管理员 / 配置的超管名单**（`starbot.core.command.admins`）。
+群主与管理员的角色由推送平台在消息事件里带上；超管名单是跨群生效的，
+因为机器人的主人未必是每个群的管理员。**私聊一律不算管理员**——
+私聊没有「群管理员」这个概念，放行等于给所有人开后门。授权与拒绝都会记日志。
+
+同一个群 3 秒内只响应一条命令，防刷屏。
+
+## 6. 配置体系
 
 ### 单一事实来源
 
@@ -166,7 +223,7 @@ META-INF/spring-configuration-metadata.json
 会让第二个 Spring 上下文以同样的方式失败，那就毫无意义。它只绑回环、带随机令牌、
 只提供「看/改/回滚 application.yml」。
 
-## 5. 插件机制
+## 7. 插件机制
 
 ### 注册
 
@@ -214,7 +271,7 @@ systemd 下的进程树也不正确。
 
 动态事件只有一个：`com.starlwr.bot.bilibili.event.dynamic.BilibiliDynamicUpdateEvent`。
 
-## 6. 反射相关的坑
+## 8. 反射相关的坑
 
 一处**只有踩过才知道**的行为：标注了 `@Configuration` 的类会被 CGLIB 代理，
 代理类上只有合成字段，直接反射拿不到真正的配置字段。反射前必须先还原：
@@ -225,7 +282,7 @@ Class<?> type = ClassUtils.getUserClass(bean);
 
 `ConfigurationLevelResolver` 就因为漏了这一步，只解析到 17 个字段中的 8 个。
 
-## 7. 测试约定
+## 9. 测试约定
 
 - `@DisplayName` 用中文，描述**行为**而不是方法名
 - 断言带消息，说明「为什么这样才对」，而不只是「期望 X 实际 Y」
@@ -245,7 +302,7 @@ Class<?> type = ClassUtils.getUserClass(bean);
    （从 HTML 源码里正则抠出待测函数，而不是手抄一份副本——手抄的副本永远是对的）
 3. 结构性检查：所有 `$('#id')` 引用的 id 都能对应到 DOM 定义，页签按钮与 section 一一对应
 
-## 8. 构建
+## 10. 构建
 
 ```bash
 ./build.sh [--clean|--skip-tests]

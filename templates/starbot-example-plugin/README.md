@@ -87,6 +87,25 @@ starbot-example-plugin/
 >- 使用了 `@StarBotComponent` 注解的类, 类名不可以与 StarBot 本体或其他插件中的类名重复, 请命名时尽量避免过于简单或过于通用的命名
 >- StarBot 内部大量使用了 Spring 的事件机制, 插件可以通过创建事件监听器来处理这些事件, 常用事件类型请参考 [StarBotCore](https://github.com/Starlwr/StarBotCore) 项目相关文档
 
+### 本仓库提供的扩展点
+
+除了监听事件，插件还可以实现下列接口来接入核心的能力。实现类同样用 `@StarBotComponent` 注册，
+核心用 `ObjectProvider` 取——**没有实现时是空流而不是启动失败**，所以插件装不装都不影响核心启动。
+
+| 接口 | 用途 |
+|---|---|
+| `StarBotEventHandler` | 推送处理器，可被配置在 `datasource.json` 里 |
+| `StarBotCommand` | 群内聊天命令，自动出现在 `菜单` 里 |
+| `HealthProbe` | 往总览页的健康自检里加一项 |
+| `AlertChannel` | 新的告警投递通道 |
+| `AccountLoginProvider` | 在配置界面里完成某个平台的登录 |
+| `BotConnectionTester` | 推送平台的连通性测试 |
+| `AtAllPermissionResolver` | 回答「机器人在这个会话能否 @全体成员」 |
+| `LiveMetricCatalog` | 声明直播指标的中文名与**能否累加**，供运营统计使用 |
+
+完整的事件类型清单、类加载规则与并发约定见本仓库的
+[架构说明](../../docs/architecture.md)——它比上游文档更贴近这里的实现。
+
 ## 依赖管理
 
 StarBot 插件使用 Maven 进行依赖管理, 插件可以依赖其他第三方库, 这些库将在被 StarBot 加载时自动下载

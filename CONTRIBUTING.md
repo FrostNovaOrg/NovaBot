@@ -45,6 +45,11 @@ mvn -Pinstall -f starbot-bilibili/pom.xml test
 mvn -Pinstall test
 ```
 
+**改配置类时可能被 `ConfigurationConsistencyTest` 拦下。** 它在构建期强制三条：
+不存在「声明了却从未生效」的配置项、模板文件里不含已删除的配置项、每个配置项都有中文说明。
+它红了先看是不是真的漏了什么，而不是先想怎么让它变绿——这个测试已经拦下过两次真实的回归。
+详见[架构说明](docs/architecture.md#三条不变量)。
+
 ## 提交
 
 - 提交信息使用中文，说明改动的意图
