@@ -2,6 +2,7 @@ package com.starlwr.bot.core.handler;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
+import com.starlwr.bot.core.model.HandlerOption;
 import com.starlwr.bot.core.model.PushMessage;
 import org.springframework.stereotype.Component;
 
@@ -69,6 +70,18 @@ public interface StarBotEventHandler {
      * @return 占位符列表
      */
     default List<String> placeholders() {
+        return List.of();
+    }
+
+    /**
+     * 消息模板之外的可配置参数，供配置界面渲染
+     * <p>
+     * 声明了才配得到：不声明的参数依旧只能在 {@code datasource.json} 里手写，
+     * 而使用者无从知道有哪些键、取值范围是多少。界面按 {@link HandlerOption} 的
+     * 类型通用渲染，本身不认识任何具体参数名，因此第三方插件自带的参数同样可配。
+     * @return 可配置参数列表，默认无
+     */
+    default List<HandlerOption> options() {
         return List.of();
     }
 }

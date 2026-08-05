@@ -8,6 +8,8 @@ import com.kennycason.kumo.font.KumoFont;
 import com.kennycason.kumo.font.scale.SqrtFontScalar;
 import com.kennycason.kumo.image.AngleGenerator;
 import com.kennycason.kumo.palette.ColorPalette;
+import javax.imageio.ImageIO;
+import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
 import com.starlwr.bot.bilibili.model.BilibiliLiveReportOptions;
 import com.starlwr.bot.bilibili.model.Room;
@@ -32,6 +34,8 @@ import java.awt.Font;
 import java.awt.Graphics2D;
 import java.awt.Point;
 import java.awt.image.BufferedImage;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -153,6 +157,11 @@ public class BilibiliLiveReportPainter {
     private static final int CURVE_COLUMN_WIDTH = 2;
 
     /**
+     * 底部标识的绘制高度，与动态图片保持一致
+     */
+    private static final int LOGO_HEIGHT = 45;
+
+    /**
      * 各条曲线的配色，礼物沿用主题粉（{@link #COLOR_NAME}）
      */
     private static final Color COLOR_CURVE_DANMU = new Color(0, 174, 236);
@@ -185,13 +194,24 @@ public class BilibiliLiveReportPainter {
 
     private final FontUtil fontUtil;
 
+    private final StarBotBilibiliProperties properties;
+
+    /**
+     * 底部标识只读一次盘，读过就不再重试——无论成败
+     */
+    private volatile boolean logoLoaded;
+
+    private BufferedImage logo;
+
     @Autowired
     public BilibiliLiveReportPainter(StarBotCommonPainterFactory factory, BilibiliApiUtil api,
-                                     LiveDataService liveDataService, FontUtil fontUtil) {
+                                     LiveDataService liveDataService, FontUtil fontUtil,
+                                     StarBotBilibiliProperties properties) {
         this.factory = factory;
         this.api = api;
         this.liveDataService = liveDataService;
         this.fontUtil = fontUtil;
+        this.properties = properties;
     }
 
     /**
@@ -233,6 +253,7 @@ public class BilibiliLiveReportPainter {
             }
 
             painter.movePos(0, 20);
+            drawLogo(painter);
             painter.drawCopyright(MARGIN);
             painter.movePos(0, 10);
 
@@ -748,6 +769,54 @@ public class BilibiliLiveReportPainter {
             log.debug("获取直播间 {} 的封面失败: {}", source.getRoomId(), e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * 绘制底部标识，未配置或读取失败时跳过
+     */
+    private void drawLogo(CommonPainter painter) {
+        BufferedImage image = logo();
+        if (image == null) {
+            return;
+        }
+
+        int top = painter.getY();
+        painter.drawImage(image, new Point(MARGIN, top));
+        painter.setPos(MARGIN, top + image.getHeight() + 10);
+    }
+
+    /**
+     * 读取并缓存底部标识图片
+     * <p>
+     * 只在首次绘制时读取一次；读取失败也标记为已加载，
+     * 以免路径写错导致每份报告都重复尝试读盘并刷一条警告。
+     * @return 标识图片，未配置或读取失败时为 null
+     */
+    private BufferedImage logo() {
+        if (logoLoaded) {
+            return logo;
+        }
+
+        synchronized (this) {
+            if (!logoLoaded) {
+                String path = properties.getLive().getReportLogoPath();
+                if (StringUtil.isNotBlank(path)) {
+                    try {
+                        Path file = Path.of(path);
+                        if (Files.isReadable(file)) {
+                            logo = ImageUtil.resizeByHeight(ImageIO.read(file.toFile()), LOGO_HEIGHT);
+                        } else {
+                            log.warn("下播报告的标识图片 {} 不存在或不可读, 已跳过绘制", path);
+                        }
+                    } catch (Exception e) {
+                        log.warn("读取下播报告的标识图片 {} 失败, 已跳过绘制: {}", path, e.getMessage());
+                    }
+                }
+                logoLoaded = true;
+            }
+        }
+
+        return logo;
     }
 
     /**

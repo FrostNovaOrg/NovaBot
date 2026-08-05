@@ -527,6 +527,7 @@ public class ConfigUiController {
             item.put("platform", handler.platform());
             item.put("placeholders", handler.placeholders());
             item.put("defaultParams", handler.getDefaultParams());
+            item.put("options", handler.options());
             items.add(item);
         });
 

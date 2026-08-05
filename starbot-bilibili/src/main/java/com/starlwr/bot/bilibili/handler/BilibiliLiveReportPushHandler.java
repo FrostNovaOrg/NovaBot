@@ -8,6 +8,7 @@ import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
 import com.starlwr.bot.core.handler.StarBotEventHandler;
+import com.starlwr.bot.core.model.HandlerOption;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.plugin.StarBotComponent;
@@ -63,24 +64,42 @@ public class BilibiliLiveReportPushHandler implements StarBotEventHandler {
         return BilibiliLiveOffEvent.class;
     }
 
+    /**
+     * 报告版式选项
+     * <p>
+     * <b>这里是默认值的唯一出处</b>：{@link #getDefaultParams()} 与配置界面都从它派生。
+     * 若两处各写一份，改了一处忘了另一处，界面上勾的与实际生效的就会对不上——
+     * 而这种不一致不会有任何报错，只会让人以为「配了没用」。
+     * <p>
+     * 排行榜类填的是「展示前多少名」，0 为不展示；上限 20 与
+     * {@link BilibiliLiveReportOptions} 的夹取区间一致。
+     */
+    private static final List<HandlerOption> OPTIONS = List.of(
+            HandlerOption.bool("cover", "直播间封面", "报告顶部的封面横幅", true),
+            HandlerOption.bool("cards", "数据卡片", "弹幕、礼物、点赞等概览卡片", true),
+            HandlerOption.bool("fans_change", "本场变化", "粉丝、粉丝团、大航海的涨幅，每次出报告要多打三个接口", true),
+            HandlerOption.bool("interaction_curve", "互动曲线", "弹幕、礼物等随时间的变化曲线", true),
+            HandlerOption.bool("guard_list", "大航海名单", "本场新开通大航海的观众", true),
+            HandlerOption.bool("danmu_cloud", "弹幕词云", "本场弹幕的词云图", true),
+            HandlerOption.integer("danmu_ranking", "弹幕排行", "展示前几名，0 为不展示", 5, 0, 20),
+            HandlerOption.integer("gift_ranking", "礼物排行", "展示前几名，0 为不展示", 5, 0, 20),
+            HandlerOption.integer("super_chat_ranking", "醒目留言排行", "展示前几名，0 为不展示", 5, 0, 20),
+            // 盲盒两榜默认关闭：多数直播间没有盲盒数据，开着只会让报告多两块空白
+            HandlerOption.integer("box_ranking", "盲盒排行", "展示前几名，0 为不展示", 0, 0, 20),
+            HandlerOption.integer("box_profit_ranking", "盲盒盈亏排行", "展示前几名，0 为不展示", 0, 0, 20));
+
     @Override
     public JSONObject getDefaultParams() {
         JSONObject params = new JSONObject();
         params.put("at_all", false);
         params.put("message", "{report}");
-
-        // 版式选项：排行榜类填「展示前多少名」，0 为不展示；其余为开关
-        params.put("cover", true);
-        params.put("cards", true);
-        params.put("danmu_ranking", 5);
-        params.put("gift_ranking", 5);
-        params.put("super_chat_ranking", 5);
-        // 盲盒两榜默认关闭：多数直播间没有盲盒数据，开着只会让报告多两块空白
-        params.put("box_ranking", 0);
-        params.put("box_profit_ranking", 0);
-        params.put("guard_list", true);
-        params.put("danmu_cloud", true);
+        OPTIONS.forEach(option -> params.put(option.key(), option.defaultValue()));
         return params;
+    }
+
+    @Override
+    public List<HandlerOption> options() {
+        return OPTIONS;
     }
 
     @Override

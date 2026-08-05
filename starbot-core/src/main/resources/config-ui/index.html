@@ -130,6 +130,16 @@ tr:last-child td{border-bottom:none}
 .tpl .preview{margin-top:8px;font-size:12.5px;color:var(--muted);white-space:pre-wrap;word-break:break-all}
 .tpl .preview b{color:var(--text);font-weight:500}
 .tpl-toggle{background:none;border:none;color:var(--accent);cursor:pointer;font-size:11.5px;padding:0 0 0 4px}
+/* 处理器自带的参数（如下播报告的版式开关），由 options 声明后通用渲染 */
+.tpl .opts{margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
+.tpl .opts>h5{margin:0 0 8px;font-size:12px;font-weight:600;color:var(--muted)}
+.tpl .opts .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:6px 14px}
+.tpl .opts label{display:flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer;min-height:26px}
+.tpl .opts label>span{flex:1}
+/* .target input 把所有输入框设成了 150px 宽，勾选框会因此撑掉整格，必须显式收回 */
+.tpl .opts input[type=checkbox]{width:auto;flex:none;margin:0;padding:0}
+.tpl .opts input[type=number]{width:64px;flex:none;text-align:right;background:var(--panel);color:var(--text);
+  border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:12.5px}
 .step{background:var(--panel);border:1px solid var(--border);border-radius:10px;margin-bottom:14px;overflow:hidden}
 .step>h3{margin:0;padding:12px 16px;font-size:14px;font-weight:600;border-bottom:1px solid var(--border);
   background:var(--accent-soft);display:flex;align-items:center;gap:10px}
@@ -758,7 +768,59 @@ function templateEditor(ui, ti, handler) {
     });
   });
 
+  if ((handler.options || []).length) {
+    box.appendChild(optionEditor(message, handler.options));
+  }
+
   return box;
+}
+
+// 处理器自带的参数。界面不认识任何具体参数名，只按声明的类型渲染，
+// 因此第三方插件声明了 options 就同样能在这里配
+function optionEditor(message, options) {
+  const wrap = el('div', 'opts');
+  wrap.innerHTML = '<h5>该内容的可选项</h5>';
+
+  const grid = el('div', 'grid');
+  options.forEach(opt => {
+    const current = message.params && message.params[opt.key] != null
+      ? message.params[opt.key]
+      : opt.defaultValue;
+
+    const label = el('label');
+    const title = '<span>' + esc(opt.label) + '</span>';
+
+    if (opt.type === 'BOOLEAN') {
+      label.innerHTML = '<input type="checkbox"' + (current ? ' checked' : '') + '>' + title;
+      label.querySelector('input').addEventListener('change', e => {
+        message.params = message.params || {};
+        message.params[opt.key] = e.target.checked;
+        markDirty();
+      });
+    } else {
+      label.innerHTML = title + '<input type="number" value="' + esc(current)
+        + '"' + (opt.min == null ? '' : ' min="' + opt.min + '"')
+        + (opt.max == null ? '' : ' max="' + opt.max + '"') + '>';
+      label.querySelector('input').addEventListener('change', e => {
+        // 就近夹到合法区间：后端也会夹一次，但当场纠正过来才看得懂发生了什么
+        let value = Math.round(Number(e.target.value) || 0);
+        if (opt.min != null) { value = Math.max(opt.min, value); }
+        if (opt.max != null) { value = Math.min(opt.max, value); }
+        e.target.value = value;
+        message.params = message.params || {};
+        message.params[opt.key] = value;
+        markDirty();
+      });
+    }
+
+    if (opt.description) {
+      label.title = opt.description;
+    }
+    grid.appendChild(label);
+  });
+
+  wrap.appendChild(grid);
+  return wrap;
 }
 
 // 用假数据渲染，让人在配置时就看到大致效果，不必等真事件发生

@@ -1,5 +1,6 @@
 package com.starlwr.bot.bilibili.painter;
 
+import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
 import com.starlwr.bot.bilibili.model.BilibiliLiveReportOptions;
 import com.starlwr.bot.bilibili.model.Room;
@@ -45,6 +46,10 @@ class BilibiliLiveReportPainterTest {
 
     private BilibiliApiUtil api;
 
+    private StarBotCommonPainterFactory factory;
+
+    private FontUtil fontUtil;
+
     private DefaultLiveDataService liveDataService;
 
     private BilibiliLiveReportPainter painter;
@@ -60,7 +65,7 @@ class BilibiliLiveReportPainterTest {
         // 使用核心内置的字体，避免测试结果依赖运行环境已安装的字体
         coreProperties.getPaint().getFonts().add("内置");
 
-        FontUtil fontUtil = new FontUtil(new DefaultResourceLoader(), coreProperties);
+        fontUtil = new FontUtil(new DefaultResourceLoader(), coreProperties);
         // 字体在 @PostConstruct 中加载，脱离 Spring 容器时需手动触发
         fontUtil.init();
 
@@ -70,8 +75,7 @@ class BilibiliLiveReportPainterTest {
         buildInfo.setProperty("artifact", "starbot-core");
         buildInfo.setProperty("name", "StarBotCore");
 
-        StarBotCommonPainterFactory factory =
-                new StarBotCommonPainterFactory(new BuildProperties(buildInfo), coreProperties, fontUtil);
+        factory = new StarBotCommonPainterFactory(new BuildProperties(buildInfo), coreProperties, fontUtil);
 
         BufferedImage placeholder = new BufferedImage(640, 360, BufferedImage.TYPE_INT_ARGB);
         Graphics2D graphics = placeholder.createGraphics();
@@ -90,7 +94,8 @@ class BilibiliLiveReportPainterTest {
         when(api.getLiveInfoByRoomId(anyLong())).thenReturn(room);
 
         liveDataService = new DefaultLiveDataService(new StarBotCoreProperties());
-        painter = new BilibiliLiveReportPainter(factory, api, liveDataService, fontUtil);
+        painter = new BilibiliLiveReportPainter(factory, api, liveDataService, fontUtil,
+                new com.starlwr.bot.bilibili.config.StarBotBilibiliProperties());
     }
 
     @Test
@@ -235,6 +240,37 @@ class BilibiliLiveReportPainterTest {
         liveDataService.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.DANMU_COUNT, 50);
 
         assertTrue(painter.paint(PLATFORM, STREAMER).isPresent(), "无曲线数据也应能出图");
+    }
+
+    @Test
+    @DisplayName("配了自定义标识时应画在署名之上")
+    void paintsCustomLogo() throws Exception {
+        BufferedImage mark = new BufferedImage(300, 90, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = mark.createGraphics();
+        g.setColor(new Color(251, 114, 153));
+        g.fillRoundRect(0, 0, 300, 90, 20, 20);
+        g.dispose();
+        Path file = Files.createTempDirectory("novabot-logo").resolve("logo.png");
+        javax.imageio.ImageIO.write(mark, "png", file.toFile());
+
+        StarBotBilibiliProperties withLogo = new StarBotBilibiliProperties();
+        withLogo.getLive().setReportLogoPath(file.toString());
+
+        Optional<String> base64 = new BilibiliLiveReportPainter(factory, api, liveDataService, fontUtil, withLogo)
+                .paint(PLATFORM, STREAMER);
+
+        assertTrue(base64.isPresent());
+        dump("logo", base64.get());
+    }
+
+    @Test
+    @DisplayName("标识路径写错时应跳过绘制而非让整张报告失败")
+    void survivesMissingLogo() {
+        StarBotBilibiliProperties badPath = new StarBotBilibiliProperties();
+        badPath.getLive().setReportLogoPath("/nowhere/does-not-exist.png");
+
+        assertTrue(new BilibiliLiveReportPainter(factory, api, liveDataService, fontUtil, badPath)
+                .paint(PLATFORM, STREAMER).isPresent(), "标识读不到也应出图");
     }
 
     @Test
