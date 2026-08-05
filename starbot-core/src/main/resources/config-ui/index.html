@@ -179,6 +179,15 @@
   <button class="ghost" id="reload">重新载入</button>
   <button class="primary" id="save" disabled>保存</button>
 </div>
-<script src="/config/assets/app.js"></script>
+<!-- 按依赖顺序加载：core 提供公共基础，main 在解析时就会调用其余模块，必须最后 -->
+<script src="/config/assets/core.js"></script>
+<script src="/config/assets/settings.js"></script>
+<script src="/config/assets/bot.js"></script>
+<script src="/config/assets/overview.js"></script>
+<script src="/config/assets/push.js"></script>
+<script src="/config/assets/bilibili.js"></script>
+<script src="/config/assets/sessions.js"></script>
+<script src="/config/assets/analytics.js"></script>
+<script src="/config/assets/main.js"></script>
 </body>
 </html>
