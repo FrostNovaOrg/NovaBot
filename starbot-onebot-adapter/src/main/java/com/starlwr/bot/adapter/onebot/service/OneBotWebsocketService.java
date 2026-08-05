@@ -301,9 +301,15 @@ public class OneBotWebsocketService {
                                     Long num = "group".equals(messageType)
                                             ? rawMessage.getLong("group_id")
                                             : rawMessage.getLong("user_id");
+                                    // sender.role 取值为 owner / admin / member，管理类命令据此判权限。
+                                    // 私聊没有群角色一说，取不到即为空
+                                    JSONObject messageSender = rawMessage.getJSONObject("sender");
+                                    String senderRole = messageSender == null ? null : messageSender.getString("role");
+
                                     service.publisher.publishEvent(new StarBotRemoteMessageEvent(
                                             sender.getName(), messageType, num,
-                                            rawMessage.getLong("user_id"), rawMessage.getString("raw_message")));
+                                            rawMessage.getLong("user_id"), rawMessage.getString("raw_message"),
+                                            senderRole));
                                 }
 
                                 if ("status".equalsIgnoreCase(rawMessage.getString("raw_message"))) {

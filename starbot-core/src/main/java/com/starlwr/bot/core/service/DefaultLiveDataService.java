@@ -462,6 +462,33 @@ public class DefaultLiveDataService implements LiveDataService {
     }
 
     /**
+     * 取得本场记录到的用户头像地址快照，供并入累计存储
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @return 用户 UID 到头像地址的映射
+     */
+    public java.util.Map<Long, String> liveUserFaces(@NonNull String platform, @NonNull Long uid) {
+        synchronized (metricLock) {
+            JSONObject faces = Optional.ofNullable(cache.getJSONObject("LiveUserFace:" + platform))
+                    .map(data -> data.getJSONObject(String.valueOf(uid)))
+                    .orElse(null);
+            if (faces == null) {
+                return java.util.Map.of();
+            }
+
+            java.util.Map<Long, String> result = new java.util.HashMap<>();
+            for (String userKey : faces.keySet()) {
+                try {
+                    result.put(Long.parseLong(userKey), faces.getString(userKey));
+                } catch (NumberFormatException ignored) {
+                    // 同上
+                }
+            }
+            return result;
+        }
+    }
+
+    /**
      * 记录用户昵称
      *
      * @param platform 直播平台
@@ -521,6 +548,35 @@ public class DefaultLiveDataService implements LiveDataService {
         }
     }
 
+    /**
+     * 记录用户头像地址
+     *
+     * @param platform 直播平台
+     * @param uid      主播 UID
+     * @param userUid  用户 UID
+     * @param userFace 用户头像地址
+     */
+    @Override
+    public void recordLiveUserFace(@NonNull String platform, @NonNull Long uid, @NonNull Long userUid, String userFace) {
+        if (userFace == null || userFace.isBlank()) {
+            return;
+        }
+
+        synchronized (metricLock) {
+            String key = "LiveUserFace:" + platform;
+            cache.putIfAbsent(key, new JSONObject());
+            JSONObject byUid = cache.getJSONObject(key);
+            byUid.putIfAbsent(String.valueOf(uid), new JSONObject());
+            JSONObject faces = byUid.getJSONObject(String.valueOf(uid));
+
+            String userKey = String.valueOf(userUid);
+            // 与昵称表同样的容量约束：头像表只为已计分的用户服务，不该比计分表更大
+            if (faces.containsKey(userKey) || faces.size() < METRIC_USER_LIMIT) {
+                faces.put(userKey, userFace);
+            }
+        }
+    }
+
     @Override
     public List<UserScore> getLiveUserRanking(@NonNull String platform, @NonNull Long uid, @NonNull String metric, int limit) {
         if (limit <= 0) {
@@ -538,11 +594,15 @@ public class DefaultLiveDataService implements LiveDataService {
             JSONObject names = Optional.ofNullable(cache.getJSONObject("LiveUserName:" + platform))
                     .map(data -> data.getJSONObject(String.valueOf(uid)))
                     .orElseGet(JSONObject::new);
+            JSONObject faces = Optional.ofNullable(cache.getJSONObject("LiveUserFace:" + platform))
+                    .map(data -> data.getJSONObject(String.valueOf(uid)))
+                    .orElseGet(JSONObject::new);
 
             List<UserScore> scores = new ArrayList<>(users.size());
             for (String userKey : users.keySet()) {
                 try {
-                    scores.add(new UserScore(Long.parseLong(userKey), names.getString(userKey), users.getDoubleValue(userKey)));
+                    scores.add(new UserScore(Long.parseLong(userKey), names.getString(userKey),
+                            faces.getString(userKey), users.getDoubleValue(userKey)));
                 } catch (NumberFormatException e) {
                     // 手工编辑数据文件等情况下可能混入非法键，跳过即可，不必让整个排行榜失败
                     log.debug("跳过计分表中的非法用户键: {}", userKey);
@@ -745,6 +805,8 @@ public class DefaultLiveDataService implements LiveDataService {
             Optional.ofNullable(cache.getJSONObject("LiveWordFrequency:" + platform))
                     .ifPresent(data -> data.remove(String.valueOf(uid)));
             Optional.ofNullable(cache.getJSONObject("LiveUserName:" + platform))
+                    .ifPresent(data -> data.remove(String.valueOf(uid)));
+            Optional.ofNullable(cache.getJSONObject("LiveUserFace:" + platform))
                     .ifPresent(data -> data.remove(String.valueOf(uid)));
             Optional.ofNullable(cache.getJSONObject("LiveSeries:" + platform))
                     .ifPresent(data -> data.remove(String.valueOf(uid)));

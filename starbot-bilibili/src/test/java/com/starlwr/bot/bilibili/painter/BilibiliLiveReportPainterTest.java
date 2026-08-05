@@ -154,6 +154,7 @@ class BilibiliLiveReportPainterTest {
             long uid = 100L + i;
             double weight = names.length - i;
             liveDataService.recordLiveUserName(PLATFORM, STREAMER.getUid(), uid, names[i]);
+            liveDataService.recordLiveUserFace(PLATFORM, STREAMER.getUid(), uid, "https://pic.example/face" + i + ".jpg");
             liveDataService.incrementLiveUserMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.DANMU_USERS, uid, weight * 7);
             liveDataService.incrementLiveUserMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.GIFT_USERS, uid, weight * 13.5);
             liveDataService.incrementLiveUserMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.SUPER_CHAT_USERS, uid, weight * 30);

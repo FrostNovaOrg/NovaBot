@@ -10,6 +10,7 @@ import com.starlwr.bot.core.service.StarBotSenderService;
 import com.starlwr.bot.core.util.HttpUtil;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.time.Instant;
 import java.util.List;
@@ -102,6 +103,84 @@ class StarBotMessageSenderTest {
         return sender(http, new StarBotCoreProperties());
     }
 
+    @Test
+    @DisplayName("@全体成员 独占一条时，超配额应整条跳过而不是发出一条空消息")
+    void skipsStandaloneAtAllWhenQuotaExhausted() {
+        // Message.create 在 {next} 处就把消息拆开了，at_all 拼出的
+        // 「{at=all}{next}正文」会变成两条，第一条只有占位符
+        StarBotCoreProperties properties = new StarBotCoreProperties();
+        properties.getPush().setAtAllDailyLimit(1);
+
+        HttpUtil http = okHttp();
+        StarBotMessageSender sender = sender(http, properties);
+
+        sender.sendNow(standaloneAtAll());
+        sender.sendNow(standaloneAtAll());
+
+        ArgumentCaptor<Map<String, Object>> captor = paramsCaptor();
+        // 第二条整条跳过，因此只该有一次投递
+        verify(http, times(1)).postJson(anyString(), any(), captor.capture());
+        assertEquals("{at=all}", captor.getValue().get("content"));
+    }
+
+    @Test
+    @DisplayName("@全体成员 与正文同条时，超配额应只摘掉占位符、保留正文")
+    void stripsAtAllButKeepsContent() {
+        StarBotCoreProperties properties = new StarBotCoreProperties();
+        properties.getPush().setAtAllDailyLimit(1);
+
+        HttpUtil http = okHttp();
+        StarBotMessageSender sender = sender(http, properties);
+
+        sender.sendNow(inlineAtAll());
+        sender.sendNow(inlineAtAll());
+
+        ArgumentCaptor<Map<String, Object>> captor = paramsCaptor();
+        verify(http, times(2)).postJson(anyString(), any(), captor.capture());
+        assertTrue(String.valueOf(captor.getAllValues().get(0).get("content")).contains("{at=all}"));
+        assertFalse(String.valueOf(captor.getAllValues().get(1).get("content")).contains("{at=all}"));
+        assertTrue(String.valueOf(captor.getAllValues().get(1).get("content")).contains("开播啦"),
+                "正文必须保留");
+    }
+
+    @Test
+    @DisplayName("私聊不占 @全体成员 的配额")
+    void privateChatDoesNotConsumeQuota() {
+        StarBotCoreProperties properties = new StarBotCoreProperties();
+        properties.getPush().setAtAllDailyLimit(1);
+
+        HttpUtil http = okHttp();
+        StarBotMessageSender sender = sender(http, properties);
+
+        sender.sendNow(Message.create(PLATFORM, PushTargetType.FRIEND, 10000L, "{at=all}开播啦").get(0));
+        // 私聊没消耗额度，群聊这一条仍应保留占位符
+        sender.sendNow(inlineAtAll());
+
+        ArgumentCaptor<Map<String, Object>> captor = paramsCaptor();
+        verify(http, times(2)).postJson(anyString(), any(), captor.capture());
+        assertTrue(String.valueOf(captor.getAllValues().get(1).get("content")).contains("{at=all}"));
+    }
+
+    private HttpUtil okHttp() {
+        HttpUtil http = mock(HttpUtil.class);
+        when(http.postJson(anyString(), any(), any())).thenReturn(
+                new JSONObject().fluentPut("code", 0).fluentPut("id", "1"));
+        return http;
+    }
+
+    private Message standaloneAtAll() {
+        return Message.create(PLATFORM, PushTargetType.GROUP, 10000003L, "{at=all}{next}开播啦").get(0);
+    }
+
+    private Message inlineAtAll() {
+        return Message.create(PLATFORM, PushTargetType.GROUP, 10000003L, "{at=all} 开播啦").get(0);
+    }
+
+    @SuppressWarnings("unchecked")
+    private ArgumentCaptor<Map<String, Object>> paramsCaptor() {
+        return ArgumentCaptor.forClass(Map.class);
+    }
+
     private StarBotMessageSender sender(HttpUtil http, StarBotCoreProperties properties) {
         Sender target = new Sender();
         target.setName(PLATFORM);
@@ -111,6 +190,7 @@ class StarBotMessageSenderTest {
         StarBotSenderService senderService = mock(StarBotSenderService.class);
         when(senderService.getSender(PLATFORM)).thenReturn(Optional.of(target));
 
-        return new StarBotMessageSender(http, senderService, new PushActivityRecorder(), new PushGate(properties));
+        return new StarBotMessageSender(http, senderService, new PushActivityRecorder(), new PushGate(properties),
+                new com.starlwr.bot.core.service.AtAllQuotaService(properties));
     }
 }

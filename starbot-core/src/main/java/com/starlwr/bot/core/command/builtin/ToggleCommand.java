@@ -5,6 +5,7 @@ import com.starlwr.bot.core.command.CommandDispatcher;
 import com.starlwr.bot.core.command.CommandReply;
 import com.starlwr.bot.core.command.CommandSettingsService;
 import com.starlwr.bot.core.command.StarBotCommand;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 
 /**
@@ -12,6 +13,7 @@ import org.springframework.beans.factory.ObjectProvider;
  * <p>
  * 两者除方向外逻辑完全一致，合成一个基类避免两份几乎相同的代码各自演化。
  */
+@Slf4j
 public abstract class ToggleCommand implements StarBotCommand {
     /**
      * 分发器反过来依赖全部命令，用 ObjectProvider 延迟取用以打破循环依赖
@@ -44,6 +46,13 @@ public abstract class ToggleCommand implements StarBotCommand {
     }
 
     @Override
+    public boolean requiresAdmin() {
+        // 改的是**全群**的可用功能，不是自己的偏好。放任何人执行，
+        // 等于把机器人的开关交给了路过的人
+        return true;
+    }
+
+    @Override
     public CommandReply execute(CommandContext context) {
         String target = context.arg(0);
         if (target == null) {
@@ -65,6 +74,10 @@ public abstract class ToggleCommand implements StarBotCommand {
         if (!changed) {
             return CommandReply.of("「" + command.name() + "」本来就是" + (enabling() ? "启用" : "禁用") + "状态");
         }
+
+        // 改的是全群状态，留一条审计日志：事后才问得出「这功能什么时候被谁关掉的」
+        log.info("{} 在会话 {} 中{}了命令 {}", context.getSenderUid(), context.getNum(),
+                enabling() ? "启用" : "禁用", command.name());
         return CommandReply.of("已" + (enabling() ? "启用" : "禁用") + "「" + command.name() + "」");
     }
 

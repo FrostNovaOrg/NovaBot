@@ -147,7 +147,7 @@ class BilibiliDataQueryPainterTest {
     private List<UserScore> ranking(int from, int to) {
         List<UserScore> rows = new ArrayList<>();
         for (int i = from; i <= to; i++) {
-            rows.add(new UserScore((long) i, "用户" + i, (to - i + 1) * 13.0));
+            rows.add(new UserScore((long) i, "用户" + i, "https://pic.example/face" + i + ".jpg", (to - i + 1) * 13.0));
         }
         return rows;
     }

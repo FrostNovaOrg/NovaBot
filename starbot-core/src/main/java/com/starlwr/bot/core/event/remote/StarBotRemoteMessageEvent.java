@@ -45,12 +45,26 @@ public class StarBotRemoteMessageEvent extends StarBotInternalBaseEvent {
      */
     private String text;
 
+    /**
+     * 发送者在会话中的角色，如 owner（群主）、admin（管理员）、member（普通成员）
+     * <p>
+     * 取自推送平台的原始消息，平台未提供时为空。管理类命令据此判断权限——
+     * 没有这一项，群里任何人都能把机器人的功能对全群关掉。
+     */
+    private String senderRole;
+
     public StarBotRemoteMessageEvent(String platform, String messageType, Long num, Long senderUid, String text) {
+        this(platform, messageType, num, senderUid, text, (String) null);
+    }
+
+    public StarBotRemoteMessageEvent(String platform, String messageType, Long num, Long senderUid,
+                                     String text, String senderRole) {
         this.platform = platform;
         this.messageType = messageType;
         this.num = num;
         this.senderUid = senderUid;
         this.text = text;
+        this.senderRole = senderRole;
     }
 
     public StarBotRemoteMessageEvent(String platform, String messageType, Long num, Long senderUid, String text, Instant instant) {

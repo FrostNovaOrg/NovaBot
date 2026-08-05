@@ -2,9 +2,11 @@ package com.starlwr.bot.core.sender;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.health.PushActivityRecorder;
 import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.Sender;
+import com.starlwr.bot.core.service.AtAllQuotaService;
 import com.starlwr.bot.core.service.StarBotSenderService;
 import com.starlwr.bot.core.util.HttpUtil;
 import com.starlwr.bot.core.util.StringUtil;
@@ -44,6 +46,8 @@ public class StarBotMessageSender {
      */
     private final PushGate pushGate;
 
+    private final AtAllQuotaService atAllQuota;
+
     /**
      * 单个平台的发送队列容量
      * <p>
@@ -77,11 +81,13 @@ public class StarBotMessageSender {
 
     @Autowired
     public StarBotMessageSender(HttpUtil http, StarBotSenderService senderService,
-                                PushActivityRecorder activityRecorder, PushGate pushGate) {
+                                PushActivityRecorder activityRecorder, PushGate pushGate,
+                                AtAllQuotaService atAllQuota) {
         this.http = http;
         this.senderService = senderService;
         this.activityRecorder = activityRecorder;
         this.pushGate = pushGate;
+        this.atAllQuota = atAllQuota;
     }
 
     /**
@@ -152,6 +158,44 @@ public class StarBotMessageSender {
                 .orElseThrow(() -> new IllegalArgumentException("未找到推送平台 " + message.getPlatform()));
 
         return doSend(sender, message);
+    }
+
+    /**
+     * @全体成员 的占位符
+     */
+    private static final String AT_ALL = "{at=all}";
+
+    /**
+     * 按每日配额处理消息中的 @全体成员
+     * <p>
+     * 额度用尽时把占位符摘掉，退化为普通消息——开播通知本身仍然该发，只是不再 @ 全体。
+     * <p>
+     * <b>摘完可能什么都不剩。</b>{@code Message.create} 在 {@code {next}} 处就把消息拆开了，
+     * 而 {@code at_all} 拼出来的正是「{@code {at=all}} + 分条 + 正文」，于是占位符
+     * <b>往往独占一条消息</b>。这种情况必须整条不发，否则群里会收到一条空消息。
+     * @return 是否还应发送这条消息
+     */
+    private boolean applyAtAllQuota(Message message) {
+        if (message.getContent() == null || !message.getContent().contains(AT_ALL)) {
+            return true;
+        }
+        // 私聊不存在 @全体成员，不占配额
+        if (PushTargetType.GROUP != message.getType()) {
+            return true;
+        }
+
+        if (atAllQuota.tryConsume(message.getPlatform(), message.getNum())) {
+            return true;
+        }
+
+        String stripped = message.getContent().replace(AT_ALL, "").trim();
+        if (StringUtil.isBlank(stripped)) {
+            log.info("会话 {} 今日的 @全体成员 已超配额, 该条只有 @全体成员, 整条跳过", message.getNum());
+            return false;
+        }
+
+        message.setContent(stripped);
+        return true;
     }
 
     /**
@@ -257,6 +301,13 @@ public class StarBotMessageSender {
      * @return 推送接口的原始响应；被拦截器取消发送时返回 null
      */
     private JSONObject doSend(Sender sender, Message message) {
+        // 配额检查放在这里而非各推送处理器里：处理器只经手 at_all 参数，
+        // 而模板里手写的 {at=all} 同样会 @ 全体。所有消息最终都汇到这一处，
+        // 只有在这里拦才拦得全
+        if (!applyAtAllQuota(message)) {
+            return null;
+        }
+
         Map<String, String> headers = new HashMap<>();
         if (StringUtil.isNotBlank(sender.getToken())) {
             headers.put("Authorization", "Bearer " + sender.getToken());

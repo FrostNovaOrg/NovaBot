@@ -73,6 +73,16 @@ public class StarBotCoreProperties {
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
         private String prefix = "";
+
+        /**
+         * 超级管理员账号，跨会话生效
+         * <p>
+         * 「禁用命令」这类操作会改变全群的可用功能，只对管理员开放。
+         * <b>群主与群管理员自动拥有权限</b>，此处填的是不依赖群角色的额外名单——
+         * 机器人的主人未必是每个群的管理员。
+         */
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        private List<Long> admins = new ArrayList<>();
     }
 
     /**
@@ -88,6 +98,17 @@ public class StarBotCoreProperties {
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
         private boolean enabled = true;
+
+        /**
+         * 每个会话每日最多 @全体成员 的次数，0 或负数表示不限制
+         * <p>
+         * QQ 本身有每日上限，用超之后**平台会静默忽略**——消息照发但 @ 不生效，
+         * 配置的人往往过很久才发现「怎么没人被 @ 到」。因此在自己这一侧先记账，
+         * 超额时主动退化为普通消息并记日志，而不是把额度花在注定无效的调用上。
+         * 默认 10 与 QQ 当前的上限一致。
+         */
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        private int atAllDailyLimit = 10;
 
         /**
          * 静音时段开始时间，格式 HH:mm，与结束时间任一为空即视为不启用

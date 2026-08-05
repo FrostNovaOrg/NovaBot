@@ -120,8 +120,18 @@ public class CommandDispatcher {
         }
         lastExecuted.put(cooldownKey, Instant.now());
 
+        boolean admin = isAdmin(event);
+        if (command.requiresAdmin() && !admin) {
+            // 这里不沉默：使用者需要知道「命令存在但自己没权限」，否则只会反复重试。
+            // 同时留一条审计日志——谁想动全群的开关，事后要查得到
+            log.info("{} 在会话 {} 中尝试执行管理命令 {}, 但不是管理员", event.getSenderUid(), event.getNum(), command.name());
+            Message.create(event.getPlatform(), type, event.getNum(),
+                    "「" + command.name() + "」仅群主、群管理员或超级管理员可用").forEach(sender::send);
+            return;
+        }
+
         CommandContext context = new CommandContext(event.getPlatform(), type, event.getNum(),
-                event.getSenderUid(), command.name(), List.copyOf(parts), event.getText());
+                event.getSenderUid(), command.name(), List.copyOf(parts), event.getText(), admin);
 
         try {
             CommandReply reply = command.execute(context);
@@ -132,6 +142,30 @@ public class CommandDispatcher {
             // 一个命令出错不应影响其他命令，也不该把异常细节回给群里
             log.error("执行命令 {} 时发生异常", command.name(), e);
         }
+    }
+
+    /**
+     * 判断消息发送者是否为管理员
+     * <p>
+     * 两条来源：会话中的角色（群主、群管理员），以及配置里的超级管理员名单。
+     * 后者不依赖群角色——机器人的主人未必是每个群的管理员。
+     * <p>
+     * <b>私聊一律不算管理员</b>：私聊没有群角色，若在此放行，任何人私聊机器人
+     * 都能改动群里的命令开关。
+     */
+    private boolean isAdmin(StarBotRemoteMessageEvent event) {
+        Long senderUid = event.getSenderUid();
+        if (senderUid == null) {
+            return false;
+        }
+
+        List<Long> admins = properties.getCommand().getAdmins();
+        if (admins != null && admins.contains(senderUid)) {
+            return true;
+        }
+
+        String role = event.getSenderRole();
+        return "owner".equalsIgnoreCase(role) || "admin".equalsIgnoreCase(role);
     }
 
     /**

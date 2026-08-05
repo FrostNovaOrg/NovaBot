@@ -250,8 +250,10 @@ public class BilibiliLiveStatsAggregator {
             return;
         }
         liveDataService.incrementLiveUserMetric(event.getPlatform(), event.getSource().getUid(), metric, sender.getUid(), delta);
-        // 昵称在事件里现成带着，此时记下，绘制榜单时便不必再逐个请求接口
+        // 昵称与头像地址在事件里现成带着，此时记下，绘制榜单时便不必再逐个请求接口——
+        // 一张榜十几个人就是十几次请求，那正是排行榜迟迟没能带上头像的原因
         liveDataService.recordLiveUserName(event.getPlatform(), event.getSource().getUid(), sender.getUid(), sender.getUname());
+        liveDataService.recordLiveUserFace(event.getPlatform(), event.getSource().getUid(), sender.getUid(), sender.getFace());
     }
 
     /**

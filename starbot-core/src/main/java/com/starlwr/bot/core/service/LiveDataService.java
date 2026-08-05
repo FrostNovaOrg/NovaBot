@@ -88,13 +88,6 @@ public interface LiveDataService {
     }
 
     /**
-     * 以取最大值的方式更新本场直播的统计指标，适用于服务端下发的单调累计值（如点赞总数）
-     * @param platform 直播平台
-     * @param uid UID
-     * @param metric 指标名
-     * @param value 候选值
-     */
-    /**
      * 直接设定本场直播的统计指标
      * <p>
      * 用于记录**快照类**的值，如开播那一刻的粉丝数——它不是累加出来的，也不取最大。
@@ -107,6 +100,13 @@ public interface LiveDataService {
     default void setLiveMetric(@NonNull String platform, @NonNull Long uid, @NonNull String metric, double value) {
     }
 
+    /**
+     * 以取最大值的方式更新本场直播的统计指标，适用于服务端下发的单调累计值（如点赞总数）
+     * @param platform 直播平台
+     * @param uid UID
+     * @param metric 指标名
+     * @param value 候选值
+     */
     default void maxLiveMetric(@NonNull String platform, @NonNull Long uid, @NonNull String metric, double value) {
     }
 
@@ -173,6 +173,19 @@ public interface LiveDataService {
      * @param userName 用户昵称
      */
     default void recordLiveUserName(@NonNull String platform, @NonNull Long uid, @NonNull Long userUid, String userName) {
+    }
+
+    /**
+     * 记录用户头像地址，供排行榜展示
+     * <p>
+     * 与昵称同理：头像地址在事件里现成带着，此时记下，绘制榜单时便不必逐个请求接口。
+     * 逐个请求既慢又容易触发风控——这正是排行榜迟迟没加头像的原因。
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @param userUid 用户 UID
+     * @param userFace 用户头像地址
+     */
+    default void recordLiveUserFace(@NonNull String platform, @NonNull Long uid, @NonNull Long userUid, String userFace) {
     }
 
     /**

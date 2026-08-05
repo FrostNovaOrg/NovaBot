@@ -166,6 +166,85 @@ class CommandDispatcherTest {
         assertTrue(dispatcher.all().stream().anyMatch(c -> "测试命令".equals(c.name())));
     }
 
+    // ============ 管理员权限 ============
+    // 在加权限之前，群里任何人都能发「禁用命令」把功能对全群关掉——这是个真漏洞，
+    // 因此下面几条用例守的是「谁能动全群的开关」
+
+    @Test
+    @DisplayName("普通成员执行管理命令应被拒绝并收到说明")
+    void rejectsAdminCommandFromMember() {
+        command.adminOnly = true;
+
+        dispatcher.onRemoteMessage(roleEvent(GROUP, "测试命令", "member"));
+
+        assertEquals(0, command.executions);
+        ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
+        verify(sender).send(captor.capture());
+        assertTrue(captor.getValue().getContent().contains("仅群主"), captor.getValue().getContent());
+    }
+
+    @Test
+    @DisplayName("群主可执行管理命令")
+    void allowsAdminCommandFromOwner() {
+        command.adminOnly = true;
+
+        dispatcher.onRemoteMessage(roleEvent(GROUP, "测试命令", "owner"));
+
+        assertEquals(1, command.executions);
+    }
+
+    @Test
+    @DisplayName("群管理员可执行管理命令")
+    void allowsAdminCommandFromGroupAdmin() {
+        // 不复用上一条用例的分发器：同会话有 3 秒冷却，而换个群号又会撞上
+        // 「只在已配置推送的会话响应」，两条约束叠在一起只能靠各自新建分发器绕开
+        command.adminOnly = true;
+
+        dispatcher.onRemoteMessage(roleEvent(GROUP, "测试命令", "admin"));
+
+        assertEquals(1, command.executions);
+    }
+
+    @Test
+    @DisplayName("角色缺失时应按普通成员处理，不能默认放行")
+    void treatsMissingRoleAsMember() {
+        command.adminOnly = true;
+
+        dispatcher.onRemoteMessage(event(GROUP, "测试命令"));
+
+        assertEquals(0, command.executions);
+    }
+
+    @Test
+    @DisplayName("超级管理员名单里的账号不依赖群角色即可执行")
+    void allowsConfiguredSuperAdmin() {
+        StarBotCoreProperties properties = new StarBotCoreProperties();
+        properties.getCommand().getAdmins().add(1L);
+
+        AbstractDataSource dataSource = mock(AbstractDataSource.class);
+        when(dataSource.getAllUsers()).thenReturn(List.of(configuredUser()));
+        CommandDispatcher withAdmins = new CommandDispatcher(providerOf(command), settings, dataSource, sender, properties);
+        command.adminOnly = true;
+
+        // 发送者 uid 为 1，角色是普通成员，但在超管名单里
+        withAdmins.onRemoteMessage(roleEvent(GROUP, "测试命令", "member"));
+
+        assertEquals(1, command.executions);
+    }
+
+    @Test
+    @DisplayName("普通命令不受权限限制，且能读到自己的管理员身份")
+    void normalCommandUnaffected() {
+        dispatcher.onRemoteMessage(roleEvent(GROUP, "测试命令", "owner"));
+
+        assertEquals(1, command.executions);
+        assertEquals(Boolean.TRUE, command.lastSeenAdmin);
+    }
+
+    private StarBotRemoteMessageEvent roleEvent(Long group, String text, String role) {
+        return new StarBotRemoteMessageEvent(PLATFORM, "group", group, 1L, text, role);
+    }
+
     private StarBotRemoteMessageEvent event(Long group, String text) {
         return new StarBotRemoteMessageEvent(PLATFORM, "group", group, 1L, text);
     }
@@ -206,6 +285,13 @@ class CommandDispatcherTest {
         private int executions;
         private List<String> lastArgs;
         private boolean explode;
+        private boolean adminOnly;
+        private Boolean lastSeenAdmin;
+
+        @Override
+        public boolean requiresAdmin() {
+            return adminOnly;
+        }
 
         @Override
         public String name() {
@@ -229,6 +315,7 @@ class CommandDispatcherTest {
             }
             executions++;
             lastArgs = context.getArgs();
+            lastSeenAdmin = context.isAdmin();
             return CommandReply.of("已执行");
         }
     }

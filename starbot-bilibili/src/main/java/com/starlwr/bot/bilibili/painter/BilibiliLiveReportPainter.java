@@ -7,6 +7,8 @@ import com.kennycason.kumo.bg.RectangleBackground;
 import com.kennycason.kumo.font.KumoFont;
 import com.kennycason.kumo.font.scale.SqrtFontScalar;
 import com.kennycason.kumo.image.AngleGenerator;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import com.kennycason.kumo.palette.ColorPalette;
 import javax.imageio.ImageIO;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
@@ -36,6 +38,7 @@ import java.awt.Point;
 import java.awt.image.BufferedImage;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -117,6 +120,11 @@ public class BilibiliLiveReportPainter {
     private static final int RANKING_BAR_HEIGHT = 14;
 
     /**
+     * 排行榜头像的直径。头像地址随计分一并记录，绘制时只需下载图片，不打接口
+     */
+    private static final int RANKING_AVATAR_SIZE = 32;
+
+    /**
      * 大航海名单最多展示的人数
      */
     private static final int GUARD_LIST_LIMIT = 10;
@@ -195,6 +203,25 @@ public class BilibiliLiveReportPainter {
     private final FontUtil fontUtil;
 
     private final StarBotBilibiliProperties properties;
+
+    /**
+     * 头像下载失败的哨兵值
+     * <p>
+     * Caffeine 不缓存 null，直接返回 null 会让坏地址每次绘制都重试一遍。
+     * 放一张 1×1 的空图占位，靠引用相等把它与真头像区分开。
+     */
+    private static final BufferedImage FAILED_AVATAR = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
+
+    /**
+     * 头像缓存，按头像地址计
+     * <p>
+     * 同一个人出现在多张榜、多份报告里都只下载一次。容量与时长都取得比较克制：
+     * 头像是小图，但常驻内存的图片对象在小内存机器上仍值得设个上界。
+     */
+    private final Cache<String, BufferedImage> avatarCache = Caffeine.newBuilder()
+            .maximumSize(500)
+            .expireAfterWrite(Duration.ofHours(6))
+            .build();
 
     /**
      * 底部标识只读一次盘，读过就不再重试——无论成败
@@ -646,7 +673,14 @@ public class BilibiliLiveReportPainter {
         painter.drawTextWithStyle(List.of(new TextWithStyle(String.valueOf(rank), 24, rankColor(rank), Font.BOLD)),
                 new Point(MARGIN + 4, y + 6));
 
-        int nameX = MARGIN + 44;
+        // 头像取不到就空着位置：让各行的昵称仍然左端对齐，比逐行错开好看
+        int avatarX = MARGIN + 40;
+        BufferedImage avatar = avatar(user.userFace());
+        if (avatar != null) {
+            painter.drawImage(avatar, new Point(avatarX, y + (RANKING_ROW_HEIGHT - RANKING_AVATAR_SIZE) / 2));
+        }
+
+        int nameX = avatarX + RANKING_AVATAR_SIZE + 10;
         painter.drawTextWithStyle(List.of(new TextWithStyle(truncate(user.displayName()), 24, COLOR_TEXT, Font.PLAIN)),
                 new Point(nameX, y + 6));
 
@@ -667,6 +701,24 @@ public class BilibiliLiveReportPainter {
                 new Point(barX + barWidth + 16, y + 6));
 
         painter.setPos(MARGIN, y + RANKING_ROW_HEIGHT);
+    }
+
+    /**
+     * 取排行榜用的圆形头像，带缓存
+     * <p>
+     * 缓存按头像地址而非用户：同一个人在多张榜里出现、多份报告里出现，都只下载一次。
+     * 取不到时缓存一个空值占位，避免坏地址被反复重试。
+     */
+    private BufferedImage avatar(String url) {
+        if (StringUtil.isBlank(url)) {
+            return null;
+        }
+
+        BufferedImage cached = avatarCache.get(url, key -> api.getBilibiliImage(atSize(key, RANKING_AVATAR_SIZE))
+                .map(image -> ImageUtil.maskToCircle(ImageUtil.resize(image, RANKING_AVATAR_SIZE, RANKING_AVATAR_SIZE)))
+                .orElse(FAILED_AVATAR));
+        // 用哨兵值区分「没缓存过」与「缓存了一次失败」，后者不再重试
+        return cached == FAILED_AVATAR ? null : cached;
     }
 
     /**
@@ -911,10 +963,19 @@ public class BilibiliLiveReportPainter {
      * 为图片地址附加缩放参数，避免下载原图
      */
     private String atSize(String url) {
+        return atSize(url, AVATAR_SIZE);
+    }
+
+    /**
+     * 为图片地址附加指定宽度的缩放参数
+     * <p>
+     * 排行榜头像只有 32px，下原图既慢又浪费——一场直播的榜单动辄数十人
+     */
+    private String atSize(String url, int size) {
         if (StringUtil.isBlank(url) || url.contains("@")) {
             return url;
         }
-        return url + "@" + AVATAR_SIZE + "w.webp";
+        return url + "@" + size + "w.webp";
     }
 
     /**

@@ -31,6 +31,8 @@ import java.util.Set;
  *     <li>{@code nb:total:<platform>:<uid>} — 哈希，字段为指标名，值为累计量</li>
  *     <li>{@code nb:total:user:<platform>:<uid>:<metric>} — 有序集合，成员为用户 UID，分值为累计得分</li>
  *     <li>{@code nb:name:<platform>:<uid>} — 哈希，字段为用户 UID，值为昵称</li>
+ *     <li>{@code nb:face:<platform>:<uid>} — 哈希，字段为用户 UID，值为头像地址</li>
+ *     <li>{@code nb:face:<platform>:<uid>} — 哈希，字段为用户 UID，值为头像地址</li>
  * </ul>
  */
 @Slf4j
@@ -90,6 +92,13 @@ public class RedisLiveDataService implements LiveDataService {
                 redis.opsForHash().putAll(nameKey(platform, uid), byUid);
             }
 
+            Map<Long, String> faces = delegate.liveUserFaces(platform, uid);
+            if (!faces.isEmpty()) {
+                Map<String, String> byUid = new java.util.HashMap<>();
+                faces.forEach((userUid, face) -> byUid.put(String.valueOf(userUid), face));
+                redis.opsForHash().putAll(faceKey(platform, uid), byUid);
+            }
+
             log.info("主播 {} 的本场数据已并入累计", uid);
         } catch (Exception e) {
             // 并入失败只影响累计统计，不该波及下播推送本身
@@ -144,7 +153,9 @@ public class RedisLiveDataService implements LiveDataService {
                 try {
                     Long userUid = Long.parseLong(member);
                     Object name = redis.opsForHash().get(nameKey(platform, uid), member);
+                    Object face = redis.opsForHash().get(faceKey(platform, uid), member);
                     result.add(new UserScore(userUid, name == null ? null : String.valueOf(name),
+                            face == null ? null : String.valueOf(face),
                             Optional.ofNullable(tuple.getScore()).orElse(0.0)));
                 } catch (NumberFormatException ignored) {
                     // 手工写入等情况下可能混入非法成员，跳过即可
@@ -278,6 +289,11 @@ public class RedisLiveDataService implements LiveDataService {
     }
 
     @Override
+    public void recordLiveUserFace(@NonNull String platform, @NonNull Long uid, @NonNull Long userUid, String userFace) {
+        delegate.recordLiveUserFace(platform, uid, userUid, userFace);
+    }
+
+    @Override
     public void incrementLiveSeries(@NonNull String platform, @NonNull Long uid, @NonNull String metric,
                                     long timestamp, double delta) {
         delegate.incrementLiveSeries(platform, uid, metric, timestamp, delta);
@@ -308,5 +324,9 @@ public class RedisLiveDataService implements LiveDataService {
 
     private String nameKey(String platform, Long uid) {
         return PREFIX + "name:" + platform + ":" + uid;
+    }
+
+    private String faceKey(String platform, Long uid) {
+        return PREFIX + "face:" + platform + ":" + uid;
     }
 }

@@ -50,6 +50,22 @@ public class CommandContext {
     private final String rawText;
 
     /**
+     * 发送者是否为管理员
+     * <p>
+     * 群主、群管理员，或列在超级管理员名单里的账号。<b>判定统一由分发器完成</b>，
+     * 命令实现只管用结论——规则若散落在各命令里，漏写一处就是一个洞。
+     */
+    private final boolean admin;
+
+    /**
+     * 视发送者为非管理员的构造方法，供测试与不关心权限的调用方使用
+     */
+    public CommandContext(String platform, PushTargetType type, Long num, Long senderUid,
+                          String command, List<String> args, String rawText) {
+        this(platform, type, num, senderUid, command, args, rawText, false);
+    }
+
+    /**
      * 取第 n 个参数
      * @param index 下标，从 0 开始
      * @return 参数，不存在时为 null

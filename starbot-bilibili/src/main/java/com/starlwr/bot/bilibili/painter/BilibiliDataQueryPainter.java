@@ -1,5 +1,7 @@
 package com.starlwr.bot.bilibili.painter;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.factory.StarBotCommonPainterFactory;
 import com.starlwr.bot.core.model.TextWithStyle;
@@ -15,6 +17,7 @@ import java.awt.Color;
 import java.awt.Font;
 import java.awt.Point;
 import java.awt.image.BufferedImage;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
@@ -62,12 +65,20 @@ public class BilibiliDataQueryPainter {
     private static final int RANKING_BAR_HEIGHT = 14;
 
     /**
-     * 昵称列的左端与右端（相对内容区），比例条从右端起画
-     * <p>
-     * 两者之差就是昵称的可用宽度：{@link #MAX_NAME_LENGTH} 个全角字加省略号约 240px，
-     * 留出 30px 余量，昵称再长也不会压到比例条上
+     * 排行榜头像的直径
      */
-    private static final int NAME_X = 60;
+    private static final int RANKING_AVATAR_SIZE = 30;
+
+    /**
+     * 榜单各列的左端（相对内容区）：头像、昵称、比例条
+     * <p>
+     * 昵称的可用宽度是 {@code BAR_X - NAME_X} = 254px，而
+     * {@link #MAX_NAME_LENGTH} 个全角字加省略号约 240px，留出的余量刚好够，
+     * 昵称再长也不会压到比例条上（这一处压过，是看样张才发现的）
+     */
+    private static final int AVATAR_X = 36;
+
+    private static final int NAME_X = 76;
 
     private static final int BAR_X = 330;
 
@@ -87,6 +98,16 @@ public class BilibiliDataQueryPainter {
     private final StarBotCommonPainterFactory factory;
 
     private final BilibiliApiUtil api;
+
+    /**
+     * 头像下载失败的哨兵值：Caffeine 不缓存 null，坏地址否则会每次都重试
+     */
+    private static final BufferedImage FAILED_AVATAR = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
+
+    private final Cache<String, BufferedImage> avatarCache = Caffeine.newBuilder()
+            .maximumSize(500)
+            .expireAfterWrite(Duration.ofHours(6))
+            .build();
 
     @Autowired
     public BilibiliDataQueryPainter(StarBotCommonPainterFactory factory, BilibiliApiUtil api) {
@@ -222,6 +243,13 @@ public class BilibiliDataQueryPainter {
 
         painter.drawTextWithStyle(List.of(new TextWithStyle(String.valueOf(rank), 24, rankColor(rank), Font.BOLD)),
                 new Point(MARGIN + 4, y + 6));
+
+        // 头像取不到就空着位置，让各行昵称仍然左端对齐
+        BufferedImage avatar = avatar(user.userFace());
+        if (avatar != null) {
+            painter.drawImage(avatar, new Point(MARGIN + AVATAR_X, y + (RANKING_ROW_HEIGHT - RANKING_AVATAR_SIZE) / 2));
+        }
+
         painter.drawTextWithStyle(List.of(new TextWithStyle(truncate(displayName(user)), 24, COLOR_TEXT, Font.PLAIN)),
                 new Point(MARGIN + NAME_X, y + 6));
 
@@ -241,6 +269,24 @@ public class BilibiliDataQueryPainter {
                 new Point(barX + barWidth + 14, y + 6));
 
         painter.setPos(MARGIN, y + RANKING_ROW_HEIGHT);
+    }
+
+    /**
+     * 取排行榜用的圆形头像，带缓存
+     * <p>
+     * 头像地址随计分一并记录，这里只需下载图片、不打接口。按地址缓存：
+     * 同一个人在多次查询里出现只下载一次。
+     */
+    private BufferedImage avatar(String url) {
+        if (StringUtil.isBlank(url)) {
+            return null;
+        }
+
+        BufferedImage cached = avatarCache.get(url, key -> api.getBilibiliImage(atSize(key, RANKING_AVATAR_SIZE))
+                .map(image -> ImageUtil.maskToCircle(ImageUtil.resize(image, RANKING_AVATAR_SIZE, RANKING_AVATAR_SIZE)))
+                .orElse(FAILED_AVATAR));
+        // 用哨兵值区分「没缓存过」与「缓存了一次失败」，后者不再重试
+        return cached == FAILED_AVATAR ? null : cached;
     }
 
     /**
@@ -273,7 +319,14 @@ public class BilibiliDataQueryPainter {
      * 为图片地址附加缩放参数，避免下载原图
      */
     private String atSize(String url) {
-        return url.contains("@") ? url : url + "@" + AVATAR_SIZE + "w.webp";
+        return atSize(url, AVATAR_SIZE);
+    }
+
+    /**
+     * 为图片地址附加指定宽度的缩放参数。榜单头像只有 30px，下原图既慢又浪费
+     */
+    private String atSize(String url, int size) {
+        return url.contains("@") ? url : url + "@" + size + "w.webp";
     }
 
     /**
