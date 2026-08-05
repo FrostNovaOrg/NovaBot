@@ -436,6 +436,44 @@ public class DefaultLiveDataService implements LiveDataService {
     }
 
     /**
+     * 获取本场直播的全部统计指标
+     *
+     * @param platform 直播平台
+     * @param uid      主播 UID
+     * @return 指标名到取值的映射
+     */
+    @Override
+    public Map<String, Double> getLiveMetrics(@NonNull String platform, @NonNull Long uid) {
+        return liveMetrics(platform, uid);
+    }
+
+    /**
+     * 获取本场直播各计分表的参与人数
+     *
+     * @param platform 直播平台
+     * @param uid      主播 UID
+     * @return 指标名到独立人数的映射
+     */
+    @Override
+    public Map<String, Integer> getLiveMetricUserCounts(@NonNull String platform, @NonNull Long uid) {
+        synchronized (metricLock) {
+            JSONObject byMetric = Optional.ofNullable(cache.getJSONObject("LiveMetricUser:" + platform))
+                    .map(data -> data.getJSONObject(String.valueOf(uid)))
+                    .orElse(null);
+            if (byMetric == null) {
+                return Map.of();
+            }
+
+            Map<String, Integer> result = new HashMap<>();
+            for (String metric : byMetric.keySet()) {
+                JSONObject users = byMetric.getJSONObject(metric);
+                result.put(metric, users == null ? 0 : users.size());
+            }
+            return result;
+        }
+    }
+
+    /**
      * 取得本场记录到的用户昵称快照，供并入累计存储
      * @param platform 直播平台
      * @param uid 主播 UID

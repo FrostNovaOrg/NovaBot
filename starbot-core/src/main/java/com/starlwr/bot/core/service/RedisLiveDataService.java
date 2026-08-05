@@ -33,7 +33,6 @@ import java.util.Set;
  *     <li>{@code nb:total:user:<platform>:<uid>:<metric>} — 有序集合，成员为用户 UID，分值为累计得分</li>
  *     <li>{@code nb:name:<platform>:<uid>} — 哈希，字段为用户 UID，值为昵称</li>
  *     <li>{@code nb:face:<platform>:<uid>} — 哈希，字段为用户 UID，值为头像地址</li>
- *     <li>{@code nb:face:<platform>:<uid>} — 哈希，字段为用户 UID，值为头像地址</li>
  * </ul>
  */
 @Slf4j
@@ -292,6 +291,16 @@ public class RedisLiveDataService implements LiveDataService {
     @Override
     public void recordLiveUserFace(@NonNull String platform, @NonNull Long uid, @NonNull Long userUid, String userFace) {
         delegate.recordLiveUserFace(platform, uid, userUid, userFace);
+    }
+
+    @Override
+    public Map<String, Double> getLiveMetrics(@NonNull String platform, @NonNull Long uid) {
+        return delegate.getLiveMetrics(platform, uid);
+    }
+
+    @Override
+    public Map<String, Integer> getLiveMetricUserCounts(@NonNull String platform, @NonNull Long uid) {
+        return delegate.getLiveMetricUserCounts(platform, uid);
     }
 
     @Override

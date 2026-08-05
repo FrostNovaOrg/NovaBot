@@ -230,6 +230,29 @@ public interface LiveDataService {
         return 0;
     }
 
+    /**
+     * 获取本场直播的全部统计指标
+     * <p>
+     * 归档与分析需要「这一场都有些什么」，而不是逐个指标去问——指标名由各平台自行定义，
+     * 核心并不知道有哪些。
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @return 指标名到取值的映射，未记录时为空表
+     */
+    default Map<String, Double> getLiveMetrics(@NonNull String platform, @NonNull Long uid) {
+        return Map.of();
+    }
+
+    /**
+     * 获取本场直播各计分表的参与人数
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @return 指标名到独立人数的映射，未记录时为空表
+     */
+    default Map<String, Integer> getLiveMetricUserCounts(@NonNull String platform, @NonNull Long uid) {
+        return Map.of();
+    }
+
     // ================ 时间序列（互动曲线） ================
     // 与「本场指标」记总量、「按用户计分」记谁贡献了多少并列，这里记的是**什么时候发生的**。
     // 只服务于本场报告里的曲线图，因此随本场数据一并清零，也不并入累计。
