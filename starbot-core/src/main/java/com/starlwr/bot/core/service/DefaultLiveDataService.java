@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -252,6 +253,21 @@ public class DefaultLiveDataService implements LiveDataService {
         synchronized (metricLock) {
             JSONObject metrics = metricsOf(platform, uid);
             metrics.put(metric, metrics.getDoubleValue(metric) + delta);
+        }
+    }
+
+    /**
+     * 直接设定本场直播的统计指标
+     *
+     * @param platform 直播平台
+     * @param uid      UID
+     * @param metric   指标名
+     * @param value    指标值
+     */
+    @Override
+    public void setLiveMetric(@NonNull String platform, @NonNull Long uid, @NonNull String metric, double value) {
+        synchronized (metricLock) {
+            metricsOf(platform, uid).put(metric, value);
         }
     }
 
@@ -635,6 +651,80 @@ public class DefaultLiveDataService implements LiveDataService {
         }
     }
 
+    // ================ 时间序列（互动曲线） ================
+
+    /**
+     * 单项指标最多保留的时间格数
+     * <p>
+     * 一分钟一格，1440 格即 24 小时。超长的直播（或忘记清零的异常场次）到此为止，
+     * 不再收录新格；已有的格仍会继续累加，所以曲线是被截断而不是错乱。
+     */
+    private static final int SERIES_BUCKET_LIMIT = 1440;
+
+    /**
+     * 把一次互动计入所属的时间格
+     *
+     * @param platform  直播平台
+     * @param uid       主播 UID
+     * @param metric    指标名
+     * @param timestamp 事件发生时刻（毫秒）
+     * @param delta     增量
+     */
+    @Override
+    public void incrementLiveSeries(@NonNull String platform, @NonNull Long uid, @NonNull String metric,
+                                    long timestamp, double delta) {
+        String bucket = String.valueOf(timestamp / SERIES_BUCKET_MILLIS * SERIES_BUCKET_MILLIS);
+
+        synchronized (metricLock) {
+            String key = "LiveSeries:" + platform;
+            cache.putIfAbsent(key, new JSONObject());
+            JSONObject byUid = cache.getJSONObject(key);
+            byUid.putIfAbsent(String.valueOf(uid), new JSONObject());
+            JSONObject byMetric = byUid.getJSONObject(String.valueOf(uid));
+            byMetric.putIfAbsent(metric, new JSONObject());
+            JSONObject buckets = byMetric.getJSONObject(metric);
+
+            Double current = buckets.getDouble(bucket);
+            if (current == null && buckets.size() >= SERIES_BUCKET_LIMIT) {
+                log.warn("主播 {} 的指标 {} 时间格数已达上限 {}, 后续时段不再收录", uid, metric, SERIES_BUCKET_LIMIT);
+                return;
+            }
+            buckets.put(bucket, (current == null ? 0 : current) + delta);
+        }
+    }
+
+    /**
+     * 获取本场直播某项指标的时间序列
+     *
+     * @param platform 直播平台
+     * @param uid      主播 UID
+     * @param metric   指标名
+     * @return 时间格起始时刻到增量的映射，未记录时为空表
+     */
+    @Override
+    public Map<Long, Double> getLiveSeries(@NonNull String platform, @NonNull Long uid, @NonNull String metric) {
+        synchronized (metricLock) {
+            JSONObject buckets = Optional.ofNullable(cache.getJSONObject("LiveSeries:" + platform))
+                    .map(data -> data.getJSONObject(String.valueOf(uid)))
+                    .map(byMetric -> byMetric.getJSONObject(metric))
+                    .orElse(null);
+            if (buckets == null) {
+                return Map.of();
+            }
+
+            // 用 TreeMap 是为了让调用方拿到按时间递增的序列——曲线的横轴就是它
+            Map<Long, Double> result = new TreeMap<>();
+            for (String bucket : buckets.keySet()) {
+                try {
+                    result.put(Long.parseLong(bucket), buckets.getDoubleValue(bucket));
+                } catch (NumberFormatException e) {
+                    log.debug("跳过时间序列中的非法时间格: {}", bucket);
+                }
+            }
+            return result;
+        }
+    }
+
     // ================ 其他操作 ================
 
     /**
@@ -655,6 +745,8 @@ public class DefaultLiveDataService implements LiveDataService {
             Optional.ofNullable(cache.getJSONObject("LiveWordFrequency:" + platform))
                     .ifPresent(data -> data.remove(String.valueOf(uid)));
             Optional.ofNullable(cache.getJSONObject("LiveUserName:" + platform))
+                    .ifPresent(data -> data.remove(String.valueOf(uid)));
+            Optional.ofNullable(cache.getJSONObject("LiveSeries:" + platform))
                     .ifPresent(data -> data.remove(String.valueOf(uid)));
         }
     }

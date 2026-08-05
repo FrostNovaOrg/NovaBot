@@ -146,6 +146,24 @@ public class BilibiliLiveReportPainter {
     private static final Color COLOR_CARD = new Color(246, 247, 249);
 
     /**
+     * 互动曲线的高度与像素列宽
+     */
+    private static final int CURVE_HEIGHT = 90;
+
+    private static final int CURVE_COLUMN_WIDTH = 2;
+
+    /**
+     * 各条曲线的配色，礼物沿用主题粉（{@link #COLOR_NAME}）
+     */
+    private static final Color COLOR_CURVE_DANMU = new Color(0, 174, 236);
+
+    private static final Color COLOR_CURVE_SUPER_CHAT = new Color(255, 168, 61);
+
+    private static final Color COLOR_CURVE_BOX = new Color(110, 199, 122);
+
+    private static final Color COLOR_CURVE_GUARD = new Color(151, 129, 224);
+
+    /**
      * 词云配色：哔哩哔哩粉蓝系
      */
     private static final List<Color> CLOUD_PALETTE = List.of(
@@ -202,6 +220,12 @@ public class BilibiliLiveReportPainter {
             drawOverview(painter, platform, source.getUid());
             if (options.isCards()) {
                 drawCards(painter, platform, source.getUid());
+            }
+            if (options.isFansChange()) {
+                drawFansChange(painter, platform, source);
+            }
+            if (options.isInteractionCurve()) {
+                drawCurves(painter, platform, source.getUid());
             }
             drawRankings(painter, platform, source.getUid(), options);
             if (options.isDanmuCloud()) {
@@ -361,6 +385,183 @@ public class BilibiliLiveReportPainter {
         painter.drawTextWithStyle(
                 List.of(new TextWithStyle(card.label, 22, COLOR_TIP, Font.PLAIN)),
                 new Point(x + 20, y + 68));
+    }
+
+    /**
+     * 绘制粉丝、粉丝团与大航海的本场变化
+     * <p>
+     * 这三项都不在弹幕流里，只能问接口。开播时的快照由
+     * {@code BilibiliRoomStatsSnapshotter} 记下，这里取一次实时值相减即得涨幅——
+     * 于是直播中随时拉的实时报告与下播报告走的是同一段逻辑。
+     * <p>
+     * 三项各自独立降级：接口挂了或没有开播快照，就只跳过那一项。
+     */
+    private void drawFansChange(CommonPainter painter, String platform, LiveStreamerInfo source) {
+        List<Card> cards = new ArrayList<>();
+
+        api.getFansCount(source.getUid()).ifPresent(fans ->
+                cards.add(changeCard(platform, source.getUid(), fans, BilibiliLiveMetric.FANS_AT_START, "粉丝")));
+        api.getFansMedalCount(source.getUid()).ifPresent(medal ->
+                cards.add(changeCard(platform, source.getUid(), medal, BilibiliLiveMetric.FANS_MEDAL_AT_START, "粉丝团")));
+        if (source.getRoomId() != null) {
+            api.getGuardCount(source.getRoomId(), source.getUid()).ifPresent(guard ->
+                    cards.add(changeCard(platform, source.getUid(), guard, BilibiliLiveMetric.GUARD_AT_START, "大航海")));
+        }
+
+        if (cards.isEmpty()) {
+            return;
+        }
+
+        painter.movePos(0, 10);
+        painter.drawTextWithStyle(List.of(new TextWithStyle("本场变化", CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN)));
+        painter.movePos(0, 6);
+
+        int startY = painter.getY();
+        for (int i = 0; i < cards.size(); i++) {
+            drawCard(painter, cards.get(i), MARGIN + i * (CARD_WIDTH + CARD_GAP), startY);
+        }
+        painter.setPos(MARGIN, startY + CARD_HEIGHT + CARD_GAP);
+    }
+
+    /**
+     * 组装一张变化卡片：主体是当前值，副标题带上本场涨幅
+     * <p>
+     * 没有开播快照时（如程序在直播中途才启动）只显示当前值，不显示涨幅——
+     * 拿不到基准就别编一个出来。
+     */
+    private Card changeCard(String platform, Long uid, long current, String startMetric, String label) {
+        double start = liveDataService.getLiveMetric(platform, uid, startMetric);
+        if (start <= 0) {
+            return new Card(String.valueOf(current), label);
+        }
+
+        long delta = current - Math.round(start);
+        String sign = delta >= 0 ? "+" : "";
+        return new Card(String.valueOf(current), label + " · 本场 " + sign + delta);
+    }
+
+    /**
+     * 绘制互动曲线
+     * <p>
+     * 每项指标一条独立的面积图，各自按自身峰值缩放。<b>刻意不把它们叠在同一张图上</b>：
+     * 弹幕以「条」计、礼物以「元」计，量级动辄差两个数量级，共用纵轴的结果是
+     * 除了最大的那条以外全部压成一条直线。
+     */
+    private void drawCurves(CommonPainter painter, String platform, Long uid) {
+        Optional<Long> start = liveDataService.getLiveStartTime(platform, uid);
+        Optional<Long> end = effectiveEndTime(platform, uid, start);
+        if (start.isEmpty() || end.isEmpty() || end.get() <= start.get()) {
+            return;
+        }
+
+        List<Curve> curves = new ArrayList<>();
+        curves.add(new Curve("弹幕", BilibiliLiveMetric.DANMU_COUNT, COLOR_CURVE_DANMU,
+                peak -> Math.round(peak) + " 条/分"));
+        curves.add(new Curve("礼物", BilibiliLiveMetric.GIFT_VALUE, COLOR_NAME,
+                peak -> "¥" + yuan(peak) + "/分"));
+        curves.add(new Curve("醒目留言", BilibiliLiveMetric.SUPER_CHAT_VALUE, COLOR_CURVE_SUPER_CHAT,
+                peak -> "¥" + yuan(peak) + "/分"));
+        curves.add(new Curve("盲盒", BilibiliLiveMetric.BOX_COUNT, COLOR_CURVE_BOX,
+                peak -> Math.round(peak) + " 个/分"));
+        curves.add(new Curve("大航海", BilibiliLiveMetric.GUARD_VALUE, COLOR_CURVE_GUARD,
+                peak -> "¥" + yuan(peak) + "/分"));
+
+        boolean first = true;
+        for (Curve curve : curves) {
+            Map<Long, Double> series = liveDataService.getLiveSeries(platform, uid, curve.metric);
+            if (series.isEmpty()) {
+                continue;
+            }
+
+            if (first) {
+                painter.movePos(0, 10);
+                painter.drawTextWithStyle(List.of(new TextWithStyle("互动曲线", CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN)));
+                painter.movePos(0, 6);
+                first = false;
+            }
+            drawCurve(painter, curve, series, start.get(), end.get());
+        }
+
+        if (!first) {
+            painter.movePos(0, 8);
+        }
+    }
+
+    /**
+     * 绘制一条面积图：标题、峰值、面积本体与基线
+     */
+    private void drawCurve(CommonPainter painter, Curve curve, Map<Long, Double> series, long start, long end) {
+        int top = painter.getY();
+
+        int columns = Math.max(1, CONTENT_WIDTH / CURVE_COLUMN_WIDTH);
+        double[] values = resample(series, start, end, columns);
+
+        double peak = 0;
+        for (double value : values) {
+            peak = Math.max(peak, Math.abs(value));
+        }
+        if (peak == 0) {
+            return;
+        }
+
+        painter.drawTextWithStyle(List.of(
+                new TextWithStyle(curve.title, 24, COLOR_TEXT, Font.PLAIN),
+                new TextWithStyle("　峰值 " + curve.peakText.apply(peak), 22, COLOR_TIP, Font.PLAIN)),
+                new Point(MARGIN, top));
+
+        int chartTop = top + 34;
+        int baseline = chartTop + CURVE_HEIGHT;
+
+        // 面积多边形：左下角起，沿曲线走一遍，回到右下角闭合
+        List<Point> area = new ArrayList<>(columns + 2);
+        area.add(new Point(MARGIN, baseline));
+        for (int i = 0; i < columns; i++) {
+            int height = (int) Math.round(CURVE_HEIGHT * Math.abs(values[i]) / peak);
+            area.add(new Point(MARGIN + i * CURVE_COLUMN_WIDTH, baseline - height));
+        }
+        area.add(new Point(MARGIN + (columns - 1) * CURVE_COLUMN_WIDTH, baseline));
+        painter.drawPolygon(area, curve.color);
+
+        // 基线压在面积下沿，给曲线一个明确的落脚点
+        painter.drawRectangle(MARGIN, baseline, CONTENT_WIDTH, 2, COLOR_CARD);
+        painter.setPos(MARGIN, baseline + 16);
+    }
+
+    /**
+     * 把时间序列重采样到固定数量的像素列上
+     * <p>
+     * <b>时间格数与像素列数几乎不会相等，两个方向都要处理</b>：
+     * 三小时的直播只有 180 个时间格却有四百多列，若只把有数据的格落到对应列、
+     * 其余留零，画出来会是一排竖齿而不是一条曲线（这个坑真踩过）；
+     * 十二小时的直播则相反，多个格挤进同一列。
+     * <p>
+     * 因此先补齐成逐格的稠密数组，再按列取所辖各格的**最大值**——
+     * 取最大而非平均，是为了让短促的高峰不被摊平，也与标题上的「峰值 X/分」自洽。
+     */
+    private double[] resample(Map<Long, Double> series, long start, long end, int columns) {
+        int buckets = (int) Math.max(1, (end - start) / LiveDataService.SERIES_BUCKET_MILLIS + 1);
+        double[] dense = new double[buckets];
+        for (Map.Entry<Long, Double> entry : series.entrySet()) {
+            // 落在直播区间之外的格直接丢弃：时钟回拨或上一场残留都可能造成
+            long offset = entry.getKey() - start;
+            if (offset < 0) {
+                continue;
+            }
+            int index = (int) (offset / LiveDataService.SERIES_BUCKET_MILLIS);
+            if (index < buckets) {
+                dense[index] += entry.getValue();
+            }
+        }
+
+        double[] values = new double[columns];
+        for (int i = 0; i < columns; i++) {
+            int from = (int) ((long) i * buckets / columns);
+            int to = (int) Math.max(from + 1L, (long) (i + 1) * buckets / columns);
+            for (int j = from; j < Math.min(to, buckets); j++) {
+                values[i] = Math.max(values[i], Math.abs(dense[j]));
+            }
+        }
+        return values;
     }
 
     /**
@@ -651,5 +852,15 @@ public class BilibiliLiveReportPainter {
      * 数据卡片：取值与标签
      */
     private record Card(String value, String label) {
+    }
+
+    /**
+     * 一条互动曲线的定义
+     * @param title 曲线标题
+     * @param metric 时间序列的指标名
+     * @param color 面积配色
+     * @param peakText 峰值的展示文案
+     */
+    private record Curve(String title, String metric, Color color, DoubleFunction<String> peakText) {
     }
 }

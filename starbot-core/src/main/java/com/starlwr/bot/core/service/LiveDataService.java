@@ -94,6 +94,19 @@ public interface LiveDataService {
      * @param metric 指标名
      * @param value 候选值
      */
+    /**
+     * 直接设定本场直播的统计指标
+     * <p>
+     * 用于记录**快照类**的值，如开播那一刻的粉丝数——它不是累加出来的，也不取最大。
+     * 幂等，重复调用只是覆盖成同一个值。
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @param metric 指标名
+     * @param value 指标值
+     */
+    default void setLiveMetric(@NonNull String platform, @NonNull Long uid, @NonNull String metric, double value) {
+    }
+
     default void maxLiveMetric(@NonNull String platform, @NonNull Long uid, @NonNull String metric, double value) {
     }
 
@@ -202,6 +215,42 @@ public interface LiveDataService {
     default int getLiveUserRank(@NonNull String platform, @NonNull Long uid, @NonNull String metric,
                                 @NonNull Long userUid) {
         return 0;
+    }
+
+    // ================ 时间序列（互动曲线） ================
+    // 与「本场指标」记总量、「按用户计分」记谁贡献了多少并列，这里记的是**什么时候发生的**。
+    // 只服务于本场报告里的曲线图，因此随本场数据一并清零，也不并入累计。
+
+    /**
+     * 时间序列的分桶长度
+     * <p>
+     * 一分钟一格：一场 12 小时的直播是 720 格，画在 800px 宽的图上仍绰绰有余，
+     * 而更细的粒度只会让曲线变成噪声。读写两侧都以此为准，不可各自定义。
+     */
+    long SERIES_BUCKET_MILLIS = 60_000L;
+
+    /**
+     * 把一次互动计入所属的时间格
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @param metric 指标名，与本场指标同名，便于曲线与卡片对应
+     * @param timestamp 事件发生时刻（毫秒）
+     * @param delta 增量
+     */
+    default void incrementLiveSeries(@NonNull String platform, @NonNull Long uid, @NonNull String metric,
+                                     long timestamp, double delta) {
+    }
+
+    /**
+     * 获取本场直播某项指标的时间序列
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @param metric 指标名
+     * @return 「时间格起始时刻（毫秒）→ 该格内的增量合计」，未记录时为空表。
+     *         **没有互动的时间格不会出现在结果里**，绘图方需自行补零
+     */
+    default Map<Long, Double> getLiveSeries(@NonNull String platform, @NonNull Long uid, @NonNull String metric) {
+        return Map.of();
     }
 
     // ================ 累计数据 ================

@@ -229,6 +229,11 @@ public class RedisLiveDataService implements LiveDataService {
     }
 
     @Override
+    public void setLiveMetric(@NonNull String platform, @NonNull Long uid, @NonNull String metric, double value) {
+        delegate.setLiveMetric(platform, uid, metric, value);
+    }
+
+    @Override
     public void maxLiveMetric(@NonNull String platform, @NonNull Long uid, @NonNull String metric, double value) {
         delegate.maxLiveMetric(platform, uid, metric, value);
     }
@@ -270,6 +275,17 @@ public class RedisLiveDataService implements LiveDataService {
     @Override
     public void recordLiveUserName(@NonNull String platform, @NonNull Long uid, @NonNull Long userUid, String userName) {
         delegate.recordLiveUserName(platform, uid, userUid, userName);
+    }
+
+    @Override
+    public void incrementLiveSeries(@NonNull String platform, @NonNull Long uid, @NonNull String metric,
+                                    long timestamp, double delta) {
+        delegate.incrementLiveSeries(platform, uid, metric, timestamp, delta);
+    }
+
+    @Override
+    public Map<Long, Double> getLiveSeries(@NonNull String platform, @NonNull Long uid, @NonNull String metric) {
+        return delegate.getLiveSeries(platform, uid, metric);
     }
 
     @Override

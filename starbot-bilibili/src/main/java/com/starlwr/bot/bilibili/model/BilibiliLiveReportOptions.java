@@ -65,6 +65,18 @@ public class BilibiliLiveReportOptions {
     private boolean guardList = true;
 
     /**
+     * 是否展示粉丝、粉丝团与大航海的本场变化
+     * <p>
+     * 这一项每次出报告都要额外打三个接口，关掉它可以省下这笔开销。
+     */
+    private boolean fansChange = true;
+
+    /**
+     * 是否展示互动曲线
+     */
+    private boolean interactionCurve = true;
+
+    /**
      * 是否展示弹幕词云
      */
     private boolean danmuCloud = true;
@@ -88,6 +100,8 @@ public class BilibiliLiveReportOptions {
         options.boxRanking = ranking(params, "box_ranking", options.boxRanking);
         options.boxProfitRanking = ranking(params, "box_profit_ranking", options.boxProfitRanking);
         options.guardList = bool(params, "guard_list", options.guardList);
+        options.fansChange = bool(params, "fans_change", options.fansChange);
+        options.interactionCurve = bool(params, "interaction_curve", options.interactionCurve);
         options.danmuCloud = bool(params, "danmu_cloud", options.danmuCloud);
         return options;
     }

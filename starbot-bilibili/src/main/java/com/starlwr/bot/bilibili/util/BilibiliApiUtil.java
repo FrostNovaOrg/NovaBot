@@ -75,6 +75,16 @@ public class BilibiliApiUtil {
 
     private static final String ROOM_INFO_API = "https://api.live.bilibili.com/room/v1/Room/get_info?room_id=";
 
+    /**
+     * 粉丝团（粉丝勋章）成员排行。只取第一页一条，要的是响应里的总人数 {@code data.num}
+     */
+    private static final String FANS_MEDAL_RANK_API = "https://api.live.bilibili.com/xlive/general-interface/v1/rank/getFansMembersRank?page=1&page_size=1&ruid=";
+
+    /**
+     * 大航海列表。同样只取一条，要的是 {@code data.info.num}
+     */
+    private static final String GUARD_LIST_API = "https://api.live.bilibili.com/xlive/app-room/v2/guardTab/topList?page=1&page_size=1";
+
     private static final String ROOM_STATUS_API = "https://api.live.bilibili.com/room/v1/Room/get_status_info_by_uids";
 
     private static final String DANMU_INFO_API = "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo";
@@ -1005,6 +1015,53 @@ public class BilibiliApiUtil {
         Long roomId = Optional.ofNullable(data.getLong("room_id")).filter(id -> id != 0L).orElse(null);
 
         return new Up(uid, info.getString("uname"), roomId, info.getString("face"));
+    }
+
+    /**
+     * 获取粉丝数
+     * <p>
+     * 复用主播信息接口的 {@code follower_num}，与 {@code x/relation/stat} 的
+     * {@code follower} 实测一致，不必为此多打一个接口。
+     * @param uid uid
+     * @return 粉丝数，取不到时为空
+     */
+    public Optional<Long> getFansCount(@NonNull Long uid) {
+        try {
+            return Optional.ofNullable(requestBilibiliApi(MASTER_INFO_API + uid).getLong("follower_num"));
+        } catch (Exception e) {
+            log.debug("获取 uid {} 的粉丝数失败: {}", uid, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * 获取粉丝团（粉丝勋章）人数
+     * @param uid 主播 uid
+     * @return 粉丝团人数，取不到时为空
+     */
+    public Optional<Integer> getFansMedalCount(@NonNull Long uid) {
+        try {
+            return Optional.ofNullable(requestBilibiliApi(FANS_MEDAL_RANK_API + uid).getInteger("num"));
+        } catch (Exception e) {
+            log.debug("获取 uid {} 的粉丝团人数失败: {}", uid, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * 获取大航海人数
+     * @param roomId 直播间号
+     * @param uid 主播 uid
+     * @return 大航海人数，取不到时为空
+     */
+    public Optional<Integer> getGuardCount(@NonNull Long roomId, @NonNull Long uid) {
+        try {
+            JSONObject data = requestBilibiliApi(GUARD_LIST_API + "&roomid=" + roomId + "&ruid=" + uid);
+            return Optional.ofNullable(data.getJSONObject("info")).map(info -> info.getInteger("num"));
+        } catch (Exception e) {
+            log.debug("获取直播间 {} 的大航海人数失败: {}", roomId, e.getMessage());
+            return Optional.empty();
+        }
     }
 
     /**

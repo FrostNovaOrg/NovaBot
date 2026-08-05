@@ -26,6 +26,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
 
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * 本场直播数据聚合器
@@ -199,11 +200,32 @@ public class BilibiliLiveStatsAggregator {
         increment(event, BilibiliLiveMetric.SHARE_COUNT, 1);
     }
 
+    /**
+     * 需要画成曲线的指标
+     * <p>
+     * 只挑「能看出直播节奏」的那几项：弹幕看热度，礼物与醒目留言看收益，
+     * 盲盒与大航海看爆发点。进场、点赞、分享之类画出来只是一条噪声带，不值得占版面。
+     */
+    private static final Set<String> SERIES_METRICS = Set.of(
+            BilibiliLiveMetric.DANMU_COUNT,
+            BilibiliLiveMetric.GIFT_VALUE,
+            BilibiliLiveMetric.SUPER_CHAT_VALUE,
+            BilibiliLiveMetric.BOX_COUNT,
+            BilibiliLiveMetric.BOX_PROFIT,
+            BilibiliLiveMetric.GUARD_VALUE);
+
     private void increment(StarBotBaseLiveEvent event, String metric, double delta) {
         if (event.getSource() == null || event.getSource().getUid() == null) {
             return;
         }
         liveDataService.incrementLiveMetric(event.getPlatform(), event.getSource().getUid(), metric, delta);
+
+        // 曲线与总量共用指标名，且由同一次调用写入：两者天然对得上，
+        // 不会出现「卡片说 100 条弹幕、曲线加起来只有 80」这种自相矛盾
+        if (SERIES_METRICS.contains(metric)) {
+            liveDataService.incrementLiveSeries(event.getPlatform(), event.getSource().getUid(),
+                    metric, event.getTimestamp(), delta);
+        }
     }
 
     private void max(StarBotBaseLiveEvent event, String metric, double value) {

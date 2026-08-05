@@ -76,6 +76,19 @@ public final class BilibiliLiveMetric {
     /** 分享直播间人次 */
     public static final String SHARE_COUNT = "share_count";
 
+    // 以下三项是**开播那一刻的快照**，由 setLiveMetric 写入而非累加。
+    // 报告展示的是「现在多少、这场涨了多少」，涨幅由绘制时的实时值减去快照得到——
+    // 这样直播中的实时报告与下播报告共用同一段逻辑，不必再单独记一份终值
+
+    /** 开播时的粉丝数 */
+    public static final String FANS_AT_START = "fans_at_start";
+
+    /** 开播时的粉丝团人数 */
+    public static final String FANS_MEDAL_AT_START = "fans_medal_at_start";
+
+    /** 开播时的大航海人数 */
+    public static final String GUARD_AT_START = "guard_at_start";
+
     private BilibiliLiveMetric() {
     }
 }

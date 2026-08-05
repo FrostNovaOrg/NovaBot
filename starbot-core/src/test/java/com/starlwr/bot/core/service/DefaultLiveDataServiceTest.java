@@ -58,6 +58,15 @@ class DefaultLiveDataServiceTest {
     }
 
     @Test
+    @DisplayName("直接设定指标应覆盖而非叠加，用于记录快照类的值")
+    void setOverwrites() {
+        service.incrementLiveMetric(PLATFORM, UID, "fans_at_start", 100);
+        service.setLiveMetric(PLATFORM, UID, "fans_at_start", 243);
+
+        assertEquals(243.0, service.getLiveMetric(PLATFORM, UID, "fans_at_start"));
+    }
+
+    @Test
     @DisplayName("独立人数应对同一用户去重")
     void userCountDeduplicates() {
         service.recordLiveMetricUser(PLATFORM, UID, "danmu_users", 1L);
@@ -211,6 +220,58 @@ class DefaultLiveDataServiceTest {
         assertEquals(0.0, service.getTotalMetric(PLATFORM, UID, "gift_value"));
         assertEquals(0.0, service.getTotalUserMetric(PLATFORM, UID, "gift_value", 1L));
         assertEquals(0, service.getTotalUserRanking(PLATFORM, UID, "gift_value", 10).size());
+    }
+
+    // ============ 时间序列（互动曲线） ============
+
+    @Test
+    @DisplayName("同一分钟内的互动应合并到同一个时间格")
+    void seriesBucketsByMinute() {
+        long minute = 1_700_000_040_000L;
+
+        service.incrementLiveSeries(PLATFORM, UID, "danmu_count", minute, 3);
+        service.incrementLiveSeries(PLATFORM, UID, "danmu_count", minute + 19_000, 5);
+
+        java.util.Map<Long, Double> series = service.getLiveSeries(PLATFORM, UID, "danmu_count");
+        assertEquals(1, series.size());
+        assertEquals(8.0, series.values().iterator().next());
+    }
+
+    @Test
+    @DisplayName("跨分钟的互动应落在不同时间格，且键为该格的起始时刻")
+    void seriesSplitsAcrossMinutes() {
+        long base = 1_700_000_040_000L;
+
+        service.incrementLiveSeries(PLATFORM, UID, "danmu_count", base, 3);
+        service.incrementLiveSeries(PLATFORM, UID, "danmu_count", base + 60_000, 5);
+
+        java.util.Map<Long, Double> series = service.getLiveSeries(PLATFORM, UID, "danmu_count");
+        assertEquals(2, series.size());
+        // 键应是分钟的起点，而不是事件到达的那一刻
+        assertEquals(3.0, series.get(1_700_000_040_000L));
+        assertEquals(5.0, series.get(1_700_000_100_000L));
+    }
+
+    @Test
+    @DisplayName("时间序列应按时间递增返回，绘图直接照单画即可")
+    void seriesIsOrdered() {
+        long base = 1_700_000_040_000L;
+        service.incrementLiveSeries(PLATFORM, UID, "danmu_count", base + 180_000, 1);
+        service.incrementLiveSeries(PLATFORM, UID, "danmu_count", base, 1);
+        service.incrementLiveSeries(PLATFORM, UID, "danmu_count", base + 60_000, 1);
+
+        List<Long> keys = new java.util.ArrayList<>(service.getLiveSeries(PLATFORM, UID, "danmu_count").keySet());
+        assertEquals(List.of(base, base + 60_000, base + 180_000), keys);
+    }
+
+    @Test
+    @DisplayName("重置直播数据应一并清空时间序列")
+    void resetClearsSeries() {
+        service.incrementLiveSeries(PLATFORM, UID, "danmu_count", 1_700_000_040_000L, 3);
+
+        service.resetLiveData(PLATFORM, UID);
+
+        assertTrue(service.getLiveSeries(PLATFORM, UID, "danmu_count").isEmpty());
     }
 
     @Test

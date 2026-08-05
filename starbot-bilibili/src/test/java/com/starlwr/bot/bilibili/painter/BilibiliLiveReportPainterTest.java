@@ -43,6 +43,8 @@ class BilibiliLiveReportPainterTest {
 
     private static final LiveStreamerInfo STREAMER = new LiveStreamerInfo(10001L, "测试主播", 20002L, "https://pic.example/face.jpg");
 
+    private BilibiliApiUtil api;
+
     private DefaultLiveDataService liveDataService;
 
     private BilibiliLiveReportPainter painter;
@@ -78,7 +80,7 @@ class BilibiliLiveReportPainterTest {
         graphics.setColor(new Color(90, 140, 190));
         graphics.fillOval(180, 60, 280, 240);
         graphics.dispose();
-        BilibiliApiUtil api = mock(BilibiliApiUtil.class);
+        api = mock(BilibiliApiUtil.class);
         when(api.getBilibiliImage(anyString())).thenReturn(Optional.of(placeholder));
 
         // 直播间信息返回带封面的房间，覆盖封面横幅版式
@@ -164,6 +166,75 @@ class BilibiliLiveReportPainterTest {
 
         assertTrue(base64.isPresent());
         dump("rankings", base64.get());
+    }
+
+    @Test
+    @DisplayName("有时间序列时应画出互动曲线")
+    void paintsInteractionCurves() {
+        long start = 1_700_000_000_000L;
+        long end = start + 3 * 3600_000;
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+        liveDataService.setLiveEndTime(PLATFORM, STREAMER.getUid(), end);
+
+        // 造一场有节奏的直播：弹幕全程有、中段有个高峰，礼物集中在两处，SC 只有零星几次
+        for (int minute = 0; minute < 180; minute++) {
+            long at = start + minute * 60_000L;
+            int danmu = 3 + (int) (12 * Math.exp(-Math.pow(minute - 95, 2) / 400.0));
+            liveDataService.incrementLiveSeries(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.DANMU_COUNT, at, danmu);
+            liveDataService.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.DANMU_COUNT, danmu);
+
+            if (minute == 40 || minute == 96 || minute == 97) {
+                liveDataService.incrementLiveSeries(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.GIFT_VALUE, at, 66.0);
+                liveDataService.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.GIFT_VALUE, 66.0);
+            }
+            if (minute == 96) {
+                liveDataService.incrementLiveSeries(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.SUPER_CHAT_VALUE, at, 30.0);
+                liveDataService.incrementLiveSeries(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.GUARD_VALUE, at, 138.0);
+            }
+        }
+
+        Optional<String> base64 = painter.paint(PLATFORM, STREAMER);
+
+        assertTrue(base64.isPresent());
+        dump("curves", base64.get());
+    }
+
+    @Test
+    @DisplayName("有开播快照时应画出本场变化，涨幅为实时值减快照")
+    void paintsFansChange() {
+        when(api.getFansCount(anyLong())).thenReturn(Optional.of(243L));
+        when(api.getFansMedalCount(anyLong())).thenReturn(Optional.of(36));
+        when(api.getGuardCount(anyLong(), anyLong())).thenReturn(Optional.of(3));
+
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), 1_700_000_000_000L);
+        liveDataService.setLiveEndTime(PLATFORM, STREAMER.getUid(), 1_700_000_000_000L + 3600_000);
+        liveDataService.setLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.FANS_AT_START, 231);
+        liveDataService.setLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.FANS_MEDAL_AT_START, 36);
+        liveDataService.setLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.GUARD_AT_START, 2);
+
+        Optional<String> base64 = painter.paint(PLATFORM, STREAMER);
+
+        assertTrue(base64.isPresent());
+        dump("fans-change", base64.get());
+    }
+
+    @Test
+    @DisplayName("接口取不到时本场变化区块应整体跳过，不应画出占位的空卡片")
+    void skipsFansChangeWhenApiUnavailable() {
+        // 默认桩即三个接口都返回空
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), 1_700_000_000_000L);
+
+        assertTrue(painter.paint(PLATFORM, STREAMER).isPresent(), "接口不可用也应能出图");
+    }
+
+    @Test
+    @DisplayName("没有时间序列时曲线区块应整体跳过")
+    void skipsCurvesWithoutSeries() {
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), 1_700_000_000_000L);
+        liveDataService.setLiveEndTime(PLATFORM, STREAMER.getUid(), 1_700_000_000_000L + 3600_000);
+        liveDataService.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.DANMU_COUNT, 50);
+
+        assertTrue(painter.paint(PLATFORM, STREAMER).isPresent(), "无曲线数据也应能出图");
     }
 
     @Test
