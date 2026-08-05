@@ -82,12 +82,27 @@ public class BilibiliLiveReportOptions {
     private boolean danmuCloud = true;
 
     /**
+     * 是否展示金额
+     * <p>
+     * <b>这一项不来自推送参数</b>，而是取自会话级的金额可见性设置：它回答的是「这份东西给谁看」，
+     * 与「报告要长什么样」不是一个问题。同一套版式推给主播私聊和推给大群，
+     * 该显示的区块完全相同，该不该带金额则完全相反。
+     * <p>
+     * 关闭后并非简单地少画几块：概览行的收益整段省略，卡片改用人数、条数等非金额表述，
+     * 曲线保留形状但不标峰值，而礼物、醒目留言、盲盒盈亏三张榜整榜不画——
+     * 那三张榜的每一行都是「某人花了多少钱」，去掉数字也仍然在排消费。
+     */
+    private boolean showRevenue = true;
+
+    /**
      * 从推送参数解析版式选项，缺省项用默认值
      * @param params 推送参数，可为 null
+     * @param showRevenue 该会话能否看到金额
      * @return 版式选项
      */
-    public static BilibiliLiveReportOptions of(JSONObject params) {
+    public static BilibiliLiveReportOptions of(JSONObject params, boolean showRevenue) {
         BilibiliLiveReportOptions options = new BilibiliLiveReportOptions();
+        options.showRevenue = showRevenue;
         if (params == null) {
             return options;
         }

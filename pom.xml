@@ -12,7 +12,7 @@
 
     <groupId>com.starlwr</groupId>
     <artifactId>starbot-parent</artifactId>
-    <version>4.1.1</version>
+    <version>4.2.0</version>
     <packaging>pom</packaging>
 
     <name>NovaBot</name>
@@ -57,7 +57,7 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
         <!-- StarBot 自身构件版本 -->
-        <starbot-core.version>4.1.1</starbot-core.version>
+        <starbot-core.version>4.2.0</starbot-core.version>
         <starbot-plugin-processor.version>1.0.0</starbot-plugin-processor.version>
 
         <!-- 第三方依赖版本，集中在此管理，模块内不再各写各的 -->

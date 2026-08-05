@@ -11,6 +11,7 @@ import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.service.LiveDataService;
+import com.starlwr.bot.core.service.RevenueVisibilityService;
 import com.starlwr.bot.core.service.UserBindingService;
 import com.starlwr.bot.core.util.StringUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -32,8 +33,8 @@ public abstract class BilibiliMyDataCommand extends BilibiliScopedDataCommand {
 
     protected BilibiliMyDataCommand(AbstractDataSource dataSource, LiveDataService liveDataService,
                                     BilibiliDataQueryPainter painter, UserBindingService bindings,
-                                    BilibiliApiUtil api) {
-        super(dataSource, liveDataService, painter);
+                                    BilibiliApiUtil api, RevenueVisibilityService revenueVisibility) {
+        super(dataSource, liveDataService, painter, revenueVisibility);
         this.bindings = bindings;
         this.api = api;
     }
@@ -69,17 +70,25 @@ public abstract class BilibiliMyDataCommand extends BilibiliScopedDataCommand {
         String platform = LivePlatform.BILIBILI.getName();
         BilibiliDataScope scope = scope();
 
+        // 这是发起者自己的消费额，但回复是发在会话里的，同群其他人一样看得见，
+        // 因此仍按会话的金额可见性处理
+        boolean revenue = revenueVisible(context);
+
         List<BilibiliDataQueryPainter.DataCard> cards = new ArrayList<>();
         addCard(cards, scope, platform, streamer.getUid(), BilibiliLiveMetric.DANMU_USERS, userUid,
                 score -> Math.round(score) + " 条", "弹幕");
-        addCard(cards, scope, platform, streamer.getUid(), BilibiliLiveMetric.GIFT_USERS, userUid,
-                score -> "¥" + yuan(score), "礼物");
-        addCard(cards, scope, platform, streamer.getUid(), BilibiliLiveMetric.SUPER_CHAT_USERS, userUid,
-                score -> "¥" + yuan(score), "醒目留言");
+        if (revenue) {
+            addCard(cards, scope, platform, streamer.getUid(), BilibiliLiveMetric.GIFT_USERS, userUid,
+                    score -> "¥" + yuan(score), "礼物");
+            addCard(cards, scope, platform, streamer.getUid(), BilibiliLiveMetric.SUPER_CHAT_USERS, userUid,
+                    score -> "¥" + yuan(score), "醒目留言");
+        }
         addCard(cards, scope, platform, streamer.getUid(), BilibiliLiveMetric.BOX_USERS, userUid,
                 score -> Math.round(score) + " 个", "盲盒");
-        addCard(cards, scope, platform, streamer.getUid(), BilibiliLiveMetric.BOX_PROFIT_USERS, userUid,
-                score -> (score >= 0 ? "+¥" : "-¥") + yuan(Math.abs(score)), "盲盒盈亏");
+        if (revenue) {
+            addCard(cards, scope, platform, streamer.getUid(), BilibiliLiveMetric.BOX_PROFIT_USERS, userUid,
+                    score -> (score >= 0 ? "+¥" : "-¥") + yuan(Math.abs(score)), "盲盒盈亏");
+        }
         addCard(cards, scope, platform, streamer.getUid(), BilibiliLiveMetric.GUARD_USERS, userUid,
                 score -> Math.round(score) + " 次", "大航海");
 

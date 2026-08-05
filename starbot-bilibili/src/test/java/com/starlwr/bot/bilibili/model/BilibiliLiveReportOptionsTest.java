@@ -16,7 +16,7 @@ class BilibiliLiveReportOptionsTest {
     @Test
     @DisplayName("参数为空时应全部取默认值")
     void usesDefaultsWhenParamsAbsent() {
-        BilibiliLiveReportOptions options = BilibiliLiveReportOptions.of(null);
+        BilibiliLiveReportOptions options = BilibiliLiveReportOptions.of(null, true);
 
         assertTrue(options.isCover());
         assertTrue(options.isCards());
@@ -32,7 +32,7 @@ class BilibiliLiveReportOptionsTest {
         JSONObject params = new JSONObject();
         params.put("cover", false);
 
-        BilibiliLiveReportOptions options = BilibiliLiveReportOptions.of(params);
+        BilibiliLiveReportOptions options = BilibiliLiveReportOptions.of(params, true);
 
         assertFalse(options.isCover(), "显式配置的项应生效");
         assertTrue(options.isCards(), "未配置的项应保留默认值");
@@ -46,7 +46,7 @@ class BilibiliLiveReportOptionsTest {
         params.put("danmu_ranking", 10);
         params.put("gift_ranking", 0);
 
-        BilibiliLiveReportOptions options = BilibiliLiveReportOptions.of(params);
+        BilibiliLiveReportOptions options = BilibiliLiveReportOptions.of(params, true);
 
         assertEquals(10, options.getDanmuRanking());
         assertEquals(0, options.getGiftRanking());
@@ -59,7 +59,7 @@ class BilibiliLiveReportOptionsTest {
         params.put("danmu_ranking", -3);
         params.put("gift_ranking", 9999);
 
-        BilibiliLiveReportOptions options = BilibiliLiveReportOptions.of(params);
+        BilibiliLiveReportOptions options = BilibiliLiveReportOptions.of(params, true);
 
         assertEquals(0, options.getDanmuRanking());
         assertEquals(20, options.getGiftRanking(), "应夹到上限 20");

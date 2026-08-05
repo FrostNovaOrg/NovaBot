@@ -5,6 +5,7 @@ import com.starlwr.bot.bilibili.painter.BilibiliDataQueryPainter;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.service.LiveDataService;
+import com.starlwr.bot.core.service.RevenueVisibilityService;
 import org.springframework.beans.factory.annotation.Autowired;
 
 /**
@@ -14,8 +15,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 public class BilibiliRoomLiveDataCommand extends BilibiliRoomDataCommand {
     @Autowired
     public BilibiliRoomLiveDataCommand(AbstractDataSource dataSource, LiveDataService liveDataService,
-                                       BilibiliDataQueryPainter painter) {
-        super(dataSource, liveDataService, painter);
+                                       BilibiliDataQueryPainter painter, RevenueVisibilityService revenueVisibility) {
+        super(dataSource, liveDataService, painter, revenueVisibility);
     }
 
     @Override

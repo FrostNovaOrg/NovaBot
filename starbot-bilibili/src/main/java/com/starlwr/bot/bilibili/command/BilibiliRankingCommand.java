@@ -10,6 +10,7 @@ import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.model.UserScore;
 import com.starlwr.bot.core.service.LiveDataService;
+import com.starlwr.bot.core.service.RevenueVisibilityService;
 
 import java.util.List;
 import java.util.function.DoubleFunction;
@@ -31,8 +32,8 @@ public abstract class BilibiliRankingCommand extends BilibiliScopedDataCommand {
     private static final int MAX_PAGE = 50;
 
     protected BilibiliRankingCommand(AbstractDataSource dataSource, LiveDataService liveDataService,
-                                     BilibiliDataQueryPainter painter) {
-        super(dataSource, liveDataService, painter);
+                                     BilibiliDataQueryPainter painter, RevenueVisibilityService revenueVisibility) {
+        super(dataSource, liveDataService, painter, revenueVisibility);
     }
 
     @Override
@@ -47,11 +48,19 @@ public abstract class BilibiliRankingCommand extends BilibiliScopedDataCommand {
             return unavailable;
         }
 
+        boolean revenue = revenueVisible(context);
+        String example = revenue ? "礼物" : "弹幕";
+
         Board board = Board.match(context.arg(0));
         if (board == null) {
-            return CommandReply.of("请指明要看哪张榜：" + Board.names()
-                    + "\n例如：" + name() + " 礼物"
-                    + "\n翻页：" + name() + " 礼物 2");
+            return CommandReply.of("请指明要看哪张榜：" + Board.names(revenue)
+                    + "\n例如：" + name() + " " + example
+                    + "\n翻页：" + name() + " " + example + " 2");
+        }
+
+        if (board.money && !revenue) {
+            // 说清是「本会话不展示」而不是「没这张榜」，否则只会被反复重试
+            return CommandReply.of("本会话不展示金额相关的榜单，可查：" + Board.names(false));
         }
 
         int page = 1;
@@ -117,25 +126,34 @@ public abstract class BilibiliRankingCommand extends BilibiliScopedDataCommand {
      * 可查的榜单
      */
     private enum Board {
-        DANMU("弹幕", BilibiliLiveMetric.DANMU_USERS, score -> Math.round(score) + " 条"),
-        GIFT("礼物", BilibiliLiveMetric.GIFT_USERS, score -> "¥" + yuan(score)),
-        SUPER_CHAT("醒目留言", BilibiliLiveMetric.SUPER_CHAT_USERS, score -> "¥" + yuan(score), "SC", "sc"),
-        BOX("盲盒", BilibiliLiveMetric.BOX_USERS, score -> Math.round(score) + " 个"),
-        BOX_PROFIT("盲盒盈亏", BilibiliLiveMetric.BOX_PROFIT_USERS,
+        DANMU("弹幕", BilibiliLiveMetric.DANMU_USERS, false, score -> Math.round(score) + " 条"),
+        GIFT("礼物", BilibiliLiveMetric.GIFT_USERS, true, score -> "¥" + yuan(score)),
+        SUPER_CHAT("醒目留言", BilibiliLiveMetric.SUPER_CHAT_USERS, true, score -> "¥" + yuan(score), "SC", "sc"),
+        BOX("盲盒", BilibiliLiveMetric.BOX_USERS, false, score -> Math.round(score) + " 个"),
+        BOX_PROFIT("盲盒盈亏", BilibiliLiveMetric.BOX_PROFIT_USERS, true,
                 score -> (score >= 0 ? "+¥" : "-¥") + yuan(Math.abs(score)), "盈亏"),
-        GUARD("大航海", BilibiliLiveMetric.GUARD_USERS, score -> Math.round(score) + " 次", "舰长");
+        GUARD("大航海", BilibiliLiveMetric.GUARD_USERS, false, score -> Math.round(score) + " 次", "舰长");
 
         private final String title;
 
         private final String metric;
 
+        /**
+         * 榜单是否以金额排名
+         * <p>
+         * 这三张榜的每一行都是「某人花了多少钱」，不展示金额时整张不出——
+         * 只抹掉右侧的数字仍然是在公开排消费。
+         */
+        private final boolean money;
+
         private final DoubleFunction<String> scoreText;
 
         private final List<String> aliases;
 
-        Board(String title, String metric, DoubleFunction<String> scoreText, String... aliases) {
+        Board(String title, String metric, boolean money, DoubleFunction<String> scoreText, String... aliases) {
             this.title = title;
             this.metric = metric;
+            this.money = money;
             this.scoreText = scoreText;
             this.aliases = List.of(aliases);
         }
@@ -156,11 +174,16 @@ public abstract class BilibiliRankingCommand extends BilibiliScopedDataCommand {
         }
 
         /**
-         * 全部榜单名，用于提示
+         * 可查的榜单名，用于提示
+         * <p>
+         * 按可见性过滤而不是全部列出：列一张查了必被拒的榜，等于请人白跑一趟。
          */
-        static String names() {
+        static String names(boolean revenue) {
             StringBuilder text = new StringBuilder();
             for (Board board : values()) {
+                if (board.money && !revenue) {
+                    continue;
+                }
                 if (!text.isEmpty()) {
                     text.append("、");
                 }

@@ -10,6 +10,7 @@ import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.service.LiveDataService;
+import com.starlwr.bot.core.service.RevenueVisibilityService;
 
 import java.time.Instant;
 import java.time.ZoneId;
@@ -30,8 +31,8 @@ public abstract class BilibiliRoomDataCommand extends BilibiliScopedDataCommand 
             DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(ZoneId.of("Asia/Shanghai"));
 
     protected BilibiliRoomDataCommand(AbstractDataSource dataSource, LiveDataService liveDataService,
-                                      BilibiliDataQueryPainter painter) {
-        super(dataSource, liveDataService, painter);
+                                      BilibiliDataQueryPainter painter, RevenueVisibilityService revenueVisibility) {
+        super(dataSource, liveDataService, painter, revenueVisibility);
     }
 
     @Override
@@ -56,7 +57,7 @@ public abstract class BilibiliRoomDataCommand extends BilibiliScopedDataCommand 
         Long uid = streamer.getUid();
         BilibiliDataScope scope = scope();
 
-        List<BilibiliDataQueryPainter.DataCard> cards = buildCards(scope, platform, uid);
+        List<BilibiliDataQueryPainter.DataCard> cards = buildCards(scope, platform, uid, revenueVisible(context));
         if (cards.isEmpty()) {
             return CommandReply.of(nameOf(streamer) + "的直播间还没有" + scope.getLabel() + "数据");
         }
@@ -71,8 +72,11 @@ public abstract class BilibiliRoomDataCommand extends BilibiliScopedDataCommand 
 
     /**
      * 排出直播间的数据卡片，为零的项自动省略
+     * <p>
+     * 不展示金额时卡片不消失，只换一种说法：礼物讲「多少人送出」、醒目留言讲「多少条」。
+     * 直播间有多热闹照样看得见，走掉的只是具体数额。
      */
-    private List<BilibiliDataQueryPainter.DataCard> buildCards(BilibiliDataScope scope, String platform, Long uid) {
+    private List<BilibiliDataQueryPainter.DataCard> buildCards(BilibiliDataScope scope, String platform, Long uid, boolean revenue) {
         long danmu = count(scope, platform, uid, BilibiliLiveMetric.DANMU_COUNT);
         int danmuUsers = scope.userCount(liveDataService, platform, uid, BilibiliLiveMetric.DANMU_USERS);
         double giftValue = scope.metric(liveDataService, platform, uid, BilibiliLiveMetric.GIFT_VALUE);
@@ -96,16 +100,20 @@ public abstract class BilibiliRoomDataCommand extends BilibiliScopedDataCommand 
             cards.add(card(String.valueOf(danmu), "弹幕 · " + danmuUsers + " 人参与"));
         }
         if (giftValue > 0) {
-            cards.add(card("¥" + yuan(giftValue), "礼物 · " + giftUsers + " 人送出"));
+            cards.add(revenue
+                    ? card("¥" + yuan(giftValue), "礼物 · " + giftUsers + " 人送出")
+                    : card(giftUsers + " 人", "送出礼物"));
         }
         if (superChat > 0) {
-            cards.add(card(superChat + " 条", "醒目留言 · ¥" + yuan(superChatValue)));
+            cards.add(card(superChat + " 条", revenue ? "醒目留言 · ¥" + yuan(superChatValue) : "醒目留言"));
         }
         if (guards > 0) {
-            cards.add(card("+" + guards, "大航海 · ¥" + yuan(guardValue)));
+            cards.add(card("+" + guards, revenue ? "大航海 · ¥" + yuan(guardValue) : "大航海"));
         }
         if (box > 0) {
-            cards.add(card(box + " 个", "盲盒 · " + (boxProfit >= 0 ? "盈利" : "亏损") + " ¥" + yuan(Math.abs(boxProfit))));
+            cards.add(card(box + " 个", revenue
+                    ? "盲盒 · " + (boxProfit >= 0 ? "盈利" : "亏损") + " ¥" + yuan(Math.abs(boxProfit))
+                    : "盲盒"));
         }
         if (likeTotal > 0) {
             cards.add(card(String.valueOf(likeTotal), "点赞"));

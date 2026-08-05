@@ -9,6 +9,9 @@ import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.model.UserScore;
 import com.starlwr.bot.core.service.LiveDataService;
+import com.starlwr.bot.core.service.RevenueVisibilityService;
+import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.config.StarBotCoreProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,6 +23,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -51,8 +55,14 @@ class BilibiliRankingCommandTest {
 
     private BilibiliLiveRankingCommand command;
 
+    private RevenueVisibilityService revenueVisibility;
+
     @BeforeEach
     void setUp() {
+        revenueVisibility = new RevenueVisibilityService(new StarBotStateStore(new StarBotCoreProperties()));
+        // 本类测的是翻页与匹配，与金额可见性无关。群聊默认不展示金额，
+        // 若不显式放开，礼物榜会被直接拒掉，测到的就不是翻页了
+        revenueVisibility.set(PLATFORM, GROUP, true);
         AbstractDataSource dataSource = mock(AbstractDataSource.class);
         when(dataSource.getUsers("bilibili")).thenReturn(List.of(streamer(STREAMER, "测试主播")));
 
@@ -60,7 +70,7 @@ class BilibiliRankingCommandTest {
         painter = mock(BilibiliDataQueryPainter.class);
         when(painter.paintRanking(any(), any(), anyInt(), any(), any())).thenReturn(Optional.of("QUJD"));
 
-        command = new BilibiliLiveRankingCommand(dataSource, liveDataService, painter);
+        command = new BilibiliLiveRankingCommand(dataSource, liveDataService, painter, revenueVisibility);
     }
 
     @Test
@@ -79,6 +89,43 @@ class BilibiliRankingCommandTest {
         CommandReply reply = command.execute(context("人气"));
 
         assertTrue(reply.content().contains("礼物"));
+    }
+
+    @Test
+    @DisplayName("不展示金额的会话应拒绝金额榜，并说明原因")
+    void refusesMoneyBoardsWithoutRevenue() {
+        revenueVisibility.set(PLATFORM, GROUP, false);
+
+        for (String board : List.of("礼物", "醒目留言", "盲盒盈亏")) {
+            CommandReply reply = command.execute(context(board));
+
+            // 说清是「本会话不展示」而不是「没这张榜」，否则只会被反复重试
+            assertTrue(reply.content().contains("不展示金额"), board + "：" + reply.content());
+        }
+        verify(painter, never()).paintRanking(any(), any(), anyInt(), any(), any());
+    }
+
+    @Test
+    @DisplayName("不展示金额的会话仍可查非金额榜")
+    void allowsNonMoneyBoardsWithoutRevenue() {
+        revenueVisibility.set(PLATFORM, GROUP, false);
+        withRanking(3);
+
+        command.execute(context("弹幕"));
+
+        verify(painter).paintRanking(any(), any(), eq(1), any(), any());
+    }
+
+    @Test
+    @DisplayName("提示里不应列出查了必被拒的榜")
+    void hintOmitsMoneyBoardsWithoutRevenue() {
+        revenueVisibility.set(PLATFORM, GROUP, false);
+
+        CommandReply reply = command.execute(context());
+
+        assertTrue(reply.content().contains("弹幕"), reply.content());
+        assertFalse(reply.content().contains("礼物"), "列出来就是请人白跑一趟：" + reply.content());
+        assertFalse(reply.content().contains("盲盒盈亏"), reply.content());
     }
 
     @Test

@@ -1359,6 +1359,17 @@ function renderSessions(sessions, commands) {
     let html = '<div class="head"><b>' + esc((s.type || '会话') + ' ' + s.num) + '</b>'
       + '<span class="id">' + esc(s.platform) + '</span>' + tag + '</div>';
 
+    // 金额可见性放在命令开关之前：它不是某一条命令的开关，而是这个会话能看到什么，
+    // 同时管住下播报告与全部数据查询命令
+    html += '<div class="cat">这个会话能看到什么</div>'
+      + '<div class="cmd"><span class="nm">直播收益等金额</span>'
+      + '<span class="ds">关掉后，下播报告不显示收益、卡片改用人数与条数、礼物与醒目留言榜整榜不出；'
+      + '数据查询命令同样不再回金额'
+      + (s.revenueExplicit ? '' : '（当前为默认值：私聊显示、群聊隐藏）') + '</span>'
+      + '<label class="switch"><input type="checkbox" data-revenue="1" data-num="' + esc(s.num) + '"'
+      + ' data-platform="' + esc(s.platform) + '"' + (s.revenueVisible ? ' checked' : '') + '></label>'
+      + '</div>';
+
     for (const [category, list] of byCategory) {
       html += '<div class="cat">' + esc(category) + '</div>';
 
@@ -1400,6 +1411,33 @@ function renderSessions(sessions, commands) {
   box.querySelectorAll('input[data-command]').forEach(input => {
     input.addEventListener('change', () => toggleCommand(input));
   });
+  box.querySelectorAll('input[data-revenue]').forEach(input => {
+    input.addEventListener('change', () => toggleRevenue(input));
+  });
+}
+
+async function toggleRevenue(input) {
+  const body = {
+    platform: input.dataset.platform,
+    num: Number(input.dataset.num),
+    visible: input.checked
+  };
+
+  input.disabled = true;
+  try {
+    const res = await api('/state/revenue', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    });
+    say(res.message || (res.success ? '已保存' : '操作失败'), res.success ? 'ok' : 'err');
+    // 失败时把开关拨回去：留在新位置会让人以为改成功了
+    if (!res.success) input.checked = !input.checked;
+    // 改过之后就不再是默认值了，说明文字要跟着变
+    else await loadState();
+  } catch (e) {
+    input.checked = !input.checked;
+    say('操作失败：' + e.message, 'err');
+  }
+  input.disabled = false;
 }
 
 async function toggleCommand(input) {

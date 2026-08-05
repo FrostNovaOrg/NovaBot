@@ -10,6 +10,10 @@ import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.bilibili.model.BilibiliLiveReportOptions;
+import com.starlwr.bot.core.service.RevenueVisibilityService;
+import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.config.StarBotCoreProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -26,6 +30,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -40,13 +45,16 @@ class BilibiliLiveReportPushHandlerTest {
 
     private BilibiliLiveReportPushHandler handler;
 
+    private RevenueVisibilityService revenueVisibility;
+
     @BeforeEach
     void setUp() {
+        revenueVisibility = new RevenueVisibilityService(new StarBotStateStore(new StarBotCoreProperties()));
         BilibiliApiUtil api = mock(BilibiliApiUtil.class);
         when(api.getUpInfoByUid(anyLong())).thenThrow(new RuntimeException("接口不可用"));
         painter = mock(BilibiliLiveReportPainter.class);
         sender = mock(StarBotMessageSender.class);
-        handler = new BilibiliLiveReportPushHandler(api, sender, painter);
+        handler = new BilibiliLiveReportPushHandler(api, sender, painter, revenueVisibility);
     }
 
     @Test
@@ -97,6 +105,40 @@ class BilibiliLiveReportPushHandlerTest {
                     assertEquals(0, option.min(), option.key() + " 的下限应为 0（即不展示）");
                     assertEquals(20, option.max(), option.key() + " 的上限应与 BilibiliLiveReportOptions 一致");
                 });
+    }
+
+    @Test
+    @DisplayName("金额可见性取自推送目标所在的会话，而非推送参数")
+    void revenueFollowsTargetSession() {
+        when(painter.paint(anyString(), any(), any())).thenReturn(Optional.of("QUJD"));
+        ArgumentCaptor<BilibiliLiveReportOptions> options = ArgumentCaptor.forClass(BilibiliLiveReportOptions.class);
+
+        // 群聊默认不展示金额
+        handler.handle(event(), pushMessage());
+        verify(painter).paint(anyString(), any(), options.capture());
+        assertFalse(options.getValue().isShowRevenue(), "群聊默认不该带金额");
+
+        // 同一份推送参数，改会话设置后应当跟着变
+        revenueVisibility.set("qq-onebot", 30003L, true);
+        handler.handle(event(), pushMessage());
+        verify(painter, times(2)).paint(anyString(), any(), options.capture());
+        assertTrue(options.getValue().isShowRevenue(), "放开后应带金额");
+    }
+
+    @Test
+    @DisplayName("私聊默认展示金额：主播看自己的报告不该缺数")
+    void revenueVisibleInFriendChat() {
+        when(painter.paint(anyString(), any(), any())).thenReturn(Optional.of("QUJD"));
+
+        PushMessage message = pushMessage();
+        message.getTarget().setType(PushTargetType.FRIEND);
+        message.getTarget().setNum(2000000002L);
+
+        handler.handle(event(), message);
+
+        ArgumentCaptor<BilibiliLiveReportOptions> options = ArgumentCaptor.forClass(BilibiliLiveReportOptions.class);
+        verify(painter).paint(anyString(), any(), options.capture());
+        assertTrue(options.getValue().isShowRevenue());
     }
 
     private BilibiliLiveOffEvent event() {

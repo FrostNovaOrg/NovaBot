@@ -8,7 +8,9 @@ import com.starlwr.bot.core.command.StarBotCommand;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
+import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.service.AtSubscriptionService;
+import com.starlwr.bot.core.service.RevenueVisibilityService;
 import com.starlwr.bot.core.service.StarBotStateStore;
 import com.starlwr.bot.core.service.UserBindingService;
 import lombok.extern.slf4j.Slf4j;
@@ -68,16 +70,20 @@ public class RuntimeStateController {
 
     private final AbstractDataSource dataSource;
 
+    private final RevenueVisibilityService revenueVisibility;
+
     @Autowired
     public RuntimeStateController(CommandDispatcher dispatcher, CommandSettingsService settings,
                                   AtSubscriptionService subscriptions, UserBindingService bindings,
-                                  StarBotStateStore store, AbstractDataSource dataSource) {
+                                  StarBotStateStore store, AbstractDataSource dataSource,
+                                  RevenueVisibilityService revenueVisibility) {
         this.dispatcher = dispatcher;
         this.settings = settings;
         this.subscriptions = subscriptions;
         this.bindings = bindings;
         this.store = store;
         this.dataSource = dataSource;
+        this.revenueVisibility = revenueVisibility;
     }
 
     /**
@@ -141,6 +147,35 @@ public class RuntimeStateController {
 
         result.put("success", true);
         result.put("message", "「" + name + "」已在 " + num + " " + (disabled ? "禁用" : "启用"));
+        return result;
+    }
+
+    /**
+     * 设置某个会话的金额可见性
+     * <p>
+     * 与命令开关不同，这一项<b>只能在这里改</b>：让群里的人自己把金额打开，
+     * 等于这道设置形同虚设。
+     * @param body 请求体，含 platform、num 与 visible；visible 为 null 表示恢复默认
+     * @return 操作结果
+     */
+    @PostMapping("/revenue")
+    public JSONObject setRevenueVisibility(@RequestBody JSONObject body) {
+        JSONObject result = new JSONObject();
+
+        String platform = body.getString("platform");
+        Long num = body.getLong("num");
+        if (platform == null || num == null) {
+            return fail(result, "缺少参数");
+        }
+
+        Boolean visible = body.getBoolean("visible");
+        revenueVisibility.set(platform, num, visible);
+        // 立即落盘：这是人的一次明确操作，进程此刻被杀掉会让人以为「我明明关了」
+        store.save();
+        log.info("配置界面将会话 {} 的金额可见性设为 {}", num, visible == null ? "默认" : visible);
+
+        result.put("success", true);
+        result.put("message", num + " 的金额" + (visible == null ? "已恢复默认" : visible ? "已设为可见" : "已隐藏"));
         return result;
     }
 
@@ -260,9 +295,22 @@ public class RuntimeStateController {
                     k -> session(item.platform(), item.num(), null, false));
         }
 
+        for (RevenueVisibilityService.Setting item : revenueVisibility.all()) {
+            sessions.computeIfAbsent(item.platform() + ":" + item.num(),
+                    k -> session(item.platform(), item.num(), null, false));
+        }
+
         disabled.forEach(item -> sessions.get(item.platform() + ":" + item.num())
                 .put("disabled", item.commands()));
         streamers.forEach((key, names) -> sessions.get(key).put("streamers", names));
+
+        // 金额可见性没有「未设置」这一档好展示：界面上的开关要么开要么关，
+        // 因此这里把默认值也算出来给它，另用 revenueExplicit 标出这份值究竟是人配的还是默认的
+        sessions.forEach((key, item) -> {
+            Boolean explicit = revenueVisibility.explicit(item.getString("platform"), item.getLong("num"));
+            item.put("revenueVisible", explicit != null ? explicit : defaultRevenue(item.getString("type")));
+            item.put("revenueExplicit", explicit != null);
+        });
 
         List<JSONObject> sorted = new ArrayList<>(sessions.values());
         sorted.sort(Comparator.comparing((JSONObject item) -> item.getString("platform"))
@@ -271,6 +319,16 @@ public class RuntimeStateController {
         JSONArray items = new JSONArray();
         items.addAll(sorted);
         return items;
+    }
+
+    /**
+     * 未显式设置时的金额可见性
+     * <p>
+     * 会话清单里的 type 存的是给人看的中文（「群」「好友」），只有来自推送配置的会话才有；
+     * 状态文件里残留的会话取不到类型，此时按群聊处理——不确定就按更保守的那一边。
+     */
+    private boolean defaultRevenue(String type) {
+        return PushTargetType.FRIEND.getStr().equals(type);
     }
 
     private JSONObject session(String platform, Long num, String type, boolean configured) {

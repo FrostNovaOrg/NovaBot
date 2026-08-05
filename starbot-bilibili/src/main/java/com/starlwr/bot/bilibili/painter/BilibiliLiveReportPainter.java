@@ -264,15 +264,15 @@ public class BilibiliLiveReportPainter {
             painter.setPos(MARGIN, MARGIN);
 
             drawHeader(painter, platform, source, options);
-            drawOverview(painter, platform, source.getUid());
+            drawOverview(painter, platform, source.getUid(), options);
             if (options.isCards()) {
-                drawCards(painter, platform, source.getUid());
+                drawCards(painter, platform, source.getUid(), options);
             }
             if (options.isFansChange()) {
                 drawFansChange(painter, platform, source);
             }
             if (options.isInteractionCurve()) {
-                drawCurves(painter, platform, source.getUid());
+                drawCurves(painter, platform, source.getUid(), options);
             }
             drawRankings(painter, platform, source.getUid(), options);
             if (options.isDanmuCloud()) {
@@ -336,20 +336,25 @@ public class BilibiliLiveReportPainter {
 
     /**
      * 绘制概览行：直播时长与本场收益
+     * <p>
+     * 收益此前是<b>无条件</b>绘制的：即使把其余区块全部关掉，只留一张卡片，
+     * 这一行照样把整场收入写在报告最显眼的位置。
      */
-    private void drawOverview(CommonPainter painter, String platform, Long uid) {
+    private void drawOverview(CommonPainter painter, String platform, Long uid, BilibiliLiveReportOptions options) {
         String duration = Optional.of(durationText(platform, uid)).filter(StringUtil::isNotBlank).orElse("未知");
-
-        double revenue = liveDataService.getLiveMetric(platform, uid, BilibiliLiveMetric.GIFT_VALUE)
-                + liveDataService.getLiveMetric(platform, uid, BilibiliLiveMetric.SUPER_CHAT_VALUE)
-                + liveDataService.getLiveMetric(platform, uid, BilibiliLiveMetric.GUARD_VALUE);
 
         List<TextWithStyle> line = new ArrayList<>();
         line.add(new TextWithStyle("直播时长 ", CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN));
         line.add(new TextWithStyle(duration, CommonPainter.TEXT_FONT_SIZE, COLOR_TEXT, Font.BOLD));
-        if (revenue > 0) {
-            line.add(new TextWithStyle("    本场收益 ", CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN));
-            line.add(new TextWithStyle("¥" + yuan(revenue), CommonPainter.TEXT_FONT_SIZE, COLOR_NAME, Font.BOLD));
+
+        if (options.isShowRevenue()) {
+            double revenue = liveDataService.getLiveMetric(platform, uid, BilibiliLiveMetric.GIFT_VALUE)
+                    + liveDataService.getLiveMetric(platform, uid, BilibiliLiveMetric.SUPER_CHAT_VALUE)
+                    + liveDataService.getLiveMetric(platform, uid, BilibiliLiveMetric.GUARD_VALUE);
+            if (revenue > 0) {
+                line.add(new TextWithStyle("    本场收益 ", CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN));
+                line.add(new TextWithStyle("¥" + yuan(revenue), CommonPainter.TEXT_FONT_SIZE, COLOR_NAME, Font.BOLD));
+            }
         }
 
         painter.drawTextWithStyle(line);
@@ -358,8 +363,12 @@ public class BilibiliLiveReportPainter {
 
     /**
      * 绘制数据卡片栅格，为零的卡片自动省略
+     * <p>
+     * 不展示金额时这些卡片不是消失，而是换一种说法：礼物讲「多少人送出」、
+     * 醒目留言讲「多少条」、盲盒讲「开了多少个」。互动的热闹程度照样看得见，
+     * 只是不带走具体数额——那正是想给大群看的部分。
      */
-    private void drawCards(CommonPainter painter, String platform, Long uid) {
+    private void drawCards(CommonPainter painter, String platform, Long uid, BilibiliLiveReportOptions options) {
         long danmu = count(platform, uid, BilibiliLiveMetric.DANMU_COUNT);
         int danmuUsers = liveDataService.getLiveMetricUserCount(platform, uid, BilibiliLiveMetric.DANMU_USERS);
         double giftValue = liveDataService.getLiveMetric(platform, uid, BilibiliLiveMetric.GIFT_VALUE);
@@ -378,10 +387,14 @@ public class BilibiliLiveReportPainter {
         long likeTotal = count(platform, uid, BilibiliLiveMetric.LIKE_TOTAL);
         long share = count(platform, uid, BilibiliLiveMetric.SHARE_COUNT);
 
+        boolean revenue = options.isShowRevenue();
+
         List<Card> cards = new ArrayList<>();
         cards.add(new Card(String.valueOf(danmu), "弹幕 · " + danmuUsers + " 人参与"));
         if (giftValue > 0 || giftUsers > 0) {
-            cards.add(new Card("¥" + yuan(giftValue), "礼物 · " + giftUsers + " 人送出"));
+            cards.add(revenue
+                    ? new Card("¥" + yuan(giftValue), "礼物 · " + giftUsers + " 人送出")
+                    : new Card(giftUsers + " 人", "送出礼物"));
         }
         if (likeTotal > 0) {
             cards.add(new Card(String.valueOf(likeTotal), "点赞"));
@@ -393,14 +406,16 @@ public class BilibiliLiveReportPainter {
             cards.add(new Card("+" + follow, "新增关注"));
         }
         if (superChat > 0) {
-            cards.add(new Card(superChat + " 条", "醒目留言 · ¥" + yuan(superChatValue)));
+            cards.add(new Card(superChat + " 条", revenue ? "醒目留言 · ¥" + yuan(superChatValue) : "醒目留言"));
         }
         if (captain > 0 || commander > 0 || governor > 0) {
-            cards.add(new Card("+" + (captain + commander + governor), "大航海 · ¥" + yuan(guardValue)));
+            cards.add(new Card("+" + (captain + commander + governor),
+                    revenue ? "大航海 · ¥" + yuan(guardValue) : "大航海"));
         }
         if (box > 0) {
             String direction = boxProfit >= 0 ? "盈利" : "亏损";
-            cards.add(new Card(box + " 个", "盲盒 · " + direction + " ¥" + yuan(Math.abs(boxProfit))));
+            cards.add(new Card(box + " 个",
+                    revenue ? "盲盒 · " + direction + " ¥" + yuan(Math.abs(boxProfit)) : "盲盒"));
         }
         if (freeGift > 0) {
             cards.add(new Card(freeGift + " 个", "免费礼物"));
@@ -495,24 +510,26 @@ public class BilibiliLiveReportPainter {
      * 弹幕以「条」计、礼物以「元」计，量级动辄差两个数量级，共用纵轴的结果是
      * 除了最大的那条以外全部压成一条直线。
      */
-    private void drawCurves(CommonPainter painter, String platform, Long uid) {
+    private void drawCurves(CommonPainter painter, String platform, Long uid, BilibiliLiveReportOptions options) {
         Optional<Long> start = liveDataService.getLiveStartTime(platform, uid);
         Optional<Long> end = effectiveEndTime(platform, uid, start);
         if (start.isEmpty() || end.isEmpty() || end.get() <= start.get()) {
             return;
         }
 
+        // 不展示金额时，礼物、醒目留言、大航海三条曲线保留形状但不标峰值。
+        // 面积图按自身峰值归一化，画出来的是「什么时候热闹」，本身不含任何绝对数值——
+        // 这恰好是最适合给大群看的东西，整条删掉反而丢了氛围
+        DoubleFunction<String> money = options.isShowRevenue() ? peak -> "¥" + yuan(peak) + "/分" : null;
+
         List<Curve> curves = new ArrayList<>();
         curves.add(new Curve("弹幕", BilibiliLiveMetric.DANMU_COUNT, COLOR_CURVE_DANMU,
                 peak -> Math.round(peak) + " 条/分"));
-        curves.add(new Curve("礼物", BilibiliLiveMetric.GIFT_VALUE, COLOR_NAME,
-                peak -> "¥" + yuan(peak) + "/分"));
-        curves.add(new Curve("醒目留言", BilibiliLiveMetric.SUPER_CHAT_VALUE, COLOR_CURVE_SUPER_CHAT,
-                peak -> "¥" + yuan(peak) + "/分"));
+        curves.add(new Curve("礼物", BilibiliLiveMetric.GIFT_VALUE, COLOR_NAME, money));
+        curves.add(new Curve("醒目留言", BilibiliLiveMetric.SUPER_CHAT_VALUE, COLOR_CURVE_SUPER_CHAT, money));
         curves.add(new Curve("盲盒", BilibiliLiveMetric.BOX_COUNT, COLOR_CURVE_BOX,
                 peak -> Math.round(peak) + " 个/分"));
-        curves.add(new Curve("大航海", BilibiliLiveMetric.GUARD_VALUE, COLOR_CURVE_GUARD,
-                peak -> "¥" + yuan(peak) + "/分"));
+        curves.add(new Curve("大航海", BilibiliLiveMetric.GUARD_VALUE, COLOR_CURVE_GUARD, money));
 
         boolean first = true;
         for (Curve curve : curves) {
@@ -552,10 +569,13 @@ public class BilibiliLiveReportPainter {
             return;
         }
 
-        painter.drawTextWithStyle(List.of(
-                new TextWithStyle(curve.title, 24, COLOR_TEXT, Font.PLAIN),
-                new TextWithStyle("　峰值 " + curve.peakText.apply(peak), 22, COLOR_TIP, Font.PLAIN)),
-                new Point(MARGIN, top));
+        List<TextWithStyle> title = new ArrayList<>();
+        title.add(new TextWithStyle(curve.title, 24, COLOR_TEXT, Font.PLAIN));
+        // peakText 为 null 表示这条曲线的峰值是金额且本会话不展示金额，只留标题
+        if (curve.peakText != null) {
+            title.add(new TextWithStyle("　峰值 " + curve.peakText.apply(peak), 22, COLOR_TIP, Font.PLAIN));
+        }
+        painter.drawTextWithStyle(title, new Point(MARGIN, top));
 
         int chartTop = top + 34;
         int baseline = chartTop + CURVE_HEIGHT;
@@ -616,17 +636,23 @@ public class BilibiliLiveReportPainter {
      * 绘制各类排行榜与大航海名单，无数据的榜自动跳过
      */
     private void drawRankings(CommonPainter painter, String platform, Long uid, BilibiliLiveReportOptions options) {
+        // 金额榜整榜跳过而非只抹掉数字：这三张榜的每一行本质都是「某人花了多少钱」，
+        // 留下名次仍然是在公开排消费
+        int giftRanking = options.isShowRevenue() ? options.getGiftRanking() : 0;
+        int superChatRanking = options.isShowRevenue() ? options.getSuperChatRanking() : 0;
+        int boxProfitRanking = options.isShowRevenue() ? options.getBoxProfitRanking() : 0;
+
         drawRanking(painter, platform, uid, "弹幕排行", BilibiliLiveMetric.DANMU_USERS,
                 options.getDanmuRanking(), score -> Math.round(score) + " 条");
         drawRanking(painter, platform, uid, "礼物排行", BilibiliLiveMetric.GIFT_USERS,
-                options.getGiftRanking(), score -> "¥" + yuan(score));
+                giftRanking, score -> "¥" + yuan(score));
         drawRanking(painter, platform, uid, "醒目留言排行", BilibiliLiveMetric.SUPER_CHAT_USERS,
-                options.getSuperChatRanking(), score -> "¥" + yuan(score));
+                superChatRanking, score -> "¥" + yuan(score));
         drawRanking(painter, platform, uid, "盲盒排行", BilibiliLiveMetric.BOX_USERS,
                 options.getBoxRanking(), score -> Math.round(score) + " 个");
         // 盲盒盈亏可正可负，正数补个加号，让盈亏方向一眼可辨
         drawRanking(painter, platform, uid, "盲盒盈亏排行", BilibiliLiveMetric.BOX_PROFIT_USERS,
-                options.getBoxProfitRanking(), score -> (score >= 0 ? "+¥" : "-¥") + yuan(Math.abs(score)));
+                boxProfitRanking, score -> (score >= 0 ? "+¥" : "-¥") + yuan(Math.abs(score)));
 
         if (options.isGuardList()) {
             drawRanking(painter, platform, uid, "本场开通大航海", BilibiliLiveMetric.GUARD_USERS,
@@ -990,6 +1016,14 @@ public class BilibiliLiveReportPainter {
      * @param metric 时间序列的指标名
      * @param color 面积配色
      * @param peakText 峰值的展示文案
+     */
+    /**
+     * 一条互动曲线
+     *
+     * @param title 曲线标题
+     * @param metric 指标名
+     * @param color 面积配色
+     * @param peakText 峰值文案，为 null 时不标峰值（金额曲线在不展示金额的会话里即为此情形）
      */
     private record Curve(String title, String metric, Color color, DoubleFunction<String> peakText) {
     }

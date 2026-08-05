@@ -2,9 +2,11 @@ package com.starlwr.bot.bilibili.command;
 
 import com.starlwr.bot.bilibili.model.BilibiliDataScope;
 import com.starlwr.bot.bilibili.painter.BilibiliDataQueryPainter;
+import com.starlwr.bot.core.command.CommandContext;
 import com.starlwr.bot.core.command.CommandReply;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.service.LiveDataService;
+import com.starlwr.bot.core.service.RevenueVisibilityService;
 
 /**
  * 分范围的数据查询命令
@@ -18,11 +20,28 @@ public abstract class BilibiliScopedDataCommand extends BilibiliStreamerCommand 
 
     protected final BilibiliDataQueryPainter painter;
 
+    private final RevenueVisibilityService revenueVisibility;
+
     protected BilibiliScopedDataCommand(AbstractDataSource dataSource, LiveDataService liveDataService,
-                                        BilibiliDataQueryPainter painter) {
+                                        BilibiliDataQueryPainter painter, RevenueVisibilityService revenueVisibility) {
         super(dataSource);
         this.liveDataService = liveDataService;
         this.painter = painter;
+        this.revenueVisibility = revenueVisibility;
+    }
+
+    /**
+     * 本会话能否看到金额
+     * <p>
+     * 数据查询命令谁都能在群里打，而它们回的图里带着礼物、醒目留言、大航海的具体金额。
+     * 下播报告的版式配置管不到这里——命令不属于任何推送目标，读不到那份配置，
+     * 所以「给谁看」这件事必须由会话本身回答。
+     * <p>
+     * 各命令拿到结论后自行决定怎么降级：卡片改用人数、条数等非金额表述，
+     * 而整张榜都是「谁花了多少钱」的，直接不出。
+     */
+    protected boolean revenueVisible(CommandContext context) {
+        return revenueVisibility.isVisible(context.getPlatform(), context.getType(), context.getNum());
     }
 
     /**

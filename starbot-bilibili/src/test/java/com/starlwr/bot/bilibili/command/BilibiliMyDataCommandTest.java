@@ -13,6 +13,7 @@ import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.StarBotStateStore;
 import com.starlwr.bot.core.service.UserBindingService;
+import com.starlwr.bot.core.service.RevenueVisibilityService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -57,8 +58,13 @@ class BilibiliMyDataCommandTest {
 
     private BilibiliMyTotalDataCommand totalCommand;
 
+    private RevenueVisibilityService revenueVisibility;
+
     @BeforeEach
     void setUp() {
+        revenueVisibility = new RevenueVisibilityService(new StarBotStateStore(new StarBotCoreProperties()));
+        // 本类测的是绑定与名次文案。群聊默认不展示金额，不显式放开的话礼物卡片根本不会出现
+        revenueVisibility.set(PLATFORM, GROUP, true);
         AbstractDataSource dataSource = mock(AbstractDataSource.class);
         when(dataSource.getUsers("bilibili")).thenReturn(List.of(streamer()));
 
@@ -70,8 +76,8 @@ class BilibiliMyDataCommandTest {
         BilibiliApiUtil api = mock(BilibiliApiUtil.class);
         when(api.getUpInfoByUid(anyLong())).thenThrow(new RuntimeException("接口不可用"));
 
-        liveCommand = new BilibiliMyLiveDataCommand(dataSource, liveDataService, painter, bindings, api);
-        totalCommand = new BilibiliMyTotalDataCommand(dataSource, liveDataService, painter, bindings, api);
+        liveCommand = new BilibiliMyLiveDataCommand(dataSource, liveDataService, painter, bindings, api, revenueVisibility);
+        totalCommand = new BilibiliMyTotalDataCommand(dataSource, liveDataService, painter, bindings, api, revenueVisibility);
     }
 
     @Test
@@ -125,6 +131,25 @@ class BilibiliMyDataCommandTest {
         verify(painter).paintCards(any(), cards.capture(), any());
         assertEquals("¥52.5", cards.getValue().get(0).value());
         assertEquals("礼物", cards.getValue().get(0).label());
+    }
+
+    @Test
+    @DisplayName("不展示金额的会话应省略金额卡片，保留非金额卡片")
+    void omitsMoneyCardsWithoutRevenue() {
+        // 查的虽是自己的数据，回复却发在会话里、同群其他人都看得见，因此仍按会话设置处理
+        revenueVisibility.set(PLATFORM, GROUP, false);
+        bindings.bind(PLATFORM, "bilibili", QQ, UID);
+        when(liveDataService.getLiveUserMetric(anyString(), eq(STREAMER), eq(BilibiliLiveMetric.GIFT_USERS), eq(UID)))
+                .thenReturn(52.5);
+        when(liveDataService.getLiveUserMetric(anyString(), eq(STREAMER), eq(BilibiliLiveMetric.DANMU_USERS), eq(UID)))
+                .thenReturn(144.0);
+
+        liveCommand.execute(context());
+
+        ArgumentCaptor<List<BilibiliDataQueryPainter.DataCard>> cards = captor();
+        verify(painter).paintCards(any(), cards.capture(), any());
+        assertEquals(1, cards.getValue().size(), "礼物是金额，只该剩弹幕这一张");
+        assertEquals("144 条", cards.getValue().get(0).value());
     }
 
     @Test

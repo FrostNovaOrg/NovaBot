@@ -168,7 +168,7 @@ class BilibiliLiveReportPainterTest {
         liveDataService.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.CAPTAIN_COUNT, 1);
         liveDataService.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.GUARD_VALUE, 138.0);
 
-        Optional<String> base64 = painter.paint(PLATFORM, STREAMER, BilibiliLiveReportOptions.of(null));
+        Optional<String> base64 = painter.paint(PLATFORM, STREAMER, BilibiliLiveReportOptions.of(null, true));
 
         assertTrue(base64.isPresent());
         dump("rankings", base64.get());
@@ -286,10 +286,78 @@ class BilibiliLiveReportPainterTest {
         params.put("guard_list", false);
         params.put("danmu_cloud", false);
 
-        Optional<String> base64 = painter.paint(PLATFORM, STREAMER, BilibiliLiveReportOptions.of(params));
+        Optional<String> base64 = painter.paint(PLATFORM, STREAMER, BilibiliLiveReportOptions.of(params, true));
 
         assertTrue(base64.isPresent(), "全部关闭也应能出图");
         dump("minimal", base64.get());
+    }
+
+    @Test
+    @DisplayName("不展示金额时报告应更短：三张金额榜整榜不出")
+    void hidesMoneyRankingsWithoutRevenue() throws Exception {
+        feedRankingData();
+
+        int withRevenue = heightOf(painter.paint(PLATFORM, STREAMER, BilibiliLiveReportOptions.of(null, true)).orElseThrow());
+        String hidden = painter.paint(PLATFORM, STREAMER, BilibiliLiveReportOptions.of(null, false)).orElseThrow();
+
+        assertTrue(heightOf(hidden) < withRevenue,
+                "礼物榜与醒目留言榜整榜不出，图应明显变矮：" + heightOf(hidden) + " vs " + withRevenue);
+        dump("no-revenue-rankings", hidden);
+    }
+
+    @Test
+    @DisplayName("不展示金额时卡片与曲线仍在，只是不带数额")
+    void keepsAtmosphereWithoutRevenue() {
+        feedRankingData();
+        liveDataService.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.FOLLOW_COUNT, 5);
+        liveDataService.recordLiveMetricUser(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.ENTER_USERS, 3L);
+        liveDataService.maxLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.LIKE_TOTAL, 1024);
+
+        String[] words = {"晚上好", "唱歌", "好听", "打游戏", "厉害", "加油", "可爱", "再来一首", "笑死", "太强了", "岁月史书", "下次一定"};
+        for (int i = 0; i < words.length; i++) {
+            for (int j = 0; j <= i * 2; j++) {
+                liveDataService.incrementLiveWordFrequency(PLATFORM, STREAMER.getUid(), words[i]);
+            }
+        }
+
+        Optional<String> base64 = painter.paint(PLATFORM, STREAMER, BilibiliLiveReportOptions.of(null, false));
+
+        assertTrue(base64.isPresent(), "不展示金额也应能出图");
+        // 图里有没有 ¥ 只能人工看，这里存一份样张；断言留给选项与命令层
+        dump("no-revenue-full", base64.get());
+    }
+
+    /**
+     * 喂一份带金额的榜单数据
+     */
+    private void feedRankingData() {
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), 1_700_000_000_000L);
+        liveDataService.setLiveEndTime(PLATFORM, STREAMER.getUid(), 1_700_000_000_000L + 3600_000);
+
+        String[] names = {"甲乙丙", "丁戊己", "庚辛壬", "癸子丑", "寅卯辰", "巳午未"};
+        for (int i = 0; i < names.length; i++) {
+            long uid = 100L + i;
+            double weight = names.length - i;
+            liveDataService.recordLiveUserName(PLATFORM, STREAMER.getUid(), uid, names[i]);
+            liveDataService.recordLiveUserFace(PLATFORM, STREAMER.getUid(), uid, "https://pic.example/face" + i + ".jpg");
+            liveDataService.incrementLiveUserMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.DANMU_USERS, uid, weight * 7);
+            liveDataService.incrementLiveUserMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.GIFT_USERS, uid, weight * 13.5);
+            liveDataService.incrementLiveUserMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.SUPER_CHAT_USERS, uid, weight * 30);
+        }
+        liveDataService.incrementLiveUserMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.GUARD_USERS, 100L, 1);
+        liveDataService.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.DANMU_COUNT, 147);
+        liveDataService.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.GIFT_VALUE, 283.5);
+        liveDataService.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.SUPER_CHAT_COUNT, 6);
+        liveDataService.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.SUPER_CHAT_VALUE, 630.0);
+        liveDataService.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.CAPTAIN_COUNT, 1);
+        liveDataService.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.GUARD_VALUE, 138.0);
+    }
+
+    /**
+     * 取图片高度
+     */
+    private int heightOf(String base64) throws Exception {
+        return javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(Base64.getDecoder().decode(base64))).getHeight();
     }
 
     /**

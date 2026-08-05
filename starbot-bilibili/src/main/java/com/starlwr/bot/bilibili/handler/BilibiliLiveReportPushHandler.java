@@ -13,6 +13,7 @@ import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.service.RevenueVisibilityService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -33,11 +34,15 @@ public class BilibiliLiveReportPushHandler implements StarBotEventHandler {
 
     private final BilibiliLiveReportPainter painter;
 
+    private final RevenueVisibilityService revenueVisibility;
+
     @Autowired
-    public BilibiliLiveReportPushHandler(BilibiliApiUtil api, StarBotMessageSender sender, BilibiliLiveReportPainter painter) {
+    public BilibiliLiveReportPushHandler(BilibiliApiUtil api, StarBotMessageSender sender,
+                                         BilibiliLiveReportPainter painter, RevenueVisibilityService revenueVisibility) {
         this.api = api;
         this.sender = sender;
         this.painter = painter;
+        this.revenueVisibility = revenueVisibility;
     }
 
     @Override
@@ -46,8 +51,12 @@ public class BilibiliLiveReportPushHandler implements StarBotEventHandler {
         JSONObject params = pushMessage.getParamsJsonObject();
         PushTarget target = pushMessage.getTarget();
 
+        // 版式来自推送配置，金额可见性来自会话：前者是「长什么样」，后者是「给谁看」。
+        // 同一套版式推给主播私聊和推给大群，该显示的区块相同，该不该带金额则相反
+        boolean showRevenue = revenueVisibility.isVisible(target.getPlatform(), target.getType(), target.getNum());
+
         // 绘制失败时占位符替换为空串；默认模板只含 {report}，此时消息为空白，发送环节会直接跳过
-        String report = painter.paint(event.getPlatform(), event.getSource(), BilibiliLiveReportOptions.of(params))
+        String report = painter.paint(event.getPlatform(), event.getSource(), BilibiliLiveReportOptions.of(params, showRevenue))
                 .map(base64 -> "{image_base64=" + base64 + "}")
                 .orElse("");
 

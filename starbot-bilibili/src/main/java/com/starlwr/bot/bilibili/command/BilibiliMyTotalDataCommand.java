@@ -6,6 +6,7 @@ import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.service.LiveDataService;
+import com.starlwr.bot.core.service.RevenueVisibilityService;
 import com.starlwr.bot.core.service.UserBindingService;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -17,8 +18,8 @@ public class BilibiliMyTotalDataCommand extends BilibiliMyDataCommand {
     @Autowired
     public BilibiliMyTotalDataCommand(AbstractDataSource dataSource, LiveDataService liveDataService,
                                       BilibiliDataQueryPainter painter, UserBindingService bindings,
-                                      BilibiliApiUtil api) {
-        super(dataSource, liveDataService, painter, bindings, api);
+                                      BilibiliApiUtil api, RevenueVisibilityService revenueVisibility) {
+        super(dataSource, liveDataService, painter, bindings, api, revenueVisibility);
     }
 
     @Override
