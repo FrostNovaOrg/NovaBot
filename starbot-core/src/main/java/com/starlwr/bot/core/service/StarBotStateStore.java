@@ -1,5 +1,6 @@
 package com.starlwr.bot.core.service;
 
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import lombok.NonNull;
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Service;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -114,14 +116,51 @@ public class StarBotStateStore {
     }
 
     /**
-     * 取得某个命名空间的只读视图
+     * 取得某个命名空间的快照
+     * <p>
+     * <b>必须是拷贝而不是本体。</b>调用方拿到之后会在锁外遍历 {@code keySet()}，
+     * 而写入来自消息线程：群里有人发「开播@我」的同时开播推送正在读订阅名单，
+     * 遍历中途结构发生变化就会抛 {@link java.util.ConcurrentModificationException}——
+     * 偏偏是在最要紧的那一刻把推送打断。
+     * <p>
+     * 拷贝必须是深的：订阅名单是「会话 → 订阅者集合」的两层结构，
+     * 浅拷贝只换掉外层，真正被遍历的内层还是那个活对象。
      * @param namespace 命名空间
-     * @return 该命名空间的 JSON 对象，不存在时为空对象
+     * @return 该命名空间的独立快照，不存在时为空对象
      */
     public JSONObject namespace(@NonNull String namespace) {
         synchronized (lock) {
-            return Optional.ofNullable(cache.getJSONObject(namespace)).orElseGet(JSONObject::new);
+            return Optional.ofNullable(cache.getJSONObject(namespace))
+                    .map(StarBotStateStore::deepCopy)
+                    .orElseGet(JSONObject::new);
         }
+    }
+
+    /**
+     * 深拷贝一个 JSON 对象
+     * <p>
+     * 只有 JSONObject 与 JSONArray 需要递归，其余值都是不可变的标量
+     */
+    private static JSONObject deepCopy(JSONObject source) {
+        JSONObject copy = new JSONObject(source.size());
+        for (Map.Entry<String, Object> entry : source.entrySet()) {
+            copy.put(entry.getKey(), deepCopyValue(entry.getValue()));
+        }
+        return copy;
+    }
+
+    private static Object deepCopyValue(Object value) {
+        if (value instanceof JSONObject nested) {
+            return deepCopy(nested);
+        }
+        if (value instanceof JSONArray array) {
+            JSONArray copy = new JSONArray(array.size());
+            for (Object item : array) {
+                copy.add(deepCopyValue(item));
+            }
+            return copy;
+        }
+        return value;
     }
 
     /**
