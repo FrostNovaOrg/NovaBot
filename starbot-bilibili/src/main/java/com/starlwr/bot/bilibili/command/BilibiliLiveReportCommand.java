@@ -105,4 +105,9 @@ public class BilibiliLiveReportCommand implements StarBotCommand {
         }
         return result;
     }
+
+    @Override
+    public String category() {
+        return "数据查询";
+    }
 }

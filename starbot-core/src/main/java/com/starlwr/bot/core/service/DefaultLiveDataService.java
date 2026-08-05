@@ -474,6 +474,37 @@ public class DefaultLiveDataService implements LiveDataService {
         }
     }
 
+    /**
+     * 获取某个用户在本场排行中的名次
+     *
+     * @param platform 直播平台
+     * @param uid      主播 UID
+     * @param metric   指标名
+     * @param userUid  用户 UID
+     * @return 名次，从 1 开始；未上榜时为 0
+     */
+    @Override
+    public int getLiveUserRank(@NonNull String platform, @NonNull Long uid, @NonNull String metric, @NonNull Long userUid) {
+        synchronized (metricLock) {
+            JSONObject users = users(platform, uid, metric);
+            String userKey = String.valueOf(userUid);
+            if (users == null || !users.containsKey(userKey)) {
+                return 0;
+            }
+
+            // 数一数有多少人分数比他高即可，不必把整张榜排序。
+            // 同分并列取较优名次：并列第一时两人都显示第 1，而不是一个第 1 一个第 2
+            double score = users.getDoubleValue(userKey);
+            int higher = 0;
+            for (String key : users.keySet()) {
+                if (!key.equals(userKey) && users.getDoubleValue(key) > score) {
+                    higher++;
+                }
+            }
+            return higher + 1;
+        }
+    }
+
     @Override
     public List<UserScore> getLiveUserRanking(@NonNull String platform, @NonNull Long uid, @NonNull String metric, int limit) {
         if (limit <= 0) {

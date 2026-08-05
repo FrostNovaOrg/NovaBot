@@ -188,6 +188,22 @@ public interface LiveDataService {
         return List.of();
     }
 
+    /**
+     * 获取某个用户在本场排行中的名次
+     * <p>
+     * 单列一个方法而不让调用方自己在排行榜里找：Redis 的 zset 求名次是 O(log n)，
+     * 拉一整张榜再遍历则是 O(n)，而「我排第几」恰恰是最常查的一项。
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @param metric 指标名
+     * @param userUid 用户 UID
+     * @return 名次，从 1 开始；未上榜时为 0
+     */
+    default int getLiveUserRank(@NonNull String platform, @NonNull Long uid, @NonNull String metric,
+                                @NonNull Long userUid) {
+        return 0;
+    }
+
     // ================ 累计数据 ================
     // 跨场次累计，数据量随时间无限增长，因此只有配置了外部存储（如 Redis）的实现才支持。
     // 未配置时一律返回「不支持」，由调用方明确告知使用者，不可静默返回 0——
@@ -244,6 +260,30 @@ public interface LiveDataService {
     default List<UserScore> getTotalUserRanking(
             @NonNull String platform, @NonNull Long uid, @NonNull String metric, int limit) {
         return List.of();
+    }
+
+    /**
+     * 获取某个用户在累计排行中的名次
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @param metric 指标名
+     * @param userUid 用户 UID
+     * @return 名次，从 1 开始；不支持或未上榜时为 0
+     */
+    default int getTotalUserRank(@NonNull String platform, @NonNull Long uid, @NonNull String metric,
+                                 @NonNull Long userUid) {
+        return 0;
+    }
+
+    /**
+     * 获取累计参与某项互动的独立用户数
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @param metric 指标名
+     * @return 独立用户数，不支持或未记录时为 0
+     */
+    default int getTotalMetricUserCount(@NonNull String platform, @NonNull Long uid, @NonNull String metric) {
+        return 0;
     }
 
     /**

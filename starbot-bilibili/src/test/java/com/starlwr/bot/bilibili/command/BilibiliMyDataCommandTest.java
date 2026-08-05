@@ -1,0 +1,163 @@
+package com.starlwr.bot.bilibili.command;
+
+import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
+import com.starlwr.bot.bilibili.painter.BilibiliDataQueryPainter;
+import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
+import com.starlwr.bot.core.command.CommandContext;
+import com.starlwr.bot.core.command.CommandReply;
+import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.datasource.AbstractDataSource;
+import com.starlwr.bot.core.enums.PushTargetType;
+import com.starlwr.bot.core.model.PushTarget;
+import com.starlwr.bot.core.model.PushUser;
+import com.starlwr.bot.core.service.LiveDataService;
+import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.UserBindingService;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+
+import java.util.List;
+import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+/**
+ * 个人数据命令测试
+ */
+@DisplayName("我的数据命令")
+class BilibiliMyDataCommandTest {
+    private static final String PLATFORM = "qq-onebot";
+
+    private static final Long GROUP = 30003L;
+
+    private static final Long QQ = 2000000002L;
+
+    private static final Long UID = 500000004L;
+
+    private static final Long STREAMER = 10001L;
+
+    private LiveDataService liveDataService;
+
+    private UserBindingService bindings;
+
+    private BilibiliDataQueryPainter painter;
+
+    private BilibiliMyLiveDataCommand liveCommand;
+
+    private BilibiliMyTotalDataCommand totalCommand;
+
+    @BeforeEach
+    void setUp() {
+        AbstractDataSource dataSource = mock(AbstractDataSource.class);
+        when(dataSource.getUsers("bilibili")).thenReturn(List.of(streamer()));
+
+        liveDataService = mock(LiveDataService.class);
+        bindings = new UserBindingService(new StarBotStateStore(new StarBotCoreProperties()));
+        painter = mock(BilibiliDataQueryPainter.class);
+        when(painter.paintCards(any(), any(), any())).thenReturn(Optional.of("QUJD"));
+
+        BilibiliApiUtil api = mock(BilibiliApiUtil.class);
+        when(api.getUpInfoByUid(anyLong())).thenThrow(new RuntimeException("接口不可用"));
+
+        liveCommand = new BilibiliMyLiveDataCommand(dataSource, liveDataService, painter, bindings, api);
+        totalCommand = new BilibiliMyTotalDataCommand(dataSource, liveDataService, painter, bindings, api);
+    }
+
+    @Test
+    @DisplayName("未绑定时应引导去绑定，而不是回一堆 0")
+    void requiresBinding() {
+        CommandReply reply = liveCommand.execute(context());
+
+        assertTrue(reply.content().contains("绑定"));
+        verify(painter, never()).paintCards(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("没有互动数据时应说明而非出一张空图")
+    void repliesWhenNoInteraction() {
+        bindings.bind(PLATFORM, "bilibili", QQ, UID);
+
+        CommandReply reply = liveCommand.execute(context());
+
+        assertTrue(reply.content().contains("还没有"));
+        verify(painter, never()).paintCards(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("只玩过一项时应只出一张卡片，零值项不占位")
+    void skipsZeroValuedCards() {
+        bindings.bind(PLATFORM, "bilibili", QQ, UID);
+        when(liveDataService.getLiveUserMetric(anyString(), eq(STREAMER), eq(BilibiliLiveMetric.DANMU_USERS), eq(UID)))
+                .thenReturn(144.0);
+        when(liveDataService.getLiveUserRank(anyString(), eq(STREAMER), eq(BilibiliLiveMetric.DANMU_USERS), eq(UID)))
+                .thenReturn(3);
+
+        liveCommand.execute(context());
+
+        ArgumentCaptor<List<BilibiliDataQueryPainter.DataCard>> cards = captor();
+        verify(painter).paintCards(any(), cards.capture(), any());
+        assertEquals(1, cards.getValue().size());
+        assertEquals("144 条", cards.getValue().get(0).value());
+        assertEquals("弹幕 · 第 3 名", cards.getValue().get(0).label());
+    }
+
+    @Test
+    @DisplayName("未上榜时卡片不应带名次")
+    void omitsRankWhenUnranked() {
+        bindings.bind(PLATFORM, "bilibili", QQ, UID);
+        when(liveDataService.getLiveUserMetric(anyString(), eq(STREAMER), eq(BilibiliLiveMetric.GIFT_USERS), eq(UID)))
+                .thenReturn(52.5);
+
+        liveCommand.execute(context());
+
+        ArgumentCaptor<List<BilibiliDataQueryPainter.DataCard>> cards = captor();
+        verify(painter).paintCards(any(), cards.capture(), any());
+        assertEquals("¥52.5", cards.getValue().get(0).value());
+        assertEquals("礼物", cards.getValue().get(0).label());
+    }
+
+    @Test
+    @DisplayName("未配置累计存储时总数据应明确告知，而不是展示 0")
+    void totalDataNeedsExternalStore() {
+        bindings.bind(PLATFORM, "bilibili", QQ, UID);
+        when(liveDataService.supportsTotalData()).thenReturn(false);
+
+        CommandReply reply = totalCommand.execute(context());
+
+        assertTrue(reply.content().contains("Redis"), reply.content());
+        verify(painter, never()).paintCards(any(), any(), any());
+    }
+
+    private CommandContext context() {
+        return new CommandContext(PLATFORM, PushTargetType.GROUP, GROUP, QQ, "我的数据", List.of(), "我的数据");
+    }
+
+    private PushUser streamer() {
+        PushTarget target = new PushTarget();
+        target.setPlatform(PLATFORM);
+        target.setType(PushTargetType.GROUP);
+        target.setNum(GROUP);
+
+        PushUser user = new PushUser();
+        user.setUid(STREAMER);
+        user.setUname("测试主播");
+        user.setTargets(List.of(target));
+        return user;
+    }
+
+    @SuppressWarnings("unchecked")
+    private ArgumentCaptor<List<BilibiliDataQueryPainter.DataCard>> captor() {
+        return ArgumentCaptor.forClass(List.class);
+    }
+}

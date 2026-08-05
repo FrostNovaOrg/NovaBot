@@ -42,6 +42,17 @@ public interface StarBotCommand {
     }
 
     /**
+     * 命令归属的分类，用于「菜单」分组
+     * <p>
+     * 命令一多，一长串平铺的清单就没人看得下去。分类名自由填写，
+     * 「菜单」按各分类首次出现的顺序展示。
+     * @return 分类名
+     */
+    default String category() {
+        return "其他";
+    }
+
+    /**
      * 是否只在群聊中可用
      * @return 是否仅限群聊
      */

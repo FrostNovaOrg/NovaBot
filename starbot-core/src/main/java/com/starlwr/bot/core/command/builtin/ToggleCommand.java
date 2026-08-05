@@ -81,4 +81,9 @@ public abstract class ToggleCommand implements StarBotCommand {
                 .findFirst()
                 .orElse(null);
     }
+
+    @Override
+    public String category() {
+        return "命令管理";
+    }
 }

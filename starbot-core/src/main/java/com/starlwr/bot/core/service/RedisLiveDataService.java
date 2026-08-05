@@ -157,6 +157,30 @@ public class RedisLiveDataService implements LiveDataService {
         }
     }
 
+    @Override
+    public int getTotalUserRank(@NonNull String platform, @NonNull Long uid, @NonNull String metric,
+                                @NonNull Long userUid) {
+        try {
+            Long rank = redis.opsForZSet().reverseRank(totalUserKey(platform, uid, metric), String.valueOf(userUid));
+            // zset 的名次从 0 开始，对外统一成从 1 开始；成员不存在时返回 null
+            return rank == null ? 0 : rank.intValue() + 1;
+        } catch (Exception e) {
+            log.error("读取用户 {} 在主播 {} 的累计名次异常", userUid, uid, e);
+            return 0;
+        }
+    }
+
+    @Override
+    public int getTotalMetricUserCount(@NonNull String platform, @NonNull Long uid, @NonNull String metric) {
+        try {
+            Long size = redis.opsForZSet().size(totalUserKey(platform, uid, metric));
+            return size == null ? 0 : size.intValue();
+        } catch (Exception e) {
+            log.error("读取主播 {} 的累计参与人数 {} 异常", uid, metric, e);
+            return 0;
+        }
+    }
+
     // ================ 本场数据一律委托 ================
 
     @Override
@@ -235,6 +259,12 @@ public class RedisLiveDataService implements LiveDataService {
     public List<UserScore> getLiveUserRanking(@NonNull String platform, @NonNull Long uid,
                                               @NonNull String metric, int limit) {
         return delegate.getLiveUserRanking(platform, uid, metric, limit);
+    }
+
+    @Override
+    public int getLiveUserRank(@NonNull String platform, @NonNull Long uid, @NonNull String metric,
+                               @NonNull Long userUid) {
+        return delegate.getLiveUserRank(platform, uid, metric, userUid);
     }
 
     @Override

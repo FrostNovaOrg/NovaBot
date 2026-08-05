@@ -158,6 +158,38 @@ class DefaultLiveDataServiceTest {
     }
 
     @Test
+    @DisplayName("名次应从 1 开始，未参与者为 0")
+    void rankStartsAtOne() {
+        service.incrementLiveUserMetric(PLATFORM, UID, "gift_value", 1L, 3);
+        service.incrementLiveUserMetric(PLATFORM, UID, "gift_value", 2L, 9);
+        service.incrementLiveUserMetric(PLATFORM, UID, "gift_value", 3L, 5);
+
+        assertEquals(1, service.getLiveUserRank(PLATFORM, UID, "gift_value", 2L));
+        assertEquals(2, service.getLiveUserRank(PLATFORM, UID, "gift_value", 3L));
+        assertEquals(3, service.getLiveUserRank(PLATFORM, UID, "gift_value", 1L));
+        assertEquals(0, service.getLiveUserRank(PLATFORM, UID, "gift_value", 99L));
+    }
+
+    @Test
+    @DisplayName("同分应并列取较优名次")
+    void rankTiesShareBestPosition() {
+        service.incrementLiveUserMetric(PLATFORM, UID, "danmu_users", 1L, 5);
+        service.incrementLiveUserMetric(PLATFORM, UID, "danmu_users", 2L, 5);
+        service.incrementLiveUserMetric(PLATFORM, UID, "danmu_users", 3L, 1);
+
+        // 两人同为 5 分时都算第 1，而不是一个第 1 一个第 2
+        assertEquals(1, service.getLiveUserRank(PLATFORM, UID, "danmu_users", 1L));
+        assertEquals(1, service.getLiveUserRank(PLATFORM, UID, "danmu_users", 2L));
+        assertEquals(3, service.getLiveUserRank(PLATFORM, UID, "danmu_users", 3L));
+    }
+
+    @Test
+    @DisplayName("未记录过的指标查名次应为 0 而非报错")
+    void rankOfUnknownMetricIsZero() {
+        assertEquals(0, service.getLiveUserRank(PLATFORM, UID, "gift_value", 1L));
+    }
+
+    @Test
     @DisplayName("重置直播数据应一并清空计分表")
     void resetClearsUserScores() {
         service.incrementLiveUserMetric(PLATFORM, UID, "gift_value", 1L, 5);
