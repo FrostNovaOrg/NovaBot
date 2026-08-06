@@ -195,6 +195,43 @@ class BilibiliEventParserTest {
     }
 
     @Test
+    @DisplayName("盲盒的字段方向：blind_gift 里的是投入的盒子，顶层的是开出的东西")
+    void blindGiftFieldDirection() {
+        // 2026-08-06 从热门直播间实抓。这两个名字本身就说明了方向：
+        // 「小熊虫盲盒」显然是投进去的，「心事虫虫」显然是开出来的
+        String real = "{\"cmd\":\"SEND_GIFT\",\"data\":{\"uid\":555,\"uname\":\"送礼的人\",\"num\":1,"
+                + "\"timestamp\":1785990000,\"giftId\":31040,\"giftName\":\"心事虫虫\","
+                + "\"price\":9000,\"discount_price\":9000,\"total_coin\":9000,\"coin_type\":\"gold\","
+                + "\"blind_gift\":{\"original_gift_id\":35800,\"original_gift_name\":\"小熊虫盲盒\","
+                + "\"original_gift_price\":9000,\"gift_action\":\"爆出\"}}}";
+
+        BilibiliRandomGiftEvent event = assertInstanceOf(BilibiliRandomGiftEvent.class, parse(real).orElseThrow());
+
+        assertEquals("小熊虫盲盒", event.getRandomGiftInfo().getName(), "randomGiftInfo 是投入的盲盒");
+        assertEquals("心事虫虫", event.getGiftInfo().getName(), "giftInfo 是开出的礼物");
+        assertEquals(9.0, event.getPrice(), 0.0001, "price 是盲盒实付");
+        assertEquals(9.0, event.getValue(), 0.0001, "value 是开出物面值");
+    }
+
+    @Test
+    @DisplayName("盲盒亏损时实付应是盒子的价，而不是开出物的价")
+    void blindGiftPaidIsBoxPrice() {
+        // 上面那条实抽恰好保本（两个价都是 9000），无法区分 total_coin 跟的是哪一个。
+        // 这里构造一个亏损样本把方向钉死：花 9 元开出 1 元的东西
+        String json = "{\"cmd\":\"SEND_GIFT\",\"data\":{\"uid\":555,\"uname\":\"送礼的人\",\"num\":1,"
+                + "\"giftId\":31040,\"giftName\":\"小玩意\",\"price\":1000,\"discount_price\":1000,"
+                + "\"total_coin\":9000,\"coin_type\":\"gold\","
+                + "\"blind_gift\":{\"original_gift_id\":35800,\"original_gift_name\":\"盲盒\","
+                + "\"original_gift_price\":9000}}}";
+
+        BilibiliRandomGiftEvent event = assertInstanceOf(BilibiliRandomGiftEvent.class, parse(json).orElseThrow());
+
+        assertEquals(9.0, event.getPaid(), 0.0001, "实付是盒子的 9 元");
+        assertEquals(1.0, event.getValue(), 0.0001, "主播只收到 1 元的东西");
+        assertEquals(9.0, event.getPrice(), 0.0001);
+    }
+
+    @Test
     @DisplayName("total_coin 与单价算出的金额不一致时以 total_coin 为准")
     void totalCoinWinsOverUnitPrice() {
         // 背包礼物预期就是这个形态：主播收到面值，而实际一分钱没扣
