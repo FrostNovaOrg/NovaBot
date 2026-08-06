@@ -22,8 +22,10 @@ import java.util.List;
 public class BilibiliLiveMetricCatalog implements LiveMetricCatalog {
     private static final List<Metric> METRICS = List.of(
             Metric.count(BilibiliLiveMetric.DANMU_COUNT, "弹幕", "条"),
+            // 这两个是一对，要挨着看：主播到手的与观众花掉的，差额来自盲盒运气和背包礼物。
+            // 界面上不用「实扣」这个内部叫法——主播容易读成「从我这儿扣钱」
             Metric.money(BilibiliLiveMetric.GIFT_VALUE, "礼物价值"),
-            Metric.money(BilibiliLiveMetric.GIFT_PAID, "礼物实付"),
+            Metric.money(BilibiliLiveMetric.GIFT_PAID, "观众消耗"),
             Metric.count(BilibiliLiveMetric.SUPER_CHAT_COUNT, "醒目留言", "条"),
             Metric.money(BilibiliLiveMetric.SUPER_CHAT_VALUE, "醒目留言价值"),
             Metric.money(BilibiliLiveMetric.GUARD_VALUE, "大航海价值"),

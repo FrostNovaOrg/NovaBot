@@ -360,7 +360,7 @@ public class BilibiliEventParser {
         if (blind == null) {
             Double value = gift.getPrice() == null || count == null ? null : gift.getPrice() * count;
             BilibiliPaidGiftEvent event = new BilibiliPaidGiftEvent(source, sender, gift, value, timestamp);
-            event.setPaid(paidOf(meta, value));
+            event.setCharged(chargedOf(meta, value));
             return event;
         }
 
@@ -377,9 +377,9 @@ public class BilibiliEventParser {
         Double value = gift.getPrice() == null || count == null ? null : gift.getPrice() * count;
 
         BilibiliRandomGiftEvent event = new BilibiliRandomGiftEvent(source, sender, randomGift, gift, price, value, timestamp);
-        // 盲盒的实付就是盲盒本身的价，与 total_coin 应当一致。以 total_coin 为准并在不一致时留下日志——
+        // 盲盒的实扣就是盲盒本身的价，与 total_coin 应当一致。以 total_coin 为准并在不一致时留下日志——
         // 盲盒尚未拿到过真实报文，这行日志就是将来真有一个盲盒送进来时的证据
-        event.setPaid(paidOf(meta, price));
+        event.setCharged(chargedOf(meta, price));
         return event;
     }
 
@@ -400,9 +400,9 @@ public class BilibiliEventParser {
      * 把「取不到」记成「没花钱」会让营收凭空少一截，且不会有任何报错。
      * @param meta 礼物消息内容
      * @param expected 字段缺失时的回退值
-     * @return 实付金额（元）
+     * @return 实扣金额（元）
      */
-    private Double paidOf(JSONObject meta, Double expected) {
+    private Double chargedOf(JSONObject meta, Double expected) {
         if (meta.getJSONObject("bag_gift") != null) {
             // 背包礼物来自红包、活动或签到，观众没有为这一笔花钱。
             // 这里必须早于 total_coin 判断：它在背包礼物上给的是原价，不是扣除额
@@ -417,12 +417,12 @@ public class BilibiliEventParser {
             return null;
         }
 
-        double paid = totalCoin / PRICE_UNIT;
-        if (expected != null && Math.abs(paid - expected) > 0.001) {
-            log.debug("礼物 {} 的实付 {} 与按单价算出的 {} 不一致, 以实付为准",
-                    meta.getString("giftName"), paid, expected);
+        double charged = totalCoin / PRICE_UNIT;
+        if (expected != null && Math.abs(charged - expected) > 0.001) {
+            log.debug("礼物 {} 的实扣 {} 与按单价算出的 {} 不一致, 以实扣为准",
+                    meta.getString("giftName"), charged, expected);
         }
-        return paid;
+        return charged;
     }
 
     /**
@@ -500,7 +500,7 @@ public class BilibiliEventParser {
         BilibiliRedPocketEvent event = new BilibiliRedPocketEvent(source, new BilibiliUserInfo(uid, uname, face), startedAt);
         event.setLotteryId(String.valueOf(lotId));
         // total_price 与礼物价格同单位（千分之一元），已用真实账单核对：
-        // 一笔 total_price=2000 的红包，发红包的人实付 20 电池即 ¥2.00
+        // 一笔 total_price=2000 的红包，发红包的人实际支出 20 电池即 ¥2.00
         event.setCost(Optional.ofNullable(meta.getInteger("total_price")).map(price -> price / PRICE_UNIT).orElse(null));
 
         JSONArray awards = meta.getJSONArray("awards");

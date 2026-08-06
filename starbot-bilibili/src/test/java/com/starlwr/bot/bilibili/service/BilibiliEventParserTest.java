@@ -220,7 +220,7 @@ class BilibiliEventParserTest {
     }
 
     @Test
-    @DisplayName("实付取自 total_coin —— 用一条真实抓到的报文核对")
+    @DisplayName("实扣取自 total_coin —— 用一条真实抓到的报文核对")
     void paidComesFromTotalCoin() {
         // 取自 2026-08-06 线上抓到的一条真实 SEND_GIFT，只保留与金额相关的字段（uid 已换成测试值）。
         // price / discount_price / total_coin 三者相等，说明当时没有折扣活动
@@ -231,7 +231,7 @@ class BilibiliEventParserTest {
         BilibiliPaidGiftEvent event = assertInstanceOf(BilibiliPaidGiftEvent.class, parse(real).orElseThrow());
 
         assertEquals(0.1, event.getValue(), 0.0001, "到手价值 = discount_price × num");
-        assertEquals(0.1, event.getPaid(), 0.0001, "实付 = total_coin");
+        assertEquals(0.1, event.getCharged(), 0.0001, "实扣 = total_coin");
     }
 
     @Test
@@ -249,12 +249,12 @@ class BilibiliEventParserTest {
 
         assertEquals("小熊虫盲盒", event.getRandomGiftInfo().getName(), "randomGiftInfo 是投入的盲盒");
         assertEquals("心事虫虫", event.getGiftInfo().getName(), "giftInfo 是开出的礼物");
-        assertEquals(9.0, event.getPrice(), 0.0001, "price 是盲盒实付");
+        assertEquals(9.0, event.getPrice(), 0.0001, "price 是盲盒实扣");
         assertEquals(9.0, event.getValue(), 0.0001, "value 是开出物面值");
     }
 
     @Test
-    @DisplayName("盲盒亏损时实付应是盒子的价，而不是开出物的价")
+    @DisplayName("盲盒亏损时实扣应是盒子的价，而不是开出物的价")
     void blindGiftPaidIsBoxPrice() {
         // 2026-08-07 00:05 实抓。上一条实抽恰好保本（两个价都是 9000），分不出 total_coin
         // 跟的是哪一个；这条是真实的亏损样本：花 15 元的心动盲盒，开出 9 元的棉花糖。
@@ -268,11 +268,11 @@ class BilibiliEventParserTest {
 
         BilibiliRandomGiftEvent event = assertInstanceOf(BilibiliRandomGiftEvent.class, parse(real).orElseThrow());
 
-        assertEquals(15.0, event.getPaid(), 0.0001, "实付是盒子的 15 元");
+        assertEquals(15.0, event.getCharged(), 0.0001, "实扣是盒子的 15 元");
         assertEquals(9.0, event.getValue(), 0.0001, "主播只收到 9 元的东西");
         assertEquals(15.0, event.getPrice(), 0.0001);
         // 这条报文里 combo_total_coin 是 9000（开出物的价）而不是 15000。
-        // 用错字段会让盲盒实付系统性记成开出物的价，而在「保本」的盲盒上完全看不出来
+        // 用错字段会让盲盒实扣系统性记成开出物的价，而在「保本」的盲盒上完全看不出来
     }
 
     @Test
@@ -289,7 +289,7 @@ class BilibiliEventParserTest {
         BilibiliPaidGiftEvent event = assertInstanceOf(BilibiliPaidGiftEvent.class, parse(real).orElseThrow());
 
         assertEquals(0.1, event.getValue(), 0.0001, "主播按面值收到 0.1 元");
-        assertEquals(0.0, event.getPaid(), 0.0001, "观众一分钱没花");
+        assertEquals(0.0, event.getCharged(), 0.0001, "观众一分钱没花");
     }
 
     @Test
@@ -302,18 +302,18 @@ class BilibiliEventParserTest {
                 parse(giftMessage("gold", ",\"total_coin\":0")).orElseThrow());
 
         assertEquals(3.0, event.getValue(), 0.0001, "主播仍按面值收到");
-        assertEquals(0.0, event.getPaid(), 0.0001, "但服务端说没扣钱");
+        assertEquals(0.0, event.getCharged(), 0.0001, "但服务端说没扣钱");
     }
 
     @Test
-    @DisplayName("没有 total_coin 时实付应为空，表示「平台没告诉我们」")
+    @DisplayName("没有 total_coin 时实扣应为空，表示「平台没告诉我们」")
     void missingTotalCoinLeavesPaidNull() {
         BilibiliPaidGiftEvent event = assertInstanceOf(BilibiliPaidGiftEvent.class,
                 parse(giftMessage("gold", "")).orElseThrow());
 
         // 空与「填一个算出来的值」不同：填上之后下游就分不清
         // 「两个口径确实相等」和「取不到才回退成相等」。回退交给聚合层做
-        assertNull(event.getPaid());
+        assertNull(event.getCharged());
         assertEquals(3.0, event.getValue(), 0.0001);
     }
 

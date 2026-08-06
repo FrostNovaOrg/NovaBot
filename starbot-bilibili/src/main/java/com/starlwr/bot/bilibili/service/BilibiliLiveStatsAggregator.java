@@ -81,13 +81,13 @@ public class BilibiliLiveStatsAggregator {
     @EventListener(BilibiliPaidGiftEvent.class)
     public void onPaidGift(BilibiliPaidGiftEvent event) {
         double value = Optional.ofNullable(event.getValue()).orElse(0.0);
-        // 取不到实付时回退到到手价值，而不是当作 0：把「不知道」记成「没花钱」会让营收凭空少一截
-        double paid = Optional.ofNullable(event.getPaid()).orElse(value);
+        // 取不到实扣时回退到到手价值，而不是当作 0：把「不知道」记成「没花钱」会让营收凭空少一截
+        double charged = Optional.ofNullable(event.getCharged()).orElse(value);
 
         increment(event, BilibiliLiveMetric.GIFT_VALUE, value);
-        increment(event, BilibiliLiveMetric.GIFT_PAID, paid);
+        increment(event, BilibiliLiveMetric.GIFT_PAID, charged);
         // 计分表记金额而非次数：礼物排行榜比的是送了多少钱，而人数仍是表的大小
-        scoreUser(event, BilibiliLiveMetric.GIFT_USERS, event.getSender(), paid);
+        scoreUser(event, BilibiliLiveMetric.GIFT_USERS, event.getSender(), charged);
     }
 
     /**
@@ -108,10 +108,10 @@ public class BilibiliLiveStatsAggregator {
      * 开出物的价值计入 {@code GIFT_VALUE}（主播确实收到了那么多），
      * 盲盒本身的价计入 {@code GIFT_PAID}（观众确实只花了那么多），差额记为盲盒盈亏。
      * <p>
-     * <b>礼物排行榜按实付排。</b>按到手价值排的话，花 100 元开出一堆小心心的人会排在榜尾，
+     * <b>礼物排行榜按实扣排。</b>按到手价值排的话，花 100 元开出一堆小心心的人会排在榜尾，
      * 花 10 元中了大奖的人排到榜首——那是在按运气排名，而不是按心意。
      * <p>
-     * 事件里 {@code price} 是盲盒实付、{@code value} 是开出物面值。
+     * 事件里 {@code price} 是盲盒实扣、{@code value} 是开出物面值。
      * 这两个字段名相当反直觉（{@code randomGiftInfo} 指的是<b>投入的盲盒</b>而不是开出的东西），
      * 改动此处前请先确认方向。
      */
@@ -122,13 +122,13 @@ public class BilibiliLiveStatsAggregator {
                 .orElse(1);
         double value = Optional.ofNullable(event.getValue()).orElse(0.0);
         double price = Optional.ofNullable(event.getPrice()).orElse(0.0);
-        double paid = Optional.ofNullable(event.getPaid()).orElse(price);
+        double charged = Optional.ofNullable(event.getCharged()).orElse(price);
 
         increment(event, BilibiliLiveMetric.BOX_COUNT, count);
         increment(event, BilibiliLiveMetric.BOX_PROFIT, value - price);
         increment(event, BilibiliLiveMetric.GIFT_VALUE, value);
-        increment(event, BilibiliLiveMetric.GIFT_PAID, paid);
-        scoreUser(event, BilibiliLiveMetric.GIFT_USERS, event.getSender(), paid);
+        increment(event, BilibiliLiveMetric.GIFT_PAID, charged);
+        scoreUser(event, BilibiliLiveMetric.GIFT_USERS, event.getSender(), charged);
         scoreUser(event, BilibiliLiveMetric.BOX_USERS, event.getSender(), count);
         scoreUser(event, BilibiliLiveMetric.BOX_PROFIT_USERS, event.getSender(), value - price);
     }
