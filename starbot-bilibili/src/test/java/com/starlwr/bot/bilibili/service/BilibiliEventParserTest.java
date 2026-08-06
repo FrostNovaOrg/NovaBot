@@ -414,7 +414,8 @@ class BilibiliEventParserTest {
     @Test
     @DisplayName("GUARD_BUY 应解析出大航海，价格取自 price")
     void parsesGuardBuy() {
-        // 实抓样本的形状：198000 千分之一元 = ¥198，与舰长月价对得上
+        // 实抓样本的形状。价格一律从 price 取，不对月价做任何假设——
+        // 舰长实际可能是 138（首次开通自动续费）、168（无优惠自动续费）或 198（挂牌价）
         BilibiliCaptainEvent event = assertInstanceOf(BilibiliCaptainEvent.class,
                 parse("{\"cmd\":\"GUARD_BUY\",\"data\":{\"uid\":777,\"username\":\"新舰长\",\"guard_level\":3,"
                         + "\"num\":1,\"price\":198000,\"gift_id\":10003,\"gift_name\":\"舰长\","
@@ -448,7 +449,7 @@ class BilibiliEventParserTest {
                 + "\"num\":1,\"price\":198000,\"start_time\":1785990000,\"end_time\":1788582000}}";
 
         assertTrue(parse(guardBuy).isPresent(), "第一条应产生事件");
-        assertTrue(parse(guardBuy).isEmpty(), "重复播报不应再产生事件，否则 ¥198 会被算两遍");
+        assertTrue(parse(guardBuy).isEmpty(), "重复播报不应再产生事件，否则这笔钱会被算两遍");
     }
 
     @Test
