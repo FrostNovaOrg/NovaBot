@@ -25,8 +25,10 @@ public final class BilibiliLiveMetric {
      * 与 {@link #GIFT_VALUE} 的差别只在盲盒与背包礼物上，普通礼物两者相等：
      * <ul>
      *     <li><b>盲盒</b>：观众付的是盲盒的价，主播收到的是开出物的价值，两者可以差很远</li>
-     *     <li><b>背包礼物</b>：观众一分钱没花，主播却有收益——钱是买礼物红包的那个人出的</li>
+     *     <li><b>背包礼物</b>：观众一分钱没花，主播却有收益——礼物是抢红包、活动或签到白得的</li>
      * </ul>
+     * 背包礼物<b>只能靠 {@code bag_gift} 字段认出来</b>：实测它的 {@code total_coin}
+     * 等于礼物原价而不是 0，拿金额去猜必然猜错。
      * 两个口径的差额本身就有意义，它约等于「靠盲盒运气与红包活动带来的那部分收益」。
      */
     public static final String GIFT_PAID = "gift_paid";

@@ -364,16 +364,28 @@ public class BilibiliEventParser {
      * 取观众为这一笔实际付出的金额
      * <p>
      * {@code total_coin} 是<b>服务端给出的实际扣除额</b>，比自己拿单价乘数量更可靠：
-     * 打折、背包礼物这些情形都体现在它身上，而单价字段体现不出来。
-     * 已用一次真实的 ¥0.1 礼物核对过 {@code total_coin == discount_price × num}。
+     * 打折与盲盒这些情形都体现在它身上，而单价字段体现不出来。
+     * 已用一次真实的 ¥0.1 礼物核对过 {@code total_coin == discount_price × num}，
+     * 又用一次真实的心动盲盒核对过 {@code total_coin} 跟的是盒子的价而非开出物的价。
+     * <p>
+     * <b>唯独背包礼物是例外，只能靠 {@code bag_gift} 认出来。</b>
+     * 2026-08-06 实测两条背包礼物，{@code total_coin} 都<b>等于礼物原价而不是 0</b>
+     * （小花花 100、人气票 100），照它记就会把白来的礼物算成观众的支出。
+     * 判别字段是 {@code bag_gift}：背包礼物为一个对象，普通礼物为 {@code null}。
      * <p>
      * 字段缺失时回退到调用方算出的金额，<b>而不是当作 0</b>——
      * 把「取不到」记成「没花钱」会让营收凭空少一截，且不会有任何报错。
      * @param meta 礼物消息内容
-     * @param fallback 字段缺失时的回退值
+     * @param expected 字段缺失时的回退值
      * @return 实付金额（元）
      */
     private Double paidOf(JSONObject meta, Double expected) {
+        if (meta.getJSONObject("bag_gift") != null) {
+            // 背包礼物来自红包、活动或签到，观众没有为这一笔花钱。
+            // 这里必须早于 total_coin 判断：它在背包礼物上给的是原价，不是扣除额
+            return 0.0;
+        }
+
         Integer totalCoin = meta.getInteger("total_coin");
         if (totalCoin == null) {
             // 留空而不是填一个算出来的值：空表示「平台没告诉我们」，

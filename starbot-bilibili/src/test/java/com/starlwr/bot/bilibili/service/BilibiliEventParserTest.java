@@ -255,30 +255,53 @@ class BilibiliEventParserTest {
     @Test
     @DisplayName("盲盒亏损时实付应是盒子的价，而不是开出物的价")
     void blindGiftPaidIsBoxPrice() {
-        // 上面那条实抽恰好保本（两个价都是 9000），无法区分 total_coin 跟的是哪一个。
-        // 这里构造一个亏损样本把方向钉死：花 9 元开出 1 元的东西
-        String json = "{\"cmd\":\"SEND_GIFT\",\"data\":{\"uid\":555,\"uname\":\"送礼的人\",\"num\":1,"
-                + "\"giftId\":31040,\"giftName\":\"小玩意\",\"price\":1000,\"discount_price\":1000,"
-                + "\"total_coin\":9000,\"coin_type\":\"gold\","
-                + "\"blind_gift\":{\"original_gift_id\":35800,\"original_gift_name\":\"盲盒\","
-                + "\"original_gift_price\":9000}}}";
+        // 2026-08-07 00:05 实抓。上一条实抽恰好保本（两个价都是 9000），分不出 total_coin
+        // 跟的是哪一个；这条是真实的亏损样本：花 15 元的心动盲盒，开出 9 元的棉花糖。
+        // 送礼人字段换成了占位值，金额字段一字未改
+        String real = "{\"cmd\":\"SEND_GIFT\",\"data\":{\"uid\":555,\"uname\":\"送礼的人\",\"num\":1,"
+                + "\"giftId\":32126,\"giftName\":\"棉花糖\",\"price\":9000,\"discount_price\":9000,"
+                + "\"total_coin\":15000,\"combo_total_coin\":9000,\"coin_type\":\"gold\","
+                + "\"blind_gift\":{\"blind_gift_config_id\":139,\"gift_action\":\"爆出\","
+                + "\"gift_tip_price\":9000,\"original_gift_id\":32251,"
+                + "\"original_gift_name\":\"心动盲盒\",\"original_gift_price\":15000}}}";
 
-        BilibiliRandomGiftEvent event = assertInstanceOf(BilibiliRandomGiftEvent.class, parse(json).orElseThrow());
+        BilibiliRandomGiftEvent event = assertInstanceOf(BilibiliRandomGiftEvent.class, parse(real).orElseThrow());
 
-        assertEquals(9.0, event.getPaid(), 0.0001, "实付是盒子的 9 元");
-        assertEquals(1.0, event.getValue(), 0.0001, "主播只收到 1 元的东西");
-        assertEquals(9.0, event.getPrice(), 0.0001);
+        assertEquals(15.0, event.getPaid(), 0.0001, "实付是盒子的 15 元");
+        assertEquals(9.0, event.getValue(), 0.0001, "主播只收到 9 元的东西");
+        assertEquals(15.0, event.getPrice(), 0.0001);
+        // 这条报文里 combo_total_coin 是 9000（开出物的价）而不是 15000。
+        // 用错字段会让盲盒实付系统性记成开出物的价，而在「保本」的盲盒上完全看不出来
+    }
+
+    @Test
+    @DisplayName("背包礼物：主播收到面值，观众没花钱")
+    void bagGiftIsNotPaid() {
+        // 2026-08-06 23:53 实抓，红包中奖后送出的人气票。送礼人字段换成了占位值。
+        // 关键：total_coin 是 100 而<b>不是 0</b>——它给的是礼物原价，
+        // 照收就会把白来的礼物记成观众的支出。只有 bag_gift 能认出这是背包礼物
+        String real = "{\"cmd\":\"SEND_GIFT\",\"data\":{\"uid\":555,\"uname\":\"送礼的人\",\"num\":1,"
+                + "\"giftId\":34003,\"giftName\":\"人气票\",\"price\":100,\"discount_price\":100,"
+                + "\"total_coin\":100,\"coin_type\":\"gold\",\"blind_gift\":null,"
+                + "\"bag_gift\":{\"price_for_show\":100,\"show_price\":1}}}";
+
+        BilibiliPaidGiftEvent event = assertInstanceOf(BilibiliPaidGiftEvent.class, parse(real).orElseThrow());
+
+        assertEquals(0.1, event.getValue(), 0.0001, "主播按面值收到 0.1 元");
+        assertEquals(0.0, event.getPaid(), 0.0001, "观众一分钱没花");
     }
 
     @Test
     @DisplayName("total_coin 与单价算出的金额不一致时以 total_coin 为准")
     void totalCoinWinsOverUnitPrice() {
-        // 背包礼物预期就是这个形态：主播收到面值，而实际一分钱没扣
+        // 这里只验证「以 total_coin 为准」这一条规则本身，取 0 是为了让方向无可争辩。
+        // 注意这<b>不是</b>背包礼物的形态——实测背包礼物的 total_coin 等于原价，
+        // 靠 bag_gift 识别，见 bagGiftIsNotPaid
         BilibiliPaidGiftEvent event = assertInstanceOf(BilibiliPaidGiftEvent.class,
                 parse(giftMessage("gold", ",\"total_coin\":0")).orElseThrow());
 
         assertEquals(3.0, event.getValue(), 0.0001, "主播仍按面值收到");
-        assertEquals(0.0, event.getPaid(), 0.0001, "但观众没花钱");
+        assertEquals(0.0, event.getPaid(), 0.0001, "但服务端说没扣钱");
     }
 
     @Test
