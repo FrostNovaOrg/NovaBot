@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>NovaBot 控制台</title>
+  <style>
+    * { box-sizing: border-box }
+    body {
+      margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      background: #f6f7f9; color: #333;
+      font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    form {
+      width: 320px; max-width: calc(100vw - 32px); padding: 32px 28px;
+      background: #fff; border-radius: 12px; box-shadow: 0 2px 16px rgba(0, 0, 0, .06);
+    }
+    h1 { margin: 0 0 4px; font-size: 20px }
+    p.sub { margin: 0 0 24px; font-size: 13px; color: #999 }
+    label { display: block; margin-bottom: 6px; font-size: 13px; color: #666 }
+    input {
+      width: 100%; padding: 9px 12px; margin-bottom: 16px; font-size: 14px;
+      border: 1px solid #dcdfe6; border-radius: 6px; background: #fff; color: #333;
+    }
+    input:focus { outline: none; border-color: #fb7299 }
+    button {
+      width: 100%; padding: 10px; font-size: 14px; color: #fff; cursor: pointer;
+      background: #fb7299; border: none; border-radius: 6px;
+    }
+    button:disabled { background: #fbb0c4; cursor: default }
+    .msg { margin-top: 14px; font-size: 13px; color: #f56c6c; min-height: 18px; text-align: center }
+    .hidden { display: none }
+    @media (prefers-color-scheme: dark) {
+      body { background: #1b1c1f; color: #e5e6eb }
+      form { background: #26272b; box-shadow: none }
+      label { color: #909399 }
+      input { background: #1b1c1f; border-color: #3c3d41; color: #e5e6eb }
+    }
+  </style>
+</head>
+<body>
+<form id="form" autocomplete="on">
+  <h1>NovaBot 控制台</h1>
+  <p class="sub">请输入口令后继续</p>
+
+  <!--
+    单用户面板本来没有「账号」这一说，但密码管理器需要一个用户名字段才肯保存条目。
+    这里放一个固定值的隐藏字段，仅用于让浏览器把口令记在一条可识别的记录上。
+  -->
+  <input type="text" name="username" value="novabot" autocomplete="username" class="hidden" readonly>
+
+  <label for="password">口令</label>
+  <input type="password" id="password" name="password" autocomplete="current-password" required autofocus>
+
+  <div id="code-field" class="hidden">
+    <label for="code">动态验证码</label>
+    <input type="text" id="code" name="code" inputmode="numeric" autocomplete="one-time-code"
+           pattern="[0-9]*" maxlength="6" placeholder="验证器应用中的 6 位数字">
+  </div>
+
+  <button type="submit" id="submit">登录</button>
+  <div class="msg" id="msg"></div>
+</form>
+
+<script>
+  const $ = s => document.querySelector(s);
+
+  fetch('/config/api/auth/state')
+    .then(r => r.json())
+    .then(state => {
+      if (state.totpRequired) $('#code-field').classList.remove('hidden');
+      // 已经登录却停在登录页，多半是点了后退，直接回控制台
+      if (state.authenticated) location.replace('/config');
+    })
+    .catch(() => {});
+
+  $('#form').addEventListener('submit', async e => {
+    e.preventDefault();
+    $('#submit').disabled = true;
+    $('#msg').textContent = '';
+
+    try {
+      const r = await fetch('/config/api/auth/login', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({password: $('#password').value, code: $('#code').value})
+      });
+      const data = await r.json();
+
+      if (data.success) {
+        // 交给浏览器保存口令：submit 事件里改用整页跳转，密码管理器才会认为这是一次成功登录
+        location.replace('/config');
+        return;
+      }
+
+      $('#msg').textContent = data.message || '登录失败';
+      $('#password').value = '';
+      $('#password').focus();
+    } catch (err) {
+      $('#msg').textContent = '无法连接到服务器';
+    } finally {
+      $('#submit').disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

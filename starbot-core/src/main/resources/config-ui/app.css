@@ -15,6 +15,11 @@ header{background:var(--panel);border-bottom:1px solid var(--border);padding:14p
   display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:10}
 header h1{margin:0;font-size:16px;font-weight:600}
 header .sub{color:var(--muted);font-size:12px}
+/* 推到最右：退出与标题无关，紧挨着标题放容易被看成标题的一部分 */
+header #auth-actions{margin-left:auto;display:flex;gap:8px}
+header #auth-actions button{background:none;border:1px solid var(--border);border-radius:6px;
+  padding:5px 12px;cursor:pointer;color:var(--muted);font-size:12px;font-family:inherit}
+header #auth-actions button:hover{color:var(--accent);border-color:var(--accent)}
 main{max-width:960px;margin:0 auto;padding:20px 24px 80px}
 /* 窄屏上横向滚动而不是把每个页签挤成竖排的单字：页签一多（现在 7 个），
    flex 默认的收缩会让「群与成员」变成四行一列，认不出来也点不准 */

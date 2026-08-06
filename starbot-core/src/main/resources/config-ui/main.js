@@ -89,7 +89,25 @@ $('#ana-view').addEventListener('change', loadAnalytics);
 $('#ana-period').addEventListener('change', loadAnalytics);
 $('#ana-uid').addEventListener('change', loadAnalytics);
 $('#reload').addEventListener('click', load);
+$('#logout').addEventListener('click', async () => {
+  await api('/auth/logout', {method: 'POST'});
+  location.reload();
+});
+$('#logout-all').addEventListener('click', async () => {
+  if (!confirm('将注销所有设备上的登录，包括当前这一个。继续？')) return;
+  await api('/auth/logout?all=true', {method: 'POST'});
+  location.reload();
+});
 // 先注入 DOM 再绑定，否则 bindBotForm 取到的是 null
 $('#bot-form').innerHTML = botFormHtml('bot');
 bindBotForm('bot');
-load();
+
+// 登录态必须先于正式载入取到：CSRF 令牌从这里来，缺了它所有写请求都会被拒。
+// 取不到也照常载入——未启用口令登录时本就没有令牌，读接口不受影响
+api('/auth/state')
+  .then(state => {
+    csrfToken = state.csrfToken || '';
+    $('#auth-actions').style.display = state.enabled ? '' : 'none';
+  })
+  .catch(() => {})
+  .finally(load);

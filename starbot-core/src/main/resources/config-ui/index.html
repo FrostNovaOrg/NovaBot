@@ -10,6 +10,12 @@
 <header>
   <h1>NovaBot 控制台</h1>
   <span class="sub" id="head-sub">加载中…</span>
+  <!-- 未启用口令登录时没有「退出」可言，由脚本按登录状态决定是否显示 -->
+  <span id="auth-actions" style="display:none">
+    <button type="button" id="logout">退出登录</button>
+    <!-- 怀疑 Cookie 泄漏时的收回手段。没有它就只能重启进程，而重启会断开全部直播间长连接 -->
+    <button type="button" id="logout-all">退出全部设备</button>
+  </span>
 </header>
 
 <main>

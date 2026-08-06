@@ -1,6 +1,9 @@
 package com.starlwr.bot.core.config.ui;
 
 import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
+import com.starlwr.bot.core.config.ui.auth.ConfigUiSessionStore;
+import com.starlwr.bot.core.config.ui.auth.LoginThrottle;
 import com.starlwr.bot.core.util.IpMatcher;
 import com.starlwr.bot.core.util.SecureToken;
 import com.starlwr.bot.core.util.StringUtil;
@@ -14,6 +17,8 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+
+import java.time.Duration;
 
 /**
  * 配置界面注册器
@@ -56,18 +61,46 @@ public class ConfigUiRegistrar {
     }
 
     /**
+     * 登录会话存储
+     */
+    @Bean
+    public ConfigUiSessionStore configUiSessionStore() {
+        StarBotCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
+        return new ConfigUiSessionStore(
+                Duration.ofHours(Math.max(1, auth.getSessionHours())),
+                Duration.ofHours(Math.max(1, auth.getIdleHours())));
+    }
+
+    /**
+     * 登录限流
+     */
+    @Bean
+    public LoginThrottle configUiLoginThrottle() {
+        StarBotCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
+        return new LoginThrottle(auth.getMaxFailures(), Duration.ofMinutes(Math.max(1, auth.getLockoutMinutes())));
+    }
+
+    /**
+     * 登录校验
+     */
+    @Bean
+    public ConfigUiAuthService configUiAuthService(ConfigUiSessionStore sessionStore, LoginThrottle throttle) {
+        return new ConfigUiAuthService(properties.getConfigUi().getAuth(), sessionStore, throttle);
+    }
+
+    /**
      * 注册配置界面安全过滤器
      * @return 过滤器注册信息
      */
     @Bean
-    public FilterRegistrationBean<ConfigUiSecurityFilter> configUiSecurityFilterRegistration() {
+    public FilterRegistrationBean<ConfigUiSecurityFilter> configUiSecurityFilterRegistration(ConfigUiAuthService authService) {
         IpMatcher ipMatcher = new IpMatcher(properties.getConfigUi().getAllowIps());
         if (ipMatcher.isEmpty()) {
             log.error("配置界面的 IP 白名单为空, 所有访问都将被拒绝, 请检查 starbot.core.config-ui.allow-ips 配置");
         }
 
         FilterRegistrationBean<ConfigUiSecurityFilter> registration = new FilterRegistrationBean<>();
-        registration.setFilter(new ConfigUiSecurityFilter(properties.getConfigUi(), token, ipMatcher));
+        registration.setFilter(new ConfigUiSecurityFilter(token, ipMatcher, authService));
         registration.addUrlPatterns(ConfigUiController.BASE_PATH, ConfigUiController.BASE_PATH + "/*");
         registration.setOrder(Ordered.HIGHEST_PRECEDENCE + 1);
         registration.setName("configUiSecurityFilter");
@@ -78,7 +111,7 @@ public class ConfigUiRegistrar {
     /**
      * 启动完毕后输出配置界面地址
      * <p>
-     * 令牌只在启动日志中出现一次，使用者复制该地址即可直接进入界面，无需另行配置。
+     * 未启用口令登录时，令牌只在启动日志中出现一次，使用者复制该地址即可直接进入界面，无需另行配置。
      */
     @Order(20000)
     @EventListener(ApplicationReadyEvent.class)
@@ -88,7 +121,22 @@ public class ConfigUiRegistrar {
                 ? "127.0.0.1"
                 : "本机地址";
 
+        StarBotCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
+        if (!StringUtil.isBlank(auth.getPassword())) {
+            log.info("配置界面已启动: http://{}:{}{}", address, port, ConfigUiController.BASE_PATH);
+            log.info("已启用口令登录{}, 访问令牌不再作为凭据", StringUtil.isBlank(auth.getTotpSecret()) ? "" : "与二次验证");
+            return;
+        }
+
         log.info("配置界面已启动: http://{}:{}{}?token={}", address, port, ConfigUiController.BASE_PATH, token);
         log.info("该地址包含访问令牌, 请勿分享。令牌未在配置文件中显式设置时, 每次启动都会重新生成");
+
+        // 白名单与口令分处两处配置，放开了前者却忘了后者是最容易犯的错，而它的后果是面板对全网敞开
+        boolean open = properties.getConfigUi().getAllowIps().stream()
+                .anyMatch(ip -> ip.startsWith("0.0.0.0") || ip.startsWith("::/") || "*".equals(ip.strip()));
+        if (open) {
+            log.error("配置界面的 IP 白名单已放开到任意地址, 但未设置登录口令");
+            log.error("请设置 starbot.core.config-ui.auth.password, 否则任何人都能改推送目标与查看运行数据");
+        }
     }
 }

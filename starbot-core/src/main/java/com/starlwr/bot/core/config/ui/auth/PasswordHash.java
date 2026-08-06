@@ -31,7 +31,10 @@ public final class PasswordHash {
      * 迭代次数
      * <p>
      * OWASP 对 PBKDF2-HMAC-SHA256 的建议值是 60 万次。登录是低频操作，
-     * 单次几百毫秒的代价换来的是离线爆破慢六个数量级。
+     * 单次的代价（开发机实测约 570 毫秒）换来的是离线爆破慢六个数量级。
+     * <p>
+     * 这个代价也是有副作用的：它同样落在服务端，因此登录接口必须限流，
+     * 否则未登录的请求就成了消耗 CPU 的杠杆，见 {@link LoginThrottle}。
      */
     private static final int ITERATIONS = 600_000;
 

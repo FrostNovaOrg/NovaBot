@@ -328,6 +328,62 @@ public class StarBotCoreProperties {
          * 配置界面可修改推送目标并读取运行状态，权限高于推送接口，默认仅放行本机回环地址。
          */
         private List<String> allowIps = new ArrayList<>(List.of("127.0.0.1/32", "::1/128"));
+
+        /**
+         * 口令登录相关
+         */
+        @Getter
+        private final Auth auth = new Auth();
+
+        /**
+         * 配置界面口令登录相关
+         * <p>
+         * 只有把面板开到公网时才需要配置这一节。默认不填口令，面板维持「仅本机 + 地址栏令牌」的形态。
+         */
+        @Getter
+        @Setter
+        public static class Auth {
+            /**
+             * 登录口令
+             * <p>
+             * 留空表示不启用口令登录。可以直接填明文，启动时会哈希后使用，
+             * 同时在日志里输出可替换过去的哈希串——<b>填了明文就意味着看得到配置文件的人也就有了口令</b>。
+             */
+            private String password = "";
+
+            /**
+             * 二次验证密钥（TOTP，Base32）
+             * <p>
+             * 留空表示不启用二次验证。启用后登录需要额外输入验证器应用中的六位动态码。
+             * 密钥必须以明文保存，因此配置文件的权限要收紧到仅属主可读。
+             */
+            private String totpSecret = "";
+
+            /**
+             * 登录会话的有效期，单位：小时
+             * <p>
+             * 从登录起算的绝对上限，到点必须重新登录。它约束的是「会话 Cookie 一旦泄漏还能被用多久」，
+             * 因此不随使用而顺延。
+             */
+            private int sessionHours = 168;
+
+            /**
+             * 登录会话的闲置超时，单位：小时
+             * <p>
+             * 多久没有操作即自动退出。管的是在别人的设备上登录后忘记退出这类情形。
+             */
+            private int idleHours = 12;
+
+            /**
+             * 连续登录失败多少次后锁定该来源 IP
+             */
+            private int maxFailures = 5;
+
+            /**
+             * 首次锁定的时长，单位：分钟。反复触发时逐次翻倍
+             */
+            private int lockoutMinutes = 15;
+        }
     }
 
     /**
