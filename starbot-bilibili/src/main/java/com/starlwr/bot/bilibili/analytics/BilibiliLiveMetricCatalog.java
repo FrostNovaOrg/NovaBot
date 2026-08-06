@@ -23,6 +23,7 @@ public class BilibiliLiveMetricCatalog implements LiveMetricCatalog {
     private static final List<Metric> METRICS = List.of(
             Metric.count(BilibiliLiveMetric.DANMU_COUNT, "弹幕", "条"),
             Metric.money(BilibiliLiveMetric.GIFT_VALUE, "礼物价值"),
+            Metric.money(BilibiliLiveMetric.GIFT_PAID, "礼物实付"),
             Metric.count(BilibiliLiveMetric.SUPER_CHAT_COUNT, "醒目留言", "条"),
             Metric.money(BilibiliLiveMetric.SUPER_CHAT_VALUE, "醒目留言价值"),
             Metric.money(BilibiliLiveMetric.GUARD_VALUE, "大航海价值"),

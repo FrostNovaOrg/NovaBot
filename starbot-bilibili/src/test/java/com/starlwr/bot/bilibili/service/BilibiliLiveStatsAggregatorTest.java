@@ -148,6 +148,64 @@ class BilibiliLiveStatsAggregatorTest {
     }
 
     @Test
+    @DisplayName("礼物排行榜按实付排，不能让运气好的盲盒玩家挤掉真金白银的人")
+    void giftRankingUsesPaidNotOpenedValue() {
+        // 甲花 100 元开盲盒，只开出价值 1 元的东西
+        aggregator.onRandomGift(new BilibiliRandomGiftEvent(STREAMER, user(1L), gift(100.0, 1), gift(1.0, 1), 100.0, 1.0));
+        // 乙花 10 元开盲盒，运气好开出 500 元
+        aggregator.onRandomGift(new BilibiliRandomGiftEvent(STREAMER, user(2L), gift(10.0, 1), gift(500.0, 1), 10.0, 500.0));
+
+        List<UserScore> ranking = liveDataService.getLiveUserRanking(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.GIFT_USERS, 10);
+
+        assertEquals(1L, ranking.get(0).userUid(), "花了 100 元的应排第一，而不是运气好的那位");
+        assertEquals(100.0, ranking.get(0).score(), 0.0001, "得分应是实付而非开出面值");
+        assertEquals(10.0, ranking.get(1).score(), 0.0001);
+    }
+
+    @Test
+    @DisplayName("盲盒的实付与到手价值应各归各的口径")
+    void randomGiftSplitsPaidAndValue() {
+        // 花 9.9 买盲盒，开出价值 6.6 的礼物
+        aggregator.onRandomGift(new BilibiliRandomGiftEvent(STREAMER, user(1L), gift(9.9, 1), gift(6.6, 1), 9.9, 6.6));
+
+        assertEquals(6.6, metric(BilibiliLiveMetric.GIFT_VALUE), 0.0001, "到手价值是开出物的价值");
+        assertEquals(9.9, metric(BilibiliLiveMetric.GIFT_PAID), 0.0001, "实付是盲盒本身的价");
+    }
+
+    @Test
+    @DisplayName("普通礼物的实付与到手价值相等")
+    void paidGiftHasSamePaidAndValue() {
+        aggregator.onPaidGift(new BilibiliPaidGiftEvent(STREAMER, user(1L), gift(0.1, 1), 0.1));
+
+        assertEquals(0.1, metric(BilibiliLiveMetric.GIFT_VALUE), 0.0001);
+        assertEquals(0.1, metric(BilibiliLiveMetric.GIFT_PAID), 0.0001);
+    }
+
+    @Test
+    @DisplayName("实付取不到时应回退到到手价值，而不是当作没花钱")
+    void missingPaidFallsBackToValue() {
+        BilibiliPaidGiftEvent event = new BilibiliPaidGiftEvent(STREAMER, user(1L), gift(5.0, 1), 5.0);
+        event.setPaid(null);
+
+        aggregator.onPaidGift(event);
+
+        assertEquals(5.0, metric(BilibiliLiveMetric.GIFT_PAID), 0.0001, "记成 0 会让营收凭空少一截");
+    }
+
+    @Test
+    @DisplayName("事件带了实付时以实付为准——背包礼物正是靠这条区分开的")
+    void explicitPaidWins() {
+        // 背包礼物：主播收到 5 元的价值，而观众一分钱没花
+        BilibiliPaidGiftEvent event = new BilibiliPaidGiftEvent(STREAMER, user(1L), gift(5.0, 1), 5.0);
+        event.setPaid(0.0);
+
+        aggregator.onPaidGift(event);
+
+        assertEquals(5.0, metric(BilibiliLiveMetric.GIFT_VALUE), 0.0001, "主播确实收到了");
+        assertEquals(0.0, metric(BilibiliLiveMetric.GIFT_PAID), 0.0001, "但观众没花钱");
+    }
+
+    @Test
     @DisplayName("醒目留言应累计条数与价值")
     void superChatCountsAndValue() {
         aggregator.onSuperChat(new BilibiliSuperChatEvent(STREAMER, user(1L), "加油", 30.0));

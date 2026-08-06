@@ -16,10 +16,28 @@ public final class BilibiliLiveMetric {
     /** 弹幕用户计分表，得分为该用户发送的弹幕条数 */
     public static final String DANMU_USERS = "danmu_users";
 
-    /** 付费礼物价值，单位：元（含盲盒开出的礼物价值） */
+    /** 付费礼物价值，单位：元（含盲盒开出的礼物价值）。这是「<b>主播到手</b>」的口径 */
     public static final String GIFT_VALUE = "gift_value";
 
-    /** 礼物用户计分表，得分为该用户送出的礼物价值（元） */
+    /**
+     * 付费礼物的观众实付金额，单位：元
+     * <p>
+     * 与 {@link #GIFT_VALUE} 的差别只在盲盒与背包礼物上，普通礼物两者相等：
+     * <ul>
+     *     <li><b>盲盒</b>：观众付的是盲盒的价，主播收到的是开出物的价值，两者可以差很远</li>
+     *     <li><b>背包礼物</b>：观众一分钱没花，主播却有收益——钱是买礼物红包的那个人出的</li>
+     * </ul>
+     * 两个口径的差额本身就有意义，它约等于「靠盲盒运气与红包活动带来的那部分收益」。
+     */
+    public static final String GIFT_PAID = "gift_paid";
+
+    /**
+     * 礼物用户计分表，得分为该用户<b>实际花掉的钱</b>（元）
+     * <p>
+     * 记实付而不是到手价值。盲盒上两者会打架：按到手价值排，
+     * <b>花 100 元开出一堆小心心的人会排在榜尾，花 10 元中了大奖的人排到榜首</b>——
+     * 那是在按运气排名，而不是按心意。
+     */
     public static final String GIFT_USERS = "gift_users";
 
     /** 醒目留言用户计分表，得分为该用户的醒目留言总额（元） */

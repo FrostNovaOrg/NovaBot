@@ -327,7 +327,10 @@ public class BilibiliEventParser {
 
         JSONObject blind = meta.getJSONObject("blind_gift");
         if (blind == null) {
-            return new BilibiliPaidGiftEvent(source, sender, gift, gift.getPrice() == null || count == null ? null : gift.getPrice() * count, timestamp);
+            Double value = gift.getPrice() == null || count == null ? null : gift.getPrice() * count;
+            BilibiliPaidGiftEvent event = new BilibiliPaidGiftEvent(source, sender, gift, value, timestamp);
+            event.setPaid(paidOf(meta, value));
+            return event;
         }
 
         Long randomGiftId = blind.getLong("original_gift_id");
@@ -342,7 +345,38 @@ public class BilibiliEventParser {
         Double price = randomGift.getPrice() == null || count == null ? null : randomGift.getPrice() * count;
         Double value = gift.getPrice() == null || count == null ? null : gift.getPrice() * count;
 
-        return new BilibiliRandomGiftEvent(source, sender, randomGift, gift, price, value, timestamp);
+        BilibiliRandomGiftEvent event = new BilibiliRandomGiftEvent(source, sender, randomGift, gift, price, value, timestamp);
+        // 盲盒的实付就是盲盒本身的价，与 total_coin 应当一致。以 total_coin 为准并在不一致时留下日志——
+        // 盲盒尚未拿到过真实报文，这行日志就是将来真有一个盲盒送进来时的证据
+        event.setPaid(paidOf(meta, price));
+        return event;
+    }
+
+    /**
+     * 取观众为这一笔实际付出的金额
+     * <p>
+     * {@code total_coin} 是<b>服务端给出的实际扣除额</b>，比自己拿单价乘数量更可靠：
+     * 打折、背包礼物这些情形都体现在它身上，而单价字段体现不出来。
+     * 已用一次真实的 ¥0.1 礼物核对过 {@code total_coin == discount_price × num}。
+     * <p>
+     * 字段缺失时回退到调用方算出的金额，<b>而不是当作 0</b>——
+     * 把「取不到」记成「没花钱」会让营收凭空少一截，且不会有任何报错。
+     * @param meta 礼物消息内容
+     * @param fallback 字段缺失时的回退值
+     * @return 实付金额（元）
+     */
+    private Double paidOf(JSONObject meta, Double fallback) {
+        Integer totalCoin = meta.getInteger("total_coin");
+        if (totalCoin == null) {
+            return fallback;
+        }
+
+        double paid = totalCoin / PRICE_UNIT;
+        if (fallback != null && Math.abs(paid - fallback) > 0.001) {
+            log.debug("礼物 {} 的实付 {} 与按单价算出的 {} 不一致, 以实付为准",
+                    meta.getString("giftName"), paid, fallback);
+        }
+        return paid;
     }
 
     /**

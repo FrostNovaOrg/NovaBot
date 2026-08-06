@@ -180,6 +180,41 @@ class BilibiliEventParserTest {
     }
 
     @Test
+    @DisplayName("实付取自 total_coin —— 用一条真实抓到的报文核对")
+    void paidComesFromTotalCoin() {
+        // 取自 2026-08-06 线上抓到的一条真实 SEND_GIFT，只保留与金额相关的字段（uid 已换成测试值）。
+        // price / discount_price / total_coin 三者相等，说明当时没有折扣活动
+        String real = "{\"cmd\":\"SEND_GIFT\",\"data\":{\"uid\":555,\"uname\":\"送礼的人\","
+                + "\"timestamp\":1785987737,\"giftId\":31039,\"giftName\":\"牛哇牛哇\",\"num\":1,"
+                + "\"price\":100,\"discount_price\":100,\"total_coin\":100,\"coin_type\":\"gold\"}}";
+
+        BilibiliPaidGiftEvent event = assertInstanceOf(BilibiliPaidGiftEvent.class, parse(real).orElseThrow());
+
+        assertEquals(0.1, event.getValue(), 0.0001, "到手价值 = discount_price × num");
+        assertEquals(0.1, event.getPaid(), 0.0001, "实付 = total_coin");
+    }
+
+    @Test
+    @DisplayName("total_coin 与单价算出的金额不一致时以 total_coin 为准")
+    void totalCoinWinsOverUnitPrice() {
+        // 背包礼物预期就是这个形态：主播收到面值，而实际一分钱没扣
+        BilibiliPaidGiftEvent event = assertInstanceOf(BilibiliPaidGiftEvent.class,
+                parse(giftMessage("gold", ",\"total_coin\":0")).orElseThrow());
+
+        assertEquals(3.0, event.getValue(), 0.0001, "主播仍按面值收到");
+        assertEquals(0.0, event.getPaid(), 0.0001, "但观众没花钱");
+    }
+
+    @Test
+    @DisplayName("没有 total_coin 时实付回退到到手价值，而不是当作 0")
+    void missingTotalCoinFallsBack() {
+        BilibiliPaidGiftEvent event = assertInstanceOf(BilibiliPaidGiftEvent.class,
+                parse(giftMessage("gold", "")).orElseThrow());
+
+        assertEquals(3.0, event.getPaid(), 0.0001, "记成 0 会让营收凭空少一截，且不会有任何报错");
+    }
+
+    @Test
     @DisplayName("银瓜子礼物解析为免费礼物")
     void parseFreeGift() {
         BilibiliFreeGiftEvent event = assertInstanceOf(BilibiliFreeGiftEvent.class, parse(giftMessage("silver", "")).orElseThrow());

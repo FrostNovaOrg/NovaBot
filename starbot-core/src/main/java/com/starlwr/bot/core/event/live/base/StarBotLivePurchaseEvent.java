@@ -19,9 +19,21 @@ import java.time.Instant;
 @ToString(callSuper = true)
 public class StarBotLivePurchaseEvent extends StarBotLiveInteractionEvent {
     /**
-     * 总价值
+     * 总价值，即<b>主播这一笔收到了多少</b>
      */
     private Double value;
+
+    /**
+     * 观众为这一笔实际付出的金额，取不到时为空
+     * <p>
+     * <b>与 {@link #value} 不是一回事，尽管多数时候数值相同。</b>
+     * 普通礼物两者相等；盲盒是「付了盲盒的钱、主播收到开出物的价值」；
+     * 背包礼物更极端——观众一分钱没花，而主播照样有收益，因为有人买过礼物红包。
+     * <p>
+     * 为空表示该平台或该类事件给不出实付金额。此时应回退到 {@link #value} 而不是当作 0：
+     * <b>把「不知道」记成「没花钱」会让营收凭空少一截，而且不会有任何报错。</b>
+     */
+    private Double paid;
 
     public StarBotLivePurchaseEvent(String platform, LiveStreamerInfo source, UserInfo sender, Double value) {
         super(platform, source, sender);
