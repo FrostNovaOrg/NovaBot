@@ -60,6 +60,79 @@ public class StarBotCoreProperties {
     private final Command command = new Command();
 
     /**
+     * 事件触发外部命令相关
+     */
+    @Getter
+    @Setter
+    private final Exec exec = new Exec();
+
+    /**
+     * 事件触发外部命令
+     * <p>
+     * 收到事件时执行一个外部程序，用来接那些内置功能覆盖不到的用法——
+     * 开播启动录播、上舰写台账、被切流发提醒。
+     * <p>
+     * <b>默认关闭</b>：这是个能执行任意程序的口子，必须由使用者明确打开。
+     * 执行细节与安全约束见 {@code EventCommandRunner}。
+     */
+    @Getter
+    @Setter
+    public static class Exec {
+        /**
+         * 是否启用事件触发外部命令
+         */
+        private boolean enabled = false;
+
+        /**
+         * 单条命令的最长执行时间，单位：秒，超时后强制结束
+         */
+        private int timeout = 30;
+
+        /**
+         * 同时执行的命令数上限，超出的直接丢弃
+         * <p>
+         * 弹幕这类事件一秒能来几十条。没有上限的话，一次刷屏就等于一次 fork 炸弹。
+         */
+        private int maxConcurrent = 4;
+
+        /**
+         * 规则列表
+         */
+        private List<ExecRule> rules = new ArrayList<>();
+    }
+
+    /**
+     * 一条事件命令规则
+     */
+    @Getter
+    @Setter
+    public static class ExecRule {
+        /**
+         * 是否启用该条规则
+         */
+        private boolean enabled = true;
+
+        /**
+         * 事件类名，简名或全限定名皆可
+         * <p>
+         * 沿继承链匹配，因此填 {@code LiveOnEvent} 可同时命中各平台的具体开播事件。
+         */
+        private String event;
+
+        /**
+         * 命令与参数
+         * <p>
+         * <b>第一项是可执行文件，其余各项是独立参数——不是一整行命令。</b>
+         * 想用管道、重定向之类的 shell 特性，请自己写一个脚本文件再在这里填它的路径；
+         * 把命令拼成一行交给 shell 执行，等于让弹幕内容有机会变成命令。
+         * <p>
+         * 支持的占位符：{@code {event}} {@code {platform}} {@code {uid}}
+         * {@code {uname}} {@code {room_id}} {@code {timestamp}} {@code {json}}。
+         */
+        private List<String> command = new ArrayList<>();
+    }
+
+    /**
      * 聊天命令相关
      */
     @Getter
