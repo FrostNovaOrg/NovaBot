@@ -42,3 +42,4 @@ docs/OPS-NOTES.md
 
 # 产品需求文档，暂不公开
 docs/PRD-5.0.md
+dist/*.tar.gz
