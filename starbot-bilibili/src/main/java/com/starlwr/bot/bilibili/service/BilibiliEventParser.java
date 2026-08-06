@@ -467,9 +467,10 @@ public class BilibiliEventParser {
     /**
      * 解析大航海开通消息（{@code GUARD_BUY}）
      * <p>
-     * 与 {@code USER_TOAST_MSG} 播报的是同一件事，但字段不同：
-     * 这条没有 {@code unit}，时长要从 {@code start_time} 与 {@code end_time} 的差推。
-     * 两条都收并去重，理由见 {@link BilibiliGuardDeduplicator}。
+     * 与 {@code USER_TOAST_MSG} 播报的是同一件事，两条都收并去重，理由见 {@link BilibiliGuardDeduplicator}。
+     * <p>
+     * 字段不完全一样：这条一定带 {@code start_time} 与 {@code end_time}，而带不带 {@code unit}
+     * 我们没有实测过，取值口径见 {@link #unitOf}。
      */
     private StarBotBaseLiveEvent parseGuardBuy(JSONObject data, LiveStreamerInfo source) {
         JSONObject meta = data.getJSONObject("data");
@@ -521,14 +522,23 @@ public class BilibiliEventParser {
     }
 
     /**
-     * 从起止时刻推出开通时长的单位
+     * 取出大航海开通时长的单位
      * <p>
-     * {@code GUARD_BUY} 不给 {@code unit}，只给起止时刻。按天数归类而不是精确换算：
-     * 大航海只按月/年售卖，而月长本就有 28~31 天的浮动，硬算会得出「1.03 个月」这种东西。
+     * 先认消息自己给的 {@code unit}。{@code GUARD_BUY} 到底带不带这个字段，我们没有实测过
+     * ——曾有过「不带」的说法，但那是把「没记录」当成了「不存在」，已被撤回。所以这里不预设，
+     * 有就用，只在没有时才回退到起止时刻。
+     * <p>
+     * 回退时按天数归类而不是精确换算：大航海只按月/年售卖，而月长本就有 28~31 天的浮动，
+     * 硬算会得出「1.03 个月」这种东西。
      * @param meta 消息内容
      * @return 「月」或「年」，推不出来时为 null 而不是猜一个
      */
     private String unitOf(JSONObject meta) {
+        String declared = meta.getString("unit");
+        if (declared != null && !declared.isBlank()) {
+            return declared;
+        }
+
         Long start = meta.getLong("start_time");
         Long end = meta.getLong("end_time");
         if (start == null || end == null || end <= start) {

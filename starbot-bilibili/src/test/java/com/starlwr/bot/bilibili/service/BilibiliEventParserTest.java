@@ -424,11 +424,23 @@ class BilibiliEventParserTest {
         assertEquals(198.0, event.getValue(), 0.0001);
         assertEquals(1, event.getCount());
         assertEquals(777L, event.getSender().getUid());
-        assertEquals("月", event.getUnit(), "GUARD_BUY 没有 unit，要从起止时刻推");
+        assertEquals("月", event.getUnit(), "这条样本没带 unit，于是从起止时刻推");
     }
 
     @Test
-    @DisplayName("时长单位按起止时刻的天数归类，推不出来时留空而不是猜")
+    @DisplayName("时长单位优先认消息自己给的 unit")
+    void guardBuyPrefersDeclaredUnit() {
+        // GUARD_BUY 带不带 unit 我们没有实测过，所以两种都要能处理。
+        // 这里的起止时刻只差一个月，若 unit 被忽略就会得出「月」
+        BilibiliCaptainEvent event = assertInstanceOf(BilibiliCaptainEvent.class,
+                parse("{\"cmd\":\"GUARD_BUY\",\"data\":{\"uid\":3,\"guard_level\":3,\"num\":1,\"price\":1000,"
+                        + "\"unit\":\"年\",\"start_time\":1785990000,\"end_time\":1788582000}}").orElseThrow());
+
+        assertEquals("年", event.getUnit(), "消息自己说了单位，就不该再拿时刻去推翻它");
+    }
+
+    @Test
+    @DisplayName("没有 unit 时按起止时刻的天数归类，推不出来则留空而不是猜")
     void guardBuyUnitFromTimeRange() {
         // 一年
         BilibiliCaptainEvent year = assertInstanceOf(BilibiliCaptainEvent.class,

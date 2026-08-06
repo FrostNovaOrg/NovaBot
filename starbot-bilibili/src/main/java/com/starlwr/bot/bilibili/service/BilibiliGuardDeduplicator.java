@@ -12,8 +12,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * 大航海消息去重
  * <p>
  * 同一次开通可能由两条消息各播报一次：老的 {@code USER_TOAST_MSG} 与现行的 {@code GUARD_BUY}。
- * 两条都收是有意的——实测匿名连接只收得到 {@code GUARD_BUY}，
- * 而 {@code USER_TOAST_MSG} 是否在登录态下仍在下发尚未定论，只认一条就有漏收的风险。
+ * 两条都收是有意的——观测到的 3 次开通都只来了 {@code GUARD_BUY}，但 3 例还不足以断定
+ * {@code USER_TOAST_MSG} 已经废弃（也可能只在续费、特定档位或特定房间配置下才发），
+ * 只认一条就有漏收的风险。
  * <p>
  * <b>但两条都收就必须去重。</b>大航海是本项目金额最大的一类事件，算两遍会让营收凭空翻倍，
  * 而且这个错误在数据上完全说得通——没有任何地方会报错。
