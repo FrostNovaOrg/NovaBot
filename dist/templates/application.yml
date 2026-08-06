@@ -109,6 +109,9 @@ starbot:
       auto-detect-live-room-risk-ratio: 50      # 进房消息占比达到此百分比即判定为风控
       backup-live-push: true              # 是否启用备用直播推送（轮询接口兜底开播下播）
       backup-live-push-interval: 10       # 备用推送检测间隔，单位：秒
+      snapshot-interval: 6                # 主播基础数据（粉丝数、粉丝团、大航海）的留档间隔，单位：小时，0 为关闭。
+                                          # 本场数据只覆盖直播期间，而这些数字在不播的日子里照样在变；
+                                          # 没有这份留档，「本周涨了多少粉」只能答成「每场开播时分别是多少」
 
     dynamic:
       auto-follow: true             # 是否用登录账号自动关注「被监听的 UP 主」（不是回关粉丝）。
@@ -131,6 +134,22 @@ starbot:
     command:
       prefix:                       # 聊天命令前缀，留空表示直接以命令名触发（如直接发「菜单」）。
                                     # 群里同时有多个机器人容易撞词时可加前缀，如 /
+
+    exec:                           # 收到事件时执行外部程序。开播启动录播、上舰写台账之类，
+                                    # 内置功能覆盖不到的用法都从这里接
+      enabled: false                # ⚠️ 默认关闭。这是个能执行任意程序的口子，请确认清楚再打开
+      timeout: 30                   # 单条命令最长执行时间，单位：秒，超时强制结束
+      max-concurrent: 4             # 同时执行的命令数上限，超出的直接丢弃。
+                                    # 弹幕类事件一秒能来几十条，没有上限时一次刷屏就等于一次 fork 炸弹
+      rules: []
+      # rules:
+      #   - event: LiveOnEvent      # 事件类名，简名或全限定名皆可，沿继承链匹配，
+      #                             # 因此填 LiveOnEvent 可同时命中各平台的具体开播事件
+      #     command:                # ⚠️ 第一项是可执行文件，其余各项是独立参数，不是一整行命令。
+      #       - /opt/scripts/record.sh    # 想用管道、重定向请自己写脚本文件再填它的路径——
+      #       - "{room_id}"                # 把命令拼成一行交给 shell，等于让昵称和弹幕有机会变成命令
+      #       - "{uname}"
+      #     # 可用占位符：{event} {platform} {uid} {uname} {room_id} {timestamp} {json}
 
     alert:
       enabled: true                 # 是否启用告警。关闭后登录失效、连接中断等问题只写日志，不主动通知

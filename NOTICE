@@ -109,6 +109,32 @@ StarBot Python 版（1.x / 2.x，自 2025-06-09 起仅修复缺陷）: https://g
   再分发，但衍生产品请使用你自己的名称与标识。
 
 ================================================================================
+协议资料的参考来源
+================================================================================
+
+哔哩哔哩直播间长连接的消息格式没有官方文档，字段结构只能从社区项目的记录中获得。
+以下项目在开发中被查阅过，**本仓库未复制其中任何代码**：所取的是「服务端会下发哪些
+指令、每条指令带哪些字段」这一事实本身，各项目对该事实的具体表达（类型定义、解析实现）
+均未进入本仓库。相关解析代码为独立编写，见
+starbot-bilibili/src/main/java/com/starlwr/bot/bilibili/service/BilibiliEventParser.java。
+
+按事实与表达二分，协议字段名不构成受著作权保护的表达；此处列出来源是出于致谢与可追溯，
+而非许可要求。
+
+  CUT_OFF / ROOM_LOCK / WARNING / ROOM_CHANGE / PREPARING 五类指令的字段结构
+    https://github.com/bilive/bilive_client        bilive/@types/danmaku.d.ts   (MIT)
+    https://github.com/starknt/tiny-bilibili-ws    src/base/cmd.ts              (MIT)
+    两处分别记录于 2019 年与近期版本，字段一致，交叉核对后采用。
+
+功能设计上参考过的同类项目。**同样只借鉴了「可以做这件事」这一想法，未取用任何代码**，
+各功能均为独立实现——其中 BilibiliLiveRecordDownLoader 为 GPL-3.0，这一点尤需说明清楚：
+
+  https://github.com/Janet-Baker/webhookGo                  (MIT)         每事件独立配置外部命令的模型
+  https://github.com/timerring/bilive                       (Apache-2.0)  按弹幕密度定位高能片段的思路
+  https://github.com/HMBSbige/BilibiliLiveRecordDownLoader  (GPL-3.0)     场次内记录标题变更
+  https://github.com/Akokk0/bilibili-notify                 (MIT)         非直播期间的基础数据留档
+
+================================================================================
 第三方依赖
 ================================================================================
 
