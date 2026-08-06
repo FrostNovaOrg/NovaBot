@@ -58,7 +58,7 @@ function targetRow(user, ui, target, ti) {
   // 此时若只给一个空选项，界面就在说「这条规则没有配机器人」——而实际上配了，
   // 保存也不会把它写没（serializePush 用的是 pushData 而不是 DOM）。
   // 与其显示一句与事实不符的话，不如把配置里的值原样列出并标注它当前不可用
-  const known = store.senderList.length ? senderList : (target.platform ? [target.platform] : []);
+  const known = store.senderList.length ? store.senderList : (target.platform ? [target.platform] : []);
   const platformOpts = known.length
     ? known.map(s => '<option value="' + esc(s) + '"' + (s === target.platform ? ' selected' : '') + '>'
         + esc(s) + (store.senderList.length ? '' : '（当前不可用）') + '</option>').join('')
