@@ -18,6 +18,7 @@ import com.starlwr.bot.core.plugin.StarBotComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -26,6 +27,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
 
 /**
@@ -42,6 +44,25 @@ public class BilibiliEventParser {
      * 礼物与大航海接口返回的价格单位为电池的千分之一，1000 对应 1 元
      */
     private static final double PRICE_UNIT = 1000.0;
+
+    /**
+     * 已播报过的红包，键为 {@code lot_id}，值为首次见到的时刻
+     * <p>
+     * 红包的开启消息<b>会被周期性重播</b>：实测一条 {@code POPULARITY_RED_POCKET_START}
+     * 的 {@code start_time} 是十分钟前，而 {@code current_time} 就是当下。
+     * 不去重就会把同一个红包反复感谢。
+     */
+    private final Map<String, Instant> seenRedPockets = new ConcurrentHashMap<>();
+
+    /**
+     * 红包记录的条目上限，防止长期运行后无限增长
+     */
+    private static final int MAX_SEEN_RED_POCKETS = 256;
+
+    /**
+     * 红包记录的保留时长。单个红包最长 600 秒，留一小时余量足够
+     */
+    private static final Duration RED_POCKET_RETENTION = Duration.ofHours(1);
 
     private final StarBotBilibiliProperties properties;
 
@@ -73,6 +94,8 @@ public class BilibiliEventParser {
         parsers.put("USER_TOAST_MSG", this::parseGuard);
         parsers.put("USER_TOAST_MSG_V2", this::parseGuardV2);
         parsers.put("GUARD_BUY", this::parseGuardBuy);
+        parsers.put("POPULARITY_RED_POCKET_START", this::parseRedPocket);
+        parsers.put("POPULARITY_RED_POCKET_V2_START", this::parseRedPocket);
         parsers.put("LIKE_INFO_V3_CLICK", this::parseLike);
         parsers.put("LIKE_INFO_V3_UPDATE", this::parseLikeUpdate);
         parsers.put("WATCHED_CHANGE", this::parseWatchedUpdate);
@@ -422,6 +445,82 @@ public class BilibiliEventParser {
         Instant timestamp = Optional.ofNullable(data.getLong("send_time")).map(Instant::ofEpochMilli).orElseGet(Instant::now);
 
         return new BilibiliSuperChatEvent(source, sender, meta.getString("message"), meta.getDouble("price"), timestamp);
+    }
+
+    /**
+     * 解析红包消息（{@code POPULARITY_RED_POCKET_START} 与其 V2 形式）
+     * <p>
+     * <b>红包不给主播带来收益</b>，钱进的是红包，只有中奖者把奖品换成礼物送出主播才分成。
+     * 因此产出的是 {@link BilibiliRedPocketEvent} 而非任何购买事件——
+     * 详见 {@link com.starlwr.bot.core.event.live.common.RedPocketEvent} 的说明。
+     * <p>
+     * 只认「开启」这一条。中奖名单（{@code ..._WINNER_LIST}）暂不处理：
+     * 它同样有 v1/V2 两种形式，而目前只抓到过两个不同 {@code lot_id} 的样本，
+     * <b>无法证明同一个红包会不会同时下发两版</b>，贸然处理有重复计数的风险。
+     * @param data 消息内容
+     * @param source 主播信息
+     * @return 红包事件，无法识别或属于重播时为空
+     */
+    private StarBotBaseLiveEvent parseRedPocket(JSONObject data, LiveStreamerInfo source) {
+        JSONObject meta = data.getJSONObject("data");
+        if (meta == null) {
+            return null;
+        }
+
+        Object lotId = meta.get("lot_id");
+        if (lotId == null) {
+            // 认不出是哪个红包就没法挡重播。按本项目一贯的取舍，宁可漏播一次也不要反复感谢
+            log.debug("红包消息缺少 lot_id, 已忽略");
+            return null;
+        }
+
+        Instant now = Instant.now();
+        if (seenRedPockets.putIfAbsent(String.valueOf(lotId), now) != null) {
+            log.debug("红包开启消息重播, 已忽略: lot={}", lotId);
+            return null;
+        }
+        sweepRedPockets(now);
+
+        // V2 形式的发送者字段位置未实测过。按 USER_TOAST_MSG_V2 的先例，
+        // 新格式会把人塞进 sender_uinfo，所以优先读它，读不到再退回平铺字段
+        JSONObject uinfo = meta.getJSONObject("sender_uinfo");
+        JSONObject base = uinfo == null ? null : uinfo.getJSONObject("base");
+        Long uid = Optional.ofNullable(uinfo).map(info -> info.getLong("uid")).orElseGet(() -> meta.getLong("sender_uid"));
+        String uname = Optional.ofNullable(base).map(info -> info.getString("name")).orElseGet(() -> meta.getString("sender_name"));
+        String face = Optional.ofNullable(base).map(info -> info.getString("face")).orElseGet(() -> meta.getString("sender_face"));
+        if (uid == null && uname == null) {
+            // 连是谁发的都取不到，这条就没有播报价值了。留一行日志，格式变了才有迹可循
+            log.debug("红包消息认不出发送者, 已忽略: lot={}", lotId);
+            return null;
+        }
+
+        // 用红包自己的开始时刻而不是收到消息的时刻：首次见到的可能已经是重播
+        Instant startedAt = Optional.ofNullable(meta.getLong("start_time")).map(Instant::ofEpochSecond).orElse(now);
+
+        BilibiliRedPocketEvent event = new BilibiliRedPocketEvent(source, new BilibiliUserInfo(uid, uname, face), startedAt);
+        event.setLotteryId(String.valueOf(lotId));
+        // total_price 与礼物价格同单位（千分之一元）。这一点尚未拿真实账单核对过，
+        // 只是同一份报文里其余金额字段都是这个单位
+        event.setCost(Optional.ofNullable(meta.getInteger("total_price")).map(price -> price / PRICE_UNIT).orElse(null));
+
+        JSONArray awards = meta.getJSONArray("awards");
+        if (awards != null && !awards.isEmpty()) {
+            JSONObject award = awards.getJSONObject(0);
+            if (award != null) {
+                event.setAwardName(award.getString("gift_name"));
+                event.setAwardCount(award.getInteger("num"));
+            }
+        }
+        return event;
+    }
+
+    /**
+     * 清掉超出保留期的红包记录
+     */
+    private void sweepRedPockets(Instant now) {
+        if (seenRedPockets.size() >= MAX_SEEN_RED_POCKETS) {
+            seenRedPockets.entrySet().removeIf(entry -> Duration.between(entry.getValue(), now).compareTo(RED_POCKET_RETENTION) > 0);
+        }
     }
 
     /**

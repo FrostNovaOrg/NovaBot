@@ -7,6 +7,7 @@ import com.starlwr.bot.bilibili.enums.GuardOperateType;
 import com.starlwr.bot.bilibili.event.live.*;
 import com.starlwr.bot.bilibili.model.BilibiliUserInfo;
 import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
+import com.starlwr.bot.core.event.live.base.StarBotLivePurchaseEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -314,6 +315,79 @@ class BilibiliEventParserTest {
         // 「两个口径确实相等」和「取不到才回退成相等」。回退交给聚合层做
         assertNull(event.getPaid());
         assertEquals(3.0, event.getValue(), 0.0001);
+    }
+
+    /**
+     * 2026-08-06 23:53 实抓的红包开启消息。字段结构与金额一字未改，
+     * 发送者、红包编号与绝对时刻换成了中性值——保留了 {@code start_time}
+     * 比 {@code current_time} 早 597 秒这个关键关系：<b>这条报文本身就是一次重播</b>。
+     */
+    private static final String RED_POCKET = "{\"cmd\":\"POPULARITY_RED_POCKET_START\",\"data\":{"
+            + "\"lot_id\":10001,\"sender_uid\":555,\"sender_name\":\"发红包的人\","
+            + "\"join_requirement\":2,\"current_time\":1700000597,\"start_time\":1700000000,"
+            + "\"end_time\":1700000600,\"last_time\":600,\"lot_status\":1,\"rp_type\":0,"
+            + "\"awards\":[{\"gift_id\":0,\"gift_name\":\"电池红包\",\"num\":10}],"
+            + "\"total_price\":2000,"
+            + "\"sender_uinfo\":{\"uid\":555,\"base\":{\"name\":\"发红包的人\",\"face\":\"\"}}}}";
+
+    @Test
+    @DisplayName("红包记成互动而不是收入：主播没有从这一笔拿到钱")
+    void redPocketIsNotRevenue() {
+        StarBotBaseLiveEvent parsed = parse(RED_POCKET).orElseThrow();
+
+        // 关键：它不能是购买事件，否则会被算进营收——而钱进的是红包，不是主播。
+        // 这里刻意用基类接收再判断：若直接用 BilibiliRedPocketEvent 声明，
+        // 编译器会因为「两个类型不可能相交」而拒绝编译，反倒看不出这条断言在防什么
+        assertFalse(parsed instanceof StarBotLivePurchaseEvent, "红包不该是购买事件");
+
+        BilibiliRedPocketEvent event = assertInstanceOf(BilibiliRedPocketEvent.class, parsed);
+        assertEquals(555L, event.getSender().getUid());
+        assertEquals("10001", event.getLotteryId());
+        assertEquals(2.0, event.getCost(), 0.0001, "送红包者花掉 2 元");
+        assertEquals("电池红包", event.getAwardName());
+        assertEquals(10, event.getAwardCount());
+    }
+
+    @Test
+    @DisplayName("红包用自己的开始时刻，而不是收到重播的时刻")
+    void redPocketUsesStartTime() {
+        BilibiliRedPocketEvent event = assertInstanceOf(BilibiliRedPocketEvent.class, parse(RED_POCKET).orElseThrow());
+
+        // 首次见到的很可能已经是重播（本样本就是），拿收到的时刻会把红包记晚十分钟
+        assertEquals(1700000000_000L, event.getTimestamp());
+    }
+
+    @Test
+    @DisplayName("同一个红包重播时不再播报——否则会被反复感谢")
+    void redPocketRebroadcastIsIgnored() {
+        assertTrue(parse(RED_POCKET).isPresent(), "第一次应当播报");
+        assertTrue(parse(RED_POCKET).isEmpty(), "重播不应再播报");
+    }
+
+    @Test
+    @DisplayName("认不出是哪个红包时宁可不播报，也不要冒反复感谢的风险")
+    void redPocketWithoutLotIdIsIgnored() {
+        String json = "{\"cmd\":\"POPULARITY_RED_POCKET_START\",\"data\":{"
+                + "\"sender_uid\":555,\"sender_name\":\"发红包的人\",\"total_price\":2000}}";
+
+        assertTrue(parse(json).isEmpty());
+    }
+
+    @Test
+    @DisplayName("发送者只有平铺字段时也要认得出来")
+    void redPocketFallsBackToFlatSenderFields() {
+        // V2 形式的字段位置没有实测过。按 USER_TOAST_MSG_V2 的先例优先读 sender_uinfo，
+        // 但不能因此丢掉只有平铺字段的情形
+        String json = "{\"cmd\":\"POPULARITY_RED_POCKET_V2_START\",\"data\":{\"lot_id\":99,"
+                + "\"sender_uid\":777,\"sender_name\":\"另一个人\",\"total_price\":1000,"
+                + "\"awards\":[{\"gift_name\":\"礼物红包\",\"num\":3}]}}";
+
+        BilibiliRedPocketEvent event = assertInstanceOf(BilibiliRedPocketEvent.class, parse(json).orElseThrow());
+
+        assertEquals(777L, event.getSender().getUid());
+        assertEquals("另一个人", event.getSender().getUname());
+        assertEquals(1.0, event.getCost(), 0.0001);
+        assertEquals("礼物红包", event.getAwardName());
     }
 
     @Test
