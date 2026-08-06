@@ -85,6 +85,7 @@ $('#wizard-toggle').addEventListener('click', () => {
   wizardTouched = true;
   setWizardCollapsed($('#wizard').style.display !== 'none');
 });
+$('#ana-view').addEventListener('change', loadAnalytics);
 $('#ana-period').addEventListener('change', loadAnalytics);
 $('#ana-uid').addEventListener('change', loadAnalytics);
 $('#reload').addEventListener('click', load);

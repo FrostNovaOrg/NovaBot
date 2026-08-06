@@ -133,10 +133,16 @@
     只该有一份实现，见 LiveSessionAnalytics。
   -->
   <section id="analytics">
-    <p class="hint">按周或月看趋势，数据来自每场直播下播时的归档。<b>只在这里看得到，不会发到群里。</b></p>
+    <p class="hint">数据来自每场直播下播时的归档。<b>只在这里看得到，不会发到群里。</b>
+      按周期看趋势，逐场流水看具体某一场发生了什么。</p>
 
     <div class="backups" id="ana-bar">
-      <span>周期</span>
+      <span>视图</span>
+      <select id="ana-view">
+        <option value="period">按周期汇总</option>
+        <option value="sessions">逐场流水</option>
+      </select>
+      <span id="ana-period-label">周期</span>
       <select id="ana-period"><option value="week">按周</option><option value="month">按月</option></select>
       <span>主播</span>
       <select id="ana-uid"></select>

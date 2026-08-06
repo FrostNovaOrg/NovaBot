@@ -16,14 +16,105 @@ function fmtMetric(value, metric) {
 }
 
 async function loadAnalytics() {
-  const period = $('#ana-period').value;
+  const view = $('#ana-view').value;
   const uid = $('#ana-uid').value;
+  const query = uid ? '&uid=' + encodeURIComponent(uid) : '';
+
+  // 周期选择器只对汇总视图有意义。逐场流水下藏起来，而不是留着让人以为选了没生效
+  const isSessions = view === 'sessions';
+  $('#ana-period').style.display = isSessions ? 'none' : '';
+  $('#ana-period-label').style.display = isSessions ? 'none' : '';
+
   try {
-    anaData = await api('/analytics?period=' + period + (uid ? '&uid=' + encodeURIComponent(uid) : ''));
-    renderAnalytics(anaData);
+    if (isSessions) {
+      anaData = await api('/analytics/sessions?limit=0' + query);
+      renderSessionList(anaData);
+    } else {
+      anaData = await api('/analytics?period=' + $('#ana-period').value + query);
+      renderAnalytics(anaData);
+    }
   } catch (e) {
     say('载入数据分析失败：' + e.message, 'err');
   }
+}
+
+function fmtTime(ms) {
+  if (!ms) return '—';
+  const d = new Date(ms);
+  const p = n => String(n).padStart(2, '0');
+  return (d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+
+// 逐场流水。汇总视图回答「这周比上周如何」，这里回答「上周六那场到底怎么了」——
+// 被切流、只播了十分钟这类事情在周汇总里全被平均掉了
+function renderSessionList(d) {
+  renderAnalyticsStreamers(d.streamers || [], d.uid ? String(d.uid) : '');
+
+  const sessions = d.sessions || [];
+  const metrics = d.metrics || [];
+  $('#ana-scope').textContent = '共 ' + d.total + ' 场';
+  $('#ana-chart').innerHTML = '';
+
+  if (!sessions.length) {
+    $('#ana-cards').innerHTML = '';
+    $('#ana-table').innerHTML = '<p class="hint">还没有归档任何场次。每场直播结束时会自动记一条。</p>';
+    $('#ana-note').textContent = '';
+    return;
+  }
+
+  const totalSeconds = sessions.reduce((a, s) => a + s.durationSeconds, 0);
+  const interrupted = sessions.filter(s => s.interrupted).length;
+  $('#ana-cards').innerHTML = [
+    ['场次', sessions.length],
+    ['总时长', fmtDuration(totalSeconds)],
+    ['场均时长', fmtDuration(Math.round(totalSeconds / sessions.length))],
+    ['被中断', interrupted + ' 场']
+  ].map(([l, n]) => '<div class="card"><div class="n">' + esc(n) + '</div><div class="l">'
+    + esc(l) + '</div></div>').join('');
+
+  const multi = new Set(sessions.map(s => s.uid)).size > 1;
+
+  // 逐场表是横向的，指标一多就没法读了。只留至少有一场非零的列——
+  // 十几列清一色的 0 除了把真正有数的那几列挤出屏幕之外没有任何作用
+  const shown = metrics.filter(m => sessions.some(s => (s.metrics[m.key] || 0) !== 0));
+  const hidden = metrics.length - shown.length;
+
+  const head = '<tr><th>开播</th>' + (multi ? '<th>主播</th>' : '') + '<th class="n">时长</th>'
+    + shown.map(m => '<th class="n">' + esc(m.name)
+        + (m.unit ? '<br><small>' + esc(m.unit) + '</small>' : '') + '</th>').join('')
+    + '<th>标题</th></tr>';
+
+  const rows = sessions.map(s => {
+    // 结束原因只在非正常时标出：每行都缀一个「主动下播」纯属噪音，
+    // 真出事的那几场反而会淹在里面
+    const flag = s.interrupted ? ' <b>· ' + esc(s.endReasonText) + '</b>' : '';
+    const titles = s.titles || [];
+    const title = titles.length ? (titles[titles.length - 1].title || '') : '';
+    const changed = s.titleChangeCount ? '（改过 ' + s.titleChangeCount + ' 次）' : '';
+
+    return '<tr' + (s.interrupted ? ' class="empty-row"' : '') + '>'
+      + '<td>' + esc(fmtTime(s.startTime)) + flag + '</td>'
+      + (multi ? '<td>' + esc(s.uname || s.uid) + '</td>' : '')
+      + '<td class="n">' + esc(fmtDuration(s.durationSeconds)) + '</td>'
+      + shown.map(m => '<td class="n">' + esc(fmtMetric(s.metrics[m.key] || 0, m)) + '</td>').join('')
+      + '<td title="' + esc(title) + '">'
+      + esc((title.length > 18 ? title.slice(0, 18) + '…' : title) + changed) + '</td></tr>';
+  }).join('');
+
+  $('#ana-table').innerHTML = '<table><thead>' + head + '</thead><tbody>' + rows + '</tbody></table>';
+
+  const notes = [];
+  if (d.droppedSessions) {
+    notes.push('更早的 ' + d.droppedSessions + ' 场未显示。');
+  }
+  if (hidden) {
+    notes.push('这些场次里全为零的 ' + hidden + ' 项指标未列出。');
+  }
+  if (interrupted) {
+    notes.push('被平台中断的场次已标出：它的时长与营收和正常场次不可比，做趋势判断时应当单独看待。');
+  }
+  notes.push('4.3.0 之前归档的场次没有结束原因与标题记录，一律显示为正常结束。');
+  $('#ana-note').textContent = notes.join('');
 }
 
 function renderAnalyticsStreamers(list, keep) {

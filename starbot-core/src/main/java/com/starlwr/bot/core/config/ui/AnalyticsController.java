@@ -4,7 +4,9 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.analytics.LiveMetricCatalog;
 import com.starlwr.bot.core.analytics.LiveSessionAnalytics;
+import com.starlwr.bot.core.enums.LiveEndReason;
 import com.starlwr.bot.core.model.LiveSession;
+import com.starlwr.bot.core.model.RoomInfoSnapshot;
 import com.starlwr.bot.core.service.LiveSessionArchive;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
@@ -16,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -44,6 +47,15 @@ public class AnalyticsController {
     private static final int DEFAULT_LIMIT = 26;
 
     private static final int MAX_LIMIT = 120;
+
+    /**
+     * 逐场流水默认返回多少场
+     * <p>
+     * 每天两场的话约合一个月，足够回答「最近怎么样」，又不至于让表格长到没法读。
+     */
+    private static final int DEFAULT_SESSION_LIMIT = 60;
+
+    private static final int MAX_SESSION_LIMIT = 500;
 
     private final LiveSessionArchive archive;
 
@@ -120,6 +132,89 @@ public class AnalyticsController {
         result.put("archive", archived);
 
         return result;
+    }
+
+    /**
+     * 逐场流水
+     * <p>
+     * 周期汇总回答的是「这周比上周如何」，回答不了「上周六那场到底发生了什么」。
+     * 一段时间的成败往往就系于某一场的特殊情况——改了标题、被切了流、或者干脆只播了十分钟——
+     * 而这些在周汇总里全被平均掉了。
+     * <p>
+     * 归档本身就是逐场存的，这里只是把它按时间倒序开个出口。
+     * @param uid 只看某位主播，为空则全部
+     * @param limit 返回最近多少场
+     * @return 按开播时间倒序的场次
+     */
+    @GetMapping("/sessions")
+    public JSONObject sessions(@RequestParam(required = false) Long uid,
+                               @RequestParam(defaultValue = "0") int limit) {
+        JSONObject result = new JSONObject();
+        result.put("success", true);
+
+        List<LiveSession> all = archive.find(0, Long.MAX_VALUE);
+        result.put("streamers", streamers(all));
+
+        List<LiveSession> selected = new ArrayList<>(uid == null
+                ? all
+                : all.stream().filter(session -> uid.equals(session.uid())).toList());
+        // 归档按开播时间升序，而逐场查看要的是最近几场，倒过来
+        Collections.reverse(selected);
+
+        result.put("uid", uid);
+        result.put("total", selected.size());
+        result.put("metrics", describe(metricsOf(selected)));
+
+        int effective = limit <= 0 ? DEFAULT_SESSION_LIMIT : Math.min(limit, MAX_SESSION_LIMIT);
+        List<LiveSession> page = selected.size() > effective ? selected.subList(0, effective) : selected;
+
+        JSONArray items = new JSONArray();
+        for (LiveSession session : page) {
+            items.add(sessionJson(session));
+        }
+        result.put("sessions", items);
+        // 截断了就得说，否则界面看起来像是「一共就播过这些场」
+        result.put("droppedSessions", Math.max(0, selected.size() - page.size()));
+
+        return result;
+    }
+
+    /**
+     * 把一场直播转为界面用的 JSON
+     */
+    private JSONObject sessionJson(LiveSession session) {
+        JSONObject item = new JSONObject();
+        item.put("platform", session.platform());
+        item.put("uid", session.uid());
+        item.put("uname", session.uname());
+        item.put("roomId", session.roomId());
+        item.put("startTime", session.startTime());
+        item.put("endTime", session.endTime());
+        item.put("durationSeconds", session.durationSeconds());
+        item.put("metrics", session.metrics() == null ? new JSONObject() : new JSONObject(session.metrics()));
+        item.put("userCounts", session.userCounts() == null ? new JSONObject() : new JSONObject(session.userCounts()));
+
+        // 被平台中断的场次要能一眼认出来：它的时长与营收和正常场次不可比，
+        // 混在一张表里看就成了「这天状态怎么这么差」
+        LiveEndReason reason = session.endReason() == null ? LiveEndReason.NORMAL : session.endReason();
+        item.put("endReason", reason.name());
+        item.put("endReasonText", reason.getDescription());
+        item.put("interrupted", session.interrupted());
+
+        JSONArray titles = new JSONArray();
+        if (session.titles() != null) {
+            for (RoomInfoSnapshot title : session.titles()) {
+                JSONObject entry = new JSONObject();
+                entry.put("at", title.at());
+                entry.put("title", title.title());
+                entry.put("area", title.area());
+                titles.add(entry);
+            }
+        }
+        item.put("titles", titles);
+        item.put("titleChangeCount", session.titleChangeCount());
+
+        return item;
     }
 
     /**
