@@ -290,6 +290,41 @@ class ConfigurationFileServiceTest {
         assertEquals(1, service.listBackups().size(), "整体覆盖前同样应先备份");
     }
 
+    // ============ 值里带换行 ============
+
+    @Test
+    @DisplayName("标量值含换行时应当场拒绝，而不是写出一份解析不了的配置")
+    void rejectsMultilineScalarValue() throws IOException {
+        String before = content();
+
+        // 不带冒号的那行不会被加引号，会顶在第 0 列，整份配置从此解析不了，
+        // 而接口照样回报「已保存」——问题要到下次重启才暴露成安全模式
+        IOException error = assertThrows(IOException.class,
+                () -> service.write(Map.of("starbot.core.push.quiet-start", "22:00\nevil")));
+
+        assertTrue(error.getMessage().contains("starbot.core.push.quiet-start"), "报错要说清是哪一项: " + error.getMessage());
+        assertEquals(before, content(), "拒绝时文件必须原样不动");
+    }
+
+    @Test
+    @DisplayName("字符串列表的换行是分隔符，不受影响")
+    void allowsMultilineForStringList() throws IOException {
+        service.write(Map.of("starbot.core.config-ui.allow-ips", "127.0.0.1/32\n10.0.0.0/8"));
+
+        // 读回来仍是以换行连接的一个串，与界面上的多行输入框一一对应
+        assertEquals("127.0.0.1/32\n10.0.0.0/8", service.read().get("starbot.core.config-ui.allow-ips"));
+    }
+
+    @Test
+    @DisplayName("换行不能凭空造出新的配置项")
+    void multilineCannotInjectKeys() throws IOException {
+        // 这一条即使当前已被拒绝也要留着：将来若放宽了限制，注入才是真正危险的那一面
+        assertThrows(IOException.class,
+                () -> service.write(Map.of("starbot.core.push.quiet-start", "x\n      enabled: false")));
+
+        assertEquals("true", service.read().get("starbot.core.config-ui.enabled"), "既有配置项不该被顶掉");
+    }
+
     // ============ 清空即移除（否则程序起不来） ============
 
     @Test

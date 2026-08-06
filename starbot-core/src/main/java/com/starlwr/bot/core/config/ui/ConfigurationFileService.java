@@ -137,6 +137,38 @@ public class ConfigurationFileService {
      */
     private static final Set<String> BLANK_MEANS_ABSENT = Set.of("spring.data.redis.host");
 
+    /**
+     * 拒绝写入含换行的标量值
+     * <p>
+     * 本类是逐行改写配置文件的，一个值里的换行会变成文件里真正的换行。
+     * 实测（见 {@code ConfigurationFileServiceTest#rejectsMultilineScalarValue}）：
+     * 值里带 {@code : } 时会被引号包住，折行后仍是同一个字符串，注入不了新的键；
+     * <b>但不带冒号时不会加引号，多出来的那行会顶在第 0 列，整份配置从此解析不了</b>——
+     * 而接口照样回报「已保存」，问题要到下次重启才暴露成安全模式。
+     * <p>
+     * 界面上标量走单行输入框，正常操作打不出换行，能走到这里的都是直接调接口的。
+     * 与其把值悄悄改掉，不如当场拒绝并说清是哪一项。
+     * <p>
+     * 字符串列表不在此列：那里换行本就是各项之间的分隔符。
+     * @param changes 待写入的配置项
+     * @param index 配置文件中已有的行
+     * @throws IOException 存在含换行的标量值时抛出
+     */
+    private void rejectMultilineScalars(Map<String, String> changes, Map<String, Line> index) throws IOException {
+        for (Map.Entry<String, String> change : changes.entrySet()) {
+            String value = change.getValue();
+            if (value == null || (value.indexOf('\n') < 0 && value.indexOf('\r') < 0)) {
+                continue;
+            }
+
+            Line line = index.get(change.getKey());
+            // 文件里还没有这一项时，含换行的值会被当成字符串列表写入，那是合法的
+            if (line != null && !line.isList()) {
+                throw new IOException("配置项 " + change.getKey() + " 的值不能包含换行");
+            }
+        }
+    }
+
     public synchronized int write(Map<String, String> changes) throws IOException {
         if (changes.isEmpty()) {
             return 0;
@@ -151,6 +183,8 @@ public class ConfigurationFileService {
                 index.put(line.path, line);
             }
         }
+
+        rejectMultilineScalars(changes, index);
 
         int changed = 0;
         List<Map.Entry<String, String>> missing = new ArrayList<>();
