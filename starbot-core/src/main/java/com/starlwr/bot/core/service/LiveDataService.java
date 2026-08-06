@@ -278,6 +278,23 @@ public interface LiveDataService {
     }
 
     /**
+     * 把一次读数计入所属的时间格，同一格内取最大值
+     * <p>
+     * <b>瞬时量必须走这里而不是 {@link #incrementLiveSeries}。</b>
+     * 看过人数、高能用户数这类数字，平台每分钟要下发好几次，每次给的都是
+     * 「当前是多少」而不是「又多了多少」——累加的话，一个真实值 8000 的读数
+     * 在一分钟内下发 5 次就成了 40000。<b>而这个数看起来完全合理，不会有任何地方报错。</b>
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @param metric 指标名
+     * @param timestamp 读数时刻（毫秒）
+     * @param value 读数
+     */
+    default void maxLiveSeries(@NonNull String platform, @NonNull Long uid, @NonNull String metric,
+                               long timestamp, double value) {
+    }
+
+    /**
      * 获取本场直播某项指标的时间序列
      * @param platform 直播平台
      * @param uid 主播 UID

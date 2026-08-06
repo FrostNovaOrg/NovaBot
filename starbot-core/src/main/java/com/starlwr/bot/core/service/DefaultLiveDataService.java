@@ -798,6 +798,38 @@ public class DefaultLiveDataService implements LiveDataService {
     }
 
     /**
+     * 把一次读数计入所属的时间格，同一格内取最大值
+     *
+     * @param platform  直播平台
+     * @param uid       主播 UID
+     * @param metric    指标名
+     * @param timestamp 读数时刻（毫秒）
+     * @param value     读数
+     */
+    @Override
+    public void maxLiveSeries(@NonNull String platform, @NonNull Long uid, @NonNull String metric,
+                              long timestamp, double value) {
+        String bucket = String.valueOf(timestamp / SERIES_BUCKET_MILLIS * SERIES_BUCKET_MILLIS);
+
+        synchronized (metricLock) {
+            String key = "LiveSeries:" + platform;
+            cache.putIfAbsent(key, new JSONObject());
+            JSONObject byUid = cache.getJSONObject(key);
+            byUid.putIfAbsent(String.valueOf(uid), new JSONObject());
+            JSONObject byMetric = byUid.getJSONObject(String.valueOf(uid));
+            byMetric.putIfAbsent(metric, new JSONObject());
+            JSONObject buckets = byMetric.getJSONObject(metric);
+
+            Double current = buckets.getDouble(bucket);
+            if (current == null && buckets.size() >= SERIES_BUCKET_LIMIT) {
+                log.warn("主播 {} 的指标 {} 时间格数已达上限 {}, 后续时段不再收录", uid, metric, SERIES_BUCKET_LIMIT);
+                return;
+            }
+            buckets.put(bucket, current == null ? value : Math.max(current, value));
+        }
+    }
+
+    /**
      * 获取本场直播某项指标的时间序列
      *
      * @param platform 直播平台

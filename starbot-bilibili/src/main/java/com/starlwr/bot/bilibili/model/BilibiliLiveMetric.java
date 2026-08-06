@@ -94,6 +94,24 @@ public final class BilibiliLiveMetric {
     /** 分享直播间人次 */
     public static final String SHARE_COUNT = "share_count";
 
+    /**
+     * 看过人数，本场累计
+     * <p>
+     * <b>不是「同时在线人数」。</b>它只增不减，画出来永远在往上爬；
+     * 真正有信息量的是曲线的<b>斜率</b>，也就是每分钟新来多少人。
+     * <p>
+     * 平台每分钟下发数次，每次给的都是当前值，因此以「取最大」而非累加的方式记录。
+     */
+    public static final String WATCHED_COUNT = "watched_count";
+
+    /**
+     * 高能用户数
+     * <p>
+     * 高能榜只收有过消费的观众，所以这个数远小于观看人数，更接近「有多少人真的掏了钱」。
+     * 与只增不减的看过人数不同，它会随时间涨落。同样是瞬时量，取最大而非累加。
+     */
+    public static final String ONLINE_RANK_COUNT = "online_rank_count";
+
     // 以下三项是**开播那一刻的快照**，由 setLiveMetric 写入而非累加。
     // 报告展示的是「现在多少、这场涨了多少」，涨幅由绘制时的实时值减去快照得到——
     // 这样直播中的实时报告与下播报告共用同一段逻辑，不必再单独记一份终值

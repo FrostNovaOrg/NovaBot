@@ -3,6 +3,8 @@ package com.starlwr.bot.bilibili.service;
 import com.starlwr.bot.bilibili.event.live.BilibiliCaptainEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliCommanderEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliDanmuEvent;
+import com.starlwr.bot.bilibili.event.live.BilibiliOnlineRankCountUpdateEvent;
+import com.starlwr.bot.bilibili.event.live.BilibiliWatchedUpdateEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliEmojiEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliEnterRoomEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliFollowEvent;
@@ -208,6 +210,34 @@ public class BilibiliLiveStatsAggregator {
     }
 
     /**
+     * 看过人数更新
+     * <p>
+     * 平台每分钟下发数次，每次给的是当前累计值。<b>只能取最大，不能累加</b>——
+     * 一个真实值 8000 的读数在一分钟内下发 5 次，累加就成了 40000，
+     * 而这个数看起来完全合理，不会有任何地方报错。
+     */
+    @EventListener(BilibiliWatchedUpdateEvent.class)
+    public void onWatchedUpdate(BilibiliWatchedUpdateEvent event) {
+        Integer count = event.getCount();
+        if (count != null) {
+            max(event, BilibiliLiveMetric.WATCHED_COUNT, count);
+            maxSeries(event, BilibiliLiveMetric.WATCHED_COUNT, count);
+        }
+    }
+
+    /**
+     * 高能用户数更新
+     */
+    @EventListener(BilibiliOnlineRankCountUpdateEvent.class)
+    public void onOnlineRankCountUpdate(BilibiliOnlineRankCountUpdateEvent event) {
+        Integer count = event.getCount();
+        if (count != null) {
+            max(event, BilibiliLiveMetric.ONLINE_RANK_COUNT, count);
+            maxSeries(event, BilibiliLiveMetric.ONLINE_RANK_COUNT, count);
+        }
+    }
+
+    /**
      * 分享直播间
      */
     @EventListener(BilibiliShareEvent.class)
@@ -248,6 +278,20 @@ public class BilibiliLiveStatsAggregator {
             return;
         }
         liveDataService.maxLiveMetric(event.getPlatform(), event.getSource().getUid(), metric, value);
+    }
+
+    /**
+     * 把一次瞬时读数计入曲线，同一分钟内取最大
+     * <p>
+     * 与 {@link #increment} 里那段曲线写入的区别在这里：那边是累加增量，
+     * 而这些指标每次给的都是「当前是多少」，累加会得出天文数字。
+     */
+    private void maxSeries(StarBotBaseLiveEvent event, String metric, double value) {
+        if (event.getSource() == null || event.getSource().getUid() == null) {
+            return;
+        }
+        liveDataService.maxLiveSeries(event.getPlatform(), event.getSource().getUid(),
+                metric, event.getTimestamp(), value);
     }
 
     private void recordUser(StarBotBaseLiveEvent event, String metric, UserInfo sender) {

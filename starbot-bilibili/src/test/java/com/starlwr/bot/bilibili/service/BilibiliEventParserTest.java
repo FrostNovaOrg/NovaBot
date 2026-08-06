@@ -324,6 +324,53 @@ class BilibiliEventParserTest {
     }
 
     @Test
+    @DisplayName("看过人数应解析出精确值与平台格式化文本")
+    void parsesWatchedChange() {
+        // 取自 2026-08-06 从在播的热门直播间实抓的报文，data 只有这三个键
+        BilibiliWatchedUpdateEvent event = assertInstanceOf(BilibiliWatchedUpdateEvent.class,
+                parse("{\"cmd\":\"WATCHED_CHANGE\",\"data\":{\"num\":47391,"
+                        + "\"text_small\":\"4.7万\",\"text_large\":\"4.7万人看过\"}}").orElseThrow());
+
+        assertEquals(47391, event.getCount());
+        assertEquals("4.7万人看过", event.getText(), "展示文本用平台给的，自己格式化会与直播间里的数字对不上");
+    }
+
+    @Test
+    @DisplayName("高能用户数应解析出两个计数与展示文本")
+    void parsesOnlineRankCount() {
+        // 同为实抓报文。实测 18/18 条里 count 与 online_count 始终相等，
+        // 但平台既然分了两个字段就都带上，免得哪天语义分叉
+        BilibiliOnlineRankCountUpdateEvent event = assertInstanceOf(BilibiliOnlineRankCountUpdateEvent.class,
+                parse("{\"cmd\":\"ONLINE_RANK_COUNT\",\"data\":{\"count\":11921,\"count_text\":\"1万+\","
+                        + "\"online_count\":11921,\"online_count_text\":\"1万+\"}}").orElseThrow());
+
+        assertEquals(11921, event.getCount());
+        assertEquals(11921, event.getOnlineCount());
+        assertEquals("1万+", event.getText());
+    }
+
+    @Test
+    @DisplayName("高能用户数只给 count 时也应能解析，多余字段为空")
+    void onlineRankCountWithOnlyCount() {
+        // 旧版本的消息里只有 count 一个字段，缺的两项都只是展示用，不该让整条消息解析失败
+        BilibiliOnlineRankCountUpdateEvent event = assertInstanceOf(BilibiliOnlineRankCountUpdateEvent.class,
+                parse("{\"cmd\":\"ONLINE_RANK_COUNT\",\"data\":{\"count\":23}}").orElseThrow());
+
+        assertEquals(23, event.getCount());
+        assertNull(event.getOnlineCount());
+        assertNull(event.getText());
+    }
+
+    @Test
+    @DisplayName("两个统计消息缺少 data 时不抛异常")
+    void statsMessagesToleratesMissingData() {
+        assertDoesNotThrow(() -> {
+            assertTrue(parse("{\"cmd\":\"WATCHED_CHANGE\"}").isEmpty());
+            assertTrue(parse("{\"cmd\":\"ONLINE_RANK_COUNT\"}").isEmpty());
+        });
+    }
+
+    @Test
     @DisplayName("平台切流消息应解析出切断原因")
     void parsesCutOff() {
         BilibiliCutOffEvent event = assertInstanceOf(BilibiliCutOffEvent.class,
@@ -398,7 +445,9 @@ class BilibiliEventParserTest {
     @Test
     @DisplayName("未知消息类型安全忽略")
     void ignoresUnknownCommand() {
-        assertTrue(parse("{\"cmd\":\"WATCHED_CHANGE\",\"data\":{}}").isEmpty());
+        // 这里原本拿 WATCHED_CHANGE 举例，它后来被支持了，用例也就名不副实了。
+        // 换成一个确实不会去支持的：ENTRY_EFFECT 是进场特效，纯展示，与统计无关
+        assertTrue(parse("{\"cmd\":\"ENTRY_EFFECT\",\"data\":{}}").isEmpty());
         assertTrue(parse("{}").isEmpty());
         assertTrue(parser.parse(null, SOURCE).isEmpty());
     }

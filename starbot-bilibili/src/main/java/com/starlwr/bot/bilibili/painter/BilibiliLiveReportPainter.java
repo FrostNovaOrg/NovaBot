@@ -175,6 +175,8 @@ public class BilibiliLiveReportPainter {
     /**
      * 各条曲线的配色，礼物沿用主题粉（{@link #COLOR_NAME}）
      */
+    private static final Color COLOR_CURVE_WATCHED = new Color(110, 199, 122);
+
     private static final Color COLOR_CURVE_DANMU = new Color(0, 174, 236);
 
     private static final Color COLOR_CURVE_SUPER_CHAT = new Color(255, 168, 61);
@@ -578,6 +580,10 @@ public class BilibiliLiveReportPainter {
         curves.add(new Curve("盲盒", BilibiliLiveMetric.BOX_COUNT, COLOR_CURVE_BOX,
                 peak -> Math.round(peak) + " 个/分"));
         curves.add(new Curve("大航海", BilibiliLiveMetric.GUARD_VALUE, COLOR_CURVE_GUARD, money));
+        // 看过人数是累计值，画出来是一条只升不降的线——它的**斜率**才是「什么时候在涨人」。
+        // 峰值标的是本场最终看过多少人，因此文案是「人看过」而不是「人/分」
+        curves.add(new Curve("看过人数", BilibiliLiveMetric.WATCHED_COUNT, COLOR_CURVE_WATCHED,
+                peak -> Math.round(peak) + " 人看过"));
 
         boolean first = true;
         for (Curve curve : curves) {

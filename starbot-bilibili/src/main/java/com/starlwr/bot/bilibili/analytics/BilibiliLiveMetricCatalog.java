@@ -33,6 +33,10 @@ public class BilibiliLiveMetricCatalog implements LiveMetricCatalog {
             Metric.count(BilibiliLiveMetric.FOLLOW_COUNT, "新增关注", "人次"),
             Metric.count(BilibiliLiveMetric.LIKE_TOTAL, "点赞", "次"),
             Metric.count(BilibiliLiveMetric.SHARE_COUNT, "分享", "人次"),
+            // 单位写「人次」而不是「人」：单场是这场的独立人数，而周月汇总是把各场相加，
+            // 同一个人两场都来会被算两次。与已有的点赞总数（同为服务端下发的累计值）口径一致
+            Metric.count(BilibiliLiveMetric.WATCHED_COUNT, "看过", "人次"),
+            Metric.count(BilibiliLiveMetric.ONLINE_RANK_COUNT, "高能用户", "人次"),
             Metric.count(BilibiliLiveMetric.BOX_COUNT, "盲盒", "个"),
             Metric.money(BilibiliLiveMetric.BOX_PROFIT, "盲盒盈亏"),
             Metric.count(BilibiliLiveMetric.FREE_GIFT_COUNT, "免费礼物", "个")

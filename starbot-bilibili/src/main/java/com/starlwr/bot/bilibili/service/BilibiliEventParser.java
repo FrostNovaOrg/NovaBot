@@ -69,6 +69,8 @@ public class BilibiliEventParser {
         parsers.put("USER_TOAST_MSG", this::parseGuard);
         parsers.put("LIKE_INFO_V3_CLICK", this::parseLike);
         parsers.put("LIKE_INFO_V3_UPDATE", this::parseLikeUpdate);
+        parsers.put("WATCHED_CHANGE", this::parseWatchedUpdate);
+        parsers.put("ONLINE_RANK_COUNT", this::parseOnlineRankCount);
         parsers.put("ROOM_CHANGE", this::parseRoomInfoChange);
         parsers.put("WARNING", this::parseWarning);
         parsers.put("CUT_OFF", this::parseCutOff);
@@ -485,6 +487,34 @@ public class BilibiliEventParser {
         }
 
         return new BilibiliLikeUpdateEvent(source, meta.getInteger("click_count"));
+    }
+
+    /**
+     * 解析看过人数更新消息
+     */
+    private StarBotBaseLiveEvent parseWatchedUpdate(JSONObject data, LiveStreamerInfo source) {
+        JSONObject meta = data.getJSONObject("data");
+        if (meta == null) {
+            return null;
+        }
+
+        return new BilibiliWatchedUpdateEvent(source, meta.getInteger("num"), meta.getString("text_large"));
+    }
+
+    /**
+     * 解析高能用户数更新消息
+     * <p>
+     * {@code online_count} 与 {@code count_text} 只在部分版本的消息里出现，
+     * 取不到时为空即可——这两项都只是展示用，缺了不影响 {@code count} 这个正主。
+     */
+    private StarBotBaseLiveEvent parseOnlineRankCount(JSONObject data, LiveStreamerInfo source) {
+        JSONObject meta = data.getJSONObject("data");
+        if (meta == null) {
+            return null;
+        }
+
+        return new BilibiliOnlineRankCountUpdateEvent(source,
+                meta.getInteger("count"), meta.getInteger("online_count"), meta.getString("count_text"));
     }
 
     /**

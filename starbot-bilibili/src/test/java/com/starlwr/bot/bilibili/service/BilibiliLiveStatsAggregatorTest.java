@@ -9,7 +9,9 @@ import com.starlwr.bot.bilibili.event.live.BilibiliEnterRoomEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliFollowEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliLikeUpdateEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliPaidGiftEvent;
+import com.starlwr.bot.bilibili.event.live.BilibiliOnlineRankCountUpdateEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliRandomGiftEvent;
+import com.starlwr.bot.bilibili.event.live.BilibiliWatchedUpdateEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliSuperChatEvent;
 import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
@@ -203,6 +205,38 @@ class BilibiliLiveStatsAggregatorTest {
 
         assertEquals(5.0, metric(BilibiliLiveMetric.GIFT_VALUE), 0.0001, "主播确实收到了");
         assertEquals(0.0, metric(BilibiliLiveMetric.GIFT_PAID), 0.0001, "但观众没花钱");
+    }
+
+    @Test
+    @DisplayName("看过人数是瞬时读数，重复下发只取最大而不是累加")
+    void watchedCountTakesMaxNotSum() {
+        // 平台每分钟要下发好几次，每次给的都是「当前累计是多少」。
+        // 累加的话，8000 这个真实值下发三次就成了 24000——而这个数看起来完全合理
+        aggregator.onWatchedUpdate(new BilibiliWatchedUpdateEvent(STREAMER, 8000, "8000人看过"));
+        aggregator.onWatchedUpdate(new BilibiliWatchedUpdateEvent(STREAMER, 8000, "8000人看过"));
+        aggregator.onWatchedUpdate(new BilibiliWatchedUpdateEvent(STREAMER, 8376, "8376人看过"));
+
+        assertEquals(8376.0, metric(BilibiliLiveMetric.WATCHED_COUNT), 0.0001);
+    }
+
+    @Test
+    @DisplayName("高能用户数会涨落，取本场峰值")
+    void onlineRankCountTakesPeak() {
+        aggregator.onOnlineRankCountUpdate(new BilibiliOnlineRankCountUpdateEvent(STREAMER, 1305, 1305, "1305"));
+        aggregator.onOnlineRankCountUpdate(new BilibiliOnlineRankCountUpdateEvent(STREAMER, 3831, 3831, "3831"));
+        // 高能榜人数会掉下去，峰值不该跟着掉
+        aggregator.onOnlineRankCountUpdate(new BilibiliOnlineRankCountUpdateEvent(STREAMER, 2100, 2100, "2100"));
+
+        assertEquals(3831.0, metric(BilibiliLiveMetric.ONLINE_RANK_COUNT), 0.0001);
+    }
+
+    @Test
+    @DisplayName("计数缺失时不应写入，免得把没有的数据记成 0")
+    void missingCountIsIgnored() {
+        aggregator.onWatchedUpdate(new BilibiliWatchedUpdateEvent(STREAMER, 8376, "8376人看过"));
+        aggregator.onWatchedUpdate(new BilibiliWatchedUpdateEvent(STREAMER, null, null));
+
+        assertEquals(8376.0, metric(BilibiliLiveMetric.WATCHED_COUNT), 0.0001);
     }
 
     @Test

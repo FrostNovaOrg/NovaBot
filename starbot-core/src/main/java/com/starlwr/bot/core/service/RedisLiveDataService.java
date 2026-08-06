@@ -310,6 +310,12 @@ public class RedisLiveDataService implements LiveDataService {
     }
 
     @Override
+    public void maxLiveSeries(@NonNull String platform, @NonNull Long uid, @NonNull String metric,
+                              long timestamp, double value) {
+        delegate.maxLiveSeries(platform, uid, metric, timestamp, value);
+    }
+
+    @Override
     public Map<Long, Double> getLiveSeries(@NonNull String platform, @NonNull Long uid, @NonNull String metric) {
         return delegate.getLiveSeries(platform, uid, metric);
     }
