@@ -29,6 +29,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 直播间消息解析器
@@ -44,6 +46,19 @@ public class BilibiliEventParser {
      * 礼物与大航海接口返回的价格单位为电池的千分之一，1000 对应 1 元
      */
     private static final double PRICE_UNIT = 1000.0;
+
+    /**
+     * 从大航海播报文案里取陪伴天数，如「今天是TA陪伴主播的第1171天」
+     * <p>
+     * 「陪伴」与「第」之间隔着主播名等文字，长度不定，因此用惰性匹配并限长——
+     * 不限长的话可能跨过整句话去匹配到后面某个不相干的数字。
+     */
+    private static final Pattern COMPANION_DAYS = Pattern.compile("陪伴[^0-9]{0,30}?第\\s*([0-9]{1,6})\\s*天");
+
+    /**
+     * 陪伴天数的合理上限，超出即认为匹配错了位置。按平台自身年龄留足余量
+     */
+    private static final int MAX_COMPANION_DAYS = 36500;
 
     /**
      * 已播报过的红包，键为 {@code lot_id}，值为首次见到的时刻
@@ -549,7 +564,8 @@ public class BilibiliEventParser {
 
         return buildGuardEvent(source, senderUid, meta.getString("username"), meta.getString("role_name"),
                 guardLevel, toYuan(meta.getInteger("price")), meta.getInteger("num"), meta.getString("unit"),
-                GuardOperateType.of(Optional.ofNullable(meta.getInteger("op_type")).orElse(-1)), timestamp);
+                GuardOperateType.of(Optional.ofNullable(meta.getInteger("op_type")).orElse(-1)),
+                companionDaysOf(meta.getString("toast_msg")), timestamp);
     }
 
     /**
@@ -594,7 +610,8 @@ public class BilibiliEventParser {
         return buildGuardEvent(source, senderUid, base == null ? null : base.getString("name"),
                 guardInfo.getString("role_name"), guardLevel, toYuan(payInfo.getInteger("price")),
                 payInfo.getInteger("num"), payInfo.getString("unit"),
-                GuardOperateType.of(Optional.ofNullable(guardInfo.getInteger("op_type")).orElse(-1)), timestamp);
+                GuardOperateType.of(Optional.ofNullable(guardInfo.getInteger("op_type")).orElse(-1)),
+                companionDaysOf(meta.getString("toast_msg")), timestamp);
     }
 
     /**
@@ -633,8 +650,38 @@ public class BilibiliEventParser {
 
         guardReconciler.holdGuardBuy(senderUid, guardLevel, timestamp,
                 buildGuardEvent(source, senderUid, meta.getString("username"), meta.getString("gift_name"),
-                        guardLevel, price, count, unitOf(meta), GuardOperateType.UNKNOWN, timestamp));
+                        guardLevel, price, count, unitOf(meta), GuardOperateType.UNKNOWN, null, timestamp));
         return null;
+    }
+
+    /**
+     * 从播报文案里取陪伴天数
+     * <p>
+     * 平台没有给这个字段，只把它写进 {@code toast_msg}，如
+     * 「&lt;%某人%&gt; 在主播某某的直播间开通了舰长，今天是TA陪伴主播的第1171天」。
+     * <p>
+     * <b>这是在解析文案，不是解析字段，随时可能因为改版而失效。</b>
+     * 因此取不到就返回空，<b>绝不返回 0</b>——「陪伴 0 天」会变成假信息出现在感谢文案里。
+     * 同理超出常理的值也当作没取到：正则一旦匹配错位置，宁可丢掉也不要拿去展示。
+     * @return 陪伴天数，解析不出或不合常理时为空
+     */
+    private Integer companionDaysOf(String toastMsg) {
+        if (toastMsg == null || toastMsg.isBlank()) {
+            return null;
+        }
+
+        Matcher matcher = COMPANION_DAYS.matcher(toastMsg);
+        if (!matcher.find()) {
+            return null;
+        }
+
+        try {
+            int days = Integer.parseInt(matcher.group(1));
+            // 上限按平台自身年龄留足余量。超出说明多半匹配到了别的数字
+            return days > 0 && days <= MAX_COMPANION_DAYS ? days : null;
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     /**
@@ -643,11 +690,13 @@ public class BilibiliEventParser {
      * 三条播报消息（{@code GUARD_BUY}、{@code USER_TOAST_MSG}、{@code USER_TOAST_MSG_V2}）
      * 字段位置各不相同，取值的差异留在各自的解析方法里，这里只负责组装。
      * @param iconName 用于查图标的名称，各消息取自不同字段
+     * @param companionDays 陪伴天数，{@code GUARD_BUY} 没有文案可解析，传空
      * @return 等级不认识时返回 null
      */
     private StarBotBaseLiveEvent buildGuardEvent(LiveStreamerInfo source, Long senderUid, String username,
                                                  String iconName, Integer guardLevel, Double price, Integer count,
-                                                 String unit, GuardOperateType operateType, Instant timestamp) {
+                                                 String unit, GuardOperateType operateType, Integer companionDays,
+                                                 Instant timestamp) {
         boolean complete = properties.getLive().isCompleteEvent();
         BilibiliUserInfo sender = new BilibiliUserInfo(
                 senderUid,
@@ -660,16 +709,19 @@ public class BilibiliEventParser {
             case 1 -> {
                 BilibiliGovernorEvent event = new BilibiliGovernorEvent(source, sender, price, count, unit, timestamp);
                 event.setOperateType(operateType);
+                event.setCompanionDays(companionDays);
                 yield event;
             }
             case 2 -> {
                 BilibiliCommanderEvent event = new BilibiliCommanderEvent(source, sender, price, count, unit, timestamp);
                 event.setOperateType(operateType);
+                event.setCompanionDays(companionDays);
                 yield event;
             }
             case 3 -> {
                 BilibiliCaptainEvent event = new BilibiliCaptainEvent(source, sender, price, count, unit, timestamp);
                 event.setOperateType(operateType);
+                event.setCompanionDays(companionDays);
                 yield event;
             }
             default -> {

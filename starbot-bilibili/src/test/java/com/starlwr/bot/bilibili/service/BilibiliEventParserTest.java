@@ -331,6 +331,48 @@ class BilibiliEventParserTest {
             + "\"sender_uinfo\":{\"uid\":555,\"base\":{\"name\":\"发红包的人\",\"face\":\"\"}}}}";
 
     @Test
+    @DisplayName("陪伴天数从播报文案里解析出来")
+    void companionDaysParsedFromToast() {
+        // 文案取自 2026-08-06 实抓的 USER_TOAST_MSG，人名换成占位值
+        String json = "{\"cmd\":\"USER_TOAST_MSG\",\"data\":{\"uid\":555,\"username\":\"老舰长\","
+                + "\"guard_level\":3,\"op_type\":2,\"price\":168000,\"num\":1,\"unit\":\"月\","
+                + "\"role_name\":\"舰长\",\"payflow_id\":\"flow-companion\","
+                + "\"toast_msg\":\"<%老舰长%> 在主播某某的直播间开通了舰长，今天是TA陪伴主播的第1171天\"}}";
+
+        BilibiliCaptainEvent event = assertInstanceOf(BilibiliCaptainEvent.class, parse(json).orElseThrow());
+
+        assertEquals(1171, event.getCompanionDays());
+    }
+
+    @Test
+    @DisplayName("文案里没有陪伴天数时留空，绝不能填 0")
+    void companionDaysAbsentStaysNull() {
+        // 「陪伴 0 天」会作为假信息出现在感谢文案与报告里，比没有这个信息糟得多
+        String json = "{\"cmd\":\"USER_TOAST_MSG\",\"data\":{\"uid\":556,\"username\":\"新舰长\","
+                + "\"guard_level\":3,\"op_type\":1,\"price\":138000,\"num\":1,\"unit\":\"月\","
+                + "\"role_name\":\"舰长\",\"payflow_id\":\"flow-no-companion\","
+                + "\"toast_msg\":\"<%新舰长%> 在主播某某的直播间开通了舰长\"}}";
+
+        BilibiliCaptainEvent event = assertInstanceOf(BilibiliCaptainEvent.class, parse(json).orElseThrow());
+
+        assertNull(event.getCompanionDays(), "解析不出就该是空，不是 0");
+    }
+
+    @Test
+    @DisplayName("文案改版导致匹配错位置时也要留空，而不是给个荒谬的数")
+    void companionDaysRejectsAbsurdValue() {
+        // 构造一个能匹配上正则、但天数远超平台年龄的文案
+        String json = "{\"cmd\":\"USER_TOAST_MSG\",\"data\":{\"uid\":557,\"username\":\"某人\","
+                + "\"guard_level\":3,\"op_type\":1,\"price\":198000,\"num\":1,\"unit\":\"月\","
+                + "\"role_name\":\"舰长\",\"payflow_id\":\"flow-absurd\","
+                + "\"toast_msg\":\"陪伴主播的第999999天\"}}";
+
+        BilibiliCaptainEvent event = assertInstanceOf(BilibiliCaptainEvent.class, parse(json).orElseThrow());
+
+        assertNull(event.getCompanionDays());
+    }
+
+    @Test
     @DisplayName("红包记成互动而不是收入：主播没有从这一笔拿到钱")
     void redPocketIsNotRevenue() {
         StarBotBaseLiveEvent parsed = parse(RED_POCKET).orElseThrow();
