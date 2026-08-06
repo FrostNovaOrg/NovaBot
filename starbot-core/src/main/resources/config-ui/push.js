@@ -2,23 +2,22 @@
  * 推送规则页：主播卡片、推送目标、消息模板与版式选项
  */
 
+import {$, api, el, esc, markDirty, say} from './core.js';
+import {store} from './store.js';
+
 // 插件新增处理器时勾选项自动出现，前端不硬编码任何类名。
-let pushData = [];      // datasource.json 解析结果，改动直接作用其上以保留表单未覆盖的字段
-let handlerList = [];   // 已注册的推送处理器
-let senderList = [];    // 已配置的机器人平台
-let advancedMode = false;
 const openTemplates = new Set();   // 已展开的模板编辑器，卡片重绘后据此恢复展开状态
 
-function renderStreamers() {
+export function renderStreamers() {
   const box = $('#streamers');
 
-  if (!pushData.length) {
+  if (!store.pushData.length) {
     box.innerHTML = '<div class="empty">尚未配置任何主播。在上方输入 uid 或粘贴个人空间链接来添加。</div>';
     return;
   }
 
   box.innerHTML = '';
-  pushData.forEach((user, ui) => box.appendChild(streamerCard(user, ui)));
+  store.pushData.forEach((user, ui) => box.appendChild(streamerCard(user, ui)));
 }
 
 function streamerCard(user, ui) {
@@ -42,7 +41,7 @@ function streamerCard(user, ui) {
   add.textContent = '+ 添加推送目标';
   add.addEventListener('click', () => {
     user.targets = user.targets || [];
-    user.targets.push({ platform: senderList[0] || '', type: 1, num: null, enabled: true, messages: [] });
+    user.targets.push({ platform: store.senderList[0] || '', type: 1, num: null, enabled: true, messages: [] });
     renderStreamers();
     markDirty();
   });
@@ -59,10 +58,10 @@ function targetRow(user, ui, target, ti) {
   // 此时若只给一个空选项，界面就在说「这条规则没有配机器人」——而实际上配了，
   // 保存也不会把它写没（serializePush 用的是 pushData 而不是 DOM）。
   // 与其显示一句与事实不符的话，不如把配置里的值原样列出并标注它当前不可用
-  const known = senderList.length ? senderList : (target.platform ? [target.platform] : []);
+  const known = store.senderList.length ? senderList : (target.platform ? [target.platform] : []);
   const platformOpts = known.length
     ? known.map(s => '<option value="' + esc(s) + '"' + (s === target.platform ? ' selected' : '') + '>'
-        + esc(s) + (senderList.length ? '' : '（当前不可用）') + '</option>').join('')
+        + esc(s) + (store.senderList.length ? '' : '（当前不可用）') + '</option>').join('')
     : '<option value="">（尚无可用的机器人）</option>';
 
   // 取值须与 PushTargetType 的 code 一致：GROUP(1)、FRIEND(0)
@@ -78,7 +77,7 @@ function targetRow(user, ui, target, ti) {
   events.style.cssText = 'flex-basis:100%;margin:8px 0 0';
   const chosen = new Set((target.messages || []).map(m => m.handler));
 
-  handlerList.forEach(h => {
+  store.handlerList.forEach(h => {
     const label = el('label');
     label.innerHTML = '<input type="checkbox" data-h="' + ui + ',' + ti + ',' + esc(h.className) + '"'
       + (chosen.has(h.className) ? ' checked' : '') + '>'
@@ -90,14 +89,14 @@ function targetRow(user, ui, target, ti) {
     events.appendChild(label);
   });
 
-  if (!handlerList.length) {
+  if (!store.handlerList.length) {
     events.innerHTML = '<small>尚未加载到任何推送处理器，请确认对应插件已加载</small>';
   }
 
   row.appendChild(events);
 
   // 已展开的模板编辑器在重绘后需要保持展开，否则每改一个字就会收起来
-  handlerList.forEach(h => {
+  store.handlerList.forEach(h => {
     if (chosen.has(h.className) && openTemplates.has(ui + ',' + ti + ',' + h.className)) {
       row.appendChild(templateEditor(ui, ti, h));
     }
@@ -109,7 +108,7 @@ function targetRow(user, ui, target, ti) {
 // 占位符要查文档才知道有哪些，模板里写了什么效果也全靠脑补。
 // 做成可点击插入的标签加实时预览，把这两件事都摆到眼前
 function templateEditor(ui, ti, handler) {
-  const message = pushData[ui].targets[ti].messages.find(m => m.handler === handler.className);
+  const message = store.pushData[ui].targets[ti].messages.find(m => m.handler === handler.className);
   const value = (message.params && message.params.message) != null
     ? message.params.message
     : (handler.defaultParams && handler.defaultParams.message) || '';
@@ -223,19 +222,19 @@ $('#streamers').addEventListener('change', e => {
   const h = t.getAttribute('data-h');
 
   if (enable !== null) {
-    pushData[+enable].enabled = t.checked;
+    store.pushData[+enable].enabled = t.checked;
   } else if (tPlatform) {
     const [ui, ti] = tPlatform.split(',').map(Number);
-    pushData[ui].targets[ti].platform = t.value;
+    store.pushData[ui].targets[ti].platform = t.value;
   } else if (tType) {
     const [ui, ti] = tType.split(',').map(Number);
-    pushData[ui].targets[ti].type = Number(t.value);
+    store.pushData[ui].targets[ti].type = Number(t.value);
   } else if (tNum) {
     const [ui, ti] = tNum.split(',').map(Number);
-    pushData[ui].targets[ti].num = t.value.trim() === '' ? null : Number(t.value.trim());
+    store.pushData[ui].targets[ti].num = t.value.trim() === '' ? null : Number(t.value.trim());
   } else if (h) {
     const parts = h.split(',');
-    const target = pushData[+parts[0]].targets[+parts[1]];
+    const target = store.pushData[+parts[0]].targets[+parts[1]];
     const className = parts.slice(2).join(',');
     target.messages = target.messages || [];
     if (t.checked) {
@@ -268,20 +267,20 @@ $('#streamers').addEventListener('click', e => {
   }
 
   if (delUser !== null) {
-    const user = pushData[+delUser];
+    const user = store.pushData[+delUser];
     if (!confirm('确定删除主播 ' + (user._uname || user.uid) + ' 吗？')) return;
-    pushData.splice(+delUser, 1);
+    store.pushData.splice(+delUser, 1);
     renderStreamers();
     markDirty();
   } else if (delTarget) {
     const [ui, ti] = delTarget.split(',').map(Number);
-    pushData[ui].targets.splice(ti, 1);
+    store.pushData[ui].targets.splice(ti, 1);
     renderStreamers();
     markDirty();
   }
 });
 
-async function addStreamer() {
+export async function addStreamer() {
   const input = $('#add-uid').value.trim();
   if (!input) {
     say('请先输入 uid 或个人空间链接', 'err');
@@ -304,14 +303,14 @@ async function addStreamer() {
       return;
     }
 
-    if (pushData.some(u => Number(u.uid) === Number(res.uid))) {
+    if (store.pushData.some(u => Number(u.uid) === Number(res.uid))) {
       say('主播 ' + res.uname + ' 已在列表中', 'err');
       return;
     }
 
     if (!confirm('确认添加「' + res.uname + '」（uid ' + res.uid + '）吗？')) return;
 
-    pushData.push({
+    store.pushData.push({
       uid: res.uid, platform: 'bilibili', enabled: true, targets: [],
       _uname: res.uname, _roomId: res.roomId, _face: res.face
     });
@@ -327,16 +326,16 @@ async function addStreamer() {
 }
 
 // 下划线开头的字段仅供界面展示（昵称、头像等），不应写进配置文件
-function serializePush() {
-  return JSON.stringify(pushData, (key, value) => key.startsWith('_') ? undefined : value, 2);
+export function serializePush() {
+  return JSON.stringify(store.pushData, (key, value) => key.startsWith('_') ? undefined : value, 2);
 }
 
-function toggleAdvanced() {
-  if (!advancedMode) {
+export function toggleAdvanced() {
+  if (!store.advancedMode) {
     $('#datasource').value = serializePush();
   } else {
     try {
-      pushData = JSON.parse($('#datasource').value);
+      store.pushData = JSON.parse($('#datasource').value);
       renderStreamers();
     } catch (e) {
       say('原始 JSON 格式有误，无法切回表单：' + e.message, 'err');
@@ -344,18 +343,18 @@ function toggleAdvanced() {
     }
   }
 
-  advancedMode = !advancedMode;
-  $('#advanced').style.display = advancedMode ? 'block' : 'none';
-  $('#streamers').style.display = advancedMode ? 'none' : 'block';
+  store.advancedMode = !store.advancedMode;
+  $('#advanced').style.display = store.advancedMode ? 'block' : 'none';
+  $('#streamers').style.display = store.advancedMode ? 'none' : 'block';
   $('#push-toolbar').querySelectorAll('input,button').forEach(elm => {
-    if (elm.id !== 'toggle-advanced') elm.disabled = advancedMode;
+    if (elm.id !== 'toggle-advanced') elm.disabled = store.advancedMode;
   });
-  $('#toggle-advanced').textContent = advancedMode ? '返回表单编辑' : '高级：编辑原始 JSON';
+  $('#toggle-advanced').textContent = store.advancedMode ? '返回表单编辑' : '高级：编辑原始 JSON';
 }
 
 // 配置文件里只有 uid，昵称需要另行补全才能在界面上显示
-async function decoratePushData() {
-  await Promise.all(pushData.map(async user => {
+export async function decoratePushData() {
+  await Promise.all(store.pushData.map(async user => {
     if (user._uname || user.platform !== 'bilibili') return;
     try {
       const res = await api('/streamer/lookup', {

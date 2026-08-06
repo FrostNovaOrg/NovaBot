@@ -2,8 +2,10 @@
  * 群与成员页：会话列表、金额可见性、命令开关、订阅名单与账号绑定
  */
 
+import {$, api, el, esc, say} from './core.js';
+import {loadState} from './overview.js';
 
-function renderSessions(sessions, commands) {
+export function renderSessions(sessions, commands) {
   const box = $('#sess-list');
   box.innerHTML = '';
 
@@ -141,7 +143,7 @@ async function toggleCommand(input) {
   input.disabled = false;
 }
 
-function renderSubs(subs) {
+export function renderSubs(subs) {
   const body = $('#subs tbody');
   body.innerHTML = '';
 
@@ -187,7 +189,7 @@ async function removeSub(sub, userUid) {
   }
 }
 
-function renderBinds(binds) {
+export function renderBinds(binds) {
   const body = $('#binds tbody');
   body.innerHTML = '';
 

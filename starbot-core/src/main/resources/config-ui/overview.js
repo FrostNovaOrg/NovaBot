@@ -2,9 +2,13 @@
  * 总览页：首次配置向导、健康自检、推送开关与推送记录
  */
 
-let wizardTouched = false;   // 使用者手动展开或收起过，此后不再自动折叠
+import {bindBotForm, botFormHtml, renderTestMessage} from './bot.js';
+import {$, api, el, esc, say} from './core.js';
+import {switchTab} from './main.js';
+import {renderBinds, renderSessions, renderSubs} from './sessions.js';
+import {store} from './store.js';
 
-function renderWizard() {
+export function renderWizard() {
   $('#wizard').innerHTML = `
     <div class="step">
       <h3><span class="no" id="s1-no">1</span>连接机器人</h3>
@@ -48,12 +52,12 @@ function stepDone(no, done) {
   badge.textContent = done ? '✓' : String(no);
 }
 
-function setWizardCollapsed(collapsed) {
+export function setWizardCollapsed(collapsed) {
   $('#wizard').style.display = collapsed ? 'none' : 'block';
   $('#wizard-toggle').textContent = collapsed ? '展开' : '收起';
 }
 
-async function refreshWizardState() {
+export async function refreshWizardState() {
   try {
     const [login, st] = await Promise.all([api('/login'), api('/status')]);
 
@@ -85,7 +89,7 @@ async function refreshWizardState() {
     $('#wizard-title').textContent = remaining
       ? '首次配置 · 还有 ' + remaining + ' 步未完成'
       : '首次配置已完成';
-    if (!wizardTouched) setWizardCollapsed(remaining === 0);
+    if (!store.wizardTouched) setWizardCollapsed(remaining === 0);
   } catch (e) {
     // 向导只是引导，拉取失败不影响其余功能
   }
@@ -111,7 +115,7 @@ function renderHistory(records) {
   }).join('');
 }
 
-async function loadHistory() {
+export async function loadHistory() {
   try {
     renderHistory((await api('/push-history')).records);
   } catch (e) {
@@ -124,14 +128,14 @@ async function loadHistory() {
 
 
 function renderPushSwitch(enabled) {
-  pushEnabled = enabled !== false;
-  $('#toggle-push').textContent = pushEnabled ? '暂停全部推送' : '恢复推送';
-  $('#push-hint').textContent = pushEnabled ? '当前正常推送' : '已暂停，所有推送都会被丢弃';
-  $('#push-hint').style.color = pushEnabled ? '' : 'var(--err)';
+  store.pushEnabled = enabled !== false;
+  $('#toggle-push').textContent = store.pushEnabled ? '暂停全部推送' : '恢复推送';
+  $('#push-hint').textContent = store.pushEnabled ? '当前正常推送' : '已暂停，所有推送都会被丢弃';
+  $('#push-hint').style.color = store.pushEnabled ? '' : 'var(--err)';
 }
 
-async function togglePush() {
-  const next = !pushEnabled;
+export async function togglePush() {
+  const next = !store.pushEnabled;
   $('#toggle-push').disabled = true;
   try {
     const res = await api('/push/toggle', {
@@ -158,7 +162,7 @@ function healthRows(list, emptyText) {
     : '<div class="row"><span class="who">健康检查</span><span>' + esc(emptyText) + '</span></div>';
 }
 
-function renderStatus(data) {
+export function renderStatus(data) {
   renderPushSwitch(data.pushEnabled);
   renderTestMessage(data.senders);
 
@@ -200,7 +204,7 @@ function renderStatus(data) {
 // 「命令是新的、名单是旧的」这种自相矛盾的画面
 let stateData = null;
 
-async function loadState() {
+export async function loadState() {
   try {
     stateData = await api('/state');
     renderState(stateData);
@@ -217,7 +221,7 @@ function renderState(d) {
 
 // 「运行自检」把探针再跑一遍并给出结论。异常项本就在下方逐条列着，
 // 这里只回答「现在到底有没有问题」，省得使用者自己数
-async function runSelfTest() {
+export async function runSelfTest() {
   $('#selftest-run').disabled = true;
   say('自检中…');
   try {

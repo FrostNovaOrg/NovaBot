@@ -199,15 +199,11 @@
   <button class="ghost" id="reload">重新载入</button>
   <button class="primary" id="save" disabled>保存</button>
 </div>
-<!-- 按依赖顺序加载：core 提供公共基础，main 在解析时就会调用其余模块，必须最后 -->
-<script src="/config/assets/core.js"></script>
-<script src="/config/assets/settings.js"></script>
-<script src="/config/assets/bot.js"></script>
-<script src="/config/assets/overview.js"></script>
-<script src="/config/assets/push.js"></script>
-<script src="/config/assets/bilibili.js"></script>
-<script src="/config/assets/sessions.js"></script>
-<script src="/config/assets/analytics.js"></script>
-<script src="/config/assets/main.js"></script>
+<!--
+  ES module 入口只有一个，其余文件由 import 语句自行拉起，加载顺序不再靠这里的排列维持。
+  改成一堆 <script> 时那份顺序是隐性约定：谁依赖谁只存在于人的记忆里，插错一行就是 undefined。
+  模块化没有引入构建步骤——浏览器原生支持，改完刷新即可。
+-->
+<script type="module" src="/config/assets/main.js"></script>
 </body>
 </html>

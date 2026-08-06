@@ -2,7 +2,9 @@
  * 哔哩哔哩页：账号扫码登录与登出
  */
 
-let accountTimer = null;
+import {$, api, esc, say} from './core.js';
+import {refreshWizardState} from './overview.js';
+import {store} from './store.js';
 
 function renderAccounts(accounts) {
   const box = $('#accounts');
@@ -25,16 +27,16 @@ function renderAccounts(accounts) {
   // 等待扫码时轮询刷新，扫完页面自动变为已登录，不必手动刷新。
   // 二维码在「哔哩哔哩」页与总览页的向导里各有一处，两处都要跟着刷新
   const waiting = (accounts || []).some(a => !a.loggedIn);
-  clearTimeout(accountTimer);
-  if (waiting && (tab === 'bilibili' || tab === 'overview')) {
-    accountTimer = setTimeout(() => {
+  clearTimeout(store.accountTimer);
+  if (waiting && (store.tab === 'bilibili' || store.tab === 'overview')) {
+    store.accountTimer = setTimeout(() => {
       loadAccounts();
-      if (tab === 'overview') refreshWizardState();
+      if (store.tab === 'overview') refreshWizardState();
     }, 3000);
   }
 }
 
-async function loadAccounts() {
+export async function loadAccounts() {
   try {
     renderAccounts((await api('/login')).accounts);
   } catch (e) {

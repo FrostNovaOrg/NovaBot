@@ -3,13 +3,22 @@
  * 必须最后加载——它在解析时就会调用其余模块里的函数。
  */
 
-async function load() {
+import {loadAnalytics} from './analytics.js';
+import {loadAccounts} from './bilibili.js';
+import {bindBotForm, botFormHtml, fillBotForms, sendTestMessage} from './bot.js';
+import {$, api, esc, markDirty, say} from './core.js';
+import {loadHistory, loadState, refreshWizardState, renderStatus, renderWizard, runSelfTest, setWizardCollapsed, togglePush} from './overview.js';
+import {addStreamer, decoratePushData, renderStreamers, toggleAdvanced} from './push.js';
+import {renderBackups, renderGeneral, save, saveRaw} from './settings.js';
+import {store} from './store.js';
+
+export async function load() {
   say('载入中…');
   try {
     const [s, v] = await Promise.all([api('/schema'), api('/values')]);
-    schema = s.groups || [];
-    values = v.values || {};
-    dirty = {};
+    store.schema = s.groups || [];
+    store.values = v.values || {};
+    store.dirty = {};
     renderGeneral();
 
     const [d, y, st, b, h] = await Promise.all([
@@ -18,14 +27,14 @@ async function load() {
     $('#rawyml').value = y.content || '';
     renderStatus(st);
 
-    handlerList = h.handlers || [];
-    senderList = st.senders || [];
+    store.handlerList = h.handlers || [];
+    store.senderList = st.senders || [];
     try {
-      pushData = JSON.parse(d.content || '[]');
+      store.pushData = JSON.parse(d.content || '[]');
     } catch (e) {
       // 文件内容不合法时退回高级模式，让使用者直接修，而不是把错误内容悄悄吞掉
-      pushData = [];
-      if (!advancedMode) toggleAdvanced();
+      store.pushData = [];
+      if (!store.advancedMode) toggleAdvanced();
       say('推送配置不是合法 JSON，已切换到高级模式供你修正', 'err');
     }
     renderStreamers();
@@ -38,8 +47,8 @@ async function load() {
     // 向导渲染完成后两份表单才都在 DOM 里，此时统一回填
     fillBotForms();
 
-    const count = schema.reduce((n, g) => n + g.fields.length, 0);
-    $('#head-sub').textContent = count + ' 个配置项 · ' + schema.length + ' 个分组';
+    const count = store.schema.reduce((n, g) => n + g.fields.length, 0);
+    $('#head-sub').textContent = count + ' 个配置项 · ' + store.schema.length + ' 个分组';
     say('');
   } catch (e) {
     say('载入失败：' + e.message, 'err');
@@ -47,22 +56,22 @@ async function load() {
   markDirty();
 }
 
-function switchTab(name) {
+export function switchTab(name) {
   document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x.dataset.tab === name));
   document.querySelectorAll('section').forEach(x => x.classList.toggle('on', x.id === name));
-  tab = name;
+  store.tab = name;
 
   // 窄屏上页签栏是横向滚动的，靠右的页签会落在视野外。选中却看不见等于没有选中标记，
   // 因此把当前页签滚进来。block:'nearest' 防止它顺带把整页往下拉
   $('nav button.on')?.scrollIntoView({inline: 'center', block: 'nearest'});
 
-  clearTimeout(accountTimer);
-  if (tab === 'overview') { api('/status').then(renderStatus); loadHistory(); loadAccounts(); refreshWizardState(); }
-  else if (tab === 'bot') api('/status').then(renderStatus);
-  else if (tab === 'bilibili') { api('/status').then(renderStatus); loadAccounts(); }
+  clearTimeout(store.accountTimer);
+  if (store.tab === 'overview') { api('/status').then(renderStatus); loadHistory(); loadAccounts(); refreshWizardState(); }
+  else if (store.tab === 'bot') api('/status').then(renderStatus);
+  else if (store.tab === 'bilibili') { api('/status').then(renderStatus); loadAccounts(); }
   // 每次进入都重取：群里随时可能有人订阅或关掉命令，缓存的画面会误导人
-  else if (tab === 'sessions') loadState();
-  else if (tab === 'analytics') loadAnalytics();
+  else if (store.tab === 'sessions') loadState();
+  else if (store.tab === 'analytics') loadAnalytics();
 
   markDirty();
 }
@@ -82,7 +91,7 @@ $('#add-streamer').addEventListener('click', addStreamer);
 $('#toggle-advanced').addEventListener('click', toggleAdvanced);
 $('#add-uid').addEventListener('keydown', e => { if (e.key === 'Enter') addStreamer(); });
 $('#wizard-toggle').addEventListener('click', () => {
-  wizardTouched = true;
+  store.wizardTouched = true;
   setWizardCollapsed($('#wizard').style.display !== 'none');
 });
 $('#ana-view').addEventListener('change', loadAnalytics);
@@ -156,7 +165,7 @@ bindBotForm('bot');
 // 取不到也照常载入——未启用口令登录时本就没有令牌，读接口不受影响
 api('/auth/state')
   .then(state => {
-    csrfToken = state.csrfToken || '';
+    store.csrfToken = state.csrfToken || '';
     $('#auth-actions').style.display = state.enabled ? '' : 'none';
     if (state.totpSetupNeeded) renderTotpSetup();
   })

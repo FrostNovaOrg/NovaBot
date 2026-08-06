@@ -2,10 +2,14 @@
  * 设置页：配置项表单、备份、保存与校验提示
  */
 
+import {$, api, el, esc, markDirty, saveTarget, say} from './core.js';
+import {load} from './main.js';
+import {serializePush} from './push.js';
+import {store} from './store.js';
 
 // 配置项有数十项，但真正决定系统能否跑起来的只有寥寥几项。
 // 默认只显示必填与常用，高级项收起来——问题不在项多，而在没有区分「必须懂」与「可以不管」
-function renderGeneral() {
+export function renderGeneral() {
   const box = $('#groups');
   box.innerHTML = '';
 
@@ -15,7 +19,7 @@ function renderGeneral() {
   let shown = 0;
   let hidden = 0;
 
-  for (const g of schema) {
+  for (const g of store.schema) {
     const fields = g.fields.filter(visible);
     hidden += g.fields.length - fields.length;
     if (!fields.length) continue;
@@ -48,10 +52,10 @@ function renderGeneral() {
       row.appendChild(meta);
 
       const cell = el('div');
-      const saved = values[f.name] !== undefined ? values[f.name]
+      const saved = store.values[f.name] !== undefined ? store.values[f.name]
         : (f.defaultValue !== null && f.defaultValue !== undefined ? String(f.defaultValue) : '');
       // 切换显示范围会整体重绘，此时未保存的改动要接着显示出来，否则看起来像被悄悄还原了
-      const current = dirty[f.name] !== undefined ? dirty[f.name] : saved;
+      const current = store.dirty[f.name] !== undefined ? store.dirty[f.name] : saved;
 
       let input;
       if (f.widget === 'boolean') {
@@ -105,14 +109,14 @@ function renderGeneral() {
       // 基准是已保存的值，而非当前显示值——后者可能是尚未保存的改动
       const original = String(saved);
 
-      if (dirty[f.name] !== undefined) {
+      if (store.dirty[f.name] !== undefined) {
         row.classList.add('changed');
       }
 
       const onChange = () => {
         const now = read();
-        if (now === original) { delete dirty[f.name]; row.classList.remove('changed'); }
-        else { dirty[f.name] = now; row.classList.add('changed'); }
+        if (now === original) { delete store.dirty[f.name]; row.classList.remove('changed'); }
+        else { store.dirty[f.name] = now; row.classList.add('changed'); }
         markDirty();
       };
       input.addEventListener('input', onChange);
@@ -134,7 +138,7 @@ function renderGeneral() {
 // 同一份表单在「首次配置」向导与「机器人」页签下各出现一次。
 
 // 每次保存都会留一份带时间戳的备份，改坏了可以直接滚回去
-function renderBackups(names) {
+export function renderBackups(names) {
   const box = $('#backups');
   if (!names || !names.length) {
     box.innerHTML = '<span>暂无历史备份，每次保存会自动生成一份</span>';
@@ -177,7 +181,7 @@ function showIssues(issues) {
     + issues.map(i => '<li>' + esc(i) + '</li>').join('') + '</ul>';
 }
 
-async function save() {
+export async function save() {
   const target = saveTarget();
   if (!target) return;
 
@@ -191,14 +195,14 @@ async function save() {
       res = await api('/values', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(dirty)
+        body: JSON.stringify(store.dirty)
       });
-      if (res.success) { dirty = {}; document.querySelectorAll('.field.changed').forEach(e => e.classList.remove('changed')); }
+      if (res.success) { store.dirty = {}; document.querySelectorAll('.field.changed').forEach(e => e.classList.remove('changed')); }
     } else {
       res = await api('/datasource', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: advancedMode ? $('#datasource').value : serializePush() })
+        body: JSON.stringify({ content: store.advancedMode ? $('#datasource').value : serializePush() })
       });
     }
 
@@ -214,7 +218,7 @@ async function save() {
 
 // 整份 YAML 的保存单独成一个按钮：它覆盖的是文件全文，
 // 与表单里逐项改动不是一回事，混用同一个按钮迟早会误把旧内容盖回去
-async function saveRaw() {
+export async function saveRaw() {
   $('#raw-save').disabled = true;
   showIssues(null);
   say('保存中…');

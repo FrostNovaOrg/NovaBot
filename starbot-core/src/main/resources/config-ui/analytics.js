@@ -2,6 +2,8 @@
  * 数据分析页：按周月聚合的场次趋势与图表
  */
 
+import {$, api, esc, say} from './core.js';
+
 let anaData = null;
 
 function fmtDuration(seconds) {
@@ -15,7 +17,7 @@ function fmtMetric(value, metric) {
   return metric.money ? value.toFixed(2) : Math.round(value).toLocaleString('en-US');
 }
 
-async function loadAnalytics() {
+export async function loadAnalytics() {
   const view = $('#ana-view').value;
   const uid = $('#ana-uid').value;
   const query = uid ? '&uid=' + encodeURIComponent(uid) : '';

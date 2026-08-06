@@ -2,8 +2,11 @@
  * 机器人页：连接参数表单与测试消息
  */
 
+import {$, api, esc} from './core.js';
+import {store} from './store.js';
+
 // 同一文档里不能有两个相同 id，因此按前缀生成 DOM，逻辑仍只写一份。
-function botFormHtml(p) {
+export function botFormHtml(p) {
   return '<div class="row"><label>地址</label><input id="' + p + '-addr" value="127.0.0.1"></div>'
     + '<div class="row"><label>HTTP 端口</label><input id="' + p + '-hport" value="3000" inputmode="numeric"></div>'
     + '<div class="row"><label>HTTP Token</label><input id="' + p + '-htoken" placeholder="与 OneBot 实现中配置的一致"></div>'
@@ -14,7 +17,7 @@ function botFormHtml(p) {
     + '<div class="out" id="' + p + '-out"></div>';
 }
 
-function bindBotForm(p) {
+export function bindBotForm(p) {
   $('#' + p + '-test').addEventListener('click', () => testBotConnection(p));
   $('#' + p + '-save').addEventListener('click', () => saveBotConnection(p));
 }
@@ -24,7 +27,7 @@ function bindBotForm(p) {
 // 保存端对空白字段是「保持原值」语义，留空不会把已有 token 抹掉。
 const BOT_FORMS = ['s1', 'bot'];
 
-async function fillBotForms() {
+export async function fillBotForms() {
   try {
     const current = await api('/setup/bot');
     if (!current.configured) return;
@@ -102,7 +105,7 @@ async function saveBotConnection(p) {
 // 而不是先猜哪个页签是入口。四步都完成后自动收起。
 
 // 让使用者当场发一条真消息，是最直接的验证手段
-function renderTestMessage(senders) {
+export function renderTestMessage(senders) {
   const pick = $('#test-platform');
   pick.innerHTML = (senders || []).length
     ? senders.map(s => '<option value="' + esc(s) + '">' + esc(s) + '</option>').join('')
@@ -110,7 +113,7 @@ function renderTestMessage(senders) {
   $('#test-send').disabled = !(senders || []).length;
 }
 
-async function sendTestMessage() {
+export async function sendTestMessage() {
   const box = $('#test-result');
   const platform = $('#test-platform').value;
   const num = $('#test-num').value.trim();
@@ -148,4 +151,3 @@ async function sendTestMessage() {
 }
 
 // 「临时静音」要求立即生效，因此后端会同时改内存与配置文件
-let pushEnabled = true;
