@@ -30,9 +30,10 @@ class ConfigUiAuthServiceTest {
         properties.setTotpSecret(totpSecret);
         properties.setTotp(totp);
 
+        // fileService 传 null：这些用例只关心校验逻辑，不需要把哈希写回配置文件
         return new ConfigUiAuthService(properties,
                 new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(2)),
-                new LoginThrottle(properties.getMaxFailures(), Duration.ofMinutes(15)));
+                new LoginThrottle(properties.getMaxFailures(), Duration.ofMinutes(15)), null);
     }
 
     @Test

@@ -38,6 +38,11 @@ import java.util.Optional;
 @ConditionalOnProperty(name = "starbot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
 public class ConfigUiAuthController {
     /**
+     * 登录口令所在的配置项，界面上填的明文会被哈希后写回此处
+     */
+    public static final String PASSWORD_PROPERTY = ConfigUiAuthService.PASSWORD_PROPERTY;
+
+    /**
      * 二次验证密钥所在的配置项，绑定成功后写回此处
      */
     private static final String TOTP_SECRET_PROPERTY = "starbot.core.config-ui.auth.totp-secret";

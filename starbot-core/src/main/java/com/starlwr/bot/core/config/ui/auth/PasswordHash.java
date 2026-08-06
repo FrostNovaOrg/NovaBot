@@ -99,6 +99,54 @@ public final class PasswordHash {
         return value != null && value.startsWith(PREFIX + "$");
     }
 
+    /**
+     * 检查一个哈希串是不是残缺的
+     * <p>
+     * <b>为什么需要单独检查。</b>{@link #verify} 遇到损坏的串一律返回 false——这是对的，
+     * 校验时不该因为数据脏就抛异常。但代价是<b>「哈希抄错了」与「口令输错了」表现完全一样</b>：
+     * 都只得到一句「口令不正确」。手工复制这串东西时少一个字符，人就被永久挡在门外，
+     * 且完全看不出是配置坏了——这个坑真踩过，掉的就是最后一位。
+     * <p>
+     * 所以启动时要单独验一次格式，把问题在它造成损失之前喊出来。
+     * @param encoded 已存储的编码串
+     * @return 问题描述，格式正确时返回 null
+     */
+    public static String describeProblem(String encoded) {
+        if (!isHashed(encoded)) {
+            return null;
+        }
+
+        String[] parts = encoded.split("\\$");
+        if (parts.length != 4) {
+            return "应为 4 段（" + PREFIX + "$迭代次数$盐$哈希），实际 " + parts.length + " 段";
+        }
+
+        try {
+            if (Integer.parseInt(parts[1]) <= 0) {
+                return "迭代次数必须为正整数";
+            }
+        } catch (NumberFormatException e) {
+            return "迭代次数不是数字";
+        }
+
+        try {
+            Base64.Decoder decoder = Base64.getDecoder();
+            int saltLength = decoder.decode(parts[2]).length;
+            int keyLength = decoder.decode(parts[3]).length;
+
+            if (saltLength != SALT_BYTES) {
+                return "盐应为 " + SALT_BYTES + " 字节，实际 " + saltLength + " 字节，多半是复制时漏了字符";
+            }
+            if (keyLength != KEY_BITS / 8) {
+                return "哈希应为 " + (KEY_BITS / 8) + " 字节，实际 " + keyLength + " 字节，多半是复制时漏了字符";
+            }
+        } catch (IllegalArgumentException e) {
+            return "盐或哈希不是合法的 Base64，多半是复制时带进了多余字符";
+        }
+
+        return null;
+    }
+
     private static byte[] derive(char[] password, byte[] salt, int iterations) {
         PBEKeySpec spec = new PBEKeySpec(password, salt, iterations, KEY_BITS);
         try {

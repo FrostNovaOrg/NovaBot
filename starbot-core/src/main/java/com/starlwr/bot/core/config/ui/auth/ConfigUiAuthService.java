@@ -1,11 +1,13 @@
 package com.starlwr.bot.core.config.ui.auth;
 
 import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.ui.ConfigurationFileService;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -28,9 +30,19 @@ public class ConfigUiAuthService {
      */
     private static final String INVALID = "口令或验证码不正确";
 
+    /**
+     * 登录口令所在的配置项，明文会在启动时哈希后写回此处
+     */
+    public static final String PASSWORD_PROPERTY = "starbot.core.config-ui.auth.password";
+
     private final ConfigUiSessionStore sessions;
 
     private final LoginThrottle throttle;
+
+    /**
+     * 用于把哈希写回配置文件。测试中可为 null，此时只提示不落盘
+     */
+    private final ConfigurationFileService fileService;
 
     /**
      * 口令哈希，未启用口令登录时为 null
@@ -63,9 +75,11 @@ public class ConfigUiAuthService {
     @Getter
     private final boolean enabled;
 
-    public ConfigUiAuthService(StarBotCoreProperties.ConfigUi.Auth properties, ConfigUiSessionStore sessions, LoginThrottle throttle) {
+    public ConfigUiAuthService(StarBotCoreProperties.ConfigUi.Auth properties, ConfigUiSessionStore sessions,
+                               LoginThrottle throttle, ConfigurationFileService fileService) {
         this.sessions = sessions;
         this.throttle = throttle;
+        this.fileService = fileService;
         this.passwordHash = resolvePasswordHash(properties.getPassword());
         this.totpEnabled = properties.isTotp();
         this.totpSecret = blankToNull(properties.getTotpSecret());
@@ -212,9 +226,12 @@ public class ConfigUiAuthService {
     /**
      * 解析配置中的口令
      * <p>
-     * 配置文件里既接受哈希串也接受明文。明文只是为了让人能直接填一个密码进去就用起来，
-     * 启动时会当场哈希掉，但<b>文件里那份明文仍然摆在那</b>——所以要在日志里把这件事说清楚，
-     * 并把可以替换过去的哈希串一并打出来。
+     * 配置文件里既接受哈希串也接受明文。填明文是为了让人直接写个密码进去就能用起来——
+     * 启动时会当场哈希掉<b>并写回配置文件</b>，明文不会留在盘上。
+     * <p>
+     * <b>不能只打一行日志让使用者自己去抄。</b>那串东西有 80 个字符，
+     * 手工复制少一位就再也登不进去，而登录时的报错与「口令输错了」一模一样——
+     * 人只会以为是自己记错了密码。这个坑真踩过，掉的就是最后一位。
      * @param configured 配置值
      * @return 口令哈希，未配置时为 null
      */
@@ -225,14 +242,42 @@ public class ConfigUiAuthService {
         }
 
         if (PasswordHash.isHashed(password)) {
+            String problem = PasswordHash.describeProblem(password);
+            if (problem != null) {
+                // 不能因此把口令登录关掉——那等于把已开到公网的面板整个敞开。
+                // 但也不能一声不吭：残缺的哈希与任何口令都对不上，
+                // 而登录时的报错与「口令输错了」一模一样
+                log.error("配置界面的口令哈希不完整（{}），任何口令都无法登录", problem);
+                log.error("请在配置界面重新设置一次登录口令；");
+                log.error("此时仍可凭启动令牌进入面板，地址见下方日志");
+            }
             return password;
         }
 
         String hashed = PasswordHash.hash(password.toCharArray());
-        log.warn("配置界面的登录口令是以明文保存的, 建议改填下面这串哈希, 效果完全相同:");
-        log.warn("  starbot.core.config-ui.auth.password: {}", hashed);
+        persistHash(hashed);
 
         return hashed;
+    }
+
+    /**
+     * 把哈希写回配置文件，替换掉那份明文
+     * <p>
+     * 写不进去也要继续跑：口令本身是有效的，登录不受影响，
+     * 只是文件里还留着明文——那是要提醒使用者的事，不是要拦住启动的事。
+     */
+    private void persistHash(String hashed) {
+        if (fileService == null) {
+            log.warn("配置界面的登录口令仍以明文保存在配置文件中");
+            return;
+        }
+
+        try {
+            fileService.write(Map.of(PASSWORD_PROPERTY, hashed));
+            log.info("配置界面的登录口令已改为哈希保存, 配置文件中不再有明文");
+        } catch (Exception e) {
+            log.warn("配置界面的登录口令未能改为哈希保存, 文件中仍是明文: {}", e.getMessage());
+        }
     }
 
     private static String blankToNull(String value) {

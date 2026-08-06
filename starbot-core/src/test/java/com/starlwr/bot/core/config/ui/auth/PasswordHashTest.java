@@ -4,6 +4,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -85,5 +87,28 @@ class PasswordHashTest {
         // 直接改次数会让哈希对不上，这里只验证解析路径不会因为次数不同而拒绝
         assertFalse(PasswordHash.verify("口令".toCharArray(),
                 "pbkdf2$1000$" + parts[2] + "$" + parts[3]), "次数不同则哈希不同，应判为不匹配而不是报错");
+    }
+
+    @Test
+    @DisplayName("残缺的哈希要能被指出来，而不是等到登录时才表现为「口令不正确」")
+    void detectsTruncatedHash() {
+        String good = PasswordHash.hash("口令".toCharArray());
+        assertNull(PasswordHash.describeProblem(good), "完好的哈希不该报问题");
+
+        // 真实事故：手工复制这串 80 字符时掉了最后一位。
+        // verify 对它只会返回 false，与「口令输错了」完全无法区分
+        String truncated = good.substring(0, good.length() - 1);
+        assertFalse(PasswordHash.verify("口令".toCharArray(), truncated), "残缺的哈希不可能匹配上");
+        assertNotNull(PasswordHash.describeProblem(truncated), "但必须能被指出来");
+
+        assertNotNull(PasswordHash.describeProblem(good.replace("$600000$", "$abc$")), "迭代次数不是数字");
+        assertNotNull(PasswordHash.describeProblem("pbkdf2$600000$onlythree"), "段数不对");
+    }
+
+    @Test
+    @DisplayName("不是哈希格式的串不归它管")
+    void ignoresPlainText() {
+        assertNull(PasswordHash.describeProblem("这是明文口令"));
+        assertNull(PasswordHash.describeProblem(null));
     }
 }

@@ -84,8 +84,9 @@ public class ConfigUiRegistrar {
      * 登录校验
      */
     @Bean
-    public ConfigUiAuthService configUiAuthService(ConfigUiSessionStore sessionStore, LoginThrottle throttle) {
-        return new ConfigUiAuthService(properties.getConfigUi().getAuth(), sessionStore, throttle);
+    public ConfigUiAuthService configUiAuthService(ConfigUiSessionStore sessionStore, LoginThrottle throttle,
+                                                  ConfigurationFileService fileService) {
+        return new ConfigUiAuthService(properties.getConfigUi().getAuth(), sessionStore, throttle, fileService);
     }
 
     /**
