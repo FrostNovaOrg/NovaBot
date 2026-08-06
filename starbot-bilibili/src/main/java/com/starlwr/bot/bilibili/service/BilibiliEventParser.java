@@ -499,8 +499,8 @@ public class BilibiliEventParser {
 
         BilibiliRedPocketEvent event = new BilibiliRedPocketEvent(source, new BilibiliUserInfo(uid, uname, face), startedAt);
         event.setLotteryId(String.valueOf(lotId));
-        // total_price 与礼物价格同单位（千分之一元）。这一点尚未拿真实账单核对过，
-        // 只是同一份报文里其余金额字段都是这个单位
+        // total_price 与礼物价格同单位（千分之一元），已用真实账单核对：
+        // 一笔 total_price=2000 的红包，发红包的人实付 20 电池即 ¥2.00
         event.setCost(Optional.ofNullable(meta.getInteger("total_price")).map(price -> price / PRICE_UNIT).orElse(null));
 
         JSONArray awards = meta.getJSONArray("awards");
