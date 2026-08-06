@@ -21,9 +21,14 @@ class ConfigUiAuthServiceTest {
     private static final String IP = "1.2.3.4";
 
     private ConfigUiAuthService service(String password, String totpSecret) {
+        return service(password, totpSecret, true);
+    }
+
+    private ConfigUiAuthService service(String password, String totpSecret, boolean totp) {
         StarBotCoreProperties.ConfigUi.Auth properties = new StarBotCoreProperties.ConfigUi.Auth();
         properties.setPassword(password);
         properties.setTotpSecret(totpSecret);
+        properties.setTotp(totp);
 
         return new ConfigUiAuthService(properties,
                 new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(2)),
@@ -110,6 +115,73 @@ class ConfigUiAuthServiceTest {
 
         assertEquals(wrongPassword, wrongCode,
                 "分开提示等于告诉攻击者口令已经猜对了，二次验证就只剩六位数字要试");
+    }
+
+    @Test
+    @DisplayName("设了口令却没绑验证器时，应提示去绑而不是把人拦在外面")
+    void promptsForEnrollmentWhenSecretMissing() {
+        ConfigUiAuthService service = service(PASSWORD, "");
+
+        assertTrue(service.totpPending(), "默认要求二次验证，没绑就该提示");
+        assertFalse(service.totpRequired(), "还没绑，登录时无从校验验证码");
+        assertTrue(service.login(PASSWORD.toCharArray(), null, IP).success(),
+                "没绑就不让登录的话，人根本进不到能绑定的界面里去");
+    }
+
+    @Test
+    @DisplayName("绑定引导中的密钥在同一进程内不能变")
+    void pendingSecretIsStable() {
+        ConfigUiAuthService service = service(PASSWORD, "");
+
+        // 每次刷新页面换一个密钥的话，先扫进验证器的那个就作废了，而用户毫不知情
+        assertEquals(service.pendingSecret(), service.pendingSecret());
+    }
+
+    @Test
+    @DisplayName("绑定确认要校验验证码，通过后登录才开始要验证码")
+    void enrollmentActivatesTotp() {
+        ConfigUiAuthService service = service(PASSWORD, "");
+        String secret = service.pendingSecret();
+
+        assertTrue(service.verifyPending("000000").isEmpty(), "验证码不对不能算绑定成功");
+
+        String code = TotpGenerator.generate(TotpGenerator.base32Decode(secret), Instant.now().getEpochSecond() / 30);
+        assertEquals(secret, service.verifyPending(code).orElse(null));
+
+        service.activateTotp(secret);
+        assertTrue(service.totpRequired());
+        assertFalse(service.totpPending(), "绑好了就不该再提示");
+        assertFalse(service.login(PASSWORD.toCharArray(), null, "9.9.9.9").success(), "从此登录必须带验证码");
+    }
+
+    @Test
+    @DisplayName("显式关掉二次验证后既不提示也不校验")
+    void totpCanBeTurnedOff() {
+        ConfigUiAuthService service = service(PASSWORD, "", false);
+
+        assertFalse(service.totpPending());
+        assertFalse(service.totpRequired());
+        assertTrue(service.login(PASSWORD.toCharArray(), null, IP).success());
+    }
+
+    @Test
+    @DisplayName("关掉二次验证时，即使配置里还留着密钥也不再校验")
+    void turningOffIgnoresExistingSecret() {
+        // 否则「关掉了却还要输验证码」，而验证器可能早就被删了
+        ConfigUiAuthService service = service(PASSWORD, TotpGenerator.generateSecret(), false);
+
+        assertFalse(service.totpRequired());
+        assertTrue(service.login(PASSWORD.toCharArray(), null, IP).success());
+    }
+
+    @Test
+    @DisplayName("运维通道签发的会话与登录得来的一样可用")
+    void operatorSessionIsUsable() {
+        ConfigUiAuthService service = service(PASSWORD, TotpGenerator.generateSecret());
+        ConfigUiSession session = service.issueForOperator("127.0.0.1");
+
+        assertTrue(service.validate(session.getId()).isPresent(),
+                "改了口令与二次验证之后，还得有办法从服务器上进得来");
     }
 
     @Test

@@ -37,6 +37,12 @@
   <!-- 校验问题在多个页签下都可能出现，故置于页签之外共用 -->
   <div class="issues" id="issues"></div>
 
+  <!--
+    尚未绑定验证器时的引导。放在页签之外、所有页签之上：只有口令的面板一旦开到公网，
+    安全性就全押在这一个口令上，这件事不该藏在某个页签里等人翻出来。
+  -->
+  <div class="totp-setup" id="totp-setup" style="display:none"></div>
+
   <section id="overview" class="on">
     <div id="wizard-box">
       <div class="backups">
@@ -174,7 +180,9 @@
       <summary>高级：直接编辑配置文件</summary>
       <div class="inner">
         <div class="warn">直接编辑 application.yml，适用于上方表单未覆盖的场景（例如列表类配置项）。
-          保存前会校验 YAML 语法与字段类型，并自动备份原文件；改坏了可用下方的历史备份回滚。</div>
+          保存前会校验 YAML 语法与字段类型，并自动备份原文件；改坏了可用下方的历史备份回滚。
+          <br><b>注意：这里显示的是文件原文，口令、令牌与密钥都是明文</b>——要编辑就必须看得到。
+          正在直播或有人在旁边时，别展开这一段。</div>
         <div class="backups" id="backups"></div>
         <textarea class="full" id="rawyml" spellcheck="false"></textarea>
         <div class="backups" style="margin-top:12px">

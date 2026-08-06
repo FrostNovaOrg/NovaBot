@@ -108,6 +108,30 @@ tr:last-child td{border-bottom:none}
 #push-toolbar #add-uid{width:260px}
 .issues.ok{border-color:var(--ok)}
 .issues.ok li,.issues.ok b{color:var(--ok)}
+/* 机密字段：输入框 + 一个显示/隐藏开关 */
+.secret{display:flex;gap:6px;align-items:center}
+.secret input{flex:1}
+.secret button{background:var(--panel);color:var(--muted);border:1px solid var(--border);
+  border-radius:7px;padding:6px 10px;font-size:12px;cursor:pointer;font-family:inherit;flex:none}
+.secret button:hover{border-color:var(--muted);color:var(--text)}
+/* 绑定验证器的引导。用强调色描边而非报错色：这是建议，不是故障 */
+.totp-setup{background:var(--panel);border:1px solid var(--accent);border-radius:10px;
+  padding:14px 16px;margin-bottom:14px;font-size:13px}
+.totp-setup h3{margin:0 0 4px;font-size:14px}
+.totp-setup p{margin:0 0 12px;color:var(--muted);font-size:12.5px}
+.totp-body{display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap}
+/* 二维码给白底：深色模式下码元与背景对比不足会扫不出来 */
+.totp-body img{width:160px;height:160px;background:#fff;padding:6px;border-radius:8px}
+.totp-side{display:flex;flex-direction:column;gap:8px;min-width:260px;flex:1}
+.totp-side label{color:var(--muted);font-size:12px}
+.totp-side code{background:var(--code);border-radius:6px;padding:6px 9px;font-size:12.5px;
+  word-break:break-all;user-select:all}
+.totp-confirm{display:flex;gap:8px;flex-wrap:wrap}
+.totp-confirm input{background:var(--panel);color:var(--text);border:1px solid var(--border);
+  border-radius:7px;padding:6px 9px;font-size:13px;width:110px}
+.totp-confirm button{background:var(--panel);color:var(--text);border:1px solid var(--border);
+  border-radius:7px;padding:6px 12px;font-size:12.5px;cursor:pointer;font-family:inherit}
+.totp-confirm button:hover{border-color:var(--accent);color:var(--accent)}
 .account{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:18px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
 .account .who{font-size:13px}
 .account .who b{display:block;margin-bottom:2px}

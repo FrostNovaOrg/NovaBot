@@ -119,7 +119,16 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
         }
 
         Optional<ConfigUiSession> session = authService.validate(cookie(request, SESSION_COOKIE));
+
+        // 没有会话时看看是不是拿着启动令牌来的运维通道
         if (session.isEmpty()) {
+            session = redeemOperatorToken(request, response, clientIp);
+            if (session.isPresent()) {
+                // 令牌只能从地址栏或请求头带来，跨站页面拿不到它，因此这一趟不必再查 CSRF
+                chain.doFilter(request, response);
+                return;
+            }
+
             unauthenticated(request, response);
             return;
         }
@@ -132,6 +141,54 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
         }
 
         chain.doFilter(request, response);
+    }
+
+    /**
+     * 用启动令牌换一个会话
+     * <p>
+     * <b>这是一条刻意留下的运维通道</b>：口令与二次验证都改过之后，仍然要有办法从服务器上进得来。
+     * 令牌就在启动日志里，而能看到启动日志的人本来就对这台机器有完全控制权，
+     * 因此它不构成额外的权限泄漏；反过来，没有这条通道，忘记口令就只能改配置重启，
+     * 而重启会断开全部直播间长连接。
+     * <p>
+     * 只认地址栏参数与 {@code Authorization} 头，<b>不认 Cookie</b>：
+     * Cookie 是浏览器自动附上的，认它就等于把这条通道也变成一个 CSRF 面。
+     * 反之，跨站页面既读不到令牌也设不了自定义头，所以凭令牌来的请求本身就不可能是跨站伪造的。
+     * <p>
+     * 换到会话之后浏览器就照常走会话那一套，地址栏里的令牌不必再出现第二次。
+     * @return 换得的会话，令牌不正确时为空
+     */
+    private Optional<ConfigUiSession> redeemOperatorToken(HttpServletRequest request, HttpServletResponse response, String clientIp) {
+        String presented = request.getParameter("token");
+        if (presented == null || presented.isBlank()) {
+            String authorization = request.getHeader(HttpHeaders.AUTHORIZATION);
+            if (authorization != null && authorization.regionMatches(true, 0, BEARER_PREFIX, 0, BEARER_PREFIX.length())) {
+                presented = authorization.substring(BEARER_PREFIX.length()).strip();
+            }
+        }
+
+        if (presented == null || presented.isBlank() || !SecureToken.verify(token, presented.strip())) {
+            return Optional.empty();
+        }
+
+        ConfigUiSession session = authService.issueForOperator(clientIp);
+        response.addHeader(HttpHeaders.SET_COOKIE, sessionCookie(session.getId(), request));
+
+        // 这条通道绕过了口令与二次验证，每次使用都要留痕，否则被人拿到令牌也看不出来
+        log.warn("配置界面: 来自 {} 的访问以启动令牌换取了会话, 已绕过口令与二次验证", clientIp);
+
+        return Optional.of(session);
+    }
+
+    /**
+     * 构造会话 Cookie
+     * <p>
+     * 与 {@link ConfigUiAuthController} 中的那份保持一致：{@code HttpOnly} 挡住脚本读取，
+     * {@code SameSite=Strict} 让跨站请求根本带不上它，{@code Secure} 跟随当前连接是否为 https。
+     */
+    private String sessionCookie(String value, HttpServletRequest request) {
+        return "%s=%s; Path=%s; HttpOnly; SameSite=Strict%s".formatted(
+                SESSION_COOKIE, value, ConfigUiController.BASE_PATH, request.isSecure() ? "; Secure" : "");
     }
 
     /**

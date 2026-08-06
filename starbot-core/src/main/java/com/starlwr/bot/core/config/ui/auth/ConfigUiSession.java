@@ -45,6 +45,15 @@ public class ConfigUiSession {
      */
     private volatile Instant lastSeenAt;
 
+    /**
+     * 本次登录是否已经把「去绑定验证器」的提示按掉了
+     * <p>
+     * 记在会话上而不是配置里：跳过应当只对这一次登录有效。写进配置就成了永久关闭，
+     * 而那是一个该显式做出的决定，不该由一次「等会儿再说」代劳。
+     */
+    @lombok.Setter
+    private volatile boolean totpSetupDismissed;
+
     ConfigUiSession(String id, String csrfToken, Instant issuedAt, Instant expiresAt, String clientIp) {
         this.id = id;
         this.csrfToken = csrfToken;

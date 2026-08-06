@@ -253,6 +253,7 @@ public class ConfigUiController {
                 item.put("defaultValue", field.defaultValue());
                 // 未标注的一律按高级处理：新增配置项默认收进高级区，避免常用区随时间不断膨胀
                 item.put("level", levels.getOrDefault(field.name(), ConfigLevel.Level.ADVANCED).name());
+                item.put("sensitive", SensitiveFields.isSensitive(field.name()));
                 items.add(item);
             }
 
@@ -279,7 +280,8 @@ public class ConfigUiController {
 
         try {
             result.put("success", true);
-            result.put("values", fileService.read());
+            // 口令、令牌与密钥不出这道门：面板可能在直播画面里被打开
+            result.put("values", SensitiveFields.mask(fileService.read()));
         } catch (IOException e) {
             log.error("读取配置文件失败", e);
             result.put("success", false);
@@ -298,8 +300,13 @@ public class ConfigUiController {
     public JSONObject save(@RequestBody Map<String, String> body) {
         JSONObject result = new JSONObject();
 
+        // 界面拿到的机密项是占位值，原样送回来的就是没改过的。不剔除的话，
+        // 改了别的字段一起保存就会把占位值写进配置，口令、令牌与密钥当场全部失效
+        Map<String, String> changes = new LinkedHashMap<>(body);
+        SensitiveFields.dropUnchanged(changes);
+
         try {
-            int changed = fileService.write(body);
+            int changed = fileService.write(changes);
             result.put("success", true);
             result.put("changed", changed);
             result.put("message", changed == 0 ? "没有需要保存的改动" : "已保存 " + changed + " 项，重启后生效");

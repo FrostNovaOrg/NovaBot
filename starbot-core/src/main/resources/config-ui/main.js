@@ -89,6 +89,56 @@ $('#ana-view').addEventListener('change', loadAnalytics);
 $('#ana-period').addEventListener('change', loadAnalytics);
 $('#ana-uid').addEventListener('change', loadAnalytics);
 $('#reload').addEventListener('click', load);
+/**
+ * 未绑定验证器时的引导卡片
+ *
+ * 必须让用户先输一次验证码才算绑定成功——少了这一步，扫码没扫上的人会以为绑好了，
+ * 下次登录被自己的二次验证挡在门外，而那时已经没有界面可以撤销了。
+ */
+async function renderTotpSetup() {
+  const box = $('#totp-setup');
+  const setup = await api('/auth/totp/setup');
+  if (!setup.success) return;
+
+  box.style.display = '';
+  box.innerHTML =
+    '<h3>建议绑定验证器</h3>'
+    + '<p>面板开到公网后，只有口令这一道防线。用任意验证器应用扫码，再输一次它给出的数字即可。</p>'
+    + '<div class="totp-body">'
+    + (setup.qrCode ? '<img src="data:image/png;base64,' + esc(setup.qrCode) + '" alt="二维码">' : '')
+    + '<div class="totp-side">'
+    + '<label>不方便扫码时手动输入这串密钥</label>'
+    + '<code>' + esc(setup.secret) + '</code>'
+    + '<div class="totp-confirm">'
+    + '<input id="totp-code" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="6 位数字">'
+    + '<button type="button" id="totp-enroll">确认绑定</button>'
+    + '<button type="button" id="totp-skip">暂不绑定</button>'
+    + '</div><span class="status" id="totp-msg"></span>'
+    + '</div></div>';
+
+  $('#totp-enroll').addEventListener('click', async () => {
+    const r = await api('/auth/totp/enroll', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({code: $('#totp-code').value})
+    });
+    if (r.success) {
+      box.style.display = 'none';
+      say(r.message, 'ok');
+      return;
+    }
+    $('#totp-msg').textContent = r.message;
+    $('#totp-msg').className = 'status err';
+  });
+
+  $('#totp-skip').addEventListener('click', async () => {
+    await api('/auth/totp/skip', {method: 'POST'});
+    box.style.display = 'none';
+    // 只跳过这一次登录。要永久关掉得去改 starbot.core.config-ui.auth.totp，
+    // 那是个该显式做出的决定，不该由一次「等会儿再说」代劳
+    say('本次登录不再提示。要永久关闭请改配置项 auth.totp');
+  });
+}
+
 $('#logout').addEventListener('click', async () => {
   await api('/auth/logout', {method: 'POST'});
   location.reload();
@@ -108,6 +158,7 @@ api('/auth/state')
   .then(state => {
     csrfToken = state.csrfToken || '';
     $('#auth-actions').style.display = state.enabled ? '' : 'none';
+    if (state.totpSetupNeeded) renderTotpSetup();
   })
   .catch(() => {})
   .finally(load);

@@ -38,9 +38,24 @@ public class ConfigUiAuthService {
     private final String passwordHash;
 
     /**
-     * 2FA 密钥，未启用二次验证时为 null
+     * 是否要求二次验证
      */
-    private final String totpSecret;
+    private final boolean totpEnabled;
+
+    /**
+     * 已绑定的 2FA 密钥，尚未绑定时为 null
+     * <p>
+     * 绑定可以在运行期完成，因此是可变的
+     */
+    private volatile String totpSecret;
+
+    /**
+     * 绑定引导中待确认的密钥
+     * <p>
+     * 只在内存里存到确认为止。<b>不能一生成就写进配置</b>：那样刷新一次页面就换一个密钥，
+     * 用户扫了旧的却对不上，而配置里躺着一个谁也没绑定的密钥。
+     */
+    private volatile String pendingSecret;
 
     /**
      * 是否启用了口令登录
@@ -52,15 +67,64 @@ public class ConfigUiAuthService {
         this.sessions = sessions;
         this.throttle = throttle;
         this.passwordHash = resolvePasswordHash(properties.getPassword());
+        this.totpEnabled = properties.isTotp();
         this.totpSecret = blankToNull(properties.getTotpSecret());
         this.enabled = passwordHash != null;
+
+        if (this.enabled && this.totpEnabled && this.totpSecret == null) {
+            log.warn("配置界面已启用口令登录但尚未绑定验证器, 请在界面上完成绑定");
+        }
     }
 
     /**
-     * 是否要求二次验证
+     * 登录时是否要输验证码
      */
     public boolean totpRequired() {
-        return totpSecret != null;
+        return totpEnabled && totpSecret != null;
+    }
+
+    /**
+     * 是否该提示用户去绑定验证器
+     */
+    public boolean totpPending() {
+        return enabled && totpEnabled && totpSecret == null;
+    }
+
+    /**
+     * 取出绑定引导用的密钥
+     * <p>
+     * 同一个进程内始终返回同一个，刷新页面不会换：换了的话先扫的那个二维码就作废了。
+     * @return Base32 密钥
+     */
+    public synchronized String pendingSecret() {
+        if (pendingSecret == null) {
+            pendingSecret = TotpGenerator.generateSecret();
+        }
+        return pendingSecret;
+    }
+
+    /**
+     * 校验绑定引导中输入的验证码
+     * <p>
+     * 只校验、不落盘：密钥要先写进配置文件成功，才能真正启用。顺序反过来的话，
+     * 写文件失败就会出现「界面说绑好了，重启后却又要重新绑」，而中间这段时间登录要输的
+     * 是一个没人记得的密钥。
+     * @param code 用户输入的验证码
+     * @return 校验通过时返回待启用的密钥
+     */
+    public Optional<String> verifyPending(String code) {
+        String secret = pendingSecret();
+        return TotpGenerator.verify(secret, code, Instant.now()) ? Optional.of(secret) : Optional.empty();
+    }
+
+    /**
+     * 启用已确认的密钥
+     * @param secret Base32 密钥
+     */
+    public void activateTotp(String secret) {
+        this.totpSecret = secret;
+        this.pendingSecret = null;
+        log.info("配置界面已绑定验证器, 之后登录需要额外输入动态验证码");
     }
 
     /**
@@ -70,6 +134,17 @@ public class ConfigUiAuthService {
      */
     public Optional<ConfigUiSession> validate(String sessionId) {
         return sessions.validate(sessionId, Instant.now());
+    }
+
+    /**
+     * 为持有启动令牌的运维通道签发会话
+     * <p>
+     * 不过限流也不记失败：调用方已经验过令牌，走到这里就说明来人能读到本机的启动日志。
+     * @param clientIp 来源 IP
+     * @return 新会话
+     */
+    public ConfigUiSession issueForOperator(String clientIp) {
+        return sessions.issue(clientIp, Instant.now());
     }
 
     /**
@@ -114,8 +189,9 @@ public class ConfigUiAuthService {
         }
 
         try {
+            String secret = totpEnabled ? totpSecret : null;
             boolean passwordOk = PasswordHash.verify(password, passwordHash);
-            boolean codeOk = totpSecret == null || TotpGenerator.verify(totpSecret, code, now);
+            boolean codeOk = secret == null || TotpGenerator.verify(secret, code, now);
 
             if (!passwordOk || !codeOk) {
                 throttle.recordFailure(clientIp, now);

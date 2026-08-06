@@ -77,6 +77,23 @@ function renderGeneral() {
         input.value = current;
         input.placeholder = '每行一项';
         cell.appendChild(input);
+      } else if (f.sensitive) {
+        // 口令、令牌与密钥。后端给的是占位值而非真值，这里只负责别把它摆在画面里——
+        // 面板可能正开在直播画面上，而二次验证密钥一旦泄漏就永久失效且当事人不会察觉
+        const wrap = el('div', 'secret');
+        input = el('input');
+        input.type = 'password';
+        input.value = current;
+        input.autocomplete = 'off';
+        const eye = el('button');
+        eye.type = 'button';
+        eye.textContent = '显示';
+        eye.addEventListener('click', () => {
+          input.type = input.type === 'password' ? 'text' : 'password';
+          eye.textContent = input.type === 'password' ? '显示' : '隐藏';
+        });
+        wrap.append(input, eye);
+        cell.appendChild(wrap);
       } else {
         input = el('input');
         input.type = (f.widget === 'integer' || f.widget === 'number') ? 'number' : 'text';

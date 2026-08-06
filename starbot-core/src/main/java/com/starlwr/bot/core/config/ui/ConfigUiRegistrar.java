@@ -124,7 +124,11 @@ public class ConfigUiRegistrar {
         StarBotCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
         if (!StringUtil.isBlank(auth.getPassword())) {
             log.info("配置界面已启动: http://{}:{}{}", address, port, ConfigUiController.BASE_PATH);
-            log.info("已启用口令登录{}, 访问令牌不再作为凭据", StringUtil.isBlank(auth.getTotpSecret()) ? "" : "与二次验证");
+            log.info("已启用口令登录{}", StringUtil.isBlank(auth.getTotpSecret()) ? "" : "与二次验证");
+            // 令牌仍然有效，它是忘记口令时唯一不必重启就能进去的路。
+            // 这一行必须打出来——否则「运维通道」只存在于代码里，真需要时谁也拿不到令牌
+            log.info("忘记口令时可用以下地址直接进入（该地址等同于口令，请勿分享）:");
+            log.info("  http://{}:{}{}?token={}", address, port, ConfigUiController.BASE_PATH, token);
             return;
         }
 
