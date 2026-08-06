@@ -1,9 +1,12 @@
 package com.starlwr.bot.core.service;
 
 import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.enums.LiveEndReason;
 import com.starlwr.bot.core.model.LiveSession;
+import com.starlwr.bot.core.model.RoomInfoSnapshot;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -169,11 +172,52 @@ public class LiveSessionArchive {
                     json.getLongValue("endTime"),
                     json.getLongValue("durationSeconds"),
                     metrics,
-                    userCounts);
+                    userCounts,
+                    parseEndReason(json.getString("endReason")),
+                    parseTitles(json.getJSONArray("titles")));
         } catch (Exception e) {
             log.debug("跳过归档中无法解析的一行: {}", e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * 解析结束原因
+     * <p>
+     * 4.3.0 之前归档的记录没有这一项，认不出的一律当作正常结束——
+     * <b>宁可把一场被切的算成正常，也不能把正常场次误标成事故</b>，
+     * 后者会让人去追查一个根本不存在的问题。
+     */
+    private LiveEndReason parseEndReason(String name) {
+        if (name == null || name.isBlank()) {
+            return LiveEndReason.NORMAL;
+        }
+
+        try {
+            return LiveEndReason.valueOf(name);
+        } catch (IllegalArgumentException e) {
+            log.debug("归档中出现无法识别的结束原因 {}, 按正常结束处理", name);
+            return LiveEndReason.NORMAL;
+        }
+    }
+
+    /**
+     * 解析标题与分区轨迹，缺失或格式不符时为空表
+     */
+    private List<RoomInfoSnapshot> parseTitles(JSONArray raw) {
+        if (raw == null || raw.isEmpty()) {
+            return List.of();
+        }
+
+        List<RoomInfoSnapshot> titles = new ArrayList<>(raw.size());
+        for (int i = 0; i < raw.size(); i++) {
+            JSONObject entry = raw.getJSONObject(i);
+            if (entry == null) {
+                continue;
+            }
+            titles.add(new RoomInfoSnapshot(entry.getLongValue("at"), entry.getString("title"), entry.getString("area")));
+        }
+        return titles;
     }
 
     /**

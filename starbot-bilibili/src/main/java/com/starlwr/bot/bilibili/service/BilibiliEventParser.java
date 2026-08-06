@@ -19,6 +19,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -67,6 +69,10 @@ public class BilibiliEventParser {
         parsers.put("USER_TOAST_MSG", this::parseGuard);
         parsers.put("LIKE_INFO_V3_CLICK", this::parseLike);
         parsers.put("LIKE_INFO_V3_UPDATE", this::parseLikeUpdate);
+        parsers.put("ROOM_CHANGE", this::parseRoomInfoChange);
+        parsers.put("WARNING", this::parseWarning);
+        parsers.put("CUT_OFF", this::parseCutOff);
+        parsers.put("ROOM_LOCK", this::parseRoomLock);
     }
 
     /**
@@ -445,6 +451,67 @@ public class BilibiliEventParser {
         }
 
         return new BilibiliLikeUpdateEvent(source, meta.getInteger("click_count"));
+    }
+
+    /**
+     * 解析直播间标题与分区变更消息
+     */
+    private StarBotBaseLiveEvent parseRoomInfoChange(JSONObject data, LiveStreamerInfo source) {
+        JSONObject meta = data.getJSONObject("data");
+        if (meta == null) {
+            return null;
+        }
+
+        return new BilibiliRoomInfoChangeEvent(source,
+                meta.getString("title"),
+                meta.getString("parent_area_name"),
+                meta.getString("area_name"));
+    }
+
+    /**
+     * 解析违规警告消息
+     */
+    private StarBotBaseLiveEvent parseWarning(JSONObject data, LiveStreamerInfo source) {
+        return new BilibiliLiveWarningEvent(source, data.getString("msg"));
+    }
+
+    /**
+     * 解析直播流被切断消息
+     */
+    private StarBotBaseLiveEvent parseCutOff(JSONObject data, LiveStreamerInfo source) {
+        return new BilibiliCutOffEvent(source, data.getString("msg"));
+    }
+
+    /**
+     * 解析直播间封禁消息
+     * <p>
+     * 该消息只给解封时刻、不给理由，与警告和切流的字段结构不同。
+     */
+    private StarBotBaseLiveEvent parseRoomLock(JSONObject data, LiveStreamerInfo source) {
+        return new BilibiliRoomLockEvent(source, data.getString("msg"), parseShanghaiTime(data.getString("expire")));
+    }
+
+    /**
+     * 解析接口以东八区本地时间给出的时刻
+     * <p>
+     * 形如 {@code 2019-06-30 03:57:04}，不带时区。<b>解析失败返回 null 而不是当前时刻</b>：
+     * 用「现在」冒充解封时间会让告警声称直播间已经解封。
+     * @param text 时间文本
+     * @return 对应时刻，缺失或无法解析时为 null
+     */
+    private Instant parseShanghaiTime(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+
+        try {
+            return LocalDateTime.parse(text.strip().replace(' ', 'T'))
+                    .atZone(ZoneId.of("Asia/Shanghai"))
+                    .toInstant();
+        } catch (Exception e) {
+            log.debug("无法解析时间文本 {}", text);
+            return null;
+        }
     }
 
     /**

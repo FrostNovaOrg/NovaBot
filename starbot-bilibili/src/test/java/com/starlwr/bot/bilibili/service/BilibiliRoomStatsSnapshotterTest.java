@@ -1,15 +1,20 @@
 package com.starlwr.bot.bilibili.service;
 
 import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
+import com.starlwr.bot.bilibili.model.Room;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.event.live.common.LiveOnEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
+import com.starlwr.bot.core.model.RoomInfoSnapshot;
 import com.starlwr.bot.core.service.DefaultLiveDataService;
+import com.starlwr.bot.core.service.LiveRoomInfoHistory;
+import com.starlwr.bot.core.service.StarBotStateStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -37,6 +42,8 @@ class BilibiliRoomStatsSnapshotterTest {
 
     private DefaultLiveDataService liveDataService;
 
+    private LiveRoomInfoHistory roomInfoHistory;
+
     private BilibiliRoomStatsSnapshotter snapshotter;
 
     @BeforeEach
@@ -46,8 +53,33 @@ class BilibiliRoomStatsSnapshotterTest {
         when(api.getFansMedalCount(anyLong())).thenReturn(Optional.of(36));
         when(api.getGuardCount(anyLong(), anyLong())).thenReturn(Optional.of(3));
 
+        when(api.getLiveInfoByRoomId(anyLong())).thenReturn(new Room(1, null, "早八人的自习室", null));
+
         liveDataService = new DefaultLiveDataService(new StarBotCoreProperties());
-        snapshotter = new BilibiliRoomStatsSnapshotter(liveDataService, api);
+        roomInfoHistory = new LiveRoomInfoHistory(new StarBotStateStore(new StarBotCoreProperties()));
+        snapshotter = new BilibiliRoomStatsSnapshotter(liveDataService, api, roomInfoHistory);
+    }
+
+    @Test
+    @DisplayName("开播时应记下初始标题，作为标题变更记录的起点")
+    void recordsInitialTitle() {
+        snapshotter.onLiveOn(event(false));
+
+        assertEquals(List.of(new RoomInfoSnapshot(0, "早八人的自习室", "")),
+                roomInfoHistory.history(PLATFORM, UID).stream()
+                        .map(snapshot -> new RoomInfoSnapshot(0, snapshot.title(), snapshot.area()))
+                        .toList());
+    }
+
+    @Test
+    @DisplayName("取不到直播间信息时不应影响其余快照")
+    void titleFailureDoesNotBreakSnapshot() {
+        when(api.getLiveInfoByRoomId(anyLong())).thenThrow(new IllegalStateException("接口失败"));
+
+        snapshotter.onLiveOn(event(false));
+
+        assertEquals(243.0, liveDataService.getLiveMetric(PLATFORM, UID, BilibiliLiveMetric.FANS_AT_START));
+        assertEquals(List.of(), roomInfoHistory.history(PLATFORM, UID));
     }
 
     @Test

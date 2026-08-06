@@ -1,9 +1,12 @@
 package com.starlwr.bot.core.listener;
 
+import com.starlwr.bot.core.enums.LiveEndReason;
 import com.starlwr.bot.core.event.live.common.LiveOffEvent;
 import com.starlwr.bot.core.model.LiveSession;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.service.LiveDataService;
+import com.starlwr.bot.core.service.LiveInterventionTracker;
+import com.starlwr.bot.core.service.LiveRoomInfoHistory;
 import com.starlwr.bot.core.service.LiveSessionArchive;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -11,6 +14,7 @@ import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
 import java.util.Optional;
 
 /**
@@ -23,10 +27,17 @@ public class StarBotDefaultLiveOffEventListener {
 
     private final LiveSessionArchive archive;
 
+    private final LiveInterventionTracker interventionTracker;
+
+    private final LiveRoomInfoHistory roomInfoHistory;
+
     @Autowired
-    public StarBotDefaultLiveOffEventListener(LiveDataService liveDataService, LiveSessionArchive archive) {
+    public StarBotDefaultLiveOffEventListener(LiveDataService liveDataService, LiveSessionArchive archive,
+                                              LiveInterventionTracker interventionTracker, LiveRoomInfoHistory roomInfoHistory) {
         this.liveDataService = liveDataService;
         this.archive = archive;
+        this.interventionTracker = interventionTracker;
+        this.roomInfoHistory = roomInfoHistory;
     }
 
     /**
@@ -68,6 +79,12 @@ public class StarBotDefaultLiveOffEventListener {
         // 时钟回拨或数据异常会让时长成为负数，夹到 0 而不是让统计里出现负值
         long duration = Math.max(0, (endTime - start.get()) / 1000);
 
+        LiveEndReason endReason = interventionTracker.endReason(
+                event.getPlatform(), source.getUid(), Instant.ofEpochMilli(endTime));
+        if (endReason != LiveEndReason.NORMAL) {
+            log.warn("{} 本场直播{}, 时长 {} 秒不代表正常水平", source.getUname(), endReason.getDescription(), duration);
+        }
+
         archive.append(new LiveSession(
                 event.getPlatform(),
                 source.getUid(),
@@ -77,6 +94,8 @@ public class StarBotDefaultLiveOffEventListener {
                 endTime,
                 duration,
                 liveDataService.getLiveMetrics(event.getPlatform(), source.getUid()),
-                liveDataService.getLiveMetricUserCounts(event.getPlatform(), source.getUid())));
+                liveDataService.getLiveMetricUserCounts(event.getPlatform(), source.getUid()),
+                endReason,
+                roomInfoHistory.history(event.getPlatform(), source.getUid())));
     }
 }

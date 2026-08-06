@@ -1,12 +1,14 @@
 package com.starlwr.bot.bilibili.service;
 
 import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
+import com.starlwr.bot.bilibili.model.Room;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.event.live.common.LiveOnEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.service.LiveDataService;
+import com.starlwr.bot.core.service.LiveRoomInfoHistory;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
@@ -29,10 +31,13 @@ public class BilibiliRoomStatsSnapshotter {
 
     private final BilibiliApiUtil api;
 
+    private final LiveRoomInfoHistory roomInfoHistory;
+
     @Autowired
-    public BilibiliRoomStatsSnapshotter(LiveDataService liveDataService, BilibiliApiUtil api) {
+    public BilibiliRoomStatsSnapshotter(LiveDataService liveDataService, BilibiliApiUtil api, LiveRoomInfoHistory roomInfoHistory) {
         this.liveDataService = liveDataService;
         this.api = api;
+        this.roomInfoHistory = roomInfoHistory;
     }
 
     /**
@@ -65,8 +70,27 @@ public class BilibiliRoomStatsSnapshotter {
         if (source.getRoomId() != null) {
             api.getGuardCount(source.getRoomId(), uid).ifPresent(guard ->
                     liveDataService.setLiveMetric(platform, uid, BilibiliLiveMetric.GUARD_AT_START, guard));
+
+            recordInitialTitle(platform, uid, source, event.getTimestamp());
         }
 
         log.debug("已记录 {} 开播时的粉丝与大航海快照", source.getUname());
+    }
+
+    /**
+     * 记下开播时的标题与分区，作为标题变更记录的起点
+     * <p>
+     * {@code ROOM_CHANGE} 只在改动发生时下发，拿不到开播时的原始标题。
+     * 没有这个起点，报告只能说「改成了 X」而说不出「从什么改成 X」。
+     * <p>
+     * 拉不到就算了：少一个起点只是让第一条变更看起来像初始值，而让开播流程为此失败得不偿失。
+     */
+    private void recordInitialTitle(String platform, Long uid, LiveStreamerInfo source, long at) {
+        try {
+            Room room = api.getLiveInfoByRoomId(source.getRoomId());
+            roomInfoHistory.record(platform, uid, at, room.getTitle(), "");
+        } catch (Exception e) {
+            log.debug("获取 {} 开播时的直播间标题失败: {}", source.getUname(), e.getMessage());
+        }
     }
 }

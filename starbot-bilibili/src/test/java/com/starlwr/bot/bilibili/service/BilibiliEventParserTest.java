@@ -12,6 +12,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -284,6 +286,63 @@ class BilibiliEventParserTest {
         assertEquals(1700000005000L, on.getTimestamp());
 
         assertInstanceOf(BilibiliLiveOffEvent.class, parse("{\"cmd\":\"PREPARING\"}").orElseThrow());
+    }
+
+    @Test
+    @DisplayName("平台切流消息应解析出切断原因")
+    void parsesCutOff() {
+        BilibiliCutOffEvent event = assertInstanceOf(BilibiliCutOffEvent.class,
+                parse("{\"cmd\":\"CUT_OFF\",\"msg\":\"违反直播规范\",\"roomid\":500002}").orElseThrow());
+
+        assertEquals("违反直播规范", event.getReason());
+    }
+
+    @Test
+    @DisplayName("违规警告消息应解析出警告内容")
+    void parsesWarning() {
+        BilibiliLiveWarningEvent event = assertInstanceOf(BilibiliLiveWarningEvent.class,
+                parse("{\"cmd\":\"WARNING\",\"msg\":\"违反直播着装规范，请立即调整\",\"roomid\":500003}").orElseThrow());
+
+        assertEquals("违反直播着装规范，请立即调整", event.getReason());
+    }
+
+    @Test
+    @DisplayName("封禁消息的解封时刻按东八区解析")
+    void parsesRoomLockExpire() {
+        BilibiliRoomLockEvent event = assertInstanceOf(BilibiliRoomLockEvent.class,
+                parse("{\"cmd\":\"ROOM_LOCK\",\"expire\":\"2019-06-30 03:57:04\",\"roomid\":4000004}").orElseThrow());
+
+        assertEquals(LocalDateTime.of(2019, 6, 30, 3, 57, 4)
+                .atZone(ZoneId.of("Asia/Shanghai")).toInstant(), event.getExpireAt());
+    }
+
+    @Test
+    @DisplayName("解封时刻缺失或格式不对时应为空，而不是当作现在")
+    void unparsableExpireIsNull() {
+        assertNull(assertInstanceOf(BilibiliRoomLockEvent.class,
+                parse("{\"cmd\":\"ROOM_LOCK\",\"roomid\":1}").orElseThrow()).getExpireAt());
+        assertNull(assertInstanceOf(BilibiliRoomLockEvent.class,
+                parse("{\"cmd\":\"ROOM_LOCK\",\"expire\":\"不是时间\",\"roomid\":1}").orElseThrow()).getExpireAt());
+    }
+
+    @Test
+    @DisplayName("直播间信息变更应解析出标题与两级分区")
+    void parsesRoomInfoChange() {
+        BilibiliRoomInfoChangeEvent event = assertInstanceOf(BilibiliRoomInfoChangeEvent.class,
+                parse("{\"cmd\":\"ROOM_CHANGE\",\"data\":{\"title\":\"【北北】是MIKU呀~\",\"area_id\":145,"
+                        + "\"parent_area_id\":1,\"area_name\":\"视频聊天\",\"parent_area_name\":\"娱乐\"}}").orElseThrow());
+
+        assertEquals("【北北】是MIKU呀~", event.getTitle());
+        assertEquals("娱乐 · 视频聊天", event.fullAreaName());
+    }
+
+    @Test
+    @DisplayName("分区只给出一级时不应渲染出悬空的分隔符")
+    void partialAreaName() {
+        BilibiliRoomInfoChangeEvent event = assertInstanceOf(BilibiliRoomInfoChangeEvent.class,
+                parse("{\"cmd\":\"ROOM_CHANGE\",\"data\":{\"title\":\"标题\",\"parent_area_name\":\"娱乐\"}}").orElseThrow());
+
+        assertEquals("娱乐", event.fullAreaName());
     }
 
     @Test
