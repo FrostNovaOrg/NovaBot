@@ -5,6 +5,7 @@ import com.starlwr.bot.bilibili.service.BilibiliAccountService;
 import com.starlwr.bot.bilibili.service.BilibiliBackupLivePushService;
 import com.starlwr.bot.bilibili.service.BilibiliDynamicService;
 import com.starlwr.bot.bilibili.service.BilibiliLiveRoomService;
+import com.starlwr.bot.bilibili.service.BilibiliStreamerSnapshotService;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -193,6 +194,7 @@ class BilibiliStartupListenerTest {
                 liveRoomService,
                 mock(BilibiliBackupLivePushService.class),
                 mock(BilibiliDynamicService.class),
+                mock(BilibiliStreamerSnapshotService.class),
                 dataSource,
                 scheduler,
                 properties

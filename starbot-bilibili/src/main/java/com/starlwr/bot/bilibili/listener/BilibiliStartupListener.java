@@ -5,6 +5,7 @@ import com.starlwr.bot.bilibili.service.BilibiliAccountService;
 import com.starlwr.bot.bilibili.service.BilibiliBackupLivePushService;
 import com.starlwr.bot.bilibili.service.BilibiliDynamicService;
 import com.starlwr.bot.bilibili.service.BilibiliLiveRoomService;
+import com.starlwr.bot.bilibili.service.BilibiliStreamerSnapshotService;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.event.datasource.base.StarBotDataSourceChangeEvent;
 import com.starlwr.bot.core.plugin.StarBotComponent;
@@ -37,6 +38,8 @@ public class BilibiliStartupListener {
 
     private final BilibiliDynamicService dynamicService;
 
+    private final BilibiliStreamerSnapshotService snapshotService;
+
     private final AbstractDataSource dataSource;
 
     private final TaskScheduler scheduler;
@@ -64,6 +67,7 @@ public class BilibiliStartupListener {
                                    BilibiliLiveRoomService liveRoomService,
                                    BilibiliBackupLivePushService backupLivePushService,
                                    BilibiliDynamicService dynamicService,
+                                   BilibiliStreamerSnapshotService snapshotService,
                                    AbstractDataSource dataSource,
                                    @Qualifier("bilibiliTaskScheduler") TaskScheduler scheduler,
                                    StarBotBilibiliProperties properties) {
@@ -71,6 +75,7 @@ public class BilibiliStartupListener {
         this.liveRoomService = liveRoomService;
         this.backupLivePushService = backupLivePushService;
         this.dynamicService = dynamicService;
+        this.snapshotService = snapshotService;
         this.dataSource = dataSource;
         this.scheduler = scheduler;
         this.properties = properties;
@@ -126,6 +131,12 @@ public class BilibiliStartupListener {
             dynamicService.start(dataSource);
         } catch (Exception e) {
             log.error("启动动态推送失败", e);
+        }
+
+        try {
+            snapshotService.start(dataSource);
+        } catch (Exception e) {
+            log.error("启动主播基础数据留档失败", e);
         }
 
         startLoginStateVerification();

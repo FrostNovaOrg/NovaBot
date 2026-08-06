@@ -224,6 +224,17 @@ public class StarBotBilibiliProperties {
         private int backupLivePushInterval = 10;
 
         /**
+         * 主播基础数据的留档间隔，单位：小时，0 为关闭
+         * <p>
+         * 粉丝数这些数字在不播的日子里照样在变，而本场数据只覆盖直播期间——
+         * 没有这份留档，「本周涨了多少粉」只能答成「每场开播时分别是多少」。
+         * <p>
+         * 6 小时一次足够画出趋势，一年不到 2 MB；调得太密除了多打接口没有别的收益。
+         */
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        private int snapshotInterval = 6;
+
+        /**
          * 下播报告底部标识的图片路径，留空则不绘制
          * <p>
          * 与动态图片的标识分开配置，因为两者未必想打同一个标；要一致的话，
