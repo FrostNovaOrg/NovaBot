@@ -125,6 +125,12 @@ starbot:
       push-minutes: 1440            # 发布时间早于此分钟数的动态不再推送，避免启动时补推历史动态
 
   core:
+    log:
+      console:                      # 控制台日志级别，留空用内置默认。可填 TRACE/DEBUG/INFO/WARN/ERROR/OFF
+      file:                         # 日志文件级别，同上。
+                                    # 排查直播间消息时可把 console 调到 DEBUG，
+                                    # 配合 bilibili.debug.live-room-raw-message-log 使用；查完记得改回来
+
     push:
       enabled: true                 # 全局推送开关。关闭后所有推送都被丢弃，用于调试或临时静音
       quiet-start:                  # 静音时段，格式 HH:mm，两者任一留空即不启用。
