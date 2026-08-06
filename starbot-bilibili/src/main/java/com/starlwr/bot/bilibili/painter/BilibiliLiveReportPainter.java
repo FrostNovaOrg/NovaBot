@@ -17,13 +17,16 @@ import com.starlwr.bot.bilibili.model.BilibiliLiveReportOptions;
 import com.starlwr.bot.bilibili.model.Room;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.bilibili.util.DurationFormatUtil;
+import com.starlwr.bot.core.analytics.LiveHighlightFinder;
 import com.starlwr.bot.core.factory.StarBotCommonPainterFactory;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
+import com.starlwr.bot.core.model.RoomInfoSnapshot;
 import com.starlwr.bot.core.model.TextWithStyle;
 import com.starlwr.bot.core.model.UserScore;
 import com.starlwr.bot.core.painter.CommonPainter;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.service.LiveDataService;
+import com.starlwr.bot.core.service.LiveRoomInfoHistory;
 import com.starlwr.bot.core.util.FontUtil;
 import com.starlwr.bot.core.util.ImageUtil;
 import com.starlwr.bot.core.util.StringUtil;
@@ -194,6 +197,42 @@ public class BilibiliLiveReportPainter {
     private static final DateTimeFormatter TIME_FORMATTER =
             DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(ZoneId.of("Asia/Shanghai"));
 
+    /**
+     * 场次内的时刻只需要时分，日期由报告头部交代
+     */
+    private static final DateTimeFormatter CLOCK_FORMAT =
+            DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.of("Asia/Shanghai"));
+
+    /**
+     * 最多列出几个高能时刻
+     * <p>
+     * 三个足够指出一场直播的骨架，再多就成了「把曲线又写了一遍」。
+     */
+    private static final int HIGHLIGHT_LIMIT = 3;
+
+    /**
+     * 两个高能时刻之间至少相隔多久
+     */
+    private static final long HIGHLIGHT_MIN_SEPARATION_MILLIS = 5 * 60_000L;
+
+    /**
+     * 高能时刻至少要达到基线的多少倍
+     */
+    private static final double HIGHLIGHT_MIN_RATIO = 3.0;
+
+    /**
+     * 高能时刻的绝对门槛：这一分钟至少要有这么多条弹幕
+     * <p>
+     * 没有这道门槛，一场总共二十条弹幕的冷场也能凑出三个「三倍于基线」的时刻，
+     * 而那三分钟各自只有三条弹幕。<b>冷场就该老实说没有高能片段。</b>
+     */
+    private static final double HIGHLIGHT_MIN_DANMU = 15;
+
+    /**
+     * 截断过长标题的字数上限，比昵称宽松：标题占的是整行
+     */
+    private static final int MAX_TITLE_LENGTH = 24;
+
     private final StarBotCommonPainterFactory factory;
 
     private final BilibiliApiUtil api;
@@ -203,6 +242,8 @@ public class BilibiliLiveReportPainter {
     private final FontUtil fontUtil;
 
     private final StarBotBilibiliProperties properties;
+
+    private final LiveRoomInfoHistory roomInfoHistory;
 
     /**
      * 头像下载失败的哨兵值
@@ -233,12 +274,13 @@ public class BilibiliLiveReportPainter {
     @Autowired
     public BilibiliLiveReportPainter(StarBotCommonPainterFactory factory, BilibiliApiUtil api,
                                      LiveDataService liveDataService, FontUtil fontUtil,
-                                     StarBotBilibiliProperties properties) {
+                                     StarBotBilibiliProperties properties, LiveRoomInfoHistory roomInfoHistory) {
         this.factory = factory;
         this.api = api;
         this.liveDataService = liveDataService;
         this.fontUtil = fontUtil;
         this.properties = properties;
+        this.roomInfoHistory = roomInfoHistory;
     }
 
     /**
@@ -273,6 +315,12 @@ public class BilibiliLiveReportPainter {
             }
             if (options.isInteractionCurve()) {
                 drawCurves(painter, platform, source.getUid(), options);
+            }
+            if (options.isHighlights()) {
+                drawHighlights(painter, platform, source.getUid());
+            }
+            if (options.isTitleChanges()) {
+                drawTitleChanges(painter, platform, source.getUid());
             }
             drawRankings(painter, platform, source.getUid(), options);
             if (options.isDanmuCloud()) {
@@ -553,6 +601,120 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
+     * 绘制高能时刻
+     * <p>
+     * 给出的是<b>距开播的偏移量</b>而不只是钟表时间：主播回看录播时要拖的是进度条，
+     * 而进度条上的刻度正是开播后过了多久。钟表时间跟在后面备查。
+     * <p>
+     * 不受金额可见性影响——这里的判据是弹幕密度，一个数字都不涉及消费。
+     */
+    private void drawHighlights(CommonPainter painter, String platform, Long uid) {
+        Optional<Long> start = liveDataService.getLiveStartTime(platform, uid);
+        Optional<Long> end = effectiveEndTime(platform, uid, start);
+        if (start.isEmpty() || end.isEmpty() || end.get() <= start.get()) {
+            return;
+        }
+
+        List<LiveHighlightFinder.Highlight> highlights = LiveHighlightFinder.find(
+                liveDataService.getLiveSeries(platform, uid, BilibiliLiveMetric.DANMU_COUNT),
+                LiveDataService.SERIES_BUCKET_MILLIS, start.get(), end.get(),
+                HIGHLIGHT_LIMIT, HIGHLIGHT_MIN_SEPARATION_MILLIS, HIGHLIGHT_MIN_RATIO, HIGHLIGHT_MIN_DANMU);
+        if (highlights.isEmpty()) {
+            return;
+        }
+
+        painter.movePos(0, 10);
+        painter.drawTextWithStyle(List.of(new TextWithStyle("高能时刻", CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN)));
+        painter.movePos(0, 6);
+
+        for (int i = 0; i < highlights.size(); i++) {
+            drawHighlightRow(painter, i + 1, highlights.get(i), start.get());
+        }
+        painter.movePos(0, 8);
+    }
+
+    /**
+     * 绘制高能时刻的一行：名次、距开播时长、钟表时间与弹幕密度
+     */
+    private void drawHighlightRow(CommonPainter painter, int rank, LiveHighlightFinder.Highlight highlight, long start) {
+        int y = painter.getY();
+
+        painter.drawTextWithStyle(List.of(new TextWithStyle(String.valueOf(rank), 24, rankColor(rank), Font.BOLD)),
+                new Point(MARGIN + 4, y + 6));
+
+        painter.drawTextWithStyle(List.of(
+                        new TextWithStyle(offsetText(highlight.at(), Optional.of(start)), 24, COLOR_TEXT, Font.BOLD),
+                        new TextWithStyle("  " + CLOCK_FORMAT.format(Instant.ofEpochMilli(highlight.at())), 22, COLOR_TIP, Font.PLAIN)),
+                new Point(MARGIN + 40, y + 6));
+
+        painter.drawTextWithStyle(List.of(
+                        new TextWithStyle(Math.round(highlight.value()) + " 条/分", 24, COLOR_CURVE_DANMU, Font.BOLD)),
+                new Point(MARGIN + CONTENT_WIDTH - 130, y + 6));
+
+        painter.setPos(MARGIN, y + RANKING_ROW_HEIGHT);
+    }
+
+    /**
+     * 绘制本场的标题变化
+     * <p>
+     * 只在真的改过时出现。首条记录是开播时的初始标题，不算一次改动，
+     * 所以一条记录等于「全程没改过」，直接跳过整块。
+     */
+    private void drawTitleChanges(CommonPainter painter, String platform, Long uid) {
+        List<RoomInfoSnapshot> titles = roomInfoHistory.history(platform, uid);
+        if (titles.size() < 2) {
+            return;
+        }
+
+        Optional<Long> start = liveDataService.getLiveStartTime(platform, uid);
+
+        painter.movePos(0, 10);
+        painter.drawTextWithStyle(List.of(new TextWithStyle(
+                "标题变化 · 本场改过 " + (titles.size() - 1) + " 次", CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN)));
+        painter.movePos(0, 6);
+
+        String previousArea = "";
+        for (RoomInfoSnapshot title : titles) {
+            int y = painter.getY();
+
+            painter.drawTextWithStyle(List.of(new TextWithStyle(offsetText(title.at(), start), 22, COLOR_TIP, Font.PLAIN)),
+                    new Point(MARGIN + 4, y + 6));
+
+            List<TextWithStyle> line = new ArrayList<>();
+            line.add(new TextWithStyle(truncateTitle(title.title()), 24, COLOR_TEXT, Font.PLAIN));
+            // 分区只在这一条真的换了分区时才标出来：多数场次全程一个分区，
+            // 每行都跟一遍只会把真正的改动淹掉
+            String area = title.area() == null ? "" : title.area();
+            if (!area.isBlank() && !area.equals(previousArea)) {
+                line.add(new TextWithStyle("  " + area, 22, COLOR_TIP, Font.PLAIN));
+            }
+            previousArea = area.isBlank() ? previousArea : area;
+            painter.drawTextWithStyle(line, new Point(MARGIN + 180, y + 6));
+
+            painter.setPos(MARGIN, y + RANKING_ROW_HEIGHT);
+        }
+        painter.movePos(0, 8);
+    }
+
+    /**
+     * 把时刻表述为距开播多久
+     * <p>
+     * 开播那一刻的偏移量是 0，而时长格式化对 0 返回空字符串——直接拼就会渲染出
+     * 一个后面什么都没有的「开播后」。这里单独说成「开播时」。
+     * @param at 时刻（毫秒）
+     * @param start 开播时刻，取不到时退回钟表时间
+     * @return 可读描述
+     */
+    private String offsetText(long at, Optional<Long> start) {
+        if (start.isEmpty()) {
+            return CLOCK_FORMAT.format(Instant.ofEpochMilli(at));
+        }
+
+        String offset = DurationFormatUtil.format(Math.max(0, (at - start.get()) / 1000));
+        return offset.isEmpty() ? "开播时" : "开播后 " + offset;
+    }
+
+    /**
      * 绘制一条面积图：标题、峰值、面积本体与基线
      */
     private void drawCurve(CommonPainter painter, Curve curve, Map<Long, Double> series, long start, long end) {
@@ -764,6 +926,16 @@ public class BilibiliLiveReportPainter {
      */
     private String truncate(String name) {
         return name.length() <= MAX_NAME_LENGTH ? name : name.substring(0, MAX_NAME_LENGTH) + "…";
+    }
+
+    /**
+     * 截断过长的标题
+     */
+    private String truncateTitle(String title) {
+        if (title == null) {
+            return "";
+        }
+        return title.length() <= MAX_TITLE_LENGTH ? title : title.substring(0, MAX_TITLE_LENGTH) + "…";
     }
 
     /**

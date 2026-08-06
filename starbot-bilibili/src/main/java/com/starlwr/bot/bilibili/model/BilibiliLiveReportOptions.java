@@ -82,6 +82,20 @@ public class BilibiliLiveReportOptions {
     private boolean danmuCloud = true;
 
     /**
+     * 是否展示高能时刻
+     * <p>
+     * 判据是弹幕密度，不涉及任何金额，因此不随金额可见性降级。
+     */
+    private boolean highlights = true;
+
+    /**
+     * 是否展示本场的标题变化
+     * <p>
+     * 只在本场真的改过标题时才会占版面，没改过时这一项开着也不会画出空区块。
+     */
+    private boolean titleChanges = true;
+
+    /**
      * 是否展示金额
      * <p>
      * <b>这一项不来自推送参数</b>，而是取自会话级的金额可见性设置：它回答的是「这份东西给谁看」，
@@ -118,6 +132,8 @@ public class BilibiliLiveReportOptions {
         options.fansChange = bool(params, "fans_change", options.fansChange);
         options.interactionCurve = bool(params, "interaction_curve", options.interactionCurve);
         options.danmuCloud = bool(params, "danmu_cloud", options.danmuCloud);
+        options.highlights = bool(params, "highlights", options.highlights);
+        options.titleChanges = bool(params, "title_changes", options.titleChanges);
         return options;
     }
 

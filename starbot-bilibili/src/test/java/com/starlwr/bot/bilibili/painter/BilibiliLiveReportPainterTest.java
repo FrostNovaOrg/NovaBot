@@ -9,6 +9,8 @@ import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.factory.StarBotCommonPainterFactory;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.service.DefaultLiveDataService;
+import com.starlwr.bot.core.service.LiveRoomInfoHistory;
+import com.starlwr.bot.core.service.StarBotStateStore;
 import com.starlwr.bot.core.util.FontUtil;
 import org.springframework.boot.info.BuildProperties;
 import org.junit.jupiter.api.BeforeAll;
@@ -26,6 +28,7 @@ import java.util.Base64;
 import java.util.Optional;
 import java.util.Properties;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -51,6 +54,8 @@ class BilibiliLiveReportPainterTest {
     private FontUtil fontUtil;
 
     private DefaultLiveDataService liveDataService;
+
+    private LiveRoomInfoHistory roomInfoHistory;
 
     private BilibiliLiveReportPainter painter;
 
@@ -94,8 +99,9 @@ class BilibiliLiveReportPainterTest {
         when(api.getLiveInfoByRoomId(anyLong())).thenReturn(room);
 
         liveDataService = new DefaultLiveDataService(new StarBotCoreProperties());
+        roomInfoHistory = new LiveRoomInfoHistory(new StarBotStateStore(new StarBotCoreProperties()));
         painter = new BilibiliLiveReportPainter(factory, api, liveDataService, fontUtil,
-                new com.starlwr.bot.bilibili.config.StarBotBilibiliProperties());
+                new com.starlwr.bot.bilibili.config.StarBotBilibiliProperties(), roomInfoHistory);
     }
 
     @Test
@@ -257,7 +263,7 @@ class BilibiliLiveReportPainterTest {
         StarBotBilibiliProperties withLogo = new StarBotBilibiliProperties();
         withLogo.getLive().setReportLogoPath(file.toString());
 
-        Optional<String> base64 = new BilibiliLiveReportPainter(factory, api, liveDataService, fontUtil, withLogo)
+        Optional<String> base64 = new BilibiliLiveReportPainter(factory, api, liveDataService, fontUtil, withLogo, roomInfoHistory)
                 .paint(PLATFORM, STREAMER);
 
         assertTrue(base64.isPresent());
@@ -270,7 +276,7 @@ class BilibiliLiveReportPainterTest {
         StarBotBilibiliProperties badPath = new StarBotBilibiliProperties();
         badPath.getLive().setReportLogoPath("/nowhere/does-not-exist.png");
 
-        assertTrue(new BilibiliLiveReportPainter(factory, api, liveDataService, fontUtil, badPath)
+        assertTrue(new BilibiliLiveReportPainter(factory, api, liveDataService, fontUtil, badPath, roomInfoHistory)
                 .paint(PLATFORM, STREAMER).isPresent(), "标识读不到也应出图");
     }
 
@@ -285,6 +291,8 @@ class BilibiliLiveReportPainterTest {
         params.put("super_chat_ranking", 0);
         params.put("guard_list", false);
         params.put("danmu_cloud", false);
+        params.put("highlights", false);
+        params.put("title_changes", false);
 
         Optional<String> base64 = painter.paint(PLATFORM, STREAMER, BilibiliLiveReportOptions.of(params, true));
 
@@ -325,6 +333,63 @@ class BilibiliLiveReportPainterTest {
         assertTrue(base64.isPresent(), "不展示金额也应能出图");
         // 图里有没有 ¥ 只能人工看，这里存一份样张；断言留给选项与命令层
         dump("no-revenue-full", base64.get());
+    }
+
+    @Test
+    @DisplayName("有明显高峰时应画出高能时刻，冷场时整块不出现")
+    void drawsHighlightsOnlyWhenThereIsAPeak() throws Exception {
+        long start = 1_700_000_000_000L;
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+        liveDataService.setLiveEndTime(PLATFORM, STREAMER.getUid(), start + 60 * 60_000L);
+
+        // 冷场：全程每分钟一条弹幕，没有任何高峰
+        for (int i = 0; i < 60; i++) {
+            liveDataService.incrementLiveSeries(PLATFORM, STREAMER.getUid(),
+                    BilibiliLiveMetric.DANMU_COUNT, start + i * 60_000L, 1);
+        }
+        int quiet = heightOf(painter.paint(PLATFORM, STREAMER).orElseThrow());
+
+        // 同一场再叠一个第 30 分钟的高峰
+        liveDataService.incrementLiveSeries(PLATFORM, STREAMER.getUid(),
+                BilibiliLiveMetric.DANMU_COUNT, start + 30 * 60_000L, 200);
+        String peaked = painter.paint(PLATFORM, STREAMER).orElseThrow();
+
+        assertTrue(heightOf(peaked) > quiet, "出现高峰后报告应多出一块高能时刻");
+        dump("highlights", peaked);
+    }
+
+    @Test
+    @DisplayName("标题没改过时不应占版面，改过之后才出现")
+    void drawsTitleChangesOnlyAfterAnActualChange() throws Exception {
+        long start = 1_700_000_000_000L;
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+        liveDataService.setLiveEndTime(PLATFORM, STREAMER.getUid(), start + 60 * 60_000L);
+
+        // 只有开播时的初始标题：一条记录不等于改过一次
+        roomInfoHistory.record(PLATFORM, STREAMER.getUid(), start, "早八人的自习室", "");
+        int unchanged = heightOf(painter.paint(PLATFORM, STREAMER).orElseThrow());
+
+        roomInfoHistory.record(PLATFORM, STREAMER.getUid(), start + 20 * 60_000L, "睡前杂谈", "娱乐 · 视频聊天");
+        String changed = painter.paint(PLATFORM, STREAMER).orElseThrow();
+
+        assertTrue(heightOf(changed) > unchanged, "改过标题后报告应多出一块标题变化");
+        dump("title-changes", changed);
+    }
+
+    @Test
+    @DisplayName("原样保存不算改动，重复内容不应被记成一次变化")
+    void repeatedIdenticalTitleIsNotAChange() throws Exception {
+        long start = 1_700_000_000_000L;
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+        liveDataService.setLiveEndTime(PLATFORM, STREAMER.getUid(), start + 60 * 60_000L);
+
+        roomInfoHistory.record(PLATFORM, STREAMER.getUid(), start, "早八人的自习室", "");
+        int before = heightOf(painter.paint(PLATFORM, STREAMER).orElseThrow());
+
+        roomInfoHistory.record(PLATFORM, STREAMER.getUid(), start + 10 * 60_000L, "早八人的自习室", "");
+
+        assertEquals(before, heightOf(painter.paint(PLATFORM, STREAMER).orElseThrow()),
+                "内容相同的下发不应让报告多出一块");
     }
 
     /**
