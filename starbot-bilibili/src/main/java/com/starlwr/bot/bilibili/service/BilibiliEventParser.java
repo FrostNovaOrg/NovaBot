@@ -49,7 +49,7 @@ public class BilibiliEventParser {
 
     private final BilibiliApiSupport apiSupport;
 
-    private final BilibiliGuardDeduplicator guardDeduplicator;
+    private final BilibiliGuardReconciler guardReconciler;
 
     /**
      * 消息类型到解析方法的映射
@@ -58,11 +58,11 @@ public class BilibiliEventParser {
 
     @Autowired
     public BilibiliEventParser(StarBotBilibiliProperties properties, BilibiliGiftService giftService,
-                               BilibiliApiSupport apiSupport, BilibiliGuardDeduplicator guardDeduplicator) {
+                               BilibiliApiSupport apiSupport, BilibiliGuardReconciler guardReconciler) {
         this.properties = properties;
         this.giftService = giftService;
         this.apiSupport = apiSupport;
-        this.guardDeduplicator = guardDeduplicator;
+        this.guardReconciler = guardReconciler;
 
         parsers.put("LIVE", this::parseLiveOn);
         parsers.put("PREPARING", this::parseLiveOff);
@@ -71,6 +71,7 @@ public class BilibiliEventParser {
         parsers.put("SEND_GIFT", this::parseGift);
         parsers.put("SUPER_CHAT_MESSAGE", this::parseSuperChat);
         parsers.put("USER_TOAST_MSG", this::parseGuard);
+        parsers.put("USER_TOAST_MSG_V2", this::parseGuardV2);
         parsers.put("GUARD_BUY", this::parseGuardBuy);
         parsers.put("LIKE_INFO_V3_CLICK", this::parseLike);
         parsers.put("LIKE_INFO_V3_UPDATE", this::parseLikeUpdate);
@@ -412,7 +413,10 @@ public class BilibiliEventParser {
     }
 
     /**
-     * 解析大航海消息
+     * 解析大航海消息（{@code USER_TOAST_MSG}）
+     * <p>
+     * 这条带的 {@code price} 是<b>实际成交价</b>，与 {@code GUARD_BUY} 的挂牌价不是一回事，
+     * 取舍见 {@link BilibiliGuardReconciler}。
      */
     private StarBotBaseLiveEvent parseGuard(JSONObject data, LiveStreamerInfo source) {
         JSONObject meta = data.getJSONObject("data");
@@ -426,51 +430,71 @@ public class BilibiliEventParser {
         }
 
         Long senderUid = meta.getLong("uid");
-        boolean complete = properties.getLive().isCompleteEvent();
-
-        BilibiliUserInfo sender = new BilibiliUserInfo(
-                senderUid,
-                meta.getString("username"),
-                complete ? apiSupport.completeFace(senderUid, source).orElse(null) : null
-        );
-        sender.setGuard(new Guard(guardLevel, complete ? giftService.getGuardIcon(meta.getString("role_name")).orElse(null) : null));
-
-        GuardOperateType operateType = GuardOperateType.of(Optional.ofNullable(meta.getInteger("op_type")).orElse(-1));
-        Double price = toYuan(meta.getInteger("price"));
-        Integer count = meta.getInteger("num");
-        String unit = meta.getString("unit");
         Instant timestamp = Optional.ofNullable(data.getLong("send_time")).map(Instant::ofEpochMilli).orElseGet(Instant::now);
 
-        return switch (guardLevel) {
-            case 1 -> {
-                BilibiliGovernorEvent event = new BilibiliGovernorEvent(source, sender, price, count, unit, timestamp);
-                event.setOperateType(operateType);
-                yield event;
-            }
-            case 2 -> {
-                BilibiliCommanderEvent event = new BilibiliCommanderEvent(source, sender, price, count, unit, timestamp);
-                event.setOperateType(operateType);
-                yield event;
-            }
-            case 3 -> {
-                BilibiliCaptainEvent event = new BilibiliCaptainEvent(source, sender, price, count, unit, timestamp);
-                event.setOperateType(operateType);
-                yield event;
-            }
-            default -> {
-                log.debug("未处理的直播间大航海类型: {}", guardLevel);
-                yield null;
-            }
-        };
+        if (!guardReconciler.acceptToast(meta.getString("payflow_id"), senderUid, guardLevel, timestamp)) {
+            return null;
+        }
+
+        return buildGuardEvent(source, senderUid, meta.getString("username"), meta.getString("role_name"),
+                guardLevel, toYuan(meta.getInteger("price")), meta.getInteger("num"), meta.getString("unit"),
+                GuardOperateType.of(Optional.ofNullable(meta.getInteger("op_type")).orElse(-1)), timestamp);
+    }
+
+    /**
+     * 解析大航海消息的新版格式（{@code USER_TOAST_MSG_V2}）
+     * <p>
+     * 与 {@code USER_TOAST_MSG} 是同一件事的两种格式，字段位置不同：开通者在 {@code sender_uinfo}，
+     * 等级与操作类型在 {@code guard_info}，金额在 {@code pay_info}。
+     * <p>
+     * <b>两种格式都要收。</b>2026-08-06 抓的 49 笔上舰里有 7 笔只以 V2 形式下发、
+     * 且没有 {@code GUARD_BUY} 兜底——只认老格式就会让这 14% 完全消失，而且不会有任何报错。
+     * 重复的那部分靠 {@code payflow_id} 去重。
+     */
+    private StarBotBaseLiveEvent parseGuardV2(JSONObject data, LiveStreamerInfo source) {
+        JSONObject meta = data.getJSONObject("data");
+        if (meta == null) {
+            return null;
+        }
+
+        JSONObject guardInfo = meta.getJSONObject("guard_info");
+        JSONObject payInfo = meta.getJSONObject("pay_info");
+        if (guardInfo == null || payInfo == null) {
+            return null;
+        }
+
+        Integer guardLevel = guardInfo.getInteger("guard_level");
+        if (guardLevel == null) {
+            return null;
+        }
+
+        JSONObject senderInfo = meta.getJSONObject("sender_uinfo");
+        Long senderUid = senderInfo == null ? null : senderInfo.getLong("uid");
+        JSONObject base = senderInfo == null ? null : senderInfo.getJSONObject("base");
+
+        Instant timestamp = Optional.ofNullable(data.getLong("send_time")).map(Instant::ofEpochMilli)
+                .or(() -> Optional.ofNullable(guardInfo.getLong("start_time")).map(Instant::ofEpochSecond))
+                .orElseGet(Instant::now);
+
+        if (!guardReconciler.acceptToast(payInfo.getString("payflow_id"), senderUid, guardLevel, timestamp)) {
+            return null;
+        }
+
+        return buildGuardEvent(source, senderUid, base == null ? null : base.getString("name"),
+                guardInfo.getString("role_name"), guardLevel, toYuan(payInfo.getInteger("price")),
+                payInfo.getInteger("num"), payInfo.getString("unit"),
+                GuardOperateType.of(Optional.ofNullable(guardInfo.getInteger("op_type")).orElse(-1)), timestamp);
     }
 
     /**
      * 解析大航海开通消息（{@code GUARD_BUY}）
      * <p>
-     * 与 {@code USER_TOAST_MSG} 播报的是同一件事，两条都收并去重，理由见 {@link BilibiliGuardDeduplicator}。
+     * <b>解析出的事件不在这里返回，而是交给 {@link BilibiliGuardReconciler} 压住等 toast。</b>
+     * 这条的 {@code price} 是挂牌价（35 个样本里舰长恒为 198000），toast 的才是实际成交价；
+     * 而这条又恒定先到，不压住就必然取到挂牌价，实测高估 15.4%。
      * <p>
-     * 字段不完全一样：这条一定带 {@code start_time} 与 {@code end_time}，而带不带 {@code unit}
-     * 我们没有实测过，取值口径见 {@link #unitOf}。
+     * 字段也更少：实测 35 条<b>全都没有 {@code unit}</b>，且 {@code start_time == end_time}，
+     * 所以 {@link #unitOf} 的两条路都走不通，单位只能是空——这也是宁可等 toast 的理由之一。
      */
     private StarBotBaseLiveEvent parseGuardBuy(JSONObject data, LiveStreamerInfo source) {
         JSONObject meta = data.getJSONObject("data");
@@ -489,31 +513,54 @@ public class BilibiliEventParser {
         Instant timestamp = Optional.ofNullable(meta.getLong("start_time"))
                 .map(Instant::ofEpochSecond).orElseGet(Instant::now);
 
-        if (!guardDeduplicator.firstReport(senderUid, guardLevel, count, timestamp)) {
-            return null;
-        }
-
-        // 单价还是总价？三方样本都是 num=1，区分不出来。多买时把三个数一起记下来，
+        // 单价还是总价？至今 35 个样本全是 num=1，区分不出来。多买时把三个数一起记下来，
         // 首次出现就能人工核对——按单价处理而实际是总价的话，多月开通会被乘重
         if (count != null && count > 1) {
             log.info("大航海开通数量大于 1, 请核对价格口径: price={} num={} 按单价算得 {} 元",
                     meta.getInteger("price"), count, price == null ? null : price * count);
         }
 
+        guardReconciler.holdGuardBuy(senderUid, guardLevel, timestamp,
+                buildGuardEvent(source, senderUid, meta.getString("username"), meta.getString("gift_name"),
+                        guardLevel, price, count, unitOf(meta), GuardOperateType.UNKNOWN, timestamp));
+        return null;
+    }
+
+    /**
+     * 按等级组装大航海事件
+     * <p>
+     * 三条播报消息（{@code GUARD_BUY}、{@code USER_TOAST_MSG}、{@code USER_TOAST_MSG_V2}）
+     * 字段位置各不相同，取值的差异留在各自的解析方法里，这里只负责组装。
+     * @param iconName 用于查图标的名称，各消息取自不同字段
+     * @return 等级不认识时返回 null
+     */
+    private StarBotBaseLiveEvent buildGuardEvent(LiveStreamerInfo source, Long senderUid, String username,
+                                                 String iconName, Integer guardLevel, Double price, Integer count,
+                                                 String unit, GuardOperateType operateType, Instant timestamp) {
         boolean complete = properties.getLive().isCompleteEvent();
         BilibiliUserInfo sender = new BilibiliUserInfo(
                 senderUid,
-                meta.getString("username"),
+                username,
                 complete ? apiSupport.completeFace(senderUid, source).orElse(null) : null
         );
-        sender.setGuard(new Guard(guardLevel, complete ? giftService.getGuardIcon(meta.getString("gift_name")).orElse(null) : null));
-
-        String unit = unitOf(meta);
+        sender.setGuard(new Guard(guardLevel, complete ? giftService.getGuardIcon(iconName).orElse(null) : null));
 
         return switch (guardLevel) {
-            case 1 -> new BilibiliGovernorEvent(source, sender, price, count, unit, timestamp);
-            case 2 -> new BilibiliCommanderEvent(source, sender, price, count, unit, timestamp);
-            case 3 -> new BilibiliCaptainEvent(source, sender, price, count, unit, timestamp);
+            case 1 -> {
+                BilibiliGovernorEvent event = new BilibiliGovernorEvent(source, sender, price, count, unit, timestamp);
+                event.setOperateType(operateType);
+                yield event;
+            }
+            case 2 -> {
+                BilibiliCommanderEvent event = new BilibiliCommanderEvent(source, sender, price, count, unit, timestamp);
+                event.setOperateType(operateType);
+                yield event;
+            }
+            case 3 -> {
+                BilibiliCaptainEvent event = new BilibiliCaptainEvent(source, sender, price, count, unit, timestamp);
+                event.setOperateType(operateType);
+                yield event;
+            }
             default -> {
                 log.debug("未处理的直播间大航海类型: {}", guardLevel);
                 yield null;

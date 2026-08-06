@@ -12,12 +12,21 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 @DisplayName("直播间消息解析")
 class BilibiliEventParserTest {
@@ -26,16 +35,45 @@ class BilibiliEventParserTest {
     private StarBotBilibiliProperties properties;
     private BilibiliEventParser parser;
 
+    /**
+     * 归并器发出的事件。{@code GUARD_BUY} 不由 {@code parse} 返回，只能从这里取
+     */
+    private List<StarBotBaseLiveEvent> published;
+
     @BeforeEach
     void setUp() {
         properties = new StarBotBilibiliProperties();
+        published = new ArrayList<>();
+
+        // 这个测试只管字段映射，不管「等 toast」的时序，因此把定时器换成立刻执行。
+        // 时序与去重行为在 BilibiliGuardReconcilerTest 里用真定时器测
+        ScheduledExecutorService immediate = mock(ScheduledExecutorService.class);
+        when(immediate.schedule(any(Runnable.class), anyLong(), any(TimeUnit.class)))
+                .thenAnswer(invocation -> {
+                    invocation.getArgument(0, Runnable.class).run();
+                    return mock(ScheduledFuture.class);
+                });
+
         // 事件补全默认关闭，此时解析过程不会触碰任何接口
         parser = new BilibiliEventParser(properties, mock(BilibiliGiftService.class), mock(BilibiliApiSupport.class),
-                new BilibiliGuardDeduplicator());
+                new BilibiliGuardReconciler(event -> published.add((StarBotBaseLiveEvent) event),
+                        immediate, Duration.ZERO));
     }
 
     private Optional<StarBotBaseLiveEvent> parse(String json) {
         return parser.parse(JSON.parseObject(json), SOURCE);
+    }
+
+    /**
+     * 解析一条 {@code GUARD_BUY} 并取出归并器最终发出的事件
+     * <p>
+     * 这条消息不会由 {@code parse} 返回——它要先被压住等 toast，见 {@link BilibiliGuardReconciler}
+     * @return 发出的事件，一条都没发出时为空
+     */
+    private Optional<StarBotBaseLiveEvent> parseGuardBuy(String json) {
+        published.clear();
+        assertTrue(parse(json).isEmpty(), "GUARD_BUY 不应由 parse 直接返回，它要先等 toast");
+        return published.stream().findFirst();
     }
 
     /**
@@ -342,6 +380,43 @@ class BilibiliEventParserTest {
         assertTrue(parse(guardMessage(9)).isEmpty());
     }
 
+    /**
+     * 一条实抓的 {@code USER_TOAST_MSG_V2}，字段位置与老格式完全不同
+     */
+    private static final String GUARD_V2 =
+            "{\"cmd\":\"USER_TOAST_MSG_V2\",\"data\":{"
+                    + "\"sender_uinfo\":{\"uid\":10086,\"base\":{\"name\":\"新舰长\",\"face\":\"\"}},"
+                    + "\"guard_info\":{\"guard_level\":3,\"role_name\":\"舰长\",\"op_type\":1,"
+                    + "\"start_time\":1786025542,\"end_time\":1786025542},"
+                    + "\"pay_info\":{\"payflow_id\":\"flow-2608060001\",\"price\":198000,\"num\":1,\"unit\":\"月\"},"
+                    + "\"gift_info\":{\"gift_id\":10003}}}";
+
+    @Test
+    @DisplayName("USER_TOAST_MSG_V2 应解析成与老格式相同的事件")
+    void parsesGuardV2() {
+        // 只认老格式会让 14% 的上舰完全消失：实测 49 笔里有 7 笔只以 V2 下发，
+        // 且没有 GUARD_BUY 兜底——丢了不会有任何报错
+        BilibiliCaptainEvent event = assertInstanceOf(BilibiliCaptainEvent.class, parse(GUARD_V2).orElseThrow());
+
+        assertEquals(10086L, event.getSender().getUid(), "开通者在 sender_uinfo 而不是顶层 uid");
+        assertEquals("新舰长", event.getSender().getUname(), "用户名在 sender_uinfo.base.name");
+        assertEquals(198.0, event.getValue(), 0.0001, "金额在 pay_info 而不是顶层");
+        assertEquals(1, event.getCount());
+        assertEquals("月", event.getUnit());
+        assertEquals(GuardOperateType.ACTIVATION, event.getOperateType(), "操作类型在 guard_info");
+    }
+
+    @Test
+    @DisplayName("同一笔的新老两种格式只应产生一个事件")
+    void guardV1AndV2ShareOnePayflow() {
+        String v1 = "{\"cmd\":\"USER_TOAST_MSG\",\"send_time\":1700000004000,\"data\":{\"uid\":10086,"
+                + "\"username\":\"新舰长\",\"guard_level\":3,\"op_type\":1,\"price\":198000,\"num\":1,"
+                + "\"unit\":\"月\",\"role_name\":\"舰长\",\"payflow_id\":\"flow-2608060001\"}}";
+
+        assertTrue(parse(v1).isPresent(), "先到的那条应产生事件");
+        assertTrue(parse(GUARD_V2).isEmpty(), "同一个 payflow_id 是同一笔，再产生一个事件就是把这笔钱算两遍");
+    }
+
     @Test
     @DisplayName("解析点赞与点赞数更新")
     void parseLike() {
@@ -414,10 +489,11 @@ class BilibiliEventParserTest {
     @Test
     @DisplayName("GUARD_BUY 应解析出大航海，价格取自 price")
     void parsesGuardBuy() {
-        // 实抓样本的形状。价格一律从 price 取，不对月价做任何假设——
-        // 舰长实际可能是 138（首次开通自动续费）、168（无优惠自动续费）或 198（挂牌价）
+        // 价格一律从 price 取，不对月价做任何假设。注意这只是挂牌价：
+        // 实测 35 条 GUARD_BUY 的舰长价恒为 198000，而实际成交可能是 138 / 168 / 198，
+        // 真实金额要等 toast，见 BilibiliGuardReconciler
         BilibiliCaptainEvent event = assertInstanceOf(BilibiliCaptainEvent.class,
-                parse("{\"cmd\":\"GUARD_BUY\",\"data\":{\"uid\":777,\"username\":\"新舰长\",\"guard_level\":3,"
+                parseGuardBuy("{\"cmd\":\"GUARD_BUY\",\"data\":{\"uid\":777,\"username\":\"新舰长\",\"guard_level\":3,"
                         + "\"num\":1,\"price\":198000,\"gift_id\":10003,\"gift_name\":\"舰长\","
                         + "\"start_time\":1785990000,\"end_time\":1788582000}}").orElseThrow());
 
@@ -430,10 +506,11 @@ class BilibiliEventParserTest {
     @Test
     @DisplayName("时长单位优先认消息自己给的 unit")
     void guardBuyPrefersDeclaredUnit() {
-        // GUARD_BUY 带不带 unit 我们没有实测过，所以两种都要能处理。
-        // 这里的起止时刻只差一个月，若 unit 被忽略就会得出「月」
+        // 实测 35 条 GUARD_BUY 一条都没带 unit，但不能因此认定它永远不带
+        //（「没记录到」当成「不存在」已经错过一次）。这里的起止时刻只差一个月，
+        // 若 unit 被忽略就会得出「月」
         BilibiliCaptainEvent event = assertInstanceOf(BilibiliCaptainEvent.class,
-                parse("{\"cmd\":\"GUARD_BUY\",\"data\":{\"uid\":3,\"guard_level\":3,\"num\":1,\"price\":1000,"
+                parseGuardBuy("{\"cmd\":\"GUARD_BUY\",\"data\":{\"uid\":3,\"guard_level\":3,\"num\":1,\"price\":1000,"
                         + "\"unit\":\"年\",\"start_time\":1785990000,\"end_time\":1788582000}}").orElseThrow());
 
         assertEquals("年", event.getUnit(), "消息自己说了单位，就不该再拿时刻去推翻它");
@@ -444,24 +521,27 @@ class BilibiliEventParserTest {
     void guardBuyUnitFromTimeRange() {
         // 一年
         BilibiliCaptainEvent year = assertInstanceOf(BilibiliCaptainEvent.class,
-                parse("{\"cmd\":\"GUARD_BUY\",\"data\":{\"uid\":1,\"guard_level\":3,\"num\":1,\"price\":1000,"
+                parseGuardBuy("{\"cmd\":\"GUARD_BUY\",\"data\":{\"uid\":1,\"guard_level\":3,\"num\":1,\"price\":1000,"
                         + "\"start_time\":1785990000,\"end_time\":" + (1785990000L + 365 * 86400) + "}}").orElseThrow());
         assertEquals("年", year.getUnit());
 
         // 没有时间字段
         BilibiliCaptainEvent unknown = assertInstanceOf(BilibiliCaptainEvent.class,
-                parse("{\"cmd\":\"GUARD_BUY\",\"data\":{\"uid\":2,\"guard_level\":3,\"num\":1,\"price\":1000}}").orElseThrow());
+                parseGuardBuy("{\"cmd\":\"GUARD_BUY\",\"data\":{\"uid\":2,\"guard_level\":3,\"num\":1,\"price\":1000}}").orElseThrow());
         assertNull(unknown.getUnit(), "推不出来就留空，猜一个「月」会在报告里变成假信息");
     }
 
     @Test
-    @DisplayName("同一次开通由两条消息播报时只应产生一个事件")
-    void guardBuyAndToastAreDeduplicated() {
-        String guardBuy = "{\"cmd\":\"GUARD_BUY\",\"data\":{\"uid\":777,\"username\":\"新舰长\",\"guard_level\":3,"
-                + "\"num\":1,\"price\":198000,\"start_time\":1785990000,\"end_time\":1788582000}}";
+    @DisplayName("实抓样本：start_time 等于 end_time 时单位推不出来，只能留空")
+    void guardBuyRealSampleHasNoUsableUnit() {
+        // 实测 35 条 GUARD_BUY 全都 start_time == end_time，unitOf 的两条路都走不通。
+        // 这条钉住的是「真实报文长这样」，别再指望 GUARD_BUY 能给出时长
+        BilibiliCaptainEvent event = assertInstanceOf(BilibiliCaptainEvent.class,
+                parseGuardBuy("{\"cmd\":\"GUARD_BUY\",\"data\":{\"uid\":10087,\"username\":\"实抓\",\"guard_level\":3,"
+                        + "\"num\":1,\"price\":198000,\"gift_id\":10003,\"gift_name\":\"舰长\","
+                        + "\"start_time\":1786025566,\"end_time\":1786025566}}").orElseThrow());
 
-        assertTrue(parse(guardBuy).isPresent(), "第一条应产生事件");
-        assertTrue(parse(guardBuy).isEmpty(), "重复播报不应再产生事件，否则这笔钱会被算两遍");
+        assertNull(event.getUnit(), "起止时刻相同推不出时长，猜一个会变成假信息");
     }
 
     @Test
@@ -555,6 +635,9 @@ class BilibiliEventParserTest {
             assertTrue(parse("{\"cmd\":\"SEND_GIFT\"}").isEmpty());
             assertTrue(parse("{\"cmd\":\"SUPER_CHAT_MESSAGE\"}").isEmpty());
             assertTrue(parse("{\"cmd\":\"USER_TOAST_MSG\",\"data\":{}}").isEmpty());
+            assertTrue(parse("{\"cmd\":\"USER_TOAST_MSG_V2\",\"data\":{}}").isEmpty());
+            assertTrue(parse("{\"cmd\":\"USER_TOAST_MSG_V2\",\"data\":{\"guard_info\":{\"guard_level\":3}}}").isEmpty(),
+                    "缺 pay_info 时没有金额可用，不该当成一笔零元开通");
             assertTrue(parse("{\"cmd\":\"INTERACT_WORD\",\"data\":{}}").isEmpty());
         });
     }
