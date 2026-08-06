@@ -30,7 +30,8 @@ class BilibiliEventParserTest {
     void setUp() {
         properties = new StarBotBilibiliProperties();
         // 事件补全默认关闭，此时解析过程不会触碰任何接口
-        parser = new BilibiliEventParser(properties, mock(BilibiliGiftService.class), mock(BilibiliApiSupport.class));
+        parser = new BilibiliEventParser(properties, mock(BilibiliGiftService.class), mock(BilibiliApiSupport.class),
+                new BilibiliGuardDeduplicator());
     }
 
     private Optional<StarBotBaseLiveEvent> parse(String json) {
@@ -243,12 +244,15 @@ class BilibiliEventParserTest {
     }
 
     @Test
-    @DisplayName("没有 total_coin 时实付回退到到手价值，而不是当作 0")
-    void missingTotalCoinFallsBack() {
+    @DisplayName("没有 total_coin 时实付应为空，表示「平台没告诉我们」")
+    void missingTotalCoinLeavesPaidNull() {
         BilibiliPaidGiftEvent event = assertInstanceOf(BilibiliPaidGiftEvent.class,
                 parse(giftMessage("gold", "")).orElseThrow());
 
-        assertEquals(3.0, event.getPaid(), 0.0001, "记成 0 会让营收凭空少一截，且不会有任何报错");
+        // 空与「填一个算出来的值」不同：填上之后下游就分不清
+        // 「两个口径确实相等」和「取不到才回退成相等」。回退交给聚合层做
+        assertNull(event.getPaid());
+        assertEquals(3.0, event.getValue(), 0.0001);
     }
 
     @Test
@@ -405,6 +409,46 @@ class BilibiliEventParserTest {
             assertTrue(parse("{\"cmd\":\"WATCHED_CHANGE\"}").isEmpty());
             assertTrue(parse("{\"cmd\":\"ONLINE_RANK_COUNT\"}").isEmpty());
         });
+    }
+
+    @Test
+    @DisplayName("GUARD_BUY 应解析出大航海，价格取自 price")
+    void parsesGuardBuy() {
+        // 实抓样本的形状：198000 千分之一元 = ¥198，与舰长月价对得上
+        BilibiliCaptainEvent event = assertInstanceOf(BilibiliCaptainEvent.class,
+                parse("{\"cmd\":\"GUARD_BUY\",\"data\":{\"uid\":777,\"username\":\"新舰长\",\"guard_level\":3,"
+                        + "\"num\":1,\"price\":198000,\"gift_id\":10003,\"gift_name\":\"舰长\","
+                        + "\"start_time\":1785990000,\"end_time\":1788582000}}").orElseThrow());
+
+        assertEquals(198.0, event.getValue(), 0.0001);
+        assertEquals(1, event.getCount());
+        assertEquals(777L, event.getSender().getUid());
+        assertEquals("月", event.getUnit(), "GUARD_BUY 没有 unit，要从起止时刻推");
+    }
+
+    @Test
+    @DisplayName("时长单位按起止时刻的天数归类，推不出来时留空而不是猜")
+    void guardBuyUnitFromTimeRange() {
+        // 一年
+        BilibiliCaptainEvent year = assertInstanceOf(BilibiliCaptainEvent.class,
+                parse("{\"cmd\":\"GUARD_BUY\",\"data\":{\"uid\":1,\"guard_level\":3,\"num\":1,\"price\":1000,"
+                        + "\"start_time\":1785990000,\"end_time\":" + (1785990000L + 365 * 86400) + "}}").orElseThrow());
+        assertEquals("年", year.getUnit());
+
+        // 没有时间字段
+        BilibiliCaptainEvent unknown = assertInstanceOf(BilibiliCaptainEvent.class,
+                parse("{\"cmd\":\"GUARD_BUY\",\"data\":{\"uid\":2,\"guard_level\":3,\"num\":1,\"price\":1000}}").orElseThrow());
+        assertNull(unknown.getUnit(), "推不出来就留空，猜一个「月」会在报告里变成假信息");
+    }
+
+    @Test
+    @DisplayName("同一次开通由两条消息播报时只应产生一个事件")
+    void guardBuyAndToastAreDeduplicated() {
+        String guardBuy = "{\"cmd\":\"GUARD_BUY\",\"data\":{\"uid\":777,\"username\":\"新舰长\",\"guard_level\":3,"
+                + "\"num\":1,\"price\":198000,\"start_time\":1785990000,\"end_time\":1788582000}}";
+
+        assertTrue(parse(guardBuy).isPresent(), "第一条应产生事件");
+        assertTrue(parse(guardBuy).isEmpty(), "重复播报不应再产生事件，否则 ¥198 会被算两遍");
     }
 
     @Test

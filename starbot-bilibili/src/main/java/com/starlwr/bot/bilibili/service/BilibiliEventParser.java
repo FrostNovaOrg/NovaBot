@@ -49,16 +49,20 @@ public class BilibiliEventParser {
 
     private final BilibiliApiSupport apiSupport;
 
+    private final BilibiliGuardDeduplicator guardDeduplicator;
+
     /**
      * 消息类型到解析方法的映射
      */
     private final Map<String, BiFunction<JSONObject, LiveStreamerInfo, StarBotBaseLiveEvent>> parsers = new HashMap<>();
 
     @Autowired
-    public BilibiliEventParser(StarBotBilibiliProperties properties, BilibiliGiftService giftService, BilibiliApiSupport apiSupport) {
+    public BilibiliEventParser(StarBotBilibiliProperties properties, BilibiliGiftService giftService,
+                               BilibiliApiSupport apiSupport, BilibiliGuardDeduplicator guardDeduplicator) {
         this.properties = properties;
         this.giftService = giftService;
         this.apiSupport = apiSupport;
+        this.guardDeduplicator = guardDeduplicator;
 
         parsers.put("LIVE", this::parseLiveOn);
         parsers.put("PREPARING", this::parseLiveOff);
@@ -67,6 +71,7 @@ public class BilibiliEventParser {
         parsers.put("SEND_GIFT", this::parseGift);
         parsers.put("SUPER_CHAT_MESSAGE", this::parseSuperChat);
         parsers.put("USER_TOAST_MSG", this::parseGuard);
+        parsers.put("GUARD_BUY", this::parseGuardBuy);
         parsers.put("LIKE_INFO_V3_CLICK", this::parseLike);
         parsers.put("LIKE_INFO_V3_UPDATE", this::parseLikeUpdate);
         parsers.put("WATCHED_CHANGE", this::parseWatchedUpdate);
@@ -367,16 +372,19 @@ public class BilibiliEventParser {
      * @param fallback 字段缺失时的回退值
      * @return 实付金额（元）
      */
-    private Double paidOf(JSONObject meta, Double fallback) {
+    private Double paidOf(JSONObject meta, Double expected) {
         Integer totalCoin = meta.getInteger("total_coin");
         if (totalCoin == null) {
-            return fallback;
+            // 留空而不是填一个算出来的值：空表示「平台没告诉我们」，
+            // 填上则表示「平台就是这么说的」。下游据此才能分辨
+            // 「两个口径确实相等」与「取不到才回退成相等」，回退由消费方自己做
+            return null;
         }
 
         double paid = totalCoin / PRICE_UNIT;
-        if (fallback != null && Math.abs(paid - fallback) > 0.001) {
+        if (expected != null && Math.abs(paid - expected) > 0.001) {
             log.debug("礼物 {} 的实付 {} 与按单价算出的 {} 不一致, 以实付为准",
-                    meta.getString("giftName"), paid, fallback);
+                    meta.getString("giftName"), paid, expected);
         }
         return paid;
     }
@@ -454,6 +462,84 @@ public class BilibiliEventParser {
                 yield null;
             }
         };
+    }
+
+    /**
+     * 解析大航海开通消息（{@code GUARD_BUY}）
+     * <p>
+     * 与 {@code USER_TOAST_MSG} 播报的是同一件事，但字段不同：
+     * 这条没有 {@code unit}，时长要从 {@code start_time} 与 {@code end_time} 的差推。
+     * 两条都收并去重，理由见 {@link BilibiliGuardDeduplicator}。
+     */
+    private StarBotBaseLiveEvent parseGuardBuy(JSONObject data, LiveStreamerInfo source) {
+        JSONObject meta = data.getJSONObject("data");
+        if (meta == null) {
+            return null;
+        }
+
+        Integer guardLevel = meta.getInteger("guard_level");
+        if (guardLevel == null) {
+            return null;
+        }
+
+        Long senderUid = meta.getLong("uid");
+        Integer count = meta.getInteger("num");
+        Double price = toYuan(meta.getInteger("price"));
+        Instant timestamp = Optional.ofNullable(meta.getLong("start_time"))
+                .map(Instant::ofEpochSecond).orElseGet(Instant::now);
+
+        if (!guardDeduplicator.firstReport(senderUid, guardLevel, count, timestamp)) {
+            return null;
+        }
+
+        // 单价还是总价？三方样本都是 num=1，区分不出来。多买时把三个数一起记下来，
+        // 首次出现就能人工核对——按单价处理而实际是总价的话，多月开通会被乘重
+        if (count != null && count > 1) {
+            log.info("大航海开通数量大于 1, 请核对价格口径: price={} num={} 按单价算得 {} 元",
+                    meta.getInteger("price"), count, price == null ? null : price * count);
+        }
+
+        boolean complete = properties.getLive().isCompleteEvent();
+        BilibiliUserInfo sender = new BilibiliUserInfo(
+                senderUid,
+                meta.getString("username"),
+                complete ? apiSupport.completeFace(senderUid, source).orElse(null) : null
+        );
+        sender.setGuard(new Guard(guardLevel, complete ? giftService.getGuardIcon(meta.getString("gift_name")).orElse(null) : null));
+
+        String unit = unitOf(meta);
+
+        return switch (guardLevel) {
+            case 1 -> new BilibiliGovernorEvent(source, sender, price, count, unit, timestamp);
+            case 2 -> new BilibiliCommanderEvent(source, sender, price, count, unit, timestamp);
+            case 3 -> new BilibiliCaptainEvent(source, sender, price, count, unit, timestamp);
+            default -> {
+                log.debug("未处理的直播间大航海类型: {}", guardLevel);
+                yield null;
+            }
+        };
+    }
+
+    /**
+     * 从起止时刻推出开通时长的单位
+     * <p>
+     * {@code GUARD_BUY} 不给 {@code unit}，只给起止时刻。按天数归类而不是精确换算：
+     * 大航海只按月/年售卖，而月长本就有 28~31 天的浮动，硬算会得出「1.03 个月」这种东西。
+     * @param meta 消息内容
+     * @return 「月」或「年」，推不出来时为 null 而不是猜一个
+     */
+    private String unitOf(JSONObject meta) {
+        Long start = meta.getLong("start_time");
+        Long end = meta.getLong("end_time");
+        if (start == null || end == null || end <= start) {
+            return null;
+        }
+
+        long days = (end - start) / 86400;
+        if (days >= 300) {
+            return "年";
+        }
+        return days >= 20 ? "月" : null;
     }
 
     /**
