@@ -1,6 +1,7 @@
 package com.starlwr.bot.bilibili.service;
 
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.health.BilibiliRiskMetrics;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import org.junit.jupiter.api.DisplayName;
@@ -73,7 +74,8 @@ class BilibiliLiveRoomServiceTest {
                 mock(BilibiliLiveStateGate.class),
                 // 用真实闸门而不是 mock：首连的错开间隔现在由它产生，
                 // mock 掉就等于把被测行为一起 mock 没了
-                new BilibiliConnectGate(properties, scheduler)
+                new BilibiliConnectGate(properties, scheduler),
+                new BilibiliRiskMetrics()
         );
     }
 

@@ -1,5 +1,6 @@
 package com.starlwr.bot.bilibili.service;
 
+import com.starlwr.bot.bilibili.health.BilibiliRiskMetrics;
 import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
 import com.starlwr.bot.bilibili.model.Room;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
@@ -13,6 +14,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 开播时的直播间数据快照
@@ -33,11 +37,14 @@ public class BilibiliRoomStatsSnapshotter {
 
     private final LiveRoomInfoHistory roomInfoHistory;
 
+    private final BilibiliRiskMetrics riskMetrics;
+
     @Autowired
-    public BilibiliRoomStatsSnapshotter(LiveDataService liveDataService, BilibiliApiUtil api, LiveRoomInfoHistory roomInfoHistory) {
+    public BilibiliRoomStatsSnapshotter(LiveDataService liveDataService, BilibiliApiUtil api, LiveRoomInfoHistory roomInfoHistory, BilibiliRiskMetrics riskMetrics) {
         this.liveDataService = liveDataService;
         this.api = api;
         this.roomInfoHistory = roomInfoHistory;
+        this.riskMetrics = riskMetrics;
     }
 
     /**
@@ -62,19 +69,55 @@ public class BilibiliRoomStatsSnapshotter {
         String platform = event.getPlatform();
         Long uid = source.getUid();
 
-        // 三个接口各自失败互不影响：拿到几项就记几项，报告里只展示记到的那几项
-        api.getFansCount(uid).ifPresent(fans ->
-                liveDataService.setLiveMetric(platform, uid, BilibiliLiveMetric.FANS_AT_START, fans));
-        api.getFansMedalCount(uid).ifPresent(medal ->
-                liveDataService.setLiveMetric(platform, uid, BilibiliLiveMetric.FANS_MEDAL_AT_START, medal));
+        // 三个接口各自失败互不影响：拿到几项就记几项，报告里只展示记到的那几项。
+        // 但「少记了一项」必须被发现——它的表现是报告里那张卡整个消失，数值不会变成 0，
+        // 按数值告警永远不会触发，所以这里按「应记 N 项、实记 M 项」计数
+        int expected = 0;
+        int recorded = 0;
+        List<String> missing = new ArrayList<>();
+
+        expected++;
+        if (api.getFansCount(uid).map(fans -> {
+            liveDataService.setLiveMetric(platform, uid, BilibiliLiveMetric.FANS_AT_START, fans);
+            return true;
+        }).orElse(false)) {
+            recorded++;
+        } else {
+            missing.add("粉丝数");
+        }
+
+        expected++;
+        if (api.getFansMedalCount(uid).map(medal -> {
+            liveDataService.setLiveMetric(platform, uid, BilibiliLiveMetric.FANS_MEDAL_AT_START, medal);
+            return true;
+        }).orElse(false)) {
+            recorded++;
+        } else {
+            missing.add("粉丝团");
+        }
+
         if (source.getRoomId() != null) {
-            api.getGuardCount(source.getRoomId(), uid).ifPresent(guard ->
-                    liveDataService.setLiveMetric(platform, uid, BilibiliLiveMetric.GUARD_AT_START, guard));
+            expected++;
+            if (api.getGuardCount(source.getRoomId(), uid).map(guard -> {
+                liveDataService.setLiveMetric(platform, uid, BilibiliLiveMetric.GUARD_AT_START, guard);
+                return true;
+            }).orElse(false)) {
+                recorded++;
+            } else {
+                missing.add("大航海");
+            }
 
             recordInitialTitle(platform, uid, source, event.getTimestamp());
         }
 
-        log.debug("已记录 {} 开播时的粉丝与大航海快照", source.getUname());
+        if (recorded < expected) {
+            riskMetrics.record(BilibiliRiskMetrics.Kind.SNAPSHOT_MISSING,
+                    String.format("%s 开播快照应记 %d 项、实记 %d 项，缺 %s",
+                            source.getUname(), expected, recorded, String.join("、", missing)));
+            log.warn("{} 开播快照缺失 {} 项: {}", source.getUname(), expected - recorded, String.join("、", missing));
+        } else {
+            log.debug("已记录 {} 开播时的粉丝与大航海快照（{} 项）", source.getUname(), recorded);
+        }
     }
 
     /**

@@ -8,6 +8,7 @@ import com.starlwr.bot.bilibili.enums.DanmuType;
 import com.starlwr.bot.bilibili.exception.NetworkException;
 import com.starlwr.bot.bilibili.exception.RequestFailedException;
 import com.starlwr.bot.bilibili.exception.ResponseCodeException;
+import com.starlwr.bot.bilibili.health.BilibiliRiskMetrics;
 import com.starlwr.bot.bilibili.model.*;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.util.HttpUtil;
@@ -19,6 +20,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.client.HttpStatusCodeException;
 
 import java.awt.image.BufferedImage;
 import java.net.URLEncoder;
@@ -145,6 +147,11 @@ public class BilibiliApiUtil {
     private final StarBotBilibiliProperties properties;
 
     /**
+     * 风控指标记录。这些信号不报错也不进日志，不主动记就等于没有发现机制
+     */
+    private final BilibiliRiskMetrics riskMetrics;
+
+    /**
      * 当前使用的登录凭据
      */
     @Getter
@@ -179,9 +186,10 @@ public class BilibiliApiUtil {
     private volatile WebSign webSign;
 
     @Autowired
-    public BilibiliApiUtil(HttpUtil http, StarBotBilibiliProperties properties) {
+    public BilibiliApiUtil(HttpUtil http, StarBotBilibiliProperties properties, BilibiliRiskMetrics riskMetrics) {
         this.http = http;
         this.properties = properties;
+        this.riskMetrics = riskMetrics;
     }
 
     /**
@@ -329,6 +337,7 @@ public class BilibiliApiUtil {
 
             return http.getJson(target, headers);
         } catch (Exception e) {
+            recordHttpStatus(url, e);
             throw new NetworkException("请求 " + url + " 时发生网络异常", e);
         }
     }
@@ -343,8 +352,11 @@ public class BilibiliApiUtil {
             throw new NetworkException("接口未返回任何内容");
         }
 
+        recordChallenge(response);
+
         Integer code = response.getInteger("code");
         if (code != null && code != 0) {
+            recordBusinessCode(code, response.getString("message"));
             throw new ResponseCodeException(code, Optional.ofNullable(response.getString("message")).orElse("未知错误"));
         }
 
@@ -1139,6 +1151,61 @@ public class BilibiliApiUtil {
             log.debug("获取 uid {} 的头像失败: {}", uid, e.getMessage());
             return Optional.empty();
         }
+    }
+
+    /**
+     * 记录 HTTP 层的风控状态码
+     * <p>
+     * <b>按响应状态码判定，不要按日志文本 grep</b>——日志时间戳里的 {@code .412} 会大量误匹配。
+     */
+    private void recordHttpStatus(String url, Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof HttpStatusCodeException status) {
+                int code = status.getStatusCode().value();
+                if (code == 412) {
+                    riskMetrics.record(BilibiliRiskMetrics.Kind.HTTP_412, shortUrl(url));
+                }
+                return;
+            }
+        }
+    }
+
+    /**
+     * 记录风控相关的业务错误代码
+     */
+    private void recordBusinessCode(int code, String message) {
+        BilibiliRiskMetrics.Kind kind = switch (code) {
+            case -352 -> BilibiliRiskMetrics.Kind.CODE_352;
+            case -401 -> BilibiliRiskMetrics.Kind.CODE_401;
+            case -509 -> BilibiliRiskMetrics.Kind.CODE_509;
+            default -> null;
+        };
+        if (kind != null) {
+            riskMetrics.record(kind, message);
+        }
+    }
+
+    /**
+     * 记录风控质询与验证码拦截
+     * <p>
+     * 判据放在响应体而不是错误码上：质询可能伴随 -352 下发，也可能单独出现。
+     */
+    private void recordChallenge(JSONObject response) {
+        JSONObject data = response.getJSONObject("data");
+        boolean challenged = (data != null && (data.containsKey("v_voucher") || data.containsKey("geetest")))
+                || response.containsKey("v_voucher");
+        if (challenged) {
+            riskMetrics.record(BilibiliRiskMetrics.Kind.GAIA,
+                    Optional.ofNullable(response.getString("message")).filter(m -> !m.isBlank()).orElse("响应中带质询凭据"));
+        }
+    }
+
+    /**
+     * 截取 URL 的路径部分，避免把查询参数（含签名与凭据）写进健康页
+     */
+    private String shortUrl(String url) {
+        int q = url.indexOf('?');
+        return q < 0 ? url : url.substring(0, q);
     }
 
     /**

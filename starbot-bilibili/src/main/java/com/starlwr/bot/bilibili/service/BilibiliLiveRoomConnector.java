@@ -7,6 +7,7 @@ import com.starlwr.bot.bilibili.enums.ConnectStatus;
 import com.starlwr.bot.bilibili.enums.DataHeaderType;
 import com.starlwr.bot.bilibili.enums.DataPackType;
 import com.starlwr.bot.bilibili.event.live.BilibiliConnectedEvent;
+import com.starlwr.bot.bilibili.health.BilibiliRiskMetrics;
 import com.starlwr.bot.bilibili.event.live.BilibiliDisconnectedEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliLiveOffEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliLiveOnEvent;
@@ -70,6 +71,11 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
      */
     private static final Duration WATCH_HEARTBEAT_INTERVAL = Duration.ofSeconds(60);
 
+    /**
+     * WebSocket 关闭码 1006：连接异常中断且未收到关闭帧
+     */
+    private static final int ABNORMAL_CLOSURE = 1006;
+
     private final LiveStreamerInfo source;
 
     private final BilibiliApiUtil api;
@@ -96,6 +102,8 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
      * 全局连接放行闸门。首连与重连都要经过它，否则多房间同时断线会叠成请求洪峰
      */
     private final BilibiliConnectGate connectGate;
+
+    private final BilibiliRiskMetrics riskMetrics;
 
     /**
      * 当前连接状态
@@ -145,7 +153,8 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
                                      @NonNull TaskScheduler scheduler,
                                      @NonNull WebSocketClient client,
                                      @NonNull BilibiliLiveStateGate stateGate,
-                                     @NonNull BilibiliConnectGate connectGate) {
+                                     @NonNull BilibiliConnectGate connectGate,
+                                     @NonNull BilibiliRiskMetrics riskMetrics) {
         this.source = source;
         this.api = api;
         this.parser = parser;
@@ -155,6 +164,7 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
         this.client = client;
         this.stateGate = stateGate;
         this.connectGate = connectGate;
+        this.riskMetrics = riskMetrics;
     }
 
     /**
@@ -411,6 +421,13 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
     @Override
     public void afterConnectionClosed(@NonNull WebSocketSession session, @NonNull CloseStatus closeStatus) {
         cancelHeartbeat();
+
+        // 1006 是「连接被切断且没有关闭帧」。单次属正常抖动，成串出现才是风暴，
+        // 计数交给健康探针按窗口判定，这里只如实记一笔
+        if (closeStatus.getCode() == ABNORMAL_CLOSURE) {
+            riskMetrics.record(BilibiliRiskMetrics.Kind.DISCONNECT_1006,
+                    "直播间 " + source.getRoomId());
+        }
 
         if (closed.get()) {
             return;

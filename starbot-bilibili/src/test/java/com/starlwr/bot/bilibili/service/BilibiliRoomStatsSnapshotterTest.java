@@ -1,6 +1,7 @@
 package com.starlwr.bot.bilibili.service;
 
 import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
+import com.starlwr.bot.bilibili.health.BilibiliRiskMetrics;
 import com.starlwr.bot.bilibili.model.Room;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
@@ -15,9 +16,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.time.Duration;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -46,6 +49,9 @@ class BilibiliRoomStatsSnapshotterTest {
 
     private BilibiliRoomStatsSnapshotter snapshotter;
 
+
+    private BilibiliRiskMetrics riskMetrics;
+
     @BeforeEach
     void setUp() {
         api = mock(BilibiliApiUtil.class);
@@ -57,7 +63,30 @@ class BilibiliRoomStatsSnapshotterTest {
 
         liveDataService = new DefaultLiveDataService(new StarBotCoreProperties());
         roomInfoHistory = new LiveRoomInfoHistory(new StarBotStateStore(new StarBotCoreProperties()));
-        snapshotter = new BilibiliRoomStatsSnapshotter(liveDataService, api, roomInfoHistory);
+        riskMetrics = new BilibiliRiskMetrics();
+        snapshotter = new BilibiliRoomStatsSnapshotter(liveDataService, api, roomInfoHistory, riskMetrics);
+    }
+
+    @Test
+    @DisplayName("有快照项取不到时应记入风控指标，而不是悄悄少一项")
+    void recordsSnapshotMissing() {
+        // 大航海端点若被平台下线，getGuardCount 返回空，调用方直接跳过，
+        // 报告里那张卡整个消失、数值不会变成 0 —— 这种静默降级必须能被自动发现
+        when(api.getGuardCount(anyLong(), anyLong())).thenReturn(Optional.empty());
+
+        snapshotter.onLiveOn(event(false));
+
+        assertEquals(1, riskMetrics.count(BilibiliRiskMetrics.Kind.SNAPSHOT_MISSING, Duration.ofMinutes(1)));
+        assertTrue(riskMetrics.lastDetail(BilibiliRiskMetrics.Kind.SNAPSHOT_MISSING)
+                .orElse("").contains("大航海"), "要记下缺的是哪一项");
+    }
+
+    @Test
+    @DisplayName("三项都取到时不应记入风控指标")
+    void noRecordWhenSnapshotComplete() {
+        snapshotter.onLiveOn(event(false));
+
+        assertEquals(0, riskMetrics.count(BilibiliRiskMetrics.Kind.SNAPSHOT_MISSING, Duration.ofMinutes(1)));
     }
 
     @Test
