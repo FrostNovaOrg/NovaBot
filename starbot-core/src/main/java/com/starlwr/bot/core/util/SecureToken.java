@@ -26,6 +26,11 @@ public final class SecureToken {
      */
     private static final String[] WEAK_FRAGMENTS = {"token", "password", "123456", "starbot", "admin", "test", "changeme"};
 
+    /**
+     * 生成令牌时的最大重掷次数
+     */
+    private static final int MAX_GENERATE_ATTEMPTS = 64;
+
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private SecureToken() {
@@ -33,12 +38,25 @@ public final class SecureToken {
 
     /**
      * 生成一个高强度随机令牌
+     * <p>
+     * <b>会重掷到不被 {@link #isWeak} 判定为弱为止。</b> 随机的 Base64 串里
+     * 恰好出现 {@code test}、{@code admin} 这类片段并非不可能——43 个字符、
+     * 每个位置命中一个指定四字母序列的概率是 {@code (2/64)^4}（大小写都会被折叠掉），
+     * 算下来大约每千次生成就有一次。真撞上时，自动生成的令牌会被我们自己的弱令牌检查拒掉，
+     * 而使用者对着一个看起来完全随机的串根本无从判断哪里弱。
      * @return 令牌
      */
     public static String generate() {
         byte[] bytes = new byte[GENERATED_BYTES];
-        RANDOM.nextBytes(bytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+        for (int attempt = 0; attempt < MAX_GENERATE_ATTEMPTS; attempt++) {
+            RANDOM.nextBytes(bytes);
+            String token = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+            if (!isWeak(token)) {
+                return token;
+            }
+        }
+        // 走到这里说明随机源出了问题，与其返回一个弱令牌不如直接失败
+        throw new IllegalStateException("连续 " + MAX_GENERATE_ATTEMPTS + " 次都生成出弱令牌, 随机源可能异常");
     }
 
     /**
