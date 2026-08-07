@@ -178,6 +178,13 @@ public class StarBotBilibiliProperties {
 
         /**
          * 是否仅连接到启用了直播推送的直播间
+         * <p>
+         * <b>开启后就没有「纯监听房间」了。</b> 纯监听房间指的是数据源里配了主播、
+         * 但不配任何推送目标的那种——只把事件采集下来送进事件输出或累计数据，一条 QQ 消息都不发。
+         * 本项为真时这类房间会被整个跳过，<b>表现是「加了主播却什么都没发生」</b>，
+         * 所以跳过时会在日志里逐个列出来。
+         * <p>
+         * 默认关闭，即每个启用的主播都连。只在连接数受限、又确实只关心推送的场景下才开。
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
         private boolean onlyConnectNecessaryRooms = false;

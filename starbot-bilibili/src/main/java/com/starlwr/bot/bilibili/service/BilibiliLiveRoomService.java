@@ -110,12 +110,29 @@ public class BilibiliLiveRoomService {
             return;
         }
 
-        Set<Up> targets = dataSource.getUsers(LivePlatform.BILIBILI.getName()).stream()
+        List<PushUser> enabled = dataSource.getUsers(LivePlatform.BILIBILI.getName()).stream()
                 .filter(user -> !Boolean.FALSE.equals(user.getEnabled()))
+                .toList();
+
+        Set<Up> targets = enabled.stream()
                 .filter(user -> !properties.getLive().isOnlyConnectNecessaryRooms() || subscribesLiveEvent(user))
                 .map(Up::new)
                 .filter(up -> up.getRoomId() != null)
                 .collect(Collectors.toSet());
+
+        // 被开关挡掉的房间要说出来。否则「我加了主播却什么都没发生」在日志里
+        // 没有任何痕迹——纯监听房间（没有推送目标，只为把事件送进事件输出）
+        // 正是最容易撞上这一条的用法
+        if (properties.getLive().isOnlyConnectNecessaryRooms()) {
+            List<String> skipped = enabled.stream()
+                    .filter(user -> !subscribesLiveEvent(user))
+                    .map(user -> user.getUname() + "(" + user.getRoomId() + ")")
+                    .toList();
+            if (!skipped.isEmpty()) {
+                log.info("以下直播间未配置直播推送, 已按 only-connect-necessary-rooms 跳过连接: {}; " +
+                        "若希望只采集不推送, 请把该项改为 false", String.join(", ", skipped));
+            }
+        }
 
         // 断开已不在配置中的直播间
         connectors.keySet().stream()
