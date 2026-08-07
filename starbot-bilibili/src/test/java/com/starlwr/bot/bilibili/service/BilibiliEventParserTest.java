@@ -290,6 +290,29 @@ class BilibiliEventParserTest {
 
         assertEquals(0.1, event.getValue(), 0.0001, "主播按面值收到 0.1 元");
         assertEquals(0.0, event.getCharged(), 0.0001, "观众一分钱没花");
+        assertTrue(event.isFromBag(), "背包标志要显式带上去，下游不该靠金额反推");
+    }
+
+    @Test
+    @DisplayName("普通礼物不带背包标志")
+    void normalGiftIsNotFromBag() {
+        BilibiliPaidGiftEvent event = assertInstanceOf(BilibiliPaidGiftEvent.class,
+                parse(giftMessage("gold", ",\"total_coin\":3000")).orElseThrow());
+
+        assertFalse(event.isFromBag());
+    }
+
+    @Test
+    @DisplayName("实扣为 0 但不是背包礼物时，背包标志必须为假")
+    void zeroChargedAloneDoesNotMeanFromBag() {
+        // 这条钉的是契约本身：charged == 0 目前恰好只有背包一种来源，
+        // 但那是当下的巧合而不是约定。将来出现第二种「确实扣了 0」的情形时，
+        // 反推会把它静默地当成背包礼物且不报错——本断言就是那道防线
+        BilibiliPaidGiftEvent event = assertInstanceOf(BilibiliPaidGiftEvent.class,
+                parse(giftMessage("gold", ",\"total_coin\":0")).orElseThrow());
+
+        assertEquals(0.0, event.getCharged(), 0.0001);
+        assertFalse(event.isFromBag(), "实扣为 0 不等于来自背包");
     }
 
     @Test

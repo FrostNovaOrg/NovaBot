@@ -376,6 +376,7 @@ public class BilibiliEventParser {
             Double value = gift.getPrice() == null || count == null ? null : gift.getPrice() * count;
             BilibiliPaidGiftEvent event = new BilibiliPaidGiftEvent(source, sender, gift, value, timestamp);
             event.setCharged(chargedOf(meta, value));
+            event.setFromBag(fromBag(meta));
             return event;
         }
 
@@ -395,7 +396,20 @@ public class BilibiliEventParser {
         // 盲盒的实扣就是盲盒本身的价，与 total_coin 应当一致。以 total_coin 为准并在不一致时留下日志——
         // 盲盒尚未拿到过真实报文，这行日志就是将来真有一个盲盒送进来时的证据
         event.setCharged(chargedOf(meta, price));
+        event.setFromBag(fromBag(meta));
         return event;
+    }
+
+    /**
+     * 判断礼物是否来自背包
+     * <p>
+     * 判别字段是 {@code bag_gift}：背包礼物为一个对象，普通礼物为 {@code null}。
+     * <b>不要拿金额去反推</b>——理由见 {@code StarBotLiveGiftEvent.fromBag} 的契约说明。
+     * @param meta 礼物消息体
+     * @return 是否来自背包
+     */
+    private boolean fromBag(JSONObject meta) {
+        return meta.getJSONObject("bag_gift") != null;
     }
 
     /**
