@@ -36,6 +36,7 @@ import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -75,6 +76,16 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
      * WebSocket 关闭码 1006：连接异常中断且未收到关闭帧
      */
     private static final int ABNORMAL_CLOSURE = 1006;
+
+    /**
+     * 业务消息的 cmd 集合
+     * <p>
+     * 「业务消息」指主播真正关心、也是我们真正要采的那些：弹幕、礼物、上舰、醒目留言。
+     * 进房、排行、点赞、看过人数这些属于环境消息，被限制下发时它们照样会来。
+     */
+    private static final Set<String> BUSINESS_COMMANDS = Set.of(
+            "DANMU_MSG", "SEND_GIFT", "COMBO_SEND", "GUARD_BUY",
+            "USER_TOAST_MSG", "USER_TOAST_MSG_V2", "SUPER_CHAT_MESSAGE");
 
     private final LiveStreamerInfo source;
 
@@ -141,9 +152,19 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
     private final AtomicInteger totalMessages = new AtomicInteger();
 
     /**
-     * 风控检测窗口内收到的进房类消息数
+     * 风控检测窗口内收到的进房类消息数，仅作辅助信号
      */
     private final AtomicInteger interactMessages = new AtomicInteger();
+
+    /**
+     * 风控检测窗口内收到的业务消息数，这才是判据
+     */
+    private final AtomicInteger businessMessages = new AtomicInteger();
+
+    /**
+     * 跨窗口的判定器
+     */
+    private final BilibiliLiveRoomRiskDetector riskDetector;
 
     public BilibiliLiveRoomConnector(@NonNull LiveStreamerInfo source,
                                      @NonNull BilibiliApiUtil api,
@@ -165,6 +186,8 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
         this.stateGate = stateGate;
         this.connectGate = connectGate;
         this.riskMetrics = riskMetrics;
+        this.riskDetector = new BilibiliLiveRoomRiskDetector(
+                properties.getLive().getAutoDetectLiveRoomRiskWindows());
     }
 
     /**
@@ -368,8 +391,8 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
     /**
      * 累计风控检测所需的计数
      * <p>
-     * 直播间被风控时，弹幕、礼物等消息会被屏蔽，长连接上只剩进房消息。
-     * 因此以进房消息在总消息中的占比作为风控判据。
+     * 判据是业务消息是否断流，进房占比只作辅助信号，理由见
+     * {@link BilibiliLiveRoomRiskDetector}。
      * @param data 消息内容
      */
     private void countForRiskDetection(JSONObject data) {
@@ -379,8 +402,13 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
 
         totalMessages.incrementAndGet();
         String cmd = data.getString("cmd");
-        if (cmd != null && cmd.startsWith("INTERACT_WORD")) {
+        if (cmd == null) {
+            return;
+        }
+        if (cmd.startsWith("INTERACT_WORD")) {
             interactMessages.incrementAndGet();
+        } else if (BUSINESS_COMMANDS.contains(cmd)) {
+            businessMessages.incrementAndGet();
         }
     }
 
@@ -393,23 +421,16 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
             return false;
         }
 
-        int total = totalMessages.getAndSet(0);
-        int interact = interactMessages.getAndSet(0);
+        BilibiliLiveRoomRiskDetector.Window window = new BilibiliLiveRoomRiskDetector.Window(
+                totalMessages.getAndSet(0), businessMessages.getAndSet(0), interactMessages.getAndSet(0));
 
-        // 样本过少时不足以判断，避免冷清的直播间被误判
-        if (total < 10) {
-            return false;
-        }
-
-        int ratio = interact * 100 / total;
-        if (ratio < properties.getLive().getAutoDetectLiveRoomRiskRatio()) {
-            return false;
-        }
-
-        log.warn("直播间 {} 的进房消息占比达到 {}%, 判定为直播间数据风控", source.getRoomId(), ratio);
-        status = ConnectStatus.RISK;
-
-        return true;
+        return riskDetector.accept(window).map(observation -> {
+            // 只陈述观测到了什么，不断言原因——从这里分不清是平台限制了下发、
+            // 协议变更导致业务消息解析不出来、还是主播那边确实没人说话但有人进出
+            log.warn("直播间 {} 业务消息疑似断流: {}", source.getRoomId(), observation);
+            status = ConnectStatus.RISK;
+            return true;
+        }).orElse(false);
     }
 
     @Override
@@ -421,6 +442,12 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
     @Override
     public void afterConnectionClosed(@NonNull WebSocketSession session, @NonNull CloseStatus closeStatus) {
         cancelHeartbeat();
+
+        // 断线后清空判定历史：跨连接累计会把重连前后的窗口混在一起
+        riskDetector.reset();
+        totalMessages.set(0);
+        businessMessages.set(0);
+        interactMessages.set(0);
 
         // 1006 是「连接被切断且没有关闭帧」。单次属正常抖动，成串出现才是风暴，
         // 计数交给健康探针按窗口判定，这里只如实记一笔

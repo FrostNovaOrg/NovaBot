@@ -211,9 +211,17 @@ public class StarBotBilibiliProperties {
         private int autoDetectLiveRoomRiskInterval = 60;
 
         /**
-         * 判定为风控的进房事件占比阈值，单位：百分比
+         * 连续多少个检测窗口业务消息为零，才判定为疑似断流
+         * <p>
+         * 与 auto-detect-live-room-risk-interval 相乘就是判定所需的持续时长，
+         * 默认 3 × 60 秒 = 3 分钟。调小会把偶发的安静误判成断流。
+         * <p>
+         * 本项取代了原先的 auto-detect-live-room-risk-ratio（进房消息占比阈值）。
+         * 那个判据 2026-08-07 被实测证伪：热门房间人来人往、进房消息天然刷屏，
+         * 一个 41 万人气的房间进房占比 53% 被判风控，而它同时段每分钟收 71 条弹幕、
+         * 对独立基准的到达率 93.3%。**「进房占比高」与「收不到业务消息」是两回事。**
          */
-        private int autoDetectLiveRoomRiskRatio = 50;
+        private int autoDetectLiveRoomRiskWindows = 3;
 
         /**
          * 是否启用备用直播推送，通过轮询接口而非长连接判断开播状态

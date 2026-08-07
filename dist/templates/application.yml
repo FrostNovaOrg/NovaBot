@@ -104,7 +104,10 @@ starbot:
       complete-event: false               # 是否请求接口补全事件中缺失的昵称、头像等信息
       auto-detect-live-room-risk: true    # 是否检测直播间数据风控
       auto-detect-live-room-risk-interval: 60   # 风控检测周期，单位：秒
-      auto-detect-live-room-risk-ratio: 50      # 进房消息占比达到此百分比即判定为风控
+      auto-detect-live-room-risk-windows: 3     # 连续多少个检测窗口业务消息为零才判定为疑似断流。
+                                                # 与上面的间隔相乘即持续时长，默认 3 × 60 秒 = 3 分钟。
+                                                # 判据是业务消息（弹幕/礼物/上舰/醒目留言）断流，
+                                                # 不是进房消息占比——热门房间进房天然刷屏，按占比判会误报
       backup-live-push: true              # 是否启用备用直播推送（轮询接口兜底开播下播）
       backup-live-push-interval: 10       # 备用推送检测间隔，单位：秒
       snapshot-interval: 6                # 主播基础数据（粉丝数、粉丝团、大航海）的留档间隔，单位：小时，0 为关闭。
