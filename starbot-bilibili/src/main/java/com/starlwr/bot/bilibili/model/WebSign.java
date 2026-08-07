@@ -38,6 +38,14 @@ public class WebSign {
     private String subKey;
 
     /**
+     * 本份凭据的生成时刻
+     * <p>
+     * 用来判断「刚换过就别再换」：收到 -352 时若这份密钥才生成没多久，
+     * 重算出来的多半还是同一份，重试没有意义，只是白白多打一次请求。
+     */
+    private Instant generatedAt;
+
+    /**
      * 判断签名凭据是否仍然有效
      * @return 是否仍然有效
      */

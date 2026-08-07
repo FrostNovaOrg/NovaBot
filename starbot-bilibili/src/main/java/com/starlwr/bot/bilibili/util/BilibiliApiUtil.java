@@ -25,11 +25,13 @@ import org.springframework.web.client.HttpStatusCodeException;
 import java.awt.image.BufferedImage;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 /**
@@ -142,6 +144,18 @@ public class BilibiliApiUtil {
      */
     public static final int CODE_NOT_LOGGED_IN = -101;
 
+    /**
+     * 「请求被风控拦截」的业务错误代码
+     */
+    private static final int CODE_RISK_CONTROL = -352;
+
+    /**
+     * 收到 -352 后允许重算签名的最小密钥年龄，单位：秒
+     * <p>
+     * 比这更新的密钥重算出来多半还是同一份，重试没有意义，只是白白多打一次请求。
+     */
+    private static final long MIN_SIGN_AGE_BEFORE_RETRY = 900;
+
     private final HttpUtil http;
 
     private final StarBotBilibiliProperties properties;
@@ -184,6 +198,11 @@ public class BilibiliApiUtil {
      * 接口签名凭据，按需刷新
      */
     private volatile WebSign webSign;
+
+    /**
+     * 是否已有线程正在因风控重算签名。同一时刻只放一个，避免 -352 一来就人人都去重算
+     */
+    private final AtomicBoolean signRefreshing = new AtomicBoolean();
 
     @Autowired
     public BilibiliApiUtil(HttpUtil http, StarBotBilibiliProperties properties, BilibiliRiskMetrics riskMetrics) {
@@ -292,6 +311,68 @@ public class BilibiliApiUtil {
      * @return 响应中的 data 字段，响应无 data 时返回空 JSON 对象
      */
     public JSONObject requestBilibiliApi(String url, String method, Map<String, String> headers, Map<String, Object> params) {
+        try {
+            return requestWithRetry(url, method, headers, params);
+        } catch (ResponseCodeException e) {
+            // 只给一次自救机会：重算签名后再打一遍，还失败就抛出去。
+            // 刻意不写成循环——目的是「给一次机会」，不是「重试到成功」，
+            // 后者会在平台限流时把请求密度推得更高，正好是限流想拦的行为
+            if (e.getCode() == CODE_RISK_CONTROL && refreshSignForRiskControl()) {
+                log.info("接口 {} 返回 -352, 已重算签名并重试一次", shortUrl(url));
+                return requestWithRetry(url, method, headers, params);
+            }
+            throw e;
+        }
+    }
+
+    /**
+     * 因风控重算签名
+     * <p>
+     * 两道闸：密钥太新不重算（重算也是同一份），已有线程在重算则不重复发起。
+     * @return 是否真的重算了
+     */
+    private boolean refreshSignForRiskControl() {
+        if (!signOldEnoughToRetry(webSign, Instant.now())) {
+            return false;
+        }
+
+        if (!signRefreshing.compareAndSet(false, true)) {
+            return false;
+        }
+
+        try {
+            WebSign fresh = generateWebSign();
+            synchronized (this) {
+                this.webSign = fresh;
+            }
+            return true;
+        } catch (Exception e) {
+            log.warn("因 -352 重算签名失败: {}", e.getMessage());
+            return false;
+        } finally {
+            signRefreshing.set(false);
+        }
+    }
+
+    /**
+     * 判断当前签名是否旧到值得为风控重算一次
+     * <p>
+     * 抽成静态方法是为了能直接测这条规则本身——它决定了「-352 时到底要不要多打一次请求」。
+     * @param sign 当前签名，可为空
+     * @param now 当前时刻
+     * @return 是否值得重算
+     */
+    static boolean signOldEnoughToRetry(WebSign sign, Instant now) {
+        if (sign == null || sign.getGeneratedAt() == null) {
+            return false;
+        }
+        return Duration.between(sign.getGeneratedAt(), now).getSeconds() >= MIN_SIGN_AGE_BEFORE_RETRY;
+    }
+
+    /**
+     * 按配置的次数重试执行请求
+     */
+    private JSONObject requestWithRetry(String url, String method, Map<String, String> headers, Map<String, Object> params) {
         int maxTimes = Math.max(1, properties.getNetwork().getApiRetryMaxTimes());
         RuntimeException last = null;
 
@@ -471,6 +552,7 @@ public class BilibiliApiUtil {
      */
     public WebSign generateWebSign() {
         WebSign sign = new WebSign();
+        sign.setGeneratedAt(Instant.now());
 
         Map<String, String> headers = new HashMap<>();
         headers.put("User-Agent", properties.getNetwork().getUserAgent());
