@@ -91,7 +91,7 @@ starbot:
       dynamic-raw-message-log: false      # 动态接口原始响应调试日志
 
     network:
-      user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36
+      user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36
       api-retry-max-times: 3        # 接口失败重试次数
       api-retry-interval: 3000      # 重试间隔，单位：毫秒
 

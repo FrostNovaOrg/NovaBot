@@ -82,8 +82,12 @@ public class StarBotBilibiliProperties {
          * 请求哔哩哔哩接口时使用的 User-Agent
          * <p>
          * 声称的浏览器版本长期停在很旧的版本上容易被判定为非正常客户端，升级时应一并跟进。
+         * <p>
+         * <b>改版本号时，配置模板 {@code dist/templates/application.yml} 里那份要一起改。</b>
+         * 模板里的值会覆盖这里的默认值——2026-08-07 就发现模板停在 Chrome/119 而这里已是 150，
+         * 生产按模板部署，实际发出去的一直是落后三年的那个。两处不同步等于这个默认值形同虚设。
          */
-        private String userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36";
+        private String userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36";
 
         /**
          * 接口请求失败后的最大重试次数
