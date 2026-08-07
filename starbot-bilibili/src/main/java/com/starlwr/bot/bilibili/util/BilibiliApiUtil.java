@@ -82,8 +82,18 @@ public class BilibiliApiUtil {
 
     /**
      * 大航海列表。同样只取一条，要的是 {@code data.info.num}
+     * <p>
+     * 2026-08-07 由 {@code topList} 切到 {@code topListNew}：同一时刻同一房间比对了 5 个直播间
+     * （大航海人数 0 / 3 / 16 / 117 / 405），两个端点的 {@code data.info} <b>逐字段一致</b>，
+     * 名单顺序与昵称也逐条相同。旧端点当时仍可用，切换是为了不等它被下线。
+     * <p>
+     * <b>但列表项的结构变了</b>，将来要用名单时注意：旧端点是扁平的
+     * {@code uid} / {@code username} / {@code guard_level}，新端点挪进了嵌套的
+     * {@code uinfo.uid} / {@code uinfo.base.name} / {@code uinfo.guard.level}，
+     * 另外新增 {@code score}、<b>去掉了 {@code is_alive}</b>。
+     * 我们只取 {@code info.num}，所以这次切换不受影响。
      */
-    private static final String GUARD_LIST_API = "https://api.live.bilibili.com/xlive/app-room/v2/guardTab/topList?page=1&page_size=1";
+    private static final String GUARD_LIST_API = "https://api.live.bilibili.com/xlive/app-room/v2/guardTab/topListNew?page=1&page_size=1";
 
     private static final String ROOM_STATUS_API = "https://api.live.bilibili.com/room/v1/Room/get_status_info_by_uids";
 
