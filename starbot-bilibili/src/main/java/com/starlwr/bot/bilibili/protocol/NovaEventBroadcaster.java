@@ -2,6 +2,8 @@ package com.starlwr.bot.bilibili.protocol;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.core.enums.LivePlatform;
+import com.starlwr.bot.core.event.datasource.change.StarBotDataSourceRemoveEvent;
 import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
 import com.starlwr.bot.core.event.live.common.ConnectedEvent;
 import com.starlwr.bot.core.event.live.common.DisconnectedEvent;
@@ -12,6 +14,7 @@ import com.starlwr.bot.core.event.live.common.OnlineRankCountUpdateEvent;
 import com.starlwr.bot.core.event.live.common.RoomInfoChangeEvent;
 import com.starlwr.bot.core.event.live.common.WatchedUpdateEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
+import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -108,6 +111,37 @@ public class NovaEventBroadcaster {
         }
     }
 
+    /**
+     * 主播被移出数据源
+     * <p>
+     * <b>这是唯一能推出 {@code disconnected} 的地方。</b> 主动摘除房间时连接器走的是
+     * {@code close()} 那条路，它不会发 {@link DisconnectedEvent}——发了的话，
+     * 使用者在界面上删掉一位主播就会收到一条「连接断开」的告警推送。
+     * <p>
+     * 但下游必须知道这件事：房间没了却收不到任何状态变化，面板上那一路就会
+     * <b>永远停在「已连接」</b>，看着像还在采集，其实一条都不会再来。
+     * @param event 数据源移除事件
+     */
+    @EventListener(StarBotDataSourceRemoveEvent.class)
+    public void onRemoved(StarBotDataSourceRemoveEvent event) {
+        if (!enabled) {
+            return;
+        }
+
+        try {
+            PushUser user = event.getUser();
+            if (user == null || user.getRoomId() == null
+                    || !LivePlatform.BILIBILI.getName().equals(user.getPlatform())) {
+                return;
+            }
+
+            rooms.remove(user.getRoomId());
+            publish(NovaEventMapper.sourceState(user.getRoomId(), event.getTimestamp(), "disconnected"), null);
+        } catch (Exception e) {
+            log.error("转发数据源移除事件至事件输出时异常", e);
+        }
+    }
+
     private void dispatch(StarBotBaseLiveEvent event) {
         Long room = roomOf(event);
         if (room == null) {
@@ -147,7 +181,7 @@ public class NovaEventBroadcaster {
         }
         if (event instanceof DisconnectedEvent e) {
             // 只要房间还在监听列表里我们就会一直重连，所以这里是 reconnecting 而不是 disconnected。
-            // 真正的 disconnected 目前没有出口，已在 hello.notes 里对下游讲明
+            // disconnected 走 onRemoved()——那才是「这个房间不会再有数据了」
             publish(NovaEventMapper.sourceState(room, e.getTimestamp(), "reconnecting"), event);
             return;
         }

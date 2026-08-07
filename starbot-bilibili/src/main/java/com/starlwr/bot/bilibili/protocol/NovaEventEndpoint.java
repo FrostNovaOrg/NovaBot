@@ -105,7 +105,7 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
     private static final List<String> NOTES = List.of(
             "like: 未聚合。每次点赞单独下发一条、count 恒为 1，协议注释所说的「源侧已按单用户短窗口聚合」尚未实现",
             "live_state: 只在开播、下播、标题变更时下发，没有中途接入的快照。客户端接上时若还没收到过，说明我们也还不知道",
-            "source_state: 只会出现 connected 与 reconnecting。房间还在监听列表里时我们一直重连，因此不发 disconnected",
+            "source_state: disconnected 只在主播被移出数据源时下发。房间还在监听列表里时我们一直重连，那种情况一律是 reconnecting",
             "user.isAdmin: 只有弹幕消息带房管标志，其余消息恒为 false，含义是「这条消息没说」而不是「不是房管」",
             "rawJson: 协议之外的附加字段，为平台原始报文。字段随平台改版而变，不要当契约用");
 
