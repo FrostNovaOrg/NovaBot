@@ -36,17 +36,6 @@ public class HttpUtil {
 
     private static final Logger networkLogger = LoggerFactory.getLogger("NetworkLogger");
 
-    private final List<String> USER_AGENTS = Arrays.asList(
-            "Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; Win64; x64; Trident/5.0; .NET CLR 3.5.30729; .NET CLR 3.0.30729; .NET CLR 2.0.50727; Media Center PC 6.0)",
-            "Mozilla/5.0 (compatible; MSIE 8.0; Windows NT 6.0; Trident/4.0; WOW64; Trident/4.0; SLCC2; .NET CLR 2.0.50727; .NET CLR 3.5.30729; .NET CLR 3.0.30729; .NET CLR 1.0.3705; .NET CLR 1.1.4322)",
-            "Mozilla/4.0 (compatible; MSIE 7.0b; Windows NT 5.2; .NET CLR 1.1.4322; .NET CLR 2.0.50727; InfoPath.2; .NET CLR 3.0.04506.30)",
-            "Mozilla/5.0 (Windows; U; Windows NT 5.1; zh-CN) AppleWebKit/523.15 (KHTML, like Gecko, Safari/419.3) Arora/0.3 (Change: 287 c9dfb30)",
-            "Mozilla/5.0 (X11; U; Linux; en-US) AppleWebKit/527+ (KHTML, like Gecko, Safari/419.3) Arora/0.6",
-            "Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.8.1.2pre) Gecko/20070215 K-Ninja/2.1.1",
-            "Mozilla/5.0 (Windows; U; Windows NT 5.1; zh-CN; rv:1.9) Gecko/20080705 Firefox/3.0 Kapiko/3.0",
-            "Mozilla/5.0 (X11; Linux i686; U;) Gecko/20070322 Kazehakase/0.4.5"
-    );
-
     @Autowired
     public HttpUtil(@Qualifier("networkThreadPool") ThreadPoolTaskExecutor executor, RestTemplate restTemplate, StarBotCoreProperties properties) {
         this.executor = executor;
@@ -54,14 +43,12 @@ public class HttpUtil {
         this.properties = properties;
     }
 
-    /**
-     * 获取随机用户代理字符串
-     *
-     * @return 随机用户代理字符串
-     */
-    public String getRandomUserAgent() {
-        return USER_AGENTS.get(new Random().nextInt(USER_AGENTS.size()));
-    }
+    // 这里原先有一个 getRandomUserAgent() 和一串 2007 年的浏览器 UA
+    // （MSIE 7/8/9、Firefox 3、Arora、Kazehakase），零调用方，已于 2026-08-07 删除。
+    // 真实请求一律用配置里的 network.user-agent。
+    // 随机化古董 UA 起不到任何伪装作用，反而是最醒目的异常客户端特征——
+    // 2026 年还在发 MSIE 7 的 UA，比不设 UA 更容易被挑出来。
+    // 需要 UA 时请读配置，不要在这里重新引入一份。
 
     /**
      * 发起 HTTP 请求

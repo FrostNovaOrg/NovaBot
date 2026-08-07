@@ -48,11 +48,6 @@
             <artifactId>kumo-core</artifactId>
         </dependency>
 
-        <!-- 扫码登录页面 -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-thymeleaf</artifactId>
-        </dependency>
     </dependencies>
 
     <build>

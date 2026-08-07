@@ -13,8 +13,6 @@ spring:
   profiles:
     active: json            # 数据源类型。目前只有 json（读取 datasource.json）一种，
                             # 第三方插件可自带数据源实现并在此指定对应的 profile 名
-  thymeleaf:
-    check-template-location: false
   mail:                     # 邮件告警的发件服务。不用邮件告警时整段留空即可
     host:                   # SMTP 服务器地址，如 smtp.qq.com
     port:                   # SMTP 端口，如 465（SSL）或 587（STARTTLS）

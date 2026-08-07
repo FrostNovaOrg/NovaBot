@@ -63,7 +63,12 @@ StarBot Python 版（1.x / 2.x，自 2025-06-09 起仅修复缺陷）: https://g
    公开源码改为按处理器类名（handler 字段）指定。本仓库以公开源码为准。
 
    因此二进制中存在而公开源码中没有的若干类（DefaultHandlerForEvent、Command、
-   StarBotDefaultDanmuEventListener）属于旧设计的遗留，公开源码已不再需要，本仓库未予保留。
+   StarBotDefaultDanmuEventListener），本仓库未予保留。
+
+   更正（2026-08-07）：此处原先写的是这些类「属于旧设计的遗留，公开源码已不再需要」。
+   这个结论下得太满——上游 2026-08-07 的发行包中，四个处理器仍然标注着
+   DefaultHandlerForEvent。准确的表述是：本仓库因采用按处理器类名指定推送内容的设计
+   而不需要它们，而不是上游已经废弃它们。
 
 6. 移除上游品牌标识
    上游在 starbot-core 的类路径中内置了一张带 "StarBot" 字样的标识图片（logo.png），
