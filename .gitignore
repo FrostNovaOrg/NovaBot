@@ -44,3 +44,6 @@ docs/OPS-NOTES.md
 docs/PRD-5.0.md
 dist/*.tar.gz
 docs/PRD-6.0-运营分析.md
+
+# 冻结待办（含本机路径与未公开需求）
+docs/BACKLOG-冻结.md
