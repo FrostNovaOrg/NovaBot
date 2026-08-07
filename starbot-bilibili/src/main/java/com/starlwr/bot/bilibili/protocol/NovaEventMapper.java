@@ -10,8 +10,10 @@ import com.starlwr.bot.core.event.live.base.StarBotLivePurchaseEvent;
 import com.starlwr.bot.core.event.live.common.*;
 import com.starlwr.bot.core.model.EmojiInfo;
 import com.starlwr.bot.core.model.GiftInfo;
+import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.UserInfo;
 
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -227,19 +229,33 @@ public final class NovaEventMapper {
     /**
      * 醒目留言
      * <p>
-     * <b>【未能确认】</b>停留时长、消息 id、起止时间目前没有从报文里解析出来，
-     * 按协议要求给 0 占位。协议校验能过，但语义是空的——
-     * 下游若要用「SC 还剩多久」这类能力，需要先在解析层补这几个字段。
+     * <b>起止时间统一换算成毫秒。</b> 平台给的是秒级时间戳，而协议里其他所有时间
+     * （信封的 {@code ts}、{@code live_state.startTs}）都是毫秒。
+     * 让 SC 独自用秒，下游只要有一处忘了换算就会把 2026 年算成 1970 年。
+     * <p>
+     * <b>取不到时给 0，含义是「平台没给这一项」。</b> 协议把这四项声明为必填的 number，
+     * 不能省略；而 0 在这里不可能是合法值——2026-08-07 的实测样本里
+     * {@code time} 是 60、{@code start_time} 与 {@code end_time} 是十位秒级时间戳、
+     * {@code id} 是八位编号，都远大于 0。
      */
     private static JSONObject superChat(SuperChatEvent e) {
         JSONObject data = new JSONObject();
         data.put("text", e.getContent());
         data.put("rmb", chargedOf(e));
-        data.put("durationSec", 0);
-        data.put("messageId", 0);
-        data.put("startTs", 0);
-        data.put("endTs", 0);
+        data.put("durationSec", e.getDurationSec() == null ? 0 : e.getDurationSec());
+        data.put("messageId", e.getMessageId() == null ? 0L : e.getMessageId());
+        data.put("startTs", millisOf(e.getStartTime()));
+        data.put("endTs", millisOf(e.getEndTime()));
         return envelope(e, e.getSender(), "superchat", data);
+    }
+
+    /**
+     * 时刻转毫秒
+     * @param instant 时刻，可空
+     * @return 毫秒时间戳，取不到时为 0
+     */
+    private static long millisOf(Instant instant) {
+        return instant == null ? 0L : instant.toEpochMilli();
     }
 
     /**
@@ -295,10 +311,92 @@ public final class NovaEventMapper {
         return d == null ? 0d : d;
     }
 
+    // ── 房间级消息 ──────────────────────────────────────────────────────────
+
+    /**
+     * 开播状态
+     * <p>
+     * <b>{@code title} 取自我们记住的最近一次房间信息</b>，而不是这条事件本身——
+     * 开播消息里没有标题。刚接上还没收到过标题变更时只能给空串，
+     * 这一点在 {@code hello.notes} 里对下游讲明。
+     * @param room 房间号
+     * @param ts 事件时刻，毫秒
+     * @param live 是否在播
+     * @param title 直播间标题，未知时给空串
+     * @param startTs 开播时刻，毫秒，未在播或未知时为空
+     * @return 信封
+     */
+    public static JSONObject liveState(long room, long ts, boolean live, String title, Long startTs) {
+        JSONObject data = new JSONObject();
+        data.put("live", live);
+        data.put("title", title == null ? "" : title);
+        data.put("startTs", startTs);
+        return roomEnvelope(room, ts, "live_state", data);
+    }
+
+    /**
+     * 采集侧的连接状态
+     * @param room 房间号
+     * @param ts 事件时刻，毫秒
+     * @param state {@code connected} / {@code reconnecting} / {@code disconnected}
+     * @return 信封
+     */
+    public static JSONObject sourceState(long room, long ts, String state) {
+        JSONObject data = new JSONObject();
+        data.put("state", state);
+        return roomEnvelope(room, ts, "source_state", data);
+    }
+
+    /**
+     * 房间统计
+     * <p>
+     * <b>取不到的项要整个不放，而不是放 null。</b> 协议把这三项声明成可选字段
+     * （{@code watched?}）而非可空字段，一个显式的 null 在按协议生成的校验器眼里是类型错误。
+     * @param room 房间号
+     * @param ts 事件时刻，毫秒
+     * @param watched 累计看过人数，取不到时为空
+     * @param online 高能用户数，取不到时为空
+     * @param likeTotal 本场点赞总数，取不到时为空
+     * @return 信封，三项全空时返回 {@code null}——协议规定此时不推送
+     */
+    public static JSONObject roomStat(long room, long ts, Integer watched, Integer online, Integer likeTotal) {
+        if (watched == null && online == null && likeTotal == null) {
+            return null;
+        }
+
+        JSONObject data = new JSONObject();
+        if (watched != null) {
+            data.put("watched", watched);
+        }
+        if (online != null) {
+            data.put("online", online);
+        }
+        if (likeTotal != null) {
+            data.put("likeTotal", likeTotal);
+        }
+        return roomEnvelope(room, ts, "room_stat", data);
+    }
+
     // ── 信封与用户 ──────────────────────────────────────────────────────────
 
     /**
-     * 组装信封
+     * 组装房间级信封，不带 {@code user}
+     * <p>
+     * 协议要求「解析时必须先按 kind 分派再取字段，不能假设 user 一定存在」，
+     * 所以这里<b>不能</b>为了统一而补一个空的 user 上去。
+     */
+    private static JSONObject roomEnvelope(long room, long ts, String kind, JSONObject data) {
+        JSONObject env = new JSONObject();
+        env.put("v", PROTOCOL_VERSION);
+        env.put("ts", ts);
+        env.put("room", room);
+        env.put("kind", kind);
+        env.put("data", data);
+        return env;
+    }
+
+    /**
+     * 组装用户级信封
      * <p>
      * {@code seq} 由服务端统一编号后补上——它必须在单条连接内严格递增，映射器不管。
      * <p>
@@ -306,17 +404,23 @@ public final class NovaEventMapper {
      * 和礼物那支没有共同的「带 sender」父类。
      */
     private static JSONObject envelope(StarBotBaseLiveEvent e, UserInfo sender, String kind, JSONObject data) {
+        LiveStreamerInfo source = e.getSource();
         JSONObject env = new JSONObject();
         env.put("v", PROTOCOL_VERSION);
         env.put("ts", e.getTimestamp());
-        env.put("room", e.getSource() == null || e.getSource().getRoomId() == null ? 0 : e.getSource().getRoomId());
+        env.put("room", source == null || source.getRoomId() == null ? 0 : source.getRoomId());
         env.put("kind", kind);
-        env.put("user", user(sender));
+        env.put("user", user(sender, source == null ? null : source.getUid()));
         env.put("data", data);
         return env;
     }
 
-    private static JSONObject user(UserInfo u) {
+    /**
+     * 组装用户
+     * @param u 用户，为空时给一份全默认值——协议要求这个对象存在
+     * @param anchorUid 本房间主播的 uid，用于判定发送者是不是主播本人
+     */
+    private static JSONObject user(UserInfo u, Long anchorUid) {
         JSONObject j = new JSONObject();
         if (u == null) {
             j.put("uid", "0");
@@ -335,12 +439,35 @@ public final class NovaEventMapper {
         j.put("name", u.getUname() == null ? "" : u.getUname());
         j.put("face", u.getFace());
         j.put("guardLevel", guardLevelOf(u));
-        // 【未能确认】事件模型里没有房管与主播标志，恒为 false。
-        // 这两个字段目前是「我们不知道」而不是「确认不是」，下游不应据此做权限判断
-        j.put("isAdmin", false);
-        j.put("isAnchor", false);
+        j.put("isAdmin", isAdmin(u));
+        j.put("isAnchor", isAnchor(u, anchorUid));
         j.put("medal", medal(u));
         return j;
+    }
+
+    /**
+     * 房管标志
+     * <p>
+     * <b>只有弹幕消息带这个标志</b>（报文的 {@code info[2][2]}），礼物、上舰、进房这些
+     * 消息的报文里根本没有它。所以这里的 false 在多数消息上是「这条消息没说」，
+     * 而不是「此人确认不是房管」——<b>下游不要拿它做权限判断</b>，
+     * 更不要因为同一个人在礼物消息上是 false 就撤销他在弹幕上显示的房管标识。
+     */
+    private static boolean isAdmin(UserInfo u) {
+        return u instanceof BilibiliUserInfo b && Boolean.TRUE.equals(b.getRoomAdmin());
+    }
+
+    /**
+     * 主播本人
+     * <p>
+     * 拿发送者 uid 与房间主播 uid 相比，不依赖报文里的任何标志位。
+     * <p>
+     * <b>匿名连接下恒为 false</b>：平台对未登录连接把 uid 一律抹成 0、昵称打码成
+     * {@code b***}（2026-08-07 实测），此时谁都对不上主播 uid。这是「比不了」而非「不是」。
+     */
+    private static boolean isAnchor(UserInfo u, Long anchorUid) {
+        Long uid = u.getUid();
+        return uid != null && uid != 0L && anchorUid != null && uid.equals(anchorUid);
     }
 
     private static JSONObject medal(UserInfo u) {

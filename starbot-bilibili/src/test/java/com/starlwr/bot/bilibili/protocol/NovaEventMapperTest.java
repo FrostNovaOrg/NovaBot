@@ -4,16 +4,19 @@ import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.event.live.BilibiliDanmuEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliEmojiEvent;
 import com.starlwr.bot.bilibili.model.BilibiliEmojiInfo;
+import com.starlwr.bot.bilibili.model.BilibiliUserInfo;
 import com.starlwr.bot.core.event.live.common.FreeGiftEvent;
 import com.starlwr.bot.core.event.live.common.MembershipEvent;
 import com.starlwr.bot.core.event.live.common.PaidGiftEvent;
 import com.starlwr.bot.core.event.live.common.RandomGiftEvent;
+import com.starlwr.bot.core.event.live.common.SuperChatEvent;
 import com.starlwr.bot.core.model.GiftInfo;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.UserInfo;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -282,5 +285,135 @@ class NovaEventMapperTest {
     void unknownEventReturnsNull() {
         assertNull(NovaEventMapper.map(new com.starlwr.bot.core.event.live.common.WatchedUpdateEvent(
                 PLATFORM, room(), 100, "100人看过")));
+    }
+
+    // ── 醒目留言的四个字段 ──────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("醒目留言：时长、id 与起止时间照实映射，时间统一为毫秒")
+    void superChatFields() {
+        SuperChatEvent e = new SuperChatEvent(PLATFORM, room(), sender(), "今天好可爱喵", 30.0);
+        e.setCharged(30.0);
+        e.setDurationSec(60);
+        e.setMessageId(18106982L);
+        e.setStartTime(Instant.ofEpochSecond(1786111565L));
+        e.setEndTime(Instant.ofEpochSecond(1786111625L));
+
+        JSONObject d = NovaEventMapper.map(e).getJSONObject("data");
+        assertEquals(30.0, d.getDoubleValue("rmb"));
+        assertEquals(60, d.getIntValue("durationSec"));
+        assertEquals(18106982L, d.getLongValue("messageId"));
+        // 平台给的是秒，协议里其余所有时间都是毫秒。少换算一处就会把 2026 年算成 1970 年
+        assertEquals(1786111565000L, d.getLongValue("startTs"));
+        assertEquals(1786111625000L, d.getLongValue("endTs"));
+    }
+
+    @Test
+    @DisplayName("醒目留言：字段取不到时给 0，协议要求这四项必须存在")
+    void superChatFieldsFallBackToZero() {
+        SuperChatEvent e = new SuperChatEvent(PLATFORM, room(), sender(), "留言", 30.0);
+
+        JSONObject d = NovaEventMapper.map(e).getJSONObject("data");
+        assertEquals(0, d.getIntValue("durationSec"));
+        assertEquals(0L, d.getLongValue("messageId"));
+        assertEquals(0L, d.getLongValue("startTs"));
+        assertEquals(0L, d.getLongValue("endTs"));
+    }
+
+    // ── 房管与主播标志 ──────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("房管标志取自报文")
+    void adminFlagComesFromPayload() {
+        BilibiliUserInfo admin = new BilibiliUserInfo(10000007L, "房管");
+        admin.setRoomAdmin(true);
+
+        BilibiliDanmuEvent e = new BilibiliDanmuEvent(room(), admin, "别刷屏", "别刷屏", Instant.now());
+        assertTrue(NovaEventMapper.map(e).getJSONObject("user").getBooleanValue("isAdmin"));
+    }
+
+    @Test
+    @DisplayName("⚠️ 报文没说房管时为 false，含义是「这条消息没说」而不是「不是房管」")
+    void adminFlagAbsentIsFalse() {
+        BilibiliUserInfo unknown = new BilibiliUserInfo(10000007L, "观众");
+
+        BilibiliDanmuEvent e = new BilibiliDanmuEvent(room(), unknown, "666", "666", Instant.now());
+        assertFalse(NovaEventMapper.map(e).getJSONObject("user").getBooleanValue("isAdmin"));
+    }
+
+    @Test
+    @DisplayName("主播判定靠 uid 相等，不靠报文里的标志位")
+    void anchorFlagMatchesRoomUid() {
+        LiveStreamerInfo source = room();
+        source.setUid(500000006L);
+
+        UserInfo anchor = new UserInfo();
+        anchor.setUid(500000006L);
+        anchor.setUname("主播");
+
+        BilibiliDanmuEvent e = new BilibiliDanmuEvent(source, anchor, "谢谢大家", "谢谢大家", Instant.now());
+        assertTrue(NovaEventMapper.map(e).getJSONObject("user").getBooleanValue("isAnchor"));
+    }
+
+    @Test
+    @DisplayName("⚠️ 匿名连接下 uid 被抹成 0，此时不能把观众判成主播")
+    void anonymousUidIsNeverAnchor() {
+        LiveStreamerInfo source = room();
+        // 平台对未登录连接把 uid 一律抹成 0（2026-08-07 实测），
+        // 两个 0 一比就相等，观众会被整片判成主播
+        source.setUid(0L);
+
+        UserInfo masked = new UserInfo();
+        masked.setUid(0L);
+        masked.setUname("b***");
+
+        BilibiliDanmuEvent e = new BilibiliDanmuEvent(source, masked, "666", "666", Instant.now());
+        assertFalse(NovaEventMapper.map(e).getJSONObject("user").getBooleanValue("isAnchor"));
+    }
+
+    // ── 房间级消息 ──────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("房间级消息不带 user")
+    void roomMessagesHaveNoUser() {
+        JSONObject live = NovaEventMapper.liveState(10000L, 1786111565000L, true, "标题", 1786111000000L);
+        JSONObject source = NovaEventMapper.sourceState(10000L, 1786111565000L, "connected");
+
+        // 协议要求「解析时必须先按 kind 分派再取字段，不能假设 user 一定存在」，
+        // 为了统一而补一个空 user 会让下游把它当成一位 uid 为 0 的观众
+        assertFalse(live.containsKey("user"));
+        assertFalse(source.containsKey("user"));
+        assertEquals(10000L, live.getLongValue("room"));
+        assertEquals("live_state", live.getString("kind"));
+        assertEquals("connected", source.getJSONObject("data").getString("state"));
+    }
+
+    @Test
+    @DisplayName("下播时 startTs 为 null，不是 0")
+    void liveOffHasNullStart() {
+        JSONObject env = NovaEventMapper.liveState(10000L, 1786111565000L, false, "标题", null);
+
+        JSONObject d = env.getJSONObject("data");
+        assertFalse(d.getBooleanValue("live"));
+        assertTrue(d.containsKey("startTs"));
+        assertNull(d.get("startTs"));
+    }
+
+    @Test
+    @DisplayName("⚠️ 房间统计取不到的项要整个不放，而不是放 null")
+    void roomStatOmitsMissingFields() {
+        JSONObject d = NovaEventMapper.roomStat(10000L, 1786111565000L, 1820, null, null).getJSONObject("data");
+
+        // 协议把这三项声明成可选字段（watched?）而非可空字段，
+        // 显式的 null 在按协议生成的校验器眼里是类型错误
+        assertEquals(1820, d.getIntValue("watched"));
+        assertFalse(d.containsKey("online"));
+        assertFalse(d.containsKey("likeTotal"));
+    }
+
+    @Test
+    @DisplayName("房间统计三项全空时不推送")
+    void roomStatWithNothingIsNotPublished() {
+        assertNull(NovaEventMapper.roomStat(10000L, 1786111565000L, null, null, null));
     }
 }

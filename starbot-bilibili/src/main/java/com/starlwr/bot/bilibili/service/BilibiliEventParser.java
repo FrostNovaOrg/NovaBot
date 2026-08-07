@@ -153,7 +153,14 @@ public class BilibiliEventParser {
         }
 
         try {
-            return Optional.ofNullable(parser.apply(data, source));
+            StarBotBaseLiveEvent event = parser.apply(data, source);
+            if (event != null) {
+                // 原始报文随事件一起走：事件输出协议要把它透传给下游，排障时也要对着它看
+                // 「解析出来的字段」与「平台实际下发的内容」是不是一回事。存引用不做序列化，
+                // 详见 StarBotBaseLiveEvent.rawMessage
+                event.setRawMessage(data);
+            }
+            return Optional.ofNullable(event);
         } catch (Exception e) {
             log.error("解析直播间 {} 的 {} 类型消息异常, 内容: {}", source.getRoomId(), type, data.toJSONString(), e);
             return Optional.empty();
@@ -202,6 +209,7 @@ public class BilibiliEventParser {
         // 弹幕消息的粉丝勋章位于 info[3]，为定长数组而非对象
         sender.setFansMedal(parseArrayFansMedal(arrayAt(info, 3), source));
         sender.setHonorLevel(Optional.ofNullable(arrayAt(info, 16)).map(array -> array.getInteger(0)).orElse(null));
+        sender.setRoomAdmin(parseRoomAdmin(arrayAt(info, 2)));
 
         Instant timestamp = Optional.ofNullable(primary.getLong(4)).map(Instant::ofEpochMilli).orElseGet(Instant::now);
         JSONObject extra = parseExtra(meta.getString("extra"));
@@ -251,6 +259,29 @@ public class BilibiliEventParser {
         event.setReply(parseReply(extra, source));
 
         return event;
+    }
+
+    /**
+     * 解析房管标志
+     * <p>
+     * 房管标志在<b>旧格式的发送者数组</b> {@code info[2]} 的第 3 位，
+     * 而昵称、头像这些我们是从新格式的 {@code uinfo} 里取的——两处并存，
+     * 但 {@code uinfo} 里<b>没有</b>房管标志（实测 1346 条弹幕，uinfo 的键始终是
+     * anon / base / guard / guard_leader / medal / title / uhead_frame / uid / wealth）。
+     * <p>
+     * <b>{@code guard_leader} 不是房管</b>，那是大航海的舰长头衔，两者无关。
+     * <p>
+     * 实测印证：同一批样本里 24 条取 1、1322 条取 0，{@code info[2]} 的其余位恒定不变。
+     * @param sender 旧格式发送者数组
+     * @return 是否为房管，数组缺失时为空——空表示「这条消息没说」
+     */
+    private Boolean parseRoomAdmin(JSONArray sender) {
+        if (sender == null || sender.size() < 3) {
+            return null;
+        }
+
+        Integer admin = sender.getInteger(2);
+        return admin == null ? null : admin == 1;
     }
 
     /**
@@ -473,7 +504,26 @@ public class BilibiliEventParser {
 
         Instant timestamp = Optional.ofNullable(data.getLong("send_time")).map(Instant::ofEpochMilli).orElseGet(Instant::now);
 
-        return new BilibiliSuperChatEvent(source, sender, meta.getString("message"), meta.getDouble("price"), timestamp);
+        BilibiliSuperChatEvent event = new BilibiliSuperChatEvent(source, sender, meta.getString("message"), meta.getDouble("price"), timestamp);
+
+        // 字段名与量纲取自 2026-08-07 的实抓样本: time=60（秒）、start_time 与 end_time
+        // 是秒级时间戳且相差正好等于 time、id 是醒目留言自己的编号。
+        // 这里全部按「取不到就留空」处理——0 秒的 SC 与「不知道多久」是两件事
+        event.setDurationSec(meta.getInteger("time"));
+        event.setMessageId(meta.getLong("id"));
+        event.setStartTime(epochSecond(meta.getLong("start_time")));
+        event.setEndTime(epochSecond(meta.getLong("end_time")));
+
+        return event;
+    }
+
+    /**
+     * 秒级时间戳转时刻
+     * @param seconds 秒级时间戳，为空或非正数时视为平台没给
+     * @return 时刻，取不到时为空
+     */
+    private Instant epochSecond(Long seconds) {
+        return seconds == null || seconds <= 0 ? null : Instant.ofEpochSecond(seconds);
     }
 
     /**
