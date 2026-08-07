@@ -38,6 +38,11 @@ public class BilibiliDynamicService {
      */
     private static final int PUSHED_CACHE_SIZE = 1000;
 
+    /**
+     * 开播动态的类型，即哔哩哔哩在 UP 主开播时自动生成的那条动态
+     */
+    private static final String LIVE_DYNAMIC_TYPE = "DYNAMIC_TYPE_LIVE_RCMD";
+
     private final BilibiliApiUtil api;
 
     private final BilibiliAccountService accountService;
@@ -138,6 +143,13 @@ public class BilibiliDynamicService {
                 continue;
             }
 
+            // 开播动态和开播推送是同一件事的两条通道，两条都放行就会同一个群收到两遍。
+            // 这里只看顶层类型：转发开播动态是 UP 主自己的动作，照常推送
+            if (LIVE_DYNAMIC_TYPE.equals(dynamic.getType()) && !properties.getDynamic().isPushLiveDynamic()) {
+                log.debug("已跳过开播动态: {}", dynamic.getUrl());
+                continue;
+            }
+
             Up up = dynamic.getAuthorUid().map(ups::get).orElse(null);
             if (up == null) {
                 continue;
@@ -171,7 +183,7 @@ public class BilibiliDynamicService {
             case "DYNAMIC_TYPE_FORWARD" -> "转发了动态";
             case "DYNAMIC_TYPE_ARTICLE" -> "投稿了专栏";
             case "DYNAMIC_TYPE_MUSIC" -> "投稿了音频";
-            case "DYNAMIC_TYPE_LIVE_RCMD" -> "开播了";
+            case LIVE_DYNAMIC_TYPE -> "开播了";
             case "DYNAMIC_TYPE_PGC", "DYNAMIC_TYPE_UGC_SEASON" -> "更新了番剧";
             default -> "发布了动态";
         };

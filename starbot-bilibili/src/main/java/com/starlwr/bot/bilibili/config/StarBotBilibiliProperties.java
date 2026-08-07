@@ -294,5 +294,18 @@ public class StarBotBilibiliProperties {
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
         private int pushMinutes = 1440;
+
+        /**
+         * 是否推送开播动态（哔哩哔哩在 UP 主开播时自动生成的那条动态）
+         * <p>
+         * 默认关闭，因为它和开播推送是同一件事的两条通道，开了就会同一个群收到两遍。
+         * 而且开播推送在每个维度上都更好：<b>早得多</b>（实测开播动态的发布时间比开播晚整
+         * 600 秒，出现在动态流里又晚了 21 分钟，一共迟到半小时）、带标题与封面、能 at 全体成员，
+         * 开播动态只是它的劣化重复。
+         * <p>
+         * <b>打开之前先确认这个 UP 主配了开播推送。</b>只配动态推送、没配开播推送时，
+         * 关掉本开关就再也收不到他的开播消息了。
+         */
+        private boolean pushLiveDynamic = false;
     }
 }
