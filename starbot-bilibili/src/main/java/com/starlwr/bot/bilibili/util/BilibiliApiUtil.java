@@ -1142,6 +1142,8 @@ public class BilibiliApiUtil {
         params.put("id", roomId);
         params.put("type", 0);
 
+        // 紧贴着请求读身份：token 与这个 uid 必须来自同一瞬间，理由见 ConnectInfo.uid
+        Long identity = getLoginUid();
         JSONObject data = requestBilibiliApi(DANMU_INFO_API, params);
 
         List<ConnectAddress> addresses = new ArrayList<>();
@@ -1158,7 +1160,8 @@ public class BilibiliApiUtil {
             }
         }
 
-        return new ConnectInfo(data.getString("token"), addresses);
+        return new ConnectInfo(data.getString("token"), addresses,
+                identity == null ? 0L : identity);
     }
 
     /**

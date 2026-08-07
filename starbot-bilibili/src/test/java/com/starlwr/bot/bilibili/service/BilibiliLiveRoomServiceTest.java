@@ -70,7 +70,10 @@ class BilibiliLiveRoomServiceTest {
                 properties,
                 mock(ApplicationEventPublisher.class),
                 scheduler,
-                mock(BilibiliLiveStateGate.class)
+                mock(BilibiliLiveStateGate.class),
+                // 用真实闸门而不是 mock：首连的错开间隔现在由它产生，
+                // mock 掉就等于把被测行为一起 mock 没了
+                new BilibiliConnectGate(properties, scheduler)
         );
     }
 

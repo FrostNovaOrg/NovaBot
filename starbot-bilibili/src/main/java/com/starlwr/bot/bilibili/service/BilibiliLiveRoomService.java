@@ -55,6 +55,11 @@ public class BilibiliLiveRoomService {
     private final BilibiliLiveStateGate stateGate;
 
     /**
+     * 全局连接放行闸门，首连与重连共用同一条时间轴
+     */
+    private final BilibiliConnectGate connectGate;
+
+    /**
      * 直播间号到连接器的映射
      */
     private final Map<Long, BilibiliLiveRoomConnector> connectors = new ConcurrentHashMap<>();
@@ -79,13 +84,15 @@ public class BilibiliLiveRoomService {
                                    StarBotBilibiliProperties properties,
                                    ApplicationEventPublisher publisher,
                                    @Qualifier("bilibiliTaskScheduler") TaskScheduler scheduler,
-                                   BilibiliLiveStateGate stateGate) {
+                                   BilibiliLiveStateGate stateGate,
+                                   BilibiliConnectGate connectGate) {
         this.api = api;
         this.parser = parser;
         this.properties = properties;
         this.publisher = publisher;
         this.scheduler = scheduler;
         this.stateGate = stateGate;
+        this.connectGate = connectGate;
     }
 
     /**
@@ -111,15 +118,14 @@ public class BilibiliLiveRoomService {
                 .toList()
                 .forEach(this::disconnect);
 
-        long delay = 0;
         for (Up up : targets) {
             if (connectors.containsKey(up.getRoomId())) {
                 continue;
             }
 
-            // 按配置的间隔错开建立连接，连接过快会触发风控
-            scheduler.schedule(() -> connect(up), Instant.now().plusMillis(delay));
-            delay += Math.max(0, properties.getLive().getLiveRoomConnectInterval());
+            // 交给全局闸门排队。这里不再自己累加延迟：首连若走自己的时间轴，
+            // 就会和正在退避重连的房间撞在一起，多房间同时断线时叠成请求洪峰
+            connectGate.submit(() -> connect(up));
         }
 
         if (properties.getLive().isAutoDetectLiveRoomRisk() && riskDetectionStarted.compareAndSet(false, true)) {
@@ -150,7 +156,7 @@ public class BilibiliLiveRoomService {
     private void connect(Up up) {
         connectors.computeIfAbsent(up.getRoomId(), roomId -> {
             BilibiliLiveRoomConnector connector =
-                    new BilibiliLiveRoomConnector(up, api, parser, properties, publisher, scheduler, webSocketClient, stateGate);
+                    new BilibiliLiveRoomConnector(up, api, parser, properties, publisher, scheduler, webSocketClient, stateGate, connectGate);
             connector.connect();
             return connector;
         });

@@ -85,6 +85,11 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
     private final BilibiliLiveStateGate stateGate;
 
     /**
+     * 全局连接放行闸门。首连与重连都要经过它，否则多房间同时断线会叠成请求洪峰
+     */
+    private final BilibiliConnectGate connectGate;
+
+    /**
      * 当前连接状态
      */
     @Getter
@@ -126,7 +131,8 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
                                      @NonNull ApplicationEventPublisher publisher,
                                      @NonNull TaskScheduler scheduler,
                                      @NonNull WebSocketClient client,
-                                     @NonNull BilibiliLiveStateGate stateGate) {
+                                     @NonNull BilibiliLiveStateGate stateGate,
+                                     @NonNull BilibiliConnectGate connectGate) {
         this.source = source;
         this.api = api;
         this.parser = parser;
@@ -135,6 +141,7 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
         this.scheduler = scheduler;
         this.client = client;
         this.stateGate = stateGate;
+        this.connectGate = connectGate;
     }
 
     /**
@@ -162,7 +169,7 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
             headers.add("Origin", "https://live.bilibili.com");
 
             this.session = client.execute(this, headers, URI.create(address.toWebSocketUrl())).get();
-            sendVerify(info.getToken());
+            sendVerify(info);
         } catch (Exception e) {
             log.error("连接直播间 {} 失败: {}", source.getRoomId(), e.getMessage());
             status = ConnectStatus.ERROR;
@@ -186,22 +193,23 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
 
     /**
      * 发送认证包
-     * @param token 认证令牌
+     * @param info 长连接信息，其中的 uid 与 token 取自同一瞬间
      * @throws IOException 发送失败时抛出
      */
-    private void sendVerify(String token) throws IOException {
+    private void sendVerify(ConnectInfo info) throws IOException {
         JSONObject verify = new JSONObject();
-        // uid 必须与取 token 时的身份一致。token 由 getDanmuInfo 取得，已登录时该请求带着
-        // SESSDATA，服务端签发的是与该账号绑定的 token；此处若仍声称 uid=0（匿名），
-        // 服务端会在握手完成后立刻切断连接且不发关闭帧——表现为 1006，且重连会拿到新的
-        // 绑定 token 再次被拒，形成死循环。未登录时保持 0 即可
-        Long loginUid = api.getLoginUid();
-        verify.put("uid", loginUid == null ? 0L : loginUid);
+        // uid 必须与取 token 时的身份一致，所以直接用 ConnectInfo 里那份快照，
+        // 不要在这里重新读一次 api.getLoginUid()：本方法在 WebSocket 握手完成之后才执行，
+        // 距离取 token 已经隔了一次网络往返，登录若恰好在这个窗口内完成就会两边对不上。
+        // 服务端遇到不一致会握手后立刻切断且不发关闭帧——表现为 1006，
+        // 重连再拿到新的绑定 token 又被拒，形成死循环（2026-08-04 实际发生过 96 次）
+        Long identity = info.getUid();
+        verify.put("uid", identity == null ? 0L : identity);
         verify.put("roomid", source.getRoomId());
         verify.put("protover", DataHeaderType.BROTLI_JSON.getCode());
         verify.put("platform", "web");
         verify.put("type", 2);
-        verify.put("key", token);
+        verify.put("key", info.getToken());
 
         send(BilibiliPacketCodec.encode(DataPackType.VERIFY, verify.toJSONString()));
     }
@@ -424,8 +432,11 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
         long base = Math.max(1000, properties.getLive().getLiveRoomReconnectInterval());
         long delay = Math.min(base * (1L << Math.min(attempts - 1, 8)), MAX_RECONNECT_INTERVAL.toMillis());
 
-        log.debug("直播间 {} 将在 {} 毫秒后进行第 {} 次重连", source.getRoomId(), delay, attempts);
-        scheduler.schedule(this::connect, Instant.now().plusMillis(delay));
+        // 退避是本房间自己的节奏，闸门再把它和别的房间排到同一条时间轴上，
+        // 两者叠加：既不会比退避更早重连，也不会和其它房间挤在同一瞬间
+        Instant at = connectGate.submit(this::connect, Instant.now().plusMillis(delay));
+        log.debug("直播间 {} 第 {} 次重连，退避 {} 毫秒，闸门放行于 {}",
+                source.getRoomId(), attempts, delay, at);
     }
 
     /**
