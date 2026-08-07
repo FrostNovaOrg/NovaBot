@@ -103,6 +103,15 @@ public class BilibiliApiUtil {
 
     private static final String GIFT_CONFIG_API = "https://api.live.bilibili.com/xlive/web-room/v1/giftPanel/roomGiftConfig?platform=pc";
 
+    /**
+     * 观看心跳。{@code hb} 是 base64 编码的 {@code "间隔|房间号|1|0"}，不是裸房间号
+     * <p>
+     * 2026-08-07 实测：这个接口对 {@code hb} 传什么都回 {@code code:0}——正确的 base64、
+     * 裸房间号、纯垃圾串、空值、不存在的房间号，五种输入的响应完全一样，
+     * 都是 {@code {"code":0,"data":{"next_interval":60}}}。
+     * <b>所以「返回码正常」不能用来验证心跳是否真的生效</b>，别拿它当判据。
+     * 这里仍按规范格式拼，是因为格式正确不花任何代价。
+     */
     private static final String LIVE_HEARTBEAT_API = "https://live-trace.bilibili.com/xlive/rdata-interface/v1/heartbeat/webHeartBeat?pf=web&hb=";
 
     private static final String DYNAMIC_FEED_API = "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all?features=itemOpusStyle,listOnlyfans,opusBigCover,onlyfansVote,decorationCard,onlyfansAssetsV2,forwardListHidden,ugcDelete,onlyfansQaCard,commentsNewVersion";
@@ -1165,14 +1174,19 @@ public class BilibiliApiUtil {
     }
 
     /**
-     * 上报直播间心跳，用于维持观看状态
+     * 上报直播间观看心跳，用于维持观看状态
+     * <p>
+     * 只做标准存活心跳：不提交播放状态、不提交切屏与点击、不请求播放地址。
      * @param roomId 直播间号
+     * @param intervalSeconds 心跳间隔秒数，与实际发送周期保持一致
      */
-    public void liveRoomHeartbeat(@NonNull Long roomId) {
+    public void liveRoomHeartbeat(@NonNull Long roomId, int intervalSeconds) {
         try {
-            http.getJson(LIVE_HEARTBEAT_API + roomId, getBilibiliHeaders());
+            String payload = intervalSeconds + "|" + roomId + "|1|0";
+            String hb = Base64.getEncoder().encodeToString(payload.getBytes(StandardCharsets.UTF_8));
+            http.getJson(LIVE_HEARTBEAT_API + URLEncoder.encode(hb, StandardCharsets.UTF_8), getBilibiliHeaders());
         } catch (Exception e) {
-            log.debug("上报直播间 {} 心跳失败: {}", roomId, e.getMessage());
+            log.debug("上报直播间 {} 观看心跳失败: {}", roomId, e.getMessage());
         }
     }
 

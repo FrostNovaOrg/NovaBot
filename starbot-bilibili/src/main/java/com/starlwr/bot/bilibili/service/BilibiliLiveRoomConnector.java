@@ -62,6 +62,14 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
      */
     private static final Duration MAX_RECONNECT_INTERVAL = Duration.ofMinutes(5);
 
+    /**
+     * 观看心跳的上报间隔
+     * <p>
+     * 与心跳报文里声明的间隔保持一致——声明 60 就每 60 秒发一次。
+     * 上游声明 60 却实发 30，我们按声明值发，更保守。
+     */
+    private static final Duration WATCH_HEARTBEAT_INTERVAL = Duration.ofSeconds(60);
+
     private final LiveStreamerInfo source;
 
     private final BilibiliApiUtil api;
@@ -98,6 +106,11 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
     private volatile WebSocketSession session;
 
     private volatile ScheduledFuture<?> heartbeatTask;
+
+    /**
+     * 观看心跳任务，与长连接心跳分开：一个走 WebSocket 每 30 秒，一个走 HTTP 每 60 秒
+     */
+    private volatile ScheduledFuture<?> watchHeartbeatTask;
 
     /**
      * 最近一次收到消息的时间，用于判定连接是否已静默失效
@@ -445,6 +458,11 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
     private void startHeartbeat() {
         cancelHeartbeat();
         heartbeatTask = scheduler.scheduleAtFixedRate(this::sendHeartbeat, HEARTBEAT_INTERVAL);
+        // 观看心跳只在连接存活期间上报：连接断了就不再声称自己在看
+        watchHeartbeatTask = scheduler.scheduleAtFixedRate(
+                () -> api.liveRoomHeartbeat(source.getRoomId(),
+                        (int) WATCH_HEARTBEAT_INTERVAL.toSeconds()),
+                WATCH_HEARTBEAT_INTERVAL);
     }
 
     /**
@@ -455,6 +473,12 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
         if (task != null) {
             task.cancel(false);
             heartbeatTask = null;
+        }
+
+        ScheduledFuture<?> watch = watchHeartbeatTask;
+        if (watch != null) {
+            watch.cancel(false);
+            watchHeartbeatTask = null;
         }
     }
 
