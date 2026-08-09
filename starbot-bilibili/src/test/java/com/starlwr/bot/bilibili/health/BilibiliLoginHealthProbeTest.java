@@ -72,6 +72,30 @@ class BilibiliLoginHealthProbeTest {
         assertEquals("正常（uid 200000001）", status.summary(), "使用者主动关掉的功能不该反复提醒");
     }
 
+    @Test
+    @DisplayName("⚠️ 匿名模式必须在状态页如实标注，且不许记成正常")
+    void shouldLabelAnonymousHonestly() {
+        BilibiliAccountService account = mock(BilibiliAccountService.class);
+        when(account.isAnonymous()).thenReturn(true);
+        when(account.isLoggedIn()).thenReturn(false);
+
+        HealthStatus status = probe(account, new StarBotBilibiliProperties()).check();
+
+        // 不是故障，是配置选出来的，所以不该是 DOWN；但它确实拿不全数据，
+        // 记 OK 就等于在界面上说「一切正常」，而那不是真的
+        assertEquals(HealthStatus.Level.DEGRADED, status.level());
+        assertEquals("匿名模式（未登录）", status.summary());
+
+        // 与启动日志、用户手册共用同一份文本。分开写三遍迟早会各说各话
+        assertEquals(BilibiliAccountService.ANONYMOUS_NOTICE, status.advice());
+
+        // 不许把匿名模式描述成「功能一致的免登录版」: 这四件事必须说出来
+        assertTrue(status.advice().contains("限制下发"), "要说清弹幕可能收不全");
+        assertTrue(status.advice().contains("实测已证实"), "要说清这是实测结论而非推测");
+        assertTrue(status.advice().contains("uid"), "要说清发送者 uid 被抹成 0");
+        assertTrue(status.advice().contains("配置登录"), "要给出拿到完整数据的办法");
+    }
+
     /**
      * 构造一个已登录的账号服务
      * @return 账号服务

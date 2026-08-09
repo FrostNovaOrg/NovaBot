@@ -677,6 +677,7 @@ public class ConfigUiController {
             item.put("displayName", provider.displayName());
             item.put("loggedIn", provider.isLoggedIn());
             item.put("accountId", provider.accountId().orElse(null));
+            item.put("disabledReason", provider.disabledReason().orElse(null));
 
             provider.pendingQrCodeContent()
                     .flatMap(content -> QrCodeUtil.generateQrCodeAndGetBase64(content, QR_CODE_IMAGE_SIZE))

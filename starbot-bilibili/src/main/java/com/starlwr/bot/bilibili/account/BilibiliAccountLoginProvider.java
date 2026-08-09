@@ -56,6 +56,11 @@ public class BilibiliAccountLoginProvider implements AccountLoginProvider {
     }
 
     @Override
+    public Optional<String> disabledReason() {
+        return accountService.isAnonymous() ? Optional.of(BilibiliAccountService.ANONYMOUS_NOTICE) : Optional.empty();
+    }
+
+    @Override
     public void logout() {
         accountService.logout();
 

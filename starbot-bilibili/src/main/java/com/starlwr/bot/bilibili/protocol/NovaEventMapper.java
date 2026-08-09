@@ -462,8 +462,12 @@ public final class NovaEventMapper {
      * <p>
      * 拿发送者 uid 与房间主播 uid 相比，不依赖报文里的任何标志位。
      * <p>
-     * <b>匿名连接下恒为 false</b>：平台对未登录连接把 uid 一律抹成 0、昵称打码成
-     * {@code b***}（2026-08-07 实测），此时谁都对不上主播 uid。这是「比不了」而非「不是」。
+     * <b>匿名连接的弹幕上恒为 false</b>：平台对未登录连接把弹幕的发送者 uid 抹成 0、
+     * 昵称只留首字（形如 {@code b***}），此时谁都对不上主播 uid。这是「比不了」而非「不是」。
+     * <p>
+     * 抹除是<b>按消息类型来的，不是整条连接一刀切</b>：2026-08-09 实测同一条匿名连接上，
+     * 弹幕的 uid 全为 0，点赞消息却带着完整 uid 与完整昵称。所以别把「匿名源」
+     * 整体当作「没有 uid」——要按 kind 分别看。
      */
     private static boolean isAnchor(UserInfo u, Long anchorUid) {
         Long uid = u.getUid();

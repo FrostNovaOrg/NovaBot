@@ -4,7 +4,7 @@
 
 **文档**：[用户手册](docs/user-guide.md) · [排障与 FAQ](docs/troubleshooting.md) ·
 [架构说明](docs/architecture.md) · [安全说明](SECURITY.md) · [性能实测](docs/performance.md) ·
-[更新日志](CHANGELOG.md)
+[本机起真源](docs/runbook-local-source.md) · [更新日志](CHANGELOG.md)
 
 ## 特点
 

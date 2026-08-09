@@ -163,8 +163,32 @@ class BilibiliStartupListenerTest {
     }
 
     @Test
-    @DisplayName("登录未完成时的数据源变更不应触发同步")
-    void changeEventAfterFailedLoginShouldBeIgnored() {
+    @DisplayName("⚠️ 登录失败也要照常连直播间：直播采集不依赖登录态，不该被连坐")
+    void failedLoginShouldNotBlockLiveChannel() {
+        BilibiliAccountService accountService = mock(BilibiliAccountService.class);
+        when(accountService.login()).thenThrow(new IllegalStateException("网络不通"));
+        BilibiliLiveRoomService liveRoomService = mock(BilibiliLiveRoomService.class);
+        BilibiliBackupLivePushService backupService = mock(BilibiliBackupLivePushService.class);
+        BilibiliStreamerSnapshotService snapshotService = mock(BilibiliStreamerSnapshotService.class);
+        BilibiliDynamicService dynamicService = mock(BilibiliDynamicService.class);
+        AbstractDataSource dataSource = mock(AbstractDataSource.class);
+
+        new BilibiliStartupListener(accountService, liveRoomService, backupService, dynamicService,
+                snapshotService, dataSource, inlineScheduler(), new StarBotBilibiliProperties())
+                .onApplicationReadyEvent();
+
+        verify(liveRoomService).sync(dataSource);
+        verify(backupService).start(dataSource);
+        verify(snapshotService).start(dataSource);
+
+        // 动态推送确实要登录态，没有就别启动: 未登录时接口返回的是空列表而不是错误，
+        // 启动了也只会安安静静一条不推，看着像坏了
+        verify(dynamicService, never()).start(any());
+    }
+
+    @Test
+    @DisplayName("登录失败后的数据源变更仍应触发重同步")
+    void changeEventAfterFailedLoginShouldStillResync() {
         BilibiliAccountService accountService = mock(BilibiliAccountService.class);
         when(accountService.login()).thenReturn(false);
         BilibiliLiveRoomService liveRoomService = mock(BilibiliLiveRoomService.class);
@@ -174,7 +198,33 @@ class BilibiliStartupListenerTest {
         listener.onApplicationReadyEvent();
         listener.onDataSourceChangeEvent();
 
-        verify(liveRoomService, never()).sync(any());
+        verify(liveRoomService, times(2)).sync(dataSource);
+    }
+
+    @Test
+    @DisplayName("匿名模式下应照常采集直播，但不启动动态推送与登录态复检")
+    void anonymousModeShouldCollectLiveOnly() {
+        StarBotBilibiliProperties properties = new StarBotBilibiliProperties();
+        properties.getAccount().setAnonymous(true);
+
+        BilibiliAccountService accountService = mock(BilibiliAccountService.class);
+        when(accountService.login()).thenReturn(false);
+        when(accountService.isAnonymous()).thenReturn(true);
+
+        BilibiliLiveRoomService liveRoomService = mock(BilibiliLiveRoomService.class);
+        BilibiliDynamicService dynamicService = mock(BilibiliDynamicService.class);
+        AbstractDataSource dataSource = mock(AbstractDataSource.class);
+        TaskScheduler scheduler = inlineScheduler();
+
+        new BilibiliStartupListener(accountService, liveRoomService, mock(BilibiliBackupLivePushService.class),
+                dynamicService, mock(BilibiliStreamerSnapshotService.class), dataSource, scheduler, properties)
+                .onApplicationReadyEvent();
+
+        verify(liveRoomService).sync(dataSource);
+        verify(dynamicService, never()).start(any());
+
+        // 没有凭据可复检，也没有可续期的东西，注册了只会每十分钟白打一次接口
+        verify(scheduler, never()).scheduleAtFixedRate(any(Runnable.class), any(Instant.class), any(Duration.class));
     }
 
     /**

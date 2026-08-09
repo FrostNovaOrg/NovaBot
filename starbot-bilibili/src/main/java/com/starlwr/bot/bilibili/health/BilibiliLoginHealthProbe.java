@@ -52,6 +52,13 @@ public class BilibiliLoginHealthProbe implements HealthProbe {
 
     @Override
     public HealthStatus check() {
+        // 匿名模式是配置选出来的，不是故障，所以不记 DOWN；但它确实拿不全数据，
+        // 也就不能记 OK——记 OK 就等于在界面上说「一切正常」，而那不是真的。
+        // 文案与启动日志、用户手册共用 ANONYMOUS_NOTICE 这一份，三处不会各说各话
+        if (accountService.isAnonymous()) {
+            return HealthStatus.degraded("匿名模式（未登录）", BilibiliAccountService.ANONYMOUS_NOTICE);
+        }
+
         if (!accountService.isLoggedIn()) {
             return HealthStatus.down(
                     accountService.getPendingQrCodeContent() != null ? "等待扫码登录" : "未登录",

@@ -109,6 +109,24 @@ public class StarBotBilibiliProperties {
     @Setter
     public static class Account {
         /**
+         * 是否以匿名模式运行
+         * <p>
+         * 开启后<b>完全不使用登录凭据</b>：不读已保存的凭据、不弹二维码、不做登录态复检与续期。
+         * 直播采集照常进行，动态推送与自动关注则不可用——它们必须有登录态。
+         * <p>
+         * <b>匿名连接拿到的数据是不完整的，这是实测结论而不是推测</b>：
+         * <ul>
+         *   <li>部分房间的弹幕会被服务端限制下发，同一房间同一时段，匿名连接的到达率实测低至 4.3%</li>
+         *   <li>拿得到的弹幕里，发送者 uid 一律被抹成 0、昵称只留首字（形如 {@code b***}）。
+         *       这是<b>按消息类型来的</b>：同一条连接上点赞消息仍带完整 uid 与昵称</li>
+         * </ul>
+         * 因此它<b>不是「功能一致的免登录版」</b>，只适合「有多少算多少」的场景：
+         * 本机试跑、给下游供一路粗粒度事件流、不想为采集绑一个账号。要完整数据就得登录。
+         */
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        private boolean anonymous = false;
+
+        /**
          * 登录凭据存储文件路径
          */
         private String cookiePath = "cookies.json";

@@ -63,9 +63,14 @@ export async function refreshWizardState() {
 
     const account = (login.accounts || [])[0];
     const loggedIn = !!(account && account.loggedIn);
-    stepDone(2, loggedIn);
+    // 登录被配置关掉时（例如匿名模式）这一步不会再有进展，算它「已定」而不是「未完成」，
+    // 否则向导会永远停在「还有 1 步未完成」，催一件使用者已经决定不做的事
+    const disabled = (account && account.disabledReason) || '';
+    const settled = loggedIn || !!disabled;
+    stepDone(2, settled);
     $('#s2-out').textContent = account
-      ? (loggedIn ? '已登录，账号 ' + (account.accountId || '未知') : '请使用哔哩哔哩客户端扫描下方二维码')
+      ? (loggedIn ? '已登录，账号 ' + (account.accountId || '未知')
+        : disabled || '请使用哔哩哔哩客户端扫描下方二维码')
       : '未找到可登录的平台';
     $('#s2-out').className = 'out' + (loggedIn ? ' ok' : '');
     $('#s2-qr').innerHTML = (account && !loggedIn && account.qrCode)
@@ -82,10 +87,10 @@ export async function refreshWizardState() {
     stepDone(1, botOk);
 
     // 第四步没有独立的判定依据：能把消息推出去的前提正是前三步都成立
-    const ready = botOk && loggedIn && count > 0;
+    const ready = botOk && settled && count > 0;
     stepDone(4, ready);
 
-    const remaining = [botOk, loggedIn, count > 0, ready].filter(x => !x).length;
+    const remaining = [botOk, settled, count > 0, ready].filter(x => !x).length;
     $('#wizard-title').textContent = remaining
       ? '首次配置 · 还有 ' + remaining + ' 步未完成'
       : '首次配置已完成';

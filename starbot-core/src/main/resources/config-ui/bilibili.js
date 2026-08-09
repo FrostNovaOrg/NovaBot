@@ -9,10 +9,14 @@ import {store} from './store.js';
 function renderAccounts(accounts) {
   const box = $('#accounts');
   box.innerHTML = (accounts || []).map(a => {
+    // 登录被配置关掉时（例如匿名模式），二维码永远不会来。这里要说明白，
+    // 否则界面上只剩一句「尚未生成二维码，请稍候」，而那个「稍候」是没有尽头的
     const who = a.loggedIn
       ? '<b>' + esc(a.displayName) + '　已登录</b><span>账号 ' + esc(a.accountId || '未知') + '</span>'
-      : '<b>' + esc(a.displayName) + '　未登录</b><span>'
-        + (a.qrCode ? '请使用手机客户端扫描右侧二维码' : '尚未生成二维码，请稍候') + '</span>';
+      : a.disabledReason
+        ? '<b>' + esc(a.displayName) + '　未登录（已按配置停用登录）</b><span>' + esc(a.disabledReason) + '</span>'
+        : '<b>' + esc(a.displayName) + '　未登录</b><span>'
+          + (a.qrCode ? '请使用手机客户端扫描右侧二维码' : '尚未生成二维码，请稍候') + '</span>';
     const qr = a.qrCode ? '<img alt="登录二维码" src="data:image/png;base64,' + esc(a.qrCode) + '">' : '';
     const action = a.loggedIn
       ? '<button type="button" data-logout="' + esc(a.platform) + '">退出登录</button>'
@@ -26,7 +30,7 @@ function renderAccounts(accounts) {
 
   // 等待扫码时轮询刷新，扫完页面自动变为已登录，不必手动刷新。
   // 二维码在「哔哩哔哩」页与总览页的向导里各有一处，两处都要跟着刷新
-  const waiting = (accounts || []).some(a => !a.loggedIn);
+  const waiting = (accounts || []).some(a => !a.loggedIn && !a.disabledReason);
   clearTimeout(store.accountTimer);
   if (waiting && (store.tab === 'bilibili' || store.tab === 'overview')) {
     store.accountTimer = setTimeout(() => {

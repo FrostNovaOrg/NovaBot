@@ -92,29 +92,60 @@ public class BilibiliStartupListener {
 
     /**
      * 依次执行登录与服务启动
+     * <p>
+     * <b>两条通道是分开的。</b> 直播通道（长连接采集、备用直播推送、基础数据留档）不需要登录态，
+     * 动态通道（动态推送、自动关注）才需要。此前登录一旦失败就整个 {@code return}，
+     * 把不相干的直播采集也一并连坐了——而绝大多数使用者要的恰恰是直播那半边。
      */
     private void start() {
-        try {
-            if (!accountService.login()) {
-                // 登录流程被停机信号中止属于正常关闭，不是故障，不应以 ERROR 惊扰使用者
-                if (accountService.isStopping()) {
-                    log.info("正在停机, 已中止哔哩哔哩登录流程");
-                } else {
-                    log.warn("哔哩哔哩登录未完成, 动态推送将不可用");
-                }
-                return;
-            }
-        } catch (Exception e) {
-            log.error("哔哩哔哩登录失败, 相关功能将不可用", e);
-            return;
-        }
+        boolean loggedIn = tryLogin();
 
-        // 登录期间可能已开始停机，此时不必再启动后续服务
+        // 登录可能等了很久，这期间可能已经开始停机
         if (accountService.isStopping()) {
             log.info("正在停机, 已跳过哔哩哔哩服务启动");
             return;
         }
 
+        startLiveChannel();
+        startDynamicChannel(loggedIn);
+
+        servicesStarted.set(true);
+        log.info("StarBotBilibili 已就绪{}", accountService.isAnonymous() ? "（匿名模式）" : "");
+    }
+
+    /**
+     * 尝试登录
+     * @return 是否已登录。匿名模式、登录失败、停机中止都返回 false
+     */
+    private boolean tryLogin() {
+        try {
+            if (accountService.login()) {
+                return true;
+            }
+
+            if (accountService.isAnonymous()) {
+                // 说明已由账号服务打过了，不重复刷屏
+                return false;
+            }
+
+            // 登录流程被停机信号中止属于正常关闭，不是故障，不应以 ERROR 惊扰使用者
+            if (accountService.isStopping()) {
+                log.info("正在停机, 已中止哔哩哔哩登录流程");
+            } else {
+                log.warn("哔哩哔哩登录未完成, 动态推送与自动关注将不可用; 直播采集不受影响");
+            }
+        } catch (Exception e) {
+            log.error("哔哩哔哩登录失败, 动态推送与自动关注将不可用; 直播采集不受影响", e);
+        }
+        return false;
+    }
+
+    /**
+     * 启动直播通道
+     * <p>
+     * 这三项都不依赖登录态，登录成不成功都照常启动。
+     */
+    private void startLiveChannel() {
         try {
             liveRoomService.sync(dataSource);
         } catch (Exception e) {
@@ -128,21 +159,34 @@ public class BilibiliStartupListener {
         }
 
         try {
+            snapshotService.start(dataSource);
+        } catch (Exception e) {
+            log.error("启动主播基础数据留档失败", e);
+        }
+    }
+
+    /**
+     * 启动动态通道
+     * <p>
+     * 没有登录态时不启动，并把「为什么没启动」说清楚：动态接口对未登录请求返回的是空列表
+     * 而不是错误，启动了也只会安安静静地一条都不推，看着像功能坏了。
+     * @param loggedIn 是否已登录
+     */
+    private void startDynamicChannel(boolean loggedIn) {
+        if (!loggedIn) {
+            log.warn("动态推送与自动关注已禁用: {}", accountService.isAnonymous()
+                    ? "当前为匿名模式，它们必须有登录态"
+                    : "尚未登录，扫码登录后重启程序即可启用");
+            return;
+        }
+
+        try {
             dynamicService.start(dataSource);
         } catch (Exception e) {
             log.error("启动动态推送失败", e);
         }
 
-        try {
-            snapshotService.start(dataSource);
-        } catch (Exception e) {
-            log.error("启动主播基础数据留档失败", e);
-        }
-
         startLoginStateVerification();
-
-        servicesStarted.set(true);
-        log.info("StarBotBilibili 已就绪");
     }
 
     /**

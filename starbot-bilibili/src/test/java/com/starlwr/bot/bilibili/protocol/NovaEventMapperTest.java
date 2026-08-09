@@ -371,6 +371,29 @@ class NovaEventMapperTest {
         assertFalse(NovaEventMapper.map(e).getJSONObject("user").getBooleanValue("isAnchor"));
     }
 
+    @Test
+    @DisplayName("⚠️ 匿名连接的用户如实原样输出，不许自作主张补白或抹掉")
+    void anonymousUserIsPassedThroughVerbatim() {
+        UserInfo masked = new UserInfo();
+        masked.setUid(0L);
+        masked.setUname("b***");
+
+        BilibiliDanmuEvent e = new BilibiliDanmuEvent(room(), masked, "666", "666", Instant.now());
+        JSONObject user = NovaEventMapper.map(e).getJSONObject("user");
+
+        // uid 恒为字符串, 协议要求如此, 0 也不例外。下游据此认出「这一路是匿名源」;
+        // 换成 null 或者干脆不发这个字段，下游就只能靠猜
+        assertEquals("0", user.getString("uid"));
+        assertEquals("uid", user.getString("idKind"));
+
+        // 打码后的昵称原样透传。它是平台给的实际内容, 不是缺失值——
+        // 替换成「匿名用户」这类自造文案，等于我们凭空发明了一个平台没说过的事实
+        assertEquals("b***", user.getString("name"));
+
+        assertFalse(user.getBooleanValue("isAdmin"));
+        assertFalse(user.getBooleanValue("isAnchor"));
+    }
+
     // ── 房间级消息 ──────────────────────────────────────────────────────────
 
     @Test

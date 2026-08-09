@@ -428,6 +428,56 @@ class BilibiliAccountServiceTest {
     }
 
     /**
+     * 构造匿名模式的账号服务
+     * @param api 接口工具
+     * @param store 凭据存储
+     * @return 账号服务
+     */
+    private BilibiliAccountService anonymousService(BilibiliApiUtil api, BilibiliCredentialStore store) {
+        StarBotBilibiliProperties properties = new StarBotBilibiliProperties();
+        properties.getAccount().setAnonymous(true);
+        return new BilibiliAccountService(api, store, properties);
+    }
+
+    @Test
+    @DisplayName("⚠️ 匿名模式下连已保存的凭据都不该读")
+    void anonymousShouldNotTouchSavedCredentials() {
+        BilibiliApiUtil api = mock(BilibiliApiUtil.class);
+        BilibiliCredentialStore store = mock(BilibiliCredentialStore.class);
+        // 机器上确实存着一份可用凭据，匿名模式也不许用它
+        when(store.load()).thenReturn(Optional.of(refreshableCookies()));
+
+        BilibiliAccountService service = anonymousService(api, store);
+
+        assertFalse(service.login(), "匿名模式的 login 应返回 false");
+        assertTrue(service.isAnonymous(), "应处于匿名模式");
+        assertFalse(service.isLoggedIn(), "匿名模式不应被判定为已登录");
+
+        // 读了凭据就不叫匿名了: 拿这个开关做的匿名对照实验测出来的就不是匿名
+        verify(store, never()).load();
+        verify(api, never()).setCookies(any());
+        verify(api, never()).getTvQrCodeLoginInfo();
+        verify(api, never()).getQrCodeLoginInfo();
+
+        // 接口凭据（buvid、web 签名）仍要初始化, 否则匿名连接自己也取不到令牌
+        verify(api).init();
+    }
+
+    @Test
+    @DisplayName("匿名模式下界面发起的扫码请求应被挡住")
+    void anonymousShouldRefuseQrCodeLogin() {
+        BilibiliApiUtil api = mock(BilibiliApiUtil.class);
+        BilibiliCredentialStore store = mock(BilibiliCredentialStore.class);
+
+        BilibiliAccountService service = anonymousService(api, store);
+
+        // 界面上的「退出登录」会顺手发起新一轮扫码，挡不住的话点一下就凭空冒出个二维码
+        assertFalse(service.loginByQrCode(), "匿名模式下扫码登录应直接返回 false");
+        verify(api, never()).getTvQrCodeLoginInfo();
+        assertNull(service.getPendingQrCodeContent(), "匿名模式下不该有待扫描的二维码");
+    }
+
+    /**
      * 构造一份 TV 端登录取得的凭据
      * @param remaining 距令牌到期还剩多久
      * @return 凭据

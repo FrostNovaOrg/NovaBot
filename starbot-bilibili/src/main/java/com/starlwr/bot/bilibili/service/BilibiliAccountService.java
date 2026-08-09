@@ -32,6 +32,21 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @StarBotComponent
 public class BilibiliAccountService {
     /**
+     * 匿名模式的如实说明
+     * <p>
+     * <b>启动日志、运行状态页与用户手册用的是同一份文本，就是这一份。</b>
+     * 分成三处各写一遍的话，改了一处忘了另一处，界面上说的和文档里说的就会不一样——
+     * 而这段话的全部意义就在于它得是真的。
+     * <p>
+     * 措辞是被要求过的：不许把匿名模式描述成「功能一致的免登录版」。括号里的「实测已证实」
+     * 指 2026-08-07 的对照实验，同房间同时段匿名连接的弹幕到达率 4.3%。
+     */
+    public static final String ANONYMOUS_NOTICE =
+            "匿名模式：部分房间的弹幕可能被服务端限制下发（实测已证实），"
+                    + "拿得到的弹幕里发送者 uid 会被抹成 0、昵称只留首字（形如 b***）；"
+                    + "动态推送与自动关注不可用。需要完整数据请配置登录";
+
+    /**
      * 二维码矩阵边长
      * <p>
      * 该值是矩阵的模块数而非缩放倍数：登录链接约需 45 个模块，加上静默区后至少需要 55，
@@ -349,13 +364,30 @@ public class BilibiliAccountService {
     }
 
     /**
+     * 是否以匿名模式运行
+     * @return 是否为匿名模式
+     */
+    public boolean isAnonymous() {
+        return properties.isAnonymous();
+    }
+
+    /**
      * 登录
      * <p>
      * 优先使用已保存的凭据，凭据缺失或已失效时转为扫码登录。
-     * @return 是否登录成功，因停机而中止时返回 false
+     * <p>
+     * 匿名模式下直接返回：<b>连已保存的凭据都不读</b>。读了就不叫匿名了——
+     * 开着这个开关跑出来的数据必须与「这台机器上根本没有凭据」完全一致，
+     * 否则拿它做的匿名对照实验测的就不是匿名。
+     * @return 是否登录成功，匿名模式与因停机而中止时返回 false
      */
     public boolean login() {
         api.init();
+
+        if (isAnonymous()) {
+            log.warn(ANONYMOUS_NOTICE);
+            return false;
+        }
 
         Optional<Cookies> saved = store.load();
         if (saved.isPresent() && saved.get().isComplete()) {
@@ -372,6 +404,12 @@ public class BilibiliAccountService {
 
             log.warn("保存的登录凭据已失效, 需要重新扫码登录");
             store.clear();
+        } else {
+            // 扫码之前直播采集是不会启动的，而这一等可以是无限久。只想要直播数据的人
+            // 不该被卡在这里却猜不到有别的路——把那条路当场说出来
+            log.info("尚无登录凭据。若只需要直播弹幕、礼物等数据而不需要动态推送, "
+                    + "可以把 starbot.bilibili.account.anonymous 设为 true 免登录启动, "
+                    + "代价见该配置项的说明");
         }
 
         return loginByQrCode();
@@ -386,6 +424,13 @@ public class BilibiliAccountService {
      * @return 是否登录成功，因停机或已有流程在进行而中止时返回 false
      */
     public boolean loginByQrCode() {
+        if (isAnonymous()) {
+            // 界面上的「退出登录」会顺手发起新一轮扫码，匿名模式下必须在这里挡住，
+            // 否则点一下就凭空冒出个二维码，扫完还跟配置说的不是一回事
+            log.info("当前为匿名模式, 已忽略扫码登录请求; 要登录请先关闭 starbot.bilibili.account.anonymous");
+            return false;
+        }
+
         if (!loginInProgress.compareAndSet(false, true)) {
             log.debug("已有扫码登录流程正在进行, 忽略本次请求");
             return loggedIn;

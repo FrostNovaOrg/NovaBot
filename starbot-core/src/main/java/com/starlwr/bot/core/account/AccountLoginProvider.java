@@ -43,6 +43,20 @@ public interface AccountLoginProvider {
     Optional<String> pendingQrCodeContent();
 
     /**
+     * 登录能力被配置关掉的原因，未被关掉时为空
+     * <p>
+     * 有了它，界面才能把「还没扫码」和「这台机器压根不打算登录」区分开。
+     * 两者在界面上原本长得一模一样：都是「未登录」加一个永远等不来的二维码。
+     * <p>
+     * 返回的文本会直接显示给使用者，因此要写清楚<b>关掉之后代价是什么</b>，
+     * 而不只是说一句「已禁用」。
+     * @return 被关掉的原因
+     */
+    default Optional<String> disabledReason() {
+        return Optional.empty();
+    }
+
+    /**
      * 退出登录并清除本地凭据
      */
     void logout();
