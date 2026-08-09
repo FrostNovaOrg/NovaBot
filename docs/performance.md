@@ -163,7 +163,7 @@ JAVA_OPTS="-Xms96m -Xmx320m" ./start.sh
 
 | 配置项 | 效果 |
 |---|---|
-| `starbot.bilibili.live.only-connect-necessary-rooms: true` | 只连接订阅了直播事件的直播间 |
+| `starbot.bilibili.live.only-connect-necessary-rooms: true` | 只连接订阅了直播事件的直播间。⚠️ 会跳过[纯监听房间](user-guide.md#只采集不推送的房间)，开之前先确认没在用 |
 | `starbot.bilibili.live.enable-connect-live-room: false` | 完全不连长连接，仅靠轮询判断开播下播；代价是收不到弹幕、礼物等事件 |
 | `starbot.bilibili.live.complete-event: false`（默认） | 不为事件补全昵称头像，显著减少接口请求 |
 | `starbot.core.config-ui.enabled: false` | 配置完成后可关闭配置界面 |

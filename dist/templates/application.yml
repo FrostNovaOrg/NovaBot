@@ -97,10 +97,12 @@ starbot:
 
     live:
       enable-connect-live-room: true      # 是否连接直播间长连接。被风控时可关闭，仅用备用直播推送
-      only-connect-necessary-rooms: true  # 是否仅连接订阅了直播事件的直播间。
-                                          # ⚠️ 为 true 时「纯监听房间」（配了主播但不配任何推送目标，
-                                          # 只采集不推送）会被整个跳过，表现是「加了主播却什么都没发生」；
-                                          # 跳过时日志里会逐个列出来。要用纯监听房间就改成 false
+      only-connect-necessary-rooms: false # 是否仅连接订阅了直播事件的直播间。
+                                          # 默认 false，即配置里启用的主播全都连——「纯监听房间」
+                                          #（配了主播但不配任何推送目标，只采集不推送）是正式能力。
+                                          # ⚠️ 改成 true 会把纯监听房间整个跳过，表现是「加了主播却
+                                          # 什么都没发生」（跳过时日志里会逐个列出来）。它是大规模
+                                          # 部署下减少连接数的优化项，只在连接数受限、又确实只关心推送时才开
       live-room-connect-interval: 2000    # 直播间连接间隔，过快会触发风控，单位：毫秒
       live-room-reconnect-interval: 1000  # 重连基准间隔，实际间隔按失败次数指数退避
       gift-cache-expire: 3600             # 礼物配置缓存时长，单位：秒
