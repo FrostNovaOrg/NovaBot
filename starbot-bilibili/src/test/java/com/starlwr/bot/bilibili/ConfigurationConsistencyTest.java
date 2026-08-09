@@ -5,6 +5,8 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.core.io.FileSystemResource;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -17,6 +19,7 @@ import java.util.Set;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * 配置项一致性测试
@@ -240,6 +243,26 @@ class ConfigurationConsistencyTest {
 
         assertTrue(unknown.isEmpty(),
                 "配置模板中存在代码里已不存在的配置项，请更新模板:\n  " + String.join("\n  ", unknown));
+    }
+
+    @Test
+    @DisplayName("⚠️ 配置模板本身能被解析：模板起不来，等于发行包开箱即坏")
+    void templateIsParseable() throws IOException {
+        Path template = repositoryRoot().resolve("dist/templates/application.yml");
+        if (!Files.exists(template)) {
+            return;
+        }
+
+        // 用启动时真正在跑的那个加载器来解析，而不是自己写一遍。
+        // 上面那条按行扫键路径的检查看不见「同一个键写了两遍」这类结构性错误:
+        // 模板里 starbot.core.log 出现过两次，逐行扫过去两次都是合法的键路径，
+        // 而 SnakeYAML 直接抛 DuplicateKeyException，程序连启动都启动不了，
+        // 只会掉进安全模式，报的还是一句 YAML 报错。新装的人第一步就撞上
+        try {
+            new YamlPropertySourceLoader().load("template", new FileSystemResource(template.toFile()));
+        } catch (Exception e) {
+            fail("发行包的配置模板无法被解析，照它安装的人会直接进安全模式: " + e.getMessage());
+        }
     }
 
     @Test

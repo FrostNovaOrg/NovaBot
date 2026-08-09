@@ -153,6 +153,8 @@ starbot:
       file:                         # 日志文件级别，同上。
                                     # 排查直播间消息时可把 console 调到 DEBUG，
                                     # 配合 bilibili.debug.live-room-raw-message-log 使用；查完记得改回来
+      event-log: true               # 是否把收到的每条直播事件写进日志
+      network-log: true             # 是否记录接口请求
 
     push:
       enabled: true                 # 全局推送开关。关闭后所有推送都被丢弃，用于调试或临时静音
@@ -231,9 +233,3 @@ starbot:
         idle-hours: 12              # 会话闲置多久自动退出
         max-failures: 5             # 同一来源连续失败多少次后锁定
         lockout-minutes: 15         # 首次锁定时长，反复触发时逐次翻倍
-
-    log:
-      console: INFO
-      file: DEBUG
-      event-log: true
-      network-log: true
