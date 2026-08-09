@@ -4,19 +4,24 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.enums.GuardOperateType;
+import com.starlwr.bot.bilibili.enums.GuardType;
 import com.starlwr.bot.bilibili.event.live.*;
 import com.starlwr.bot.bilibili.model.BilibiliUserInfo;
+import com.starlwr.bot.bilibili.model.FansMedal;
 import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
 import com.starlwr.bot.core.event.live.base.StarBotLivePurchaseEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ScheduledExecutorService;
@@ -26,7 +31,10 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @DisplayName("直播间消息解析")
@@ -35,6 +43,11 @@ class BilibiliEventParserTest {
 
     private StarBotBilibiliProperties properties;
     private BilibiliEventParser parser;
+
+    /**
+     * 补全用的接口封装。默认不打桩——事件补全默认关闭，解析过程根本不会碰它
+     */
+    private BilibiliApiSupport apiSupport;
 
     /**
      * 归并器发出的事件。{@code GUARD_BUY} 不由 {@code parse} 返回，只能从这里取
@@ -56,7 +69,8 @@ class BilibiliEventParserTest {
                 });
 
         // 事件补全默认关闭，此时解析过程不会触碰任何接口
-        parser = new BilibiliEventParser(properties, mock(BilibiliGiftService.class), mock(BilibiliApiSupport.class),
+        apiSupport = mock(BilibiliApiSupport.class);
+        parser = new BilibiliEventParser(properties, mock(BilibiliGiftService.class), apiSupport,
                 new BilibiliGuardReconciler(event -> published.add((StarBotBaseLiveEvent) event),
                         immediate, Duration.ZERO));
     }
@@ -203,6 +217,215 @@ class BilibiliEventParserTest {
         String json = "{\"cmd\":\"INTERACT_WORD\",\"data\":{\"msg_type\":99,\"uid\":777,\"uinfo\":{\"uid\":777,\"base\":{\"name\":\"观众\"}}}}";
 
         assertTrue(parse(json).isEmpty());
+    }
+
+    @Nested
+    @DisplayName("INTERACT_WORD_V2")
+    class InteractV2 {
+        /**
+         * 以下 base64 全部脱敏自 2026-08-10 在单个直播间实抓的登录态语料。
+         * <p>
+         * <b>只替换了承载身份的标量</b>——观众 uid 与昵称、头像地址、勋章所属主播与房间号、
+         * 勋章名称。字段号、wire type、嵌套层次、字段出现顺序，以及等级、颜色、时间戳、
+         * 大航海到期时间和那些语义未明的字段，全部是平台原样下发的字节重新序列化而来。
+         * 因此这些固件测的是<b>真实报文的结构</b>，而不含任何真实观众信息。
+         * <p>
+         * 主播 uid 与房间号已改写成与 {@link BilibiliEventParserTest#SOURCE} 一致，
+         * 便于直接核对勋章归属。
+         */
+        private static final String ENTER_WITH_GUARD = "CJFOEg/ov5vmiL/op4LkvJfnlLIiAwYDASgBMIHaxAk4v+Di0wZAuKjH0f8zSjYIgYSvXxAoGgzmtYvor5Xli4vnq6Agi8L9ByiLwv0HMISh/wc4/9GfA0ABSANggdrECWiWzBJiAHjttYKCuqeM5RiAAQOaAQCyAe4CCJFOEkAKD+i/m+aIv+inguS8l+eUshIkaHR0cHM6Ly9mYWNlLmV4YW1wbGUvZW50ZXItZ3VhcmQuanBnQgcjMDBEMUYxGrgBCgzmtYvor5Xli4vnq6AQKBiLwv0HIISh/wco/9GfAzCLwv0HOL6nEUgBUIGEr19YA2CWzBJqSmh0dHBzOi8vaTAuaGRzbGIuY29tL2Jmcy9saXZlLzQ4MzYwYzhmM2I3ZGU4MDMxZTg2ZmYxZWY0YTJkZmMwZWMyYTYxYzIucG5negkjNEM3REZGOTmCAQkjNEM3REZGOTmKAQcjNThBMUY4kgEHI0ZGRkZGRpoBCSM0QzdERkZFNiICCCUyFwgDEhMyMDI2LTA4LTE0IDIzOjU5OjU5Ok8I7w0SSmh0dHBzOi8vaTAuaGRzbGIuY29tL2Jmcy9saXZlLzgwZjczMjk0M2NjMzM2NzAyOWRmNjVlMjY3OTYwZDU2NzM2YTgyZWUucG5nugEAwgEA";
+
+        private static final String ENTER_WITH_PROMOTION = "CJJOEg/ov5vmiL/op4LkvJfkuZkiAQEoATCB2sQJOOHk4tMGQPvl47v+M0oAUAFaByNGRjY0OUViAGoP5rWB6YeP5YyF5o6o5bm/eMvUnKivt4zlGJoBALIBhAEIkk4SfwoP6L+b5oi/6KeC5LyX5LmZEiVodHRwczovL2ZhY2UuZXhhbXBsZS9lbnRlci1zcHJlYWQuanBnMjgKD+i/m+aIv+inguS8l+S5mRIlaHR0cHM6Ly9mYWNlLmV4YW1wbGUvZW50ZXItc3ByZWFkLmpwZzoLIP///////////wG6AQDCAQA=";
+
+        private static final String ENTER_PLAIN = "CJNOEg/ov5vmiL/op4LkvJfkuJkiAQEoATCB2sQJOKLf4tMGQK6ouLv+M2IAeKvs1ejyoozlGJoBALIBQgiTThI3Cg/ov5vmiL/op4LkvJfkuJkSJGh0dHBzOi8vZmFjZS5leGFtcGxlL2VudGVyLXBsYWluLmpwZyICCAcyALoBAMIBAA==";
+
+        private static final String FOLLOW_WITH_MEDAL = "CJROEgzlhbPms6jop4LkvJciAgMBKAIwgdrECTjl6OLTBkCf1OXA/jNKMgiBhK9fEAMaDOa1i+ivleWLi+eroCCOrfICKI6t8gIwjq3yAjiOrfICQAFggdrECWgKYgB467rniavGjOUYmgEAsgHcAQiUThJtCgzlhbPms6jop4LkvJcSH2h0dHBzOi8vZmFjZS5leGFtcGxlL2ZvbGxvdy5qcGcyLwoM5YWz5rOo6KeC5LyXEh9odHRwczovL2ZhY2UuZXhhbXBsZS9mb2xsb3cuanBnOgsg////////////ARpmCgzmtYvor5Xli4vnq6AQAxiOrfICII6t8gIojq3yAjCOrfICSAFQgYSvX2AKegkjNTc2MkE3OTmCAQkjNTc2MkE3OTmKAQkjNTc2MkE3OTmSAQcjRkZGRkZGmgEJIzU3NjJBN0U2MgC6AQA=";
+
+        private static final String SHARE = "CJVOEgzliIbkuqvop4LkvJciAQEoAzCB2sQJOLns4tMGQIqjn7z+M0oxCIGEr18QDhoM5rWL6K+V5YuL56ugIIbN+QUowIGDBjDAgYMGOMCBgwZggdrECWjXA2IAeL6un+SC1IzlGJoBALIB2QEIlU4SawoM5YiG5Lqr6KeC5LyXEh5odHRwczovL2ZhY2UuZXhhbXBsZS9zaGFyZS5qcGcyLgoM5YiG5Lqr6KeC5LyXEh5odHRwczovL2ZhY2UuZXhhbXBsZS9zaGFyZS5qcGc6CyD///////////8BGmUKDOa1i+ivleWLi+eroBAOGMCBgwYgwIGDBijAgYMGMIbN+QVQgYSvX2DXA3oJIzkxOTI5OENDggEJIzkxOTI5OENDigEJIzkxOTI5OENDkgEHI0ZGRkZGRpoBCSM5MTkyOThFNjIAugEA";
+
+        /**
+         * 手工按 wire format 拼的报文，取值 {@code msg_type=99}。语料里没有这种消息
+         */
+        private static final String UNKNOWN_TYPE = "CIkGEgbop4LkvJcoYziB4s+qBg==";
+
+        /**
+         * 手工拼的报文，只有顶层字段而没有 uinfo，用来验证退回顶层 uid 与昵称的通路
+         */
+        private static final String WITHOUT_UINFO = "CIkGEgzpobblsYLmmLXnp7AoATCB2sQJOIHiz6oG";
+
+        /**
+         * 手工拼的报文，uinfo 里有 uid 但没有 base，用来验证事件补全的通路
+         */
+        private static final String UINFO_WITHOUT_BASE = "CIkGEgzpobblsYLmmLXnp7AoATiB4s+qBrIBAwiJBg==";
+
+        private Optional<StarBotBaseLiveEvent> parseV2(String pb) {
+            return parse("{\"cmd\":\"INTERACT_WORD_V2\",\"data\":{\"dmscore\":3,\"pb\":\"" + pb + "\"}}");
+        }
+
+        @Test
+        @DisplayName("解析进房消息，含勋章、大航海与财富等级")
+        void parseEnterRoomWithMedalAndGuard() {
+            BilibiliEnterRoomEvent event = assertInstanceOf(BilibiliEnterRoomEvent.class, parseV2(ENTER_WITH_GUARD).orElseThrow());
+
+            BilibiliUserInfo sender = (BilibiliUserInfo) event.getSender();
+            assertEquals(10001L, sender.getUid());
+            assertEquals("进房观众甲", sender.getUname());
+            assertEquals("https://face.example/enter-guard.jpg", sender.getFace());
+            assertEquals(37, sender.getHonorLevel());
+
+            // 字段 7 是秒级，事件对外给出的必须是毫秒
+            assertEquals(1786294335000L, event.getTimestamp());
+
+            assertEquals(GuardType.Captain, sender.getGuard().getGuardType());
+            assertEquals("https://i0.hdslb.com/bfs/live/48360c8f3b7de8031e86ff1ef4a2dfc0ec2a61c2.png",
+                    sender.getGuard().getIcon());
+
+            FansMedal medal = sender.getFansMedal();
+            assertEquals(200000001L, medal.getUid());
+            assertEquals(20000001L, medal.getRoomId());
+            assertEquals("测试勋章", medal.getName());
+            assertEquals(40, medal.getLevel());
+            assertTrue(medal.getLighted());
+
+            assertFalse(event.isFromPromotion());
+            assertNull(event.getPromotionSource());
+        }
+
+        @Test
+        @DisplayName("解析推广位进房，且空的勋章子消息视为没有勋章")
+        void parseEnterRoomFromPromotion() {
+            BilibiliEnterRoomEvent event = assertInstanceOf(BilibiliEnterRoomEvent.class, parseV2(ENTER_WITH_PROMOTION).orElseThrow());
+
+            assertEquals(10002L, event.getSender().getUid());
+            assertTrue(event.isFromPromotion());
+            assertEquals("流量包推广", event.getPromotionSource());
+            assertEquals(1786294881000L, event.getTimestamp());
+
+            BilibiliUserInfo sender = (BilibiliUserInfo) event.getSender();
+            // 这条报文带着一条空的勋章子消息。空不等于缺失，但同样应当得出「没有勋章」
+            assertNull(sender.getFansMedal());
+            assertNull(sender.getGuard());
+            assertNull(sender.getHonorLevel());
+        }
+
+        @Test
+        @DisplayName("解析普通进房，没有勋章与大航海时留空而不是给零值")
+        void parseEnterRoomPlain() {
+            BilibiliEnterRoomEvent event = assertInstanceOf(BilibiliEnterRoomEvent.class, parseV2(ENTER_PLAIN).orElseThrow());
+
+            BilibiliUserInfo sender = (BilibiliUserInfo) event.getSender();
+            assertEquals(10003L, sender.getUid());
+            assertEquals("进房观众丙", sender.getUname());
+            assertEquals(7, sender.getHonorLevel());
+            assertNull(sender.getFansMedal());
+            assertNull(sender.getGuard());
+            assertFalse(event.isFromPromotion());
+            assertNull(event.getPromotionSource());
+        }
+
+        @Test
+        @DisplayName("解析关注消息")
+        void parseFollow() {
+            // 样本量不足：全部语料里只有 4 条 msg_type=2。这一条只能证明枚举值确实会下发、
+            // 且字段布局与进房一致，不构成对关注这条通路的验收
+            BilibiliFollowEvent event = assertInstanceOf(BilibiliFollowEvent.class, parseV2(FOLLOW_WITH_MEDAL).orElseThrow());
+
+            BilibiliUserInfo sender = (BilibiliUserInfo) event.getSender();
+            assertEquals(10004L, sender.getUid());
+            assertEquals("关注观众", sender.getUname());
+            assertEquals(1786295397000L, event.getTimestamp());
+            assertEquals(3, sender.getFansMedal().getLevel());
+            assertTrue(sender.getFansMedal().getLighted());
+        }
+
+        @Test
+        @DisplayName("解析分享消息")
+        void parseShare() {
+            // 样本量不足：全部语料里只有 1 条 msg_type=3，同上，不构成验收
+            BilibiliShareEvent event = assertInstanceOf(BilibiliShareEvent.class, parseV2(SHARE).orElseThrow());
+
+            BilibiliUserInfo sender = (BilibiliUserInfo) event.getSender();
+            assertEquals(10005L, sender.getUid());
+            assertEquals("分享观众", sender.getUname());
+            assertEquals(1786295865000L, event.getTimestamp());
+            assertEquals(14, sender.getFansMedal().getLevel());
+            // 这条的勋章没有点亮标志。proto3 省略零值，未点亮时字段整个消失
+            assertFalse(sender.getFansMedal().getLighted());
+        }
+
+        @Test
+        @DisplayName("没有 uinfo 时退回顶层的 uid 与昵称")
+        void fallsBackToTopLevelIdentity() {
+            BilibiliEnterRoomEvent event = assertInstanceOf(BilibiliEnterRoomEvent.class, parseV2(WITHOUT_UINFO).orElseThrow());
+
+            assertEquals(777L, event.getSender().getUid());
+            assertEquals("顶层昵称", event.getSender().getUname());
+            assertEquals(1700000001000L, event.getTimestamp());
+        }
+
+        @Test
+        @DisplayName("未知的互动类型不产生事件")
+        void ignoresUnknownType() {
+            assertTrue(parseV2(UNKNOWN_TYPE).isEmpty());
+        }
+
+        @Test
+        @DisplayName("报文缺失、为空或不是合法 base64 时不产生事件也不抛异常")
+        void ignoresUnusablePayload() {
+            assertTrue(parse("{\"cmd\":\"INTERACT_WORD_V2\",\"data\":{\"dmscore\":3}}").isEmpty(), "缺 pb 字段");
+            assertTrue(parseV2("").isEmpty(), "pb 为空串");
+            assertTrue(parseV2("!!!不是 base64!!!").isEmpty(), "pb 不是合法 base64");
+            assertTrue(parse("{\"cmd\":\"INTERACT_WORD_V2\"}").isEmpty(), "整个 data 缺失");
+        }
+
+        @Test
+        @DisplayName("读不出互动类型时不产生事件")
+        void ignoresPayloadWithoutMsgType() {
+            // 一串随机字节几乎必然读不出 msg_type。这里要的是「不抛异常且不产生事件」，
+            // 而不是让它凑出一个进房事件来
+            assertTrue(parseV2(Base64.getEncoder().encodeToString(new byte[]{1, 2, 3, 4, 5})).isEmpty());
+        }
+
+        @Test
+        @DisplayName("被截断的报文仍按已读到的字段产出事件")
+        void stillEmitsEventOnTruncatedPayload() {
+            // 长连接上真出现半条消息时，uid、msg_type 与时间戳都在报文开头，
+            // 丢掉的是勋章与 uinfo。此时宁可产出一个信息不全的进房事件，也不要整条丢弃
+            byte[] full = Base64.getDecoder().decode(ENTER_WITH_GUARD);
+            byte[] cut = Arrays.copyOf(full, 40);
+
+            BilibiliEnterRoomEvent event = assertInstanceOf(BilibiliEnterRoomEvent.class,
+                    parseV2(Base64.getEncoder().encodeToString(cut)).orElseThrow());
+
+            assertEquals(10001L, event.getSender().getUid());
+            assertEquals("进房观众甲", event.getSender().getUname());
+            assertEquals(1786294335000L, event.getTimestamp());
+            assertNull(((BilibiliUserInfo) event.getSender()).getFansMedal(), "截断之后的字段应当缺失而不是被猜出来");
+        }
+
+        @Test
+        @DisplayName("开启事件补全后，uinfo 缺少 base 时去补昵称与头像")
+        void completesIdentityWhenBaseMissing() {
+            properties.getLive().setCompleteEvent(true);
+            when(apiSupport.completeUname(eq(777L), any())).thenReturn(Optional.of("补全昵称"));
+            when(apiSupport.completeFace(eq(777L), any())).thenReturn(Optional.of("https://face.example/completed.jpg"));
+
+            BilibiliEnterRoomEvent event = assertInstanceOf(BilibiliEnterRoomEvent.class, parseV2(UINFO_WITHOUT_BASE).orElseThrow());
+
+            assertEquals("补全昵称", event.getSender().getUname());
+            assertEquals("https://face.example/completed.jpg", event.getSender().getFace());
+        }
+
+        @Test
+        @DisplayName("uinfo 带 base 时不去调补全接口")
+        void doesNotCompleteWhenBasePresent() {
+            properties.getLive().setCompleteEvent(true);
+
+            BilibiliEnterRoomEvent event = assertInstanceOf(BilibiliEnterRoomEvent.class, parseV2(ENTER_PLAIN).orElseThrow());
+
+            assertEquals("进房观众丙", event.getSender().getUname());
+            verify(apiSupport, never()).completeUname(eq(10003L), any());
+        }
     }
 
     /**

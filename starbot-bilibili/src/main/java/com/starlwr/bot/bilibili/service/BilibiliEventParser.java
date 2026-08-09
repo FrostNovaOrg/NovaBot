@@ -10,6 +10,7 @@ import com.starlwr.bot.bilibili.model.BilibiliEmojiInfo;
 import com.starlwr.bot.bilibili.model.BilibiliUserInfo;
 import com.starlwr.bot.bilibili.model.FansMedal;
 import com.starlwr.bot.bilibili.model.Guard;
+import com.starlwr.bot.bilibili.protocol.BilibiliProtobufReader;
 import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
 import com.starlwr.bot.core.model.GiftInfo;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
@@ -23,6 +24,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -79,6 +81,93 @@ public class BilibiliEventParser {
      */
     private static final Duration RED_POCKET_RETENTION = Duration.ofHours(1);
 
+    /**
+     * {@code INTERACT_WORD_V2} 的 protobuf 字段号
+     * <p>
+     * 平台没有公开 {@code .proto}，以下字段号全部由实抓语料反推：2026-08-10 在单个直播间
+     * 采集的 2122 条登录态 {@code INTERACT_WORD_V2}，用最小 wire 读取器逐条统计得出，
+     * 并与 {@code protoc --decode_raw} 抽样核对过结构。
+     * <p>
+     * <b>反推必须用登录态语料。</b>匿名连接下 uid 被平台抹成 0，而 proto3 不序列化零值，
+     * {@link #V2_UID} 会整个消失——照匿名语料会得出「uid 只在少数消息里出现」的错误结论。
+     * 登录态语料里 uid 的出现率是 2122/2122。
+     * <p>
+     * 各字段的证据强度差别很大，取值时的防护按此区分：
+     * <pre>
+     *   字段  语义              证据
+     *     1   观众 uid          2122/2122，1978 个不同值，与 22.1 逐条一致
+     *     2   观众昵称          2122/2122，与 22.2.1 一致
+     *     5   消息类型          2122/2122，取值只有 1/2/3，分布 2117/4/1
+     *     6   房间号            2122/2122，恒为采集所在房间
+     *     7   秒级时间戳        2122/2122，10 位，全部落在采集窗口内
+     *     9   本房间粉丝勋章    859/2122（其中 6 条为空消息），子字段见下
+     *    10   是否推广位进入    3/2122，恒为 1，与 V1 的 is_spread 对应
+     *    13   推广来源文案      3/2122，与字段 10 同现，值为「流量包推广」
+     *    22   观众完整信息      2122/2122，子字段见下
+     *   9.1   勋章所属主播 uid  853/853
+     *   9.2   勋章等级          853/853
+     *   9.3   勋章名称          853/853
+     *   9.8   勋章是否点亮      284/853（proto3 省略 0，未出现即未点亮）
+     *  9.12   勋章所属房间号    853/853
+     *  22.1   观众 uid          2122/2122
+     *  22.2   基础信息 {1:昵称, 2:头像}
+     *  22.3   勋章全量 {11:大航海等级, 13:大航海图标}
+     *  22.4   财富等级 {1:等级}
+     *  22.6   大航海 {1:等级, 2:到期时间}
+     * </pre>
+     * <b>不使用</b>字段 8：它多数时候等于字段 7 的毫秒形式，但 287/2122 条对不上，
+     * 最多超出字段 7 达三天半，语义未明，拿它当时间戳会把事件时刻记错。
+     * <p>
+     * <b>不使用</b>字段 16：疑似大航海等级，29/2122 条出现且恒为 3，与 22.3.11、22.6.1
+     * 逐条一致。但只见过舰长这一种取值，无法证明总督与提督也走同一个字段，
+     * 因此大航海仍从 {@code uinfo} 里取，见 {@link #parseGuardV2}。
+     * <p>
+     * 字段 4、12、15、19、23、24 语义未坐实，均未取用，详见实现汇报。
+     */
+    private static final int V2_UID = 1;
+
+    private static final int V2_UNAME = 2;
+
+    private static final int V2_MSG_TYPE = 5;
+
+    private static final int V2_TIMESTAMP = 7;
+
+    private static final int V2_FANS_MEDAL = 9;
+
+    private static final int V2_IS_SPREAD = 10;
+
+    private static final int V2_SPREAD_DESC = 13;
+
+    private static final int V2_UINFO = 22;
+
+    private static final int V2_MEDAL_TARGET_UID = 1;
+
+    private static final int V2_MEDAL_LEVEL = 2;
+
+    private static final int V2_MEDAL_NAME = 3;
+
+    private static final int V2_MEDAL_LIGHTED = 8;
+
+    private static final int V2_MEDAL_ROOM_ID = 12;
+
+    private static final int V2_UINFO_BASE = 2;
+
+    private static final int V2_UINFO_MEDAL = 3;
+
+    private static final int V2_UINFO_WEALTH = 4;
+
+    private static final int V2_UINFO_GUARD = 6;
+
+    private static final int V2_BASE_NAME = 1;
+
+    private static final int V2_BASE_FACE = 2;
+
+    private static final int V2_FULL_MEDAL_GUARD_LEVEL = 11;
+
+    private static final int V2_FULL_MEDAL_GUARD_ICON = 13;
+
+    private static final int V2_LEVEL = 1;
+
     private final StarBotBilibiliProperties properties;
 
     private final BilibiliGiftService giftService;
@@ -103,7 +192,10 @@ public class BilibiliEventParser {
         parsers.put("LIVE", this::parseLiveOn);
         parsers.put("PREPARING", this::parseLiveOff);
         parsers.put("DANMU_MSG", this::parseMessage);
+        // 两种格式都要收。2026-08 起平台改发 V2，三次抓包都是 0 条 V1——只认老格式的话
+        // 进房、关注、分享会恒为 0 条且没有任何报错。V1 仍然保留，平台随时可能回滚
         parsers.put("INTERACT_WORD", this::parseInteract);
+        parsers.put("INTERACT_WORD_V2", this::parseInteractV2);
         parsers.put("SEND_GIFT", this::parseGift);
         parsers.put("SUPER_CHAT_MESSAGE", this::parseSuperChat);
         parsers.put("USER_TOAST_MSG", this::parseGuard);
@@ -361,6 +453,200 @@ public class BilibiliEventParser {
                 return null;
             }
         }
+    }
+
+    /**
+     * 解析进房、关注与分享消息的新版格式（{@code INTERACT_WORD_V2}）
+     * <p>
+     * 与 {@code INTERACT_WORD} 是同一件事的两种格式，产出<b>完全相同的三种事件</b>，
+     * 下游无需区分。差别只在承载方式：这一版把正文塞进 {@code data.pb}，
+     * 是一段 base64 编码的 protobuf，字段号的来历与证据见 {@link #V2_UID} 处的字段表。
+     * <p>
+     * <b>验收覆盖度：</b>进房（{@code msg_type=1}）在 2117 条实抓样本上比对过，
+     * 是这条通路的正主。<b>关注（4 条）与分享（1 条）样本量严重不足</b>，
+     * 分支照写，见下面各自的说明。
+     */
+    private StarBotBaseLiveEvent parseInteractV2(JSONObject data, LiveStreamerInfo source) {
+        JSONObject meta = data.getJSONObject("data");
+        if (meta == null) {
+            return null;
+        }
+
+        byte[] payload = decodePayload(meta.getString("pb"), source);
+        if (payload == null) {
+            return null;
+        }
+
+        BilibiliProtobufReader message = BilibiliProtobufReader.parse(payload);
+        if (message.isTruncated()) {
+            // 报文读到一半就断了。已读到的字段仍然可用（uid 与 msg_type 都在开头），
+            // 因此照常往下走，只留一行日志——格式真的变了才有迹可循
+            log.debug("直播间 {} 的 INTERACT_WORD_V2 报文未能读完, 已按读到的 {} 个字段继续: {}",
+                    source.getRoomId(), message.size(), meta.getString("pb"));
+        }
+
+        Long msgType = message.number(V2_MSG_TYPE);
+        if (msgType == null) {
+            // proto3 不序列化零值，取不到既可能是缺字段也可能是 msg_type=0。
+            // 而 0 不在已知取值 1/2/3 里，两种情况都该丢弃
+            log.debug("直播间 {} 的 INTERACT_WORD_V2 消息取不到互动类型, 已忽略", source.getRoomId());
+            return null;
+        }
+
+        BilibiliUserInfo sender = buildSenderFromUinfoV2(message.message(V2_UINFO), source);
+        if (sender.getUid() == null) {
+            sender.setUid(message.number(V2_UID));
+        }
+        if (sender.getUname() == null) {
+            sender.setUname(message.string(V2_UNAME));
+        }
+        sender.setFansMedal(parseFansMedalV2(message.message(V2_FANS_MEDAL), source));
+
+        // 字段 7 是秒级。事件模型内部统一用 Instant，换算成毫秒是事件输出协议的事，
+        // 与醒目留言的 start_time / end_time 同一处理方式
+        Instant timestamp = Optional.ofNullable(epochSecond(message.number(V2_TIMESTAMP))).orElseGet(Instant::now);
+
+        return switch (msgType.intValue()) {
+            case 1 -> {
+                BilibiliEnterRoomEvent event = new BilibiliEnterRoomEvent(source, sender, timestamp);
+                // 字段 10 与 13 只在 3/2122 条里出现，值分别为 1 与「流量包推广」，
+                // 与 V1 的 is_spread / spread_desc 对得上。样本少，但取不到就是「没走推广位」，
+                // 与 V1 对字段缺失的处理一致，不会造成假信息
+                Long spread = message.number(V2_IS_SPREAD);
+                event.setFromPromotion(spread != null && spread == 1L);
+                event.setPromotionSource(Optional.ofNullable(message.string(V2_SPREAD_DESC))
+                        .filter(desc -> !desc.isBlank()).orElse(null));
+                yield event;
+            }
+            // 关注：样本量不足，仅够确认枚举值存在，字段未充分验证。
+            // 2122 条语料里只有 4 条 msg_type=2，全部来自同一直播间的同一段时间。
+            // 已确认这 4 条的 uid、昵称、时间戳与勋章都在与进房相同的字段号上，
+            // 但「关注是否会带 msg_type=1 所没有的字段」无从判断，也无法排除
+            // 别的房间或别的客户端版本有不同结构
+            case 2 -> new BilibiliFollowEvent(source, sender, timestamp);
+            // 分享：样本量不足，仅够确认枚举值存在，字段未充分验证。
+            // 整份语料只有 1 条 msg_type=3。单条样本只能证明这个枚举值确实会下发、
+            // 且该条的字段布局与进房一致，此外<b>什么都不能证明</b>
+            case 3 -> new BilibiliShareEvent(source, sender, timestamp);
+            default -> {
+                log.debug("未处理的直播间互动消息类型: {}", msgType);
+                yield null;
+            }
+        };
+    }
+
+    /**
+     * 取出并解码 protobuf 正文
+     * <p>
+     * 实测 2122 条样本的 {@code pb} 全为标准 base64（字符集只含 {@code A-Za-z0-9+/=}），
+     * 因此用标准解码器。解码失败只留日志不抛出：单条报文的编码出问题不该影响整个直播间。
+     * @return 正文字节，字段缺失或解码失败时为空
+     */
+    private byte[] decodePayload(String base64, LiveStreamerInfo source) {
+        if (base64 == null || base64.isBlank()) {
+            log.debug("直播间 {} 的 INTERACT_WORD_V2 消息没有 pb 字段, 已忽略", source.getRoomId());
+            return null;
+        }
+
+        try {
+            return Base64.getDecoder().decode(base64);
+        } catch (IllegalArgumentException e) {
+            log.debug("直播间 {} 的 INTERACT_WORD_V2 消息的 pb 不是合法 base64, 已忽略: {}", source.getRoomId(), base64);
+            return null;
+        }
+    }
+
+    /**
+     * 从 protobuf 形式的 uinfo 构造发送者信息
+     * <p>
+     * 与 {@link #buildSenderFromUinfo} 是同一件事的两种承载形式，取值位置一一对应：
+     * {@code uid} 在字段 1、昵称与头像在 {@code base}、财富等级在 {@code wealth}、
+     * 大航海在勋章全量里。
+     */
+    private BilibiliUserInfo buildSenderFromUinfoV2(BilibiliProtobufReader uinfo, LiveStreamerInfo source) {
+        if (uinfo == null) {
+            return new BilibiliUserInfo();
+        }
+
+        Long uid = uinfo.number(V2_UID);
+        BilibiliProtobufReader base = uinfo.message(V2_UINFO_BASE);
+
+        String uname = base == null ? null : base.string(V2_BASE_NAME);
+        String face = base == null ? null : base.string(V2_BASE_FACE);
+
+        if (base == null && properties.getLive().isCompleteEvent() && uid != null) {
+            uname = apiSupport.completeUname(uid, source).orElse(null);
+            face = apiSupport.completeFace(uid, source).orElse(null);
+        }
+
+        BilibiliUserInfo sender = new BilibiliUserInfo(uid, uname, face);
+        sender.setGuard(parseGuardV2(uinfo));
+        sender.setHonorLevel(Optional.ofNullable(uinfo.message(V2_UINFO_WEALTH))
+                .map(wealth -> wealth.number(V2_LEVEL))
+                .map(Long::intValue)
+                .orElse(null));
+
+        return sender;
+    }
+
+    /**
+     * 解析 protobuf 形式的大航海信息
+     * <p>
+     * 同一条报文里大航海等级出现在<b>三处</b>：勋章全量的字段 11、{@code guard} 子消息的字段 1、
+     * 以及顶层的字段 16。实抓的 29 条上舰观众消息里三处恒为同一个值。
+     * <p>
+     * 以勋章全量为主，与 {@link #buildSenderFromUinfo} 从 {@code medal} 取的先例一致，
+     * 且只有那里同时带图标地址；勋章缺失时退到 {@code guard} 子消息——
+     * 此时<b>只有等级没有图标</b>，宁可少一个图标也不要把上舰的人显示成普通观众。
+     * @return 大航海信息，两处都取不到或等级为 0 时为空
+     */
+    private Guard parseGuardV2(BilibiliProtobufReader uinfo) {
+        Long guardLevel = Optional.ofNullable(uinfo.message(V2_UINFO_MEDAL))
+                .map(medal -> medal.number(V2_FULL_MEDAL_GUARD_LEVEL))
+                .orElse(null);
+        if (guardLevel != null && guardLevel != 0L) {
+            String icon = Optional.ofNullable(uinfo.message(V2_UINFO_MEDAL))
+                    .map(medal -> medal.string(V2_FULL_MEDAL_GUARD_ICON))
+                    .orElse(null);
+            return new Guard(guardLevel.intValue(), icon);
+        }
+
+        Long fallback = Optional.ofNullable(uinfo.message(V2_UINFO_GUARD))
+                .map(guard -> guard.number(V2_LEVEL))
+                .orElse(null);
+        if (fallback == null || fallback == 0L) {
+            return null;
+        }
+
+        return new Guard(fallback.intValue(), null);
+    }
+
+    /**
+     * 解析 protobuf 形式的粉丝勋章
+     * <p>
+     * 与 {@link #parseObjectFansMedal} 对应，同样是「观众在本直播间的勋章」，
+     * 没有勋章时平台下发一条<b>空的</b>子消息（实抓 859 条里有 6 条如此）而非省略字段，
+     * 因此判据仍是所属主播 uid 取不到就当没有勋章。
+     */
+    private FansMedal parseFansMedalV2(BilibiliProtobufReader medal, LiveStreamerInfo source) {
+        if (medal == null) {
+            return null;
+        }
+
+        Long uid = medal.number(V2_MEDAL_TARGET_UID);
+        if (uid == null || uid == 0L) {
+            return null;
+        }
+
+        Long level = medal.number(V2_MEDAL_LEVEL);
+        Long lighted = medal.number(V2_MEDAL_LIGHTED);
+        return buildFansMedal(uid, null,
+                medal.number(V2_MEDAL_ROOM_ID),
+                medal.string(V2_MEDAL_NAME),
+                level == null ? null : level.intValue(),
+                // proto3 省略零值：284/853 条带这个字段且恒为 1，其余是未点亮而非「没说」
+                lighted != null && lighted == 1L,
+                source);
     }
 
     /**
