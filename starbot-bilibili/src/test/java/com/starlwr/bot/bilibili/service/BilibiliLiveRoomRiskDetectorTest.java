@@ -6,12 +6,11 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 直播间数据风控判定测试
+ * 业务消息断流判定测试（枚举名仍是 RISK，见 ConnectStatus 的注释）
  * <p>
  * 这些边界是拿实测数据定的，改阈值必须同时改这些断言：
  * <ul>
@@ -24,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *   <li>冷清房间：环境与业务都很少 —— <b>必须不报</b>，「没人说话」不等于「收不到」</li>
  * </ul>
  */
-@DisplayName("直播间数据风控判定")
+@DisplayName("业务消息断流判定")
 class BilibiliLiveRoomRiskDetectorTest {
     private static final int WINDOWS = 3;
 
@@ -96,13 +95,48 @@ class BilibiliLiveRoomRiskDetectorTest {
                 new Window(2, 0, 1),
                 new Window(4, 0, 3));
 
-        assertFalse(r.isPresent(), "总量不足下限时应判为冷清而非断流");
+        assertFalse(r.isPresent(), "逐用户事件不足下限时应判为冷清而非断流");
+    }
+
+    @Test
+    @DisplayName("⚠️ 误报回放：安静但在播的房间，定时推送攒够总量也不报")
+    void doesNotReportQuietRoomPaddedByTimerPushes() {
+        // 2026-08-10 23:50:57 生产实数：判定时「13 条消息、业务 0 条、进房类 1 条」，
+        // 13 条里 12 条是排行与看过这类按秒下发的定时推送。
+        // 同期成对观察量到基准 3 条弹幕 / 我们 3 条——采集没停，主播那三分钟确实没人说话。
+        //
+        // 旧判据拿「消息总量」当样本量下限，13 ≥ 10 轻松越过，于是把「安静」读成了「断流」。
+        // 这条测试守的正是那个错：**总量能被定时推送撑起来，逐用户事件不能。**
+        Optional<String> r = feed(detector(),
+                new Window(5, 0, 1),
+                new Window(4, 0, 0),
+                new Window(4, 0, 0));
+
+        assertFalse(r.isPresent(), "13 条里 12 条是定时推送，这是冷清，不是断流");
+    }
+
+    @Test
+    @DisplayName("样本量下限只数逐用户事件，定时推送再多也不算")
+    void timerPushesDoNotCountTowardTheFloor() {
+        int min = BilibiliLiveRoomRiskDetector.MIN_USER_EVENTS;
+
+        // 总量远超下限，但逐用户事件只有 1 条：不报
+        assertFalse(feed(detector(),
+                new Window(min * 10, 0, 1),
+                new Window(min * 10, 0, 0),
+                new Window(min * 10, 0, 0)).isPresent(), "定时推送不该把下限顶上去");
+
+        // 逐用户事件够了：报。这就是「进房类有量而业务为零」那唯一的触发形状
+        assertTrue(feed(detector(),
+                new Window(min, 0, min),
+                new Window(0, 0, 0),
+                new Window(0, 0, 0)).isPresent());
     }
 
     @Test
     @DisplayName("样本量下限的边界")
-    void minTotalBoundary() {
-        int min = BilibiliLiveRoomRiskDetector.MIN_TOTAL;
+    void minUserEventsBoundary() {
+        int min = BilibiliLiveRoomRiskDetector.MIN_USER_EVENTS;
 
         // 差一条不到下限
         assertFalse(feed(detector(),
@@ -125,7 +159,11 @@ class BilibiliLiveRoomRiskDetectorTest {
                 new Window(18, 0, 13),
                 new Window(22, 0, 17)).orElseThrow();
 
-        assertTrue(msg.contains("60") || msg.contains("条"), "要给出具体数字");
+        // 原先这里写的是 contains("60") || contains("条")，而右边那半恒真——
+        // 任何一句中文描述都含「条」，等于这条断言什么都没查。改成两个数都必须出现：
+        // 总量 60 与逐用户事件 45，缺哪个读日志的人都判断不出这次越过了哪个门槛
+        assertTrue(msg.contains("60"), "要给出消息总量: " + msg);
+        assertTrue(msg.contains("45"), "要给出逐用户事件数，否则看不出判据越过了哪个门槛: " + msg);
         for (String forbidden : new String[]{"风控", "被限制", "无法接收", "收不到"}) {
             assertFalse(msg.contains(forbidden),
                     "描述不得断言原因，我们分不清是平台限制、协议变更还是真的没人说话：命中「" + forbidden + "」");
@@ -179,15 +217,16 @@ class BilibiliLiveRoomRiskDetectorTest {
     }
 
     @Test
-    @DisplayName("描述里带上进房数作为辅助信号")
-    void includesInteractCountAsAuxiliary() {
+    @DisplayName("描述里带上进房数，它现在参与下限判定")
+    void includesInteractCount() {
         String msg = feed(detector(),
                 new Window(20, 0, 15),
                 new Window(18, 0, 13),
                 new Window(22, 0, 17)).orElseThrow();
 
+        // 进房数不再只是「说清观测」：它与业务数一起构成样本量下限的分子，
+        // 所以这个数写不写进描述，决定了读日志的人能不能复核这次判定
         assertTrue(msg.contains("45"), "三个窗口的进房数应累加为 45，便于人判断是不是「只剩进房」");
-        assertEquals(1, msg.split("进房").length - 1);
     }
 
     @Test
@@ -195,8 +234,8 @@ class BilibiliLiveRoomRiskDetectorTest {
     void neverJudgesWhenNotLiving() {
         // 2026-08-10 生产实测的误报形状：两个未开播/轮播的房间，三个窗口共 10 条消息、
         // 业务 0 条、进房 0 条，被判成「已被数据风控」并触发告警。
-        // 没有直播就没人发弹幕，业务消息必然为零，而环境消息照旧在来——
-        // MIN_TOTAL 挡的是「冷清」，挡不住「没在播」
+        // 没有直播就没人发弹幕，业务消息必然为零，而轮播房照旧可能有人进出——
+        // 样本量下限挡的是「冷清」，挡不住「没在播」，两条各挡一件事
         BilibiliLiveRoomRiskDetector d = detector();
 
         assertFalse(d.accept(new Window(4, 0, 0, false)).isPresent());
