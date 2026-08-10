@@ -1,6 +1,8 @@
 package com.starlwr.bot.bilibili.protocol;
 
+import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import com.alibaba.fastjson2.JSONWriter;
 import com.starlwr.bot.bilibili.event.live.BilibiliDanmuEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliEmojiEvent;
 import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
@@ -545,5 +547,34 @@ class NovaEventMapperTest {
     @DisplayName("房间统计三项全空时不推送")
     void roomStatWithNothingIsNotPublished() {
         assertNull(NovaEventMapper.roomStat(10000L, 1786111565000L, null, null, null));
+    }
+
+    @Test
+    @DisplayName("⚠️ 序列化必须带 WriteNulls：协议允许字段为 null，不允许字段不存在")
+    void nullValuedKeysSurviveSerialization() {
+        // 这是一面承重墙。fastjson2 **默认丢弃空值**，而协议里 emoji / replyTo / medal
+        // 这些字段是「可空」而不是「可选」——下游按键存在与否分支时，丢键与置空是两种语义。
+        // 出口（NovaEventStream、NovaEventEndpoint）都显式带了这个 Feature，
+        // 这条测试守的就是「谁也别顺手把它删掉」。
+        // 2026-08-11 的语料回放里测试自己漏了它，一次刷出 17093 处「缺少 medal/emoji/replyTo」
+        BilibiliDanmuEvent event = new BilibiliDanmuEvent(
+                room(), new BilibiliUserInfo(10000007L, "观众"), "普通弹幕", "普通弹幕", Instant.now());
+
+        JSONObject envelope = NovaEventMapper.map(event);
+        assertTrue(envelope.getJSONObject("data").containsKey("emoji"), "前提：普通弹幕的 emoji 是显式的 null");
+        assertNull(envelope.getJSONObject("data").get("emoji"));
+
+        JSONObject reparsed = JSON.parseObject(envelope.toString(JSONWriter.Feature.WriteNulls));
+        JSONObject data = reparsed.getJSONObject("data");
+        for (String nullable : List.of("emoji", "replyTo")) {
+            assertTrue(data.containsKey(nullable), "带 WriteNulls 序列化后 " + nullable + " 这个键必须还在");
+            assertNull(data.get(nullable), nullable + " 的值应当是 null 而不是别的");
+        }
+        assertTrue(reparsed.getJSONObject("user").containsKey("medal"), "user.medal 同样是可空不可缺");
+
+        // 反面：不带这个 Feature 键就会消失。写出来是为了让「为什么必须带」有据可查，
+        // 而不是让人以为上面那些断言是多余的
+        assertFalse(JSON.parseObject(envelope.toJSONString()).getJSONObject("data").containsKey("emoji"),
+                "若这条挂了，说明 fastjson2 的默认行为变了，那个 Feature 的必要性要重新评估");
     }
 }
