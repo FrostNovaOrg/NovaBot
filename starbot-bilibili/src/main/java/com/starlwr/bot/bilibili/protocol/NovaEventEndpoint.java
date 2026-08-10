@@ -25,7 +25,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * 事件输出协议 v1 的 WebSocket 端点
+ * 事件输出协议 v2 的 WebSocket 端点
  * <p>
  * 握手后先发 {@code hello}，随后把 {@link NovaEventStream} 的实时流转发给客户端，
  * 并按协议维持 15 秒一次的 {@code ping}。
@@ -97,7 +97,7 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
     /**
      * 能力集之外、需要下游知道的口径差异
      * <p>
-     * <b>这是协议 v1 之外新增的可选字段</b>，按协议 §6「新增可选字段不算破坏性变更、
+     * <b>这是协议正文之外新增的可选字段</b>，按协议 §6「新增可选字段不算破坏性变更、
      * 客户端必须忽略不认识的字段」的规定加在 {@code hello.data} 上。
      * 放进报文而不是只写在文档里，是因为口径差异要在运行时能被看见——
      * 对着连接排查的人不会先去翻我们的源码。

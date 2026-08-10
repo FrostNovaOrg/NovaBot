@@ -179,7 +179,10 @@ class NovaEventMapperTest {
         e.setCharged(1.0);
 
         JSONObject env = NovaEventMapper.map(e);
-        assertEquals(1, env.getIntValue("v"));
+        // 断常量而不是断字面 2：这条测试要守的是「信封里带着版本号」，
+        // 而不是「版本号恰好是几」。升版本时该改的是常量与协议文本，不是一堆测试
+        assertEquals(NovaEventMapper.PROTOCOL_VERSION, env.getIntValue("v"));
+        assertEquals(2, NovaEventMapper.PROTOCOL_VERSION, "v2 起 emoji 语义收严，降回去会让下游按 v1 解析新报文");
         assertEquals(10000L, env.getLongValue("room"));
         assertTrue(env.getLongValue("ts") > 0);
 

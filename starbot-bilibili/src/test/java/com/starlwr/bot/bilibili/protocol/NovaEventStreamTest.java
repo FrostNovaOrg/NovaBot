@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class NovaEventStreamTest {
     private static JSONObject envelope(String kind) {
         JSONObject j = new JSONObject();
-        j.put("v", 1);
+        j.put("v", NovaEventMapper.PROTOCOL_VERSION);
         j.put("kind", kind);
         return j;
     }

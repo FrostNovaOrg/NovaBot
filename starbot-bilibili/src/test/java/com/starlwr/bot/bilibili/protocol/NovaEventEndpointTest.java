@@ -164,7 +164,7 @@ class NovaEventEndpointTest {
 
     private static JSONObject envelope() {
         JSONObject j = new JSONObject();
-        j.put("v", 1);
+        j.put("v", NovaEventMapper.PROTOCOL_VERSION);
         j.put("kind", "danmaku");
         j.put("ts", 1786111565000L);
         j.put("room", 10000);
@@ -176,7 +176,7 @@ class NovaEventEndpointTest {
         data.put("fromSeq", fromSeq);
 
         JSONObject request = new JSONObject();
-        request.put("v", 1);
+        request.put("v", NovaEventMapper.PROTOCOL_VERSION);
         request.put("kind", "resume");
         request.put("data", data);
         return new TextMessage(request.toJSONString());

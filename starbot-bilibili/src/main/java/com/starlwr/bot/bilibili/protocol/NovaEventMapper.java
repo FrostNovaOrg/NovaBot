@@ -20,7 +20,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * NovaBot 事件 → 事件输出协议 v1 的信封
+ * NovaBot 事件 → 事件输出协议 v2 的信封
  * <p>
  * 起点是 VRDash 仓库的 {@code club.vrdash.relay.ProtocolMapper}（同一作者、同为 AGPL-3.0），
  * 迁入后改包名并按 NovaBot 事件模型的实际字段作了调整，差异见文末「迁入时改了什么」。
@@ -56,7 +56,18 @@ import java.util.Set;
  * </ul>
  */
 public final class NovaEventMapper {
-    public static final int PROTOCOL_VERSION = 1;
+    /**
+     * 协议版本
+     * <p>
+     * <b>v1 → v2 的原因是 {@code emoji} 语义收严，那是不兼容变更</b>：v1 里内联表情会被折叠进
+     * {@code emoji}，v2 起 {@code emoji} 只在整条即一张表情图时非空，内联表情走 {@code inlineEmojis}。
+     * 只加字段本来是兼容的，收严不是。
+     * <p>
+     * 升号还有一个实际用处：下游在 {@code hello} 那一层就能看出源侧是 v1 还是 v2，
+     * <b>把过渡期的风险拦在握手，而不是等渲染出错才发现</b>。
+     * 版本语义的正式文字由 VRDash 落在协议文本里（裁决 #23 二）。
+     */
+    public static final int PROTOCOL_VERSION = 2;
 
     private NovaEventMapper() {
     }

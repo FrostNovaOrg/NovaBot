@@ -8,7 +8,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 事件输出协议 v1 的校验器
+ * 事件输出协议 v2 的校验器
  * <p>
  * 手工对齐于 VRDash 仓库的 {@code packages/shared/src/protocol.ts}——那份 TypeScript
  * 是协议的唯一真相来源，本类是它在 Java 侧的可执行副本。
