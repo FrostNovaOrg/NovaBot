@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiFunction;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -70,6 +71,17 @@ public class BilibiliEventParser {
      * 不去重就会把同一个红包反复感谢。
      */
     private final Map<String, Instant> seenRedPockets = new ConcurrentHashMap<>();
+
+    /**
+     * 因 {@code info[0]} 过短而被整条丢弃的弹幕数
+     * <p>
+     * 这一处丢弃原先<b>一声不响</b>：格式一旦变了，弹幕会静默消失而日志上什么都看不到。
+     * 计数按 1、10、100… 报，既不会淹掉日志，也不会让「丢了多少」无从得知。
+     * <p>
+     * 实测截至 2026-08-10，八个房间 656 条弹幕的 {@code info[0]} 长度恒为 18，一次都没触发过——
+     * 但「没触发过」这个结论只对量过的语料成立，所以这个计数器不是多余的。
+     */
+    private final AtomicLong shortInfoDropped = new AtomicLong();
 
     /**
      * 红包记录的条目上限，防止长期运行后无限增长
@@ -286,6 +298,7 @@ public class BilibiliEventParser {
         // info 中只有下标 0 是必需的，粉丝勋章与荣耀等级所在的下标可能不存在，按可选处理
         JSONArray primary = arrayAt(data.getJSONArray("info"), 0);
         if (primary == null || primary.size() < 16) {
+            reportShortInfo(primary);
             return null;
         }
 
@@ -351,6 +364,21 @@ public class BilibiliEventParser {
         event.setReply(parseReply(extra, source));
 
         return event;
+    }
+
+    /**
+     * 报告一条因 {@code info[0]} 过短而被丢弃的弹幕
+     * <p>
+     * 按 1、10、100… 这样的次数报，而不是每条都报：格式真变了的时候丢弃是成千上万条的，
+     * 逐条打日志只会把日志本身冲垮，而完全不打就等于让弹幕静默消失。
+     */
+    private void reportShortInfo(JSONArray primary) {
+        long count = shortInfoDropped.incrementAndGet();
+        if (Long.toString(count).matches("10*")) {
+            log.warn("已有 {} 条弹幕因 info[0] 过短被丢弃（本条 {} 项，需要至少 16 项）。"
+                            + "若这个数在持续增长，说明报文格式变了，需要重新核对下标",
+                    count, primary == null ? 0 : primary.size());
+        }
     }
 
     /**
