@@ -6,6 +6,7 @@ import com.starlwr.bot.adapter.onebot.dto.MessageDTO;
 import com.starlwr.bot.adapter.onebot.model.OneBotSender;
 import com.starlwr.bot.adapter.onebot.security.PushApiTokenStore;
 import com.starlwr.bot.adapter.onebot.service.OneBotHttpService;
+import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.model.Sender;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.service.StarBotSenderService;
@@ -23,6 +24,7 @@ import org.springframework.web.servlet.mvc.method.RequestMappingInfo;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
 import java.lang.reflect.Method;
+import java.util.Map;
 
 /**
  * OneBot 控制器
@@ -86,9 +88,11 @@ public class OneBotController {
                 log.error("推送平台 {} 注册异常", sender.getName(), e);
             }
 
-            // 固定使用 IPv4 回环地址, 保证核心自调用始终命中默认 IP 白名单
+            // url 仍然记着：它是对外推送接口的地址，配置界面与文档都要用。
+            // 但核心自己投递不再走它，改为下面的进程内直调，理由见 Sender.LocalDelivery
             String url = "http://127.0.0.1:" + webContext.getWebServer().getPort() + path;
-            senderService.addSender(new Sender(sender.getName(), url, apiToken, sender.getDelay()));
+            senderService.addSender(new Sender(sender.getName(), url, apiToken, sender.getDelay(),
+                    (headers, params) -> send(toMessage(params))));
 
             httpService.register(sender);
         }
@@ -129,5 +133,51 @@ public class OneBotController {
      */
     public JSONObject send(@RequestBody MessageDTO message) {
         return httpService.send(message);
+    }
+
+    /**
+     * 把核心传来的参数装成 {@link MessageDTO}
+     * <p>
+     * <b>逐字段显式转换，不借道任何序列化器。</b>走 HTTP 时这一步由 Jackson 完成，
+     * 而本项目内部到处用的是 fastjson——两者对同一个 {@code MessageDTO} 的理解并不一致：
+     * {@code createTime} 上挂的是 Jackson 的 {@code @JsonProperty("create_time")}，
+     * fastjson 不认它，用 fastjson 转会<b>悄悄丢掉时间戳</b>而不报任何错。
+     * 与其押注两个库行为一致，不如把六个字段写明白。
+     * @param params 与 HTTP 请求体字段完全一致的参数
+     * @return 消息
+     */
+    static MessageDTO toMessage(Map<String, Object> params) {
+        MessageDTO message = new MessageDTO();
+        message.setPlatform(str(params.get("platform")));
+        message.setContent(str(params.get("content")));
+        message.setNum(number(params.get("num")));
+        message.setSequence(number(params.get("sequence")));
+        message.setCreateTime(number(params.get("create_time")));
+
+        Long type = number(params.get("type"));
+        // 用 of(code) 而不是按序号取：核心传过来的是 PushTargetType 的 code。
+        // 二者在 FRIEND(0) 与 GROUP(1) 上恰好相同，但 UNKNOWN 的 code 是 -1、序号是 2，
+        // 只有 of(code) 是照语义来的
+        message.setType(type == null ? PushTargetType.UNKNOWN : PushTargetType.of(type.intValue()));
+
+        return message;
+    }
+
+    private static String str(Object value) {
+        return value == null ? null : value.toString();
+    }
+
+    private static Long number(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Long.parseLong(value.toString().strip());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 }

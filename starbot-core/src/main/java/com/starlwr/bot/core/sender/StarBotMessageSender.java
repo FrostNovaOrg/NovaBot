@@ -240,7 +240,14 @@ public class StarBotMessageSender {
 
         for (int attempt = 1; attempt <= SEND_MAX_ATTEMPTS; attempt++) {
             try {
-                JSONObject result = http.postJson(sender.getUrl(), headers, params);
+                // 适配器与核心同进程时直接交过去，不绕本机 HTTP。
+                // 绕一圈的代价不是那点开销，而是把投递压在自己服务端口的几个工作线程上：
+                // 下游一慢线程就被占满，没有线程去读请求体，几百 KB 的图片因此卡满超时被丢弃，
+                // 而体积小的文字一次写进 socket 缓冲区就完事、照常送达——
+                // 「文字能发、图片发不出去」正是这么来的
+                JSONObject result = sender.getLocalDelivery() == null
+                        ? http.postJson(sender.getUrl(), headers, params)
+                        : sender.getLocalDelivery().deliver(headers, params);
                 if (result != null) {
                     return result;
                 }

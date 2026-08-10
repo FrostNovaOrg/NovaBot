@@ -288,4 +288,147 @@ class StarBotMessageSenderTest {
         return new StarBotMessageSender(http, senderService, new PushActivityRecorder(), new PushGate(properties),
                 new com.starlwr.bot.core.service.AtAllQuotaService(properties), resolvers);
     }
+
+    /**
+     * 进程内直调（任务 7a）
+     * <p>
+     * 验收标准来自裁决 #7：<b>测试桩模拟 6 秒以上的慢响应，文字与图片都不能丢。</b>
+     * <p>
+     * 旧路径是核心把消息 POST 给自己的服务端口，再由自己的控制器转给下游。
+     * 那一圈自环有个很难查的后果：服务端口的工作线程有限（默认 8 个），
+     * 控制器转发下游时同步阻塞，下游一慢线程就被占满，<b>没有线程去读请求体</b>。
+     * 体积小的文字一次写进 socket 缓冲区就完事、照常送达；
+     * 而图片是几百 KB 的内联 base64，必须服务端一边读才写得完，于是卡满 60 秒超时被丢弃。
+     * 2026-08-10 生产上就是这么丢了一条动态配图。
+     */
+    @org.junit.jupiter.api.Nested
+    @DisplayName("进程内直调")
+    class LocalDelivery {
+        /** 一张图片消息的量级：几百 KB 的内联 base64 */
+        private String imageContent() {
+            return "{image_base64=" + "A".repeat(400 * 1024) + "}";
+        }
+
+        @Test
+        @DisplayName("⚠️ 下游每次慢 6 秒时，文字与图片都必须送达")
+        void neitherTextNorImageIsLostWhenDownstreamIsSlow() {
+            HttpUtil http = mock(HttpUtil.class);
+            AtomicInteger delivered = new AtomicInteger();
+
+            Sender.LocalDelivery slow = (headers, params) -> {
+                try {
+                    // 裁决 #7 指定的验收条件：每次 6 秒以上
+                    Thread.sleep(6_100);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                delivered.incrementAndGet();
+                return new JSONObject().fluentPut("code", 0).fluentPut("id", "m" + delivered.get());
+            };
+
+            StarBotMessageSender sender = localSender(http, slow);
+
+            Message text = message();
+            text.setContent("开播啦");
+            assertEquals(0, sender.sendNow(text).getInteger("code"), "文字消息不该丢");
+
+            Message image = message();
+            image.setContent(imageContent());
+            assertEquals(0, sender.sendNow(image).getInteger("code"), "图片消息同样不该丢——这正是旧路径丢掉的那种");
+
+            assertEquals(2, delivered.get(), "两条都应真正到达下游");
+            verify(http, never()).postJson(anyString(), anyMap(), anyMap());
+        }
+
+        @Test
+        @DisplayName("配了进程内投递就不该再发本机 HTTP —— 没有 socket 就没有读不完请求体的问题")
+        void neverTouchesHttpWhenLocalDeliveryPresent() {
+            HttpUtil http = mock(HttpUtil.class);
+            StarBotMessageSender sender = localSender(http,
+                    (headers, params) -> new JSONObject().fluentPut("code", 0));
+
+            sender.sendNow(message());
+
+            // 这一条是整个 7a 的结构性保证：请求体不再需要「谁来读」
+            verify(http, never()).postJson(anyString(), anyMap(), anyMap());
+        }
+
+        @Test
+        @DisplayName("没配进程内投递时回落到 HTTP，外部推送平台照旧可用")
+        void fallsBackToHttpWhenAbsent() {
+            HttpUtil http = mock(HttpUtil.class);
+            when(http.postJson(anyString(), anyMap(), anyMap()))
+                    .thenReturn(new JSONObject().fluentPut("code", 0));
+
+            sender(http).sendNow(message());
+
+            verify(http, times(1)).postJson(anyString(), anyMap(), anyMap());
+        }
+
+        @Test
+        @DisplayName("进程内投递抛异常时照样重试，语义与走 HTTP 时一致")
+        void retriesLikeTheHttpPath() {
+            HttpUtil http = mock(HttpUtil.class);
+            AtomicInteger attempts = new AtomicInteger();
+
+            StarBotMessageSender sender = localSender(http, (headers, params) -> {
+                if (attempts.incrementAndGet() < 3) {
+                    throw new IllegalStateException("下游暂时不可用");
+                }
+                return new JSONObject().fluentPut("code", 0);
+            });
+
+            assertEquals(0, sender.sendNow(message()).getInteger("code"));
+            assertEquals(3, attempts.get(), "重试次数应与 HTTP 路径相同");
+        }
+
+        @Test
+        @DisplayName("交给下游的参数与走 HTTP 时逐字段相同")
+        void passesTheSameParamsAsHttp() {
+            HttpUtil http = mock(HttpUtil.class);
+            when(http.postJson(anyString(), anyMap(), anyMap()))
+                    .thenReturn(new JSONObject().fluentPut("code", 0));
+
+            ArgumentCaptor<Map<String, Object>> viaHttp = ArgumentCaptor.forClass(Map.class);
+            sender(http).sendNow(message());
+            verify(http).postJson(anyString(), anyMap(), viaHttp.capture());
+
+            java.util.concurrent.atomic.AtomicReference<Map<String, Object>> viaLocal =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+            localSender(mock(HttpUtil.class), (headers, params) -> {
+                viaLocal.set(params);
+                return new JSONObject().fluentPut("code", 0);
+            }).sendNow(message());
+
+            // 两条路必须喂给下游同样的东西，否则「改走直调」就成了偷偷改协议
+            assertEquals(viaHttp.getValue().keySet(), viaLocal.get().keySet());
+            assertEquals(viaHttp.getValue().get("platform"), viaLocal.get().get("platform"));
+            assertEquals(viaHttp.getValue().get("type"), viaLocal.get().get("type"));
+            assertEquals(viaHttp.getValue().get("num"), viaLocal.get().get("num"));
+            assertEquals(viaHttp.getValue().get("content"), viaLocal.get().get("content"));
+            assertTrue(viaLocal.get().containsKey("create_time"), "时间戳不能在这条路上丢掉");
+        }
+    }
+
+    /**
+     * 造一个走进程内直调的发送器
+     */
+    private StarBotMessageSender localSender(HttpUtil http, Sender.LocalDelivery delivery) {
+        Sender target = new Sender();
+        target.setName(PLATFORM);
+        target.setUrl("http://127.0.0.1:7827/onebot/send");
+        target.setDelay(0);
+        target.setLocalDelivery(delivery);
+
+        StarBotSenderService senderService = mock(StarBotSenderService.class);
+        when(senderService.getSender(PLATFORM)).thenReturn(Optional.of(target));
+
+        @SuppressWarnings("unchecked")
+        ObjectProvider<AtAllPermissionResolver> resolvers = mock(ObjectProvider.class);
+        when(resolvers.iterator()).thenAnswer(invocation -> List.<AtAllPermissionResolver>of().iterator());
+
+        StarBotCoreProperties properties = new StarBotCoreProperties();
+        return new StarBotMessageSender(http, senderService, new PushActivityRecorder(), new PushGate(properties),
+                new com.starlwr.bot.core.service.AtAllQuotaService(properties), resolvers);
+    }
 }
