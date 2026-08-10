@@ -96,7 +96,7 @@ java -Dloader.path=lib,plugins-lib -jar StarBotCore.jar
 
 ```
 事件输出已启用, 地址: ws://127.0.0.1:<server.port>/nova/events, 仅接受本机连接
-匿名模式：部分房间的弹幕可能被服务端限制下发（实测已证实）…
+匿名模式：个人主播的直播间实测只能拿到约一成弹幕（七格实测 8.8%~12.5%）…
 动态推送与自动关注已禁用: 当前为匿名模式，它们必须有登录态
 StarBotBilibili 已就绪（匿名模式）
 已连接到直播间 500001

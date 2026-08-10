@@ -89,9 +89,13 @@ class BilibiliLoginHealthProbeTest {
         // 与启动日志、用户手册共用同一份文本。分开写三遍迟早会各说各话
         assertEquals(BilibiliAccountService.ANONYMOUS_NOTICE, status.advice());
 
-        // 不许把匿名模式描述成「功能一致的免登录版」: 这四件事必须说出来
-        assertTrue(status.advice().contains("限制下发"), "要说清弹幕可能收不全");
-        assertTrue(status.advice().contains("实测已证实"), "要说清这是实测结论而非推测");
+        // 不许把匿名模式描述成「功能一致的免登录版」: 这四件事必须说出来。
+        // 措辞在 2026-08-10 改过一次：原先是「部分房间的弹幕可能被服务端限制下发（实测已证实）」，
+        // 「部分房间」「可能」太软，读起来像小概率事件，而实测是个人房普遍只有一成。
+        // 断言跟着改成「必须给出那个数字」——比断言某个具体词更贴近这条测试真正要守的东西
+        assertTrue(status.advice().contains("约一成"), "要说清个人房只能拿到约一成，不能只说「可能收不全」");
+        assertTrue(status.advice().contains("实测"), "要说清这是实测结论而非推测");
+        assertTrue(status.advice().matches("(?s).*\\d+(\\.\\d+)?%.*"), "要带上实测区间，让人能自己判断值不值得登录");
         assertTrue(status.advice().contains("uid"), "要说清发送者 uid 被抹成 0");
         assertTrue(status.advice().contains("配置登录"), "要给出拿到完整数据的办法");
     }
