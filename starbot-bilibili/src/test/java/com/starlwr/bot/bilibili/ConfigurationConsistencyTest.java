@@ -3,6 +3,7 @@ package com.starlwr.bot.bilibili;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.starlwr.bot.bilibili.protocol.NovaEventMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.env.YamlPropertySourceLoader;
@@ -16,6 +17,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -263,6 +266,38 @@ class ConfigurationConsistencyTest {
         } catch (Exception e) {
             fail("发行包的配置模板无法被解析，照它安装的人会直接进安全模式: " + e.getMessage());
         }
+    }
+
+    @Test
+    @DisplayName("⚠️ 文档与模板里写的协议版本号与代码里的常量一致")
+    void protocolVersionIsStatedConsistently() throws IOException {
+        // 升 v2 时我按「散在 11 处」逐处改，漏了配置模板——它一直写着 v1。
+        // 靠数出来的清单去改，改完没法证明改全了；这条测试改成让机器去找那些地方。
+        Pattern mention = Pattern.compile("事件输出协议 v(\\d+)");
+        List<String> stale = new ArrayList<>();
+        Path root = repositoryRoot();
+
+        for (String relative : List.of("dist/templates/application.yml", "docs/user-guide.md", "CHANGELOG.md")) {
+            Path file = root.resolve(relative);
+            if (!Files.exists(file)) {
+                continue;
+            }
+            List<String> lines = Files.readAllLines(file);
+            for (int i = 0; i < lines.size(); i++) {
+                Matcher matcher = mention.matcher(lines.get(i));
+                while (matcher.find()) {
+                    int stated = Integer.parseInt(matcher.group(1));
+                    // 更新日志会提到历史版本，那是沿革不是现状；只有「未发布」之前的正文才必须是当前版本。
+                    // 这里的判据从简：写着比当前版本号更小的，一律当漏改
+                    if (stated != NovaEventMapper.PROTOCOL_VERSION) {
+                        stale.add(relative + ":" + (i + 1) + " 写的是 v" + stated);
+                    }
+                }
+            }
+        }
+
+        assertTrue(stale.isEmpty(), "协议版本号与 NovaEventMapper.PROTOCOL_VERSION（当前 "
+                + NovaEventMapper.PROTOCOL_VERSION + "）不一致:\n  " + String.join("\n  ", stale));
     }
 
     @Test
