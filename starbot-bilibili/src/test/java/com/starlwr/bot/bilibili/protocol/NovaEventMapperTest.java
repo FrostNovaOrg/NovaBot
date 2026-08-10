@@ -3,6 +3,7 @@ package com.starlwr.bot.bilibili.protocol;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.event.live.BilibiliDanmuEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliEmojiEvent;
+import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
 import com.starlwr.bot.bilibili.model.BilibiliEmojiInfo;
 import com.starlwr.bot.bilibili.model.BilibiliUserInfo;
 import com.starlwr.bot.core.event.live.common.FreeGiftEvent;
@@ -265,9 +266,112 @@ class NovaEventMapperTest {
 
         JSONObject d = NovaEventMapper.map(e).getJSONObject("data");
         assertEquals("牛[dog]", d.getString("text"), "text 取保留占位符的 content，不是剥干净的纯文本");
-        assertEquals("https://x/d.png", d.getJSONObject("emoji").getString("url"));
         assertEquals("555", d.getJSONObject("replyTo").getString("uid"));
         assertEquals("被回复的人", d.getJSONObject("replyTo").getString("name"));
+
+        // 裁决 #21：emoji 收严为「整条就是一张图」的精确判据，内联表情不再折叠进它。
+        // 原先这里断言的是 emoji.url == d.png——那正是让下游分不清两类表情的做法
+        assertNull(d.get("emoji"), "普通弹幕的 emoji 恒为 null");
+
+        com.alibaba.fastjson2.JSONArray inline = d.getJSONArray("inlineEmojis");
+        assertEquals(1, inline.size());
+        assertEquals("[dog]", inline.getJSONObject(0).getString("placeholder"), "下游按占位符替换，所以它必须给出来");
+        assertEquals("https://x/d.png", inline.getJSONObject(0).getString("url"));
+        assertEquals(20, inline.getJSONObject(0).getIntValue("w"));
+        assertEquals(1, inline.getJSONObject(0).getIntValue("count"));
+    }
+
+    @Test
+    @DisplayName("同一占位符重复出现时只给一项，次数放在 count 里")
+    void inlineEmojisAreDedupedByPlaceholder() {
+        BilibiliDanmuEvent e = new BilibiliDanmuEvent(room(), sender(), "谢谢[大哭][大哭][大哭]", "谢谢", java.time.Instant.now());
+        // 平台给的 count 是 3，正文里也确实出现 3 次（实测 42/42 吻合，所以直接用它）
+        e.setEmojis(List.of(new BilibiliEmojiInfo("id_cry", "[大哭]", "https://x/cry.png", 20, 20, 3)));
+
+        com.alibaba.fastjson2.JSONArray inline = NovaEventMapper.map(e).getJSONObject("data").getJSONArray("inlineEmojis");
+
+        assertEquals(1, inline.size(), "按占位符去重：下游按字符串替换，不需要重复项");
+        assertEquals(3, inline.getJSONObject(0).getIntValue("count"));
+    }
+
+    @Test
+    @DisplayName("一条里多种占位符逐个给出，顺序不参与语义")
+    void inlineEmojisCarryEveryKind() {
+        BilibiliDanmuEvent e = new BilibiliDanmuEvent(room(), sender(), "[哇][dog]", "", java.time.Instant.now());
+        e.setEmojis(List.of(
+                new BilibiliEmojiInfo("id_wow", "[哇]", "https://x/w.png", 20, 20, 1),
+                new BilibiliEmojiInfo("id_dog", "[dog]", "https://x/d.png", 20, 20, 1)));
+
+        com.alibaba.fastjson2.JSONArray inline = NovaEventMapper.map(e).getJSONObject("data").getJSONArray("inlineEmojis");
+
+        assertEquals(2, inline.size(), "实测一半的内联弹幕含两个以上，一个 emoji 对象装不下");
+    }
+
+    @Test
+    @DisplayName("count 缺失或非正时记 1：出现在正文里的占位符至少出现过一次")
+    void inlineEmojiCountFallsBackToOne() {
+        BilibiliDanmuEvent e = new BilibiliDanmuEvent(room(), sender(), "[哇]", "", java.time.Instant.now());
+        e.setEmojis(List.of(new BilibiliEmojiInfo("id_wow", "[哇]", "https://x/w.png", 20, 20, null)));
+
+        com.alibaba.fastjson2.JSONArray inline = NovaEventMapper.map(e).getJSONObject("data").getJSONArray("inlineEmojis");
+
+        assertEquals(1, inline.getJSONObject(0).getIntValue("count"));
+    }
+
+    @Test
+    @DisplayName("映射出来的信封要过协议校验器：inlineEmojis 与 emoji 的互斥不许只写在注释里")
+    void mappedEnvelopesPassSchema() {
+        // 这条测试的存在本身是补的一个洞：inlineEmojis 那几条 schema 规则原先没有任何测试在跑，
+        // 校验器此前只被 hello 用过一次，等于「锁死不变量」是句空话
+        BilibiliDanmuEvent inline = new BilibiliDanmuEvent(room(), sender(), "牛[dog]", "牛", java.time.Instant.now());
+        inline.setEmojis(List.of(new BilibiliEmojiInfo("id_2", "[dog]", "https://x/d.png", 20, 20, 2)));
+
+        BilibiliDanmuEvent plain = new BilibiliDanmuEvent(room(), sender(), "普通弹幕", "普通弹幕", java.time.Instant.now());
+
+        BilibiliEmojiEvent pure = new BilibiliEmojiEvent(room(), sender(),
+                new BilibiliEmojiInfo("official_1", "[官方]", "https://x/o.png", 200, 200, null), java.time.Instant.now());
+
+        long seq = 1;
+        for (StarBotBaseLiveEvent event : List.of(inline, plain, pure)) {
+            JSONObject envelope = NovaEventMapper.map(event);
+            // seq 由端点盖章、映射层不管，这里补上再验，让断言只针对 data 段的规则
+            envelope.put("seq", seq++);
+            assertEquals(List.of(), NovaProtocolSchema.violations(envelope),
+                    event.getClass().getSimpleName() + " 的映射结果不合协议");
+        }
+    }
+
+    @Test
+    @DisplayName("校验器真的会拦下 emoji 与 inlineEmojis 同时非空")
+    void schemaRejectsBothPresent() {
+        // 反例测试：不验一次「它拦得住」，上面那条全绿也可能只是因为校验器什么都不查
+        JSONObject envelope = NovaEventMapper.map(new BilibiliEmojiEvent(room(), sender(),
+                new BilibiliEmojiInfo("official_1", "[官方]", "https://x/o.png", 200, 200, null), java.time.Instant.now()));
+        com.alibaba.fastjson2.JSONArray inline = new com.alibaba.fastjson2.JSONArray();
+        JSONObject item = new JSONObject();
+        item.put("placeholder", "[dog]");
+        item.put("url", "https://x/d.png");
+        item.put("w", 20);
+        item.put("h", 20);
+        item.put("count", 1);
+        inline.add(item);
+        envelope.getJSONObject("data").put("inlineEmojis", inline);
+        envelope.put("seq", 1L);
+
+        assertTrue(NovaProtocolSchema.violations(envelope).stream().anyMatch(v -> v.contains("emoji 非空时")),
+                "两者同时非空必须被拦下，实际违例: " + NovaProtocolSchema.violations(envelope));
+    }
+
+    @Test
+    @DisplayName("纯表情弹幕的 inlineEmojis 是空表，且 emoji 非空——两者不同时出现")
+    void emojiDanmakuHasEmptyInlineList() {
+        BilibiliEmojiInfo emoji = new BilibiliEmojiInfo("official_1", "[官方]", "https://x/o.png", 200, 200, null);
+        BilibiliEmojiEvent e = new BilibiliEmojiEvent(room(), sender(), emoji, java.time.Instant.now());
+
+        JSONObject d = NovaEventMapper.map(e).getJSONObject("data");
+
+        assertNotNull(d.getJSONObject("emoji"), "整条就是一张图，emoji 必须非空");
+        assertEquals(0, d.getJSONArray("inlineEmojis").size(), "给空表而不是漏键，下游少一个 null 判断");
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.starlwr.bot.bilibili.protocol;
 
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.event.live.BilibiliDanmuEvent;
 import com.starlwr.bot.bilibili.model.BilibiliEmojiInfo;
@@ -14,7 +15,9 @@ import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.UserInfo;
 
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * NovaBot 事件 → 事件输出协议 v1 的信封
@@ -165,7 +168,10 @@ public final class NovaEventMapper {
     private static JSONObject danmaku(DanmuEvent e) {
         JSONObject data = new JSONObject();
         data.put("text", e.getContent());
-        data.put("emoji", inlineEmoji(e));
+        // 普通弹幕的 emoji 恒为 null。内联表情改走 inlineEmojis——
+        // 见 inlineEmojis(DanmuEvent) 的说明，原先那个「取第一个」的折叠已整个移除
+        data.put("emoji", null);
+        data.put("inlineEmojis", inlineEmojis(e));
         data.put("replyTo", replyTo(e));
         // 弹幕报文的最外层没有 msg_id（实测 10 万条消息里只有醒目留言与 PK 状态类带），
         // 协议要求这个字段存在，故给空串而不是漏字段。**下游据此去重会失效**，
@@ -185,21 +191,55 @@ public final class NovaEventMapper {
         JSONObject data = new JSONObject();
         data.put("text", emoji == null ? "" : emoji.getName());
         data.put("emoji", emojiOf(emoji));
+        // 整条就是一张图，没有内联表情。给空表而不是漏键：下游少一个 null 判断
+        data.put("inlineEmojis", new JSONArray());
         data.put("replyTo", null);
         data.put("msgId", "");
         return envelope(e, e.getSender(), "danmaku", data);
     }
 
     /**
-     * 内联表情。协议的 {@code emoji} 是单个对象，而一条弹幕可能内联多个，
-     * 这里取第一个——协议本意是「这条弹幕是不是表情」，多个的完整信息在 {@code text} 的占位符里
+     * 内联表情：正文里嵌的若干张小图，逐个给出
+     * <p>
+     * <b>此前是「折叠」：只取第一个塞进 {@code emoji}。</b>那个做法有两处说不清——
+     * 「第一个」取的是 {@code emots} 映射的键序而非占位符在正文里的出现顺序；
+     * 而给出的对象里<b>没有 placeholder</b>，下游连它对应哪个占位符都答不出。
+     * 实测一半的内联弹幕含两个以上表情（最多 8 个），一个 {@code emoji} 对象根本装不下。
+     * <p>
+     * 现在按占位符逐个给出，并且：
+     * <ul>
+     *     <li><b>按占位符去重</b>。同一个表情在一条里可能出现多次（实测 18 条是同一占位符重复），
+     *         下游按占位符字符串替换即可，不需要下标——下标反而会在正文被截断时失效</li>
+     *     <li><b>带上 {@code count}</b>。这是平台自己给的次数，实测 42/42 与正文实际出现次数吻合，
+     *         所以下游连数都不用数。取不到时按 1 记：一个出现在正文里的占位符至少出现过一次</li>
+     * </ul>
      */
-    private static JSONObject inlineEmoji(DanmuEvent e) {
-        if (!(e instanceof BilibiliDanmuEvent b)) {
-            return null;
+    private static JSONArray inlineEmojis(DanmuEvent e) {
+        JSONArray array = new JSONArray();
+        if (!(e instanceof BilibiliDanmuEvent b) || b.getEmojis() == null) {
+            return array;
         }
-        List<BilibiliEmojiInfo> emojis = b.getEmojis();
-        return emojis == null || emojis.isEmpty() ? null : emojiOf(emojis.get(0));
+
+        Set<String> seen = new HashSet<>();
+        for (BilibiliEmojiInfo emoji : b.getEmojis()) {
+            if (emoji == null || emoji.getUrl() == null || emoji.getName() == null) {
+                continue;
+            }
+            // 解析侧的 emots 本就按占位符去重了，这里再挡一次：emojis 是可写属性，
+            // 上游改动或插件塞进重复项时，协议这一层不该跟着重复
+            if (!seen.add(emoji.getName())) {
+                continue;
+            }
+
+            JSONObject item = new JSONObject();
+            item.put("placeholder", emoji.getName());
+            item.put("url", emoji.getUrl());
+            item.put("w", emoji.getWidth() == null ? 0 : emoji.getWidth());
+            item.put("h", emoji.getHeight() == null ? 0 : emoji.getHeight());
+            item.put("count", emoji.getCount() == null || emoji.getCount() < 1 ? 1 : emoji.getCount());
+            array.add(item);
+        }
+        return array;
     }
 
     private static JSONObject emojiOf(EmojiInfo emoji) {

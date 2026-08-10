@@ -240,6 +240,31 @@ final class NovaProtocolSchema {
                 requireString(replyTo, "uid");
                 requireString(replyTo, "name");
             }
+
+            // inlineEmojis 的键必须在，没有内联表情时是空表而不是漏键
+            com.alibaba.fastjson2.JSONArray inline = data.getJSONArray("inlineEmojis");
+            if (inline == null) {
+                add("inlineEmojis 必须存在（没有内联表情时给空表）");
+                return;
+            }
+            for (int i = 0; i < inline.size(); i++) {
+                JSONObject item = inline.getJSONObject(i);
+                if (item == null) {
+                    add("inlineEmojis[" + i + "] 必须是对象");
+                    continue;
+                }
+                requireString(item, "placeholder");
+                requireString(item, "url");
+                requireNumber(item, "w");
+                requireNumber(item, "h");
+                requireNumber(item, "count");
+            }
+
+            // emoji 收严为「整条就是一张表情」的精确判据：两者不许同时非空，
+            // 否则下游又要面对「这条到底算不算表情弹幕」的混计问题
+            if (emoji != null && !inline.isEmpty()) {
+                add("emoji 非空时 inlineEmojis 必须为空：emoji 仅用于整条即一张图的表情弹幕");
+            }
         }
 
         private void superChat(JSONObject data) {
