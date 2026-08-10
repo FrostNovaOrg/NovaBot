@@ -214,8 +214,14 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
             headers.add("User-Agent", properties.getNetwork().getUserAgent());
             headers.add("Origin", "https://live.bilibili.com");
 
+            // 正常情况下 afterConnectionEstablished 已经把它赋好了，这里是兜底：
+            // 万一某个客户端实现不在握手期回调，也不能让 session 空着。
+            // 两次赋的是同一个对象，重复赋值无害
             this.session = client.execute(this, headers, URI.create(address.toWebSocketUrl())).get();
             sendVerify(info);
+
+            // 认证包发出之后才开始心跳，保证它一定是这条连接上的第一个包
+            startHeartbeat();
         } catch (Exception e) {
             log.error("连接直播间 {} 失败: {}", source.getRoomId(), e.getMessage());
             status = ConnectStatus.ERROR;
@@ -304,10 +310,21 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
     public void afterConnectionEstablished(@NonNull WebSocketSession session) {
         log.info("已连接到直播间 {}", source.getRoomId());
 
+        // 必须在这里就把会话记下来，不能等 connect() 里 client.execute().get() 返回。
+        // 本回调发生在那个 future 完成之前，而它下面就要启动心跳，
+        // 而 scheduleAtFixedRate 是「尽快开始」——第一次心跳完全可能跑在赋值之前。
+        // 那时 send() 看到 null 会抛 IOException，被当成发送失败走进 reconnect()：
+        // 轻则给一条刚建好的连接白排一次重连，重则 closeSession() 正好赶上赋值完成，
+        // 把这条好连接直接掐掉。回调参数里的 session 就是权威的那一个，用它没有窗口。
+        this.session = session;
         this.status = ConnectStatus.CONNECTED;
         this.lastMessageTime = Instant.now();
 
-        startHeartbeat();
+        // 心跳<b>不在这里</b>启动，改由 connect() 在认证包发出之后启动。
+        // 原因是把 session 提前赋值之后，这里启动的心跳就真的发得出去了——
+        // 而 sendVerify 排在本回调之后，于是心跳会抢在认证包前面发出去。
+        // 服务端要求认证包打头，未认证就发包同样会被切断，等于把一个竞态换成另一个。
+        // 这一条是脚手架建成后第一次审启动时序就抓到的，测试 verifyMustBeTheFirstPacket 钉住了它。
         publisher.publishEvent(new BilibiliConnectedEvent(source));
     }
 
