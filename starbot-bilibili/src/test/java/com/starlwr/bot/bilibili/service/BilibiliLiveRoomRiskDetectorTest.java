@@ -15,8 +15,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>
  * 这些边界是拿实测数据定的，改阈值必须同时改这些断言：
  * <ul>
- *   <li>真降级（2026-08-07 登录态对照，被限制的那条连接）：29.3 分钟 6 条弹幕，
- *       环境消息照收 —— <b>必须报</b></li>
+ *   <li>业务断流而环境仍有量：<b>必须报</b>。这是判据的触发条件，
+ *       <b>不要读成「真被限流时就长这样」</b>——实测限流是整条流按比例削减，
+ *       业务与环境削得一样多（详见 {@code BilibiliLiveRoomRiskDetector} 的类注释）。
+ *       判据之所以仍然成立，是因为「业务连续为零」在两种机理下都会出现</li>
  *   <li>误报案例（同日，41 万人气游戏区）：进房占比 53%，但每分钟 71 条弹幕 ——
  *       <b>必须不报</b></li>
  *   <li>冷清房间：环境与业务都很少 —— <b>必须不报</b>，「没人说话」不等于「收不到」</li>
@@ -39,9 +41,11 @@ class BilibiliLiveRoomRiskDetectorTest {
     }
 
     @Test
-    @DisplayName("业务消息断流而环境消息照收：报")
+    @DisplayName("业务消息断流而环境消息仍有量：报")
     void reportsWhenBusinessSilentButAmbientFlowing() {
-        // 真降级的形状：进房、排行、点赞照收，弹幕礼物为零
+        // 判据的触发条件：环境消息还在来，而弹幕礼物为零。
+        // 注意这不是「真被限流时的形状」——实测限流两类一起按比例削，
+        // 这里只是说「业务连续为零」这个可观测事实值得报出来
         Optional<String> r = feed(detector(),
                 new Window(20, 0, 15),
                 new Window(18, 0, 13),
