@@ -36,6 +36,16 @@ public class HttpUtil {
 
     private static final Logger networkLogger = LoggerFactory.getLogger("NetworkLogger");
 
+    /**
+     * 网络日志的同类去重抑制
+     * <p>
+     * <b>抑制是按「一次请求」决定的，不是按「一行日志」</b>：{@code ->} 与 {@code <-} 必须同进同出。
+     * 分别抑制会留下孤立的半条，而这两行配起来才算得出耗时——
+     * 2026-08-10 那次「图片推送变慢」的定位正是靠配对 {@code <-}/{@code ->} 算出 4754ms 的，
+     * 若当时日志里只剩半边，那条根因就查不出来。
+     */
+    private final NetworkLogThrottle networkLogThrottle = new NetworkLogThrottle();
+
     @Autowired
     public HttpUtil(@Qualifier("networkThreadPool") ThreadPoolTaskExecutor executor, RestTemplate restTemplate, StarBotCoreProperties properties) {
         this.executor = executor;
@@ -77,13 +87,15 @@ public class HttpUtil {
      */
     private <T> ResponseEntity<T> requestForEntity(URI uri, HttpMethod method, HttpEntity<?> httpEntity, Class<T> responseType) {
         long startTime = System.currentTimeMillis();
-        if (properties.getLog().isNetworkLog()) {
-            networkLogger.info("{} -> {}", method.name(), uri);
+        NetworkLogThrottle.Decision decision = decideNetworkLog(method, uri.toString(), startTime);
+        if (decision.log()) {
+            networkLogger.info("{} -> {}{}", method.name(), uri, decision.suffix());
         }
 
         try {
             return restTemplate.exchange(uri, method, httpEntity, responseType);
         } catch (Exception e) {
+            // 失败一律放行，不看抑制决定：抑制的目的就是让异常显出来
             if (properties.getLog().isNetworkLog()) {
                 long cost = System.currentTimeMillis() - startTime;
                 networkLogger.error("{} <- [{}]({} ms): {}", method.name(), e.getMessage(), cost, uri, e);
@@ -94,8 +106,9 @@ public class HttpUtil {
 
     private <T> ResponseEntity<T> requestForEntity(String url, HttpMethod method, HttpEntity<?> httpEntity, Class<T> responseType) {
         long startTime = System.currentTimeMillis();
-        if (properties.getLog().isNetworkLog()) {
-            networkLogger.info("{} -> {}", method.name(), url);
+        NetworkLogThrottle.Decision decision = decideNetworkLog(method, url, startTime);
+        if (decision.log()) {
+            networkLogger.info("{} -> {}{}", method.name(), url, decision.suffix());
         }
 
         ResponseEntity<T> response = null;
@@ -103,6 +116,7 @@ public class HttpUtil {
             response = restTemplate.exchange(url, method, httpEntity, responseType);
             return response;
         } catch (Exception e) {
+            // 失败一律放行，不看抑制决定
             if (properties.getLog().isNetworkLog()) {
                 long cost = System.currentTimeMillis() - startTime;
                 networkLogger.error("{} <- [{}]({} ms): {}", method.name(), e.getMessage(), cost, url, e);
@@ -111,13 +125,27 @@ public class HttpUtil {
         } finally {
             if (properties.getLog().isNetworkLog()) {
                 long cost = System.currentTimeMillis() - startTime;
-                if (response != null) {
-                    networkLogger.info("{} <- [{}]({} ms): {}", method.name(), response.getStatusCode().value(), cost, url);
-                } else {
+                if (response == null) {
+                    // 无结果同样是失败，照样放行
                     networkLogger.error("{} <- [无结果]({} ms): {}", method.name(), cost, url);
+                } else if (decision.log()) {
+                    networkLogger.info("{} <- [{}]({} ms): {}", method.name(), response.getStatusCode().value(), cost, url);
                 }
             }
         }
+    }
+
+    /**
+     * 决定这次请求的两行日志写不写
+     * <p>
+     * 一次请求只决定一次，{@code ->} 与 {@code <-} 共用同一个决定，保证成对出现。
+     */
+    private NetworkLogThrottle.Decision decideNetworkLog(HttpMethod method, String url, long nowMillis) {
+        if (!properties.getLog().isNetworkLog()) {
+            return new NetworkLogThrottle.Decision(false, 0);
+        }
+        return networkLogThrottle.decide(method.name(), url,
+                properties.getLog().getNetworkLogSuppressWindow(), nowMillis);
     }
 
     /**
