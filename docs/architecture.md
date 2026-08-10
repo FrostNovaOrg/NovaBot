@@ -323,5 +323,15 @@ Class<?> type = ClassUtils.getUserClass(bean);
 Maven 插件，而 Maven 不支持在同一 reactor 内构建并使用同一个插件，因此必须先单独安装它。
 `build.sh` 已处理这一点——直接 `mvn package` 会失败。
 
+**只想跑某一条测试时也不能用 `mvn test`。** 那个插件要求 `starbot-core` 是一个 jar，
+而停在 `test` 阶段时 core 只有 `target/classes`，于是报
+`starbot-core/target/classes (Is a directory)`——`mvn -pl <模块>` 失败是同一个原因。
+正确写法是走到 `install`，用 `-Dtest=` 挑测试：
+
+```bash
+mvn -B -Pinstall install -Dtest=某个测试类 -DfailIfNoTests=false \
+    -Dsurefire.failIfNoSpecifiedTests=false
+```
+
 产物在 `dist/build/`，其中 `application.yml` 来自 `dist/templates/`。
 **本机联调用的令牌只写在 `dist/build/`**（构建产物，已 gitignore），不要写进 `dist/templates/`。

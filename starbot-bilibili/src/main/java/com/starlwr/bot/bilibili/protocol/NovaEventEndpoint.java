@@ -107,6 +107,10 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
             "live_state: 只在开播、下播、标题变更时下发，没有中途接入的快照。客户端接上时若还没收到过，说明我们也还不知道",
             "source_state: disconnected 只在主播被移出数据源时下发。房间还在监听列表里时我们一直重连，那种情况一律是 reconnecting",
             "user.isAdmin: 只有弹幕消息带房管标志，其余消息恒为 false，含义是「这条消息没说」而不是「不是房管」",
+            // 这一条是照着一次真实误读补的：下游按 emoji != null 判断「这条带表情」，
+            // 于是内联表情弹幕全被漏掉。口径差异写在这里才能在排查时被看见
+            "danmaku.emoji: 只在「整条弹幕就是一张表情图」时非空。判断「这条带表情」要读 inlineEmojis，"
+                    + "按 emoji != null 判会漏掉全部内联表情弹幕",
             "rawJson: 协议之外的附加字段，为平台原始报文。字段随平台改版而变，不要当契约用");
 
     private final NovaEventStream stream;
