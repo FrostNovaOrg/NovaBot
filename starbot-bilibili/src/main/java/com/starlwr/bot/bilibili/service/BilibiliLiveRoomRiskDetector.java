@@ -21,6 +21,11 @@ import java.util.Optional;
  * <p>
  * 冷清的直播间由样本量下限挡住：环境消息也很少时总量不达标，直接不判定——
  * 「没人说话」和「说了但我们收不到」必须区分开。
+ * <p>
+ * <b>未开播的直播间一律不判定。</b>没有直播就没人发弹幕，业务消息必然为零，
+ * 而排行、观看人数这些环境消息照旧在来，样本量下限挡不住它。
+ * 2026-08-10 生产实测过这个误报：两个未开播/轮播的房间三个窗口共 10 条消息、
+ * 业务 0 条，被判成风控并触发告警。<b>样本量下限挡的是「冷清」，不是「没在播」。</b>
  */
 public class BilibiliLiveRoomRiskDetector {
     /**
@@ -36,8 +41,17 @@ public class BilibiliLiveRoomRiskDetector {
      * @param total 窗口内收到的全部消息数
      * @param business 其中的业务消息数（弹幕、礼物、醒目留言、上舰等）
      * @param interact 其中的进房类消息数，仅作辅助信号
+     * @param living 本窗口内主播是否在直播
      */
-    public record Window(int total, int business, int interact) {
+    public record Window(int total, int business, int interact, boolean living) {
+        /**
+         * 在播窗口
+         * <p>
+         * 「未开播不判定」这条规则之前写的调用方都是在播场景，保留三参数形式供它们使用。
+         */
+        public Window(int total, int business, int interact) {
+            this(total, business, interact, true);
+        }
     }
 
     private final Deque<Window> recent = new ArrayDeque<>();
@@ -57,6 +71,16 @@ public class BilibiliLiveRoomRiskDetector {
      * @return 判定为异常时返回<b>只陈述观测的</b>描述，否则为空
      */
     public Optional<String> accept(Window window) {
+        // 未开播的直播间必然满足「业务消息为零」：没有直播就没人发弹幕，
+        // 而排行、观看人数这些环境消息照旧涓涓地来，轻松越过 MIN_TOTAL。
+        // 2026-08-10 生产实测：两个未开播/轮播的房间，三个窗口共 10 条消息、
+        // 业务 0 条、进房 0 条，被判成「已被数据风控」并触发告警——纯误报。
+        // MIN_TOTAL 挡的是「冷清」，挡不住「没在播」，这两件事要分开挡。
+        if (!window.living()) {
+            recent.clear();
+            return Optional.empty();
+        }
+
         recent.addLast(window);
         while (recent.size() > requiredWindows) {
             recent.pollFirst();

@@ -185,4 +185,42 @@ class BilibiliLiveRoomRiskDetectorTest {
         assertTrue(msg.contains("45"), "三个窗口的进房数应累加为 45，便于人判断是不是「只剩进房」");
         assertEquals(1, msg.split("进房").length - 1);
     }
+
+    @Test
+    @DisplayName("⚠️ 未开播的直播间一律不判定")
+    void neverJudgesWhenNotLiving() {
+        // 2026-08-10 生产实测的误报形状：两个未开播/轮播的房间，三个窗口共 10 条消息、
+        // 业务 0 条、进房 0 条，被判成「已被数据风控」并触发告警。
+        // 没有直播就没人发弹幕，业务消息必然为零，而环境消息照旧在来——
+        // MIN_TOTAL 挡的是「冷清」，挡不住「没在播」
+        BilibiliLiveRoomRiskDetector d = detector();
+
+        assertFalse(d.accept(new Window(4, 0, 0, false)).isPresent());
+        assertFalse(d.accept(new Window(3, 0, 0, false)).isPresent());
+        assertFalse(d.accept(new Window(3, 0, 0, false)).isPresent(),
+                "总量已达 10 条、业务 0 条，若不看直播状态就会在这里误报");
+    }
+
+    @Test
+    @DisplayName("未开播的窗口不该留在历史里，等开播后凑数触发误报")
+    void notLivingClearsHistory() {
+        BilibiliLiveRoomRiskDetector d = detector();
+
+        // 先攒两个「在播且业务为零」的窗口
+        assertFalse(d.accept(new Window(20, 0, 15)).isPresent());
+        assertFalse(d.accept(new Window(20, 0, 15)).isPresent());
+
+        // 中间下播一次：这段历史必须作废，否则下播前后的窗口会被拼在一起判定
+        assertFalse(d.accept(new Window(5, 0, 0, false)).isPresent());
+
+        // 重新开播后只有一个窗口，离 requiredWindows 还差两个
+        assertFalse(d.accept(new Window(20, 0, 15)).isPresent(),
+                "下播打断后应从零开始重新累计");
+    }
+
+    @Test
+    @DisplayName("三参数的 Window 视为在播，保持旧调用方语义不变")
+    void threeArgWindowMeansLiving() {
+        assertTrue(new Window(1, 0, 0).living());
+    }
 }

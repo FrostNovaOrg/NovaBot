@@ -421,8 +421,11 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
             return false;
         }
 
+        // 是否在播必须一起交给判据：未开播的直播间没人发弹幕、业务消息必然为零，
+        // 而排行、观看人数这些环境消息照旧在来，样本量下限挡不住，判据会稳定误报
         BilibiliLiveRoomRiskDetector.Window window = new BilibiliLiveRoomRiskDetector.Window(
-                totalMessages.getAndSet(0), businessMessages.getAndSet(0), interactMessages.getAndSet(0));
+                totalMessages.getAndSet(0), businessMessages.getAndSet(0), interactMessages.getAndSet(0),
+                stateGate.isLiving(source.getUid()));
 
         return riskDetector.accept(window).map(observation -> {
             // 只陈述观测到了什么，不断言原因——从这里分不清是平台限制了下发、

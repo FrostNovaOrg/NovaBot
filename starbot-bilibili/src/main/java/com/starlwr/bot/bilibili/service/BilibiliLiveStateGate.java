@@ -67,4 +67,25 @@ public class BilibiliLiveStateGate {
         admitted.put(uid, living);
         return true;
     }
+
+    /**
+     * 该主播当前是否在直播
+     * <p>
+     * 供风控判定使用：未开播的直播间必然「业务消息为零」，不该被判成数据风控。
+     * 以本闸门已放行的状态为准，未知时回落到持久化状态；两者都不知道时返回
+     * {@code false}——宁可少判一次风控，也不要凭不知道的状态误报。
+     * @param uid 主播 UID
+     * @return 是否在直播
+     */
+    public synchronized boolean isLiving(Long uid) {
+        if (uid == null) {
+            return false;
+        }
+
+        Boolean state = admitted.get(uid);
+        if (state == null) {
+            state = liveDataService.getLiveStatus(LivePlatform.BILIBILI.getName(), uid).orElse(null);
+        }
+        return Boolean.TRUE.equals(state);
+    }
 }
