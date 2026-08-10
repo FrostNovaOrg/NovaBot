@@ -5,6 +5,8 @@ import com.starlwr.bot.bilibili.exception.NetworkException;
 import com.starlwr.bot.bilibili.exception.ResponseCodeException;
 import com.starlwr.bot.bilibili.model.Cookies;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
@@ -515,6 +517,157 @@ class BilibiliAccountServiceTest {
                 fail("登录流程未能在预期时间内进入扫码轮询状态");
             }
             Thread.sleep(20);
+        }
+    }
+
+    // ── 凭据维护的分阶段独立退避（裁决 #17 二护栏：只打桩验失败路径，不用真凭据）──────
+
+    @Nested
+    @DisplayName("凭据维护的分阶段独立退避")
+    class MaintenanceBackoff {
+        private static final Instant T0 = Instant.parse("2026-08-11T07:00:00Z");
+        private static final Duration BASE = Duration.ofSeconds(600);
+
+        private BilibiliApiUtil api;
+        private BilibiliAccountService service;
+
+        @BeforeEach
+        void setUp() {
+            api = mock(BilibiliApiUtil.class);
+            BilibiliCredentialStore store = mock(BilibiliCredentialStore.class);
+            when(store.load()).thenReturn(Optional.empty());
+            service = new BilibiliAccountService(api, store, new StarBotBilibiliProperties());
+        }
+
+        /**
+         * 让凭据看起来可续期。**只是打桩**：不读盘、不碰真凭据，也不发任何请求
+         */
+        private void refreshableCookies() {
+            Cookies cookies = mock(Cookies.class);
+            when(cookies.isRefreshable()).thenReturn(true);
+            when(cookies.isAppRefreshable()).thenReturn(false);
+            when(api.getCookies()).thenReturn(cookies);
+        }
+
+        @Test
+        @DisplayName("复检连续失败后不再每个周期都试")
+        void verifyBacksOffOnRepeatedFailures() throws Exception {
+            when(api.fetchLoginUid()).thenThrow(new NetworkException("模拟出网劣化"));
+            refreshableCookies();
+
+            service.maintain(T0);
+            verify(api, times(1)).fetchLoginUid();
+
+            // 第 1 次失败后要等一个基准。到点前再喂时刻，不该有新的调用
+            service.maintain(T0.plus(BASE).minusSeconds(1));
+            verify(api, times(1)).fetchLoginUid();
+
+            service.maintain(T0.plus(BASE));
+            verify(api, times(2)).fetchLoginUid();
+
+            // 第 2 次失败后要等两个基准，一个基准时还不到点
+            service.maintain(T0.plus(BASE).plus(BASE));
+            verify(api, times(2)).fetchLoginUid();
+
+            service.maintain(T0.plus(BASE).plus(BASE).plus(BASE));
+            verify(api, times(3)).fetchLoginUid();
+        }
+
+        @Test
+        @DisplayName("⚠️ 问出「已掉登录」是一次成功的复检，不该退避")
+        void definitiveLoggedOutIsNotAFailure() throws Exception {
+            // 这是最要紧的一条：掉登录之后恰恰要按基准节奏继续看着，
+            // 才能在人重新扫码之后及时发现恢复。把它当失败会一路退到上限，
+            // 于是「已经恢复了」这件事要过一个小时才被发现
+            when(api.fetchLoginUid()).thenReturn(null);
+
+            service.maintain(T0);
+            assertFalse(service.isLoggedIn(), "前提：这次复检问出了明确的未登录");
+
+            service.maintain(T0.plus(BASE));
+            verify(api, times(2)).fetchLoginUid();
+
+            service.maintain(T0.plus(BASE).plus(BASE));
+            verify(api, times(3)).fetchLoginUid();
+        }
+
+        @Test
+        @DisplayName("⚠️ 复检失败不拖慢续期，两件事各记各的")
+        void verifyFailureDoesNotDelayRefresh() throws Exception {
+            // 出网劣化时两件事会一起失败，看不出独立性。
+            // 所以这里让复检失败而续期正常：若两者共用一个退避，续期会被复检的失败拖住
+            refreshableCookies();
+            when(api.checkCookieRefresh()).thenReturn(new BilibiliApiUtil.CookieRefreshHint(false, 0L));
+
+            // 先让登录态为真，否则续期那道门压根不放行
+            when(api.fetchLoginUid()).thenReturn(10000007L);
+            service.maintain(T0);
+            assertTrue(service.isLoggedIn());
+
+            // 之后复检开始失败。**必须用 doThrow**：when(api.fetchLoginUid()) 会真的调一次 mock，
+            // 而那时上一个桩已经是抛异常，于是异常从打桩语句里飞出来（第一版就是这么挂的）
+            doThrow(new NetworkException("模拟复检失败")).when(api).fetchLoginUid();
+
+            // 复检连续失败三次，把它自己的间隔推到四个基准。
+            // 网络故障维持原登录态，所以续期那道门一直是开的
+            service.maintain(T0.plus(BASE));
+            service.maintain(T0.plus(BASE.multipliedBy(2)));
+            service.maintain(T0.plus(BASE.multipliedBy(4)));
+
+            // 四次 maintain 各查一次续期：续期从头到尾按自己的基准走
+            verify(api, times(4)).checkCookieRefresh();
+        }
+
+        @Test
+        @DisplayName("⚠️ 「服务端说不需要续期」是正常情形，不能算失败")
+        void notNeededIsNotAFailure() throws Exception {
+            // 这是续期最常见的答复。把它当失败，退避会在几个周期内推到上限，
+            // 于是真正需要续期的那一天我们正好在等
+            when(api.fetchLoginUid()).thenReturn(10000007L);
+            refreshableCookies();
+            when(api.checkCookieRefresh()).thenReturn(new BilibiliApiUtil.CookieRefreshHint(false, 0L));
+
+            service.maintain(T0);
+            service.maintain(T0.plus(BASE));
+            service.maintain(T0.plus(BASE.multipliedBy(2)));
+
+            verify(api, times(3)).checkCookieRefresh();
+        }
+
+        @Test
+        @DisplayName("续期查询失败会退避，且不影响复检")
+        void refreshFailureBacksOffOnItsOwn() throws Exception {
+            when(api.fetchLoginUid()).thenReturn(10000007L);
+            refreshableCookies();
+            when(api.checkCookieRefresh()).thenThrow(new NetworkException("模拟查询失败"));
+
+            service.maintain(T0);
+            verify(api, times(1)).checkCookieRefresh();
+
+            // 续期退到一个基准之后；这个时刻它不该再查，而复检照常
+            service.maintain(T0.plus(BASE).minusSeconds(1));
+            verify(api, times(1)).checkCookieRefresh();
+
+            service.maintain(T0.plus(BASE));
+            verify(api, times(2)).checkCookieRefresh();
+            verify(api, atLeast(2)).fetchLoginUid();
+        }
+
+        @Test
+        @DisplayName("关掉自动续期时不算失败也不算成功，复检节奏不受影响")
+        void disabledRefreshIsSkipped() throws Exception {
+            StarBotBilibiliProperties properties = new StarBotBilibiliProperties();
+            properties.getAccount().setAutoRefreshCookie(false);
+            BilibiliCredentialStore store = mock(BilibiliCredentialStore.class);
+            when(store.load()).thenReturn(Optional.empty());
+            BilibiliAccountService disabled = new BilibiliAccountService(api, store, properties);
+            when(api.fetchLoginUid()).thenReturn(10000007L);
+
+            disabled.maintain(T0);
+            disabled.maintain(T0.plus(BASE));
+
+            verify(api, never()).checkCookieRefresh();
+            verify(api, times(2)).fetchLoginUid();
         }
     }
 }

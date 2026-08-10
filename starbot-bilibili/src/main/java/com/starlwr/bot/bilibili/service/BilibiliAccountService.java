@@ -129,7 +129,34 @@ public class BilibiliAccountService {
         this.api = api;
         this.store = store;
         this.properties = properties.getAccount();
+
+        // 基准取复检间隔：一切正常时两件事都按它走，与改动前的行为一致。
+        // 复检间隔配成 0（关闭复检）时这里会退化成 1 秒，但那种配置下
+        // 定时任务压根不会被登记，退避也就不会被问到
+        Duration base = Duration.ofSeconds(Math.max(1, this.properties.getVerifyInterval()));
+        Duration cap = Duration.ofSeconds(Math.max(0, this.properties.getMaintenanceBackoffCap()));
+        this.verifyBackoff = new BilibiliStagedBackoff(base, cap);
+        this.refreshBackoff = new BilibiliStagedBackoff(base, cap);
     }
+
+    /**
+     * 复检自己的退避。与续期那个各记各的失败次数——
+     * 出网劣化时续期查不动，不该把复检也拖慢，那是判断「凭据还在不在」的唯一途径
+     */
+    private final BilibiliStagedBackoff verifyBackoff;
+
+    /**
+     * 续期自己的退避
+     */
+    private final BilibiliStagedBackoff refreshBackoff;
+
+    /**
+     * 最近一次续期尝试是否真的完成了续期
+     * <p>
+     * 只为保住 {@link #refreshCookiesIfNeeded()} 原来的返回语义而存在：
+     * 那个方法对外的含义是「有没有完成一次续期」，与退避要的「尝试成不成功」不是一回事
+     */
+    private boolean refreshed;
 
     /**
      * 上次成功完成登录态复检的时间，从未复检成功时为空
@@ -156,8 +183,22 @@ public class BilibiliAccountService {
      * @return 复检后的登录态
      */
     public boolean verify() {
+        verifyOnce();
+        return loggedIn;
+    }
+
+    /**
+     * 复检一次并如实报出「这次尝试成不成功」
+     * <p>
+     * <b>与登录态是两件事。</b>「问出了明确的未登录」是一次<b>成功</b>的复检——
+     * 我们拿到了答案；而「网络不通」才是失败。{@link #verify()} 返回的是前者（状态），
+     * 退避需要的是后者（尝试结果），拿状态当结果会让「凭据失效」被误当成故障而不断退避，
+     * 于是恰好在最该密切观察的时候把复检拉稀。
+     * @return 本次尝试的结果
+     */
+    private MaintenanceOutcome verifyOnce() {
         if (isStopping()) {
-            return loggedIn;
+            return MaintenanceOutcome.SKIPPED;
         }
 
         try {
@@ -166,7 +207,7 @@ public class BilibiliAccountService {
 
             if (uid == null) {
                 markLoggedOut();
-                return false;
+                return MaintenanceOutcome.OK;
             }
 
             this.loginUid = uid;
@@ -174,19 +215,19 @@ public class BilibiliAccountService {
                 this.loggedIn = true;
                 log.info("哔哩哔哩登录态已恢复, uid: {}", uid);
             }
-            return true;
+            return MaintenanceOutcome.OK;
         } catch (ResponseCodeException e) {
             if (e.getCode() == BilibiliApiUtil.CODE_NOT_LOGGED_IN) {
                 lastVerifiedAt = Instant.now();
                 markLoggedOut();
-                return false;
+                return MaintenanceOutcome.OK;
             }
 
             log.warn("登录态复检返回未预期的错误代码 {}, 暂维持原状态: {}", e.getCode(), e.getMessage());
-            return loggedIn;
+            return MaintenanceOutcome.FAILED;
         } catch (Exception e) {
             log.debug("登录态复检失败, 疑为网络故障, 暂维持原状态: {}", e.getMessage());
-            return loggedIn;
+            return MaintenanceOutcome.FAILED;
         }
     }
 
@@ -208,11 +249,71 @@ public class BilibiliAccountService {
      * @return 复检后的登录态
      */
     public boolean maintain() {
-        boolean alive = verify();
-        if (alive) {
-            refreshCookiesIfNeeded();
+        return maintain(Instant.now());
+    }
+
+    /**
+     * 例行维护，时刻由调用方给
+     * <p>
+     * 供测试用固定时刻推进退避的级数，不必 sleep。
+     * @param now 当前时刻
+     * @return 复检后的登录态
+     */
+    boolean maintain(Instant now) {
+        if (verifyBackoff.due(now)) {
+            record(verifyBackoff, verifyOnce(), now, "登录态复检");
         }
-        return alive;
+
+        // 续期只在登录态正常时才有意义：掉登录后再怎么续也是徒劳。
+        // 这道门与退避是两回事——门管「该不该做」，退避管「什么时候再试」
+        if (loggedIn && refreshBackoff.due(now)) {
+            record(refreshBackoff, refreshOnce(), now, "Cookie 续期");
+        }
+
+        return loggedIn;
+    }
+
+    /**
+     * 把一次尝试的结果记进对应的退避
+     * <p>
+     * {@code SKIPPED} 既不算成功也不算失败：压根没做的事不该改变重试节奏。
+     * 若把它当成功，关掉自动续期的部署会每个周期都白跑一遍判断；
+     * 若把它当失败，间隔会因为一个「本来就不做」的开关被推到上限。
+     */
+    private void record(BilibiliStagedBackoff backoff, MaintenanceOutcome outcome, Instant now, String what) {
+        switch (outcome) {
+            case OK -> backoff.succeeded(now);
+            case FAILED -> {
+                Duration delay = backoff.failed(now);
+                // 连续失败次数与下次间隔一起写出来：只说「失败了」的日志，
+                // 看的人无法判断它是偶发抖动还是已经退到上限
+                log.warn("{}连续失败 {} 次, {} 秒后再试",
+                        what, backoff.getConsecutiveFailures(), delay.toSeconds());
+            }
+            case SKIPPED -> {
+            }
+        }
+    }
+
+    /**
+     * 一次维护尝试的结果，只用于决定「下次什么时候再试」
+     * <p>
+     * 与业务结果分开：复检问出「已掉登录」是一次成功的复检，续期问出「不需要续期」
+     * 也是一次成功的续期检查。<b>把业务结果当尝试结果，是这两处原本的毛病。</b>
+     */
+    private enum MaintenanceOutcome {
+        /**
+         * 做成了，或者服务端明确答复「不需要做」
+         */
+        OK,
+        /**
+         * 压根没做：停机中、开关关着、缺刷新口令
+         */
+        SKIPPED,
+        /**
+         * 试了没成：网络不通、未预期错误码、续期链路失败
+         */
+        FAILED
     }
 
     /**
@@ -231,20 +332,36 @@ public class BilibiliAccountService {
      * @return 是否完成了一次续期
      */
     public boolean refreshCookiesIfNeeded() {
+        return refreshOnce() == MaintenanceOutcome.OK && refreshed;
+    }
+
+    /**
+     * 按需续期一次并如实报出「这次尝试成不成功」
+     * <p>
+     * 原来那个 {@code boolean} 返回值把六种情形压成了一个 {@code false}：停机中、
+     * 关了自动续期、没有刷新口令、查询失败、服务端说不需要、续期本身失败。
+     * <b>其中只有两种是失败</b>，而退避若按 {@code false} 升级，
+     * 「服务端说不需要续期」这个最常见的正常情形会把间隔一路推到上限。
+     * @return 本次尝试的结果
+     */
+    private MaintenanceOutcome refreshOnce() {
+        refreshed = false;
+
         if (isStopping() || !properties.isAutoRefreshCookie()) {
-            return false;
+            return MaintenanceOutcome.SKIPPED;
         }
 
         Cookies current = api.getCookies();
         if (!current.isRefreshable()) {
             // 旧版本保存的凭据里没有刷新口令，只能等下次扫码时补上，不必反复告警
             log.debug("当前凭据缺少持久化刷新口令, 跳过 Cookie 续期");
-            return false;
+            return MaintenanceOutcome.SKIPPED;
         }
 
         // TV 端登录取得的凭据走 oauth2 续期，与 Web 端的接口和参数完全不同
         if (current.isAppRefreshable()) {
-            return refreshAppTokenIfNeeded(current);
+            refreshed = refreshAppTokenIfNeeded(current);
+            return MaintenanceOutcome.OK;
         }
 
         BilibiliApiUtil.CookieRefreshHint hint;
@@ -252,15 +369,18 @@ public class BilibiliAccountService {
             hint = api.checkCookieRefresh();
         } catch (Exception e) {
             log.debug("查询 Cookie 续期状态失败: {}", e.getMessage());
-            return false;
+            return MaintenanceOutcome.FAILED;
         }
 
         if (!hint.needed()) {
-            return false;
+            return MaintenanceOutcome.OK;
         }
 
         log.info("哔哩哔哩提示当前凭据需要续期, 开始续期");
-        return doRefresh(current, hint.timestamp());
+        refreshed = doRefresh(current, hint.timestamp());
+        // 续期没做成是失败：这一步不可回退，做不成时旧凭据仍在手上，
+        // 但下次不该立刻再试——真正续不动时反复调这条链路只是给风控送素材
+        return refreshed ? MaintenanceOutcome.OK : MaintenanceOutcome.FAILED;
     }
 
     /**
