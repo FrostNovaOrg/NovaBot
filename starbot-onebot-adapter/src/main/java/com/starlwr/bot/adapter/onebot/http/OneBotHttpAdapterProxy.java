@@ -3,6 +3,7 @@ package com.starlwr.bot.adapter.onebot.http;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.adapter.onebot.annotation.OneBotApi;
 import com.starlwr.bot.adapter.onebot.exception.OneBotApiException;
+import com.starlwr.bot.adapter.onebot.health.OneBotConnectionState;
 import com.starlwr.bot.adapter.onebot.model.OneBotSender;
 import com.starlwr.bot.core.util.HttpUtil;
 import com.starlwr.bot.core.util.StringUtil;
@@ -20,8 +21,11 @@ import java.util.Map;
 public class OneBotHttpAdapterProxy implements InvocationHandler {
     private final HttpUtil http;
 
-    public OneBotHttpAdapterProxy(HttpUtil http) {
+    private final OneBotConnectionState state;
+
+    public OneBotHttpAdapterProxy(HttpUtil http, OneBotConnectionState state) {
         this.http = http;
+        this.state = state;
     }
 
     @Override
@@ -49,7 +53,14 @@ public class OneBotHttpAdapterProxy implements InvocationHandler {
 
                 log.debug("OneBotApi <- : {} {}", api.url(), StringUtil.getOmitString(params.toJSONString(), sender.getDebugLogMaxLength()));
                 String url = apiBaseUrl + api.url();
+
+                // 每个 OneBot 接口调用都从这里过，是记录往返耗时唯一不会漏的地方。
+                // 耗时是一个健康维度：接口调得通但每次要好几秒时，图片推送会因为
+                // 没有工作线程去读那个大请求体而超时丢弃，而连通性检查全程看不出异常
+                long startTime = System.currentTimeMillis();
                 JSONObject result = http.postJson(url, headers, params);
+                state.recordLatency(sender.getName(), System.currentTimeMillis() - startTime);
+
                 log.debug("OneBotApi -> : {} {}", api.url(), result.toJSONString());
 
                 if (result.getInteger("retcode") != 0) {

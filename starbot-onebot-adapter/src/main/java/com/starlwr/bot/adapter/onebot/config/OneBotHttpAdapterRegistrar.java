@@ -1,5 +1,6 @@
 package com.starlwr.bot.adapter.onebot.config;
 
+import com.starlwr.bot.adapter.onebot.health.OneBotConnectionState;
 import com.starlwr.bot.adapter.onebot.http.OneBotHttpAdapter;
 import com.starlwr.bot.adapter.onebot.http.OneBotHttpAdapterProxy;
 import com.starlwr.bot.core.plugin.StarBotComponent;
@@ -16,8 +17,8 @@ import java.lang.reflect.Proxy;
 @StarBotComponent
 public class OneBotHttpAdapterRegistrar {
     @Bean
-    public OneBotHttpAdapterProxy oneBotHttpAdapterProxy(HttpUtil http) {
-        return new OneBotHttpAdapterProxy(http);
+    public OneBotHttpAdapterProxy oneBotHttpAdapterProxy(HttpUtil http, OneBotConnectionState state) {
+        return new OneBotHttpAdapterProxy(http, state);
     }
 
     @Bean

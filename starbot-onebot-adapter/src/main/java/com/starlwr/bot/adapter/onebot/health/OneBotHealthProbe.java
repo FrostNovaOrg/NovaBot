@@ -1,5 +1,6 @@
 package com.starlwr.bot.adapter.onebot.health;
 
+import com.starlwr.bot.adapter.onebot.config.OneBotAdapterPluginProperties;
 import com.starlwr.bot.core.health.HealthProbe;
 import com.starlwr.bot.core.health.HealthStatus;
 import com.starlwr.bot.core.plugin.StarBotComponent;
@@ -8,20 +9,28 @@ import org.springframework.beans.factory.annotation.Autowired;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * OneBot 连接健康探针
  * <p>
  * 只读取 {@link OneBotConnectionState} 中缓存的结果，不发起网络请求：实际探测由启动检查与
  * 定时检测完成。
+ * <p>
+ * 判据有四项：HTTP 通不通、账号在不在线、Websocket 在不在、以及<b>调用有多快</b>。
+ * 最后一项是 2026-08-10 那次故障补上的——当时接口每次要 2~11 秒，前三项全绿了十个小时，
+ * 而带图的推送一直在丢。「通不通」答不了「够不够用」。
  */
 @StarBotComponent
 public class OneBotHealthProbe implements HealthProbe {
     private final OneBotConnectionState state;
 
+    private final OneBotAdapterPluginProperties properties;
+
     @Autowired
-    public OneBotHealthProbe(OneBotConnectionState state) {
+    public OneBotHealthProbe(OneBotConnectionState state, OneBotAdapterPluginProperties properties) {
         this.state = state;
+        this.properties = properties;
     }
 
     @Override
@@ -57,9 +66,12 @@ public class OneBotHealthProbe implements HealthProbe {
             OneBotConnectionState.Status account = item.getValue().getAccount();
             OneBotConnectionState.Status websocket = item.getValue().getWebsocket();
 
+            Optional<Long> slowMedian = slowMedian(item.getValue().getLatency());
+
             summaries.add(sender + "：HTTP " + brief(http)
                     + " / 账号 " + briefAccount(account)
-                    + " / WS " + brief(websocket));
+                    + " / WS " + brief(websocket)
+                    + slowMedian.map(m -> " / 调用慢（中位 " + format(m) + "）").orElse(""));
 
             // HTTP 不通即无法推送消息，属于致命；Websocket 只用于接收事件，断开仅影响插件功能
             if (http.kind() != OneBotConnectionState.Kind.OK) {
@@ -75,9 +87,46 @@ public class OneBotHealthProbe implements HealthProbe {
                 worst = HealthStatus.Level.DEGRADED;
                 advices.add(sender + " 的 Websocket " + websocket.detail() + "，消息仍可推送，但收不到群内事件");
             }
+
+            // 慢与上面几项是并列的判据，不能放进同一条 else-if 链：
+            // 「Websocket 也断了」不该让「调用很慢」这条建议消失，两者的处置办法不同
+            if (slowMedian.isPresent()) {
+                if (worst == HealthStatus.Level.OK) {
+                    worst = HealthStatus.Level.DEGRADED;
+                }
+                advices.add(sender + " 的接口调用已明显变慢（最近 " + OneBotConnectionState.LATENCY_SAMPLES
+                        + " 次中位 " + format(slowMedian.get())
+                        + "，最慢 " + item.getValue().getLatency().max().map(this::format).orElse("未知")
+                        + "），接口仍然通，但带图的推送可能因超时被丢弃。"
+                        + "先用 curl 直接调一次 OneBot 实现：curl 快而本程序慢，说明慢在本程序这一侧"
+                        + "（查过的方向：cgroup 内存软上限节流、GC、线程占满），两边都慢才是 OneBot 实现的问题");
+            }
         }
 
         return new HealthStatus(worst, String.join("；", summaries), String.join("；", advices));
+    }
+
+    /**
+     * 判定接口调用是否已明显变慢
+     * <p>
+     * 取最近若干次的中位数：健康时也有偶发的慢调用，只看最近一次会被毛刺反复翻黄。
+     * 样本不足时不作判断——宁可不说，也不要拿两三个样本硬出一个结论。
+     * @param latency 耗时记录
+     * @return 已判定为慢时返回中位耗时，否则为空
+     */
+    private Optional<Long> slowMedian(OneBotConnectionState.Latency latency) {
+        int threshold = properties.getDetect().getSlowThresholdMillis();
+        if (threshold <= 0) {
+            return Optional.empty();
+        }
+        return latency.median().filter(median -> median > threshold);
+    }
+
+    /**
+     * 毫秒数的可读形式
+     */
+    private String format(long millis) {
+        return millis >= 1000 ? String.format("%.1f 秒", millis / 1000.0) : millis + " 毫秒";
     }
 
     /**

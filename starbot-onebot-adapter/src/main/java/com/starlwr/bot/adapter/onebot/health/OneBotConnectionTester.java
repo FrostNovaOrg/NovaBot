@@ -48,7 +48,9 @@ public class OneBotConnectionTester implements BotConnectionTester {
     @Override
     public Result test(String address, int httpPort, String httpToken) {
         OneBotSender sender = new OneBotSender();
-        sender.setName("__connection_test__");
+        // 用保留名，让耗时统计等按平台聚合的指标能把这次临时调用排除掉：
+        // 测试连接常常正是指向一个填错的地址，混进真实平台的统计会把它带歪
+        sender.setName(OneBotConnectionState.RESERVED_TEST_SENDER);
         sender.setOneBotAddress(address);
         sender.setOneBotHttpPort(httpPort);
         sender.setOneBotHttpToken(httpToken);

@@ -4,8 +4,10 @@ import com.starlwr.bot.core.plugin.StarBotComponent;
 import lombok.Getter;
 
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -17,6 +19,24 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @StarBotComponent
 public class OneBotConnectionState {
+    /**
+     * 连接测试用的保留平台名
+     * <p>
+     * 测试连接时会临时构造一个假平台去调一次真接口。它的结果不代表任何在用的平台，
+     * 记进来会污染真实平台的统计——尤其是耗时，测试常常正是指向一个填错的地址。
+     */
+    public static final String RESERVED_TEST_SENDER = "__connection_test__";
+
+    /**
+     * 参与耗时中位数计算的最近样本数
+     * <p>
+     * 取中位数而不是最近一次：健康时也有偶发慢调用（实测 2026-08-08/09 两天中位
+     * <b>0.00 秒</b>、p99 2.4 秒），只看最近一次会被这种毛刺反复翻黄；
+     * 真退化时是整体抬升（同一测法 2026-08-10 中位 <b>2.83 秒</b>、p90 10.4 秒）。
+     * 中位数能把这两种情形分开，而单点样本不能。
+     */
+    static final int LATENCY_SAMPLES = 20;
+
     private final Map<String, Entry> entries = new ConcurrentHashMap<>();
 
     /**
@@ -98,6 +118,27 @@ public class OneBotConnectionState {
     }
 
     /**
+     * 记录一次 OneBot 接口调用的往返耗时
+     * <p>
+     * 只判「通不通」会漏掉一整类故障。2026-08-10 生产上 OneBot 接口连续十小时每次要
+     * 2~11 秒，接口一直返回 200、账号一直在线，状态页因此<b>全程显示正常</b>，
+     * 而带图的推送已经在丢：图片是几百 KB 的内联 base64，转发一慢就没有工作线程去读它，
+     * 最终卡满超时被丢弃。事后查明是 cgroup 内存软上限在节流整个进程。
+     * <p>
+     * 那次故障里唯一如实变化的量就是耗时，所以它必须和连通性一样是一个健康维度。
+     * 只记成功的调用：失败自有 {@link #httpFailed} 记录并直接判 DOWN，
+     * 把失败的耗时混进来只会让中位数变成两种含义的混合物。
+     * @param sender 推送平台名
+     * @param millis 本次调用的往返耗时，单位: 毫秒
+     */
+    public void recordLatency(String sender, long millis) {
+        if (RESERVED_TEST_SENDER.equals(sender)) {
+            return;
+        }
+        entry(sender).latency.add(millis);
+    }
+
+    /**
      * 获取全部推送平台的连接状态
      * @return 推送平台名到状态的映射
      */
@@ -172,5 +213,66 @@ public class OneBotConnectionState {
         private volatile Status account = new Status(Kind.UNKNOWN, "尚未检查", null);
 
         private volatile Status websocket = new Status(Kind.UNKNOWN, "尚未检查", null);
+
+        private final Latency latency = new Latency();
+    }
+
+    /**
+     * 最近若干次调用的往返耗时
+     * <p>
+     * 有意做成固定长度的环：健康探针会被状态页反复调用，不能让它读一个持续增长的列表。
+     */
+    public static class Latency {
+        private final long[] samples = new long[LATENCY_SAMPLES];
+
+        private int count;
+
+        private int next;
+
+        private synchronized void add(long millis) {
+            samples[next] = millis;
+            next = (next + 1) % samples.length;
+            if (count < samples.length) {
+                count++;
+            }
+        }
+
+        /**
+         * 已积累的样本数
+         * @return 样本数
+         */
+        public synchronized int count() {
+            return count;
+        }
+
+        /**
+         * 最近若干次调用耗时的中位数
+         * <p>
+         * 样本不足时返回空，而不是拿一两个样本硬算一个数字充当结论。
+         * @return 中位数（毫秒），样本不足时为空
+         */
+        public synchronized Optional<Long> median() {
+            if (count < 3) {
+                return Optional.empty();
+            }
+            long[] sorted = Arrays.copyOf(samples, count);
+            Arrays.sort(sorted);
+            return Optional.of(sorted[count / 2]);
+        }
+
+        /**
+         * 最近若干次调用里最慢的一次
+         * @return 最大耗时（毫秒），无样本时为空
+         */
+        public synchronized Optional<Long> max() {
+            if (count == 0) {
+                return Optional.empty();
+            }
+            long worst = samples[0];
+            for (int i = 1; i < count; i++) {
+                worst = Math.max(worst, samples[i]);
+            }
+            return Optional.of(worst);
+        }
     }
 }
