@@ -210,12 +210,19 @@ public class BilibiliLiveRoomService {
 
     /**
      * 对全部连接执行一次风控检测
+     * <p>
+     * <b>这行日志只陈述观测，不断言成因。</b> 检测器能看到的只是「业务消息断流」，
+     * 而断流可能来自平台限制下发、协议改版导致解析不出、连接半死，也可能只是没人说话。
+     * 此处一度写作「已被数据风控, 该直播间的弹幕、礼物等事件将无法接收」——
+     * 2026-08-10 那次误报打出来的正是它，而当时采集根本没停，弹幕照常入库。
+     * <b>把推断写成结论，会让人去查一个不存在的故障。</b>
      */
     private void detectRisk() {
         connectors.values().stream()
                 .filter(BilibiliLiveRoomConnector::detectRisk)
                 .forEach(connector -> log.warn(
-                        "直播间 {} 已被数据风控, 该直播间的弹幕、礼物等事件将无法接收, 开播下播推送仍可通过备用直播推送保障",
+                        "直播间 {} 业务消息断流, 原因未定（可能是平台限制下发、解析不出、连接半死或确实无人发言）, "
+                                + "开播下播推送仍可通过备用直播推送保障",
                         connector.getSource().getRoomId()));
     }
 

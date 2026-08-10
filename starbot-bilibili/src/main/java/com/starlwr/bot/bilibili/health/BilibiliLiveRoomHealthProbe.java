@@ -57,11 +57,14 @@ public class BilibiliLiveRoomHealthProbe implements HealthProbe {
 
         String summary = connected + "/" + managed + " 已连接";
 
-        // 被风控时长连接看似正常，弹幕与礼物却收不到，需要单独指出
+        // 断流时长连接看似正常，业务消息却不来，需要单独指出。
+        // 但只说观测、不说成因：这里分不清平台限制、解析不出、连接半死与「确实没人说话」，
+        // 2026-08-10 的误报就是把最后一种当成了第一种
         if (risk > 0) {
-            return HealthStatus.degraded(summary + "，其中 " + risk + " 个被数据风控",
-                    "被风控的直播间收不到弹幕、礼物等事件，开播下播推送仍由备用直播推送保障。"
-                            + "通常与账号或 IP 有关，可稍后重试或改用其他账号");
+            return HealthStatus.degraded(summary + "，其中 " + risk + " 个业务消息断流",
+                    "断流的直播间暂时收不到弹幕、礼物等事件，开播下播推送仍由备用直播推送保障。"
+                            + "原因未定：可能是平台限制下发、账号或 IP 受限、也可能只是当时无人发言。"
+                            + "先看该直播间是否确有人在互动，再考虑稍后重试或改用其他账号");
         }
 
         if (connected < managed) {
