@@ -3,6 +3,7 @@ package com.starlwr.bot.core.listener;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.event.live.common.LiveOnEvent;
 import com.starlwr.bot.core.service.LiveDataService;
+import com.starlwr.bot.core.service.LiveSessionRecovery;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
@@ -22,10 +23,14 @@ public class StarBotDefaultLiveOnEventListener {
 
     private final LiveDataService liveDataService;
 
+    private final LiveSessionRecovery sessionRecovery;
+
     @Autowired
-    public StarBotDefaultLiveOnEventListener(StarBotCoreProperties properties, LiveDataService liveDataService) {
+    public StarBotDefaultLiveOnEventListener(StarBotCoreProperties properties, LiveDataService liveDataService,
+                                             LiveSessionRecovery sessionRecovery) {
         this.properties = properties;
         this.liveDataService = liveDataService;
+        this.sessionRecovery = sessionRecovery;
     }
 
     /**
@@ -57,6 +62,12 @@ public class StarBotDefaultLiveOnEventListener {
             log.info("[{}] [断线重连] {}(UID: {}, 房间号: {})", event.getPlatform(), event.getSource().getUname(), event.getSource().getUid(), event.getSource().getRoomIdString());
         } else {
             log.info("[{}] [开播] {}(UID: {}, 房间号: {})", event.getPlatform(), event.getSource().getUname(), event.getSource().getUid(), event.getSource().getRoomIdString());
+        }
+
+        if (!event.isReconnect()) {
+            // 必须赶在 setLiveStatus 与 resetLiveData 之前：前者会抹掉「上一场还挂着」这个判据，
+            // 后者会把上一场的统计清光。程序在上一场进行中崩过的话，这是它唯一的归档机会
+            sessionRecovery.archiveUnclosedIfAny(event.getPlatform(), event.getSource(), event.getTimestamp());
         }
 
         liveDataService.setLiveStatus(event.getPlatform(), event.getSource().getUid(), true);

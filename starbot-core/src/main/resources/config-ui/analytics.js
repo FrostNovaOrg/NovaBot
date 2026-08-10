@@ -12,6 +12,13 @@ function fmtDuration(seconds) {
   return h ? h + ' 时 ' + m + ' 分' : m + ' 分';
 }
 
+// 缺口不能用 fmtDuration：它按分钟四舍五入，一次 44 秒的重启会显示成「1 分」，
+// 而 20 秒的会显示成「0 分」。缺口本来就常在秒的量级，得留住秒
+function fmtGap(seconds) {
+  const h = Math.floor(seconds / 3600), m = Math.floor((seconds % 3600) / 60), s = seconds % 60;
+  return [h ? h + ' 时' : '', m ? m + ' 分' : '', s ? s + ' 秒' : ''].filter(Boolean).join(' ');
+}
+
 function fmtMetric(value, metric) {
   if (value === undefined || value === null) return '—';
   return metric.money ? value.toFixed(2) : Math.round(value).toLocaleString('en-US');
@@ -93,11 +100,14 @@ function renderSessionList(d) {
     const titles = s.titles || [];
     const title = titles.length ? (titles[titles.length - 1].title || '') : '';
     const changed = s.titleChangeCount ? '（改过 ' + s.titleChangeCount + ' 次）' : '';
+    // 缺口标在时长这一格：这一行的每个数字都受它影响，看时长的人必须同时看到它
+    const gap = s.maintenanceGapSeconds || 0;
 
     return '<tr' + (s.interrupted ? ' class="empty-row"' : '') + '>'
       + '<td>' + esc(fmtTime(s.startTime)) + flag + '</td>'
       + (multi ? '<td>' + esc(s.uname || s.uid) + '</td>' : '')
-      + '<td class="n">' + esc(fmtDuration(s.durationSeconds)) + '</td>'
+      + '<td class="n"' + (gap ? ' title="其中 ' + esc(fmtGap(gap)) + '因程序停机未采集，本行各项计数只是下界"' : '')
+      + '>' + esc(fmtDuration(s.durationSeconds)) + (gap ? ' ⚠' : '') + '</td>'
       + shown.map(m => '<td class="n">' + esc(fmtMetric(s.metrics[m.key] || 0, m)) + '</td>').join('')
       + '<td title="' + esc(title) + '">'
       + esc((title.length > 18 ? title.slice(0, 18) + '…' : title) + changed) + '</td></tr>';
@@ -113,9 +123,12 @@ function renderSessionList(d) {
     notes.push('这些场次里全为零的 ' + hidden + ' 项指标未列出。');
   }
   if (interrupted) {
-    notes.push('被平台中断的场次已标出：它的时长与营收和正常场次不可比，做趋势判断时应当单独看待。');
+    notes.push('被中断或未闭合的场次已标出：它的时长与营收和正常场次不可比，做趋势判断时应当单独看待。');
   }
-  notes.push('4.3.0 之前归档的场次没有结束原因与标题记录，一律显示为正常结束。');
+  if (sessions.some(s => (s.maintenanceGapSeconds || 0) > 0)) {
+    notes.push('时长后带 ⚠ 的场次有程序停机造成的采集缺口，那几场的计数只是下界；缺口期间到达的弹幕与礼物无法补采。');
+  }
+  notes.push('4.3.0 之前归档的场次没有结束原因、标题记录与缺口统计，一律显示为正常结束、无缺口。');
   $('#ana-note').textContent = notes.join('');
 }
 

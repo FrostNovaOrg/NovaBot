@@ -174,7 +174,10 @@ public class LiveSessionArchive {
                     metrics,
                     userCounts,
                     parseEndReason(json.getString("endReason")),
-                    parseTitles(json.getJSONArray("titles")));
+                    parseTitles(json.getJSONArray("titles")),
+                    // 4.3.0 之前的记录没有这一项，缺失读成 0：那时候确实没在算缺口，
+                    // 报成 0 是「不知道」而不是「我保证一秒没漏」——这一点在 analytics 里注明
+                    json.getLongValue("maintenanceGapSeconds"));
         } catch (Exception e) {
             log.debug("跳过归档中无法解析的一行: {}", e.getMessage());
             return null;

@@ -85,6 +85,12 @@ public class StarBotDefaultLiveOffEventListener {
             log.warn("{} 本场直播{}, 时长 {} 秒不代表正常水平", source.getUname(), endReason.getDescription(), duration);
         }
 
+        // 本场之内程序停过的时段，只算与本场重叠的部分
+        long gap = liveDataService.downtimeWithin(start.get(), endTime) / 1000;
+        if (gap > 0) {
+            log.warn("{} 本场有 {} 秒因程序停机未采集, 各项计数只是下界", source.getUname(), gap);
+        }
+
         archive.append(new LiveSession(
                 event.getPlatform(),
                 source.getUid(),
@@ -96,6 +102,7 @@ public class StarBotDefaultLiveOffEventListener {
                 liveDataService.getLiveMetrics(event.getPlatform(), source.getUid()),
                 liveDataService.getLiveMetricUserCounts(event.getPlatform(), source.getUid()),
                 endReason,
-                roomInfoHistory.history(event.getPlatform(), source.getUid())));
+                roomInfoHistory.history(event.getPlatform(), source.getUid()),
+                gap));
     }
 }

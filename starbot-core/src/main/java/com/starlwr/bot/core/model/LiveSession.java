@@ -29,6 +29,7 @@ import java.util.Map;
  * @param userCounts 各计分表的独立参与人数
  * @param endReason 结束原因，用于把被平台切断的场次与正常场次区分开
  * @param titles 本场的标题与分区轨迹，首条为开播时的初始值
+ * @param maintenanceGapSeconds 本场之内因程序停机而没有采集的秒数
  */
 public record LiveSession(
         String platform,
@@ -41,17 +42,28 @@ public record LiveSession(
         Map<String, Double> metrics,
         Map<String, Integer> userCounts,
         LiveEndReason endReason,
-        List<RoomInfoSnapshot> titles
+        List<RoomInfoSnapshot> titles,
+        long maintenanceGapSeconds
 ) {
     /**
-     * 按正常结束、无标题记录构造
+     * 按正常结束、无标题记录、无停机缺口构造
      * <p>
-     * 绝大多数场次都是这种情况，另有 4.3.0 之前归档的历史记录也没有这两项。
+     * 绝大多数场次都是这种情况，另有 4.3.0 之前归档的历史记录也没有这几项。
      */
     public LiveSession(String platform, Long uid, String uname, Long roomId, long startTime, long endTime,
                        long durationSeconds, Map<String, Double> metrics, Map<String, Integer> userCounts) {
         this(platform, uid, uname, roomId, startTime, endTime, durationSeconds, metrics, userCounts,
-                LiveEndReason.NORMAL, List.of());
+                LiveEndReason.NORMAL, List.of(), 0);
+    }
+
+    /**
+     * 按无停机缺口构造，供只关心结束原因与标题轨迹的调用方与既有测试使用
+     */
+    public LiveSession(String platform, Long uid, String uname, Long roomId, long startTime, long endTime,
+                       long durationSeconds, Map<String, Double> metrics, Map<String, Integer> userCounts,
+                       LiveEndReason endReason, List<RoomInfoSnapshot> titles) {
+        this(platform, uid, uname, roomId, startTime, endTime, durationSeconds, metrics, userCounts,
+                endReason, titles, 0);
     }
 
     /**
@@ -85,5 +97,15 @@ public record LiveSession(
      */
     public int titleChangeCount() {
         return titles == null ? 0 : Math.max(0, titles.size() - 1);
+    }
+
+    /**
+     * 本场是否有没采到的时段
+     * <p>
+     * 有缺口时各项计数<b>只是下界</b>。缺口期间到达的弹幕与礼物没有任何实例在接收，
+     * 事后也无法补——平台不提供回溯。
+     */
+    public boolean hasMaintenanceGap() {
+        return maintenanceGapSeconds > 0;
     }
 }

@@ -1,5 +1,6 @@
 package com.starlwr.bot.core.service;
 
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.model.UserScore;
@@ -47,6 +48,14 @@ public class DefaultLiveDataService implements LiveDataService {
     }
 
     /**
+     * 上一个进程最后一次落盘的时刻，启动读文件时取下来
+     * <p>
+     * 必须在这里存一份：自动保存会不断改写文件里的那个值，几十秒后就问不出上次停在哪了，
+     * 而崩溃恢复与停机缺口都要拿它当水位线。
+     */
+    private Long loadedLastSaveTime;
+
+    /**
      * 加载直播数据
      */
     @Order(-10000)
@@ -63,7 +72,50 @@ public class DefaultLiveDataService implements LiveDataService {
                 log.error("读取直播数据 {} 异常", liveDataPath, e);
             }
             log.info("直播数据加载完成");
+            readWatermark();
             autoSave();
+        }
+    }
+
+    /**
+     * 读出上次落盘的水位线，并立刻把「本次是否正常退出」置为否
+     * <p>
+     * 立刻改写文件是有意的：这一项要到下一次自动保存才会被刷新，
+     * 而进程刚起来那几十秒里崩掉的话，文件里还留着上次的「正常退出」，
+     * 于是一次真崩溃会被报成一次正常停机。多写一次几 KB 的文件换掉这个误报。
+     */
+    private void readWatermark() {
+        loadedLastSaveTime = cache.getLong(KEY_LAST_SAVE_TIME);
+        boolean clean = cache.getBooleanValue(KEY_CLEAN_SHUTDOWN);
+
+        if (loadedLastSaveTime == null) {
+            // 4.3.0 之前的数据文件没有这一项，属正常
+            log.info("直播数据里没有上次落盘时刻, 本次不做崩溃恢复与缺口计算");
+        } else {
+            log.info("上次落盘于 {}, 上次退出{}", localTime(loadedLastSaveTime),
+                    clean ? "正常" : "异常（崩溃或被强杀）");
+        }
+
+        if (cache.isEmpty()) {
+            return;
+        }
+
+        saveNow(false);
+    }
+
+    /**
+     * 立刻把本场数据落盘
+     * <p>
+     * 三个调用点共用：启动改写、自动保存、退出收尾。抽出来是为了让测试能精确地
+     * 模拟「崩溃前最后一次自动保存」——那是 {@code kill -9} 之后文件里唯一剩下的东西。
+     * @param cleanShutdown 是否为正常退出时的收尾保存
+     */
+    void saveNow(boolean cleanShutdown) {
+        String liveDataPath = properties.getLive().getLiveDataPath();
+        try {
+            Files.writeString(Path.of(liveDataPath), snapshot(cleanShutdown));
+        } catch (Exception e) {
+            log.error("保存直播数据至 {} 异常", liveDataPath, e);
         }
     }
 
@@ -83,28 +135,17 @@ public class DefaultLiveDataService implements LiveDataService {
         if (properties.getLive().isSaveLiveData()) {
             String liveDataPath = properties.getLive().getLiveDataPath();
             log.info("开始保存直播数据至 {}", liveDataPath);
-            try {
-                Files.writeString(Path.of(liveDataPath), snapshot());
-            } catch (Exception e) {
-                log.error("保存直播数据至 {} 异常", liveDataPath, e);
-            }
+            saveNow(true);
             log.info("直播数据已保存至 {}", liveDataPath);
         }
     }
 
     public void autoSave() {
         int interval = properties.getLive().getAutoSaveLiveDataInterval();
-        Path path = Path.of(properties.getLive().getLiveDataPath());
 
         scheduler.scheduleWithFixedDelay(() -> {
             Thread.currentThread().setName("auto-save-data");
-
-            try {
-                Files.writeString(path, snapshot());
-            } catch (Exception e) {
-                log.error("自动保存直播数据异常", e);
-            }
-
+            saveNow(false);
         }, interval, interval, TimeUnit.SECONDS);
     }
 
@@ -113,10 +154,106 @@ public class DefaultLiveDataService implements LiveDataService {
      * <p>
      * 统计指标随直播间消息高频写入，序列化遍历期间若结构变化会直接抛异常，
      * 故拿锁序列化；文件写入在锁外进行，避免磁盘慢时阻塞指标写入。
+     * <p>
+     * 落盘时刻在这里盖章而不是由调用方传：它必须与这一份快照的内容严格对应，
+     * 否则「采集到哪儿为止」就成了一个近似值。
+     * @param cleanShutdown 本次是否为正常退出时的收尾保存
      */
-    private String snapshot() {
+    private String snapshot(boolean cleanShutdown) {
         synchronized (metricLock) {
+            cache.put(KEY_LAST_SAVE_TIME, System.currentTimeMillis());
+            cache.put(KEY_CLEAN_SHUTDOWN, cleanShutdown);
             return cache.toJSONString();
+        }
+    }
+
+    // ================ 采集水位线与停机缺口 ================
+
+    /**
+     * 最后一次落盘时刻的存放键
+     */
+    private static final String KEY_LAST_SAVE_TIME = "LastSaveTime";
+
+    /**
+     * 上次是否正常退出的存放键
+     */
+    private static final String KEY_CLEAN_SHUTDOWN = "CleanShutdown";
+
+    /**
+     * 停机区间列表的存放键
+     */
+    private static final String KEY_DOWNTIMES = "Downtimes";
+
+    /**
+     * 停机记录的保留时长。留 30 天：月度统计要算得出「这个月有多少时间没在采」，
+     * 再往前的场次早已归档，归档里带着当时算好的缺口
+     */
+    private static final long DOWNTIME_RETENTION_MILLIS = 30L * 24 * 60 * 60 * 1000;
+
+    /**
+     * 时刻的本机时区表示。运维日志里的时刻一律用本机时区，
+     * 混着 UTC 会让人对着两行日志算时差
+     */
+    private static String localTime(long millis) {
+        return java.time.Instant.ofEpochMilli(millis).atZone(java.time.ZoneId.systemDefault())
+                .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+    }
+
+    @Override
+    public Optional<Long> getLastSaveTime() {
+        return Optional.ofNullable(loadedLastSaveTime);
+    }
+
+    @Override
+    public void recordDowntime(long from, long to) {
+        if (to <= from) {
+            return;
+        }
+
+        synchronized (metricLock) {
+            JSONArray downtimes = cache.getJSONArray(KEY_DOWNTIMES);
+            if (downtimes == null) {
+                downtimes = new JSONArray();
+                cache.put(KEY_DOWNTIMES, downtimes);
+            }
+
+            long expiry = System.currentTimeMillis() - DOWNTIME_RETENTION_MILLIS;
+            downtimes.removeIf(entry -> !(entry instanceof JSONObject json) || json.getLongValue("to") < expiry);
+
+            JSONObject entry = new JSONObject();
+            entry.put("from", from);
+            entry.put("to", to);
+            downtimes.add(entry);
+        }
+
+        log.info("已记录一段停机: {} ~ {}, 共 {} 秒", localTime(from), localTime(to), (to - from) / 1000);
+    }
+
+    @Override
+    public long downtimeWithin(long from, long to) {
+        if (to <= from) {
+            return 0;
+        }
+
+        synchronized (metricLock) {
+            JSONArray downtimes = cache.getJSONArray(KEY_DOWNTIMES);
+            if (downtimes == null || downtimes.isEmpty()) {
+                return 0;
+            }
+
+            long total = 0;
+            for (int i = 0; i < downtimes.size(); i++) {
+                JSONObject entry = downtimes.getJSONObject(i);
+                if (entry == null) {
+                    continue;
+                }
+                // 只算交集，跨越开播时刻的那一段停机里，开播之前那一截不属于本场
+                long overlap = Math.min(to, entry.getLongValue("to")) - Math.max(from, entry.getLongValue("from"));
+                if (overlap > 0) {
+                    total += overlap;
+                }
+            }
+            return total;
         }
     }
 

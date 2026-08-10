@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -138,6 +139,35 @@ class LiveSessionArchiveTest {
         assertEquals(2, summary.count());
         assertEquals(1_000_000L, summary.earliestStart());
         assertEquals(3_000_000L, summary.latestStart());
+    }
+
+    @Test
+    @DisplayName("停机缺口应原样存回读出")
+    void keepsMaintenanceGap() {
+        archive.append(new LiveSession("bilibili", 1L, "测试主播", 2L, 1_000_000L, 1_100_000L, 100,
+                Map.of(), Map.of(), com.starlwr.bot.core.enums.LiveEndReason.UNCLOSED, List.of(), 42));
+
+        LiveSession session = archive.find(0, Long.MAX_VALUE).get(0);
+
+        assertEquals(42, session.maintenanceGapSeconds());
+        assertTrue(session.hasMaintenanceGap());
+    }
+
+    @Test
+    @DisplayName("4.3.0 之前的记录没有缺口字段，读成 0 且不报错")
+    void oldRecordsHaveNoMaintenanceGap() throws Exception {
+        // 手工写一行当年格式的记录：没有 endReason、没有 titles、没有 maintenanceGapSeconds
+        Files.writeString(dir.resolve("sessions.jsonl"),
+                "{\"platform\":\"bilibili\",\"uid\":1,\"uname\":\"测试主播\",\"roomId\":2,"
+                        + "\"startTime\":1000000,\"endTime\":1100000,\"durationSeconds\":100,"
+                        + "\"metrics\":{\"danmu_count\":455},\"userCounts\":{\"danmu_users\":33}}\n",
+                StandardCharsets.UTF_8);
+
+        LiveSession session = archive.find(0, Long.MAX_VALUE).get(0);
+
+        assertEquals(0, session.maintenanceGapSeconds());
+        assertFalse(session.hasMaintenanceGap(), "读成 0 表示「当年没在算」，不表示「保证一秒没漏」");
+        assertEquals(455.0, session.metric("danmu_count"));
     }
 
     private LiveSession session(long startTime, long durationSeconds) {

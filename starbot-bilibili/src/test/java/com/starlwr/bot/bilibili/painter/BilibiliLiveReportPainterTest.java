@@ -418,6 +418,45 @@ class BilibiliLiveReportPainterTest {
         liveDataService.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.GUARD_VALUE, 138.0);
     }
 
+    @Test
+    @DisplayName("本场有停机缺口时应标注缺了多久，并画得出报告")
+    void annotatesMaintenanceGap() {
+        // 时刻取近期真实时间：停机记录有 30 天保留期，2023 年的区间会被当成过期
+        long start = System.currentTimeMillis() - 2 * 3600_000;
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+        liveDataService.setLiveEndTime(PLATFORM, STREAMER.getUid(), start + 2 * 3600_000);
+        liveDataService.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.DANMU_COUNT, 106);
+        // 开播 30 分钟后重启，缺了 12 分 34 秒
+        liveDataService.recordDowntime(start + 1800_000, start + 1800_000 + 754_000);
+
+        assertEquals("12 分 34 秒", painter.maintenanceGapText(PLATFORM, STREAMER.getUid()));
+
+        Optional<String> base64 = painter.paint(PLATFORM, STREAMER);
+        assertTrue(base64.isPresent());
+        dump("gap", base64.get());
+    }
+
+    @Test
+    @DisplayName("没有缺口时不该多出一句话")
+    void saysNothingWithoutGap() {
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), 1_700_000_000_000L);
+        liveDataService.setLiveEndTime(PLATFORM, STREAMER.getUid(), 1_700_000_000_000L + 3600_000);
+
+        assertEquals("", painter.maintenanceGapText(PLATFORM, STREAMER.getUid()));
+    }
+
+    @Test
+    @DisplayName("开播之前那一段停机不算进本场")
+    void gapBeforeStartIsNotCounted() {
+        long start = System.currentTimeMillis() - 3600_000;
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+        liveDataService.setLiveEndTime(PLATFORM, STREAMER.getUid(), start + 3600_000);
+        // 停机跨过开播时刻：开播前 10 分钟停到开播后 1 分钟，本场只该算那 1 分钟
+        liveDataService.recordDowntime(start - 600_000, start + 60_000);
+
+        assertEquals("1 分", painter.maintenanceGapText(PLATFORM, STREAMER.getUid()));
+    }
+
     /**
      * 取图片高度
      */

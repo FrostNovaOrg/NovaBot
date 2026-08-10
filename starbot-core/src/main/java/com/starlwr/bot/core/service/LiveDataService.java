@@ -44,6 +44,38 @@ public interface LiveDataService {
     void setLiveStartTime(@NonNull String platform, @NonNull Long uid, long startTime);
 
     /**
+     * 获取<b>上一个进程</b>最后一次把本场数据落盘的时刻
+     * <p>
+     * 这是「采集到哪儿为止」的水位线：这个时刻之后收到的消息，随进程一起没了。
+     * 崩溃恢复用它当未闭合场次的结束时刻，停机缺口用它当缺口的起点。
+     * <p>
+     * 取的是<b>启动时读到的那个值</b>，不是当前进程正在写的值——后者会被
+     * 自动保存不断刷新，几十秒后就问不出上次停在哪了。
+     * @return 上次落盘时刻（毫秒），不落盘或文件里没有这一项时为空
+     */
+    Optional<Long> getLastSaveTime();
+
+    /**
+     * 记一段停机（未采集）区间
+     * <p>
+     * 按<b>全局区间</b>存而不是按主播存：停机是进程层面的事，同时监听 10 个主播时
+     * 10 场直播共享同一段缺口，各自的报告只需截取与自己场次重叠的部分。
+     * @param from 起始时刻（毫秒，含）
+     * @param to 结束时刻（毫秒，含）
+     */
+    void recordDowntime(long from, long to);
+
+    /**
+     * 查询与给定区间重叠的停机总时长
+     * <p>
+     * 只算重叠部分：一段跨越开播时刻的停机，开播之前那一截不属于本场。
+     * @param from 区间起始（毫秒，含）
+     * @param to 区间结束（毫秒，含）
+     * @return 重叠的停机总毫秒数，没有交集时为 0
+     */
+    long downtimeWithin(long from, long to);
+
+    /**
      * 获取最近一场直播结束时间戳
      * @param platform 直播平台
      * @param uid UID

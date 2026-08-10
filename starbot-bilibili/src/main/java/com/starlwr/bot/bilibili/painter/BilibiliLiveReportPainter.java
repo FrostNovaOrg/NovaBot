@@ -397,6 +397,14 @@ public class BilibiliLiveReportPainter {
         line.add(new TextWithStyle("直播时长 ", CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN));
         line.add(new TextWithStyle(duration, CommonPainter.TEXT_FONT_SIZE, COLOR_TEXT, Font.BOLD));
 
+        // 停机缺口紧跟在时长后面，而不是塞进页脚：报告上每个数字都受它影响，
+        // 看到时长的人必须同时看到「这段时间里有一截没在采」
+        String gap = maintenanceGapText(platform, uid);
+        if (!gap.isEmpty()) {
+            line.add(new TextWithStyle("（其中 " + gap + "因维护未采集）",
+                    CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN));
+        }
+
         if (options.isShowRevenue()) {
             double revenue = liveDataService.getLiveMetric(platform, uid, BilibiliLiveMetric.GIFT_VALUE)
                     + liveDataService.getLiveMetric(platform, uid, BilibiliLiveMetric.SUPER_CHAT_VALUE)
@@ -1092,6 +1100,24 @@ public class BilibiliLiveReportPainter {
             return "";
         }
         return DurationFormatUtil.format((end.get() - start.get()) / 1000);
+    }
+
+    /**
+     * 本场之内因程序停机而没有采集的时长描述
+     * <p>
+     * 只算与本场重叠的部分：一段跨越开播时刻的停机，开播之前那一截不属于本场。
+     * 没有缺口时返回空字符串，报告上就不会多出一句废话。
+     * <p>
+     * <b>刻意不是私有的</b>：报告文本降级输出要用同一份措辞，
+     * 缺口这句话只能有一个出处，否则图片版与文字版迟早说出两个不同的数。
+     */
+    String maintenanceGapText(String platform, Long uid) {
+        Optional<Long> start = liveDataService.getLiveStartTime(platform, uid);
+        Optional<Long> end = effectiveEndTime(platform, uid, start);
+        if (start.isEmpty() || end.isEmpty()) {
+            return "";
+        }
+        return DurationFormatUtil.format(liveDataService.downtimeWithin(start.get(), end.get()) / 1000);
     }
 
     /**

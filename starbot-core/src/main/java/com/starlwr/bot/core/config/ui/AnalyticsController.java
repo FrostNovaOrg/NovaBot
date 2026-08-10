@@ -201,6 +201,9 @@ public class AnalyticsController {
         item.put("endReasonText", reason.getDescription());
         item.put("interrupted", session.interrupted());
 
+        // 有缺口的场次，各项计数只是下界。不标出来的话，一次维护重启会被读成「这天人气差」
+        item.put("maintenanceGapSeconds", session.maintenanceGapSeconds());
+
         JSONArray titles = new JSONArray();
         if (session.titles() != null) {
             for (RoomInfoSnapshot title : session.titles()) {

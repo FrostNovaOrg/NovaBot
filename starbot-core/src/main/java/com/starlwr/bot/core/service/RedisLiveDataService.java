@@ -215,6 +215,21 @@ public class RedisLiveDataService implements LiveDataService {
     }
 
     @Override
+    public Optional<Long> getLastSaveTime() {
+        return delegate.getLastSaveTime();
+    }
+
+    @Override
+    public void recordDowntime(long from, long to) {
+        delegate.recordDowntime(from, to);
+    }
+
+    @Override
+    public long downtimeWithin(long from, long to) {
+        return delegate.downtimeWithin(from, to);
+    }
+
+    @Override
     public Optional<Long> getLiveEndTime(@NonNull String platform, @NonNull Long uid) {
         return delegate.getLiveEndTime(platform, uid);
     }
