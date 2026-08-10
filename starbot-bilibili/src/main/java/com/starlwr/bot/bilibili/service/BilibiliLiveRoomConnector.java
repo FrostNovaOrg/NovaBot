@@ -164,7 +164,7 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
     private final AtomicInteger totalMessages = new AtomicInteger();
 
     /**
-     * 风控检测窗口内收到的进房类消息数，仅作辅助信号
+     * 风控检测窗口内收到的进房类消息数，与业务消息一起构成样本量下限的分子
      */
     private final AtomicInteger interactMessages = new AtomicInteger();
 
@@ -177,6 +177,16 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
      * 跨窗口的判定器
      */
     private final BilibiliLiveRoomRiskDetector riskDetector;
+
+    /**
+     * 本段断流是否已经用掉那一次「先重连再判」的机会
+     * <p>
+     * 一段断流只重连一次。业务消息恢复后清零，下一段断流可以再用——
+     * 不清零会让长时间运行的实例失去这道防线，一直清零则会变成断流期间反复重连。
+     * <p>
+     * 只在 {@code detectRisk} 里读写，而它由单线程的调度器串行调用，因此不用加锁。
+     */
+    private boolean reconnectedForStall;
 
     public BilibiliLiveRoomConnector(@NonNull LiveStreamerInfo source,
                                      @NonNull BilibiliApiUtil api,
@@ -427,7 +437,7 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
     /**
      * 累计风控检测所需的计数
      * <p>
-     * 判据是业务消息是否断流，进房占比只作辅助信号，理由见
+     * 判据是业务消息是否断流；进房类与业务一起构成样本量下限的分子，理由见
      * {@link BilibiliLiveRoomRiskDetector}。
      * @param data 消息内容
      */
@@ -463,10 +473,28 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
                 totalMessages.getAndSet(0), businessMessages.getAndSet(0), interactMessages.getAndSet(0),
                 stateGate.isLiving(source.getUid()));
 
+        if (window.business() > 0) {
+            // 业务消息回来了，这一段断流结束，下一段可以重新用掉那次重连机会
+            reconnectedForStall = false;
+        }
+
         return riskDetector.accept(window).map(observation -> {
-            // 只陈述观测到了什么，不断言原因——从这里分不清是平台限制了下发、
-            // 协议变更导致业务消息解析不出来、还是主播那边确实没人说话但有人进出
-            log.warn("直播间 {} 业务消息疑似断流: {}", source.getRoomId(), observation);
+            // 先重连一次再判：重连是我们手上最便宜的动作（退避与闸门都现成），
+            // 而它恰好就是区分「连接半死」与「平台真限制」的那个实验——
+            // 半死的连接重连即恢复，真被限制时换一条连接照样收不到。
+            // 少了这一步，一个重连就能自愈的故障会被报成平台问题，人也就白查一趟
+            if (!reconnectedForStall) {
+                reconnectedForStall = true;
+                log.warn("直播间 {} 业务消息疑似断流, 先重连一次验证: {}", source.getRoomId(), observation);
+                // 判定历史由 afterConnectionClosed 清空，重连后从零重新攒窗口
+                reconnect();
+                return false;
+            }
+
+            // 重连之后仍然断流，才升级为判定。只陈述观测到了什么，不断言原因——
+            // 从这里分不清是平台限制了下发、协议变更导致业务消息解析不出来、
+            // 还是主播那边确实没人说话但有人进出
+            log.warn("直播间 {} 重连后业务消息仍然断流: {}", source.getRoomId(), observation);
             status = ConnectStatus.RISK;
             return true;
         }).orElse(false);

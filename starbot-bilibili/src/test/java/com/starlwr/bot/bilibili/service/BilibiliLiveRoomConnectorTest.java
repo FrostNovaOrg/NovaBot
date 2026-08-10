@@ -1,6 +1,7 @@
 package com.starlwr.bot.bilibili.service;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.enums.ConnectStatus;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -207,6 +208,107 @@ class BilibiliLiveRoomConnectorTest {
 
             assertEquals(ConnectStatus.CLOSED, harness.connector().getStatus());
             assertEquals(1, harness.handshakes(), "关闭后不该再握手");
+        }
+    }
+
+    @Nested
+    @DisplayName("业务消息断流：先重连一次再判")
+    class StallDetection {
+        /**
+         * 判定所需的连续窗口数。从默认配置里取而不是写死：
+         * 改了默认值时这些测试应当跟着走，而不是变成对着一个旧数字的断言
+         */
+        private final int WINDOWS = new StarBotBilibiliProperties().getLive().getAutoDetectLiveRoomRiskWindows();
+
+        /**
+         * 攒满一段断流：每个窗口喂够逐用户事件（进房类），业务消息为零
+         * @return 最后一次判定的结果
+         */
+        private boolean stall(BilibiliConnectorHarness harness, int windows) {
+            boolean judged = false;
+            for (int window = 0; window < windows; window++) {
+                for (int i = 0; i < 10; i++) {
+                    harness.receive("INTERACT_WORD_V2");
+                }
+                // 定时推送也一起喂：它们不该把样本量下限顶上去，也不该妨碍判定
+                harness.receive("ONLINE_RANK_COUNT");
+                harness.receive("WATCHED_CHANGE");
+                judged = harness.connector().detectRisk();
+            }
+            return judged;
+        }
+
+        @Test
+        @DisplayName("⚠️ 第一次攒满断流只重连，不判定")
+        void firstStallOnlyReconnects() {
+            BilibiliConnectorHarness harness = new BilibiliConnectorHarness().living();
+            harness.connect();
+            int handshakesBefore = harness.handshakes();
+
+            boolean judged = stall(harness, WINDOWS);
+
+            assertFalse(judged, "第一次攒满不该直接判定——重连是最便宜的动作，也是区分半死连接的那个实验");
+            harness.fireConnectionClosed(1000);
+            harness.runQueuedReconnects();
+            assertEquals(handshakesBefore + 1, harness.handshakes(), "应当重连一次");
+            assertNotEquals(ConnectStatus.RISK, harness.connector().getStatus(), "还没到判定这一步");
+        }
+
+        @Test
+        @DisplayName("重连之后仍然断流才判定")
+        void judgesOnlyAfterReconnectFails() {
+            BilibiliConnectorHarness harness = new BilibiliConnectorHarness().living();
+            harness.connect();
+
+            assertFalse(stall(harness, WINDOWS), "第一段只重连");
+            harness.fireConnectionClosed(1000);
+            harness.runQueuedReconnects();
+
+            assertTrue(stall(harness, WINDOWS), "重连后仍然断流，这次要判定");
+            assertEquals(ConnectStatus.RISK, harness.connector().getStatus());
+        }
+
+        @Test
+        @DisplayName("业务消息恢复后，下一段断流仍能再重连一次")
+        void reconnectChanceIsRestoredAfterRecovery() {
+            BilibiliConnectorHarness harness = new BilibiliConnectorHarness().living();
+            harness.connect();
+
+            assertFalse(stall(harness, WINDOWS), "第一段只重连");
+            harness.fireConnectionClosed(1000);
+            harness.runQueuedReconnects();
+
+            // 业务消息回来了：这一段断流结束
+            harness.receive("DANMU_MSG");
+            harness.connector().detectRisk();
+
+            // 下一段断流应当重新获得那次重连机会，而不是直接判定
+            int handshakesBefore = harness.handshakes();
+            assertFalse(stall(harness, WINDOWS), "恢复过之后，新的一段断流应当再给一次重连机会");
+            harness.fireConnectionClosed(1000);
+            harness.runQueuedReconnects();
+            assertEquals(handshakesBefore + 1, harness.handshakes());
+        }
+
+        @Test
+        @DisplayName("安静但在播：定时推送再多也不重连、不判定")
+        void quietRoomNeitherReconnectsNorJudges() {
+            // 2026-08-10 深夜那次误报的形状：总量被排行与看过撑起来，逐用户事件只有 1 条
+            BilibiliConnectorHarness harness = new BilibiliConnectorHarness().living();
+            harness.connect();
+            int handshakesBefore = harness.handshakes();
+
+            for (int window = 0; window < WINDOWS; window++) {
+                harness.receive("INTERACT_WORD_V2");
+                for (int i = 0; i < 12; i++) {
+                    harness.receive("ONLINE_RANK_COUNT");
+                }
+                assertFalse(harness.connector().detectRisk());
+            }
+
+            harness.runQueuedReconnects();
+            assertEquals(handshakesBefore, harness.handshakes(), "安静不是故障，不该为它重连");
+            assertNotEquals(ConnectStatus.RISK, harness.connector().getStatus());
         }
     }
 }

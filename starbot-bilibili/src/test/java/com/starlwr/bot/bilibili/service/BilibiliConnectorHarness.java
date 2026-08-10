@@ -16,6 +16,7 @@ import org.mockito.stubbing.Answer;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.web.socket.BinaryMessage;
+import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.WebSocketHttpHeaders;
 import org.springframework.web.socket.WebSocketSession;
@@ -200,6 +201,44 @@ class BilibiliConnectorHarness {
      */
     void fireConnectionEstablished() throws Exception {
         connector.afterConnectionEstablished(session);
+    }
+
+    /**
+     * 让连接器收到一条消息，走真实的解码与计数路径
+     * <p>
+     * 不直接改计数字段：断流判据的分子取决于 {@code cmd} 怎么被归类，
+     * 而那段归类逻辑正是要测的东西之一。绕过它等于把判据的一半打了桩。
+     * @param cmd 消息的 cmd，例如 {@code DANMU_MSG} 或 {@code ONLINE_RANK_COUNT}
+     */
+    void receive(String cmd) {
+        byte[] encoded = BilibiliPacketCodec.encode(DataPackType.NOTICE,
+                "{\"cmd\":\"" + cmd + "\"}");
+        try {
+            connector.handleMessage(session, new BinaryMessage(encoded));
+        } catch (Exception e) {
+            // 收消息这条路上抛异常本身就是缺陷，别让调用方每处都写 throws 把它藏进签名里
+            throw new IllegalStateException("喂消息时连接器抛了异常: " + cmd, e);
+        }
+    }
+
+    /**
+     * 让主播处于在播状态。未开播时判据一律不判定，测断流必须先把这一条摘掉
+     */
+    BilibiliConnectorHarness living() {
+        when(stateGate.isLiving(STREAMER_UID)).thenReturn(true);
+        return this;
+    }
+
+    /**
+     * 模拟容器回调「连接已关闭」
+     * <p>
+     * 连接器自己调 reconnect() 时只关会话、不改状态——状态要等容器把这个回调送回来才变。
+     * 测试里不补这一步，connect() 会因为状态还是 CONNECTED 而直接返回，看起来像「重连没发生」。
+     * @param code 关闭码，1000 为正常关闭
+     */
+    void fireConnectionClosed(int code) {
+        sessionOpen = false;
+        connector.afterConnectionClosed(session, new CloseStatus(code));
     }
 
     /**
