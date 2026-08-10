@@ -7,6 +7,8 @@ import com.starlwr.bot.bilibili.enums.ConnectStatus;
 import com.starlwr.bot.bilibili.enums.DataHeaderType;
 import com.starlwr.bot.bilibili.enums.DataPackType;
 import com.starlwr.bot.bilibili.event.live.BilibiliConnectedEvent;
+import com.starlwr.bot.bilibili.health.BilibiliDisconnectCause;
+import com.starlwr.bot.bilibili.health.BilibiliDisconnectDigest;
 import com.starlwr.bot.bilibili.health.BilibiliRiskMetrics;
 import com.starlwr.bot.bilibili.event.live.BilibiliDisconnectedEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliLiveOffEvent;
@@ -116,6 +118,16 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
 
     private final BilibiliRiskMetrics riskMetrics;
 
+    private final BilibiliDisconnectDigest disconnectDigest;
+
+    /**
+     * 本条连接认证成功的时刻，未认证时为 null
+     * <p>
+     * 断线归因要用它算「这条连接活了多久」：认证都没过就断，与活了两小时才断，
+     * 是两件完全不同的事，而关闭码把它们说成同一个 1006
+     */
+    private volatile Instant authenticatedAt;
+
     /**
      * 当前连接状态
      */
@@ -175,7 +187,8 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
                                      @NonNull WebSocketClient client,
                                      @NonNull BilibiliLiveStateGate stateGate,
                                      @NonNull BilibiliConnectGate connectGate,
-                                     @NonNull BilibiliRiskMetrics riskMetrics) {
+                                     @NonNull BilibiliRiskMetrics riskMetrics,
+                                     @NonNull BilibiliDisconnectDigest disconnectDigest) {
         this.source = source;
         this.api = api;
         this.parser = parser;
@@ -186,6 +199,7 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
         this.stateGate = stateGate;
         this.connectGate = connectGate;
         this.riskMetrics = riskMetrics;
+        this.disconnectDigest = disconnectDigest;
         this.riskDetector = new BilibiliLiveRoomRiskDetector(
                 properties.getLive().getAutoDetectLiveRoomRiskWindows());
     }
@@ -352,6 +366,7 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
     private void handlePacket(BilibiliPacket packet) {
         if (packet.getOperation() == DataPackType.VERIFY_SUCCESS_RESPONSE.getCode()) {
             log.debug("直播间 {} 认证成功", source.getRoomId());
+            authenticatedAt = Instant.now();
             return;
         }
 
@@ -476,11 +491,22 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
                     "直播间 " + source.getRoomId());
         }
 
+        Instant authAt = authenticatedAt;
+        Duration lived = authAt == null ? null : Duration.between(authAt, Instant.now());
+        authenticatedAt = null;
+
+        BilibiliDisconnectCause cause = BilibiliDisconnectCause.classify(
+                closed.get(), closeStatus.getCode(), authAt != null, lived);
+        disconnectDigest.record(source.getRoomId(), cause, lived);
+
         if (closed.get()) {
             return;
         }
 
-        log.info("与直播间 {} 的连接已断开 ({}), 将尝试重连", source.getRoomId(), closeStatus.getCode());
+        // 逐次一行在断线风暴里数不清也看不出集中在哪，走 DEBUG；
+        // 按窗口汇总的那条带归因的摘要由 BilibiliDisconnectDigest 打 WARN
+        log.debug("与直播间 {} 的连接已断开 ({}, {}), 将尝试重连",
+                source.getRoomId(), closeStatus.getCode(), cause.getLabel());
         status = ConnectStatus.CLOSED;
 
         publisher.publishEvent(new BilibiliDisconnectedEvent(source));

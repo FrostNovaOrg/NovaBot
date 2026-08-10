@@ -1,6 +1,7 @@
 package com.starlwr.bot.bilibili.service;
 
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.health.BilibiliDisconnectDigest;
 import com.starlwr.bot.bilibili.health.BilibiliRiskMetrics;
 import com.starlwr.bot.bilibili.enums.ConnectStatus;
 import com.starlwr.bot.bilibili.model.Up;
@@ -62,6 +63,8 @@ public class BilibiliLiveRoomService {
 
     private final BilibiliRiskMetrics riskMetrics;
 
+    private final BilibiliDisconnectDigest disconnectDigest;
+
     /**
      * 直播间号到连接器的映射
      */
@@ -89,7 +92,8 @@ public class BilibiliLiveRoomService {
                                    @Qualifier("bilibiliTaskScheduler") TaskScheduler scheduler,
                                    BilibiliLiveStateGate stateGate,
                                    BilibiliConnectGate connectGate,
-                                   BilibiliRiskMetrics riskMetrics) {
+                                   BilibiliRiskMetrics riskMetrics,
+                                   BilibiliDisconnectDigest disconnectDigest) {
         this.api = api;
         this.parser = parser;
         this.properties = properties;
@@ -98,6 +102,7 @@ public class BilibiliLiveRoomService {
         this.stateGate = stateGate;
         this.connectGate = connectGate;
         this.riskMetrics = riskMetrics;
+        this.disconnectDigest = disconnectDigest;
     }
 
     /**
@@ -178,7 +183,7 @@ public class BilibiliLiveRoomService {
     private void connect(Up up) {
         connectors.computeIfAbsent(up.getRoomId(), roomId -> {
             BilibiliLiveRoomConnector connector =
-                    new BilibiliLiveRoomConnector(up, api, parser, properties, publisher, scheduler, webSocketClient, stateGate, connectGate, riskMetrics);
+                    new BilibiliLiveRoomConnector(up, api, parser, properties, publisher, scheduler, webSocketClient, stateGate, connectGate, riskMetrics, disconnectDigest);
             connector.connect();
             return connector;
         });

@@ -218,6 +218,15 @@ public class StarBotBilibiliProperties {
         private int liveRoomReconnectInterval = 1000;
 
         /**
+         * 断线摘要的汇总窗口，单位：秒，设为 0 关闭
+         * <p>
+         * 逐次一行「连接已断开」在断线风暴里恰好最没用：十个房间各断五次就是五十行，
+         * 数不清次数，也看不出是集中在一个房间还是所有房间一起断——而这两者的处理方式相反。
+         * 逐次那行走 DEBUG，按本窗口汇总成一条带归因的摘要。没有断线的窗口不打日志。
+         */
+        private int disconnectDigestInterval = 600;
+
+        /**
          * 礼物配置缓存过期时间，单位：秒
          */
         private int giftCacheExpire = 3600;

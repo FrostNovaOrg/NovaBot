@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.enums.DataPackType;
+import com.starlwr.bot.bilibili.health.BilibiliDisconnectDigest;
 import com.starlwr.bot.bilibili.health.BilibiliRiskMetrics;
 import com.starlwr.bot.bilibili.model.ConnectAddress;
 import com.starlwr.bot.bilibili.model.ConnectInfo;
@@ -93,6 +94,13 @@ class BilibiliConnectorHarness {
 
     private final BilibiliRiskMetrics riskMetrics = mock(BilibiliRiskMetrics.class);
 
+    /**
+     * 断线摘要用真实对象而不是 mock：断线归因正是这个脚手架该看得见的东西。
+     * 在构造体里赋值而不是在字段上——properties 与 scheduler 声明在后面，
+     * 字段初始化器里引用它们是非法前向引用
+     */
+    private final BilibiliDisconnectDigest disconnectDigest;
+
     private final WebSocketSession session = mock(WebSocketSession.class);
 
     private final StarBotBilibiliProperties properties = new StarBotBilibiliProperties();
@@ -126,6 +134,8 @@ class BilibiliConnectorHarness {
     BilibiliConnectorHarness() {
         LiveStreamerInfo source = new LiveStreamerInfo(STREAMER_UID, "测试主播", ROOM_ID);
 
+        this.disconnectDigest = new BilibiliDisconnectDigest(properties, scheduler);
+
         stubSession();
         stubApi();
         stubScheduler();
@@ -133,7 +143,7 @@ class BilibiliConnectorHarness {
         stubConnectGate();
 
         this.connector = new BilibiliLiveRoomConnector(source, api, parser, properties, publisher,
-                scheduler, client, stateGate, connectGate, riskMetrics);
+                scheduler, client, stateGate, connectGate, riskMetrics, disconnectDigest);
     }
 
     // ================ 配置 ================
