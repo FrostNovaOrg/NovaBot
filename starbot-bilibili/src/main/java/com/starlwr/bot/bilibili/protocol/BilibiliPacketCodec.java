@@ -55,14 +55,16 @@ public final class BilibiliPacketCodec {
     private static final int DECOMPRESS_BUFFER_SIZE = 8192;
 
     /**
-     * 解压后允许的最大字节数，防御异常或恶意构造的数据包导致内存耗尽
+     * 解码限额的默认值
+     * <p>
+     * 32 MB 与 3 层是<b>防御性上限而非预期值</b>：正常数据包解压后是几十 KB、嵌套不超过一层。
+     * 它们只在数据异常或被恶意构造时起作用。
+     * <p>
+     * <b>做成可配的理由是内存</b>：默认堆是 {@code -Xmx512m}，而这个上限允许单次解压
+     * 吃掉 32 MB 连续字节数组——在小内存 VPS 上，防御上限自己就可能是那根稻草。
+     * 1 GB 机器建议连同 {@code -Xmx} 一起调低，见 {@code docs/performance.md}。
      */
-    private static final int MAX_DECOMPRESSED_BYTES = 32 * 1024 * 1024;
-
-    /**
-     * 递归展开压缩包的最大层数，正常数据不会超过一层
-     */
-    private static final int MAX_NESTING_DEPTH = 3;
+    public static final Limits DEFAULT_LIMITS = new Limits(32 * 1024 * 1024, 3);
 
     private BilibiliPacketCodec() {
     }
@@ -93,9 +95,41 @@ public final class BilibiliPacketCodec {
      * @return 数据包列表，数据非法时返回空列表
      */
     public static List<BilibiliPacket> decode(byte[] data) {
+        return decode(data, DEFAULT_LIMITS);
+    }
+
+    /**
+     * 按给定限额解码一段字节流
+     * <p>
+     * 限额随调用传入而不是设成可变静态字段：这个类是无状态工具，
+     * 一个可写的全局字段会让「这次解码用的是哪个上限」变得要靠时序去推。
+     * @param data 字节流
+     * @param limits 解码限额
+     * @return 数据包列表，数据非法时返回空列表
+     */
+    public static List<BilibiliPacket> decode(byte[] data, Limits limits) {
         List<BilibiliPacket> packets = new ArrayList<>();
-        decodeInto(data, packets, 0);
+        decodeInto(data, packets, 0, limits == null ? DEFAULT_LIMITS : limits);
         return packets;
+    }
+
+    /**
+     * 解码限额
+     * <p>
+     * 非正数一律回退到默认值：把上限配成 0 会让所有压缩包都解不开，
+     * 而那种「配错一个数就整条流静默消失」的失败方式最难查。
+     * @param maxDecompressedBytes 解压后允许的最大字节数
+     * @param maxNestingDepth 递归展开压缩包的最大层数
+     */
+    public record Limits(int maxDecompressedBytes, int maxNestingDepth) {
+        public Limits {
+            if (maxDecompressedBytes <= 0) {
+                maxDecompressedBytes = 32 * 1024 * 1024;
+            }
+            if (maxNestingDepth <= 0) {
+                maxNestingDepth = 3;
+            }
+        }
     }
 
     /**
@@ -104,9 +138,9 @@ public final class BilibiliPacketCodec {
      * @param packets 结果收集器
      * @param depth 当前递归层数
      */
-    private static void decodeInto(byte[] data, List<BilibiliPacket> packets, int depth) {
-        if (depth > MAX_NESTING_DEPTH) {
-            log.warn("直播间数据包嵌套层数超过 {} 层, 已停止解析", MAX_NESTING_DEPTH);
+    private static void decodeInto(byte[] data, List<BilibiliPacket> packets, int depth, Limits limits) {
+        if (depth > limits.maxNestingDepth()) {
+            log.warn("直播间数据包嵌套层数超过 {} 层, 已停止解析", limits.maxNestingDepth());
             return;
         }
 
@@ -129,9 +163,9 @@ public final class BilibiliPacketCodec {
             System.arraycopy(data, offset + headerLength, body, 0, body.length);
 
             if (protocolVersion == DataHeaderType.BROTLI_JSON.getCode()) {
-                decompress(body, true).ifPresent(decompressed -> decodeInto(decompressed, packets, depth + 1));
+                decompress(body, true, limits).ifPresent(decompressed -> decodeInto(decompressed, packets, depth + 1, limits));
             } else if (protocolVersion == PROTOCOL_ZLIB) {
-                decompress(body, false).ifPresent(decompressed -> decodeInto(decompressed, packets, depth + 1));
+                decompress(body, false, limits).ifPresent(decompressed -> decodeInto(decompressed, packets, depth + 1, limits));
             } else {
                 packets.add(new BilibiliPacket(operation, protocolVersion, body));
             }
@@ -144,9 +178,10 @@ public final class BilibiliPacketCodec {
      * 解压负载
      * @param body 压缩后的负载
      * @param brotli 是否为 brotli 压缩，否则按 zlib 处理
+     * @param limits 解码限额
      * @return 解压结果，失败时返回空
      */
-    private static Optional<byte[]> decompress(byte[] body, boolean brotli) {
+    private static Optional<byte[]> decompress(byte[] body, boolean brotli, Limits limits) {
         try (ByteArrayInputStream source = new ByteArrayInputStream(body);
              InputStream input = brotli ? new BrotliInputStream(source) : new InflaterInputStream(source);
              ByteArrayOutputStream output = new ByteArrayOutputStream(Math.min(body.length * 4, DECOMPRESS_BUFFER_SIZE))) {
@@ -156,8 +191,8 @@ public final class BilibiliPacketCodec {
             int read;
             while ((read = input.read(buffer)) != -1) {
                 total += read;
-                if (total > MAX_DECOMPRESSED_BYTES) {
-                    log.warn("直播间数据包解压后超过 {} 字节, 已放弃解析", MAX_DECOMPRESSED_BYTES);
+                if (total > limits.maxDecompressedBytes()) {
+                    log.warn("直播间数据包解压后超过 {} 字节, 已放弃解析", limits.maxDecompressedBytes());
                     return Optional.empty();
                 }
                 output.write(buffer, 0, read);

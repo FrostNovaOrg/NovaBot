@@ -218,6 +218,20 @@ public class StarBotBilibiliProperties {
         private int liveRoomReconnectInterval = 1000;
 
         /**
+         * 直播间数据包解压后允许的最大字节数，非正数回退到默认 32 MB
+         * <p>
+         * 这是**防御性上限而非预期值**：正常数据包解压后是几十 KB。
+         * 做成可配的理由是内存——默认堆 `-Xmx512m`，而这个上限允许单次解压吃掉
+         * 32 MB 连续字节数组，在小内存机器上防御上限自己就可能是那根稻草。
+         */
+        private int maxDecompressedBytes = 32 * 1024 * 1024;
+
+        /**
+         * 递归展开压缩包的最大层数，非正数回退到默认 3；正常数据不超过一层
+         */
+        private int maxDecodeNestingDepth = 3;
+
+        /**
          * 断线摘要的汇总窗口，单位：秒，设为 0 关闭
          * <p>
          * 逐次一行「连接已断开」在断线风暴里恰好最没用：十个房间各断五次就是五十行，

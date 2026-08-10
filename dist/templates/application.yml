@@ -123,6 +123,12 @@ starbot:
       # 逐次那行走 DEBUG，按窗口汇总成一条带归因（握手期被切断 / 网络抖动 / 认证后很快被切断…）
       # 与处理建议的摘要。没有断线的窗口不打日志
       disconnect-digest-interval: 600     # 汇总窗口，单位：秒，设为 0 关闭
+      # 解码限额：防御异常或恶意构造的数据包，不是预期值——正常包解压后只有几十 KB。
+      # 做成可配是为了小内存机器：默认堆 -Xmx512m，而 32 MB 上限允许单次解压吃掉
+      # 32 MB 连续字节数组，那时防御上限自己就可能是压垮内存的那根稻草。
+      # 1 GB 机器建议连同 -Xmx 一起调低，见 docs/performance.md。非正数回退到默认值
+      max-decompressed-bytes: 33554432    # 解压后最大字节数，默认 32 MB
+      max-decode-nesting-depth: 3         # 压缩包最大嵌套层数，正常数据不超过一层
       gift-cache-expire: 3600             # 礼物配置缓存时长，单位：秒
       complete-event: false               # 是否请求接口补全事件中缺失的昵称、头像等信息
       auto-detect-live-room-risk: true    # 是否检测直播间数据风控

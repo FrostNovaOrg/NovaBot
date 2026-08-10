@@ -354,7 +354,11 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
         byte[] data = new byte[message.getPayload().remaining()];
         message.getPayload().get(data);
 
-        for (BilibiliPacket packet : BilibiliPacketCodec.decode(data)) {
+        BilibiliPacketCodec.Limits limits = new BilibiliPacketCodec.Limits(
+                properties.getLive().getMaxDecompressedBytes(),
+                properties.getLive().getMaxDecodeNestingDepth());
+
+        for (BilibiliPacket packet : BilibiliPacketCodec.decode(data, limits)) {
             handlePacket(packet);
         }
     }

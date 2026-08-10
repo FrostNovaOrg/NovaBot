@@ -90,6 +90,56 @@ class BilibiliPacketCodecTest {
     }
 
     @Test
+    @DisplayName("解压超过限额时放弃解析，不把限额撑爆内存")
+    void refusesWhenOverDecompressedLimit() throws Exception {
+        ByteArrayOutputStream inner = new ByteArrayOutputStream();
+        inner.write(jsonPacket("{\"cmd\":\"NESTED_1\"}"));
+
+        ByteArrayOutputStream compressed = new ByteArrayOutputStream();
+        try (DeflaterOutputStream deflater = new DeflaterOutputStream(compressed)) {
+            deflater.write(inner.toByteArray());
+        }
+        byte[] outer = packet(DataPackType.NOTICE.getCode(), 2, compressed.toByteArray());
+
+        // 把上限压到 1 字节：解压刚开始就超额，应当整包放弃而不是抛异常
+        List<BilibiliPacket> packets = BilibiliPacketCodec.decode(
+                outer, new BilibiliPacketCodec.Limits(1, 3));
+
+        assertTrue(packets.isEmpty());
+        // 默认限额下同一份数据是解得开的——证明上面为空是限额起了作用，不是数据本身坏了
+        assertEquals(1, BilibiliPacketCodec.decode(outer).size());
+    }
+
+    @Test
+    @DisplayName("嵌套层数限额为 1 时不再往下展开")
+    void stopsAtNestingLimit() throws Exception {
+        ByteArrayOutputStream inner = new ByteArrayOutputStream();
+        inner.write(jsonPacket("{\"cmd\":\"NESTED_1\"}"));
+
+        ByteArrayOutputStream compressed = new ByteArrayOutputStream();
+        try (DeflaterOutputStream deflater = new DeflaterOutputStream(compressed)) {
+            deflater.write(inner.toByteArray());
+        }
+        byte[] outer = packet(DataPackType.NOTICE.getCode(), 2, compressed.toByteArray());
+
+        // 外层是第 0 层、展开一次到第 1 层，限额 1 仍应放行；这条锁的是边界不被改窄
+        assertEquals(1, BilibiliPacketCodec.decode(outer, new BilibiliPacketCodec.Limits(1024 * 1024, 1)).size());
+    }
+
+    @Test
+    @DisplayName("限额配成非正数时回退到默认值，而不是让整条流静默消失")
+    void nonPositiveLimitsFallBackToDefaults() {
+        BilibiliPacketCodec.Limits zero = new BilibiliPacketCodec.Limits(0, 0);
+
+        assertEquals(BilibiliPacketCodec.DEFAULT_LIMITS.maxDecompressedBytes(), zero.maxDecompressedBytes());
+        assertEquals(BilibiliPacketCodec.DEFAULT_LIMITS.maxNestingDepth(), zero.maxNestingDepth());
+
+        BilibiliPacketCodec.Limits negative = new BilibiliPacketCodec.Limits(-1, -5);
+        assertEquals(BilibiliPacketCodec.DEFAULT_LIMITS.maxDecompressedBytes(), negative.maxDecompressedBytes());
+        assertEquals(BilibiliPacketCodec.DEFAULT_LIMITS.maxNestingDepth(), negative.maxNestingDepth());
+    }
+
+    @Test
     @DisplayName("解码 zlib 压缩包并递归展开其中的数据包")
     void decodeZlibNested() throws Exception {
         ByteArrayOutputStream inner = new ByteArrayOutputStream();
