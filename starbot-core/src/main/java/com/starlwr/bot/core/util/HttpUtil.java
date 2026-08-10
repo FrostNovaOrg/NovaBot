@@ -415,6 +415,51 @@ public class HttpUtil {
     }
 
     /**
+     * 只关心「送到没送到」的同步 HTTP POST 请求，响应体一概不解析
+     * <p>
+     * <b>为什么需要这么一个方法</b>：常规的 {@link #post(String, Map, Object)} 把响应体转成
+     * {@code String}，于是响应的 {@code Content-Type} 决定了调用方眼中的成败——
+     * 一个返回 200 但不带 {@code Content-Type} 的接收端（自建接口很常见）会让
+     * {@code RestTemplate} 抛「无法提取响应」，明明送到了却被判为失败。
+     * <p>
+     * 对告警这类「投递本身就是目的」的调用，成败只该由 HTTP 状态码决定。
+     * <p>
+     * 用 {@code Void.class} 而不是 {@code byte[].class}：{@code RestTemplate} 对 Void
+     * <b>根本不去读响应体</b>，因此连「响应体读到一半连接就断了」也影响不到结论。
+     * 实测过一个只回 {@code HTTP/1.0 200} 且不带 {@code Content-Length} 的接收端——
+     * 换成 {@code byte[]} 仍然抛 {@code IOException: closed}，换成 Void 才真正免疫。
+     * @param url URL
+     * @param headers HTTP 请求头
+     * @param params HTTP 请求参数
+     * @return HTTP 状态码
+     */
+    public int postForStatus(String url, Map<String, String> headers, Object params) {
+        HttpHeaders httpHeaders = new HttpHeaders();
+        headers.forEach(httpHeaders::add);
+        httpHeaders.setContentType(MediaType.APPLICATION_JSON);
+
+        HttpEntity<Object> httpEntity = new HttpEntity<>(params, httpHeaders);
+
+        return requestForEntity(url, HttpMethod.POST, httpEntity, Void.class).getStatusCode().value();
+    }
+
+    /**
+     * 只关心「送到没送到」的同步 HTTP GET 请求，响应体一概不解析
+     * <p>
+     * 理由同 {@link #postForStatus(String, Map, Object)}——Bark 这类以查询串接收的服务
+     * 同样可能返回一个我们解析不了的响应体。
+     * @param uri URI，必须以 URI 传入以免被当作模板二次编码
+     * @param headers HTTP 请求头
+     * @return HTTP 状态码
+     */
+    public int getForStatus(URI uri, Map<String, String> headers) {
+        HttpHeaders httpHeaders = new HttpHeaders();
+        headers.forEach(httpHeaders::add);
+
+        return requestForEntity(uri, HttpMethod.GET, new HttpEntity<>(httpHeaders), Void.class).getStatusCode().value();
+    }
+
+    /**
      * 自定义请求头和请求参数的异步 HTTP POST 请求
      *
      * @param url URL

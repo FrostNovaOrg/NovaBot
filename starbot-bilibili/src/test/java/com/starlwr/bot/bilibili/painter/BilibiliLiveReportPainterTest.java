@@ -437,6 +437,55 @@ class BilibiliLiveReportPainterTest {
     }
 
     @Test
+    @DisplayName("文字版报告应带上时长、弹幕与缺口标注")
+    void textReportCarriesTheNumbers() {
+        long start = System.currentTimeMillis() - 2 * 3600_000;
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+        liveDataService.setLiveEndTime(PLATFORM, STREAMER.getUid(), start + 2 * 3600_000);
+        liveDataService.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.DANMU_COUNT, 106);
+        liveDataService.recordLiveMetricUser(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.DANMU_USERS, 1L);
+        liveDataService.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.GIFT_VALUE, 52.0);
+        liveDataService.recordLiveMetricUser(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.GIFT_USERS, 1L);
+        liveDataService.recordDowntime(start + 600_000, start + 600_000 + 754_000);
+
+        String text = painter.textReport(PLATFORM, STREAMER, BilibiliLiveReportOptions.of(new com.alibaba.fastjson2.JSONObject(), true));
+
+        assertTrue(text.contains("测试主播"), text);
+        assertTrue(text.contains("直播时长 2 时"), text);
+        assertTrue(text.contains("其中 12 分 34 秒因维护未采集"), text);
+        assertTrue(text.contains("弹幕 106 条 · 1 人参与"), text);
+        // 金额格式与图片版共用 yuan()，整数不补两位小数——两版说的必须是同一个数
+        assertTrue(text.contains("本场收益 ¥52"), text);
+        assertTrue(text.contains("绘制失败"), "要说清这是降级来的，别让人以为报告一直长这样");
+    }
+
+    @Test
+    @DisplayName("文字版同样受金额可见性约束：该给大群看的不带金额")
+    void textReportHidesRevenueWhenAsked() {
+        long start = System.currentTimeMillis() - 3600_000;
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+        liveDataService.setLiveEndTime(PLATFORM, STREAMER.getUid(), start + 3600_000);
+        liveDataService.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.GIFT_VALUE, 52.0);
+        liveDataService.recordLiveMetricUser(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.GIFT_USERS, 3L);
+
+        String text = painter.textReport(PLATFORM, STREAMER, BilibiliLiveReportOptions.of(new com.alibaba.fastjson2.JSONObject(), false));
+
+        assertFalse(text.contains("¥"), "降级不是放宽口径的理由: " + text);
+        assertFalse(text.contains("52"), text);
+        assertTrue(text.contains("礼物 1 人送出"), "热闹程度照样看得见: " + text);
+    }
+
+    @Test
+    @DisplayName("零数据时文字版也要成句，不能是一堆空行")
+    void textReportSurvivesEmptySession() {
+        String text = painter.textReport(PLATFORM, STREAMER, new BilibiliLiveReportOptions());
+
+        assertTrue(text.contains("测试主播"), text);
+        assertTrue(text.contains("直播时长 未知"), text);
+        assertTrue(text.contains("弹幕 0 条"), text);
+    }
+
+    @Test
     @DisplayName("没有缺口时不该多出一句话")
     void saysNothingWithoutGap() {
         liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), 1_700_000_000_000L);

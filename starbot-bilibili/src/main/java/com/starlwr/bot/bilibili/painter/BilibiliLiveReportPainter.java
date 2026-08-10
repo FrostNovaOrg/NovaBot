@@ -296,6 +296,79 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
+     * 本场直播报告的<b>文字版</b>，画图失败时顶上
+     * <p>
+     * 画图这条路依赖字体、图形环境与几个外部图片，任何一处出问题此前的结果是
+     * <b>整条报告消失</b>——占位符被替换成空串、消息成了空白、发送环节直接跳过，
+     * 主播看到的是「这场没有报告」而不是「报告画不出来」。
+     * <p>
+     * 文字版<b>不追求版式对等</b>，只保证一件事：这一场的关键数字送到了。
+     * 金额可见性照 {@code options} 走——降级不是放宽口径的理由，
+     * 该给大群看的仍然不带金额。
+     * @param platform 直播平台
+     * @param source 主播信息
+     * @param options 版式选项，此处只用到金额可见性
+     * @return 文字版报告
+     */
+    public String textReport(String platform, LiveStreamerInfo source, BilibiliLiveReportOptions options) {
+        Long uid = source.getUid();
+        StringBuilder text = new StringBuilder();
+
+        text.append(source.getUname()).append(" 本场直播数据");
+
+        String duration = durationText(platform, uid);
+        text.append("\n直播时长 ").append(StringUtil.isNotBlank(duration) ? duration : "未知");
+        String gap = maintenanceGapText(platform, uid);
+        if (!gap.isEmpty()) {
+            text.append("（其中 ").append(gap).append("因维护未采集）");
+        }
+
+        long danmu = count(platform, uid, BilibiliLiveMetric.DANMU_COUNT);
+        int danmuUsers = liveDataService.getLiveMetricUserCount(platform, uid, BilibiliLiveMetric.DANMU_USERS);
+        text.append("\n弹幕 ").append(danmu).append(" 条 · ").append(danmuUsers).append(" 人参与");
+
+        long boxes = count(platform, uid, BilibiliLiveMetric.BOX_COUNT);
+        long superChats = count(platform, uid, BilibiliLiveMetric.SUPER_CHAT_COUNT);
+        long guards = count(platform, uid, BilibiliLiveMetric.CAPTAIN_COUNT)
+                + count(platform, uid, BilibiliLiveMetric.COMMANDER_COUNT)
+                + count(platform, uid, BilibiliLiveMetric.GOVERNOR_COUNT);
+
+        if (options.isShowRevenue()) {
+            double revenue = liveDataService.getLiveMetric(platform, uid, BilibiliLiveMetric.GIFT_VALUE)
+                    + liveDataService.getLiveMetric(platform, uid, BilibiliLiveMetric.SUPER_CHAT_VALUE)
+                    + liveDataService.getLiveMetric(platform, uid, BilibiliLiveMetric.GUARD_VALUE);
+            if (revenue > 0) {
+                text.append("\n本场收益 ¥").append(yuan(revenue));
+            }
+        } else {
+            // 不展示金额时换一种说法，热闹程度照样看得见——与图片版同一个立场
+            int giftUsers = liveDataService.getLiveMetricUserCount(platform, uid, BilibiliLiveMetric.GIFT_USERS);
+            if (giftUsers > 0) {
+                text.append("\n礼物 ").append(giftUsers).append(" 人送出");
+            }
+        }
+
+        if (superChats > 0) {
+            text.append("\n醒目留言 ").append(superChats).append(" 条");
+        }
+        if (guards > 0) {
+            text.append("\n新开通大航海 ").append(guards).append(" 人");
+        }
+        if (boxes > 0) {
+            text.append("\n盲盒 ").append(boxes).append(" 个");
+        }
+
+        long follow = count(platform, uid, BilibiliLiveMetric.FOLLOW_COUNT);
+        int enterUsers = liveDataService.getLiveMetricUserCount(platform, uid, BilibiliLiveMetric.ENTER_USERS);
+        if (follow > 0 || enterUsers > 0) {
+            text.append("\n新增关注 ").append(follow).append(" 人次 · 进房 ").append(enterUsers).append(" 人");
+        }
+
+        text.append("\n\n（报告图片绘制失败，本条为文字版）");
+        return text.toString();
+    }
+
+    /**
      * 按指定版式绘制本场直播报告
      * @param platform 直播平台
      * @param source 主播信息

@@ -294,6 +294,27 @@ public class StarBotCoreProperties {
          * Webhook 附加请求头，用于需要鉴权的服务，如 {@code Authorization: Bearer xxx}
          */
         private final java.util.Map<String, String> webhookHeaders = new java.util.LinkedHashMap<>();
+
+        /**
+         * 发送失败的告警的重投间隔，单位：秒，设为 0 关闭重投
+         * <p>
+         * <b>需要告警的时候往往正是发不出去的时候</b>：出网劣化、QQ 掉登录、Webhook 服务抖动，
+         * 三者都会让告警本身失败，而失败之后此前没有下文——「没收到告警」于是被读成「没出事」。
+         */
+        private int retryInterval = 60;
+
+        /**
+         * 待重投队列的容量上限
+         * <p>
+         * 满了之后丢最旧的，并在日志里说明丢了哪一条。<b>不静默截断</b>：
+         * 悄悄丢掉的告警比没有重投更糟，它会让人以为队列在正常工作。
+         */
+        private int retryQueueSize = 50;
+
+        /**
+         * 单条告警的最大重投次数，超过后放弃并写日志
+         */
+        private int retryMaxAttempts = 10;
     }
 
     /**

@@ -23,6 +23,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * Webhook 告警通道测试
@@ -43,6 +44,9 @@ class WebhookAlertChannelTest {
         properties = new StarBotCoreProperties();
         http = mock(HttpUtil.class);
         channel = new WebhookAlertChannel(properties, http);
+        // 成败只看状态码，默认桩成 200；不桩的话 mock 返回 0，会被判成非 2xx
+        when(http.postForStatus(anyString(), anyMap(), any())).thenReturn(200);
+        when(http.getForStatus(any(URI.class), anyMap())).thenReturn(200);
     }
 
     @Test
@@ -67,7 +71,7 @@ class WebhookAlertChannelTest {
         channel.send("标题", "内容");
 
         ArgumentCaptor<Object> body = ArgumentCaptor.forClass(Object.class);
-        verify(http).post(anyString(), anyMap(), body.capture());
+        verify(http).postForStatus(anyString(), anyMap(), body.capture());
         JSONObject json = (JSONObject) body.getValue();
         assertEquals("标题", json.getString("title"));
         assertEquals("内容", json.getString("content"));
@@ -83,7 +87,7 @@ class WebhookAlertChannelTest {
         channel.send("标题", "内容");
 
         ArgumentCaptor<Object> body = ArgumentCaptor.forClass(Object.class);
-        verify(http).post(anyString(), anyMap(), body.capture());
+        verify(http).postForStatus(anyString(), anyMap(), body.capture());
         JSONObject json = (JSONObject) body.getValue();
         assertEquals("标题", json.getString("text"));
         assertEquals("内容", json.getString("desp"));
@@ -101,7 +105,7 @@ class WebhookAlertChannelTest {
         assertTrue(uri.toString().startsWith("https://example.invalid/push?"), "实际: " + uri);
         assertTrue(uri.toString().contains("title=" + URLEncoder.encode("直播间断线", StandardCharsets.UTF_8)));
         assertTrue(uri.toString().contains("content="));
-        verify(http, never()).post(anyString(), anyMap(), any());
+        verify(http, never()).postForStatus(anyString(), anyMap(), any());
     }
 
     @Test
@@ -137,7 +141,7 @@ class WebhookAlertChannelTest {
      */
     private URI capturedUri() {
         ArgumentCaptor<URI> uri = ArgumentCaptor.forClass(URI.class);
-        verify(http, org.mockito.Mockito.atLeastOnce()).get(uri.capture(), anyMap());
+        verify(http, org.mockito.Mockito.atLeastOnce()).getForStatus(uri.capture(), anyMap());
         return uri.getValue();
     }
 
@@ -163,7 +167,29 @@ class WebhookAlertChannelTest {
         channel.send("标题", "内容");
 
         ArgumentCaptor<Map<String, String>> headers = ArgumentCaptor.captor();
-        verify(http).post(anyString(), headers.capture(), any());
+        verify(http).postForStatus(anyString(), headers.capture(), any());
         assertEquals("Bearer token", headers.getValue().get("Authorization"));
+    }
+
+    @Test
+    @DisplayName("返回 200 就算送到，响应体解析不了也不算失败")
+    void successJudgedByStatusOnly() {
+        // 真机上踩过：接收端返回 200 但不带 Content-Type，RestTemplate 抛「无法提取响应」，
+        // 明明送到了却被判为失败。配上重投之后这个误判会让接收端收到一串重复告警
+        properties.getAlert().setWebhookUrl("https://example.invalid/push");
+        when(http.postForStatus(anyString(), anyMap(), any())).thenReturn(200);
+
+        channel.send("标题", "内容");
+    }
+
+    @Test
+    @DisplayName("非 2xx 才算失败，抛出去交给重投队列")
+    void nonSuccessStatusThrows() {
+        properties.getAlert().setWebhookUrl("https://example.invalid/push");
+        when(http.postForStatus(anyString(), anyMap(), any())).thenReturn(502);
+
+        IllegalStateException error = org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalStateException.class, () -> channel.send("标题", "内容"));
+        assertTrue(error.getMessage().contains("502"), error.getMessage());
     }
 }

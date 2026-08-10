@@ -56,8 +56,8 @@ public class WebhookAlertChannel implements AlertChannel {
         if ("GET".equalsIgnoreCase(alert.getWebhookMethod())) {
             // 必须以 URI 传入：传字符串会被 RestTemplate 当作模板再编码一次，
             // 接收方收到的就是一串字面的百分号转义而非中文
-            http.get(URI.create(appendQuery(url, alert.getWebhookTitleField(), subject,
-                    alert.getWebhookContentField(), content)), headers);
+            check(http.getForStatus(URI.create(appendQuery(url, alert.getWebhookTitleField(), subject,
+                    alert.getWebhookContentField(), content)), headers));
             return;
         }
 
@@ -65,8 +65,23 @@ public class WebhookAlertChannel implements AlertChannel {
         body.put(alert.getWebhookTitleField(), subject);
         body.put(alert.getWebhookContentField(), content);
 
-        // HttpUtil#post 自身已设置 JSON 的 Content-Type，此处不再重复指定
-        http.post(url, headers, body);
+        // HttpUtil#postForStatus 自身已设置 JSON 的 Content-Type，此处不再重复指定
+        check(http.postForStatus(url, headers, body));
+    }
+
+    /**
+     * 成败只看 HTTP 状态码，响应体一概不解析
+     * <p>
+     * <b>这里踩过一次</b>：原先走的是把响应体转成 {@code String} 的重载，于是一个
+     * 返回 200 但<b>不带 {@code Content-Type}</b> 的接收端（自建接口很常见）会让
+     * RestTemplate 抛「无法提取响应」——告警明明送到了，却被判为失败。
+     * 配上重投之后这个误判更贵：同一条告警会被反复补发，接收端收到一串重复。
+     * @param status HTTP 状态码
+     */
+    private void check(int status) {
+        if (status < 200 || status >= 300) {
+            throw new IllegalStateException("Webhook 返回 " + status);
+        }
     }
 
     /**

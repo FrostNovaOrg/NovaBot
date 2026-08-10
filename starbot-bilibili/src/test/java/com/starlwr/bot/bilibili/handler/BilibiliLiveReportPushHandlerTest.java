@@ -70,13 +70,32 @@ class BilibiliLiveReportPushHandlerTest {
     }
 
     @Test
-    @DisplayName("绘制失败时默认模板应整条跳过而非推送空消息")
-    void skipsWhenPaintFails() {
+    @DisplayName("绘制失败时应改发文字版，而不是什么都不发")
+    void fallsBackToTextWhenPaintFails() {
+        // 此前这里断言的是「整条跳过」：占位符被替换成空串、消息成空白、发送环节跳过。
+        // 那个行为让主播看到的是「这场没有报告」，而真相是「报告画不出来」——
+        // Phase 1.5 第 2 项就是改掉它，所以这条测试的期望跟着改了
         when(painter.paint(anyString(), any(), any())).thenReturn(Optional.empty());
+        when(painter.textReport(anyString(), any(), any())).thenReturn("测试主播 本场直播数据\n弹幕 106 条");
 
         handler.handle(event(), pushMessage());
 
-        verify(sender, never()).send(any());
+        ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
+        verify(sender).send(captor.capture());
+        assertTrue(captor.getValue().getContent().contains("弹幕 106 条"), "应把文字版报告发出去");
+    }
+
+    @Test
+    @DisplayName("降级用的金额可见性与图片版同一份，不因降级放宽")
+    void textFallbackKeepsRevenueVisibility() {
+        when(painter.paint(anyString(), any(), any())).thenReturn(Optional.empty());
+        when(painter.textReport(anyString(), any(), any())).thenReturn("文字版");
+
+        handler.handle(event(), pushMessage());
+
+        ArgumentCaptor<BilibiliLiveReportOptions> options = ArgumentCaptor.forClass(BilibiliLiveReportOptions.class);
+        verify(painter).textReport(anyString(), any(), options.capture());
+        assertFalse(options.getValue().isShowRevenue(), "群聊降级后同样不该带金额");
     }
 
     @Test

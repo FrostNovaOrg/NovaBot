@@ -55,10 +55,16 @@ public class BilibiliLiveReportPushHandler implements StarBotEventHandler {
         // 同一套版式推给主播私聊和推给大群，该显示的区块相同，该不该带金额则相反
         boolean showRevenue = revenueVisibility.isVisible(target.getPlatform(), target.getType(), target.getNum());
 
-        // 绘制失败时占位符替换为空串；默认模板只含 {report}，此时消息为空白，发送环节会直接跳过
-        String report = painter.paint(event.getPlatform(), event.getSource(), BilibiliLiveReportOptions.of(params, showRevenue))
+        // 画图失败时改发文字版，而不是什么都不发。默认模板只含 {report}，
+        // 此前占位符被替换成空串会让整条消息成为空白、发送环节直接跳过——
+        // 主播看到的是「这场没有报告」，而真相是「报告画不出来」
+        BilibiliLiveReportOptions options = BilibiliLiveReportOptions.of(params, showRevenue);
+        String report = painter.paint(event.getPlatform(), event.getSource(), options)
                 .map(base64 -> "{image_base64=" + base64 + "}")
-                .orElse("");
+                .orElseGet(() -> {
+                    log.warn("{} 的下播报告图片绘制失败, 改发文字版", event.getSource().getUname());
+                    return painter.textReport(event.getPlatform(), event.getSource(), options);
+                });
 
         String content = params.getString("message")
                 .replace("{uname}", PushHandlerSupport.resolveUname(api, event.getSource()))
