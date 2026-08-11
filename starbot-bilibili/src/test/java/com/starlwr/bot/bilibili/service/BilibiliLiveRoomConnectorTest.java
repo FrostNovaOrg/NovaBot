@@ -249,6 +249,8 @@ class BilibiliLiveRoomConnectorTest {
 
             assertFalse(judged, "第一次攒满不该直接判定——重连是最便宜的动作，也是区分半死连接的那个实验");
             harness.fireConnectionClosed(1000);
+            assertEquals(1, harness.queuedReconnects(),
+                    "断流触发的这次重连同样只该排一次队：reconnect() 与关闭回调是同一次断开");
             harness.runQueuedReconnects();
             assertEquals(handshakesBefore + 1, harness.handshakes(), "应当重连一次");
             assertNotEquals(ConnectStatus.RISK, harness.connector().getStatus(), "还没到判定这一步");
@@ -309,6 +311,102 @@ class BilibiliLiveRoomConnectorTest {
             harness.runQueuedReconnects();
             assertEquals(handshakesBefore, harness.handshakes(), "安静不是故障，不该为它重连");
             assertNotEquals(ConnectStatus.RISK, harness.connector().getStatus());
+        }
+    }
+
+    /**
+     * 重连排队与退避阶梯
+     * <p>
+     * 一次断开会从两条路径各排一次队：{@code reconnect()} 自己排一次，
+     * 它关掉会话后容器回调 {@code afterConnectionClosed} 又排一次。
+     * 多排的那次是空转的，所以<b>行为上看不出来</b>——2026-08-11 08:46 的实况日志里
+     * 两条「第 N 次重连」相隔 5 毫秒，而下一次真实重试的退避已经是设计值的两倍：
+     * <pre>
+     * 08:46:12.865 第 1 次重连，退避 1000 毫秒
+     * 08:46:12.870 第 2 次重连，退避 2000 毫秒   ← 同一次断开
+     * 08:46:26.228 第 3 次重连，退避 4000 毫秒   ← 本该是「第 2 次、2000 毫秒」
+     * </pre>
+     * 所以这组测试断言的是<b>退避时长</b>而不只是排队次数：只数次数的话，
+     * 修好之前修好之后的握手次数完全一样，测试照样全绿。
+     */
+    @Nested
+    @DisplayName("重连排队与退避阶梯")
+    class ReconnectScheduling {
+        /** 退避基准，从默认配置取：改了默认值时测试应当跟着走 */
+        private final long BASE_SECONDS =
+                new StarBotBilibiliProperties().getLive().getLiveRoomReconnectInterval() / 1000;
+
+        /**
+         * 走一次「本端主动重连」：发包失败 → reconnect() → 关会话 + 排队，
+         * 随后容器把关闭回调送回来，于是两条路径都到齐了
+         */
+        private BilibiliConnectorHarness disconnectOnce() {
+            BilibiliConnectorHarness harness = new BilibiliConnectorHarness();
+            harness.connect();
+            harness.failNextSend();
+            harness.fireHeartbeat();
+            harness.fireConnectionClosed(1000);
+            return harness;
+        }
+
+        @Test
+        @DisplayName("⚠️ 一次断开只排一次重连")
+        void oneDisconnectQueuesOneReconnect() {
+            BilibiliConnectorHarness harness = disconnectOnce();
+
+            assertEquals(1, harness.scheduleCount(),
+                    "reconnect() 与关闭回调是同一次断开的两条路径，不该各排一次");
+            assertEquals(1, harness.queuedReconnects());
+            assertEquals(BASE_SECONDS, harness.lastBackoffSeconds(), "第一次重试就该按一个基准等");
+        }
+
+        @Test
+        @DisplayName("⚠️ 退避阶梯每次真实重试只爬一级")
+        void backoffClimbsOncePerRealRetry() {
+            BilibiliConnectorHarness harness = disconnectOnce();
+
+            // 排出去的那次重连跑起来，握手失败——这才是第二次真实重试
+            harness.failNextHandshake();
+            harness.runQueuedReconnects();
+
+            assertEquals(2, harness.scheduleCount(), "一次断开加一次失败重试，一共只该排两次");
+            assertEquals(1, harness.queuedReconnects(), "握手失败之后仍要排下一次重连");
+            assertEquals(BASE_SECONDS * 2, harness.lastBackoffSeconds(),
+                    "第二次真实重试该等两个基准；等到四个说明计数被同一次断开加了两次");
+        }
+
+        @Test
+        @DisplayName("重连跑起来之后闸门要放开，否则一次失败就再也不重连了")
+        void gateReopensWhenTheQueuedReconnectRuns() {
+            BilibiliConnectorHarness harness = disconnectOnce();
+
+            harness.failNextHandshake();
+            harness.runQueuedReconnects();
+            harness.failNextHandshake();
+            harness.runQueuedReconnects();
+
+            assertEquals(3, harness.scheduleCount());
+            assertEquals(1, harness.queuedReconnects(), "连续失败要能一次接一次地排下去");
+            assertEquals(BASE_SECONDS * 4, harness.lastBackoffSeconds(), "第三次真实重试等四个基准");
+        }
+
+        @Test
+        @DisplayName("恢复连接之后新的一次断开重新从一个基准起算")
+        void ladderResetsAfterMessagesResume() {
+            BilibiliConnectorHarness harness = disconnectOnce();
+
+            // 重连成功并收到消息——收到消息才是连接确实可用的证据，退避计数在那时清零
+            harness.runQueuedReconnects();
+            harness.receive("DANMU_MSG");
+
+            harness.failNextSend();
+            harness.fireHeartbeat();
+            harness.fireConnectionClosed(1000);
+
+            assertEquals(2, harness.scheduleCount(), "两段断流各排一次");
+            assertEquals(1, harness.queuedReconnects());
+            assertEquals(BASE_SECONDS, harness.lastBackoffSeconds(),
+                    "上一段的失败次数已经清零，这一段该从一个基准重新起算");
         }
     }
 }

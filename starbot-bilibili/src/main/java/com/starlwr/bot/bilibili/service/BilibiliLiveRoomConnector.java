@@ -159,6 +159,14 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
     private final AtomicBoolean closed = new AtomicBoolean();
 
     /**
+     * 是否已有一次重连排在闸门里等着执行
+     * <p>
+     * 同一次断开会从两条路径各排一次队（详见 {@link #scheduleReconnect()}），
+     * 这个标记把它们合成一次。执行那次重连时放开（{@link #runScheduledConnect()}）。
+     */
+    private final AtomicBoolean reconnectScheduled = new AtomicBoolean();
+
+    /**
      * 风控检测窗口内收到的消息总数
      */
     private final AtomicInteger totalMessages = new AtomicInteger();
@@ -547,6 +555,10 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
 
     /**
      * 立即重连
+     * <p>
+     * 关会话与排队两步都要做：会话已经不在（或从未建立）时容器不会回调
+     * {@code afterConnectionClosed}，只关不排就再也不会重连了。
+     * 重复排队由 {@link #scheduleReconnect()} 里的闸门挡住。
      */
     private void reconnect() {
         closeSession();
@@ -557,9 +569,30 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
      * 按退避间隔安排一次重连
      * <p>
      * 连续失败时逐步拉长间隔，避免在服务端故障或本机断网时高频重试加重风控。
+     * <p>
+     * <b>一次断开只排一次。</b>{@code reconnect()} 先关会话再排队，而 {@code closeSession()}
+     * 触发的容器回调 {@code afterConnectionClosed} 也会排一次，两条路径叠加让
+     * {@code reconnectAttempts} <b>每断一次加 2</b>。2026-08-11 08:46:12 的日志里
+     * 两条相隔 5 毫秒，是同一次断开：
+     * <pre>
+     * 08:46:12.865 直播间 500001 第 1 次重连，退避 1000 毫秒   ← 关闭回调排的
+     * 08:46:12.870 直播间 500001 第 2 次重连，退避 2000 毫秒   ← reconnect() 自己排的
+     * </pre>
+     * 多排的那次本身是空转（第二个 {@code connect()} 看到状态已是 CONNECTING/CONNECTED
+     * 就直接返回），真实代价在<b>后续</b>的重试上：计数虚高一级，于是从第二次真实重试起
+     * 每次退避都是设计值的两倍，退避阶梯爬到上限所需的真实重试次数减半。
+     * 同一段日志里下一次连接失败排的是「第 3 次、退避 4000 毫秒」，
+     * 按设计本该是「第 2 次、退避 2000 毫秒」。
      */
     private void scheduleReconnect() {
         if (closed.get()) {
+            return;
+        }
+
+        // 闸门在排出去的那次重连真的开始执行时打开（见 runScheduledConnect），
+        // 而不是在握手成功时——握手前的这段时间里再来几次断开回调都只是同一次断开
+        if (!reconnectScheduled.compareAndSet(false, true)) {
+            log.debug("直播间 {} 已有待执行的重连, 不再重复排队", source.getRoomId());
             return;
         }
 
@@ -567,11 +600,30 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
         long base = Math.max(1000, properties.getLive().getLiveRoomReconnectInterval());
         long delay = Math.min(base * (1L << Math.min(attempts - 1, 8)), MAX_RECONNECT_INTERVAL.toMillis());
 
-        // 退避是本房间自己的节奏，闸门再把它和别的房间排到同一条时间轴上，
-        // 两者叠加：既不会比退避更早重连，也不会和其它房间挤在同一瞬间
-        Instant at = connectGate.submit(this::connect, Instant.now().plusMillis(delay));
-        log.debug("直播间 {} 第 {} 次重连，退避 {} 毫秒，闸门放行于 {}",
-                source.getRoomId(), attempts, delay, at);
+        try {
+            // 退避是本房间自己的节奏，闸门再把它和别的房间排到同一条时间轴上，
+            // 两者叠加：既不会比退避更早重连，也不会和其它房间挤在同一瞬间
+            Instant at = connectGate.submit(this::runScheduledConnect, Instant.now().plusMillis(delay));
+            log.debug("直播间 {} 第 {} 次重连，退避 {} 毫秒，闸门放行于 {}",
+                    source.getRoomId(), attempts, delay, at);
+        } catch (RuntimeException e) {
+            // 排不进去（如停机时调度器已拒收）就得把闸门放回去：
+            // 留在「已排队」状态而实际没有任务，等于这个房间从此不再重连
+            reconnectScheduled.set(false);
+            throw e;
+        }
+    }
+
+    /**
+     * 执行一次排队中的重连
+     * <p>
+     * 先放开「已排队」的闸门再连：{@code connect()} 失败时会同步调
+     * {@code scheduleReconnect()} 排下一次，闸门必须在那之前就已经开着，
+     * 否则一次失败之后这个房间就永远不再重连了。
+     */
+    private void runScheduledConnect() {
+        reconnectScheduled.set(false);
+        connect();
     }
 
     /**
