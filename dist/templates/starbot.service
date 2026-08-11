@@ -23,6 +23,13 @@ ExecStart=/opt/starbot/start.sh
 Restart=on-failure
 RestartSec=10s
 
+# 143 = 128 + SIGTERM(15)，也就是 `systemctl stop` 之后 JVM 正常退出的码。
+# 不声明它的话每次正常停机都会在 journal 里留一行
+# 「starbot.service: Failed with result 'exit-code'」——关停其实是干净的
+# （data.json 已保存、tomcat graceful shutdown complete）。
+# 那行纯噪声，但它训练人忽略 `Failed` 字样，而下一次真的失败长得一模一样。
+SuccessExitStatus=143
+
 # 凭据文件需保持仅属主可读写
 UMask=0077
 
