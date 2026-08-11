@@ -93,9 +93,17 @@ public class BilibiliLiveOnPushHandler implements StarBotEventHandler {
      * 「getaddrinfo ENOTFOUND」，两种情形<b>消息 id 均为空，文字一起没发出去</b>。
      * 正例（真封面）合并成一条正常送达并渲染，所以原因不是「混排本身不行」。
      * <p>
-     * 而封面地址失效并不罕见：那是平台给的 URL，会过期。分成两条时封面拉不到只丢那一条图，
-     * 文字照常送达。{@code BilibiliDynamicPushHandler} 的 {@code {url}{next}{picture}} 同理，
+     * 分成两条时封面拉不到只丢那一条图，文字照常送达。
+     * {@code BilibiliDynamicPushHandler} 的 {@code {url}{next}{picture}} 同理，
      * 且那边 2026-08-02 真丢过一次图，文字正是靠分条才幸存。
+     * <p>
+     * ⚠️ <b>封面地址会不会变坏、多久变坏一次，没有实测。</b>这里<b>不</b>声称它「会过期」——
+     * 那句话写过一次，查完发现反证：URL 是纯内容寻址路径
+     * （{@code /bfs/live/new_room_cover/<40 位哈希>.jpg}），<b>没有签名与有效期参数</b>，
+     * 而 8/9~8/10 抓到的三个同族 CDN 地址两天后仍然 HTTP 200。
+     * 可信的机制是<b>主播更换封面后旧图被清理</b>或<b>推送那一刻 CDN 恰好取不到</b>，
+     * 两者都只是推断。**已实测的只有「取不到时整条发不出去」这一件**，
+     * 而这一件已经足够支撑本段的结论——兜底该做的理由不依赖失效频率。
      * <p>
      * <b>但这只是默认值，模板是使用者可以自己改的</b>——注释拦不住配置行为。
      * 真正的解法在程序层面：含图消息发送失败时剥掉图片段重发一次纯文字，
