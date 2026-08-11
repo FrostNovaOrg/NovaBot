@@ -153,6 +153,55 @@ class BilibiliMyDataCommandTest {
     }
 
     @Test
+    @DisplayName("礼物卡片要附口径说明，本场范围不提口径变更")
+    void giftCardCarriesTheUnitNote() {
+        bindings.bind(PLATFORM, "bilibili", QQ, UID);
+        when(liveDataService.getLiveUserMetric(anyString(), eq(STREAMER), eq(BilibiliLiveMetric.GIFT_USERS), eq(UID)))
+                .thenReturn(52.5);
+
+        liveCommand.execute(context());
+
+        ArgumentCaptor<String> footnote = ArgumentCaptor.forClass(String.class);
+        verify(painter).paintCards(any(), any(), footnote.capture());
+        assertEquals(BilibiliLiveMetric.GIFT_RANKING_NOTE, footnote.getValue(),
+                "本场数据是变更之后攒的，只有一段口径，不该提变更");
+    }
+
+    @Test
+    @DisplayName("⚠️ 累计范围要另说一句：这个数里含口径变更前后两段")
+    void totalScopeAlsoDeclaresTheUnitChange() {
+        bindings.bind(PLATFORM, "bilibili", QQ, UID);
+        when(liveDataService.supportsTotalData()).thenReturn(true);
+        when(liveDataService.getTotalUserMetric(anyString(), eq(STREAMER), eq(BilibiliLiveMetric.GIFT_USERS), eq(UID)))
+                .thenReturn(52.5);
+
+        totalCommand.execute(context());
+
+        ArgumentCaptor<String> footnote = ArgumentCaptor.forClass(String.class);
+        verify(painter).paintCards(any(), any(), footnote.capture());
+        // 累计数据是逐场累加的，变更那一刻之前按实扣、之后按到手价值——
+        // 同一个数里含两段口径，正撞「同名指标必须同口径」那条规矩，只能标注
+        assertTrue(footnote.getValue().contains(BilibiliLiveMetric.GIFT_RANKING_NOTE),
+                "口径说明本身仍要有，实际: " + footnote.getValue());
+        assertTrue(footnote.getValue().contains(BilibiliLiveMetric.GIFT_RANKING_SCOPE_CHANGE_NOTE),
+                "累计范围还要说明口径变更过，实际: " + footnote.getValue());
+    }
+
+    @Test
+    @DisplayName("没有礼物卡片时不要附一句关于礼物口径的话")
+    void noGiftCardNoUnitNote() {
+        bindings.bind(PLATFORM, "bilibili", QQ, UID);
+        when(liveDataService.getLiveUserMetric(anyString(), eq(STREAMER), eq(BilibiliLiveMetric.DANMU_USERS), eq(UID)))
+                .thenReturn(144.0);
+
+        liveCommand.execute(context());
+
+        ArgumentCaptor<String> footnote = ArgumentCaptor.forClass(String.class);
+        verify(painter).paintCards(any(), any(), footnote.capture());
+        assertEquals(null, footnote.getValue(), "只发过弹幕的人不该读到一句礼物口径说明");
+    }
+
+    @Test
     @DisplayName("未配置累计存储时总数据应明确告知，而不是展示 0")
     void totalDataNeedsExternalStore() {
         bindings.bind(PLATFORM, "bilibili", QQ, UID);

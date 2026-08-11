@@ -106,7 +106,14 @@ public abstract class BilibiliMyDataCommand extends BilibiliScopedDataCommand {
                 scope.getLabel() + "数据 · " + nameOf(streamer) + "的直播间",
                 self.getFace());
 
-        String footnote = giftCard ? BilibiliLiveMetric.GIFT_RANKING_NOTE : null;
+        String footnote = null;
+        if (giftCard) {
+            footnote = BilibiliLiveMetric.GIFT_RANKING_NOTE;
+            // 累计范围下这个数里含口径变更前后两段，多说一句
+            if (scope.isTotal()) {
+                footnote = footnote + "\n" + BilibiliLiveMetric.GIFT_RANKING_SCOPE_CHANGE_NOTE;
+            }
+        }
 
         return painter.paintCards(header, cards, footnote).map(CommandReply::image).orElseGet(this::paintFailed);
     }
