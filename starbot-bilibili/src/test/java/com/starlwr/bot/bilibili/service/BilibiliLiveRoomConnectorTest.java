@@ -3,9 +3,12 @@ package com.starlwr.bot.bilibili.service;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.enums.ConnectStatus;
+import com.starlwr.bot.bilibili.health.BilibiliDisconnectCause;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
 
 import static com.starlwr.bot.bilibili.service.BilibiliConnectorHarness.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -388,6 +391,58 @@ class BilibiliLiveRoomConnectorTest {
             assertEquals(3, harness.scheduleCount());
             assertEquals(1, harness.queuedReconnects(), "连续失败要能一次接一次地排下去");
             assertEquals(BASE_SECONDS * 4, harness.lastBackoffSeconds(), "第三次真实重试等四个基准");
+        }
+
+        @Test
+        @DisplayName("⚠️ 本端为重连而关的连接，归因不能说成「服务端正常关闭」")
+        void localReconnectIsNotBlamedOnTheServer() {
+            // 2026-08-11 早上的实况：心跳超时 → 本端 close() → 容器回调给的关闭码是 1000。
+            // 旧判据只看「是否已被永久关闭」与关闭码，于是归成「服务端正常关闭」，
+            // 我照着这个标签把一次笔记本合盖睡眠写成了平台断线。
+            // 错的方向最坏：把本端问题说成对端问题，人会一路往外查
+            BilibiliConnectorHarness harness = disconnectOnce();
+
+            assertEquals(List.of(BilibiliDisconnectCause.LOCAL_RECONNECT), harness.recordedCauses(),
+                    "关闭码里没有「是谁关的」这个信息，只有连接器自己知道");
+        }
+
+        @Test
+        @DisplayName("平台关的 1000 仍然算服务端正常关闭，不能反过来错标成本端")
+        void platformCloseIsStillServerClosed() {
+            BilibiliConnectorHarness harness = new BilibiliConnectorHarness();
+            harness.connect();
+
+            harness.fireConnectionClosed(1000);
+
+            assertEquals(List.of(BilibiliDisconnectCause.SERVER_CLOSED), harness.recordedCauses());
+        }
+
+        @Test
+        @DisplayName("停止监听算主动关闭，不算故障")
+        void stoppingIsByUs() {
+            BilibiliConnectorHarness harness = new BilibiliConnectorHarness();
+            harness.connect();
+
+            harness.connector().close();
+            harness.fireConnectionClosed(1000);
+
+            assertEquals(List.of(BilibiliDisconnectCause.BY_US), harness.recordedCauses(),
+                    "close() 之后的那次回调是我们自己造成的，且不该进断线率");
+        }
+
+        @Test
+        @DisplayName("本端关过一次之后，下一次平台断开不能继续记在本端账上")
+        void theLocalCloseMarkDoesNotLeakToTheNextDisconnect() {
+            BilibiliConnectorHarness harness = disconnectOnce();
+
+            // 重连成功，然后这一次是平台关的
+            harness.runQueuedReconnects();
+            harness.fireConnectionClosed(1000);
+
+            assertEquals(
+                    List.of(BilibiliDisconnectCause.LOCAL_RECONNECT, BilibiliDisconnectCause.SERVER_CLOSED),
+                    harness.recordedCauses(),
+                    "「本端关的」这笔记录只对那一条会话有效");
         }
 
         @Test

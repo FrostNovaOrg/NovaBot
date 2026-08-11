@@ -167,6 +167,14 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
     private final AtomicBoolean reconnectScheduled = new AtomicBoolean();
 
     /**
+     * 被本端关掉的那条会话，用于断线归因
+     * <p>
+     * 本端主动关闭时容器回调给的关闭码是 1000，与服务端正常关闭无法区分，
+     * 所以「是谁关的」只能由这里记着。建立新连接时清空：一条新会话上不该背着旧账。
+     */
+    private volatile WebSocketSession closedByUsSession;
+
+    /**
      * 风控检测窗口内收到的消息总数
      */
     private final AtomicInteger totalMessages = new AtomicInteger();
@@ -351,6 +359,8 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
         this.session = session;
         this.status = ConnectStatus.CONNECTED;
         this.lastMessageTime = Instant.now();
+        // 新会话不背旧账：上一条会话若关了却没等到回调，那笔记录到此作废
+        this.closedByUsSession = null;
 
         // 心跳<b>不在这里</b>启动，改由 connect() 在认证包发出之后启动。
         // 原因是把 session 提前赋值之后，这里启动的心跳就真的发得出去了——
@@ -536,7 +546,7 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
         authenticatedAt = null;
 
         BilibiliDisconnectCause cause = BilibiliDisconnectCause.classify(
-                closed.get(), closeStatus.getCode(), authAt != null, lived);
+                closerOf(session), closeStatus.getCode(), authAt != null, lived);
         disconnectDigest.record(source.getRoomId(), cause, lived);
 
         if (closed.get()) {
@@ -658,18 +668,45 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
 
     /**
      * 关闭当前会话
+     * <p>
+     * 关掉之前先记下「这一条是本端关的」。容器随后回调 {@code afterConnectionClosed}
+     * 时给的关闭码是 <b>1000</b>，与服务端正常关闭一模一样——
+     * 「是谁关的」这个信息不在关闭码里，只有这里知道。
      */
     private void closeSession() {
         WebSocketSession current = session;
         session = null;
 
         if (current != null && current.isOpen()) {
+            // 记的是会话对象本身而不是一个布尔：布尔会在「关闭回调迟迟不来」时留给
+            // 下一次断开，把平台关的说成我们关的。按对象比对就没有这个窗口
+            closedByUsSession = current;
             try {
                 current.close();
             } catch (IOException e) {
                 log.debug("关闭直播间 {} 的连接时发生异常: {}", source.getRoomId(), e.getMessage());
             }
         }
+    }
+
+    /**
+     * 判断这次关闭是谁发起的
+     * <p>
+     * 顺序有讲究：已被永久关闭时一律算停止监听，哪怕它同时也是本端关的会话——
+     * 停止监听不是故障，不该进断线摘要。
+     */
+    private BilibiliDisconnectCause.Closer closerOf(WebSocketSession closedSession) {
+        boolean byUs = closedSession.equals(closedByUsSession);
+        if (byUs) {
+            closedByUsSession = null;
+        }
+
+        if (closed.get()) {
+            return BilibiliDisconnectCause.Closer.US_STOPPING;
+        }
+        return byUs
+                ? BilibiliDisconnectCause.Closer.US_RECONNECTING
+                : BilibiliDisconnectCause.Closer.PLATFORM;
     }
 
     /**
