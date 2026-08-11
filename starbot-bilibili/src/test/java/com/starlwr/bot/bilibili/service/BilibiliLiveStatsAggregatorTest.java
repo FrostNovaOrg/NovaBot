@@ -162,8 +162,10 @@ class BilibiliLiveStatsAggregatorTest {
 
         List<UserScore> ranking = liveDataService.getLiveUserRanking(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.GIFT_USERS, 10);
 
-        assertEquals(1, ranking.size(), "送礼人不该因为实扣是 0 就从榜上消失");
-        assertEquals(80.0, ranking.get(0).score(), 0.0001, "榜上记的是主播到手价值");
+        // 旧口径下这个人并不是从计分表里消失（记 0 也会建条目，所以「N 人送出」一直是对的），
+        // 而是得分为 0、排到榜尾——于是在只出前几名的榜上看不见，看见的也是 ¥0.00
+        assertEquals(1, ranking.size());
+        assertEquals(80.0, ranking.get(0).score(), 0.0001, "榜上记的是主播到手价值，不是 0");
         assertEquals(80.0, metric(BilibiliLiveMetric.GIFT_VALUE), 0.0001);
         assertEquals(0.0, metric(BilibiliLiveMetric.GIFT_PAID), 0.0001, "实扣仍然如实记 0，只是不再拿它排榜");
     }

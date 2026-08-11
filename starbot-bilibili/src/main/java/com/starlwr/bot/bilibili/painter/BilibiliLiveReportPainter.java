@@ -589,6 +589,16 @@ public class BilibiliLiveReportPainter {
      * 于是直播中随时拉的实时报告与下播报告走的是同一段逻辑。
      * <p>
      * 三项各自独立降级：接口挂了或没有开播快照，就只跳过那一项。
+     * <p>
+     * ⚠️ <b>已登记待处理：这里的「大航海」与数据卡片里的「大航海」不同口径，而名字一样。</b>
+     * 卡片上那个是<b>上舰人次</b>（{@code CAPTAIN/COMMANDER/GOVERNOR_COUNT} 之和，
+     * <b>含续费</b>），这里这个是<b>大航海人数的净变化</b>（续费不改变人数，到期会减少）。
+     * 于是同一张报告里可以出现「大航海 +5」与「大航海 · 本场 +2」，读的人无法对上。
+     * 曲线区还有第三个「大航海」，画的是金额（{@code GUARD_VALUE}）。
+     * <p>
+     * 按「同一张报告里同名指标必须同口径，不同就改名或标注」这条规矩，这里要么改名
+     * （如「上舰人次」/「大航海人数」）要么标注。改动涉及报告版面与既有截图的认知，
+     * 不与礼物口径那批一起做，已记账。
      */
     private void drawFansChange(CommonPainter painter, String platform, LiveStreamerInfo source) {
         List<Card> cards = new ArrayList<>();
