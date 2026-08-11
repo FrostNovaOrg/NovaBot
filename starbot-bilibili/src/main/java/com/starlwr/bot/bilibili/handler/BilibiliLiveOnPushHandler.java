@@ -81,6 +81,28 @@ public class BilibiliLiveOnPushHandler implements StarBotEventHandler {
         return BilibiliLiveOnEvent.class;
     }
 
+    /**
+     * 默认参数
+     * <p>
+     * ⚠️ <b>模板里的 {@code {next}} 落在文字与封面之间，那不是排版，是文字的可达性保护。
+     * 想把开播合并成一条的人请先读完这一段。</b>
+     * <p>
+     * <b>2026-08-11 实测</b>（NapCat / OneBot 11，专用测试群，三条真发）：
+     * 一条消息里文字与图片段混排时，<b>图片下载失败会让整条 {@code send_group_msg} 失败</b>，
+     * 而不是只丢图片段。封面地址 404 返回「下载文件失败: Not Found」、主机不存在返回
+     * 「getaddrinfo ENOTFOUND」，两种情形<b>消息 id 均为空，文字一起没发出去</b>。
+     * 正例（真封面）合并成一条正常送达并渲染，所以原因不是「混排本身不行」。
+     * <p>
+     * 而封面地址失效并不罕见：那是平台给的 URL，会过期。分成两条时封面拉不到只丢那一条图，
+     * 文字照常送达。{@code BilibiliDynamicPushHandler} 的 {@code {url}{next}{picture}} 同理，
+     * 且那边 2026-08-02 真丢过一次图，文字正是靠分条才幸存。
+     * <p>
+     * <b>但这只是默认值，模板是使用者可以自己改的</b>——注释拦不住配置行为。
+     * 真正的解法在程序层面：含图消息发送失败时剥掉图片段重发一次纯文字，
+     * 并在日志里明写降级发生了（静默降级是看不见的谎言）。
+     * <b>要求是「推送文字的可达性不得依赖图片的可取性，任何模板写法下都必须成立」。</b>
+     * 兜底落地之后这一段的限制取消；在那之前别删这个 {@code {next}}。
+     */
     @Override
     public JSONObject getDefaultParams() {
         JSONObject params = new JSONObject();

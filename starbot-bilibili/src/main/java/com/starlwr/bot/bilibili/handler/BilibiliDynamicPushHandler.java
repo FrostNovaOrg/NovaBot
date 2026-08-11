@@ -109,6 +109,23 @@ public class BilibiliDynamicPushHandler implements StarBotEventHandler {
         return BilibiliDynamicUpdateEvent.class;
     }
 
+    /**
+     * 默认参数
+     * <p>
+     * ⚠️ <b>模板里的 {@code {next}} 落在文字与动态图之间，那不是排版，是文字的可达性保护。</b>
+     * <b>2026-08-02 真丢过一次动态图</b>：图片重试三次后整条放弃，
+     * 而文字因为分了条才幸存——若当时是合并的一条，文字会跟着一起没。
+     * <p>
+     * 与开播那边的失败点不同：开播的封面是把 URL 交给 OneBot 实现去下载
+     * （详见 {@code BilibiliLiveOnPushHandler.getDefaultParams} 里 2026-08-11 那次实测），
+     * 动态图是<b>本端渲染后按 base64 组装</b>，失败发生在我们这一侧。
+     * <b>两者不能互相推断</b>，动态这条路径自己的降级证据还没拿到。
+     * <p>
+     * 程序层面的兜底（含图消息发送失败时剥掉图片段重发纯文字，并在日志里明写降级）
+     * 对两条路径同样适用，且已定为产品级要求：
+     * <b>推送文字的可达性不得依赖图片的可取性，任何模板写法下都必须成立。</b>
+     * 在它落地之前别删这个 {@code {next}}。
+     */
     @Override
     public JSONObject getDefaultParams() {
         JSONObject params = new JSONObject();
