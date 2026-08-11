@@ -86,8 +86,10 @@ public class BilibiliLiveStatsAggregator {
 
         increment(event, BilibiliLiveMetric.GIFT_VALUE, value);
         increment(event, BilibiliLiveMetric.GIFT_PAID, charged);
-        // 计分表记金额而非次数：礼物排行榜比的是送了多少钱，而人数仍是表的大小
-        scoreUser(event, BilibiliLiveMetric.GIFT_USERS, event.getSender(), charged);
+        // 计分表记金额而非次数：礼物排行榜比的是送了多少，而人数仍是表的大小。
+        // 记到手价值而不是实扣——与 GIFT_VALUE 同口径，卡片与榜单必须能相加对上，
+        // 理由与背包礼物那个反例见 BilibiliLiveMetric.GIFT_USERS
+        scoreUser(event, BilibiliLiveMetric.GIFT_USERS, event.getSender(), value);
     }
 
     /**
@@ -108,8 +110,17 @@ public class BilibiliLiveStatsAggregator {
      * 开出物的价值计入 {@code GIFT_VALUE}（主播确实收到了那么多），
      * 盲盒本身的价计入 {@code GIFT_PAID}（观众确实只花了那么多），差额记为盲盒盈亏。
      * <p>
-     * <b>礼物排行榜按实扣排。</b>按到手价值排的话，花 100 元开出一堆小心心的人会排在榜尾，
-     * 花 10 元中了大奖的人排到榜首——那是在按运气排名，而不是按心意。
+     * <b>礼物排行榜按到手价值排，不按实扣。</b>这一条改过一次，改的理由要连着反例一起记住：
+     * <p>
+     * 原先按实扣排，论据是「按到手价值排等于按运气排名：花 100 元开出一堆小心心的人排榜尾，
+     * 花 10 元中了大奖的人排榜首」。这个论据<b>只对盲盒成立</b>，
+     * 而礼物榜同时还要装下背包礼物——背包礼物实扣恒为 0，于是一份 80 元的背包礼物
+     * 在榜上记 0、在总额里记 80。2026-08-10 就这样出过事：礼物榜 ¥1.1，礼物总额 ¥86.6，
+     * 同一份报告里同一件事两个数，界面上没有一处说明它们不同口径。
+     * <p>
+     * <b>只对着盲盒论证，就会得出一个把背包礼物送礼人清零的结论。</b>
+     * 盲盒那份顾虑现在由下面的盲盒盈亏榜（{@code BOX_PROFIT_USERS}）单独表达，
+     * 它本来就是「按运气」那张榜；为它把主榜改成实扣，代价要每个送背包礼物的观众来付。
      * <p>
      * 事件里 {@code price} 是盲盒实扣、{@code value} 是开出物面值。
      * 这两个字段名相当反直觉（{@code randomGiftInfo} 指的是<b>投入的盲盒</b>而不是开出的东西），
@@ -128,7 +139,7 @@ public class BilibiliLiveStatsAggregator {
         increment(event, BilibiliLiveMetric.BOX_PROFIT, value - price);
         increment(event, BilibiliLiveMetric.GIFT_VALUE, value);
         increment(event, BilibiliLiveMetric.GIFT_PAID, charged);
-        scoreUser(event, BilibiliLiveMetric.GIFT_USERS, event.getSender(), charged);
+        scoreUser(event, BilibiliLiveMetric.GIFT_USERS, event.getSender(), value);
         scoreUser(event, BilibiliLiveMetric.BOX_USERS, event.getSender(), count);
         scoreUser(event, BilibiliLiveMetric.BOX_PROFIT_USERS, event.getSender(), value - price);
     }

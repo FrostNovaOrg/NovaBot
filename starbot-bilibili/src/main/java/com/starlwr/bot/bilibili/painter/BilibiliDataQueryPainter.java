@@ -153,7 +153,11 @@ public class BilibiliDataQueryPainter {
 
             if (StringUtil.isNotBlank(footnote)) {
                 painter.movePos(0, 6);
-                painter.drawTip(footnote, COLOR_TIP);
+                // 开自动折行而不是 drawTip：drawTip 不折行，而脚注要装口径说明这类整句，
+                // 一行放不下就会画到画布外面去——只是画布外，报错都不会有
+                painter.drawTextWithStyle(
+                        List.of(new TextWithStyle(footnote, CommonPainter.TIP_FONT_SIZE, COLOR_TIP, Font.PLAIN)),
+                        null, true, MARGIN);
             }
 
             painter.movePos(0, 16);

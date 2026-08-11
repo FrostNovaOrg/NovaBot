@@ -150,18 +150,63 @@ class BilibiliLiveStatsAggregatorTest {
     }
 
     @Test
-    @DisplayName("礼物排行榜按实扣排，不能让运气好的盲盒玩家挤掉真金白银的人")
-    void giftRankingUsesPaidNotOpenedValue() {
+    @DisplayName("⚠️ 背包礼物必须上礼物榜：它实扣为零，但主播确实收到了")
+    void bagGiftIsOnTheRankingNotOnlyInTheTotal() {
+        // 2026-08-10 的实况：观众送出一份 80 元的背包礼物（抢红包白得的，实扣 0），
+        // 礼物榜显示 ¥1.1、礼物总额 ¥86.6——同一份报告里同一件事两个数。
+        // 这里把那一份礼物单独喂进去，榜与总额必须都是 80
+        BilibiliPaidGiftEvent bagGift = new BilibiliPaidGiftEvent(STREAMER, user(1L), gift(80.0, 1), 80.0);
+        bagGift.setCharged(0.0);
+
+        aggregator.onPaidGift(bagGift);
+
+        List<UserScore> ranking = liveDataService.getLiveUserRanking(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.GIFT_USERS, 10);
+
+        assertEquals(1, ranking.size(), "送礼人不该因为实扣是 0 就从榜上消失");
+        assertEquals(80.0, ranking.get(0).score(), 0.0001, "榜上记的是主播到手价值");
+        assertEquals(80.0, metric(BilibiliLiveMetric.GIFT_VALUE), 0.0001);
+        assertEquals(0.0, metric(BilibiliLiveMetric.GIFT_PAID), 0.0001, "实扣仍然如实记 0，只是不再拿它排榜");
+    }
+
+    @Test
+    @DisplayName("⚠️ 礼物榜逐行相加应当等于礼物总额")
+    void giftRankingSumsToTheTotal() {
+        // 一份普通礼物、一份背包礼物、一次盲盒：三种口径会打架的形状凑在一场里
+        aggregator.onPaidGift(new BilibiliPaidGiftEvent(STREAMER, user(1L), gift(5.2, 1), 5.2));
+
+        BilibiliPaidGiftEvent bagGift = new BilibiliPaidGiftEvent(STREAMER, user(2L), gift(80.0, 1), 80.0);
+        bagGift.setCharged(0.0);
+        aggregator.onPaidGift(bagGift);
+
+        aggregator.onRandomGift(new BilibiliRandomGiftEvent(STREAMER, user(3L), gift(9.9, 1), gift(6.6, 1), 9.9, 6.6));
+
+        List<UserScore> ranking = liveDataService.getLiveUserRanking(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.GIFT_USERS, 10);
+        double sum = ranking.stream().mapToDouble(UserScore::score).sum();
+
+        // 卡片与榜单能相加对上，是主播读得懂报告的前提；对不上的话，
+        // 差额既可能是「有人没上榜」也可能是「榜只取了前几名」，读的人无从分辨
+        assertEquals(metric(BilibiliLiveMetric.GIFT_VALUE), sum, 0.0001, "榜与总额必须同口径");
+        assertEquals(91.8, sum, 0.0001);
+    }
+
+    @Test
+    @DisplayName("盲盒「按运气排名」的顾虑由盲盒盈亏榜表达，不靠改礼物榜")
+    void luckIsExpressedByTheBoxProfitRankingInstead() {
         // 甲花 100 元开盲盒，只开出价值 1 元的东西
         aggregator.onRandomGift(new BilibiliRandomGiftEvent(STREAMER, user(1L), gift(100.0, 1), gift(1.0, 1), 100.0, 1.0));
         // 乙花 10 元开盲盒，运气好开出 500 元
         aggregator.onRandomGift(new BilibiliRandomGiftEvent(STREAMER, user(2L), gift(10.0, 1), gift(500.0, 1), 10.0, 500.0));
 
-        List<UserScore> ranking = liveDataService.getLiveUserRanking(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.GIFT_USERS, 10);
+        List<UserScore> gifts = liveDataService.getLiveUserRanking(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.GIFT_USERS, 10);
+        assertEquals(2L, gifts.get(0).userUid(), "礼物榜按到手价值排，开出 500 的在前");
+        assertEquals(500.0, gifts.get(0).score(), 0.0001);
+        assertEquals(1.0, gifts.get(1).score(), 0.0001);
 
-        assertEquals(1L, ranking.get(0).userUid(), "花了 100 元的应排第一，而不是运气好的那位");
-        assertEquals(100.0, ranking.get(0).score(), 0.0001, "得分应是实扣而非开出面值");
-        assertEquals(10.0, ranking.get(1).score(), 0.0001);
+        // 「谁真的掏了钱」这件事没有丢，它在盲盒盈亏榜上：甲亏 99，乙赚 490
+        List<UserScore> profit = liveDataService.getLiveUserRanking(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.BOX_PROFIT_USERS, 10);
+        assertEquals(2L, profit.get(0).userUid());
+        assertEquals(490.0, profit.get(0).score(), 0.0001);
+        assertEquals(-99.0, profit.get(1).score(), 0.0001, "花 100 只开出 1 的那位，亏在这张榜上一眼可见");
     }
 
     @Test
