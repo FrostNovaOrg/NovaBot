@@ -116,6 +116,10 @@ public abstract class BilibiliRankingCommand extends BilibiliScopedDataCommand {
                 scope.getLabel() + "数据 · " + nameOf(streamer) + "的直播间",
                 streamer.getFace());
         String footnote = "第 " + page + " / " + pages + " 页 · 共 " + total + " 人";
+        if (board.note != null) {
+            // 口径说明单独一行，别和页码挤在一起：挤在一起的那行会长到折行，读起来像页码的一部分
+            footnote = footnote + "\n" + board.note;
+        }
 
         return painter.paintRanking(header, rows, offset + 1, board.scoreText, footnote)
                 .map(CommandReply::image)
@@ -126,17 +130,27 @@ public abstract class BilibiliRankingCommand extends BilibiliScopedDataCommand {
      * 可查的榜单
      */
     private enum Board {
-        DANMU("弹幕", BilibiliLiveMetric.DANMU_USERS, false, score -> Math.round(score) + " 条"),
-        GIFT("礼物", BilibiliLiveMetric.GIFT_USERS, true, score -> "¥" + yuan(score)),
-        SUPER_CHAT("醒目留言", BilibiliLiveMetric.SUPER_CHAT_USERS, true, score -> "¥" + yuan(score), "SC", "sc"),
-        BOX("盲盒", BilibiliLiveMetric.BOX_USERS, false, score -> Math.round(score) + " 个"),
+        DANMU("弹幕", BilibiliLiveMetric.DANMU_USERS, false, score -> Math.round(score) + " 条", null),
+        GIFT("礼物", BilibiliLiveMetric.GIFT_USERS, true, score -> "¥" + yuan(score),
+                BilibiliLiveMetric.GIFT_RANKING_NOTE),
+        SUPER_CHAT("醒目留言", BilibiliLiveMetric.SUPER_CHAT_USERS, true, score -> "¥" + yuan(score),
+                null, "SC", "sc"),
+        BOX("盲盒", BilibiliLiveMetric.BOX_USERS, false, score -> Math.round(score) + " 个", null),
         BOX_PROFIT("盲盒盈亏", BilibiliLiveMetric.BOX_PROFIT_USERS, true,
-                score -> (score >= 0 ? "+¥" : "-¥") + yuan(Math.abs(score)), "盈亏"),
-        GUARD("大航海", BilibiliLiveMetric.GUARD_USERS, false, score -> Math.round(score) + " 次", "舰长");
+                score -> (score >= 0 ? "+¥" : "-¥") + yuan(Math.abs(score)), null, "盈亏"),
+        GUARD("大航海", BilibiliLiveMetric.GUARD_USERS, false, score -> Math.round(score) + " 次", null, "舰长");
 
         private final String title;
 
         private final String metric;
+
+        /**
+         * 榜单的口径说明，没有歧义的榜为 null
+         * <p>
+         * 只有礼物榜需要：它的得分是「主播到手价值」而不是「观众花了多少」，
+         * 而这张榜的读者最容易把两者当成一回事。
+         */
+        private final String note;
 
         /**
          * 榜单是否以金额排名
@@ -150,11 +164,17 @@ public abstract class BilibiliRankingCommand extends BilibiliScopedDataCommand {
 
         private final List<String> aliases;
 
-        Board(String title, String metric, boolean money, DoubleFunction<String> scoreText, String... aliases) {
+        /**
+         * 口径说明写成必填位置参数而不是可变参数的一部分：
+         * 与别名共用可变参数时，「礼物」那条的说明会被当成一个别名收下，而编译器不会有意见
+         */
+        Board(String title, String metric, boolean money, DoubleFunction<String> scoreText,
+              String note, String... aliases) {
             this.title = title;
             this.metric = metric;
             this.money = money;
             this.scoreText = scoreText;
+            this.note = note;
             this.aliases = List.of(aliases);
         }
 

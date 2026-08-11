@@ -115,6 +115,15 @@ class BilibiliConnectorHarness {
     /** 交给闸门排队的重连任务 */
     private final List<Runnable> queuedReconnects = new ArrayList<>();
 
+    /**
+     * 每次排队时连接器要求的「最早不得早于此刻」，与 {@link #queuedReconnects} 一一对应
+     * <p>
+     * 退避时长只出现在这个参数里（日志之外没有别的出口），而退避算错正是
+     * 「重连排两次队」那个缺陷唯一能被看见的地方——排队次数多一次是空转的，
+     * 拖长的间隔才是真代价。
+     */
+    private final List<Instant> reconnectDeadlines = new ArrayList<>();
+
     private final AtomicInteger handshakes = new AtomicInteger();
 
     private boolean sessionOpen = true;
@@ -129,6 +138,9 @@ class BilibiliConnectorHarness {
 
     /** 下一次 execute() 是否直接失败 */
     private boolean failNextHandshake;
+
+    /** 下一次发包是否直接失败 */
+    private boolean failNextSend;
 
     private final BilibiliLiveRoomConnector connector;
 
@@ -173,6 +185,21 @@ class BilibiliConnectorHarness {
 
     BilibiliConnectorHarness failNextHandshake() {
         this.failNextHandshake = true;
+        return this;
+    }
+
+    /**
+     * 让下一次发包失败，用来走 {@code sendHeartbeat()} 里的 {@code reconnect()} 分支
+     * <p>
+     * 心跳还有一条更贴近实况的入口——「超过 90 秒没收到消息」——但那条要拨时钟，
+     * 会把这个刻意做成单线程确定性的脚手架拖回到靠时间赌运气。
+     * 两条入口进的是同一个 {@code reconnect()}，用发包失败这条即可。
+     * <p>
+     * <b>必须在 {@code connect()} 之后调用</b>：认证包也走 send()，
+     * 提前打开会让首次连接就失败，测的就不是重连了。
+     */
+    BilibiliConnectorHarness failNextSend() {
+        this.failNextSend = true;
         return this;
     }
 
@@ -267,6 +294,40 @@ class BilibiliConnectorHarness {
     }
 
     /**
+     * 连接器一共排过几次队（含已经跑掉的）
+     * <p>
+     * 与 {@link #queuedReconnects()} 不同：那个数只算还没跑的，
+     * 而「同一次断开排了两次队」这件事在跑掉之后就看不见了。
+     */
+    int scheduleCount() {
+        return reconnectDeadlines.size();
+    }
+
+    /**
+     * 最近一次排队时连接器要求的退避时长（从排队那一刻算起，四舍五入到秒）
+     * <p>
+     * 用秒而不是毫秒比较：脚手架跑在真实时钟上，从连接器算出 {@code now} 到
+     * 这里读到参数之间会过去几毫秒，按毫秒断言就是一条时好时坏的测试。
+     * 退避的量级是秒，秒级精度足够把「一个间隔」和「两个间隔」分开。
+     * <p>
+     * <b>刻意只给「最近一次」，不给按下标取。</b>按下标取会写出「碰巧通过」的断言：
+     * 重连排两次队时，下标 1 恰好就是那次多余排队，而它的退避正好等于
+     * 修好之后第二次真实重试的值——于是断言在修好之前也是绿的。
+     * 第一版这四条测试里就有一条这样白过了，靠对照跑（把修改 stash 掉再跑一遍）才发现。
+     */
+    long lastBackoffSeconds() {
+        if (reconnectDeadlines.isEmpty()) {
+            throw new IllegalStateException("还没有排过队");
+        }
+
+        Instant deadline = reconnectDeadlines.get(reconnectDeadlines.size() - 1);
+        if (deadline == null) {
+            throw new IllegalStateException("最近一次排队没有附带退避时刻");
+        }
+        return Math.round(Duration.between(Instant.now(), deadline).toMillis() / 1000.0);
+    }
+
+    /**
      * 会话是否被关掉过
      */
     boolean sessionClosed() {
@@ -309,6 +370,11 @@ class BilibiliConnectorHarness {
 
         try {
             doAnswer(invocation -> {
+                if (failNextSend) {
+                    failNextSend = false;
+                    throw new IOException("发送失败");
+                }
+
                 BinaryMessage message = invocation.getArgument(0);
                 ByteBuffer payload = message.getPayload();
                 byte[] copy = new byte[payload.remaining()];
@@ -391,10 +457,12 @@ class BilibiliConnectorHarness {
     private void stubConnectGate() {
         when(connectGate.submit(any(Runnable.class), any())).thenAnswer(invocation -> {
             queuedReconnects.add(invocation.getArgument(0));
+            reconnectDeadlines.add(invocation.getArgument(1));
             return Instant.EPOCH;
         });
         when(connectGate.submit(any(Runnable.class))).thenAnswer(invocation -> {
             queuedReconnects.add(invocation.getArgument(0));
+            reconnectDeadlines.add(null);
             return Instant.EPOCH;
         });
     }

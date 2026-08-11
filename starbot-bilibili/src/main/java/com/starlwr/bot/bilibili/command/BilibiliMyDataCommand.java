@@ -77,9 +77,13 @@ public abstract class BilibiliMyDataCommand extends BilibiliScopedDataCommand {
         List<BilibiliDataQueryPainter.DataCard> cards = new ArrayList<>();
         addCard(cards, scope, platform, streamer.getUid(), BilibiliLiveMetric.DANMU_USERS, userUid,
                 score -> Math.round(score) + " 条", "弹幕");
+        boolean giftCard = false;
         if (revenue) {
+            int beforeGift = cards.size();
             addCard(cards, scope, platform, streamer.getUid(), BilibiliLiveMetric.GIFT_USERS, userUid,
                     score -> "¥" + yuan(score), "礼物");
+            // 礼物卡片真的出来了才附口径说明：没送过礼物的人不需要读一句关于礼物口径的话
+            giftCard = cards.size() > beforeGift;
             addCard(cards, scope, platform, streamer.getUid(), BilibiliLiveMetric.SUPER_CHAT_USERS, userUid,
                     score -> "¥" + yuan(score), "醒目留言");
         }
@@ -102,7 +106,9 @@ public abstract class BilibiliMyDataCommand extends BilibiliScopedDataCommand {
                 scope.getLabel() + "数据 · " + nameOf(streamer) + "的直播间",
                 self.getFace());
 
-        return painter.paintCards(header, cards, null).map(CommandReply::image).orElseGet(this::paintFailed);
+        String footnote = giftCard ? BilibiliLiveMetric.GIFT_RANKING_NOTE : null;
+
+        return painter.paintCards(header, cards, footnote).map(CommandReply::image).orElseGet(this::paintFailed);
     }
 
     /**

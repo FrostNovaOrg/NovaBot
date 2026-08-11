@@ -589,6 +589,16 @@ public class BilibiliLiveReportPainter {
      * 于是直播中随时拉的实时报告与下播报告走的是同一段逻辑。
      * <p>
      * 三项各自独立降级：接口挂了或没有开播快照，就只跳过那一项。
+     * <p>
+     * ⚠️ <b>已登记待处理：这里的「大航海」与数据卡片里的「大航海」不同口径，而名字一样。</b>
+     * 卡片上那个是<b>上舰人次</b>（{@code CAPTAIN/COMMANDER/GOVERNOR_COUNT} 之和，
+     * <b>含续费</b>），这里这个是<b>大航海人数的净变化</b>（续费不改变人数，到期会减少）。
+     * 于是同一张报告里可以出现「大航海 +5」与「大航海 · 本场 +2」，读的人无法对上。
+     * 曲线区还有第三个「大航海」，画的是金额（{@code GUARD_VALUE}）。
+     * <p>
+     * 按「同一张报告里同名指标必须同口径，不同就改名或标注」这条规矩，这里要么改名
+     * （如「上舰人次」/「大航海人数」）要么标注。改动涉及报告版面与既有截图的认知，
+     * 不与礼物口径那批一起做，已记账。
      */
     private void drawFansChange(CommonPainter painter, String platform, LiveStreamerInfo source) {
         List<Card> cards = new ArrayList<>();
@@ -892,20 +902,22 @@ public class BilibiliLiveReportPainter {
         int boxProfitRanking = options.isShowRevenue() ? options.getBoxProfitRanking() : 0;
 
         drawRanking(painter, platform, uid, "弹幕排行", BilibiliLiveMetric.DANMU_USERS,
-                options.getDanmuRanking(), score -> Math.round(score) + " 条");
+                options.getDanmuRanking(), score -> Math.round(score) + " 条", null);
+        // 礼物榜与上面礼物卡片同口径（都是主播到手价值），标题下把口径写明：
+        // 观众最容易把这张榜读成「谁花了多少钱」，而背包礼物与盲盒上那不是同一个数
         drawRanking(painter, platform, uid, "礼物排行", BilibiliLiveMetric.GIFT_USERS,
-                giftRanking, score -> "¥" + yuan(score));
+                giftRanking, score -> "¥" + yuan(score), BilibiliLiveMetric.GIFT_RANKING_NOTE);
         drawRanking(painter, platform, uid, "醒目留言排行", BilibiliLiveMetric.SUPER_CHAT_USERS,
-                superChatRanking, score -> "¥" + yuan(score));
+                superChatRanking, score -> "¥" + yuan(score), null);
         drawRanking(painter, platform, uid, "盲盒排行", BilibiliLiveMetric.BOX_USERS,
-                options.getBoxRanking(), score -> Math.round(score) + " 个");
+                options.getBoxRanking(), score -> Math.round(score) + " 个", null);
         // 盲盒盈亏可正可负，正数补个加号，让盈亏方向一眼可辨
         drawRanking(painter, platform, uid, "盲盒盈亏排行", BilibiliLiveMetric.BOX_PROFIT_USERS,
-                boxProfitRanking, score -> (score >= 0 ? "+¥" : "-¥") + yuan(Math.abs(score)));
+                boxProfitRanking, score -> (score >= 0 ? "+¥" : "-¥") + yuan(Math.abs(score)), null);
 
         if (options.isGuardList()) {
             drawRanking(painter, platform, uid, "本场开通大航海", BilibiliLiveMetric.GUARD_USERS,
-                    GUARD_LIST_LIMIT, score -> Math.round(score) + " 次");
+                    GUARD_LIST_LIMIT, score -> Math.round(score) + " 次", null);
         }
     }
 
@@ -915,9 +927,10 @@ public class BilibiliLiveReportPainter {
      * @param metric 用户计分表指标名
      * @param limit 展示前多少名，0 为不展示
      * @param scoreText 得分的展示文案
+     * @param note 标题下的口径说明，无歧义的榜传 null
      */
     private void drawRanking(CommonPainter painter, String platform, Long uid, String title,
-                             String metric, int limit, DoubleFunction<String> scoreText) {
+                             String metric, int limit, DoubleFunction<String> scoreText, String note) {
         if (limit <= 0) {
             return;
         }
@@ -929,6 +942,12 @@ public class BilibiliLiveReportPainter {
 
         painter.movePos(0, 10);
         painter.drawTextWithStyle(List.of(new TextWithStyle(title, CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN)));
+        if (note != null) {
+            // 开自动折行：这句话一行放不下，而不折行的写法会把它画到画布外面，且不报错
+            painter.drawTextWithStyle(
+                    List.of(new TextWithStyle(note, CommonPainter.TIP_FONT_SIZE, COLOR_TIP, Font.PLAIN)),
+                    null, true, MARGIN);
+        }
         painter.movePos(0, 6);
 
         // 条形长度按榜首归一化：榜首满格，其余按比例，一眼能看出差距
