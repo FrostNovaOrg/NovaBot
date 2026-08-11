@@ -599,6 +599,11 @@ public class BilibiliLiveReportPainter {
      * 按「同一张报告里同名指标必须同口径，不同就改名或标注」这条规矩，这里要么改名
      * （如「上舰人次」/「大航海人数」）要么标注。改动涉及报告版面与既有截图的认知，
      * 不与礼物口径那批一起做，已记账。
+     * <p>
+     * <b>届时以改名为主，不是标注。</b>礼物那次能靠标注解决，是因为变更后只剩一个口径，
+     * 那句话说的是「这个数是什么」；而这里是<b>三个不同的量共用一个名字</b>，
+     * 标注得写成「这个大航海是人次，那个大航海是人数，曲线那个是金额」——
+     * 读的人仍然要在三个同名的东西之间自己对号。
      */
     private void drawFansChange(CommonPainter painter, String platform, LiveStreamerInfo source) {
         List<Card> cards = new ArrayList<>();
