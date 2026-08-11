@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.enums.DataPackType;
+import com.starlwr.bot.bilibili.health.BilibiliDisconnectCause;
 import com.starlwr.bot.bilibili.health.BilibiliDisconnectDigest;
 import com.starlwr.bot.bilibili.health.BilibiliRiskMetrics;
 import com.starlwr.bot.bilibili.model.ConnectAddress;
@@ -38,6 +39,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 
 /**
@@ -102,6 +104,9 @@ class BilibiliConnectorHarness {
      */
     private final BilibiliDisconnectDigest disconnectDigest;
 
+    /** 摘要收下的归因，按顺序。归因错的方向只有从这里才看得出来 */
+    private final List<BilibiliDisconnectCause> recordedCauses = new ArrayList<>();
+
     private final WebSocketSession session = mock(WebSocketSession.class);
 
     private final StarBotBilibiliProperties properties = new StarBotBilibiliProperties();
@@ -147,7 +152,14 @@ class BilibiliConnectorHarness {
     BilibiliConnectorHarness() {
         LiveStreamerInfo source = new LiveStreamerInfo(STREAMER_UID, "测试主播", ROOM_ID);
 
-        this.disconnectDigest = new BilibiliDisconnectDigest(properties, scheduler);
+        // 真实对象外面套一层 spy 只为把归因抄下来，逻辑仍走真实实现——
+        // 归因指错方向这类缺陷，只有看「实际记下了哪一类」才能发现，
+        // 看条数是看不出来的（错标同样会被记一条）
+        this.disconnectDigest = spy(new BilibiliDisconnectDigest(properties, scheduler));
+        doAnswer(invocation -> {
+            recordedCauses.add(invocation.getArgument(1));
+            return invocation.callRealMethod();
+        }).when(disconnectDigest).record(anyLong(), any(BilibiliDisconnectCause.class), any());
 
         stubSession();
         stubApi();
@@ -291,6 +303,16 @@ class BilibiliConnectorHarness {
      */
     int queuedReconnects() {
         return queuedReconnects.size();
+    }
+
+    /**
+     * 连接器算出来、交给摘要的归因，按顺序
+     * <p>
+     * 抄的是<b>入参</b>，所以 {@code BY_US} 也会出现在这里——摘要本身会把它丢掉，
+     * 而这里要看的是「连接器认为这次是谁关的」，那正是错标发生的地方。
+     */
+    List<BilibiliDisconnectCause> recordedCauses() {
+        return List.copyOf(recordedCauses);
     }
 
     /**

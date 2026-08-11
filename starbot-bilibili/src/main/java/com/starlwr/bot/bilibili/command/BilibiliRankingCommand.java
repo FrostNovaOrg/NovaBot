@@ -119,6 +119,10 @@ public abstract class BilibiliRankingCommand extends BilibiliScopedDataCommand {
         if (board.note != null) {
             // 口径说明单独一行，别和页码挤在一起：挤在一起的那行会长到折行，读起来像页码的一部分
             footnote = footnote + "\n" + board.note;
+            // 累计榜还要多说一句：这个数里含口径变更前后两段
+            if (scope.isTotal()) {
+                footnote = footnote + "\n" + BilibiliLiveMetric.GIFT_RANKING_SCOPE_CHANGE_NOTE;
+            }
         }
 
         return painter.paintRanking(header, rows, offset + 1, board.scoreText, footnote)
