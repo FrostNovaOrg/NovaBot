@@ -431,4 +431,206 @@ class StarBotMessageSenderTest {
         return new StarBotMessageSender(http, senderService, new PushActivityRecorder(), new PushGate(properties),
                 new com.starlwr.bot.core.service.AtAllQuotaService(properties), resolvers);
     }
+
+    /**
+     * 含图消息发送失败时剥掉图片段重发纯文字（裁决 #41 一 / #50 一）
+     * <p>
+     * 要求原文：<b>推送文字的可达性不得依赖图片的可取性，任何模板写法下都必须成立。</b>
+     * 实测（2026-08-11，NapCat）一条消息里图片下载失败会让<b>整条发送失败</b>，不是只丢图，
+     * 于是封面拉不到的那一次，开播通知<b>整条消失</b>。
+     * <p>
+     * 触发三条件缺一不可：<b>发送失败 + 含图片段 + 剥掉之后还剩东西</b>。
+     * 刻意<b>不</b>判断「失败是不是图片引起的」——解析 NapCat 的错误文案是用错量，
+     * 版本一改就静默失效，而失效方向是「再也不降级」。不判断成因是设计的一部分：
+     * 非图片故障下纯文字重发同样会失败，所以双发不成立。
+     */
+    @org.junit.jupiter.api.Nested
+    @DisplayName("含图消息失败后的纯文字兜底")
+    class ImageFallback {
+        /** 一条「文字 + 封面」的开播通知，合并在同一条里（用户自行改模板删掉 {next} 的写法） */
+        private Message withImage() {
+            return Message.create(PLATFORM, PushTargetType.GROUP, 12345L,
+                    "某某 开播啦 {image_url=https://example.com/cover.jpg}").get(0);
+        }
+
+        /** 图片下载失败时 NapCat 的响应形态：报错、且 id 为空（2026-08-11 实测两次都是这个形状） */
+        private JSONObject imageFailure() {
+            return new JSONObject()
+                    .fluentPut("code", 2)
+                    .fluentPut("message", "下载文件失败: Not Found");
+        }
+
+        @Test
+        @DisplayName("⚠️ 守卫：含图消息发送失败时，文字必须仍然送达")
+        void textSurvivesWhenImageSendFails() {
+            HttpUtil http = mock(HttpUtil.class);
+            List<String> sent = new java.util.ArrayList<>();
+
+            when(http.postJson(anyString(), any(), any())).thenAnswer(invocation -> {
+                Map<String, Object> params = invocation.getArgument(2);
+                sent.add(String.valueOf(params.get("content")));
+                return imageFailure();
+            });
+
+            sender(http).sendNow(withImage());
+
+            assertTrue(sent.stream().anyMatch(c -> !c.contains("{image_url=") && c.contains("开播啦")),
+                    "含图消息失败后应当有一次不含图片段的纯文字投递，实际投递内容: " + sent);
+        }
+
+        @Test
+        @DisplayName("尺子先过阳性对照：'只投递一次' 这个断言必须真的数得出双发")
+        void deliveryCounterActuallyCountsTwice() {
+            // 下面几个用例都靠「只投递了一次」来证明没有双发。
+            // 若那个计数根本数不出第二次，它们会全部假绿——先用一次真的双发证明它数得出来
+            HttpUtil http = mock(HttpUtil.class);
+            when(http.postJson(anyString(), any(), any())).thenReturn(imageFailure());
+
+            StarBotMessageSender sender = sender(http);
+            sender.sendNow(withImage());
+
+            // 含图 + 失败 + 剥完还剩文字 → 必然是两次投递（原内容一次、纯文字一次）
+            verify(http, times(2)).postJson(anyString(), any(), any());
+        }
+
+        @Test
+        @DisplayName("A 图片失败：应剥掉图片段重发纯文字并送达")
+        void stripsImageAndResendsText() {
+            HttpUtil http = mock(HttpUtil.class);
+            when(http.postJson(anyString(), any(), any()))
+                    .thenReturn(imageFailure())
+                    .thenReturn(new JSONObject().fluentPut("code", 0).fluentPut("id", "m2"));
+
+            sender(http).sendNow(withImage());
+
+            ArgumentCaptor<Map<String, Object>> captor = paramsCaptor();
+            verify(http, times(2)).postJson(anyString(), any(), captor.capture());
+
+            String second = String.valueOf(captor.getAllValues().get(1).get("content"));
+            assertFalse(second.contains("{image_url="), "重发的那条不该再带图片段");
+            assertEquals("某某 开播啦", second, "文字必须原样保留，且首尾空白已修剪");
+        }
+
+        @Test
+        @DisplayName("B 非图片故障：纯文字重发同样失败，所以不会双发")
+        void nonImageFailureDoesNotDoubleDeliver() {
+            // 被禁言、机器人被踢、群号错、Token 错、出网故障——剥掉图不改变其中任何一个。
+            // 这正是「不必判断失败成因」的依据：双发在这条路径上不成立
+            HttpUtil http = mock(HttpUtil.class);
+            when(http.postJson(anyString(), any(), any()))
+                    .thenReturn(new JSONObject().fluentPut("code", 1200).fluentPut("message", "机器人不在该群"));
+
+            sender(http).sendNow(withImage());
+
+            // 两次投递、零次送达：重发也失败，没有任何一条到达
+            verify(http, times(2)).postJson(anyString(), any(), any());
+        }
+
+        @Test
+        @DisplayName("C' 失败但响应带着消息 id：模糊态，不重发")
+        void doesNotResendWhenResponseCarriesId() {
+            // 接口谎报失败（报错但其实送到了）是唯一可能双发的情形。
+            // 收成一个有定义的条件：只在响应没带 id 时才重发。
+            // 2026-08-11 实测的两次真失败都是 id 为空且群里一条没出现
+            HttpUtil http = mock(HttpUtil.class);
+            when(http.postJson(anyString(), any(), any())).thenReturn(
+                    new JSONObject().fluentPut("code", 2).fluentPut("message", "超时").fluentPut("id", "m9"));
+
+            sender(http).sendNow(withImage());
+
+            verify(http, times(1)).postJson(anyString(), any(), any());
+        }
+
+        @Test
+        @DisplayName("D 图片独占一条：剥完为空，不重发也不发空消息")
+        void doesNotResendWhenNothingLeftAfterStripping() {
+            // 开播模板默认就是「文字{next}封面」，第二条只有封面
+            HttpUtil http = mock(HttpUtil.class);
+            when(http.postJson(anyString(), any(), any())).thenReturn(imageFailure());
+
+            Message imageOnly = Message.create(PLATFORM, PushTargetType.GROUP, 12345L,
+                    "{image_url=https://example.com/cover.jpg}").get(0);
+            sender(http).sendNow(imageOnly);
+
+            verify(http, times(1)).postJson(anyString(), any(), any());
+        }
+
+        @Test
+        @DisplayName("E 纯文字消息失败：不触发兜底，否则所有失败的重试次数都翻倍")
+        void plainTextFailureDoesNotTriggerFallback() {
+            HttpUtil http = mock(HttpUtil.class);
+            when(http.postJson(anyString(), any(), any())).thenReturn(
+                    new JSONObject().fluentPut("code", 1200).fluentPut("message", "机器人不在该群"));
+
+            sender(http).sendNow(Message.create(PLATFORM, PushTargetType.GROUP, 12345L, "某某 开播啦").get(0));
+
+            verify(http, times(1)).postJson(anyString(), any(), any());
+        }
+
+        @Test
+        @DisplayName("降级那行日志必须同时带上原始失败原因与「图片未送达」")
+        void degradeLogCarriesRootCauseAndImageLoss() {
+            // 降级不能掩盖根因：只说「图没了」而不说为什么，等于把故障藏进一行 WARN 里
+            ch.qos.logback.classic.Logger logger =
+                    (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(StarBotMessageSender.class);
+            ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                    new ch.qos.logback.core.read.ListAppender<>();
+            appender.start();
+            logger.addAppender(appender);
+
+            try {
+                HttpUtil http = mock(HttpUtil.class);
+                when(http.postJson(anyString(), any(), any()))
+                        .thenReturn(imageFailure())
+                        .thenReturn(new JSONObject().fluentPut("code", 0).fluentPut("id", "m2"));
+
+                sender(http).sendNow(withImage());
+
+                String degrade = appender.list.stream()
+                        .map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage)
+                        .filter(m -> m.contains("已剥除图片段重发纯文字"))
+                        .findFirst()
+                        .orElse(null);
+
+                assertNotNull(degrade, "降级成功必须留下一行日志，实际日志: " + appender.list);
+                assertTrue(degrade.contains("图片未送达"), "必须显式写明图没送到: " + degrade);
+                assertTrue(degrade.contains("下载文件失败: Not Found"), "必须带上原始失败原因: " + degrade);
+            } finally {
+                logger.detachAppender(appender);
+            }
+        }
+
+        @Test
+        @DisplayName("降级送达时应触发图片降级回调，供下播报告留痕")
+        void notifiesImageDegradedCallback() {
+            HttpUtil http = mock(HttpUtil.class);
+            when(http.postJson(anyString(), any(), any()))
+                    .thenReturn(imageFailure())
+                    .thenReturn(new JSONObject().fluentPut("code", 0).fluentPut("id", "m2"));
+
+            AtomicInteger degraded = new AtomicInteger();
+            Message message = withImage();
+            message.addOnImageDegradedCallback(degraded::incrementAndGet);
+
+            sender(http).sendNow(message);
+
+            assertEquals(1, degraded.get(), "文字到了、图没到，应当记一次降级");
+        }
+
+        @Test
+        @DisplayName("重发仍然失败时不该记成降级——那一条完全没送达")
+        void doesNotNotifyCallbackWhenResendAlsoFails() {
+            HttpUtil http = mock(HttpUtil.class);
+            when(http.postJson(anyString(), any(), any()))
+                    .thenReturn(new JSONObject().fluentPut("code", 1200).fluentPut("message", "机器人不在该群"));
+
+            AtomicInteger degraded = new AtomicInteger();
+            Message message = withImage();
+            message.addOnImageDegradedCallback(degraded::incrementAndGet);
+
+            sender(http).sendNow(message);
+
+            assertEquals(0, degraded.get(), "零送达不是降级");
+        }
+    }
 }

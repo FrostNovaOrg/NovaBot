@@ -112,9 +112,11 @@ public class BilibiliDynamicPushHandler implements StarBotEventHandler {
     /**
      * 默认参数
      * <p>
-     * ⚠️ <b>模板里的 {@code {next}} 落在文字与动态图之间，那不是排版，是文字的可达性保护。</b>
+     * ℹ️ <b>模板里的 {@code {next}} 落在文字与动态图之间。曾经那是文字的可达性保护，
+     * 现在不是了</b>——可达性已由发送侧兜底保证（见下），<b>模板可以自由合并</b>。
      * <b>2026-08-02 真丢过一次动态图</b>：图片重试三次后整条放弃，
      * 而文字因为分了条才幸存——若当时是合并的一条，文字会跟着一起没。
+     * 这段记录保留，它是这个默认值的由来。
      * <p>
      * 与开播那边的失败点不同：开播的封面是把 URL 交给 OneBot 实现去下载
      * （详见 {@code BilibiliLiveOnPushHandler.getDefaultParams} 里 2026-08-11 那次实测），
@@ -122,9 +124,12 @@ public class BilibiliDynamicPushHandler implements StarBotEventHandler {
      * <b>两者不能互相推断</b>，动态这条路径自己的降级证据还没拿到。
      * <p>
      * 程序层面的兜底（含图消息发送失败时剥掉图片段重发纯文字，并在日志里明写降级）
-     * 对两条路径同样适用，且已定为产品级要求：
+     * <b>已经落地</b>，见 {@link com.starlwr.bot.core.sender.StarBotMessageSender}，对两条路径同样适用：
      * <b>推送文字的可达性不得依赖图片的可取性，任何模板写法下都必须成立。</b>
-     * 在它落地之前别删这个 {@code {next}}。
+     * <p>
+     * ⚠️ <b>但别把动态的「组装失败」也算在兜底头上</b>——那一种本来就安全：
+     * 渲染不出图时占位符是空串，转换器按 {@code isNotBlank} 跳过该段，文字照发。
+     * <b>兜底管的是「组装成功但发送失败」那一种</b>（如 payload 过大），也就是 08-02 丢的那种。
      */
     @Override
     public JSONObject getDefaultParams() {

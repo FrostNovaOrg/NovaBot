@@ -98,6 +98,18 @@ public class Message {
     private List<Runnable> onFailureCallbacks = new ArrayList<>();
 
     /**
+     * 图片降级回调列表，请勿调用阻塞操作
+     * <p>
+     * 在「原内容含图、发送失败、剥掉图片段重发纯文字并送达」时触发，
+     * 也就是<b>文字到了、图没到</b>那一种结局。
+     * <p>
+     * 之所以单独出一个回调而不是复用成功/失败回调：这件事对使用者是
+     * <b>可感知的数据不完整</b>，而日志只有运维看得见。core 只管发信号，
+     * 谁关心谁自己记账——例如哔哩哔哩那侧据此在下播报告里注明本场有几条推送的图片没送到。
+     */
+    private List<Runnable> onImageDegradedCallbacks = new ArrayList<>();
+
+    /**
      * 创建通过 next 字段和 previous 字段相连接的消息列表，自动处理 {next} 占位符
      * @param platform 推送平台
      * @param type 推送目标类型
@@ -156,12 +168,12 @@ public class Message {
             return "";
         }
 
-        return content.replaceAll("\\{face=.+?}", "[表情]")
-                .replace("{at=all}", "@全体成员 ")
-                .replaceAll("\\{at=(.*?)}", "@$1")
-                .replaceAll("\\{image_url=.*?}", "[图片]")
-                .replaceAll("\\{image_path=.*?}", "[图片]")
-                .replaceAll("\\{image_base64=.*?}", "[图片]");
+        String replaced = content.replaceAll("\\{face=.+?}", "[表情]")
+                .replace(MessagePlaceholders.AT_ALL, "@全体成员 ")
+                .replaceAll("\\{at=(.*?)}", "@$1");
+        // 图片三种走同一个模式，与发送器剥段用的是同一份定义（MessagePlaceholders）——
+        // 这里曾是三条各写一遍的 replaceAll，改一处漏一处
+        return MessagePlaceholders.replaceImages(replaced, "[图片]");
     }
 
     /**
@@ -194,5 +206,13 @@ public class Message {
      */
     public void addOnFailureCallback(Runnable callback) {
         this.onFailureCallbacks.add(callback);
+    }
+
+    /**
+     * 添加图片降级回调
+     * @param callback 图片降级回调，在「剥掉图片段重发纯文字并送达」时触发
+     */
+    public void addOnImageDegradedCallback(Runnable callback) {
+        this.onImageDegradedCallbacks.add(callback);
     }
 }

@@ -187,6 +187,20 @@ public final class BilibiliLiveMetric {
     public static final String SHARE_COUNT = "share_count";
 
     /**
+     * 本场有几条推送<b>文字送到了、图片没送到</b>
+     * <p>
+     * 由发送侧的兜底触发（{@link com.starlwr.bot.core.sender.StarBotMessageSender} 剥掉图片段
+     * 重发纯文字并送达时记一次）。<b>它不是平台指标，是我们自己的投递质量指标。</b>
+     * <p>
+     * ⚠️ <b>为什么要占报告的版面</b>：兜底之后开播通知不再整条丢失，
+     * 但主播看到的那条通知是<b>没有封面的</b>——这是他能感知的差异。
+     * 日志里那行 WARN 只有运维看得见，主播只会觉得「今天的开播图怎么没了」。
+     * <p>
+     * <b>为零时报告不显示这一项</b>，绝大多数场次都该是零。
+     */
+    public static final String IMAGE_DEGRADED_COUNT = "image_degraded_count";
+
+    /**
      * 看过人数，本场累计
      * <p>
      * <b>不是「同时在线人数」。</b>它只增不减，画出来永远在往上爬；

@@ -457,6 +457,28 @@ class BilibiliLiveReportPainterTest {
         // 金额格式与图片版共用 yuan()，整数不补两位小数——两版说的必须是同一个数
         assertTrue(text.contains("本场收益 ¥52"), text);
         assertTrue(text.contains("绘制失败"), "要说清这是降级来的，别让人以为报告一直长这样");
+        assertFalse(text.contains("图片未送达"), "本场没有图片降级时不该占版面");
+    }
+
+    @Test
+    @DisplayName("本场有推送的图片没送到时，报告要注明；为零时不显示")
+    void reportsImageDegradedOnlyWhenNonZero() {
+        long start = System.currentTimeMillis() - 3600_000;
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+        liveDataService.setLiveEndTime(PLATFORM, STREAMER.getUid(), start + 3600_000);
+
+        // 先证明这个断言真的分得出有无——零的那一遍必须读不到这句话
+        String before = painter.textReport(PLATFORM, STREAMER,
+                BilibiliLiveReportOptions.of(new com.alibaba.fastjson2.JSONObject(), true));
+        assertFalse(before.contains("图片未送达"), "为零时不该显示: " + before);
+
+        liveDataService.incrementLiveMetric(PLATFORM, STREAMER.getUid(),
+                BilibiliLiveMetric.IMAGE_DEGRADED_COUNT, 2);
+
+        String after = painter.textReport(PLATFORM, STREAMER,
+                BilibiliLiveReportOptions.of(new com.alibaba.fastjson2.JSONObject(), true));
+        assertTrue(after.contains("本场有 2 条推送的图片未送达"), after);
+        assertTrue(after.contains("文字已送达"), "要说清丢的只有图，别让人以为整条没发出去: " + after);
     }
 
     @Test

@@ -5,6 +5,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.health.PushActivityRecorder;
 import com.starlwr.bot.core.model.Message;
+import com.starlwr.bot.core.model.MessagePlaceholders;
 import com.starlwr.bot.core.model.Sender;
 import com.starlwr.bot.core.service.AtAllQuotaService;
 import com.starlwr.bot.core.service.StarBotSenderService;
@@ -170,8 +171,10 @@ public class StarBotMessageSender {
 
     /**
      * @全体成员 的占位符
+     *
+     * @see MessagePlaceholders 占位符的单一来源
      */
-    private static final String AT_ALL = "{at=all}";
+    private static final String AT_ALL = MessagePlaceholders.AT_ALL;
 
     /**
      * 按每日配额处理消息中的 @全体成员
@@ -401,9 +404,97 @@ public class StarBotMessageSender {
                     log.error("执行消息发送失败回调异常: [{}]{}", message.getSequence(), message.getDisplay(), e);
                 }
             }
+
+            fallbackWithoutImages(sender, headers, params, message, result);
         }
 
         return result;
+    }
+
+    /**
+     * 含图消息失败后，剥掉图片段重发一次纯文字
+     * <p>
+     * 要求来自裁决 #41 一：<b>推送文字的可达性不得依赖图片的可取性，任何模板写法下都必须成立。</b>
+     * 实测（2026-08-11，NapCat）一条消息里图片下载失败会让<b>整条发送失败</b>而不是只丢图，
+     * 于是封面拉不到的那一次，开播通知整条消失。
+     * <p>
+     * 放在这里而不是各推送处理器里，理由与 {@link #applyAtAllQuota} 相同：
+     * 图片占位符可以来自处理器的 {@code {cover}}／{@code {picture}}，
+     * <b>也可以是使用者在模板里手写的</b>，只有汇合点拦得全——而「任何模板写法下都成立」正是要求本身。
+     * <p>
+     * <b>触发三条件缺一不可</b>：发送失败 + 含图片段 + 剥掉之后还剩东西。
+     * 少了第二条，纯文字消息失败也会白重发一次，等于把所有失败的重试次数翻倍；
+     * 少了第三条，图片独占的那一条（开播模板第二条就是）会发出一条空消息。
+     * <p>
+     * ⚠️ <b>刻意不判断「失败是不是图片引起的」。</b> 最容易想到的做法是解析错误文案
+     * （{@code 下载文件失败: Not Found}）来确认，但那是 NapCat 的措辞，
+     * <b>版本一改判据就静默失效，而失效方向是「再也不降级」</b>——与「守卫写下了但没在跑」同族。
+     * 这个形态本来就不需要知道原因：非图片故障（被禁言、被踢、群号错、Token 错、出网故障）
+     * 下纯文字重发<b>同样会失败</b>，所以双发不成立。
+     * <p>
+     * ⚠️ <b>唯一可能双发的是「接口谎报失败」</b>：回了错误码但消息其实送到了。
+     * 已收成一个有定义的条件——<b>只在响应没带消息 id 时才重发</b>。
+     * 2026-08-11 实测的两次失败响应都是 {@code {"code":2, ..., "id":null}} 且群里一条都没出现，
+     * 「失败且 id 为空」这一形态已验证等于未送达。响应既报错又带着 id 的属模糊态，只记日志不重发。
+     * 残余风险如实记：<b>NapCat 换版本后响应形状可能变，这属于「已知边界」而不是「已解决」</b>，
+     * 但它的坏结果（偶尔多发一条纯文字）远轻于现状（封面坏掉就整条不发）。
+     * <p>
+     * 降级<b>只发一次、不走 {@link #postWithRetry} 的重试</b>，
+     * 于是最坏情形是「原内容 N 次 + 纯文字 1 次」而不是 2N 次。
+     */
+    private void fallbackWithoutImages(Sender sender, Map<String, String> headers, Map<String, Object> params,
+                                       Message message, JSONObject failure) {
+        if (!MessagePlaceholders.containsImage(message.getContent())) {
+            return;
+        }
+
+        String deliveredId = failure.getString("id");
+        if (StringUtil.isNotBlank(deliveredId)) {
+            log.warn("推送含图片的消息失败, 但响应带着消息 id {}, 无法排除其实已送达, 不重发纯文字: [{}]: {}",
+                    deliveredId, message.getSequence(), message.getDisplay());
+            return;
+        }
+
+        String textOnly = MessagePlaceholders.stripImages(message.getContent()).trim();
+        if (StringUtil.isBlank(textOnly)) {
+            // 这一条是设计如此，不是异常：开播模板的第二条本就只有封面
+            log.debug("消息只含图片段, 剥除后无内容可发, 不重发: [{}]", message.getSequence());
+            return;
+        }
+
+        Map<String, Object> textParams = new LinkedHashMap<>(params);
+        textParams.put("content", textOnly);
+
+        JSONObject result;
+        try {
+            result = sender.getLocalDelivery() == null
+                    ? http.postJson(sender.getUrl(), headers, textParams)
+                    : sender.getLocalDelivery().deliver(headers, textParams);
+        } catch (RuntimeException e) {
+            result = new JSONObject().fluentPut("code", -1).fluentPut("message", "投递失败: " + e.getMessage());
+        }
+
+        // 静默降级是看不见的谎言（裁决 #41 二）：三种结局各出一行，
+        // 且都要说清「图没送到」，并带上原始失败原因——降级不能掩盖根因
+        if (result != null && Integer.valueOf(0).equals(result.getInteger("code"))) {
+            activityRecorder.recordSuccess(sender.getName(), describeTarget(message), message.getDisplay());
+            log.warn("推送含图片的消息失败, 已剥除图片段重发纯文字并送达（图片未送达）: NovaBot -> {} ([{}] {}) [{}]: {}；原始失败: {}",
+                    sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(),
+                    textOnly, failure.getString("message"));
+
+            for (Runnable callback : message.getOnImageDegradedCallbacks()) {
+                try {
+                    callback.run();
+                } catch (Exception e) {
+                    log.error("执行图片降级回调异常: [{}]{}", message.getSequence(), message.getDisplay(), e);
+                }
+            }
+        } else {
+            String reason = result == null ? "推送接口未返回任何内容" : result.getString("message");
+            log.warn("剥除图片段后重发仍然失败, 本条消息完全未送达: NovaBot -> {} ([{}] {}) [{}]: {}；原始失败: {}；重发失败: {}",
+                    sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(),
+                    textOnly, failure.getString("message"), reason);
+        }
     }
 
     /**

@@ -2,6 +2,7 @@ package com.starlwr.bot.bilibili.handler;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.event.live.BilibiliLiveOnEvent;
+import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
 import com.starlwr.bot.bilibili.model.Room;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.enums.LivePlatform;
@@ -14,6 +15,7 @@ import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
 import com.starlwr.bot.core.service.AtSubscriptionService;
+import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.util.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,11 +34,15 @@ public class BilibiliLiveOnPushHandler implements StarBotEventHandler {
 
     private final AtSubscriptionService subscriptions;
 
+    private final LiveDataService liveDataService;
+
     @Autowired
-    public BilibiliLiveOnPushHandler(BilibiliApiUtil api, StarBotMessageSender sender, AtSubscriptionService subscriptions) {
+    public BilibiliLiveOnPushHandler(BilibiliApiUtil api, StarBotMessageSender sender,
+                                     AtSubscriptionService subscriptions, LiveDataService liveDataService) {
         this.api = api;
         this.sender = sender;
         this.subscriptions = subscriptions;
+        this.liveDataService = liveDataService;
     }
 
     @Override
@@ -73,7 +79,13 @@ public class BilibiliLiveOnPushHandler implements StarBotEventHandler {
                 .replace("{at}", PushHandlerSupport.atSubscribers(subscriptions.list(
                         target.getPlatform(), target.getNum(), event.getSource().getUid(), "live")));
 
-        PushHandlerSupport.send(sender, target, PushHandlerSupport.withAtAll(params, target, content));
+        // 封面没送到时在本场记一笔，下播报告据此注明——日志里那行 WARN 只有运维看得见，
+        // 而「今天的开播图怎么没了」是主播能感知的事
+        Long uid = event.getSource().getUid();
+        Runnable onImageDegraded = uid == null ? null : () -> liveDataService.incrementLiveMetric(
+                event.getPlatform(), uid, BilibiliLiveMetric.IMAGE_DEGRADED_COUNT, 1);
+
+        PushHandlerSupport.send(sender, target, PushHandlerSupport.withAtAll(params, target, content), onImageDegraded);
     }
 
     @Override
@@ -84,8 +96,9 @@ public class BilibiliLiveOnPushHandler implements StarBotEventHandler {
     /**
      * 默认参数
      * <p>
-     * ⚠️ <b>模板里的 {@code {next}} 落在文字与封面之间，那不是排版，是文字的可达性保护。
-     * 想把开播合并成一条的人请先读完这一段。</b>
+     * ℹ️ <b>模板里的 {@code {next}} 落在文字与封面之间。曾经那是文字的可达性保护，
+     * 现在不是了</b>——可达性已由发送侧兜底保证（见本段末尾），<b>模板可以自由合并</b>。
+     * 下面这段实测记录保留，因为它解释了这个默认值为什么长这样，也是「混排会整条失败」的机构记忆。
      * <p>
      * <b>2026-08-11 实测</b>（NapCat / OneBot 11，专用测试群，三条真发）：
      * 一条消息里文字与图片段混排时，<b>图片下载失败会让整条 {@code send_group_msg} 失败</b>，
@@ -106,10 +119,16 @@ public class BilibiliLiveOnPushHandler implements StarBotEventHandler {
      * 而这一件已经足够支撑本段的结论——兜底该做的理由不依赖失效频率。
      * <p>
      * <b>但这只是默认值，模板是使用者可以自己改的</b>——注释拦不住配置行为。
-     * 真正的解法在程序层面：含图消息发送失败时剥掉图片段重发一次纯文字，
-     * 并在日志里明写降级发生了（静默降级是看不见的谎言）。
-     * <b>要求是「推送文字的可达性不得依赖图片的可取性，任何模板写法下都必须成立」。</b>
-     * 兜底落地之后这一段的限制取消；在那之前别删这个 {@code {next}}。
+     * 所以解法放在程序层面而不是这段注释里：
+     * <b>含图消息发送失败时，发送侧会剥掉图片段重发一次纯文字</b>
+     * （{@link com.starlwr.bot.core.sender.StarBotMessageSender} 的兜底），
+     * 并在日志里明写降级发生了——静默降级是看不见的谎言。
+     * <b>要求「推送文字的可达性不得依赖图片的可取性，任何模板写法下都必须成立」已经兑现，
+     * 删掉这个 {@code {next}} 不再有丢文字的风险。</b>
+     * <p>
+     * 默认值仍然分两条，理由变成了观感与兼容而不是健壮性：合并之后封面坏掉时
+     * 观众看到的是一条没有图的通知，与「文字一条 + 图那条没来」观感不同。
+     * 那是产品口味问题，<b>要不要顺势合并单独裁，不由一个健壮性修复顺手改掉</b>。
      */
     @Override
     public JSONObject getDefaultParams() {

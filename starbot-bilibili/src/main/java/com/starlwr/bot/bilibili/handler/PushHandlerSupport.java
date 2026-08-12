@@ -116,11 +116,24 @@ final class PushHandlerSupport {
      * @param content 消息内容
      */
     static void send(StarBotMessageSender sender, PushTarget target, String content) {
+        send(sender, target, content, null);
+    }
+
+    /**
+     * 发送消息，并在「图片没送到、文字送到了」时回调
+     * @param onImageDegraded 图片降级回调，可为 null；<b>每一条分条各注册一次</b>，
+     *                        所以「文字一条 + 封面一条」的默认模板下，
+     *                        只有真正含图的那一条可能触发它
+     */
+    static void send(StarBotMessageSender sender, PushTarget target, String content, Runnable onImageDegraded) {
         if (StringUtil.isBlank(content)) {
             return;
         }
 
         List<Message> messages = Message.create(target.getPlatform(), target.getType(), target.getNum(), content);
+        if (onImageDegraded != null) {
+            messages.forEach(message -> message.addOnImageDegradedCallback(onImageDegraded));
+        }
         messages.forEach(sender::send);
     }
 

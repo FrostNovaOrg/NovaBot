@@ -323,6 +323,12 @@ public class BilibiliLiveReportPainter {
             text.append("（其中 ").append(gap).append("因维护未采集）");
         }
 
+        // 本场有推送的图片没送到时才出现这一行，绝大多数场次是零、不占版面
+        long imageDegraded = count(platform, uid, BilibiliLiveMetric.IMAGE_DEGRADED_COUNT);
+        if (imageDegraded > 0) {
+            text.append("\n⚠️ 本场有 ").append(imageDegraded).append(" 条推送的图片未送达（文字已送达）");
+        }
+
         long danmu = count(platform, uid, BilibiliLiveMetric.DANMU_COUNT);
         int danmuUsers = liveDataService.getLiveMetricUserCount(platform, uid, BilibiliLiveMetric.DANMU_USERS);
         text.append("\n弹幕 ").append(danmu).append(" 条 · ").append(danmuUsers).append(" 人参与");
@@ -475,6 +481,14 @@ public class BilibiliLiveReportPainter {
         String gap = maintenanceGapText(platform, uid);
         if (!gap.isEmpty()) {
             line.add(new TextWithStyle("（其中 " + gap + "因维护未采集）",
+                    CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN));
+        }
+
+        // 与停机缺口同一个道理：图片没送到是主播能感知的差异，
+        // 而它只在日志里留过痕。为零时整段不出现
+        long imageDegraded = count(platform, uid, BilibiliLiveMetric.IMAGE_DEGRADED_COUNT);
+        if (imageDegraded > 0) {
+            line.add(new TextWithStyle("    ⚠ 有 " + imageDegraded + " 条推送的图片未送达",
                     CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN));
         }
 
