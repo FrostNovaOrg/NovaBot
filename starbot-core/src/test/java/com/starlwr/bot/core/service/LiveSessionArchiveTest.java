@@ -170,10 +170,130 @@ class LiveSessionArchiveTest {
         assertEquals(455.0, session.metric("danmu_count"));
     }
 
+    // ⚠️ 夹具一律用保留段假值（裁决 #77 一 1）。
+    // 这里原本写的是真实主播 uid 与房间号——真实身份数据不进测试夹具，
+    // 那正是 2026-08-12 那次泄漏的成因（「照真实场景写测试最省事」）
+    private static final long STREAMER_UID = 10000101L;
+    private static final long ROOM_ID = 10000102L;
+
     private LiveSession session(long startTime, long durationSeconds) {
-        return new LiveSession("bilibili", 3000000000000001L, "测试主播", 2000000001L,
+        return new LiveSession("bilibili", STREAMER_UID, "测试主播", ROOM_ID,
                 startTime, startTime + durationSeconds * 1000, durationSeconds,
                 Map.of("danmu_count", 455.0, "gift_value", 23.6),
                 Map.of("danmu_users", 33, "gift_users", 13));
+    }
+
+    /**
+     * 第②批：名单落盘（F5）与单房断线缺口
+     * <p>
+     * 两者<b>同动归档结构</b>，所以一批做完、一起测。
+     */
+    @org.junit.jupiter.api.Nested
+    @DisplayName("名单落盘与单房断线缺口")
+    class UserSetsAndOutage {
+        /** 观众 uid 一律用保留段假值，绝不拿实抓语料里的真 uid 当夹具 */
+        private LiveSession withSets(Map<String, List<Long>> sets, long gap, long outage) {
+            return new LiveSession("bilibili", STREAMER_UID, "测试主播", ROOM_ID,
+                    1_000_000L, 1_003_600_000L, 3600,
+                    Map.of("danmu_count", 455.0),
+                    Map.of("danmu_users", sets.getOrDefault("danmu_users", List.of()).size()),
+                    com.starlwr.bot.core.enums.LiveEndReason.NORMAL, List.of(), gap, sets, outage);
+        }
+
+        @Test
+        @DisplayName("⚠️ 守卫：归档必须留下参与者名单，只留人数等于每播一场丢一场")
+        void archivesUserSets() {
+            archive.append(withSets(Map.of(
+                    "danmu_users", List.of(10000201L, 10000202L, 10000203L),
+                    "gift_users", List.of(10000201L)), 0, 0));
+
+            LiveSession s = archive.find(0, Long.MAX_VALUE).get(0);
+
+            assertEquals(List.of(10000201L, 10000202L, 10000203L), s.userSet("danmu_users"),
+                    "名单必须原样读回——它一次性，这一场丢了就再也补不回来");
+            assertEquals(List.of(10000201L), s.userSet("gift_users"));
+            assertTrue(s.hasUserSets());
+        }
+
+        @Test
+        @DisplayName("名单长度必须与人数对得上——对不上说明落盘漏了")
+        void userSetsAgreeWithCounts() {
+            archive.append(withSets(Map.of("danmu_users", List.of(10000201L, 10000202L)), 0, 0));
+
+            LiveSession s = archive.find(0, Long.MAX_VALUE).get(0);
+
+            assertEquals(s.userCount("danmu_users"), s.userSet("danmu_users").size(),
+                    "两者同源，size 必然相等");
+        }
+
+        @Test
+        @DisplayName("尺子先过阳性对照：造一次故意不一致，上面那条断言必须抓得到")
+        void inconsistencyIsDetectable() {
+            // 人数写 9、名单只给 2 个——若断言写错方向或比了同一个值，这里会假绿
+            archive.append(new LiveSession("bilibili", STREAMER_UID, "测试主播", ROOM_ID,
+                    1_000_000L, 1_003_600_000L, 3600,
+                    Map.of("danmu_count", 455.0),
+                    Map.of("danmu_users", 9),
+                    com.starlwr.bot.core.enums.LiveEndReason.NORMAL, List.of(), 0,
+                    Map.of("danmu_users", List.of(10000201L, 10000202L)), 0));
+
+            LiveSession s = archive.find(0, Long.MAX_VALUE).get(0);
+
+            assertEquals(9, s.userCount("danmu_users"));
+            assertEquals(2, s.userSet("danmu_users").size());
+            assertTrue(s.userCount("danmu_users") != s.userSet("danmu_users").size(),
+                    "阳性对照：不一致必须能被读出来，否则一致性断言是摆设");
+        }
+
+        @Test
+        @DisplayName("两种缺口分开存、各自读回，不相加")
+        void gapsStaySeparate() {
+            archive.append(withSets(Map.of(), 754, 123));
+
+            LiveSession s = archive.find(0, Long.MAX_VALUE).get(0);
+
+            assertEquals(754, s.maintenanceGapSeconds(), "程序停机");
+            assertEquals(123, s.roomOutageSeconds(), "单房断线");
+            assertTrue(s.hasGap());
+            // 停机期间所有房间都在断，两段必然重叠；相加就是重复计数
+            assertEquals(877, s.maintenanceGapSeconds() + s.roomOutageSeconds(),
+                    "这个和本身没有意义，写在这里是为了说明它不该被当成总缺口");
+        }
+
+        @Test
+        @DisplayName("老记录没有这两项：名单读成空表、断线读成 0，且能与「真的是 0」分开")
+        void oldRecordsRemainReadable() throws Exception {
+            Files.writeString(dir.resolve("sessions.jsonl"),
+                    "{\"platform\":\"bilibili\",\"uid\":1,\"uname\":\"测试主播\",\"roomId\":2,"
+                            + "\"startTime\":1000000,\"endTime\":1100000,\"durationSeconds\":100,"
+                            + "\"metrics\":{\"danmu_count\":455},\"userCounts\":{\"danmu_users\":33}}\n",
+                    StandardCharsets.UTF_8);
+
+            LiveSession s = archive.find(0, Long.MAX_VALUE).get(0);
+
+            assertTrue(s.userSet("danmu_users").isEmpty());
+            assertEquals(0, s.roomOutageSeconds());
+            assertFalse(s.hasUserSets(),
+                    "空名单要能与「这场真的没人」分开——否则历史场次会显示成零观众");
+            // 老记录的既有字段一个都不能读坏
+            assertEquals(455.0, s.metric("danmu_count"));
+            assertEquals(33, s.userCount("danmu_users"));
+        }
+
+        @Test
+        @DisplayName("名单里有一个坏项时，只跳过那一个，不丢掉整场")
+        void oneBadUidDoesNotDropTheWholeList() throws Exception {
+            Files.writeString(dir.resolve("sessions.jsonl"),
+                    "{\"platform\":\"bilibili\",\"uid\":1,\"uname\":\"测试主播\",\"roomId\":2,"
+                            + "\"startTime\":1000000,\"endTime\":1100000,\"durationSeconds\":100,"
+                            + "\"metrics\":{},\"userCounts\":{},"
+                            + "\"userSets\":{\"danmu_users\":[10000201,\"坏了\",10000202]}}\n",
+                    StandardCharsets.UTF_8);
+
+            LiveSession s = archive.find(0, Long.MAX_VALUE).get(0);
+
+            assertEquals(List.of(10000201L, 10000202L), s.userSet("danmu_users"),
+                    "名单一次性，坏一个不能连累其余的");
+        }
     }
 }

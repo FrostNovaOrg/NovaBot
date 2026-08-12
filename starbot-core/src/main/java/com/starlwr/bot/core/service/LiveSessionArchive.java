@@ -177,7 +177,14 @@ public class LiveSessionArchive {
                     parseTitles(json.getJSONArray("titles")),
                     // 4.3.0 之前的记录没有这一项，缺失读成 0：那时候确实没在算缺口，
                     // 报成 0 是「不知道」而不是「我保证一秒没漏」——这一点在 analytics 里注明
-                    json.getLongValue("maintenanceGapSeconds"));
+                    json.getLongValue("maintenanceGapSeconds"),
+                    // F5 之前的记录没有名单。缺失读成空表，同样是「不知道」而不是「没人来」——
+                    // 分析侧必须用 LiveSession.hasUserSets() 把两者分开，
+                    // 否则历史场次会显示成「零观众」，与上面那条缺口读成 0 是同一类误读
+                    parseUserSets(json.getJSONObject("userSets")),
+                    // 单房断线缺口。与上面的程序停机缺口分开存、不相加：
+                    // 停机期间所有房间都在断，两段重叠，相加就是重复计数
+                    json.getLongValue("roomOutageSeconds"));
         } catch (Exception e) {
             log.debug("跳过归档中无法解析的一行: {}", e.getMessage());
             return null;
@@ -202,6 +209,37 @@ public class LiveSessionArchive {
             log.debug("归档中出现无法识别的结束原因 {}, 按正常结束处理", name);
             return LiveEndReason.NORMAL;
         }
+    }
+
+    /**
+     * 解析各计分表的参与者名单（F5），缺失或格式不符时为空表
+     * <p>
+     * ⚠️ <b>坏一个 uid 不能丢掉整场名单</b>：名单是一次性的，这一场丢了就再也补不回来，
+     * 所以逐个跳过认不出的项、保住其余的，而不是整条记录判死。
+     * 这与「跳过归档中无法解析的一行」是不同粒度的容错——那一层管的是整行 JSON 坏掉。
+     */
+    private Map<String, List<Long>> parseUserSets(JSONObject raw) {
+        if (raw == null || raw.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<String, List<Long>> result = new HashMap<>();
+        for (String metric : raw.keySet()) {
+            JSONArray users = raw.getJSONArray(metric);
+            if (users == null) {
+                continue;
+            }
+            List<Long> uids = new ArrayList<>(users.size());
+            for (Object user : users) {
+                if (user instanceof Number number) {
+                    uids.add(number.longValue());
+                } else {
+                    log.debug("归档名单 {} 里有认不出的用户项, 已跳过", metric);
+                }
+            }
+            result.put(metric, uids);
+        }
+        return result;
     }
 
     /**

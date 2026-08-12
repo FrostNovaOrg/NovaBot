@@ -76,6 +76,38 @@ public interface LiveDataService {
     long downtimeWithin(long from, long to);
 
     /**
+     * 记一段<b>单个直播间</b>的断线区间
+     * <p>
+     * ⚠️ <b>与 {@link #recordDowntime} 是两回事，别合并。</b>
+     * 那一个是<b>进程层面</b>的停机，全局一份、所有主播共享；
+     * 这一个是<b>某个房间自己</b>断线重连，别的房间可能一直好好的。
+     * <p>
+     * 两者<b>必然重叠</b>——程序停机期间每个房间都是断的——所以
+     * <b>相加会重复计数</b>，报告里必须分开表述。
+     * <p>
+     * 默认空实现：不记录的实现照旧返回 0，行为与加这一项之前完全一致。
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @param from 起始时刻（毫秒，含）
+     * @param to 结束时刻（毫秒，含）
+     */
+    default void recordRoomOutage(@NonNull String platform, @NonNull Long uid, long from, long to) {
+    }
+
+    /**
+     * 查询某个直播间与给定区间重叠的断线总时长
+     * <p>
+     * 只算重叠部分，理由同 {@link #downtimeWithin}：跨越开播时刻的那一段，开播之前那一截不属于本场。
+     * <p>
+     * ⚠️ <b>区间之间可能互相重叠</b>（一次断线尚未恢复又记了一次），
+     * 实现必须<b>先合并再累加</b>，否则同一秒会被数两遍。
+     * @return 重叠的断线总毫秒数，没有交集或未记录时为 0
+     */
+    default long roomOutageWithin(@NonNull String platform, @NonNull Long uid, long from, long to) {
+        return 0;
+    }
+
+    /**
      * 获取最近一场直播结束时间戳
      * @param platform 直播平台
      * @param uid UID
@@ -282,6 +314,32 @@ public interface LiveDataService {
      * @return 指标名到独立人数的映射，未记录时为空表
      */
     default Map<String, Integer> getLiveMetricUserCounts(@NonNull String platform, @NonNull Long uid) {
+        return Map.of();
+    }
+
+    /**
+     * 获取本场直播各计分表的<b>参与者名单</b>（冻结项 F5）
+     * <p>
+     * 与 {@link #getLiveMetricUserCounts} 取的是同一份数据：那边只要 size，这边要 uid 本身。
+     * <p>
+     * ⚠️ <b>为什么非做不可</b>：计分表活在内存里、下一次开播就清空，
+     * 而归档此前只留了 size——<b>每播一场就永久丢一场名单</b>。
+     * 回流率、新客、周月去重 UV、同期群留存、沉睡预警、RFM 全都卡在这里，
+     * 而且这一项<b>越晚做丢得越多</b>，所以排在所有分析工作最前面。
+     * <p>
+     * ⚠️ <b>返回原始 uid，不脱敏。</b> 隐私边界 2026-08-07 已定：
+     * 数据由 Nova 系列统一管理、uid 不出这个生态；
+     * <b>脱敏留给数据离开生态的场景，在导出层做不在采集层做</b>——
+     * 采集层脱敏不可逆，存了哈希就再也换不回 uid。
+     * <p>
+     * ⚠️ 落盘之后 {@code sessions.jsonl} 就<b>长期持有他人的 uid</b>，与 {@code EventDebug/} 同性质。
+     * 它不进仓库（{@code .gitignore} 已覆盖并过阳性对照），
+     * 写测试时也<b>不许拿真实 uid 当夹具</b>——用保留段假值。
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @return 指标名到参与者 uid 列表的映射，未记录时为空表
+     */
+    default Map<String, List<Long>> getLiveMetricUserSets(@NonNull String platform, @NonNull Long uid) {
         return Map.of();
     }
 

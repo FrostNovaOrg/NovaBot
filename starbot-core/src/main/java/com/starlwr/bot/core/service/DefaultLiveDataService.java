@@ -257,6 +257,102 @@ public class DefaultLiveDataService implements LiveDataService {
         }
     }
 
+    /**
+     * 单个直播间断线区间的存放键
+     * <p>
+     * 与全局停机分开存：停机是进程层面的，一份就够；断线是每个房间各自的事。
+     */
+    private static final String KEY_ROOM_OUTAGES = "RoomOutages:";
+
+    @Override
+    public void recordRoomOutage(@NonNull String platform, @NonNull Long uid, long from, long to) {
+        if (to <= from) {
+            return;
+        }
+
+        synchronized (metricLock) {
+            JSONObject byRoom = cache.getJSONObject(KEY_ROOM_OUTAGES + platform);
+            if (byRoom == null) {
+                byRoom = new JSONObject();
+                cache.put(KEY_ROOM_OUTAGES + platform, byRoom);
+            }
+            JSONArray outages = byRoom.getJSONArray(String.valueOf(uid));
+            if (outages == null) {
+                outages = new JSONArray();
+                byRoom.put(String.valueOf(uid), outages);
+            }
+
+            // 保留窗口与停机记录一致：更早的场次早已归档，归档里带着当时算好的缺口
+            long expiry = System.currentTimeMillis() - DOWNTIME_RETENTION_MILLIS;
+            outages.removeIf(entry -> !(entry instanceof JSONObject json) || json.getLongValue("to") < expiry);
+
+            JSONObject entry = new JSONObject();
+            entry.put("from", from);
+            entry.put("to", to);
+            outages.add(entry);
+        }
+
+        log.debug("已记录直播间 {} 的一段断线: {} ~ {}, 共 {} 秒",
+                uid, localTime(from), localTime(to), (to - from) / 1000);
+    }
+
+    /**
+     * 查询某个直播间与给定区间重叠的断线总时长
+     * <p>
+     * ⚠️ <b>先合并再累加。</b> 断线区间之间可能互相重叠（一次断线还没恢复又记了一次，
+     * 或者重连过程中记了几段），直接把每段的交集加起来会<b>把同一秒数两遍</b>，
+     * 算出比整场时长还大的缺口。全局停机那一侧不需要合并——进程要么在跑要么没在跑，
+     * 区间天然不重叠；这里不同。
+     */
+    @Override
+    public long roomOutageWithin(@NonNull String platform, @NonNull Long uid, long from, long to) {
+        if (to <= from) {
+            return 0;
+        }
+
+        List<long[]> clipped = new ArrayList<>();
+        synchronized (metricLock) {
+            JSONArray outages = Optional.ofNullable(cache.getJSONObject(KEY_ROOM_OUTAGES + platform))
+                    .map(byRoom -> byRoom.getJSONArray(String.valueOf(uid)))
+                    .orElse(null);
+            if (outages == null || outages.isEmpty()) {
+                return 0;
+            }
+
+            for (int i = 0; i < outages.size(); i++) {
+                JSONObject entry = outages.getJSONObject(i);
+                if (entry == null) {
+                    continue;
+                }
+                long start = Math.max(from, entry.getLongValue("from"));
+                long end = Math.min(to, entry.getLongValue("to"));
+                if (end > start) {
+                    clipped.add(new long[]{start, end});
+                }
+            }
+        }
+
+        if (clipped.isEmpty()) {
+            return 0;
+        }
+
+        clipped.sort(Comparator.comparingLong(interval -> interval[0]));
+        long total = 0;
+        long currentStart = clipped.get(0)[0];
+        long currentEnd = clipped.get(0)[1];
+        for (int i = 1; i < clipped.size(); i++) {
+            long[] interval = clipped.get(i);
+            if (interval[0] <= currentEnd) {
+                currentEnd = Math.max(currentEnd, interval[1]);
+            } else {
+                total += currentEnd - currentStart;
+                currentStart = interval[0];
+                currentEnd = interval[1];
+            }
+        }
+        return total + currentEnd - currentStart;
+    }
+
     // ================ 直播间状态 ================
 
     /**
@@ -605,6 +701,48 @@ public class DefaultLiveDataService implements LiveDataService {
             for (String metric : byMetric.keySet()) {
                 JSONObject users = byMetric.getJSONObject(metric);
                 result.put(metric, users == null ? 0 : users.size());
+            }
+            return result;
+        }
+    }
+
+    /**
+     * 获取本场直播各计分表的参与者名单（F5）
+     * <p>
+     * 与 {@link #getLiveMetricUserCounts} 读的是同一份数据、同一把锁，
+     * <b>所以两者必然对得上</b>——归档时会断言这一点，对不上说明落盘漏了。
+     * <p>
+     * 名单里是<b>原始 uid</b>，隐私边界见接口文档。
+     * @return 指标名到参与者 uid 列表的映射
+     */
+    @Override
+    public Map<String, List<Long>> getLiveMetricUserSets(@NonNull String platform, @NonNull Long uid) {
+        synchronized (metricLock) {
+            JSONObject byMetric = Optional.ofNullable(cache.getJSONObject("LiveMetricUser:" + platform))
+                    .map(data -> data.getJSONObject(String.valueOf(uid)))
+                    .orElse(null);
+            if (byMetric == null) {
+                return Map.of();
+            }
+
+            Map<String, List<Long>> result = new HashMap<>();
+            for (String metric : byMetric.keySet()) {
+                JSONObject users = byMetric.getJSONObject(metric);
+                if (users == null) {
+                    result.put(metric, List.of());
+                    continue;
+                }
+                List<Long> uids = new ArrayList<>(users.size());
+                for (String userUid : users.keySet()) {
+                    try {
+                        uids.add(Long.parseLong(userUid));
+                    } catch (NumberFormatException e) {
+                        // 计分表的键理论上都是 uid 字符串；真出现非数字键时跳过这一个，
+                        // 不能让一条脏数据把整场名单丢掉——名单丢了就再也补不回来
+                        log.warn("计分表 {} 里有非数字的用户键, 已跳过: {}", metric, userUid);
+                    }
+                }
+                result.put(metric, uids);
             }
             return result;
         }

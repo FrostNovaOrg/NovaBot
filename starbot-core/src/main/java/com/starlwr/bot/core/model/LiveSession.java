@@ -29,7 +29,14 @@ import java.util.Map;
  * @param userCounts 各计分表的独立参与人数
  * @param endReason 结束原因，用于把被平台切断的场次与正常场次区分开
  * @param titles 本场的标题与分区轨迹，首条为开播时的初始值
- * @param maintenanceGapSeconds 本场之内因程序停机而没有采集的秒数
+ * @param maintenanceGapSeconds 本场之内因<b>程序停机</b>而没有采集的秒数
+ * @param userSets 各计分表的参与者 uid 名单（冻结项 F5）。与 {@code userCounts} <b>同源</b>——
+ *                 后者就是前者的 size，归档时会断言两者一致。老记录没有这一项，读成空表
+ * @param roomOutageSeconds 本场之内因<b>这个直播间自己断线重连</b>而没有采集的秒数。
+ *                          ⚠️ <b>与 {@code maintenanceGapSeconds} 分开存，不相加</b>：
+ *                          两者成因不同（单房断线 vs 整个程序停机），而且程序停机期间
+ *                          所有房间都在断，两段会重叠，<b>相加就是重复计数</b>。
+ *                          合成一个数还会重演「两个口径混成一个数」那类错误
  */
 public record LiveSession(
         String platform,
@@ -43,7 +50,9 @@ public record LiveSession(
         Map<String, Integer> userCounts,
         LiveEndReason endReason,
         List<RoomInfoSnapshot> titles,
-        long maintenanceGapSeconds
+        long maintenanceGapSeconds,
+        Map<String, List<Long>> userSets,
+        long roomOutageSeconds
 ) {
     /**
      * 按正常结束、无标题记录、无停机缺口构造
@@ -67,6 +76,19 @@ public record LiveSession(
     }
 
     /**
+     * 按无名单、无单房断线构造
+     * <p>
+     * 供 4.3.x 之前就存在的调用方与测试继续使用，<b>也是读取老归档记录时走的那一个</b>——
+     * 老记录里本来就没有这两项。
+     */
+    public LiveSession(String platform, Long uid, String uname, Long roomId, long startTime, long endTime,
+                       long durationSeconds, Map<String, Double> metrics, Map<String, Integer> userCounts,
+                       LiveEndReason endReason, List<RoomInfoSnapshot> titles, long maintenanceGapSeconds) {
+        this(platform, uid, uname, roomId, startTime, endTime, durationSeconds, metrics, userCounts,
+                endReason, titles, maintenanceGapSeconds, Map.of(), 0);
+    }
+
+    /**
      * 取某项指标，缺失时为 0
      */
     public double metric(String name) {
@@ -80,6 +102,35 @@ public record LiveSession(
     public int userCount(String name) {
         Integer value = userCounts == null ? null : userCounts.get(name);
         return value == null ? 0 : value;
+    }
+
+    /**
+     * 取某个计分表的参与者名单，缺失时为空表
+     * <p>
+     * ⚠️ <b>空表有两种含义，本方法分不开</b>：一是这一场真的没人参与，
+     * 二是这条记录来自还没有 F5 的年代。要区分请用 {@link #hasUserSets()}。
+     */
+    public List<Long> userSet(String name) {
+        List<Long> value = userSets == null ? null : userSets.get(name);
+        return value == null ? List.of() : value;
+    }
+
+    /**
+     * 这条记录是否带名单
+     * <p>
+     * <b>用来把「这场没人」和「那时候还没这功能」分开。</b>
+     * 分析侧若不做这个区分，历史场次会显示成「零观众」，
+     * 与停机缺口那一项读成 0 是同一类误读——<b>0 是「不知道」不是「我保证没有」</b>。
+     */
+    public boolean hasUserSets() {
+        return userSets != null && !userSets.isEmpty();
+    }
+
+    /**
+     * 本场是否有任何一种采集缺口（程序停机或单房断线）
+     */
+    public boolean hasGap() {
+        return maintenanceGapSeconds > 0 || roomOutageSeconds > 0;
     }
 
     /**

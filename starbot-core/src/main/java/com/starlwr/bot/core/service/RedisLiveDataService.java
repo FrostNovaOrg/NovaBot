@@ -318,6 +318,25 @@ public class RedisLiveDataService implements LiveDataService {
         return delegate.getLiveMetricUserCounts(platform, uid);
     }
 
+    /**
+     * 本场名单同样走本地委托：Redis 只存跨场累计，本场数据一律在本地。
+     * 与人数那一对方法保持同一条路径，避免两者读到不同的数据源。
+     */
+    @Override
+    public Map<String, List<Long>> getLiveMetricUserSets(@NonNull String platform, @NonNull Long uid) {
+        return delegate.getLiveMetricUserSets(platform, uid);
+    }
+
+    @Override
+    public void recordRoomOutage(@NonNull String platform, @NonNull Long uid, long from, long to) {
+        delegate.recordRoomOutage(platform, uid, from, to);
+    }
+
+    @Override
+    public long roomOutageWithin(@NonNull String platform, @NonNull Long uid, long from, long to) {
+        return delegate.roomOutageWithin(platform, uid, from, to);
+    }
+
     @Override
     public void incrementLiveSeries(@NonNull String platform, @NonNull Long uid, @NonNull String metric,
                                     long timestamp, double delta) {

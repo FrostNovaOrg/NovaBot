@@ -91,6 +91,13 @@ public class StarBotDefaultLiveOffEventListener {
             log.warn("{} 本场有 {} 秒因程序停机未采集, 各项计数只是下界", source.getUname(), gap);
         }
 
+        // 本场之内**这个直播间自己**断线的时段。与上面的程序停机分开算、分开存：
+        // 停机期间所有房间都在断，两段必然重叠，加起来就是重复计数
+        long outage = liveDataService.roomOutageWithin(event.getPlatform(), source.getUid(), start.get(), endTime) / 1000;
+        if (outage > 0) {
+            log.warn("{} 本场有 {} 秒因直播间断线未采集, 各项计数只是下界", source.getUname(), outage);
+        }
+
         archive.append(new LiveSession(
                 event.getPlatform(),
                 source.getUid(),
@@ -103,6 +110,13 @@ public class StarBotDefaultLiveOffEventListener {
                 liveDataService.getLiveMetricUserCounts(event.getPlatform(), source.getUid()),
                 endReason,
                 roomInfoHistory.history(event.getPlatform(), source.getUid()),
-                gap));
+                gap,
+                // F5 名单。⚠️ 它与上面的人数是**两次独立调用**，各自持锁但彼此之间没有原子性：
+                // 两次之间恰好又来一个人，size 与名单长度就会差 1。
+                // 这里**不**用名单反推人数——`getLiveMetricUserSets` 是带默认实现的接口方法，
+                // 自定义实现可能只覆盖了人数那一个，反推会把人数变成 0。
+                // 差 1 的代价（分析侧一个计数偏差）远小于把人数打成 0。
+                liveDataService.getLiveMetricUserSets(event.getPlatform(), source.getUid()),
+                outage));
     }
 }

@@ -104,6 +104,13 @@ class BilibiliConnectorHarness {
      */
     private final BilibiliDisconnectDigest disconnectDigest;
 
+    /**
+     * 单房断线缺口的记录去处。用 mock 是为了能断言「到底记没记」——
+     * 这一项一旦没接上，归档里的缺口就永远是 0，而 0 和「真的没断过」长得一模一样
+     */
+    private final com.starlwr.bot.core.service.LiveDataService liveDataService =
+            org.mockito.Mockito.mock(com.starlwr.bot.core.service.LiveDataService.class);
+
     /** 摘要收下的归因，按顺序。归因错的方向只有从这里才看得出来 */
     private final List<BilibiliDisconnectCause> recordedCauses = new ArrayList<>();
 
@@ -168,7 +175,7 @@ class BilibiliConnectorHarness {
         stubConnectGate();
 
         this.connector = new BilibiliLiveRoomConnector(source, api, parser, properties, publisher,
-                scheduler, client, stateGate, connectGate, riskMetrics, disconnectDigest);
+                scheduler, client, stateGate, connectGate, riskMetrics, disconnectDigest, liveDataService);
     }
 
     // ================ 配置 ================
@@ -257,6 +264,26 @@ class BilibiliConnectorHarness {
         } catch (Exception e) {
             // 收消息这条路上抛异常本身就是缺陷，别让调用方每处都写 throws 把它藏进签名里
             throw new IllegalStateException("喂消息时连接器抛了异常: " + cmd, e);
+        }
+    }
+
+    /** 断线缺口记到哪儿去了，供断言 */
+    com.starlwr.bot.core.service.LiveDataService getLiveDataService() {
+        return liveDataService;
+    }
+
+    /**
+     * 模拟服务端回「认证成功」
+     * <p>
+     * 采集缺口的终点是<b>认证成功</b>而不是 TCP 连上——认证之前服务端不发业务消息，
+     * 那段时间同样什么都没收到。所以测缺口必须走这一条，不能只 fireConnectionEstablished。
+     */
+    void fireVerifySuccess() {
+        byte[] encoded = BilibiliPacketCodec.encode(DataPackType.VERIFY_SUCCESS_RESPONSE, "{}");
+        try {
+            connector.handleMessage(session, new BinaryMessage(encoded));
+        } catch (Exception e) {
+            throw new IllegalStateException("喂认证成功包时连接器抛了异常", e);
         }
     }
 

@@ -12,6 +12,7 @@ import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.service.LiveDataService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -66,6 +67,11 @@ public class BilibiliLiveRoomService {
     private final BilibiliDisconnectDigest disconnectDigest;
 
     /**
+     * 传给每个连接器，用于记录单房断线造成的采集缺口
+     */
+    private final LiveDataService liveDataService;
+
+    /**
      * 直播间号到连接器的映射
      */
     private final Map<Long, BilibiliLiveRoomConnector> connectors = new ConcurrentHashMap<>();
@@ -93,7 +99,8 @@ public class BilibiliLiveRoomService {
                                    BilibiliLiveStateGate stateGate,
                                    BilibiliConnectGate connectGate,
                                    BilibiliRiskMetrics riskMetrics,
-                                   BilibiliDisconnectDigest disconnectDigest) {
+                                   BilibiliDisconnectDigest disconnectDigest,
+                                   LiveDataService liveDataService) {
         this.api = api;
         this.parser = parser;
         this.properties = properties;
@@ -103,6 +110,7 @@ public class BilibiliLiveRoomService {
         this.connectGate = connectGate;
         this.riskMetrics = riskMetrics;
         this.disconnectDigest = disconnectDigest;
+        this.liveDataService = liveDataService;
     }
 
     /**
@@ -183,7 +191,7 @@ public class BilibiliLiveRoomService {
     private void connect(Up up) {
         connectors.computeIfAbsent(up.getRoomId(), roomId -> {
             BilibiliLiveRoomConnector connector =
-                    new BilibiliLiveRoomConnector(up, api, parser, properties, publisher, scheduler, webSocketClient, stateGate, connectGate, riskMetrics, disconnectDigest);
+                    new BilibiliLiveRoomConnector(up, api, parser, properties, publisher, scheduler, webSocketClient, stateGate, connectGate, riskMetrics, disconnectDigest, liveDataService);
             connector.connect();
             return connector;
         });

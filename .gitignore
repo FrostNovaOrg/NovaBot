@@ -47,3 +47,24 @@ docs/PRD-6.0-运营分析.md
 
 # 冻结待办（含本机路径与未公开需求）
 docs/BACKLOG-冻结.md
+
+# 敏感串扫描清单：真值只存本机一份，正本在仓库外
+# （~/.claude/projects/<项目>/novabot-scan-patterns.txt）。
+# 这几条是防御性的——万一哪天有人把副本放进仓库，别让它跟着推出去。
+*scan-pattern*
+*sensitive-patterns*
+*.bundle
+
+# 运行时数据文件。程序在安装目录生成，但从仓库根跑起来时会落在这里。
+# 内容都含他人个人信息或本机身份：
+#   state.json      推送目标的群号／QQ 号
+#   data.json       本场计分表，含观众 uid 与昵称
+#   sessions.jsonl  场次归档（F5 落地后含观众 uid 名单）
+#   snapshots.jsonl 主播基础数据快照
+# 2026-08-12 核过：四者从未被提交过，这里补的是守卫不是补救。
+state.json
+data.json
+sessions.jsonl
+snapshots.jsonl
+EventDebug/
+NetworkDebug/

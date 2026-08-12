@@ -130,7 +130,12 @@ public class LiveSessionRecovery {
                 // 崩溃后标题轨迹只存在内存里，已经没了。这里<b>不能</b>拿当前标题顶上，
                 // 那会把这一场的标题记到上一场头上
                 List.of(),
-                gap));
+                gap,
+                // ⚠️ 名单这一条**必须和正常下播走同一套**：异常路径最容易漏，
+                // 而漏在这里的后果是「崩溃过的那一场永远没有名单」，事后补不回来。
+                // 与标题轨迹不同——标题在崩溃时真的没了，名单是从磁盘上的计分表读的，还在
+                liveDataService.getLiveMetricUserSets(platform, source.getUid()),
+                liveDataService.roomOutageWithin(platform, source.getUid(), start, endTime) / 1000));
 
         log.warn("{} 上一场直播未闭合（程序在直播中途停过），已按未闭合归档: 时长下界 {} 秒, 其中 {} 秒未采集",
                 source.getUname(), duration, gap);

@@ -19,7 +19,9 @@ import com.starlwr.bot.bilibili.protocol.BilibiliPacket;
 import com.starlwr.bot.bilibili.protocol.BilibiliPacketCodec;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
+import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
+import com.starlwr.bot.core.service.LiveDataService;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -121,12 +123,22 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
     private final BilibiliDisconnectDigest disconnectDigest;
 
     /**
+     * 记录单房断线缺口用。只写不读——读在下播归档那一刻
+     */
+    private final LiveDataService liveDataService;
+
+    /**
      * 本条连接认证成功的时刻，未认证时为 null
      * <p>
      * 断线归因要用它算「这条连接活了多久」：认证都没过就断，与活了两小时才断，
      * 是两件完全不同的事，而关闭码把它们说成同一个 1006
      */
     private volatile Instant authenticatedAt;
+
+    /**
+     * 本段断线的起点。非空表示「正在断」，认证成功时清空并记一段采集缺口
+     */
+    private volatile Instant disconnectedAt;
 
     /**
      * 当前连接状态
@@ -214,7 +226,8 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
                                      @NonNull BilibiliLiveStateGate stateGate,
                                      @NonNull BilibiliConnectGate connectGate,
                                      @NonNull BilibiliRiskMetrics riskMetrics,
-                                     @NonNull BilibiliDisconnectDigest disconnectDigest) {
+                                     @NonNull BilibiliDisconnectDigest disconnectDigest,
+                                     @NonNull LiveDataService liveDataService) {
         this.source = source;
         this.api = api;
         this.parser = parser;
@@ -226,6 +239,7 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
         this.connectGate = connectGate;
         this.riskMetrics = riskMetrics;
         this.disconnectDigest = disconnectDigest;
+        this.liveDataService = liveDataService;
         this.riskDetector = new BilibiliLiveRoomRiskDetector(
                 properties.getLive().getAutoDetectLiveRoomRiskWindows());
     }
@@ -392,6 +406,36 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
     }
 
     /**
+     * 重连认证成功，把这一段断线记成采集缺口
+     * <p>
+     * <b>缺口的终点是「认证成功」而不是「TCP 连上」</b>：认证完成之前服务端不发业务消息，
+     * 那段时间同样什么都没收到。
+     * <p>
+     * 记的是<b>绝对区间</b>而不是时长，因为归档时要按场次窗口裁剪——
+     * 主播没在播的时候断线不算任何一场的缺口，
+     * 而跨越开播时刻的那一段只有开播之后那一截才算。
+     * <p>
+     * ⚠️ 这一段与「程序停机」是两个口径，存在两个字段里，<b>不相加</b>。
+     */
+    private void closeOutageGap() {
+        Instant from = disconnectedAt;
+        if (from == null) {
+            return;
+        }
+        disconnectedAt = null;
+
+        Instant now = Instant.now();
+        if (!now.isAfter(from)) {
+            return;
+        }
+
+        liveDataService.recordRoomOutage(LivePlatform.BILIBILI.getName(), source.getUid(),
+                from.toEpochMilli(), now.toEpochMilli());
+        log.debug("直播间 {} 断线 {} 秒后恢复, 已记入采集缺口",
+                source.getRoomId(), Duration.between(from, now).toSeconds());
+    }
+
+    /**
      * 处理单个数据包
      * @param packet 数据包
      */
@@ -399,6 +443,7 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
         if (packet.getOperation() == DataPackType.VERIFY_SUCCESS_RESPONSE.getCode()) {
             log.debug("直播间 {} 认证成功", source.getRoomId());
             authenticatedAt = Instant.now();
+            closeOutageGap();
             return;
         }
 
@@ -548,6 +593,16 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
         BilibiliDisconnectCause cause = BilibiliDisconnectCause.classify(
                 closerOf(session), closeStatus.getCode(), authAt != null, lived);
         disconnectDigest.record(source.getRoomId(), cause, lived);
+
+        // 从这一刻起就收不到这个房间的任何消息，直到重连认证成功——那才是缺口的终点，
+        // 所以起点记在这里、终点在 handlePacket 的认证成功那一支补上。
+        // ⚠️ 只对**认证过**的连接记：从没认证成功的那次本来就没在采，
+        // 把首连失败也算成「采集中断」会让缺口凭空变大。
+        // ⚠️ 已经在断的不覆盖起点：一段断线里可能反复触发关闭回调，
+        // 覆盖会把缺口越记越短
+        if (authAt != null && disconnectedAt == null) {
+            disconnectedAt = Instant.now();
+        }
 
         if (closed.get()) {
             return;

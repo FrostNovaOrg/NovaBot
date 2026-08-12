@@ -464,4 +464,67 @@ class BilibiliLiveRoomConnectorTest {
                     "上一段的失败次数已经清零，这一段该从一个基准重新起算");
         }
     }
+    /**
+     * 单房断线要记成采集缺口（第②批）
+     * <p>
+     * ⚠️ <b>这一项没接上时，归档里的缺口永远是 0——而 0 与「真的没断过」长得一模一样。</b>
+     * 所以断言的不是「值对不对」，而是「到底记没记」。
+     */
+    @Nested
+    @DisplayName("单房断线记成采集缺口")
+    class RoomOutage {
+        @Test
+        @DisplayName("⚠️ 断线到重连认证成功之间，应记一段采集缺口")
+        void recordsOutageBetweenCloseAndVerify() {
+            BilibiliConnectorHarness harness = new BilibiliConnectorHarness();
+            harness.connect();
+            harness.fireVerifySuccess();
+
+            harness.fireConnectionClosed(1006);
+            harness.fireVerifySuccess();
+
+            org.mockito.Mockito.verify(harness.getLiveDataService()).recordRoomOutage(
+                    org.mockito.ArgumentMatchers.anyString(),
+                    org.mockito.ArgumentMatchers.eq(STREAMER_UID),
+                    org.mockito.ArgumentMatchers.anyLong(),
+                    org.mockito.ArgumentMatchers.anyLong());
+        }
+
+        @Test
+        @DisplayName("从没认证成功过的连接断掉，不算采集缺口——那时本来就没在采")
+        void firstHandshakeFailureIsNotAnOutage() {
+            BilibiliConnectorHarness harness = new BilibiliConnectorHarness();
+            harness.connect();
+
+            // 没有 fireVerifySuccess，直接断
+            harness.fireConnectionClosed(1006);
+            harness.fireVerifySuccess();
+
+            org.mockito.Mockito.verify(harness.getLiveDataService(),
+                    org.mockito.Mockito.never()).recordRoomOutage(
+                    org.mockito.ArgumentMatchers.anyString(),
+                    org.mockito.ArgumentMatchers.anyLong(),
+                    org.mockito.ArgumentMatchers.anyLong(),
+                    org.mockito.ArgumentMatchers.anyLong());
+        }
+
+        @Test
+        @DisplayName("尺子先过阳性对照：上一条的 never() 必须真的分得出记与不记")
+        void neverAssertionIsDiscriminating() {
+            // 若 verify(...).recordRoomOutage 的匹配器写错，never() 会永远通过。
+            // 用一个确实会记录的场景证明同一组匹配器抓得到
+            BilibiliConnectorHarness harness = new BilibiliConnectorHarness();
+            harness.connect();
+            harness.fireVerifySuccess();
+            harness.fireConnectionClosed(1006);
+            harness.fireVerifySuccess();
+
+            org.mockito.Mockito.verify(harness.getLiveDataService(),
+                    org.mockito.Mockito.times(1)).recordRoomOutage(
+                    org.mockito.ArgumentMatchers.anyString(),
+                    org.mockito.ArgumentMatchers.anyLong(),
+                    org.mockito.ArgumentMatchers.anyLong(),
+                    org.mockito.ArgumentMatchers.anyLong());
+        }
+    }
 }

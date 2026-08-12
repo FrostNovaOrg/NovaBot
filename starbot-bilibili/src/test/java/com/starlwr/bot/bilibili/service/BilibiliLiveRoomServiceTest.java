@@ -3,6 +3,7 @@ package com.starlwr.bot.bilibili.service;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.health.BilibiliRiskMetrics;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
+import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -76,7 +77,8 @@ class BilibiliLiveRoomServiceTest {
                 // mock 掉就等于把被测行为一起 mock 没了
                 new BilibiliConnectGate(properties, scheduler),
                 new BilibiliRiskMetrics(),
-                new com.starlwr.bot.bilibili.health.BilibiliDisconnectDigest(properties, scheduler)
+                new com.starlwr.bot.bilibili.health.BilibiliDisconnectDigest(properties, scheduler),
+                mock(LiveDataService.class)
         );
     }
 
