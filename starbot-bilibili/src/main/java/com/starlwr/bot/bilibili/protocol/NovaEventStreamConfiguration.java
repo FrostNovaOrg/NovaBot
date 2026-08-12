@@ -2,6 +2,7 @@ package com.starlwr.bot.bilibili.protocol;
 
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.service.EventStreamTokenService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.context.annotation.Bean;
@@ -56,10 +57,12 @@ public class NovaEventStreamConfiguration implements DisposableBean {
      * 事件输出端点的路径映射
      * @param properties 配置
      * @param stream 事件流
+     * @param tokenService 只读口令校验
      * @return 路径映射，未启用时为空映射
      */
     @Bean
-    public HandlerMapping novaEventStreamHandlerMapping(StarBotBilibiliProperties properties, NovaEventStream stream) {
+    public HandlerMapping novaEventStreamHandlerMapping(StarBotBilibiliProperties properties, NovaEventStream stream,
+                                                        EventStreamTokenService tokenService) {
         StarBotBilibiliProperties.EventStream config = properties.getEventStream();
         if (!config.isEnabled()) {
             return new SimpleUrlHandlerMapping(Map.of(), ORDER);
@@ -70,7 +73,18 @@ public class NovaEventStreamConfiguration implements DisposableBean {
         WebSocketHttpRequestHandler handler = new WebSocketHttpRequestHandler(endpoint, new DefaultHandshakeHandler());
         handler.getHandshakeInterceptors().add(new LoopbackOnly());
 
-        log.info("事件输出已启用, 地址: ws://127.0.0.1:<server.port>{}, 仅接受本机连接", config.getPath());
+        if (config.isRequireToken()) {
+            handler.getHandshakeInterceptors().add(new ReadOnlyTokenRequired(tokenService));
+            log.info("事件输出已启用, 路径 {}, 需出示只读口令", config.getPath());
+        } else {
+            log.info("事件输出已启用, 地址: ws://127.0.0.1:<server.port>{}, 仅接受本机连接", config.getPath());
+            // 这条提示存在的理由：反代与本程序同机，转发过来的连接源地址就是回环，
+            // 「只接受本机连接」届时不再等于「人在这台机器上」——装了反代却没开这个开关，
+            // 表面上一切正常，实际上门是敞开的
+            log.warn("事件输出未要求口令。⚠️ 这台机器上若装了反向代理, 必须打开 "
+                    + "starbot.bilibili.event-stream.require-token: "
+                    + "反代转发过来的连接源地址就是回环, 「只接受本机连接」将不再拦得住任何人");
+        }
         return new SimpleUrlHandlerMapping(Map.of(config.getPath(), handler), ORDER);
     }
 

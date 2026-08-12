@@ -1,0 +1,58 @@
+# NovaBot 事件流反向代理（Caddy）
+#
+# 用途：让**另一台机器**上的面板读到事件流，而不必开 SSH 隧道。
+#
+# 🔴 装这个之前先读这一段
+#
+# Caddy 与 NovaBot 在同一台机器上，它转发过来的连接**源地址就是回环**。
+# 也就是说装上反代之后，NovaBot 那道「只接受本机连接」的判据**不再等于
+# 「人在这台机器上」**——任何能连上反代的人在端点看来都是本机。
+#
+# 所以必须同时打开：
+#
+#     starbot:
+#       bilibili:
+#         event-stream:
+#           require-token: true
+#
+# 不打开就等于没有鉴权，而且表面上一切正常。
+#
+# 口令在配置控制台里签发（只读，既不给 shell 也不给控制台），
+# 面板用它连接；控制台令牌**不要**发给面板那台机器。
+#
+# 安装：
+#   sudo cp dist/templates/Caddyfile /etc/caddy/Caddyfile
+#   # 把下面的 events.example.com 改成你自己的域名
+#   sudo caddy validate --config /etc/caddy/Caddyfile
+#   sudo systemctl reload caddy
+
+events.example.com {
+	# 只放行事件流这一条路径，其余一律 404。
+	# 这是本文件最关键的一条：配置界面、静态资源、接口全都不该经由反代出去，
+	# 它们背后是能改配置的控制台。
+	handle /nova/events {
+		reverse_proxy 127.0.0.1:7827 {
+			# WebSocket 升级头透传。Caddy 2 默认就会转发 Upgrade/Connection，
+			# 这里写出来是为了让人知道它是被依赖的，改动时别顺手删掉
+			header_up Host {host}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	# 其余路径直接拒绝。⚠️ 用 404 而不是 403：
+	# 403 等于告诉对方「这里有东西但你不能看」，404 什么也不告诉
+	handle {
+		respond 404
+	}
+
+	# 访问日志：记下来是为了让「有人在敲门」看得见（我们不做自动封禁，用可见性代替对抗）。
+	# ⚠️ 口令走 Sec-WebSocket-Protocol 请求头而**不是**查询参数，
+	# 正是为了让它不出现在这份日志里——改成 ?token= 的话，口令会被抄进这里、
+	# 抄进浏览器历史、抄进 Referer，三个我们都管不到的地方。
+	log {
+		output file /var/log/caddy/nova-events.log
+		format json
+	}
+
+	# TLS 由 Caddy 自动申请与续期，这也是选它而不选 nginx 的主要理由
+}

@@ -5,6 +5,8 @@ import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.config.ConfigLevel;
 import com.starlwr.bot.core.config.ui.auth.PasswordHash;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.model.EventStreamToken;
+import com.starlwr.bot.core.service.EventStreamTokenService;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.datasource.DataSourceServiceRegistry;
 import com.starlwr.bot.core.model.PushUser;
@@ -144,6 +146,11 @@ public class ConfigUiController {
 
     private final ConfigurationLevelResolver levelResolver;
 
+    /**
+     * 事件流只读口令的签发与吊销
+     */
+    private final EventStreamTokenService eventStreamTokens;
+
     private final ObjectProvider<BotConnectionTester> connectionTesters;
 
     @Autowired
@@ -160,7 +167,9 @@ public class ConfigUiController {
                               StarBotEventHandlerService handlerService,
                               DataSourceServiceRegistry dataSourceServiceRegistry,
                               ConfigurationLevelResolver levelResolver,
-                              ObjectProvider<BotConnectionTester> connectionTesters) {
+                              ObjectProvider<BotConnectionTester> connectionTesters,
+                              EventStreamTokenService eventStreamTokens) {
+        this.eventStreamTokens = eventStreamTokens;
         this.levelResolver = levelResolver;
         this.connectionTesters = connectionTesters;
         this.activityRecorder = activityRecorder;
@@ -405,6 +414,82 @@ public class ConfigUiController {
      * 响应中<strong>不含 token</strong>，详见 {@link BotConnectionTester.Connection}。
      * @return 连接信息
      */
+    /**
+     * 列出事件流的只读口令
+     * <p>
+     * <b>只给指纹，不给哈希，更不给明文</b>——明文在签发那一刻之后就不存在了，
+     * 而哈希虽然不可逆，也没有任何理由送到浏览器里。
+     * <p>
+     * 已吊销的一并列出：它们是<b>审计事实</b>，「这把曾经存在过、何时被撤」正是事后要查的。
+     * @return 口令清单
+     */
+    @GetMapping("/api/event-tokens")
+    public JSONObject listEventTokens() {
+        JSONObject result = new JSONObject();
+        JSONArray items = new JSONArray();
+        for (EventStreamToken token : eventStreamTokens.list()) {
+            JSONObject item = new JSONObject();
+            item.put("fingerprint", eventStreamTokens.fingerprintOf(token));
+            item.put("label", token.label());
+            item.put("issuedAt", token.issuedAt());
+            item.put("revokedAt", token.revokedAt());
+            item.put("active", token.active());
+            items.add(item);
+        }
+        result.put("success", true);
+        result.put("tokens", items);
+        return result;
+    }
+
+    /**
+     * 签发一把新的只读口令
+     * <p>
+     * ⚠️ <b>响应里的明文是它唯一一次出现</b>：库里只存哈希，此后不可能再取回。
+     * 界面必须把这句话显示给使用者，否则「怎么看不到了」会被当成缺陷。
+     * <b>能再取回来的明文，等于明文落盘。</b>
+     * <p>
+     * 🔒 签发动作发生在<b>服务器侧</b>，口令带出去给面板。顺序不能反——
+     * 反过来就是把控制台令牌送进面板机器，那正是这条路线要避免的。
+     * @param body 含 label：签给谁，用于日后定向吊销
+     * @return 口令明文，仅此一次
+     */
+    @PostMapping("/api/event-tokens")
+    public JSONObject issueEventToken(@RequestBody Map<String, String> body) {
+        JSONObject result = new JSONObject();
+        String label = body == null ? null : body.get("label");
+        if (label == null || label.isBlank()) {
+            result.put("success", false);
+            // 没有标签就无法定向吊销，只能一次全撤——那就退回了复用控制台令牌时的粒度
+            result.put("message", "请填写这把口令签给谁，否则日后无法单独吊销它");
+            return result;
+        }
+
+        String token = eventStreamTokens.issue(label.trim());
+        result.put("success", true);
+        result.put("token", token);
+        result.put("message", "这是这把口令唯一一次显示，请立即复制保存；关闭后无法再次查看");
+        return result;
+    }
+
+    /**
+     * 吊销一把只读口令
+     * <p>
+     * ⚠️ <b>吊销对已经建立的连接不自动生效。</b> 这一条与校验放在哪一侧无关，
+     * 撤完必须确认对方确实掉线了，否则「已吊销」只对新连接成立。
+     * @param fingerprint 口令指纹
+     * @return 吊销结果
+     */
+    @PostMapping("/api/event-tokens/{fingerprint}/revoke")
+    public JSONObject revokeEventToken(@PathVariable String fingerprint) {
+        JSONObject result = new JSONObject();
+        boolean found = eventStreamTokens.revoke(fingerprint);
+        result.put("success", found);
+        result.put("message", found
+                ? "已吊销。⚠️ 已经建立的连接不会自动断开，请确认对方已掉线"
+                : "没有找到这把仍然有效的口令（可能已经撤过了）");
+        return result;
+    }
+
     @GetMapping("/api/setup/bot")
     public JSONObject currentBot() {
         JSONObject result = new JSONObject();
