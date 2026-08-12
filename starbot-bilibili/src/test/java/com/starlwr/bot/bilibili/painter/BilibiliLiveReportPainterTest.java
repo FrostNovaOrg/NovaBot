@@ -547,4 +547,32 @@ class BilibiliLiveReportPainterTest {
             // 仅用于人工核对，失败不影响测试结论
         }
     }
+
+    @Test
+    @DisplayName("单房断线缺口与程序停机分两句写，且各自零则不显示")
+    void reportsRoomOutageSeparatelyFromMaintenanceGap() {
+        long start = System.currentTimeMillis() - 2 * 3600_000;
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+        liveDataService.setLiveEndTime(PLATFORM, STREAMER.getUid(), start + 2 * 3600_000);
+
+        // 先证明这两句在没有缺口时都不出现——否则下面的「出现了」说明不了问题
+        String before = painter.textReport(PLATFORM, STREAMER,
+                BilibiliLiveReportOptions.of(new com.alibaba.fastjson2.JSONObject(), true));
+        assertFalse(before.contains("因维护未采集"), before);
+        assertFalse(before.contains("因直播间断线未采集"), before);
+
+        liveDataService.recordDowntime(start + 600_000, start + 600_000 + 754_000);
+        liveDataService.recordRoomOutage(PLATFORM, STREAMER.getUid(),
+                start + 600_000, start + 600_000 + 123_000);
+
+        String after = painter.textReport(PLATFORM, STREAMER,
+                BilibiliLiveReportOptions.of(new com.alibaba.fastjson2.JSONObject(), true));
+
+        assertTrue(after.contains("因维护未采集"), after);
+        assertTrue(after.contains("因直播间断线未采集"), after);
+        // 两段是重叠的（断线那 123 秒就落在停机那 754 秒里），
+        // 报告必须分两句写而不是给一个和——给和就是把同一秒数了两遍
+        assertEquals("12 分 34 秒", painter.maintenanceGapText(PLATFORM, STREAMER.getUid()));
+        assertEquals("2 分 3 秒", painter.roomOutageText(PLATFORM, STREAMER.getUid()));
+    }
 }

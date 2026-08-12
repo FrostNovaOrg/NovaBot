@@ -322,6 +322,12 @@ public class BilibiliLiveReportPainter {
         if (!gap.isEmpty()) {
             text.append("（其中 ").append(gap).append("因维护未采集）");
         }
+        // 单房断线与程序停机分两句写。合成一句就得把两个数相加，
+        // 而它们会重叠——停机期间这个房间当然也是断的
+        String outage = roomOutageText(platform, uid);
+        if (!outage.isEmpty()) {
+            text.append("（另有 ").append(outage).append("因直播间断线未采集）");
+        }
 
         // 本场有推送的图片没送到时才出现这一行，绝大多数场次是零、不占版面
         long imageDegraded = count(platform, uid, BilibiliLiveMetric.IMAGE_DEGRADED_COUNT);
@@ -481,6 +487,11 @@ public class BilibiliLiveReportPainter {
         String gap = maintenanceGapText(platform, uid);
         if (!gap.isEmpty()) {
             line.add(new TextWithStyle("（其中 " + gap + "因维护未采集）",
+                    CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN));
+        }
+        String outage = roomOutageText(platform, uid);
+        if (!outage.isEmpty()) {
+            line.add(new TextWithStyle("（另有 " + outage + "因直播间断线未采集）",
                     CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN));
         }
 
@@ -1229,6 +1240,24 @@ public class BilibiliLiveReportPainter {
             return "";
         }
         return DurationFormatUtil.format(liveDataService.downtimeWithin(start.get(), end.get()) / 1000);
+    }
+
+    /**
+     * 本场因<b>这个直播间自己断线</b>而没采到的时长描述，没有则为空串
+     * <p>
+     * ⚠️ <b>与 {@link #maintenanceGapText} 分开显示，不相加。</b>
+     * 那一个是整个程序停了，这一个是单个房间断线重连；
+     * 程序停机期间所有房间都在断，两段必然重叠，加起来就是重复计数。
+     * 报告上并排写两句，读者才知道这是两回事。
+     */
+    String roomOutageText(String platform, Long uid) {
+        Optional<Long> start = liveDataService.getLiveStartTime(platform, uid);
+        Optional<Long> end = effectiveEndTime(platform, uid, start);
+        if (start.isEmpty() || end.isEmpty()) {
+            return "";
+        }
+        long seconds = liveDataService.roomOutageWithin(platform, uid, start.get(), end.get()) / 1000;
+        return seconds <= 0 ? "" : DurationFormatUtil.format(seconds);
     }
 
     /**

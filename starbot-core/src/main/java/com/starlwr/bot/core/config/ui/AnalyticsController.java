@@ -203,6 +203,20 @@ public class AnalyticsController {
 
         // 有缺口的场次，各项计数只是下界。不标出来的话，一次维护重启会被读成「这天人气差」
         item.put("maintenanceGapSeconds", session.maintenanceGapSeconds());
+        // 单房断线缺口。与上面那项**分两个字段给出去，不相加**：
+        // 程序停机期间所有房间都在断，两段必然重叠，相加就是重复计数
+        item.put("roomOutageSeconds", session.roomOutageSeconds());
+
+        // ⚠️ 名单这一项，「空」有两种含义，必须让消费方分得开：
+        // 一是这一场真的没人参与，二是这条记录来自还没有名单功能的年代。
+        // 只丢一个空对象出去的话，历史场次会被显示成「零观众」——
+        // 与缺口读成 0 是同一类误读：**0 是「不知道」，不是「我保证没有」**
+        item.put("hasUserSets", session.hasUserSets());
+        JSONObject userSets = new JSONObject();
+        if (session.userSets() != null) {
+            session.userSets().forEach((metric, uids) -> userSets.put(metric, new JSONArray(uids)));
+        }
+        item.put("userSets", userSets);
 
         JSONArray titles = new JSONArray();
         if (session.titles() != null) {
