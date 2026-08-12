@@ -223,7 +223,8 @@ class LiveSessionArchiveTest {
             LiveSession s = archive.find(0, Long.MAX_VALUE).get(0);
 
             assertEquals(s.userCount("danmu_users"), s.userSet("danmu_users").size(),
-                    "两者同源，size 必然相等");
+                    "同一批数据落盘再读回，两者必须一致");
+            assertFalse(s.userSetSuspicious("danmu_users"), "一致时不该报可疑");
         }
 
         @Test
@@ -294,6 +295,42 @@ class LiveSessionArchiveTest {
 
             assertEquals(List.of(10000201L, 10000202L), s.userSet("danmu_users"),
                     "名单一次性，坏一个不能连累其余的");
+        }
+        @Test
+        @DisplayName("自校验绊线放宽到 ±1：差 1 是正常竞态不报，差 2 才当缺陷查")
+        void toleratesOneOffButFlagsMore() {
+            // 归档时人数与名单是两次独立调用取的，两次之间来一个人就差 1。
+            // 绊线写成严格相等会在正常竞态上误报，而误报会把人训练成忽略告警
+            LiveSession offByOne = new LiveSession("bilibili", STREAMER_UID, "测试主播", ROOM_ID,
+                    1_000_000L, 1_003_600_000L, 3600, Map.of(), Map.of("danmu_users", 3),
+                    com.starlwr.bot.core.enums.LiveEndReason.NORMAL, List.of(), 0,
+                    Map.of("danmu_users", List.of(10000201L, 10000202L)), 0);
+            assertFalse(offByOne.userSetSuspicious("danmu_users"), "差 1 属正常竞态，不该报");
+
+            LiveSession offByTwo = new LiveSession("bilibili", STREAMER_UID, "测试主播", ROOM_ID,
+                    1_000_000L, 1_003_600_000L, 3600, Map.of(), Map.of("danmu_users", 4),
+                    com.starlwr.bot.core.enums.LiveEndReason.NORMAL, List.of(), 0,
+                    Map.of("danmu_users", List.of(10000201L, 10000202L)), 0);
+            assertTrue(offByTwo.userSetSuspicious("danmu_users"), "差 2 超出容差，必须报");
+        }
+
+        @Test
+        @DisplayName("老记录没有名单时一律不报——那是个不存在的问题")
+        void oldRecordsAreNeverSuspicious() throws Exception {
+            // 名单 0 条 vs 人数 33，若不特判就会报缺陷，
+            // 但那时候本来就不写名单，报的是一个不存在的问题
+            Files.writeString(dir.resolve("sessions.jsonl"),
+                    "{\"platform\":\"bilibili\",\"uid\":1,\"uname\":\"测试主播\",\"roomId\":2,"
+                            + "\"startTime\":1000000,\"endTime\":1100000,\"durationSeconds\":100,"
+                            + "\"metrics\":{},\"userCounts\":{\"danmu_users\":33}}\n",
+                    StandardCharsets.UTF_8);
+
+            LiveSession s = archive.find(0, Long.MAX_VALUE).get(0);
+
+            assertEquals(33, s.userCount("danmu_users"));
+            assertTrue(s.userSet("danmu_users").isEmpty());
+            assertFalse(s.userSetSuspicious("danmu_users"),
+                    "没有名单的年代不该被当成落盘缺陷");
         }
     }
 }

@@ -127,6 +127,37 @@ public record LiveSession(
     }
 
     /**
+     * 名单长度与人数容许的偏差
+     * <p>
+     * 归档时人数与名单是<b>两次独立调用</b>取的：各自持锁，但彼此之间没有原子性。
+     * 两次之间恰好又来一个人，size 与名单长度就会差 1。
+     * <p>
+     * <b>所以自校验的绊线不能写成严格相等</b>——竞态既然存在且已记档，
+     * 严格相等会在正常竞态上误报，而<b>误报会把人训练成忽略告警</b>，
+     * 那比没有告警更糟。
+     */
+    private static final int USER_SET_TOLERANCE = 1;
+
+    /**
+     * 名单长度与人数的偏差是否已经大到该当缺陷查
+     * <p>
+     * 两者本该同源（后者就是前者的 size），所以这是一条<b>免费的自校验绊线</b>：
+     * 差得太多就说明落盘漏了。但判读要放宽到 ±{@value #USER_SET_TOLERANCE}，理由见
+     * {@link #USER_SET_TOLERANCE}。
+     * <p>
+     * ⚠️ <b>没有名单的老记录一律不报</b>：那时候本来就不写名单，
+     * 拿「名单 0 条 vs 人数 33」去报缺陷，报的是一个不存在的问题。
+     * @param name 计分表名
+     * @return true 表示偏差超出容差，值得查
+     */
+    public boolean userSetSuspicious(String name) {
+        if (!hasUserSets()) {
+            return false;
+        }
+        return Math.abs(userCount(name) - userSet(name).size()) > USER_SET_TOLERANCE;
+    }
+
+    /**
      * 本场是否有任何一种采集缺口（程序停机或单房断线）
      */
     public boolean hasGap() {
