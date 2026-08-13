@@ -51,6 +51,25 @@ events.example.com {
 			# 这里写出来是为了让人知道它是被依赖的，改动时别顺手删掉
 			header_up Host {host}
 			header_up X-Real-IP {remote_host}
+
+			# 🔴 必须删掉 X-Forwarded-*，这一行不是可选的。
+			#
+			# Caddy 的 reverse_proxy **默认会加** X-Forwarded-For；而 NovaBot 若开着
+			# server.forward-headers-strategy（控制台的登录锁定与 https 判定要它），
+			# Spring 会拿这个头改写 request.getRemoteAddress()。
+			# 于是事件流那道「只接受本机连接」的判据看到的是**真实客户端 IP**，
+			# 把反代自己挡在门外——2026-08-13 在 nginx 上实测到了这个形态：
+			# 握手回一个**空的 200**（不是 401、不是 403），后端日志写着
+			# 「拒绝了来自 <公网IP> 的事件输出连接」。
+			# ⚠️ 空 200 这个症状极难猜，别在这上面耗时间。
+			#
+			# 删掉之后后端看见真实 TCP 对端 127.0.0.1，回环判据放行，
+			# 由首帧口令充当真正的门——这正是 require-token 存在的理由。
+			# 代价：NovaBot 侧鉴权失败日志的来源恒为 127.0.0.1，
+			# 「谁在敲门」改由下面那份 access log 提供。
+			header_up -X-Forwarded-For
+			header_up -X-Forwarded-Proto
+			header_up -X-Forwarded-Host
 		}
 	}
 
