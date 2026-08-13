@@ -15,6 +15,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
@@ -56,6 +57,19 @@ class EventTokenEndpointsTest {
                 mock(ConfigurationLevelResolver.class),
                 mock(org.springframework.beans.factory.ObjectProvider.class),
                 tokens);
+    }
+
+    @Test
+    @DisplayName("🔒 会话校验端点：只回 2xx 且不带响应体")
+    void sessionCheckReturnsNoContent() {
+        var response = controller.sessionCheck();
+
+        // nginx 的 auth_request 只看状态码：2xx 放行、401/403 拒绝。
+        // 这一位是契约——改成「200 带一段 body」也照样能用，
+        // 但那段 body 会被 auth_request 直接丢掉，白白多一次序列化，
+        // 而且会诱使后来人往里塞信息，那些信息谁也看不到
+        assertTrue(response.getStatusCode().is2xxSuccessful(), "2xx 才会被 auth_request 当成放行");
+        assertNull(response.getBody(), "校验端点唯一的输出就是状态码");
     }
 
     @Test

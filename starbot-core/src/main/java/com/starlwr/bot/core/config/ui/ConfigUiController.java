@@ -423,6 +423,34 @@ public class ConfigUiController {
      * 已吊销的一并列出：它们是<b>审计事实</b>，「这把曾经存在过、何时被撤」正是事后要查的。
      * @return 口令清单
      */
+    /**
+     * 会话校验端点，供反向代理的 {@code auth_request} 使用
+     * <p>
+     * <b>只回状态码，不回响应体。</b> 能走进这个方法体，就说明
+     * {@code ConfigUiSecurityFilter} 已经放行了——也就是会话有效；
+     * 会话无效时过滤器早就回了 401，根本到不了这里。
+     * <b>校验逻辑因此只有一份</b>，不会出现「代理那条路与界面这条路判得不一样」。
+     *
+     * <h2>为什么必须挂在 {@code /config} 下</h2>
+     * 会话 Cookie 的作用域是 {@code Path=/config}，安全过滤器也只注册在
+     * {@code /config} 与 {@code /config/*} 上。<b>放到别的命名空间下，
+     * 浏览器根本不会带上会话 Cookie，过滤器也不会跑</b>——两头都落空。
+     * <p>
+     * ⚠️ 由此得到一条给反代用的硬约束：<b>凡是要靠这套会话把门的被代理服务，
+     * 它的对外路径也必须落在 {@code /config} 下</b>，否则 {@code auth_request}
+     * 拿不到 Cookie，表现是全部 401 却看不出原因。
+     *
+     * <h2>关于「无副作用」</h2>
+     * 它不认证、不签发、不改配置。<b>但会顺带刷新会话的活跃时间</b>——这是刻意的：
+     * 不刷新的话，运维正在被代理的服务里干着活，会话却因为「没访问过配置界面」而到期，
+     * 等于把人踢出去。
+     * @return 固定 204，无响应体
+     */
+    @GetMapping("/api/session-check")
+    public ResponseEntity<Void> sessionCheck() {
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/api/event-tokens")
     public JSONObject listEventTokens() {
         JSONObject result = new JSONObject();

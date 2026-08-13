@@ -101,7 +101,8 @@ public class ConfigUiRegistrar {
         }
 
         FilterRegistrationBean<ConfigUiSecurityFilter> registration = new FilterRegistrationBean<>();
-        registration.setFilter(new ConfigUiSecurityFilter(token, ipMatcher, authService));
+        registration.setFilter(new ConfigUiSecurityFilter(token, ipMatcher, authService,
+                properties.getConfigUi().getAuth().isOperatorToken()));
         registration.addUrlPatterns(ConfigUiController.BASE_PATH, ConfigUiController.BASE_PATH + "/*");
         registration.setOrder(Ordered.HIGHEST_PRECEDENCE + 1);
         registration.setName("configUiSecurityFilter");
@@ -126,10 +127,19 @@ public class ConfigUiRegistrar {
         if (!StringUtil.isBlank(auth.getPassword())) {
             log.info("配置界面已启动: http://{}:{}{}", address, port, ConfigUiController.BASE_PATH);
             log.info("已启用口令登录{}", StringUtil.isBlank(auth.getTotpSecret()) ? "" : "与二次验证");
-            // 令牌仍然有效，它是忘记口令时唯一不必重启就能进去的路。
-            // 这一行必须打出来——否则「运维通道」只存在于代码里，真需要时谁也拿不到令牌
-            log.info("忘记口令时可用以下地址直接进入（该地址等同于口令，请勿分享）:");
-            log.info("  http://{}:{}{}?token={}", address, port, ConfigUiController.BASE_PATH, token);
+
+            if (auth.isOperatorToken()) {
+                // 令牌仍然有效，它是忘记口令时唯一不必重启就能进去的路。
+                // 这一行必须打出来——否则「运维通道」只存在于代码里，真需要时谁也拿不到令牌
+                log.info("忘记口令时可用以下地址直接进入（该地址等同于口令，请勿分享）:");
+                log.info("  http://{}:{}{}?token={}", address, port, ConfigUiController.BASE_PATH, token);
+                log.info("  ⚠️ 该地址绕过二次验证, 且会进反向代理的访问日志。"
+                        + "确认口令与验证器都能用之后, 建议把 starbot.core.config-ui.auth.operator-token 关掉");
+            } else {
+                // 关掉时**不能**照旧打印那个地址：打印一个不管用的地址比不打印更让人困惑，
+                // 而且它仍然是个真令牌，照样会被抄进日志与截图
+                log.info("「忘记口令」的启动令牌通道已关闭。忘记口令时请改配置文件后重启");
+            }
             return;
         }
 

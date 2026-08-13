@@ -77,10 +77,20 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
 
     private final ConfigUiAuthService authService;
 
-    public ConfigUiSecurityFilter(String token, IpMatcher ipMatcher, ConfigUiAuthService authService) {
+    /**
+     * 是否保留「忘记口令」的启动令牌通道
+     * <p>
+     * 传布尔而不是整个配置对象：这个过滤器只关心这一位，
+     * 拿着整份配置反而让「它到底会读什么」变得说不清。
+     */
+    private final boolean operatorToken;
+
+    public ConfigUiSecurityFilter(String token, IpMatcher ipMatcher, ConfigUiAuthService authService,
+                                  boolean operatorToken) {
         this.token = token;
         this.ipMatcher = ipMatcher;
         this.authService = authService;
+        this.operatorToken = operatorToken;
     }
 
     @Override
@@ -159,6 +169,13 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
      * @return 换得的会话，令牌不正确时为空
      */
     private Optional<ConfigUiSession> redeemOperatorToken(HttpServletRequest request, HttpServletResponse response, String clientIp) {
+        // 🔴 关掉之后这条路整个不存在：不看令牌、不比对、不记失败。
+        // 之所以在最前面就返回而不是「比一比再拒」，是因为「比过了但不放行」
+        // 仍然会因为耗时差异透露出令牌对不对，而这条路关掉之后本就不该有任何反馈
+        if (!operatorToken) {
+            return Optional.empty();
+        }
+
         String presented = request.getParameter("token");
         if (presented == null || presented.isBlank()) {
             String authorization = request.getHeader(HttpHeaders.AUTHORIZATION);
