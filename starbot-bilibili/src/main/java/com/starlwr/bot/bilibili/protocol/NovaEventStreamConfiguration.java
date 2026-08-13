@@ -68,14 +68,17 @@ public class NovaEventStreamConfiguration implements DisposableBean {
             return new SimpleUrlHandlerMapping(Map.of(), ORDER);
         }
 
-        endpoint = new NovaEventEndpoint(stream);
+        // 要求口令时把口令服务交给端点：认证发生在连接建立之后的第一帧，不在握手里
+        endpoint = new NovaEventEndpoint(stream, config.isRequireToken() ? tokenService : null);
 
         WebSocketHttpRequestHandler handler = new WebSocketHttpRequestHandler(endpoint, new DefaultHandshakeHandler());
         handler.getHandshakeInterceptors().add(new LoopbackOnly());
+        // 无论开不开口令都装：它拦的是「把凭据塞进握手」这个动作本身。
+        // 只在开口令时装的话，没开口令的部署仍会把旧客户端的口令原样记进代理日志
+        handler.getHandshakeInterceptors().add(new NoCredentialsInHandshake());
 
         if (config.isRequireToken()) {
-            handler.getHandshakeInterceptors().add(new ReadOnlyTokenRequired(tokenService));
-            log.info("事件输出已启用, 路径 {}, 需出示只读口令", config.getPath());
+            log.info("事件输出已启用, 路径 {}, 需在连接后首帧出示只读口令", config.getPath());
         } else {
             log.info("事件输出已启用, 地址: ws://127.0.0.1:<server.port>{}, 仅接受本机连接", config.getPath());
             // 这条提示存在的理由：反代与本程序同机，转发过来的连接源地址就是回环，

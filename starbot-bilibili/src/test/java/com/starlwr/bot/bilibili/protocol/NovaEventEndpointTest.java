@@ -36,14 +36,14 @@ class NovaEventEndpointTest {
     /**
      * 收集发送内容的假会话
      */
-    private static class FakeSession implements WebSocketSession {
+    static class FakeSession implements WebSocketSession {
         private final String id;
 
         private final LinkedBlockingQueue<String> sent = new LinkedBlockingQueue<>();
 
-        private volatile CloseStatus closedWith;
+        volatile CloseStatus closedWith;
 
-        private FakeSession(String id) {
+        FakeSession(String id) {
             this.id = id;
         }
 
@@ -51,7 +51,7 @@ class NovaEventEndpointTest {
          * 取下一条消息
          * @return 消息，超时未收到时为 null
          */
-        private JSONObject next() throws InterruptedException {
+        JSONObject next() throws InterruptedException {
             String json = sent.poll(3, TimeUnit.SECONDS);
             return json == null ? null : JSON.parseObject(json);
         }
@@ -59,7 +59,7 @@ class NovaEventEndpointTest {
         /**
          * 取接下来的若干条消息
          */
-        private List<JSONObject> next(int count) throws InterruptedException {
+        List<JSONObject> next(int count) throws InterruptedException {
             List<JSONObject> messages = new ArrayList<>();
             for (int i = 0; i < count; i++) {
                 JSONObject message = next();

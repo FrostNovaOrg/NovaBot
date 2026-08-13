@@ -114,18 +114,66 @@ public class EventStreamTokenService {
     }
 
     /**
-     * 校验来访口令
+     * 校验结论
+     * <p>
+     * 取值与事件输出协议 {@code auth_failed.reason} 的线上取值一一对应，
+     * <b>字符串写在这里而不是散在调用侧</b>——散着写迟早会有一处拼错，
+     * 而客户端只会把认不出的 reason 当成「未知错误」，那正是这一位要消灭的东西。
+     */
+    public enum Verdict {
+        /** 放行 */
+        OK(null),
+
+        /** 从没被签发过，或压根没出示 */
+        BAD_TOKEN("bad_token"),
+
+        /**
+         * 曾经有效，已被吊销
+         * <p>
+         * ⚠️ 与 {@link #BAD_TOKEN} <b>必须分开</b>：只测「乱填一串被拒」证明不了吊销真的生效。
+         */
+        REVOKED("revoked"),
+
+        /**
+         * 已过期
+         * <p>
+         * 🔴 <b>当前永远不会返回这一项</b>：口令首版不带有效期
+         * （{@code expiresAt} 恒为 {@code null}，见裁决 #99 二），到期靠控制台吊销。
+         * <p>
+         * 它留在这里是因为<b>契约有三值</b>（VRDash《设置界面设计稿-88》§五②）。
+         * 日后真加了有效期，<b>必须回这一项而不是 {@link #BAD_TOKEN}</b>——
+         * 「过期了」和「这把口令根本不存在」对用户是完全不同的两件事，
+         * 前者该提示重取，后者该提示查证来源。
+         */
+        EXPIRED("expired");
+
+        private final String wire;
+
+        Verdict(String wire) {
+            this.wire = wire;
+        }
+
+        /**
+         * 协议里 {@code auth_failed.reason} 该写的值，{@link #OK} 返回 {@code null}
+         */
+        public String wire() {
+            return wire;
+        }
+    }
+
+    /**
+     * 校验来访口令并给出结论
      * <p>
      * <b>只认本服务签发且未吊销的口令。</b>
      * ⚠️ 「无效」与「已吊销」是两种不同的失败：前者从没被签发过，后者<b>曾经有效</b>。
-     * 两者都拒，但日志要分得开——只测「乱填一串被拒」证明不了吊销真的生效。
+     * 两者都拒，但要分得开——客户端据此告诉用户该重取还是该查来源。
      * @param presented 来访者出示的口令
-     * @return 是否放行
+     * @return 校验结论
      */
-    public boolean verify(String presented) {
+    public Verdict check(String presented) {
         if (presented == null || presented.isBlank()) {
             recordFailure("未出示口令", null);
-            return false;
+            return Verdict.BAD_TOKEN;
         }
 
         String presentedHash = hash(presented);
@@ -134,15 +182,24 @@ public class EventStreamTokenService {
                     presentedHash.getBytes(StandardCharsets.UTF_8))) {
                 if (!token.active()) {
                     recordFailure("口令已吊销", presented);
-                    return false;
+                    return Verdict.REVOKED;
                 }
                 consecutiveFailures.set(0);
-                return true;
+                return Verdict.OK;
             }
         }
 
         recordFailure("口令无效", presented);
-        return false;
+        return Verdict.BAD_TOKEN;
+    }
+
+    /**
+     * 校验来访口令
+     * @param presented 来访者出示的口令
+     * @return 是否放行
+     */
+    public boolean verify(String presented) {
+        return check(presented) == Verdict.OK;
     }
 
     /**
