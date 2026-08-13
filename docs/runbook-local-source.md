@@ -49,7 +49,7 @@ starbot:
 `datasource.json` 填一个房间的**主播 uid**（不是房间号）：
 
 ```json
-[{"uid": 8000004, "platform": "bilibili", "targets": []}]
+[{"uid": <主播uid>, "platform": "bilibili", "targets": []}]
 ```
 
 `targets` 留空就是[纯监听房间](user-guide.md#只采集不推送的房间)：照常连接、照常出事件、
@@ -57,7 +57,7 @@ starbot:
 
 > 房间号 → uid 的换算：
 > ```bash
-> curl -s 'https://api.live.bilibili.com/room/v1/Room/get_info?room_id=500001' | grep -o '"uid":[0-9]*'
+> curl -s 'https://api.live.bilibili.com/room/v1/Room/get_info?room_id=<房间号>' | grep -o '"uid":[0-9]*'
 > ```
 
 ### 挑一个不会白等的房间
@@ -66,19 +66,19 @@ starbot:
 看起来和「程序坏了」一模一样。
 
 ```bash
-curl -s 'https://api.live.bilibili.com/room/v1/Room/get_info?room_id=500001' \
+curl -s 'https://api.live.bilibili.com/room/v1/Room/get_info?room_id=<房间号>' \
   | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; print("uid",d["uid"],"live_status",d["live_status"],"online",d["online"])'
 ```
 
 `live_status`：**1 = 正在播**，2 = 轮播（放录像，不会有弹幕），0 = 没播。
 
-几个常年高流量的备选，挑一个 `live_status` 为 1 的：
+🔴 **本文里的房间号与 uid 全部是占位值，照抄连不上任何房间。**
+这里不列具体房间——写死几个真实房间等于把「这个仓库的人在盯哪些直播间」记录下来，
+而房间随时会停播，列表本来也会过期。
 
-| 房间号 | 主播 uid | 分区 |
-|---|---|---|
-| `500001` | 8000004 | 英雄联盟。流量最稳，晚间常有 |
-| `22000003` | 500000007 | 虚拟主播 |
-| `20000002` | 3000003 | 虚拟主播 |
+自己挑一个的办法：打开 <https://live.bilibili.com/> 任一分区，
+点进一个**正在播且人多**的房间，地址栏末段就是房间号，代入上面那条 `get_info` 取 uid。
+挑分区时优先选常年有大房间的（如英雄联盟、虚拟主播），验证起来不用等。
 
 **别照抄弹幕速率去做容量估算。** 人气值和弹幕量没有关系——实测有 75 万人气每分钟 0.1 条的
 房间，也有 29 万人气每分钟 180 条的房间。
@@ -99,7 +99,7 @@ java -Dloader.path=lib,plugins-lib -jar StarBotCore.jar
 匿名模式：个人主播的直播间实测只能拿到约一成弹幕（七格实测 8.8%~12.5%）…
 动态推送与自动关注已禁用: 当前为匿名模式，它们必须有登录态
 StarBotBilibili 已就绪（匿名模式）
-已连接到直播间 500001
+已连接到直播间 <房间号>
 ```
 
 OneBot 那两行 ERROR（`未配置 OneBot HTTP Token`）**可以无视**：你没配 QQ 机器人，
@@ -161,7 +161,7 @@ asyncio.run(main())
 
 ### ⚠️ 做容量估算时别漏掉 `enter`
 
-**它是仅次于弹幕的第二大类。** 下游实测（房间 `500001`，网游区、约 34 万在线、匿名模式）：
+**它是仅次于弹幕的第二大类。** 下游实测（网游区某房间、约 34 万在线、匿名模式）：
 **5 分钟 629 条，约 120 条/分。**
 
 > 这一行此前写的是「`enter` / `follow` / `share` 恒为 0 条」。那句话在 `63af58f` 时是**对的**

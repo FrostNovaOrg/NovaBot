@@ -180,10 +180,12 @@ Python 版用 Redis 存两套数据：
 - **变化量不单独记终值**：开播记快照，绘制时取实时值相减。于是直播中随时拉的实时报告
   与下播报告共用同一段逻辑，也不必担心「记终值」和「画报告」两步之间的顺序
 
-三个接口均已对真实账号验证（测试主播 uid 3000000000000001，房间 2000000001），
-无需登录态：粉丝数复用已有的 `live_user/v1/Master/info` 的 `follower_num`（243），
-粉丝团人数取 `rank/getFansMembersRank` 的 `data.num`（36），
-大航海人数取 `guardTab/topList` 的 `data.info.num`（3）。
+三个接口均已对真实账号验证过，且**都无需登录态**：粉丝数复用已有的
+`live_user/v1/Master/info` 的 `follower_num`，粉丝团人数取 `rank/getFansMembersRank`
+的 `data.num`，大航海人数取 `guardTab/topList` 的 `data.info.num`。
+
+（验证用的账号标识与当时的三个实测数值不在此记录——留下来只会把某个具体的人
+和这个仓库绑在一起，而对读者理解接口没有任何帮助。）
 
 **真机验收待做**：报告图里的曲线横轴与直播时段吻合、涨幅与直播间实际变化一致。
 
