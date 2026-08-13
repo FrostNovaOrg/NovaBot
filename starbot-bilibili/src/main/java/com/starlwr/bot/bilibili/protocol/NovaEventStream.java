@@ -157,7 +157,13 @@ public class NovaEventStream {
                 buffer.pollFirst();
             }
 
-            for (Subscriber subscriber : subscribers) {
+            // 🔴 必须遍历副本：onFrame 会同步回调进 unsubscribe。
+            // 那不是假想情况，是设计上就会走到的路——端点在「客户端队列满」时断开它，
+            // 断开就退订，而此刻我们正拿着迭代器站在这个集合上（锁可重入，进得来）。
+            // 直接遍历原集合会抛 ConcurrentModificationException，
+            // 而且抛在发布线程上，也就是整条弹幕流水线上。
+            // 副本的语义也正是我们要的：这一帧照发给当时在册的每一位，退订下一帧生效。
+            for (Subscriber subscriber : List.copyOf(subscribers)) {
                 subscriber.onFrame(frame);
             }
             return frame;
