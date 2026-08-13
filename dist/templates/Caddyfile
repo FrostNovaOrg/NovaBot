@@ -20,11 +20,26 @@
 # 口令在配置控制台里签发（只读，既不给 shell 也不给控制台），
 # 面板用它连接；控制台令牌**不要**发给面板那台机器。
 #
+# 🔴 下面的 127.0.0.1:7827 与 /nova/events 必须与 application.yml 对得上
+#
+#     server.port                          ←→ 本文件里的 7827
+#     starbot.bilibili.event-stream.path   ←→ 本文件里的 /nova/events
+#
+# 两者都是可改的配置项，本文件写的是模板默认值。改了一边不改另一边，症状很难查：
+# 端口对不上是连不上；**路径对不上则会被下面那条「其余一律 404」吃掉**——
+# 而那正是配置正确时拒绝陌生路径的样子，两种情况长得一模一样。
+#
 # 安装：
 #   sudo cp dist/templates/Caddyfile /etc/caddy/Caddyfile
 #   # 把下面的 events.example.com 改成你自己的域名
+#   # ⚠️ 日志目录必须先存在且 caddy 可写，否则 validate 直接失败（是错误，不是警告）
+#   sudo mkdir -p /var/log/caddy && sudo chown caddy:caddy /var/log/caddy
 #   sudo caddy validate --config /etc/caddy/Caddyfile
 #   sudo systemctl reload caddy
+#
+# ✅ 2026-08-13 本机 caddy 2.11.4 实测 `caddy validate` 通过（退出码 0），
+#    尺子先过阳性对照（故意写错指令的配置确实被拒、退出码 1）。
+#    唯一拦下过它的就是上面那个日志目录。
 
 events.example.com {
 	# 只放行事件流这一条路径，其余一律 404。
@@ -40,7 +55,12 @@ events.example.com {
 	}
 
 	# 其余路径直接拒绝。⚠️ 用 404 而不是 403：
-	# 403 等于告诉对方「这里有东西但你不能看」，404 什么也不告诉
+	# 403 等于告诉对方「这里有东西但你不能看」，404 什么也不告诉。
+	#
+	# ⚠️ 这条还挡住了另一件事：**配置界面的令牌是走地址栏 `?token=` 的**
+	# （ConfigUiSecurityFilter 从 request.getParameter("token") 取）。
+	# 事件流的口令刻意不走查询串，控制台的却走——所以一旦把控制台也放行到反代上，
+	# 控制台令牌会被原样抄进下面那份访问日志。**别为了图方便在这里开第二条 handle。**
 	handle {
 		respond 404
 	}
