@@ -176,6 +176,14 @@ class LiveSessionRecoveryTest {
             before.saveNow(false);
             long watermark = watermark();
 
+            // 🔴 等时钟真的走过落盘那一毫秒再启动。
+            // 恢复逻辑对「当前时刻 <= 落盘时刻」是**刻意不记**的（那是时钟回拨的形态，
+            // 见 ignoresClockRollback）。落盘与恢复挤进同一毫秒时它同样不记，
+            // 于是这条用例会红——而红的原因与被测代码无关。
+            // 2026-08-14 真的红过一次：同一个提交，隔了一个多小时重跑就复现了。
+            // **一个会因为跑得太快而失败的用例，是把尺子本身弄坏了。**
+            awaitClockPast(watermark);
+
             DefaultLiveDataService after = boot();
             new LiveSessionRecovery(after, archive).onApplicationReadyEvent();
 
@@ -314,6 +322,18 @@ class LiveSessionRecoveryTest {
     /**
      * 读出数据文件里当前的水位线，判据必须取自盘上而不是内存
      */
+    /**
+     * 自旋到系统时钟严格越过给定时刻
+     * <p>
+     * 最多一毫秒，不引入固定睡眠——固定睡眠只是把概率调低，
+     * 而这里要的是「一定越过去」。
+     */
+    private static void awaitClockPast(long instant) {
+        while (System.currentTimeMillis() <= instant) {
+            Thread.onSpinWait();
+        }
+    }
+
     private long watermark() {
         try {
             return com.alibaba.fastjson2.JSON
