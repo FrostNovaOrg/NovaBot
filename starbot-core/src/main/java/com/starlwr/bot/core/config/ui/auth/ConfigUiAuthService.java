@@ -35,6 +35,14 @@ public class ConfigUiAuthService {
      */
     public static final String PASSWORD_PROPERTY = "starbot.core.config-ui.auth.password";
 
+    /**
+     * 并发闸门拦下时建议等待的时长
+     * <p>
+     * 这是瞬时拥塞，不是锁定，所以给的是「几秒钟」而不是「几分钟」——
+     * 两者若共用一个数量级，界面上就分不出「服务器忙」和「你被锁了」。
+     */
+    private static final Duration BUSY_RETRY_AFTER = Duration.ofSeconds(5);
+
     private final ConfigUiSessionStore sessions;
 
     private final LoginThrottle throttle;
@@ -182,6 +190,58 @@ public class ConfigUiAuthService {
     }
 
     /**
+     * 只校验凭据，<b>不签发会话</b>
+     * <p>
+     * 🔴 存在的理由就是那个「不」字。代签发端点（§五① 契约）要拿口令换一把<b>只读</b>口令，
+     * 它若图省事调 {@link #login}，那个方法会<b>顺手签发一个控制台会话并下发 Cookie</b>——
+     * 于是只读通道被悄悄升级成完整控制台权限，<b>而功能上完全看不出来</b>（口令照样能用）。
+     * <p>
+     * 限流、锁定、失败日志与 {@link #login} <b>共用同一份</b>：口令是同一个，
+     * 分开计数等于把它的可猜次数翻倍。
+     * @param password 明文口令
+     * @param code 二次验证码，未启用二次验证时忽略；契约规定不传（字段缺席）而非空串
+     * @param clientIp 来源 IP。<b>反代必须转发真实来源</b>，否则所有失败都记进同一个桶，
+     *                 而 {@link LoginThrottle} 恰好是刻意不做全局锁定的
+     * @return 判定与需要等待的时长
+     */
+    public CredentialCheck checkCredentials(char[] password, String code, String clientIp) {
+        if (!enabled) {
+            return new CredentialCheck(Verdict.AUTH_DISABLED, Duration.ZERO);
+        }
+
+        Instant now = Instant.now();
+
+        Duration lockout = throttle.remainingLockout(clientIp, now);
+        if (!lockout.isZero()) {
+            return new CredentialCheck(Verdict.LOCKED_OUT, lockout);
+        }
+
+        // 校验本身很吃 CPU，抢不到名额时直接拒绝而不是排队，否则排队本身就是放大器
+        if (!throttle.tryAcquireSlot()) {
+            log.warn("配置界面同时进行的登录校验过多, 已拒绝来自 {} 的请求", clientIp);
+            return new CredentialCheck(Verdict.BUSY, BUSY_RETRY_AFTER);
+        }
+
+        try {
+            String secret = totpEnabled ? totpSecret : null;
+            // 两个都算完再判：短路会让「口令对不对」体现在耗时上
+            boolean passwordOk = PasswordHash.verify(password, passwordHash);
+            boolean codeOk = secret == null || TotpGenerator.verify(secret, code, now);
+
+            if (!passwordOk || !codeOk) {
+                throttle.recordFailure(clientIp, now);
+                log.warn("配置界面登录失败, 来源: {}", clientIp);
+                return new CredentialCheck(Verdict.BAD_CREDENTIALS, Duration.ZERO);
+            }
+        } finally {
+            throttle.releaseSlot();
+        }
+
+        throttle.recordSuccess(clientIp);
+        return new CredentialCheck(Verdict.OK, Duration.ZERO);
+    }
+
+    /**
      * 登录
      * @param password 明文口令
      * @param code 二次验证码，未启用二次验证时忽略
@@ -189,38 +249,64 @@ public class ConfigUiAuthService {
      * @return 登录结果
      */
     public LoginResult login(char[] password, String code, String clientIp) {
-        Instant now = Instant.now();
+        CredentialCheck check = checkCredentials(password, code, clientIp);
 
-        Duration lockout = throttle.remainingLockout(clientIp, now);
-        if (!lockout.isZero()) {
-            return LoginResult.lockedOut(lockout);
-        }
-
-        // 校验本身很吃 CPU，抢不到名额时直接拒绝而不是排队，否则排队本身就是放大器
-        if (!throttle.tryAcquireSlot()) {
-            log.warn("配置界面同时进行的登录校验过多, 已拒绝来自 {} 的请求", clientIp);
-            return LoginResult.busy();
-        }
-
-        try {
-            String secret = totpEnabled ? totpSecret : null;
-            boolean passwordOk = PasswordHash.verify(password, passwordHash);
-            boolean codeOk = secret == null || TotpGenerator.verify(secret, code, now);
-
-            if (!passwordOk || !codeOk) {
-                throttle.recordFailure(clientIp, now);
-                log.warn("配置界面登录失败, 来源: {}", clientIp);
-                return LoginResult.failure();
+        return switch (check.verdict()) {
+            case OK -> {
+                ConfigUiSession session = sessions.issue(clientIp, Instant.now());
+                log.info("配置界面登录成功, 来源: {}", clientIp);
+                yield LoginResult.success(session);
             }
-        } finally {
-            throttle.releaseSlot();
+            case LOCKED_OUT -> LoginResult.lockedOut(check.retryAfter());
+            case BUSY -> LoginResult.busy();
+            // AUTH_DISABLED 落到这里只可能是调用方没先问 isEnabled()。
+            // 按凭据不符处理——没有校验对象绝不是放行的理由
+            default -> LoginResult.failure();
+        };
+    }
+
+    /**
+     * 凭据校验的判定
+     * <p>
+     * 这几个值里除 {@link #OK} 外都是<b>对外契约的一部分</b>：代签发端点按 {@link #wire()}
+     * 原样回给客户端，对侧照它分文案。<b>改动即为契约变更。</b>
+     * <p>
+     * 🔴 「口令错」与「验证码错」<b>故意合并</b>成 {@link #BAD_CREDENTIALS} 一个值：
+     * 分开说等于告诉攻击者口令已经猜对了，二次验证就只剩六位数字要试。
+     * <p>
+     * 🔴 但 {@link #LOCKED_OUT} <b>必须与它分开</b>：锁定期内输对的口令<b>也会被拒</b>，
+     * 此时若显示「口令不对」，人会去重置一个根本没问题的口令。
+     */
+    public enum Verdict {
+        OK(null),
+        BAD_CREDENTIALS("bad_credentials"),
+        LOCKED_OUT("locked_out"),
+        BUSY("busy"),
+        AUTH_DISABLED("auth_disabled");
+
+        private final String wire;
+
+        Verdict(String wire) {
+            this.wire = wire;
         }
 
-        throttle.recordSuccess(clientIp);
-        ConfigUiSession session = sessions.issue(clientIp, now);
-        log.info("配置界面登录成功, 来源: {}", clientIp);
+        /**
+         * @return 契约里约定的字符串，{@link #OK} 无对应值
+         */
+        public String wire() {
+            return wire;
+        }
+    }
 
-        return LoginResult.success(session);
+    /**
+     * 凭据校验结果
+     * @param verdict 判定
+     * @param retryAfter 建议等待时长，无需等待时为 {@link Duration#ZERO}
+     */
+    public record CredentialCheck(Verdict verdict, Duration retryAfter) {
+        public boolean ok() {
+            return verdict == Verdict.OK;
+        }
     }
 
     /**
@@ -309,7 +395,7 @@ public class ConfigUiAuthService {
         }
 
         static LoginResult busy() {
-            return new LoginResult(null, "服务器正忙，请稍后重试", Duration.ofSeconds(5));
+            return new LoginResult(null, "服务器正忙，请稍后重试", BUSY_RETRY_AFTER);
         }
     }
 }
