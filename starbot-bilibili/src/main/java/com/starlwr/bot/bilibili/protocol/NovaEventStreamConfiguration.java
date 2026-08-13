@@ -81,12 +81,14 @@ public class NovaEventStreamConfiguration implements DisposableBean {
             log.info("事件输出已启用, 路径 {}, 需在连接后首帧出示只读口令", config.getPath());
         } else {
             log.info("事件输出已启用, 地址: ws://127.0.0.1:<server.port>{}, 仅接受本机连接", config.getPath());
-            // 这条提示存在的理由：反代与本程序同机，转发过来的连接源地址就是回环，
+            // 这条提示存在的理由：反代与本程序同机、且反代未送 X-Forwarded-* 时，
+            // 转发过来的连接源地址就是回环，
             // 「只接受本机连接」届时不再等于「人在这台机器上」——装了反代却没开这个开关，
             // 表面上一切正常，实际上门是敞开的
             log.warn("事件输出未要求口令。⚠️ 这台机器上若装了反向代理, 必须打开 "
                     + "starbot.bilibili.event-stream.require-token: "
-                    + "反代转发过来的连接源地址就是回环, 「只接受本机连接」将不再拦得住任何人");
+                    + "反代若未送 X-Forwarded-*, 转发过来的连接源地址就是回环, "
+                    + "「只接受本机连接」将不再拦得住任何人");
         }
         return new SimpleUrlHandlerMapping(Map.of(config.getPath(), handler), ORDER);
     }
@@ -101,8 +103,23 @@ public class NovaEventStreamConfiguration implements DisposableBean {
     /**
      * 只放行来自本机回环地址的握手
      * <p>
-     * <b>判据取自 TCP 对端地址，不看任何请求头。</b> {@code X-Forwarded-For} 这类头是
-     * 客户端可以随便写的，拿它做访问控制等于没做。
+     * 判据取自 {@code getRemoteAddress()}。原意是「只看 TCP 对端，不看请求头」——
+     * 因为 {@code X-Forwarded-For} 这类头客户端可以随便写，拿它做访问控制等于没做。
+     * <p>
+     * 🔴 <b>但「不看请求头」这句话有前提，2026-08-13 生产上被推翻过一次。</b>
+     * 本程序若开着 {@code server.forward-headers-strategy}（配置控制台的登录锁定
+     * 与 https 判定要它），Spring 会用 {@code X-Forwarded-For}
+     * <b>改写 {@code getRemoteAddress()}</b>——于是这道判据看到的不再是 TCP 对端，
+     * 而是那个头里写的地址。
+     * <p>
+     * 后果是<b>反直觉的</b>：反代若把 {@code X-Forwarded-*} 送下来，
+     * 这道判据看到真实客户端 IP，于是<b>把反代自己挡在门外</b>，
+     * 症状是握手回一个<b>空的 200</b>（不是 401、不是 403）。
+     * 正确做法是让反代<b>剥掉</b> {@code X-Forwarded-*}（见 {@code dist/templates/Caddyfile}），
+     * 让这里如实看到回环，再由首帧口令充当真正的门。
+     * <p>
+     * ⚠️ 所以这道判据<b>不是</b>在开了 forwarded 策略时仍然可信的来源判据：
+     * 它的可信度取决于反代有没有剥头。**要真正的门，靠 {@code require-token}。**
      * <p>
      * 这道拦截与 {@code server.address} 相互独立：把监听地址放开是为了对外提供推送接口，
      * 不等于愿意把观众昵称、uid 与消费金额一并放出去。
