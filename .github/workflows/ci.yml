@@ -59,6 +59,36 @@ jobs:
         run: mvn -B -f build-tools/starbot-plugin-processor/pom.xml install -DskipTests
 
       - name: 扫描已知漏洞
-        # 扫描结果仅作提示，不阻断构建：上游依赖的修复节奏不受本仓库控制
+        # 本步骤**只出报告，永不阻断构建**：上游依赖的修复节奏不受本仓库控制。
+        #
+        # ⚠️ 这里原本还带着 -DfailBuildOnCVSS=8。那个参数在 continue-on-error: true
+        # 之下**没有任何效果**——阈值再低也拦不住构建，却让读到它的人以为
+        # CVSS≥8 会被拦下。**配置在撒谎比配置缺失更糟**，已删除。
         continue-on-error: true
-        run: mvn -B -Pinstall org.owasp:dependency-check-maven:check -DfailBuildOnCVSS=8 -DskipTests
+        run: mvn -B -Pinstall org.owasp:dependency-check-maven:check -Dformat=CSV -DskipTests
+
+      # 不阻断，但不能让高危悄悄溜过去：结果显式贴到 job summary。
+      # 「不阻断」省下的阻塞成本，必须用可见性补回来，否则等于没扫。
+      - name: 高危漏洞进 job summary
+        if: always()
+        run: |
+          {
+            echo "## 依赖漏洞扫描"
+            REPORT=$(find . -name 'dependency-check-report.csv' | head -1)
+            if [ -z "$REPORT" ]; then
+              # ⚠️ 报告缺失和「没有漏洞」长得一样，必须分开说，否则这块永远是绿的
+              echo "⚠️ **未找到报告文件**——扫描步骤可能根本没跑成。"
+              echo "别把这一栏的空白当成「没有漏洞」。"
+            else
+              HIGH=$(awk -F',' 'NR>1 && $NF+0 >= 7' "$REPORT" | wc -l | tr -d ' ')
+              echo "报告：\`$REPORT\`"
+              if [ "$HIGH" = "0" ]; then
+                echo "✅ 本次未发现 CVSS ≥ 7 的条目。"
+              else
+                echo "🔴 **发现 $HIGH 条 CVSS ≥ 7 的依赖漏洞**（不阻断构建，但请处理）："
+                echo '```'
+                awk -F',' 'NR>1 && $NF+0 >= 7 {print $2, $3, "CVSS="$NF}' "$REPORT" | sort -u | head -40
+                echo '```'
+              fi
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

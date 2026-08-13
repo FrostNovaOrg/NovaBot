@@ -51,6 +51,22 @@ public class SafeModeServer {
 
     private final String failure;
 
+    /**
+     * 访问令牌
+     * <p>
+     * ⚠️ <b>它走启动日志与地址栏 {@code ?token=}，这与事件流那边的规矩正好相反，
+     * 是有意的，别去「统一」。</b>
+     * <p>
+     * 事件流（{@code ReadOnlyTokenRequired}）刻意<b>不收</b>查询参数，因为它
+     * <b>就是为了经反向代理对外提供</b>而设计的，查询串会进反代访问日志、
+     * 浏览器历史与 {@code Referer}。
+     * <p>
+     * 安全模式的前提相反：<b>只绑回环、刻意不经过反代</b>，那条动机不成立；
+     * 而且此刻程序根本没起来，<b>除了启动日志没有任何别的渠道能把令牌交给人</b>。
+     * 改成请求头就等于把用户锁在门外。
+     * <p>
+     * 朝任一方向统一都会踩坑，两套规矩都要留着。
+     */
     private final String token = SecureToken.generate();
 
     public SafeModeServer(Path configPath, String failure) {

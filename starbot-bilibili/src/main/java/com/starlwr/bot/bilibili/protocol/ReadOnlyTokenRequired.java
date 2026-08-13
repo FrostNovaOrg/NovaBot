@@ -26,11 +26,29 @@ import java.util.Map;
  * 能设的只有子协议。所以口令放在子协议里，形如 {@code nova.token.<口令>}。
  * <p>
  * ⚠️ <b>刻意不接受 {@code ?token=} 查询参数</b>，尽管那样最省事：
- * 查询串会进反向代理的访问日志、浏览器历史与 {@code Referer}，
- * <b>等于把口令抄进好几个我们管不到的地方</b>。检查单里「关闭请求体日志」那条
- * 防的是请求体，防不住请求行。
+ * 查询串会进浏览器历史与 {@code Referer}，<b>那两处我们管不到</b>。
+ * 检查单里「关闭请求体日志」那条防的是请求体，防不住请求行。
+ * <p>
+ * 🔴 <b>但别把「走请求头」当成「不会进反代日志」——这里曾经这么写过，是错的。</b>
+ * 2026-08-13 实测（本机 caddy 2.11.4）：Caddy 的 json 访问日志<b>默认记录全部请求头</b>，
+ * 只对 {@code Authorization}、{@code Cookie} 等做 REDACTED，
+ * <b>而 {@code Sec-Websocket-Protocol} 不在那份遮蔽名单里，是明文落盘的</b>。
+ * 反代那一侧必须靠 {@code dist/templates/Caddyfile} 里的 log filter 显式删掉它。
+ * <b>子协议真正挡住的是浏览器历史与 Referer，不是反代日志。</b>
  * <p>
  * 非浏览器客户端可以用 {@code Authorization: Bearer <口令>}，两种都认。
+ *
+ * <h2>⚠️ 配置控制台是相反的一套规矩，别去「统一」</h2>
+ *
+ * {@code ConfigUiSecurityFilter} 与 {@code SafeModeServer} 的令牌<b>恰恰走地址栏
+ * {@code ?token=}</b>，与本类相反。这不是遗漏，是前提不同：
+ * <ul>
+ *   <li>它们<b>只绑回环、且刻意不经过反代</b>，「查询串进反代日志」这条动机不成立</li>
+ *   <li><b>安全模式没有别的投递渠道</b>——程序都没起来，除了启动日志没地方把令牌交出去</li>
+ *   <li>本类服务的事件流<b>正是为了经反代出去而设计的</b>，前提正相反</li>
+ * </ul>
+ * <b>两套都要保留。</b>朝任一方向统一都会踩坑：让控制台改走子协议，安全模式交不出令牌；
+ * 让事件流改收查询参数，浏览器历史与 Referer 当场泄漏。
  */
 @Slf4j
 class ReadOnlyTokenRequired implements HandshakeInterceptor {
