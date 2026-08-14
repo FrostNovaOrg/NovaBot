@@ -241,4 +241,19 @@ td.act button:hover{color:var(--err)}
 #ana-table table{min-width:100%;width:max-content}
 #ana-table td.n,#ana-table th.n{text-align:right;font-variant-numeric:tabular-nums}
 #ana-table tr.empty-row td{color:var(--muted)}
+/* 只读口令：签发结果那一块。整页只有这里的内容是「现在不抄就没了」的，用强调色框住 */
+.issued{border:1px solid var(--accent);border-radius:8px;padding:12px 14px;margin-top:14px;background:var(--accent-soft)}
+.issued>b{font-size:13px}
+.issued>p{margin:6px 0 10px;font-size:12.5px;color:var(--muted)}
+.issued .secret{margin-bottom:6px}
+/* 口令要等宽字体才分得清 l 与 1；.fbox input 的固定宽度在这里得让位给 flex */
+.issued .secret input{font-family:ui-monospace,Menlo,Consolas,monospace;width:auto;letter-spacing:.5px}
+.issued .secret button{background:var(--panel);color:var(--text);border:1px solid var(--border);
+  border-radius:7px;padding:6px 12px;font-size:12.5px;cursor:pointer;flex:none}
+.issued .secret button:hover{border-color:var(--accent);color:var(--accent)}
+.issued .status{font-size:11.5px;color:var(--muted)}
+.issued .status.ok{color:var(--ok)}
+.issued .status.err{color:var(--err)}
+#token-list td.fp{font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--muted)}
+#token-list tr.revoked td{color:var(--muted)}
 @media (max-width:680px){.field{grid-template-columns:1fr}}

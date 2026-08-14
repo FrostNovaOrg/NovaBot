@@ -37,7 +37,21 @@ class ConfigUiFrontendTest {
      */
     private static final List<String> SHARED = List.of(
             "schema", "values", "dirty", "tab", "csrfToken", "pushData", "handlerList",
-            "senderList", "advancedMode", "wizardTouched", "pushEnabled", "accountTimer");
+            "senderList", "advancedMode", "wizardTouched", "pushEnabled", "accountTimer",
+            "totpRequired");
+
+    /**
+     * 凭据绝不能流进去的地方
+     * <p>
+     * 只读口令的明文<b>只在这一页的内存里存在</b>：一旦落进浏览器存储或控制台日志，
+     * 它就从「这一次显示」变成了「一直存着」，而界面上那句「离开本页后无法再次查看」
+     * 会照样显示——<b>这种错在功能上完全看不出来，口令照样能用</b>。
+     * <p>
+     * 范围是整个 config-ui 而不只是签发那个模块：这些文件跑在同一张页面上，
+     * 口令就在同一棵 DOM 里，谁都够得着。
+     */
+    private static final List<String> FORBIDDEN_SINKS = List.of(
+            "localStorage", "sessionStorage", "console.");
 
     /**
      * 已知的合法同名局部变量：函数内部自己声明的，与 store 无关
@@ -186,6 +200,39 @@ class ConfigUiFrontendTest {
         });
 
         assertTrue(bad.isEmpty(), "以下 import 找不到对应的 export，加载时就会失败:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
+     * 把「口令只在内存里」从一句承诺变成每次构建都被检查的事实
+     * <p>
+     * 这条判据是奔着一类具体的错去的：有人为了「刷新后还能看到」把口令写进 localStorage，
+     * 或调试时留下一行打印。两种改动都不会让任何功能变坏，因此靠人复查是拦不住的。
+     */
+    @Test
+    @DisplayName("口令明文不进浏览器存储、地址栏与日志")
+    void issuedTokenNeverLeavesMemory() {
+        List<String> bad = new ArrayList<>();
+
+        sources().forEach((name, text) -> {
+            String[] lines = codeOnly(text).split("\n", -1);
+            for (int i = 0; i < lines.length; i++) {
+                for (String sink : FORBIDDEN_SINKS) {
+                    if (lines[i].contains(sink)) {
+                        bad.add(name + ":" + (i + 1) + "  " + lines[i].strip());
+                    }
+                }
+
+                // 地址栏那一条只查持有明文的那个模块：别处的 location.reload() 是正当用法，
+                // 一刀切会逼出一串豁免，而豁免多了这条判据就形同虚设
+                if (name.equals("tokens.js")
+                        && Pattern.compile("(?<![\\w$.])(location|history)(?![\\w$])").matcher(lines[i]).find()) {
+                    bad.add(name + ":" + (i + 1) + "  " + lines[i].strip());
+                }
+            }
+        });
+
+        assertTrue(bad.isEmpty(), "只读口令的明文只许留在内存里，以下位置会把它带出去（或为此开了口子）:\n  "
+                + String.join("\n  ", bad));
     }
 
     @Test

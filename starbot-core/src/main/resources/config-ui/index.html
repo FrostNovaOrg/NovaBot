@@ -31,6 +31,7 @@
     <button data-tab="bilibili">哔哩哔哩</button>
     <button data-tab="sessions">群与成员</button>
     <button data-tab="analytics">数据分析</button>
+    <button data-tab="tokens">只读口令</button>
     <button data-tab="settings">设置</button>
   </nav>
 
@@ -165,6 +166,26 @@
     <div id="ana-chart"></div>
     <div id="ana-table"></div>
     <p class="hint" id="ana-note" style="margin-top:12px"></p>
+  </section>
+
+  <!--
+    只读口令。它签给的是这台机器之外的东西——桌面面板、别人电脑上的看板，
+    因此权限刻意只有「读事件流」这一项：那些机器不在运维范围内，
+    上面的副本泄漏时，损失必须止于「别人能看直播事件」，而不是「别人能改机器人配置」。
+  -->
+  <section id="tokens">
+    <p class="hint">外部面板（如 VRDash 桌面面板）要连事件流，得有一把只读口令。
+      它<b>只能读</b>——看得到开播、弹幕这些事件，改不了任何配置，也进不了这个控制台。</p>
+
+    <div class="group fbox">
+      <h2>签发一把新口令</h2>
+      <div class="body" id="token-issue"></div>
+    </div>
+
+    <div class="group">
+      <h2>已签发的口令</h2>
+      <div class="body" id="token-list"></div>
+    </div>
   </section>
 
   <section id="settings">

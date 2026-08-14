@@ -30,4 +30,11 @@ export const store = {
   pushEnabled: true,
   /** 扫码登录的轮询计时器 */
   accountTimer: null,
+  /**
+   * 当前是否真的需要动态验证码，来自 /auth/state
+   *
+   * 「配置里开了二次验证」与「此刻真的要输验证码」不是一回事——验证器还没绑时就不要。
+   * 界面必须照这一位来显示验证码框，否则说明文字与服务端的实际要求就会各说各话
+   */
+  totpRequired: false,
 };

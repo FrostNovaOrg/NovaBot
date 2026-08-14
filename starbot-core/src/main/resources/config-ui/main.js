@@ -11,6 +11,7 @@ import {loadHistory, loadState, refreshWizardState, renderStatus, renderWizard, 
 import {addStreamer, decoratePushData, renderStreamers, toggleAdvanced} from './push.js';
 import {renderBackups, renderGeneral, save, saveRaw} from './settings.js';
 import {store} from './store.js';
+import {clearIssuedToken, loadTokens} from './tokens.js';
 
 export async function load() {
   say('载入中…');
@@ -57,6 +58,10 @@ export async function load() {
 }
 
 export function switchTab(name) {
+  // 切走就把刚签发的口令从 DOM 里抹掉。界面上写着「离开本页后无法再次查看」，
+  // 这一行就是那句话的实现——留着它，那句话只是句话
+  if (store.tab === 'tokens' && name !== 'tokens') clearIssuedToken();
+
   document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x.dataset.tab === name));
   document.querySelectorAll('section').forEach(x => x.classList.toggle('on', x.id === name));
   store.tab = name;
@@ -72,6 +77,8 @@ export function switchTab(name) {
   // 每次进入都重取：群里随时可能有人订阅或关掉命令，缓存的画面会误导人
   else if (store.tab === 'sessions') loadState();
   else if (store.tab === 'analytics') loadAnalytics();
+  // 每次进入都重建：顺带抹掉上一次留在屏幕上的口令明文
+  else if (store.tab === 'tokens') loadTokens();
 
   markDirty();
 }
@@ -166,6 +173,8 @@ bindBotForm('bot');
 api('/auth/state')
   .then(state => {
     store.csrfToken = state.csrfToken || '';
+    // 签发只读口令要重新校验一次凭据，验证码框显示与否照这一位来，不照配置项猜
+    store.totpRequired = !!state.totpRequired;
     $('#auth-actions').style.display = state.enabled ? '' : 'none';
     if (state.totpSetupNeeded) renderTotpSetup();
   })
