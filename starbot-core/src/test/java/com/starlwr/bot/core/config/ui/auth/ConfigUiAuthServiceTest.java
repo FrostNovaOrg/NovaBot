@@ -198,4 +198,96 @@ class ConfigUiAuthServiceTest {
         assertFalse(result.success(), "锁定期内不该再受理任何尝试");
         assertFalse(result.retryAfter().isZero(), "应告知还要等多久");
     }
+
+    /**
+     * 全局桶的容量，与 {@link LoginThrottle} 里的常量对齐
+     */
+    private static final int GLOBAL_BURST = 20;
+
+    private LoginThrottle throttle;
+
+    /**
+     * 造一个共用同一个限流器的服务，好让判据能从外面观察那个全局桶
+     */
+    private ConfigUiAuthService serviceSharingThrottle() {
+        StarBotCoreProperties.ConfigUi.Auth properties = new StarBotCoreProperties.ConfigUi.Auth();
+        properties.setPassword(PASSWORD);
+        properties.setTotp(false);
+
+        throttle = new LoginThrottle(properties.getMaxFailures(), Duration.ofMinutes(15));
+        return new ConfigUiAuthService(properties,
+                new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(2)), throttle, null);
+    }
+
+    /**
+     * 把全局桶抽干，返回抽出来的令牌数
+     */
+    private int drainGlobal(Instant at) {
+        int taken = 0;
+        while (throttle.tryAcquireGlobal(at)) {
+            taken++;
+            if (taken > GLOBAL_BURST * 10) {
+                throw new IllegalStateException("桶取不完, 说明全局速率限制根本没生效");
+            }
+        }
+        return taken;
+    }
+
+    /**
+     * 🔴 全局速率限制得真的被这条路径问到（M3）
+     * <p>
+     * {@link LoginThrottleTest} 证的是桶本身会拦；这条证的是<b>校验这条路真的去问了那个桶</b>。
+     * 两件事分开写，是因为「桶实现得很对，但没人调它」在功能上完全看不出来——
+     * 面板照样能登录，攻击者照样能猜。
+     * <p>
+     * 这里用的是<b>正确的口令</b>：额度用完时连对的口令也得被拒，
+     * 否则这道限制就只在「猜错」时生效，而攻击者并不知道自己猜没猜对。
+     */
+    @Test
+    @DisplayName("全局额度用尽时，口令正确也先被挡回")
+    void globalRateLimitAppliesToCredentialChecks() {
+        ConfigUiAuthService service = serviceSharingThrottle();
+
+        // 先由别处（换着 IP 来的爆破）把全局额度抽干
+        drainGlobal(Instant.now());
+
+        ConfigUiAuthService.CredentialCheck check = service.checkCredentials(PASSWORD.toCharArray(), null, IP);
+
+        assertEquals(ConfigUiAuthService.Verdict.BUSY, check.verdict(),
+                "额度用尽时应答复瞬时的「忙」, 而不是放行, 也不是说成锁定");
+        assertFalse(check.retryAfter().isZero(), "应告知稍后重试");
+
+        // 换个说法再验一次「不是锁定」：退还一个额度后，同一把口令立刻就能过
+        throttle.refundGlobal();
+        assertTrue(service.checkCredentials(PASSWORD.toCharArray(), null, IP).ok(),
+                "额度一回来就该放行, 不该留下任何惩罚");
+    }
+
+    /**
+     * 🔴 猜错的那些尝试必须真的把额度花掉
+     * <p>
+     * 上一条判据只证明「桶空了会拦」。若把退还写成无条件退还，桶就永远不会空——
+     * 那时上一条照样绿（判据自己把桶抽干了），而这道限制对真正的爆破<b>一次也没生效过</b>。
+     * <p>
+     * 用三个不同的来源地址，避开按 IP 的锁定：这条要量的是全局那个桶，不是锁定。
+     */
+    @Test
+    @DisplayName("猜错的尝试会消耗全局额度")
+    void failedChecksSpendTheGlobalBudget() {
+        ConfigUiAuthService service = serviceSharingThrottle();
+
+        // 🔴 记下开跑前的时刻，最后拿它去抽桶：桶按传进来的时刻补充，
+        // 用一个更早的时刻问它就不会补——否则三次 PBKDF2 校验花掉的那一两秒
+        // 会让桶悄悄回上半个令牌，判据的结果就成了「这台机器有多快」的函数
+        Instant before = Instant.now();
+
+        for (int i = 0; i < 3; i++) {
+            ConfigUiAuthService.CredentialCheck check =
+                    service.checkCredentials("猜的".toCharArray(), null, "203.0.113." + i);
+            assertEquals(ConfigUiAuthService.Verdict.BAD_CREDENTIALS, check.verdict());
+        }
+
+        assertEquals(GLOBAL_BURST - 3, drainGlobal(before),
+                "三次失败的尝试应当从全局桶里扣掉三个令牌");
+    }
 }

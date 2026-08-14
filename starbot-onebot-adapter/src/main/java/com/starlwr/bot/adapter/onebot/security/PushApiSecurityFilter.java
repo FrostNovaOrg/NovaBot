@@ -88,8 +88,10 @@ public class PushApiSecurityFilter extends OncePerRequestFilter {
         if (properties.isTrustProxy()) {
             String forwarded = request.getHeader("X-Forwarded-For");
             if (forwarded != null && !forwarded.isBlank()) {
-                // X-Forwarded-For 形如 client, proxy1, proxy2, 取最左侧的客户端地址
-                return forwarded.split(",")[0].trim();
+                String hop = rightmost(forwarded);
+                if (hop != null) {
+                    return hop;
+                }
             }
 
             String realIp = request.getHeader("X-Real-IP");
@@ -99,6 +101,39 @@ public class PushApiSecurityFilter extends OncePerRequestFilter {
         }
 
         return request.getRemoteAddr();
+    }
+
+    /**
+     * 取 X-Forwarded-For 中最右侧的那一段
+     * <p>
+     * 🔴 <b>是最右侧，不是最左侧。</b>这个头是<b>追加</b>式的：客户端自己带一个
+     * {@code X-Forwarded-For: 1.2.3.4} 过来，反代（如 nginx 的
+     * {@code $proxy_add_x_forwarded_for}）把真实对端<b>接在后面</b>，
+     * 上游收到的是 {@code 1.2.3.4, <真实对端>}。
+     * 于是<b>最左侧那一段完全由客户端说了算</b>——拿它做 IP 白名单，
+     * 等于白名单可以被一个请求头绕过。最右侧那一段是我们自己那台代理写上去的，客户端伸不进手。
+     * <p>
+     * 原先的注释「形如 client, proxy1, proxy2」只想到了「代理覆写该头」的情形，
+     * 没想到「代理追加」——而追加才是各家反代的默认行为。
+     * <p>
+     * ⚠️ <b>前提是恰好一层可信代理。</b>两层以上时最右侧是内层代理的地址，
+     * 白名单会把所有人挡在门外——<b>失败方向是拒绝而不是放行</b>，
+     * 这正是它能当默认取法的理由。多层部署请在最外层覆写该头，或改用 X-Real-IP。
+     * @param forwarded 请求头原文，调用方保证非空白
+     * @return 最右侧的地址；整个头只有逗号与空白时返回 null，表示这个头给不出地址
+     */
+    private static String rightmost(String forwarded) {
+        String[] hops = forwarded.split(",");
+        for (int i = hops.length - 1; i >= 0; i--) {
+            String hop = hops[i].strip();
+            if (!hop.isEmpty()) {
+                return hop;
+            }
+        }
+
+        // 整个头全是逗号与空白（"， ，"）。当作没有这个头，交给后面的兜底，
+        // 而不是返回空串——空串既匹配不上白名单，也会让审计日志里的来源变成一片空白
+        return null;
     }
 
     /**

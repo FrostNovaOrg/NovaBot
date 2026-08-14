@@ -216,9 +216,19 @@ public class ConfigUiAuthService {
             return new CredentialCheck(Verdict.LOCKED_OUT, lockout);
         }
 
+        // 全局速率限制，拦的是换着 IP 来的分布式猜口令：每个地址只试两三次，
+        // 按 IP 的锁定一次也触发不了。放在锁定判断之后——已经被锁的地址不该再消耗全局预算
+        if (!throttle.tryAcquireGlobal(now)) {
+            // 用 BUSY 而不是新加一个判定值：Verdict 是对外契约的一部分，
+            // 而这确实就是「服务器忙，稍后重试」的语义——桶几秒钟就回，不是锁定
+            return new CredentialCheck(Verdict.BUSY, BUSY_RETRY_AFTER);
+        }
+
         // 校验本身很吃 CPU，抢不到名额时直接拒绝而不是排队，否则排队本身就是放大器
         if (!throttle.tryAcquireSlot()) {
             log.warn("配置界面同时进行的登录校验过多, 已拒绝来自 {} 的请求", clientIp);
+            // 没真的校验，额度退回去，否则「服务器忙」也在扣猜口令的预算
+            throttle.refundGlobal();
             return new CredentialCheck(Verdict.BUSY, BUSY_RETRY_AFTER);
         }
 
@@ -238,6 +248,8 @@ public class ConfigUiAuthService {
         }
 
         throttle.recordSuccess(clientIp);
+        // 校验通过的这一次不算进猜口令的预算：一个人反复进出面板不该把额度耗掉
+        throttle.refundGlobal();
         return new CredentialCheck(Verdict.OK, Duration.ZERO);
     }
 

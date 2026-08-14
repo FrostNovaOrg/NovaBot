@@ -29,6 +29,15 @@ import java.time.Duration;
 @Configuration
 @ConditionalOnProperty(name = "starbot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
 public class ConfigUiRegistrar {
+    /**
+     * 配置界面安全过滤器的顺序
+     * <p>
+     * 它要尽量靠前，但<b>安全响应头那道要排在它之前</b>：
+     * 本过滤器拒绝时会直接把响应写完返回，排在它后面的东西对那些 401/403 就一概不生效了。
+     * 这个常量是公开的，好让那条判据能直接引用它，而不是抄一个会各自漂移的字面量。
+     */
+    public static final int FILTER_ORDER = Ordered.HIGHEST_PRECEDENCE + 1;
+
     private final StarBotCoreProperties properties;
 
     private final WebServerApplicationContext webContext;
@@ -119,7 +128,7 @@ public class ConfigUiRegistrar {
         registration.setFilter(new ConfigUiSecurityFilter(token, ipMatcher, authService,
                 properties.getConfigUi().getAuth().isOperatorToken()));
         registration.addUrlPatterns(ConfigUiController.BASE_PATH, ConfigUiController.BASE_PATH + "/*");
-        registration.setOrder(Ordered.HIGHEST_PRECEDENCE + 1);
+        registration.setOrder(FILTER_ORDER);
         registration.setName("configUiSecurityFilter");
 
         return registration;
