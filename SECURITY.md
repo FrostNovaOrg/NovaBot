@@ -242,6 +242,24 @@ starbot:
 这也是它能当默认取法的理由。这种部署请在最外层用
 `proxy_set_header X-Forwarded-For $remote_addr;` 覆写该头。
 
+**⚠️ 还有一处取的是最左侧，它不在本程序里，在 Spring 中。**
+开启 `server.forward-headers-strategy` 后，Spring 的 `ForwardedHeaderFilter` 会用
+`X-Forwarded-For` **改写 `getRemoteAddr()`**，而它取的是**最左侧**。
+配置控制台的登录锁定与只读口令代签发的来源 IP 都来自这个方法。
+
+于是在「**开着 forwarded 策略 + 反代是追加式**」这个组合下，
+**按来源 IP 的登录锁定不可依赖**：攻击者换着伪造最左侧那一段，一次锁定也触发不了。
+
+这个组合下的兜底是**口令校验的全局速率上限**（每分钟 20 次，见 `LoginThrottle`）——
+它按 IP 计数管不着的那条路，正是全局桶存在的理由。
+
+**本仓库提供的反代模板一律覆写该头**（`proxy_set_header X-Forwarded-For $remote_addr;`），
+不用 `$proxy_add_x_forwarded_for`。覆写之后头里只有一段，最左＝最右＝真实对端，
+上面那个组合就不成立——**模板这么写不是随手写的，改它之前请先读完这一段**。
+
+本程序没有自己解析并覆盖 `getRemoteAddr()`：那样做的失败方向是把正常用户挡在门外，
+代价大于收益。若你的部署确实是追加式反代，请改成覆写，或不要开 `forward-headers-strategy`。
+
 ### 关于安全响应头
 
 本程序对所有响应加 `X-Content-Type-Options: nosniff` 与 `X-Frame-Options: SAMEORIGIN`，
