@@ -133,6 +133,8 @@ public class BilibiliDynamicService {
         Instant earliest = Instant.now().minus(Duration.ofMinutes(Math.max(1, properties.getDynamic().getPushMinutes())));
 
         for (Dynamic dynamic : dynamics) {
+            logDedupProbe(dynamic);
+
             if (dynamic.getId() == null || pushed.contains(dynamic.getId())) {
                 continue;
             }
@@ -223,5 +225,33 @@ public class BilibiliDynamicService {
         configured.stream()
                 .filter(uid -> !following.contains(uid))
                 .forEach(api::followUp);
+    }
+
+    /**
+     * 去重定键的取证探针（4.3.1 篮子③，先证据后实现）
+     * <p>
+     * 要回答的只有一个问题：<b>同一条内容被推了两次时，两条记录的 {@code basic.rid_str}
+     * 是不是同一个</b>。是则键定为它，不是则假说否掉、重新取证——
+     * <b>键定死之前不写去重</b>。
+     *
+     * <h2>为什么只记三个字段，不开整份原始报文</h2>
+     * 裁决 #96 三① 原本写的是打开 {@code dynamic-raw-message-log}。那个开关打的是
+     * <b>整份 feed 响应</b>——关注列表里所有人发的动态正文、昵称、图片地址，
+     * 一轮一整份，全落进主日志。而假说要判的字段<b>早就解析在模型上了</b>
+     * （{@code parseDynamic} 里有 {@code setBasic}），所以只记 id/rid/type 就够，
+     * 证据完全等价，别人的正文一个字都不进日志。#126 五① 据此改裁窄探针。
+     *
+     * <h2>为什么是 INFO 不是 DEBUG</h2>
+     * 取证要它进日志文件，而文件级别默认是 INFO。写成 DEBUG 就得把整个 DEBUG 打开，
+     * 那又会把一堆别的东西拖进来——<b>为了看一行而开一扇门</b>。
+     * 默认关闭，取证期间才开；取证毕即关并清理，探针行里的 rid/id 按关联信息处置。
+     */
+    private void logDedupProbe(Dynamic dynamic) {
+        if (!properties.getDebug().isDynamicDedupProbe()) {
+            return;
+        }
+
+        String rid = dynamic.getBasic() == null ? null : dynamic.getBasic().getString("rid_str");
+        log.info("动态去重探针: id={} rid={} type={}", dynamic.getId(), rid, dynamic.getType());
     }
 }

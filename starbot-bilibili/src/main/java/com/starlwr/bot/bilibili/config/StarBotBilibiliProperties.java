@@ -72,6 +72,17 @@ public class StarBotBilibiliProperties {
          * 是否启用动态接口原始响应调试日志
          */
         private boolean dynamicRawMessageLog = false;
+
+        /**
+         * 是否开启动态去重定键的取证探针
+         * <p>
+         * 每条动态记一行 {@code id / rid / type}，用来判定「同一条内容被推两次时
+         * 两条记录的 rid 是否相同」。<b>只记这三个标识符，不记正文</b>——
+         * 与上一项（整份原始响应，含关注列表里所有人的动态内容与昵称）刻意不同。
+         * <p>
+         * 取证用，默认关闭；取证结束即关闭并清理日志，探针行里的 id/rid 按关联信息处置。
+         */
+        private boolean dynamicDedupProbe = false;
     }
 
     /**

@@ -106,6 +106,10 @@ starbot:
     debug:
       live-room-raw-message-log: false    # 直播间原始消息调试日志，会输出大量内容且可能含用户信息
       dynamic-raw-message-log: false      # 动态接口原始响应调试日志
+      dynamic-dedup-probe: false          # 动态去重定键的取证探针：每条动态记一行 id/rid/type。
+                                          # 只记这三个标识符、不记正文——与上一项（整份原始响应，
+                                          # 含关注列表里所有人的动态内容与昵称）刻意不同。
+                                          # 取证用，查完就关并清理日志
 
     network:
       user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36
@@ -187,10 +191,17 @@ starbot:
 
   core:
     log:
-      console:                      # 控制台日志级别，留空用内置默认。可填 TRACE/DEBUG/INFO/WARN/ERROR/OFF
-      file:                         # 日志文件级别，同上。
+      console: INFO                 # 控制台日志级别。可填 TRACE/DEBUG/INFO/WARN/ERROR/OFF
+      file: INFO                    # 日志文件级别，同上。
                                     # 排查直播间消息时可把 console 调到 DEBUG，
                                     # 配合 bilibili.debug.live-room-raw-message-log 使用；查完记得改回来
+                                    #
+                                    # 🔴 这两项**不要留空**。留空与整行删掉不是一回事：
+                                    # 整行删掉会用内置默认 INFO，而留空传给日志框架的是空串，
+                                    # 它解析不了空串时**退回 DEBUG**——于是 DEBUG 全写进日志文件。
+                                    # 实测留空跑 25 秒，文件里 140 行 DEBUG 对 87 行 INFO，
+                                    # 而这些 DEBUG 行里可能带着请求地址与他人昵称。
+                                    # 程序启动时会检查这一点并告警，别忽略那条告警
       event-log: false              # 是否把收到的每条直播事件写进 EventDebug/ 目录。
                                     # 排障工具，默认关闭。打开前先知道两件事：
                                     #   1. 写的是完整事件转储，**含观众昵称与 uid**，

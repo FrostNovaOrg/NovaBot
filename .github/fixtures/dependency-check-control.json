@@ -1,0 +1,37 @@
+{
+  "_comment": [
+    "漏洞统计的阳性对照报告。CI 每次先拿它验尺，抓不出下面那条 9.8 就判定解析坏了。",
+    "为什么必须有它：解析坏掉的表现是『一条都没找到』，与『真的没有漏洞』完全一样。",
+    "上一版就是这么绿了很久的——`$NF` 取到的是空的 Notes 列，条件恒不成立。",
+    "字段结构照上游报告模板 jsonReport.vsl，改动它等于改动对照本身，要一起改判据。",
+    "里面的 CVE 号与依赖名都是编的，不代表本仓库真的用了这些依赖。"
+  ],
+  "reportSchema": "1.1",
+  "dependencies": [
+    {
+      "fileName": "control-high.jar",
+      "vulnerabilities": [
+        {
+          "name": "CVE-0000-0001",
+          "severity": "CRITICAL",
+          "cvssv3": { "baseScore": 9.8, "baseSeverity": "CRITICAL" }
+        },
+        {
+          "name": "CVE-0000-0002",
+          "severity": "LOW",
+          "cvssv3": { "baseScore": 3.1, "baseSeverity": "LOW" }
+        }
+      ]
+    },
+    {
+      "fileName": "control-v2only.jar",
+      "vulnerabilities": [
+        {
+          "name": "CVE-0000-0003",
+          "severity": "HIGH",
+          "cvssv2": { "score": 9.0 }
+        }
+      ]
+    }
+  ]
+}

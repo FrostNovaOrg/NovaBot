@@ -65,29 +65,67 @@ jobs:
         # 之下**没有任何效果**——阈值再低也拦不住构建，却让读到它的人以为
         # CVSS≥8 会被拦下。**配置在撒谎比配置缺失更糟**，已删除。
         continue-on-error: true
-        run: mvn -B -Pinstall org.owasp:dependency-check-maven:check -Dformat=CSV -DskipTests
+        # 出 JSON 不出 CSV：CSV 的描述字段含逗号，任何按分隔符切列的读法都会错位，
+        # 而错位的表现是「没找到高危」——与真的没有高危一模一样
+        run: mvn -B -Pinstall org.owasp:dependency-check-maven:check -Dformat=JSON -DskipTests
 
       # 不阻断，但不能让高危悄悄溜过去：结果显式贴到 job summary。
       # 「不阻断」省下的阻塞成本，必须用可见性补回来，否则等于没扫。
+      #
+      # 🔴 这一步先验尺再量事。上一版就是尺子坏了却一直绿着：
+      # 用 CSV 最后一列当分数，而最后一列是 Notes（空串），于是
+      # 「CVSS ≥ 7」恒不成立，summary 每次都打印「✅ 未发现」。
+      # **解析坏掉的表现与真的没有漏洞完全一样**，所以必须有阳性对照。
       - name: 高危漏洞进 job summary
         if: always()
         run: |
+          set -euo pipefail
+          chmod +x .github/scripts/high-cvss.sh .github/scripts/no-cvssv3.sh
+
+          # ① 验尺：对照报告里有一条写死的 9.8，抓不到它就说明解析坏了。
+          #    这一条**允许失败整个步骤**——尺子坏掉时给出的「未发现」比不给更危险，
+          #    它不是漏洞不阻断的那个议题，它是工具本身坏了
+          CONTROL=$(.github/scripts/high-cvss.sh .github/fixtures/dependency-check-control.json 7 | wc -l | tr -d ' ')
+          if [ "$CONTROL" != "1" ]; then
+            echo "::error::漏洞统计的阳性对照失败（期望 1 条，实得 $CONTROL）——本次扫描结果不可信"
+            exit 1
+          fi
+
+          # ② 所有模块的报告都要看。上一版 `find | head -1` 只取第一份，
+          #    其余模块的结果整个不看，而那同样表现为「没发现」
+          mapfile -t REPORTS < <(find . -name 'dependency-check-report.json' | sort)
+
           {
             echo "## 依赖漏洞扫描"
-            REPORT=$(find . -name 'dependency-check-report.csv' | head -1)
-            if [ -z "$REPORT" ]; then
+            echo "（阳性对照已通过：解析器能在对照报告里抓出那条 9.8）"
+            if [ "${#REPORTS[@]}" -eq 0 ]; then
               # ⚠️ 报告缺失和「没有漏洞」长得一样，必须分开说，否则这块永远是绿的
               echo "⚠️ **未找到报告文件**——扫描步骤可能根本没跑成。"
               echo "别把这一栏的空白当成「没有漏洞」。"
             else
-              HIGH=$(awk -F',' 'NR>1 && $NF+0 >= 7' "$REPORT" | wc -l | tr -d ' ')
-              echo "报告：\`$REPORT\`"
-              if [ "$HIGH" = "0" ]; then
-                echo "✅ 本次未发现 CVSS ≥ 7 的条目。"
+              echo "报告 ${#REPORTS[@]} 份：$(printf '`%s` ' "${REPORTS[@]}")"
+              HIGH=$(for r in "${REPORTS[@]}"; do .github/scripts/high-cvss.sh "$r" 7; done | sort -u)
+              COUNT=$(printf '%s' "$HIGH" | grep -c . || true)
+              if [ "$COUNT" = "0" ]; then
+                echo "✅ 本次未发现 CVSSv3 ≥ 7 的条目。"
               else
-                echo "🔴 **发现 $HIGH 条 CVSS ≥ 7 的依赖漏洞**（不阻断构建，但请处理）："
+                echo "🔴 **发现 $COUNT 条 CVSSv3 ≥ 7 的依赖漏洞**（不阻断构建，但请处理）："
                 echo '```'
-                awk -F',' 'NR>1 && $NF+0 >= 7 {print $2, $3, "CVSS="$NF}' "$REPORT" | sort -u | head -40
+                printf '%s\n' "$HIGH" | head -40
+                echo '```'
+                [ "$COUNT" -gt 40 ] && echo "（上面只列了前 40 条，共 $COUNT 条）"
+              fi
+
+              # 只有 CVSSv2 的旧条目不参与上面的阈值判定。不报出来就等于
+              # 把「没判到它」说成「它不高危」——同一个病的小号版本
+              NOV3=$(for r in "${REPORTS[@]}"; do .github/scripts/no-cvssv3.sh "$r"; done | sort -u)
+              NOV3_COUNT=$(printf '%s' "$NOV3" | grep -c . || true)
+              if [ "$NOV3_COUNT" != "0" ]; then
+                echo ""
+                echo "ℹ️ 另有 **$NOV3_COUNT 条没有 CVSSv3 分数**（多为只有 CVSSv2 的旧条目），"
+                echo "未参与上面的阈值判定，需要人工过目："
+                echo '```'
+                printf '%s\n' "$NOV3" | head -20
                 echo '```'
               fi
             fi

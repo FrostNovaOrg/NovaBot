@@ -87,9 +87,10 @@ public class HttpUtil {
      */
     private <T> ResponseEntity<T> requestForEntity(URI uri, HttpMethod method, HttpEntity<?> httpEntity, Class<T> responseType) {
         long startTime = System.currentTimeMillis();
+        String safe = UrlMasker.mask(uri.toString());
         NetworkLogThrottle.Decision decision = decideNetworkLog(method, uri.toString(), startTime);
         if (decision.log()) {
-            networkLogger.info("{} -> {}{}", method.name(), uri, decision.suffix());
+            networkLogger.info("{} -> {}{}", method.name(), safe, decision.suffix());
         }
 
         try {
@@ -98,7 +99,8 @@ public class HttpUtil {
             // 失败一律放行，不看抑制决定：抑制的目的就是让异常显出来
             if (properties.getLog().isNetworkLog()) {
                 long cost = System.currentTimeMillis() - startTime;
-                networkLogger.error("{} <- [{}]({} ms): {}", method.name(), e.getMessage(), cost, uri, e);
+                networkLogger.error("{} <- [{}]({} ms): {}", method.name(),
+                        UrlMasker.mask(e.getMessage()), cost, safe, e);
             }
             throw e;
         }
@@ -106,9 +108,10 @@ public class HttpUtil {
 
     private <T> ResponseEntity<T> requestForEntity(String url, HttpMethod method, HttpEntity<?> httpEntity, Class<T> responseType) {
         long startTime = System.currentTimeMillis();
+        String safe = UrlMasker.mask(url);
         NetworkLogThrottle.Decision decision = decideNetworkLog(method, url, startTime);
         if (decision.log()) {
-            networkLogger.info("{} -> {}{}", method.name(), url, decision.suffix());
+            networkLogger.info("{} -> {}{}", method.name(), safe, decision.suffix());
         }
 
         ResponseEntity<T> response = null;
@@ -119,7 +122,9 @@ public class HttpUtil {
             // 失败一律放行，不看抑制决定
             if (properties.getLog().isNetworkLog()) {
                 long cost = System.currentTimeMillis() - startTime;
-                networkLogger.error("{} <- [{}]({} ms): {}", method.name(), e.getMessage(), cost, url, e);
+                // 异常本身也要打码：它的 message 里常带着触发失败的完整地址
+                networkLogger.error("{} <- [{}]({} ms): {}", method.name(),
+                        UrlMasker.mask(e.getMessage()), cost, safe, e);
             }
             throw e;
         } finally {
@@ -127,9 +132,9 @@ public class HttpUtil {
                 long cost = System.currentTimeMillis() - startTime;
                 if (response == null) {
                     // 无结果同样是失败，照样放行
-                    networkLogger.error("{} <- [无结果]({} ms): {}", method.name(), cost, url);
+                    networkLogger.error("{} <- [无结果]({} ms): {}", method.name(), cost, safe);
                 } else if (decision.log()) {
-                    networkLogger.info("{} <- [{}]({} ms): {}", method.name(), response.getStatusCode().value(), cost, url);
+                    networkLogger.info("{} <- [{}]({} ms): {}", method.name(), response.getStatusCode().value(), cost, safe);
                 }
             }
         }

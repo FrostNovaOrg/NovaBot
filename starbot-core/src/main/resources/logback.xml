@@ -3,8 +3,20 @@
     <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
     <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
 
-    <springProperty name="consoleLogLevel" source="starbot.core.log.console"/>
-    <springProperty name="fileLogLevel" source="starbot.core.log.file"/>
+    <!--
+        🔴 defaultValue 不是可选的。配置项 starbot.core.log.console / .file 的模板默认是**留空**，
+        留空时这两个变量根本没有定义，${fileLogLevel} 会被替换成字面量
+        「fileLogLevel_IS_UNDEFINED」，而 ThresholdFilter 解析不了它时会退回 DEBUG。
+        结果是**开箱即用的部署把 DEBUG 全写进日志文件**——实测模板默认跑 25 秒，
+        文件里 140 行 DEBUG 对 87 行 INFO。这个失效不报错、不告警，只是安静地多写。
+
+        下面这个 logger 的 DEBUG 是**故意写死的**，不要改成跟随变量：
+        它让 DEBUG 事件到得了各个 appender，由每个 appender 的 ThresholdFilter 各自决定收不收。
+        改成跟随 fileLogLevel 之后，「控制台开 DEBUG 排障、文件仍留 INFO」这件事就做不到了，
+        而那正是配置注释里让人去做的事。
+    -->
+    <springProperty name="consoleLogLevel" source="starbot.core.log.console" defaultValue="INFO"/>
+    <springProperty name="fileLogLevel" source="starbot.core.log.file" defaultValue="INFO"/>
 
     <logger name="org.reflections.Reflections" level="OFF"/>
     <logger name="org.apache.catalina.loader.WebappLoader" level="OFF"/>
