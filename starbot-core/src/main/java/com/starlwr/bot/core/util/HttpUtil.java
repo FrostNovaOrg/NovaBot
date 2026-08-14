@@ -99,8 +99,10 @@ public class HttpUtil {
             // 失败一律放行，不看抑制决定：抑制的目的就是让异常显出来
             if (properties.getLog().isNetworkLog()) {
                 long cost = System.currentTimeMillis() - startTime;
+                // 末参必须是打码副本：交原异常进去，logback 会附栈迹，
+                // 而栈迹首行是 e.toString()，里面是未打码的原始 message
                 networkLogger.error("{} <- [{}]({} ms): {}", method.name(),
-                        UrlMasker.mask(e.getMessage()), cost, safe, e);
+                        UrlMasker.mask(e.getMessage()), cost, safe, UrlMasker.sanitize(e));
             }
             throw e;
         }
@@ -123,8 +125,10 @@ public class HttpUtil {
             if (properties.getLog().isNetworkLog()) {
                 long cost = System.currentTimeMillis() - startTime;
                 // 异常本身也要打码：它的 message 里常带着触发失败的完整地址
+                // 末参必须是打码副本：交原异常进去，logback 会附栈迹，
+                // 而栈迹首行是 e.toString()，里面是未打码的原始 message
                 networkLogger.error("{} <- [{}]({} ms): {}", method.name(),
-                        UrlMasker.mask(e.getMessage()), cost, safe, e);
+                        UrlMasker.mask(e.getMessage()), cost, safe, UrlMasker.sanitize(e));
             }
             throw e;
         } finally {

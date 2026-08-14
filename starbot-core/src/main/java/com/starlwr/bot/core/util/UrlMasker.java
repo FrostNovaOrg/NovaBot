@@ -64,6 +64,54 @@ public final class UrlMasker {
      * @param text 原文，可为 null
      * @return 打码后的文本；null 原样返回
      */
+    /**
+     * 做一个消息已打码的异常副本，供落日志时代替原异常
+     * <p>
+     * 🔴 <b>只打码 {@code getMessage()} 是不够的。</b>把原异常作为末参交给日志框架时，
+     * 它会附上栈迹，而<b>栈迹首行就是 {@code throwable.toString()}</b>——类名加上
+     * <b>原始未打码的 message</b>。Spring 的 I/O 类异常
+     * （{@code ResourceAccessException: I/O error on GET request for "https://…?csrf=…"}）
+     * 正是把完整地址裹在 message 里的，于是凭据从栈迹再漏一遍。
+     * <p>
+     * 这个漏口在生产的前后对照里没有暴露，<b>只因为重启后恰好没有 I/O 失败</b>；
+     * 而网络抖动恰恰与「开着网络日志排障」同时发生。
+     * <p>
+     * 副本保留原始栈帧（诊断价值全在那里），只换掉会被打印成文本的部分，
+     * 并<b>沿 cause 链逐层做</b>——只处理最外层的话，凭据会从 {@code Caused by:} 那几行漏出去。
+     * @param throwable 原异常，可为 null
+     * @return 打码后的副本；null 原样返回
+     */
+    public static Throwable sanitize(Throwable throwable) {
+        if (throwable == null) {
+            return null;
+        }
+
+        Sanitized copy = new Sanitized(mask(throwable.toString()), sanitize(throwable.getCause()));
+        copy.setStackTrace(throwable.getStackTrace());
+        return copy;
+    }
+
+    /**
+     * 打码后的异常副本
+     * <p>
+     * {@code toString()} 直接返回打码后的原文，这样日志里那一行看起来与原来一致，
+     * 只是凭据变成了掩码——<b>不能让它印成本类的类名</b>，那会让读日志的人
+     * 以为异常类型变了，而异常类型正是排障要看的第一样东西。
+     */
+    private static final class Sanitized extends Throwable {
+        private final String rendered;
+
+        private Sanitized(String rendered, Throwable cause) {
+            super(rendered, cause, false, true);
+            this.rendered = rendered;
+        }
+
+        @Override
+        public String toString() {
+            return rendered;
+        }
+    }
+
     public static String mask(String text) {
         if (text == null || text.isEmpty()) {
             return text;
