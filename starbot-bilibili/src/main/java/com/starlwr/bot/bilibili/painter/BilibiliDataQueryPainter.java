@@ -72,9 +72,8 @@ public class BilibiliDataQueryPainter {
     /**
      * 榜单各列的左端（相对内容区）：头像、昵称、比例条
      * <p>
-     * 昵称的可用宽度是 {@code BAR_X - NAME_X} = 254px，而
-     * {@link #MAX_NAME_LENGTH} 个全角字加省略号约 240px，留出的余量刚好够，
-     * 昵称再长也不会压到比例条上（这一处压过，是看样张才发现的）
+     * 昵称的可用宽度是 {@code BAR_X - NAME_X} 再留 12px 不贴条子，
+     * 见 {@link #NAME_MAX_WIDTH}（这一处压过比例条，是看样张才发现的）
      */
     private static final int AVATAR_X = 36;
 
@@ -83,9 +82,12 @@ public class BilibiliDataQueryPainter {
     private static final int BAR_X = 330;
 
     /**
-     * 昵称最多展示的字符数，超出截断
+     * 昵称的可用宽度，单位像素
+     * <p>
+     * 🔴 <b>原先写的是「最多 9 个字」。</b>按字数收，安全与否取决于用户起了什么名字：
+     * 9 个全角汉字比 9 个半角字母宽一倍多。改成按像素量真宽度
      */
-    private static final int MAX_NAME_LENGTH = 9;
+    private static final int NAME_MAX_WIDTH = BAR_X - NAME_X - 12;
 
     private static final Color COLOR_NAME = new Color(251, 114, 153);
 
@@ -254,7 +256,7 @@ public class BilibiliDataQueryPainter {
             painter.drawImage(avatar, new Point(MARGIN + AVATAR_X, y + (RANKING_ROW_HEIGHT - RANKING_AVATAR_SIZE) / 2));
         }
 
-        painter.drawTextWithStyle(List.of(new TextWithStyle(truncate(displayName(user)), 24, COLOR_TEXT, Font.PLAIN)),
+        painter.drawTextWithStyle(List.of(new TextWithStyle(truncate(painter, displayName(user)), 24, COLOR_TEXT, Font.PLAIN)),
                 new Point(MARGIN + NAME_X, y + 6));
 
         int barX = MARGIN + BAR_X;
@@ -314,9 +316,12 @@ public class BilibiliDataQueryPainter {
 
     /**
      * 截断过长的昵称，避免顶到比例条
+     * <p>
+     * 按像素收，理由见 {@link #NAME_MAX_WIDTH}。顺带解决 {@code substring}
+     * 把 emoji 劈成半个代理项的问题——昵称里 emoji 很常见
      */
-    private String truncate(String name) {
-        return name.length() <= MAX_NAME_LENGTH ? name : name.substring(0, MAX_NAME_LENGTH) + "…";
+    private String truncate(CommonPainter painter, String name) {
+        return painter.truncateToWidth(new TextWithStyle(name, 24, COLOR_TEXT, Font.PLAIN), NAME_MAX_WIDTH);
     }
 
     /**

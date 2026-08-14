@@ -63,6 +63,14 @@ public class CommonPainter {
     public static final Color COLOR_LINK = new Color(23, 139, 207);
 
     /**
+     * 文本被截断时留下的记号
+     * <p>
+     * 用单字符的省略号而不是三个句点：三个句点占的宽度是它的三倍，
+     * 而这东西恰恰是在「宽度不够」的场合出现的
+     */
+    public static final String ELLIPSIS = "…";
+
+    /**
      * 初始化绘图器
      * @param width 画布宽度
      * @param height 画布高度
@@ -853,6 +861,66 @@ public class CommonPainter {
      */
     public Pair<Integer, Integer> getStringWidthAndHeight(String text, int size) {
         return fontUtil.getStringWidthAndHeight(this.draw, new TextWithStyle(text, size));
+    }
+
+    /**
+     * 计算含格式文本绘制时的像素宽度和高度
+     * <p>
+     * 与只传字号的那个重载的区别是<b>它认粗体</b>。粗体比常规宽，
+     * 拿常规的宽度去排粗体的版，量出来的是个下界——够用的结论会变成不够用的实物。
+     *
+     * @param text 含格式文本
+     * @return 宽度，高度
+     */
+    public Pair<Integer, Integer> getStringWidthAndHeight(@NonNull TextWithStyle text) {
+        return fontUtil.getStringWidthAndHeight(this.draw, text);
+    }
+
+    /**
+     * 把文本截到指定像素宽度以内，截掉的部分用省略号代替
+     *
+     * <h2>为什么是按像素而不是按字数</h2>
+     * 「最多 12 个字」这种写法看着直观，实际量的不是版面：12 个全角汉字比 12 个半角字母宽一倍多，
+     * 而昵称里两者混着来。按字数收，<b>安全与否取决于用户起了什么名字</b>。
+     *
+     * <h2>为什么按码点切</h2>
+     * {@code substring} 按 {@code char} 切，会把 emoji 与其他增补平面字符<b>劈成两半</b>，
+     * 留下一个孤立的代理项——显示出来是个方块或问号。昵称里 emoji 很常见。
+     *
+     * @param text 含格式文本，其字体、字号与粗细都参与计算
+     * @param maxWidth 可用宽度，单位像素
+     * @return 放得下的文本；原文本身就放得下时原样返回；连一个省略号都放不下时返回空串
+     */
+    public String truncateToWidth(@NonNull TextWithStyle text, int maxWidth) {
+        String value = text.getText();
+        if (StringUtil.isEmpty(value) || getStringWidthAndHeight(text).getFirst() <= maxWidth) {
+            return value;
+        }
+
+        TextWithStyle probe = new TextWithStyle(ELLIPSIS, text.getSize(), text.getColor(), text.getStyle());
+        probe.setFont(text.getFont());
+        int ellipsisWidth = getStringWidthAndHeight(probe).getFirst();
+        if (ellipsisWidth > maxWidth) {
+            // 连省略号都放不下。返回空串而不是硬塞一个：塞进去照样溢出，
+            // 而调用方拿到空串至少能看出「这里的宽度给得不对」
+            return "";
+        }
+
+        StringBuilder kept = new StringBuilder();
+        int used = 0;
+        for (int codePoint : value.codePoints().toArray()) {
+            String character = new String(Character.toChars(codePoint));
+            probe.setText(character);
+            int charWidth = getStringWidthAndHeight(probe).getFirst();
+            if (used + charWidth + ellipsisWidth > maxWidth) {
+                break;
+            }
+
+            kept.append(character);
+            used += charWidth;
+        }
+
+        return kept + ELLIPSIS;
     }
 
     /**

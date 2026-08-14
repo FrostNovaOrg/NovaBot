@@ -113,6 +113,11 @@ public class BilibiliLiveReportPainter {
     private static final int CARD_RADIUS = 16;
 
     /**
+     * 卡片内文字距卡片左右两边的留白
+     */
+    private static final int CARD_TEXT_INSET = 20;
+
+    /**
      * 排行榜每行的行高
      */
     private static final int RANKING_ROW_HEIGHT = 44;
@@ -133,9 +138,12 @@ public class BilibiliLiveReportPainter {
     private static final int GUARD_LIST_LIMIT = 10;
 
     /**
-     * 昵称最多展示的字符数，超出截断
+     * 排行榜昵称的可用宽度，单位像素
+     * <p>
+     * 昵称画在头像右侧（{@code MARGIN + 40 + 头像 32 + 10}），比例条从 {@code MARGIN + 300} 起，
+     * 中间留 12px 不让字贴上条子。<b>是像素不是字数</b>——理由见 {@link #truncate}
      */
-    private static final int MAX_NAME_LENGTH = 12;
+    private static final int NAME_MAX_WIDTH = 300 - (40 + RANKING_AVATAR_SIZE + 10) - 12;
 
     /**
      * 词云绘制尺寸
@@ -158,7 +166,11 @@ public class BilibiliLiveReportPainter {
 
     private static final Color COLOR_TEXT = new Color(51, 51, 51);
 
-    private static final Color COLOR_CARD = new Color(246, 247, 249);
+    /**
+     * 卡片底色。包内可见：版式判据要靠它认出「哪几行落在卡片带里」，
+     * 否则同样的 x 区间会撞上封面横幅与排行榜的比例条
+     */
+    static final Color COLOR_CARD = new Color(246, 247, 249);
 
     /**
      * 互动曲线的高度与像素列宽
@@ -231,9 +243,11 @@ public class BilibiliLiveReportPainter {
     private static final double HIGHLIGHT_MIN_DANMU = 15;
 
     /**
-     * 截断过长标题的字数上限，比昵称宽松：标题占的是整行
+     * 高能时刻标题的可用宽度，单位像素
+     * <p>
+     * 比昵称宽松：标题从 {@code MARGIN + 180} 起，占的是到版心右边界的一整段
      */
-    private static final int MAX_TITLE_LENGTH = 24;
+    private static final int TITLE_MAX_WIDTH = CONTENT_WIDTH - 180;
 
     private final StarBotCommonPainterFactory factory;
 
@@ -453,7 +467,7 @@ public class BilibiliLiveReportPainter {
             }
 
             int textX = avatarX + AVATAR_SIZE + 22;
-            painter.drawSection(Optional.ofNullable(source.getUname()).orElse("未知主播"), COLOR_NAME, new Point(textX, top + COVER_HEIGHT + 4));
+            painter.drawSection(unameWithin(painter, source, textX), COLOR_NAME, new Point(textX, top + COVER_HEIGHT + 4));
             painter.drawTip("直播报告 · " + timeRange(platform, source.getUid()), COLOR_TIP, new Point(textX, top + COVER_HEIGHT + 52));
 
             painter.setPos(MARGIN, top + COVER_HEIGHT + AVATAR_SIZE + 16);
@@ -464,9 +478,24 @@ public class BilibiliLiveReportPainter {
         if (face != null) {
             painter.drawImage(face, new Point(MARGIN, top));
         }
-        painter.drawSection(Optional.ofNullable(source.getUname()).orElse("未知主播"), COLOR_NAME, new Point(textX, top + 8));
+        painter.drawSection(unameWithin(painter, source, textX), COLOR_NAME, new Point(textX, top + 8));
         painter.drawTip("直播报告 · " + timeRange(platform, source.getUid()), COLOR_TIP, new Point(textX, top + 58));
         painter.setPos(MARGIN, top + AVATAR_SIZE + 30);
+    }
+
+    /**
+     * 取主播名，并按版心剩下的宽度截断
+     * <p>
+     * B 站昵称<b>没有长度上限</b>，而这一行原先一个字都不截。现在没出事只是因为
+     * 常见昵称都短——<b>没撞上不等于没有</b>：实测 30 个字的昵称会顶出画布 338 像素。
+     * @param textX 这一行的起始 x，可用宽度是从这里到版心右边界
+     */
+    private String unameWithin(CommonPainter painter, LiveStreamerInfo source, int textX) {
+        String uname = Optional.ofNullable(source.getUname()).orElse("未知主播");
+
+        return painter.truncateToWidth(
+                new TextWithStyle(uname, CommonPainter.SECTION_FONT_SIZE, COLOR_NAME, Font.BOLD),
+                WIDTH - MARGIN - textX);
     }
 
     /**
@@ -513,8 +542,60 @@ public class BilibiliLiveReportPainter {
             }
         }
 
-        painter.drawTextWithStyle(line);
+        painter.drawTextWithStyle(wrapAtSegments(painter, line, MARGIN), null, true, MARGIN);
         painter.movePos(0, 18);
+    }
+
+    /**
+     * 让一行由若干语义完整的片段拼成的文本，在<b>片段边界</b>上换行
+     *
+     * <h2>为什么不直接开自动换行了事</h2>
+     * {@code drawTextWithStyle} 的自动换行是<b>逐字</b>判断的，
+     * 于是「本场收益 ¥55.3」会被断成「本场收益 ¥55.」和「3」——
+     * 一个数字被劈成两行，比溢出还难认。
+     * <p>
+     * 这些片段每一个都是一句完整的话（「（其中 8 秒因维护未采集）」「本场收益 ¥55.3」），
+     * 在它们之间断开才是人读得懂的断法。
+     * <p>
+     * 逐字的自动换行仍然要开着<b>兜底</b>：万一某一个片段自己就比一整行还长
+     * （比如时长文案将来变得很啰嗦），片段边界无处可断，那时宁可断在字中间也不要画出画布。
+     *
+     * @param painter 绘图器，用来量宽度
+     * @param segments 片段，按绘制顺序
+     * <p>
+     * 包内可见而不是私有：<b>「断在哪」是这段逻辑唯一的产出</b>，
+     * 而右边距那把尺子只看得出「有没有画出去」，看不出「断得人读不读得懂」——
+     * 逐字换行同样不溢出，同样是绿的。要钉住片段边界这件事，判据得直接看这个返回值。
+     * @param startX 这一行的起始 x，也是换行后新行的起始 x
+     * @return 需要换行处已插入换行符的片段列表
+     */
+    List<TextWithStyle> wrapAtSegments(CommonPainter painter, List<TextWithStyle> segments, int startX) {
+        int maxRight = WIDTH - MARGIN;
+
+        List<TextWithStyle> wrapped = new ArrayList<>(segments.size());
+        int x = startX;
+        for (TextWithStyle segment : segments) {
+            int width = painter.getStringWidthAndHeight(segment).getFirst();
+
+            if (x > startX && x + width > maxRight) {
+                // 换行之后那几个用来拉开间距的前导空格就没有意义了，去掉
+                String text = segment.getText().stripLeading();
+                TextWithStyle broken = new TextWithStyle("\n" + text,
+                        segment.getSize(), segment.getColor(), segment.getStyle());
+                broken.setFont(segment.getFont());
+                wrapped.add(broken);
+
+                TextWithStyle measured = new TextWithStyle(text,
+                        segment.getSize(), segment.getColor(), segment.getStyle());
+                measured.setFont(segment.getFont());
+                x = startX + painter.getStringWidthAndHeight(measured).getFirst();
+            } else {
+                wrapped.add(segment);
+                x += width;
+            }
+        }
+
+        return wrapped;
     }
 
     /**
@@ -598,12 +679,18 @@ public class BilibiliLiveReportPainter {
      */
     private void drawCard(CommonPainter painter, Card card, int x, int y) {
         painter.drawRoundedRectangle(x, y, CARD_WIDTH, CARD_HEIGHT, CARD_RADIUS, COLOR_CARD);
-        painter.drawTextWithStyle(
-                List.of(new TextWithStyle(card.value, 34, COLOR_TEXT, Font.BOLD)),
-                new Point(x + 20, y + 16));
-        painter.drawTextWithStyle(
-                List.of(new TextWithStyle(card.label, 22, COLOR_TIP, Font.PLAIN)),
-                new Point(x + 20, y + 68));
+
+        // 卡片里的文字放不下时不是被画布切掉，而是<b>盖到隔壁那张卡片上</b>——那比被切还难认。
+        // 实测余量只剩个位数像素：「粉丝团 · 本场 +12345」离撑破只差 9px，涨幅到六位数就出界
+        int usable = CARD_WIDTH - CARD_TEXT_INSET * 2;
+
+        TextWithStyle value = new TextWithStyle(card.value, 34, COLOR_TEXT, Font.BOLD);
+        value.setText(painter.truncateToWidth(value, usable));
+        painter.drawTextWithStyle(List.of(value), new Point(x + CARD_TEXT_INSET, y + 16));
+
+        TextWithStyle label = new TextWithStyle(card.label, 22, COLOR_TIP, Font.PLAIN);
+        label.setText(painter.truncateToWidth(label, usable));
+        painter.drawTextWithStyle(List.of(label), new Point(x + CARD_TEXT_INSET, y + 68));
     }
 
     /**
@@ -808,7 +895,7 @@ public class BilibiliLiveReportPainter {
                     new Point(MARGIN + 4, y + 6));
 
             List<TextWithStyle> line = new ArrayList<>();
-            line.add(new TextWithStyle(truncateTitle(title.title()), 24, COLOR_TEXT, Font.PLAIN));
+            line.add(new TextWithStyle(truncateTitle(painter, title.title()), 24, COLOR_TEXT, Font.PLAIN));
             // 分区只在这一条真的换了分区时才标出来：多数场次全程一个分区，
             // 每行都跟一遍只会把真正的改动淹掉
             String area = title.area() == null ? "" : title.area();
@@ -1005,7 +1092,7 @@ public class BilibiliLiveReportPainter {
         }
 
         int nameX = avatarX + RANKING_AVATAR_SIZE + 10;
-        painter.drawTextWithStyle(List.of(new TextWithStyle(truncate(user.displayName()), 24, COLOR_TEXT, Font.PLAIN)),
+        painter.drawTextWithStyle(List.of(new TextWithStyle(truncate(painter, user.displayName()), 24, COLOR_TEXT, Font.PLAIN)),
                 new Point(nameX, y + 6));
 
         // 比例条画在昵称右侧的固定区域，与得分文字对齐
@@ -1059,19 +1146,27 @@ public class BilibiliLiveReportPainter {
 
     /**
      * 截断过长的昵称，避免顶到比例条
+     * <p>
+     * 🔴 <b>按像素收，不按字数。</b>原先写的是「最多 12 个字」——
+     * 12 个全角汉字比 12 个半角字母宽一倍多，而昵称里两者混着来，
+     * <b>安全与否取决于用户起了什么名字</b>。顺带解决另一件事：
+     * {@code substring} 会把 emoji 劈成半个代理项，而昵称里 emoji 很常见。
      */
-    private String truncate(String name) {
-        return name.length() <= MAX_NAME_LENGTH ? name : name.substring(0, MAX_NAME_LENGTH) + "…";
+    private String truncate(CommonPainter painter, String name) {
+        return painter.truncateToWidth(new TextWithStyle(name, 24, COLOR_TEXT, Font.PLAIN), NAME_MAX_WIDTH);
     }
 
     /**
      * 截断过长的标题
+     * <p>
+     * 同上，按像素收
      */
-    private String truncateTitle(String title) {
+    private String truncateTitle(CommonPainter painter, String title) {
         if (title == null) {
             return "";
         }
-        return title.length() <= MAX_TITLE_LENGTH ? title : title.substring(0, MAX_TITLE_LENGTH) + "…";
+
+        return painter.truncateToWidth(new TextWithStyle(title, 24, COLOR_TEXT, Font.PLAIN), TITLE_MAX_WIDTH);
     }
 
     /**
