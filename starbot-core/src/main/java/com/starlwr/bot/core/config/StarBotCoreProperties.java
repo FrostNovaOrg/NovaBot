@@ -357,6 +357,64 @@ public class StarBotCoreProperties {
         private final Auth auth = new Auth();
 
         /**
+         * 把 NapCat WebUI 挂在本控制台后面时的凭据
+         */
+        @Getter
+        private final NapCat napcat = new NapCat();
+
+        /**
+         * NapCat WebUI 并入本控制台所需的凭据
+         * <p>
+         * 只有把 NapCat 的 WebUI 反代到本控制台路径下、且不想让使用者再单独登录一次它时，
+         * 才需要填这一节。填了之后，NovaBot 会在使用者点进去时替他换一把 NapCat 的凭据——
+         * <b>使用者只在 NovaBot 这一侧配置与操作</b>。
+         *
+         * <h2>为什么不省掉 NapCat 自己那道门</h2>
+         * 省不掉：它是另一个进程的鉴权，我们只能替使用者过，不能替它取消。
+         * 外层那道门（反代的 {@code auth_request} → 本控制台会话）才是真正把关的，
+         * 它要求的仍是完整的口令 + 二次验证，只需要过一次。
+         */
+        @Getter
+        @Setter
+        public static class NapCat {
+            /**
+             * NapCat WebUI 的 token
+             * <p>
+             * 填明文即可，<b>启动时会立刻换算成登录用的哈希写回，明文不留在盘上</b>。
+             * <p>
+             * 🔴 <b>换算出来的哈希与 token 在权限上完全等价</b>——NapCat 的登录接口收的就是它，
+             * 拿到哈希的人照样登得进去。所以这一步的收益<b>不是「更安全」</b>，
+             * 而是「不在这台机器上多造一份 token 的副本」：原文在 NapCat 自己的配置里本来就有，
+             * NovaBot 不需要第二份。别把它当成加密后就可以放松保管的东西。
+             */
+            private String token = "";
+
+            /**
+             * 上一项换算出来的哈希，由程序写回，不必手填
+             * <p>
+             * 形态是 {@code SHA-256(token + ".napcat")} 的十六进制串——这不是我们选的，
+             * 是 NapCat 的登录接口就收这个。
+             */
+            private String tokenHash = "";
+
+            /**
+             * NapCat WebUI 的二次验证密钥（Base32）
+             * <p>
+             * 它开了 2FA 才需要填。<b>只能明文保存</b>：代登录时要用它现算验证码，
+             * 而算码需要密钥本身——这一点没有折中办法，因此配置文件的权限必须收紧到仅属主可读。
+             */
+            private String totpSecret = "";
+
+            /**
+             * NapCat WebUI 在本机的地址
+             * <p>
+             * 默认回环。<b>不该改成非回环地址</b>：代登录是拿着凭据去换凭据，
+             * 这条请求一旦离开本机，凭据就上了网线。
+             */
+            private String address = "http://127.0.0.1:6099";
+        }
+
+        /**
          * 配置界面口令登录相关
          * <p>
          * 只有把面板开到公网时才需要配置这一节。默认不填口令，面板维持「仅本机 + 地址栏令牌」的形态。

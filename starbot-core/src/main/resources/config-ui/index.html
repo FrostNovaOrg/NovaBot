@@ -93,6 +93,21 @@
       <div class="body" id="bot-form"></div>
     </div>
 
+    <!--
+      NapCat 的 WebUI 挂在本控制台后面时才显示。没配凭据就整块不显示——
+      一个点了才知道不能用的按钮，比没有那个按钮更费解。
+    -->
+    <div class="group" id="napcat-entry" style="display:none">
+      <h2>NapCat 控制台</h2>
+      <div class="body">
+        <p class="hint" style="margin:0 0 10px">扫码登录 QQ、查看运行日志这些事在 NapCat 自己的界面里做。
+          你已经登录了这个控制台，<b>不必再登录它一次</b>——点开时会替你办好。</p>
+        <div class="backups" style="margin:0">
+          <button type="button" id="napcat-open">打开 NapCat 控制台</button>
+        </div>
+      </div>
+    </div>
+
     <div class="group">
       <h2>发送测试消息</h2>
       <div class="body">

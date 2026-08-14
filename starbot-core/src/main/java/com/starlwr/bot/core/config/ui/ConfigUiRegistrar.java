@@ -4,6 +4,7 @@ import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSessionStore;
 import com.starlwr.bot.core.config.ui.auth.LoginThrottle;
+import com.starlwr.bot.core.config.ui.napcat.NapCatCredentialService;
 import com.starlwr.bot.core.util.IpMatcher;
 import com.starlwr.bot.core.util.SecureToken;
 import com.starlwr.bot.core.util.StringUtil;
@@ -17,6 +18,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.web.client.RestTemplate;
 
 import java.time.Duration;
 
@@ -87,6 +89,19 @@ public class ConfigUiRegistrar {
     public ConfigUiAuthService configUiAuthService(ConfigUiSessionStore sessionStore, LoginThrottle throttle,
                                                   ConfigurationFileService fileService) {
         return new ConfigUiAuthService(properties.getConfigUi().getAuth(), sessionStore, throttle, fileService);
+    }
+
+    /**
+     * NapCat WebUI 的代登录
+     * <p>
+     * 无条件注册：没配 token 时它自己回「未配置」，界面据此不显示入口。
+     * 若改用条件注册把这个 Bean 整个去掉，配漏了的表现会变成 404——
+     * 那与「路径写错了」长得一模一样，而这两件事该去查的地方完全不同。
+     */
+    @Bean
+    public NapCatCredentialService napCatCredentialService(ConfigurationFileService fileService,
+                                                           RestTemplate restTemplate) {
+        return new NapCatCredentialService(properties.getConfigUi().getNapcat(), fileService, restTemplate);
     }
 
     /**

@@ -168,6 +168,15 @@ $('#logout-all').addEventListener('click', async () => {
 $('#bot-form').innerHTML = botFormHtml('bot');
 bindBotForm('bot');
 
+// NapCat 控制台入口。凭据没配好就不显示这一块——
+// 显示了点进去才报错，比不显示更难懂
+api('/napcat/state')
+  .then(state => { if (state.configured) $('#napcat-entry').style.display = ''; })
+  .catch(() => {});
+// 走引导页而不是直接跳 WebUI：凭据要由同源脚本写进 localStorage，
+// 服务端下发再多头也写不进浏览器的存储
+$('#napcat-open').addEventListener('click', () => { location.href = '/config/napcat-bootstrap'; });
+
 // 登录态必须先于正式载入取到：CSRF 令牌从这里来，缺了它所有写请求都会被拒。
 // 取不到也照常载入——未启用口令登录时本就没有令牌，读接口不受影响
 api('/auth/state')

@@ -64,6 +64,27 @@ public final class TotpGenerator {
     }
 
     /**
+     * 按当前时刻算出验证码
+     * <p>
+     * 用在<b>我们自己是那个「验证器 App」</b>的场合：NovaBot 代用户登录 NapCat WebUI 时，
+     * 得拿着它的密钥现算一个码填进去。与 {@link #verify} 共用同一个 {@code generate}，
+     * 因为「算码」与「验码」一旦各写一份，偏差只会在真登录的时候才暴露。
+     * <p>
+     * 🔴 <b>返回值是凭据，不许进日志。</b>它 30 秒内有效，打出来与打口令没有区别。
+     * @param secret Base32 密钥
+     * @param now 当前时刻
+     * @return 6 位验证码
+     * @throws IllegalArgumentException 密钥为空或不是合法 Base32
+     */
+    public static String currentCode(String secret, @NonNull Instant now) {
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalArgumentException("密钥为空");
+        }
+
+        return generate(base32Decode(secret), now.getEpochSecond() / STEP_SECONDS);
+    }
+
+    /**
      * 校验验证码
      * @param secret Base32 密钥
      * @param code 用户输入的验证码

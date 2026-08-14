@@ -1,0 +1,115 @@
+package com.starlwr.bot.core.config.ui.napcat;
+
+import com.alibaba.fastjson2.JSONObject;
+import com.starlwr.bot.core.config.ui.ConfigUiController;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Optional;
+
+/**
+ * 把使用者送进 NapCat WebUI，路上替他把凭据办了
+ *
+ * <h2>为什么是一个页面而不是一次跳转</h2>
+ * NapCat 的 WebUI 认的是 {@code localStorage["token"]}（存的是它的 Credential），
+ * 而 localStorage 只有<b>同源的脚本</b>写得进去。反代之后 WebUI 与本控制台同源，
+ * 所以这件事必须由一个跑在这个源上的页面来做——服务端下发再多头也写不进浏览器的 localStorage。
+ *
+ * <h2>为什么不用 {@code ?webui_token=}</h2>
+ * NapCat 的中间件确实也收查询参数，那样一次跳转就完事。
+ * 但凭据会因此进反向代理的访问日志，与我们刚关掉「地址栏启动令牌」的理由是同一条。
+ * <b>这条是硬性判据，不是风格选择</b>（裁决 #123 三②），有测试盯着。
+ *
+ * <h2>路径为什么不带尾斜杠</h2>
+ * 反代上那条 {@code location /config/napcat/} 是带尾斜杠的前缀匹配，
+ * 因此 {@code /config/napcat-bootstrap} 落不进它、会回到本进程；
+ * 又因为它以 {@code /config} 开头，<b>自动落在控制台安全过滤器的保护范围内</b>——
+ * 换句话说，这个会发凭据的页面天生就在那道门后面，不必也不该另建一套鉴权。
+ */
+@Slf4j
+@RestController
+public class NapCatBootstrapController {
+    public static final String PAGE_PATH = ConfigUiController.BASE_PATH + "/napcat-bootstrap";
+
+    public static final String CREDENTIAL_PATH = ConfigUiController.BASE_PATH + "/api/napcat/credential";
+
+    private final NapCatCredentialService credentials;
+
+    public NapCatBootstrapController(NapCatCredentialService credentials) {
+        this.credentials = credentials;
+    }
+
+    /**
+     * 配没配好
+     * <p>
+     * 界面据此决定要不要显示入口。<b>没配好时不显示，而不是显示了点进去报错</b>——
+     * 一个点了才知道不能用的按钮，比没有那个按钮更费解。
+     * @return {@code {configured}}
+     */
+    @GetMapping(value = ConfigUiController.BASE_PATH + "/api/napcat/state",
+            produces = MediaType.APPLICATION_JSON_VALUE)
+    public JSONObject state() {
+        JSONObject result = new JSONObject();
+        result.put("success", true);
+        result.put("configured", credentials.isConfigured());
+        return result;
+    }
+
+    /**
+     * 引导页
+     */
+    @GetMapping(value = PAGE_PATH, produces = MediaType.TEXT_HTML_VALUE)
+    public ResponseEntity<String> page() throws IOException {
+        try (var stream = new ClassPathResource("config-ui/napcat-bootstrap.html").getInputStream()) {
+            return ResponseEntity.ok()
+                    .contentType(MediaType.valueOf("text/html;charset=UTF-8"))
+                    .body(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
+        }
+    }
+
+    /**
+     * 取一把 NapCat 凭据
+     * <p>
+     * 用 POST 而不是 GET：这是<b>签发</b>不是查询，而且过滤器只对非安全方法查同源与 CSRF——
+     * 一个 GET 就能取到凭据的出口，等于把它降级成「浏览器里有枚 Cookie 就行」。
+     * <p>
+     * 🔴 {@code renew} 只许由页面在「这把不管用」时带一次。
+     * 服务端不替调用方兜底重试：换不出来的原因几乎总是配置不对，
+     * 而循环重试换来的不是成功，是把 NapCat 的登录限流打满。
+     * @param renew 是否强制换一把新的
+     * @return {@code {success, credential}}，未配置或换不到时 {@code success=false} 并带原因
+     */
+    @PostMapping(value = CREDENTIAL_PATH, produces = MediaType.APPLICATION_JSON_VALUE)
+    public JSONObject credential(@RequestParam(defaultValue = "false") boolean renew) {
+        JSONObject result = new JSONObject();
+
+        if (!credentials.isConfigured()) {
+            result.put("success", false);
+            result.put("reason", "not_configured");
+            result.put("message", "尚未在 starbot.core.config-ui.napcat 下配置 NapCat 的 token");
+            return result;
+        }
+
+        Optional<String> credential = renew ? credentials.renew() : credentials.credential();
+        if (credential.isEmpty()) {
+            result.put("success", false);
+            result.put("reason", "mint_failed");
+            // 具体原因在服务端日志里（token 不对／2FA 密钥缺失／连不上），
+            // 不往浏览器送细节：这个页面的读者不一定是配置它的那个人
+            result.put("message", "无法替你登录 NapCat，请检查 NovaBot 侧的 NapCat 凭据配置");
+            return result;
+        }
+
+        result.put("success", true);
+        result.put("credential", credential.get());
+        return result;
+    }
+}

@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>正在进入 NapCat</title>
+  <style>
+    * { box-sizing: border-box }
+    body {
+      margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      background: #f6f7f9; color: #333;
+      font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    .box {
+      width: 420px; max-width: calc(100vw - 32px); padding: 28px;
+      background: #fff; border-radius: 12px; box-shadow: 0 2px 16px rgba(0, 0, 0, .06);
+    }
+    h1 { margin: 0 0 6px; font-size: 17px }
+    p { margin: 0; font-size: 13px; color: #666; line-height: 1.7 }
+    p.err { color: #f56c6c }
+    .steps { margin-top: 14px; font-size: 12.5px; color: #999 }
+    a { color: #fb7299 }
+    @media (prefers-color-scheme: dark) {
+      body { background: #1b1c1f; color: #e5e6eb }
+      .box { background: #26272b; box-shadow: none }
+      p { color: #909399 }
+    }
+  </style>
+</head>
+<body>
+<div class="box">
+  <h1 id="title">正在进入 NapCat…</h1>
+  <p id="msg">正在替你换取一次登录凭据，稍等一下。</p>
+  <div class="steps" id="steps"></div>
+</div>
+
+<script>
+  // NapCat WebUI 的 localStorage 键名。它那边的常量表里就叫 token，
+  // 存的是 Credential（登录响应的那个字段），且是 JSON 编码过的字符串——
+  // 它的请求拦截器读出来后会 JSON.parse 再放进 Authorization: Bearer。
+  // 🔴 少了 JSON.stringify 这一层，存进去的裸串会被 parse 成异常，
+  //    症状是「明明写进去了却还是要登录」
+  const KEY = 'token';
+  const WEBUI = '/config/napcat/webui/';
+
+  const $ = s => document.querySelector(s);
+  const step = text => { $('#steps').textContent = text; };
+
+  function fail(text) {
+    $('#title').textContent = '没能替你登录 NapCat';
+    $('#msg').className = 'err';
+    $('#msg').innerHTML = text + '<br><br><a href="/config">返回 NovaBot 控制台</a>';
+    $('#steps').textContent = '';
+  }
+
+  async function mint(csrf, renew) {
+    const res = await fetch('/config/api/napcat/credential' + (renew ? '?renew=true' : ''), {
+      method: 'POST', headers: {'X-CSRF-Token': csrf}
+    });
+    return res.json();
+  }
+
+  // 拿这把凭据去问一句 NapCat「我算登录了吗」。
+  // 🔴 必须问，不能写完就跳：凭据只活一小时，缓存里那把可能刚好过期，
+  //    而过期的表现是跳过去之后被弹回它自己的登录页——那时候使用者只会以为配置错了
+  async function accepted(credential) {
+    try {
+      const res = await fetch('/config/napcat/api/auth/check', {
+        method: 'POST', headers: {'Authorization': 'Bearer ' + credential}
+      });
+      const data = await res.json();
+      // NapCat 鉴权失败也回 HTTP 200，错误只在响应体里。只看状态码会一律读成成功
+      return data && data.code === 0;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  (async () => {
+    let csrf = '';
+    try {
+      const state = await (await fetch('/config/api/auth/state')).json();
+      csrf = state.csrfToken || '';
+    } catch (e) {
+      fail('连不上 NovaBot 控制台。');
+      return;
+    }
+
+    step('① 取凭据');
+    let issued = await mint(csrf, false);
+    if (!issued.success) { fail(issued.message || '换取凭据失败。'); return; }
+
+    localStorage.setItem(KEY, JSON.stringify(issued.credential));
+
+    step('② 验证凭据');
+    if (!await accepted(issued.credential)) {
+      // 🔴 只重换一次，不循环。换不出来的原因几乎总是配置不对，
+      //    而那类原因重试多少次都是同一个结果，只会把 NapCat 的登录限流打满
+      step('③ 凭据不管用，换一把（只换这一次）');
+      issued = await mint(csrf, true);
+      if (!issued.success) { fail(issued.message || '换取凭据失败。'); return; }
+
+      localStorage.setItem(KEY, JSON.stringify(issued.credential));
+      if (!await accepted(issued.credential)) {
+        localStorage.removeItem(KEY);
+        fail('换了两把凭据 NapCat 都不认。多半是 NovaBot 侧配的 NapCat token 或二次验证密钥'
+          + '与 NapCat 当前的对不上——两边改过其中一边时会这样。');
+        return;
+      }
+    }
+
+    step('④ 进入');
+    location.replace(WEBUI);
+  })();
+</script>
+</body>
+</html>
