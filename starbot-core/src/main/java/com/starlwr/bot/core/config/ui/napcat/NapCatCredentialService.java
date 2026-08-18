@@ -19,6 +19,7 @@ import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 /**
  * 替使用者换取 NapCat WebUI 的凭据
@@ -71,6 +72,27 @@ public class NapCatCredentialService {
      */
     private static final Duration RENEW_MARGIN = Duration.ofMinutes(5);
 
+    /**
+     * 一个窗口内最多向 NapCat 发起几次登录
+     * <p>
+     * 🔴 <b>这道闸必须在服务端，页面里的那道挡不住它要挡的东西。</b>
+     * 边界⑤ 说的害处是「把 NapCat 的登录限流打满」——那是一个<b>全局</b>资源，
+     * 而页面里的计数器<b>一刷新就清零、多开一个标签页就各算各的</b>。
+     * 一个刷新就能重置的上限，对它要保护的东西不构成上限。
+     * <p>
+     * 取 3 看的是正常用法的上界：引导页最多用掉两次（取一把 + 那把不管用时重换一把），
+     * 续登一次用一把。<b>正常使用碰不到 3，而失控的循环第 4 次就会被拦下。</b>
+     * <p>
+     * 与 {@code LoginThrottle} 同理，这里做的是<b>速率限制不是锁定</b>：
+     * 桶随时间自己回满，攻击或 bug 一停，等一会儿就能正常用，<b>不留惩罚</b>。
+     */
+    private static final int MINT_BURST = 3;
+
+    /**
+     * 上面那 {@value #MINT_BURST} 次额度回满所需的时间
+     */
+    private static final Duration MINT_WINDOW = Duration.ofMinutes(5);
+
     private final RestTemplate restTemplate;
 
     private final String baseUrl;
@@ -89,12 +111,150 @@ public class NapCatCredentialService {
 
     private volatile Instant mintedAt;
 
+    /**
+     * 取当前时刻。构造时注入是为了判据能把时间往前拨，
+     * <b>而不是靠 sleep 去等一个五分钟的窗口</b>——那种判据慢到最后一定会被人关掉。
+     */
+    private final Supplier<Instant> clock;
+
+    /**
+     * 剩余额度，见 {@link #MINT_BURST}
+     */
+    private double mintTokens = MINT_BURST;
+
+    private Instant mintRefilledAt;
+
+    /**
+     * 反向见证，见 {@link NapCatRouteWitness}
+     */
+    private final NapCatRouteWitness routeWitness;
+
     public NapCatCredentialService(StarBotCoreProperties.ConfigUi.NapCat properties,
                                    ConfigurationFileService fileService, RestTemplate restTemplate) {
+        this(properties, fileService, restTemplate, Instant::now);
+    }
+
+    NapCatCredentialService(StarBotCoreProperties.ConfigUi.NapCat properties,
+                            ConfigurationFileService fileService, RestTemplate restTemplate,
+                            Supplier<Instant> clock) {
+        this(properties, fileService, restTemplate, clock, null);
+    }
+
+    /**
+     * @param witness 传 null 时按配置自己造一个。留这个口子只为一件事：
+     *                让判据能塞进一个<b>必然出岔子</b>的见证，验「见证垮了签发也不垮」——
+     *                够不着的守卫等于没有守卫
+     */
+    NapCatCredentialService(StarBotCoreProperties.ConfigUi.NapCat properties,
+                            ConfigurationFileService fileService, RestTemplate restTemplate,
+                            Supplier<Instant> clock, NapCatRouteWitness witness) {
         this.restTemplate = restTemplate;
         this.baseUrl = trimTrailingSlash(properties.getAddress());
         this.tokenHash = resolveHash(properties, fileService);
         this.totpSecret = blankToNull(properties.getTotpSecret());
+        this.clock = clock;
+        this.routeWitness = witness != null ? witness : new NapCatRouteWitness(this.baseUrl, restTemplate);
+    }
+
+    /**
+     * 反向见证，供判据证明它确实被调用过
+     */
+    public NapCatRouteWitness routeWitness() {
+        return routeWitness;
+    }
+
+    /**
+     * 一次签发的结局
+     * <p>
+     * 分型是为了让界面能说对话：<b>「太频繁，等一会儿」与「配置不对，去改配置」
+     * 要引向完全不同的动作</b>，混成一句「换不出来」等于把使用者支去查一个没毛病的地方。
+     */
+    public enum Outcome {
+        /** 拿到了 */
+        OK,
+        /** 没配 token */
+        NOT_CONFIGURED,
+        /** 短时间内换得太多次，被本机的速率闸拦下 */
+        THROTTLED,
+        /** 向 NapCat 换取失败，原因在服务端日志里 */
+        FAILED
+    }
+
+    /**
+     * @param outcome 结局
+     * @param credential 凭据，仅 {@link Outcome#OK} 时非空
+     */
+    public record Issued(Outcome outcome, String credential) {
+        static Issued of(String credential) {
+            return new Issued(Outcome.OK, credential);
+        }
+
+        static Issued failed(Outcome outcome) {
+            return new Issued(outcome, null);
+        }
+
+        /**
+         * 记录组件的读取器不许换返回类型，所以取值另起一个名字
+         */
+        public Optional<String> asOptional() {
+            return Optional.ofNullable(credential);
+        }
+    }
+
+    /**
+     * 签发一把凭据
+     * @param forceRenew 手上那把不管用了，强制换新的
+     */
+    public synchronized Issued issue(boolean forceRenew) {
+        if (!isConfigured()) {
+            return Issued.failed(Outcome.NOT_CONFIGURED);
+        }
+        if (!forceRenew) {
+            Optional<String> cached = cached();
+            if (cached.isPresent()) {
+                return Issued.of(cached.get());
+            }
+        } else {
+            cachedCredential = null;
+            mintedAt = null;
+        }
+        if (!tryAcquireMint(clock.get())) {
+            return Issued.failed(Outcome.THROTTLED);
+        }
+        return mint().map(Issued::of).orElseGet(() -> Issued.failed(Outcome.FAILED));
+    }
+
+    /**
+     * 速率闸：还有额度吗
+     * <p>
+     * 与 {@code LoginThrottle} 的全局桶同一个形状：按时间线性回满，取不到就直接拒绝，<b>不排队</b>。
+     * 排队会把「太频繁」变成「很慢」，而后者查起来要难得多。
+     */
+    synchronized boolean tryAcquireMint(Instant now) {
+        if (mintRefilledAt == null) {
+            mintRefilledAt = now;
+        }
+        double elapsedSeconds = Duration.between(mintRefilledAt, now).toMillis() / 1000.0;
+        if (elapsedSeconds > 0) {
+            mintTokens = Math.min(MINT_BURST,
+                    mintTokens + elapsedSeconds * MINT_BURST / MINT_WINDOW.toSeconds());
+            mintRefilledAt = now;
+        }
+        if (mintTokens < 1.0) {
+            log.warn("向 NapCat 换取凭据过于频繁, 已拦下本次（上限 {} 次 / {} 分钟）。"
+                    + "若反复出现, 检查是否有页面在循环重试", MINT_BURST, MINT_WINDOW.toMinutes());
+            return false;
+        }
+        mintTokens -= 1.0;
+        return true;
+    }
+
+    private Optional<String> cached() {
+        if (cachedCredential != null && mintedAt != null
+                && Duration.between(mintedAt, clock.get()).compareTo(CREDENTIAL_LIFETIME.minus(RENEW_MARGIN)) < 0) {
+            return Optional.of(cachedCredential);
+        }
+        return Optional.empty();
     }
 
     /**
@@ -109,14 +269,7 @@ public class NapCatCredentialService {
      * @return 凭据；未配置时为空
      */
     public synchronized Optional<String> credential() {
-        if (!isConfigured()) {
-            return Optional.empty();
-        }
-        if (cachedCredential != null && mintedAt != null
-                && Duration.between(mintedAt, Instant.now()).compareTo(CREDENTIAL_LIFETIME.minus(RENEW_MARGIN)) < 0) {
-            return Optional.of(cachedCredential);
-        }
-        return mint();
+        return issue(false).asOptional();
     }
 
     /**
@@ -128,9 +281,7 @@ public class NapCatCredentialService {
      * @return 新凭据；换不出来时为空
      */
     public synchronized Optional<String> renew() {
-        cachedCredential = null;
-        mintedAt = null;
-        return isConfigured() ? mint() : Optional.empty();
+        return issue(true).asOptional();
     }
 
     private Optional<String> mint() {
@@ -183,9 +334,22 @@ public class NapCatCredentialService {
         }
 
         cachedCredential = credential;
-        mintedAt = Instant.now();
+        mintedAt = clock.get();
         // 只记「换到了」，不记凭据本身
         log.info("已替使用者换取 NapCat WebUI 凭据, 有效期 {} 分钟", CREDENTIAL_LIFETIME.toMinutes());
+
+        // 见证挂在这里而不是另起一个调度器：这一刻本来就要与 WebUI 通信，
+        // 多两跳是本机回环；凭据每小时最多换一次，频率天然合适。
+        // 代价（长期没人开面板时见证不跑）是明知的：那时也没有会话需要救
+        try {
+            routeWitness.witness();
+        } catch (RuntimeException e) {
+            // 🔴 见证是来报信的，不是来把门关上的（边界②：失败回落到现状）。
+            // 它自己出了岔子，最坏的结果应当是「这次没见证成」，
+            // 而不是「凭据签不出来了」——后者会让使用者被关在 NapCat 门外
+            log.warn("NapCat 路由见证过程中出错, 不影响本次凭据签发: {}", e.getMessage());
+        }
+
         return Optional.of(credential);
     }
 

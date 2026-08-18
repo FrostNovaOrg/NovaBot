@@ -251,4 +251,101 @@ class NapCatCredentialServiceTest {
             assertTrue(service.credential().isEmpty());
         }
     }
+
+    /**
+     * 换取速率的上限
+     *
+     * <h2>🔴 为什么这道闸必须在服务端</h2>
+     * 边界⑤ 说的害处是「把 NapCat 的登录限流打满」——那是一个<b>全局</b>资源。
+     * 而页面里的计数器<b>一刷新就清零、多开一个标签页就各算各的</b>：
+     * 一个刷新就能重置的上限，对它要保护的东西不构成任何上限。
+     * 页面里那道管的是交互（一次不成就停手回落），这道管的是流量。
+     */
+    @Nested
+    @DisplayName("换取速率的上限")
+    class MintRate {
+        private final java.util.concurrent.atomic.AtomicReference<java.time.Instant> now =
+                new java.util.concurrent.atomic.AtomicReference<>(java.time.Instant.parse("2026-08-18T00:00:00Z"));
+
+        private NapCatCredentialService service(Recorder recorder) {
+            return new NapCatCredentialService(props(null, "0".repeat(64), null), null,
+                    recorder.template, now::get);
+        }
+
+        private void advance(java.time.Duration by) {
+            now.updateAndGet(at -> at.plus(by));
+        }
+
+        /**
+         * 阳性对照：不撞闸的时候它是通的。
+         * <b>「一直被拦」与「压根换不出来」长得一模一样</b>，所以先证这一条。
+         */
+        @Test
+        @DisplayName("正常用法不碰这道闸")
+        void normalUseNeverHitsTheGate() {
+            NapCatCredentialService service = service(new Recorder(ok("c")));
+
+            // 引导页最多用掉两次：取一把，那把不管用时重换一把
+            assertEquals(NapCatCredentialService.Outcome.OK, service.issue(false).outcome());
+            assertEquals(NapCatCredentialService.Outcome.OK, service.issue(true).outcome());
+        }
+
+        @Test
+        @DisplayName("短时间内换得太多次会被拦下，且与「换取失败」分开报")
+        void refusesWhenHammered() {
+            NapCatCredentialService service = service(new Recorder(ok("c")));
+
+            for (int i = 0; i < 3; i++) {
+                assertEquals(NapCatCredentialService.Outcome.OK, service.issue(true).outcome(),
+                        "第 " + (i + 1) + " 次应当放行");
+            }
+
+            NapCatCredentialService.Issued fourth = service.issue(true);
+            assertEquals(NapCatCredentialService.Outcome.THROTTLED, fourth.outcome());
+            assertTrue(fourth.asOptional().isEmpty());
+        }
+
+        /**
+         * 🔴 <b>做的是速率限制，不是锁定。</b>
+         * 锁定是状态：触发之后即使循环停了也照样把人关在门外若干分钟，
+         * 那等于给了一个「一键把使用者锁出去」的按钮。
+         * 速率限制是流量：桶随时间自己回满，循环一停，等一会儿就能正常用，<b>不留惩罚</b>。
+         */
+        @Test
+        @DisplayName("桶会自己回满：循环停了之后立刻能正常用")
+        void theBucketRefillsSoThereIsNoLockout() {
+            NapCatCredentialService service = service(new Recorder(ok("c")));
+
+            for (int i = 0; i < 3; i++) {
+                service.issue(true);
+            }
+            assertEquals(NapCatCredentialService.Outcome.THROTTLED, service.issue(true).outcome(),
+                    "前提：这时确实撞上闸了");
+
+            advance(java.time.Duration.ofMinutes(5));
+
+            assertEquals(NapCatCredentialService.Outcome.OK, service.issue(true).outcome(),
+                    "等桶回满之后应当照常放行 —— 不放行说明这是锁定不是限流");
+        }
+
+        /**
+         * 被拦下时不许对 NapCat 发请求。<b>拦下来却照发，等于没拦。</b>
+         */
+        @Test
+        @DisplayName("被拦下的那一次不会向 NapCat 发请求")
+        void aRefusedAttemptSendsNothing() {
+            Recorder recorder = new Recorder(ok("c"));
+            NapCatCredentialService service = service(recorder);
+
+            for (int i = 0; i < 3; i++) {
+                service.issue(true);
+            }
+            int sentBeforeTheRefusal = recorder.bodies.size();
+
+            service.issue(true);
+
+            assertEquals(sentBeforeTheRefusal, recorder.bodies.size(),
+                    "被闸拦下之后仍然发了请求");
+        }
+    }
 }

@@ -21,10 +21,27 @@
     p.err { color: #f56c6c }
     .steps { margin-top: 14px; font-size: 12.5px; color: #999 }
     a { color: #fb7299 }
+    /* 托住内层的形态：整屏一张 iframe，外层只留一条提示位 */
+    body.mounted { display: block; background: #fff }
+    body.mounted .box { display: none }
+    #frame { display: none; border: 0; width: 100vw; height: 100vh }
+    body.mounted #frame { display: block }
+    #banner {
+      display: none; position: fixed; left: 0; right: 0; bottom: 0; z-index: 9;
+      padding: 10px 14px; font-size: 13px; line-height: 1.6;
+      background: #fdf6ec; color: #b88230; border-top: 1px solid #f5dab1;
+    }
+    #banner.show { display: block }
+    #banner button {
+      float: right; margin-left: 12px; border: 0; border-radius: 4px;
+      padding: 4px 10px; cursor: pointer; background: #b88230; color: #fff; font-size: 12px;
+    }
     @media (prefers-color-scheme: dark) {
       body { background: #1b1c1f; color: #e5e6eb }
       .box { background: #26272b; box-shadow: none }
       p { color: #909399 }
+      body.mounted { background: #1b1c1f }
+      #banner { background: #2b2417; color: #e6a23c; border-top-color: #4a3d24 }
     }
   </style>
 </head>
@@ -34,6 +51,10 @@
   <p id="msg">正在替你换取一次登录凭据，稍等一下。</p>
   <div class="steps" id="steps"></div>
 </div>
+<iframe id="frame" title="NapCat WebUI"></iframe>
+<div id="banner"><button type="button" id="banner-close">知道了</button><span id="banner-text"></span></div>
+
+<script src="/config/assets/napcat-resume.js"></script>
 
 <script>
   // NapCat WebUI 的 localStorage 键名。它那边的常量表里就叫 token，
@@ -77,6 +98,34 @@
     }
   }
 
+  // 🔴 从「跳过去」改成「托住它」，是为了外层留在同一个源上、读得到内层的路径。
+  //    整页跳走之后没有任何东西还在跑，会话过期时也就没有谁能救 —— 那正是今天的样子
+  function mount(csrf) {
+    const frame = document.getElementById('frame');
+    document.body.classList.add('mounted');
+    frame.src = WEBUI;
+
+    NapCatResume.start({
+      frame: frame,
+      webuiUrl: WEBUI,
+      renew: () => mint(csrf, true),
+      persist: credential => localStorage.setItem(KEY, JSON.stringify(credential)),
+      onGiveUp: reason => {
+        // 停手之后不清 localStorage、不跳转、不弹窗挡住内层：
+        // 使用者看到的仍是 NapCat 自己的登录页，照样能手动登录（边界②：回落到现状）
+        const text = reason === 'throttled'
+          ? '自动续登被本机的速率闸拦下了（短时间内换取太多次）。稍等一会儿刷新本页即可，也可以直接在下面手动登录。'
+          : '自动续登没能救回来，请在下面手动登录一次。若反复出现，检查 NovaBot 侧配的 NapCat token 与二次验证密钥是否仍与 NapCat 当前的一致。';
+        document.getElementById('banner-text').textContent = text;
+        document.getElementById('banner').classList.add('show');
+      }
+    });
+
+    document.getElementById('banner-close').addEventListener('click', () => {
+      document.getElementById('banner').classList.remove('show');
+    });
+  }
+
   (async () => {
     let csrf = '';
     try {
@@ -111,7 +160,7 @@
     }
 
     step('④ 进入');
-    location.replace(WEBUI);
+    mount(csrf);
   })();
 </script>
 </body>

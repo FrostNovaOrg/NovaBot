@@ -13,7 +13,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.Optional;
 
 /**
  * 把使用者送进 NapCat WebUI，路上替他把凭据办了
@@ -90,26 +89,34 @@ public class NapCatBootstrapController {
     @PostMapping(value = CREDENTIAL_PATH, produces = MediaType.APPLICATION_JSON_VALUE)
     public JSONObject credential(@RequestParam(defaultValue = "false") boolean renew) {
         JSONObject result = new JSONObject();
+        NapCatCredentialService.Issued issued = credentials.issue(renew);
 
-        if (!credentials.isConfigured()) {
-            result.put("success", false);
-            result.put("reason", "not_configured");
-            result.put("message", "尚未在 starbot.core.config-ui.napcat 下配置 NapCat 的 token");
-            return result;
+        switch (issued.outcome()) {
+            case NOT_CONFIGURED -> {
+                result.put("success", false);
+                result.put("reason", "not_configured");
+                result.put("message", "尚未在 starbot.core.config-ui.napcat 下配置 NapCat 的 token");
+            }
+            case THROTTLED -> {
+                // 🔴 这一支必须与 mint_failed 分开。两者的下一步动作完全相反：
+                // 一个是「等一会儿再来」，一个是「去改配置」。
+                // 合成一句「换不出来」，等于把使用者支去查一个没毛病的地方
+                result.put("success", false);
+                result.put("reason", "throttled");
+                result.put("message", "换取凭据过于频繁，请稍等一会儿再试");
+            }
+            case FAILED -> {
+                result.put("success", false);
+                result.put("reason", "mint_failed");
+                // 具体原因在服务端日志里（token 不对／2FA 密钥缺失／连不上），
+                // 不往浏览器送细节：这个页面的读者不一定是配置它的那个人
+                result.put("message", "无法替你登录 NapCat，请检查 NovaBot 侧的 NapCat 凭据配置");
+            }
+            case OK -> {
+                result.put("success", true);
+                result.put("credential", issued.credential());
+            }
         }
-
-        Optional<String> credential = renew ? credentials.renew() : credentials.credential();
-        if (credential.isEmpty()) {
-            result.put("success", false);
-            result.put("reason", "mint_failed");
-            // 具体原因在服务端日志里（token 不对／2FA 密钥缺失／连不上），
-            // 不往浏览器送细节：这个页面的读者不一定是配置它的那个人
-            result.put("message", "无法替你登录 NapCat，请检查 NovaBot 侧的 NapCat 凭据配置");
-            return result;
-        }
-
-        result.put("success", true);
-        result.put("credential", credential.get());
         return result;
     }
 }
