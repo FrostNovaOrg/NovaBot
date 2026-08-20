@@ -100,6 +100,17 @@ public class NapCatCredentialService {
      */
     private static final Duration MINT_WINDOW = Duration.ofMinutes(5);
 
+    /**
+     * 一个额度回来要多久 —— {@code MINT_WINDOW} ÷ {@code MINT_BURST}
+     * <p>
+     * 🔴 <b>撞闸文案里写给使用者的那个数就是它，必须算出来、不许再写字面量。</b>
+     * 写字面量的时候它已经错过一次了：{@code MINT_BURST} 从 3 改到 4，
+     * 文案还留着 3 那会儿的 100 秒。<b>两个数各写各的，就一定会有一天对不上。</b>
+     */
+    static long refillSeconds() {
+        return MINT_WINDOW.toSeconds() / MINT_BURST;
+    }
+
     private final RestTemplate restTemplate;
 
     private final String baseUrl;

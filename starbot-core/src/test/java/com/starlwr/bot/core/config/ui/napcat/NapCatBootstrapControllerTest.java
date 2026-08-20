@@ -72,11 +72,17 @@ class NapCatBootstrapControllerTest {
             assertTrue(message.contains("token") || message.contains("密钥"),
                     "要点破「多半是 token 或二次验证密钥配得不对」：" + message);
 
-            // 🔴 回满速率照实写：MINT_WINDOW 5 分钟 ÷ MINT_BURST 4 = 75 秒回一个。
-            //    这个数跟着 MINT_BURST 走——改了闸不改文案，这条判据就会红，
-            //    那正是它存在的理由（旧文案写的是 BURST=3 时的 100 秒）
+            // 🔴 这里原先只有下面那一行字面量断言，注释却写着「改了闸不改文案就会红」——
+            //    那是假的：文案里的 75 也是字面量，改闸时两边都不动，它照样绿。
+            //    真要盯住，得盯<b>换算关系</b>，所以有了上面 refillSeconds() 这一行。
+            assertTrue(message.contains(String.valueOf(NapCatCredentialService.refillSeconds())),
+                    "文案里的回满速率必须等于 MINT_WINDOW ÷ MINT_BURST 算出来的那个数：" + message);
+
+            // 🔴 字面量这一行是<b>故意</b>留的：重新标定这道闸时它会红。
+            //    红了不是坏事——那是在要求人去看一眼新数字下这句话还通不通顺
+            //    （BURST=3 那会儿这里是 100 秒）。改标定时连同这一行一起改，是应做的动作
             assertTrue(message.contains("75"),
-                    "回满速率要照实写成 75 秒回一个（5 分钟 ÷ 4）：" + message);
+                    "今天的标定下回满速率是 75 秒（5 分钟 ÷ 4）：" + message);
         }
     }
 

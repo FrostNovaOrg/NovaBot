@@ -276,7 +276,10 @@ VARIANTS: list[Variant] = [
     Variant(
         "U", "撞闸文案不再写回满速率",
         BOOTSTRAP,
-        '                result.put("message", "换取凭据过于频繁，请稍等一会儿再试（额度约每 75 秒回一次）。"',
+        # 🔴 锚点跟着实现走：文案里的数已改成由 refillSeconds() 算出，
+        #    原先钉的那行字面量「75 秒」不存在了（--check-anchors 当场拦下的）
+        '                result.put("message", "换取凭据过于频繁，请稍等一会儿再试（额度约每 "\n'
+        '                        + NapCatCredentialService.refillSeconds() + " 秒回一次）。"',
         '                result.put("message", "换取凭据过于频繁，请稍等一会儿再试。"',
         "文案判据应红：等多久没了数，使用者不知道该等多久才算等够",
     ),
@@ -309,6 +312,31 @@ VARIANTS: list[Variant] = [
         "    private static final int MINT_BURST = 4;",
         "    private static final int MINT_BURST = 1;",
         "4 不是拍的：收到 1 会打到正常用法",
+    ),
+    # 🔴 下面两个变体冲着「回满速率从没被量过」去（WO-017 第 2 件）。
+    #    X 的意义在于：它**只**该红新加的那一条，而既有的
+    #    theBucketRefillsSoThereIsNoLockout 应当**照绿** —— 那正是「旧判据分不出、
+    #    新判据分得出」的证据。**一个变体红了什么要紧，它没红什么同样要紧。**
+    Variant(
+        "X", "回满时把桶整个填满，而不是只回一个额度",
+        CREDENTIAL,
+        """            mintTokens = Math.min(MINT_BURST,
+                    mintTokens + elapsedSeconds * MINT_BURST / MINT_WINDOW.toSeconds());""",
+        """            mintTokens = Math.min(MINT_BURST,
+                    mintTokens + elapsedSeconds * MINT_BURST / MINT_WINDOW.toSeconds());
+            if (mintTokens >= 1.0) {
+                mintTokens = MINT_BURST;
+            }""",
+        "theBucketRefillsLinearlyNotAllAtOnce 应红，且 theBucketRefillsSoThereIsNoLockout "
+        "应照绿：拨满一整窗时两种实现读数相同，只有拨不满一窗才分得出",
+    ),
+    Variant(
+        "Y", "把回满窗口拉长一倍（速率减半）",
+        CREDENTIAL,
+        "    private static final Duration MINT_WINDOW = Duration.ofMinutes(5);",
+        "    private static final Duration MINT_WINDOW = Duration.ofMinutes(10);",
+        "throttledCopyPointsAtTheConfigAndStatesTheRefillRate 应红（文案里那个数由常量算出，"
+        "窗口一改它就不再是 75）＋ theBucketRefillsLinearlyNotAllAtOnce 应红（75 秒回不来一个）",
     ),
 ]
 
@@ -373,8 +401,13 @@ class BreakRunRulerControlTest {
 OWN_CLASSES = ("NapCatRouteWitnessTest", "NapCatResumeDebounceTest", "NapCatCredentialServiceTest",
                "NapCatBootstrapControllerTest", "ConfigUiAuthServiceTest")
 
-# 本批新增的那 23 条判据（见证 12 + 续登 7 + 速率闸 4）。
-# 上面三个类里还住着一批既有判据，它们红不红是另一回事，要分开数。
+# 逐批累加的「新增判据」名册（今天共 27 条）：
+#   WO-009 起 23 条＝见证 12 + 续登 7 + 速率闸 4
+#   WO-010 加 3 条＝文案 2 + 时钟注入后重写的 1
+#   WO-017 加 1 条＝线性回填
+# 🔴 这段注释一度写着「23 条」而下面已经列到 26 条 —— 数字写进注释就会有一天对不上，
+#    所以分母以 len(NEW_JUDGMENTS) 为准、注释只说构成。
+# 上面几个类里还住着一批既有判据，它们红不红是另一回事，要分开数。
 NEW_JUDGMENTS = {
     # 见证层 12
     "recognisesTheRouteInTheMainBundle", "shoutsWhenTheRouteIsGone",
@@ -394,6 +427,11 @@ NEW_JUDGMENTS = {
     "throttledIsReportedSeparatelyFromMintFailure",
     "throttledCopyPointsAtTheConfigAndStatesTheRefillRate",
     "mintFailureTellsTheUserToCheckTheConfiguration",
+    # WO-017 本批新增 1
+    # 🔴 上面那条 theBucketRefillsSoThereIsNoLockout 拨的是整整一个窗口，
+    #    而线性回填与整窗重置在那个读数下一模一样 —— 它证得了「不是锁定」，证不了「按速率回」。
+    #    这一条拨不满一窗，才分得出回来的是一个额度还是一整桶（变体 X 拿它当靶子）
+    "theBucketRefillsLinearlyNotAllAtOnce",
 }
 
 # 🔴 已知会随机器忙闲变红的判据。**不是消音，是记账**：

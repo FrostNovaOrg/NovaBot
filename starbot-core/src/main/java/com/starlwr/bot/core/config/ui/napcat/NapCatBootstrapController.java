@@ -105,10 +105,17 @@ public class NapCatBootstrapController {
                 // 🔴 但只说「稍等再试」也不够：撞闸与「配置本来就不对」在使用者眼里一模一样，
                 // 而后者等到天荒地老也换不出来——那时这句「稍等」就是在把人往错的方向支。
                 // 所以两层都说：等多久有数，等够了还不行时知道该去查哪儿。
-                // 75 秒＝MINT_WINDOW 5 分钟 ÷ MINT_BURST 4，改闸时这个数要跟着改（有判据盯着）
+                // 🔴 回满速率<b>算出来，不写字面量</b>：MINT_WINDOW ÷ MINT_BURST。
+                // 这里原先写的是字面量 75，注释还写着「有判据盯着」——
+                // 而当时盯着它的判据只查 message 里有没有「75」这三个字，
+                // 文案与常量各写各的，改了闸两边都不动，那条判据一样绿。
+                // 🔴 注释说「有判据盯着」时要指名是哪一条，指不出来就别写这句话：
+                // 现在盯着它的是 NapCatBootstrapControllerTest
+                // .throttledCopyPointsAtTheConfigAndStatesTheRefillRate
                 result.put("success", false);
                 result.put("reason", "throttled");
-                result.put("message", "换取凭据过于频繁，请稍等一会儿再试（额度约每 75 秒回一次）。"
+                result.put("message", "换取凭据过于频繁，请稍等一会儿再试（额度约每 "
+                        + NapCatCredentialService.refillSeconds() + " 秒回一次）。"
                         + "若一直换不出来，多半是 NapCat 的 token 或二次验证密钥配得不对");
             }
             case FAILED -> {

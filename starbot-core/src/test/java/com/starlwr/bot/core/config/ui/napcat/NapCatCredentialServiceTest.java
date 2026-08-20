@@ -349,6 +349,45 @@ class NapCatCredentialServiceTest {
         }
 
         /**
+         * 🔴 <b>回满是按速率线性回的，不是到点把桶重置成满。</b>
+         * <p>
+         * 上面那条拨的是整整一个窗口，而<b>线性回填与整窗重置在那个读数下一模一样</b>——
+         * 拨满一窗，两种实现都放行。所以它证得了「不是锁定」，<b>证不了「按速率回」</b>。
+         * 分辨的办法是拨<b>不满一窗</b>，再看回来的是<b>一个额度</b>还是<b>一整桶</b>。
+         * <p>
+         * 一个额度 = {@code MINT_WINDOW} ÷ {@code MINT_BURST} = 300 秒 ÷ 4 = <b>75 秒</b>，
+         * 也就是撞闸文案里写给使用者的那个数。
+         */
+        @Test
+        @DisplayName("桶按速率线性回满：75 秒回一个，不是到点整桶重置")
+        void theBucketRefillsLinearlyNotAllAtOnce() {
+            NapCatCredentialService service = service(new Recorder(ok("c")));
+
+            for (int i = 0; i < 4; i++) {
+                assertEquals(NapCatCredentialService.Outcome.OK, service.issue(true).outcome(),
+                        "把桶排空的第 " + (i + 1) + " 次不该被拦：额度本该有 4 次");
+            }
+            assertEquals(NapCatCredentialService.Outcome.THROTTLED, service.issue(true).outcome(),
+                    "前提：这时确实撞上闸了");
+
+            // 🔴 这里不许加容差。75 × 4 ÷ 300 在双精度下<b>恰好</b>是 1.0，74 秒是 0.98666…，
+            //    两边都精确，用不着容差；加了容差，下面这一行就挡不住「差一点也放行」
+            advance(java.time.Duration.ofSeconds(74));
+            assertEquals(NapCatCredentialService.Outcome.THROTTLED, service.issue(true).outcome(),
+                    "还差一秒才够一个额度 —— 这时放行说明回填算多了");
+
+            advance(java.time.Duration.ofSeconds(1));
+            assertEquals(NapCatCredentialService.Outcome.OK, service.issue(true).outcome(),
+                    "满 75 秒该回来一个额度");
+
+            // 🔴 这一行才是这条判据的核心。若实现是「到点把桶重置成满」，
+            //    上一行放行之后桶里还剩 3 个，这一次照样放行 —— 只有线性回填拦得住它。
+            //    去掉这一行，本条判据就退化成上面那条，什么新东西都证不了
+            assertEquals(NapCatCredentialService.Outcome.THROTTLED, service.issue(true).outcome(),
+                    "回来的应当只有一个额度、不是一整桶 —— 放行说明这是到点重置不是线性回填");
+        }
+
+        /**
          * 被拦下时不许对 NapCat 发请求。<b>拦下来却照发，等于没拦。</b>
          */
         @Test
