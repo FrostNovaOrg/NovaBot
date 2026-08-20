@@ -279,6 +279,11 @@ class NapCatCredentialServiceTest {
         /**
          * 阳性对照：不撞闸的时候它是通的。
          * <b>「一直被拦」与「压根换不出来」长得一模一样</b>，所以先证这一条。
+         *
+         * <h2>🔴 正常上界是三次，不是两次</h2>
+         * 续登层上线之后这条路上有了<b>第三个</b>触发源：引导页取一把（{@code issue(false)}）、
+         * 那把不管用时重换一把（{@code issue(true)}），再加内层凭据过期时续登层换的那一把。
+         * 桶必须容得下正常上界，否则正常用法自己就会撞闸。
          */
         @Test
         @DisplayName("正常用法不碰这道闸")
@@ -288,6 +293,16 @@ class NapCatCredentialServiceTest {
             // 引导页最多用掉两次：取一把，那把不管用时重换一把
             assertEquals(NapCatCredentialService.Outcome.OK, service.issue(false).outcome());
             assertEquals(NapCatCredentialService.Outcome.OK, service.issue(true).outcome());
+            // 第三次＝续登层：内层凭据过期时外层替它换一把，这也是正常用法
+            assertEquals(NapCatCredentialService.Outcome.OK, service.issue(true).outcome(),
+                    "续登层是第三个触发源，它也属于正常用法");
+
+            // 🔴 光证「正常上界用得完」是不够的——桶恰好等于正常上界时这一条<b>照样绿</b>，
+            //    而那时余量为零：任何一次多出来的换取都会撞闸，闸就退化成了「正常用法的天花板」。
+            //    这一行量的是<b>余量</b>，也就是 MINT_BURST 那句「正常上界 +1」里的那个 +1。
+            //    桶等于正常上界时它会红，这正是它存在的理由
+            assertEquals(NapCatCredentialService.Outcome.OK, service.issue(true).outcome(),
+                    "正常上界用满之后仍须留有余量 —— 没有余量说明这道闸卡在正常用法上");
         }
 
         @Test
@@ -295,14 +310,14 @@ class NapCatCredentialServiceTest {
         void refusesWhenHammered() {
             NapCatCredentialService service = service(new Recorder(ok("c")));
 
-            for (int i = 0; i < 3; i++) {
+            for (int i = 0; i < 4; i++) {
                 assertEquals(NapCatCredentialService.Outcome.OK, service.issue(true).outcome(),
                         "第 " + (i + 1) + " 次应当放行");
             }
 
-            NapCatCredentialService.Issued fourth = service.issue(true);
-            assertEquals(NapCatCredentialService.Outcome.THROTTLED, fourth.outcome());
-            assertTrue(fourth.asOptional().isEmpty());
+            NapCatCredentialService.Issued fifth = service.issue(true);
+            assertEquals(NapCatCredentialService.Outcome.THROTTLED, fifth.outcome());
+            assertTrue(fifth.asOptional().isEmpty());
         }
 
         /**
@@ -316,7 +331,9 @@ class NapCatCredentialServiceTest {
         void theBucketRefillsSoThereIsNoLockout() {
             NapCatCredentialService service = service(new Recorder(ok("c")));
 
-            for (int i = 0; i < 3; i++) {
+            // 🔴 与 MINT_BURST 写死同一个数，不许改成「跑到红为止」：
+            //    那样写它永远绿，回满这件事就再也测不出来了
+            for (int i = 0; i < 4; i++) {
                 service.issue(true);
             }
             assertEquals(NapCatCredentialService.Outcome.THROTTLED, service.issue(true).outcome(),
@@ -337,7 +354,9 @@ class NapCatCredentialServiceTest {
             Recorder recorder = new Recorder(ok("c"));
             NapCatCredentialService service = service(recorder);
 
-            for (int i = 0; i < 3; i++) {
+            // 🔴 与 MINT_BURST 写死同一个数：把桶恰好用完，下一次才是「被拦下的那一次」。
+            //    不许改成「跑到红为止」——那样写它永远绿，也就再也证不出「拦下了就不发」
+            for (int i = 0; i < 4; i++) {
                 service.issue(true);
             }
             int sentBeforeTheRefusal = recorder.bodies.size();

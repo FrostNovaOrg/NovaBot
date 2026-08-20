@@ -30,6 +30,13 @@
    变体不可能让口令校验的判据变红。碰到这种红，就把那个类单独再跑一遍：
    单跑还红说明它本来就红，单跑就绿说明它跟机器当时的忙闲有关 —— 两种都不该
    记在变体头上。
+5. **「零」永远不读成「绿」（共同纪律 34）。** 0 命中、空目录、没有输出 ——
+   这三样与「真的没问题」长得一模一样，而历史上三处尺错全是它们被当成了好消息：
+   正则尺名字串行而条数正常、分类器把本批的红全判成本批之外后汇总打出 0 条、
+   单跑管道拿展示名喂 ``-Dtest=`` 一条没跑起来却记成「变绿」。
+   **共性是「错的输出只要不荒唐就活得下去」**，所以每把尺开跑前先在一个
+   **历史真错**摆出来的已知样本上过一遍（``verify_ruler``），过不了就地停手 ——
+   自编样本只能验证自己对错误的想象，历史真错验的是真发生过的形状。
 """
 
 from __future__ import annotations
@@ -261,6 +268,7 @@ RULER_CONTROL = TEST_ROOT / "BreakRunRulerControlTest.java"
 
 RULER_CONTROL_SOURCE = """package com.starlwr.bot.core;
 
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
@@ -270,11 +278,18 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 /**
  * 验尺用的一次性样本，由 docs/break-run/breakrun.py 临时写入、跑完即删。
  *
- * 形状是照着上一轮那个 bug 摆的：三绿夹一红，红的排在第三位。
- * 通过的判据在 surefire 里写成自闭合的 &lt;testcase .../&gt;，
- * 用正则去数红的话，会把这里的 gamma 记到 beta 名下。
+ * 形状照着历史上真出过的三处尺错摆，每一处都由样本里的一个特征去踩：
+ *
+ * 一、三绿夹一红、红的排第三 —— 通过的判据在 surefire 里写成自闭合的
+ *     &lt;testcase .../&gt;，用正则去数红会把这里的 gamma 记到 beta 名下。
+ * 二、下面这个 @DisplayName <b>故意与类名不同</b> —— 拿 classname 属性当类名的
+ *     那把尺会读出「验尺用的样本」而不是 BreakRunRulerControlTest，
+ *     于是本批的红全被判成「本批之外」。真类名只在文件名里。
+ * 三、类名可被 -Dtest= 精确匹配 —— 单跑复核管道若拿展示名去喂 -Dtest=，
+ *     一条都跑不起来，而空结果会被读成「变绿」。
  */
 @TestMethodOrder(MethodOrderer.MethodName.class)
+@DisplayName("验尺用的样本")
 class BreakRunRulerControlTest {
     @Test
     void alphaGreen() {
@@ -411,14 +426,47 @@ def verify_ruler() -> dict:
             raise SystemExit("验尺跑不起来（编译失败？）：\n" + tail)
         reds, total = read_reds()
         names = [r["判据"] for r in reds]
+
+        # 🔴 纪律 34：先证这一跑真的跑起来了。0 条不是「全绿」，是管道断了。
+        if total == 0:
+            raise SystemExit("❌ 验尺不过：实际跑起来 0 条判据 —— "
+                             "管道断了，不是全绿（surefire 报告里一个 <testcase> 都没有）")
+
         control = [n for n in names if n.startswith("BreakRunRulerControlTest.")]
         expected = ["BreakRunRulerControlTest.gammaRedOnPurpose"]
         print(f"    共 {total} 条，红 {len(reds)} 条；样本里红的是 {control}")
+        # 尺错一：名字串行。只对条数不够，必须逐字对名字
         if control != expected:
             raise SystemExit(f"❌ 验尺不过：样本里应当只有 {expected} 红，实得 {control}")
         print("    ✅ 尺子数对了，名字也没串行")
+
+        # 尺错二：拿 classname 属性当类名。样本的 @DisplayName 故意与类名不同，
+        # 分类器一旦读了展示名，这里就会现形 —— 而它当初的症状是「本批的红全被
+        # 判成本批之外、汇总打出 0 条」，光看输出完全正常
+        red = next(r for r in reds if r["判据"] in expected)
+        if red["外层类"] != "BreakRunRulerControlTest":
+            raise SystemExit(f"❌ 验尺不过：类名读成了 {red['外层类']!r}，"
+                             f"应为 BreakRunRulerControlTest（真类名只在文件名里）")
+        if "验尺用的样本" not in red["展示名"]:
+            raise SystemExit(f"❌ 验尺不过：样本的 @DisplayName 没进 classname 属性，"
+                             f"这条自检就没踩到它要踩的坑（实得 {red['展示名']!r}）")
+        print("    ✅ 分类器取的是真类名，没被 @DisplayName 带偏")
+
+        # 尺错三：单跑复核管道。拿真类名跑得起来，拿展示名跑不起来而且必须报「管道断了」
+        good = recheck("BreakRunRulerControlTest")
+        if not good.get("跑起来了") or not good.get("实跑条数"):
+            raise SystemExit(f"❌ 验尺不过：单跑复核管道拿真类名都跑不起来：{good}")
+        bad = recheck("验尺用的样本")
+        if bad.get("仍红") is not None:
+            raise SystemExit("❌ 验尺不过：拿展示名喂 -Dtest= 居然回了「仍红」结果，"
+                             "空结果被读成了判据结论 —— 纪律 34 没兜住")
+        print(f"    ✅ 单跑管道会分辨「断了」与「不红了」（真类名跑起 "
+              f"{good['实跑条数']} 条；展示名报断）")
+
         return {"样本红": control, "全量条数": total, "全量红数": len(reds),
-                "全量红": names}
+                "全量红": names, "分类器": red["外层类"],
+                "单跑管道": {"真类名实跑条数": good["实跑条数"],
+                             "展示名": bad.get("管道", "")}}
     finally:
         RULER_CONTROL.unlink(missing_ok=True)
 
@@ -458,12 +506,23 @@ def recheck(outer: str) -> dict:
 
     这一步不动源码 —— 此时变体已经还原，跑的是交付版。
     还红＝它本来就红；变绿＝它跟机器当时的忙闲有关。两种都不该记在变体头上。
+
+    🔴 **纪律 34：「零」不读成「绿」。** 这条管道栽过一次 —— 把展示名喂给
+    ``-Dtest=``，一条判据都没跑起来，读到的空结果被当成「变绿」记了下去。
+    空结果与「真的不红了」在这里长得一模一样，所以必须靠**实际跑起来几条**
+    把两者分开：跑起来 0 条＝管道断了，不是判据绿了。
     """
     compiled, tail = run_tests(only=outer)
     if not compiled:
-        return {"跑起来了": False, "仍红": None, "报的": ""}
-    reds, _ = read_reds(only=outer)
-    return {"跑起来了": True, "仍红": [r["判据"] for r in reds],
+        return {"跑起来了": False, "仍红": None, "报的": "",
+                "管道": f"跑不起来（编译失败或 -Dtest={outer} 没匹配到任何类）"}
+    reds, total = read_reds(only=outer)
+    if total == 0:
+        # 绝不回 仍红=[]：那会被下游读成「变绿」
+        return {"跑起来了": False, "仍红": None, "报的": "", "实跑条数": 0,
+                "管道": f"❌ 管道断了：-Dtest={outer} 匹配到 0 条判据，"
+                        f"空结果不算变绿（喂错名字？该用文件名里的真类名）"}
+    return {"跑起来了": True, "实跑条数": total, "仍红": [r["判据"] for r in reds],
             "报的": [r["报的"] for r in reds]}
 
 

@@ -101,9 +101,15 @@ public class NapCatBootstrapController {
                 // 🔴 这一支必须与 mint_failed 分开。两者的下一步动作完全相反：
                 // 一个是「等一会儿再来」，一个是「去改配置」。
                 // 合成一句「换不出来」，等于把使用者支去查一个没毛病的地方
+                //
+                // 🔴 但只说「稍等再试」也不够：撞闸与「配置本来就不对」在使用者眼里一模一样，
+                // 而后者等到天荒地老也换不出来——那时这句「稍等」就是在把人往错的方向支。
+                // 所以两层都说：等多久有数，等够了还不行时知道该去查哪儿。
+                // 75 秒＝MINT_WINDOW 5 分钟 ÷ MINT_BURST 4，改闸时这个数要跟着改（有判据盯着）
                 result.put("success", false);
                 result.put("reason", "throttled");
-                result.put("message", "换取凭据过于频繁，请稍等一会儿再试");
+                result.put("message", "换取凭据过于频繁，请稍等一会儿再试（额度约每 75 秒回一次）。"
+                        + "若一直换不出来，多半是 NapCat 的 token 或二次验证密钥配得不对");
             }
             case FAILED -> {
                 result.put("success", false);

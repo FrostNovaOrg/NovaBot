@@ -207,6 +207,17 @@ class ConfigUiAuthServiceTest {
     private LoginThrottle throttle;
 
     /**
+     * 判据自己的时钟。<b>停着不走</b>，除非判据自己拨。
+     * <p>
+     * 🔴 这个东西存在的理由：全局桶按传进来的时刻线性回满，而口令校验走 PBKDF2，
+     * 三次就是一两秒——那一两秒足够让桶悄悄回上半个令牌。用真实时钟的话，
+     * 下面那条「三次失败扣三个令牌」就成了<b>「这台机器有多快」的函数</b>：
+     * 快机器上绿，慢机器上红。停住时钟之后它量的才是它声称要量的东西。
+     */
+    private final java.util.concurrent.atomic.AtomicReference<Instant> now =
+            new java.util.concurrent.atomic.AtomicReference<>(Instant.parse("2026-08-20T00:00:00Z"));
+
+    /**
      * 造一个共用同一个限流器的服务，好让判据能从外面观察那个全局桶
      */
     private ConfigUiAuthService serviceSharingThrottle() {
@@ -216,7 +227,8 @@ class ConfigUiAuthServiceTest {
 
         throttle = new LoginThrottle(properties.getMaxFailures(), Duration.ofMinutes(15));
         return new ConfigUiAuthService(properties,
-                new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(2)), throttle, null);
+                new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(2)), throttle, null,
+                now::get);
     }
 
     /**
@@ -249,7 +261,7 @@ class ConfigUiAuthServiceTest {
         ConfigUiAuthService service = serviceSharingThrottle();
 
         // 先由别处（换着 IP 来的爆破）把全局额度抽干
-        drainGlobal(Instant.now());
+        drainGlobal(now.get());
 
         ConfigUiAuthService.CredentialCheck check = service.checkCredentials(PASSWORD.toCharArray(), null, IP);
 
@@ -276,18 +288,15 @@ class ConfigUiAuthServiceTest {
     void failedChecksSpendTheGlobalBudget() {
         ConfigUiAuthService service = serviceSharingThrottle();
 
-        // 🔴 记下开跑前的时刻，最后拿它去抽桶：桶按传进来的时刻补充，
-        // 用一个更早的时刻问它就不会补——否则三次 PBKDF2 校验花掉的那一两秒
-        // 会让桶悄悄回上半个令牌，判据的结果就成了「这台机器有多快」的函数
-        Instant before = Instant.now();
-
+        // 时钟停着（见 now 字段），所以三次 PBKDF2 花掉多少真实时间都不影响读数：
+        // 桶按传进来的时刻补充，而这里从头到尾都是同一刻
         for (int i = 0; i < 3; i++) {
             ConfigUiAuthService.CredentialCheck check =
                     service.checkCredentials("猜的".toCharArray(), null, "203.0.113." + i);
             assertEquals(ConfigUiAuthService.Verdict.BAD_CREDENTIALS, check.verdict());
         }
 
-        assertEquals(GLOBAL_BURST - 3, drainGlobal(before),
+        assertEquals(GLOBAL_BURST - 3, drainGlobal(now.get()),
                 "三次失败的尝试应当从全局桶里扣掉三个令牌");
     }
 }

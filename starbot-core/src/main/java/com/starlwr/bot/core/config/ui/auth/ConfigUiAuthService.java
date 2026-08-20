@@ -9,6 +9,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 /**
  * 配置界面的登录校验
@@ -83,11 +84,30 @@ public class ConfigUiAuthService {
     @Getter
     private final boolean enabled;
 
+    /**
+     * 取当前时刻。构造时注入是为了判据能把时间往前拨，
+     * <b>而不是靠 sleep 去等一个真实的窗口</b>——那种判据慢到最后一定会被人关掉。
+     * <p>
+     * 🔴 还有一层更要紧的：不注入的话，<b>判据量的是「这台机器有多快」</b>。
+     * 全局桶按传进来的时刻线性回满，而口令校验走的是 PBKDF2，几次校验就是一两秒；
+     * 那一两秒足够让桶悄悄回上半个令牌，于是同一条判据在快机器上绿、在慢机器上红。
+     * 它当初是靠「记下开跑前的时刻，最后拿那个更早的时刻去抽桶」绕过去的——
+     * 绕得过一次，但那条判据从此量的就不是它声称要量的东西了。
+     */
+    private final Supplier<Instant> clock;
+
     public ConfigUiAuthService(StarBotCoreProperties.ConfigUi.Auth properties, ConfigUiSessionStore sessions,
                                LoginThrottle throttle, ConfigurationFileService fileService) {
+        this(properties, sessions, throttle, fileService, Instant::now);
+    }
+
+    ConfigUiAuthService(StarBotCoreProperties.ConfigUi.Auth properties, ConfigUiSessionStore sessions,
+                        LoginThrottle throttle, ConfigurationFileService fileService,
+                        Supplier<Instant> clock) {
         this.sessions = sessions;
         this.throttle = throttle;
         this.fileService = fileService;
+        this.clock = clock;
         this.passwordHash = resolvePasswordHash(properties.getPassword());
         this.totpEnabled = properties.isTotp();
         this.totpSecret = blankToNull(properties.getTotpSecret());
@@ -136,7 +156,7 @@ public class ConfigUiAuthService {
      */
     public Optional<String> verifyPending(String code) {
         String secret = pendingSecret();
-        return TotpGenerator.verify(secret, code, Instant.now()) ? Optional.of(secret) : Optional.empty();
+        return TotpGenerator.verify(secret, code, clock.get()) ? Optional.of(secret) : Optional.empty();
     }
 
     /**
@@ -155,7 +175,7 @@ public class ConfigUiAuthService {
      * @return 有效会话，无效时为空
      */
     public Optional<ConfigUiSession> validate(String sessionId) {
-        return sessions.validate(sessionId, Instant.now());
+        return sessions.validate(sessionId, clock.get());
     }
 
     /**
@@ -166,7 +186,7 @@ public class ConfigUiAuthService {
      * @return 新会话
      */
     public ConfigUiSession issueForOperator(String clientIp) {
-        return sessions.issue(clientIp, Instant.now());
+        return sessions.issue(clientIp, clock.get());
     }
 
     /**
@@ -209,7 +229,7 @@ public class ConfigUiAuthService {
             return new CredentialCheck(Verdict.AUTH_DISABLED, Duration.ZERO);
         }
 
-        Instant now = Instant.now();
+        Instant now = clock.get();
 
         Duration lockout = throttle.remainingLockout(clientIp, now);
         if (!lockout.isZero()) {
@@ -265,7 +285,7 @@ public class ConfigUiAuthService {
 
         return switch (check.verdict()) {
             case OK -> {
-                ConfigUiSession session = sessions.issue(clientIp, Instant.now());
+                ConfigUiSession session = sessions.issue(clientIp, clock.get());
                 log.info("配置界面登录成功, 来源: {}", clientIp);
                 yield LoginResult.success(session);
             }
