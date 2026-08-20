@@ -1,0 +1,95 @@
+{
+  "提交号": "e15d193",
+  "基线条数": 552,
+  "验尺": {
+    "样本红": [
+      "BreakRunRulerControlTest.gammaRedOnPurpose"
+    ],
+    "全量条数": 556,
+    "全量红数": 1,
+    "全量红": [
+      "BreakRunRulerControlTest.gammaRedOnPurpose"
+    ],
+    "分类器": "BreakRunRulerControlTest",
+    "单跑管道": {
+      "真类名实跑条数": 4,
+      "展示名": "跑不起来（编译失败或 -Dtest=验尺用的样本 没匹配到任何类）"
+    }
+  },
+  "基线红": [],
+  "已知不稳": {},
+  "本批类": [
+    "NapCatRouteWitnessTest",
+    "NapCatResumeDebounceTest",
+    "NapCatCredentialServiceTest",
+    "NapCatBootstrapControllerTest",
+    "ConfigUiAuthServiceTest"
+  ],
+  "本批新增判据数": 26,
+  "变体总数": 23,
+  "本跑变体数": 2,
+  "跑完": "2026-08-20 14:20:09 +0800",
+  "变体": [
+    {
+      "key": "V",
+      "what": "撞闸与换取失败报同一句话",
+      "path": "starbot-core/src/main/java/com/starlwr/bot/core/config/ui/napcat/NapCatBootstrapController.java",
+      "expects": "throttledIsReportedSeparatelyFromMintFailure 应红：两支的下一步动作相反（一个是等，一个是去改配置），文案一相等就等于没分开报",
+      "started": "2026-08-20 14:17:27 +0800",
+      "finished": "2026-08-20 14:18:48 +0800",
+      "compiled": true,
+      "reds": [
+        {
+          "判据": "NapCatBootstrapControllerTest.mintFailureTellsTheUserToCheckTheConfiguration",
+          "展示名": "NapCat 引导页的回复文案.mintFailureTellsTheUserToCheckTheConfiguration",
+          "外层类": "NapCatBootstrapControllerTest",
+          "本批": true,
+          "本批新增": true,
+          "已知不稳": false,
+          "耗时秒": "0.021",
+          "报的": "expected: <true> but was: <false>",
+          "类型": "org.opentest4j.AssertionFailedError"
+        },
+        {
+          "判据": "NapCatBootstrapControllerTest.throttledIsReportedSeparatelyFromMintFailure",
+          "展示名": "撞闸这一支.throttledIsReportedSeparatelyFromMintFailure",
+          "外层类": "NapCatBootstrapControllerTest",
+          "本批": true,
+          "本批新增": true,
+          "已知不稳": false,
+          "耗时秒": "0.001",
+          "报的": "撞闸与换取失败必须是两句不同的话 ==> expected: not equal but was: <换取凭据过于频繁，请稍等一会儿再试（额度约每 75 秒回一次）。若一直换不出来，多半是 NapCat 的 token 或二次验证密钥配得不对>",
+          "类型": "org.opentest4j.AssertionFailedError"
+        }
+      ],
+      "外来红": [],
+      "total": 552,
+      "tail": ""
+    },
+    {
+      "key": "W",
+      "what": "换取失败只说失败，不说去哪儿看",
+      "path": "starbot-core/src/main/java/com/starlwr/bot/core/config/ui/napcat/NapCatBootstrapController.java",
+      "expects": "mintFailureTellsTheUserToCheckTheConfiguration 应红：只报「失败了」不指路，使用者不知道下一步该动哪里",
+      "started": "2026-08-20 14:18:48 +0800",
+      "finished": "2026-08-20 14:20:09 +0800",
+      "compiled": true,
+      "reds": [
+        {
+          "判据": "NapCatBootstrapControllerTest.mintFailureTellsTheUserToCheckTheConfiguration",
+          "展示名": "NapCat 引导页的回复文案.mintFailureTellsTheUserToCheckTheConfiguration",
+          "外层类": "NapCatBootstrapControllerTest",
+          "本批": true,
+          "本批新增": true,
+          "已知不稳": false,
+          "耗时秒": "0.02",
+          "报的": "expected: <true> but was: <false>",
+          "类型": "org.opentest4j.AssertionFailedError"
+        }
+      ],
+      "外来红": [],
+      "total": 552,
+      "tail": ""
+    }
+  ]
+}

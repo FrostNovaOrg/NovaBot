@@ -164,6 +164,8 @@ def main() -> None:
     out.append(f"- 编译失败的：**{len(broken)}** 个 {broken or '（无）'}")
     fresh = sorted({x["判据"] for r in results for x in r["reds"] if x.get("本批新增")})
     # 老 JSON 没记口径，退回它当时的值；措辞也照旧，好让重渲染逐字节可比
+    # 附录路径先算出来：§五 判「有漏」时要知道本件带没带补跑读数
+    extra = raw.with_name(raw.stem + ".附录.md")
     n_new = data.get("本批新增判据数", 23)
     n_cls = "三" if "本批类" not in data else f" {len(data['本批类'])} "
     out.append(f"- 这{n_cls}个类里被红过的判据：**{len(covered)}** 条")
@@ -178,8 +180,12 @@ def main() -> None:
                    f"所以「新增判据被红过几条」这一格**不构成覆盖率结论**——"
                    f"没被红到的多半是这次压根没跑它的那个变体。整跑的覆盖率见整跑的案卷。\n")
     else:
+        # 有漏而本件带附录时，指一下 —— 附录里多半就是补跑的读数。
+        # 但**不许**因为附录存在就把「有漏」改写成「全数」：这一跑漏了就是漏了。
+        gap = "" if len(fresh) == n_new else ("　🔴 有漏（补跑读数见附录）" if extra.exists()
+                                              else "　🔴 有漏")
         out.append(f"- 其中**本批新增的 {n_new} 条**：被红过 **{len(fresh)}** 条"
-                   f"{'（全数）' if len(fresh) == n_new else '　🔴 有漏'}\n")
+                   f"{'（全数）' if len(fresh) == n_new else gap}\n")
     if data.get("分类订正"):
         out.append(f"> **分类订正**：{data['分类订正']}\n")
     out.append("被红过的判据逐条（← 后面是把它弄红的变体）：\n")
@@ -191,7 +197,7 @@ def main() -> None:
 
     # 案卷是重渲染出来的，手写段落写进正文会被下一次渲染抹掉。
     # 凡是不出自这一跑 JSON 的读数（比如扫描器阳性对照），放同名 .附录.md，由这里挂进来。
-    extra = raw.with_name(raw.stem + ".附录.md")
+
     # 没有附录就什么都不加：已交付的老案卷重渲染后必须逐字节可比，
     # 这是「改渲染脚本没改动历史读数」的对照项，一行提示也不许加。
     if extra.exists():
