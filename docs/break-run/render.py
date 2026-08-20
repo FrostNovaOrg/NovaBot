@@ -47,11 +47,29 @@ HEADER = """# 破坏跑案卷：{commit}
 | 当时全量 | {ruler_total} |
 | 结论 | {ruler_verdict} |
 
-同一份 XML 交给上一轮那把正则尺（`<testcase[^>]*name="([^"]+)"[^>]*>(.*?)</testcase>`
+{ruler_extra}"""
+
+LEGACY_RULER = """同一份 XML 交给上一轮那把正则尺（`<testcase[^>]*name="([^"]+)"[^>]*>(.*?)</testcase>`
 配 `re.S`），它报的是 `com.starlwr.bot.core.BreakRunRulerControlTest` —— **两处都错**：
 贪婪的 `[^>]*` 越过 `name="alphaGreen"` 抓到了 `classname="` 尾巴上的那个 `name="`，
 而 `re.S` 让 `(.*?)` 从第一个自闭合的绿判据一路吞到第三条的 `</testcase>`。
 **红的条数与名字全不可信，输出却看着完全正常。**
+
+"""
+
+# 尺子除了「数对不对」还得自证三件事。逐项从 JSON 读，不在文里写死结论。
+STRUCT_RULER = """尺子另外三项自证（读数取自 `{commit}.json` 的 `验尺` 段）：
+
+| 自证的是什么 | 读数 | 结论 |
+|---|---|---|
+| 分类器取的是真类名，不被 `@DisplayName` 带偏 | 报 `{classifier}` | {v_cls} |
+| 单跑管道跑得起来（真类名） | 实跑 {pipe_n} 条 | {v_pipe} |
+| 单跑管道分得清「断了」与「不红了」（展示名） | {pipe_display} | {v_disp} |
+
+> 第三行是**失败闭合**那一条：`-Dtest=` 拿展示名去跑会匹配到 0 个类，
+> 而 0 条判据**不算「全绿」**——不这么判，管道一断就会伪装成「都好着呢」。
+>
+> 夹具的 `@DisplayName` 是**故意**取得和类名不一样的，否则这两行自证等于没做。
 
 """
 
@@ -62,7 +80,21 @@ def main() -> None:
     commit = data["提交号"]
     ruler = data["验尺"]
 
+    if "分类器" in ruler:
+        ruler_extra = STRUCT_RULER.format(
+            commit=commit,
+            classifier=f"`{ruler['分类器']}`",
+            v_cls="✅ 没被带偏" if ruler["分类器"] == CONTROL.split(".")[0] else "❌ 串行了",
+            pipe_n=ruler["单跑管道"]["真类名实跑条数"],
+            v_pipe="✅ 跑得起来" if ruler["单跑管道"]["真类名实跑条数"] else "❌ 跑不起来",
+            pipe_display=ruler["单跑管道"]["展示名"],
+            v_disp="✅ 认出「断了」" if "跑不起来" in ruler["单跑管道"]["展示名"] else "❌ 当成了全绿",
+        )
+    else:
+        ruler_extra = LEGACY_RULER
+
     out = [HEADER.format(
+        ruler_extra=ruler_extra,
         commit=commit,
         base_total=data["基线条数"],
         finished=data["跑完"],
@@ -131,9 +163,12 @@ def main() -> None:
     out.append(f"- 没能让任何判据变红的：**{len(silent)}** 个 {silent or '（无）'}")
     out.append(f"- 编译失败的：**{len(broken)}** 个 {broken or '（无）'}")
     fresh = sorted({x["判据"] for r in results for x in r["reds"] if x.get("本批新增")})
-    out.append(f"- 这三个类里被红过的判据：**{len(covered)}** 条")
-    out.append(f"- 其中**本批新增的 23 条**：被红过 **{len(fresh)}** 条"
-               f"{'（全数）' if len(fresh) == 23 else '　🔴 有漏'}\n")
+    # 老 JSON 没记口径，退回它当时的值；措辞也照旧，好让重渲染逐字节可比
+    n_new = data.get("本批新增判据数", 23)
+    n_cls = "三" if "本批类" not in data else str(len(data["本批类"]))
+    out.append(f"- 这{n_cls}个类里被红过的判据：**{len(covered)}** 条")
+    out.append(f"- 其中**本批新增的 {n_new} 条**：被红过 **{len(fresh)}** 条"
+               f"{'（全数）' if len(fresh) == n_new else '　🔴 有漏'}\n")
     if data.get("分类订正"):
         out.append(f"> **分类订正**：{data['分类订正']}\n")
     out.append("被红过的判据逐条（← 后面是把它弄红的变体）：\n")
@@ -142,6 +177,14 @@ def main() -> None:
         tag = "" if name in fresh else "　（既有判据）"
         out.append(f"- `{name}` ← {'、'.join(by)}{tag}")
     out.append("")
+
+    # 案卷是重渲染出来的，手写段落写进正文会被下一次渲染抹掉。
+    # 凡是不出自这一跑 JSON 的读数（比如扫描器阳性对照），放同名 .附录.md，由这里挂进来。
+    extra = raw.with_name(raw.stem + ".附录.md")
+    # 没有附录就什么都不加：已交付的老案卷重渲染后必须逐字节可比，
+    # 这是「改渲染脚本没改动历史读数」的对照项，一行提示也不许加。
+    if extra.exists():
+        out.append(extra.read_text(encoding="utf-8").rstrip() + "\n")
 
     target = raw.with_suffix(".md")
     target.write_text("\n".join(out), encoding="utf-8")

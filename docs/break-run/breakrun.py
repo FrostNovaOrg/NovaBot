@@ -261,7 +261,10 @@ VARIANTS: list[Variant] = [
         CREDENTIAL,
         "    private static final int MINT_BURST = 4;",
         "    private static final int MINT_BURST = 3;",
-        "四条钉着桶容量的判据应全红：正常上界没了余量、撞闸点前移一位",
+        # 🔴 头一跑（733ff4e）这句是错的：只红了 2 条。另两条的排空循环把 issue()
+        #    的结果吞了，容量掉到 3 时第 4 次静默被拦、下游断言照样成立 ——
+        #    它们只挡得住容量变大。循环改成接住结果之后这句才成立。
+        "四条钉着桶容量的判据应全红：正常上界没了余量、撞闸点前移一位、两处排空循环第 4 次就被拦",
     ),
     Variant(
         "T", "登录校验的时钟换成会走的（#168 补法指定的试法）",
@@ -719,6 +722,8 @@ def main() -> None:
 
     out = {"提交号": head, "基线条数": base_total, "验尺": ruler,
            "基线红": baseline, "已知不稳": UNSTABLE,
+           # 🔴 口径随批次走，不许让渲染脚本再把这两个数写死在文里
+           "本批类": list(OWN_CLASSES), "本批新增判据数": len(NEW_JUDGMENTS),
            "跑完": stamp(), "变体": results}
     raw = Path(__file__).with_name(f"{head}.json")
     raw.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
