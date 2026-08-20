@@ -281,11 +281,14 @@ VARIANTS: list[Variant] = [
         "文案判据应红：等多久没了数，使用者不知道该等多久才算等够",
     ),
     Variant(
+        # 🔴 锚点跟着标定走：本批把 MINT_BURST 3→4，这一行原先还写着 3，
+        #    于是整跑到最后一个变体才停。**钉着某个字面量的变体，那个字面量一改就得一起改。**
+        #    （现在开跑前会先验所有锚点，不会再让它跑满几十分钟才撞上。）
         "R", "速率闸的额度收到只剩一次",
         CREDENTIAL,
-        "    private static final int MINT_BURST = 3;",
+        "    private static final int MINT_BURST = 4;",
         "    private static final int MINT_BURST = 1;",
-        "3 不是拍的：收到 1 会打到正常用法",
+        "4 不是拍的：收到 1 会打到正常用法",
     ),
 ]
 
@@ -666,6 +669,8 @@ def owner(method: str) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("keys", nargs="*", help="只跑这几个变体，缺省全跑")
+    parser.add_argument("--check-anchors", action="store_true",
+                        help="只做落点先验就退出（改过被钉的字面量之后先跑这个，一秒钟）")
     parser.add_argument("--ruler-only", action="store_true")
     parser.add_argument("--reclassify", metavar="JSON",
                         help="不重跑，只把一份已有记录的本批/外来标签重贴一遍")
@@ -675,9 +680,31 @@ def main() -> None:
         reclassify(Path(args.reclassify))
         return
 
-    if not os.environ.get("JAVA_HOME"):
+    # 落点先验排在「工作区干净」之前：它不动树也不跑 java，
+    # 而改完被钉的字面量之后正是要立刻验一次的时候 —— 那会儿树本来就是脏的。
+    if not args.check_anchors and not os.environ.get("JAVA_HOME"):
         print("⚠️  JAVA_HOME 没设。build.sh 只查 PATH 里的 java >= 17，"
               "本机默认是 JDK 26，Lombok 会静默失效并伪装成一串编译错误。", file=sys.stderr)
+
+    chosen = [v for v in VARIANTS if not args.keys or v.key in args.keys]
+
+    # 🔴 开跑第一步就把所有落点验一遍。锚点失效是**静态**查得出来的事，
+    #    而验尺、基线各要几分钟，每个变体又要一分多钟 ——
+    #    让它跑满几十分钟才撞上，等于拿实跑时间去做一次 grep。
+    #    （真撞上过：本批把 MINT_BURST 3→4，变体 R 的锚点还写着 3，
+    #      整跑到最后一个变体才停，前面 20 个的读数一起没了。）
+    stale = []
+    for v in chosen:
+        hits = (ROOT / v.path).read_text(encoding="utf-8").count(v.old)
+        if hits != 1:
+            stale.append(f"  变体 {v.key}（{v.what}）：{v.path} 命中 {hits} 次，应当恰好 1 次\n"
+                         f"    锚点：{v.old.strip()[:90]}")
+    if stale:
+        raise SystemExit("以下变体的落点对不上当前的树，先修锚点再跑：\n" + "\n".join(stale) +
+                         "\n\n改过被钉的字面量之后，钉着它的变体要一起改。")
+    print(f"✅ 先验落点：{len(chosen)} 个变体的锚点都在树上恰好命中 1 次")
+    if args.check_anchors:
+        return
 
     head = ensure_clean()
     print(f"破坏跑，被测版本 {head}")
@@ -700,12 +727,32 @@ def main() -> None:
     if args.ruler_only:
         return
 
-    chosen = [v for v in VARIANTS if not args.keys or v.key in args.keys]
     results = []
+    raw = Path(__file__).with_name(f"{head}.json")
+
+    def dump(done: bool) -> None:
+        """每跑完一个变体就落一次盘。
+
+        🔴 读数是**跑出来的**，丢了就得重跑。原先只在最后写一次，
+        中途任何一次硬停都会把前面几十分钟的读数一起带走（真发生过）。
+        `跑完` 为空表示这份还没跑完，渲染与复核都该当半份看。
+        """
+        raw.write_text(json.dumps(
+            {"提交号": head, "基线条数": base_total, "验尺": ruler,
+             "基线红": baseline, "已知不稳": UNSTABLE,
+             # 口径随批次走，不许让渲染脚本再把这两个数写死在文里
+             "本批类": list(OWN_CLASSES), "本批新增判据数": len(NEW_JUDGMENTS),
+             # 挑着跑的时候覆盖率不由这一跑说了算 —— 记下跑了几个 / 一共几个，
+             # 好让案卷别把「这次没跑到」写成「有漏」
+             "变体总数": len(VARIANTS), "本跑变体数": len(chosen),
+             "跑完": stamp() if done else "", "变体": results},
+            ensure_ascii=False, indent=2), encoding="utf-8")
+
     for v in chosen:
         print(f"==> 变体 {v.key}：{v.what}")
         r = run_variant(v)
         results.append(r)
+        dump(False)
         if not r["compiled"]:
             print("    ❌ 编译失败 —— 这不是「一条都没红」，是变体本身没成立")
             continue
@@ -720,16 +767,7 @@ def main() -> None:
             print(f"    ⚠️ 本批之外还红了 {a['判据']}（{a['报的']}）；"
                   f"单跑复核：{'仍红' if still else '变绿'} {still}")
 
-    out = {"提交号": head, "基线条数": base_total, "验尺": ruler,
-           "基线红": baseline, "已知不稳": UNSTABLE,
-           # 🔴 口径随批次走，不许让渲染脚本再把这两个数写死在文里
-           "本批类": list(OWN_CLASSES), "本批新增判据数": len(NEW_JUDGMENTS),
-           # 🔴 挑着跑的时候，覆盖率不由这一跑说了算 —— 记下跑了几个 / 一共几个，
-           #    好让案卷别把「这次没跑到」写成「有漏」
-           "变体总数": len(VARIANTS), "本跑变体数": len(chosen),
-           "跑完": stamp(), "变体": results}
-    raw = Path(__file__).with_name(f"{head}.json")
-    raw.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+    dump(True)   # 收尾这一次才盖上「跑完」的时刻
     print(f"\n原始记录：{raw.relative_to(ROOT)}")
 
     silent = [r["key"] for r in results if r["compiled"] and not r["reds"]]
