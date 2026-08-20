@@ -724,6 +724,9 @@ def main() -> None:
            "基线红": baseline, "已知不稳": UNSTABLE,
            # 🔴 口径随批次走，不许让渲染脚本再把这两个数写死在文里
            "本批类": list(OWN_CLASSES), "本批新增判据数": len(NEW_JUDGMENTS),
+           # 🔴 挑着跑的时候，覆盖率不由这一跑说了算 —— 记下跑了几个 / 一共几个，
+           #    好让案卷别把「这次没跑到」写成「有漏」
+           "变体总数": len(VARIANTS), "本跑变体数": len(chosen),
            "跑完": stamp(), "变体": results}
     raw = Path(__file__).with_name(f"{head}.json")
     raw.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")

@@ -83,7 +83,7 @@ def main() -> None:
     if "分类器" in ruler:
         ruler_extra = STRUCT_RULER.format(
             commit=commit,
-            classifier=f"`{ruler['分类器']}`",
+            classifier=ruler['分类器'],
             v_cls="✅ 没被带偏" if ruler["分类器"] == CONTROL.split(".")[0] else "❌ 串行了",
             pipe_n=ruler["单跑管道"]["真类名实跑条数"],
             v_pipe="✅ 跑得起来" if ruler["单跑管道"]["真类名实跑条数"] else "❌ 跑不起来",
@@ -165,10 +165,21 @@ def main() -> None:
     fresh = sorted({x["判据"] for r in results for x in r["reds"] if x.get("本批新增")})
     # 老 JSON 没记口径，退回它当时的值；措辞也照旧，好让重渲染逐字节可比
     n_new = data.get("本批新增判据数", 23)
-    n_cls = "三" if "本批类" not in data else str(len(data["本批类"]))
+    n_cls = "三" if "本批类" not in data else f" {len(data['本批类'])} "
     out.append(f"- 这{n_cls}个类里被红过的判据：**{len(covered)}** 条")
-    out.append(f"- 其中**本批新增的 {n_new} 条**：被红过 **{len(fresh)}** 条"
-               f"{'（全数）' if len(fresh) == n_new else '　🔴 有漏'}\n")
+
+    # 🔴 覆盖率只有整跑才判得了。挑着跑的时候「被红过的少」是因为变体没跑全，
+    #    把它写成「有漏」就是拿一个假红去吓复核的人。
+    total_v, ran_v = data.get("变体总数"), data.get("本跑变体数")
+    partial = total_v is not None and ran_v is not None and ran_v < total_v
+    if partial:
+        out.append(f"- 其中**本批新增的 {n_new} 条**：被本跑的 {ran_v} 个变体红过 **{len(fresh)}** 条")
+        out.append(f"\n> ⚠️ **本跑是挑着跑的**（{ran_v}/{total_v} 个变体），"
+                   f"所以「新增判据被红过几条」这一格**不构成覆盖率结论**——"
+                   f"没被红到的多半是这次压根没跑它的那个变体。整跑的覆盖率见整跑的案卷。\n")
+    else:
+        out.append(f"- 其中**本批新增的 {n_new} 条**：被红过 **{len(fresh)}** 条"
+                   f"{'（全数）' if len(fresh) == n_new else '　🔴 有漏'}\n")
     if data.get("分类订正"):
         out.append(f"> **分类订正**：{data['分类订正']}\n")
     out.append("被红过的判据逐条（← 后面是把它弄红的变体）：\n")
