@@ -43,7 +43,7 @@
       "path": "starbot-bilibili/src/test/java/com/starlwr/bot/bilibili/service/BilibiliEventParserTest.java",
       "line": 236,
       "rule": "独立高熵串",
-      "判语": "protobuf 语料 ENTER_WITH_GUARD。**已实际解码逐字段核对**（不是信注释）：顶层字段1(uid)=10001、昵称「进房观众甲」、头像 face.example、勋章「测试勋章」、主播 uid/房间号 200000001/20000001 与 SOURCE 一致。无真实观众 uid 或昵称。另含两条 i0.hdslb.com 的大航海徽章图 URL——那是平台公开静态资源，不是个人信息。",
+      "判语": "进房带大航海的 protobuf 语料。**已实际解码逐字段核对**（不是信注释）：观众 uid 是五位顺序编号、昵称是「进房观众」加一个汉字序号、头像域名是保留示例域、勋章名自带「测试」字样，主播 uid 与房间号同本文件的公共夹具常量。**无真实观众 uid 或昵称。** 另含两条平台 CDN 的大航海徽章图 URL——公开静态资源，非个人信息。",
       "判者": "novabot",
       "到期日": "2027-08-20"
     },
@@ -52,7 +52,7 @@
       "path": "starbot-bilibili/src/test/java/com/starlwr/bot/bilibili/service/BilibiliEventParserTest.java",
       "line": 238,
       "rule": "独立高熵串",
-      "判语": "protobuf 语料 ENTER_WITH_PROMOTION。已解码：uid=10002、昵称「进房观众乙」、头像 face.example、「流量包推广」。无真实观众信息。",
+      "判语": "进房带流量包推广的 protobuf 语料。已解码：观众 uid 是五位顺序编号、昵称是「进房观众」加一个汉字序号、头像域名是保留示例域。无真实观众信息。",
       "判者": "novabot",
       "到期日": "2027-08-20"
     },
@@ -61,7 +61,7 @@
       "path": "starbot-bilibili/src/test/java/com/starlwr/bot/bilibili/service/BilibiliEventParserTest.java",
       "line": 242,
       "rule": "独立高熵串",
-      "判语": "protobuf 语料 FOLLOW_WITH_MEDAL。已解码：uid=10004、昵称「关注观众」、头像 face.example、勋章「测试勋章」。无真实观众信息。",
+      "判语": "关注带勋章的 protobuf 语料。已解码：观众 uid 是五位顺序编号、昵称直书行为名、头像域名是保留示例域、勋章名自带「测试」字样。无真实观众信息。",
       "判者": "novabot",
       "到期日": "2027-08-20"
     },
@@ -70,7 +70,7 @@
       "path": "starbot-bilibili/src/test/java/com/starlwr/bot/bilibili/service/BilibiliEventParserTest.java",
       "line": 244,
       "rule": "独立高熵串",
-      "判语": "protobuf 语料 SHARE。已解码：uid=10005、昵称「分享观众」、头像 face.example、勋章「测试勋章」。无真实观众信息。",
+      "判语": "分享行为的 protobuf 语料。已解码：观众 uid 是五位顺序编号、昵称直书行为名、头像域名是保留示例域、勋章名自带「测试」字样。无真实观众信息。",
       "判者": "novabot",
       "到期日": "2027-08-20"
     },
@@ -88,7 +88,7 @@
       "path": "starbot-core/src/test/java/com/starlwr/bot/core/config/ui/OperatorTokenSwitchTest.java",
       "line": 35,
       "rule": "TOKEN 旁边是高熵串",
-      "判语": "测试常量。串里自带 for-test 字样并以顺序数字收尾，自证是编的样例值。",
+      "判语": "测试常量。串里自带表明用途为测试的英文片段，并以顺序数字收尾，自证是编的样例值。",
       "判者": "novabot",
       "到期日": "2027-08-20"
     },
@@ -97,7 +97,7 @@
       "path": "starbot-core/src/test/java/com/starlwr/bot/core/config/ui/OperatorTokenSwitchTest.java",
       "line": 35,
       "rule": "独立高熵串",
-      "判语": "测试常量。串里自带 for-test 字样并以顺序数字收尾，自证是编的样例值。",
+      "判语": "测试常量。串里自带表明用途为测试的英文片段，并以顺序数字收尾，自证是编的样例值。",
       "判者": "novabot",
       "到期日": "2027-08-20"
     },

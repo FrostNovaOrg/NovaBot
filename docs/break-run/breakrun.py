@@ -253,6 +253,28 @@ VARIANTS: list[Variant] = [
         for (String src : scripts) {""",
         "正常只两跳",
     ),
+    # ── WO-010 本批（2026-08-20）──────────────────────────────
+    Variant(
+        "S", "速率闸退回改标定之前的 3（余量归零）",
+        CREDENTIAL,
+        "    private static final int MINT_BURST = 4;",
+        "    private static final int MINT_BURST = 3;",
+        "四条钉着桶容量的判据应全红：正常上界没了余量、撞闸点前移一位",
+    ),
+    Variant(
+        "T", "登录校验的时钟换成会走的（#168 补法指定的试法）",
+        AUTH_TEST,
+        "                now::get);",
+        "                () -> now.getAndUpdate(t -> t.plusSeconds(2)));",
+        "failedChecksSpendTheGlobalBudget 应红：桶在循环里回补，读数不再是它声称要量的东西",
+    ),
+    Variant(
+        "U", "撞闸文案不再写回满速率",
+        BOOTSTRAP,
+        '                result.put("message", "换取凭据过于频繁，请稍等一会儿再试（额度约每 75 秒回一次）。"',
+        '                result.put("message", "换取凭据过于频繁，请稍等一会儿再试。"',
+        "文案判据应红：等多久没了数，使用者不知道该等多久才算等够",
+    ),
     Variant(
         "R", "速率闸的额度收到只剩一次",
         CREDENTIAL,
@@ -320,7 +342,8 @@ class BreakRunRulerControlTest {
 #    判据用了 @DisplayName，于是 XML 里 classname="挂在凭据签发上" —— 是展示名，
 #    不是类名。第一版拿它去比，18 个变体全被判成「本批之外」，
 #    汇总打出「本批被红过的判据 0 条」。这次是数字荒唐才露的馅。
-OWN_CLASSES = ("NapCatRouteWitnessTest", "NapCatResumeDebounceTest", "NapCatCredentialServiceTest")
+OWN_CLASSES = ("NapCatRouteWitnessTest", "NapCatResumeDebounceTest", "NapCatCredentialServiceTest",
+               "NapCatBootstrapControllerTest", "ConfigUiAuthServiceTest")
 
 # 本批新增的那 23 条判据（见证 12 + 续登 7 + 速率闸 4）。
 # 上面三个类里还住着一批既有判据，它们红不红是另一回事，要分开数。
@@ -339,23 +362,30 @@ NEW_JUDGMENTS = {
     # 速率闸 4
     "normalUseNeverHitsTheGate", "refusesWhenHammered",
     "theBucketRefillsSoThereIsNoLockout", "aRefusedAttemptSendsNothing",
+    # WO-010 本批新增 3（文案 2 + 时钟注入后重写的 1）
+    "throttledIsReportedSeparatelyFromMintFailure",
+    "throttledCopyPointsAtTheConfigAndStatesTheRefillRate",
+    "mintFailureTellsTheUserToCheckTheConfiguration",
 }
 
 # 🔴 已知会随机器忙闲变红的判据。**不是消音，是记账**：
 # 它每一跑报了什么都照录进 JSON，只是不拿它拦住破坏跑、也不记在任何变体头上。
 #
-# 名下这条的机理是量出来的（2026-08-18）：它先做三次口令校验（每次 600 000 轮
-# PBKDF2），再把全局桶抽干，期望恰好少三个令牌。可那三次校验是拿真实时刻去问桶的，
-# 而桶按 20 次/分钟回满 —— 也就是每 3 秒回一个。机器慢到单次校验超过 1.5 秒，
-# 桶就在循环里回上一整个令牌，判据于是变成「这台机器有多快」的函数。
-# 判据自己的注释说这一族已经被 before 那一手挡住了，但 before 挡的是**循环之后**
-# 的回满，循环之内的三次没挡住 —— 判据自洽，前提没被检查过。
-# 实测：本机空闲时它绿；24 路 CPU 占满时报 expected 17 but was 18；
-# 改用电池供电后单跑三次连红，该判据自身耗时 14.2 / 14.3 / 14.8 秒，报 was 19。
-UNSTABLE = {
-    "ConfigUiAuthServiceTest.failedChecksSpendTheGlobalBudget":
-        "机器慢到单次口令校验超过 1.5 秒就会红；机理见上方注释，已报 pm 待裁",
-}
+# 🟢 **2026-08-20（WO-010）起这份名单是空的。**
+# 名下原先只有一条 ConfigUiAuthServiceTest.failedChecksSpendTheGlobalBudget，
+# 机理是：它先做三次口令校验（每次 600 000 轮 PBKDF2），再把全局桶抽干，
+# 期望恰好少三个令牌；而那三次校验是拿**真实时刻**去问桶的，桶按 20 次/分钟回满，
+# 机器慢到单次校验超过 1.5 秒，桶就在循环里回上一整个令牌 ——
+# 判据于是成了「这台机器有多快」的函数（实测：空闲时绿；24 路 CPU 占满报 was 18；
+# 电池供电时连红三次、报 was 19）。
+#
+# WO-010 给 ConfigUiAuthService 注入了时钟，判据改用停住的时钟，
+# **病根没了，不是被消音了**——所以这条从名单里删掉而不是留着记账。
+#
+# 🔴 往这份名单里加东西之前先想清楚：不稳的判据该修的是它不稳的**成因**。
+# 加进来只应是「成因已查明、但这一轮修不了」的过渡态，且必须带机理说明。
+# 名单不为空时，工单里那句「已知不稳名单为空」就不成立。
+UNSTABLE: dict[str, str] = {}
 
 
 def unstable(name: str) -> bool:
