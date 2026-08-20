@@ -20,6 +20,9 @@ logs/
 # ---- 本机工作备忘（含本机路径，不对外）----
 docs/WORK-STATE.md
 
+# 破坏跑脚本跑过之后留下的 Python 字节码
+__pycache__/
+
 # ---- IDE ----
 .idea/
 *.iml
