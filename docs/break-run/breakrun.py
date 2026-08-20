@@ -61,6 +61,8 @@ TEST_ROOT = ROOT / MODULE / "src/test/java/com/starlwr/bot/core"
 WITNESS = f"{MODULE}/src/main/java/com/starlwr/bot/core/config/ui/napcat/NapCatRouteWitness.java"
 CREDENTIAL = f"{MODULE}/src/main/java/com/starlwr/bot/core/config/ui/napcat/NapCatCredentialService.java"
 RESUME_JS = f"{MODULE}/src/main/resources/config-ui/napcat-resume.js"
+BOOTSTRAP = f"{MODULE}/src/main/java/com/starlwr/bot/core/config/ui/napcat/NapCatBootstrapController.java"
+AUTH_TEST = f"{MODULE}/src/test/java/com/starlwr/bot/core/config/ui/auth/ConfigUiAuthServiceTest.java"
 
 
 @dataclass
