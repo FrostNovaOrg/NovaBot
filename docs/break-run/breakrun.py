@@ -280,6 +280,26 @@ VARIANTS: list[Variant] = [
         '                result.put("message", "换取凭据过于频繁，请稍等一会儿再试。"',
         "文案判据应红：等多久没了数，使用者不知道该等多久才算等够",
     ),
+    # 🔴 V/W 是整跑之后补的：那一跑（d862a36）26 条新增判据里有 2 条**从没红过**，
+    #    正是这两条文案判据。「一条从没红过的判据，就还没有人证明过它拦得住什么」——
+    #    这句话是这套跑法的开篇，补两个变体才算把它当真。
+    Variant(
+        "V", "撞闸与换取失败报同一句话",
+        BOOTSTRAP,
+        '                result.put("message", "无法替你登录 NapCat，请检查 NovaBot 侧的 NapCat 凭据配置");',
+        '                result.put("message", "换取凭据过于频繁，请稍等一会儿再试（额度约每 75 秒回一次）。"\n'
+        '                        + "若一直换不出来，多半是 NapCat 的 token 或二次验证密钥配得不对");',
+        "throttledIsReportedSeparatelyFromMintFailure 应红：两支的下一步动作相反"
+        "（一个是等，一个是去改配置），文案一相等就等于没分开报",
+    ),
+    Variant(
+        "W", "换取失败只说失败，不说去哪儿看",
+        BOOTSTRAP,
+        '                result.put("message", "无法替你登录 NapCat，请检查 NovaBot 侧的 NapCat 凭据配置");',
+        '                result.put("message", "无法替你登录 NapCat");',
+        "mintFailureTellsTheUserToCheckTheConfiguration 应红：只报「失败了」不指路，"
+        "使用者不知道下一步该动哪里",
+    ),
     Variant(
         # 🔴 锚点跟着标定走：本批把 MINT_BURST 3→4，这一行原先还写着 3，
         #    于是整跑到最后一个变体才停。**钉着某个字面量的变体，那个字面量一改就得一起改。**
