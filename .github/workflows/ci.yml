@@ -72,7 +72,7 @@ jobs:
       # 不阻断，但不能让高危悄悄溜过去：结果显式贴到 job summary。
       # 「不阻断」省下的阻塞成本，必须用可见性补回来，否则等于没扫。
       #
-      # 🔴 这一步先验尺再量事。上一版就是尺子坏了却一直绿着：
+      # 🔴 这一步先确认检查脚本本身是好的，再看它报什么。上一版就是脚本坏了却一直绿着：
       # 用 CSV 最后一列当分数，而最后一列是 Notes（空串），于是
       # 「CVSS ≥ 7」恒不成立，summary 每次都打印「✅ 未发现」。
       # **解析坏掉的表现与真的没有漏洞完全一样**，所以必须有阳性对照。
@@ -82,7 +82,7 @@ jobs:
           set -euo pipefail
           chmod +x .github/scripts/high-cvss.sh .github/scripts/no-cvssv3.sh
 
-          # ① 验尺：对照报告里有一条写死的 9.8，抓不到它就说明解析坏了。
+          # ① 先确认脚本本身能用：对照报告里有一条写死的 9.8，抓不到它就说明解析坏了。
           #    这一条**允许失败整个步骤**——尺子坏掉时给出的「未发现」比不给更危险，
           #    它不是漏洞不阻断的那个议题，它是工具本身坏了
           CONTROL=$(.github/scripts/high-cvss.sh .github/fixtures/dependency-check-control.json 7 | wc -l | tr -d ' ')

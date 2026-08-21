@@ -35,7 +35,7 @@ class MemoryLimitStartupCheckTest {
     }
 
     @Test
-    @DisplayName("抬到 920M 之后不再报——这是裁决 #8 定的新模板值")
+    @DisplayName("抬到 920M 之后不再报——这是模板给出的新值")
     void acceptsTheFixedTemplateValue() {
         assertTrue(advise(920 * M, 1024 * M, XMX, METASPACE).isEmpty());
     }
