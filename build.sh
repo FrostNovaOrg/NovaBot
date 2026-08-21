@@ -10,6 +10,7 @@
 #   ./build.sh              构建并运行测试，产物输出至 dist/build
 #   ./build.sh --skip-tests 跳过测试
 #   ./build.sh --clean      构建前先清理
+#   ./build.sh --package    构建后把 dist/build 打成 dist/NovaBot-<版本>.tar.gz
 #
 set -euo pipefail
 
@@ -18,11 +19,13 @@ cd "$ROOT"
 
 MAVEN_ARGS=(-B)
 CLEAN=""
+PACKAGE=""
 
 for arg in "$@"; do
     case "$arg" in
         --skip-tests) MAVEN_ARGS+=(-DskipTests) ;;
         --clean)      CLEAN="clean" ;;
+        --package)    PACKAGE="1" ;;
         *)            echo "未知参数: $arg" >&2; exit 1 ;;
     esac
 done
@@ -64,6 +67,59 @@ if [ "${JAVA_MAJOR}" -gt "${JAVA_VERIFIED_MAX}" ] && [ -z "${NOVABOT_ALLOW_UNTES
     echo "（PATH 也要改：本脚本查的是 PATH 上的 java，只设 JAVA_HOME 不算数）" >&2
     echo "确要在未验版本上试：NOVABOT_ALLOW_UNTESTED_JDK=1 $0" >&2
     exit 1
+fi
+
+# ── 构建来源：BUILD-INFO 与工作区闸 ─────────────────────────────────────
+# 产物里放一份 BUILD-INFO，记下它是从哪一次提交、哪一棵树构建出来的。
+# 没有这两行，拿到一个包之后就无法回答「它出自哪份源码」——只能靠回忆，
+# 而回忆答不了这个问题。tree 那一行尤其关键：它是可以拿去比对的事实。
+#
+# 默认要求工作区干净。从脏工作区构建出来的产物，其内容与任何一次提交都不对应，
+# 而**包本身看不出这一点**——它和干净构建出来的包长得一模一样。
+#
+# 确需从脏工作区构建，两个变量都要给：
+#   NOVABOT_ALLOW_DIRTY_BUILD=1 NOVABOT_DIRTY_REASON="为什么" ./build.sh
+# 只给开关不给理由会被拒绝。开了覆盖之后，dirty=true 与理由照写进 BUILD-INFO：
+# 一道被关掉的闸，产物上必须看得出来它是关着的——否则「关掉」和「一切正常」
+# 长得一样，那这道闸等于不存在。
+#
+# 未跟踪的文件同样算脏：用 status --porcelain -uall，不是 diff --quiet。
+# diff --quiet 看不见未跟踪文件，而未跟踪文件照样会被打进产物。
+if ! git -C "$ROOT" rev-parse --git-dir > /dev/null 2>&1; then
+    echo "这里不是 git 仓库，无法记录构建来源。" >&2
+    echo "确要继续：NOVABOT_ALLOW_DIRTY_BUILD=1 NOVABOT_DIRTY_REASON=\"...\" $0" >&2
+    [ -n "${NOVABOT_ALLOW_DIRTY_BUILD:-}" ] && [ -n "${NOVABOT_DIRTY_REASON:-}" ] || exit 1
+    BUILD_COMMIT="unknown"; BUILD_TREE="unknown"; IS_DIRTY="true"
+else
+    BUILD_COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
+    BUILD_TREE="$(git -C "$ROOT" rev-parse "HEAD^{tree}")"
+    if [ -n "$(git -C "$ROOT" status --porcelain -uall)" ]; then
+        IS_DIRTY="true"
+    else
+        IS_DIRTY="false"
+    fi
+fi
+
+DIRTY_REASON="${NOVABOT_DIRTY_REASON:-}"
+
+if [ "$IS_DIRTY" = "true" ]; then
+    if [ -z "${NOVABOT_ALLOW_DIRTY_BUILD:-}" ]; then
+        echo "工作区有未提交的改动，已停止构建，未产出任何文件。" >&2
+        echo "" >&2
+        git -C "$ROOT" status --porcelain -uall >&2
+        echo "" >&2
+        echo "提交或清理后重试；确要照此构建：" >&2
+        echo "  NOVABOT_ALLOW_DIRTY_BUILD=1 NOVABOT_DIRTY_REASON=\"为什么\" $0 $*" >&2
+        exit 1
+    fi
+    if [ -z "$DIRTY_REASON" ]; then
+        echo "已开启 NOVABOT_ALLOW_DIRTY_BUILD，但没有给 NOVABOT_DIRTY_REASON。" >&2
+        echo "理由会写进产物的 BUILD-INFO，用来说明这个包为什么不对应任何一次提交。" >&2
+        echo "不写理由就不产出。" >&2
+        exit 1
+    fi
+    echo "注意：正从脏工作区构建，BUILD-INFO 将记 dirty=true"
+    echo "      理由：$DIRTY_REASON"
 fi
 
 echo "==> [1/4] 安装构建插件 starbot-plugin-processor"
@@ -116,6 +172,31 @@ rm -f "$OUT"/plugins-lib/starbot-core-*.jar
 # 不吞错误：模板拷贝失败时产物里会没有 application.yml，
 # 而那要到运行时才暴露成一句莫名其妙的启动失败
 cp -R dist/templates/. "$OUT/"
+
+# BUILD-INFO 只进产物，不进仓库
+{
+    echo "commit=$BUILD_COMMIT"
+    echo "tree=$BUILD_TREE"
+    echo "dirty=$IS_DIRTY"
+    echo "dirty_reason=$DIRTY_REASON"
+    echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+} > "$OUT/BUILD-INFO"
+
+if [ -n "$PACKAGE" ]; then
+    VERSION="$(mvn -B -q -DforceStdout help:evaluate -Dexpression=project.version 2>/dev/null | tail -1)"
+    if [ -z "$VERSION" ]; then
+        echo "取不到版本号，未打包。" >&2
+        exit 1
+    fi
+    TARBALL="$ROOT/dist/NovaBot-${VERSION}.tar.gz"
+    # COPYFILE_DISABLE=1：macOS 的 tar 默认会为带扩展属性的文件另塞一个 ._ 边车条目，
+    # 而 tar tzvf 不显示它——列一遍看不出来，它却真的在包里，跟着一起发出去。
+    COPYFILE_DISABLE=1 tar -czf "$TARBALL" -C "$OUT" .
+    echo
+    echo "已打包：$TARBALL"
+    echo "  sha256=$(shasum -a 256 "$TARBALL" | awk '{print $1}')"
+    echo "  条目数=$(python3 -c "import tarfile,sys;print(sum(1 for m in tarfile.open(sys.argv[1]).getmembers() if m.isfile()))" "$TARBALL")"
+fi
 
 echo
 echo "构建完成，产物位于 dist/build"
