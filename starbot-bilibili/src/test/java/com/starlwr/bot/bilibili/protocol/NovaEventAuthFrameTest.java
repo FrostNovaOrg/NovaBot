@@ -10,6 +10,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 
 import java.nio.file.Path;
@@ -199,5 +200,59 @@ class NovaEventAuthFrameTest {
         } finally {
             open.shutdown();
         }
+    }
+
+    /**
+     * 逾期未认证这一路，此前只有实现没有判据
+     * <p>
+     * 使用说明与本机跑真源那两份文档都在教使用者依赖这条行为：
+     * <b>10 秒内不出示口令就被关，而且那一路不发任何解释帧</b>。
+     * 「不发解释帧」是有意的——没人出示过任何东西，发 {@code auth_failed} 反而是在
+     * 回答一个没被问过的问题；客户端要靠这一点把「我压根没发」和「我发错了」分开。
+     * <p>
+     * 🔴 <b>不等真的 10 秒</b>：那会让整套测试白白慢十秒。这里改为钉住三件可验的事——
+     * 常量确实是 10 秒、连上时超时确实被挂上了（不是有个常量摆着没人用）、
+     * 到点执行的那段确实按文档说的关。三件缺一，文档那句就落空。
+     */
+    @Test
+    @DisplayName("🔴 逾期未认证：POLICY_VIOLATION 关闭，且一个解释帧都不发")
+    void closesUnauthenticatedWithoutAnyExplainingFrame() throws Exception {
+        NovaEventEndpointTest.FakeSession session = connect("s-timeout");
+
+        assertEquals(10_000L, NovaEventEndpoint.AUTH_TIMEOUT_MS,
+                "文档写的是 10 秒。改了这个数就要同步改文档，否则文档开始撒谎");
+
+        Object client = clientOf(session);
+        assertNotNull(readField(client, "authDeadline"),
+                "要求口令时连上就该挂上超时。挂不上的话前一条断言只是个没人用的常量");
+
+        closeUnauthenticated(client);
+
+        assertNull(session.next(),
+                "逾期这一路不发任何帧：没人出示过任何东西，发 auth_failed 是在答没被问的问题");
+        assertNotNull(session.closedWith, "应当被关掉");
+        assertEquals(CloseStatus.POLICY_VIOLATION.getCode(), session.closedWith.getCode(),
+                "关闭码要与「口令错」那一路分得开");
+        assertEquals("未在时限内认证", session.closedWith.getReason());
+    }
+
+    private Object clientOf(NovaEventEndpointTest.FakeSession session) throws Exception {
+        java.lang.reflect.Field field = NovaEventEndpoint.class.getDeclaredField("clients");
+        field.setAccessible(true);
+        Object client = ((java.util.Map<?, ?>) field.get(endpoint)).get(session.getId());
+        assertNotNull(client, "连上之后应当登记在册");
+        return client;
+    }
+
+    private Object readField(Object target, String name) throws Exception {
+        java.lang.reflect.Field field = target.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        return field.get(target);
+    }
+
+    private void closeUnauthenticated(Object client) throws Exception {
+        java.lang.reflect.Method method = client.getClass().getDeclaredMethod("closeUnauthenticated");
+        method.setAccessible(true);
+        method.invoke(client);
     }
 }
