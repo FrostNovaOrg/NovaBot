@@ -40,6 +40,32 @@ if [ "${JAVA_MAJOR:-0}" -lt 17 ]; then
     exit 1
 fi
 
+# 🔴 上界。这里原先只有下界，于是 JDK 26 一路放行 —— 而在它上面 Lombok 会静默失效，
+#    报出来的是一串**指向别处的普通编译错误**，一个字都不提 Lombok：
+#
+#      AlertService.java:[91,13] cannot find symbol   symbol: variable log
+#      AlertService.java:[89,34] cannot find symbol   symbol: method getAlert()
+#
+#    （2026-08-21 在 JDK 26.0.2 上实测的原文。）照着这种错去查，会一路查到
+#    「谁把 @Slf4j 删了」上面去，而那边根本没问题。**报错指向哪里，和毛病在哪里，是两件事。**
+#
+# 🔴 这个上界不是「Lombok 在哪一版坏掉」——那个数我没量过，不写没量过的数。
+#    它是**「这个工程验过哪一版」**：pom 里 java.version=17，实测 17 通过、26 失败，
+#    17 与 26 之间一版都没试过。所以默认只放行验过的那一版。
+#    要在别的版本上试，显式打开：NOVABOT_ALLOW_UNTESTED_JDK=1 ./build.sh
+#    试通了就把 JAVA_VERIFIED_MAX 抬上去，并把新读数补进这段注释 —— 抬数之前先跑一次整测。
+JAVA_VERIFIED_MAX=17
+if [ "${JAVA_MAJOR}" -gt "${JAVA_VERIFIED_MAX}" ] && [ -z "${NOVABOT_ALLOW_UNTESTED_JDK:-}" ]; then
+    echo "当前 Java ${JAVA_MAJOR}，而本工程只在 Java ${JAVA_VERIFIED_MAX} 上验过（pom 的 java.version 也是它）。" >&2
+    echo "高版本上 Lombok 会静默失效，报错会伪装成一串「cannot find symbol: variable log」，" >&2
+    echo "指向的位置与真实原因无关 —— 那种错查起来很贵，所以这里直接拦住。" >&2
+    echo "" >&2
+    echo "改用 17：export JAVA_HOME=<jdk17 路径> && export PATH=\"\$JAVA_HOME/bin:\$PATH\"" >&2
+    echo "（PATH 也要改：本脚本查的是 PATH 上的 java，只设 JAVA_HOME 不算数）" >&2
+    echo "确要在未验版本上试：NOVABOT_ALLOW_UNTESTED_JDK=1 $0" >&2
+    exit 1
+fi
+
 echo "==> [1/4] 安装构建插件 starbot-plugin-processor"
 mvn "${MAVEN_ARGS[@]}" -f build-tools/starbot-plugin-processor/pom.xml ${CLEAN} install
 
