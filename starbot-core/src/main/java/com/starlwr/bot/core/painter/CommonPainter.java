@@ -816,20 +816,22 @@ public class CommonPainter {
 
     /**
      * 绘制版权信息
-     * @param extraMiddle 附加版权信息，会输出到默认两行版权信息之间
-     * @param extraBottom 附加版权信息，会输出到默认两行版权信息之后
+     * @param extraMiddle 附加版权信息，会输出到默认版权信息之后
+     * @param extraBottom 附加版权信息，输出在 {@code extraMiddle} 之后
+     *                    （原先默认版权是两行、这两个参数一个夹在中间一个排在后面；
+     *                    现在默认只剩一行，两者的落点只差先后，不再分居两侧）
      * @param marginRight 右边距
      * @return 当前绘图器实例
      */
     public CommonPainter drawCopyright(List<List<TextWithStyle>> extraMiddle, List<List<TextWithStyle>> extraBottom, int marginRight) {
-        // 底部默认版权信息。上游项目的致谢见 README 与 banner
+        // 底部默认版权信息。上游项目的致谢见 README 与 banner。
+        // 这里只写产品名，不写仓库地址：图会发到聊天里，而地址在仓库搬家后就指向不存在的地方，
+        // 收到图的人无从知道它已经失效。要写地址就得有人保证它一直有效，这里保证不了。
         drawTextRight("Running on NovaBot v" + buildProperties.getVersion(), Color.LIGHT_GRAY, marginRight);
 
         for (List<TextWithStyle> line : extraMiddle) {
             drawTextRightWithStyle(line, marginRight);
         }
-
-        drawTextRight("https://github.com/rossinova/NovaBot", COLOR_LINK, marginRight);
 
         for (List<TextWithStyle> line : extraBottom) {
             drawTextRightWithStyle(line, marginRight);
