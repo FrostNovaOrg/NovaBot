@@ -9,6 +9,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
@@ -254,5 +255,141 @@ class NovaEventAuthFrameTest {
         java.lang.reflect.Method method = client.getClass().getDeclaredMethod("closeUnauthenticated");
         method.setAccessible(true);
         method.invoke(client);
+    }
+
+    /**
+     * 使用说明写着「{@code token} 是唯一必填项，带上 {@code v} 也可以，本端不校验它」
+     * <p>
+     * 此前所有用例都走 {@link #authFrame} 而它<b>恒带 {@code v:2}</b>——
+     * 也就是说「不带 v 也行」这半句从没被验过。
+     * 🔴 <b>它还得是「不校验」而不是「刚好也认」</b>：所以另发一帧 {@code v} 写成
+     * 完全不对的值，同样该通过。两条都过，文档那句才立得住。
+     */
+    @Test
+    @DisplayName("认证帧不带 v 照样通过；v 写错也不拦 —— 它是装饰字段")
+    void acceptsAuthFrameRegardlessOfVersionField() throws Exception {
+        NovaEventEndpointTest.FakeSession noVersion = connect("s-no-v");
+        send(noVersion, "{\"kind\":\"auth\",\"token\":\"" + tokens.issue("面板-无v") + "\"}");
+        JSONObject hello = noVersion.next();
+        assertNotNull(hello, "token 是唯一必填项，不带 v 也该通过");
+        assertEquals("hello", hello.getString("kind"));
+
+        NovaEventEndpointTest.FakeSession wrongVersion = connect("s-bad-v");
+        send(wrongVersion, "{\"kind\":\"auth\",\"v\":9999,\"token\":\"" + tokens.issue("面板-错v") + "\"}");
+        JSONObject hello2 = wrongVersion.next();
+        assertNotNull(hello2, "v 不被校验，写错也不该拦 —— 别拿它做版本协商");
+        assertEquals("hello", hello2.getString("kind"));
+    }
+
+    /**
+     * 回补窗口是 2 秒，且它在<b>认证成功那一刻</b>才挂上
+     * <p>
+     * 「迟到的 resume 会收到一份新的 hello」那条行为另有判据看着，但**2 这个数**没有：
+     * 文档同时在教「收到 hello 后 2 秒内发 resume」。窗口挂在认证之后这件事也要钉——
+     * 挂在连上那一刻的话，认证花掉的时间会从回补窗口里扣走。
+     */
+    @Test
+    @DisplayName("🔴 回补窗口是 2 秒，且认证成功后才挂上")
+    void resumeGraceIsTwoSecondsAndArmedAfterAuth() throws Exception {
+        assertEquals(2_000L, NovaEventEndpoint.RESUME_GRACE_MS,
+                "文档写的是 2 秒。改了这个数就要同步改文档");
+
+        NovaEventEndpointTest.FakeSession session = connect("s-grace");
+        Object client = clientOf(session);
+        assertNull(readField(client, "grace"),
+                "认证之前不该挂回补窗口：认证花掉的时间不该从窗口里扣走");
+
+        send(session, authFrame(tokens.issue("面板-窗口")));
+        assertEquals("hello", session.next().getString("kind"));
+        assertNotNull(readField(client, "grace"), "认证成功之后窗口才该挂上");
+    }
+
+    /**
+     * 消费过慢 → {@code SERVICE_OVERLOAD}
+     * <p>
+     * 使用说明把这条列成了三种断法之一，而此前只有实现没有判据。
+     * 要驱动它就得让下行**真的写不动**：普通夹具写进队列即返回，队列永远排不满。
+     * 这里用一个卡住不返回的会话，把出队那一侧堵死。
+     */
+    @Test
+    @Timeout(60)
+    @DisplayName("🔴 消费过慢：队列排满即 SERVICE_OVERLOAD 断开")
+    void closesSlowConsumerWithServiceOverload() throws Exception {
+        StalledSession session = new StalledSession("s-slow");
+        endpoint.afterConnectionEstablished(session);
+        send(session, authFrame(tokens.issue("面板-慢")));
+
+        // 🔴 认证完还不够：转入实时流之前，publish 只进事件流的缓冲，一条都不会进这个客户端的队列
+        //    （{@code onFrame} 要等 {@code goLive} 里 subscribe 之后才会被调到）。
+        //    发一帧 resume 让它当场转入实时流，否则这一格量的是「没订阅的人收不到」，不是背压。
+        send(session, "{\"kind\":\"resume\",\"data\":{\"fromSeq\":" + stream.snapshot().lastSeq() + "}}");
+
+        // 🔴 堵只能在转入实时流<b>之后</b>开：writeDirect 是攥着本连接的锁去写的，
+        //    开早了，hello 那一帧就把锁攥死，上面那句 resume 压根进不来——
+        //    不是用例失败，是整个构建吊住（本用例第一版就是这么吊死的）
+        session.stall();
+
+        try {
+            int capacity = stream.getCapacity() + 256;
+            for (int i = 0; i < capacity + 64 && session.closedWith == null; i++) {
+                stream.publish(slowEnvelope());
+            }
+
+            assertNotNull(session.closedWith, "排满了就该断开，而不是无限堆积");
+            assertEquals(CloseStatus.SERVICE_OVERLOAD.getCode(), session.closedWith.getCode(),
+                    "要与「认证超时」「口令错」那两种断法分得开");
+            assertEquals("客户端消费过慢", session.closedWith.getReason());
+        } finally {
+            session.release();
+        }
+    }
+
+    private static JSONObject slowEnvelope() {
+        JSONObject j = new JSONObject();
+        j.put("v", 2);
+        j.put("kind", "danmaku");
+        j.put("ts", 1786111565000L);
+        j.put("room", 10000);
+        return j;
+    }
+
+    /**
+     * 一个写下行时卡住不返回的会话：用来把出队那一侧堵死
+     */
+    private static final class StalledSession extends NovaEventEndpointTest.FakeSession {
+        private final java.util.concurrent.CountDownLatch block = new java.util.concurrent.CountDownLatch(1);
+
+        private volatile boolean stalled;
+
+        StalledSession(String id) {
+            super(id);
+        }
+
+        @Override
+        public void sendMessage(org.springframework.web.socket.WebSocketMessage<?> message) {
+            if (!stalled) {
+                super.sendMessage(message);
+                return;
+            }
+
+            try {
+                // 有界：这一格要的是「写不动」，不是「永远不返回」。
+                // 无界的闩一旦等错了地方，失败的不是用例而是整个构建
+                block.await(30, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        /**
+         * 从此刻起写不动
+         */
+        void stall() {
+            stalled = true;
+        }
+
+        void release() {
+            block.countDown();
+        }
     }
 }
