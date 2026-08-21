@@ -908,6 +908,7 @@ def main() -> None:
         return
 
     results = []
+    started = stamp()
     raw = Path(__file__).with_name(f"{head}.json")
 
     def dump(done: bool) -> None:
@@ -923,9 +924,14 @@ def main() -> None:
              # 口径随批次走，不许让渲染脚本再把这两个数写死在文里
              "本批类": list(OWN_CLASSES), "本批新增判据数": len(NEW_JUDGMENTS),
              # 挑着跑的时候覆盖率不由这一跑说了算 —— 记下跑了几个 / 一共几个，
-             # 好让案卷别把「这次没跑到」写成「有漏」
+             # 好让案卷别把「这次没跑到」写成「有漏」。
+             # 🔴 时点义：`变体总数` 是**落盘这一刻**的变体集大小，不是今天的。
+             #    活例：d862a36 记的是 21/21＝当时的整跑；后来补了 V/W，总数成了 23。
+             #    拿今天的 23 去对它的 21，会以为漏了两个 —— 案卷里那句「相对当时的变体集」
+             #    就是为这个写的。**变体集会长大，已落盘的读数不会跟着长。**
              "变体总数": len(VARIANTS), "本跑变体数": len(chosen),
-             "跑完": stamp() if done else "", "变体": results},
+             # 开跑与跑完各记一次：两者之差是耗时，也让「中途硬停过没有」看得出来
+             "开跑": started, "跑完": stamp() if done else "", "变体": results},
             ensure_ascii=False, indent=2), encoding="utf-8")
 
     for v in chosen:
