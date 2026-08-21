@@ -1,10 +1,10 @@
 /*
- * NapCat 会话失效自动续登（篮子⑥ 路线 (a) 的续登层，裁决 #138 四）
+ * NapCat 会话失效自动续登（续登层）
  *
  * 形态：外层同源包装页托住 iframe，盯着内层的路径；一旦看到它落到登录路由，
  * 就重换一把凭据写回 localStorage 并重载内层。
  *
- * 为什么要盯路径而不是盯请求（裁决 #130 五 的前置实查）：
+ * 为什么要盯路径而不是盯请求：
  * 凭据过期时 NapCat 的拦截器清 localStorage 并 reload，SPA 启动后守卫走
  * navigate("/web_login", {replace:true}) —— 那是 history.replaceState，**不发任何请求**。
  * 所以反代看不见它，只有同源的父页读得到 iframe.contentWindow.location.pathname。
