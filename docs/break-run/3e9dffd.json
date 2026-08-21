@@ -1,0 +1,120 @@
+{
+  "提交号": "3e9dffd",
+  "基线条数": 553,
+  "验尺": {
+    "样本红": [
+      "BreakRunRulerControlTest.gammaRedOnPurpose"
+    ],
+    "全量条数": 557,
+    "全量红数": 1,
+    "全量红": [
+      "BreakRunRulerControlTest.gammaRedOnPurpose"
+    ],
+    "分类器": "BreakRunRulerControlTest",
+    "单跑管道": {
+      "真类名实跑条数": 4,
+      "展示名": "跑不起来（编译失败或 -Dtest=验尺用的样本 没匹配到任何类）"
+    }
+  },
+  "基线红": [],
+  "已知不稳": {},
+  "本批类": [
+    "NapCatRouteWitnessTest",
+    "NapCatResumeDebounceTest",
+    "NapCatCredentialServiceTest",
+    "NapCatBootstrapControllerTest",
+    "ConfigUiAuthServiceTest"
+  ],
+  "本批新增判据数": 27,
+  "变体总数": 25,
+  "本跑变体数": 3,
+  "跑完": "2026-08-20 17:56:58 +0800",
+  "变体": [
+    {
+      "key": "U",
+      "what": "撞闸文案不再写回满速率",
+      "path": "starbot-core/src/main/java/com/starlwr/bot/core/config/ui/napcat/NapCatBootstrapController.java",
+      "expects": "文案判据应红：等多久没了数，使用者不知道该等多久才算等够",
+      "started": "2026-08-20 17:51:36 +0800",
+      "finished": "2026-08-20 17:53:04 +0800",
+      "compiled": true,
+      "reds": [
+        {
+          "判据": "NapCatBootstrapControllerTest.throttledCopyPointsAtTheConfigAndStatesTheRefillRate",
+          "展示名": "撞闸这一支.throttledCopyPointsAtTheConfigAndStatesTheRefillRate",
+          "外层类": "NapCatBootstrapControllerTest",
+          "本批": true,
+          "本批新增": true,
+          "已知不稳": false,
+          "耗时秒": "0.003",
+          "报的": "文案里的回满速率必须等于 MINT_WINDOW ÷ MINT_BURST 算出来的那个数：换取凭据过于频繁，请稍等一会儿再试。若一直换不出来，多半是 NapCat 的 token 或二次验证密钥配得不对 ==> expected: <true> but was: <false>",
+          "类型": "org.opentest4j.AssertionFailedError"
+        }
+      ],
+      "外来红": [],
+      "total": 553,
+      "tail": ""
+    },
+    {
+      "key": "X",
+      "what": "回满时把桶整个填满，而不是只回一个额度",
+      "path": "starbot-core/src/main/java/com/starlwr/bot/core/config/ui/napcat/NapCatCredentialService.java",
+      "expects": "theBucketRefillsLinearlyNotAllAtOnce 应红，且 theBucketRefillsSoThereIsNoLockout 应照绿：拨满一整窗时两种实现读数相同，只有拨不满一窗才分得出",
+      "started": "2026-08-20 17:53:04 +0800",
+      "finished": "2026-08-20 17:54:30 +0800",
+      "compiled": true,
+      "reds": [
+        {
+          "判据": "NapCatCredentialServiceTest.theBucketRefillsLinearlyNotAllAtOnce",
+          "展示名": "换取速率的上限.theBucketRefillsLinearlyNotAllAtOnce",
+          "外层类": "NapCatCredentialServiceTest",
+          "本批": true,
+          "本批新增": true,
+          "已知不稳": false,
+          "耗时秒": "0.005",
+          "报的": "回来的应当只有一个额度、不是一整桶 —— 放行说明这是到点重置不是线性回填 ==> expected: <THROTTLED> but was: <OK>",
+          "类型": "org.opentest4j.AssertionFailedError"
+        }
+      ],
+      "外来红": [],
+      "total": 553,
+      "tail": ""
+    },
+    {
+      "key": "Y",
+      "what": "把回满窗口拉长一倍（速率减半）",
+      "path": "starbot-core/src/main/java/com/starlwr/bot/core/config/ui/napcat/NapCatCredentialService.java",
+      "expects": "throttledCopyPointsAtTheConfigAndStatesTheRefillRate 应红（文案里那个数由常量算出，窗口一改它就不再是 75）＋ theBucketRefillsLinearlyNotAllAtOnce 应红（75 秒回不来一个）",
+      "started": "2026-08-20 17:54:30 +0800",
+      "finished": "2026-08-20 17:56:58 +0800",
+      "compiled": true,
+      "reds": [
+        {
+          "判据": "NapCatBootstrapControllerTest.throttledCopyPointsAtTheConfigAndStatesTheRefillRate",
+          "展示名": "撞闸这一支.throttledCopyPointsAtTheConfigAndStatesTheRefillRate",
+          "外层类": "NapCatBootstrapControllerTest",
+          "本批": true,
+          "本批新增": true,
+          "已知不稳": false,
+          "耗时秒": "0.002",
+          "报的": "今天的标定下回满速率是 75 秒（5 分钟 ÷ 4）：换取凭据过于频繁，请稍等一会儿再试（额度约每 150 秒回一次）。若一直换不出来，多半是 NapCat 的 token 或二次验证密钥配得不对 ==> expected: <true> but was: <false>",
+          "类型": "org.opentest4j.AssertionFailedError"
+        },
+        {
+          "判据": "NapCatCredentialServiceTest.theBucketRefillsLinearlyNotAllAtOnce",
+          "展示名": "换取速率的上限.theBucketRefillsLinearlyNotAllAtOnce",
+          "外层类": "NapCatCredentialServiceTest",
+          "本批": true,
+          "本批新增": true,
+          "已知不稳": false,
+          "耗时秒": "0.004",
+          "报的": "满 75 秒该回来一个额度 ==> expected: <OK> but was: <THROTTLED>",
+          "类型": "org.opentest4j.AssertionFailedError"
+        }
+      ],
+      "外来红": [],
+      "total": 553,
+      "tail": ""
+    }
+  ]
+}
