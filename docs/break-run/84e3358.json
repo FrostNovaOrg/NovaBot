@@ -871,5 +871,13 @@
       "tail": ""
     }
   ],
-  "分类订正": "原跑的分类器把 surefire 的 classname 属性当成了类名，而判据带 @DisplayName，于是每一条红都被贴成「本批之外」，并且触发了一轮把展示名传给 -Dtest= 的「单跑复核」——那一轮一个测试都没跑起来，结果作废已删。本次只重贴标签，未重跑，测出来的数一个没动。"
+  "分类订正": "原跑的分类器把 surefire 的 classname 属性当成了类名，而判据带 @DisplayName，于是每一条红都被贴成「本批之外」，并且触发了一轮把展示名传给 -Dtest= 的「单跑复核」——那一轮一个测试都没跑起来，结果作废已删。本次只重贴标签，未重跑，测出来的数一个没动。",
+  "本批类": [
+    "NapCatRouteWitnessTest",
+    "NapCatResumeDebounceTest",
+    "NapCatCredentialServiceTest"
+  ],
+  "本批新增判据数": 23,
+  "变体总数": 18,
+  "本跑变体数": 18
 }

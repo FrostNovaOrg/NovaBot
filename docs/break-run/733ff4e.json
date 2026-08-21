@@ -106,5 +106,15 @@
       "total": 552,
       "tail": ""
     }
-  ]
+  ],
+  "本批类": [
+    "NapCatRouteWitnessTest",
+    "NapCatResumeDebounceTest",
+    "NapCatCredentialServiceTest",
+    "NapCatBootstrapControllerTest",
+    "ConfigUiAuthServiceTest"
+  ],
+  "本批新增判据数": 26,
+  "变体总数": 21,
+  "本跑变体数": 3
 }

@@ -166,26 +166,36 @@ def main() -> None:
     # 老 JSON 没记口径，退回它当时的值；措辞也照旧，好让重渲染逐字节可比
     # 附录路径先算出来：§五 判「有漏」时要知道本件带没带补跑读数
     extra = raw.with_name(raw.stem + ".附录.md")
-    n_new = data.get("本批新增判据数", 23)
-    n_cls = "三" if "本批类" not in data else f" {len(data['本批类'])} "
-    out.append(f"- 这{n_cls}个类里被红过的判据：**{len(covered)}** 条")
-
-    # 🔴 覆盖率只有整跑才判得了。挑着跑的时候「被红过的少」是因为变体没跑全，
-    #    把它写成「有漏」就是拿一个假红去吓复核的人。
-    total_v, ran_v = data.get("变体总数"), data.get("本跑变体数")
-    partial = total_v is not None and ran_v is not None and ran_v < total_v
-    if partial:
-        out.append(f"- 其中**本批新增的 {n_new} 条**：被本跑的 {ran_v} 个变体红过 **{len(fresh)}** 条")
-        out.append(f"\n> ⚠️ **本跑是挑着跑的**（{ran_v}/{total_v} 个变体），"
-                   f"所以「新增判据被红过几条」这一格**不构成覆盖率结论**——"
-                   f"没被红到的多半是这次压根没跑它的那个变体。整跑的覆盖率见整跑的案卷。\n")
+    # 🔴 缺键一律拒出覆盖率格，不许拿默认值顶。
+    #    这里原先写的是 data.get("本批新增判据数", 23) 与 "三" —— 缺键时会拿一个**编出来的分母**
+    #    印出覆盖率，而印出来的东西和真读数长得一模一样。「缺」被读成了一个具体的数，
+    #    正是共同纪律 34 的形状。旧案卷的键已按各自那一版脚本的实际取值补齐。
+    #    🔴 拒的是**这一格**，不是整份案卷：这里原先写成 return，而它在 main() 里，
+    #    等于缺一个键就整份渲不出来 —— 那是把「这一格不可信」办成了「什么都没有」。
+    missing = [k for k in ("本批新增判据数", "本批类", "变体总数", "本跑变体数") if k not in data]
+    if missing:
+        out.append(f"> ⚠️ **本份 JSON 缺 {'、'.join(missing)}，覆盖率不予判定。**"
+                   f"缺的不是「零」，是「没量」——这一格不给数。\n")
     else:
-        # 有漏而本件带附录时，指一下 —— 附录里多半就是补跑的读数。
-        # 但**不许**因为附录存在就把「有漏」改写成「全数」：这一跑漏了就是漏了。
-        gap = "" if len(fresh) == n_new else ("　🔴 有漏（补跑读数见附录）" if extra.exists()
-                                              else "　🔴 有漏")
-        out.append(f"- 其中**本批新增的 {n_new} 条**：被红过 **{len(fresh)}** 条"
-                   f"{'（全数）' if len(fresh) == n_new else gap}\n")
+        n_new = data["本批新增判据数"]
+        n_cls = f" {len(data['本批类'])} "
+        out.append(f"- 这{n_cls}个类里被红过的判据：**{len(covered)}** 条")
+
+        # 🔴 覆盖率只有整跑才判得了。挑着跑的时候「被红过的少」是因为变体没跑全，
+        #    把它写成「有漏」就是拿一个假红去吓复核的人。
+        total_v, ran_v = data["变体总数"], data["本跑变体数"]
+        if ran_v < total_v:
+            out.append(f"- 其中**本批新增的 {n_new} 条**：被本跑的 {ran_v} 个变体红过 **{len(fresh)}** 条")
+            out.append(f"\n> ⚠️ **本跑是挑着跑的**（{ran_v}/{total_v} 个变体），"
+                       f"所以「新增判据被红过几条」这一格**不构成覆盖率结论**——"
+                       f"没被红到的多半是这次压根没跑它的那个变体。整跑的覆盖率见整跑的案卷。\n")
+        else:
+            # 有漏而本件带附录时，指一下 —— 附录里多半就是补跑的读数。
+            # 但**不许**因为附录存在就把「有漏」改写成「全数」：这一跑漏了就是漏了。
+            gap = "" if len(fresh) == n_new else ("　🔴 有漏（补跑读数见附录）" if extra.exists()
+                                                  else "　🔴 有漏")
+            out.append(f"- 其中**本批新增的 {n_new} 条**：被红过 **{len(fresh)}** 条"
+                       f"{'（全数）' if len(fresh) == n_new else gap}\n")
     if data.get("分类订正"):
         out.append(f"> **分类订正**：{data['分类订正']}\n")
     out.append("被红过的判据逐条（← 后面是把它弄红的变体）：\n")
@@ -198,7 +208,7 @@ def main() -> None:
     # 案卷是重渲染出来的，手写段落写进正文会被下一次渲染抹掉。
     # 凡是不出自这一跑 JSON 的读数（比如扫描器阳性对照），放同名 .附录.md，由这里挂进来。
 
-    # 没有附录就什么都不加：已交付的老案卷重渲染后必须逐字节可比，
+    # 没有附录就什么都不加：已交付的老案卷重渲染后必须**逐字节相同，除非有显式记录的重立基线**，
     # 这是「改渲染脚本没改动历史读数」的对照项，一行提示也不许加。
     if extra.exists():
         out.append(extra.read_text(encoding="utf-8").rstrip() + "\n")
