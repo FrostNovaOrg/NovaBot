@@ -170,7 +170,7 @@ class LiveSessionArchiveTest {
         assertEquals(455.0, session.metric("danmu_count"));
     }
 
-    // ⚠️ 夹具一律用保留段假值（裁决 #77 一 1）。
+    // ⚠️ 夹具一律用保留段假值。
     // 这里原本写的是真实主播 uid 与房间号——真实身份数据不进测试夹具，
     // 那正是 2026-08-12 那次泄漏的成因（「照真实场景写测试最省事」）
     private static final long STREAMER_UID = 10000101L;

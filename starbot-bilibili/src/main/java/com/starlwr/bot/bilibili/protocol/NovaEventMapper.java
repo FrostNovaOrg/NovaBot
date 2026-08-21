@@ -65,7 +65,7 @@ public final class NovaEventMapper {
      * <p>
      * 升号还有一个实际用处：下游在 {@code hello} 那一层就能看出源侧是 v1 还是 v2，
      * <b>把过渡期的风险拦在握手，而不是等渲染出错才发现</b>。
-     * 版本语义的正式文字由 VRDash 落在协议文本里（裁决 #23 二）。
+     * 版本语义的正式文字见协议文本。
      */
     public static final int PROTOCOL_VERSION = 2;
 

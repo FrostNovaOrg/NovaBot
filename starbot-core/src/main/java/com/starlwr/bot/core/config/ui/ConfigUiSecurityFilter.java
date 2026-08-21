@@ -191,7 +191,7 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
         ConfigUiSession session = authService.issueForOperator(clientIp);
         response.addHeader(HttpHeaders.SET_COOKIE, sessionCookie(session.getId(), request));
 
-        // 这条通道绕过了口令与二次验证，每次使用都要留痕，否则被人拿到令牌也看不出来
+        // 这条通道绕过了口令与二次验证，每次使用都要写审计记录，否则被人拿到令牌也看不出来
         log.warn("配置界面: 来自 {} 的访问以启动令牌换取了会话, 已绕过口令与二次验证", clientIp);
 
         return Optional.of(session);

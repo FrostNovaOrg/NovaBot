@@ -292,7 +292,7 @@ class StarBotMessageSenderTest {
     /**
      * 进程内直调（任务 7a）
      * <p>
-     * 验收标准来自裁决 #7：<b>测试桩模拟 6 秒以上的慢响应，文字与图片都不能丢。</b>
+     * 验收标准：<b>测试桩模拟 6 秒以上的慢响应，文字与图片都不能丢。</b>
      * <p>
      * 旧路径是核心把消息 POST 给自己的服务端口，再由自己的控制器转给下游。
      * 那一圈自环有个很难查的后果：服务端口的工作线程有限（默认 8 个），
@@ -317,7 +317,7 @@ class StarBotMessageSenderTest {
 
             Sender.LocalDelivery slow = (headers, params) -> {
                 try {
-                    // 裁决 #7 指定的验收条件：每次 6 秒以上
+                    // 验收条件：每次 6 秒以上
                     Thread.sleep(6_100);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
@@ -433,7 +433,7 @@ class StarBotMessageSenderTest {
     }
 
     /**
-     * 含图消息发送失败时剥掉图片段重发纯文字（裁决 #41 一 / #50 一）
+     * 含图消息发送失败时剥掉图片段重发纯文字
      * <p>
      * 要求原文：<b>推送文字的可达性不得依赖图片的可取性，任何模板写法下都必须成立。</b>
      * 实测（2026-08-11，NapCat）一条消息里图片下载失败会让<b>整条发送失败</b>，不是只丢图，
@@ -601,7 +601,7 @@ class StarBotMessageSenderTest {
         }
 
         @Test
-        @DisplayName("降级送达时应触发图片降级回调，供下播报告留痕")
+        @DisplayName("降级送达时应触发图片降级回调，供下播报告记录")
         void notifiesImageDegradedCallback() {
             HttpUtil http = mock(HttpUtil.class);
             when(http.postJson(anyString(), any(), any()))

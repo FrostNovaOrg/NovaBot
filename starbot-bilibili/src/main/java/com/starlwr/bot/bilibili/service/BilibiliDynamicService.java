@@ -235,7 +235,7 @@ public class BilibiliDynamicService {
      * <b>键定死之前不写去重</b>。
      *
      * <h2>为什么只记三个字段，不开整份原始报文</h2>
-     * 裁决 #96 三① 原本写的是打开 {@code dynamic-raw-message-log}。那个开关打的是
+     * 早先的写法是打开 {@code dynamic-raw-message-log}。那个开关打的是
      * <b>整份 feed 响应</b>——关注列表里所有人发的动态正文、昵称、图片地址，
      * 一轮一整份，全落进主日志。而假说要判的字段<b>早就解析在模型上了</b>
      * （{@code parseDynamic} 里有 {@code setBasic}），所以只记 id/rid/type 就够，

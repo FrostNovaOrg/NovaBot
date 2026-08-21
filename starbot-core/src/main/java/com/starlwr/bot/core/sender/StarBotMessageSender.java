@@ -414,7 +414,7 @@ public class StarBotMessageSender {
     /**
      * 含图消息失败后，剥掉图片段重发一次纯文字
      * <p>
-     * 要求来自裁决 #41 一：<b>推送文字的可达性不得依赖图片的可取性，任何模板写法下都必须成立。</b>
+     * 要求：<b>推送文字的可达性不得依赖图片的可取性，任何模板写法下都必须成立。</b>
      * 实测（2026-08-11，NapCat）一条消息里图片下载失败会让<b>整条发送失败</b>而不是只丢图，
      * 于是封面拉不到的那一次，开播通知整条消失。
      * <p>
@@ -474,7 +474,7 @@ public class StarBotMessageSender {
             result = new JSONObject().fluentPut("code", -1).fluentPut("message", "投递失败: " + e.getMessage());
         }
 
-        // 静默降级是看不见的谎言（裁决 #41 二）：三种结局各出一行，
+        // 静默降级是看不见的谎言：三种结局各出一行，
         // 且都要说清「图没送到」，并带上原始失败原因——降级不能掩盖根因
         if (result != null && Integer.valueOf(0).equals(result.getInteger("code"))) {
             activityRecorder.recordSuccess(sender.getName(), describeTarget(message), message.getDisplay());

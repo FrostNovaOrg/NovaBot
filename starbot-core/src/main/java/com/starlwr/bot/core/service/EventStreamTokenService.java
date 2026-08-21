@@ -138,7 +138,7 @@ public class EventStreamTokenService {
          * 已过期
          * <p>
          * 🔴 <b>当前永远不会返回这一项</b>：口令首版不带有效期
-         * （{@code expiresAt} 恒为 {@code null}，见裁决 #99 二），到期靠控制台吊销。
+         * （{@code expiresAt} 恒为 {@code null}），到期靠控制台吊销。
          * <p>
          * 它留在这里是因为<b>契约有三值</b>（VRDash《设置界面设计稿-88》§五②）。
          * 日后真加了有效期，<b>必须回这一项而不是 {@link #BAD_TOKEN}</b>——

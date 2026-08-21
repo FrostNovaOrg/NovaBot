@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 续登层的防抖（篮子⑥ 边界⑤，裁决 #138 四 ④）
+ * 续登层的防抖
  *
  * <h2>为什么要真的把那段 JS 跑起来</h2>
  * 要证的命题是「检测到落在登录页时至多自动续登一次，仍回登录页就停手」。

@@ -274,7 +274,7 @@ class NovaEventMapperTest {
         assertEquals("555", d.getJSONObject("replyTo").getString("uid"));
         assertEquals("被回复的人", d.getJSONObject("replyTo").getString("name"));
 
-        // 裁决 #21：emoji 收严为「整条就是一张图」的精确判据，内联表情不再折叠进它。
+        // emoji 收严为「整条就是一张图」的精确判据，内联表情不再折叠进它。
         // 原先这里断言的是 emoji.url == d.png——那正是让下游分不清两类表情的做法
         assertNull(d.get("emoji"), "普通弹幕的 emoji 恒为 null");
 

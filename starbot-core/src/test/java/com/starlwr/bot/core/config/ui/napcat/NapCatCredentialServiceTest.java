@@ -334,7 +334,7 @@ class NapCatCredentialServiceTest {
             // 🔴 与 MINT_BURST 写死同一个数，不许改成「跑到红为止」：
             //    那样写它永远绿，回满这件事就再也测不出来了
             // 🔴 循环里必须接住结果：吞掉它，桶容量掉到 3 时第 4 次静默被拦，
-            //    下面几行照样成立 —— 那样这个循环就只挡得住容量变大，挡不住变小（掰断跑查出来的）
+            //    下面几行照样成立 —— 那样这个循环就只挡得住容量变大，挡不住变小
             for (int i = 0; i < 4; i++) {
                 assertEquals(NapCatCredentialService.Outcome.OK, service.issue(true).outcome(),
                         "把桶排空的第 " + (i + 1) + " 次不该被拦：额度本该有 4 次");
@@ -398,7 +398,7 @@ class NapCatCredentialServiceTest {
 
             // 🔴 与 MINT_BURST 写死同一个数：把桶恰好用完，下一次才是「被拦下的那一次」。
             //    不许改成「跑到红为止」——那样写它永远绿，也就再也证不出「拦下了就不发」
-            // 🔴 同上：循环里不接住结果，容量变小时这条判据是瞎的（掰断跑查出来的）
+            // 🔴 同上：循环里不接住结果，容量变小时这条判据是瞎的
             for (int i = 0; i < 4; i++) {
                 assertEquals(NapCatCredentialService.Outcome.OK, service.issue(true).outcome(),
                         "把桶排空的第 " + (i + 1) + " 次不该被拦：额度本该有 4 次");
