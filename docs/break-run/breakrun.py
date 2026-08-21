@@ -45,8 +45,10 @@ import argparse
 import json
 import os
 import re
+import hashlib
 import shutil
 import subprocess
+import tempfile
 import sys
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -717,6 +719,80 @@ def _methods_in(cls: str, rev: str | None = None) -> set[str]:
     return set(_TEST_METHOD.findall(src))
 
 
+
+CASE_BASELINE = Path(__file__).with_name("案卷基线.json")
+
+
+def check_baselines() -> int:
+    """已交付案卷的字节哨兵。
+
+    渲染脚本里那句「已交付的老案卷重渲染后必须逐字节相同，除非有显式记录的重立基线」
+    <b>原先只是一句话</b>。而 2026-08-21 当天：立下这句口径的下一个提交，就改了三份案卷的
+    字节而没有记录 —— <b>不是忘了，是没有任何东西会拦住我忘</b>。
+    「记住」不是修法，把它变成一个会红的东西才是修法。
+
+    两头都查，因为它们坏的方式不一样：
+
+    - <b>树上那份的 md5</b>：有人手改了案卷、或重渲了却没更新基线记录；
+    - <b>从 JSON 重渲一遍的 md5</b>：渲染脚本改了而<b>没人重渲</b> ——
+      这一格树上的字节还是老的，只查树上那份看不出来。
+    """
+    if not CASE_BASELINE.exists():
+        print(f"缺 {CASE_BASELINE.name}：没有基线就没有对照 —— "
+              f"这不是「都对」，是「压根没在比」")
+        return 1
+
+    recorded = json.loads(CASE_BASELINE.read_text(encoding="utf-8"))
+    here = Path(__file__).parent
+    problems: list[str] = []
+
+    for name, want in sorted(recorded["案卷"].items()):
+        md = here / name
+        if not md.exists():
+            problems.append(f"{name}：基线记录里有，树上没有")
+            continue
+        on_disk = hashlib.md5(md.read_bytes()).hexdigest()
+        if on_disk != want["md5"]:
+            problems.append(
+                f"{name}：树上这份 {on_disk} ≠ 基线 {want['md5']} —— "
+                f"案卷被改过而基线记录没更新")
+
+        src = here / (Path(name).stem + ".json")
+        if not src.exists():
+            problems.append(f"{name}：找不到 {src.name}，重渲对照做不了（这不是通过）")
+            continue
+
+        with tempfile.TemporaryDirectory() as tmp:
+            box = Path(tmp)
+            shutil.copy2(src, box / src.name)
+            extra = here / (Path(name).stem + ".附录.md")
+            if extra.exists():
+                shutil.copy2(extra, box / extra.name)
+            done = subprocess.run([sys.executable, str(here / "render.py"), str(box / src.name)],
+                                  capture_output=True, text=True)
+            fresh = box / name
+            if done.returncode != 0 or not fresh.exists():
+                problems.append(f"{name}：重渲没跑成 —— {(done.stderr or '').strip()[:150]}")
+                continue
+            rendered = hashlib.md5(fresh.read_bytes()).hexdigest()
+
+        if rendered != want["md5"]:
+            problems.append(
+                f"{name}：重渲出来是 {rendered} ≠ 基线 {want['md5']} —— "
+                f"渲染脚本改过，而这份案卷还没重渲、或基线记录没更新")
+
+    print(f"案卷基线：{len(recorded['案卷'])} 份，记录见 {recorded.get('记录', '（未注明）')}")
+    if problems:
+        print("对不上：")
+        for line in problems:
+            print("  ✗ " + line)
+        print("\n改案卷字节不是不行 —— 但要在重立基线记录里写明「变了什么、为什么、"
+              "读数动没动」，并把新 md5 补进 案卷基线.json。**悄悄变才是坏的。**")
+        return 1
+    print("✅ 每份案卷树上的字节与重渲的字节都等于基线")
+    return 0
+
+
 def check_denominator() -> int:
     """分母闭合先验。
 
@@ -849,6 +925,8 @@ def main() -> None:
     parser.add_argument("--ruler-only", action="store_true")
     parser.add_argument("--check-denominator", action="store_true",
                         help="只验分母闭合：树上那几个类的每条判据都得登记在册，且新增的确实是新增")
+    parser.add_argument("--check-baselines", action="store_true",
+                        help="只验已交付案卷的字节基线：树上那份与重渲那份都得等于 案卷基线.json")
     parser.add_argument("--reclassify", metavar="JSON",
                         help="不重跑，只把一份已有记录的本批/外来标签重贴一遍")
     args = parser.parse_args()
@@ -882,6 +960,9 @@ def main() -> None:
     print(f"✅ 先验落点：{len(chosen)} 个变体的锚点都在树上恰好命中 1 次")
     if args.check_denominator:
         raise SystemExit(check_denominator())
+
+    if args.check_baselines:
+        raise SystemExit(check_baselines())
 
     if args.check_anchors:
         return
