@@ -403,7 +403,9 @@ OWN_CLASSES = ("NapCatRouteWitnessTest", "NapCatResumeDebounceTest", "NapCatCred
 
 # 逐批累加的「新增判据」名册（今天共 27 条）：
 #   WO-009 起 23 条＝见证 12 + 续登 7 + 速率闸 4
-#   WO-010 加 3 条＝文案 2 + 时钟注入后重写的 1
+#   WO-010 加 3 条＝<b>三条都是文案</b>。这里一度写着「文案 2 + 时钟注入后重写的 1」，
+#     而 failedChecksSpendTheGlobalBudget 是 2026-08-15 的 7f8f26a 就有的，这批只是重写了它 ——
+#     <b>重写不产生新增</b>。分母先验（--check-denominator）就是撞出这一条的。
 #   WO-017 加 1 条＝线性回填
 # 🔴 这段注释一度写着「23 条」而下面已经列到 26 条 —— 数字写进注释就会有一天对不上，
 #    所以分母以 len(NEW_JUDGMENTS) 为准、注释只说构成。
@@ -688,12 +690,111 @@ def reclassify(path: Path) -> None:
 
 # 那三个类里的既有判据（不是本批新增）。列出来是为了让「本批新增 23 条」这个数
 # 与「这三个类里红过的判据」分得开
+
+# 各批判据是在哪一版进的树。基线取那一批第一个提交的父版 —— 「新增」必须在基线上找不到。
+# 🔴 五个类不是同一天进树的，所以没有单一基线；按批各记各的，别硬凑一个。
+
+_TEST_METHOD = re.compile(
+    r"@Test\b[\s\S]{0,400}?\b(?:void|public\s+void)\s+([A-Za-z_]\w*)\s*\(")
+
+
+def _methods_in(cls: str, rev: str | None = None) -> set[str]:
+    """取某个测试类里的判据方法名；rev 为 None 时读工作树。"""
+    rel = None
+    for path in (ROOT / MODULE / "src/test").rglob(cls + ".java"):
+        rel = path.relative_to(ROOT)
+        break
+    if rel is None:
+        return set()
+    if rev is None:
+        src = (ROOT / rel).read_text(encoding="utf-8")
+    else:
+        done = subprocess.run(["git", "show", f"{rev}:{rel}"], cwd=ROOT,
+                              capture_output=True, text=True)
+        if done.returncode != 0:
+            return set()          # 那一版还没有这个类，等于一条都没有
+        src = done.stdout
+    return set(_TEST_METHOD.findall(src))
+
+
+def check_denominator() -> int:
+    """分母闭合先验。
+
+    🔴 覆盖率那一格的分母是 len(NEW_JUDGMENTS)，而那是一份**手写**名单。
+    手写名单会漏登、会留下已删判据的名字，两种都让覆盖率失真 ——
+    <b>而失真的方向都是「看起来更好」</b>：漏登让分母变小，幻影让分母变大但那条永远红不了。
+    所以这一关必须 fail-closed：对不上就退非零，不许只打一行提示。
+    """
+    on_tree: dict[str, set[str]] = {c: _methods_in(c) for c in OWN_CLASSES}
+    everything = set().union(*on_tree.values()) if on_tree else set()
+    registered = NEW_JUDGMENTS | PRE_EXISTING_IN_OWN
+
+    problems: list[str] = []
+
+    both = NEW_JUDGMENTS & PRE_EXISTING_IN_OWN
+    if both:
+        problems.append(f"同时登记成新增与既有的 {len(both)} 条：{sorted(both)}")
+
+    phantom = registered - everything
+    if phantom:
+        problems.append(f"登记了但树上没有（判据删了没销名？）{len(phantom)} 条：{sorted(phantom)}")
+
+    unregistered = everything - registered
+    if unregistered:
+        problems.append(f"树上有但没登记 {len(unregistered)} 条：{sorted(unregistered)}")
+
+    # 「新增」得真是新增：在它那一批的基线上必须找不到
+    batched: set[str] = set()
+    for batch, (base, names) in JUDGMENT_BATCHES.items():
+        batched |= names
+        at_base: set[str] = set()
+        for c in OWN_CLASSES:
+            at_base |= _methods_in(c, base)
+        stale = names & at_base
+        if stale:
+            problems.append(
+                f"批 {batch}（基线 {base}）上就已经存在、却被登记成新增的 {len(stale)} 条："
+                f"{sorted(stale)}")
+        missing = names - NEW_JUDGMENTS
+        if missing:
+            problems.append(f"批 {batch} 列了但不在 NEW_JUDGMENTS 里的 {len(missing)} 条：{sorted(missing)}")
+
+    # 🔴 每一条新增都得归到某一批名下，否则它的「是不是真新增」从来没被验过
+    unbatched = NEW_JUDGMENTS - batched
+    if unbatched:
+        problems.append(f"登记成新增却没归到任何一批的 {len(unbatched)} 条：{sorted(unbatched)}")
+
+    print(f"树上 {len(everything)} 条；登记 {len(registered)} 条"
+          f"（新增 {len(NEW_JUDGMENTS)} + 既有 {len(PRE_EXISTING_IN_OWN)}）")
+    if problems:
+        print("分母对不上，覆盖率那一格不可信：")
+        for line in problems:
+            print("  ✗ " + line)
+        return 1
+    print(f"✅ 分母闭合：{len(OWN_CLASSES)} 个类里每条判据都登记在册，"
+          f"且新增的在各自基线上确实不存在")
+    return 0
+
+
 PRE_EXISTING_IN_OWN = {
+    # 🔴 这份名单一度只登记了 NapCatCredentialServiceTest 的 13 条，
+    #    ConfigUiAuthServiceTest 的 17 条一条都没登记 —— 而它也是「本批类」之一。
+    #    没人发现，是因为覆盖率格只拿新增那半边当分母，既有那半边缺不缺没人去数。
+    #    现在 --check-denominator 会拒绝任何没登记的判据（分母闭合＝两份名单之并等于树上全集）。
+    # NapCatCredentialServiceTest 既有 13
     "matchesNapCatAlgorithm", "plainTokenIsHashedAndCleared", "existingHashIsNotRewritten",
     "notConfigured", "bodyFieldIsHashNotToken", "sendsTotpCodeWhenSecretConfigured",
     "omitsTotpCodeWhenNoSecret", "secondCallUsesCache", "renewForcesFreshLogin",
     "errorInsideHttp200IsNotSuccess", "require2FaIsNotACredential", "failureIsNotCached",
     "connectionFailureIsHandled",
+    # ConfigUiAuthServiceTest 既有 17。failedChecksSpendTheGlobalBudget 在 WO-010 被重写成
+    # 注入时钟（不再量机器快慢），但它 2026-08-15 就在树上了 —— 重写不产生新增。
+    "acceptsHashedPassword", "acceptsPlainTextPassword", "acceptsValidTotp",
+    "disabledWithoutPassword", "enrollmentActivatesTotp", "failedChecksSpendTheGlobalBudget",
+    "failureMessageDoesNotLeakWhichPartWasWrong", "globalRateLimitAppliesToCredentialChecks",
+    "issuesUsableSession", "lockedOutAfterRepeatedFailures", "operatorSessionIsUsable",
+    "pendingSecretIsStable", "rejectsWrongPassword", "promptsForEnrollmentWhenSecretMissing",
+    "requiresTotpWhenConfigured", "totpCanBeTurnedOff", "turningOffIgnoresExistingSecret",
 }
 
 _WITNESS_METHODS = {
@@ -709,6 +810,22 @@ _RESUME_METHODS = {
     "theRulerLoadsTheRealScript", "renewsExactlyOnceThenStops", "waitsForTheReloadToLand",
     "resetsOnlyAfterActuallyLeavingTheLoginPage", "doesNothingWhenTheInnerPathIsUnreadable",
     "recognisesTheRealLoginPath", "doesNotMatchBySubstring",
+}
+
+# 🔴 一份扁平的新增名单**验不了**这件事：拿整份去对每一批基线，
+#    WO-009 的判据当然存在于 WO-010 的基线上，于是每批都报一堆假问题。
+#    要验「新增确实是新增」，名单必须按批切开——各批只对各自的基线。
+JUDGMENT_BATCHES = {
+    "WO-009": ("84e3358^", _WITNESS_METHODS | _RESUME_METHODS | {
+        "normalUseNeverHitsTheGate", "refusesWhenHammered",
+        "theBucketRefillsSoThereIsNoLockout", "aRefusedAttemptSendsNothing",
+    }),
+    "WO-010": ("e6125a1^", {
+        "throttledIsReportedSeparatelyFromMintFailure",
+        "throttledCopyPointsAtTheConfigAndStatesTheRefillRate",
+        "mintFailureTellsTheUserToCheckTheConfiguration",
+    }),
+    "WO-017": ("3e9dffd^", {"theBucketRefillsLinearlyNotAllAtOnce"}),
 }
 
 
@@ -730,6 +847,8 @@ def main() -> None:
     parser.add_argument("--check-anchors", action="store_true",
                         help="只做落点先验就退出（改过被钉的字面量之后先跑这个，一秒钟）")
     parser.add_argument("--ruler-only", action="store_true")
+    parser.add_argument("--check-denominator", action="store_true",
+                        help="只验分母闭合：树上那几个类的每条判据都得登记在册，且新增的确实是新增")
     parser.add_argument("--reclassify", metavar="JSON",
                         help="不重跑，只把一份已有记录的本批/外来标签重贴一遍")
     args = parser.parse_args()
@@ -761,6 +880,9 @@ def main() -> None:
         raise SystemExit("以下变体的落点对不上当前的树，先修锚点再跑：\n" + "\n".join(stale) +
                          "\n\n改过被钉的字面量之后，钉着它的变体要一起改。")
     print(f"✅ 先验落点：{len(chosen)} 个变体的锚点都在树上恰好命中 1 次")
+    if args.check_denominator:
+        raise SystemExit(check_denominator())
+
     if args.check_anchors:
         return
 
