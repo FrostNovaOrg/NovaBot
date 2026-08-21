@@ -722,6 +722,105 @@ def _methods_in(cls: str, rev: str | None = None) -> set[str]:
 
 CASE_BASELINE = Path(__file__).with_name("案卷基线.json")
 
+# ── 阳性对照留痕的 schema ────────────────────────────────────────────────
+# 🔴 两份留痕原先一份写 `实测命中期望字样`、一份写 `命中期望字样`。**验是验了的**，
+#    但任何机读这两份的东西，会在其中一份上静默拿到 `None`。
+#    **`None` 是最危险的读数，因为它不报错**——不抛、不红，
+#    只会被当成「这一列没验」或者干脆跳过。真发生过：读的人一整列拿到五个 None，
+#    第一反应是「那一列今天什么都没验」——差点把「我读错了 schema」报成「你验漏了」。
+# 🔴 所以键名统一之外还要有这道断言：**缺一个键、多一个键、类型不对，都红。**
+#    光把今天这两份改齐是「记住」，不是修法——第三份还会再漂一次，而那时没有人会发现。
+CONTROL_GLOB = "*阳性对照*.json"
+CONTROL_TOP = {"跑于": str, "总判": str, "各例": list}
+CONTROL_CASE = {
+    "名目": str,
+    "期望": str,
+    "实测退出码": int,
+    "实测命中期望字样": bool,
+    "报出的问题行": list,
+}
+
+
+def check_controls() -> int:
+    """阳性对照留痕的 schema 断言。
+
+    只查形状，不重跑对照——重跑是各哨兵自己的事。这里管的是
+    **「留痕能不能被机器可靠地读」**：键名漂了，读的人不会看见错误，只会看见 None。
+    """
+    here = Path(__file__).parent
+    files = sorted(here.glob(CONTROL_GLOB))
+    if not files:
+        # 🔴 一个都没找到，和「每一份都合格」长得一模一样。fail closed。
+        print(f"没找到任何 {CONTROL_GLOB} —— 这不是「都合格」，是「压根没在查」")
+        return 1
+
+    problems: list[str] = []
+    for f in files:
+        try:
+            d = json.loads(f.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as ex:
+            problems.append(f"{f.name}：读不动 —— {ex}")
+            continue
+        if not isinstance(d, dict):
+            problems.append(f"{f.name}：顶层不是对象")
+            continue
+
+        missing = [k for k in CONTROL_TOP if k not in d]
+        extra = [k for k in d if k not in CONTROL_TOP]
+        for k in missing:
+            problems.append(f"{f.name}：缺顶层键 `{k}`")
+        for k in extra:
+            problems.append(f"{f.name}：多出顶层键 `{k}`（漂了就没人读得到）")
+        for k, t in CONTROL_TOP.items():
+            if k in d and not isinstance(d[k], t):
+                problems.append(f"{f.name}：`{k}` 应当是 {t.__name__}，实际是 {type(d[k]).__name__}")
+
+        cases = d.get("各例")
+        if not isinstance(cases, list) or not cases:
+            problems.append(f"{f.name}：`各例` 空的 —— 没有例子的「通过」什么都没说")
+            continue
+
+        for i, c in enumerate(cases, 1):
+            if not isinstance(c, dict):
+                problems.append(f"{f.name} 第 {i} 例：不是对象")
+                continue
+            for k in CONTROL_CASE:
+                if k not in c:
+                    problems.append(f"{f.name} 第 {i} 例（{c.get('名目', '未具名')}）：缺 `{k}`")
+            for k in c:
+                if k not in CONTROL_CASE:
+                    problems.append(f"{f.name} 第 {i} 例（{c.get('名目', '未具名')}）："
+                                    f"多出 `{k}`")
+            for k, t in CONTROL_CASE.items():
+                if k in c and not isinstance(c[k], t):
+                    # bool 是 int 的子类，反过来不是；退出码写成 True 得报出来
+                    if t is int and isinstance(c[k], bool):
+                        problems.append(f"{f.name} 第 {i} 例：`{k}` 是 bool，不是退出码")
+                    elif not (t is int and isinstance(c[k], bool)):
+                        problems.append(f"{f.name} 第 {i} 例：`{k}` 应当是 {t.__name__}，"
+                                        f"实际是 {type(c[k]).__name__}")
+
+        # 交叉核对：总判说「通过」，就得每一例都真的命中了期望字样。
+        # 🔴 这一条抓的是「留痕齐全但内容自相矛盾」——比缺键更难看出来。
+        oks = [c.get("实测命中期望字样") for c in cases if isinstance(c, dict)]
+        if all(isinstance(x, bool) for x in oks):
+            want = "通过" if all(oks) else "不通过"
+            if d.get("总判") != want:
+                problems.append(f"{f.name}：总判写「{d.get('总判')}」，"
+                                f"但逐例算出来是「{want}」")
+
+    print(f"阳性对照留痕：{len(files)} 份（{'、'.join(f.name for f in files)}）")
+    if problems:
+        print("对不上：")
+        for line in problems:
+            print("  ✗ " + line)
+        print("\n键名一漂，机读的那一头拿到的是 `None` —— 它不抛、不红，"
+              "只会被当成「这一列没验」。**所以缺键、多键、类型不对，一律红。**")
+        return 1
+    print("✅ 每份留痕的顶层键与逐例键都齐、类型对、总判与逐例自洽")
+    return 0
+
+
 
 def check_baselines() -> int:
     """已交付案卷的字节哨兵。
@@ -927,6 +1026,8 @@ def main() -> None:
                         help="只验分母闭合：树上那几个类的每条判据都得登记在册，且新增的确实是新增")
     parser.add_argument("--check-baselines", action="store_true",
                         help="只验已交付案卷的字节基线：树上那份与重渲那份都得等于 案卷基线.json")
+    parser.add_argument("--check-controls", action="store_true",
+                        help="只验阳性对照留痕的 schema：键齐、类型对、总判与逐例自洽")
     parser.add_argument("--reclassify", metavar="JSON",
                         help="不重跑，只把一份已有记录的本批/外来标签重贴一遍")
     args = parser.parse_args()
@@ -958,6 +1059,16 @@ def main() -> None:
         raise SystemExit("以下变体的落点对不上当前的树，先修锚点再跑：\n" + "\n".join(stale) +
                          "\n\n改过被钉的字面量之后，钉着它的变体要一起改。")
     print(f"✅ 先验落点：{len(chosen)} 个变体的锚点都在树上恰好命中 1 次")
+
+    # 🔴 留痕 schema 排在这里而不是做成一个要人记得跑的开关：
+    #    键名漂掉不会让任何东西报错，只会让机读的那一头拿到 None。
+    #    要它自己会响，就得**每次开跑都路过它**。（它只读几个 json，一眨眼。）
+    if check_controls() != 0:
+        raise SystemExit(1)
+
+    if args.check_controls:
+        return
+
     if args.check_denominator:
         raise SystemExit(check_denominator())
 
