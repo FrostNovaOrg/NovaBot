@@ -22,7 +22,7 @@ import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.关�
 import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.判据等待;
 import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.后排余量;
 import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.慢客户端id;
-import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.心跳线程卡在关闭帧的写里;
+import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.先验尺_有人卡在关闭帧的写里;
 import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.读数;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -116,18 +116,50 @@ class NovaEvent关闭帧钉线程Test {
     // ══════════════════════════ 先验尺 ══════════════════════════
 
     @Test
-    @DisplayName("先验尺：心跳线程确实卡在关闭帧的写里（且不是卡在监视器上）")
-    void 先验尺_心跳卡在关闭帧的写里() throws Exception {
+    @DisplayName("先验尺：这一跑里有人卡在关闭帧的写里（复现成立）")
+    void 先验尺_有人卡在关闭帧写里() throws Exception {
         支起(false);
-        Map<String, Object> 栈 = 心跳线程卡在关闭帧的写里();
+        Map<String, Object> 尺读 = 先验尺_有人卡在关闭帧的写里();
         读数("先验尺-关闭帧", Map.of(
-                "心跳线程卡在关闭帧的写里", 栈 != null,
-                "读数", String.valueOf(栈),
-                "🔴 与另一支的分界", "本支要求线程状态**不是** BLOCKED —— BLOCKED 说明它在等一把 "
-                        + "Java 锁，那是另一个洞；本支要的是卡在 socket 写里"));
-        assertNotNull(栈, "没抓到「心跳线程卡在关闭帧的写里」这个读数。"
-                + "拿不到它就不许采信四条判据——没复现出阻塞时，判据的绿和修好了的绿长得一样。");
+                "有人卡在关闭帧的写里", 尺读 != null,
+                "实录", String.valueOf(尺读),
+                "🔴 这把尺只量现象", "卡住的是**哪条**线程是判据 0 的事，不是这把尺的事。"
+                        + "把归属写进复现尺，修好那天它必死——而死掉的尺让「修好了」"
+                        + "和「压根没灌满」长得一样。"));
+        assertNotNull(尺读, "这一跑没有任何人卡在关闭帧的写里 —— **复现根本没成立**。"
+                + "拿不到它就不许采信下面几条判据：没复现出阻塞时，判据的绿和修好了的绿长得一样。");
+        assertTrue(!Boolean.TRUE.equals(尺读.get("尺没见过的状态")),
+                "线程状态 " + 尺读.get("线程状态") + " 不在白名单 " + 尺读.get("白名单") + " 内。"
+                        + "这不是红也不是绿：**这把尺没见过这个形态**，它量出来的东西不作数。"
+                        + "先查这个状态是怎么来的，再决定要不要把它收进名单。实录：" + 尺读);
     }
+
+    // ══════════════════════════ 判据 0 ══════════════════════════
+
+    @Test
+    @DisplayName("判据 0：卡住的那条不是共享心跳线程")
+    void 判据0_卡住的不是共享心跳线程() throws Exception {
+        支起(false);
+        Map<String, Object> 尺读 = 先验尺_有人卡在关闭帧的写里();
+        assertNotNull(尺读, "复现没成立（没有人卡在关闭帧的写里），判据 0 无从判 —— "
+                + "这一跑不算数，不折算成绿");
+
+        long 卡住的 = (Long) 尺读.get("线程号");
+        // 🔴 身份按**夹具登记在案**的那条心跳线程比，不按名字前缀猜：
+        //    名字是端点内部线程工厂给的，哪天改了措辞，按前缀比会静悄悄判成「不是心跳线程」。
+        boolean 是心跳线程 = 卡住的 == 台.心跳线程.getId();
+        读数("判据0-归属", Map.of(
+                "卡住那条线程号", 卡住的, "卡住那条线程名", String.valueOf(尺读.get("线程名")),
+                "夹具登记的心跳线程号", 台.心跳线程.getId(),
+                "夹具登记的心跳线程名", 台.心跳线程.getName(),
+                "卡住的是共享心跳线程", 是心跳线程,
+                "🔴 身份怎么判的", "与夹具登记在案的那条线程比线程号，不按名字前缀猜"));
+
+        assertTrue(!是心跳线程, "关闭帧的阻塞写把**全局共享的心跳线程**（"
+                + 台.心跳线程.getName() + "）钉住了。它一停，所有连接的 ping、认证时限、"
+                + "回补窗口一起停；还多一层——遍历是顺序的，排在它后面的连接这一轮连 ping 都轮不到。");
+    }
+
 
     // ══════════════════════════ 四条判据 ══════════════════════════
 
@@ -198,6 +230,20 @@ class NovaEvent关闭帧钉线程Test {
                 "逐条迟到毫秒", 逐条迟到, "超出上限的", 超了));
         读数("分簇尺", Map.of("前簇条数", 分.前簇条数(), "后簇条数", 分.后簇条数(),
                 "两簇间隔毫秒", 分.两簇间隔毫秒(), "亮", 分.亮(), "说明", 分.说明()));
+
+        // 🔴 算序是**选料器**，分簇尺是**裁判**。
+        //    算序告诉我们该挑哪个 id 当慢客户端（它得真能把健康连接切成两截）；
+        //    这一跑到底怎么排，只认分簇尺的实测。两者不符就不出结论——
+        //    多半是换了 JDK（散列变了），算出来的次序当场作废。
+        Map<String, Object> 序 = NovaEvent慢消费者台架.算序(慢客户端id, 健康连接数, "silent", "other");
+        boolean 符 = !分.亮()
+                || ((long) (Long) 序.get("算出来·健康连接排在前面的") == 分.前簇条数()
+                    && (long) (Long) 序.get("算出来·排在后面的") == 分.后簇条数());
+        读数("算序-选料器", Map.of("算序", 序, "实测前簇", 分.前簇条数(),
+                "实测后簇", 分.后簇条数(), "算序与实测相符", 符));
+        assertTrue(符, "算出来的遍历次序与这一跑的实测对不上："
+                + 序 + "，实测 " + 分.前簇条数() + " 前／" + 分.后簇条数() + " 后。"
+                + "选料的依据当场作废（多半是换了 JDK），先查因，不要挑一个好看的写上去。");
 
         // 🔴 停摆了就必须能指出「排序那层确实被碰到了」，否则红的不是判据 4 要量的东西。
         if (!超了.isEmpty()) {

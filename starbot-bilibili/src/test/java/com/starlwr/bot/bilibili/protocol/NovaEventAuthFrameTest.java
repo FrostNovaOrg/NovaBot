@@ -237,6 +237,40 @@ class NovaEventAuthFrameTest {
         assertEquals("未在时限内认证", session.closedWith.getReason());
     }
 
+    /**
+     * 🔴 超时清理这条路上，关闭帧是这条连接收到的<b>第一个、也是唯一一个</b>下行帧
+     * <p>
+     * 这不是协议洁癖，它挡的是一个<b>并发</b>问题：逾期未认证的清理跑在<b>全局共享的</b>
+     * 心跳线程上，而关一条 WebSocket 要发一帧关闭帧——那是一次<b>阻塞写</b>。
+     * 眼下它写得出去，只是因为认证之前这条连接上一个字节都没下行过、发送缓冲是空的。
+     * <p>
+     * 也就是说，它<b>不是因为安全才安全</b>，是因为现在没人往那儿写。
+     * 将来谁往认证之前加了下行（横幅、版本协商、排队提示……），对端不读时缓冲会填满，
+     * 这一帧就写不动，<b>一条没认证的连接会把共享心跳线程钉住</b>——
+     * 所有连接的 ping、认证时限、回补窗口跟着一起停。
+     * <p>
+     * 所以这一格拦的是那个人：先在这里被拦下来，去把清理那一步改成不阻塞共享线程，
+     * 再回来加下行。
+     * <p>
+     * <b>射程只钉「超时」这一条路。</b>口令错那条路是<b>有</b>下行的（先发 auth_failed 再关），
+     * 别把这一格写宽了去误伤它。
+     */
+    @Test
+    @DisplayName("🔴 超时清理：关闭帧是这条连接唯一的下行帧（认证前一个字节都不下行）")
+    void timeoutCleanupSendsNothingBeforeTheCloseFrame() throws Exception {
+        NovaEventEndpointTest.FakeSession session = connect("s-nothing-before-close");
+
+        assertEquals(0, session.sentCount(),
+                "认证之前这条连接上不该有任何下行帧。加了的话，逾期清理那一帧关闭帧"
+                        + "就可能写不动，而它跑在全局共享的心跳线程上");
+
+        closeUnauthenticated(clientOf(session));
+
+        assertNotNull(session.closedWith, "逾期就该关掉");
+        assertEquals(0, session.sentCount(),
+                "关闭帧之外，这条连接自始至终不该收到任何下行帧");
+    }
+
     private Object clientOf(NovaEventEndpointTest.FakeSession session) throws Exception {
         java.lang.reflect.Field field = NovaEventEndpoint.class.getDeclaredField("clients");
         field.setAccessible(true);

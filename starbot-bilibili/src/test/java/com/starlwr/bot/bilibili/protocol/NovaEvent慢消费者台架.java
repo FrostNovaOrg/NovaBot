@@ -111,12 +111,24 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
     static final String 慢客户端id = "slow-4";
 
     /**
-     * 判据 4 的余量：一条健康连接的相邻两次 ping 最多能隔多久（超出即算「陪葬」）
+     * 判据 4 的余量：一条健康连接的相邻两次 ping，允许比心跳周期多等多久（超出即算「陪葬」）
      * <p>
-     * 🔴 <b>这个数此刻是暂定的。</b> 定稿要在<b>修后</b>连跑若干轮量出调度抖动分布再取，
-     * 并把分布与取法一并记进读数——<b>拍出来的阈值和量出来的阈值长得一样，直到它假红那天</b>。
+     * <b>这个数是量出来的</b>：修后连跑 20 轮、120 个读数，取「间隔<b>超出周期</b>那部分」
+     * 的 p99 再乘二——p99 挡住常态抖动，乘二给比本机慢的跑测试环境留一档。
+     * <p>
+     * 实测（本机 arm64 macOS，JDK 17.0.20，周期 200ms，健康连接 6 条）：
+     * 间隔 204／207／210（最小／中位／最大），<b>超出周期 4／7／10</b>，p99＝10 → 余量 20，
+     * 判据上限 220ms。
+     * <p>
+     * 🔴 取的是<b>超出周期</b>那部分，不是间隔本身。拿间隔的 p99（210）乘二会把余量定成 420、
+     * 上限 620ms——而这个洞的签名是「漏掉一轮」≈400ms，<b>上限比洞还宽，判据就永远绿了</b>。
+     * 量出来的阈值一样可以是错的，错在拿错了量纲，而它和对的那个长得一样。
+     * <p>
+     * 🔴 定完阈值还要验它<b>抓不抓得住洞</b>：220 &lt; 400，检出余地 180ms。
+     * <p>
+     * 什么时候要重量：换机器、换 JDK、改心跳周期、改健康连接条数，四者任一。
      */
-    static final long 后排余量 = 250;
+    static final long 后排余量 = 20;
 
     static final NovaEventEndpoint.Timings 关闭帧时限 = new NovaEventEndpoint.Timings(
             PING, 关闭帧_CLIENT_TIMEOUT, 关闭帧_AUTH, 关闭帧_GRACE);
@@ -131,6 +143,30 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
 
     private final List<NovaEventSlowConsumerTest.SocketSession> 真会话 = new ArrayList<>();
 
+    /**
+     * 夹具<b>登记在案</b>的那条共享心跳线程
+     * <p>
+     * 🔴 判据 0 的身份判定以它为准，<b>不按名字前缀猜</b>：名字是端点内部的线程工厂给的，
+     * 哪天改了措辞，按前缀比会静悄悄地判成「不是心跳线程」——那是一个假绿。
+     * <p>
+     * 必须在<b>任何连接被灌满之前</b>登记：登记的办法是往那条线程上派一件小活问它是谁，
+     * 而它一旦被钉住，这件活就永远排不上号。
+     */
+    final Thread 心跳线程;
+
+    private static Thread 登记心跳线程(NovaEventEndpoint endpoint) {
+        try {
+            java.lang.reflect.Field f = NovaEventEndpoint.class.getDeclaredField("heartbeats");
+            f.setAccessible(true);
+            java.util.concurrent.ScheduledExecutorService ex =
+                    (java.util.concurrent.ScheduledExecutorService) f.get(endpoint);
+            return ex.submit(Thread::currentThread).get(5, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (Exception e) {
+            throw new IllegalStateException("登记不到那条共享心跳线程 —— 判据 0 的身份判定就没有依据，"
+                    + "这一跑不算数。不许退回按名字前缀猜：名字对不上时那是静悄悄的假绿。", e);
+        }
+    }
+
     NovaEvent慢消费者台架(Path dir, boolean 慢客户端读, NovaEventEndpoint.Timings 时限) throws IOException {
         this(dir, 慢客户端读, 时限, "slow", false);
     }
@@ -142,6 +178,7 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
         this.tokens = new EventStreamTokenService(properties);
         this.stream = new NovaEventStream(64);
         this.endpoint = new NovaEventEndpoint(stream, tokens, 时限);
+        this.心跳线程 = 登记心跳线程(this.endpoint);
         this.慢客户端 = new NovaEventSlowConsumerTest.SocketSession(
                 慢id, 1024, 1024, 慢客户端读, 关闭时真写);
         真会话.add(this.慢客户端);
@@ -343,6 +380,37 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
         return j;
     }
 
+    /**
+     * 算序：把这一组 id 原样放进一个 {@code ConcurrentHashMap}，直接算出遍历次序
+     * <p>
+     * 🔴 <b>算序是选料器，分簇尺是裁判。</b> 算的是「次序应该是什么」——它依赖 JDK 的散列实现，
+     * 换个 JDK 就可能不作数；分簇尺量的是「这一跑实际发生了什么」。
+     * 两者<b>不一致即举手</b>（{@code 算序与实测不符}＝true），由外部收集方判 ABORT 查因，
+     * 不许挑一个好看的写上去。
+     */
+    static Map<String, Object> 算序(String 慢id, int 健康数, String... 别的) {
+        java.util.Map<String, Integer> m = new ConcurrentHashMap<>();
+        for (int i = 0; i < 健康数; i++) {
+            m.put("healthy-" + i, 1);
+        }
+        m.put(慢id, 1);
+        for (String k : 别的) {
+            m.put(k, 1);
+        }
+        List<String> 序 = new ArrayList<>(m.keySet());
+        int 位 = 序.indexOf(慢id);
+        long 前 = 序.subList(0, 位).stream().filter(x -> x.startsWith("healthy-")).count();
+        long 后 = 序.subList(位 + 1, 序.size()).stream().filter(x -> x.startsWith("healthy-")).count();
+        Map<String, Object> 出 = new LinkedHashMap<>();
+        出.put("慢客户端 id", 慢id);
+        出.put("位次", 位 + "/" + 序.size());
+        出.put("算出来·健康连接排在前面的", 前);
+        出.put("算出来·排在后面的", 后);
+        出.put("JDK", System.getProperty("java.version") + " / " + System.getProperty("java.vm.name"));
+        出.put("🔴", "算序只是选料器；这一跑到底怎么排，以分簇尺的实测为准");
+        return 出;
+    }
+
     // ══════════════════════════ 后排尺（判据 4） ══════════════════════════
 
     /**
@@ -534,42 +602,113 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
     }
 
     /**
-     * 先验尺（关闭帧那一组）：心跳线程<b>确实</b>卡在关闭帧的写里
+     * 关闭帧那把尺认的线程状态<b>白名单</b>
      * <p>
-     * 🔴 与「卡在别人的监视器上」那支<b>分界写死在这里</b>：这一支要求
-     * 线程状态<b>不是</b> {@code BLOCKED}（BLOCKED 说明它在等一把 Java 锁，那是另一个洞），
-     * 且栈里同时有 socket 写帧与 {@code Client.close}。
-     * 两张单量两个洞，分界写在尺上而不是心里。
-     *
-     * @return 栈摘录与观测到的线程状态；没卡住时返回 null
+     * 🔴 写成名单，不写成「不是 {@code BLOCKED}」：后者会对<b>没见过的状态默默放行</b>——
+     * {@code TIMED_WAITING}、或某个将来 JDK 的新形态，都会带着完全正确的栈帧悄悄过尺。
+     * 量的是「在不在名单里」，不是「是不是那个已知的坏形态」。
+     * <p>
+     * {@code BLOCKED} 不在名单里，是因为它是<b>另一个洞</b>的形状（在等一把 Java 锁）——
+     * 分界写在尺上，不写在心里。
      */
-    static Map<String, Object> 心跳线程卡在关闭帧的写里() {
+    static final java.util.Set<Thread.State> 关闭帧_状态白名单 =
+            java.util.Set.of(Thread.State.WAITING, Thread.State.RUNNABLE);
+
+    /**
+     * 同一份线程转储里，<b>持着 {@code NioSocketImpl} 那把写锁</b>的线程
+     * <p>
+     * 判别法：栈里有 {@code NioSocketImpl.write}，而<b>那一帧之上没有</b>
+     * {@code ReentrantLock.lock}／{@code AQS.acquire}——也就是它已经<b>进了</b>锁，
+     * 不是在等锁。
+     * <p>
+     * 🔴 取到它，「心跳线程在等 socket 写锁」才从推断变成实录：
+     * 它等的是谁，名字与栈都钉在读数里。取不到就写明取不到，不含糊过去。
+     */
+    static Map<String, Object> 持写锁的线程() {
         for (Map.Entry<Thread, StackTraceElement[]> e : Thread.getAllStackTraces().entrySet()) {
-            if (!e.getKey().getName().startsWith("nova-event-heartbeat")) {
-                continue;
-            }
-            if (e.getKey().getState() == Thread.State.BLOCKED) {
-                continue;   // 那是「卡在别人的监视器上」，不是本支要量的
-            }
-            boolean 在写 = false;
-            boolean 在关 = false;
             List<String> 摘 = new ArrayList<>();
+            int 写帧 = -1;
+            boolean 在等锁 = false;
+            StackTraceElement[] fs = e.getValue();
+            for (int i = 0; i < fs.length; i++) {
+                String line = fs[i].getClassName() + "." + fs[i].getMethodName();
+                摘.add(line);
+                if (写帧 < 0 && line.equals("sun.nio.ch.NioSocketImpl.write")) {
+                    写帧 = i;
+                }
+                if (写帧 < 0 && (line.endsWith("ReentrantLock.lock")
+                        || line.endsWith("AbstractQueuedSynchronizer.acquire"))) {
+                    在等锁 = true;   // 这几帧在 write 之上 ＝ 它在等这把锁，不是持有
+                }
+            }
+            if (写帧 >= 0 && !在等锁) {
+                Map<String, Object> 出 = new LinkedHashMap<>();
+                出.put("线程名", e.getKey().getName());
+                出.put("线程状态", e.getKey().getState().name());
+                出.put("栈摘录", 摘.subList(0, Math.min(10, 摘.size())));
+                return 出;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 先验尺：这一跑里<b>有人</b>卡在关闭帧的写里 —— 复现成立
+     * <p>
+     * 🔴 <b>复现尺量现象，判据量归属。</b>这把尺只问「关闭帧的写有没有真的卡住」，
+     * 不问卡住的是<b>哪条</b>线程——那是判据 0 的事。
+     * <p>
+     * 原先它问的是「<b>心跳线程</b>卡在关闭帧写里」，把病灶的归属写进了现象的复现里。
+     * 那样的尺在修好那天必死：修复要拿掉的正是「卡住的是心跳线程」这件事，
+     * 于是修后它必红，而<b>一把死掉的尺让「修好了」和「压根没灌满」长得一样</b>。
+     * 劈开之后修前修后都该绿，每一轮的数都自带「复现成立」的戳。
+     * <p>
+     * 状态走<b>白名单</b>：{@code {WAITING, RUNNABLE}} ＋ socket 写帧 ＋ {@code sendCloseFrame} 帧。
+     * 不写成「<b>不是</b> {@code BLOCKED}」——那样会对没见过的状态默默放行：
+     * {@code TIMED_WAITING}、或某个将来 JDK 的新形态，都会带着完全正确的栈帧悄悄过尺。
+     * <b>名单外则尺自己举手</b>（{@code 尺没见过的状态}＝true），既不算红也不算绿，
+     * 由外部收集方判 ABORT 带实录。
+     * <p>
+     * 实测：状态是 {@code WAITING}——它停在 {@code NioSocketImpl} 自己那把写锁上，
+     * 不是自己停在 write 系统调用里。照「必须 RUNNABLE」写会次次假红。
+     *
+     * @return 卡住那条线程的名字／线程号／状态／栈摘录，以及它在等谁；没有人卡住时返回 null
+     */
+    static Map<String, Object> 先验尺_有人卡在关闭帧的写里() {
+        for (Map.Entry<Thread, StackTraceElement[]> e : Thread.getAllStackTraces().entrySet()) {
+            List<String> 摘 = new ArrayList<>();
+            boolean 在写 = false;
+            boolean 在发关闭帧 = false;
             for (StackTraceElement f : e.getValue()) {
                 String line = f.getClassName() + "." + f.getMethodName();
                 摘.add(line);
-                if (line.contains("Socket") && f.getMethodName().contains("rite")) {
+                if (line.contains("Socket") && line.endsWith(".write")) {
                     在写 = true;
                 }
-                if (line.endsWith("NovaEventEndpoint$Client.close")) {
-                    在关 = true;
+                if (line.contains("NovaEventEndpoint$Client")
+                        && (f.getMethodName().equals("sendCloseFrame")
+                            || f.getMethodName().equals("close"))) {
+                    在发关闭帧 = true;
                 }
             }
-            if (在写 && 在关) {
-                Map<String, Object> 出 = new LinkedHashMap<>();
-                出.put("线程状态", e.getKey().getState().name());
-                出.put("栈摘录", 摘.subList(0, Math.min(14, 摘.size())));
-                return 出;
+            if (!(在写 && 在发关闭帧)) {
+                continue;
             }
+            Thread.State st = e.getKey().getState();
+            Map<String, Object> 出 = new LinkedHashMap<>();
+            出.put("线程名", e.getKey().getName());
+            出.put("线程号", e.getKey().getId());
+            出.put("线程状态", st.name());
+            出.put("状态在白名单内", 关闭帧_状态白名单.contains(st));
+            出.put("尺没见过的状态", !关闭帧_状态白名单.contains(st));
+            出.put("白名单", 关闭帧_状态白名单.stream().map(Enum::name).sorted().toList());
+            出.put("栈摘录", 摘.subList(0, Math.min(14, 摘.size())));
+            Map<String, Object> 持 = 持写锁的线程();
+            出.put("它在等谁（持 NioSocketImpl 写锁的线程）",
+                    持 == null ? "取不到——同一份转储里没找出持锁的那条" : 持);
+            出.put("JDK", System.getProperty("java.version") + " / "
+                    + System.getProperty("java.vm.name"));
+            return 出;
         }
         return null;
     }
@@ -611,6 +750,13 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * 公开面的源码字符串里不该有；改前缀要<b>两头同改</b>（这里与外部收集方的匹配串）。
      */
     static void 读数(String 名, Map<String, Object> 值) {
+        // 🔴 值里再出现一个叫「读数」的键，就会把**名字**顶掉，
+        //    而顶掉之后那条读数看起来跟正常的一模一样——外面按名字找就永远找不到它。
+        //    （已经踩过一次：先验尺那条把栈实录塞在「读数」键里，定余量那 20 轮第一轮就停。）
+        if (值.containsKey("读数")) {
+            throw new IllegalArgumentException("读数「" + 名 + "」的值里有一个叫「读数」的键，"
+                    + "它会把名字顶掉。换个键名（比如「实录」）——顶掉之后没人看得出来。");
+        }
         JSONObject j = new JSONObject();
         j.put("读数", 名);
         j.putAll(值);

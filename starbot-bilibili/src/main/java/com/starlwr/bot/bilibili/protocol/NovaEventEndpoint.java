@@ -18,6 +18,7 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -457,8 +458,41 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
         }
 
         private void close(CloseStatus status) {
-            if (closed) {
+            if (!beginClose()) {
                 return;
+            }
+            sendCloseFrame(status);
+        }
+
+        /**
+         * 同上，但**发关闭帧那一步**交给发送线程池
+         * <p>
+         * 关一条 WebSocket 要发一帧关闭帧，那是一次<b>阻塞写</b>；落在一条写不动的连接上，
+         * 调用方的线程就停在那儿。给心跳线程用的就是这一支：那条线程是<b>全局共享的单线程</b>，
+         * 它停一下，所有连接的 ping、认证时限、回补窗口一起停。
+         * <p>
+         * 记账的部分（{@code closed}、退订、清空待发）仍旧就地做完，只有那一次写挪走：
+         * 挪走的是会阻塞的那一步，不是「什么时候算关上了」。这样下一轮心跳看见 {@code closed}
+         * 就直接跳过，不会反复往池子里塞活。
+         */
+        private void closeAsync(CloseStatus status) {
+            if (!beginClose()) {
+                return;
+            }
+            try {
+                senders.execute(() -> sendCloseFrame(status));
+            } catch (RejectedExecutionException e) {
+                // 正在关停，池子不收活了。这时阻不阻塞已经无所谓，就地关掉。
+                sendCloseFrame(status);
+            }
+        }
+
+        /**
+         * 关闭的记账部分：只做一次，返回是否由本次调用做的
+         */
+        private boolean beginClose() {
+            if (closed) {
+                return false;
             }
             closed = true;
 
@@ -467,7 +501,10 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
             }
             stream.unsubscribe(this);
             outbox.clear();
+            return true;
+        }
 
+        private void sendCloseFrame(CloseStatus status) {
             try {
                 session.close(status);
             } catch (IOException | IllegalStateException e) {
@@ -611,6 +648,9 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
 
     /**
      * 心跳：给每个客户端发 {@code ping}，并清理已经不回话的连接
+     * <p>
+     * 跑在<b>全局共享的单线程</b>上，所以这里<b>不许有阻塞调用</b>——发 ping 走的是每条连接
+     * 自己的待发队列，清理走 {@link Client#closeAsync}。
      */
     private void heartbeat() {
         long now = System.currentTimeMillis();
@@ -622,7 +662,11 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
             }
             if (now - client.lastSeenAt > timings.clientTimeout()) {
                 log.info("事件流客户端 {} 超过 {} 毫秒未回应, 已断开", client.session.getId(), timings.clientTimeout());
-                client.close(CloseStatus.POLICY_VIOLATION.withReason("未按协议回应心跳"));
+                // 🔴 用 closeAsync 而不是 close：这条线程是全局共享的单线程，
+                //    而关一条连接要发关闭帧、那是阻塞写。就地关的话，
+                //    一条写不动的连接会把**所有**连接的 ping、认证时限、回补窗口一起钉住；
+                //    还多一层——遍历是顺序的，排在它后面的连接这一轮连 ping 都轮不到。
+                client.closeAsync(CloseStatus.POLICY_VIOLATION.withReason("未按协议回应心跳"));
                 continue;
             }
             client.send(control("ping"));

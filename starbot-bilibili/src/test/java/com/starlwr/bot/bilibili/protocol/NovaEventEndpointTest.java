@@ -57,6 +57,16 @@ class NovaEventEndpointTest {
         }
 
         /**
+         * 已经下行过多少帧
+         * <p>
+         * 给「认证之前一个字节都不下行」那一格用：它要断言的是**零**，
+         * 而 {@link #next()} 为了等消息会先空等三秒——断言零不该靠空等。
+         */
+        int sentCount() {
+            return sent.size();
+        }
+
+        /**
          * 取接下来的若干条消息
          */
         List<JSONObject> next(int count) throws InterruptedException {
