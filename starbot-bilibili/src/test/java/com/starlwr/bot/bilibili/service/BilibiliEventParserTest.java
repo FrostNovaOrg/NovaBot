@@ -233,15 +233,15 @@ class BilibiliEventParserTest {
          * 主播 uid 与房间号已改写成与 {@link BilibiliEventParserTest#SOURCE} 一致，
          * 便于直接核对勋章归属。
          */
-        private static final String ENTER_WITH_GUARD = "CJFOEg/ov5vmiL/op4LkvJfnlLIiAwYDASgBMIHaxAk4v+Di0wZAuKjH0f8zSjYIgYSvXxAoGgzmtYvor5Xli4vnq6Agi8L9ByiLwv0HMISh/wc4/9GfA0ABSANggdrECWiWzBJiAHjttYKCuqeM5RiAAQOaAQCyAe4CCJFOEkAKD+i/m+aIv+inguS8l+eUshIkaHR0cHM6Ly9mYWNlLmV4YW1wbGUvZW50ZXItZ3VhcmQuanBnQgcjMDBEMUYxGrgBCgzmtYvor5Xli4vnq6AQKBiLwv0HIISh/wco/9GfAzCLwv0HOL6nEUgBUIGEr19YA2CWzBJqSmh0dHBzOi8vaTAuaGRzbGIuY29tL2Jmcy9saXZlLzQ4MzYwYzhmM2I3ZGU4MDMxZTg2ZmYxZWY0YTJkZmMwZWMyYTYxYzIucG5negkjNEM3REZGOTmCAQkjNEM3REZGOTmKAQcjNThBMUY4kgEHI0ZGRkZGRpoBCSM0QzdERkZFNiICCCUyFwgDEhMyMDI2LTA4LTE0IDIzOjU5OjU5Ok8I7w0SSmh0dHBzOi8vaTAuaGRzbGIuY29tL2Jmcy9saXZlLzgwZjczMjk0M2NjMzM2NzAyOWRmNjVlMjY3OTYwZDU2NzM2YTgyZWUucG5nugEAwgEA";
+        private static final String ENTER_WITH_GUARD = "CJFOEg/ov5vmiL/op4LkvJfnlLIiAwYDASgBMLPY1oyX7Qo4v+Di0wZAuKjH0f8zSjwIjKHB6LTABBAoGgzmtYvor5Xli4vnq6Agi8L9ByiLwv0HMISh/wc4/9GfA0ABSANgs9jWjJftCmiWzBJiAHjttYKCuqeM5RiAAQOaAQCyAfECCJFOEkAKD+i/m+aIv+inguS8l+eUshIkaHR0cHM6Ly9mYWNlLmV4YW1wbGUvZW50ZXItZ3VhcmQuanBnQgcjMDBEMUYxGrsBCgzmtYvor5Xli4vnq6AQKBiLwv0HIISh/wco/9GfAzCLwv0HOL6nEUgBUIyhwei0wARYA2CWzBJqSmh0dHBzOi8vaTAuaGRzbGIuY29tL2Jmcy9saXZlLzQ4MzYwYzhmM2I3ZGU4MDMxZTg2ZmYxZWY0YTJkZmMwZWMyYTYxYzIucG5negkjNEM3REZGOTmCAQkjNEM3REZGOTmKAQcjNThBMUY4kgEHI0ZGRkZGRpoBCSM0QzdERkZFNiICCCUyFwgDEhMyMDI2LTA4LTE0IDIzOjU5OjU5Ok8I7w0SSmh0dHBzOi8vaTAuaGRzbGIuY29tL2Jmcy9saXZlLzgwZjczMjk0M2NjMzM2NzAyOWRmNjVlMjY3OTYwZDU2NzM2YTgyZWUucG5nugEAwgEA";
 
-        private static final String ENTER_WITH_PROMOTION = "CJJOEg/ov5vmiL/op4LkvJfkuZkiAQEoATCB2sQJOOHk4tMGQPvl47v+M0oAUAFaByNGRjY0OUViAGoP5rWB6YeP5YyF5o6o5bm/eMvUnKivt4zlGJoBALIBhAEIkk4SfwoP6L+b5oi/6KeC5LyX5LmZEiVodHRwczovL2ZhY2UuZXhhbXBsZS9lbnRlci1zcHJlYWQuanBnMjgKD+i/m+aIv+inguS8l+S5mRIlaHR0cHM6Ly9mYWNlLmV4YW1wbGUvZW50ZXItc3ByZWFkLmpwZzoLIP///////////wG6AQDCAQA=";
+        private static final String ENTER_WITH_PROMOTION = "CJJOEg/ov5vmiL/op4LkvJfkuZkiAQEoATCz2NaMl+0KOOHk4tMGQPvl47v+M0oAUAFaByNGRjY0OUViAGoP5rWB6YeP5YyF5o6o5bm/eMvUnKivt4zlGJoBALIBhAEIkk4SfwoP6L+b5oi/6KeC5LyX5LmZEiVodHRwczovL2ZhY2UuZXhhbXBsZS9lbnRlci1zcHJlYWQuanBnMjgKD+i/m+aIv+inguS8l+S5mRIlaHR0cHM6Ly9mYWNlLmV4YW1wbGUvZW50ZXItc3ByZWFkLmpwZzoLIP///////////wG6AQDCAQA=";
 
-        private static final String ENTER_PLAIN = "CJNOEg/ov5vmiL/op4LkvJfkuJkiAQEoATCB2sQJOKLf4tMGQK6ouLv+M2IAeKvs1ejyoozlGJoBALIBQgiTThI3Cg/ov5vmiL/op4LkvJfkuJkSJGh0dHBzOi8vZmFjZS5leGFtcGxlL2VudGVyLXBsYWluLmpwZyICCAcyALoBAMIBAA==";
+        private static final String ENTER_PLAIN = "CJNOEg/ov5vmiL/op4LkvJfkuJkiAQEoATCz2NaMl+0KOKLf4tMGQK6ouLv+M2IAeKvs1ejyoozlGJoBALIBQgiTThI3Cg/ov5vmiL/op4LkvJfkuJkSJGh0dHBzOi8vZmFjZS5leGFtcGxlL2VudGVyLXBsYWluLmpwZyICCAcyALoBAMIBAA==";
 
-        private static final String FOLLOW_WITH_MEDAL = "CJROEgzlhbPms6jop4LkvJciAgMBKAIwgdrECTjl6OLTBkCf1OXA/jNKMgiBhK9fEAMaDOa1i+ivleWLi+eroCCOrfICKI6t8gIwjq3yAjiOrfICQAFggdrECWgKYgB467rniavGjOUYmgEAsgHcAQiUThJtCgzlhbPms6jop4LkvJcSH2h0dHBzOi8vZmFjZS5leGFtcGxlL2ZvbGxvdy5qcGcyLwoM5YWz5rOo6KeC5LyXEh9odHRwczovL2ZhY2UuZXhhbXBsZS9mb2xsb3cuanBnOgsg////////////ARpmCgzmtYvor5Xli4vnq6AQAxiOrfICII6t8gIojq3yAjCOrfICSAFQgYSvX2AKegkjNTc2MkE3OTmCAQkjNTc2MkE3OTmKAQkjNTc2MkE3OTmSAQcjRkZGRkZGmgEJIzU3NjJBN0U2MgC6AQA=";
+        private static final String FOLLOW_WITH_MEDAL = "CJROEgzlhbPms6jop4LkvJciAgMBKAIws9jWjJftCjjl6OLTBkCf1OXA/jNKOAiMocHotMAEEAMaDOa1i+ivleWLi+eroCCOrfICKI6t8gIwjq3yAjiOrfICQAFgs9jWjJftCmgKYgB467rniavGjOUYmgEAsgHfAQiUThJtCgzlhbPms6jop4LkvJcSH2h0dHBzOi8vZmFjZS5leGFtcGxlL2ZvbGxvdy5qcGcyLwoM5YWz5rOo6KeC5LyXEh9odHRwczovL2ZhY2UuZXhhbXBsZS9mb2xsb3cuanBnOgsg////////////ARppCgzmtYvor5Xli4vnq6AQAxiOrfICII6t8gIojq3yAjCOrfICSAFQjKHB6LTABGAKegkjNTc2MkE3OTmCAQkjNTc2MkE3OTmKAQkjNTc2MkE3OTmSAQcjRkZGRkZGmgEJIzU3NjJBN0U2MgC6AQA=";
 
-        private static final String SHARE = "CJVOEgzliIbkuqvop4LkvJciAQEoAzCB2sQJOLns4tMGQIqjn7z+M0oxCIGEr18QDhoM5rWL6K+V5YuL56ugIIbN+QUowIGDBjDAgYMGOMCBgwZggdrECWjXA2IAeL6un+SC1IzlGJoBALIB2QEIlU4SawoM5YiG5Lqr6KeC5LyXEh5odHRwczovL2ZhY2UuZXhhbXBsZS9zaGFyZS5qcGcyLgoM5YiG5Lqr6KeC5LyXEh5odHRwczovL2ZhY2UuZXhhbXBsZS9zaGFyZS5qcGc6CyD///////////8BGmUKDOa1i+ivleWLi+eroBAOGMCBgwYgwIGDBijAgYMGMIbN+QVQgYSvX2DXA3oJIzkxOTI5OENDggEJIzkxOTI5OENDigEJIzkxOTI5OENDkgEHI0ZGRkZGRpoBCSM5MTkyOThFNjIAugEA";
+        private static final String SHARE = "CJVOEgzliIbkuqvop4LkvJciAQEoAzCz2NaMl+0KOLns4tMGQIqjn7z+M0o3CIyhwei0wAQQDhoM5rWL6K+V5YuL56ugIIbN+QUowIGDBjDAgYMGOMCBgwZgs9jWjJftCmjXA2IAeL6un+SC1IzlGJoBALIB3AEIlU4SawoM5YiG5Lqr6KeC5LyXEh5odHRwczovL2ZhY2UuZXhhbXBsZS9zaGFyZS5qcGcyLgoM5YiG5Lqr6KeC5LyXEh5odHRwczovL2ZhY2UuZXhhbXBsZS9zaGFyZS5qcGc6CyD///////////8BGmgKDOa1i+ivleWLi+eroBAOGMCBgwYgwIGDBijAgYMGMIbN+QVQjKHB6LTABGDXA3oJIzkxOTI5OENDggEJIzkxOTI5OENDigEJIzkxOTI5OENDkgEHI0ZGRkZGRpoBCSM5MTkyOThFNjIAugEA";
 
         /**
          * 手工按 wire format 拼的报文，取值 {@code msg_type=99}。语料里没有这种消息
@@ -251,7 +251,7 @@ class BilibiliEventParserTest {
         /**
          * 手工拼的报文，只有顶层字段而没有 uinfo，用来验证退回顶层 uid 与昵称的通路
          */
-        private static final String WITHOUT_UINFO = "CIkGEgzpobblsYLmmLXnp7AoATCB2sQJOIHiz6oG";
+        private static final String WITHOUT_UINFO = "CIkGEgzpobblsYLmmLXnp7AoATCz2NaMl+0KOIHiz6oG";
 
         /**
          * 手工拼的报文，uinfo 里有 uid 但没有 base，用来验证事件补全的通路
@@ -281,8 +281,8 @@ class BilibiliEventParserTest {
                     sender.getGuard().getIcon());
 
             FansMedal medal = sender.getFansMedal();
-            assertEquals(200000001L, medal.getUid());
-            assertEquals(20000001L, medal.getRoomId());
+            assertEquals(19805387116684L, medal.getUid());
+            assertEquals(47731877194803L, medal.getRoomId());
             assertEquals("测试勋章", medal.getName());
             assertEquals(40, medal.getLevel());
             assertTrue(medal.getLighted());
@@ -386,20 +386,31 @@ class BilibiliEventParserTest {
             assertTrue(parseV2(Base64.getEncoder().encodeToString(new byte[]{1, 2, 3, 4, 5})).isEmpty());
         }
 
+        /**
+         * 截断点：落在时间戳（字段 7）读完之后、勋章（字段 9）开始之前。
+         * <p>
+         * 🔴 这个数<b>跟着报文头几个字段的字节数走</b>。头几个字段是变长 varint——
+         * uid、房间号、时间戳，值一改字节数就跟着改。改了夹具而没有把这个数往后挪，
+         * 时间戳就会被切到截断点外面，解析器退回 {@code Instant.now()}，
+         * 而失败信息只会说「时间戳不对」，不会说「截断点该挪」。
+         */
+        private static final int TRUNCATE_AT = 43;
+
         @Test
         @DisplayName("被截断的报文仍按已读到的字段产出事件")
         void stillEmitsEventOnTruncatedPayload() {
             // 长连接上真出现半条消息时，uid、msg_type 与时间戳都在报文开头，
             // 丢掉的是勋章与 uinfo。此时宁可产出一个信息不全的进房事件，也不要整条丢弃
             byte[] full = Base64.getDecoder().decode(ENTER_WITH_GUARD);
-            byte[] cut = Arrays.copyOf(full, 40);
+            byte[] cut = Arrays.copyOf(full, TRUNCATE_AT);
 
             BilibiliEnterRoomEvent event = assertInstanceOf(BilibiliEnterRoomEvent.class,
                     parseV2(Base64.getEncoder().encodeToString(cut)).orElseThrow());
 
             assertEquals(10001L, event.getSender().getUid());
             assertEquals("进房观众甲", event.getSender().getUname());
-            assertEquals(1786294335000L, event.getTimestamp());
+            assertEquals(1786294335000L, event.getTimestamp(),
+                    "时间戳被切到截断点外面了——报文头是变长 varint，值一改字节数就变，TRUNCATE_AT 要跟着往后挪");
             assertNull(((BilibiliUserInfo) event.getSender()).getFansMedal(), "截断之后的字段应当缺失而不是被猜出来");
         }
 
