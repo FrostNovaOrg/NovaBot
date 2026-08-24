@@ -1,12 +1,12 @@
 [
   {
-    "uid": 12345678,
+    "uid": "",
     "platform": "bilibili",
     "targets": [
       {
         "platform": "qq-onebot",
         "type": 1,
-        "num": 987654321,
+        "num": "",
         "messages": [
           {
             "handler": "com.starlwr.bot.bilibili.handler.BilibiliLiveOnPushHandler"

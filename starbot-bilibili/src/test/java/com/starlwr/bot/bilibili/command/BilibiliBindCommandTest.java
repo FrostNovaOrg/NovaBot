@@ -16,6 +16,7 @@ import java.util.Arrays;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
@@ -58,7 +59,11 @@ class BilibiliBindCommandTest {
     @Test
     @DisplayName("不带 uid 时应说明用法")
     void hintsWhenNoArgument() {
-        assertTrue(bind.execute(context("绑定")).content().contains("uid"));
+        String content = bind.execute(context("绑定")).content();
+
+        System.out.println("[绑定·不带参数] 用户看到的正文：\n" + content);
+        assertTrue(content.contains("uid"), content);
+        assertNoCopyableNumber(content);
     }
 
     @Test
@@ -66,7 +71,9 @@ class BilibiliBindCommandTest {
     void rejectsNonNumericUid() {
         CommandReply reply = bind.execute(context("绑定", "我的主页"));
 
+        System.out.println("[绑定·参数不是数字] 用户看到的正文：\n" + reply.content());
         assertTrue(reply.content().contains("纯数字"), reply.content());
+        assertNoCopyableNumber(reply.content());
         assertEquals(Optional.empty(), bindings.get(PLATFORM, "bilibili", QQ));
     }
 
@@ -116,6 +123,22 @@ class BilibiliBindCommandTest {
                 "确认绑定", java.util.List.of(), "确认绑定");
         assertTrue(confirm.execute(other).content().contains("没有待确认"));
         assertEquals(Optional.empty(), bindings.get(PLATFORM, "bilibili", 10000L));
+    }
+
+    /**
+     * 用法提示里不许出现<b>能被照抄的号</b>
+     * <p>
+     * 🔴 原来这两条断言只核 {@code contains("uid")}，示例号是真号还是占位记号<b>它都绿</b>。
+     * 示例里那串 9 位数在哔哩哔哩是合法 uid，用户照着抄就绑到别人头上；手册那处更在
+     * 「照着做」的编号步骤里，链接可点。
+     * <p>
+     * 断言钉的是<b>性质</b>而不是那一个字符串：正文里不得有连续 4 位以上的数字。
+     * 这样它拦得住「为了过测试把占位记号又写回像号的东西」——把 {@code <你的 uid>}
+     * 换回任何一串号，这条都会红。
+     */
+    private static void assertNoCopyableNumber(String content) {
+        assertFalse(java.util.regex.Pattern.compile("\\d{4,}").matcher(content).find(),
+                "用法提示里不该出现能被照抄的号，实际正文：" + content);
     }
 
     private CommandContext context(String command, String... args) {

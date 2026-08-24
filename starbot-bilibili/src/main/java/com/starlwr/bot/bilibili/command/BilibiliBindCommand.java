@@ -80,8 +80,8 @@ public class BilibiliBindCommand implements StarBotCommand {
 
         String arg = context.arg(0);
         if (StringUtil.isBlank(arg)) {
-            return CommandReply.of("请带上你的哔哩哔哩 uid，例如：绑定 500000004"
-                    + "\nuid 在个人主页地址栏里，形如 space.bilibili.com/500000004");
+            return CommandReply.of("请带上你的哔哩哔哩 uid，例如：绑定 <你的 uid>"
+                    + "\nuid 在个人主页地址栏里，形如 space.bilibili.com/<你的 uid>");
         }
 
         long uid;

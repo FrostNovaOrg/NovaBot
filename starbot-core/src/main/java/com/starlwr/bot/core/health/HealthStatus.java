@@ -4,7 +4,7 @@ package com.starlwr.bot.core.health;
  * 健康状况
  *
  * @param level 严重程度
- * @param summary 当前状态的简短描述，例如「正常（uid 200000001）」
+ * @param summary 当前状态的简短描述，例如 {@code 正常（uid <你的 uid>）}
  * @param advice 修复建议，正常时为空字符串。异常时务必给出使用者下一步能做什么，
  *               而不是只说「异常」——排障成本高正是本项目最主要的可用性短板
  */
