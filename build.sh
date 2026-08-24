@@ -255,6 +255,15 @@ rm -f "$OUT"/plugins-lib/starbot-core-*.jar
 # 而那要到运行时才暴露成一句莫名其妙的启动失败
 cp -R dist/templates/. "$OUT/"
 
+# datasource.json 被 .gitignore 忽略（免得谁把自己的真配置提交上来），因此导出的树里没有它。
+# 🔴 上一版包里那份 datasource.json 是 `cp -R dist/templates/.` 从**打包那台机器的本地文件**
+#    拷来的：它不在仓库里，内容取决于谁来打包，而包本身看不出这一点。
+#    现在固定写一个空数组，与打包的人无关；填法看旁边的 datasource.example.json。
+#    不写这一行的话，收尾那句「请编辑 datasource.json」指向一个不存在的文件。
+if [ ! -e "$OUT/datasource.json" ]; then
+    echo "[]" > "$OUT/datasource.json"
+fi
+
 # BUILD-INFO 只进产物，不进仓库
 # source= 这一行是给拿到包的人看的：worktree 表示打包源是某人的工作目录
 # （那么包里可能有仓库里没有的文件），archive:<ref> 表示打包源是一棵导出的树。
