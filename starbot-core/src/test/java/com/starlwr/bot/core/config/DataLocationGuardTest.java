@@ -194,6 +194,37 @@ class DataLocationGuardTest {
         assertTrue(logs.isEmpty(), "什么都没发生的时候不该有日志——恒亮的告警会训练人忽略它");
     }
 
+    @Test
+    @DisplayName("⑥ 注册 —— 守卫必须真的被 Spring 装上，而不是只写对了逻辑")
+    void 注册要真的生效() throws Exception {
+        String 键 = "org.springframework.boot.EnvironmentPostProcessor";
+        java.util.List<String> 声明 = new ArrayList<>();
+        var urls = getClass().getClassLoader().getResources("META-INF/spring.factories");
+        while (urls.hasMoreElements()) {
+            java.util.Properties props = new java.util.Properties();
+            try (var in = urls.nextElement().openStream()) {
+                props.load(in);
+            }
+            String v = props.getProperty(键);
+            if (v != null) {
+                for (String one : v.split(",")) {
+                    声明.add(one.trim());
+                }
+            }
+        }
+
+        assertTrue(声明.contains(DataLocationGuard.class.getName()),
+                "spring.factories 的 " + 键 + " 下没有列出守卫 —— 逻辑写对了但没装上，等于没有守卫。"
+                        + "实有：" + 声明);
+
+        // 🔴 键名对了还不够：键名就是**接口的全限定名**，装错接口一样不会被调用。
+        //    这两处正是本轮踩的：先用了 .imports 文件（Boot 4 认的是 spring.factories），
+        //    又用了 org.springframework.boot.env.EnvironmentPostProcessor（两个同名接口都在）。
+        //    单元测试当时 6 格全绿，因为它们**只测了类自己的逻辑，没测它有没有被装上**。
+        assertTrue(Class.forName(键).isAssignableFrom(DataLocationGuard.class),
+                "守卫没有实现 " + 键 + " —— 键名与接口必须是同一个");
+    }
+
     /**
      * 只把消息收进列表的 {@code Log}。
      * <p>

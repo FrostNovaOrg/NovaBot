@@ -1,0 +1,2 @@
+org.springframework.boot.EnvironmentPostProcessor=\
+  com.starlwr.bot.core.config.DataLocationGuard
