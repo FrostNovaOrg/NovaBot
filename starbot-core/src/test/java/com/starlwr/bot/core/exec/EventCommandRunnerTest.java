@@ -51,7 +51,7 @@ class EventCommandRunnerTest {
     }
 
     private LiveOnEvent event(String uname) {
-        return new LiveOnEvent(PLATFORM, new LiveStreamerInfo(3000000000000001L, uname, 2000000001L));
+        return new LiveOnEvent(PLATFORM, new LiveStreamerInfo(19142561034510L, uname, 2000000001L));
     }
 
     private StarBotCoreProperties.ExecRule rule(String eventName, String... command) {
@@ -76,7 +76,7 @@ class EventCommandRunnerTest {
         List<String> command = runner.resolve(
                 List.of("/bin/echo", "{event}", "{platform}", "{uid}", "{uname}", "{room_id}"), event("测试主播"));
 
-        assertEquals(List.of("/bin/echo", "LiveOnEvent", "bilibili", "3000000000000001", "测试主播", "2000000001"), command);
+        assertEquals(List.of("/bin/echo", "LiveOnEvent", "bilibili", "19142561034510", "测试主播", "2000000001"), command);
     }
 
     @Test

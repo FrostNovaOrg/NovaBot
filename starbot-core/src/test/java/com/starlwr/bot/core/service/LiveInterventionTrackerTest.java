@@ -26,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class LiveInterventionTrackerTest {
     private static final String PLATFORM = "bilibili";
 
-    private static final Long UID = 3000000000000001L;
+    private static final Long UID = 19142561034510L;
 
     private static final Instant NOW = Instant.parse("2026-08-06T12:00:00Z");
 

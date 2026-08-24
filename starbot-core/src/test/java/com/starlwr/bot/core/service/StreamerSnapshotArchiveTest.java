@@ -28,7 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class StreamerSnapshotArchiveTest {
     private static final String PLATFORM = "bilibili";
 
-    private static final Long UID = 3000000000000001L;
+    private static final Long UID = 19142561034510L;
 
     private static final long DAY = 86_400_000L;
 

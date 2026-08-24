@@ -19,7 +19,7 @@ import static org.mockito.Mockito.*;
  */
 @DisplayName("直播状态闸门")
 class BilibiliLiveStateGateTest {
-    private static final long UID = 3000000000000001L;
+    private static final long UID = 19142561034510L;
 
     private LiveDataService liveDataService;
 

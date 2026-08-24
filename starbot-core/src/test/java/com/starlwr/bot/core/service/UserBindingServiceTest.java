@@ -50,9 +50,9 @@ class UserBindingServiceTest {
     @DisplayName("重复绑定应覆盖为最新的 uid")
     void rebindOverwrites() {
         service.bind(PUSH, LIVE, QQ, UID);
-        service.bind(PUSH, LIVE, QQ, 3000000000000001L);
+        service.bind(PUSH, LIVE, QQ, 19142561034510L);
 
-        assertEquals(Optional.of(3000000000000001L), service.get(PUSH, LIVE, QQ));
+        assertEquals(Optional.of(19142561034510L), service.get(PUSH, LIVE, QQ));
     }
 
     @Test
@@ -70,10 +70,10 @@ class UserBindingServiceTest {
     @DisplayName("不同账号的绑定应相互隔离")
     void bindingsIsolatedPerSender() {
         service.bind(PUSH, LIVE, QQ, UID);
-        service.bind(PUSH, LIVE, 10000L, 3000000000000001L);
+        service.bind(PUSH, LIVE, 10000L, 19142561034510L);
 
         assertEquals(Optional.of(UID), service.get(PUSH, LIVE, QQ));
-        assertEquals(Optional.of(3000000000000001L), service.get(PUSH, LIVE, 10000L));
+        assertEquals(Optional.of(19142561034510L), service.get(PUSH, LIVE, 10000L));
     }
 
     @Test
@@ -105,7 +105,7 @@ class UserBindingServiceTest {
     @DisplayName("全量列出的结果应能直接拿去解绑")
     void listedItemsCanBeUnbound() {
         service.bind(PUSH, LIVE, QQ, UID);
-        service.bind("telegram", LIVE, 10000L, 3000000000000001L);
+        service.bind("telegram", LIVE, 10000L, 19142561034510L);
 
         // 管理后台正是这么用的：把列出来的字段原样回传。字段一旦错位，
         // 界面上点「解绑」会解掉另一个人的绑定
