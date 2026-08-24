@@ -7,7 +7,6 @@ import org.springframework.boot.logging.DeferredLogFactory;
 import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.MapPropertySource;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
@@ -59,19 +58,15 @@ public class DataLocationGuard implements EnvironmentPostProcessor {
     static final String DEFAULT_PATH = "data.json";
 
     /**
-     * 逃生阀开关。取 {@code 1} 时放行「数据落在 git 工作树内」。
+     * 逃生阀开关与理由、开发落点：与日志落点<b>共用同一份</b>（{@link WorktreeGuard}）。
+     * <p>
+     * 🔴 同一件事不该有两个开关——两个开关意味着有人关了一个以为都关了。
      */
-    static final String ALLOW_ENV = "NOVABOT_ALLOW_DATA_IN_WORKTREE";
+    static final String ALLOW_ENV = WorktreeGuard.ALLOW_ENV;
 
-    /**
-     * 逃生阀理由。开关按下时<b>必须非空</b>，否则按拒绝处理。
-     */
-    static final String REASON_ENV = "NOVABOT_ALLOW_DATA_IN_WORKTREE_REASON";
+    static final String REASON_ENV = WorktreeGuard.REASON_ENV;
 
-    /**
-     * 默认派生的路径落在工作树内时，改写到的开发落点。
-     */
-    static final String DEV_DIR = ".novabot";
+    static final String DEV_DIR = WorktreeGuard.DEV_DIR;
 
     private static final String SOURCE_NAME = "novaBotDataLocationGuard";
 
@@ -93,7 +88,7 @@ public class DataLocationGuard implements EnvironmentPostProcessor {
             return;
         }
 
-        Path worktree = findWorktreeRoot(dir);
+        Path worktree = WorktreeGuard.findWorktreeRoot(dir);
         if (worktree == null) {
             // 生产形状：目录上溯不到 .git。一字不改，落原地。
             return;
@@ -143,34 +138,12 @@ public class DataLocationGuard implements EnvironmentPostProcessor {
         environment.getPropertySources().addFirst(new MapPropertySource(SOURCE_NAME, overrides));
     }
 
-    /**
-     * 从给定目录逐级上溯，找出它所属的 git 工作树根。
-     * <p>
-     * {@code .git} 既可能是目录（普通克隆），也可能是文件（{@code git worktree} 检出的树、
-     * 子模块）——<b>两种都算</b>。只认目录的话，{@code git worktree} 出来的树会被读成「不在工作树内」，
-     * 而那正是本项目构建时会用到的形态。
-     *
-     * @return 工作树根；不在任何工作树内时返回 {@code null}
-     */
-    private Path findWorktreeRoot(Path dir) {
-        for (Path p = dir; p != null; p = p.getParent()) {
-            if (Files.exists(p.resolve(".git"))) {
-                return p;
-            }
-        }
-        return null;
-    }
-
     private boolean allowed() {
-        return "1".equals(trimmed(env(ALLOW_ENV))) && !reason().isEmpty();
+        return WorktreeGuard.allowed(this::env);
     }
 
     private String reason() {
-        return trimmed(env(REASON_ENV));
-    }
-
-    private String trimmed(String value) {
-        return value == null ? "" : value.trim();
+        return WorktreeGuard.reason(this::env);
     }
 
     /**

@@ -18,6 +18,21 @@
     <springProperty name="consoleLogLevel" source="starbot.core.log.console" defaultValue="INFO"/>
     <springProperty name="fileLogLevel" source="starbot.core.log.file" defaultValue="INFO"/>
 
+    <!--
+        🔴 LOG_HOME 不是「让人换目录」的便利项，是一道守卫。
+        下面三棵日志树原本写的是相对路径，于是从**仓库工作树**里跑起来时，
+        日志就落进仓库目录树——而日志里有观众 uid、昵称与房间号。
+        它比运行时数据更容易触发：跑一次 `mvn test` 就有，不用启动程序
+        （实测三个模块下各写一份，共 46 个文件）。
+
+        故用 logback 自己的 PropertyDefiner 求这个值，**不挂在 Spring 上**：
+        mvn test 跑单元测试时 Spring 可能根本没起来，logback 却已经在写盘了。
+        挂在 Spring 上的守卫盖不住那条路。
+
+        生产形状（目录上溯不到 .git）它返回 "."，落点与本改动之前**逐字节相同**。
+    -->
+    <define name="LOG_HOME" class="com.starlwr.bot.core.config.LogHomeDefiner"/>
+
     <logger name="org.reflections.Reflections" level="OFF"/>
     <logger name="org.apache.catalina.loader.WebappLoader" level="OFF"/>
     <!-- 词云渲染每放置一个词就输出一行 INFO，一张报告能刷几十行 -->
@@ -52,7 +67,7 @@
             <level>${fileLogLevel}</level>
         </filter>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <fileNamePattern>logs/%d{yyyy-MM,aux}/starbot-%d{yyyy-MM-dd}.log</fileNamePattern>
+            <fileNamePattern>${LOG_HOME}/logs/%d{yyyy-MM,aux}/starbot-%d{yyyy-MM-dd}.log</fileNamePattern>
         </rollingPolicy>
         <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
             <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %5p ${PID:- } --- [%20.20t] %-40.40logger{39} : %msg%n</pattern>
@@ -70,7 +85,7 @@
             <level>DEBUG</level>
         </filter>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <fileNamePattern>EventDebug/%d{yyyy-MM,aux}/starbot-event-%d{yyyy-MM-dd}.log</fileNamePattern>
+            <fileNamePattern>${LOG_HOME}/EventDebug/%d{yyyy-MM,aux}/starbot-event-%d{yyyy-MM-dd}.log</fileNamePattern>
         </rollingPolicy>
         <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
             <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} : %msg%n</pattern>
@@ -88,7 +103,7 @@
             <level>DEBUG</level>
         </filter>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <fileNamePattern>NetworkDebug/%d{yyyy-MM,aux}/starbot-network-%d{yyyy-MM-dd}.log</fileNamePattern>
+            <fileNamePattern>${LOG_HOME}/NetworkDebug/%d{yyyy-MM,aux}/starbot-network-%d{yyyy-MM-dd}.log</fileNamePattern>
         </rollingPolicy>
         <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
             <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %5p --- [%20.20t] : %msg%n</pattern>
