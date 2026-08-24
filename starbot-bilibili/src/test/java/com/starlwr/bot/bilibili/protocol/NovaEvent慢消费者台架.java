@@ -27,6 +27,9 @@ import static org.junit.jupiter.api.Assertions.fail;
  * 因为<b>没复现出阻塞时，三条判据的绿和修好了的绿长得一样</b>。
  */
 final class NovaEvent慢消费者台架 implements AutoCloseable {
+    /** 读数行的前缀。改它要两头同改——外部收集方按这个串匹配 */
+    static final String 读数标记 = "慢消费者读数 ";
+
     /** 心跳周期。取小值，好让「一个周期都没等到」在秒级窗口里看得出来 */
     static final long PING = 200;
 
@@ -82,7 +85,15 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
 
     // ══════════════════════════ 台架动作 ══════════════════════════
 
+    /** 此刻端点上挂着几条连接。读数要带上它——同一条判据在 2 条连接和 200 条连接上不是一件事 */
+    int 连接数() {
+        return 已连上.size();
+    }
+
+    private final List<String> 已连上 = new ArrayList<>();
+
     NovaEventEndpointTest.FakeSession 连(String id) {
+        已连上.add(id);
         NovaEventEndpointTest.FakeSession session = new NovaEventEndpointTest.FakeSession(id);
         endpoint.afterConnectionEstablished(session);
         return session;
@@ -109,7 +120,10 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * @return 灌进去的字节数
      */
     long 支起慢客户端() throws Exception {
+        已连上.add(慢客户端.getId());
+        long 灌满起 = System.currentTimeMillis();
         long 灌 = 慢客户端.灌满();
+        long 灌满耗时 = Math.max(1, System.currentTimeMillis() - 灌满起);
         endpoint.afterConnectionEstablished(慢客户端);
         认证(慢客户端, tokens.issue("慢客户端"));
 
@@ -129,6 +143,12 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
         List<String> 心跳栈 = 心跳线程卡在别人的监视器上();
         读数("先验尺", Map.of(
                 "灌入字节", 灌,
+                // 发送速率与连接数：换台机器复现时，这两个数决定了背压是不是同一回事。
+                // 🔴 速率是**量出来的**（灌满字节 ÷ 灌满耗时），不是配的——
+                //    配一个数上去，机器换了它还是那个数。
+                "灌满耗时毫秒", 灌满耗时,
+                "发送速率字节每秒", 灌 * 1000L / 灌满耗时,
+                "此刻连接数（支起慢客户端这一刻，健康连接尚未接入）", 连接数(),
                 "发送线程栈摘录", 栈,
                 "等过回补窗口毫秒", GRACE + 200,
                 "此刻心跳线程被钉住吗", 心跳栈 != null,
@@ -271,11 +291,16 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
         return null;
     }
 
-    /** 读数打到标准输出，由外部收集 */
+    /**
+     * 读数打到标准输出，由外部收集
+     * <p>
+     * 🔴 前缀里<b>不带编号</b>。编号形状是「这里有一套编号系统」的招牌，
+     * 公开面的源码字符串里不该有；改前缀要<b>两头同改</b>（这里与外部收集方的匹配串）。
+     */
     static void 读数(String 名, Map<String, Object> 值) {
         JSONObject j = new JSONObject();
         j.put("读数", 名);
         j.putAll(值);
-        System.out.println("WO025-读数 " + j.toJSONString());
+        System.out.println(读数标记 + j.toJSONString());
     }
 }
