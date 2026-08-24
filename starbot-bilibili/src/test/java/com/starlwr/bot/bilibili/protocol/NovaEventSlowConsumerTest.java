@@ -95,7 +95,23 @@ class NovaEventSlowConsumerTest {
 
         volatile CloseStatus closedWith;
 
+        /**
+         * 关闭时是否**真往 socket 写字节**（充当关闭帧）
+         * <p>
+         * 🔴 默认 {@code false}，也就是「关就是关 fd，一个字节不写」——本类原本的行为。
+         * 不设这个开关而直接改 {@link #close(CloseStatus)} 的话，
+         * 已经绿着的那几组用例的行为会被<b>顺带改掉</b>，
+         * 而<b>被改过的绿和一直没动的绿长得一样</b>。
+         */
+        private final boolean 关闭时真写;
+
         SocketSession(String id, int sndBuf, int rcvBuf, boolean peerReads) throws IOException {
+            this(id, sndBuf, rcvBuf, peerReads, false);
+        }
+
+        SocketSession(String id, int sndBuf, int rcvBuf, boolean peerReads, boolean 关闭时真写)
+                throws IOException {
+            this.关闭时真写 = 关闭时真写;
             this.id = id;
             listener = new ServerSocket();
             // 🔴 接收缓冲要在 bind **之前**设在 ServerSocket 上，accept 出来的那条才继承得到
@@ -210,6 +226,19 @@ class NovaEventSlowConsumerTest {
         @Override
         public void close(CloseStatus status) {
             closedWith = status;
+            if (关闭时真写) {
+                // 真 WebSocket 的 close 要发一帧关闭帧。管道灌满时这一写就返回不了——
+                // 这正是要复现的那件事。字节数取协议里关闭帧载荷的上限，
+                // **量的东西要和要防的东西同尺寸**：写 1 个字节也卡得住，
+                // 但「1 字节卡住」证不了「真实关闭帧会卡住」。
+                try {
+                    out.write(new byte[NovaEvent慢消费者台架.关闭帧字节]);
+                    out.flush();
+                    已写字节.addAndGet(NovaEvent慢消费者台架.关闭帧字节);
+                } catch (IOException ignored) {
+                    // 对端已经没了就算了，本来就在关
+                }
+            }
             关掉();
         }
 
