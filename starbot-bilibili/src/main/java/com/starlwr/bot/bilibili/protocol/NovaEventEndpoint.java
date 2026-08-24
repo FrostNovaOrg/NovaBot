@@ -125,7 +125,26 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
                     + "按 emoji != null 判会漏掉全部内联表情弹幕",
             "rawJson: 协议之外的附加字段，为平台原始报文。字段随平台改版而变，不要当契约用");
 
+    /**
+     * 时限组
+     * <p>
+     * 生产恒为 {@link #DEFAULT}。开这个口子<b>不是修复</b>，也不改任何生产行为——
+     * 它只让测试把秒换成毫秒：判据要量的是「慢消费者在场时 ping／认证闸／转实时流还走不走」，
+     * 而按 15 秒的真周期跑，一条判据要等一分多钟。🔴 <b>等不起的判据最后不会有人跑。</b>
+     *
+     * @param pingInterval  心跳间隔
+     * @param clientTimeout 多久不回话就断开
+     * @param authTimeout   未认证超时
+     * @param resumeGrace   回补窗口
+     */
+    record Timings(long pingInterval, long clientTimeout, long authTimeout, long resumeGrace) {
+        static final Timings DEFAULT =
+                new Timings(PING_INTERVAL_MS, CLIENT_TIMEOUT_MS, AUTH_TIMEOUT_MS, RESUME_GRACE_MS);
+    }
+
     private final NovaEventStream stream;
+
+    private final Timings timings;
 
     /**
      * 单个连接的发送队列容量，单位：条
@@ -135,7 +154,15 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
     private final Map<String, Client> clients = new ConcurrentHashMap<>();
 
     /**
-     * 心跳线程。只做定时，不做发送
+     * 心跳线程：全局定时器
+     * <p>
+     * 它<b>不做发送</b>，但它承接三类定时任务：周期性的 {@link #heartbeat()}、
+     * 每条连接的未认证超时（{@code closeUnauthenticated}）、以及回补窗口到点后的
+     * {@code goLive}。后两类是<b>某一条连接</b>的状态迁移，跑在这条<b>全局共享</b>的线程上。
+     * <p>
+     * 🔴 <b>只有一条线程</b>，所以派到这里的任务里<b>不许有任何等得没边的东西</b>——
+     * 一旦有一个任务等在某条连接的锁上，全局 ping、别人的认证闸、别人的 goLive 一起停。
+     * 参见 {@link Client#writeDirect} 为什么用自己的锁而不是这个对象的监视器。
      */
     private final ScheduledExecutorService heartbeats =
             Executors.newSingleThreadScheduledExecutor(daemon("nova-event-heartbeat"));
@@ -161,10 +188,19 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
      * @param tokens 只读口令服务。传 {@code null} 表示不要求口令，连上即开始推
      */
     public NovaEventEndpoint(NovaEventStream stream, EventStreamTokenService tokens) {
+        this(stream, tokens, Timings.DEFAULT);
+    }
+
+    /**
+     * @param timings 时限组。生产不走这个构造器，见 {@link Timings}
+     */
+    NovaEventEndpoint(NovaEventStream stream, EventStreamTokenService tokens, Timings timings) {
         this.stream = stream;
         this.tokens = tokens;
+        this.timings = timings;
         this.outboxCapacity = stream.getCapacity() + OUTBOX_HEADROOM;
-        heartbeats.scheduleAtFixedRate(this::heartbeat, PING_INTERVAL_MS, PING_INTERVAL_MS, TimeUnit.MILLISECONDS);
+        heartbeats.scheduleAtFixedRate(this::heartbeat,
+                timings.pingInterval(), timings.pingInterval(), TimeUnit.MILLISECONDS);
     }
 
     private static ThreadFactory daemon(String name) {
@@ -204,6 +240,25 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
          */
         private volatile boolean authenticated;
 
+        /**
+         * 口令已经被判过一次不合格。用来挡住「两帧同时来、两条都去写 auth_failed」——
+         * 从前靠 {@code close} 在监视器里先把 {@code closed} 立起来挡，
+         * 而现在写与关都在监视器外面。
+         */
+        private volatile boolean authRejected;
+
+        /**
+         * 写锁
+         * <p>
+         * 🔴 <b>写要串起来，但不能用这个对象的监视器串。</b>
+         * {@code sendMessage} 是阻塞写，客户端不读就一直不返回；而 {@code goLive} 与
+         * {@code closeUnauthenticated} 是 synchronized，且跑在<b>全局共享的心跳线程</b>上。
+         * 两者共用监视器的话，一个写不动的客户端就把心跳线程钉死在自己的锁上——
+         * 全局 ping 停发、别人的认证闸不触发、别人的 goLive 不执行。
+         * 所以写自己拿一把锁：<b>锁不跨阻塞写</b>。
+         */
+        private final Object writeMutex = new Object();
+
         private ScheduledFuture<?> grace;
 
         /**
@@ -218,13 +273,6 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
         }
 
         /**
-         * 处理 {@code auth} 帧
-         * <p>
-         * 成功就走与「不要求口令时连上」完全相同的那条路：发 hello、开回补窗口。
-         * 失败则先<b>同步</b>把 {@code auth_failed} 写出去再关连接——
-         * 客户端要能分清「口令错」和「数据源没起」，这一位就是全部区别。
-         */
-        /**
          * 未认证超时到点
          * <p>
          * 与「口令错」区分开：这里<b>不发 {@code auth_failed}</b>，因为没人出示过任何东西。
@@ -234,36 +282,58 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
             if (authenticated || closed) {
                 return;
             }
-            log.info("事件流客户端 {} 连上后 {} 毫秒内未发认证帧, 已断开", session.getId(), AUTH_TIMEOUT_MS);
+            log.info("事件流客户端 {} 连上后 {} 毫秒内未发认证帧, 已断开", session.getId(), timings.authTimeout());
             close(CloseStatus.POLICY_VIOLATION.withReason("未在时限内认证"));
         }
 
-        private synchronized void authenticate(String presented) {
-            if (authenticated || closed) {
-                // 重复发 auth 直接忽略：已经认过的连接不该被第二帧改变状态
-                return;
+        /**
+         * 处理 {@code auth} 帧
+         * <p>
+         * 成功就走与「不要求口令时连上」完全相同的那条路：发 hello、开回补窗口。
+         * 失败则先<b>同步</b>把 {@code auth_failed} 写出去再关连接——
+         * 客户端要能分清「口令错」和「数据源没起」，这一位就是全部区别。
+         * <p>
+         * 🔴 <b>判与写分两段</b>：判在监视器里（含「拒过没有」这一位），
+         * 写与关在监视器<b>外面</b>——{@code writeDirect} 是阻塞写，而这条连接的
+         * {@code closeUnauthenticated} 正跑在<b>全局共享的心跳线程</b>上等同一个监视器。
+         * 「先同步写完再关」一点没变，变的只是这两步持不持锁。
+         */
+        private void authenticate(String presented) {
+            String reason;
+            synchronized (this) {
+                if (authenticated || closed || authRejected) {
+                    // 重复发 auth 直接忽略：已经认过的连接不该被第二帧改变状态
+                    return;
+                }
+
+                EventStreamTokenService.Verdict verdict = tokens.check(presented);
+                if (verdict == EventStreamTokenService.Verdict.OK) {
+                    authenticated = true;
+                    if (authDeadline != null) {
+                        authDeadline.cancel(false);
+                    }
+
+                    NovaEventStream.State state = stream.snapshot();
+                    send(hello(state));
+                    grace = heartbeats.schedule(() -> goLive(state.lastSeq()), timings.resumeGrace(), TimeUnit.MILLISECONDS);
+                    log.info("事件流客户端 {} 已通过口令认证", session.getId());
+                    return;
+                }
+
+                // 只在监视器里定下「拒了、拒的是哪一种」，写与关都挪到外面
+                authRejected = true;
+                reason = verdict.wire();
             }
 
-            EventStreamTokenService.Verdict verdict = tokens.check(presented);
-            if (verdict != EventStreamTokenService.Verdict.OK) {
-                JSONObject envelope = new JSONObject();
-                envelope.put("v", NovaEventMapper.PROTOCOL_VERSION);
-                envelope.put("kind", "auth_failed");
-                envelope.put("reason", verdict.wire());
-                writeDirect(envelope.toString(JSONWriter.Feature.WriteNulls));
-                close(CloseStatus.NORMAL.withReason("认证失败"));
-                return;
-            }
-
-            authenticated = true;
-            if (authDeadline != null) {
-                authDeadline.cancel(false);
-            }
-
-            NovaEventStream.State state = stream.snapshot();
-            send(hello(state));
-            grace = heartbeats.schedule(() -> goLive(state.lastSeq()), RESUME_GRACE_MS, TimeUnit.MILLISECONDS);
-            log.info("事件流客户端 {} 已通过口令认证", session.getId());
+            // 🔴 这一句是**阻塞写**，不许在监视器里做：客户端不读的话它一直不返回，
+            //    而同一条连接的 closeUnauthenticated 正等在共享心跳线程上要这个监视器。
+            //    仍然是同步写完再关——「说清为什么失败」这件事一点没变，变的只是持不持锁。
+            JSONObject envelope = new JSONObject();
+            envelope.put("v", NovaEventMapper.PROTOCOL_VERSION);
+            envelope.put("kind", "auth_failed");
+            envelope.put("reason", reason);
+            writeDirect(envelope.toString(JSONWriter.Feature.WriteNulls));
+            close(CloseStatus.NORMAL.withReason("认证失败"));
         }
 
         @Override
@@ -320,9 +390,19 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
          * 走队列的话 {@link #close} 会把队列清掉，客户端就只看到一个无缘无故的断开，
          * 而「说清为什么失败」正是这次改用认证帧要换来的东西。
          * 两个线程都可能写，就必须串起来。
+         * <p>
+         * 🔴 串用的是 {@link #writeMutex} 而<b>不是这个对象的监视器</b>——
+         * 这里会阻塞任意久，而监视器还要给跑在共享心跳线程上的 {@code goLive} 用。
+         * 见 {@link #writeMutex}。
          * @return 是否写成功；失败时连接已被关闭
          */
-        private synchronized boolean writeDirect(String json) {
+        private boolean writeDirect(String json) {
+            synchronized (writeMutex) {
+                return writeLocked(json);
+            }
+        }
+
+        private boolean writeLocked(String json) {
             try {
                 session.sendMessage(new TextMessage(json));
                 return true;
@@ -416,13 +496,13 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
             // 认证之前不该给出去。连上就发 hello 等于把「握手成功」当成了「认证成功」，
             // 而这次改用认证帧，要的正是把这两件事分开。
             client.authDeadline = heartbeats.schedule(
-                    () -> client.closeUnauthenticated(), AUTH_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                    () -> client.closeUnauthenticated(), timings.authTimeout(), TimeUnit.MILLISECONDS);
             log.info("事件流客户端 {} 已连接, 等待认证帧, 当前连接数 {}", session.getId(), clients.size());
             return;
         }
 
         client.send(hello(state));
-        client.grace = heartbeats.schedule(() -> client.goLive(client.helloSeq), RESUME_GRACE_MS, TimeUnit.MILLISECONDS);
+        client.grace = heartbeats.schedule(() -> client.goLive(client.helloSeq), timings.resumeGrace(), TimeUnit.MILLISECONDS);
 
         log.info("事件流客户端 {} 已连接, 当前连接数 {}", session.getId(), clients.size());
     }
@@ -540,8 +620,8 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
             if (!client.authenticated) {
                 continue;
             }
-            if (now - client.lastSeenAt > CLIENT_TIMEOUT_MS) {
-                log.info("事件流客户端 {} 超过 {} 毫秒未回应, 已断开", client.session.getId(), CLIENT_TIMEOUT_MS);
+            if (now - client.lastSeenAt > timings.clientTimeout()) {
+                log.info("事件流客户端 {} 超过 {} 毫秒未回应, 已断开", client.session.getId(), timings.clientTimeout());
                 client.close(CloseStatus.POLICY_VIOLATION.withReason("未按协议回应心跳"));
                 continue;
             }
