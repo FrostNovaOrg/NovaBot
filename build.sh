@@ -11,6 +11,9 @@
 #   ./build.sh --skip-tests 跳过测试
 #   ./build.sh --clean      构建前先清理
 #   ./build.sh --package    构建后把 dist/build 打成 dist/NovaBot-<版本>.tar.gz
+#   ./build.sh --from-ref=<ref>
+#                           从 git archive <ref> 导出的干净树里构建（发布必用，理由见下方注释）
+#                           也可用环境变量：NOVABOT_BUILD_REF=<ref> ./build.sh
 #
 set -euo pipefail
 
@@ -20,12 +23,16 @@ cd "$ROOT"
 MAVEN_ARGS=(-B)
 CLEAN=""
 PACKAGE=""
+BUILD_REF="${NOVABOT_BUILD_REF:-}"
+# 转发给内层（干净树里那一次）构建的参数：--from-ref 自己不转发，否则会无限套娃
+INNER_ARGS=()
 
 for arg in "$@"; do
     case "$arg" in
-        --skip-tests) MAVEN_ARGS+=(-DskipTests) ;;
-        --clean)      CLEAN="clean" ;;
-        --package)    PACKAGE="1" ;;
+        --skip-tests) MAVEN_ARGS+=(-DskipTests); INNER_ARGS+=("$arg") ;;
+        --clean)      CLEAN="clean";             INNER_ARGS+=("$arg") ;;
+        --package)    PACKAGE="1";               INNER_ARGS+=("$arg") ;;
+        --from-ref=*) BUILD_REF="${arg#--from-ref=}" ;;
         *)            echo "未知参数: $arg" >&2; exit 1 ;;
     esac
 done
@@ -85,14 +92,22 @@ fi
 #
 # 未跟踪的文件同样算脏：用 status --porcelain -uall，不是 diff --quiet。
 # diff --quiet 看不见未跟踪文件，而未跟踪文件照样会被打进产物。
-if ! git -C "$ROOT" rev-parse --git-dir > /dev/null 2>&1; then
+if [ -n "${NOVABOT_ARCHIVE_BUILD:-}" ]; then
+    # 这是内层：当前目录是 git archive 导出的树，里面没有 .git，问不出来源。
+    # 来源由外层解析好之后传进来 —— 内层不去猜，猜出来的来源和没有来源是一回事。
+    BUILD_COMMIT="$NOVABOT_ARCHIVE_BUILD"
+    BUILD_TREE="$NOVABOT_ARCHIVE_TREE"
+    BUILD_SOURCE="archive:${NOVABOT_ARCHIVE_REF}"
+    IS_DIRTY="false"
+elif ! git -C "$ROOT" rev-parse --git-dir > /dev/null 2>&1; then
     echo "这里不是 git 仓库，无法记录构建来源。" >&2
     echo "确要继续：NOVABOT_ALLOW_DIRTY_BUILD=1 NOVABOT_DIRTY_REASON=\"...\" $0" >&2
     [ -n "${NOVABOT_ALLOW_DIRTY_BUILD:-}" ] && [ -n "${NOVABOT_DIRTY_REASON:-}" ] || exit 1
-    BUILD_COMMIT="unknown"; BUILD_TREE="unknown"; IS_DIRTY="true"
+    BUILD_COMMIT="unknown"; BUILD_TREE="unknown"; IS_DIRTY="true"; BUILD_SOURCE="worktree"
 else
     BUILD_COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
     BUILD_TREE="$(git -C "$ROOT" rev-parse "HEAD^{tree}")"
+    BUILD_SOURCE="worktree"
     if [ -n "$(git -C "$ROOT" status --porcelain -uall)" ]; then
         IS_DIRTY="true"
     else
@@ -120,6 +135,73 @@ if [ "$IS_DIRTY" = "true" ]; then
     fi
     echo "注意：正从脏工作区构建，BUILD-INFO 将记 dirty=true"
     echo "      理由：$DIRTY_REASON"
+fi
+
+# ── 打包源：从 git archive 出干净树 ────────────────────────────────────────
+# 🔴 上面那道脏闸拦的是「工作区有改动」。它拦不住另一件事：**被忽略的文件照样进包**。
+#
+#    忽略件不出现在 status --porcelain -uall 里（-uall 只补列未跟踪的，不列被忽略的），
+#    所以闸看过去是干净的；而下面「汇总产物」那一步是 `cp -R dist/templates/. "$OUT/"`，
+#    照目录拷，目录里有什么就拷什么。dist/templates/datasource.json 正是一个被忽略的
+#    未跟踪文件，它就这样进了 dist/build/datasource.json。
+#
+#    2026-08-24 实测：工作区 status --porcelain -uall 一个字都没输出（＝干净），
+#    而 dist/build/datasource.json 已经在那里了。**这不是闸没关，是闸量的那个量不含它。**
+#    ——一把只量「改动」的尺，永远读不出「忽略」；它的「都对」和它看不见，长得一样。
+#
+# 所以发布构建的打包源不许是工作目录，只许是一棵从 git 导出的树：
+#
+#     ./build.sh --from-ref=origin/main --package
+#
+# git archive 只吐已跟踪文件。忽略件**结构上进不去**，不依赖任何一处「记得检查」——
+# 这是与「加一条检查」的区别：检查会漏，导出的树里根本没有那个文件可漏。
+# 脏闸保留为前置：它拦不住忽略件，但它仍然是「你看的和你建的不是一份」的唯一提示。
+if [ -n "$BUILD_REF" ] && [ -z "${NOVABOT_ARCHIVE_BUILD:-}" ]; then
+    if ! git -C "$ROOT" rev-parse --git-dir > /dev/null 2>&1; then
+        echo "--from-ref 需要 git 仓库，而这里不是。" >&2
+        exit 1
+    fi
+    if ! REF_SHA="$(git -C "$ROOT" rev-parse --verify --quiet "${BUILD_REF}^{commit}")"; then
+        echo "解不出 ref：$BUILD_REF" >&2
+        exit 1
+    fi
+    REF_TREE="$(git -C "$ROOT" rev-parse "${REF_SHA}^{tree}")"
+
+    STAGE="$(mktemp -d "${TMPDIR:-/tmp}/novabot-archive-XXXXXX")"
+    trap 'rm -rf "$STAGE"' EXIT
+
+    echo "==> [0/4] 从 $BUILD_REF 导出干净树"
+    echo "    commit=$REF_SHA"
+    echo "    tree=$REF_TREE"
+    echo "    导出至 $STAGE"
+    git -C "$ROOT" archive --format=tar "$REF_SHA" | tar -x -C "$STAGE"
+
+    if [ ! -x "$STAGE/build.sh" ]; then
+        echo "导出的树里没有可执行的 build.sh，已停止。" >&2
+        exit 1
+    fi
+
+    # 外层工作区脏不脏，不影响内层产物的字节（内层建的是 $REF_SHA 那棵树），
+    # 所以 BUILD-INFO 的 dirty= 记 false 是照实记。但「脏闸曾被打开」这件事也要写下来：
+    # 另记一行 outer_worktree_dirty，不混进 dirty=。过程和结论分开写，两个都不失真。
+    NOVABOT_ARCHIVE_BUILD="$REF_SHA" \
+    NOVABOT_ARCHIVE_TREE="$REF_TREE" \
+    NOVABOT_ARCHIVE_REF="$BUILD_REF" \
+    NOVABOT_ARCHIVE_OUTER_DIRTY="$IS_DIRTY" \
+        "$STAGE/build.sh" ${INNER_ARGS[@]+"${INNER_ARGS[@]}"}
+
+    echo
+    echo "==> 取回产物"
+    rm -rf "$ROOT/dist/build"
+    mkdir -p "$ROOT/dist"
+    cp -R "$STAGE/dist/build" "$ROOT/dist/build"
+    echo "    $ROOT/dist/build"
+    for tb in "$STAGE"/dist/*.tar.gz; do
+        [ -e "$tb" ] || continue
+        cp "$tb" "$ROOT/dist/"
+        echo "    $ROOT/dist/$(basename "$tb")"
+    done
+    exit 0
 fi
 
 echo "==> [1/4] 安装构建插件 starbot-plugin-processor"
@@ -174,11 +256,18 @@ rm -f "$OUT"/plugins-lib/starbot-core-*.jar
 cp -R dist/templates/. "$OUT/"
 
 # BUILD-INFO 只进产物，不进仓库
+# source= 这一行是给拿到包的人看的：worktree 表示打包源是某人的工作目录
+# （那么包里可能有仓库里没有的文件），archive:<ref> 表示打包源是一棵导出的树。
+# 两种包长得一样，不写这一行就分不出来。
 {
     echo "commit=$BUILD_COMMIT"
     echo "tree=$BUILD_TREE"
+    echo "source=$BUILD_SOURCE"
     echo "dirty=$IS_DIRTY"
     echo "dirty_reason=$DIRTY_REASON"
+    if [ -n "${NOVABOT_ARCHIVE_OUTER_DIRTY:-}" ]; then
+        echo "outer_worktree_dirty=$NOVABOT_ARCHIVE_OUTER_DIRTY"
+    fi
     echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 } > "$OUT/BUILD-INFO"
 
