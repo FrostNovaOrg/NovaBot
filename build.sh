@@ -184,9 +184,14 @@ if [ -n "$BUILD_REF" ] && [ -z "${NOVABOT_ARCHIVE_BUILD:-}" ]; then
     # 外层工作区脏不脏，不影响内层产物的字节（内层建的是 $REF_SHA 那棵树），
     # 所以 BUILD-INFO 的 dirty= 记 false 是照实记。但「脏闸曾被打开」这件事也要写下来：
     # 另记一行 outer_worktree_dirty，不混进 dirty=。过程和结论分开写，两个都不失真。
+    # source= 记解析后的 40 位，不记 --from-ref 收到的那个名字：
+    # HEAD、main、v4.3.0 这些名字会挪，明天再解一次可能落到另一次提交上。
+    # 拿到包的人要能凭这一行找回**当时那一棵树**，所以这里传的是已经解开的 commit。
+    # 人当初敲的是哪个名字另记一行，两件事都留着，谁也不冒充谁。
     NOVABOT_ARCHIVE_BUILD="$REF_SHA" \
     NOVABOT_ARCHIVE_TREE="$REF_TREE" \
-    NOVABOT_ARCHIVE_REF="$BUILD_REF" \
+    NOVABOT_ARCHIVE_REF="$REF_SHA" \
+    NOVABOT_ARCHIVE_REF_ASKED="$BUILD_REF" \
     NOVABOT_ARCHIVE_OUTER_DIRTY="$IS_DIRTY" \
         "$STAGE/build.sh" ${INNER_ARGS[@]+"${INNER_ARGS[@]}"}
 
@@ -270,12 +275,17 @@ echo "[]" > "$OUT/datasource.json"
 
 # BUILD-INFO 只进产物，不进仓库
 # source= 这一行是给拿到包的人看的：worktree 表示打包源是某人的工作目录
-# （那么包里可能有仓库里没有的文件），archive:<ref> 表示打包源是一棵导出的树。
-# 两种包长得一样，不写这一行就分不出来。
+# （那么包里可能有仓库里没有的文件），archive:<40 位 commit> 表示打包源是从那一次提交
+# 导出的一棵树。两种包长得一样，不写这一行就分不出来。
+# 记 40 位而不记 HEAD 一类的名字：名字会挪，凭一个会挪的名字回不到当时那棵树。
+# source_ref_asked= 记人当初敲的是哪个名字，只在它与 commit 不同时出现。
 {
     echo "commit=$BUILD_COMMIT"
     echo "tree=$BUILD_TREE"
     echo "source=$BUILD_SOURCE"
+    if [ -n "${NOVABOT_ARCHIVE_REF_ASKED:-}" ] && [ "$NOVABOT_ARCHIVE_REF_ASKED" != "$BUILD_COMMIT" ]; then
+        echo "source_ref_asked=$NOVABOT_ARCHIVE_REF_ASKED"
+    fi
     echo "dirty=$IS_DIRTY"
     echo "dirty_reason=$DIRTY_REASON"
     if [ -n "${NOVABOT_ARCHIVE_OUTER_DIRTY:-}" ]; then
