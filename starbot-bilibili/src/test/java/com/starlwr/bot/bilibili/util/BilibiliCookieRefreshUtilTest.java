@@ -124,7 +124,7 @@ class BilibiliCookieRefreshUtilTest {
         Cookies updated = BilibiliCookieRefreshUtil.applySetCookies(current, List.of(
                 "SESSDATA=new-sess; Path=/; Domain=.bilibili.com; HttpOnly",
                 "bili_jct=new-jct; Path=/; Domain=.bilibili.com",
-                "DedeUserID=200000001; Path=/",
+                "DedeUserID=19805387116684; Path=/",
                 "sid=abcdefg; Path=/"));
 
         assertEquals("new-sess", updated.getSessData());

@@ -43,7 +43,7 @@ class JsonDataSourceTest {
         List<PushUser> users = dataSource.parse("""
                 [
                   {
-                    "uid": 12345678,
+                    "uid": 19466979697833,
                     "platform": "bilibili",
                     "targets": [
                       {
@@ -61,7 +61,7 @@ class JsonDataSourceTest {
 
         assertEquals(1, users.size());
         PushUser user = users.get(0);
-        assertEquals(12345678L, user.getUid());
+        assertEquals(19466979697833L, user.getUid());
         assertEquals("bilibili", user.getPlatform());
 
         PushTarget target = user.getTargets().get(0);

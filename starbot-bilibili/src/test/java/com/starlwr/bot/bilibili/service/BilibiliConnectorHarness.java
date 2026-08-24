@@ -69,7 +69,7 @@ import static org.mockito.Mockito.when;
  * 于是竞态变成确定性的：要么必然复现，要么必然不复现，没有中间态。
  */
 class BilibiliConnectorHarness {
-    static final long ROOM_ID = 20000001L;
+    static final long ROOM_ID = 47731877194803L;
 
     static final long STREAMER_UID = 3000003L;
 
@@ -77,7 +77,7 @@ class BilibiliConnectorHarness {
     static final long SNAPSHOT_UID = 0L;
 
     /** 握手往返期间「登录完成」后的身份，用于证明认证包没有去重新读它 */
-    static final long LOGGED_IN_UID = 500000002L;
+    static final long LOGGED_IN_UID = 19313558846753L;
 
     static final String TOKEN = "snapshot-token";
 

@@ -198,7 +198,7 @@ class LiveSessionAnalyticsTest {
 
     private LiveSession session(String localDateTime, long durationSeconds, double danmu, double gift) {
         long start = millis(localDateTime);
-        return new LiveSession("bilibili", 19142561034510L, "测试主播", 2000000001L,
+        return new LiveSession("bilibili", 19142561034510L, "测试主播", 47121903112096L,
                 start, start + durationSeconds * 1000, durationSeconds,
                 Map.of("danmu_count", danmu, "gift_value", gift),
                 Map.of("danmu_users", 10));

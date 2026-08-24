@@ -228,13 +228,13 @@ class BilibiliProtobufReaderTest {
         @Test
         @DisplayName("从任意位置截断都不抛异常，且保留已读到的字段")
         void keepsFieldsReadBeforeTruncation() {
-            int uidLength = writer().varint(1, 500000005L).build().length;
+            int uidLength = writer().varint(1, 19924156647619L).build().length;
             byte[] full = writer()
-                    .varint(1, 500000005L)
+                    .varint(1, 19924156647619L)
                     .string(2, "观众昵称")
                     .varint(5, 1L)
                     .varint(7, 1786294335L)
-                    .bytes(22, writer().varint(1, 500000005L).string(2, "嵌套").build())
+                    .bytes(22, writer().varint(1, 19924156647619L).string(2, "嵌套").build())
                     .build();
 
             // 逐字节截断，一处都不许抛出
@@ -246,7 +246,7 @@ class BilibiliProtobufReaderTest {
                 // uid 在报文开头。只要它那一段读完了，后面截在哪里都不该影响它——
                 // 这正是「截断也照常出事件」的依据
                 if (length >= uidLength) {
-                    assertEquals(500000005L, message.number(1), "截断到 " + length + " 字节时 uid 应当仍可读");
+                    assertEquals(19924156647619L, message.number(1), "截断到 " + length + " 字节时 uid 应当仍可读");
                 }
             }
 

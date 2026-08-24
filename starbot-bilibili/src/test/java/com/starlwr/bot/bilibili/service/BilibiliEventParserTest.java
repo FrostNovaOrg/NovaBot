@@ -39,7 +39,7 @@ import static org.mockito.Mockito.when;
 
 @DisplayName("直播间消息解析")
 class BilibiliEventParserTest {
-    private static final LiveStreamerInfo SOURCE = new LiveStreamerInfo(200000001L, "主播", 20000001L);
+    private static final LiveStreamerInfo SOURCE = new LiveStreamerInfo(19805387116684L, "主播", 47731877194803L);
 
     private StarBotBilibiliProperties properties;
     private BilibiliEventParser parser;

@@ -40,7 +40,7 @@ class BilibiliLoginHealthProbeTest {
         HealthStatus status = probe(account, new StarBotBilibiliProperties()).check();
 
         assertEquals(HealthStatus.Level.OK, status.level());
-        assertEquals("正常（uid 200000001）", status.summary());
+        assertEquals("正常（uid 19805387116684）", status.summary());
         assertTrue(status.advice().isBlank());
     }
 
@@ -69,7 +69,7 @@ class BilibiliLoginHealthProbeTest {
 
         HealthStatus status = probe(account, properties).check();
 
-        assertEquals("正常（uid 200000001）", status.summary(), "使用者主动关掉的功能不该反复提醒");
+        assertEquals("正常（uid 19805387116684）", status.summary(), "使用者主动关掉的功能不该反复提醒");
     }
 
     @Test
@@ -107,7 +107,7 @@ class BilibiliLoginHealthProbeTest {
     private BilibiliAccountService loggedIn() {
         BilibiliAccountService account = mock(BilibiliAccountService.class);
         when(account.isLoggedIn()).thenReturn(true);
-        when(account.getLoginUid()).thenReturn(200000001L);
+        when(account.getLoginUid()).thenReturn(19805387116684L);
         return account;
     }
 

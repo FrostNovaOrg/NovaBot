@@ -38,7 +38,7 @@ class LiveInterventionTrackerTest {
     }
 
     private LiveStreamerInfo source() {
-        return new LiveStreamerInfo(UID, "测试主播", 2000000001L);
+        return new LiveStreamerInfo(UID, "测试主播", 47121903112096L);
     }
 
     private void cutOff(Instant at) {

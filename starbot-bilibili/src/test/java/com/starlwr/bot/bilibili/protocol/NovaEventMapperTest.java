@@ -44,7 +44,7 @@ class NovaEventMapperTest {
 
     private static UserInfo sender() {
         UserInfo u = new UserInfo();
-        u.setUid(10000007L);
+        u.setUid(19829936086068L);
         u.setUname("观众");
         return u;
     }
@@ -189,7 +189,7 @@ class NovaEventMapperTest {
         assertTrue(env.getLongValue("ts") > 0);
 
         JSONObject u = env.getJSONObject("user");
-        assertEquals("10000007", u.getString("uid"), "uid 是字符串，开放平台源时会是 open_id");
+        assertEquals("19829936086068", u.getString("uid"), "uid 是字符串，开放平台源时会是 open_id");
         assertEquals("uid", u.getString("idKind"));
         assertEquals(0, u.getIntValue("guardLevel"));
         assertNull(u.get("medal"));
@@ -434,7 +434,7 @@ class NovaEventMapperTest {
     @Test
     @DisplayName("房管标志取自报文")
     void adminFlagComesFromPayload() {
-        BilibiliUserInfo admin = new BilibiliUserInfo(10000007L, "房管");
+        BilibiliUserInfo admin = new BilibiliUserInfo(19829936086068L, "房管");
         admin.setRoomAdmin(true);
 
         BilibiliDanmuEvent e = new BilibiliDanmuEvent(room(), admin, "别刷屏", "别刷屏", Instant.now());
@@ -444,7 +444,7 @@ class NovaEventMapperTest {
     @Test
     @DisplayName("⚠️ 报文没说房管时为 false，含义是「这条消息没说」而不是「不是房管」")
     void adminFlagAbsentIsFalse() {
-        BilibiliUserInfo unknown = new BilibiliUserInfo(10000007L, "观众");
+        BilibiliUserInfo unknown = new BilibiliUserInfo(19829936086068L, "观众");
 
         BilibiliDanmuEvent e = new BilibiliDanmuEvent(room(), unknown, "666", "666", Instant.now());
         assertFalse(NovaEventMapper.map(e).getJSONObject("user").getBooleanValue("isAdmin"));
@@ -454,10 +454,10 @@ class NovaEventMapperTest {
     @DisplayName("主播判定靠 uid 相等，不靠报文里的标志位")
     void anchorFlagMatchesRoomUid() {
         LiveStreamerInfo source = room();
-        source.setUid(500000006L);
+        source.setUid(19010430006952L);
 
         UserInfo anchor = new UserInfo();
-        anchor.setUid(500000006L);
+        anchor.setUid(19010430006952L);
         anchor.setUname("主播");
 
         BilibiliDanmuEvent e = new BilibiliDanmuEvent(source, anchor, "谢谢大家", "谢谢大家", Instant.now());
@@ -558,7 +558,7 @@ class NovaEventMapperTest {
         // 这条测试守的就是「谁也别顺手把它删掉」。
         // 2026-08-11 的语料回放里测试自己漏了它，一次刷出 17093 处「缺少 medal/emoji/replyTo」
         BilibiliDanmuEvent event = new BilibiliDanmuEvent(
-                room(), new BilibiliUserInfo(10000007L, "观众"), "普通弹幕", "普通弹幕", Instant.now());
+                room(), new BilibiliUserInfo(19829936086068L, "观众"), "普通弹幕", "普通弹幕", Instant.now());
 
         JSONObject envelope = NovaEventMapper.map(event);
         assertTrue(envelope.getJSONObject("data").containsKey("emoji"), "前提：普通弹幕的 emoji 是显式的 null");

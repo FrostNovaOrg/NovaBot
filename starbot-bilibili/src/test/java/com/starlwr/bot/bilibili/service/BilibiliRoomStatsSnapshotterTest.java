@@ -39,7 +39,7 @@ class BilibiliRoomStatsSnapshotterTest {
 
     private static final Long UID = 19142561034510L;
 
-    private static final Long ROOM = 2000000001L;
+    private static final Long ROOM = 47121903112096L;
 
     private BilibiliApiUtil api;
 

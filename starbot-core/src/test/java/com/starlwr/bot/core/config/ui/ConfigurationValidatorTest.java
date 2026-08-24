@@ -114,7 +114,7 @@ class ConfigurationValidatorTest {
     @DisplayName("合法的推送配置应通过")
     void acceptsValidDatasource() {
         String json = """
-                [{"uid":200000001,"platform":"bilibili","targets":[
+                [{"uid":19805387116684,"platform":"bilibili","targets":[
                   {"platform":"qq-onebot","type":1,"num":12345,"messages":[{"handler":"%s"}]}
                 ]}]
                 """.formatted(HANDLER);

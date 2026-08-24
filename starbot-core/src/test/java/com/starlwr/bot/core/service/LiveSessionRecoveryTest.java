@@ -33,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class LiveSessionRecoveryTest {
     private static final String PLATFORM = "bilibili";
 
-    private static final LiveStreamerInfo STREAMER = new LiveStreamerInfo(114514L, "测试主播", 20000001L);
+    private static final LiveStreamerInfo STREAMER = new LiveStreamerInfo(114514L, "测试主播", 47731877194803L);
 
     @TempDir
     Path dir;

@@ -36,7 +36,7 @@ class BilibiliBindCommandTest {
 
     private static final Long QQ = 2000000002L;
 
-    private static final Long UID = 500000004L;
+    private static final Long UID = 19659359825927L;
 
     private BilibiliApiUtil api;
 

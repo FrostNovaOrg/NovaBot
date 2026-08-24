@@ -173,8 +173,8 @@ class LiveSessionArchiveTest {
     // ⚠️ 夹具一律用保留段假值。
     // 这里原本写的是真实主播 uid 与房间号——真实身份数据不进测试夹具，
     // 那正是 2026-08-12 那次泄漏的成因（「照真实场景写测试最省事」）
-    private static final long STREAMER_UID = 10000101L;
-    private static final long ROOM_ID = 10000102L;
+    private static final long STREAMER_UID = 19532742171987L;
+    private static final long ROOM_ID = 47789014283216L;
 
     private LiveSession session(long startTime, long durationSeconds) {
         return new LiveSession("bilibili", STREAMER_UID, "测试主播", ROOM_ID,
@@ -204,21 +204,21 @@ class LiveSessionArchiveTest {
         @DisplayName("⚠️ 守卫：归档必须留下参与者名单，只留人数等于每播一场丢一场")
         void archivesUserSets() {
             archive.append(withSets(Map.of(
-                    "danmu_users", List.of(10000201L, 10000202L, 10000203L),
-                    "gift_users", List.of(10000201L)), 0, 0));
+                    "danmu_users", List.of(19427650908284L, 19471545457530L, 19879099161950L),
+                    "gift_users", List.of(19427650908284L)), 0, 0));
 
             LiveSession s = archive.find(0, Long.MAX_VALUE).get(0);
 
-            assertEquals(List.of(10000201L, 10000202L, 10000203L), s.userSet("danmu_users"),
+            assertEquals(List.of(19427650908284L, 19471545457530L, 19879099161950L), s.userSet("danmu_users"),
                     "名单必须原样读回——它一次性，这一场丢了就再也补不回来");
-            assertEquals(List.of(10000201L), s.userSet("gift_users"));
+            assertEquals(List.of(19427650908284L), s.userSet("gift_users"));
             assertTrue(s.hasUserSets());
         }
 
         @Test
         @DisplayName("名单长度必须与人数对得上——对不上说明落盘漏了")
         void userSetsAgreeWithCounts() {
-            archive.append(withSets(Map.of("danmu_users", List.of(10000201L, 10000202L)), 0, 0));
+            archive.append(withSets(Map.of("danmu_users", List.of(19427650908284L, 19471545457530L)), 0, 0));
 
             LiveSession s = archive.find(0, Long.MAX_VALUE).get(0);
 
@@ -236,7 +236,7 @@ class LiveSessionArchiveTest {
                     Map.of("danmu_count", 455.0),
                     Map.of("danmu_users", 9),
                     com.starlwr.bot.core.enums.LiveEndReason.NORMAL, List.of(), 0,
-                    Map.of("danmu_users", List.of(10000201L, 10000202L)), 0));
+                    Map.of("danmu_users", List.of(19427650908284L, 19471545457530L)), 0));
 
             LiveSession s = archive.find(0, Long.MAX_VALUE).get(0);
 
@@ -288,12 +288,12 @@ class LiveSessionArchiveTest {
                     "{\"platform\":\"bilibili\",\"uid\":1,\"uname\":\"测试主播\",\"roomId\":2,"
                             + "\"startTime\":1000000,\"endTime\":1100000,\"durationSeconds\":100,"
                             + "\"metrics\":{},\"userCounts\":{},"
-                            + "\"userSets\":{\"danmu_users\":[10000201,\"坏了\",10000202]}}\n",
+                            + "\"userSets\":{\"danmu_users\":[19427650908284,\"坏了\",19471545457530]}}\n",
                     StandardCharsets.UTF_8);
 
             LiveSession s = archive.find(0, Long.MAX_VALUE).get(0);
 
-            assertEquals(List.of(10000201L, 10000202L), s.userSet("danmu_users"),
+            assertEquals(List.of(19427650908284L, 19471545457530L), s.userSet("danmu_users"),
                     "名单一次性，坏一个不能连累其余的");
         }
         @Test
@@ -304,13 +304,13 @@ class LiveSessionArchiveTest {
             LiveSession offByOne = new LiveSession("bilibili", STREAMER_UID, "测试主播", ROOM_ID,
                     1_000_000L, 1_003_600_000L, 3600, Map.of(), Map.of("danmu_users", 3),
                     com.starlwr.bot.core.enums.LiveEndReason.NORMAL, List.of(), 0,
-                    Map.of("danmu_users", List.of(10000201L, 10000202L)), 0);
+                    Map.of("danmu_users", List.of(19427650908284L, 19471545457530L)), 0);
             assertFalse(offByOne.userSetSuspicious("danmu_users"), "差 1 属正常竞态，不该报");
 
             LiveSession offByTwo = new LiveSession("bilibili", STREAMER_UID, "测试主播", ROOM_ID,
                     1_000_000L, 1_003_600_000L, 3600, Map.of(), Map.of("danmu_users", 4),
                     com.starlwr.bot.core.enums.LiveEndReason.NORMAL, List.of(), 0,
-                    Map.of("danmu_users", List.of(10000201L, 10000202L)), 0);
+                    Map.of("danmu_users", List.of(19427650908284L, 19471545457530L)), 0);
             assertTrue(offByTwo.userSetSuspicious("danmu_users"), "差 2 超出容差，必须报");
         }
 

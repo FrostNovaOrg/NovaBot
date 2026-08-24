@@ -32,7 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @DisplayName("大航海消息归并")
 class BilibiliGuardReconcilerTest {
-    private static final LiveStreamerInfo SOURCE = new LiveStreamerInfo(200000001L, "主播", 20000001L);
+    private static final LiveStreamerInfo SOURCE = new LiveStreamerInfo(19805387116684L, "主播", 47731877194803L);
     private static final Instant NOW = Instant.parse("2026-08-06T12:00:00Z");
 
     /**
