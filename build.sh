@@ -256,13 +256,17 @@ rm -f "$OUT"/plugins-lib/starbot-core-*.jar
 cp -R dist/templates/. "$OUT/"
 
 # datasource.json 被 .gitignore 忽略（免得谁把自己的真配置提交上来），因此导出的树里没有它。
-# 🔴 上一版包里那份 datasource.json 是 `cp -R dist/templates/.` 从**打包那台机器的本地文件**
-#    拷来的：它不在仓库里，内容取决于谁来打包，而包本身看不出这一点。
-#    现在固定写一个空数组，与打包的人无关；填法看旁边的 datasource.example.json。
-#    不写这一行的话，收尾那句「请编辑 datasource.json」指向一个不存在的文件。
-if [ ! -e "$OUT/datasource.json" ]; then
-    echo "[]" > "$OUT/datasource.json"
-fi
+# 🔴 上一版包里那份 datasource.json 是上面 `cp -R dist/templates/.` 从**打包那台机器的
+#    本地文件**拷来的：它不在仓库里，内容取决于谁来打包，而包本身看不出这一点。
+#
+# 🔴 **无条件覆盖，不是「没有才写」。** 写成 `if [ ! -e ]` 只堵住了 archive 那条路
+#    ——那条路上本来就没有这个文件；而 worktree 那条路上它**已经被 cp 拷进来了**，
+#    条件不成立，于是本机件原样进包。这正是 v5.0.0-beta2 的病灶形状：
+#    **值只活在打包那一刻的工作区里**，仓库全历史干净，包里却带着它。
+#    覆盖要落在「谁都拦不住的位置」：不问它在不在，一律写成空数组。
+#    填法看旁边的 datasource.example.json；不写这一行，收尾那句
+#    「请编辑 datasource.json」会指向一个不存在的文件。
+echo "[]" > "$OUT/datasource.json"
 
 # BUILD-INFO 只进产物，不进仓库
 # source= 这一行是给拿到包的人看的：worktree 表示打包源是某人的工作目录
