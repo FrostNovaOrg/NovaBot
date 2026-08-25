@@ -35,8 +35,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <h2>这一组数不到什么</h2>
  * 它只认「用链接色画」。<b>换个颜色把地址画进图，它读 0。</b>
- * 另有一件顺带记下：图里的计数今天是结构性的 0——{@code COLOR_LINK} 全树只有一处声明、
- * 没有任何一处在用。<b>这个 0 买到的是「没人画链接色」，不是「图干净」。</b>
+ * 另有一件顺带记下：图里的计数今天是结构性的 0——{@code COLOR_LINK} 只在
+ * {@code CommonPainter} 里声明了一处，<b>生产面再没有任何一处在用</b>
+ *（测试面在用：本组判据自己就要拿它当目标色）。
+ * <b>这个 0 买到的是「没人画链接色」，不是「图干净」。</b>
  * 所以计数旁边还印一个会动的数：<b>最近的像素离链接色有多远</b>。
  * 哪天有人用相近的蓝画了东西，计数仍是 0，而这个距离会掉下来。
  */
@@ -181,7 +183,8 @@ class CommonPainterLinkColorPixelTest {
                 + "，由 drawCopyright(20) 出图；可见像素 " + clean.visible() + "／" + clean.total());
         System.out.println("  画回地址　　" + dirty.within() + " 枚（最近 " + dirty.nearest() + "）");
         System.out.println("  干净图　　　" + clean.within() + " 枚（最近 " + clean.nearest() + "）");
-        System.out.println("  🔴 干净图这个 0 是结构性的：COLOR_LINK 全树一处声明、零处使用。");
+        System.out.println("  🔴 干净图这个 0 是结构性的：COLOR_LINK 生产面只有一处声明、零处使用");
+        System.out.println("     （测试面在用，本组判据自己就拿它当目标色——所以别把它读成「全树没人碰」）。");
         System.out.println("     它买到的是「没人画链接色」，不是「图干净」——会动的数是上面那个「最近」。");
         // 容差取这个值不是抄来的：两个方向都量一遍，让读的人自己看见它为什么落在中间
         System.out.println("  容差两个方向：");
@@ -191,10 +194,56 @@ class CommonPainterLinkColorPixelTest {
             System.out.println("    容差 " + t + "：画回地址 " + d.within() + " 枚，干净图 " + c.within() + " 枚"
                     + (c.within() > 0 ? "  ← 干净图开始被误收" : ""));
         }
+        // 容差 0 与容差 40 之间多出来的那些像素，到底是不是实色块的边缘？
+        // 核法：看它们挨不挨着一个颜色一模一样的像素（八邻域）。挨着才叫边缘
+        BufferedImage dirtyImage = imageWithAddressDrawnBack();
+        int band = 0;
+        int bandTouchingExact = 0;
+        for (int y = 0; y < dirtyImage.getHeight(); y++) {
+            for (int x = 0; x < dirtyImage.getWidth(); x++) {
+                int argb = dirtyImage.getRGB(x, y);
+                if (((argb >>> 24) & 0xFF) == 0) {
+                    continue;
+                }
+                int d = LinkColorPixels.distance(argb, CommonPainter.COLOR_LINK);
+                if (d <= 0 || d > TOLERANCE) {
+                    continue;
+                }
+                band++;
+                if (touchesExact(dirtyImage, x, y)) {
+                    bandTouchingExact++;
+                }
+            }
+        }
+        System.out.println("  容差 0 与 " + TOLERANCE + " 之间那 " + band + " 枚：其中 "
+                + bandTouchingExact + " 枚挨着一个同色像素，"
+                + (band - bandTouchingExact) + " 枚不挨着");
         System.out.println("  尺 sha256 　" + gaugeSha);
         System.out.println("  判次　　　　本方法跑到这里即为通过；退出码由构建给出");
 
         assertNotEquals(clean.within(), dirty.within(), "两个方向读数一样，这把尺分辨不出改没改");
+    }
+
+    /** 八邻域里有没有一个颜色和目标色一模一样的像素。 */
+    private static boolean touchesExact(BufferedImage image, int x, int y) {
+        for (int dy = -1; dy <= 1; dy++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                if (dx == 0 && dy == 0) {
+                    continue;
+                }
+                int nx = x + dx;
+                int ny = y + dy;
+                if (nx < 0 || ny < 0 || nx >= image.getWidth() || ny >= image.getHeight()) {
+                    continue;
+                }
+                int argb = image.getRGB(nx, ny);
+                if (((argb >>> 24) & 0xFF) != 0
+                        && LinkColorPixels.distance(argb, CommonPainter.COLOR_LINK) == 0) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private BufferedImage cleanImage() {
