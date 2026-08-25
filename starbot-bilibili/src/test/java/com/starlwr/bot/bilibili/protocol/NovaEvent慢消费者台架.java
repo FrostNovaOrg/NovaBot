@@ -45,7 +45,21 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
     static final long CLIENT_TIMEOUT = 60_000;
 
     /** 判据的等待上限。取心跳周期的十几倍——够宽，红了就不是「再等等就好了」 */
-    static final long 判据等待 = 3_000;
+    /**
+     * 判据的观测窗口
+     * <p>
+     * 🔴 <b>3000ms 曾经太长。</b>阻塞撑不过窗口时，闸会在剩下的时间里自己办完，
+     * 修前的红当场变绿——实测撞到过两次：2703ms 与 2973ms，
+     * 后者离 3000 只差 27ms。
+     * <p>
+     * 现在取 1200ms：实测阻塞最短约 2700ms，余 ~1500ms。
+     * 光靠这个数不够——它是**分布的下沿**，不是保证；所以每一格另有**收尾戳**，
+     * 窗口走完时再确认一次阻塞还在，撑不住的那一跑记作不算数。
+     * <p>
+     * 窗口够不够用：心跳周期 200ms，1200ms 是 6 轮 ping；
+     * 认证闸 1000ms、回补窗口 1000ms，都在窗口内。
+     */
+    static final long 判据等待 = 1_200;
 
     /**
      * 破坏用的大数。派到这个时限上的那件事在 {@link #判据等待} 内一定不会发生，
@@ -129,6 +143,47 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * 什么时候要重量：换机器、换 JDK、改心跳周期、改健康连接条数，四者任一。
      */
     static final long 后排余量 = 20;
+
+    /**
+     * 「漏掉一轮」这个洞在读数上长什么样：这一条要多等<b>一个整周期</b>
+     * <p>
+     * 判据 4 的上限必须<b>小于</b>它，否则那一格从出生起就永远绿。
+     */
+    static final long 洞的签名_漏一轮 = PING * 2;
+
+    /**
+     * 判据 4 实际在用的上限
+     * <p>
+     * 🔴 单独取出来命名，是为了让「上限」有一个<b>能被断言的名字</b>：
+     * 阈值的自验尺得装在<b>生效值</b>上，不是装在算它的那个脚本里。
+     * 算它的脚本再严，谁把上面那个 {@code 后排余量} 从 20 改成 200，判据当场永远绿，
+     * 而全套读数一声不吭——<b>护栏装在门口，而门在别处。</b>
+     */
+    static final long 判据4上限 = PING + 后排余量;
+
+    /**
+     * 余量尺等阻塞解开的上限：等到这么久还卡着就不等了
+     * <p>
+     * 只是个封顶，不是判据；判据看的是 {@link #阻塞最小余量}。
+     */
+    static final long 阻塞等待上限 = 8_000;
+
+    /**
+     * 开窗前等「复现成立」的上限：等到这么久还没成立就不等了，让判据自己去红
+     * <p>
+     * 🔴 上限存在的意义是<b>不许无限等</b>：等不到就该红在「复现没成立」上，
+     * 而不是把夹具挂死在那里，让人以为是别的问题。
+     */
+    static final long 复现等待上限 = 3_000;
+
+    /**
+     * 阻塞时长至少要比观测窗口多出这么多，判据 2／3 的修前红才算钉得住
+     * <p>
+     * 🔴 这个数是<b>量出来的</b>：见台架自检里那一格的推导与实测分布。
+     * 实测到过 2703ms 阻塞对 3000ms 窗口——只差 297ms，那一跑的修前红当场变成绿。
+     * <b>「卡住能撑满窗口」是个从来没人量过的默认。</b>
+     */
+    static final long 阻塞最小余量 = 800;
 
     static final NovaEventEndpoint.Timings 关闭帧时限 = new NovaEventEndpoint.Timings(
             PING, 关闭帧_CLIENT_TIMEOUT, 关闭帧_AUTH, 关闭帧_GRACE);
@@ -672,9 +727,16 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * 实测：状态是 {@code WAITING}——它停在 {@code NioSocketImpl} 自己那把写锁上，
      * 不是自己停在 write 系统调用里。照「必须 RUNNABLE」写会次次假红。
      *
-     * @return 卡住那条线程的名字／线程号／状态／栈摘录，以及它在等谁；没有人卡住时返回 null
+     * <p>
+     * 🔴 <b>收全量，不是「第一条命中」。</b> {@code Thread.getAllStackTraces()} 的次序不定；
+     * 只返回撞见的第一条，判据 0 判的就成了「<b>抽中的这条</b>不是心跳线程」，
+     * 而它自称判的是「<b>没有</b>心跳线程卡在关闭帧写里」——两句话在绿的时候长得一样，
+     * 只在「同时有两条卡住」那天分岔。
+     *
+     * @return 每条卡住的线程一份读数（名字／线程号／状态／栈摘录／它在等谁）；没人卡住时空表
      */
-    static Map<String, Object> 先验尺_有人卡在关闭帧的写里() {
+    static List<Map<String, Object>> 先验尺_有人卡在关闭帧的写里() {
+        List<Map<String, Object>> 全部 = new ArrayList<>();
         for (Map.Entry<Thread, StackTraceElement[]> e : Thread.getAllStackTraces().entrySet()) {
             List<String> 摘 = new ArrayList<>();
             boolean 在写 = false;
@@ -708,9 +770,54 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
                     持 == null ? "取不到——同一份转储里没找出持锁的那条" : 持);
             出.put("JDK", System.getProperty("java.version") + " / "
                     + System.getProperty("java.vm.name"));
-            return 出;
+            全部.add(出);
         }
-        return null;
+        return 全部;
+    }
+
+    /**
+     * 这一次阻塞<b>撑了多久</b>：从此刻起，等到再没有人卡在关闭帧的写里
+     * <p>
+     * 🔴 每一条「在窗口内没发生」型的判据（认证闸、转实时流）都<b>默认阻塞撑得过那个窗口</b>。
+     * 那个默认从来没人量过——实测到过一次 2703ms 自行解开、窗口 3000ms，
+     * 只差 297ms，于是那一轮的「修前红」变成了绿。
+     * <b>撑不撑得过窗口，是量出来的，不是拍的。</b>
+     * <p>
+     * 机制上它本来就会自行解开：对端不读，但环回 TCP 的接收缓冲会随时间被内核放大，
+     * 窗口一开，那 125 字节就写出去了。所以这个数是<b>分布</b>，要留余量。
+     *
+     * @param 上限毫秒 等到这么久还卡着就不等了，返回上限（读数里记成「至少这么久」）
+     * @return 阻塞实际撑了多少毫秒
+     */
+    static long 阻塞撑了多久(long 上限毫秒) throws InterruptedException {
+        long 起 = System.currentTimeMillis();
+        while (System.currentTimeMillis() - 起 < 上限毫秒) {
+            if (!复现成立(先验尺_有人卡在关闭帧的写里())) {
+                return System.currentTimeMillis() - 起;
+            }
+            Thread.sleep(25);
+        }
+        return 上限毫秒;
+    }
+
+    /**
+     * 先验尺的一句话结论：这一跑复现成立吗
+     *
+     * @param 尺读 {@link #先验尺_有人卡在关闭帧的写里()} 的返回
+     * @return 有人卡在关闭帧的写里就为真
+     */
+    static boolean 复现成立(List<Map<String, Object>> 尺读) {
+        return 尺读 != null && !尺读.isEmpty();
+    }
+
+    /**
+     * 尺见到了它没见过的线程状态吗
+     * <p>
+     * 🔴 这不是红也不是绿：<b>这把尺没见过这个形态</b>，它量出来的东西不作数，
+     * 由外部收集方判 ABORT 带实录。
+     */
+    static boolean 尺没见过的状态(List<Map<String, Object>> 尺读) {
+        return 尺读 != null && 尺读.stream().anyMatch(x -> Boolean.TRUE.equals(x.get("尺没见过的状态")));
     }
 
     /** 心跳线程此刻卡在谁身上。返回栈摘录；没卡住时返回 null */

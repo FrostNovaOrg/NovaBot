@@ -88,6 +88,13 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
     static final long AUTH_TIMEOUT_MS = 10_000;
 
     /**
+     * 关停时留给发送线程发完**已排队关闭帧**的宽限
+     * <p>
+     * 不是等所有活干完：写不动的那条连接本来就发不出去，等它没有意义。
+     */
+    static final long SHUTDOWN_DRAIN_MS = 200;
+
+    /**
      * 单个连接的发送队列在缓冲窗口之外额外留的余量，单位：条
      * <p>
      * 回补时可能一次性塞进整个缓冲窗口，队列必须装得下，否则刚补上就因为队列满被断开。
@@ -457,15 +464,23 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
             log.info("事件流客户端 {} 请求的 seq {} 已超出缓冲窗口, 已要求其重新握手", session.getId(), fromSeq);
         }
 
-        private void close(CloseStatus status) {
+        /**
+         * 关闭这条连接，就地把关闭帧发出去
+         * <p>
+         * 与 {@link #closeAsync} <b>同签名</b>：两者可以整个替换而不牵动调用点。
+         *
+         * @return 这一次真的由它翻转成已关闭时为 {@code true}；早已关闭时为 {@code false}
+         */
+        private boolean close(CloseStatus status) {
             if (!beginClose()) {
-                return;
+                return false;
             }
             sendCloseFrame(status);
+            return true;
         }
 
         /**
-         * 同上，但**发关闭帧那一步**交给发送线程池
+         * 同上，但**发关闭帧那一步**交给发送线程池，并回报**这一次是不是真的由它关上的**
          * <p>
          * 关一条 WebSocket 要发一帧关闭帧，那是一次<b>阻塞写</b>；落在一条写不动的连接上，
          * 调用方的线程就停在那儿。给心跳线程用的就是这一支：那条线程是<b>全局共享的单线程</b>，
@@ -474,10 +489,15 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
          * 记账的部分（{@code closed}、退订、清空待发）仍旧就地做完，只有那一次写挪走：
          * 挪走的是会阻塞的那一步，不是「什么时候算关上了」。这样下一轮心跳看见 {@code closed}
          * 就直接跳过，不会反复往池子里塞活。
+         * <p>
+         * 返回值给调用方用来**只打一次日志**：关闭帧写不动时，这条连接会在册子里多待一会儿，
+         * 心跳每个周期都会再看见它一次。
+         *
+         * @return 这一次真的由它翻转成已关闭时为 {@code true}；早已关闭时为 {@code false}
          */
-        private void closeAsync(CloseStatus status) {
+        private boolean closeAsync(CloseStatus status) {
             if (!beginClose()) {
-                return;
+                return false;
             }
             try {
                 senders.execute(() -> sendCloseFrame(status));
@@ -485,6 +505,7 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
                 // 正在关停，池子不收活了。这时阻不阻塞已经无所谓，就地关掉。
                 sendCloseFrame(status);
             }
+            return true;
         }
 
         /**
@@ -636,7 +657,20 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
         }
         clients.clear();
         heartbeats.shutdownNow();
-        senders.shutdownNow();
+
+        // 🔴 先给发送线程一小段宽限，把**已经排上队的关闭帧**发出去，再强杀。
+        //    直接 shutdownNow 的话，那些已经记账为「已关闭」、关闭帧还排在队里的连接
+        //    会被连任务一起丢掉——对端一帧关闭帧都收不到，只看得见连接断了。
+        //    宽限有上限：写不动的那条本来就发不出去，等它也没有意义。
+        senders.shutdown();
+        try {
+            if (!senders.awaitTermination(SHUTDOWN_DRAIN_MS, TimeUnit.MILLISECONDS)) {
+                senders.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            senders.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 
     /**
@@ -661,12 +695,18 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
                 continue;
             }
             if (now - client.lastSeenAt > timings.clientTimeout()) {
-                log.info("事件流客户端 {} 超过 {} 毫秒未回应, 已断开", client.session.getId(), timings.clientTimeout());
                 // 🔴 用 closeAsync 而不是 close：这条线程是全局共享的单线程，
                 //    而关一条连接要发关闭帧、那是阻塞写。就地关的话，
                 //    一条写不动的连接会把**所有**连接的 ping、认证时限、回补窗口一起钉住；
                 //    还多一层——遍历是顺序的，排在它后面的连接这一轮连 ping 都轮不到。
-                client.closeAsync(CloseStatus.POLICY_VIOLATION.withReason("未按协议回应心跳"));
+                //
+                //    日志只在**真的由这一次关上**时打。关闭帧写不动的连接会在册子里多待一会儿，
+                //    每个周期都会被再看见一次——无条件打的话，一条断开会打出几十行一模一样的，
+                //    把日志面上真正的事淹掉。
+                if (client.closeAsync(CloseStatus.POLICY_VIOLATION.withReason("未按协议回应心跳"))) {
+                    log.info("事件流客户端 {} 超过 {} 毫秒未回应, 已断开",
+                            client.session.getId(), timings.clientTimeout());
+                }
                 continue;
             }
             client.send(control("ping"));

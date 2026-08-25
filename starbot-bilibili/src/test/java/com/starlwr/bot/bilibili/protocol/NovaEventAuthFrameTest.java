@@ -256,19 +256,33 @@ class NovaEventAuthFrameTest {
      * 别把这一格写宽了去误伤它。
      */
     @Test
-    @DisplayName("🔴 超时清理：关闭帧是这条连接唯一的下行帧（认证前一个字节都不下行）")
+    @DisplayName("🔴 超时清理：关闭帧是这条连接唯一的下行帧（认证前既不发也不排队）")
     void timeoutCleanupSendsNothingBeforeTheCloseFrame() throws Exception {
         NovaEventEndpointTest.FakeSession session = connect("s-nothing-before-close");
+        Object client = clientOf(session);
 
+        // 🔴 两样都要量：**已经写出去的**与**还排在待发队列里的**。
+        //    只量写出去的话，将来那条认证前下行若走 `send(...)`（进待发队列、由发送线程异步写），
+        //    这一处就是竞态；而 `beginClose()` 关的时候会清空待发队列，
+        //    那一帧可能**永远写不出去**——于是这一格静静保持绿，而洞是真的开了。
+        //    两样合起来才是完整的：这一刻它要么已写出、要么还排着，不可能两处都看不见。
         assertEquals(0, session.sentCount(),
                 "认证之前这条连接上不该有任何下行帧。加了的话，逾期清理那一帧关闭帧"
                         + "就可能写不动，而它跑在全局共享的心跳线程上");
+        assertEquals(0, outboxSize(client),
+                "认证之前也不该有任何帧**排进待发队列**。排队的帧同样会撑满对端缓冲，"
+                        + "而它在关闭时会被清掉——只量「已写出的」的话，这一半就漏了");
 
-        closeUnauthenticated(clientOf(session));
+        closeUnauthenticated(client);
 
         assertNotNull(session.closedWith, "逾期就该关掉");
         assertEquals(0, session.sentCount(),
                 "关闭帧之外，这条连接自始至终不该收到任何下行帧");
+    }
+
+    /** 这条连接此刻排了几帧待发 */
+    private int outboxSize(Object client) throws Exception {
+        return ((java.util.Collection<?>) readField(client, "outbox")).size();
     }
 
     private Object clientOf(NovaEventEndpointTest.FakeSession session) throws Exception {
