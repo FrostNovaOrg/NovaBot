@@ -7,6 +7,7 @@ import java.util.Map;
 
 import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.PING;
 import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.判据4上限;
+import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.像漏轮的下沿;
 import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.后排余量;
 import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.洞的签名_漏一轮;
 import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.读数;
@@ -47,6 +48,40 @@ class NovaEvent台架自检Test {
                         + 洞的签名_漏一轮 + "ms（＝多等一个整周期）——"
                         + "这个阈值抓不住它要抓的东西，那一格会永远绿。"
                         + "改 后排余量（" + 后排余量 + "）之前先想清楚这一条。");
+    }
+
+    /**
+     * 🔴 说法线要<b>高于</b>红绿线，否则两支诊断塌成一支
+     * <p>
+     * 判据 4 红有两种成因，红形长得一模一样：漏了一轮（超出到一个整周期这个量级），
+     * 与机器比定这条线那台慢（超出只比红绿线高一点）。失败语靠
+     * {@link NovaEvent慢消费者台架#像漏轮的下沿} 把两者分开。
+     * <p>
+     * 那条说法线要是<b>掉到红绿线上或以下</b>，凡红必被说成「更像漏了轮」——
+     * <b>看着还有两支，其实只剩一支，而这一支永远说同一句话</b>。
+     * 它不会红、不会抛，只会在往后每一条假红上把人指向错的方向。所以就地钉住。
+     * <p>
+     * 还要留得下说话的余地：两条线之间得放得下一档，否则「更像机器慢」那一支
+     * 落在一个几乎不可能取到的区间里，等于没有。
+     */
+    @Test
+    @DisplayName("说法线必须高于红绿线，否则失败语两支塌成一支")
+    void 说法线高于红绿线() {
+        读数("台架自检-两条线", Map.of(
+                "红绿线毫秒（心跳周期＋余量）", 判据4上限,
+                "说法线毫秒（超出多少算更像漏轮）", 像漏轮的下沿,
+                "「更像机器慢」那一档的宽度毫秒", 像漏轮的下沿 - 后排余量,
+                "漏一轮的超出量毫秒", PING,
+                "🔴 量的是生效值", "这里用的就是失败语在用的那两个常量，不是复制品"));
+
+        assertTrue(像漏轮的下沿 > 后排余量,
+                "说法线 " + 像漏轮的下沿 + "ms 没有高于红绿线用的余量 " + 后排余量 + "ms——"
+                        + "凡是红的都会被说成「更像漏了轮」，两支诊断塌成一支。"
+                        + "它不会让任何一格变红，只会在往后每一条假红上把人指错方向。");
+
+        assertTrue(像漏轮的下沿 < PING,
+                "说法线 " + 像漏轮的下沿 + "ms 不低于漏一轮的超出量 " + PING + "ms——"
+                        + "真漏了一轮反而会被说成「更像机器慢」，两支说反了。");
     }
 
     /**
