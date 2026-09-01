@@ -34,9 +34,24 @@ class MemoryLimitStartupCheckTest {
         assertTrue(advice.get().contains("MemoryHigh"), advice.get());
     }
 
+    /**
+     * 模板现在发的两个值，取 systemd 写进 cgroup 之后的字节数（内核会把软上限向下对齐到页）。
+     * 写字节而不写 {@code 1228 * M}，是为了让这两个数与线上读到的
+     * {@code memory.high} / {@code memory.max} 逐位对得上。
+     */
+    private static final long TEMPLATE_HIGH = 1288486912L;
+
+    private static final long TEMPLATE_MAX = 1610612736L;
+
     @Test
-    @DisplayName("抬到 920M 之后不再报——这是模板给出的新值")
-    void acceptsTheFixedTemplateValue() {
+    @DisplayName("模板发的 MemoryHigh=1.2G / MemoryMax=1.5G 不该报——854M 装得下")
+    void acceptsTheShippedTemplateValues() {
+        assertTrue(advise(TEMPLATE_HIGH, TEMPLATE_MAX, XMX, METASPACE).isEmpty());
+    }
+
+    @Test
+    @DisplayName("920M 这个旧值也仍然装得下——上一次抬限并没有抬错，只是余量不够")
+    void theEarlierRaiseWasAlreadyEnoughToClearTheCheck() {
         assertTrue(advise(920 * M, 1024 * M, XMX, METASPACE).isEmpty());
     }
 

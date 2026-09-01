@@ -140,6 +140,9 @@ class LiveSessionRecoveryTest {
             writeWatermark(start - 60_000);
 
             LiveSessionRecovery recovery = new LiveSessionRecovery(boot(), archive);
+            // 🔴 必须等时钟真的走过 start：归档判的是 start < newStartTime，
+            // 两次取时钟落在同一毫秒时会被判成「同一场」而跳过——本用例曾因此偶发红
+            awaitClockPast(start);
             recovery.archiveUnclosedIfAny(PLATFORM, STREAMER, Instant.now().toEpochMilli());
 
             List<LiveSession> sessions = archived();
@@ -320,9 +323,6 @@ class LiveSessionRecoveryTest {
     }
 
     /**
-     * 读出数据文件里当前的水位线，判据必须取自盘上而不是内存
-     */
-    /**
      * 自旋到系统时钟严格越过给定时刻
      * <p>
      * 最多一毫秒，不引入固定睡眠——固定睡眠只是把概率调低，
@@ -334,6 +334,9 @@ class LiveSessionRecoveryTest {
         }
     }
 
+    /**
+     * 读出数据文件里当前的水位线，判据必须取自盘上而不是内存
+     */
     private long watermark() {
         try {
             return com.alibaba.fastjson2.JSON
