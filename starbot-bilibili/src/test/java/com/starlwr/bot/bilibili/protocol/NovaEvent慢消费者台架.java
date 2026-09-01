@@ -14,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -110,141 +111,287 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * <p>
      * 🔴 端点里的 {@code clients} 是 {@code ConcurrentHashMap}，遍历次序由 id 的散列定，
      * <b>同一组 id 每跑都一样</b>。这个 id 要是恰好散到最后，后排就永远是空的，
-     * 分簇尺会次次不亮——而那看起来像「夹具搭不起来」，其实是「id 选得不巧」。
+     * 判据 4 当场变成空真——而那看起来像「夹具搭不起来」，其实是「id 选得不巧」。
      * <p>
      * 这个值是<b>定出来的，不是挑顺眼的</b>：把这一组连接的 id 原样放进一个
      * {@code ConcurrentHashMap} 里，直接算出遍历次序，看慢客户端落在第几位。
      * {@code slow-0/1/2/3/6/7/10/11} 都排在六条健康连接<b>之前</b>（后排 6 条、前排 0 条），
-     * {@code slow-8} 排在最后（前排 6 条、后排 0 条）——这两种都分不出簇。
+     * {@code slow-8} 排在最后（前排 6 条、后排 0 条）——这两种都缺一簇。
      * {@code slow-4} 落在第 4 位：<b>前 2 条、后 4 条</b>，两边都不空。
      * <p>
-     * 🔴 算出来之后仍要由 {@link 后排尺#分簇尺} 在真跑里确认。
-     * 算的是「次序应该是什么」，分簇尺量的是「这一跑里实际发生了什么」——
-     * 两者都要，因为前者依赖 JDK 的散列实现，换个 JDK 就可能不作数。
+     * 🔴 算出来的次序<b>不许只当注释信</b>：它依赖 JDK 的散列实现，换个 JDK 就可能重排。
+     * 所以判据 4 每一跑开头都由 {@code 两簇都不空} 就地再验一次——
+     * <b>验的是生效值，不是这段注释</b>。
      */
     static final String 慢客户端id = "slow-4";
 
-    /**
-     * 判据 4 的余量：一条健康连接的相邻两次 ping，允许比心跳周期多等多久（超出即算「陪葬」）
-     * <p>
-     * <b>这个数不是从噪声里量出来的，是从「检出预算」里分出来的</b>：
-     * 这个洞的签名是「漏掉一轮」——那一条要多等<b>一个整周期</b>。
-     * 噪声要留在线下面，洞要留在线上面，于是把线放在预算的<b>一半</b>：余量＝周期／2。
-     * <p>
-     * 🔴 <b>为什么不按实测的噪声定线</b>：这条噪声是长尾的（形态像 GC／调度停顿），
-     * 绝大多数跑只多等几毫秒，偶尔窜上去一次。先按「安静时的 p99×2」定过一次，
-     * 撑了几十跑就红；改按「见过的最坏×2」定，不到十跑又红——
-     * <b>见过的最坏只是还没见过更坏</b>，拿采样去给长尾封顶，封不住。
-     * 按洞有多大定线，线就不随下一次采样变；按噪声有多大定线，每次采样都在改线。
-     * <p>
-     * 🔴 分的是<b>超出周期</b>那部分的预算，不是间隔本身。拿间隔去分会把上限定到周期的三倍上，
-     * 而洞的签名才两个周期，<b>上限比洞还宽，判据就永远绿了</b>。
-     * <p>
-     * 🔴 实测到的噪声值只进读数，不写在这里：注释里的数会跟着时间跑偏，
-     * <b>而跑偏的数和当初量准的数长得一样</b>。要看某一跑的实测分布，
-     * 判据 4 红的时候会连同上限的来历一起打进失败语。
-     * <p>
-     * 🔴 定完还要验它<b>抓不抓得住洞</b>——见本类下方那格常驻断言：
-     * 心跳周期＋余量必须小于「漏掉一轮」的签名。
-     * <p>
-     * 什么时候要重定：改心跳周期，或者洞的签名变了（比如清理改成一次漏好几轮）。
-     * <b>换机器、换 JDK 不用重定</b>——线不是按那台机器的噪声定的。
-     */
-    static final long 后排余量 = PING / 2;
+    // ═══════════════════ 负载免疫：判相对，不判绝对 ═══════════════════
+    //
+    // 🔴 这一组判据从前拿**墙钟绝对时长**当尺：判据 4 要求每条健康连接的相邻两次 ping
+    //    不许超过「心跳周期＋余量」＝ 300ms。机器一有负载，判的就不是代码是机器——
+    //    实测在**空载**下已经量到六条健康连接**齐齐 320ms**。
+    //    六条一起偏移，那是整机被推了一把的形状，不是「谁被落下了」的形状；
+    //    可那把绝对尺分不出这两件事，于是它红在了机器上。
+    //
+    //    改法只有一条：**判相对**。这个洞的伤害本来就是差分的——
+    //    心跳线程被钉住时，遍历前半段的连接收到了那一轮，后半段一条都没收到。
+    //    负载会把**所有**连接一起拖慢，差分不变；钉住只拖后半段，差分立刻现形。
+    //    于是判据量的不再是「多少毫秒」，而是「**后簇比前簇落后了多少**」。
+    //
+    //    还剩下的那点「多久算久」，一律折算成 {@link 对照钟} 的格数——
+    //    那把表和心跳跑在同一台机器、同一份负载上，只是<b>不经过心跳线程</b>。
+    //    机器慢，它跟着慢；心跳被钉住，它照走。
 
     /**
-     * 「漏掉一轮」这个洞在读数上长什么样：这一条要多等<b>一个整周期</b>
+     * 对照钟：和端点心跳<b>同周期、同机器、同负载，但不经过心跳线程</b>的一把表
      * <p>
-     * 判据 4 的上限必须<b>小于</b>它，否则那一格从出生起就永远绿。
+     * 🔴 <b>它是这一组判据全部「时长」的单位。</b>负载一高，墙钟毫秒说明不了任何事：
+     * 「1200 毫秒内没收到 ping」在空载是洞，在满载是机器。而「对照钟走了两格、
+     * 心跳一格没走」在两种负载下都是同一句话——因为这把表和心跳吃的是同一份 CPU。
+     * <p>
+     * 用 {@code ScheduledExecutorService} 而不是 {@code sleep} 循环，是为了和被量的那条
+     * （端点的 {@code heartbeats}）<b>同一种机器</b>：同样的定时器实现、同样的补齐行为。
+     * <b>对照要和被对照的东西同形，差出来的才是被测的那件事。</b>
      */
-    static final long 洞的签名_漏一轮 = PING * 2;
+    static final class 对照钟 implements AutoCloseable {
+        private final java.util.concurrent.ScheduledExecutorService 表;
 
-    /**
-     * 超出多少就该往「漏了一轮」上想，而不是往「机器慢」上想
-     * <p>
-     * 🔴 这个数<b>只决定失败语怎么说</b>，不决定红不红：红绿仍然只看有没有连接超过
-     * {@code PING + 后排余量}。
-     * <p>
-     * 🔴 <b>它必须比红绿线高</b>：两条线要是重合了，凡红必被说成「像漏轮」，
-     * 两支说法塌成一支，这条诊断就没用了。取四分之三个周期，于是分成三段——
-     * 线下绿；线与它之间红、说「更像机器慢」；它以上红、说「更像漏了轮」。
-     * 真漏一轮是一个整周期，稳稳落在最上面那一段。
-     * <p>
-     * 🔴 说法只指方向，不下定论：失败语里写的是「<b>更像</b>」。
-     */
-    static final long 像漏轮的下沿 = PING * 3 / 4;
+        private final java.util.concurrent.atomic.AtomicLong 格 =
+                new java.util.concurrent.atomic.AtomicLong();
 
-    /**
-     * 判据 4 红了的时候，把「这一跑慢了多少」和「上限是怎么来的」一起说清楚
-     * <p>
-     * 🔴 <b>一句指错方向的失败信息比没有更费事。</b>这一格红有两种成因，红形长得一模一样：
-     * <ul>
-     *   <li><b>漏掉了一轮</b>：那一条要多等一个整心跳周期，超出量到得了周期这个量级；</li>
-     *   <li><b>跑测试的机器比定余量那台慢</b>：超出量只比红绿线高一点，离一个整周期还远。</li>
-     * </ul>
-     * 分不开的话，下一个人会拿着一条真红去查一个不存在的洞，或者反过来把真洞当成机器慢。
-     * 所以把<b>本跑实测</b>的超出分布连同上限的来历一并打出来——
-     * 上限写死在源码里，分布只有跑起来才有。
-     * <p>
-     * 🔴 措辞一律用「<b>更像</b>」：这段只<b>指方向</b>，不下定论。
-     * 一句把话说死的诊断，错的时候比不说更难纠。
-     */
-    static String 判据4失败语(java.util.List<Long> 逐条迟到毫秒, java.util.List<String> 超了) {
-        java.util.List<Long> 超出周期 = 逐条迟到毫秒.stream()
-                .map(x -> x - PING).sorted().toList();
-        long 最大超出 = 超出周期.isEmpty() ? 0 : 超出周期.get(超出周期.size() - 1);
-        // 🔴 别写死成「≈ 一个整周期」：卡得久时能超出好几个周期，
-        //    那句话就成了「1018ms ≈ 200ms」——**一句自己就不成立的话，没人会再信它后半句**。
-        long 十倍周期数 = PING == 0 ? 0 : 最大超出 * 10 / PING;
-        String 几个周期 = (十倍周期数 / 10) + "." + (十倍周期数 % 10);
-        String 像什么 = 最大超出 >= 像漏轮的下沿
-                ? "最大超出 " + 最大超出 + "ms ＝ " + 几个周期 + " 个心跳周期（周期 " + PING + "ms）"
-                  + "——漏一轮就要多等一个整周期，所以这更像**漏了轮**，正是这一格要抓的那件事。"
-                : "最大超出 " + 最大超出 + "ms ＝ " + 几个周期 + " 个心跳周期（周期 " + PING + "ms），"
-                  + "只比红绿线（" + 后排余量 + "ms）高一点，离一个整周期还远"
-                  + "——**更像跑测试的机器比定这条线那台慢**。"
-                  + "先换台机器或挑机器闲的时候再跑一遍；"
-                  + "要是连着好几跑都在这一档，那才说明这条线定低了。";
-        return "有连接因为**别人**被清理而少收了轮次：" + 超了
-                + "\n  上限 " + (PING + 后排余量) + "ms ＝ 心跳周期 " + PING + "ms ＋ 余量 " + 后排余量 + "ms"
-                + "\n  余量不是按噪声定的，是按检出预算定的：漏一轮要多等一个整周期，线放在它的一半"
-                + "\n  本跑实测各连接「超出周期」的毫秒数（已排序）：" + 超出周期
-                + "\n  " + 像什么;
+        private final long 名义格长毫秒;
+
+        对照钟(long 周期毫秒) {
+            this.名义格长毫秒 = 周期毫秒;
+            this.表 = java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "nova-test-control-clock");
+                t.setDaemon(true);
+                return t;
+            });
+            表.scheduleAtFixedRate(格::incrementAndGet, 周期毫秒, 周期毫秒, TimeUnit.MILLISECONDS);
+        }
+
+        long 读() {
+            return 格.get();
+        }
+
+        long 名义格长毫秒() {
+            return 名义格长毫秒;
+        }
+
+        /**
+         * 开一段观测：从此刻起，等这把表再走满 {@code 格数} 格
+         *
+         * @param 格数 等几格
+         * @return 这一段的起止（含本跑实测的格长）
+         */
+        一段 走过(long 格数) throws InterruptedException {
+            long 起格 = 读();
+            long 起毫秒 = System.currentTimeMillis();
+            long 死线 = 起毫秒 + 死线毫秒(格数);
+            while (读() - 起格 < 格数 && System.currentTimeMillis() < 死线) {
+                Thread.sleep(5);
+            }
+            return new 一段(起格, 读(), 起毫秒, System.currentTimeMillis(), 名义格长毫秒);
+        }
+
+        /**
+         * 在这把表走满 {@code 格数} 格之前反复问 {@code 探}；拿到非 {@code null} 就提前返回
+         * <p>
+         * 🔴 这是 {@link NovaEvent慢消费者台架#等到(long, java.util.function.Supplier)} 的负载免疫版：
+         * 预算按<b>对照格</b>算，机器慢时窗口自己变长。判「窗口内那件事有没有发生」的格子
+         * 一律走这一支——拿墙钟毫秒当预算，负载一高判的就是机器。
+         */
+        <T> T 等到(long 格数, java.util.function.Supplier<T> 探) throws InterruptedException {
+            long 起格 = 读();
+            long 死线 = System.currentTimeMillis() + 死线毫秒(格数);
+            while (true) {
+                T v = 探.get();
+                if (v != null) {
+                    return v;
+                }
+                if (读() - 起格 >= 格数 || System.currentTimeMillis() >= 死线) {
+                    return null;
+                }
+                Thread.sleep(5);
+            }
+        }
+
+        /**
+         * 墙钟死线：只为「对照钟自己死了别把夹具挂死」
+         * <p>
+         * 🔴 <b>它不是判据</b>，取得极宽（名义格长的二十倍）。够不到它就是表坏了，
+         * 不是机器慢——真慢到二十倍，红在哪一格都无所谓了。
+         */
+        private long 死线毫秒(long 格数) {
+            return Math.max(1, 格数) * 名义格长毫秒 * 20;
+        }
+
+        @Override
+        public void close() {
+            表.shutdownNow();
+        }
     }
 
     /**
-     * 判据 4 实际在用的上限
+     * 一段观测：起止的对照格与墙钟
      * <p>
-     * 🔴 单独取出来命名，是为了让「上限」有一个<b>能被断言的名字</b>：
-     * 阈值的自验尺得装在<b>生效值</b>上，不是装在算它的那个脚本里。
-     * 算它的脚本再严，谁把上面那个 {@code 后排余量} 从 20 改成 200，判据当场永远绿，
-     * 而全套读数一声不吭——<b>护栏装在门口，而门在别处。</b>
+     * 🔴 {@link #本跑格长毫秒()} 是<b>这一跑实测</b>的一格有多长，不是配的那个数。
+     * 判据要拿毫秒和「一格」比时，比的必须是这个实测值——
+     * 拿名义值去比，负载一高就又回到判绝对了。
      */
-    static final long 判据4上限 = PING + 后排余量;
+    record 一段(long 起格, long 止格, long 起毫秒, long 止毫秒, long 名义格长毫秒) {
+        long 走了几格() {
+            return 止格 - 起格;
+        }
+
+        long 墙钟毫秒() {
+            return 止毫秒 - 起毫秒;
+        }
+
+        /** 本跑实测的一格有多长；一格都没走时退回名义值（只会发生在窗口开得极短时） */
+        long 本跑格长毫秒() {
+            return 走了几格() <= 0 ? 名义格长毫秒 : Math.max(1, 墙钟毫秒() / 走了几格());
+        }
+
+        /** 把一段毫秒折算成「几个千分之一格」——判据用的单位 */
+        long 折成千分格(long 毫秒) {
+            return 毫秒 * 1000 / 本跑格长毫秒();
+        }
+
+        Map<String, Object> 读数() {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("走了几格", 走了几格());
+            m.put("墙钟毫秒", 墙钟毫秒());
+            m.put("本跑实测格长毫秒", 本跑格长毫秒());
+            m.put("名义格长毫秒", 名义格长毫秒);
+            return m;
+        }
+    }
 
     /**
-     * 余量尺等阻塞解开的上限：等到这么久还卡着就不等了
+     * 判据的观测窗口，以<b>对照格</b>计
      * <p>
-     * 只是个封顶，不是判据；判据看的是 {@link #阻塞最小余量}。
+     * 🔴 不写成毫秒：负载一高，心跳一格就变长，窗口也该跟着变长——
+     * 窗口按格算，「窗口里该发生几轮」这件事就不随负载变。
+     * <p>
+     * 取 2 格：判据 1 只要「有人推进过至少一轮」，判据 2／3 要等的那件事在开窗时
+     * <b>早已到点</b>（认证闸与回补窗口都排在超时清理之前），两格是宽打宽算。
+     * <p>
+     * 🔴 <b>不能取大。</b>这一组的复现（对端不读的 socket 写）只撑得住两三秒，
+     * 而那两三秒<b>不随负载变长</b>（内核放大接收缓冲是按时间走的，不按 CPU 走）。
+     * 窗口按格算、格随负载变长，窗口开太多格就会在满载时伸出复现之外——
+     * 那时红的是「这一跑没撑住」，不是判据。见 {@link #阻塞余量_千分格}。
      */
-    static final long 阻塞等待上限 = 8_000;
+    static final long 观测格数 = 2;
 
     /**
-     * 开窗前等「复现成立」的上限：等到这么久还没成立就不等了，让判据自己去红
+     * 后簇比前簇落后，允许<b>持续</b>多久（单位：千分之一个对照格）
+     * <p>
+     * <b>这个数不是从噪声里量出来的，是从两边的量级里分出来的。</b>
+     * <ul>
+     *   <li><b>修后</b>那一点点落后是「心跳正走在遍历中间」的快照假象：
+     *       {@code heartbeat()} 对每条连接只做一次入队，整趟走完是微秒级；
+     *       加上各连接投递线程的调度差，也就几毫秒到几十毫秒——<b>远不到一格</b>。</li>
+     *   <li><b>修前</b>那一段落后是<b>整个阻塞</b>：后簇要等心跳从关闭帧的写里出来才轮得到，
+     *       实测两三秒，也就是<b>好几格</b>（{@link #洞的签名_落后_千分格}）。</li>
+     * </ul>
+     * 两边差着量级，线放在中间：0.4 格。<b>它只挡量级错，不挡毫秒抖动。</b>
+     * <p>
+     * 🔴 为什么可以按格算而不按毫秒算：负载一高，那点快照假象和一格<b>一起</b>变长，
+     * 比值不动；而阻塞那两三秒是墙钟固定的，格一变长它反而占更少格——
+     * 也就是说负载只会让这条线<b>更难红</b>，不会让它假红。
+     * <p>
+     * 🔴 定完要验它抓不抓得住洞：见台架自检里那一格（{@code 落后容忍抓得住洞}）。
+     */
+    static final long 落后容忍_千分格 = 400;
+
+    /**
+     * 「后簇陪葬」这个洞在读数上长什么样：后簇会落后<b>整段窗口</b>
+     * <p>
+     * 心跳被钉在关闭帧的写里时，遍历停在慢客户端那一步，后簇一轮也轮不到，
+     * 直到阻塞解开为止——而阻塞撑得过窗口（{@link #阻塞余量_千分格} 就是在保这一条）。
+     * 所以量到的落后会一路顶到窗口长度。
+     * <p>
+     * {@link #落后容忍_千分格} 必须<b>小于</b>它，否则那一格从出生起就永远绿。
+     */
+    static final long 洞的签名_落后_千分格 = 观测格数 * 1000;
+
+    /**
+     * 落后到多少就该往「真被钉住了」上想，而不是往「机器抖了一下」上想
+     * <p>
+     * 🔴 这个数<b>只决定失败语怎么说</b>，不决定红不红：红绿仍然只看
+     * {@link #落后容忍_千分格}。
+     * <p>
+     * 🔴 <b>它必须比红绿线高</b>：两条线要是重合了，凡红必被说成「像真钉住」，
+     * 两支说法塌成一支，这条诊断就没用了。也必须<b>低于</b>洞的签名，
+     * 否则真钉住反而被说成机器抖——两支说反了比没有更费事。
+     */
+    static final long 像真钉住的下沿_千分格 = 落后容忍_千分格 * 2;
+
+    /**
+     * 判据 4 红了的时候，把「这一跑落后了多少」和「线是怎么来的」一起说清楚
+     * <p>
+     * 🔴 <b>一句指错方向的失败信息比没有更费事。</b>这一格红有两种成因，红形长得一样：
+     * <ul>
+     *   <li><b>后簇真被落下了</b>：落后一路顶到窗口长度，是<b>格</b>这个量级；</li>
+     *   <li><b>机器抖了一下</b>：某条投递线程被剥了一会儿 CPU，落后只比线高一点。</li>
+     * </ul>
+     * 所以把<b>本跑实测</b>的落后连同线的来历一并打出来——
+     * 线写死在源码里，落后只有跑起来才有。措辞一律用「<b>更像</b>」：只指方向，不下定论。
+     */
+    static String 判据4失败语(后排读 读) {
+        String 像什么 = 读.最长落后_千分格() >= 像真钉住的下沿_千分格
+                ? "落后 " + 千分格成串(读.最长落后_千分格()) + " 格，到了**格**这个量级"
+                  + "——心跳被钉住时后簇要等整段阻塞才轮得到，所以这更像**真被落下了**，"
+                  + "正是这一格要抓的那件事。"
+                : "落后 " + 千分格成串(读.最长落后_千分格()) + " 格，只比线（"
+                  + 千分格成串(落后容忍_千分格) + " 格）高一点，离一整格还远"
+                  + "——**更像某条投递线程被剥了一会儿 CPU**。"
+                  + "挑机器闲的时候再跑一遍；连着好几跑都在这一档，才说明这条线定低了。";
+        return "后簇（排在被清理那条**后面**的健康连接）持续落在前簇后面："
+                + "\n  最长落后 " + 读.最长落后毫秒() + "ms ＝ " + 千分格成串(读.最长落后_千分格())
+                + " 个对照格（本跑实测一格 " + 读.段().本跑格长毫秒() + "ms）"
+                + "\n  线 ＝ " + 千分格成串(落后容忍_千分格) + " 格。线不是按噪声定的，是按两边的量级定的："
+                + "修后的落后是遍历中间的快照假象（微秒到几十毫秒），修前是整段阻塞（好几格）"
+                + "\n  前簇 " + 读.前簇() + " 收到的轮次 " + 读.前簇逐条轮次()
+                + "\n  后簇 " + 读.后簇() + " 收到的轮次 " + 读.后簇逐条轮次()
+                + "\n  " + 像什么;
+    }
+
+    /** 把千分格印成人读得懂的「几点几格」 */
+    static String 千分格成串(long 千分格) {
+        return (千分格 / 1000) + "." + String.format("%03d", Math.abs(千分格 % 1000));
+    }
+
+    /**
+     * 余量尺等阻塞解开的上限，以<b>对照格</b>计：等到这么久还卡着就不等了
+     * <p>
+     * 只是个封顶，不是判据；判据看的是 {@link #阻塞余量_千分格}。
+     */
+    static final long 阻塞等待格数 = 40;
+
+    /**
+     * 开窗前等「复现成立」的上限，以<b>对照格</b>计
      * <p>
      * 🔴 上限存在的意义是<b>不许无限等</b>：等不到就该红在「复现没成立」上，
      * 而不是把夹具挂死在那里，让人以为是别的问题。
+     * <p>
+     * 按格算而不按毫秒算：负载高时该多等一会儿，等的是「机器又走了这么多步」，
+     * 不是「墙上又过了这么多秒」。
      */
-    static final long 复现等待上限 = 3_000;
+    static final long 复现等待格数 = 15;
 
     /**
-     * 阻塞时长至少要比观测窗口多出这么多，判据 2／3 的修前红才算钉得住
+     * 阻塞至少要比观测窗口多撑这么多（千分格），判据 2／3／4 的修前红才算钉得住
      * <p>
-     * 🔴 这个数是<b>量出来的</b>：见台架自检里那一格的推导与实测分布。
-     * 实测到过 2703ms 阻塞对 3000ms 窗口——只差 297ms，那一跑的修前红当场变成绿。
-     * <b>「卡住能撑满窗口」是个从来没人量过的默认。</b>
+     * 🔴 <b>「卡住能撑满窗口」是个从来没人量过的默认。</b>撑不过的那一轮，
+     * 闸会在窗口剩下的时间里自己办完，红当场变绿——而那不是修好了，是这一跑没撑住。
+     * 实测撞到过 2703ms 阻塞对 3000ms 窗口。
+     * <p>
+     * 半格：窗口本身按格算，余量也按格算，两者才是同一把尺上的数。
      */
-    static final long 阻塞最小余量 = 800;
+    static final long 阻塞余量_千分格 = 500;
 
     static final NovaEventEndpoint.Timings 关闭帧时限 = new NovaEventEndpoint.Timings(
             PING, 关闭帧_CLIENT_TIMEOUT, 关闭帧_AUTH, 关闭帧_GRACE);
@@ -269,6 +416,15 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * 而它一旦被钉住，这件活就永远排不上号。
      */
     final Thread 心跳线程;
+
+    /**
+     * 这一跑的对照钟
+     * <p>
+     * 🔴 <b>和夹具同生共死</b>：它要和被量的那条心跳吃同一份负载，
+     * 所以在夹具支起来的那一刻就开始走，收摊时一起停。
+     * 判据临用时才起一把新表的话，量到的是「表刚起来那几格」，不是这一跑的机器。
+     */
+    final 对照钟 钟 = new 对照钟(PING);
 
     private static Thread 登记心跳线程(NovaEventEndpoint endpoint) {
         try {
@@ -302,12 +458,14 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
 
     @Override
     public void close() {
+        钟.close();
         endpoint.shutdown();
         for (NovaEventSlowConsumerTest.SocketSession s : 真会话) {
             s.关掉();
         }
         真会话.clear();
     }
+
 
     // ══════════════════════════ 台架动作 ══════════════════════════
 
@@ -499,32 +657,230 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
     /**
      * 算序：把这一组 id 原样放进一个 {@code ConcurrentHashMap}，直接算出遍历次序
      * <p>
-     * 🔴 <b>算序是选料器，分簇尺是裁判。</b> 算的是「次序应该是什么」——它依赖 JDK 的散列实现，
-     * 换个 JDK 就可能不作数；分簇尺量的是「这一跑实际发生了什么」。
-     * 两者<b>不一致即举手</b>（{@code 算序与实测不符}＝true），由外部收集方判 ABORT 查因，
-     * 不许挑一个好看的写上去。
+     * 🔴 判据 4 改判相对之后，这两张名单<b>从选料参考变成了判据的一部分</b>：
+     * 前簇是后簇的对照，两簇都不空这一条由 {@code 两簇都不空} 在每一跑开头就地断言。
+     * <p>
+     * 🔴 它依赖 JDK 的散列实现，换个 JDK 就可能重排——所以<b>算完要在真跑里验</b>，
+     * 不许挑一个好看的次序写进注释就当数。阳性对照那一格更进一步：
+     * 心跳真被钉在这个位次上时，量到的落后必须顶到洞的签名那个量级，
+     * 次序要是算错了，落后就出不来，那一格当场红。
      */
-    static Map<String, Object> 算序(String 慢id, int 健康数, String... 别的) {
-        java.util.Map<String, Integer> m = new ConcurrentHashMap<>();
+    static 序读 算序(String 慢id, int 健康数, String... 别的) {
+        List<String> 全 = new ArrayList<>();
         for (int i = 0; i < 健康数; i++) {
-            m.put("healthy-" + i, 1);
+            全.add("healthy-" + i);
         }
-        m.put(慢id, 1);
-        for (String k : 别的) {
-            m.put(k, 1);
+        全.add(慢id);
+        全.addAll(List.of(别的));
+        return 算序(慢id, 全);
+    }
+
+    /**
+     * 遍历次序的读数：谁排在被清理那条<b>前面</b>、谁排在<b>后面</b>
+     * <p>
+     * 🔴 判据 4 改判相对之后，这两张名单从「选料参考」变成了<b>判据的一部分</b>：
+     * 前簇是后簇的对照。两簇都不能空——后簇空了，「后排不陪葬」就是空真。
+     */
+    record 序读(String 慢id, int 位, int 总, List<String> 前簇, List<String> 后簇, String jdk) {
+        Map<String, Object> 读数() {
+            Map<String, Object> 出 = new LinkedHashMap<>();
+            出.put("被清理那条的 id", 慢id);
+            出.put("位次", 位 + "/" + 总);
+            出.put("算出来·排在前面的健康连接", 前簇);
+            出.put("算出来·排在后面的健康连接", 后簇);
+            出.put("JDK", jdk);
+            出.put("🔴", "算序依赖 JDK 的散列实现；换 JDK 就可能重排，两簇不空由判据自己再验一次");
+            return 出;
         }
+    }
+
+    static 序读 算序(String 慢id, java.util.Collection<String> 全部id) {
+        java.util.Map<String, Integer> m = new ConcurrentHashMap<>();
+        全部id.forEach(k -> m.put(k, 1));
         List<String> 序 = new ArrayList<>(m.keySet());
         int 位 = 序.indexOf(慢id);
-        long 前 = 序.subList(0, 位).stream().filter(x -> x.startsWith("healthy-")).count();
-        long 后 = 序.subList(位 + 1, 序.size()).stream().filter(x -> x.startsWith("healthy-")).count();
-        Map<String, Object> 出 = new LinkedHashMap<>();
-        出.put("慢客户端 id", 慢id);
-        出.put("位次", 位 + "/" + 序.size());
-        出.put("算出来·健康连接排在前面的", 前);
-        出.put("算出来·排在后面的", 后);
-        出.put("JDK", System.getProperty("java.version") + " / " + System.getProperty("java.vm.name"));
-        出.put("🔴", "算序只是选料器；这一跑到底怎么排，以分簇尺的实测为准");
-        return 出;
+        List<String> 前 = 序.subList(0, 位).stream().filter(x -> x.startsWith("healthy-")).toList();
+        List<String> 后 = 序.subList(位 + 1, 序.size()).stream()
+                .filter(x -> x.startsWith("healthy-")).toList();
+        return new 序读(慢id, 位, 序.size(), 前, 后,
+                System.getProperty("java.version") + " / " + System.getProperty("java.vm.name"));
+    }
+
+    /**
+     * 挑一个<b>落在健康连接中间</b>的 id：前后两簇都不空
+     * <p>
+     * 🔴 阳性对照那把钉子要钉在遍历<b>中间</b>才量得出「后簇陪葬」——
+     * 钉在最末尾的话后簇是空的，那一格就是空真。位次由 id 的散列定、不归我们挑，
+     * 所以这里<b>算着挑</b>，而不是写死一个顺眼的：写死的那个换个 JDK 就作废，
+     * 而作废之后它看起来还是绿的。
+     *
+     * @param 候选前缀 试哪一族 id（会一路试 {@code 前缀0}、{@code 前缀1}……）
+     * @param 旁的     同时挂在端点上的其它 id
+     * @return 挑中的 id 与它的两簇；一个都挑不出来时返回 {@code null}
+     */
+    static 序读 挑个居中的id(String 候选前缀, int 健康数, List<String> 旁的) {
+        for (int i = 0; i < 200; i++) {
+            String 候选 = 候选前缀 + i;
+            List<String> 全 = new ArrayList<>();
+            for (int j = 0; j < 健康数; j++) {
+                全.add("healthy-" + j);
+            }
+            全.addAll(旁的);
+            全.add(候选);
+            序读 s = 算序(候选, 全);
+            if (!s.前簇().isEmpty() && !s.后簇().isEmpty()) {
+                return s;
+            }
+        }
+        return null;
+    }
+
+    // ══════════════════════════ 判据的量法（判据格与阳性对照格共用同一份） ══════════════════════════
+    //
+    // 🔴 <b>阳性对照必须走判据在走的那一段代码。</b>另写一份「差不多的」去证明格子咬人，
+    //    证的是那一份，不是真正在用的这一份——两把尺量同一件事必生漂移，
+    //    而漂移之后，阳性对照的绿和判据的绿说的已经不是同一句话了。
+
+    /** 判据 1 的读数 */
+    record 推进读(long 推进了的条数, long 总条数, Map<String, Integer> 起点轮次,
+                Map<String, Integer> 终点轮次, 一段 段) {
+        Map<String, Object> 读数() {
+            Map<String, Object> 出 = new LinkedHashMap<>();
+            出.put("窗口内推进过至少一轮的健康连接数", 推进了的条数);
+            出.put("健康连接总数", 总条数);
+            出.put("窗口起点各条轮次", 起点轮次);
+            出.put("窗口终点各条轮次", 终点轮次);
+            出.put("观测段", 段.读数());
+            return 出;
+        }
+    }
+
+    /**
+     * 判据 1 的量法：对照钟走 {@code 格数} 格的这一段里，有几条健康连接<b>推进了</b>至少一轮 ping
+     * <p>
+     * 🔴 量的是<b>推进</b>（终点轮次 − 起点轮次），不是「窗口里有没有 ping」。
+     * 后者要靠窗口两端的绝对时刻去截，负载一高截出来的就是机器；
+     * 前者问的是「对照钟走了两格，心跳走了没有」——<b>两把表比着看，比的是同一份负载</b>。
+     */
+    static 推进读 量健康连接推进(后排尺 尺, 对照钟 钟, long 格数) throws InterruptedException {
+        Map<String, Integer> 起 = 尺.各条轮次();
+        一段 段 = 钟.走过(格数);
+        Map<String, Integer> 止 = 尺.各条轮次();
+        long 推进了 = 起.keySet().stream()
+                .filter(id -> 止.getOrDefault(id, 0) > 起.getOrDefault(id, 0))
+                .count();
+        return new 推进读(推进了, 起.size(), 起, 止, 段);
+    }
+
+    /**
+     * <b>旧</b>量法的红绿线：一条健康连接的相邻两次 ping 不许超过「心跳周期＋周期／2」
+     * <p>
+     * 🔴 <b>这个数只进读数，一格断言都不挂。</b>留着它不是为了判谁，是为了让每一跑都带上
+     * 「同一段窗口，旧尺会怎么判」这条对照——<b>说自己治好了，得让病在同一份读数里现形</b>。
+     * <p>
+     * 它就是这一组从前红在机器上的那把尺：实测在空载下量到六条健康连接齐齐 320ms > 300ms，
+     * 六条一起偏移是整机被推了一把的形状，而这把绝对尺分不出它和「谁被落下了」。
+     */
+    static final long 旧量法上限毫秒 = PING + PING / 2;
+
+    /** 判据 4 的读数 */
+    record 后排读(long 最长落后毫秒, long 最长落后_千分格, List<String> 前簇, List<String> 后簇,
+                Map<String, Integer> 前簇逐条轮次, Map<String, Integer> 后簇逐条轮次,
+                long 采样次数, 一段 段, long 旧量法最大间隔毫秒, List<String> 旧量法会红的) {
+        Map<String, Object> 读数() {
+            Map<String, Object> 出 = new LinkedHashMap<>();
+            出.put("最长落后毫秒", 最长落后毫秒);
+            出.put("最长落后千分格", 最长落后_千分格);
+            出.put("最长落后（格）", 千分格成串(最长落后_千分格));
+            出.put("线（格）", 千分格成串(落后容忍_千分格));
+            出.put("洞的签名（格）", 千分格成串(洞的签名_落后_千分格));
+            出.put("前簇", 前簇);
+            出.put("后簇", 后簇);
+            出.put("前簇终点轮次", 前簇逐条轮次);
+            出.put("后簇终点轮次", 后簇逐条轮次);
+            出.put("采样次数", 采样次数);
+            出.put("观测段", 段.读数());
+            出.put("🔴 判的是什么", "后簇最快的那条比前簇最快的那条少收轮次，这个状态**持续**了多久；"
+                    + "持续时长折成对照格，负载把两簇一起拖慢时它不动");
+            // 🔴 同一段窗口上，**旧尺**会怎么判。只作读数，一格断言都不挂——
+            //    留着它是为了让「治好了」这句话在每一跑的读数里都拿得出对照。
+            出.put("旧量法·最大 ping 间隔毫秒", 旧量法最大间隔毫秒);
+            出.put("旧量法·上限毫秒（心跳周期＋周期／2）", 旧量法上限毫秒);
+            出.put("旧量法·会判红的连接", 旧量法会红的);
+            出.put("旧量法·这一跑在这段窗口上会红吗", !旧量法会红的.isEmpty());
+            出.put("🔴 旧量法只作读数", "它拿墙钟绝对间隔判，负载一高判的是机器不是代码。"
+                    + "留在读数里是为了让每一跑都带上对照：同一段窗口，新尺说什么、旧尺说什么。");
+            出.put("🔴 这条对照读的是什么", "量的是**这一段（" + 段.墙钟毫秒()
+                    + "ms）**上旧尺的读数，不是旧那一格的原样复跑——"
+                    + "旧那一格开的是 1200ms 的窗，窗越长越容易撞上那条 " + 旧量法上限毫秒
+                    + "ms 的线。所以这条读数是**下界**：它说红，旧那一格必红；它说不红，"
+                    + "旧那一格未必不红。要看的是它**随负载游走**（而新尺钉在 0 上）。");
+            return 出;
+        }
+    }
+
+    /**
+     * 判据 4 的量法：这一段里，「后簇比前簇少收轮次」这个状态最长<b>连续</b>撑了多久
+     * <p>
+     * 🔴 <b>为什么判持续时长而不判轮次差。</b>心跳被钉住时后簇也只落后<b>一轮</b>
+     * （心跳起不了下一轮，前簇同样停着），轮次差量级不够；
+     * 而修后那一轮之差是「心跳正走在遍历中间」的快照假象，几毫秒就抹平。
+     * <b>两者差的不是差多少，是差了多久</b>——所以量的是这个状态的连续时长。
+     * <p>
+     * 🔴 时长再折成<b>对照格</b>：负载一高，快照假象和一格一起变长，比值不动。
+     *
+     * @param 尺   后排尺
+     * @param 前簇 排在被清理那条前面的健康连接
+     * @param 后簇 排在后面的健康连接
+     * @param 钟   对照钟
+     * @param 格数 观测窗口，以对照格计
+     */
+    static 后排读 量后簇落后(后排尺 尺, List<String> 前簇, List<String> 后簇,
+                       对照钟 钟, long 格数) throws InterruptedException {
+        long 起格 = 钟.读();
+        long 起毫秒 = System.currentTimeMillis();
+        long 死线 = 起毫秒 + Math.max(1, 格数) * 钟.名义格长毫秒() * 20;
+        long 最长落后 = 0;
+        long 本段起 = -1;
+        long 采样 = 0;
+        Map<String, Integer> 各条 = 尺.各条轮次();
+        while (钟.读() - 起格 < 格数 && System.currentTimeMillis() < 死线) {
+            各条 = 尺.各条轮次();
+            long 前快 = 后排尺.簇里最快(各条, 前簇);
+            long 后快 = 后排尺.簇里最快(各条, 后簇);
+            long 此刻 = System.currentTimeMillis();
+            采样++;
+            if (后快 < 前快) {
+                if (本段起 < 0) {
+                    本段起 = 此刻;
+                }
+                最长落后 = Math.max(最长落后, 此刻 - 本段起);
+            } else {
+                本段起 = -1;
+            }
+            Thread.sleep(5);
+        }
+        一段 段 = new 一段(起格, 钟.读(), 起毫秒, System.currentTimeMillis(), 钟.名义格长毫秒());
+        Map<String, Integer> 前表 = new java.util.TreeMap<>();
+        Map<String, Integer> 后表 = new java.util.TreeMap<>();
+        for (String id : 前簇) {
+            前表.put(id, 各条.getOrDefault(id, 0));
+        }
+        for (String id : 后簇) {
+            后表.put(id, 各条.getOrDefault(id, 0));
+        }
+        // 🔴 同一段窗口，再用**旧尺**量一遍——只作读数。
+        //    新旧两把尺量的是同一段、同一批连接，读数并排放着，「治好了」才有对照可看。
+        long 旧最大 = 0;
+        List<String> 旧会红的 = new ArrayList<>();
+        for (后排尺.一条 c : 尺.收(段.起毫秒(), 段.止毫秒())) {
+            旧最大 = Math.max(旧最大, c.最大间隔毫秒());
+            if (c.最大间隔毫秒() > 旧量法上限毫秒) {
+                旧会红的.add(c.id() + "＝" + c.最大间隔毫秒() + "ms");
+            }
+        }
+        return new 后排读(最长落后, 段.折成千分格(最长落后), 前簇, 后簇, 前表, 后表, 采样, 段,
+                旧最大, 旧会红的);
     }
 
     // ══════════════════════════ 后排尺（判据 4） ══════════════════════════
@@ -540,12 +896,13 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * 健康连接自己也会被清理掉，那量的就成了别的事。
      */
     static final class 后排尺 implements AutoCloseable {
-        /** 一条连接的读数 */
-        record 一条(String id, long 最后ping时刻, long 最大间隔毫秒, int ping数) {
-        }
-
-        /** 分簇尺的读数：遍历有没有被截断在中间 */
-        record 分簇(int 前簇条数, int 后簇条数, long 两簇间隔毫秒, boolean 亮, String 说明) {
+        /**
+         * 一条连接在某一段窗口上的读数
+         * <p>
+         * 🔴 判据 4 改判相对之后，这张读数只剩<b>一个用处</b>：给「旧尺会怎么判」那条
+         * 对照读数用（{@link #旧量法上限毫秒}）。判据自己走的是 {@link #各条轮次()}。
+         */
+        record 一条(String id, long 最大间隔毫秒, int ping数) {
         }
 
         private final Map<String, List<Long>> ping时刻 = new ConcurrentHashMap<>();
@@ -589,23 +946,49 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
         }
 
         /**
-         * 收尺：算出每条连接在 [观测起, 观测止] 窗口内的最大 ping 间隔。
+         * 各条连接<b>到此刻为止</b>收到的 ping 轮次
+         * <p>
+         * 🔴 判据 4 改判相对之后，量的就是这一张表：
+         * 「后簇最快的那条」比「前簇最快的那条」少收几轮。
+         * 数轮次而不数毫秒，是因为<b>负载会把所有连接一起拖慢，轮次差不动</b>；
+         * 而心跳被钉在遍历中间时，只有后簇的轮次停着不涨。
+         * <p>
+         * 🔴 <b>簇内取最快的那条，不取最慢的。</b>取最慢的话，
+         * 六条里随便哪条投递线程被剥一会儿 CPU 就能伪造出「后簇落后」——
+         * 而这个洞是<b>整簇一起</b>轮不到，不是某一条掉队。
+         * 拿簇内最快的去比，一条掉队伪造不出簇的形状。
+         */
+        Map<String, Integer> 各条轮次() {
+            Map<String, Integer> 出 = new java.util.TreeMap<>();
+            ping时刻.forEach((id, 们) -> {
+                synchronized (们) {
+                    出.put(id, 们.size());
+                }
+            });
+            return 出;
+        }
+
+        /** 一簇里走得最快的那条收到了几轮；簇为空时返回 -1 */
+        static long 簇里最快(Map<String, Integer> 各条, List<String> 簇) {
+            long 最快 = -1;
+            for (String id : 簇) {
+                Integer n = 各条.get(id);
+                if (n != null) {
+                    最快 = Math.max(最快, n);
+                }
+            }
+            return 最快;
+        }
+
+        /**
+         * 收尺：算出每条连接在 [观测起, 观测止] 窗口内的最大 ping 间隔
          * <p>
          * 🔴 窗口两端也算进间隔里：只算「相邻两次 ping 之间」的话，
          * <b>一次 ping 都没收到的那条连接会算出 0 间隔</b>，读起来像最健康的那条。
-         */
-        /**
-         * 收全程：不设窗口，只为分簇尺用
          * <p>
-         * 🔴 分簇尺读的是「<b>卡住之前</b>谁收到了那一轮、谁没收到」，
-         * 而判据 4 的窗口是<b>卡住之后</b>那一段——窗口里一条 ping 都没有。
-         * 拿窗口内的数据去分簇，只会得到「收到过 ping 的连接不足两条」。
-         * 头一版就是这么错的：<b>分簇尺不亮，而不亮的原因是我喂错了数据</b>。
+         * 🔴 判据 4 已经<b>不走这条</b>了——它判的是两簇的轮次差（{@link #各条轮次()}）。
+         * 这里只剩「旧尺会怎么判」那条对照读数在用。
          */
-        List<一条> 收全程() {
-            return 收(0, Long.MAX_VALUE);
-        }
-
         List<一条> 收(long 观测起, long 观测止) {
             List<一条> 出 = new ArrayList<>();
             new java.util.TreeMap<>(ping时刻).forEach((id, 们) -> {
@@ -624,61 +1007,11 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
                     上一次 = t;
                 }
                 最大 = Math.max(最大, 观测止 - 上一次);
-                出.add(new 一条(id, 窗.isEmpty() ? -1 : 窗.get(窗.size() - 1), 最大, 窗.size()));
+                出.add(new 一条(id, 最大, 窗.size()));
             });
             return 出;
         }
 
-        /**
-         * 分簇尺：判据 4 自己的先验尺
-         * <p>
-         * 判据 4 天生依赖「被清理的那条排在遍历第几位」——它排最后的话后排没有人，
-         * 判据 4 会在洞还在的时候变绿，而遍历次序由 id 的散列定、不归我们挑。
-         * <p>
-         * 🔴 故采信判据 4 之前必须量到<b>遍历确实被截断在中间</b>：
-         * 各连接「最后一次收到 ping 的时刻」分成两簇、相差约一个心跳周期
-         * （排在前面的收到了那一轮，排在后面的没收到）。
-         * 全在一簇 → 这一跑<b>对判据 4 不算数</b>，不折算成绿。
-         */
-        static 分簇 分簇尺(List<一条> 条们) {
-            List<Long> 时刻 = new ArrayList<>();
-            条们.forEach(c -> {
-                if (c.最后ping时刻() > 0) {
-                    时刻.add(c.最后ping时刻());
-                }
-            });
-            if (时刻.size() < 2) {
-                return new 分簇(时刻.size(), 0, -1, false,
-                        "收到过 ping 的连接不足两条，分不出簇——这一跑对判据 4 不算数");
-            }
-            时刻.sort(null);
-            long 最大间隔 = 0;
-            int 断点 = -1;
-            for (int i = 1; i < 时刻.size(); i++) {
-                if (时刻.get(i) - 时刻.get(i - 1) > 最大间隔) {
-                    最大间隔 = 时刻.get(i) - 时刻.get(i - 1);
-                    断点 = i;
-                }
-            }
-            if (断点 < 1) {
-                // 🔴 所有时刻一模一样（间隔全是 0）时找不出断点。
-                //    不挡住的话，`前簇 = size - (-1)` 会算出**比连接数还多一条**，
-                //    读数上去像是分出了簇——一个算错的数比不亮更难看出来。
-                return new 分簇(时刻.size(), 0, 0, false,
-                        "各连接的最后 ping 时刻完全相同，分不出断点——"
-                                + "慢客户端在遍历次序里整个排在它们的一侧，后排是空的，"
-                                + "这一跑对判据 4 不算数");
-            }
-            int 后 = 断点;                       // 时刻更早的那批 ＝ 排在被清理那条后面的
-            int 前 = 时刻.size() - 断点;          // 时刻更晚的那批 ＝ 排在前面的
-            boolean 亮 = 前 > 0 && 后 > 0 && 最大间隔 >= PING / 2;
-            return new 分簇(前, 后, 最大间隔, 亮,
-                    亮 ? "遍历被截断在中间：" + 前 + " 条排在前面（收到了那一轮）、"
-                            + 后 + " 条排在后面（没收到），相差 " + 最大间隔 + " 毫秒"
-                       : "各连接的最后 ping 时刻聚成一簇（最大间隔 " + 最大间隔 + " 毫秒 < "
-                            + (PING / 2) + "）——要么没人排在后面、要么没人排在前面，"
-                            + "排序那层伤害没被碰到，这一跑对判据 4 不算数");
-        }
     }
 
     // ══════════════════════════ 先验尺 ══════════════════════════
@@ -847,18 +1180,52 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * 机制上它本来就会自行解开：对端不读，但环回 TCP 的接收缓冲会随时间被内核放大，
      * 窗口一开，那 125 字节就写出去了。所以这个数是<b>分布</b>，要留余量。
      *
-     * @param 上限毫秒 等到这么久还卡着就不等了，返回上限（读数里记成「至少这么久」）
-     * @return 阻塞实际撑了多少毫秒
+     * 🔴 上限按<b>对照格</b>算，量出来的时长也一并折成格：判据的窗口是按格开的，
+     * 「撑不撑得过窗口」这一问只有在<b>同一把尺</b>上才答得了。
+     * <p>
+     * 🔴 <b>这是全套里唯一一条会被负载往坏处推的量。</b>阻塞那两三秒是内核按<b>时间</b>
+     * 放大接收缓冲放出来的，不随 CPU 负载变长；而窗口按格算、格随负载变长。
+     * 所以窗口不能开大（{@link #观测格数} 取 2 就是为了这个），
+     * 这一格量的正是「窗口还没伸出复现之外」。
+     *
+     * @param 钟   对照钟
+     * @param 格数 等到对照钟走了这么多格还卡着就不等了
+     * @return 阻塞撑了多久，以及折成格之后是多少
      */
-    static long 阻塞撑了多久(long 上限毫秒) throws InterruptedException {
+    static 阻塞读 阻塞撑了多久(对照钟 钟, long 格数) throws InterruptedException {
+        long 起格 = 钟.读();
         long 起 = System.currentTimeMillis();
-        while (System.currentTimeMillis() - 起 < 上限毫秒) {
+        long 死线 = 起 + Math.max(1, 格数) * 钟.名义格长毫秒() * 20;
+        boolean 到顶 = true;
+        while (钟.读() - 起格 < 格数 && System.currentTimeMillis() < 死线) {
             if (!复现成立(先验尺_有人卡在关闭帧的写里())) {
-                return System.currentTimeMillis() - 起;
+                到顶 = false;
+                break;
             }
             Thread.sleep(25);
         }
-        return 上限毫秒;
+        一段 段 = new 一段(起格, 钟.读(), 起, System.currentTimeMillis(), 钟.名义格长毫秒());
+        return new 阻塞读(段.墙钟毫秒(), 段.折成千分格(段.墙钟毫秒()), 到顶, 段);
+    }
+
+    /** 余量尺的读数 */
+    record 阻塞读(long 撑了毫秒, long 撑了_千分格, boolean 等到上限就不等了, 一段 段) {
+        /** 撑过观测窗口之后还余下多少（千分格）。为负就是没撑住 */
+        long 余量_千分格() {
+            return 撑了_千分格 - 观测格数 * 1000;
+        }
+
+        Map<String, Object> 读数() {
+            Map<String, Object> 出 = new LinkedHashMap<>();
+            出.put("阻塞撑了毫秒", 撑了毫秒);
+            出.put("阻塞撑了（格）", 千分格成串(撑了_千分格));
+            出.put("观测窗口（格）", 观测格数);
+            出.put("余量（格）", 千分格成串(余量_千分格()));
+            出.put("要求的最小余量（格）", 千分格成串(阻塞余量_千分格));
+            出.put("等到上限就不等了", 等到上限就不等了);
+            出.put("观测段", 段.读数());
+            return 出;
+        }
     }
 
     /**
@@ -897,6 +1264,212 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
             return 摘.subList(0, Math.min(8, 摘.size()));
         }
         return null;
+    }
+
+    // ══════════════════════════ 阳性对照：人为把心跳线程钉住 ══════════════════════════
+
+    /**
+     * 钉住闸：<b>人为</b>把共享心跳线程钉在关闭帧的写里，用来证明各格咬得动
+     * <p>
+     * 🔴 <b>没有阳性对照的绿，说明不了任何事。</b>判据 0～4 全都在问「洞不在的时候别人好不好」，
+     * 而「洞不在」和「格子不咬人」的绿长得一模一样。所以每一格另有一格：
+     * 把心跳线程真钉住一次，看那一格红不红；红完就把钉子拔掉。
+     * <p>
+     * 🔴 <b>钉在哪一步要紧。</b>心跳线程承接两类活：
+     * <ul>
+     *   <li><b>遍历外</b>（认证闸、回补窗口这类派上去的一次性活）——钉在这里，
+     *       全局 ping 停发，判据 1／2／3 会红，但<b>判据 4 不会</b>：
+     *       所有连接一起停，两簇没有差分。</li>
+     *   <li><b>遍历中间</b>（{@code heartbeat()} 挨个发 ping 那一趟）——钉在这里，
+     *       排在后面的连接这一轮轮不到，判据 4 才咬得着。</li>
+     * </ul>
+     * 这把闸走的是后者：让心跳线程自己在遍历里踩进一条连接的同步 {@code close}。
+     * 门是 {@code send} 的「待发队列满了就地关」那一支——<b>队列灌满，下一发 ping 就踩进去</b>。
+     * <p>
+     * 🔴 <b>钉子要拔得动、也不许自己松。</b>关闭帧那 125 字节会被内核放大的接收缓冲吃掉，
+     * 两三秒后阻塞自行解开——<b>自己松开的钉子和「格子不咬人」长得一样</b>。
+     * 所以钉子写一个对端永远吞不下的数（{@link #钉子字节}），只由 {@link #拔掉()} 关对端来解。
+     */
+    final class 钉住闸 implements AutoCloseable {
+        /** 钉子写多大一坨：要大到对端的缓冲永远吞不下，钉子才不会自己松 */
+        static final int 钉子字节 = 8 * 1024 * 1024;
+
+        /** 这把钉子钉在哪条连接上；它的位次决定了判据 4 的两簇怎么分 */
+        final 序读 序;
+
+        private final NovaEventSlowConsumerTest.SocketSession 会话;
+
+        private final Thread 保鲜;
+
+        private volatile boolean 收了 = false;
+
+        private final Map<String, Object> 钉下去的读数 = new LinkedHashMap<>();
+
+        /**
+         * @param id 钉子那条连接的 id。要落在健康连接<b>中间</b>，判据 4 的两簇才都不空——
+         *           用 {@link NovaEvent慢消费者台架#挑个居中的id} 算着挑
+         */
+        钉住闸(String id) throws Exception {
+            List<String> 全部id = new ArrayList<>(已连上);
+            全部id.add(id);
+            this.序 = 算序(id, 全部id);
+            // 先把 socket 灌到写不动：泵一写就卡住，往后的 ping 全堆在待发队列里。
+            // 不灌的话泵会一直把队列抽干，队列永远满不了，钉子就钉不下去。
+            this.会话 = new NovaEventSlowConsumerTest.SocketSession(
+                    id, 1024, 1024, false, true, 钉子字节);
+            真会话.add(this.会话);
+            long 灌 = this.会话.灌满();
+            已连上.add(id);
+            endpoint.afterConnectionEstablished(this.会话);
+            认证(this.会话, tokens.issue(id));
+
+            // 🔴 保鲜：不回 pong 的话，超时清理会先把它 closeAsync 掉——
+            //    那一支是**派给发送线程**的，心跳线程根本不会被钉住，这把闸就成了摆设。
+            this.保鲜 = new Thread(() -> {
+                while (!收了) {
+                    try {
+                        endpoint.handleTextMessage(会话, new TextMessage("{\"kind\":\"pong\"}"));
+                        Thread.sleep(Math.max(10, PING / 4));
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    } catch (RuntimeException ignored) {
+                        return;
+                    }
+                }
+            }, "nova-test-pin-keepalive-" + id);
+            this.保鲜.setDaemon(true);
+            this.保鲜.start();
+
+            long 灌进队列 = 把待发队列灌到快满(id);
+            List<Map<String, Object>> 尺读 = 等到_心跳线程被钉住();
+            钉下去的读数.put("钉子 id", id);
+            钉下去的读数.put("灌进 socket 的字节", 灌);
+            钉下去的读数.put("灌进待发队列的条数", 灌进队列);
+            钉下去的读数.put("钉住了吗", 尺读 != null);
+            钉下去的读数.put("实录", String.valueOf(尺读));
+            钉下去的读数.put("算序", 序.读数());
+            读数("阳性对照-钉住闸", 钉下去的读数);
+            if (尺读 == null) {
+                拔掉();
+                fail("钉住闸没能把共享心跳线程钉住 —— **阳性对照本身没成立**，"
+                        + "这一格证不了「格子咬人」。先查这把闸：待发队列灌进了 " + 灌进队列
+                        + " 条（-1 ＝ 这条连接压根没转进实时流，灌什么都进不了队列），"
+                        + "socket 灌了 " + 灌 + " 字节。");
+            }
+        }
+
+        /**
+         * 把这条连接的待发队列灌到<b>差一点就满</b>
+         * <p>
+         * 🔴 <b>不能灌到溢出。</b>溢出那一发触发的同步 {@code close} 跑在<b>灌的人</b>身上——
+         * 灌的是本线程，钉住的就是本线程，心跳线程一根汗毛没动。
+         * 留两格空位，让心跳自己发的那几帧 ping 去踩，钉子才钉在心跳线程上。
+         * <p>
+         * 🔴 <b>要先等它转进实时流再灌。</b>没订阅之前 {@code publish} 根本到不了这条连接的
+         * 待发队列，灌多少都是空的；而<b>一边不停 publish 一边等 goLive，是等不到的</b>——
+         * {@code goLive} 派在心跳线程上、要拿事件流的锁，一个不歇气的 publish 循环
+         * 正好把它饿在那儿。头一版就是这么写的：灌了一千六百万条，队列一格没满，
+         * 钉子钉不下去，而<b>钉不下去的阳性对照和「格子不咬人」长得一模一样</b>。
+         */
+        private long 把待发队列灌到快满(String id) throws Exception {
+            Object 上线了 = 钟.等到(复现等待格数, () -> 转进实时流了吗(id) ? Boolean.TRUE : null);
+            if (上线了 == null) {
+                return -1;
+            }
+            long 发了 = 0;
+            // 队列容量是「事件流缓冲＋余量」这个量级；给一倍多的余地就够灌满，
+            // 再多就是这条路不通了，交给外面那句失败语去说。
+            long 上限 = 8L * (待发队列(id) == null ? 0 : 待发队列(id).remainingCapacity()) + 64;
+            while (发了 < 上限) {
+                java.util.concurrent.BlockingQueue<?> q = 待发队列(id);
+                if (q == null) {
+                    break;
+                }
+                if (q.remainingCapacity() <= 2) {
+                    return 发了;
+                }
+                stream.publish(事件());
+                发了++;
+            }
+            return 发了;
+        }
+
+        /** 等到先验尺里出现的那条卡住的线程<b>就是</b>共享心跳线程 */
+        private List<Map<String, Object>> 等到_心跳线程被钉住() throws Exception {
+            return 钟.等到(复现等待格数, () -> {
+                List<Map<String, Object>> 尺读 = 先验尺_有人卡在关闭帧的写里();
+                boolean 是心跳 = 尺读.stream()
+                        .anyMatch(x -> ((Long) x.get("线程号")) == 心跳线程.getId());
+                return 是心跳 ? 尺读 : null;
+            });
+        }
+
+        /** 此刻心跳线程还钉着吗——阳性对照自己的收尾戳 */
+        boolean 还钉着() {
+            return 先验尺_有人卡在关闭帧的写里().stream()
+                    .anyMatch(x -> ((Long) x.get("线程号")) == 心跳线程.getId());
+        }
+
+        /**
+         * 拔钉子：关掉对端 socket，那一坨写不出去的字节当场报错，心跳线程走出来
+         * <p>
+         * 🔴 拔完要<b>确认拔动了</b>：拔不动的钉子会把后面每一格都拖红，
+         * 而那些红看起来像是判据自己红的。
+         */
+        void 拔掉() throws Exception {
+            收了 = true;
+            保鲜.interrupt();
+            会话.关掉();
+            Object 松了 = 钟.等到(复现等待格数, () -> 还钉着() ? null : Boolean.TRUE);
+            读数("阳性对照-拔钉子", Map.of("拔动了", 松了 != null,
+                    "🔴 拔不动会怎样", "钉子留着，后面每一格都会被拖红，而那些红看起来像判据自己红的"));
+        }
+
+        @Override
+        public void close() throws Exception {
+            拔掉();
+        }
+    }
+
+    /**
+     * 反射取一条连接的待发队列
+     * <p>
+     * 🔴 只<b>读</b>它的余量，不动它一条：钉住闸要知道「还差几格满」，
+     * 才能把最后那两格留给心跳自己去踩。
+     */
+    java.util.concurrent.BlockingQueue<?> 待发队列(String id) {
+        Object v = 取连接的字段(id, "outbox");
+        return (java.util.concurrent.BlockingQueue<?>) v;
+    }
+
+    /**
+     * 这条连接转进实时流了吗
+     * <p>
+     * 🔴 钉住闸要靠它<b>先等再灌</b>：没订阅之前灌什么都进不了队列，
+     * 而一边灌一边等，反倒把派在心跳线程上的 {@code goLive} 饿住了。
+     */
+    boolean 转进实时流了吗(String id) {
+        Object v = 取连接的字段(id, "live");
+        return Boolean.TRUE.equals(v);
+    }
+
+    private Object 取连接的字段(String id, String 字段) {
+        try {
+            java.lang.reflect.Field cf = NovaEventEndpoint.class.getDeclaredField("clients");
+            cf.setAccessible(true);
+            Map<?, ?> m = (Map<?, ?>) cf.get(endpoint);
+            Object client = m.get(id);
+            if (client == null) {
+                return null;
+            }
+            java.lang.reflect.Field f = client.getClass().getDeclaredField(字段);
+            f.setAccessible(true);
+            return f.get(client);
+        } catch (Exception e) {
+            throw new IllegalStateException("取不到连接 " + id + " 的 " + 字段
+                    + " —— 钉住闸就下不去，阳性对照证不了「格子咬人」。", e);
+        }
     }
 
     static <T> T 等到(long 上限毫秒, java.util.function.Supplier<T> 探) throws Exception {

@@ -105,13 +105,31 @@ class NovaEventSlowConsumerTest {
          */
         private final boolean 关闭时真写;
 
+        /**
+         * 关闭时真写多少字节
+         * <p>
+         * 默认 {@link NovaEvent慢消费者台架#关闭帧字节}——协议里关闭帧载荷的上限，
+         * <b>量的东西要和要防的东西同尺寸</b>。
+         * <p>
+         * 🔴 阳性对照那把钉子要它<b>大得多</b>：125 字节会被内核随时间放大的接收缓冲吃掉，
+         * 于是钉子在两三秒后自己松开——而<b>松开的钉子和「格子不咬人」长得一模一样</b>。
+         * 写一个对端永远吞不下的数，这把钉子就只由我们自己拔（关掉对端 socket）。
+         */
+        private final int 关闭写字节;
+
         SocketSession(String id, int sndBuf, int rcvBuf, boolean peerReads) throws IOException {
             this(id, sndBuf, rcvBuf, peerReads, false);
         }
 
         SocketSession(String id, int sndBuf, int rcvBuf, boolean peerReads, boolean 关闭时真写)
                 throws IOException {
+            this(id, sndBuf, rcvBuf, peerReads, 关闭时真写, NovaEvent慢消费者台架.关闭帧字节);
+        }
+
+        SocketSession(String id, int sndBuf, int rcvBuf, boolean peerReads, boolean 关闭时真写,
+                      int 关闭写字节) throws IOException {
             this.关闭时真写 = 关闭时真写;
+            this.关闭写字节 = 关闭写字节;
             this.id = id;
             listener = new ServerSocket();
             // 🔴 接收缓冲要在 bind **之前**设在 ServerSocket 上，accept 出来的那条才继承得到
@@ -232,9 +250,9 @@ class NovaEventSlowConsumerTest {
                 // **量的东西要和要防的东西同尺寸**：写 1 个字节也卡得住，
                 // 但「1 字节卡住」证不了「真实关闭帧会卡住」。
                 try {
-                    out.write(new byte[NovaEvent慢消费者台架.关闭帧字节]);
+                    out.write(new byte[关闭写字节]);
                     out.flush();
-                    已写字节.addAndGet(NovaEvent慢消费者台架.关闭帧字节);
+                    已写字节.addAndGet(关闭写字节);
                 } catch (IOException ignored) {
                     // 对端已经没了就算了，本来就在关
                 }
