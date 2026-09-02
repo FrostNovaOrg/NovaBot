@@ -7,6 +7,7 @@ import com.starlwr.bot.bilibili.enums.ConnectStatus;
 import com.starlwr.bot.bilibili.model.Up;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
+import com.starlwr.bot.core.datasource.MonitorLimit;
 import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
@@ -23,6 +24,7 @@ import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -127,11 +129,27 @@ public class BilibiliLiveRoomService {
                 .filter(user -> !Boolean.FALSE.equals(user.getEnabled()))
                 .toList();
 
-        Set<Up> targets = enabled.stream()
+        // 按数据源给出的先后排好再截。原先收进无序的 HashSet，超员时「留下哪几间」
+        // 每次启动都可能不同，而使用者看到的是「同一份配置，今天连的和昨天不是同一批」
+        List<Up> candidates = enabled.stream()
                 .filter(user -> !properties.getLive().isOnlyConnectNecessaryRooms() || subscribesLiveEvent(user))
                 .map(Up::new)
                 .filter(up -> up.getRoomId() != null)
-                .collect(Collectors.toSet());
+                .distinct()
+                .toList();
+
+        // 超出上限的要点名。否则那几间只是从此没有任何事件，而界面上一切正常，
+        // 这种缺口没有痕迹可查
+        if (candidates.size() > MonitorLimit.MAX_STREAMERS) {
+            String dropped = candidates.subList(MonitorLimit.MAX_STREAMERS, candidates.size()).stream()
+                    .map(up -> up.getUname() + "(UID: " + up.getUid() + ", 房间号: " + up.getRoomId() + ")")
+                    .collect(Collectors.joining(", "));
+            log.warn("同时监控的主播数上限为 {} 位, 以下直播间超出上限, 不予连接: {}", MonitorLimit.MAX_STREAMERS, dropped);
+        }
+
+        Set<Up> targets = candidates.stream()
+                .limit(MonitorLimit.MAX_STREAMERS)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
 
         // 被开关挡掉的房间要说出来。否则「我加了主播却什么都没发生」在日志里
         // 没有任何痕迹——纯监听房间（没有推送目标，只为把事件送进事件输出）
@@ -189,6 +207,16 @@ public class BilibiliLiveRoomService {
      * @param up UP 主信息
      */
     private void connect(Up up) {
+        // 兜底。正常路径上 sync 已经截过一道，这里挡的是它拦不住的那一种：
+        // 热重载换了一批主播，而上一批的建连任务还压在闸门里没放行，
+        // 两批各自都不超限，凑到一起执行时才撞上名额。
+        // 已在管理中的房间要放行——重连走的正是这条路，挡下它等于满员时断线就再也连不回来
+        if (!connectors.containsKey(up.getRoomId()) && connectors.size() >= MonitorLimit.MAX_STREAMERS) {
+            log.warn("同时监控的主播数已达上限 {} 位, 不再连接直播间 {} (UID: {})",
+                    MonitorLimit.MAX_STREAMERS, up.getRoomId(), up.getUid());
+            return;
+        }
+
         connectors.computeIfAbsent(up.getRoomId(), roomId -> {
             BilibiliLiveRoomConnector connector =
                     new BilibiliLiveRoomConnector(up, api, parser, properties, publisher, scheduler, webSocketClient, stateGate, connectGate, riskMetrics, disconnectDigest, liveDataService);
