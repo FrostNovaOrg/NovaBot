@@ -9,6 +9,7 @@ import com.starlwr.bot.core.model.EventStreamToken;
 import com.starlwr.bot.core.service.EventStreamTokenService;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.datasource.DataSourceServiceRegistry;
+import com.starlwr.bot.core.datasource.MonitorLimit;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.service.DataSourceService;
 import com.starlwr.bot.core.account.AccountLoginProvider;
@@ -1000,7 +1001,7 @@ public class ConfigUiController {
      * @return 保存结果
      */
     @PostMapping("/api/datasource")
-    public JSONObject saveDatasource(@RequestBody JSONObject body) {
+    public ResponseEntity<JSONObject> saveDatasource(@RequestBody JSONObject body) {
         JSONObject result = new JSONObject();
 
         String content = body.getString("content");
@@ -1009,7 +1010,16 @@ public class ConfigUiController {
             result.put("success", false);
             result.put("message", "推送配置有误，已拒绝保存");
             result.put("issues", issues);
-            return result;
+            return ResponseEntity.ok(result);
+        }
+
+        // 超员在数据源那一层也拦得住，但那层只会拒收并写一行日志：界面照样回「已保存」，
+        // 而多出来的几位从此不会被监控，使用者在界面上完全看不出来。所以保存这一步得自己说清楚
+        int enabledStreamers = countEnabledStreamers(content);
+        if (enabledStreamers > MonitorLimit.MAX_STREAMERS) {
+            result.put("success", false);
+            result.put("message", "最多同时监控 " + MonitorLimit.MAX_STREAMERS + " 位主播（本次提交 " + enabledStreamers + " 位）");
+            return ResponseEntity.badRequest().body(result);
         }
 
         try {
@@ -1030,7 +1040,44 @@ public class ConfigUiController {
             result.put("message", "保存失败: " + e.getMessage());
         }
 
-        return result;
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 统计推送配置中启用的主播数
+     * <p>
+     * 缺少 enabled 字段的按启用计，与数据源加载时的认法保持一致；内容不是数组时返回 0，
+     * 交由前面的格式校验去回绝，这里不重复报同一件事。
+     * @param content 推送配置内容
+     * @return 启用的主播数
+     */
+    private int countEnabledStreamers(String content) {
+        JSONArray users;
+        try {
+            users = JSONArray.parseArray(content);
+        } catch (Exception e) {
+            return 0;
+        }
+
+        if (users == null) {
+            return 0;
+        }
+
+        int count = 0;
+        for (int i = 0; i < users.size(); i++) {
+            JSONObject user;
+            try {
+                user = users.getJSONObject(i);
+            } catch (Exception e) {
+                continue;
+            }
+
+            if (user != null && !Boolean.FALSE.equals(user.getBoolean("enabled"))) {
+                count++;
+            }
+        }
+
+        return count;
     }
 
     /**
@@ -1067,6 +1114,8 @@ public class ConfigUiController {
 
         result.put("users", users);
         result.put("runtime", runtimeInfo);
+        // 上限由后端下发，界面不再各写一份，免得两边对不上
+        result.put("streamerLimit", MonitorLimit.MAX_STREAMERS);
         result.put("pushEnabled", properties.getPush().isEnabled());
         // 供界面填充「发送测试消息」的推送平台下拉框，避免让使用者手打平台名
         result.put("senders", senderService.getSenderNames().stream().sorted().toList());

@@ -104,6 +104,19 @@ public abstract class AbstractDataSource {
 
         pending.removeIf(user -> notSupportedPlatforms.contains(user.getPlatform()));
 
+        // 同时监控的主播数有上限，超出的按传入顺序从后往前拒收。
+        // 拒收而不抛异常：启动时加载 datasource.json 若因超员抛出，整个进程都起不来，
+        // 而使用者看到的只是「机器人没上线」，比少监控几位主播难查得多。
+        // 拒收也不能是静悄悄的——少监控一位主播在界面上看不出，推送只是「没有」而已
+        int remaining = remainingCapacity();
+        if (pending.size() > remaining) {
+            String rejected = pending.subList(remaining, pending.size()).stream()
+                    .map(user -> "(UID: " + user.getUid() + ", 昵称: " + user.getUname() + ")")
+                    .collect(Collectors.joining(", "));
+            log.warn("同时监控的主播数上限为 {} 位, 以下推送用户超出上限, 未被加载: {}", MonitorLimit.MAX_STREAMERS, rejected);
+            pending = new ArrayList<>(pending.subList(0, remaining));
+        }
+
         this.users.addAll(pending);
         for (PushUser user: pending) {
             this.userMap.computeIfAbsent(user.getPlatform(), k -> new HashMap<>()).put(user.getUid(), user);
@@ -115,6 +128,14 @@ public abstract class AbstractDataSource {
             StarBotDataSourceAddEvent event = new StarBotDataSourceAddEvent(user, Instant.now());
             eventPublisher.publishEvent(event);
         }
+    }
+
+    /**
+     * 获取距离同时监控上限还剩多少名额
+     * @return 还能再添加的主播数，已达上限时为 0
+     */
+    public synchronized int remainingCapacity() {
+        return Math.max(0, MonitorLimit.MAX_STREAMERS - this.users.size());
     }
 
     /**

@@ -184,7 +184,8 @@ export function renderStatus(data) {
     ['堆内存', r.heapUsedMb + ' / ' + r.heapMaxMb + ' MB'],
     ['线程数', r.threads],
     ['CPU 核心', r.processors],
-    ['监听主播', (data.users || []).length]
+    // 上限一并显示：只报「监听 10 位」看不出这已经是顶格，再加主播时才发现加不进去
+    ['监听主播', (data.users || []).length + (data.streamerLimit ? ' / ' + data.streamerLimit : '')]
   ].map(([l, n]) => '<div class="card"><div class="n">' + n + '</div><div class="l">' + l + '</div></div>').join('');
 
   const body = $('#users tbody');

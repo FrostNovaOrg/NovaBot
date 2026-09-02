@@ -240,6 +240,79 @@ class AbstractDataSourceTest {
         assertEquals("默认模板", params.getString("message"), "未覆盖的默认项应保留");
     }
 
+    @Test
+    @DisplayName("一次添加超过上限的主播时只收下靠前的 10 位, 其余点名拒收")
+    void shouldRejectStreamersBeyondLimit() {
+        ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(AbstractDataSource.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+
+        try {
+            List<PushUser> many = new ArrayList<>();
+            for (long uid = 1; uid <= 11; uid++) {
+                many.add(user(uid, true));
+            }
+
+            dataSource.add(many);
+
+            // 上限写死 10 而不是引用常量：这里要钉住的正是「上限是 10」这条产品结论，
+            // 引用常量的话跟着常量一起改，等于什么都没钉住
+            assertEquals(10, dataSource.getAllUsers().size(), "同时监控的主播数不得超过上限");
+            assertTrue(dataSource.getUser(PLATFORM, 10L).isPresent(), "上限之内的应按传入顺序悉数收下");
+            assertTrue(dataSource.getUser(PLATFORM, 11L).isEmpty(), "超出上限的第 11 位应被拒收");
+
+            String warn = appender.list.stream()
+                    .filter(event -> event.getLevel() == ch.qos.logback.classic.Level.WARN)
+                    .map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage)
+                    .filter(message -> message.contains("上限"))
+                    .findFirst()
+                    .orElse(null);
+
+            // 悄悄少监控一位主播是最难查的一种故障：界面上看不出，推送只是「没有」而已
+            assertNotNull(warn, "被拒收的主播必须在日志里留痕，实际日志: " + appender.list);
+            assertTrue(warn.contains("10"), "日志要说清上限是多少: " + warn);
+            assertTrue(warn.contains("11"), "日志要点名是谁被拒收: " + warn);
+        } finally {
+            logger.detachAppender(appender);
+        }
+    }
+
+    @Test
+    @DisplayName("已达上限后再添加应被拒收, 且不得抛出异常")
+    void shouldRejectWhenAlreadyAtLimit() {
+        List<PushUser> ten = new ArrayList<>();
+        for (long uid = 1; uid <= 10; uid++) {
+            ten.add(user(uid, true));
+        }
+        dataSource.add(ten);
+
+        // 启动时加载的推送配置若超员就抛异常，整个进程都起不来，
+        // 而使用者看到的只是「机器人没上线」——这比少监控一位主播难查得多
+        assertDoesNotThrow(() -> dataSource.add(user(99L, true)), "超员只能拒收，不能把进程打死");
+
+        assertEquals(10, dataSource.getAllUsers().size(), "拒收之后总数仍应停在上限上");
+        assertTrue(dataSource.getUser(PLATFORM, 99L).isEmpty(), "超出上限的主播不应进入数据源");
+    }
+
+    @Test
+    @DisplayName("剩余名额应随已监控的主播数递减到零")
+    void shouldReportRemainingCapacity() {
+        assertEquals(10, dataSource.remainingCapacity(), "空数据源应有满额的名额");
+
+        dataSource.add(user(1L, true));
+        assertEquals(9, dataSource.remainingCapacity(), "收下一位后名额应少一个");
+
+        List<PushUser> rest = new ArrayList<>();
+        for (long uid = 2; uid <= 10; uid++) {
+            rest.add(user(uid, true));
+        }
+        dataSource.add(rest);
+        assertEquals(0, dataSource.remainingCapacity(), "达到上限后不应再有名额");
+    }
+
     /**
      * 构造一个带一个推送目标、一条推送消息的推送用户
      * @param uid UID
