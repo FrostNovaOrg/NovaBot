@@ -10,7 +10,7 @@
 
 [Unit]
 Description=NovaBot - 哔哩哔哩直播与动态推送机器人
-Documentation=https://github.com/rossinova/NovaBot
+Documentation=https://github.com/FrostNovaOrg/NovaBot
 After=network-online.target
 Wants=network-online.target
 
