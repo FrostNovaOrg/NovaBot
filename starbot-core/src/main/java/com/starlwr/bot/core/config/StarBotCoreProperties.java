@@ -395,6 +395,17 @@ public class StarBotCoreProperties {
              * 日后要回答「这台机器上是什么时候同意的」时，答案得在盘上，而不是靠人回忆。
              */
             private String acceptedAt = "";
+
+            /**
+             * 同意是从哪条通道点下的
+             * <p>
+             * {@code password}＝输过登录口令之后同意，{@code operator-token}＝凭启动令牌进来之后同意。
+             * <p>
+             * <b>留空表示这行记录说不出是谁点的</b>，此时会在下次登录之后再请使用者确认一次。
+             * 4.4.0 及更早的版本在登录之前就让人点同意，写下的正是这种记录——
+             * 那时任何能连上控制台端口的程序都写得下它，因此它证明不了使用者本人确实看过。
+             */
+            private String acceptedBy = "";
         }
 
         /**

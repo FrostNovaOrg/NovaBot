@@ -186,7 +186,7 @@ public class ConfigUiAuthService {
      * @return 新会话
      */
     public ConfigUiSession issueForOperator(String clientIp) {
-        return sessions.issue(clientIp, clock.get());
+        return sessions.issue(clientIp, clock.get(), ConfigUiSession.Channel.OPERATOR_TOKEN);
     }
 
     /**
@@ -285,7 +285,7 @@ public class ConfigUiAuthService {
 
         return switch (check.verdict()) {
             case OK -> {
-                ConfigUiSession session = sessions.issue(clientIp, clock.get());
+                ConfigUiSession session = sessions.issue(clientIp, clock.get(), ConfigUiSession.Channel.PASSWORD);
                 log.info("配置界面登录成功, 来源: {}", clientIp);
                 yield LoginResult.success(session);
             }

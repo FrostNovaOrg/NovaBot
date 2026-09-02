@@ -49,14 +49,17 @@ public class ConfigUiSessionStore {
      * 签发一个新会话
      * @param clientIp 登录来源 IP
      * @param now 当前时刻
+     * @param channel 这一把是从哪条通道换来的。<b>没有默认值是有意的</b>：日后新添一处签发点时，
+     *                这个参数会逼着人当场说清它走的是哪条路；给了默认值就会有一处悄悄记成另一条通道，
+     *                而那件事从功能上完全看不出来
      * @return 新会话
      */
-    public ConfigUiSession issue(String clientIp, Instant now) {
+    public ConfigUiSession issue(String clientIp, Instant now, ConfigUiSession.Channel channel) {
         sweep(now);
         evictOldestIfFull();
 
         ConfigUiSession session = new ConfigUiSession(
-                SecureToken.generate(), SecureToken.generate(), now, now.plus(ttl), clientIp);
+                SecureToken.generate(), SecureToken.generate(), now, now.plus(ttl), clientIp, channel);
         sessions.put(session.getId(), session);
 
         return session;

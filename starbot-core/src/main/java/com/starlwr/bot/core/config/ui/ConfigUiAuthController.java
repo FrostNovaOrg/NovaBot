@@ -71,6 +71,8 @@ public class ConfigUiAuthController {
 
     private static final String AGREEMENT_TIME_PROPERTY = "starbot.core.config-ui.agreement.accepted-at";
 
+    private static final String AGREEMENT_BY_PROPERTY = "starbot.core.config-ui.agreement.accepted-by";
+
     private final ConfigUiAuthService authService;
 
     private final ConfigurationFileService fileService;
@@ -105,13 +107,14 @@ public class ConfigUiAuthController {
         result.put("enabled", authService.isEnabled());
         result.put("totpRequired", authService.totpRequired());
 
-        // 协议这一问排在口令之前：没同意就不该有会话，因此它与「有没有登录」无关，未登录也要如实回答
-        result.put("agreementRequired", ConfigUiAgreement.required(agreement.getAcceptedVersion()));
+        // 协议这一问与「有没有登录」是两件事，未登录也如实回答：
+        // 前端要靠这两个值决定摆出口令表单还是协议面板
+        result.put("agreementRequired", ConfigUiAgreement.required(agreement));
         result.put("agreementVersion", ConfigUiAgreement.VERSION);
 
-        Optional<ConfigUiSession> session = authService.isEnabled()
-                ? authService.validate(sessionId(request))
-                : Optional.empty();
+        // 不再看 isEnabled：未配口令的那一形态本来就没有会话，问一句返回空而已，
+        // 而拿它当前提会让「凭启动令牌换来的会话」在这条接口上显示成未登录
+        Optional<ConfigUiSession> session = authService.validate(sessionId(request));
 
         result.put("authenticated", session.isPresent());
         // CSRF 令牌只发给已经持有该会话的人，它本身不是秘密，但发给未登录者没有任何意义
@@ -151,16 +154,32 @@ public class ConfigUiAuthController {
     /**
      * 同意使用协议
      * <p>
-     * 未登录也能调用：协议正是登录之前那一步，要求先登录再同意就把顺序颠倒了。
+     * <b>必须先通过身份校验</b>：同意是一个签字动作，签字的人得先被认出来。
+     * 反过来（未登录也能点）的话，任何能连上控制台端口的程序都替使用者签得下去，
+     * 而那行记录一旦写下，使用者本人就再也不会被问第二次——记录也就证明不了任何事。
+     * <p>
+     * 认人这件事由安全过滤器办，通道名从它那里接过来：判两遍就会有两个答案，
+     * 其中一个迟早与实际放行的依据对不上。
      * @return 同意之后的登录状态
      */
     @PostMapping("/agreement/accept")
-    public JSONObject acceptAgreement(HttpServletRequest request) {
+    public ResponseEntity<JSONObject> acceptAgreement(HttpServletRequest request) {
+        ConfigUiSession.Channel channel = ConfigUiSession.Channel.fromWire(
+                String.valueOf(request.getAttribute(ConfigUiSecurityFilter.CHANNEL_ATTRIBUTE)));
+
+        if (channel == null) {
+            JSONObject result = new JSONObject();
+            result.put("success", false);
+            result.put("message", "请先登录，再确认使用协议");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(result);
+        }
+
         agreement.setAcceptedVersion(ConfigUiAgreement.VERSION);
         agreement.setAcceptedAt(OffsetDateTime.now().truncatedTo(ChronoUnit.SECONDS).toString());
-        persistAgreement();
+        agreement.setAcceptedBy(channel.wire());
+        persistAgreement(request.getRemoteAddr());
 
-        return state(request);
+        return ResponseEntity.ok(state(request));
     }
 
     /**
@@ -169,8 +188,12 @@ public class ConfigUiAuthController {
      * 与口令哈希写回是同一副形状：先认下、再落盘，<b>写不进去也照常放行</b>——
      * 人已经看过并点了同意，这件事已经发生了；写盘失败的后果只是下次启动还要再点一次，
      * 而反过来让一次写盘失败把人挡在控制台外面，是把一件小事办成了故障。
+     * <p>
+     * 通道写进配置，来源 IP 只写进日志：配置文件里那三行是给使用者看的凭据，
+     * 多一个他看不懂也用不上的地址只会碍事；而排查「这是谁点的」时要的恰恰是日志里那一行。
+     * @param clientIp 点同意的那一端的地址
      */
-    private void persistAgreement() {
+    private void persistAgreement(String clientIp) {
         if (fileService == null) {
             log.warn("配置界面的使用协议同意记录未能保存, 下次启动会再次要求确认");
             return;
@@ -179,10 +202,12 @@ public class ConfigUiAuthController {
         Map<String, String> changes = new LinkedHashMap<>();
         changes.put(AGREEMENT_VERSION_PROPERTY, String.valueOf(ConfigUiAgreement.VERSION));
         changes.put(AGREEMENT_TIME_PROPERTY, agreement.getAcceptedAt());
+        changes.put(AGREEMENT_BY_PROPERTY, agreement.getAcceptedBy());
 
         try {
             fileService.write(changes);
-            log.info("配置界面: 已同意第 {} 版使用协议, 时间 {}", ConfigUiAgreement.VERSION, agreement.getAcceptedAt());
+            log.info("配置界面: 已同意第 {} 版使用协议, 时间 {}, 通道 {}, 来源 {}",
+                    ConfigUiAgreement.VERSION, agreement.getAcceptedAt(), agreement.getAcceptedBy(), clientIp);
         } catch (Exception e) {
             log.warn("配置界面的使用协议同意记录未能写入配置文件, 下次启动会再次要求确认: {}", e.getMessage());
         }
@@ -287,14 +312,9 @@ public class ConfigUiAuthController {
             return ResponseEntity.badRequest().body(result);
         }
 
-        // 协议这道闸在校验口令之前：会话是控制台的钥匙，没同意协议就一把也不该发出去。
-        // 挡在这里而不是挡在前端，是因为前端那一层任谁都能跳过
-        if (ConfigUiAgreement.required(agreement.getAcceptedVersion())) {
-            result.put("success", false);
-            result.put("message", "请先阅读并同意使用协议");
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(result);
-        }
-
+        // 协议那道闸不在这里，而在这一步之后：先认出人，再问他同不同意。
+        // 挡在登录之前的话，点同意的就未必是使用者本人了，而那行记录也就说明不了任何事。
+        // 此刻发出去的会话除了看协议什么也打不开，安全过滤器那一层会把控制台一直关着
         char[] password = Optional.ofNullable(body.getString("password")).orElse("").toCharArray();
         try {
             ConfigUiAuthService.LoginResult outcome = authService.login(password, body.getString("code"), request.getRemoteAddr());

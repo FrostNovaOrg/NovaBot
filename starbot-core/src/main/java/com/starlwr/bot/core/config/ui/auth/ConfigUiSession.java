@@ -41,6 +41,14 @@ public class ConfigUiSession {
     private final String clientIp;
 
     /**
+     * 这把钥匙是从哪条通道换来的
+     * <p>
+     * 记在会话上而不是用的时候现推：换会话与用会话是两次请求，第二次请求手上只有一枚 Cookie，
+     * 再也看不出它当初是怎么来的。而「使用者已同意使用协议」那行记录要写明通道，靠的正是这一位。
+     */
+    private final Channel channel;
+
+    /**
      * 最近一次使用时刻，用于闲置超时
      */
     private volatile Instant lastSeenAt;
@@ -54,16 +62,66 @@ public class ConfigUiSession {
     @lombok.Setter
     private volatile boolean totpSetupDismissed;
 
-    ConfigUiSession(String id, String csrfToken, Instant issuedAt, Instant expiresAt, String clientIp) {
+    ConfigUiSession(String id, String csrfToken, Instant issuedAt, Instant expiresAt, String clientIp, Channel channel) {
         this.id = id;
         this.csrfToken = csrfToken;
         this.issuedAt = issuedAt;
         this.expiresAt = expiresAt;
         this.clientIp = clientIp;
+        this.channel = channel;
         this.lastSeenAt = issuedAt;
     }
 
     void touch(Instant now) {
         this.lastSeenAt = now;
+    }
+
+    /**
+     * 进入控制台的通道
+     * <p>
+     * 这几个名字会被<b>原样写进配置文件</b>（使用协议的同意记录里那一项），
+     * 因此它们是对外契约的一部分：改了名字，盘上此前那些记录就再也对不上号。
+     */
+    public enum Channel {
+        /**
+         * 输过登录口令（以及二次验证码，若已绑定）
+         */
+        PASSWORD("password"),
+
+        /**
+         * 凭启动日志里那个令牌进来的。未配口令时它就是这套面板唯一的凭据
+         */
+        OPERATOR_TOKEN("operator-token");
+
+        private final String wire;
+
+        Channel(String wire) {
+            this.wire = wire;
+        }
+
+        /**
+         * @return 写进配置文件与接口响应里的那个名字
+         */
+        public String wire() {
+            return wire;
+        }
+
+        /**
+         * 按名字找回通道
+         * <p>
+         * 认不出来时返回 null，而不是随便挑一个：这个值最终要写进配置文件，
+         * 让一个来路不明的字符串落到盘上，日后就没人说得清它是什么意思了。
+         * @param wire 通道名
+         * @return 对应的通道，认不出时为 null
+         */
+        public static Channel fromWire(String wire) {
+            for (Channel channel : values()) {
+                if (channel.wire.equals(wire)) {
+                    return channel;
+                }
+            }
+
+            return null;
+        }
     }
 }

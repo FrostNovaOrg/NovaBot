@@ -52,7 +52,7 @@
 <body>
 <section id="agreement" class="hidden">
   <h1>NovaBot 使用协议</h1>
-  <p class="sub">第一次打开控制台，请先读一遍下面的约定</p>
+  <p class="sub">进入控制台之前，请先读一遍下面的约定</p>
 
   <!-- 正文由 /api/auth/agreement 下发后填入，页面里不留第二份副本 -->
   <div id="agreement-text"></div>
@@ -89,6 +89,10 @@
   const show = s => $(s).classList.remove('hidden');
   const hide = s => $(s).classList.add('hidden');
 
+  // 点同意那一趟要带上它。CSRF 令牌只发给已经持有会话的人，
+  // 未配口令的那一形态里没有会话，也就没有这个值——那一形态靠的是令牌 Cookie 与 SameSite
+  let csrfToken = null;
+
   function showLogin(state) {
     if (state.totpRequired) show('#code-field');
     show('#form');
@@ -113,18 +117,26 @@
   }
 
   function apply(state) {
-    // 已经登录却停在登录页，多半是点了后退，直接回控制台
-    if (state.authenticated) {
-      location.replace('/config');
+    csrfToken = state.csrfToken || null;
+
+    // 认出来是谁了没有。未配口令的那一形态里没有会话可言，
+    // 但这张页面在那一形态下只会由验过令牌的请求取到，取到它本身就说明人已经进了门
+    const known = state.authenticated || !state.enabled;
+
+    if (!known) {
+      showLogin(state);
       return;
     }
 
+    // 先登录、后同意：协议面板只在人已经被认出来之后才摆出来，
+    // 这样点下「同意并继续」的必定是刚刚通过口令或启动令牌的那一位
     if (state.agreementRequired) {
       showAgreement();
       return;
     }
 
-    showLogin(state);
+    // 已经登录、协议也过了却停在登录页，多半是点了后退，直接回控制台
+    location.replace('/config');
   }
 
   fetch('/config/api/auth/state')
@@ -139,23 +151,20 @@
     $('#agreement-msg').textContent = '';
 
     try {
-      const r = await fetch('/config/api/auth/agreement/accept', {method: 'POST'});
+      const r = await fetch('/config/api/auth/agreement/accept', {
+        method: 'POST',
+        headers: csrfToken ? {'X-CSRF-Token': csrfToken} : {}
+      });
       const state = await r.json();
 
-      if (state.agreementRequired) {
+      if (!r.ok || state.agreementRequired) {
         $('#agreement-msg').textContent = state.message || '使用协议未能记录，请重试';
         return;
       }
 
+      // 同意之前就已经登录过了，这一步之后控制台就开着
       hide('#agreement');
-
-      // 未启用口令登录时没有口令表单可显示，点完同意就该直接进控制台
-      if (!state.enabled) {
-        location.replace('/config');
-        return;
-      }
-
-      showLogin(state);
+      location.replace('/config');
     } catch (err) {
       $('#agreement-msg').textContent = '无法连接到服务器';
     } finally {
@@ -177,7 +186,8 @@
       const data = await r.json();
 
       if (data.success) {
-        // 交给浏览器保存口令：submit 事件里改用整页跳转，密码管理器才会认为这是一次成功登录
+        // 交给浏览器保存口令：submit 事件里改用整页跳转，密码管理器才会认为这是一次成功登录。
+        // 协议若还没同意，/config 会把这张页面再发回来一次，那一次摆出来的就是协议面板
         location.replace('/config');
         return;
       }

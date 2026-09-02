@@ -61,14 +61,39 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
     private static final String BEARER_PREFIX = "Bearer ";
 
     /**
-     * 无需登录即可访问的接口
+     * 请求走到后面那一端时，这个属性里放着它是从哪条通道进来的
+     * <p>
+     * 「同意使用协议」那一笔要记下通道，而只有这一层才知道来人是输了口令、还是拿着启动令牌。
+     * 用请求属性交出去，而不是让控制器自己再判一次：判两遍就会有两个答案，
+     * 其中一个迟早与实际放行的依据对不上。
+     */
+    public static final String CHANNEL_ATTRIBUTE = "starbot.config-ui.channel";
+
+    /**
+     * 无需通过身份校验即可访问的接口
+     * <p>
+     * 只有登录页自己要用的这两条：问一句「要不要登录、要不要验证码」，以及登录本身。
+     * <p>
+     * 🔴 使用协议那几条<b>不在这里</b>。它们曾经在，而那正是一处缺陷：「同意」是一个签字动作，
+     * 签字的人必须先被认出来。放在身份校验之前，任何能连上这个端口的程序都替使用者签得下去，
+     * 而那行记录一旦写下，使用者本人就再也不会被问第二次。
      */
     private static final Set<String> PUBLIC_API = Set.of(
             ConfigUiController.BASE_PATH + "/api/auth/state",
-            ConfigUiController.BASE_PATH + "/api/auth/login",
-            // 使用协议要在登录之前看到，要求先登录再同意就把顺序颠倒了
+            ConfigUiController.BASE_PATH + "/api/auth/login");
+
+    /**
+     * 身份已经认出来、但协议还没同意时仍然放行的接口
+     * <p>
+     * 就是协议面板自己要用的三条：问状态、取文案、点同意。它们要是也被拦下，面板就成了一张死页。
+     * 控制台里的东西一条也不在此列——这道闸关的正是控制台。
+     */
+    private static final Set<String> AGREEMENT_API = Set.of(
+            ConfigUiController.BASE_PATH + "/api/auth/state",
             ConfigUiController.BASE_PATH + "/api/auth/agreement",
-            ConfigUiController.BASE_PATH + "/api/auth/agreement/accept");
+            ConfigUiController.BASE_PATH + "/api/auth/agreement/accept",
+            // 退出登录不是控制台里的东西：登了却不想同意的人要能走，否则只能等会话过期
+            ConfigUiController.BASE_PATH + "/api/auth/logout");
 
     /**
      * 不改变状态、因而不要求 CSRF 令牌的方法
@@ -142,27 +167,35 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
         }
 
         Optional<ConfigUiSession> session = authService.validate(cookie(request, SESSION_COOKIE));
+        boolean redeemed = false;
 
         // 没有会话时看看是不是拿着启动令牌来的运维通道
         if (session.isEmpty()) {
             session = redeemOperatorToken(request, response, clientIp);
-            if (session.isPresent()) {
-                // 令牌只能从地址栏或请求头带来，跨站页面拿不到它，因此这一趟不必再查 CSRF
-                chain.doFilter(request, response);
+            if (session.isEmpty()) {
+                unauthenticated(request, response);
                 return;
             }
 
-            unauthenticated(request, response);
-            return;
+            redeemed = true;
         }
 
-        if (!SAFE_METHODS.contains(request.getMethod())
+        // 令牌只能从地址栏或请求头带来，跨站页面拿不到它，因此换会话的那一趟不必再查 CSRF
+        if (!redeemed && !SAFE_METHODS.contains(request.getMethod())
                 && !SecureToken.verify(session.get().getCsrfToken(), request.getHeader(CSRF_HEADER))) {
             log.warn("配置界面拒绝了来自 {} 的请求: 缺少或错误的 CSRF 令牌", clientIp);
             reject(request, response, HttpStatus.FORBIDDEN, "请求校验失败，请刷新页面后重试");
             return;
         }
 
+        // 协议这道闸<b>排在身份校验之后</b>：先认出是谁，再问他同不同意。
+        // 反过来的话，「同意」就成了一个谁都替使用者按得下去的按钮
+        if (ConfigUiAgreement.required(agreement) && !AGREEMENT_API.contains(path(request))) {
+            agreementNotAccepted(request, response);
+            return;
+        }
+
+        request.setAttribute(CHANNEL_ATTRIBUTE, session.get().getChannel().wire());
         chain.doFilter(request, response);
     }
 
@@ -201,14 +234,8 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
             return Optional.empty();
         }
 
-        // 使用协议这道闸对这条通道同样有效：会话是控制台的钥匙，没同意协议就一把也不发。
-        // 只挡口令登录是挡不住的——启动日志里那个带令牌的地址一直都在，
-        // 照着它进来的人一次协议也看不到。按未登录处理即可：面板首页会给出登录页，协议面板就在那上面
-        if (ConfigUiAgreement.required(agreement.getAcceptedVersion())) {
-            log.info("配置界面: 来自 {} 的访问持有有效的启动令牌, 但尚未同意使用协议, 请先在面板上确认", clientIp);
-            return Optional.empty();
-        }
-
+        // 使用协议这道闸不在这里：会话在协议同意之前什么也打不开（那道闸在下一步），
+        // 而<b>不发会话反倒使人无从同意</b>——点同意得先被认出来是谁，认出来的凭据正是这把会话
         ConfigUiSession session = authService.issueForOperator(clientIp);
         response.addHeader(HttpHeaders.SET_COOKIE, sessionCookie(session.getId(), request));
 
@@ -254,10 +281,14 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
             response.addCookie(cookie);
         }
 
+        // 这一形态里没有口令，令牌本身就是凭据：验过令牌就等于认出了人，
+        // 与口令形态那一侧「凭启动令牌换会话」走的是同一条路，因此记的也是同一条通道
+        request.setAttribute(CHANNEL_ATTRIBUTE, ConfigUiSession.Channel.OPERATOR_TOKEN.wire());
+
         // 使用协议这道闸对令牌形态同样有效。未配口令时，凭令牌进来就是这套面板的「登录」，
         // 只拦口令那一形态等于绝大多数单机使用者一次协议也看不到。
         // 白名单那几条是协议面板自己要用的（问状态、取文案、点同意），放它们过去
-        if (ConfigUiAgreement.required(agreement.getAcceptedVersion()) && !PUBLIC_API.contains(path(request))) {
+        if (ConfigUiAgreement.required(agreement) && !AGREEMENT_API.contains(path(request))) {
             agreementNotAccepted(request, response);
             return;
         }
