@@ -148,6 +148,13 @@
       }
 
       hide('#agreement');
+
+      // 未启用口令登录时没有口令表单可显示，点完同意就该直接进控制台
+      if (!state.enabled) {
+        location.replace('/config');
+        return;
+      }
+
       showLogin(state);
     } catch (err) {
       $('#agreement-msg').textContent = '无法连接到服务器';

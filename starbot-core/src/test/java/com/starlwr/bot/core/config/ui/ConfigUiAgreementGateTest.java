@@ -7,12 +7,23 @@ import com.starlwr.bot.core.config.ui.auth.ConfigUiSession;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSessionStore;
 import com.starlwr.bot.core.config.ui.auth.LoginThrottle;
 import com.starlwr.bot.core.util.IpMatcher;
+import jakarta.servlet.Servlet;
 import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.boot.context.properties.bind.Bindable;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.context.properties.source.ConfigurationPropertySources;
+import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.core.io.FileSystemResource;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -72,6 +83,8 @@ class ConfigUiAgreementGateTest {
     @TempDir
     Path dir;
 
+    private Path config;
+
     private StarBotCoreProperties properties;
 
     private ConfigurationFileService fileService;
@@ -82,7 +95,7 @@ class ConfigUiAgreementGateTest {
 
     @BeforeEach
     void setUp() throws IOException {
-        Path config = dir.resolve("application.yml");
+        config = dir.resolve("application.yml");
         Files.writeString(config, TEMPLATE, StandardCharsets.UTF_8);
         fileService = new ConfigurationFileService(config);
 
@@ -140,6 +153,66 @@ class ConfigUiAgreementGateTest {
 
     private String sha256(String text) throws NoSuchAlgorithmException {
         return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(text.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    /**
+     * 未配口令的那一形态——单机部署的默认样子
+     * <p>
+     * 这一形态里没有会话可言：凭令牌直接进，令牌本身就是凭据。
+     * 协议若只拦口令那一形态，绝大多数使用者一次协议也看不到。
+     */
+    private ConfigUiSecurityFilter tokenFormFilter() {
+        ConfigUiAuthService noPassword = new ConfigUiAuthService(new StarBotCoreProperties.ConfigUi.Auth(),
+                new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(2)),
+                new LoginThrottle(5, Duration.ofMinutes(15)), fileService);
+
+        assertFalse(noPassword.isEnabled(), "这一组问的正是「没配口令」那一形态，前提先自证，免得测成了口令形态");
+
+        return new ConfigUiSecurityFilter(TOKEN, new IpMatcher(List.of("0.0.0.0/0", "::/0")),
+                noPassword, true, agreement());
+    }
+
+    /**
+     * 在未配口令那一形态下走一趟过滤器
+     * @param carryToken true＝令牌走地址栏（第一次访问的样子），false＝令牌走 Cookie（此后每一次的样子）
+     * @param endpoint 过滤器放行后接住请求的那一端，不关心时传 null
+     * @return 过滤链，{@code getRequest()} 非空即表示请求确实被放行了
+     */
+    private MockFilterChain tokenFormVisit(String method, String path, boolean carryToken,
+                                           MockHttpServletResponse response, Servlet endpoint) throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest(method, path);
+        request.setRemoteAddr("127.0.0.1");
+
+        if (carryToken) {
+            request.setParameter("token", TOKEN);
+        } else {
+            // Cookie 名是这一形态的对外契约，测试里照写
+            request.setCookies(new Cookie("starbot_config_token", TOKEN));
+        }
+
+        MockFilterChain chain = endpoint == null ? new MockFilterChain() : new MockFilterChain(endpoint);
+        tokenFormFilter().doFilter(request, response, chain);
+
+        return chain;
+    }
+
+    /**
+     * 站位控制台首页那个出口
+     * <p>
+     * 读的是 {@code ConfigUiController#page} 同一个类路径资源。这一考问的是过滤器放不放行，
+     * 首页自己怎么渲染另有用例管。
+     */
+    private Servlet consoleHome() {
+        return new HttpServlet() {
+            @Override
+            protected void service(HttpServletRequest request, HttpServletResponse response) throws IOException {
+                try (var stream = new ClassPathResource("config-ui/index.html").getInputStream()) {
+                    response.setContentType(MediaType.TEXT_HTML_VALUE);
+                    response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+                    response.getWriter().write(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
+                }
+            }
+        };
     }
 
     @Test
@@ -273,5 +346,88 @@ class ConfigUiAgreementGateTest {
         assertEquals(TEXT_SHA256, sha256(body.getString("text")),
                 "文案指纹对不上。改文案就要连着把 ConfigUiAgreement.VERSION 加一，"
                         + "否则已经点过同意的人再也看不到新的那一份");
+    }
+
+    @Test
+    @DisplayName("🔴 未配口令那一形态：凭令牌进来也先看协议，令牌 Cookie 照旧先写下")
+    void theTokenFormShowsTheAgreementFirst() throws Exception {
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = tokenFormVisit("GET", ConfigUiController.BASE_PATH, true, response, consoleHome());
+
+        assertEquals(200, response.getStatus(), "面板首页给页面，协议面板就在那一页上");
+        assertTrue(response.getContentAsString().contains("id=\"agreement\""),
+                "首页此刻该给出带协议面板的那一页，而不是控制台本身");
+        assertNull(chain.getRequest(), "控制台首页这一趟不该被放行");
+        assertNotNull(response.getCookie("starbot_config_token"),
+                "令牌 Cookie 必须在这一趟就写下：同意之后浏览器回到 /config 时，地址栏里已经没有令牌了，"
+                        + "此刻若还没写，人就被自己刚点过的同意关在门外");
+    }
+
+    @Test
+    @DisplayName("🔴 未配口令那一形态：没同意协议时接口一律 403，协议自己那几条除外")
+    void theTokenFormRefusesApisUntilAccepted() throws Exception {
+        MockHttpServletResponse blocked = new MockHttpServletResponse();
+        MockFilterChain chain = tokenFormVisit("GET", ConfigUiController.BASE_PATH + "/api/status", true, blocked, null);
+
+        assertEquals(403, blocked.getStatus(), "令牌对不对都不重要，没同意协议就不该读到控制台的任何数据");
+        assertTrue(blocked.getContentAsString().contains("请先阅读并同意使用协议"),
+                "话要说清是卡在哪一步：「令牌不对」与「还没同意」要去做的事完全不同");
+        assertNull(chain.getRequest(), "更不该悄悄放行");
+
+        // 协议面板自己要用的三条：问状态、取文案、点同意。它们要是也被拦下，面板就成了一张死页
+        List<String[]> open = List.of(
+                new String[]{"GET", ConfigUiController.BASE_PATH + "/api/auth/state"},
+                new String[]{"GET", ConfigUiController.BASE_PATH + "/api/auth/agreement"},
+                new String[]{"POST", ConfigUiController.BASE_PATH + "/api/auth/agreement/accept"});
+
+        for (String[] endpoint : open) {
+            MockFilterChain passed = tokenFormVisit(endpoint[0], endpoint[1], true, new MockHttpServletResponse(), null);
+            assertNotNull(passed.getRequest(), endpoint[1] + " 被协议闸挡下了，协议面板将无从显示，也点不动同意");
+        }
+    }
+
+    @Test
+    @DisplayName("🔴 未配口令那一形态：同意之后凭 Cookie 直接进控制台，不必再带一次令牌")
+    void theTokenFormEntersTheConsoleOnceAccepted() throws Exception {
+        controller.acceptAgreement(new MockHttpServletRequest());
+
+        // 地址栏里不再带 token，只有上一趟写下的那枚 Cookie——同意之后浏览器回来时就是这副样子
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = tokenFormVisit("GET", ConfigUiController.BASE_PATH, false, response, consoleHome());
+
+        assertNotNull(chain.getRequest(),
+                "阳性对照：这一条不通过，上面那两条「没同意就进不去」说明不了任何事");
+        assertEquals(200, response.getStatus(), "同意之后就该直接进控制台");
+        assertTrue(response.getContentAsString().contains("/config/assets/app.css"),
+                "拿到的该是控制台首页（它取外部样式表），不是自足的那张登录页");
+        assertFalse(response.getContentAsString().contains("id=\"agreement\""), "协议面板不该再出现");
+    }
+
+    @Test
+    @DisplayName("🔴 同意时间重启后还是那个时间：ISO 串不会在读回来的路上被改掉样子")
+    void theAcceptedTimeSurvivesAReload() throws IOException {
+        controller.acceptAgreement(new MockHttpServletRequest());
+        String written = agreement().getAcceptedAt();
+
+        // 盘上先得还是原文：这一半与下一半是两回事，一并钉住才说得清「哪一头变了」
+        assertTrue(Files.readString(config, StandardCharsets.UTF_8).contains(written),
+                "写下去的 ISO 串就该原样躺在配置文件里: " + written);
+
+        // 再用启动时真正在跑的那套加载与绑定重读一次，而不是自己按行解析。
+        // 🔴 这一条守的是一件「本来就成立、但极容易被后人改坏」的事：裸写的
+        // 2026-09-02T10:11:12+08:00 在通用 YAML 解析器眼里是个时间戳，会被解成日期对象、
+        // 再转回字符串时就成了另一副写法。Spring Boot 的属性加载器特意关掉了时间戳这条隐式规则
+        // （OriginTrackedYamlLoader.NoTimestampResolver），所以现在是逐字相等的——
+        // 哪天换了加载器或自己拿通用解析器去读这份文件，这条会当场红
+        StarBotCoreProperties reloaded = new StarBotCoreProperties();
+        new Binder(ConfigurationPropertySources.from(
+                new YamlPropertySourceLoader().load("重启后再读一遍", new FileSystemResource(config.toFile()))))
+                .bind("starbot.core", Bindable.ofInstance(reloaded));
+
+        assertEquals(written, reloaded.getConfigUi().getAgreement().getAcceptedAt(),
+                "盘上那行与重启后内存里的值必须逐字相同。不加引号时 YAML 会把它当日期解掉，"
+                        + "写进去的是 ISO 串、读回来的是另一副写法，而这错从界面上完全看不出来");
+        assertEquals(ConfigUiAgreement.VERSION, reloaded.getConfigUi().getAgreement().getAcceptedVersion(),
+                "版本号同样要读得回来，否则每次重启都要再同意一次");
     }
 }

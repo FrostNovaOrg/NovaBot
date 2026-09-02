@@ -241,7 +241,9 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
             return;
         }
 
-        // 地址栏参数校验通过后写入 Cookie，后续请求无需再带令牌
+        // 地址栏参数校验通过后写入 Cookie，后续请求无需再带令牌。
+        // 这一步<b>必须排在协议那道闸之前</b>：同意之后浏览器回到 /config 时地址栏里已经没有令牌了，
+        // 此刻 Cookie 若还没写下，人就被自己刚点过的同意关在了门外，只能回头去启动日志里再抄一次地址
         if (request.getParameter("token") != null) {
             Cookie cookie = new Cookie(TOKEN_COOKIE, token);
             cookie.setHttpOnly(true);
@@ -250,6 +252,14 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
             // 只能靠 SameSite 把跨站请求整个挡掉——现代浏览器的默认值已是 Lax，这里显式写死不指望默认
             cookie.setAttribute("SameSite", "Strict");
             response.addCookie(cookie);
+        }
+
+        // 使用协议这道闸对令牌形态同样有效。未配口令时，凭令牌进来就是这套面板的「登录」，
+        // 只拦口令那一形态等于绝大多数单机使用者一次协议也看不到。
+        // 白名单那几条是协议面板自己要用的（问状态、取文案、点同意），放它们过去
+        if (ConfigUiAgreement.required(agreement.getAcceptedVersion()) && !PUBLIC_API.contains(path(request))) {
+            agreementNotAccepted(request, response);
+            return;
         }
 
         chain.doFilter(request, response);
@@ -262,12 +272,43 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
      * 报出的错与真实原因毫无关系；静态资源同理，一个 200 的 HTML 冒充 CSS 只会让人查错方向。
      */
     private void unauthenticated(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        String path = path(request);
-        if (!ConfigUiController.BASE_PATH.equals(path) && !(ConfigUiController.BASE_PATH + "/").equals(path)) {
+        if (!isHome(request)) {
             reject(request, response, HttpStatus.UNAUTHORIZED, "尚未登录");
             return;
         }
 
+        loginPage(response);
+    }
+
+    /**
+     * 尚未同意使用协议时的响应
+     * <p>
+     * 与未登录那一副形状相同：只有面板首页给页面（协议面板就在 login.html 上），其余一律拒绝，
+     * 并说清是卡在哪一步——「访问令牌不正确」与「还没同意协议」要去做的事完全不同。
+     * <p>
+     * 静态资源不必单开口子：login.html 的样式与脚本都写在它自己里面，不取任何外部资源。
+     */
+    private void agreementNotAccepted(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        if (isHome(request)) {
+            loginPage(response);
+            return;
+        }
+
+        reject(request, response, HttpStatus.FORBIDDEN, "请先阅读并同意使用协议");
+    }
+
+    /**
+     * 是否为面板首页
+     */
+    private boolean isHome(HttpServletRequest request) {
+        String path = path(request);
+        return ConfigUiController.BASE_PATH.equals(path) || (ConfigUiController.BASE_PATH + "/").equals(path);
+    }
+
+    /**
+     * 吐出登录页
+     */
+    private void loginPage(HttpServletResponse response) throws IOException {
         try (var stream = new ClassPathResource("config-ui/login.html").getInputStream()) {
             response.setStatus(HttpStatus.OK.value());
             response.setContentType(MediaType.TEXT_HTML_VALUE);
