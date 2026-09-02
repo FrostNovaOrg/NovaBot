@@ -60,6 +60,9 @@
         <starbot-core.version>4.3.1</starbot-core.version>
         <starbot-plugin-processor.version>1.0.0</starbot-plugin-processor.version>
 
+        <!-- 构建期判据用的插件，版本钉死：判据本身跟着上游漂就不成其为判据 -->
+        <maven-enforcer-plugin.version>3.5.0</maven-enforcer-plugin.version>
+
         <!-- 第三方依赖版本，集中在此管理，模块内不再各写各的 -->
         <fastjson2.version>2.0.56</fastjson2.version>
         <reflections.version>0.10.2</reflections.version>
@@ -160,5 +163,44 @@
                 </plugin>
             </plugins>
         </pluginManagement>
+
+        <plugins>
+            <!--
+                发版要改的字面版本号有两处：本工程的 version，以及上面那个 starbot-core.version。
+                后者是各插件模块编译期依赖的 core 版本，改漏了构建照常绿——插件模块会去本机仓库里
+                翻出上一版的 core 来编译，产物看不出异样，问题要到运行期才炸——上一版就是这么漏的。
+                这条判据把「漏改」从一件靠人记的事变成一件构建当场拒绝的事。
+
+                inherited=false：这一条问的是本工程的两个版本号对不对得上，是聚合工程自己的事，
+                各模块跟着跑一遍只是把同一句话重复四次。
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>${maven-enforcer-plugin.version}</version>
+                <inherited>false</inherited>
+                <executions>
+                    <execution>
+                        <id>check-starbot-core-version</id>
+                        <!-- 绑在 validate：编译一个字节之前就该拦下，而不是等构建跑完再说 -->
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <requireProperty>
+                                    <property>starbot-core.version</property>
+                                    <!-- \Q..\E 把工程版本整段当字面量比，版本号里的点不会被当成通配 -->
+                                    <regex>\Q${project.version}\E</regex>
+                                    <message>插件模块编译依赖的 core 版本须与工程版本一致：请把 starbot-core.version 改成 ${project.version}</message>
+                                    <regexMessage>插件模块编译依赖的 core 版本须与工程版本一致：starbot-core.version 与工程版本 ${project.version} 对不上，改漏了这一处，插件模块会拿本机仓库里的旧 core 编译</regexMessage>
+                                </requireProperty>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
     </build>
 </project>
