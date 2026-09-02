@@ -46,7 +46,12 @@ class OperatorTokenSwitchTest {
     }
 
     private ConfigUiSecurityFilter filter(ConfigUiAuthService auth, boolean operatorToken) {
-        return new ConfigUiSecurityFilter(TOKEN, new IpMatcher(List.of("0.0.0.0/0", "::/0")), auth, operatorToken);
+        // 这一组用例问的是「令牌通道开关」，因此把使用协议置于已同意——
+        // 否则协议那道闸会先一步把令牌挡下，上面那条阳性对照测到的就不是令牌开关了
+        StarBotCoreProperties.ConfigUi.Agreement agreement = new StarBotCoreProperties.ConfigUi.Agreement();
+        agreement.setAcceptedVersion(ConfigUiAgreement.VERSION);
+
+        return new ConfigUiSecurityFilter(TOKEN, new IpMatcher(List.of("0.0.0.0/0", "::/0")), auth, operatorToken, agreement);
     }
 
     /**

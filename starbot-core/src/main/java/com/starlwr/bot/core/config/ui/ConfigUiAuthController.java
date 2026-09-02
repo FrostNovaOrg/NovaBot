@@ -22,7 +22,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
 import java.time.Duration;
+import java.time.OffsetDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 
@@ -61,16 +64,32 @@ public class ConfigUiAuthController {
      */
     private static final int QR_CODE_IMAGE_SIZE = 320;
 
+    /**
+     * 使用协议的同意记录所在的配置项，点了「同意并继续」后写回此处
+     */
+    private static final String AGREEMENT_VERSION_PROPERTY = "starbot.core.config-ui.agreement.accepted-version";
+
+    private static final String AGREEMENT_TIME_PROPERTY = "starbot.core.config-ui.agreement.accepted-at";
+
     private final ConfigUiAuthService authService;
 
     private final ConfigurationFileService fileService;
 
     private final StarBotCoreProperties.ConfigUi.Auth properties;
 
+    /**
+     * 使用协议的同意记录
+     * <p>
+     * 拿的是配置里那一份本体而不是它的副本：点了同意之后要<b>当场</b>放行，
+     * 安全过滤器读的也是同一个对象，不必等下次重启。
+     */
+    private final StarBotCoreProperties.ConfigUi.Agreement agreement;
+
     public ConfigUiAuthController(ConfigUiAuthService authService, ConfigurationFileService fileService, StarBotCoreProperties properties) {
         this.authService = authService;
         this.fileService = fileService;
         this.properties = properties.getConfigUi().getAuth();
+        this.agreement = properties.getConfigUi().getAgreement();
     }
 
     /**
@@ -86,6 +105,10 @@ public class ConfigUiAuthController {
         result.put("enabled", authService.isEnabled());
         result.put("totpRequired", authService.totpRequired());
 
+        // 协议这一问排在口令之前：没同意就不该有会话，因此它与「有没有登录」无关，未登录也要如实回答
+        result.put("agreementRequired", ConfigUiAgreement.required(agreement.getAcceptedVersion()));
+        result.put("agreementVersion", ConfigUiAgreement.VERSION);
+
         Optional<ConfigUiSession> session = authService.isEnabled()
                 ? authService.validate(sessionId(request))
                 : Optional.empty();
@@ -99,6 +122,70 @@ public class ConfigUiAuthController {
                 && session.map(value -> !value.isTotpSetupDismissed()).orElse(false));
 
         return result;
+    }
+
+    /**
+     * 取使用协议全文
+     * <p>
+     * 文案不随接口下发第二份副本，界面拿到什么就显示什么——
+     * 页面里再抄一遍的话，改了文件而没改页面，使用者同意的与文件里写的就不是同一份东西了。
+     * @return 协议版本与全文
+     */
+    @GetMapping("/agreement")
+    public JSONObject agreement() {
+        JSONObject result = new JSONObject();
+        result.put("version", ConfigUiAgreement.VERSION);
+
+        try {
+            result.put("text", ConfigUiAgreement.text());
+            result.put("success", true);
+        } catch (IOException e) {
+            log.error("读取使用协议文案失败", e);
+            result.put("success", false);
+            result.put("message", "读取使用协议失败: " + e.getMessage());
+        }
+
+        return result;
+    }
+
+    /**
+     * 同意使用协议
+     * <p>
+     * 未登录也能调用：协议正是登录之前那一步，要求先登录再同意就把顺序颠倒了。
+     * @return 同意之后的登录状态
+     */
+    @PostMapping("/agreement/accept")
+    public JSONObject acceptAgreement(HttpServletRequest request) {
+        agreement.setAcceptedVersion(ConfigUiAgreement.VERSION);
+        agreement.setAcceptedAt(OffsetDateTime.now().truncatedTo(ChronoUnit.SECONDS).toString());
+        persistAgreement();
+
+        return state(request);
+    }
+
+    /**
+     * 把同意记录写回配置文件
+     * <p>
+     * 与口令哈希写回是同一副形状：先认下、再落盘，<b>写不进去也照常放行</b>——
+     * 人已经看过并点了同意，这件事已经发生了；写盘失败的后果只是下次启动还要再点一次，
+     * 而反过来让一次写盘失败把人挡在控制台外面，是把一件小事办成了故障。
+     */
+    private void persistAgreement() {
+        if (fileService == null) {
+            log.warn("配置界面的使用协议同意记录未能保存, 下次启动会再次要求确认");
+            return;
+        }
+
+        Map<String, String> changes = new LinkedHashMap<>();
+        changes.put(AGREEMENT_VERSION_PROPERTY, String.valueOf(ConfigUiAgreement.VERSION));
+        changes.put(AGREEMENT_TIME_PROPERTY, agreement.getAcceptedAt());
+
+        try {
+            fileService.write(changes);
+            log.info("配置界面: 已同意第 {} 版使用协议, 时间 {}", ConfigUiAgreement.VERSION, agreement.getAcceptedAt());
+        } catch (Exception e) {
+            log.warn("配置界面的使用协议同意记录未能写入配置文件, 下次启动会再次要求确认: {}", e.getMessage());
+        }
     }
 
     /**
@@ -198,6 +285,14 @@ public class ConfigUiAuthController {
             result.put("success", false);
             result.put("message", "未启用口令登录");
             return ResponseEntity.badRequest().body(result);
+        }
+
+        // 协议这道闸在校验口令之前：会话是控制台的钥匙，没同意协议就一把也不该发出去。
+        // 挡在这里而不是挡在前端，是因为前端那一层任谁都能跳过
+        if (ConfigUiAgreement.required(agreement.getAcceptedVersion())) {
+            result.put("success", false);
+            result.put("message", "请先阅读并同意使用协议");
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(result);
         }
 
         char[] password = Optional.ofNullable(body.getString("password")).orElse("").toCharArray();

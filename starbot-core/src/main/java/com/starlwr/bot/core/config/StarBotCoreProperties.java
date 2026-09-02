@@ -363,6 +363,41 @@ public class StarBotCoreProperties {
         private final NapCat napcat = new NapCat();
 
         /**
+         * 使用协议的同意记录
+         */
+        @Getter
+        private final Agreement agreement = new Agreement();
+
+        /**
+         * 使用协议的同意记录
+         * <p>
+         * 这一节由程序写回，<b>不必手填</b>：控制台第一次打开时会先显示使用协议，
+         * 点了「同意并继续」才写下这两项，此后不再打扰。
+         * <p>
+         * 记在配置文件里而不是浏览器里：换一台电脑、换一个浏览器打开控制台的仍是同一个使用者，
+         * 记在浏览器里等于每换一处就要再同意一次，而那让「同意」变成一个随手点掉的动作。
+         */
+        @Getter
+        @Setter
+        public static class Agreement {
+            /**
+             * 已同意的协议版本号
+             * <p>
+             * 0 表示尚未同意过。协议文案改版时版本号会加一，届时此处记着的旧版本即刻失效，
+             * 使用者会被要求重新确认一次——<b>否则改了文案等于没改</b>，没有人会再看到它。
+             */
+            private int acceptedVersion = 0;
+
+            /**
+             * 同意的时间
+             * <p>
+             * ISO 格式，留空表示尚未同意过。它不参与任何判断，只是留个凭据：
+             * 日后要回答「这台机器上是什么时候同意的」时，答案得在盘上，而不是靠人回忆。
+             */
+            private String acceptedAt = "";
+        }
+
+        /**
          * NapCat WebUI 并入本控制台所需的凭据
          * <p>
          * 只有把 NapCat 的 WebUI 反代到本控制台路径下、且不想让使用者再单独登录一次它时，

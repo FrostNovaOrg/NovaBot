@@ -1,6 +1,7 @@
 package com.starlwr.bot.core.config.ui;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSession;
 import com.starlwr.bot.core.util.IpMatcher;
@@ -64,7 +65,10 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
      */
     private static final Set<String> PUBLIC_API = Set.of(
             ConfigUiController.BASE_PATH + "/api/auth/state",
-            ConfigUiController.BASE_PATH + "/api/auth/login");
+            ConfigUiController.BASE_PATH + "/api/auth/login",
+            // 使用协议要在登录之前看到，要求先登录再同意就把顺序颠倒了
+            ConfigUiController.BASE_PATH + "/api/auth/agreement",
+            ConfigUiController.BASE_PATH + "/api/auth/agreement/accept");
 
     /**
      * 不改变状态、因而不要求 CSRF 令牌的方法
@@ -85,12 +89,21 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
      */
     private final boolean operatorToken;
 
+    /**
+     * 使用协议的同意记录
+     * <p>
+     * 与登录接口拿的是同一个对象，不是它的副本：使用者点下「同意并继续」之后要<b>当场</b>能进，
+     * 各留一份的话，这一侧要等到下次重启才知道人已经同意过了。
+     */
+    private final StarBotCoreProperties.ConfigUi.Agreement agreement;
+
     public ConfigUiSecurityFilter(String token, IpMatcher ipMatcher, ConfigUiAuthService authService,
-                                  boolean operatorToken) {
+                                  boolean operatorToken, StarBotCoreProperties.ConfigUi.Agreement agreement) {
         this.token = token;
         this.ipMatcher = ipMatcher;
         this.authService = authService;
         this.operatorToken = operatorToken;
+        this.agreement = agreement;
     }
 
     @Override
@@ -185,6 +198,14 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
         }
 
         if (presented == null || presented.isBlank() || !SecureToken.verify(token, presented.strip())) {
+            return Optional.empty();
+        }
+
+        // 使用协议这道闸对这条通道同样有效：会话是控制台的钥匙，没同意协议就一把也不发。
+        // 只挡口令登录是挡不住的——启动日志里那个带令牌的地址一直都在，
+        // 照着它进来的人一次协议也看不到。按未登录处理即可：面板首页会给出登录页，协议面板就在那上面
+        if (ConfigUiAgreement.required(agreement.getAcceptedVersion())) {
+            log.info("配置界面: 来自 {} 的访问持有有效的启动令牌, 但尚未同意使用协议, 请先在面板上确认", clientIp);
             return Optional.empty();
         }
 

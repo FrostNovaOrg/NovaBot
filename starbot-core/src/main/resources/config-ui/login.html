@@ -12,10 +12,12 @@
       background: #f6f7f9; color: #333;
       font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
     }
-    form {
+    form, section {
       width: 320px; max-width: calc(100vw - 32px); padding: 32px 28px;
       background: #fff; border-radius: 12px; box-shadow: 0 2px 16px rgba(0, 0, 0, .06);
     }
+    /* 协议卡片比口令表单宽：条款按 320px 折行，一条要折成四五行，没人读得下去 */
+    section { width: 520px }
     h1 { margin: 0 0 4px; font-size: 20px }
     p.sub { margin: 0 0 24px; font-size: 13px; color: #999 }
     label { display: block; margin-bottom: 6px; font-size: 13px; color: #666 }
@@ -31,16 +33,35 @@
     button:disabled { background: #fbb0c4; cursor: default }
     .msg { margin-top: 14px; font-size: 13px; color: #f56c6c; min-height: 18px; text-align: center }
     .hidden { display: none }
+    /* 正文照原样显示：换行与空行是文案的一部分，挤成一坨就没人读了。
+       长文案给一个滚动区，按钮始终留在卡片里看得见的位置 */
+    #agreement-text {
+      margin: 4px 0 20px; padding: 14px 16px; max-height: 46vh; overflow-y: auto;
+      white-space: pre-wrap; font-size: 13px; line-height: 1.8; color: #555;
+      background: #fafbfc; border: 1px solid #ebeef5; border-radius: 8px;
+    }
     @media (prefers-color-scheme: dark) {
       body { background: #1b1c1f; color: #e5e6eb }
-      form { background: #26272b; box-shadow: none }
+      form, section { background: #26272b; box-shadow: none }
       label { color: #909399 }
       input { background: #1b1c1f; border-color: #3c3d41; color: #e5e6eb }
+      #agreement-text { background: #1b1c1f; border-color: #3c3d41; color: #c9cbd1 }
     }
   </style>
 </head>
 <body>
-<form id="form" autocomplete="on">
+<section id="agreement" class="hidden">
+  <h1>NovaBot 使用协议</h1>
+  <p class="sub">第一次打开控制台，请先读一遍下面的约定</p>
+
+  <!-- 正文由 /api/auth/agreement 下发后填入，页面里不留第二份副本 -->
+  <div id="agreement-text"></div>
+
+  <button type="button" id="accept">同意并继续</button>
+  <div class="msg" id="agreement-msg"></div>
+</section>
+
+<form id="form" class="hidden" autocomplete="on">
   <h1>NovaBot 控制台</h1>
   <p class="sub">请输入口令后继续</p>
 
@@ -65,15 +86,75 @@
 
 <script>
   const $ = s => document.querySelector(s);
+  const show = s => $(s).classList.remove('hidden');
+  const hide = s => $(s).classList.add('hidden');
+
+  function showLogin(state) {
+    if (state.totpRequired) show('#code-field');
+    show('#form');
+    $('#password').focus();
+  }
+
+  function showAgreement() {
+    show('#agreement');
+
+    // 文案只有服务端那一份。在这里再抄一遍的话，改了文件而没改页面，
+    // 使用者同意的与文件里写的就不是同一份东西了，而且从界面上完全看不出来
+    fetch('/config/api/auth/agreement')
+      .then(r => r.json())
+      .then(data => {
+        // textContent 而非 innerHTML：文案是文字，不该被当成标记解释
+        $('#agreement-text').textContent = data.text || '';
+        if (!data.success) $('#agreement-msg').textContent = data.message || '使用协议读取失败';
+      })
+      .catch(() => {
+        $('#agreement-msg').textContent = '无法连接到服务器';
+      });
+  }
+
+  function apply(state) {
+    // 已经登录却停在登录页，多半是点了后退，直接回控制台
+    if (state.authenticated) {
+      location.replace('/config');
+      return;
+    }
+
+    if (state.agreementRequired) {
+      showAgreement();
+      return;
+    }
+
+    showLogin(state);
+  }
 
   fetch('/config/api/auth/state')
     .then(r => r.json())
-    .then(state => {
-      if (state.totpRequired) $('#code-field').classList.remove('hidden');
-      // 已经登录却停在登录页，多半是点了后退，直接回控制台
-      if (state.authenticated) location.replace('/config');
-    })
-    .catch(() => {});
+    .then(apply)
+    // 状态问不到时把口令表单摆出来：这样人至少看得见「无法连接到服务器」，
+    // 而不是对着一张什么都没有的白页
+    .catch(() => show('#form'));
+
+  $('#accept').addEventListener('click', async () => {
+    $('#accept').disabled = true;
+    $('#agreement-msg').textContent = '';
+
+    try {
+      const r = await fetch('/config/api/auth/agreement/accept', {method: 'POST'});
+      const state = await r.json();
+
+      if (state.agreementRequired) {
+        $('#agreement-msg').textContent = state.message || '使用协议未能记录，请重试';
+        return;
+      }
+
+      hide('#agreement');
+      showLogin(state);
+    } catch (err) {
+      $('#agreement-msg').textContent = '无法连接到服务器';
+    } finally {
+      $('#accept').disabled = false;
+    }
+  });
 
   $('#form').addEventListener('submit', async e => {
     e.preventDefault();
