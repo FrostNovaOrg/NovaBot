@@ -15,20 +15,20 @@ import java.util.concurrent.ThreadPoolExecutor;
 @Slf4j
 @Configuration
 public class StarBotCoreThreadPoolConfig {
-    private final StarBotCoreProperties properties;
+    private final NetworkThreadProperties networkThread;
 
     @Autowired
-    public StarBotCoreThreadPoolConfig(StarBotCoreProperties properties) {
-        this.properties = properties;
+    public StarBotCoreThreadPoolConfig(NetworkThreadProperties networkThread) {
+        this.networkThread = networkThread;
     }
 
     @Bean
     public ThreadPoolTaskExecutor networkThreadPool() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(properties.getNetworkThread().getCorePoolSize());
-        executor.setMaxPoolSize(properties.getNetworkThread().getMaxPoolSize());
-        executor.setQueueCapacity(properties.getNetworkThread().getQueueCapacity());
-        executor.setKeepAliveSeconds(properties.getNetworkThread().getKeepAliveSeconds());
+        executor.setCorePoolSize(networkThread.getCorePoolSize());
+        executor.setMaxPoolSize(networkThread.getMaxPoolSize());
+        executor.setQueueCapacity(networkThread.getQueueCapacity());
+        executor.setKeepAliveSeconds(networkThread.getKeepAliveSeconds());
         executor.setThreadNamePrefix("network-thread-");
         executor.setRejectedExecutionHandler(new NetworkWithLogCallerRunsPolicy());
         executor.initialize();

@@ -33,7 +33,7 @@ class EventStreamTokenServiceTest {
     void setUp() {
         StarBotCoreProperties properties = new StarBotCoreProperties();
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
-        service = new EventStreamTokenService(properties);
+        service = new EventStreamTokenService(properties.getLive());
     }
 
     @Test

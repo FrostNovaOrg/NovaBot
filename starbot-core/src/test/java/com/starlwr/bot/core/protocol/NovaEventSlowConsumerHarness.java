@@ -447,7 +447,7 @@ final class NovaEventSlowConsumerHarness implements AutoCloseable {
                    String slowId, boolean reallyWriteOnClose) throws IOException {
         StarBotCoreProperties properties = new StarBotCoreProperties();
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
-        this.tokens = new EventStreamTokenService(properties);
+        this.tokens = new EventStreamTokenService(properties.getLive());
         this.stream = new NovaEventStream(64);
         this.endpoint = new NovaEventEndpoint(stream, tokens, timings);
         this.heartbeatThread = registerHeartbeatThread(this.endpoint);

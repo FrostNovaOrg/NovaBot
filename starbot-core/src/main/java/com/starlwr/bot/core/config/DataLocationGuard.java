@@ -51,7 +51,7 @@ public class DataLocationGuard implements EnvironmentPostProcessor {
     static final String KEY = "starbot.core.live.live-data-path";
 
     /**
-     * 与 {@link StarBotCoreProperties.Live#getLiveDataPath()} 的默认值一致。
+     * 与 {@link LiveProperties#getLiveDataPath()} 的默认值一致。
      * <p>
      * 🔴 两处必须同时改。这里读不到那个默认值——本类跑在任何 Bean 存在之前。
      */

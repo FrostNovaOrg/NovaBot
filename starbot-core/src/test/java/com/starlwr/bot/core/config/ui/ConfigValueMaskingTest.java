@@ -152,7 +152,7 @@ class ConfigValueMaskingTest {
                 mock(ConfigurationLevelResolver.class),
                 mock(org.springframework.beans.factory.ObjectProvider.class),
                 mock(org.springframework.beans.factory.ObjectProvider.class),
-                new EventStreamTokenService(properties));
+                new EventStreamTokenService(properties.getLive()));
     }
 
     private JSONObject values() {

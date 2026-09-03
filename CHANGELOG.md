@@ -8,6 +8,22 @@
 
 ### 变更
 
+- **网络、线程池、日志、直播这四节配置改为各自一个独立的类。**（写插件的人需要看这一条）
+  **配置文件一个字不用改**：键名、默认值、界面上的字段与说明全部照旧，
+  `starbot.core.network.*`、`starbot.core.network-thread.*`、`starbot.core.log.*`、
+  `starbot.core.live.*` 仍是原来那几个键。用不着写插件的人不必看这一条。
+  <br>改的是代码里的落点：这四节此前是 `StarBotCoreProperties` 的内部类，
+  而那个类同时还装着控制台口令、告警通道、绘图字体等一整套配置——
+  只为读一个网络超时值，就得依赖整份配置。现在它们是四个独立的类：
+  `NetworkProperties`、`NetworkThreadProperties`、`LogProperties`、`LiveProperties`，
+  各自不带任何框架注解，用哪一节就依赖哪一节。
+  <br>**插件迁移**：把 `StarBotCoreProperties.Network` 这类类型引用换成对应的新类名
+  （`.Network` → `NetworkProperties`，`.NetworkThread` → `NetworkThreadProperties`，
+  `.Log` → `LogProperties`，`.Live` → `LiveProperties`，均在
+  `com.starlwr.bot.core.config` 包下）。经 `StarBotCoreProperties` 取值的写法
+  （如 `properties.getNetwork().getConnectTimeout()`）**不受影响**，一个字都不用动；
+  也可以直接注入其中某一个类，容器里四个都在。
+
 - **直播平台不再由一份写死的清单列出，改由各直播平台插件自己登记。**（写插件的人需要看这一条）
   `LivePlatform` 此前是一个枚举，里面列着八个平台名，其中七个一行实现也没有——
   装了这套程序的人在界面上看得见那些名字，填下去却什么也不会发生；而想接一个不在名单里的平台，

@@ -2,7 +2,7 @@ package com.starlwr.bot.core.service;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.LiveProperties;
 import com.starlwr.bot.core.model.EventStreamToken;
 import com.starlwr.bot.core.util.SecureToken;
 import lombok.NonNull;
@@ -58,8 +58,8 @@ public class EventStreamTokenService {
     private final Path file;
 
     @Autowired
-    public EventStreamTokenService(StarBotCoreProperties properties) {
-        this.file = Path.of(properties.getLive().getLiveDataPath()).toAbsolutePath()
+    public EventStreamTokenService(LiveProperties live) {
+        this.file = Path.of(live.getLiveDataPath()).toAbsolutePath()
                 .getParent().resolve(FILE_NAME);
     }
 

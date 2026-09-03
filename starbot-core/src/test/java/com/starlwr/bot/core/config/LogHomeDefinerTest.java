@@ -58,7 +58,7 @@ class LogHomeDefinerTest {
 
     @Test
     @DisplayName("① 没人指定 ＋ 当前工作目录在工作树内 —— 改写到开发落点")
-    void 默认落树内必改写() throws IOException {
+    void defaultInsideWorktreeIsRewritten() throws IOException {
         Path tree = worktree("repo");
         Path home = Files.createDirectories(tmp.resolve("home"));
 
@@ -70,7 +70,7 @@ class LogHomeDefinerTest {
 
     @Test
     @DisplayName("② 显式指定 LOG_HOME 且落在工作树内 —— 拒绝，不替人改主意")
-    void 显式落树内必拒() throws IOException {
+    void explicitInsideWorktreeIsRefused() throws IOException {
         Path tree = worktree("repo");
         Path home = Files.createDirectories(tmp.resolve("home"));
         Map<String, String> vars = Map.of(LogHomeDefiner.KEY, tree.resolve("var").toString());
@@ -84,7 +84,7 @@ class LogHomeDefinerTest {
 
     @Test
     @DisplayName("③ 逃生阀带非空理由 —— 放行，落原地")
-    void 逃生阀带理由放行() throws IOException {
+    void escapeHatchWithReasonPasses() throws IOException {
         Path tree = worktree("repo");
         Path home = Files.createDirectories(tmp.resolve("home"));
         Map<String, String> vars = Map.of(
@@ -96,7 +96,7 @@ class LogHomeDefinerTest {
 
     @Test
     @DisplayName("③ 之二 —— 开关按下但理由为空，按拒绝处理（显式那支）")
-    void 逃生阀理由为空仍拒() throws IOException {
+    void escapeHatchWithoutReasonStillRefused() throws IOException {
         Path tree = worktree("repo");
         Path home = Files.createDirectories(tmp.resolve("home"));
         Map<String, String> vars = new HashMap<>();
@@ -109,7 +109,7 @@ class LogHomeDefinerTest {
 
     @Test
     @DisplayName("③ 之三 —— 理由为空时，默认那支也不许被放行成「落原地」")
-    void 逃生阀理由为空默认支仍改写() throws IOException {
+    void blankReasonStillRewritesDefaultBranch() throws IOException {
         Path tree = worktree("repo");
         Path home = Files.createDirectories(tmp.resolve("home"));
         Map<String, String> vars = new HashMap<>();
@@ -122,21 +122,21 @@ class LogHomeDefinerTest {
 
     @Test
     @DisplayName("④ 阴性 —— 生产形状返回 \".\"，与本改动之前逐字节相同的落点")
-    void 生产形状返回点() throws IOException {
-        Path 生产 = Files.createDirectories(tmp.resolve("opt").resolve("starbot"));
+    void productionShapeReturnsDot() throws IOException {
+        Path production = Files.createDirectories(tmp.resolve("opt").resolve("starbot"));
         Path home = Files.createDirectories(tmp.resolve("home"));
 
-        assertEquals(".", definer(生产, home, Map.of()).resolve(),
+        assertEquals(".", definer(production, home, Map.of()).resolve(),
                 "上溯不到 .git 就一字不改——logs/ 仍相对当前工作目录，systemd 与容器两条路径不变");
 
         Map<String, String> vars = Map.of(LogHomeDefiner.KEY, "/var/log/novabot");
-        assertEquals("/var/log/novabot", definer(生产, home, vars).resolve(),
+        assertEquals("/var/log/novabot", definer(production, home, vars).resolve(),
                 "生产形状下显式指定的值也原样返回");
     }
 
     @Test
     @DisplayName("⑤ 两把守卫共用同一对逃生阀 —— 同一件事不该有两个开关")
-    void 共用逃生阀() {
+    void guardsShareOneEscapeHatch() {
         assertEquals(DataLocationGuard.ALLOW_ENV, WorktreeGuard.ALLOW_ENV);
         assertEquals(DataLocationGuard.REASON_ENV, WorktreeGuard.REASON_ENV);
         assertEquals(DataLocationGuard.DEV_DIR, WorktreeGuard.DEV_DIR);

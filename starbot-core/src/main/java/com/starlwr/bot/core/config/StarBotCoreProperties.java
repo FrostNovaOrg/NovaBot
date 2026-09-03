@@ -1,32 +1,54 @@
 package com.starlwr.bot.core.config;
 
-import ch.qos.logback.classic.Level;
 import com.starlwr.bot.core.model.Sender;
 import com.starlwr.bot.core.model.TextWithStyle;
 import jakarta.annotation.PostConstruct;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.NestedConfigurationProperty;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.util.*;
 
 /**
  * StarBotCore 配置类
+ * <p>
+ * <b>本类是配置的绑定根，不是一份按层划好的配置</b>：{@code starbot.core.*} 下的每一节
+ * 都挂在这里，从连接超时到控制台口令、从绘图字体到告警通道。<b>各节自身的层次并不相同</b>——
+ * 网络、线程池、日志、直播这四节是事件源自己要用的，其余各节服务的是推送、控制台、绘图这些外围功能。
+ * <p>
+ * 因此按层要用到的那几节<b>已经单独成件</b>（{@link NetworkProperties}、
+ * {@link NetworkThreadProperties}、{@link LogProperties}、{@link LiveProperties}），
+ * 各自是不带任何框架注解的纯数据类，用它的地方直接依赖那一件即可，<b>不必再依赖整份配置</b>。
+ * 配置键一字未动：它们仍是本类的字段，绑定与装配也仍在本类这一侧完成。
+ * <p>
+ * 其余各节仍以内部类的形式留在本类内——它们的使用方与本类同属一侧，单独成件换不到任何解耦。
  */
 @Getter
 @Setter
 @Configuration
 @ConfigurationProperties(prefix = "starbot.core")
 public class StarBotCoreProperties {
+    /**
+     * 单独成件的那几节要显式标注
+     * <p>
+     * 配置元数据处理器只会自动下钻到<b>内部类</b>形态的那一节；单独成件之后，
+     * 不标这一个注解，这几节的配置项就<b>整节从元数据里消失</b>——
+     * 程序照常读得到值，控制台的字段表却少了整整一块，而它不会报任何错。
+     */
     @Getter
-    private final NetworkThread networkThread = new NetworkThread();
+    @NestedConfigurationProperty
+    private final NetworkThreadProperties networkThread = new NetworkThreadProperties();
 
     @Getter
-    private final Log log = new Log();
+    @NestedConfigurationProperty
+    private final LogProperties log = new LogProperties();
 
     @Getter
-    private final Network network = new Network();
+    @NestedConfigurationProperty
+    private final NetworkProperties network = new NetworkProperties();
 
     @Getter
     private final DataSource datasource = new DataSource();
@@ -35,7 +57,8 @@ public class StarBotCoreProperties {
     private final Plugin plugin = new Plugin();
 
     @Getter
-    private final Live live = new Live();
+    @NestedConfigurationProperty
+    private final LiveProperties live = new LiveProperties();
 
     @Getter
     private final Paint paint = new Paint();
@@ -543,90 +566,6 @@ public class StarBotCoreProperties {
     }
 
     /**
-     * 网络线程相关
-     */
-    @Getter
-    @Setter
-    public static class NetworkThread {
-        /**
-         * 线程池核心线程数
-         */
-        private int corePoolSize = 4;
-
-        /**
-         * 线程池最大线程数
-         */
-        private int maxPoolSize = 24;
-
-        /**
-         * 线程池任务队列容量
-         */
-        private int queueCapacity = 64;
-
-        /**
-         * 非核心线程存活时间，单位：秒
-         */
-        private int keepAliveSeconds = 60;
-    }
-
-    /**
-     * 日志相关
-     */
-    @Getter
-    @Setter
-    public static class Log {
-        /**
-         * 控制台日志级别
-         */
-        private Level console;
-
-        /**
-         * 文件日志级别
-         */
-        private Level file;
-
-        /**
-         * 是否记录事件日志
-         */
-        private boolean eventLog = false;
-
-        /**
-         * 是否记录网络请求日志
-         */
-        private boolean networkLog = false;
-
-        /**
-         * 网络日志的同类去重抑制窗口，单位：秒，设为 0 关闭抑制
-         * <p>
-         * 打开 {@code network-log} 之后每个请求写一行，而本程序的请求绝大多数是轮询：
-         * 三个房间十秒一轮，一小时上千行几乎一样的记录，**要查的那一条异常正好淹在里面**。
-         * 排障日志的用处取决于它读不读得下去。
-         * <p>
-         * 同类按「请求方法 + 去掉查询串的地址」判定；被抑制的条数攒着，
-         * 随下一条同类日志一起报出来。<b>失败一律放行，不参与抑制</b>——
-         * 抑制的目的就是让异常显出来。
-         */
-        private int networkLogSuppressWindow = 60;
-    }
-
-    /**
-     * 网络相关
-     */
-    @Getter
-    @Setter
-    public static class Network {
-        /**
-         * 网络请求连接超时时间，单位：秒
-         */
-        private int connectTimeout = 10;
-
-        /**
-         * 网络请求读取超时时间，单位：秒
-         */
-        private int readTimeout = 60;
-    }
-
-    /**
      * 数据源相关
      */
     @Getter
@@ -661,33 +600,6 @@ public class StarBotCoreProperties {
     }
 
     /**
-     * 直播相关
-     */
-    @Getter
-    @Setter
-    public static class Live {
-        /**
-         * 是否持久化直播数据至文件，仅使用默认直播数据服务时生效
-         */
-        private boolean saveLiveData = true;
-
-        /**
-         * 直播数据文件路径，仅使用默认直播数据服务时生效
-         */
-        private String liveDataPath = "data.json";
-
-        /**
-         * 自动保存直播数据间隔，单位：秒，仅使用默认直播数据服务时生效
-         */
-        private int autoSaveLiveDataInterval = 300;
-
-        /**
-         * 判定主播断线重连（下播后短时间内重新开播）的时间间隔，断线重连不会重置直播数据，单位：秒
-         */
-        private int reconnectInterval = 300;
-    }
-
-    /**
      * 绘图相关
      */
     @Getter
@@ -719,6 +631,47 @@ public class StarBotCoreProperties {
          * 默认收件邮箱
          */
         private String defaultTo;
+    }
+
+    /**
+     * 把单独成件的那几节各自登记为一个 bean
+     * <p>
+     * 用它们的地方于是可以只声明自己真正需要的那一节，而不是整份配置。
+     * 装配写在这里而不是在那几个类上加注解：<b>它们不带任何框架注解，这一点是有意的</b>——
+     * 一旦挂上 {@code @ConfigurationProperties}，同一批配置键就有了两个绑定入口，
+     * 编译期生成的配置元数据也会多出一份同名条目。
+     * @return 网络配置
+     */
+    @Bean
+    public NetworkProperties coreNetworkProperties() {
+        return network;
+    }
+
+    /**
+     * 网络线程池配置
+     * @return 网络线程池配置
+     */
+    @Bean
+    public NetworkThreadProperties coreNetworkThreadProperties() {
+        return networkThread;
+    }
+
+    /**
+     * 日志配置
+     * @return 日志配置
+     */
+    @Bean
+    public LogProperties coreLogProperties() {
+        return log;
+    }
+
+    /**
+     * 直播配置
+     * @return 直播配置
+     */
+    @Bean
+    public LiveProperties coreLiveProperties() {
+        return live;
     }
 
     @PostConstruct

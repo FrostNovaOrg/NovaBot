@@ -38,7 +38,7 @@ class EventTokenEndpointsTest {
     void setUp() {
         StarBotCoreProperties properties = new StarBotCoreProperties();
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
-        tokens = new EventStreamTokenService(properties);
+        tokens = new EventStreamTokenService(properties.getLive());
 
         // 构造器只做赋值，其余依赖对本组用例毫无参与，全部给桩
         controller = new ConfigUiController(

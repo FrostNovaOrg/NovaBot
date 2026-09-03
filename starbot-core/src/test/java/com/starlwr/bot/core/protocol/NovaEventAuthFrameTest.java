@@ -47,7 +47,7 @@ class NovaEventAuthFrameTest {
     void setUp() {
         StarBotCoreProperties properties = new StarBotCoreProperties();
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
-        tokens = new EventStreamTokenService(properties);
+        tokens = new EventStreamTokenService(properties.getLive());
         stream = new NovaEventStream(64);
         endpoint = new NovaEventEndpoint(stream, tokens);
     }

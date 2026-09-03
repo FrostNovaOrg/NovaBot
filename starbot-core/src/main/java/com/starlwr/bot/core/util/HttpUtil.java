@@ -2,7 +2,7 @@ package com.starlwr.bot.core.util;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.LogProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,7 +32,7 @@ public class HttpUtil {
 
     private final RestTemplate restTemplate;
 
-    private final StarBotCoreProperties properties;
+    private final LogProperties logConfig;
 
     private static final Logger networkLogger = LoggerFactory.getLogger("NetworkLogger");
 
@@ -47,10 +47,10 @@ public class HttpUtil {
     private final NetworkLogThrottle networkLogThrottle = new NetworkLogThrottle();
 
     @Autowired
-    public HttpUtil(@Qualifier("networkThreadPool") ThreadPoolTaskExecutor executor, RestTemplate restTemplate, StarBotCoreProperties properties) {
+    public HttpUtil(@Qualifier("networkThreadPool") ThreadPoolTaskExecutor executor, RestTemplate restTemplate, LogProperties logConfig) {
         this.executor = executor;
         this.restTemplate = restTemplate;
-        this.properties = properties;
+        this.logConfig = logConfig;
     }
 
     // 这里原先有一个 getRandomUserAgent() 和一串 2007 年的浏览器 UA
@@ -97,7 +97,7 @@ public class HttpUtil {
             return restTemplate.exchange(uri, method, httpEntity, responseType);
         } catch (Exception e) {
             // 失败一律放行，不看抑制决定：抑制的目的就是让异常显出来
-            if (properties.getLog().isNetworkLog()) {
+            if (logConfig.isNetworkLog()) {
                 long cost = System.currentTimeMillis() - startTime;
                 // 末参必须是打码副本：交原异常进去，logback 会附栈迹，
                 // 而栈迹首行是 e.toString()，里面是未打码的原始 message
@@ -122,7 +122,7 @@ public class HttpUtil {
             return response;
         } catch (Exception e) {
             // 失败一律放行，不看抑制决定
-            if (properties.getLog().isNetworkLog()) {
+            if (logConfig.isNetworkLog()) {
                 long cost = System.currentTimeMillis() - startTime;
                 // 异常本身也要打码：它的 message 里常带着触发失败的完整地址
                 // 末参必须是打码副本：交原异常进去，logback 会附栈迹，
@@ -132,7 +132,7 @@ public class HttpUtil {
             }
             throw e;
         } finally {
-            if (properties.getLog().isNetworkLog()) {
+            if (logConfig.isNetworkLog()) {
                 long cost = System.currentTimeMillis() - startTime;
                 if (response == null) {
                     // 无结果同样是失败，照样放行
@@ -150,11 +150,11 @@ public class HttpUtil {
      * 一次请求只决定一次，{@code ->} 与 {@code <-} 共用同一个决定，保证成对出现。
      */
     private NetworkLogThrottle.Decision decideNetworkLog(HttpMethod method, String url, long nowMillis) {
-        if (!properties.getLog().isNetworkLog()) {
+        if (!logConfig.isNetworkLog()) {
             return new NetworkLogThrottle.Decision(false, 0);
         }
         return networkLogThrottle.decide(method.name(), url,
-                properties.getLog().getNetworkLogSuppressWindow(), nowMillis);
+                logConfig.getNetworkLogSuppressWindow(), nowMillis);
     }
 
     /**

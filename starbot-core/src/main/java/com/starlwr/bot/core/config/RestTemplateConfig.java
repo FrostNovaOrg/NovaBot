@@ -26,17 +26,17 @@ import java.time.temporal.ChronoUnit;
  */
 @Configuration
 public class RestTemplateConfig {
-    private final StarBotCoreProperties properties;
+    private final NetworkProperties network;
 
     @Autowired
-    public RestTemplateConfig(StarBotCoreProperties properties) {
-        this.properties = properties;
+    public RestTemplateConfig(NetworkProperties network) {
+        this.network = network;
     }
 
     @Bean
     public RestTemplate restTemplate() {
         HttpClient client = HttpClient.newBuilder()
-                .connectTimeout(Duration.of(properties.getNetwork().getConnectTimeout(), ChronoUnit.SECONDS))
+                .connectTimeout(Duration.of(network.getConnectTimeout(), ChronoUnit.SECONDS))
                 // 跟随重定向：哔哩哔哩的部分接口会在鉴权后跳转
                 .followRedirects(HttpClient.Redirect.NORMAL)
                 // 固定 HTTP/1.1。JDK 默认是 HTTP_2，对明文 http:// 会先发一个带
@@ -49,7 +49,7 @@ public class RestTemplateConfig {
                 .build();
 
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(client);
-        factory.setReadTimeout(Duration.of(properties.getNetwork().getReadTimeout(), ChronoUnit.SECONDS));
+        factory.setReadTimeout(Duration.of(network.getReadTimeout(), ChronoUnit.SECONDS));
 
         return new RestTemplate(factory);
     }

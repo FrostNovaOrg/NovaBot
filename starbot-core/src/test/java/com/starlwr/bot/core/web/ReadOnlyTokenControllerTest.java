@@ -51,7 +51,7 @@ class ReadOnlyTokenControllerTest {
     void setUp() {
         StarBotCoreProperties properties = new StarBotCoreProperties();
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
-        tokens = new EventStreamTokenService(properties);
+        tokens = new EventStreamTokenService(properties.getLive());
     }
 
     /**
