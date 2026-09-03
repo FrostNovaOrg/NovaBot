@@ -51,7 +51,7 @@ class SecurityHeadersFilterTest {
     @Test
     @DisplayName("不加过滤器时响应上一条安全头都没有")
     void theRulerSeesTheAbsenceOfHeaders() throws Exception {
-        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/config/api/raw");
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/config/api/values");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         new MockFilterChain().doFilter(request, response);
@@ -91,7 +91,7 @@ class SecurityHeadersFilterTest {
     @Test
     @DisplayName("控制台与代签发口令的响应不许被存下来")
     void sensitiveNamespacesAreNotStored() throws Exception {
-        assertEquals("no-store", through("/config/api/raw").getHeader(HttpHeaders.CACHE_CONTROL));
+        assertEquals("no-store", through("/config/api/values").getHeader(HttpHeaders.CACHE_CONTROL));
         assertEquals("no-store", through("/config").getHeader(HttpHeaders.CACHE_CONTROL));
         assertEquals("no-store", through("/nova/readonly-token").getHeader(HttpHeaders.CACHE_CONTROL));
     }
@@ -167,8 +167,8 @@ class SecurityHeadersFilterTest {
     @Test
     @DisplayName("处理链中途提交响应时，头仍在")
     void headersSurviveACommittedResponse() throws Exception {
-        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/config/api/raw");
-        request.setRequestURI("/config/api/raw");
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/config/api/values");
+        request.setRequestURI("/config/api/values");
         StrictResponse response = new StrictResponse();
 
         new SecurityHeadersFilter(PREFIXES).doFilter(request, response, (req, res) -> {

@@ -2,7 +2,7 @@
  * 推送规则页：主播卡片、推送目标、消息模板与版式选项
  */
 
-import {$, api, el, esc, markDirty, say} from './core.js';
+import {$, api, dropDisplayOnly, el, esc, markDirty, say} from './core.js';
 import {store} from './store.js';
 
 // 插件新增处理器时勾选项自动出现，前端不硬编码任何类名。
@@ -364,33 +364,11 @@ export async function addStreamer() {
   }
 }
 
-// 下划线开头的字段仅供界面展示（昵称、头像等），不应写进配置文件
+// 下划线开头的字段仅供界面展示（昵称、头像等），不应写进配置文件。
+// 「哪些字段只是给人看的」这条规则只有 dropDisplayOnly 一份：写两份的话，
+// 改动计数与真正写盘的内容会按两套规则算，于是「有改动却存不出东西」这种事没人查得出来
 export function serializePush() {
-  return JSON.stringify(store.pushData, (key, value) => key.startsWith('_') ? undefined : value, 2);
-}
-
-export function toggleAdvanced() {
-  if (!store.advancedMode) {
-    $('#datasource').value = serializePush();
-  } else {
-    try {
-      store.pushData = JSON.parse($('#datasource').value);
-      renderStreamers();
-    } catch (e) {
-      say('原始 JSON 格式有误，无法切回表单：' + e.message, 'err');
-      return;
-    }
-  }
-
-  store.advancedMode = !store.advancedMode;
-  $('#advanced').style.display = store.advancedMode ? 'block' : 'none';
-  $('#streamers').style.display = store.advancedMode ? 'none' : 'block';
-  $('#push-toolbar').querySelectorAll('input,button,select').forEach(elm => {
-    if (elm.id !== 'toggle-advanced') elm.disabled = store.advancedMode;
-  });
-  // 回到表单模式时重摆一次：一个平台都没注册的话，那一行本来就该是停用的
-  if (!store.advancedMode) renderPlatforms();
-  $('#toggle-advanced').textContent = store.advancedMode ? '返回表单编辑' : '高级：编辑原始 JSON';
+  return JSON.stringify(store.pushData, dropDisplayOnly, 2);
 }
 
 // 配置文件里只有 uid，昵称需要另行补全才能在界面上显示

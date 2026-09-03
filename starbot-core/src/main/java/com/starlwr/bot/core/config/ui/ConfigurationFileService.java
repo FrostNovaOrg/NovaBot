@@ -370,6 +370,19 @@ public class ConfigurationFileService {
     }
 
     /**
+     * 配置文件的绝对路径，供界面显示「到服务器上改哪个文件」
+     * <p>
+     * 界面上不再提供配置文件编辑，取而代之的是一行路径。这行路径必须由本服务给出：
+     * 界面自己拼一份的话，在换过工作目录或用 {@code -Dspring.config.location} 指过别处的部署里
+     * 会指到一个并不生效的文件上，而使用者照着改完发现「怎么改都不生效」，
+     * 却看不出是路径显示错了。
+     * @return 绝对路径
+     */
+    public String describeConfigPath() {
+        return configPath.toAbsolutePath().normalize().toString();
+    }
+
+    /**
      * 读取配置文件原始文本
      * @return 原始文本
      * @throws IOException 读取失败时抛出
@@ -379,7 +392,11 @@ public class ConfigurationFileService {
     }
 
     /**
-     * 覆盖写入配置文件原始文本，供界面中的高级编辑使用
+     * 覆盖写入配置文件原始文本
+     * <p>
+     * ⚠️ 控制台已不再提供配置文件编辑，本方法当前没有调用方。整份覆盖的正门是安全模式
+     * （{@code SafeModeServer}），那条路只在程序起不来时才走得到。
+     * 要重新给它接一个界面入口之前，请先读设置页底部那行路径旁边的理由。
      * @param content 新内容
      * @throws IOException 写入失败时抛出
      */

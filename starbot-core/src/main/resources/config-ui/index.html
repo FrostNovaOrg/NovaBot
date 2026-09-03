@@ -42,8 +42,8 @@
       <a href="#/settings" data-page="settings"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v1.6M8 12.6v1.6M14.2 8h-1.6M3.4 8H1.8M12.4 3.6l-1.1 1.1M4.7 11.3l-1.1 1.1M12.4 12.4l-1.1-1.1M4.7 4.7 3.6 3.6"/></svg>设置</a>
     </nav>
     <!--
-      版本位。值得由后端把构建信息下发下来才填得上（/api/status 目前没有这个字段），
-      因此这里先只落位：脚本拿得到 version 就显示，拿不到只显示产品名。
+      版本位。值由 /api/status 的 version 下发，真源是构建期生成的 build-info；
+      从源码直接跑（未经打包）时那个字段是空串，此处只显示产品名。
       在界面里写死一个版本号是更坏的选择——它与产物脱节的那一天不会有任何提示。
     -->
     <div class="verline"><span id="side-version">NovaBot</span></div>
@@ -96,15 +96,9 @@
         <select id="add-platform" style="display:none"></select>
         <input id="add-uid" placeholder="输入 uid 或粘贴个人空间链接">
         <button id="add-streamer" type="button">添加主播</button>
-        <button id="toggle-advanced" type="button" style="margin-left:auto">高级：编辑原始 JSON</button>
       </div>
 
       <div id="streamers"></div>
-
-      <div id="advanced" style="display:none">
-        <p class="hint">直接编辑 datasource.json。自定义插件提供的处理器可在此配置。</p>
-        <textarea class="full" id="datasource" spellcheck="false"></textarea>
-      </div>
     </div>
 
     <!--
@@ -260,21 +254,16 @@
       </div>
       <div id="groups"></div>
 
-      <details class="adv" id="rawbox">
-        <summary>高级：直接编辑配置文件</summary>
-        <div class="inner">
-          <div class="warn">直接编辑 application.yml，适用于上方表单未覆盖的场景（例如列表类配置项）。
-            保存前会校验 YAML 语法与字段类型，并自动备份原文件；改坏了可用下方的历史备份回滚。
-            <br><b>注意：这里显示的是文件原文，口令、令牌与密钥都是明文</b>——要编辑就必须看得到。
-            正在直播或有人在旁边时，别展开这一段。</div>
-          <div class="backups" id="backups"></div>
-          <textarea class="full" id="rawyml" spellcheck="false"></textarea>
-          <div class="backups" style="margin-top:12px">
-            <button id="raw-save" type="button">保存配置文件</button>
-            <span>与底部的保存按钮相互独立，避免误把整份文件覆盖出去</span>
-          </div>
-        </div>
-      </details>
+      <!--
+        页底只留配置文件在哪，不提供编辑。
+        在控制台上直接改整份 application.yml 这条路已经撤了：它改坏之后程序下次起不来，
+        而控制台随之一同挂掉——远程部署时人就被挡在门外。要直接改文件请到服务器上改，
+        写坏之后的正门是安全模式（程序起不来时它接管端口）。
+      -->
+      <div class="nv-card cfgpath">
+        <span>配置文件在 <code id="cfg-path">读取中…</code>。要直接改的话，到服务器上改；控制台不提供编辑，改完重启生效。</span>
+        <button class="ghost" id="cfg-copy" type="button">复制路径</button>
+      </div>
     </div>
 
     <!--
@@ -303,9 +292,18 @@
   </main>
 </div>
 
-<div class="bar">
+<!--
+  底部改动条：所有页面共用这一条，而不是每页各摆一套保存按钮。
+  改了几处、存不存、要不要丢掉，是同一个问题的三个面，分散在各页上问就得各答一遍。
+
+  「其中 M 处需重启生效」与「现在重启」还没有位置：每个配置项是即时生效还是重启生效，
+  这件事眼下没有任何地方记着，编一个数出来只会让人照着它做决定。等配置项补上生效时机的
+  元数据之后，那半句接在 #change-count 后面即可。
+-->
+<div class="bar" id="changebar">
   <span class="status" id="status-text"></span>
-  <button class="ghost" id="reload">重新载入</button>
+  <span class="change-count" id="change-count"></span>
+  <button class="ghost" id="discard" disabled>放弃</button>
   <button class="primary" id="save" disabled>保存</button>
 </div>
 <!--

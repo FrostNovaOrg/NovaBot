@@ -7,8 +7,8 @@ import {loadAnalytics} from './analytics.js';
 import {bindBotForm, botFormHtml, fillBotForms, sendTestMessage} from './bot.js';
 import {$, api, el, esc, markDirty, say} from './core.js';
 import {loadHistory, loadState, refreshWizardState, renderStatus, renderWizard, runSelfTest, setWizardCollapsed, togglePush} from './overview.js';
-import {addStreamer, decoratePushData, renderPlatforms, renderStreamers, toggleAdvanced} from './push.js';
-import {renderBackups, renderGeneral, save, saveRaw} from './settings.js';
+import {addStreamer, decoratePushData, renderPlatforms, renderStreamers, serializePush} from './push.js';
+import {copyConfigPath, discard, renderConfigPath, renderGeneral, save} from './settings.js';
 import {store} from './store.js';
 import {clearIssuedToken, loadTokens} from './tokens.js';
 
@@ -109,28 +109,35 @@ export async function load() {
     store.dirty = {};
     renderGeneral();
 
-    const [d, y, st, b, h, p] = await Promise.all([
-      api('/datasource'), api('/raw'), api('/status'), api('/backups'), api('/handlers'), api('/platforms')]);
-    $('#datasource').value = d.content || '[]';
-    $('#rawyml').value = y.content || '';
+    const [d, st, h, p] = await Promise.all([
+      api('/datasource'), api('/status'), api('/handlers'), api('/platforms')]);
     renderStatus(st);
+    renderConfigPath(st.configPath);
 
     store.handlerList = h.handlers || [];
     store.senderList = st.senders || [];
     // 能添加哪些平台的主播由已注册的数据源服务决定，界面不替任何一个平台作主
     store.platforms = p.platforms || [];
     renderPlatforms();
+    // 推送配置解析不了是这一趟里唯一「载入成功了但有话要说」的情况。
+    // 记一位是因为末尾那句 say('') 会把状态栏清空——不记的话，这条提示刚显示就被自己抹掉
+    let pushBroken = false;
     try {
       store.pushData = JSON.parse(d.content || '[]');
+      // 快照要取序列化之后的形态，与改动计数比的是同一把尺；
+      // 直接存 d.content 的话，文件里的缩进与键序都会算成「改动」
+      store.pushSaved = serializePush();
     } catch (e) {
-      // 文件内容不合法时退回高级模式，让使用者直接修，而不是把错误内容悄悄吞掉
+      // 内容不合法时不在界面上开一个编辑器让人现场改文件——那条路已经撤了。
+      // 这里只把话说清楚：改哪个文件、在哪儿改，路径就显示在设置页底部
       store.pushData = [];
-      if (!store.advancedMode) toggleAdvanced();
-      say('推送配置不是合法 JSON，已切换到高级模式供你修正', 'err');
+      store.pushSaved = '[]';
+      pushBroken = true;
+      say('推送配置 datasource.json 不是合法 JSON，界面上暂时看不到已配好的主播。'
+        + '请到服务器上修正该文件后重新载入', 'err');
     }
     renderStreamers();
     decoratePushData();
-    renderBackups(b.backups);
     refreshPages();
     loadHistory();
     loadState();
@@ -140,7 +147,7 @@ export async function load() {
 
     const count = store.schema.reduce((n, g) => n + g.fields.length, 0);
     $('#head-sub').textContent = count + ' 个配置项 · ' + store.schema.length + ' 个分组';
-    say('');
+    if (!pushBroken) say('');
   } catch (e) {
     say('载入失败：' + e.message, 'err');
   }
@@ -151,7 +158,7 @@ export async function load() {
  * 六页导航的路由名 → 该页当家的那个旧页签
  *
  * store.tab 仍取旧页签名，没有跟着改成路由名：它是插件页读得到的东西
- * （哔哩哔哩页据 `store.tab === 'overview'` 决定要不要接着轮询二维码），
+ * （带扫码登录的那类插件页据 `store.tab === 'overview'` 决定要不要接着轮询二维码），
  * 换一套取值就是悄悄改了对插件的约定，而表现是那张二维码扫完不自己变。
  *
  * 一页装下两个旧页签时，取有草稿态的那个：底部保存按钮照 store.tab 决定存去哪
@@ -257,14 +264,14 @@ document.querySelectorAll('#nav a').forEach(a => {
 });
 
 $('#save').addEventListener('click', save);
-$('#raw-save').addEventListener('click', saveRaw);
+$('#discard').addEventListener('click', discard);
+$('#cfg-copy').addEventListener('click', copyConfigPath);
 $('#test-send').addEventListener('click', sendTestMessage);
 $('#selftest-run').addEventListener('click', runSelfTest);
 // 切换显示范围时保留已改动的字段：重绘只影响可见性，不该丢掉未保存的编辑
 $('#show-advanced').addEventListener('change', () => { renderGeneral(); markDirty(); });
 $('#toggle-push').addEventListener('click', togglePush);
 $('#add-streamer').addEventListener('click', addStreamer);
-$('#toggle-advanced').addEventListener('click', toggleAdvanced);
 $('#add-uid').addEventListener('keydown', e => { if (e.key === 'Enter') addStreamer(); });
 $('#wizard-toggle').addEventListener('click', () => {
   store.wizardTouched = true;
@@ -273,7 +280,6 @@ $('#wizard-toggle').addEventListener('click', () => {
 $('#ana-view').addEventListener('change', loadAnalytics);
 $('#ana-period').addEventListener('change', loadAnalytics);
 $('#ana-uid').addEventListener('change', loadAnalytics);
-$('#reload').addEventListener('click', load);
 /**
  * 未绑定验证器时的引导卡片
  *

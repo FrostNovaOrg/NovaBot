@@ -264,7 +264,8 @@ starbot:
 
 本程序对所有响应加 `X-Content-Type-Options: nosniff` 与 `X-Frame-Options: SAMEORIGIN`，
 并对 `/config` 与 `/nova` 两个命名空间加 `Cache-Control: no-store`
-（前者是控制台，`/config/api/raw` 返回的是配置文件原文；后者是代签发只读口令，响应体里就是那把口令）。
+（前者是控制台，`/config/api/values` 这类端点返回的是配置项的当前值；后者是代签发只读口令，
+响应体里就是那把口令）。
 
 `X-Frame-Options` 取 `SAMEORIGIN` 而非 `DENY` 是**有意的**：点击劫持的威胁模型是跨站嵌套，
 `SAMEORIGIN` 已经挡住；`DENY` 多防的只有同源嵌套，而同源嵌套是本程序自己在用的形态。

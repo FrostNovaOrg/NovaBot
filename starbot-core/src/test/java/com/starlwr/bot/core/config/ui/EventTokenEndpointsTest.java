@@ -57,7 +57,8 @@ class EventTokenEndpointsTest {
                 mock(ConfigurationLevelResolver.class),
                 mock(org.springframework.beans.factory.ObjectProvider.class),
                 mock(org.springframework.beans.factory.ObjectProvider.class),
-                tokens);
+                tokens,
+                mock(org.springframework.beans.factory.ObjectProvider.class));
     }
 
     @Test

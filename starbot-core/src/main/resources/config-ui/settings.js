@@ -141,38 +141,33 @@ export function renderGeneral() {
     : '共 ' + shown + ' 项';
 }
 
-// ============ 机器人连接表单 ============
-// 同一份表单在「首次配置」向导与「机器人」页签下各出现一次。
+/**
+ * 设置页底部那行配置文件路径
+ *
+ * 控制台不再提供配置文件编辑，这一行是「要直接改文件的话去哪儿改」的唯一答案，
+ * 因此路径必须来自服务端对配置文件的实际定位，界面不自己拼一个。
+ * @param path 配置文件的绝对路径，来自 /status
+ */
+export function renderConfigPath(path) {
+  $('#cfg-path').textContent = path || '（未能确定）';
+  $('#cfg-copy').disabled = !path;
+}
 
-// 每次保存都会留一份带时间戳的备份，改坏了可以直接滚回去
-export function renderBackups(names) {
-  const box = $('#backups');
-  if (!names || !names.length) {
-    box.innerHTML = '<span>暂无历史备份，每次保存会自动生成一份</span>';
-    return;
+/**
+ * 复制路径
+ *
+ * 剪贴板接口只在安全上下文（https 或 localhost）里存在。面板常经内网 http 访问，
+ * 那里 navigator.clipboard 直接是 undefined——不兜底的话，点下去毫无反应，
+ * 而使用者无从知道是没复制上还是复制了。
+ */
+export async function copyConfigPath() {
+  const path = $('#cfg-path').textContent;
+  try {
+    await navigator.clipboard.writeText(path);
+    say('已复制路径', 'ok');
+  } catch (e) {
+    say('这个浏览器不让脚本写剪贴板，请手动复制：' + path, 'err');
   }
-
-  box.innerHTML = '<span>历史备份</span>'
-    + '<select id="backup-pick">'
-    + names.map(n => '<option value="' + esc(n) + '">' + esc(n) + '</option>').join('')
-    + '</select><button id="backup-restore" type="button">回滚到此版本</button>';
-
-  $('#backup-restore').addEventListener('click', async () => {
-    const name = $('#backup-pick').value;
-    if (!confirm('确定回滚至 ' + name + ' 吗？当前内容会先备份一份。')) return;
-    say('回滚中…');
-    try {
-      const res = await api('/backups/restore', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name })
-      });
-      say(res.message || (res.success ? '已回滚' : '回滚失败'), res.success ? 'ok' : 'err');
-      if (res.success) await load();
-    } catch (e) {
-      say('回滚失败：' + e.message, 'err');
-    }
-  });
 }
 
 // 校验不通过时逐条列出问题：只说「保存失败」而不说哪里错，使用者无从下手
@@ -209,7 +204,7 @@ export async function save() {
       res = await api('/datasource', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: store.advancedMode ? $('#datasource').value : serializePush() })
+        body: JSON.stringify({ content: serializePush() })
       });
     }
 
@@ -223,30 +218,17 @@ export async function save() {
   markDirty();
 }
 
-// 整份 YAML 的保存单独成一个按钮：它覆盖的是文件全文，
-// 与表单里逐项改动不是一回事，混用同一个按钮迟早会误把旧内容盖回去
-export async function saveRaw() {
-  $('#raw-save').disabled = true;
-  showIssues(null);
-  say('保存中…');
-
-  try {
-    const res = await api('/raw', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: $('#rawyml').value })
-    });
-
-    showIssues(res.issues);
-    say(res.message || (res.success ? '已保存' : '保存失败'), res.success ? 'ok' : 'err');
-    if (res.success) {
-      const open = $('#rawbox').open;
-      await load();
-      $('#rawbox').open = open;   // 重新载入会重建内容，但展开状态是使用者的选择
-    }
-  } catch (e) {
-    say('保存失败：' + e.message, 'err');
-  }
-
-  $('#raw-save').disabled = false;
+/**
+ * 丢掉改过还没保存的内容，回到上一次保存时的样子
+ *
+ * 走的是整体重载而不是「把改动逐项撤回」：撤回要为每种草稿态各写一套还原逻辑，
+ * 而每加一种草稿态就多一处会漏掉的地方；重载则是把服务端的现值重新取一遍，
+ * 漏不掉任何一处。代价是一次往返，放弃改动本就不是高频动作。
+ */
+export async function discard() {
+  if (!confirm('放弃这些改动？改过还没保存的内容会全部回到上一次保存时的样子。')) return;
+  // 草稿态由 load 自己清。在这里先清一遍的话，重载失败时屏幕上还留着改过的值，
+  // 而计数已经归零——看起来像「改动被保存了」
+  await load();
+  say('已放弃全部改动');
 }

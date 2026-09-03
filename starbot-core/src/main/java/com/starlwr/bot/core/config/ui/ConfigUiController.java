@@ -29,6 +29,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.info.BuildProperties;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
@@ -165,6 +166,15 @@ public class ConfigUiController {
      */
     private final ObjectProvider<ConsolePageProvider> pageProviders;
 
+    /**
+     * 构建信息，版本号从这里来
+     * <p>
+     * 用 ObjectProvider 取：这个 Bean 由 build-info 生成的属性文件撑着，
+     * 从源码直接跑时它不存在。直接注入的话，控制台会在「没打过包」的环境里整个起不来——
+     * 而那正是开发时最常见的跑法。
+     */
+    private final ObjectProvider<BuildProperties> buildProperties;
+
     @Autowired
     public ConfigUiController(ConfigurationMetadataService metadataService,
                               ConfigurationFileService fileService,
@@ -181,7 +191,9 @@ public class ConfigUiController {
                               ConfigurationLevelResolver levelResolver,
                               ObjectProvider<BotConnectionTester> connectionTesters,
                               ObjectProvider<ConsolePageProvider> pageProviders,
-                              EventStreamTokenService eventStreamTokens) {
+                              EventStreamTokenService eventStreamTokens,
+                              ObjectProvider<BuildProperties> buildProperties) {
+        this.buildProperties = buildProperties;
         this.eventStreamTokens = eventStreamTokens;
         this.pageProviders = pageProviders;
         this.levelResolver = levelResolver;
@@ -487,56 +499,16 @@ public class ConfigUiController {
         }
     }
 
-    /**
-     * 读取 application.yml 原始内容
-     * @return 原始内容
+    /*
+     * 读写配置文件原文的那一对端点曾经在这里，5.1 撤掉了（确切路径见 CHANGELOG 与仓库历史）。
+     *
+     * 撤掉的理由是它的失败方向：控制台上直接改整份 application.yml，改坏了程序下次起不来，
+     * 而配置界面随之一同挂掉——远程部署时等于把自己锁在门外。表单逐项改与安全模式两条路
+     * 都不会走到这一步：前者只动被改的那几行，后者在程序起不来时才接管端口。
+     *
+     * 现在控制台只在设置页底部显示配置文件的路径，要直接改文件请到服务器上改。
+     * 写坏之后的正门是 SafeModeServer，别在这里重新开一个。
      */
-    @GetMapping("/api/raw")
-    public JSONObject raw() {
-        JSONObject result = new JSONObject();
-
-        try {
-            result.put("success", true);
-            result.put("content", fileService.readRaw());
-        } catch (IOException e) {
-            result.put("success", false);
-            result.put("message", "读取失败: " + e.getMessage());
-        }
-
-        return result;
-    }
-
-    /**
-     * 覆盖写入 application.yml 原始内容
-     * @param body 请求体，content 字段为新内容
-     * @return 保存结果
-     */
-    @PostMapping("/api/raw")
-    public JSONObject saveRaw(@RequestBody JSONObject body) {
-        JSONObject result = new JSONObject();
-        String content = body.getString("content");
-
-        // 写坏配置文件会让程序下次起不来，而配置界面随之一同挂掉，远程部署时等于把自己锁在门外，
-        // 因此宁可拒绝保存也不能让明显错误的内容落盘
-        List<String> issues = validator.validateApplicationYaml(content);
-        if (!issues.isEmpty()) {
-            result.put("success", false);
-            result.put("message", "配置有误，已拒绝保存");
-            result.put("issues", issues);
-            return result;
-        }
-
-        try {
-            fileService.writeRaw(content);
-            result.put("success", true);
-            result.put("message", "已保存，重启后生效");
-        } catch (IOException e) {
-            result.put("success", false);
-            result.put("message", "保存失败: " + e.getMessage());
-        }
-
-        return result;
-    }
 
     /**
      * 查询当前已配置的机器人连接信息
@@ -1065,39 +1037,13 @@ public class ConfigUiController {
         return result;
     }
 
-    /**
-     * 列出 application.yml 的历史备份
-     * @return 备份文件名列表，按时间倒序
+    /*
+     * 列出历史备份与回滚到某一份的那两个端点曾经在这里，5.1 随编辑器一并撤掉。
+     *
+     * 它们是配置文件编辑器的配套：编辑器撤了，「改坏了滚回去」这件事也就没有了界面入口。
+     * 备份本身照旧生成——每次保存前 ConfigurationFileService 都留一份带时间戳的 .bak，
+     * 那是文件系统上的东西，运维在服务器上直接改回来即可。
      */
-    @GetMapping("/api/backups")
-    public JSONObject backups() {
-        JSONObject result = new JSONObject();
-        result.put("success", true);
-        result.put("backups", fileService.listBackups());
-        return result;
-    }
-
-    /**
-     * 回滚 application.yml 至指定备份
-     * @param body 请求体，name 字段为备份文件名
-     * @return 回滚结果
-     */
-    @PostMapping("/api/backups/restore")
-    public JSONObject restoreBackup(@RequestBody JSONObject body) {
-        JSONObject result = new JSONObject();
-        String name = body.getString("name");
-
-        try {
-            fileService.restoreBackup(name);
-            result.put("success", true);
-            result.put("message", "已回滚至 " + name + "，重启后生效");
-        } catch (IOException e) {
-            result.put("success", false);
-            result.put("message", "回滚失败: " + e.getMessage());
-        }
-
-        return result;
-    }
 
     /**
      * 读取推送配置 datasource.json
@@ -1244,6 +1190,15 @@ public class ConfigUiController {
 
         result.put("users", users);
         result.put("runtime", runtimeInfo);
+        // 侧栏上显示的版本号。真源是构建期生成的 build-info，不在界面里另写一份——
+        // 写死一份的表现是升级之后侧栏还显示旧版本，而没有任何东西会发现这件事。
+        // 从源码直接跑（未经打包）时没有 build-info，此时回空串：界面上那一格空着，
+        // 比显示一个编出来的版本号要好
+        BuildProperties build = buildProperties.getIfAvailable();
+        result.put("version", build == null ? "" : Optional.ofNullable(build.getVersion()).orElse(""));
+        // 设置页底部要显示「配置文件在哪」。路径由定位配置文件的那个服务给，不在界面里写死：
+        // 写死的那一份在换了工作目录或用 -Dspring.config.location 指过别处时会指错地方
+        result.put("configPath", fileService.describeConfigPath());
         // 上限由后端下发，界面不再各写一份，免得两边对不上
         result.put("streamerLimit", MonitorLimit.MAX_STREAMERS);
         result.put("pushEnabled", properties.getPush().isEnabled());

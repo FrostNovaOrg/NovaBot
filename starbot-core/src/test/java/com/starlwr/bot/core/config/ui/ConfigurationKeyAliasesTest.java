@@ -109,7 +109,8 @@ class ConfigurationKeyAliasesTest {
                 mock(ConfigurationLevelResolver.class),
                 mock(org.springframework.beans.factory.ObjectProvider.class),
                 mock(org.springframework.beans.factory.ObjectProvider.class),
-                new EventStreamTokenService(properties.getLive()));
+                new EventStreamTokenService(properties.getLive()),
+                mock(org.springframework.beans.factory.ObjectProvider.class));
     }
 
     private JSONObject read() {
