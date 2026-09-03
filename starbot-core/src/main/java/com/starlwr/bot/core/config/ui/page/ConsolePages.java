@@ -29,6 +29,11 @@ public final class ConsolePages {
     public static final String SCRIPT_ROOT = "config-ui-pages/";
 
     /**
+     * 核心自己那份界面资源所在的目录，与 {@code /assets/{name}} 出口取资源的前缀是同一个串
+     */
+    private static final String CORE_ASSET_ROOT = "config-ui/";
+
+    /**
      * 合规的页签标识：小写字母打头的小写字母、数字与连字符，最长 32 位
      */
     private static final Pattern ID = Pattern.compile("[a-z][a-z0-9-]{0,31}");
@@ -74,6 +79,18 @@ public final class ConsolePages {
     }
 
     /**
+     * 这个脚本名是不是与核心自带的界面资源撞了
+     * <p>
+     * 用核心自己这个类的类加载器去问：插件在独立的类加载器里，这一问看不见插件 jar 里的东西，
+     * 问到的只会是核心那一份。
+     * @param script 插件申报的脚本文件名，已通过合规校验，不含路径分隔符
+     * @return 核心的 {@code config-ui/} 下有同名文件时为真
+     */
+    private static boolean collidesWithCoreAsset(String script) {
+        return ConsolePages.class.getClassLoader().getResource(CORE_ASSET_ROOT + script) != null;
+    }
+
+    /**
      * 整理注册清单
      * <p>
      * 不合规的直接丢掉并留一行日志：登记不上的页签在界面上根本不出现，
@@ -109,6 +126,25 @@ public final class ConsolePages {
             String script = read(provider, ConsolePageProvider::script, "脚本名");
             if (script == null || !SCRIPT.matcher(script).matches()) {
                 log.warn("控制台页面 {} 的脚本名不合规, 已忽略: {}", id, script);
+                continue;
+            }
+
+            // 🔴 撞名一律拒绝，不静默偏向任何一方。
+            //    /assets/{name} 那条出口是「核心的 config-ui/ 里有就用核心的，没有才回落到插件」，
+            //    因此同一个文件名底下会有两份内容，而**取到的是哪一份，请求方一点都看不出来**：
+            //    状态码 200、长度正常，只是内容出自另一处。2026-09-03 实测过这一形的一次真事——
+            //    某界面文件已从核心源码树删除改由插件提供，上一次构建留在 target/classes 里的旧文件
+            //    照旧进包，于是服务端一直回那份源码里根本不存在的旧页。
+            //
+            //    反过来「插件优先」也不成：核心的 core.js 一类是每张页面都 import 的公共文件，
+            //    让插件顶掉它，坏的是全部页面而不只是这一页——而且同样是静默的。
+            //    两个方向都是「悄悄选一方」，与病同形。
+            //
+            //    所以这一页不予登记：页签不出现，日志里点名说清是谁、撞的是哪个名字，两份文件都留在原处。
+            //    插件作者换个名字即可，而换名字这件事只有在他知道撞了名之后才做得到。
+            if (collidesWithCoreAsset(script)) {
+                log.warn("控制台页面 {} 申报的脚本名 {} 与配置界面自带的资源同名, 已忽略该页, 请改用其他文件名: {}",
+                        id, script, provider.getClass().getName());
                 continue;
             }
 

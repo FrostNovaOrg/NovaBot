@@ -78,10 +78,14 @@ ssh -L 7827:127.0.0.1:7827 用户名@服务器地址
 ```
 
 产物在 `dist/build/`：`StarBotCore.jar` 是主程序，`lib/` 为核心依赖，
-`plugins/` 与 `plugins-lib/` 为插件及其依赖。可选 `--skip-tests`、`--clean`。
+`plugins/` 与 `plugins-lib/` 为插件及其依赖。可选 `--skip-tests`。
 
 > 构建分两步：`starbot-plugin-processor` 是各插件模块在 build 阶段调用的 Maven 插件，
 > 而 Maven 不支持在同一 reactor 内构建并使用同一个插件，因此需先单独安装。`build.sh` 已处理。
+
+> 每次构建都先清理再重来（`--clean` 因此成了空动作，敲了也不报错）：Maven 不会替你删掉
+> 「源码里已经没有的东西」，上一次留下的旧文件照旧会被打进包，而包上看不出来。
+> 出包前还会核对包里的界面文件是否都出自当前源码，对不上就不出包。
 
 ## 插件开发
 

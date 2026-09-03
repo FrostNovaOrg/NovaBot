@@ -9,7 +9,7 @@
 # 用法:
 #   ./build.sh              构建并运行测试，产物输出至 dist/build
 #   ./build.sh --skip-tests 跳过测试
-#   ./build.sh --clean      构建前先清理
+#   ./build.sh --clean      已是默认行为，保留只为兼容旧命令行（见下方「陈旧产物」一段）
 #   ./build.sh --package    构建后把 dist/build 打成 dist/NovaBot-<版本>.tar.gz
 #   ./build.sh --from-ref=<ref>
 #                           从 git archive <ref> 导出的干净树里构建（发布必用，理由见下方注释）
@@ -21,7 +21,30 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
 MAVEN_ARGS=(-B)
-CLEAN=""
+# ── 陈旧产物：为什么这里恒为 clean ──────────────────────────────────────
+# 🔴 Maven 只往 target/ 里写，从不为「源码里已经没有的东西」做删除。源文件删掉或改名之后，
+#    上一次构建留下的那一份照旧躺在 target/classes 里，照旧被打进 jar，而**包上看不出来**。
+#
+#    2026-09-03 实测的形状：某个界面文件已从源码树删除并改由插件提供，
+#    未清理的 target/classes 里那份旧的仍在，进了包；而界面资源出口是「核心里有就用核心的，
+#    没有才回落到插件」——于是旧文件静默压过插件那一份，服务端回的是一份源码里根本不存在的页面，
+#    请求成功、状态码 200、长度也正常，只是内容来自上一个版本。
+#
+# 🔴 选 `mvn clean` 而不是「把那个目录删掉」：删目录只答得了今天这一例。
+#    真正的形状是「产物目录里可以有源码里没有的任何东西」——删掉的类留下的 .class、
+#    改过名的资源、上一版的 MANIFEST 条目，都是同一件事。一把只清一个目录的扫帚，
+#    下次换个位置照样漏，而漏掉时的表现仍然是「一切正常」。
+#
+#    代价是每次构建都从零编译。这条链本来就是出包用的（要跑整测、要打 tar），
+#    不是改一行看一眼的内循环；用它换「包里的东西都出自源码」这句话能当真，值。
+#
+# 🔴 清不到的地方要写明：`mvn clean` 走的是 reactor，而 build-tools/starbot-plugin-processor
+#    与 templates/starbot-example-plugin 都不在模块列表里（理由见 pom.xml:41-46）。
+#    前者由下面 [1/5] 用 -f 单独构建，那一步同样带上 clean；后者本脚本根本不构建，
+#    它的 target/ 里有什么都进不了 dist/build。
+#
+# --clean 保留为空动作：README 与 docs/architecture.md 里写过它，敲了不该报「未知参数」。
+CLEAN="clean"
 PACKAGE=""
 BUILD_REF="${NOVABOT_BUILD_REF:-}"
 # 转发给内层（干净树里那一次）构建的参数：--from-ref 自己不转发，否则会无限套娃
@@ -30,7 +53,7 @@ INNER_ARGS=()
 for arg in "$@"; do
     case "$arg" in
         --skip-tests) MAVEN_ARGS+=(-DskipTests); INNER_ARGS+=("$arg") ;;
-        --clean)      CLEAN="clean";             INNER_ARGS+=("$arg") ;;
+        --clean)      : "已是默认";                INNER_ARGS+=("$arg") ;;
         --package)    PACKAGE="1";               INNER_ARGS+=("$arg") ;;
         --from-ref=*) BUILD_REF="${arg#--from-ref=}" ;;
         *)            echo "未知参数: $arg" >&2; exit 1 ;;
@@ -170,7 +193,7 @@ if [ -n "$BUILD_REF" ] && [ -z "${NOVABOT_ARCHIVE_BUILD:-}" ]; then
     STAGE="$(mktemp -d "${TMPDIR:-/tmp}/novabot-archive-XXXXXX")"
     trap 'rm -rf "$STAGE"' EXIT
 
-    echo "==> [0/4] 从 $BUILD_REF 导出干净树"
+    echo "==> [0/5] 从 $BUILD_REF 导出干净树"
     echo "    commit=$REF_SHA"
     echo "    tree=$REF_TREE"
     echo "    导出至 $STAGE"
@@ -209,20 +232,22 @@ if [ -n "$BUILD_REF" ] && [ -z "${NOVABOT_ARCHIVE_BUILD:-}" ]; then
     exit 0
 fi
 
-echo "==> [1/4] 安装构建插件 starbot-plugin-processor"
+echo "==> [1/5] 安装构建插件 starbot-plugin-processor"
 mvn "${MAVEN_ARGS[@]}" -f build-tools/starbot-plugin-processor/pom.xml ${CLEAN} install
 
 # starbot-core 有两种产物形态：
 #   install profile —— 普通库 jar，供各插件模块编译期依赖
 #   package profile —— Spring Boot 重打包后的可运行 jar，类位于 BOOT-INF/classes
 # 后者无法作为依赖被下游模块解析，因此必须先以 install 形态构建整个工程，最后再单独打发行包。
-echo "==> [2/4] 构建全部模块（库形态）"
+echo "==> [2/5] 构建全部模块（库形态）"
 mvn "${MAVEN_ARGS[@]}" -Pinstall ${CLEAN} install
 
-echo "==> [3/4] 打包可运行的 StarBotCore"
+echo "==> [3/5] 打包可运行的 StarBotCore"
+# 这一步不带 clean：[2/5] 刚把 starbot-core/target 清空并重建过，此刻目录里只有那一次的产物。
+# 在这里再清一次，等于把上一步刚编好的东西删掉重编一遍，清掉的却是同一批文件。
 mvn "${MAVEN_ARGS[@]}" -f starbot-core/pom.xml -Ppackage package
 
-echo "==> [4/4] 汇总产物至 dist/build"
+echo "==> [4/5] 汇总产物至 dist/build"
 OUT="$ROOT/dist/build"
 PLUGIN_MODULES=(starbot-onebot-adapter starbot-onebot-adapter-napcat-extension starbot-bilibili)
 
@@ -293,6 +318,17 @@ echo "[]" > "$OUT/datasource.json"
     fi
     echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 } > "$OUT/BUILD-INFO"
+
+# ── [5/5] 产物守卫 ──────────────────────────────────────────────────────
+# 上面那道恒 clean 答的是「构建有没有从空目录开始」；这一格答的是另一个问题：
+# 「打出来的包里有没有源码里不存在的界面资源」。前者管编译输出，管不着从别处拷进 dist/build 的东西，
+# 也管不住将来有谁把 clean 改回去。**只装一道就是把另一个问题悄悄结掉**，而它下次出事时
+# 表现仍然是「BUILD SUCCESS」。判据与理由写在尺里。
+#
+# 放在打包之前：脏产物不许被压进 tar.gz——包一旦成形就会被拿去发，那时再发现已经晚一步。
+echo
+echo "==> [5/5] 校验产物界面资源"
+"$ROOT/tools/artifact-ui-resource-check.sh" "$OUT"
 
 if [ -n "$PACKAGE" ]; then
     VERSION="$(mvn -B -q -DforceStdout help:evaluate -Dexpression=project.version 2>/dev/null | tail -1)"

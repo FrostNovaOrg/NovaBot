@@ -316,12 +316,26 @@ Class<?> type = ClassUtils.getUserClass(bean);
 ## 10. 构建
 
 ```bash
-./build.sh [--clean|--skip-tests]
+./build.sh [--skip-tests]
 ```
 
 **分两步构建**：`build-tools/starbot-plugin-processor` 是各插件模块在 build 阶段要调用的
 Maven 插件，而 Maven 不支持在同一 reactor 内构建并使用同一个插件，因此必须先单独安装它。
 `build.sh` 已处理这一点——直接 `mvn package` 会失败。
+
+**恒清理**：两步都带 `clean`（`--clean` 因此成了空动作，保留只为兼容旧命令行）。
+Maven 只往 `target/` 里写，从不为「源码里已经没有的东西」做删除：源文件删掉或改名之后，
+上一次构建留下的那一份照旧躺在 `target/classes` 里、照旧进 jar，而**包上看不出来**。
+配置界面的资源出口又是「核心里有就用核心的，没有才回落到插件」，于是这种旧文件会
+**静默压过**插件那一份——请求 200、长度正常，内容却出自一个源码里根本不存在的版本。
+理由与「清不到哪里」写在 `build.sh` 顶部。
+
+**产物守卫**：收尾一步跑 `tools/artifact-ui-resource-check.sh`，判据是
+「jar 内界面资源条目 ⊆ 源码目录条目」（核心 `BOOT-INF/classes/config-ui/`
+与各插件 jar 的 `config-ui-pages/`），多出即退非 0 并逐条点名。它与上面那道 `clean`
+答的是两个问题——前者问「构建有没有从空目录开始」，后者问「打出来的包里有没有脏东西」，
+产物是从多处拷进 `dist/build` 的，清理管不着拷进来的那些。这把尺也可单独跑：
+`tools/artifact-ui-resource-check.sh [产物目录]`。
 
 **只想跑某一条测试时也不能用 `mvn test`。** 那个插件要求 `starbot-core` 是一个 jar，
 而停在 `test` 阶段时 core 只有 `target/classes`，于是报

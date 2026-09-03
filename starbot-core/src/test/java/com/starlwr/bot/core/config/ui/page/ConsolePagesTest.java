@@ -82,6 +82,34 @@ class ConsolePagesTest {
         assertTrue(ConsolePages.valid(bad).isEmpty(), "以上脚本名都不该被登记: " + bad);
     }
 
+    /**
+     * 与核心自带界面文件同名的页面脚本，一律不予登记
+     * <p>
+     * 这条判据来自一次真事：某个界面文件已从核心源码树删除、改由插件提供，而上一次构建
+     * 留在 target/classes 里的旧文件照旧进了包。取资源那一侧是「核心里有就用核心的，
+     * 没有才回落到插件」，于是旧文件<b>静默压过</b>插件那一份——请求成功、长度正常，
+     * 内容却来自一个源码里根本不存在的版本。
+     * <p>
+     * <b>同名就是两份判法。</b>无论静默选哪一方，选中的那一方都看不出来自己压过了另一方：
+     * 选核心，就是上面那件事；选插件，则核心自己的 {@code core.js} 一类公共文件会被插件顶掉，
+     * 而其余每张页面都 {@code import} 它，坏的是全部页面而不是这一页。<b>拒绝登记</b>是唯一
+     * 说得出口的处置：这一页不出现，日志里有一行点名说它为什么不出现，两份文件都还在原处。
+     */
+    @Test
+    @DisplayName("脚本名与核心自带界面资源撞名的，拒绝登记，不静默偏向任何一方")
+    void scriptsCollidingWithCoreAssetsAreRejected() {
+        List<ConsolePageProvider> providers = list(
+                page("shadow", "core.js"),
+                page("shadow-main", "main.js"),
+                page("ok", "somewhere-else.js"));
+
+        assertEquals(List.of("ok"), ConsolePages.valid(providers).stream().map(ConsolePageProvider::id).toList(),
+                "撞名的两页都不该登记，不撞名的那页照常在");
+        assertEquals(Optional.empty(), ConsolePages.byScript(providers, "core.js"),
+                "撞名的页按脚本名也取不到，否则 /assets 那条路仍会走到它");
+        assertEquals(Optional.empty(), ConsolePages.byScript(providers, "main.js"));
+    }
+
     @Test
     @DisplayName("显示名为空的不登记：页签条上会多出一个点不着的空档")
     void blankDisplayNameIsDropped() {
