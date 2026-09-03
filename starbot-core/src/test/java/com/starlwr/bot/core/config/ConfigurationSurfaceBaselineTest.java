@@ -9,9 +9,10 @@ import org.springframework.boot.context.properties.source.MapConfigurationProper
 import org.springframework.boot.env.YamlPropertySourceLoader;
 import org.springframework.core.env.EnumerablePropertySource;
 import org.springframework.core.env.PropertySource;
-import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.ClassPathResource;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
@@ -52,16 +53,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @DisplayName("配置面定盘星")
 class ConfigurationSurfaceBaselineTest {
     /**
-     * 样本所在的目录
-     * <p>
-     * 按路径读盘而不是走类路径：本模块的 maven-resources-plugin 是在插件层配置 {@code resources} 的，
-     * 而 {@code testResources} 目标读的也是这个参数，于是 {@code src/test/resources} 被
-     * {@code src/main/resources} 顶掉，放进去的文件根本不会出现在测试类路径上。
+     * 样本所在的类路径目录
      * <p>
      * 目录名不叫 {@code config/}：Spring Boot 会在 {@code classpath:/config/} 下找配置文件，
-     * 万一日后类路径这条通了，往那里放东西等于给测试悄悄加一层配置源。
+     * 往那里放东西等于给测试悄悄加一层配置源。
      */
-    private static final Path BASELINE = Path.of("src", "test", "resources", "configuration-baseline");
+    private static final String BASELINE = "configuration-baseline/";
 
     private static final String KEYS_FILE = "config-keys.txt";
 
@@ -147,7 +144,7 @@ class ConfigurationSurfaceBaselineTest {
         Map<String, Object> flat = new LinkedHashMap<>();
 
         for (PropertySource<?> source : new YamlPropertySourceLoader()
-                .load("coverage", new FileSystemResource(BASELINE.resolve(COVERAGE_YML)))) {
+                .load("coverage", new ClassPathResource(BASELINE + COVERAGE_YML))) {
             for (String name : ((EnumerablePropertySource<?>) source).getPropertyNames()) {
                 flat.putIfAbsent(name, source.getProperty(name));
             }
@@ -282,7 +279,12 @@ class ConfigurationSurfaceBaselineTest {
     private static List<String> readBaseline(String name) throws IOException {
         List<String> lines = new ArrayList<>();
 
-        for (String line : Files.readString(BASELINE.resolve(name), StandardCharsets.UTF_8).split("\n")) {
+        String content;
+        try (InputStream in = new ClassPathResource(BASELINE + name).getInputStream()) {
+            content = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
+
+        for (String line : content.split("\n")) {
             if (!line.isEmpty()) {
                 lines.add(line);
             }

@@ -1,0 +1,1 @@
+{"enabled":true,"face":"https://example.invalid/face.jpg","platform":"bilibili","roomId":123456,"roomIdString":"123456","targets":[{"enabled":true,"messages":[{"enabled":true,"handler":"com.example.SomeHandler","params":"{\"key\":\"value\"}"},{"enabled":false,"handler":"com.example.DisabledHandler"}],"num":654321,"platform":"qq-onebot","type":1}],"uid":1,"uname":"测试主播"}

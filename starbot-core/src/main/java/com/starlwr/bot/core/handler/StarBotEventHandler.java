@@ -4,14 +4,18 @@ import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
 import com.starlwr.bot.core.model.HandlerOption;
 import com.starlwr.bot.core.model.PushMessage;
+import com.starlwr.bot.core.model.PushMessageHandler;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 
 /**
  * StarBot 事件处理器接口，推送配置中配置的事件处理器实现均应实现此接口，并使用 {@link Component} 等注解注册至 Spring 容器中
+ * <p>
+ * 继承 {@link PushMessageHandler} 只为让推送消息挂得住这个实例：模型那一侧只认那个空接口，
+ * 不认识本接口的任何一个方法，于是读推送配置这件事不必连带背上整条推送链路。
  */
-public interface StarBotEventHandler {
+public interface StarBotEventHandler extends PushMessageHandler {
     /**
      * 处理事件
      * @param baseEvent 事件

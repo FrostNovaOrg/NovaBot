@@ -44,8 +44,8 @@ public class StarBotHandlerListener {
         PushUser user = optionalUser.get();
         for (PushTarget target : user.getTargets()) {
             for (PushMessage message : target.getMessages()) {
-                if (event.getClass().equals(message.getEventClass())) {
-                    StarBotEventHandler handler = message.getHandlerInstance();
+                if (event.getClass().equals(message.getEventClass())
+                        && message.getHandlerInstance() instanceof StarBotEventHandler handler) {
                     try {
                         handler.handle(event, message);
                     } catch (Exception e) {

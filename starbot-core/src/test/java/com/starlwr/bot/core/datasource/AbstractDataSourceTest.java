@@ -13,6 +13,7 @@ import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.service.DataSourceService;
 import com.starlwr.bot.core.service.DataSourceServiceConfig;
+import com.starlwr.bot.core.handler.StarBotEventHandlerPushMessageInitializer;
 import com.starlwr.bot.core.service.StarBotEventHandlerService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -66,7 +67,7 @@ class AbstractDataSourceTest {
         when(handlerService.getHandler(argThat(name -> !HANDLER.equals(name)))).thenReturn(Optional.empty());
 
         DataSourceServiceRegistry registry = new DataSourceServiceRegistry(List.of(new BilibiliDataSourceService()));
-        dataSource = new TestDataSource(publisher, registry, handlerService);
+        dataSource = new TestDataSource(publisher, registry, new StarBotEventHandlerPushMessageInitializer(handlerService));
     }
 
     @Test
@@ -362,8 +363,8 @@ class AbstractDataSourceTest {
      * 供测试实例化的数据源实现，load 由各具体数据源负责，此处不参与
      */
     private static class TestDataSource extends AbstractDataSource {
-        TestDataSource(ApplicationEventPublisher publisher, DataSourceServiceRegistry registry, StarBotEventHandlerService handlerService) {
-            super(publisher, registry, handlerService);
+        TestDataSource(ApplicationEventPublisher publisher, DataSourceServiceRegistry registry, PushMessageInitializer messageInitializer) {
+            super(publisher, registry, messageInitializer);
         }
 
         @Override

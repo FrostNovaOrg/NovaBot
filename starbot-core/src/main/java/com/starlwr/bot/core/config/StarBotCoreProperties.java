@@ -17,10 +17,11 @@ import java.util.*;
  * <p>
  * <b>本类是配置的绑定根，不是一份按层划好的配置</b>：{@code starbot.core.*} 下的每一节
  * 都挂在这里，从连接超时到控制台口令、从绘图字体到告警通道。<b>各节自身的层次并不相同</b>——
- * 网络、线程池、日志、直播这四节是事件源自己要用的，其余各节服务的是推送、控制台、绘图这些外围功能。
+ * 网络、线程池、日志、直播、数据源这五节是事件源自己要用的，其余各节服务的是推送、控制台、绘图这些外围功能。
  * <p>
  * 因此按层要用到的那几节<b>已经单独成件</b>（{@link NetworkProperties}、
- * {@link NetworkThreadProperties}、{@link LogProperties}、{@link LiveProperties}），
+ * {@link NetworkThreadProperties}、{@link LogProperties}、{@link LiveProperties}、
+ * {@link DatasourceProperties}），
  * 各自是不带任何框架注解的纯数据类，用它的地方直接依赖那一件即可，<b>不必再依赖整份配置</b>。
  * 配置键一字未动：它们仍是本类的字段，绑定与装配也仍在本类这一侧完成。
  * <p>
@@ -51,7 +52,8 @@ public class StarBotCoreProperties {
     private final NetworkProperties network = new NetworkProperties();
 
     @Getter
-    private final DataSource datasource = new DataSource();
+    @NestedConfigurationProperty
+    private final DatasourceProperties datasource = new DatasourceProperties();
 
     @Getter
     private final Plugin plugin = new Plugin();
@@ -566,24 +568,7 @@ public class StarBotCoreProperties {
     }
 
     /**
-     * 数据源相关
-     */
-    @Getter
-    @Setter
-    public static class DataSource {
-        /**
-         * JSON 文件路径，仅使用 JSON 数据源时生效
-         */
-        private String jsonPath = "datasource.json";
-
-        /**
-         * JSON 文件发生变化时是否自动重载，仅使用 JSON 数据源时生效
-         */
-        private boolean jsonAutoReload = true;
-    }
-
-    /**
-     * 数据源相关
+     * 插件相关
      */
     @Getter
     @Setter
@@ -672,6 +657,15 @@ public class StarBotCoreProperties {
     @Bean
     public LiveProperties coreLiveProperties() {
         return live;
+    }
+
+    /**
+     * 数据源配置
+     * @return 数据源配置
+     */
+    @Bean
+    public DatasourceProperties coreDatasourceProperties() {
+        return datasource;
     }
 
     @PostConstruct

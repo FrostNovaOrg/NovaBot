@@ -6,6 +6,7 @@ import com.starlwr.bot.core.exception.DataSourceException;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
+import com.starlwr.bot.core.handler.StarBotEventHandlerPushMessageInitializer;
 import com.starlwr.bot.core.service.StarBotEventHandlerService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -202,8 +203,8 @@ class JsonDataSourceTest {
         return new JsonDataSource(
                 mock(ApplicationEventPublisher.class),
                 new DataSourceServiceRegistry(List.of()),
-                mock(StarBotEventHandlerService.class),
-                properties
+                new StarBotEventHandlerPushMessageInitializer(mock(StarBotEventHandlerService.class)),
+                properties.getDatasource()
         );
     }
 

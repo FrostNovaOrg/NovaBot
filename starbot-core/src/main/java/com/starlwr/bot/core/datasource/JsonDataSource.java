@@ -2,14 +2,13 @@ package com.starlwr.bot.core.datasource;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.DatasourceProperties;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.event.datasource.other.StarBotDataSourceLoadCompleteEvent;
 import com.starlwr.bot.core.exception.DataSourceException;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
-import com.starlwr.bot.core.service.StarBotEventHandlerService;
 import com.starlwr.bot.core.util.CollectionUtil;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -35,7 +34,7 @@ import java.util.concurrent.atomic.AtomicLong;
 @Service
 @DataSource(name = "json")
 public class JsonDataSource extends AbstractDataSource {
-    private final StarBotCoreProperties properties;
+    private final DatasourceProperties properties;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
@@ -53,8 +52,8 @@ public class JsonDataSource extends AbstractDataSource {
     private final long debounceDelayMillis = 1000L;
 
     @Autowired
-    public JsonDataSource(ApplicationEventPublisher eventPublisher, DataSourceServiceRegistry dataSourceServiceRegistry, StarBotEventHandlerService handlerService, StarBotCoreProperties properties) {
-        super(eventPublisher, dataSourceServiceRegistry, handlerService);
+    public JsonDataSource(ApplicationEventPublisher eventPublisher, DataSourceServiceRegistry dataSourceServiceRegistry, PushMessageInitializer messageInitializer, DatasourceProperties properties) {
+        super(eventPublisher, dataSourceServiceRegistry, messageInitializer);
         this.properties = properties;
     }
 
@@ -69,7 +68,7 @@ public class JsonDataSource extends AbstractDataSource {
         log.info("已选用 JSON 作为数据源");
         log.info("开始从 JSON 中初始化推送配置");
 
-        String path = properties.getDatasource().getJsonPath();
+        String path = properties.getJsonPath();
         try {
             List<PushUser> users = parse(Files.readString(Path.of(path)));
             add(users);
@@ -83,7 +82,7 @@ public class JsonDataSource extends AbstractDataSource {
 
         eventPublisher.publishEvent(new StarBotDataSourceLoadCompleteEvent(new ArrayList<>(this.users)));
 
-        if (properties.getDatasource().isJsonAutoReload()) {
+        if (properties.isJsonAutoReload()) {
             watchFileUpdate();
         }
     }
@@ -95,7 +94,7 @@ public class JsonDataSource extends AbstractDataSource {
         try {
             WatchService watchService = FileSystems.getDefault().newWatchService();
             this.watchService = watchService;
-            Path jsonPath = Paths.get(properties.getDatasource().getJsonPath()).toAbsolutePath();
+            Path jsonPath = Paths.get(properties.getJsonPath()).toAbsolutePath();
             Path parentPath = jsonPath.getParent();
             parentPath.register(watchService, StandardWatchEventKinds.ENTRY_MODIFY, StandardWatchEventKinds.ENTRY_CREATE);
 
@@ -147,7 +146,7 @@ public class JsonDataSource extends AbstractDataSource {
      * 重载数据源
      */
     private void reload() {
-        String path = properties.getDatasource().getJsonPath();
+        String path = properties.getJsonPath();
         try {
             List<PushUser> addUsers = new ArrayList<>();
             List<PushUser> removeUsers = new ArrayList<>();

@@ -8,6 +8,26 @@
 
 ### 变更
 
+- **数据源这一节配置也改为独立的类，数据源不再需要认识事件处理器。**（写插件的人需要看这一条）
+  **配置文件一个字不用改**，`datasource.json` 的写法与内容也一个字不用改：
+  `starbot.core.datasource.json-path`、`starbot.core.datasource.json-auto-reload`
+  仍是原来那两个键，界面上的字段与说明照旧。用不着写插件的人不必看这一条。
+  <br>改的有两处。一是这一节与网络、日志那几节一样单独成件，叫 `DatasourceProperties`，
+  在 `com.starlwr.bot.core.config` 包下。二是数据源基类 `AbstractDataSource` 不再依赖
+  事件处理器服务：处理器实例、事件类型、推送参数的补全此前写在数据源里面，
+  而这些都是推送侧的事——读一份推送配置，本不该连带背上整条推送链路。
+  现在这一步交给 `PushMessageInitializer`，由推送侧实现并装配；数据源只按它的回答
+  决定一条推送消息还留不留。**行为一字未变**：处理器认不出来时照旧写一条 error
+  并丢掉那条消息，参数合并的规则也照旧。
+  <br>**插件迁移**：自定义数据源的构造方法，第三个参数由 `StarBotEventHandlerService`
+  换成 `PushMessageInitializer`（在 `com.starlwr.bot.core.datasource` 包下），
+  直接沿用容器里那一个即可；直接构造 `JsonDataSource` 的，第四个参数由
+  `StarBotCoreProperties` 换成 `DatasourceProperties`（`properties.getDatasource()` 取得到）。
+  <br>另外 `PushMessage.getHandlerInstance()` 的返回类型由 `StarBotEventHandler`
+  变为 `PushMessageHandler`（`com.starlwr.bot.core.model` 包下的空接口，
+  `StarBotEventHandler` 已继承它）。**写处理器的人不受影响**，一个字都不用动；
+  只有取出这个实例再调用它的代码需要先 `instanceof StarBotEventHandler` 收窄一次。
+
 - **网络、线程池、日志、直播这四节配置改为各自一个独立的类。**（写插件的人需要看这一条）
   **配置文件一个字不用改**：键名、默认值、界面上的字段与说明全部照旧，
   `starbot.core.network.*`、`starbot.core.network-thread.*`、`starbot.core.log.*`、

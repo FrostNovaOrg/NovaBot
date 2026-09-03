@@ -188,18 +188,33 @@
                             </execution>
                         </executions>
                     </plugin>
+                    <!--
+                        ⚠️ resources 这一段必须待在 execution 内，不能上提到 plugin 层。
+                        本插件的 resources 与 testResources 两个目标共用同一个参数名 resources：
+                        一旦写在 plugin 层，testResources 也会读到它，于是 src/test/resources
+                        被 src/main/resources 顶掉，测试资源根本不上测试类路径——
+                        不报错、不警告，只是读不到。判据见 TestResourcesOnClasspathTest。
+                    -->
                     <plugin>
                         <artifactId>maven-resources-plugin</artifactId>
-                        <configuration>
-                            <resources>
-                                <resource>
-                                    <directory>src/main/resources</directory>
-                                    <excludes>
-                                        <exclude>application-dev.yml</exclude>
-                                    </excludes>
-                                </resource>
-                            </resources>
-                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>default-resources</id>
+                                <goals>
+                                    <goal>resources</goal>
+                                </goals>
+                                <configuration>
+                                    <resources>
+                                        <resource>
+                                            <directory>src/main/resources</directory>
+                                            <excludes>
+                                                <exclude>application-dev.yml</exclude>
+                                            </excludes>
+                                        </resource>
+                                    </resources>
+                                </configuration>
+                            </execution>
+                        </executions>
                     </plugin>
                 </plugins>
             </build>
@@ -211,21 +226,30 @@
             <build>
                 <finalName>StarBotCore</finalName>
                 <plugins>
+                    <!-- resources 这一段同样必须待在 execution 内，理由见 package profile 那一处 -->
                     <plugin>
                         <artifactId>maven-resources-plugin</artifactId>
-                        <configuration>
-                            <resources>
-                                <resource>
-                                    <directory>src/main/resources</directory>
-                                    <excludes>
-                                        <exclude>application.yml</exclude>
-                                        <exclude>application-dev.yml</exclude>
-                                        <exclude>banner.txt</exclude>
-                                        <exclude>logback.xml</exclude>
-                                    </excludes>
-                                </resource>
-                            </resources>
-                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>default-resources</id>
+                                <goals>
+                                    <goal>resources</goal>
+                                </goals>
+                                <configuration>
+                                    <resources>
+                                        <resource>
+                                            <directory>src/main/resources</directory>
+                                            <excludes>
+                                                <exclude>application.yml</exclude>
+                                                <exclude>application-dev.yml</exclude>
+                                                <exclude>banner.txt</exclude>
+                                                <exclude>logback.xml</exclude>
+                                            </excludes>
+                                        </resource>
+                                    </resources>
+                                </configuration>
+                            </execution>
+                        </executions>
                     </plugin>
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>

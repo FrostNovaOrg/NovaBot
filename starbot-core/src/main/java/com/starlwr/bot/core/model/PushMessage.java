@@ -3,7 +3,6 @@ package com.starlwr.bot.core.model;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.annotation.JSONField;
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
-import com.starlwr.bot.core.handler.StarBotEventHandler;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -30,9 +29,12 @@ public class PushMessage {
 
     /**
      * 事件处理器实例，自动根据事件处理器解析
+     * <p>
+     * 类型是那个空接口而不是推送侧的处理器接口：本模型只负责把实例存住，一次也不调它。
+     * 真要用它的推送侧自己知道该把它当成什么。
      */
     @JSONField(serialize = false)
-    private StarBotEventHandler handlerInstance;
+    private PushMessageHandler handlerInstance;
 
     /**
      * 事件处理器处理的事件类型，自动根据事件处理器解析

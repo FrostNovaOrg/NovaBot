@@ -1,17 +1,12 @@
 package com.starlwr.bot.core.datasource;
 
-import com.alibaba.fastjson2.JSON;
-import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.event.datasource.change.StarBotDataSourceAddEvent;
 import com.starlwr.bot.core.event.datasource.change.StarBotDataSourceRemoveEvent;
 import com.starlwr.bot.core.event.datasource.change.StarBotDataSourceUpdateEvent;
 import com.starlwr.bot.core.exception.DataSourceException;
-import com.starlwr.bot.core.handler.StarBotEventHandler;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
-import com.starlwr.bot.core.service.StarBotEventHandlerService;
-import com.starlwr.bot.core.util.StringUtil;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,17 +25,17 @@ public abstract class AbstractDataSource {
 
     private final DataSourceServiceRegistry dataSourceServiceRegistry;
 
-    private final StarBotEventHandlerService handlerService;
+    private final PushMessageInitializer messageInitializer;
 
     protected final List<PushUser> users = new ArrayList<>();
 
     private final Map<String, Map<Long, PushUser>> userMap = new HashMap<>();
 
     @Autowired
-    public AbstractDataSource(ApplicationEventPublisher eventPublisher, DataSourceServiceRegistry dataSourceServiceRegistry, StarBotEventHandlerService handlerService) {
+    public AbstractDataSource(ApplicationEventPublisher eventPublisher, DataSourceServiceRegistry dataSourceServiceRegistry, PushMessageInitializer messageInitializer) {
         this.eventPublisher = eventPublisher;
         this.dataSourceServiceRegistry = dataSourceServiceRegistry;
-        this.handlerService = handlerService;
+        this.messageInitializer = messageInitializer;
     }
 
 
@@ -257,38 +252,19 @@ public abstract class AbstractDataSource {
 
     /**
      * 初始化推送消息参数
+     * <p>
+     * 补全交给 {@link PushMessageInitializer}：哪个处理器叫什么名字、参数怎么合并，
+     * 都是推送侧的事，数据源只按补全器的回答决定这条消息还留不留。
+     * 未装配补全器时一条也不丢——那是空数据源之类不投递任何消息的场景。
      * @param user 推送用户
      */
     private void initPushMessageParams(@NonNull PushUser user) {
+        if (messageInitializer == null) {
+            return;
+        }
+
         for (PushTarget target: user.getTargets()) {
-            for (PushMessage message: target.getMessages()) {
-                Optional<StarBotEventHandler> optionalHandler = handlerService.getHandler(message.getHandler());
-                if (optionalHandler.isPresent()) {
-                    StarBotEventHandler handler = optionalHandler.get();
-                    message.setHandlerInstance(handler);
-                    message.setEventClass(handler.getEventType());
-                    message.setParamsJsonObject(handler.getDefaultParams());
-                } else {
-                    message.setHandlerInstance(null);
-                    message.setEventClass(null);
-                    message.setParamsJsonObject(null);
-                    log.error("不存在的事件处理器: {}, 请检查推送配置", message.getHandler());
-                    continue;
-                }
-
-                if (StringUtil.isNotBlank(message.getParams())) {
-                    try {
-                        JSONObject params = JSON.parseObject(message.getParams());
-                        for (Map.Entry<String, Object> entry : params.entrySet()) {
-                            message.getParamsJsonObject().put(entry.getKey(), entry.getValue());
-                        }
-                    } catch (Exception e) {
-                        log.error("解析推送消息参数失败, 请检查格式是否正确: {}", message.getParams(), e);
-                    }
-                }
-            }
-
-            target.getMessages().removeIf(message -> message.getHandlerInstance() == null);
+            target.getMessages().removeIf(message -> !messageInitializer.initialize(message));
         }
     }
 

@@ -1,0 +1,24 @@
+[
+  {
+    "uid": "",
+    "platform": "bilibili",
+    "targets": [
+      {
+        "platform": "qq-onebot",
+        "type": 1,
+        "num": "",
+        "messages": [
+          {
+            "handler": "com.starlwr.bot.bilibili.handler.BilibiliLiveOnPushHandler"
+          },
+          {
+            "handler": "com.starlwr.bot.bilibili.handler.BilibiliLiveOffPushHandler"
+          },
+          {
+            "handler": "com.starlwr.bot.bilibili.handler.BilibiliDynamicPushHandler"
+          }
+        ]
+      }
+    ]
+  }
+]

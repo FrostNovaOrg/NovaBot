@@ -1,0 +1,1 @@
+PushUser(uid=1, uname=测试主播, roomId=123456, face=https://example.invalid/face.jpg, platform=bilibili, enabled=true, targets=[PushTarget(platform=qq-onebot, type=GROUP, num=654321, enabled=true, messages=[PushMessage(handler=com.example.SomeHandler, params={"key":"value"}, enabled=true), PushMessage(handler=com.example.DisabledHandler, params=null, enabled=false)])])

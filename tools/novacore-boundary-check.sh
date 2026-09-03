@@ -482,4 +482,135 @@ else
     RED=1
 fi
 
+# ============================================================
+# 格6：核心件不得引用壳侧件
+#
+# 这一格是编译期守卫的前奏。核心拆成独立模块之后，它的 pom 不再依赖运行壳，
+# 那一刻起核心件里每一处对壳侧件的引用都是编译错误。拆的那天不该是
+# 「先编译失败、再回头逐个查」，而该是「这把尺早已 0 命中，改完直接编得过」。
+#
+# 与格4 的分工：格4 管「核心 → 插件模块」，跨模块，编译期本就看得见；
+# 本格管「核心 → 同一个模块内的壳侧件」，同一个 jar 里，编译期一点异常都没有，
+# 只有真拆开那天才炸。也正因为同模块，**同包不写 import 的引用一样算**——
+# 只查 import 行的尺，会把 config 包内、model 包内那一批不写 import 的引用整批放过，
+# 而那种引用拆的时候一样编不过。判据因此按简单类名在正文里找，与格4 同法。
+#
+# 注释不算（与格3 同法，走 strip_comments）：类注释里写一句「这个事件由某某记住」
+# 是该写的话，让它把判据判红，结局必然是把注释删掉而不是把边界守住。
+#
+# 两侧集合都写在下面、可当场比对，不从别处读表：
+#   核心件 ＝ 事件源纯库。整目录收的四个包 ＋ 逐件点名的若干件（配置纯 POJO、
+#            事件流令牌、数据源服务接口与注解、平台标识与事件枚举、异常型、
+#            以及它们用到的四个纯函数工具类）。
+#   壳侧件 ＝ 核心模块主码里除此之外的**全部**件。用「补集」而不是再列一张壳的清单，
+#            是因为这两种写法只有一处不同、而那一处正是要害：漏列一件壳，
+#            列清单的写法静默放过，补集的写法当场判红。新件默认落在壳这一侧，
+#            要进核心得往上面那张表里加一行并写明理由——这正是该有的方向。
+#
+# 逐件点名的那几件为什么算核心，一句话各记一条：
+#   config/*Properties       —— 配置纯 POJO，零框架注解，事件源自己要读的那几节
+#   service/EventStreamTokenService —— 事件输出协议的只读令牌，属第④层
+#   service/DataSourceService / DataSourceServiceConfig —— 采集范围的接口面与实现注解
+#   enums/LivePlatform / LiveEndReason / PushTargetType —— 平台标识与事件模型枚举；
+#                          PushTargetType 是 PushTarget 的字段类型，随推送模型一起走，
+#                          它留在壳侧的话 PushTarget 根本编不过
+#   exception/DataSourceException —— 采集范围加载失败的异常型
+#   util/SecureToken / MathUtil / StringUtil / CollectionUtil —— 四个纯函数工具，
+#                          不碰框架、不碰界面，且各自都有核心侧的调用方（金额换算、
+#                          推送参数判空、配置重载时的集合比对）
+# ============================================================
+
+# —— 核心件：整目录收 ——
+G6_CORE_DIRS="protocol event datasource model"
+
+# —— 核心件：逐件点名（路径相对 com/starlwr/bot/core/）——
+G6_CORE_FILES="config/NetworkProperties.java
+config/NetworkThreadProperties.java
+config/LogProperties.java
+config/LiveProperties.java
+config/DatasourceProperties.java
+config/EventStreamProperties.java
+service/EventStreamTokenService.java
+service/DataSourceService.java
+service/DataSourceServiceConfig.java
+enums/LivePlatform.java
+enums/LiveEndReason.java
+enums/PushTargetType.java
+exception/DataSourceException.java
+util/SecureToken.java
+util/MathUtil.java
+util/StringUtil.java
+util/CollectionUtil.java"
+
+# —— 例外表：每条写「核心件基名 被引件基名 到期条件」，三段以空格分隔 ——
+#    **到期条件是必填的**：没有到期条件的例外只会长住，一年后没人记得它当初豁免的是什么。
+#    现无例外。
+G6_EXEMPT=()
+
+G6_ALL="$WORK/g6all"
+: > "$G6_ALL"
+for allowed in $ALLOWED_CORE_MODULES; do
+    [ -d "$allowed/src/main/java" ] && find "$allowed/src/main/java" -name '*.java' -type f >> "$G6_ALL"
+done
+sort -u "$G6_ALL" -o "$G6_ALL"
+g6_total=$(grep -cv '^[[:space:]]*$' "$G6_ALL" 2>/dev/null || echo 0)
+
+G6_CORE="$WORK/g6core"
+: > "$G6_CORE"
+if [ "$g6_total" -gt 0 ]; then
+    for d in $G6_CORE_DIRS; do
+        grep -F "/com/starlwr/bot/core/$d/" "$G6_ALL" >> "$G6_CORE" 2>/dev/null
+    done
+    while IFS= read -r rel; do
+        [ -z "$rel" ] && continue
+        grep -F "/com/starlwr/bot/core/$rel" "$G6_ALL" >> "$G6_CORE" 2>/dev/null
+    done <<< "$G6_CORE_FILES"
+fi
+sort -u "$G6_CORE" -o "$G6_CORE"
+g6_core_n=$(grep -cv '^[[:space:]]*$' "$G6_CORE" 2>/dev/null || echo 0)
+
+G6_SHELL="$WORK/g6shell"
+: > "$G6_SHELL"
+[ "$g6_core_n" -gt 0 ] && grep -vxFf "$G6_CORE" "$G6_ALL" > "$G6_SHELL"
+sed 's|.*/||; s|\.java$||' "$G6_SHELL" | sort -u > "$WORK/g6names"
+g6_shell_n=$(grep -cv '^[[:space:]]*$' "$WORK/g6names" 2>/dev/null || echo 0)
+
+g6_hits=""
+g6_n=0
+if [ "$g6_shell_n" -gt 0 ] && [ "$g6_core_n" -gt 0 ]; then
+    sed -E 's|^|(^\|[^A-Za-z0-9_])|; s|$|([^A-Za-z0-9_]\|$)|' "$WORK/g6names" > "$WORK/g6re"
+    while IFS= read -r f; do
+        [ -z "$f" ] && continue
+        strip_comments "$f" > "$WORK/g6body"
+        grep -qE -f "$WORK/g6re" "$WORK/g6body" || continue
+        core_base="$(basename "$f" .java)"
+        while IFS= read -r n; do
+            [ -z "$n" ] && continue
+            g6_line=$(grep -nE "(^|[^A-Za-z0-9_])${n}([^A-Za-z0-9_]|\$)" "$WORK/g6body" 2>/dev/null | head -1 | cut -d: -f1)
+            [ -z "$g6_line" ] && continue
+
+            exempt=0
+            for rule in ${G6_EXEMPT[@]+"${G6_EXEMPT[@]}"}; do
+                set -- $rule
+                if [ "$1" = "$core_base" ] && [ "$2" = "$n" ]; then
+                    exempt=1
+                    break
+                fi
+            done
+            [ "$exempt" -eq 1 ] && continue
+
+            g6_hits="${g6_hits}${f#*/src/main/java/com/starlwr/bot/core/}:${g6_line}(->${n}) "
+            g6_n=$((g6_n + 1))
+        done < "$WORK/g6names"
+    done < "$G6_CORE"
+fi
+
+g6_read="核心件${g6_core_n}/${g6_total} 壳侧件${g6_shell_n} 例外${#G6_EXEMPT[@]}条"
+if [ "$g6_n" -eq 0 ]; then
+    echo "格6 绿 命中0 核心件不引用壳侧件 $g6_read"
+else
+    echo "格6 红 命中${g6_n} ${g6_hits% } $g6_read"
+    RED=1
+fi
+
 exit "$RED"
