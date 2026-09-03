@@ -94,6 +94,8 @@ export async function load() {
     const [s, v] = await Promise.all([api('/schema'), api('/values')]);
     store.schema = s.groups || [];
     store.values = v.values || {};
+    // 哪几项是按旧位置生效的，要跟着值一起进来：值与它的出处分开取，两次之间配置一变就对不上了
+    store.legacy = v.legacy || {};
     store.dirty = {};
     renderGeneral();
 

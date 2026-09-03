@@ -380,7 +380,11 @@ public class ConfigUiController {
 
     /**
      * 当前配置值，取自 application.yml
-     * @return 键值映射
+     * <p>
+     * 改过名的配置键要按<b>程序实际生效的那个值</b>回给界面，而不是按现行键在文件里查得到什么：
+     * 只写旧位置的既有部署，现行键一个也查不到，界面就会显示默认值，而程序正按旧位置的值在跑
+     * （见 {@link ConfigurationKeyAliases}）。落回旧位置的项另附一张来源表，界面据此标出来。
+     * @return 键值映射，附落回旧位置的项及其来源
      */
     @GetMapping("/api/values")
     public JSONObject values() {
@@ -388,8 +392,11 @@ public class ConfigUiController {
 
         try {
             result.put("success", true);
+            Map<String, String> values = fileService.read();
+            // 先补旧位置再遮机密：补进来的项同样可能是机密，顺序反了就会漏出去
+            result.put("legacy", ConfigurationKeyAliases.resolve(values));
             // 口令、令牌与密钥不出这道门：面板可能在直播画面里被打开
-            result.put("values", SensitiveFields.mask(fileService.read()));
+            result.put("values", SensitiveFields.mask(values));
         } catch (IOException e) {
             log.error("读取配置文件失败", e);
             result.put("success", false);
@@ -401,6 +408,11 @@ public class ConfigUiController {
 
     /**
      * 保存配置值到 application.yml
+     * <p>
+     * 界面上的字段名取自元数据，元数据里只有现行键，因此<b>写侧只会写现行键</b>：
+     * 一个原本写在旧位置的配置项，被保存一次就等于迁到了新位置。
+     * <b>旧位置那几行不删也不改</b>——删是替使用者改他自己的配置文件，理由见
+     * {@link ConfigurationKeyAliases}。程序两套键都认，多留几行只多一条启动提醒。
      * @param body 待保存的键值
      * @return 保存结果
      */

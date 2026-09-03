@@ -6,7 +6,15 @@
 # 控制台／登录／推送／聚合／存储归 NovaBot 壳。一句话尺：莓果或 VRDash 用不到的，就不是核心。
 #
 # 本尺只 grep/find，不 build、不联网。拆仓／拆模块后作 CI 守卫。
-# 退码：三格任一红 ⇒ 非 0。
+# 退码：五格任一红 ⇒ 非 0。
+#
+# —— 格4／格5 为什么要加（2026-09-03 加严）——
+# 原来的格2 只按 NovaEventEndpoint／NovaEventStreamConfiguration 两个文件名判「在不在核心模块」。
+# 那量的是位置不是边界：把事件流的其余几个类挪回插件、或把核心的配置键写回平台前缀，
+# 尺一格都不会红，而边界已经破了。加两格补上这两条缝——
+#   格4 从「引用方向」判：核心引用了插件，就是核心依赖了平台，文件放在哪个目录都不作数。
+#   格5 从「配置键」判：键名带平台名，等于把平台写进了核心对外的接口面，改名要惊动所有使用者。
+# 两格都不写死任何平台名或插件包名，一律从源码现算，理由同格1。
 
 set -uo pipefail
 
@@ -86,6 +94,21 @@ scan() {
     [ -s "$WORK/short" ] && grep -rinwF -f "$WORK/short" "$1" 2>/dev/null
     [ -s "$WORK/wide" ]  && grep -rinF  -f "$WORK/wide"  "$1" 2>/dev/null
     return 0
+}
+
+# 单串是否带平台名。分档规则与 scan 一致：短标识整词、其余子串
+# （格5 逐条判配置键时用；不能拿 scan 去查，那会连「文件路径里的平台名」也一并命中）
+platform_hit() {
+    if [ -s "$WORK/long" ] && printf '%s\n' "$1" | grep -qiF -f "$WORK/long"; then
+        return 0
+    fi
+    if [ -s "$WORK/short" ] && printf '%s\n' "$1" | grep -qiwF -f "$WORK/short"; then
+        return 0
+    fi
+    if [ -s "$WORK/wide" ] && printf '%s\n' "$1" | grep -qF -f "$WORK/wide"; then
+        return 0
+    fi
+    return 1
 }
 
 g1_hits=""
@@ -199,6 +222,181 @@ if [ "$g3_core_concrete" -eq 0 ]; then
     echo "格3 绿 core内具体成员0处 枚举${g3_members}/被引用${g3_used} $LP"
 else
     echo "格3 红 core内具体成员${g3_core_concrete}处(须0) 枚举${g3_members}/被引用${g3_used} $LP"
+    RED=1
+fi
+
+# —— 核心模块的主码目录，供格4／格5 使用 ——
+# 从 ALLOWED_CORE_MODULES 现算而不写死 starbot-core：模块一改名，写死的那两格就静默地什么都不查了
+CORE_MAINS=""
+for allowed in $ALLOWED_CORE_MODULES; do
+    [ -d "$allowed/src/main" ] && CORE_MAINS="${CORE_MAINS}${allowed}/src/main "
+done
+
+# ============================================================
+# 格4：核心不得引用插件包
+#
+# 格2 问的是「事件流那两个类在哪个模块」，这一格问的是「核心有没有反过来依赖插件」——
+# 后者才是拆仓时真正拦路的那件事：核心一旦 import 了插件的类，它就编译不了，
+# 也就不可能单独发布给莓果或 VRDash 用。文件放在哪个目录跟这件事无关。
+#
+# 插件包名当场从模块目录算出来，不写死：本仓实际的插件根包是 com.starlwr.bot.bilibili 与
+# com.starlwr.bot.adapter（OneBot 适配器的模块目录叫 starbot-onebot-adapter，包却在 adapter 下）——
+# 写死一份名单，只要有一处对不上，这一格就是个永远绿的摆设。
+#
+# 射程只到核心的 src/main，不含 src/test：
+#   测试要造场景，写一个插件类的**全限定名字符串**是正常的（现有一处：
+#   ConfigurationValidatorTest 里那个用来喂给校验器的处理器类名字面）。那是数据不是依赖，
+#   它既不参与核心的编译，也不会跟着核心发布出去。把测试算进来，这一格第一天就得开例外，
+#   而开在测试上的例外会顺手把真正的依赖也放过去。
+# 判据是「出现即命中」而非只查 import 行：全限定名直接写在代码里同样是依赖，
+# 反射按字符串加载更是——那种依赖编译期看不见，运行期才炸。
+# ============================================================
+
+G4_PKGS="$WORK/g4pkgs"
+: > "$G4_PKGS"
+
+for mod in */; do
+    mod="${mod%/}"
+    [ -d "$mod/src/main/java/com/starlwr/bot" ] || continue
+    skip=0
+    for allowed in $ALLOWED_CORE_MODULES; do
+        [ "$mod" = "$allowed" ] && skip=1
+    done
+    [ "$skip" -eq 1 ] && continue
+
+    find "$mod/src/main/java/com/starlwr/bot" -mindepth 1 -maxdepth 1 -type d 2>/dev/null \
+        | sed 's|.*/||' >> "$G4_PKGS"
+done
+
+sort -u "$G4_PKGS" -o "$G4_PKGS"
+g4_pkg_n=$(grep -cv '^[[:space:]]*$' "$G4_PKGS" 2>/dev/null || echo 0)
+
+g4_hits=""
+g4_n=0
+
+if [ -n "$CORE_MAINS" ] && [ "$g4_pkg_n" -gt 0 ]; then
+    sed -E 's|^|com\\.starlwr\\.bot\\.|; s|$|([^A-Za-z0-9_]\|$)|' "$G4_PKGS" > "$WORK/g4re"
+    while IFS= read -r hit; do
+        [ -z "$hit" ] && continue
+        g4_hits="${g4_hits}${hit%%:*}:$(printf '%s' "$hit" | cut -d: -f2) "
+        g4_n=$((g4_n + 1))
+    done <<< "$(grep -rnE -f "$WORK/g4re" --include='*.java' $CORE_MAINS 2>/dev/null | sort -u)"
+fi
+
+if [ "$g4_n" -eq 0 ]; then
+    echo "格4 绿 命中0 核心不引用插件包 插件包${g4_pkg_n}个(现算): $(tr '\n' ',' < "$G4_PKGS" | sed 's/,$//')"
+else
+    echo "格4 红 命中${g4_n} ${g4_hits% } 插件包${g4_pkg_n}个(现算)"
+    RED=1
+fi
+
+# ============================================================
+# 格5：核心的配置键不得带平台名
+#
+# 配置键是核心对使用者的接口面。键里带平台名，等于核心公开承认自己长在某一个平台上：
+# 拆出去给别的产品用时改不动（改一次所有既有部署的配置都失效），不改又处处是那个平台的名字。
+# 这一格与格1 是同一条边界的两面——格1 管界面上看得见的字，这一格管配置文件里写下的键。
+#
+# 两处源头，都在核心一侧：
+#   ① 核心主码里作为配置前缀出现的字面量：@ConfigurationProperties(prefix = "…")，
+#      以及被它引用的 …PREFIX… 常量（值以 starbot. 开头的那些）
+#   ② 发行模板 dist/templates/application.yml 里核心那一节的键（starbot.core.* 全部路径）
+# 平台名清单与格1 共用，从 LivePlatform 现算。
+#
+# —— 例外表：每条写明理由与到期条件，没有到期条件的例外一律不许加 ——
+#    命中行的文件名与内容同时匹配才豁免。
+G5_EXEMPT=(
+    # 旧键兼容：事件输出的配置键曾在平台插件一侧，真源迁入核心后键名改了，但既有部署的
+    # application.yml 里写的还是旧键。这个字面量是**读侧**认旧键用的（绑定时先按它绑一趟，
+    # 再让现行键逐项压过去），不是核心在用平台前缀对外提供配置——核心自己声明的前缀是
+    # @ConfigurationProperties 上那个，不带平台名。
+    # 引用它的是 NovaEventStreamConfiguration，字面量本身落在 EventStreamProperties 上。
+    # 到期条件：旧键弃用移除的那一版——那一版删掉 LEGACY_PREFIX 常量，本条同时删除。
+    "EventStreamProperties.java LEGACY_PREFIX"
+)
+# ============================================================
+
+g5_hits=""
+g5_n=0
+g5_keys=0
+
+# —— 源头①：核心主码里的配置前缀字面量 ——
+if [ -n "$CORE_MAINS" ]; then
+    while IFS= read -r hit; do
+        [ -z "$hit" ] && continue
+        file="${hit%%:*}"
+        rest="${hit#*:}"
+        lineno="${rest%%:*}"
+        text="${rest#*:}"
+
+        # 取这一行里的字符串字面量作为待判的键
+        key="$(printf '%s' "$text" | sed -E 's/^[^"]*"([^"]*)".*/\1/')"
+        [ -z "$key" ] && continue
+        g5_keys=$((g5_keys + 1))
+
+        exempt=0
+        for rule in ${G5_EXEMPT[@]+"${G5_EXEMPT[@]}"}; do
+            rule_file="${rule%% *}"
+            rule_re="${rule#* }"
+            if [[ "$file" == *"$rule_file"* ]] && printf '%s' "$text" | grep -qE "$rule_re"; then
+                exempt=1
+                break
+            fi
+        done
+        [ "$exempt" -eq 1 ] && continue
+
+        if platform_hit "$key"; then
+            g5_hits="${g5_hits}${file}:${lineno}(${key}) "
+            g5_n=$((g5_n + 1))
+        fi
+    done <<< "$(grep -rnE '@ConfigurationProperties\(.*prefix[[:space:]]*=[[:space:]]*"|(static[[:space:]]+final[[:space:]]+String[[:space:]]+[A-Z_]*PREFIX[A-Z_]*[[:space:]]*=[[:space:]]*"starbot\.)' \
+        --include='*.java' $CORE_MAINS 2>/dev/null | sort -u)"
+fi
+
+# —— 源头②：发行模板里核心那一节的键 ——
+# 只看键，不看注释：注释里提到旧位置是在教人怎么迁，正是该写的话
+TEMPLATE_YML="dist/templates/application.yml"
+if [ -f "$TEMPLATE_YML" ]; then
+    while IFS= read -r entry; do
+        [ -z "$entry" ] && continue
+        lineno="${entry%%:*}"
+        key="${entry#*:}"
+        g5_keys=$((g5_keys + 1))
+
+        if platform_hit "$key"; then
+            g5_hits="${g5_hits}${TEMPLATE_YML}:${lineno}(${key}) "
+            g5_n=$((g5_n + 1))
+        fi
+    done <<< "$(awk '
+        {
+            line = $0
+            sub(/[[:space:]]*#.*$/, "", line)                 # 去掉注释
+            if (line ~ /^[[:space:]]*$/) next
+            if (line ~ /^[[:space:]]*-/) next                 # 列表项不是键路径的一级
+            if (line !~ /^[[:space:]]*[A-Za-z_][A-Za-z0-9_.-]*[[:space:]]*:/) next
+
+            indent = match(line, /[^ ]/) - 1
+            key = line
+            sub(/^[[:space:]]*/, "", key)
+            sub(/[[:space:]]*:.*$/, "", key)
+
+            depth = int(indent / 2)
+            path[depth] = key
+            for (i = depth + 1; i <= maxdepth; i++) delete path[i]
+            if (depth > maxdepth) maxdepth = depth
+
+            full = path[0]
+            for (i = 1; i <= depth; i++) full = full "." path[i]
+
+            if (full ~ /^starbot\.core(\.|$)/) print NR ":" full
+        }
+    ' "$TEMPLATE_YML")"
+fi
+
+if [ "$g5_n" -eq 0 ]; then
+    echo "格5 绿 命中0 核心配置键无平台名 受查键${g5_keys}个 例外${#G5_EXEMPT[@]}条"
+else
+    echo "格5 红 命中${g5_n} ${g5_hits% } 受查键${g5_keys}个 例外${#G5_EXEMPT[@]}条"
     RED=1
 fi
 

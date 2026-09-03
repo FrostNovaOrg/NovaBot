@@ -49,6 +49,13 @@ export function renderGeneral() {
         d.textContent = '默认值：' + f.defaultValue;
         meta.appendChild(d);
       }
+      // 配置键改过名，这一项在文件里写的还是旧位置。值显示的就是它，但得说清是从哪一行来的——
+      // 否则使用者在文件里按现行名字找不到这一行，会以为界面显示错了
+      if (store.legacy[f.name]) {
+        const l = el('div', 'legacy');
+        l.textContent = '该项按旧位置 ' + store.legacy[f.name] + ' 生效，建议迁到新位置：在此保存一次即可，旧位置的内容不会被改动';
+        meta.appendChild(l);
+      }
       row.appendChild(meta);
 
       const cell = el('div');

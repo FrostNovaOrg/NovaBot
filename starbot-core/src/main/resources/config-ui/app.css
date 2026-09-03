@@ -42,6 +42,8 @@ section.on{display:block}
   padding:1px 6px;border-radius:4px;font-family:ui-monospace,Menlo,Consolas,monospace}
 .field .desc{color:var(--muted);font-size:12.5px;margin-top:3px;white-space:pre-line}
 .field .dflt{color:var(--muted);font-size:11.5px;margin-top:3px}
+/* 按旧位置生效的配置项：不是错误，但必须看得见，否则值与文件里的行对不上 */
+.field .legacy{color:var(--err);font-size:11.5px;margin-top:4px;line-height:1.5}
 .field input[type=text],.field input[type=number],.field textarea{width:100%;padding:6px 9px;
   border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);
   font-family:inherit;font-size:13px}

@@ -37,7 +37,7 @@ class ConfigUiFrontendTest {
      * 跨页签共享的可变状态，全部挂在 store 上。裸着出现即为 ReferenceError
      */
     private static final List<String> SHARED = List.of(
-            "schema", "values", "dirty", "tab", "csrfToken", "pushData", "handlerList",
+            "schema", "values", "legacy", "dirty", "tab", "csrfToken", "pushData", "handlerList",
             "senderList", "advancedMode", "wizardTouched", "pushEnabled", "accountTimer",
             "platforms", "totpRequired");
 
