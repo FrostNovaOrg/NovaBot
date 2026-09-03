@@ -3,6 +3,7 @@ package com.starlwr.bot.adapter.onebot.service;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.adapter.onebot.config.OneBotAdapterPluginProperties;
+import com.starlwr.bot.adapter.onebot.converter.OneBotIncomingMessage;
 import com.starlwr.bot.adapter.onebot.model.OneBotSender;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.adapter.onebot.health.OneBotConnectionState;
@@ -251,6 +252,11 @@ public class OneBotWebsocketService {
 
         private Boolean tokenVerify = null;
 
+        /**
+         * 是否已就「上报里没有 self_id」报过一次
+         */
+        private boolean selfIdWarned = false;
+
         private final OneBotLivenessTracker liveness = new OneBotLivenessTracker(Instant.now());
 
         private OneBotWebSocketHandler(OneBotWebsocketService service, OneBotSender sender) {
@@ -354,10 +360,13 @@ public class OneBotWebsocketService {
                                     JSONObject messageSender = rawMessage.getJSONObject("sender");
                                     String senderRole = messageSender == null ? null : messageSender.getString("role");
 
+                                    warnOnceIfSelfIdMissing(rawMessage, messageType);
+                                    OneBotIncomingMessage incoming = OneBotIncomingMessage.of(rawMessage);
+
                                     service.publisher.publishEvent(new StarBotRemoteMessageEvent(
                                             sender.getName(), messageType, num,
-                                            rawMessage.getLong("user_id"), rawMessage.getString("raw_message"),
-                                            senderRole));
+                                            rawMessage.getLong("user_id"), incoming.text(),
+                                            senderRole, incoming.mentionsBot()));
                                 }
 
                                 if ("status".equalsIgnoreCase(rawMessage.getString("raw_message"))) {
@@ -385,6 +394,24 @@ public class OneBotWebsocketService {
                 log.error("处理 {} 的 OneBot Websocket 分片消息发生异常", sender.getName(), e);
                 messageBuffer.setLength(0);
             }
+        }
+
+        /**
+         * 群消息里缺 {@code self_id} 时报一次
+         * <p>
+         * 群聊命令要靠「@ 的是不是我」来判，而这一判需要知道自己的账号。缺了它，
+         * <b>全部群聊命令会一起失灵，且不报任何错</b>——机器人只是从此不再应答，
+         * 谁也说不上来是从哪一刻起变成这样的。所以在这里响一声；
+         * 每条连接只响一次，免得把日志刷满。
+         * @param rawMessage 收到的消息事件
+         * @param messageType 消息类型
+         */
+        private void warnOnceIfSelfIdMissing(JSONObject rawMessage, String messageType) {
+            if (selfIdWarned || !"group".equals(messageType) || rawMessage.getLong("self_id") != null) {
+                return;
+            }
+            selfIdWarned = true;
+            log.warn("{} 上报的群消息里没有 self_id, 无法判断消息是否 @ 了机器人, 群聊命令将不会响应", sender.getName());
         }
 
         /**

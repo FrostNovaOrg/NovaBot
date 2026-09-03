@@ -20,7 +20,6 @@ starbot.core.alert.webhook-method|java.lang.String|POST|Webhook 请求方式：P
 starbot.core.alert.webhook-title-field|java.lang.String|title|Webhook JSON 中承载标题的字段名 各服务字段名不统一：Server 酱用 title/desp，钉钉与飞书用嵌套结构， 自建接口则各有各的约定，因此做成可配置而非写死。
 starbot.core.alert.webhook-url|java.lang.String||Webhook 告警地址，留空则不启用 QQ 与邮件之外唯一不依赖机器人自身链路的通道。QQ 告警走的是机器人的推送链路， 一旦 OneBot 实现掉线或 QQ 掉登录，需要告警的正是这种时候，而告警本身也一并失效了。 Webhook 只需一个地址，适配 Bark、Server 酱、钉钉、飞书、Telegram 等常见服务。
 starbot.core.command.admins|java.util.List<java.lang.Long>|<null>|超级管理员账号，跨会话生效 「禁用命令」这类操作会改变全群的可用功能，只对管理员开放。 群主与群管理员自动拥有权限，此处填的是不依赖群角色的额外名单—— 机器人的主人未必是每个群的管理员。
-starbot.core.command.prefix|java.lang.String||命令前缀，留空表示直接以命令名触发 群里同时有多个机器人时容易撞词，此时可加前缀（如 /）区分。 默认留空是因为对只装了一个机器人的多数使用者而言，多打一个符号没有收益。
 starbot.core.config-ui.agreement.accepted-at|java.lang.String||同意的时间 ISO 格式，留空表示尚未同意过。它不参与任何判断，只是留个凭据： 日后要回答「这台机器上是什么时候同意的」时，答案得在盘上，而不是靠人回忆。
 starbot.core.config-ui.agreement.accepted-by|java.lang.String||同意是从哪条通道点下的 password＝输过登录口令之后同意，operator-token＝凭启动令牌进来之后同意。 留空表示这行记录说不出是谁点的，此时会在下次登录之后再请使用者确认一次。 4.4.0 及更早的版本在登录之前就让人点同意，写下的正是这种记录—— 那时任何能连上控制台端口的程序都写得下它，因此它证明不了使用者本人确实看过。
 starbot.core.config-ui.agreement.accepted-version|java.lang.Integer|0|已同意的协议版本号 0 表示尚未同意过。协议文案改版时版本号会加一，届时此处记着的旧版本即刻失效， 使用者会被要求重新确认一次——否则改了文案等于没改，没有人会再看到它。

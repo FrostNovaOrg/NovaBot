@@ -88,7 +88,6 @@ starbot:
       quiet-start: "23:30"
       quiet-end: "07:45"
     command:
-      prefix: "/"
       admins:
         - 101
         - 102

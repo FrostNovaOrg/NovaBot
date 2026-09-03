@@ -5,7 +5,6 @@ import com.starlwr.bot.core.command.CommandDispatcher;
 import com.starlwr.bot.core.command.CommandReply;
 import com.starlwr.bot.core.command.CommandSettingsService;
 import com.starlwr.bot.core.command.StarBotCommand;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.util.StringUtil;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,6 +20,9 @@ import java.util.Map;
  * <p>
  * 列出当前会话可用的命令。已被禁用的命令不出现在列表里——列出一个用不了的命令
  * 只会让人反复尝试。
+ * <p>
+ * 认不出的消息也回这一份，因此<b>顶行必须写清怎么用</b>：走到这里的人多半正是
+ * 没打对触发方式的那个人，只给他一串命令名，他还是不知道该怎么把它们发出去。
  */
 @Component
 public class MenuCommand implements StarBotCommand {
@@ -32,19 +34,15 @@ public class MenuCommand implements StarBotCommand {
 
     private final CommandSettingsService settings;
 
-    private final StarBotCoreProperties properties;
-
     @Autowired
-    public MenuCommand(ObjectProvider<CommandDispatcher> dispatcher, CommandSettingsService settings,
-                       StarBotCoreProperties properties) {
+    public MenuCommand(ObjectProvider<CommandDispatcher> dispatcher, CommandSettingsService settings) {
         this.dispatcher = dispatcher;
         this.settings = settings;
-        this.properties = properties;
     }
 
     @Override
     public String name() {
-        return "菜单";
+        return CommandDispatcher.MENU_COMMAND_NAME;
     }
 
     @Override
@@ -70,8 +68,6 @@ public class MenuCommand implements StarBotCommand {
             return CommandReply.none();
         }
 
-        String prefix = StringUtil.isBlank(properties.getCommand().getPrefix()) ? "" : properties.getCommand().getPrefix();
-
         // 先按分类归拢再输出：命令一多，平铺的清单没人看得下去。
         // 分类的先后取「首次出现的顺序」——命令本身已按名称排序，因此这个顺序是稳定的，
         // 不会每次发菜单都换个模样
@@ -83,11 +79,11 @@ public class MenuCommand implements StarBotCommand {
             grouped.computeIfAbsent(command.category(), key -> new ArrayList<>()).add(command);
         }
 
-        StringBuilder text = new StringBuilder("可用命令：");
+        StringBuilder text = new StringBuilder(usageLine(context)).append("\n\n可用命令：");
         for (Map.Entry<String, List<StarBotCommand>> entry : grouped.entrySet()) {
             text.append("\n\n【").append(entry.getKey()).append("】");
             for (StarBotCommand command : entry.getValue()) {
-                text.append("\n").append(prefix).append(command.name());
+                text.append("\n").append(command.name());
                 if (StringUtil.isNotBlank(command.usage())) {
                     text.append(" ").append(command.usage());
                 }
@@ -96,6 +92,20 @@ public class MenuCommand implements StarBotCommand {
         }
 
         return CommandReply.of(text.toString());
+    }
+
+    /**
+     * 顶行的使用方法
+     * <p>
+     * 群聊与私聊的触发方式不同，这一行也就得跟着会话走：在群里写「直接发命令名」
+     * 会让人照做，然后什么也不会发生。
+     * @param context 执行上下文
+     * @return 使用方法
+     */
+    private String usageLine(CommandContext context) {
+        return context.isGroup()
+                ? "用法：@ 我，后面接命令名，例如「" + name() + "」。"
+                : "用法：直接发命令名，例如「" + name() + "」。";
     }
 
     @Override

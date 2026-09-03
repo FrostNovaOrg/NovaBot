@@ -50,7 +50,17 @@ class MenuCommandTest {
         when(provider.getIfAvailable()).thenReturn(dispatcher);
 
         settings = new CommandSettingsService(new StarBotStateStore(new StarBotCoreProperties()));
-        menu = new MenuCommand(provider, settings, new StarBotCoreProperties());
+        menu = new MenuCommand(provider, settings);
+    }
+
+    @Test
+    @DisplayName("顶行应写清怎么用，且群聊与私聊各说各的")
+    void leadsWithUsage() {
+        // 认不出的消息回的就是这一份，看到它的人多半正是没打对触发方式的那个人
+        assertTrue(menu.execute(context(PushTargetType.GROUP)).content().startsWith("用法：@ 我，"),
+                menu.execute(context(PushTargetType.GROUP)).content());
+        assertTrue(menu.execute(context(PushTargetType.FRIEND)).content().startsWith("用法：直接发命令名"),
+                menu.execute(context(PushTargetType.FRIEND)).content());
     }
 
     @Test
@@ -85,7 +95,11 @@ class MenuCommandTest {
     }
 
     private CommandContext context() {
-        return new CommandContext(PLATFORM, PushTargetType.GROUP, GROUP, 1L, "菜单", List.of(), "菜单");
+        return context(PushTargetType.GROUP);
+    }
+
+    private CommandContext context(PushTargetType type) {
+        return new CommandContext(PLATFORM, type, GROUP, 1L, "菜单", List.of(), "菜单");
     }
 
     private StarBotCommand stub(String name, String category) {

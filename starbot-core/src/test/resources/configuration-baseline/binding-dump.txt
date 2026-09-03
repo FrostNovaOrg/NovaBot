@@ -14,7 +14,6 @@ starbot.core.alert.webhook-title-field=coverage-title
 starbot.core.alert.webhook-url=http://127.0.0.1:18080/hook
 starbot.core.command.admins[0]=101
 starbot.core.command.admins[1]=102
-starbot.core.command.prefix=/
 starbot.core.config-ui.agreement.accepted-at=2026-01-02T03:04:05
 starbot.core.config-ui.agreement.accepted-by=password
 starbot.core.config-ui.agreement.accepted-version=71
