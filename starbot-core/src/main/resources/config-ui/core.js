@@ -28,7 +28,7 @@ export const api = (p, o) => {
 };
 export const $ = s => document.querySelector(s);
 export const el = (t, c) => { const e = document.createElement(t); if (c) e.className = c; return e; };
-// 主播昵称等内容来自哔哩哔哩接口，属于外部数据，拼进 innerHTML 前必须转义
+// 主播昵称等内容来自各平台的接口，属于外部数据，拼进 innerHTML 前必须转义
 export const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 

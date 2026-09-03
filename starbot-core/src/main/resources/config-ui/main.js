@@ -60,17 +60,32 @@ async function mountPages() {
 }
 
 /**
+ * 调某一页的钩子，它抛出来只算它自己那一页出事
+ *
+ * 钩子里跑的是插件的代码。不拦在这里的话，一页抛出去会当场中断整轮遍历——
+ * 排在它后面的页就都不再刷新，而调用方那一趟整体载入也跟着失败，
+ * 屏幕上只剩一句与出事那一页毫无关系的「载入失败」。
+ */
+function callPage(page, hook, ...args) {
+  try {
+    page.module[hook]?.(...args);
+  } catch (e) {
+    say(page.meta.displayName + ' 页出错：' + e.message, 'err');
+  }
+}
+
+/**
  * 让各插件页重取自己的数据
  */
 export function refreshPages() {
-  pages.forEach(page => page.module.refresh?.());
+  pages.forEach(page => callPage(page, 'refresh'));
 }
 
 /**
  * 把运行状态转给各插件页，由它们自己挑要用的部分
  */
 export function pageStatus(data) {
-  pages.forEach(page => page.module.status?.(data));
+  pages.forEach(page => callPage(page, 'status', data));
 }
 
 export async function load() {
@@ -145,7 +160,7 @@ export function switchTab(name) {
   else {
     // 剩下的都是插件带来的页：核心不知道它们叫什么，按注册清单认
     const page = pages.find(item => item.meta.id === store.tab);
-    if (page) { api('/status').then(renderStatus); page.module.refresh?.(); }
+    if (page) { api('/status').then(renderStatus); callPage(page, 'refresh'); }
   }
 
   markDirty();

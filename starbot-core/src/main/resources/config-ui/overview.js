@@ -16,7 +16,7 @@ export function renderWizard() {
     </div>
 
     <div class="step">
-      <h3><span class="no" id="s2-no">2</span>登录哔哩哔哩</h3>
+      <h3><span class="no" id="s2-no">2</span><span id="s2-title">登录直播平台</span></h3>
       <div class="body">
         <div class="out" id="s2-out">读取中…</div>
         <div id="s2-qr"></div>
@@ -61,17 +61,27 @@ export async function refreshWizardState() {
   try {
     const [login, st] = await Promise.all([api('/login'), api('/status')]);
 
-    const account = (login.accounts || [])[0];
+    // 这一步登录的是哪个平台，由运行时的清单说了算，向导里不写死任何一个平台的名字：
+    // 只装了一个平台插件时它就是默认的那个，一个都没装时这一步根本无从做起，
+    // 装了多个则每个都要有着落——写死一个名字，别的平台在向导里就永远不存在
+    const accounts = login.accounts || [];
+    const done = a => !!(a.loggedIn || a.disabledReason);
+    // 停在还没着落的那个平台上：已经登录好的那些不必再占着这一屏
+    const account = accounts.find(a => !done(a)) || accounts[0];
     const loggedIn = !!(account && account.loggedIn);
     // 登录被配置关掉时（例如匿名模式）这一步不会再有进展，算它「已定」而不是「未完成」，
-    // 否则向导会永远停在「还有 1 步未完成」，催一件使用者已经决定不做的事
+    // 否则向导会永远停在「还有 1 步未完成」，催一件使用者已经决定不做的事。
+    // 一个平台插件都没装时同理：那不是没做完，是没得做
     const disabled = (account && account.disabledReason) || '';
-    const settled = loggedIn || !!disabled;
+    const settled = accounts.every(done);
     stepDone(2, settled);
+    $('#s2-title').textContent = accounts.length === 1 ? '登录' + accounts[0].displayName : '登录直播平台';
+    // 装了多个平台时要点明这一屏说的是哪一个，否则二维码是谁的都看不出来
+    const who = accounts.length > 1 ? account.displayName + '：' : '';
     $('#s2-out').textContent = account
-      ? (loggedIn ? '已登录，账号 ' + (account.accountId || '未知')
-        : disabled || '请使用哔哩哔哩客户端扫描下方二维码')
-      : '未找到可登录的平台';
+      ? who + (loggedIn ? '已登录，账号 ' + (account.accountId || '未知')
+        : disabled || ('请使用' + account.displayName + '客户端扫描下方二维码'))
+      : '未加载任何直播平台插件，无法登录';
     $('#s2-out').className = 'out' + (loggedIn ? ' ok' : '');
     $('#s2-qr').innerHTML = (account && !loggedIn && account.qrCode)
       ? '<img referrerpolicy="no-referrer" style="width:240px;height:240px;background:#fff;border-radius:6px;padding:8px" src="data:image/png;base64,' + esc(account.qrCode) + '">'

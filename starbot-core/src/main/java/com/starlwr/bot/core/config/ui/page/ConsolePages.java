@@ -8,6 +8,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 
 /**
@@ -16,6 +17,9 @@ import java.util.regex.Pattern;
  * 清单里的每一项都来自插件，也就是<b>本模块管不着的代码</b>：标识会原样成为 DOM 里的 id，
  * 脚本名会原样接在取资源的路径后面。因此登记这一步就是唯一的关口——
  * 放行之后再想补救，补的就是浏览器里那个奇怪的元素，和一次照着 {@code ../} 去翻文件的读取。
+ * <p>
+ * 同样因为它们来自插件，取值这几下<b>本身就可能抛</b>：那几个方法里可以是任何东西。
+ * 一项出事只该少一个页签，不该让整条清单连同其余插件的页一起消失。
  */
 @Slf4j
 public final class ConsolePages {
@@ -37,7 +41,36 @@ public final class ConsolePages {
      */
     private static final Pattern SCRIPT = Pattern.compile("[A-Za-z0-9_-]+\\.js");
 
+    /**
+     * 已通过登记的一项：注册项本身，加上登记时读到的标识与顺序值
+     * <p>
+     * 排序要用标识与顺序值，而<b>再问注册项一次就是再给它一次抛异常的机会</b>——
+     * 那一下会发生在比较器里，掀掉的是整次排序。登记时读到什么就按什么排。
+     * <p>
+     * 留着注册项本身而不是只留这几个值：取页面脚本要用它自己的类加载器去翻它自己的 jar，
+     * 换成核心这边造的替身，翻的就是核心的资源目录，插件页从此取不到。
+     */
+    private record Entry(ConsolePageProvider provider, String id, int order) {
+    }
+
     private ConsolePages() {
+    }
+
+    /**
+     * 向注册项要一个值，它抛了就当这一项没填
+     * @param provider 注册项
+     * @param field 要取的那一项
+     * @param what 取的是什么，用于日志
+     * @return 取到的值，取值过程抛异常时为空
+     */
+    private static <T> T read(ConsolePageProvider provider, Function<ConsolePageProvider, T> field, String what) {
+        try {
+            return field.apply(provider);
+        } catch (RuntimeException | LinkageError e) {
+            // 连类名都可能取不到（插件的类加载器已经出事了），因此这里也不敢直接调 provider 的任何东西
+            log.warn("控制台页面读取{}失败, 已忽略该页: {}", what, e.toString());
+            return null;
+        }
     }
 
     /**
@@ -53,7 +86,7 @@ public final class ConsolePages {
             return List.of();
         }
 
-        List<ConsolePageProvider> kept = new ArrayList<>();
+        List<Entry> kept = new ArrayList<>();
         Set<String> seen = new HashSet<>();
 
         for (ConsolePageProvider provider : providers) {
@@ -61,21 +94,26 @@ public final class ConsolePages {
                 continue;
             }
 
-            String id = provider.id();
+            String id = read(provider, ConsolePageProvider::id, "标识");
             if (id == null || !ID.matcher(id).matches()) {
                 log.warn("控制台页面 {} 的标识不合规, 已忽略: {}", provider.getClass().getName(), id);
                 continue;
             }
 
-            String displayName = provider.displayName();
+            String displayName = read(provider, ConsolePageProvider::displayName, "显示名称");
             if (displayName == null || displayName.isBlank()) {
                 log.warn("控制台页面 {} 没有显示名称, 已忽略", id);
                 continue;
             }
 
-            String script = provider.script();
+            String script = read(provider, ConsolePageProvider::script, "脚本名");
             if (script == null || !SCRIPT.matcher(script).matches()) {
                 log.warn("控制台页面 {} 的脚本名不合规, 已忽略: {}", id, script);
+                continue;
+            }
+
+            Integer order = read(provider, ConsolePageProvider::order, "顺序值");
+            if (order == null) {
                 continue;
             }
 
@@ -84,11 +122,11 @@ public final class ConsolePages {
                 continue;
             }
 
-            kept.add(provider);
+            kept.add(new Entry(provider, id, order));
         }
 
-        kept.sort(Comparator.comparingInt(ConsolePageProvider::order).thenComparing(ConsolePageProvider::id));
-        return List.copyOf(kept);
+        kept.sort(Comparator.comparingInt(Entry::order).thenComparing(Entry::id));
+        return kept.stream().map(Entry::provider).toList();
     }
 
     /**
@@ -106,7 +144,7 @@ public final class ConsolePages {
         }
 
         return valid(providers).stream()
-                .filter(provider -> provider.script().equals(script))
+                .filter(provider -> script.equals(read(provider, ConsolePageProvider::script, "脚本名")))
                 .findFirst();
     }
 }

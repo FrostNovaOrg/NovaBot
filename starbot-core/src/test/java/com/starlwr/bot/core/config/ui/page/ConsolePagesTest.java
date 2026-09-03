@@ -125,4 +125,81 @@ class ConsolePagesTest {
 
         assertEquals(Optional.empty(), ConsolePages.byScript(providers, "shady.js"));
     }
+
+    /**
+     * 会抛异常的注册项
+     * <p>
+     * 插件是第三方代码，这几个方法里可以是任何东西——读配置、拼字符串、甚至查一次数据库。
+     * 它抛出来的那一下，不该由整张清单来承担。
+     */
+    private record Exploding(String where) implements ConsolePageProvider {
+        @Override
+        public String id() {
+            if ("id".equals(where)) {
+                throw new IllegalStateException("插件的 id() 抛了异常");
+            }
+            return "boom-" + where;
+        }
+
+        @Override
+        public String displayName() {
+            if ("displayName".equals(where)) {
+                throw new IllegalStateException("插件的 displayName() 抛了异常");
+            }
+            return "会抛异常的页";
+        }
+
+        @Override
+        public String script() {
+            if ("script".equals(where)) {
+                throw new IllegalStateException("插件的 script() 抛了异常");
+            }
+            return "boom-" + where + ".js";
+        }
+
+        @Override
+        public int order() {
+            if ("order".equals(where)) {
+                throw new IllegalStateException("插件的 order() 抛了异常");
+            }
+            return 100;
+        }
+    }
+
+    /**
+     * 一个坏插件只坏它自己那一页
+     * <p>
+     * 清单里的各项来自互不相干的插件。<b>其中一个填错或抛了异常，控制台该少的只是那一个页签</b>，
+     * 而不是整条清单一起消失——那样使用者看到的是一个一个平台页都没有的控制台，
+     * 只会以为插件全都没装上，而真正出问题的那一个反倒无从辨认。
+     */
+    @Test
+    @DisplayName("坏的注册项只丢它自己，其余照常入清单")
+    void oneBadProviderDoesNotTakeDownTheRest() {
+        List<ConsolePageProvider> kept = ConsolePages.valid(list(
+                new Page("alpha", "甲", "alpha.js", 10),
+                new Exploding("id"),
+                new Exploding("displayName"),
+                new Exploding("script"),
+                new Exploding("order"),
+                page("Upper", "shady.js"),
+                page("bad-script", "../../application.yml"),
+                null,
+                new Page("zulu", "乙", "zulu.js", 20)));
+
+        assertEquals(List.of("alpha", "zulu"), kept.stream().map(ConsolePageProvider::id).toList(),
+                "坏项该被逐个跳过，好的那两页照常在清单里");
+    }
+
+    @Test
+    @DisplayName("清单里有会抛异常的项时，按脚本名照样找得到好的那一页")
+    void scriptLookupSurvivesExplodingProviders() {
+        List<ConsolePageProvider> providers = list(
+                new Exploding("script"),
+                page("alpha", "alpha.js"),
+                new Exploding("id"));
+
+        assertEquals("alpha", ConsolePages.byScript(providers, "alpha.js").map(ConsolePageProvider::id).orElse(null));
+        assertEquals(Optional.empty(), ConsolePages.byScript(providers, "boom-id.js"));
+    }
 }

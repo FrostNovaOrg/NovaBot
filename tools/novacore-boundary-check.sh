@@ -6,7 +6,7 @@
 # 控制台／登录／推送／聚合／存储归 NovaBot 壳。一句话尺：莓果或 VRDash 用不到的，就不是核心。
 #
 # 本尺只 grep/find，不 build、不联网。拆仓／拆模块后作 CI 守卫。
-# 退码：格1 或 格2 任一红 ⇒ 非 0；格3 只印数不判红绿（读法未定，见文末注释）。
+# 退码：三格任一红 ⇒ 非 0。
 
 set -uo pipefail
 
@@ -19,54 +19,129 @@ cd "$REPO_ROOT" || exit 2
 CORE_UI="starbot-core/src/main/resources/config-ui"
 RED=0
 
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+
 # ============================================================
-# 格1：core 资源里不许有平台专页
-# 现状（拆前）＝红：整份 bilibili.js 在 core 资源里，且 index.html/main.js/push.js 写死 bilibili。
-# 拆法：core 只留 tab 注册点，平台页由插件带（笔二）。
+# 格1：core 的界面目录里不许出现任何一个直播平台的名字
+#
+# 平台名清单当场从源码里算出来，本脚本不写死任何一个平台名 —— 写死一个，
+# 这把尺守的就只是那一个平台，下一个平台写死进核心界面照样是绿的。两处源头：
+#   ① enums/LivePlatform.java 的枚举成员名与其名称字符串（含小写、去下划线、连字符各变体）
+#   ② 各插件自己申报给控制台的显示名（ConsolePageProvider / AccountLoginProvider 的 displayName）
+#      —— 界面上「登录哔哩哔哩」这类中文写死，只有从这一处才认得出来
+#
+# 射程是 config-ui/ 整个目录，文件名与文件内容都查，而不是点名几个文件几种写法：
+# 把平台字样挪到同目录的另一个文件、换一种拼法，尺就该照样逮到，否则它量的是位置不是边界。
+#
+# 匹配方式分两档：不足 4 字符的短标识（如 CC、YY）按整词匹配，其余按子串匹配。
+# 两个字母的子串会命中 account、success 这类词，那种判据只会被当成噪音关掉。
 # ============================================================
+
+# —— 例外表：每条写明「为什么它不算把平台写死进核心」，没有理由的例外一律不许加 ——
+#    形如 "文件名 正则"，命中行的文件名与内容同时匹配才豁免。
+#    现无例外：核心界面里一处平台字样都不该有。
+G1_EXEMPT=()
+
+TOKENS="$WORK/tokens"
+: > "$TOKENS"
+
+LP="starbot-core/src/main/java/com/starlwr/bot/core/enums/LivePlatform.java"
+if [ -f "$LP" ]; then
+    while IFS= read -r line; do
+        member="$(printf '%s' "$line" | sed -E 's/^[[:space:]]*([A-Z][A-Z_]*)\(.*/\1/')"
+        value="$(printf '%s' "$line" | sed -E 's/^[^"]*"([^"]*)".*/\1/')"
+        lower="$(printf '%s' "$member" | tr 'A-Z' 'a-z')"
+        printf '%s\n%s\n%s\n%s\n' "$value" "$lower" "${lower//_/}" "${lower//_/-}" >> "$TOKENS"
+    done <<< "$(grep -E '^[[:space:]]+[A-Z][A-Z_]*\("' "$LP")"
+fi
+
+for mod in */; do
+    mod="${mod%/}"
+    [ -d "$mod/src/main" ] || continue
+    skip=0
+    for allowed in $ALLOWED_CORE_MODULES; do
+        [ "$mod" = "$allowed" ] && skip=1
+    done
+    [ "$skip" -eq 1 ] && continue
+
+    while IFS= read -r f; do
+        [ -z "$f" ] && continue
+        grep -A3 'String displayName()' "$f" 2>/dev/null \
+            | grep -oE 'return "[^"]*"' \
+            | sed -E 's/^return "(.*)"$/\1/' >> "$TOKENS"
+    done <<< "$(grep -rl 'implements ConsolePageProvider\|implements AccountLoginProvider' \
+        --include='*.java' "$mod/src/main" 2>/dev/null)"
+done
+
+grep -v '^[[:space:]]*$' "$TOKENS" | sort -u > "$WORK/all"
+grep -E '^[ -~]+$' "$WORK/all" | awk 'length($0) >= 4' > "$WORK/long"
+grep -E '^[ -~]+$' "$WORK/all" | awk 'length($0) <  4' > "$WORK/short"
+grep -vE '^[ -~]+$' "$WORK/all" > "$WORK/wide"
+g1_tokens=$(wc -l < "$WORK/all" | tr -d ' ')
+
+scan() {
+    # $1 = 目标（目录或单行文本时用 - 从标准输入读）
+    [ -s "$WORK/long" ]  && grep -rinF  -f "$WORK/long"  "$1" 2>/dev/null
+    [ -s "$WORK/short" ] && grep -rinwF -f "$WORK/short" "$1" 2>/dev/null
+    [ -s "$WORK/wide" ]  && grep -rinF  -f "$WORK/wide"  "$1" 2>/dev/null
+    return 0
+}
+
 g1_hits=""
 g1_n=0
 
-add_hit() {
-    # $1 = "file:line" 串（可多行）
-    while IFS= read -r line; do
-        [ -z "$line" ] && continue
-        g1_hits="${g1_hits}${line} "
-        g1_n=$((g1_n + 1))
-    done <<< "$1"
-}
+if [ -d "$CORE_UI" ]; then
+    # 文件名本身带平台名的（整份平台专页放在核心资源里就是这一形）
+    while IFS= read -r f; do
+        [ -z "$f" ] && continue
+        base="$(basename "$f")"
+        named=0
+        [ -s "$WORK/long" ] && printf '%s\n' "$base" | grep -qiF -f "$WORK/long" && named=1
+        [ -s "$WORK/short" ] && printf '%s\n' "$base" | grep -qiwF -f "$WORK/short" && named=1
+        [ -s "$WORK/wide" ] && printf '%s\n' "$base" | grep -qF -f "$WORK/wide" && named=1
+        if [ "$named" -eq 1 ]; then
+            g1_hits="${g1_hits}${f}:0(文件名) "
+            g1_n=$((g1_n + 1))
+        fi
+    done <<< "$(find "$CORE_UI" -type f | sort)"
 
-# 1a 平台专页文件本身
-if [ -f "$CORE_UI/bilibili.js" ]; then
-    add_hit "$CORE_UI/bilibili.js:1"
-fi
-# 1b index.html 的 tab 与 section
-if [ -f "$CORE_UI/index.html" ]; then
-    add_hit "$(grep -n 'data-tab="bilibili"\|id="bilibili"' "$CORE_UI/index.html" \
-        | sed "s|^\([0-9]*\):.*|$CORE_UI/index.html:\1|")"
-fi
-# 1c main.js 的 import 与分支
-if [ -f "$CORE_UI/main.js" ]; then
-    add_hit "$(grep -n "from '\./bilibili\.js'\|tab === 'bilibili'" "$CORE_UI/main.js" \
-        | sed "s|^\([0-9]*\):.*|$CORE_UI/main.js:\1|")"
-fi
-# 1d push.js 写死 platform bilibili（含赋值与比较两形）
-if [ -f "$CORE_UI/push.js" ]; then
-    add_hit "$(grep -n "platform: *'bilibili'\|platform !== *'bilibili'\|platform === *'bilibili'" "$CORE_UI/push.js" \
-        | sed "s|^\([0-9]*\):.*|$CORE_UI/push.js:\1|")"
+    # 文件内容里出现平台名的（同一行被多类标识命中只算一处）
+    scan "$CORE_UI" | sort -u | awk -F: '!seen[$1":"$2]++' > "$WORK/hits"
+    while IFS= read -r hit; do
+        [ -z "$hit" ] && continue
+        file="${hit%%:*}"
+        rest="${hit#*:}"
+        lineno="${rest%%:*}"
+        text="${rest#*:}"
+
+        exempt=0
+        for rule in ${G1_EXEMPT[@]+"${G1_EXEMPT[@]}"}; do
+            rule_file="${rule%% *}"
+            rule_re="${rule#* }"
+            if [[ "$file" == *"$rule_file"* ]] && printf '%s' "$text" | grep -qE "$rule_re"; then
+                exempt=1
+                break
+            fi
+        done
+        [ "$exempt" -eq 1 ] && continue
+
+        g1_hits="${g1_hits}${file}:${lineno} "
+        g1_n=$((g1_n + 1))
+    done < "$WORK/hits"
 fi
 
 if [ "$g1_n" -eq 0 ]; then
-    echo "格1 绿 命中0 core 资源无平台专页"
+    echo "格1 绿 命中0 核心界面无平台字样 平台名${g1_tokens}个(现算)"
 else
-    echo "格1 红 命中${g1_n} ${g1_hits% }"
+    echo "格1 红 命中${g1_n} ${g1_hits% } 平台名${g1_tokens}个(现算)"
     RED=1
 fi
 
 # ============================================================
 # 格2：§5 事件输出协议（真源）须在核心模块
 # 现状（拆前）＝红：端点与装配都在 starbot-bilibili。
-# 拆法：NovaEventEndpoint / NovaEventStreamConfiguration 迁核心，协议与路径不变（笔三）。
+# 拆法：NovaEventEndpoint / NovaEventStreamConfiguration 迁核心，协议与路径不变。
 # ============================================================
 g2_files=$(find . -path ./target -prune -o -name 'NovaEventEndpoint.java' -print \
     -o -name 'NovaEventStreamConfiguration.java' -print 2>/dev/null \
@@ -102,18 +177,14 @@ else
 fi
 
 # ============================================================
-# 格3：平台清单 LivePlatform —— 本尺只印数，不判红绿（读法待定）
+# 格3：平台清单 LivePlatform —— 读法已定为「开放标识／注册表」
 #
-# 读法甲（闭集枚举留核心）：尺＝枚举成员数 与 全树被引用的平台数 并排。
-#   绿判据将写成：两数相等 —— 枚举里列的每一个平台都真有实现，没有列而不做的空头。
-#   落法：核心保留 LivePlatform，新增平台须同时改枚举与实现。
-#
-# 读法乙（开放标识/注册表）：尺＝core 内引用 LivePlatform.<具体成员> 的处数，须为 0。
-#   绿判据将写成：该处数 == 0 —— 核心只认平台标识串，不认某个具体平台的名字；
-#   平台由插件在注册表里自报，核心的枚举退化为字符串或整份退休。
-#   落法：核心里所有 LivePlatform.BILIBILI 之类改为按标识串比对。
+# 绿判据：core 内引用 LivePlatform.<具体成员> 的处数为 0 ——
+# 核心只认平台标识串，不认某一个具体平台的名字；平台由插件在注册表里自报。
+# 另一读法（闭集枚举留核心，绿判据＝枚举成员数与被引用平台数相等）不采：
+# 那要为枚举里列而不做的那几个平台背书，而它们一个实现也没有。
+# 两数照旧印出来，只是不再作判据 —— 它是「空头平台有几个」的现读数。
 # ============================================================
-LP="starbot-core/src/main/java/com/starlwr/bot/core/enums/LivePlatform.java"
 if [ -f "$LP" ]; then
     g3_members=$(grep -cE '^\s+[A-Z][A-Z_]*\("' "$LP")
 else
@@ -124,6 +195,11 @@ g3_used=$(grep -rhoE 'LivePlatform\.[A-Z][A-Z_]*' --include='*.java' \
 g3_core_concrete=$(grep -rcE 'LivePlatform\.[A-Z][A-Z_]*' --include='*.java' \
     starbot-core/src/main 2>/dev/null | awk -F: '{s+=$2} END {print s+0}')
 
-echo "格3 印数 读法甲=枚举${g3_members}/被引用${g3_used} 读法乙=core内具体成员${g3_core_concrete}处(须0) $LP"
+if [ "$g3_core_concrete" -eq 0 ]; then
+    echo "格3 绿 core内具体成员0处 枚举${g3_members}/被引用${g3_used} $LP"
+else
+    echo "格3 红 core内具体成员${g3_core_concrete}处(须0) 枚举${g3_members}/被引用${g3_used} $LP"
+    RED=1
+fi
 
 exit "$RED"

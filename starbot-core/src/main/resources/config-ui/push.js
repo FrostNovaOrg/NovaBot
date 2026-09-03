@@ -201,7 +201,7 @@ function optionEditor(message, options) {
 // 用假数据渲染，让人在配置时就看到大致效果，不必等真事件发生
 const PREVIEW_VALUES = {
   '{uname}': '示例主播', '{title}': '示例直播间标题', '{action}': '投稿了视频',
-  '{url}': 'https://live.bilibili.com/123456', '{time}': '1 小时 23 分钟',
+  '{url}': 'https://live.example.com/123456', '{time}': '1 小时 23 分钟',
   '{cover}': '［直播间封面］', '{picture}': '［动态图片］',
   '{next}': '\n──────\n', '{at=all}': '@全体成员'
 };
