@@ -45,11 +45,13 @@ public class EventStreamProperties {
      * 需要从其他机器读取时请自行建立 SSH 隧道，<b>直接暴露到公网风险自负</b>：
      * 事件流里有观众的昵称、uid 与消费金额。
      */
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
     private boolean enabled = false;
 
     /**
      * 事件输出的路径，与配置界面共用 {@code server.port} 端口
      */
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
     private String path = "/nova/events";
 
     /**
@@ -70,6 +72,7 @@ public class EventStreamProperties {
      * <p>
      * 口令由控制台签发，<b>只能读事件流</b>：既不给服务器 shell，也不给配置控制台。
      */
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
     private boolean requireToken = false;
 
     /**
@@ -80,5 +83,6 @@ public class EventStreamProperties {
      * <p>
      * 每条约数 KB（含原始报文），2000 条量级在十 MB 上下，调大前先掂量内存。
      */
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
     private int bufferSize = 2000;
 }

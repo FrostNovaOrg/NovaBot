@@ -14,6 +14,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -169,9 +170,19 @@ public class ConfigurationFileService {
         }
     }
 
-    public synchronized int write(Map<String, String> changes) throws IOException {
+    /**
+     * 把一批配置项写进配置文件
+     * <p>
+     * 回的是<b>真正落盘的那几个键的名字，而不是一个数目</b>。调用方接下来要回答的是
+     * 「其中哪几项要等重启」——只给数目的话，那个红色的数字后面跟不出任何一个键名，
+     * 而事后再算一遍得到的是「现在有哪些项与默认值不同」，答的已经是另一个问题了。
+     * @param changes 待写入的配置项名到取值
+     * @return 实际发生改动的配置项名
+     * @throws IOException 读写失败或存在含换行的标量值时抛出
+     */
+    public synchronized List<String> write(Map<String, String> changes) throws IOException {
         if (changes.isEmpty()) {
-            return 0;
+            return List.of();
         }
 
         List<String> lines = Files.readAllLines(configPath, StandardCharsets.UTF_8);
@@ -186,7 +197,8 @@ public class ConfigurationFileService {
 
         rejectMultilineScalars(changes, index);
 
-        int changed = 0;
+        // 用有序集而不是计数器：同一个键在一次调用里只会处理一次，但名字要按处理顺序留下来
+        Set<String> changed = new LinkedHashSet<>();
         List<Map.Entry<String, String>> missing = new ArrayList<>();
 
         // 列表整块替换会改变行号，因此自下而上处理，避免先前的替换让后面的行号失效
@@ -206,7 +218,7 @@ public class ConfigurationFileService {
                     && (change.getValue() == null || change.getValue().isBlank())) {
                 if (line != null) {
                     lines.remove(line.index);
-                    changed++;
+                    changed.add(change.getKey());
                 }
                 continue;
             }
@@ -218,7 +230,7 @@ public class ConfigurationFileService {
 
             if (line.isList()) {
                 if (replaceList(lines, line, change.getValue())) {
-                    changed++;
+                    changed.add(change.getKey());
                 }
                 continue;
             }
@@ -226,26 +238,26 @@ public class ConfigurationFileService {
             String updated = replaceValue(lines.get(line.index), change.getValue());
             if (!updated.equals(lines.get(line.index))) {
                 lines.set(line.index, updated);
-                changed++;
+                changed.add(change.getKey());
             }
         }
 
         // 配置文件中尚不存在的项追加到其最近的已有祖先之下
         for (Map.Entry<String, String> entry : missing) {
             if (insert(lines, entry.getKey(), entry.getValue())) {
-                changed++;
+                changed.add(entry.getKey());
             } else {
                 log.warn("配置项 {} 无法定位到合适的插入位置, 已跳过", entry.getKey());
             }
         }
 
-        if (changed > 0) {
+        if (!changed.isEmpty()) {
             backup();
             Files.write(configPath, lines, StandardCharsets.UTF_8);
-            log.info("配置界面已更新 {} 个配置项, 重启后生效", changed);
+            log.info("配置界面已更新 {} 个配置项: {}", changed.size(), String.join(", ", changed));
         }
 
-        return changed;
+        return List.copyOf(changed);
     }
 
     /**

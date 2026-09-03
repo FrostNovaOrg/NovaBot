@@ -199,7 +199,14 @@ export async function save() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(store.dirty)
       });
-      if (res.success) { store.dirty = {}; document.querySelectorAll('.field.changed').forEach(e => e.classList.remove('changed')); }
+      if (res.success) {
+        store.dirty = {};
+        document.querySelectorAll('.field.changed').forEach(e => e.classList.remove('changed'));
+        // 保存之后 N 归零，但刚存下的那几项里需重启的仍然没生效。这份名单由服务端回，
+        // 不在这里按 store.dirty 自己算一遍——真正落盘的是哪几项只有服务端知道
+        // （送上来但值没变的项不会写，也就不欠这次重启）
+        store.restartPending = res.restartPending || [];
+      }
     } else {
       res = await api('/datasource', {
         method: 'POST',

@@ -103,9 +103,9 @@ class ConfigurationFileServiceTest {
     @Test
     @DisplayName("修改标量值后文件内容随之改变")
     void writesScalar() throws IOException {
-        int changed = service.write(Map.of("starbot.bilibili.dynamic.push-minutes", "720"));
+        List<String> changed = service.write(Map.of("starbot.bilibili.dynamic.push-minutes", "720"));
 
-        assertEquals(1, changed);
+        assertEquals(List.of("starbot.bilibili.dynamic.push-minutes"), changed);
         assertTrue(content().contains("push-minutes: 720"));
         assertEquals("720", service.read().get("starbot.bilibili.dynamic.push-minutes"));
     }
@@ -142,9 +142,9 @@ class ConfigurationFileServiceTest {
     @Test
     @DisplayName("字符串列表整块替换且缩进正确")
     void writesStringList() throws IOException {
-        int changed = service.write(Map.of("starbot.core.config-ui.allow-ips", "10.0.0.0/8\n192.168.0.0/16\n127.0.0.1/32"));
+        List<String> changed = service.write(Map.of("starbot.core.config-ui.allow-ips", "10.0.0.0/8\n192.168.0.0/16\n127.0.0.1/32"));
 
-        assertEquals(1, changed);
+        assertEquals(List.of("starbot.core.config-ui.allow-ips"), changed);
         assertEquals("10.0.0.0/8\n192.168.0.0/16\n127.0.0.1/32", service.read().get("starbot.core.config-ui.allow-ips"));
 
         assertTrue(content().contains("      - 10.0.0.0/8"), "列表项缩进应与原文件一致:\n" + content());
@@ -169,7 +169,7 @@ class ConfigurationFileServiceTest {
     @Test
     @DisplayName("值未变化时不计入改动")
     void noChangeWhenValueIdentical() throws IOException {
-        assertEquals(0, service.write(Map.of("starbot.bilibili.dynamic.push-minutes", "1440")));
+        assertEquals(List.of(), service.write(Map.of("starbot.bilibili.dynamic.push-minutes", "1440")));
     }
 
     @Test
@@ -264,18 +264,18 @@ class ConfigurationFileServiceTest {
     @Test
     @DisplayName("尚不存在的配置项会被插入到已有父节点之下")
     void insertsMissingProperty() throws IOException {
-        int changed = service.write(Map.of("starbot.bilibili.dynamic.auto-save-image", "true"));
+        List<String> changed = service.write(Map.of("starbot.bilibili.dynamic.auto-save-image", "true"));
 
-        assertEquals(1, changed);
+        assertEquals(List.of("starbot.bilibili.dynamic.auto-save-image"), changed);
         assertEquals("true", service.read().get("starbot.bilibili.dynamic.auto-save-image"));
     }
 
     @Test
     @DisplayName("尚不存在的列表配置项写成 YAML 列表而非多行标量")
     void insertsMissingList() throws IOException {
-        int changed = service.write(Map.of("starbot.core.plugin.maven-base-urls", "https://a.example\nhttps://b.example"));
+        List<String> changed = service.write(Map.of("starbot.core.plugin.maven-base-urls", "https://a.example\nhttps://b.example"));
 
-        assertEquals(1, changed);
+        assertEquals(List.of("starbot.core.plugin.maven-base-urls"), changed);
         assertTrue(content().contains("- https://a.example"), "应写成 YAML 列表:\n" + content());
         assertFalse(content().contains("\"https://a.example"), "不应写成带引号的多行标量:\n" + content());
         assertEquals("https://a.example\nhttps://b.example", service.read().get("starbot.core.plugin.maven-base-urls"));
@@ -350,9 +350,9 @@ class ConfigurationFileServiceTest {
     void clearingAbsentRedisHostInsertsNothing() throws Exception {
         String before = Files.readString(config);
 
-        int changed = service.write(Map.of("spring.data.redis.host", ""));
+        List<String> changed = service.write(Map.of("spring.data.redis.host", ""));
 
-        assertEquals(0, changed);
+        assertEquals(List.of(), changed);
         assertEquals(before, Files.readString(config));
     }
 

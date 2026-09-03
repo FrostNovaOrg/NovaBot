@@ -108,11 +108,13 @@ public class StarBotCoreProperties {
         /**
          * 是否启用事件触发外部命令
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private boolean enabled = false;
 
         /**
          * 单条命令的最长执行时间，单位：秒，超时后强制结束
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private int timeout = 30;
 
         /**
@@ -120,11 +122,13 @@ public class StarBotCoreProperties {
          * <p>
          * 弹幕这类事件一秒能来几十条。没有上限的话，一次刷屏就等于一次 fork 炸弹。
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private int maxConcurrent = 4;
 
         /**
          * 规则列表
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private List<ExecRule> rules = new ArrayList<>();
     }
 
@@ -172,6 +176,7 @@ public class StarBotCoreProperties {
          * 默认留空是因为对只装了一个机器人的多数使用者而言，多打一个符号没有收益。
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private String prefix = "";
 
         /**
@@ -182,6 +187,7 @@ public class StarBotCoreProperties {
          * 机器人的主人未必是每个群的管理员。
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private List<Long> admins = new ArrayList<>();
     }
 
@@ -194,9 +200,12 @@ public class StarBotCoreProperties {
         /**
          * 全局推送开关
          * <p>
-         * 关闭后所有推送都会被丢弃，用于调试或临时静音，无需逐条改推送配置。
+         * 关闭后所有推送都会被丢弃，用于调试或临时静音，无需逐条改推送配置。改完立即生效，不必重启。
          */
+        // 之所以能即时生效：PushGate 每次判断都重新读它。「临时静音」这个诉求本身就要求立刻管用——
+        // 为了让它生效而重启一次，会把正在采集的场次打断
         @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         private boolean enabled = true;
 
         /**
@@ -211,6 +220,7 @@ public class StarBotCoreProperties {
          * <b>它才是真正会先卡住的那一道</b>。
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private int atAllDailyLimit = 10;
 
         /**
@@ -220,22 +230,27 @@ public class StarBotCoreProperties {
          * 默认 20 与 QQ 实测值一致。通常先撞到的是账号额度，本项是第二道保险。
          */
         @ConfigLevel(ConfigLevel.Level.ADVANCED)
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private int atAllSessionDailyLimit = 20;
 
         /**
          * 静音时段开始时间，格式 HH:mm，与结束时间任一为空即视为不启用
          * <p>
          * 半夜被机器人吵醒是这类通知产品被投诉最多的点，因此内置该能力而不是让使用者自行想办法。
+         * 改完立即生效，不必重启。
          */
+        // 之所以能即时生效：PushGate 每条推送都现读一次起止时刻
         @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         private String quietStart = "";
 
         /**
          * 静音时段结束时间，格式 HH:mm
          * <p>
-         * 允许跨零点：开始 23:00、结束 08:00 表示当晚 23 点至次日 8 点。
+         * 允许跨零点：开始 23:00、结束 08:00 表示当晚 23 点至次日 8 点。改完立即生效，不必重启。
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         private String quietEnd = "";
     }
 
@@ -251,6 +266,7 @@ public class StarBotCoreProperties {
          * 关闭后登录失效、连接中断、队列积压等问题只会写进日志，不会主动通知。
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private boolean enabled = true;
 
         /**
@@ -258,15 +274,19 @@ public class StarBotCoreProperties {
          * <p>
          * 故障往往持续存在，不做收敛就会反复推送同一条消息，最终使人对告警彻底脱敏。
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private int convergenceInterval = 3600;
 
         /**
          * 接收告警的推送平台名，留空则不通过 QQ 告警
          * <p>
          * 对本项目的使用者而言，告警直接推到管理员 QQ 远比邮件实用——大多数人并不会为
-         * 一个机器人专门配置发件邮箱。
+         * 一个机器人专门配置发件邮箱。改完立即生效，不必重启。
          */
+        // 收件人这几项之所以能即时生效：告警通道每次发送前都重新读它们。
+        // 需要告警的时候往往正是配错了的时候，要等重启才生效的话，改对了也得先没有告警地跑到下次启动
         @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         private String qqPlatform = "";
 
         /**
@@ -275,15 +295,19 @@ public class StarBotCoreProperties {
          * 取值必须与 {@link com.starlwr.bot.core.enums.PushTargetType} 的 code 一致：
          * {@code GROUP(1)}、{@code FRIEND(0)}。此处曾误写为「2 为私聊」，而 2 会被解析为
          * {@code UNKNOWN}，告警在发送阶段被直接丢弃，且不留任何痕迹——与 datasource.json 中
-         * 推送目标的 type 是同一套编码，不要凭直觉另立一套。
+         * 推送目标的 type 是同一套编码，不要凭直觉另立一套。改完立即生效，不必重启。
          */
+        // 与平台名、号码同进退：三项合起来才是一个收件地址，只让其中一项立刻生效，
+        // 群改私聊之后那条告警会发到上一个地址去
         @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         private int qqType = 0;
 
         /**
-         * 接收告警的群号或 QQ 号
+         * 接收告警的群号或 QQ 号，改完立即生效，不必重启
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         private Long qqNum;
 
         /**
@@ -292,8 +316,12 @@ public class StarBotCoreProperties {
          * <b>QQ 与邮件之外唯一不依赖机器人自身链路的通道。</b>QQ 告警走的是机器人的推送链路，
          * 一旦 OneBot 实现掉线或 QQ 掉登录，需要告警的正是这种时候，而告警本身也一并失效了。
          * Webhook 只需一个地址，适配 Bark、Server 酱、钉钉、飞书、Telegram 等常见服务。
+         * 改完立即生效，不必重启。
          */
+        // 请求方式与字段名那几项不在此列：它们是「怎么发」，改动通常伴随一次对接调试，
+        // 等一次重启是可以接受的
         @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         private String webhookUrl = "";
 
         /**
@@ -302,6 +330,7 @@ public class StarBotCoreProperties {
          * POST 提交 JSON（字段名见 webhook-title-field 与 webhook-content-field）；
          * GET 把标题与内容拼进查询串，适配 Bark 这类以路径或查询参数接收的服务。
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private String webhookMethod = "POST";
 
         /**
@@ -310,16 +339,19 @@ public class StarBotCoreProperties {
          * 各服务字段名不统一：Server 酱用 title/desp，钉钉与飞书用嵌套结构，
          * 自建接口则各有各的约定，因此做成可配置而非写死。
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private String webhookTitleField = "title";
 
         /**
          * Webhook JSON 中承载内容的字段名
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private String webhookContentField = "content";
 
         /**
          * Webhook 附加请求头，用于需要鉴权的服务，如 {@code Authorization: Bearer xxx}
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private final java.util.Map<String, String> webhookHeaders = new java.util.LinkedHashMap<>();
 
         /**
@@ -328,6 +360,7 @@ public class StarBotCoreProperties {
          * <b>需要告警的时候往往正是发不出去的时候</b>：出网劣化、QQ 掉登录、Webhook 服务抖动，
          * 三者都会让告警本身失败，而失败之后此前没有下文——「没收到告警」于是被读成「没出事」。
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private int retryInterval = 60;
 
         /**
@@ -336,11 +369,13 @@ public class StarBotCoreProperties {
          * 满了之后丢最旧的，并在日志里说明丢了哪一条。<b>不静默截断</b>：
          * 悄悄丢掉的告警比没有重投更糟，它会让人以为队列在正常工作。
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private int retryQueueSize = 50;
 
         /**
          * 单条告警的最大重投次数，超过后放弃并写日志
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private int retryMaxAttempts = 10;
     }
 
@@ -348,6 +383,7 @@ public class StarBotCoreProperties {
      * 非插件实现的推送平台配置
      */
     @Getter
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
     private final List<Sender> sender = new ArrayList<>();
 
     /**
@@ -360,6 +396,7 @@ public class StarBotCoreProperties {
          * 是否启用配置界面
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private boolean enabled = true;
 
         /**
@@ -368,6 +405,7 @@ public class StarBotCoreProperties {
          * 留空时每次启动自动生成一个随机令牌并输出到日志。配合默认仅监听回环地址的设置，
          * 单机部署无需任何配置即可安全使用；需要从其他机器访问时在此显式设置一个随机串。
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private String token = "";
 
         /**
@@ -375,6 +413,7 @@ public class StarBotCoreProperties {
          * <p>
          * 配置界面可修改推送目标并读取运行状态，权限高于推送接口，默认仅放行本机回环地址。
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private List<String> allowIps = new ArrayList<>(List.of("127.0.0.1/32", "::1/128"));
 
         /**
@@ -413,6 +452,7 @@ public class StarBotCoreProperties {
              * 0 表示尚未同意过。协议文案改版时版本号会加一，届时此处记着的旧版本即刻失效，
              * 使用者会被要求重新确认一次——<b>否则改了文案等于没改</b>，没有人会再看到它。
              */
+            @ConfigEffect(ConfigEffect.Effect.RESTART)
             private int acceptedVersion = 0;
 
             /**
@@ -421,6 +461,7 @@ public class StarBotCoreProperties {
              * ISO 格式，留空表示尚未同意过。它不参与任何判断，只是留个凭据：
              * 日后要回答「这台机器上是什么时候同意的」时，答案得在盘上，而不是靠人回忆。
              */
+            @ConfigEffect(ConfigEffect.Effect.RESTART)
             private String acceptedAt = "";
 
             /**
@@ -432,6 +473,7 @@ public class StarBotCoreProperties {
              * 4.4.0 及更早的版本在登录之前就让人点同意，写下的正是这种记录——
              * 那时任何能连上控制台端口的程序都写得下它，因此它证明不了使用者本人确实看过。
              */
+            @ConfigEffect(ConfigEffect.Effect.RESTART)
             private String acceptedBy = "";
         }
 
@@ -460,6 +502,7 @@ public class StarBotCoreProperties {
              * 而是「不在这台机器上多造一份 token 的副本」：原文在 NapCat 自己的配置里本来就有，
              * NovaBot 不需要第二份。别把它当成加密后就可以放松保管的东西。
              */
+            @ConfigEffect(ConfigEffect.Effect.RESTART)
             private String token = "";
 
             /**
@@ -468,6 +511,7 @@ public class StarBotCoreProperties {
              * 形态是 {@code SHA-256(token + ".napcat")} 的十六进制串——这不是我们选的，
              * 是 NapCat 的登录接口就收这个。
              */
+            @ConfigEffect(ConfigEffect.Effect.RESTART)
             private String tokenHash = "";
 
             /**
@@ -476,6 +520,7 @@ public class StarBotCoreProperties {
              * 它开了 2FA 才需要填。<b>只能明文保存</b>：代登录时要用它现算验证码，
              * 而算码需要密钥本身——这一点没有折中办法，因此配置文件的权限必须收紧到仅属主可读。
              */
+            @ConfigEffect(ConfigEffect.Effect.RESTART)
             private String totpSecret = "";
 
             /**
@@ -484,6 +529,7 @@ public class StarBotCoreProperties {
              * 默认回环。<b>不该改成非回环地址</b>：代登录是拿着凭据去换凭据，
              * 这条请求一旦离开本机，凭据就上了网线。
              */
+            @ConfigEffect(ConfigEffect.Effect.RESTART)
             private String address = "http://127.0.0.1:6099";
         }
 
@@ -501,6 +547,7 @@ public class StarBotCoreProperties {
              * 留空表示不启用口令登录。可以直接填明文，启动时会哈希后使用，
              * 同时在日志里输出可替换过去的哈希串——<b>填了明文就意味着看得到配置文件的人也就有了口令</b>。
              */
+            @ConfigEffect(ConfigEffect.Effect.RESTART)
             private String password = "";
 
             /**
@@ -510,6 +557,7 @@ public class StarBotCoreProperties {
              * 一旦开到公网，其安全性就完全押在这一个口令上</b>，而口令是会被撞库、被键盘记录、
              * 被肩窥的。真的不想要二次验证时把这一项改成 false，那是一个需要写下来的决定。
              */
+            @ConfigEffect(ConfigEffect.Effect.RESTART)
             private boolean totp = true;
 
             /**
@@ -520,6 +568,7 @@ public class StarBotCoreProperties {
              * <p>
              * 密钥必须以明文保存，因此配置文件的权限要收紧到仅属主可读。
              */
+            @ConfigEffect(ConfigEffect.Effect.RESTART)
             private String totpSecret = "";
 
             /**
@@ -540,6 +589,7 @@ public class StarBotCoreProperties {
              * 关闭后：令牌不再被接受，启动日志也不再打印那一行——
              * <b>打印一个不管用的地址比不打印更让人困惑</b>。
              */
+            @ConfigEffect(ConfigEffect.Effect.RESTART)
             private boolean operatorToken = true;
 
             /**
@@ -548,6 +598,7 @@ public class StarBotCoreProperties {
              * 从登录起算的绝对上限，到点必须重新登录。它约束的是「会话 Cookie 一旦泄漏还能被用多久」，
              * 因此不随使用而顺延。
              */
+            @ConfigEffect(ConfigEffect.Effect.RESTART)
             private int sessionHours = 168;
 
             /**
@@ -555,16 +606,19 @@ public class StarBotCoreProperties {
              * <p>
              * 多久没有操作即自动退出。管的是在别人的设备上登录后忘记退出这类情形。
              */
+            @ConfigEffect(ConfigEffect.Effect.RESTART)
             private int idleHours = 12;
 
             /**
              * 连续登录失败多少次后锁定该来源 IP
              */
+            @ConfigEffect(ConfigEffect.Effect.RESTART)
             private int maxFailures = 5;
 
             /**
              * 首次锁定的时长，单位：分钟。反复触发时逐次翻倍
              */
+            @ConfigEffect(ConfigEffect.Effect.RESTART)
             private int lockoutMinutes = 15;
         }
     }
@@ -578,11 +632,13 @@ public class StarBotCoreProperties {
         /**
          * 是否自动下载插件依赖，可使用 --skip-download-dependency 命令行参数临时跳过自动下载
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private boolean autoDownloadDependency = true;
 
         /**
          * 用于自动下载插件依赖的 Maven 地址
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private List<String> mavenBaseUrls = new ArrayList<>(Arrays.asList("https://maven.aliyun.com/repository/public", "https://repo1.maven.org/maven2"));
     }
 
@@ -595,16 +651,19 @@ public class StarBotCoreProperties {
         /**
          * 绘图器字体列表，支持配置为字体名称或字体文件路径
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private List<String> fonts = new ArrayList<>();
 
         /**
          * 绘图器自动扩展高度时扩展像素数，设置过大会导致占用较大内存，设置过小会频繁自动扩展导致效率降低
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private int autoExpandHeight = 5000;
 
         /**
          * 自定义绘图器底部额外版权信息
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private List<TextWithStyle> extraCopyrights = new ArrayList<>();
     }
 
@@ -615,8 +674,11 @@ public class StarBotCoreProperties {
     @Setter
     public static class Mail {
         /**
-         * 默认收件邮箱
+         * 默认收件邮箱，改完立即生效，不必重启
          */
+        // 发件服务那几项（spring.mail.*）不是：它们撑着一个启动时装配好的 bean，
+        // 改了配置对象也换不掉它
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         private String defaultTo;
     }
 

@@ -4,12 +4,17 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.protocol.NovaEventMapper;
+import com.starlwr.bot.core.config.ConfigEffect;
+import com.starlwr.bot.core.config.ui.RuntimeConfigurationApplier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.env.YamlPropertySourceLoader;
 import org.springframework.core.io.FileSystemResource;
 
 import java.io.IOException;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -28,11 +33,12 @@ import static org.junit.jupiter.api.Assertions.fail;
 /**
  * 配置项一致性测试
  * <p>
- * 校验三件事，任一不满足即视为配置体系出现漂移：
+ * 校验四件事，任一不满足即视为配置体系出现漂移：
  * <ol>
  *   <li>每个声明的配置项都真实生效，不存在「改了没反应」的虚空配置</li>
  *   <li>发行包中的 application.yml 模板不含已不存在的配置项</li>
  *   <li>配置项的中文说明齐备，配置界面依赖这些说明生成字段提示</li>
+ *   <li>每个配置项都标了生效时机，且标成即时生效的那些真的会被写回运行中的配置</li>
  * </ol>
  * <p>
  * 本测试放在反应堆中最后构建的模块，以便读取到全部模块编译期生成的配置元数据。
@@ -156,11 +162,15 @@ class ConfigurationConsistencyTest {
     }
 
     /**
-     * 由配置项名推导其可能的读取方式
+     * 由配置项名推导它在配置类里的字段名
+     * <p>
+     * 只有一份实现：读取方式的推导与生效时机的字段定位问的是同一件事——
+     * 「这个键对应哪个字段」。两处各写一遍短横线转驼峰，迟早会在某个边角上分家，
+     * 而分家之后其中一把尺量的是不存在的字段，报出来的却是「这一项没标」。
      * @param name 配置项名，例如 starbot.bilibili.dynamic.draw-logo
-     * @return 判定该配置项已被使用的候选片段
+     * @return 字段名，例如 drawLogo
      */
-    private List<String> usageMarkers(String name) {
+    private String fieldNameOf(String name) {
         String leaf = name.substring(name.lastIndexOf('.') + 1);
 
         StringBuilder camel = new StringBuilder();
@@ -174,10 +184,185 @@ class ConfigurationConsistencyTest {
             }
         }
 
-        String capitalized = Character.toUpperCase(camel.charAt(0)) + camel.substring(1);
+        return camel.toString();
+    }
+
+    /**
+     * 由配置项名推导其可能的读取方式
+     * @param name 配置项名，例如 starbot.bilibili.dynamic.draw-logo
+     * @return 判定该配置项已被使用的候选片段
+     */
+    private List<String> usageMarkers(String name) {
+        String field = fieldNameOf(name);
+        String capitalized = Character.toUpperCase(field.charAt(0)) + field.substring(1);
 
         // getter / isser 调用，或完整属性名出现在 @ConditionalOnProperty、@Value、logback.xml 等处
         return List.of("get" + capitalized + "()", "is" + capitalized + "()", name);
+    }
+
+    /**
+     * 能看到全部模块编译产物的类加载器
+     * <p>
+     * 本测试所在模块的类路径上<b>没有适配器那两个插件模块</b>——它们不是本模块的依赖，
+     * 也不该为了一把尺去变成依赖。但生效时机标在它们的配置类字段上，读不到就等于
+     * 那 20 个配置项自动免检，而尺照样报绿。
+     * <p>
+     * 采用双亲优先的普通委派：核心与本模块的类仍从测试类路径加载，因此
+     * {@code ConfigEffect} 只有一份，注解比对不会因为「同名不同类」而恒不相等。
+     * @return 类加载器
+     */
+    private ClassLoader modulesClassLoader() {
+        Path root = repositoryRoot();
+
+        List<URL> urls = new ArrayList<>();
+        for (String module : modules()) {
+            Path classes = root.resolve(module).resolve("target/classes");
+            if (!Files.isDirectory(classes)) {
+                continue;
+            }
+            try {
+                urls.add(classes.toUri().toURL());
+            } catch (MalformedURLException e) {
+                throw new IllegalStateException("拼不出 " + classes + " 的 URL", e);
+            }
+        }
+
+        return new URLClassLoader(urls.toArray(new URL[0]), getClass().getClassLoader());
+    }
+
+    /**
+     * 确认这批配置项覆盖了全部声明过配置类的模块
+     * <p>
+     * 元数据文件缺席时 {@link #properties()} 是直接跳过的。跳过的那个模块<b>连同它的配置项
+     * 一起从分母里消失</b>，于是「一个没标的都没有」与「根本没量到」在读数上长得一模一样。
+     * 这里把分母钉在源码上：源码里写了 {@code @ConfigurationProperties} 的模块，
+     * 就必须在这批配置项里出现。
+     * @param properties 已读到的配置项
+     */
+    private void assertPopulationCoversAllModules(List<JSONObject> properties) {
+        assertFalse(properties.isEmpty(), "一个配置项都没读到，这把尺量的是空集");
+
+        Set<String> covered = new LinkedHashSet<>();
+        for (JSONObject property : properties) {
+            String sourceType = property.getString("sourceType");
+            if (sourceType != null) {
+                covered.add(sourceType);
+            }
+        }
+
+        Path root = repositoryRoot();
+        List<String> missing = new ArrayList<>();
+
+        for (String module : modules()) {
+            Path main = root.resolve(module).resolve("src/main/java");
+            if (!Files.exists(main)) {
+                continue;
+            }
+
+            boolean declares;
+            try (Stream<Path> files = Files.walk(main)) {
+                declares = files.filter(Files::isRegularFile)
+                        .filter(path -> path.getFileName().toString().endsWith(".java"))
+                        .anyMatch(path -> {
+                            try {
+                                return Files.readString(path, StandardCharsets.UTF_8)
+                                        .contains("@ConfigurationProperties(");
+                            } catch (IOException e) {
+                                throw new IllegalStateException("读取 " + path + " 失败", e);
+                            }
+                        });
+            } catch (IOException e) {
+                throw new IllegalStateException("遍历 " + main + " 失败", e);
+            }
+
+            if (declares && covered.stream().noneMatch(type -> belongsTo(root, module, type))) {
+                missing.add(module);
+            }
+        }
+
+        assertTrue(missing.isEmpty(), "以下模块声明了配置类却一个配置项也没量到，"
+                + "多半是它的 target/classes 还没构建，此时其余各格报的绿只覆盖了一部分配置项:\n  "
+                + String.join("\n  ", missing));
+    }
+
+    /**
+     * 判断某个配置类是否出自指定模块
+     * @param root 仓库根目录
+     * @param module 模块目录名
+     * @param sourceType 配置类全限定名，内部类以 $ 分隔
+     * @return 出自该模块时返回 true
+     */
+    private boolean belongsTo(Path root, String module, String sourceType) {
+        String outer = sourceType.contains("$") ? sourceType.substring(0, sourceType.indexOf('$')) : sourceType;
+        return Files.exists(root.resolve(module).resolve("src/main/java")
+                .resolve(outer.replace('.', '/') + ".java"));
+    }
+
+    /**
+     * 读出一个配置项标注的生效时机
+     * @param property 配置项元数据
+     * @param loader 能看到全部模块的类加载器
+     * @return 生效时机，未标注时为 null
+     * @throws ReflectiveOperationException 配置类或字段找不到时抛出
+     */
+    private ConfigEffect.Effect effectOf(JSONObject property, ClassLoader loader) throws ReflectiveOperationException {
+        Class<?> type = Class.forName(property.getString("sourceType"), false, loader);
+        ConfigEffect effect = type.getDeclaredField(fieldNameOf(property.getString("name")))
+                .getAnnotation(ConfigEffect.class);
+        return effect == null ? null : effect.value();
+    }
+
+    @Test
+    @DisplayName("⚠️ 每个配置项都标了生效时机：标不出来的那一项，界面只能编一个说法")
+    void everyPropertyDeclaresItsEffect() throws ReflectiveOperationException {
+        List<JSONObject> properties = properties();
+        assertPopulationCoversAllModules(properties);
+
+        ClassLoader loader = modulesClassLoader();
+        List<String> unmarked = new ArrayList<>();
+
+        for (JSONObject property : properties) {
+            if (effectOf(property, loader) == null) {
+                unmarked.add(property.getString("name"));
+            }
+        }
+
+        assertTrue(unmarked.isEmpty(), "以下配置项没有标注生效时机（共 " + properties.size()
+                + " 项，未标 " + unmarked.size() + " 项），请在字段上补 @ConfigEffect:\n  "
+                + String.join("\n  ", unmarked));
+    }
+
+    @Test
+    @DisplayName("⚠️ 标成即时生效的配置项，保存时真的会被写回运行中的配置")
+    void immediatePropertiesAreActuallyApplied() throws ReflectiveOperationException {
+        List<JSONObject> properties = properties();
+        assertPopulationCoversAllModules(properties);
+
+        ClassLoader loader = modulesClassLoader();
+        Set<String> declared = new LinkedHashSet<>();
+
+        for (JSONObject property : properties) {
+            if (effectOf(property, loader) == ConfigEffect.Effect.IMMEDIATE) {
+                declared.add(property.getString("name"));
+            }
+        }
+
+        // 声明与名单是同一条规则的两个读者。只对其中一边加项，界面会照着声明说「已生效」，
+        // 而保存那一步压根没碰运行中的配置——改了不生效，且没有任何提示说它没生效
+        Set<String> applied = RuntimeConfigurationApplier.supportedKeys();
+
+        List<String> promisedOnly = new ArrayList<>(declared);
+        promisedOnly.removeAll(applied);
+        List<String> appliedOnly = new ArrayList<>(applied);
+        appliedOnly.removeAll(declared);
+
+        assertTrue(promisedOnly.isEmpty(),
+                "以下配置项标成即时生效，但保存时没有任何代码把新值写回运行中的配置:\n  "
+                        + String.join("\n  ", promisedOnly));
+        assertTrue(appliedOnly.isEmpty(),
+                "以下配置项保存时会被写回运行中的配置，却没标成即时生效，界面会白让人重启一次:\n  "
+                        + String.join("\n  ", appliedOnly));
+        assertFalse(declared.isEmpty(), "一个即时生效的配置项都没有，这一格此刻量的是空集");
     }
 
     @Test
