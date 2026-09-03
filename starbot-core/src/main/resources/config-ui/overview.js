@@ -5,7 +5,7 @@
 import {bindBotForm, botFormHtml, renderTestMessage} from './bot.js';
 import {$, api, esc, say} from './core.js';
 import {pageStatus, switchTab} from './main.js';
-import {renderBinds, renderSessions, renderSubs} from './sessions.js';
+import {renderBinds, renderIncomplete, renderSessions, renderSubs} from './sessions.js';
 import {store} from './store.js';
 
 export function renderWizard() {
@@ -221,6 +221,7 @@ export async function loadState() {
 }
 
 function renderState(d) {
+  renderIncomplete(d.incomplete || []);
   renderSessions(d.sessions || [], d.commands || []);
   renderSubs(d.subscriptions || []);
   renderBinds(d.bindings || []);

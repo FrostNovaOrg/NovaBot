@@ -31,6 +31,8 @@ public abstract class AbstractDataSource {
 
     private final Map<String, Map<Long, PushUser>> userMap = new HashMap<>();
 
+    private final List<IncompleteEntry> incompleteEntries = new ArrayList<>();
+
     @Autowired
     public AbstractDataSource(ApplicationEventPublisher eventPublisher, DataSourceServiceRegistry dataSourceServiceRegistry, PushMessageInitializer messageInitializer) {
         this.eventPublisher = eventPublisher;
@@ -298,6 +300,49 @@ public abstract class AbstractDataSource {
             return Optional.ofNullable(this.userMap.get(livePlatform).get(uid));
         } else {
             return Optional.empty();
+        }
+    }
+
+    /**
+     * 登记本次读取中尚未填完、因而未被加载的条目
+     * <p>
+     * <b>整份替换而不是逐条追加</b>：使用者把某一条填好之后重新读取，界面上那句提示必须跟着消失；
+     * 追加的话，改对了的那条会一直挂在那里，而使用者已经无从判断它说的是不是当下这一份配置。
+     * @param entries 本次读取中未填完的条目，一条都没有时传空列表
+     */
+    protected synchronized void reportIncompleteEntries(@NonNull List<IncompleteEntry> entries) {
+        this.incompleteEntries.clear();
+        this.incompleteEntries.addAll(entries);
+    }
+
+    /**
+     * 获取尚未填完、因而未被加载的条目
+     * @return 未填完的条目
+     */
+    public synchronized List<IncompleteEntry> getIncompleteEntries() {
+        return new ArrayList<>(this.incompleteEntries);
+    }
+
+    /**
+     * 一条尚未填完的推送配置
+     * <p>
+     * 「未填完」指必填字段写了、值却是空的。发行包里的示例推送配置正是这一形：
+     * uid 与推送目标的 num 都留成空串等人填。这类条目不会被加载——半份配置推不出任何东西——
+     * 但它<b>也不该表现为一个错误</b>：配置填到一半正是使用者会打开控制台的时候。
+     * <p>
+     * 因此这里记的是「哪一条、还差哪个字段」，而不只是一个条数：
+     * 只说「有 1 条没配好」的提示，与什么都不说相比并没有让人更知道该改哪里。
+     *
+     * @param index 在推送配置中的序号，从 1 起——与使用者在文件里数到的次序一致
+     * @param fields 尚未填写的字段，嵌套的写成 {@code targets[1].num} 这样的路径
+     */
+    public record IncompleteEntry(int index, List<String> fields) {
+        /**
+         * 给人看的一句说明
+         * @return 说明
+         */
+        public String describe() {
+            return "推送配置中的第 " + index + " 位主播尚未填写完整，暂未加载，还差：" + String.join("、", fields);
         }
     }
 }

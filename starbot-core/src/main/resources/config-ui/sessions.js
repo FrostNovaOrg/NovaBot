@@ -5,6 +5,26 @@
 import {$, api, el, esc, say} from './core.js';
 import {loadState} from './overview.js';
 
+/**
+ * 推送配置里没填完的条目
+ *
+ * 后端已经说清是哪一条、还差哪个字段，这里照原话显示、不再自己拼一遍：
+ * 同一句话两边各写一份，改了一处忘了另一处的时候，界面说的就不是真事了。
+ */
+export function renderIncomplete(entries) {
+  const box = $('#sess-incomplete');
+
+  if (!entries.length) {
+    box.innerHTML = '';
+    return;
+  }
+
+  box.innerHTML = '<div class="warn"><b>推送配置尚未填写完整</b>，以下条目暂未生效，'
+    + '请在「推送规则」中补齐后保存：<ul>'
+    + entries.map(e => '<li>' + esc(e.message) + '</li>').join('')
+    + '</ul></div>';
+}
+
 export function renderSessions(sessions, commands) {
   const box = $('#sess-list');
   box.innerHTML = '';

@@ -98,6 +98,7 @@ public class RuntimeStateController {
         result.put("sessions", sessions());
         result.put("subscriptions", subscriptionList());
         result.put("bindings", bindingList());
+        result.put("incomplete", incompleteList());
         return result;
     }
 
@@ -357,6 +358,30 @@ public class RuntimeStateController {
             json.put("type", item.type());
             json.put("typeName", typeName(item.type()));
             json.put("users", item.users());
+            items.add(json);
+        }
+
+        return items;
+    }
+
+    /**
+     * 尚未填完、因而未被加载的推送配置
+     * <p>
+     * 这几条不会出现在会话清单里——它们没被加载，本来也构不成会话。可正因如此，
+     * 不把它们说出来的话，页面上就只是一片空白，而使用者刚刚明明配过：
+     * <b>最需要一句解释的正是这种时候。</b>
+     * <p>
+     * 说明由数据源那一侧给，不在这里另拼一遍：哪条算没填完、还差哪个字段，
+     * 都是读配置的人才知道的事，两处各写一份迟早会对不上。
+     */
+    private JSONArray incompleteList() {
+        JSONArray items = new JSONArray();
+
+        for (AbstractDataSource.IncompleteEntry entry : dataSource.getIncompleteEntries()) {
+            JSONObject json = new JSONObject();
+            json.put("index", entry.index());
+            json.put("fields", entry.fields());
+            json.put("message", entry.describe());
             items.add(json);
         }
 
