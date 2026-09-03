@@ -1,5 +1,6 @@
 package com.starlwr.bot.core.config.ui;
 
+import com.starlwr.bot.core.config.ui.page.ConsolePages;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -38,7 +39,7 @@ class ConfigUiFrontendTest {
     private static final List<String> SHARED = List.of(
             "schema", "values", "dirty", "tab", "csrfToken", "pushData", "handlerList",
             "senderList", "advancedMode", "wizardTouched", "pushEnabled", "accountTimer",
-            "totpRequired");
+            "platforms", "totpRequired");
 
     /**
      * 凭据绝不能流进去的地方
@@ -57,6 +58,31 @@ class ConfigUiFrontendTest {
      * 已知的合法同名局部变量：函数内部自己声明的，与 store 无关
      */
     private static final Set<String> ALLOWED_LOCALS = Set.of("analytics.js:values");
+
+    /**
+     * 核心自己的页签，闭集
+     * <p>
+     * 这一条是边界：<b>核心的界面文件里不许出现这七个以外的页签</b>。平台页由对应插件带进来，
+     * 核心只在运行时按注册清单把它挂上去。写死一个平台的页签，界面就替一件可能没装的东西
+     * 立了个入口——点开是空的，而使用者无从知道是插件没装还是坏了；
+     * 想加第二个平台时，又得回头改核心的界面文件。
+     */
+    private static final Set<String> CORE_TABS = Set.of(
+            "overview", "push", "bot", "sessions", "analytics", "tokens", "settings");
+
+    /**
+     * 插件放页面脚本的资源目录名，与服务端取资源时用的是同一个常量
+     */
+    private static final String PAGE_DIR = ConsolePages.SCRIPT_ROOT;
+
+    /**
+     * 界面文件里出现的页签标识：{@code data-tab="x"}、{@code <section id="x">} 与 {@code store.tab === 'x'}
+     */
+    private static final Pattern TAB_ATTRIBUTE = Pattern.compile("data-tab=\"([^\"]+)\"");
+
+    private static final Pattern TAB_SECTION = Pattern.compile("<section[^>]*\\sid=\"([^\"]+)\"");
+
+    private static final Pattern TAB_COMPARISON = Pattern.compile("store\\.tab\\s*[!=]==\\s*'([^']+)'");
 
     /**
      * 注释与普通字符串。重命名和引用检查都不该看这里面
@@ -79,20 +105,44 @@ class ConfigUiFrontendTest {
     /**
      * 定位仓库根目录。测试既可能由 Maven 在模块目录下执行，也可能由 IDE 在仓库根目录下执行
      */
-    private Path frontendDir() {
+    private Path repoRoot() {
         Path current = Path.of("").toAbsolutePath();
         while (current != null) {
             if (Files.exists(current.resolve("build.sh")) && Files.exists(current.resolve("pom.xml"))) {
-                return current.resolve("starbot-core/src/main/resources/config-ui");
+                return current;
             }
             current = current.getParent();
         }
         throw new IllegalStateException("未能定位仓库根目录");
     }
 
-    private Map<String, String> sources() {
-        Map<String, String> out = new LinkedHashMap<>();
-        try (Stream<Path> files = Files.list(frontendDir())) {
+    private Path frontendDir() {
+        return repoRoot().resolve("starbot-core/src/main/resources/config-ui");
+    }
+
+    /**
+     * 各插件自带的页面脚本目录
+     * <p>
+     * 它们与核心的界面文件跑在同一张页面、同一棵 DOM 上，因此下面几条判据一条都不能少查。
+     * 只查核心那一份的话，把口令写进 localStorage 这种事只要挪进插件就查不出来了。
+     */
+    private List<Path> pageDirs() {
+        List<Path> dirs = new ArrayList<>();
+        try (Stream<Path> modules = Files.list(repoRoot())) {
+            modules.sorted().forEach(module -> {
+                Path dir = module.resolve("src/main/resources").resolve(PAGE_DIR);
+                if (Files.isDirectory(dir)) {
+                    dirs.add(dir);
+                }
+            });
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        return dirs;
+    }
+
+    private void readInto(Map<String, String> out, Path dir) {
+        try (Stream<Path> files = Files.list(dir)) {
             files.filter(p -> p.getFileName().toString().endsWith(".js"))
                     .sorted()
                     .forEach(p -> {
@@ -105,6 +155,32 @@ class ConfigUiFrontendTest {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    /**
+     * 核心自己的界面文件
+     */
+    private Map<String, String> coreSources() {
+        Map<String, String> out = new LinkedHashMap<>();
+        readInto(out, frontendDir());
+        return out;
+    }
+
+    /**
+     * 插件带来的页面脚本
+     */
+    private Map<String, String> pageSources() {
+        Map<String, String> out = new LinkedHashMap<>();
+        pageDirs().forEach(dir -> readInto(out, dir));
+        return out;
+    }
+
+    /**
+     * 页面上真正会被加载的全部脚本
+     */
+    private Map<String, String> sources() {
+        Map<String, String> out = coreSources();
+        out.putAll(pageSources());
         return out;
     }
 
@@ -249,5 +325,72 @@ class ConfigUiFrontendTest {
         assertTrue(scripts.size() == 1, "入口应当只有一个，实际 " + scripts.size() + " 个: " + scripts);
         assertTrue(scripts.get(0).contains("type=\"module\""), "入口必须是 module: " + scripts.get(0));
         assertTrue(scripts.get(0).contains("main.js"), "入口应当是 main.js: " + scripts.get(0));
+    }
+
+    /**
+     * 核心的页签是一个闭集，平台页不在其中
+     * <p>
+     * 三处一起查，因为写死一个页签要同时改这三处，只查一处就会剩下另外两处的残迹：
+     * 标签条上的按钮、页面里的容器、以及切页签时那串按名字分派的判断。
+     */
+    @Test
+    @DisplayName("核心界面里只有核心自己的页签，平台页由插件带")
+    void coreTabsAreClosedSet() throws IOException {
+        String html = Files.readString(frontendDir().resolve("index.html"), StandardCharsets.UTF_8);
+        List<String> bad = new ArrayList<>();
+
+        Matcher tab = TAB_ATTRIBUTE.matcher(html);
+        while (tab.find()) {
+            if (!CORE_TABS.contains(tab.group(1))) {
+                bad.add("index.html 的标签条上写死了页签 " + tab.group(1));
+            }
+        }
+
+        Matcher section = TAB_SECTION.matcher(html);
+        while (section.find()) {
+            if (!CORE_TABS.contains(section.group(1))) {
+                bad.add("index.html 里写死了页面容器 " + section.group(1));
+            }
+        }
+
+        coreSources().forEach((name, text) -> {
+            Matcher m = TAB_COMPARISON.matcher(text);
+            while (m.find()) {
+                if (!CORE_TABS.contains(m.group(1))) {
+                    bad.add(name + " 按名字认出了页签 " + m.group(1));
+                }
+            }
+        });
+
+        assertTrue(bad.isEmpty(), "核心只该认得自己的页签 " + CORE_TABS + "，以下是写死的平台页残迹:\n  "
+                + String.join("\n  ", bad));
+    }
+
+    /**
+     * 插件页是运行时装上来的，不是编译期定死的
+     * <p>
+     * 静态 {@code import} 一写，那个平台就成了核心的一部分：没装插件时页面加载不了，
+     * 而这件事在源码里看不出来——它长得和其余 import 一模一样。
+     */
+    @Test
+    @DisplayName("核心不静态引用任何插件页脚本")
+    void coreNeverImportsPluginPages() {
+        Set<String> pages = pageSources().keySet();
+        List<String> bad = new ArrayList<>();
+
+        coreSources().forEach((name, text) -> {
+            if (pages.contains(name)) {
+                bad.add(name + " 同时存在于核心与插件的资源目录里");
+            }
+
+            Matcher m = IMPORT.matcher(text);
+            while (m.find()) {
+                if (pages.contains(m.group(2))) {
+                    bad.add(name + " 静态引用了插件页 " + m.group(2));
+                }
+            }
+        });
+
+        assertTrue(bad.isEmpty(), "插件页只能在运行时按注册清单装载:\n  " + String.join("\n  ", bad));
     }
 }

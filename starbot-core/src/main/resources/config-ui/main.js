@@ -4,14 +4,74 @@
  */
 
 import {loadAnalytics} from './analytics.js';
-import {loadAccounts} from './bilibili.js';
 import {bindBotForm, botFormHtml, fillBotForms, sendTestMessage} from './bot.js';
-import {$, api, esc, markDirty, say} from './core.js';
+import {$, api, el, esc, markDirty, say} from './core.js';
 import {loadHistory, loadState, refreshWizardState, renderStatus, renderWizard, runSelfTest, setWizardCollapsed, togglePush} from './overview.js';
-import {addStreamer, decoratePushData, renderStreamers, toggleAdvanced} from './push.js';
+import {addStreamer, decoratePushData, renderPlatforms, renderStreamers, toggleAdvanced} from './push.js';
 import {renderBackups, renderGeneral, save, saveRaw} from './settings.js';
 import {store} from './store.js';
 import {clearIssuedToken, loadTokens} from './tokens.js';
+
+/**
+ * 插件带来的页，装好之后每项是 {meta, module}
+ *
+ * 平台页此前是编译期定死的一句 import：核心必须先认识那个平台，页面才存在。
+ * 现在它是运行期的一张清单——核心只知道「有几页、叫什么、脚本在哪」，页里做什么与它无关。
+ */
+const pages = [];
+
+/**
+ * 按注册清单建出页签与页面容器，并装载各自的脚本
+ *
+ * 逐个装而不是一次性 Promise.all：页签的先后要与清单一致，
+ * 而某一页装不上时也只该影响它自己——其余的页照常可用，那一页上写清为什么空着。
+ */
+async function mountPages() {
+  let list = [];
+  try {
+    list = (await api('/pages')).pages || [];
+  } catch (e) {
+    // 取不到清单只是没有平台页，控制台其余部分照常
+    return;
+  }
+
+  const slot = $('#page-tabs');
+  for (const meta of list) {
+    const button = el('button');
+    button.type = 'button';
+    button.dataset.tab = meta.id;
+    button.textContent = meta.displayName;
+    button.addEventListener('click', () => switchTab(meta.id));
+    slot.parentNode.insertBefore(button, slot);
+
+    const section = el('section');
+    section.id = meta.id;
+    $('#page-sections').appendChild(section);
+
+    try {
+      const module = await import('/config/assets/' + meta.script);
+      pages.push({meta, module});
+      module.render?.(section);
+    } catch (e) {
+      section.innerHTML = '<p class="hint">' + esc(meta.displayName) + ' 的页面没能载入：' + esc(e.message)
+        + '。该插件的其余功能不受影响。</p>';
+    }
+  }
+}
+
+/**
+ * 让各插件页重取自己的数据
+ */
+export function refreshPages() {
+  pages.forEach(page => page.module.refresh?.());
+}
+
+/**
+ * 把运行状态转给各插件页，由它们自己挑要用的部分
+ */
+export function pageStatus(data) {
+  pages.forEach(page => page.module.status?.(data));
+}
 
 export async function load() {
   say('载入中…');
@@ -22,14 +82,17 @@ export async function load() {
     store.dirty = {};
     renderGeneral();
 
-    const [d, y, st, b, h] = await Promise.all([
-      api('/datasource'), api('/raw'), api('/status'), api('/backups'), api('/handlers')]);
+    const [d, y, st, b, h, p] = await Promise.all([
+      api('/datasource'), api('/raw'), api('/status'), api('/backups'), api('/handlers'), api('/platforms')]);
     $('#datasource').value = d.content || '[]';
     $('#rawyml').value = y.content || '';
     renderStatus(st);
 
     store.handlerList = h.handlers || [];
     store.senderList = st.senders || [];
+    // 能添加哪些平台的主播由已注册的数据源服务决定，界面不替任何一个平台作主
+    store.platforms = p.platforms || [];
+    renderPlatforms();
     try {
       store.pushData = JSON.parse(d.content || '[]');
     } catch (e) {
@@ -41,7 +104,7 @@ export async function load() {
     renderStreamers();
     decoratePushData();
     renderBackups(b.backups);
-    loadAccounts();
+    refreshPages();
     loadHistory();
     loadState();
     renderWizard();
@@ -71,14 +134,19 @@ export function switchTab(name) {
   $('nav button.on')?.scrollIntoView({inline: 'center', block: 'nearest'});
 
   clearTimeout(store.accountTimer);
-  if (store.tab === 'overview') { api('/status').then(renderStatus); loadHistory(); loadAccounts(); refreshWizardState(); }
+  // 总览页的向导里也有平台的二维码，因此那一页同样要把各平台页刷一遍
+  if (store.tab === 'overview') { api('/status').then(renderStatus); loadHistory(); refreshPages(); refreshWizardState(); }
   else if (store.tab === 'bot') api('/status').then(renderStatus);
-  else if (store.tab === 'bilibili') { api('/status').then(renderStatus); loadAccounts(); }
   // 每次进入都重取：群里随时可能有人订阅或关掉命令，缓存的画面会误导人
   else if (store.tab === 'sessions') loadState();
   else if (store.tab === 'analytics') loadAnalytics();
   // 每次进入都重建：顺带抹掉上一次留在屏幕上的口令明文
   else if (store.tab === 'tokens') loadTokens();
+  else {
+    // 剩下的都是插件带来的页：核心不知道它们叫什么，按注册清单认
+    const page = pages.find(item => item.meta.id === store.tab);
+    if (page) { api('/status').then(renderStatus); page.module.refresh?.(); }
+  }
 
   markDirty();
 }
@@ -188,4 +256,5 @@ api('/auth/state')
     if (state.totpSetupNeeded) renderTotpSetup();
   })
   .catch(() => {})
-  .finally(load);
+  // 插件页要先挂上去，随后那一趟整体载入才有东西可刷
+  .finally(() => mountPages().finally(load));

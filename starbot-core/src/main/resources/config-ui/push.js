@@ -280,7 +280,46 @@ $('#streamers').addEventListener('click', e => {
   }
 });
 
+/**
+ * 按已注册的平台清单摆好添加主播那一行
+ *
+ * 平台名此前写死成一个具体平台，于是没装那个插件时按钮照样点得动，点完才在服务端被回一句
+ * 「没有可用的数据源服务」；装了第二个平台时，界面上又没有地方选。现在三种情形都说清楚：
+ * 一个都没有就把这一行停掉并写明原因，只有一个就照旧默认它，有多个才让人挑。
+ */
+export function renderPlatforms() {
+  const available = store.platforms || [];
+  const picker = $('#add-platform');
+
+  picker.innerHTML = available
+    .map(name => '<option value="' + esc(name) + '">' + esc(name) + '</option>').join('');
+  picker.style.display = available.length > 1 ? '' : 'none';
+
+  const none = available.length === 0;
+  $('#add-uid').disabled = none;
+  $('#add-streamer').disabled = none;
+  $('#add-uid').placeholder = none
+    ? '未加载任何直播平台插件，无法添加主播'
+    : '输入 uid 或粘贴个人空间链接';
+}
+
+/**
+ * 这一次要添加哪个平台的主播
+ * @return 平台名，一个平台都没注册时为空串
+ */
+function chosenPlatform() {
+  const available = store.platforms || [];
+  if (available.length <= 1) return available[0] || '';
+  return $('#add-platform').value || available[0];
+}
+
 export async function addStreamer() {
+  const platform = chosenPlatform();
+  if (!platform) {
+    say('未加载任何直播平台插件，无法添加主播', 'err');
+    return;
+  }
+
   const input = $('#add-uid').value.trim();
   if (!input) {
     say('请先输入 uid 或个人空间链接', 'err');
@@ -295,7 +334,7 @@ export async function addStreamer() {
     const res = await api('/streamer/lookup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ platform: 'bilibili', uid: input })
+      body: JSON.stringify({ platform, uid: input })
     });
 
     if (!res.success) {
@@ -311,7 +350,7 @@ export async function addStreamer() {
     if (!confirm('确认添加「' + res.uname + '」（uid ' + res.uid + '）吗？')) return;
 
     store.pushData.push({
-      uid: res.uid, platform: 'bilibili', enabled: true, targets: [],
+      uid: res.uid, platform, enabled: true, targets: [],
       _uname: res.uname, _roomId: res.roomId, _face: res.face
     });
     $('#add-uid').value = '';
@@ -346,16 +385,19 @@ export function toggleAdvanced() {
   store.advancedMode = !store.advancedMode;
   $('#advanced').style.display = store.advancedMode ? 'block' : 'none';
   $('#streamers').style.display = store.advancedMode ? 'none' : 'block';
-  $('#push-toolbar').querySelectorAll('input,button').forEach(elm => {
+  $('#push-toolbar').querySelectorAll('input,button,select').forEach(elm => {
     if (elm.id !== 'toggle-advanced') elm.disabled = store.advancedMode;
   });
+  // 回到表单模式时重摆一次：一个平台都没注册的话，那一行本来就该是停用的
+  if (!store.advancedMode) renderPlatforms();
   $('#toggle-advanced').textContent = store.advancedMode ? '返回表单编辑' : '高级：编辑原始 JSON';
 }
 
 // 配置文件里只有 uid，昵称需要另行补全才能在界面上显示
 export async function decoratePushData() {
   await Promise.all(store.pushData.map(async user => {
-    if (user._uname || user.platform !== 'bilibili') return;
+    // 补昵称要靠对应平台的数据源服务，没注册的平台查不了，照 uid 显示就是
+    if (user._uname || !(store.platforms || []).includes(user.platform)) return;
     try {
       const res = await api('/streamer/lookup', {
         method: 'POST',

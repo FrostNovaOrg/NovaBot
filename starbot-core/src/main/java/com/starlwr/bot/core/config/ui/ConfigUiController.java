@@ -4,6 +4,8 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.config.ConfigLevel;
 import com.starlwr.bot.core.config.ui.auth.PasswordHash;
+import com.starlwr.bot.core.config.ui.page.ConsolePageProvider;
+import com.starlwr.bot.core.config.ui.page.ConsolePages;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.model.EventStreamToken;
 import com.starlwr.bot.core.service.EventStreamTokenService;
@@ -39,6 +41,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.lang.management.ManagementFactory;
 import java.nio.charset.StandardCharsets;
 import java.time.ZoneId;
@@ -154,6 +157,14 @@ public class ConfigUiController {
 
     private final ObjectProvider<BotConnectionTester> connectionTesters;
 
+    /**
+     * 各插件注册的控制台页面
+     * <p>
+     * 与登录能力同形，用 ObjectProvider 取：页面来自插件，而插件的 Bean 定义由
+     * BeanDefinitionRegistryPostProcessor 注册，延迟解析才不受注册与注入的先后顺序影响。
+     */
+    private final ObjectProvider<ConsolePageProvider> pageProviders;
+
     @Autowired
     public ConfigUiController(ConfigurationMetadataService metadataService,
                               ConfigurationFileService fileService,
@@ -169,8 +180,10 @@ public class ConfigUiController {
                               DataSourceServiceRegistry dataSourceServiceRegistry,
                               ConfigurationLevelResolver levelResolver,
                               ObjectProvider<BotConnectionTester> connectionTesters,
+                              ObjectProvider<ConsolePageProvider> pageProviders,
                               EventStreamTokenService eventStreamTokens) {
         this.eventStreamTokens = eventStreamTokens;
+        this.pageProviders = pageProviders;
         this.levelResolver = levelResolver;
         this.connectionTesters = connectionTesters;
         this.activityRecorder = activityRecorder;
@@ -228,7 +241,7 @@ public class ConfigUiController {
 
         ClassPathResource resource = new ClassPathResource("config-ui/" + name);
         if (!resource.exists()) {
-            return ResponseEntity.notFound().build();
+            return pageScript(name, type);
         }
 
         try (var stream = resource.getInputStream()) {
@@ -241,6 +254,89 @@ public class ConfigUiController {
             log.error("读取配置界面静态资源 {} 失败", name, e);
             return ResponseEntity.notFound().build();
         }
+    }
+
+    /**
+     * 插件带来的页面脚本
+     * <p>
+     * 与核心自己的静态资源走同一个地址前缀，因此插件页里的 {@code import './core.js'}
+     * 解析出来仍是核心那一份——<b>换个前缀就得让每个插件去拼绝对路径</b>，
+     * 而那种路径一旦写错，表现是页面某一块静默地不出现。
+     * <p>
+     * 只按<b>已登记的文件名</b>精确匹配，取资源用的是该插件自己的类加载器：插件在独立的
+     * 类加载器里，核心这一侧看不见它 jar 里的东西。名字不匹配就是 404，
+     * 因此这条路只开放插件自报的那几个文件，jar 里的其余内容一概取不到。
+     * @param name 脚本文件名
+     * @param type 内容类型
+     * @return 脚本内容，未登记或读取失败时返回 404
+     */
+    private ResponseEntity<byte[]> pageScript(String name, MediaType type) {
+        Optional<ConsolePageProvider> page = ConsolePages.byScript(pageProviders.orderedStream().toList(), name);
+        if (page.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        try (InputStream stream = page.get().getClass().getClassLoader()
+                .getResourceAsStream(ConsolePages.SCRIPT_ROOT + name)) {
+            if (stream == null) {
+                log.error("控制台页面 {} 登记的脚本 {} 不在插件资源里", page.get().id(), name);
+                return ResponseEntity.notFound().build();
+            }
+
+            return ResponseEntity.ok()
+                    .contentType(type)
+                    .cacheControl(CacheControl.noCache())
+                    .body(stream.readAllBytes());
+        } catch (IOException e) {
+            log.error("读取控制台页面脚本 {} 失败", name, e);
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    /**
+     * 插件注册的控制台页面
+     * <p>
+     * 界面据此长出页签与页面容器，再按 script 去取各自的脚本。核心的界面文件里因此
+     * 一个平台的名字也没有：装了哪些平台，是运行时才知道的事。
+     * @return 页面清单
+     */
+    @GetMapping("/api/pages")
+    public JSONObject pages() {
+        JSONObject result = new JSONObject();
+        result.put("success", true);
+
+        JSONArray pages = new JSONArray();
+        for (ConsolePageProvider page : ConsolePages.valid(pageProviders.orderedStream().toList())) {
+            JSONObject item = new JSONObject();
+            item.put("id", page.id());
+            item.put("displayName", page.displayName());
+            item.put("script", page.script());
+            item.put("order", page.order());
+            pages.add(item);
+        }
+
+        result.put("pages", pages);
+        return result;
+    }
+
+    /**
+     * 已注册数据源服务的直播平台
+     * <p>
+     * 添加主播时要给出平台名，而能查得到主播信息的平台正是这些。界面此前把平台名写死成
+     * 一个具体平台，于是<b>没装那个插件时按钮照样点得动</b>，点完才在服务端被回一句
+     * 「没有可用的数据源服务」；装了第二个平台时，界面上又没有地方选。
+     * @return 平台名清单
+     */
+    @GetMapping("/api/platforms")
+    public JSONObject platforms() {
+        JSONObject result = new JSONObject();
+        result.put("success", true);
+
+        JSONArray platforms = new JSONArray();
+        platforms.addAll(dataSourceServiceRegistry.platforms());
+
+        result.put("platforms", platforms);
+        return result;
     }
 
     /**

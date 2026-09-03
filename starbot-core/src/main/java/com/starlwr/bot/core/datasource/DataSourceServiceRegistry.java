@@ -35,4 +35,15 @@ public class DataSourceServiceRegistry {
     public Optional<DataSourceService> getDataSourceService(String platform) {
         return Optional.ofNullable(serviceMap.get(platform));
     }
+
+    /**
+     * 已注册数据源服务的直播平台名称
+     * <p>
+     * 这就是「这台实例认得哪些平台」的答案：能查到主播信息、能被写进推送配置的正是它们。
+     * 排过序返回，界面上的先后不随 Bean 的加载次序变化。
+     * @return 平台名称清单
+     */
+    public List<String> platforms() {
+        return serviceMap.keySet().stream().sorted().toList();
+    }
 }

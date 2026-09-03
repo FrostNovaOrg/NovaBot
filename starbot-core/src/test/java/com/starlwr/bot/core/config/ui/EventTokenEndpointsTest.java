@@ -56,6 +56,7 @@ class EventTokenEndpointsTest {
                 mock(com.starlwr.bot.core.datasource.DataSourceServiceRegistry.class),
                 mock(ConfigurationLevelResolver.class),
                 mock(org.springframework.beans.factory.ObjectProvider.class),
+                mock(org.springframework.beans.factory.ObjectProvider.class),
                 tokens);
     }
 

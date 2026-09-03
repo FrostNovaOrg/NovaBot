@@ -28,7 +28,11 @@
     <button data-tab="overview" class="on">总览</button>
     <button data-tab="push">推送规则</button>
     <button data-tab="bot">机器人</button>
-    <button data-tab="bilibili">哔哩哔哩</button>
+    <!--
+      各直播平台的页签插在这里，由插件在运行时注册。装了哪些平台是运行期才知道的事，
+      写死在这份文件里的话，没装的那个也照样立着入口，点开是一张空页。
+    -->
+    <span id="page-tabs" style="display:none"></span>
     <button data-tab="sessions">群与成员</button>
     <button data-tab="analytics">数据分析</button>
     <button data-tab="tokens">只读口令</button>
@@ -71,6 +75,8 @@
     <p class="hint">配置要监听的主播与推送目标。保存前会校验格式，并检查处理器与推送平台是否存在。</p>
 
     <div class="backups" id="push-toolbar">
+      <!-- 装了不止一个直播平台时才用得上，因此由脚本按已注册的平台清单决定显示与否 -->
+      <select id="add-platform" style="display:none"></select>
       <input id="add-uid" placeholder="输入 uid 或粘贴个人空间链接">
       <button id="add-streamer" type="button">添加主播</button>
       <button id="toggle-advanced" type="button" style="margin-left:auto">高级：编辑原始 JSON</button>
@@ -124,13 +130,8 @@
     </div>
   </section>
 
-  <section id="bilibili">
-    <p class="hint">哔哩哔哩登录态用于拉取动态与直播间信息。登录态失效时推送会静默停止，本页可随时查看与重新扫码。</p>
-    <div class="health" id="bili-health"></div>
-    <div id="accounts"></div>
-    <p class="hint" style="margin:20px 0 10px">监听中的主播与直播间</p>
-    <table id="users"><thead><tr><th>UID</th><th>昵称</th><th>直播间</th><th>平台</th><th>推送目标</th><th>状态</th></tr></thead><tbody></tbody></table>
-  </section>
+  <!-- 各直播平台的页面容器，与上面的页签一同在运行时按注册清单建出 -->
+  <div id="page-sections"></div>
 
   <!--
     本页展示的都是群成员在聊天里产生的状态，此前只存在于 state.json，界面上毫无痕迹：

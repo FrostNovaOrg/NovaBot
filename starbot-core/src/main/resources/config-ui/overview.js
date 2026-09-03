@@ -3,8 +3,8 @@
  */
 
 import {bindBotForm, botFormHtml, renderTestMessage} from './bot.js';
-import {$, api, el, esc, say} from './core.js';
-import {switchTab} from './main.js';
+import {$, api, esc, say} from './core.js';
+import {pageStatus, switchTab} from './main.js';
 import {renderBinds, renderSessions, renderSubs} from './sessions.js';
 import {store} from './store.js';
 
@@ -156,7 +156,12 @@ export async function togglePush() {
   $('#toggle-push').disabled = false;
 }
 
-function healthRows(list, emptyText) {
+/**
+ * 探针行。插件页要渲染属于自己的那几条，因此这里导出去
+ * @param list 探针
+ * @param emptyText 一条都没有时说的话
+ */
+export function healthRows(list, emptyText) {
   return list.length
     ? list.map(h =>
         '<div class="row"><span class="dot ' + esc(h.level) + '"></span>' +
@@ -171,13 +176,11 @@ export function renderStatus(data) {
   renderPushSwitch(data.pushEnabled);
   renderTestMessage(data.senders);
 
-  // 总览展示全部探针；另两个页签只展示与自己相关的，由探针自报 scope 决定归属
+  // 总览展示全部探针；机器人页只展示与自己相关的，由探针自报 scope 决定归属
   const health = data.health || [];
   $('#health').innerHTML = healthRows(health, '暂无可用探针');
   $('#bot-health').innerHTML = healthRows(health.filter(h => h.scope === 'BOT'),
     '未找到机器人适配器，请确认对应插件已加载');
-  $('#bili-health').innerHTML = healthRows(health.filter(h => h.scope === 'PLATFORM'),
-    '未找到哔哩哔哩模块的健康探针');
 
   const r = data.runtime || {};
   $('#runtime').innerHTML = [
@@ -188,21 +191,9 @@ export function renderStatus(data) {
     ['监听主播', (data.users || []).length + (data.streamerLimit ? ' / ' + data.streamerLimit : '')]
   ].map(([l, n]) => '<div class="card"><div class="n">' + n + '</div><div class="l">' + l + '</div></div>').join('');
 
-  const body = $('#users tbody');
-  body.innerHTML = '';
-
-  if (!data.users || !data.users.length) {
-    body.innerHTML = '<tr><td colspan="6" class="empty">尚未配置任何主播，请在「推送规则」中添加</td></tr>';
-    return;
-  }
-
-  for (const u of data.users) {
-    const tr = el('tr');
-    tr.innerHTML = [u.uid, u.uname || '—', u.roomId || '—', u.platform,
-      u.targets, u.enabled === false ? '已停用' : '正常']
-      .map(v => '<td>' + esc(v) + '</td>').join('');
-    body.appendChild(tr);
-  }
+  // 平台相关的那几块归各平台页自己渲染：这里既不知道装了哪些页，也不知道页里有哪些元素。
+  // 反过来由这里按元素 id 去写，那些 id 就成了一条谁都看不见的约定
+  pageStatus(data);
 }
 
 // ---- 群与成员 ----

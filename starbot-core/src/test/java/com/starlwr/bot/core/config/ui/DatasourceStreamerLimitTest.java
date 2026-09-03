@@ -76,6 +76,7 @@ class DatasourceStreamerLimitTest {
                 mock(com.starlwr.bot.core.datasource.DataSourceServiceRegistry.class),
                 mock(ConfigurationLevelResolver.class),
                 mock(ObjectProvider.class),
+                mock(ObjectProvider.class),
                 mock(com.starlwr.bot.core.service.EventStreamTokenService.class));
     }
 
