@@ -1,7 +1,7 @@
 package com.starlwr.bot.bilibili.event.live;
 
+import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.bilibili.model.BilibiliEmojiInfo;
-import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.event.live.common.DanmuEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.UserInfo;
@@ -33,10 +33,10 @@ public class BilibiliDanmuEvent extends DanmuEvent {
     private List<BilibiliEmojiInfo> emojis = new ArrayList<>();
 
     public BilibiliDanmuEvent(LiveStreamerInfo source, UserInfo sender, String content, String contentText) {
-        super(LivePlatform.BILIBILI, source, sender, content, contentText);
+        super(BilibiliPlatform.BILIBILI, source, sender, content, contentText);
     }
 
     public BilibiliDanmuEvent(LiveStreamerInfo source, UserInfo sender, String content, String contentText, Instant instant) {
-        super(LivePlatform.BILIBILI, source, sender, content, contentText, instant);
+        super(BilibiliPlatform.BILIBILI, source, sender, content, contentText, instant);
     }
 }

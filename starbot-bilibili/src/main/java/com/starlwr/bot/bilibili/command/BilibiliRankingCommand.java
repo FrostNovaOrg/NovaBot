@@ -1,12 +1,12 @@
 package com.starlwr.bot.bilibili.command;
 
+import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.bilibili.model.BilibiliDataScope;
 import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
 import com.starlwr.bot.bilibili.painter.BilibiliDataQueryPainter;
 import com.starlwr.bot.core.command.CommandContext;
 import com.starlwr.bot.core.command.CommandReply;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
-import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.model.UserScore;
 import com.starlwr.bot.core.service.LiveDataService;
@@ -86,7 +86,7 @@ public abstract class BilibiliRankingCommand extends BilibiliScopedDataCommand {
         }
 
         PushUser streamer = resolved.streamer();
-        String platform = LivePlatform.BILIBILI.getName();
+        String platform = BilibiliPlatform.BILIBILI.id();
         BilibiliDataScope scope = scope();
 
         int total = scope.userCount(liveDataService, platform, streamer.getUid(), board.metric);

@@ -1,10 +1,10 @@
 package com.starlwr.bot.bilibili.command;
 
+import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.core.command.CommandContext;
 import com.starlwr.bot.core.command.CommandReply;
 import com.starlwr.bot.core.command.StarBotCommand;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
-import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.util.StringUtil;
 
@@ -58,7 +58,7 @@ public abstract class BilibiliStreamerCommand implements StarBotCommand {
      */
     protected List<PushUser> streamersOf(CommandContext context) {
         List<PushUser> result = new ArrayList<>();
-        for (PushUser user : dataSource.getUsers(LivePlatform.BILIBILI.getName())) {
+        for (PushUser user : dataSource.getUsers(BilibiliPlatform.BILIBILI.id())) {
             if (Boolean.FALSE.equals(user.getEnabled()) || user.getUid() == null) {
                 continue;
             }

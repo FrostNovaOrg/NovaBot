@@ -1,5 +1,6 @@
 package com.starlwr.bot.bilibili.service;
 
+import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.event.dynamic.BilibiliDynamicUpdateEvent;
 import com.starlwr.bot.bilibili.exception.ResponseCodeException;
@@ -7,7 +8,6 @@ import com.starlwr.bot.bilibili.model.Dynamic;
 import com.starlwr.bot.bilibili.model.Up;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
-import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.util.FixedSizeSetQueue;
 import lombok.extern.slf4j.Slf4j;
@@ -124,7 +124,7 @@ public class BilibiliDynamicService {
             return;
         }
 
-        Map<Long, Up> ups = source.getUsers(LivePlatform.BILIBILI.getName()).stream()
+        Map<Long, Up> ups = source.getUsers(BilibiliPlatform.BILIBILI.id()).stream()
                 .filter(user -> !Boolean.FALSE.equals(user.getEnabled()))
                 .map(Up::new)
                 .filter(up -> up.getUid() != null)
@@ -202,7 +202,7 @@ public class BilibiliDynamicService {
             return;
         }
 
-        Set<Long> configured = source.getUsers(LivePlatform.BILIBILI.getName()).stream()
+        Set<Long> configured = source.getUsers(BilibiliPlatform.BILIBILI.id()).stream()
                 .filter(user -> !Boolean.FALSE.equals(user.getEnabled()))
                 .map(com.starlwr.bot.core.model.PushUser::getUid)
                 .filter(java.util.Objects::nonNull)

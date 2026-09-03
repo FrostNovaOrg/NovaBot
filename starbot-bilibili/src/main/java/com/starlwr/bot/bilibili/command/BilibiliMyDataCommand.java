@@ -1,5 +1,6 @@
 package com.starlwr.bot.bilibili.command;
 
+import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.bilibili.model.BilibiliDataScope;
 import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
 import com.starlwr.bot.bilibili.model.Up;
@@ -8,7 +9,6 @@ import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.command.CommandContext;
 import com.starlwr.bot.core.command.CommandReply;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
-import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.RevenueVisibilityService;
@@ -55,7 +55,7 @@ public abstract class BilibiliMyDataCommand extends BilibiliScopedDataCommand {
             return unavailable;
         }
 
-        Long userUid = bindings.get(context.getPlatform(), LivePlatform.BILIBILI.getName(), context.getSenderUid())
+        Long userUid = bindings.get(context.getPlatform(), BilibiliPlatform.BILIBILI.id(), context.getSenderUid())
                 .orElse(null);
         if (userUid == null) {
             return CommandReply.of("你还没有绑定哔哩哔哩账号，请先发送「绑定 你的哔哩哔哩 uid」");
@@ -67,7 +67,7 @@ public abstract class BilibiliMyDataCommand extends BilibiliScopedDataCommand {
         }
 
         PushUser streamer = resolved.streamer();
-        String platform = LivePlatform.BILIBILI.getName();
+        String platform = BilibiliPlatform.BILIBILI.id();
         BilibiliDataScope scope = scope();
 
         // 这是发起者自己的消费额，但回复是发在会话里的，同群其他人一样看得见，

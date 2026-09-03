@@ -1,11 +1,11 @@
 package com.starlwr.bot.bilibili.handler;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.bilibili.event.live.BilibiliLiveOffEvent;
 import com.starlwr.bot.bilibili.model.BilibiliLiveReportOptions;
 import com.starlwr.bot.bilibili.painter.BilibiliLiveReportPainter;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
-import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
 import com.starlwr.bot.core.handler.StarBotEventHandler;
 import com.starlwr.bot.core.model.HandlerOption;
@@ -131,7 +131,7 @@ public class BilibiliLiveReportPushHandler implements StarBotEventHandler {
 
     @Override
     public String platform() {
-        return LivePlatform.BILIBILI.getName();
+        return BilibiliPlatform.BILIBILI.id();
     }
 
     @Override

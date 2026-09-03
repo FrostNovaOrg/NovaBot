@@ -1,6 +1,6 @@
 package com.starlwr.bot.bilibili.event.live;
 
-import com.starlwr.bot.core.enums.LivePlatform;
+import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.core.event.live.common.LiveCutOffEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import lombok.Getter;
@@ -19,10 +19,10 @@ import java.time.Instant;
 @ToString(callSuper = true)
 public class BilibiliCutOffEvent extends LiveCutOffEvent {
     public BilibiliCutOffEvent(LiveStreamerInfo source, String reason) {
-        super(LivePlatform.BILIBILI, source, reason);
+        super(BilibiliPlatform.BILIBILI, source, reason);
     }
 
     public BilibiliCutOffEvent(LiveStreamerInfo source, String reason, Instant instant) {
-        super(LivePlatform.BILIBILI, source, reason, instant);
+        super(BilibiliPlatform.BILIBILI, source, reason, instant);
     }
 }

@@ -1,11 +1,11 @@
 package com.starlwr.bot.bilibili.service;
 
+import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.model.BilibiliStreamerMetric;
 import com.starlwr.bot.bilibili.model.Up;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
-import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.model.StreamerSnapshot;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.service.StreamerSnapshotArchive;
@@ -88,7 +88,7 @@ public class BilibiliStreamerSnapshotService {
             return;
         }
 
-        List<Up> ups = source.getUsers(LivePlatform.BILIBILI.getName()).stream()
+        List<Up> ups = source.getUsers(BilibiliPlatform.BILIBILI.id()).stream()
                 .filter(user -> !Boolean.FALSE.equals(user.getEnabled()))
                 .map(Up::new)
                 .filter(up -> up.getUid() != null)
@@ -139,7 +139,7 @@ public class BilibiliStreamerSnapshotService {
             }
         }
 
-        return new StreamerSnapshot(LivePlatform.BILIBILI.getName(), up.getUid(), up.getUname(), at, metrics);
+        return new StreamerSnapshot(BilibiliPlatform.BILIBILI.id(), up.getUid(), up.getUname(), at, metrics);
     }
 
     private void sleep() {

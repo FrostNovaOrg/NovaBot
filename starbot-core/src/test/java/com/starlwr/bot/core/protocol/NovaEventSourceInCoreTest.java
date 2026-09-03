@@ -26,12 +26,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 地址与配置这两样在这里量；协议本身由同目录下那一批端点判据量。
  */
 @DisplayName("事件输出真源在核心")
-class Nova事件输出真源在核心Test {
+class NovaEventSourceInCoreTest {
     private static final String PACKAGE = "com.starlwr.bot.core.protocol.";
 
     @Test
     @DisplayName("WS 端点与其装配都在核心模块")
-    void 端点与装配都在核心模块() {
+    void endpointAndWiringLiveInCoreModule() {
         assertDoesNotThrow(() -> Class.forName(PACKAGE + "NovaEventEndpoint"),
                 "事件输出端点必须由核心提供");
         assertDoesNotThrow(() -> Class.forName(PACKAGE + "NovaEventStreamConfiguration"),
@@ -40,7 +40,7 @@ class Nova事件输出真源在核心Test {
 
     @Test
     @DisplayName("编号回补中枢与握手拦截也在核心模块")
-    void 编号回补与握手拦截也在核心模块() {
+    void replayAndHandshakeGuardAlsoInCoreModule() {
         assertDoesNotThrow(() -> Class.forName(PACKAGE + "NovaEventStream"),
                 "编号与回补中枢必须由核心提供");
         assertDoesNotThrow(() -> Class.forName(PACKAGE + "NoCredentialsInHandshake"),
@@ -49,7 +49,7 @@ class Nova事件输出真源在核心Test {
 
     @Test
     @DisplayName("默认值原样：路径仍是 /nova/events，默认仍不开、不要口令")
-    void 默认值原样() {
+    void defaultsUnchanged() {
         EventStreamProperties resolved = resolve(Map.of());
 
         assertEquals("/nova/events", resolved.getPath(), "端点路径不许改, 下游是照它连的");
@@ -61,7 +61,7 @@ class Nova事件输出真源在核心Test {
 
     @Test
     @DisplayName("🔴 只写旧键的既有部署照常生效——搬家不许把别人跑着的事件流悄悄关掉")
-    void 旧键仍然认得() {
+    void legacyKeysStillRecognized() {
         EventStreamProperties resolved = resolve(Map.of(
                 "starbot.bilibili.event-stream.enabled", "true",
                 "starbot.bilibili.event-stream.path", "/legacy/events",
@@ -76,7 +76,7 @@ class Nova事件输出真源在核心Test {
 
     @Test
     @DisplayName("两套键同时在场时逐项取舍：新键写到的项归新键，没写到的项才落回旧键")
-    void 新键逐项压过旧键() {
+    void currentKeysOverrideLegacyKeys() {
         EventStreamProperties resolved = resolve(Map.of(
                 "starbot.bilibili.event-stream.enabled", "true",
                 "starbot.bilibili.event-stream.path", "/legacy/events",

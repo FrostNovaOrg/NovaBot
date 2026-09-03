@@ -39,13 +39,13 @@ public class StarBotExternalBaseEvent extends StarBotBaseEvent {
     }
 
     public StarBotExternalBaseEvent(LivePlatform platform, LiveStreamerInfo source) {
-        this.platform = platform.getName();
+        this.platform = platform.id();
         this.source = source;
     }
 
     public StarBotExternalBaseEvent(LivePlatform platform, LiveStreamerInfo source, Instant instant) {
         super(instant);
-        this.platform = platform.getName();
+        this.platform = platform.id();
         this.source = source;
     }
 }

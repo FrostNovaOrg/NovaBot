@@ -1,8 +1,8 @@
 package com.starlwr.bot.bilibili.account;
 
+import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.bilibili.service.BilibiliAccountService;
 import com.starlwr.bot.core.account.AccountLoginProvider;
-import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -32,7 +32,7 @@ public class BilibiliAccountLoginProvider implements AccountLoginProvider {
 
     @Override
     public String platform() {
-        return LivePlatform.BILIBILI.getName();
+        return BilibiliPlatform.BILIBILI.id();
     }
 
     @Override

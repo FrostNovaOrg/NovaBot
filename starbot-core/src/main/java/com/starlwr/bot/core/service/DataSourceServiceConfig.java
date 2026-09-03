@@ -14,7 +14,7 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 public @interface DataSourceServiceConfig {
     /**
-     * 直播平台，请优先从 {@link LivePlatform} 中获取，若不存在可使用自定义字符串
+     * 直播平台标识串，取自 {@link LivePlatform} 实例的 {@code id()}，由各直播平台插件登记
      */
     String name();
 }

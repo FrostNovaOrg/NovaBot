@@ -1,9 +1,9 @@
 package com.starlwr.bot.bilibili.service;
 
+import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.health.BilibiliRiskMetrics;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
-import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
@@ -184,7 +184,7 @@ class BilibiliLiveRoomServiceTest {
             user.setUid(uid);
             user.setUname("主播" + uid);
             user.setRoomId(1000L + uid);
-            user.setPlatform(LivePlatform.BILIBILI.getName());
+            user.setPlatform(BilibiliPlatform.BILIBILI.id());
             user.setEnabled(true);
             user.setTargets(new ArrayList<>());
             users.add(user);

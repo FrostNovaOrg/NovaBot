@@ -35,7 +35,12 @@ trap 'rm -rf "$WORK"' EXIT
 #
 # 平台名清单当场从源码里算出来，本脚本不写死任何一个平台名 —— 写死一个，
 # 这把尺守的就只是那一个平台，下一个平台写死进核心界面照样是绿的。两处源头：
-#   ① enums/LivePlatform.java 的枚举成员名与其名称字符串（含小写、去下划线、连字符各变体）
+#   ① 各插件模块登记平台的地方：LivePlatform.of("<标识串>"[, "<显示名>"]) 里的字面量，
+#      以及承载它的常量名（含小写、去下划线、连字符各变体）
+#      —— 口径改自插件侧是 2026-09-03 平台清单改开放标识（乙形）的必然结果：核心里已经
+#      没有平台清单可读，认得哪几个平台完全取决于这台实例装了哪些插件，尺也就只能从那一侧算。
+#      代价照记：从此清单里只有<b>真有插件的</b>平台，没人实现的平台名写进核心界面尺不会红——
+#      而那种名字本来也不该由核心来背书，它该在开插件的那一笔里连同实现一起进来。
 #   ② 各插件自己申报给控制台的显示名（ConsolePageProvider / AccountLoginProvider 的 displayName）
 #      —— 界面上「登录哔哩哔哩」这类中文写死，只有从这一处才认得出来
 #
@@ -55,13 +60,37 @@ TOKENS="$WORK/tokens"
 : > "$TOKENS"
 
 LP="starbot-core/src/main/java/com/starlwr/bot/core/enums/LivePlatform.java"
-if [ -f "$LP" ]; then
-    while IFS= read -r line; do
-        member="$(printf '%s' "$line" | sed -E 's/^[[:space:]]*([A-Z][A-Z_]*)\(.*/\1/')"
-        value="$(printf '%s' "$line" | sed -E 's/^[^"]*"([^"]*)".*/\1/')"
+
+# —— 插件模块的主码目录，供源头① 与格3 使用 ——
+PLUGIN_MAINS=""
+for mod in */; do
+    mod="${mod%/}"
+    [ -d "$mod/src/main" ] || continue
+    skip=0
+    for allowed in $ALLOWED_CORE_MODULES; do
+        [ "$mod" = "$allowed" ] && skip=1
+    done
+    [ "$skip" -eq 1 ] && continue
+    PLUGIN_MAINS="${PLUGIN_MAINS}${mod}/src/main "
+done
+
+# —— 源头①：各插件模块登记平台的地方 ——
+g1_registrations=0
+if [ -n "$PLUGIN_MAINS" ]; then
+    while IFS= read -r call; do
+        [ -z "$call" ] && continue
+        g1_registrations=$((g1_registrations + 1))
+        printf '%s\n' "$call" | grep -oE '"[^"]*"' | sed -E 's/^"(.*)"$/\1/' >> "$TOKENS"
+    done <<< "$(grep -rhoE 'LivePlatform\.of\("[^"]*"([[:space:]]*,[[:space:]]*"[^"]*")?[[:space:]]*\)' \
+        --include='*.java' $PLUGIN_MAINS 2>/dev/null | sort -u)"
+
+    while IFS= read -r member; do
+        [ -z "$member" ] && continue
         lower="$(printf '%s' "$member" | tr 'A-Z' 'a-z')"
-        printf '%s\n%s\n%s\n%s\n' "$value" "$lower" "${lower//_/}" "${lower//_/-}" >> "$TOKENS"
-    done <<< "$(grep -E '^[[:space:]]+[A-Z][A-Z_]*\("' "$LP")"
+        printf '%s\n%s\n%s\n' "$lower" "${lower//_/}" "${lower//_/-}" >> "$TOKENS"
+    done <<< "$(grep -rhoE 'LivePlatform[[:space:]]+[A-Z][A-Z_0-9]*[[:space:]]*=' \
+        --include='*.java' $PLUGIN_MAINS 2>/dev/null \
+        | sed -E 's/.*[[:space:]]([A-Z][A-Z_0-9]*)[[:space:]]*=$/\1/' | sort -u)"
 fi
 
 for mod in */; do
@@ -111,6 +140,48 @@ platform_hit() {
     return 1
 }
 
+# 去掉 Java 注释后的正文（格3 用）
+#
+# 判据只看代码不看注释：类上写一段「插件这样登记平台」的用法示例，正是该写的话——
+# 让示例把自己的判据判红，那把尺的下场必然是把示例删掉，而不是把边界守住。
+# 同一条道理在格5 源头② 已经用过一次（只看键不看注释）。
+# 已知边界：串里含 // 的行会被从那里截断，判据因此只会漏不会误报——
+# 想靠这一点把登记藏进核心，得先在同一行写一个带 // 的字符串，那已不是笔误而是有意为之。
+strip_comments() {
+    awk '
+    {
+        line = $0
+        while (1) {
+            if (inc) {
+                i = index(line, "*/")
+                if (i == 0) { line = ""; break }
+                line = substr(line, i + 2); inc = 0
+            } else {
+                i = index(line, "/*")
+                if (i == 0) break
+                pre = substr(line, 1, i - 1); rest = substr(line, i + 2)
+                j = index(rest, "*/")
+                if (j == 0) { line = pre; inc = 1; break }
+                line = pre substr(rest, j + 2)
+            }
+        }
+        sub(/\/\/.*$/, "", line)
+        print line
+    }' "$1"
+}
+
+# 核心主码正文里命中某个模式的处数（注释不计）
+core_code_hits() {
+    hits_re="$1"
+    hits_total=0
+    while IFS= read -r hits_f; do
+        [ -z "$hits_f" ] && continue
+        hits_n=$(strip_comments "$hits_f" | grep -cE "$hits_re")
+        hits_total=$((hits_total + hits_n))
+    done <<< "$(grep -rlE "$hits_re" --include='*.java' $CORE_MAINS 2>/dev/null)"
+    echo "$hits_total"
+}
+
 g1_hits=""
 g1_n=0
 
@@ -155,9 +226,9 @@ if [ -d "$CORE_UI" ]; then
 fi
 
 if [ "$g1_n" -eq 0 ]; then
-    echo "格1 绿 命中0 核心界面无平台字样 平台名${g1_tokens}个(现算)"
+    echo "格1 绿 命中0 核心界面无平台字样 平台名${g1_tokens}个(现算自插件侧登记${g1_registrations}处)"
 else
-    echo "格1 红 命中${g1_n} ${g1_hits% } 平台名${g1_tokens}个(现算)"
+    echo "格1 红 命中${g1_n} ${g1_hits% } 平台名${g1_tokens}个(现算自插件侧登记${g1_registrations}处)"
     RED=1
 fi
 
@@ -199,38 +270,49 @@ else
     fi
 fi
 
-# ============================================================
-# 格3：平台清单 LivePlatform —— 读法已定为「开放标识／注册表」
-#
-# 绿判据：core 内引用 LivePlatform.<具体成员> 的处数为 0 ——
-# 核心只认平台标识串，不认某一个具体平台的名字；平台由插件在注册表里自报。
-# 另一读法（闭集枚举留核心，绿判据＝枚举成员数与被引用平台数相等）不采：
-# 那要为枚举里列而不做的那几个平台背书，而它们一个实现也没有。
-# 两数照旧印出来，只是不再作判据 —— 它是「空头平台有几个」的现读数。
-# ============================================================
-if [ -f "$LP" ]; then
-    g3_members=$(grep -cE '^\s+[A-Z][A-Z_]*\("' "$LP")
-else
-    g3_members=0
-fi
-g3_used=$(grep -rhoE 'LivePlatform\.[A-Z][A-Z_]*' --include='*.java' \
-    */src/main 2>/dev/null | sort -u | wc -l | tr -d ' ')
-g3_core_concrete=$(grep -rcE 'LivePlatform\.[A-Z][A-Z_]*' --include='*.java' \
-    starbot-core/src/main 2>/dev/null | awk -F: '{s+=$2} END {print s+0}')
-
-if [ "$g3_core_concrete" -eq 0 ]; then
-    echo "格3 绿 core内具体成员0处 枚举${g3_members}/被引用${g3_used} $LP"
-else
-    echo "格3 红 core内具体成员${g3_core_concrete}处(须0) 枚举${g3_members}/被引用${g3_used} $LP"
-    RED=1
-fi
-
-# —— 核心模块的主码目录，供格4／格5 使用 ——
-# 从 ALLOWED_CORE_MODULES 现算而不写死 starbot-core：模块一改名，写死的那两格就静默地什么都不查了
+# —— 核心模块的主码目录，供格3／格4／格5 使用 ——
+# 从 ALLOWED_CORE_MODULES 现算而不写死 starbot-core：模块一改名，写死的那几格就静默地什么都不查了
 CORE_MAINS=""
 for allowed in $ALLOWED_CORE_MODULES; do
     [ -d "$allowed/src/main" ] && CORE_MAINS="${CORE_MAINS}${allowed}/src/main "
 done
+
+# ============================================================
+# 格3：平台标识 LivePlatform —— 读法已定为「开放标识」（乙形，2026-09-03 裁）
+#
+# 枚举列平台名的老形态已退场。它有两处不成立：一是那份清单要为列而不做的那几个平台背书，
+# 而它们一个实现也没有；二是——更要紧的——它把「世上有哪些直播平台」写死进了核心，
+# 于是核心永远认识每一个平台的名字，拆出去给别的产品用时那份名单还得跟着走。
+#
+# 乙形＝平台由各插件在自己那一侧登记，核心只认标识串并原样透传。三条一起判，全绿才绿：
+#   ① LivePlatform 件内不许有平台申报：既不许列枚举成员，也不许挂平台常量，
+#      并且件内不许出现任何一个现算出来的平台名 —— 后者是兜底，
+#      防的是换一种写法（数组、Map、静态块）把同一份名单塞回同一个文件。
+#   ② 核心主码里引用 LivePlatform.<具体成员> 的处数为 0 —— 核心不认识任何一个具体平台。
+#   ③ 平台登记 LivePlatform.of("…") 只出现在插件模块，核心主码里 0 处 ——
+#      光有 ① ② 拦不住核心在别的文件里就地登记一个平台，那等于把平台名换个地方写回核心。
+#      射程只到 src/main 不含 src/test：测试造场景时按串取一个平台是数据不是依赖，理由同格4。
+#
+# ① 的两个数与 ③ 一并印出来，红时看得出是哪一条不成立。
+# ============================================================
+g3_declared=0
+g3_named=0
+if [ -f "$LP" ]; then
+    strip_comments "$LP" > "$WORK/lp_code"
+    g3_declared=$(grep -cE '^[[:space:]]*[A-Z][A-Z_0-9]*\("|static[[:space:]]+final[[:space:]]+LivePlatform[[:space:]]+[A-Z]' "$WORK/lp_code")
+    g3_named=$(scan "$WORK/lp_code" | sort -u | awk -F: '!seen[$1":"$2]++' | wc -l | tr -d ' ')
+fi
+g3_core_concrete=$(core_code_hits 'LivePlatform\.[A-Z][A-Z_]*')
+g3_core_register=$(core_code_hits 'LivePlatform\.of[[:space:]]*\(')
+
+g3_read="件内申报${g3_declared}处 件内平台名${g3_named}处 核心内具体成员${g3_core_concrete}处 核心内登记${g3_core_register}处 插件侧登记${g1_registrations}处(现算)"
+if [ "$g3_declared" -eq 0 ] && [ "$g3_named" -eq 0 ] \
+    && [ "$g3_core_concrete" -eq 0 ] && [ "$g3_core_register" -eq 0 ]; then
+    echo "格3 绿 $g3_read $LP"
+else
+    echo "格3 红 四数须全0 $g3_read $LP"
+    RED=1
+fi
 
 # ============================================================
 # 格4：核心不得引用插件包

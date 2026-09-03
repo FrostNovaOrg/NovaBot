@@ -1,12 +1,12 @@
 package com.starlwr.bot.bilibili.service;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.event.dynamic.BilibiliDynamicUpdateEvent;
 import com.starlwr.bot.bilibili.model.Dynamic;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
-import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.model.PushUser;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -72,7 +72,7 @@ class BilibiliDynamicServiceTest {
         PushUser user = new PushUser();
         user.setUid(UID);
         user.setUname("测试UP主");
-        user.setPlatform(LivePlatform.BILIBILI.getName());
+        user.setPlatform(BilibiliPlatform.BILIBILI.id());
 
         AbstractDataSource dataSource = mock(AbstractDataSource.class);
         when(dataSource.getUsers(anyString())).thenReturn(List.of(user));

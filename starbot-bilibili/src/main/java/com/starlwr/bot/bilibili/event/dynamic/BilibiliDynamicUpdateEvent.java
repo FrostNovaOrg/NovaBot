@@ -1,7 +1,7 @@
 package com.starlwr.bot.bilibili.event.dynamic;
 
+import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.bilibili.model.Dynamic;
-import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.event.dynamic.StarBotBaseDynamicEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import lombok.Getter;
@@ -35,14 +35,14 @@ public class BilibiliDynamicUpdateEvent extends StarBotBaseDynamicEvent {
     private String url;
 
     public BilibiliDynamicUpdateEvent(LiveStreamerInfo source, Dynamic dynamic, String action, String url) {
-        super(LivePlatform.BILIBILI, source);
+        super(BilibiliPlatform.BILIBILI, source);
         this.dynamic = dynamic;
         this.action = action;
         this.url = url;
     }
 
     public BilibiliDynamicUpdateEvent(LiveStreamerInfo source, Dynamic dynamic, String action, String url, Instant instant) {
-        super(LivePlatform.BILIBILI, source, instant);
+        super(BilibiliPlatform.BILIBILI, source, instant);
         this.dynamic = dynamic;
         this.action = action;
         this.url = url;

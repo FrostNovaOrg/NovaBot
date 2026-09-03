@@ -62,7 +62,7 @@ class LiveInterventionTrackerTest {
     @Test
     @DisplayName("封禁后紧接着的下播应判为被封禁")
     void roomLockFollowedByLiveOff() {
-        tracker.onRoomLock(new RoomLockEvent(LivePlatform.BILIBILI, source(), null, null, NOW.minusSeconds(3)));
+        tracker.onRoomLock(new RoomLockEvent(LivePlatform.of(PLATFORM), source(), null, null, NOW.minusSeconds(3)));
 
         assertEquals(LiveEndReason.ROOM_LOCK, tracker.endReason(PLATFORM, UID, NOW));
     }

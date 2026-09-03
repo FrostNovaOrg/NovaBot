@@ -1,7 +1,7 @@
 package com.starlwr.bot.bilibili.console;
 
+import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.core.config.ui.page.ConsolePageProvider;
-import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 
 /**
@@ -15,7 +15,7 @@ import com.starlwr.bot.core.plugin.StarBotComponent;
 public class BilibiliConsolePageProvider implements ConsolePageProvider {
     @Override
     public String id() {
-        return LivePlatform.BILIBILI.getName();
+        return BilibiliPlatform.BILIBILI.id();
     }
 
     @Override

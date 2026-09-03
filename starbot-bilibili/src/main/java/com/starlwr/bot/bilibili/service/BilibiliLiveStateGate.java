@@ -1,6 +1,6 @@
 package com.starlwr.bot.bilibili.service;
 
-import com.starlwr.bot.core.enums.LivePlatform;
+import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.service.LiveDataService;
 import lombok.extern.slf4j.Slf4j;
@@ -56,7 +56,7 @@ public class BilibiliLiveStateGate {
         Boolean last = admitted.get(uid);
         if (last == null) {
             // 进程刚起来时以持久化的状态为准，避免重启后把旧状态当成新变化推一遍
-            last = liveDataService.getLiveStatus(LivePlatform.BILIBILI.getName(), uid).orElse(null);
+            last = liveDataService.getLiveStatus(BilibiliPlatform.BILIBILI.id(), uid).orElse(null);
         }
 
         if (last != null && last == living) {
@@ -84,7 +84,7 @@ public class BilibiliLiveStateGate {
 
         Boolean state = admitted.get(uid);
         if (state == null) {
-            state = liveDataService.getLiveStatus(LivePlatform.BILIBILI.getName(), uid).orElse(null);
+            state = liveDataService.getLiveStatus(BilibiliPlatform.BILIBILI.id(), uid).orElse(null);
         }
         return Boolean.TRUE.equals(state);
     }

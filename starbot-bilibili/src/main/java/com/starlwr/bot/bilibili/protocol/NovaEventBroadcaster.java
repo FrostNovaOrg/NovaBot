@@ -1,8 +1,8 @@
 package com.starlwr.bot.bilibili.protocol;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.core.config.EventStreamProperties;
-import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.event.datasource.change.StarBotDataSourceRemoveEvent;
 import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
 import com.starlwr.bot.core.event.live.common.ConnectedEvent;
@@ -132,7 +132,7 @@ public class NovaEventBroadcaster {
         try {
             PushUser user = event.getUser();
             if (user == null || user.getRoomId() == null
-                    || !LivePlatform.BILIBILI.getName().equals(user.getPlatform())) {
+                    || !BilibiliPlatform.BILIBILI.id().equals(user.getPlatform())) {
                 return;
             }
 

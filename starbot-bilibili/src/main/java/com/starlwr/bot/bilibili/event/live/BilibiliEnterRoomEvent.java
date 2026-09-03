@@ -1,6 +1,6 @@
 package com.starlwr.bot.bilibili.event.live;
 
-import com.starlwr.bot.core.enums.LivePlatform;
+import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.core.event.live.common.EnterRoomEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.UserInfo;
@@ -30,10 +30,10 @@ public class BilibiliEnterRoomEvent extends EnterRoomEvent {
     private String promotionSource;
 
     public BilibiliEnterRoomEvent(LiveStreamerInfo source, UserInfo sender) {
-        super(LivePlatform.BILIBILI, source, sender);
+        super(BilibiliPlatform.BILIBILI, source, sender);
     }
 
     public BilibiliEnterRoomEvent(LiveStreamerInfo source, UserInfo sender, Instant instant) {
-        super(LivePlatform.BILIBILI, source, sender, instant);
+        super(BilibiliPlatform.BILIBILI, source, sender, instant);
     }
 }

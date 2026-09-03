@@ -2,6 +2,7 @@ package com.starlwr.bot.bilibili.service;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.enums.ConnectStatus;
 import com.starlwr.bot.bilibili.enums.DataHeaderType;
@@ -19,7 +20,6 @@ import com.starlwr.bot.bilibili.protocol.BilibiliPacket;
 import com.starlwr.bot.bilibili.protocol.BilibiliPacketCodec;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
-import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.service.LiveDataService;
 import lombok.Getter;
@@ -429,7 +429,7 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
             return;
         }
 
-        liveDataService.recordRoomOutage(LivePlatform.BILIBILI.getName(), source.getUid(),
+        liveDataService.recordRoomOutage(BilibiliPlatform.BILIBILI.id(), source.getUid(),
                 from.toEpochMilli(), now.toEpochMilli());
         log.debug("直播间 {} 断线 {} 秒后恢复, 已记入采集缺口",
                 source.getRoomId(), Duration.between(from, now).toSeconds());

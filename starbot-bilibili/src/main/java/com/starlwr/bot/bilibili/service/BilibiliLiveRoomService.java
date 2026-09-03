@@ -1,5 +1,6 @@
 package com.starlwr.bot.bilibili.service;
 
+import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.health.BilibiliDisconnectDigest;
 import com.starlwr.bot.bilibili.health.BilibiliRiskMetrics;
@@ -8,7 +9,6 @@ import com.starlwr.bot.bilibili.model.Up;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.datasource.MonitorLimit;
-import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
@@ -125,7 +125,7 @@ public class BilibiliLiveRoomService {
             return;
         }
 
-        List<PushUser> enabled = dataSource.getUsers(LivePlatform.BILIBILI.getName()).stream()
+        List<PushUser> enabled = dataSource.getUsers(BilibiliPlatform.BILIBILI.id()).stream()
                 .filter(user -> !Boolean.FALSE.equals(user.getEnabled()))
                 .toList();
 

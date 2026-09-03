@@ -1,11 +1,11 @@
 package com.starlwr.bot.bilibili.command;
 
+import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.bilibili.model.Up;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.command.CommandContext;
 import com.starlwr.bot.core.command.CommandReply;
 import com.starlwr.bot.core.command.StarBotCommand;
-import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.service.UserBindingService;
 import com.starlwr.bot.core.util.StringUtil;
@@ -128,7 +128,7 @@ public class BilibiliBindCommand implements StarBotCommand {
             return CommandReply.of("待确认的绑定已超时，请重新发送「绑定 你的哔哩哔哩 uid」");
         }
 
-        bindings.bind(context.getPlatform(), LivePlatform.BILIBILI.getName(), context.getSenderUid(), pending.uid());
+        bindings.bind(context.getPlatform(), BilibiliPlatform.BILIBILI.id(), context.getSenderUid(), pending.uid());
         log.info("会话 {} 中 {} 绑定了哔哩哔哩账号 {}", context.getNum(), context.getSenderUid(), pending.uid());
 
         return CommandReply.of("已绑定「" + pending.uname() + "」（" + pending.uid() + "）"

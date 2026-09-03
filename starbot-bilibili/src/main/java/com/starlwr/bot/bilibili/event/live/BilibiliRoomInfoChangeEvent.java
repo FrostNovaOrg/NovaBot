@@ -1,6 +1,6 @@
 package com.starlwr.bot.bilibili.event.live;
 
-import com.starlwr.bot.core.enums.LivePlatform;
+import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.core.event.live.common.RoomInfoChangeEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import lombok.Getter;
@@ -19,10 +19,10 @@ import java.time.Instant;
 @ToString(callSuper = true)
 public class BilibiliRoomInfoChangeEvent extends RoomInfoChangeEvent {
     public BilibiliRoomInfoChangeEvent(LiveStreamerInfo source, String title, String parentAreaName, String areaName) {
-        super(LivePlatform.BILIBILI, source, title, parentAreaName, areaName);
+        super(BilibiliPlatform.BILIBILI, source, title, parentAreaName, areaName);
     }
 
     public BilibiliRoomInfoChangeEvent(LiveStreamerInfo source, String title, String parentAreaName, String areaName, Instant instant) {
-        super(LivePlatform.BILIBILI, source, title, parentAreaName, areaName, instant);
+        super(BilibiliPlatform.BILIBILI, source, title, parentAreaName, areaName, instant);
     }
 }

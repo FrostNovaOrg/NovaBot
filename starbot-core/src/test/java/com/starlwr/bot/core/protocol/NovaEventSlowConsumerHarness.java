@@ -22,16 +22,16 @@ import static org.junit.jupiter.api.Assertions.fail;
  * 慢消费者用例的台架与三条判据的<b>探针本体</b>
  * <p>
  * 🔴 探针只写这一份。{@link NovaEventSlowConsumerTest}（量「修好没有」）与
- * {@link NovaEvent判据探针独立性Test}（量「三条判据互不代劳」）<b>共用</b>它——
+ * {@link NovaEventProbeIndependenceTest}（量「三条判据互不代劳」）<b>共用</b>它——
  * <b>两把尺量同一件事必生漂移</b>，而这里漂移的后果是：独立性那组量的其实是另一支探针，
  * 于是它证明的独立性对真正在用的那三条<b>一句都不算</b>。
  * <p>
- * 台架自己也要能被拆开：{@link #支起慢客户端()} 不亮先验尺就直接判失败，
+ * 台架自己也要能被拆开：{@link #bringUpSlowClient()} 不亮先验尺就直接判失败，
  * 因为<b>没复现出阻塞时，三条判据的绿和修好了的绿长得一样</b>。
  */
-final class NovaEvent慢消费者台架 implements AutoCloseable {
+final class NovaEventSlowConsumerHarness implements AutoCloseable {
     /** 读数行的前缀。改它要两头同改——外部收集方按这个串匹配 */
-    static final String 读数标记 = "慢消费者读数 ";
+    static final String READING_MARK = "慢消费者读数 ";
 
     /** 心跳周期。取小值，好让「一个周期都没等到」在秒级窗口里看得出来 */
     static final long PING = 200;
@@ -60,15 +60,15 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * 窗口够不够用：心跳周期 200ms，1200ms 是 6 轮 ping；
      * 认证闸 1000ms、回补窗口 1000ms，都在窗口内。
      */
-    static final long 判据等待 = 1_200;
+    static final long CRITERION_WAIT = 1_200;
 
     /**
-     * 破坏用的大数。派到这个时限上的那件事在 {@link #判据等待} 内一定不会发生，
+     * 破坏用的大数。派到这个时限上的那件事在 {@link #CRITERION_WAIT} 内一定不会发生，
      * 而它<b>只</b>是那一条判据所量的下游。
      */
-    static final long 破坏 = 60_000;
+    static final long BREAK = 60_000;
 
-    static final NovaEventEndpoint.Timings 标准时限 =
+    static final NovaEventEndpoint.Timings STANDARD_TIMINGS =
             new NovaEventEndpoint.Timings(PING, CLIENT_TIMEOUT, AUTH, GRACE);
 
     // ══════ 「超时清理时的关闭帧」那一组：时限**反过来配** ══════
@@ -83,17 +83,17 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * <b>之后</b>才接上，它们的闸才可能在卡住那一刻还悬着。头一版取 600 毫秒，
      * 支起那一段就花掉了 800 毫秒——<b>卡住之前认证闸与 goLive 都自己办完了，判据 2／3 假绿</b>。
      */
-    static final long 关闭帧_CLIENT_TIMEOUT = 1200;
+    static final long CLOSE_FRAME_CLIENT_TIMEOUT = 1200;
 
     /**
      * 认证闸：从沉默连接接上算起，要**晚于**卡住那一刻到点
      * <p>
      * 沉默连接在慢客户端支起之后才接上，那时距卡住还有约 700 毫秒；取 1000 毫秒即悬在卡住之后。
      */
-    static final long 关闭帧_AUTH = 1000;
+    static final long CLOSE_FRAME_AUTH = 1000;
 
     /** 回补窗口：同上，要晚于卡住那一刻到点 */
-    static final long 关闭帧_GRACE = 1000;
+    static final long CLOSE_FRAME_GRACE = 1000;
 
     /**
      * 关闭时真写多少字节。取协议里关闭帧载荷的上限。
@@ -101,10 +101,10 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * 🔴 <b>量的东西要和要防的东西同尺寸。</b> 管道灌满时写 1 个字节也卡得住，
      * 但「1 字节卡住」证不了「真实关闭帧会卡住」。
      */
-    static final int 关闭帧字节 = 125;
+    static final int CLOSE_FRAME_BYTES = 125;
 
     /** 健康连接条数。要多于一条，后排那层伤害才有可能被排出来 */
-    static final int 健康连接数 = 6;
+    static final int HEALTHY_CONNECTIONS = 6;
 
     /**
      * 慢客户端的 id
@@ -120,10 +120,10 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * {@code slow-4} 落在第 4 位：<b>前 2 条、后 4 条</b>，两边都不空。
      * <p>
      * 🔴 算出来的次序<b>不许只当注释信</b>：它依赖 JDK 的散列实现，换个 JDK 就可能重排。
-     * 所以判据 4 每一跑开头都由 {@code 两簇都不空} 就地再验一次——
+     * 所以判据 4 每一跑开头都由 {@code bothClustersNonEmpty} 就地再验一次——
      * <b>验的是生效值，不是这段注释</b>。
      */
-    static final String 慢客户端id = "slow-4";
+    static final String SLOW_CLIENT_ID = "slow-4";
 
     // ═══════════════════ 负载免疫：判相对，不判绝对 ═══════════════════
     //
@@ -138,7 +138,7 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
     //    负载会把**所有**连接一起拖慢，差分不变；钉住只拖后半段，差分立刻现形。
     //    于是判据量的不再是「多少毫秒」，而是「**后簇比前簇落后了多少**」。
     //
-    //    还剩下的那点「多久算久」，一律折算成 {@link 对照钟} 的格数——
+    //    还剩下的那点「多久算久」，一律折算成 {@link ReferenceClock} 的格数——
     //    那把表和心跳跑在同一台机器、同一份负载上，只是<b>不经过心跳线程</b>。
     //    机器慢，它跟着慢；心跳被钉住，它照走。
 
@@ -153,64 +153,64 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * （端点的 {@code heartbeats}）<b>同一种机器</b>：同样的定时器实现、同样的补齐行为。
      * <b>对照要和被对照的东西同形，差出来的才是被测的那件事。</b>
      */
-    static final class 对照钟 implements AutoCloseable {
-        private final java.util.concurrent.ScheduledExecutorService 表;
+    static final class ReferenceClock implements AutoCloseable {
+        private final java.util.concurrent.ScheduledExecutorService ticker;
 
-        private final java.util.concurrent.atomic.AtomicLong 格 =
+        private final java.util.concurrent.atomic.AtomicLong tick =
                 new java.util.concurrent.atomic.AtomicLong();
 
-        private final long 名义格长毫秒;
+        private final long tickMs;
 
-        对照钟(long 周期毫秒) {
-            this.名义格长毫秒 = 周期毫秒;
-            this.表 = java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+        ReferenceClock(long periodMs) {
+            this.tickMs = periodMs;
+            this.ticker = java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
                 Thread t = new Thread(r, "nova-test-control-clock");
                 t.setDaemon(true);
                 return t;
             });
-            表.scheduleAtFixedRate(格::incrementAndGet, 周期毫秒, 周期毫秒, TimeUnit.MILLISECONDS);
+            ticker.scheduleAtFixedRate(tick::incrementAndGet, periodMs, periodMs, TimeUnit.MILLISECONDS);
         }
 
-        long 读() {
-            return 格.get();
+        long read() {
+            return tick.get();
         }
 
-        long 名义格长毫秒() {
-            return 名义格长毫秒;
+        long nominalTickMs() {
+            return tickMs;
         }
 
         /**
-         * 开一段观测：从此刻起，等这把表再走满 {@code 格数} 格
+         * 开一段观测：从此刻起，等这把表再走满 {@code tickCount} 格
          *
          * @param 格数 等几格
          * @return 这一段的起止（含本跑实测的格长）
          */
-        一段 走过(long 格数) throws InterruptedException {
-            long 起格 = 读();
-            long 起毫秒 = System.currentTimeMillis();
-            long 死线 = 起毫秒 + 死线毫秒(格数);
-            while (读() - 起格 < 格数 && System.currentTimeMillis() < 死线) {
+        TimeSegment awaitTicks(long tickCount) throws InterruptedException {
+            long startTick = read();
+            long startMs = System.currentTimeMillis();
+            long deadlineAt = startMs + deadlineMs(tickCount);
+            while (read() - startTick < tickCount && System.currentTimeMillis() < deadlineAt) {
                 Thread.sleep(5);
             }
-            return new 一段(起格, 读(), 起毫秒, System.currentTimeMillis(), 名义格长毫秒);
+            return new TimeSegment(startTick, read(), startMs, System.currentTimeMillis(), tickMs);
         }
 
         /**
-         * 在这把表走满 {@code 格数} 格之前反复问 {@code 探}；拿到非 {@code null} 就提前返回
+         * 在这把表走满 {@code tickCount} 格之前反复问 {@code probe}；拿到非 {@code null} 就提前返回
          * <p>
-         * 🔴 这是 {@link NovaEvent慢消费者台架#等到(long, java.util.function.Supplier)} 的负载免疫版：
+         * 🔴 这是 {@link NovaEventSlowConsumerHarness#await(long, java.util.function.Supplier)} 的负载免疫版：
          * 预算按<b>对照格</b>算，机器慢时窗口自己变长。判「窗口内那件事有没有发生」的格子
          * 一律走这一支——拿墙钟毫秒当预算，负载一高判的就是机器。
          */
-        <T> T 等到(long 格数, java.util.function.Supplier<T> 探) throws InterruptedException {
-            long 起格 = 读();
-            long 死线 = System.currentTimeMillis() + 死线毫秒(格数);
+        <T> T await(long tickCount, java.util.function.Supplier<T> probe) throws InterruptedException {
+            long startTick = read();
+            long deadlineAt = System.currentTimeMillis() + deadlineMs(tickCount);
             while (true) {
-                T v = 探.get();
+                T v = probe.get();
                 if (v != null) {
                     return v;
                 }
-                if (读() - 起格 >= 格数 || System.currentTimeMillis() >= 死线) {
+                if (read() - startTick >= tickCount || System.currentTimeMillis() >= deadlineAt) {
                     return null;
                 }
                 Thread.sleep(5);
@@ -223,48 +223,48 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
          * 🔴 <b>它不是判据</b>，取得极宽（名义格长的二十倍）。够不到它就是表坏了，
          * 不是机器慢——真慢到二十倍，红在哪一格都无所谓了。
          */
-        private long 死线毫秒(long 格数) {
-            return Math.max(1, 格数) * 名义格长毫秒 * 20;
+        private long deadlineMs(long tickCount) {
+            return Math.max(1, tickCount) * tickMs * 20;
         }
 
         @Override
         public void close() {
-            表.shutdownNow();
+            ticker.shutdownNow();
         }
     }
 
     /**
      * 一段观测：起止的对照格与墙钟
      * <p>
-     * 🔴 {@link #本跑格长毫秒()} 是<b>这一跑实测</b>的一格有多长，不是配的那个数。
+     * 🔴 {@link #runTickMs()} 是<b>这一跑实测</b>的一格有多长，不是配的那个数。
      * 判据要拿毫秒和「一格」比时，比的必须是这个实测值——
      * 拿名义值去比，负载一高就又回到判绝对了。
      */
-    record 一段(long 起格, long 止格, long 起毫秒, long 止毫秒, long 名义格长毫秒) {
-        long 走了几格() {
-            return 止格 - 起格;
+    record TimeSegment(long startTick, long endTick, long startMs, long endMs, long nominalTickMs) {
+        long ticksWalked() {
+            return endTick - startTick;
         }
 
-        long 墙钟毫秒() {
-            return 止毫秒 - 起毫秒;
+        long wallClockMs() {
+            return endMs - startMs;
         }
 
         /** 本跑实测的一格有多长；一格都没走时退回名义值（只会发生在窗口开得极短时） */
-        long 本跑格长毫秒() {
-            return 走了几格() <= 0 ? 名义格长毫秒 : Math.max(1, 墙钟毫秒() / 走了几格());
+        long runTickMs() {
+            return ticksWalked() <= 0 ? nominalTickMs : Math.max(1, wallClockMs() / ticksWalked());
         }
 
         /** 把一段毫秒折算成「几个千分之一格」——判据用的单位 */
-        long 折成千分格(long 毫秒) {
-            return 毫秒 * 1000 / 本跑格长毫秒();
+        long toMilliTick(long ms) {
+            return ms * 1000 / runTickMs();
         }
 
-        Map<String, Object> 读数() {
+        Map<String, Object> reading() {
             Map<String, Object> m = new LinkedHashMap<>();
-            m.put("走了几格", 走了几格());
-            m.put("墙钟毫秒", 墙钟毫秒());
-            m.put("本跑实测格长毫秒", 本跑格长毫秒());
-            m.put("名义格长毫秒", 名义格长毫秒);
+            m.put("走了几格", ticksWalked());
+            m.put("墙钟毫秒", wallClockMs());
+            m.put("本跑实测格长毫秒", runTickMs());
+            m.put("名义格长毫秒", nominalTickMs);
             return m;
         }
     }
@@ -281,9 +281,9 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * 🔴 <b>不能取大。</b>这一组的复现（对端不读的 socket 写）只撑得住两三秒，
      * 而那两三秒<b>不随负载变长</b>（内核放大接收缓冲是按时间走的，不按 CPU 走）。
      * 窗口按格算、格随负载变长，窗口开太多格就会在满载时伸出复现之外——
-     * 那时红的是「这一跑没撑住」，不是判据。见 {@link #阻塞余量_千分格}。
+     * 那时红的是「这一跑没撑住」，不是判据。见 {@link #BLOCK_MARGIN_MILLI_TICK}。
      */
-    static final long 观测格数 = 2;
+    static final long OBSERVE_TICKS = 2;
 
     /**
      * 后簇比前簇落后，允许<b>持续</b>多久（单位：千分之一个对照格）
@@ -294,7 +294,7 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      *       {@code heartbeat()} 对每条连接只做一次入队，整趟走完是微秒级；
      *       加上各连接投递线程的调度差，也就几毫秒到几十毫秒——<b>远不到一格</b>。</li>
      *   <li><b>修前</b>那一段落后是<b>整个阻塞</b>：后簇要等心跳从关闭帧的写里出来才轮得到，
-     *       实测两三秒，也就是<b>好几格</b>（{@link #洞的签名_落后_千分格}）。</li>
+     *       实测两三秒，也就是<b>好几格</b>（{@link #HOLE_SIGNATURE_LAG_MILLI_TICK}）。</li>
      * </ul>
      * 两边差着量级，线放在中间：0.4 格。<b>它只挡量级错，不挡毫秒抖动。</b>
      * <p>
@@ -302,32 +302,32 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * 比值不动；而阻塞那两三秒是墙钟固定的，格一变长它反而占更少格——
      * 也就是说负载只会让这条线<b>更难红</b>，不会让它假红。
      * <p>
-     * 🔴 定完要验它抓不抓得住洞：见台架自检里那一格（{@code 落后容忍抓得住洞}）。
+     * 🔴 定完要验它抓不抓得住洞：见台架自检里那一格（{@code lagToleranceCatchesHole}）。
      */
-    static final long 落后容忍_千分格 = 400;
+    static final long LAG_TOLERANCE_MILLI_TICK = 400;
 
     /**
      * 「后簇陪葬」这个洞在读数上长什么样：后簇会落后<b>整段窗口</b>
      * <p>
      * 心跳被钉在关闭帧的写里时，遍历停在慢客户端那一步，后簇一轮也轮不到，
-     * 直到阻塞解开为止——而阻塞撑得过窗口（{@link #阻塞余量_千分格} 就是在保这一条）。
+     * 直到阻塞解开为止——而阻塞撑得过窗口（{@link #BLOCK_MARGIN_MILLI_TICK} 就是在保这一条）。
      * 所以量到的落后会一路顶到窗口长度。
      * <p>
-     * {@link #落后容忍_千分格} 必须<b>小于</b>它，否则那一格从出生起就永远绿。
+     * {@link #LAG_TOLERANCE_MILLI_TICK} 必须<b>小于</b>它，否则那一格从出生起就永远绿。
      */
-    static final long 洞的签名_落后_千分格 = 观测格数 * 1000;
+    static final long HOLE_SIGNATURE_LAG_MILLI_TICK = OBSERVE_TICKS * 1000;
 
     /**
      * 落后到多少就该往「真被钉住了」上想，而不是往「机器抖了一下」上想
      * <p>
      * 🔴 这个数<b>只决定失败语怎么说</b>，不决定红不红：红绿仍然只看
-     * {@link #落后容忍_千分格}。
+     * {@link #LAG_TOLERANCE_MILLI_TICK}。
      * <p>
      * 🔴 <b>它必须比红绿线高</b>：两条线要是重合了，凡红必被说成「像真钉住」，
      * 两支说法塌成一支，这条诊断就没用了。也必须<b>低于</b>洞的签名，
      * 否则真钉住反而被说成机器抖——两支说反了比没有更费事。
      */
-    static final long 像真钉住的下沿_千分格 = 落后容忍_千分格 * 2;
+    static final long REAL_PIN_FLOOR_MILLI_TICK = LAG_TOLERANCE_MILLI_TICK * 2;
 
     /**
      * 判据 4 红了的时候，把「这一跑落后了多少」和「线是怎么来的」一起说清楚
@@ -340,36 +340,36 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * 所以把<b>本跑实测</b>的落后连同线的来历一并打出来——
      * 线写死在源码里，落后只有跑起来才有。措辞一律用「<b>更像</b>」：只指方向，不下定论。
      */
-    static String 判据4失败语(后排读 读) {
-        String 像什么 = 读.最长落后_千分格() >= 像真钉住的下沿_千分格
-                ? "落后 " + 千分格成串(读.最长落后_千分格()) + " 格，到了**格**这个量级"
+    static String criterion4FailureMessage(BackRowReading Reading) {
+        String looksLike = Reading.maxLagMilliTick() >= REAL_PIN_FLOOR_MILLI_TICK
+                ? "落后 " + milliTickToString(Reading.maxLagMilliTick()) + " 格，到了**格**这个量级"
                   + "——心跳被钉住时后簇要等整段阻塞才轮得到，所以这更像**真被落下了**，"
                   + "正是这一格要抓的那件事。"
-                : "落后 " + 千分格成串(读.最长落后_千分格()) + " 格，只比线（"
-                  + 千分格成串(落后容忍_千分格) + " 格）高一点，离一整格还远"
+                : "落后 " + milliTickToString(Reading.maxLagMilliTick()) + " 格，只比线（"
+                  + milliTickToString(LAG_TOLERANCE_MILLI_TICK) + " 格）高一点，离一整格还远"
                   + "——**更像某条投递线程被剥了一会儿 CPU**。"
                   + "挑机器闲的时候再跑一遍；连着好几跑都在这一档，才说明这条线定低了。";
         return "后簇（排在被清理那条**后面**的健康连接）持续落在前簇后面："
-                + "\n  最长落后 " + 读.最长落后毫秒() + "ms ＝ " + 千分格成串(读.最长落后_千分格())
-                + " 个对照格（本跑实测一格 " + 读.段().本跑格长毫秒() + "ms）"
-                + "\n  线 ＝ " + 千分格成串(落后容忍_千分格) + " 格。线不是按噪声定的，是按两边的量级定的："
+                + "\n  最长落后 " + Reading.maxLagMs() + "ms ＝ " + milliTickToString(Reading.maxLagMilliTick())
+                + " 个对照格（本跑实测一格 " + Reading.segment().runTickMs() + "ms）"
+                + "\n  线 ＝ " + milliTickToString(LAG_TOLERANCE_MILLI_TICK) + " 格。线不是按噪声定的，是按两边的量级定的："
                 + "修后的落后是遍历中间的快照假象（微秒到几十毫秒），修前是整段阻塞（好几格）"
-                + "\n  前簇 " + 读.前簇() + " 收到的轮次 " + 读.前簇逐条轮次()
-                + "\n  后簇 " + 读.后簇() + " 收到的轮次 " + 读.后簇逐条轮次()
-                + "\n  " + 像什么;
+                + "\n  前簇 " + Reading.frontCluster() + " 收到的轮次 " + Reading.frontClusterRounds()
+                + "\n  后簇 " + Reading.backCluster() + " 收到的轮次 " + Reading.backClusterRounds()
+                + "\n  " + looksLike;
     }
 
     /** 把千分格印成人读得懂的「几点几格」 */
-    static String 千分格成串(long 千分格) {
-        return (千分格 / 1000) + "." + String.format("%03d", Math.abs(千分格 % 1000));
+    static String milliTickToString(long milliTick) {
+        return (milliTick / 1000) + "." + String.format("%03d", Math.abs(milliTick % 1000));
     }
 
     /**
      * 余量尺等阻塞解开的上限，以<b>对照格</b>计：等到这么久还卡着就不等了
      * <p>
-     * 只是个封顶，不是判据；判据看的是 {@link #阻塞余量_千分格}。
+     * 只是个封顶，不是判据；判据看的是 {@link #BLOCK_MARGIN_MILLI_TICK}。
      */
-    static final long 阻塞等待格数 = 40;
+    static final long BLOCK_WAIT_TICKS = 40;
 
     /**
      * 开窗前等「复现成立」的上限，以<b>对照格</b>计
@@ -380,7 +380,7 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * 按格算而不按毫秒算：负载高时该多等一会儿，等的是「机器又走了这么多步」，
      * 不是「墙上又过了这么多秒」。
      */
-    static final long 复现等待格数 = 15;
+    static final long REPRO_WAIT_TICKS = 15;
 
     /**
      * 阻塞至少要比观测窗口多撑这么多（千分格），判据 2／3／4 的修前红才算钉得住
@@ -391,10 +391,10 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * <p>
      * 半格：窗口本身按格算，余量也按格算，两者才是同一把尺上的数。
      */
-    static final long 阻塞余量_千分格 = 500;
+    static final long BLOCK_MARGIN_MILLI_TICK = 500;
 
-    static final NovaEventEndpoint.Timings 关闭帧时限 = new NovaEventEndpoint.Timings(
-            PING, 关闭帧_CLIENT_TIMEOUT, 关闭帧_AUTH, 关闭帧_GRACE);
+    static final NovaEventEndpoint.Timings CLOSE_FRAME_TIMINGS = new NovaEventEndpoint.Timings(
+            PING, CLOSE_FRAME_CLIENT_TIMEOUT, CLOSE_FRAME_AUTH, CLOSE_FRAME_GRACE);
 
     final NovaEventStream stream;
 
@@ -402,9 +402,9 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
 
     final EventStreamTokenService tokens;
 
-    final NovaEventSlowConsumerTest.SocketSession 慢客户端;
+    final NovaEventSlowConsumerTest.SocketSession slowClient;
 
-    private final List<NovaEventSlowConsumerTest.SocketSession> 真会话 = new ArrayList<>();
+    private final List<NovaEventSlowConsumerTest.SocketSession> realSession = new ArrayList<>();
 
     /**
      * 夹具<b>登记在案</b>的那条共享心跳线程
@@ -415,7 +415,7 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * 必须在<b>任何连接被灌满之前</b>登记：登记的办法是往那条线程上派一件小活问它是谁，
      * 而它一旦被钉住，这件活就永远排不上号。
      */
-    final Thread 心跳线程;
+    final Thread heartbeatThread;
 
     /**
      * 这一跑的对照钟
@@ -424,9 +424,9 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * 所以在夹具支起来的那一刻就开始走，收摊时一起停。
      * 判据临用时才起一把新表的话，量到的是「表刚起来那几格」，不是这一跑的机器。
      */
-    final 对照钟 钟 = new 对照钟(PING);
+    final ReferenceClock clock = new ReferenceClock(PING);
 
-    private static Thread 登记心跳线程(NovaEventEndpoint endpoint) {
+    private static Thread registerHeartbeatThread(NovaEventEndpoint endpoint) {
         try {
             java.lang.reflect.Field f = NovaEventEndpoint.class.getDeclaredField("heartbeats");
             f.setAccessible(true);
@@ -439,51 +439,51 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
         }
     }
 
-    NovaEvent慢消费者台架(Path dir, boolean 慢客户端读, NovaEventEndpoint.Timings 时限) throws IOException {
-        this(dir, 慢客户端读, 时限, "slow", false);
+    NovaEventSlowConsumerHarness(Path dir, boolean slowClientReads, NovaEventEndpoint.Timings timings) throws IOException {
+        this(dir, slowClientReads, timings, "slow", false);
     }
 
-    NovaEvent慢消费者台架(Path dir, boolean 慢客户端读, NovaEventEndpoint.Timings 时限,
-                   String 慢id, boolean 关闭时真写) throws IOException {
+    NovaEventSlowConsumerHarness(Path dir, boolean slowClientReads, NovaEventEndpoint.Timings timings,
+                   String slowId, boolean reallyWriteOnClose) throws IOException {
         StarBotCoreProperties properties = new StarBotCoreProperties();
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
         this.tokens = new EventStreamTokenService(properties);
         this.stream = new NovaEventStream(64);
-        this.endpoint = new NovaEventEndpoint(stream, tokens, 时限);
-        this.心跳线程 = 登记心跳线程(this.endpoint);
-        this.慢客户端 = new NovaEventSlowConsumerTest.SocketSession(
-                慢id, 1024, 1024, 慢客户端读, 关闭时真写);
-        真会话.add(this.慢客户端);
+        this.endpoint = new NovaEventEndpoint(stream, tokens, timings);
+        this.heartbeatThread = registerHeartbeatThread(this.endpoint);
+        this.slowClient = new NovaEventSlowConsumerTest.SocketSession(
+                slowId, 1024, 1024, slowClientReads, reallyWriteOnClose);
+        realSession.add(this.slowClient);
     }
 
     @Override
     public void close() {
-        钟.close();
+        clock.close();
         endpoint.shutdown();
-        for (NovaEventSlowConsumerTest.SocketSession s : 真会话) {
-            s.关掉();
+        for (NovaEventSlowConsumerTest.SocketSession s : realSession) {
+            s.closeIt();
         }
-        真会话.clear();
+        realSession.clear();
     }
 
 
     // ══════════════════════════ 台架动作 ══════════════════════════
 
     /** 此刻端点上挂着几条连接。读数要带上它——同一条判据在 2 条连接和 200 条连接上不是一件事 */
-    int 连接数() {
-        return 已连上.size();
+    int connectionCount() {
+        return connected.size();
     }
 
-    private final List<String> 已连上 = new ArrayList<>();
+    private final List<String> connected = new ArrayList<>();
 
-    NovaEventEndpointTest.FakeSession 连(String id) {
-        已连上.add(id);
+    NovaEventEndpointTest.FakeSession connection(String id) {
+        connected.add(id);
         NovaEventEndpointTest.FakeSession session = new NovaEventEndpointTest.FakeSession(id);
         endpoint.afterConnectionEstablished(session);
         return session;
     }
 
-    void 认证(WebSocketSession session, String token) {
+    void authenticated(WebSocketSession session, String token) {
         endpoint.handleTextMessage(session, new TextMessage(
                 "{\"kind\":\"auth\",\"v\":2,\"token\":\"" + token + "\"}"));
     }
@@ -494,8 +494,8 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * 「超时清理」那一组把断连时限压到了几百毫秒。不回 pong 的连接会被<b>正常清理掉</b>，
      * 于是判据 2／3 在修后也红——那不是洞，是这条连接自己没活着。
      */
-    保活 保活跑者(NovaEventEndpointTest.FakeSession s) {
-        保活 记 = new 保活();
+    KeepAlive keepAliveRunner(NovaEventEndpointTest.FakeSession s) {
+        KeepAlive mark = new KeepAlive();
         Thread t = new Thread(() -> {
             while (true) {
                 try {
@@ -505,7 +505,7 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
                     }
                     // 🔴 跑者把队列抽干了，别人再去 next() 就抢不到——
                     //    所以「见过什么」由它自己记下来，不留第二个读队列的人。
-                    记.见过.add(String.valueOf(m.getString("kind")));
+                    mark.seen.add(String.valueOf(m.getString("kind")));
                     endpoint.handleTextMessage(s, new TextMessage("{\"kind\":\"pong\"}"));
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
@@ -517,22 +517,22 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
         }, "nova-test-keepalive-" + s.getId());
         t.setDaemon(true);
         t.start();
-        return 记;
+        return mark;
     }
 
     /** 保活跑者替这条连接记下「见过哪几种帧」 */
-    static final class 保活 {
-        private final java.util.Set<String> 见过 = ConcurrentHashMap.newKeySet();
+    static final class KeepAlive {
+        private final java.util.Set<String> seen = ConcurrentHashMap.newKeySet();
 
-        boolean 见过(String kind) {
-            return 见过.contains(kind);
+        boolean seen(String kind) {
+            return seen.contains(kind);
         }
     }
 
     /** 连上、认证、把 hello 收掉。返回这条会话 */
-    NovaEventEndpointTest.FakeSession 连并认证(String id) throws Exception {
-        NovaEventEndpointTest.FakeSession s = 连(id);
-        认证(s, tokens.issue(id));
+    NovaEventEndpointTest.FakeSession connectAndAuthenticate(String id) throws Exception {
+        NovaEventEndpointTest.FakeSession s = connection(id);
+        authenticated(s, tokens.issue(id));
         if (s.next() == null) {
             fail("客户端 " + id + " 认证之后没收到 hello——台架自己就没起来，往下的读数都不算数");
         }
@@ -544,19 +544,19 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      *
      * @return 灌进去的字节数
      */
-    long 支起慢客户端() throws Exception {
-        已连上.add(慢客户端.getId());
-        long 灌满起 = System.currentTimeMillis();
-        long 灌 = 慢客户端.灌满();
-        long 灌满耗时 = Math.max(1, System.currentTimeMillis() - 灌满起);
-        endpoint.afterConnectionEstablished(慢客户端);
-        认证(慢客户端, tokens.issue("慢客户端"));
+    long bringUpSlowClient() throws Exception {
+        connected.add(slowClient.getId());
+        long fillStart = System.currentTimeMillis();
+        long fill = slowClient.filled();
+        long fillElapsedMs = Math.max(1, System.currentTimeMillis() - fillStart);
+        endpoint.afterConnectionEstablished(slowClient);
+        authenticated(slowClient, tokens.issue("慢客户端"));
 
-        List<String> 栈 = 等到(判据等待, NovaEvent慢消费者台架::先验尺_发送线程确实卡在写里);
-        if (栈 == null) {
+        List<String> stack = await(CRITERION_WAIT, NovaEventSlowConsumerHarness::priorGaugeSenderThreadStuckInWrite);
+        if (stack == null) {
             fail("先验尺不亮：没抓到「发送线程卡在 socket 写里且持着该客户端的监视器」这个读数。"
                     + "拿不到它就不许采信三条判据——没复现出阻塞时，三条判据的绿和修好了的绿长得一样。"
-                    + "（已灌 " + 灌 + " 字节）");
+                    + "（已灌 " + fill + " 字节）");
         }
         // 🔴 等过慢客户端 goLive 的到点时刻再开量。
         //    不等的话，判据 1 会在心跳线程还没被派到 goLive 之前就收到 ping 而变绿——
@@ -565,21 +565,21 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
         //    等「直到心跳线程被钉住」的话，修好之后这一等会永远等下去。
         Thread.sleep(GRACE + 200);
 
-        List<String> 心跳栈 = 心跳线程卡在别人的监视器上();
-        读数("先验尺", Map.of(
-                "灌入字节", 灌,
+        List<String> heartbeatStack = heartbeatThreadStuckOnAnotherMonitor();
+        reading("先验尺", Map.of(
+                "灌入字节", fill,
                 // 发送速率与连接数：换台机器复现时，这两个数决定了背压是不是同一回事。
                 // 🔴 速率是**量出来的**（灌满字节 ÷ 灌满耗时），不是配的——
                 //    配一个数上去，机器换了它还是那个数。
-                "灌满耗时毫秒", 灌满耗时,
-                "发送速率字节每秒", 灌 * 1000L / 灌满耗时,
-                "此刻连接数（支起慢客户端这一刻，健康连接尚未接入）", 连接数(),
-                "发送线程栈摘录", 栈,
+                "灌满耗时毫秒", fillElapsedMs,
+                "发送速率字节每秒", fill * 1000L / fillElapsedMs,
+                "此刻连接数（支起慢客户端这一刻，健康连接尚未接入）", connectionCount(),
+                "发送线程栈摘录", stack,
                 "等过回补窗口毫秒", GRACE + 200,
-                "此刻心跳线程被钉住吗", 心跳栈 != null,
-                "心跳线程栈摘录", String.valueOf(心跳栈),
-                "此刻卡了毫秒", 慢客户端.此刻卡了多久()));
-        return 灌;
+                "此刻心跳线程被钉住吗", heartbeatStack != null,
+                "心跳线程栈摘录", String.valueOf(heartbeatStack),
+                "此刻卡了毫秒", slowClient.stuckForHowLong()));
+        return fill;
     }
 
     // ══════════════════════════ 三条判据的探针本体 ══════════════════════════
@@ -590,62 +590,62 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * @param 绿       这条判据这一次是不是绿
      * @param 耗时毫秒 量到的耗时；红时为 -1
      */
-    record 读(boolean 绿, long 耗时毫秒) {
+    record Reading(boolean green, long elapsedMs) {
     }
 
-    /** 判据 1 的探针：健康客户端在 {@link #判据等待} 内收不收得到 ping */
-    读 探1_健康客户端收得到ping(NovaEventEndpointTest.FakeSession 健康) throws Exception {
-        long 起点 = System.currentTimeMillis();
-        long deadline = 起点 + 判据等待;
+    /** 判据 1 的探针：健康客户端在 {@link #CRITERION_WAIT} 内收不收得到 ping */
+    Reading probe1HealthyClientGetsPing(NovaEventEndpointTest.FakeSession healthy) throws Exception {
+        long origin = System.currentTimeMillis();
+        long deadline = origin + CRITERION_WAIT;
         while (System.currentTimeMillis() < deadline) {
-            JSONObject m = 健康.next();
+            JSONObject m = healthy.next();
             if (m == null) {
                 break;
             }
             if ("ping".equals(m.getString("kind"))) {
-                return new 读(true, System.currentTimeMillis() - 起点);
+                return new Reading(true, System.currentTimeMillis() - origin);
             }
         }
-        return new 读(false, -1);
+        return new Reading(false, -1);
     }
 
-    /** 判据 2 的探针：未认证连接在 {@link #判据等待} 内关不关得掉 */
-    读 探2_认证闸关得掉(NovaEventEndpointTest.FakeSession 沉默) throws Exception {
-        long 起点 = System.currentTimeMillis();
-        CloseStatus 关 = 等到(判据等待, () -> 沉默.closedWith);
-        return new 读(关 != null, 关 == null ? -1 : System.currentTimeMillis() - 起点);
+    /** 判据 2 的探针：未认证连接在 {@link #CRITERION_WAIT} 内关不关得掉 */
+    Reading probe2AuthGateCloses(NovaEventEndpointTest.FakeSession silent) throws Exception {
+        long origin = System.currentTimeMillis();
+        CloseStatus closeStatus = await(CRITERION_WAIT, () -> silent.closedWith);
+        return new Reading(closeStatus != null, closeStatus == null ? -1 : System.currentTimeMillis() - origin);
     }
 
     /**
-     * 判据 3 的探针：他连在 {@link #判据等待} 内转不转得进实时流
+     * 判据 3 的探针：他连在 {@link #CRITERION_WAIT} 内转不转得进实时流
      * <p>
      * 🔴 这里睡的是<b>名义上的</b>回补窗口 {@link #GRACE}，不是端点上配着的那个值——
-     * 破坏组把端点的回补窗口推到 {@link #破坏} 毫秒，探针要是跟着睡就变成睡一分钟，
+     * 破坏组把端点的回补窗口推到 {@link #BREAK} 毫秒，探针要是跟着睡就变成睡一分钟，
      * 而<b>探针不该跟着被测物一起被破坏</b>。
      */
-    读 探3_他连转进实时流(NovaEventEndpointTest.FakeSession 他连) throws Exception {
-        return 探3_他连转进实时流(他连, GRACE);
+    Reading probe3OtherConnectionEntersLiveStream(NovaEventEndpointTest.FakeSession otherConnection) throws Exception {
+        return probe3OtherConnectionEntersLiveStream(otherConnection, GRACE);
     }
 
-    读 探3_他连转进实时流(NovaEventEndpointTest.FakeSession 他连, long 回补窗口) throws Exception {
-        long 起点 = System.currentTimeMillis();
-        Thread.sleep(回补窗口 + 100);
-        stream.publish(事件());
+    Reading probe3OtherConnectionEntersLiveStream(NovaEventEndpointTest.FakeSession otherConnection, long replayWindow) throws Exception {
+        long origin = System.currentTimeMillis();
+        Thread.sleep(replayWindow + 100);
+        stream.publish(event());
 
-        long deadline = 起点 + 判据等待;
+        long deadline = origin + CRITERION_WAIT;
         while (System.currentTimeMillis() < deadline) {
-            JSONObject m = 他连.next();
+            JSONObject m = otherConnection.next();
             if (m == null) {
                 break;
             }
             if ("danmaku".equals(m.getString("kind"))) {
-                return new 读(true, System.currentTimeMillis() - 起点);
+                return new Reading(true, System.currentTimeMillis() - origin);
             }
         }
-        return new 读(false, -1);
+        return new Reading(false, -1);
     }
 
-    static JSONObject 事件() {
+    static JSONObject event() {
         JSONObject j = new JSONObject();
         j.put("v", NovaEventEndpoint.PROTOCOL_VERSION);
         j.put("kind", "danmaku");
@@ -658,21 +658,21 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * 算序：把这一组 id 原样放进一个 {@code ConcurrentHashMap}，直接算出遍历次序
      * <p>
      * 🔴 判据 4 改判相对之后，这两张名单<b>从选料参考变成了判据的一部分</b>：
-     * 前簇是后簇的对照，两簇都不空这一条由 {@code 两簇都不空} 在每一跑开头就地断言。
+     * 前簇是后簇的对照，两簇都不空这一条由 {@code bothClustersNonEmpty} 在每一跑开头就地断言。
      * <p>
      * 🔴 它依赖 JDK 的散列实现，换个 JDK 就可能重排——所以<b>算完要在真跑里验</b>，
      * 不许挑一个好看的次序写进注释就当数。阳性对照那一格更进一步：
      * 心跳真被钉在这个位次上时，量到的落后必须顶到洞的签名那个量级，
      * 次序要是算错了，落后就出不来，那一格当场红。
      */
-    static 序读 算序(String 慢id, int 健康数, String... 别的) {
-        List<String> 全 = new ArrayList<>();
-        for (int i = 0; i < 健康数; i++) {
-            全.add("healthy-" + i);
+    static OrderReading computeOrder(String slowId, int healthyCount, String... other) {
+        List<String> all = new ArrayList<>();
+        for (int i = 0; i < healthyCount; i++) {
+            all.add("healthy-" + i);
         }
-        全.add(慢id);
-        全.addAll(List.of(别的));
-        return 算序(慢id, 全);
+        all.add(slowId);
+        all.addAll(List.of(other));
+        return computeOrder(slowId, all);
     }
 
     /**
@@ -681,28 +681,28 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * 🔴 判据 4 改判相对之后，这两张名单从「选料参考」变成了<b>判据的一部分</b>：
      * 前簇是后簇的对照。两簇都不能空——后簇空了，「后排不陪葬」就是空真。
      */
-    record 序读(String 慢id, int 位, int 总, List<String> 前簇, List<String> 后簇, String jdk) {
-        Map<String, Object> 读数() {
-            Map<String, Object> 出 = new LinkedHashMap<>();
-            出.put("被清理那条的 id", 慢id);
-            出.put("位次", 位 + "/" + 总);
-            出.put("算出来·排在前面的健康连接", 前簇);
-            出.put("算出来·排在后面的健康连接", 后簇);
-            出.put("JDK", jdk);
-            出.put("🔴", "算序依赖 JDK 的散列实现；换 JDK 就可能重排，两簇不空由判据自己再验一次");
-            return 出;
+    record OrderReading(String slowId, int index, int total, List<String> frontCluster, List<String> backCluster, String jdk) {
+        Map<String, Object> reading() {
+            Map<String, Object> outMap = new LinkedHashMap<>();
+            outMap.put("被清理那条的 id", slowId);
+            outMap.put("位次", index + "/" + total);
+            outMap.put("算出来·排在前面的健康连接", frontCluster);
+            outMap.put("算出来·排在后面的健康连接", backCluster);
+            outMap.put("JDK", jdk);
+            outMap.put("🔴", "算序依赖 JDK 的散列实现；换 JDK 就可能重排，两簇不空由判据自己再验一次");
+            return outMap;
         }
     }
 
-    static 序读 算序(String 慢id, java.util.Collection<String> 全部id) {
+    static OrderReading computeOrder(String slowId, java.util.Collection<String> allIds) {
         java.util.Map<String, Integer> m = new ConcurrentHashMap<>();
-        全部id.forEach(k -> m.put(k, 1));
-        List<String> 序 = new ArrayList<>(m.keySet());
-        int 位 = 序.indexOf(慢id);
-        List<String> 前 = 序.subList(0, 位).stream().filter(x -> x.startsWith("healthy-")).toList();
-        List<String> 后 = 序.subList(位 + 1, 序.size()).stream()
+        allIds.forEach(k -> m.put(k, 1));
+        List<String> order = new ArrayList<>(m.keySet());
+        int index = order.indexOf(slowId);
+        List<String> before = order.subList(0, index).stream().filter(x -> x.startsWith("healthy-")).toList();
+        List<String> after = order.subList(index + 1, order.size()).stream()
                 .filter(x -> x.startsWith("healthy-")).toList();
-        return new 序读(慢id, 位, 序.size(), 前, 后,
+        return new OrderReading(slowId, index, order.size(), before, after,
                 System.getProperty("java.version") + " / " + System.getProperty("java.vm.name"));
     }
 
@@ -718,17 +718,17 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * @param 旁的     同时挂在端点上的其它 id
      * @return 挑中的 id 与它的两簇；一个都挑不出来时返回 {@code null}
      */
-    static 序读 挑个居中的id(String 候选前缀, int 健康数, List<String> 旁的) {
+    static OrderReading pickMiddleId(String candidatePrefix, int healthyCount, List<String> others) {
         for (int i = 0; i < 200; i++) {
-            String 候选 = 候选前缀 + i;
-            List<String> 全 = new ArrayList<>();
-            for (int j = 0; j < 健康数; j++) {
-                全.add("healthy-" + j);
+            String candidates = candidatePrefix + i;
+            List<String> all = new ArrayList<>();
+            for (int j = 0; j < healthyCount; j++) {
+                all.add("healthy-" + j);
             }
-            全.addAll(旁的);
-            全.add(候选);
-            序读 s = 算序(候选, 全);
-            if (!s.前簇().isEmpty() && !s.后簇().isEmpty()) {
+            all.addAll(others);
+            all.add(candidates);
+            OrderReading s = computeOrder(candidates, all);
+            if (!s.frontCluster().isEmpty() && !s.backCluster().isEmpty()) {
                 return s;
             }
         }
@@ -742,34 +742,34 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
     //    而漂移之后，阳性对照的绿和判据的绿说的已经不是同一句话了。
 
     /** 判据 1 的读数 */
-    record 推进读(long 推进了的条数, long 总条数, Map<String, Integer> 起点轮次,
-                Map<String, Integer> 终点轮次, 一段 段) {
-        Map<String, Object> 读数() {
-            Map<String, Object> 出 = new LinkedHashMap<>();
-            出.put("窗口内推进过至少一轮的健康连接数", 推进了的条数);
-            出.put("健康连接总数", 总条数);
-            出.put("窗口起点各条轮次", 起点轮次);
-            出.put("窗口终点各条轮次", 终点轮次);
-            出.put("观测段", 段.读数());
-            return 出;
+    record AdvanceReading(long advancedCount, long totalCount, Map<String, Integer> startRounds,
+                Map<String, Integer> endRounds, TimeSegment segment) {
+        Map<String, Object> reading() {
+            Map<String, Object> outMap = new LinkedHashMap<>();
+            outMap.put("窗口内推进过至少一轮的健康连接数", advancedCount);
+            outMap.put("健康连接总数", totalCount);
+            outMap.put("窗口起点各条轮次", startRounds);
+            outMap.put("窗口终点各条轮次", endRounds);
+            outMap.put("观测段", segment.reading());
+            return outMap;
         }
     }
 
     /**
-     * 判据 1 的量法：对照钟走 {@code 格数} 格的这一段里，有几条健康连接<b>推进了</b>至少一轮 ping
+     * 判据 1 的量法：对照钟走 {@code tickCount} 格的这一段里，有几条健康连接<b>推进了</b>至少一轮 ping
      * <p>
      * 🔴 量的是<b>推进</b>（终点轮次 − 起点轮次），不是「窗口里有没有 ping」。
      * 后者要靠窗口两端的绝对时刻去截，负载一高截出来的就是机器；
      * 前者问的是「对照钟走了两格，心跳走了没有」——<b>两把表比着看，比的是同一份负载</b>。
      */
-    static 推进读 量健康连接推进(后排尺 尺, 对照钟 钟, long 格数) throws InterruptedException {
-        Map<String, Integer> 起 = 尺.各条轮次();
-        一段 段 = 钟.走过(格数);
-        Map<String, Integer> 止 = 尺.各条轮次();
-        long 推进了 = 起.keySet().stream()
-                .filter(id -> 止.getOrDefault(id, 0) > 起.getOrDefault(id, 0))
+    static AdvanceReading measureHealthyConnectionAdvance(BackRowGauge gauge, ReferenceClock clock, long tickCount) throws InterruptedException {
+        Map<String, Integer> roundsAtStart = gauge.eachRounds();
+        TimeSegment segment = clock.awaitTicks(tickCount);
+        Map<String, Integer> roundsAtEnd = gauge.eachRounds();
+        long advanced = roundsAtStart.keySet().stream()
+                .filter(id -> roundsAtEnd.getOrDefault(id, 0) > roundsAtStart.getOrDefault(id, 0))
                 .count();
-        return new 推进读(推进了, 起.size(), 起, 止, 段);
+        return new AdvanceReading(advanced, roundsAtStart.size(), roundsAtStart, roundsAtEnd, segment);
     }
 
     /**
@@ -781,41 +781,41 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * 它就是这一组从前红在机器上的那把尺：实测在空载下量到六条健康连接齐齐 320ms > 300ms，
      * 六条一起偏移是整机被推了一把的形状，而这把绝对尺分不出它和「谁被落下了」。
      */
-    static final long 旧量法上限毫秒 = PING + PING / 2;
+    static final long OLD_METHOD_CAP_MS = PING + PING / 2;
 
     /** 判据 4 的读数 */
-    record 后排读(long 最长落后毫秒, long 最长落后_千分格, List<String> 前簇, List<String> 后簇,
-                Map<String, Integer> 前簇逐条轮次, Map<String, Integer> 后簇逐条轮次,
-                long 采样次数, 一段 段, long 旧量法最大间隔毫秒, List<String> 旧量法会红的) {
-        Map<String, Object> 读数() {
-            Map<String, Object> 出 = new LinkedHashMap<>();
-            出.put("最长落后毫秒", 最长落后毫秒);
-            出.put("最长落后千分格", 最长落后_千分格);
-            出.put("最长落后（格）", 千分格成串(最长落后_千分格));
-            出.put("线（格）", 千分格成串(落后容忍_千分格));
-            出.put("洞的签名（格）", 千分格成串(洞的签名_落后_千分格));
-            出.put("前簇", 前簇);
-            出.put("后簇", 后簇);
-            出.put("前簇终点轮次", 前簇逐条轮次);
-            出.put("后簇终点轮次", 后簇逐条轮次);
-            出.put("采样次数", 采样次数);
-            出.put("观测段", 段.读数());
-            出.put("🔴 判的是什么", "后簇最快的那条比前簇最快的那条少收轮次，这个状态**持续**了多久；"
+    record BackRowReading(long maxLagMs, long maxLagMilliTick, List<String> frontCluster, List<String> backCluster,
+                Map<String, Integer> frontClusterRounds, Map<String, Integer> backClusterRounds,
+                long SAMPLE_COUNT, TimeSegment segment, long oldMethodMaxGapMs, List<String> oldMethodWouldBeRed) {
+        Map<String, Object> reading() {
+            Map<String, Object> outMap = new LinkedHashMap<>();
+            outMap.put("最长落后毫秒", maxLagMs);
+            outMap.put("最长落后千分格", maxLagMilliTick);
+            outMap.put("最长落后（格）", milliTickToString(maxLagMilliTick));
+            outMap.put("线（格）", milliTickToString(LAG_TOLERANCE_MILLI_TICK));
+            outMap.put("洞的签名（格）", milliTickToString(HOLE_SIGNATURE_LAG_MILLI_TICK));
+            outMap.put("前簇", frontCluster);
+            outMap.put("后簇", backCluster);
+            outMap.put("前簇终点轮次", frontClusterRounds);
+            outMap.put("后簇终点轮次", backClusterRounds);
+            outMap.put("采样次数", SAMPLE_COUNT);
+            outMap.put("观测段", segment.reading());
+            outMap.put("🔴 判的是什么", "后簇最快的那条比前簇最快的那条少收轮次，这个状态**持续**了多久；"
                     + "持续时长折成对照格，负载把两簇一起拖慢时它不动");
             // 🔴 同一段窗口上，**旧尺**会怎么判。只作读数，一格断言都不挂——
             //    留着它是为了让「治好了」这句话在每一跑的读数里都拿得出对照。
-            出.put("旧量法·最大 ping 间隔毫秒", 旧量法最大间隔毫秒);
-            出.put("旧量法·上限毫秒（心跳周期＋周期／2）", 旧量法上限毫秒);
-            出.put("旧量法·会判红的连接", 旧量法会红的);
-            出.put("旧量法·这一跑在这段窗口上会红吗", !旧量法会红的.isEmpty());
-            出.put("🔴 旧量法只作读数", "它拿墙钟绝对间隔判，负载一高判的是机器不是代码。"
+            outMap.put("旧量法·最大 ping 间隔毫秒", oldMethodMaxGapMs);
+            outMap.put("旧量法·上限毫秒（心跳周期＋周期／2）", OLD_METHOD_CAP_MS);
+            outMap.put("旧量法·会判红的连接", oldMethodWouldBeRed);
+            outMap.put("旧量法·这一跑在这段窗口上会红吗", !oldMethodWouldBeRed.isEmpty());
+            outMap.put("🔴 旧量法只作读数", "它拿墙钟绝对间隔判，负载一高判的是机器不是代码。"
                     + "留在读数里是为了让每一跑都带上对照：同一段窗口，新尺说什么、旧尺说什么。");
-            出.put("🔴 这条对照读的是什么", "量的是**这一段（" + 段.墙钟毫秒()
+            outMap.put("🔴 这条对照读的是什么", "量的是**这一段（" + segment.wallClockMs()
                     + "ms）**上旧尺的读数，不是旧那一格的原样复跑——"
-                    + "旧那一格开的是 1200ms 的窗，窗越长越容易撞上那条 " + 旧量法上限毫秒
+                    + "旧那一格开的是 1200ms 的窗，窗越长越容易撞上那条 " + OLD_METHOD_CAP_MS
                     + "ms 的线。所以这条读数是**下界**：它说红，旧那一格必红；它说不红，"
                     + "旧那一格未必不红。要看的是它**随负载游走**（而新尺钉在 0 上）。");
-            return 出;
+            return outMap;
         }
     }
 
@@ -835,52 +835,52 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * @param 钟   对照钟
      * @param 格数 观测窗口，以对照格计
      */
-    static 后排读 量后簇落后(后排尺 尺, List<String> 前簇, List<String> 后簇,
-                       对照钟 钟, long 格数) throws InterruptedException {
-        long 起格 = 钟.读();
-        long 起毫秒 = System.currentTimeMillis();
-        long 死线 = 起毫秒 + Math.max(1, 格数) * 钟.名义格长毫秒() * 20;
-        long 最长落后 = 0;
-        long 本段起 = -1;
-        long 采样 = 0;
-        Map<String, Integer> 各条 = 尺.各条轮次();
-        while (钟.读() - 起格 < 格数 && System.currentTimeMillis() < 死线) {
-            各条 = 尺.各条轮次();
-            long 前快 = 后排尺.簇里最快(各条, 前簇);
-            long 后快 = 后排尺.簇里最快(各条, 后簇);
-            long 此刻 = System.currentTimeMillis();
-            采样++;
-            if (后快 < 前快) {
-                if (本段起 < 0) {
-                    本段起 = 此刻;
+    static BackRowReading measureBackClusterLag(BackRowGauge gauge, List<String> frontCluster, List<String> backCluster,
+                       ReferenceClock clock, long tickCount) throws InterruptedException {
+        long startTick = clock.read();
+        long startMs = System.currentTimeMillis();
+        long deadlineAt = startMs + Math.max(1, tickCount) * clock.nominalTickMs() * 20;
+        long maxLag = 0;
+        long segmentStart = -1;
+        long sample = 0;
+        Map<String, Integer> eachOne = gauge.eachRounds();
+        while (clock.read() - startTick < tickCount && System.currentTimeMillis() < deadlineAt) {
+            eachOne = gauge.eachRounds();
+            long frontFastest = BackRowGauge.clusterFastest(eachOne, frontCluster);
+            long backFastest = BackRowGauge.clusterFastest(eachOne, backCluster);
+            long now = System.currentTimeMillis();
+            sample++;
+            if (backFastest < frontFastest) {
+                if (segmentStart < 0) {
+                    segmentStart = now;
                 }
-                最长落后 = Math.max(最长落后, 此刻 - 本段起);
+                maxLag = Math.max(maxLag, now - segmentStart);
             } else {
-                本段起 = -1;
+                segmentStart = -1;
             }
             Thread.sleep(5);
         }
-        一段 段 = new 一段(起格, 钟.读(), 起毫秒, System.currentTimeMillis(), 钟.名义格长毫秒());
-        Map<String, Integer> 前表 = new java.util.TreeMap<>();
-        Map<String, Integer> 后表 = new java.util.TreeMap<>();
-        for (String id : 前簇) {
-            前表.put(id, 各条.getOrDefault(id, 0));
+        TimeSegment segment = new TimeSegment(startTick, clock.read(), startMs, System.currentTimeMillis(), clock.nominalTickMs());
+        Map<String, Integer> beforeTable = new java.util.TreeMap<>();
+        Map<String, Integer> afterTable = new java.util.TreeMap<>();
+        for (String id : frontCluster) {
+            beforeTable.put(id, eachOne.getOrDefault(id, 0));
         }
-        for (String id : 后簇) {
-            后表.put(id, 各条.getOrDefault(id, 0));
+        for (String id : backCluster) {
+            afterTable.put(id, eachOne.getOrDefault(id, 0));
         }
         // 🔴 同一段窗口，再用**旧尺**量一遍——只作读数。
         //    新旧两把尺量的是同一段、同一批连接，读数并排放着，「治好了」才有对照可看。
-        long 旧最大 = 0;
-        List<String> 旧会红的 = new ArrayList<>();
-        for (后排尺.一条 c : 尺.收(段.起毫秒(), 段.止毫秒())) {
-            旧最大 = Math.max(旧最大, c.最大间隔毫秒());
-            if (c.最大间隔毫秒() > 旧量法上限毫秒) {
-                旧会红的.add(c.id() + "＝" + c.最大间隔毫秒() + "ms");
+        long oldMax = 0;
+        List<String> oldWouldBeRed = new ArrayList<>();
+        for (BackRowGauge.PingGapItem c : gauge.receive(segment.startMs(), segment.endMs())) {
+            oldMax = Math.max(oldMax, c.maxGapMs());
+            if (c.maxGapMs() > OLD_METHOD_CAP_MS) {
+                oldWouldBeRed.add(c.id() + "＝" + c.maxGapMs() + "ms");
             }
         }
-        return new 后排读(最长落后, 段.折成千分格(最长落后), 前簇, 后簇, 前表, 后表, 采样, 段,
-                旧最大, 旧会红的);
+        return new BackRowReading(maxLag, segment.toMilliTick(maxLag), frontCluster, backCluster, beforeTable, afterTable, sample, segment,
+                oldMax, oldWouldBeRed);
     }
 
     // ══════════════════════════ 后排尺（判据 4） ══════════════════════════
@@ -892,38 +892,38 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * 后者非按连接分开记不可。
      * <p>
      * 每条连接配一个跑者线程：收到任何一帧就<b>回一帧 pong</b>——
-     * 这一组把断连时限压到了 {@link #关闭帧_CLIENT_TIMEOUT} 毫秒，不回 pong 的话
+     * 这一组把断连时限压到了 {@link #CLOSE_FRAME_CLIENT_TIMEOUT} 毫秒，不回 pong 的话
      * 健康连接自己也会被清理掉，那量的就成了别的事。
      */
-    static final class 后排尺 implements AutoCloseable {
+    static final class BackRowGauge implements AutoCloseable {
         /**
          * 一条连接在某一段窗口上的读数
          * <p>
          * 🔴 判据 4 改判相对之后，这张读数只剩<b>一个用处</b>：给「旧尺会怎么判」那条
-         * 对照读数用（{@link #旧量法上限毫秒}）。判据自己走的是 {@link #各条轮次()}。
+         * 对照读数用（{@link #OLD_METHOD_CAP_MS}）。判据自己走的是 {@link #eachRounds()}。
          */
-        record 一条(String id, long 最大间隔毫秒, int ping数) {
+        record PingGapItem(String id, long maxGapMs, int pingCount) {
         }
 
-        private final Map<String, List<Long>> ping时刻 = new ConcurrentHashMap<>();
-        private final List<Thread> 跑者们 = new ArrayList<>();
-        private volatile boolean 停 = false;
+        private final Map<String, List<Long>> pingAt = new ConcurrentHashMap<>();
+        private final List<Thread> runners = new ArrayList<>();
+        private volatile boolean stop = false;
 
-        后排尺(NovaEventEndpoint 端点, Map<String, NovaEventEndpointTest.FakeSession> 们) {
-            们.forEach((id, s) -> {
-                ping时刻.put(id, java.util.Collections.synchronizedList(new ArrayList<>()));
+        BackRowGauge(NovaEventEndpoint boundEndpoint, Map<String, NovaEventEndpointTest.FakeSession> members) {
+            members.forEach((id, s) -> {
+                pingAt.put(id, java.util.Collections.synchronizedList(new ArrayList<>()));
                 Thread t = new Thread(() -> {
-                    while (!停) {
+                    while (!stop) {
                         try {
                             JSONObject m = s.next();
                             if (m == null) {
                                 continue;
                             }
                             if ("ping".equals(m.getString("kind"))) {
-                                ping时刻.get(id).add(System.currentTimeMillis());
+                                pingAt.get(id).add(System.currentTimeMillis());
                             }
                             // 回一帧让 lastSeenAt 保鲜：这一组的断连时限只有几百毫秒
-                            端点.handleTextMessage(s, new TextMessage("{\"kind\":\"pong\"}"));
+                            boundEndpoint.handleTextMessage(s, new TextMessage("{\"kind\":\"pong\"}"));
                         } catch (InterruptedException e) {
                             Thread.currentThread().interrupt();
                             return;
@@ -935,14 +935,14 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
                 }, "nova-test-poller-" + id);
                 t.setDaemon(true);
                 t.start();
-                跑者们.add(t);
+                runners.add(t);
             });
         }
 
         @Override
         public void close() {
-            停 = true;
-            跑者们.forEach(Thread::interrupt);
+            stop = true;
+            runners.forEach(Thread::interrupt);
         }
 
         /**
@@ -958,26 +958,26 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
          * 而这个洞是<b>整簇一起</b>轮不到，不是某一条掉队。
          * 拿簇内最快的去比，一条掉队伪造不出簇的形状。
          */
-        Map<String, Integer> 各条轮次() {
-            Map<String, Integer> 出 = new java.util.TreeMap<>();
-            ping时刻.forEach((id, 们) -> {
-                synchronized (们) {
-                    出.put(id, 们.size());
+        Map<String, Integer> eachRounds() {
+            Map<String, Integer> outMap = new java.util.TreeMap<>();
+            pingAt.forEach((id, members) -> {
+                synchronized (members) {
+                    outMap.put(id, members.size());
                 }
             });
-            return 出;
+            return outMap;
         }
 
         /** 一簇里走得最快的那条收到了几轮；簇为空时返回 -1 */
-        static long 簇里最快(Map<String, Integer> 各条, List<String> 簇) {
-            long 最快 = -1;
-            for (String id : 簇) {
-                Integer n = 各条.get(id);
+        static long clusterFastest(Map<String, Integer> eachOne, List<String> cluster) {
+            long fastest = -1;
+            for (String id : cluster) {
+                Integer n = eachOne.get(id);
                 if (n != null) {
-                    最快 = Math.max(最快, n);
+                    fastest = Math.max(fastest, n);
                 }
             }
-            return 最快;
+            return fastest;
         }
 
         /**
@@ -986,30 +986,30 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
          * 🔴 窗口两端也算进间隔里：只算「相邻两次 ping 之间」的话，
          * <b>一次 ping 都没收到的那条连接会算出 0 间隔</b>，读起来像最健康的那条。
          * <p>
-         * 🔴 判据 4 已经<b>不走这条</b>了——它判的是两簇的轮次差（{@link #各条轮次()}）。
+         * 🔴 判据 4 已经<b>不走这条</b>了——它判的是两簇的轮次差（{@link #eachRounds()}）。
          * 这里只剩「旧尺会怎么判」那条对照读数在用。
          */
-        List<一条> 收(long 观测起, long 观测止) {
-            List<一条> 出 = new ArrayList<>();
-            new java.util.TreeMap<>(ping时刻).forEach((id, 们) -> {
-                List<Long> 窗 = new ArrayList<>();
-                synchronized (们) {
-                    们.forEach(t -> {
-                        if (t >= 观测起 && t <= 观测止) {
-                            窗.add(t);
+        List<PingGapItem> receive(long observeStart, long observeEnd) {
+            List<PingGapItem> outMap = new ArrayList<>();
+            new java.util.TreeMap<>(pingAt).forEach((id, members) -> {
+                List<Long> window = new ArrayList<>();
+                synchronized (members) {
+                    members.forEach(t -> {
+                        if (t >= observeStart && t <= observeEnd) {
+                            window.add(t);
                         }
                     });
                 }
-                long 最大 = 0;
-                long 上一次 = 观测起;
-                for (long t : 窗) {
-                    最大 = Math.max(最大, t - 上一次);
-                    上一次 = t;
+                long maxSoFar = 0;
+                long previous = observeStart;
+                for (long t : window) {
+                    maxSoFar = Math.max(maxSoFar, t - previous);
+                    previous = t;
                 }
-                最大 = Math.max(最大, 观测止 - 上一次);
-                出.add(new 一条(id, 最大, 窗.size()));
+                maxSoFar = Math.max(maxSoFar, observeEnd - previous);
+                outMap.add(new PingGapItem(id, maxSoFar, window.size()));
             });
-            return 出;
+            return outMap;
         }
 
     }
@@ -1024,27 +1024,27 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      *
      * @return 那条线程的栈摘录（不含任何值）
      */
-    static List<String> 先验尺_发送线程确实卡在写里() {
+    static List<String> priorGaugeSenderThreadStuckInWrite() {
         for (Map.Entry<Thread, StackTraceElement[]> e : Thread.getAllStackTraces().entrySet()) {
             if (!e.getKey().getName().startsWith("nova-event-sender-")) {
                 continue;
             }
-            boolean 在写 = false;
-            boolean 持锁 = false;
-            List<String> 摘 = new ArrayList<>();
+            boolean inWrite = false;
+            boolean lockHolder = false;
+            List<String> excerpt = new ArrayList<>();
             for (StackTraceElement f : e.getValue()) {
                 String line = f.getClassName() + "." + f.getMethodName();
-                摘.add(line);
+                excerpt.add(line);
                 if (line.contains("Socket") && f.getMethodName().contains("rite")) {
-                    在写 = true;
+                    inWrite = true;
                 }
                 if (line.endsWith("NovaEventEndpoint$Client.writeLocked")
                         || line.endsWith("NovaEventEndpoint$Client.writeDirect")) {
-                    持锁 = true;
+                    lockHolder = true;
                 }
             }
-            if (在写 && 持锁) {
-                return 摘.subList(0, Math.min(12, 摘.size()));
+            if (inWrite && lockHolder) {
+                return excerpt.subList(0, Math.min(12, excerpt.size()));
             }
         }
         return null;
@@ -1060,7 +1060,7 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * {@code BLOCKED} 不在名单里，是因为它是<b>另一个洞</b>的形状（在等一把 Java 锁）——
      * 分界写在尺上，不写在心里。
      */
-    static final java.util.Set<Thread.State> 关闭帧_状态白名单 =
+    static final java.util.Set<Thread.State> CLOSE_FRAME_STATE_ALLOWLIST =
             java.util.Set.of(Thread.State.WAITING, Thread.State.RUNNABLE);
 
     /**
@@ -1073,29 +1073,29 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * 🔴 取到它，「心跳线程在等 socket 写锁」才从推断变成实录：
      * 它等的是谁，名字与栈都钉在读数里。取不到就写明取不到，不含糊过去。
      */
-    static Map<String, Object> 持写锁的线程() {
+    static Map<String, Object> writeLockHolderThread() {
         for (Map.Entry<Thread, StackTraceElement[]> e : Thread.getAllStackTraces().entrySet()) {
-            List<String> 摘 = new ArrayList<>();
-            int 写帧 = -1;
-            boolean 在等锁 = false;
+            List<String> excerpt = new ArrayList<>();
+            int writeFrame = -1;
+            boolean waitingForLock = false;
             StackTraceElement[] fs = e.getValue();
             for (int i = 0; i < fs.length; i++) {
                 String line = fs[i].getClassName() + "." + fs[i].getMethodName();
-                摘.add(line);
-                if (写帧 < 0 && line.equals("sun.nio.ch.NioSocketImpl.write")) {
-                    写帧 = i;
+                excerpt.add(line);
+                if (writeFrame < 0 && line.equals("sun.nio.ch.NioSocketImpl.write")) {
+                    writeFrame = i;
                 }
-                if (写帧 < 0 && (line.endsWith("ReentrantLock.lock")
+                if (writeFrame < 0 && (line.endsWith("ReentrantLock.lock")
                         || line.endsWith("AbstractQueuedSynchronizer.acquire"))) {
-                    在等锁 = true;   // 这几帧在 write 之上 ＝ 它在等这把锁，不是持有
+                    waitingForLock = true;   // 这几帧在 write 之上 ＝ 它在等这把锁，不是持有
                 }
             }
-            if (写帧 >= 0 && !在等锁) {
-                Map<String, Object> 出 = new LinkedHashMap<>();
-                出.put("线程名", e.getKey().getName());
-                出.put("线程状态", e.getKey().getState().name());
-                出.put("栈摘录", 摘.subList(0, Math.min(10, 摘.size())));
-                return 出;
+            if (writeFrame >= 0 && !waitingForLock) {
+                Map<String, Object> outMap = new LinkedHashMap<>();
+                outMap.put("线程名", e.getKey().getName());
+                outMap.put("线程状态", e.getKey().getState().name());
+                outMap.put("栈摘录", excerpt.subList(0, Math.min(10, excerpt.size())));
+                return outMap;
             }
         }
         return null;
@@ -1115,7 +1115,7 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * 状态走<b>白名单</b>：{@code {WAITING, RUNNABLE}} ＋ socket 写帧 ＋ {@code sendCloseFrame} 帧。
      * 不写成「<b>不是</b> {@code BLOCKED}」——那样会对没见过的状态默默放行：
      * {@code TIMED_WAITING}、或某个将来 JDK 的新形态，都会带着完全正确的栈帧悄悄过尺。
-     * <b>名单外则尺自己举手</b>（{@code 尺没见过的状态}＝true），既不算红也不算绿，
+     * <b>名单外则尺自己举手</b>（{@code gaugeUnseenState}＝true），既不算红也不算绿，
      * 由外部收集方判 ABORT 带实录。
      * <p>
      * 实测：状态是 {@code WAITING}——它停在 {@code NioSocketImpl} 自己那把写锁上，
@@ -1129,44 +1129,44 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      *
      * @return 每条卡住的线程一份读数（名字／线程号／状态／栈摘录／它在等谁）；没人卡住时空表
      */
-    static List<Map<String, Object>> 先验尺_有人卡在关闭帧的写里() {
-        List<Map<String, Object>> 全部 = new ArrayList<>();
+    static List<Map<String, Object>> priorGaugeSomeoneStuckWritingCloseFrame() {
+        List<Map<String, Object>> everything = new ArrayList<>();
         for (Map.Entry<Thread, StackTraceElement[]> e : Thread.getAllStackTraces().entrySet()) {
-            List<String> 摘 = new ArrayList<>();
-            boolean 在写 = false;
-            boolean 在发关闭帧 = false;
+            List<String> excerpt = new ArrayList<>();
+            boolean inWrite = false;
+            boolean inCloseFrame = false;
             for (StackTraceElement f : e.getValue()) {
                 String line = f.getClassName() + "." + f.getMethodName();
-                摘.add(line);
+                excerpt.add(line);
                 if (line.contains("Socket") && line.endsWith(".write")) {
-                    在写 = true;
+                    inWrite = true;
                 }
                 if (line.contains("NovaEventEndpoint$Client")
                         && (f.getMethodName().equals("sendCloseFrame")
                             || f.getMethodName().equals("close"))) {
-                    在发关闭帧 = true;
+                    inCloseFrame = true;
                 }
             }
-            if (!(在写 && 在发关闭帧)) {
+            if (!(inWrite && inCloseFrame)) {
                 continue;
             }
             Thread.State st = e.getKey().getState();
-            Map<String, Object> 出 = new LinkedHashMap<>();
-            出.put("线程名", e.getKey().getName());
-            出.put("线程号", e.getKey().getId());
-            出.put("线程状态", st.name());
-            出.put("状态在白名单内", 关闭帧_状态白名单.contains(st));
-            出.put("尺没见过的状态", !关闭帧_状态白名单.contains(st));
-            出.put("白名单", 关闭帧_状态白名单.stream().map(Enum::name).sorted().toList());
-            出.put("栈摘录", 摘.subList(0, Math.min(14, 摘.size())));
-            Map<String, Object> 持 = 持写锁的线程();
-            出.put("它在等谁（持 NioSocketImpl 写锁的线程）",
-                    持 == null ? "取不到——同一份转储里没找出持锁的那条" : 持);
-            出.put("JDK", System.getProperty("java.version") + " / "
+            Map<String, Object> outMap = new LinkedHashMap<>();
+            outMap.put("线程名", e.getKey().getName());
+            outMap.put("线程号", e.getKey().getId());
+            outMap.put("线程状态", st.name());
+            outMap.put("状态在白名单内", CLOSE_FRAME_STATE_ALLOWLIST.contains(st));
+            outMap.put("尺没见过的状态", !CLOSE_FRAME_STATE_ALLOWLIST.contains(st));
+            outMap.put("白名单", CLOSE_FRAME_STATE_ALLOWLIST.stream().map(Enum::name).sorted().toList());
+            outMap.put("栈摘录", excerpt.subList(0, Math.min(14, excerpt.size())));
+            Map<String, Object> holder = writeLockHolderThread();
+            outMap.put("它在等谁（持 NioSocketImpl 写锁的线程）",
+                    holder == null ? "取不到——同一份转储里没找出持锁的那条" : holder);
+            outMap.put("JDK", System.getProperty("java.version") + " / "
                     + System.getProperty("java.vm.name"));
-            全部.add(出);
+            everything.add(outMap);
         }
-        return 全部;
+        return everything;
     }
 
     /**
@@ -1185,57 +1185,57 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * <p>
      * 🔴 <b>这是全套里唯一一条会被负载往坏处推的量。</b>阻塞那两三秒是内核按<b>时间</b>
      * 放大接收缓冲放出来的，不随 CPU 负载变长；而窗口按格算、格随负载变长。
-     * 所以窗口不能开大（{@link #观测格数} 取 2 就是为了这个），
+     * 所以窗口不能开大（{@link #OBSERVE_TICKS} 取 2 就是为了这个），
      * 这一格量的正是「窗口还没伸出复现之外」。
      *
      * @param 钟   对照钟
      * @param 格数 等到对照钟走了这么多格还卡着就不等了
      * @return 阻塞撑了多久，以及折成格之后是多少
      */
-    static 阻塞读 阻塞撑了多久(对照钟 钟, long 格数) throws InterruptedException {
-        long 起格 = 钟.读();
-        long 起 = System.currentTimeMillis();
-        long 死线 = 起 + Math.max(1, 格数) * 钟.名义格长毫秒() * 20;
-        boolean 到顶 = true;
-        while (钟.读() - 起格 < 格数 && System.currentTimeMillis() < 死线) {
-            if (!复现成立(先验尺_有人卡在关闭帧的写里())) {
-                到顶 = false;
+    static BlockReading blockHeldFor(ReferenceClock clock, long tickCount) throws InterruptedException {
+        long startTick = clock.read();
+        long startMillis = System.currentTimeMillis();
+        long deadlineAt = startMillis + Math.max(1, tickCount) * clock.nominalTickMs() * 20;
+        boolean atCap = true;
+        while (clock.read() - startTick < tickCount && System.currentTimeMillis() < deadlineAt) {
+            if (!reproHolds(priorGaugeSomeoneStuckWritingCloseFrame())) {
+                atCap = false;
                 break;
             }
             Thread.sleep(25);
         }
-        一段 段 = new 一段(起格, 钟.读(), 起, System.currentTimeMillis(), 钟.名义格长毫秒());
-        return new 阻塞读(段.墙钟毫秒(), 段.折成千分格(段.墙钟毫秒()), 到顶, 段);
+        TimeSegment segment = new TimeSegment(startTick, clock.read(), startMillis, System.currentTimeMillis(), clock.nominalTickMs());
+        return new BlockReading(segment.wallClockMs(), segment.toMilliTick(segment.wallClockMs()), atCap, segment);
     }
 
     /** 余量尺的读数 */
-    record 阻塞读(long 撑了毫秒, long 撑了_千分格, boolean 等到上限就不等了, 一段 段) {
+    record BlockReading(long heldMs, long heldMilliTick, boolean awaitCapReached, TimeSegment segment) {
         /** 撑过观测窗口之后还余下多少（千分格）。为负就是没撑住 */
-        long 余量_千分格() {
-            return 撑了_千分格 - 观测格数 * 1000;
+        long marginMilliTick() {
+            return heldMilliTick - OBSERVE_TICKS * 1000;
         }
 
-        Map<String, Object> 读数() {
-            Map<String, Object> 出 = new LinkedHashMap<>();
-            出.put("阻塞撑了毫秒", 撑了毫秒);
-            出.put("阻塞撑了（格）", 千分格成串(撑了_千分格));
-            出.put("观测窗口（格）", 观测格数);
-            出.put("余量（格）", 千分格成串(余量_千分格()));
-            出.put("要求的最小余量（格）", 千分格成串(阻塞余量_千分格));
-            出.put("等到上限就不等了", 等到上限就不等了);
-            出.put("观测段", 段.读数());
-            return 出;
+        Map<String, Object> reading() {
+            Map<String, Object> outMap = new LinkedHashMap<>();
+            outMap.put("阻塞撑了毫秒", heldMs);
+            outMap.put("阻塞撑了（格）", milliTickToString(heldMilliTick));
+            outMap.put("观测窗口（格）", OBSERVE_TICKS);
+            outMap.put("余量（格）", milliTickToString(marginMilliTick()));
+            outMap.put("要求的最小余量（格）", milliTickToString(BLOCK_MARGIN_MILLI_TICK));
+            outMap.put("等到上限就不等了", awaitCapReached);
+            outMap.put("观测段", segment.reading());
+            return outMap;
         }
     }
 
     /**
      * 先验尺的一句话结论：这一跑复现成立吗
      *
-     * @param 尺读 {@link #先验尺_有人卡在关闭帧的写里()} 的返回
+     * @param 尺读 {@link #priorGaugeSomeoneStuckWritingCloseFrame()} 的返回
      * @return 有人卡在关闭帧的写里就为真
      */
-    static boolean 复现成立(List<Map<String, Object>> 尺读) {
-        return 尺读 != null && !尺读.isEmpty();
+    static boolean reproHolds(List<Map<String, Object>> gaugeReading) {
+        return gaugeReading != null && !gaugeReading.isEmpty();
     }
 
     /**
@@ -1244,12 +1244,12 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * 🔴 这不是红也不是绿：<b>这把尺没见过这个形态</b>，它量出来的东西不作数，
      * 由外部收集方判 ABORT 带实录。
      */
-    static boolean 尺没见过的状态(List<Map<String, Object>> 尺读) {
-        return 尺读 != null && 尺读.stream().anyMatch(x -> Boolean.TRUE.equals(x.get("尺没见过的状态")));
+    static boolean gaugeUnseenState(List<Map<String, Object>> gaugeReading) {
+        return gaugeReading != null && gaugeReading.stream().anyMatch(x -> Boolean.TRUE.equals(x.get("尺没见过的状态")));
     }
 
     /** 心跳线程此刻卡在谁身上。返回栈摘录；没卡住时返回 null */
-    static List<String> 心跳线程卡在别人的监视器上() {
+    static List<String> heartbeatThreadStuckOnAnotherMonitor() {
         for (Map.Entry<Thread, StackTraceElement[]> e : Thread.getAllStackTraces().entrySet()) {
             if (!e.getKey().getName().startsWith("nova-event-heartbeat")) {
                 continue;
@@ -1257,11 +1257,11 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
             if (e.getKey().getState() != Thread.State.BLOCKED) {
                 continue;
             }
-            List<String> 摘 = new ArrayList<>();
+            List<String> excerpt = new ArrayList<>();
             for (StackTraceElement f : e.getValue()) {
-                摘.add(f.getClassName() + "." + f.getMethodName());
+                excerpt.add(f.getClassName() + "." + f.getMethodName());
             }
-            return 摘.subList(0, Math.min(8, 摘.size()));
+            return excerpt.subList(0, Math.min(8, excerpt.size()));
         }
         return null;
     }
@@ -1288,47 +1288,47 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * <p>
      * 🔴 <b>钉子要拔得动、也不许自己松。</b>关闭帧那 125 字节会被内核放大的接收缓冲吃掉，
      * 两三秒后阻塞自行解开——<b>自己松开的钉子和「格子不咬人」长得一样</b>。
-     * 所以钉子写一个对端永远吞不下的数（{@link #钉子字节}），只由 {@link #拔掉()} 关对端来解。
+     * 所以钉子写一个对端永远吞不下的数（{@link #PIN_BYTES}），只由 {@link #unplug()} 关对端来解。
      */
-    final class 钉住闸 implements AutoCloseable {
+    final class PinGate implements AutoCloseable {
         /** 钉子写多大一坨：要大到对端的缓冲永远吞不下，钉子才不会自己松 */
-        static final int 钉子字节 = 8 * 1024 * 1024;
+        static final int PIN_BYTES = 8 * 1024 * 1024;
 
         /** 这把钉子钉在哪条连接上；它的位次决定了判据 4 的两簇怎么分 */
-        final 序读 序;
+        final OrderReading order;
 
-        private final NovaEventSlowConsumerTest.SocketSession 会话;
+        private final NovaEventSlowConsumerTest.SocketSession socketSession;
 
-        private final Thread 保鲜;
+        private final Thread keepFresh;
 
-        private volatile boolean 收了 = false;
+        private volatile boolean received = false;
 
-        private final Map<String, Object> 钉下去的读数 = new LinkedHashMap<>();
+        private final Map<String, Object> pinnedReading = new LinkedHashMap<>();
 
         /**
          * @param id 钉子那条连接的 id。要落在健康连接<b>中间</b>，判据 4 的两簇才都不空——
-         *           用 {@link NovaEvent慢消费者台架#挑个居中的id} 算着挑
+         *           用 {@link NovaEventSlowConsumerHarness#pickMiddleId} 算着挑
          */
-        钉住闸(String id) throws Exception {
-            List<String> 全部id = new ArrayList<>(已连上);
-            全部id.add(id);
-            this.序 = 算序(id, 全部id);
+        PinGate(String id) throws Exception {
+            List<String> allIds = new ArrayList<>(connected);
+            allIds.add(id);
+            this.order = computeOrder(id, allIds);
             // 先把 socket 灌到写不动：泵一写就卡住，往后的 ping 全堆在待发队列里。
             // 不灌的话泵会一直把队列抽干，队列永远满不了，钉子就钉不下去。
-            this.会话 = new NovaEventSlowConsumerTest.SocketSession(
-                    id, 1024, 1024, false, true, 钉子字节);
-            真会话.add(this.会话);
-            long 灌 = this.会话.灌满();
-            已连上.add(id);
-            endpoint.afterConnectionEstablished(this.会话);
-            认证(this.会话, tokens.issue(id));
+            this.socketSession = new NovaEventSlowConsumerTest.SocketSession(
+                    id, 1024, 1024, false, true, PIN_BYTES);
+            realSession.add(this.socketSession);
+            long fill = this.socketSession.filled();
+            connected.add(id);
+            endpoint.afterConnectionEstablished(this.socketSession);
+            authenticated(this.socketSession, tokens.issue(id));
 
             // 🔴 保鲜：不回 pong 的话，超时清理会先把它 closeAsync 掉——
             //    那一支是**派给发送线程**的，心跳线程根本不会被钉住，这把闸就成了摆设。
-            this.保鲜 = new Thread(() -> {
-                while (!收了) {
+            this.keepFresh = new Thread(() -> {
+                while (!received) {
                     try {
-                        endpoint.handleTextMessage(会话, new TextMessage("{\"kind\":\"pong\"}"));
+                        endpoint.handleTextMessage(socketSession, new TextMessage("{\"kind\":\"pong\"}"));
                         Thread.sleep(Math.max(10, PING / 4));
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
@@ -1338,24 +1338,24 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
                     }
                 }
             }, "nova-test-pin-keepalive-" + id);
-            this.保鲜.setDaemon(true);
-            this.保鲜.start();
+            this.keepFresh.setDaemon(true);
+            this.keepFresh.start();
 
-            long 灌进队列 = 把待发队列灌到快满(id);
-            List<Map<String, Object>> 尺读 = 等到_心跳线程被钉住();
-            钉下去的读数.put("钉子 id", id);
-            钉下去的读数.put("灌进 socket 的字节", 灌);
-            钉下去的读数.put("灌进待发队列的条数", 灌进队列);
-            钉下去的读数.put("钉住了吗", 尺读 != null);
-            钉下去的读数.put("实录", String.valueOf(尺读));
-            钉下去的读数.put("算序", 序.读数());
-            读数("阳性对照-钉住闸", 钉下去的读数);
-            if (尺读 == null) {
-                拔掉();
+            long fillQueue = fillPendingQueueNearFull(id);
+            List<Map<String, Object>> gaugeReading = awaitHeartbeatThreadPinned();
+            pinnedReading.put("钉子 id", id);
+            pinnedReading.put("灌进 socket 的字节", fill);
+            pinnedReading.put("灌进待发队列的条数", fillQueue);
+            pinnedReading.put("钉住了吗", gaugeReading != null);
+            pinnedReading.put("实录", String.valueOf(gaugeReading));
+            pinnedReading.put("算序", order.reading());
+            reading("阳性对照-钉住闸", pinnedReading);
+            if (gaugeReading == null) {
+                unplug();
                 fail("钉住闸没能把共享心跳线程钉住 —— **阳性对照本身没成立**，"
-                        + "这一格证不了「格子咬人」。先查这把闸：待发队列灌进了 " + 灌进队列
+                        + "这一格证不了「格子咬人」。先查这把闸：待发队列灌进了 " + fillQueue
                         + " 条（-1 ＝ 这条连接压根没转进实时流，灌什么都进不了队列），"
-                        + "socket 灌了 " + 灌 + " 字节。");
+                        + "socket 灌了 " + fill + " 字节。");
             }
         }
 
@@ -1372,43 +1372,43 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
          * 正好把它饿在那儿。头一版就是这么写的：灌了一千六百万条，队列一格没满，
          * 钉子钉不下去，而<b>钉不下去的阳性对照和「格子不咬人」长得一模一样</b>。
          */
-        private long 把待发队列灌到快满(String id) throws Exception {
-            Object 上线了 = 钟.等到(复现等待格数, () -> 转进实时流了吗(id) ? Boolean.TRUE : null);
-            if (上线了 == null) {
+        private long fillPendingQueueNearFull(String id) throws Exception {
+            Object wentLive = clock.await(REPRO_WAIT_TICKS, () -> hasEnteredLiveStream(id) ? Boolean.TRUE : null);
+            if (wentLive == null) {
                 return -1;
             }
-            long 发了 = 0;
+            long sent = 0;
             // 队列容量是「事件流缓冲＋余量」这个量级；给一倍多的余地就够灌满，
             // 再多就是这条路不通了，交给外面那句失败语去说。
-            long 上限 = 8L * (待发队列(id) == null ? 0 : 待发队列(id).remainingCapacity()) + 64;
-            while (发了 < 上限) {
-                java.util.concurrent.BlockingQueue<?> q = 待发队列(id);
+            long cap = 8L * (pendingQueue(id) == null ? 0 : pendingQueue(id).remainingCapacity()) + 64;
+            while (sent < cap) {
+                java.util.concurrent.BlockingQueue<?> q = pendingQueue(id);
                 if (q == null) {
                     break;
                 }
                 if (q.remainingCapacity() <= 2) {
-                    return 发了;
+                    return sent;
                 }
-                stream.publish(事件());
-                发了++;
+                stream.publish(event());
+                sent++;
             }
-            return 发了;
+            return sent;
         }
 
         /** 等到先验尺里出现的那条卡住的线程<b>就是</b>共享心跳线程 */
-        private List<Map<String, Object>> 等到_心跳线程被钉住() throws Exception {
-            return 钟.等到(复现等待格数, () -> {
-                List<Map<String, Object>> 尺读 = 先验尺_有人卡在关闭帧的写里();
-                boolean 是心跳 = 尺读.stream()
-                        .anyMatch(x -> ((Long) x.get("线程号")) == 心跳线程.getId());
-                return 是心跳 ? 尺读 : null;
+        private List<Map<String, Object>> awaitHeartbeatThreadPinned() throws Exception {
+            return clock.await(REPRO_WAIT_TICKS, () -> {
+                List<Map<String, Object>> gaugeReading = priorGaugeSomeoneStuckWritingCloseFrame();
+                boolean isPing = gaugeReading.stream()
+                        .anyMatch(x -> ((Long) x.get("线程号")) == heartbeatThread.getId());
+                return isPing ? gaugeReading : null;
             });
         }
 
         /** 此刻心跳线程还钉着吗——阳性对照自己的收尾戳 */
-        boolean 还钉着() {
-            return 先验尺_有人卡在关闭帧的写里().stream()
-                    .anyMatch(x -> ((Long) x.get("线程号")) == 心跳线程.getId());
+        boolean stillPinned() {
+            return priorGaugeSomeoneStuckWritingCloseFrame().stream()
+                    .anyMatch(x -> ((Long) x.get("线程号")) == heartbeatThread.getId());
         }
 
         /**
@@ -1417,18 +1417,18 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
          * 🔴 拔完要<b>确认拔动了</b>：拔不动的钉子会把后面每一格都拖红，
          * 而那些红看起来像是判据自己红的。
          */
-        void 拔掉() throws Exception {
-            收了 = true;
-            保鲜.interrupt();
-            会话.关掉();
-            Object 松了 = 钟.等到(复现等待格数, () -> 还钉着() ? null : Boolean.TRUE);
-            读数("阳性对照-拔钉子", Map.of("拔动了", 松了 != null,
+        void unplug() throws Exception {
+            received = true;
+            keepFresh.interrupt();
+            socketSession.closeIt();
+            Object loosened = clock.await(REPRO_WAIT_TICKS, () -> stillPinned() ? null : Boolean.TRUE);
+            reading("阳性对照-拔钉子", Map.of("拔动了", loosened != null,
                     "🔴 拔不动会怎样", "钉子留着，后面每一格都会被拖红，而那些红看起来像判据自己红的"));
         }
 
         @Override
         public void close() throws Exception {
-            拔掉();
+            unplug();
         }
     }
 
@@ -1438,8 +1438,8 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * 🔴 只<b>读</b>它的余量，不动它一条：钉住闸要知道「还差几格满」，
      * 才能把最后那两格留给心跳自己去踩。
      */
-    java.util.concurrent.BlockingQueue<?> 待发队列(String id) {
-        Object v = 取连接的字段(id, "outbox");
+    java.util.concurrent.BlockingQueue<?> pendingQueue(String id) {
+        Object v = connectionsField(id, "outbox");
         return (java.util.concurrent.BlockingQueue<?>) v;
     }
 
@@ -1449,12 +1449,12 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * 🔴 钉住闸要靠它<b>先等再灌</b>：没订阅之前灌什么都进不了队列，
      * 而一边灌一边等，反倒把派在心跳线程上的 {@code goLive} 饿住了。
      */
-    boolean 转进实时流了吗(String id) {
-        Object v = 取连接的字段(id, "live");
+    boolean hasEnteredLiveStream(String id) {
+        Object v = connectionsField(id, "live");
         return Boolean.TRUE.equals(v);
     }
 
-    private Object 取连接的字段(String id, String 字段) {
+    private Object connectionsField(String id, String field) {
         try {
             java.lang.reflect.Field cf = NovaEventEndpoint.class.getDeclaredField("clients");
             cf.setAccessible(true);
@@ -1463,19 +1463,19 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
             if (client == null) {
                 return null;
             }
-            java.lang.reflect.Field f = client.getClass().getDeclaredField(字段);
+            java.lang.reflect.Field f = client.getClass().getDeclaredField(field);
             f.setAccessible(true);
             return f.get(client);
         } catch (Exception e) {
-            throw new IllegalStateException("取不到连接 " + id + " 的 " + 字段
+            throw new IllegalStateException("取不到连接 " + id + " 的 " + field
                     + " —— 钉住闸就下不去，阳性对照证不了「格子咬人」。", e);
         }
     }
 
-    static <T> T 等到(long 上限毫秒, java.util.function.Supplier<T> 探) throws Exception {
-        long deadline = System.currentTimeMillis() + 上限毫秒;
+    static <T> T await(long capMs, java.util.function.Supplier<T> probe) throws Exception {
+        long deadline = System.currentTimeMillis() + capMs;
         while (System.currentTimeMillis() < deadline) {
-            T v = 探.get();
+            T v = probe.get();
             if (v != null) {
                 return v;
             }
@@ -1490,17 +1490,17 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
      * 🔴 前缀里<b>不带编号</b>。编号形状是「这里有一套编号系统」的招牌，
      * 公开面的源码字符串里不该有；改前缀要<b>两头同改</b>（这里与外部收集方的匹配串）。
      */
-    static void 读数(String 名, Map<String, Object> 值) {
+    static void reading(String readingName, Map<String, Object> value) {
         // 🔴 值里再出现一个叫「读数」的键，就会把**名字**顶掉，
         //    而顶掉之后那条读数看起来跟正常的一模一样——外面按名字找就永远找不到它。
         //    （已经踩过一次：先验尺那条把栈实录塞在「读数」键里，定余量那 20 轮第一轮就停。）
-        if (值.containsKey("读数")) {
-            throw new IllegalArgumentException("读数「" + 名 + "」的值里有一个叫「读数」的键，"
+        if (value.containsKey("读数")) {
+            throw new IllegalArgumentException("读数「" + readingName + "」的值里有一个叫「读数」的键，"
                     + "它会把名字顶掉。换个键名（比如「实录」）——顶掉之后没人看得出来。");
         }
         JSONObject j = new JSONObject();
-        j.put("读数", 名);
-        j.putAll(值);
-        System.out.println(读数标记 + j.toJSONString());
+        j.put("读数", readingName);
+        j.putAll(value);
+        System.out.println(READING_MARK + j.toJSONString());
     }
 }

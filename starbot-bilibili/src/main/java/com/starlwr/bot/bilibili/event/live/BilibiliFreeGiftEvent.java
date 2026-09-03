@@ -1,6 +1,6 @@
 package com.starlwr.bot.bilibili.event.live;
 
-import com.starlwr.bot.core.enums.LivePlatform;
+import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.core.event.live.common.FreeGiftEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.GiftInfo;
@@ -21,10 +21,10 @@ import java.time.Instant;
 @ToString(callSuper = true)
 public class BilibiliFreeGiftEvent extends FreeGiftEvent {
     public BilibiliFreeGiftEvent(LiveStreamerInfo source, UserInfo sender, GiftInfo giftInfo) {
-        super(LivePlatform.BILIBILI, source, sender, giftInfo);
+        super(BilibiliPlatform.BILIBILI, source, sender, giftInfo);
     }
 
     public BilibiliFreeGiftEvent(LiveStreamerInfo source, UserInfo sender, GiftInfo giftInfo, Instant instant) {
-        super(LivePlatform.BILIBILI, source, sender, giftInfo, instant);
+        super(BilibiliPlatform.BILIBILI, source, sender, giftInfo, instant);
     }
 }

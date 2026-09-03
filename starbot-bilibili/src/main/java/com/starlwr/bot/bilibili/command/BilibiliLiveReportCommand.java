@@ -1,6 +1,7 @@
 package com.starlwr.bot.bilibili.command;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.bilibili.handler.BilibiliLiveReportPushHandler;
 import com.starlwr.bot.bilibili.model.BilibiliLiveReportOptions;
 import com.starlwr.bot.bilibili.painter.BilibiliLiveReportPainter;
@@ -8,7 +9,6 @@ import com.starlwr.bot.core.command.CommandContext;
 import com.starlwr.bot.core.command.CommandReply;
 import com.starlwr.bot.core.command.StarBotCommand;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
-import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.plugin.StarBotComponent;
@@ -62,7 +62,7 @@ public class BilibiliLiveReportCommand implements StarBotCommand {
     public CommandReply execute(CommandContext context) {
         List<Subscription> living = new ArrayList<>();
         for (Subscription subscription : reportSubscribers(context)) {
-            if (liveDataService.getLiveStatus(LivePlatform.BILIBILI.getName(), subscription.user().getUid()).orElse(false)) {
+            if (liveDataService.getLiveStatus(BilibiliPlatform.BILIBILI.id(), subscription.user().getUid()).orElse(false)) {
                 living.add(subscription);
             }
         }
@@ -81,7 +81,7 @@ public class BilibiliLiveReportCommand implements StarBotCommand {
         BilibiliLiveReportOptions options = BilibiliLiveReportOptions.of(living.get(0).params(),
                 revenueVisibility.isVisible(context.getPlatform(), context.getType(), context.getNum()));
 
-        return painter.paint(LivePlatform.BILIBILI.getName(),
+        return painter.paint(BilibiliPlatform.BILIBILI.id(),
                         new LiveStreamerInfo(streamer.getUid(), streamer.getUname(), streamer.getRoomId(), streamer.getFace()),
                         options)
                 .map(CommandReply::image)
@@ -95,7 +95,7 @@ public class BilibiliLiveReportCommand implements StarBotCommand {
      */
     private List<Subscription> reportSubscribers(CommandContext context) {
         List<Subscription> result = new ArrayList<>();
-        for (PushUser user : dataSource.getUsers(LivePlatform.BILIBILI.getName())) {
+        for (PushUser user : dataSource.getUsers(BilibiliPlatform.BILIBILI.id())) {
             if (Boolean.FALSE.equals(user.getEnabled()) || user.getUid() == null) {
                 continue;
             }

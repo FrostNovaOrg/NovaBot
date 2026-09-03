@@ -1,8 +1,8 @@
 package com.starlwr.bot.bilibili.service;
 
+import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.bilibili.model.Up;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
-import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.service.DataSourceService;
@@ -71,6 +71,6 @@ public class BilibiliDataSourceService implements DataSourceService {
      * @return 平台名称
      */
     public String platform() {
-        return LivePlatform.BILIBILI.getName();
+        return BilibiliPlatform.BILIBILI.id();
     }
 }

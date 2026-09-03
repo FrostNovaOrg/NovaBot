@@ -1,6 +1,6 @@
 package com.starlwr.bot.bilibili.event.live;
 
-import com.starlwr.bot.core.enums.LivePlatform;
+import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.core.event.live.common.RoomLockEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import lombok.Getter;
@@ -19,10 +19,10 @@ import java.time.Instant;
 @ToString(callSuper = true)
 public class BilibiliRoomLockEvent extends RoomLockEvent {
     public BilibiliRoomLockEvent(LiveStreamerInfo source, String reason, Instant expireAt) {
-        super(LivePlatform.BILIBILI, source, reason, expireAt);
+        super(BilibiliPlatform.BILIBILI, source, reason, expireAt);
     }
 
     public BilibiliRoomLockEvent(LiveStreamerInfo source, String reason, Instant expireAt, Instant instant) {
-        super(LivePlatform.BILIBILI, source, reason, expireAt, instant);
+        super(BilibiliPlatform.BILIBILI, source, reason, expireAt, instant);
     }
 }

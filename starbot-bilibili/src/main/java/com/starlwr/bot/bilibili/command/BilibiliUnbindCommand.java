@@ -1,9 +1,9 @@
 package com.starlwr.bot.bilibili.command;
 
+import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.core.command.CommandContext;
 import com.starlwr.bot.core.command.CommandReply;
 import com.starlwr.bot.core.command.StarBotCommand;
-import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.service.UserBindingService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,7 +38,7 @@ public class BilibiliUnbindCommand implements StarBotCommand {
             return CommandReply.none();
         }
 
-        boolean removed = bindings.unbind(context.getPlatform(), LivePlatform.BILIBILI.getName(), context.getSenderUid());
+        boolean removed = bindings.unbind(context.getPlatform(), BilibiliPlatform.BILIBILI.id(), context.getSenderUid());
         return CommandReply.of(removed ? "已解除绑定" : "你还没有绑定哔哩哔哩账号");
     }
 

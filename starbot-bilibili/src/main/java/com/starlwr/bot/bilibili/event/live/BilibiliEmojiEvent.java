@@ -1,6 +1,6 @@
 package com.starlwr.bot.bilibili.event.live;
 
-import com.starlwr.bot.core.enums.LivePlatform;
+import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.core.event.live.common.EmojiEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.EmojiInfo;
@@ -21,10 +21,10 @@ import java.time.Instant;
 @ToString(callSuper = true)
 public class BilibiliEmojiEvent extends EmojiEvent {
     public BilibiliEmojiEvent(LiveStreamerInfo source, UserInfo sender, EmojiInfo emoji) {
-        super(LivePlatform.BILIBILI, source, sender, emoji);
+        super(BilibiliPlatform.BILIBILI, source, sender, emoji);
     }
 
     public BilibiliEmojiEvent(LiveStreamerInfo source, UserInfo sender, EmojiInfo emoji, Instant instant) {
-        super(LivePlatform.BILIBILI, source, sender, emoji, instant);
+        super(BilibiliPlatform.BILIBILI, source, sender, emoji, instant);
     }
 }

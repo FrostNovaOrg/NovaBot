@@ -1,6 +1,6 @@
 package com.starlwr.bot.bilibili.service;
 
-import com.starlwr.bot.core.enums.LivePlatform;
+import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.core.service.LiveDataService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -72,7 +72,7 @@ class BilibiliLiveStateGateTest {
     @Test
     @DisplayName("进程重启后以持久化状态为准, 不重复推送启动前的变化")
     void shouldFallBackToPersistedStatus() {
-        when(liveDataService.getLiveStatus(LivePlatform.BILIBILI.getName(), UID)).thenReturn(Optional.of(false));
+        when(liveDataService.getLiveStatus(BilibiliPlatform.BILIBILI.id(), UID)).thenReturn(Optional.of(false));
 
         assertFalse(gate.admit(UID, false), "持久化状态已是下播, 不应再推一次");
         assertTrue(gate.admit(UID, true), "开播是相对持久化状态的真实变化, 应放行");
