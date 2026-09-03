@@ -9,8 +9,10 @@ import java.util.List;
  * 无需改动核心的任何注册表。
  * <p>
  * <b>命令只应在自己确实该管的会话里响应。</b>群聊机器人往往同时在多个群，
- * 在无关群里回话是最容易招致反感的行为，因此分发器默认只在**已配置推送的会话**中
- * 处理命令；确有需要的命令可通过 {@link #requiresConfiguredTarget()} 放宽。
+ * 在无关群里回话是最容易招致反感的行为。这一条由
+ * {@link CommandDispatcher} 统一把关：只在<b>已配置推送</b>的会话里处理命令，
+ * 且群聊里还要 @ 过机器人。命令实现没有放宽它的余地——留一个能放宽的开关，
+ * 就等于把这条规矩交给每个命令各自守，而漏守一次就是一次投诉。
  */
 public interface StarBotCommand {
     /**
@@ -80,16 +82,6 @@ public interface StarBotCommand {
      */
     default boolean requiresAdmin() {
         return false;
-    }
-
-    /**
-     * 是否要求会话已配置推送
-     * <p>
-     * 默认为 true：机器人常同时在多个群，在没配置过推送的群里应答等同于打扰。
-     * @return 是否要求
-     */
-    default boolean requiresConfiguredTarget() {
-        return true;
     }
 
     /**

@@ -53,18 +53,35 @@ public class StarBotRemoteMessageEvent extends StarBotInternalBaseEvent {
      */
     private String senderRole;
 
+    /**
+     * 消息里是否 @ 了机器人本身
+     * <p>
+     * 群聊中这是「这条消息是不是说给我听的」的唯一依据。判定必须由适配器完成：
+     * 「@ 了谁」只存在于平台的原始消息结构里（OneBot 是 at 段与 self_id），
+     * 到了 {@link #text} 这一层已经看不出来了。
+     * <p>
+     * 私聊没有 @ 一说，此项恒为 false，不参与判定。
+     */
+    private boolean mentionsBot;
+
     public StarBotRemoteMessageEvent(String platform, String messageType, Long num, Long senderUid, String text) {
         this(platform, messageType, num, senderUid, text, (String) null);
     }
 
     public StarBotRemoteMessageEvent(String platform, String messageType, Long num, Long senderUid,
                                      String text, String senderRole) {
+        this(platform, messageType, num, senderUid, text, senderRole, false);
+    }
+
+    public StarBotRemoteMessageEvent(String platform, String messageType, Long num, Long senderUid,
+                                     String text, String senderRole, boolean mentionsBot) {
         this.platform = platform;
         this.messageType = messageType;
         this.num = num;
         this.senderUid = senderUid;
         this.text = text;
         this.senderRole = senderRole;
+        this.mentionsBot = mentionsBot;
     }
 
     public StarBotRemoteMessageEvent(String platform, String messageType, Long num, Long senderUid, String text, Instant instant) {

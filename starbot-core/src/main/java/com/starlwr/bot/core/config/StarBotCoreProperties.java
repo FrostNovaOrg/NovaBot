@@ -170,16 +170,6 @@ public class StarBotCoreProperties {
     @Setter
     public static class Command {
         /**
-         * 命令前缀，留空表示直接以命令名触发
-         * <p>
-         * 群里同时有多个机器人时容易撞词，此时可加前缀（如 {@code /}）区分。
-         * 默认留空是因为对只装了一个机器人的多数使用者而言，多打一个符号没有收益。
-         */
-        @ConfigLevel(ConfigLevel.Level.COMMON)
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
-        private String prefix = "";
-
-        /**
          * 超级管理员账号，跨会话生效
          * <p>
          * 「禁用命令」这类操作会改变全群的可用功能，只对管理员开放。

@@ -31,8 +31,9 @@ import static org.mockito.Mockito.when;
 /**
  * 命令分发器测试
  * <p>
- * 重点覆盖三条横切约束：只在已配置推送的会话响应、未知命令沉默、命令开关生效。
- * 这些约束一旦失守，机器人就会在无关群里说话——这是这类产品最招人反感的行为。
+ * 覆盖分发这一步本身：参数怎么切、回复怎么发、权限怎么判、命令炸了怎么办。
+ * <b>「什么算一条命令」不在这里</b>——那件事的用例数远多于方法数，
+ * 摆在 {@link CommandDispatcherCorpusTest} 的语料表里逐条回放。
  */
 @DisplayName("命令分发器")
 class CommandDispatcherTest {
@@ -81,8 +82,11 @@ class CommandDispatcherTest {
     }
 
     @Test
-    @DisplayName("未知命令不应有任何回复")
-    void ignoresUnknownCommand() {
+    @DisplayName("没有注册「菜单」命令时，认不出的消息不应把分发器带崩")
+    void survivesMissingMenuCommand() {
+        // 认不出的消息要回菜单，而菜单本身也只是一个命令 Bean。
+        // 插件把它换掉或改名之后，这条路会找不到东西可回——那时候该是安静地不回，
+        // 而不是每条闲聊都在日志里抛一次空指针
         dispatcher.onRemoteMessage(event(GROUP, "今天天气不错"));
 
         verify(sender, never()).send(any());
@@ -97,13 +101,16 @@ class CommandDispatcherTest {
     }
 
     @Test
-    @DisplayName("被禁用的命令不应执行")
+    @DisplayName("被禁用的命令不应执行，但要说明它被关了")
     void skipsDisabledCommand() {
         settings.disable(PLATFORM, GROUP, "测试命令");
 
         dispatcher.onRemoteMessage(event(GROUP, "测试命令"));
 
         assertEquals(0, command.executions);
+        ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
+        verify(sender).send(captor.capture());
+        assertEquals("本群已关闭「测试命令」命令", captor.getValue().getContent());
     }
 
     @Test
@@ -113,22 +120,6 @@ class CommandDispatcherTest {
         dispatcher.onRemoteMessage(event(GROUP, "测试命令"));
 
         assertEquals(1, command.executions);
-    }
-
-    @Test
-    @DisplayName("配置了前缀时，不带前缀的消息应被忽略")
-    void respectsConfiguredPrefix() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
-        properties.getCommand().setPrefix("/");
-        AbstractDataSource dataSource = mock(AbstractDataSource.class);
-        when(dataSource.getAllUsers()).thenReturn(List.of(configuredUser()));
-        CommandDispatcher prefixed = new CommandDispatcher(providerOf(command), settings, dataSource, sender, properties);
-
-        prefixed.onRemoteMessage(event(GROUP, "测试命令"));
-        assertEquals(0, command.executions, "缺少前缀时不应执行");
-
-        prefixed.onRemoteMessage(event(GROUP, "/测试命令"));
-        assertEquals(1, command.executions, "带前缀时应执行");
     }
 
     @Test
@@ -147,17 +138,6 @@ class CommandDispatcherTest {
         dispatcher.onRemoteMessage(event(GROUP, "测试命令"));
 
         verify(sender, never()).send(any());
-    }
-
-    @Test
-    @DisplayName("私聊中不应执行仅限群聊的命令")
-    void skipsGroupOnlyCommandInPrivateChat() {
-        StarBotRemoteMessageEvent privateMessage =
-                new StarBotRemoteMessageEvent(PLATFORM, "private", GROUP, 1L, "测试命令");
-
-        dispatcher.onRemoteMessage(privateMessage);
-
-        assertEquals(0, command.executions);
     }
 
     @Test
@@ -241,12 +221,16 @@ class CommandDispatcherTest {
         assertEquals(Boolean.TRUE, command.lastSeenAdmin);
     }
 
+    /**
+     * 群聊消息一律带上「@ 了机器人」——不带 @ 的消息根本进不了分发这一步，
+     * 那条判定归语料表管
+     */
     private StarBotRemoteMessageEvent roleEvent(Long group, String text, String role) {
-        return new StarBotRemoteMessageEvent(PLATFORM, "group", group, 1L, text, role);
+        return new StarBotRemoteMessageEvent(PLATFORM, "group", group, 1L, text, role, true);
     }
 
     private StarBotRemoteMessageEvent event(Long group, String text) {
-        return new StarBotRemoteMessageEvent(PLATFORM, "group", group, 1L, text);
+        return roleEvent(group, text, null);
     }
 
     /**
