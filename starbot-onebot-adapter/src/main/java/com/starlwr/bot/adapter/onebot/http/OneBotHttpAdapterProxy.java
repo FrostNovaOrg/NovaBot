@@ -1,5 +1,6 @@
 package com.starlwr.bot.adapter.onebot.http;
 
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.adapter.onebot.annotation.OneBotApi;
 import com.starlwr.bot.adapter.onebot.exception.OneBotApiException;
@@ -67,7 +68,16 @@ public class OneBotHttpAdapterProxy implements InvocationHandler {
                     throw new OneBotApiException(api.url(), params, result.getInteger("retcode"), result.getString("message"));
                 }
 
-                return result.getJSONObject("data");
+                // data 有对象与数组两种形状：查一条信息回对象，列群／列好友回数组。
+                // 按方法声明的返回类型分流，而不是一律当对象取。
+                //
+                // 🔴 一律当对象取<b>不会报错</b>：2026-09-04 实测，fastjson 的 getJSONObject
+                // 读到一个数组时静默返回 null。于是列表接口一条不少地取回来了，
+                // 而调用方拿到的是 null——报出来的是某处的空指针，与「这个接口返回的是列表」
+                // 之间隔着一段没人愿意查第二遍的距离。抛异常反倒是好的那种失败。
+                return JSONArray.class.equals(method.getReturnType())
+                        ? result.getJSONArray("data")
+                        : result.getJSONObject("data");
             }
         }
 
