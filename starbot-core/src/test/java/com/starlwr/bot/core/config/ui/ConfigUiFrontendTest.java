@@ -60,15 +60,28 @@ class ConfigUiFrontendTest {
     private static final Set<String> ALLOWED_LOCALS = Set.of("analytics.js:values");
 
     /**
-     * 核心自己的页签，闭集
+     * 核心自己的页签，闭集，也就是 {@code store.tab} 的取值域
      * <p>
-     * 这一条是边界：<b>核心的界面文件里不许出现这七个以外的页签</b>。平台页由对应插件带进来，
+     * 这一条是边界：<b>核心的界面文件里不许出现这几个以外的页签</b>。平台页由对应插件带进来，
      * 核心只在运行时按注册清单把它挂上去。写死一个平台的页签，界面就替一件可能没装的东西
      * 立了个入口——点开是空的，而使用者无从知道是插件没装还是坏了；
      * 想加第二个平台时，又得回头改核心的界面文件。
+     * <p>
+     * 六页导航之后这仍是页签名而不是路由名：{@code store.tab} 是插件页读得到的东西，
+     * 换成路由名等于改了对插件的约定。路由那一侧另有 {@link #CORE_ROUTES}。
      */
     private static final Set<String> CORE_TABS = Set.of(
-            "overview", "push", "bot", "sessions", "analytics", "tokens", "settings");
+            "overview", "push", "bot", "sessions", "analytics", "tokens", "settings", "log", "setup");
+
+    /**
+     * 核心自己的六页导航与初始设置页，闭集
+     * <p>
+     * 与 {@link #CORE_TABS} 是同一条边界的另一面：<b>核心的界面文件里不许出现这几条以外的路由</b>。
+     * 插件页挂在设置页「高级」下，地址是 {@code #/settings/<页标识>}，那一段由注册清单在运行时拼出，
+     * 界面文件里一个平台的名字也没有。
+     */
+    private static final Set<String> CORE_ROUTES = Set.of(
+            "home", "push", "streamers", "log", "links", "settings", "setup");
 
     /**
      * 插件放页面脚本的资源目录名，与服务端取资源时用的是同一个常量
@@ -81,6 +94,16 @@ class ConfigUiFrontendTest {
     private static final Pattern TAB_ATTRIBUTE = Pattern.compile("data-tab=\"([^\"]+)\"");
 
     private static final Pattern TAB_SECTION = Pattern.compile("<section[^>]*\\sid=\"([^\"]+)\"");
+
+    /**
+     * 侧栏上的路由入口：{@code <a href="#/x" data-page="x">}
+     */
+    private static final Pattern NAV_ROUTE = Pattern.compile("data-page=\"([^\"]+)\"");
+
+    /**
+     * 页容器 id 的前缀。六页各一个 {@code <section class="page" id="page-<路由>">}
+     */
+    private static final String PAGE_PREFIX = "page-";
 
     private static final Pattern TAB_COMPARISON = Pattern.compile("store\\.tab\\s*[!=]==\\s*'([^']+)'");
 
@@ -328,16 +351,23 @@ class ConfigUiFrontendTest {
     }
 
     /**
-     * 核心的页签是一个闭集，平台页不在其中
+     * 核心的页签与路由都是闭集，平台页不在其中
      * <p>
-     * 三处一起查，因为写死一个页签要同时改这三处，只查一处就会剩下另外两处的残迹：
-     * 标签条上的按钮、页面里的容器、以及切页签时那串按名字分派的判断。
+     * 四处一起查，因为写死一个平台要同时改这四处，只查一处就会剩下其余三处的残迹：
+     * 侧栏上的路由入口、旧标签条上的按钮、页面里的容器、以及按名字分派时那串判断。
      */
     @Test
-    @DisplayName("核心界面里只有核心自己的页签，平台页由插件带")
+    @DisplayName("核心界面里只有核心自己的页签与路由，平台页由插件带")
     void coreTabsAreClosedSet() throws IOException {
         String html = Files.readString(frontendDir().resolve("index.html"), StandardCharsets.UTF_8);
         List<String> bad = new ArrayList<>();
+
+        Matcher route = NAV_ROUTE.matcher(html);
+        while (route.find()) {
+            if (!CORE_ROUTES.contains(route.group(1))) {
+                bad.add("index.html 的侧栏上写死了路由 " + route.group(1));
+            }
+        }
 
         Matcher tab = TAB_ATTRIBUTE.matcher(html);
         while (tab.find()) {
@@ -348,8 +378,14 @@ class ConfigUiFrontendTest {
 
         Matcher section = TAB_SECTION.matcher(html);
         while (section.find()) {
-            if (!CORE_TABS.contains(section.group(1))) {
-                bad.add("index.html 里写死了页面容器 " + section.group(1));
+            String id = section.group(1);
+            // 页容器叫 page-<路由>，容器里那层旧页签容器仍叫页签名。两种命名各按各的闭集比，
+            // 一律拿页签集比的话，六个页容器会被当成六处平台残迹
+            boolean known = id.startsWith(PAGE_PREFIX)
+                    ? CORE_ROUTES.contains(id.substring(PAGE_PREFIX.length()))
+                    : CORE_TABS.contains(id);
+            if (!known) {
+                bad.add("index.html 里写死了页面容器 " + id);
             }
         }
 
@@ -362,8 +398,8 @@ class ConfigUiFrontendTest {
             }
         });
 
-        assertTrue(bad.isEmpty(), "核心只该认得自己的页签 " + CORE_TABS + "，以下是写死的平台页残迹:\n  "
-                + String.join("\n  ", bad));
+        assertTrue(bad.isEmpty(), "核心只该认得自己的路由 " + CORE_ROUTES + " 与页签 " + CORE_TABS
+                + "，以下是写死的平台页残迹:\n  " + String.join("\n  ", bad));
     }
 
     /**

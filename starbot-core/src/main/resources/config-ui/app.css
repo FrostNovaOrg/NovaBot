@@ -28,6 +28,9 @@
   --mono:"SF Mono",Menlo,"JetBrains Mono",ui-monospace,monospace;
   --fs:15px; --lh:1.6;
   --r-card:14px; --r-ctl:8px; --r-pill:999px;
+  /* 页头高度写成 token：侧栏要 sticky 在页头下沿，两处各写一个数字的话，
+     改了页头内边距就会留下一条与页面一起滚的缝，而那条缝只在滚动时才看得见 */
+  --head-h:54px;
 }
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
@@ -86,7 +89,8 @@
 *{box-sizing:border-box}
 body{margin:0;background:var(--ground);color:var(--text);
   font-family:var(--font);font-size:var(--fs);line-height:var(--lh)}
-header{background:var(--surface);border-bottom:1px solid var(--line);padding:14px 24px;
+header{background:var(--surface);border-bottom:1px solid var(--line);
+  height:var(--head-h);padding:0 24px;
   display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:10}
 header h1{margin:0;font-size:16px;font-weight:600}
 header .sub{color:var(--dim);font-size:12px}
@@ -95,18 +99,57 @@ header #auth-actions{margin-left:auto;display:flex;gap:8px}
 header #auth-actions button{background:none;border:1px solid var(--line);border-radius:var(--r-ctl);
   padding:5px 12px;cursor:pointer;color:var(--dim);font-size:12px;font-family:inherit}
 header #auth-actions button:hover{color:var(--accent);border-color:var(--accent)}
-main{max-width:960px;margin:0 auto;padding:20px 24px 80px}
-/* 窄屏上横向滚动而不是把每个页签挤成竖排的单字：页签一多（现在 7 个），
-   flex 默认的收缩会让「群与成员」变成四行一列，认不出来也点不准 */
-nav{display:flex;gap:4px;margin-bottom:20px;border-bottom:1px solid var(--line);
-  overflow-x:auto;scrollbar-width:none}
-nav::-webkit-scrollbar{display:none}
-nav button{background:none;border:none;padding:9px 16px;cursor:pointer;color:var(--dim);
-  font-size:14px;font-family:inherit;border-bottom:2px solid transparent;margin-bottom:-1px;
-  white-space:nowrap;flex:none}
-nav button.on{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
-section{display:none}
-section.on{display:block}
+/* ---------- 外壳：左侧六页导航 ＋ 右侧内容 ---------- */
+#app{display:flex;max-width:1320px;margin:0 auto;align-items:flex-start}
+#side{position:sticky;top:var(--head-h);flex:0 0 216px;width:216px;align-self:flex-start;
+  padding:20px 14px 20px 20px;min-height:calc(100vh - var(--head-h))}
+#main{flex:1 1 auto;min-width:0;max-width:1104px;padding:20px 24px 90px}
+.brand{display:flex;align-items:center;gap:9px;padding:2px 8px 16px}
+.brand-mark{width:26px;height:26px;border-radius:var(--r-ctl);background:var(--brand-fill);
+  display:grid;place-items:center;color:var(--paper);font-size:13px;font-weight:700;flex:none}
+.brand-name{font-size:15px;font-weight:700}
+.nav{display:grid;gap:2px}
+.nav a{position:relative;display:flex;align-items:center;gap:9px;padding:8px 10px;
+  border-radius:var(--r-ctl);color:var(--text);text-decoration:none;font-size:14px}
+.nav a svg{width:16px;height:16px;flex:none;color:var(--dim)}
+.nav a:hover{background:var(--soft)}
+.nav a[aria-current="page"]{background:var(--soft);font-weight:600}
+.nav a[aria-current="page"] svg{color:var(--accent)}
+/* 指示条绝对定位在侧栏内边距上，不占布局：改用左边框画的话，只有当前项有边框，
+   六条的文字会彼此错开三像素，看上去像抖了一下 */
+.nav a[aria-current="page"]::before{content:"";position:absolute;left:-8px;top:6px;bottom:6px;
+  width:3px;border-radius:2px;background:var(--nav-ind)}
+.verline{margin-top:16px;padding:10px 10px 0;border-top:1px solid var(--line);
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11.5px;color:var(--dim)}
+/* 窄屏：侧栏改成顶部横条并可横向滚动。竖着放的话，960 以下正文只剩半屏宽；
+   而把六项挤进一行又会让「QQ 推送」折成竖排的单字，认不出来也点不准 */
+@media (max-width:959px){
+  #app{display:block}
+  #side{position:sticky;top:var(--head-h);z-index:9;width:auto;flex:none;min-height:0;
+    padding:8px 12px;background:var(--surface);border-bottom:1px solid var(--line);
+    display:flex;align-items:center;gap:10px}
+  .brand{padding:0 4px 0 0;flex:none}
+  .nav{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;flex:1 1 auto}
+  .nav::-webkit-scrollbar{display:none}
+  .nav a{white-space:nowrap;padding:6px 10px}
+  .nav a svg{display:none}
+  .nav a[aria-current="page"]::before{left:8px;right:8px;top:auto;bottom:-8px;width:auto;height:2px}
+  .verline{display:none}
+  #main{padding:16px 14px 100px;max-width:none}
+}
+/* 一次只显示一页 */
+.page{display:none}
+.page.on{display:block}
+/* 插件带来的页：设置页「高级」里一次只显示选中的那一张 */
+.pgpage{display:none}
+.pgpage.on{display:block}
+#page-tabs button.on{border-color:var(--accent);color:var(--accent);background:var(--soft)}
+/* 初始设置页是独立版式：不显示侧栏、页头与底部保存栏。
+   还没上锁的机器走的就是这条路，此时页头上的「退出登录」无从谈起 */
+html.chromeless header,html.chromeless #side,html.chromeless .bar{display:none}
+html.chromeless #main{max-width:640px;margin:0 auto;padding-top:60px}
+#setup-shell{padding:20px 22px}
+#setup-shell h2{margin:0 0 6px;font-size:16px}
 .group{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);
   box-shadow:var(--shadow);margin-bottom:14px;overflow:hidden}
 .group>h2{margin:0;padding:12px 16px;font-size:14px;font-weight:600;

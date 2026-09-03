@@ -18,225 +18,290 @@
   </span>
 </header>
 
-<main>
+<div id="app">
   <!--
-    页签按「用户此刻想干什么」划分，而不是按数据存在哪个文件里。
-    早先的常规配置/推送配置/配置文件/运行状态是后者：使用者得先知道
+    左侧六页导航。页按「用户此刻想干什么」划分，而不是按数据存在哪个文件里：
+    早先的常规配置/推送配置/配置文件/运行状态是后者，使用者得先知道
     「登录态属于运行状态、机器人端口属于配置文件」才找得到入口。
-  -->
-  <nav>
-    <button data-tab="overview" class="on">总览</button>
-    <button data-tab="push">推送规则</button>
-    <button data-tab="bot">机器人</button>
-    <!--
-      各直播平台的页签插在这里，由插件在运行时注册。装了哪些平台是运行期才知道的事，
-      写死在这份文件里的话，没装的那个也照样立着入口，点开是一张空页。
-    -->
-    <span id="page-tabs" style="display:none"></span>
-    <button data-tab="sessions">群与成员</button>
-    <button data-tab="analytics">数据分析</button>
-    <button data-tab="tokens">只读口令</button>
-    <button data-tab="settings">设置</button>
-  </nav>
 
-  <!-- 校验问题在多个页签下都可能出现，故置于页签之外共用 -->
+    地址是 hash 路由（#/home 等六个）。用 hash 而不用 history.pushState：
+    控制台是挂在 /config 下的单张页面，服务端并没有为每条路由各备一份响应——
+    改成 pushState 的话，在 #/settings 上按刷新，浏览器会去要 /config/settings 而得到 404。
+  -->
+  <aside id="side">
+    <div class="brand">
+      <div class="brand-mark">N</div>
+      <div class="brand-name">NovaBot</div>
+    </div>
+    <nav class="nav" id="nav">
+      <a href="#/home" data-page="home"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 6.5 8 2l6 4.5V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/><path d="M6.2 14V9h3.6v5"/></svg>首页</a>
+      <a href="#/push" data-page="push"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 4.2A1.2 1.2 0 0 1 3.2 3h9.6A1.2 1.2 0 0 1 14 4.2v6.1a1.2 1.2 0 0 1-1.2 1.2H6.4L3.4 14V11.5H3.2A1.2 1.2 0 0 1 2 10.3z"/></svg>QQ 推送</a>
+      <a href="#/streamers" data-page="streamers"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="5.2" r="2.6"/><path d="M2.8 14c0-2.9 2.3-4.6 5.2-4.6s5.2 1.7 5.2 4.6"/></svg>主播</a>
+      <a href="#/log" data-page="log"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="3.6" cy="3.8" r="1.3"/><circle cx="3.6" cy="8" r="1.3"/><circle cx="3.6" cy="12.2" r="1.3"/><path d="M7 3.8h6.4M7 8h6.4M7 12.2h4.2"/></svg>日志</a>
+      <a href="#/links" data-page="links"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M6.6 9.4a2.6 2.6 0 0 0 3.9.3l2-2a2.6 2.6 0 0 0-3.7-3.7l-1.1 1.1"/><path d="M9.4 6.6a2.6 2.6 0 0 0-3.9-.3l-2 2a2.6 2.6 0 0 0 3.7 3.7l1.1-1.1"/></svg>连接</a>
+      <a href="#/settings" data-page="settings"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v1.6M8 12.6v1.6M14.2 8h-1.6M3.4 8H1.8M12.4 3.6l-1.1 1.1M4.7 11.3l-1.1 1.1M12.4 12.4l-1.1-1.1M4.7 4.7 3.6 3.6"/></svg>设置</a>
+    </nav>
+    <!--
+      版本位。值得由后端把构建信息下发下来才填得上（/api/status 目前没有这个字段），
+      因此这里先只落位：脚本拿得到 version 就显示，拿不到只显示产品名。
+      在界面里写死一个版本号是更坏的选择——它与产物脱节的那一天不会有任何提示。
+    -->
+    <div class="verline"><span id="side-version">NovaBot</span></div>
+  </aside>
+
+  <main id="main">
+
+  <!-- 校验问题在哪一页都可能出现，故置于各页之外共用 -->
   <div class="issues" id="issues"></div>
 
   <!--
-    尚未绑定验证器时的引导。放在页签之外、所有页签之上：只有口令的面板一旦开到公网，
-    安全性就全押在这一个口令上，这件事不该藏在某个页签里等人翻出来。
+    尚未绑定验证器时的引导。放在各页之外、所有页之上：只有口令的面板一旦开到公网，
+    安全性就全押在这一个口令上，这件事不该藏在某一页里等人翻出来。
   -->
   <div class="totp-setup" id="totp-setup" style="display:none"></div>
 
-  <section id="overview" class="on">
-    <div id="wizard-box">
-      <div class="backups">
-        <span id="wizard-title">首次配置</span>
-        <button id="wizard-toggle" type="button">收起</button>
+  <!-- ============ 首页 #/home ============ -->
+  <section class="page" id="page-home">
+    <div id="overview">
+      <div id="wizard-box">
+        <div class="backups">
+          <span id="wizard-title">首次配置</span>
+          <button id="wizard-toggle" type="button">收起</button>
+        </div>
+        <div id="wizard"></div>
       </div>
-      <div id="wizard"></div>
-    </div>
 
-    <div class="health" id="health"></div>
+      <div class="health" id="health"></div>
 
-    <div class="backups" id="quickbar">
-      <button id="selftest-run" type="button">立即自检</button>
-      <button id="toggle-push" type="button">…</button>
-      <span id="push-hint"></span>
-    </div>
+      <div class="backups" id="quickbar">
+        <button id="selftest-run" type="button">立即自检</button>
+        <button id="toggle-push" type="button">…</button>
+        <span id="push-hint"></span>
+      </div>
 
-    <div class="cards" id="runtime"></div>
+      <div class="cards" id="runtime"></div>
 
-    <p class="hint" style="margin:20px 0 10px">最近推送</p>
-    <table id="history"><thead><tr><th>时间</th><th>目标</th><th>内容</th><th>结果</th></tr></thead><tbody></tbody></table>
-  </section>
-
-  <section id="push">
-    <p class="hint">配置要监听的主播与推送目标。保存前会校验格式，并检查处理器与推送平台是否存在。</p>
-
-    <div class="backups" id="push-toolbar">
-      <!-- 装了不止一个直播平台时才用得上，因此由脚本按已注册的平台清单决定显示与否 -->
-      <select id="add-platform" style="display:none"></select>
-      <input id="add-uid" placeholder="输入 uid 或粘贴个人空间链接">
-      <button id="add-streamer" type="button">添加主播</button>
-      <button id="toggle-advanced" type="button" style="margin-left:auto">高级：编辑原始 JSON</button>
-    </div>
-
-    <div id="streamers"></div>
-
-    <div id="advanced" style="display:none">
-      <p class="hint">直接编辑 datasource.json。自定义插件提供的处理器可在此配置。</p>
-      <textarea class="full" id="datasource" spellcheck="false"></textarea>
+      <p class="hint" style="margin:20px 0 10px">最近推送</p>
+      <table id="history"><thead><tr><th>时间</th><th>目标</th><th>内容</th><th>结果</th></tr></thead><tbody></tbody></table>
     </div>
   </section>
 
-  <section id="bot">
-    <p class="hint">机器人指 NapCat、Lagrange 等 OneBot 实现。NovaBot 通过它把消息发到 QQ，本页负责确认这条链路是通的。</p>
-    <div class="health" id="bot-health"></div>
+  <!-- ============ QQ 推送 #/push ============ -->
+  <section class="page" id="page-push">
+    <div id="push">
+      <p class="hint">配置要监听的主播与推送目标。保存前会校验格式，并检查处理器与推送平台是否存在。</p>
 
-    <div class="group fbox">
-      <h2>连接参数</h2>
-      <div class="body" id="bot-form"></div>
+      <div class="backups" id="push-toolbar">
+        <!-- 装了不止一个直播平台时才用得上，因此由脚本按已注册的平台清单决定显示与否 -->
+        <select id="add-platform" style="display:none"></select>
+        <input id="add-uid" placeholder="输入 uid 或粘贴个人空间链接">
+        <button id="add-streamer" type="button">添加主播</button>
+        <button id="toggle-advanced" type="button" style="margin-left:auto">高级：编辑原始 JSON</button>
+      </div>
+
+      <div id="streamers"></div>
+
+      <div id="advanced" style="display:none">
+        <p class="hint">直接编辑 datasource.json。自定义插件提供的处理器可在此配置。</p>
+        <textarea class="full" id="datasource" spellcheck="false"></textarea>
+      </div>
     </div>
 
     <!--
-      NapCat 的 WebUI 挂在本控制台后面时才显示。没配凭据就整块不显示——
-      一个点了才知道不能用的按钮，比没有那个按钮更费解。
+      群成员在聊天里产生的状态。它讲的是「这些群此刻听不听话」，与上面的「往哪些群推」
+      是同一件事的两面，因此归在本页而不再单开一页——分成两页时，
+      「配好了却不响应」这种情况要在两个入口之间来回对照才看得出来。
+      改动即时生效并立刻落盘，因此不受底部「保存」按钮管辖。
     -->
-    <div class="group" id="napcat-entry" style="display:none">
-      <h2>NapCat 控制台</h2>
-      <div class="body">
-        <p class="hint" style="margin:0 0 10px">扫码登录 QQ、查看运行日志这些事在 NapCat 自己的界面里做。
-          你已经登录了这个控制台，<b>不必再登录它一次</b>——点开时会替你办好。</p>
-        <div class="backups" style="margin:0">
-          <button type="button" id="napcat-open">打开 NapCat 控制台</button>
-        </div>
-      </div>
-    </div>
+    <div id="sessions">
+      <h3 class="cat-title">群与成员</h3>
+      <p class="hint">这里是群成员通过聊天命令产生的状态。改动<b>立即生效</b>，无需点击保存。</p>
 
-    <div class="group">
-      <h2>发送测试消息</h2>
-      <div class="body">
-        <p class="hint">群号填错、Token 不对、机器人不在群里，表现都是「什么都不发生」。发一条真消息是最直接的验证方式。</p>
-        <div class="backups" id="selftest">
-          <select id="test-platform"></select>
-          <!-- 取值须与 PushTargetType 的 code 一致：GROUP(1)、FRIEND(0) -->
-          <select id="test-type"><option value="1">群聊</option><option value="0">私聊</option></select>
-          <input id="test-num" placeholder="群号 / QQ 号" inputmode="numeric">
-          <button id="test-send" type="button">发送</button>
-        </div>
-        <div class="issues" id="test-result"></div>
-      </div>
+      <!--
+        推送配置里没填完的条目。它们没被加载，因此下面一个会话也不会有——
+        不在这里说一句，这一块看起来就只是「什么都没有」，而使用者刚刚明明配过。
+        一条都没有时整块不渲染，见 renderIncomplete
+      -->
+      <div id="sess-incomplete"></div>
+
+      <h3 class="cat-title">命令开关</h3>
+      <p class="hint">群主与群管理员可在群里用「禁用命令」关掉某条命令，关掉后机器人对它一言不发——
+        不看这里就无从得知。此处可直接改回来。</p>
+      <div id="sess-list"></div>
+
+      <h3 class="cat-title">「@我」订阅名单</h3>
+      <p class="hint">开播或发动态时会 @ 这些人。人退群后订阅仍会留着，@ 一个不在群里的号是无效的，可在此清理。</p>
+      <table id="subs"><thead><tr><th>会话</th><th>主播</th><th>类型</th><th>人数</th><th>成员（点击移除）</th><th></th></tr></thead><tbody></tbody></table>
+
+      <h3 class="cat-title">账号绑定</h3>
+      <p class="hint">成员用「绑定」把自己的 QQ 号对应到直播平台 UID，个人数据查询据此认人。
+        <b>绑定无法验证归属</b>，只能核对昵称防打错，因此这里只提供解绑、不提供代人绑定。</p>
+      <table id="binds"><thead><tr><th>推送平台</th><th>账号</th><th>直播平台</th><th>UID</th><th></th></tr></thead><tbody></tbody></table>
     </div>
   </section>
 
-  <!-- 各直播平台的页面容器，与上面的页签一同在运行时按注册清单建出 -->
-  <div id="page-sections"></div>
-
-  <!--
-    本页展示的都是群成员在聊天里产生的状态，此前只存在于 state.json，界面上毫无痕迹：
-    群里为什么突然不应答、名单里积了多少人、谁绑了哪个 uid，机器人的主人一概不知情。
-    改动即时生效并立刻落盘，因此不受底部「保存」按钮管辖。
-  -->
-  <section id="sessions">
-    <p class="hint">这里是群成员通过聊天命令产生的状态。改动<b>立即生效</b>，无需点击保存。</p>
-
-    <!--
-      推送配置里没填完的条目。它们没被加载，因此下面一个会话也不会有——
-      不在这里说一句，这一页看起来就只是「什么都没有」，而使用者刚刚明明配过。
-      一条都没有时整块不渲染，见 renderIncomplete
-    -->
-    <div id="sess-incomplete"></div>
-
-    <h3 class="cat-title">命令开关</h3>
-    <p class="hint">群主与群管理员可在群里用「禁用命令」关掉某条命令，关掉后机器人对它一言不发——
-      不看这里就无从得知。此处可直接改回来。</p>
-    <div id="sess-list"></div>
-
-    <h3 class="cat-title">「@我」订阅名单</h3>
-    <p class="hint">开播或发动态时会 @ 这些人。人退群后订阅仍会留着，@ 一个不在群里的号是无效的，可在此清理。</p>
-    <table id="subs"><thead><tr><th>会话</th><th>主播</th><th>类型</th><th>人数</th><th>成员（点击移除）</th><th></th></tr></thead><tbody></tbody></table>
-
-    <h3 class="cat-title">账号绑定</h3>
-    <p class="hint">成员用「绑定」把自己的 QQ 号对应到直播平台 UID，个人数据查询据此认人。
-      <b>绑定无法验证归属</b>，只能核对昵称防打错，因此这里只提供解绑、不提供代人绑定。</p>
-    <table id="binds"><thead><tr><th>推送平台</th><th>账号</th><th>直播平台</th><th>UID</th><th></th></tr></thead><tbody></tbody></table>
-  </section>
-
+  <!-- ============ 主播 #/streamers ============ -->
   <!--
     运营分析。数据源是 sessions.jsonl，每场下播追加一条，
     聚合在服务端完成——跨零点归属、按本地时区分周、空周期补零这几条规则
     只该有一份实现，见 LiveSessionAnalytics。
   -->
-  <section id="analytics">
-    <p class="hint">数据来自每场直播下播时的归档。<b>只在这里看得到，不会发到群里。</b>
-      按周期看趋势，逐场流水看具体某一场发生了什么。</p>
+  <section class="page" id="page-streamers">
+    <div id="analytics">
+      <p class="hint">数据来自每场直播下播时的归档。<b>只在这里看得到，不会发到群里。</b>
+        按周期看趋势，逐场流水看具体某一场发生了什么。</p>
 
-    <div class="backups" id="ana-bar">
-      <span>视图</span>
-      <select id="ana-view">
-        <option value="period">按周期汇总</option>
-        <option value="sessions">逐场流水</option>
-      </select>
-      <span id="ana-period-label">周期</span>
-      <select id="ana-period"><option value="week">按周</option><option value="month">按月</option></select>
-      <span>主播</span>
-      <select id="ana-uid"></select>
-      <span id="ana-scope"></span>
+      <div class="backups" id="ana-bar">
+        <span>视图</span>
+        <select id="ana-view">
+          <option value="period">按周期汇总</option>
+          <option value="sessions">逐场流水</option>
+        </select>
+        <span id="ana-period-label">周期</span>
+        <select id="ana-period"><option value="week">按周</option><option value="month">按月</option></select>
+        <span>主播</span>
+        <select id="ana-uid"></select>
+        <span id="ana-scope"></span>
+      </div>
+
+      <div class="cards" id="ana-cards"></div>
+      <div id="ana-chart"></div>
+      <div id="ana-table"></div>
+      <p class="hint" id="ana-note" style="margin-top:12px"></p>
     </div>
-
-    <div class="cards" id="ana-cards"></div>
-    <div id="ana-chart"></div>
-    <div id="ana-table"></div>
-    <p class="hint" id="ana-note" style="margin-top:12px"></p>
   </section>
 
+  <!-- ============ 日志 #/log ============ -->
   <!--
-    只读口令。它签给的是这台机器之外的东西——桌面面板、别人电脑上的看板，
-    因此权限刻意只有「读事件流」这一项：那些机器不在运维范围内，
-    上面的副本泄漏时，损失必须止于「别人能看直播事件」，而不是「别人能改机器人配置」。
+    时间线要有结构化事件才画得出来，那一层还没接上。这里刻意只留一句空态：
+    先摆一份示例时间线的话，界面上的「几点发生了什么」与机器人真正做过的事无关，
+    而这一页存在的全部意义正是回答那个问题。
   -->
-  <section id="tokens">
-    <p class="hint">外部面板（如 VRDash 桌面面板）要连事件流，得有一把只读口令。
-      它<b>只能读</b>——看得到开播、弹幕这些事件，改不了任何配置，也进不了这个控制台。</p>
-
-    <div class="group fbox">
-      <h2>签发一把新口令</h2>
-      <div class="body" id="token-issue"></div>
-    </div>
-
-    <div class="group">
-      <h2>已签发的口令</h2>
-      <div class="body" id="token-list"></div>
+  <section class="page" id="page-log">
+    <div id="log">
+      <p class="hint">一条按天翻的时间线：几点、发生了什么、成没成、没成为什么、该做什么。</p>
+      <div class="empty" id="log-empty">这一页等事件时间线接上</div>
     </div>
   </section>
 
-  <section id="settings">
-    <p class="hint">字段由程序在编译期自动生成，与代码中的配置项始终一致。修改后点击保存，改动会写入 application.yml，重启生效。</p>
-    <div class="backups" id="levelbar">
-      <span>显示</span>
-      <label class="switch"><input type="checkbox" id="show-advanced"><span>包含高级选项</span></label>
-      <span id="level-hint"></span>
-    </div>
-    <div id="groups"></div>
+  <!-- ============ 连接 #/links ============ -->
+  <section class="page" id="page-links">
+    <div id="bot">
+      <p class="hint">机器人指 NapCat、Lagrange 等 OneBot 实现。NovaBot 通过它把消息发到 QQ，本页负责确认这条链路是通的。</p>
+      <div class="health" id="bot-health"></div>
 
-    <details class="adv" id="rawbox">
-      <summary>高级：直接编辑配置文件</summary>
-      <div class="inner">
-        <div class="warn">直接编辑 application.yml，适用于上方表单未覆盖的场景（例如列表类配置项）。
-          保存前会校验 YAML 语法与字段类型，并自动备份原文件；改坏了可用下方的历史备份回滚。
-          <br><b>注意：这里显示的是文件原文，口令、令牌与密钥都是明文</b>——要编辑就必须看得到。
-          正在直播或有人在旁边时，别展开这一段。</div>
-        <div class="backups" id="backups"></div>
-        <textarea class="full" id="rawyml" spellcheck="false"></textarea>
-        <div class="backups" style="margin-top:12px">
-          <button id="raw-save" type="button">保存配置文件</button>
-          <span>与底部的保存按钮相互独立，避免误把整份文件覆盖出去</span>
+      <div class="group fbox">
+        <h2>连接参数</h2>
+        <div class="body" id="bot-form"></div>
+      </div>
+
+      <!--
+        NapCat 的 WebUI 挂在本控制台后面时才显示。没配凭据就整块不显示——
+        一个点了才知道不能用的按钮，比没有那个按钮更费解。
+      -->
+      <div class="group" id="napcat-entry" style="display:none">
+        <h2>NapCat 控制台</h2>
+        <div class="body">
+          <p class="hint" style="margin:0 0 10px">扫码登录 QQ、查看运行日志这些事在 NapCat 自己的界面里做。
+            你已经登录了这个控制台，<b>不必再登录它一次</b>——点开时会替你办好。</p>
+          <div class="backups" style="margin:0">
+            <button type="button" id="napcat-open">打开 NapCat 控制台</button>
+          </div>
         </div>
+      </div>
+
+      <div class="group">
+        <h2>发送测试消息</h2>
+        <div class="body">
+          <p class="hint">群号填错、Token 不对、机器人不在群里，表现都是「什么都不发生」。发一条真消息是最直接的验证方式。</p>
+          <div class="backups" id="selftest">
+            <select id="test-platform"></select>
+            <!-- 取值须与 PushTargetType 的 code 一致：GROUP(1)、FRIEND(0) -->
+            <select id="test-type"><option value="1">群聊</option><option value="0">私聊</option></select>
+            <input id="test-num" placeholder="群号 / QQ 号" inputmode="numeric">
+            <button id="test-send" type="button">发送</button>
+          </div>
+          <div class="issues" id="test-result"></div>
+        </div>
+      </div>
+    </div>
+
+    <!--
+      只读口令。它签给的是这台机器之外的东西——桌面面板、别人电脑上的看板，
+      因此权限刻意只有「读事件流」这一项：那些机器不在运维范围内，
+      上面的副本泄漏时，损失必须止于「别人能看直播事件」，而不是「别人能改机器人配置」。
+      它与上面两块同属「这台机器与外面怎么连」，因此并在本页。
+    -->
+    <div id="tokens">
+      <h3 class="cat-title">外部面板</h3>
+      <p class="hint">外部面板（如 VRDash 桌面面板）要连事件流，得有一把只读口令。
+        它<b>只能读</b>——看得到开播、弹幕这些事件，改不了任何配置，也进不了这个控制台。</p>
+
+      <div class="group fbox">
+        <h2>签发一把新口令</h2>
+        <div class="body" id="token-issue"></div>
+      </div>
+
+      <div class="group">
+        <h2>已签发的口令</h2>
+        <div class="body" id="token-list"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 设置 #/settings ============ -->
+  <section class="page" id="page-settings">
+    <div id="settings">
+      <p class="hint">字段由程序在编译期自动生成，与代码中的配置项始终一致。修改后点击保存，改动会写入 application.yml，重启生效。</p>
+      <div class="backups" id="levelbar">
+        <span>显示</span>
+        <label class="switch"><input type="checkbox" id="show-advanced"><span>包含高级选项</span></label>
+        <span id="level-hint"></span>
+      </div>
+      <div id="groups"></div>
+
+      <details class="adv" id="rawbox">
+        <summary>高级：直接编辑配置文件</summary>
+        <div class="inner">
+          <div class="warn">直接编辑 application.yml，适用于上方表单未覆盖的场景（例如列表类配置项）。
+            保存前会校验 YAML 语法与字段类型，并自动备份原文件；改坏了可用下方的历史备份回滚。
+            <br><b>注意：这里显示的是文件原文，口令、令牌与密钥都是明文</b>——要编辑就必须看得到。
+            正在直播或有人在旁边时，别展开这一段。</div>
+          <div class="backups" id="backups"></div>
+          <textarea class="full" id="rawyml" spellcheck="false"></textarea>
+          <div class="backups" style="margin-top:12px">
+            <button id="raw-save" type="button">保存配置文件</button>
+            <span>与底部的保存按钮相互独立，避免误把整份文件覆盖出去</span>
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <!--
+      各直播平台的页由插件在运行时注册，因此整块由脚本按注册清单建出——
+      装了哪些平台是运行期才知道的事，写死在这份文件里的话，没装的那个也照样立着入口。
+      一个插件页都没有时整块不显示，见 mountPages。
+    -->
+    <details class="adv" id="plugin-adv" style="display:none">
+      <summary>高级：插件带来的页</summary>
+      <div class="inner">
+        <div class="backups" id="page-tabs"></div>
+        <div id="page-sections"></div>
       </div>
     </details>
   </section>
-</main>
+
+  <!-- ============ 初始设置 #/setup（独立版式，不显示侧栏） ============ -->
+  <section class="page" id="page-setup">
+    <div class="nv-card" id="setup-shell">
+      <h2>初始设置</h2>
+      <p class="hint">免配置起步的五步引导还没接上，这里先只占住这条路由。</p>
+      <p class="hint"><a href="#/home">先去控制台 →</a></p>
+    </div>
+  </section>
+
+  </main>
+</div>
 
 <div class="bar">
   <span class="status" id="status-text"></span>

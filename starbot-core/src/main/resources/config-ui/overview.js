@@ -27,15 +27,15 @@ export function renderWizard() {
       <h3><span class="no" id="s3-no">3</span>添加第一个主播</h3>
       <div class="body">
         <div class="out" id="s3-out"></div>
-        <div class="row"><button id="s3-go" type="button">前往「推送规则」</button></div>
+        <div class="row"><button id="s3-go" type="button">前往「QQ 推送」</button></div>
       </div>
     </div>
 
     <div class="step">
       <h3><span class="no" id="s4-no">4</span>发送测试消息</h3>
       <div class="body">
-        <div class="out">在「机器人」页选择目标并发送一条测试消息，群里收到即表示全链路正常。</div>
-        <div class="row"><button id="s4-go" type="button">前往「机器人」</button></div>
+        <div class="out">在「连接」页选择目标并发送一条测试消息，群里收到即表示全链路正常。</div>
+        <div class="row"><button id="s4-go" type="button">前往「连接」</button></div>
       </div>
     </div>`;
 
@@ -167,6 +167,17 @@ export async function togglePush() {
 }
 
 /**
+ * 侧栏底部的版本位
+ *
+ * 值由运行状态下发。没有这个字段时只显示产品名，不在界面里写死一个版本号——
+ * 写死的那个与产物脱节的那一天不会有任何提示，而使用者正是照着它去判断该不该换 jar。
+ * @param version 当前版本，没有则不显示
+ */
+function renderVersion(version) {
+  $('#side-version').textContent = version ? 'NovaBot ' + version : 'NovaBot';
+}
+
+/**
  * 探针行。插件页要渲染属于自己的那几条，因此这里导出去
  * @param list 探针
  * @param emptyText 一条都没有时说的话
@@ -185,6 +196,7 @@ export function healthRows(list, emptyText) {
 export function renderStatus(data) {
   renderPushSwitch(data.pushEnabled);
   renderTestMessage(data.senders);
+  renderVersion(data.version);
 
   // 总览展示全部探针；机器人页只展示与自己相关的，由探针自报 scope 决定归属
   const health = data.health || [];
