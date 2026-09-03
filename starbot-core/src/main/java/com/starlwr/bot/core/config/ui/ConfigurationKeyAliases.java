@@ -51,6 +51,33 @@ public final class ConfigurationKeyAliases {
     }
 
     /**
+     * 把写在旧位置的键换算成它对应的现行键
+     * <p>
+     * 配置元数据里<b>只有现行键</b>，因此凡是拿名字去查元数据的地方——类型、说明、默认值——
+     * 拿旧位置那一行的键一律查不到。而旧位置与现行位置<b>是同一项配置</b>，
+     * 类型自然也是同一个，查之前先过一道这里即可。
+     * <p>
+     * 这件事必须放在本类：改过名的键有哪些只该有一处知道，散在各处抄一份，
+     * 就会出现「某一处认得旧键、另一处不认得」的半截兼容。
+     * @param name 配置项完整路径，可能写在旧位置
+     * @return 对应的现行键；本来就是现行键、或与改名无关时原样返回
+     */
+    public static String currentName(String name) {
+        if (name == null) {
+            return null;
+        }
+
+        for (Map.Entry<String, String> entry : RENAMED_PREFIXES.entrySet()) {
+            String prefix = entry.getValue() + ".";
+            if (name.startsWith(prefix)) {
+                return entry.getKey() + "." + name.substring(prefix.length());
+            }
+        }
+
+        return name;
+    }
+
+    /**
      * 把只写在旧位置的配置项按现行键补进读数
      * <p>
      * 就地修改传入的键值表：现行键已经在表里的项一概不动（现行键优先），

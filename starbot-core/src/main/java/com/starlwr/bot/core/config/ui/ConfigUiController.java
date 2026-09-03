@@ -361,7 +361,7 @@ public class ConfigUiController {
                 item.put("defaultValue", field.defaultValue());
                 // 未标注的一律按高级处理：新增配置项默认收进高级区，避免常用区随时间不断膨胀
                 item.put("level", levels.getOrDefault(field.name(), ConfigLevel.Level.ADVANCED).name());
-                item.put("sensitive", SensitiveFields.isSensitive(field.name()));
+                item.put("sensitive", SensitiveFields.isSensitive(field.name(), field.type()));
                 items.add(item);
             }
 
@@ -395,8 +395,10 @@ public class ConfigUiController {
             Map<String, String> values = fileService.read();
             // 先补旧位置再遮机密：补进来的项同样可能是机密，顺序反了就会漏出去
             result.put("legacy", ConfigurationKeyAliases.resolve(values));
-            // 口令、令牌与密钥不出这道门：面板可能在直播画面里被打开
-            result.put("values", SensitiveFields.mask(values));
+            // 口令、令牌与密钥不出这道门：面板可能在直播画面里被打开。
+            // 带上类型表，开关才不会因为名字里有 token 被遮成占位值——遮了它界面上就恒显「已关闭」
+            Map<String, String> types = metadataService.getKnownTypes();
+            result.put("values", SensitiveFields.mask(values, name -> typeOf(types, name)));
         } catch (IOException e) {
             log.error("读取配置文件失败", e);
             result.put("success", false);
@@ -404,6 +406,25 @@ public class ConfigUiController {
         }
 
         return result;
+    }
+
+    /**
+     * 查一个配置项的 Java 类型
+     * <p>
+     * 写在旧位置的那一行按它对应的现行键去查：元数据里只有现行键，而两者是同一项配置
+     * （见 {@link ConfigurationKeyAliases}）。查不到就返回 {@code null}，由调用方自己决定怎么办——
+     * 机密遮蔽在类型未知时按名字判，也就是照旧遮住，往安全的方向失败。
+     * @param types 元数据里的类型表
+     * @param name 配置项完整路径
+     * @return 类型全限定名，未知时为 {@code null}
+     */
+    private static String typeOf(Map<String, String> types, String name) {
+        if (types == null) {
+            return null;
+        }
+
+        String type = types.get(name);
+        return type != null ? type : types.get(ConfigurationKeyAliases.currentName(name));
     }
 
     /**
@@ -423,7 +444,8 @@ public class ConfigUiController {
         // 界面拿到的机密项是占位值，原样送回来的就是没改过的。不剔除的话，
         // 改了别的字段一起保存就会把占位值写进配置，口令、令牌与密钥当场全部失效
         Map<String, String> changes = new LinkedHashMap<>(body);
-        SensitiveFields.dropUnchanged(changes);
+        Map<String, String> types = metadataService.getKnownTypes();
+        SensitiveFields.dropUnchanged(changes, name -> typeOf(types, name));
         hashPasswordInPlace(changes);
 
         try {

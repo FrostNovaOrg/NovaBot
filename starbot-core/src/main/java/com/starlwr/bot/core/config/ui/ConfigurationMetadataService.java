@@ -278,6 +278,19 @@ public class ConfigurationMetadataService {
      */
     public record ConfigurationField(String name, String type, String description, Object defaultValue) {
         /**
+         * 类型是不是布尔
+         * <p>
+         * 单拎出来是为了让「什么算布尔」<b>只有一份定义</b>：界面按它把字段渲染成开关，
+         * {@link SensitiveFields} 按它决定这一项不必遮。两处各写各的一旦分家，
+         * 就会重演「控件是开关、值却被遮成占位值，于是开关恒显已关闭」那种病。
+         * @param type 配置项的 Java 类型全限定名，可为 null
+         * @return 是否为布尔类型
+         */
+        public static boolean isBoolean(String type) {
+            return "java.lang.Boolean".equals(type) || "boolean".equals(type);
+        }
+
+        /**
          * 推断供界面使用的控件类型
          * @return 控件类型：boolean、integer、number、list、complex、string
          */
@@ -286,7 +299,7 @@ public class ConfigurationMetadataService {
                 return "string";
             }
 
-            if (type.equals("java.lang.Boolean") || type.equals("boolean")) {
+            if (isBoolean(type)) {
                 return "boolean";
             }
             if (type.equals("java.lang.Integer") || type.equals("int")
