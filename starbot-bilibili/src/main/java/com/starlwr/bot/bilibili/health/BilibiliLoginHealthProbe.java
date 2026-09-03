@@ -51,6 +51,11 @@ public class BilibiliLoginHealthProbe implements HealthProbe {
     }
 
     @Override
+    public boolean loginState() {
+        return true;
+    }
+
+    @Override
     public HealthStatus check() {
         // 匿名模式是配置选出来的，不是故障，所以不记 DOWN；但它确实拿不全数据，
         // 也就不能记 OK——记 OK 就等于在界面上说「一切正常」，而那不是真的。

@@ -7,6 +7,7 @@ import com.starlwr.bot.core.health.PushActivityRecorder;
 import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.Sender;
 import com.starlwr.bot.core.service.StarBotSenderService;
+import com.starlwr.bot.core.timeline.TimelineWriter;
 import com.starlwr.bot.core.util.HttpUtil;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -285,8 +286,8 @@ class StarBotMessageSenderTest {
         });
         when(resolvers.iterator()).thenAnswer(invocation -> list.iterator());
 
-        return new StarBotMessageSender(http, senderService, new PushActivityRecorder(), new PushGate(properties),
-                new com.starlwr.bot.core.service.AtAllQuotaService(properties), resolvers);
+        return new StarBotMessageSender(http, senderService, new PushActivityRecorder(TimelineWriter.NONE), new PushGate(properties),
+                TimelineWriter.NONE, new com.starlwr.bot.core.service.AtAllQuotaService(properties), resolvers);
     }
 
     /**
@@ -428,8 +429,8 @@ class StarBotMessageSenderTest {
         when(resolvers.iterator()).thenAnswer(invocation -> List.<AtAllPermissionResolver>of().iterator());
 
         StarBotCoreProperties properties = new StarBotCoreProperties();
-        return new StarBotMessageSender(http, senderService, new PushActivityRecorder(), new PushGate(properties),
-                new com.starlwr.bot.core.service.AtAllQuotaService(properties), resolvers);
+        return new StarBotMessageSender(http, senderService, new PushActivityRecorder(TimelineWriter.NONE), new PushGate(properties),
+                TimelineWriter.NONE, new com.starlwr.bot.core.service.AtAllQuotaService(properties), resolvers);
     }
 
     /**

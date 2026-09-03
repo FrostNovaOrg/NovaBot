@@ -4,6 +4,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.timeline.TimelineWriter;
 import org.springframework.beans.factory.ObjectProvider;
 
 import java.util.List;
@@ -20,7 +21,7 @@ class PushActivityHealthProbeTest {
     @DisplayName("启动后尚无推送不应报成异常")
     void treatsNoActivityAsNormal() {
         // 开播、动态本就是低频事件，长时间没有推送属正常现象
-        HealthStatus status = probe(new PushActivityRecorder()).check();
+        HealthStatus status = probe(new PushActivityRecorder(TimelineWriter.NONE)).check();
 
         assertEquals(HealthStatus.Level.OK, status.level());
         assertTrue(status.advice().isBlank(), "正常状态不应给出建议");
@@ -29,7 +30,7 @@ class PushActivityHealthProbeTest {
     @Test
     @DisplayName("推送成功后应判定为正常并计数")
     void reportsOkAfterSuccess() {
-        PushActivityRecorder recorder = new PushActivityRecorder();
+        PushActivityRecorder recorder = new PushActivityRecorder(TimelineWriter.NONE);
         recorder.recordSuccess("qq-onebot", "群 12345", "测试消息");
         recorder.recordSuccess("qq-onebot", "群 12345", "测试消息");
 
@@ -42,7 +43,7 @@ class PushActivityHealthProbeTest {
     @Test
     @DisplayName("最近一次为失败且此后未再成功时判定为降级")
     void reportsDegradedWhenLatestIsFailure() {
-        PushActivityRecorder recorder = new PushActivityRecorder();
+        PushActivityRecorder recorder = new PushActivityRecorder(TimelineWriter.NONE);
         recorder.recordSuccess("qq-onebot", "群 12345", "测试消息");
         recorder.recordFailure("qq-onebot", "群 12345", "测试消息", "群号不存在");
 
@@ -55,7 +56,7 @@ class PushActivityHealthProbeTest {
     @Test
     @DisplayName("失败后又成功应恢复为正常")
     void recoversAfterLaterSuccess() throws InterruptedException {
-        PushActivityRecorder recorder = new PushActivityRecorder();
+        PushActivityRecorder recorder = new PushActivityRecorder(TimelineWriter.NONE);
         recorder.recordFailure("qq-onebot", "群 12345", "测试消息", "一次抖动");
         // 两次记录之间需有可分辨的时间差，否则无法判断孰先孰后
         Thread.sleep(5);
@@ -67,7 +68,7 @@ class PushActivityHealthProbeTest {
     @Test
     @DisplayName("推送记录按时间倒序保留, 且容量固定")
     void keepsBoundedHistoryInReverseOrder() {
-        PushActivityRecorder recorder = new PushActivityRecorder();
+        PushActivityRecorder recorder = new PushActivityRecorder(TimelineWriter.NONE);
         for (int i = 1; i <= 60; i++) {
             recorder.recordSuccess("qq-onebot", "群 " + i, "第 " + i + " 条");
         }
@@ -83,7 +84,7 @@ class PushActivityHealthProbeTest {
     @Test
     @DisplayName("失败记录应保留失败原因")
     void keepsFailureReasonInHistory() {
-        PushActivityRecorder recorder = new PushActivityRecorder();
+        PushActivityRecorder recorder = new PushActivityRecorder(TimelineWriter.NONE);
         recorder.recordFailure("qq-onebot", "群 12345", "开播啦", "机器人不在该群");
 
         PushActivityRecorder.PushRecord record = recorder.getHistory().get(0);

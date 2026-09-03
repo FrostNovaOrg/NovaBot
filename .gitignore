@@ -57,10 +57,17 @@ docs/BACKLOG-冻结.md
 #   data.json       本场计分表，含观众 uid 与昵称
 #   sessions.jsonl  场次归档（F5 落地后含观众 uid 名单）
 #   snapshots.jsonl 主播基础数据快照
-# 2026-08-12 核过：四者从未被提交过，这里补的是守卫不是补救。
+#   timeline/       事件时间线，按日一个文件，含主播名与推送目标的群号／QQ 号
+# 2026-08-12 核过：当时的四者从未被提交过，这里补的是守卫不是补救；
+# timeline/ 是它落地那一笔一并加的，从未存在过未被忽略的窗口。
 state.json
 data.json
 sessions.jsonl
 snapshots.jsonl
+# 🔴 这一条必须带前导斜杠。不带的话 timeline/ 会匹配**任意深度**上任何一个叫
+# timeline 的目录——包括源码包 starbot-core/src/main/java/.../core/timeline/，
+# 于是整个包在 git 眼里凭空消失，而 git status 一声不响、构建照常通过。
+# 上面那几项是文件名不是目录名，没有这个问题，故写法不同。
+/timeline/
 EventDebug/
 NetworkDebug/

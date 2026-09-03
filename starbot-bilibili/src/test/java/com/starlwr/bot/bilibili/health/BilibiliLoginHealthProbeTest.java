@@ -100,6 +100,15 @@ class BilibiliLoginHealthProbeTest {
         assertTrue(status.advice().contains("配置登录"), "要给出拿到完整数据的办法");
     }
 
+    @Test
+    @DisplayName("⚠️ 本探针必须自报量的是登录态：时间线据此把登录失效单列一类")
+    void shouldDeclareItselfAsLoginState() {
+        // 这一项默认是 false，也就是说漏了这行覆写不会有任何报错——
+        // 表现只是「登录掉了的那一次在日志页上混进了普通状态变化」，
+        // 而那种事一年不出一次，没人会因为它没单独出现而起疑
+        assertTrue(probe(loggedIn(), new StarBotBilibiliProperties()).loginState());
+    }
+
     /**
      * 构造一个已登录的账号服务
      * @return 账号服务
