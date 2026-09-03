@@ -584,12 +584,16 @@ starbot:
 
 ```yaml
 starbot:
-  bilibili:
+  core:
     event-stream:
       enabled: true               # 默认关闭
       path: /nova/events
       buffer-size: 2000
 ```
+
+> 这一段以前写在 `starbot.bilibili` 下。事件输出由核心提供，与接的是哪个平台无关，
+> 配置也就跟着挪到了 `starbot.core`。**旧位置仍然认得**：只写旧位置照常生效，
+> 启动时会打一条提醒；两处都写时以 `starbot.core` 为准，它没写到的项才取旧位置的值。
 
 打开后地址是 `ws://127.0.0.1:<server.port>/nova/events`，与配置界面共用端口。
 连上后服务端先发一条 `hello`（带会话标识与能力集），随后是实时事件；

@@ -1,4 +1,4 @@
-package com.starlwr.bot.bilibili.protocol;
+package com.starlwr.bot.core.protocol;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONException;
@@ -100,6 +100,15 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
      * 回补时可能一次性塞进整个缓冲窗口，队列必须装得下，否则刚补上就因为队列满被断开。
      */
     private static final int OUTBOX_HEADROOM = 256;
+
+    /**
+     * 事件输出协议的版本号，写在每个信封的 {@code v} 字段里
+     * <p>
+     * 协议是本模块对外的主产品，版本号是它的一部分，所以真源在这里。
+     * 各平台侧的映射器按本常量填写 {@code v}，不许各自写一个字面量——
+     * 两处字面量在协议升版那天必然只改得动一处，而下游只看得见 {@code v}。
+     */
+    public static final int PROTOCOL_VERSION = 2;
 
     /**
      * 源标识，写在 {@code hello} 里供客户端识别数据来源
@@ -337,7 +346,7 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
             //    而同一条连接的 closeUnauthenticated 正等在共享心跳线程上要这个监视器。
             //    仍然是同步写完再关——「说清为什么失败」这件事一点没变，变的只是持不持锁。
             JSONObject envelope = new JSONObject();
-            envelope.put("v", NovaEventMapper.PROTOCOL_VERSION);
+            envelope.put("v", PROTOCOL_VERSION);
             envelope.put("kind", "auth_failed");
             envelope.put("reason", reason);
             writeDirect(envelope.toString(JSONWriter.Feature.WriteNulls));
@@ -733,7 +742,7 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
         data.put("notes", NOTES);
 
         JSONObject envelope = new JSONObject();
-        envelope.put("v", NovaEventMapper.PROTOCOL_VERSION);
+        envelope.put("v", PROTOCOL_VERSION);
         envelope.put("kind", "hello");
         envelope.put("data", data);
         return envelope.toString(JSONWriter.Feature.WriteNulls);
@@ -746,7 +755,7 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
      */
     private String control(String kind) {
         JSONObject envelope = new JSONObject();
-        envelope.put("v", NovaEventMapper.PROTOCOL_VERSION);
+        envelope.put("v", PROTOCOL_VERSION);
         envelope.put("kind", kind);
         return envelope.toString(JSONWriter.Feature.WriteNulls);
     }

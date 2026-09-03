@@ -1,4 +1,4 @@
-package com.starlwr.bot.bilibili.protocol;
+package com.starlwr.bot.core.protocol;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
@@ -174,7 +174,7 @@ class NovaEventEndpointTest {
 
     private static JSONObject envelope() {
         JSONObject j = new JSONObject();
-        j.put("v", NovaEventMapper.PROTOCOL_VERSION);
+        j.put("v", NovaEventEndpoint.PROTOCOL_VERSION);
         j.put("kind", "danmaku");
         j.put("ts", 1786111565000L);
         j.put("room", 10000);
@@ -186,7 +186,7 @@ class NovaEventEndpointTest {
         data.put("fromSeq", fromSeq);
 
         JSONObject request = new JSONObject();
-        request.put("v", NovaEventMapper.PROTOCOL_VERSION);
+        request.put("v", NovaEventEndpoint.PROTOCOL_VERSION);
         request.put("kind", "resume");
         request.put("data", data);
         return new TextMessage(request.toJSONString());

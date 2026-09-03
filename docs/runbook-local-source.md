@@ -41,6 +41,7 @@ starbot:
   bilibili:
     account:
       anonymous: true         # ← 免登录。不读凭据、不弹二维码
+  core:
     event-stream:
       enabled: true           # ← 打开事件输出
       path: /nova/events

@@ -1,4 +1,4 @@
-package com.starlwr.bot.bilibili.protocol;
+package com.starlwr.bot.core.protocol;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
@@ -647,7 +647,7 @@ final class NovaEvent慢消费者台架 implements AutoCloseable {
 
     static JSONObject 事件() {
         JSONObject j = new JSONObject();
-        j.put("v", NovaEventMapper.PROTOCOL_VERSION);
+        j.put("v", NovaEventEndpoint.PROTOCOL_VERSION);
         j.put("kind", "danmaku");
         j.put("ts", 1786111565000L);
         j.put("room", 47731877194803L);

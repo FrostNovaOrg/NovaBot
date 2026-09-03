@@ -1,7 +1,7 @@
 package com.starlwr.bot.bilibili.protocol;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.core.config.EventStreamProperties;
 import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.event.datasource.change.StarBotDataSourceRemoveEvent;
 import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
@@ -16,6 +16,7 @@ import com.starlwr.bot.core.event.live.common.WatchedUpdateEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.protocol.NovaEventStream;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -81,10 +82,10 @@ public class NovaEventBroadcaster {
     }
 
     @Autowired
-    public NovaEventBroadcaster(StarBotBilibiliProperties properties, NovaEventStream stream,
+    public NovaEventBroadcaster(EventStreamProperties properties, NovaEventStream stream,
                                 @Qualifier("bilibiliTaskScheduler") TaskScheduler scheduler) {
         this.stream = stream;
-        this.enabled = properties.getEventStream().isEnabled();
+        this.enabled = properties.isEnabled();
 
         if (enabled) {
             scheduler.scheduleAtFixedRate(this::flushRoomStats, ROOM_STAT_INTERVAL);

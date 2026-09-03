@@ -13,6 +13,7 @@ import com.starlwr.bot.core.model.EmojiInfo;
 import com.starlwr.bot.core.model.GiftInfo;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.UserInfo;
+import com.starlwr.bot.core.protocol.NovaEventEndpoint;
 
 import java.time.Instant;
 import java.util.HashSet;
@@ -66,8 +67,11 @@ public final class NovaEventMapper {
      * 升号还有一个实际用处：下游在 {@code hello} 那一层就能看出源侧是 v1 还是 v2，
      * <b>把过渡期的风险拦在握手，而不是等渲染出错才发现</b>。
      * 版本语义的正式文字见协议文本。
+     * <p>
+     * <b>真源在核心</b>（{@link NovaEventEndpoint#PROTOCOL_VERSION}）：协议由核心提供，
+     * 平台侧只是照它填。这里留一个同名常量是为了不惊动既有引用，值不许在这一侧另写。
      */
-    public static final int PROTOCOL_VERSION = 2;
+    public static final int PROTOCOL_VERSION = NovaEventEndpoint.PROTOCOL_VERSION;
 
     private NovaEventMapper() {
     }

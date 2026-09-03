@@ -1,6 +1,6 @@
-package com.starlwr.bot.bilibili.protocol;
+package com.starlwr.bot.core.protocol;
 
-import com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.读;
+import com.starlwr.bot.core.protocol.NovaEvent慢消费者台架.读;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -11,12 +11,12 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.AUTH;
-import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.CLIENT_TIMEOUT;
-import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.GRACE;
-import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.PING;
-import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.破坏;
-import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.读数;
+import static com.starlwr.bot.core.protocol.NovaEvent慢消费者台架.AUTH;
+import static com.starlwr.bot.core.protocol.NovaEvent慢消费者台架.CLIENT_TIMEOUT;
+import static com.starlwr.bot.core.protocol.NovaEvent慢消费者台架.GRACE;
+import static com.starlwr.bot.core.protocol.NovaEvent慢消费者台架.PING;
+import static com.starlwr.bot.core.protocol.NovaEvent慢消费者台架.破坏;
+import static com.starlwr.bot.core.protocol.NovaEvent慢消费者台架.读数;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 

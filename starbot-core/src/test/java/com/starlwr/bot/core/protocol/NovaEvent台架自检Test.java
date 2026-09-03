@@ -1,17 +1,17 @@
-package com.starlwr.bot.bilibili.protocol;
+package com.starlwr.bot.core.protocol;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
 
-import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.PING;
-import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.千分格成串;
-import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.像真钉住的下沿_千分格;
-import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.洞的签名_落后_千分格;
-import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.观测格数;
-import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.读数;
-import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.落后容忍_千分格;
+import static com.starlwr.bot.core.protocol.NovaEvent慢消费者台架.PING;
+import static com.starlwr.bot.core.protocol.NovaEvent慢消费者台架.千分格成串;
+import static com.starlwr.bot.core.protocol.NovaEvent慢消费者台架.像真钉住的下沿_千分格;
+import static com.starlwr.bot.core.protocol.NovaEvent慢消费者台架.洞的签名_落后_千分格;
+import static com.starlwr.bot.core.protocol.NovaEvent慢消费者台架.观测格数;
+import static com.starlwr.bot.core.protocol.NovaEvent慢消费者台架.读数;
+import static com.starlwr.bot.core.protocol.NovaEvent慢消费者台架.落后容忍_千分格;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;

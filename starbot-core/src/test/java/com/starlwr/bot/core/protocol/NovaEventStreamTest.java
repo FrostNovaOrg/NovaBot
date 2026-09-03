@@ -1,4 +1,4 @@
-package com.starlwr.bot.bilibili.protocol;
+package com.starlwr.bot.core.protocol;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class NovaEventStreamTest {
     private static JSONObject envelope(String kind) {
         JSONObject j = new JSONObject();
-        j.put("v", NovaEventMapper.PROTOCOL_VERSION);
+        j.put("v", NovaEventEndpoint.PROTOCOL_VERSION);
         j.put("kind", kind);
         return j;
     }

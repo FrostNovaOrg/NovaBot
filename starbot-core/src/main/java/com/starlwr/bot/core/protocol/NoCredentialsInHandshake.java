@@ -1,4 +1,4 @@
-package com.starlwr.bot.bilibili.protocol;
+package com.starlwr.bot.core.protocol;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;

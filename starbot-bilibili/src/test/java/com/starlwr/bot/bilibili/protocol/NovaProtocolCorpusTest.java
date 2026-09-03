@@ -11,6 +11,7 @@ import com.starlwr.bot.bilibili.service.BilibiliGiftService;
 import com.starlwr.bot.bilibili.service.BilibiliGuardReconciler;
 import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
+import com.starlwr.bot.core.protocol.NovaProtocolSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;

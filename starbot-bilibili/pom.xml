@@ -26,6 +26,19 @@
             <artifactId>starbot-core</artifactId>
         </dependency>
 
+        <!--
+            事件输出协议的校验器（NovaProtocolSchema）随协议真源留在核心的测试域里，
+            本模块的映射器判据按它校验产出的信封。版本显式写出：依赖管理里那条按
+            groupId:artifactId:type 匹配，test-jar 与普通 jar 不是同一个键
+        -->
+        <dependency>
+            <groupId>com.starlwr</groupId>
+            <artifactId>starbot-core</artifactId>
+            <version>${starbot-core.version}</version>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+
         <!-- 直播间弹幕流的数据包可能使用 brotli 压缩 -->
         <dependency>
             <groupId>org.brotli</groupId>

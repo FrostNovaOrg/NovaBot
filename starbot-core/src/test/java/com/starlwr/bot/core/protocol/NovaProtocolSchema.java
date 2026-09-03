@@ -1,4 +1,4 @@
-package com.starlwr.bot.bilibili.protocol;
+package com.starlwr.bot.core.protocol;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
@@ -17,8 +17,11 @@ import java.util.Set;
  * 两者在 JSON 里差一个键，在客户端的类型校验里差一个报错，而在我们这边
  * 只差 fastjson2 的一个序列化开关。这种错不会让任何测试自然失败，
  * 只会让下游收到一堆过不了校验的消息——所以必须有一个东西逐条按协议对。
+ * <p>
+ * <b>它随协议真源留在核心，并以 test-jar 供各平台插件的测试引用</b>：
+ * 各平台的映射器产出的信封要按同一把尺量，一个平台抄一份就等于多一个会和协议漂开的副本。
  */
-final class NovaProtocolSchema {
+public final class NovaProtocolSchema {
     /**
      * 控制类：不带 seq / ts / room / user
      */
@@ -43,11 +46,11 @@ final class NovaProtocolSchema {
      * @param envelope 消息
      * @return 违例说明，全部合规时为空列表
      */
-    static List<String> violations(JSONObject envelope) {
+    public static List<String> violations(JSONObject envelope) {
         Violations violations = new Violations();
 
-        if (envelope.getIntValue("v", -1) != NovaEventMapper.PROTOCOL_VERSION) {
-            violations.add("v 必须等于 " + NovaEventMapper.PROTOCOL_VERSION);
+        if (envelope.getIntValue("v", -1) != NovaEventEndpoint.PROTOCOL_VERSION) {
+            violations.add("v 必须等于 " + NovaEventEndpoint.PROTOCOL_VERSION);
         }
 
         String kind = envelope.getString("kind");

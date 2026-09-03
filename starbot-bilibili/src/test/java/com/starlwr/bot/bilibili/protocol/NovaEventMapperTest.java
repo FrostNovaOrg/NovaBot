@@ -16,6 +16,7 @@ import com.starlwr.bot.core.event.live.common.SuperChatEvent;
 import com.starlwr.bot.core.model.GiftInfo;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.UserInfo;
+import com.starlwr.bot.core.protocol.NovaProtocolSchema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

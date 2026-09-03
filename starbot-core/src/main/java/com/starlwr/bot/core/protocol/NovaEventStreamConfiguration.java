@@ -1,11 +1,14 @@
-package com.starlwr.bot.bilibili.protocol;
+package com.starlwr.bot.core.protocol;
 
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.config.EventStreamProperties;
 import com.starlwr.bot.core.service.EventStreamTokenService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.DisposableBean;
+import org.springframework.boot.context.properties.bind.Bindable;
+import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.web.servlet.HandlerMapping;
@@ -21,17 +24,19 @@ import java.util.Map;
 /**
  * 事件输出协议服务端的装配
  * <p>
- * <b>刻意不用 {@code @EnableWebSocket}。</b> 本模块以插件形式加载，注解驱动的那套
- * （{@code @Import}、{@code @ConditionalOnProperty}）在插件类加载路径下是否按预期生效
- * 没有把握，而这里要装配的东西一共就一个映射，手工写出来反而清楚：
+ * <b>刻意不用 {@code @EnableWebSocket}。</b> 这里要装配的东西一共就一个映射，手工写出来反而清楚：
  * {@code @EnableWebSocket} 做的也正是「把 WebSocketHttpRequestHandler 挂进一个
  * SimpleUrlHandlerMapping」这件事。
  * <p>
  * 开关同理不走 {@code @ConditionalOnProperty}，直接在方法里读配置：关闭时返回一个空映射，
  * 既不占路径也不起心跳线程。
+ *
+ * <h2>装配方式</h2>
+ * 普通的 {@code @Configuration}，由核心自身的组件扫描拾取。<b>不走插件加载器那条路</b>——
+ * 核心不是插件，事件输出是它自带的能力，装配也就不该绕经只有插件才走的注解。
  */
 @Slf4j
-@StarBotComponent
+@Configuration
 public class NovaEventStreamConfiguration implements DisposableBean {
     /**
      * 映射优先级。取一个比默认映射靠前的值，避免路径被通配的静态资源处理器抢走
@@ -39,6 +44,36 @@ public class NovaEventStreamConfiguration implements DisposableBean {
     private static final int ORDER = 1;
 
     private NovaEventEndpoint endpoint;
+
+    /**
+     * 解析事件输出配置，新旧两套键都认
+     * <p>
+     * <b>逐项覆盖，不是整段二选一。</b> 先按旧键 {@code starbot.bilibili.event-stream} 绑一趟，
+     * 再按现行键 {@code starbot.core.event-stream} 绑第二趟：第二趟只会写入真的出现在配置里的项，
+     * 没写的项原样留着第一趟的值。于是「新键在场时压过旧键、缺的项由旧键补上」这句话
+     * 落在每一项上而不只是整段上，两套键都没写的项拿到的则是字段自带的默认值。
+     * <p>
+     * 分两趟绑而不是让 Spring 自动绑，是因为要分辨「这一项写没写」：
+     * 自动绑定给出的只有绑完之后的值，分辨不出默认值与显式写成同一个值。
+     * @param environment 运行环境
+     * @return 解析后的配置
+     */
+    @Bean
+    public EventStreamProperties eventStreamProperties(Environment environment) {
+        EventStreamProperties properties = new EventStreamProperties();
+        Binder binder = Binder.get(environment);
+
+        boolean legacy = binder.bind(EventStreamProperties.LEGACY_PREFIX, Bindable.ofInstance(properties)).isBound();
+        boolean current = binder.bind(EventStreamProperties.PREFIX, Bindable.ofInstance(properties)).isBound();
+
+        if (legacy) {
+            log.warn("配置项 {}.* 已改名为 {}.*, 旧键仍然有效, 但请尽快改过来{}",
+                    EventStreamProperties.LEGACY_PREFIX, EventStreamProperties.PREFIX,
+                    current ? "。两套键同时存在时以新键为准, 新键未写到的项才取旧键的值" : "");
+        }
+
+        return properties;
+    }
 
     /**
      * 编号与回补中枢
@@ -49,8 +84,8 @@ public class NovaEventStreamConfiguration implements DisposableBean {
      * @return 事件流
      */
     @Bean
-    public NovaEventStream novaEventStream(StarBotBilibiliProperties properties) {
-        return new NovaEventStream(properties.getEventStream().getBufferSize());
+    public NovaEventStream novaEventStream(EventStreamProperties properties) {
+        return new NovaEventStream(properties.getBufferSize());
     }
 
     /**
@@ -61,15 +96,14 @@ public class NovaEventStreamConfiguration implements DisposableBean {
      * @return 路径映射，未启用时为空映射
      */
     @Bean
-    public HandlerMapping novaEventStreamHandlerMapping(StarBotBilibiliProperties properties, NovaEventStream stream,
+    public HandlerMapping novaEventStreamHandlerMapping(EventStreamProperties properties, NovaEventStream stream,
                                                         EventStreamTokenService tokenService) {
-        StarBotBilibiliProperties.EventStream config = properties.getEventStream();
-        if (!config.isEnabled()) {
+        if (!properties.isEnabled()) {
             return new SimpleUrlHandlerMapping(Map.of(), ORDER);
         }
 
         // 要求口令时把口令服务交给端点：认证发生在连接建立之后的第一帧，不在握手里
-        endpoint = new NovaEventEndpoint(stream, config.isRequireToken() ? tokenService : null);
+        endpoint = new NovaEventEndpoint(stream, properties.isRequireToken() ? tokenService : null);
 
         WebSocketHttpRequestHandler handler = new WebSocketHttpRequestHandler(endpoint, new DefaultHandshakeHandler());
         handler.getHandshakeInterceptors().add(new LoopbackOnly());
@@ -77,20 +111,20 @@ public class NovaEventStreamConfiguration implements DisposableBean {
         // 只在开口令时装的话，没开口令的部署仍会把旧客户端的口令原样记进代理日志
         handler.getHandshakeInterceptors().add(new NoCredentialsInHandshake());
 
-        if (config.isRequireToken()) {
-            log.info("事件输出已启用, 路径 {}, 需在连接后首帧出示只读口令", config.getPath());
+        if (properties.isRequireToken()) {
+            log.info("事件输出已启用, 路径 {}, 需在连接后首帧出示只读口令", properties.getPath());
         } else {
-            log.info("事件输出已启用, 地址: ws://127.0.0.1:<server.port>{}, 仅接受本机连接", config.getPath());
+            log.info("事件输出已启用, 地址: ws://127.0.0.1:<server.port>{}, 仅接受本机连接", properties.getPath());
             // 这条提示存在的理由：反代与本程序同机、且反代未送 X-Forwarded-* 时，
             // 转发过来的连接源地址就是回环，
             // 「只接受本机连接」届时不再等于「人在这台机器上」——装了反代却没开这个开关，
             // 表面上一切正常，实际上门是敞开的
             log.warn("事件输出未要求口令。⚠️ 这台机器上若装了反向代理, 必须打开 "
-                    + "starbot.bilibili.event-stream.require-token: "
+                    + EventStreamProperties.PREFIX + ".require-token: "
                     + "反代若未送 X-Forwarded-*, 转发过来的连接源地址就是回环, "
                     + "「只接受本机连接」将不再拦得住任何人");
         }
-        return new SimpleUrlHandlerMapping(Map.of(config.getPath(), handler), ORDER);
+        return new SimpleUrlHandlerMapping(Map.of(properties.getPath(), handler), ORDER);
     }
 
     @Override

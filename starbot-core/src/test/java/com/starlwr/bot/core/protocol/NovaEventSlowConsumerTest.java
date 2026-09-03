@@ -1,6 +1,6 @@
-package com.starlwr.bot.bilibili.protocol;
+package com.starlwr.bot.core.protocol;
 
-import com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.读;
+import com.starlwr.bot.core.protocol.NovaEvent慢消费者台架.读;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -28,14 +28,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
-import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.AUTH;
-import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.GRACE;
-import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.PING;
-import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.判据等待;
-import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.标准时限;
-import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.心跳线程卡在别人的监视器上;
-import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.先验尺_发送线程确实卡在写里;
-import static com.starlwr.bot.bilibili.protocol.NovaEvent慢消费者台架.读数;
+import static com.starlwr.bot.core.protocol.NovaEvent慢消费者台架.AUTH;
+import static com.starlwr.bot.core.protocol.NovaEvent慢消费者台架.GRACE;
+import static com.starlwr.bot.core.protocol.NovaEvent慢消费者台架.PING;
+import static com.starlwr.bot.core.protocol.NovaEvent慢消费者台架.判据等待;
+import static com.starlwr.bot.core.protocol.NovaEvent慢消费者台架.标准时限;
+import static com.starlwr.bot.core.protocol.NovaEvent慢消费者台架.心跳线程卡在别人的监视器上;
+import static com.starlwr.bot.core.protocol.NovaEvent慢消费者台架.先验尺_发送线程确实卡在写里;
+import static com.starlwr.bot.core.protocol.NovaEvent慢消费者台架.读数;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;

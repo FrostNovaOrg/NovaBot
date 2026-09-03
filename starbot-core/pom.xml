@@ -100,6 +100,30 @@
         </dependency>
     </dependencies>
 
+    <build>
+        <plugins>
+            <!--
+                把测试域也打成一个构件（test-jar）。唯一的用途是事件输出协议的校验器
+                NovaProtocolSchema：协议真源在核心，各平台插件的映射器测试要按同一把尺
+                校验自己产出的信封。让插件仓各抄一份的话，抄出来的那份第二天就会和协议漂开，
+                而漂开的校验器不会红，只会安静地放行错的信封。
+                test 作用域，不进任何交付产物。
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>test-jar</id>
+                        <goals>
+                            <goal>test-jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
     <profiles>
         <!-- package：构建可直接运行的发行产物，依赖输出至 target/lib -->
         <profile>

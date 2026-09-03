@@ -18,7 +18,7 @@
 # 所以必须同时打开：
 #
 #     starbot:
-#       bilibili:
+#       core:
 #         event-stream:
 #           require-token: true
 #
@@ -30,7 +30,7 @@
 # 🔴 下面的 127.0.0.1:7827 与 /nova/events 必须与 application.yml 对得上
 #
 #     server.port                          ←→ 本文件里的 7827
-#     starbot.bilibili.event-stream.path   ←→ 本文件里的 /nova/events
+#     starbot.core.event-stream.path       ←→ 本文件里的 /nova/events
 #
 # 两者都是可改的配置项，本文件写的是模板默认值。改了一边不改另一边，症状很难查：
 # 端口对不上是连不上；**路径对不上则会被下面那条「其余一律 404」吃掉**——
