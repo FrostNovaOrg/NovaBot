@@ -1,261 +1,361 @@
+/* 设计 token —— 三态结构，必须照这个顺序写：
+     :root                                亮色，定义全部 token
+     @media (prefers-color-scheme:dark)   跟随系统的暗色，块内只重定义 token
+     :root[data-theme="dark"]             手动切到暗色，再定义一次
+   中间那块的选择器是 :root:not([data-theme="light"]) 而不是 :root——
+   否则系统是暗色、用户手动选了亮色时，媒体查询里的暗值会盖掉亮值。
+   组件规则一律只引 var(--x)，不在媒体查询里直接写色；
+   这三块之外，本文件不写十六进制色值。 */
 :root{
-  --bg:#f5f6f8; --panel:#fff; --border:#e3e5e9; --text:#1f2328; --muted:#6b7280;
-  --accent:#fb7299; --accent-soft:#fff1f5; --ok:#16a34a; --err:#dc2626; --code:#f6f8fa;
+  --ground:#F5F4FA; --surface:#FFFFFF; --line:#E4E2EE; --text:#1C1A2E; --dim:#6E6A86;
+  --accent:#7A4DFF; --accent2:#E0479E;
+  --ok:#22B573; --warn:#F2A93B; --err:#EF4A5C; --live:#E0479E;
+  --soft:rgba(122,77,255,.08); --softline:rgba(122,77,255,.28);
+  --oksoft:rgba(34,181,115,.12); --warnsoft:rgba(242,169,59,.14); --errsoft:rgba(239,74,92,.12);
+  --shadow:0 1px 2px rgba(28,26,46,.04), 0 8px 24px rgba(28,26,46,.06);
+  --brand-fill:linear-gradient(120deg,var(--accent),var(--accent2));
+  --nav-ind:linear-gradient(180deg,var(--accent),var(--accent2));
+  --cloud3:#A38BFF;
+  --c-danmu:#7A4DFF; --c-gift:#E0479E; --c-sc:#F2A93B; --c-blind:#22B573;
+  --c-guard:#00A6D6; --c-view:#6E6A86;
+  /* 下面两个不在色表里，是这套界面自己需要的两张「纸」：
+     --paper   永远是白的那种底。二维码必须白底，暗色下换成任何深色都扫不出来；
+               开关的滑块也用它，滑到强调色上时白点最容易看清。
+     --on-accent 压在强调色填充上的字。暗色下强调色变浅，白字对比度不够，改用页底色。 */
+  --paper:#FFFFFF; --on-accent:#FFFFFF;
+  /* 字体与尺寸：不随主题变，只在这里定义一次 */
+  --font:-apple-system,"PingFang SC","HarmonyOS Sans SC","MiSans",system-ui,sans-serif;
+  --mono:"SF Mono",Menlo,"JetBrains Mono",ui-monospace,monospace;
+  --fs:15px; --lh:1.6;
+  --r-card:14px; --r-ctl:8px; --r-pill:999px;
 }
 @media (prefers-color-scheme:dark){
-  :root{
-    --bg:#15171a; --panel:#1c1f23; --border:#2c3036; --text:#e6e8eb; --muted:#9aa1ab;
-    --accent:#fb7299; --accent-soft:#2a1d22; --code:#111316;
+  :root:not([data-theme="light"]){
+    --ground:#14121F; --surface:#1D1A2B; --line:#2E2A42; --text:#ECEAF6; --dim:#9B96B5;
+    --accent:#A38BFF; --accent2:#F06AB8;
+    --ok:#3DD68C; --warn:#F7BC5B; --err:#FF6B7A; --live:#F06AB8;
+    --soft:rgba(163,139,255,.14); --softline:rgba(163,139,255,.38);
+    --oksoft:rgba(61,214,140,.16); --warnsoft:rgba(247,188,91,.16); --errsoft:rgba(255,107,122,.16);
+    --shadow:0 0 0 1px rgba(255,255,255,.05);
+    --brand-fill:linear-gradient(120deg,var(--accent),var(--accent2));
+    --nav-ind:linear-gradient(180deg,var(--accent),var(--accent2));
+    --cloud3:#C4B5FF;
+    --c-danmu:#A38BFF; --c-gift:#F06AB8; --c-sc:#F7BC5B; --c-blind:#3DD68C;
+    --c-guard:#4CC9F0; --c-view:#9B96B5;
+    --paper:#FFFFFF; --on-accent:#14121F;
   }
 }
+:root[data-theme="dark"]{
+  --ground:#14121F; --surface:#1D1A2B; --line:#2E2A42; --text:#ECEAF6; --dim:#9B96B5;
+  --accent:#A38BFF; --accent2:#F06AB8;
+  --ok:#3DD68C; --warn:#F7BC5B; --err:#FF6B7A; --live:#F06AB8;
+  --soft:rgba(163,139,255,.14); --softline:rgba(163,139,255,.38);
+  --oksoft:rgba(61,214,140,.16); --warnsoft:rgba(247,188,91,.16); --errsoft:rgba(255,107,122,.16);
+  --shadow:0 0 0 1px rgba(255,255,255,.05);
+  --brand-fill:linear-gradient(120deg,var(--accent),var(--accent2));
+  --nav-ind:linear-gradient(180deg,var(--accent),var(--accent2));
+  --cloud3:#C4B5FF;
+  --c-danmu:#A38BFF; --c-gift:#F06AB8; --c-sc:#F7BC5B; --c-blind:#3DD68C;
+  --c-guard:#4CC9F0; --c-view:#9B96B5;
+  --paper:#FFFFFF; --on-accent:#14121F;
+}
+/* 旧变量名留一版别名。页面脚本里若有按旧名取色的地方，换名当天不会突然读到空值；
+   各页版式改造把引用逐处换到新名之后，这一块就可以整块删掉。 */
+:root{
+  --bg:var(--ground); --panel:var(--surface); --border:var(--line); --muted:var(--dim);
+  --accent-soft:var(--soft); --code:var(--ground);
+}
+
+/* 组件基类。本轮只把样式备好，页面结构一处未动，由后续各页改造时挂上去。 */
+.nv-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);
+  box-shadow:var(--shadow)}
+.nv-btn{background:var(--accent);color:var(--on-accent);border:none;border-radius:var(--r-ctl);
+  padding:8px 20px;cursor:pointer;font-size:14px;font-family:inherit;font-weight:500}
+.nv-btn:disabled{opacity:.45;cursor:not-allowed}
+.nv-btn2{background:var(--surface);color:var(--text);border:1px solid var(--line);
+  border-radius:var(--r-ctl);padding:8px 16px;cursor:pointer;font-size:14px;font-family:inherit}
+.nv-btn2:hover{border-color:var(--accent);color:var(--accent)}
+.nv-pill{display:inline-flex;align-items:center;border:1px solid var(--line);
+  border-radius:var(--r-pill);padding:1px 9px;font-size:11.5px;color:var(--dim)}
+.nv-pill.ok{border-color:var(--ok);color:var(--ok);background:var(--oksoft)}
+.nv-pill.warn{border-color:var(--warn);color:var(--warn);background:var(--warnsoft)}
+.nv-pill.err{border-color:var(--err);color:var(--err);background:var(--errsoft)}
+.nv-pill.acc{border-color:var(--softline);color:var(--accent);background:var(--soft)}
+.nv-soft{background:var(--soft);border:1px solid var(--softline);border-radius:var(--r-ctl)}
+
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);
-  font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;font-size:14px;line-height:1.6}
-header{background:var(--panel);border-bottom:1px solid var(--border);padding:14px 24px;
+body{margin:0;background:var(--ground);color:var(--text);
+  font-family:var(--font);font-size:var(--fs);line-height:var(--lh)}
+header{background:var(--surface);border-bottom:1px solid var(--line);padding:14px 24px;
   display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:10}
 header h1{margin:0;font-size:16px;font-weight:600}
-header .sub{color:var(--muted);font-size:12px}
+header .sub{color:var(--dim);font-size:12px}
 /* 推到最右：退出与标题无关，紧挨着标题放容易被看成标题的一部分 */
 header #auth-actions{margin-left:auto;display:flex;gap:8px}
-header #auth-actions button{background:none;border:1px solid var(--border);border-radius:6px;
-  padding:5px 12px;cursor:pointer;color:var(--muted);font-size:12px;font-family:inherit}
+header #auth-actions button{background:none;border:1px solid var(--line);border-radius:var(--r-ctl);
+  padding:5px 12px;cursor:pointer;color:var(--dim);font-size:12px;font-family:inherit}
 header #auth-actions button:hover{color:var(--accent);border-color:var(--accent)}
 main{max-width:960px;margin:0 auto;padding:20px 24px 80px}
 /* 窄屏上横向滚动而不是把每个页签挤成竖排的单字：页签一多（现在 7 个），
    flex 默认的收缩会让「群与成员」变成四行一列，认不出来也点不准 */
-nav{display:flex;gap:4px;margin-bottom:20px;border-bottom:1px solid var(--border);
+nav{display:flex;gap:4px;margin-bottom:20px;border-bottom:1px solid var(--line);
   overflow-x:auto;scrollbar-width:none}
 nav::-webkit-scrollbar{display:none}
-nav button{background:none;border:none;padding:9px 16px;cursor:pointer;color:var(--muted);
+nav button{background:none;border:none;padding:9px 16px;cursor:pointer;color:var(--dim);
   font-size:14px;font-family:inherit;border-bottom:2px solid transparent;margin-bottom:-1px;
   white-space:nowrap;flex:none}
 nav button.on{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
 section{display:none}
 section.on{display:block}
-.group{background:var(--panel);border:1px solid var(--border);border-radius:10px;margin-bottom:14px;overflow:hidden}
+.group{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);
+  box-shadow:var(--shadow);margin-bottom:14px;overflow:hidden}
 .group>h2{margin:0;padding:12px 16px;font-size:14px;font-weight:600;
-  border-bottom:1px solid var(--border);background:var(--accent-soft)}
-.field{padding:12px 16px;border-bottom:1px solid var(--border);display:grid;
+  border-bottom:1px solid var(--line);background:var(--soft)}
+.field{padding:12px 16px;border-bottom:1px solid var(--line);display:grid;
   grid-template-columns:minmax(180px,1fr) minmax(200px,280px);gap:16px;align-items:start}
 .field:last-child{border-bottom:none}
-.field .meta code{font-size:12px;color:var(--text);background:var(--code);
-  padding:1px 6px;border-radius:4px;font-family:ui-monospace,Menlo,Consolas,monospace}
-.field .desc{color:var(--muted);font-size:12.5px;margin-top:3px;white-space:pre-line}
-.field .dflt{color:var(--muted);font-size:11.5px;margin-top:3px}
+.field .meta code{font-size:12px;color:var(--text);background:var(--ground);
+  padding:1px 6px;border-radius:var(--r-ctl);font-family:var(--mono)}
+.field .desc{color:var(--dim);font-size:12.5px;margin-top:3px;white-space:pre-line}
+.field .dflt{color:var(--dim);font-size:11.5px;margin-top:3px}
 /* 按旧位置生效的配置项：不是错误，但必须看得见，否则值与文件里的行对不上 */
 .field .legacy{color:var(--err);font-size:11.5px;margin-top:4px;line-height:1.5}
 .field input[type=text],.field input[type=number],.field textarea{width:100%;padding:6px 9px;
-  border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);
+  border:1px solid var(--line);border-radius:var(--r-ctl);background:var(--ground);color:var(--text);
   font-family:inherit;font-size:13px}
-.field textarea{min-height:60px;font-family:ui-monospace,Menlo,Consolas,monospace;resize:vertical}
+.field textarea{min-height:60px;font-family:var(--mono);resize:vertical}
 .field input:focus,.field textarea:focus{outline:none;border-color:var(--accent)}
-.field.changed{background:var(--accent-soft)}
-.readonly{color:var(--muted);font-size:12.5px;padding:6px 0;font-style:italic}
+.field.changed{background:var(--soft)}
+.readonly{color:var(--dim);font-size:12.5px;padding:6px 0;font-style:italic}
 .switch{display:inline-flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
-.switch input{appearance:none;width:38px;height:22px;border-radius:11px;background:var(--border);
+.switch input{appearance:none;width:38px;height:22px;border-radius:var(--r-pill);background:var(--line);
   position:relative;cursor:pointer;transition:background .15s;margin:0}
 .switch input:checked{background:var(--accent)}
 .switch input::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;
-  border-radius:50%;background:#fff;transition:transform .15s}
+  border-radius:50%;background:var(--paper);transition:transform .15s}
 .switch input:checked::after{transform:translateX(16px)}
-.switch span{font-size:13px;color:var(--muted)}
-textarea.full{width:100%;min-height:420px;padding:12px;border:1px solid var(--border);border-radius:8px;
-  background:var(--code);color:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;
+.switch span{font-size:13px;color:var(--dim)}
+textarea.full{width:100%;min-height:420px;padding:12px;border:1px solid var(--line);
+  border-radius:var(--r-ctl);background:var(--ground);color:var(--text);font-family:var(--mono);
   font-size:12.5px;line-height:1.55;resize:vertical}
-.bar{position:fixed;left:0;right:0;bottom:0;background:var(--panel);border-top:1px solid var(--border);
+.bar{position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-top:1px solid var(--line);
   padding:12px 24px;display:flex;align-items:center;gap:12px;justify-content:flex-end}
 .bar .status{margin-right:auto;font-size:13px}
 .bar .status.ok{color:var(--ok)}
 .bar .status.err{color:var(--err)}
-button.primary{background:var(--accent);color:#fff;border:none;padding:8px 20px;border-radius:6px;
-  cursor:pointer;font-size:14px;font-family:inherit;font-weight:500}
+button.primary{background:var(--accent);color:var(--on-accent);border:none;padding:8px 20px;
+  border-radius:var(--r-ctl);cursor:pointer;font-size:14px;font-family:inherit;font-weight:500}
 button.primary:disabled{opacity:.45;cursor:not-allowed}
-button.ghost{background:none;border:1px solid var(--border);color:var(--text);padding:8px 16px;
-  border-radius:6px;cursor:pointer;font-size:14px;font-family:inherit}
-table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--border);border-radius:10px}
-th,td{padding:9px 14px;text-align:left;border-bottom:1px solid var(--border);font-size:13px}
-th{color:var(--muted);font-weight:500}
+button.ghost{background:none;border:1px solid var(--line);color:var(--text);padding:8px 16px;
+  border-radius:var(--r-ctl);cursor:pointer;font-size:14px;font-family:inherit}
+table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--r-card)}
+th,td{padding:12px 14px;height:44px;text-align:left;border-bottom:1px solid var(--line);font-size:13px}
+th{color:var(--dim);font-weight:500}
 tr:last-child td{border-bottom:none}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:18px}
-.card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px 16px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);
+  box-shadow:var(--shadow);padding:14px 16px}
 .card .n{font-size:22px;font-weight:600}
-.card .l{color:var(--muted);font-size:12px;margin-top:2px}
-.hint{color:var(--muted);font-size:12.5px;margin:0 0 14px}
-.empty{color:var(--muted);text-align:center;padding:40px 0}
-.health{background:var(--panel);border:1px solid var(--border);border-radius:10px;margin-bottom:18px}
+.card .l{color:var(--dim);font-size:12px;margin-top:2px}
+.hint{color:var(--dim);font-size:12.5px;margin:0 0 14px}
+.empty{color:var(--dim);text-align:center;padding:40px 0}
+.health{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);
+  box-shadow:var(--shadow);margin-bottom:18px}
 /* 必须 wrap：建议文字用 flex-basis:100% 独占一行，不换行的话它会挤在同一行里，
    把结论那一列压到几十像素宽、一个字一折行 */
 .health .row{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px;padding:11px 16px;
-  border-bottom:1px solid var(--border);font-size:13px}
+  border-bottom:1px solid var(--line);font-size:13px}
 .health .row:last-child{border-bottom:none}
 .health .dot{width:8px;height:8px;border-radius:50%;flex:none;align-self:center}
 .health .dot.OK{background:var(--ok)}
-.health .dot.DEGRADED{background:#d98e00}
+.health .dot.DEGRADED{background:var(--warn)}
 .health .dot.DOWN{background:var(--err)}
-.health .who{flex:none;min-width:120px;color:var(--muted)}
+.health .who{flex:none;min-width:120px;color:var(--dim)}
 .health .sum{flex:1;min-width:0}
-.health .advice{flex-basis:100%;margin:4px 0 0 138px;color:var(--muted);font-size:12.5px}
-.issues{display:none;background:var(--panel);border:1px solid var(--err);border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:13px}
+.health .advice{flex-basis:100%;margin:4px 0 0 138px;color:var(--dim);font-size:12.5px}
+.issues{display:none;background:var(--errsoft);border:1px solid var(--err);border-radius:var(--r-card);
+  padding:12px 16px;margin-bottom:14px;font-size:13px}
 .issues ul{margin:6px 0 0;padding-left:20px}
 .issues li{margin:3px 0;color:var(--err)}
-.backups{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;font-size:12.5px;color:var(--muted)}
-.backups select{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:6px 9px;font-size:12.5px}
-.backups button{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:6px 12px;font-size:12.5px;cursor:pointer}
-.backups button:hover{border-color:var(--muted)}
+.backups{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;font-size:12.5px;color:var(--dim)}
+.backups select{background:var(--surface);color:var(--text);border:1px solid var(--line);
+  border-radius:var(--r-ctl);padding:6px 9px;font-size:12.5px}
+.backups button{background:var(--surface);color:var(--text);border:1px solid var(--line);
+  border-radius:var(--r-ctl);padding:6px 12px;font-size:12.5px;cursor:pointer}
+.backups button:hover{border-color:var(--dim)}
 /* 只管文本框。写成 .backups input 会连开关和勾选框一起撑成 140px——
    同样的坑在 .target input 上踩过一次，这里从根上避开 */
-.backups input:not([type=checkbox]){background:var(--panel);color:var(--text);
-  border:1px solid var(--border);border-radius:7px;padding:6px 9px;font-size:12.5px;width:140px}
+.backups input:not([type=checkbox]){background:var(--surface);color:var(--text);
+  border:1px solid var(--line);border-radius:var(--r-ctl);padding:6px 9px;font-size:12.5px;width:140px}
 /* 添加主播是本页的主入口，140px 连提示语都放不下 */
 #push-toolbar #add-uid{width:260px}
-.issues.ok{border-color:var(--ok)}
+.issues.ok{border-color:var(--ok);background:var(--oksoft)}
 .issues.ok li,.issues.ok b{color:var(--ok)}
 /* 机密字段：输入框 + 一个显示/隐藏开关 */
 .secret{display:flex;gap:6px;align-items:center}
 .secret input{flex:1}
-.secret button{background:var(--panel);color:var(--muted);border:1px solid var(--border);
-  border-radius:7px;padding:6px 10px;font-size:12px;cursor:pointer;font-family:inherit;flex:none}
-.secret button:hover{border-color:var(--muted);color:var(--text)}
+.secret button{background:var(--surface);color:var(--dim);border:1px solid var(--line);
+  border-radius:var(--r-ctl);padding:6px 10px;font-size:12px;cursor:pointer;font-family:inherit;flex:none}
+.secret button:hover{border-color:var(--dim);color:var(--text)}
 /* 绑定验证器的引导。用强调色描边而非报错色：这是建议，不是故障 */
-.totp-setup{background:var(--panel);border:1px solid var(--accent);border-radius:10px;
-  padding:14px 16px;margin-bottom:14px;font-size:13px}
+.totp-setup{background:var(--surface);border:1px solid var(--accent);border-radius:var(--r-card);
+  box-shadow:var(--shadow);padding:14px 16px;margin-bottom:14px;font-size:13px}
 .totp-setup h3{margin:0 0 4px;font-size:14px}
-.totp-setup p{margin:0 0 12px;color:var(--muted);font-size:12.5px}
+.totp-setup p{margin:0 0 12px;color:var(--dim);font-size:12.5px}
 .totp-body{display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap}
 /* 二维码给白底：深色模式下码元与背景对比不足会扫不出来 */
-.totp-body img{width:160px;height:160px;background:#fff;padding:6px;border-radius:8px}
+.totp-body img{width:160px;height:160px;background:var(--paper);padding:6px;border-radius:var(--r-ctl)}
 .totp-side{display:flex;flex-direction:column;gap:8px;min-width:260px;flex:1}
-.totp-side label{color:var(--muted);font-size:12px}
-.totp-side code{background:var(--code);border-radius:6px;padding:6px 9px;font-size:12.5px;
-  word-break:break-all;user-select:all}
+.totp-side label{color:var(--dim);font-size:12px}
+.totp-side code{background:var(--ground);border-radius:var(--r-ctl);padding:6px 9px;font-size:12.5px;
+  font-family:var(--mono);word-break:break-all;user-select:all}
 .totp-confirm{display:flex;gap:8px;flex-wrap:wrap}
-.totp-confirm input{background:var(--panel);color:var(--text);border:1px solid var(--border);
-  border-radius:7px;padding:6px 9px;font-size:13px;width:110px}
-.totp-confirm button{background:var(--panel);color:var(--text);border:1px solid var(--border);
-  border-radius:7px;padding:6px 12px;font-size:12.5px;cursor:pointer;font-family:inherit}
+.totp-confirm input{background:var(--surface);color:var(--text);border:1px solid var(--line);
+  border-radius:var(--r-ctl);padding:6px 9px;font-size:13px;width:110px}
+.totp-confirm button{background:var(--surface);color:var(--text);border:1px solid var(--line);
+  border-radius:var(--r-ctl);padding:6px 12px;font-size:12.5px;cursor:pointer;font-family:inherit}
 .totp-confirm button:hover{border-color:var(--accent);color:var(--accent)}
-.account{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:18px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.account{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);
+  box-shadow:var(--shadow);padding:14px 16px;margin-bottom:18px;display:flex;align-items:center;
+  gap:16px;flex-wrap:wrap}
 .account .who{font-size:13px}
 .account .who b{display:block;margin-bottom:2px}
-.account .who span{color:var(--muted);font-size:12.5px}
-.account img{width:240px;height:240px;background:#fff;border-radius:6px;padding:8px}
-.account button{margin-left:auto;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:6px 12px;font-size:12.5px;cursor:pointer}
+.account .who span{color:var(--dim);font-size:12.5px}
+.account img{width:240px;height:240px;background:var(--paper);border-radius:var(--r-ctl);padding:8px}
+.account button{margin-left:auto;background:var(--surface);color:var(--text);border:1px solid var(--line);
+  border-radius:var(--r-ctl);padding:6px 12px;font-size:12.5px;cursor:pointer}
 .account button:hover{border-color:var(--err);color:var(--err)}
-.streamer{background:var(--panel);border:1px solid var(--border);border-radius:10px;margin-bottom:14px;overflow:hidden}
-.streamer>.head{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--accent-soft)}
-.streamer>.head img{width:34px;height:34px;border-radius:50%;flex:none;background:var(--border)}
+.streamer{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);
+  box-shadow:var(--shadow);margin-bottom:14px;overflow:hidden}
+.streamer>.head{display:flex;align-items:center;gap:12px;padding:12px 16px;
+  border-bottom:1px solid var(--line);background:var(--soft)}
+.streamer>.head img{width:34px;height:34px;border-radius:50%;flex:none;background:var(--line)}
 .streamer>.head .name{font-weight:600}
-.streamer>.head .id{color:var(--muted);font-size:12px;font-weight:400;margin-left:8px}
+.streamer>.head .id{color:var(--dim);font-size:12px;font-weight:400;margin-left:8px}
 .streamer .body{padding:12px 16px}
 .streamer .events{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px}
 .streamer .events label{display:inline-flex;align-items:center;gap:6px;font-size:13px;cursor:pointer}
 .streamer .events input{margin:0;cursor:pointer}
-.streamer .events small{color:var(--muted);font-size:11.5px}
-.target{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 0;border-top:1px dashed var(--border);font-size:13px}
-.target select,.target input{background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:5px 8px;font-size:12.5px}
+.streamer .events small{color:var(--dim);font-size:11.5px}
+.target{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 0;
+  border-top:1px dashed var(--line);font-size:13px}
+.target select,.target input{background:var(--ground);color:var(--text);border:1px solid var(--line);
+  border-radius:var(--r-ctl);padding:5px 8px;font-size:12.5px}
 .target input{width:150px}
-.target .rm{margin-left:auto;background:none;border:none;color:var(--muted);cursor:pointer;font-size:12.5px}
+.target .rm{margin-left:auto;background:none;border:none;color:var(--dim);cursor:pointer;font-size:12.5px}
 .target .rm:hover{color:var(--err)}
-.streamer .add-target{margin-top:10px;background:none;border:1px dashed var(--border);color:var(--muted);border-radius:7px;padding:6px 12px;font-size:12.5px;cursor:pointer;width:100%}
+.streamer .add-target{margin-top:10px;background:none;border:1px dashed var(--line);color:var(--dim);
+  border-radius:var(--r-ctl);padding:6px 12px;font-size:12.5px;cursor:pointer;width:100%}
 .streamer .add-target:hover{border-color:var(--accent);color:var(--accent)}
-.tpl{flex-basis:100%;margin:8px 0 0;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px}
+.tpl{flex-basis:100%;margin:8px 0 0;padding:10px 12px;background:var(--ground);
+  border:1px solid var(--line);border-radius:var(--r-ctl)}
 .tpl .chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
-.tpl .chips button{background:var(--panel);border:1px solid var(--border);border-radius:999px;padding:2px 10px;
-  font-size:11.5px;cursor:pointer;color:var(--muted);font-family:ui-monospace,Menlo,monospace}
+.tpl .chips button{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-pill);
+  padding:2px 10px;font-size:11.5px;cursor:pointer;color:var(--dim);font-family:var(--mono)}
 .tpl .chips button:hover{border-color:var(--accent);color:var(--accent)}
-.tpl textarea{width:100%;min-height:56px;background:var(--panel);color:var(--text);border:1px solid var(--border);
-  border-radius:6px;padding:7px 9px;font-size:12.5px;font-family:ui-monospace,Menlo,monospace;resize:vertical}
-.tpl .preview{margin-top:8px;font-size:12.5px;color:var(--muted);white-space:pre-wrap;word-break:break-all}
+.tpl textarea{width:100%;min-height:56px;background:var(--surface);color:var(--text);
+  border:1px solid var(--line);border-radius:var(--r-ctl);padding:7px 9px;font-size:12.5px;
+  font-family:var(--mono);resize:vertical}
+.tpl .preview{margin-top:8px;font-size:12.5px;color:var(--dim);white-space:pre-wrap;word-break:break-all}
 .tpl .preview b{color:var(--text);font-weight:500}
 .tpl-toggle{background:none;border:none;color:var(--accent);cursor:pointer;font-size:11.5px;padding:0 0 0 4px}
 /* 处理器自带的参数（如下播报告的版式开关），由 options 声明后通用渲染 */
-.tpl .opts{margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
-.tpl .opts>h5{margin:0 0 8px;font-size:12px;font-weight:600;color:var(--muted)}
+.tpl .opts{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+.tpl .opts>h5{margin:0 0 8px;font-size:12px;font-weight:600;color:var(--dim)}
 .tpl .opts .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:6px 14px}
 .tpl .opts label{display:flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer;min-height:26px}
 .tpl .opts label>span{flex:1}
 /* .target input 把所有输入框设成了 150px 宽，勾选框会因此撑掉整格，必须显式收回 */
 .tpl .opts input[type=checkbox]{width:auto;flex:none;margin:0;padding:0}
-.tpl .opts input[type=number]{width:64px;flex:none;text-align:right;background:var(--panel);color:var(--text);
-  border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:12.5px}
-.step{background:var(--panel);border:1px solid var(--border);border-radius:10px;margin-bottom:14px;overflow:hidden}
-.step>h3{margin:0;padding:12px 16px;font-size:14px;font-weight:600;border-bottom:1px solid var(--border);
-  background:var(--accent-soft);display:flex;align-items:center;gap:10px}
-.step>h3 .no{width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;
+.tpl .opts input[type=number]{width:64px;flex:none;text-align:right;background:var(--surface);
+  color:var(--text);border:1px solid var(--line);border-radius:var(--r-ctl);padding:3px 6px;font-size:12.5px}
+.step{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);
+  box-shadow:var(--shadow);margin-bottom:14px;overflow:hidden}
+.step>h3{margin:0;padding:12px 16px;font-size:14px;font-weight:600;border-bottom:1px solid var(--line);
+  background:var(--soft);display:flex;align-items:center;gap:10px}
+.step>h3 .no{width:22px;height:22px;border-radius:50%;background:var(--accent);color:var(--on-accent);
   display:inline-flex;align-items:center;justify-content:center;font-size:12px;flex:none}
 .step>h3 .done{background:var(--ok)}
 /* .fbox 与 .step 共用同一套表单样式：机器人连接表单在向导与「机器人」页签下各出现一次 */
 .step .body,.group .body{padding:14px 16px}
 .step .row,.fbox .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
-.step label,.fbox label{font-size:12.5px;color:var(--muted);min-width:88px}
-.step input,.fbox input{background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;
-  padding:6px 9px;font-size:12.5px;width:190px}
-.step button,.fbox button{background:var(--accent);color:#fff;border:none;border-radius:7px;padding:7px 16px;
-  font-size:13px;cursor:pointer}
+.step label,.fbox label{font-size:12.5px;color:var(--dim);min-width:88px}
+.step input,.fbox input{background:var(--ground);color:var(--text);border:1px solid var(--line);
+  border-radius:var(--r-ctl);padding:6px 9px;font-size:12.5px;width:190px}
+.step button,.fbox button{background:var(--accent);color:var(--on-accent);border:none;
+  border-radius:var(--r-ctl);padding:7px 16px;font-size:13px;cursor:pointer}
 .step button:disabled,.fbox button:disabled{opacity:.45;cursor:not-allowed}
 .step .out,.fbox .out{margin-top:10px;font-size:12.5px;white-space:pre-wrap}
 .step .out.ok,.fbox .out.ok{color:var(--ok)}
 .step .out.err,.fbox .out.err{color:var(--err)}
-details.adv{background:var(--panel);border:1px solid var(--border);border-radius:10px;margin-top:22px}
+details.adv{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);
+  box-shadow:var(--shadow);margin-top:22px}
 details.adv>summary{padding:12px 16px;cursor:pointer;font-size:14px;font-weight:600;list-style:none}
 details.adv>summary::-webkit-details-marker{display:none}
-details.adv>summary::before{content:"▸";color:var(--muted);margin-right:8px;display:inline-block}
+details.adv>summary::before{content:"▸";color:var(--dim);margin-right:8px;display:inline-block}
 details.adv[open]>summary::before{transform:rotate(90deg)}
 details.adv .inner{padding:0 16px 16px}
-.warn{background:var(--accent-soft);border:1px solid var(--accent);border-radius:8px;
+.warn{background:var(--warnsoft);border:1px solid var(--warn);border-radius:var(--r-ctl);
   padding:10px 12px;font-size:12.5px;margin-bottom:12px}
 #history td{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #history .bad{color:var(--err)}
 #history .good{color:var(--ok)}
 /* 群与成员：命令开关按会话分卡片，每条命令一行 */
-.sess{background:var(--panel);border:1px solid var(--border);border-radius:10px;margin-bottom:14px;overflow:hidden;padding-bottom:6px}
-.sess>.head{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--accent-soft);flex-wrap:wrap}
+.sess{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);
+  box-shadow:var(--shadow);margin-bottom:14px;overflow:hidden;padding-bottom:6px}
+.sess>.head{display:flex;align-items:center;gap:10px;padding:12px 16px;
+  border-bottom:1px solid var(--line);background:var(--soft);flex-wrap:wrap}
 .sess>.head b{font-size:14px}
-.sess>.head .id{color:var(--muted);font-size:12px}
-.sess>.head .tag{margin-left:auto;font-size:11.5px;border:1px solid var(--border);border-radius:999px;padding:1px 9px;color:var(--muted);background:var(--panel)}
-.sess>.head .tag.off{border-color:#d98e00;color:#d98e00}
-.sess .cat{padding:9px 16px 3px;font-size:12px;color:var(--muted)}
+.sess>.head .id{color:var(--dim);font-size:12px}
+.sess>.head .tag{margin-left:auto;font-size:11.5px;border:1px solid var(--line);
+  border-radius:var(--r-pill);padding:1px 9px;color:var(--dim);background:var(--surface)}
+.sess>.head .tag.off{border-color:var(--warn);color:var(--warn);background:var(--warnsoft)}
+.sess .cat{padding:9px 16px 3px;font-size:12px;color:var(--dim)}
 .cmd{display:flex;align-items:center;gap:10px;padding:7px 16px;font-size:13px}
 .cmd .nm{font-weight:500;min-width:104px}
-.cmd .ds{color:var(--muted);font-size:12.5px;flex:1;min-width:0}
-.cmd .adm{font-size:11px;border:1px solid var(--border);border-radius:999px;padding:0 7px;color:var(--muted);flex:none}
-.cmd .lock{font-size:11.5px;color:var(--muted);flex:none}
+.cmd .ds{color:var(--dim);font-size:12.5px;flex:1;min-width:0}
+.cmd .adm{font-size:11px;border:1px solid var(--line);border-radius:var(--r-pill);padding:0 7px;
+  color:var(--dim);flex:none}
+.cmd .lock{font-size:11.5px;color:var(--dim);flex:none}
 .cmd .switch{flex:none}
 .cat-title{font-size:14px;font-weight:600;margin:26px 0 8px}
 .cat-title:first-of-type{margin-top:8px}
 .uids{display:flex;gap:6px;flex-wrap:wrap}
-.uids button{background:var(--bg);border:1px solid var(--border);border-radius:999px;padding:1px 8px;
-  font-size:11.5px;cursor:pointer;color:var(--text);font-family:ui-monospace,Menlo,monospace}
+.uids button{background:var(--ground);border:1px solid var(--line);border-radius:var(--r-pill);
+  padding:1px 8px;font-size:11.5px;cursor:pointer;color:var(--text);font-family:var(--mono)}
 .uids button:hover{border-color:var(--err);color:var(--err)}
-td.act button{background:none;border:none;color:var(--muted);cursor:pointer;font-size:12.5px;padding:0}
+td.act button{background:none;border:none;color:var(--dim);cursor:pointer;font-size:12.5px;padding:0}
 td.act button:hover{color:var(--err)}
 /* 数据分析：趋势图用内联 SVG 画，页面刻意不引入任何外部依赖 */
-.chart{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:18px}
+.chart{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);
+  box-shadow:var(--shadow);padding:14px 16px;margin-bottom:18px}
 .chart h4{margin:0 0 10px;font-size:13px;font-weight:600}
 .chart .plot{position:relative;padding-top:16px}
 .chart svg{display:block;width:100%;height:110px}
 .chart .bar{fill:var(--accent)}
-.chart .bar.zero{fill:var(--border)}
+.chart .bar.zero{fill:var(--line)}
 /* 峰值标注是 HTML 而非 SVG 文字：SVG 那边会被横向拉伸 */
-.chart .peak{position:absolute;top:0;transform:translateX(-50%);font-size:11px;color:var(--muted);white-space:nowrap}
-.chart .xlab{display:flex;justify-content:space-between;margin-top:6px;font-size:11px;color:var(--muted)}
+.chart .peak{position:absolute;top:0;transform:translateX(-50%);font-size:11px;color:var(--dim);white-space:nowrap}
+.chart .xlab{display:flex;justify-content:space-between;margin-top:6px;font-size:11px;color:var(--dim)}
 #ana-table{overflow-x:auto}
 #ana-table table{min-width:100%;width:max-content}
 #ana-table td.n,#ana-table th.n{text-align:right;font-variant-numeric:tabular-nums}
-#ana-table tr.empty-row td{color:var(--muted)}
+#ana-table tr.empty-row td{color:var(--dim)}
 /* 只读口令：签发结果那一块。整页只有这里的内容是「现在不抄就没了」的，用强调色框住 */
-.issued{border:1px solid var(--accent);border-radius:8px;padding:12px 14px;margin-top:14px;background:var(--accent-soft)}
+.issued{border:1px solid var(--accent);border-radius:var(--r-ctl);padding:12px 14px;margin-top:14px;
+  background:var(--soft)}
 .issued>b{font-size:13px}
-.issued>p{margin:6px 0 10px;font-size:12.5px;color:var(--muted)}
+.issued>p{margin:6px 0 10px;font-size:12.5px;color:var(--dim)}
 .issued .secret{margin-bottom:6px}
 /* 口令要等宽字体才分得清 l 与 1；.fbox input 的固定宽度在这里得让位给 flex */
-.issued .secret input{font-family:ui-monospace,Menlo,Consolas,monospace;width:auto;letter-spacing:.5px}
-.issued .secret button{background:var(--panel);color:var(--text);border:1px solid var(--border);
-  border-radius:7px;padding:6px 12px;font-size:12.5px;cursor:pointer;flex:none}
+.issued .secret input{font-family:var(--mono);width:auto;letter-spacing:.5px}
+.issued .secret button{background:var(--surface);color:var(--text);border:1px solid var(--line);
+  border-radius:var(--r-ctl);padding:6px 12px;font-size:12.5px;cursor:pointer;flex:none}
 .issued .secret button:hover{border-color:var(--accent);color:var(--accent)}
-.issued .status{font-size:11.5px;color:var(--muted)}
+.issued .status{font-size:11.5px;color:var(--dim)}
 .issued .status.ok{color:var(--ok)}
 .issued .status.err{color:var(--err)}
-#token-list td.fp{font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--muted)}
-#token-list tr.revoked td{color:var(--muted)}
+#token-list td.fp{font-family:var(--mono);color:var(--dim)}
+#token-list tr.revoked td{color:var(--dim)}
 @media (max-width:680px){.field{grid-template-columns:1fr}}

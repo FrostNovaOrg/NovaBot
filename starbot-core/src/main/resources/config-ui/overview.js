@@ -84,7 +84,7 @@ export async function refreshWizardState() {
       : '未加载任何直播平台插件，无法登录';
     $('#s2-out').className = 'out' + (loggedIn ? ' ok' : '');
     $('#s2-qr').innerHTML = (account && !loggedIn && account.qrCode)
-      ? '<img referrerpolicy="no-referrer" style="width:240px;height:240px;background:#fff;border-radius:6px;padding:8px" src="data:image/png;base64,' + esc(account.qrCode) + '">'
+      ? '<img referrerpolicy="no-referrer" style="width:240px;height:240px;background:var(--paper);border-radius:var(--r-ctl);padding:8px" src="data:image/png;base64,' + esc(account.qrCode) + '">'
       : '';
 
     const count = (st.users || []).length;
