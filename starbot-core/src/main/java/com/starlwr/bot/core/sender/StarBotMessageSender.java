@@ -9,6 +9,9 @@ import com.starlwr.bot.core.model.MessagePlaceholders;
 import com.starlwr.bot.core.model.Sender;
 import com.starlwr.bot.core.service.AtAllQuotaService;
 import com.starlwr.bot.core.service.StarBotSenderService;
+import com.starlwr.bot.core.timeline.TimelineEvent;
+import com.starlwr.bot.core.timeline.TimelineEventType;
+import com.starlwr.bot.core.timeline.TimelineWriter;
 import com.starlwr.bot.core.util.HttpUtil;
 import com.starlwr.bot.core.util.StringUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -47,6 +50,11 @@ public class StarBotMessageSender {
      * 若也被静音拦下，只会让人以为「配置又出问题了」，与验证配置的初衷相悖。
      */
     private final PushGate pushGate;
+
+    /**
+     * 事件时间线。只写不读，写失败由它自己吞掉
+     */
+    private final TimelineWriter timeline;
 
     private final AtAllQuotaService atAllQuota;
 
@@ -89,12 +97,13 @@ public class StarBotMessageSender {
     @Autowired
     public StarBotMessageSender(HttpUtil http, StarBotSenderService senderService,
                                 PushActivityRecorder activityRecorder, PushGate pushGate,
-                                AtAllQuotaService atAllQuota,
+                                TimelineWriter timeline, AtAllQuotaService atAllQuota,
                                 ObjectProvider<AtAllPermissionResolver> atAllPermissionResolvers) {
         this.http = http;
         this.senderService = senderService;
         this.activityRecorder = activityRecorder;
         this.pushGate = pushGate;
+        this.timeline = timeline;
         this.atAllQuota = atAllQuota;
         this.atAllPermissionResolvers = atAllPermissionResolvers;
     }
@@ -105,8 +114,18 @@ public class StarBotMessageSender {
      */
     public void send(Message message) {
         if (!pushGate.allowed()) {
-            log.info("{}, 已丢弃消息: [{}] {}: {}", pushGate.blockReason(),
+            PushGate.Block block = pushGate.blockedBy();
+            log.info("{}, 已丢弃消息: [{}] {}: {}", block.getDescription(),
                     message.getType().getStr(), message.getNum(), message.getDisplay());
+
+            // 被丢掉的那条正是使用者最想知道的一条——日志里它只有一行 INFO，
+            // 默认级别下人还得先知道去哪儿翻才找得到
+            timeline.record(TimelineEvent.of(timelineType(block), TimelineEvent.Level.WARN)
+                    .channel(describeTarget(message))
+                    .text(block.getDescription() + "，丢弃了发往" + describeTarget(message) + "的一条消息")
+                    .detail("summary", message.getDisplay())
+                    .detail("platform", message.getPlatform())
+                    .build());
             return;
         }
 
@@ -504,5 +523,19 @@ public class StarBotMessageSender {
      */
     private String describeTarget(Message message) {
         return message.getType().getStr() + " " + message.getNum();
+    }
+
+    /**
+     * 拦截原因对应的时间线事件类型
+     * <p>
+     * 写成 switch 表达式且<b>不给 default</b>：{@link PushGate.Block} 日后多一项时，
+     * 这里会编译不过，逼着加的那个人当场决定它算哪一类。给了 default 的话，
+     * 新的那一类会被静默归进现有的某一类，而界面上「静音丢弃」的条数就此开始虚高。
+     */
+    private static TimelineEventType timelineType(PushGate.Block block) {
+        return switch (block) {
+            case QUIET_HOURS -> TimelineEventType.PUSH_MUTED;
+            case DISABLED -> TimelineEventType.PUSH_PAUSED;
+        };
     }
 }

@@ -1,5 +1,6 @@
 package com.starlwr.bot.core.config.ui;
 
+import com.starlwr.bot.core.config.ConfigEffect;
 import com.starlwr.bot.core.config.ConfigLevel;
 
 import java.util.LinkedHashMap;
@@ -21,42 +22,54 @@ import java.util.Map;
  */
 final class ExternalConfigurationFields {
     /**
-     * 配置项及其重要程度
+     * 配置项及其重要程度与生效时机
      * <p>
      * 用有序表以保证界面上的先后固定：地址在前、端口在后，与人填写的顺序一致。
      */
-    private static final Map<ConfigurationMetadataService.ConfigurationField, ConfigLevel.Level> FIELDS =
+    private static final Map<ConfigurationMetadataService.ConfigurationField, Marks> FIELDS =
             new LinkedHashMap<>();
 
     static {
         // ---- 累计数据存储 ----
-        put("spring.data.redis.host", "java.lang.String", ConfigLevel.Level.COMMON,
+        put("spring.data.redis.host", "java.lang.String", ConfigLevel.Level.COMMON, ConfigEffect.Effect.RESTART,
                 "累计数据存储的 Redis 地址，填了才有跨场次的累计数据。"
                         + "留空时本场数据完整可用，但「我的总数据」「直播间总数据」「总数据排行榜」"
                         + "会明确提示不可用——那类数据随时间无限增长，放在文件里迟早撑不住。"
                         + "只需本机可达，切勿暴露到公网。改完需重启");
-        put("spring.data.redis.port", "java.lang.Integer", ConfigLevel.Level.ADVANCED,
+        put("spring.data.redis.port", "java.lang.Integer", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.RESTART,
                 "Redis 端口，默认 6379");
-        put("spring.data.redis.password", "java.lang.String", ConfigLevel.Level.ADVANCED,
+        put("spring.data.redis.password", "java.lang.String", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.RESTART,
                 "Redis 密码，未设密码时留空");
-        put("spring.data.redis.database", "java.lang.Integer", ConfigLevel.Level.ADVANCED,
+        put("spring.data.redis.database", "java.lang.Integer", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.RESTART,
                 "Redis 库号，默认 0。与其他程序共用同一实例时可换一个库避免键冲突");
 
         // ---- 邮件告警的发件服务 ----
         // 收件人是 starbot.core.mail.default-to，在界面上找得到；
         // 但没有下面这几项，那一项配了也发不出去
-        put("spring.mail.host", "java.lang.String", ConfigLevel.Level.ADVANCED,
+        put("spring.mail.host", "java.lang.String", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.RESTART,
                 "邮件告警的 SMTP 服务器地址，如 smtp.qq.com。不用邮件告警时留空");
-        put("spring.mail.port", "java.lang.Integer", ConfigLevel.Level.ADVANCED,
+        put("spring.mail.port", "java.lang.Integer", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.RESTART,
                 "SMTP 端口，如 465（SSL）或 587（STARTTLS）");
-        put("spring.mail.username", "java.lang.String", ConfigLevel.Level.ADVANCED,
+        put("spring.mail.username", "java.lang.String", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.RESTART,
                 "SMTP 登录账号，通常就是发件邮箱地址");
-        put("spring.mail.password", "java.lang.String", ConfigLevel.Level.ADVANCED,
+        put("spring.mail.password", "java.lang.String", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.RESTART,
                 "SMTP 密码或授权码。多数邮箱服务要求的是「授权码」而非登录密码");
     }
 
-    private static void put(String name, String type, ConfigLevel.Level level, String description) {
-        FIELDS.put(new ConfigurationMetadataService.ConfigurationField(name, type, description, null), level);
+    /**
+     * 这几项的重要程度与生效时机
+     * <p>
+     * 两者<b>都是必填的构造参数</b>，而不是各一张可以只写一半的表。这几项没有字段可标注，
+     * 构建期那道「每个配置项都标了生效时机」的判据够不着它们；新加一项时唯一还拦得住
+     * 「忘了标」的，就是这里少写一个参数编译不过。
+     */
+    private record Marks(ConfigLevel.Level level, ConfigEffect.Effect effect) {
+    }
+
+    private static void put(String name, String type, ConfigLevel.Level level, ConfigEffect.Effect effect,
+                            String description) {
+        FIELDS.put(new ConfigurationMetadataService.ConfigurationField(name, type, description, null),
+                new Marks(level, effect));
     }
 
     private ExternalConfigurationFields() {
@@ -74,7 +87,19 @@ final class ExternalConfigurationFields {
      */
     static Map<String, ConfigLevel.Level> levels() {
         Map<String, ConfigLevel.Level> result = new LinkedHashMap<>();
-        FIELDS.forEach((field, level) -> result.put(field.name(), level));
+        FIELDS.forEach((field, marks) -> result.put(field.name(), marks.level()));
+        return result;
+    }
+
+    /**
+     * 这些配置项的生效时机
+     * <p>
+     * 都要重启：Redis 连接与邮件发件服务都是启动时装配一次的 bean，改了配置对象也换不掉它们。
+     * 累计存储日后要做到「配好即自动恢复」的话，改的是那一侧的装配方式，不是这里的标注。
+     */
+    static Map<String, ConfigEffect.Effect> effects() {
+        Map<String, ConfigEffect.Effect> result = new LinkedHashMap<>();
+        FIELDS.forEach((field, marks) -> result.put(field.name(), marks.effect()));
         return result;
     }
 }

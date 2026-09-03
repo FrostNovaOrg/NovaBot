@@ -520,6 +520,9 @@ fi
 #
 # 逐件点名的那几件为什么算核心，一句话各记一条：
 #   config/*Properties       —— 配置纯 POJO，零框架注解，事件源自己要读的那几节
+#   config/ConfigEffect      —— 配置项生效时机的标注，只用 java.lang.annotation，零框架依赖。
+#                          它必须与上面那几节同侧：那几个 POJO 的字段要标它，
+#                          放在壳侧就等于核心反过来引用运行壳，本格与格7 会当场红
 #   config/CoreConfigurationSections —— 上面那几节的元数据出处。默认值取自字段初始值、
 #                          说明取自 Javadoc，两者只存在于源码里，因此这一份声明必须与
 #                          那几个类同模块；放到壳侧生成出来的就是一列空值。它不参与绑定
@@ -538,7 +541,8 @@ fi
 G6_CORE_DIRS="protocol event datasource model"
 
 # —— 核心件：逐件点名（路径相对 com/starlwr/bot/core/）——
-G6_CORE_FILES="config/CoreConfigurationSections.java
+G6_CORE_FILES="config/ConfigEffect.java
+config/CoreConfigurationSections.java
 config/NetworkProperties.java
 config/NetworkThreadProperties.java
 config/LogProperties.java

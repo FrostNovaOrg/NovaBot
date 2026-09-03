@@ -2,6 +2,7 @@ package com.starlwr.bot.core.config.ui;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.starlwr.bot.core.config.ConfigEffect;
 import com.starlwr.bot.core.config.ConfigLevel;
 import com.starlwr.bot.core.config.ui.auth.PasswordHash;
 import com.starlwr.bot.core.config.ui.page.ConsolePageProvider;
@@ -151,6 +152,13 @@ public class ConfigUiController {
 
     private final ConfigurationLevelResolver levelResolver;
 
+    private final ConfigurationEffectResolver effectResolver;
+
+    /**
+     * 保存之后把能即时生效的那几项落到运行中的程序上，并记着还欠一次重启的是哪些
+     */
+    private final RuntimeConfigurationApplier runtimeApplier;
+
     /**
      * 事件流只读口令的签发与吊销
      */
@@ -189,10 +197,14 @@ public class ConfigUiController {
                               StarBotEventHandlerService handlerService,
                               DataSourceServiceRegistry dataSourceServiceRegistry,
                               ConfigurationLevelResolver levelResolver,
+                              ConfigurationEffectResolver effectResolver,
+                              RuntimeConfigurationApplier runtimeApplier,
                               ObjectProvider<BotConnectionTester> connectionTesters,
                               ObjectProvider<ConsolePageProvider> pageProviders,
                               EventStreamTokenService eventStreamTokens,
                               ObjectProvider<BuildProperties> buildProperties) {
+        this.effectResolver = effectResolver;
+        this.runtimeApplier = runtimeApplier;
         this.buildProperties = buildProperties;
         this.eventStreamTokens = eventStreamTokens;
         this.pageProviders = pageProviders;
@@ -361,6 +373,7 @@ public class ConfigUiController {
     public JSONObject schema() {
         JSONArray groups = new JSONArray();
         Map<String, ConfigLevel.Level> levels = levelResolver.getLevels();
+        Map<String, ConfigEffect.Effect> effects = effectResolver.getEffects();
 
         metadataService.getGroupedFields().forEach((group, fields) -> {
             JSONArray items = new JSONArray();
@@ -373,6 +386,11 @@ public class ConfigUiController {
                 item.put("defaultValue", field.defaultValue());
                 // 未标注的一律按高级处理：新增配置项默认收进高级区，避免常用区随时间不断膨胀
                 item.put("level", levels.getOrDefault(field.name(), ConfigLevel.Level.ADVANCED).name());
+                // 生效时机没有默认值可取。这里回 null 而不是补一个「重启生效」：
+                // 补上之后这一格就再也不会是空的，「没人标过」这件事在接口上永远看不出来。
+                // 界面拿到 null 时按需重启显示，那是显示上的兜底，不是把答案编出来
+                ConfigEffect.Effect effect = effects.get(field.name());
+                item.put("effect", effect == null ? null : effect.name());
                 item.put("sensitive", SensitiveFields.isSensitive(field.name(), field.type()));
                 items.add(item);
             }
@@ -446,8 +464,13 @@ public class ConfigUiController {
      * 一个原本写在旧位置的配置项，被保存一次就等于迁到了新位置。
      * <b>旧位置那几行不删也不改</b>——删是替使用者改他自己的配置文件，理由见
      * {@link ConfigurationKeyAliases}。程序两套键都认，多留几行只多一条启动提醒。
+     * <p>
+     * 写完之后还要多做一件事：把能即时生效的那几项落到运行中的程序上
+     * （见 {@link RuntimeConfigurationApplier}），并如实告诉界面剩下哪几项还欠一次重启。
+     * <b>此前这里一律回「重启后生效」</b>，于是「暂停推送」这种当场就管用的项也被说成要重启，
+     * 有人为此重启了整个程序——而重启会把正在采集的场次打断。
      * @param body 待保存的键值
-     * @return 保存结果
+     * @return 保存结果，含改动项数、其中需重启的项数与它们的键名
      */
     @PostMapping("/api/values")
     public JSONObject save(@RequestBody Map<String, String> body) {
@@ -461,10 +484,21 @@ public class ConfigUiController {
         hashPasswordInPlace(changes);
 
         try {
-            int changed = fileService.write(changes);
+            List<String> changedKeys = fileService.write(changes);
+
+            // 只对真正落盘的那几个键动运行中的配置：送上来但值没变的项不该触发任何副作用
+            Map<String, String> applied = new LinkedHashMap<>();
+            changedKeys.forEach(key -> applied.put(key, changes.get(key)));
+            List<String> restartRequired = runtimeApplier.applyAndTrack(applied);
+
+            int changed = changedKeys.size();
+            int restart = restartRequired.size();
+
             result.put("success", true);
             result.put("changed", changed);
-            result.put("message", changed == 0 ? "没有需要保存的改动" : "已保存 " + changed + " 项，重启后生效");
+            result.put("restartRequired", restartRequired);
+            result.put("restartPending", runtimeApplier.getPendingRestart());
+            result.put("message", saveMessage(changed, restart));
         } catch (IOException e) {
             log.error("保存配置文件失败", e);
             result.put("success", false);
@@ -472,6 +506,25 @@ public class ConfigUiController {
         }
 
         return result;
+    }
+
+    /**
+     * 保存之后那句话
+     * <p>
+     * 一项都不用重启时写「已生效」而不是「其中 0 项需重启」：后者要人先读懂句式再算一遍才知道
+     * 「不用管」，而这是最常见的那种情形。
+     * @param changed 实际保存的项数
+     * @param restart 其中需要重启才生效的项数
+     * @return 提示文案
+     */
+    private static String saveMessage(int changed, int restart) {
+        if (changed == 0) {
+            return "没有需要保存的改动";
+        }
+        if (restart == 0) {
+            return "已保存 " + changed + " 项，已生效";
+        }
+        return "已保存 " + changed + " 项，其中 " + restart + " 项需重启";
     }
 
     /**
@@ -723,10 +776,14 @@ public class ConfigUiController {
         JSONObject result = new JSONObject();
         boolean enabled = Boolean.TRUE.equals(body.getBoolean("enabled"));
 
-        properties.getPush().setEnabled(enabled);
+        // 走与设置页保存同一条通道，而不是在这里再写一次 setEnabled：
+        // 「这一项怎么落到运行中的程序上」有两处实现的话，改了其中一处的另一处不会跟着变，
+        // 而两条路在界面上看起来是同一个开关
+        Map<String, String> change = Map.of("starbot.core.push.enabled", String.valueOf(enabled));
+        runtimeApplier.applyAndTrack(change);
 
         try {
-            fileService.write(Map.of("starbot.core.push.enabled", String.valueOf(enabled)));
+            fileService.write(change);
             result.put("success", true);
             result.put("message", enabled ? "已恢复推送" : "已暂停全部推送");
             log.info("配置界面已{}全局推送", enabled ? "恢复" : "暂停");
@@ -1202,6 +1259,9 @@ public class ConfigUiController {
         // 上限由后端下发，界面不再各写一份，免得两边对不上
         result.put("streamerLimit", MonitorLimit.MAX_STREAMERS);
         result.put("pushEnabled", properties.getPush().isEnabled());
+        // 保存过、仍等着重启的那几项。放在这里而不是让界面自己记：这条提示的寿命是「到下次重启为止」，
+        // 而只有服务端知道自己是不是刚起来的。记在浏览器里的话，重启完那条提示还挂着
+        result.put("restartPending", runtimeApplier.getPendingRestart());
         // 供界面填充「发送测试消息」的推送平台下拉框，避免让使用者手打平台名
         result.put("senders", senderService.getSenderNames().stream().sorted().toList());
         return result;

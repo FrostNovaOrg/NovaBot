@@ -1,0 +1,82 @@
+package com.starlwr.bot.core.timeline;
+
+/**
+ * 时间线事件类型
+ * <p>
+ * <b>闭集</b>：新增一类事件就在这里加一项，而不是让调用方传一个自由字符串。
+ * 自由字符串的代价在读的那一端——界面要按类型筛选，而它无从知道一共有哪几种，
+ * 只能把见过的凑成一张表，于是「这台实例今天没发生过的类型」在筛选框里根本不出现。
+ * <p>
+ * ⚠️ <b>只进不退</b>：这些名字已经写进磁盘上的 {@code timeline/*.jsonl}。
+ * 改名或删项等于让既有记录里的那一行认不出来（读的时候会被跳过），
+ * 而那些行是补不回来的。要改叫法请改 {@link #getDescription() 说明}，不要改枚举名。
+ */
+public enum TimelineEventType {
+    /**
+     * 处于静音时段，消息被丢弃
+     */
+    PUSH_MUTED("静音丢弃"),
+
+    /**
+     * 全局推送开关关闭，消息被丢弃
+     */
+    PUSH_PAUSED("暂停丢弃"),
+
+    /**
+     * 推送成功
+     */
+    PUSH_SENT("推送成功"),
+
+    /**
+     * 推送失败
+     */
+    PUSH_FAILED("推送失败"),
+
+    /**
+     * 某项健康状况发生变化，含恢复正常
+     */
+    PROBE_CHANGED("状态变化"),
+
+    /**
+     * 账号登录态由正常转为不正常
+     */
+    LOGIN_LOST("登录失效");
+
+    private final String description;
+
+    TimelineEventType(String description) {
+        this.description = description;
+    }
+
+    /**
+     * 中文说明，供界面展示与筛选
+     * <p>
+     * 由枚举自己带着而不是让界面按类型名硬编码一张对照表：那张表漏一项的表现是
+     * 界面上出现一个英文枚举名，而漏了谁只有真发生过那类事件的人才看得见。
+     * @return 中文说明
+     */
+    public String getDescription() {
+        return description;
+    }
+
+    /**
+     * 按名称解析，认不出时返回 {@code null}
+     * <p>
+     * 不抛异常：这个方法的两个使用者——读旧记录与解析查询参数——都不该因为
+     * 一个认不出的名字而整体失败。
+     * @param name 类型名，不区分大小写
+     * @return 事件类型，认不出时为 {@code null}
+     */
+    public static TimelineEventType parse(String name) {
+        if (name == null || name.isBlank()) {
+            return null;
+        }
+
+        for (TimelineEventType type : values()) {
+            if (type.name().equalsIgnoreCase(name.trim())) {
+                return type;
+            }
+        }
+        return null;
+    }
+}

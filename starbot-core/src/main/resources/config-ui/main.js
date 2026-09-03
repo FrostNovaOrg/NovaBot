@@ -103,6 +103,11 @@ export async function load() {
   try {
     const [s, v] = await Promise.all([api('/schema'), api('/values')]);
     store.schema = s.groups || [];
+    // 生效时机摊平成一张表：底部改动条要按键查，而字段表是按分组套着的
+    store.effects = {};
+    for (const g of store.schema) {
+      for (const f of g.fields) store.effects[f.name] = f.effect;
+    }
     store.values = v.values || {};
     // 哪几项是按旧位置生效的，要跟着值一起进来：值与它的出处分开取，两次之间配置一变就对不上了
     store.legacy = v.legacy || {};
@@ -113,6 +118,8 @@ export async function load() {
       api('/datasource'), api('/status'), api('/handlers'), api('/platforms')]);
     renderStatus(st);
     renderConfigPath(st.configPath);
+    // 上一次保存留下的「还欠一次重启」，刷新页面、换台机器打开都该照样看得见
+    store.restartPending = st.restartPending || [];
 
     store.handlerList = h.handlers || [];
     store.senderList = st.senders || [];

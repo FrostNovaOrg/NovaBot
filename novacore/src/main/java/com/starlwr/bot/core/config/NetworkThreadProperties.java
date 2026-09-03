@@ -16,20 +16,24 @@ public class NetworkThreadProperties {
     /**
      * 线程池核心线程数
      */
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
     private int corePoolSize = 4;
 
     /**
      * 线程池最大线程数
      */
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
     private int maxPoolSize = 24;
 
     /**
      * 线程池任务队列容量
      */
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
     private int queueCapacity = 64;
 
     /**
      * 非核心线程存活时间，单位：秒
      */
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
     private int keepAliveSeconds = 60;
 }

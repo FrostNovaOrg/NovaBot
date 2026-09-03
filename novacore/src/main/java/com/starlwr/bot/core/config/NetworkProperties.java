@@ -19,10 +19,12 @@ public class NetworkProperties {
     /**
      * 网络请求连接超时时间，单位：秒
      */
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
     private int connectTimeout = 10;
 
     /**
      * 网络请求读取超时时间，单位：秒
      */
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
     private int readTimeout = 60;
 }

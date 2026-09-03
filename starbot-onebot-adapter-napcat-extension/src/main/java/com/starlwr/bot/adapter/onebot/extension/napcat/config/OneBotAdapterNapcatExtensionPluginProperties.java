@@ -1,5 +1,6 @@
 package com.starlwr.bot.adapter.onebot.extension.napcat.config;
 
+import com.starlwr.bot.core.config.ConfigEffect;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import lombok.Getter;
 import lombok.Setter;
@@ -18,5 +19,6 @@ public class OneBotAdapterNapcatExtensionPluginProperties {
     /**
      * 是否启用发送 @全体成员 次数不足时替换为群待办
      */
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
     private boolean enableBackupAtAll = true;
 }

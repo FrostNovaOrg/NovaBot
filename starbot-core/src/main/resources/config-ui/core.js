@@ -99,6 +99,38 @@ export function dropDisplayOnly(key, value) {
   return key.startsWith('_') ? undefined : value;
 }
 
+/**
+ * 这一项改了要不要重启才生效
+ *
+ * 只有明确标着「即时生效」的才算即时。没标的（后端回 null，多见于运行期装进来的插件）
+ * 一律按需重启：多提示一次重启的代价是白重启，而反过来说成已生效却没生效，
+ * 使用者会以为功能坏了，且没有任何东西会纠正他。
+ * @param name 配置项名
+ * @return {boolean} 需要重启时为 true
+ */
+export function needsRestart(name) {
+  return store.effects[name] !== 'IMMEDIATE';
+}
+
+/**
+ * 底部那条改动条上写什么
+ *
+ * 它答的是「有多少改动还没生效」，因此有两段各自成立的话：
+ * 改了还没保存的那 N 处（其中有几处保存了也还要重启），以及已经保存下来、
+ * 正等着重启的那些。后者不随保存清零——它要一直挂到重启为止，那正是它的意思。
+ * @param n 改过还没保存的项数
+ * @return {string} 改动条文案
+ */
+function changeText(n) {
+  const pending = store.restartPending.length;
+
+  if (!n) return pending ? pending + ' 处改动需重启生效' : '';
+
+  // 需重启的项数只在设置页算得出：推送页的改动不是配置项，没有生效时机可言
+  const m = saveTarget() === 'values' ? Object.keys(store.dirty).filter(needsRestart).length : 0;
+  return n + ' 处改动' + (m ? ' · 其中 ' + m + ' 处需重启生效' : '');
+}
+
 export function markDirty() {
   const target = saveTarget();
   const n = changeCount();
@@ -108,5 +140,5 @@ export function markDirty() {
   // 而按 N 禁用意味着算漏一处就等于把保存这条路堵死
   $('#save').disabled = !target || (target === 'values' && n === 0);
   $('#discard').disabled = n === 0;
-  $('#change-count').textContent = n ? n + ' 处改动' : '';
+  $('#change-count').textContent = changeText(n);
 }

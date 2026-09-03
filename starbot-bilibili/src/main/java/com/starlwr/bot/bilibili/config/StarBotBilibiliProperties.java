@@ -1,5 +1,6 @@
 package com.starlwr.bot.bilibili.config;
 
+import com.starlwr.bot.core.config.ConfigEffect;
 import com.starlwr.bot.core.config.ConfigLevel;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import lombok.Getter;
@@ -37,21 +38,25 @@ public class StarBotBilibiliProperties {
         /**
          * 线程池核心线程数
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private int corePoolSize = 4;
 
         /**
          * 线程池最大线程数
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private int maxPoolSize = 32;
 
         /**
          * 线程池任务队列容量
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private int queueCapacity = 256;
 
         /**
          * 非核心线程存活时间，单位：秒
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private int keepAliveSeconds = 300;
     }
 
@@ -64,11 +69,13 @@ public class StarBotBilibiliProperties {
         /**
          * 是否启用直播间原始消息调试日志
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private boolean liveRoomRawMessageLog = false;
 
         /**
          * 是否启用动态接口原始响应调试日志
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private boolean dynamicRawMessageLog = false;
 
         /**
@@ -80,6 +87,7 @@ public class StarBotBilibiliProperties {
          * <p>
          * 取证用，默认关闭；取证结束即关闭并清理日志，探针行里的 id/rid 按关联信息处置。
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private boolean dynamicDedupProbe = false;
     }
 
@@ -98,16 +106,19 @@ public class StarBotBilibiliProperties {
          * 模板里的值会覆盖这里的默认值——2026-08-07 就发现模板停在 Chrome/119 而这里已是 150，
          * 生产按模板部署，实际发出去的一直是落后三年的那个。两处不同步等于这个默认值形同虚设。
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private String userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36";
 
         /**
          * 接口请求失败后的最大重试次数
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private int apiRetryMaxTimes = 3;
 
         /**
          * 接口请求失败后的重试间隔，单位：毫秒
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private int apiRetryInterval = 3000;
     }
 
@@ -133,11 +144,13 @@ public class StarBotBilibiliProperties {
          * 本机试跑、给下游供一路粗粒度事件流、不想为采集绑一个账号。要完整数据就得登录。
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private boolean anonymous = false;
 
         /**
          * 登录凭据存储文件路径
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private String cookiePath = "cookies.json";
 
         /**
@@ -147,6 +160,7 @@ public class StarBotBilibiliProperties {
          * 进程或备份都能直接接管账号。启用后凭据将以 AES-GCM 加密保存，密钥存放于独立的密钥文件中，
          * 两者均以仅属主可读写的权限创建。
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private boolean encrypt = true;
 
         /**
@@ -154,6 +168,7 @@ public class StarBotBilibiliProperties {
          * <p>
          * 密钥与密文分离存放，便于将密钥置于权限更严格的位置，或替换为由外部密钥管理服务注入。
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private String keyPath = "cookies.key";
 
         /**
@@ -164,6 +179,7 @@ public class StarBotBilibiliProperties {
          * 默认十分钟一次，开销可忽略。
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private int verifyInterval = 600;
 
         /**
@@ -176,6 +192,7 @@ public class StarBotBilibiliProperties {
          * 上限的意义是别把间隔拉到几天：退避是为了不在故障期间空转，不是为了放弃。
          * 设为 0 或小于复检间隔时等于关闭退避，每次都按复检间隔重试。
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private int maintenanceBackoffCap = 3600;
 
         /**
@@ -188,6 +205,7 @@ public class StarBotBilibiliProperties {
          * 控制；复检关闭时续期也不会执行。
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private boolean autoRefreshCookie = true;
 
         /**
@@ -200,6 +218,7 @@ public class StarBotBilibiliProperties {
          * 除非 TV 端接口出现异常，否则不建议改为 web。
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private String qrCodeLoginMode = "tv";
     }
 
@@ -213,6 +232,7 @@ public class StarBotBilibiliProperties {
          * 是否启用直播间连接，若连接直播间已被风控，可关闭此开关，仅使用备用直播推送
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private boolean enableConnectLiveRoom = true;
 
         /**
@@ -226,16 +246,19 @@ public class StarBotBilibiliProperties {
          * 默认关闭，即每个启用的主播都连。只在连接数受限、又确实只关心推送的场景下才开。
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private boolean onlyConnectNecessaryRooms = false;
 
         /**
          * 直播间连接间隔，连接过快可能触发风控，单位：毫秒
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private int liveRoomConnectInterval = 1000;
 
         /**
          * 直播间重连间隔，单位：毫秒
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private int liveRoomReconnectInterval = 1000;
 
         /**
@@ -245,11 +268,13 @@ public class StarBotBilibiliProperties {
          * 做成可配的理由是内存——默认堆 `-Xmx512m`，而这个上限允许单次解压吃掉
          * 32 MB 连续字节数组，在小内存机器上防御上限自己就可能是那根稻草。
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private int maxDecompressedBytes = 32 * 1024 * 1024;
 
         /**
          * 递归展开压缩包的最大层数，非正数回退到默认 3；正常数据不超过一层
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private int maxDecodeNestingDepth = 3;
 
         /**
@@ -259,26 +284,31 @@ public class StarBotBilibiliProperties {
          * 数不清次数，也看不出是集中在一个房间还是所有房间一起断——而这两者的处理方式相反。
          * 逐次那行走 DEBUG，按本窗口汇总成一条带归因的摘要。没有断线的窗口不打日志。
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private int disconnectDigestInterval = 600;
 
         /**
          * 礼物配置缓存过期时间，单位：秒
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private int giftCacheExpire = 3600;
 
         /**
          * 是否自动补全事件信息，启用后会为缺少昵称、头像等信息的事件额外请求接口补全
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private boolean completeEvent = false;
 
         /**
          * 是否启用直播间数据风控检测
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private boolean autoDetectLiveRoomRisk = true;
 
         /**
          * 直播间数据风控检测周期，单位：秒
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private int autoDetectLiveRoomRiskInterval = 60;
 
         /**
@@ -292,18 +322,21 @@ public class StarBotBilibiliProperties {
          * 一个 41 万人气的房间进房占比 53% 被判风控，而它同时段每分钟收 71 条弹幕、
          * 对独立基准的到达率 93.3%。**「进房占比高」与「收不到业务消息」是两回事。**
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private int autoDetectLiveRoomRiskWindows = 3;
 
         /**
          * 是否启用备用直播推送，通过轮询接口而非长连接判断开播状态
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private boolean backupLivePush = true;
 
         /**
          * 备用直播推送检测间隔，单位：秒
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private int backupLivePushInterval = 10;
 
         /**
@@ -315,6 +348,7 @@ public class StarBotBilibiliProperties {
          * 6 小时一次足够画出趋势，一年不到 2 MB；调得太密除了多打接口没有别的收益。
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private int snapshotInterval = 6;
 
         /**
@@ -325,6 +359,7 @@ public class StarBotBilibiliProperties {
          * 图片按固定高度等比缩放。
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private String reportLogoPath = "";
     }
 
@@ -344,17 +379,20 @@ public class StarBotBilibiliProperties {
          * 本开关会修改登录账号的关注列表，这也是建议使用专用小号而非个人主号的原因之一。
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private boolean autoFollow = true;
 
         /**
          * 自动关注的执行间隔，单位：秒
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private int autoFollowInterval = 30;
 
         /**
          * 动态接口请求间隔，单位：秒
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private int apiRequestInterval = 10;
 
         /**
@@ -365,17 +403,20 @@ public class StarBotBilibiliProperties {
          * 在此填入本地图片路径即可，图片会按固定高度等比缩放。
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private String logoPath = "";
 
         /**
          * 是否自动保存绘制出的动态图片
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private boolean autoSaveImage = false;
 
         /**
          * 动态发布时间早于此分钟数时不再推送，避免首次启动时补推大量历史动态
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private int pushMinutes = 1440;
 
         /**
@@ -389,6 +430,7 @@ public class StarBotBilibiliProperties {
          * <b>打开之前先确认这个 UP 主配了开播推送。</b>只配动态推送、没配开播推送时，
          * 关掉本开关就再也收不到他的开播消息了。
          */
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
         private boolean pushLiveDynamic = false;
     }
 }

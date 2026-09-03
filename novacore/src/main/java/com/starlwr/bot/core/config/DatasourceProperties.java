@@ -20,10 +20,12 @@ public class DatasourceProperties {
     /**
      * JSON 文件路径，仅使用 JSON 数据源时生效
      */
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
     private String jsonPath = "datasource.json";
 
     /**
      * JSON 文件发生变化时是否自动重载，仅使用 JSON 数据源时生效
      */
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
     private boolean jsonAutoReload = true;
 }

@@ -1,6 +1,10 @@
 package com.starlwr.bot.core.health;
 
+import com.starlwr.bot.core.timeline.TimelineEvent;
+import com.starlwr.bot.core.timeline.TimelineEventType;
+import com.starlwr.bot.core.timeline.TimelineWriter;
 import lombok.Getter;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -55,6 +59,20 @@ public class PushActivityRecorder {
     private final Deque<PushRecord> history = new ArrayDeque<>();
 
     /**
+     * 事件时间线
+     * <p>
+     * 与上面那份 {@link #history} <b>并写、不互相取代</b>：内存里这份只有 50 条、
+     * 重启即空，答的是「此刻系统还在不在干活」；时间线落磁盘、按日留存，
+     * 答的是「昨晚那条到底怎么了」。把前者换成后者，健康探针就得去读文件才能判活。
+     */
+    private final TimelineWriter timeline;
+
+    @Autowired
+    public PushActivityRecorder(TimelineWriter timeline) {
+        this.timeline = timeline;
+    }
+
+    /**
      * 记录一次推送成功
      * @param platform 推送平台
      * @param target 推送目标描述
@@ -64,6 +82,13 @@ public class PushActivityRecorder {
         lastSuccessAt = Instant.now();
         successCount.incrementAndGet();
         append(new PushRecord(lastSuccessAt, platform, target, summary, true, null));
+
+        timeline.record(TimelineEvent.of(TimelineEventType.PUSH_SENT, TimelineEvent.Level.INFO)
+                .at(lastSuccessAt)
+                .channel(target)
+                .text("已推送：" + summary)
+                .detail("platform", platform)
+                .build());
     }
 
     /**
@@ -78,6 +103,14 @@ public class PushActivityRecorder {
         lastFailureReason = reason;
         failureCount.incrementAndGet();
         append(new PushRecord(lastFailureAt, platform, target, summary, false, reason));
+
+        timeline.record(TimelineEvent.of(TimelineEventType.PUSH_FAILED, TimelineEvent.Level.ERROR)
+                .at(lastFailureAt)
+                .channel(target)
+                .text("推送失败：" + (reason == null || reason.isBlank() ? "未给出原因" : reason))
+                .detail("platform", platform)
+                .detail("summary", summary)
+                .build());
     }
 
     /**
