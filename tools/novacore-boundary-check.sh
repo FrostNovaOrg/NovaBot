@@ -6,7 +6,7 @@
 # 控制台／登录／推送／聚合／存储归 NovaBot 壳。一句话尺：莓果或 VRDash 用不到的，就不是核心。
 #
 # 本尺只 grep/find，不 build、不联网。拆仓／拆模块后作 CI 守卫。
-# 退码：五格任一红 ⇒ 非 0。
+# 退码：任一格红 ⇒ 非 0。
 #
 # —— 格4／格5 为什么要加（2026-09-03 加严）——
 # 原来的格2 只按 NovaEventEndpoint／NovaEventStreamConfiguration 两个文件名判「在不在核心模块」。
@@ -59,7 +59,15 @@ G1_EXEMPT=()
 TOKENS="$WORK/tokens"
 : > "$TOKENS"
 
-LP="starbot-core/src/main/java/com/starlwr/bot/core/enums/LivePlatform.java"
+# —— 平台标识件的位置现算，不写死模块名 ——
+# 写死 starbot-core/... 的那一版有一个安静的失败形态：核心件搬进新模块的那一刻文件就不在了，
+# 而格3 的两个「件内」计数在文件缺席时双双为 0，于是它报绿——报的绿是「这个文件里没有平台申报」，
+# 而实情是「这个文件不在这里」。判据落在空集上恒真，看起来和守住了一模一样。
+LP=""
+for allowed in $ALLOWED_CORE_MODULES; do
+    candidate="$allowed/src/main/java/com/starlwr/bot/core/enums/LivePlatform.java"
+    [ -f "$candidate" ] && LP="$candidate" && break
+done
 
 # —— 插件模块的主码目录，供源头① 与格3 使用 ——
 PLUGIN_MAINS=""
@@ -306,7 +314,10 @@ g3_core_concrete=$(core_code_hits 'LivePlatform\.[A-Z][A-Z_]*')
 g3_core_register=$(core_code_hits 'LivePlatform\.of[[:space:]]*\(')
 
 g3_read="件内申报${g3_declared}处 件内平台名${g3_named}处 核心内具体成员${g3_core_concrete}处 核心内登记${g3_core_register}处 插件侧登记${g1_registrations}处(现算)"
-if [ "$g3_declared" -eq 0 ] && [ "$g3_named" -eq 0 ] \
+if [ -z "$LP" ]; then
+    echo "格3 红 核心模块里找不到 LivePlatform.java 受查模块: $ALLOWED_CORE_MODULES"
+    RED=1
+elif [ "$g3_declared" -eq 0 ] && [ "$g3_named" -eq 0 ] \
     && [ "$g3_core_concrete" -eq 0 ] && [ "$g3_core_register" -eq 0 ]; then
     echo "格3 绿 $g3_read $LP"
 else
@@ -509,6 +520,9 @@ fi
 #
 # 逐件点名的那几件为什么算核心，一句话各记一条：
 #   config/*Properties       —— 配置纯 POJO，零框架注解，事件源自己要读的那几节
+#   config/CoreConfigurationSections —— 上面那几节的元数据出处。默认值取自字段初始值、
+#                          说明取自 Javadoc，两者只存在于源码里，因此这一份声明必须与
+#                          那几个类同模块；放到壳侧生成出来的就是一列空值。它不参与绑定
 #   service/EventStreamTokenService —— 事件输出协议的只读令牌，属第④层
 #   service/DataSourceService / DataSourceServiceConfig —— 采集范围的接口面与实现注解
 #   enums/LivePlatform / LiveEndReason / PushTargetType —— 平台标识与事件模型枚举；
@@ -524,7 +538,8 @@ fi
 G6_CORE_DIRS="protocol event datasource model"
 
 # —— 核心件：逐件点名（路径相对 com/starlwr/bot/core/）——
-G6_CORE_FILES="config/NetworkProperties.java
+G6_CORE_FILES="config/CoreConfigurationSections.java
+config/NetworkProperties.java
 config/NetworkThreadProperties.java
 config/LogProperties.java
 config/LiveProperties.java
@@ -611,6 +626,117 @@ if [ "$g6_n" -eq 0 ]; then
 else
     echo "格6 红 命中${g6_n} ${g6_hits% } $g6_read"
     RED=1
+fi
+
+# ============================================================
+# 格7：核心模块的构建描述里不得依赖运行壳模块
+#
+# 格6 是这一格的前奏，两格问的不是同一件事：格6 问「核心件有没有在源码里引用壳侧件」，
+# 靠 grep 类名判；本格问「构建配置上核心还能不能够得着壳」。前者绿而后者红是常态——
+# 源码一处不引用，pom 里却仍写着对壳的依赖，那么下一个人往核心里写一句 new 壳类()
+# 照样编得过，边界只剩下一把每天要有人跑的 grep 在守。本格一绿，那句 new 当场编译失败：
+# 判据从「有人记得跑尺」变成「编译器不答应」。这是模块化这一步真正买到的东西。
+#
+# 模块名不写死，两侧都从格6 已经算好的两份清单现算：
+#   核心模块 ＝ 核心件所在的模块目录（格6 的 G6_CORE）
+#   壳模块   ＝ 壳侧件所在的模块目录（格6 的 G6_SHELL）
+# 写死 "novacore 的 pom 里不许有 starbot-core" 只守得住这一次改名之前的形态：
+# 模块一改名，那一格就什么都不查了，而它照样报绿——同一个坑格3 刚踩过一次。
+#
+# 两侧落在同一个模块时判红并写明「尚未拆分」：那时核心与壳同在一个 jar 里，
+# 「pom 不依赖壳」这句话恒真，而恒真的判据守不住任何东西。
+#
+# 依赖按 artifactId 判，不按目录名：目录叫什么与 Maven 解析用的坐标是两件事。
+# 比对前先去掉 XML 注释——pom 里写一句「本模块不依赖运行壳」是该写的话，
+# 让它把自己判红，结局必然是把那句注释删掉（理由同格3 的 strip_comments）。
+# ============================================================
+
+# 去掉 XML 注释后的正文
+strip_xml_comments() {
+    awk '
+    {
+        line = $0
+        while (1) {
+            if (inc) {
+                i = index(line, "-->")
+                if (i == 0) { line = ""; break }
+                line = substr(line, i + 3); inc = 0
+            } else {
+                i = index(line, "<!--")
+                if (i == 0) break
+                pre = substr(line, 1, i - 1); rest = substr(line, i + 4)
+                j = index(rest, "-->")
+                if (j == 0) { line = pre; inc = 1; break }
+                line = pre substr(rest, j + 3)
+            }
+        }
+        print line
+    }' "$1"
+}
+
+# 取一个模块自身的 artifactId
+#
+# 先把 <parent> 那一段整块去掉再取第一处：模块 pom 里最先出现的 artifactId 是父工程的，
+# 直接 head -1 取到的是 starbot-parent，于是本格拿父工程的坐标去核心 pom 里找——
+# 找得到（每个模块都声明父工程），判红，而红的理由与要守的那件事毫无关系。
+module_artifact() {
+    strip_xml_comments "$1/pom.xml" 2>/dev/null \
+        | awk '/<parent>/{skip=1} /<\/parent>/{skip=0; next} !skip' \
+        | grep -oE '<artifactId>[^<]+</artifactId>' \
+        | head -1 \
+        | awk -F'[<>]' '{print $3}'
+}
+
+modules_of() {
+    awk -F/ '{print $1}' "$1" 2>/dev/null | sort -u | grep -v '^[[:space:]]*$'
+}
+
+g7_core_mods="$(modules_of "$G6_CORE" | tr '\n' ' ')"
+g7_shell_mods="$(modules_of "$G6_SHELL" | tr '\n' ' ')"
+g7_hits=""
+g7_n=0
+g7_read="核心模块[${g7_core_mods% }] 壳模块[${g7_shell_mods% }]"
+
+if [ -z "${g7_core_mods// /}" ] || [ -z "${g7_shell_mods// /}" ]; then
+    echo "格7 红 两侧件集有一侧为空，算不出模块归属 $g7_read"
+    RED=1
+else
+    g7_same=0
+    for cm in $g7_core_mods; do
+        for sm in $g7_shell_mods; do
+            [ "$cm" = "$sm" ] && g7_same=1
+        done
+    done
+
+    if [ "$g7_same" -eq 1 ]; then
+        echo "格7 红 核心件与壳侧件仍同处一个模块，核心尚未拆成独立模块 $g7_read"
+        RED=1
+    else
+        for cm in $g7_core_mods; do
+            if [ ! -f "$cm/pom.xml" ]; then
+                g7_hits="${g7_hits}${cm}/pom.xml(缺件) "
+                g7_n=$((g7_n + 1))
+                continue
+            fi
+            strip_xml_comments "$cm/pom.xml" > "$WORK/g7pom"
+            for sm in $g7_shell_mods; do
+                sm_artifact="$(module_artifact "$sm")"
+                [ -z "$sm_artifact" ] && continue
+                hit=$(grep -c "<artifactId>${sm_artifact}</artifactId>" "$WORK/g7pom")
+                if [ "$hit" -gt 0 ]; then
+                    g7_hits="${g7_hits}${cm}/pom.xml(->${sm_artifact}x${hit}) "
+                    g7_n=$((g7_n + hit))
+                fi
+            done
+        done
+
+        if [ "$g7_n" -eq 0 ]; then
+            echo "格7 绿 命中0 核心模块不依赖运行壳 $g7_read"
+        else
+            echo "格7 红 命中${g7_n} ${g7_hits% } $g7_read"
+            RED=1
+        fi
+    fi
 fi
 
 exit "$RED"

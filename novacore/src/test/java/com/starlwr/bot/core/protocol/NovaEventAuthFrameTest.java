@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.protocol;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.LiveProperties;
 import com.starlwr.bot.core.model.EventStreamToken;
 import com.starlwr.bot.core.service.EventStreamTokenService;
 import com.starlwr.bot.core.util.SecureToken;
@@ -45,9 +45,9 @@ class NovaEventAuthFrameTest {
 
     @BeforeEach
     void setUp() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
-        properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
-        tokens = new EventStreamTokenService(properties.getLive());
+        LiveProperties live = new LiveProperties();
+        live.setLiveDataPath(dir.resolve("data.json").toString());
+        tokens = new EventStreamTokenService(live);
         stream = new NovaEventStream(64);
         endpoint = new NovaEventEndpoint(stream, tokens);
     }

@@ -6,7 +6,6 @@ import jakarta.annotation.PostConstruct;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.boot.context.properties.NestedConfigurationProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -33,33 +32,36 @@ import java.util.*;
 @ConfigurationProperties(prefix = "starbot.core")
 public class StarBotCoreProperties {
     /**
-     * 单独成件的那几节要显式标注
+     * 单独成件的那几节
      * <p>
-     * 配置元数据处理器只会自动下钻到<b>内部类</b>形态的那一节；单独成件之后，
-     * 不标这一个注解，这几节的配置项就<b>整节从元数据里消失</b>——
-     * 程序照常读得到值，控制台的字段表却少了整整一块，而它不会报任何错。
+     * 这五节的类已随事件源迁入 {@code novacore} 模块，配置键与绑定一字未动：
+     * 值仍然绑到本类的这几个字段上。
+     * <p>
+     * <b>这里不标 {@code @NestedConfigurationProperty}，是有意的。</b>
+     * 标了本模块也生成不出完整的元数据——默认值取自字段初始值、说明取自 Javadoc，
+     * 两者都只存在于源码里，而本模块编译时看到的是那五个类的 class 文件，
+     * 于是生成出来的条目<b>默认值与说明整列是空的</b>。这几节的元数据改由它们所在的模块
+     * 自己生成（{@code novacore} 的 {@code CoreConfigurationSections}）；
+     * 两侧都标就会出现两份同名条目，合并时谁胜出取决于类路径顺序。
+     * <p>
+     * 绑定不依赖这个注解：它只是给元数据处理器的提示，与运行期绑定无关。
      */
     @Getter
-    @NestedConfigurationProperty
     private final NetworkThreadProperties networkThread = new NetworkThreadProperties();
 
     @Getter
-    @NestedConfigurationProperty
     private final LogProperties log = new LogProperties();
 
     @Getter
-    @NestedConfigurationProperty
     private final NetworkProperties network = new NetworkProperties();
 
     @Getter
-    @NestedConfigurationProperty
     private final DatasourceProperties datasource = new DatasourceProperties();
 
     @Getter
     private final Plugin plugin = new Plugin();
 
     @Getter
-    @NestedConfigurationProperty
     private final LiveProperties live = new LiveProperties();
 
     @Getter

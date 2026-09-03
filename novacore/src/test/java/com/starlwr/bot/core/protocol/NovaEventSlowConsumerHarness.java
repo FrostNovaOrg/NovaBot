@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.protocol;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.LiveProperties;
 import com.starlwr.bot.core.service.EventStreamTokenService;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
@@ -445,9 +445,9 @@ final class NovaEventSlowConsumerHarness implements AutoCloseable {
 
     NovaEventSlowConsumerHarness(Path dir, boolean slowClientReads, NovaEventEndpoint.Timings timings,
                    String slowId, boolean reallyWriteOnClose) throws IOException {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
-        properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
-        this.tokens = new EventStreamTokenService(properties.getLive());
+        LiveProperties live = new LiveProperties();
+        live.setLiveDataPath(dir.resolve("data.json").toString());
+        this.tokens = new EventStreamTokenService(live);
         this.stream = new NovaEventStream(64);
         this.endpoint = new NovaEventEndpoint(stream, tokens, timings);
         this.heartbeatThread = registerHeartbeatThread(this.endpoint);

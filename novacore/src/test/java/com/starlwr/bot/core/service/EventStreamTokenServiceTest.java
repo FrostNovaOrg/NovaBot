@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.service;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.LiveProperties;
 import com.starlwr.bot.core.model.EventStreamToken;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -31,9 +31,9 @@ class EventStreamTokenServiceTest {
 
     @BeforeEach
     void setUp() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
-        properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
-        service = new EventStreamTokenService(properties.getLive());
+        LiveProperties live = new LiveProperties();
+        live.setLiveDataPath(dir.resolve("data.json").toString());
+        service = new EventStreamTokenService(live);
     }
 
     @Test

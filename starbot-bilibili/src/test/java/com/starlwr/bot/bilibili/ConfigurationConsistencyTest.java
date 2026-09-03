@@ -21,6 +21,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -44,14 +45,31 @@ class ConfigurationConsistencyTest {
     private static final String METADATA_PATH = "target/classes/META-INF/spring-configuration-metadata.json";
 
     /**
-     * 参与检查的模块
+     * 从聚合工程的 pom 里现算参与检查的模块
+     * <p>
+     * 原先这里是一张手写的模块名单。手写名单有一个安静的失败形态：<b>新加的模块不在名单里，
+     * 于是它生成的配置项在这把尺眼里根本不存在</b>——模板里写着的那些键会被判成「代码里已不存在」，
+     * 而反过来，新模块声明的虚空配置与缺说明的配置项一个都查不出来，尺照样报绿。
+     * 名单从 {@code <modules>} 现算，加模块这件事就不再需要有人记得同时改这里。
+     * @return 模块目录名
      */
-    private static final List<String> MODULES = List.of(
-            "starbot-core",
-            "starbot-onebot-adapter",
-            "starbot-onebot-adapter-napcat-extension",
-            "starbot-bilibili"
-    );
+    private List<String> modules() {
+        String pom;
+        try {
+            pom = Files.readString(repositoryRoot().resolve("pom.xml"), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new IllegalStateException("读取聚合工程 pom.xml 失败", e);
+        }
+
+        List<String> modules = new ArrayList<>();
+        Matcher matcher = Pattern.compile("<module>([^<]+)</module>").matcher(pom);
+        while (matcher.find()) {
+            modules.add(matcher.group(1).trim());
+        }
+
+        assertFalse(modules.isEmpty(), "聚合工程 pom.xml 里一个 <module> 都没读到，这把尺量的是空集");
+        return modules;
+    }
 
     /**
      * 定位仓库根目录
@@ -80,7 +98,7 @@ class ConfigurationConsistencyTest {
         Path root = repositoryRoot();
 
         List<JSONObject> properties = new ArrayList<>();
-        for (String module : MODULES) {
+        for (String module : modules()) {
             Path metadata = root.resolve(module).resolve(METADATA_PATH);
             if (!Files.exists(metadata)) {
                 continue;
@@ -109,7 +127,7 @@ class ConfigurationConsistencyTest {
         Path root = repositoryRoot();
 
         StringBuilder content = new StringBuilder();
-        for (String module : MODULES) {
+        for (String module : modules()) {
             Path main = root.resolve(module).resolve("src/main");
             if (!Files.exists(main)) {
                 continue;

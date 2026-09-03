@@ -15,6 +15,15 @@
     <description>StarBot Core</description>
 
     <dependencies>
+        <!--
+            事件源本体。依赖是单向的：壳依赖核心，核心不依赖壳——
+            反过来加一条，模块化这一步买到的编译期边界当场作废。
+        -->
+        <dependency>
+            <groupId>com.starlwr</groupId>
+            <artifactId>novacore</artifactId>
+        </dependency>
+
         <!-- 累计数据存储。未配置 spring.data.redis.host 时相关 Bean 不注册，
              程序照常以 JSON 运行，仅累计类查询不可用 -->
         <dependency>
@@ -100,29 +109,11 @@
         </dependency>
     </dependencies>
 
-    <build>
-        <plugins>
-            <!--
-                把测试域也打成一个构件（test-jar）。唯一的用途是事件输出协议的校验器
-                NovaProtocolSchema：协议真源在核心，各平台插件的映射器测试要按同一把尺
-                校验自己产出的信封。让插件仓各抄一份的话，抄出来的那份第二天就会和协议漂开，
-                而漂开的校验器不会红，只会安静地放行错的信封。
-                test 作用域，不进任何交付产物。
-            -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-jar-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>test-jar</id>
-                        <goals>
-                            <goal>test-jar</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-        </plugins>
-    </build>
+    <!--
+        测试域构件（test-jar）随 NovaProtocolSchema 一并去了 novacore：
+        校验器跟着协议真源走，真源在哪个模块，供插件引用的那个构件就该由哪个模块出。
+        留一份在这里只会多打一个没人引用的 jar，而下一个人读到它会以为校验器还在这边。
+    -->
 
     <profiles>
         <!-- package：构建可直接运行的发行产物，依赖输出至 target/lib -->

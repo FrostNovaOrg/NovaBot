@@ -45,6 +45,8 @@
         templates/starbot-example-plugin 是提供给第三方插件开发者的模板，同样不参与本工程构建。
     -->
     <modules>
+        <!-- novacore 排在最前：starbot-core 编译期依赖它，reactor 按声明顺序解析 -->
+        <module>novacore</module>
         <module>starbot-core</module>
         <module>starbot-onebot-adapter</module>
         <module>starbot-onebot-adapter-napcat-extension</module>
@@ -57,6 +59,7 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
         <!-- StarBot 自身构件版本 -->
+        <novacore.version>4.4.1</novacore.version>
         <starbot-core.version>4.4.1</starbot-core.version>
         <starbot-plugin-processor.version>1.0.0</starbot-plugin-processor.version>
 
@@ -79,6 +82,24 @@
 
     <dependencyManagement>
         <dependencies>
+            <!--
+                版本走属性而不是 ${project.version}：各插件模块自己的 version 是 1.0.0，
+                依赖管理是继承下去的，${project.version} 在那几个模块里解出来的是 1.0.0，
+                于是 novacore 作为传递依赖被解析成一个根本不存在的坐标——
+                报错发生在插件模块，指着的却是这一行。属性由下面的 enforcer 判据守着别漏改。
+            -->
+            <dependency>
+                <groupId>com.starlwr</groupId>
+                <artifactId>novacore</artifactId>
+                <version>${novacore.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.starlwr</groupId>
+                <artifactId>novacore</artifactId>
+                <version>${novacore.version}</version>
+                <type>test-jar</type>
+            </dependency>
+
             <dependency>
                 <groupId>com.starlwr</groupId>
                 <artifactId>starbot-core</artifactId>
@@ -189,6 +210,17 @@
                         </goals>
                         <configuration>
                             <rules>
+                                <!--
+                                    novacore 与工程同进同出，版本永远一致；写成属性只是因为
+                                    ${project.version} 在插件模块里会解成插件自己的版本。
+                                    既然是个能漏改的字面量，就照 starbot-core 那条一样守住。
+                                -->
+                                <requireProperty>
+                                    <property>novacore.version</property>
+                                    <regex>\Q${project.version}\E</regex>
+                                    <message>novacore.version 须与工程版本一致：请把它改成 ${project.version}</message>
+                                    <regexMessage>novacore.version 与工程版本 ${project.version} 对不上：改漏了这一处，各模块会去仓库里翻上一版的 novacore，翻不到就报「找不到构件」，而报错指向的是插件模块</regexMessage>
+                                </requireProperty>
                                 <requireProperty>
                                     <property>starbot-core.version</property>
                                     <!-- \Q..\E 把工程版本整段当字面量比，版本号里的点不会被当成通配 -->

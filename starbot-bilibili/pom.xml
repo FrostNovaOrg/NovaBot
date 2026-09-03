@@ -27,14 +27,13 @@
         </dependency>
 
         <!--
-            事件输出协议的校验器（NovaProtocolSchema）随协议真源留在核心的测试域里，
-            本模块的映射器判据按它校验产出的信封。版本显式写出：依赖管理里那条按
-            groupId:artifactId:type 匹配，test-jar 与普通 jar 不是同一个键
+            事件输出协议的校验器（NovaProtocolSchema）随协议真源待在 novacore 的测试域里，
+            本模块的映射器判据按它校验产出的信封。依赖管理里那条 test-jar 单列一项：
+            那张表按 groupId:artifactId:type 匹配，test-jar 与普通 jar 不是同一个键
         -->
         <dependency>
             <groupId>com.starlwr</groupId>
-            <artifactId>starbot-core</artifactId>
-            <version>${starbot-core.version}</version>
+            <artifactId>novacore</artifactId>
             <type>test-jar</type>
             <scope>test</scope>
         </dependency>
