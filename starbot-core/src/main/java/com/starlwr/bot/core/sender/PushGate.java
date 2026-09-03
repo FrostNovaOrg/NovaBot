@@ -54,7 +54,48 @@ public class PushGate {
      * @return 拦截原因
      */
     public String blockReason() {
-        return properties.getPush().isEnabled() ? "处于静音时段" : "全局推送开关已关闭";
+        return blockedBy().getDescription();
+    }
+
+    /**
+     * 当前被哪一道拦下
+     * <p>
+     * 与 {@link #blockReason()} 同源，只是一个给人看、一个给程序判。
+     * 时间线要把「静音丢弃」和「暂停丢弃」分成两类事件，而认这两类的判据<b>不能是那句中文</b>——
+     * 文案是随时会改的东西，改一个字判据就静默失效，失效方向还是「从此全归成同一类」。
+     * @return 拦截原因
+     */
+    public Block blockedBy() {
+        return properties.getPush().isEnabled() ? Block.QUIET_HOURS : Block.DISABLED;
+    }
+
+    /**
+     * 拦截原因
+     */
+    public enum Block {
+        /**
+         * 全局推送开关已关闭
+         */
+        DISABLED("全局推送开关已关闭"),
+
+        /**
+         * 处于静音时段
+         */
+        QUIET_HOURS("处于静音时段");
+
+        private final String description;
+
+        Block(String description) {
+            this.description = description;
+        }
+
+        /**
+         * 给人看的说明
+         * @return 说明
+         */
+        public String getDescription() {
+            return description;
+        }
     }
 
     /**

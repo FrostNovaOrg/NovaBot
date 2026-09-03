@@ -15,7 +15,7 @@ import java.util.Map;
  * 运行时数据落点守卫
  * <p>
  * 运行时数据（{@code data.json}、{@code state.json}、{@code sessions.jsonl}、
- * {@code snapshots.jsonl}）的路径由 {@code starbot.core.live.live-data-path} 一个配置项派生，
+ * {@code snapshots.jsonl}、{@code timeline/}）的路径由 {@code starbot.core.live.live-data-path} 一个配置项派生，
  * 默认值 {@code data.json} 是<b>相对当前工作目录</b>的。
  * <p>
  * 生产的两种部署方式都依赖这一点，<b>不能改</b>：
@@ -46,7 +46,7 @@ import java.util.Map;
  */
 public class DataLocationGuard implements EnvironmentPostProcessor {
     /**
-     * 数据文件路径配置项。四个运行时文件都由它派生：其余三个取它的父目录。
+     * 数据文件路径配置项。其余运行时文件与目录都由它派生：取它的父目录。
      */
     static final String KEY = "starbot.core.live.live-data-path";
 
@@ -97,8 +97,8 @@ public class DataLocationGuard implements EnvironmentPostProcessor {
         if (allowed()) {
             log.warn("运行时数据落在 git 工作树内（" + dir + "，工作树 " + worktree + "），"
                     + "已按 " + ALLOW_ENV + " 放行。理由：" + reason());
-            log.warn("🔴 该目录下会生成 data.json / state.json / sessions.jsonl / snapshots.jsonl，"
-                    + "四者都含他人 uid、昵称与群号。.gitignore 挡得住 git add，挡不住复制粘贴。");
+            log.warn("🔴 该目录下会生成 data.json / state.json / sessions.jsonl / snapshots.jsonl / timeline/，"
+                    + "都含他人 uid、昵称与群号。.gitignore 挡得住 git add，挡不住复制粘贴。");
             return;
         }
 
@@ -111,8 +111,8 @@ public class DataLocationGuard implements EnvironmentPostProcessor {
                     "    解析后目录：" + dir,
                     "    工作树根  ：" + worktree,
                     "",
-                    "该目录下会生成 data.json / state.json / sessions.jsonl / snapshots.jsonl，",
-                    "四者都含他人 uid、昵称与群号；.gitignore 挡得住 git add，挡不住复制粘贴。",
+                    "该目录下会生成 data.json / state.json / sessions.jsonl / snapshots.jsonl / timeline/，",
+                    "都含他人 uid、昵称与群号；.gitignore 挡得住 git add，挡不住复制粘贴。",
                     "",
                     "这是你显式写下的路径，所以程序不替你改它，只停下来告诉你。三条出路：",
                     "  1. 把 " + KEY + " 改到仓库工作树以外；",

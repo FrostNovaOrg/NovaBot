@@ -83,3 +83,4 @@ starbot.core.sender[0].local-delivery=<null>
 starbot.core.sender[0].name=coverage-sender
 starbot.core.sender[0].token=coverage-sender-token
 starbot.core.sender[0].url=http://127.0.0.1:19/send
+starbot.core.timeline.retention-days=107

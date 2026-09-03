@@ -92,6 +92,8 @@ starbot:
       admins:
         - 101
         - 102
+    timeline:
+      retention-days: 107
     exec:
       enabled: true
       timeout: 111

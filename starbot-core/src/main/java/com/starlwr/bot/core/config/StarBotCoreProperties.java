@@ -94,6 +94,32 @@ public class StarBotCoreProperties {
     private final Exec exec = new Exec();
 
     /**
+     * 事件时间线相关
+     */
+    @Getter
+    @Setter
+    private final Timeline timeline = new Timeline();
+
+    /**
+     * 事件时间线
+     * <p>
+     * 「刚才那条推了吗」「昨晚为什么没推」这类问题的答案，按日记在
+     * {@code timeline/YYYY-MM-DD.jsonl} 里。
+     */
+    @Getter
+    @Setter
+    public static class Timeline {
+        /**
+         * 事件时间线的保留天数，含当天；设为 0 或负数表示不自动清理
+         * <p>
+         * 时间线是排障线索而不是业务数据：两周之前「某条推送失败过」这件事，
+         * 已经没有人会再去查，留着只是让日志页越翻越长、磁盘越占越多。
+         * 要长期保存的场次数据在 {@code sessions.jsonl} 里，那一份不会被删。
+         */
+        private int retentionDays = 14;
+    }
+
+    /**
      * 事件触发外部命令
      * <p>
      * 收到事件时执行一个外部程序，用来接那些内置功能覆盖不到的用法——

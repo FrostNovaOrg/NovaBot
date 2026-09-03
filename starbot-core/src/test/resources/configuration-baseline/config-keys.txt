@@ -76,3 +76,4 @@ starbot.core.push.enabled|java.lang.Boolean|true|全局推送开关 关闭后所
 starbot.core.push.quiet-end|java.lang.String||静音时段结束时间，格式 HH:mm 允许跨零点：开始 23:00、结束 08:00 表示当晚 23 点至次日 8 点。
 starbot.core.push.quiet-start|java.lang.String||静音时段开始时间，格式 HH:mm，与结束时间任一为空即视为不启用 半夜被机器人吵醒是这类通知产品被投诉最多的点，因此内置该能力而不是让使用者自行想办法。
 starbot.core.sender|java.util.List<com.starlwr.bot.core.model.Sender>|<null>|非插件实现的推送平台配置
+starbot.core.timeline.retention-days|java.lang.Integer|14|事件时间线的保留天数，含当天；设为 0 或负数表示不自动清理 时间线是排障线索而不是业务数据：两周之前「某条推送失败过」这件事， 已经没有人会再去查，留着只是让日志页越翻越长、磁盘越占越多。 要长期保存的场次数据在 sessions.jsonl 里，那一份不会被删。
