@@ -155,7 +155,7 @@ public class RuntimeConfigurationApplier {
     }
 
     /**
-     * 判据台架的构造口：要哪几个侧件按需给
+     * 判据台架的构造口：要哪几个侧件按需给（包内可见：台架都在同包）
      * <p>
      * 台架里带不带登录校验、带不带累计数据存储，是<b>每条判据各取所需</b>的事；
      * 为每种组合单列一个构造签名，组合每多一种就再多一个，而且互相长得像——
@@ -165,14 +165,14 @@ public class RuntimeConfigurationApplier {
      * @param properties 配置对象
      * @return 构造器
      */
-    public static Bench bench(StarBotCoreProperties properties) {
+    static Bench bench(StarBotCoreProperties properties) {
         return new Bench(properties);
     }
 
     /**
      * {@link #bench} 的构造器
      */
-    public static final class Bench {
+    static final class Bench {
         private final StarBotCoreProperties properties;
         private ConfigUiAuthService authService;
         private TotalDataStorage totalDataStorage;
@@ -186,7 +186,7 @@ public class RuntimeConfigurationApplier {
          * @param authService 登录校验
          * @return 本构造器
          */
-        public Bench authService(ConfigUiAuthService authService) {
+        Bench authService(ConfigUiAuthService authService) {
             this.authService = authService;
             return this;
         }
@@ -196,7 +196,7 @@ public class RuntimeConfigurationApplier {
          * @param totalDataStorage 累计数据存储
          * @return 本构造器
          */
-        public Bench totalDataStorage(TotalDataStorage totalDataStorage) {
+        Bench totalDataStorage(TotalDataStorage totalDataStorage) {
             this.totalDataStorage = totalDataStorage;
             return this;
         }
@@ -204,7 +204,7 @@ public class RuntimeConfigurationApplier {
         /**
          * @return 按给出的侧件装配好的实例
          */
-        public RuntimeConfigurationApplier build() {
+        RuntimeConfigurationApplier build() {
             return new RuntimeConfigurationApplier(properties, () -> authService, totalDataStorage);
         }
     }
