@@ -262,7 +262,8 @@ class BilibiliAtModeMatrixTest {
                 ? new BilibiliLiveOnPushHandler(mock(BilibiliApiUtil.class), mock(StarBotMessageSender.class),
                         mock(AtSubscriptionService.class), mock(LiveDataService.class)).getDefaultParams()
                 : new BilibiliDynamicPushHandler(mock(BilibiliApiUtil.class), mock(BilibiliDynamicPainter.class),
-                        mock(StarBotMessageSender.class), mock(AtSubscriptionService.class)).getDefaultParams();
+                        mock(StarBotMessageSender.class), mock(AtSubscriptionService.class),
+                        mock(LiveDataService.class)).getDefaultParams();
     }
 
     /**
@@ -321,7 +322,7 @@ class BilibiliAtModeMatrixTest {
 
             BilibiliDynamicPainter painter = mock(BilibiliDynamicPainter.class);
             when(painter.paint(any())).thenReturn(Optional.empty());
-            new BilibiliDynamicPushHandler(api, painter, collector, subscriptions)
+            new BilibiliDynamicPushHandler(api, painter, collector, subscriptions, mock(LiveDataService.class))
                     .handle(new BilibiliDynamicUpdateEvent(source, mock(Dynamic.class), "发布了动态",
                             "https://t.bilibili.com/1"), pushMessage(params));
         }

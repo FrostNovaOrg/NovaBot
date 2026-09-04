@@ -100,7 +100,7 @@ class MergedNoticeTemplateTest {
 
     private StarBotEventHandler dynamic() {
         return new BilibiliDynamicPushHandler(mock(BilibiliApiUtil.class), mock(BilibiliDynamicPainter.class),
-                mock(StarBotMessageSender.class), mock(AtSubscriptionService.class));
+                mock(StarBotMessageSender.class), mock(AtSubscriptionService.class), mock(LiveDataService.class));
     }
 
     /**
