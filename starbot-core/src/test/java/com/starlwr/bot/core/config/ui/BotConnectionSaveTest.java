@@ -160,7 +160,7 @@ class BotConnectionSaveTest {
                 mock(ConfigurationLevelResolver.class),
                 new ConfigurationEffectResolver(mock(org.springframework.context.ApplicationContext.class)),
                 new ConfigurationDangerResolver(mock(org.springframework.context.ApplicationContext.class)),
-                new RuntimeConfigurationApplier(properties),
+                RuntimeConfigurationApplier.bench(properties).build(),
                 testers,
                 mock(ObjectProvider.class),
                 mock(com.starlwr.bot.core.service.EventStreamTokenService.class),

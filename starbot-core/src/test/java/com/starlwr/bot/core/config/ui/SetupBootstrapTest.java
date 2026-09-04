@@ -221,7 +221,7 @@ class SetupBootstrapTest {
     @Test
     @DisplayName("从设置页保存口令与二次验证开关，当场生效")
     void savingAuthKeysFromSettingsTakesEffectAtOnce() {
-        RuntimeConfigurationApplier applier = new RuntimeConfigurationApplier(properties, authService);
+        RuntimeConfigurationApplier applier = RuntimeConfigurationApplier.bench(properties).authService(authService).build();
 
         assertFalse(authService.isEnabled(), "夹具起点：还没上锁");
 
@@ -239,7 +239,7 @@ class SetupBootstrapTest {
     @Test
     @DisplayName("配置界面被整个关掉时，那两项算「等重启」而不是静静跳过")
     void authKeysFallBackToRestartWhenTheConsoleIsOff() {
-        RuntimeConfigurationApplier applier = new RuntimeConfigurationApplier(properties);
+        RuntimeConfigurationApplier applier = RuntimeConfigurationApplier.bench(properties).build();
 
         List<String> restart = applier.applyAndTrack(new java.util.LinkedHashMap<>(java.util.Map.of(
                 ConfigUiAuthService.PASSWORD_PROPERTY, FIRST_PASSWORD)));

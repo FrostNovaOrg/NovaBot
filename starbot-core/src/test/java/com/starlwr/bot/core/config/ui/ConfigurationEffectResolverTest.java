@@ -69,27 +69,28 @@ class ConfigurationEffectResolverTest {
     }
 
     @Test
-    @DisplayName("⚠️ 累计存储那三项标的是即时生效，界面不再白让人重启一次")
+    @DisplayName("⚠️ 累计存储那四项标的是即时生效，界面不再白让人重启一次")
     void redisConnectionKeysApplyImmediately() {
         try (AnnotationConfigApplicationContext context = context()) {
             Map<String, ConfigEffect.Effect> effects = new ConfigurationEffectResolver(context).getEffects();
 
-            // 这三项没有字段可标 @ConfigEffect，声明写在 ExternalConfigurationFields 那张表里，
+            // 这四项没有字段可标 @ConfigEffect，声明写在 ExternalConfigurationFields 那张表里，
             // 因此它们的标注只有走这条运行期的路才量得到
             for (String key : List.of("spring.data.redis.host", "spring.data.redis.port",
-                    "spring.data.redis.password")) {
+                    "spring.data.redis.password", "spring.data.redis.database")) {
                 assertEquals(ConfigEffect.Effect.IMMEDIATE, effects.get(key), key);
             }
 
-            // 阴性对照：同一张表里的库号没接进那条路，标的仍是重启。
-            // 少了这一条，「整张表一律 IMMEDIATE」也会让上面三条全绿
-            assertEquals(ConfigEffect.Effect.RESTART, effects.get("spring.data.redis.database"));
-            assertEquals(List.of("spring.data.redis.database"),
+            // 阴性对照：同一张表里的 SMTP 发件服务没接进那条路，标的仍是重启。
+            // 少了这一条，「整张表一律 IMMEDIATE」也会让上面四条全绿
+            assertEquals(ConfigEffect.Effect.RESTART, effects.get("spring.mail.host"));
+            assertEquals(List.of("spring.mail.host"),
                     new ConfigurationEffectResolver(context).restartRequired(List.of(
                             "spring.data.redis.host",
                             "spring.data.redis.port",
                             "spring.data.redis.password",
-                            "spring.data.redis.database")));
+                            "spring.data.redis.database",
+                            "spring.mail.host")));
         }
     }
 

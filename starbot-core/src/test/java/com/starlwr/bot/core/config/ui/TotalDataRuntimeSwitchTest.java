@@ -103,7 +103,7 @@ class TotalDataRuntimeSwitchTest {
     @DisplayName("⚠️ 运行中填上 Redis 地址，保存那一步就该把它落到跑着的程序上")
     void appliesRedisHostAtRuntime() {
         RuntimeConfigurationApplier applier =
-                new RuntimeConfigurationApplier(new StarBotCoreProperties(), storage);
+                RuntimeConfigurationApplier.bench(new StarBotCoreProperties()).totalDataStorage(storage).build();
 
         List<String> restart = applier.applyAndTrack(Map.of("spring.data.redis.host", "127.0.0.1"));
 
@@ -188,22 +188,25 @@ class TotalDataRuntimeSwitchTest {
     }
 
     @Test
-    @DisplayName("阴性：库号仍要重启，落不下去时如实计入待重启")
-    void databaseStillNeedsRestart() {
+    @DisplayName("⚠️ 运行中改库号，保存那一步就该落到跑着的程序上")
+    void appliesRedisDatabaseAtRuntime() {
+        storage.applyHost("127.0.0.1");
         RuntimeConfigurationApplier applier =
-                new RuntimeConfigurationApplier(new StarBotCoreProperties(), storage);
+                RuntimeConfigurationApplier.bench(new StarBotCoreProperties()).totalDataStorage(storage).build();
 
         List<String> restart = applier.applyAndTrack(Map.of("spring.data.redis.database", "3"));
 
-        assertEquals(List.of("spring.data.redis.database"), restart,
-                "没接进即时生效通道的项要如实说要重启，不能跟着那三项一起说「已生效」");
+        assertEquals(List.of(), restart,
+                "库号与地址那三项一起改时，只有它说要重启——那句话读起来像半件事没办完");
+        assertEquals("127.0.0.1:6379/3", storage.describeTarget(),
+                "库号该跟着一起就地换后端，而不是换上去的还是旧库号");
     }
 
     @Test
     @DisplayName("阴性：端口写成一句话时按需重启处理，不当作已生效")
     void unparsablePortCountsAsRestartRequired() {
         RuntimeConfigurationApplier applier =
-                new RuntimeConfigurationApplier(new StarBotCoreProperties(), storage);
+                RuntimeConfigurationApplier.bench(new StarBotCoreProperties()).totalDataStorage(storage).build();
 
         List<String> restart = applier.applyAndTrack(Map.of("spring.data.redis.port", "六三七九"));
 

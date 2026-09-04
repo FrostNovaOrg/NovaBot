@@ -1100,10 +1100,27 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
-     * 本场时间轴分成多少个时间格
+     * 开播时刻所在的那个绝对分钟格的起点
+     * <p>
+     * 采集端（{@code DefaultLiveDataService#incrementLiveSeries}）把每分钟的数据记在
+     * <b>绝对分钟格</b>上——12:00:00 到 12:00:59 的任何一次采样都落在键 12:00:00；
+     * 高能时刻（{@link LiveHighlightFinder}）读的也是同一套键。曲线这边若从开播时刻
+     * 本身起算自己的格，开播落在半分上时（如 12:00:30）采下来的第一格对不上原点被丢弃、
+     * 之后每一格都错一位。下面三处用格的入口（数格、取值、缺口落列）都从这里取原点，
+     * 与采集端<b>同一个对齐法</b>。
      */
-    private static int bucketCount(long start, long end) {
-        return (int) Math.max(1, (end - start) / LiveDataService.SERIES_BUCKET_MILLIS + 1);
+    private static long gridStart(long start) {
+        return start / LiveDataService.SERIES_BUCKET_MILLIS * LiveDataService.SERIES_BUCKET_MILLIS;
+    }
+
+    /**
+     * 本场时间轴分成多少个时间格
+     * <p>
+     * 原点取 {@link #gridStart}：格数数的是「从开播那一分钟到下播的那一分钟」
+     * 共几个绝对分钟格，而不是「从开播时刻起每满一分钟一格」。
+     */
+    static int bucketCount(long start, long end) {
+        return (int) Math.max(1, (end - gridStart(start)) / LiveDataService.SERIES_BUCKET_MILLIS + 1);
     }
 
     /**
@@ -1125,16 +1142,17 @@ public class BilibiliLiveReportPainter {
      * 也不让一段真实的缺口因为不足一列宽而在图上整个消失——
      * 「缺口如实标注」的方向是让它看得见，不是让它凑整。
      */
-    private static boolean[] gapColumns(List<LiveGap> gaps, long start, int buckets, int columns) {
+    static boolean[] gapColumns(List<LiveGap> gaps, long start, int buckets, int columns) {
         boolean[] missing = new boolean[columns];
         if (gaps.isEmpty()) {
             return missing;
         }
 
+        long origin = gridStart(start);
         for (int i = 0; i < columns; i++) {
             int[] range = bucketRange(i, buckets, columns);
-            long from = start + range[0] * LiveDataService.SERIES_BUCKET_MILLIS;
-            long to = start + range[1] * LiveDataService.SERIES_BUCKET_MILLIS;
+            long from = origin + range[0] * LiveDataService.SERIES_BUCKET_MILLIS;
+            long to = origin + range[1] * LiveDataService.SERIES_BUCKET_MILLIS;
             for (LiveGap gap : gaps) {
                 if (gap.from() < to && gap.to() > from) {
                     missing[i] = true;
@@ -1155,13 +1173,17 @@ public class BilibiliLiveReportPainter {
      * <p>
      * 因此先补齐成逐格的稠密数组，再按列取所辖各格的**最大值**——
      * 取最大而非平均，是为了让短促的高峰不被摊平，也与标题上的「峰值 X/分」自洽。
+     * <p>
+     * 序列的键是采集端记的<b>绝对分钟格</b>，认列按 {@link #gridStart} 的原点：
+     * 开播落在半分上时（如 12:00:30），开播那一分钟（键 12:00:00）仍是第 0 格。
      */
-    private double[] resample(Map<Long, Double> series, long start, long end, int columns) {
+    static double[] resample(Map<Long, Double> series, long start, long end, int columns) {
+        long origin = gridStart(start);
         int buckets = bucketCount(start, end);
         double[] dense = new double[buckets];
         for (Map.Entry<Long, Double> entry : series.entrySet()) {
             // 落在直播区间之外的格直接丢弃：时钟回拨或上一场残留都可能造成
-            long offset = entry.getKey() - start;
+            long offset = entry.getKey() - origin;
             if (offset < 0) {
                 continue;
             }

@@ -80,7 +80,7 @@ class DatasourceStreamerLimitTest {
                 // 给个空上下文即可，本组用例不看生效时机
                 new ConfigurationEffectResolver(mock(org.springframework.context.ApplicationContext.class)),
                 new ConfigurationDangerResolver(mock(org.springframework.context.ApplicationContext.class)),
-                new RuntimeConfigurationApplier(properties),
+                RuntimeConfigurationApplier.bench(properties).build(),
                 mock(ObjectProvider.class),
                 mock(ObjectProvider.class),
                 mock(com.starlwr.bot.core.service.EventStreamTokenService.class),

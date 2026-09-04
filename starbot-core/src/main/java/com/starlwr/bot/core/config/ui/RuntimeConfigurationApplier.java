@@ -83,15 +83,12 @@ public class RuntimeConfigurationApplier {
      * 不必为此重启一次（重启会把正在采集的场次打断）。
      * <p>
      * 单列一张表，理由同下面那张：上面那张的签名只拿得到配置对象。
-     * <p>
-     * ⚠️ {@code database} 不在其中，仍按需重启。它与这三项一起改时，
-     * 换上去的后端用的是<b>新地址与旧库号</b>，界面也照实说 database 还欠一次重启——
-     * 这是一句真话，但它读起来像半件事没办完，收口时一并定去留。
      */
     private static final Map<String, BiConsumer<TotalDataStorage, String>> REDIS_APPLIERS = Map.of(
             "spring.data.redis.host", TotalDataStorage::applyHost,
             "spring.data.redis.port", (storage, value) -> storage.applyPort(Integer.parseInt(value.trim())),
-            "spring.data.redis.password", TotalDataStorage::applyPassword);
+            "spring.data.redis.password", TotalDataStorage::applyPassword,
+            "spring.data.redis.database", (storage, value) -> storage.applyDatabase(Integer.parseInt(value.trim())));
 
     /**
      * 得经登录校验那一侧才落得下的配置项
@@ -158,27 +155,58 @@ public class RuntimeConfigurationApplier {
     }
 
     /**
-     * 不带登录校验的那一支，供判据台架用
+     * 判据台架的构造口：要哪几个侧件按需给
      * <p>
-     * 台架里量的是「配置写回运行中的配置对象」这件事，与登录校验无关；而它此时的行为
-     * <b>与真实的「配置界面被关掉」那一形一致</b>——两项口令配置落不下去，按需重启处理。
+     * 台架里带不带登录校验、带不带累计数据存储，是<b>每条判据各取所需</b>的事；
+     * 为每种组合单列一个构造签名，组合每多一种就再多一个，而且互相长得像——
+     * 台架拿错一个重载时编译照样过（两个参数都能隐式往上凑的场合），
+     * 量出来的就是另一个形态。收成一个口子按需给，缺省就是「都没有」：
+     * 与真实的「配置界面被关掉、也没配累计存储」那一形一致，口令类配置落不下去，按需重启处理。
+     * @param properties 配置对象
+     * @return 构造器
      */
-    RuntimeConfigurationApplier(StarBotCoreProperties properties) {
-        this(properties, () -> null, null);
+    public static Bench bench(StarBotCoreProperties properties) {
+        return new Bench(properties);
     }
 
     /**
-     * 带登录校验的那一支，供判据台架用
+     * {@link #bench} 的构造器
      */
-    RuntimeConfigurationApplier(StarBotCoreProperties properties, ConfigUiAuthService authService) {
-        this(properties, () -> authService, null);
-    }
+    public static final class Bench {
+        private final StarBotCoreProperties properties;
+        private ConfigUiAuthService authService;
+        private TotalDataStorage totalDataStorage;
 
-    /**
-     * 带累计数据存储的那一支，供判据台架用
-     */
-    RuntimeConfigurationApplier(StarBotCoreProperties properties, TotalDataStorage totalDataStorage) {
-        this(properties, () -> null, totalDataStorage);
+        private Bench(StarBotCoreProperties properties) {
+            this.properties = properties;
+        }
+
+        /**
+         * 带上登录校验
+         * @param authService 登录校验
+         * @return 本构造器
+         */
+        public Bench authService(ConfigUiAuthService authService) {
+            this.authService = authService;
+            return this;
+        }
+
+        /**
+         * 带上累计数据存储
+         * @param totalDataStorage 累计数据存储
+         * @return 本构造器
+         */
+        public Bench totalDataStorage(TotalDataStorage totalDataStorage) {
+            this.totalDataStorage = totalDataStorage;
+            return this;
+        }
+
+        /**
+         * @return 按给出的侧件装配好的实例
+         */
+        public RuntimeConfigurationApplier build() {
+            return new RuntimeConfigurationApplier(properties, () -> authService, totalDataStorage);
+        }
     }
 
     private RuntimeConfigurationApplier(StarBotCoreProperties properties, Supplier<ConfigUiAuthService> authService,
