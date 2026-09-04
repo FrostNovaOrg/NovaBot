@@ -622,6 +622,44 @@ td.act button:hover{color:var(--err)}
 .tl-foot a{font-size:12.5px;color:var(--accent);text-decoration:none}
 .tl-foot a:hover{text-decoration:underline}
 
+/* ==================== 连接页：三张卡 ====================
+   卡的色调跟着灯走，与首页同一条规则：同一个事实在两页上判成两种颜色，
+   会让人以为是两件事。熄灯那一档不描色——它既不是好也不是坏，是这一段此刻无从谈起。 */
+.lcard{padding:0;margin-bottom:16px;overflow:hidden}
+.lcard.l-warn{border-color:var(--warn)}
+.lcard.l-err{border-color:var(--err)}
+.lc-hd{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:12px 16px;
+  border-bottom:1px solid var(--line);background:var(--soft)}
+.lcard.l-warn .lc-hd{background:var(--warnsoft)}
+.lcard.l-err .lc-hd{background:var(--errsoft)}
+.lc-hd b{font-size:14px;font-weight:600}
+.lc-hd .lc-cap{color:var(--dim);font-size:12.5px;flex:1 1 200px;min-width:0}
+/* 要人动手时那几句。空着时整块不占位——一条边框围着的空白会被当成加载失败 */
+.lc-note{padding:10px 16px;font-size:12.5px;line-height:1.6;border-bottom:1px solid var(--line);
+  background:var(--ground)}
+.lc-note div+div{margin-top:4px;color:var(--dim)}
+.lc-note .lc-go{display:inline-block;margin-top:6px;color:var(--accent);text-decoration:none;font-size:12.5px}
+.lc-note .lc-go:hover{text-decoration:underline}
+.lc-body{padding:14px 16px}
+.lc-body>.hint:last-child{margin-bottom:0}
+.lc-h{margin:18px 0 8px;font-size:13px;font-weight:600}
+.lc-h:first-of-type{margin-top:4px}
+.lc-sub{margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
+/* 二维码还没来的那一档：留出与二维码同样大的一块，来了之后版式不跳 */
+.qrwait{width:240px;height:240px;border:1px dashed var(--line);border-radius:var(--r-ctl);
+  display:grid;place-items:center;color:var(--dim);font-size:12.5px}
+/* 卡里的账号块不再自带边框与阴影：它已经在一张卡里了，再套一层看起来像嵌了个窗口 */
+.lc-body .account{border:none;box-shadow:none;background:transparent;padding:0;margin:0 0 10px}
+.lc-body .health{margin-bottom:0}
+/* 发一条试试：目标下拉要能放下群名，140px 只够显示一半 */
+#selftest #test-target{flex:1 1 260px;min-width:200px;max-width:420px}
+/* 回显的气泡。它答的是「那边收到的是不是这句」，一行「已发送」答不了这个问题 */
+.bubble{margin-top:10px;max-width:420px}
+.bubble .bb-to{font-size:11.5px;color:var(--dim);margin-bottom:4px}
+.bubble .bb-body{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);
+  border-top-left-radius:var(--r-ctl);padding:9px 12px;font-size:13px;color:var(--text);line-height:1.6}
+.tr-advice{margin:6px 0 0;font-size:12.5px;color:var(--dim);line-height:1.6}
+
 /* ---------- 侧栏「运行」三行 ---------- */
 .runbox{margin-top:16px;padding:10px 10px 0;border-top:1px solid var(--line);font-size:11.5px}
 .rb-t{color:var(--dim);margin-bottom:5px}

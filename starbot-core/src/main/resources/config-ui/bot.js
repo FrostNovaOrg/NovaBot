@@ -2,8 +2,7 @@
  * 机器人页：连接参数表单与测试消息
  */
 
-import {$, api, esc} from './core.js';
-import {store} from './store.js';
+import {$, api} from './core.js';
 
 // 同一文档里不能有两个相同 id，因此按前缀生成 DOM，逻辑仍只写一份。
 export function botFormHtml(p) {
@@ -98,56 +97,10 @@ async function saveBotConnection(p) {
   $('#' + p + '-save').disabled = false;
 }
 
-// ============ 首次配置向导 ============
-// 每步都当场验证：若填完只能「保存并重启看看」，配错了不会有任何提示，
-// 等于把排障成本全推给了使用者。
-// 向导嵌在总览页顶部而非独立页签：新用户打开界面第一眼就该看到它，
-// 而不是先猜哪个页签是入口。四步都完成后自动收起。
-
-// 让使用者当场发一条真消息，是最直接的验证手段
-export function renderTestMessage(senders) {
-  const pick = $('#test-platform');
-  pick.innerHTML = (senders || []).length
-    ? senders.map(s => '<option value="' + esc(s) + '">' + esc(s) + '</option>').join('')
-    : '<option value="">（尚无可用的机器人）</option>';
-  $('#test-send').disabled = !(senders || []).length;
-}
-
-export async function sendTestMessage() {
-  const box = $('#test-result');
-  const platform = $('#test-platform').value;
-  const num = $('#test-num').value.trim();
-
-  if (!platform || !num) {
-    box.style.display = 'block';
-    box.className = 'issues';
-    box.innerHTML = '<b>请先选择机器人并填写群号或 QQ 号</b>';
-    return;
-  }
-
-  $('#test-send').disabled = true;
-  box.style.display = 'block';
-  box.className = 'issues';
-  box.innerHTML = '<b>发送中…</b>';
-
-  try {
-    const res = await api('/test-message', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ platform, type: Number($('#test-type').value), num: Number(num) })
-    });
-
-    box.className = 'issues' + (res.success ? ' ok' : '');
-    let html = '<b>' + esc(res.message) + '</b>';
-    if (res.advice) html += '<ul><li>' + esc(res.advice) + '</li></ul>';
-    if (res.raw) html += '<ul><li>接口原始响应：' + esc(JSON.stringify(res.raw)) + '</li></ul>';
-    box.innerHTML = html;
-  } catch (e) {
-    box.className = 'issues';
-    box.innerHTML = '<b>发送失败：' + esc(e.message) + '</b>';
-  }
-
-  $('#test-send').disabled = false;
-}
-
-// 「临时静音」要求立即生效，因此后端会同时改内存与配置文件
+/*
+ * 「发一条试试」原先也在本文件里，5.1 随连接页改版搬去了 links.js。
+ *
+ * 搬走不只是挪位置：那一版的目标是手填的群号或 QQ 号，而这一步存在的全部意义
+ * 正是把「群号填错」与其余三类错分开——手填的话，第一类错又混了回去，
+ * 且是在使用者最相信这一步的时候。现在目标只能从机器人自己给的名单里挑。
+ */

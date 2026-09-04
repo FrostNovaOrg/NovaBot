@@ -243,6 +243,36 @@ public class BilibiliAccountService {
     }
 
     /**
+     * 当前凭据的到期时刻，答不上时为空
+     * <p>
+     * 只有 TV 端扫码登录会拿到一个确定的到期时刻（登录令牌，默认 180 天），Web 端那条路
+     * 服务端不下发到期时间——此时返回空，而不是估一个出来。界面上「还剩几天」宁可不显示，
+     * 也不能显示一个从第一天起就是错的数字：使用者恰恰照着它决定什么时候去重新扫码。
+     * @return 到期时刻
+     */
+    public Optional<Instant> credentialExpiresAt() {
+        Long expiresAt = api.getCookies().getAccessTokenExpiresAt();
+        return expiresAt == null ? Optional.empty() : Optional.of(Instant.ofEpochMilli(expiresAt));
+    }
+
+    /**
+     * 凭据续期状况的一句话
+     * <p>
+     * 答的是「到期之后会不会自己续上」。缺刷新口令那一档必须说出来：自动续期会一直静默跳过，
+     * 表现是某天突然掉登录，而在那之前界面上一切正常。
+     * @return 续期状况
+     */
+    public String credentialNote() {
+        if (!properties.isAutoRefreshCookie()) {
+            return "自动续期已关，凭据到期后需要重新扫码";
+        }
+        if (!isRefreshable()) {
+            return "本次登录没拿到刷新口令，自动续期用不上，凭据到期后需要重新扫码";
+        }
+        return "自动续期已开，到期前会自己续上";
+    }
+
+    /**
      * 例行维护：先复检登录态，登录态正常时再按需续期 Cookie
      * <p>
      * 两件事共用一个周期：续期只在登录态正常时才有意义，掉登录后再怎么续也是徒劳。

@@ -150,6 +150,33 @@ class EventTokenEndpointsTest {
                 "这个坑换了机制也还在，回执里必须说");
     }
 
+    /**
+     * 连接页上那张外部面板卡按的就是这两个按钮，因此这条走的是端到端的一整趟
+     * <p>
+     * 两向都要量：撤过的那把必须被拒，紧接着新签的那把必须放行。
+     * 只量前一向的话，一个「verify 一律返回 false」的实现照样全绿，而那时所有面板都连不上；
+     * 只量后一向则连吊销做没做都不知道。
+     * <p>
+     * 两个端点各测各的不算数：这一条要答的是「界面上点了吊销之后，那把口令还认不认」，
+     * 而吊销与校验分属两支代码，中间那一步（指纹认到了哪一行）正是最容易接错的地方。
+     */
+    @Test
+    @DisplayName("🔴 吊销后旧口令必须被拒，而同一时刻新签的那把必须放行")
+    void revokedTokenIsRejectedWhileFreshOneStillWorks() {
+        String old = controller.issueEventToken(Map.of("label", "客厅那台")).getString("token");
+        // 尺子先过阳性对照：撤之前它是认的，否则下面那句「撤完不认」可能只是从来就没认过
+        assertTrue(tokens.verify(old), "刚签出来的口令就该认");
+
+        String fingerprint = tokens.fingerprintOf(tokens.list().get(0));
+        assertTrue(controller.revokeEventToken(fingerprint).getBooleanValue("success"));
+
+        assertFalse(tokens.verify(old), "撤过的口令必须被拒——它曾经有效，与「无效」不是同一件事");
+
+        String fresh = controller.issueEventToken(Map.of("label", "换的那台")).getString("token");
+        assertTrue(tokens.verify(fresh), "撤掉一把不该把这条路整个堵死");
+        assertFalse(tokens.verify(old), "签了新的也不会让旧的复活");
+    }
+
     @Test
     @DisplayName("撤一把不影响另一把")
     void revokeIsTargeted() {

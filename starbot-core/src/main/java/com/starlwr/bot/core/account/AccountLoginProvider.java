@@ -1,5 +1,6 @@
 package com.starlwr.bot.core.account;
 
+import java.time.Instant;
 import java.util.Optional;
 
 /**
@@ -53,6 +54,34 @@ public interface AccountLoginProvider {
      * @return 被关掉的原因
      */
     default Optional<String> disabledReason() {
+        return Optional.empty();
+    }
+
+    /**
+     * 当前凭据的到期时刻，答不上时为空
+     * <p>
+     * 「这把登录还能用多久」是连接页上使用者最想知道的一件事，而它<b>只有平台自己答得出来</b>：
+     * 有的平台把到期时间写在凭据里，有的压根没有一个确定的到期时刻。
+     * <p>
+     * 答不上就留空，界面那一侧就不写「还剩几天」——编一个日期出来的话，那个数字从第一天起就是错的，
+     * 而使用者恰恰会照着它决定什么时候去重新扫码。
+     * @return 到期时刻
+     */
+    default Optional<Instant> credentialExpiresAt() {
+        return Optional.empty();
+    }
+
+    /**
+     * 凭据续期状况的一句话，没有可说的时为空
+     * <p>
+     * 与 {@link #credentialExpiresAt()} 分开：到期时刻答的是「什么时候失效」，
+     * 这一句答的是「失效之后会不会自己续上」。后者常常比前者要紧——
+     * 能自动续期的凭据到期不用管人，不能续的那种到期就是一次掉登录。
+     * <p>
+     * 文本会原样显示给使用者，因此要写清楚<b>接下来会发生什么</b>。
+     * @return 续期状况
+     */
+    default Optional<String> credentialNote() {
         return Optional.empty();
     }
 

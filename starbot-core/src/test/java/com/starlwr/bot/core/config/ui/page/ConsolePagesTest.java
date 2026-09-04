@@ -127,6 +127,19 @@ class ConsolePagesTest {
         assertEquals("先来的", kept.get(0).displayName());
     }
 
+    /**
+     * 落位缺省是设置页，已有的实现一个字都不用改
+     * <p>
+     * 这一条守的是升级路径：{@code slot()} 是后加的默认方法，一个在它之前写好的插件
+     * 不会实现它。缺省要是给了「连接页」，那些插件的页会在升级到这一版之后
+     * <b>悄悄挪到另一页上</b>——功能一件不少，只是使用者再也找不到它。
+     */
+    @Test
+    @DisplayName("没申报落位的页落在设置页，不会被悄悄挪到别处")
+    void slotDefaultsToSettings() {
+        assertEquals(ConsolePageSlot.SETTINGS, new Page("a", "甲", "a.js", 100).slot());
+    }
+
     @Test
     @DisplayName("整理出来的清单改不动")
     void resultIsImmutable() {
@@ -192,6 +205,14 @@ class ConsolePagesTest {
             }
             return 100;
         }
+
+        @Override
+        public ConsolePageSlot slot() {
+            if ("slot".equals(where)) {
+                throw new IllegalStateException("插件的 slot() 抛了异常");
+            }
+            return ConsolePageSlot.SETTINGS;
+        }
     }
 
     /**
@@ -210,6 +231,7 @@ class ConsolePagesTest {
                 new Exploding("displayName"),
                 new Exploding("script"),
                 new Exploding("order"),
+                new Exploding("slot"),
                 page("Upper", "shady.js"),
                 page("bad-script", "../../application.yml"),
                 null,

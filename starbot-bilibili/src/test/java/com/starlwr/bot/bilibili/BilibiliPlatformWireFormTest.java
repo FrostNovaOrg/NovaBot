@@ -5,6 +5,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.console.BilibiliConsolePageProvider;
 import com.starlwr.bot.bilibili.event.live.BilibiliLiveOffEvent;
 import com.starlwr.bot.bilibili.service.BilibiliDataSourceService;
+import com.starlwr.bot.core.config.ui.page.ConsolePageSlot;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.service.DataSourceServiceConfig;
@@ -94,5 +95,17 @@ class BilibiliPlatformWireFormTest {
 
         assertEquals(WIRE_ID, page.id());
         assertEquals("哔哩哔哩", page.displayName());
+    }
+
+    /**
+     * 这一页要落在连接页上，而落位这件事只有插件自己申报得出来
+     * <p>
+     * 核心界面里一个平台的名字都没有，因此它无从判断某一页该摆在哪儿。申报错了不会有任何报错——
+     * 那张卡会安静地折进设置页「高级」里，而连接页上少了一段，看起来像是这个平台不需要连接。
+     */
+    @Test
+    @DisplayName("控制台页面落在连接页上")
+    void consolePageSitsOnLinksPage() {
+        assertEquals(ConsolePageSlot.LINKS, new BilibiliConsolePageProvider().slot());
     }
 }

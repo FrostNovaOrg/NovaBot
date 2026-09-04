@@ -61,6 +61,17 @@ public class BilibiliAccountLoginProvider implements AccountLoginProvider {
     }
 
     @Override
+    public Optional<Instant> credentialExpiresAt() {
+        return accountService.credentialExpiresAt();
+    }
+
+    @Override
+    public Optional<String> credentialNote() {
+        // 未登录时说续期状况没有意义：此时该说的是「去扫码」，而那句话由登录态自己带
+        return isLoggedIn() ? Optional.of(accountService.credentialNote()) : Optional.empty();
+    }
+
+    @Override
     public void logout() {
         accountService.logout();
 
