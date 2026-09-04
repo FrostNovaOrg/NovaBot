@@ -41,4 +41,16 @@ public class LiveProperties {
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     private int reconnectInterval = 300;
+
+    /**
+     * 每场直播明细数据（曲线、排行、词频、弹幕原文）的保留天数，0 表示永久保留
+     */
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
+    private int detailRetentionDays = 0;
+
+    /**
+     * 下播报告图片的缓存天数，过期后删除，查看时从明细数据重新绘制，0 表示永久保留
+     */
+    @ConfigEffect(ConfigEffect.Effect.RESTART)
+    private int reportCacheDays = 30;
 }

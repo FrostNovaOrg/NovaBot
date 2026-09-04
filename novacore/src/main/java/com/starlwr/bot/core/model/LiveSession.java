@@ -4,6 +4,7 @@ import com.starlwr.bot.core.enums.LiveEndReason;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * 一场直播的归档记录
@@ -37,6 +38,12 @@ import java.util.Map;
  *                          两者成因不同（单房断线 vs 整个程序停机），而且程序停机期间
  *                          所有房间都在断，两段会重叠，<b>相加就是重复计数</b>。
  *                          合成一个数还会重演「两个口径混成一个数」那类错误
+ * @param peaks 各条时间序列在本场之内的<b>派生峰值</b>：指标名 → 峰值与出现时刻。
+ *              与 {@code metrics} 的分工是「多少」与「最多时是多少」——
+ *              后者从累计值里推不出来，而序列本身下次开播就清零，
+ *              所以它必须在下播那一刻算出来跟着场次走。
+ *              <b>本版之前归档的场次没有这一项，读成空表</b>：那时候的序列已经没了，
+ *              补不出来，界面上该显示「—」而不是 0
  */
 public record LiveSession(
         String platform,
@@ -52,8 +59,23 @@ public record LiveSession(
         List<RoomInfoSnapshot> titles,
         long maintenanceGapSeconds,
         Map<String, List<Long>> userSets,
-        long roomOutageSeconds
+        long roomOutageSeconds,
+        Map<String, SeriesPeak> peaks
 ) {
+    /**
+     * 按无峰值构造
+     * <p>
+     * 供峰值这一项之前就存在的调用方与测试继续使用，<b>也是读取老归档记录时走的那一个</b>——
+     * 老记录里本来就没有峰值。
+     */
+    public LiveSession(String platform, Long uid, String uname, Long roomId, long startTime, long endTime,
+                       long durationSeconds, Map<String, Double> metrics, Map<String, Integer> userCounts,
+                       LiveEndReason endReason, List<RoomInfoSnapshot> titles, long maintenanceGapSeconds,
+                       Map<String, List<Long>> userSets, long roomOutageSeconds) {
+        this(platform, uid, uname, roomId, startTime, endTime, durationSeconds, metrics, userCounts,
+                endReason, titles, maintenanceGapSeconds, userSets, roomOutageSeconds, Map.of());
+    }
+
     /**
      * 按正常结束、无标题记录、无停机缺口构造
      * <p>
@@ -85,7 +107,7 @@ public record LiveSession(
                        long durationSeconds, Map<String, Double> metrics, Map<String, Integer> userCounts,
                        LiveEndReason endReason, List<RoomInfoSnapshot> titles, long maintenanceGapSeconds) {
         this(platform, uid, uname, roomId, startTime, endTime, durationSeconds, metrics, userCounts,
-                endReason, titles, maintenanceGapSeconds, Map.of(), 0);
+                endReason, titles, maintenanceGapSeconds, Map.of(), 0, Map.of());
     }
 
     /**
@@ -124,6 +146,29 @@ public record LiveSession(
      */
     public boolean hasUserSets() {
         return userSets != null && !userSets.isEmpty();
+    }
+
+    /**
+     * 取某条序列的峰值，没有这一项时为空
+     * <p>
+     * ⚠️ <b>空有两种含义，本方法分不开</b>：一是这一场那条序列一个点都没有，
+     * 二是这条记录来自还没有峰值的年代。要区分请用 {@link #hasPeaks()}——
+     * 与名单那一项同一条道理：<b>把「不知道」显示成 0，读的人会当成「最高只有 0」</b>。
+     * @param metric 指标名
+     * @return 峰值与出现时刻
+     */
+    public Optional<SeriesPeak> peak(String metric) {
+        return Optional.ofNullable(peaks == null ? null : peaks.get(metric));
+    }
+
+    /**
+     * 这条记录是否带峰值
+     * <p>
+     * <b>用来把「这一场没有互动」和「那时候还没这功能」分开。</b>
+     * 场次表上前者该显示 0，后者该显示「—」。
+     */
+    public boolean hasPeaks() {
+        return peaks != null && !peaks.isEmpty();
     }
 
     /**

@@ -361,6 +361,11 @@ public class RedisLiveDataService implements LiveDataService {
     }
 
     @Override
+    public java.util.Set<String> getLiveSeriesMetrics(@NonNull String platform, @NonNull Long uid) {
+        return delegate.getLiveSeriesMetrics(platform, uid);
+    }
+
+    @Override
     public void incrementLiveWordFrequency(@NonNull String platform, @NonNull Long uid, @NonNull String word) {
         delegate.incrementLiveWordFrequency(platform, uid, word);
     }

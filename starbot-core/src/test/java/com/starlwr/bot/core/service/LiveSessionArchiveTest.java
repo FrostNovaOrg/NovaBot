@@ -2,6 +2,7 @@ package com.starlwr.bot.core.service;
 
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.model.LiveSession;
+import com.starlwr.bot.core.model.SeriesPeak;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -181,6 +182,67 @@ class LiveSessionArchiveTest {
                 startTime, startTime + durationSeconds * 1000, durationSeconds,
                 Map.of("danmu_count", 455.0, "gift_value", 23.6),
                 Map.of("danmu_users", 33, "gift_users", 13));
+    }
+
+    /**
+     * 第③批：序列峰值
+     * <p>
+     * 峰值是<b>派生字段</b>：从本场序列算出来的，而序列下次开播就清零。
+     * 这一批钉的是「算出来的那个数真的跟着场次落了盘」，以及
+     * 「本版之前的那些场次读回来是『不知道』而不是 0」。
+     */
+    @org.junit.jupiter.api.Nested
+    @DisplayName("序列峰值")
+    class Peaks {
+        @Test
+        @DisplayName("峰值与时刻原样往返，多条曲线各留各的")
+        void peaksRoundTrip() {
+            archive.append(new LiveSession("bilibili", STREAMER_UID, "测试主播", ROOM_ID,
+                    1_000_000L, 1_003_600_000L, 3600, Map.of(), Map.of(),
+                    com.starlwr.bot.core.enums.LiveEndReason.NORMAL, List.of(), 0, Map.of(), 0,
+                    Map.of("danmu_count", new SeriesPeak(1_002_520_000L, 34),
+                            "watched_count", new SeriesPeak(1_003_500_000L, 8642))));
+
+            LiveSession read = archive.find(0, Long.MAX_VALUE).get(0);
+
+            assertTrue(read.hasPeaks());
+            assertEquals(new SeriesPeak(1_002_520_000L, 34), read.peak("danmu_count").orElseThrow());
+            assertEquals(new SeriesPeak(1_003_500_000L, 8642), read.peak("watched_count").orElseThrow());
+        }
+
+        @Test
+        @DisplayName("本版之前的记录没有峰值：读成「不知道」而不是「最高 0」")
+        void oldRecordsHaveNoPeaks() throws Exception {
+            Files.writeString(dir.resolve("sessions.jsonl"),
+                    "{\"platform\":\"bilibili\",\"uid\":1,\"uname\":\"测试主播\",\"roomId\":2,"
+                            + "\"startTime\":1000000,\"endTime\":1100000,\"durationSeconds\":100,"
+                            + "\"metrics\":{},\"userCounts\":{}}\n",
+                    StandardCharsets.UTF_8);
+
+            LiveSession read = archive.find(0, Long.MAX_VALUE).get(0);
+
+            assertFalse(read.hasPeaks(),
+                    "那时候的序列早就没了, 事后补不出来——界面上该显示「—」而不是 0");
+            assertTrue(read.peak("danmu_count").isEmpty());
+        }
+
+        @Test
+        @DisplayName("缺时刻的那一项整条跳过，不补一个 0 进去")
+        void malformedPeakIsDropped() throws Exception {
+            Files.writeString(dir.resolve("sessions.jsonl"),
+                    "{\"platform\":\"bilibili\",\"uid\":1,\"uname\":\"测试主播\",\"roomId\":2,"
+                            + "\"startTime\":1000000,\"endTime\":1100000,\"durationSeconds\":100,"
+                            + "\"metrics\":{},\"userCounts\":{},"
+                            + "\"peaks\":{\"danmu_count\":{\"value\":34},"
+                            + "\"watched_count\":{\"at\":1050000,\"value\":8642}}}\n",
+                    StandardCharsets.UTF_8);
+
+            LiveSession read = archive.find(0, Long.MAX_VALUE).get(0);
+
+            assertTrue(read.peak("danmu_count").isEmpty(),
+                    "「峰值 34, 出现在开播那一刻」是一句会被人当真的假话");
+            assertEquals(8642, read.peak("watched_count").orElseThrow().value());
+        }
     }
 
     /**

@@ -14,13 +14,9 @@ import com.starlwr.bot.core.service.DefaultLiveDataService;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.LiveRoomInfoHistory;
 import com.starlwr.bot.core.util.FontUtil;
-import com.starlwr.bot.core.util.ImageUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 
-import java.awt.Color;
-import java.awt.Graphics2D;
-import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.util.Base64;
 import java.util.List;
@@ -82,13 +78,6 @@ public class BilibiliLiveReportPreviewPainter extends BilibiliLiveReportPainter 
     private static final LiveStreamerInfo PREVIEW_STREAMER =
             new LiveStreamerInfo(PREVIEW_UID, "示例主播", PREVIEW_ROOM_ID, "preview-face");
 
-    /**
-     * 占位图的配色：与报告主色系接近但明显是占位，免得被当成真封面
-     */
-    private static final Color PLACEHOLDER_FROM = new Color(203, 213, 225);
-
-    private static final Color PLACEHOLDER_TO = new Color(148, 163, 184);
-
     private final BufferedImage banner;
 
     private final BufferedImage face;
@@ -101,10 +90,11 @@ public class BilibiliLiveReportPreviewPainter extends BilibiliLiveReportPainter 
                                             LiveRoomInfoHistory roomInfoHistory) {
         super(factory, api, fixtureData(), fontUtil, properties, roomInfoHistory);
 
-        this.banner = ImageUtil.maskToRoundedRectangle(
-                placeholder(CONTENT_WIDTH, COVER_HEIGHT), CANVAS_RADIUS - 5);
-        this.face = ImageUtil.maskToCircle(placeholder(AVATAR_SIZE, AVATAR_SIZE));
-        this.rankingFace = ImageUtil.maskToCircle(placeholder(RANKING_AVATAR_SIZE, RANKING_AVATAR_SIZE));
+        // 占位图与历史场次重画那一支共用一份：两处的尺寸必须一致，
+        // 各画各的话，版式改宽的那天会变成两张对不齐的图，而图上看不出哪张是错的
+        this.banner = PainterPlaceholder.banner();
+        this.face = PainterPlaceholder.face();
+        this.rankingFace = PainterPlaceholder.rankingFace();
     }
 
     /**
@@ -292,18 +282,4 @@ public class BilibiliLiveReportPreviewPainter extends BilibiliLiveReportPainter 
         }
     }
 
-    /**
-     * 画一张斜向渐变的占位图
-     * <p>
-     * 不用纯色块：纯色在报告里看起来像一处画崩了的空白，而渐变一眼就知道是占位。
-     */
-    private static BufferedImage placeholder(int width, int height) {
-        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D graphics = image.createGraphics();
-        graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        graphics.setPaint(new java.awt.GradientPaint(0, 0, PLACEHOLDER_FROM, width, height, PLACEHOLDER_TO));
-        graphics.fillRect(0, 0, width, height);
-        graphics.dispose();
-        return image;
-    }
 }

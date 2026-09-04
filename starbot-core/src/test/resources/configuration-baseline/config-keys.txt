@@ -51,8 +51,10 @@ starbot.core.exec.max-concurrent|java.lang.Integer|4|同时执行的命令数上
 starbot.core.exec.rules|java.util.List<com.starlwr.bot.core.config.StarBotCoreProperties$ExecRule>|<null>|规则列表
 starbot.core.exec.timeout|java.lang.Integer|30|单条命令的最长执行时间，单位：秒，超时后强制结束
 starbot.core.live.auto-save-live-data-interval|java.lang.Integer|300|自动保存直播数据间隔，单位：秒，仅使用默认直播数据服务时生效
+starbot.core.live.detail-retention-days|java.lang.Integer|0|每场直播明细数据（曲线、排行、词频、弹幕原文）的保留天数，0 表示永久保留
 starbot.core.live.live-data-path|java.lang.String|data.json|直播数据文件路径，仅使用默认直播数据服务时生效
 starbot.core.live.reconnect-interval|java.lang.Integer|300|判定主播断线重连（下播后短时间内重新开播）的时间间隔，断线重连不会重置直播数据，单位：秒
+starbot.core.live.report-cache-days|java.lang.Integer|30|下播报告图片的缓存天数，过期后删除，查看时从明细数据重新绘制，0 表示永久保留
 starbot.core.live.save-live-data|java.lang.Boolean|true|是否持久化直播数据至文件，仅使用默认直播数据服务时生效
 starbot.core.log.console|ch.qos.logback.classic.Level|<null>|控制台日志级别
 starbot.core.log.event-log|java.lang.Boolean|false|是否记录事件日志

@@ -2,6 +2,7 @@ package com.starlwr.bot.core.config.ui;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.starlwr.bot.core.analytics.LiveDetail;
 import com.starlwr.bot.core.analytics.LiveMetricCatalog;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
@@ -12,9 +13,12 @@ import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.model.RoomInfoSnapshot;
+import com.starlwr.bot.core.model.SeriesPeak;
 import com.starlwr.bot.core.model.StreamerSnapshot;
 import com.starlwr.bot.core.service.LiveDataService;
+import com.starlwr.bot.core.service.LiveDetailArchive;
 import com.starlwr.bot.core.service.LiveReportArchive;
+import com.starlwr.bot.core.service.LiveReportRedrawer;
 import com.starlwr.bot.core.service.LiveSessionArchive;
 import com.starlwr.bot.core.service.StreamerDirectory;
 import com.starlwr.bot.core.service.StreamerSnapshotArchive;
@@ -32,6 +36,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -75,6 +80,14 @@ class StreamerApiTest {
 
     private LiveReportArchive reports;
 
+    private LiveDetailArchive details;
+
+    /** 有没有装重绘实现。没装时报告过期就是看不到了，装了才重画得出来 */
+    private LiveReportRedrawer redrawer;
+
+    /** 重画时拿到的那份明细，用来证明控制器喂给它的是这一场而不是另一场 */
+    private final List<LiveDetail> redrawnFrom = new ArrayList<>();
+
     private StreamerController controller;
 
     /** 今天零点，夹具的场次都按「几天前」摆放，免得跨零点跑测试时结果飘 */
@@ -92,6 +105,9 @@ class StreamerApiTest {
         archive = new LiveSessionArchive(properties);
         snapshots = new StreamerSnapshotArchive(properties);
         reports = new LiveReportArchive(properties);
+        details = new LiveDetailArchive(properties);
+        redrawer = null;
+        redrawnFrom.clear();
 
         liveDataService = mock(LiveDataService.class);
         when(liveDataService.getLiveStatus(any(), any())).thenReturn(Optional.of(false));
@@ -126,8 +142,31 @@ class StreamerApiTest {
         ObjectProvider<LiveMetricCatalog> catalogs = mock(ObjectProvider.class);
         when(catalogs.orderedStream()).thenAnswer(invocation -> java.util.stream.Stream.of(catalog()));
 
+        ObjectProvider<LiveReportRedrawer> redrawers = mock(ObjectProvider.class);
+        when(redrawers.orderedStream()).thenAnswer(invocation ->
+                redrawer == null ? java.util.stream.Stream.empty() : java.util.stream.Stream.of(redrawer));
+
         return new StreamerController(dataSource, new StreamerDirectory(properties), liveDataService,
-                archive, snapshots, reports, catalogs);
+                archive, snapshots, reports, details, catalogs, redrawers);
+    }
+
+    /**
+     * 装了重绘实现的控制器：没装时点开过期场次只能是 404，装了才走得到重画那一支
+     */
+    private void installRedrawer(byte[] redrawn) {
+        redrawer = new LiveReportRedrawer() {
+            @Override
+            public String platform() {
+                return "bilibili";
+            }
+
+            @Override
+            public Optional<byte[]> redraw(LiveDetail detail) {
+                redrawnFrom.add(detail);
+                return Optional.ofNullable(redrawn);
+            }
+        };
+        controller = controller();
     }
 
     private LiveMetricCatalog catalog() {
@@ -429,13 +468,99 @@ class StreamerApiTest {
     }
 
     @Test
-    @DisplayName("没留档时回 404 加一句人话，不是 500 也不是一张空图")
+    @DisplayName("④ 既没缓存也没明细时回 404 加一句人话，不是 500 也不是一张空图")
     void reportMissingIs404() {
         ResponseEntity<?> response = controller.report("bilibili", 1001L, todayStart);
 
         assertEquals(404, response.getStatusCode().value());
         assertEquals(MediaType.APPLICATION_JSON, response.getHeaders().getContentType());
-        assertTrue(((JSONObject) response.getBody()).getString("message").contains("没有留下报告图"));
+        String message = ((JSONObject) response.getBody()).getString("message");
+        assertTrue(message.contains("没有报告图") && message.contains("明细"),
+                "这一句要同时交代两件事：图没有, 而且重画不出来——只说图没有的话, "
+                        + "使用者会以为等一会儿就好了");
+    }
+
+    @Test
+    @DisplayName("③ 缓存过期了但明细还在：从明细重画，仍回 200 PNG")
+    void reportIsRedrawnFromDetail() {
+        byte[] redrawn = "重画出来的图".getBytes(StandardCharsets.UTF_8);
+        installRedrawer(redrawn);
+        details.store(detail(1001L, todayStart));
+
+        ResponseEntity<?> response = controller.report("bilibili", 1001L, todayStart);
+
+        assertEquals(200, response.getStatusCode().value());
+        assertEquals(MediaType.IMAGE_PNG, response.getHeaders().getContentType());
+        assertArrayEquals(redrawn, (byte[]) response.getBody());
+        assertEquals(1, redrawnFrom.size());
+        assertEquals(todayStart, redrawnFrom.get(0).startTime(),
+                "喂给重画的必须是这一场的明细, 喂错一场的话画出来的图仍然像模像样");
+    }
+
+    @Test
+    @DisplayName("③ 缓存还在就不重画——重画是兜底，不是每次都跑一遍")
+    void cacheWinsOverRedraw() {
+        byte[] cached = "缓存里的图".getBytes(StandardCharsets.UTF_8);
+        installRedrawer("重画出来的图".getBytes(StandardCharsets.UTF_8));
+        reports.store("bilibili", 1001L, todayStart, cached, true);
+        details.store(detail(1001L, todayStart));
+
+        ResponseEntity<?> response = controller.report("bilibili", 1001L, todayStart);
+
+        assertArrayEquals(cached, (byte[]) response.getBody());
+        assertTrue(redrawnFrom.isEmpty());
+    }
+
+    @Test
+    @DisplayName("④ 有明细但这台机器没装那个平台的插件：照样 404，不是半张图")
+    void noRedrawerStillIs404() {
+        details.store(detail(1001L, todayStart));
+
+        ResponseEntity<?> response = controller.report("bilibili", 1001L, todayStart);
+
+        assertEquals(404, response.getStatusCode().value());
+    }
+
+    @Test
+    @DisplayName("场次行点不点得开：有缓存或有明细都算，只按缓存判会让老场次整批变成点不开")
+    void hasReportCountsDetailToo() {
+        archive.append(session(1001L, "主播甲", todayStart - DAY, 3600));
+        archive.append(session(1001L, "主播甲", todayStart - 2 * DAY, 3600));
+        archive.append(session(1001L, "主播甲", todayStart - 3 * DAY, 3600));
+        reports.store("bilibili", 1001L, todayStart - DAY, "图".getBytes(StandardCharsets.UTF_8), true);
+        details.store(detail(1001L, todayStart - 2 * DAY));
+
+        JSONArray items = detail(1001L).getJSONObject("sessions").getJSONArray("items");
+
+        assertTrue(items.getJSONObject(0).getBooleanValue("hasReport"), "缓存里有图");
+        assertTrue(items.getJSONObject(1).getBooleanValue("hasReport"), "图过期了但明细还在, 重画得出来");
+        assertFalse(items.getJSONObject(2).getBooleanValue("hasReport"), "两样都没有");
+    }
+
+    // ---------------------------------------------------------------- 人气峰
+
+    @Test
+    @DisplayName("⑤ 场次表列出峰值实值；本版之前的场次是「不知道」而不是 0")
+    void sessionRowCarriesPeaks() {
+        archive.append(new LiveSession("bilibili", 1001L, "主播甲", 10010L,
+                todayStart - DAY, todayStart - DAY + 3600_000, 3600,
+                Map.of("danmu_count", 106.0), Map.of(),
+                LiveEndReason.NORMAL, List.of(), 0, Map.of(), 0,
+                Map.of("watched_count", new SeriesPeak(todayStart - DAY + 42 * 60_000L, 8642))));
+        archive.append(session(1001L, "主播甲", todayStart - 2 * DAY, 3600));
+
+        JSONArray items = detail(1001L).getJSONObject("sessions").getJSONArray("items");
+
+        JSONObject withPeaks = items.getJSONObject(0);
+        JSONObject old = items.getJSONObject(1);
+        assertTrue(withPeaks.getBooleanValue("hasPeaks"));
+        assertEquals(8642.0, withPeaks.getJSONObject("peaks").getJSONObject("watched_count").getDoubleValue("value"));
+        assertEquals(todayStart - DAY + 42 * 60_000L,
+                withPeaks.getJSONObject("peaks").getJSONObject("watched_count").getLongValue("at"),
+                "峰值旁边要有它出现的时刻, 否则「最高 8642」答不出「什么时候」");
+        assertFalse(old.getBooleanValue("hasPeaks"),
+                "本版之前的场次序列早就没了——界面该显示「—」, 显示 0 是一句假话");
+        assertTrue(old.getJSONObject("peaks").isEmpty());
     }
 
     @Test
@@ -492,5 +617,16 @@ class StreamerApiTest {
         return new LiveSession("bilibili", uid, uname, uid * 10, startTime,
                 startTime + durationSeconds * 1000, durationSeconds,
                 Map.of("danmu_count", 106.0), Map.of());
+    }
+
+    /**
+     * 一份够用的明细：本组用例只关心「这一场有没有明细」与「喂给重画的是不是它」
+     */
+    private LiveDetail detail(long uid, long startTime) {
+        return new LiveDetail(LiveDetail.VERSION, "bilibili", uid, "主播甲", uid * 10,
+                startTime, startTime + 3600_000, 3600,
+                Map.of("danmu_count", 106.0), Map.of(),
+                Map.of("danmu_count", Map.of(startTime, 6.0)),
+                Map.of(), Map.of("好听", 3), List.of(), List.of(), List.of(), Map.of());
     }
 }
