@@ -596,6 +596,12 @@ a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);bac
 .stat{background:var(--ground);border:1px solid var(--line);border-radius:var(--r-card);padding:12px 14px}
 .stat-v{font-size:22px;font-weight:600;line-height:1.15;font-variant-numeric:tabular-nums}
 .stat-l{font-size:12px;color:var(--dim);margin-top:2px}
+.stat-exp{cursor:pointer;text-align:left;font:inherit;color:inherit;width:100%}
+.stat-exp:hover{border-color:var(--accent)}
+.stat-exp .stat-drop{display:none;margin-top:10px;padding-top:8px;border-top:1px solid var(--line);font-size:12.5px}
+.stat-exp.open .stat-drop{display:block}
+.stat-row{display:flex;justify-content:space-between;gap:8px;padding:3px 0;font-variant-numeric:tabular-nums}
+.stat-more{color:var(--dim);padding-top:4px}
 .quickbar{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:12px;
   padding-top:12px;border-top:1px solid var(--line);font-size:12.5px;color:var(--dim)}
 .quickbar button{background:var(--surface);color:var(--text);border:1px solid var(--line);

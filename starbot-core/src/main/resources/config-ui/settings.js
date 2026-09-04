@@ -24,6 +24,24 @@ const ALERT_GROUP = 'alert';
 const AUTH_GROUP = 'auth';
 
 /**
+ * 滚到设置页上的某一组
+ *
+ * 组目录药丸与首页那条「QQ 告警有死角」待办走的是同一条路。
+ * 点了药丸却因为筛选而看不见那一组，比什么都不发生更费解，因此先把 hide 揭掉。
+ * @param id 组标识，与 schema 里的 group 一致；高级折页传 adv
+ */
+export function focusGroup(id) {
+  if (!id) return;
+  if (id === 'adv') {
+    const adv = $('#adv-groups');
+    if (adv) adv.open = true;
+  }
+  const target = document.querySelector('[data-grp="' + id + '"]');
+  if (target) target.classList.remove('hide');
+  if (target && target.scrollIntoView) target.scrollIntoView({behavior: 'smooth', block: 'start'});
+}
+
+/**
  * 一项的当前值：草稿优先，其次已保存的值，最后才是默认值
  *
  * 顺序不能反。切换搜索或筛选会整体重绘，此时未保存的改动要接着显示出来，
@@ -314,19 +332,11 @@ function buildNav(groups, hasAdvanced) {
   const nav = $('#grp-nav');
   nav.innerHTML = '';
 
-  const jump = id => {
-    if (id === 'adv') $('#adv-groups').open = true;
-    const target = document.querySelector('[data-grp="' + id + '"]');
-    // 点了药丸却因为筛选而看不见那一组，比什么都不发生更费解
-    if (target) target.classList.remove('hide');
-    if (target && target.scrollIntoView) target.scrollIntoView({behavior: 'smooth', block: 'start'});
-  };
-
   for (const group of groups) {
     const pill = el('button', 'pill');
     pill.type = 'button';
     pill.textContent = group.title;
-    pill.addEventListener('click', () => jump(group.group));
+    pill.addEventListener('click', () => focusGroup(group.group));
     nav.appendChild(pill);
   }
 
@@ -334,7 +344,7 @@ function buildNav(groups, hasAdvanced) {
     const pill = el('button', 'pill');
     pill.type = 'button';
     pill.textContent = '高级';
-    pill.addEventListener('click', () => jump('adv'));
+    pill.addEventListener('click', () => focusGroup('adv'));
     nav.appendChild(pill);
   }
 }

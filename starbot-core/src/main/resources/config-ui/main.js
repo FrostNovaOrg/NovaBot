@@ -11,7 +11,7 @@ import {loadLog, stopFollow, syncLogView} from './log.js';
 import {refreshHome, renderStatus, runSelfTest, togglePush} from './overview.js';
 import {decoratePushData, loadPushPage, renderStreamers, serializePush, showPush} from './push.js';
 import {setAuthState} from './settings-auth.js';
-import {copyConfigPath, discard, filterSettings, renderConfigPath, renderGeneral, save, toggleKeyNames}
+import {copyConfigPath, discard, filterSettings, focusGroup, renderConfigPath, renderGeneral, save, toggleKeyNames}
   from './settings.js';
 import {openSetup, stopSetupPolling} from './setup.js';
 import {store} from './store.js';
@@ -142,6 +142,8 @@ export async function load() {
     store.legacy = v.legacy || {};
     store.dirty = {};
     renderGeneral();
+    const here = parseHash();
+    if (here.name === 'settings' && here.card) focusGroup(here.card);
 
     const [d, st, h, p] = await Promise.all([
       api('/datasource'), api('/status'), api('/handlers'), api('/platforms')]);
@@ -174,7 +176,7 @@ export async function load() {
     decoratePushData();
     refreshPages();
     loadPushPage();
-    // 首页要三份数据一起算，与这一趟里的 /status 各取各的：它那一趟晚一点回来，
+    // 首页要四份数据一起算，与这一趟里的 /status 各取各的：它那一趟晚一点回来，
     // 画出来的是更新的一份，不会与这里的运行状态互相矛盾
     refreshHome();
     fillBotForms();
@@ -344,12 +346,13 @@ function applyRoute(withData = true) {
     const box = $('#' + PROBE_ANCHOR);
     if (box) box.scrollIntoView({block: 'start', behavior: 'smooth'});
   }
+  if (name === 'settings' && card) focusGroup(card);
 
   markDirty();
   if (!withData) return;
 
   clearTimeout(store.accountTimer);
-  // 首页三份数据一起取，见 refreshHome
+  // 首页四份数据一起取，见 refreshHome
   if (name === 'home') { refreshHome(); refreshPages(); }
   // 每次进入都重取：群里随时可能有人订阅或关掉命令，缓存的画面会误导人。
   // 页内换选中项不重取——那一下没有任何东西会变，重取只是让点一行慢四个请求

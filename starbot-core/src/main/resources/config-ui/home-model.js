@@ -1,8 +1,8 @@
 /**
  * 首页视图模型
  *
- * 把 /api/status、/api/login、/api/timeline 三份回包算成屏幕上要显示的东西：
- * 链路三段的灯色与说明、六项探针、顶部横条、待办、现在与今日、今天发生了什么。
+ * 把 /api/status、/api/login、/api/timeline、/api/at-all/quota 四份回包算成屏幕上要显示的东西：
+ * 链路三段的灯色与说明、六项探针、顶部横条、待办、现在与今日（含 @全体成员 已用）、今天发生了什么。
  *
  * 刻意不碰 DOM，也不发请求。首页要在八种情形下都说得对——正常、首次安装、机器人掉线、
  * 直播平台掉登录、直播间断流、推送变慢、静音时段中、已暂停推送——而这八种情形
@@ -218,6 +218,63 @@ export function totalDataOff(status) {
 }
 
 /**
+ * Webhook 或邮件配好了没有
+ * <p>
+ * 首页那条「QQ 告警有死角」催的是掉线时还有一路能叫到人，QQ 那路本身会一起掉，
+ * 所以不算。设置页药丸各卡仍各报各的；这条待办只看 Webhook 与邮件两位。
+ * 邮件那一位由服务端按收件＋SMTP 主机同一口径下发，这里不另判。
+ * @param status /api/status 回包
+ * @return {boolean} Webhook 或邮件至少一路已配
+ */
+export function alertConfigured(status) {
+  const alerts = (status || {}).alerts || {};
+  return !!(alerts.webhook || alerts.mail);
+}
+
+/**
+ * 「今日」第三格：账号维度的 @全体成员 已用
+ * <p>
+ * 数字取自 /api/at-all/quota。无机器人或接口失败时写「—」，不编一个 0／10——
+ * 0 看起来像今天一次都没用，而「—」说的是这台机器此刻无从谈起。
+ * {@code limited} 为假时不画分母：上限是 0 或负数在配额服务里都是「不限」，
+ * 画成 3／0 会让人以为今天已经用完了。
+ * @param quota /api/at-all/quota 回包；没有或失败时传 null
+ * @return {{value: string, label: string, details: object[], more: number}}
+ */
+export function atAllTile(quota) {
+  const empty = {value: '—', label: '@全体成员 已用', details: [], more: 0};
+  if (!quota || quota.success === false) return empty;
+
+  const bots = Array.isArray(quota.bots) ? quota.bots : [];
+  if (!bots.length) return empty;
+
+  const used = bots.reduce((n, item) => n + Number(item.used || 0), 0);
+  const capped = bots.every(item => item.limited);
+  const limit = bots.reduce((n, item) => n + (item.limited ? Number(item.limit || 0) : 0), 0);
+  const value = capped ? used + '／' + limit : String(used);
+
+  const sessions = Array.isArray(quota.sessions) ? quota.sessions.slice() : [];
+  sessions.sort((a, b) => Number(b.used || 0) - Number(a.used || 0));
+  const shown = sessions.slice(0, 5);
+  return {
+    value,
+    label: '@全体成员 已用',
+    details: shown.map(item => {
+      const rowUsed = Number(item.used || 0);
+      return {
+        platform: item.platform || '',
+        num: item.num,
+        used: rowUsed,
+        limit: Number(item.limit || 0),
+        limited: !!item.limited,
+        text: item.limited ? rowUsed + '／' + Number(item.limit || 0) : String(rowUsed),
+      };
+    }),
+    more: Math.max(0, sessions.length - shown.length),
+  };
+}
+
+/**
  * 待办
  *
  * 只放「要人动手，不动就一直不好」的事。会自己恢复的异常不进这里——
@@ -271,6 +328,15 @@ function todos(status, login, chain, fresh) {
       body: '群里只能查本场，「直播间总数据」「总数据排行榜」这两条不会出现在菜单里。'
         + '要开得给 NovaBot 配一个累计存储，找运维。',
       action: '去配', href: '#/settings', soft: true,
+    });
+  }
+
+  if (!alertConfigured(status)) {
+    list.push({
+      key: 'webhook',
+      title: 'QQ 告警有死角，建议再配 Webhook',
+      body: '机器人掉线时 QQ 那路叫不到你，Webhook 或邮件配好其中一路这条就消失',
+      action: '去配', href: '#/settings?card=alert', soft: true,
     });
   }
 
@@ -335,9 +401,10 @@ function shortStrip(timeline) {
  * @param status /api/status 回包
  * @param login /api/login 回包
  * @param timeline /api/timeline?date=今天 回包
+ * @param quota /api/at-all/quota 回包；没有或失败时可不传
  * @return 首页视图模型
  */
-export function homeModel(status, login, timeline) {
+export function homeModel(status, login, timeline, quota) {
   const state = status || {};
   const account = login || {};
 
@@ -398,6 +465,7 @@ export function homeModel(status, login, timeline) {
     today: {
       sent: (state.today && state.today.sent) || 0,
       failed: (state.today && state.today.failed) || 0,
+      atAll: atAllTile(quota),
     },
     events: shortStrip(timeline),
     // 空态那句话分两种：刚装好的机器与「今天真的没发生什么」不是一回事
