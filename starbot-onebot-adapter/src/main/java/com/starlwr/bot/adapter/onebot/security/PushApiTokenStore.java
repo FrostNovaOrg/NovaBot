@@ -8,6 +8,8 @@ import org.springframework.web.util.pattern.PathPattern;
 import org.springframework.web.util.pattern.PathPatternParser;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -28,12 +30,15 @@ public class PushApiTokenStore {
     public static final int MIN_TOKEN_LENGTH = SecureToken.MIN_LENGTH;
 
     /**
-     * 路径匹配口径。与路由用的 {@link org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping}
-     * 同一套默认配置：框架把请求按「解码后的路径、去掉分号后的矩阵参数」去匹配路由，
+     * 路径匹配口径。按 Spring 的默认选项构造，与路由侧
+     * {@link org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping}
+     * 在未被定制时的解析同源：框架把请求按「解码后的路径、去掉分号后的矩阵参数」去匹配路由，
      * 鉴权侧若另拿原始 URI 做字符串精确查表，两边口径就会分叉——
      * {@code /onebot/send;jsessionid=abc} 在查表眼里是没见过的路径（放行），
      * 在框架眼里却正是登记过的那条（照常路由），门禁就这样被一个分号绕过。
      * 用框架自己的解析与匹配来认路，两侧口径同源；框架哪天改了折叠或解码的规矩，两侧一起变。
+     * 「同源」只承诺默认配置：路由侧若换用了自定义的解析配置，本解析器必须随之同改，
+     * 否则两边各认各的路。
      */
     private static final PathPatternParser PATH_PARSER = new PathPatternParser();
 
@@ -44,8 +49,15 @@ public class PushApiTokenStore {
 
     /**
      * 接口路径 -> 该登记路径的匹配模式（框架口径）
+     * <p>
+     * 按登记先后保序：{@link #resolve} 取最具体的做法本就不依赖迭代顺序，
+     * 但一旦有实现退化成「取首个命中」，答案就完全由迭代顺序决定——哈希表的迭代顺序
+     * 随 JDK 与键名漂，那种退化测不测得出来全凭运气。保序之后迭代顺序固定，
+     * 「先登宽者再登具体者」的登记顺序下取首个命中必答错，退化必被测试逮住。
+     * <p>
+     * 登记发生在连接建立时（运行期也会来），迭代按 {@link java.util.Collections#synchronizedMap} 的规约用同步块护住。
      */
-    private final Map<String, PathPattern> patterns = new ConcurrentHashMap<>();
+    private final Map<String, PathPattern> patterns = Collections.synchronizedMap(new LinkedHashMap<>());
 
     /**
      * 注册某个推送接口的 Token
@@ -89,13 +101,15 @@ public class PushApiTokenStore {
 
         String bestPath = null;
         PathPattern bestPattern = null;
-        for (Map.Entry<String, PathPattern> entry : patterns.entrySet()) {
-            if (!entry.getValue().matches(withinApplication)) {
-                continue;
-            }
-            if (bestPattern == null || entry.getValue().compareTo(bestPattern) < 0) {
-                bestPath = entry.getKey();
-                bestPattern = entry.getValue();
+        synchronized (patterns) {
+            for (Map.Entry<String, PathPattern> entry : patterns.entrySet()) {
+                if (!entry.getValue().matches(withinApplication)) {
+                    continue;
+                }
+                if (bestPattern == null || entry.getValue().compareTo(bestPattern) < 0) {
+                    bestPath = entry.getKey();
+                    bestPattern = entry.getValue();
+                }
             }
         }
 
