@@ -231,6 +231,13 @@ html.showkeys .keyname{display:block}
 .al-r.ok{color:var(--ok)}
 .al-r.err{color:var(--err)}
 .al-r.warn{color:var(--warn)}
+/* ---------- 登录与安全：四张卡，沿用告警那一套卡片版式 ----------
+   通行密钥那张要摆一张表，四列并排挤在 260px 里会折成一团，因此这一组的最小列宽放宽。 */
+#auth-cards{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+#auth-cards .alcard button{margin-top:4px;padding:6px 14px;font-size:12.5px}
+#auth-cards table{width:100%;font-size:12.5px}
+/* 开与关各自要问的那一段，摆在开关下面；不问的时候整块不占位 */
+.totp-flow:not(:empty){margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
 .switch{display:inline-flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
 .switch input{appearance:none;width:38px;height:22px;border-radius:var(--r-pill);background:var(--line);
   position:relative;cursor:pointer;transition:background .15s;margin:0}
@@ -615,9 +622,87 @@ td.act button:hover{color:var(--err)}
 .tl-foot a{font-size:12.5px;color:var(--accent);text-decoration:none}
 .tl-foot a:hover{text-decoration:underline}
 
+/* ==================== 连接页：三张卡 ====================
+   卡的色调跟着灯走，与首页同一条规则：同一个事实在两页上判成两种颜色，
+   会让人以为是两件事。熄灯那一档不描色——它既不是好也不是坏，是这一段此刻无从谈起。 */
+.lcard{padding:0;margin-bottom:16px;overflow:hidden}
+.lcard.l-warn{border-color:var(--warn)}
+.lcard.l-err{border-color:var(--err)}
+.lc-hd{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:12px 16px;
+  border-bottom:1px solid var(--line);background:var(--soft)}
+.lcard.l-warn .lc-hd{background:var(--warnsoft)}
+.lcard.l-err .lc-hd{background:var(--errsoft)}
+.lc-hd b{font-size:14px;font-weight:600}
+.lc-hd .lc-cap{color:var(--dim);font-size:12.5px;flex:1 1 200px;min-width:0}
+/* 要人动手时那几句。空着时整块不占位——一条边框围着的空白会被当成加载失败 */
+.lc-note{padding:10px 16px;font-size:12.5px;line-height:1.6;border-bottom:1px solid var(--line);
+  background:var(--ground)}
+.lc-note div+div{margin-top:4px;color:var(--dim)}
+.lc-note .lc-go{display:inline-block;margin-top:6px;color:var(--accent);text-decoration:none;font-size:12.5px}
+.lc-note .lc-go:hover{text-decoration:underline}
+.lc-body{padding:14px 16px}
+.lc-body>.hint:last-child{margin-bottom:0}
+.lc-h{margin:18px 0 8px;font-size:13px;font-weight:600}
+.lc-h:first-of-type{margin-top:4px}
+.lc-sub{margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
+/* 二维码还没来的那一档：留出与二维码同样大的一块，来了之后版式不跳 */
+.qrwait{width:240px;height:240px;border:1px dashed var(--line);border-radius:var(--r-ctl);
+  display:grid;place-items:center;color:var(--dim);font-size:12.5px}
+/* 卡里的账号块不再自带边框与阴影：它已经在一张卡里了，再套一层看起来像嵌了个窗口 */
+.lc-body .account{border:none;box-shadow:none;background:transparent;padding:0;margin:0 0 10px}
+.lc-body .health{margin-bottom:0}
+/* 发一条试试：目标下拉要能放下群名，140px 只够显示一半 */
+#selftest #test-target{flex:1 1 260px;min-width:200px;max-width:420px}
+/* 回显的气泡。它答的是「那边收到的是不是这句」，一行「已发送」答不了这个问题 */
+.bubble{margin-top:10px;max-width:420px}
+.bubble .bb-to{font-size:11.5px;color:var(--dim);margin-bottom:4px}
+.bubble .bb-body{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);
+  border-top-left-radius:var(--r-ctl);padding:9px 12px;font-size:13px;color:var(--text);line-height:1.6}
+.tr-advice{margin:6px 0 0;font-size:12.5px;color:var(--dim);line-height:1.6}
+
 /* ---------- 侧栏「运行」三行 ---------- */
 .runbox{margin-top:16px;padding:10px 10px 0;border-top:1px solid var(--line);font-size:11.5px}
 .rb-t{color:var(--dim);margin-bottom:5px}
 .rb-r{display:flex;justify-content:space-between;gap:8px;padding:2px 0;color:var(--dim)}
 .rb-r b{color:var(--text);font-weight:500;font-variant-numeric:tabular-nums}
 @media (max-width:959px){.runbox{display:none}}
+
+/* ---------- 日志页与它的子页「工程日志」 ---------- */
+.loghead{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-bottom:4px}
+.loghead>:first-child{flex:1 1 320px;min-width:0}
+.loghead .note{flex:1 1 300px;margin:0;font-size:12.5px;line-height:1.6}
+/* 日期条与页脚上那几个按钮。链接与按不动的按钮长得一样——「没有前一天」时位置得留着 */
+.daystep{display:inline-flex;align-items:center;flex:0 0 auto;background:var(--surface);
+  color:var(--text);border:1px solid var(--line);border-radius:var(--r-ctl);
+  padding:5px 11px;font-size:12.5px;font-family:inherit;cursor:pointer;text-decoration:none}
+.daystep:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+.daystep:disabled{opacity:.45;cursor:not-allowed}
+#log-daybar b{font-size:14px;color:var(--text)}
+#log-filters{margin:12px 0 4px}
+#log-filters input[type=search]{flex:1 1 200px;min-width:160px}
+#log-list{margin-top:8px}
+#log-more{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+#log-more .dim{color:var(--dim);font-size:12.5px}
+/* 详情折叠。默认收起：补充键值是排障用的，摊开会把「一行一事」淹掉 */
+.tl-d{margin-top:5px;font-size:12.5px}
+.tl-d>summary{color:var(--dim);cursor:pointer;list-style:none}
+.tl-d>summary::-webkit-details-marker{display:none}
+.tl-d>summary::before{content:"› "}
+.tl-d[open]>summary::before{content:"⌄ "}
+.tl-d .kv{margin:6px 0 0}
+.tl-d .kv dt{color:var(--dim);font-family:var(--mono);font-size:11.5px}
+.tl-d .kv dd{word-break:break-all}
+/* 级别药丸。按下去问的是「这一档还显示吗」，因此用 aria-pressed 而不是自定 class */
+.lgpills{display:flex;gap:6px;flex-wrap:wrap}
+.lgpill{cursor:pointer;font-family:inherit;background:var(--surface);color:var(--dim)}
+.lgpill[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);background:var(--soft)}
+/* 工程日志正文：等宽，并保留原样的空白与换行——堆栈的缩进就是它的结构 */
+.eng{margin-top:12px;max-height:60vh;overflow:auto;background:var(--ground);
+  border:1px solid var(--line);border-radius:var(--r-ctl);padding:10px 12px;
+  font-family:var(--mono);font-size:12px;line-height:1.65}
+.eng .er{white-space:pre-wrap;word-break:break-word;padding:1px 0 1px 8px;
+  border-left:2px solid transparent}
+.eng .er.warn{border-left-color:var(--warn);background:var(--warnsoft)}
+.eng .er.error{border-left-color:var(--err);background:var(--errsoft)}
+.eng .er.debug{color:var(--dim)}
+#eng-tools input[type=search]{flex:1 1 180px;min-width:140px}

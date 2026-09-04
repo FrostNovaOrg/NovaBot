@@ -71,6 +71,16 @@
   -->
   <div class="totp-setup" id="totp-setup" style="display:none"></div>
 
+  <!--
+    用启动令牌进来时的常驻提醒。同样在各页之外：那条通道绕过了口令与二次验证，
+    人是从后门进来的，而后门开着这件事没有任何其它现象——不常驻一条的话，
+    「进来之后改口令、再把通道关掉」这两步只会被忘掉，那道门就一直开着。
+  -->
+  <div class="warn" id="op-banner" style="display:none">
+    你是用启动令牌进来的：先改口令，再把令牌通道关掉。
+    <a href="#/settings">去「设置 → 登录与安全」→</a>
+  </div>
+
   <!-- ============ 首页 #/home ============ -->
   <!--
     首页回答一个问题：现在好不好。
@@ -187,6 +197,16 @@
     只该有一份实现，见 LiveSessionAnalytics。
   -->
   <section class="page" id="page-streamers">
+    <!--
+      监听中的主播。这张表原先长在平台插件那一页上，可它的每一列都来自 /api/status，
+      与是哪个平台无关——放在插件里的代价是装第二个平台时会出现两张各列一半的表。
+      本页正是「主播」这件事的落点，因此搬到这里。
+      它最终会并进主播页那份带汇总与折线的列表里，那一页还没建，先整份留在这里。
+    -->
+    <h3 class="cat-title">监听中的主播</h3>
+    <table id="users"><thead><tr><th>UID</th><th>昵称</th><th>直播间</th><th>平台</th>
+      <th>推送目标</th><th>状态</th></tr></thead><tbody></tbody></table>
+
     <div id="analytics">
       <p class="hint">数据来自每场直播下播时的归档。<b>只在这里看得到，不会发到群里。</b>
         按周期看趋势，逐场流水看具体某一场发生了什么。</p>
@@ -213,54 +233,139 @@
 
   <!-- ============ 日志 #/log ============ -->
   <!--
-    时间线要有结构化事件才画得出来，那一层还没接上。这里刻意只留一句空态：
-    先摆一份示例时间线的话，界面上的「几点发生了什么」与机器人真正做过的事无关，
-    而这一页存在的全部意义正是回答那个问题。
+    两半共用一个页容器：时间线（#/log）与它的子页工程日志（#/log/eng）。
+    子页不另立一个 .page 容器，因为它不是第七页——侧栏上没有它的入口，
+    它只从这一页右上角进得去，回来也只回得到这一页。
+
+    地址形态：#/log ｜ #/log/<日期> ｜ #/log/eng，筛选一律写在查询串里
+    （only=problem、type、streamer、chan、q），因此筛完的画面能收藏、能贴给别人。
+    翻页的位置<b>不</b>进地址栏：它是「翻到哪儿了」不是「筛了什么」，
+    贴出去的地址若从第三页开始显示，对方看不出前面还有。
   -->
   <section class="page" id="page-log">
     <div id="log">
-      <p class="hint">一条按天翻的时间线：几点、发生了什么、成没成、没成为什么、该做什么。</p>
-      <div class="empty" id="log-empty">这一页等事件时间线接上</div>
+      <div class="loghead">
+        <p class="hint">一条按天翻的时间线：几点、发生了什么、成没成、没成为什么、该做什么。
+          给人看的，不是程序日志。</p>
+        <a class="daystep" id="log-eng-open" href="#/log/eng">工程日志 →</a>
+      </div>
+
+      <div class="nv-card hcard">
+        <div class="backups" id="log-daybar"></div>
+
+        <label class="switch"><input type="checkbox" id="log-only">
+          <span>只看问题 · 失败、告警，还有降级发出去的那几条</span></label>
+
+        <!--
+          三筛的选项由服务端给：类型是枚举闭集，主播与通道取自这一天出现过的那些。
+          界面自己从这一页事件里凑的话，结果被截断时那张表就缺项——
+          而缺了谁，只有想筛它的人才看得见。
+        -->
+        <div class="backups" id="log-filters">
+          <span>类型</span><select id="log-type" aria-label="按类型筛"></select>
+          <span>主播</span><select id="log-streamer" aria-label="按主播筛"></select>
+          <span>群 / 私聊</span><select id="log-channel" aria-label="按通道筛"></select>
+          <input type="search" id="log-q" placeholder="搜主播、群、关键字" aria-label="搜索日志">
+          <button type="button" id="log-clear" style="display:none">清掉筛选</button>
+        </div>
+
+        <div class="tl" id="log-list"></div>
+        <div class="tl-foot" id="log-more"></div>
+        <p class="hint" id="log-retention" style="margin:10px 0 0"></p>
+      </div>
+    </div>
+
+    <!-- ============ 工程日志 #/log/eng ============ -->
+    <div id="logeng" style="display:none">
+      <div class="loghead">
+        <div>
+          <a class="daystep" id="log-back" href="#/log">‹ 回日志</a>
+          <p class="hint" style="margin:8px 0 0">NovaBot 程序自己记的，给排障用。上面那页是给人看的。
+            口令与 Cookie 这类串在送到这里之前已经打码。</p>
+        </div>
+        <!--
+          NapCat 的日志不进控制台：把别人的日志代理进来，
+          等于替一个我们既管不着、也说不清它写了什么的程序背书。这里只留一个去它自己界面的入口，
+          凭据没配好时整块只剩上面那句话——一个点了才知道不能用的按钮，比没有那个按钮更费解。
+        -->
+        <div class="note" id="eng-napcat"></div>
+      </div>
+
+      <div class="nv-card hcard">
+        <div class="backups" id="eng-tools">
+          <div class="lgpills" id="eng-levels"></div>
+          <input type="search" id="eng-q" placeholder="搜这一段日志" aria-label="搜索工程日志">
+          <span>行数</span>
+          <select id="eng-limit" aria-label="读多少行">
+            <option value="300">最后 300 行</option>
+            <option value="1000">最后 1000 行</option>
+            <option value="2000">最后 2000 行</option>
+          </select>
+          <button type="button" id="eng-reload">重新读</button>
+        </div>
+        <div class="eng" id="eng-body"></div>
+        <p class="hint" id="eng-foot" style="margin:8px 0 0"></p>
+      </div>
     </div>
   </section>
 
   <!-- ============ 连接 #/links ============ -->
+  <!--
+    一页三张卡，答的是同一个问题的三段：直播平台那一头连上了没有、机器人这一头连上了没有、
+    事件往外送的那把口令签了没有。三段各自可能单独坏掉，而坏掉时该做的事完全不同——
+    合成一块「连接状态」的话，屏幕上只剩一句「有问题」，使用者仍然不知道该动哪儿。
+
+    卡的颜色与那句状态说明由 links-model.js 一次算出（见 tools/links-model-check.sh 的十二档），
+    这里只留容器。分散在各处「取一份数据、渲染一张卡」的写法在故障档下会互相矛盾。
+  -->
   <section class="page" id="page-links">
     <div id="bot">
-      <p class="hint">机器人指 NapCat、Lagrange 等 OneBot 实现。NovaBot 通过它把消息发到 QQ，本页负责确认这条链路是通的。</p>
-      <div class="health" id="bot-health"></div>
-
-      <div class="group fbox">
-        <h2>连接参数</h2>
-        <div class="body" id="bot-form"></div>
-      </div>
+      <p class="hint">这台机器与外面的三条连接。哪一段断了，这一页上就只有那一张卡是黄的或红的。</p>
 
       <!--
-        NapCat 的 WebUI 挂在本控制台后面时才显示。没配凭据就整块不显示——
-        一个点了才知道不能用的按钮，比没有那个按钮更费解。
+        直播平台的卡由插件登记进来，装了哪个平台是运行期才知道的事。
+        卡壳（标题、灯、那句状态说明）由核心按运行状态画，卡里的内容由插件自己填——
+        扫码、退出登录这些只有插件做得了，而「这一段此刻是好是坏」只有核心手里有探针。
       -->
-      <div class="group" id="napcat-entry" style="display:none">
-        <h2>NapCat 控制台</h2>
-        <div class="body">
-          <p class="hint" style="margin:0 0 10px">扫码登录 QQ、查看运行日志这些事在 NapCat 自己的界面里做。
-            你已经登录了这个控制台，<b>不必再登录它一次</b>——点开时会替你办好。</p>
-          <div class="backups" style="margin:0">
-            <button type="button" id="napcat-open">打开 NapCat 控制台</button>
+      <div id="link-cards"></div>
+
+      <div class="nv-card lcard" id="card-napcat">
+        <div class="lc-hd"><span class="lamp"></span><b>机器人（NapCat 等）</b><span class="lc-cap"></span></div>
+        <div class="lc-note"></div>
+        <div class="lc-body">
+          <p class="hint">机器人指 NapCat、Lagrange 等 OneBot 实现，NovaBot 通过它把消息发到 QQ。
+            两个 Token 留空表示<b>保持原值</b>，不会被抹掉。</p>
+          <div class="fbox" id="bot-form"></div>
+
+          <!--
+            NapCat 的 WebUI 挂在本控制台后面时才显示。没配凭据就整块不显示——
+            一个点了才知道不能用的按钮，比没有那个按钮更费解。
+          -->
+          <div class="lc-sub" id="napcat-entry" style="display:none">
+            <p class="hint" style="margin:0 0 8px">扫码登录 QQ、查看它自己的运行日志，这些事在 NapCat 的界面里做。
+              你已经登录了这个控制台，<b>不必再登录它一次</b>——点开时会替你办好。</p>
+            <button type="button" class="nv-btn2" id="napcat-open">打开 NapCat 界面 ↗</button>
           </div>
         </div>
       </div>
 
-      <div class="group">
-        <h2>发送测试消息</h2>
-        <div class="body">
-          <p class="hint">群号填错、Token 不对、机器人不在群里，表现都是「什么都不发生」。发一条真消息是最直接的验证方式。</p>
+      <!--
+        发一条试试。它不是第四条连接，而是上面那张卡的验收：群号填错、Token 不对、
+        机器人不在群里、OneBot 没起——这四类错的表现完全一样，什么都不发生。
+
+        目标从机器人自己给的名单里挑，<b>没有手填号码的格子</b>：手填时填错一位数不会有任何报错，
+        消息只是发去了别处，而那正是这一步要排除的第一类错。这条不靠「页面上没有那个框」保证，
+        由 links-model.js 的 resolveTarget 判，见 tools/links-model-check.sh。
+      -->
+      <div class="nv-card lcard" id="card-test">
+        <div class="lc-hd"><b>发一条试试</b><span class="lc-cap">从机器人自己知道的群与好友里挑</span></div>
+        <div class="lc-body">
           <div class="backups" id="selftest">
-            <select id="test-platform"></select>
-            <!-- 取值须与 PushTargetType 的 code 一致：GROUP(1)、FRIEND(0) -->
-            <select id="test-type"><option value="1">群聊</option><option value="0">私聊</option></select>
-            <input id="test-num" placeholder="群号 / QQ 号" inputmode="numeric">
+            <select id="test-target" aria-label="发给谁"></select>
+            <button id="test-refresh" type="button">刷新名单</button>
             <button id="test-send" type="button">发送</button>
           </div>
+          <p class="hint" id="test-hint" style="margin:0"></p>
           <div class="issues" id="test-result"></div>
         </div>
       </div>
@@ -273,18 +378,19 @@
       它与上面两块同属「这台机器与外面怎么连」，因此并在本页。
     -->
     <div id="tokens">
-      <h3 class="cat-title">外部面板</h3>
-      <p class="hint">外部面板（如 VRDash 桌面面板）要连事件流，得有一把只读口令。
-        它<b>只能读</b>——看得到开播、弹幕这些事件，改不了任何配置，也进不了这个控制台。</p>
+      <div class="nv-card lcard" id="card-panel">
+        <div class="lc-hd"><span class="lamp"></span><b>外部面板</b><span class="lc-cap"></span></div>
+        <div class="lc-note"></div>
+        <div class="lc-body">
+          <p class="hint">外部面板要连事件流，得有一把只读口令。它<b>只能读</b>——
+            看得到开播、弹幕这些事件，改不了任何配置，也进不了这个控制台。</p>
 
-      <div class="group fbox">
-        <h2>签发一把新口令</h2>
-        <div class="body" id="token-issue"></div>
-      </div>
+          <h4 class="lc-h">签发一把新口令</h4>
+          <div class="fbox" id="token-issue"></div>
 
-      <div class="group">
-        <h2>已签发的口令</h2>
-        <div class="body" id="token-list"></div>
+          <h4 class="lc-h">已签发的口令</h4>
+          <div id="token-list"></div>
+        </div>
       </div>
     </div>
   </section>
@@ -308,23 +414,11 @@
       <div id="groups"></div>
 
       <!--
-        通行密钥。摆在设置页里而不是登录页：登记这件事只有已经进得来的人才做得了，
-        而登录页上的人恰好还没进来。渲染时由脚本挪进「登录与安全」那一组内，
-        因此这里写的是它的内容，不是它最终待的地方；整块的版式随登录页一并重排。
-        未启用口令登录时整块不显示——那一形态下签发出来的会话打不开任何门，
-        摆一个登记按钮等于发一把没有锁的钥匙。
+        改口令、二次验证、通行密钥、重新跑一遍初始设置四块由 settings-auth.js 建出，
+        随「登录与安全」那一组一同渲染。它们不写在这里是因为设置页会整体重绘，
+        而重绘的第一步是把组容器清空——写死在这里再搬进去的那一块会跟着一起没掉，
+        此后按 id 取到的是 null，那一块就安静地从页面上消失了。
       -->
-      <div class="group nested" id="passkey-box" style="display:none">
-        <h2>通行密钥</h2>
-        <div class="body">
-          <p class="hint">登记之后，登录时按一下指纹或面容即可，<b>不用再输动态验证码</b>——
-            私钥一直在你自己的设备上，这台机器只存得下一把开不了门的公钥。</p>
-          <div class="backups" style="margin:0 0 10px">
-            <button type="button" id="passkey-add">登记这台设备</button>
-          </div>
-          <div id="passkey-list"></div>
-        </div>
-      </div>
 
       <!--
         页底只留配置文件在哪，不提供编辑。

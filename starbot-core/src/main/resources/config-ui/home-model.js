@@ -47,11 +47,15 @@ export function worstLamp(levels) {
  *
  * 按探针自报的 scope 归并，不按名字认：名字是随时会改的东西，
  * 按名字分档的判据在探针改个显示名的那天静默失效，而失效方向是「这一段从此永远绿着」。
+ *
+ * 连接页也要读同一批探针（见 links-model.js），因此导出去而不是各写一份：
+ * 「哪个级别算黄、认不出的级别算什么」这条规则有两份实现的话，改了其中一份的另一份不会跟着变，
+ * 而两页说的是同一件事。
  * @param status /api/status 回包
  * @param scope 范围，BOT / PLATFORM / SYSTEM
  * @return 该范围内的探针
  */
-function probesIn(status, scope) {
+export function probesIn(status, scope) {
   return (status.health || [])
     .filter(item => item.scope === scope)
     .map(item => ({

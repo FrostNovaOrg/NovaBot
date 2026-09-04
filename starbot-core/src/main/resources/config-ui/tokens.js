@@ -11,19 +11,30 @@
  */
 
 import {$, api, esc, say} from './core.js';
+import {refreshLinks} from './links.js';
 import {store} from './store.js';
 
 /**
- * 进入本页签时调用
+ * 进入本页时调用，重建签发表单
  * <p>
- * 每次进入都重建签发表单：顺带把上一次留在屏幕上的口令抹掉，
+ * 每次进入都重建：顺带把上一次留在屏幕上的口令抹掉，
  * 这正是「离开本页后无法再次查看」要的效果。
+ * <p>
+ * 清单不在这里取——本页那张外部面板卡的状态（有几把有效、有几把撤了）与清单读的是同一份数据，
+ * 各取各的话，卡上写着「1 把有效」而清单里一条都没有，两块都出自这一页。
  */
 export function loadTokens() {
   $('#token-issue').innerHTML = issueFormHtml();
   $('#tk-issue').addEventListener('click', issue);
   $('#tk-label').addEventListener('keydown', e => { if (e.key === 'Enter') $('#tk-pass').focus(); });
-  loadTokenList();
+}
+
+/**
+ * 把口令清单画出来
+ * @param tokens 口令清单，来自 /api/event-tokens
+ */
+export function renderTokens(tokens) {
+  renderTokenList(tokens || []);
 }
 
 /**
@@ -91,7 +102,7 @@ async function issue() {
       showIssued(data.token, label);
       $('#tk-pass').value = '';
       if (codeInput) codeInput.value = '';
-      loadTokenList();
+      refreshTokens();
     } else {
       // 失败时也把口令框清空：留着上一次输错的内容，再点一次还是同样的错
       $('#tk-pass').value = '';
@@ -184,15 +195,14 @@ function note(text, kind) {
   box.className = 'status ' + kind;
 }
 
-async function loadTokenList() {
-  const box = $('#token-list');
-  box.innerHTML = '<p class="hint" style="margin:0">载入中…</p>';
-  try {
-    const result = await api('/event-tokens');
-    renderTokenList(result.tokens || []);
-  } catch (e) {
-    box.innerHTML = '<p class="hint" style="margin:0">载入失败：' + esc(e.message) + '</p>';
-  }
+/**
+ * 签发或吊销之后重取本页
+ *
+ * 走整页重取而不是只重画清单：那张外部面板卡上写着「几把有效」，只更新清单的话，
+ * 刚签出来的这一把在清单里出现了，而卡上的数字还停在上一刻——两块说的是同一件事。
+ */
+function refreshTokens() {
+  refreshLinks();
 }
 
 function renderTokenList(tokens) {
@@ -237,7 +247,7 @@ async function revoke(token) {
     const result = await api('/event-tokens/' + encodeURIComponent(token.fingerprint) + '/revoke',
         {method: 'POST'});
     say(result.message || (result.success ? '已吊销' : '操作失败'), result.success ? 'ok' : 'err');
-    if (result.success) loadTokenList();
+    if (result.success) refreshTokens();
   } catch (e) {
     say('吊销失败：' + e.message, 'err');
   }

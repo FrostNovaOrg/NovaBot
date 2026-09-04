@@ -166,6 +166,12 @@ final class PushHandlerSupport {
      * 去掉之后「@ 谁」只剩一个说法，不会出现「模板里写了一套、下拉里选了另一套」。
      * <p>
      * 仅群聊有 @全体成员，私聊里那两档不补任何东西。
+     * <p>
+     * <b>三档都拼在正文首行，不另起一条。</b>@全体成员 那两档原先拼的是
+     * {@code {at=all}} + 分条 + 正文，于是一次开播在群里是两条消息、两声提示音；
+     * 而分条这件事对 @ 本身没有任何好处——@ 与它说的那件事本就该在同一条里。
+     * 摘掉 @ 的那一次（没权限或额度用尽）也随之变干净：以前是「空的那一条整条不发」，
+     * 现在只是正文前面少了一截。
      * @param mode @ 模式
      * @param target 推送目标
      * @param template 原始模板，用于判断使用者是否已自己写了占位符
@@ -180,7 +186,7 @@ final class PushHandlerSupport {
                     : subscriberAt + content;
             case ALL, ALL_OR_SUBSCRIBERS -> PushTargetType.GROUP != target.getType() || template.contains(AT_ALL)
                     ? content
-                    : AT_ALL + NEXT + content;
+                    : AT_ALL + content;
         };
     }
 

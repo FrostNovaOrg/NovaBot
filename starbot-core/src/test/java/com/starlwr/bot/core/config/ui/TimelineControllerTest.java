@@ -13,10 +13,12 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
 import java.time.LocalDate;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -127,7 +129,66 @@ class TimelineControllerTest {
         assertEquals(2, query(null, false, null, null).getIntValue("matched"));
     }
 
+    @Test
+    @DisplayName("主播与通道两项也应传到存储那一层, 并把可选项一起给出")
+    void passesStreamerAndChannelThrough() {
+        store.record(TimelineEvent.of(TimelineEventType.PUSH_SENT, TimelineEvent.Level.INFO)
+                .streamer("甲主播").channel("群 111").text("甲的").build());
+        store.record(TimelineEvent.of(TimelineEventType.PUSH_SENT, TimelineEvent.Level.INFO)
+                .streamer("乙主播").channel("群 222").text("乙的").build());
+
+        assertEquals(1, controller.timeline(null, false, null, "甲主播", null, null, 0, null)
+                .getIntValue("matched"));
+        assertEquals(1, controller.timeline(null, false, null, null, "群 222", null, 0, null)
+                .getIntValue("matched"));
+        assertEquals(0, controller.timeline(null, false, null, "甲主播", "群 222", null, 0, null)
+                .getIntValue("matched"), "两项都给时应同时满足");
+
+        // 筛选框里有哪几位主播、哪几个通道，由这里给而不是让界面从这一页事件里凑：
+        // 凑出来的那张表在结果被截断时缺项，而缺了谁只有想筛它的人才看得见
+        JSONObject all = query(null, false, null, null);
+        assertEquals(List.of("乙主播", "甲主播"), all.getJSONArray("streamers").toJavaList(String.class),
+                "两栏按字符序给，与谁最近出现过无关");
+        assertEquals(List.of("群 111", "群 222"), all.getJSONArray("channels").toJavaList(String.class));
+    }
+
+    @Test
+    @DisplayName("翻页游标应传下去, 并回出接着翻的那个游标")
+    void pagesWithCursor() {
+        for (int i = 0; i < 3; i++) {
+            store.record(TimelineEvent.of(TimelineEventType.PUSH_SENT, TimelineEvent.Level.INFO)
+                    .text("第 " + i + " 条").build());
+        }
+
+        JSONObject first = controller.timeline(null, false, null, null, null, null, 2, null);
+        assertEquals(2, first.getJSONArray("events").size());
+        assertEquals(3, first.getIntValue("matched"));
+        assertTrue(first.getBooleanValue("truncated"));
+        String cursor = first.getString("nextCursor");
+        assertNotNull(cursor);
+
+        JSONObject second = controller.timeline(null, false, null, null, null, null, 2, cursor);
+        assertEquals(1, second.getJSONArray("events").size());
+        assertEquals("第 0 条", second.getJSONArray("events").getJSONObject(0).getString("text"));
+        assertFalse(second.getBooleanValue("truncated"));
+        assertNull(second.getString("nextCursor"), "翻到底就不该再给游标");
+    }
+
+    @Test
+    @DisplayName("认不出的游标应明说, 而不是当成没给去从头翻")
+    void rejectsBadCursor() {
+        store.record(TimelineEvent.of(TimelineEventType.PUSH_SENT, TimelineEvent.Level.INFO)
+                .text("一条").build());
+
+        // 当成「没给」的话，「看更早」会一直翻回第一页，而屏幕上看起来只是「没有更早的了」
+        JSONObject result = controller.timeline(null, false, null, null, null, null, 0, "第二页");
+
+        assertFalse(result.getBooleanValue("success"));
+        assertTrue(result.getString("message").contains("第二页"));
+        assertTrue(result.getJSONArray("events") == null, "失败时不该顺手返回全部记录");
+    }
+
     private JSONObject query(String date, boolean problems, String type, String keyword) {
-        return controller.timeline(date, problems, type, null, null, keyword, 0);
+        return controller.timeline(date, problems, type, null, null, keyword, 0, null);
     }
 }

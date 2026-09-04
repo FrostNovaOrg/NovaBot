@@ -47,14 +47,15 @@ public abstract class BilibiliStreamerCommand implements StarBotCommand {
      */
     protected Resolved resolve(CommandContext context, String keyword) {
         List<PushUser> candidates = streamersOf(context);
+        String here = here(context);
         if (candidates.isEmpty()) {
-            return Resolved.failed("本群没有配置任何哔哩哔哩主播的推送");
+            return Resolved.failed(here + "没有配置任何哔哩哔哩主播的推送");
         }
 
         if (StringUtil.isNotBlank(keyword)) {
             PushUser matched = match(candidates, keyword);
             if (matched == null) {
-                return Resolved.failed("本群没有配置「" + keyword + "」的推送，当前可选：\n" + describe(candidates));
+                return Resolved.failed(here + "没有配置「" + keyword + "」的推送，当前可选：\n" + describe(candidates));
             }
             // 点名即换人：说出名字这件事本身就是「这次开始用这一位」
             choice.remember(context, matched.getUid());
@@ -82,6 +83,17 @@ public abstract class BilibiliStreamerCommand implements StarBotCommand {
     }
 
     /**
+     * 说不出主播时那两句话里的「在哪儿」
+     * <p>
+     * 数据查询这几条命令在<b>已配了推送的好友会话</b>里同样能用，而那里没有「本群」这回事：
+     * 私聊里说「本群没有配置」，问的人会去群里找一个并不存在的配置，
+     * 而他要改的其实是这个好友会话自己的那份推送。
+     */
+    private String here(CommandContext context) {
+        return context.isGroup() ? "本群" : "这里";
+    }
+
+    /**
      * 把「这次用的是谁」那一行加在回复前面
      * <p>
      * 只在<b>没点名</b>时才有这一行：点了名的那一次，用的是谁本就是他自己说的。
@@ -96,7 +108,7 @@ public abstract class BilibiliStreamerCommand implements StarBotCommand {
     }
 
     /**
-     * 找出本群配置了推送的全部哔哩哔哩主播
+     * 找出本会话配置了推送的全部哔哩哔哩主播
      */
     protected List<PushUser> streamersOf(CommandContext context) {
         List<PushUser> result = new ArrayList<>();

@@ -11,12 +11,16 @@ import {$, api, el, esc, markDirty, saveTarget, say} from './core.js';
 import {load} from './main.js';
 import {serializePush} from './push.js';
 import {alertCards, CARD_FIELDS, filterCards} from './settings-alert.js';
+import {authCards, AUTH_CARD_FIELDS, filterAuthCards} from './settings-auth.js';
 import {defaultText, defaultValue, effectOf, isChanged, isDangerous, dangerOf, isVisible}
   from './settings-model.js';
 import {store} from './store.js';
 
-/** 告警那一组的标识，它是唯一一个要额外接三张卡的组 */
+/** 告警那一组的标识，它要额外接三张卡 */
 const ALERT_GROUP = 'alert';
+
+/** 登录与安全那一组的标识，它要额外接四张卡 */
+const AUTH_GROUP = 'auth';
 
 /**
  * 一项的当前值：草稿优先，其次已保存的值，最后才是默认值
@@ -263,10 +267,14 @@ function buildGroup(group) {
   for (const field of group.fields) {
     // 告警那几项由三张卡自己摆，不再在这里出一遍
     if (group.group === ALERT_GROUP && CARD_FIELDS.has(field.name)) continue;
+    // 口令、二次验证开关与它的密钥同理：这三项改的时候各有一道门要过
+    // （旧口令、现在的验证码、先绑定），摊成普通行的话那三道门就只剩「填格子按保存」
+    if (group.group === AUTH_GROUP && AUTH_CARD_FIELDS.has(field.name)) continue;
     box.appendChild(buildRow(field, group.allRestart));
   }
 
   if (group.group === ALERT_GROUP) box.appendChild(alertCards());
+  if (group.group === AUTH_GROUP) box.appendChild(authCards());
   return box;
 }
 
@@ -358,12 +366,6 @@ export function renderGeneral() {
     box.appendChild(details);
   }
 
-  // 通行密钥那一块摆在「登录与安全」组里：它讲的就是这台机器怎么被访问。
-  // 版式（列表、登记流程）随登录页一并重排，这里只管它落在哪一组底下
-  const passkeys = $('#passkey-box');
-  const auth = box.querySelector('[data-grp="auth"]');
-  if (passkeys && auth) auth.appendChild(passkeys);
-
   buildNav(common, advanced.length > 0);
   filterSettings();
 }
@@ -396,6 +398,7 @@ export function filterSettings() {
   }
 
   shown += filterCards(query, onlyChanged);
+  shown += filterAuthCards(query, onlyChanged);
 
   // 一组里一项都不剩就把整组收起来，否则屏幕上留着一串空标题
   for (const group of document.querySelectorAll('.setgrp')) {

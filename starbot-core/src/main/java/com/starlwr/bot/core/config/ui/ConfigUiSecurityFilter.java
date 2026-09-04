@@ -13,7 +13,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -343,14 +342,15 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
 
     /**
      * 吐出登录页
+     * <p>
+     * 页面上那几个判定（摆什么、折什么、禁什么）由 {@link ConfigUiLoginPage} 拼进来，
+     * 见那里的说明：这张页面不取任何外部资源，而那段判定又不该在页面里再抄一份。
      */
     private void loginPage(HttpServletResponse response) throws IOException {
-        try (var stream = new ClassPathResource("config-ui/login.html").getInputStream()) {
-            response.setStatus(HttpStatus.OK.value());
-            response.setContentType(MediaType.TEXT_HTML_VALUE);
-            response.setCharacterEncoding(StandardCharsets.UTF_8.name());
-            response.getWriter().write(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
-        }
+        response.setStatus(HttpStatus.OK.value());
+        response.setContentType(MediaType.TEXT_HTML_VALUE);
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        response.getWriter().write(ConfigUiLoginPage.html());
     }
 
     /**

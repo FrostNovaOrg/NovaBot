@@ -16,7 +16,6 @@ import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.RevenueVisibilityService;
 import com.starlwr.bot.core.service.StarBotEventHandlerService;
 import com.starlwr.bot.core.service.StarBotStateStore;
-import com.starlwr.bot.core.service.UserBindingService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -100,7 +99,9 @@ class UnfilledDatasourceEntryTest {
         // 新增的那几栏摘掉之后，其余部分要与改动之前一模一样。
         // 基线是在改动之前的树上跑同一份配置抄下来的实值，不是改完之后回头补的——
         // 因此后来新增的栏一律在这里逐个摘名，而不是把它们追加进基线串：
-        // 追加一次，这串就不再是「那次改动之前的实值」，而是「上次谁改完之后的样子」
+        // 追加一次，这串就不再是「那次改动之前的实值」，而是「上次谁改完之后的样子」。
+        // 撤掉的栏没有这条路可走：摘名摘的是「实际有、基线里没有」的那一侧，
+        // 而撤栏正好相反，只能改基线串本身——见 FILLED_STATE_BEFORE 那一段
         JSONObject rest = new JSONObject(state);
         rest.remove("incomplete");
         rest.remove("totalDataAvailable");
@@ -115,11 +116,15 @@ class UnfilledDatasourceEntryTest {
      * <p>
      * 取法：在改动之前的树上跑 {@link #shouldKeepStateUnchangedForFilledConfiguration}
      * 并把 {@code state()} 的返回抄下来。改完之后这一串必须原样成立。
+     * <p>
+     * <b>动过一次</b>：{@code "bindings":[]} 那一栏随「账号绑定整族停用」一并从接口面撤掉，
+     * 因此这串里也删掉了它——撤栏是唯一能改这串的理由，且只许删掉被撤的那一栏、其余一个字节不动。
+     * 别的差异一律照旧不许往这串里补。
      */
     private static final String FILLED_STATE_BEFORE = "{\"success\":true,\"commands\":[],"
             + "\"sessions\":[{\"platform\":\"qq-onebot\",\"num\":987654321,\"type\":\"群\",\"configured\":true,"
             + "\"streamers\":[\"19466979697833\"],\"disabled\":[],\"revenueVisible\":false,"
-            + "\"revenueExplicit\":false}],\"subscriptions\":[],\"bindings\":[]}";
+            + "\"revenueExplicit\":false}],\"subscriptions\":[]}";
 
     /**
      * 把示例里留空的两处填上，其余一字不动
@@ -165,7 +170,6 @@ class UnfilledDatasourceEntryTest {
                 mock(CommandDispatcher.class),
                 mock(CommandSettingsService.class),
                 mock(AtSubscriptionService.class),
-                mock(UserBindingService.class),
                 store,
                 dataSource,
                 new RevenueVisibilityService(store),
