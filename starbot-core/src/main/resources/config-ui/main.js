@@ -143,7 +143,7 @@ export async function load() {
     store.dirty = {};
     renderGeneral();
     const here = parseHash();
-    if (here.name === 'settings' && here.card) focusGroup(here.card);
+    focusCard(here.name, here.card);
 
     const [d, st, h, p] = await Promise.all([
       api('/datasource'), api('/status'), api('/handlers'), api('/platforms')]);
@@ -265,6 +265,22 @@ function parseHash() {
 }
 
 /**
+ * 按地址栏滚到「要看的那一块」
+ *
+ * 连接页的卡、首页健康自检、设置页的某一组，问的都是地址栏里的 card。
+ * 首屏整体载入会再画一次设置页分组，因此 load 在画完之后也走这里——
+ * 只在切页时滚的话，从收藏夹打开带 card 的设置页地址会停在页顶。
+ */
+function focusCard(name, card) {
+  focusStation(name === 'links' ? card : '');
+  if (name === 'home' && card === 'probes') {
+    const box = $('#' + PROBE_ANCHOR);
+    if (box) box.scrollIntoView({block: 'start', behavior: 'smooth'});
+  }
+  if (name === 'settings' && card) focusGroup(card);
+}
+
+/**
  * 按地址栏切页
  *
  * 只认地址栏、不认「谁点了哪个链接」：刷新、收藏、后退三种进法走的都是这一条路，
@@ -341,12 +357,7 @@ function applyRoute(withData = true) {
 
   // 要看哪一块得赶在取数之前记下：真正滚过去是在卡画完之后，
   // 此刻卡上还是上一刻的高度，滚了也白滚
-  focusStation(name === 'links' ? card : '');
-  if (name === 'home' && card === 'probes') {
-    const box = $('#' + PROBE_ANCHOR);
-    if (box) box.scrollIntoView({block: 'start', behavior: 'smooth'});
-  }
-  if (name === 'settings' && card) focusGroup(card);
+  focusCard(name, card);
 
   markDirty();
   if (!withData) return;

@@ -6,7 +6,7 @@
  */
 
 import {$, api, clock, el, esc, markDirty, say, today} from './core.js';
-import {homeModel, PROBE_ANCHOR, stationHref} from './home-model.js';
+import {homeModel, PROBE_ANCHOR, stationHref, todayAtAllMarkup} from './home-model.js';
 import {pageStatus} from './main.js';
 import {store} from './store.js';
 
@@ -174,21 +174,15 @@ function renderToday(model) {
       return '<div class="stat"><div class="stat-v">' + esc(cell.value) + '</div>'
         + '<div class="stat-l">' + esc(cell.label) + '</div></div>';
     }
-    const rows = (cell.tile.details || []).map(item =>
-      '<div class="stat-row"><span>群 ' + esc(item.num) + '</span><span>'
-      + esc(item.text) + '</span></div>').join('')
-      + (cell.tile.more ? '<div class="stat-more">还有 ' + cell.tile.more + ' 个群</div>' : '');
-    const canOpen = (cell.tile.details || []).length > 0;
-    return '<button class="stat' + (canOpen ? ' stat-exp' : '') + '" type="button" id="today-atall">'
-      + '<div class="stat-v">' + esc(cell.value) + '</div>'
-      + '<div class="stat-l">' + esc(cell.label) + '</div>'
-      + (rows ? '<div class="stat-drop">' + rows + '</div>' : '')
-      + '</button>';
+    return todayAtAllMarkup(cell.tile, false);
   }).join('');
 
   const btn = $('#today-atall');
   if (btn && (atAll.details || []).length) {
-    btn.addEventListener('click', () => btn.classList.toggle('open'));
+    btn.addEventListener('click', () => {
+      const open = btn.classList.toggle('open');
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
   }
 }
 
