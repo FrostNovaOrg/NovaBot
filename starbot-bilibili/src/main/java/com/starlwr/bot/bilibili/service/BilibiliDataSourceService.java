@@ -4,6 +4,7 @@ import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.bilibili.model.Up;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.model.PushUser;
+import com.starlwr.bot.core.model.StreamerReference;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.service.DataSourceService;
 import com.starlwr.bot.core.service.DataSourceServiceConfig;
@@ -13,6 +14,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 哔哩哔哩数据源服务
@@ -25,6 +28,19 @@ import java.util.Optional;
 @StarBotComponent
 @DataSourceServiceConfig(name = "bilibili")
 public class BilibiliDataSourceService implements DataSourceService {
+    /**
+     * 个人空间链接中的 uid
+     * <p>
+     * 优先按该模式提取：链接里往往还带有 spm_id_from 之类含数字的参数，
+     * 单纯取「第一串数字」会取错。
+     */
+    private static final Pattern SPACE_URL_UID = Pattern.compile("space\\.bilibili\\.com/(\\d{1,19})");
+
+    /**
+     * 直播间链接中的房间号，短号与真实房间号都是这一串数字
+     */
+    private static final Pattern LIVE_URL_ROOM = Pattern.compile("live\\.bilibili\\.com/(\\d{1,19})");
+
     private final BilibiliApiUtil api;
 
     @Autowired
@@ -121,6 +137,37 @@ public class BilibiliDataSourceService implements DataSourceService {
             log.debug("按直播间号 {} 查询主播失败: {}", roomId, e.getMessage());
             return Optional.empty();
         }
+    }
+
+    /**
+     * 从一段文本里认出本平台的主播
+     * <p>
+     * 两种链接各指一种编号：个人空间链接里的是 uid，直播间链接里的是直播间号（可能是短号）。
+     * 先判直播间链接：两条模式的域名不同，谁先判都一样，这个次序沿用原先在控制台一侧的写法。
+     * 纯数字不在这里认——那不是本平台的链接，各平台一样对待。
+     */
+    @Override
+    public Optional<StreamerReference> parseStreamerLink(String text) {
+        if (text == null) {
+            return Optional.empty();
+        }
+
+        String trimmed = text.trim();
+        if (trimmed.isEmpty()) {
+            return Optional.empty();
+        }
+
+        Matcher live = LIVE_URL_ROOM.matcher(trimmed);
+        if (live.find()) {
+            return Optional.of(StreamerReference.roomId(Long.parseLong(live.group(1))));
+        }
+
+        Matcher space = SPACE_URL_UID.matcher(trimmed);
+        if (space.find()) {
+            return Optional.of(StreamerReference.uid(Long.parseLong(space.group(1))));
+        }
+
+        return Optional.empty();
     }
 
     /**
