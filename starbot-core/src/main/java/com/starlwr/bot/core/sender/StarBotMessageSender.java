@@ -126,8 +126,13 @@ public class StarBotMessageSender {
                     message.getType().getStr(), message.getNum(), message.getDisplay());
 
             // 被丢掉的那条正是使用者最想知道的一条——日志里它只有一行 INFO，
-            // 默认级别下人还得先知道去哪儿翻才找得到
-            timeline.record(TimelineEvent.of(timelineType(block), TimelineEvent.Level.WARN)
+            // 默认级别下人还得先知道去哪儿翻才找得到。
+            //
+            // 走事件分发那条路的推送在更早一层就被拦下了（{@link StarBotHandlerListener}），
+            // 那一层记的是一整场的聚合条目（谁的通知、几个会话）。到得了这里的是
+            // <b>不经过事件分发的那些</b>：命令回复、告警、首推提示——它们没有「一场」可归，
+            // 因此逐条记；两层各记各的，不会为同一条消息记两遍
+            timeline.record(TimelineEvent.of(block.timelineType(), TimelineEvent.Level.WARN)
                     .channel(describeTarget(message))
                     .text(block.getDescription() + "，丢弃了发往" + describeTarget(message) + "的一条消息")
                     .detail("summary", message.getDisplay())
@@ -421,7 +426,11 @@ public class StarBotMessageSender {
             }
         }
 
+        // 「推送慢不慢」问的是投递本身花了多久，所以从这里起算而不是从消息创建起算：
+        // 后者含排队与平台间隔，那两段在队列积压时会盖过投递耗时，让每一条看起来都很慢
+        long startedAt = System.nanoTime();
         JSONObject result = postWithRetry(sender, headers, params, message);
+        long elapsedMillis = elapsedMillisSince(startedAt);
         message.setCompleteTime(Instant.now());
 
         for (Runnable callback : message.getOnCompleteCallbacks()) {
@@ -437,7 +446,7 @@ public class StarBotMessageSender {
         boolean delivered = Integer.valueOf(0).equals(result.getInteger("code"));
         if (delivered) {
             message.setId(result.getString("id"));
-            activityRecorder.recordSuccess(sender.getName(), describeTarget(message), message.getDisplay());
+            activityRecorder.recordSuccess(sender.getName(), describeTarget(message), message.getDisplay(), elapsedMillis);
             log.info("NovaBot -> {} ([{}] {}) [{}]: {}", sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(), message.getDisplay());
 
             for (Runnable callback : message.getOnSuccessCallbacks()) {
@@ -448,7 +457,7 @@ public class StarBotMessageSender {
                 }
             }
         } else {
-            activityRecorder.recordFailure(sender.getName(), describeTarget(message), message.getDisplay(), result.getString("message"));
+            activityRecorder.recordFailure(sender.getName(), describeTarget(message), message.getDisplay(), result.getString("message"), elapsedMillis);
             log.error("消息发送失败 ({}): NovaBot -> {} ([{}] {}) [{}]: {}", result.getString("message"), sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(), message.getDisplay());
 
             for (Runnable callback : message.getOnFailureCallbacks()) {
@@ -525,6 +534,7 @@ public class StarBotMessageSender {
         Map<String, Object> textParams = new LinkedHashMap<>(params);
         textParams.put("content", textOnly);
 
+        long startedAt = System.nanoTime();
         JSONObject result;
         try {
             result = sender.getLocalDelivery() == null
@@ -533,12 +543,13 @@ public class StarBotMessageSender {
         } catch (RuntimeException e) {
             result = new JSONObject().fluentPut("code", -1).fluentPut("message", "投递失败: " + e.getMessage());
         }
+        long elapsedMillis = elapsedMillisSince(startedAt);
 
         // 静默降级是看不见的谎言：三种结局各出一行，
         // 且都要说清「图没送到」，并带上原始失败原因——降级不能掩盖根因
         boolean textDelivered = result != null && Integer.valueOf(0).equals(result.getInteger("code"));
         if (textDelivered) {
-            activityRecorder.recordSuccess(sender.getName(), describeTarget(message), message.getDisplay());
+            activityRecorder.recordSuccess(sender.getName(), describeTarget(message), message.getDisplay(), elapsedMillis);
             log.warn("推送含图片的消息失败, 已剥除图片段重发纯文字并送达（图片未送达）: NovaBot -> {} ([{}] {}) [{}]: {}；原始失败: {}",
                     sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(),
                     textOnly, failure.getString("message"));
@@ -594,25 +605,22 @@ public class StarBotMessageSender {
     }
 
     /**
+     * 从一个 {@link System#nanoTime()} 取样起算的毫秒数
+     * <p>
+     * 用 {@code nanoTime} 而不是两次 {@link Instant#now()} 相减：后者读的是墙上时钟，
+     * 校时或夏令时切换的那一刻会给出负数或几小时的耗时，而那种数只在一年里的某几秒出现，
+     * 事后既复现不了也说不清。
+     */
+    private static long elapsedMillisSince(long startedAtNanos) {
+        return Duration.ofNanos(System.nanoTime() - startedAtNanos).toMillis();
+    }
+
+    /**
      * 描述推送目标，用于推送记录的展示
      * @param message 消息
      * @return 目标描述，例如「群 12345」
      */
     private String describeTarget(Message message) {
         return message.getType().getStr() + " " + message.getNum();
-    }
-
-    /**
-     * 拦截原因对应的时间线事件类型
-     * <p>
-     * 写成 switch 表达式且<b>不给 default</b>：{@link PushGate.Block} 日后多一项时，
-     * 这里会编译不过，逼着加的那个人当场决定它算哪一类。给了 default 的话，
-     * 新的那一类会被静默归进现有的某一类，而界面上「静音丢弃」的条数就此开始虚高。
-     */
-    private static TimelineEventType timelineType(PushGate.Block block) {
-        return switch (block) {
-            case QUIET_HOURS -> TimelineEventType.PUSH_MUTED;
-            case DISABLED -> TimelineEventType.PUSH_PAUSED;
-        };
     }
 }

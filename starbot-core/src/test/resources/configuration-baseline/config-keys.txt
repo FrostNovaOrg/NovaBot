@@ -27,7 +27,7 @@ starbot.core.config-ui.allow-ips|java.util.List<java.lang.String>|<null>|允许�
 starbot.core.config-ui.auth.idle-hours|java.lang.Integer|12|登录会话的闲置超时，单位：小时 多久没有操作即自动退出。管的是在别人的设备上登录后忘记退出这类情形。
 starbot.core.config-ui.auth.lockout-minutes|java.lang.Integer|15|首次锁定的时长，单位：分钟。反复触发时逐次翻倍
 starbot.core.config-ui.auth.max-failures|java.lang.Integer|5|连续登录失败多少次后锁定该来源 IP
-starbot.core.config-ui.auth.operator-token|java.lang.Boolean|true|是否保留「忘记口令」的启动令牌通道 启用口令登录之后，启动日志里仍会打印一个带令牌的地址，用它可以绕过口令与 二次验证直接进入。这是忘记口令时唯一不必改配置重启就能进去的路， 所以默认保留——默认关掉会把人锁在门外，那比留一道后门更糟。 ⚠️ 但确认口令与验证器都能用之后，就该把它关掉，理由有三： 它绕过二次验证——留着它，TOTP 的保护上限就是这个令牌的保密程度 令牌走地址栏，会进反向代理的访问日志。2026-08-13 在生产的 nginx 归档里实测到 82 行含 token= 若日后把别的服务挂在这套会话之后（如经 auth_request 代理 OneBot 实现的 WebUI），这个后门会同时成为那些服务的后门 关闭后：令牌不再被接受，启动日志也不再打印那一行—— 打印一个不管用的地址比不打印更让人困惑。
+starbot.core.config-ui.auth.operator-token|java.lang.Boolean|false|是否保留「忘记口令」的启动令牌通道 打开之后，启用口令登录的实例在启动日志里仍会打印一个带令牌的地址， 用它可以绕过口令与二次验证直接进入。 ⚠️ 默认关闭，理由有三： 它绕过二次验证——开着它，TOTP 的保护上限就是这个令牌的保密程度 令牌走地址栏，会进反向代理的访问日志。2026-08-13 在生产的 nginx 归档里实测到 82 行含 token= 若日后把别的服务挂在这套会话之后（如经 auth_request 代理 OneBot 实现的 WebUI），这个后门会同时成为那些服务的后门 反过来的默认值曾经也有它的道理——忘记口令时这是唯一不必改配置重启就能进去的路， 默认关掉像是把人锁在门外。但那道门本来就开得着：把这一项改成 true 重启即可，启动日志随即打印那个地址，进去改完口令再改回来。 权衡因此是「忘记口令的那一次多重启一遍」对「每一台设了口令的实例长年带着一个 等同于口令的后门」，而后者是常态、且开着这件事没有任何现象。 关闭时启动日志不打印那个地址——打印一个不管用的地址比不打印更让人困惑， 但会打印一行说明，写清怎么把它临时打开。
 starbot.core.config-ui.auth.password|java.lang.String||登录口令 留空表示不启用口令登录。可以直接填明文，启动时会哈希后使用， 同时在日志里输出可替换过去的哈希串——填了明文就意味着看得到配置文件的人也就有了口令。
 starbot.core.config-ui.auth.session-hours|java.lang.Integer|168|登录会话的有效期，单位：小时 从登录起算的绝对上限，到点必须重新登录。它约束的是「会话 Cookie 一旦泄漏还能被用多久」， 因此不随使用而顺延。
 starbot.core.config-ui.auth.totp-secret|java.lang.String||二次验证密钥（TOTP，Base32） 留空表示尚未绑定验证器，登录时只校验口令。通过界面上的绑定引导扫码后， 密钥会自动写回本配置项。 密钥必须以明文保存，因此配置文件的权限要收紧到仅属主可读。

@@ -77,8 +77,9 @@ public class PushActivityRecorder {
      * @param platform 推送平台
      * @param target 推送目标描述
      * @param summary 消息摘要
+     * @param elapsedMillis 投递耗时，单位毫秒
      */
-    public void recordSuccess(String platform, String target, String summary) {
+    public void recordSuccess(String platform, String target, String summary, long elapsedMillis) {
         lastSuccessAt = Instant.now();
         successCount.incrementAndGet();
         append(new PushRecord(lastSuccessAt, platform, target, summary, true, null));
@@ -88,6 +89,7 @@ public class PushActivityRecorder {
                 .channel(target)
                 .text("已推送：" + summary)
                 .detail("platform", platform)
+                .detail("elapsed_ms", String.valueOf(elapsedMillis))
                 .build());
     }
 
@@ -97,8 +99,9 @@ public class PushActivityRecorder {
      * @param target 推送目标描述
      * @param summary 消息摘要
      * @param reason 失败原因
+     * @param elapsedMillis 投递耗时，单位毫秒
      */
-    public void recordFailure(String platform, String target, String summary, String reason) {
+    public void recordFailure(String platform, String target, String summary, String reason, long elapsedMillis) {
         lastFailureAt = Instant.now();
         lastFailureReason = reason;
         failureCount.incrementAndGet();
@@ -110,6 +113,7 @@ public class PushActivityRecorder {
                 .text("推送失败：" + (reason == null || reason.isBlank() ? "未给出原因" : reason))
                 .detail("platform", platform)
                 .detail("summary", summary)
+                .detail("elapsed_ms", String.valueOf(elapsedMillis))
                 .build());
     }
 
