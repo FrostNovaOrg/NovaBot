@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.io.UncheckedIOException;
 import java.util.Arrays;
 import java.util.Optional;
 
@@ -111,16 +112,23 @@ public class ReadOnlyTokenController {
                 .filter(value -> !value.isEmpty())
                 .orElse(DEFAULT_LABEL);
 
-        String token = tokens.issue(label);
-        log.info("已凭控制台密码为「{}」代签发只读口令, 来源: {}", label, clientIp);
+        try {
+            String token = tokens.issue(label);
+            log.info("已凭控制台密码为「{}」代签发只读口令, 来源: {}", label, clientIp);
 
-        JSONObject result = new JSONObject();
-        result.put("token", token);
-        // expiresAt 首版恒为 null（靠吊销兜底）。字段仍要发出去：
-        // 对侧那条「口令过期了」的分支得留着，等它真发过来时才写，就等于让主播替我们撞第一次
-        result.put("expiresAt", null);
+            JSONObject result = new JSONObject();
+            result.put("token", token);
+            // expiresAt 首版恒为 null（靠吊销兜底）。字段仍要发出去：
+            // 对侧那条「口令过期了」的分支得留着，等它真发过来时才写，就等于让主播替我们撞第一次
+            result.put("expiresAt", null);
 
-        return json(HttpStatus.OK, result);
+            return json(HttpStatus.OK, result);
+        } catch (UncheckedIOException e) {
+            log.error("只读口令代签发写盘失败, 来源: {}", clientIp, e);
+            JSONObject result = new JSONObject();
+            result.put("message", "签发没能写进磁盘，请检查数据目录后重试");
+            return json(HttpStatus.INTERNAL_SERVER_ERROR, result);
+        }
     }
 
     /**

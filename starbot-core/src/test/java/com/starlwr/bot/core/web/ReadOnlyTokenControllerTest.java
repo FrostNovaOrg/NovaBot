@@ -16,6 +16,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 
@@ -226,5 +227,35 @@ class ReadOnlyTokenControllerTest {
         assertEquals(401, response.getStatusCode().value());
         assertEquals("bad_credentials", JSONObject.parseObject(response.getBody()).getString("reason"),
                 "验证码缺席与密码错回同一句话——分开说等于告诉爆破者密码那一半已经对了");
+    }
+
+    @Test
+    @DisplayName("签发写不进磁盘时回人话错误，不把明文交出去")
+    void issueWriteFailureIsAHumanError() throws Exception {
+        Path blocker = dir.resolve("not-a-directory");
+        Files.writeString(blocker, "occupied");
+
+        StarBotCoreProperties properties = new StarBotCoreProperties();
+        properties.getLive().setLiveDataPath(blocker.resolve("data.json").toString());
+        EventStreamTokenService brokenTokens = new EventStreamTokenService(properties.getLive());
+
+        StarBotCoreProperties.ConfigUi.Auth auth = new StarBotCoreProperties.ConfigUi.Auth();
+        auth.setPassword(PASSWORD);
+        ConfigUiAuthService service = new ConfigUiAuthService(auth,
+                new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(2)),
+                new LoginThrottle(auth.getMaxFailures(), Duration.ofMinutes(15)), null);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<ConfigUiAuthService> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(service);
+
+        ReadOnlyTokenController broken = new ReadOnlyTokenController(provider, brokenTokens);
+        ResponseEntity<String> response = post(broken, body(PASSWORD, "面板-丁"));
+
+        assertEquals(500, response.getStatusCode().value(),
+                "写盘失败应当回结构化错误，而不是未捕获的服务器错误");
+        JSONObject result = JSONObject.parseObject(response.getBody());
+        assertNull(result.get("token"), "写盘失败不该交出明文");
+        assertTrue(result.getString("message").contains("磁盘"),
+                () -> "应当用人话说明写盘失败, 实际: " + result.getString("message"));
     }
 }
