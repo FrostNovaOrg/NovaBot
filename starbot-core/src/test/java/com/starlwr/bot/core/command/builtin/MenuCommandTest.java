@@ -41,9 +41,10 @@ class MenuCommandTest {
     void setUp() {
         CommandDispatcher dispatcher = mock(CommandDispatcher.class);
         when(dispatcher.all()).thenReturn(List.of(
-                stub("我的数据", "数据查询"),
-                stub("数据排行榜", "数据查询"),
-                stub("绑定", "账号绑定")));
+                stub("直播间数据", "数据查询", true),
+                stub("数据排行榜", "数据查询", true),
+                stub("直播间总数据", "数据查询", false),
+                stub("开播@我", "提醒订阅", true)));
 
         @SuppressWarnings("unchecked")
         ObjectProvider<CommandDispatcher> provider = mock(ObjectProvider.class);
@@ -69,21 +70,32 @@ class MenuCommandTest {
         String text = menu.execute(context()).content();
 
         assertEquals(1, count(text, "【数据查询】"));
-        assertEquals(1, count(text, "【账号绑定】"));
+        assertEquals(1, count(text, "【提醒订阅】"));
         // 分类标题应排在自己那组命令之前
-        assertTrue(text.indexOf("【数据查询】") < text.indexOf("我的数据"));
-        assertTrue(text.indexOf("【账号绑定】") < text.indexOf("绑定"));
+        assertTrue(text.indexOf("【数据查询】") < text.indexOf("直播间数据"));
+        assertTrue(text.indexOf("【提醒订阅】") < text.indexOf("开播@我"));
     }
 
     @Test
     @DisplayName("被禁用的命令不应出现，其分类若因此空了也不应留下空标题")
     void hidesDisabledCommandsAndEmptyCategories() {
-        settings.disable(PLATFORM, GROUP, "绑定");
+        settings.disable(PLATFORM, GROUP, "开播@我");
 
         String text = menu.execute(context()).content();
 
-        assertFalse(text.contains("【账号绑定】"), text);
+        assertFalse(text.contains("【提醒订阅】"), text);
         assertTrue(text.contains("【数据查询】"));
+    }
+
+    @Test
+    @DisplayName("本机没开的能力对应的命令不应出现")
+    void hidesUnavailableCommands() {
+        // 与「被本群禁用」是两回事：那是人为选择，这是整台机器没有这项能力。
+        // 列出来的下场一样——照着发一遍，收到一句拒绝
+        String text = menu.execute(context()).content();
+
+        assertFalse(text.contains("直播间总数据"), text);
+        assertTrue(text.contains("直播间数据"), text);
     }
 
     private int count(String text, String token) {
@@ -102,7 +114,7 @@ class MenuCommandTest {
         return new CommandContext(PLATFORM, type, GROUP, 1L, "菜单", List.of(), "菜单");
     }
 
-    private StarBotCommand stub(String name, String category) {
+    private StarBotCommand stub(String name, String category, boolean available) {
         return new StarBotCommand() {
             @Override
             public String name() {
@@ -117,6 +129,11 @@ class MenuCommandTest {
             @Override
             public String category() {
                 return category;
+            }
+
+            @Override
+            public boolean available() {
+                return available;
             }
 
             @Override

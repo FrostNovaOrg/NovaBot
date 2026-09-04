@@ -10,12 +10,15 @@ import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.service.AtSubscriptionService;
+import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.RevenueVisibilityService;
 import com.starlwr.bot.core.service.StarBotStateStore;
 import com.starlwr.bot.core.service.UserBindingService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -34,12 +37,15 @@ import java.util.Set;
 /**
  * 运行状态接口
  * <p>
- * 展示并修改 {@code state.json} 里的三类内容：命令开关、「@我」订阅名单、账号绑定。
- * 它们**都由群成员在聊天里产生**，此前只存在于状态文件中——机器人的主人打开界面
- * 看不到任何痕迹，群里为什么突然不应答、名单里积了多少人、谁绑了哪个 uid，一概无从得知。
+ * 展示并修改 {@code state.json} 里由群成员在聊天里产生的那几类内容：命令开关、「@我」订阅名单。
+ * 它们此前只存在于状态文件中——机器人的主人打开界面看不到任何痕迹，群里为什么突然不应答、
+ * 名单里积了多少人，一概无从得知。
  * <p>
- * 界面只提供「关闭」与「移除」，不提供代人订阅或代人绑定：这两件事都以本人意愿为前提，
- * 尤其绑定本就无法验证归属，替别人建立绑定等于凭空造出一条看似可信的对应关系。
+ * 界面只提供「关闭」与「移除」，不提供代人订阅：订阅以本人意愿为前提。
+ * <p>
+ * <b>账号绑定已停用</b>：那一族聊天命令不再注册，界面上的绑定块也随之撤掉，
+ * 解绑接口回 410。已有的绑定记录<b>原样留在状态文件里</b>，只是不再显示、不再响应——
+ * 删掉它们等于替使用者做了一个不可逆的决定，而这件事随时可能改回来。
  * <p>
  * 独立于 {@link ConfigUiController} 而非并入其中：那个类已承担配置读写、账号登录、
  * 自检与推送测试，再塞进四个接口与四项依赖只会让它更难改动。安全过滤器按
@@ -72,11 +78,13 @@ public class RuntimeStateController {
 
     private final RevenueVisibilityService revenueVisibility;
 
+    private final LiveDataService liveDataService;
+
     @Autowired
     public RuntimeStateController(CommandDispatcher dispatcher, CommandSettingsService settings,
                                   AtSubscriptionService subscriptions, UserBindingService bindings,
                                   StarBotStateStore store, AbstractDataSource dataSource,
-                                  RevenueVisibilityService revenueVisibility) {
+                                  RevenueVisibilityService revenueVisibility, LiveDataService liveDataService) {
         this.dispatcher = dispatcher;
         this.settings = settings;
         this.subscriptions = subscriptions;
@@ -84,11 +92,16 @@ public class RuntimeStateController {
         this.store = store;
         this.dataSource = dataSource;
         this.revenueVisibility = revenueVisibility;
+        this.liveDataService = liveDataService;
     }
 
     /**
      * 运行状态全量
-     * @return 命令清单、各会话的命令开关、订阅名单与绑定关系
+     * <p>
+     * {@code totalDataAvailable} 是整台机器的一项能力，不是某个会话的设置：没配累计存储时，
+     * 依赖它的命令在群里已经不出现在菜单里，界面上也该把对应的行置灰、把条数改小。
+     * 由接口给出而不是让界面自己按命令名去认——认名字的话，下一条「总」字命令进来就会被漏掉。
+     * @return 命令清单、各会话的命令开关、订阅名单、绑定关系与累计数据是否可用
      */
     @GetMapping
     public JSONObject state() {
@@ -99,6 +112,7 @@ public class RuntimeStateController {
         result.put("subscriptions", subscriptionList());
         result.put("bindings", bindingList());
         result.put("incomplete", incompleteList());
+        result.put("totalDataAvailable", liveDataService.supportsTotalData());
         return result;
     }
 
@@ -216,30 +230,19 @@ public class RuntimeStateController {
     }
 
     /**
-     * 解除绑定
-     * @param body 请求体，含 pushPlatform、livePlatform 与 senderUid
-     * @return 操作结果
+     * 解除绑定（已停用）
+     * <p>
+     * 账号绑定整族停用后，这里回 410 而不是 404：<b>它曾经在，现在不办了</b>，
+     * 这两件事对着旧界面、旧脚本或旧文档来的调用方是不同的答案。回 200 加一句
+     * 「已停用」更糟——调用方会当成办成了。
+     * @return 停用说明
      */
     @PostMapping("/binding")
-    public JSONObject removeBinding(@RequestBody JSONObject body) {
+    public ResponseEntity<JSONObject> removeBinding() {
         JSONObject result = new JSONObject();
-
-        String pushPlatform = body.getString("pushPlatform");
-        String livePlatform = body.getString("livePlatform");
-        Long senderUid = body.getLong("senderUid");
-        if (pushPlatform == null || livePlatform == null || senderUid == null) {
-            return fail(result, "缺少参数");
-        }
-
-        boolean removed = bindings.unbind(pushPlatform, livePlatform, senderUid);
-        if (removed) {
-            store.save();
-            log.info("配置界面解除了 {} 在 {} 的绑定", senderUid, livePlatform);
-        }
-
-        result.put("success", true);
-        result.put("message", removed ? "已解除 " + senderUid + " 的绑定" : senderUid + " 当前并未绑定");
-        return result;
+        result.put("success", false);
+        result.put("message", "账号绑定已停用，已有的绑定记录保留但不再生效");
+        return ResponseEntity.status(HttpStatus.GONE).body(result);
     }
 
     /**
@@ -247,6 +250,9 @@ public class RuntimeStateController {
      * <p>
      * 界面按此渲染每个会话的开关表，因此要给出全部命令而非仅被禁用的那些：
      * 「哪些命令是开着的」与「哪些被关了」同样需要一眼看清。
+     * <p>
+     * {@code available} 为假的那些也照样列出，只是界面该把它们置灰：它们在群里的菜单中已经不出现，
+     * 直接从这张表里抹掉的话，界面就说不出「有这条命令、只是这台机器没开那项能力」。
      */
     private JSONArray commands() {
         JSONArray items = new JSONArray();
@@ -261,6 +267,7 @@ public class RuntimeStateController {
             item.put("disableable", command.disableable());
             item.put("requiresAdmin", command.requiresAdmin());
             item.put("groupOnly", command.groupOnly());
+            item.put("available", command.available());
             items.add(item);
         }
 
@@ -389,7 +396,10 @@ public class RuntimeStateController {
     }
 
     /**
-     * 绑定关系
+     * 绑定关系（已停用，仅留档）
+     * <p>
+     * 界面上已经没有这一块了，这里仍照实给出：记录还在状态文件里，接口装作它不存在的话，
+     * 「一条都没有」与「有一批留着不再生效」就分不出来了。
      */
     private JSONArray bindingList() {
         JSONArray items = new JSONArray();

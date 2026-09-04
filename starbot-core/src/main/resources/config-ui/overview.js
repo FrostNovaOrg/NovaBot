@@ -5,7 +5,7 @@
 import {bindBotForm, botFormHtml, renderTestMessage} from './bot.js';
 import {$, api, esc, say} from './core.js';
 import {pageStatus, switchTab} from './main.js';
-import {renderBinds, renderIncomplete, renderSessions, renderSubs} from './sessions.js';
+import {renderIncomplete, renderSessions, renderSubs} from './sessions.js';
 import {store} from './store.js';
 
 export function renderWizard() {
@@ -236,7 +236,7 @@ function renderState(d) {
   renderIncomplete(d.incomplete || []);
   renderSessions(d.sessions || [], d.commands || []);
   renderSubs(d.subscriptions || []);
-  renderBinds(d.bindings || []);
+  // d.bindings 不再渲染：账号绑定已停用，记录只留档
 }
 
 // 「运行自检」把探针再跑一遍并给出结论。异常项本就在下方逐条列着，

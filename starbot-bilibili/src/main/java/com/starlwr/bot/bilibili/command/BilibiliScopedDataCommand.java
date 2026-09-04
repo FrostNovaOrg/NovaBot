@@ -7,6 +7,7 @@ import com.starlwr.bot.core.command.CommandReply;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.RevenueVisibilityService;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * 分范围的数据查询命令
@@ -15,6 +16,7 @@ import com.starlwr.bot.core.service.RevenueVisibilityService;
  * 范围由 {@link #scope()} 声明，取数交给 {@link BilibiliDataScope}，
  * 子类只关心排哪些数据、怎么排。
  */
+@Slf4j
 public abstract class BilibiliScopedDataCommand extends BilibiliStreamerCommand {
     protected final LiveDataService liveDataService;
 
@@ -49,16 +51,34 @@ public abstract class BilibiliScopedDataCommand extends BilibiliStreamerCommand 
      */
     protected abstract BilibiliDataScope scope();
 
+    @Override
+    public boolean groupOnly() {
+        // 查数据只关乎发问的人自己，在已配推送的好友会话里一样该答得上来。
+        // 「@ 谁」那几条不同：@ 在私聊里没有对象
+        return false;
+    }
+
+    @Override
+    public boolean available() {
+        // 累计要靠外部存储。没配的机器上这条命令不进菜单，但仍认得出来，好回一句为什么
+        return !scope().isTotal() || liveDataService.supportsTotalData();
+    }
+
     /**
      * 累计范围是否可用
      * <p>
      * 未配置外部存储时累计数据一律为 0。直接把 0 画出来会让人以为数据丢了，
-     * 因此这里明确回一句「没开这个能力」。
+     * 因此这里明确回一句「没开这个能力」，并顺手指一条现在就能用的路。
+     * <p>
+     * 还要在日志里记一行：菜单已经不列这两条了，仍然发过来说明有人照着旧习惯或旧文档在用，
+     * 而这件事在机器的主人那边<b>没有任何别的痕迹</b>——群里的对话他看不到。
+     * @param context 执行上下文，用于日志
      * @return 不可用时的说明，可用时为 null
      */
-    protected CommandReply checkScopeAvailable() {
+    protected CommandReply checkScopeAvailable(CommandContext context) {
         if (scope().isTotal() && !liveDataService.supportsTotalData()) {
-            return CommandReply.of("累计数据需要配置 Redis 后才能查询，当前只有本场数据可用");
+            log.info("会话 {} 请求了累计数据命令 {}, 但本机未配置累计存储, 已回绝", context.getNum(), name());
+            return CommandReply.of("本机没开累计数据，只能查本场。发「直播间数据」看本场。");
         }
         return null;
     }

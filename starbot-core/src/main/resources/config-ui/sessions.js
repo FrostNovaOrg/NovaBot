@@ -1,5 +1,5 @@
 /**
- * 群与成员页：会话列表、金额可见性、命令开关、订阅名单与账号绑定
+ * 群与成员页：会话列表、金额可见性、命令开关与订阅名单
  */
 
 import {$, api, el, esc, say} from './core.js';
@@ -209,40 +209,8 @@ async function removeSub(sub, userUid) {
   }
 }
 
-export function renderBinds(binds) {
-  const body = $('#binds tbody');
-  body.innerHTML = '';
-
-  if (!binds.length) {
-    body.innerHTML = '<tr><td colspan="5" class="empty">暂无绑定，群成员发送「绑定 uid」即可绑定</td></tr>';
-    return;
-  }
-
-  for (const b of binds) {
-    const tr = el('tr');
-    tr.innerHTML = '<td>' + esc(b.pushPlatform) + '</td><td>' + esc(b.senderUid) + '</td>'
-      + '<td>' + esc(b.livePlatform) + '</td><td>' + esc(b.liveUid) + '</td>'
-      + '<td class="act"><button type="button">解绑</button></td>';
-
-    tr.querySelector('button').addEventListener('click', async () => {
-      if (!confirm('确定解除 ' + b.senderUid + ' 与 ' + b.liveUid + ' 的绑定吗？对方需重新发送「绑定」。')) return;
-      try {
-        const res = await api('/state/binding', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            pushPlatform: b.pushPlatform, livePlatform: b.livePlatform, senderUid: b.senderUid
-          })
-        });
-        say(res.message || (res.success ? '已解绑' : '操作失败'), res.success ? 'ok' : 'err');
-        if (res.success) await loadState();
-      } catch (e) {
-        say('操作失败：' + e.message, 'err');
-      }
-    });
-    body.appendChild(tr);
-  }
-}
+// 账号绑定那一块（renderBinds 与解绑按钮）已随命令一同撤掉。
+// 记录仍在状态文件里，/state 也照旧给出，只是界面不再显示、也不再提供解绑。
 
 // ---- 数据分析 ----
 // 聚合全在服务端做，这里只负责画。周期归属、时区、空周期补零那几条规则

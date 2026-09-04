@@ -1,11 +1,16 @@
 package com.starlwr.bot.adapter.onebot.http;
 
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.adapter.onebot.annotation.OneBotApi;
 import com.starlwr.bot.adapter.onebot.model.OneBotSender;
 
 /**
  * StarBot OneBot HTTP 服务接口
+ * <p>
+ * <b>返回类型不是装饰</b>：代理按方法声明的返回类型去取 {@code data}。
+ * 列表类接口的 {@code data} 是数组，写成 {@link JSONObject} 会<b>安静地拿到 null</b>
+ * 而不是报错，详见 {@code OneBotHttpAdapterProxy}。
  */
 public interface OneBotHttpAdapter {
     @OneBotApi(name = "获取版本信息", url = "/get_version_info")
@@ -19,6 +24,12 @@ public interface OneBotHttpAdapter {
 
     @OneBotApi(name = "获取群成员信息", url = "/get_group_member_info")
     JSONObject getGroupMemberInfo(OneBotSender sender, JSONObject params);
+
+    @OneBotApi(name = "获取群列表", url = "/get_group_list")
+    JSONArray getGroupList(OneBotSender sender, JSONObject params);
+
+    @OneBotApi(name = "获取好友列表", url = "/get_friend_list")
+    JSONArray getFriendList(OneBotSender sender, JSONObject params);
 
     @OneBotApi(name = "发送私聊消息", url = "/send_private_msg")
     JSONObject sendPrivateMsg(OneBotSender sender, JSONObject params);

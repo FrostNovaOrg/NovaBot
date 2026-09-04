@@ -43,7 +43,7 @@ public abstract class BilibiliRankingCommand extends BilibiliScopedDataCommand {
 
     @Override
     public CommandReply execute(CommandContext context) {
-        CommandReply unavailable = checkScopeAvailable();
+        CommandReply unavailable = checkScopeAvailable(context);
         if (unavailable != null) {
             return unavailable;
         }
