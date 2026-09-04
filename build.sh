@@ -42,7 +42,7 @@ MAVEN_ARGS=(-B)
 #
 # 🔴 清不到的地方要写明：`mvn clean` 走的是 reactor，而 build-tools/starbot-plugin-processor
 #    与 templates/starbot-example-plugin 都不在模块列表里（理由见 pom.xml:41-46）。
-#    前者由下面 [1/6] 用 -f 单独构建，那一步同样带上 clean；后者本脚本根本不构建，
+#    前者由下面 [1/7] 用 -f 单独构建，那一步同样带上 clean；后者本脚本根本不构建，
 #    它的 target/ 里有什么都进不了 dist/build。
 #
 # --clean 保留为空动作：README 与 docs/architecture.md 里写过它，敲了不该报「未知参数」。
@@ -197,7 +197,7 @@ if [ -n "$BUILD_REF" ] && [ -z "${NOVABOT_ARCHIVE_BUILD:-}" ]; then
     STAGE="$(mktemp -d "${TMPDIR:-/tmp}/novabot-archive-XXXXXX")"
     trap 'rm -rf "$STAGE"' EXIT
 
-    echo "==> [0/6] 从 $BUILD_REF 导出干净树"
+    echo "==> [0/7] 从 $BUILD_REF 导出干净树"
     echo "    commit=$REF_SHA"
     echo "    tree=$REF_TREE"
     echo "    导出至 $STAGE"
@@ -236,22 +236,22 @@ if [ -n "$BUILD_REF" ] && [ -z "${NOVABOT_ARCHIVE_BUILD:-}" ]; then
     exit 0
 fi
 
-echo "==> [1/6] 安装构建插件 starbot-plugin-processor"
+echo "==> [1/7] 安装构建插件 starbot-plugin-processor"
 mvn "${MAVEN_ARGS[@]}" -f build-tools/starbot-plugin-processor/pom.xml ${CLEAN} install
 
 # starbot-core 有两种产物形态：
 #   install profile —— 普通库 jar，供各插件模块编译期依赖
 #   package profile —— Spring Boot 重打包后的可运行 jar，类位于 BOOT-INF/classes
 # 后者无法作为依赖被下游模块解析，因此必须先以 install 形态构建整个工程，最后再单独打发行包。
-echo "==> [2/6] 构建全部模块（库形态）"
+echo "==> [2/7] 构建全部模块（库形态）"
 mvn "${MAVEN_ARGS[@]}" -Pinstall ${CLEAN} install
 
-echo "==> [3/6] 打包可运行的 StarBotCore"
-# 这一步不带 clean：[2/6] 刚把 starbot-core/target 清空并重建过，此刻目录里只有那一次的产物。
+echo "==> [3/7] 打包可运行的 StarBotCore"
+# 这一步不带 clean：[2/7] 刚把 starbot-core/target 清空并重建过，此刻目录里只有那一次的产物。
 # 在这里再清一次，等于把上一步刚编好的东西删掉重编一遍，清掉的却是同一批文件。
 mvn "${MAVEN_ARGS[@]}" -f starbot-core/pom.xml -Ppackage package
 
-echo "==> [4/6] 汇总产物至 dist/build"
+echo "==> [4/7] 汇总产物至 dist/build"
 OUT="$ROOT/dist/build"
 PLUGIN_MODULES=(starbot-onebot-adapter starbot-onebot-adapter-napcat-extension starbot-bilibili)
 
@@ -343,7 +343,7 @@ rm -f "$OUT/template-defaults.json"
     echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 } > "$OUT/BUILD-INFO"
 
-# ── [5/6] 产物守卫 ──────────────────────────────────────────────────────
+# ── [5/7] 产物守卫 ──────────────────────────────────────────────────────
 # 上面那道恒 clean 答的是「构建有没有从空目录开始」；这一格答的是另一个问题：
 # 「打出来的包里有没有源码里不存在的界面资源」。前者管编译输出，管不着从别处拷进 dist/build 的东西，
 # 也管不住将来有谁把 clean 改回去。**只装一道就是把另一个问题悄悄结掉**，而它下次出事时
@@ -351,25 +351,32 @@ rm -f "$OUT/template-defaults.json"
 #
 # 放在打包之前：脏产物不许被压进 tar.gz——包一旦成形就会被拿去发，那时再发现已经晚一步。
 echo
-echo "==> [5/6] 校验产物界面资源"
+echo "==> [5/7] 校验产物界面资源"
 "$ROOT/tools/artifact-ui-resource-check.sh" "$OUT"
 
-# 步骤五后：首页／推送／连接三把视图模型尺。
+# ── [6/7] 界面视图模型 ──────────────────────────────────────────────────
 # 名单写死一处：少写一把，那一页的模型从此只靠人手跑，
 # 而「人手跑过」和「没跑」在构建日志上长得一样。任一红即本构建红。
+# 本树已有主播页那一把，名单九把（首页／推送／连接／主播／日志／初始设置／模板／设置／登录）。
 echo
-echo "==> 校验界面视图模型"
+echo "==> [6/7] 校验界面视图模型"
 MODEL_CHECKERS=(
     home-model-check.sh
     push-model-check.sh
     links-model-check.sh
+    streamers-model-check.sh
+    log-model-check.sh
+    setup-model-check.sh
+    template-model-check.sh
+    settings-model-check.sh
+    login-model-check.sh
 )
 for checker in "${MODEL_CHECKERS[@]}"; do
     bash "$ROOT/tools/$checker"
 done
 
-# ── [6/6] 起动冒烟 ──────────────────────────────────────────────────────
-# 上面五步答的是「编译过、测过、包里的文件都出自源码」；这一步答的是另一句：
+# ── [7/7] 起动冒烟 ──────────────────────────────────────────────────────
+# 上面六步答的是「编译过、测过、包里的文件都出自源码、视图模型对得上」；这一步答的是另一句：
 # 这堆 jar 摆在一起，在一台没有任何配置文件的机器上，起不起得来。
 # 单元测试里每个类都是自己 new 出来的，谁也不经过容器；容器到启动那一刻才第一次
 # 按类型去凑构造参数，凑不齐当场退出——所以「整测全绿而包起不来」在结构上可能，
@@ -383,13 +390,13 @@ done
 # 例如 7827 已被别的进程占着时：BOOT_SMOKE_PORT=17827 ./build.sh
 echo
 if [ "$SMOKE" = "1" ]; then
-    echo "==> [6/6] 起动冒烟"
+    echo "==> [7/7] 起动冒烟"
     # bash 调用而不是直接执行：这把尺在仓库里不带执行位，且 CI 的 runner 按 git 记录的
     # 权限 checkout——直接执行在「谁chmod过谁的环境」上绿、在干净 checkout 上炸，
     # 而那种炸与「装配坏了」的红同形。不依赖盘上权限位的调法在哪都一样。
     bash "$ROOT/tools/boot-smoke.sh" "$OUT"
 else
-    echo "==> [6/6] 起动冒烟：已按 --no-smoke 跳过"
+    echo "==> [7/7] 起动冒烟：已按 --no-smoke 跳过"
 fi
 
 if [ -n "$PACKAGE" ]; then

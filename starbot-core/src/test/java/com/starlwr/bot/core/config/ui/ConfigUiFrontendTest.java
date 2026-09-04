@@ -19,6 +19,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -529,7 +530,8 @@ class ConfigUiFrontendTest {
      * 那一块就<b>安静地从页面上消失</b>了。通行密钥那一块正是这么搬过的。
      */
     private static final List<String> AUTH_CONTROLS = List.of(
-            "auth-cards", "pwd-save", "totp-switch", "passkey-add", "setup-rerun");
+            "auth-cards", "pwd-save", "pwd-current-reveal", "pwd-next-reveal", "pwd-again-reveal",
+            "totp-switch", "passkey-add", "setup-rerun");
 
     /**
      * 「登录与安全」那一组要调的端点，闭集
@@ -1162,7 +1164,7 @@ class ConfigUiFrontendTest {
      * 机器人被踢出群、OneBot 没起）表现完全一样，混在一起就再也分不开。
      * <p>
      * 量的是 {@code index.html} 里推送页那一块：挑选面板由脚本建出来，里面那个
-     * 「uid 或个人空间链接」是主播的账号，不是推送目标的号码，两者不是一回事。
+     * 「uid、直播间号或链接」是主播的账号，不是推送目标的号码，两者不是一回事。
      * @param html index.html 全文
      * @return 问题，没有则为空
      */
@@ -1450,6 +1452,68 @@ class ConfigUiFrontendTest {
     }
 
     /**
+     * 首页「今日」第三格与 Webhook 待办的落点，闭集
+     * <p>
+     * 额度与告警已配没配的判定只许有 {@code home-model.js} 一份。渲染那一层再判一遍的话，
+     * 夹具照样全绿——它量的还是没人调的那一份，而屏幕上跑的是新抄的这一份。
+     */
+    private static final List<String> HOME_ENDPOINTS = List.of(
+            "/status", "/login", "/timeline?date=", "/at-all/quota");
+
+    private static final List<String> HOME_MODEL_FUNCTIONS = List.of(
+            "function atAllTile", "function alertConfigured");
+
+    @Test
+    @DisplayName("首页今日格取额度接口，告警待办落到设置页告警段，判法只有 home-model 一份")
+    void homeTodayTileAndWebhookTodoAreWired() throws IOException {
+        Map<String, String> sources = coreSources();
+        String view = sources.getOrDefault("overview.js", "");
+        String model = sources.getOrDefault("home-model.js", "");
+        String main = sources.getOrDefault("main.js", "");
+        String settings = sources.getOrDefault("settings.js", "");
+
+        List<String> bad = new ArrayList<>();
+        if (view.isBlank()) {
+            bad.add("找不到 overview.js，下面每一格都无从量起");
+        }
+        if (model.isBlank()) {
+            bad.add("找不到 home-model.js，额度格与告警待办的判法没有落脚的地方");
+        }
+
+        for (String endpoint : HOME_ENDPOINTS) {
+            if (!view.contains("'" + endpoint + "'") && !view.contains("\"" + endpoint + "\"")) {
+                // timeline 那一支带 today()，字面量是 '/timeline?date='
+                if (!view.contains(endpoint)) {
+                    bad.add("overview.js 没有调用 " + endpoint + "，那一格此刻空着而不说为什么");
+                }
+            }
+        }
+
+        if (!model.contains("'#/settings?card=alert'")) {
+            bad.add("home-model.js 没有设置页告警段的落点");
+        }
+        if (!main.contains("focusGroup(")) {
+            bad.add("main.js 没有问过 focusGroup，从待办点进设置页会停在页顶");
+        }
+        if (!settings.contains("export function focusGroup")
+                && !Pattern.compile("^export\\s+function\\s+focusGroup\\b", Pattern.MULTILINE)
+                .matcher(settings).find()) {
+            bad.add("settings.js 没有 export focusGroup，上面那条「main.js 问过」因此不作数");
+        }
+
+        for (String function : HOME_MODEL_FUNCTIONS) {
+            if (!model.contains(function)) {
+                bad.add("home-model.js 没有 " + function + "，夹具量的那一份不存在");
+            }
+            if (view.contains(function)) {
+                bad.add("渲染代码里又判了一遍 " + function + "。那几条规则只许有 home-model.js 一份");
+            }
+        }
+
+        assertTrue(bad.isEmpty(), "首页今日格与 Webhook 待办少了这几件事:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
      * 新版提示写在 index.html 里的那两处落点，闭集
      * <p>
      * 侧栏那枚药丸与它点开的小面板的壳。面板里的内容不写在页面里：每次拿到新的
@@ -1511,4 +1575,109 @@ class ConfigUiFrontendTest {
         assertTrue(bad.isEmpty(), "新版提示少了这几件事的落点:\n  " + String.join("\n  ", bad));
     }
 
+    /**
+     * 主播页两级子路由与日志页工程日志子路由，闭集
+     * <p>
+     * 顶层路由由 {@link #CORE_ROUTES} 管。子路由是同一页容器底下的第 2/3 段：
+     * 主播页 {@code /streamers/{平台}/{uid}} 与 {@code /{开播时刻}}、日志页 {@code #/log/eng}。
+     * 解析从模型里那份表认，界面文件里写出的子路径也必须在表上——各写各的话，
+     * 新开一条子路由只改了地址拼法、解析仍退回列表或时间线，屏幕上像页面卡住了。
+     */
+    @Test
+    @DisplayName("主播页与日志页的子路由是闭集，解析从同一份表认")
+    void subRoutesAreClosedSet() throws IOException {
+        Map<String, String> sources = coreSources();
+        String streamers = sources.getOrDefault(STREAMERS_MODEL, "");
+        String logs = sources.getOrDefault("log-model.js", "");
+        String html = Files.readString(frontendDir().resolve("index.html"), StandardCharsets.UTF_8);
+
+        List<String> bad = new ArrayList<>();
+        List<String> views = exportedStringArray(streamers, "STREAMER_VIEWS");
+        List<String> logSubs = exportedStringArray(logs, "LOG_SUBROUTES");
+
+        if (views.isEmpty()) {
+            bad.add(STREAMERS_MODEL + " 没有导出 STREAMER_VIEWS，子视图闭集没有落脚的地方");
+        } else {
+            for (String need : List.of("list", "detail", "session")) {
+                if (!views.contains(need)) {
+                    bad.add("STREAMER_VIEWS 里没有 " + need);
+                }
+            }
+        }
+        if (logSubs.isEmpty()) {
+            bad.add("log-model.js 没有导出 LOG_SUBROUTES，工程日志这条子路由没有落脚的地方");
+        } else if (!logSubs.contains("eng")) {
+            bad.add("LOG_SUBROUTES 里没有 eng");
+        }
+
+        String parseStreamers = functionBody(streamers, "parseStreamersHash");
+        if (!parseStreamers.contains("STREAMER_VIEWS")) {
+            bad.add("parseStreamersHash 没有问过 STREAMER_VIEWS，解析与闭集不是同一份");
+        }
+        String parseLog = functionBody(logs, "parseLogHash");
+        if (!parseLog.contains("LOG_SUBROUTES")) {
+            bad.add("parseLogHash 没有问过 LOG_SUBROUTES，解析与闭集不是同一份");
+        }
+        String writeLog = functionBody(logs, "logHash");
+        if (!writeLog.contains("LOG_SUBROUTES")) {
+            bad.add("logHash 没有问过 LOG_SUBROUTES，写出的地址与闭集不是同一份");
+        }
+
+        String detail = functionBody(streamers, "detailHash");
+        if (!detail.contains("'#/streamers/'") || !detail.contains("encodeURIComponent(platform)")
+                || !detail.contains("encodeURIComponent(uid)")) {
+            bad.add("detailHash 没有拼出 /streamers/{平台}/{uid}");
+        }
+        String session = functionBody(streamers, "sessionHash");
+        if (!session.contains("'#/streamers/'") || !session.contains("encodeURIComponent(start)")) {
+            bad.add("sessionHash 没有拼出 /{开播时刻} 这一段");
+        }
+
+        Matcher named = Pattern.compile("#/log/([A-Za-z][A-Za-z0-9_-]*)").matcher(html + "\n" + String.join("\n", sources.values()));
+        while (named.find()) {
+            if (!logSubs.contains(named.group(1))) {
+                bad.add("界面里出现了未登记的日志子路由 #/log/" + named.group(1));
+            }
+        }
+
+        Matcher viewLit = Pattern.compile("(?:view:\\s*|\\.view\\s*=\\s*)'([^']+)'").matcher(parseStreamers);
+        while (viewLit.find()) {
+            if (!views.contains(viewLit.group(1))) {
+                bad.add("parseStreamersHash 写出了未登记的子视图 " + viewLit.group(1));
+            }
+        }
+
+        assertTrue(bad.isEmpty(), "主播页与日志页的子路由闭集对不上:\n  " + String.join("\n  ", bad));
+        assertFalse(views.isEmpty() || logSubs.isEmpty(), "上面那条「闭集在」因此不作数");
+    }
+
+    /**
+     * 模型文件里导出的字符串数组
+     */
+    private List<String> exportedStringArray(String text, String name) {
+        Matcher m = Pattern.compile("export const " + name + "\\s*=\\s*\\[([^]]*)]").matcher(text);
+        if (!m.find()) {
+            return List.of();
+        }
+        List<String> out = new ArrayList<>();
+        Matcher item = Pattern.compile("'([^']+)'").matcher(m.group(1));
+        while (item.find()) {
+            out.add(item.group(1));
+        }
+        return out;
+    }
+
+    /**
+     * 某个 export function 到下一个 export 之间的正文
+     */
+    private String functionBody(String text, String name) {
+        Matcher m = Pattern.compile("export function " + name + "\\s*\\(").matcher(text);
+        if (!m.find()) {
+            return "";
+        }
+        Matcher next = Pattern.compile("\\nexport ").matcher(text);
+        next.region(m.end(), text.length());
+        int to = next.find() ? next.start() : text.length();
+        return text.substring(m.start(), to);
+    }
 }

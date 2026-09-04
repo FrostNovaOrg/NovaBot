@@ -95,6 +95,23 @@ class ConfigurationEffectResolverTest {
     }
 
     @Test
+    @DisplayName("二次验证开关标的是即时生效，界面不再说需重启")
+    void totpSwitchAppliesImmediately() {
+        try (AnnotationConfigApplicationContext context = context()) {
+            Map<String, ConfigEffect.Effect> effects = new ConfigurationEffectResolver(context).getEffects();
+
+            assertEquals(ConfigEffect.Effect.IMMEDIATE, effects.get("starbot.core.config-ui.auth.totp"),
+                    "开关当场生效，标成需重启会让界面与行为各说各话");
+            assertEquals(List.of(),
+                    new ConfigurationEffectResolver(context)
+                            .restartRequired(List.of("starbot.core.config-ui.auth.totp")),
+                    "这一项不该进待重启名单");
+            // 阴性：密钥仍需重启。少了这一条，「整张登录组一律 IMMEDIATE」也会让上面那格绿
+            assertEquals(ConfigEffect.Effect.RESTART, effects.get("starbot.core.config-ui.auth.totp-secret"));
+        }
+    }
+
+    @Test
     @DisplayName("没标过的项按需重启处理，而不是当成即时生效")
     void unknownKeysCountAsRestartRequired() {
         try (AnnotationConfigApplicationContext context = context()) {

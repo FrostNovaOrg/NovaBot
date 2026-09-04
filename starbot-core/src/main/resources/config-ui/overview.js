@@ -161,13 +161,35 @@ function renderNow(model) {
   box.innerHTML = parts.join('');
 }
 
-/** 今日两个数。第三格「@全体成员 已用」还没有数据源，宁可不摆，也不摆一个编出来的分数 */
+/** 今日三个数。第三格点开是各群明细，没有数据时写「—」，不编一个分数 */
 function renderToday(model) {
-  $('#today-stats').innerHTML = [
-    [model.today.sent, '推送（条）'],
-    [model.today.failed, '失败（条）'],
-  ].map(([n, label]) => '<div class="stat"><div class="stat-v">' + esc(n) + '</div>'
-    + '<div class="stat-l">' + esc(label) + '</div></div>').join('');
+  const atAll = model.today.atAll || {value: '—', label: '@全体成员 已用', details: [], more: 0};
+  const cells = [
+    {value: model.today.sent, label: '推送（条）'},
+    {value: model.today.failed, label: '失败（条）'},
+    {value: atAll.value, label: atAll.label, tile: atAll},
+  ];
+  $('#today-stats').innerHTML = cells.map(cell => {
+    if (!cell.tile) {
+      return '<div class="stat"><div class="stat-v">' + esc(cell.value) + '</div>'
+        + '<div class="stat-l">' + esc(cell.label) + '</div></div>';
+    }
+    const rows = (cell.tile.details || []).map(item =>
+      '<div class="stat-row"><span>群 ' + esc(item.num) + '</span><span>'
+      + esc(item.text) + '</span></div>').join('')
+      + (cell.tile.more ? '<div class="stat-more">还有 ' + cell.tile.more + ' 个群</div>' : '');
+    const canOpen = (cell.tile.details || []).length > 0;
+    return '<button class="stat' + (canOpen ? ' stat-exp' : '') + '" type="button" id="today-atall">'
+      + '<div class="stat-v">' + esc(cell.value) + '</div>'
+      + '<div class="stat-l">' + esc(cell.label) + '</div>'
+      + (rows ? '<div class="stat-drop">' + rows + '</div>' : '')
+      + '</button>';
+  }).join('');
+
+  const btn = $('#today-atall');
+  if (btn && (atAll.details || []).length) {
+    btn.addEventListener('click', () => btn.classList.toggle('open'));
+  }
 }
 
 /** 六项探针 */
@@ -208,9 +230,10 @@ function renderStrip(model) {
  * @param status /api/status 回包
  * @param login /api/login 回包
  * @param timeline /api/timeline 回包
+ * @param quota /api/at-all/quota 回包；没有或失败时可不传
  */
-function renderHome(status, login, timeline) {
-  const model = homeModel(status, login, timeline);
+function renderHome(status, login, timeline, quota) {
+  const model = homeModel(status, login, timeline, quota);
   renderBanner(model);
   renderLinkMap(model);
   renderTodos(model);
@@ -222,19 +245,21 @@ function renderHome(status, login, timeline) {
 }
 
 /**
- * 取三份数据再一次性画完
+ * 取四份数据再一次性画完
  *
- * 三个请求并发发出、一起等：分三次画的话，链路已经按新的一份数据变红，
+ * 四个请求并发发出、一起等：分几次画的话，链路已经按新的一份数据变红，
  * 而待办还是上一份算出来的——两块说的是同一件事，屏幕上却互相矛盾。
+ * 额度那一份单独失败时其余三份照画，那一格写「—」，不让整页跟着空白。
  * @return 这一趟取到的运行状态，取不到时为 null
  */
 export async function refreshHome() {
   try {
-    const [status, login, timeline] = await Promise.all([
+    const [status, login, timeline, quota] = await Promise.all([
       api('/status'), api('/login'), api('/timeline?date=' + today()),
+      api('/at-all/quota').catch(() => null),
     ]);
     renderStatus(status);
-    renderHome(status, login, timeline);
+    renderHome(status, login, timeline, quota);
     return status;
   } catch (e) {
     say('载入首页失败：' + e.message, 'err');

@@ -15,6 +15,7 @@
  */
 
 import {setupSteps} from './home-model.js';
+import {mailAlertConfigured} from './alert-model.js';
 
 /**
  * 五步，闭集
@@ -165,7 +166,8 @@ export function initialRows(configValues, commandCount) {
   const quietStart = read('starbot.core.push.quiet-start');
   const quietEnd = read('starbot.core.push.quiet-end');
   const retention = Number(read('starbot.core.timeline.retention-days'));
-  const alerted = !!read('starbot.core.alert.webhook-url') || !!read('starbot.core.alert.qq-num');
+  const alerted = !!read('starbot.core.alert.webhook-url') || !!read('starbot.core.alert.qq-num')
+    || mailAlertConfigured(read('starbot.core.mail.default-to'), read('spring.mail.host'));
 
   return [
     row('推送总开关', read('starbot.core.push.enabled') === 'false' ? '关' : '开',

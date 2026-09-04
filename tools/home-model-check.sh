@@ -8,7 +8,8 @@
 #
 # 顺带把首页那几个前端模块过一遍语法（node --input-type=module --check < 文件）：
 # 它们是 ES module，没有构建步骤，语法错要等页面加载时才炸，而那时报的是一句与出错文件无关的「载入失败」。
-# node --check 对含 import 的 .js 一律返 0（Node v22 实测），那一格从来没能红过。
+# 走 stdin 加 --input-type=module 之后坏语法会红（Node 22 实测）；直接 `node --check 文件`
+# 对含 import 的 .js 仍一律返 0，那种写法本尺不用。
 #
 # 退码：0 全对；1 有档对不上或有模块语法不过；2 环境不具备（没装 node）。
 

@@ -12,6 +12,15 @@ export const DEFAULT_LIMIT = 200;
 /** 工程日志的四档级别与它们的人话。TRACE 并进「调试」，药丸只有这四个 */
 export const ENG_LEVELS = [['error', '错误'], ['warn', '警告'], ['info', '信息'], ['debug', '调试']];
 
+/**
+ * 日志页上有名字的子路由，闭集
+ *
+ * 现在只有工程日志这一条。日期走第二段是另一类（形状是 YYYY-MM-DD，不进这张表）。
+ * 解析与拼地址都从这张表认——另写一个字符串的话，新开一页只改了链接，
+ * 解析仍落在时间线，屏幕上像页面卡住了。
+ */
+export const LOG_SUBROUTES = ['eng'];
+
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
@@ -56,7 +65,7 @@ export function parseLogHash(hash, today) {
   const state = emptyState(today);
 
   const seg = path[1] || '';
-  if (seg === 'eng') state.view = 'eng';
+  if (LOG_SUBROUTES.includes(seg)) state.view = seg;
   else if (DATE.test(seg)) state.date = seg;
 
   for (const part of (cut < 0 ? '' : raw.slice(cut + 1)).split('&')) {
@@ -101,8 +110,8 @@ export function logHash(state, today) {
   const query = [];
   let path = '#/log';
 
-  if (state.view === 'eng') {
-    path += '/eng';
+  if (LOG_SUBROUTES.includes(state.view)) {
+    path += '/' + state.view;
     if (state.date && state.date !== today) query.push('d=' + state.date);
     // 定位到哪一分钟也写进地址栏：日志页上那一跳贴给别人，对方落在同一刻
     if (state.at) query.push('at=' + encodeURIComponent(state.at));

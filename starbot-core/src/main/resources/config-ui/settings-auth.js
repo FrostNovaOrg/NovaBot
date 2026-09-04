@@ -10,6 +10,7 @@
  */
 
 import {$, api, el, esc, say} from './core.js';
+import {bindPasswordReveal} from './password-reveal.js';
 import {loadPasskeys, registerPasskey} from './passkeys.js';
 import {store} from './store.js';
 
@@ -64,6 +65,22 @@ function field(box, label, id, type, note) {
 
   box.appendChild(wrap);
   return input;
+}
+
+/**
+ * 给口令框接上共用的显示／隐藏按钮。按钮先建出来再赋 id，id 必须是字面量——
+ * 闭集那一格按源码里的 `.id = '…'` 认落点。
+ * @param input 口令框
+ * @return 那颗按钮，调用方赋 id
+ */
+function attachEye(input) {
+  const wrap = el('div', 'secret');
+  const eye = el('button');
+  eye.type = 'button';
+  input.parentNode.insertBefore(wrap, input);
+  wrap.append(input, eye);
+  bindPasswordReveal(input, eye);
+  return eye;
 }
 
 /** 卡片里那行键名，「显示键名」打开时才露出来 */
@@ -123,6 +140,14 @@ function passwordCard() {
       '填的是这个控制台的登录口令，不是 NapCat 界面的口令。');
   const next = field(box.body, '新口令', 'pwd-next', 'password', '至少 8 个字符。');
   const again = field(box.body, '再输一遍', 'pwd-again', 'password');
+  if (current) {
+    const currentEye = attachEye(current);
+    currentEye.id = 'pwd-current-reveal';
+  }
+  const nextEye = attachEye(next);
+  nextEye.id = 'pwd-next-reveal';
+  const againEye = attachEye(again);
+  againEye.id = 'pwd-again-reveal';
   keyLine(box.body, 'starbot.core.config-ui.auth.password');
 
   const button = el('button', 'ghost');

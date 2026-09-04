@@ -32,6 +32,7 @@ import com.starlwr.bot.core.service.StarBotSenderService;
 import com.starlwr.bot.core.timeline.TimelineEventType;
 import com.starlwr.bot.core.timeline.TimelineStore;
 import com.starlwr.bot.core.util.QrCodeUtil;
+import com.starlwr.bot.core.util.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -133,7 +134,12 @@ public class ConfigUiController {
     private static final Pattern SPACE_URL_UID = Pattern.compile("space\\.bilibili\\.com/(\\d{1,19})");
 
     /**
-     * 纯数字形式的 uid
+     * 直播间链接中的房间号，短号与真实房间号都是这一串数字
+     */
+    private static final Pattern LIVE_URL_ROOM = Pattern.compile("live\\.bilibili\\.com/(\\d{1,19})");
+
+    /**
+     * 纯数字：可能是 uid，也可能是直播间号
      */
     private static final Pattern PLAIN_UID = Pattern.compile("^(\\d{1,19})$");
 
@@ -971,7 +977,11 @@ public class ConfigUiController {
      * <p>
      * 添加主播时先把昵称与直播间号显示出来让人确认，避免 uid 打错一位却配了个陌生人——
      * 这类错误在推送真正发生前完全无法察觉。
-     * @param body 请求体，含 platform 与 uid（uid 亦可为个人空间链接）
+     * <p>
+     * 输入除 uid 与个人空间链接外，也收直播间号：纯数字短号，或直播间链接。
+     * 纯数字既像 uid 又像房间号时<b>先按 uid 查，查不到再按房间号查一次</b>；
+     * 链接已经标明是哪一种时只走对应那一趟，不加重试。
+     * @param body 请求体，含 platform 与 uid（uid 亦可为空间链接、直播间号或直播间链接）
      * @return 主播信息
      */
     @PostMapping("/api/streamer/lookup")
@@ -979,11 +989,11 @@ public class ConfigUiController {
         JSONObject result = new JSONObject();
 
         String platform = body.getString("platform");
-        Long uid = extractUid(body.getString("uid"));
+        StreamerQuery query = parseStreamerQuery(body.getString("uid"));
 
-        if (platform == null || platform.isBlank() || uid == null) {
+        if (platform == null || platform.isBlank() || query == null) {
             result.put("success", false);
-            result.put("message", "请填写平台与 uid，也可直接粘贴个人空间链接");
+            result.put("message", "请填写平台与 uid，也可直接粘贴个人空间链接或直播间号");
             return result;
         }
 
@@ -994,22 +1004,27 @@ public class ConfigUiController {
             return result;
         }
 
-        PushUser user = new PushUser();
-        user.setUid(uid);
-        user.setPlatform(platform);
-
+        DataSourceService data = service.get();
+        PushUser user;
         try {
-            service.get().completePushUser(user);
+            if (query.kind() == StreamerIdKind.ROOM) {
+                user = data.lookupByRoomId(query.id()).orElse(null);
+            } else {
+                user = completeByUid(data, platform, query.id());
+                if (missingName(user) && query.kind() == StreamerIdKind.DIGITS) {
+                    user = data.lookupByRoomId(query.id()).orElse(null);
+                }
+            }
         } catch (Exception e) {
-            log.error("查询主播 {} 信息失败", uid, e);
+            log.error("查询主播 {} 信息失败", query.id(), e);
             result.put("success", false);
             result.put("message", "查询失败: " + e.getMessage());
             return result;
         }
 
-        if (user.getUname() == null || user.getUname().isBlank()) {
+        if (missingName(user)) {
             result.put("success", false);
-            result.put("message", "未查到 uid " + uid + " 对应的主播，请确认 uid 是否正确");
+            result.put("message", "未查到 uid " + query.id() + " 对应的主播，请确认 uid 是否正确");
             return result;
         }
 
@@ -1024,35 +1039,63 @@ public class ConfigUiController {
         // 单独兜一次异常：主播已经查到了，不该因为一个附带字段拉不下来就整次判失败
         Long fans = null;
         try {
-            fans = service.get().getFansCount(uid).orElse(null);
+            fans = data.getFansCount(user.getUid()).orElse(null);
         } catch (Exception e) {
-            log.debug("获取 uid {} 的粉丝数失败: {}", uid, e.getMessage());
+            log.debug("获取 uid {} 的粉丝数失败: {}", user.getUid(), e.getMessage());
         }
         result.put("fans", fans);
         return result;
     }
 
+    private PushUser completeByUid(DataSourceService data, String platform, long uid) {
+        PushUser user = new PushUser();
+        user.setUid(uid);
+        user.setPlatform(platform);
+        data.completePushUser(user);
+        return user;
+    }
+
+    private static boolean missingName(PushUser user) {
+        return user == null || user.getUname() == null || user.getUname().isBlank();
+    }
+
     /**
-     * 从输入中提取 uid，兼容直接粘贴个人空间链接
+     * 从输入中提取 uid 或直播间号
      * <p>
      * 让使用者自己去链接里抠出那串数字是没必要的一道门槛。
+     * 直播间链接与空间链接各走各的：两者都像一串数字时，先按 uid 查。
      * @param input 输入内容
-     * @return uid，无法识别时返回 null
+     * @return 解析结果，无法识别时返回 null
      */
-    private Long extractUid(String input) {
+    private StreamerQuery parseStreamerQuery(String input) {
         if (input == null) {
             return null;
         }
 
         String trimmed = input.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+
+        Matcher live = LIVE_URL_ROOM.matcher(trimmed);
+        if (live.find()) {
+            return new StreamerQuery(StreamerIdKind.ROOM, Long.parseLong(live.group(1)));
+        }
 
         Matcher fromUrl = SPACE_URL_UID.matcher(trimmed);
         if (fromUrl.find()) {
-            return Long.parseLong(fromUrl.group(1));
+            return new StreamerQuery(StreamerIdKind.UID, Long.parseLong(fromUrl.group(1)));
         }
 
         Matcher plain = PLAIN_UID.matcher(trimmed);
-        return plain.matches() ? Long.parseLong(plain.group(1)) : null;
+        return plain.matches() ? new StreamerQuery(StreamerIdKind.DIGITS, Long.parseLong(plain.group(1))) : null;
+    }
+
+    private enum StreamerIdKind {
+        UID, ROOM, DIGITS
+    }
+
+    private record StreamerQuery(StreamerIdKind kind, long id) {
     }
 
     /**
@@ -1532,7 +1575,46 @@ public class ConfigUiController {
         result.put("live", liveNow());
         result.put("today", todayPushCounts());
         result.put("queue", queue());
+        result.put("alerts", alerts());
         return result;
+    }
+
+    /**
+     * 三张告警卡各自配好了没有
+     * <p>
+     * 首页那条「QQ 告警有死角」要按 Webhook 与邮件这两位决定出不出——QQ 配没配都出，
+     * 它催的是掉线时还有一路能叫到人。判定与设置页药丸同源，见 {@link AlertReadiness}：
+     * QQ 看有没有号码、Webhook 看地址空不空、邮件看收件与 SMTP 主机都有没有。
+     */
+    private JSONObject alerts() {
+        JSONObject json = new JSONObject();
+        StarBotCoreProperties.Alert alert = properties.getAlert();
+        json.put("qq", alert.getQqNum() != null);
+        json.put("webhook", StringUtil.isNotBlank(alert.getWebhookUrl()));
+        json.put("mail", AlertReadiness.mailConfigured(properties.getMail().getDefaultTo(), smtpHost()));
+        return json;
+    }
+
+    /**
+     * 邮件告警的 SMTP 主机
+     * <p>
+     * 这一项不在核心配置对象上，是 Spring 自己的 {@code spring.mail.host}。
+     * 设置页药丸读的是配置文件里这一栏，这里也读同一份，两边才不会分叉。
+     * 文件不在或读失败按没配算：首页因此会催人去配，比悄悄当成已配要安全。
+     * @return 主机名，没有时为空串
+     */
+    private String smtpHost() {
+        try {
+            Map<String, String> values = fileService.read();
+            if (values == null) {
+                return "";
+            }
+            String host = values.get("spring.mail.host");
+            return host == null ? "" : host;
+        } catch (IOException e) {
+            log.debug("读 SMTP 主机失败，邮件这一路按未配算: {}", e.getMessage());
+            return "";
+        }
     }
 
     /**

@@ -12,6 +12,7 @@
 
 import {$, api, el, markDirty} from './core.js';
 import {store} from './store.js';
+import {mailAlertConfigured} from './alert-model.js';
 
 /**
  * 三张卡各自吃掉哪几个配置键
@@ -399,7 +400,7 @@ export function alertCards() {
     || CUSTOM;
   mailCustom.classList.toggle('hide', !!MAIL_PRESETS[mailPreset.value]);
 
-  const mailReady = () => pillState(mail.pill, !!to.value.trim() && !!host.value.trim());
+  const mailReady = () => pillState(mail.pill, mailAlertConfigured(to.value, host.value));
   to.addEventListener('input', mailReady);
   host.addEventListener('input', mailReady);
   mailReady();

@@ -46,6 +46,9 @@ function status(patch) {
     quiet: {active: false, start: '', end: ''},
     live: [{uid: 3493, uname: '柚子', roomId: 1234, platform: 'bilibili', since: 1757000000000}],
     today: {sent: 14, failed: 1},
+    // 八档说的是一台已经配过告警的机器上的运行态。没配时首页会多一条软待办，
+    // 那一档下面单独喂，免得八档每一档都沾上同一条
+    alerts: {qq: false, webhook: true, mail: false},
   }, patch);
 }
 
@@ -238,3 +241,128 @@ if (bad.length || hrefBad.length) {
 }
 console.log('本机站\t' + stationHref('self') + '\t锚 #' + PROBE_ANCHOR + '\t绿');
 console.log('\n九档全对，本机站落到首页探针区');
+
+// ── 「今日」第三格与 Webhook 待办 ──────────────────────────────────────
+// 这两块是后补上的：额度接口与告警三卡交付之后，首页才有真数据可摆。
+// 判法只留 home-model 一份。下面逐格喂回包对答案，不碰 DOM。
+
+const tileFails = [];
+let tileChecks = 0;
+
+function same(actual, expected, what) {
+  tileChecks++;
+  const a = JSON.stringify(actual);
+  const b = JSON.stringify(expected);
+  if (a !== b) tileFails.push(what + '：得到 ' + a + '，应为 ' + b);
+}
+
+function tileOf(quota) {
+  const model = homeModel(status(), login(), timeline(), quota);
+  return model.today.atAll || {value: null, label: null, details: [], more: 0};
+}
+
+function quota(bots, sessions) {
+  return {success: true, date: '2026-09-04', bots: bots || [], sessions: sessions || []};
+}
+
+function bot(over) {
+  return Object.assign({platform: 'onebot', used: 0, limit: 10, limited: true}, over);
+}
+
+function group(num, used, over) {
+  return Object.assign({platform: 'onebot', num, used, limit: 20, limited: true}, over);
+}
+
+// 格三态
+same(tileOf(quota([bot({used: 3, limit: 10, limited: true})])).value, '3／10',
+  '限额：账号已用画分母');
+same(tileOf(quota([bot({used: 3, limit: 0, limited: false})])).value, '3',
+  '不限额：只显已用、不画分母');
+same(tileOf(quota([])).value, '—', '无机器人显「—」');
+same(tileOf(null).value, '—', '接口失败显「—」');
+same(tileOf(undefined).value, '—', '没交额度回包显「—」');
+same(tileOf({success: false}).value, '—', '回包声明失败显「—」');
+
+// 多账号合计：两路都限额则分母相加；一路不限额则整格不画分母
+same(tileOf(quota([
+  bot({platform: 'a', used: 3, limit: 10, limited: true}),
+  bot({platform: 'b', used: 2, limit: 10, limited: true}),
+])).value, '5／20', '两个限额账号合计已用与上限');
+same(tileOf(quota([
+  bot({platform: 'a', used: 3, limit: 10, limited: true}),
+  bot({platform: 'b', used: 2, limit: 0, limited: false}),
+])).value, '5', '有一个不限额则整格不画分母');
+
+// 明细：按 used 降序、最多 5 行、其余报还有 N 个群
+const six = tileOf(quota([bot({used: 1})], [
+  group(11, 1), group(12, 8), group(13, 3), group(14, 8), group(15, 0), group(16, 5),
+]));
+same(six.details.map(item => item.num), [12, 14, 16, 13, 11],
+  '明细按已用降序取前 5，used 相同的保持原序');
+same(six.more, 1, '第 6 个群进「还有 N 个群」');
+same((six.details[0] || {}).text, '8／20', '限额群的明细也画分母');
+same((tileOf(quota([bot()], [group(11, 4, {limited: false, limit: 0})])).details[0] || {}).text, '4',
+  '不限额群的明细不画分母');
+same(tileOf(quota([bot()], [group(11, 1)])).more, 0, '不超过 5 个群时没有「还有」');
+
+same(tileOf(quota([bot({used: 3})])).label, '@全体成员 已用', '格的标签');
+
+// 待办四态。催的是掉线时还有一路能叫到人，QQ 配没配都不算出。
+// fresh 那一档只留初始设置，这条不掺进去。
+function todoKeys(patch) {
+  return homeModel(status(patch), login(), timeline()).todos.map(item => item.key);
+}
+
+same(todoKeys({alerts: {qq: false, webhook: false, mail: false}}), ['webhook'],
+  '都没配：出 Webhook 软待办');
+same(todoKeys({alerts: {qq: true, webhook: false, mail: false}}), ['webhook'],
+  '只配了 QQ：仍出待办');
+same(todoKeys({alerts: {qq: false, webhook: true, mail: false}}), [],
+  '有 Webhook：不出待办');
+same(todoKeys({alerts: {qq: false, webhook: false, mail: false}}), ['webhook'],
+  '只填收件无主机（后端判未配，mail 为假）：出待办');
+same(todoKeys({alerts: {qq: false, webhook: false, mail: true}}), [],
+  '邮件已配：不出待办');
+same(todoKeys({locked: false, alerts: {qq: false, webhook: false, mail: false}}),
+  ['lock', 'webhook'],
+  '三路都没配时与上锁待办并存、不去重');
+same(todoKeys({alerts: {}}), ['webhook'],
+  'alerts 在但三路都缺：作出没配');
+same(todoKeys({}), [],
+  '默认那份已经配了 Webhook，八档不沾这条待办');
+
+const webhookTodo = homeModel(status({alerts: {qq: false, webhook: false, mail: false}}),
+  login(), timeline()).todos[0];
+same((webhookTodo || {}).soft, true, 'Webhook 待办是软的');
+same((webhookTodo || {}).href, '#/settings?card=alert',
+  '点待办落到设置页告警段');
+same((webhookTodo || {}).title, 'QQ 告警有死角，建议再配 Webhook', '待办标题');
+same((webhookTodo || {}).body,
+  '机器人掉线时 QQ 那路叫不到你，Webhook 或邮件配好其中一路这条就消失',
+  '待办正文');
+same((webhookTodo || {}).action, '去配', '待办按钮');
+
+// 首次安装只出初始设置，不叠 Webhook 待办
+const freshStatus = status({
+  senders: [], users: [], live: [], locked: false, totalDataAvailable: false,
+  alerts: {qq: false, webhook: false, mail: false},
+  today: {sent: 0, failed: 0},
+  health: [
+    probe('直播平台登录', 'PLATFORM', 'DEGRADED', '未登录', '', true),
+    probe('机器人连接', 'BOT', 'DOWN', '未配置任何机器人', ''),
+    probe('直播间连接', 'PLATFORM', 'OK', '暂无需要连接的直播间'),
+    probe('推送活动', 'SYSTEM', 'OK', '启动后尚无推送'),
+    probe('风控与静默降级', 'PLATFORM', 'OK', '7 天内 412 0 次'),
+    probe('数据存储', 'SYSTEM', 'OK', '仅本场数据'),
+  ],
+});
+same(homeModel(freshStatus, login(), timeline()).todos.map(item => item.key), ['setup'],
+  '首次安装只出初始设置待办');
+
+if (tileFails.length) {
+  console.error('\n今日格／待办对不上 ' + tileFails.length + ' 处（共跑了 ' + tileChecks + ' 格）：');
+  tileFails.forEach(line => console.error('  ' + line));
+  process.exit(1);
+}
+console.log('今日格／待办\t跑了 ' + tileChecks + ' 格，全绿');
+console.log('跑了 ' + (CASES.length + tileChecks) + ' 格，全绿');

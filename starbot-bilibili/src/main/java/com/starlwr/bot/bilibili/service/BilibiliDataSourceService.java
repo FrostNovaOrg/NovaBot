@@ -93,6 +93,37 @@ public class BilibiliDataSourceService implements DataSourceService {
     }
 
     /**
+     * 按直播间号查主播
+     * <p>
+     * 短号由平台接口一次解析成真实房间再拿到 uid。找不到或接口失败时给空，
+     * 不加重试——查主播口会把空收成原来那句「未查到」。
+     */
+    @Override
+    public Optional<PushUser> lookupByRoomId(Long roomId) {
+        if (roomId == null) {
+            return Optional.empty();
+        }
+
+        try {
+            Up up = api.getUpInfoByRoomId(roomId);
+            if (up == null || StringUtil.isBlank(up.getUname())) {
+                return Optional.empty();
+            }
+
+            PushUser user = new PushUser();
+            user.setUid(up.getUid());
+            user.setUname(up.getUname());
+            user.setRoomId(up.getRoomId() != null ? up.getRoomId() : roomId);
+            user.setFace(up.getFace());
+            user.setPlatform(BilibiliPlatform.BILIBILI.id());
+            return Optional.of(user);
+        } catch (Exception e) {
+            log.debug("按直播间号 {} 查询主播失败: {}", roomId, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
      * 平台名称，与推送配置中的 platform 字段对应
      * @return 平台名称
      */
