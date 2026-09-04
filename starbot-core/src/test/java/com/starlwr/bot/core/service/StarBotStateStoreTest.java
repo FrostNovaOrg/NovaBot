@@ -5,7 +5,10 @@ import com.starlwr.bot.core.config.StarBotCoreProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -129,5 +132,100 @@ class StarBotStateStoreTest {
 
         assertEquals("v", store.read(NAMESPACE, "k", data -> data.getString("k")).orElse(null));
         assertTrue(store.read(NAMESPACE, "缺失", data -> data.getString("缺失")).isEmpty());
+    }
+
+    // 死段清理的测试里，段名「StreamerChoice」与陪衬「CorpusMarker」都逐字写死，不从被测取——
+    // 尺的名字若来自被测，被测哪天把这个名字丢了，尺就跟着量不到它，红也红不出来
+    private static final String RETIRED = "StreamerChoice";
+    private static final String MARKER = "CorpusMarker";
+
+    private StarBotStateStore storeAt(@TempDir Path dir) {
+        StarBotCoreProperties properties = new StarBotCoreProperties();
+        properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
+        return new StarBotStateStore(properties);
+    }
+
+    @Test
+    @DisplayName("启动时清掉已撤功能的死段, 其余命名空间原样保留")
+    void startupDropsRetiredSegmentKeepsTheRest(@TempDir Path dir) throws Exception {
+        Path state = dir.resolve("state.json");
+        Files.writeString(state, "{\"" + RETIRED + "\":{\"10001:20001\":30001},\"" + MARKER + "\":{\"seen\":true}}");
+
+        StarBotStateStore opened = storeAt(dir);
+        opened.onApplicationReadyEvent();
+        opened.onContextClosedEvent();
+
+        String saved = Files.readString(state);
+        assertFalse(saved.contains(RETIRED), "已撤功能的死段还在盘上: " + saved);
+        assertTrue(saved.contains(MARKER), "清死段时误伤了别的命名空间: " + saved);
+
+        // 重读一遍：不是「这回没看见」，而是下一次启动读到的确实已经没有它
+        StarBotStateStore reopened = storeAt(dir);
+        reopened.onApplicationReadyEvent();
+        reopened.onContextClosedEvent();
+        assertTrue(reopened.namespace(MARKER).getBoolean("seen"), "陪衬段经一轮启停后内容变了");
+        assertFalse(Files.readString(state).contains(RETIRED), "死段在第二次启动后又回来了: " + Files.readString(state));
+    }
+
+    @Test
+    @DisplayName("没有死段时启动不惊动别的命名空间")
+    void startupWithoutRetiredSegmentLeavesOthersAlone(@TempDir Path dir) throws Exception {
+        Path state = dir.resolve("state.json");
+        Files.writeString(state, "{\"" + MARKER + "\":{\"seen\":true}}");
+
+        StarBotStateStore opened = storeAt(dir);
+        opened.onApplicationReadyEvent();
+        opened.onContextClosedEvent();
+
+        String saved = Files.readString(state);
+        assertTrue(saved.contains(MARKER), "无死段可清时陪衬段被弄丢了: " + saved);
+        assertFalse(saved.contains(RETIRED), "无中生有: " + saved);
+    }
+
+    @Test
+    @DisplayName("死段是文件里唯一内容时也真的落了盘")
+    void removingTheOnlySegmentStillPersists(@TempDir Path dir) throws Exception {
+        Path state = dir.resolve("state.json");
+        Files.writeString(state, "{\"" + RETIRED + "\":{\"10001:20001\":30001}}");
+
+        StarBotStateStore opened = storeAt(dir);
+        opened.onApplicationReadyEvent();
+        opened.onContextClosedEvent();
+
+        String saved = Files.readString(state);
+        assertFalse(saved.contains(RETIRED), "删空场景下死段留在了盘上: " + saved);
+        assertTrue(JSONObject.parseObject(saved).isEmpty(), "删空后文件应是合法的空对象, 实际: " + saved);
+    }
+
+    @Test
+    @DisplayName("remove 删段后不等停机就已经在盘上")
+    void removePersistsToDiskImmediately(@TempDir Path dir) throws Exception {
+        StarBotStateStore opened = storeAt(dir);
+        opened.onApplicationReadyEvent();
+
+        opened.write(RETIRED, data -> data.put("10001:20001", 30001));
+        opened.write(MARKER, data -> data.put("seen", true));
+        opened.remove(RETIRED);
+
+        String saved = Files.readString(dir.resolve("state.json"));
+        assertFalse(saved.contains(RETIRED), "remove 后死段仍在盘上: " + saved);
+        assertTrue(saved.contains(MARKER), "remove 误删了别的命名空间: " + saved);
+
+        opened.onContextClosedEvent();
+    }
+
+    @Test
+    @DisplayName("remove 不存在的段是安全的空操作")
+    void removeMissingSegmentIsNoOp(@TempDir Path dir) throws Exception {
+        StarBotStateStore opened = storeAt(dir);
+        opened.onApplicationReadyEvent();
+
+        opened.write(MARKER, data -> data.put("seen", true));
+        opened.save();
+        opened.remove("从未写过");
+
+        assertTrue(Files.readString(dir.resolve("state.json")).contains(MARKER), "空操作弄丢了内容");
+
+        opened.onContextClosedEvent();
     }
 }
