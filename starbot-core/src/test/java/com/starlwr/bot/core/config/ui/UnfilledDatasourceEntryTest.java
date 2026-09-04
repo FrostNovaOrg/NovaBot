@@ -13,6 +13,7 @@ import com.starlwr.bot.core.service.AtSubscriptionService;
 import com.starlwr.bot.core.service.DataSourceService;
 import com.starlwr.bot.core.service.DataSourceServiceConfig;
 import com.starlwr.bot.core.service.LiveDataService;
+import com.starlwr.bot.core.service.PushTemplateDefaults;
 import com.starlwr.bot.core.service.RevenueVisibilityService;
 import com.starlwr.bot.core.service.StarBotEventHandlerService;
 import com.starlwr.bot.core.service.StarBotStateStore;
@@ -170,7 +171,8 @@ class UnfilledDatasourceEntryTest {
         JsonDataSource dataSource = new JsonDataSource(
                 mock(ApplicationEventPublisher.class),
                 new DataSourceServiceRegistry(List.of(new NoopDataSourceService())),
-                new StarBotEventHandlerPushMessageInitializer(mock(StarBotEventHandlerService.class)),
+                new StarBotEventHandlerPushMessageInitializer(mock(StarBotEventHandlerService.class),
+                        new PushTemplateDefaults(new StarBotCoreProperties())),
                 properties.getDatasource());
         dataSource.load();
 

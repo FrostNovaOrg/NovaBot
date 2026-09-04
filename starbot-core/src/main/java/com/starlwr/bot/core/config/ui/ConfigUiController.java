@@ -26,6 +26,7 @@ import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.sender.PushGate;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
 import com.starlwr.bot.core.service.LiveDataService;
+import com.starlwr.bot.core.service.PushTemplateDefaults;
 import com.starlwr.bot.core.service.StarBotEventHandlerService;
 import com.starlwr.bot.core.service.StarBotSenderService;
 import com.starlwr.bot.core.timeline.TimelineEventType;
@@ -213,6 +214,11 @@ public class ConfigUiController {
      */
     private final ConfigUiAuthService authService;
 
+    /**
+     * 这台机器改过的默认模板。模板编辑器的「默认模板」那一页读写的就是它
+     */
+    private final PushTemplateDefaults templateDefaults;
+
     @Autowired
     public ConfigUiController(ConfigurationMetadataService metadataService,
                               ConfigurationFileService fileService,
@@ -237,7 +243,9 @@ public class ConfigUiController {
                               PushGate pushGate,
                               LiveDataService liveDataService,
                               TimelineStore timeline,
-                              ConfigUiAuthService authService) {
+                              ConfigUiAuthService authService,
+                              PushTemplateDefaults templateDefaults) {
+        this.templateDefaults = templateDefaults;
         this.pushGate = pushGate;
         this.liveDataService = liveDataService;
         this.timeline = timeline;
@@ -996,7 +1004,13 @@ public class ConfigUiController {
             item.put("description", handler.description());
             item.put("platform", handler.platform());
             item.put("placeholders", handler.placeholders());
-            item.put("defaultParams", handler.getDefaultParams());
+            item.put("attachments", handler.attachmentPlaceholders());
+            // 「默认」是这台机器此刻的默认（出厂默认盖上控制台改过的那几个键），
+            // 不是出厂默认：界面拿它判「这个通道用的是默认还是自定义」，
+            // 拿出厂默认去判的话，改过默认模板之后每一个通道都会显示成「自定义」
+            item.put("defaultParams", templateDefaults.paramsOf(handler));
+            // 出厂默认另给一份：默认模板那一页要答「这一项改过没有」与「恢复出厂」
+            item.put("factoryParams", handler.getDefaultParams());
             item.put("options", handler.options());
             items.add(item);
         });
@@ -1004,6 +1018,59 @@ public class ConfigUiController {
         items.sort(Comparator.comparing(item -> ((JSONObject) item).getString("className")));
         result.put("handlers", items);
         return result;
+    }
+
+    /**
+     * 读这台机器改过的默认模板
+     * <p>
+     * 回的是<b>相对出厂默认的覆盖</b>，没改过的处理器整个不出现。整份默认参数在
+     * {@code /api/handlers} 的 {@code defaultParams} 里，这一支答的是另一个问题：
+     * 「哪几项是人改过的」——两者合一的话，「改成了与出厂一样的值」与「没改过」
+     * 就再也分不开，而默认模板那一页上「恢复出厂」该不该亮正是靠这个分。
+     * @return 覆盖参数
+     */
+    @GetMapping("/api/templates")
+    public JSONObject templates() {
+        JSONObject result = new JSONObject();
+        result.put("success", true);
+        result.put("defaults", templateDefaults.all());
+        return result;
+    }
+
+    /**
+     * 改某一类通知的默认模板
+     * <p>
+     * 一次一个处理器，传的是<b>整份覆盖</b>：某个键不在里面即回到出厂默认，
+     * 空对象即整类回到出厂默认。改这里等于改<b>所有用默认的通道</b>，
+     * 因此校验不过时一个字也不写——半份默认模板会一次落到一批群上。
+     * @param body 请求体，className 为处理器全类名，params 为整份覆盖
+     * @return 保存结果
+     */
+    @PostMapping("/api/templates")
+    public ResponseEntity<JSONObject> saveTemplate(@RequestBody JSONObject body) {
+        JSONObject result = new JSONObject();
+
+        String className = body.getString("className");
+        Optional<com.starlwr.bot.core.handler.StarBotEventHandler> handler =
+                className == null ? Optional.empty() : handlerService.getHandler(className);
+        if (handler.isEmpty()) {
+            result.put("success", false);
+            result.put("message", "没有这样一个推送处理器: " + className);
+            return ResponseEntity.badRequest().body(result);
+        }
+
+        List<String> issues = templateDefaults.save(handler.get(), body.getJSONObject("params"));
+        if (!issues.isEmpty()) {
+            result.put("success", false);
+            result.put("message", "默认模板有误，已拒绝保存");
+            result.put("issues", issues);
+            return ResponseEntity.ok(result);
+        }
+
+        result.put("success", true);
+        result.put("message", "已保存，用默认模板的通道跟着一起变");
+        log.info("配置界面已更新默认模板: {}", className);
+        return ResponseEntity.ok(result);
     }
 
     /**

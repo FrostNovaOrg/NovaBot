@@ -98,6 +98,23 @@ public interface StarBotEventHandler extends PushMessageHandler {
     }
 
     /**
+     * 上面那些占位符里，哪几个展开成整行的附件（图片）
+     * <p>
+     * 模板编辑器把一条消息画成一串块，而附件块与文字块在屏幕上是两种东西：
+     * 文字块混在行里，附件块独占一行、预览里画成图片占位。
+     * <b>哪个占位符是附件只有处理器自己知道</b>——它展开成的是
+     * {@code {image_url=…}} 还是一段文字，界面看不见。
+     * <p>
+     * 不声明就当文字块：界面把它画在行里、预览里按占位符名字显示，
+     * 一个没声明的附件顶多是预览画得不像，而<b>猜错的方向</b>（界面按名字认出
+     * {@code {cover}} 这类名字）会让第三方插件的同名占位符跟着变成图片。
+     * @return 附件型占位符，须是 {@link #placeholders()} 的子集；默认无
+     */
+    default List<String> attachmentPlaceholders() {
+        return List.of();
+    }
+
+    /**
      * 消息模板之外的可配置参数，供配置界面渲染
      * <p>
      * 声明了才配得到：不声明的参数依旧只能在 {@code datasource.json} 里手写，

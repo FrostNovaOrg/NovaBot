@@ -7,6 +7,7 @@ import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.handler.StarBotEventHandlerPushMessageInitializer;
+import com.starlwr.bot.core.service.PushTemplateDefaults;
 import com.starlwr.bot.core.service.StarBotEventHandlerService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -202,7 +203,8 @@ class PushUserWireFormTest {
         return new JsonDataSource(
                 mock(ApplicationEventPublisher.class),
                 new DataSourceServiceRegistry(List.of()),
-                new StarBotEventHandlerPushMessageInitializer(mock(StarBotEventHandlerService.class)),
+                new StarBotEventHandlerPushMessageInitializer(mock(StarBotEventHandlerService.class),
+                        new PushTemplateDefaults(new StarBotCoreProperties())),
                 new StarBotCoreProperties().getDatasource()
         );
     }

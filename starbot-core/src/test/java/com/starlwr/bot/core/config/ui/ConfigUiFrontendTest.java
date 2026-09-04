@@ -878,11 +878,24 @@ class ConfigUiFrontendTest {
      * <p>
      * 少接一条，那一块就变成一片说不出为什么空着的地方。这些端点别处也在用，
      * 因此只在 {@code push.js} 里找：拿全部脚本找的话，这一页把某条丢了也照样绿。
+     * <p>
+     * 后两条属于模板编辑器：改默认模板要写回服务端（{@code /templates}）并重新取一遍
+     * 处理器清单（{@code /handlers}，否则树上「模板：默认／自定义」那一列还是旧的）。
+     * 报告版式那张图另走一支（见 {@link #REPORT_PREVIEW_PATH}），它回的是 PNG 不是 JSON。
      */
     private static final List<String> PUSH_ENDPOINTS = List.of(
             "/state", "/push-history", "/at-all/quota",
             "/onebot/targets?type=group", "/onebot/targets?type=friend", "/onebot/targets/refresh",
-            "/streamer/lookup");
+            "/streamer/lookup", "/templates", "/handlers");
+
+    /**
+     * 报告版式那张图的来路
+     * <p>
+     * 单列一条而不是并进上面那张表：它不经 {@code api()}（那一支解 JSON，而这里回的是 PNG），
+     * 因此写的是完整路径。少了它，「报告长什么样」那一段就只剩一排开关，
+     * 而所见即所得的全部意义正是那张图。
+     */
+    private static final String REPORT_PREVIEW_PATH = "/config/api/report/preview";
 
     /**
      * 「本群设置」那一段要调的端点，闭集
@@ -899,7 +912,8 @@ class ConfigUiFrontendTest {
     private static final List<String> PUSH_MODEL_CALLS = List.of(
             "pushTree(", "channelIndex(", "templateState(", "layoutState(", "noticeSwitches(",
             "commandGroups(", "commandSummary(", "recentPushes(", "atAllStatus(",
-            "subscriptionSummary(", "revenueSummary(", "strandedSessions(", "channelName(");
+            "subscriptionSummary(", "revenueSummary(", "strandedSessions(", "channelName(",
+            "templateAdoption(", "restoreDefaults(", "isDefault(");
 
     /**
      * 抄进渲染代码就算退步的那几条判法，闭集
@@ -908,6 +922,132 @@ class ConfigUiFrontendTest {
             "function pushTree", "function channelIndex", "function templateState",
             "function layoutState", "function commandGroups", "function commandSummary",
             "function recentPushes", "function atAllStatus");
+
+    /**
+     * 模板编辑器那份渲染
+     */
+    private static final String TEMPLATE_VIEW = "template.js";
+
+    /**
+     * 模板编辑器那份判法
+     */
+    private static final String TEMPLATE_MODEL = "template-model.js";
+
+    /**
+     * 编辑器渲染那一层必须问过判法的那几件事，闭集
+     * <p>
+     * 一整串模板与一张张卡之间的换算、块的增删排序、落点、能不能放、@ 那一档、
+     * 以及预览里 @ 落在哪。
+     */
+    private static final List<String> TEMPLATE_MODEL_CALLS = List.of(
+            "parseTemplate(", "toTemplateText(", "normalizeCards(", "addCard(", "removeCard(",
+            "moveCard(", "insertBlock(", "moveBlock(", "splitText(", "dropIndex(",
+            "blockRefusal(", "blockSpec(", "atModeOf(", "atPlan(", "previewBubbles(", "applyEdit(");
+
+    /**
+     * 抄进渲染代码就算退步的那几条判法，闭集
+     */
+    private static final List<String> TEMPLATE_MODEL_FUNCTIONS = List.of(
+            "function parseTemplate", "function toTemplateText", "function normalizeCards",
+            "function moveBlock", "function splitText", "function dropIndex",
+            "function blockRefusal", "function atPlan", "function previewBubbles",
+            "function applyEdit");
+
+    /**
+     * 模板编辑器上那几件事的落点，由 {@code template.js} 建出来，闭集
+     * <p>
+     * 通知分栏、说明、调色板、卡片列表、@ 那一档的下拉、文本形式、气泡预览与条数，
+     * 以及报告版式的开关与那张图。
+     */
+    private static final List<String> TEMPLATE_CONTROLS = List.of(
+            "tpl-tabs", "tpl-note", "tpl-palette", "tpl-cards", "tpl-at", "tpl-raw",
+            "tpl-preview", "tpl-count", "rep-options", "rep-preview");
+
+    /**
+     * 模板编辑器各有落点，且块表那几条判法只有 template-model 一份
+     * <p>
+     * 与推送页那条同理，另外奔着三类具体的退步去：
+     * <ul>
+     *   <li><b>把换算与落点抄一份到渲染代码里。</b>它们由 {@code template-model.js} 现算，
+     *   那一份有 node 夹具逐格在量；抄进渲染代码之后夹具照样全绿——它量的还是那份没人调的判法。</li>
+     *   <li><b>把 {next} 当成一个块摆回调色板。</b>那是这一版明确撤掉的东西：分条改由
+     *   「再加一条消息」表达，摆回去之后一份模板里会同时有两种分条的说法。</li>
+     *   <li><b>自己判「@ 会落在哪」。</b>那条规则在发送那一侧只有一份实现
+     *   （{@code PushHandlerSupport.withAtBlock}），预览必须照着它算；
+     *   各判各的话，预览上少一个或多一个 @，而两种错都要等真发到群里才看得见。</li>
+     * </ul>
+     */
+    @Test
+    @DisplayName("模板编辑器各有落点，块表与 @ 的判法只有 template-model 一份")
+    void templateEditorIsWiredUp() {
+        Map<String, String> sources = coreSources();
+        String view = sources.getOrDefault(TEMPLATE_VIEW, "");
+        String model = sources.getOrDefault(TEMPLATE_MODEL, "");
+
+        List<String> bad = new ArrayList<>();
+        // 找不到那两份时判红而不是跳过：一把量不动却报绿的判据，比没有这把判据更糟
+        if (view.isBlank()) {
+            bad.add("找不到 " + TEMPLATE_VIEW + "，下面每一格都无从量起");
+        }
+        if (model.isBlank()) {
+            bad.add("找不到 " + TEMPLATE_MODEL + "，块表的判法没有落脚的地方");
+        }
+
+        for (String id : TEMPLATE_CONTROLS) {
+            if (!view.contains("'" + id + "'")) {
+                bad.add(TEMPLATE_VIEW + " 里没有 #" + id + "，编辑器少了这件事的落点");
+            }
+        }
+
+        // 引进来的名字与用到的名字要对得上。少 import 一个不是加载期的错，
+        // 是<b>那一段跑到时才抛</b>的 ReferenceError——而「保存模板」那一段恰恰是
+        // 使用者改完之后才碰到的。这一条正是本笔自己踩过的那一脚
+        String imported = importedFrom(view, TEMPLATE_MODEL);
+        for (String call : TEMPLATE_MODEL_CALLS) {
+            if (!view.contains(call)) {
+                bad.add(TEMPLATE_VIEW + " 没有问过 " + call + "，那一块算的是别处的账");
+                continue;
+            }
+            String name = call.substring(0, call.length() - 1);
+            if (!imported.contains(name)) {
+                bad.add(TEMPLATE_VIEW + " 用了 " + name + " 却没从 " + TEMPLATE_MODEL
+                        + " 引进来，那一段跑到时会抛 ReferenceError");
+            }
+        }
+        for (String function : TEMPLATE_MODEL_FUNCTIONS) {
+            if (view.contains(function)) {
+                bad.add("渲染代码里又判了一遍 " + function + "。那几条规则只许有 " + TEMPLATE_MODEL
+                        + " 一份——抄一份进来之后，夹具量的还是没人调的那一份");
+            }
+        }
+
+        // 分条不再是一个块：调色板由 blockSpec 现算，而它把 {next} 与两种手写 @ 挡在外面
+        if (view.contains("'{next}'")) {
+            bad.add(TEMPLATE_VIEW + " 里出现了 {next}。这一版把它撤了——分条改由「再加一条消息」表达，"
+                    + "摆回调色板之后一份模板里会同时有两种分条的说法");
+        }
+        if (!model.contains("NEXT")) {
+            bad.add(TEMPLATE_MODEL + " 里没有分条占位符，上面那条「渲染代码里没有」因此不作数");
+        }
+
+        assertTrue(bad.isEmpty(), "模板编辑器少了这几件事:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
+     * 某个文件从某个模块引进来的那一串名字
+     * @param text 文件全文
+     * @param module 被引的模块文件名
+     * @return 花括号里那一串，没引过时为空串
+     */
+    private String importedFrom(String text, String module) {
+        Matcher m = IMPORT.matcher(text);
+        while (m.find()) {
+            if (module.equals(m.group(2))) {
+                return m.group(1);
+            }
+        }
+        return "";
+    }
 
     /**
      * 推送页各有落点，且树与摘要的判法只有 push-model 一份
@@ -962,6 +1102,10 @@ class ConfigUiFrontendTest {
             if (!view.contains("'" + endpoint + "'")) {
                 bad.add(PUSH_VIEW + " 没有调用 " + endpoint + "，那一块此刻空着而不说为什么");
             }
+        }
+        if (!view.contains("'" + REPORT_PREVIEW_PATH + "'")) {
+            bad.add(PUSH_VIEW + " 没有调用 " + REPORT_PREVIEW_PATH
+                    + "，「报告长什么样」那一段就只剩一排开关，而所见即所得的意义正是那张图");
         }
         for (String endpoint : PUSH_SETTINGS_ENDPOINTS) {
             if (!settings.contains("'" + endpoint + "'")) {
