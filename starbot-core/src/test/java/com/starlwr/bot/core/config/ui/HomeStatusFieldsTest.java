@@ -136,7 +136,8 @@ class HomeStatusFieldsTest {
                 liveDataService,
                 timeline,
                 authService,
-                new PushTemplateDefaults(new StarBotCoreProperties()));
+                new PushTemplateDefaults(new StarBotCoreProperties()),
+                mock(UpdateCheckService.class));
     }
 
     /** 一个只声明范围与登录态位的探针，够本组用例用 */

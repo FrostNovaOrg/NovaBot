@@ -31,8 +31,7 @@ public final class ExternalConfigurationFields {
 
     static {
         // ---- 累计数据存储 ----
-        // 前三项即时生效：认这几个值的是 TotalDataStorage，它按新参数就地换一个后端。
-        // 库号还没接进那条路，仍要重启（见 RuntimeConfigurationApplier 的说明）
+        // 这四项即时生效：认这几个值的是 TotalDataStorage，它按新参数就地换一个后端
         put("spring.data.redis.host", "java.lang.String", ConfigLevel.Level.COMMON, ConfigEffect.Effect.IMMEDIATE,
                 "累计数据存储的 Redis 地址，填了才有跨场次的累计数据。"
                         + "留空时本场数据完整可用，但「我的总数据」「直播间总数据」「总数据排行榜」"
@@ -43,8 +42,8 @@ public final class ExternalConfigurationFields {
                 6379, "Redis 端口，默认 6379");
         put("spring.data.redis.password", "java.lang.String", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.IMMEDIATE,
                 "Redis 密码，未设密码时留空");
-        put("spring.data.redis.database", "java.lang.Integer", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.RESTART,
-                0, "Redis 库号，默认 0。与其他程序共用同一实例时可换一个库避免键冲突。改完需重启");
+        put("spring.data.redis.database", "java.lang.Integer", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.IMMEDIATE,
+                0, "Redis 库号，默认 0。与其他程序共用同一实例时可换一个库避免键冲突。改完即时生效，不用重启");
 
         // ---- 邮件告警的发件服务 ----
         // 收件人是 starbot.core.mail.default-to，在界面上找得到；
@@ -144,7 +143,7 @@ public final class ExternalConfigurationFields {
     /**
      * 这些配置项的生效时机
      * <p>
-     * 累计存储那三项即时生效：认它们的 {@code TotalDataStorage} 会按新参数就地换一个后端。
+     * 累计存储那四项即时生效：认它们的 {@code TotalDataStorage} 会按新参数就地换一个后端。
      * 其余仍要重启——邮件发件服务与服务端口都是启动时装配一次的 bean，改了配置对象也换不掉它们。
      */
     static Map<String, ConfigEffect.Effect> effects() {

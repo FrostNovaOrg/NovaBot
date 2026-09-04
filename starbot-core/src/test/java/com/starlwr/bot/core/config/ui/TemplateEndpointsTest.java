@@ -143,7 +143,7 @@ class TemplateEndpointsTest {
                 mock(ConfigurationLevelResolver.class),
                 new ConfigurationEffectResolver(mock(org.springframework.context.ApplicationContext.class)),
                 new ConfigurationDangerResolver(mock(org.springframework.context.ApplicationContext.class)),
-                new RuntimeConfigurationApplier(properties),
+                RuntimeConfigurationApplier.bench(properties).build(),
                 mock(ObjectProvider.class),
                 mock(ObjectProvider.class),
                 mock(com.starlwr.bot.core.service.EventStreamTokenService.class),
@@ -152,7 +152,8 @@ class TemplateEndpointsTest {
                 mock(com.starlwr.bot.core.service.LiveDataService.class),
                 mock(com.starlwr.bot.core.timeline.TimelineStore.class),
                 mock(com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService.class),
-                templateDefaults);
+                templateDefaults,
+                mock(UpdateCheckService.class));
     }
 
     private static final class FakeHandler implements StarBotEventHandler {

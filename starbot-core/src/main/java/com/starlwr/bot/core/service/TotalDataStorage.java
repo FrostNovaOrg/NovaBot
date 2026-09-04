@@ -1,5 +1,7 @@
 package com.starlwr.bot.core.service;
 
+import io.lettuce.core.ClientOptions;
+import io.lettuce.core.SocketOptions;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.DisposableBean;
@@ -13,6 +15,11 @@ import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactor
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.LongSupplier;
 
 /**
@@ -27,12 +34,18 @@ import java.util.function.LongSupplier;
  * 所以判定改成两问：<b>配了没有</b>（地址有值）与<b>此刻连不连得上</b>（探活）。
  * 两问都过才叫可用；地址改了就地换一个后端，连不上就降级，连回来就自己恢复，全程不重启。
  *
- * <h2>探活为什么带缓存</h2>
+ * <h2>探活为什么带缓存、为什么不在请求线程上做</h2>
  * 这个判定是被<b>高频问</b>的：每开一次菜单、每刷一次首页、每执行一条命令都要问一遍。
  * 每次都真去 PING 一趟，等于把一次网络往返挂在这些路径上。因此结果缓存
  * {@value #PROBE_CACHE_MILLIS} 毫秒——这个数是「掉线后最迟多久界面开始说实话」与
  * 「多久问一次不算打扰」之间的取舍：几秒的滞后在使用者眼里察觉不到，
  * 而再长就会出现「Redis 早连上了，菜单还是不列」这种解释不清的画面。
+ * <p>
+ * 但缓存只挡得住<b>问得勤</b>，挡不住<b>探得慢</b>：主机丢包（地址不可达、包被丢弃）
+ * 时连接根本建立不起来，一次探活要等满连接超时才肯死心。谁在请求线程上等这一趟，
+ * 谁就把首页与菜单挂住整整一个超时。因此探活一律在<b>后台线程</b>上做：
+ * 请求线程只读缓存，缓存过期就派一趟后台探活、照报上一个已知值；
+ * 另有一条后台定时刷新，没人问也按窗口期重探，掉线不靠下一次打开菜单才被发现。
  */
 @Slf4j
 @Service
@@ -49,6 +62,16 @@ public class TotalDataStorage implements DisposableBean {
      * Redis 一挂，使用者点开控制台就是一分钟白屏。
      */
     private static final Duration COMMAND_TIMEOUT = Duration.ofSeconds(2);
+
+    /**
+     * 建立连接本身最多等多久
+     * <p>
+     * 命令超时管的是「连上了之后一条指令等多久」，管不到建连那一段——
+     * 主机丢包（地址不可达或包被丢弃）时，建连会一直等到内核放弃为止。
+     * 客户端默认 10 秒；探活挪到后台后这一趟不再挂住任何页面，但 10 秒
+     * 意味着后台探活线程一次占满 10 秒、掉线要两个窗口才说得清，收到与命令同级。
+     */
+    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(2);
 
     /**
      * 累计存储的连接参数
@@ -103,6 +126,27 @@ public class TotalDataStorage implements DisposableBean {
 
     private final LongSupplier clock;
 
+    /**
+     * 探活在哪儿跑
+     * <p>
+     * 可注入是为判据：量「请求线程不等探活」要能把探活派到一个<b>收下但先不跑</b>的执行器上，
+     * 那样调用返回时探活压根还没发生——比拿秒表量耗时确定得多。
+     */
+    private final Executor probeExecutor;
+
+    /**
+     * 自己起的那个后台探活线程，销毁时收掉；判据台架里为 null（台架的执行器不是线程）
+     */
+    private final ScheduledExecutorService ownedProbe;
+
+    /**
+     * 一趟探活还在跑时不重复派
+     * <p>
+     * 没有它，「主机丢包」那一档会让每次判定都再派一趟：一趟还没等满连接超时死心，
+     * 下一趟又排上了——排队的都是注定白等的。
+     */
+    private final AtomicBoolean probeInFlight = new AtomicBoolean();
+
     private final Object lock = new Object();
 
     private volatile Settings settings;
@@ -120,7 +164,7 @@ public class TotalDataStorage implements DisposableBean {
 
     @Autowired
     public TotalDataStorage(Environment environment) {
-        this(readFrom(environment), TotalDataStorage::lettuce, System::currentTimeMillis);
+        this(readFrom(environment), TotalDataStorage::lettuce, System::currentTimeMillis, daemonProbeThread());
     }
 
     /**
@@ -128,16 +172,54 @@ public class TotalDataStorage implements DisposableBean {
      * <p>
      * 钟也要能换：探活带缓存，而「缓存到期之后才重新探」这件事拿真钟量得靠等——
      * 等出来的判据在慢机器上会偶尔红，那种红比不量还糟。
+     * <p>
+     * 探活执行器是「当场直跑」的那一个：判据要的是确定的读数，这一支保持旧语义——
+     * 调用返回时探活已经做完。
      * @param initial 起始连接参数
      * @param factories 建连接工厂的那一手
      * @param clock 当前时刻（毫秒）
      */
     public TotalDataStorage(@NonNull Settings initial, @NonNull ConnectionFactories factories,
                             @NonNull LongSupplier clock) {
+        this(initial, factories, clock, Runnable::run);
+    }
+
+    /**
+     * 供判据用的那一支，探活执行器可换
+     * <p>
+     * 传一个收下任务但不跑的执行器，量出来的就是「调用返回时探活还没发生」；
+     * 传后台线程，量出来的就是生产那一支的形态。
+     * @param initial 起始连接参数
+     * @param factories 建连接工厂的那一手
+     * @param clock 当前时刻（毫秒）
+     * @param probeExecutor 探活在哪儿跑
+     */
+    public TotalDataStorage(@NonNull Settings initial, @NonNull ConnectionFactories factories,
+                            @NonNull LongSupplier clock, @NonNull Executor probeExecutor) {
         this.settings = initial;
         this.factories = factories;
         this.clock = clock;
+        this.probeExecutor = probeExecutor;
+        this.ownedProbe = probeExecutor instanceof ScheduledExecutorService scheduler ? scheduler : null;
+        if (ownedProbe != null) {
+            // 生产那一支：传进来的执行器就是自己的后台线程，定时刷新也挂它身上。
+            // 被派的探活与定时那一趟共用一条线程，排队而不并发，去重那边正好挡住重活
+            ownedProbe.scheduleWithFixedDelay(this::refresh, PROBE_CACHE_MILLIS, PROBE_CACHE_MILLIS, TimeUnit.MILLISECONDS);
+        }
         rebuild();
+    }
+
+    /**
+     * 生产那一支的后台探活线程：单线程、守护
+     * <p>
+     * 守护是刻意的：探活是判定，不是数据，不值得为一个判定拦住进程退出。
+     */
+    private static ScheduledExecutorService daemonProbeThread() {
+        return Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "total-data-probe");
+            thread.setDaemon(true);
+            return thread;
+        });
     }
 
     /**
@@ -145,6 +227,10 @@ public class TotalDataStorage implements DisposableBean {
      * <p>
      * 「配了」与「连得上」都要为真。菜单列不列那两条、首页那条待办出不出、
      * {@code /api/status} 的 {@code totalDataAvailable} 是什么，问的都是这一个方法。
+     * <p>
+     * 这个方法<b>从不碰网络</b>：只读缓存；缓存过期就派一趟后台探活、照报上一个已知值。
+     * 还没探过（刚起或刚换后端）时答不可用——宁可让紧接着的下一次轮询说真话，
+     * 也不让请求线程等一趟可能等满连接超时的网络。
      * @return 可用为 true
      */
     public boolean isAvailable() {
@@ -158,13 +244,19 @@ public class TotalDataStorage implements DisposableBean {
             return reachable;
         }
 
-        synchronized (lock) {
-            // 双检：一批命令同时问过来时只探一趟
-            long inLock = clock.getAsLong();
-            if (probed && inLock - probedAt < PROBE_CACHE_MILLIS) {
-                return reachable;
-            }
+        // 缓存过期或还没探过：派一趟后台探活，这里照报上一个已知值
+        kickProbe();
+        return reachable;
+    }
 
+    /**
+     * 真去探一趟，把结果记进缓存
+     * <p>
+     * 公开是因为判据：台架要在确定的时机拿到确定的读数，等不得后台那一趟；
+     * 后台线程定时跑的也是它。
+     */
+    public void probeNow() {
+        synchronized (lock) {
             RedisTotalDataStore latest = store;
             boolean ok = latest != null && latest.reachable();
             if (probed && ok != reachable) {
@@ -177,8 +269,49 @@ public class TotalDataStorage implements DisposableBean {
             }
             reachable = ok;
             probed = true;
-            probedAt = inLock;
-            return ok;
+            probedAt = clock.getAsLong();
+        }
+    }
+
+    /**
+     * 后台定时那一趟：缓存过期就探，没人问也按窗口期刷新
+     * <p>
+     * 没有它，掉线要等下一次有人打开菜单才被发现——「没人问」不该等于「不用知道」。
+     */
+    private void refresh() {
+        if (store == null) {
+            return;
+        }
+
+        long now = clock.getAsLong();
+        if (probed && now - probedAt < PROBE_CACHE_MILLIS) {
+            return;
+        }
+
+        kickProbe();
+    }
+
+    /**
+     * 派一趟探活到后台；一趟没跑完时不重复派
+     * <p>
+     * 派不出去（执行器正在销毁）也不抛：探活本来就允许失败，这一趟没派成的
+     * 后果只是缓存多旧一会儿，不值得把异常甩给刚好来问的请求线程。
+     */
+    private void kickProbe() {
+        if (!probeInFlight.compareAndSet(false, true)) {
+            return;
+        }
+
+        try {
+            probeExecutor.execute(() -> {
+                try {
+                    probeNow();
+                } finally {
+                    probeInFlight.set(false);
+                }
+            });
+        } catch (RuntimeException e) {
+            probeInFlight.set(false);
         }
     }
 
@@ -237,8 +370,22 @@ public class TotalDataStorage implements DisposableBean {
         replace(new Settings(settings.host(), settings.port(), password, settings.database()));
     }
 
+    /**
+     * 换一个库号，就地生效
+     * @param database 库号
+     */
+    public void applyDatabase(int database) {
+        replace(new Settings(settings.host(), settings.port(), settings.password(), database));
+    }
+
     @Override
     public void destroy() {
+        // 先收后台线程再拆后端：定时那一趟若正卡在建连上，这里会把它打断，
+        // 免得进程退出后还留着一条等超时的线程
+        if (ownedProbe != null) {
+            ownedProbe.shutdownNow();
+        }
+
         synchronized (lock) {
             RedisTotalDataStore current = store;
             store = null;
@@ -267,8 +414,8 @@ public class TotalDataStorage implements DisposableBean {
     /**
      * 按当前参数换一个后端
      * <p>
-     * 换完<b>不当场探活</b>，只把探活结果作废：新地址通不通是下一次有人问的时候现探的，
-     * 在这里探等于把一次可能长达数秒的网络等待挂在「保存配置」那个按钮上。
+     * 换完<b>不当场探活</b>，只把探活结果作废：新地址通不通由下一次有人问或后台定时
+     * 派出的那一趟去探，在这里探等于把一次可能长达数秒的网络等待挂在「保存配置」那个按钮上。
      * <p>
      * 建不起来时后端置空（表现为「连不上」），而不是留着上一个继续用：
      * 留着的话，配置文件里写的是新地址，跑着的是旧地址，<b>而界面会说已生效</b>。
@@ -328,7 +475,14 @@ public class TotalDataStorage implements DisposableBean {
             standalone.setPassword(RedisPassword.of(settings.password()));
         }
 
+        // 建连超时 spring-data-redis 没有直设口，只能下到 lettuce 的 ClientOptions 这一层；
+        // lettuce 是 spring-boot-starter-data-redis 传递带进来的，本模块没有为它另立声明
         LettuceClientConfiguration client = LettuceClientConfiguration.builder()
+                .clientOptions(ClientOptions.builder()
+                        .socketOptions(SocketOptions.builder()
+                                .connectTimeout(CONNECT_TIMEOUT)
+                                .build())
+                        .build())
                 .commandTimeout(COMMAND_TIMEOUT)
                 .shutdownTimeout(Duration.ofMillis(200))
                 .build();

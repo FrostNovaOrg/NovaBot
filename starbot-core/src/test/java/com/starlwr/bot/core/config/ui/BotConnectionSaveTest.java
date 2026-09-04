@@ -161,7 +161,7 @@ class BotConnectionSaveTest {
                 mock(ConfigurationLevelResolver.class),
                 new ConfigurationEffectResolver(mock(org.springframework.context.ApplicationContext.class)),
                 new ConfigurationDangerResolver(mock(org.springframework.context.ApplicationContext.class)),
-                new RuntimeConfigurationApplier(properties),
+                RuntimeConfigurationApplier.bench(properties).build(),
                 testers,
                 mock(ObjectProvider.class),
                 mock(com.starlwr.bot.core.service.EventStreamTokenService.class),
@@ -170,7 +170,8 @@ class BotConnectionSaveTest {
                 mock(com.starlwr.bot.core.service.LiveDataService.class),
                 mock(com.starlwr.bot.core.timeline.TimelineStore.class),
                 mock(com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService.class),
-                new com.starlwr.bot.core.service.PushTemplateDefaults(properties));
+                new com.starlwr.bot.core.service.PushTemplateDefaults(properties),
+                mock(UpdateCheckService.class));
     }
 
     private JSONObject body() {

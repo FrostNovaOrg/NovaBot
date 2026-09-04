@@ -223,6 +223,7 @@ class StreamerLookupRoomTest {
                 mock(LiveDataService.class),
                 mock(TimelineStore.class),
                 mock(ConfigUiAuthService.class),
-                new PushTemplateDefaults(new StarBotCoreProperties()));
+                new PushTemplateDefaults(new StarBotCoreProperties()),
+                mock(UpdateCheckService.class));
     }
 }
