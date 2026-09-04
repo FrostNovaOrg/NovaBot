@@ -49,7 +49,12 @@ import static org.mockito.Mockito.when;
  * @ 模式矩阵
  * <p>
  * 三种模式 ×「管理员且有额度／非管理员／额度用尽」× 开播与动态两类通知，共十八格，
- * 每格量三个数：<b>谁被 @ 到、有没有退回订阅名单、时间线记了几条</b>。
+ * 每格量三个数：<b>谁被 @ 到、发出去几条、时间线记了几条</b>。
+ * <p>
+ * 第二个数原本量的是「有没有退回订阅名单」，读法是「@ 串独占一条」。@ 串并进正文之后
+ * 那个读法量不到了——退回的那一格与模式一在发出去的字面上完全同形，分得开它们的是
+ * 时间线那一列。改量条数不是退让：<b>「@ 全体那一档只发一条」正是这次要守的事</b>，
+ * 而它在旧读法下恒为假、没有任何一格看得见。
  * <p>
  * <b>为什么要整张表而不是挑几格</b>：这三件事分别落在两处代码——「@ 块怎么拼」在推送处理器，
  * 「@ 不出去时怎么办」在发送器，而模式是唯一把它们串起来的东西。只验几格的话，
@@ -130,38 +135,38 @@ class BilibiliAtModeMatrixTest {
     /**
      * 一格的读数
      * @param who 谁被 @ 到
-     * @param fellBack 是否退回了订阅名单：@ 串独占一条，也就是原本放 @全体成员 的那一条
+     * @param segments 这次推送真正投出去几条消息
      * @param timeline 本次推送记下的「未 @ 全体」事件条数
      */
-    private record Reading(AtWho who, boolean fellBack, int timeline) {
+    private record Reading(AtWho who, int segments, int timeline) {
     }
 
     @Test
-    @DisplayName("十八格逐格对表：谁被 @、是否退回、时间线条数")
+    @DisplayName("十八格逐格对表：谁被 @、发出去几条、时间线条数")
     void matrix() {
         Map<String, Reading> expected = new LinkedHashMap<>();
         for (Notice notice : Notice.values()) {
             // 模式一从头到尾不碰 @全体成员，因此权限与额度怎么变都影响不到它
             for (Situation situation : Situation.values()) {
                 expected.put(key(AtMode.SUBSCRIBERS, situation, notice),
-                        new Reading(AtWho.SUBSCRIBERS, false, 0));
+                        new Reading(AtWho.SUBSCRIBERS, 1, 0));
             }
 
             // 模式二：@ 得出去就 @ 全体，@ 不出去就谁也不 @，两种拦法各记一条
             expected.put(key(AtMode.ALL, Situation.ADMIN_WITH_QUOTA, notice),
-                    new Reading(AtWho.EVERYONE, false, 0));
+                    new Reading(AtWho.EVERYONE, 1, 0));
             expected.put(key(AtMode.ALL, Situation.NOT_ADMIN, notice),
-                    new Reading(AtWho.NOBODY, false, 1));
+                    new Reading(AtWho.NOBODY, 1, 1));
             expected.put(key(AtMode.ALL, Situation.QUOTA_EXHAUSTED, notice),
-                    new Reading(AtWho.NOBODY, false, 1));
+                    new Reading(AtWho.NOBODY, 1, 1));
 
             // 模式三：@ 不出去的那一次改 @ 订阅名单，同样各记一条
             expected.put(key(AtMode.ALL_OR_SUBSCRIBERS, Situation.ADMIN_WITH_QUOTA, notice),
-                    new Reading(AtWho.EVERYONE, false, 0));
+                    new Reading(AtWho.EVERYONE, 1, 0));
             expected.put(key(AtMode.ALL_OR_SUBSCRIBERS, Situation.NOT_ADMIN, notice),
-                    new Reading(AtWho.SUBSCRIBERS, true, 1));
+                    new Reading(AtWho.SUBSCRIBERS, 1, 1));
             expected.put(key(AtMode.ALL_OR_SUBSCRIBERS, Situation.QUOTA_EXHAUSTED, notice),
-                    new Reading(AtWho.SUBSCRIBERS, true, 1));
+                    new Reading(AtWho.SUBSCRIBERS, 1, 1));
         }
 
         Map<String, Reading> actual = new LinkedHashMap<>();
@@ -171,7 +176,7 @@ class BilibiliAtModeMatrixTest {
                     Harness harness = new Harness(situation);
                     List<String> sent = harness.run(params(mode, notice, null), notice);
                     actual.put(key(mode, situation, notice),
-                            new Reading(whoIn(sent), sent.contains(SUBSCRIBER_AT), harness.skipped));
+                            new Reading(whoIn(sent), sent.size(), harness.skipped));
                 }
             }
         }
@@ -180,16 +185,23 @@ class BilibiliAtModeMatrixTest {
     }
 
     @Test
-    @DisplayName("模式三退回时，@ 全体那一条原地换成订阅名单，正文一字不动")
+    @DisplayName("模式三退回时，@ 串就地换成订阅名单，正文一字不动，仍是一条")
     void fallbackReplacesInPlace() {
-        assertEquals(List.of(SUBSCRIBER_AT, LIVE_BODY),
+        assertEquals(List.of(SUBSCRIBER_AT + LIVE_BODY),
                 send(AtMode.ALL_OR_SUBSCRIBERS, Situation.NOT_ADMIN, Notice.LIVE, null));
     }
 
     @Test
-    @DisplayName("模式二被摘时，只剩 @全体成员 的那一条整条不发，正文照常")
-    void modeAllDropsTheEmptySegment() {
+    @DisplayName("模式二被摘时，@ 串就地消失，剩下的正文照发")
+    void modeAllDropsTheAtBlockOnly() {
         assertEquals(List.of(LIVE_BODY), send(AtMode.ALL, Situation.QUOTA_EXHAUSTED, Notice.LIVE, null));
+    }
+
+    @Test
+    @DisplayName("@全体成员 与正文同处一条：群里只响一次")
+    void atAllRidesInTheBody() {
+        assertEquals(List.of(AT_ALL + LIVE_BODY),
+                send(AtMode.ALL, Situation.ADMIN_WITH_QUOTA, Notice.LIVE, null));
     }
 
     @Test

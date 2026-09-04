@@ -54,7 +54,9 @@ import static org.mockito.Mockito.when;
  * <b>而那张图看起来完全正常</b>，这一半只有反向的期望写得出来。
  * <p>
  * 时间由夹具里的时钟说了算：那两分钟的窗口若靠真等，这张表没人会跑第二遍，
- * 而不跑的表与跑过且通过的表在报告里长得一样。
+ * 而不跑的表与跑过且通过的表在报告里长得一样。<b>命令冷却读的也是这一把钟</b>——
+ * 两把钟的那一版里，凡是「等一会儿再说一句」的语料都会被冷却挡在门外，
+ * 挡住之后机器人一个字都不说，而那与「这一句本就不该有回应」是同一种读数。
  */
 @DisplayName("回序号选主播语料")
 class BilibiliStreamerFollowUpCorpusTest {
@@ -139,11 +141,18 @@ class BilibiliStreamerFollowUpCorpusTest {
                         at("直播间数据", "回序号选一位"),
                         atAfter(Duration.ofSeconds(119), "2", "已出图：主播乙")),
 
-                // 「追问过期之后还能重新问一次」这一形态本表量不到：命令的 3 秒冷却读的是真实时钟，
-                // 而这里的时钟是推着走的，第二条命令会撞在冷却上。要量得给分发器也装上同一把时钟
                 corpus("过了两分钟 —— 作废，不照着办",
                         at("直播间数据", "回序号选一位"),
-                        atAfter(Duration.ofSeconds(121), "2", "!已出图")));
+                        atAfter(Duration.ofSeconds(121), "2", "!已出图", "用法：")),
+
+                // 上一行只说了「作废」，而作废之后<b>还问不问得出来</b>是另一件事：
+                // 追问表里若留着一份过期的记录不清，第二次问会被它顶掉，现象是「机器人不理我了」。
+                // 这一行要走完 121 秒＋命令冷却两道时间，靠真等没人会跑第二遍——
+                // 分发器与追问因此共用同一把推着走的时钟
+                corpus("过期之后重新问 —— 清单照样问得出来",
+                        at("直播间数据", "回序号选一位"),
+                        atAfter(Duration.ofSeconds(121), "2", "!已出图"),
+                        atAfter(Duration.ofSeconds(5), "直播间数据", "回序号选一位")));
     }
 
     @ParameterizedTest(name = "{0}")
@@ -213,7 +222,9 @@ class BilibiliStreamerFollowUpCorpusTest {
             ObjectProvider<CommandFollowUp> followUps = mock(ObjectProvider.class);
             when(followUps.iterator()).thenAnswer(invocation -> List.of((CommandFollowUp) choice).iterator());
 
-            dispatcher = new CommandDispatcher(provider, followUps, settings, dataSource, sender, properties);
+            // 分发器与追问共用这一把钟：两者各读各的时间时，「过期之后重新问」那一行
+            // 会撞在读真钟的那道冷却上，而撞上冷却与「追问表没清干净」在回复里长得一样（都是一个字不说）
+            dispatcher = new CommandDispatcher(provider, followUps, settings, dataSource, sender, properties, clock);
 
             @SuppressWarnings("unchecked")
             ObjectProvider<CommandDispatcher> self = mock(ObjectProvider.class);

@@ -15,6 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -86,16 +87,38 @@ public class CommandDispatcher {
      */
     private final Map<String, Instant> lastExecuted = new ConcurrentHashMap<>();
 
+    /**
+     * 冷却所用的时钟
+     * <p>
+     * 冷却与追问的有效期是同一条时间轴上的两件事：机器人问完「是哪一位」，
+     * 那份追问两分钟后作废，而<b>作废之后还问不问得出来</b>只有把时间推过去才量得到。
+     * 这里读真钟的话，推时间的那一端推不动它，第二次提问会撞在 3 秒冷却上——
+     * 现象与「追问表没清干净」一模一样，而那正是要量的那一件。
+     */
+    private final Clock clock;
+
     @Autowired
     public CommandDispatcher(ObjectProvider<StarBotCommand> commands, ObjectProvider<CommandFollowUp> followUps,
                              CommandSettingsService settings, AbstractDataSource dataSource,
                              StarBotMessageSender sender, StarBotCoreProperties properties) {
+        this(commands, followUps, settings, dataSource, sender, properties, Clock.systemDefaultZone());
+    }
+
+    /**
+     * 指定时钟的构造方法，供把时间推着走的测试使用
+     *
+     * @see #clock 为什么这把钟必须能换
+     */
+    public CommandDispatcher(ObjectProvider<StarBotCommand> commands, ObjectProvider<CommandFollowUp> followUps,
+                             CommandSettingsService settings, AbstractDataSource dataSource,
+                             StarBotMessageSender sender, StarBotCoreProperties properties, Clock clock) {
         this.commands = commands;
         this.followUps = followUps;
         this.settings = settings;
         this.dataSource = dataSource;
         this.sender = sender;
         this.properties = properties;
+        this.clock = clock;
     }
 
     @EventListener(StarBotRemoteMessageEvent.class)
@@ -214,12 +237,13 @@ public class CommandDispatcher {
      */
     private boolean acquireCooldown(StarBotRemoteMessageEvent event, String name) {
         String key = event.getPlatform() + ":" + event.getMessageType() + ":" + event.getNum();
+        Instant now = clock.instant();
         Instant last = lastExecuted.get(key);
-        if (last != null && Instant.now().isBefore(last.plus(COOLDOWN))) {
+        if (last != null && now.isBefore(last.plus(COOLDOWN))) {
             log.debug("会话 {} 处于冷却期, 已忽略: {}", event.getNum(), name);
             return false;
         }
-        lastExecuted.put(key, Instant.now());
+        lastExecuted.put(key, now);
         return true;
     }
 

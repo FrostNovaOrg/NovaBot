@@ -98,6 +98,18 @@ public class AtAllQuotaService {
         return used(platform, LocalDate.now(ZONE));
     }
 
+    /**
+     * 这份计数属于哪一天
+     * <p>
+     * 由本服务给出而不是让调用方自己算：自然日按东八区切（见 {@link #ZONE}），
+     * 两处各写一遍时区的话，海外机器上界面显示的日期会与真正在计数的那一天差一天，
+     * 而那一天正是「数字怎么自己回去了」最难查的时候。
+     * @return 计数所属的日期
+     */
+    public LocalDate today() {
+        return LocalDate.now(ZONE);
+    }
+
     private int used(String key, LocalDate today) {
         DailyCount current = counts.get(key);
         return current == null || !current.date().equals(today) ? 0 : current.used();

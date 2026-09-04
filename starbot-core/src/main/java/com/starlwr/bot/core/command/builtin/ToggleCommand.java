@@ -8,6 +8,8 @@ import com.starlwr.bot.core.command.StarBotCommand;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 
+import java.util.function.Predicate;
+
 /**
  * 「启用命令」与「禁用命令」的共同实现
  * <p>
@@ -61,6 +63,13 @@ public abstract class ToggleCommand implements StarBotCommand {
 
         StarBotCommand command = resolve(target);
         if (command == null) {
+            // 「本机没开」与「没有这条命令」要分得开：前者去配一份存储就回来了，
+            // 后者该去看菜单。说成同一句的话，能力没配好的那个人会一直在改自己的措辞
+            StarBotCommand unavailable = first(target, item -> !item.available());
+            if (unavailable != null) {
+                return CommandReply.of("「" + unavailable.name() + "」在本机没开，不用开关它，"
+                        + "把它要的能力配好之后会自动回来");
+            }
             return CommandReply.of("没有名为「" + target + "」的命令，发送「菜单」可查看全部命令");
         }
         if (!command.disableable()) {
@@ -82,14 +91,30 @@ public abstract class ToggleCommand implements StarBotCommand {
     }
 
     /**
-     * 按命令名或别名找到目标命令
+     * 按命令名或别名找到目标命令，<b>只在本机可用的那些里找</b>
+     * <p>
+     * 不可用说的是整台机器缺着这条命令要靠的能力（如累计数据要外部存储），
+     * 那样的命令菜单里已经不列了，开关它同样不会有任何效果：关掉的是一条本来就用不了的命令，
+     * 而这条记录留在状态文件里，界面上看得见、群里却怎么也验证不了。
+     * 能力配好之后它自己就回来了，那才是使用者要做的那一件事。
      */
     private StarBotCommand resolve(String name) {
+        return first(name, StarBotCommand::available);
+    }
+
+    /**
+     * 在满足条件的命令里按命令名或别名找头一个
+     * @param name 命令名或别名
+     * @param filter 候选范围
+     * @return 找到的命令，没有时为 null
+     */
+    private StarBotCommand first(String name, Predicate<StarBotCommand> filter) {
         CommandDispatcher instance = dispatcher.getIfAvailable();
         if (instance == null) {
             return null;
         }
         return instance.all().stream()
+                .filter(filter)
                 .filter(command -> command.name().equals(name) || command.aliases().contains(name))
                 .findFirst()
                 .orElse(null);
