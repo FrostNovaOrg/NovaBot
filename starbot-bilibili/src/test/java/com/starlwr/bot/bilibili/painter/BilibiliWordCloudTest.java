@@ -81,6 +81,15 @@ class BilibiliWordCloudTest {
      */
     private static final int WORD_GAP = 8;
 
+    /**
+     * 词距随字号的系数：相邻两词最小间距 = max(8, round(本系数 × 两词中较大字号))。
+     * 同上面那几个数字的纪律：<b>写死在判据侧，不从被测取</b>——引 {@code WordCloudLayout}
+     * 的常量的话，把系数改成 0、词距退回固定 8px，判据会跟着一起松，头名粘连这件事
+     * 就再也量不出来了。封顶字对另有一条不取整的硬线：实距 ≥ 本系数 × 56（见
+     * {@code geometryHoldsAcrossRandomCorpora} 末尾的封顶判）
+     */
+    private static final double WORD_GAP_PER_FONT = 0.35;
+
     private static final int FRAME_MARGIN = 8;
 
     private static final int FILL_TARGET_PERCENT = 85;
@@ -94,7 +103,8 @@ class BilibiliWordCloudTest {
      * <p>
      * 🔴 这一条<b>不是把填充率判据放宽</b>：32 是量出来的——词数 5～90 各两颗种子扫一遍，
      * 凡填充率不足 85% 的那 21 个词数，最小字号实测都在 38 以上（最低 38＝17 词那组），
-     * 取 32 留 6px 余量。把整体放大那一段拆掉，最小字号会停在 18，两条都不成立即红；
+     * 取 32 留 6px 余量。词距随字号加宽后重排，同一组升到 41，余量只宽不窄。
+     * 把整体放大那一段拆掉，最小字号会停在 18，两条都不成立即红；
      * 反过来「一律画成最大」也过不去，落词总数那一条会先红
      */
     private static final int FILL_EXEMPT_FONT_SIZE = 32;
@@ -290,6 +300,11 @@ class BilibiliWordCloudTest {
         int minFontSize = Integer.MAX_VALUE;
         int maxFontSize = 0;
         int placedTotal = 0;
+        // 逐对折算出的期望间距里最小的那档——「下限有没有被走到过」拿它对照（见方法末尾）
+        int minExpected = Integer.MAX_VALUE;
+        // 较大字号封顶的词对：个数与最小实距。个数也要记，空集时封顶判恒真
+        int topPairs = 0;
+        int topPairMinClearance = Integer.MAX_VALUE;
 
         for (int group = 0; group < 20; group++) {
             long seed = 92_000L + group;
@@ -305,24 +320,35 @@ class BilibiliWordCloudTest {
 
             placedTotal += result.placements().size();
 
-            // ③ 两两隔开 ≥8px（隔开 <0 即压叠）、全在框内且离框边 ≥8px
-            List<Rectangle> boxes = result.placements().stream().map(WordCloudLayout.Placement::box).toList();
+            // ③ 两两隔开：≥8 下限，再往上随两词中较大的字号走（隔开 <0 即压叠）、
+            //    全在框内且离框边 ≥8px
+            List<WordCloudLayout.Placement> placed = result.placements();
             int groupMinClearance = Integer.MAX_VALUE;
-            for (int i = 0; i < boxes.size(); i++) {
-                Rectangle a = boxes.get(i);
+            for (int i = 0; i < placed.size(); i++) {
+                Rectangle a = placed.get(i).box();
                 if (a.x < FRAME_MARGIN || a.y < FRAME_MARGIN
                         || a.x + a.width > CONTENT_WIDTH - FRAME_MARGIN
                         || a.y + a.height > CLOUD_HEIGHT - FRAME_MARGIN) {
-                    failures.add("第" + group + "组「" + result.placements().get(i).text() + "」离框边不足 "
+                    failures.add("第" + group + "组「" + placed.get(i).text() + "」离框边不足 "
                             + FRAME_MARGIN + "px " + a);
                 }
-                for (int j = i + 1; j < boxes.size(); j++) {
-                    int clearance = clearance(a, boxes.get(j));
+                for (int j = i + 1; j < placed.size(); j++) {
+                    int clearance = clearance(a, placed.get(j).box());
                     groupMinClearance = Math.min(groupMinClearance, clearance);
-                    if (clearance < WORD_GAP) {
-                        failures.add("第" + group + "组「" + result.placements().get(i).text() + "」与「"
-                                + result.placements().get(j).text() + "」只隔开 " + clearance + "px "
-                                + a + " 与 " + boxes.get(j));
+
+                    int larger = Math.max(placed.get(i).fontSize(), placed.get(j).fontSize());
+                    int expected = expectedGap(larger);
+                    minExpected = Math.min(minExpected, expected);
+                    if (clearance < expected) {
+                        failures.add("第" + group + "组「" + placed.get(i).text() + "」与「"
+                                + placed.get(j).text() + "」只隔开 " + clearance + "px, 较大字号 "
+                                + larger + " 应 ≥" + expected + "px " + a + " 与 " + placed.get(j).box());
+                    }
+
+                    // 封顶字对单独记：这一档是「56px 相邻两词肉眼分得开」的正主
+                    if (larger == FONT_SIZE_MAX) {
+                        topPairs++;
+                        topPairMinClearance = Math.min(topPairMinClearance, clearance);
                     }
                 }
             }
@@ -340,7 +366,7 @@ class BilibiliWordCloudTest {
 
             int colors = (int) result.placements().stream().map(WordCloudLayout.Placement::color).distinct().count();
             readings.add(String.format("第%02d组 词数%3d 落%3d 丢%2d 填充%5.1f%% 字号%2d~%2d 首次比%5.3f 用色%d 最小实距%3s",
-                    group, size, result.placements().size(), result.dropped(), fill,
+                    group, size, placed.size(), result.dropped(), fill,
                     groupMinFontSize, groupMaxFontSize, topRatio(result), colors,
                     groupMinClearance == Integer.MAX_VALUE ? "—" : String.valueOf(groupMinClearance)));
 
@@ -371,13 +397,23 @@ class BilibiliWordCloudTest {
             failures.addAll(accentRatioFailures(group, result, laid));
         }
 
-        // 🔴 「≥8px」只说得出下限没被破，说不出下限有没有被走到过：
-        // 把间距改回「各涨 8px」是 16px，一样 ≥8。要求最小实距<b>恰好</b>是 8，
-        // 那一条才既拦得住压叠、又拦得住悄悄改回去
+        // 🔴 「≥期望」只说得出下限没被破，说不出下限有没有被走到过：
+        // 把间距改回「两边各涨」是隔开翻倍，一样每对都 ≥期望。要求最小实距离
+        // 期望里最小的那档不超过 1px（实现里四舍五入的那一档松），下限才仍被走到过
         int placedTarget = (int) Math.ceil(PLACED_BEFORE * 1.5);
-        if (minClearance != WORD_GAP) {
-            failures.add("相邻词最小实距 " + minClearance + "px, 应恰为 " + WORD_GAP
-                    + "px（大于它说明词与词之间空得比定的还多）");
+        if (minClearance > minExpected + 1) {
+            failures.add("相邻词最小实距 " + minClearance + "px, 期望里最小一档是 " + minExpected
+                    + "px（隔得比定的还宽得多, 可能又改回了两边各涨一半）");
+        }
+        // 硬线：56px 的相邻两词肉眼要分得开。固定 8px 时这一档
+        // 实距就是 8（改前实读）；按系数折要 ≥0.35×56=19.6px。不取整地比——
+        // 取整到 19 会把这条线悄悄降一档。一对封顶词对都没有时这条恒真, 连红都红不出来
+        if (topPairs < 1) {
+            failures.add("20 组语料里没有一对较大字号 " + FONT_SIZE_MAX + " 的相邻词, 封顶判落空");
+        }
+        if (topPairMinClearance < WORD_GAP_PER_FONT * FONT_SIZE_MAX) {
+            failures.add(String.format("封顶字号 %d 的相邻词最小实距 %dpx, 应 ≥%.1fpx（固定 8px 正是这一档粘连的由来）",
+                    FONT_SIZE_MAX, topPairMinClearance, WORD_GAP_PER_FONT * FONT_SIZE_MAX));
         }
         if (placedTotal < placedTarget) {
             failures.add("20 组合计落词 " + placedTotal + " 个, 不足改前 " + PLACED_BEFORE
@@ -391,8 +427,9 @@ class BilibiliWordCloudTest {
                     + "（整体放大是乘在字号上的，只钳按词频算出来的那一档钳不住它）");
         }
 
-        String summary = String.format("合计 落%d（改前 %d, 需 ≥%d）最小实距 %d 字号 %d~%d（上限 %d）",
-                placedTotal, PLACED_BEFORE, placedTarget, minClearance, minFontSize, maxFontSize, FONT_SIZE_MAX);
+        String summary = String.format("合计 落%d（改前 %d, 需 ≥%d）最小实距 %d（最小期望 %d）封顶对 %d 最小实距 %d 字号 %d~%d（上限 %d）",
+                placedTotal, PLACED_BEFORE, placedTarget, minClearance, minExpected,
+                topPairs, topPairMinClearance, minFontSize, maxFontSize, FONT_SIZE_MAX);
         readings.add(summary);
 
         Path dir = Path.of("target", "painter-output");
@@ -404,11 +441,21 @@ class BilibiliWordCloudTest {
     }
 
     /**
+     * 这个字号的词与邻居至少该隔多少：max(下限, round(系数 × 字号))，数字全在判据侧写死
+     * <p>
+     * 间距按<b>两词中较大的字号</b>折——小词挨着大词也让出大词的间距，不然挨着
+     * 头名的小词照样粘上去
+     */
+    private static int expectedGap(int largerFontSize) {
+        return Math.max(WORD_GAP, (int) Math.round(WORD_GAP_PER_FONT * largerFontSize));
+    }
+
+    /**
      * 两个包围盒之间隔开多少：两个轴上各自隔开的距离取大的那个
      * <p>
-     * 取大的那个而不是欧氏距离，是因为版式规则控住的正是它——「一个框涨 {@value #WORD_GAP}px
-     * 之后与另一个不相交」等价于「两轴之中至少有一轴隔开了 {@value #WORD_GAP}px」。
-     * 两轴都没隔开（返回负数）就是压叠了
+     * 取大的那个而不是欧氏距离，是因为版式规则控住的正是它——「一个框涨 {@code gap}px
+     * 之后与另一个不相交」等价于「两轴之中至少有一轴隔开了 {@code gap}px」
+     * （{@code gap} 即 {@link #expectedGap}）。两轴都没隔开（返回负数）就是压叠了
      */
     private static int clearance(Rectangle a, Rectangle b) {
         int dx = Math.max(b.x - (a.x + a.width), a.x - (b.x + b.width));

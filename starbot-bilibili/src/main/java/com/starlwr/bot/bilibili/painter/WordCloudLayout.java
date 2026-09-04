@@ -26,7 +26,8 @@ import java.util.Random;
  *       全场词频相同时分母为零，一律取下限，靠下面的整体放大去填满</li>
  *   <li>按词频从高到低逐个放，位置沿中心向外的<b>椭圆</b>螺旋试探——椭圆的长短轴比
  *       取自框本身，否则在 830×380 这样的扁框里词会挤成一个圆、四角空着</li>
- *   <li>相邻两个词之间隔开 {@value #WORD_GAP}px，词与框边之间留 {@value #FRAME_MARGIN}px</li>
+ *   <li>相邻两个词之间至少隔开 {@value #WORD_GAP}px，再往上随两词中较大的字号走
+ *       （见 {@link #WORD_GAP_PER_FONT}）；词与框边之间留 {@value #FRAME_MARGIN}px</li>
  *   <li>放不下的词丢掉。从大到小放，丢掉的自然是最小的那几个</li>
  *   <li>全部放完后若外包围盒不足框的 {@value #FILL_TARGET_PERCENT}%，字号整体放大一档重排，
  *       直到够了、或者再放大反而更差；放大之后照旧钳在 18～56，头名再多压一道（见
@@ -38,13 +39,27 @@ import java.util.Random;
  */
 final class WordCloudLayout {
     /**
-     * 相邻两个词的包围盒之间至少隔开的空白
+     * 相邻两个词的包围盒之间至少隔开的空白<b>下限</b>；字号大过它的词按
+     * {@link #WORD_GAP_PER_FONT} 折出更大的间距
      * <p>
      * 🔴 这是<b>两个词之间实际隔开多少</b>，不是每个词自己四周涨多少。头一版按后者写：
      * 两个词各涨 8px 再判不相交，于是墨与墨之间隔的其实是 16px，看上去空得发散。
      * 判据也要按这个形去量——量「各涨 8px 后不相交」的尺子读的是 16
      */
     static final int WORD_GAP = 8;
+
+    /**
+     * 词距随字号的系数：相邻两词最小间距＝{@code max(WORD_GAP, 本系数 × 两词中较大字号)}
+     * <p>
+     * 固定 8px 是按 18px 的尾词定的：小词隔 8px 恰好，可同一道间距落在 56px 的头名上
+     * 就是近乎粘连——dm-01 场次里 {@code dog} 与 {@code 鬼魂} 被读成一个连写的词，
+     * 冷清场次十几个 56px 的词排成整行连读。系数取 0.35：56px 的相邻两词隔开 20px
+     * （约字高的三分之一，肉眼分得开），18px 的小词折出来 6px、仍走 {@value #WORD_GAP} 下限，
+     * 不为小词多让版面。三份真实语料邻档实测（落词三档都是 72）：0.30 时 56px 词对隔
+     * 17px，头几名仍近得像一句话；0.40 时 22px 分得更开，但最密的一份语料填充掉到
+     * 85% 贴线、最小字号被压到 24，同一块版面少站词
+     */
+    static final double WORD_GAP_PER_FONT = 0.35;
 
     /**
      * 词与框边之间至少留出的空白
@@ -298,7 +313,7 @@ final class WordCloudLayout {
     private static Result placeAll(List<Word> sorted, int[] baseSizes, boolean[] accented, double scale,
                                    int width, int height, long seed, Measurer measurer) {
         List<Placement> placements = new ArrayList<>();
-        List<Rectangle> occupied = new ArrayList<>();
+        List<PlacedWord> occupied = new ArrayList<>();
         int dropped = 0;
 
         int[] sizes = effectiveFontSizes(baseSizes, scale);
@@ -315,13 +330,14 @@ final class WordCloudLayout {
                 continue;
             }
 
-            Rectangle box = spiralSearch(extent, occupied, width, height, phase);
+            int fontGap = fontGapOf(sizes[i]);
+            Rectangle box = spiralSearch(extent, fontGap, occupied, width, height, phase);
             if (box == null) {
                 dropped++;
                 continue;
             }
 
-            occupied.add(box);
+            occupied.add(new PlacedWord(box, fontGap));
             placements.add(new Placement(sorted.get(i).text(), i + 1, sizes[i], box, colorOf(i + 1, accented[i])));
         }
 
@@ -339,9 +355,25 @@ final class WordCloudLayout {
     }
 
     /**
+     * 一个已放下的词：包围盒，与它按自己字号折出的词距
+     * <p>
+     * 只存原框不存涨过的框：与下一个词隔多少要按<b>两个词</b>的字号现算，
+     * 存成涨过的就把它与小组词的间距焊死在大词那一档上
+     */
+    private record PlacedWord(Rectangle box, int fontGap) {
+    }
+
+    /**
+     * 这个字号的词按系数折出的词距（不含 {@value #WORD_GAP} 下限——下限在与已放词合算时取 max）
+     */
+    private static int fontGapOf(int fontSize) {
+        return (int) Math.round(WORD_GAP_PER_FONT * fontSize);
+    }
+
+    /**
      * 沿中心向外的椭圆螺旋找第一个放得下的位置，找不到返回 null
      */
-    private static Rectangle spiralSearch(Dimension extent, List<Rectangle> occupied,
+    private static Rectangle spiralSearch(Dimension extent, int fontGap, List<PlacedWord> occupied,
                                           int width, int height, double phase) {
         double centerX = width / 2.0;
         double centerY = height / 2.0;
@@ -364,7 +396,7 @@ final class WordCloudLayout {
             int y = (int) Math.round(centerY + radius * Math.sin(t + phase) - extent.height / 2.0);
             Rectangle candidate = new Rectangle(x, y, extent.width, extent.height);
 
-            if (fits(candidate, occupied, width, height)) {
+            if (fits(candidate, fontGap, occupied, width, height)) {
                 return candidate;
             }
 
@@ -377,19 +409,22 @@ final class WordCloudLayout {
     /**
      * 这个位置放得下吗：离框边够远，也不能贴上已放下的词
      */
-    private static boolean fits(Rectangle candidate, List<Rectangle> occupied, int width, int height) {
+    private static boolean fits(Rectangle candidate, int fontGap, List<PlacedWord> occupied,
+                                int width, int height) {
         if (candidate.x < FRAME_MARGIN || candidate.y < FRAME_MARGIN
                 || candidate.x + candidate.width > width - FRAME_MARGIN
                 || candidate.y + candidate.height > height - FRAME_MARGIN) {
             return false;
         }
 
-        // 🔴 只涨候选框这一次，occupied 里存的是原框：一边涨 8px 与不相交合起来，
-        // 恰好是「两个词之间隔开 8px」。两边都涨会变成隔开 16px
-        Rectangle spaced = new Rectangle(candidate.x - WORD_GAP, candidate.y - WORD_GAP,
-                candidate.width + WORD_GAP * 2, candidate.height + WORD_GAP * 2);
-        for (Rectangle taken : occupied) {
-            if (taken.intersects(spaced)) {
+        // 🔴 还是只涨候选框这一次，occupied 里存的是原框。涨多少逐个已放词算：
+        // 候选与已放词 i 之间隔 max(下限, 系数×两词中较大字号)——间距跟着大词走，
+        // 小词挨着大词也让出大词的间距。两边都涨会把这个间距翻倍
+        for (PlacedWord taken : occupied) {
+            int gap = Math.max(Math.max(WORD_GAP, fontGap), taken.fontGap());
+            Rectangle spaced = new Rectangle(candidate.x - gap, candidate.y - gap,
+                    candidate.width + gap * 2, candidate.height + gap * 2);
+            if (taken.box().intersects(spaced)) {
                 return false;
             }
         }
