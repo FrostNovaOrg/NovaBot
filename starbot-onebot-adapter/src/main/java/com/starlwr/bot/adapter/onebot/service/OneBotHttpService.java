@@ -24,8 +24,9 @@ import org.springframework.web.client.HttpClientErrorException;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledFuture;
 
 /**
  * OneBot HTTP 服务
@@ -45,7 +46,21 @@ public class OneBotHttpService {
 
     private final OneBotConnectionState state;
 
-    private final Map<String, OneBotSender> senders = new HashMap<>();
+    /**
+     * 已注册的推送平台
+     * <p>
+     * 注册不再只发生在启动那一刻：从控制台配好第一台机器人时也会往里加一条，
+     * 而此时定期检测与推送投递正在别的线程上读它，因此不能用普通 HashMap
+     */
+    private final Map<String, OneBotSender> senders = new ConcurrentHashMap<>();
+
+    /**
+     * 各推送平台的 HTTP 可用性检测任务
+     * <p>
+     * 记着它才停得掉。改一次连接就挂一个新的、旧的照跑，几次之后同一个平台上有好几份检测
+     * 在轮流写连接状态——而它们持有的地址各不相同，界面于是在「正常」与「连不上」之间跳
+     */
+    private final Map<String, ScheduledFuture<?>> detectTasks = new ConcurrentHashMap<>();
 
     @Autowired
     public OneBotHttpService(TaskScheduler taskScheduler, @Qualifier("oneBotThreadPool") ThreadPoolTaskExecutor executor, OneBotAdapterPluginProperties properties, OneBotHttpAdapter http, OneBotMessageConverter converter, OneBotConnectionState state) {
@@ -72,30 +87,41 @@ public class OneBotHttpService {
     @Order(-10000)
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReadyEvent() {
-        for (String senderName : senders.keySet()) {
-            OneBotSender sender = senders.get(senderName);
+        for (OneBotSender sender : senders.values()) {
+            check(sender);
+        }
+    }
 
-            log.info("开始检测 {} 的 OneBot HTTP 服务可用性", senderName);
-            log.info("{} 的 OneBot HTTP 连接地址: http://{}:{}", senderName, sender.getOneBotAddress(), sender.getOneBotHttpPort());
-            try {
-                JSONObject versionInfo = http.getVersionInfo(sender, new JSONObject());
-                log.info("{} 的 OneBot HTTP 连接正常, 版本 v{}", senderName, versionInfo.getString("app_version"));
-                JSONObject loginInfo = http.getLoginInfo(sender, new JSONObject());
-                log.info("{} 当前登录账号: {}({})", senderName, loginInfo.getString("nickname"), loginInfo.getLong("user_id"));
+    /**
+     * 按这个推送平台<b>当前的</b>配置体检一次，并重新挂上定期检测
+     * <p>
+     * 启动那条路走的也是这里，理由与 {@code OneBotWebsocketService#start} 同：
+     * 「开机时查一次」与「改了配置再查一次」若各写一份，两份迟早会在某个细节上分家。
+     * @param sender OneBot 推送平台信息
+     */
+    public void check(OneBotSender sender) {
+        String senderName = sender.getName();
 
-                state.httpOk(senderName, "v" + versionInfo.getString("app_version")
-                        + "，登录账号 " + loginInfo.getString("nickname") + "(" + loginInfo.getLong("user_id") + ")");
+        log.info("开始检测 {} 的 OneBot HTTP 服务可用性", senderName);
+        log.info("{} 的 OneBot HTTP 连接地址: http://{}:{}", senderName, sender.getOneBotAddress(), sender.getOneBotHttpPort());
+        try {
+            JSONObject versionInfo = http.getVersionInfo(sender, new JSONObject());
+            log.info("{} 的 OneBot HTTP 连接正常, 版本 v{}", senderName, versionInfo.getString("app_version"));
+            JSONObject loginInfo = http.getLoginInfo(sender, new JSONObject());
+            log.info("{} 当前登录账号: {}({})", senderName, loginInfo.getString("nickname"), loginInfo.getLong("user_id"));
 
-                if (properties.getDetect().isEnableHttpDetect()) {
-                    startDetect(sender);
-                }
-            } catch (HttpClientErrorException.Forbidden e) {
-                log.error("{} 的 OneBot HTTP Token 配置不正确, 将无法推送消息, 请检查 Token 配置", senderName, e);
-                state.httpFailed(senderName, OneBotConnectionState.Kind.TOKEN_INVALID, "Token 不正确");
-            } catch (Exception e) {
-                log.error("{} 的 OneBot HTTP 服务不可用, 请检查配置和服务状态", senderName, e);
-                state.httpFailed(senderName, OneBotConnectionState.Kind.UNREACHABLE, e.getMessage());
+            state.httpOk(senderName, "v" + versionInfo.getString("app_version")
+                    + "，登录账号 " + loginInfo.getString("nickname") + "(" + loginInfo.getLong("user_id") + ")");
+
+            if (properties.getDetect().isEnableHttpDetect()) {
+                startDetect(sender);
             }
+        } catch (HttpClientErrorException.Forbidden e) {
+            log.error("{} 的 OneBot HTTP Token 配置不正确, 将无法推送消息, 请检查 Token 配置", senderName, e);
+            state.httpFailed(senderName, OneBotConnectionState.Kind.TOKEN_INVALID, "Token 不正确");
+        } catch (Exception e) {
+            log.error("{} 的 OneBot HTTP 服务不可用, 请检查配置和服务状态", senderName, e);
+            state.httpFailed(senderName, OneBotConnectionState.Kind.UNREACHABLE, e.getMessage());
         }
     }
 
@@ -151,8 +177,9 @@ public class OneBotHttpService {
      */
     private void startDetect(OneBotSender sender) {
         int detectInterval = properties.getDetect().getHttpDetectInterval();
+        stopDetect(sender.getName());
 
-        taskScheduler.scheduleAtFixedRate(() -> executor.submit(() -> {
+        ScheduledFuture<?> task = taskScheduler.scheduleAtFixedRate(() -> executor.submit(() -> {
             try {
                 JSONObject status = http.getStatus(sender, new JSONObject());
 
@@ -182,5 +209,18 @@ public class OneBotHttpService {
             // 告警不在此处发出：写进连接状态后，由健康探针与 HealthAlertMonitor 统一告警。
             // 两条路都发的话，同一次 OneBot 故障会收到两条内容雷同、标识不同的告警
         }), Instant.now().plusSeconds(detectInterval), Duration.ofSeconds(detectInterval));
+
+        detectTasks.put(sender.getName(), task);
+    }
+
+    /**
+     * 停掉某推送平台的 HTTP 可用性检测
+     * @param platformName 推送平台名
+     */
+    private void stopDetect(String platformName) {
+        ScheduledFuture<?> previous = detectTasks.remove(platformName);
+        if (previous != null) {
+            previous.cancel(false);
+        }
     }
 }

@@ -339,9 +339,16 @@ public class ConfigurationFileService {
      * <p>
      * 仍采用逐行定位替换：配置模板中的中文注释是使用者理解配置项的主要依据，
      * 用 YAML 库反序列化再写回会把注释、空行与顺序全部丢失。
+     *
+     * <h2>列表还是空的时候，建出第一个元素来</h2>
+     * 🔴 发行包不再带 application.yml，第一次保存时由 {@link #createIfAbsent()} 按配置面渲染一份，
+     * 而配置面里这个列表的默认值是<b>空表</b>，渲染出来就是一行 {@code senders: []}。
+     * 「找不到第 1 个元素」于是成了全新机器上的<b>必然</b>结果，而它的表现是引导流程第二步
+     * 报一句「保存失败」——那台机器因此一步也走不下去。所以下标 0 且列表为空时建一个出来，
+     * 字段与顺序由调用方给：写进去的必须是<b>整条</b>元素，缺了平台名的那一条会让下次启动直接失败。
      * @param listPath 列表的完整路径，例如 starbot.adapter.onebot.senders
      * @param index 元素下标，从 0 开始
-     * @param fields 待修改的字段名到取值，字段名为元素内部的键
+     * @param fields 待修改的字段名到取值，字段名为元素内部的键；建新元素时即为元素全文
      * @return 实际修改的字段数
      * @throws IOException 读写失败时抛出
      */
@@ -353,13 +360,25 @@ public class ConfigurationFileService {
         createIfAbsent();
 
         List<String> lines = Files.readAllLines(configPath, StandardCharsets.UTF_8);
-        int[] range = locateListItem(lines, listPath, index);
-        if (range == null) {
-            throw new IOException("未在配置文件中找到 " + listPath + " 的第 " + (index + 1) + " 个元素");
+        ListLocation location = locateListItem(lines, listPath, index);
+        if (location == null) {
+            throw new IOException("未在配置文件中找到 " + listPath);
+        }
+
+        if (location.start() < 0) {
+            if (index != 0) {
+                throw new IOException("未在配置文件中找到 " + listPath + " 的第 " + (index + 1) + " 个元素");
+            }
+
+            int created = createFirstItem(lines, location, fields);
+            backup();
+            Files.write(configPath, lines, StandardCharsets.UTF_8);
+            log.info("配置界面已在 {} 下建出第 1 个元素, 共 {} 个字段", listPath, created);
+            return created;
         }
 
         int changed = 0;
-        for (int i = range[0]; i < range[1]; i++) {
+        for (int i = location.start(); i < location.end(); i++) {
             String stripped = lines.get(i).strip();
             // 元素首行形如 "- name: xxx"，其键同样需要参与匹配
             String candidate = stripped.startsWith("-") ? stripped.substring(1).strip() : stripped;
@@ -391,14 +410,29 @@ public class ConfigurationFileService {
     }
 
     /**
-     * 定位列表中某一元素所占的行范围
-     * @return 长度为 2 的数组，分别为起始行（含）与结束行（不含）；未找到时返回 null
+     * 列表在配置文件里的位置
+     *
+     * @param keyLine 列表键那一行的行号
+     * @param keyIndent 列表键的缩进
+     * @param start 指定元素的起始行（含），该元素不存在时为 -1
+     * @param end 指定元素的结束行（不含）
      */
-    private int[] locateListItem(List<String> lines, String listPath, int index) {
+    private record ListLocation(int keyLine, int keyIndent, int start, int end) {}
+
+    /**
+     * 定位列表中某一元素所占的行范围
+     * <p>
+     * 「列表键在哪一行」与「那个元素在哪几行」一并回答，而不是分成两趟各走一遍：
+     * 两趟就是同一条缩进规则的两个读者，其中一个哪天改了，另一个会安静地指到别处去。
+     * @return 列表的位置；<b>连列表键都不在文件里时</b>返回 null——那与「列表是空的」是两件事，
+     *         前者是配置文件本身不完整，后者只是还没配过第一台机器人
+     */
+    private ListLocation locateListItem(List<String> lines, String listPath, int index) {
         List<String> segments = List.of(listPath.split("\\."));
         List<String> stack = new ArrayList<>();
 
         int listIndent = -1;
+        int keyLine = -1;
         // 列表项的缩进由第一个 "-" 决定，通常比列表键本身更深，不能假定二者相等
         int itemIndent = -1;
         int seen = -1;
@@ -417,7 +451,7 @@ public class ConfigurationFileService {
                 if (stripped.startsWith("-") && (itemIndent < 0 || indent == itemIndent)) {
                     itemIndent = indent;
                     if (start >= 0) {
-                        return new int[]{start, i};
+                        return new ListLocation(keyLine, listIndent, start, i);
                     }
                     if (++seen == index) {
                         start = i;
@@ -427,7 +461,7 @@ public class ConfigurationFileService {
 
                 // 缩进退回到列表键层级或更浅，说明列表已结束
                 if (indent <= listIndent) {
-                    return start >= 0 ? new int[]{start, i} : null;
+                    return new ListLocation(keyLine, listIndent, start, start >= 0 ? i : -1);
                 }
                 continue;
             }
@@ -447,10 +481,44 @@ public class ConfigurationFileService {
 
             if (stack.equals(segments)) {
                 listIndent = indent;
+                keyLine = i;
             }
         }
 
-        return start >= 0 ? new int[]{start, lines.size()} : null;
+        if (listIndent < 0) {
+            return null;
+        }
+
+        return new ListLocation(keyLine, listIndent, start, start >= 0 ? lines.size() : -1);
+    }
+
+    /**
+     * 在一个空列表下建出第一个元素
+     * <p>
+     * 空表在文件里写作 {@code senders: []}，那对方括号必须先去掉：留着它，
+     * 新元素与它并存的那份文件<b>整个解析不了</b>，而接口这一侧照样回报「已保存」。
+     * 行尾注释保留——它是使用者理解这一项的主要依据。
+     * @param lines 文件行，就地修改
+     * @param location 列表的位置
+     * @param fields 元素全文，按传入顺序逐行写下
+     * @return 写下的字段数
+     */
+    private int createFirstItem(List<String> lines, ListLocation location, Map<String, String> fields) {
+        lines.set(location.keyLine(), replaceValue(lines.get(location.keyLine()), "").stripTrailing());
+
+        String indent = " ".repeat(location.keyIndent() + INDENT);
+        int at = location.keyLine() + 1;
+        boolean first = true;
+
+        for (Map.Entry<String, String> field : fields.entrySet()) {
+            String rendered = render(field.getValue());
+            String line = indent + (first ? "- " : "  ") + field.getKey() + ":"
+                    + (rendered.isEmpty() ? "" : " " + rendered);
+            lines.add(at++, line);
+            first = false;
+        }
+
+        return fields.size();
     }
 
     /**

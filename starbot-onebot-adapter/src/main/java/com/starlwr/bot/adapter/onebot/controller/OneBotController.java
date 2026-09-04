@@ -25,6 +25,8 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
 
 import java.lang.reflect.Method;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * OneBot 控制器
@@ -45,6 +47,11 @@ public class OneBotController {
 
     private final PushApiTokenStore tokenStore;
 
+    /**
+     * 已经挂过推送接口的平台名
+     */
+    private final Set<String> registered = ConcurrentHashMap.newKeySet();
+
     @Autowired
     public OneBotController(WebServerApplicationContext webContext, RequestMappingHandlerMapping mapping, OneBotAdapterPluginProperties properties, StarBotSenderService senderService, OneBotHttpService httpService, PushApiTokenStore tokenStore) {
         this.webContext = webContext;
@@ -61,6 +68,33 @@ public class OneBotController {
     @Order(-20000)
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReadyEvent() {
+        for (OneBotSender sender : properties.getSenders()) {
+            register(sender);
+        }
+    }
+
+    /**
+     * 把一个推送平台的推送接口挂上去
+     * <p>
+     * 从控制台配好第一台机器人时也会走这里，因此必须<b>可以重复调用</b>：
+     * 已经挂过的直接返回，不再挂第二遍。挂第二遍的后果是接口路径撞号、
+     * 平台名撞号（{@code addSender} 直接抛），以及<b>推送接口 Token 换了一把</b>——
+     * 未配置时那把 Token 是随机生成的，重新生成一次就等于把已经拿到旧 Token 的调用方全部踢掉。
+     * @param sender OneBot 推送平台信息
+     * @return 挂上了或本来就挂着时为 true；缺 HTTP Token 而挂不上时为 false
+     */
+    public synchronized boolean register(OneBotSender sender) {
+        if (StringUtil.isBlank(sender.getOneBotHttpToken())) {
+            log.error("推送平台 {} 未配置 OneBot HTTP Token, 请完善配置", sender.getName());
+            return false;
+        }
+
+        // 连接信息是就地改在同一个 OneBotSender 上的，因此已注册的平台换了地址也不必重挂：
+        // 接口路径、推送 Token 与平台名都没变，变的只是它连向哪里
+        if (!registered.add(sender.getName())) {
+            return true;
+        }
+
         Method method;
         try {
             method = getClass().getMethod("send", MessageDTO.class);
@@ -68,34 +102,28 @@ public class OneBotController {
             throw new RuntimeException("注册推送 API 异常", e);
         }
 
-        for (OneBotSender sender : properties.getSenders()) {
-            if (StringUtil.isBlank(sender.getOneBotHttpToken())) {
-                log.error("推送平台 {} 未配置 OneBot HTTP Token, 请完善配置", sender.getName());
-                continue;
-            }
+        String path = properties.getBaseUrl() + sender.getApi();
+        String apiToken = resolveApiToken(sender);
+        tokenStore.register(path, apiToken);
 
-            String path = properties.getBaseUrl() + sender.getApi();
-            String apiToken = resolveApiToken(sender);
-            tokenStore.register(path, apiToken);
-
-            try {
-                RequestMappingInfo info = RequestMappingInfo
-                        .paths(path)
-                        .methods(RequestMethod.POST)
-                        .build();
-                mapping.registerMapping(info, this, method);
-            } catch (Exception e) {
-                log.error("推送平台 {} 注册异常", sender.getName(), e);
-            }
-
-            // url 仍然记着：它是对外推送接口的地址，配置界面与文档都要用。
-            // 但核心自己投递不再走它，改为下面的进程内直调，理由见 Sender.LocalDelivery
-            String url = "http://127.0.0.1:" + webContext.getWebServer().getPort() + path;
-            senderService.addSender(new Sender(sender.getName(), url, apiToken, sender.getDelay(),
-                    (headers, params) -> send(toMessage(params))));
-
-            httpService.register(sender);
+        try {
+            RequestMappingInfo info = RequestMappingInfo
+                    .paths(path)
+                    .methods(RequestMethod.POST)
+                    .build();
+            mapping.registerMapping(info, this, method);
+        } catch (Exception e) {
+            log.error("推送平台 {} 注册异常", sender.getName(), e);
         }
+
+        // url 仍然记着：它是对外推送接口的地址，配置界面与文档都要用。
+        // 但核心自己投递不再走它，改为下面的进程内直调，理由见 Sender.LocalDelivery
+        String url = "http://127.0.0.1:" + webContext.getWebServer().getPort() + path;
+        senderService.addSender(new Sender(sender.getName(), url, apiToken, sender.getDelay(),
+                (headers, params) -> send(toMessage(params))));
+
+        httpService.register(sender);
+        return true;
     }
 
     /**

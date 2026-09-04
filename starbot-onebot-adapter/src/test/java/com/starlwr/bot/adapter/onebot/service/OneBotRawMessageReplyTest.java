@@ -129,10 +129,13 @@ class OneBotRawMessageReplyTest {
         return executor;
     }
 
-    private WebSocketHandler newHandler(OneBotWebsocketService service, OneBotSender sender) throws Exception {
-        Class<?> type = Class.forName(OneBotWebsocketService.class.getName() + "$OneBotWebSocketHandler");
-        Constructor<?> constructor = type.getDeclaredConstructor(OneBotWebsocketService.class, OneBotSender.class);
-        constructor.setAccessible(true);
-        return (WebSocketHandler) constructor.newInstance(service, sender);
+    /**
+     * 取真的处理器来驱动
+     * <p>
+     * 走服务自己给的那个口，不按名字反射私有构造器：后者认的是写法，
+     * 构造器多一个参数它就整个跑不起来，而报出来的与被测的行为毫无关系。
+     */
+    private WebSocketHandler newHandler(OneBotWebsocketService service, OneBotSender sender) {
+        return service.handlerFor(sender);
     }
 }

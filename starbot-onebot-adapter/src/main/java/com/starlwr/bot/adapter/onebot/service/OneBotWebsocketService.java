@@ -60,11 +60,11 @@ public class OneBotWebsocketService {
     private final ApplicationEventPublisher publisher;
 
     /**
-     * 各推送平台的存活检测任务
+     * 各推送平台当前在用的那一代连接
      * <p>
      * 连接、重连与断开分别发生在不同线程上，注册与取消都可能并发发生，因此不能用普通 HashMap
      */
-    private final Map<String, ScheduledFuture<?>> detectTasks = new ConcurrentHashMap<>();
+    private final Map<String, Connection> connections = new ConcurrentHashMap<>();
 
     /**
      * 已提示过「未推送心跳」的推送平台
@@ -87,29 +87,80 @@ public class OneBotWebsocketService {
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReadyEvent() {
         for (OneBotSender sender : properties.getSenders()) {
-            if (sender.isWebsocket()) {
-                if (StringUtil.isBlank(sender.getOneBotWebsocketToken())) {
-                    log.error("推送平台 {} 未配置 OneBot Websocket Token, 请完善配置", sender.getName());
-                    state.websocketDisconnected(sender.getName(), "未配置 Websocket Token");
-                    continue;
-                }
+            start(sender);
+        }
+    }
 
-                connect(sender);
-            } else {
-                state.websocketDisabled(sender.getName());
+    /**
+     * 按这个推送平台<b>当前的</b>配置把 Websocket 接上
+     * <p>
+     * 🔴 <b>启动那条路走的也是这里。</b>「开机时连一次」与「运行期改了配置再连一次」
+     * 若各写一份，两份迟早分家——而分家之后，从界面上配出来的那条连接与从配置文件里
+     * 起出来的那条会在细节上不一样（补不补检测任务、Token 空了怎么记），
+     * 且只在其中一条路上表现出来。
+     * <p>
+     * 反复调用是正常用法（使用者会连按保存）：每次都先把旧的那一代断掉，
+     * 因此调三次之后仍然只有<b>一条</b>连接。
+     * @param sender OneBot 推送平台信息
+     */
+    public synchronized void start(OneBotSender sender) {
+        // 先断旧，且不论接下来连不连得成：改成「不启用 Websocket」之后旧连接还挂着的话，
+        // 界面上写着未启用而消息照收，那是最难看出来的一种不一致
+        stop(sender.getName());
+
+        if (!sender.isWebsocket()) {
+            state.websocketDisabled(sender.getName());
+            return;
+        }
+
+        if (StringUtil.isBlank(sender.getOneBotWebsocketToken())) {
+            log.error("推送平台 {} 未配置 OneBot Websocket Token, 请完善配置", sender.getName());
+            state.websocketDisconnected(sender.getName(), "未配置 Websocket Token");
+            return;
+        }
+
+        Connection connection = new Connection(sender);
+        connections.put(sender.getName(), connection);
+        connect(connection);
+    }
+
+    /**
+     * 断开这个推送平台的 Websocket，并回收它的重连与存活检测任务
+     * <p>
+     * 作废整一代而不是只关一个套接字：正在退避等待的重试循环、已经发出去还没回来的握手、
+     * 挂着的存活检测，都属于这一代。只关套接字的话，那条重试循环会<b>接着往旧地址重连</b>，
+     * 并把状态改回它自己那一份——界面上于是看到新地址连上了又断、断了又连。
+     * @param platformName 推送平台名
+     */
+    public synchronized void stop(String platformName) {
+        Connection previous = connections.remove(platformName);
+        if (previous == null) {
+            return;
+        }
+
+        previous.retired = true;
+        stopDetect(previous);
+
+        WebSocketSession session = previous.session;
+        if (session != null && session.isOpen()) {
+            try {
+                session.close();
+            } catch (Exception e) {
+                log.warn("断开 {} 的旧 OneBot Websocket 连接异常", platformName, e);
             }
         }
     }
 
     /**
      * 连接到 OneBot Websocket 服务
-     * @param sender OneBot 推送平台信息
+     * @param connection 这一代连接
      */
-    public void connect(OneBotSender sender) {
+    private void connect(Connection connection) {
+        OneBotSender sender = connection.sender;
         executor.submit(() -> {
             int retryCount = 0;
             int retryInterval = 1;
-            while (true) {
+            while (!connection.retired) {
                 log.info("准备连接 {} 的 OneBot Websocket 服务", sender.getName());
                 log.info("{} 的 OneBot Websocket 连接地址: ws://{}:{}/", sender.getName(), sender.getOneBotAddress(), sender.getOneBotWebsocketPort());
 
@@ -123,7 +174,7 @@ public class OneBotWebsocketService {
                     WebSocketContainer container = ContainerProvider.getWebSocketContainer();
                     container.setDefaultMaxTextMessageBufferSize(8 * 1024 * 1024);
                     StandardWebSocketClient webSocketClient = new StandardWebSocketClient(container);
-                    OneBotWebSocketHandler handler = new OneBotWebSocketHandler(this, sender);
+                    OneBotWebSocketHandler handler = new OneBotWebSocketHandler(this, connection);
                     sessionFuture = webSocketClient.execute(handler, headers, URI.create(url));
 
                     if (handler.awaitConnection()) {
@@ -133,6 +184,11 @@ public class OneBotWebsocketService {
                         throw new TimeoutException();
                     }
                 } catch (Exception e) {
+                    if (connection.retired) {
+                        log.info("已停止重连 {} 的 OneBot Websocket 服务", sender.getName());
+                        break;
+                    }
+
                     retryCount++;
                     retryInterval = Math.min(retryInterval * 2, 60);
 
@@ -162,6 +218,41 @@ public class OneBotWebsocketService {
     }
 
     /**
+     * 造一个不连任何东西的处理器，供判据直接驱动
+     * <p>
+     * 判据要量的是「收到一条上报之后适配器做了什么」，而那件事只发生在处理器里。
+     * 有这个口，判据就不必按名字去反射一个私有构造器——那种判据认的是写法：
+     * 构造器多一个参数它就整个跑不起来，报出来的还是一句与被测行为毫无关系的
+     * {@code NoSuchMethodException}。
+     * @param sender OneBot 推送平台信息
+     * @return 处理器
+     */
+    WebSocketHandler handlerFor(OneBotSender sender) {
+        return new OneBotWebSocketHandler(this, new Connection(sender));
+    }
+
+    /**
+     * 一个推送平台的一代 Websocket 连接
+     * <p>
+     * 断旧连新时整代作废：连接本身、正在退避的重试循环、存活检测任务都挂在这上面。
+     * 作废之后这一代不再改动连接状态——否则一条已经被换掉的连接，会拿它自己的死讯
+     * 去覆盖新连接刚写下的「已连接」。
+     */
+    private static final class Connection {
+        private final OneBotSender sender;
+
+        private volatile boolean retired;
+
+        private volatile WebSocketSession session;
+
+        private volatile ScheduledFuture<?> detectTask;
+
+        private Connection(OneBotSender sender) {
+            this.sender = sender;
+        }
+    }
+
+    /**
      * Websocket 存活检测
      * <p>
      * 检测周期与判定超时是两件事：判定超时按心跳间隔取（见 {@link OneBotLivenessTracker}），
@@ -170,12 +261,17 @@ public class OneBotWebsocketService {
      * @param handler WebSocket 处理器
      */
     private void startDetect(OneBotWebSocketHandler handler) {
-        String platformName = handler.sender.getName();
-        stopDetect(platformName);
+        Connection connection = handler.connection;
+        String platformName = connection.sender.getName();
+        stopDetect(connection);
 
         Duration timeout = Duration.ofSeconds(properties.getDetect().getWebsocketSilenceTimeout());
 
-        ScheduledFuture<?> detectTask = taskScheduler.scheduleAtFixedRate(() -> executor.submit(() -> {
+        connection.detectTask = taskScheduler.scheduleAtFixedRate(() -> executor.submit(() -> {
+            if (connection.retired) {
+                return;
+            }
+
             OneBotLivenessTracker.Verdict verdict = handler.liveness.evaluate(Instant.now(), timeout);
 
             switch (verdict.state()) {
@@ -189,21 +285,23 @@ public class OneBotWebsocketService {
                 case NO_HEARTBEAT -> warnNoHeartbeat(platformName);
             }
         }), Instant.now().plus(CHECK_INTERVAL), CHECK_INTERVAL);
-
-        detectTasks.put(platformName, detectTask);
     }
 
     /**
-     * 停止某推送平台的存活检测
+     * 停止某一代连接的存活检测
      * <p>
      * 连接断开后必须停掉：检测任务持有的是旧连接的计时器，留着会在重连期间按旧数据把状态改回「已连接」，
      * 覆盖掉「正在重连」的真实状态。
-     * @param platformName 推送平台名
+     * <p>
+     * 🔴 挂在<b>这一代</b>上而不是按平台名记一份：换地址时旧连接的关闭回调常常晚于新连接建立，
+     * 按平台名去停，停掉的会是刚刚挂好的那一个——而它此后再也不检测，界面上却一切正常。
+     * @param connection 这一代连接
      */
-    private void stopDetect(String platformName) {
-        ScheduledFuture<?> previous = detectTasks.remove(platformName);
+    private void stopDetect(Connection connection) {
+        ScheduledFuture<?> previous = connection.detectTask;
         if (previous != null) {
             previous.cancel(false);
+            connection.detectTask = null;
         }
     }
 
@@ -233,6 +331,8 @@ public class OneBotWebsocketService {
     private static class OneBotWebSocketHandler implements WebSocketHandler {
         private final OneBotWebsocketService service;
 
+        private final Connection connection;
+
         private final OneBotSender sender;
 
         private final ThreadPoolTaskExecutor executor;
@@ -252,9 +352,10 @@ public class OneBotWebsocketService {
 
         private final OneBotLivenessTracker liveness = new OneBotLivenessTracker(Instant.now());
 
-        private OneBotWebSocketHandler(OneBotWebsocketService service, OneBotSender sender) {
+        private OneBotWebSocketHandler(OneBotWebsocketService service, Connection connection) {
             this.service = service;
-            this.sender = sender;
+            this.connection = connection;
+            this.sender = connection.sender;
             this.executor = service.executor;
         }
 
@@ -283,10 +384,13 @@ public class OneBotWebsocketService {
          */
         @Override
         public void afterConnectionEstablished(@NonNull WebSocketSession session) {
+            connection.session = session;
             latch.countDown();
 
             synchronized (this) {
-                if (connectTimeout) {
+                // 这一代已经被换掉时同样要关：断旧连新那一刻这个握手可能正在路上，
+                // 关不掉的话，旧地址上会留着一条谁也不认识、却照常收消息的连接
+                if (connectTimeout || connection.retired) {
                     try {
                         session.close();
                     } catch (Exception e) {
@@ -424,6 +528,10 @@ public class OneBotWebsocketService {
          */
         @Override
         public void handleTransportError(@NonNull WebSocketSession session, @NonNull Throwable exception) {
+            if (connection.retired) {
+                return;
+            }
+
             executor.submit(() -> {
                 log.warn("与 {} 的 Websocket 连接异常, 将在 1 秒后重新连接", sender.getName(), exception);
                 try {
@@ -432,7 +540,9 @@ public class OneBotWebsocketService {
                     Thread.currentThread().interrupt();
                     log.error("重新连接 {} 的 Websocket 时中断", sender.getName(), e);
                 }
-                service.connect(sender);
+                if (!connection.retired) {
+                    service.connect(connection);
+                }
             });
         }
 
@@ -444,9 +554,11 @@ public class OneBotWebsocketService {
         @Override
         public void afterConnectionClosed(@NonNull WebSocketSession session, @NonNull CloseStatus closeStatus) {
             // 存活检测认的是这个连接的计时器，连接没了就得停，否则它会拿旧数据把状态改回「已连接」
-            service.stopDetect(sender.getName());
+            service.stopDetect(connection);
 
-            if (connectTimeout) {
+            // 这一代是被主动换掉的：既不重连，也不写连接状态。写了的话，
+            // 一条已经作废的连接会拿它的死讯覆盖新连接刚记下的「已连接」
+            if (connectTimeout || connection.retired) {
                 return;
             }
 
@@ -466,7 +578,9 @@ public class OneBotWebsocketService {
                     Thread.currentThread().interrupt();
                     log.error("重新连接 {} 的 Websocket 时中断", sender.getName(), e);
                 }
-                service.connect(sender);
+                if (!connection.retired) {
+                    service.connect(connection);
+                }
             });
         }
 

@@ -88,6 +88,26 @@ public class RuntimeConfigurationApplier {
             "starbot.core.config-ui.auth.totp", (auth, value) -> auth.applyConfiguredTotp(Boolean.parseBoolean(value)));
 
     /**
+     * 即时生效、但落地动作不在本类的配置项
+     * <p>
+     * 有几项<b>根本不经过设置页那条保存通道</b>：它们是列表，而设置页按设计不展示列表元素，
+     * 改它们只能走各自的专门入口。落地动作因此也在那个入口里，本类的签名（一个键、一个字符串）
+     * 也接不住一整份列表。
+     * <p>
+     * 🔴 <b>但「即时生效」这句话只有一张表。</b>本表与上面两张一起构成
+     * {@link #supportedKeys()}——也就是「保存之后不需要重启的键」的全部。少了这张表的话，
+     * 这几项要么被迫标成「重启后生效」（界面白让人重启一次，而它其实已经生效了），
+     * 要么标成即时生效而无处对账（判据只能睁一只眼，从此谁标都行）。
+     * <p>
+     * 值是<b>谁去落地</b>，写清楚才对得上账：光有一份键名清单，等于给这几项签了免检。
+     */
+    private static final Map<String, String> APPLIED_ELSEWHERE = Map.of(
+            // 机器人连接：/api/setup/bot 保存时经 BotConnectionTester#apply 当场重建连接，
+            // 判据在适配器一侧（连接建起来没有、换了地址旧连接断没断）
+            "starbot.adapter.onebot.senders",
+            "/api/setup/bot 保存时经 BotConnectionTester#apply 当场重建连接");
+
+    /**
      * 保存过、但要等重启才生效的配置项
      * <p>
      * 记在进程里而不是浏览器里，「等到重启」这件事才是准的：重启之后进程换了一个，这份记录随之消失，
@@ -135,11 +155,12 @@ public class RuntimeConfigurationApplier {
 
     /**
      * 名单里有哪些键
-     * @return 能即时生效的配置项名
+     * @return 保存之后不需要重启的配置项名，含 {@link #APPLIED_ELSEWHERE} 里那些
      */
     public static Set<String> supportedKeys() {
         Set<String> keys = new LinkedHashSet<>(APPLIERS.keySet());
         keys.addAll(AUTH_APPLIERS.keySet());
+        keys.addAll(APPLIED_ELSEWHERE.keySet());
         return Collections.unmodifiableSet(keys);
     }
 
