@@ -6,8 +6,9 @@
 # 而首页恰恰是「出事时第一眼看的那一页」——它在故障档下长什么样，正是最该被守住的部分。
 # 视图模型因此被切成纯函数（config-ui/home-model.js，不碰 DOM），本尺喂它八份回包对答案。
 #
-# 顺带把首页那几个前端模块过一遍 node --check：它们是 ES module，没有构建步骤，
-# 语法错要等页面加载时才炸，而那时报的是一句与出错文件无关的「载入失败」。
+# 顺带把首页那几个前端模块过一遍语法（node --input-type=module --check < 文件）：
+# 它们是 ES module，没有构建步骤，语法错要等页面加载时才炸，而那时报的是一句与出错文件无关的「载入失败」。
+# node --check 对含 import 的 .js 一律返 0（Node v22 实测），那一格从来没能红过。
 #
 # 退码：0 全对；1 有档对不上或有模块语法不过；2 环境不具备（没装 node）。
 
@@ -25,10 +26,9 @@ UI="starbot-core/src/main/resources/config-ui"
 RED=0
 
 # —— 语法 ——
-# 逐个跑而不是一次传多个文件：node --check 只报第一个出错的，
-# 一次传一串时后面那些是「查过了」还是「没轮到」分不出来
+# 逐个跑而不是一次传多个文件：一次传一串时后面那些是「查过了」还是「没轮到」分不出来
 for f in "$UI"/home-model.js "$UI"/overview.js "$UI"/main.js "$UI"/core.js; do
-    if node --check "$f"; then
+    if node --input-type=module --check < "$f"; then
         echo "语法 绿 $f"
     else
         echo "语法 红 $f"
