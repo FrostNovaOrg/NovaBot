@@ -27,10 +27,12 @@ import java.util.Comparator;
 import java.util.Deque;
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.NavigableMap;
+import java.util.Set;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.stream.Stream;
 
@@ -172,31 +174,65 @@ public class TimelineStore implements TimelineWriter {
      * <p>
      * 逐条读磁盘而不是读索引：索引只有条数与最近若干条，答不了「上周二那天警告都有哪些」。
      * 射程被保留天数框住，最多也就那么几个文件。
+     * <p>
+     * <b>游标是必填参数而非可选</b>：不翻页时显式传 {@code null}。留一个不带游标的重载，
+     * 调用方就可以在完全不知道有翻页这回事的情况下写完一整条取数路径——
+     * 而那条路径在记录超过一页时会安静地只显示最近的那些，看起来与「一共就这么多」一样。
      * @param filter 筛选条件
+     * @param cursor 从哪一条往更旧的接着翻，{@code null} 表示从最近的开始
      * @return 查询结果
      */
-    public Result query(@NonNull Filter filter) {
+    public Result query(@NonNull Filter filter, Cursor cursor) {
         int limit = filter.limit() <= 0 ? DEFAULT_LIMIT : Math.min(filter.limit(), MAX_LIMIT);
 
         List<TimelineEvent> hits = new ArrayList<>();
+        Set<String> streamers = new LinkedHashSet<>();
+        Set<String> channels = new LinkedHashSet<>();
+        Cursor last = null;
         int matched = 0;
+        int passed = 0;
 
         for (LocalDate day : searchDays(filter.date())) {
             List<TimelineEvent> events = readDay(day);
             // 文件里是按发生顺序追加的，倒着走就是从近到远
             for (int i = events.size() - 1; i >= 0; i--) {
                 TimelineEvent event = events.get(i);
+
+                // 筛选框里的可选项取自这几天<b>全部</b>事件，不受当前筛选影响：
+                // 跟着筛一起缩水的话，选了某位主播之后通道那一栏就只剩他推过的那几个，
+                // 使用者再也换不回去，只能清掉整组筛选重来
+                if (event.streamer() != null) {
+                    streamers.add(event.streamer());
+                }
+                if (event.channel() != null) {
+                    channels.add(event.channel());
+                }
+
                 if (!filter.matches(event)) {
                     continue;
                 }
+                // 命中总数答的是「一共有多少」，因此不看游标——翻到第二页时它要是跟着变小，
+                // 页脚那句「共 N 条」就会在翻页过程中自己往下掉
                 matched++;
+
+                Cursor here = new Cursor(day, i);
+                if (cursor != null && !here.olderThan(cursor)) {
+                    continue;
+                }
+                passed++;
                 if (hits.size() < limit) {
                     hits.add(event);
+                    last = here;
                 }
             }
         }
 
-        return new Result(hits, matched, limit);
+        // 还有更旧的命中没给出去时才给游标。给早了，界面上那个「看更早」永远按得下去
+        //
+        // 两栏可选项按字符序给，不按「谁最近出现过」：后者会在每一条新事件进来时
+        // 把下拉框重排一遍，而使用者正对着它找上一次选过的那一项
+        return new Result(hits, matched, limit, passed > hits.size() ? last : null,
+                streamers.stream().sorted().toList(), channels.stream().sorted().toList());
     }
 
     /**
@@ -488,6 +524,71 @@ public class TimelineStore implements TimelineWriter {
     }
 
     /**
+     * 翻页位置：某一天里的第几条
+     * <p>
+     * 不用时刻当游标：同一毫秒里可以记下好几条事件，按时刻翻会把其中几条整批跳过或整批重发。
+     * 用「哪一天的第几条」是因为<b>日文件只追加不改写</b>——已经写下的那几行位置不会再变，
+     * 新事件一律加在末尾。这条性质正是这个游标能用的全部理由，
+     * 哪天时间线改成可编辑的存储，这个游标就得跟着换。
+     * <p>
+     * 下标数的是<b>解析得出的事件</b>，不是文件行数：坏行本来就不在结果里，
+     * 按物理行号数的话，游标会指到一条根本读不出来的记录上。
+     *
+     * @param day 哪一天
+     * @param index 那一天里的第几条，从 0 起
+     */
+    public record Cursor(LocalDate day, int index) {
+        /**
+         * 分隔符。日期里本来就有连字符，冒号不与它撞
+         */
+        private static final String SEPARATOR = ":";
+
+        /**
+         * 本位置是否比另一个更旧
+         * <p>
+         * 「更旧」＝日子更早，或同一天里下标更小。翻页取的是严格更旧的那些，
+         * 取到「不比它新」就会把上一页最后那条再发一遍
+         * @param other 另一个位置
+         * @return 更旧返回 true
+         */
+        boolean olderThan(Cursor other) {
+            return day.isBefore(other.day()) || (day.equals(other.day()) && index < other.index());
+        }
+
+        /**
+         * 按文本解析，认不出时返回 {@code null}
+         * <p>
+         * 不抛异常，与 {@link TimelineEventType#parse} 同法：调用方要能分辨
+         * 「没给游标」与「给了但认不出」，而后者必须当场说出来——当成没给去从头翻的话，
+         * 「看更早」会一直翻回第一页，而屏幕上看起来只是「没有更早的了」。
+         * @param text 文本形态
+         * @return 位置，认不出时为 {@code null}
+         */
+        public static Cursor parse(String text) {
+            if (text == null || text.isBlank()) {
+                return null;
+            }
+
+            int cut = text.lastIndexOf(SEPARATOR);
+            if (cut < 0) {
+                return null;
+            }
+
+            try {
+                int index = Integer.parseInt(text.substring(cut + 1).trim());
+                return index < 0 ? null : new Cursor(LocalDate.parse(text.substring(0, cut).trim()), index);
+            } catch (DateTimeParseException | NumberFormatException e) {
+                return null;
+            }
+        }
+
+        @Override
+        public String toString() {
+            return day + SEPARATOR + index;
+        }
+    }
+
+    /**
      * 查询条件
      * <p>
      * 各项为空即不按该项筛。
@@ -556,17 +657,24 @@ public class TimelineStore implements TimelineWriter {
      * 查询结果
      *
      * @param events 命中的事件，最近的在前，最多 {@code limit} 条
-     * @param matched 命中总条数。<b>与 {@code events.size()} 不是一回事</b>——
+     * @param matched 命中总条数，<b>不受游标影响</b>。与 {@code events.size()} 不是一回事——
      *                截断了就得说，否则界面看起来像是「一共就发生了这些」
      * @param limit 本次生效的条数上限
+     * @param nextCursor 接着往更旧的翻的位置，没有更旧的命中时为 {@code null}
+     * @param streamers 射程内出现过的主播，供筛选框用；<b>不随本次筛选缩水</b>
+     * @param channels 射程内出现过的通道，同上
      */
-    public record Result(List<TimelineEvent> events, int matched, int limit) {
+    public record Result(List<TimelineEvent> events, int matched, int limit, Cursor nextCursor,
+                         List<String> streamers, List<String> channels) {
         /**
-         * 是否被截断
-         * @return 被截断返回 true
+         * 是否还有没给出去的命中
+         * <p>
+         * 按游标判而不是按「命中总数 &gt; 这一页条数」：翻到第二页之后后者恒为真，
+         * 于是最后一页也会显示「还有更多」，而按下去什么都不会发生。
+         * @return 还有更旧的命中时返回 true
          */
         public boolean truncated() {
-            return matched > events.size();
+            return nextCursor != null;
         }
     }
 }

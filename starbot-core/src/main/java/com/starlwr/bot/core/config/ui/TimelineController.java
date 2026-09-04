@@ -47,6 +47,7 @@ public class TimelineController {
      * @param channel 只看某个推送通道
      * @param q 在正文、主播、通道与补充信息里搜关键词
      * @param limit 最多返回多少条
+     * @param cursor 上一页给出的 {@code nextCursor}，从那一条往更旧的接着翻；留空即从最近的开始
      * @return 命中的事件与本次筛选的说明
      */
     @GetMapping
@@ -56,7 +57,8 @@ public class TimelineController {
                                @RequestParam(required = false) String streamer,
                                @RequestParam(required = false) String channel,
                                @RequestParam(required = false) String q,
-                               @RequestParam(defaultValue = "0") int limit) {
+                               @RequestParam(defaultValue = "0") int limit,
+                               @RequestParam(required = false) String cursor) {
         JSONObject result = new JSONObject();
         result.put("success", true);
 
@@ -79,8 +81,17 @@ public class TimelineController {
             return result;
         }
 
+        // 认不出的游标同样不当成「没给」：当成没给就是从头翻，而「看更早」一路翻回第一页
+        // 这件事在屏幕上看起来只是「没有更早的了」
+        TimelineStore.Cursor from = TimelineStore.Cursor.parse(cursor);
+        if (cursor != null && !cursor.isBlank() && from == null) {
+            result.put("success", false);
+            result.put("message", "认不出的翻页游标: " + cursor);
+            return result;
+        }
+
         TimelineStore.Result found = store.query(new TimelineStore.Filter(
-                day, problems, parsedType, streamer, channel, q, limit));
+                day, problems, parsedType, streamer, channel, q, limit), from);
 
         result.put("date", day == null ? null : day.toString());
         result.put("problemsOnly", problems);
@@ -100,7 +111,12 @@ public class TimelineController {
         result.put("returned", found.events().size());
         result.put("truncated", found.truncated());
         result.put("limit", found.limit());
+        result.put("nextCursor", found.nextCursor() == null ? null : found.nextCursor().toString());
         result.put("types", types());
+        // 主播与通道两栏的可选项由这里给，界面不从这一页事件里凑：凑出来的那张表
+        // 在结果被截断时缺项，而缺了谁只有想筛它的人才看得见
+        result.put("streamers", found.streamers());
+        result.put("channels", found.channels());
         result.put("retentionDays", store.retentionDays());
 
         return result;

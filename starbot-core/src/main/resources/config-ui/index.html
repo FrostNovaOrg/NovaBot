@@ -213,14 +213,79 @@
 
   <!-- ============ 日志 #/log ============ -->
   <!--
-    时间线要有结构化事件才画得出来，那一层还没接上。这里刻意只留一句空态：
-    先摆一份示例时间线的话，界面上的「几点发生了什么」与机器人真正做过的事无关，
-    而这一页存在的全部意义正是回答那个问题。
+    两半共用一个页容器：时间线（#/log）与它的子页工程日志（#/log/eng）。
+    子页不另立一个 .page 容器，因为它不是第七页——侧栏上没有它的入口，
+    它只从这一页右上角进得去，回来也只回得到这一页。
+
+    地址形态：#/log ｜ #/log/<日期> ｜ #/log/eng，筛选一律写在查询串里
+    （only=problem、type、streamer、chan、q），因此筛完的画面能收藏、能贴给别人。
+    翻页的位置<b>不</b>进地址栏：它是「翻到哪儿了」不是「筛了什么」，
+    贴出去的地址若从第三页开始显示，对方看不出前面还有。
   -->
   <section class="page" id="page-log">
     <div id="log">
-      <p class="hint">一条按天翻的时间线：几点、发生了什么、成没成、没成为什么、该做什么。</p>
-      <div class="empty" id="log-empty">这一页等事件时间线接上</div>
+      <div class="loghead">
+        <p class="hint">一条按天翻的时间线：几点、发生了什么、成没成、没成为什么、该做什么。
+          给人看的，不是程序日志。</p>
+        <a class="daystep" id="log-eng-open" href="#/log/eng">工程日志 →</a>
+      </div>
+
+      <div class="nv-card hcard">
+        <div class="backups" id="log-daybar"></div>
+
+        <label class="switch"><input type="checkbox" id="log-only">
+          <span>只看问题 · 失败、告警，还有降级发出去的那几条</span></label>
+
+        <!--
+          三筛的选项由服务端给：类型是枚举闭集，主播与通道取自这一天出现过的那些。
+          界面自己从这一页事件里凑的话，结果被截断时那张表就缺项——
+          而缺了谁，只有想筛它的人才看得见。
+        -->
+        <div class="backups" id="log-filters">
+          <span>类型</span><select id="log-type" aria-label="按类型筛"></select>
+          <span>主播</span><select id="log-streamer" aria-label="按主播筛"></select>
+          <span>群 / 私聊</span><select id="log-channel" aria-label="按通道筛"></select>
+          <input type="search" id="log-q" placeholder="搜主播、群、关键字" aria-label="搜索日志">
+          <button type="button" id="log-clear" style="display:none">清掉筛选</button>
+        </div>
+
+        <div class="tl" id="log-list"></div>
+        <div class="tl-foot" id="log-more"></div>
+        <p class="hint" id="log-retention" style="margin:10px 0 0"></p>
+      </div>
+    </div>
+
+    <!-- ============ 工程日志 #/log/eng ============ -->
+    <div id="logeng" style="display:none">
+      <div class="loghead">
+        <div>
+          <a class="daystep" id="log-back" href="#/log">‹ 回日志</a>
+          <p class="hint" style="margin:8px 0 0">NovaBot 程序自己记的，给排障用。上面那页是给人看的。
+            口令与 Cookie 这类串在送到这里之前已经打码。</p>
+        </div>
+        <!--
+          NapCat 的日志不进控制台：把别人的日志代理进来，
+          等于替一个我们既管不着、也说不清它写了什么的程序背书。这里只留一个去它自己界面的入口，
+          凭据没配好时整块只剩上面那句话——一个点了才知道不能用的按钮，比没有那个按钮更费解。
+        -->
+        <div class="note" id="eng-napcat"></div>
+      </div>
+
+      <div class="nv-card hcard">
+        <div class="backups" id="eng-tools">
+          <div class="lgpills" id="eng-levels"></div>
+          <input type="search" id="eng-q" placeholder="搜这一段日志" aria-label="搜索工程日志">
+          <span>行数</span>
+          <select id="eng-limit" aria-label="读多少行">
+            <option value="300">最后 300 行</option>
+            <option value="1000">最后 1000 行</option>
+            <option value="2000">最后 2000 行</option>
+          </select>
+          <button type="button" id="eng-reload">重新读</button>
+        </div>
+        <div class="eng" id="eng-body"></div>
+        <p class="hint" id="eng-foot" style="margin:8px 0 0"></p>
+      </div>
     </div>
   </section>
 

@@ -6,6 +6,7 @@
 import {loadAnalytics} from './analytics.js';
 import {bindBotForm, botFormHtml, fillBotForms, sendTestMessage} from './bot.js';
 import {$, api, el, esc, markDirty, say} from './core.js';
+import {loadLog, syncLogView} from './log.js';
 import {loadHistory, loadState, refreshHome, renderStatus, runSelfTest, togglePush} from './overview.js';
 import {addStreamer, decoratePushData, renderPlatforms, renderStreamers, serializePush} from './push.js';
 import {loadPasskeys, registerPasskey} from './passkeys.js';
@@ -196,10 +197,15 @@ let route = '';
 
 /**
  * 解析地址栏。认不出来的路由一律当首页，不留白屏
- * @return {{name: string, sub: string}} 路由名与子路由（插件页标识）
+ *
+ * 查询串先切掉再分段：日志页把筛选写在 `#/log/2026-09-01?only=problem` 这样的地址里，
+ * 不切的话第二段会连着后面那一串，于是「带筛选的那一天」认不出是哪一天。
+ * 查询串本身由各页自己解析——每页要认的参数不是同一批，摊到这里就是一张长不完的表。
+ * @return {{name: string, sub: string}} 路由名与子路由（插件页标识、或日志页的日期与子页）
  */
 function parseHash() {
-  const parts = (location.hash || '').replace(/^#\/?/, '').split('/').filter(Boolean);
+  const raw = (location.hash || '').replace(/^#\/?/, '').split('?')[0];
+  const parts = raw.split('/').filter(Boolean);
   const name = parts[0] || 'home';
   return {name: PAGE_TAB[name] ? name : 'home', sub: parts[1] || ''};
 }
@@ -230,6 +236,9 @@ function applyRoute(withData = true) {
     x => x.classList.toggle('on', !!plugin && x.dataset.tab === plugin.meta.id));
   // 初始设置页是独立版式：这台机器可能还没上锁，页头上的「退出登录」无从谈起
   document.documentElement.classList.toggle('chromeless', name === 'setup');
+  // 日志页有两半（时间线与工程日志），哪一半该显示由地址栏定，与取不取数据无关——
+  // 合进下面那一趟的话，直接打开 #/log/eng 会先闪一下时间线那一半
+  if (name === 'log') syncLogView();
   // 插件页是折起来的，点它的入口进来时要替使用者展开，否则地址对了而屏幕上什么都没变
   if (plugin) $('#plugin-adv').open = true;
 
@@ -248,6 +257,9 @@ function applyRoute(withData = true) {
   // 最近推送那张表随首页改版挪到了本页，因此跟着这一页刷
   else if (name === 'push') { loadState(); loadHistory(); }
   else if (name === 'streamers') loadAnalytics();
+  // 翻天、改筛选、进出工程日志走的都是改地址栏这一条路，因此每次进来都重取：
+  // 日志页的「现在是哪一天、筛了什么」全部只存在地址栏里，本页自己不记
+  else if (name === 'log') loadLog();
   // 每次进入都重建只读口令那一块：顺带抹掉上一次留在屏幕上的口令明文
   else if (name === 'links') { api('/status').then(renderStatus); loadTokens(); }
   else if (plugin) { api('/status').then(renderStatus); callPage(plugin, 'refresh'); }

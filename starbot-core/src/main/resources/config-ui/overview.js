@@ -6,7 +6,7 @@
  */
 
 import {renderTestMessage} from './bot.js';
-import {$, api, el, esc, markDirty, say} from './core.js';
+import {$, api, clock, el, esc, markDirty, say, today} from './core.js';
 import {homeModel} from './home-model.js';
 import {pageStatus} from './main.js';
 import {renderIncomplete, renderSessions, renderSubs} from './sessions.js';
@@ -171,12 +171,6 @@ function renderProbes(model) {
     : '<div class="empty">暂无可用探针</div>';
 }
 
-/** 时:分。事件时刻是毫秒时间戳，按浏览器所在时区显示——看的人和机器往往不在同一个时区 */
-function clock(at) {
-  const time = new Date(at);
-  return String(time.getHours()).padStart(2, '0') + ':' + String(time.getMinutes()).padStart(2, '0');
-}
-
 /** 今天发生了什么：失败与告警置顶的那几条 */
 function renderStrip(model) {
   const box = $('#home-timeline');
@@ -235,19 +229,6 @@ export async function refreshHome() {
     say('载入首页失败：' + e.message, 'err');
     return null;
   }
-}
-
-/**
- * 今天是哪一天，按浏览器所在时区算
- *
- * 不用 toISOString()：那一串是 UTC 的日期，东八区的深夜与凌晨会各错一天，
- * 而「今天发生了什么」在错的那几个小时里会显示成空的。
- */
-function today() {
-  const now = new Date();
-  return now.getFullYear() + '-'
-    + String(now.getMonth() + 1).padStart(2, '0') + '-'
-    + String(now.getDate()).padStart(2, '0');
 }
 
 // ============ 推送记录 ============

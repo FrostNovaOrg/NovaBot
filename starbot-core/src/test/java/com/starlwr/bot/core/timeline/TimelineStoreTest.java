@@ -20,6 +20,7 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -167,7 +168,7 @@ class TimelineStoreTest {
         store.record(leveled(TimelineEvent.Level.ERROR, "故障一条"));
 
         TimelineStore.Result result = store.query(
-                new TimelineStore.Filter(null, true, null, null, null, null, 0));
+                new TimelineStore.Filter(null, true, null, null, null, null, 0), null);
 
         assertEquals(List.of("故障一条", "警告一条"), texts(result));
     }
@@ -179,7 +180,7 @@ class TimelineStoreTest {
         store.record(typed(TimelineEventType.PUSH_SENT, "推出去的"));
 
         TimelineStore.Result result = store.query(new TimelineStore.Filter(
-                null, false, TimelineEventType.PUSH_MUTED, null, null, null, 0));
+                null, false, TimelineEventType.PUSH_MUTED, null, null, null, 0), null);
 
         assertEquals(List.of("静音丢的"), texts(result));
     }
@@ -193,11 +194,11 @@ class TimelineStoreTest {
                 .streamer("乙主播").channel("群 222").text("乙的").build());
 
         assertEquals(List.of("甲的"), texts(store.query(
-                new TimelineStore.Filter(null, false, null, "甲主播", null, null, 0))));
+                new TimelineStore.Filter(null, false, null, "甲主播", null, null, 0), null)));
         assertEquals(List.of("乙的"), texts(store.query(
-                new TimelineStore.Filter(null, false, null, null, "群 222", null, 0))));
+                new TimelineStore.Filter(null, false, null, null, "群 222", null, 0), null)));
         assertEquals(List.of(), texts(store.query(
-                new TimelineStore.Filter(null, false, null, "甲主播", "群 222", null, 0))),
+                new TimelineStore.Filter(null, false, null, "甲主播", "群 222", null, 0), null)),
                 "两项都给时应同时满足");
     }
 
@@ -226,11 +227,90 @@ class TimelineStoreTest {
         }
 
         TimelineStore.Result result = store.query(
-                new TimelineStore.Filter(null, false, null, null, null, null, 2));
+                new TimelineStore.Filter(null, false, null, null, null, null, 2), null);
 
         assertEquals(2, result.events().size());
         assertEquals(5, result.matched(), "截断了也要说清一共命中多少");
         assertTrue(result.truncated());
+        assertNotNull(result.nextCursor(), "还有更旧的没给, 就得给出接着翻的位置");
+    }
+
+    @Test
+    @DisplayName("按游标接着往更旧的翻, 一条不重不漏, 命中总数不随翻页变")
+    void pagesBackwardsWithCursor() {
+        for (int i = 0; i < 5; i++) {
+            store.record(leveled(TimelineEvent.Level.INFO, "第 " + i + " 条"));
+        }
+
+        TimelineStore.Result first = page(null);
+        assertEquals(List.of("第 4 条", "第 3 条"), texts(first));
+
+        TimelineStore.Result second = page(first.nextCursor());
+        assertEquals(List.of("第 2 条", "第 1 条"), texts(second));
+        assertEquals(5, second.matched(), "命中总数答的是「一共有多少」, 翻到第几页与它无关");
+
+        TimelineStore.Result third = page(second.nextCursor());
+        assertEquals(List.of("第 0 条"), texts(third));
+        assertNull(third.nextCursor(), "翻到底就不该再给游标, 否则界面上那个按钮永远按得下去");
+        assertFalse(third.truncated());
+    }
+
+    @Test
+    @DisplayName("游标那一天已被清掉时应从更旧的那一天接着翻, 而不是从头再来")
+    void cursorSurvivesItsDayBeingPurged() {
+        LocalDate today = LocalDate.now();
+        store.record(event(today, "今天这条"));
+        store.record(event(today.minusDays(1), "昨天那条"));
+
+        // 游标指着一个此刻已经没有文件的日子（保留期清理会造出这种游标）
+        TimelineStore.Cursor gone = new TimelineStore.Cursor(today.minusDays(1), 0);
+
+        assertEquals(List.of("昨天那条"), texts(store.query(
+                new TimelineStore.Filter(null, false, null, null, null, null, 0),
+                new TimelineStore.Cursor(today, 0))), "从今天那条往更旧的翻");
+        assertEquals(List.of(), texts(store.query(
+                new TimelineStore.Filter(null, false, null, null, null, null, 0), gone)),
+                "游标指着最旧那一条时, 它前面什么都没有");
+    }
+
+    @Test
+    @DisplayName("游标的文本形态应能原样解析回来, 认不出的一律为空")
+    void cursorRoundTrip() {
+        TimelineStore.Cursor cursor = new TimelineStore.Cursor(LocalDate.of(2026, 9, 4), 57);
+
+        assertEquals("2026-09-04:57", cursor.toString());
+        assertEquals(cursor, TimelineStore.Cursor.parse("2026-09-04:57"));
+        assertNull(TimelineStore.Cursor.parse(null), "没给就是没给");
+        assertNull(TimelineStore.Cursor.parse("  "));
+        assertNull(TimelineStore.Cursor.parse("2026-09-04"), "少了下标认不出");
+        assertNull(TimelineStore.Cursor.parse("2026年9月4日:1"));
+        assertNull(TimelineStore.Cursor.parse("2026-09-04:x"));
+        assertNull(TimelineStore.Cursor.parse("2026-09-04:-1"), "下标不许为负");
+    }
+
+    @Test
+    @DisplayName("结果里应带出这几天出现过的主播与通道, 按字符序且不随筛选缩水")
+    void offersFilterChoices() {
+        // 后记的这条排在扫描的最前面（扫描从近到远），而它在两栏里都该排在后面：
+        // 可选项按字符序给，不按「谁最近出现过」——后者会在每条新事件进来时把下拉框重排一遍
+        store.record(TimelineEvent.of(TimelineEventType.PUSH_SENT, TimelineEvent.Level.INFO)
+                .streamer("西门").channel("群 222").text("西的").build());
+        store.record(TimelineEvent.of(TimelineEventType.PUSH_SENT, TimelineEvent.Level.INFO)
+                .streamer("东方").channel("群 111").text("东的").build());
+        store.record(TimelineEvent.of(TimelineEventType.PROBE_CHANGED, TimelineEvent.Level.WARN)
+                .text("与谁都无关的一条").build());
+
+        TimelineStore.Result all = query(null);
+        assertEquals(List.of("东方", "西门"), all.streamers());
+        assertEquals(List.of("群 111", "群 222"), all.channels());
+
+        // 筛完还得能改主意。选项跟着筛选一起缩水的话，选了「东方」之后
+        // 通道那一栏就只剩「群 111」，使用者再也换不回去，只能清掉整组筛选重来
+        TimelineStore.Result narrowed = store.query(
+                new TimelineStore.Filter(null, false, null, "东方", null, null, 0), null);
+        assertEquals(List.of("东的"), texts(narrowed));
+        assertEquals(List.of("东方", "西门"), narrowed.streamers());
+        assertEquals(List.of("群 111", "群 222"), narrowed.channels());
     }
 
     @Test
@@ -279,11 +359,16 @@ class TimelineStoreTest {
     // —— 以下为夹具 ——
 
     private TimelineStore.Result query(LocalDate date) {
-        return store.query(new TimelineStore.Filter(date, false, null, null, null, null, 0));
+        return store.query(new TimelineStore.Filter(date, false, null, null, null, null, 0), null);
+    }
+
+    /** 一页两条，供翻页那几格用 */
+    private TimelineStore.Result page(TimelineStore.Cursor cursor) {
+        return store.query(new TimelineStore.Filter(null, false, null, null, null, null, 2), cursor);
     }
 
     private int search(String keyword) {
-        return store.query(new TimelineStore.Filter(null, false, null, null, null, keyword, 0)).matched();
+        return store.query(new TimelineStore.Filter(null, false, null, null, null, keyword, 0), null).matched();
     }
 
     private List<String> texts(TimelineStore.Result result) {
