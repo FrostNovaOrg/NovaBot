@@ -192,6 +192,25 @@ public class ConfigUiAuthController {
     }
 
     /**
+     * 二次验证敏感操作被限流或锁定时的回包
+     * <p>
+     * 与登录同一把桶，话术却不能写成「登录失败」：人正在关二次验证或绑验证器，
+     * 说登录会让他以为走错了口。
+     */
+    private JSONObject refuseSensitiveTotp(ConfigUiAuthService.CredentialCheck check, HttpServletRequest request) {
+        JSONObject result = new JSONObject();
+        result.put("success", false);
+        result.put("lockedSeconds", remainingLockSeconds(request));
+        if (check.verdict() == ConfigUiAuthService.Verdict.LOCKED_OUT) {
+            long minutes = Math.max(1, check.retryAfter().toMinutes());
+            result.put("message", "尝试次数过多，请在 " + minutes + " 分钟后重试");
+        } else {
+            result.put("message", "服务器正忙，请稍后重试");
+        }
+        return result;
+    }
+
+    /**
      * 取使用协议全文
      * <p>
      * 文案不随接口下发第二份副本，界面拿到什么就显示什么——
@@ -323,10 +342,17 @@ public class ConfigUiAuthController {
             return result;
         }
 
+        ConfigUiAuthService.CredentialCheck gate = authService.beginSensitiveTotp(request.getRemoteAddr());
+        if (!gate.ok()) {
+            return refuseSensitiveTotp(gate, request);
+        }
+
         String secret = authService.verifyPending(body.getString("code")).orElse(null);
         if (secret == null) {
+            authService.failSensitiveTotp(request.getRemoteAddr());
             result.put("success", false);
             result.put("message", "验证码不正确，请确认手机时间是否准确后重试");
+            result.put("lockedSeconds", remainingLockSeconds(request));
             return result;
         }
 
@@ -338,12 +364,14 @@ public class ConfigUiAuthController {
                     TOTP_SECRET_PROPERTY, secret, TOTP_PROPERTY, "true")));
         } catch (IOException e) {
             log.error("写入二次验证密钥失败", e);
+            authService.succeedSensitiveTotp(request.getRemoteAddr());
             result.put("success", false);
             result.put("message", "保存失败: " + e.getMessage());
             return result;
         }
 
         authService.activateTotp(secret);
+        authService.succeedSensitiveTotp(request.getRemoteAddr());
         authService.logoutOthers(sessionId(request));
         result.put("success", true);
         result.put("message", "已绑定，下次登录需要输入动态验证码");
@@ -372,9 +400,16 @@ public class ConfigUiAuthController {
             return ResponseEntity.badRequest().body(result);
         }
 
+        ConfigUiAuthService.CredentialCheck gate = authService.beginSensitiveTotp(request.getRemoteAddr());
+        if (!gate.ok()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(refuseSensitiveTotp(gate, request));
+        }
+
         if (!authService.verifyCurrentCode(body.getString("code"))) {
+            authService.failSensitiveTotp(request.getRemoteAddr());
             result.put("success", false);
             result.put("message", "验证码不正确，请确认手机时间是否准确后重试");
+            result.put("lockedSeconds", remainingLockSeconds(request));
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(result);
         }
 
@@ -385,12 +420,14 @@ public class ConfigUiAuthController {
                     TOTP_PROPERTY, "false", TOTP_SECRET_PROPERTY, "")));
         } catch (IOException e) {
             log.error("关闭二次验证时写入配置失败", e);
+            authService.succeedSensitiveTotp(request.getRemoteAddr());
             result.put("success", false);
             result.put("message", "保存失败: " + e.getMessage());
             return ResponseEntity.internalServerError().body(result);
         }
 
         authService.disableTotp();
+        authService.succeedSensitiveTotp(request.getRemoteAddr());
         authService.logoutOthers(sessionId(request));
         result.put("success", true);
         result.put("message", "已关闭。下次登录只要口令，验证器里那一条可以删掉了");

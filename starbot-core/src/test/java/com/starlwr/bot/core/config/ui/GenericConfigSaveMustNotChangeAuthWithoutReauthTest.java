@@ -26,6 +26,7 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -95,9 +96,7 @@ class GenericConfigSaveMustNotChangeAuthWithoutReauthTest {
                 ConfigUiAuthService.PASSWORD_PROPERTY, "java.lang.String",
                 "starbot.core.config-ui.auth.totp", "java.lang.Boolean"));
 
-        RuntimeConfigurationApplier applier = RuntimeConfigurationApplier.bench(properties)
-                .authService(authService)
-                .build();
+        RuntimeConfigurationApplier applier = RuntimeConfigurationApplier.bench(properties).build();
 
         return new ConfigUiController(
                 metadata,
@@ -191,6 +190,24 @@ class GenericConfigSaveMustNotChangeAuthWithoutReauthTest {
                         + result.getBooleanValue("success") + " message=" + result.getString("message")
                         + " totpRequired=" + authService.totpRequired()
                         + " oldSessionAlive=" + authService.validate(session.getId()).isPresent());
+    }
+
+    @Test
+    @DisplayName("🔴 通用保存带认证键必须整单拒，配置文件一个字不动")
+    void genericSaveMustRejectAuthKeysAndLeaveTheFileUntouched() throws IOException {
+        login();
+        String before = Files.readString(config, StandardCharsets.UTF_8);
+
+        Map<String, String> body = new LinkedHashMap<>();
+        body.put(ConfigUiAuthService.PASSWORD_PROPERTY, NEW_PASSWORD);
+        JSONObject result = controller.save(body);
+
+        assertFalse(result.getBooleanValue("success"),
+                "放行就会把口令哈希写进配置文件, 重启即换门, 实际 message=" + result.getString("message"));
+        assertTrue(result.getString("message") != null && result.getString("message").contains("登录与安全"),
+                "应把人领去专用口, 实际 message=" + result.getString("message"));
+        assertEquals(before, Files.readString(config, StandardCharsets.UTF_8),
+                "拒了配置文件就该逐字同, 哈希写进去等于门已经换了");
     }
 
 }

@@ -319,39 +319,6 @@ public class ConfigUiAuthService {
     }
 
     /**
-     * 从设置页保存下来的口令即刻生效
-     * <p>
-     * 与启动时读配置那一步<b>走同一条路</b>：明文当场哈希掉并写回文件，哈希则原样认下。
-     * 各写一份的下场是，从设置页填进去的明文会一直躺在盘上，直到有人重启一次才被换掉——
-     * 而那期间文件里明明白白写着口令，界面上却看不出任何区别。
-     * @param configured 配置文件里那一行的取值，明文或哈希
-     */
-    public void applyConfiguredPassword(String configured) {
-        this.passwordHash = resolvePasswordHash(configured);
-        log.info("配置界面的登录口令已更换");
-    }
-
-    /**
-     * 从设置页保存下来的「要不要二次验证」即刻生效
-     * <p>
-     * 关掉时连密钥一起清（同 {@link #disableTotp()}）：留着一个不再用的密钥躺在配置里，
-     * 下次重新打开时它会被直接沿用，而使用者以为自己新绑了一把。
-     * <p>
-     * 打开时<b>不动密钥</b>：没绑过就是「开着但还没绑」，界面会持续提示去绑，
-     * 这正是 {@link #totpPending()} 那一问的形态。
-     * @param required 是否要求二次验证
-     */
-    public void applyConfiguredTotp(boolean required) {
-        if (required) {
-            this.totpEnabled = true;
-            log.info("配置界面已要求二次验证");
-            return;
-        }
-
-        disableTotp();
-    }
-
-    /**
      * 这一串是不是当前的登录口令
      * <p>
      * 不走 {@link #checkCredentials}：那一支会连二次验证码一起要，而改口令时手边未必有验证器；
@@ -442,6 +409,44 @@ public class ConfigUiAuthService {
      */
     public void recordFailedAttempt(String clientIp) {
         throttle.recordFailure(clientIp, clock.get());
+    }
+
+    /**
+     * 二次验证敏感操作开工闸：锁定与全局速率与登录共用同一把桶
+     * <p>
+     * 关掉、绑定确认都要先过这一关。已登录会话反复猜六位码，不跟登录共用的话
+     * 等于给同一把锁开了第二扇门。
+     * @param clientIp 来源 IP
+     * @return 未锁定且拿到全局额度时 {@link Verdict#OK}
+     */
+    public CredentialCheck beginSensitiveTotp(String clientIp) {
+        Instant now = clock.get();
+        Duration lockout = throttle.remainingLockout(clientIp, now);
+        if (!lockout.isZero()) {
+            return new CredentialCheck(Verdict.LOCKED_OUT, lockout);
+        }
+        if (!throttle.tryAcquireGlobal(now)) {
+            return new CredentialCheck(Verdict.BUSY, BUSY_RETRY_AFTER);
+        }
+        return new CredentialCheck(Verdict.OK, Duration.ZERO);
+    }
+
+    /**
+     * 二次验证敏感操作猜错：计入失败，可能触发锁定
+     * @param clientIp 来源 IP
+     */
+    public void failSensitiveTotp(String clientIp) {
+        throttle.recordFailure(clientIp, clock.get());
+        log.warn("配置界面二次验证敏感操作失败, 来源: {}", clientIp);
+    }
+
+    /**
+     * 二次验证敏感操作猜对：清掉该来源的失败记录，并把全局额度退还
+     * @param clientIp 来源 IP
+     */
+    public void succeedSensitiveTotp(String clientIp) {
+        throttle.recordSuccess(clientIp);
+        throttle.refundGlobal();
     }
 
     /**

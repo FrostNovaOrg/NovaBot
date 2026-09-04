@@ -5,7 +5,6 @@ import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.config.ConfigEffect;
 import com.starlwr.bot.core.config.ConfigLevel;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
-import com.starlwr.bot.core.config.ui.auth.PasswordHash;
 import com.starlwr.bot.core.config.ui.page.ConsolePageProvider;
 import com.starlwr.bot.core.config.ui.page.ConsolePages;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
@@ -61,7 +60,6 @@ import java.time.format.DateTimeFormatter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -598,8 +596,6 @@ public class ConfigUiController {
             return result;
         }
 
-        hashPasswordInPlace(changes);
-
         try {
             List<String> changedKeys = fileService.write(changes);
 
@@ -642,31 +638,6 @@ public class ConfigUiController {
             return "已保存 " + changed + " 项，已生效";
         }
         return "已保存 " + changed + " 项，其中 " + restart + " 项需重启";
-    }
-
-    /**
-     * 把界面上填的明文登录口令换成哈希再落盘
-     * <p>
-     * <b>不该让使用者自己去抄哈希串。</b>那串东西有 80 个字符，手工复制少一位就再也登不进去，
-     * 而登录时的报错与「口令输错了」一模一样——人只会以为是自己记错了密码，
-     * 完全看不出是配置坏了。这个坑真踩过，掉的就是最后一位。
-     * <p>
-     * 在这里换掉，配置文件里就从来不会留下明文，使用者也不必知道哈希这回事。
-     * @param changes 待写入的配置项，就地修改
-     */
-    private void hashPasswordInPlace(Map<String, String> changes) {
-        String value = changes.get(ConfigUiAuthController.PASSWORD_PROPERTY);
-        if (value == null || value.isBlank() || PasswordHash.isHashed(value)) {
-            return;
-        }
-
-        char[] plain = value.toCharArray();
-        try {
-            changes.put(ConfigUiAuthController.PASSWORD_PROPERTY, PasswordHash.hash(plain));
-            log.info("配置界面的登录口令已哈希后保存, 重启后生效");
-        } finally {
-            Arrays.fill(plain, '\0');
-        }
     }
 
     /*

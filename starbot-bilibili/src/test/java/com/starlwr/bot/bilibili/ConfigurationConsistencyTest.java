@@ -9,6 +9,7 @@ import com.starlwr.bot.core.config.ConfigEffect;
 import com.starlwr.bot.core.config.ui.ConfigurationGroups;
 import com.starlwr.bot.core.config.ui.ExternalConfigurationFields;
 import com.starlwr.bot.core.config.ui.RuntimeConfigurationApplier;
+import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.env.YamlPropertySourceLoader;
@@ -353,6 +354,8 @@ class ConfigurationConsistencyTest {
         // 界面额外展示的那几项没有字段可标注，声明写在另一张表里。分母漏掉它们的话，
         // 其中任何一项接进即时生效通道都会被判成「会被写回却没标」——标了，只是这把尺看不见
         declared.addAll(ExternalConfigurationFields.immediateNames());
+        // 口令与二次验证当场生效走专用口，不经通用保存，故不进 Applier 名单
+        declared.removeIf(ConfigUiAuthService::isDedicatedAuthKey);
 
         // 声明与名单是同一条规则的两个读者。只对其中一边加项，界面会照着声明说「已生效」，
         // 而保存那一步压根没碰运行中的配置——改了不生效，且没有任何提示说它没生效

@@ -4,7 +4,6 @@ import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.service.TotalDataStorage;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -16,28 +15,29 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.BiConsumer;
-import java.util.function.Supplier;
 
-/**
- * 把保存下来的配置改动落到运行中的程序上
- * <p>
- * 绝大多数配置项是启动时读一次就不再回头看的，改了只能等重启。但有几项<b>「等重启」等于没有这项功能</b>：
- * 「临时静音」要的就是现在生效，为此重启一次会把正在采集的场次打断；告警接收人配错了的时候，
- * 正需要告警的往往就是此刻。
- * <p>
- * <b>能即时生效的键是这里这份显式名单，不是推断出来的。</b>「把新值写回配置对象」这个动作本身
- * 到处都能做，但它只在<b>读取方每次都重新读</b>的前提下才真的管用——启动时把值抄进自己字段的组件，
- * 改了配置对象它也看不见。哪几项满足这个前提是一件需要逐项确认的事，写成名单才有地方确认；
- * 靠「凡是标了即时生效的都试着写回去」，就会出现界面说已生效而实际没有的情形，
- * 且<b>没有任何提示说它没生效</b>。
- * <p>
- * 名单与字段上的 {@code @ConfigEffect} 标注必须一一对应，两边对不上时构建会红
- * （判据在 {@code ConfigurationConsistencyTest}）。
- *
- * <h2>不在名单里的那两类</h2>
- * 「命令开关」与「金额可见」同样是即时生效的，但它们<b>不是 application.yml 里的配置项</b>——
- * 两者都按会话记在运行状态里，走 {@link RuntimeStateController} 那条路，本类够不着也不该够得着。
- */
+    /**
+     * 把保存下来的配置改动落到运行中的程序上
+     * <p>
+     * 绝大多数配置项是启动时读一次就不再回头看的，改了只能等重启。但有几项<b>「等重启」等于没有这项功能</b>：
+     * 「临时静音」要的就是现在生效，为此重启一次会把正在采集的场次打断；告警接收人配错了的时候，
+     * 正需要告警的往往就是此刻。
+     * <p>
+     * <b>能即时生效的键是这里这份显式名单，不是推断出来的。</b>「把新值写回配置对象」这个动作本身
+     * 到处都能做，但它只在<b>读取方每次都重新读</b>的前提下才真的管用——启动时把值抄进自己字段的组件，
+     * 改了配置对象它也看不见。哪几项满足这个前提是一件需要逐项确认的事，写成名单才有地方确认；
+     * 靠「凡是标了即时生效的都试着写回去」，就会出现界面说已生效而实际没有的情形，
+     * 且<b>没有任何提示说它没生效</b>。
+     * <p>
+     * 名单与字段上的 {@code @ConfigEffect} 标注必须一一对应，两边对不上时构建会红
+     * （判据在 {@code ConfigurationConsistencyTest}）。登录口令与二次验证开关标的也是即时生效，
+     * 但落地在 {@code /config/api/auth} 专用口，不进本名单——通用保存若把它们写回，
+     * 一枚已登录会话就能换掉门。
+     *
+     * <h2>不在名单里的那两类</h2>
+     * 「命令开关」与「金额可见」同样是即时生效的，但它们<b>不是 application.yml 里的配置项</b>——
+     * 两者都按会话记在运行状态里，走 {@link RuntimeStateController} 那条路，本类够不着也不该够得着。
+     */
 @Slf4j
 @Service
 public class RuntimeConfigurationApplier {
@@ -97,9 +97,6 @@ public class RuntimeConfigurationApplier {
      * 改它们只能走各自的专门入口。落地动作因此也在那个入口里，本类的签名（一个键、一个字符串）
      * 也接不住一整份列表。
      * <p>
-     * 登录口令与二次验证开关同样不走这里：通用保存若直接改这两项，一枚已登录会话就能换掉门。
-     * 它们改完仍然当场生效，落地在 {@code /config/api/auth} 专用口。
-     * <p>
      * 🔴 <b>但「即时生效」这句话只有一张表。</b>本表与上面那张一起构成
      * {@link #supportedKeys()}——也就是「保存之后不需要重启的键」的全部。少了这张表的话，
      * 这几项要么被迫标成「重启后生效」（界面白让人重启一次，而它其实已经生效了），
@@ -111,11 +108,7 @@ public class RuntimeConfigurationApplier {
             // 机器人连接：/api/setup/bot 保存时经 BotConnectionTester#apply 当场重建连接，
             // 判据在适配器一侧（连接建起来没有、换了地址旧连接断没断）
             "starbot.adapter.onebot.senders",
-            "/api/setup/bot 保存时经 BotConnectionTester#apply 当场重建连接",
-            ConfigUiAuthService.PASSWORD_PROPERTY,
-            "/config/api/auth/password 专用口落盘并当场生效",
-            ConfigUiAuthService.TOTP_PROPERTY,
-            "/config/api/auth/totp 专用口落盘并当场生效");
+            "/api/setup/bot 保存时经 BotConnectionTester#apply 当场重建连接");
 
     /**
      * 保存过、但要等重启才生效的配置项
@@ -129,32 +122,21 @@ public class RuntimeConfigurationApplier {
     private final StarBotCoreProperties properties;
 
     /**
-     * 登录校验，配置界面关掉时不存在
-     * <p>
-     * 用 {@code ObjectProvider} 而不是直接注入：本类是每台实例都有的，而登录校验那个 bean
-     * 只在配置界面开着时才存在。直接注入等于让「关掉配置界面」这条路起不来。
-     */
-    private final Supplier<ConfigUiAuthService> authService;
-
-    /**
      * 累计数据存储，判据台架里可能没有
      */
     private final TotalDataStorage totalDataStorage;
 
     @Autowired
-    public RuntimeConfigurationApplier(StarBotCoreProperties properties, ObjectProvider<ConfigUiAuthService> authService,
-                                       TotalDataStorage totalDataStorage) {
-        this(properties, (Supplier<ConfigUiAuthService>) authService::getIfAvailable, totalDataStorage);
+    public RuntimeConfigurationApplier(StarBotCoreProperties properties, TotalDataStorage totalDataStorage) {
+        this.properties = properties;
+        this.totalDataStorage = totalDataStorage;
     }
 
     /**
      * 判据台架的构造口：要哪几个侧件按需给（包内可见：台架都在同包）
      * <p>
-     * 台架里带不带登录校验、带不带累计数据存储，是<b>每条判据各取所需</b>的事；
-     * 为每种组合单列一个构造签名，组合每多一种就再多一个，而且互相长得像——
-     * 台架拿错一个重载时编译照样过（两个参数都能隐式往上凑的场合），
-     * 量出来的就是另一个形态。收成一个口子按需给，缺省就是「都没有」：
-     * 与真实的「配置界面被关掉、也没配累计存储」那一形一致，口令类配置落不下去，按需重启处理。
+     * 台架里带不带累计数据存储，是<b>每条判据各取所需</b>的事；
+     * 缺省就是「都没有」：与真实的「也没配累计存储」那一形一致。
      * @param properties 配置对象
      * @return 构造器
      */
@@ -167,21 +149,10 @@ public class RuntimeConfigurationApplier {
      */
     static final class Bench {
         private final StarBotCoreProperties properties;
-        private ConfigUiAuthService authService;
         private TotalDataStorage totalDataStorage;
 
         private Bench(StarBotCoreProperties properties) {
             this.properties = properties;
-        }
-
-        /**
-         * 带上登录校验
-         * @param authService 登录校验
-         * @return 本构造器
-         */
-        Bench authService(ConfigUiAuthService authService) {
-            this.authService = authService;
-            return this;
         }
 
         /**
@@ -198,15 +169,8 @@ public class RuntimeConfigurationApplier {
          * @return 按给出的侧件装配好的实例
          */
         RuntimeConfigurationApplier build() {
-            return new RuntimeConfigurationApplier(properties, () -> authService, totalDataStorage);
+            return new RuntimeConfigurationApplier(properties, totalDataStorage);
         }
-    }
-
-    private RuntimeConfigurationApplier(StarBotCoreProperties properties, Supplier<ConfigUiAuthService> authService,
-                                        TotalDataStorage totalDataStorage) {
-        this.properties = properties;
-        this.authService = authService;
-        this.totalDataStorage = totalDataStorage;
     }
 
     /**

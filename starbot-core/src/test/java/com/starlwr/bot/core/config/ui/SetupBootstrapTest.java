@@ -221,7 +221,7 @@ class SetupBootstrapTest {
     @Test
     @DisplayName("通用即时通道不得改口令或二次验证，这两项只走专用口")
     void genericApplierMustNotChangeAuthKeys() {
-        RuntimeConfigurationApplier applier = RuntimeConfigurationApplier.bench(properties).authService(authService).build();
+        RuntimeConfigurationApplier applier = RuntimeConfigurationApplier.bench(properties).build();
 
         assertFalse(authService.isEnabled(), "夹具起点：还没上锁");
         boolean totpBefore = authService.totpEnabled();
