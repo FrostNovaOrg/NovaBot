@@ -10,6 +10,7 @@
 import {ask} from './confirm.js';
 import {$, api, el, esc, markDirty, saveTarget, say} from './core.js';
 import {load} from './main.js';
+import {bindPasswordReveal} from './password-reveal.js';
 import {serializePush} from './push.js';
 import {alertCards, CARD_FIELDS, filterCards} from './settings-alert.js';
 import {authCards, AUTH_CARD_FIELDS, filterAuthCards} from './settings-auth.js';
@@ -108,12 +109,8 @@ function buildControl(field, value, cell) {
     input.autocomplete = 'off';
     const eye = el('button');
     eye.type = 'button';
-    eye.textContent = '显示';
-    eye.addEventListener('click', () => {
-      input.type = input.type === 'password' ? 'text' : 'password';
-      eye.textContent = input.type === 'password' ? '显示' : '隐藏';
-    });
     wrap.append(input, eye);
+    bindPasswordReveal(input, eye);
     cell.appendChild(wrap);
     return input;
   }

@@ -39,6 +39,9 @@ let directory = {};
 /** 挑选目标时那份原样的可选项，认目标要用它 */
 let options = [];
 
+/** 加主播格子上的提示，与空着按下时那句共用：两处各写一份就会各说各的 */
+export const STREAMER_INPUT_HINT = 'uid、直播间号，或粘贴空间／直播间链接';
+
 /** 地址栏定的选中项：主播 uid 与通道号，两者皆空即通道一览 */
 let picked = {uid: '', num: ''};
 
@@ -1103,7 +1106,7 @@ export function addStreamer() {
 
     const input = el('input');
     input.id = 'add-uid';
-    input.placeholder = '输入 uid、直播间号，或粘贴空间／直播间链接';
+    input.placeholder = '输入 ' + STREAMER_INPUT_HINT;
     input.setAttribute('aria-label', '主播 uid、直播间号或链接');
     form.appendChild(input);
 
@@ -1130,7 +1133,7 @@ async function lookupStreamer(platformNames, input, go, out) {
     : platformNames[0];
   const value = input.value.trim();
   if (!value) {
-    out.textContent = '请先输入 uid、直播间号或链接。';
+    out.textContent = '请先输入 ' + STREAMER_INPUT_HINT + '。';
     return;
   }
 

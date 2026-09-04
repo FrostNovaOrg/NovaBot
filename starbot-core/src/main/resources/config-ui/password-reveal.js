@@ -1,16 +1,18 @@
 /**
  * 口令框显示／隐藏
  *
- * 默认藏着，点一下揭开，再点藏回去。登录页一口与设置页改口令三栏共用这一份，
- * 不各写一份——抄四份的话，默认态或文案分叉时，四处在屏幕上长得不一样，
- * 而夹具永远只量得着其中一份。
+ * 默认藏着，点一下揭开，再点藏回去。登录页一口、改口令三栏、设置页机密行
+ * 与签发口令页共用这一份，不各写一份——抄六份的话，默认态或文案分叉时，
+ * 六处在屏幕上长得不一样，而夹具永远只量得着其中一份。
  *
  * 判定是纯函数，不碰 DOM。接线那一层把算出来的 type / 文案挂到元素上。
  * 登录页不取外部资源，这份文件由服务端拼进那张页面，与设置页 import 的是同一份字节。
  */
 
-/** 四处落点。闭集：少一处等于那一处还在各写一份 */
-export const PASSWORD_REVEAL_SITES = ['login', 'pwd-current', 'pwd-next', 'pwd-again'];
+/** 六处落点。闭集：少一处等于那一处还在各写一份 */
+export const PASSWORD_REVEAL_SITES = [
+  'login', 'pwd-current', 'pwd-next', 'pwd-again', 'settings', 'tokens',
+];
 
 /**
  * 这一刻口令框该长什么样
@@ -39,9 +41,12 @@ export function togglePasswordReveal(state) {
  * 把算出来的显隐挂到一对输入框与按钮上
  * @param input 口令框
  * @param button 显示／隐藏按钮
+ * @return {{setRevealed: function(boolean): void}} 需要从别处揭开时用（签发口令页剪贴板失败那一路）
  */
 export function bindPasswordReveal(input, button) {
-  if (!input || !button) return;
+  if (!input || !button) {
+    return {setRevealed() {}};
+  }
 
   let state = passwordReveal(false);
   const paint = () => {
@@ -56,4 +61,10 @@ export function bindPasswordReveal(input, button) {
     state = togglePasswordReveal(state);
     paint();
   });
+  return {
+    setRevealed(on) {
+      state = passwordReveal(!!on);
+      paint();
+    },
+  };
 }
