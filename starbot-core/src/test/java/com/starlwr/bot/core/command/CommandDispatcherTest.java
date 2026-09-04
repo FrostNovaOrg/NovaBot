@@ -58,7 +58,7 @@ class CommandDispatcherTest {
         settings = new CommandSettingsService(new StarBotStateStore(new StarBotCoreProperties()));
         command = new RecordingCommand();
 
-        dispatcher = new CommandDispatcher(providerOf(command), settings, dataSource, sender, new StarBotCoreProperties());
+        dispatcher = new CommandDispatcher(providerOf(command), noFollowUps(), settings, dataSource, sender, new StarBotCoreProperties());
     }
 
     @Test
@@ -203,7 +203,7 @@ class CommandDispatcherTest {
 
         AbstractDataSource dataSource = mock(AbstractDataSource.class);
         when(dataSource.getAllUsers()).thenReturn(List.of(configuredUser()));
-        CommandDispatcher withAdmins = new CommandDispatcher(providerOf(command), settings, dataSource, sender, properties);
+        CommandDispatcher withAdmins = new CommandDispatcher(providerOf(command), noFollowUps(), settings, dataSource, sender, properties);
         command.adminOnly = true;
 
         // 发送者 uid 为 1，角色是普通成员，但在超管名单里
@@ -260,6 +260,13 @@ class CommandDispatcherTest {
         when(provider.iterator()).thenAnswer(invocation -> List.of(command).iterator());
         when(provider.orderedStream()).thenAnswer(invocation -> Stream.of(command));
         return provider;
+    }
+
+    /**
+     * 没有任何追问认领方：本类量的是命令本身的路由与权限，与追问应答无关
+     */
+    private ObjectProvider<CommandFollowUp> noFollowUps() {
+        return CommandDispatcherCorpusTest.noFollowUps();
     }
 
     /**

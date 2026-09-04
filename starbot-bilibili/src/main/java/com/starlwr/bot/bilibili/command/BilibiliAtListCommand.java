@@ -19,8 +19,9 @@ public abstract class BilibiliAtListCommand extends BilibiliAtCommand {
      */
     private static final int MAX_SHOWN = 30;
 
-    protected BilibiliAtListCommand(AbstractDataSource dataSource, AtSubscriptionService subscriptions) {
-        super(dataSource, subscriptions);
+    protected BilibiliAtListCommand(AbstractDataSource dataSource, BilibiliStreamerChoice choice,
+                                    AtSubscriptionService subscriptions) {
+        super(dataSource, choice, subscriptions);
     }
 
     @Override

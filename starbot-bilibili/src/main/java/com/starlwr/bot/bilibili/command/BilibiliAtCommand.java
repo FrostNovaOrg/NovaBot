@@ -17,8 +17,9 @@ import com.starlwr.bot.core.service.AtSubscriptionService;
 public abstract class BilibiliAtCommand extends BilibiliStreamerCommand {
     protected final AtSubscriptionService subscriptions;
 
-    protected BilibiliAtCommand(AbstractDataSource dataSource, AtSubscriptionService subscriptions) {
-        super(dataSource);
+    protected BilibiliAtCommand(AbstractDataSource dataSource, BilibiliStreamerChoice choice,
+                                AtSubscriptionService subscriptions) {
+        super(dataSource, choice);
         this.subscriptions = subscriptions;
     }
 

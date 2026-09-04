@@ -10,10 +10,12 @@ import com.starlwr.bot.core.health.PushActivityRecorder;
 import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.Sender;
 import com.starlwr.bot.core.sender.AtAllPermissionResolver;
+import com.starlwr.bot.core.sender.FirstPushTipService;
 import com.starlwr.bot.core.sender.PushGate;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
 import com.starlwr.bot.core.service.AtAllQuotaService;
 import com.starlwr.bot.core.service.StarBotSenderService;
+import com.starlwr.bot.core.service.StarBotStateStore;
 import com.starlwr.bot.core.util.HttpUtil;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -261,7 +263,8 @@ class TimelineHookTest {
 
         return new StarBotMessageSender(mock(HttpUtil.class), senderService,
                 new PushActivityRecorder(TimelineWriter.NONE), new PushGate(properties),
-                timeline, new AtAllQuotaService(properties), resolvers);
+                timeline, new AtAllQuotaService(properties), resolvers,
+                new FirstPushTipService(new StarBotStateStore(properties)));
     }
 
     private Message message() {
