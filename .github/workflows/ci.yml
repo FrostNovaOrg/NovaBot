@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: 配置 JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '17'
           distribution: temurin
@@ -27,10 +27,10 @@ jobs:
       # 与登录页那八格显隐矩阵都由 JUnit 拉起 node 跑夹具，PATH 上没有它这两格就红
       # （不是跳过——跳过与通过在构建日志上长得一样）。ubuntu-latest 自带 node，
       # 但那是运行器镜像的巧合而不是承诺：显式装一次，版本也就写下来了
-      - name: 配置 Node 20
+      - name: 配置 Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       # 构建与汇总走 ./build.sh 这一个入口：它装构建插件、整测、打可运行包，并把
       # StarBotCore.jar＋lib＋plugins＋plugins-lib＋模板汇总到 dist/build —— 汇总那一步
@@ -73,7 +73,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: 配置 JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '17'
           distribution: temurin
