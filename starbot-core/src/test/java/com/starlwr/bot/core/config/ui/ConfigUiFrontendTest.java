@@ -837,6 +837,208 @@ class ConfigUiFrontendTest {
     }
 
     /**
+     * 推送页那份判法
+     */
+    private static final String PUSH_MODEL = "push-model.js";
+
+    /**
+     * 推送页那份渲染
+     */
+    private static final String PUSH_VIEW = "push.js";
+
+    /**
+     * 通道页第 4 段「本群设置」那份渲染
+     */
+    private static final String PUSH_SETTINGS = "sessions.js";
+
+    /**
+     * 推送页的外壳，写在 {@code index.html} 里，闭集
+     * <p>
+     * 左树的两个入口与树本身、窄屏那个下拉、右区、挑选面板那一摊，以及「哪几条推送配置没填完」。
+     * 树上的节点与右区四段全部由脚本建出来，不写在页面里——同一件事在页面与脚本里各有一份的话，
+     * 两份分叉时屏幕上不会有任何异常。
+     */
+    private static final List<String> PUSH_SHELL = List.of(
+            "push-tree", "push-right", "push-nav", "push-default-tpl", "push-add-streamer",
+            "push-drawer", "push-drawer-title", "push-drawer-lead", "push-drawer-body",
+            "push-drawer-close", "sess-incomplete");
+
+    /**
+     * 上面那些里必须被脚本接上线的，闭集
+     * <p>
+     * {@code push-default-tpl} 不在其中：它是一个普通链接，地址写在标签上，没有脚本可接。
+     */
+    private static final List<String> PUSH_WIRED = List.of(
+            "push-tree", "push-right", "push-nav", "push-add-streamer",
+            "push-drawer", "push-drawer-title", "push-drawer-lead", "push-drawer-body",
+            "push-drawer-close", "sess-incomplete");
+
+    /**
+     * 推送页自己要调的端点，闭集
+     * <p>
+     * 少接一条，那一块就变成一片说不出为什么空着的地方。这些端点别处也在用，
+     * 因此只在 {@code push.js} 里找：拿全部脚本找的话，这一页把某条丢了也照样绿。
+     */
+    private static final List<String> PUSH_ENDPOINTS = List.of(
+            "/state", "/push-history", "/at-all/quota",
+            "/onebot/targets?type=group", "/onebot/targets?type=friend", "/onebot/targets/refresh",
+            "/streamer/lookup");
+
+    /**
+     * 「本群设置」那一段要调的端点，闭集
+     * <p>
+     * 单条开关、成批开关、金额可见与移除订阅。成批那一支是「组开关」与「一键恢复」按下去的那一下：
+     * 少了它，界面只能自己循环调单条，而中途失败会留下一半开一半关的局面。
+     */
+    private static final List<String> PUSH_SETTINGS_ENDPOINTS = List.of(
+            "/state/command", "/state/commands", "/state/revenue", "/state/subscription");
+
+    /**
+     * 渲染那一层必须问过判法的那几件事，闭集
+     */
+    private static final List<String> PUSH_MODEL_CALLS = List.of(
+            "pushTree(", "channelIndex(", "templateState(", "layoutState(", "noticeSwitches(",
+            "commandGroups(", "commandSummary(", "recentPushes(", "atAllStatus(",
+            "subscriptionSummary(", "revenueSummary(", "strandedSessions(", "channelName(");
+
+    /**
+     * 抄进渲染代码就算退步的那几条判法，闭集
+     */
+    private static final List<String> PUSH_MODEL_FUNCTIONS = List.of(
+            "function pushTree", "function channelIndex", "function templateState",
+            "function layoutState", "function commandGroups", "function commandSummary",
+            "function recentPushes", "function atAllStatus");
+
+    /**
+     * 推送页各有落点，且树与摘要的判法只有 push-model 一份
+     * <p>
+     * 与设置页、连接页、日志页那几条同理：元素与接线缺哪一半都不会报错——元素没了，
+     * 脚本按 id 取到 null；脚本没接上，控件就静静地立在那里，点它什么也不发生。
+     * <p>
+     * 🔴 后半截奔着两类具体的退步去：
+     * <ul>
+     *   <li><b>把树与摘要那几条判法抄一份到渲染代码里。</b>它们由 {@code push-model.js} 现算，
+     *   那一份有 node 夹具逐档在量；抄进渲染代码之后，夹具照样全绿——它量的还是那份没人调的判法，
+     *   而屏幕上跑的是新抄的这一份。</li>
+     *   <li><b>自己判「这个会话的菜单里列不列这条命令」。</b>那条规则在命令那一侧只有一份实现
+     *   （{@code availableIn}），结论由 {@code /api/state} 的 {@code menuHidden} 带过来。
+     *   在界面上再判一遍的话，改了那一份的那天控制台仍按旧规矩画，而两边的代码看起来都对。</li>
+     * </ul>
+     * 两种改动<b>都不会让任何功能变坏</b>，因此靠人复查是拦不住的。
+     */
+    @Test
+    @DisplayName("推送页左树、四段与本群设置各有落点，树与摘要的判法只有 push-model 一份")
+    void pushPageIsWiredUp() throws IOException {
+        String html = Files.readString(frontendDir().resolve("index.html"), StandardCharsets.UTF_8);
+        Map<String, String> sources = coreSources();
+        String scripts = String.join("\n", sources.values());
+        String view = sources.getOrDefault(PUSH_VIEW, "");
+        String settings = sources.getOrDefault(PUSH_SETTINGS, "");
+
+        List<String> bad = new ArrayList<>();
+        // 找不到那两份渲染时判红而不是跳过：一把量不动却报绿的判据，比没有这把判据更糟
+        if (view.isBlank()) {
+            bad.add("找不到 " + PUSH_VIEW + "，下面每一格都无从量起");
+        }
+        if (settings.isBlank()) {
+            bad.add("找不到 " + PUSH_SETTINGS + "，「本群设置」那一段无从量起");
+        }
+        if (!sources.containsKey(PUSH_MODEL)) {
+            bad.add("找不到 " + PUSH_MODEL + "，树与摘要的判法没有落脚的地方");
+        }
+
+        for (String id : PUSH_SHELL) {
+            if (!html.contains("id=\"" + id + "\"")) {
+                bad.add("index.html 上没有 #" + id);
+            }
+        }
+        for (String id : PUSH_WIRED) {
+            if (!scripts.contains("$('#" + id + "')")) {
+                bad.add("没有任何脚本用到 #" + id + "，它立在那里但点了不管用");
+            }
+        }
+
+        for (String endpoint : PUSH_ENDPOINTS) {
+            if (!view.contains("'" + endpoint + "'")) {
+                bad.add(PUSH_VIEW + " 没有调用 " + endpoint + "，那一块此刻空着而不说为什么");
+            }
+        }
+        for (String endpoint : PUSH_SETTINGS_ENDPOINTS) {
+            if (!settings.contains("'" + endpoint + "'")) {
+                bad.add(PUSH_SETTINGS + " 没有调用 " + endpoint + "，那一项此刻改了不生效");
+            }
+        }
+
+        for (String call : PUSH_MODEL_CALLS) {
+            if (!view.contains(call)) {
+                bad.add(PUSH_VIEW + " 没有问过 " + call + "，那一块画的是别处算的");
+            }
+        }
+        for (String function : PUSH_MODEL_FUNCTIONS) {
+            if (view.contains(function) || settings.contains(function)) {
+                bad.add("渲染代码里又判了一遍 " + function + "。那几条规则只许有 " + PUSH_MODEL
+                        + " 一份——抄一份进来之后，夹具量的还是没人调的那一份");
+            }
+        }
+
+        // 「菜单里列不列」的结论只许被判法读一次：出现在渲染代码里，就是又判了一遍
+        for (String name : List.of(PUSH_VIEW, PUSH_SETTINGS)) {
+            if (sources.getOrDefault(name, "").contains("menuHidden")) {
+                bad.add(name + " 自己读了 menuHidden。这个会话的菜单里列哪几条由命令那一侧算，"
+                        + "结论经 " + PUSH_MODEL + " 一处消费");
+            }
+        }
+        if (!sources.getOrDefault(PUSH_MODEL, "").contains("menuHidden")) {
+            bad.add(PUSH_MODEL + " 没有读 menuHidden，上面那条「渲染代码里没有」因此不作数");
+        }
+
+        if (!view.contains("resolveTarget(")) {
+            bad.add(PUSH_VIEW + " 没有经过 resolveTarget 认目标。填错一位数不会有任何报错，"
+                    + "消息只是发去了别处，而挑选面板存在的意义正是把那种错拦在配置阶段");
+        }
+
+        bad.addAll(pushPageHasNoFreeTextField(html));
+
+        assertTrue(bad.isEmpty(), "推送页少了这几件事:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
+     * 推送页上不许有手填号码的格子
+     * <p>
+     * 与连接页那条同族，奔着同一类退步去：<b>把手填群号的格子加回来</b>。填错一位数不会有
+     * 任何报错，消息只是发去了别处；而「配好了群里没动静」的另外几类错（Token 不对、
+     * 机器人被踢出群、OneBot 没起）表现完全一样，混在一起就再也分不开。
+     * <p>
+     * 量的是 {@code index.html} 里推送页那一块：挑选面板由脚本建出来，里面那个
+     * 「uid 或个人空间链接」是主播的账号，不是推送目标的号码，两者不是一回事。
+     * @param html index.html 全文
+     * @return 问题，没有则为空
+     */
+    private List<String> pushPageHasNoFreeTextField(String html) {
+        List<String> bad = new ArrayList<>();
+
+        int from = html.indexOf("id=\"page-push\"");
+        int to = html.indexOf("id=\"page-streamers\"", Math.max(from, 0));
+        if (from < 0 || to < 0) {
+            // 找不到那一块时判红而不是跳过
+            bad.add("index.html 里找不到推送页那一块（#page-push 到 #page-streamers 之间）");
+            return bad;
+        }
+
+        String block = html.substring(from, to);
+        if (block.contains("<input")) {
+            bad.add("推送页上出现了输入框。推送目标只能从机器人自己给的名单里挑——"
+                    + "手填时填错一位数不会有任何报错，消息只是发去了别处");
+        }
+        // 阴性对照：这一格得能分辨。没有这一句的话，那一块整个被删掉也照样「不含输入框」
+        if (!block.contains("<select")) {
+            bad.add("推送页上没有窄屏那个下拉，上面那条「不含输入框」因此不作数");
+        }
+
+        return bad;
+    }
+
+    /**
      * 插件页是运行时装上来的，不是编译期定死的
      * <p>
      * 静态 {@code import} 一写，那个平台就成了核心的一部分：没装插件时页面加载不了，

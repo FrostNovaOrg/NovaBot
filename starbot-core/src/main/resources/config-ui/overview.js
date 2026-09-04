@@ -8,7 +8,6 @@
 import {$, api, clock, el, esc, markDirty, say, today} from './core.js';
 import {homeModel} from './home-model.js';
 import {pageStatus} from './main.js';
-import {renderIncomplete, renderSessions, renderSubs} from './sessions.js';
 import {store} from './store.js';
 
 /** 链路图上三座站的图标。画在这里而不是插件里：这三座站是产品形态本身，不随装了什么插件变 */
@@ -233,31 +232,9 @@ export async function refreshHome() {
   }
 }
 
-// ============ 推送记录 ============
-// 「刚才那条推了吗」「为什么没推」此前只能翻 journalctl
-function renderHistory(records) {
-  const body = $('#history tbody');
-  if (!records || !records.length) {
-    body.innerHTML = '<tr><td colspan="4" class="empty">尚无推送记录</td></tr>';
-    return;
-  }
-
-  body.innerHTML = records.map(r => {
-    const result = r.success
-      ? '<span class="good">成功</span>'
-      : '<span class="bad">失败：' + esc(r.reason || '未知原因') + '</span>';
-    return '<tr><td>' + esc(r.at) + '</td><td>' + esc(r.target) + '</td>'
-      + '<td title="' + esc(r.summary) + '">' + esc(r.summary) + '</td><td>' + result + '</td></tr>';
-  }).join('');
-}
-
-export async function loadHistory() {
-  try {
-    renderHistory((await api('/push-history')).records);
-  } catch (e) {
-    // 推送记录拉取失败不影响其余状态展示
-  }
-}
+// 推送记录那张表随推送页改版挪去了通道页的「推什么」那一段：
+// 每个通道各看自己的 5 条，见 push.js 的 sectionNotices。整份表不再有摆放的地方——
+// 「刚才那条推了吗」问的总是某一个群，而整份表要人自己在里面找。
 
 function renderPushSwitch(enabled) {
   store.pushEnabled = enabled !== false;
@@ -359,26 +336,9 @@ export function renderStatus(data) {
   pageStatus(data);
 }
 
-// ---- 群与成员 ----
-// 三份数据同属 state.json，用一个接口一次取回：分三次请求会出现
-// 「命令是新的、名单是旧的」这种自相矛盾的画面
-let stateData = null;
-
-export async function loadState() {
-  try {
-    stateData = await api('/state');
-    renderState(stateData);
-  } catch (e) {
-    say('载入运行状态失败：' + e.message, 'err');
-  }
-}
-
-function renderState(d) {
-  renderIncomplete(d.incomplete || []);
-  renderSessions(d.sessions || [], d.commands || []);
-  renderSubs(d.subscriptions || []);
-  // d.bindings 不再渲染：账号绑定已停用，记录只留档
-}
+// 命令开关、订阅名单与「哪几条推送配置没填完」那三块随推送页改版挪去了通道页的
+// 「本群设置」那一段（见 sessions.js）：它们讲的是某一个群此刻听不听话，
+// 而这一页答的是「现在好不好」。取那份状态的那一趟也跟着搬走了，见 push.js 的 loadPushPage。
 
 // 「运行自检」把整页重取一遍并给出结论。异常项本就在探针那一栏里逐条列着，
 // 这里只回答「现在到底有没有问题」，省得使用者自己数。

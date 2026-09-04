@@ -23,6 +23,9 @@
                开关的滑块也用它，滑到强调色上时白点最容易看清。
      --on-accent 压在强调色填充上的字。暗色下强调色变浅，白字对比度不够，改用页底色。 */
   --paper:#FFFFFF; --on-accent:#FFFFFF;
+  /* 盖在整页上的那层。亮色下压得轻些、暗色下压得重些：暗色本来就暗，
+     用同一个值的话底下那一页几乎还是清清楚楚，看起来像面板浮在没被挡住的页面上 */
+  --overlay:rgba(28,26,46,.32);
   /* 字体与尺寸：不随主题变，只在这里定义一次 */
   --font:-apple-system,"PingFang SC","HarmonyOS Sans SC","MiSans",system-ui,sans-serif;
   --mono:"SF Mono",Menlo,"JetBrains Mono",ui-monospace,monospace;
@@ -46,6 +49,7 @@
     --c-danmu:#A38BFF; --c-gift:#F06AB8; --c-sc:#F7BC5B; --c-blind:#3DD68C;
     --c-guard:#4CC9F0; --c-view:#9B96B5;
     --paper:#FFFFFF; --on-accent:#14121F;
+  --overlay:rgba(10,8,18,.58);
   }
 }
 :root[data-theme="dark"]{
@@ -61,6 +65,7 @@
   --c-danmu:#A38BFF; --c-gift:#F06AB8; --c-sc:#F7BC5B; --c-blind:#3DD68C;
   --c-guard:#4CC9F0; --c-view:#9B96B5;
   --paper:#FFFFFF; --on-accent:#14121F;
+  --overlay:rgba(10,8,18,.58);
 }
 /* 旧变量名留一版别名。页面脚本里若有按旧名取色的地方，换名当天不会突然读到空值；
    各页版式改造把引用逐处换到新名之后，这一块就可以整块删掉。 */
@@ -370,8 +375,6 @@ tr:last-child td{border-bottom:none}
    同样的坑在 .target input 上踩过一次，这里从根上避开 */
 .backups input:not([type=checkbox]){background:var(--surface);color:var(--text);
   border:1px solid var(--line);border-radius:var(--r-ctl);padding:6px 9px;font-size:12.5px;width:140px}
-/* 添加主播是本页的主入口，140px 连提示语都放不下 */
-#push-toolbar #add-uid{width:260px}
 .issues.ok{border-color:var(--ok);background:var(--oksoft)}
 .issues.ok li,.issues.ok b{color:var(--ok)}
 /* 机密字段：输入框 + 一个显示/隐藏开关 */
@@ -408,50 +411,6 @@ tr:last-child td{border-bottom:none}
 .account button{margin-left:auto;background:var(--surface);color:var(--text);border:1px solid var(--line);
   border-radius:var(--r-ctl);padding:6px 12px;font-size:12.5px;cursor:pointer}
 .account button:hover{border-color:var(--err);color:var(--err)}
-.streamer{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);
-  box-shadow:var(--shadow);margin-bottom:14px;overflow:hidden}
-.streamer>.head{display:flex;align-items:center;gap:12px;padding:12px 16px;
-  border-bottom:1px solid var(--line);background:var(--soft)}
-.streamer>.head img{width:34px;height:34px;border-radius:50%;flex:none;background:var(--line)}
-.streamer>.head .name{font-weight:600}
-.streamer>.head .id{color:var(--dim);font-size:12px;font-weight:400;margin-left:8px}
-.streamer .body{padding:12px 16px}
-.streamer .events{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px}
-.streamer .events label{display:inline-flex;align-items:center;gap:6px;font-size:13px;cursor:pointer}
-.streamer .events input{margin:0;cursor:pointer}
-.streamer .events small{color:var(--dim);font-size:11.5px}
-.target{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 0;
-  border-top:1px dashed var(--line);font-size:13px}
-.target select,.target input{background:var(--ground);color:var(--text);border:1px solid var(--line);
-  border-radius:var(--r-ctl);padding:5px 8px;font-size:12.5px}
-.target input{width:150px}
-.target .rm{margin-left:auto;background:none;border:none;color:var(--dim);cursor:pointer;font-size:12.5px}
-.target .rm:hover{color:var(--err)}
-.streamer .add-target{margin-top:10px;background:none;border:1px dashed var(--line);color:var(--dim);
-  border-radius:var(--r-ctl);padding:6px 12px;font-size:12.5px;cursor:pointer;width:100%}
-.streamer .add-target:hover{border-color:var(--accent);color:var(--accent)}
-.tpl{flex-basis:100%;margin:8px 0 0;padding:10px 12px;background:var(--ground);
-  border:1px solid var(--line);border-radius:var(--r-ctl)}
-.tpl .chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
-.tpl .chips button{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-pill);
-  padding:2px 10px;font-size:11.5px;cursor:pointer;color:var(--dim);font-family:var(--mono)}
-.tpl .chips button:hover{border-color:var(--accent);color:var(--accent)}
-.tpl textarea{width:100%;min-height:56px;background:var(--surface);color:var(--text);
-  border:1px solid var(--line);border-radius:var(--r-ctl);padding:7px 9px;font-size:12.5px;
-  font-family:var(--mono);resize:vertical}
-.tpl .preview{margin-top:8px;font-size:12.5px;color:var(--dim);white-space:pre-wrap;word-break:break-all}
-.tpl .preview b{color:var(--text);font-weight:500}
-.tpl-toggle{background:none;border:none;color:var(--accent);cursor:pointer;font-size:11.5px;padding:0 0 0 4px}
-/* 处理器自带的参数（如下播报告的版式开关），由 options 声明后通用渲染 */
-.tpl .opts{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
-.tpl .opts>h5{margin:0 0 8px;font-size:12px;font-weight:600;color:var(--dim)}
-.tpl .opts .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:6px 14px}
-.tpl .opts label{display:flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer;min-height:26px}
-.tpl .opts label>span{flex:1}
-/* .target input 把所有输入框设成了 150px 宽，勾选框会因此撑掉整格，必须显式收回 */
-.tpl .opts input[type=checkbox]{width:auto;flex:none;margin:0;padding:0}
-.tpl .opts input[type=number]{width:64px;flex:none;text-align:right;background:var(--surface);
-  color:var(--text);border:1px solid var(--line);border-radius:var(--r-ctl);padding:3px 6px;font-size:12.5px}
 .step{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);
   box-shadow:var(--shadow);margin-bottom:14px;overflow:hidden}
 .step>h3{margin:0;padding:12px 16px;font-size:14px;font-weight:600;border-bottom:1px solid var(--line);
@@ -480,33 +439,8 @@ details.adv[open]>summary::before{transform:rotate(90deg)}
 details.adv .inner{padding:0 16px 16px}
 .warn{background:var(--warnsoft);border:1px solid var(--warn);border-radius:var(--r-ctl);
   padding:10px 12px;font-size:12.5px;margin-bottom:12px}
-#history td{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#history .bad{color:var(--err)}
-#history .good{color:var(--ok)}
-/* 群与成员：命令开关按会话分卡片，每条命令一行 */
-.sess{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);
-  box-shadow:var(--shadow);margin-bottom:14px;overflow:hidden;padding-bottom:6px}
-.sess>.head{display:flex;align-items:center;gap:10px;padding:12px 16px;
-  border-bottom:1px solid var(--line);background:var(--soft);flex-wrap:wrap}
-.sess>.head b{font-size:14px}
-.sess>.head .id{color:var(--dim);font-size:12px}
-.sess>.head .tag{margin-left:auto;font-size:11.5px;border:1px solid var(--line);
-  border-radius:var(--r-pill);padding:1px 9px;color:var(--dim);background:var(--surface)}
-.sess>.head .tag.off{border-color:var(--warn);color:var(--warn);background:var(--warnsoft)}
-.sess .cat{padding:9px 16px 3px;font-size:12px;color:var(--dim)}
-.cmd{display:flex;align-items:center;gap:10px;padding:7px 16px;font-size:13px}
-.cmd .nm{font-weight:500;min-width:104px}
-.cmd .ds{color:var(--dim);font-size:12.5px;flex:1;min-width:0}
-.cmd .adm{font-size:11px;border:1px solid var(--line);border-radius:var(--r-pill);padding:0 7px;
-  color:var(--dim);flex:none}
-.cmd .lock{font-size:11.5px;color:var(--dim);flex:none}
-.cmd .switch{flex:none}
 .cat-title{font-size:14px;font-weight:600;margin:26px 0 8px}
 .cat-title:first-of-type{margin-top:8px}
-.uids{display:flex;gap:6px;flex-wrap:wrap}
-.uids button{background:var(--ground);border:1px solid var(--line);border-radius:var(--r-pill);
-  padding:1px 8px;font-size:11.5px;cursor:pointer;color:var(--text);font-family:var(--mono)}
-.uids button:hover{border-color:var(--err);color:var(--err)}
 td.act button{background:none;border:none;color:var(--dim);cursor:pointer;font-size:12.5px;padding:0}
 td.act button:hover{color:var(--err)}
 /* 数据分析：趋势图用内联 SVG 画，页面刻意不引入任何外部依赖 */
@@ -784,3 +718,162 @@ td.act button:hover{color:var(--err)}
 #eng-tools input[type=search]{flex:1 1 180px;min-width:140px}
 #eng-tools input[type=date]{font-family:inherit}
 #eng-jump{margin:0 0 12px}
+
+/* ==================== QQ 推送 ====================
+   左边一棵「主播 → 通道」两级树，右边随选中项换。版式取自 5.1 原型，
+   色值一律引本文件顶部的 token，这一段里不写任何十六进制色。 */
+.pushwrap{display:grid;grid-template-columns:236px 1fr;gap:16px;align-items:start}
+.ptree{position:sticky;top:calc(var(--head-h) + 16px);background:var(--surface);
+  border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(--shadow);padding:10px}
+.ptop{display:grid;gap:6px;margin-bottom:10px}
+.ptop>*{justify-self:stretch;text-align:left;background:var(--surface);color:var(--text);
+  border:1px solid var(--line);border-radius:var(--r-ctl);padding:6px 10px;font-size:12.5px;
+  cursor:pointer;font-family:inherit;text-decoration:none}
+.ptop>*:hover{border-color:var(--accent);color:var(--accent)}
+.ptree-t{font-size:11.5px;color:var(--dim);padding:4px 6px}
+.tgroup{margin-bottom:2px}
+.tnode{display:flex;align-items:center;gap:6px;width:100%;background:none;border:none;
+  border-radius:var(--r-ctl);padding:6px 8px;font:inherit;font-size:13px;color:var(--text);
+  cursor:pointer;text-align:left}
+.tnode:hover{background:var(--soft)}
+.tnode.on{background:var(--soft);font-weight:600}
+.tnode.tchan{padding-left:24px;font-size:12.5px}
+.tnode .caret{width:14px;flex:none;color:var(--dim);font-size:10px}
+.tnode .tn-ico{flex:none;width:18px;height:18px;border-radius:var(--r-ctl);background:var(--soft);
+  color:var(--dim);font-size:10.5px;display:inline-flex;align-items:center;justify-content:center}
+.tnode .tn-nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 记号挤成一竖排会把整行撑高，树上一行一行地错开就看不出层级了 */
+.tnode .tn-marks{flex:none;display:flex;gap:4px;max-width:96px;overflow:hidden}
+.tempty{padding:6px 8px 6px 24px;font-size:12px;color:var(--dim)}
+.pnarrow{display:none;margin-bottom:12px}
+.pnarrow label{display:block;font-size:12.5px;color:var(--dim);margin-bottom:4px}
+.pnarrow select{width:100%;background:var(--surface);color:var(--text);border:1px solid var(--line);
+  border-radius:var(--r-ctl);padding:8px 10px;font-size:13px;font-family:inherit}
+.pright{min-width:0}
+/* 窄屏：左树摆不下，改成上面那个下拉。树不是「藏起来」而是换了一种画法——
+   直接横过来摆的话，正文只剩半屏宽，而通道页四段每一段都是整行的开关 */
+@media (max-width:900px){
+  .pushwrap{display:block}
+  .ptree{display:none}
+  .pnarrow{display:block}
+}
+.psec>h3{display:flex;align-items:center;gap:8px}
+.psec-n{flex:none;width:20px;height:20px;border-radius:50%;background:var(--soft);
+  color:var(--accent);font-size:11.5px;display:inline-flex;align-items:center;justify-content:center}
+.psec h4{margin:18px 0 6px;font-size:12.5px;font-weight:600;color:var(--dim)}
+.ptable{margin-bottom:8px}
+.ptable td.n{font-variant-numeric:tabular-nums;color:var(--dim)}
+.ptable td{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ptable .good{color:var(--ok)}
+.ptable .bad{color:var(--err)}
+/* 主播级的头 */
+.shead{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.sav{width:40px;height:40px;border-radius:50%;flex:none;background:var(--line);object-fit:cover}
+.sh-m{flex:1 1 180px;min-width:0}
+.sh-nm{font-size:17px;font-weight:600}
+.sh-id{color:var(--dim);font-size:12.5px}
+.sh-side{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+button.danger:hover{border-color:var(--err);color:var(--err)}
+/* 通道行 */
+.rowcard{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 0;
+  border-top:1px solid var(--line)}
+.rowcard:first-of-type{border-top:none}
+.rc-main{flex:1 1 240px;min-width:0}
+.rc-nm{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:14px}
+.rc-nm a{color:inherit;text-decoration:none}
+.rc-nm a:hover{color:var(--accent)}
+.rc-sub{color:var(--dim);font-size:12px;margin-top:1px}
+.rc-tg{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
+.rc-side{display:flex;align-items:center;gap:8px;flex:none}
+.addrow{width:100%;margin-top:10px;background:none;border:1px dashed var(--line);color:var(--dim);
+  border-radius:var(--r-ctl);padding:7px 12px;font-size:12.5px;cursor:pointer;font-family:inherit}
+.addrow:hover{border-color:var(--accent);color:var(--accent)}
+/* 通道级的头 */
+.chead{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ch-nm{font-size:17px;font-weight:600}
+.ch-id{color:var(--dim);font-size:12.5px}
+.chead .ghost{margin-left:auto}
+/* 开关一行：左边开关、右边名字与一句说明 */
+.swrow{display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-top:1px solid var(--line)}
+.swrow:first-of-type{border-top:none}
+.swrow>.switch{flex:none;margin-top:2px}
+.swtxt{flex:1;min-width:0;font-size:13px}
+.swtxt b{font-weight:600}
+.swtxt .dim{color:var(--dim);font-weight:400;font-size:11.5px}
+.swtxt p{margin:2px 0 0;color:var(--dim);font-size:12.5px}
+/* 群里本来就不列的那几条：淡下去但仍然看得见。整行藏掉的话，
+   使用者会以为这条命令不存在，而它只是在这个会话里不列 */
+.swrow.dimmed{opacity:.6}
+.cmdmark{margin-left:8px;font-size:11.5px;color:var(--dim);font-weight:400}
+.cmdlock{flex:none;width:38px;font-size:11px;color:var(--dim);line-height:22px}
+/* 模板那一行的读态 */
+.tplstate{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--soft);
+  border:1px solid var(--softline);border-radius:var(--r-ctl);padding:9px 12px;
+  margin-bottom:10px;font-size:13px}
+.tplstate>span:first-child{flex:1 1 auto}
+.tplrow{padding:10px 0;border-top:1px solid var(--line)}
+.tplrow:first-of-type{border-top:none}
+.tplbody{margin:0 0 8px;padding:9px 11px;background:var(--ground);border:1px solid var(--line);
+  border-radius:var(--r-ctl);font-family:var(--mono);font-size:12.5px;white-space:pre-wrap;
+  word-break:break-all}
+/* 本群设置：四行摘要 */
+.crow{border-top:1px solid var(--line)}
+.crow:first-of-type{border-top:none}
+.crow>summary{display:flex;align-items:baseline;gap:10px;padding:10px 0;cursor:pointer;
+  list-style:none;font-size:13px}
+.crow>summary::-webkit-details-marker{display:none}
+.crow>summary::before{content:"▸";color:var(--dim);flex:none}
+.crow[open]>summary::before{content:"▾"}
+.cr-t{flex:none;min-width:76px;font-weight:600}
+.cr-sum{flex:1;min-width:0;color:var(--dim);font-size:12.5px}
+.cr-body{padding:2px 0 14px 16px}
+.cgroup{border-top:1px solid var(--line);padding:2px 0}
+.cgroup>.swrow{border-top:none}
+.cgroup>.swrow>.ghost{flex:none;padding:4px 12px;font-size:12px}
+.cfine{padding-left:24px}
+.strand{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0;
+  border-top:1px solid var(--line);font-size:12.5px}
+.strand:first-of-type{border-top:none}
+/* @全体成员：状态行，不是设置 */
+.statline{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;border-top:1px solid var(--line);
+  padding:10px 0 2px;font-size:12.5px}
+.statline .st-nm{flex:none;min-width:76px;font-weight:600;font-size:13px}
+.statline .st-v{color:var(--dim)}
+.statline .st-w{flex-basis:100%;color:var(--err)}
+/* 挑选面板：盖住整页，一次只问一件事 */
+.drawer{position:fixed;inset:0;background:var(--overlay);display:flex;justify-content:flex-end;
+  z-index:20}
+.drawer[hidden]{display:none}
+.drawer .dw{width:min(420px,100%);height:100%;overflow-y:auto;background:var(--surface);
+  border-left:1px solid var(--line);padding:18px 20px}
+.dw-hd{display:flex;align-items:center;gap:12px;margin-bottom:4px}
+.dw-hd h3{margin:0;font-size:15px;flex:1}
+.dwbar{display:flex;gap:8px;margin-bottom:10px}
+.dwbar input{flex:1;min-width:0;background:var(--ground);color:var(--text);
+  border:1px solid var(--line);border-radius:var(--r-ctl);padding:7px 10px;font-size:13px;
+  font-family:inherit}
+.dwbar .ghost{flex:none;padding:7px 12px;font-size:12.5px}
+.dwlist{display:grid;gap:4px}
+.dwrow{display:grid;gap:1px;text-align:left;background:none;border:1px solid transparent;
+  border-radius:var(--r-ctl);padding:8px 10px;cursor:pointer;font-family:inherit}
+.dwrow:hover:not(:disabled){background:var(--soft);border-color:var(--softline)}
+.dwrow:disabled{cursor:not-allowed;opacity:.5}
+.dw-nm{font-size:13.5px;color:var(--text)}
+.dw-sub{font-size:11.5px;color:var(--dim)}
+.dw-tag{font-size:11px;color:var(--dim)}
+.dwform{display:grid;gap:8px;margin-bottom:12px}
+.dwform input,.dwform select{background:var(--ground);color:var(--text);border:1px solid var(--line);
+  border-radius:var(--r-ctl);padding:8px 10px;font-size:13px;font-family:inherit}
+.dwout{font-size:12.5px;color:var(--dim)}
+.dwfound{display:grid;gap:4px;background:var(--soft);border:1px solid var(--softline);
+  border-radius:var(--r-ctl);padding:10px 12px}
+.dwfound span{font-size:12px;color:var(--dim)}
+.dwfound button{margin-top:6px;justify-self:start}
+.dwsub{padding:10px 0;border-top:1px solid var(--line)}
+.dwsub:first-of-type{border-top:none}
+.dwsub-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;font-size:13px}
+.dwsub-h span{color:var(--dim);font-size:12px}
+.dwsub-h .ghost{margin-left:auto;padding:4px 10px;font-size:12px}
+.dwpills{display:flex;gap:5px;flex-wrap:wrap}
+.dwpills .nv-pill{cursor:pointer;font-family:var(--mono)}
+.dwpills .nv-pill:hover{border-color:var(--err);color:var(--err)}

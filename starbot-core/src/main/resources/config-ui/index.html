@@ -134,59 +134,45 @@
   </section>
 
   <!-- ============ QQ 推送 #/push ============ -->
+  <!--
+    左边一棵「主播 → 通道」两级树，右边随选中项换成主播级或通道级。
+    地址形态：#/push（通道一览）｜ #/push/default（默认模板）｜ #/push/<uid> ｜ #/push/<uid>/<号>，
+    因此某一个通道的页面能收藏、能贴给别人。
+
+    一位主播 × 一个群（或一位好友）＝ 一个通道。同一个群出现在多位主播下是正常的，
+    而「本群设置」那一段是这个群自己的事、对推给它的所有主播共用——两件事摆在同一页上，
+    改哪一边影响谁才说得清；分成两页时，「配好了却不响应」要在两个入口之间来回对照才看得出来。
+
+    这里只留容器：树、右区四段与那四行摘要全部由 push-model.js 一次算出
+    （见 tools/push-model-check.sh 的各档），渲染那一层只管把算好的摆上去。
+  -->
   <section class="page" id="page-push">
-    <div id="push">
-      <p class="hint">配置要监听的主播与推送目标。保存前会校验格式，并检查处理器与推送平台是否存在。</p>
-
-      <div class="backups" id="push-toolbar">
-        <!-- 装了不止一个直播平台时才用得上，因此由脚本按已注册的平台清单决定显示与否 -->
-        <select id="add-platform" style="display:none"></select>
-        <input id="add-uid" placeholder="输入 uid 或粘贴个人空间链接">
-        <button id="add-streamer" type="button">添加主播</button>
-      </div>
-
-      <div id="streamers"></div>
-    </div>
+    <p class="hint">推谁、推到哪、推什么，按主播管。左边先选一位主播看它推到哪几个通道；
+      再点开通道，定这个通道收到什么、消息长什么样、这个群怎么设。</p>
 
     <!--
-      群成员在聊天里产生的状态。它讲的是「这些群此刻听不听话」，与上面的「往哪些群推」
-      是同一件事的两面，因此归在本页而不再单开一页——分成两页时，
-      「配好了却不响应」这种情况要在两个入口之间来回对照才看得出来。
-      改动即时生效并立刻落盘，因此不受底部「保存」按钮管辖。
+      推送配置里没填完的条目。它们没被加载，因此树上一个通道也不会有——
+      不在这里说一句，这一页看起来就只是「什么都没有」，而使用者刚刚明明配过。
+      一条都没有时整块不渲染，见 renderIncomplete
     -->
-    <div id="sessions">
-      <h3 class="cat-title">群与成员</h3>
-      <p class="hint">这里是群成员通过聊天命令产生的状态。改动<b>立即生效</b>，无需点击保存。</p>
+    <div id="sess-incomplete"></div>
 
-      <!--
-        推送配置里没填完的条目。它们没被加载，因此下面一个会话也不会有——
-        不在这里说一句，这一块看起来就只是「什么都没有」，而使用者刚刚明明配过。
-        一条都没有时整块不渲染，见 renderIncomplete
-      -->
-      <div id="sess-incomplete"></div>
+    <!-- 窄屏上左树摆不下，改成一个下拉。两处是同一棵树的两种画法，选中项由同一个地址定 -->
+    <div class="pnarrow">
+      <label for="push-nav">选一位主播或一个通道</label>
+      <select id="push-nav"></select>
+    </div>
 
-      <h3 class="cat-title">命令开关</h3>
-      <p class="hint">群主与群管理员可在群里用「禁用命令」关掉某条命令，关掉后机器人对它一言不发——
-        不看这里就无从得知。此处可直接改回来。</p>
-      <div id="sess-list"></div>
-
-      <h3 class="cat-title">「@我」订阅名单</h3>
-      <p class="hint">开播或发动态时会 @ 这些人。人退群后订阅仍会留着，@ 一个不在群里的号是无效的，可在此清理。</p>
-      <table id="subs"><thead><tr><th>会话</th><th>主播</th><th>类型</th><th>人数</th><th>成员（点击移除）</th><th></th></tr></thead><tbody></tbody></table>
-
-      <!--
-        账号绑定块已撤：那一族聊天命令不再注册，界面上留一张永远空着的表只会让人以为功能坏了。
-        已有的绑定记录仍在状态文件里原样留着，接口 /state 也照旧给出，只是不再显示、不再可改。
-      -->
-
-      <!--
-        最近推送。原先在首页上，随首页改版挪到这里——首页答的是「现在好不好」，
-        而这张表答的是「刚才那条推了吗」，后者属于推送这件事本身。
-        它最终该落在通道页的「推什么」那一段里（每个通道各看自己的 5 条），
-        那一页还没建，先整份留在本页，不让这条排障线索在改版中途消失。
-      -->
-      <h3 class="cat-title">最近推送</h3>
-      <table id="history"><thead><tr><th>时间</th><th>目标</th><th>内容</th><th>结果</th></tr></thead><tbody></tbody></table>
+    <div class="pushwrap">
+      <aside class="ptree">
+        <div class="ptop">
+          <a class="lnkbtn" id="push-default-tpl" href="#/push/default">默认模板</a>
+          <button type="button" id="push-add-streamer">＋ 添加主播</button>
+        </div>
+        <div class="ptree-t">主播</div>
+        <div id="push-tree"></div>
+      </aside>
+      <div class="pright" id="push-right"></div>
     </div>
   </section>
 
@@ -498,6 +484,22 @@
   </section>
 
   </main>
+</div>
+
+<!--
+  挑选面板：添加通道、添加主播、管理订阅名单都在这里摊开。
+  摆在各页之外、盖在整页之上：它一次只问一件事，而那件事问完之前，底下那一页上的东西
+  一个也不该被点到。内容由 push.js 按当次要问的事建出来。
+-->
+<div class="drawer" id="push-drawer" hidden>
+  <div class="dw" role="dialog" aria-modal="true" aria-labelledby="push-drawer-title">
+    <div class="dw-hd">
+      <h3 id="push-drawer-title">面板</h3>
+      <button class="ghost" type="button" id="push-drawer-close">关闭</button>
+    </div>
+    <p class="hint" id="push-drawer-lead"></p>
+    <div id="push-drawer-body"></div>
+  </div>
 </div>
 
 <!--
