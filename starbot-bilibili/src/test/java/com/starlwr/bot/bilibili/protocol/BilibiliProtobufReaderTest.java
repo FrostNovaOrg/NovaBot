@@ -124,6 +124,32 @@ class BilibiliProtobufReaderTest {
             assertTrue(message.isTruncated(), "11 字节的 varint 应当被判为畸形");
             assertNull(message.number(1));
         }
+
+        @Test
+        @DisplayName("第 10 字节带高位垃圾、或字段号超过 2^29-1 时判为畸形")
+        void rejectsTenthByteGarbageAndOversizedFieldNumbers() {
+            // 字段 1 的 key 写成 10 字节，第 10 字节是 0x02：64 位 varint 里第 10 字节只有最低一位有定义，
+            // 宽容的读法会把 2<<63 截成 0，这条坏 key 就被当成字段 1 读了过去
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            out.write(0x88);
+            for (int index = 0; index < 8; index++) {
+                out.write(0x80);
+            }
+            out.write(0x02);
+            out.write(0x01);
+
+            BilibiliProtobufReader tenth = BilibiliProtobufReader.parse(out.toByteArray());
+            assertTrue(tenth.isTruncated(), "第 10 字节带未定义高位的 varint 应当判为畸形");
+            assertNull(tenth.number(1));
+
+            // 字段号 536870912：比规范上界 536870911 大一位，只可能是位置读错了
+            byte[] oversized = writer().varint(1, 1L).key(536870912, 0).raw(1L).varint(3, 3L).build();
+
+            BilibiliProtobufReader oversizedMessage = BilibiliProtobufReader.parse(oversized);
+            assertTrue(oversizedMessage.isTruncated(), "超过上界的字段号应当判为畸形");
+            assertEquals(1L, oversizedMessage.number(1), "判畸形之前读到的字段应当保留");
+            assertNull(oversizedMessage.number(3));
+        }
     }
 
     @Nested

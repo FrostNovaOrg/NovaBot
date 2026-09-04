@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.zip.DeflaterOutputStream;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -37,6 +38,29 @@ class BilibiliPacketCodecTest {
 
     private byte[] jsonPacket(String json) {
         return packet(DataPackType.NOTICE.getCode(), DataHeaderType.RAW_JSON.getCode(), json.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * 拼一批总长约 totalBytes 的合法未压缩数据包，用来把解压产出撑到想要的大小
+     */
+    private byte[] jsonPacketStream(int totalBytes) {
+        ByteArrayOutputStream stream = new ByteArrayOutputStream();
+        String filler = "x".repeat(1024);
+        while (stream.size() < totalBytes) {
+            stream.writeBytes(jsonPacket(filler));
+        }
+        return stream.toByteArray();
+    }
+
+    /**
+     * zlib 压缩
+     */
+    private byte[] zlib(byte[] data) throws Exception {
+        ByteArrayOutputStream compressed = new ByteArrayOutputStream();
+        try (DeflaterOutputStream deflater = new DeflaterOutputStream(compressed)) {
+            deflater.write(data);
+        }
+        return compressed.toByteArray();
     }
 
     @Test
@@ -249,5 +273,41 @@ class BilibiliPacketCodecTest {
                 .array();
 
         assertTrue(BilibiliPacketCodec.decode(data).isEmpty());
+    }
+
+    @Test
+    @DisplayName("头部长度盖过整包长度时按坏包拒收，不再抛数组负长度")
+    void rejectsHeaderExceedingWholePacket() {
+        // 整包 16 字节、头部长度却写 17：两个长度都各自合法，合在一起才矛盾，
+        // 按整包长切负载会切出 new byte[-1]
+        byte[] data = ByteBuffer.allocate(BilibiliPacketCodec.HEADER_LENGTH)
+                .putInt(BilibiliPacketCodec.HEADER_LENGTH)
+                .putShort((short) (BilibiliPacketCodec.HEADER_LENGTH + 1))
+                .putShort((short) 0)
+                .putInt(5)
+                .putInt(1)
+                .array();
+
+        List<BilibiliPacket> packets = assertDoesNotThrow(() -> BilibiliPacketCodec.decode(data));
+        assertTrue(packets.isEmpty());
+    }
+
+    @Test
+    @DisplayName("同一批兄弟子包的解压产出合计超限时整批拒收")
+    void siblingPacketsShareOneDecompressedBudget() throws Exception {
+        // 每半各自解压约 600 KB：单看谁都不超 1,000,000，合起来约 1.2 MB 超了。
+        // 预算若按子包各算一份，这种「每个都守规、合起来越界」的批次会被整体放过
+        byte[] half = jsonPacketStream(600 * 1024);
+
+        ByteArrayOutputStream inner = new ByteArrayOutputStream();
+        inner.write(packet(DataPackType.NOTICE.getCode(), 2, zlib(half)));
+        inner.write(packet(DataPackType.NOTICE.getCode(), 2, zlib(half)));
+        byte[] outer = packet(DataPackType.NOTICE.getCode(), 2, zlib(inner.toByteArray()));
+
+        List<BilibiliPacket> packets = BilibiliPacketCodec.decode(outer, new BilibiliPacketCodec.Limits(1_000_000, 3));
+        assertTrue(packets.isEmpty(), "两半合计约 1.2 MB，超过 1,000,000 的预算应整批拒收，实际放行 " + packets.size() + " 个包");
+
+        // 默认预算（32 MB）下同一份数据能全解开——证明上面拒收是因为合计超限，不是数据本身坏了
+        assertTrue(BilibiliPacketCodec.decode(outer).size() > 0);
     }
 }

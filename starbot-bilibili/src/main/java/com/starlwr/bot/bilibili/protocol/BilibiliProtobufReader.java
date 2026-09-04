@@ -33,6 +33,11 @@ public final class BilibiliProtobufReader {
      */
     private static final int MAX_VARINT_BYTES = 10;
 
+    /**
+     * 字段号上界：key 的低 3 位是 wire type，字段号在 64 位 key 里最多占 29 位
+     */
+    private static final int MAX_FIELD_NUMBER = (1 << 29) - 1;
+
     private static final int WIRE_VARINT = 0;
 
     private static final int WIRE_FIXED64 = 1;
@@ -78,13 +83,15 @@ public final class BilibiliProtobufReader {
         try {
             while (cursor.hasRemaining()) {
                 long key = cursor.readVarint();
-                int field = (int) (key >>> 3);
+                long fieldNumber = key >>> 3;
                 int wire = (int) (key & 7);
 
-                // 字段号 0 不存在。走到这里说明位置已经错了，继续读只会读出更多垃圾字段
-                if (field <= 0) {
+                // 字段号 0 不存在、上界是 2^29-1（key 的低 3 位归 wire type）。
+                // 越过任一边界都说明位置已经错了，继续读只会读出更多垃圾字段
+                if (fieldNumber <= 0 || fieldNumber > MAX_FIELD_NUMBER) {
                     throw MALFORMED;
                 }
+                int field = (int) fieldNumber;
 
                 switch (wire) {
                     case WIRE_VARINT -> fields.put(field, cursor.readVarint());
@@ -195,6 +202,9 @@ public final class BilibiliProtobufReader {
          * <p>
          * 第 10 字节仍带续读位说明这不是合法的 64 位 varint。<b>必须设这个上限</b>，
          * 否则一串 {@code 0xFF} 会让循环一直读到缓冲区末尾，把后面所有字段的位置全带偏。
+         * <p>
+         * 第 10 字节本身只有最低一位（2^63）有定义——9×7+1 恰好装满 64 位，
+         * 高出的 6 位只能是垃圾，宽容地截掉会把一条位置已错的报文继续往后读。
          */
         private long readVarint() {
             long value = 0;
@@ -204,6 +214,10 @@ public final class BilibiliProtobufReader {
                 }
 
                 int current = data[index++];
+                // 第 10 字节（shift == 63）只认最低一位，其余 6 位有值即判畸形
+                if (shift == (MAX_VARINT_BYTES - 1) * 7 && (current & 0x7E) != 0) {
+                    throw MALFORMED;
+                }
                 value |= (long) (current & 0x7F) << shift;
                 if ((current & 0x80) == 0) {
                     return value;
