@@ -12,6 +12,7 @@
 
 import {$, api, esc, say} from './core.js';
 import {refreshLinks} from './links.js';
+import {bindPasswordReveal} from './password-reveal.js';
 import {store} from './store.js';
 
 /**
@@ -168,11 +169,7 @@ function showIssued(token, label) {
   const field = $('#tk-value');
   field.value = token;
 
-  $('#tk-reveal').addEventListener('click', () => {
-    const hidden = field.type === 'password';
-    field.type = hidden ? 'text' : 'password';
-    $('#tk-reveal').textContent = hidden ? '隐藏' : '显示';
-  });
+  const reveal = bindPasswordReveal(field, $('#tk-reveal'));
 
   $('#tk-copy').addEventListener('click', async () => {
     try {
@@ -181,8 +178,7 @@ function showIssued(token, label) {
     } catch (e) {
       // 非 https 访问或浏览器不给权限时剪贴板用不了。这里不能只报一句失败：
       // 手上这把口令没有第二次机会，得把它交到人手里
-      field.type = 'text';
-      $('#tk-reveal').textContent = '隐藏';
+      reveal.setRevealed(true);
       field.select();
       note('这个浏览器不让脚本写剪贴板，已为你选中，请按 Ctrl / ⌘ + C 复制', 'err');
     }

@@ -97,9 +97,46 @@ class StreamerLookupRoomTest {
         JSONObject result = controller().lookupStreamer(request("999"));
 
         assertFalse(result.getBooleanValue("success"));
-        assertTrue(result.getString("message").contains(NOT_FOUND_HINT), result.getString("message"));
+        String message = result.getString("message");
+        assertTrue(message.contains(NOT_FOUND_HINT), message);
+        assertTrue(message.contains("未查到 uid 999"), message);
+        assertTrue(message.contains("请确认 uid 是否正确"), message);
         assertEquals(1, rooms.uidCalls.get());
         assertEquals(1, rooms.roomCalls.get(), "落空后只再查房间号一次");
+    }
+
+    @Test
+    @DisplayName("空间链接找不到：原句仍称 uid")
+    void missingSpaceLinkKeepsUidCopy() {
+        FakeRooms rooms = FakeRooms.empty();
+        when(registry.getDataSourceService("bilibili")).thenReturn(Optional.of(rooms));
+
+        JSONObject result = controller().lookupStreamer(request("https://space.bilibili.com/999"));
+
+        assertFalse(result.getBooleanValue("success"));
+        String message = result.getString("message");
+        assertTrue(message.contains("未查到 uid 999"), message);
+        assertTrue(message.contains("请确认 uid 是否正确"), message);
+        assertFalse(message.contains("直播间号"), "uid 输入不该改口成直播间号: " + message);
+        assertEquals(1, rooms.uidCalls.get());
+        assertEquals(0, rooms.roomCalls.get(), "空间链接已经标明是 uid，不打房间号");
+    }
+
+    @Test
+    @DisplayName("直播间链接找不到：改称直播间号")
+    void missingLiveLinkUsesRoomCopy() {
+        FakeRooms rooms = FakeRooms.empty();
+        when(registry.getDataSourceService("bilibili")).thenReturn(Optional.of(rooms));
+
+        JSONObject result = controller().lookupStreamer(request("https://live.bilibili.com/999"));
+
+        assertFalse(result.getBooleanValue("success"));
+        String message = result.getString("message");
+        assertTrue(message.contains("未查到直播间号 999"), message);
+        assertTrue(message.contains("请确认直播间号是否正确"), message);
+        assertFalse(message.contains("uid"), "直播间链接不该仍称 uid: " + message);
+        assertEquals(0, rooms.uidCalls.get(), "链接已经标明是房间号，不按 uid 打");
+        assertEquals(1, rooms.roomCalls.get());
     }
 
     @Test

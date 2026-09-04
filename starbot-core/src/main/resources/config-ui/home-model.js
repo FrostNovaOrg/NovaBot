@@ -234,10 +234,10 @@ export function alertConfigured(status) {
 /**
  * 「今日」第三格：账号维度的 @全体成员 已用
  * <p>
- * 数字取自 /api/at-all/quota。无机器人或接口失败时写「—」，不编一个 0／10——
+ * 数字取自 /api/at-all/quota。无机器人或接口失败时写「—」，不编一个 0/10——
  * 0 看起来像今天一次都没用，而「—」说的是这台机器此刻无从谈起。
  * {@code limited} 为假时不画分母：上限是 0 或负数在配额服务里都是「不限」，
- * 画成 3／0 会让人以为今天已经用完了。
+ * 画成 3/0 会让人以为今天已经用完了。
  * @param quota /api/at-all/quota 回包；没有或失败时传 null
  * @return {{value: string, label: string, details: object[], more: number}}
  */
@@ -251,7 +251,7 @@ export function atAllTile(quota) {
   const used = bots.reduce((n, item) => n + Number(item.used || 0), 0);
   const capped = bots.every(item => item.limited);
   const limit = bots.reduce((n, item) => n + (item.limited ? Number(item.limit || 0) : 0), 0);
-  const value = capped ? used + '／' + limit : String(used);
+  const value = capped ? used + '/' + limit : String(used);
 
   const sessions = Array.isArray(quota.sessions) ? quota.sessions.slice() : [];
   sessions.sort((a, b) => Number(b.used || 0) - Number(a.used || 0));
@@ -261,17 +261,52 @@ export function atAllTile(quota) {
     label: '@全体成员 已用',
     details: shown.map(item => {
       const rowUsed = Number(item.used || 0);
+      const platform = item.platform || '';
       return {
-        platform: item.platform || '',
+        platform,
         num: item.num,
         used: rowUsed,
         limit: Number(item.limit || 0),
         limited: !!item.limited,
-        text: item.limited ? rowUsed + '／' + Number(item.limit || 0) : String(rowUsed),
+        text: item.limited ? rowUsed + '/' + Number(item.limit || 0) : String(rowUsed),
+        who: (platform ? platform + ' 群 ' : '群 ') + item.num,
       };
     }),
     more: Math.max(0, sessions.length - shown.length),
   };
+}
+
+function escapeHtml(v) {
+  return String(v ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
+/**
+ * 今日第三格的 HTML。expanded 只在有明细时有意义。
+ * <p>
+ * 有明细才是按钮（能开合、带 aria-expanded）；没明细与旁边两格一样是普通格，
+ * 点了不会摊开任何东西。
+ * @param tile {@link atAllTile} 的返回值
+ * @param expanded 此刻是否摊开
+ * @return {string}
+ */
+export function todayAtAllMarkup(tile, expanded) {
+  const cell = tile || {value: '—', label: '@全体成员 已用', details: [], more: 0};
+  const details = cell.details || [];
+  const rows = details.map(item =>
+    '<div class="stat-row"><span>' + escapeHtml(item.who || ('群 ' + item.num)) + '</span><span>'
+    + escapeHtml(item.text) + '</span></div>').join('')
+    + (cell.more ? '<div class="stat-more">还有 ' + escapeHtml(cell.more) + ' 个群</div>' : '');
+  const inner = '<div class="stat-v">' + escapeHtml(cell.value) + '</div>'
+    + '<div class="stat-l">' + escapeHtml(cell.label) + '</div>'
+    + (rows ? '<div class="stat-drop">' + rows + '</div>' : '');
+  if (!details.length) {
+    return '<div class="stat">' + inner + '</div>';
+  }
+  return '<button class="stat stat-exp' + (expanded ? ' open' : '')
+    + '" type="button" id="today-atall" aria-expanded="' + (expanded ? 'true' : 'false') + '">'
+    + inner + '</button>';
 }
 
 /**

@@ -1024,7 +1024,9 @@ public class ConfigUiController {
 
         if (missingName(user)) {
             result.put("success", false);
-            result.put("message", "未查到 uid " + query.id() + " 对应的主播，请确认 uid 是否正确");
+            result.put("message", query.kind() == StreamerIdKind.ROOM
+                    ? "未查到直播间号 " + query.id() + " 对应的主播，请确认直播间号是否正确"
+                    : "未查到 uid " + query.id() + " 对应的主播，请确认 uid 是否正确");
             return result;
         }
 

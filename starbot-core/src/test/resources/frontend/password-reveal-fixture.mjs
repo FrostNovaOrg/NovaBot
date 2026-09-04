@@ -2,8 +2,8 @@
  * 口令框显示／隐藏的夹具
  *
  * 量的是 config-ui/password-reveal.js：默认藏着、点一下切换、再点切回，
- * 登录页一口与改口令三栏共用同一份构件。四处各自一份状态，互不牵连——
- * 登录页点了「显示」不该把设置页三栏一起揭开。
+ * 登录页一口、改口令三栏、设置页机密行、签发口令页共用同一份构件。
+ * 六处各自一份状态，互不牵连——登录页点了「显示」不该把别处一起揭开。
  *
  * 由 PasswordRevealModelTest 拉起。引用的是源码树里那一份，也是登录页拼进去的同一份字节。
  */
@@ -41,10 +41,10 @@ eq(view(togglePasswordReveal(passwordReveal(true)).revealed),
 eq(togglePasswordReveal(togglePasswordReveal(passwordReveal(false))),
   passwordReveal(false), '切两下回到原样');
 
-// ---------- 三、四处共用同一份构件，状态各自独立 ----------
+// ---------- 三、六处共用同一份构件，状态各自独立 ----------
 eq(PASSWORD_REVEAL_SITES.slice().sort(),
-  ['login', 'pwd-again', 'pwd-current', 'pwd-next'].sort(),
-  '四处落点闭集：登录一口 + 改口令三栏');
+  ['login', 'pwd-again', 'pwd-current', 'pwd-next', 'settings', 'tokens'].sort(),
+  '六处落点闭集：登录一口 + 改口令三栏 + 设置机密行 + 签发口令页');
 
 const states = {};
 for (const site of PASSWORD_REVEAL_SITES) states[site] = passwordReveal(false);
@@ -56,12 +56,20 @@ eq(view(states['pwd-next'].revealed), {revealed: false, type: 'password', label:
   '登录页揭开不带动新口令');
 eq(view(states['pwd-again'].revealed), {revealed: false, type: 'password', label: '显示'},
   '登录页揭开不带动再输一遍');
+eq(states.settings ? view(states.settings.revealed) : null,
+  {revealed: false, type: 'password', label: '显示'},
+  '登录页揭开不带动设置页机密行');
+eq(states.tokens ? view(states.tokens.revealed) : null,
+  {revealed: false, type: 'password', label: '显示'},
+  '登录页揭开不带动签发口令页');
 
-// 四处调的是同一份函数，不是各写一份：把四处的「默认」都交给它，结果必须逐字相同
+// 六处调的是同一份函数，不是各写一份：把六处的「默认」都交给它，结果必须逐字相同
 const defaults = PASSWORD_REVEAL_SITES.map(() => passwordReveal(false));
-eq(defaults[0], defaults[1], '四处默认态同一份');
-eq(defaults[1], defaults[2], '四处默认态同一份');
-eq(defaults[2], defaults[3], '四处默认态同一份');
+eq(defaults[0], defaults[1], '六处默认态同一份');
+eq(defaults[1], defaults[2], '六处默认态同一份');
+eq(defaults[2], defaults[3], '六处默认态同一份');
+eq(defaults[3], defaults[4], '六处默认态同一份');
+eq(defaults[4], defaults[5], '六处默认态同一份');
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);

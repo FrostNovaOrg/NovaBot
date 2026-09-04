@@ -17,7 +17,7 @@ class HomeModelTest {
     private static final String FIXTURE = "tools/home-model-check.mjs";
 
     @Test
-    @DisplayName("八档、今日格三态、明细截断、Webhook 待办四态逐格与预期相同")
+    @DisplayName("八档、今日格三态、明细截断与平台名、开合格、Webhook 待办四态逐格与预期相同")
     void pureFunctionsBehaveAsSpecified() throws IOException, InterruptedException {
         FrontendFixture.run(FIXTURE, "首页判定");
     }

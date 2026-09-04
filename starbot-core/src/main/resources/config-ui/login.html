@@ -60,10 +60,11 @@
     input:focus { outline: none; border-color: var(--accent) }
     input:disabled { background: var(--ground); color: var(--dim) }
     .secret { display: flex; gap: 6px; align-items: center }
-    .secret input { flex: 1; width: auto }
+    .secret input { flex: 1 }
     .secret button {
-      width: auto; flex: none; padding: 8px 10px; font-size: 12px; font-weight: 400;
-      color: var(--dim); background: var(--surface); border: 1px solid var(--line);
+      background: var(--surface); color: var(--dim); border: 1px solid var(--line);
+      border-radius: var(--r-ctl); padding: 6px 10px; font-size: 12px; cursor: pointer;
+      font-family: inherit; flex: none;
     }
     .secret button:hover { border-color: var(--dim); color: var(--text) }
     button {
@@ -257,6 +258,7 @@
 
     $('#passkey').disabled = view.disabled;
     $('#password').disabled = view.disabled;
+    $('#password-reveal').disabled = view.disabled;
     $('#code').disabled = view.disabled;
     $('#submit').disabled = view.disabled;
   }

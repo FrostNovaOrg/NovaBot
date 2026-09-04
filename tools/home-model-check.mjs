@@ -12,7 +12,7 @@
  * 退码 0 即九档全对；任一档对不上打印差异并以 1 退出。
  */
 
-import {homeModel, PROBE_ANCHOR, stationHref} from '../starbot-core/src/main/resources/config-ui/home-model.js';
+import {homeModel, PROBE_ANCHOR, stationHref, todayAtAllMarkup} from '../starbot-core/src/main/resources/config-ui/home-model.js';
 
 /** 探针的原样形态，与 /api/status 里 health 那一项逐字段同形 */
 function probe(name, scope, level, summary, advice, loginState) {
@@ -274,7 +274,7 @@ function group(num, used, over) {
 }
 
 // 格三态
-same(tileOf(quota([bot({used: 3, limit: 10, limited: true})])).value, '3／10',
+same(tileOf(quota([bot({used: 3, limit: 10, limited: true})])).value, '3/10',
   '限额：账号已用画分母');
 same(tileOf(quota([bot({used: 3, limit: 0, limited: false})])).value, '3',
   '不限额：只显已用、不画分母');
@@ -287,7 +287,7 @@ same(tileOf({success: false}).value, '—', '回包声明失败显「—」');
 same(tileOf(quota([
   bot({platform: 'a', used: 3, limit: 10, limited: true}),
   bot({platform: 'b', used: 2, limit: 10, limited: true}),
-])).value, '5／20', '两个限额账号合计已用与上限');
+])).value, '5/20', '两个限额账号合计已用与上限');
 same(tileOf(quota([
   bot({platform: 'a', used: 3, limit: 10, limited: true}),
   bot({platform: 'b', used: 2, limit: 0, limited: false}),
@@ -300,12 +300,49 @@ const six = tileOf(quota([bot({used: 1})], [
 same(six.details.map(item => item.num), [12, 14, 16, 13, 11],
   '明细按已用降序取前 5，used 相同的保持原序');
 same(six.more, 1, '第 6 个群进「还有 N 个群」');
-same((six.details[0] || {}).text, '8／20', '限额群的明细也画分母');
+same((six.details[0] || {}).text, '8/20', '限额群的明细也画分母');
 same((tileOf(quota([bot()], [group(11, 4, {limited: false, limit: 0})])).details[0] || {}).text, '4',
   '不限额群的明细不画分母');
 same(tileOf(quota([bot()], [group(11, 1)])).more, 0, '不超过 5 个群时没有「还有」');
 
 same(tileOf(quota([bot({used: 3})])).label, '@全体成员 已用', '格的标签');
+
+same(tileOf(quota([bot({used: 3, limit: 10, limited: true})])).value.includes('／'), false,
+  '限额格不含全角斜线');
+same((six.details[0] || {}).text.includes('／'), false, '明细不含全角斜线');
+
+const twin = tileOf(quota([bot({used: 4})], [
+  group(11, 3, {platform: 'alpha-bot'}),
+  group(11, 1, {platform: 'beta-bot'}),
+]));
+const whoA = (twin.details[0] || {}).who;
+const whoB = (twin.details[1] || {}).who;
+tileChecks++;
+if (whoA === whoB) {
+  tileFails.push('同号异平台两条明细文本不应相同：得到 '
+    + JSON.stringify(whoA) + ' 与 ' + JSON.stringify(whoB));
+}
+const twinHtml = todayAtAllMarkup(twin, false);
+tileChecks++;
+if (!(whoA && whoB && twinHtml.includes(String(whoA)) && twinHtml.includes(String(whoB)))) {
+  tileFails.push('明细 HTML 应带上两条不同的平台群名，得到 ' + twinHtml);
+}
+
+const emptyHtml = todayAtAllMarkup(tileOf(quota([bot({used: 0})])), false);
+tileChecks++;
+if (emptyHtml.includes('<button')) {
+  tileFails.push('无明细不应渲染 button，得到 ' + emptyHtml);
+}
+const closedHtml = todayAtAllMarkup(tileOf(quota([bot({used: 1})], [group(11, 1)])), false);
+tileChecks++;
+if (!closedHtml.includes('aria-expanded="false"')) {
+  tileFails.push('有明细收起时应 aria-expanded="false"，得到 ' + closedHtml);
+}
+const openedHtml = todayAtAllMarkup(tileOf(quota([bot({used: 1})], [group(11, 1)])), true);
+tileChecks++;
+if (!openedHtml.includes('aria-expanded="true"')) {
+  tileFails.push('有明细摊开后应 aria-expanded="true"，得到 ' + openedHtml);
+}
 
 // 待办四态。催的是掉线时还有一路能叫到人，QQ 配没配都不算出。
 // fresh 那一档只留初始设置，这条不掺进去。
