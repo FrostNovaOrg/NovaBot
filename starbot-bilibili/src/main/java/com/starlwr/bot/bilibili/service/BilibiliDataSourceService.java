@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 哔哩哔哩数据源服务
@@ -52,6 +53,31 @@ public class BilibiliDataSourceService implements DataSourceService {
         } catch (Exception e) {
             // 补全失败不应导致该主播被整体丢弃：直播间号缺失只影响直播推送，动态推送仍可正常工作
             log.error("补全 uid {} 的信息失败, 该主播的直播推送可能不可用: {}", user.getUid(), e.getMessage());
+        }
+    }
+
+    /**
+     * 获取粉丝数
+     * <p>
+     * ⚠️ 它与 {@link #completePushUser} 打的是<b>同一个接口</b>（主播信息），
+     * 因此查一次主播会往平台去两趟。没有把两者并成一次，是因为补全推送用户
+     * 在加载配置时对每一位主播都会跑一遍，而粉丝数只有添加主播那一屏要——
+     * 并起来会让每次重载配置都多拉一份没人看的数据。
+     * @param uid UID
+     * @return 粉丝数，取不到时为空
+     */
+    @Override
+    public Optional<Long> getFansCount(Long uid) {
+        if (uid == null) {
+            return Optional.empty();
+        }
+
+        try {
+            return api.getFansCount(uid);
+        } catch (Exception e) {
+            // 查不到粉丝数不该让整次查询失败：昵称与直播间号才是确认主播身份的主要依据
+            log.debug("获取 uid {} 的粉丝数失败: {}", uid, e.getMessage());
+            return Optional.empty();
         }
     }
 

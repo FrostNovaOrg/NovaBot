@@ -13,11 +13,15 @@ import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.service.LiveDataService;
+import com.starlwr.bot.core.service.LiveReportArchive;
 import com.starlwr.bot.core.service.RevenueVisibilityService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import java.util.Base64;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 下播报告推送处理器
@@ -36,13 +40,26 @@ public class BilibiliLiveReportPushHandler implements StarBotEventHandler {
 
     private final RevenueVisibilityService revenueVisibility;
 
+    /**
+     * 报告图留档，供控制台的场次列表点开看
+     */
+    private final LiveReportArchive reports;
+
+    /**
+     * 开播时刻。留档要拿它当文件名的一部分，好让场次表里的那一行找得到自己的图
+     */
+    private final LiveDataService liveDataService;
+
     @Autowired
     public BilibiliLiveReportPushHandler(BilibiliApiUtil api, StarBotMessageSender sender,
-                                         BilibiliLiveReportPainter painter, RevenueVisibilityService revenueVisibility) {
+                                         BilibiliLiveReportPainter painter, RevenueVisibilityService revenueVisibility,
+                                         LiveReportArchive reports, LiveDataService liveDataService) {
         this.api = api;
         this.sender = sender;
         this.painter = painter;
         this.revenueVisibility = revenueVisibility;
+        this.reports = reports;
+        this.liveDataService = liveDataService;
     }
 
     @Override
@@ -59,7 +76,12 @@ public class BilibiliLiveReportPushHandler implements StarBotEventHandler {
         // 此前占位符被替换成空串会让整条消息成为空白、发送环节直接跳过——
         // 主播看到的是「这场没有报告」，而真相是「报告画不出来」
         BilibiliLiveReportOptions options = BilibiliLiveReportOptions.of(params, showRevenue);
-        String report = painter.paint(event.getPlatform(), event.getSource(), options)
+        Optional<String> image = painter.paint(event.getPlatform(), event.getSource(), options);
+
+        // 图既然已经画出来了，顺手留一份到本地。留档失败不影响推送，见 LiveReportArchive
+        image.ifPresent(base64 -> archiveReport(event, base64, showRevenue));
+
+        String report = image
                 .map(base64 -> "{image_base64=" + base64 + "}")
                 .orElseGet(() -> {
                     log.warn("{} 的下播报告图片绘制失败, 改发文字版", event.getSource().getUname());
@@ -72,6 +94,31 @@ public class BilibiliLiveReportPushHandler implements StarBotEventHandler {
                 .replace("{report}", report);
 
         PushHandlerSupport.send(sender, target, PushHandlerSupport.withAtAll(params, target, content));
+    }
+
+    /**
+     * 把这一场的报告图留一份到本地
+     * <p>
+     * 以<b>开播时刻</b>作键，与场次归档里的 {@code startTime} 同源（都问
+     * {@link LiveDataService#getLiveStartTime} 要）。两边不同源的话，场次表里的
+     * 那一行会点开另一场的报告，而两张图看起来都像模像样。
+     * <p>
+     * 没记到开播时刻就不留档：那种情况下这一场<b>本来也不会被归档</b>
+     * （见下播事件监听器），控制台上不存在这一行，留下的图永远没人点得到。
+     */
+    private void archiveReport(BilibiliLiveOffEvent event, String base64, boolean revenueVisible) {
+        Long uid = event.getSource().getUid();
+        Optional<Long> start = liveDataService.getLiveStartTime(event.getPlatform(), uid);
+        if (start.isEmpty()) {
+            log.debug("{} 没有记录到开播时间, 本场报告不留档", event.getSource().getUname());
+            return;
+        }
+
+        try {
+            reports.store(event.getPlatform(), uid, start.get(), Base64.getDecoder().decode(base64), revenueVisible);
+        } catch (IllegalArgumentException e) {
+            log.warn("{} 的报告图不是合法的 Base64, 本场报告不留档: {}", event.getSource().getUname(), e.getMessage());
+        }
     }
 
     @Override
