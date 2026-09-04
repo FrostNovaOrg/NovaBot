@@ -2,6 +2,8 @@ package com.starlwr.bot.core.config.ui.auth;
 
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.config.ui.ConfigurationFileService;
+import com.starlwr.bot.core.config.ui.ConfigurationKeyAliases;
+import com.starlwr.bot.core.config.ui.SensitiveFields;
 import lombok.extern.slf4j.Slf4j;
 
 import java.time.Duration;
@@ -34,6 +36,57 @@ public class ConfigUiAuthService {
      * 登录口令所在的配置项，明文会在启动时哈希后写回此处
      */
     public static final String PASSWORD_PROPERTY = "starbot.core.config-ui.auth.password";
+
+    /**
+     * 二次验证开关所在的配置项
+     */
+    public static final String TOTP_PROPERTY = "starbot.core.config-ui.auth.totp";
+
+    /**
+     * 二次验证密钥所在的配置项
+     */
+    public static final String TOTP_SECRET_PROPERTY = "starbot.core.config-ui.auth.totp-secret";
+
+    /**
+     * 这一项是不是只能走专用口的认证键
+     * <p>
+     * 口令、二次验证开关、二次验证密钥（以及同一前缀下按机密表认出的密钥类键）
+     * 改的时候要过旧口令或当前动态码。通用保存若直接改，一枚已登录会话就能换掉门。
+     * @param name 配置项名，现行键或旧位置均可
+     * @return 是专用口那几项时为 true
+     */
+    public static boolean isDedicatedAuthKey(String name) {
+        if (name == null || name.isBlank()) {
+            return false;
+        }
+
+        String current = ConfigurationKeyAliases.currentName(name);
+        if (PASSWORD_PROPERTY.equals(current)
+                || TOTP_PROPERTY.equals(current)
+                || TOTP_SECRET_PROPERTY.equals(current)) {
+            return true;
+        }
+
+        return current.startsWith("starbot.core.config-ui.auth.")
+                && SensitiveFields.isSensitive(current, null);
+    }
+
+    /**
+     * 这批键里有没有只能走专用口的认证项
+     * @param names 配置项名
+     * @return 有则为 true
+     */
+    public static boolean containsDedicatedAuthKey(Iterable<String> names) {
+        if (names == null) {
+            return false;
+        }
+        for (String name : names) {
+            if (isDedicatedAuthKey(name)) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     /**
      * 并发闸门拦下时建议等待的时长
@@ -82,6 +135,18 @@ public class ConfigUiAuthService {
      * 用户扫了旧的却对不上，而配置里躺着一个谁也没绑定的密钥。
      */
     private volatile String pendingSecret;
+
+    /**
+     * 已用过的动态码时间步。单用户面板只有一个账号，登录与代签发共用这一格。
+     * <p>
+     * {@code null} 表示还没用过。消费时按单调递增拦：同一格或更早的格一律拒。
+     */
+    private Long lastUsedTotpStep;
+
+    /**
+     * 消费时间步时用的锁，避免两趟同时通过校验后都写上同一格
+     */
+    private final Object totpConsumeLock = new Object();
 
     /**
      * 取当前时刻。构造时注入是为了判据能把时间往前拨，
@@ -208,6 +273,7 @@ public class ConfigUiAuthService {
         this.totpSecret = secret;
         this.pendingSecret = null;
         this.totpEnabled = true;
+        resetTotpConsume();
         log.info("配置界面已绑定验证器, 之后登录需要额外输入动态验证码");
     }
 
@@ -235,6 +301,7 @@ public class ConfigUiAuthService {
         this.totpSecret = null;
         this.pendingSecret = null;
         this.totpEnabled = false;
+        resetTotpConsume();
         log.warn("配置界面已关闭二次验证, 之后登录只校验口令");
     }
 
@@ -444,9 +511,17 @@ public class ConfigUiAuthService {
             String secret = totpEnabled ? totpSecret : null;
             // 两个都算完再判：短路会让「口令对不对」体现在耗时上
             boolean passwordOk = PasswordHash.verify(password, passwordHash);
-            boolean codeOk = secret == null || TotpGenerator.verify(secret, code, now);
+            Long step = secret == null ? null : TotpGenerator.matchingStep(secret, code, now);
+            boolean codeOk = secret == null || step != null;
 
             if (!passwordOk || !codeOk) {
+                throttle.recordFailure(clientIp, now);
+                log.warn("配置界面登录失败, 来源: {}", clientIp);
+                return new CredentialCheck(Verdict.BAD_CREDENTIALS, Duration.ZERO);
+            }
+
+            // 口令错的那一趟不能把码烧掉：上面两个都过了才消费这一格
+            if (step != null && !consumeTotpStep(step)) {
                 throttle.recordFailure(clientIp, now);
                 log.warn("配置界面登录失败, 来源: {}", clientIp);
                 return new CredentialCheck(Verdict.BAD_CREDENTIALS, Duration.ZERO);
@@ -583,6 +658,30 @@ public class ConfigUiAuthService {
             log.info("配置界面的登录口令已改为哈希保存, 配置文件中不再有明文");
         } catch (Exception e) {
             log.warn("配置界面的登录口令未能改为哈希保存, 文件中仍是明文: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 记下这一格已经用过。同一格或更早的格再来一律拒。
+     * @param step 命中的时间步
+     * @return 消费成功为 true，已经用过为 false
+     */
+    private boolean consumeTotpStep(long step) {
+        synchronized (totpConsumeLock) {
+            if (lastUsedTotpStep != null && step <= lastUsedTotpStep) {
+                return false;
+            }
+            lastUsedTotpStep = step;
+            return true;
+        }
+    }
+
+    /**
+     * 密钥换了或二次验证关了，已用过的格作废
+     */
+    private void resetTotpConsume() {
+        synchronized (totpConsumeLock) {
+            lastUsedTotpStep = null;
         }
     }
 

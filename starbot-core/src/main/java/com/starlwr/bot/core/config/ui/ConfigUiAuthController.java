@@ -314,7 +314,7 @@ public class ConfigUiAuthController {
      * @return 绑定结果
      */
     @PostMapping("/totp/enroll")
-    public JSONObject totpEnroll(@RequestBody JSONObject body) {
+    public JSONObject totpEnroll(@RequestBody JSONObject body, HttpServletRequest request) {
         JSONObject result = new JSONObject();
 
         if (!authService.canEnrollTotp()) {
@@ -344,6 +344,7 @@ public class ConfigUiAuthController {
         }
 
         authService.activateTotp(secret);
+        authService.logoutOthers(sessionId(request));
         result.put("success", true);
         result.put("message", "已绑定，下次登录需要输入动态验证码");
 
@@ -362,7 +363,7 @@ public class ConfigUiAuthController {
      * @return 关闭结果
      */
     @PostMapping("/totp/disable")
-    public ResponseEntity<JSONObject> totpDisable(@RequestBody JSONObject body) {
+    public ResponseEntity<JSONObject> totpDisable(@RequestBody JSONObject body, HttpServletRequest request) {
         JSONObject result = new JSONObject();
 
         if (!authService.totpRequired()) {
@@ -390,6 +391,7 @@ public class ConfigUiAuthController {
         }
 
         authService.disableTotp();
+        authService.logoutOthers(sessionId(request));
         result.put("success", true);
         result.put("message", "已关闭。下次登录只要口令，验证器里那一条可以删掉了");
 

@@ -91,27 +91,16 @@ public class RuntimeConfigurationApplier {
             "spring.data.redis.database", (storage, value) -> storage.applyDatabase(Integer.parseInt(value.trim())));
 
     /**
-     * 得经登录校验那一侧才落得下的配置项
-     * <p>
-     * 这两项写回配置对象<b>没有用</b>：认口令的是 {@code ConfigUiAuthService} 里那个哈希，
-     * 不是配置对象上那一行。只写配置对象的话，界面会照着「即时生效」的声明说已生效，
-     * 而门上认的还是旧的那一把——<b>而这件事从界面上看不出任何异常</b>。
-     * <p>
-     * 单列一张表而不是塞进上面那张：上面那张的签名只拿得到配置对象，
-     * 为这两项把签名改宽，等于让每一条都有能力去动登录校验。
-     */
-    private static final Map<String, BiConsumer<ConfigUiAuthService, String>> AUTH_APPLIERS = Map.of(
-            "starbot.core.config-ui.auth.password", ConfigUiAuthService::applyConfiguredPassword,
-            "starbot.core.config-ui.auth.totp", (auth, value) -> auth.applyConfiguredTotp(Boolean.parseBoolean(value)));
-
-    /**
      * 即时生效、但落地动作不在本类的配置项
      * <p>
      * 有几项<b>根本不经过设置页那条保存通道</b>：它们是列表，而设置页按设计不展示列表元素，
      * 改它们只能走各自的专门入口。落地动作因此也在那个入口里，本类的签名（一个键、一个字符串）
      * 也接不住一整份列表。
      * <p>
-     * 🔴 <b>但「即时生效」这句话只有一张表。</b>本表与上面两张一起构成
+     * 登录口令与二次验证开关同样不走这里：通用保存若直接改这两项，一枚已登录会话就能换掉门。
+     * 它们改完仍然当场生效，落地在 {@code /config/api/auth} 专用口。
+     * <p>
+     * 🔴 <b>但「即时生效」这句话只有一张表。</b>本表与上面那张一起构成
      * {@link #supportedKeys()}——也就是「保存之后不需要重启的键」的全部。少了这张表的话，
      * 这几项要么被迫标成「重启后生效」（界面白让人重启一次，而它其实已经生效了），
      * 要么标成即时生效而无处对账（判据只能睁一只眼，从此谁标都行）。
@@ -122,7 +111,11 @@ public class RuntimeConfigurationApplier {
             // 机器人连接：/api/setup/bot 保存时经 BotConnectionTester#apply 当场重建连接，
             // 判据在适配器一侧（连接建起来没有、换了地址旧连接断没断）
             "starbot.adapter.onebot.senders",
-            "/api/setup/bot 保存时经 BotConnectionTester#apply 当场重建连接");
+            "/api/setup/bot 保存时经 BotConnectionTester#apply 当场重建连接",
+            ConfigUiAuthService.PASSWORD_PROPERTY,
+            "/config/api/auth/password 专用口落盘并当场生效",
+            ConfigUiAuthService.TOTP_PROPERTY,
+            "/config/api/auth/totp 专用口落盘并当场生效");
 
     /**
      * 保存过、但要等重启才生效的配置项
@@ -222,7 +215,6 @@ public class RuntimeConfigurationApplier {
      */
     public static Set<String> supportedKeys() {
         Set<String> keys = new LinkedHashSet<>(APPLIERS.keySet());
-        keys.addAll(AUTH_APPLIERS.keySet());
         keys.addAll(APPLIED_ELSEWHERE.keySet());
         keys.addAll(REDIS_APPLIERS.keySet());
         return Collections.unmodifiableSet(keys);
@@ -263,14 +255,18 @@ public class RuntimeConfigurationApplier {
     /**
      * 找出把这一项落到运行中的程序上的那个动作
      * <p>
-     * 登录校验那一侧拿不到时回 null，也就是按需重启处理：配置界面被整个关掉的实例里
-     * 没有这个 bean，而那种实例本来也没有设置页可以保存这两项。
-     * <b>不静静跳过</b>——跳过等于对着一个没落下去的改动说「已生效」。
+     * 登录口令与二次验证不在这里落地：通用保存若直接改，一枚已登录会话就能换掉门。
+     * 那两项走专用口。出现在本方法里时按需重启处理——不静静跳过，也不动手改门。
      * @param name 配置项名
      * @param value 取值
      * @return 落地动作，落不下时为 null
      */
     private Runnable resolve(String name, String value) {
+        if (ConfigUiAuthService.isDedicatedAuthKey(name)) {
+            log.warn("配置项 {} 不能经通用保存改，请走登录与安全专用口", name);
+            return null;
+        }
+
         BiConsumer<StarBotCoreProperties, String> applier = APPLIERS.get(name);
         if (applier != null) {
             return () -> applier.accept(properties, value);
@@ -281,13 +277,7 @@ public class RuntimeConfigurationApplier {
             return totalDataStorage == null ? null : () -> redis.accept(totalDataStorage, value);
         }
 
-        BiConsumer<ConfigUiAuthService, String> auth = AUTH_APPLIERS.get(name);
-        if (auth == null) {
-            return null;
-        }
-
-        ConfigUiAuthService service = authService.get();
-        return service == null ? null : () -> auth.accept(service, value);
+        return null;
     }
 
     /**

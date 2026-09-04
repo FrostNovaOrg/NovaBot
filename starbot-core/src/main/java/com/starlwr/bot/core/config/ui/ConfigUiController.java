@@ -591,6 +591,13 @@ public class ConfigUiController {
         Map<String, String> changes = new LinkedHashMap<>(body);
         Map<String, String> types = metadataService.getKnownTypes();
         SensitiveFields.dropUnchanged(changes, name -> typeOf(types, name));
+
+        if (ConfigUiAuthService.containsDedicatedAuthKey(changes.keySet())) {
+            result.put("success", false);
+            result.put("message", "登录口令和二次验证请到「登录与安全」里改，这里不能保存这两项");
+            return result;
+        }
+
         hashPasswordInPlace(changes);
 
         try {

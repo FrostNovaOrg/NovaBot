@@ -219,21 +219,23 @@ class SetupBootstrapTest {
     }
 
     @Test
-    @DisplayName("从设置页保存口令与二次验证开关，当场生效")
-    void savingAuthKeysFromSettingsTakesEffectAtOnce() {
+    @DisplayName("通用即时通道不得改口令或二次验证，这两项只走专用口")
+    void genericApplierMustNotChangeAuthKeys() {
         RuntimeConfigurationApplier applier = RuntimeConfigurationApplier.bench(properties).authService(authService).build();
 
         assertFalse(authService.isEnabled(), "夹具起点：还没上锁");
+        boolean totpBefore = authService.totpEnabled();
 
         List<String> restart = applier.applyAndTrack(new java.util.LinkedHashMap<>(java.util.Map.of(
                 ConfigUiAuthService.PASSWORD_PROPERTY, FIRST_PASSWORD)));
 
-        assertTrue(restart.isEmpty(), "这一项标着即时生效，却被算进了「等重启」: " + restart);
-        assertTrue(authService.isEnabled(), "从设置页保存的口令没有当场落到门上");
-        assertTrue(authService.login(FIRST_PASSWORD.toCharArray(), null, "127.0.0.3").success());
+        assertFalse(authService.isEnabled(), "通用写口不得把口令落到门上");
+        assertTrue(restart.contains(ConfigUiAuthService.PASSWORD_PROPERTY),
+                "拒收时应进待重启名单而不是假装已生效: " + restart);
 
-        applier.applyAndTrack(new java.util.LinkedHashMap<>(java.util.Map.of("starbot.core.config-ui.auth.totp", "false")));
-        assertFalse(authService.totpEnabled(), "二次验证开关没有当场落下");
+        applier.applyAndTrack(new java.util.LinkedHashMap<>(java.util.Map.of(
+                ConfigUiAuthService.TOTP_PROPERTY, "false")));
+        assertEquals(totpBefore, authService.totpEnabled(), "通用写口不得拨二次验证开关");
     }
 
     @Test

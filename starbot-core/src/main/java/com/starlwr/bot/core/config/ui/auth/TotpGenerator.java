@@ -92,29 +92,43 @@ public final class TotpGenerator {
      * @return 是否有效
      */
     public static boolean verify(String secret, String code, @NonNull Instant now) {
+        return matchingStep(secret, code, now) != null;
+    }
+
+    /**
+     * 校验通过时返回命中的时间步，否则 {@code null}
+     * <p>
+     * 登录与代签发在凭据都通过之后要按这一格消费：同一窗口内再用，比的就是这个值。
+     * @param secret Base32 密钥
+     * @param code 用户输入的验证码
+     * @param now 当前时刻
+     * @return RFC 6238 的 counter，未通过时为 {@code null}
+     */
+    public static Long matchingStep(String secret, String code, @NonNull Instant now) {
         if (secret == null || secret.isBlank() || code == null) {
-            return false;
+            return null;
         }
 
         String normalized = code.replaceAll("\\s", "");
         if (normalized.length() != DIGITS) {
-            return false;
+            return null;
         }
 
         byte[] key;
         try {
             key = base32Decode(secret);
         } catch (IllegalArgumentException e) {
-            return false;
+            return null;
         }
 
         long counter = now.getEpochSecond() / STEP_SECONDS;
         for (int offset = -WINDOW; offset <= WINDOW; offset++) {
-            if (constantTimeEquals(generate(key, counter + offset), normalized)) {
-                return true;
+            long step = counter + offset;
+            if (constantTimeEquals(generate(key, step), normalized)) {
+                return step;
             }
         }
-        return false;
+        return null;
     }
 
     /**

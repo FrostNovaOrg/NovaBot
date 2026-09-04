@@ -11,6 +11,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.http.ResponseEntity;
+import org.springframework.mock.web.MockHttpServletRequest;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -99,7 +100,7 @@ class TotpSwitchTest {
     void wrongCodeCannotDisable() throws IOException {
         String before = Files.readString(config, StandardCharsets.UTF_8);
 
-        ResponseEntity<JSONObject> response = controller.totpDisable(code("000000"));
+        ResponseEntity<JSONObject> response = controller.totpDisable(code("000000"), new MockHttpServletRequest());
 
         assertEquals(401, response.getStatusCode().value());
         assertFalse(response.getBody().getBooleanValue("success"));
@@ -110,9 +111,9 @@ class TotpSwitchTest {
     @Test
     @DisplayName("码不填、填成别的形状，同样拒")
     void malformedCodeCannotDisable() {
-        assertEquals(401, controller.totpDisable(code(null)).getStatusCode().value());
-        assertEquals(401, controller.totpDisable(code("")).getStatusCode().value());
-        assertEquals(401, controller.totpDisable(code("abcdef")).getStatusCode().value());
+        assertEquals(401, controller.totpDisable(code(null), new MockHttpServletRequest()).getStatusCode().value());
+        assertEquals(401, controller.totpDisable(code(""), new MockHttpServletRequest()).getStatusCode().value());
+        assertEquals(401, controller.totpDisable(code("abcdef"), new MockHttpServletRequest()).getStatusCode().value());
         assertTrue(authService.totpRequired(), "三次都拒之后仍然要码");
     }
 
@@ -120,7 +121,8 @@ class TotpSwitchTest {
     @DisplayName("填对现在的码才关得掉，密钥一并清干净")
     void correctCodeDisablesAndClearsSecret() throws IOException {
         ResponseEntity<JSONObject> response =
-                controller.totpDisable(code(TotpGenerator.currentCode(SECRET, Instant.now())));
+                controller.totpDisable(code(TotpGenerator.currentCode(SECRET, Instant.now())),
+                        new MockHttpServletRequest());
 
         assertEquals(200, response.getStatusCode().value(), response.getBody().toJSONString());
         assertFalse(authService.totpRequired(), "关掉之后登录不该再要码");
@@ -138,9 +140,10 @@ class TotpSwitchTest {
     @Test
     @DisplayName("已经关着的时候再关一次，说清「本来就没开」而不是假装办成了")
     void disablingTwiceIsHonest() {
-        controller.totpDisable(code(TotpGenerator.currentCode(SECRET, Instant.now())));
+        controller.totpDisable(code(TotpGenerator.currentCode(SECRET, Instant.now())),
+                new MockHttpServletRequest());
 
-        ResponseEntity<JSONObject> again = controller.totpDisable(code("000000"));
+        ResponseEntity<JSONObject> again = controller.totpDisable(code("000000"), new MockHttpServletRequest());
         assertEquals(400, again.getStatusCode().value());
         assertFalse(again.getBody().getBooleanValue("success"));
     }
@@ -148,7 +151,8 @@ class TotpSwitchTest {
     @Test
     @DisplayName("关掉之后还能重新绑一把：绑定这条路不看开关那一位")
     void canEnrollAgainAfterDisabling() {
-        controller.totpDisable(code(TotpGenerator.currentCode(SECRET, Instant.now())));
+        controller.totpDisable(code(TotpGenerator.currentCode(SECRET, Instant.now())),
+                new MockHttpServletRequest());
 
         // 关掉之后开关是 false，若绑定这条路以它为前提，人得先重启一次才绑得了，
         // 而重启会断开全部直播间长连接
@@ -158,7 +162,8 @@ class TotpSwitchTest {
         assertNull(setup.getString("message"));
 
         String pending = setup.getString("secret");
-        JSONObject enrolled = controller.totpEnroll(code(TotpGenerator.currentCode(pending, Instant.now())));
+        JSONObject enrolled = controller.totpEnroll(
+                code(TotpGenerator.currentCode(pending, Instant.now())), new MockHttpServletRequest());
         assertTrue(enrolled.getBooleanValue("success"), enrolled.toJSONString());
         assertTrue(authService.totpRequired(), "绑好之后应当当场要码");
         assertTrue(authService.totpEnabled(), "绑定本身就是「我要用二次验证」的意思");
