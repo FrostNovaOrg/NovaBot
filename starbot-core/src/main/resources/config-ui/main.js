@@ -9,7 +9,8 @@ import {$, api, el, esc, markDirty, say} from './core.js';
 import {loadHistory, loadState, refreshHome, renderStatus, runSelfTest, togglePush} from './overview.js';
 import {addStreamer, decoratePushData, renderPlatforms, renderStreamers, serializePush} from './push.js';
 import {loadPasskeys, registerPasskey} from './passkeys.js';
-import {copyConfigPath, discard, renderConfigPath, renderGeneral, save} from './settings.js';
+import {copyConfigPath, discard, filterSettings, renderConfigPath, renderGeneral, save, toggleKeyNames}
+  from './settings.js';
 import {store} from './store.js';
 import {clearIssuedToken, loadTokens} from './tokens.js';
 
@@ -104,6 +105,8 @@ export async function load() {
   try {
     const [s, v] = await Promise.all([api('/schema'), api('/values')]);
     store.schema = s.groups || [];
+    // 归不了组的那几项单独收着，由设置页摆在最上面一块里，见 store.ungrouped
+    store.ungrouped = s.ungrouped || [];
     // 生效时机摊平成一张表：底部改动条要按键查，而字段表是按分组套着的
     store.effects = {};
     for (const g of store.schema) {
@@ -278,8 +281,11 @@ $('#discard').addEventListener('click', discard);
 $('#cfg-copy').addEventListener('click', copyConfigPath);
 $('#test-send').addEventListener('click', sendTestMessage);
 $('#selftest-run').addEventListener('click', runSelfTest);
-// 切换显示范围时保留已改动的字段：重绘只影响可见性，不该丢掉未保存的编辑
-$('#show-advanced').addEventListener('change', () => { renderGeneral(); markDirty(); });
+// 搜索与「只看改过的」只改可见性，不重绘：重绘会丢掉正在编辑的那一格，
+// 而使用者常常是一边改一边搜下一项
+$('#set-search').addEventListener('input', filterSettings);
+$('#only-changed').addEventListener('change', filterSettings);
+$('#show-keys').addEventListener('change', toggleKeyNames);
 $('#toggle-push').addEventListener('click', togglePush);
 $('#add-streamer').addEventListener('click', addStreamer);
 $('#add-uid').addEventListener('keydown', e => { if (e.key === 'Enter') addStreamer(); });

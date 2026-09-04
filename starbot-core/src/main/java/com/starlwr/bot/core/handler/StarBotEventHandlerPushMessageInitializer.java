@@ -11,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -53,6 +54,11 @@ public class StarBotEventHandlerPushMessageInitializer implements PushMessageIni
             try {
                 JSONObject params = JSON.parseObject(message.getParams());
                 for (Map.Entry<String, Object> entry : params.entrySet()) {
+                    if (isSupersededDefault(handler, entry.getKey(), entry.getValue())) {
+                        log.info("推送参数 {} 存的还是旧版默认值, 已改用新的默认值: {}",
+                                entry.getKey(), message.getHandler());
+                        continue;
+                    }
                     message.getParamsJsonObject().put(entry.getKey(), entry.getValue());
                 }
             } catch (Exception e) {
@@ -61,5 +67,22 @@ public class StarBotEventHandlerPushMessageInitializer implements PushMessageIni
         }
 
         return true;
+    }
+
+    /**
+     * 存着的这个值是不是某一版旧默认值
+     * <p>
+     * 是的话就<b>不覆盖</b>，于是这一项跟着新默认走。改默认值这件事只有走这一步才落得到
+     * <b>已经存在的配置</b>上：使用者的参数是整份存下来的，里面那串多半就是当初界面预填的
+     * 默认值，不认得它的话，改了默认值也只对今后新建的推送生效。
+     * <p>
+     * 比的是<b>整串一字不差</b>，不是「像不像」：差一个空格就算使用者改过，原样保留。
+     * 方向是刻意的——迁错的那一次会安静地覆盖掉使用者写了很久的模板，
+     * 而不迁的那一次只是没跟上默认值，后者可逆、前者不可逆。
+     */
+    private boolean isSupersededDefault(StarBotEventHandler handler, String key, Object value) {
+        return value instanceof String text && handler.supersededDefaults()
+                .getOrDefault(key, List.of())
+                .contains(text);
     }
 }

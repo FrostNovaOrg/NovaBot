@@ -112,6 +112,7 @@ class HomeStatusFieldsTest {
                 mock(ConfigurationLevelResolver.class),
                 // 不 mock 这个具体类：内联 mock 要改写它的字节码，clean 构建下实测会抛「could not instrument」
                 new ConfigurationEffectResolver(mock(org.springframework.context.ApplicationContext.class)),
+                new ConfigurationDangerResolver(mock(org.springframework.context.ApplicationContext.class)),
                 mock(RuntimeConfigurationApplier.class),
                 mock(ObjectProvider.class),
                 mock(ObjectProvider.class),

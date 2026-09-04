@@ -476,6 +476,47 @@ class ConfigUiFrontendTest {
     }
 
     /**
+     * 设置页那几件事各自要有落点
+     * <p>
+     * 搜索、显示键名、只看改过的、组目录药丸、配置文件路径——每一件都由
+     * {@code index.html} 里的一个元素与 {@code settings.js} 里的一段代码合起来完成，
+     * <b>缺哪一半都不会报错</b>：元素没了，脚本按 id 取到 null（那一条由
+     * {@link #everyReferencedElementIdExists} 管）；脚本没接上，元素就静静地立在那里，
+     * 点它什么也不发生——而后者在任何一次「打开页面看一眼」里都看不出来。
+     * <p>
+     * 这一格量的是「落点都在」，量不到的是「渲染出来的组真的按那个顺序排」——
+     * 后者要在跑起来的界面上看，组的先后本身由 {@code ConfigurationGroupsTest} 管。
+     */
+    @Test
+    @DisplayName("设置页的搜索、显示键名、只看改过、组目录、路径各有落点")
+    void settingsPageControlsAreWiredUp() throws IOException {
+        String html = Files.readString(frontendDir().resolve("index.html"), StandardCharsets.UTF_8);
+        Map<String, String> sources = coreSources();
+        String scripts = String.join("\n", sources.values());
+
+        List<String> bad = new ArrayList<>();
+        for (String id : SETTINGS_CONTROLS) {
+            if (!html.contains("id=\"" + id + "\"")) {
+                bad.add("index.html 上没有 #" + id);
+            }
+            if (!scripts.contains("$('#" + id + "')")) {
+                bad.add("没有任何脚本用到 #" + id + "，它立在那里但点了不管用");
+            }
+        }
+
+        assertTrue(bad.isEmpty(), "设置页少了这几件事的落点:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
+     * 设置页上这几件事各自的落点，闭集
+     * <p>
+     * 搜索框、显示键名、只看改过的、计数、组目录药丸、组容器、配置文件路径与复制。
+     */
+    private static final List<String> SETTINGS_CONTROLS = List.of(
+            "set-search", "show-keys", "only-changed", "set-count", "grp-nav", "groups",
+            "cfg-path", "cfg-copy");
+
+    /**
      * 插件页是运行时装上来的，不是编译期定死的
      * <p>
      * 静态 {@code import} 一写，那个平台就成了核心的一部分：没装插件时页面加载不了，

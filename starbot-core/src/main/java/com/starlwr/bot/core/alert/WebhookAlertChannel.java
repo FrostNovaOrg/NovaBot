@@ -37,6 +37,11 @@ public class WebhookAlertChannel implements AlertChannel {
     }
 
     @Override
+    public String id() {
+        return "webhook";
+    }
+
+    @Override
     public String name() {
         return "Webhook";
     }

@@ -1,6 +1,7 @@
 package com.starlwr.bot.core.sender;
 
 import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.timeline.TimelineEventType;
 import com.starlwr.bot.core.util.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -109,6 +110,25 @@ public class PushGate {
          */
         public String getDescription() {
             return description;
+        }
+
+        /**
+         * 这一道拦下的事件在时间线上算哪一类
+         * <p>
+         * 挂在枚举自己身上而不是各调用点各写一份：拦下的地方不止一处
+         * （事件分发那一层与发送器各一处），各写一份的话，日后多一种拦法时
+         * <b>只改到其中一处的那次没有任何现象</b>，另一处会把新的那一类
+         * 静默归进现有的某一类，而界面上「静音丢弃」的条数就此开始虚高。
+         * <p>
+         * 写成 switch 表达式且<b>不给 default</b>：多一项时这里会编译不过，
+         * 逼着加的那个人当场决定它算哪一类。
+         * @return 时间线事件类型
+         */
+        public TimelineEventType timelineType() {
+            return switch (this) {
+                case QUIET_HOURS -> TimelineEventType.PUSH_MUTED;
+                case DISABLED -> TimelineEventType.PUSH_PAUSED;
+            };
         }
     }
 

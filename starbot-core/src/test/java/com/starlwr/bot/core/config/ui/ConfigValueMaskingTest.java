@@ -153,6 +153,7 @@ class ConfigValueMaskingTest {
                 // 不 mock 这个具体类：内联 mock 要改写它的字节码，clean 构建下实测会抛「could not instrument」。
                 // 给个空上下文即可，本组用例不看生效时机
                 new ConfigurationEffectResolver(mock(org.springframework.context.ApplicationContext.class)),
+                new ConfigurationDangerResolver(mock(org.springframework.context.ApplicationContext.class)),
                 new RuntimeConfigurationApplier(properties),
                 mock(org.springframework.beans.factory.ObjectProvider.class),
                 mock(org.springframework.beans.factory.ObjectProvider.class),

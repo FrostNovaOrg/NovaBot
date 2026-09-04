@@ -22,6 +22,11 @@ public class MailAlertChannel implements AlertChannel {
     }
 
     @Override
+    public String id() {
+        return "mail";
+    }
+
+    @Override
     public String name() {
         return "邮件";
     }

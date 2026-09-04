@@ -171,9 +171,9 @@ class BilibiliDynamicPushHandlerTest {
         handler.handle(event(), pushMessage());
 
         List<Message> sent = sentMessages();
-        assertEquals(2, sent.size(), "默认模板 {url}{next}{picture} 该分成两条");
+        assertEquals(1, sent.size(), "默认模板文字与动态图并成一条");
 
         long withCallback = sent.stream().filter(m -> !m.getOnImageDegradedCallbacks().isEmpty()).count();
-        assertEquals(2, withCallback, "回调该逐条挂上——哪一条含图由发送侧判，不由这里猜");
+        assertEquals(sent.size(), withCallback, "回调该逐条挂上——哪一条含图由发送侧判，不由这里猜");
     }
 }

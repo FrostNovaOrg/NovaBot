@@ -1,5 +1,6 @@
 package com.starlwr.bot.bilibili.command;
 
+import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.command.CommandDispatcher;
 import com.starlwr.bot.core.command.CommandFollowUp;
 import com.starlwr.bot.core.command.CommandSettingsService;
@@ -9,9 +10,12 @@ import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.event.remote.StarBotRemoteMessageEvent;
 import com.starlwr.bot.core.model.Message;
+import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
+import com.starlwr.bot.core.sender.AtMode;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.service.AtSubscriptionService;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.StarBotStateStore;
 import org.junit.jupiter.api.BeforeEach;
@@ -62,6 +66,11 @@ class CommandSurfaceTest {
     private static final long FRIEND = 20001L;
 
     /**
+     * 发命令的那个人
+     */
+    private static final long SENDER = 2000000002L;
+
+    /**
      * 全部已注册命令，及其可用的会话范围（true 为仅限群聊）
      * <p>
      * 这张表两个方向都对：多一条、少一条、某条的范围改了，都会红。新增命令必须来这里添一行，
@@ -99,6 +108,17 @@ class CommandSurfaceTest {
     private static final List<String> TOTAL_ONLY = List.of("直播间总数据", "总数据排行榜");
 
     private static final String TOTAL_OFF_REPLY = "本机没开累计数据，只能查本场。发「直播间数据」看本场。";
+
+    /**
+     * 开播那一类的三条订阅命令，与动态那一类的三条
+     */
+    private static final List<String> LIVE_AT_COMMANDS = List.of("开播@我", "取消开播@我", "开播@名单");
+
+    private static final List<String> DYNAMIC_AT_COMMANDS = List.of("动态@我", "取消动态@我", "动态@名单");
+
+    private static final String AT_ALL_REPLY = "本群开播通知会 @全体成员，不用单独订阅";
+
+    private static final String AT_ALL_NOTE = "本群开播通知会先 @全体成员";
 
     private Registry registry;
 
@@ -216,6 +236,87 @@ class CommandSurfaceTest {
         }
     }
 
+    @Test
+    @DisplayName("本群开播通知配成 @全体成员：菜单撤下开播那三条，动态三条照列")
+    void menuHidesLiveSubscriptionCommandsWhenAtAll() {
+        registry.atMode(BilibiliAtNoticeKind.LIVE, AtMode.ALL);
+
+        String menu = registry.feed(true, "菜单");
+
+        for (String name : LIVE_AT_COMMANDS) {
+            assertFalse(menu.contains("\n" + name + " "), name + " 不该出现：" + menu);
+        }
+        // 动态那一类没配成 @全体成员，它的订阅照样有用——只藏该藏的那一类
+        for (String name : DYNAMIC_AT_COMMANDS) {
+            assertTrue(menu.contains("\n" + name + " "), name + " 该出现：" + menu);
+        }
+        assertEquals(GROUP_ONLY.size() - LIVE_AT_COMMANDS.size(), entryCount(menu));
+    }
+
+    @Test
+    @DisplayName("配成 @全体成员 时三条还是发过来了：各回一句为什么")
+    void repliesInsteadOfSubscribingWhenAtAll() {
+        registry.atMode(BilibiliAtNoticeKind.LIVE, AtMode.ALL);
+
+        for (String name : LIVE_AT_COMMANDS) {
+            assertEquals(AT_ALL_REPLY, registry.feed(true, name), name);
+        }
+    }
+
+    @Test
+    @DisplayName("另外两档：三条都照列，十四条一条不少")
+    void menuKeepsSubscriptionCommandsInOtherModes() {
+        for (AtMode mode : List.of(AtMode.SUBSCRIBERS, AtMode.ALL_OR_SUBSCRIBERS)) {
+            registry.atMode(BilibiliAtNoticeKind.LIVE, mode);
+
+            String menu = registry.feed(true, "菜单");
+            for (String name : LIVE_AT_COMMANDS) {
+                assertTrue(menu.contains("\n" + name + " "), mode.key() + " 下 " + name + " 该出现：" + menu);
+            }
+            assertEquals(GROUP_ONLY.size(), entryCount(menu), mode.key());
+        }
+    }
+
+    @Test
+    @DisplayName("「@ 不成就 @ 订阅的人」那一档：三行各加一句说明，只 @ 订阅的人时没有")
+    void menuNoteOnlyInFallbackMode() {
+        registry.atMode(BilibiliAtNoticeKind.LIVE, AtMode.ALL_OR_SUBSCRIBERS);
+        assertEquals(LIVE_AT_COMMANDS.size(), noteCount(registry.feed(true, "菜单")));
+
+        registry.atMode(BilibiliAtNoticeKind.LIVE, AtMode.SUBSCRIBERS);
+        assertEquals(0, noteCount(registry.feed(true, "菜单")));
+    }
+
+    @Test
+    @DisplayName("一条这类推送都没配：不算「全都 @ 全体」，菜单照列十四条")
+    void emptyChannelHidesNothing() {
+        // 空表上「全都是 @全体成员」恒为真，而恒真的判据与真查过了在菜单上长得一样
+        assertEquals(GROUP_ONLY.size(), entryCount(registry.feed(true, "菜单")));
+        assertTrue(registry.feed(true, "开播@名单").contains("还没有人订阅"), "该照常执行");
+    }
+
+    @Test
+    @DisplayName("切到 @全体成员 再切回来，订阅名单还在")
+    void subscriptionSurvivesModeSwitch() {
+        registry.atMode(BilibiliAtNoticeKind.LIVE, AtMode.SUBSCRIBERS);
+        assertTrue(registry.feed(true, "开播@我").contains("会 @ 你"), "先订上");
+
+        // 这一档里连「取消」都只回一句，于是名单不可能在这中间被谁清掉
+        registry.atMode(BilibiliAtNoticeKind.LIVE, AtMode.ALL);
+        assertEquals(AT_ALL_REPLY, registry.feed(true, "取消开播@我"));
+
+        registry.atMode(BilibiliAtNoticeKind.LIVE, AtMode.SUBSCRIBERS);
+        assertTrue(registry.feed(true, "开播@名单").contains(String.valueOf(SENDER)),
+                "切回来之后名单该还在");
+    }
+
+    /**
+     * 菜单里带着「@ 不成才按名单 @ 人」那句说明的行数
+     */
+    private int noteCount(String menu) {
+        return (int) Arrays.stream(menu.split("\n")).filter(line -> line.contains(AT_ALL_NOTE)).count();
+    }
+
     /**
      * 菜单里的命令条数：每条命令占一行，行内以「 — 」分隔命令与说明
      */
@@ -249,11 +350,15 @@ class CommandSurfaceTest {
 
         private final ObjectProvider<StarBotCommand> provider = provider();
 
+        /**
+         * 唯一那位主播，各用例要改它在本群的 @ 模式，因此留成字段
+         */
+        private final PushUser streamer = configuredUser();
+
         Registry() {
             // 默认按「累计存储配好了」起：那是命令齐全的那一档，各用例要试没配的情形自己关掉
             when(liveDataService.supportsTotalData()).thenReturn(true);
 
-            PushUser streamer = configuredUser();
             when(dataSource.getAllUsers()).thenReturn(List.of(streamer));
             when(dataSource.getUsers("bilibili")).thenReturn(List.of(streamer));
             doAnswer(invocation -> replies.add(((Message) invocation.getArgument(0)).getContent()))
@@ -267,6 +372,9 @@ class CommandSurfaceTest {
             dependencies.put(LiveDataService.class, liveDataService);
             dependencies.put(CommandSettingsService.class, settings);
             dependencies.put(ObjectProvider.class, self);
+            // 订阅服务用真件：「切换模式之后名单还在不在」这一问，替身答不了
+            dependencies.put(AtSubscriptionService.class,
+                    new AtSubscriptionService(new StarBotStateStore(new StarBotCoreProperties())));
 
             for (Class<?> type : scan()) {
                 commands.add(instantiate(type));
@@ -275,6 +383,27 @@ class CommandSurfaceTest {
 
         void supportsTotalData(boolean supported) {
             when(liveDataService.supportsTotalData()).thenReturn(supported);
+        }
+
+        /**
+         * 把本群这一类通知的 @ 模式配成指定档
+         * <p>
+         * 只配群聊那个通道：私聊没有 @全体成员 这回事，配上去只会让别的用例的读数变得难解释。
+         * 同一类先清后配，于是连着调两次量到的是后一次，而不是两次的并集。
+         */
+        void atMode(BilibiliAtNoticeKind kind, AtMode mode) {
+            for (PushTarget target : streamer.getTargets()) {
+                if (PushTargetType.GROUP != target.getType()) {
+                    continue;
+                }
+
+                target.getMessages().removeIf(message -> kind.handlerName().equals(message.getHandler()));
+
+                PushMessage message = new PushMessage();
+                message.setHandler(kind.handlerName());
+                message.setParamsJsonObject(new JSONObject().fluentPut(AtMode.PARAM_KEY, mode.key()));
+                target.getMessages().add(message);
+            }
         }
 
         /**
@@ -290,7 +419,7 @@ class CommandSurfaceTest {
             current.set(dispatcher);
 
             dispatcher.onRemoteMessage(new StarBotRemoteMessageEvent(PLATFORM, group ? "group" : "private",
-                    group ? GROUP : FRIEND, 2000000002L, text, group ? "member" : null, group));
+                    group ? GROUP : FRIEND, SENDER, text, group ? "member" : null, group));
 
             return String.join("\n", replies);
         }

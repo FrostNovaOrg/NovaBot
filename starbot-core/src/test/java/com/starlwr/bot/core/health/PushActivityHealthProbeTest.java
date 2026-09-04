@@ -31,8 +31,8 @@ class PushActivityHealthProbeTest {
     @DisplayName("推送成功后应判定为正常并计数")
     void reportsOkAfterSuccess() {
         PushActivityRecorder recorder = new PushActivityRecorder(TimelineWriter.NONE);
-        recorder.recordSuccess("qq-onebot", "群 12345", "测试消息");
-        recorder.recordSuccess("qq-onebot", "群 12345", "测试消息");
+        recorder.recordSuccess("qq-onebot", "群 12345", "测试消息", 12);
+        recorder.recordSuccess("qq-onebot", "群 12345", "测试消息", 12);
 
         HealthStatus status = probe(recorder).check();
 
@@ -44,8 +44,8 @@ class PushActivityHealthProbeTest {
     @DisplayName("最近一次为失败且此后未再成功时判定为降级")
     void reportsDegradedWhenLatestIsFailure() {
         PushActivityRecorder recorder = new PushActivityRecorder(TimelineWriter.NONE);
-        recorder.recordSuccess("qq-onebot", "群 12345", "测试消息");
-        recorder.recordFailure("qq-onebot", "群 12345", "测试消息", "群号不存在");
+        recorder.recordSuccess("qq-onebot", "群 12345", "测试消息", 12);
+        recorder.recordFailure("qq-onebot", "群 12345", "测试消息", "群号不存在", 12);
 
         HealthStatus status = probe(recorder).check();
 
@@ -57,10 +57,10 @@ class PushActivityHealthProbeTest {
     @DisplayName("失败后又成功应恢复为正常")
     void recoversAfterLaterSuccess() throws InterruptedException {
         PushActivityRecorder recorder = new PushActivityRecorder(TimelineWriter.NONE);
-        recorder.recordFailure("qq-onebot", "群 12345", "测试消息", "一次抖动");
+        recorder.recordFailure("qq-onebot", "群 12345", "测试消息", "一次抖动", 12);
         // 两次记录之间需有可分辨的时间差，否则无法判断孰先孰后
         Thread.sleep(5);
-        recorder.recordSuccess("qq-onebot", "群 12345", "测试消息");
+        recorder.recordSuccess("qq-onebot", "群 12345", "测试消息", 12);
 
         assertEquals(HealthStatus.Level.OK, probe(recorder).check().level());
     }
@@ -70,7 +70,7 @@ class PushActivityHealthProbeTest {
     void keepsBoundedHistoryInReverseOrder() {
         PushActivityRecorder recorder = new PushActivityRecorder(TimelineWriter.NONE);
         for (int i = 1; i <= 60; i++) {
-            recorder.recordSuccess("qq-onebot", "群 " + i, "第 " + i + " 条");
+            recorder.recordSuccess("qq-onebot", "群 " + i, "第 " + i + " 条", 12);
         }
 
         List<PushActivityRecorder.PushRecord> history = recorder.getHistory();
@@ -85,7 +85,7 @@ class PushActivityHealthProbeTest {
     @DisplayName("失败记录应保留失败原因")
     void keepsFailureReasonInHistory() {
         PushActivityRecorder recorder = new PushActivityRecorder(TimelineWriter.NONE);
-        recorder.recordFailure("qq-onebot", "群 12345", "开播啦", "机器人不在该群");
+        recorder.recordFailure("qq-onebot", "群 12345", "开播啦", "机器人不在该群", 12);
 
         PushActivityRecorder.PushRecord record = recorder.getHistory().get(0);
 

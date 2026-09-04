@@ -4,7 +4,10 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.protocol.NovaEventMapper;
+import com.starlwr.bot.core.config.ConfigDanger;
 import com.starlwr.bot.core.config.ConfigEffect;
+import com.starlwr.bot.core.config.ui.ConfigurationGroups;
+import com.starlwr.bot.core.config.ui.ExternalConfigurationFields;
 import com.starlwr.bot.core.config.ui.RuntimeConfigurationApplier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -26,6 +29,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -363,6 +367,122 @@ class ConfigurationConsistencyTest {
                 "以下配置项保存时会被写回运行中的配置，却没标成即时生效，界面会白让人重启一次:\n  "
                         + String.join("\n  ", appliedOnly));
         assertFalse(declared.isEmpty(), "一个即时生效的配置项都没有，这一格此刻量的是空集");
+    }
+
+    /**
+     * 设置页上摆着的全部配置项名
+     * <p>
+     * 分母是两批之和：{@code starbot} 命名空间下未废弃的那些，加上界面额外展示的框架配置项。
+     * 只数前一批的话，后一批（累计存储、发件服务、服务端口与监听地址）就自动免检——
+     * 而那几项恰恰是没有配置类可反射、最容易被漏掉的。
+     * @return 配置项名
+     */
+    private Set<String> displayedProperties() {
+        List<JSONObject> properties = properties();
+        assertPopulationCoversAllModules(properties);
+
+        Set<String> names = new LinkedHashSet<>();
+        for (JSONObject property : properties) {
+            String name = property.getString("name");
+            if (name == null || !name.startsWith("starbot.")) {
+                continue;
+            }
+            if (property.containsKey("deprecated") || property.containsKey("deprecation")) {
+                continue;
+            }
+            names.add(name);
+        }
+
+        names.addAll(ExternalConfigurationFields.names());
+        return names;
+    }
+
+    @Test
+    @DisplayName("⚠️ 每个配置项都归了设置页的某一组：没有组的那一项，界面上没有它的位置")
+    void everyPropertyBelongsToOneGroup() {
+        Set<String> names = displayedProperties();
+
+        List<String> orphans = new ArrayList<>();
+        for (String name : names) {
+            if (ConfigurationGroups.groupOf(name) == null) {
+                orphans.add(name);
+            }
+        }
+
+        assertTrue(orphans.isEmpty(), "以下配置项在设置页的分组表里一条前缀也匹配不上（共 " + names.size()
+                + " 项，未归组 " + orphans.size() + " 项），请在 ConfigurationGroups 里补前缀:\n  "
+                + String.join("\n  ", orphans));
+    }
+
+    @Test
+    @DisplayName("分组表里没有指不到任何配置项的死前缀")
+    void everyGroupPrefixStillMatchesSomething() {
+        Set<String> names = displayedProperties();
+
+        List<String> dead = new ArrayList<>();
+        for (String prefix : ConfigurationGroups.prefixes()) {
+            boolean used = names.stream().anyMatch(name -> name.equals(prefix) || name.startsWith(prefix + "."));
+            if (!used) {
+                dead.add(prefix);
+            }
+        }
+
+        assertTrue(dead.isEmpty(), "以下分组前缀指不到任何现存配置项，多半是键改名或删掉后留下的:\n  "
+                + String.join("\n  ", dead));
+    }
+
+    @Test
+    @DisplayName("⚠️ 危险项的声明都指得到界面上真有的配置项，且四个都还在")
+    void dangerDeclarationsPointAtRealProperties() throws ReflectiveOperationException {
+        Set<String> names = displayedProperties();
+        ClassLoader loader = modulesClassLoader();
+
+        // 标在字段上的那些：走的是与生效时机同一张字段表，因此插件带来的也在其中
+        Set<String> declared = new LinkedHashSet<>();
+        for (JSONObject property : properties()) {
+            String name = property.getString("name");
+            if (name == null || !name.startsWith("starbot.")) {
+                continue;
+            }
+
+            Class<?> type = Class.forName(property.getString("sourceType"), false, loader);
+            if (type.getDeclaredField(fieldNameOf(name)).getAnnotation(ConfigDanger.class) != null) {
+                declared.add(name);
+            }
+        }
+        // 没有字段可标的那几项，声明写在另一张表里，因此可能落单
+        declared.addAll(ExternalConfigurationFields.dangerousNames());
+
+        List<String> orphans = new ArrayList<>(declared);
+        orphans.removeAll(names);
+        assertTrue(orphans.isEmpty(), "以下配置项声明了「改到某档要先问一句」，但它根本不在界面上——"
+                + "一条指向不存在之物的声明，界面上看不出任何异常:\n  " + String.join("\n  ", orphans));
+
+        // 四个围栏是定稿定下的。少一个就是某一处的确认框悄悄没了，而界面照常好用
+        assertEquals(Set.of(
+                        "server.address",
+                        "starbot.core.exec.enabled",
+                        "starbot.core.config-ui.auth.operator-token",
+                        "starbot.bilibili.account.anonymous"),
+                declared,
+                "危险项与定稿定下的那四个对不上。加围栏是好事，但要连同这一行一起改，"
+                        + "撤围栏则须先说清为什么");
+    }
+
+    @Test
+    @DisplayName("八个组每组都有配置项，没有点开是空的组")
+    void noEmptyGroup() {
+        Set<String> names = displayedProperties();
+
+        List<String> empty = new ArrayList<>();
+        for (ConfigurationGroups.Group group : ConfigurationGroups.all()) {
+            if (names.stream().noneMatch(name -> group.equals(ConfigurationGroups.groupOf(name)))) {
+                empty.add(group.id() + "（" + group.title() + "）");
+            }
+        }
+
+        assertTrue(empty.isEmpty(), "以下组一个配置项都没有，界面上会立着一个点开什么都没有的标题:\n  "
+                + String.join("\n  ", empty));
     }
 
     @Test
