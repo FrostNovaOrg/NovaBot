@@ -217,8 +217,10 @@ public class StarBotMessageSender {
      * {@link Message#getAtAllFallback() 备好的替代文本}。
      * <p>
      * <b>摘完可能什么都不剩。</b>{@code Message.create} 在 {@code {next}} 处就把消息拆开了，
-     * 而 @ 块拼出来的正是「{@code {at=all}} + 分条 + 正文」，于是占位符
-     * <b>往往独占一条消息</b>。这种情况必须整条不发，否则群里会收到一条空消息。
+     * 模板写成「{@code {at=all}}{@code {next}}正文」的那一份里，占位符<b>独占一条消息</b>，
+     * 摘掉之后那一条就空了。这种情况必须整条不发，否则群里会收到一条空消息。
+     * （推送处理器按 @ 模式补的那一块已经并进正文首行，不再造出这种分条；
+     * 走到这一步的都是使用者自己在模板里写的。）
      * @return 是否还应发送这条消息
      */
     private boolean applyAtAllQuota(Message message) {

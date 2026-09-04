@@ -227,6 +227,48 @@ class CommandSurfaceTest {
     }
 
     @Test
+    @DisplayName("累计没开：「启用命令／禁用命令」都认不到那两条，状态里不会多出一条关不掉的记录")
+    void toggleRefusesUnavailableCommands() {
+        registry.supportsTotalData(false);
+
+        // 两个方向都要量：它们是同一个基类的两头，只量一头的话，另一头漏改了没有任何现象
+        for (String toggle : List.of("启用命令", "禁用命令")) {
+            for (String name : TOTAL_ONLY) {
+                String said = registry.feed(true, toggle + " " + name, "owner");
+
+                assertTrue(said.contains("没开"), toggle + " " + name + " 该回一句「本机没开」，实际说了：" + said);
+                assertFalse(said.contains("已启用") || said.contains("已禁用"),
+                        toggle + " " + name + " 竟然真办了：" + said);
+                assertFalse(registry.settings.isDisabled(PLATFORM, GROUP, name),
+                        name + " 进了命令开关表：菜单里本就没有它，这条记录谁也看不见、也关不回来");
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("阴性：累计开着时那两条照常开关")
+    void toggleAcceptsAvailableCommands() {
+        registry.supportsTotalData(true);
+
+        for (String name : TOTAL_ONLY) {
+            assertEquals("已禁用「" + name + "」", registry.feed(true, "禁用命令 " + name, "owner"), name);
+            assertTrue(registry.settings.isDisabled(PLATFORM, GROUP, name), name);
+
+            assertEquals("已启用「" + name + "」", registry.feed(true, "启用命令 " + name, "owner"), name);
+            assertFalse(registry.settings.isDisabled(PLATFORM, GROUP, name), name);
+        }
+    }
+
+    @Test
+    @DisplayName("名字压根不存在的那一路照旧：说的是「没有这条命令」，不是「没开」")
+    void toggleStillSaysNoSuchCommand() {
+        String said = registry.feed(true, "禁用命令 并不存在的命令", "owner");
+
+        assertTrue(said.contains("没有名为"), said);
+        assertFalse(said.contains("没开"), "两种情形要分得开：一个是打错了名字，一个是能力没配好。" + said);
+    }
+
+    @Test
     @DisplayName("累计开着时不该再回「没开」")
     void doesNotRefuseWhenTotalSupported() {
         registry.supportsTotalData(true);
@@ -413,13 +455,21 @@ class CommandSurfaceTest {
          * 而「被冷却挡住」与「本就不应答」在回复里长得一样。
          */
         String feed(boolean group, String text) {
+            return feed(group, text, group ? "member" : null);
+        }
+
+        /**
+         * 以指定群角色喂一条消息：管理命令要群主或管理员才动得了，
+         * 拿普通成员去发只会量到那一句「仅群主…可用」
+         */
+        String feed(boolean group, String text, String role) {
             replies.clear();
             CommandDispatcher dispatcher = new CommandDispatcher(provider, noFollowUps(), settings, dataSource, sender,
                     new StarBotCoreProperties());
             current.set(dispatcher);
 
             dispatcher.onRemoteMessage(new StarBotRemoteMessageEvent(PLATFORM, group ? "group" : "private",
-                    group ? GROUP : FRIEND, SENDER, text, group ? "member" : null, group));
+                    group ? GROUP : FRIEND, SENDER, text, role, group));
 
             return String.join("\n", replies);
         }

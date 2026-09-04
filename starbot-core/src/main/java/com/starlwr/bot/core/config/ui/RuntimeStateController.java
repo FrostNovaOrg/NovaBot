@@ -13,7 +13,6 @@ import com.starlwr.bot.core.service.AtSubscriptionService;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.RevenueVisibilityService;
 import com.starlwr.bot.core.service.StarBotStateStore;
-import com.starlwr.bot.core.service.UserBindingService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -46,6 +45,8 @@ import java.util.Set;
  * <b>账号绑定已停用</b>：那一族聊天命令不再注册，界面上的绑定块也随之撤掉，
  * 解绑接口回 410。已有的绑定记录<b>原样留在状态文件里</b>，只是不再显示、不再响应——
  * 删掉它们等于替使用者做了一个不可逆的决定，而这件事随时可能改回来。
+ * 状态里那一栏 {@code bindings} 也一并撤掉：整族停用之后没有任何一处渲染它，
+ * 留着的话，接口面上就有一栏谁也不看、谁也不敢改的记录。要查那批记录看状态文件本身。
  * <p>
  * 独立于 {@link ConfigUiController} 而非并入其中：那个类已承担配置读写、账号登录、
  * 自检与推送测试，再塞进四个接口与四项依赖只会让它更难改动。安全过滤器按
@@ -70,8 +71,6 @@ public class RuntimeStateController {
 
     private final AtSubscriptionService subscriptions;
 
-    private final UserBindingService bindings;
-
     private final StarBotStateStore store;
 
     private final AbstractDataSource dataSource;
@@ -82,13 +81,12 @@ public class RuntimeStateController {
 
     @Autowired
     public RuntimeStateController(CommandDispatcher dispatcher, CommandSettingsService settings,
-                                  AtSubscriptionService subscriptions, UserBindingService bindings,
+                                  AtSubscriptionService subscriptions,
                                   StarBotStateStore store, AbstractDataSource dataSource,
                                   RevenueVisibilityService revenueVisibility, LiveDataService liveDataService) {
         this.dispatcher = dispatcher;
         this.settings = settings;
         this.subscriptions = subscriptions;
-        this.bindings = bindings;
         this.store = store;
         this.dataSource = dataSource;
         this.revenueVisibility = revenueVisibility;
@@ -101,7 +99,7 @@ public class RuntimeStateController {
      * {@code totalDataAvailable} 是整台机器的一项能力，不是某个会话的设置：没配累计存储时，
      * 依赖它的命令在群里已经不出现在菜单里，界面上也该把对应的行置灰、把条数改小。
      * 由接口给出而不是让界面自己按命令名去认——认名字的话，下一条「总」字命令进来就会被漏掉。
-     * @return 命令清单、各会话的命令开关、订阅名单、绑定关系与累计数据是否可用
+     * @return 命令清单、各会话的命令开关、订阅名单、未填完的推送配置与累计数据是否可用
      */
     @GetMapping
     public JSONObject state() {
@@ -110,7 +108,6 @@ public class RuntimeStateController {
         result.put("commands", commands());
         result.put("sessions", sessions());
         result.put("subscriptions", subscriptionList());
-        result.put("bindings", bindingList());
         result.put("incomplete", incompleteList());
         result.put("totalDataAvailable", liveDataService.supportsTotalData());
         return result;
@@ -389,27 +386,6 @@ public class RuntimeStateController {
             json.put("index", entry.index());
             json.put("fields", entry.fields());
             json.put("message", entry.describe());
-            items.add(json);
-        }
-
-        return items;
-    }
-
-    /**
-     * 绑定关系（已停用，仅留档）
-     * <p>
-     * 界面上已经没有这一块了，这里仍照实给出：记录还在状态文件里，接口装作它不存在的话，
-     * 「一条都没有」与「有一批留着不再生效」就分不出来了。
-     */
-    private JSONArray bindingList() {
-        JSONArray items = new JSONArray();
-
-        for (UserBindingService.Binding item : bindings.all()) {
-            JSONObject json = new JSONObject();
-            json.put("pushPlatform", item.pushPlatform());
-            json.put("livePlatform", item.livePlatform());
-            json.put("senderUid", item.senderUid());
-            json.put("liveUid", item.liveUid());
             items.add(json);
         }
 

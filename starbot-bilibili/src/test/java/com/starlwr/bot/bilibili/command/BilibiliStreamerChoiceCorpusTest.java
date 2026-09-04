@@ -58,6 +58,11 @@ class BilibiliStreamerChoiceCorpusTest {
     private static final long GROUP = 30003L;
 
     /**
+     * 已配置推送的好友会话
+     */
+    private static final long FRIEND = 20001L;
+
+    /**
      * 发命令的人，与 {@link #OTHER} 是同一个群里的两个人
      */
     private static final long ASKER = 40001L;
@@ -98,13 +103,14 @@ class BilibiliStreamerChoiceCorpusTest {
      * 一行语料
      *
      * @param name 这一行在说哪种情形
-     * @param streamers 本群配了几位主播，依次取 {@link #NAMES} 的前几个
+     * @param type 会话类型，不写时为群聊
+     * @param streamers 本会话配了几位主播，依次取 {@link #NAMES} 的前几个
      * @param living 其中正在直播的，序号从 1 起
      * @param playedToday 其中今天播过的，序号从 1 起
      * @param dialogue 依次发的话
      */
-    private record Corpus(String name, int streamers, Set<Integer> living, Set<Integer> playedToday,
-                          List<Say> dialogue) {
+    private record Corpus(String name, PushTargetType type, int streamers, Set<Integer> living,
+                          Set<Integer> playedToday, List<Say> dialogue) {
         @Override
         public String toString() {
             return name;
@@ -113,7 +119,16 @@ class BilibiliStreamerChoiceCorpusTest {
 
     private static Corpus corpus(String name, int streamers, Set<Integer> living, Set<Integer> playedToday,
                                  Say... dialogue) {
-        return new Corpus(name, streamers, living, playedToday, List.of(dialogue));
+        return corpus(name, PushTargetType.GROUP, streamers, living, playedToday, dialogue);
+    }
+
+    /**
+     * 指明会话类型的那几行：私聊与群聊在<b>话术</b>上不是同一份，
+     * 而两者的差别只有把同一段对话在两种会话里各喂一遍才量得到
+     */
+    private static Corpus corpus(String name, PushTargetType type, int streamers, Set<Integer> living,
+                                 Set<Integer> playedToday, Say... dialogue) {
+        return new Corpus(name, type, streamers, living, playedToday, List.of(dialogue));
     }
 
     private static Set<Integer> none() {
@@ -176,13 +191,22 @@ class BilibiliStreamerChoiceCorpusTest {
                         say("", "本群没有配置任何哔哩哔哩主播的推送")),
 
                 corpus("点名一位本群没配过的主播 —— 不认，并列出可选", 8, none(), none(),
-                        say("主播壬", "本群没有配置「主播壬」的推送", "!已出图")));
+                        say("主播壬", "本群没有配置「主播壬」的推送", "!已出图")),
+
+                // 下面两行与上面两行是同一段对话换了个会话类型：私聊里没有「本群」这回事，
+                // 说了的话，问的人会去群里找一个并不存在的配置。上面两行是它们的阴性对照
+                corpus("私聊里一位主播都没配 —— 不认，且不说「本群」", PushTargetType.FRIEND, 0, none(), none(),
+                        say("", "没有配置任何哔哩哔哩主播的推送", "!本群")),
+
+                corpus("私聊里点名一位没配过的主播 —— 不认，同样不说「本群」", PushTargetType.FRIEND, 8,
+                        none(), none(),
+                        say("主播壬", "没有配置「主播壬」的推送", "!本群", "!已出图")));
     }
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("corpus")
     void replays(Corpus corpus) {
-        Fixture fixture = new Fixture(corpus.streamers(), corpus.living(), corpus.playedToday());
+        Fixture fixture = new Fixture(corpus.type(), corpus.streamers(), corpus.living(), corpus.playedToday());
 
         for (Say line : corpus.dialogue()) {
             String said = fixture.feed(line.sender(), line.text());
@@ -232,6 +256,10 @@ class BilibiliStreamerChoiceCorpusTest {
     }
 
     private static PushUser streamer(int index) {
+        return streamer(index, PushTargetType.GROUP);
+    }
+
+    private static PushUser streamer(int index, PushTargetType type) {
         PushUser user = new PushUser();
         user.setUid(10000L + index);
         user.setUname(NAMES.get(index - 1));
@@ -239,11 +267,18 @@ class BilibiliStreamerChoiceCorpusTest {
 
         PushTarget target = new PushTarget();
         target.setPlatform(PLATFORM);
-        target.setType(PushTargetType.GROUP);
-        target.setNum(GROUP);
+        target.setType(type);
+        target.setNum(numOf(type));
         target.setMessages(new ArrayList<>());
         user.setTargets(List.of(target));
         return user;
+    }
+
+    /**
+     * 会话号：群聊为群号，私聊为对方账号。两者取自互不相干的号段，不许共用一个值
+     */
+    private static long numOf(PushTargetType type) {
+        return PushTargetType.GROUP == type ? GROUP : FRIEND;
     }
 
     /**
@@ -254,10 +289,14 @@ class BilibiliStreamerChoiceCorpusTest {
     private static class Fixture {
         private final BilibiliStreamerCommand command;
 
-        Fixture(int streamers, Set<Integer> living, Set<Integer> playedToday) {
+        private final PushTargetType type;
+
+        Fixture(PushTargetType type, int streamers, Set<Integer> living, Set<Integer> playedToday) {
+            this.type = type;
+
             List<PushUser> users = new ArrayList<>();
             for (int index = 1; index <= streamers; index++) {
-                users.add(streamer(index));
+                users.add(streamer(index, type));
             }
 
             AbstractDataSource dataSource = mock(AbstractDataSource.class);
@@ -285,7 +324,7 @@ class BilibiliStreamerChoiceCorpusTest {
          */
         String feed(long sender, String text) {
             List<String> args = text.isEmpty() ? List.of() : List.of(text.trim().split("\\s+"));
-            CommandReply reply = command.execute(new CommandContext(PLATFORM, PushTargetType.GROUP, GROUP,
+            CommandReply reply = command.execute(new CommandContext(PLATFORM, type, numOf(type),
                     sender, command.name(), args, command.name() + " " + text));
             return reply == null || !reply.hasContent() ? "" : reply.content();
         }
