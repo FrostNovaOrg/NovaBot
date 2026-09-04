@@ -185,7 +185,7 @@
     <li>上服务器，把配置项 <code>starbot.core.config-ui.auth.operator-token</code> 改成
       <code>true</code> 并重启。这条通道默认关着，就是为了不留后门。</li>
     <li>启动日志里会印一行带令牌的地址，令牌是那一串。</li>
-    <li>把它贴到下面，换一次进入，然后<b>先改口令，再把这条通道关掉</b>。</li>
+    <li>把它贴到下面，换一次进入，然后<b>先改口令；改完这条通道会自动关掉并写回配置</b>。</li>
   </ol>
   <label for="token">一次性令牌</label>
   <input type="text" id="token" placeholder="启动日志里印的那一串" autocomplete="off">
