@@ -1,15 +1,7 @@
 package com.starlwr.bot.bilibili.painter;
 
-import com.kennycason.kumo.CollisionMode;
-import com.kennycason.kumo.WordCloud;
-import com.kennycason.kumo.WordFrequency;
-import com.kennycason.kumo.bg.RectangleBackground;
-import com.kennycason.kumo.font.KumoFont;
-import com.kennycason.kumo.font.scale.SqrtFontScalar;
-import com.kennycason.kumo.image.AngleGenerator;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
-import com.kennycason.kumo.palette.ColorPalette;
 import javax.imageio.ImageIO;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
@@ -34,7 +26,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.awt.Color;
-import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Graphics2D;
 import java.awt.Point;
@@ -158,7 +149,7 @@ public class BilibiliLiveReportPainter {
     /**
      * 词云至少需要的独立词数，低于此数画出来只有零星几个词，不如不画
      */
-    private static final int CLOUD_MIN_WORDS = 8;
+    private static final int CLOUD_MIN_WORDS = 5;
 
     private static final Color COLOR_NAME = new Color(251, 114, 153);
 
@@ -196,17 +187,6 @@ public class BilibiliLiveReportPainter {
     private static final Color COLOR_CURVE_BOX = new Color(110, 199, 122);
 
     private static final Color COLOR_CURVE_GUARD = new Color(151, 129, 224);
-
-    /**
-     * 词云配色：哔哩哔哩粉蓝系
-     */
-    private static final List<Color> CLOUD_PALETTE = List.of(
-            new Color(251, 114, 153),
-            new Color(0, 174, 236),
-            new Color(255, 168, 61),
-            new Color(110, 199, 122),
-            new Color(120, 120, 130)
-    );
 
     private static final DateTimeFormatter TIME_FORMATTER =
             DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(ZoneId.of("Asia/Shanghai"));
@@ -260,6 +240,11 @@ public class BilibiliLiveReportPainter {
     private final StarBotBilibiliProperties properties;
 
     private final LiveRoomInfoHistory roomInfoHistory;
+
+    /**
+     * 词云绘制器，首次画词云时建；带着一份字体查找缓存，别每张报告重建一个
+     */
+    private WordCloudRenderer cloudRenderer;
 
     /**
      * 头像下载失败的哨兵值
@@ -1179,30 +1164,62 @@ public class BilibiliLiveReportPainter {
         }
 
         try {
-            List<WordFrequency> words = frequencies.entrySet().stream()
-                    .sorted(Map.Entry.<String, Integer>comparingByValue(Comparator.reverseOrder()))
-                    .limit(CLOUD_MAX_WORDS)
-                    .map(entry -> new WordFrequency(entry.getKey(), entry.getValue()))
-                    .toList();
-
-            WordCloud cloud = new WordCloud(new Dimension(CONTENT_WIDTH, CLOUD_HEIGHT), CollisionMode.PIXEL_PERFECT);
-            cloud.setPadding(3);
-            cloud.setBackground(new RectangleBackground(new Dimension(CONTENT_WIDTH, CLOUD_HEIGHT)));
-            cloud.setBackgroundColor(new Color(0, 0, 0, 0));
-            cloud.setColorPalette(new ColorPalette(CLOUD_PALETTE));
-            cloud.setKumoFont(new KumoFont(fontUtil.findFontForCharacter('云')));
-            cloud.setFontScalar(new SqrtFontScalar(16, 62));
-            // 中文竖排可读性差，词一律横排
-            cloud.setAngleGenerator(new AngleGenerator(0));
-            cloud.build(new ArrayList<>(words));
+            BufferedImage cloud = paintWordCloud(platform, uid, frequencies);
 
             painter.movePos(0, 6);
             painter.drawTextWithStyle(List.of(new TextWithStyle("弹幕词云", CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN)));
             painter.movePos(0, 8);
-            painter.drawImage(ImageUtil.maskToRoundedRectangle(cloud.getBufferedImage(), CARD_RADIUS));
+            painter.drawImage(ImageUtil.maskToRoundedRectangle(cloud, CARD_RADIUS));
         } catch (Exception e) {
             log.warn("绘制弹幕词云失败, 报告将不含词云: {}", e.getMessage());
         }
+    }
+
+    /**
+     * 把词频排成一张透明底的词云图
+     * <p>
+     * 包内可见：判据要拿到这张图与它背后的排版结果，而整份报告里词云只占一块，
+     * 从成品图上反推「哪几个像素是哪个词」做不到
+     */
+    BufferedImage paintWordCloud(String platform, Long uid, Map<String, Integer> frequencies) {
+        return cloudRenderer().render(layoutWordCloud(platform, uid, frequencies), CONTENT_WIDTH, CLOUD_HEIGHT);
+    }
+
+    /**
+     * 排一次词云版式
+     */
+    WordCloudLayout.Result layoutWordCloud(String platform, Long uid, Map<String, Integer> frequencies) {
+        List<WordCloudLayout.Word> words = frequencies.entrySet().stream()
+                .sorted(Map.Entry.<String, Integer>comparingByValue(Comparator.reverseOrder()))
+                .limit(CLOUD_MAX_WORDS)
+                .map(entry -> new WordCloudLayout.Word(entry.getKey(), entry.getValue()))
+                .toList();
+
+        return WordCloudLayout.layout(words, CONTENT_WIDTH, CLOUD_HEIGHT,
+                cloudSeed(platform, uid), cloudRenderer());
+    }
+
+    /**
+     * 词云的随机种子取本场直播的标识：平台 + 主播 + 本场开播时刻
+     * <p>
+     * 🔴 <b>种子必须逐场固定，而不是每次绘制现取。</b>同一场报告可能被重发
+     * （推送失败重试、或推给好几个群），随机撒点的话每一次出来的是另一张图，
+     * 收到两张的人会以为是两场直播。开播时刻取不到时退回平台与主播，
+     * 至少同一场之内是稳的
+     */
+    private long cloudSeed(String platform, Long uid) {
+        long start = liveDataService.getLiveStartTime(platform, uid).orElse(0L);
+        return ((long) (platform + "#" + uid).hashCode() << 32) ^ start;
+    }
+
+    /**
+     * 词云的字体测量与绘制器。字体表在运行期不变，一份够用
+     */
+    private synchronized WordCloudRenderer cloudRenderer() {
+        if (cloudRenderer == null) {
+            cloudRenderer = new WordCloudRenderer(fontUtil);
+        }
+        return cloudRenderer;
     }
 
     /**
