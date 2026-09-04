@@ -4,6 +4,7 @@ import com.starlwr.bot.core.util.IpMatcher;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.adapter.onebot.config.OneBotAdapterPluginProperties;
 import org.junit.jupiter.api.BeforeEach;
+import org.springframework.http.HttpHeaders;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -162,6 +163,22 @@ class PushApiUnauthenticatedPathVariantMustNotReachSendTest {
         if (!reached.isEmpty()) {
             fail("未带令牌却到达了发送方法: " + reached + "；全表 " + probed);
         }
+    }
+
+    @Test
+    @DisplayName("坏百分号编码解析不了: 默认拒绝, 带对令牌也 401, 发送方法零次")
+    void malformedPercentEncodingIsRejectedEvenWithValidToken() throws Exception {
+        // 带对令牌才能把这道闸与令牌闸分开: 令牌都对了, 401 只能来自"路径解析不了, 默认拒绝"这一分支
+        MockHttpServletRequest request = post("/onebot/send%zz");
+        request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN);
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        boolean reached = reachedSend(request, response);
+
+        assertEquals(401, response.getStatus(),
+                "解析不了的路径应默认拒绝, 实际 HTTP " + response.getStatus());
+        assertEquals(0, probe.calls, "发送方法不该被调用, 实际 " + probe.calls);
+        assertTrue(!reached);
     }
 
     /**

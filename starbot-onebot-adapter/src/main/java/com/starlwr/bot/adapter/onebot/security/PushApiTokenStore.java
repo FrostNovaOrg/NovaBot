@@ -59,15 +59,26 @@ public class PushApiTokenStore {
 
     /**
      * 判断某个路径是否为受保护的推送接口
+     * <p>
+     * 只答「是否落在已登记的推送接口上」这一个布尔：按框架口径解析不了的路径（非法的百分号
+     * 编码等）答 false，不把异常甩给只想要一个布尔的调用方。真门禁（安全过滤器）对解析失败
+     * 是默认拒绝，不走这里。
      * @param path 接口路径
      * @return 是否受保护
      */
     public boolean isProtected(String path) {
-        return resolve(path, "") != null;
+        try {
+            return resolve(path, "") != null;
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
     }
 
     /**
      * 按框架匹配口径认路：这个请求路径会落到的登记路径
+     * <p>
+     * 互含的登记模式同时命中时取最具体的那一条——与路由侧在多个候选中按特异性排序取第一
+     * 的口径同源；否则命中哪条会随登记顺序漂，令牌与限流跟着记到不同的账上。
      * @param requestUri 请求原始 URI（未解码，含 contextPath）
      * @param contextPath 应用 contextPath，空串表示没有
      * @return 命中的登记路径；不属于任何推送接口时为 null
@@ -76,13 +87,19 @@ public class PushApiTokenStore {
     public String resolve(String requestUri, String contextPath) {
         PathContainer withinApplication = RequestPath.parse(requestUri, contextPath).pathWithinApplication();
 
+        String bestPath = null;
+        PathPattern bestPattern = null;
         for (Map.Entry<String, PathPattern> entry : patterns.entrySet()) {
-            if (entry.getValue().matches(withinApplication)) {
-                return entry.getKey();
+            if (!entry.getValue().matches(withinApplication)) {
+                continue;
+            }
+            if (bestPattern == null || entry.getValue().compareTo(bestPattern) < 0) {
+                bestPath = entry.getKey();
+                bestPattern = entry.getValue();
             }
         }
 
-        return null;
+        return bestPath;
     }
 
     /**
