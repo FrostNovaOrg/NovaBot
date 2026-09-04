@@ -350,7 +350,10 @@ public class PasskeyService {
             }
 
             Instant now = clock.get();
-            store.save(credential.used(authData.getSignCount(), now));
+            if (!store.updateIfSignCount(credential.id(), credential.signCount(),
+                    credential.used(authData.getSignCount(), now))) {
+                throw new IllegalArgumentException("凭据已更新或已撤销");
+            }
 
             log.info("配置界面: 已用通行密钥「{}」登录, 来源: {}", credential.name(), clientIp);
             return PasskeyLogin.success(authService.issueForPasskey(clientIp));

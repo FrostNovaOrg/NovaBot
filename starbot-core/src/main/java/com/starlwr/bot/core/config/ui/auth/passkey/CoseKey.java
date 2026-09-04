@@ -103,8 +103,8 @@ final class CoseKey {
      * @return 公钥与算法
      */
     static CoseKey parse(Map<Object, Object> cose) {
-        int keyType = (int) integer(cose, KEY_TYPE, "kty");
-        int algorithm = (int) integer(cose, ALGORITHM, "alg");
+        int keyType = integer(cose, KEY_TYPE, "kty");
+        int algorithm = integer(cose, ALGORITHM, "alg");
 
         return switch (algorithm) {
             case ES256 -> {
@@ -219,12 +219,15 @@ final class CoseKey {
         }
     }
 
-    private static long integer(Map<Object, Object> cose, int key, String name) {
+    private static int integer(Map<Object, Object> cose, int key, String name) {
         Object value = cose.get((long) key);
         if (!(value instanceof Long number)) {
             throw new IllegalArgumentException("COSE 公钥缺少整数字段 " + name);
         }
-        return number;
+        if (number < Integer.MIN_VALUE || number > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("COSE 整数字段 " + name + " 超出范围: " + number);
+        }
+        return number.intValue();
     }
 
     private static byte[] bytes(Map<Object, Object> cose, int key, String name) {

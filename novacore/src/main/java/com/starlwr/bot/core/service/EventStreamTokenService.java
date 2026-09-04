@@ -110,11 +110,7 @@ public class EventStreamTokenService {
         }
 
         if (found) {
-            try {
-                rewrite(updated);
-            } catch (UncheckedIOException e) {
-                return false;
-            }
+            rewrite(updated);
             log.warn("已吊销一把事件流只读口令: 指纹 {} —— ⚠️ 已建立的连接不会自动断开, 请确认对方已掉线",
                     fingerprint);
         }

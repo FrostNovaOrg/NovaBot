@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
@@ -14,6 +15,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -79,13 +81,11 @@ class EventStreamTokenPersistFailureMustNotReportSuccessTest {
         var original = Files.getPosixFilePermissions(ledger);
         Files.setPosixFilePermissions(ledger, PosixFilePermissions.fromString("r--r--r--"));
         try {
-            boolean revoked = tokens.revoke(fingerprint);
+            assertThrows(UncheckedIOException.class, () -> tokens.revoke(fingerprint),
+                    "写不进盘时应当让调用方看见失败，而不是回报没找到");
             List<EventStreamToken> after = tokens.list();
             boolean stillActive = after.stream().anyMatch(EventStreamToken::active);
-
-            assertFalse(revoked,
-                    "写不进盘时不该回报吊销成功, 实际 revoked=" + revoked
-                            + " stillActive=" + stillActive + " rows=" + after.size());
+            assertTrue(stillActive, "写失败之后盘上那一行还应当活着");
         } finally {
             Files.setPosixFilePermissions(ledger, original);
         }

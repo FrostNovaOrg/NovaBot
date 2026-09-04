@@ -93,26 +93,49 @@ public class PasskeyStore {
     }
 
     /**
-     * 写入一把钥匙（新登记或更新计数器）
+     * 写入一把新钥匙
+     * <p>
+     * 只给登记用。登录更新计数器走 {@link #updateIfSignCount}：
+     * 无条件覆盖会把「已经删掉」或「别人刚用过」的那一份写回去。
      * @param credential 凭据
      */
     public void save(PasskeyCredential credential) {
-        JSONObject json = new JSONObject();
-        json.put(NAME, credential.name());
-        json.put(PUBLIC_KEY, credential.publicKey());
-        json.put(ALGORITHM, credential.algorithm());
-        json.put(SIGN_COUNT, credential.signCount());
-        json.put(CREATED_AT, credential.createdAt().toString());
-        if (credential.lastUsedAt() != null) {
-            json.put(LAST_USED_AT, credential.lastUsedAt().toString());
-        }
-
-        state.write(NAMESPACE, namespace -> namespace.put(credential.id(), json));
+        state.write(NAMESPACE, namespace -> namespace.put(credential.id(), toJson(credential)));
         state.save();
     }
 
     /**
-     * 删掉一把钥匙
+     * 仅当这把钥匙还在、且计数仍是期望的旧值时，写入新值
+     * @param id 凭据 ID
+     * @param expectedSignCount 写入前必须仍是这个计数
+     * @param credential 要写成的新值
+     * @return 是否写进去了。钥匙已经不在、或计数已经被别人改过，都是 false
+     */
+    public boolean updateIfSignCount(String id, long expectedSignCount, PasskeyCredential credential) {
+        if (id == null || id.isBlank()) {
+            return false;
+        }
+
+        boolean[] updated = {false};
+        state.write(NAMESPACE, namespace -> {
+            JSONObject existing = namespace.getJSONObject(id);
+            if (existing == null) {
+                return;
+            }
+            if (existing.getLongValue(SIGN_COUNT) != expectedSignCount) {
+                return;
+            }
+            namespace.put(id, toJson(credential));
+            updated[0] = true;
+        });
+        if (updated[0]) {
+            state.save();
+        }
+        return updated[0];
+    }
+
+    /**
+     * 删掉一把钥匙，仅当它此刻还在
      * @param id 凭据 ID
      * @return 原本是否存在
      */
@@ -128,6 +151,19 @@ public class PasskeyStore {
         }
 
         return existed[0];
+    }
+
+    private JSONObject toJson(PasskeyCredential credential) {
+        JSONObject json = new JSONObject();
+        json.put(NAME, credential.name());
+        json.put(PUBLIC_KEY, credential.publicKey());
+        json.put(ALGORITHM, credential.algorithm());
+        json.put(SIGN_COUNT, credential.signCount());
+        json.put(CREATED_AT, credential.createdAt().toString());
+        if (credential.lastUsedAt() != null) {
+            json.put(LAST_USED_AT, credential.lastUsedAt().toString());
+        }
+        return json;
     }
 
     private PasskeyCredential read(String id, JSONObject json) {

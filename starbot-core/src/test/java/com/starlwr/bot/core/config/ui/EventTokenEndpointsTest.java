@@ -10,11 +10,14 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -192,5 +195,78 @@ class EventTokenEndpointsTest {
         JSONArray items = controller.listEventTokens().getJSONArray("tokens");
         assertFalse(items.getJSONObject(0).getBooleanValue("active"));
         assertTrue(items.getJSONObject(1).getBooleanValue("active"));
+    }
+
+    @Test
+    @DisplayName("签发写不进磁盘时回人话错误，不把明文交出去")
+    void issueWriteFailureIsAHumanError() throws Exception {
+        Path blocker = dir.resolve("not-a-directory");
+        Files.writeString(blocker, "occupied");
+        ConfigUiController broken = controllerFor(blocker.resolve("data.json"));
+
+        JSONObject result = broken.issueEventToken(Map.of("label", "面板-丁"));
+
+        assertFalse(result.getBooleanValue("success"), "写盘失败不该报签发成功");
+        assertNull(result.get("token"), "写盘失败不该交出明文");
+        assertTrue(result.getString("message").contains("磁盘"),
+                () -> "应当用人话说明写盘失败, 实际: " + result.getString("message"));
+    }
+
+    @Test
+    @DisplayName("吊销写不进磁盘与「没找到」不是同一句话")
+    void revokeWriteFailureIsNotTheSameAsMissing() throws Exception {
+        controller.issueEventToken(Map.of("label", "面板-戊"));
+        String fingerprint = tokens.fingerprintOf(tokens.list().get(0));
+
+        JSONObject missing = controller.revokeEventToken("no-such-token");
+        assertFalse(missing.getBooleanValue("success"));
+        String missingMessage = missing.getString("message");
+
+        Path ledger = dir.resolve("event-stream-tokens.jsonl");
+        var original = Files.getPosixFilePermissions(ledger);
+        Files.setPosixFilePermissions(ledger, PosixFilePermissions.fromString("r--r--r--"));
+        try {
+            JSONObject failed = controller.revokeEventToken(fingerprint);
+            assertFalse(failed.getBooleanValue("success"), "写不进盘不该报吊销成功");
+            assertNotEquals(missingMessage, failed.getString("message"),
+                    "写盘失败与没找到必须分句, 实际都是: " + failed.getString("message"));
+            assertTrue(failed.getString("message").contains("磁盘"),
+                    () -> "应当用人话说明写盘失败, 实际: " + failed.getString("message"));
+        } finally {
+            Files.setPosixFilePermissions(ledger, original);
+        }
+    }
+
+    private ConfigUiController controllerFor(Path dataFile) {
+        StarBotCoreProperties properties = new StarBotCoreProperties();
+        properties.getLive().setLiveDataPath(dataFile.toString());
+        EventStreamTokenService localTokens = new EventStreamTokenService(properties.getLive());
+        return new ConfigUiController(
+                mock(ConfigurationMetadataService.class),
+                mock(ConfigurationFileService.class),
+                properties,
+                mock(com.starlwr.bot.core.datasource.AbstractDataSource.class),
+                mock(org.springframework.beans.factory.ObjectProvider.class),
+                mock(ConfigurationValidator.class),
+                mock(com.starlwr.bot.core.service.StarBotSenderService.class),
+                mock(com.starlwr.bot.core.sender.StarBotMessageSender.class),
+                mock(org.springframework.beans.factory.ObjectProvider.class),
+                mock(com.starlwr.bot.core.health.PushActivityRecorder.class),
+                mock(com.starlwr.bot.core.service.StarBotEventHandlerService.class),
+                mock(com.starlwr.bot.core.datasource.DataSourceServiceRegistry.class),
+                mock(ConfigurationLevelResolver.class),
+                new ConfigurationEffectResolver(mock(org.springframework.context.ApplicationContext.class)),
+                new ConfigurationDangerResolver(mock(org.springframework.context.ApplicationContext.class)),
+                RuntimeConfigurationApplier.bench(properties).build(),
+                mock(org.springframework.beans.factory.ObjectProvider.class),
+                mock(org.springframework.beans.factory.ObjectProvider.class),
+                localTokens,
+                mock(org.springframework.beans.factory.ObjectProvider.class),
+                mock(com.starlwr.bot.core.sender.PushGate.class),
+                mock(com.starlwr.bot.core.service.LiveDataService.class),
+                mock(com.starlwr.bot.core.timeline.TimelineStore.class),
+                mock(com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService.class),
+                new PushTemplateDefaults(new StarBotCoreProperties()),
+                mock(UpdateCheckService.class));
     }
 }
