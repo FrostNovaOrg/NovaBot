@@ -339,6 +339,10 @@ public class ConfigurationFileService {
      * <p>
      * 仍采用逐行定位替换：配置模板中的中文注释是使用者理解配置项的主要依据，
      * 用 YAML 库反序列化再写回会把注释、空行与顺序全部丢失。
+     * <p>
+     * 字段写成空串或全空白时<b>删掉该字段</b>，不留 {@code api: } 这种空值行。
+     * 被删的若是元素首行（带 {@code -} 的那一行），短横顶到剩下的第一字段上，
+     * 免得列表在这一处断开。
      *
      * <h2>列表还是空的时候，建出第一个元素来</h2>
      * 🔴 发行包不再带 application.yml，第一次保存时由 {@link #createIfAbsent()} 按配置面渲染一份，
@@ -378,10 +382,15 @@ public class ConfigurationFileService {
         }
 
         int changed = 0;
+        List<Integer> remove = new ArrayList<>();
+        boolean dashGoes = false;
+        String dashIndent = null;
+
         for (int i = location.start(); i < location.end(); i++) {
-            String stripped = lines.get(i).strip();
-            // 元素首行形如 "- name: xxx"，其键同样需要参与匹配
-            String candidate = stripped.startsWith("-") ? stripped.substring(1).strip() : stripped;
+            String raw = lines.get(i);
+            String stripped = raw.strip();
+            boolean isDash = stripped.startsWith("-");
+            String candidate = isDash ? stripped.substring(1).strip() : stripped;
 
             int colon = candidate.indexOf(':');
             if (colon < 0) {
@@ -393,11 +402,43 @@ public class ConfigurationFileService {
                 continue;
             }
 
-            String replaced = replaceValue(lines.get(i), fields.get(key));
-            if (!replaced.equals(lines.get(i))) {
+            String value = fields.get(key);
+            if (value == null || value.isBlank()) {
+                // 空值＝删字段，不留 `api: ` 这种空行：跟标量键清空即删行是同一条规则
+                remove.add(i);
+                if (isDash) {
+                    dashGoes = true;
+                    dashIndent = raw.substring(0, raw.indexOf('-'));
+                }
+                changed++;
+                continue;
+            }
+
+            String replaced = replaceValue(raw, value);
+            if (!replaced.equals(raw)) {
                 lines.set(i, replaced);
                 changed++;
             }
+        }
+
+        if (dashGoes) {
+            // 被删的是元素首行（带 "-" 的那一行），剩下的第一行要顶上这个短横，
+            // 否则列表在这一处断开，后面的字段会被当成上一层的键。
+            for (int i = location.start(); i < location.end(); i++) {
+                if (remove.contains(i)) {
+                    continue;
+                }
+                String kept = lines.get(i);
+                if (kept.isBlank() || kept.strip().startsWith("#")) {
+                    continue;
+                }
+                lines.set(i, dashIndent + "- " + kept.strip());
+                break;
+            }
+        }
+
+        for (int i = remove.size() - 1; i >= 0; i--) {
+            lines.remove((int) remove.get(i));
         }
 
         if (changed > 0) {
@@ -511,6 +552,10 @@ public class ConfigurationFileService {
         boolean first = true;
 
         for (Map.Entry<String, String> field : fields.entrySet()) {
+            if (field.getValue() == null || field.getValue().isBlank()) {
+                continue;
+            }
+
             String rendered = render(field.getValue());
             String line = indent + (first ? "- " : "  ") + field.getKey() + ":"
                     + (rendered.isEmpty() ? "" : " " + rendered);
@@ -518,7 +563,8 @@ public class ConfigurationFileService {
             first = false;
         }
 
-        return fields.size();
+        return fields.size() - (int) fields.values().stream()
+                .filter(v -> v == null || v.isBlank()).count();
     }
 
     /**
