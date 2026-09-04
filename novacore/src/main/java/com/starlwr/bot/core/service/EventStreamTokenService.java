@@ -11,9 +11,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.util.ArrayList;
@@ -106,7 +110,11 @@ public class EventStreamTokenService {
         }
 
         if (found) {
-            rewrite(updated);
+            try {
+                rewrite(updated);
+            } catch (UncheckedIOException e) {
+                return false;
+            }
             log.warn("已吊销一把事件流只读口令: 指纹 {} —— ⚠️ 已建立的连接不会自动断开, 请确认对方已掉线",
                     fingerprint);
         }
@@ -261,26 +269,61 @@ public class EventStreamTokenService {
     }
 
     private void append(EventStreamToken token) {
-        try {
-            Files.createDirectories(file.getParent());
-            Files.writeString(file, JSON.toJSONString(token) + System.lineSeparator(),
-                    StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-        } catch (IOException e) {
-            log.error("写入事件流口令表失败", e);
-        }
+        writeLedger(JSON.toJSONString(token) + System.lineSeparator(), true);
     }
 
     private void rewrite(List<EventStreamToken> tokens) {
+        StringBuilder content = new StringBuilder();
+        for (EventStreamToken token : tokens) {
+            content.append(JSON.toJSONString(token)).append(System.lineSeparator());
+        }
+        writeLedger(content.toString(), false);
+    }
+
+    /**
+     * 把口令表落到磁盘。失败必须让调用方看见，不能只记一行日志还回报成功。
+     * 整表重写走临时文件再替换，避免写到一半把原表截断。
+     */
+    private void writeLedger(String content, boolean append) {
         try {
             Files.createDirectories(file.getParent());
-            StringBuilder content = new StringBuilder();
-            for (EventStreamToken token : tokens) {
-                content.append(JSON.toJSONString(token)).append(System.lineSeparator());
+            if (append) {
+                Files.writeString(file, content, StandardCharsets.UTF_8,
+                        StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+                return;
             }
-            Files.writeString(file, content.toString(), StandardCharsets.UTF_8,
-                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            replaceAtomically(content);
         } catch (IOException e) {
-            log.error("更新事件流口令表失败", e);
+            log.error(append ? "写入事件流口令表失败" : "更新事件流口令表失败", e);
+            throw new UncheckedIOException(append ? "写入事件流口令表失败" : "更新事件流口令表失败", e);
+        }
+    }
+
+    private void replaceAtomically(String content) throws IOException {
+        Path tmp = Files.createTempFile(file.getParent(), "event-stream-tokens.", ".tmp");
+        try {
+            Files.writeString(tmp, content, StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING);
+            try (FileChannel channel = FileChannel.open(tmp, StandardOpenOption.WRITE)) {
+                channel.force(true);
+            }
+            if (Files.exists(file)) {
+                // 只读文件在可写目录里仍能被 rename 换掉，先探一次写权限
+                try (FileChannel ignored = FileChannel.open(file, StandardOpenOption.WRITE)) {
+                    // 只探权限
+                }
+            }
+            try {
+                Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException e) {
+            try {
+                Files.deleteIfExists(tmp);
+            } catch (IOException suppressed) {
+                e.addSuppressed(suppressed);
+            }
+            throw e;
         }
     }
 
