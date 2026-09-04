@@ -306,6 +306,93 @@ class ConfigurationTemplateTest {
     }
 
     @Test
+    @DisplayName("HTTP 令牌留空 → 文件无该键行")
+    void blankHttpTokenIsOmittedFromRenderedList() {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("name", "qq-onebot");
+        item.put("one-bot-http-token", "");
+        String yaml = renderSender(item);
+        assertTrue(yaml.contains("name: qq-onebot"), yaml);
+        assertFalse(yaml.contains("one-bot-http-token"), "留空仍写出了键行:\n" + yaml);
+    }
+
+    @Test
+    @DisplayName("Websocket 令牌留空 → 文件无该键行")
+    void blankWebsocketTokenIsOmittedFromRenderedList() {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("name", "qq-onebot");
+        item.put("one-bot-websocket-token", "  ");
+        String yaml = renderSender(item);
+        assertTrue(yaml.contains("name: qq-onebot"), yaml);
+        assertFalse(yaml.contains("one-bot-websocket-token"), "留空仍写出了键行:\n" + yaml);
+    }
+
+    @Test
+    @DisplayName("推送接口令牌留空 → 文件无该键行")
+    void blankApiTokenIsOmittedFromRenderedList() {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("name", "qq-onebot");
+        item.put("api-token", "");
+        String yaml = renderSender(item);
+        assertTrue(yaml.contains("name: qq-onebot"), yaml);
+        assertFalse(yaml.contains("api-token"), "留空仍写出了键行:\n" + yaml);
+    }
+
+    @Test
+    @DisplayName("令牌字段后缀认得出，恒返 false 会红")
+    void blankMeansAbsentFieldRecognizesTokenSuffixes() {
+        assertTrue(ConfigurationFileService.isBlankMeansAbsentField("one-bot-http-token"));
+        assertTrue(ConfigurationFileService.isBlankMeansAbsentField("one-bot-websocket-token"));
+        assertTrue(ConfigurationFileService.isBlankMeansAbsentField("api-token"));
+        assertTrue(ConfigurationFileService.isBlankMeansAbsentField(
+                "starbot.adapter.onebot.senders.one-bot-http-token"));
+        assertFalse(ConfigurationFileService.isBlankMeansAbsentField("name"),
+                "name 不在键集里，恒返 true 会把普通字段也抹掉");
+        assertFalse(ConfigurationFileService.isBlankMeansAbsentField("api"));
+    }
+
+    @Test
+    @DisplayName("键集内空值不出现、键集外空值照写")
+    void blankMeansAbsentCutsBothWays() throws IOException {
+        Path config = generate();
+        Set<String> expected = baselineKeys();
+        Set<String> live = load(config).keySet();
+
+        List<String> leaked = new ArrayList<>();
+        for (String key : ConfigurationFileService.BLANK_MEANS_ABSENT) {
+            if (expected.contains(key) && live.contains(key)) {
+                leaked.add(key);
+            }
+        }
+        assertTrue(leaked.isEmpty(),
+                "键集内的项写成了空值而不是注释掉。加进键集却照写空值，等于只松不紧:\n  "
+                        + String.join("\n  ", leaked));
+
+        assertTrue(live.contains("starbot.core.push.quiet-start"),
+                "静音时段留空是有效取值，键集外的空值必须照写");
+        assertFalse(ConfigurationFileService.BLANK_MEANS_ABSENT.contains("starbot.core.push.quiet-start"));
+
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("name", "qq-onebot");
+        item.put("api", "");
+        item.put("one-bot-http-token", "");
+        String yaml = renderSender(item);
+        assertTrue(yaml.contains("name: qq-onebot"), yaml);
+        assertTrue(yaml.contains("api:"), "键集外的空字段必须照写:\n" + yaml);
+        assertFalse(yaml.contains("one-bot-http-token"), "键集内的空令牌不得出现:\n" + yaml);
+    }
+
+    /**
+     * 渲染一个 senders 列表项
+     */
+    private static String renderSender(Map<String, Object> item) {
+        ConfigurationMetadataService.ConfigurationField field =
+                new ConfigurationMetadataService.ConfigurationField(
+                        "senders", "java.util.List", "推送平台", List.of());
+        return ConfigurationTemplate.render(List.of(field), Map.of("senders", List.of(item)));
+    }
+
+    @Test
     @DisplayName("④ 写口·阴性 —— 已有的文件不会被这份模板盖掉")
     void existingFileIsNeverOverwritten() throws IOException {
         Path config = dir.resolve("application.yml");

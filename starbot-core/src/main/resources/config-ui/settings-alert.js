@@ -12,19 +12,7 @@
 
 import {$, api, el, markDirty} from './core.js';
 import {store} from './store.js';
-
-/**
- * 邮件这一路配好了没有
- * <p>
- * 口径与首页 {@code /api/status} 的 {@code alerts.mail} 相同：收件与 SMTP 主机都有才算。
- * 药丸跟输入走，首页待办跟保存过的配置走，两边问的是同一对栏。
- * @param to 收件邮箱
- * @param host SMTP 主机
- * @return {boolean} 两栏都有时为 true
- */
-export function mailAlertConfigured(to, host) {
-  return !!(String(to || '').trim() && String(host || '').trim());
-}
+import {mailAlertConfigured} from './alert-model.js';
 
 /**
  * 三张卡各自吃掉哪几个配置键
