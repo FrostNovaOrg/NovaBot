@@ -30,6 +30,12 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
+        <!-- 上面 starter 传递带进来的那套 Redis 客户端, 主码在直接用 (见 TotalDataStorage 的
+             建连超时), 坐标由本模块自持一条; 版本仍交 parent BOM 管, 故不写 -->
+        <dependency>
+            <groupId>io.lettuce</groupId>
+            <artifactId>lettuce-core</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>
