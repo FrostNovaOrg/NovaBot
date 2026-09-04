@@ -50,14 +50,10 @@
             <artifactId>caffeine</artifactId>
         </dependency>
 
-        <!-- 弹幕词云：jieba 分词 + kumo 渲染 -->
+        <!-- 弹幕词云的分词；排版与绘制见 painter/WordCloudLayout -->
         <dependency>
             <groupId>com.huaban</groupId>
             <artifactId>jieba-analysis</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.kennycason</groupId>
-            <artifactId>kumo-core</artifactId>
         </dependency>
 
     </dependencies>
