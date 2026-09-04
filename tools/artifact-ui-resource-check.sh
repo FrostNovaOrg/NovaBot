@@ -108,6 +108,17 @@ check_one() {
 
 echo "产物界面资源尺：$OUT"
 
+# 出厂默认模板的覆盖件：按需生成，与 datasource.json 同目录。
+# 包里带一份等于替使用者做了一半的事——而它一旦存在就归使用者所有，
+# 程序不会再去动它。「还没改过默认模板」与「改成了空覆盖」在一个 {} 上长得一样，
+# 只有前者是真的。手放一份进产物必须红，不能靠「构建的人记得别拷」。
+if [ -e "$OUT/template-defaults.json" ]; then
+    echo "  出厂覆盖件 红 产物里有 template-defaults.json —— 这份是第一次改默认模板时自己写的，不该随包"
+    RED=1
+else
+    echo "  出厂覆盖件 绿 产物里没有 template-defaults.json"
+fi
+
 check_one "$OUT/StarBotCore.jar" "$CORE_UI_IN_JAR" "$CORE_UI_SRC" "核心界面"
 
 # 插件那一侧按目录里实际有哪些 jar 来量，不写死任何一个插件的名字：
@@ -119,12 +130,13 @@ shopt -u nullglob
 if [ "${#plugin_jars[@]}" -eq 0 ]; then
     echo "  插件页面 红 $OUT/plugins/ 里一个 jar 都没有"
     RED=1
+else
+    for jar in "${plugin_jars[@]}"; do
+        base="$(basename "$jar" .jar)"
+        module="$(echo "$base" | sed -E 's/-[0-9][^-]*(-SNAPSHOT)?$//')"
+        check_one "$jar" "$PLUGIN_UI_DIR" "$module/src/main/resources/$PLUGIN_UI_DIR" "插件页面[$module]"
+    done
 fi
-for jar in "${plugin_jars[@]}"; do
-    base="$(basename "$jar" .jar)"
-    module="$(echo "$base" | sed -E 's/-[0-9][^-]*(-SNAPSHOT)?$//')"
-    check_one "$jar" "$PLUGIN_UI_DIR" "$module/src/main/resources/$PLUGIN_UI_DIR" "插件页面[$module]"
-done
 
 if [ "$RED" -ne 0 ]; then
     echo

@@ -3,6 +3,9 @@
  *
  * 判定在 confirm-model.js，本文件只负责把它画到屏幕上。问完回一个 Promise，
  * 调用方写成 `if (!await ask({title, body})) return;` 就能替换原生 confirm()。
+ *
+ * Esc＝取消、关掉以后把焦点还回刚才那颗按钮：原生 confirm() 由浏览器代劳，
+ * 自绘之后这两件事必须自己守，否则键盘和读屏都回不到原点。
  */
 
 import {el} from './core.js';
@@ -11,6 +14,7 @@ import {idle, open, settle} from './confirm-model.js';
 let state = idle();
 let resolve = null;
 let root = null;
+let listening = false;
 
 function ensure() {
   if (root) return root;
@@ -29,8 +33,19 @@ function ensure() {
     }
     if (ev.target === root) finish(false);
   });
+  if (!listening) {
+    document.addEventListener('keydown', onKey);
+    listening = true;
+  }
   document.body.appendChild(root);
   return root;
+}
+
+function onKey(ev) {
+  if (state.status !== 'open') return;
+  if (ev.key !== 'Escape') return;
+  ev.preventDefault();
+  finish(false);
 }
 
 function paint() {
@@ -45,6 +60,12 @@ function paint() {
   box.querySelector('[data-act="yes"]').focus();
 }
 
+function restoreFocus(trigger) {
+  if (trigger && typeof trigger.focus === 'function') {
+    trigger.focus();
+  }
+}
+
 function finish(ok) {
   const done = resolve;
   const next = settle(state, ok, accepted => {
@@ -52,8 +73,10 @@ function finish(ok) {
     if (done) done(accepted);
   });
   if (next === state) return;
+  const trigger = next.trigger;
   state = next;
   paint();
+  restoreFocus(trigger);
 }
 
 /**
@@ -64,7 +87,12 @@ function finish(ok) {
 export function ask(spec) {
   return new Promise(r => {
     if (state.status === 'open') finish(false);
-    state = open(state, spec || {});
+    const wanted = spec || {};
+    state = open(state, {
+      title: wanted.title,
+      body: wanted.body,
+      trigger: document.activeElement,
+    });
     resolve = r;
     paint();
   });

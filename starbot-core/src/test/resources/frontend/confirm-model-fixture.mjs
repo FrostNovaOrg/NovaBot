@@ -1,14 +1,15 @@
 /**
  * 危险确认弹层纯模型夹具
  *
- * 量的是 config-ui/confirm-model.js：打开／取消／确认三态，以及结算回调只调一次。
+ * 量的是 config-ui/confirm-model.js：打开／取消／确认三态、结算回调只调一次，
+ * 以及 Esc＝取消、关闭后还记得触发钮（好把焦点还回去）。
  * 原生 confirm() 是同步的，换成自绘弹层之后这两件事都不再由浏览器保证——
  * 连点两下确认、弹着的时候再点取消，都可能把同一件事办两遍。
  *
  * 由 ConfirmModelTest 拉起，退码 0 ＝ 全绿。
  */
 
-import {idle, open, settle} from '../../../main/resources/config-ui/confirm-model.js';
+import {idle, open, settle, keydown} from '../../../main/resources/config-ui/confirm-model.js';
 
 const failures = [];
 let checks = 0;
@@ -77,6 +78,29 @@ const byCancel = settle(opened, false, ok => { k += ok ? 10 : 1; });
 eq(k, 1, '取消把 false 交给回调');
 settle(byCancel, true, ok => { k += ok ? 10 : 1; });
 eq(k, 1, '取消后再确认，回调不再调');
+
+// ---------- 三、Esc＝取消、关闭后焦点回触发钮 ----------
+const withTrigger = open(idle(), {title: SPEC.title, body: SPEC.body, trigger: 'restore-btn'});
+eq(withTrigger.trigger, 'restore-btn', '打开时记下触发钮');
+
+const byEsc = keydown(withTrigger, 'Escape');
+eq(byEsc.status, 'done', 'Esc 取消');
+eq(byEsc.accepted, false, 'Esc 的答案是 false');
+eq(byEsc.trigger, 'restore-btn', 'Esc 取消后还记得触发钮');
+
+eq(keydown(withTrigger, 'Enter').status, 'open', '别的键不收掉弹层');
+eq(keydown(withTrigger, 'Enter').trigger, 'restore-btn', '别的键也不丢触发钮');
+
+const idleState = idle();
+same(keydown(idleState, 'Escape'), idleState, '没打开时 Esc 是空操作，返回原对象');
+
+eq(settle(withTrigger, true).trigger, 'restore-btn', '确认关闭后还记得触发钮，好把焦点还回去');
+
+let escCalls = 0;
+keydown(withTrigger, 'Escape', () => { escCalls++; });
+eq(escCalls, 1, 'Esc 调了一次取消回调');
+keydown(byEsc, 'Escape', () => { escCalls++; });
+eq(escCalls, 1, '已经收掉之后再 Esc，回调不再调');
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);

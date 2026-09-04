@@ -1255,18 +1255,21 @@ class ConfigUiFrontendTest {
     }
 
     /**
-     * 设置页与推送页的危险确认走自绘弹层，不再调用原生 confirm()
+     * 设置页、推送页与通道页的危险确认走自绘弹层，不再调用原生 confirm()
      * <p>
      * 原生那一句没有标题、没有后果、也没有取消／确认的颜色区分。
      * 改回去的那一下<b>不会让任何功能变坏</b>，因此靠人复查是拦不住的。
+     * <p>
+     * 自绘之后浏览器不再代劳两件事：按 Esc 取消，以及关掉以后把焦点还回刚才那颗按钮。
+     * 少写这两行，键盘和读屏都回不到原点，而点鼠标走主路的人看不出任何变化。
      */
     @Test
-    @DisplayName("设置页与推送页的危险确认走自绘弹层")
-    void settingsAndPushUsePaintedConfirm() {
+    @DisplayName("设置页、推送页与通道页的危险确认走自绘弹层")
+    void settingsPushAndSessionsUsePaintedConfirm() {
         Map<String, String> sources = coreSources();
         List<String> bad = new ArrayList<>();
 
-        for (String name : List.of("settings.js", "push.js")) {
+        for (String name : List.of("settings.js", "push.js", "sessions.js")) {
             String code = codeOnly(sources.getOrDefault(name, ""));
             if (code.contains("confirm(")) {
                 bad.add(name + " 仍在调用原生 confirm()");
@@ -1290,14 +1293,21 @@ class ConfigUiFrontendTest {
                 bad.add("confirm.js 没有 export ask");
             }
         }
-
-        String settingsImport = importedFrom(sources.getOrDefault("settings.js", ""), "confirm.js");
-        if (!settingsImport.contains("ask")) {
-            bad.add("settings.js 用了 ask 却没从 confirm.js 引进来");
+        if (!dialog.contains("Escape")) {
+            bad.add("confirm.js 没有 Esc＝取消");
         }
-        String pushImport = importedFrom(sources.getOrDefault("push.js", ""), "confirm.js");
-        if (!pushImport.contains("ask")) {
-            bad.add("push.js 用了 ask 却没从 confirm.js 引进来");
+        if (!dialog.contains("document.activeElement")) {
+            bad.add("confirm.js 打开时没有记下触发钮，关闭后焦点回不去");
+        }
+        if (!model.contains("export function keydown")) {
+            bad.add("confirm-model.js 没有 keydown，Esc＝取消没有可测的一份");
+        }
+
+        for (String name : List.of("settings.js", "push.js", "sessions.js")) {
+            String imported = importedFrom(sources.getOrDefault(name, ""), "confirm.js");
+            if (!imported.contains("ask")) {
+                bad.add(name + " 用了 ask 却没从 confirm.js 引进来");
+            }
         }
 
         assertTrue(bad.isEmpty(), "危险确认弹层少了这几件事:\n  " + String.join("\n  ", bad));
