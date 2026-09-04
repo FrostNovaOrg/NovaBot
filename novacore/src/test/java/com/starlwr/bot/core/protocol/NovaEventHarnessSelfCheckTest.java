@@ -3,8 +3,13 @@ package com.starlwr.bot.core.protocol;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
+import static com.starlwr.bot.core.protocol.NovaEventSlowConsumerHarness.CLOCK_GAP_SLACK_MS;
+import static com.starlwr.bot.core.protocol.NovaEventSlowConsumerHarness.CLOCK_SELF_CHECK_TICKS;
 import static com.starlwr.bot.core.protocol.NovaEventSlowConsumerHarness.PING;
 import static com.starlwr.bot.core.protocol.NovaEventSlowConsumerHarness.milliTickToString;
 import static com.starlwr.bot.core.protocol.NovaEventSlowConsumerHarness.REAL_PIN_FLOOR_MILLI_TICK;
@@ -121,5 +126,88 @@ class NovaEventHarnessSelfCheckTest {
     @DisplayName("读数：不带那个键时照常出一条，不抛")
     void readingDoesNotThrowWithoutNameClash() {
         assertDoesNotThrow(() -> reading("台架自检-阴性对照", Map.of("实录", "x")));
+    }
+
+    /**
+     * 🔴 对照钟是全套判据的<b>预算</b>，而预算不许瞬间烧完
+     * <p>
+     * 判据 1 那条推理链是：「对照钟走满 {@link NovaEventSlowConsumerHarness#OBSERVE_TICKS} 格 ⇒
+     * 这段时间里心跳该走过至少一轮」。<b>后半句是墙钟上的事</b>——端点的 {@code heartbeats}
+     * 按墙钟到点，一轮 ping 要隔一个心跳周期。所以那条链只有在
+     * 「N 格 ⇒ 至少 (N−1) 个心跳周期的墙钟」成立时才立得住。
+     * <p>
+     * 补齐型的表（{@code scheduleAtFixedRate}）让它<b>不成立</b>：ticker 那条线程被剥了
+     * 一会儿 CPU，欠下的几格会紧挨着补出来，「走了 2 格」于是可能只对应一百多毫秒。
+     * <b>实测（改前，整类连跑 25 轮）撞到过一次</b>：窗口 2 格 / 247ms，本跑实测格长 123ms，
+     * 六条健康连接一轮未推进——而同一份读数里，卡在关闭帧写里的是发送线程，
+     * 心跳线程一根汗毛没动。
+     * <p>
+     * 🔴 <b>这一格量的是生效值那把表本身</b>，不是复制品：起一把真的
+     * {@link NovaEventSlowConsumerHarness.ReferenceClock}，把 ticker 挤下 CPU，
+     * 看它相邻两格最短隔了多久。改前它落在几毫秒到几十毫秒，改后落在一个周期以上。
+     */
+    @Test
+    @DisplayName("对照钟不许补齐：相邻两格之间至少隔一个心跳周期")
+    void referenceClockMustNotCatchUp() throws Exception {
+        // 挤 CPU 的自旋线程。要多于核数，ticker 才真排不上号——
+        // 一比一的话它照样能按点跑，这一格就成了空跑
+        int hogCount = Runtime.getRuntime().availableProcessors() * 4;
+        AtomicBoolean stop = new AtomicBoolean(false);
+        List<Thread> hogs = new ArrayList<>();
+        long minGapMs;
+        long walked;
+        long wallMs;
+        try (NovaEventSlowConsumerHarness.ReferenceClock clock =
+                     new NovaEventSlowConsumerHarness.ReferenceClock(PING)) {
+            for (int i = 0; i < hogCount; i++) {
+                Thread hog = new Thread(() -> {
+                    long x = 1;
+                    while (!stop.get()) {
+                        x = x * 6364136223846793005L + 1442695040888963407L;
+                    }
+                    if (x == 0) {
+                        Thread.yield();   // 只为不让整段自旋被优化掉
+                    }
+                }, "nova-test-cpu-hog-" + i);
+                hog.setDaemon(true);
+                hog.start();
+                hogs.add(hog);
+            }
+            NovaEventSlowConsumerHarness.TimeSegment segment = clock.awaitTicks(CLOCK_SELF_CHECK_TICKS);
+            minGapMs = clock.minTickGapMs();
+            walked = segment.ticksWalked();
+            wallMs = segment.wallClockMs();
+        } finally {
+            stop.set(true);
+            for (Thread hog : hogs) {
+                hog.join(5_000);
+            }
+        }
+
+        long floorMs = PING - CLOCK_GAP_SLACK_MS;
+        reading("台架自检-对照钟", Map.of(
+                "挤 CPU 的线程数", hogCount,
+                "本机核数", Runtime.getRuntime().availableProcessors(),
+                "走了几格", walked,
+                "这一段墙钟毫秒", wallMs,
+                "相邻两格最短间隔毫秒", minGapMs,
+                "线（毫秒）", floorMs,
+                "心跳周期毫秒", PING,
+                "🔴 量的是生效值", "起的是判据在用的那一把 ReferenceClock，不是复制品",
+                "🔴 为什么量最短而不量平均", "补齐型的表平均值分毫不差（欠下的都补回来了），"
+                        + "坏的只是**分布**：紧挨着补出来的那两格之间没有时间。"
+                        + "平均值看不见它，最短值一眼就见"));
+
+        assertTrue(walked >= CLOCK_SELF_CHECK_TICKS, "对照钟没走满 " + CLOCK_SELF_CHECK_TICKS
+                + " 格就到墙钟死线了（实走 " + walked + " 格 / " + wallMs + "ms）——"
+                + "这一格量不到东西，先查这把表是不是压根没在走。");
+
+        assertTrue(minGapMs >= floorMs, "对照钟相邻两格最短只隔了 " + minGapMs + "ms，不到一个心跳周期（"
+                + PING + "ms，线 " + floorMs + "ms）——**这把表会补齐**。"
+                + "它是全套判据的预算，补齐意味着预算能瞬间烧完："
+                + "「走了 " + OBSERVE_TICKS + " 格」不再意味着「心跳该走过至少一轮」，"
+                + "判据 1 于是会在心跳好端端的时候判红。"
+                + "改回 scheduleAtFixedRate 之前先想清楚这一条。实录：走了 " + walked
+                + " 格 / " + wallMs + "ms，挤 CPU 的线程 " + hogCount + " 条。");
     }
 }

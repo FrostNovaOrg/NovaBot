@@ -58,7 +58,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <ul>
  *   <li>判据 4 量「后簇比前簇少收轮次这个状态<b>持续</b>了多久」——负载把两簇一起拖慢，差不动；</li>
  *   <li>判据 1／2／3 的窗口以 {@link NovaEventSlowConsumerHarness.ReferenceClock} 的<b>格</b>计——
- *       那把表和心跳同机器、同负载，只是不经过心跳线程：机器慢它跟着慢，心跳被钉住它照走；</li>
+ *       那把表和心跳同机器、同负载，只是不经过心跳线程：机器慢它跟着慢，心跳被钉住它照走。
+ *       🔴 它<b>不补齐</b>：补齐的表会把欠下的格紧挨着补出来，「走了 2 格」就不再意味着
+ *       「墙钟走过两个心跳周期」，判据 1 会在心跳好端端的时候判红——那正是 09-04 那两次偶红；</li>
  *   <li>判据 0 本来就只比线程号，与时间无关，量法不动。</li>
  * </ul>
  * 还留着的那几个数（{@link NovaEventSlowConsumerHarness#LAG_TOLERANCE_MILLI_TICK} 等）都放在<b>只挡量级错</b>
@@ -365,6 +367,17 @@ class NovaEventCloseFramePinTest {
         Reading.put("心跳间隔毫秒", PING);
         Reading.put("🔴 量的是推进不是绝对间隔", "问的是「对照钟走了 " + OBSERVE_TICKS
                 + " 格，心跳走了没有」——两把表比着看，比的是同一份负载");
+        // 🔴 这两栏答的是「这一跑的窗口有没有资格问那一问」：窗口里一个心跳周期都不满时，
+        //    心跳一轮都不欠，红的是尺不是被测。改前撞到过一次（2 格 / 247ms / 格长 123ms）。
+        //    只落读数，不在这里再设一道闸——闸在台架自检那一格上，
+        //    同一形态设两道防线，第二道会把第一道的死藏起来。
+        Reading.put("窗口覆盖了几个心跳周期", milliTickToString(r.segment().wallClockMs() * 1000 / PING));
+        Reading.put("对照钟相邻两格最短间隔毫秒", harness.clock.minTickGapMs());
+        if (r.advancedCount() == 0) {
+            // 🔴 心跳线程只是排不上号时，它一条也不会出现在先验尺的实录里——
+            //    「没被钉住」在读数上是沉默的，而沉默和「尺没量」长得一样
+            Reading.put("零推进时的心跳线程", NovaEventSlowConsumerHarness.threadSnapshot(harness.heartbeatThread));
+        }
         reading("判据1-ping", Reading);
 
         assertTrue(r.advancedCount() > 0, "清理那个写不动的客户端时，" + r.totalCount()

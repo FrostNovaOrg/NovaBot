@@ -71,14 +71,34 @@ class BilibiliWordCloudTest {
     private static final int CLOUD_MAX_WORDS = 72;
 
     /**
-     * 🔴 <b>这两个数字写死在判据里，不许从被测那边取。</b>
-     * 引 {@code WordCloudLayout.PADDING} 看着更「不重复」，
+     * 🔴 <b>下面这几个数字写死在判据里，不许从被测那边取。</b>
+     * 引 {@code WordCloudLayout.WORD_GAP} 看着更「不重复」，
      * 可那样一来把留白改成 0、把填充目标改成 0，判据会跟着一起松开——
      * 判据就再也逮不住它本来要逮的那件事了
+     * <p>
+     * {@code WORD_GAP} 量的是<b>两个词之间实际隔开多少</b>。它与「每个词四周涨多少」
+     * 差一倍：各涨 8px 再判不相交，词与词之间隔的是 16px
      */
-    private static final int PADDING = 8;
+    private static final int WORD_GAP = 8;
+
+    private static final int FRAME_MARGIN = 8;
 
     private static final int FILL_TARGET_PERCENT = 85;
+
+    /**
+     * 词云允许的最小字号。报告里最小的正文字号是 22，词云尾词比正文再小一档尚可读，
+     * 更小就只剩一团色块了——这条是下限，不是当前实现的写照
+     */
+    private static final int READABLE_FONT_SIZE_MIN = 18;
+
+    /**
+     * 改前同一批语料的落词总数：**2026-09-04 实测于 lane-c 3c03438**
+     * （字号按 √词频、词与词隔 16px）的 20 组合计。
+     * <p>
+     * 🔴 这是一次<b>历史读数</b>，写死。改成「现算」的话它会跟着被测一起动，
+     * 「比改前多放了多少」这条判据就永远成立
+     */
+    private static final int PLACED_BEFORE = 467;
 
     /**
      * 设计语言册（丙·星云）亮色值：accent2 / accent / cloud3 / dim
@@ -216,15 +236,19 @@ class BilibiliWordCloudTest {
     }
 
     /**
-     * 判据③④⑤⑥⑦：随机语料逐组量几何
+     * 判据③④⑤⑥⑦与「隔多远」「放多少」「多小的字」：随机语料逐组量几何
      * <p>
-     * 一组语料一行读数，全部合规才算绿；任何一条不合规都把那一组的实值报出来
+     * 一组语料一行读数，全部合规才算绿；任何一条不合规都把那一组的实值报出来。
+     * 三条跨组的判据（最小实距、落词总数、最小字号）在 20 组跑完之后一并判
      */
     @Test
-    @DisplayName("判据③④⑤⑥⑦：20 组随机语料逐组量包围盒、填充率、竖排与配色")
+    @DisplayName("判据③④⑤⑥⑦：20 组随机语料逐组量包围盒、实距、落词数、填充率、竖排与配色")
     void geometryHoldsAcrossRandomCorpora() throws Exception {
         List<String> readings = new ArrayList<>();
         List<String> failures = new ArrayList<>();
+        int minClearance = Integer.MAX_VALUE;
+        int minFontSize = Integer.MAX_VALUE;
+        int placedTotal = 0;
 
         for (int group = 0; group < 20; group++) {
             long seed = 92_000L + group;
@@ -240,23 +264,40 @@ class BilibiliWordCloudTest {
             int verticalLimit = Math.max(0, (laid - 12) / 4);
             double fill = result.fillRatio() * 100;
 
-            readings.add(String.format("第%02d组 词数%3d 落%3d 丢%2d 填充%5.1f%% 竖排%2d/%2d",
-                    group, size, result.placements().size(), result.dropped(), fill, verticals, verticalLimit));
+            placedTotal += result.placements().size();
 
-            // ③ 两两不相交、全在框内——两个框各自涨 8px 之后仍不相交
+            // ③ 两两隔开 ≥8px（隔开 <0 即压叠）、全在框内且离框边 ≥8px
             List<Rectangle> boxes = result.placements().stream().map(WordCloudLayout.Placement::box).toList();
+            int groupMinClearance = Integer.MAX_VALUE;
             for (int i = 0; i < boxes.size(); i++) {
-                Rectangle a = inflate(boxes.get(i));
-                if (a.x < 0 || a.y < 0 || a.x + a.width > CONTENT_WIDTH || a.y + a.height > CLOUD_HEIGHT) {
-                    failures.add("第" + group + "组「" + result.placements().get(i).text() + "」出界 " + a);
+                Rectangle a = boxes.get(i);
+                if (a.x < FRAME_MARGIN || a.y < FRAME_MARGIN
+                        || a.x + a.width > CONTENT_WIDTH - FRAME_MARGIN
+                        || a.y + a.height > CLOUD_HEIGHT - FRAME_MARGIN) {
+                    failures.add("第" + group + "组「" + result.placements().get(i).text() + "」离框边不足 "
+                            + FRAME_MARGIN + "px " + a);
                 }
                 for (int j = i + 1; j < boxes.size(); j++) {
-                    if (a.intersects(inflate(boxes.get(j)))) {
-                        failures.add("第" + group + "组「" + result.placements().get(i).text() + "」压上「"
-                                + result.placements().get(j).text() + "」 " + a + " 与 " + inflate(boxes.get(j)));
+                    int clearance = clearance(a, boxes.get(j));
+                    groupMinClearance = Math.min(groupMinClearance, clearance);
+                    if (clearance < WORD_GAP) {
+                        failures.add("第" + group + "组「" + result.placements().get(i).text() + "」与「"
+                                + result.placements().get(j).text() + "」只隔开 " + clearance + "px "
+                                + a + " 与 " + boxes.get(j));
                     }
                 }
             }
+            if (groupMinClearance != Integer.MAX_VALUE) {
+                minClearance = Math.min(minClearance, groupMinClearance);
+            }
+
+            for (WordCloudLayout.Placement placement : result.placements()) {
+                minFontSize = Math.min(minFontSize, placement.fontSize());
+            }
+
+            readings.add(String.format("第%02d组 词数%3d 落%3d 丢%2d 填充%5.1f%% 竖排%2d/%2d 最小实距%3s",
+                    group, size, result.placements().size(), result.dropped(), fill, verticals, verticalLimit,
+                    groupMinClearance == Integer.MAX_VALUE ? "—" : String.valueOf(groupMinClearance)));
 
             // ④ 填充率
             if (fill < FILL_TARGET_PERCENT) {
@@ -284,12 +325,45 @@ class BilibiliWordCloudTest {
             }
         }
 
+        // 🔴 「≥8px」只说得出下限没被破，说不出下限有没有被走到过：
+        // 把间距改回「各涨 8px」是 16px，一样 ≥8。要求最小实距<b>恰好</b>是 8，
+        // 那一条才既拦得住压叠、又拦得住悄悄改回去
+        int placedTarget = (int) Math.ceil(PLACED_BEFORE * 1.5);
+        if (minClearance != WORD_GAP) {
+            failures.add("相邻词最小实距 " + minClearance + "px, 应恰为 " + WORD_GAP
+                    + "px（大于它说明词与词之间空得比定的还多）");
+        }
+        if (placedTotal < placedTarget) {
+            failures.add("20 组合计落词 " + placedTotal + " 个, 不足改前 " + PLACED_BEFORE
+                    + " 的 1.5 倍（" + placedTarget + "）");
+        }
+        if (minFontSize < READABLE_FONT_SIZE_MIN) {
+            failures.add("最小字号 " + minFontSize + " 低于可读线 " + READABLE_FONT_SIZE_MIN);
+        }
+
+        String summary = String.format("合计 落%d（改前 %d, 需 ≥%d）最小实距 %d 最小字号 %d",
+                placedTotal, PLACED_BEFORE, placedTarget, minClearance, minFontSize);
+        readings.add(summary);
+
         Path dir = Path.of("target", "painter-output");
         Files.createDirectories(dir);
         Files.write(dir.resolve("wordcloud-geometry.txt"), String.join("\n", readings).getBytes());
 
         assertTrue(failures.isEmpty(), "逐组读数:\n" + String.join("\n", readings)
                 + "\n不合规:\n" + String.join("\n", failures));
+    }
+
+    /**
+     * 两个包围盒之间隔开多少：两个轴上各自隔开的距离取大的那个
+     * <p>
+     * 取大的那个而不是欧氏距离，是因为版式规则控住的正是它——「一个框涨 {@value #WORD_GAP}px
+     * 之后与另一个不相交」等价于「两轴之中至少有一轴隔开了 {@value #WORD_GAP}px」。
+     * 两轴都没隔开（返回负数）就是压叠了
+     */
+    private static int clearance(Rectangle a, Rectangle b) {
+        int dx = Math.max(b.x - (a.x + a.width), a.x - (b.x + b.width));
+        int dy = Math.max(b.y - (a.y + a.height), a.y - (b.y + b.height));
+        return Math.max(dx, dy);
     }
 
     /**
@@ -313,11 +387,17 @@ class BilibiliWordCloudTest {
         Files.createDirectories(dir);
         ImageIO.write(cloud, "png", dir.resolve("wordcloud.png").toFile());
 
+        // 样张这一张上到底站了几个词——「密不密」是拿这张图看的，那就把这张图的实值也留下
+        WordCloudLayout.Result sample = painter.layoutWordCloud(PLATFORM, streamer.getUid(), words);
+        Files.write(dir.resolve("wordcloud-sample.txt"),
+                ("样张语料 " + words.size() + " 词, 落 " + sample.placements().size()
+                        + " 丢 " + sample.dropped() + "\n").getBytes());
+
         int inRing = 0;
         for (int x = 0; x < cloud.getWidth(); x++) {
             for (int y = 0; y < cloud.getHeight(); y++) {
-                boolean ring = x < PADDING || y < PADDING
-                        || x >= cloud.getWidth() - PADDING || y >= cloud.getHeight() - PADDING;
+                boolean ring = x < FRAME_MARGIN || y < FRAME_MARGIN
+                        || x >= cloud.getWidth() - FRAME_MARGIN || y >= cloud.getHeight() - FRAME_MARGIN;
                 if (ring && (cloud.getRGB(x, y) >>> 24) != 0) {
                     inRing++;
                 }
@@ -338,10 +418,6 @@ class BilibiliWordCloudTest {
         assertTrue(result.placements().isEmpty());
         assertEquals(0, result.dropped());
         assertFalse(result.fillRatio() > 0);
-    }
-
-    private static Rectangle inflate(Rectangle box) {
-        return new Rectangle(box.x - PADDING, box.y - PADDING, box.width + PADDING * 2, box.height + PADDING * 2);
     }
 
     private static Color expectedColor(int rank) {
