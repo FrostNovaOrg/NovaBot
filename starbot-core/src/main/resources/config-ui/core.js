@@ -32,6 +32,30 @@ export const el = (t, c) => { const e = document.createElement(t); if (c) e.clas
 export const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 
+/**
+ * 时:分。事件时刻是毫秒时间戳，按浏览器所在时区显示——看的人和机器往往不在同一个时区
+ *
+ * 摆在公共这一份里而不是各页各写一个：首页那条短条与日志页那条完整时间线画的是
+ * 同一批事件，两处各写一个格式化的话，同一条事件在两页上会显示成两个时刻。
+ */
+export const clock = at => {
+  const time = new Date(at);
+  return String(time.getHours()).padStart(2, '0') + ':' + String(time.getMinutes()).padStart(2, '0');
+};
+
+/**
+ * 今天是哪一天，按浏览器所在时区算
+ *
+ * 不用 toISOString()：那一串是 UTC 的日期，东八区的深夜与凌晨会各错一天，
+ * 而「今天发生了什么」在错的那几个小时里会显示成空的。
+ */
+export const today = () => {
+  const now = new Date();
+  return now.getFullYear() + '-'
+    + String(now.getMonth() + 1).padStart(2, '0') + '-'
+    + String(now.getDate()).padStart(2, '0');
+};
+
 export function say(text, kind) {
   const s = $('#status-text');
   s.textContent = text || '';

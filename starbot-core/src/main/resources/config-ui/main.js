@@ -7,6 +7,7 @@ import {loadAnalytics} from './analytics.js';
 import {bindBotForm, botFormHtml, fillBotForms} from './bot.js';
 import {$, api, el, esc, markDirty, say} from './core.js';
 import {focusStation, loadTargets, mountLinkCard, refreshLinks, sendTestMessage} from './links.js';
+import {loadLog, syncLogView} from './log.js';
 import {loadHistory, loadState, refreshHome, renderStatus, runSelfTest, togglePush} from './overview.js';
 import {addStreamer, decoratePushData, renderPlatforms, renderStreamers, serializePush} from './push.js';
 import {setAuthState} from './settings-auth.js';
@@ -283,6 +284,9 @@ function applyRoute(withData = true) {
     x => x.classList.toggle('on', !!plugin && x.dataset.tab === plugin.meta.id));
   // 初始设置页是独立版式：这台机器可能还没上锁，页头上的「退出登录」无从谈起
   document.documentElement.classList.toggle('chromeless', name === 'setup');
+  // 日志页有两半（时间线与工程日志），哪一半该显示由地址栏定，与取不取数据无关——
+  // 合进下面那一趟的话，直接打开 #/log/eng 会先闪一下时间线那一半
+  if (name === 'log') syncLogView();
   // 插件页是折起来的，点它的入口进来时要替使用者展开，否则地址对了而屏幕上什么都没变
   if (plugin) $('#plugin-adv').open = true;
 
@@ -308,6 +312,9 @@ function applyRoute(withData = true) {
   // 每次进入都重建只读口令那一块：顺带抹掉上一次留在屏幕上的口令明文。
   // 三张卡与名单跟着一起重取——群随时会被踢，缓存的名单会让人对着一个已经不在的群发测试消息
   else if (name === 'links') { loadTokens(); refreshLinks(); refreshPages(); loadTargets(false); }
+  // 翻天、改筛选、进出工程日志走的都是改地址栏这一条路，因此每次进来都重取：
+  // 日志页的「现在是哪一天、筛了什么」全部只存在地址栏里，本页自己不记
+  else if (name === 'log') loadLog();
   else if (plugin) { api('/status').then(renderStatus); callPage(plugin, 'refresh'); }
 
   // 点名要看某一块时不回顶：滚到顶再滚下去，屏幕会先跳一下
