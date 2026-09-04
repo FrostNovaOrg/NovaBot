@@ -9,6 +9,7 @@ import com.starlwr.bot.bilibili.model.Up;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.service.LiveDataService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -47,6 +48,8 @@ public class BilibiliBackupLivePushService {
 
     private final BilibiliLiveStateGate stateGate;
 
+    private final LiveDataService liveDataService;
+
     /**
      * uid 到上次已知开播状态的映射
      * <p>
@@ -69,12 +72,14 @@ public class BilibiliBackupLivePushService {
                                          StarBotBilibiliProperties properties,
                                          ApplicationEventPublisher publisher,
                                          @Qualifier("bilibiliTaskScheduler") TaskScheduler scheduler,
-                                         BilibiliLiveStateGate stateGate) {
+                                         BilibiliLiveStateGate stateGate,
+                                         LiveDataService liveDataService) {
         this.api = api;
         this.properties = properties;
         this.publisher = publisher;
         this.scheduler = scheduler;
         this.stateGate = stateGate;
+        this.liveDataService = liveDataService;
     }
 
     /**
@@ -141,6 +146,17 @@ public class BilibiliBackupLivePushService {
         boolean living = room.isLiving();
         Boolean previous = livingStates.put(up.getUid(), living);
 
+        // 此前没观测过这位主播：可能是运行期新增，也可能是进程首轮。观测到在播而账上
+        // 不是在播时，这场直播会全程被当成没在播——直播报告、实时数据与控制台在播态
+        // 读的都是那本账。此处把状态同步成在播，但不补推开播：人不是刚开播，补推是误报；
+        // 长连接进房后迟到的开播消息也会被状态闸门按「账上已在播」拦下，不会漏出第二条。
+        // 账上已在播的（如进程重启后延续的场次）不是新加入监听，跳过，也不动已有的本场数据。
+        if (previous == null && living
+                && !liveDataService.getLiveStatus(BilibiliPlatform.BILIBILI.id(), up.getUid()).orElse(false)) {
+            adoptLivingStream(up, room);
+            return;
+        }
+
         // 首轮或状态未变化时不推送
         if (!initialized || previous == null || previous == living) {
             return;
@@ -164,6 +180,29 @@ public class BilibiliBackupLivePushService {
             log.info("备用直播推送检测到 {} 下播", up.getUname());
             publisher.publishEvent(new BilibiliLiveOffEvent(up));
         }
+    }
+
+    /**
+     * 把加入监听时已在播的主播按在播记账
+     * <p>
+     * 只做同步，不发开播事件——事件除了推送通知，还会触发监听器把本场数据整场重置，
+     * 那会把已有的本场数据抹掉。已有本场起始时保持原值（如进程重启后延续的场次），
+     * 没有时才按接口报的开播时间起一场；接口没报就按当前时刻。
+     * @param up UP 主信息
+     * @param room 直播间信息
+     */
+    private void adoptLivingStream(Up up, Room room) {
+        String platform = BilibiliPlatform.BILIBILI.id();
+        liveDataService.setLiveStatus(platform, up.getUid(), true);
+
+        if (liveDataService.getLiveStartTime(platform, up.getUid()).isEmpty()) {
+            Instant startTime = room.getLiveStartTime() == null
+                    ? Instant.now()
+                    : Instant.ofEpochSecond(room.getLiveStartTime());
+            liveDataService.setLiveStartTime(platform, up.getUid(), startTime.toEpochMilli());
+        }
+
+        log.info("备用直播推送: {} 加入监听时已在播, 已按在播记账, 不补推开播", up.getUname());
     }
 
     /**
