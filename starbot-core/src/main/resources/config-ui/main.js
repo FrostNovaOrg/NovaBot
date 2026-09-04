@@ -9,7 +9,7 @@ import {$, api, el, esc, markDirty, say} from './core.js';
 import {loadLog, syncLogView} from './log.js';
 import {loadHistory, loadState, refreshHome, renderStatus, runSelfTest, togglePush} from './overview.js';
 import {addStreamer, decoratePushData, renderPlatforms, renderStreamers, serializePush} from './push.js';
-import {loadPasskeys, registerPasskey} from './passkeys.js';
+import {setAuthState} from './settings-auth.js';
 import {copyConfigPath, discard, filterSettings, renderConfigPath, renderGeneral, save, toggleKeyNames}
   from './settings.js';
 import {store} from './store.js';
@@ -287,7 +287,6 @@ document.querySelectorAll('#nav a').forEach(a => {
   a.addEventListener('click', () => { if (location.hash === a.getAttribute('href')) applyRoute(); });
 });
 
-$('#passkey-add').addEventListener('click', registerPasskey);
 $('#save').addEventListener('click', save);
 $('#discard').addEventListener('click', discard);
 $('#cfg-copy').addEventListener('click', copyConfigPath);
@@ -384,12 +383,12 @@ api('/auth/state')
     // 签发只读口令要重新校验一次凭据，验证码框显示与否照这一位来，不照配置项猜
     store.totpRequired = !!state.totpRequired;
     $('#auth-actions').style.display = state.enabled ? '' : 'none';
-    // 通行密钥跟着口令登录的开关走：未配口令时面板走的是「令牌即凭据」那一形态，
-    // 它根本不看会话，验过通行密钥签出来的会话也一样进不去
-    if (state.enabled) {
-      $('#passkey-box').style.display = '';
-      loadPasskeys();
-    }
+    // 「登录与安全」那一组要按这几位决定摆哪一版（改口令还是重设口令、开关在哪一档），
+    // 因此必须赶在下面那趟整体载入之前交进去——那一趟里就要画它了
+    setAuthState(state);
+    // 从后门进来的那一次，控制台顶上常驻一条。它不随翻页消失：
+    // 那道门开着这件事没有任何其它现象
+    $('#op-banner').style.display = state.operatorSession ? '' : 'none';
     if (state.totpSetupNeeded) renderTotpSetup();
   })
   .catch(() => {})

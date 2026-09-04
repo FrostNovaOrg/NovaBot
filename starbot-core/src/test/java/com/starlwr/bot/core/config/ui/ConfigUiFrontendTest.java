@@ -517,6 +517,65 @@ class ConfigUiFrontendTest {
             "cfg-path", "cfg-copy");
 
     /**
+     * 「登录与安全」那一组里由脚本建出来的落点，闭集
+     * <p>
+     * 与 {@link #SETTINGS_CONTROLS} 分开是因为这几件事<b>不写在 index.html 里</b>：
+     * 设置页会整体重绘（保存过一次、放弃一次改动都会），而重绘的第一步是把组容器清空——
+     * 写死在页面里再搬进去的那一块会跟着一起没掉，此后按 id 取到的是 null，
+     * 那一块就<b>安静地从页面上消失</b>了。通行密钥那一块正是这么搬过的。
+     */
+    private static final List<String> AUTH_CONTROLS = List.of(
+            "auth-cards", "pwd-save", "totp-switch", "passkey-add", "setup-rerun");
+
+    /**
+     * 「登录与安全」那一组要调的端点，闭集
+     * <p>
+     * 每一条背后都是一道门：改口令要旧口令、重设只认令牌会话、关二次验证要现在的码。
+     * 界面上少接一条，那件事就变成一个点了没反应的按钮——而按钮本身看起来完全正常。
+     */
+    private static final List<String> AUTH_ENDPOINTS = List.of(
+            "/auth/password/change", "/auth/password/reset", "/auth/totp/disable",
+            "/auth/totp/enroll", "/auth/passkeys", "/setup/rerun");
+
+    /**
+     * 「登录与安全」那一组的四件事各有落点，且各自接到了自己那条端点
+     * <p>
+     * 元素与接线缺哪一半都不会报错：元素没建出来，脚本按 id 取到 null（那一条由
+     * {@link #everyReferencedElementIdExists} 管）；脚本没接上，按钮就静静地立在那里，
+     * 点它什么也不发生——而后者在任何一次「打开页面看一眼」里都看不出来。
+     */
+    @Test
+    @DisplayName("登录与安全组的改口令、二次验证、通行密钥、重跑初始设置各有落点")
+    void authGroupControlsAreWiredUp() throws IOException {
+        Map<String, String> sources = coreSources();
+        String scripts = String.join("\n", sources.values());
+        String html = Files.readString(frontendDir().resolve("index.html"), StandardCharsets.UTF_8);
+
+        List<String> bad = new ArrayList<>();
+        for (String id : AUTH_CONTROLS) {
+            if (!scripts.contains("id=\"" + id + "\"") && !scripts.contains(".id = '" + id + "'")) {
+                bad.add("没有任何脚本建出 #" + id);
+            }
+        }
+
+        for (String endpoint : AUTH_ENDPOINTS) {
+            if (!scripts.contains("'" + endpoint + "'")) {
+                bad.add("没有任何脚本调用 " + endpoint + "，那一件事此刻点了不管用");
+            }
+        }
+
+        // 从后门进来时的常驻提醒是页面自带的一块，不随设置页重绘，因此查的是 index.html
+        if (!html.contains("id=\"op-banner\"")) {
+            bad.add("index.html 上没有 #op-banner");
+        }
+        if (!scripts.contains("$('#op-banner')")) {
+            bad.add("没有任何脚本用到 #op-banner，从启动令牌进来时那条提醒不会出现");
+        }
+
+        assertTrue(bad.isEmpty(), "登录与安全那一组少了这几件事的落点:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
      * 插件页是运行时装上来的，不是编译期定死的
      * <p>
      * 静态 {@code import} 一写，那个平台就成了核心的一部分：没装插件时页面加载不了，

@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSession;
+import com.starlwr.bot.core.config.ui.auth.PasswordHash;
 import com.starlwr.bot.core.config.ui.auth.TotpGenerator;
 import com.starlwr.bot.core.util.QrCodeUtil;
 import jakarta.servlet.http.HttpServletRequest;
@@ -49,6 +50,22 @@ public class ConfigUiAuthController {
      * 二次验证密钥所在的配置项，绑定成功后写回此处
      */
     private static final String TOTP_SECRET_PROPERTY = "starbot.core.config-ui.auth.totp-secret";
+
+    /**
+     * 二次验证开关所在的配置项
+     * <p>
+     * 绑定成功时一并写 true、关闭时写 false：只改内存那一位的话，重启之后
+     * 这台机器又回到改之前的样子，而界面上那个开关此刻显示的是使用者刚拨过的位置。
+     */
+    private static final String TOTP_PROPERTY = "starbot.core.config-ui.auth.totp";
+
+    /**
+     * 新口令的最短长度
+     * <p>
+     * 拦的是「把口令改成 1234 之后忘了自己改过」。不设上限、不要求混字符：
+     * 那类规则逼出来的是写在便利贴上的口令，而这台面板的正门另有通行密钥与二次验证。
+     */
+    private static final int MIN_PASSWORD_LENGTH = 8;
 
     /**
      * 验证器应用中显示的服务名与账号名
@@ -123,8 +140,35 @@ public class ConfigUiAuthController {
         // 已登录但还没绑验证器时提示去绑，本次登录按掉过就不再提
         result.put("totpSetupNeeded", authService.totpPending()
                 && session.map(value -> !value.isTotpSetupDismissed()).orElse(false));
+        // 设置页那个开关显示在哪一档，照这一位来而不是照配置项猜：
+        // 绑定与关闭都当场生效，配置文件里那一行要到下次重启才被读一遍
+        result.put("totpEnabled", authService.totpEnabled());
+
+        // 这个来源还要被锁多少秒。
+        //
+        // 🔴 给的是「还剩多少」而不是「什么时候解锁」：后者要拿浏览器的钟去减，
+        // 而那台电脑的钟未必准——屏幕上的倒计时会因此差出几分钟，甚至是负的。
+        result.put("lockedSeconds", remainingLockSeconds(request));
+
+        // 是不是凭启动令牌进来的。控制台顶部那条常驻提醒照这一位显示——
+        // 那条通道绕过了口令与二次验证，进来之后第一件事就该是改口令再把它关掉
+        result.put("operatorSession", session
+                .map(value -> value.getChannel() == ConfigUiSession.Channel.OPERATOR_TOKEN)
+                .orElse(false));
 
         return result;
+    }
+
+    /**
+     * 这个来源还要被锁多少秒
+     * <p>
+     * 向上取整：剩 0.4 秒时回 0 会让界面把表单放开，而下一次提交仍然会被拒。
+     * @param request 请求
+     * @return 剩余秒数，未锁定时为 0
+     */
+    private long remainingLockSeconds(HttpServletRequest request) {
+        Duration remaining = authService.remainingLockout(request.getRemoteAddr());
+        return remaining.isZero() || remaining.isNegative() ? 0 : (remaining.toMillis() + 999) / 1000;
     }
 
     /**
@@ -221,7 +265,9 @@ public class ConfigUiAuthController {
     public JSONObject totpSetup() {
         JSONObject result = new JSONObject();
 
-        if (!authService.totpPending()) {
+        // 看的是「绑得了吗」而不是「要不要提示他去绑」：设置页里把二次验证从关拨到开，
+        // 走的正是先绑后开这条路，此刻那一位还在「关」上
+        if (!authService.canEnrollTotp()) {
             result.put("success", false);
             result.put("message", "无需绑定验证器");
             return result;
@@ -251,7 +297,7 @@ public class ConfigUiAuthController {
     public JSONObject totpEnroll(@RequestBody JSONObject body) {
         JSONObject result = new JSONObject();
 
-        if (!authService.totpPending()) {
+        if (!authService.canEnrollTotp()) {
             result.put("success", false);
             result.put("message", "无需绑定验证器");
             return result;
@@ -265,9 +311,11 @@ public class ConfigUiAuthController {
         }
 
         // 先落盘再启用：反过来的话，写文件失败会让界面说「绑好了」而重启后又要重新绑，
-        // 中间这段时间登录要输的还是一个没人记得的密钥
+        // 中间这段时间登录要输的还是一个没人记得的密钥。
+        // 开关那一位与密钥一起写：只写密钥的话，从设置页拨开的那一次重启后又变回关着
         try {
-            fileService.write(Map.of(TOTP_SECRET_PROPERTY, secret));
+            fileService.write(new LinkedHashMap<>(Map.of(
+                    TOTP_SECRET_PROPERTY, secret, TOTP_PROPERTY, "true")));
         } catch (IOException e) {
             log.error("写入二次验证密钥失败", e);
             result.put("success", false);
@@ -278,6 +326,167 @@ public class ConfigUiAuthController {
         authService.activateTotp(secret);
         result.put("success", true);
         result.put("message", "已绑定，下次登录需要输入动态验证码");
+
+        return result;
+    }
+
+    /**
+     * 关掉二次验证
+     * <p>
+     * <b>必须先输一次现在的验证码。</b>关掉的是一整道防线，而这个动作只需要一次点击——
+     * 一枚被偷走的会话 Cookie 若能直接把它卸掉，那道防线保护的其实只是「口令没泄漏」这一种情形。
+     * 要求现码等于要求「此刻验证器就在你手上」。
+     * <p>
+     * 密钥一并清掉，见 {@code ConfigUiAuthService#disableTotp}。
+     * @param body 请求体，code 字段为验证器给出的六位数字
+     * @return 关闭结果
+     */
+    @PostMapping("/totp/disable")
+    public ResponseEntity<JSONObject> totpDisable(@RequestBody JSONObject body) {
+        JSONObject result = new JSONObject();
+
+        if (!authService.totpRequired()) {
+            result.put("success", false);
+            result.put("message", "二次验证本来就没开着");
+            return ResponseEntity.badRequest().body(result);
+        }
+
+        if (!authService.verifyCurrentCode(body.getString("code"))) {
+            result.put("success", false);
+            result.put("message", "验证码不正确，请确认手机时间是否准确后重试");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(result);
+        }
+
+        // 先落盘再关：写文件失败时二次验证维持原样，界面照实说没关成——
+        // 反过来（先关再写）会出现「关掉了，重启后又要输码」，而那时验证器里那把密钥已经没了
+        try {
+            fileService.write(new LinkedHashMap<>(Map.of(
+                    TOTP_PROPERTY, "false", TOTP_SECRET_PROPERTY, "")));
+        } catch (IOException e) {
+            log.error("关闭二次验证时写入配置失败", e);
+            result.put("success", false);
+            result.put("message", "保存失败: " + e.getMessage());
+            return ResponseEntity.internalServerError().body(result);
+        }
+
+        authService.disableTotp();
+        result.put("success", true);
+        result.put("message", "已关闭。下次登录只要口令，验证器里那一条可以删掉了");
+
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 改口令
+     * <p>
+     * 要旧口令：一枚被偷走的会话 Cookie 若能直接换掉口令，真正的主人就被锁在了门外，
+     * 而他手上那把口令看起来只是「突然不对了」。
+     * @param body 请求体，current 为现在的口令，next 为新口令
+     * @return 结果
+     */
+    @PostMapping("/password/change")
+    public ResponseEntity<JSONObject> changePassword(@RequestBody JSONObject body, HttpServletRequest request) {
+        JSONObject result = new JSONObject();
+
+        if (!authService.isEnabled()) {
+            result.put("success", false);
+            result.put("message", "这台机器还没设过控制台口令，请到初始设置里上锁");
+            return ResponseEntity.badRequest().body(result);
+        }
+
+        char[] current = Optional.ofNullable(body.getString("current")).orElse("").toCharArray();
+        try {
+            if (!authService.matchesPassword(current)) {
+                log.warn("配置界面改口令时旧口令不符, 来源: {}", request.getRemoteAddr());
+                result.put("success", false);
+                result.put("message", "现在的口令不对");
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(result);
+            }
+        } finally {
+            Arrays.fill(current, '\0');
+        }
+
+        return ResponseEntity.ok(replacePassword(body.getString("next"), request));
+    }
+
+    /**
+     * 用启动令牌进来之后重设口令
+     * <p>
+     * <b>只有令牌会话用得了。</b>忘记口令的人拿不出旧口令，而他能读到启动日志——
+     * 那本身就证明他对这台机器有完全控制权。反过来，让任何一把会话都能免旧口令重设，
+     * 等于把「偷一枚 Cookie」升级成「拿走这台面板」。
+     * @param body 请求体，next 为新口令
+     * @return 结果
+     */
+    @PostMapping("/password/reset")
+    public ResponseEntity<JSONObject> resetPassword(@RequestBody JSONObject body, HttpServletRequest request) {
+        JSONObject result = new JSONObject();
+
+        if (!authService.isEnabled()) {
+            result.put("success", false);
+            result.put("message", "这台机器还没设过控制台口令，请到初始设置里上锁");
+            return ResponseEntity.badRequest().body(result);
+        }
+
+        boolean operator = authService.validate(sessionId(request))
+                .map(session -> session.getChannel() == ConfigUiSession.Channel.OPERATOR_TOKEN)
+                .orElse(false);
+        if (!operator) {
+            result.put("success", false);
+            result.put("message", "这条路只给用启动令牌进来的那一次用，改口令请填现在的口令");
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(result);
+        }
+
+        return ResponseEntity.ok(replacePassword(body.getString("next"), request));
+    }
+
+    /**
+     * 换上新口令：校验、落盘、当场生效、收回别处的会话
+     * <p>
+     * 三条路（改口令、令牌重设）走到这里就没有区别了，因此只此一份——
+     * 各写一份的话，「改口令要不要注销别处的会话」这件事迟早会有两个答案。
+     * @param next 新口令明文
+     * @param request 请求，用于留下当前这一把会话
+     * @return 结果
+     */
+    private JSONObject replacePassword(String next, HttpServletRequest request) {
+        JSONObject result = new JSONObject();
+
+        String plain = next == null ? "" : next.strip();
+        if (plain.length() < MIN_PASSWORD_LENGTH) {
+            result.put("success", false);
+            result.put("message", "新口令至少 " + MIN_PASSWORD_LENGTH + " 个字符");
+            return result;
+        }
+
+        char[] chars = plain.toCharArray();
+        String hashed;
+        try {
+            hashed = PasswordHash.hash(chars);
+        } finally {
+            // 明文用完即抹，不留在堆里等垃圾回收
+            Arrays.fill(chars, '\0');
+        }
+
+        // 🔴 先落盘再认：反过来的话，写文件失败会让这台机器认一个<b>只存在于内存里</b>的口令，
+        // 而使用者记下的正是它——下次重启后他会发现自己进不来，且没有任何提示解释为什么
+        try {
+            fileService.write(Map.of(PASSWORD_PROPERTY, hashed));
+        } catch (Exception e) {
+            log.error("写入新的登录口令失败", e);
+            result.put("success", false);
+            result.put("message", "保存失败，口令没有改动: " + e.getMessage());
+            return result;
+        }
+
+        authService.applyPasswordHash(hashed);
+        int revoked = authService.logoutOthers(sessionId(request));
+
+        result.put("success", true);
+        result.put("revoked", revoked);
+        result.put("message", revoked > 0
+                ? "口令已改。别处那 " + revoked + " 个登录已经一并注销"
+                : "口令已改。下次登录用新口令");
 
         return result;
     }
@@ -322,6 +531,11 @@ public class ConfigUiAuthController {
             if (!outcome.success()) {
                 result.put("success", false);
                 result.put("message", outcome.message());
+                // 这一次是不是把自己锁进去了，由服务端说了算：界面自己数错误次数是数不准的，
+                // 锁定按来源计，同一个来源上别的浏览器试错的那几次，这一边根本看不见。
+                // 现算而不是拿 outcome.retryAfter()——刚好第 N 次失败时那一位还是零，
+                // 而此刻锁定已经生效了
+                result.put("lockedSeconds", remainingLockSeconds(request));
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(result);
             }
 

@@ -6,55 +6,106 @@
   <meta name="robots" content="noindex, nofollow">
   <title>NovaBot 控制台</title>
   <style>
+    /* 这张页面不取任何外部资源：未登录时它由安全过滤器直接吐出来，此刻 /config/assets 下的
+       样式与脚本都还关着门。因此设计 token 在这里再定义一次，取值与 app.css 里那一份相同。
+       两处对不上时改的是 app.css 那一份，这里跟着改——那边是全站的真源。 */
+    :root{
+      --ground:#F5F4FA; --surface:#FFFFFF; --line:#E4E2EE; --text:#1C1A2E; --dim:#6E6A86;
+      --accent:#7A4DFF; --accent2:#E0479E; --warn:#F2A93B; --err:#EF4A5C;
+      --soft:rgba(122,77,255,.08); --warnsoft:rgba(242,169,59,.14);
+      --shadow:0 1px 2px rgba(28,26,46,.04), 0 8px 24px rgba(28,26,46,.06);
+      --brand-fill:linear-gradient(120deg,var(--accent),var(--accent2));
+      --on-accent:#FFFFFF;
+      --font:-apple-system,"PingFang SC","HarmonyOS Sans SC","MiSans",system-ui,sans-serif;
+      --mono:"SF Mono",Menlo,"JetBrains Mono",ui-monospace,monospace;
+      --r-card:14px; --r-ctl:8px;
+    }
+    @media (prefers-color-scheme:dark){
+      :root{
+        --ground:#14121F; --surface:#1D1A2B; --line:#2E2A42; --text:#ECEAF6; --dim:#9B96B5;
+        --accent:#A38BFF; --accent2:#F06AB8; --warn:#F7BC5B; --err:#FF6B7A;
+        --soft:rgba(163,139,255,.14); --warnsoft:rgba(247,188,91,.16);
+        --shadow:0 0 0 1px rgba(255,255,255,.05);
+        --on-accent:#14121F;
+      }
+    }
+
     * { box-sizing: border-box }
     body {
       margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
-      background: #f6f7f9; color: #333;
-      font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--ground); color: var(--text); font-family: var(--font);
+      font-size: 15px; line-height: 1.6;
     }
-    form, section {
-      width: 320px; max-width: calc(100vw - 32px); padding: 32px 28px;
-      background: #fff; border-radius: 12px; box-shadow: 0 2px 16px rgba(0, 0, 0, .06);
+    .card, section {
+      width: 340px; max-width: calc(100vw - 32px); padding: 26px 24px;
+      background: var(--surface); border: 1px solid var(--line);
+      border-radius: var(--r-card); box-shadow: var(--shadow);
     }
-    /* 协议卡片比口令表单宽：条款按 320px 折行，一条要折成四五行，没人读得下去 */
-    section { width: 520px }
-    h1 { margin: 0 0 4px; font-size: 20px }
-    p.sub { margin: 0 0 24px; font-size: 13px; color: #999 }
-    label { display: block; margin-bottom: 6px; font-size: 13px; color: #666 }
+    /* 协议卡片比登录卡宽：条款按 340px 折行，一条要折成四五行，没人读得下去 */
+    section#agreement { width: 560px }
+    .brand { display: flex; align-items: center; gap: 9px; margin-bottom: 4px }
+    .brand-mark {
+      width: 26px; height: 26px; border-radius: var(--r-ctl); background: var(--brand-fill);
+      color: #fff; display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 14px;
+    }
+    h1 { margin: 0; font-size: 16px; font-weight: 700 }
+    p.sub { margin: 0 0 20px; font-size: 12.5px; color: var(--dim) }
+    label { display: block; margin-bottom: 6px; font-size: 12.5px; color: var(--dim) }
     input {
-      width: 100%; padding: 9px 12px; margin-bottom: 16px; font-size: 14px;
-      border: 1px solid #dcdfe6; border-radius: 6px; background: #fff; color: #333;
+      width: 100%; padding: 8px 11px; font-size: 14px; font-family: inherit;
+      border: 1px solid var(--line); border-radius: var(--r-ctl);
+      background: var(--surface); color: var(--text);
     }
-    input:focus { outline: none; border-color: #fb7299 }
+    input:focus { outline: none; border-color: var(--accent) }
+    input:disabled { background: var(--ground); color: var(--dim) }
     button {
-      width: 100%; padding: 10px; font-size: 14px; color: #fff; cursor: pointer;
-      background: #fb7299; border: none; border-radius: 6px;
+      width: 100%; padding: 9px; font-size: 14px; font-family: inherit; font-weight: 600;
+      color: var(--on-accent); cursor: pointer; background: var(--accent);
+      border: none; border-radius: var(--r-ctl);
     }
-    button:disabled { background: #fbb0c4; cursor: default }
-    .msg { margin-top: 14px; font-size: 13px; color: #f56c6c; min-height: 18px; text-align: center }
+    button:disabled { opacity: .45; cursor: not-allowed }
+    .lead { margin: 8px 0 0; font-size: 12px; color: var(--dim) }
+    .note { margin: 6px 0 0; font-size: 12px; color: var(--dim) }
+    .msg { margin-top: 14px; font-size: 12.5px; color: var(--err); min-height: 18px; text-align: center }
     .hidden { display: none }
-    /* 通行密钥与口令是并列的两条路，中间给一条分隔 */
-    #passkey { margin-bottom: 14px }
-    p.or { margin: 0 0 18px; font-size: 12px; color: #aaa; text-align: center }
+    /* 锁定横条。用警示色而不是错误色：这不是「你错了」，是「现在不受理」 */
+    .banner {
+      margin-bottom: 16px; padding: 10px 12px; font-size: 12.5px; line-height: 1.7;
+      background: var(--warnsoft); border: 1px solid var(--warn); border-radius: var(--r-ctl);
+    }
+    /* 通行密钥与口令是两条路，中间给一条分隔 */
+    p.or {
+      margin: 16px 0; font-size: 12px; color: var(--dim); text-align: center;
+      display: flex; align-items: center; gap: 10px;
+    }
+    p.or::before, p.or::after { content: ""; flex: 1; height: 1px; background: var(--line) }
+    /* 口令那条路折起来时才有摘要行；摊开时（没登记过通行密钥）摘要整行不出 */
+    details > summary {
+      cursor: pointer; font-size: 13px; color: var(--accent); list-style: none;
+      padding: 4px 0; margin-bottom: 8px;
+    }
+    details > summary::-webkit-details-marker { display: none }
+    details.bare > summary { display: none }
+    .links { margin-top: 16px; display: flex; gap: 14px; justify-content: center }
+    .lnk {
+      width: auto; padding: 0; background: none; border: none; font-weight: 400;
+      color: var(--accent); font-size: 12.5px; cursor: pointer;
+    }
+    ol { margin: 4px 0 16px; padding-left: 20px; font-size: 12.5px; color: var(--dim); line-height: 1.9 }
     /* 正文照原样显示：换行与空行是文案的一部分，挤成一坨就没人读了。
        长文案给一个滚动区，按钮始终留在卡片里看得见的位置 */
     #agreement-text {
       margin: 4px 0 20px; padding: 14px 16px; max-height: 46vh; overflow-y: auto;
-      white-space: pre-wrap; font-size: 13px; line-height: 1.8; color: #555;
-      background: #fafbfc; border: 1px solid #ebeef5; border-radius: 8px;
+      white-space: pre-wrap; font-size: 13px; line-height: 1.8; color: var(--dim);
+      background: var(--ground); border: 1px solid var(--line); border-radius: var(--r-ctl);
     }
-    @media (prefers-color-scheme: dark) {
-      body { background: #1b1c1f; color: #e5e6eb }
-      form, section { background: #26272b; box-shadow: none }
-      label { color: #909399 }
-      input { background: #1b1c1f; border-color: #3c3d41; color: #e5e6eb }
-      #agreement-text { background: #1b1c1f; border-color: #3c3d41; color: #c9cbd1 }
-    }
+    #token { font-family: var(--mono) }
   </style>
 </head>
 <body>
 <section id="agreement" class="hidden">
-  <h1>NovaBot 使用协议</h1>
+  <div class="brand"><span class="brand-mark">N</span><h1>NovaBot 使用协议</h1></div>
   <p class="sub">进入控制台之前，请先读一遍下面的约定</p>
 
   <!-- 正文由 /api/auth/agreement 下发后填入，页面里不留第二份副本 -->
@@ -64,40 +115,79 @@
   <div class="msg" id="agreement-msg"></div>
 </section>
 
-<form id="form" class="hidden" autocomplete="on">
-  <h1>NovaBot 控制台</h1>
-  <p class="sub">请输入口令后继续</p>
+<div class="card hidden" id="login">
+  <div class="brand"><span class="brand-mark">N</span><h1>NovaBot 控制台</h1></div>
+  <p class="sub">先证明你是这台机器的主人</p>
 
-  <!--
-    单用户面板本来没有「账号」这一说，但密码管理器需要一个用户名字段才肯保存条目。
-    这里放一个固定值的隐藏字段，仅用于让浏览器把口令记在一条可识别的记录上。
-  -->
-  <input type="text" name="username" value="novabot" autocomplete="username" class="hidden" readonly>
+  <!-- 锁定横条。文案含实值剩余时间，由 lockText 现算，见 login-model.js -->
+  <div class="banner hidden" id="lock"></div>
 
   <!--
     通行密钥这条路。默认藏着，由脚本问过服务端「这台机器登记过没有」之后才摆出来——
     一个点了必然失败的按钮，比没有这个按钮更让人不知所措。
-    版式（谁主谁次）与「登录与安全」那一组一并重排，此处只把线接上。
+    登记过时它是主按钮，口令那条路折到下面去。
   -->
   <div id="passkey-field" class="hidden">
     <button type="button" id="passkey">用通行密钥登录</button>
-    <p class="or">或者输入口令</p>
+    <p class="lead">用这台电脑的指纹、面容，或手机上确认一下。不用输口令，也不用验证器。</p>
+    <p class="or">或</p>
   </div>
 
-  <label for="password">口令</label>
-  <input type="password" id="password" name="password" autocomplete="current-password" required autofocus>
+  <details id="pwd-fold" class="bare" open>
+    <summary>用口令登录</summary>
+    <form id="form" autocomplete="on">
+      <!--
+        单用户面板本来没有「账号」这一说，但密码管理器需要一个用户名字段才肯保存条目。
+        这里放一个固定值的隐藏字段，仅用于让浏览器把口令记在一条可识别的记录上。
+      -->
+      <input type="text" name="username" value="novabot" autocomplete="username" class="hidden" readonly>
 
-  <div id="code-field" class="hidden">
-    <label for="code">动态验证码</label>
-    <input type="text" id="code" name="code" inputmode="numeric" autocomplete="one-time-code"
-           pattern="[0-9]*" maxlength="6" placeholder="验证器应用中的 6 位数字">
-  </div>
+      <label for="password">控制台口令</label>
+      <input type="password" id="password" name="password" autocomplete="current-password" required>
+      <p class="note">填的是<b>这个控制台</b>的登录口令，不是 NapCat 界面的口令，两者互不相干。</p>
 
-  <button type="submit" id="submit">登录</button>
+      <div id="code-field" class="hidden" style="margin-top:14px">
+        <label for="code">动态验证码</label>
+        <input type="text" id="code" name="code" inputmode="numeric" autocomplete="one-time-code"
+               pattern="[0-9]*" maxlength="6" placeholder="验证器应用中的 6 位数字">
+      </div>
+
+      <button type="submit" id="submit" style="margin-top:14px">登录</button>
+    </form>
+  </details>
+
   <div class="msg" id="msg"></div>
-</form>
 
-<script>
+  <div class="links">
+    <button type="button" class="lnk" id="forgot">忘记口令？</button>
+  </div>
+</div>
+
+<!--
+  忘记口令。这里不做「找回」——没有可找回的东西，口令只存哈希。
+  能做的是重设，而重设的前提是先证明你对这台机器有完全控制权：启动日志只有那样的人读得到。
+-->
+<div class="card hidden" id="forgot-panel">
+  <div class="brand"><span class="brand-mark">N</span><h1>忘记口令</h1></div>
+  <p class="sub">口令没有找回，只能重设</p>
+  <ol>
+    <li>上服务器，把配置项 <code>starbot.core.config-ui.auth.operator-token</code> 改成
+      <code>true</code> 并重启。这条通道默认关着，就是为了不留后门。</li>
+    <li>启动日志里会印一行带令牌的地址，令牌是那一串。</li>
+    <li>把它贴到下面，换一次进入，然后<b>先改口令，再把这条通道关掉</b>。</li>
+  </ol>
+  <label for="token">一次性令牌</label>
+  <input type="text" id="token" placeholder="启动日志里印的那一串" autocomplete="off">
+  <button type="button" id="use-token" style="margin-top:14px">用令牌进入</button>
+  <div class="msg" id="forgot-msg"></div>
+  <div class="links">
+    <button type="button" class="lnk" id="back">← 回登录</button>
+  </div>
+</div>
+
+<script type="module">
+  //@@login-model@@
+
   const $ = s => document.querySelector(s);
   const show = s => $(s).classList.remove('hidden');
   const hide = s => $(s).classList.add('hidden');
@@ -106,6 +196,21 @@
   // 未配口令的那一形态里没有会话，也就没有这个值——那一形态靠的是令牌 Cookie 与 SameSite
   let csrfToken = null;
 
+  // 这台机器登记过通行密钥没有。先按「没有」画，问过服务端之后再补——
+  // 反过来（先摆按钮再撤）会让没登记过的人看见一个一闪而过的按钮
+  let hasPasskey = false;
+
+  // 二次验证开着没有。由 /api/auth/state 下发
+  let totp = false;
+
+  // 这个来源还要被锁多少秒。它每秒往下走，走到 0 就把表单放开
+  let lockedSeconds = 0;
+  let lockTimer = null;
+
+  // 口令那条路折起来过没有。只折一次：登记过通行密钥这件事是问过服务端之后才知道的，
+  // 每次重画都折一遍的话，使用者刚展开的那一段会在下一次倒计时里自己合上
+  let folded = false;
+
   // 凭据里的二进制在浏览器那一侧是 ArrayBuffer，接口两侧一律用 base64url。
   // 这张页面不取任何外部资源（未登录时由服务端直接吐出来），因此这两行与设置页里那一份
   // 是各自一份而不是共用——共用就意味着这张页面要在还没登录的时候先去要一个脚本文件
@@ -113,10 +218,62 @@
   const toBase64Url = b => btoa(String.fromCharCode(...new Uint8Array(b)))
     .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
+  /**
+   * 按当前状态重画这张卡
+   *
+   * 显隐与文案全由 loginView 算，这里只负责把算出来的结果挂到元素上——
+   * 判定写在这里的话，八格里只有使用者日常见到的那一格测得着
+   */
+  function paint() {
+    const view = loginView({hasPasskey, totpRequired: totp, lockedSeconds});
+
+    $('#passkey-field').classList.toggle('hidden', !view.passkey);
+    // 折起来时摘要行才出现；摊开的那一档整行不出，否则页面上多一个点了没意义的开合
+    $('#pwd-fold').classList.toggle('bare', !view.passwordFolded);
+    if (!view.passwordFolded) $('#pwd-fold').open = true;
+    else if (!folded) {
+      $('#pwd-fold').open = false;
+      folded = true;
+      // 折的这一下会把口令框收起来，而光标此刻正在里面——不接着把它放到主按钮上，
+      // 使用者按下的第一个键会落到一个看不见的输入框里
+      $('#passkey').focus();
+    }
+    $('#code-field').classList.toggle('hidden', !view.code);
+
+    $('#lock').classList.toggle('hidden', !view.locked);
+    $('#lock').textContent = view.lockText;
+
+    $('#passkey').disabled = view.disabled;
+    $('#password').disabled = view.disabled;
+    $('#code').disabled = view.disabled;
+    $('#submit').disabled = view.disabled;
+  }
+
+  /**
+   * 锁定倒计时
+   *
+   * 服务端给的是「还剩多少秒」而不是「什么时候解锁」：后者要拿浏览器的钟去减，
+   * 而这台电脑的钟未必准——屏幕上那个数字会因此差出几分钟，甚至是负的
+   */
+  function tick() {
+    clearInterval(lockTimer);
+    if (lockedSeconds <= 0) return;
+
+    lockTimer = setInterval(() => {
+      lockedSeconds -= 1;
+      paint();
+      if (lockedSeconds <= 0) clearInterval(lockTimer);
+    }, 1000);
+  }
+
   function showLogin(state) {
-    if (state.totpRequired) show('#code-field');
-    show('#form');
-    $('#password').focus();
+    totp = !!state.totpRequired;
+    lockedSeconds = Number(state.lockedSeconds) || 0;
+
+    show('#login');
+    paint();
+    tick();
+    if (!$('#password').disabled) $('#password').focus();
     offerPasskey();
   }
 
@@ -131,7 +288,7 @@
 
     fetch('/config/api/auth/passkey/login/options', {method: 'POST'})
       .then(r => r.json())
-      .then(options => { if (options.success) show('#passkey-field'); })
+      .then(options => { if (options.success) { hasPasskey = true; paint(); } })
       .catch(() => {});
   }
 
@@ -183,7 +340,7 @@
       // 使用者按了取消也会走到这里。不说成「出错了」——那会让人以为设备有问题
       $('#msg').textContent = err.name === 'NotAllowedError' ? '' : '无法使用通行密钥：' + err.message;
     } finally {
-      $('#passkey').disabled = false;
+      paint();
     }
   }
 
@@ -232,9 +389,27 @@
     .then(apply)
     // 状态问不到时把口令表单摆出来：这样人至少看得见「无法连接到服务器」，
     // 而不是对着一张什么都没有的白页
-    .catch(() => show('#form'));
+    .catch(() => { show('#login'); paint(); });
 
   $('#passkey').addEventListener('click', loginWithPasskey);
+
+  // 忘记口令说明页。与登录卡互斥显示，不另开一张页面——
+  // 那一串令牌贴完就要立刻用，中间隔一次跳转只会多一处贴错的机会
+  $('#forgot').addEventListener('click', () => { hide('#login'); show('#forgot-panel'); $('#token').focus(); });
+  $('#back').addEventListener('click', () => { hide('#forgot-panel'); show('#login'); });
+
+  $('#use-token').addEventListener('click', () => {
+    const value = $('#token').value.trim();
+    if (!value) {
+      $('#forgot-msg').textContent = '把启动日志里印的那一串贴进来';
+      return;
+    }
+
+    // 令牌走地址栏参数：安全过滤器认的就是这一处（以及 Authorization 头），
+    // 它<b>不认 Cookie</b>——认了的话这条通道也就成了一个跨站伪造面。
+    // 换到会话之后浏览器照常走会话那一套，地址栏里的令牌不必再出现第二次
+    location.href = '/config?token=' + encodeURIComponent(value);
+  });
 
   $('#accept').addEventListener('click', async () => {
     $('#accept').disabled = true;
@@ -282,13 +457,18 @@
         return;
       }
 
+      // 这一次是不是把自己锁进去了，以服务端回的秒数为准，界面不自己数错误次数——
+      // 锁定按来源计，同一个来源上别的浏览器试错的那几次，这一边根本看不见
+      lockedSeconds = Number(data.lockedSeconds) || 0;
+      tick();
+
       $('#msg').textContent = data.message || '登录失败';
       $('#password').value = '';
-      $('#password').focus();
+      paint();
+      if (!$('#password').disabled) $('#password').focus();
     } catch (err) {
       $('#msg').textContent = '无法连接到服务器';
-    } finally {
-      $('#submit').disabled = false;
+      paint();
     }
   });
 </script>
