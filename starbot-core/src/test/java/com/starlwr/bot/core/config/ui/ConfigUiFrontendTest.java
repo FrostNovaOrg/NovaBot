@@ -1382,6 +1382,22 @@ class ConfigUiFrontendTest {
             bad.add("main.js 没有按探针区锚去滚，从收藏夹打开 #/home?card=probes 就停在页顶");
         }
 
+        String probeScroll = "$('#' + PROBE_ANCHOR)";
+        int probeScrolls = 0;
+        for (String text : sources.values()) {
+            int from = 0;
+            while ((from = text.indexOf(probeScroll, from)) >= 0) {
+                probeScrolls++;
+                from += probeScroll.length();
+            }
+        }
+        if (probeScrolls != 1) {
+            bad.add("探针区锚的滚写应只在 focusCard 一处，现在 " + probeScrolls + " 处");
+        }
+        if (overview.contains(probeScroll)) {
+            bad.add("overview.js 仍在滚探针区锚，与 focusCard 重复");
+        }
+
         Matcher stationCard = Pattern.compile("const STATION_CARD\\s*=\\s*\\{([^}]*)}").matcher(links);
         if (!stationCard.find()) {
             bad.add("links-model.js 里找不到 STATION_CARD，下面那条「连接页不加卡」无从量起");
