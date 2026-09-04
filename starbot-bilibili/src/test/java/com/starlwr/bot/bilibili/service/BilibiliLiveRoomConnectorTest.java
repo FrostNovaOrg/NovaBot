@@ -296,6 +296,34 @@ class BilibiliLiveRoomConnectorTest {
         }
 
         @Test
+        @DisplayName("SEND_GIFT_V2 计入业务消息：礼物灰度切 V2 后仍算恢复")
+        void sendGiftV2CountsAsBusinessMessage() {
+            // 2026-09-01 起平台按房间灰度改发 SEND_GIFT_V2。它若不进业务消息集合，
+            // 只剩 V2 礼物的房间会被断流判据当成还没恢复，攒够窗口就重连个没完。
+            // 解析器在这些测试里是桩，计数走的是连接器自己的 cmd 集合——
+            // 本格只量「V2 在不在集合里」，与解析无关
+            BilibiliConnectorHarness harness = new BilibiliConnectorHarness().living();
+            harness.connect();
+
+            assertFalse(stall(harness, WINDOWS), "第一段只重连");
+            harness.fireConnectionClosed(1000);
+            harness.runQueuedReconnects();
+
+            // 房间里只有 SEND_GIFT_V2 这一类的业务消息：这也该算恢复
+            harness.receive("SEND_GIFT_V2");
+            harness.connector().detectRisk();
+
+            int handshakesBefore = harness.handshakes();
+            assertFalse(stall(harness, WINDOWS), "只靠 V2 礼物恢复过的房间，新的一段断流应当再给一次重连机会");
+            // 判没判定要看状态而不是 stall 的返回值：一旦判过，后续 detectRisk 会因状态
+            // 已是 RISK 直接返回 false，最后一窗的返回值会把判定遮住
+            assertNotEquals(ConnectStatus.RISK, harness.connector().getStatus(), "恢复过就不该直接判定");
+            harness.fireConnectionClosed(1000);
+            harness.runQueuedReconnects();
+            assertEquals(handshakesBefore + 1, harness.handshakes());
+        }
+
+        @Test
         @DisplayName("安静但在播：定时推送再多也不重连、不判定")
         void quietRoomNeitherReconnectsNorJudges() {
             // 2026-08-10 深夜那次误报的形状：总量被排行与看过撑起来，逐用户事件只有 1 条
