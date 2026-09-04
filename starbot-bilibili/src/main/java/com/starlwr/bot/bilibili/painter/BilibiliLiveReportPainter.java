@@ -67,7 +67,7 @@ public class BilibiliLiveReportPainter {
     /**
      * 画布圆角半径
      */
-    private static final int CANVAS_RADIUS = 25;
+    protected static final int CANVAS_RADIUS = 25;
 
     /**
      * 内容区左右留白
@@ -77,17 +77,17 @@ public class BilibiliLiveReportPainter {
     /**
      * 内容区宽度
      */
-    private static final int CONTENT_WIDTH = WIDTH - MARGIN * 2;
+    protected static final int CONTENT_WIDTH = WIDTH - MARGIN * 2;
 
     /**
      * 封面横幅高度
      */
-    private static final int COVER_HEIGHT = 260;
+    protected static final int COVER_HEIGHT = 260;
 
     /**
      * 头像尺寸与白色描边宽度
      */
-    private static final int AVATAR_SIZE = 100;
+    protected static final int AVATAR_SIZE = 100;
 
     private static final int AVATAR_RING = 5;
 
@@ -122,7 +122,7 @@ public class BilibiliLiveReportPainter {
     /**
      * 排行榜头像的直径。头像地址随计分一并记录，绘制时只需下载图片，不打接口
      */
-    private static final int RANKING_AVATAR_SIZE = 32;
+    protected static final int RANKING_AVATAR_SIZE = 32;
 
     /**
      * 大航海名单最多展示的人数
@@ -463,10 +463,7 @@ public class BilibiliLiveReportPainter {
         int top = painter.getY();
         BufferedImage cover = options.isCover() ? loadCover(source) : null;
 
-        BufferedImage face = Optional.ofNullable(resolveFace(source))
-                .flatMap(url -> api.getBilibiliImage(atSize(url)))
-                .map(image -> ImageUtil.maskToCircle(ImageUtil.resize(image, AVATAR_SIZE, AVATAR_SIZE)))
-                .orElse(null);
+        BufferedImage face = faceImage(source);
 
         if (cover != null) {
             painter.drawImage(cover, new Point(MARGIN, top));
@@ -726,12 +723,12 @@ public class BilibiliLiveReportPainter {
     private void drawFansChange(CommonPainter painter, String platform, LiveStreamerInfo source) {
         List<Card> cards = new ArrayList<>();
 
-        api.getFansCount(source.getUid()).ifPresent(fans ->
+        fansCount(source.getUid()).ifPresent(fans ->
                 cards.add(changeCard(platform, source.getUid(), fans, BilibiliLiveMetric.FANS_AT_START, "粉丝")));
-        api.getFansMedalCount(source.getUid()).ifPresent(medal ->
+        fansMedalCount(source.getUid()).ifPresent(medal ->
                 cards.add(changeCard(platform, source.getUid(), medal, BilibiliLiveMetric.FANS_MEDAL_AT_START, "粉丝团")));
         if (source.getRoomId() != null) {
-            api.getGuardCount(source.getRoomId(), source.getUid()).ifPresent(guard ->
+            guardCount(source.getRoomId(), source.getUid()).ifPresent(guard ->
                     cards.add(changeCard(platform, source.getUid(), guard, BilibiliLiveMetric.GUARD_AT_START, "大航海")));
         }
 
@@ -884,7 +881,7 @@ public class BilibiliLiveReportPainter {
      * 所以一条记录等于「全程没改过」，直接跳过整块。
      */
     private void drawTitleChanges(CommonPainter painter, String platform, Long uid) {
-        List<RoomInfoSnapshot> titles = roomInfoHistory.history(platform, uid);
+        List<RoomInfoSnapshot> titles = titleHistory(platform, uid);
         if (titles.size() < 2) {
             return;
         }
@@ -1300,8 +1297,11 @@ public class BilibiliLiveReportPainter {
      * <p>
      * 缓存按头像地址而非用户：同一个人在多张榜里出现、多份报告里出现，都只下载一次。
      * 取不到时缓存一个空值占位，避免坏地址被反复重试。
+     * <p>
+     * 它与 {@link #loadCover} 同属「向外部要资料的口子」那一族（见该段的说明），
+     * 位置留在各自的上下文里没搬走——搬过去只会让读画法的人多跳一次。
      */
-    private BufferedImage avatar(String url) {
+    protected BufferedImage avatar(String url) {
         if (StringUtil.isBlank(url)) {
             return null;
         }
@@ -1434,8 +1434,10 @@ public class BilibiliLiveReportPainter {
 
     /**
      * 获取直播间封面并裁剪为横幅：不可得时返回 null，头部退化为简单版式
+     * <p>
+     * 属「向外部要资料的口子」那一族，见该段的说明。
      */
-    private BufferedImage loadCover(LiveStreamerInfo source) {
+    protected BufferedImage loadCover(LiveStreamerInfo source) {
         if (source.getRoomId() == null) {
             return null;
         }
@@ -1675,6 +1677,55 @@ public class BilibiliLiveReportPainter {
             log.debug("获取 uid {} 的头像失败: {}", source.getUid(), e.getMessage());
             return null;
         }
+    }
+
+    // ================ 向外部要资料的口子 ================
+    // 画一张报告要的东西有两类：一类在本场数据里（走 liveDataService，构造时给什么就是什么），
+    // 另一类要向 B 站或状态存储现取——**那一类全部收在这一段**，各是一个可覆写的方法。
+    //
+    // 🔴 收在一处，是为了让「预览不联网」这件事有个落点：
+    // BilibiliLiveReportPreviewPainter 覆写下面每一个，用本地夹具顶上。
+    // 🔴 往下加新口子时必须也加在这一段，否则预览会安静地联网——
+    // **一次真的去打了接口的预览，和一次用夹具画出来的预览，在图上长得一样。**
+    // 这一条不指望自觉：BilibiliLiveReportPreviewPainterTest 断言预览全程与接口零交互，
+    // 漏覆写的那一个口子会在那里当场红。
+
+    /**
+     * 主播头像：取地址、下图、裁成圆形
+     */
+    protected BufferedImage faceImage(LiveStreamerInfo source) {
+        return Optional.ofNullable(resolveFace(source))
+                .flatMap(url -> api.getBilibiliImage(atSize(url)))
+                .map(image -> ImageUtil.maskToCircle(ImageUtil.resize(image, AVATAR_SIZE, AVATAR_SIZE)))
+                .orElse(null);
+    }
+
+    /**
+     * 当前粉丝数，取不到时为空
+     */
+    protected Optional<Long> fansCount(Long uid) {
+        return api.getFansCount(uid);
+    }
+
+    /**
+     * 当前粉丝团人数，取不到时为空
+     */
+    protected Optional<Integer> fansMedalCount(Long uid) {
+        return api.getFansMedalCount(uid);
+    }
+
+    /**
+     * 当前大航海人数，取不到时为空
+     */
+    protected Optional<Integer> guardCount(Long roomId, Long uid) {
+        return api.getGuardCount(roomId, uid);
+    }
+
+    /**
+     * 本场的标题与分区变更记录，按时间先后排列
+     */
+    protected List<RoomInfoSnapshot> titleHistory(String platform, Long uid) {
+        return roomInfoHistory.history(platform, uid);
     }
 
     /**
