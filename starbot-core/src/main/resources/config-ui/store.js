@@ -54,8 +54,6 @@ export const store = {
   handlerList: [],
   /** 已配置的机器人平台 */
   senderList: [],
-  /** 使用者手动展开或收起过向导，此后不再自动折叠 */
-  wizardTouched: false,
   /** 全局推送开关的当前状态 */
   pushEnabled: true,
   /** 扫码登录的轮询计时器 */

@@ -3,6 +3,7 @@ package com.starlwr.bot.core.service;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.model.LiveGap;
 import com.starlwr.bot.core.model.UserScore;
 import com.starlwr.bot.core.util.FaceUrlCodec;
 import lombok.NonNull;
@@ -56,6 +57,14 @@ public class DefaultLiveDataService implements LiveDataService {
     private Long loadedLastSaveTime;
 
     /**
+     * 上一个进程是不是正常退出的，与水位线同一刻读下来
+     * <p>
+     * 必须在这里存一份，理由与水位线同一个、而且更急：{@link #readWatermark} 读完当场就把
+     * 文件里那一项改写成「否」，晚一步再问，答的是本次而不是上次。
+     */
+    private Boolean loadedCleanShutdown;
+
+    /**
      * 加载直播数据
      */
     @Order(-10000)
@@ -86,14 +95,17 @@ public class DefaultLiveDataService implements LiveDataService {
      */
     private void readWatermark() {
         loadedLastSaveTime = cache.getLong(KEY_LAST_SAVE_TIME);
-        boolean clean = cache.getBooleanValue(KEY_CLEAN_SHUTDOWN);
+        // 取 Boolean 而不是 booleanValue：文件里根本没有这一项时要答「不知道」，
+        // 答 false 就成了「上次崩过」——凭一个缺省值指认一次崩溃
+        loadedCleanShutdown = cache.getBoolean(KEY_CLEAN_SHUTDOWN);
 
         if (loadedLastSaveTime == null) {
             // 4.3.0 之前的数据文件没有这一项，属正常
             log.info("直播数据里没有上次落盘时刻, 本次不做崩溃恢复与缺口计算");
         } else {
             log.info("上次落盘于 {}, 上次退出{}", localTime(loadedLastSaveTime),
-                    clean ? "正常" : "异常（崩溃或被强杀）");
+                    loadedCleanShutdown == null ? "情况未知（数据文件里没有这一项）"
+                            : loadedCleanShutdown ? "正常" : "异常（崩溃或被强杀）");
         }
 
         if (cache.isEmpty()) {
@@ -205,7 +217,12 @@ public class DefaultLiveDataService implements LiveDataService {
     }
 
     @Override
-    public void recordDowntime(long from, long to) {
+    public Optional<Boolean> wasCleanShutdown() {
+        return Optional.ofNullable(loadedCleanShutdown);
+    }
+
+    @Override
+    public void recordDowntime(long from, long to, @NonNull LiveGap.Reason reason) {
         if (to <= from) {
             return;
         }
@@ -223,37 +240,65 @@ public class DefaultLiveDataService implements LiveDataService {
             JSONObject entry = new JSONObject();
             entry.put("from", from);
             entry.put("to", to);
+            // 存枚举名而不是中文说明：说明是给人看的、改得动，键值是数据文件的一部分、改不得
+            entry.put(FIELD_REASON, reason.name());
             downtimes.add(entry);
         }
 
-        log.info("已记录一段停机: {} ~ {}, 共 {} 秒", localTime(from), localTime(to), (to - from) / 1000);
+        log.info("已记录一段停机: {} ~ {}, 共 {} 秒, 成因 {}",
+                localTime(from), localTime(to), (to - from) / 1000, reason.getDescription());
     }
 
     @Override
-    public long downtimeWithin(long from, long to) {
+    public List<LiveGap> downtimeIntervals(long from, long to) {
         if (to <= from) {
-            return 0;
+            return List.of();
         }
 
+        List<LiveGap> clipped = new ArrayList<>();
         synchronized (metricLock) {
             JSONArray downtimes = cache.getJSONArray(KEY_DOWNTIMES);
             if (downtimes == null || downtimes.isEmpty()) {
-                return 0;
+                return List.of();
             }
 
-            long total = 0;
             for (int i = 0; i < downtimes.size(); i++) {
                 JSONObject entry = downtimes.getJSONObject(i);
                 if (entry == null) {
                     continue;
                 }
-                // 只算交集，跨越开播时刻的那一段停机里，开播之前那一截不属于本场
-                long overlap = Math.min(to, entry.getLongValue("to")) - Math.max(from, entry.getLongValue("from"));
-                if (overlap > 0) {
-                    total += overlap;
-                }
+                // 只留交集，跨越开播时刻的那一段停机里，开播之前那一截不属于本场
+                new LiveGap(entry.getLongValue("from"), entry.getLongValue("to"), reasonOf(entry))
+                        .overlap(from, to).ifPresent(clipped::add);
             }
-            return total;
+        }
+
+        // 进程要么在跑要么没在跑，全局停机区间天然不重叠；仍走一遍合并是为了排序，
+        // 顺带兜住数据文件被外部改坏、真出现两段重叠的那一天
+        return LiveGap.merge(List.of(clipped));
+    }
+
+    /**
+     * 缺口成因的存放字段
+     */
+    private static final String FIELD_REASON = "reason";
+
+    /**
+     * 读出一条缺口记录的成因
+     * <p>
+     * 认不出来一律 {@link LiveGap.Reason#UNKNOWN}：本项是 5.1 才加的，早先落盘的记录没有它，
+     * 而<b>「不知道」比猜一个成因诚实</b>——猜出来的「维护」会让人以为这段空白已经有人解释过了。
+     */
+    private static LiveGap.Reason reasonOf(JSONObject entry) {
+        String name = entry.getString(FIELD_REASON);
+        if (name == null) {
+            return LiveGap.Reason.UNKNOWN;
+        }
+        try {
+            return LiveGap.Reason.valueOf(name);
+        } catch (IllegalArgumentException e) {
+            log.warn("直播数据里的缺口成因 {} 不认得, 按原因未定处理", name);
+            return LiveGap.Reason.UNKNOWN;
         }
     }
 
@@ -297,26 +342,26 @@ public class DefaultLiveDataService implements LiveDataService {
     }
 
     /**
-     * 查询某个直播间与给定区间重叠的断线总时长
+     * 查询某个直播间与给定区间重叠的断线区间
      * <p>
-     * ⚠️ <b>先合并再累加。</b> 断线区间之间可能互相重叠（一次断线还没恢复又记了一次，
-     * 或者重连过程中记了几段），直接把每段的交集加起来会<b>把同一秒数两遍</b>，
-     * 算出比整场时长还大的缺口。全局停机那一侧不需要合并——进程要么在跑要么没在跑，
-     * 区间天然不重叠；这里不同。
+     * ⚠️ <b>先合并再返回。</b> 断线区间之间可能互相重叠（一次断线还没恢复又记了一次，
+     * 或者重连过程中记了几段），把每段的交集直接摆出来会让上层<b>把同一秒数两遍</b>，
+     * 算出比整场时长还大的缺口。全局停机那一侧不会重叠——进程要么在跑要么没在跑；
+     * 这里不同。
      */
     @Override
-    public long roomOutageWithin(@NonNull String platform, @NonNull Long uid, long from, long to) {
+    public List<LiveGap> roomOutageIntervals(@NonNull String platform, @NonNull Long uid, long from, long to) {
         if (to <= from) {
-            return 0;
+            return List.of();
         }
 
-        List<long[]> clipped = new ArrayList<>();
+        List<LiveGap> clipped = new ArrayList<>();
         synchronized (metricLock) {
             JSONArray outages = Optional.ofNullable(cache.getJSONObject(KEY_ROOM_OUTAGES + platform))
                     .map(byRoom -> byRoom.getJSONArray(String.valueOf(uid)))
                     .orElse(null);
             if (outages == null || outages.isEmpty()) {
-                return 0;
+                return List.of();
             }
 
             for (int i = 0; i < outages.size(); i++) {
@@ -324,33 +369,12 @@ public class DefaultLiveDataService implements LiveDataService {
                 if (entry == null) {
                     continue;
                 }
-                long start = Math.max(from, entry.getLongValue("from"));
-                long end = Math.min(to, entry.getLongValue("to"));
-                if (end > start) {
-                    clipped.add(new long[]{start, end});
-                }
+                new LiveGap(entry.getLongValue("from"), entry.getLongValue("to"), LiveGap.Reason.STREAM_LOSS)
+                        .overlap(from, to).ifPresent(clipped::add);
             }
         }
 
-        if (clipped.isEmpty()) {
-            return 0;
-        }
-
-        clipped.sort(Comparator.comparingLong(interval -> interval[0]));
-        long total = 0;
-        long currentStart = clipped.get(0)[0];
-        long currentEnd = clipped.get(0)[1];
-        for (int i = 1; i < clipped.size(); i++) {
-            long[] interval = clipped.get(i);
-            if (interval[0] <= currentEnd) {
-                currentEnd = Math.max(currentEnd, interval[1]);
-            } else {
-                total += currentEnd - currentStart;
-                currentStart = interval[0];
-                currentEnd = interval[1];
-            }
-        }
-        return total + currentEnd - currentStart;
+        return LiveGap.merge(List.of(clipped));
     }
 
     // ================ 直播间状态 ================

@@ -6,7 +6,7 @@
 import {loadAnalytics} from './analytics.js';
 import {bindBotForm, botFormHtml, fillBotForms, sendTestMessage} from './bot.js';
 import {$, api, el, esc, markDirty, say} from './core.js';
-import {loadHistory, loadState, refreshWizardState, renderStatus, renderWizard, runSelfTest, setWizardCollapsed, togglePush} from './overview.js';
+import {loadHistory, loadState, refreshHome, renderStatus, runSelfTest, togglePush} from './overview.js';
 import {addStreamer, decoratePushData, renderPlatforms, renderStreamers, serializePush} from './push.js';
 import {loadPasskeys, registerPasskey} from './passkeys.js';
 import {copyConfigPath, discard, renderConfigPath, renderGeneral, save} from './settings.js';
@@ -117,10 +117,9 @@ export async function load() {
 
     const [d, st, h, p] = await Promise.all([
       api('/datasource'), api('/status'), api('/handlers'), api('/platforms')]);
+    // 上一次保存留下的「还欠一次重启」也在这一趟里进来，见 renderStatus
     renderStatus(st);
     renderConfigPath(st.configPath);
-    // 上一次保存留下的「还欠一次重启」，刷新页面、换台机器打开都该照样看得见
-    store.restartPending = st.restartPending || [];
 
     store.handlerList = h.handlers || [];
     store.senderList = st.senders || [];
@@ -149,8 +148,9 @@ export async function load() {
     refreshPages();
     loadHistory();
     loadState();
-    renderWizard();
-    // 向导渲染完成后两份表单才都在 DOM 里，此时统一回填
+    // 首页要三份数据一起算，与这一趟里的 /status 各取各的：它那一趟晚一点回来，
+    // 画出来的是更新的一份，不会与这里的运行状态互相矛盾
+    refreshHome();
     fillBotForms();
 
     const count = store.schema.reduce((n, g) => n + g.fields.length, 0);
@@ -239,10 +239,11 @@ function applyRoute(withData = true) {
   if (!withData) return;
 
   clearTimeout(store.accountTimer);
-  // 首页的向导里也有平台的二维码，因此这一页同样要把各插件页刷一遍
-  if (name === 'home') { api('/status').then(renderStatus); loadHistory(); refreshPages(); refreshWizardState(); }
-  // 每次进入都重取：群里随时可能有人订阅或关掉命令，缓存的画面会误导人
-  else if (name === 'push') loadState();
+  // 首页三份数据一起取，见 refreshHome
+  if (name === 'home') { refreshHome(); refreshPages(); }
+  // 每次进入都重取：群里随时可能有人订阅或关掉命令，缓存的画面会误导人；
+  // 最近推送那张表随首页改版挪到了本页，因此跟着这一页刷
+  else if (name === 'push') { loadState(); loadHistory(); }
   else if (name === 'streamers') loadAnalytics();
   // 每次进入都重建只读口令那一块：顺带抹掉上一次留在屏幕上的口令明文
   else if (name === 'links') { api('/status').then(renderStatus); loadTokens(); }
@@ -255,7 +256,7 @@ function applyRoute(withData = true) {
  * 跳到某个旧页签现在所在的位置
  * @param name 旧页签名，或插件页标识
  */
-export function switchTab(name) {
+function switchTab(name) {
   const hash = TAB_HASH[name] || (pages.some(item => item.meta.id === name) ? '#/settings/' + name : '#/home');
   // 地址没变就不会有 hashchange，此时直接走一遍——否则点第二次「前往」毫无反应
   if (location.hash === hash) applyRoute();
@@ -282,10 +283,6 @@ $('#show-advanced').addEventListener('change', () => { renderGeneral(); markDirt
 $('#toggle-push').addEventListener('click', togglePush);
 $('#add-streamer').addEventListener('click', addStreamer);
 $('#add-uid').addEventListener('keydown', e => { if (e.key === 'Enter') addStreamer(); });
-$('#wizard-toggle').addEventListener('click', () => {
-  store.wizardTouched = true;
-  setWizardCollapsed($('#wizard').style.display !== 'none');
-});
 $('#ana-view').addEventListener('change', loadAnalytics);
 $('#ana-period').addEventListener('change', loadAnalytics);
 $('#ana-uid').addEventListener('change', loadAnalytics);

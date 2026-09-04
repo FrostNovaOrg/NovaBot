@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.config.ConfigEffect;
 import com.starlwr.bot.core.config.ConfigLevel;
+import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.config.ui.auth.PasswordHash;
 import com.starlwr.bot.core.config.ui.page.ConsolePageProvider;
 import com.starlwr.bot.core.config.ui.page.ConsolePages;
@@ -22,9 +23,13 @@ import com.starlwr.bot.core.health.HealthProbe;
 import com.starlwr.bot.core.health.HealthStatus;
 import com.starlwr.bot.core.health.PushActivityRecorder;
 import com.starlwr.bot.core.model.Message;
+import com.starlwr.bot.core.sender.PushGate;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.StarBotEventHandlerService;
 import com.starlwr.bot.core.service.StarBotSenderService;
+import com.starlwr.bot.core.timeline.TimelineEventType;
+import com.starlwr.bot.core.timeline.TimelineStore;
 import com.starlwr.bot.core.util.QrCodeUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
@@ -46,6 +51,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.lang.management.ManagementFactory;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.nio.file.Files;
@@ -183,6 +189,26 @@ public class ConfigUiController {
      */
     private final ObjectProvider<BuildProperties> buildProperties;
 
+    /**
+     * 推送闸门。首页要显示「此刻在不在静音时段」，判据只有它那一份
+     */
+    private final PushGate pushGate;
+
+    /**
+     * 直播数据。首页「现在」那一栏要问「谁在播」，累计存储开没开也在它身上
+     */
+    private final LiveDataService liveDataService;
+
+    /**
+     * 事件时间线。首页「今日推送 N 条、失败 M 条」按日历上的今天数，从这里来
+     */
+    private final TimelineStore timeline;
+
+    /**
+     * 登录能力。首页待办要答「这台控制台上没上锁」
+     */
+    private final ConfigUiAuthService authService;
+
     @Autowired
     public ConfigUiController(ConfigurationMetadataService metadataService,
                               ConfigurationFileService fileService,
@@ -202,7 +228,15 @@ public class ConfigUiController {
                               ObjectProvider<BotConnectionTester> connectionTesters,
                               ObjectProvider<ConsolePageProvider> pageProviders,
                               EventStreamTokenService eventStreamTokens,
-                              ObjectProvider<BuildProperties> buildProperties) {
+                              ObjectProvider<BuildProperties> buildProperties,
+                              PushGate pushGate,
+                              LiveDataService liveDataService,
+                              TimelineStore timeline,
+                              ConfigUiAuthService authService) {
+        this.pushGate = pushGate;
+        this.liveDataService = liveDataService;
+        this.timeline = timeline;
+        this.authService = authService;
         this.effectResolver = effectResolver;
         this.runtimeApplier = runtimeApplier;
         this.buildProperties = buildProperties;
@@ -1264,7 +1298,78 @@ public class ConfigUiController {
         result.put("restartPending", runtimeApplier.getPendingRestart());
         // 供界面填充「发送测试消息」的推送平台下拉框，避免让使用者手打平台名
         result.put("senders", senderService.getSenderNames().stream().sorted().toList());
+        // 这台控制台上没上锁。取自签发会话的那一处，界面不另按配置项自己判一遍——
+        // 「有没有口令」与「口令登录启不启用」在配置面上不是同一件事，各判各的迟早会说两种话
+        result.put("locked", authService.isEnabled());
+        // 累计存储开没开。首页待办与主播页那条小横条都要问，判据只有 LiveDataService 那一份
+        result.put("totalDataAvailable", liveDataService.supportsTotalData());
+        result.put("quiet", quiet());
+        result.put("live", liveNow());
+        result.put("today", todayPushCounts());
         return result;
+    }
+
+    /**
+     * 静音时段：此刻在不在，以及区间是什么
+     * <p>
+     * 「在不在」由推送闸门算，界面不照起止时刻自己判一遍：跨零点、起止相同、格式不对
+     * 这几条规则只该有一份实现，两份的分叉表现是屏幕上写着「静音中」而推送照发。
+     * @return 静音时段状态
+     */
+    private JSONObject quiet() {
+        StarBotCoreProperties.Push push = properties.getPush();
+        JSONObject json = new JSONObject();
+        json.put("active", pushGate.inQuietHours());
+        json.put("start", push.getQuietStart());
+        json.put("end", push.getQuietEnd());
+        return json;
+    }
+
+    /**
+     * 此刻正在直播的主播
+     * <p>
+     * 只列监听清单里的：直播状态是按 平台 + uid 记的，而「这台机器该关心谁」
+     * 由推送配置说了算。反过来遍历状态里的全部键的话，删掉主播之后他还会挂在首页上。
+     * @return 在播的主播
+     */
+    private JSONArray liveNow() {
+        JSONArray items = new JSONArray();
+
+        dataSource.getAllUsers().forEach(user -> {
+            if (Boolean.FALSE.equals(user.getEnabled())) {
+                return;
+            }
+            if (!liveDataService.getLiveStatus(user.getPlatform(), user.getUid()).orElse(false)) {
+                return;
+            }
+
+            JSONObject item = new JSONObject();
+            item.put("uid", user.getUid());
+            item.put("uname", user.getUname());
+            item.put("roomId", user.getRoomId());
+            item.put("platform", user.getPlatform());
+            // 开播时刻可能没记上（例如程序在别人已经开播之后才起来），此时给 null，
+            // 界面那一侧就不写「已播 N 小时」——编一个开始时刻出来，那个时长会一直是错的
+            item.put("since", liveDataService.getLiveStartTime(user.getPlatform(), user.getUid()).orElse(null));
+            items.add(item);
+        });
+
+        return items;
+    }
+
+    /**
+     * 今天推成功与推失败各几条
+     * <p>
+     * 按日历上的今天数，取自时间线而不是进程内那份累计计数器：后者从进程启动起算，
+     * 重启一次「今天」就归零，而使用者问的今天不会因为谁重启过而变短。
+     * @return 今日推送条数
+     */
+    private JSONObject todayPushCounts() {
+        Map<TimelineEventType, Integer> counts = timeline.countsOn(LocalDate.now());
+        JSONObject json = new JSONObject();
+        json.put("sent", counts.getOrDefault(TimelineEventType.PUSH_SENT, 0));
+        json.put("failed", counts.getOrDefault(TimelineEventType.PUSH_FAILED, 0));
+        return json;
     }
 
     /**
@@ -1283,6 +1388,10 @@ public class ConfigUiController {
                     item.put("name", probe.name());
                     // 界面据此把探针分派到「机器人」「哔哩哔哩」页签，由探针自己声明，界面不做名称匹配
                     item.put("scope", probe.scope().name());
+                    // 量的是不是登录态。首页要把「登录掉了」与「连不上」分开说：前者非得有人去扫码不可，
+                    // 后者多半会自己恢复。同样由探针自己声明——按名字认的判据在探针改个显示名的那天
+                    // 静默失效，失效方向还是「从此再也认不出登录失效」
+                    item.put("loginState", probe.loginState());
 
                     try {
                         HealthStatus status = probe.check();

@@ -7,7 +7,7 @@
  */
 
 import {$, api, el, esc, say} from './core.js';
-import {healthRows, refreshWizardState} from './overview.js';
+import {healthRows, refreshHome} from './overview.js';
 import {store} from './store.js';
 
 const PAGE_ID = 'bilibili';
@@ -85,13 +85,13 @@ function renderAccounts(accounts) {
   });
 
   // 等待扫码时轮询刷新，扫完页面自动变为已登录，不必手动刷新。
-  // 二维码在本页与总览页的向导里各有一处，两处都要跟着刷新
+  // 人停在首页上时也要刷：登录态一变，那一页的链路灯与探针都得跟着变
   const waiting = (accounts || []).some(a => !a.loggedIn && !a.disabledReason);
   clearTimeout(store.accountTimer);
   if (waiting && (store.tab === PAGE_ID || store.tab === 'overview')) {
     store.accountTimer = setTimeout(() => {
       loadAccounts();
-      if (store.tab === 'overview') refreshWizardState();
+      if (store.tab === 'overview') refreshHome();
     }, 3000);
   }
 }
