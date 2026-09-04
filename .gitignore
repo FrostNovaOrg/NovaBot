@@ -71,3 +71,6 @@ snapshots.jsonl
 /timeline/
 EventDebug/
 NetworkDebug/
+
+# 本地草稿目录，不入库
+scratch/
