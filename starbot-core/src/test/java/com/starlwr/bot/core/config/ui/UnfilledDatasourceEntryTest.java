@@ -12,6 +12,7 @@ import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.service.AtSubscriptionService;
 import com.starlwr.bot.core.service.DataSourceService;
 import com.starlwr.bot.core.service.DataSourceServiceConfig;
+import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.RevenueVisibilityService;
 import com.starlwr.bot.core.service.StarBotEventHandlerService;
 import com.starlwr.bot.core.service.StarBotStateStore;
@@ -96,10 +97,13 @@ class UnfilledDatasourceEntryTest {
 
         JSONObject state = controller.state();
 
-        // 新增的那一栏摘掉之后，其余部分要与改动之前一模一样。
-        // 基线是在改动之前的树上跑同一份配置抄下来的实值，不是改完之后回头补的
+        // 新增的那几栏摘掉之后，其余部分要与改动之前一模一样。
+        // 基线是在改动之前的树上跑同一份配置抄下来的实值，不是改完之后回头补的——
+        // 因此后来新增的栏一律在这里逐个摘名，而不是把它们追加进基线串：
+        // 追加一次，这串就不再是「那次改动之前的实值」，而是「上次谁改完之后的样子」
         JSONObject rest = new JSONObject(state);
         rest.remove("incomplete");
+        rest.remove("totalDataAvailable");
         assertEquals(FILLED_STATE_BEFORE, rest.toJSONString(),
                 "填好的配置在控制台上的读数变了：这一改动本不该碰到它");
 
@@ -164,7 +168,8 @@ class UnfilledDatasourceEntryTest {
                 mock(UserBindingService.class),
                 store,
                 dataSource,
-                new RevenueVisibilityService(store));
+                new RevenueVisibilityService(store),
+                mock(LiveDataService.class));
     }
 
     /**

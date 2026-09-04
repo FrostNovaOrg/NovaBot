@@ -56,6 +56,13 @@ public class MenuCommand implements StarBotCommand {
     }
 
     @Override
+    public boolean groupOnly() {
+        // 私聊里最该能直呼的就是它：顶行那句写的正是「私聊直接发命令名」。
+        // 若它也仅限群聊，私聊里名字发对了反而没动静，发错了倒能收到菜单
+        return false;
+    }
+
+    @Override
     public boolean disableable() {
         // 菜单被禁用后，使用者就再也看不到「启用命令」该怎么写了
         return false;
@@ -73,6 +80,11 @@ public class MenuCommand implements StarBotCommand {
         // 不会每次发菜单都换个模样
         Map<String, List<StarBotCommand>> grouped = new LinkedHashMap<>();
         for (StarBotCommand command : instance.all()) {
+            // 本机没开这项能力的命令一并不列：它与被禁用的命令在使用者那里是同一件事——
+            // 列出来只会被照着发一遍，然后收到一句拒绝
+            if (!command.available()) {
+                continue;
+            }
             if (command.disableable() && settings.isDisabled(context.getPlatform(), context.getNum(), command.name())) {
                 continue;
             }

@@ -124,6 +124,12 @@ public class BilibiliLiveReportCommand implements StarBotCommand {
     }
 
     @Override
+    public boolean groupOnly() {
+        // 与其余数据查询命令同一档：查的是主播的数据，已配推送的好友会话里一样该答得上来
+        return false;
+    }
+
+    @Override
     public String category() {
         return "数据查询";
     }

@@ -18,7 +18,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.boot.info.BuildProperties;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
 import org.springframework.scheduling.TaskScheduler;
@@ -53,15 +52,10 @@ public class OneBotWebsocketService {
     private final OneBotConnectionState state;
 
     /**
-     * 构建信息，用于回复 status 指令时取真实版本号
-     * <p>
-     * 不要写死版本字符串：写死的那份不会随 pom 的版本变化，升版本后仍报旧号，
-     * 而这类偏差没有任何测试会发现
-     */
-    private final BuildProperties buildProperties;
-
-    /**
      * 收到聊天消息时发布远程消息事件，供各平台模块实现消息命令
+     * <p>
+     * 适配器对聊天消息只做这一件事。<b>不在这里直接回话</b>：那样会绕过核心统一把关的几条
+     * 横切约束——有没有 @、这个会话配没配推送、冷却、菜单，一条都不过。
      */
     private final ApplicationEventPublisher publisher;
 
@@ -78,12 +72,11 @@ public class OneBotWebsocketService {
     private final Set<String> noHeartbeatWarned = ConcurrentHashMap.newKeySet();
 
     @Autowired
-    public OneBotWebsocketService(TaskScheduler taskScheduler, @Qualifier("oneBotThreadPool") ThreadPoolTaskExecutor executor, OneBotAdapterPluginProperties properties, OneBotConnectionState state, BuildProperties buildProperties, ApplicationEventPublisher publisher) {
+    public OneBotWebsocketService(TaskScheduler taskScheduler, @Qualifier("oneBotThreadPool") ThreadPoolTaskExecutor executor, OneBotAdapterPluginProperties properties, OneBotConnectionState state, ApplicationEventPublisher publisher) {
         this.taskScheduler = taskScheduler;
         this.executor = executor;
         this.properties = properties;
         this.state = state;
-        this.buildProperties = buildProperties;
         this.publisher = publisher;
     }
 
@@ -367,21 +360,6 @@ public class OneBotWebsocketService {
                                             sender.getName(), messageType, num,
                                             rawMessage.getLong("user_id"), incoming.text(),
                                             senderRole, incoming.mentionsBot()));
-                                }
-
-                                if ("status".equalsIgnoreCase(rawMessage.getString("raw_message"))) {
-                                    JSONObject operation = new JSONObject();
-                                    operation.put("reply", "Running on NovaBot v" + service.buildProperties.getVersion());
-
-                                    JSONObject params = new JSONObject();
-                                    params.put("context", rawMessage);
-                                    params.put("operation", operation);
-
-                                    JSONObject response = new JSONObject();
-                                    response.put("action", ".handle_quick_operation");
-                                    response.put("params", params);
-
-                                    session.sendMessage(new TextMessage(response.toJSONString()));
                                 }
                             } catch (Exception e) {
                                 log.error("处理 {} 的 OneBot Websocket 消息时发生异常", sender.getName(), e);
