@@ -468,12 +468,32 @@
     </details>
   </section>
 
-  <!-- ============ 初始设置 #/setup（独立版式，不显示侧栏） ============ -->
+  <!--
+    ============ 初始设置 #/setup（独立版式，不显示侧栏） ============
+
+    刚装好的机器上第一段路。页头、侧栏与底部改动条都不显示（html.chromeless）：
+    这台机器可能还没上锁，页头上的「退出登录」无从谈起；而五步是每步做完当场落盘的，
+    底下摆一条「有 N 处改动没保存」只会让人以为还差一次保存。
+
+    这里只摆两个容器，五步的内容全部由 setup.js 建出来——进度条上画什么、
+    这一步放不放行，由 setup-model.js 现算（那一份有 node 夹具在量）。
+    写死在这里的话，同一件事在页面与脚本里各有一份，而两份分叉时页面上不会有任何异常。
+  -->
   <section class="page" id="page-setup">
     <div class="nv-card" id="setup-shell">
-      <h2>初始设置</h2>
-      <p class="hint">免配置起步的五步引导还没接上，这里先只占住这条路由。</p>
-      <p class="hint"><a href="#/home">先去控制台 →</a></p>
+      <div class="su-top">
+        <h2>初始设置</h2>
+        <!--
+          「稍后再说」放行进首页。首页上那条待办会一直挂着「5 步里完成了 N 步」，
+          因此这不是一条把人放跑的出口，只是不把他锁在这一页上。
+        -->
+        <a class="lnkbtn" id="setup-later" href="#/home">稍后再说</a>
+      </div>
+      <p class="hint">五步走完就能收到第一条推送。每一步做完当场生效，随时可以回上一步改。</p>
+      <div class="su-body">
+        <nav class="su-rail" id="setup-steps" aria-label="初始设置五步"></nav>
+        <div class="su-panel" id="setup-main">载入中…</div>
+      </div>
     </div>
   </section>
 

@@ -289,7 +289,9 @@ function passkeyCard() {
   add.id = 'passkey-add';
   add.textContent = '登记这台设备';
   box.body.appendChild(add);
-  add.addEventListener('click', registerPasskey);
+  // 把按钮本身传进去，不靠那边按 id 取：初始设置页第 1 步也要登记一把，
+  // 两处按 id 取就得共用一个 id，而重复 id 取到的永远是靠前的那一个
+  add.addEventListener('click', () => registerPasskey(add));
 
   loadPasskeys();
   return box.card;

@@ -722,6 +722,121 @@ class ConfigUiFrontendTest {
     }
 
     /**
+     * 初始设置页那一份渲染
+     */
+    private static final String SETUP_VIEW = "setup.js";
+
+    /**
+     * 初始设置页那份判法
+     */
+    private static final String SETUP_MODEL = "setup-model.js";
+
+    /**
+     * 初始设置页的外壳，写在 {@code index.html} 里，闭集
+     * <p>
+     * 进度条、正文与「稍后再说」。五步的内容全部由脚本建出来，不写在页面里——
+     * 同一件事在页面与脚本里各有一份的话，两份分叉时屏幕上不会有任何异常。
+     */
+    private static final List<String> SETUP_SHELL = List.of(
+            "setup-steps", "setup-main", "setup-later");
+
+    /**
+     * 五步各自那几件事的落点，由 {@code setup.js} 建出来，闭集
+     * <p>
+     * 底下那一条（上一步／跳过／下一步／拦住的理由）、第 1 步的两遍口令与通行密钥、
+     * 第 2 步的五格连接参数与测试、第 4 步的平台与 uid、找一下、推到哪，
+     * 第 5 步的发给谁、发一条、收到了／没收到与那三条排查，以及初始值那一摊与「进控制台」。
+     */
+    private static final List<String> SETUP_CONTROLS = List.of(
+            "setup-back", "setup-next", "setup-why", "setup-skip",
+            "setup-lock", "setup-pwd", "setup-pwd2", "setup-passkey",
+            "setup-test-bot", "setup-addr", "setup-hport", "setup-wport",
+            "setup-htoken", "setup-wtoken",
+            "setup-platform", "setup-uid", "setup-lookup", "setup-targets",
+            "setup-send-target", "setup-send", "setup-got", "setup-not-got", "setup-tips",
+            "setup-defaults", "setup-enter");
+
+    /**
+     * 五步各自要调的端点，闭集
+     * <p>
+     * 少接一条，那一步就变成一个点了没反应的按钮——而按钮本身看起来完全正常。
+     * 这些端点别处也在用，因此只在 {@code setup.js} 里找：拿全部脚本找的话，
+     * 这一页把某条丢了也照样绿，因为别的页还留着它。
+     */
+    private static final List<String> SETUP_ENDPOINTS = List.of(
+            "/status", "/login", "/setup/state", "/setup/rerun/consumed", "/setup/test-sent",
+            "/auth/password/set", "/setup/test-bot", "/setup/bot",
+            "/streamer/lookup", "/onebot/targets?type=group", "/onebot/targets?type=friend",
+            "/datasource", "/test-message");
+
+    /**
+     * 初始设置五步各有落点，且放行的判法只有 setup-model 一份
+     * <p>
+     * 与设置页、连接页、日志页那三条同理：元素与接线缺哪一半都不会报错。
+     * <p>
+     * 🔴 后半截奔着一类具体的退步去：<b>把「这一步放不放行」抄一份到渲染代码里</b>。
+     * 那几条规则（第 1 步不许跳、第 4 步 0 主播不许过、第 3 步不登录必须先过确认）
+     * 由 {@code setup-model.js} 现算，那一份有 node 夹具逐格在量；抄进渲染代码之后，
+     * 夹具照样全绿——它量的还是那份没人调的判法，而屏幕上跑的是新抄的这一份。
+     * 抄的那一下<b>不会让任何功能变坏</b>，因此靠人复查是拦不住的。
+     * <p>
+     * 同一条理由也管着「推到哪」与「发给谁」：目标只能从机器人自己给的名单里挑，
+     * 这一条判在 {@code links-model.js} 的 resolveTarget 里，本页必须调它而不是自己认。
+     */
+    @Test
+    @DisplayName("初始设置五步各有落点，放行的判法只有 setup-model 一份")
+    void setupPageIsWiredUp() throws IOException {
+        String html = Files.readString(frontendDir().resolve("index.html"), StandardCharsets.UTF_8);
+        Map<String, String> sources = coreSources();
+        String scripts = String.join("\n", sources.values());
+        String view = sources.getOrDefault(SETUP_VIEW, "");
+
+        List<String> bad = new ArrayList<>();
+        // 找不到那份渲染时判红而不是跳过：一把量不动却报绿的判据，比没有这把判据更糟
+        if (view.isBlank()) {
+            bad.add("找不到 " + SETUP_VIEW + "，下面每一格都无从量起");
+        }
+        if (!sources.containsKey(SETUP_MODEL)) {
+            bad.add("找不到 " + SETUP_MODEL + "，五步的判法没有落脚的地方");
+        }
+
+        for (String id : SETUP_SHELL) {
+            if (!html.contains("id=\"" + id + "\"")) {
+                bad.add("index.html 上没有 #" + id);
+            }
+            if (!scripts.contains("$('#" + id + "')")) {
+                bad.add("没有任何脚本用到 #" + id + "，它立在那里但点了不管用");
+            }
+        }
+
+        for (String id : SETUP_CONTROLS) {
+            if (!view.contains("'" + id + "'")) {
+                bad.add(SETUP_VIEW + " 里没有 #" + id + "，那一步少了这件事的落点");
+            }
+        }
+
+        for (String endpoint : SETUP_ENDPOINTS) {
+            if (!view.contains("'" + endpoint + "'")) {
+                bad.add(SETUP_VIEW + " 没有调用 " + endpoint + "，那一步此刻点了不管用");
+            }
+        }
+
+        if (!view.contains("canAdvance(")) {
+            bad.add(SETUP_VIEW + " 没有问过 canAdvance，「下一步」此刻谁都拦不住");
+        }
+        if (view.contains("function canAdvance") || view.contains("function stepFacts")) {
+            bad.add(SETUP_VIEW + " 自己又判了一遍五步。那几条规则只许有 " + SETUP_MODEL
+                    + " 一份——抄一份进来之后，夹具量的还是没人调的那一份");
+        }
+        if (!view.contains("resolveTarget(")) {
+            bad.add(SETUP_VIEW + " 没有经过 resolveTarget 认目标。手填时填错一位数不会有任何报错，"
+                    + "消息只是发去了别处，而这两步存在的意义正是把那种错拦在配置阶段");
+        }
+
+        assertTrue(bad.isEmpty(), "初始设置页少了这几件事:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
      * 插件页是运行时装上来的，不是编译期定死的
      * <p>
      * 静态 {@code import} 一写，那个平台就成了核心的一部分：没装插件时页面加载不了，
