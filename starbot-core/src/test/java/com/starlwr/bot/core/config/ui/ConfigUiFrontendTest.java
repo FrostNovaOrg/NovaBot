@@ -56,8 +56,12 @@ class ConfigUiFrontendTest {
 
     /**
      * 已知的合法同名局部变量：函数内部自己声明的，与 store 无关
+     * <p>
+     * 现在一条也没有。唯一那条豁免属于 {@code analytics.js}，那一页已经并进主播页——
+     * <b>空着比留着一条指向不存在的文件的豁免好</b>：后者会在有人恰好把新文件叫回那个名字时
+     * 悄悄生效，而没有任何东西会提起它。
      */
-    private static final Set<String> ALLOWED_LOCALS = Set.of("analytics.js:values");
+    private static final Set<String> ALLOWED_LOCALS = Set.of();
 
     /**
      * 核心自己的页签，闭集，也就是 {@code store.tab} 的取值域
@@ -752,7 +756,7 @@ class ConfigUiFrontendTest {
             "setup-lock", "setup-pwd", "setup-pwd2", "setup-passkey",
             "setup-test-bot", "setup-addr", "setup-hport", "setup-wport",
             "setup-htoken", "setup-wtoken",
-            "setup-platform", "setup-uid", "setup-lookup", "setup-targets",
+            "setup-platform", "setup-uid", "setup-lookup", "setup-targets", "setup-go-streamer",
             "setup-send-target", "setup-send", "setup-got", "setup-not-got", "setup-tips",
             "setup-defaults", "setup-enter");
 
@@ -813,6 +817,10 @@ class ConfigUiFrontendTest {
             if (!view.contains("'" + id + "'")) {
                 bad.add(SETUP_VIEW + " 里没有 #" + id + "，那一步少了这件事的落点");
             }
+        }
+
+        if (!view.contains("detailHash(")) {
+            bad.add("第 4 步去主播页的地址必须问 detailHash，自己拼会与主播页那一份分叉");
         }
 
         for (String endpoint : SETUP_ENDPOINTS) {
@@ -1183,6 +1191,265 @@ class ConfigUiFrontendTest {
     }
 
     /**
+     * 主播页那份判法
+     */
+    private static final String STREAMERS_MODEL = "streamers-model.js";
+
+    /**
+     * 主播页那份渲染
+     */
+    private static final String STREAMERS_VIEW = "streamers.js";
+
+    /**
+     * 主播页三块子视图的外壳，写在 {@code index.html} 里，闭集
+     * <p>
+     * 列表、详情、场次详情三块共用一个页容器 {@code #page-streamers}——它们是同一页的三种样子，
+     * 地址都是 {@code #/streamers} 底下的。分成三个 {@code .page} 容器的话，路由那一侧
+     * 认页只看第一段，后两块永远不会被显示出来，而三处的代码看起来都对。
+     * <p>
+     * 每一块里的内容全部由脚本建出来，不写在页面里——同一件事在页面与脚本里各有一份的话，
+     * 两份分叉时屏幕上不会有任何异常。
+     */
+    private static final List<String> STREAMERS_SHELL = List.of(
+            "sv-list", "st-all", "st-list", "st-unlisted",
+            "sv-detail", "sd-back", "sd-head", "sd-tabs", "sd-body",
+            "sv-session", "sx-back", "sx-title", "sx-body");
+
+    /**
+     * 主播页自己要调的端点，闭集
+     * <p>
+     * 少接一条，那一块就变成一片说不出为什么空着的地方。这些端点别处也在用，
+     * 因此只在 {@code streamers.js} 里找：拿全部脚本找的话，这一页把某条丢了也照样绿。
+     */
+    private static final List<String> STREAMERS_ENDPOINTS = List.of("/streamers", "/status");
+
+    /**
+     * 渲染那一层必须问过判法的那几件事，闭集
+     */
+    private static final List<String> STREAMERS_MODEL_CALLS = List.of(
+            "parseStreamersHash(", "statusChip(", "sparkline(", "seriesValues(", "peakCell(",
+            "gapCells(", "totalDataBanner(", "snapshotRows(", "detailHash(", "sessionHash(",
+            "reportPath(", "reportView(", "pageBar(", "barGeometry(");
+
+    /**
+     * 抄进渲染代码就算退步的那几条判法，闭集
+     */
+    private static final List<String> STREAMERS_MODEL_FUNCTIONS = List.of(
+            "function parseStreamersHash", "function statusChip", "function sparkline",
+            "function peakCell", "function gapCells", "function totalDataBanner",
+            "function snapshotRows", "function barGeometry");
+
+    /**
+     * 主播页三块各有落点，且状态标、折线、人气峰那几条判法只有 streamers-model 一份
+     * <p>
+     * 与设置页、连接页、日志页、推送页那几条同理：元素与接线缺哪一半都不会报错——元素没了，
+     * 脚本按 id 取到 null；脚本没接上，那一块就静静地空着。
+     * <p>
+     * 🔴 后半截奔着两类具体的退步去：
+     * <ul>
+     *   <li><b>把地址解析、状态标、人气峰那几条判法抄一份到渲染代码里。</b>它们由
+     *   {@code streamers-model.js} 现算，那一份有 node 夹具逐格在量；抄进渲染代码之后，
+     *   夹具照样全绿——它量的还是那份没人调的判法，而屏幕上跑的是新抄的这一份。</li>
+     *   <li><b>自己判「这台机器开没开累计数据」。</b>那一条与首页那条软待办问的是同一件事，
+     *   判定只许有 {@code home-model.js} 的 {@code totalDataOff} 一份：各判各的那天，
+     *   首页说没开而这一页说开着，两边的代码看起来都对。</li>
+     * </ul>
+     * 两种改动<b>都不会让任何功能变坏</b>，因此靠人复查是拦不住的。
+     */
+    @Test
+    @DisplayName("主播页列表、详情、场次三块各有落点，状态标与折线的判法只有 streamers-model 一份")
+    void streamersPageIsWiredUp() throws IOException {
+        String html = Files.readString(frontendDir().resolve("index.html"), StandardCharsets.UTF_8);
+        Map<String, String> sources = coreSources();
+        String scripts = String.join("\n", sources.values());
+        String view = sources.getOrDefault(STREAMERS_VIEW, "");
+        String model = sources.getOrDefault(STREAMERS_MODEL, "");
+
+        List<String> bad = new ArrayList<>();
+        // 找不到那两份时判红而不是跳过：一把量不动却报绿的判据，比没有这把判据更糟
+        if (view.isBlank()) {
+            bad.add("找不到 " + STREAMERS_VIEW + "，下面每一格都无从量起");
+        }
+        if (model.isBlank()) {
+            bad.add("找不到 " + STREAMERS_MODEL + "，状态标与折线的判法没有落脚的地方");
+        }
+
+        for (String id : STREAMERS_SHELL) {
+            if (!html.contains("id=\"" + id + "\"")) {
+                bad.add("index.html 上没有 #" + id);
+            }
+            if (!scripts.contains("$('#" + id + "')")) {
+                bad.add("没有任何脚本用到 #" + id + "，它立在那里但点了不管用");
+            }
+        }
+
+        for (String endpoint : STREAMERS_ENDPOINTS) {
+            if (!view.contains("'" + endpoint + "'")) {
+                bad.add(STREAMERS_VIEW + " 没有调用 " + endpoint + "，那一块此刻空着而不说为什么");
+            }
+        }
+
+        for (String call : STREAMERS_MODEL_CALLS) {
+            if (!view.contains(call)) {
+                bad.add(STREAMERS_VIEW + " 没有问过 " + call + "，那一块画的是别处算的");
+            }
+        }
+        for (String function : STREAMERS_MODEL_FUNCTIONS) {
+            if (view.contains(function)) {
+                bad.add("渲染代码里又判了一遍 " + function + "。那几条规则只许有 " + STREAMERS_MODEL
+                        + " 一份——抄一份进来之后，夹具量的还是没人调的那一份");
+            }
+        }
+
+        // 「这台机器开没开累计数据」的判定只许有一份，且必须是首页那一份
+        if (view.contains("totalDataAvailable")) {
+            bad.add(STREAMERS_VIEW + " 自己读了 totalDataAvailable。这一条与首页那条软待办"
+                    + "问的是同一件事，判定经 home-model.js 的 totalDataOff 一处消费");
+        }
+        if (!model.contains("totalDataOff")) {
+            bad.add(STREAMERS_MODEL + " 没有用 totalDataOff，上面那条「渲染代码里没有」因此不作数");
+        }
+
+        if (!view.contains("detailHash(where.platform, where.uid, 'sessions')")) {
+            bad.add("场次详情的返回必须用 detailHash 指回该主播的场次页签；"
+                    + "写死 #/streamers 会回到总列表，人找不到刚才那一场属于谁");
+        }
+
+        assertTrue(bad.isEmpty(), "主播页少了这几件事:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
+     * 插件页是运行时装上来的，不是编译期定死的
+     * <p>
+     * 静态 {@code import} 一写，那个平台就成了核心的一部分：没装插件时页面加载不了，
+     * 而这件事在源码里看不出来——它长得和其余 import 一模一样。
+     */
+    @Test
+    @DisplayName("核心不静态引用任何插件页脚本")
+    void coreNeverImportsPluginPages() {
+        Set<String> pages = pageSources().keySet();
+        List<String> bad = new ArrayList<>();
+
+        coreSources().forEach((name, text) -> {
+            if (pages.contains(name)) {
+                bad.add(name + " 同时存在于核心与插件的资源目录里");
+            }
+
+            Matcher m = IMPORT.matcher(text);
+            while (m.find()) {
+                if (pages.contains(m.group(2))) {
+                    bad.add(name + " 静态引用了插件页 " + m.group(2));
+                }
+            }
+        });
+
+        assertTrue(bad.isEmpty(), "插件页只能在运行时按注册清单装载:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
+     * 首页链路「本机」站的去处，闭集
+     * <p>
+     * 它必须落到本页健康自检那一张卡，且连接页<b>不加</b>一张与它对应的卡。
+     * 写成去连接页的话，地址栏变了、屏幕没动，看起来像页面卡住了——
+     * 而那种错在任何一次「打开页面看一眼」里都看不出来，因为连接页本身完全正常。
+     */
+    @Test
+    @DisplayName("本机站落到首页探针区，连接页不加卡")
+    void selfStationGoesToHomeProbes() throws IOException {
+        String html = Files.readString(frontendDir().resolve("index.html"), StandardCharsets.UTF_8);
+        Map<String, String> sources = coreSources();
+        String home = sources.getOrDefault("home-model.js", "");
+        String overview = sources.getOrDefault("overview.js", "");
+        String links = sources.getOrDefault("links-model.js", "");
+        String main = sources.getOrDefault("main.js", "");
+
+        List<String> bad = new ArrayList<>();
+        if (!html.contains("id=\"home-probes\"")) {
+            bad.add("index.html 上没有 #home-probes，本机站没有可滚到的那一块");
+        }
+        if (!home.contains("'#/home?card=probes'")) {
+            bad.add("home-model.js 没有本机站的首页探针落点");
+        }
+        if (!home.contains("PROBE_ANCHOR")) {
+            bad.add("home-model.js 没有探针区锚的名字，上面那条落点没有东西可对");
+        }
+        if (!overview.contains("stationHref(")) {
+            bad.add("overview.js 没有问过 stationHref，链路图上点下去走的是别处的账");
+        }
+        if (!main.contains("PROBE_ANCHOR")) {
+            bad.add("main.js 没有按探针区锚去滚，从收藏夹打开 #/home?card=probes 就停在页顶");
+        }
+
+        Matcher stationCard = Pattern.compile("const STATION_CARD\\s*=\\s*\\{([^}]*)}").matcher(links);
+        if (!stationCard.find()) {
+            bad.add("links-model.js 里找不到 STATION_CARD，下面那条「连接页不加卡」无从量起");
+        } else if (stationCard.group(1).contains("self")) {
+            bad.add("连接页给本机站加了卡。本机讲的是这台机器自己的状况，不是一条对外连接");
+        }
+
+        assertTrue(bad.isEmpty(), "本机站的去处不对:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
+     * 设置页、推送页与通道页的危险确认走自绘弹层，不再调用原生 confirm()
+     * <p>
+     * 原生那一句没有标题、没有后果、也没有取消／确认的颜色区分。
+     * 改回去的那一下<b>不会让任何功能变坏</b>，因此靠人复查是拦不住的。
+     * <p>
+     * 自绘之后浏览器不再代劳两件事：按 Esc 取消，以及关掉以后把焦点还回刚才那颗按钮。
+     * 少写这两行，键盘和读屏都回不到原点，而点鼠标走主路的人看不出任何变化。
+     */
+    @Test
+    @DisplayName("设置页、推送页与通道页的危险确认走自绘弹层")
+    void settingsPushAndSessionsUsePaintedConfirm() {
+        Map<String, String> sources = coreSources();
+        List<String> bad = new ArrayList<>();
+
+        for (String name : List.of("settings.js", "push.js", "sessions.js")) {
+            String code = codeOnly(sources.getOrDefault(name, ""));
+            if (code.contains("confirm(")) {
+                bad.add(name + " 仍在调用原生 confirm()");
+            }
+            if (!code.contains("ask(")) {
+                bad.add(name + " 没有问过 ask，危险确认此刻点了不弹");
+            }
+        }
+
+        String dialog = sources.getOrDefault("confirm.js", "");
+        String model = sources.getOrDefault("confirm-model.js", "");
+        if (dialog.isBlank()) {
+            bad.add("找不到 confirm.js，自绘弹层没有落脚的地方");
+        }
+        if (model.isBlank()) {
+            bad.add("找不到 confirm-model.js，打开／取消／确认没有可测的一份");
+        }
+        if (!dialog.contains("export function ask") && !dialog.contains("export function ask(")) {
+            // export function ask 已在上面的 EXPORT 扫描里；这里再钉调用方引的就是这个名字
+            if (!Pattern.compile("^export\\s+function\\s+ask\\b", Pattern.MULTILINE).matcher(dialog).find()) {
+                bad.add("confirm.js 没有 export ask");
+            }
+        }
+        if (!dialog.contains("Escape")) {
+            bad.add("confirm.js 没有 Esc＝取消");
+        }
+        if (!dialog.contains("document.activeElement")) {
+            bad.add("confirm.js 打开时没有记下触发钮，关闭后焦点回不去");
+        }
+        if (!model.contains("export function keydown")) {
+            bad.add("confirm-model.js 没有 keydown，Esc＝取消没有可测的一份");
+        }
+
+        for (String name : List.of("settings.js", "push.js", "sessions.js")) {
+            String imported = importedFrom(sources.getOrDefault(name, ""), "confirm.js");
+            if (!imported.contains("ask")) {
+                bad.add(name + " 用了 ask 却没从 confirm.js 引进来");
+            }
+        }
+
+        assertTrue(bad.isEmpty(), "危险确认弹层少了这几件事:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
      * 新版提示写在 index.html 里的那两处落点，闭集
      * <p>
      * 侧栏那枚药丸与它点开的小面板的壳。面板里的内容不写在页面里：每次拿到新的
@@ -1244,31 +1511,4 @@ class ConfigUiFrontendTest {
         assertTrue(bad.isEmpty(), "新版提示少了这几件事的落点:\n  " + String.join("\n  ", bad));
     }
 
-    /**
-     * 插件页是运行时装上来的，不是编译期定死的
-     * <p>
-     * 静态 {@code import} 一写，那个平台就成了核心的一部分：没装插件时页面加载不了，
-     * 而这件事在源码里看不出来——它长得和其余 import 一模一样。
-     */
-    @Test
-    @DisplayName("核心不静态引用任何插件页脚本")
-    void coreNeverImportsPluginPages() {
-        Set<String> pages = pageSources().keySet();
-        List<String> bad = new ArrayList<>();
-
-        coreSources().forEach((name, text) -> {
-            if (pages.contains(name)) {
-                bad.add(name + " 同时存在于核心与插件的资源目录里");
-            }
-
-            Matcher m = IMPORT.matcher(text);
-            while (m.find()) {
-                if (pages.contains(m.group(2))) {
-                    bad.add(name + " 静态引用了插件页 " + m.group(2));
-                }
-            }
-        });
-
-        assertTrue(bad.isEmpty(), "插件页只能在运行时按注册清单装载:\n  " + String.join("\n  ", bad));
-    }
 }

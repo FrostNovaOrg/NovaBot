@@ -31,7 +31,8 @@ RED=0
 # 必须走 stdin 加 --input-type=module：node --check 对 .js 文件按 CommonJS 解析，
 # 撞上 import/export 会静默放过，整把尺对这些模块文件恒绿——实测 Node 22，
 # 同一段坏语法 .mjs 红、.js 绿。stdin 形态强制按模块解析，尺才作数
-for f in "$UI"/home-model.js "$UI"/overview.js "$UI"/main.js "$UI"/core.js; do
+for f in "$UI"/home-model.js "$UI"/overview.js "$UI"/main.js "$UI"/core.js \
+         "$UI"/confirm-model.js "$UI"/confirm.js; do
     if node --input-type=module --check < "$f"; then
         echo "语法 绿 $f"
     else

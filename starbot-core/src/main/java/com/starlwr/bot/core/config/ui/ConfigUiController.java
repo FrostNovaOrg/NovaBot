@@ -884,10 +884,11 @@ public class ConfigUiController {
         }
 
         try {
-            // 🔴 文件不在时先建出来，且必须赶在适配器去动运行中的配置之前。
-            // 这一份是按配置面现算渲染出来的，而适配器接下来要往配置面里添一条连接——
-            // 顺序反过来的话，渲染的就是一份含着刚添那条连接的配置面，而那条连接是个 Java 对象，
-            // 写进 YAML 只会是一行谁也解析不回来的东西（见 ConfigurationTemplate#renderList）。
+            // 文件不在时先建出来，且必须赶在适配器去动运行中的配置之前。
+            // 这一份是按配置面现算渲染出来的；适配器接下来要往配置面里添一条连接。
+            // 顺序反过来的话，渲染的就是一份已经含着刚添那条连接的配置面——
+            // 对象列表现在按字段写得出，但那条连接里可能带着本次运行才生成的推送 Token，
+            // 写进文件等于替人把「每次启动换一把」改成了「固定一把」。
             fileService.createIfAbsent();
         } catch (IOException e) {
             log.error("建立配置文件失败", e);
@@ -1188,6 +1189,7 @@ public class ConfigUiController {
             item.put("displayName", provider.displayName());
             item.put("loggedIn", provider.isLoggedIn());
             item.put("accountId", provider.accountId().orElse(null));
+            item.put("accountName", provider.accountName().orElse(null));
             item.put("disabledReason", provider.disabledReason().orElse(null));
             // 凭据还能用多久，以及到期之后会不会自己续上。答不上的平台给 null，
             // 界面那一侧就不写「还剩几天」——两个字段都写死成一个字段的话，

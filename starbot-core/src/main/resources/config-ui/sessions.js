@@ -14,6 +14,7 @@
 
 import {$, api, el, esc, say} from './core.js';
 import {loadPushPage, openDrawer, closeDrawer} from './push.js';
+import {ask} from './confirm.js';
 
 /**
  * 推送配置里没填完的条目
@@ -131,9 +132,10 @@ function commandRow(host, ctx) {
     const fix = el('button', 'ghost');
     fix.type = 'button';
     fix.textContent = '一键恢复';
-    fix.addEventListener('click', () => {
-      if (!confirm('把「' + summary.offNames.join('、') + '」在 ' + ctx.target.num
-          + ' 恢复可用吗？群管理员之后仍可再关掉。')) return;
+    fix.addEventListener('click', async () => {
+      if (!await ask({title: '一键恢复？',
+        body: '把「' + summary.offNames.join('、') + '」在 ' + ctx.target.num
+          + ' 恢复可用。群管理员之后仍可再关掉。'})) return;
       batchCommands(ctx, summary.restorable, false);
     });
     warn.appendChild(fix);
@@ -309,9 +311,10 @@ function subscriptionDrawer(ctx) {
       const clear = el('button', 'ghost danger');
       clear.type = 'button';
       clear.textContent = '清空';
-      clear.addEventListener('click', () => {
-        if (!confirm('确定清空「' + sub.streamerName + '」在 ' + ctx.target.num + ' 的'
-            + sub.typeName + '订阅名单吗？共 ' + sub.users.length + ' 人。')) return;
+      clear.addEventListener('click', async () => {
+        if (!await ask({title: '清空订阅名单？',
+          body: '确定清空「' + sub.streamerName + '」在 ' + ctx.target.num + ' 的'
+            + sub.typeName + '订阅名单吗？共 ' + sub.users.length + ' 人。'})) return;
         removeSub(ctx, sub, null);
       });
       head.appendChild(clear);

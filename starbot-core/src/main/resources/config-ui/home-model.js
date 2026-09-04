@@ -201,6 +201,23 @@ function banner(status, chain, fresh) {
 }
 
 /**
+ * 这台机器没开累计数据
+ *
+ * 首页那条软待办与主播详情顶上那条小横条<b>问的是同一件事</b>，因此判定只留这一份。
+ * 各写各的话，两处会在同一台机器上给出不同的答案——而最常见的分叉是有人把某一处写成
+ * {@code !status.totalDataAvailable}：那样一来，接口还没回来（值为 undefined）的那一瞬间
+ * 也会被算成「没开」，屏幕上先闪一条说这台机器不行的话，随后又自己消失。
+ *
+ * 三态里只有明确的 false 才算没开：true 是开着，缺这一栏（旧版服务端）是不知道，
+ * 而「不知道」不许读成「没开」。
+ * @param status /api/status 回包
+ * @return {boolean} 确实没开时为 true
+ */
+export function totalDataOff(status) {
+  return (status || {}).totalDataAvailable === false;
+}
+
+/**
  * 待办
  *
  * 只放「要人动手，不动就一直不好」的事。会自己恢复的异常不进这里——
@@ -247,7 +264,7 @@ function todos(status, login, chain, fresh) {
     });
   }
 
-  if (status.totalDataAvailable === false) {
+  if (totalDataOff(status)) {
     list.push({
       key: 'total',
       title: '累计数据没开',
@@ -405,4 +422,31 @@ export function homeModel(status, login, timeline) {
     // 这里换个名字，而不是去给那条判据开一个豁免——豁免多了它就形同虚设
     pushOn: state.pushEnabled !== false,
   };
+}
+
+/**
+ * 首页链路图上某一站，点下去该去哪
+ *
+ * 「本机」去本页健康自检那一块，另外两站去连接页对应的卡。
+ * 落点写在这一份而不是写在渲染代码里：渲染那边写死 {@code #/links?card=} 的话，
+ * 本机那一站会跟着跳去连接页，而连接页上没有它的卡——地址栏变了、屏幕没动，
+ * 看起来像页面卡住了。
+ *
+ * 未知的站名回空串，不编一个去处。
+ */
+export const STATION_HREF = {
+  platform: '#/links?card=platform',
+  self: '#/home?card=probes',
+  bot: '#/links?card=bot',
+};
+
+/** 首页健康自检那一张卡的 id，与 index.html 上那一块对得上 */
+export const PROBE_ANCHOR = 'home-probes';
+
+/**
+ * @param station 站名，platform / self / bot
+ * @return {string} 地址，没有去处时为空串
+ */
+export function stationHref(station) {
+  return STATION_HREF[station] || '';
 }

@@ -317,6 +317,11 @@ rm -f "$OUT/application.yml"
 #    「还没配」与「配成了空的」在一个 [] 上长得一样，而只有前者是真的。
 rm -f "$OUT/datasource.json"
 
+# template-defaults.json 同族：第一次改默认模板时由程序写出，不随包。
+# 无条件删，理由与上面两条相同——worktree 那条路上打包机的 dist/templates/
+# 里若躺着一份本机改过的覆盖，`cp -R` 已经把它拷进来了。
+rm -f "$OUT/template-defaults.json"
+
 # BUILD-INFO 只进产物，不进仓库
 # source= 这一行是给拿到包的人看的：worktree 表示打包源是某人的工作目录
 # （那么包里可能有仓库里没有的文件），archive:<40 位 commit> 表示打包源是从那一次提交
@@ -348,6 +353,20 @@ rm -f "$OUT/datasource.json"
 echo
 echo "==> [5/6] 校验产物界面资源"
 "$ROOT/tools/artifact-ui-resource-check.sh" "$OUT"
+
+# 步骤五后：首页／推送／连接三把视图模型尺。
+# 名单写死一处：少写一把，那一页的模型从此只靠人手跑，
+# 而「人手跑过」和「没跑」在构建日志上长得一样。任一红即本构建红。
+echo
+echo "==> 校验界面视图模型"
+MODEL_CHECKERS=(
+    home-model-check.sh
+    push-model-check.sh
+    links-model-check.sh
+)
+for checker in "${MODEL_CHECKERS[@]}"; do
+    bash "$ROOT/tools/$checker"
+done
 
 # ── [6/6] 起动冒烟 ──────────────────────────────────────────────────────
 # 上面五步答的是「编译过、测过、包里的文件都出自源码」；这一步答的是另一句：

@@ -12,6 +12,7 @@ cookies.key
 # 明文凭据迁移为加密存储时留下的备份
 cookies.json.plain.bak
 datasource.json
+template-defaults.json
 application-local.yml
 application-dev.yml
 logs/

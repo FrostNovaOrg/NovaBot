@@ -12,7 +12,7 @@
  * 退码 0 即九档全对；任一档对不上打印差异并以 1 退出。
  */
 
-import {homeModel} from '../starbot-core/src/main/resources/config-ui/home-model.js';
+import {homeModel, PROBE_ANCHOR, stationHref} from '../starbot-core/src/main/resources/config-ui/home-model.js';
 
 /** 探针的原样形态，与 /api/status 里 health 那一项逐字段同形 */
 function probe(name, scope, level, summary, advice, loginState) {
@@ -217,9 +217,24 @@ for (const item of CASES) {
 console.log(['档', '三段色', '横条', '待办', '短条', '判定'].join('\t'));
 rows.forEach(r => console.log(r));
 
-if (bad.length) {
-  console.error('\n对不上 ' + bad.length + ' 档：');
+const hrefBad = [];
+if (stationHref('self') !== '#/home?card=probes') {
+  hrefBad.push('本机站应去首页探针区，实得「' + stationHref('self') + '」');
+}
+if (stationHref('platform') !== '#/links?card=platform') {
+  hrefBad.push('平台站应去连接页，实得「' + stationHref('platform') + '」');
+}
+if (stationHref('bot') !== '#/links?card=bot') {
+  hrefBad.push('机器人站应去连接页，实得「' + stationHref('bot') + '」');
+}
+if (stationHref('nope') !== '') hrefBad.push('未知站名应回空串');
+if (PROBE_ANCHOR !== 'home-probes') hrefBad.push('探针区锚应为 home-probes');
+
+if (bad.length || hrefBad.length) {
+  console.error('\n对不上 ' + (bad.length + hrefBad.length) + ' 处：');
   bad.forEach(b => console.error('  ' + b));
+  hrefBad.forEach(b => console.error('  落点：' + b));
   process.exit(1);
 }
-console.log('\n九档全对');
+console.log('本机站\t' + stationHref('self') + '\t锚 #' + PROBE_ANCHOR + '\t绿');
+console.log('\n九档全对，本机站落到首页探针区');

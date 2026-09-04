@@ -6,7 +6,7 @@
  */
 
 import {$, api, clock, el, esc, markDirty, say, today} from './core.js';
-import {homeModel} from './home-model.js';
+import {homeModel, PROBE_ANCHOR, stationHref} from './home-model.js';
 import {pageStatus} from './main.js';
 import {store} from './store.js';
 
@@ -20,8 +20,9 @@ const STATION_ICONS = {
 /**
  * 一座站
  *
- * 站是按钮不是链接：它要做的事是「把人带到连接页上对应的那张卡」，
- * 而地址里带着是哪一站（{@code #/links?card=platform}），刷新与收藏也能回到同一张卡。
+ * 站是按钮不是链接：平台与机器人要把人带到连接页上对应的那张卡，
+ * 本机则锚到本页健康自检那一块。地址里带着是哪一站
+ * （{@code #/links?card=platform} 或 {@code #/home?card=probes}），刷新与收藏也能回到同一处。
  * @param key 站名，与连接页那侧认的一致：platform / self / bot
  */
 function station(key, seg, withLamp) {
@@ -60,10 +61,19 @@ function renderLinkMap(model) {
     + '<div class="lm-seg" style="min-width:0;padding-top:8px">'
     + '<div class="lm-cap">本机 · ' + esc(model.chain.self.caption || '—') + '</div></div>';
 
-  // 地址里带上是哪一站，由连接页那侧决定滚到哪张卡。写成「跳过去再由这里滚」的话，
-  // 从收藏夹直接打开那条地址就滚不了——而那正是使用者第二次来找同一张卡时会走的路
+  // 去处由 stationHref 一份判法给出。本机那一站已经在本页，地址若没变就当场滚，
+  // 不靠 hashchange——同一条地址再点一次不会触发它
   $('#linkmap').querySelectorAll('[data-goto]').forEach(btn => {
-    btn.addEventListener('click', () => { location.hash = '#/links?card=' + btn.dataset.goto; });
+    btn.addEventListener('click', () => {
+      const href = stationHref(btn.dataset.goto);
+      if (!href) return;
+      if (location.hash === href) {
+        const box = $('#' + PROBE_ANCHOR);
+        if (box) box.scrollIntoView({block: 'start', behavior: 'smooth'});
+        return;
+      }
+      location.hash = href;
+    });
   });
 }
 
@@ -96,17 +106,6 @@ function renderBanner(model) {
   box.appendChild(row);
 }
 
-/**
- * 站外链接要多带的两个属性
- *
- * 待办与新版面板里的「看完整说明」指向发布仓，是本站之外的地址；
- * 控制台是单页应用，原地跳走再退回来时页面状态全部重来。
- * 只认 http 开头：#/xxx 那些内部路由绝不能带 target，带了会在新页签里再开一份控制台。
- */
-function extAttrs(href) {
-  return String(href || '').indexOf('http') === 0 ? ' target="_blank" rel="noreferrer"' : '';
-}
-
 /** 待办。一条都没有时整块不渲染——一张写着「暂无待办」的空卡片只是在占地方 */
 function renderTodos(model) {
   const box = $('#home-todo');
@@ -120,7 +119,7 @@ function renderTodos(model) {
       '<div class="todo">'
       + '<span class="tb' + (item.soft ? ' soft' : '') + '">' + (item.soft ? 'i' : '!') + '</span>'
       + '<span class="tt"><b>' + esc(item.title) + '</b><p>' + esc(item.body) + '</p></span>'
-      + '<a href="' + esc(item.href) + '"' + extAttrs(item.href) + '>' + esc(item.action) + '</a>'
+      + '<a href="' + esc(item.href) + '">' + esc(item.action) + '</a>'
       + '</div>').join('')
     + '</div>';
 }
@@ -285,6 +284,71 @@ function renderVersion(version) {
 }
 
 /**
+ * 探针行。插件页要渲染属于自己的那几条，因此这里导出去
+ * @param list 探针
+ * @param emptyText 一条都没有时说的话
+ */
+export function healthRows(list, emptyText) {
+  return list.length
+    ? list.map(h =>
+        '<div class="row"><span class="dot ' + esc(h.level) + '"></span>' +
+        '<span class="who">' + esc(h.name) + '</span>' +
+        '<span class="sum">' + esc(h.summary) + '</span>' +
+        (h.advice ? '<span class="advice">' + esc(h.advice) + '</span>' : '') +
+        '</div>').join('')
+    : '<div class="row"><span class="who">健康检查</span><span>' + esc(emptyText) + '</span></div>';
+}
+
+/**
+ * 运行状态里与页无关的那几块：版本、侧栏运行三行、机器人页的探针、还欠一次重启的清单
+ * @param data /api/status 回包
+ */
+export function renderStatus(data) {
+  renderVersion(data.version);
+  renderUpdate(data.update);
+
+  const runtime = data.runtime || {};
+  $('#run-mem').textContent = runtime.heapUsedMb + ' / ' + runtime.heapMaxMb + ' MB';
+  $('#run-threads').textContent = runtime.threads;
+  // 上限一并显示：只报「监听 10 位」看不出这已经是顶格，再加主播时才发现加不进去
+  $('#run-streamers').textContent = (data.users || []).length
+    + (data.streamerLimit ? ' / ' + data.streamerLimit : '');
+
+  // 保存过、仍等着重启的那几项。只在这里记一次：底部改动条按它写「M 处改动需重启生效」，
+  // 而它的寿命是「到下次重启为止」——每次拿到新的运行状态都该跟着更新，
+  // 只在整体载入时记一次的话，首页刷新之后那条提示就停在了上一次的数字上
+  store.restartPending = data.restartPending || [];
+  markDirty();
+
+  // 平台相关的那几块归各平台页自己渲染：这里既不知道装了哪些页，也不知道页里有哪些元素
+  pageStatus(data);
+}
+
+// 命令开关、订阅名单与「哪几条推送配置没填完」那三块随推送页改版挪去了通道页的
+// 「本群设置」那一段（见 sessions.js）：它们讲的是某一个群此刻听不听话，
+// 而这一页答的是「现在好不好」。取那份状态的那一趟也跟着搬走了，见 push.js 的 loadPushPage。
+
+// 「运行自检」把整页重取一遍并给出结论。异常项本就在探针那一栏里逐条列着，
+// 这里只回答「现在到底有没有问题」，省得使用者自己数。
+// 走整页重取而不是单取一次 /status：自检之后屏幕上的链路、待办、横条都该是这一刻的，
+// 只更新一句结论的话，结论说「2 项异常」而上面几块还画着上一次的样子
+export async function runSelfTest() {
+  $('#selftest-run').disabled = true;
+  say('自检中…');
+
+  const st = await refreshHome();
+  if (st) {
+    const health = st.health || [];
+    const bad = health.filter(h => h.level !== 'OK');
+    say(bad.length
+      ? bad.length + ' 项异常：' + bad.map(h => h.name).join('、')
+      : '自检完成，' + health.length + ' 项全部正常', bad.length ? 'err' : 'ok');
+  }
+
+  $('#selftest-run').disabled = false;
+}
+
+/**
  * 侧栏那枚「新版」药丸与它点开的小面板
  *
  * 有没有该提示的新版由 /api/status 的 update 块说了算（缺席即没有），这里只管摆出来。
@@ -351,92 +415,4 @@ async function skipUpdate(version) {
     say('没记上：' + e.message, 'err');
     btn.disabled = false;
   }
-}
-
-/**
- * 监听中的主播
- *
- * 每一列都来自 /api/status，与是哪个平台无关，因此归核心画。这张表原先长在平台插件那一页上，
- * 装第二个平台时会变成两张各列一半的表——而使用者要的是「这台机器一共在盯着谁」。
- * @param data /api/status 回包
- */
-function renderUsers(data) {
-  const body = $('#users tbody');
-  if (!body) return;
-
-  const users = data.users || [];
-  if (!users.length) {
-    body.innerHTML = '<tr><td colspan="6" class="empty">还没有配置任何主播，去「QQ 推送」页添加</td></tr>';
-    return;
-  }
-
-  body.innerHTML = users.map(u => [u.uid, u.uname || '—', u.roomId || '—', u.platform,
-    u.targets, u.enabled === false ? '已停用' : '正常']
-    .map(v => '<td>' + esc(v) + '</td>').join('')).map(tds => '<tr>' + tds + '</tr>').join('');
-}
-
-/**
- * 探针行。插件页要渲染属于自己的那几条，因此这里导出去
- * @param list 探针
- * @param emptyText 一条都没有时说的话
- */
-export function healthRows(list, emptyText) {
-  return list.length
-    ? list.map(h =>
-        '<div class="row"><span class="dot ' + esc(h.level) + '"></span>' +
-        '<span class="who">' + esc(h.name) + '</span>' +
-        '<span class="sum">' + esc(h.summary) + '</span>' +
-        (h.advice ? '<span class="advice">' + esc(h.advice) + '</span>' : '') +
-        '</div>').join('')
-    : '<div class="row"><span class="who">健康检查</span><span>' + esc(emptyText) + '</span></div>';
-}
-
-/**
- * 运行状态里与页无关的那几块：版本、侧栏运行三行、机器人页的探针、还欠一次重启的清单
- * @param data /api/status 回包
- */
-export function renderStatus(data) {
-  renderVersion(data.version);
-  renderUpdate(data.update);
-  renderUsers(data);
-
-  const runtime = data.runtime || {};
-  $('#run-mem').textContent = runtime.heapUsedMb + ' / ' + runtime.heapMaxMb + ' MB';
-  $('#run-threads').textContent = runtime.threads;
-  // 上限一并显示：只报「监听 10 位」看不出这已经是顶格，再加主播时才发现加不进去
-  $('#run-streamers').textContent = (data.users || []).length
-    + (data.streamerLimit ? ' / ' + data.streamerLimit : '');
-
-  // 保存过、仍等着重启的那几项。只在这里记一次：底部改动条按它写「M 处改动需重启生效」，
-  // 而它的寿命是「到下次重启为止」——每次拿到新的运行状态都该跟着更新，
-  // 只在整体载入时记一次的话，首页刷新之后那条提示就停在了上一次的数字上
-  store.restartPending = data.restartPending || [];
-  markDirty();
-
-  // 平台相关的那几块归各平台页自己渲染：这里既不知道装了哪些页，也不知道页里有哪些元素
-  pageStatus(data);
-}
-
-// 命令开关、订阅名单与「哪几条推送配置没填完」那三块随推送页改版挪去了通道页的
-// 「本群设置」那一段（见 sessions.js）：它们讲的是某一个群此刻听不听话，
-// 而这一页答的是「现在好不好」。取那份状态的那一趟也跟着搬走了，见 push.js 的 loadPushPage。
-
-// 「运行自检」把整页重取一遍并给出结论。异常项本就在探针那一栏里逐条列着，
-// 这里只回答「现在到底有没有问题」，省得使用者自己数。
-// 走整页重取而不是单取一次 /status：自检之后屏幕上的链路、待办、横条都该是这一刻的，
-// 只更新一句结论的话，结论说「2 项异常」而上面几块还画着上一次的样子
-export async function runSelfTest() {
-  $('#selftest-run').disabled = true;
-  say('自检中…');
-
-  const st = await refreshHome();
-  if (st) {
-    const health = st.health || [];
-    const bad = health.filter(h => h.level !== 'OK');
-    say(bad.length
-      ? bad.length + ' 项异常：' + bad.map(h => h.name).join('、')
-      : '自检完成，' + health.length + ' 项全部正常', bad.length ? 'err' : 'ok');
-  }
-
-  $('#selftest-run').disabled = false;
 }

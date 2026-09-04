@@ -104,7 +104,7 @@
       <div id="home-banner"></div>
 
       <div class="nv-card hcard">
-        <h3>链路 <span class="h-note">点任一站去「连接」页</span></h3>
+        <h3>链路 <span class="h-note">点平台或机器人去连接页，点本机看下面的健康自检</span></h3>
         <div class="linkmap" id="linkmap"></div>
       </div>
 
@@ -126,7 +126,7 @@
         </div>
       </div>
 
-      <div class="nv-card hcard">
+      <div class="nv-card hcard" id="home-probes">
         <h3>健康自检 <span class="h-note">六项探针</span></h3>
         <div id="probe-list"></div>
       </div>
@@ -184,42 +184,65 @@
 
   <!-- ============ 主播 #/streamers ============ -->
   <!--
-    运营分析。数据源是 sessions.jsonl，每场下播追加一条，
-    聚合在服务端完成——跨零点归属、按本地时区分周、空周期补零这几条规则
-    只该有一份实现，见 LiveSessionAnalytics。
+    每位主播播了什么、播得怎么样，都在这里。三块子视图共用这一个页容器：
+    列表（#/streamers）、详情（#/streamers/<平台>/<uid>，三个页签）、
+    某一场（#/streamers/<平台>/<uid>/<开播时刻>）。
+
+    🔴 三块<b>不</b>各占一个 .page 容器：路由那一侧认页只看地址第一段（见 main.js 的 parseHash），
+    后两块因此永远不会被显示出来，而三处的代码看起来都对。哪一块显示由 syncStreamersView 定。
+
+    数据源是 /api/streamers。跨零点归属、按本地时区分周、空日补零、状态四档的优先级
+    这几条规则只该有一份实现，都在服务端（LiveSessionAnalytics 与 StreamerController）；
+    这一页只管把算好的摆上去，判断那一半在 streamers-model.js 里。
+
+    原先这里是「监听中的主播」那张表加一块运营分析，两块各答半个问题——
+    前者只说此刻在盯着谁、不说播得怎么样，后者只按周期堆总数、点不进任何一场。
+    它们已经并进下面这份列表与它的详情页。
   -->
   <section class="page" id="page-streamers">
-    <!--
-      监听中的主播。这张表原先长在平台插件那一页上，可它的每一列都来自 /api/status，
-      与是哪个平台无关——放在插件里的代价是装第二个平台时会出现两张各列一半的表。
-      本页正是「主播」这件事的落点，因此搬到这里。
-      它最终会并进主播页那份带汇总与折线的列表里，那一页还没建，先整份留在这里。
-    -->
-    <h3 class="cat-title">监听中的主播</h3>
-    <table id="users"><thead><tr><th>UID</th><th>昵称</th><th>直播间</th><th>平台</th>
-      <th>推送目标</th><th>状态</th></tr></thead><tbody></tbody></table>
-
-    <div id="analytics">
+    <div id="sv-list">
       <p class="hint">数据来自每场直播下播时的归档。<b>只在这里看得到，不会发到群里。</b>
-        按周期看趋势，逐场流水看具体某一场发生了什么。</p>
+        点一位主播看他的概况、场次与趋势；点一场看那一场的报告。</p>
 
-      <div class="backups" id="ana-bar">
-        <span>视图</span>
-        <select id="ana-view">
-          <option value="period">按周期汇总</option>
-          <option value="sessions">逐场流水</option>
-        </select>
-        <span id="ana-period-label">周期</span>
-        <select id="ana-period"><option value="week">按周</option><option value="month">按月</option></select>
-        <span>主播</span>
-        <select id="ana-uid"></select>
-        <span id="ana-scope"></span>
+      <div class="nv-card hcard">
+        <h3>全部主播 <span class="h-note" id="st-window"></span></h3>
+        <div class="stats" id="st-all"></div>
       </div>
 
-      <div class="cards" id="ana-cards"></div>
-      <div id="ana-chart"></div>
-      <div id="ana-table"></div>
-      <p class="hint" id="ana-note" style="margin-top:12px"></p>
+      <div class="nv-card hcard">
+        <h3>每位主播 <span class="h-note">右边那条小折线是最近几天的场次</span></h3>
+        <div id="st-list"></div>
+      </div>
+
+      <!--
+        归档里有、在册名单里没有的那几位。从推送配置里删掉的主播，他过去的场次仍在归档里——
+        不单列一段的话，那些场次就成了「查不到主人的数据」：列表上没有他，
+        而总数里又算着他。服务端把差集点名报出来（不是报个数），这里照名字列。
+        一位都没有时整块不显示。
+      -->
+      <div id="st-unlisted"></div>
+    </div>
+
+    <div id="sv-detail" style="display:none">
+      <div class="loghead">
+        <div>
+          <a class="daystep" id="sd-back" href="#/streamers">‹ 回主播列表</a>
+        </div>
+      </div>
+      <div class="nv-card hcard" id="sd-head"></div>
+      <!-- 三个页签。地址就是页签本身，因此它们是链接不是按钮：能收藏、能贴给别人 -->
+      <div class="lgpills" id="sd-tabs"></div>
+      <div id="sd-body"></div>
+    </div>
+
+    <div id="sv-session" style="display:none">
+      <div class="loghead">
+        <div>
+          <a class="daystep" id="sx-back" href="#/streamers">‹ 回场次列表</a>
+        </div>
+      </div>
+      <h3 class="cat-title" id="sx-title">场次</h3>
+      <div id="sx-body"></div>
     </div>
   </section>
 

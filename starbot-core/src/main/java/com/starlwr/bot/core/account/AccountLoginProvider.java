@@ -86,6 +86,18 @@ public interface AccountLoginProvider {
     }
 
     /**
+     * 当前登录账号的昵称，未登录或取不到时为空
+     * <p>
+     * 标识（{@link #accountId()}）是稳定的，昵称会改。界面要两个一起写：有昵称时「名 · uid」，
+     * 取不到时只写 uid。取的那一下走该平台已经在用的那条查询口，失败就空着，不重试——
+     * 昵称不是进门的凭据，缺了它卡上照样认得人。
+     * @return 昵称
+     */
+    default Optional<String> accountName() {
+        return Optional.empty();
+    }
+
+    /**
      * 退出登录并清除本地凭据
      */
     void logout();
