@@ -11,6 +11,7 @@
  * 与「发一条试试」「初始设置第 4 步」是同一份判法。
  */
 
+import {ask} from './confirm.js';
 import {$, api, dropDisplayOnly, el, esc, markDirty, say} from './core.js';
 import {resolveTarget, targetOptions} from './links-model.js';
 import {
@@ -376,9 +377,10 @@ function renderDefaultTemplates(host) {
   const reset = el('button', 'ghost');
   reset.type = 'button';
   reset.textContent = '恢复出厂默认';
-  reset.addEventListener('click', () => {
-    if (!confirm('把「' + (currentHandler.displayName || currentHandler.className)
-      + '」的默认模板改回出厂的样子吗？用默认模板的通道会一起变回去。')) return;
+  reset.addEventListener('click', async () => {
+    const name = currentHandler.displayName || currentHandler.className;
+    if (!await ask({title: '恢复出厂默认？',
+      body: '「' + name + '」的默认模板会改回出厂的样子，用默认模板的通道会一起变回去。'})) return;
     delete draft[currentHandler.className];
     saveDefaults(currentHandler, {}, save);
   });
@@ -518,9 +520,10 @@ function renderStreamerLevel(host, user) {
   const remove = el('button', 'ghost danger');
   remove.type = 'button';
   remove.textContent = '删除主播';
-  remove.addEventListener('click', () => {
-    if (!confirm('确定删除主播 ' + streamerName(user) + ' 吗？它的 '
-        + (user.targets || []).length + ' 个通道会一起没掉，历史场次数据保留。')) return;
+  remove.addEventListener('click', async () => {
+    if (!await ask({title: '删除这位主播？',
+      body: '「' + streamerName(user) + '」的 '
+        + (user.targets || []).length + ' 个通道会一起没掉，历史场次数据保留。'})) return;
     store.pushData.splice(store.pushData.indexOf(user), 1);
     expanded.delete(String(user.uid));
     markDirty();
@@ -618,9 +621,10 @@ function renderChannelLevel(host, user, target) {
   const remove = el('button', 'ghost danger');
   remove.type = 'button';
   remove.textContent = '移除这个通道';
-  remove.addEventListener('click', () => {
-    if (!confirm('确定不再把「' + streamerName(user) + '」推到 ' + name
-        + ' 吗？这个群的本群设置会留着，其他主播照旧推。')) return;
+  remove.addEventListener('click', async () => {
+    if (!await ask({title: '移除这个通道？',
+      body: '不再把「' + streamerName(user) + '」推到 ' + name
+        + '。这个群的本群设置会留着，其他主播照旧推。'})) return;
     user.targets.splice(user.targets.indexOf(target), 1);
     markDirty();
     location.hash = '#/push/' + user.uid;
@@ -750,15 +754,16 @@ function sectionTemplate(host, user, target, session) {
   const act = el('button', state.custom ? 'ghost' : 'primary');
   act.type = 'button';
   act.textContent = state.custom ? '恢复默认' : '改为自定义';
-  act.addEventListener('click', () => {
+  act.addEventListener('click', async () => {
     if (!state.custom) {
       unlocked.add(key);
       renderStreamers();
       return;
     }
     // 「恢复默认」丢得掉使用者写了很久的东西，因此先问一句，并说清丢的是什么
-    if (!confirm('这个通道的消息模板会改回默认，自己写的内容会丢掉。'
-      + '此后默认模板再改，这个通道跟着一起变。')) return;
+    if (!await ask({title: '恢复默认？',
+      body: '这个通道的消息模板会改回默认，自己写的内容会丢掉。'
+        + '此后默认模板再改，这个通道跟着一起变。'})) return;
     for (const message of target.messages || []) {
       const handler = (store.handlerList || []).find(item => item.className === message.handler);
       if (!handler || !(handler.placeholders || []).length) continue;
@@ -840,13 +845,14 @@ function sectionLayout(host, target) {
   const act = el('button', state.custom ? 'ghost' : 'primary');
   act.type = 'button';
   act.textContent = state.custom ? '恢复默认' : '改为自定义';
-  act.addEventListener('click', () => {
+  act.addEventListener('click', async () => {
     if (!state.custom) {
       unlocked.add(key);
       renderStreamers();
       return;
     }
-    if (!confirm('这个通道的报告版式会改回默认。此后默认版式再改，这个通道跟着一起变。')) return;
+    if (!await ask({title: '恢复默认？',
+      body: '这个通道的报告版式会改回默认。此后默认版式再改，这个通道跟着一起变。'})) return;
     const message = messageOf(target, state.className);
     if (message) {
       const params = Object.assign({}, message.params || {});

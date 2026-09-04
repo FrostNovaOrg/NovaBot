@@ -27,7 +27,8 @@ RED=0
 
 # —— 语法 ——
 # 逐个跑而不是一次传多个文件：一次传一串时后面那些是「查过了」还是「没轮到」分不出来
-for f in "$UI"/home-model.js "$UI"/overview.js "$UI"/main.js "$UI"/core.js; do
+for f in "$UI"/home-model.js "$UI"/overview.js "$UI"/main.js "$UI"/core.js \
+         "$UI"/confirm-model.js "$UI"/confirm.js; do
     if node --input-type=module --check < "$f"; then
         echo "语法 绿 $f"
     else

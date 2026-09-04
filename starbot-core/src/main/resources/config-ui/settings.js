@@ -7,6 +7,7 @@
  * 常用六组在上、工程用的两组折到页底，每一项旁边标着改完什么时候生效。
  */
 
+import {ask} from './confirm.js';
 import {$, api, el, esc, markDirty, saveTarget, say} from './core.js';
 import {load} from './main.js';
 import {serializePush} from './push.js';
@@ -218,10 +219,10 @@ function buildRow(field, groupAllRestart) {
     markDirty();
   };
 
-  const onChange = () => {
+  const onChange = async () => {
     const now = read();
     const danger = dangerOf(field, now);
-    if (danger && !confirm(danger.title + '\n\n' + danger.body)) {
+    if (danger && !await ask({title: danger.title, body: danger.body})) {
       write(previous);
       paint();
       return;
@@ -518,7 +519,8 @@ export async function save() {
  * 漏不掉任何一处。代价是一次往返，放弃改动本就不是高频动作。
  */
 export async function discard() {
-  if (!confirm('放弃这些改动？改过还没保存的内容会全部回到上一次保存时的样子。')) return;
+  if (!await ask({title: '放弃这些改动？',
+    body: '改过还没保存的内容会全部回到上一次保存时的样子。'})) return;
   // 草稿态由 load 自己清。在这里先清一遍的话，重载失败时屏幕上还留着改过的值，
   // 而计数已经归零——看起来像「改动被保存了」
   await load();

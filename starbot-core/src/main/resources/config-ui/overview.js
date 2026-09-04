@@ -6,7 +6,7 @@
  */
 
 import {$, api, clock, el, esc, markDirty, say, today} from './core.js';
-import {homeModel} from './home-model.js';
+import {homeModel, PROBE_ANCHOR, stationHref} from './home-model.js';
 import {pageStatus} from './main.js';
 import {store} from './store.js';
 
@@ -20,8 +20,9 @@ const STATION_ICONS = {
 /**
  * 一座站
  *
- * 站是按钮不是链接：它要做的事是「把人带到连接页上对应的那张卡」，
- * 而地址里带着是哪一站（{@code #/links?card=platform}），刷新与收藏也能回到同一张卡。
+ * 站是按钮不是链接：平台与机器人要把人带到连接页上对应的那张卡，
+ * 本机则锚到本页健康自检那一块。地址里带着是哪一站
+ * （{@code #/links?card=platform} 或 {@code #/home?card=probes}），刷新与收藏也能回到同一处。
  * @param key 站名，与连接页那侧认的一致：platform / self / bot
  */
 function station(key, seg, withLamp) {
@@ -60,10 +61,19 @@ function renderLinkMap(model) {
     + '<div class="lm-seg" style="min-width:0;padding-top:8px">'
     + '<div class="lm-cap">本机 · ' + esc(model.chain.self.caption || '—') + '</div></div>';
 
-  // 地址里带上是哪一站，由连接页那侧决定滚到哪张卡。写成「跳过去再由这里滚」的话，
-  // 从收藏夹直接打开那条地址就滚不了——而那正是使用者第二次来找同一张卡时会走的路
+  // 去处由 stationHref 一份判法给出。本机那一站已经在本页，地址若没变就当场滚，
+  // 不靠 hashchange——同一条地址再点一次不会触发它
   $('#linkmap').querySelectorAll('[data-goto]').forEach(btn => {
-    btn.addEventListener('click', () => { location.hash = '#/links?card=' + btn.dataset.goto; });
+    btn.addEventListener('click', () => {
+      const href = stationHref(btn.dataset.goto);
+      if (!href) return;
+      if (location.hash === href) {
+        const box = $('#' + PROBE_ANCHOR);
+        if (box) box.scrollIntoView({block: 'start', behavior: 'smooth'});
+        return;
+      }
+      location.hash = href;
+    });
   });
 }
 

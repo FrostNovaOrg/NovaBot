@@ -80,7 +80,7 @@ function platformCard(card, status, accounts) {
   if (account.loggedIn) {
     return Object.assign(base, {
       level: 'ok',
-      caption: '已登录 · 账号 ' + (account.accountId || '未知'),
+      caption: accountCaption(account),
       note: expiryText(account),
       advice: '',
     });
@@ -91,6 +91,20 @@ function platformCard(card, status, accounts) {
     caption: account.qrCode ? '未登录 · 请扫下面的二维码' : '未登录 · 二维码还没生成，稍候',
     note: probe.advice || probe.summary || '登录掉了，重新扫码即可',
   });
+}
+
+/**
+ * 已登录时卡头那一句
+ *
+ * 昵称来自登录接口顺手带回的 accountName（平台侧查一次，失败就空）。
+ * 有名就名和 uid 都写，没有就只写 uid——两档长得不一样，才看得出「这次没查到」。
+ * @param account /api/login 里的一项
+ * @return {string}
+ */
+export function accountCaption(account) {
+  const uid = (account && account.accountId) || '未知';
+  const name = String((account && account.accountName) || '').trim();
+  return name ? '已登录 · ' + name + ' · uid ' + uid : '已登录 · 账号 ' + uid;
 }
 
 /**

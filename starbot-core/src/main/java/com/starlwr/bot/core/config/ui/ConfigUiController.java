@@ -1182,6 +1182,7 @@ public class ConfigUiController {
             item.put("displayName", provider.displayName());
             item.put("loggedIn", provider.isLoggedIn());
             item.put("accountId", provider.accountId().orElse(null));
+            item.put("accountName", provider.accountName().orElse(null));
             item.put("disabledReason", provider.disabledReason().orElse(null));
             // 凭据还能用多久，以及到期之后会不会自己续上。答不上的平台给 null，
             // 界面那一侧就不写「还剩几天」——两个字段都写死成一个字段的话，

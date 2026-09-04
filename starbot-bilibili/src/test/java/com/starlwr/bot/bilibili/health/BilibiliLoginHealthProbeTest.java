@@ -28,7 +28,23 @@ class BilibiliLoginHealthProbeTest {
 
         assertEquals(HealthStatus.Level.DOWN, status.level());
         assertEquals("等待扫码登录", status.summary());
-        assertFalse(status.advice().isBlank(), "异常时必须给出下一步能做什么");
+        assertEquals(BilibiliLoginHealthProbe.ADVICE_WITH_QR, status.advice());
+        assertFalse(status.advice().contains("启动日志"), "卡上有二维码时不应再指去启动日志");
+    }
+
+    @Test
+    @DisplayName("未登录且没有二维码时应仍指引去启动日志")
+    void shouldPointToStartupLogWhenQrMissing() {
+        BilibiliAccountService account = mock(BilibiliAccountService.class);
+        when(account.isLoggedIn()).thenReturn(false);
+        when(account.getPendingQrCodeContent()).thenReturn(null);
+
+        HealthStatus status = probe(account, new StarBotBilibiliProperties()).check();
+
+        assertEquals(HealthStatus.Level.DOWN, status.level());
+        assertEquals("未登录", status.summary());
+        assertEquals(BilibiliLoginHealthProbe.ADVICE_WITHOUT_QR, status.advice());
+        assertTrue(status.advice().contains("启动日志"), "卡上没有二维码时启动日志是退路");
     }
 
     @Test

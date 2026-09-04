@@ -19,7 +19,7 @@
  * 退码 0 即十二档全对；任一档对不上打印差异并以 1 退出。
  */
 
-import {cardAnchor, linksModel, resolveTarget, targetOptions}
+import {accountCaption, cardAnchor, linksModel, resolveTarget, targetOptions}
   from '../starbot-core/src/main/resources/config-ui/links-model.js';
 
 /** 探针的原样形态，与 /api/status 里 health 那一项逐字段同形 */
@@ -147,6 +147,7 @@ for (const item of CASES) {
   if (want.noAnchor && platformAnchor !== '') fail.push(`平台站不该有落点，实得「${platformAnchor}」`);
   if (!want.noAnchor && !platformAnchor) fail.push('平台站少了落点');
   if (cardAnchor(model, 'bot') !== 'napcat') fail.push('机器人站的落点不是 napcat 卡');
+  if (cardAnchor(model, 'self') !== '') fail.push('本机站不该在连接页有落点，实得「' + cardAnchor(model, 'self') + '」');
 
   rows.push([item.name, kinds.join('/'), level.join('/'), fail.length ? '红' : '绿'].join('\t'));
   if (fail.length) bad.push(item.name + '：' + fail.join('；'));
@@ -179,10 +180,23 @@ console.log(['档', '出了哪几张卡', '灯色', '判定'].join('\t'));
 rows.forEach(r => console.log(r));
 console.log('目标名单\t' + OPTIONS.length + ' 条\t手填 4 例\t' + (pickBad.length ? '红' : '绿'));
 
-if (bad.length || pickBad.length) {
-  console.error('\n对不上 ' + (bad.length + pickBad.length) + ' 处：');
+const capBad = [];
+if (accountCaption({accountId: '123', accountName: '柚子'}) !== '已登录 · 柚子 · uid 123') {
+  capBad.push('接口有昵称时应显名，实得「' + accountCaption({accountId: '123', accountName: '柚子'}) + '」');
+}
+if (accountCaption({accountId: '123'}) !== '已登录 · 账号 123') {
+  capBad.push('接口失败只显 uid，实得「' + accountCaption({accountId: '123'}) + '」');
+}
+if (accountCaption({accountId: '123', accountName: '  '}) !== '已登录 · 账号 123') {
+  capBad.push('空白昵称应视同没有，实得「' + accountCaption({accountId: '123', accountName: '  '}) + '」');
+}
+
+if (bad.length || pickBad.length || capBad.length) {
+  console.error('\n对不上 ' + (bad.length + pickBad.length + capBad.length) + ' 处：');
   bad.forEach(b => console.error('  ' + b));
   pickBad.forEach(b => console.error('  目标名单：' + b));
+  capBad.forEach(b => console.error('  昵称：' + b));
   process.exit(1);
 }
-console.log('\n十二档全对，目标名单四例手填全拒');
+console.log('昵称\t阳显名 / 阴显 uid\t' + (capBad.length ? '红' : '绿'));
+console.log('\n十二档全对，目标名单四例手填全拒，昵称两向对照过');

@@ -1345,4 +1345,97 @@ class ConfigUiFrontendTest {
 
         assertTrue(bad.isEmpty(), "插件页只能在运行时按注册清单装载:\n  " + String.join("\n  ", bad));
     }
+
+    /**
+     * 首页链路「本机」站的去处，闭集
+     * <p>
+     * 它必须落到本页健康自检那一张卡，且连接页<b>不加</b>一张与它对应的卡。
+     * 写成去连接页的话，地址栏变了、屏幕没动，看起来像页面卡住了——
+     * 而那种错在任何一次「打开页面看一眼」里都看不出来，因为连接页本身完全正常。
+     */
+    @Test
+    @DisplayName("本机站落到首页探针区，连接页不加卡")
+    void selfStationGoesToHomeProbes() throws IOException {
+        String html = Files.readString(frontendDir().resolve("index.html"), StandardCharsets.UTF_8);
+        Map<String, String> sources = coreSources();
+        String home = sources.getOrDefault("home-model.js", "");
+        String overview = sources.getOrDefault("overview.js", "");
+        String links = sources.getOrDefault("links-model.js", "");
+        String main = sources.getOrDefault("main.js", "");
+
+        List<String> bad = new ArrayList<>();
+        if (!html.contains("id=\"home-probes\"")) {
+            bad.add("index.html 上没有 #home-probes，本机站没有可滚到的那一块");
+        }
+        if (!home.contains("'#/home?card=probes'")) {
+            bad.add("home-model.js 没有本机站的首页探针落点");
+        }
+        if (!home.contains("PROBE_ANCHOR")) {
+            bad.add("home-model.js 没有探针区锚的名字，上面那条落点没有东西可对");
+        }
+        if (!overview.contains("stationHref(")) {
+            bad.add("overview.js 没有问过 stationHref，链路图上点下去走的是别处的账");
+        }
+        if (!main.contains("PROBE_ANCHOR")) {
+            bad.add("main.js 没有按探针区锚去滚，从收藏夹打开 #/home?card=probes 就停在页顶");
+        }
+
+        Matcher stationCard = Pattern.compile("const STATION_CARD\\s*=\\s*\\{([^}]*)}").matcher(links);
+        if (!stationCard.find()) {
+            bad.add("links-model.js 里找不到 STATION_CARD，下面那条「连接页不加卡」无从量起");
+        } else if (stationCard.group(1).contains("self")) {
+            bad.add("连接页给本机站加了卡。本机讲的是这台机器自己的状况，不是一条对外连接");
+        }
+
+        assertTrue(bad.isEmpty(), "本机站的去处不对:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
+     * 设置页与推送页的危险确认走自绘弹层，不再调用原生 confirm()
+     * <p>
+     * 原生那一句没有标题、没有后果、也没有取消／确认的颜色区分。
+     * 改回去的那一下<b>不会让任何功能变坏</b>，因此靠人复查是拦不住的。
+     */
+    @Test
+    @DisplayName("设置页与推送页的危险确认走自绘弹层")
+    void settingsAndPushUsePaintedConfirm() {
+        Map<String, String> sources = coreSources();
+        List<String> bad = new ArrayList<>();
+
+        for (String name : List.of("settings.js", "push.js")) {
+            String code = codeOnly(sources.getOrDefault(name, ""));
+            if (code.contains("confirm(")) {
+                bad.add(name + " 仍在调用原生 confirm()");
+            }
+            if (!code.contains("ask(")) {
+                bad.add(name + " 没有问过 ask，危险确认此刻点了不弹");
+            }
+        }
+
+        String dialog = sources.getOrDefault("confirm.js", "");
+        String model = sources.getOrDefault("confirm-model.js", "");
+        if (dialog.isBlank()) {
+            bad.add("找不到 confirm.js，自绘弹层没有落脚的地方");
+        }
+        if (model.isBlank()) {
+            bad.add("找不到 confirm-model.js，打开／取消／确认没有可测的一份");
+        }
+        if (!dialog.contains("export function ask") && !dialog.contains("export function ask(")) {
+            // export function ask 已在上面的 EXPORT 扫描里；这里再钉调用方引的就是这个名字
+            if (!Pattern.compile("^export\\s+function\\s+ask\\b", Pattern.MULTILINE).matcher(dialog).find()) {
+                bad.add("confirm.js 没有 export ask");
+            }
+        }
+
+        String settingsImport = importedFrom(sources.getOrDefault("settings.js", ""), "confirm.js");
+        if (!settingsImport.contains("ask")) {
+            bad.add("settings.js 用了 ask 却没从 confirm.js 引进来");
+        }
+        String pushImport = importedFrom(sources.getOrDefault("push.js", ""), "confirm.js");
+        if (!pushImport.contains("ask")) {
+            bad.add("push.js 用了 ask 却没从 confirm.js 引进来");
+        }
+
+        assertTrue(bad.isEmpty(), "危险确认弹层少了这几件事:\n  " + String.join("\n  ", bad));
+    }
 }
