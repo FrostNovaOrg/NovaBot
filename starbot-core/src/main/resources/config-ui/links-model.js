@@ -279,6 +279,11 @@ export function targetOptions(groups, friends) {
     options.push({
       key: row.sender + '|1|' + row.num,
       sender: row.sender, type: 1, num: row.num, configured: !!row.configured,
+      // 名与人数、是不是管理员单列，不只拼进 text：推送页要按这几项单独排版
+      // （群名一行、群号与人数一行、管理员一枚药丸），从 text 里再切回来的话，
+      // 切法与拼法迟早分叉，而分叉的表现是群名里多出半截括号
+      name: row.name || '', memberCount: row.memberCount == null ? null : row.memberCount,
+      admin: !!row.admin,
       text: '群 · ' + (row.name || row.num) + '（' + row.num + '）'
         + (row.memberCount ? ' · ' + row.memberCount + ' 人' : ''),
     });
@@ -288,6 +293,8 @@ export function targetOptions(groups, friends) {
     options.push({
       key: row.sender + '|0|' + row.num,
       sender: row.sender, type: 0, num: row.num, configured: !!row.configured,
+      // 备注优先于昵称：备注是这台机器的主人自己写的，昵称是对方随时会改的
+      name: row.remark || row.nickname || '', memberCount: null, admin: false,
       text: '好友 · ' + (row.remark || row.nickname || row.num) + '（' + row.num + '）',
     });
   }

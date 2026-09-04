@@ -19,9 +19,11 @@ import com.starlwr.bot.bilibili.event.live.BilibiliSuperChatEvent;
 import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
 import com.starlwr.bot.bilibili.util.DanmuWordUtil;
 import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
+import com.starlwr.bot.core.model.DanmuRecord;
 import com.starlwr.bot.core.model.UserInfo;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.service.LiveDataService;
+import com.starlwr.bot.core.service.LiveDetailArchive;
 import com.starlwr.bot.core.util.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,9 +47,15 @@ import java.util.Set;
 public class BilibiliLiveStatsAggregator {
     private final LiveDataService liveDataService;
 
+    /**
+     * 弹幕原文留档。逐条追加，与指标累计并列——那边记「有多少」，这边记「说了什么」
+     */
+    private final LiveDetailArchive details;
+
     @Autowired
-    public BilibiliLiveStatsAggregator(LiveDataService liveDataService) {
+    public BilibiliLiveStatsAggregator(LiveDataService liveDataService, LiveDetailArchive details) {
         this.liveDataService = liveDataService;
+        this.details = details;
 
         // jieba 词典首次加载约一秒，事件在直播间消息线程上同步分发，
         // 放到后台线程预热，避免首条弹幕把消息处理卡住
@@ -63,7 +71,9 @@ public class BilibiliLiveStatsAggregator {
     public void onDanmu(BilibiliDanmuEvent event) {
         increment(event, BilibiliLiveMetric.DANMU_COUNT, 1);
         recordUser(event, BilibiliLiveMetric.DANMU_USERS, event.getSender());
-        recordWords(event, StringUtil.isNotBlank(event.getContentText()) ? event.getContentText() : event.getContent());
+        String text = StringUtil.isNotBlank(event.getContentText()) ? event.getContentText() : event.getContent();
+        recordWords(event, text);
+        recordDanmu(event, event.getSender(), text, DanmuRecord.Type.DANMU);
     }
 
     /**
@@ -73,6 +83,10 @@ public class BilibiliLiveStatsAggregator {
     public void onEmoji(BilibiliEmojiEvent event) {
         increment(event, BilibiliLiveMetric.DANMU_COUNT, 1);
         recordUser(event, BilibiliLiveMetric.DANMU_USERS, event.getSender());
+        // 表情包留的是表情的名字而不是图片地址：地址会失效，而名字是这条弹幕的意思所在。
+        // 它与文字弹幕一同计入弹幕条数，所以也一同留原文，否则按原文数出来的密度会比曲线低一截
+        recordDanmu(event, event.getSender(),
+                event.getEmoji() == null ? null : event.getEmoji().getName(), DanmuRecord.Type.EMOJI);
     }
 
     /**
@@ -153,6 +167,8 @@ public class BilibiliLiveStatsAggregator {
         increment(event, BilibiliLiveMetric.SUPER_CHAT_COUNT, 1);
         increment(event, BilibiliLiveMetric.SUPER_CHAT_VALUE, value);
         scoreUser(event, BilibiliLiveMetric.SUPER_CHAT_USERS, event.getSender(), value);
+        // 付费留言也是一句话，同样留原文；类型分开标，密度统计据此把它排除在外
+        recordDanmu(event, event.getSender(), event.getContent(), DanmuRecord.Type.SUPER_CHAT);
     }
 
     /**
@@ -324,6 +340,37 @@ public class BilibiliLiveStatsAggregator {
         // 一张榜十几个人就是十几次请求，那正是排行榜迟迟没能带上头像的原因
         liveDataService.recordLiveUserName(event.getPlatform(), event.getSource().getUid(), sender.getUid(), sender.getUname());
         liveDataService.recordLiveUserFace(event.getPlatform(), event.getSource().getUid(), sender.getUid(), sender.getFace());
+    }
+
+    /**
+     * 留下这一条的原文
+     * <p>
+     * <b>词频表答不出「那一句是什么」</b>：它存的是分词后的结果，
+     * 从「好听×37」拼不回任何一句原话，而这一步是不可逆的。原文留档补上的正是这一段。
+     * <p>
+     * 以<b>开播时刻</b>归入某一场，与场次归档、报告图缓存三者同一个键。
+     * 取不到开播时刻就不留：那种情况下这一场<b>本来也不会被归档</b>
+     * （见下播事件监听器），留下的原文永远没有一场直播认领得了。
+     * <p>
+     * 空文本不留：一条没有内容的记录占着行数，却答不出任何问题。
+     */
+    private void recordDanmu(StarBotBaseLiveEvent event, UserInfo sender, String text, DanmuRecord.Type type) {
+        if (event.getSource() == null || event.getSource().getUid() == null || StringUtil.isBlank(text)) {
+            return;
+        }
+
+        Long uid = event.getSource().getUid();
+        Optional<Long> start = liveDataService.getLiveStartTime(event.getPlatform(), uid);
+        if (start.isEmpty()) {
+            return;
+        }
+
+        details.appendDanmu(event.getPlatform(), uid, start.get(), new DanmuRecord(
+                event.getTimestamp(),
+                sender == null ? null : sender.getUid(),
+                sender == null ? null : sender.getUname(),
+                text,
+                type));
     }
 
     /**

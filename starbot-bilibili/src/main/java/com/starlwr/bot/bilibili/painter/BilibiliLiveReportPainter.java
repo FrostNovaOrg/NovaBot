@@ -248,31 +248,6 @@ public class BilibiliLiveReportPainter {
             DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.of("Asia/Shanghai"));
 
     /**
-     * 最多列出几个高能时刻
-     * <p>
-     * 三个足够指出一场直播的骨架，再多就成了「把曲线又写了一遍」。
-     */
-    private static final int HIGHLIGHT_LIMIT = 3;
-
-    /**
-     * 两个高能时刻之间至少相隔多久
-     */
-    private static final long HIGHLIGHT_MIN_SEPARATION_MILLIS = 5 * 60_000L;
-
-    /**
-     * 高能时刻至少要达到基线的多少倍
-     */
-    private static final double HIGHLIGHT_MIN_RATIO = 3.0;
-
-    /**
-     * 高能时刻的绝对门槛：这一分钟至少要有这么多条弹幕
-     * <p>
-     * 没有这道门槛，一场总共二十条弹幕的冷场也能凑出三个「三倍于基线」的时刻，
-     * 而那三分钟各自只有三条弹幕。<b>冷场就该老实说没有高能片段。</b>
-     */
-    private static final double HIGHLIGHT_MIN_DANMU = 15;
-
-    /**
      * 高能时刻标题的可用宽度，单位像素
      * <p>
      * 比昵称宽松：标题从 {@code MARGIN + 180} 起，占的是到版心右边界的一整段
@@ -854,10 +829,11 @@ public class BilibiliLiveReportPainter {
             return;
         }
 
+        // 判据（几个、隔多远、几倍、最少几条）取自核心的那一份默认值，此处不另抄一套：
+        // 明细留档里的高能时刻走的是同一组数，两边各写一份就会挑出两组不同的时刻
         List<LiveHighlightFinder.Highlight> highlights = LiveHighlightFinder.find(
                 liveDataService.getLiveSeries(platform, uid, BilibiliLiveMetric.DANMU_COUNT),
-                LiveDataService.SERIES_BUCKET_MILLIS, start.get(), end.get(),
-                HIGHLIGHT_LIMIT, HIGHLIGHT_MIN_SEPARATION_MILLIS, HIGHLIGHT_MIN_RATIO, HIGHLIGHT_MIN_DANMU);
+                LiveDataService.SERIES_BUCKET_MILLIS, start.get(), end.get());
         if (highlights.isEmpty()) {
             return;
         }

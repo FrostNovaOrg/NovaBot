@@ -2,195 +2,104 @@ package com.starlwr.bot.core.service;
 
 import com.starlwr.bot.core.model.LiveGap;
 import com.starlwr.bot.core.model.UserScore;
-import com.starlwr.bot.core.util.FaceUrlCodec;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Primary;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
 /**
- * 带累计数据的直播数据服务
+ * 常驻的直播数据服务：本场走本地，累计走可热换的外部存储
  * <p>
- * <b>本场数据仍走 {@link DefaultLiveDataService}</b>——它已在生产稳定运行，
- * 数据量小且随开播清零，没有换掉的理由。Redis 只承担**跨场次累计**：
- * 那部分随时间无限增长，JSON 文件迟早撑不住。
+ * <b>这是唯一一个注册的 {@link LiveDataService}</b>，不再按配置择一。此前是两个实现二选一，
+ * 而选哪一个在启动那一刻就定死了——于是「配好累计存储」与「累计数据真的能用」之间
+ * 隔着一次重启，中途所有界面都在说一句过期的话。
  * <p>
- * 仅在配置了 {@code spring.data.redis.host} 时注册。未配置时累计类查询会明确
- * 回复「需配置 Redis」，而不是静默返回 0——后者会让人以为是数据丢了。
+ * 分工：本场数据一律委托 {@link DefaultLiveDataService}（数据量小、随开播清零，JSON 够用），
+ * 累计数据一律问 {@link TotalDataStorage}（它自己回答此刻配没配、连不连得上）。
  * <p>
- * 键设计：
- * <ul>
- *     <li>{@code nb:total:<platform>:<uid>} — 哈希，字段为指标名，值为累计量</li>
- *     <li>{@code nb:total:user:<platform>:<uid>:<metric>} — 有序集合，成员为用户 UID，分值为累计得分</li>
- *     <li>{@code nb:name:<platform>:<uid>} — 哈希，字段为用户 UID，值为昵称</li>
- *     <li>{@code nb:face:<platform>:<uid>} — 哈希，字段为用户 UID，值为头像地址</li>
- * </ul>
+ * 累计不可用时，这里的行为与「压根没有累计能力」<b>完全一致</b>——
+ * {@link #supportsTotalData()} 回假，各查询回默认值。调用方据此明确告诉使用者
+ * 「本机没开累计数据」，而不是把一片 0 画出来当结论。
  */
 @Slf4j
 @Primary
 @Service
-@ConditionalOnProperty(prefix = "spring.data.redis", name = "host")
-public class RedisLiveDataService implements LiveDataService {
+public class CompositeLiveDataService implements LiveDataService {
     /**
-     * 键前缀。与其他共用同一实例的程序区分开
-     */
-    private static final String PREFIX = "nb:";
-
-    /**
-     * 本场数据委托给 JSON 实现
+     * 本场数据
      */
     private final DefaultLiveDataService delegate;
 
-    private final StringRedisTemplate redis;
+    /**
+     * 累计数据
+     */
+    private final TotalDataStorage total;
 
     @Autowired
-    public RedisLiveDataService(DefaultLiveDataService delegate, StringRedisTemplate redis) {
+    public CompositeLiveDataService(DefaultLiveDataService delegate, TotalDataStorage total) {
         this.delegate = delegate;
-        this.redis = redis;
-        log.info("累计数据存储已启用 (Redis)，「总数据」类查询可用");
+        this.total = total;
     }
 
     // ================ 累计数据 ================
 
     @Override
     public boolean supportsTotalData() {
-        return true;
+        return total.isAvailable();
     }
 
-    /**
-     * 把本场数据并入累计
-     * <p>
-     * 逐项累加而非整体覆盖：同一主播的累计量由历次直播叠加而成。
-     */
     @Override
     public void mergeLiveDataIntoTotal(@NonNull String platform, @NonNull Long uid) {
-        try {
-            for (Map.Entry<String, Double> entry : delegate.liveMetrics(platform, uid).entrySet()) {
-                redis.opsForHash().increment(totalKey(platform, uid), entry.getKey(), entry.getValue());
-            }
-
-            for (Map.Entry<String, Map<Long, Double>> byMetric : delegate.liveUserMetrics(platform, uid).entrySet()) {
-                String key = totalUserKey(platform, uid, byMetric.getKey());
-                for (Map.Entry<Long, Double> entry : byMetric.getValue().entrySet()) {
-                    redis.opsForZSet().incrementScore(key, String.valueOf(entry.getKey()), entry.getValue());
-                }
-            }
-
-            Map<Long, String> names = delegate.liveUserNames(platform, uid);
-            if (!names.isEmpty()) {
-                Map<String, String> byUid = new java.util.HashMap<>();
-                names.forEach((userUid, name) -> byUid.put(String.valueOf(userUid), name));
-                redis.opsForHash().putAll(nameKey(platform, uid), byUid);
-            }
-
-            Map<Long, String> faces = delegate.liveUserFaces(platform, uid);
-            if (!faces.isEmpty()) {
-                Map<String, String> byUid = new java.util.HashMap<>();
-                faces.forEach((userUid, face) -> byUid.put(String.valueOf(userUid), face));
-                redis.opsForHash().putAll(faceKey(platform, uid), byUid);
-            }
-
-            log.info("主播 {} 的本场数据已并入累计", uid);
-        } catch (Exception e) {
-            // 并入失败只影响累计统计，不该波及下播推送本身
-            log.error("把主播 {} 的本场数据并入累计时异常", uid, e);
+        RedisTotalDataStore store = total.active();
+        if (store == null) {
+            // 没开这个能力时下播不该报错：本场报告照发，只是没有「累计」那几行
+            return;
         }
+
+        store.merge(platform, uid, new RedisTotalDataStore.LiveSnapshot(
+                delegate.liveMetrics(platform, uid),
+                delegate.liveUserMetrics(platform, uid),
+                delegate.liveUserNames(platform, uid),
+                delegate.liveUserFaces(platform, uid)));
     }
 
     @Override
     public double getTotalMetric(@NonNull String platform, @NonNull Long uid, @NonNull String metric) {
-        try {
-            Object value = redis.opsForHash().get(totalKey(platform, uid), metric);
-            return value == null ? 0 : Double.parseDouble(String.valueOf(value));
-        } catch (Exception e) {
-            log.error("读取主播 {} 的累计指标 {} 异常", uid, metric, e);
-            return 0;
-        }
+        RedisTotalDataStore store = total.active();
+        return store == null ? 0 : store.getTotalMetric(platform, uid, metric);
     }
 
     @Override
     public double getTotalUserMetric(@NonNull String platform, @NonNull Long uid, @NonNull String metric,
                                      @NonNull Long userUid) {
-        try {
-            Double score = redis.opsForZSet().score(totalUserKey(platform, uid, metric), String.valueOf(userUid));
-            return score == null ? 0 : score;
-        } catch (Exception e) {
-            log.error("读取用户 {} 在主播 {} 的累计得分异常", userUid, uid, e);
-            return 0;
-        }
+        RedisTotalDataStore store = total.active();
+        return store == null ? 0 : store.getTotalUserMetric(platform, uid, metric, userUid);
     }
 
     @Override
     public List<UserScore> getTotalUserRanking(@NonNull String platform, @NonNull Long uid,
                                                @NonNull String metric, int limit) {
-        if (limit <= 0) {
-            return List.of();
-        }
-
-        try {
-            // zset 自带排序，取前 N 名是 O(log n + N)，不必像 JSON 那样全量取出再排
-            Set<ZSetOperations.TypedTuple<String>> top =
-                    redis.opsForZSet().reverseRangeWithScores(totalUserKey(platform, uid, metric), 0, limit - 1);
-            if (top == null || top.isEmpty()) {
-                return List.of();
-            }
-
-            List<UserScore> result = new ArrayList<>(top.size());
-            for (ZSetOperations.TypedTuple<String> tuple : top) {
-                String member = tuple.getValue();
-                if (member == null) {
-                    continue;
-                }
-                try {
-                    Long userUid = Long.parseLong(member);
-                    Object name = redis.opsForHash().get(nameKey(platform, uid), member);
-                    Object face = redis.opsForHash().get(faceKey(platform, uid), member);
-                    result.add(new UserScore(userUid, name == null ? null : String.valueOf(name),
-                            face == null ? null : FaceUrlCodec.expand(String.valueOf(face)),
-                            Optional.ofNullable(tuple.getScore()).orElse(0.0)));
-                } catch (NumberFormatException ignored) {
-                    // 手工写入等情况下可能混入非法成员，跳过即可
-                }
-            }
-            return result;
-        } catch (Exception e) {
-            log.error("读取主播 {} 的累计排行榜 {} 异常", uid, metric, e);
-            return List.of();
-        }
+        RedisTotalDataStore store = total.active();
+        return store == null ? List.of() : store.getTotalUserRanking(platform, uid, metric, limit);
     }
 
     @Override
     public int getTotalUserRank(@NonNull String platform, @NonNull Long uid, @NonNull String metric,
                                 @NonNull Long userUid) {
-        try {
-            Long rank = redis.opsForZSet().reverseRank(totalUserKey(platform, uid, metric), String.valueOf(userUid));
-            // zset 的名次从 0 开始，对外统一成从 1 开始；成员不存在时返回 null
-            return rank == null ? 0 : rank.intValue() + 1;
-        } catch (Exception e) {
-            log.error("读取用户 {} 在主播 {} 的累计名次异常", userUid, uid, e);
-            return 0;
-        }
+        RedisTotalDataStore store = total.active();
+        return store == null ? 0 : store.getTotalUserRank(platform, uid, metric, userUid);
     }
 
     @Override
     public int getTotalMetricUserCount(@NonNull String platform, @NonNull Long uid, @NonNull String metric) {
-        try {
-            Long size = redis.opsForZSet().size(totalUserKey(platform, uid, metric));
-            return size == null ? 0 : size.intValue();
-        } catch (Exception e) {
-            log.error("读取主播 {} 的累计参与人数 {} 异常", uid, metric, e);
-            return 0;
-        }
+        RedisTotalDataStore store = total.active();
+        return store == null ? 0 : store.getTotalMetricUserCount(platform, uid, metric);
     }
 
     // ================ 本场数据一律委托 ================
@@ -325,7 +234,7 @@ public class RedisLiveDataService implements LiveDataService {
     }
 
     /**
-     * 本场名单同样走本地委托：Redis 只存跨场累计，本场数据一律在本地。
+     * 本场名单同样走本地委托：外部存储只存跨场累计，本场数据一律在本地。
      * 与人数那一对方法保持同一条路径，避免两者读到不同的数据源。
      */
     @Override
@@ -361,6 +270,11 @@ public class RedisLiveDataService implements LiveDataService {
     }
 
     @Override
+    public Set<String> getLiveSeriesMetrics(@NonNull String platform, @NonNull Long uid) {
+        return delegate.getLiveSeriesMetrics(platform, uid);
+    }
+
+    @Override
     public void incrementLiveWordFrequency(@NonNull String platform, @NonNull Long uid, @NonNull String word) {
         delegate.incrementLiveWordFrequency(platform, uid, word);
     }
@@ -368,21 +282,5 @@ public class RedisLiveDataService implements LiveDataService {
     @Override
     public Map<String, Integer> getLiveWordFrequencies(@NonNull String platform, @NonNull Long uid) {
         return delegate.getLiveWordFrequencies(platform, uid);
-    }
-
-    private String totalKey(String platform, Long uid) {
-        return PREFIX + "total:" + platform + ":" + uid;
-    }
-
-    private String totalUserKey(String platform, Long uid, String metric) {
-        return PREFIX + "total:user:" + platform + ":" + uid + ":" + metric;
-    }
-
-    private String nameKey(String platform, Long uid) {
-        return PREFIX + "name:" + platform + ":" + uid;
-    }
-
-    private String faceKey(String platform, Long uid) {
-        return PREFIX + "face:" + platform + ":" + uid;
     }
 }

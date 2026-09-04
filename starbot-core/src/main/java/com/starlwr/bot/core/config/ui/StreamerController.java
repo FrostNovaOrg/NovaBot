@@ -2,6 +2,7 @@ package com.starlwr.bot.core.config.ui;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.starlwr.bot.core.analytics.LiveDetail;
 import com.starlwr.bot.core.analytics.LiveMetricCatalog;
 import com.starlwr.bot.core.analytics.LiveSessionAnalytics;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
@@ -9,7 +10,9 @@ import com.starlwr.bot.core.model.LiveSession;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.model.StreamerSnapshot;
 import com.starlwr.bot.core.service.LiveDataService;
+import com.starlwr.bot.core.service.LiveDetailArchive;
 import com.starlwr.bot.core.service.LiveReportArchive;
+import com.starlwr.bot.core.service.LiveReportRedrawer;
 import com.starlwr.bot.core.service.LiveSessionArchive;
 import com.starlwr.bot.core.service.StreamerDirectory;
 import com.starlwr.bot.core.service.StreamerSnapshotArchive;
@@ -91,9 +94,19 @@ public class StreamerController {
     private final LiveReportArchive reports;
 
     /**
+     * 每场明细。报告图缓存过期后，那一场靠它重画
+     */
+    private final LiveDetailArchive details;
+
+    /**
      * 各平台插件提供的指标说明，取法与运营分析一致（插件的 Bean 定义延迟注册）
      */
     private final ObjectProvider<LiveMetricCatalog> catalogs;
+
+    /**
+     * 各平台插件提供的报告重绘实现，取法同上
+     */
+    private final ObjectProvider<LiveReportRedrawer> redrawers;
 
     private final LiveSessionAnalytics analytics = new LiveSessionAnalytics();
 
@@ -106,14 +119,18 @@ public class StreamerController {
                               LiveSessionArchive archive,
                               StreamerSnapshotArchive snapshots,
                               LiveReportArchive reports,
-                              ObjectProvider<LiveMetricCatalog> catalogs) {
+                              LiveDetailArchive details,
+                              ObjectProvider<LiveMetricCatalog> catalogs,
+                              ObjectProvider<LiveReportRedrawer> redrawers) {
         this.dataSource = dataSource;
         this.directory = directory;
         this.liveDataService = liveDataService;
         this.archive = archive;
         this.snapshots = snapshots;
         this.reports = reports;
+        this.details = details;
         this.catalogs = catalogs;
+        this.redrawers = redrawers;
     }
 
     /**
@@ -224,10 +241,17 @@ public class StreamerController {
                                     @PathVariable long start) {
         Optional<byte[]> image = reports.read(platform, uid, start);
 
+        // 缓存里没有就从明细重画。图是缓存、会过期，而明细是原始数据、永久留着——
+        // 一场几个月前的直播点开时，走的正是这一条路
+        if (image.isEmpty()) {
+            image = redraw(platform, uid, start);
+        }
+
         if (image.isEmpty()) {
             JSONObject missing = new JSONObject();
             missing.put("success", false);
-            missing.put("message", "这一场没有留下报告图：可能没开下播报告，也可能当时报告没画出来、改发了文字版");
+            missing.put("message", "这一场没有报告图，也没有留下明细数据，重新绘制不出来："
+                    + "可能没开下播报告，也可能这一场早于「每场留明细」这个功能");
             return ResponseEntity.status(404).contentType(MediaType.APPLICATION_JSON).body(missing);
         }
 
@@ -236,6 +260,33 @@ public class StreamerController {
                 // 同一场的图会被「金额可见的那份优先」覆盖一次，缓存住会让人看到被覆盖前的那张
                 .cacheControl(CacheControl.noStore())
                 .body(image.get());
+    }
+
+    /**
+     * 从明细重画一场的报告
+     * <p>
+     * 重画出来的图<b>不再写回缓存</b>：写回去就等于「看过一次的老场次永久占着磁盘」，
+     * 而缓存期限本来就是为了不让它这样。重画一次的代价是几百毫秒，
+     * 比一年后还留着几 GB 成品图划算。
+     * <p>
+     * 没有对应平台的重画实现时为空——那时它与「没有明细」在结果上一样，都是 404。
+     * <b>但两者的日志不同</b>：一个是「这台机器没装这个平台的插件」，一个是「这一场没数据」。
+     */
+    private Optional<byte[]> redraw(String platform, Long uid, long start) {
+        Optional<LiveDetail> detail = details.read(platform, uid, start);
+        if (detail.isEmpty()) {
+            return Optional.empty();
+        }
+
+        Optional<LiveReportRedrawer> redrawer = redrawers.orderedStream()
+                .filter(one -> platform.equals(one.platform()))
+                .findFirst();
+        if (redrawer.isEmpty()) {
+            log.debug("没有 {} 平台的报告重绘实现, 这一场只能等缓存", platform);
+            return Optional.empty();
+        }
+
+        return redrawer.get().redraw(detail.get());
     }
 
     /**
@@ -431,8 +482,11 @@ public class StreamerController {
         for (LiveSession session : ordered.subList(from, to)) {
             JSONObject item = LiveSessionJson.of(session);
             // 这一行点不点得开，问留档要而不是照「配没配下播报告」推断：
-            // 配了也可能画失败改发了文字版，那一场就是没有图
-            item.put("hasReport", reports.has(platform, uid, session.startTime()));
+            // 配了也可能画失败改发了文字版，那一场就是没有图。
+            // 明细在也算点得开——图是缓存、会过期，而有明细就重画得出来，
+            // 只按缓存判的话，超过缓存期的场次会整批变成点不开，而它们其实都还在
+            item.put("hasReport", reports.has(platform, uid, session.startTime())
+                    || details.has(platform, uid, session.startTime()));
             items.add(item);
         }
 

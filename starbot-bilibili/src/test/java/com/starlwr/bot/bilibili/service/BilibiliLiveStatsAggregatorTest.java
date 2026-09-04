@@ -19,14 +19,19 @@ import com.starlwr.bot.core.model.GiftInfo;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.UserScore;
 import com.starlwr.bot.core.model.UserInfo;
+import com.starlwr.bot.core.model.DanmuRecord;
 import com.starlwr.bot.core.service.DefaultLiveDataService;
+import com.starlwr.bot.core.service.LiveDetailArchive;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 本场直播数据聚合器测试
@@ -39,14 +44,29 @@ class BilibiliLiveStatsAggregatorTest {
 
     private static final LiveStreamerInfo STREAMER = new LiveStreamerInfo(10001L, "主播甲", 20002L);
 
+    /**
+     * 弹幕原文要落盘，给它一个临时目录
+     * <p>
+     * 🔴 不给的话，{@code liveDataPath} 的默认值 {@code data.json} 没有父目录，
+     * 明细会落到<b>进程的当前目录</b>——跑一次测试就在仓库里长出一个 {@code details/}。
+     */
+    @TempDir
+    Path dir;
+
     private DefaultLiveDataService liveDataService;
+
+    private LiveDetailArchive details;
 
     private BilibiliLiveStatsAggregator aggregator;
 
     @BeforeEach
     void setUp() {
-        liveDataService = new DefaultLiveDataService(new StarBotCoreProperties());
-        aggregator = new BilibiliLiveStatsAggregator(liveDataService);
+        StarBotCoreProperties properties = new StarBotCoreProperties();
+        properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
+
+        liveDataService = new DefaultLiveDataService(properties);
+        details = new LiveDetailArchive(properties);
+        aggregator = new BilibiliLiveStatsAggregator(liveDataService, details);
     }
 
     @Test
@@ -334,6 +354,67 @@ class BilibiliLiveStatsAggregatorTest {
 
         assertEquals(1.0, metric(BilibiliLiveMetric.DANMU_COUNT));
         assertEquals(0, users(BilibiliLiveMetric.DANMU_USERS));
+    }
+
+    // ---------------------------------------------------------------- 弹幕原文留档
+
+    @Test
+    @DisplayName("弹幕原文逐条留下：文字、表情、付费留言各标各的类型")
+    void keepsRawDanmuByType() {
+        long start = 1_700_000_000_000L;
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+
+        aggregator.onDanmu(new BilibiliDanmuEvent(STREAMER, user(1L), "好听", "好听"));
+        aggregator.onEmoji(new BilibiliEmojiEvent(STREAMER, user(2L),
+                new com.starlwr.bot.core.model.EmojiInfo("1", "笑哭", "https://pic.example.invalid/e.png")));
+        aggregator.onSuperChat(new BilibiliSuperChatEvent(STREAMER, user(3L), "谢谢主播", 30.0));
+
+        List<DanmuRecord> records = details.readDanmu(PLATFORM, STREAMER.getUid(), start);
+
+        assertEquals(3, records.size());
+        assertEquals(List.of("好听", "笑哭", "谢谢主播"), records.stream().map(DanmuRecord::text).toList());
+        assertEquals(List.of(DanmuRecord.Type.DANMU, DanmuRecord.Type.EMOJI, DanmuRecord.Type.SUPER_CHAT),
+                records.stream().map(DanmuRecord::type).toList());
+        assertEquals("用户1", records.get(0).uname(), "昵称要记当时的值——昵称会改, 事后再查是另一个名字");
+    }
+
+    @Test
+    @DisplayName("按原文数出来的弹幕密度，与弹幕条数同口径")
+    void rawDanmuMatchesTheDanmuCount() {
+        long start = 1_700_000_000_000L;
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+
+        aggregator.onDanmu(new BilibiliDanmuEvent(STREAMER, user(1L), "一", "一"));
+        aggregator.onEmoji(new BilibiliEmojiEvent(STREAMER, user(2L),
+                new com.starlwr.bot.core.model.EmojiInfo("1", "笑哭", "https://pic.example.invalid/e.png")));
+        aggregator.onSuperChat(new BilibiliSuperChatEvent(STREAMER, user(3L), "谢谢主播", 30.0));
+
+        long counted = details.readDanmu(PLATFORM, STREAMER.getUid(), start).stream()
+                .filter(DanmuRecord::countsAsDanmu).count();
+
+        assertEquals((long) metric(BilibiliLiveMetric.DANMU_COUNT), counted,
+                "表情包计入弹幕条数, 付费留言不计——原文这一侧漏了表情, "
+                        + "按原文算出来的高能时刻就会比曲线上的峰低一截");
+    }
+
+    @Test
+    @DisplayName("没记到开播时刻就不留原文——留下的原文没有一场直播认领得了")
+    void noStartTimeNoRawDanmu() {
+        aggregator.onDanmu(new BilibiliDanmuEvent(STREAMER, user(1L), "开播前", "开播前"));
+
+        assertTrue(details.list().isEmpty());
+    }
+
+    @Test
+    @DisplayName("空弹幕不占一行：一条没有内容的记录答不出任何问题")
+    void blankTextIsNotArchived() {
+        long start = 1_700_000_000_000L;
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+
+        aggregator.onDanmu(new BilibiliDanmuEvent(STREAMER, user(1L), "", ""));
+        aggregator.onEmoji(new BilibiliEmojiEvent(STREAMER, user(2L), null));
+
+        assertTrue(details.readDanmu(PLATFORM, STREAMER.getUid(), start).isEmpty());
     }
 
     private double metric(String name) {

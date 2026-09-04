@@ -102,9 +102,18 @@ class UnfilledDatasourceEntryTest {
         // 追加一次，这串就不再是「那次改动之前的实值」，而是「上次谁改完之后的样子」。
         // 撤掉的栏没有这条路可走：摘名摘的是「实际有、基线里没有」的那一侧，
         // 而撤栏正好相反，只能改基线串本身——见 FILLED_STATE_BEFORE 那一段
-        JSONObject rest = new JSONObject(state);
+        // 深拷一份再摘：摘的是会话里那两栏，直接在 state 上动的话，下面那句读到的就不是接口原样了
+        JSONObject rest = JSONObject.parseObject(state.toJSONString());
         rest.remove("incomplete");
         rest.remove("totalDataAvailable");
+
+        // 会话里后添的两栏（本会话的菜单里不列哪几条、以及各自的说明）同样只摘名
+        JSONArray sessions = rest.getJSONArray("sessions");
+        for (int i = 0; i < sessions.size(); i++) {
+            sessions.getJSONObject(i).remove("menuHidden");
+            sessions.getJSONObject(i).remove("menuNotes");
+        }
+
         assertEquals(FILLED_STATE_BEFORE, rest.toJSONString(),
                 "填好的配置在控制台上的读数变了：这一改动本不该碰到它");
 

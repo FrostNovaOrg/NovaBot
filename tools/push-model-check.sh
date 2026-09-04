@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# QQ 推送页视图模型的逐档尺：喂几份接口回包，逐档核对这一页该长成什么样
+#
+# 依据：5.1 定稿包场景清单第五节「通道页四段／命令组／添加通道」与推送页原型。
+# 这些情形在真机上凑齐一次的代价极高（命令被群管理员关掉要先去群里发一条「禁用命令」，
+# 累计数据没开要去改线上存储配置，@全体成员 那一档要把几位主播的模板都改一遍）。
+# 视图模型因此被切成纯函数（config-ui/push-model.js，不碰 DOM），本尺喂它几份回包对答案。
+#
+# 顺带把这一页那几个前端模块过一遍语法。
+#
+# 🔴 用 `node --input-type=module --check < 文件` 而不是 `node --check 文件`：
+#    后者对含 import 的 .js 一律返 0（Node v22 实测），也就是说那一格从来没能红过——
+#    一把量不动却报绿的判据，比没有这把判据更糟。本尺自带阴性对照：
+#    把一段必定语法错的模块喂进去，它必须红；不红就说明这一格又量不动了，整尺判红。
+#
+# 退码：0 全对；1 有档对不上、有模块语法不过、或阴性对照不红；2 环境不具备（没装 node）。
+
+set -uo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT" || exit 2
+
+if ! command -v node > /dev/null 2>&1; then
+    echo "未找到 node，本尺跑不了（它量的是浏览器里那份逻辑）" >&2
+    exit 2
+fi
+
+UI="starbot-core/src/main/resources/config-ui"
+RED=0
+
+# —— 阴性对照：这一格自己得先证明它分得出红绿 ——
+# 放在语法检查之前：这几行要是恒绿，下面那一串「语法 绿」一个字也不作数
+if printf 'import {a} from "./x.js";\nconst b = ;;;\n' | node --input-type=module --check > /dev/null 2>&1; then
+    echo "阴性对照 红：一段必定语法错的模块被判成了过，这一格量不动" >&2
+    RED=1
+else
+    echo "阴性对照 绿（必错的模块确实被判红）"
+fi
+
+# —— 语法 ——
+# 逐个跑而不是一次传多个：一次传一串时，后面那些是「查过了」还是「没轮到」分不出来
+for f in "$UI"/push-model.js "$UI"/push.js "$UI"/sessions.js "$UI"/links-model.js "$UI"/main.js; do
+    if node --input-type=module --check < "$f" > /dev/null 2>&1; then
+        echo "语法 绿 $f"
+    else
+        echo "语法 红 $f"
+        node --input-type=module --check < "$f"
+        RED=1
+    fi
+done
+
+# —— 各档 ——
+# 退码单独读：写成管道时 $? 读到的是管道末端那个命令的退码，与被测无关
+node tools/push-model-check.mjs
+if [ $? -ne 0 ]; then
+    RED=1
+fi
+
+exit "$RED"

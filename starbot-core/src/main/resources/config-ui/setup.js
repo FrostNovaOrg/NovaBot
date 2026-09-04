@@ -592,7 +592,7 @@ function stepStreamer(host) {
     '填主播的 uid，或者直接粘贴他的个人空间链接。');
 
   // 装了哪些直播平台是运行期才知道的事，三种情形都要说清楚——
-  // 与推送页那一行同一条规矩（见 push.js 的 renderPlatforms）
+  // 与推送页「添加主播」那个面板同一条规矩（见 push.js 的 addStreamer）
   const known = store.platforms || [];
   if (!known.length) {
     host.appendChild(note('warn', '没有装任何直播平台插件，加不了主播。'));

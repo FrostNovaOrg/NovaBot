@@ -7,6 +7,7 @@ import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.enums.LiveEndReason;
 import com.starlwr.bot.core.model.LiveSession;
 import com.starlwr.bot.core.model.RoomInfoSnapshot;
+import com.starlwr.bot.core.model.SeriesPeak;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -184,7 +185,11 @@ public class LiveSessionArchive {
                     parseUserSets(json.getJSONObject("userSets")),
                     // 单房断线缺口。与上面的程序停机缺口分开存、不相加：
                     // 停机期间所有房间都在断，两段重叠，相加就是重复计数
-                    json.getLongValue("roomOutageSeconds"));
+                    json.getLongValue("roomOutageSeconds"),
+                    // 峰值。本版之前的记录没有这一项，缺失读成空表——同样是「不知道」而不是「最高 0」：
+                    // 那时候序列没留下来，事后补不出来，界面上该显示「—」。
+                    // 分析侧必须用 LiveSession.hasPeaks() 把两者分开
+                    parsePeaks(json.getJSONObject("peaks")));
         } catch (Exception e) {
             log.debug("跳过归档中无法解析的一行: {}", e.getMessage());
             return null;
@@ -238,6 +243,30 @@ public class LiveSessionArchive {
                 }
             }
             result.put(metric, uids);
+        }
+        return result;
+    }
+
+    /**
+     * 解析各条序列的峰值，缺失或格式不符时为空表
+     * <p>
+     * ⚠️ <b>缺时刻的那一项整条跳过，不补一个 0 进去</b>：
+     * 「峰值 137，出现在开播那一刻」是一句会被人当真的假话，
+     * 而少一项至少还看得出这一条没有。
+     */
+    private Map<String, SeriesPeak> parsePeaks(JSONObject raw) {
+        if (raw == null || raw.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<String, SeriesPeak> result = new HashMap<>();
+        for (String metric : raw.keySet()) {
+            JSONObject peak = raw.getJSONObject(metric);
+            if (peak == null || !peak.containsKey("at") || !peak.containsKey("value")) {
+                log.debug("跳过归档中形状不符的峰值项: {}", metric);
+                continue;
+            }
+            result.put(metric, new SeriesPeak(peak.getLongValue("at"), peak.getDoubleValue("value")));
         }
         return result;
     }

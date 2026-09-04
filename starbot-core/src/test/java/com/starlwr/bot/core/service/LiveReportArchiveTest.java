@@ -18,7 +18,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 下播报告留档测试
  * <p>
- * 这份留档是「场次可点开看报告」唯一的数据来源。三件事必须钉死：
+ * 这份留档是场次点开时的<b>缓存</b>（本版改口，此前是唯一数据来源；过期删掉之后
+ * 从 {@link LiveDetailArchive} 的明细重画）。三件事必须钉死：
  * 键要与场次归档同源（否则点开的是另一场）、平台名不许把路径撬开
  * （它是从请求路径里来的）、一场只留一份且留下的是信息最全的那一份。
  */
@@ -27,11 +28,13 @@ class LiveReportArchiveTest {
     @TempDir
     Path dir;
 
+    private StarBotCoreProperties properties;
+
     private LiveReportArchive archive;
 
     @BeforeEach
     void setUp() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        properties = new StarBotCoreProperties();
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
         archive = new LiveReportArchive(properties);
     }
@@ -109,6 +112,31 @@ class LiveReportArchiveTest {
 
         assertEquals(1, dir.resolve("reports").toFile().list().length,
                 "半张 PNG 与「图坏了」在界面上分不出来, 所以先写临时文件再原子改名");
+    }
+
+    @Test
+    @DisplayName("缓存过期按开播时刻删，默认 30 天；认不出名字的文件不动")
+    void purgesOnStartup() {
+        // 时刻取一次记在局部里：两处各调一次 currentTimeMillis 的话，存的与查的会是两个文件名
+        long old = System.currentTimeMillis() - 40L * 86_400_000L;
+        long fresh = System.currentTimeMillis() - 86_400_000L;
+        archive.store("bilibili", 1001L, old, png("旧图"), true);
+        archive.store("bilibili", 1001L, fresh, png("新图"), true);
+
+        archive.purgeOnStartup();
+
+        assertEquals(30, properties.getLive().getReportCacheDays(), "默认缓存 30 天");
+        assertFalse(archive.has("bilibili", 1001L, old), "40 天前那一场的图该删, 它重画得出来");
+        assertTrue(archive.has("bilibili", 1001L, fresh));
+    }
+
+    @Test
+    @DisplayName("落盘那一步不清理：开播时刻已在缓存窗口外的一场，不会把自己刚存的图当场删掉")
+    void storeDoesNotPurgeWhatItJustWrote() {
+        archive.store("bilibili", 1001L, 1757000000000L, png("一张图"), true);
+
+        assertTrue(archive.has("bilibili", 1001L, 1757000000000L),
+                "写与删同在一次调用里的话, 删掉的理由还看起来完全正当");
     }
 
     private byte[] png(String content) {

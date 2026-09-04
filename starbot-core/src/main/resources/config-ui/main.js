@@ -8,8 +8,8 @@ import {bindBotForm, botFormHtml, fillBotForms} from './bot.js';
 import {$, api, el, esc, markDirty, say} from './core.js';
 import {focusStation, loadTargets, mountLinkCard, refreshLinks, sendTestMessage} from './links.js';
 import {loadLog, stopFollow, syncLogView} from './log.js';
-import {loadHistory, loadState, refreshHome, renderStatus, runSelfTest, togglePush} from './overview.js';
-import {addStreamer, decoratePushData, renderPlatforms, renderStreamers, serializePush} from './push.js';
+import {refreshHome, renderStatus, runSelfTest, togglePush} from './overview.js';
+import {decoratePushData, loadPushPage, renderStreamers, serializePush, showPush} from './push.js';
 import {setAuthState} from './settings-auth.js';
 import {copyConfigPath, discard, filterSettings, renderConfigPath, renderGeneral, save, toggleKeyNames}
   from './settings.js';
@@ -152,7 +152,6 @@ export async function load() {
     store.senderList = st.senders || [];
     // 能添加哪些平台的主播由已注册的数据源服务决定，界面不替任何一个平台作主
     store.platforms = p.platforms || [];
-    renderPlatforms();
     // 推送配置解析不了是这一趟里唯一「载入成功了但有话要说」的情况。
     // 记一位是因为末尾那句 say('') 会把状态栏清空——不记的话，这条提示刚显示就被自己抹掉
     let pushBroken = false;
@@ -173,8 +172,7 @@ export async function load() {
     renderStreamers();
     decoratePushData();
     refreshPages();
-    loadHistory();
-    loadState();
+    loadPushPage();
     // 首页要三份数据一起算，与这一趟里的 /status 各取各的：它那一趟晚一点回来，
     // 画出来的是更新的一份，不会与这里的运行状态互相矛盾
     refreshHome();
@@ -236,8 +234,8 @@ let later = false;
  *
  * 问号后面那一段是「进去之后看哪一块」（#/links?card=platform），不参与认页——
  * 拿它一起去查路由表的话，带参数的地址一律认不出来，于是全掉回首页。
- * @return {{name: string, sub: string, card: string, redirect: string}}
- *         路由名、子路由（插件页标识）、要看的那一块、旧地址该转去哪
+ * @return {{name: string, sub: string, tail: string, card: string, redirect: string}}
+ *         路由名、子路由（插件页标识 / 主播）、第三段（通道号）、要看的那一块、旧地址该转去哪
  */
 function parseHash() {
   const raw = (location.hash || '').replace(/^#\/?/, '');
@@ -252,6 +250,10 @@ function parseHash() {
   return {
     name: PAGE_TAB[name] ? name : 'home',
     sub: parts[1] || '',
+    // 推送页有三段：#/push/<主播>/<通道号>。第三段只这一页用得上，
+    // 但解析放在这里而不是那一页自己再切一遍地址栏——两处各切一遍的话，
+    // 「认页」与「认页里的哪一个」会按两套规则来
+    tail: parts[2] || '',
     card: card ? card[1] : '',
     // 名字不叫 legacy：那个词是 store 上一份共享状态的名字（按旧位置生效的配置项），
     // 在界面文件里裸着出现即为 ReferenceError，因此有一条判据在盯着它——它当场逮住了这一处
@@ -267,7 +269,7 @@ function parseHash() {
  * @param withData 是否顺带重取本页的数据。首屏那一次只摆版式，数据由随后的整体载入取
  */
 function applyRoute(withData = true) {
-  const {name, sub, card, redirect} = parseHash();
+  const {name, sub, tail, card, redirect} = parseHash();
 
   // 旧地址转到它现在所在的页。改地址会再触发一次 hashchange，这一趟到此为止
   if (redirect) {
@@ -299,6 +301,9 @@ function applyRoute(withData = true) {
   // 离开初始设置页就停掉那一页等扫码的轮询：不停的话，使用者点去连接页看一眼，
   // 那一页还在每 3 秒问一次登录状态，而它已经不在屏幕上了
   if (route === 'setup' && name !== 'setup') stopSetupPolling();
+  // 是不是刚从别的页进来。推送页在页内换选中项也走改地址栏这条路，
+  // 每换一次都重取一遍名单与额度的话，点树上一行要等四个请求回来才动
+  const entering = route !== name;
   route = name;
 
   document.querySelectorAll('#nav a').forEach(a => {
@@ -314,6 +319,9 @@ function applyRoute(withData = true) {
   // 日志页有两半（时间线与工程日志），哪一半该显示由地址栏定，与取不取数据无关——
   // 合进下面那一趟的话，直接打开 #/log/eng 会先闪一下时间线那一半
   if (name === 'log') syncLogView();
+  // 推送页选中的是哪一位主播、哪一个通道同理：它只由地址栏定，与取不取数据无关。
+  // 合进下面那一趟的话，点树上一行会先闪一下上一次选中的那一页
+  if (name === 'push') showPush(sub, tail);
   // 插件页是折起来的，点它的入口进来时要替使用者展开，否则地址对了而屏幕上什么都没变
   if (plugin) $('#plugin-adv').open = true;
 
@@ -332,9 +340,9 @@ function applyRoute(withData = true) {
   clearTimeout(store.accountTimer);
   // 首页三份数据一起取，见 refreshHome
   if (name === 'home') { refreshHome(); refreshPages(); }
-  // 每次进入都重取：群里随时可能有人订阅或关掉命令，缓存的画面会误导人；
-  // 最近推送那张表随首页改版挪到了本页，因此跟着这一页刷
-  else if (name === 'push') { loadState(); loadHistory(); }
+  // 每次进入都重取：群里随时可能有人订阅或关掉命令，缓存的画面会误导人。
+  // 页内换选中项不重取——那一下没有任何东西会变，重取只是让点一行慢四个请求
+  else if (name === 'push') { if (entering) loadPushPage(); }
   else if (name === 'streamers') { loadAnalytics(); api('/status').then(renderStatus); }
   // 每次进入都重建只读口令那一块：顺带抹掉上一次留在屏幕上的口令明文。
   // 三张卡与名单跟着一起重取——群随时会被踢，缓存的名单会让人对着一个已经不在的群发测试消息
@@ -382,14 +390,14 @@ $('#setup-later').addEventListener('click', () => { later = true; });
 // 让机器人重新去问一遍：群是随时会变的，而缓存住的名单会让人对着一个已经退了的群发测试消息
 $('#test-refresh').addEventListener('click', () => loadTargets(true));
 $('#selftest-run').addEventListener('click', runSelfTest);
+// 「添加主播」与整棵树的接线都在 push.js 里：它建出来的那些控件不写在 index.html 上，
+// 在这里按 id 取只会取到 null
 // 搜索与「只看改过的」只改可见性，不重绘：重绘会丢掉正在编辑的那一格，
 // 而使用者常常是一边改一边搜下一项
 $('#set-search').addEventListener('input', filterSettings);
 $('#only-changed').addEventListener('change', filterSettings);
 $('#show-keys').addEventListener('change', toggleKeyNames);
 $('#toggle-push').addEventListener('click', togglePush);
-$('#add-streamer').addEventListener('click', addStreamer);
-$('#add-uid').addEventListener('keydown', e => { if (e.key === 'Enter') addStreamer(); });
 $('#ana-view').addEventListener('change', loadAnalytics);
 $('#ana-period').addEventListener('change', loadAnalytics);
 $('#ana-uid').addEventListener('change', loadAnalytics);

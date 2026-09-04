@@ -1,6 +1,7 @@
 package com.starlwr.bot.core.painter;
 
 import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.model.TextWithStyle;
 import com.starlwr.bot.core.util.FontUtil;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -51,6 +52,12 @@ class CommonPainterCopyrightTest {
 
     private static final String VERSION = "4.3.0";
 
+    /**
+     * 版权行的字号：<b>脚注档</b>（比正文档小一档）。数字写死在判据侧——
+     * 这一行是出处不是内容，正文档的宽度在 900 宽的图上几乎顶到左边
+     */
+    private static final int COPYRIGHT_FONT_SIZE = 25;
+
     private CapturingPainter painter;
 
     @BeforeAll
@@ -85,7 +92,7 @@ class CommonPainterCopyrightTest {
         //    而「没画」和「画错了」在一条 anyMatch 上长得一样
         assertFalse(painter.drawn.isEmpty(), "版权行一条都没画，这一格就什么都没量到");
 
-        assertEquals(List.of("Running on NovaBot v" + VERSION + " · " + REPOSITORY), painter.drawn,
+        assertEquals(List.of("NovaBot v" + VERSION + " · " + REPOSITORY), painter.drawn,
                 "版权行不是约定的那一行");
 
         // 分开再钉一次：上面那条整行相等的断言一旦被谁改宽，这两条仍然拦得住
@@ -94,6 +101,8 @@ class CommonPainterCopyrightTest {
                 "版权行该带着产品名与版本");
         assertTrue(painter.drawn.stream().anyMatch(text -> text.contains(REPOSITORY)),
                 "版权行该带着发布仓地址");
+        assertTrue(painter.sizes.stream().allMatch(size -> size == COPYRIGHT_FONT_SIZE),
+                "版权行该用脚注档 " + COPYRIGHT_FONT_SIZE + ", 实际 " + painter.sizes);
     }
 
     @Test
@@ -117,19 +126,26 @@ class CommonPainterCopyrightTest {
     }
 
     /**
-     * 把画出去的每一行右对齐文本记下来
+     * 把画出去的每一行右对齐文本与字号记下来。
+     * 覆写的是 {@code drawTextRightWithStyle}：默认版权行走的是含格式那一层，
+     * 换一条不带格式的画法把这一行画进图，这一组照样量得到
      */
     private static final class CapturingPainter extends CommonPainter {
         private final List<String> drawn = new ArrayList<>();
+
+        private final List<Integer> sizes = new ArrayList<>();
 
         CapturingPainter(BuildProperties buildProperties, StarBotCoreProperties properties, FontUtil fontUtil) {
             super(buildProperties, properties, fontUtil, 900, 400, false);
         }
 
         @Override
-        public CommonPainter drawTextRight(String text, Color color, int marginRight) {
-            drawn.add(text);
-            return super.drawTextRight(text, color, marginRight);
+        public CommonPainter drawTextRightWithStyle(List<TextWithStyle> texts, int marginRight) {
+            texts.forEach(text -> {
+                drawn.add(text.getText());
+                sizes.add(text.getSize());
+            });
+            return super.drawTextRightWithStyle(texts, marginRight);
         }
     }
 }

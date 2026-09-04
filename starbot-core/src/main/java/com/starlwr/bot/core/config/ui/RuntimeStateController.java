@@ -2,6 +2,7 @@ package com.starlwr.bot.core.config.ui;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.starlwr.bot.core.command.CommandContext;
 import com.starlwr.bot.core.command.CommandDispatcher;
 import com.starlwr.bot.core.command.CommandSettingsService;
 import com.starlwr.bot.core.command.StarBotCommand;
@@ -163,6 +164,80 @@ public class RuntimeStateController {
     }
 
     /**
+     * 成批开关某个会话中的命令
+     * <p>
+     * 控制台上的「组开关」与「一键恢复」按下去是<b>一个动作</b>：整组打开、把被群管理员关掉的
+     * 几条一起恢复。让界面自己循环调 {@link #toggleCommand} 的话，中途失败会留下一半开一半关的
+     * 局面，而屏幕上只有最后那一条的报错——使用者不知道刚才究竟改成了什么样。
+     * <p>
+     * <b>先全查再全改</b>：名单里只要有一条禁不得，整批都不动。改了一半再报错，
+     * 等于让人从一个自己没选过的状态往回收拾。
+     * @param body 请求体，含 platform、num、commands 与 disabled
+     * @return 操作结果
+     */
+    @PostMapping("/commands")
+    public JSONObject toggleCommands(@RequestBody JSONObject body) {
+        JSONObject result = new JSONObject();
+
+        String platform = body.getString("platform");
+        Long num = body.getLong("num");
+        JSONArray names = body.getJSONArray("commands");
+        Boolean disabled = body.getBoolean("disabled");
+        if (platform == null || num == null || names == null || disabled == null) {
+            return fail(result, "缺少参数");
+        }
+        if (names.isEmpty()) {
+            // 空名单不当作「都办完了」：调用方多半是把要改的那几条算丢了，
+            // 而回一句「已改 0 条」与真的改完在界面上长得一样
+            return fail(result, "没有指定要改的命令");
+        }
+
+        List<String> wanted = new ArrayList<>();
+        for (int i = 0; i < names.size(); i++) {
+            String name = names.getString(i);
+            if (name == null || name.isBlank()) {
+                return fail(result, "命令名不能为空");
+            }
+            wanted.add(name);
+        }
+
+        if (Boolean.TRUE.equals(disabled)) {
+            for (String name : wanted) {
+                Optional<StarBotCommand> command = dispatcher.all().stream()
+                        .filter(item -> item.name().equals(name))
+                        .findFirst();
+                if (command.isEmpty()) {
+                    return fail(result, "未找到命令「" + name + "」，整批未改");
+                }
+                if (!command.get().disableable()) {
+                    return fail(result, "「" + name + "」不可禁用，否则群里将无法再启用其他命令，整批未改");
+                }
+            }
+        }
+
+        int changed = 0;
+        for (String name : wanted) {
+            boolean done = Boolean.TRUE.equals(disabled)
+                    ? settings.disable(platform, num, name)
+                    : settings.enable(platform, num, name);
+            if (done) {
+                changed++;
+            }
+        }
+        if (changed > 0) {
+            // 立即落盘，理由同 toggleCommand
+            store.save();
+            log.info("配置界面成批{}了会话 {} 中的 {} 条命令", Boolean.TRUE.equals(disabled) ? "禁用" : "启用", num, changed);
+        }
+
+        result.put("success", true);
+        result.put("changed", changed);
+        result.put("message", "已在 " + num + (Boolean.TRUE.equals(disabled) ? " 禁用 " : " 启用 ")
+                + changed + " 条命令");
+        return result;
+    }
+
+    /**
      * 设置某个会话的金额可见性
      * <p>
      * 与命令开关不同，这一项<b>只能在这里改</b>：让群里的人自己把金额打开，
@@ -285,7 +360,7 @@ public class RuntimeStateController {
             for (PushTarget target : user.getTargets()) {
                 String key = target.getPlatform() + ":" + target.getNum();
                 sessions.computeIfAbsent(key, k -> session(target.getPlatform(), target.getNum(),
-                        target.getType() == null ? null : target.getType().getStr(), true));
+                        target.getType(), true));
                 streamers.computeIfAbsent(key, k -> new LinkedHashSet<>()).add(displayName(user));
             }
         }
@@ -336,15 +411,81 @@ public class RuntimeStateController {
         return PushTargetType.FRIEND.getStr().equals(type);
     }
 
-    private JSONObject session(String platform, Long num, String type, boolean configured) {
+    private JSONObject session(String platform, Long num, PushTargetType type, boolean configured) {
         JSONObject item = new JSONObject();
         item.put("platform", platform);
         item.put("num", num);
-        item.put("type", type);
+        item.put("type", type == null ? null : type.getStr());
         item.put("configured", configured);
         item.put("streamers", List.of());
         item.put("disabled", List.of());
+        item.put("menuHidden", menuHidden(platform, num, type));
+        item.put("menuNotes", menuNotes(platform, num, type));
         return item;
+    }
+
+    /**
+     * 这个会话的菜单里<b>不</b>列哪几条命令
+     * <p>
+     * 控制台要把这几行置灰、并把「本群设置」那行摘要从 14 改成 12，靠的就是这一份。
+     * <b>由这里算而不是让界面自己判</b>：「本群这类通知全配成 @全体成员 时藏掉三条订阅命令」
+     * 这条规则在命令那一侧只有一份实现（{@code availableIn}），抄一份到界面上之后，
+     * 改了那一份的那天控制台仍按旧规矩画，而两边的代码看起来都对。
+     * <p>
+     * 类型未知的会话（推送配置里已经没有、只在状态文件里留着的那些）返回 {@code null} 而不是空表：
+     * 它没有会话类型，构不出上下文，答不了这个问题。空表会被读成「一条都不藏」——
+     * 而<b>答不了与都列着长得一样</b>正是要避免的。
+     * @param platform 推送平台
+     * @param num 会话号
+     * @param type 会话类型，未知时为 null
+     * @return 不列进菜单的命令名，答不了时为 null
+     */
+    private List<String> menuHidden(String platform, Long num, PushTargetType type) {
+        if (type == null) {
+            return null;
+        }
+
+        List<String> hidden = new ArrayList<>();
+        for (StarBotCommand command : dispatcher.all()) {
+            if (!command.availableIn(context(platform, num, type, command))) {
+                hidden.add(command.name());
+            }
+        }
+        return hidden;
+    }
+
+    /**
+     * 菜单里跟在某条命令后面的那句会话相关的说明
+     * <p>
+     * 「本群开播通知会先 @全体成员，@ 不成时才按这份名单 @ 人」这类话由命令自己给。
+     * 控制台照原话显示、不另拼一遍：同一句话两边各写一份，改了一处忘了另一处的时候，
+     * 群里听见的与控制台上写的就不是同一件事了。
+     * @return 命令名 → 说明，没有说明的不进表
+     */
+    private JSONObject menuNotes(String platform, Long num, PushTargetType type) {
+        JSONObject notes = new JSONObject();
+        if (type == null) {
+            return notes;
+        }
+
+        for (StarBotCommand command : dispatcher.all()) {
+            String note = command.menuNote(context(platform, num, type, command));
+            if (note != null && !note.isBlank()) {
+                notes.put(command.name(), note);
+            }
+        }
+        return notes;
+    }
+
+    /**
+     * 替某条命令造一个「就在这个会话里」的上下文
+     * <p>
+     * 发送者留空、参数留空：问的是「这条命令在这个会话里还有没有意义」，
+     * 那与谁发的、带了什么参数无关。管理员一律按否——多列一条的代价是使用者点开发现用不了，
+     * 而反过来把一条真能用的藏掉，界面上不会有任何东西提示它去哪儿了。
+     */
+    private CommandContext context(String platform, Long num, PushTargetType type, StarBotCommand command) {
+        return new CommandContext(platform, type, num, null, command.name(), List.of(), "");
     }
 
     /**
