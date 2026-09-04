@@ -1,5 +1,6 @@
 package com.starlwr.bot.bilibili.config;
 
+import com.starlwr.bot.core.config.ConfigDanger;
 import com.starlwr.bot.core.config.ConfigEffect;
 import com.starlwr.bot.core.config.ConfigLevel;
 import com.starlwr.bot.core.plugin.StarBotComponent;
@@ -145,6 +146,9 @@ public class StarBotBilibiliProperties {
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigDanger(value = "true", title = "开启匿名模式？",
+                consequence = "个人主播的直播间只能拿到约一成弹幕，发送者会被抹成匿名，报告会明显缩水；"
+                        + "动态推送与自动关注不可用。")
         private boolean anonymous = false;
 
         /**

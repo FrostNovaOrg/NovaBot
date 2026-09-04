@@ -136,6 +136,9 @@ public class StarBotCoreProperties {
          * 是否启用事件触发外部命令
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigDanger(value = "true", title = "开启外部程序触发？",
+                consequence = "这是能执行任意程序的口子：规则里写的程序会以本程序的身份运行，"
+                        + "拿得到它拿得到的一切。")
         private boolean enabled = false;
 
         /**
@@ -607,6 +610,9 @@ public class StarBotCoreProperties {
              * <b>打印一个不管用的地址比不打印更让人困惑</b>。
              */
             @ConfigEffect(ConfigEffect.Effect.RESTART)
+            @ConfigDanger(value = "true", title = "开启「忘记口令」启动令牌通道？",
+                    consequence = "开着等于留一道能绕过口令与二次验证的后门。它是给「忘了口令进不来」"
+                            + "那一次用的，确认新口令可用之后就该关掉。")
             private boolean operatorToken = true;
 
             /**

@@ -292,21 +292,29 @@
   <!-- ============ 设置 #/settings ============ -->
   <section class="page" id="page-settings">
     <div id="settings">
-      <p class="hint">字段由程序在编译期自动生成，与代码中的配置项始终一致。修改后点击保存，改动会写入 application.yml，重启生效。</p>
-      <div class="backups" id="levelbar">
-        <span>显示</span>
-        <label class="switch"><input type="checkbox" id="show-advanced"><span>包含高级选项</span></label>
-        <span id="level-hint"></span>
+      <p class="hint">按你要办的事分组，常用的在上面、工程用的折在页底。每一项都标了改完什么时候生效。</p>
+      <!--
+        搜索、显示键名、只看改过的。三样都只改可见性，不重绘——
+        使用者常常是一边改一边搜下一项，重绘会把正在编辑的那一格丢掉。
+      -->
+      <div class="setbar">
+        <input type="search" id="set-search" placeholder="搜设置，例如：静音" aria-label="搜设置">
+        <label class="switch"><input type="checkbox" id="show-keys"><span>显示键名</span></label>
+        <label class="switch"><input type="checkbox" id="only-changed"><span>只看改过的</span></label>
+        <span class="dim" id="set-count"></span>
       </div>
+      <!-- 组目录药丸，点一下滚到那一组。内容由脚本按服务端给的组表建出 -->
+      <div class="grpnav" id="grp-nav"></div>
       <div id="groups"></div>
 
       <!--
         通行密钥。摆在设置页里而不是登录页：登记这件事只有已经进得来的人才做得了，
-        而登录页上的人恰好还没进来。整块的版式从简，与「登录与安全」那一组一并重排。
+        而登录页上的人恰好还没进来。渲染时由脚本挪进「登录与安全」那一组内，
+        因此这里写的是它的内容，不是它最终待的地方；整块的版式随登录页一并重排。
         未启用口令登录时整块不显示——那一形态下签发出来的会话打不开任何门，
         摆一个登记按钮等于发一把没有锁的钥匙。
       -->
-      <div class="group" id="passkey-box" style="display:none">
+      <div class="group nested" id="passkey-box" style="display:none">
         <h2>通行密钥</h2>
         <div class="body">
           <p class="hint">登记之后，登录时按一下指纹或面容即可，<b>不用再输动态验证码</b>——

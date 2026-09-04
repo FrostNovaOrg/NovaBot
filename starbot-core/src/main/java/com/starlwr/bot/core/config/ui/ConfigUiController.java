@@ -160,6 +160,8 @@ public class ConfigUiController {
 
     private final ConfigurationEffectResolver effectResolver;
 
+    private final ConfigurationDangerResolver dangerResolver;
+
     /**
      * 保存之后把能即时生效的那几项落到运行中的程序上，并记着还欠一次重启的是哪些
      */
@@ -224,6 +226,7 @@ public class ConfigUiController {
                               DataSourceServiceRegistry dataSourceServiceRegistry,
                               ConfigurationLevelResolver levelResolver,
                               ConfigurationEffectResolver effectResolver,
+                              ConfigurationDangerResolver dangerResolver,
                               RuntimeConfigurationApplier runtimeApplier,
                               ObjectProvider<BotConnectionTester> connectionTesters,
                               ObjectProvider<ConsolePageProvider> pageProviders,
@@ -238,6 +241,7 @@ public class ConfigUiController {
         this.timeline = timeline;
         this.authService = authService;
         this.effectResolver = effectResolver;
+        this.dangerResolver = dangerResolver;
         this.runtimeApplier = runtimeApplier;
         this.buildProperties = buildProperties;
         this.eventStreamTokens = eventStreamTokens;
@@ -401,37 +405,78 @@ public class ConfigUiController {
      * 配置项字段表
      * <p>
      * 字段来自各模块编译期生成的配置元数据，包含类型、默认值与取自 Javadoc 的中文说明。
+     * <p>
+     * 分组不再按配置键的前缀自动切（那样切出来的是<b>程序的结构</b>，二十余组，
+     * 使用者要办一件事得先猜它归哪个类管），而是按 {@link ConfigurationGroups} 那张表
+     * 落到「要办的事」上：常用六组在前，工程用的两组标了 {@code advanced}、由界面折到页底。
+     * 一条前缀也匹配不上的配置项<b>不会被塞进任何一组</b>——它的 {@code group} 为空，
+     * 构建期那道判据会点名，而不是让它安静地待在一个「其他」里。
      * @return 按分组组织的字段表
      */
     @GetMapping("/api/schema")
     public JSONObject schema() {
-        JSONArray groups = new JSONArray();
         Map<String, ConfigLevel.Level> levels = levelResolver.getLevels();
         Map<String, ConfigEffect.Effect> effects = effectResolver.getEffects();
+        Map<String, ConfigurationDangerResolver.Danger> dangers = dangerResolver.getDangers();
 
-        metadataService.getGroupedFields().forEach((group, fields) -> {
-            JSONArray items = new JSONArray();
-            for (ConfigurationMetadataService.ConfigurationField field : fields) {
-                JSONObject item = new JSONObject();
-                item.put("name", field.name());
-                item.put("label", field.name().substring(field.name().lastIndexOf('.') + 1));
-                item.put("widget", field.widget());
-                item.put("description", field.description());
-                item.put("defaultValue", field.defaultValue());
-                // 未标注的一律按高级处理：新增配置项默认收进高级区，避免常用区随时间不断膨胀
-                item.put("level", levels.getOrDefault(field.name(), ConfigLevel.Level.ADVANCED).name());
-                // 生效时机没有默认值可取。这里回 null 而不是补一个「重启生效」：
-                // 补上之后这一格就再也不会是空的，「没人标过」这件事在接口上永远看不出来。
-                // 界面拿到 null 时按需重启显示，那是显示上的兜底，不是把答案编出来
-                ConfigEffect.Effect effect = effects.get(field.name());
-                item.put("effect", effect == null ? null : effect.name());
-                item.put("sensitive", SensitiveFields.isSensitive(field.name(), field.type()));
-                items.add(item);
+        // 组是闭集，先按组开好桶再往里放：这样八个组的先后由那张表定，
+        // 而不是由「哪一组的第一个配置项先出现」定
+        Map<ConfigurationGroups.Group, JSONArray> buckets = new LinkedHashMap<>();
+        ConfigurationGroups.all().forEach(group -> buckets.put(group, new JSONArray()));
+        JSONArray orphans = new JSONArray();
+
+        for (ConfigurationMetadataService.ConfigurationField field : metadataService.getFields()) {
+            ConfigurationGroups.Group group = ConfigurationGroups.groupOf(field.name());
+
+            JSONObject item = new JSONObject();
+            item.put("name", field.name());
+            item.put("label", field.name().substring(field.name().lastIndexOf('.') + 1));
+            item.put("widget", field.widget());
+            item.put("description", field.description());
+            item.put("defaultValue", field.defaultValue());
+            // 未标注的一律按高级处理：新增配置项默认收进高级区，避免常用区随时间不断膨胀
+            item.put("level", levels.getOrDefault(field.name(), ConfigLevel.Level.ADVANCED).name());
+            // 生效时机没有默认值可取。这里回 null 而不是补一个「重启生效」：
+            // 补上之后这一格就再也不会是空的，「没人标过」这件事在接口上永远看不出来。
+            // 界面拿到 null 时按需重启显示，那是显示上的兜底，不是把答案编出来
+            ConfigEffect.Effect effect = effects.get(field.name());
+            item.put("effect", effect == null ? null : effect.name());
+            item.put("sensitive", SensitiveFields.isSensitive(field.name(), field.type()));
+            // 归不了组的同样带这一栏，值为 null。省掉它的话，界面分不出「没归组」与「后端是旧版」
+            item.put("group", group == null ? null : group.id());
+
+            // 「改到这一档要先问一句」跟着配置项自己走，界面上没有一张写死的危险项清单：
+            // 那张清单只能由核心来写，而其中有些项属于插件——核心不该认识它们
+            ConfigurationDangerResolver.Danger danger = dangers.get(field.name());
+            if (danger != null) {
+                JSONObject warning = new JSONObject();
+                warning.put("value", danger.value());
+                warning.put("title", danger.title());
+                warning.put("consequence", danger.consequence());
+                item.put("danger", warning);
             }
 
+            if (group == null) {
+                orphans.add(item);
+            } else {
+                item.put("order", buckets.get(group).size());
+                buckets.get(group).add(item);
+            }
+        }
+
+        JSONArray groups = new JSONArray();
+        buckets.forEach((group, items) -> {
             JSONObject node = new JSONObject();
-            node.put("group", group);
-            node.put("title", groupTitle(group));
+            node.put("group", group.id());
+            node.put("title", group.title());
+            node.put("description", group.description());
+            node.put("advanced", group.advanced());
+            node.put("order", ConfigurationGroups.orderOf(group));
+            // 「这一组改了都要重启」是现算的，不是表上写死的一格：某一项改成即时生效之后，
+            // 组标题上那枚牌子会自己消失，而写死的那一格只会继续说着改之前的事
+            node.put("allRestart", !items.isEmpty() && items.stream()
+                    .noneMatch(item -> ConfigEffect.Effect.IMMEDIATE.name()
+                            .equals(((JSONObject) item).getString("effect"))));
             node.put("fields", items);
             groups.add(node);
         });
@@ -439,6 +484,9 @@ public class ConfigUiController {
         JSONObject result = new JSONObject();
         result.put("success", true);
         result.put("groups", groups);
+        // 归不了组的单列一栏而不是并进某一组：并进去之后界面照样显示，
+        // 于是「这一项还没人给它安排位置」这件事在跑起来的程序上再也看不见
+        result.put("ungrouped", orphans);
         return result;
     }
 
@@ -1409,45 +1457,5 @@ public class ConfigUiController {
                 });
 
         return items;
-    }
-
-    /**
-     * 为配置分组生成中文标题
-     * @param group 分组键，例如 starbot.bilibili.live
-     * @return 中文标题
-     */
-    private String groupTitle(String group) {
-        Map<String, String> titles = Map.ofEntries(
-                Map.entry("starbot.core.network-thread", "核心 · 网络线程"),
-                Map.entry("starbot.core.log", "核心 · 日志"),
-                Map.entry("starbot.core.network", "核心 · 网络"),
-                Map.entry("starbot.core.datasource", "核心 · 数据源"),
-                Map.entry("starbot.core.plugin", "核心 · 插件"),
-                Map.entry("starbot.core.live", "核心 · 直播"),
-                Map.entry("starbot.core.paint", "核心 · 绘图"),
-                Map.entry("starbot.core.mail", "核心 · 邮件告警"),
-                Map.entry("starbot.core.alert", "核心 · 告警"),
-                Map.entry("starbot.core.push", "核心 · 推送"),
-                Map.entry("starbot.core", "核心 · 其他"),
-                Map.entry("starbot.core.config-ui", "核心 · 配置界面"),
-                Map.entry("starbot.adapter.onebot", "OneBot 适配器"),
-                Map.entry("starbot.adapter.onebot.security", "OneBot 适配器 · 安全"),
-                Map.entry("starbot.adapter.onebot.security.rate-limit", "OneBot 适配器 · 频率限制"),
-                Map.entry("starbot.adapter.onebot.websocket-thread", "OneBot 适配器 · 线程"),
-                Map.entry("starbot.adapter.onebot.detect", "OneBot 适配器 · 可用性检测"),
-                Map.entry("starbot.adapter.onebot.extension.napcat", "NapCat 扩展"),
-                Map.entry("starbot.bilibili.bilibili-thread", "哔哩哔哩 · 线程"),
-                Map.entry("starbot.bilibili.debug", "哔哩哔哩 · 调试"),
-                Map.entry("starbot.bilibili.network", "哔哩哔哩 · 网络"),
-                Map.entry("starbot.bilibili.account", "哔哩哔哩 · 账号与凭据"),
-                Map.entry("starbot.bilibili.live", "哔哩哔哩 · 直播"),
-                Map.entry("starbot.bilibili.dynamic", "哔哩哔哩 · 动态"),
-                // 以下两组不属于 starbot 命名空间，但 NovaBot 的功能依赖它们，
-                // 详见 ExternalConfigurationFields
-                Map.entry("spring.data.redis", "累计数据存储（Redis）"),
-                Map.entry("spring.mail", "邮件告警 · 发件服务")
-        );
-
-        return titles.getOrDefault(group, group);
     }
 }
