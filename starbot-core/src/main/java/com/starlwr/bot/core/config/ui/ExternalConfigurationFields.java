@@ -31,17 +31,20 @@ public final class ExternalConfigurationFields {
 
     static {
         // ---- 累计数据存储 ----
-        put("spring.data.redis.host", "java.lang.String", ConfigLevel.Level.COMMON, ConfigEffect.Effect.RESTART,
+        // 前三项即时生效：认这几个值的是 TotalDataStorage，它按新参数就地换一个后端。
+        // 库号还没接进那条路，仍要重启（见 RuntimeConfigurationApplier 的说明）
+        put("spring.data.redis.host", "java.lang.String", ConfigLevel.Level.COMMON, ConfigEffect.Effect.IMMEDIATE,
                 "累计数据存储的 Redis 地址，填了才有跨场次的累计数据。"
                         + "留空时本场数据完整可用，但「我的总数据」「直播间总数据」「总数据排行榜」"
                         + "会明确提示不可用——那类数据随时间无限增长，放在文件里迟早撑不住。"
-                        + "只需本机可达，切勿暴露到公网。改完需重启");
-        put("spring.data.redis.port", "java.lang.Integer", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.RESTART,
+                        + "只需本机可达，切勿暴露到公网。填完即时生效，不用重启；"
+                        + "Redis 中途挂了会自动降级为只有本场数据，连回来自己恢复");
+        put("spring.data.redis.port", "java.lang.Integer", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.IMMEDIATE,
                 6379, "Redis 端口，默认 6379");
-        put("spring.data.redis.password", "java.lang.String", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.RESTART,
+        put("spring.data.redis.password", "java.lang.String", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.IMMEDIATE,
                 "Redis 密码，未设密码时留空");
         put("spring.data.redis.database", "java.lang.Integer", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.RESTART,
-                0, "Redis 库号，默认 0。与其他程序共用同一实例时可换一个库避免键冲突");
+                0, "Redis 库号，默认 0。与其他程序共用同一实例时可换一个库避免键冲突。改完需重启");
 
         // ---- 邮件告警的发件服务 ----
         // 收件人是 starbot.core.mail.default-to，在界面上找得到；
@@ -141,13 +144,28 @@ public final class ExternalConfigurationFields {
     /**
      * 这些配置项的生效时机
      * <p>
-     * 都要重启：Redis 连接与邮件发件服务都是启动时装配一次的 bean，改了配置对象也换不掉它们。
-     * 累计存储日后要做到「配好即自动恢复」的话，改的是那一侧的装配方式，不是这里的标注。
+     * 累计存储那三项即时生效：认它们的 {@code TotalDataStorage} 会按新参数就地换一个后端。
+     * 其余仍要重启——邮件发件服务与服务端口都是启动时装配一次的 bean，改了配置对象也换不掉它们。
      */
     static Map<String, ConfigEffect.Effect> effects() {
         Map<String, ConfigEffect.Effect> result = new LinkedHashMap<>();
         FIELDS.forEach((field, marks) -> result.put(field.name(), marks.effect()));
         return result;
+    }
+
+    /**
+     * 这几项里标了即时生效的那些，供构建期那道「标了即时生效就真的会被写回」的判据现算分母用
+     * <p>
+     * 那道判据的分母原先只有 {@code @ConfigurationProperties} 那一批——<b>这张表里的项一个都不在其中</b>，
+     * 它们没有字段可标注，也就不会出现在配置元数据里。于是这几项一旦接进即时生效通道，
+     * 判据会反过来报「这个键会被写回运行中的配置，却没标成即时生效」：<b>标了，只是它看不见</b>。
+     * @return 配置项名，顺序与界面一致
+     */
+    public static List<String> immediateNames() {
+        return FIELDS.entrySet().stream()
+                .filter(entry -> entry.getValue().effect() == ConfigEffect.Effect.IMMEDIATE)
+                .map(entry -> entry.getKey().name())
+                .toList();
     }
 
     /**

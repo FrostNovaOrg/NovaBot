@@ -2,6 +2,7 @@ package com.starlwr.bot.core.config.ui;
 
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
+import com.starlwr.bot.core.service.TotalDataStorage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -74,6 +75,25 @@ public class RuntimeConfigurationApplier {
     }
 
     /**
+     * 得经累计数据存储那一侧才落得下的配置项
+     * <p>
+     * 这几项同样不在配置对象上：{@code spring.data.redis.*} 是框架的键，
+     * 写回 {@link StarBotCoreProperties} 无处可写。真正认这几个值的是
+     * {@link TotalDataStorage}——它按新参数就地换一个后端，因此地址填好即可用，
+     * 不必为此重启一次（重启会把正在采集的场次打断）。
+     * <p>
+     * 单列一张表，理由同下面那张：上面那张的签名只拿得到配置对象。
+     * <p>
+     * ⚠️ {@code database} 不在其中，仍按需重启。它与这三项一起改时，
+     * 换上去的后端用的是<b>新地址与旧库号</b>，界面也照实说 database 还欠一次重启——
+     * 这是一句真话，但它读起来像半件事没办完，收口时一并定去留。
+     */
+    private static final Map<String, BiConsumer<TotalDataStorage, String>> REDIS_APPLIERS = Map.of(
+            "spring.data.redis.host", TotalDataStorage::applyHost,
+            "spring.data.redis.port", (storage, value) -> storage.applyPort(Integer.parseInt(value.trim())),
+            "spring.data.redis.password", TotalDataStorage::applyPassword);
+
+    /**
      * 得经登录校验那一侧才落得下的配置项
      * <p>
      * 这两项写回配置对象<b>没有用</b>：认口令的是 {@code ConfigUiAuthService} 里那个哈希，
@@ -106,9 +126,15 @@ public class RuntimeConfigurationApplier {
      */
     private final Supplier<ConfigUiAuthService> authService;
 
+    /**
+     * 累计数据存储，判据台架里可能没有
+     */
+    private final TotalDataStorage totalDataStorage;
+
     @Autowired
-    public RuntimeConfigurationApplier(StarBotCoreProperties properties, ObjectProvider<ConfigUiAuthService> authService) {
-        this(properties, (Supplier<ConfigUiAuthService>) authService::getIfAvailable);
+    public RuntimeConfigurationApplier(StarBotCoreProperties properties, ObjectProvider<ConfigUiAuthService> authService,
+                                       TotalDataStorage totalDataStorage) {
+        this(properties, (Supplier<ConfigUiAuthService>) authService::getIfAvailable, totalDataStorage);
     }
 
     /**
@@ -118,19 +144,28 @@ public class RuntimeConfigurationApplier {
      * <b>与真实的「配置界面被关掉」那一形一致</b>——两项口令配置落不下去，按需重启处理。
      */
     RuntimeConfigurationApplier(StarBotCoreProperties properties) {
-        this(properties, () -> null);
+        this(properties, () -> null, null);
     }
 
     /**
      * 带登录校验的那一支，供判据台架用
      */
     RuntimeConfigurationApplier(StarBotCoreProperties properties, ConfigUiAuthService authService) {
-        this(properties, () -> authService);
+        this(properties, () -> authService, null);
     }
 
-    private RuntimeConfigurationApplier(StarBotCoreProperties properties, Supplier<ConfigUiAuthService> authService) {
+    /**
+     * 带累计数据存储的那一支，供判据台架用
+     */
+    RuntimeConfigurationApplier(StarBotCoreProperties properties, TotalDataStorage totalDataStorage) {
+        this(properties, () -> null, totalDataStorage);
+    }
+
+    private RuntimeConfigurationApplier(StarBotCoreProperties properties, Supplier<ConfigUiAuthService> authService,
+                                        TotalDataStorage totalDataStorage) {
         this.properties = properties;
         this.authService = authService;
+        this.totalDataStorage = totalDataStorage;
     }
 
     /**
@@ -140,6 +175,7 @@ public class RuntimeConfigurationApplier {
     public static Set<String> supportedKeys() {
         Set<String> keys = new LinkedHashSet<>(APPLIERS.keySet());
         keys.addAll(AUTH_APPLIERS.keySet());
+        keys.addAll(REDIS_APPLIERS.keySet());
         return Collections.unmodifiableSet(keys);
     }
 
@@ -189,6 +225,11 @@ public class RuntimeConfigurationApplier {
         BiConsumer<StarBotCoreProperties, String> applier = APPLIERS.get(name);
         if (applier != null) {
             return () -> applier.accept(properties, value);
+        }
+
+        BiConsumer<TotalDataStorage, String> redis = REDIS_APPLIERS.get(name);
+        if (redis != null) {
+            return totalDataStorage == null ? null : () -> redis.accept(totalDataStorage, value);
         }
 
         BiConsumer<ConfigUiAuthService, String> auth = AUTH_APPLIERS.get(name);

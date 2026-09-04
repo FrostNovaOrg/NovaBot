@@ -162,10 +162,15 @@ lifecycleProcessor.onClose()     ← 停 SmartLifecycle，默认最多等 30 秒
   缺口的起点是**最后一次落盘的时刻**而不是进程死掉的时刻——
   那之后收到的消息随进程一起没了，同样没进任何统计
 
-`LiveDataService` 有两个实现：`DefaultLiveDataService` 写 `data.json`，
-`RedisLiveDataService` 在配置了 Redis 时接管。**累计数据只有后者支持**——
-那类数据随时间无限增长，放在单个 JSON 文件里迟早撑不住。没配 Redis 时
-「总数据」类查询会明说不可用，而不是回一堆 0 让人误以为数据丢了。
+`LiveDataService` 只注册一个实现 `CompositeLiveDataService`：本场数据委托
+`DefaultLiveDataService` 写 `data.json`，累计数据交给 `TotalDataStorage`。
+**累计数据要外部存储才有**——那类数据随时间无限增长，放在单个 JSON 文件里迟早撑不住。
+
+累计能力的判定是**运行期**的，不在启动那一刻定死：`TotalDataStorage` 分两问回答
+「此刻有没有累计数据」——配没配（`spring.data.redis.host` 有没有值）与连不连得上（探活，
+结果缓存数秒）。因此地址填好即可用、Redis 挂了自动降级成只有本场数据、连回来自己恢复，
+全程不必重启。菜单、`/api/status` 的 `totalDataAvailable`、健康自检读的都是这同一个判定。
+没配或连不上时「总数据」类查询会明说不可用，而不是回一堆 0 让人误以为数据丢了。
 
 ## 5. 群内命令
 

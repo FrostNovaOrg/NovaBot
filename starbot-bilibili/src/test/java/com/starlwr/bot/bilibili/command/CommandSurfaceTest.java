@@ -16,8 +16,11 @@ import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.sender.AtMode;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
 import com.starlwr.bot.core.service.AtSubscriptionService;
+import com.starlwr.bot.core.service.CompositeLiveDataService;
+import com.starlwr.bot.core.service.DefaultLiveDataService;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.TotalDataStorage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -25,6 +28,8 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
+import org.springframework.data.redis.connection.RedisConnection;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.util.ClassUtils;
 
 import java.lang.reflect.Constructor;
@@ -36,6 +41,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
@@ -199,6 +206,53 @@ class CommandSurfaceTest {
             assertTrue(menu.contains("\n" + name + " "), name + " 该出现：" + menu);
         }
         assertEquals(GROUP_ONLY.size(), entryCount(menu));
+    }
+
+    @Test
+    @DisplayName("⚠️ 累计存储在运行中连上、掉线、连回来，菜单当场跟着变——中间一次没重启")
+    void menuFollowsRuntimeStorage() {
+        AtomicBoolean up = new AtomicBoolean(true);
+        AtomicLong clock = new AtomicLong(1_000_000L);
+        TotalDataStorage storage = new TotalDataStorage(
+                TotalDataStorage.Settings.UNSET, settings -> redisFactory(up), clock::get);
+        // 这一份 Registry 背后是真的判定链：菜单 ← 命令的 available() ← supportsTotalData()
+        // ← 累计存储的探活。上面那几条用替身量的是链条的前半截，这一条把后半截接上
+        Registry runtime = new Registry(new CompositeLiveDataService(
+                new DefaultLiveDataService(new StarBotCoreProperties()), storage));
+
+        assertEquals(GROUP_ONLY.size() - TOTAL_ONLY.size(), entryCount(runtime.feed(true, "菜单")),
+                "还没配累计存储，那两条不该列");
+
+        storage.applyHost("127.0.0.1");
+        assertEquals(GROUP_ONLY.size(), entryCount(runtime.feed(true, "菜单")),
+                "运行中配好了，那两条当场就该出现——此前这里要等一次重启");
+
+        up.set(false);
+        clock.addAndGet(TotalDataStorage.PROBE_CACHE_MILLIS + 1);
+        assertEquals(GROUP_ONLY.size() - TOTAL_ONLY.size(), entryCount(runtime.feed(true, "菜单")),
+                "连不上还照列，点进去查到的会是一片 0");
+
+        up.set(true);
+        clock.addAndGet(TotalDataStorage.PROBE_CACHE_MILLIS + 1);
+        assertEquals(GROUP_ONLY.size(), entryCount(runtime.feed(true, "菜单")),
+                "连回来之后该自己恢复");
+    }
+
+    /**
+     * 假 Redis 连接工厂：{@code up} 为假时连不上
+     * <p>
+     * 不装 Redis、不引嵌入式实现——「连不上」这一档在真 Redis 上要量得先把它杀掉。
+     */
+    private static RedisConnectionFactory redisFactory(AtomicBoolean up) {
+        RedisConnectionFactory factory = mock(RedisConnectionFactory.class);
+        RedisConnection connection = mock(RedisConnection.class);
+        when(factory.getConnection()).thenAnswer(invocation -> {
+            if (!up.get()) {
+                throw new IllegalStateException("连不上");
+            }
+            return connection;
+        });
+        return factory;
     }
 
     @Test
@@ -455,7 +509,15 @@ class CommandSurfaceTest {
 
         private final AbstractDataSource dataSource = mock(AbstractDataSource.class);
 
-        private final LiveDataService liveDataService = mock(LiveDataService.class);
+        private final LiveDataService liveDataService;
+
+        /**
+         * 累计存储是替身还是真件
+         * <p>
+         * 真件那一份不许再用 {@link #supportsTotalData(boolean)} 去拨——那等于绕开被测的那条路，
+         * 把一条端到端的判据悄悄退化成替身判据。
+         */
+        private final boolean stubbed;
 
         private final StarBotMessageSender sender = mock(StarBotMessageSender.class);
 
@@ -467,8 +529,19 @@ class CommandSurfaceTest {
         private final PushUser streamer = configuredUser();
 
         Registry() {
-            // 默认按「累计存储配好了」起：那是命令齐全的那一档，各用例要试没配的情形自己关掉
-            when(liveDataService.supportsTotalData()).thenReturn(true);
+            this(null);
+        }
+
+        /**
+         * @param liveData 直播数据服务，传空则用替身
+         */
+        Registry(LiveDataService liveData) {
+            this.stubbed = liveData == null;
+            this.liveDataService = stubbed ? mock(LiveDataService.class) : liveData;
+            if (stubbed) {
+                // 默认按「累计存储配好了」起：那是命令齐全的那一档，各用例要试没配的情形自己关掉
+                when(liveDataService.supportsTotalData()).thenReturn(true);
+            }
 
             when(dataSource.getAllUsers()).thenReturn(List.of(streamer));
             when(dataSource.getUsers("bilibili")).thenReturn(List.of(streamer));
@@ -493,6 +566,9 @@ class CommandSurfaceTest {
         }
 
         void supportsTotalData(boolean supported) {
+            if (!stubbed) {
+                throw new IllegalStateException("这一份背后是真的累计存储，要改它得去动那一侧");
+            }
             when(liveDataService.supportsTotalData()).thenReturn(supported);
         }
 
