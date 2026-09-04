@@ -127,10 +127,10 @@
       <p class="hint">开播或发动态时会 @ 这些人。人退群后订阅仍会留着，@ 一个不在群里的号是无效的，可在此清理。</p>
       <table id="subs"><thead><tr><th>会话</th><th>主播</th><th>类型</th><th>人数</th><th>成员（点击移除）</th><th></th></tr></thead><tbody></tbody></table>
 
-      <h3 class="cat-title">账号绑定</h3>
-      <p class="hint">成员用「绑定」把自己的 QQ 号对应到直播平台 UID，个人数据查询据此认人。
-        <b>绑定无法验证归属</b>，只能核对昵称防打错，因此这里只提供解绑、不提供代人绑定。</p>
-      <table id="binds"><thead><tr><th>推送平台</th><th>账号</th><th>直播平台</th><th>UID</th><th></th></tr></thead><tbody></tbody></table>
+      <!--
+        账号绑定块已撤：那一族聊天命令不再注册，界面上留一张永远空着的表只会让人以为功能坏了。
+        已有的绑定记录仍在状态文件里原样留着，接口 /state 也照旧给出，只是不再显示、不再可改。
+      -->
     </div>
   </section>
 
@@ -253,6 +253,24 @@
         <span id="level-hint"></span>
       </div>
       <div id="groups"></div>
+
+      <!--
+        通行密钥。摆在设置页里而不是登录页：登记这件事只有已经进得来的人才做得了，
+        而登录页上的人恰好还没进来。整块的版式从简，与「登录与安全」那一组一并重排。
+        未启用口令登录时整块不显示——那一形态下签发出来的会话打不开任何门，
+        摆一个登记按钮等于发一把没有锁的钥匙。
+      -->
+      <div class="group" id="passkey-box" style="display:none">
+        <h2>通行密钥</h2>
+        <div class="body">
+          <p class="hint">登记之后，登录时按一下指纹或面容即可，<b>不用再输动态验证码</b>——
+            私钥一直在你自己的设备上，这台机器只存得下一把开不了门的公钥。</p>
+          <div class="backups" style="margin:0 0 10px">
+            <button type="button" id="passkey-add">登记这台设备</button>
+          </div>
+          <div id="passkey-list"></div>
+        </div>
+      </div>
 
       <!--
         页底只留配置文件在哪，不提供编辑。

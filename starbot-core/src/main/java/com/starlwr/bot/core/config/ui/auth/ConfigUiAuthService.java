@@ -190,6 +190,46 @@ public class ConfigUiAuthService {
     }
 
     /**
+     * 为通行密钥验过身的人签发会话
+     * <p>
+     * <b>不经二次验证，这是有意的。</b>二次验证要补的是「口令可能被撞库、被键盘记录、被肩窥」这件事，
+     * 而通行密钥的私钥从未离开过使用者的设备，且用它签名之前设备本身已经问过一次指纹或面容——
+     * 那一步比一串六位数字强。再要一次验证码，换来的只是「因为麻烦所以干脆不用通行密钥」。
+     * <p>
+     * 顺带清掉这个来源的失败记录，与口令登录成功时同法：人已经用一把真钥匙证明了身份，
+     * 之前那几次输错的口令不该继续压着他。
+     * @param clientIp 来源 IP
+     * @return 新会话
+     */
+    public ConfigUiSession issueForPasskey(String clientIp) {
+        throttle.recordSuccess(clientIp);
+        return sessions.issue(clientIp, clock.get(), ConfigUiSession.Channel.PASSKEY);
+    }
+
+    /**
+     * 这个来源还要等多久才能再试
+     * <p>
+     * 通行密钥那条路也要问一次：<b>锁定是按来源计的，不是按凭据种类计的</b>。
+     * 各算各的话，正在被爆破口令的那个地址可以转头去猜通行密钥，一次锁定也触发不了。
+     * @param clientIp 来源 IP
+     * @return 剩余锁定时长，未锁定时为 {@link Duration#ZERO}
+     */
+    public Duration remainingLockout(String clientIp) {
+        return throttle.remainingLockout(clientIp, clock.get());
+    }
+
+    /**
+     * 记一次失败
+     * <p>
+     * 给口令之外的登录路子用。与口令那条路<b>共用同一份计数</b>：
+     * 分开计等于把同一个来源的可试次数翻倍。
+     * @param clientIp 来源 IP
+     */
+    public void recordFailedAttempt(String clientIp) {
+        throttle.recordFailure(clientIp, clock.get());
+    }
+
+    /**
      * 注销会话
      */
     public void logout(String sessionId) {

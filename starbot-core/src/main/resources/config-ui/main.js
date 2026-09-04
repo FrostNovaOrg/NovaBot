@@ -8,6 +8,7 @@ import {bindBotForm, botFormHtml, fillBotForms, sendTestMessage} from './bot.js'
 import {$, api, el, esc, markDirty, say} from './core.js';
 import {loadHistory, loadState, refreshWizardState, renderStatus, renderWizard, runSelfTest, setWizardCollapsed, togglePush} from './overview.js';
 import {addStreamer, decoratePushData, renderPlatforms, renderStreamers, serializePush} from './push.js';
+import {loadPasskeys, registerPasskey} from './passkeys.js';
 import {copyConfigPath, discard, renderConfigPath, renderGeneral, save} from './settings.js';
 import {store} from './store.js';
 import {clearIssuedToken, loadTokens} from './tokens.js';
@@ -270,6 +271,7 @@ document.querySelectorAll('#nav a').forEach(a => {
   a.addEventListener('click', () => { if (location.hash === a.getAttribute('href')) applyRoute(); });
 });
 
+$('#passkey-add').addEventListener('click', registerPasskey);
 $('#save').addEventListener('click', save);
 $('#discard').addEventListener('click', discard);
 $('#cfg-copy').addEventListener('click', copyConfigPath);
@@ -367,6 +369,12 @@ api('/auth/state')
     // 签发只读口令要重新校验一次凭据，验证码框显示与否照这一位来，不照配置项猜
     store.totpRequired = !!state.totpRequired;
     $('#auth-actions').style.display = state.enabled ? '' : 'none';
+    // 通行密钥跟着口令登录的开关走：未配口令时面板走的是「令牌即凭据」那一形态，
+    // 它根本不看会话，验过通行密钥签出来的会话也一样进不去
+    if (state.enabled) {
+      $('#passkey-box').style.display = '';
+      loadPasskeys();
+    }
     if (state.totpSetupNeeded) renderTotpSetup();
   })
   .catch(() => {})

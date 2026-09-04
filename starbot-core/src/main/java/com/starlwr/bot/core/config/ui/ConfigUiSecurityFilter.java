@@ -80,7 +80,12 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
      */
     private static final Set<String> PUBLIC_API = Set.of(
             ConfigUiController.BASE_PATH + "/api/auth/state",
-            ConfigUiController.BASE_PATH + "/api/auth/login");
+            ConfigUiController.BASE_PATH + "/api/auth/login",
+            // 通行密钥登录那两条与口令登录并列：它们本身就是进门的那一步，
+            // 要求先登录才能调用等于把这条路整个封死。
+            // 🔴 <b>只有 login 那两条</b>——登记那两条不在此列，理由见 ConfigUiPasskeyController
+            ConfigUiController.BASE_PATH + "/api/auth/passkey/login/options",
+            ConfigUiController.BASE_PATH + "/api/auth/passkey/login/verify");
 
     /**
      * 身份已经认出来、但协议还没同意时仍然放行的接口
