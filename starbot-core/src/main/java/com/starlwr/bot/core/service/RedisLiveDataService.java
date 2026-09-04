@@ -1,5 +1,6 @@
 package com.starlwr.bot.core.service;
 
+import com.starlwr.bot.core.model.LiveGap;
 import com.starlwr.bot.core.model.UserScore;
 import com.starlwr.bot.core.util.FaceUrlCodec;
 import lombok.NonNull;
@@ -220,13 +221,18 @@ public class RedisLiveDataService implements LiveDataService {
     }
 
     @Override
-    public void recordDowntime(long from, long to) {
-        delegate.recordDowntime(from, to);
+    public Optional<Boolean> wasCleanShutdown() {
+        return delegate.wasCleanShutdown();
     }
 
     @Override
-    public long downtimeWithin(long from, long to) {
-        return delegate.downtimeWithin(from, to);
+    public void recordDowntime(long from, long to, @NonNull LiveGap.Reason reason) {
+        delegate.recordDowntime(from, to, reason);
+    }
+
+    @Override
+    public List<LiveGap> downtimeIntervals(long from, long to) {
+        return delegate.downtimeIntervals(from, to);
     }
 
     @Override
@@ -333,8 +339,8 @@ public class RedisLiveDataService implements LiveDataService {
     }
 
     @Override
-    public long roomOutageWithin(@NonNull String platform, @NonNull Long uid, long from, long to) {
-        return delegate.roomOutageWithin(platform, uid, from, to);
+    public List<LiveGap> roomOutageIntervals(@NonNull String platform, @NonNull Long uid, long from, long to) {
+        return delegate.roomOutageIntervals(platform, uid, from, to);
     }
 
     @Override

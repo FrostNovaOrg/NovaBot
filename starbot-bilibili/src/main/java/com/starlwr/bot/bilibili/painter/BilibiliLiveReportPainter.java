@@ -11,6 +11,7 @@ import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.bilibili.util.DurationFormatUtil;
 import com.starlwr.bot.core.analytics.LiveHighlightFinder;
 import com.starlwr.bot.core.factory.StarBotCommonPainterFactory;
+import com.starlwr.bot.core.model.LiveGap;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.RoomInfoSnapshot;
 import com.starlwr.bot.core.model.TextWithStyle;
@@ -171,6 +172,22 @@ public class BilibiliLiveReportPainter {
     private static final int CURVE_COLUMN_WIDTH = 2;
 
     /**
+     * 面积的最小可见高度
+     * <p>
+     * 一整分钟一条弹幕都没有时，面积高度算出来是 0，画出来什么都没有——
+     * 而<b>「这几分钟没人说话」和「这几分钟我们没在听」必须看得出区别</b>：
+     * 后者现在画成斜纹，前者就得留下一条贴着基线的细面积，否则两者在图上都是一片空白。
+     */
+    private static final int CURVE_MIN_AREA_HEIGHT = 2;
+
+    /**
+     * 缺口斜纹的斜线间距与线宽（像素，沿 x 方向量）
+     */
+    private static final int CURVE_GAP_HATCH_PERIOD = 10;
+
+    private static final int CURVE_GAP_HATCH_WIDTH = 3;
+
+    /**
      * 底部标识的绘制高度，与动态图片保持一致
      */
     private static final int LOGO_HEIGHT = 45;
@@ -180,7 +197,21 @@ public class BilibiliLiveReportPainter {
      */
     private static final Color COLOR_CURVE_WATCHED = new Color(110, 199, 122);
 
-    private static final Color COLOR_CURVE_DANMU = new Color(0, 174, 236);
+    /**
+     * 弹幕曲线的配色。包内可见：像素判据要靠它认出「哪几列画的是面积」，
+     * 而斜纹区与贴地面积区的区别正是「这一点是不是面积色」
+     */
+    static final Color COLOR_CURVE_DANMU = new Color(0, 174, 236);
+
+    /**
+     * 采集缺口的斜纹色与边界线色。包内可见，理由同 {@link #COLOR_CURVE_DANMU}
+     * <p>
+     * 刻意取中性浅灰而不取任何一条曲线的同色系：斜纹说的是「这一段没有数据」，
+     * 它一旦长得像某条曲线，就会被读成那条曲线的一段取值。
+     */
+    static final Color COLOR_CURVE_GAP_HATCH = new Color(206, 212, 218);
+
+    static final Color COLOR_CURVE_GAP_EDGE = new Color(168, 178, 188);
 
     private static final Color COLOR_CURVE_SUPER_CHAT = new Color(255, 168, 61);
 
@@ -317,15 +348,11 @@ public class BilibiliLiveReportPainter {
 
         String duration = durationText(platform, uid);
         text.append("\n直播时长 ").append(StringUtil.isNotBlank(duration) ? duration : "未知");
-        String gap = maintenanceGapText(platform, uid);
+        // 与图片版共用同一句：缺口这句话只能有一个出处，
+        // 否则图片版与文字版迟早说出两个不同的数
+        String gap = collectionGapText(platform, uid);
         if (!gap.isEmpty()) {
-            text.append("（其中 ").append(gap).append("因维护未采集）");
-        }
-        // 单房断线与程序停机分两句写。合成一句就得把两个数相加，
-        // 而它们会重叠——停机期间这个房间当然也是断的
-        String outage = roomOutageText(platform, uid);
-        if (!outage.isEmpty()) {
-            text.append("（另有 ").append(outage).append("因直播间断线未采集）");
+            text.append("（").append(gap).append("）");
         }
 
         // 本场有推送的图片没送到时才出现这一行，绝大多数场次是零、不占版面
@@ -496,17 +523,11 @@ public class BilibiliLiveReportPainter {
         line.add(new TextWithStyle("直播时长 ", CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN));
         line.add(new TextWithStyle(duration, CommonPainter.TEXT_FONT_SIZE, COLOR_TEXT, Font.BOLD));
 
-        // 停机缺口紧跟在时长后面，而不是塞进页脚：报告上每个数字都受它影响，
-        // 看到时长的人必须同时看到「这段时间里有一截没在采」
-        String gap = maintenanceGapText(platform, uid);
+        // 采集缺口紧跟在时长后面，而不是塞进页脚：报告上每个数字都受它影响，
+        // 看到时长的人必须同时看到「这段时间里有一截没在采」，以及那一截是怎么来的
+        String gap = collectionGapText(platform, uid);
         if (!gap.isEmpty()) {
-            line.add(new TextWithStyle("（其中 " + gap + "因维护未采集）",
-                    CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN));
-        }
-        String outage = roomOutageText(platform, uid);
-        if (!outage.isEmpty()) {
-            line.add(new TextWithStyle("（另有 " + outage + "因直播间断线未采集）",
-                    CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN));
+            line.add(new TextWithStyle("（" + gap + "）", CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN));
         }
 
         // 与停机缺口同一个道理：图片没送到是主播能感知的差异，
@@ -539,7 +560,7 @@ public class BilibiliLiveReportPainter {
      * 于是「本场收益 ¥55.3」会被断成「本场收益 ¥55.」和「3」——
      * 一个数字被劈成两行，比溢出还难认。
      * <p>
-     * 这些片段每一个都是一句完整的话（「（其中 8 秒因维护未采集）」「本场收益 ¥55.3」），
+     * 这些片段每一个都是一句完整的话（「（采集缺口 共 8 秒：维护 8 秒）」「本场收益 ¥55.3」），
      * 在它们之间断开才是人读得懂的断法。
      * <p>
      * 逐字的自动换行仍然要开着<b>兜底</b>：万一某一个片段自己就比一整行还长
@@ -778,6 +799,9 @@ public class BilibiliLiveReportPainter {
         curves.add(new Curve("看过人数", BilibiliLiveMetric.WATCHED_COUNT, COLOR_CURVE_WATCHED,
                 peak -> Math.round(peak) + " 人看过"));
 
+        // 缺口表整段算一次：六条曲线共用同一条时间轴，缺口落在哪几列对它们是同一个答案
+        List<LiveGap> gaps = collectionGaps(platform, uid, start.get(), end.get());
+
         boolean first = true;
         for (Curve curve : curves) {
             Map<Long, Double> series = liveDataService.getLiveSeries(platform, uid, curve.metric);
@@ -791,7 +815,7 @@ public class BilibiliLiveReportPainter {
                 painter.movePos(0, 6);
                 first = false;
             }
-            drawCurve(painter, curve, series, start.get(), end.get());
+            drawCurve(painter, curve, series, start.get(), end.get(), gaps);
         }
 
         if (!first) {
@@ -915,16 +939,26 @@ public class BilibiliLiveReportPainter {
 
     /**
      * 绘制一条面积图：标题、峰值、面积本体与基线
+     * <p>
+     * 落在缺口里的那几列<b>不画面积改画斜纹</b>：那几分钟的数字不是 0，是没有——
+     * 画成贴地的面积等于替它答了「没人来」，而真相可能是那会儿最热闹。
+     * @param gaps 本场的采集缺口，已裁剪到 {@code [start, end)} 之内
      */
-    private void drawCurve(CommonPainter painter, Curve curve, Map<Long, Double> series, long start, long end) {
+    private void drawCurve(CommonPainter painter, Curve curve, Map<Long, Double> series,
+                           long start, long end, List<LiveGap> gaps) {
         int top = painter.getY();
 
         int columns = Math.max(1, CONTENT_WIDTH / CURVE_COLUMN_WIDTH);
+        int buckets = bucketCount(start, end);
         double[] values = resample(series, start, end, columns);
+        boolean[] missing = gapColumns(gaps, start, buckets, columns);
 
         double peak = 0;
-        for (double value : values) {
-            peak = Math.max(peak, Math.abs(value));
+        for (int i = 0; i < columns; i++) {
+            // 缺口里那几列的取值不参与峰值：那是没采到的一段，拿它去定纵轴等于让缺口决定别处的高度
+            if (!missing[i]) {
+                peak = Math.max(peak, Math.abs(values[i]));
+            }
         }
         if (peak == 0) {
             return;
@@ -941,19 +975,182 @@ public class BilibiliLiveReportPainter {
         int chartTop = top + 34;
         int baseline = chartTop + CURVE_HEIGHT;
 
-        // 面积多边形：左下角起，沿曲线走一遍，回到右下角闭合
-        List<Point> area = new ArrayList<>(columns + 2);
-        area.add(new Point(MARGIN, baseline));
-        for (int i = 0; i < columns; i++) {
-            int height = (int) Math.round(CURVE_HEIGHT * Math.abs(values[i]) / peak);
-            area.add(new Point(MARGIN + i * CURVE_COLUMN_WIDTH, baseline - height));
+        // 按「有没有采到」把列切成一段一段：采到的画面积，没采到的画斜纹
+        int from = 0;
+        while (from < columns) {
+            int to = from;
+            while (to + 1 < columns && missing[to + 1] == missing[from]) {
+                to++;
+            }
+            if (missing[from]) {
+                drawGapHatch(painter, columnX(from), columnX(to + 1), chartTop, baseline);
+            } else {
+                drawAreaRun(painter, values, peak, from, to, baseline, curve.color);
+            }
+            from = to + 1;
         }
-        area.add(new Point(MARGIN + (columns - 1) * CURVE_COLUMN_WIDTH, baseline));
-        painter.drawPolygon(area, curve.color);
 
         // 基线压在面积下沿，给曲线一个明确的落脚点
         painter.drawRectangle(MARGIN, baseline, CONTENT_WIDTH, 2, COLOR_CARD);
         painter.setPos(MARGIN, baseline + 16);
+    }
+
+    /**
+     * 第 column 列左边缘的 x
+     */
+    private static int columnX(int column) {
+        return MARGIN + column * CURVE_COLUMN_WIDTH;
+    }
+
+    /**
+     * 画一段面积：从第 from 列到第 to 列（含），下沿落在基线上
+     */
+    private void drawAreaRun(CommonPainter painter, double[] values, double peak,
+                             int from, int to, int baseline, Color color) {
+        if (from == to) {
+            // 只剩一列时多边形退化成一条没有宽度的线，什么都画不出来，改用矩形
+            int height = areaHeight(values[from], peak);
+            painter.drawRectangle(columnX(from), baseline - height, CURVE_COLUMN_WIDTH, height, color);
+            return;
+        }
+
+        // 面积多边形：左下角起，沿曲线走一遍，回到右下角闭合
+        List<Point> area = new ArrayList<>(to - from + 3);
+        area.add(new Point(columnX(from), baseline));
+        for (int i = from; i <= to; i++) {
+            area.add(new Point(columnX(i), baseline - areaHeight(values[i], peak)));
+        }
+        area.add(new Point(columnX(to), baseline));
+        painter.drawPolygon(area, color);
+    }
+
+    /**
+     * 某一列的面积高度，至少留 {@link #CURVE_MIN_AREA_HEIGHT} 像素
+     * <p>
+     * 取值为 0 的那几列本来一个像素都不画，于是「没人说话」在图上是一片空白，
+     * 与画着斜纹的缺口段<b>并排放着也分得出，单看却分不出</b>。留一条贴地的细面积，
+     * 「采集在，只是没互动」这句话才有个看得见的说法。
+     */
+    private static int areaHeight(double value, double peak) {
+        return Math.max(CURVE_MIN_AREA_HEIGHT, (int) Math.round(CURVE_HEIGHT * Math.abs(value) / peak));
+    }
+
+    /**
+     * 把一段缺口画成 45° 浅色斜纹，两侧各压一条细边界线
+     * <p>
+     * 用斜纹而不是灰底：灰底像一个取值为某个高度的区块，斜纹是公认的「此处无数据」。
+     * 斜线按<b>整幅图的坐标</b>起线而不是从本段左端起线——相邻两段缺口的斜线因此是同一套，
+     * 不会因为段的宽窄不同而各排各的。
+     * @param left 左边缘 x（含）
+     * @param right 右边缘 x（不含）
+     */
+    private void drawGapHatch(CommonPainter painter, int left, int right, int top, int bottom) {
+        int height = bottom - top;
+        if (right - left <= 0 || height <= 0) {
+            return;
+        }
+
+        // 斜线自左下向右上，写成「x + y = 常数」的一族；常数按整幅图取网格
+        int firstLine = Math.floorDiv(left + top, CURVE_GAP_HATCH_PERIOD) * CURVE_GAP_HATCH_PERIOD;
+        for (int c = firstLine; c <= right + bottom; c += CURVE_GAP_HATCH_PERIOD) {
+            List<Point> stripe = List.of(
+                    new Point(c - top, top),
+                    new Point(c - top + CURVE_GAP_HATCH_WIDTH, top),
+                    new Point(c - bottom + CURVE_GAP_HATCH_WIDTH, bottom),
+                    new Point(c - bottom, bottom));
+            List<Point> clipped = clipToColumns(stripe, left, right);
+            if (clipped.size() >= 3) {
+                painter.drawPolygon(clipped, COLOR_CURVE_GAP_HATCH);
+            }
+        }
+
+        // 边界线最后画，压在斜纹上：缺口起止于何时，比斜纹本身更该看得清
+        painter.drawRectangle(left, top, 1, height, COLOR_CURVE_GAP_EDGE);
+        painter.drawRectangle(right - 1, top, 1, height, COLOR_CURVE_GAP_EDGE);
+    }
+
+    /**
+     * 把一个凸多边形裁到 {@code [left, right)} 这条竖直带子里
+     * <p>
+     * 斜纹得停在缺口段的边上，而绘图器只会整个填多边形、不认裁剪区，
+     * 所以裁剪自己算。只需裁两条竖边，逐边取交点即可。
+     */
+    private static List<Point> clipToColumns(List<Point> polygon, int left, int right) {
+        List<Point> afterLeft = clipToHalfPlane(polygon, left, true);
+        return clipToHalfPlane(afterLeft, right - 1, false);
+    }
+
+    /**
+     * 把多边形裁到某条竖直半平面内
+     * @param bound 边界 x
+     * @param keepRight true 保留 {@code x >= bound} 的一侧，false 保留 {@code x <= bound} 的一侧
+     */
+    private static List<Point> clipToHalfPlane(List<Point> polygon, int bound, boolean keepRight) {
+        List<Point> result = new ArrayList<>(polygon.size() + 2);
+        for (int i = 0; i < polygon.size(); i++) {
+            Point current = polygon.get(i);
+            Point previous = polygon.get((i + polygon.size() - 1) % polygon.size());
+            boolean currentIn = keepRight ? current.x >= bound : current.x <= bound;
+            boolean previousIn = keepRight ? previous.x >= bound : previous.x <= bound;
+
+            if (currentIn != previousIn) {
+                // 两点跨过边界，取边界上的交点。斜线是 45°，y 随 x 等量变化
+                int dx = current.x - previous.x;
+                int dy = current.y - previous.y;
+                int y = dx == 0 ? previous.y : previous.y + Math.round((float) dy * (bound - previous.x) / dx);
+                result.add(new Point(bound, y));
+            }
+            if (currentIn) {
+                result.add(current);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 本场时间轴分成多少个时间格
+     */
+    private static int bucketCount(long start, long end) {
+        return (int) Math.max(1, (end - start) / LiveDataService.SERIES_BUCKET_MILLIS + 1);
+    }
+
+    /**
+     * 第 column 列覆盖第几到第几个时间格（左闭右开）
+     * <p>
+     * 分列法只写这一处：重采样按它取值，缺口按它落列，两边错开一格就会出现
+     * 「斜纹压着有数据的那一列」或者「缺口的边上漏出一截面积」。
+     */
+    private static int[] bucketRange(int column, int buckets, int columns) {
+        int from = (int) ((long) column * buckets / columns);
+        int to = (int) Math.max(from + 1L, (long) (column + 1) * buckets / columns);
+        return new int[]{from, Math.min(to, buckets)};
+    }
+
+    /**
+     * 逐列判断这一列是不是落在缺口里
+     * <p>
+     * 只要这一列覆盖的时段与缺口<b>有一点交集</b>就算缺口列。宁可多标一列，
+     * 也不让一段真实的缺口因为不足一列宽而在图上整个消失——
+     * 「缺口如实标注」的方向是让它看得见，不是让它凑整。
+     */
+    private static boolean[] gapColumns(List<LiveGap> gaps, long start, int buckets, int columns) {
+        boolean[] missing = new boolean[columns];
+        if (gaps.isEmpty()) {
+            return missing;
+        }
+
+        for (int i = 0; i < columns; i++) {
+            int[] range = bucketRange(i, buckets, columns);
+            long from = start + range[0] * LiveDataService.SERIES_BUCKET_MILLIS;
+            long to = start + range[1] * LiveDataService.SERIES_BUCKET_MILLIS;
+            for (LiveGap gap : gaps) {
+                if (gap.from() < to && gap.to() > from) {
+                    missing[i] = true;
+                    break;
+                }
+            }
+        }
+        return missing;
     }
 
     /**
@@ -968,7 +1165,7 @@ public class BilibiliLiveReportPainter {
      * 取最大而非平均，是为了让短促的高峰不被摊平，也与标题上的「峰值 X/分」自洽。
      */
     private double[] resample(Map<Long, Double> series, long start, long end, int columns) {
-        int buckets = (int) Math.max(1, (end - start) / LiveDataService.SERIES_BUCKET_MILLIS + 1);
+        int buckets = bucketCount(start, end);
         double[] dense = new double[buckets];
         for (Map.Entry<Long, Double> entry : series.entrySet()) {
             // 落在直播区间之外的格直接丢弃：时钟回拨或上一场残留都可能造成
@@ -984,9 +1181,8 @@ public class BilibiliLiveReportPainter {
 
         double[] values = new double[columns];
         for (int i = 0; i < columns; i++) {
-            int from = (int) ((long) i * buckets / columns);
-            int to = (int) Math.max(from + 1L, (long) (i + 1) * buckets / columns);
-            for (int j = from; j < Math.min(to, buckets); j++) {
+            int[] range = bucketRange(i, buckets, columns);
+            for (int j = range[0]; j < range[1]; j++) {
                 values[i] = Math.max(values[i], Math.abs(dense[j]));
             }
         }
@@ -1337,39 +1533,79 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
-     * 本场之内因程序停机而没有采集的时长描述
+     * 本场的全部采集缺口，按时间先后排列
      * <p>
-     * 只算与本场重叠的部分：一段跨越开播时刻的停机，开播之前那一截不属于本场。
+     * 取不到起止时刻时为空表：算不出时间轴，也就谈不上哪一段落在轴内。
+     */
+    private List<LiveGap> collectionGaps(String platform, Long uid) {
+        Optional<Long> start = liveDataService.getLiveStartTime(platform, uid);
+        Optional<Long> end = effectiveEndTime(platform, uid, start);
+        if (start.isEmpty() || end.isEmpty() || end.get() <= start.get()) {
+            return List.of();
+        }
+        return collectionGaps(platform, uid, start.get(), end.get());
+    }
+
+    /**
+     * 把程序停机与本房断线合成一份<b>互不重叠</b>的缺口表
+     * <p>
+     * ⚠️ <b>两份必然重叠，所以不能相加。</b>程序停机期间这个房间当然也是断的，
+     * 相加就是把同一秒数两遍，能算出比整场时长还长的缺口。这里让停机<b>优先占位</b>：
+     * 那一秒既然整个程序都没在跑，说成「程序停了」比说成「这个房间断流」更接近成因。
+     * <p>
+     * 让它们互不重叠还买到一件事：各成因时长之和恰好等于总时长，
+     * 概览那一行的「共 X：维护 a／重启 b／断流 c」才是一个真的分栏，而不是三个能互相重叠的数。
+     */
+    private List<LiveGap> collectionGaps(String platform, Long uid, long start, long end) {
+        return LiveGap.merge(List.of(
+                liveDataService.downtimeIntervals(start, end),
+                liveDataService.roomOutageIntervals(platform, uid, start, end)));
+    }
+
+    /**
+     * 本场采集缺口的那一句话：共缺了多久，各成因各占多久
+     * <p>
      * 没有缺口时返回空字符串，报告上就不会多出一句废话。
      * <p>
      * <b>刻意不是私有的</b>：报告文本降级输出要用同一份措辞，
      * 缺口这句话只能有一个出处，否则图片版与文字版迟早说出两个不同的数。
-     */
-    String maintenanceGapText(String platform, Long uid) {
-        Optional<Long> start = liveDataService.getLiveStartTime(platform, uid);
-        Optional<Long> end = effectiveEndTime(platform, uid, start);
-        if (start.isEmpty() || end.isEmpty()) {
-            return "";
-        }
-        return DurationFormatUtil.format(liveDataService.downtimeWithin(start.get(), end.get()) / 1000);
-    }
-
-    /**
-     * 本场因<b>这个直播间自己断线</b>而没采到的时长描述，没有则为空串
      * <p>
-     * ⚠️ <b>与 {@link #maintenanceGapText} 分开显示，不相加。</b>
-     * 那一个是整个程序停了，这一个是单个房间断线重连；
-     * 程序停机期间所有房间都在断，两段必然重叠，加起来就是重复计数。
-     * 报告上并排写两句，读者才知道这是两回事。
+     * 总时长由各成因逐项相加得出，<b>不另算一遍</b>：各项与总数各自取整的话，
+     * 「共 12 分 34 秒」旁边挂着几项加起来是 12 分 33 秒，读的人只会以为哪里少算了一段。
+     * <p>
+     * 只有一个成因时不再重复那个数（「共 8 秒·维护」而不是「共 8 秒：维护 8 秒」）：
+     * 这一句是跟在时长后面的一个片段，<b>版心只有那么宽</b>，
+     * 而同一个数写两遍既占地方又不多说明任何事情。
      */
-    String roomOutageText(String platform, Long uid) {
-        Optional<Long> start = liveDataService.getLiveStartTime(platform, uid);
-        Optional<Long> end = effectiveEndTime(platform, uid, start);
-        if (start.isEmpty() || end.isEmpty()) {
+    String collectionGapText(String platform, Long uid) {
+        List<LiveGap> gaps = collectionGaps(platform, uid);
+        if (gaps.isEmpty()) {
             return "";
         }
-        long seconds = liveDataService.roomOutageWithin(platform, uid, start.get(), end.get()) / 1000;
-        return seconds <= 0 ? "" : DurationFormatUtil.format(seconds);
+
+        // 分栏按枚举声明顺序出，只出非零的那几栏——「断流 0 秒」这种栏位是噪音
+        List<LiveGap.Reason> reasons = new ArrayList<>();
+        List<String> parts = new ArrayList<>();
+        long totalSeconds = 0;
+        for (LiveGap.Reason reason : LiveGap.Reason.values()) {
+            long seconds = gaps.stream()
+                    .filter(gap -> gap.reason() == reason)
+                    .mapToLong(LiveGap::durationMillis)
+                    .sum() / 1000;
+            if (seconds > 0) {
+                totalSeconds += seconds;
+                reasons.add(reason);
+                parts.add(reason.getDescription() + " " + DurationFormatUtil.format(seconds));
+            }
+        }
+        if (parts.isEmpty()) {
+            return "";
+        }
+
+        String total = "采集缺口 共 " + DurationFormatUtil.format(totalSeconds);
+        return reasons.size() == 1
+                ? total + "·" + reasons.get(0).getDescription()
+                : total + "：" + String.join("／", parts);
     }
 
     /**

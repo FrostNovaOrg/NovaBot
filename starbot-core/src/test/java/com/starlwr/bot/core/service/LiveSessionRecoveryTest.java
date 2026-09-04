@@ -4,6 +4,7 @@ import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.enums.LiveEndReason;
 import com.starlwr.bot.core.event.live.common.LiveOnEvent;
 import com.starlwr.bot.core.listener.StarBotDefaultLiveOnEventListener;
+import com.starlwr.bot.core.model.LiveGap;
 import com.starlwr.bot.core.model.LiveSession;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import org.junit.jupiter.api.BeforeEach;
@@ -245,6 +246,115 @@ class LiveSessionRecoveryTest {
             new LiveSessionRecovery(service, archive).onApplicationReadyEvent();
 
             assertEquals(0, service.downtimeWithin(0, Long.MAX_VALUE / 2));
+        }
+
+        @Test
+        @DisplayName("归档那一场的缺口秒数，是从区间表里现算出来的")
+        void archivedGapComesFromTheIntervals() {
+            long start = System.currentTimeMillis() - 7200_000;
+
+            DefaultLiveDataService before = boot();
+            before.setLiveStatus(PLATFORM, STREAMER.getUid(), true);
+            before.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+            // 本场之内停过两段：60 秒与 30 秒；另有一段整个落在开播之前，不该算进本场
+            before.recordDowntime(start + 600_000, start + 660_000, LiveGap.Reason.MAINTENANCE);
+            before.recordDowntime(start + 1200_000, start + 1230_000, LiveGap.Reason.RESTART);
+            before.recordDowntime(start - 600_000, start - 300_000, LiveGap.Reason.MAINTENANCE);
+            before.recordRoomOutage(PLATFORM, STREAMER.getUid(), start + 610_000, start + 640_000);
+            before.saveNow(false);
+
+            DefaultLiveDataService after = boot();
+            assertTrue(new LiveSessionRecovery(after, archive)
+                    .archiveUnclosedIfAny(PLATFORM, STREAMER, System.currentTimeMillis()));
+
+            LiveSession session = archived().get(0);
+            assertEquals(90, session.maintenanceGapSeconds(), "60 + 30，开播之前那一段不算本场");
+            assertEquals(30, session.roomOutageSeconds(), "单房断线单列，不并进上面那个数");
+        }
+
+        @Test
+        @DisplayName("区间列表逐段给出起止与成因，总时长仍是各段之和")
+        void listsIntervalsWithReasons() {
+            long base = System.currentTimeMillis() - 3600_000;
+
+            DefaultLiveDataService service = boot();
+            service.recordDowntime(base, base + 10_000, LiveGap.Reason.MAINTENANCE);
+            service.recordDowntime(base + 20_000, base + 50_000, LiveGap.Reason.RESTART);
+            service.recordRoomOutage(PLATFORM, STREAMER.getUid(), base + 60_000, base + 70_000);
+
+            List<LiveGap> downtimes = service.downtimeIntervals(base - 1000, base + 80_000);
+            assertEquals(List.of(
+                            new LiveGap(base, base + 10_000, LiveGap.Reason.MAINTENANCE),
+                            new LiveGap(base + 20_000, base + 50_000, LiveGap.Reason.RESTART)),
+                    downtimes, "两段停机应逐段给出，成因各自跟着自己那一段");
+
+            assertEquals(List.of(new LiveGap(base + 60_000, base + 70_000, LiveGap.Reason.STREAM_LOSS)),
+                    service.roomOutageIntervals(PLATFORM, STREAMER.getUid(), base - 1000, base + 80_000));
+
+            // 阴性对照：两个总数一个字都没变，区间化改的是「说不说得出缺在哪」，不是「缺了多久」
+            assertEquals(40_000, service.downtimeWithin(base - 1000, base + 80_000));
+            assertEquals(10_000, service.roomOutageWithin(PLATFORM, STREAMER.getUid(), base - 1000, base + 80_000));
+        }
+
+        @Test
+        @DisplayName("区间同样只给与场次重叠的那一截，开播之前那一段被裁掉")
+        void clipsIntervalsToTheSession() {
+            long base = System.currentTimeMillis() - 3600_000;
+
+            DefaultLiveDataService service = boot();
+            service.recordDowntime(base, base + 100_000, LiveGap.Reason.MAINTENANCE);
+
+            assertEquals(List.of(new LiveGap(base + 50_000, base + 100_000, LiveGap.Reason.MAINTENANCE)),
+                    service.downtimeIntervals(base + 50_000, base + 200_000),
+                    "跨越开播时刻的停机, 区间也只留开播之后那一截");
+            assertEquals(List.of(), service.downtimeIntervals(base + 200_000, base + 300_000));
+        }
+
+        @Test
+        @DisplayName("上次正常退出时，这段空白记成维护")
+        void readsCleanShutdownAsMaintenance() {
+            assertEquals(LiveGap.Reason.MAINTENANCE, reasonAfterShutdown(true));
+        }
+
+        @Test
+        @DisplayName("上次崩溃或被强杀时，这段空白记成重启")
+        void readsCrashAsRestart() {
+            assertEquals(LiveGap.Reason.RESTART, reasonAfterShutdown(false));
+        }
+
+        /**
+         * 停一次、起一次，返回启动时记下的那段停机的成因
+         * @param clean 上一个进程是不是正常退出的
+         */
+        private LiveGap.Reason reasonAfterShutdown(boolean clean) {
+            DefaultLiveDataService before = boot();
+            before.setLiveStatus(PLATFORM, STREAMER.getUid(), true);
+            before.saveNow(clean);
+            long watermark = watermark();
+            // 理由同 recordsDowntimeOnStartup：落盘与恢复挤进同一毫秒时刻意不记
+            awaitClockPast(watermark);
+
+            DefaultLiveDataService after = boot();
+            assertEquals(clean, after.wasCleanShutdown().orElseThrow(),
+                    "启动那一刻读到的必须是上次退出情况, 不是本次");
+            new LiveSessionRecovery(after, archive).onApplicationReadyEvent();
+
+            List<LiveGap> gaps = after.downtimeIntervals(watermark, System.currentTimeMillis());
+            assertEquals(1, gaps.size(), "启动只该记一段停机");
+            return gaps.get(0).reason();
+        }
+
+        @Test
+        @DisplayName("成因问不出来时记「原因未定」，不挑一个看起来最像的")
+        void fallsBackToUnknownReason() {
+            long base = System.currentTimeMillis() - 3600_000;
+
+            DefaultLiveDataService service = boot();
+            // 不带成因的那个重载：第三方实现不记成因时走的就是这条路
+            service.recordDowntime(base, base + 10_000);
+
+            assertEquals(LiveGap.Reason.UNKNOWN,
+                    service.downtimeIntervals(base, base + 10_000).get(0).reason());
         }
 
         @Test
