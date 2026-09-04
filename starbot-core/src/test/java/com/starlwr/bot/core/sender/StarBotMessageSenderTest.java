@@ -287,7 +287,8 @@ class StarBotMessageSenderTest {
         when(resolvers.iterator()).thenAnswer(invocation -> list.iterator());
 
         return new StarBotMessageSender(http, senderService, new PushActivityRecorder(TimelineWriter.NONE), new PushGate(properties),
-                TimelineWriter.NONE, new com.starlwr.bot.core.service.AtAllQuotaService(properties), resolvers);
+                TimelineWriter.NONE, new com.starlwr.bot.core.service.AtAllQuotaService(properties), resolvers,
+                new FirstPushTipService(new com.starlwr.bot.core.service.StarBotStateStore(properties)));
     }
 
     /**
@@ -430,7 +431,8 @@ class StarBotMessageSenderTest {
 
         StarBotCoreProperties properties = new StarBotCoreProperties();
         return new StarBotMessageSender(http, senderService, new PushActivityRecorder(TimelineWriter.NONE), new PushGate(properties),
-                TimelineWriter.NONE, new com.starlwr.bot.core.service.AtAllQuotaService(properties), resolvers);
+                TimelineWriter.NONE, new com.starlwr.bot.core.service.AtAllQuotaService(properties), resolvers,
+                new FirstPushTipService(new com.starlwr.bot.core.service.StarBotStateStore(properties)));
     }
 
     /**

@@ -82,7 +82,11 @@ class DatasourceStreamerLimitTest {
                 mock(ObjectProvider.class),
                 mock(ObjectProvider.class),
                 mock(com.starlwr.bot.core.service.EventStreamTokenService.class),
-                mock(ObjectProvider.class));
+                mock(ObjectProvider.class),
+                mock(com.starlwr.bot.core.sender.PushGate.class),
+                mock(com.starlwr.bot.core.service.LiveDataService.class),
+                mock(com.starlwr.bot.core.timeline.TimelineStore.class),
+                mock(com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService.class));
     }
 
     @Test

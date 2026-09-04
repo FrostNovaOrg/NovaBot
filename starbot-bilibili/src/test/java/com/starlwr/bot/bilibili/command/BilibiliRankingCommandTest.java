@@ -70,7 +70,9 @@ class BilibiliRankingCommandTest {
         painter = mock(BilibiliDataQueryPainter.class);
         when(painter.paintRanking(any(), any(), anyInt(), any(), any())).thenReturn(Optional.of("QUJD"));
 
-        command = new BilibiliLiveRankingCommand(dataSource, liveDataService, painter, revenueVisibility);
+        // 本类只配了一位主播，「说的是哪一位」这一步不会走到追问，替身足够
+        command = new BilibiliLiveRankingCommand(dataSource, mock(BilibiliStreamerChoice.class),
+                liveDataService, painter, revenueVisibility);
     }
 
     @Test

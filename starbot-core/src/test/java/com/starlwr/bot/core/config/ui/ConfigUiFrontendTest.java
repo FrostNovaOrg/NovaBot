@@ -38,7 +38,7 @@ class ConfigUiFrontendTest {
      */
     private static final List<String> SHARED = List.of(
             "schema", "values", "legacy", "dirty", "tab", "csrfToken", "pushData", "pushSaved",
-            "handlerList", "senderList", "wizardTouched", "pushEnabled", "accountTimer",
+            "handlerList", "senderList", "pushEnabled", "accountTimer",
             "platforms", "totpRequired");
 
     /**
@@ -106,6 +106,23 @@ class ConfigUiFrontendTest {
     private static final String PAGE_PREFIX = "page-";
 
     private static final Pattern TAB_COMPARISON = Pattern.compile("store\\.tab\\s*[!=]==\\s*'([^']+)'");
+
+    /**
+     * 页面上摆着的元素 id：{@code id="x"}。既认 index.html 里写死的，
+     * 也认脚本拼进 innerHTML 的那些——后者同样是「页面上真有这个元素」
+     */
+    private static final Pattern ELEMENT_ID = Pattern.compile("id=\"([A-Za-z0-9_-]+)\"");
+
+    /** 脚本建出节点后直接赋的 id：{@code node.id = 'x'} */
+    private static final Pattern ID_ASSIGNMENT = Pattern.compile("\\.id\\s*=\\s*'([A-Za-z0-9_-]+)'");
+
+    /**
+     * 脚本按字面 id 去取元素：{@code $('#x')}
+     * <p>
+     * 只认字面量。拼出来的（{@code $('#' + p + '-addr')}）由调用方在运行时定，
+     * 静态判不出来，判据不假装自己看得见它。
+     */
+    private static final Pattern ID_REFERENCE = Pattern.compile("\\$\\('#([A-Za-z0-9_-]+)'\\)");
 
     /**
      * 注释与普通字符串。重命名和引用检查都不该看这里面
@@ -400,6 +417,62 @@ class ConfigUiFrontendTest {
 
         assertTrue(bad.isEmpty(), "核心只该认得自己的路由 " + CORE_ROUTES + " 与页签 " + CORE_TABS
                 + "，以下是写死的平台页残迹:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
+     * 脚本按 id 去取的每个元素，页面上确实有
+     * <p>
+     * 这一条奔着改版时最常见的那类错去：把 {@code index.html} 里某块的结构换掉，
+     * 而渲染它的脚本还照着旧 id 去取。表现是 <b>那一块空着</b>，或者
+     * {@code $('#x').innerHTML} 在 null 上抛——两者都要等那一页被打开、
+     * 那一段被渲染到才发生，而首页恰恰是出事时第一眼看的那一页。
+     * <p>
+     * 「有」分两种，都算数：写在 {@code index.html} 里的，与某个脚本自己建出来的
+     * （登录页那张验证器卡片、只读口令签发后那一块都属于后者）。
+     * 只认前者的话，这条判据得为后者开一串豁免，而豁免多了它就形同虚设。
+     */
+    @Test
+    @DisplayName("脚本按 id 取的元素，页面上确实有")
+    void everyReferencedElementIdExists() throws IOException {
+        Map<String, String> sources = sources();
+
+        Set<String> available = new LinkedHashSet<>();
+        Matcher inHtml = ELEMENT_ID.matcher(
+                Files.readString(frontendDir().resolve("index.html"), StandardCharsets.UTF_8));
+        while (inHtml.find()) {
+            available.add(inHtml.group(1));
+        }
+        sources.values().forEach(text -> {
+            Matcher built = ELEMENT_ID.matcher(text);
+            while (built.find()) {
+                available.add(built.group(1));
+            }
+            Matcher assigned = ID_ASSIGNMENT.matcher(text);
+            while (assigned.find()) {
+                available.add(assigned.group(1));
+            }
+        });
+
+        List<String> bad = new ArrayList<>();
+        sources.forEach((name, text) -> {
+            String[] lines = text.split("\n", -1);
+            for (int i = 0; i < lines.length; i++) {
+                String line = lines[i].strip();
+                // 注释里的旧 id 不算引用：注掉的那段代码不会去取任何东西
+                if (line.startsWith("//") || line.startsWith("*") || line.startsWith("/*")) {
+                    continue;
+                }
+                Matcher m = ID_REFERENCE.matcher(lines[i]);
+                while (m.find()) {
+                    if (!available.contains(m.group(1))) {
+                        bad.add(name + ":" + (i + 1) + "  #" + m.group(1));
+                    }
+                }
+            }
+        });
+
+        assertTrue(bad.isEmpty(), "以下位置按 id 去取一个页面上没有的元素，渲染到那一块时会空着或抛:\n  "
+                + String.join("\n  ", bad));
     }
 
     /**

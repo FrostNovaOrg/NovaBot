@@ -130,6 +130,16 @@ class CommandDispatcherCorpusTest {
         return new Corpus(name, null, List.of(input), List.of(expected));
     }
 
+    /**
+     * 一个没有任何认领方的追问 provider：本表量的是「什么算一条命令」，与追问应答无关
+     */
+    @SuppressWarnings("unchecked")
+    static ObjectProvider<CommandFollowUp> noFollowUps() {
+        ObjectProvider<CommandFollowUp> provider = mock(ObjectProvider.class);
+        when(provider.iterator()).thenAnswer(invocation -> List.<CommandFollowUp>of().iterator());
+        return provider;
+    }
+
     private static Stream<Corpus> corpus() {
         return Stream.of(
                 one("群里 @ 机器人加命令名 —— 执行", Msg.at("测试命令"), Outcome.EXECUTED),
@@ -217,7 +227,7 @@ class CommandDispatcherCorpusTest {
             when(provider.iterator()).thenAnswer(invocation -> new ArrayList<>(commands).iterator());
             when(provider.orderedStream()).thenAnswer(invocation -> new ArrayList<>(commands).stream());
 
-            dispatcher = new CommandDispatcher(provider, settings, dataSource, sender, new StarBotCoreProperties());
+            dispatcher = new CommandDispatcher(provider, noFollowUps(), settings, dataSource, sender, new StarBotCoreProperties());
 
             @SuppressWarnings("unchecked")
             ObjectProvider<CommandDispatcher> self = mock(ObjectProvider.class);

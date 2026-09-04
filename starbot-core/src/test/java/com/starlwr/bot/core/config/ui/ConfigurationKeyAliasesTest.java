@@ -114,7 +114,11 @@ class ConfigurationKeyAliasesTest {
                 mock(org.springframework.beans.factory.ObjectProvider.class),
                 mock(org.springframework.beans.factory.ObjectProvider.class),
                 new EventStreamTokenService(properties.getLive()),
-                mock(org.springframework.beans.factory.ObjectProvider.class));
+                mock(org.springframework.beans.factory.ObjectProvider.class),
+                mock(com.starlwr.bot.core.sender.PushGate.class),
+                mock(com.starlwr.bot.core.service.LiveDataService.class),
+                mock(com.starlwr.bot.core.timeline.TimelineStore.class),
+                mock(com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService.class));
     }
 
     private JSONObject read() {

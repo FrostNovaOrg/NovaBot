@@ -24,9 +24,10 @@ public abstract class BilibiliScopedDataCommand extends BilibiliStreamerCommand 
 
     private final RevenueVisibilityService revenueVisibility;
 
-    protected BilibiliScopedDataCommand(AbstractDataSource dataSource, LiveDataService liveDataService,
+    protected BilibiliScopedDataCommand(AbstractDataSource dataSource, BilibiliStreamerChoice choice,
+                                        LiveDataService liveDataService,
                                         BilibiliDataQueryPainter painter, RevenueVisibilityService revenueVisibility) {
-        super(dataSource);
+        super(dataSource, choice);
         this.liveDataService = liveDataService;
         this.painter = painter;
         this.revenueVisibility = revenueVisibility;

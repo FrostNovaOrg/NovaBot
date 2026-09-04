@@ -1,6 +1,7 @@
 package com.starlwr.bot.bilibili.command;
 
 import com.starlwr.bot.core.command.CommandDispatcher;
+import com.starlwr.bot.core.command.CommandFollowUp;
 import com.starlwr.bot.core.command.CommandSettingsService;
 import com.starlwr.bot.core.command.StarBotCommand;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
@@ -284,7 +285,7 @@ class CommandSurfaceTest {
          */
         String feed(boolean group, String text) {
             replies.clear();
-            CommandDispatcher dispatcher = new CommandDispatcher(provider, settings, dataSource, sender,
+            CommandDispatcher dispatcher = new CommandDispatcher(provider, noFollowUps(), settings, dataSource, sender,
                     new StarBotCoreProperties());
             current.set(dispatcher);
 
@@ -338,6 +339,16 @@ class CommandSurfaceTest {
 
         private static Object stub(Class<?> type) {
             return mock(type);
+        }
+
+        /**
+         * 没有任何追问认领方：本类量的是命令表面（有哪几条、私聊能不能用），与追问应答无关
+         */
+        private ObjectProvider<CommandFollowUp> noFollowUps() {
+            @SuppressWarnings("unchecked")
+            ObjectProvider<CommandFollowUp> mocked = mock(ObjectProvider.class);
+            when(mocked.iterator()).thenAnswer(invocation -> List.<CommandFollowUp>of().iterator());
+            return mocked;
         }
 
         private ObjectProvider<StarBotCommand> provider() {

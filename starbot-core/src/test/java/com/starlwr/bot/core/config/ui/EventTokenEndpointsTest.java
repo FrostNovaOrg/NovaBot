@@ -62,7 +62,11 @@ class EventTokenEndpointsTest {
                 mock(org.springframework.beans.factory.ObjectProvider.class),
                 mock(org.springframework.beans.factory.ObjectProvider.class),
                 tokens,
-                mock(org.springframework.beans.factory.ObjectProvider.class));
+                mock(org.springframework.beans.factory.ObjectProvider.class),
+                mock(com.starlwr.bot.core.sender.PushGate.class),
+                mock(com.starlwr.bot.core.service.LiveDataService.class),
+                mock(com.starlwr.bot.core.timeline.TimelineStore.class),
+                mock(com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService.class));
     }
 
     @Test

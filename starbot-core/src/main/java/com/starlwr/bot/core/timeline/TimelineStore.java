@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Deque;
+import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -196,6 +197,25 @@ public class TimelineStore implements TimelineWriter {
         }
 
         return new Result(hits, matched, limit);
+    }
+
+    /**
+     * 某一天各类事件各有几条
+     * <p>
+     * 首页要写「今日推送 N 条、失败 M 条」。走这里而不是读进程内那份计数器：
+     * 计数器是从进程启动起算的，重启一次「今天」就归零，而使用者问的今天是日历上的今天。
+     * <p>
+     * 一次读盘算出全部类型，不是一类查一遍：查两次就读两遍同一个文件，
+     * 而且两遍之间还可能被写进新的一行，于是「成功数」与「失败数」取自两个不同的瞬间。
+     * @param day 日期
+     * @return 各类型的条数，没有发生过的类型不在表里
+     */
+    public Map<TimelineEventType, Integer> countsOn(@NonNull LocalDate day) {
+        Map<TimelineEventType, Integer> counts = new EnumMap<>(TimelineEventType.class);
+        for (TimelineEvent event : readDay(day)) {
+            counts.merge(event.type(), 1, Integer::sum);
+        }
+        return counts;
     }
 
     /**

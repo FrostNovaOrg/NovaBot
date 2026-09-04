@@ -46,7 +46,8 @@ import java.util.concurrent.ConcurrentHashMap;
  *         此时装作没听见比回一份菜单更让人困惑。</li>
  *     <li><b>被本会话关掉的命令回一句</b>——沉默会让人以为机器人坏了，反复重试。</li>
  *     <li><b>同会话冷却</b>——防止刷屏。回菜单、回「已关闭」、回「没权限」与执行命令
- *         共用同一份冷却；分开算的话，连发无效消息就能绕过它。</li>
+ *         共用同一份冷却；分开算的话，连发无效消息就能绕过它。
+ *         <b>唯一的例外是被认领的追问应答</b>，理由见 {@link CommandFollowUp}。</li>
  * </ul>
  */
 @Slf4j
@@ -67,6 +68,11 @@ public class CommandDispatcher {
 
     private final ObjectProvider<StarBotCommand> commands;
 
+    /**
+     * 追问应答的认领方。没有任何实现时，认不出的消息照旧回菜单
+     */
+    private final ObjectProvider<CommandFollowUp> followUps;
+
     private final CommandSettingsService settings;
 
     private final AbstractDataSource dataSource;
@@ -81,10 +87,11 @@ public class CommandDispatcher {
     private final Map<String, Instant> lastExecuted = new ConcurrentHashMap<>();
 
     @Autowired
-    public CommandDispatcher(ObjectProvider<StarBotCommand> commands, CommandSettingsService settings,
-                             AbstractDataSource dataSource, StarBotMessageSender sender,
-                             StarBotCoreProperties properties) {
+    public CommandDispatcher(ObjectProvider<StarBotCommand> commands, ObjectProvider<CommandFollowUp> followUps,
+                             CommandSettingsService settings, AbstractDataSource dataSource,
+                             StarBotMessageSender sender, StarBotCoreProperties properties) {
         this.commands = commands;
+        this.followUps = followUps;
         this.settings = settings;
         this.dataSource = dataSource;
         this.sender = sender;
@@ -122,8 +129,20 @@ public class CommandDispatcher {
             return;
         }
 
-        // 以下四条出声的路径共用这一份冷却
-        if (!acquireCooldown(event, name)) {
+        // 认不出的消息先问一句「有谁在等这个答案吗」。这一步必须排在冷却之前：
+        // 机器人刚问完「是哪一位」，答案却撞在它自己的冷却上，现象是「回了个数字，没反应」
+        CommandFollowUp.Claimed claimed = command == null ? claim(event, type, name, parts) : null;
+        if (claimed != null && claimed.reply() != null) {
+            reply(event, type, claimed.reply().content());
+            return;
+        }
+        if (claimed != null) {
+            command = find(claimed.command());
+            parts = new ArrayList<>(claimed.args());
+        }
+
+        // 以下四条出声的路径共用这一份冷却；被认领的应答已在上面走掉
+        if (claimed == null && !acquireCooldown(event, name)) {
             return;
         }
 
@@ -153,6 +172,35 @@ public class CommandDispatcher {
         }
 
         run(command, event, type, List.copyOf(parts), admin);
+    }
+
+    /**
+     * 问一圈有没有人认领这条认不出的消息
+     * <p>
+     * 认领方按 Bean 的顺序依次问过去，头一个认领的说了算——同一条消息被两处认领本就是个错误，
+     * 而在这里挑一个「更合适的」只会让那个错误更难被发现。
+     * @return 认领结果，无人认领时为 null
+     */
+    private CommandFollowUp.Claimed claim(StarBotRemoteMessageEvent event, PushTargetType type,
+                                          String name, List<String> args) {
+        if (name.isEmpty()) {
+            return null;
+        }
+
+        CommandContext context = new CommandContext(event.getPlatform(), type, event.getNum(),
+                event.getSenderUid(), name, List.copyOf(args), event.getText());
+        for (CommandFollowUp followUp : followUps) {
+            try {
+                CommandFollowUp.Claimed claimed = followUp.claim(context);
+                if (claimed != null) {
+                    return claimed;
+                }
+            } catch (Exception e) {
+                // 认领方出错不该让这条消息连菜单都收不到
+                log.error("认领消息 {} 时发生异常", name, e);
+            }
+        }
+        return null;
     }
 
     /**
@@ -198,7 +246,11 @@ public class CommandDispatcher {
      * 向消息来源的会话回一条消息
      */
     private void reply(StarBotRemoteMessageEvent event, PushTargetType type, String content) {
-        Message.create(event.getPlatform(), type, event.getNum(), content).forEach(sender::send);
+        Message.create(event.getPlatform(), type, event.getNum(), content).forEach(message -> {
+            // 标成回复而不是推送：这一条是有人先开口才有的，凡是「只对主动推送成立」的事都不该算上它
+            message.setReply(true);
+            sender.send(message);
+        });
     }
 
     /**

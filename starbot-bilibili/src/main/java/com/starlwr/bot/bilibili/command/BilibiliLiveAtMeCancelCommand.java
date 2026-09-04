@@ -11,8 +11,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 @StarBotComponent
 public class BilibiliLiveAtMeCancelCommand extends BilibiliAtSubscribeCommand {
     @Autowired
-    public BilibiliLiveAtMeCancelCommand(AbstractDataSource dataSource, AtSubscriptionService subscriptions) {
-        super(dataSource, subscriptions);
+    public BilibiliLiveAtMeCancelCommand(AbstractDataSource dataSource, BilibiliStreamerChoice choice,
+                                         AtSubscriptionService subscriptions) {
+        super(dataSource, choice, subscriptions);
     }
 
     @Override

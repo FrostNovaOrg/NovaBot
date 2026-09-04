@@ -42,6 +42,17 @@
       <a href="#/settings" data-page="settings"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v1.6M8 12.6v1.6M14.2 8h-1.6M3.4 8H1.8M12.4 3.6l-1.1 1.1M4.7 11.3l-1.1 1.1M12.4 12.4l-1.1-1.1M4.7 4.7 3.6 3.6"/></svg>设置</a>
     </nav>
     <!--
+      运行三行。摆在侧栏而不是首页上：堆内存、线程数这类数字是「这台机器还撑得住吗」，
+      与首页要回答的「现在好不好」不是同一个问题——放进首页会与链路、探针抢位置，
+      而它们恰恰是不需要每次都读的那种数字。
+    -->
+    <div class="runbox">
+      <div class="rb-t">运行</div>
+      <div class="rb-r"><span>堆内存</span><b id="run-mem">—</b></div>
+      <div class="rb-r"><span>线程</span><b id="run-threads">—</b></div>
+      <div class="rb-r"><span>监听主播</span><b id="run-streamers">—</b></div>
+    </div>
+    <!--
       版本位。值由 /api/status 的 version 下发，真源是构建期生成的 build-info；
       从源码直接跑（未经打包）时那个字段是空串，此处只显示产品名。
       在界面里写死一个版本号是更坏的选择——它与产物脱节的那一天不会有任何提示。
@@ -61,28 +72,54 @@
   <div class="totp-setup" id="totp-setup" style="display:none"></div>
 
   <!-- ============ 首页 #/home ============ -->
+  <!--
+    首页回答一个问题：现在好不好。
+    自上而下：出事时那条横条 → 链路三段 → 要人动手的待办 → 现在与今日 → 六项探针 → 今天发生了什么。
+
+    页上每一块的内容都由 home-model.js 一次算出，这里只留容器。
+    分散在各处「取一份数据、渲染一块」的写法在故障档下会互相矛盾：链路已经按新的一份数据变红，
+    而待办还是上一次那份算出来的——两块说的是同一件事，却来自两个瞬间。
+
+    首次配置向导（原先嵌在本页顶部的四步）已撤：它做的事现在归初始设置页 #/setup，
+    首页只留一条待办指过去。机器人连接表单与登录二维码都还在「连接」页上，能力没有少。
+  -->
   <section class="page" id="page-home">
     <div id="overview">
-      <div id="wizard-box">
-        <div class="backups">
-          <span id="wizard-title">首次配置</span>
-          <button id="wizard-toggle" type="button">收起</button>
+      <div id="home-banner"></div>
+
+      <div class="nv-card hcard">
+        <h3>链路 <span class="h-note">点任一站去「连接」页</span></h3>
+        <div class="linkmap" id="linkmap"></div>
+      </div>
+
+      <div id="home-todo"></div>
+
+      <div class="split">
+        <div class="nv-card hcard" style="flex:1 1 380px">
+          <h3>现在</h3>
+          <div id="now-box"></div>
         </div>
-        <div id="wizard"></div>
+        <div class="nv-card hcard" style="flex:1 1 260px">
+          <h3>今日</h3>
+          <div class="stats" id="today-stats"></div>
+          <div class="quickbar">
+            <button id="toggle-push" type="button">…</button>
+            <button id="selftest-run" type="button">立即自检</button>
+            <span id="push-hint"></span>
+          </div>
+        </div>
       </div>
 
-      <div class="health" id="health"></div>
-
-      <div class="backups" id="quickbar">
-        <button id="selftest-run" type="button">立即自检</button>
-        <button id="toggle-push" type="button">…</button>
-        <span id="push-hint"></span>
+      <div class="nv-card hcard">
+        <h3>健康自检 <span class="h-note">六项探针</span></h3>
+        <div id="probe-list"></div>
       </div>
 
-      <div class="cards" id="runtime"></div>
-
-      <p class="hint" style="margin:20px 0 10px">最近推送</p>
-      <table id="history"><thead><tr><th>时间</th><th>目标</th><th>内容</th><th>结果</th></tr></thead><tbody></tbody></table>
+      <div class="nv-card hcard">
+        <h3>今天发生了什么 <span class="h-note">失败与告警置顶，再带最近几条</span></h3>
+        <div class="tl" id="home-timeline"></div>
+        <div class="tl-foot"><a href="#/log">看全部 → 日志</a></div>
+      </div>
     </div>
   </section>
 
@@ -131,6 +168,15 @@
         账号绑定块已撤：那一族聊天命令不再注册，界面上留一张永远空着的表只会让人以为功能坏了。
         已有的绑定记录仍在状态文件里原样留着，接口 /state 也照旧给出，只是不再显示、不再可改。
       -->
+
+      <!--
+        最近推送。原先在首页上，随首页改版挪到这里——首页答的是「现在好不好」，
+        而这张表答的是「刚才那条推了吗」，后者属于推送这件事本身。
+        它最终该落在通道页的「推什么」那一段里（每个通道各看自己的 5 条），
+        那一页还没建，先整份留在本页，不让这条排障线索在改版中途消失。
+      -->
+      <h3 class="cat-title">最近推送</h3>
+      <table id="history"><thead><tr><th>时间</th><th>目标</th><th>内容</th><th>结果</th></tr></thead><tbody></tbody></table>
     </div>
   </section>
 
