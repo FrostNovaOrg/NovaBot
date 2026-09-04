@@ -1,118 +1,256 @@
 /**
- * 总览页：首次配置向导、健康自检、推送开关与推送记录
+ * 首页：链路三段、待办、现在与今日、六项探针、今天发生了什么
+ *
+ * 本文件只管把 home-model.js 算好的东西摆上屏幕。什么时候该显示哪句话、
+ * 哪一段该是什么颜色，一律在那边判——判断留在这里的话，八档对照就只能靠人点开页面看。
  */
 
-import {bindBotForm, botFormHtml, renderTestMessage} from './bot.js';
-import {$, api, esc, say} from './core.js';
-import {pageStatus, switchTab} from './main.js';
+import {renderTestMessage} from './bot.js';
+import {$, api, el, esc, markDirty, say} from './core.js';
+import {homeModel} from './home-model.js';
+import {pageStatus} from './main.js';
 import {renderIncomplete, renderSessions, renderSubs} from './sessions.js';
 import {store} from './store.js';
 
-export function renderWizard() {
-  $('#wizard').innerHTML = `
-    <div class="step">
-      <h3><span class="no" id="s1-no">1</span>连接机器人</h3>
-      <div class="body">` + botFormHtml('s1') + `</div>
-    </div>
+/** 链路图上三座站的图标。画在这里而不是插件里：这三座站是产品形态本身，不随装了什么插件变 */
+const STATION_ICONS = {
+  platform: '<path d="M2 4.4h12v9H2z"/><path d="M5 1.8 6.8 4.2M11 1.8 9.2 4.2"/>',
+  self: '<path d="M8 1.9 14 5v5.2L8 14.1 2 10.2V5z"/><circle cx="8" cy="7.6" r="1.9"/>',
+  bot: '<rect x="2.6" y="5" width="10.8" height="7.6" rx="2.2"/><path d="M6 8.2v1.2M10 8.2v1.2M8 2.4V5"/>',
+};
 
-    <div class="step">
-      <h3><span class="no" id="s2-no">2</span><span id="s2-title">登录直播平台</span></h3>
-      <div class="body">
-        <div class="out" id="s2-out">读取中…</div>
-        <div id="s2-qr"></div>
-      </div>
-    </div>
-
-    <div class="step">
-      <h3><span class="no" id="s3-no">3</span>添加第一个主播</h3>
-      <div class="body">
-        <div class="out" id="s3-out"></div>
-        <div class="row"><button id="s3-go" type="button">前往「QQ 推送」</button></div>
-      </div>
-    </div>
-
-    <div class="step">
-      <h3><span class="no" id="s4-no">4</span>发送测试消息</h3>
-      <div class="body">
-        <div class="out">在「连接」页选择目标并发送一条测试消息，群里收到即表示全链路正常。</div>
-        <div class="row"><button id="s4-go" type="button">前往「连接」</button></div>
-      </div>
-    </div>`;
-
-  bindBotForm('s1');
-  $('#s3-go').addEventListener('click', () => switchTab('push'));
-  $('#s4-go').addEventListener('click', () => switchTab('bot'));
-
-  refreshWizardState();
+/**
+ * 一座站
+ *
+ * 站是按钮不是链接：它要做的事是「把人带到连接页」，而按钮按下去做什么由脚本说了算——
+ * 写成 <a href> 的话，将来要滚到具体某张卡时得改成 preventDefault，那是一层白饶的弯。
+ */
+function station(key, seg, withLamp) {
+  return '<button class="lm-st" type="button" data-goto="links">'
+    + '<span class="lm-ico"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">'
+    + STATION_ICONS[key] + '</svg></span>'
+    + '<span class="lm-nm">' + esc(seg.station)
+    + (withLamp ? '<span class="lamp ' + esc(seg.level) + '"></span>' : '') + '</span>'
+    + '<span class="lm-sub">' + esc(seg.sub) + '</span>'
+    + '</button>';
 }
 
-function stepDone(no, done) {
-  const badge = $('#s' + no + '-no');
-  badge.classList.toggle('done', !!done);
-  badge.textContent = done ? '✓' : String(no);
+/** 两站之间的那一段线，灯嵌在中点，线下写这一段此刻怎么样 */
+function link(seg) {
+  return '<div class="lm-seg">'
+    + '<div class="lm-line"><span class="lamp ' + esc(seg.level) + '"></span></div>'
+    + '<div class="lm-cap">' + esc(seg.caption || '—') + '</div>'
+    + '</div>';
 }
 
-export function setWizardCollapsed(collapsed) {
-  $('#wizard').style.display = collapsed ? 'none' : 'block';
-  $('#wizard-toggle').textContent = collapsed ? '展开' : '收起';
+/**
+ * 链路图
+ *
+ * 三段对应探针自报的三档范围：直播平台一侧、本机、机器人一侧。
+ * 本机那一档的灯挂在中间那座站上——它不是两站之间的一条线，而是这台机器自己的状况。
+ */
+function renderLinkMap(model) {
+  $('#linkmap').innerHTML = '<div class="lm-track">'
+    + station('platform', model.chain.platform, false)
+    + link(model.chain.platform)
+    + station('self', model.chain.self, true)
+    + link(model.chain.bot)
+    + station('bot', model.chain.bot, false)
+    + '</div>'
+    // 本机那一段的说明没有线可挂，单独写在轨道下面
+    + '<div class="lm-seg" style="min-width:0;padding-top:8px">'
+    + '<div class="lm-cap">本机 · ' + esc(model.chain.self.caption || '—') + '</div></div>';
+
+  $('#linkmap').querySelectorAll('[data-goto]').forEach(btn => {
+    btn.addEventListener('click', () => { location.hash = '#/links'; });
+  });
 }
 
-export async function refreshWizardState() {
+/** 顶部横条。一次只出一条，出哪一条由模型定 */
+function renderBanner(model) {
+  const box = $('#home-banner');
+  box.innerHTML = '';
+  if (!model.banner) return;
+
+  const banner = model.banner;
+  const row = el('div', 'banner b-' + (banner.level === 'dim' ? 'dim' : banner.level));
+  const text = el('span');
+  text.textContent = banner.text;
+  row.appendChild(text);
+
+  if (banner.action && banner.action.href) {
+    const go = el('a', 'b-sp');
+    go.href = banner.action.href;
+    go.textContent = banner.action.text;
+    row.appendChild(go);
+  } else if (banner.action) {
+    // 「恢复推送」没有去处，它就在这里当场办
+    const go = el('button', 'b-sp');
+    go.type = 'button';
+    go.textContent = banner.action.text;
+    go.addEventListener('click', togglePush);
+    row.appendChild(go);
+  }
+
+  box.appendChild(row);
+}
+
+/** 待办。一条都没有时整块不渲染——一张写着「暂无待办」的空卡片只是在占地方 */
+function renderTodos(model) {
+  const box = $('#home-todo');
+  if (!model.todos.length) {
+    box.innerHTML = '';
+    return;
+  }
+
+  box.innerHTML = '<div class="nv-card hcard"><h3>待办</h3>'
+    + model.todos.map(item =>
+      '<div class="todo">'
+      + '<span class="tb' + (item.soft ? ' soft' : '') + '">' + (item.soft ? 'i' : '!') + '</span>'
+      + '<span class="tt"><b>' + esc(item.title) + '</b><p>' + esc(item.body) + '</p></span>'
+      + '<a href="' + esc(item.href) + '">' + esc(item.action) + '</a>'
+      + '</div>').join('')
+    + '</div>';
+}
+
+/** 已播多久。开播时刻没记上时返回空串，不编一个出来 */
+function since(at) {
+  if (!at) return '';
+  const minutes = Math.floor((Date.now() - at) / 60000);
+  if (minutes < 0) return '';
+  return minutes < 60 ? minutes + ' 分钟' : Math.floor(minutes / 60) + ' 小时 ' + (minutes % 60) + ' 分钟';
+}
+
+/** 现在：谁在播 */
+function renderNow(model) {
+  const box = $('#now-box');
+  const parts = [];
+
+  for (const who of model.now.live) {
+    const duration = since(who.since);
+    parts.push('<div class="livewho"><div class="lw-m">'
+      + '<div class="lw-nm">' + esc(who.uname)
+      + '<span class="pill ' + (model.now.note ? 'warn' : 'live') + '">'
+      + (model.now.note ? '' : '<span class="dotlive"></span>')
+      + (model.now.note ? '直播中 · 采集有缺口' : '直播中' + (duration ? ' ' + duration : ''))
+      + '</span></div>'
+      + '<dl class="kv">'
+      + (who.roomId ? '<dt>直播间</dt><dd>' + esc(who.roomId) + '</dd>' : '')
+      + '<dt>推送目标</dt><dd>' + esc(who.targets) + ' 处</dd>'
+      + '</dl></div></div>');
+  }
+
+  if (model.now.text) parts.push('<div class="empty">' + esc(model.now.text) + '</div>');
+  if (model.now.note) parts.push('<div class="note n-warn">' + esc(model.now.note) + '</div>');
+  if (model.now.paused) {
+    parts.push('<div class="note n-err">推送总开关已关闭：主播照常在播、数据照常采，'
+      + '但一条消息都不会发出去。</div>');
+  }
+
+  box.innerHTML = parts.join('');
+}
+
+/** 今日两个数。第三格「@全体成员 已用」还没有数据源，宁可不摆，也不摆一个编出来的分数 */
+function renderToday(model) {
+  $('#today-stats').innerHTML = [
+    [model.today.sent, '推送（条）'],
+    [model.today.failed, '失败（条）'],
+  ].map(([n, label]) => '<div class="stat"><div class="stat-v">' + esc(n) + '</div>'
+    + '<div class="stat-l">' + esc(label) + '</div></div>').join('');
+}
+
+/** 六项探针 */
+function renderProbes(model) {
+  $('#probe-list').innerHTML = model.probes.length
+    ? model.probes.map(item =>
+        '<div class="probe"><span class="lamp ' + esc(item.lamp) + ' p-lamp"></span>'
+        + '<div class="p-nm">' + esc(item.name) + '</div>'
+        + '<div class="p-body"><div class="p-cc">' + esc(item.summary) + '</div>'
+        + (item.advice ? '<div class="p-ad">' + esc(item.advice) + '</div>' : '')
+        + '</div></div>').join('')
+    : '<div class="empty">暂无可用探针</div>';
+}
+
+/** 时:分。事件时刻是毫秒时间戳，按浏览器所在时区显示——看的人和机器往往不在同一个时区 */
+function clock(at) {
+  const time = new Date(at);
+  return String(time.getHours()).padStart(2, '0') + ':' + String(time.getMinutes()).padStart(2, '0');
+}
+
+/** 今天发生了什么：失败与告警置顶的那几条 */
+function renderStrip(model) {
+  const box = $('#home-timeline');
+  if (!model.events.length) {
+    box.innerHTML = '<div class="empty">' + esc(model.eventsEmpty) + '</div>';
+    return;
+  }
+
+  box.innerHTML = model.events.map(item => {
+    const level = item.level === 'error' ? 'error' : (item.level === 'warn' ? 'warn' : 'info');
+    const tone = level === 'error' ? ' r-err' : (level === 'warn' ? ' r-warn' : '');
+    const where = item.channel || item.streamer || '';
+    return '<div class="tl-row' + tone + '">'
+      + '<div class="tl-t">' + esc(clock(item.at)) + '</div>'
+      + '<div class="tl-rail"><span class="d ' + level + '"></span><span class="l"></span></div>'
+      + '<div class="tl-c"><div class="tl-hd"><span>' + esc(item.text) + '</span>'
+      + (where ? '<span class="tl-x">' + esc(where) + '</span>' : '')
+      + '</div></div></div>';
+  }).join('');
+}
+
+/**
+ * 首页整页重画
+ * @param status /api/status 回包
+ * @param login /api/login 回包
+ * @param timeline /api/timeline 回包
+ */
+function renderHome(status, login, timeline) {
+  const model = homeModel(status, login, timeline);
+  renderBanner(model);
+  renderLinkMap(model);
+  renderTodos(model);
+  renderNow(model);
+  renderToday(model);
+  renderProbes(model);
+  renderStrip(model);
+  renderPushSwitch(model.pushOn);
+}
+
+/**
+ * 取三份数据再一次性画完
+ *
+ * 三个请求并发发出、一起等：分三次画的话，链路已经按新的一份数据变红，
+ * 而待办还是上一份算出来的——两块说的是同一件事，屏幕上却互相矛盾。
+ * @return 这一趟取到的运行状态，取不到时为 null
+ */
+export async function refreshHome() {
   try {
-    const [login, st] = await Promise.all([api('/login'), api('/status')]);
-
-    // 这一步登录的是哪个平台，由运行时的清单说了算，向导里不写死任何一个平台的名字：
-    // 只装了一个平台插件时它就是默认的那个，一个都没装时这一步根本无从做起，
-    // 装了多个则每个都要有着落——写死一个名字，别的平台在向导里就永远不存在
-    const accounts = login.accounts || [];
-    const done = a => !!(a.loggedIn || a.disabledReason);
-    // 停在还没着落的那个平台上：已经登录好的那些不必再占着这一屏
-    const account = accounts.find(a => !done(a)) || accounts[0];
-    const loggedIn = !!(account && account.loggedIn);
-    // 登录被配置关掉时（例如匿名模式）这一步不会再有进展，算它「已定」而不是「未完成」，
-    // 否则向导会永远停在「还有 1 步未完成」，催一件使用者已经决定不做的事。
-    // 一个平台插件都没装时同理：那不是没做完，是没得做
-    const disabled = (account && account.disabledReason) || '';
-    const settled = accounts.every(done);
-    stepDone(2, settled);
-    $('#s2-title').textContent = accounts.length === 1 ? '登录' + accounts[0].displayName : '登录直播平台';
-    // 装了多个平台时要点明这一屏说的是哪一个，否则二维码是谁的都看不出来
-    const who = accounts.length > 1 ? account.displayName + '：' : '';
-    $('#s2-out').textContent = account
-      ? who + (loggedIn ? '已登录，账号 ' + (account.accountId || '未知')
-        : disabled || ('请使用' + account.displayName + '客户端扫描下方二维码'))
-      : '未加载任何直播平台插件，无法登录';
-    $('#s2-out').className = 'out' + (loggedIn ? ' ok' : '');
-    $('#s2-qr').innerHTML = (account && !loggedIn && account.qrCode)
-      ? '<img referrerpolicy="no-referrer" style="width:240px;height:240px;background:var(--paper);border-radius:var(--r-ctl);padding:8px" src="data:image/png;base64,' + esc(account.qrCode) + '">'
-      : '';
-
-    const count = (st.users || []).length;
-    stepDone(3, count > 0);
-    $('#s3-out').textContent = count ? '已配置 ' + count + ' 位主播' : '尚未配置任何主播';
-    $('#s3-out').className = 'out' + (count ? ' ok' : '');
-
-    const bot = (st.health || []).find(h => h.scope === 'BOT');
-    const botOk = !!(bot && bot.level === 'OK');
-    stepDone(1, botOk);
-
-    // 第四步没有独立的判定依据：能把消息推出去的前提正是前三步都成立
-    const ready = botOk && settled && count > 0;
-    stepDone(4, ready);
-
-    const remaining = [botOk, settled, count > 0, ready].filter(x => !x).length;
-    $('#wizard-title').textContent = remaining
-      ? '首次配置 · 还有 ' + remaining + ' 步未完成'
-      : '首次配置已完成';
-    if (!store.wizardTouched) setWizardCollapsed(remaining === 0);
+    const [status, login, timeline] = await Promise.all([
+      api('/status'), api('/login'), api('/timeline?date=' + today()),
+    ]);
+    renderStatus(status);
+    renderHome(status, login, timeline);
+    return status;
   } catch (e) {
-    // 向导只是引导，拉取失败不影响其余功能
+    say('载入首页失败：' + e.message, 'err');
+    return null;
   }
 }
 
-// ============ 推送规则表单 ============
-// 处理器的全限定类名属于实现细节，不该要求使用者手抄。此处由 /api/handlers 驱动渲染，
+/**
+ * 今天是哪一天，按浏览器所在时区算
+ *
+ * 不用 toISOString()：那一串是 UTC 的日期，东八区的深夜与凌晨会各错一天，
+ * 而「今天发生了什么」在错的那几个小时里会显示成空的。
+ */
+function today() {
+  const now = new Date();
+  return now.getFullYear() + '-'
+    + String(now.getMonth() + 1).padStart(2, '0') + '-'
+    + String(now.getDate()).padStart(2, '0');
+}
 
+// ============ 推送记录 ============
 // 「刚才那条推了吗」「为什么没推」此前只能翻 journalctl
 function renderHistory(records) {
   const body = $('#history tbody');
@@ -138,10 +276,6 @@ export async function loadHistory() {
   }
 }
 
-// 二维码原本只打印在启动日志里，systemd 部署时得翻 journalctl，
-// 且终端字符画在字体或宽度不合适时根本扫不出来
-
-
 function renderPushSwitch(enabled) {
   store.pushEnabled = enabled !== false;
   $('#toggle-push').textContent = store.pushEnabled ? '暂停全部推送' : '恢复推送';
@@ -158,8 +292,10 @@ export async function togglePush() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enabled: next })
     });
-    renderPushSwitch(next);
     say(res.message, res.success ? 'ok' : 'err');
+    // 整页重画而不是只把开关拨过去：暂停会同时改横条、链路 QQ 段与「现在」那张卡，
+    // 只拨开关的话，屏幕上会出现「已暂停」与一段绿灯并存的画面
+    await refreshHome();
   } catch (e) {
     say('切换失败：' + e.message, 'err');
   }
@@ -193,28 +329,32 @@ export function healthRows(list, emptyText) {
     : '<div class="row"><span class="who">健康检查</span><span>' + esc(emptyText) + '</span></div>';
 }
 
+/**
+ * 运行状态里与页无关的那几块：版本、侧栏运行三行、机器人页的探针、还欠一次重启的清单
+ * @param data /api/status 回包
+ */
 export function renderStatus(data) {
-  renderPushSwitch(data.pushEnabled);
   renderTestMessage(data.senders);
   renderVersion(data.version);
 
-  // 总览展示全部探针；机器人页只展示与自己相关的，由探针自报 scope 决定归属
-  const health = data.health || [];
-  $('#health').innerHTML = healthRows(health, '暂无可用探针');
-  $('#bot-health').innerHTML = healthRows(health.filter(h => h.scope === 'BOT'),
+  // 机器人页只展示与自己相关的探针，由探针自报 scope 决定归属
+  $('#bot-health').innerHTML = healthRows((data.health || []).filter(h => h.scope === 'BOT'),
     '未找到机器人适配器，请确认对应插件已加载');
 
-  const r = data.runtime || {};
-  $('#runtime').innerHTML = [
-    ['堆内存', r.heapUsedMb + ' / ' + r.heapMaxMb + ' MB'],
-    ['线程数', r.threads],
-    ['CPU 核心', r.processors],
-    // 上限一并显示：只报「监听 10 位」看不出这已经是顶格，再加主播时才发现加不进去
-    ['监听主播', (data.users || []).length + (data.streamerLimit ? ' / ' + data.streamerLimit : '')]
-  ].map(([l, n]) => '<div class="card"><div class="n">' + n + '</div><div class="l">' + l + '</div></div>').join('');
+  const runtime = data.runtime || {};
+  $('#run-mem').textContent = runtime.heapUsedMb + ' / ' + runtime.heapMaxMb + ' MB';
+  $('#run-threads').textContent = runtime.threads;
+  // 上限一并显示：只报「监听 10 位」看不出这已经是顶格，再加主播时才发现加不进去
+  $('#run-streamers').textContent = (data.users || []).length
+    + (data.streamerLimit ? ' / ' + data.streamerLimit : '');
 
-  // 平台相关的那几块归各平台页自己渲染：这里既不知道装了哪些页，也不知道页里有哪些元素。
-  // 反过来由这里按元素 id 去写，那些 id 就成了一条谁都看不见的约定
+  // 保存过、仍等着重启的那几项。只在这里记一次：底部改动条按它写「M 处改动需重启生效」，
+  // 而它的寿命是「到下次重启为止」——每次拿到新的运行状态都该跟着更新，
+  // 只在整体载入时记一次的话，首页刷新之后那条提示就停在了上一次的数字上
+  store.restartPending = data.restartPending || [];
+  markDirty();
+
+  // 平台相关的那几块归各平台页自己渲染：这里既不知道装了哪些页，也不知道页里有哪些元素
   pageStatus(data);
 }
 
@@ -239,21 +379,22 @@ function renderState(d) {
   // d.bindings 不再渲染：账号绑定已停用，记录只留档
 }
 
-// 「运行自检」把探针再跑一遍并给出结论。异常项本就在下方逐条列着，
-// 这里只回答「现在到底有没有问题」，省得使用者自己数
+// 「运行自检」把整页重取一遍并给出结论。异常项本就在探针那一栏里逐条列着，
+// 这里只回答「现在到底有没有问题」，省得使用者自己数。
+// 走整页重取而不是单取一次 /status：自检之后屏幕上的链路、待办、横条都该是这一刻的，
+// 只更新一句结论的话，结论说「2 项异常」而上面几块还画着上一次的样子
 export async function runSelfTest() {
   $('#selftest-run').disabled = true;
   say('自检中…');
-  try {
-    const st = await api('/status');
-    renderStatus(st);
+
+  const st = await refreshHome();
+  if (st) {
     const health = st.health || [];
     const bad = health.filter(h => h.level !== 'OK');
     say(bad.length
       ? bad.length + ' 项异常：' + bad.map(h => h.name).join('、')
       : '自检完成，' + health.length + ' 项全部正常', bad.length ? 'err' : 'ok');
-  } catch (e) {
-    say('自检失败：' + e.message, 'err');
   }
+
   $('#selftest-run').disabled = false;
 }

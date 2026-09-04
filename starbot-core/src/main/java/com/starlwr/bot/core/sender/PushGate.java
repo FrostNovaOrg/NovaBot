@@ -70,6 +70,20 @@ public class PushGate {
     }
 
     /**
+     * 此刻是否落在静音时段内
+     * <p>
+     * 控制台首页要在顶部横条上写「静音中 hh:mm – hh:mm」，而判断「在不在静音时段」
+     * 只该有这一份实现：起止时刻允许跨零点、起止相同视为未设置、格式不对时忽略，
+     * 这几条规则在界面那一侧再写一遍的话，两边迟早会分叉——而分叉的表现是
+     * 屏幕上写着「静音中」，推送却照发（或反过来），两种都会让人以为开关坏了。
+     * @return 处于静音时段时返回 true
+     */
+    public boolean inQuietHours() {
+        StarBotCoreProperties.Push push = properties.getPush();
+        return inQuietHours(LocalTime.now(), push.getQuietStart(), push.getQuietEnd());
+    }
+
+    /**
      * 拦截原因
      */
     public enum Block {

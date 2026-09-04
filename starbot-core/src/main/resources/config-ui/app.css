@@ -407,3 +407,155 @@ td.act button:hover{color:var(--err)}
 #token-list td.fp{font-family:var(--mono);color:var(--dim)}
 #token-list tr.revoked td{color:var(--dim)}
 @media (max-width:680px){.field{grid-template-columns:1fr}}
+
+/* ==================== 首页 ====================
+   链路图、横条、待办、现在与今日、探针清单、今天发生了什么。
+   版式取自 5.1 原型，色值一律引本文件顶部的 token，这一段里不写任何十六进制色。 */
+
+/* 首页的卡。不复用 .card：那个类此刻是 .cards 网格里的数字块，
+   给它加外边距会让网格里每一格都多出一截空白 */
+.hcard{padding:14px 16px;margin-bottom:16px}
+.hcard>h3{margin:0 0 10px;font-size:13.5px;font-weight:600;
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.hcard>h3 .h-note{font-weight:400;color:var(--dim);font-size:12px}
+.split{display:flex;gap:16px;flex-wrap:wrap}
+.split>.hcard{min-width:0}
+
+/* ---------- 灯 ---------- */
+/* 熄灯不是「好」也不是「坏」：还没连上、正处在静音时段都是它。
+   因此它既不给绿色也不给红色，而是压暗并去掉光晕——一眼看得出这一段没在走 */
+.lamp{display:inline-block;width:8px;height:8px;border-radius:50%;flex:0 0 auto;
+  background:var(--dim);box-shadow:0 0 0 3px transparent}
+.lamp.ok{background:var(--ok);box-shadow:0 0 0 3px var(--oksoft)}
+.lamp.warn{background:var(--warn);box-shadow:0 0 0 3px var(--warnsoft)}
+.lamp.err{background:var(--err);box-shadow:0 0 0 3px var(--errsoft)}
+.lamp.off{background:var(--dim);opacity:.55;box-shadow:none}
+
+/* ---------- 链路图 ---------- */
+.linkmap{padding:6px 2px 2px}
+.lm-track{display:flex;align-items:stretch;flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px}
+.lm-st{flex:0 0 auto;min-width:126px;text-align:center;background:transparent;
+  border:1px solid var(--line);border-radius:var(--r-card);padding:12px 14px;
+  cursor:pointer;font:inherit;color:inherit}
+.lm-st:hover{border-color:var(--accent)}
+.lm-st .lm-ico{width:30px;height:30px;margin:0 auto 6px;border-radius:9px;display:grid;
+  place-items:center;background:var(--soft);color:var(--accent)}
+.lm-st .lm-ico svg{width:16px;height:16px}
+.lm-st .lm-nm{font-size:13.5px;font-weight:600;display:flex;align-items:center;
+  justify-content:center;gap:6px}
+.lm-st .lm-sub{font-size:11px;color:var(--dim);margin-top:2px}
+.lm-seg{flex:1 1 auto;min-width:150px;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:6px;padding:0 8px}
+.lm-seg .lm-line{width:100%;height:2px;background:var(--line);border-radius:2px;position:relative}
+.lm-seg .lm-line .lamp{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}
+.lm-seg .lm-cap{font-size:11.5px;color:var(--dim);text-align:center;line-height:1.5;max-width:230px}
+/* 窄屏上轨道立起来：横着放时三站会各自压到四十来像素宽，站名一个字一折行 */
+@media (max-width:760px){
+  .lm-track{flex-wrap:wrap;overflow:visible}
+  .lm-st{flex:1 1 100%;text-align:left;display:flex;gap:10px;align-items:center}
+  .lm-st .lm-ico{margin:0}
+  .lm-st .lm-nm{justify-content:flex-start}
+  .lm-seg{flex:1 1 100%;min-width:0;flex-direction:row;justify-content:flex-start;padding:8px 0 8px 16px}
+  .lm-seg .lm-line{width:2px;height:22px;flex:0 0 2px}
+  .lm-seg .lm-cap{text-align:left;max-width:none}
+}
+
+/* ---------- 顶部横条 ---------- */
+/* 修饰名用 b- 前缀：本文件里另有一个块级的 .warn 提示条，
+   两者同名会在同一元素上叠出一半一半的样式，而那种冲突只在改了顺序的那天才显形 */
+.banner{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--r-ctl);
+  border:1px solid var(--line);font-size:13px;margin-bottom:14px;flex-wrap:wrap}
+.banner.b-warn{border-color:var(--warn);background:var(--warnsoft);color:var(--text)}
+.banner.b-err{border-color:var(--err);background:var(--errsoft);color:var(--text)}
+.banner.b-dim{border-color:var(--line);background:var(--soft);color:var(--dim)}
+.banner .b-sp{margin-left:auto;flex:none}
+.banner a,.banner button{background:var(--surface);color:var(--text);border:1px solid var(--line);
+  border-radius:var(--r-ctl);padding:4px 12px;font-size:12px;font-family:inherit;
+  cursor:pointer;text-decoration:none;white-space:nowrap}
+.banner a:hover,.banner button:hover{border-color:var(--accent);color:var(--accent)}
+
+/* ---------- 待办 ---------- */
+.todo{display:flex;gap:11px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line)}
+.todo:last-child{border-bottom:none}
+.todo .tb{width:22px;height:22px;border-radius:50%;background:var(--accent);color:var(--on-accent);
+  display:inline-flex;align-items:center;justify-content:center;font-size:12px;flex:none;margin-top:1px}
+/* 软待办（例如「累计数据没开」）不是故障，用暗色而不是强调色：
+   把「可以这样也可以不这样」标成和「不修就一直坏着」一个颜色，两种都会被一起忽略 */
+.todo .tb.soft{background:var(--dim)}
+.todo .tt{flex:1 1 auto;min-width:0}
+.todo .tt b{font-size:13.5px;font-weight:500}
+.todo .tt p{margin:3px 0 0;font-size:12px;color:var(--dim);line-height:1.6}
+.todo>a,.todo>button{flex:none;background:var(--surface);color:var(--text);border:1px solid var(--line);
+  border-radius:var(--r-ctl);padding:4px 12px;font-size:12px;font-family:inherit;
+  cursor:pointer;text-decoration:none;white-space:nowrap}
+.todo>a:hover,.todo>button:hover{border-color:var(--accent);color:var(--accent)}
+
+/* ---------- 现在 ---------- */
+.livewho{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;padding:8px 0;
+  border-bottom:1px solid var(--line)}
+.livewho:last-of-type{border-bottom:none}
+.livewho .lw-m{flex:1 1 200px;min-width:0}
+.livewho .lw-nm{font-size:15px;font-weight:600;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.dotlive{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--live);flex:none}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:var(--r-pill);
+  border:1px solid var(--line);font-size:11.5px;color:var(--dim);white-space:nowrap}
+.pill.live{color:var(--live);border-color:var(--live)}
+.pill.warn{color:var(--warn);border-color:var(--warn);background:var(--warnsoft)}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:5px 14px;font-size:12.5px;margin:8px 0 0}
+.kv dt{color:var(--dim)}
+.kv dd{margin:0;font-variant-numeric:tabular-nums}
+.note{border:1px solid var(--line);border-left:3px solid var(--dim);border-radius:var(--r-ctl);
+  padding:9px 12px;font-size:12.5px;color:var(--dim);line-height:1.6;margin-top:10px}
+.note.n-warn{border-left-color:var(--warn);color:var(--text);background:var(--warnsoft)}
+.note.n-err{border-left-color:var(--err);color:var(--text);background:var(--errsoft)}
+
+/* ---------- 今日 ---------- */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px}
+.stat{background:var(--ground);border:1px solid var(--line);border-radius:var(--r-card);padding:12px 14px}
+.stat-v{font-size:22px;font-weight:600;line-height:1.15;font-variant-numeric:tabular-nums}
+.stat-l{font-size:12px;color:var(--dim);margin-top:2px}
+.quickbar{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:12px;
+  padding-top:12px;border-top:1px solid var(--line);font-size:12.5px;color:var(--dim)}
+.quickbar button{background:var(--surface);color:var(--text);border:1px solid var(--line);
+  border-radius:var(--r-ctl);padding:6px 12px;font-size:12.5px;cursor:pointer;font-family:inherit}
+.quickbar button:hover{border-color:var(--accent);color:var(--accent)}
+
+/* ---------- 探针清单 ---------- */
+.probe{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);align-items:flex-start}
+.probe:last-child{border-bottom:none}
+.probe .p-lamp{margin-top:6px}
+.probe .p-nm{flex:0 0 108px;font-size:13px;font-weight:500}
+.probe .p-body{flex:1 1 auto;min-width:0}
+.probe .p-cc{font-size:13px}
+.probe .p-ad{font-size:12px;color:var(--dim);margin-top:3px;line-height:1.55}
+@media (max-width:560px){.probe{flex-wrap:wrap}.probe .p-nm{flex:1 1 100%}}
+
+/* ---------- 今天发生了什么 ---------- */
+.tl-row{display:flex;gap:11px;align-items:flex-start;padding:2px 0}
+.tl-row .tl-t{flex:0 0 46px;font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums;
+  padding-top:9px}
+.tl-row .tl-rail{flex:0 0 12px;display:flex;flex-direction:column;align-items:center;align-self:stretch}
+.tl-row .tl-rail .d{width:9px;height:9px;border-radius:50%;margin-top:11px;flex:0 0 auto;
+  background:var(--dim)}
+.tl-row .tl-rail .d.info{background:var(--accent)}
+.tl-row .tl-rail .d.warn{background:var(--warn)}
+.tl-row .tl-rail .d.error{background:var(--err)}
+.tl-row .tl-rail .l{flex:1 1 auto;width:1px;background:var(--line);margin-top:3px}
+.tl-row:last-child .tl-rail .l{background:transparent}
+.tl-row .tl-c{flex:1 1 auto;min-width:0;padding:7px 0 9px}
+.tl-row.r-warn .tl-c{background:var(--warnsoft);border-radius:var(--r-ctl);padding:7px 11px 9px;
+  margin-bottom:2px}
+.tl-row.r-err .tl-c{background:var(--errsoft);border-radius:var(--r-ctl);padding:7px 11px 9px;
+  margin-bottom:2px}
+.tl-hd{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;font-size:13.5px}
+.tl-hd .tl-x{font-size:11.5px;color:var(--dim)}
+.tl-foot{margin-top:12px}
+.tl-foot a{font-size:12.5px;color:var(--accent);text-decoration:none}
+.tl-foot a:hover{text-decoration:underline}
+
+/* ---------- 侧栏「运行」三行 ---------- */
+.runbox{margin-top:16px;padding:10px 10px 0;border-top:1px solid var(--line);font-size:11.5px}
+.rb-t{color:var(--dim);margin-bottom:5px}
+.rb-r{display:flex;justify-content:space-between;gap:8px;padding:2px 0;color:var(--dim)}
+.rb-r b{color:var(--text);font-weight:500;font-variant-numeric:tabular-nums}
+@media (max-width:959px){.runbox{display:none}}
