@@ -96,6 +96,17 @@ function renderBanner(model) {
   box.appendChild(row);
 }
 
+/**
+ * 站外链接要多带的两个属性
+ *
+ * 待办与新版面板里的「看完整说明」指向发布仓，是本站之外的地址；
+ * 控制台是单页应用，原地跳走再退回来时页面状态全部重来。
+ * 只认 http 开头：#/xxx 那些内部路由绝不能带 target，带了会在新页签里再开一份控制台。
+ */
+function extAttrs(href) {
+  return String(href || '').indexOf('http') === 0 ? ' target="_blank" rel="noreferrer"' : '';
+}
+
 /** 待办。一条都没有时整块不渲染——一张写着「暂无待办」的空卡片只是在占地方 */
 function renderTodos(model) {
   const box = $('#home-todo');
@@ -109,7 +120,7 @@ function renderTodos(model) {
       '<div class="todo">'
       + '<span class="tb' + (item.soft ? ' soft' : '') + '">' + (item.soft ? 'i' : '!') + '</span>'
       + '<span class="tt"><b>' + esc(item.title) + '</b><p>' + esc(item.body) + '</p></span>'
-      + '<a href="' + esc(item.href) + '">' + esc(item.action) + '</a>'
+      + '<a href="' + esc(item.href) + '"' + extAttrs(item.href) + '>' + esc(item.action) + '</a>'
       + '</div>').join('')
     + '</div>';
 }
@@ -274,6 +285,75 @@ function renderVersion(version) {
 }
 
 /**
+ * 侧栏那枚「新版」药丸与它点开的小面板
+ *
+ * 有没有该提示的新版由 /api/status 的 update 块说了算（缺席即没有），这里只管摆出来。
+ * 面板每次拿到新的运行状态都整块重画：开着的时候来了一份新的，内容跟着换，
+ * 而不是停在上一次那份——说明与版本号都来自检查器，两份混在一起时说的不是同一版。
+ * @param update status 里的 update 块，没有则收起药丸与面板
+ */
+function renderUpdate(update) {
+  const pill = $('#side-update');
+  const pop = $('#update-pop');
+
+  if (!update) {
+    pill.style.display = 'none';
+    pop.style.display = 'none';
+    return;
+  }
+
+  pill.style.display = '';
+  pill.textContent = '新版 ' + update.latestVersion;
+  // onclick 是赋值不是叠加，重画多少次都只有一份监听；addEventListener 会一份份摞上去
+  pill.onclick = toggleUpdatePop;
+
+  pop.innerHTML = '<div class="up-head">新版 ' + esc(update.latestVersion) + '</div>'
+    + '<div class="up-notes">'
+    + (update.notes || []).map(line => '<p>' + esc(line) + '</p>').join('')
+    + '</div>'
+    + '<p class="up-note">控制台不做在线更新：到服务器上换 jar 重启就是了。</p>'
+    + '<div class="up-actions">'
+    + '<a href="' + esc(update.url) + '"' + extAttrs(update.url) + '>看完整更新说明 ↗</a>'
+    + '<button type="button" id="update-skip">知道了，这版先不提醒</button>'
+    + '</div>';
+
+  $('#update-skip').addEventListener('click', () => skipUpdate(update.latestVersion));
+}
+
+function toggleUpdatePop() {
+  const pop = $('#update-pop');
+  pop.style.display = pop.style.display === 'none' ? '' : 'none';
+}
+
+/**
+ * 「知道了，这版先不提醒」
+ *
+ * 记在服务器上、按版本记，因此点完走一次整页重取而不是本地把药丸藏掉：
+ * 首页待办里那条软提醒与这枚药丸由同一份状态驱动，只藏一处，另一处会继续催
+ * 一件刚说了先不提醒的事。
+ */
+async function skipUpdate(version) {
+  const btn = $('#update-skip');
+  btn.disabled = true;
+  try {
+    const res = await api('/version/skip', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ version: version })
+    });
+    if (res.success) {
+      await refreshHome();
+    } else {
+      say('没记上，稍后再试', 'err');
+      btn.disabled = false;
+    }
+  } catch (e) {
+    say('没记上：' + e.message, 'err');
+    btn.disabled = false;
+  }
+}
+
+/**
  * 监听中的主播
  *
  * 每一列都来自 /api/status，与是哪个平台无关，因此归核心画。这张表原先长在平台插件那一页上，
@@ -317,6 +397,7 @@ export function healthRows(list, emptyText) {
  */
 export function renderStatus(data) {
   renderVersion(data.version);
+  renderUpdate(data.update);
   renderUsers(data);
 
   const runtime = data.runtime || {};

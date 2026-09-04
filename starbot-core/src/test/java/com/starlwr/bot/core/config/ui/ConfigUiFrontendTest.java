@@ -1039,6 +1039,68 @@ class ConfigUiFrontendTest {
     }
 
     /**
+     * 新版提示写在 index.html 里的那两处落点，闭集
+     * <p>
+     * 侧栏那枚药丸与它点开的小面板的壳。面板里的内容不写在页面里：每次拿到新的
+     * 运行状态都整块重画，写死的那份会在下一次重画时悄悄变成上一版的信息。
+     */
+    private static final List<String> UPDATE_NOTICE_IN_HTML = List.of("side-update", "update-pop");
+
+    /**
+     * 新版提示由脚本建出来的那一处落点，闭集
+     * <p>
+     * 「知道了，这版先不提醒」。它跟着面板内容一起重画，因此不写在 index.html 里。
+     */
+    private static final List<String> UPDATE_NOTICE_BUILT = List.of("update-skip");
+
+    /**
+     * 新版提示要调的端点，闭集
+     * <p>
+     * 「先不提醒」记在服务器上、按版本记。少接这一条，那个键就是点了没反应，
+     * 而按钮本身看起来完全正常——使用者会以为提醒已经关掉，第二天药丸照样出现。
+     */
+    private static final List<String> UPDATE_NOTICE_ENDPOINTS = List.of("/version/skip");
+
+    /**
+     * 新版药丸与小面板各有落点，「先不提醒」接到了服务器
+     * <p>
+     * 与设置页、连接页那几条同理：元素与接线缺哪一半都不会报错——元素没了，脚本按
+     * id 取到 null（那一条由 {@link #everyReferencedElementIdExists} 管）；脚本没接上，
+     * 药丸就静静地立在那里，点了什么都不发生。
+     */
+    @Test
+    @DisplayName("新版药丸、小面板与先不提醒各有落点")
+    void updateNoticeIsWiredUp() throws IOException {
+        String html = Files.readString(frontendDir().resolve("index.html"), StandardCharsets.UTF_8);
+        String scripts = String.join("\n", coreSources().values());
+
+        List<String> bad = new ArrayList<>();
+        for (String id : UPDATE_NOTICE_IN_HTML) {
+            if (!html.contains("id=\"" + id + "\"")) {
+                bad.add("index.html 上没有 #" + id);
+            }
+            if (!scripts.contains("$('#" + id + "')")) {
+                bad.add("没有任何脚本用到 #" + id + "，它立在那里但点了不管用");
+            }
+        }
+        for (String id : UPDATE_NOTICE_BUILT) {
+            if (!scripts.contains("id=\"" + id + "\"")) {
+                bad.add("没有任何脚本建出 #" + id);
+            }
+            if (!scripts.contains("$('#" + id + "')")) {
+                bad.add("没有任何脚本取过 #" + id + "，那个键点了没有任何东西接");
+            }
+        }
+        for (String endpoint : UPDATE_NOTICE_ENDPOINTS) {
+            if (!scripts.contains("'" + endpoint + "'")) {
+                bad.add("没有任何脚本调用 " + endpoint + "，「先不提醒」此刻点了不管用");
+            }
+        }
+
+        assertTrue(bad.isEmpty(), "新版提示少了这几件事的落点:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
      * 插件页是运行时装上来的，不是编译期定死的
      * <p>
      * 静态 {@code import} 一写，那个平台就成了核心的一部分：没装插件时页面加载不了，

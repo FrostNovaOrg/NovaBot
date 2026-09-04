@@ -53,11 +53,17 @@
       <div class="rb-r"><span>监听主播</span><b id="run-streamers">—</b></div>
     </div>
     <!--
-      版本位。值由 /api/status 的 version 下发，真源是构建期生成的 build-info；
+      版本位与新版药丸。版本值由 /api/status 的 version 下发，真源是构建期生成的 build-info；
       从源码直接跑（未经打包）时那个字段是空串，此处只显示产品名。
       在界面里写死一个版本号是更坏的选择——它与产物脱节的那一天不会有任何提示。
+      药丸有没有由同一份回包里的 update 块决定（缺席即没有）：检查器判「该提示」才有它，
+      首装机器服务器不下发那一块。点开的小面板内容由脚本按那份块现画，不写死在这里。
     -->
-    <div class="verline"><span id="side-version">NovaBot</span></div>
+    <div class="verline">
+      <span id="side-version">NovaBot</span>
+      <button type="button" class="nv-pill acc" id="side-update" style="display:none"></button>
+      <div id="update-pop" style="display:none"></div>
+    </div>
   </aside>
 
   <main id="main">

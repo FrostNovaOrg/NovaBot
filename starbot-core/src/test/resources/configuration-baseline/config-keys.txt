@@ -40,6 +40,8 @@ starbot.core.config-ui.napcat.token-hash|java.lang.String||上一项换算出来
 starbot.core.config-ui.napcat.token|java.lang.String||NapCat WebUI 的 token 填明文即可，启动时会立刻换算成登录用的哈希写回，明文不留在盘上。 🔴 换算出来的哈希与 token 在权限上完全等价——NapCat 的登录接口收的就是它， 拿到哈希的人照样登得进去。所以这一步的收益不是「更安全」， 而是「不在这台机器上多造一份 token 的副本」：原文在 NapCat 自己的配置里本来就有， NovaBot 不需要第二份。别把它当成加密后就可以放松保管的东西。
 starbot.core.config-ui.napcat.totp-secret|java.lang.String||NapCat WebUI 的二次验证密钥（Base32） 它开了 2FA 才需要填。只能明文保存：代登录时要用它现算验证码， 而算码需要密钥本身——这一点没有折中办法，因此配置文件的权限必须收紧到仅属主可读。
 starbot.core.config-ui.token|java.lang.String||配置界面访问令牌 留空时每次启动自动生成一个随机令牌并输出到日志。配合默认仅监听回环地址的设置， 单机部署无需任何配置即可安全使用；需要从其他机器访问时在此显式设置一个随机串。
+starbot.core.config-ui.update.enabled|java.lang.Boolean|true|是否检查新版 关掉之后侧栏药丸与首页那条软待办都不会再出现。程序不会自己更新， 这一检查是使用者得知「该去换 jar 了」的唯一入口，默认开着。
+starbot.core.config-ui.update.source|java.lang.String|https://api.github.com/repos/FrostNovaOrg/NovaBot/releases/latest|新版信息的来源地址 默认指向发布仓的 latest release 接口，取回的 JSON 里要有 tag_name（版本）、body（更新说明）与 html_url（链接）。 自建镜像或换发布渠道时改这里。取不到或取回的东西认不出来时静默跳过—— 「查不到新版」不该变成控制台上的一条故障。
 starbot.core.datasource.json-auto-reload|java.lang.Boolean|true|JSON 文件发生变化时是否自动重载，仅使用 JSON 数据源时生效
 starbot.core.datasource.json-path|java.lang.String|datasource.json|JSON 文件路径，仅使用 JSON 数据源时生效
 starbot.core.event-stream.buffer-size|java.lang.Integer|2000|断线回补的缓冲条数 缓冲是全部房间共用的一条流。三个房间每分钟各 100 条时，2000 条约覆盖 6 分钟， 足够客户端断线重连；房间更多或更热闹就要相应调大，否则重连时会被告知补不上而重置。 每条约数 KB（含原始报文），2000 条量级在十 MB 上下，调大前先掂量内存。

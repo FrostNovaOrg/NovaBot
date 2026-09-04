@@ -170,6 +170,7 @@ class StreamerLookupFansTest {
                 new PushGate(properties),
                 mock(LiveDataService.class),
                 mock(TimelineStore.class),
-                mock(ConfigUiAuthService.class));
+                mock(ConfigUiAuthService.class),
+                mock(UpdateCheckService.class));
     }
 }

@@ -125,7 +125,28 @@ header #auth-actions button:hover{color:var(--accent);border-color:var(--accent)
 .nav a[aria-current="page"]::before{content:"";position:absolute;left:-8px;top:6px;bottom:6px;
   width:3px;border-radius:2px;background:var(--nav-ind)}
 .verline{margin-top:16px;padding:10px 10px 0;border-top:1px solid var(--line);
-  display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11.5px;color:var(--dim)}
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11.5px;color:var(--dim);
+  position:relative}
+/* 「新版」药丸是按钮不是链接：它要做的事是就地展开说明，没有去处。
+   字体要写一遍：button 默认不继承页面字体，别的都从 .nv-pill.acc 来 */
+#side-update{cursor:pointer;font-family:inherit}
+#side-update:hover{border-color:var(--accent)}
+/* 药丸点开的小面板，锚在版本位上方：药丸自己就在那一条线上，面板该从它头顶长出来。
+   首装机器（窄屏之上也）不会见到它——服务器不下发 update 那一块，脚本也就不会显示 */
+#update-pop{position:absolute;left:10px;right:10px;bottom:calc(100% + 6px);z-index:30;
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);
+  box-shadow:var(--shadow);padding:12px 14px;font-size:12.5px;color:var(--text)}
+#update-pop .up-head{font-size:13px;font-weight:600;margin-bottom:6px;color:var(--accent)}
+#update-pop .up-notes p{margin:0 0 2px;line-height:1.55}
+#update-pop .up-note{margin:8px 0 0;color:var(--dim)}
+#update-pop .up-actions{display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap}
+#update-pop .up-actions a{color:var(--accent);text-decoration:none}
+#update-pop .up-actions a:hover{text-decoration:underline}
+#update-pop .up-actions button{margin-left:auto;background:var(--surface);color:var(--text);
+  border:1px solid var(--line);border-radius:var(--r-ctl);padding:5px 12px;cursor:pointer;
+  font-size:12px;font-family:inherit}
+#update-pop .up-actions button:hover{border-color:var(--accent);color:var(--accent)}
+#update-pop .up-actions button:disabled{opacity:.45;cursor:not-allowed}
 /* 窄屏：侧栏改成顶部横条并可横向滚动。竖着放的话，960 以下正文只剩半屏宽；
    而把六项挤进一行又会让「QQ 推送」折成竖排的单字，认不出来也点不准 */
 @media (max-width:959px){

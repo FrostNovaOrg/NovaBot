@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# 首页视图模型八档尺：喂八份接口回包，逐档核对首页该长成什么样
+# 首页视图模型九档尺：喂九份接口回包，逐档核对首页该长成什么样
 #
-# 依据：5.1 场景清单第一节的八档与首页原型。
+# 依据：5.1 场景清单第一节的八档与首页原型；第九档（有新版）随新版提示功能补入。
 # 八档在真机上凑齐一次的代价极高（要么等故障发生，要么去改线上配置），
 # 而首页恰恰是「出事时第一眼看的那一页」——它在故障档下长什么样，正是最该被守住的部分。
-# 视图模型因此被切成纯函数（config-ui/home-model.js，不碰 DOM），本尺喂它八份回包对答案。
+# 视图模型因此被切成纯函数（config-ui/home-model.js，不碰 DOM），本尺喂它九份回包对答案。
 #
 # 顺带把首页那几个前端模块过一遍 node --check：它们是 ES module，没有构建步骤，
 # 语法错要等页面加载时才炸，而那时报的是一句与出错文件无关的「载入失败」。
@@ -26,9 +26,12 @@ RED=0
 
 # —— 语法 ——
 # 逐个跑而不是一次传多个文件：node --check 只报第一个出错的，
-# 一次传一串时后面那些是「查过了」还是「没轮到」分不出来
+# 一次传一串时后面那些是「查过了」还是「没轮到」分不出来。
+# 必须走 stdin 加 --input-type=module：node --check 对 .js 文件按 CommonJS 解析，
+# 撞上 import/export 会静默放过，整把尺对这些模块文件恒绿——实测 Node 22，
+# 同一段坏语法 .mjs 红、.js 绿。stdin 形态强制按模块解析，尺才作数
 for f in "$UI"/home-model.js "$UI"/overview.js "$UI"/main.js "$UI"/core.js; do
-    if node --check "$f"; then
+    if node --input-type=module --check < "$f"; then
         echo "语法 绿 $f"
     else
         echo "语法 红 $f"
@@ -36,7 +39,7 @@ for f in "$UI"/home-model.js "$UI"/overview.js "$UI"/main.js "$UI"/core.js; do
     fi
 done
 
-# —— 八档 ——
+# —— 九档 ——
 # 退码单独读：写成管道时 $? 读到的是管道末端那个命令的退码，与被测无关
 node tools/home-model-check.mjs
 if [ $? -ne 0 ]; then

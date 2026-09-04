@@ -127,7 +127,8 @@ class HomeStatusFieldsTest {
                 new PushGate(properties),
                 liveDataService,
                 timeline,
-                authService);
+                authService,
+                mock(UpdateCheckService.class));
     }
 
     /** 一个只声明范围与登录态位的探针，够本组用例用 */

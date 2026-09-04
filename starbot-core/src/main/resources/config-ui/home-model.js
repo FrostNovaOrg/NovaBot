@@ -257,6 +257,19 @@ function todos(status, login, chain, fresh) {
     });
   }
 
+  // 有新版。排在最后：它是软的——不升级机器照常跑，不该把「重新登录 NapCat」这类
+  // 不动就一直不好的事压下去。href 指向站外说明，渲染那一侧按 http 开头给它新开一页。
+  // 首装机器到不了这里：服务器对配置文件还没建立的机器不下发 update 块，
+  // 而 fresh 那一支在更前面就整段返回了
+  if (status.update) {
+    list.push({
+      key: 'update',
+      title: '有新版 ' + status.update.latestVersion,
+      body: '控制台不做在线更新：到服务器上换 jar 重启就是了。',
+      action: '看完整说明', href: status.update.url, soft: true,
+    });
+  }
+
   return list;
 }
 

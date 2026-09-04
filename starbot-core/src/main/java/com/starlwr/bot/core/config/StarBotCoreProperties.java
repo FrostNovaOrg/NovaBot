@@ -455,6 +455,43 @@ public class StarBotCoreProperties {
         private final Agreement agreement = new Agreement();
 
         /**
+         * 新版检查相关
+         */
+        @Getter
+        private final Update update = new Update();
+
+        /**
+         * 新版检查
+         * <p>
+         * 控制台侧栏据此挂「新版 X」药丸，首页据此挂一条软待办。检查只读不写：
+         * 控制台不做在线更新，换了 jar 重启就是更新——因此这里没有任何一处会改这台机器上的程序。
+         */
+        @Getter
+        @Setter
+        public static class Update {
+            /**
+             * 是否检查新版
+             * <p>
+             * 关掉之后侧栏药丸与首页那条软待办都不会再出现。程序不会自己更新，
+             * 这一检查是使用者得知「该去换 jar 了」的唯一入口，默认开着。
+             */
+            @ConfigLevel(ConfigLevel.Level.COMMON)
+            @ConfigEffect(ConfigEffect.Effect.RESTART)
+            private boolean enabled = true;
+
+            /**
+             * 新版信息的来源地址
+             * <p>
+             * 默认指向发布仓的 latest release 接口，取回的 JSON 里要有
+             * {@code tag_name}（版本）、{@code body}（更新说明）与 {@code html_url}（链接）。
+             * 自建镜像或换发布渠道时改这里。取不到或取回的东西认不出来时静默跳过——
+             * 「查不到新版」不该变成控制台上的一条故障。
+             */
+            @ConfigEffect(ConfigEffect.Effect.RESTART)
+            private String source = "https://api.github.com/repos/FrostNovaOrg/NovaBot/releases/latest";
+        }
+
+        /**
          * 使用协议的同意记录
          * <p>
          * 这一节由程序写回，<b>不必手填</b>：控制台第一次打开时会先显示使用协议，

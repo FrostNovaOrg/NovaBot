@@ -67,6 +67,9 @@ starbot:
         accepted-version: 71
         accepted-at: "2026-01-02T03:04:05"
         accepted-by: password
+      update:
+        enabled: false
+        source: http://127.0.0.1:1/coverage-release
     alert:
       enabled: false
       convergence-interval: 81

@@ -213,6 +213,11 @@ public class ConfigUiController {
      */
     private final ConfigUiAuthService authService;
 
+    /**
+     * 新版检查。侧栏药丸与首页软待办读同一份结果，「这版先不提醒」也由它记账
+     */
+    private final UpdateCheckService updateCheck;
+
     @Autowired
     public ConfigUiController(ConfigurationMetadataService metadataService,
                               ConfigurationFileService fileService,
@@ -237,11 +242,13 @@ public class ConfigUiController {
                               PushGate pushGate,
                               LiveDataService liveDataService,
                               TimelineStore timeline,
-                              ConfigUiAuthService authService) {
+                              ConfigUiAuthService authService,
+                              UpdateCheckService updateCheck) {
         this.pushGate = pushGate;
         this.liveDataService = liveDataService;
         this.timeline = timeline;
         this.authService = authService;
+        this.updateCheck = updateCheck;
         this.effectResolver = effectResolver;
         this.dangerResolver = dangerResolver;
         this.runtimeApplier = runtimeApplier;
@@ -1359,6 +1366,20 @@ public class ConfigUiController {
         // 比显示一个编出来的版本号要好
         BuildProperties build = buildProperties.getIfAvailable();
         result.put("version", build == null ? "" : Optional.ofNullable(build.getVersion()).orElse(""));
+        // 该提示的新版：侧栏药丸、点开的小面板与首页那条软待办共用这一块。没有新版时整块不下发——
+        // 这类字段的读法是「缺席即没有」，与 queue 那种「键必须在、值可以为 0」不是同一种约定，
+        // 多发一个空对象只会让界面多一种两头都没定义的中间态。
+        // 首装机器（配置文件还没建立，即 /auth/state 里 setupDone 的判据）不下发：
+        // 它连一个主播都还没配，最不该在那一屏上被「有新版」带走
+        if (fileService.exists()) {
+            updateCheck.pendingUpdate().ifPresent(update -> {
+                JSONObject updateJson = new JSONObject();
+                updateJson.put("latestVersion", update.version());
+                updateJson.put("notes", update.notes());
+                updateJson.put("url", update.url());
+                result.put("update", updateJson);
+            });
+        }
         // 设置页底部要显示「配置文件在哪」。路径由定位配置文件的那个服务给，不在界面里写死：
         // 写死的那一份在换了工作目录或用 -Dspring.config.location 指过别处时会指错地方
         result.put("configPath", fileService.describeConfigPath());
@@ -1379,6 +1400,27 @@ public class ConfigUiController {
         result.put("live", liveNow());
         result.put("today", todayPushCounts());
         result.put("queue", queue());
+        return result;
+    }
+
+    /**
+     * 记下「这个版本先不提醒」
+     * <p>
+     * 版本由服务端认定而不是照单全收客户端送来的串：这一动作的真源是页面上那颗按钮，
+     * 而隔了几天才送达的请求或乱填的版本号不该被记成使用者的选择。没记下时
+     * {@code success=false}，界面据此重取一次状态。
+     * @param body 请求体，version 字段为要跳过的版本号
+     * @return 记下了没有
+     */
+    @PostMapping("/api/version/skip")
+    public JSONObject skipVersion(@RequestBody JSONObject body) {
+        JSONObject result = new JSONObject();
+        String version = body == null ? "" : Optional.ofNullable(body.getString("version")).orElse("");
+        boolean recorded = updateCheck.skip(version);
+        result.put("success", recorded);
+        if (recorded) {
+            log.info("配置界面已记下版本 {} 先不提醒", version);
+        }
         return result;
     }
 
