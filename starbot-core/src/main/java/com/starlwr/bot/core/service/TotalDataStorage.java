@@ -173,6 +173,8 @@ public class TotalDataStorage implements DisposableBean {
      * 钟也要能换：探活带缓存，而「缓存到期之后才重新探」这件事拿真钟量得靠等——
      * 等出来的判据在慢机器上会偶尔红，那种红比不量还糟。
      * <p>
+     * 公开是因为判据不止在本包：健康自检、菜单、运行期换后端那几处的台架都从这一支进
+     * （三参与四参的区别只在探活执行器——四参那支只有本包的判据用）。
      * 探活执行器是「当场直跑」的那一个：判据要的是确定的读数，这一支保持旧语义——
      * 调用返回时探活已经做完。
      * @param initial 起始连接参数
@@ -185,7 +187,7 @@ public class TotalDataStorage implements DisposableBean {
     }
 
     /**
-     * 供判据用的那一支，探活执行器可换
+     * 供判据用的那一支，探活执行器可换（包内可见：判据都在同包）
      * <p>
      * 传一个收下任务但不跑的执行器，量出来的就是「调用返回时探活还没发生」；
      * 传后台线程，量出来的就是生产那一支的形态。
@@ -194,8 +196,8 @@ public class TotalDataStorage implements DisposableBean {
      * @param clock 当前时刻（毫秒）
      * @param probeExecutor 探活在哪儿跑
      */
-    public TotalDataStorage(@NonNull Settings initial, @NonNull ConnectionFactories factories,
-                            @NonNull LongSupplier clock, @NonNull Executor probeExecutor) {
+    TotalDataStorage(@NonNull Settings initial, @NonNull ConnectionFactories factories,
+                     @NonNull LongSupplier clock, @NonNull Executor probeExecutor) {
         this.settings = initial;
         this.factories = factories;
         this.clock = clock;
@@ -252,10 +254,9 @@ public class TotalDataStorage implements DisposableBean {
     /**
      * 真去探一趟，把结果记进缓存
      * <p>
-     * 公开是因为判据：台架要在确定的时机拿到确定的读数，等不得后台那一趟；
-     * 后台线程定时跑的也是它。
+     * 被派出去的、后台线程定时跑的，都是它。
      */
-    public void probeNow() {
+    void probeNow() {
         synchronized (lock) {
             RedisTotalDataStore latest = store;
             boolean ok = latest != null && latest.reachable();
@@ -466,8 +467,11 @@ public class TotalDataStorage implements DisposableBean {
      * <p>
      * 框架那一个的参数是启动时绑定的，改不动——而本类存在的理由正是「地址能在运行期换」。
      * 两个来源混用会更糟：有时用框架那个、有时用自己造的，出问题时说不清连的到底是哪儿。
+     * <p>
+     * 包内可见是给接线判据用的：判据造一个工厂、读回它的建连与命令超时（只读配置面，
+     * 不碰网络——建连是惰性的，要 {@code afterPropertiesSet} 之后才真发生）。
      */
-    private static RedisConnectionFactory lettuce(Settings settings) {
+    static RedisConnectionFactory lettuce(Settings settings) {
         RedisStandaloneConfiguration standalone =
                 new RedisStandaloneConfiguration(settings.host(), settings.port());
         standalone.setDatabase(settings.database());
