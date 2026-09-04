@@ -88,7 +88,7 @@ public class OneBotController {
      */
     public synchronized boolean register(OneBotSender sender) {
         if (StringUtil.isBlank(sender.getOneBotHttpToken())) {
-            log.error("推送平台 {} 未配置 OneBot HTTP Token, 请完善配置", sender.getName());
+            log.warn("推送平台 {} 尚未配置 OneBot HTTP Token, 配好前推送不可用", sender.getName());
             return false;
         }
 
