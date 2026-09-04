@@ -443,21 +443,31 @@ details.adv .inner{padding:0 16px 16px}
 .cat-title:first-of-type{margin-top:8px}
 td.act button{background:none;border:none;color:var(--dim);cursor:pointer;font-size:12.5px;padding:0}
 td.act button:hover{color:var(--err)}
-/* 数据分析：趋势图用内联 SVG 画，页面刻意不引入任何外部依赖 */
-.chart{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);
-  box-shadow:var(--shadow);padding:14px 16px;margin-bottom:18px}
-.chart h4{margin:0 0 10px;font-size:13px;font-weight:600}
-.chart .plot{position:relative;padding-top:16px}
+/* 趋势图用内联 SVG 画，页面刻意不引入任何外部依赖。
+   卡壳由 .nv-card.hcard 提供，这里只管图本身——它长在主播详情的趋势页里 */
+.chart{margin-bottom:2px}
+.chart .plot{position:relative;padding-top:6px}
 .chart svg{display:block;width:100%;height:110px}
 .chart .bar{fill:var(--accent)}
 .chart .bar.zero{fill:var(--line)}
-/* 峰值标注是 HTML 而非 SVG 文字：SVG 那边会被横向拉伸 */
-.chart .peak{position:absolute;top:0;transform:translateX(-50%);font-size:11px;color:var(--dim);white-space:nowrap}
 .chart .xlab{display:flex;justify-content:space-between;margin-top:6px;font-size:11px;color:var(--dim)}
-#ana-table{overflow-x:auto}
-#ana-table table{min-width:100%;width:max-content}
-#ana-table td.n,#ana-table th.n{text-align:right;font-variant-numeric:tabular-nums}
-#ana-table tr.empty-row td{color:var(--dim)}
+/* ---------- 主播页：列表的小折线、页签、表 ---------- */
+/* 一行右边那条七天折线。宽高由判法给（88×26），这里只定它占多大、什么颜色 */
+.spark{width:88px;height:26px;flex:none;color:var(--dim)}
+/* 在涨的那几条用强调色。平的与在跌的一律用暗色——给「跌」单独一种颜色的话，
+   一位主播掉了两个粉就满屏报警，而那不是这条线要说的事 */
+.spark.up{color:var(--accent)}
+/* 三个页签与趋势那两枚周期，都是链接不是按钮：地址就是页签本身，能收藏、能贴给别人。
+   .lgpill 那一套是给 <button> 写的，链接还要去掉下划线 */
+a.lgpill{text-decoration:none}
+a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);background:var(--soft)}
+#sd-tabs{margin:0 0 14px}
+/* 场次表与明细表横向可滚：指标一多就摆不下，而挤成一团的数字没法读 */
+#sd-body td.n,#sd-body th.n{text-align:right;font-variant-numeric:tabular-nums}
+#sd-body tr.empty-row td{color:var(--dim)}
+#sd-body tbody tr:hover{background:var(--soft)}
+/* 报告图那一块：图按容器宽缩放，不放大——原图比容器窄时拉伸会糊 */
+#sx-body img{max-width:100%;height:auto}
 /* 只读口令：签发结果那一块。整页只有这里的内容是「现在不抄就没了」的，用强调色框住 */
 .issued{border:1px solid var(--accent);border-radius:var(--r-ctl);padding:12px 14px;margin-top:14px;
   background:var(--soft)}

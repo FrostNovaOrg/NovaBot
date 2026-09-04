@@ -233,6 +233,79 @@ class ConfigurationTemplateTest {
     }
 
     @Test
+    @DisplayName("对象列表按字段写出，读回来仍是字段而不是对象摘要")
+    void objectListRoundTripsFieldByField() throws IOException {
+        ConfigurationMetadataService.ConfigurationField field =
+                new ConfigurationMetadataService.ConfigurationField(
+                        "senders", "java.util.List", "推送平台", List.of());
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("name", "qq-onebot");
+        item.put("api", "/send");
+        item.put("one-bot-http-token", "secret");
+
+        String yaml = ConfigurationTemplate.render(List.of(field), Map.of("senders", List.of(item)));
+        Path file = dir.resolve("object-list.yml");
+        Files.writeString(file, yaml, StandardCharsets.UTF_8);
+
+        Map<String, Object> written = load(file);
+        Object senders = written.get("senders");
+        assertTrue(senders instanceof List<?>, "senders 读回来应当是列表。文件:\n" + yaml);
+        List<?> list = (List<?>) senders;
+        assertEquals(1, list.size(), yaml);
+        assertTrue(list.get(0) instanceof Map<?, ?>,
+                "元素应当是对象。按 toString 写出去的那一版读回来是字符串，"
+                        + "再写进配置文件就解析不出 name。实值: " + list.get(0) + "\n文件:\n" + yaml);
+        assertEquals("qq-onebot", ((Map<?, ?>) list.get(0)).get("name"), yaml);
+        assertEquals("/send", ((Map<?, ?>) list.get(0)).get("api"), yaml);
+        assertEquals("secret", ((Map<?, ?>) list.get(0)).get("one-bot-http-token"), yaml);
+    }
+
+    @Test
+    @DisplayName("Java 对象列表同样按字段写出，键名是短横线")
+    void javaBeanListRoundTripsFieldByField() throws IOException {
+        ConfigurationMetadataService.ConfigurationField field =
+                new ConfigurationMetadataService.ConfigurationField(
+                        "senders", "java.util.List", "推送平台", List.of());
+        DemoSender bean = new DemoSender();
+        bean.name = "qq-onebot";
+        bean.oneBotAddress = "10.0.0.9";
+
+        String yaml = ConfigurationTemplate.render(List.of(field), Map.of("senders", List.of(bean)));
+        Path file = dir.resolve("bean-list.yml");
+        Files.writeString(file, yaml, StandardCharsets.UTF_8);
+
+        Map<String, Object> written = load(file);
+        Object senders = written.get("senders");
+        assertTrue(senders instanceof List<?> list && !list.isEmpty() && list.get(0) instanceof Map<?, ?>,
+                "Java 对象也该按字段写。实值: " + senders + "\n文件:\n" + yaml);
+        Map<?, ?> item = (Map<?, ?>) ((List<?>) senders).get(0);
+        assertEquals("qq-onebot", item.get("name"), yaml);
+        assertEquals("10.0.0.9", item.get("one-bot-address"), yaml);
+    }
+
+    @Test
+    @DisplayName("标量列表仍按标量写")
+    void scalarListStillRendersAsScalars() throws IOException {
+        ConfigurationMetadataService.ConfigurationField field =
+                new ConfigurationMetadataService.ConfigurationField(
+                        "allow-ips", "java.util.List", "白名单", List.of());
+        String yaml = ConfigurationTemplate.render(List.of(field),
+                Map.of("allow-ips", List.of("127.0.0.1/32", "::1/128")));
+        Path file = dir.resolve("scalar-list.yml");
+        Files.writeString(file, yaml, StandardCharsets.UTF_8);
+
+        assertEquals(List.of("127.0.0.1/32", "::1/128"), load(file).get("allow-ips"), yaml);
+    }
+
+    /**
+     * 配置对象列表里那种 Java bean 的替身：字段名驼峰，写出去该是短横线
+     */
+    private static final class DemoSender {
+        private String name;
+        private String oneBotAddress;
+    }
+
+    @Test
     @DisplayName("④ 写口·阴性 —— 已有的文件不会被这份模板盖掉")
     void existingFileIsNeverOverwritten() throws IOException {
         Path config = dir.resolve("application.yml");

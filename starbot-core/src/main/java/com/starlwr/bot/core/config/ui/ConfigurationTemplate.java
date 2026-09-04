@@ -1,5 +1,7 @@
 package com.starlwr.bot.core.config.ui;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -164,11 +166,8 @@ final class ConfigurationTemplate {
      * 写成空白的话，「这一项是个空列表」与「这一项还没填」在文件上长得一样，
      * 而前者是<b>一个已经做出的决定</b>。
      * <p>
-     * ⚠️ 各项按标量写。<b>元素是对象的列表（如机器人连接）在这里渲染不出来</b>——
-     * 写出去的会是一行对象的 toString。这份模板只在配置文件不存在时生成，
-     * 而那种时候这类列表本来就是空的；要往里添元素得走
-     * {@link ConfigurationFileService#writeListItemFields}，
-     * <b>并且要赶在往配置面里添那条元素之前把这份文件建出来</b>。
+     * 元素是对象时按字段写出（键名短横线），读得回来仍是一组字段。
+     * 按 {@code toString} 写出去的那一版，读回来是一串谁也解析不回对象的文字。
      */
     private static void renderList(String name, Collection<?> items, String pad, StringBuilder out) {
         if (items.isEmpty()) {
@@ -176,10 +175,77 @@ final class ConfigurationTemplate {
             return;
         }
 
-        out.append(pad).append(name).append(":\n");
+        StringBuilder body = new StringBuilder();
         for (Object item : items) {
-            out.append(pad).append(INDENT).append("- ").append(scalar(item)).append('\n');
+            Map<String, Object> fields = objectFields(item);
+            if (fields == null) {
+                body.append(pad).append(INDENT).append("- ").append(scalar(item)).append('\n');
+                continue;
+            }
+            renderObjectItem(fields, pad, body);
         }
+
+        if (body.isEmpty()) {
+            out.append(pad).append(name).append(": []\n");
+            return;
+        }
+
+        out.append(pad).append(name).append(":\n");
+        out.append(body);
+    }
+
+    /**
+     * 把一个对象列表项按字段写成 YAML
+     */
+    private static void renderObjectItem(Map<String, Object> fields, String pad, StringBuilder out) {
+        boolean first = true;
+        String itemPad = pad + INDENT;
+        String fieldPad = itemPad + INDENT;
+        for (Map.Entry<String, Object> entry : fields.entrySet()) {
+            if (isBlank(entry.getValue()) && ConfigurationFileService.isBlankMeansAbsentField(entry.getKey())) {
+                continue;
+            }
+            String rendered = scalar(entry.getValue());
+            out.append(first ? itemPad + "- " : fieldPad).append(entry.getKey()).append(':');
+            if (!rendered.isEmpty()) {
+                out.append(' ').append(rendered);
+            }
+            out.append('\n');
+            first = false;
+        }
+    }
+
+    /**
+     * 对象列表项的字段。认不出结构时返回 null，调用方按标量写
+     */
+    private static Map<String, Object> objectFields(Object item) {
+        if (item instanceof Map<?, ?> map) {
+            Map<String, Object> out = new LinkedHashMap<>();
+            map.forEach((key, value) -> out.put(String.valueOf(key), value));
+            return out;
+        }
+
+        if (item == null || item instanceof CharSequence || item instanceof Number
+                || item instanceof Boolean || item instanceof Enum<?>
+                || item instanceof Collection<?> || item.getClass().isArray()) {
+            return null;
+        }
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (Class<?> type = item.getClass(); type != null && type != Object.class; type = type.getSuperclass()) {
+            for (Field field : type.getDeclaredFields()) {
+                if (field.isSynthetic() || Modifier.isStatic(field.getModifiers())) {
+                    continue;
+                }
+                try {
+                    field.setAccessible(true);
+                    out.put(ConfigurationPropertyFields.toKebab(field.getName()), field.get(item));
+                } catch (RuntimeException | ReflectiveOperationException ignored) {
+                    // 读不到就跳过这一项：编一个值写出去，和没写长得不一样，却是假的
+                }
+            }
+        }
+        return out.isEmpty() ? null : out;
     }
 
     private static void renderMap(String name, Map<?, ?> entries, String pad, StringBuilder out) {

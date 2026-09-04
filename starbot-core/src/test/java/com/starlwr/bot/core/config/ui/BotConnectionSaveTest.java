@@ -24,6 +24,7 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -272,6 +273,38 @@ class BotConnectionSaveTest {
         controller(fileService, tester(true)).saveBot(body());
 
         assertEquals(List.of("127.0.0.1|3100|3101|new-http|new-ws"), calls);
+    }
+
+    @Test
+    @DisplayName("saveBot 把令牌留空时删掉该字段，其它连接信息照写")
+    void saveBotDropsBlankTokenFields() throws IOException {
+        write(CONFIGURED);
+
+        JSONObject body = body();
+        body.put("httpToken", "");
+        body.put("websocketToken", "");
+
+        JSONObject result = controller(fileService, tester(true)).saveBot(body);
+        assertTrue(result.getBooleanValue("success"), result.getString("message"));
+
+        String text = Files.readString(config, StandardCharsets.UTF_8);
+        assertFalse(text.contains("one-bot-http-token"), "空令牌应被删掉，不留空值行:\n" + text);
+        assertFalse(text.contains("one-bot-websocket-token"), text);
+        assertTrue(text.contains("one-bot-address: 127.0.0.1"), "地址仍该写下去:\n" + text);
+        assertTrue(text.contains("delay: 1000"), "没被清空的字段还在:\n" + text);
+        assertEquals("127.0.0.1", value("starbot.adapter.onebot.senders[0].one-bot-address"));
+        assertNull(value("starbot.adapter.onebot.senders[0].one-bot-http-token"));
+    }
+
+    @Test
+    @DisplayName("saveBot 令牌非空时照写")
+    void saveBotWritesNonEmptyTokens() throws IOException {
+        write(CONFIGURED);
+
+        JSONObject result = controller(fileService, tester(true)).saveBot(body());
+        assertTrue(result.getBooleanValue("success"), result.getString("message"));
+        assertEquals("new-http", value("starbot.adapter.onebot.senders[0].one-bot-http-token"));
+        assertEquals("new-ws", value("starbot.adapter.onebot.senders[0].one-bot-websocket-token"));
     }
 
     @Test

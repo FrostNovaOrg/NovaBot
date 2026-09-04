@@ -201,6 +201,23 @@ function banner(status, chain, fresh) {
 }
 
 /**
+ * 这台机器没开累计数据
+ *
+ * 首页那条软待办与主播详情顶上那条小横条<b>问的是同一件事</b>，因此判定只留这一份。
+ * 各写各的话，两处会在同一台机器上给出不同的答案——而最常见的分叉是有人把某一处写成
+ * {@code !status.totalDataAvailable}：那样一来，接口还没回来（值为 undefined）的那一瞬间
+ * 也会被算成「没开」，屏幕上先闪一条说这台机器不行的话，随后又自己消失。
+ *
+ * 三态里只有明确的 false 才算没开：true 是开着，缺这一栏（旧版服务端）是不知道，
+ * 而「不知道」不许读成「没开」。
+ * @param status /api/status 回包
+ * @return {boolean} 确实没开时为 true
+ */
+export function totalDataOff(status) {
+  return (status || {}).totalDataAvailable === false;
+}
+
+/**
  * 待办
  *
  * 只放「要人动手，不动就一直不好」的事。会自己恢复的异常不进这里——
@@ -247,7 +264,7 @@ function todos(status, login, chain, fresh) {
     });
   }
 
-  if (status.totalDataAvailable === false) {
+  if (totalDataOff(status)) {
     list.push({
       key: 'total',
       title: '累计数据没开',
