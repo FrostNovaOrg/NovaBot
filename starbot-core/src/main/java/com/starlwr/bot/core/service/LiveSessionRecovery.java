@@ -1,6 +1,7 @@
 package com.starlwr.bot.core.service;
 
 import com.starlwr.bot.core.enums.LiveEndReason;
+import com.starlwr.bot.core.model.LiveGap;
 import com.starlwr.bot.core.model.LiveSession;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import lombok.NonNull;
@@ -60,6 +61,9 @@ public class LiveSessionRecovery {
      * 这段区间无论崩溃还是正常重启都成立，而且<b>两种情况的起点都该是上次落盘时刻</b>：
      * 崩溃时，上次落盘之后收到的消息随进程一起没了，那部分同样没进任何统计。
      * <p>
+     * 成因就在这一刻定下来：上一个进程正常退出的算维护，崩溃或被强杀的算重启。
+     * <b>过了这一刻就问不出来了</b>——数据文件里那一项一起来就被改写成了本次。
+     * <p>
      * 顺序在 {@code -9999}：必须等 {@link DefaultLiveDataService} 在 {@code -10000}
      * 把数据文件读进来，否则水位线还没取到。
      */
@@ -79,8 +83,15 @@ public class LiveSessionRecovery {
             return;
         }
 
-        liveDataService.recordDowntime(from, now);
-        log.info("本次停机 {} 秒未采集, 期间在播场次的报告会标注缺口", (now - from) / 1000);
+        // 问不出来就落「原因未定」，不挑一个看起来最像的：报告上「原因未定」是一句真话，
+        // 而随手写成「维护」会让主播以为这段空白已经有人解释过了
+        LiveGap.Reason reason = liveDataService.wasCleanShutdown()
+                .map(clean -> clean ? LiveGap.Reason.MAINTENANCE : LiveGap.Reason.RESTART)
+                .orElse(LiveGap.Reason.UNKNOWN);
+
+        liveDataService.recordDowntime(from, now, reason);
+        log.info("本次停机 {} 秒未采集（{}）, 期间在播场次的报告会标注缺口",
+                (now - from) / 1000, reason.getDescription());
     }
 
     /**

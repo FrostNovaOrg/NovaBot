@@ -7,6 +7,7 @@ import com.starlwr.bot.bilibili.model.Room;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.factory.StarBotCommonPainterFactory;
+import com.starlwr.bot.core.model.LiveGap;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.service.DefaultLiveDataService;
 import com.starlwr.bot.core.service.LiveRoomInfoHistory;
@@ -24,10 +25,13 @@ import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 import java.util.Optional;
 import java.util.Properties;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -427,9 +431,11 @@ class BilibiliLiveReportPainterTest {
         liveDataService.setLiveEndTime(PLATFORM, STREAMER.getUid(), start + 2 * 3600_000);
         liveDataService.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.DANMU_COUNT, 106);
         // 开播 30 分钟后重启，缺了 12 分 34 秒
-        liveDataService.recordDowntime(start + 1800_000, start + 1800_000 + 754_000);
+        liveDataService.recordDowntime(start + 1800_000, start + 1800_000 + 754_000,
+                LiveGap.Reason.RESTART);
 
-        assertEquals("12 分 34 秒", painter.maintenanceGapText(PLATFORM, STREAMER.getUid()));
+        assertEquals("采集缺口 共 12 分 34 秒·重启",
+                painter.collectionGapText(PLATFORM, STREAMER.getUid()));
 
         Optional<String> base64 = painter.paint(PLATFORM, STREAMER);
         assertTrue(base64.isPresent());
@@ -446,13 +452,14 @@ class BilibiliLiveReportPainterTest {
         liveDataService.recordLiveMetricUser(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.DANMU_USERS, 1L);
         liveDataService.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.GIFT_VALUE, 52.0);
         liveDataService.recordLiveMetricUser(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.GIFT_USERS, 1L);
-        liveDataService.recordDowntime(start + 600_000, start + 600_000 + 754_000);
+        liveDataService.recordDowntime(start + 600_000, start + 600_000 + 754_000,
+                LiveGap.Reason.MAINTENANCE);
 
         String text = painter.textReport(PLATFORM, STREAMER, BilibiliLiveReportOptions.of(new com.alibaba.fastjson2.JSONObject(), true));
 
         assertTrue(text.contains("测试主播"), text);
         assertTrue(text.contains("直播时长 2 时"), text);
-        assertTrue(text.contains("其中 12 分 34 秒因维护未采集"), text);
+        assertTrue(text.contains("采集缺口 共 12 分 34 秒·维护"), text);
         assertTrue(text.contains("弹幕 106 条 · 1 人参与"), text);
         // 金额格式与图片版共用 yuan()，整数不补两位小数——两版说的必须是同一个数
         assertTrue(text.contains("本场收益 ¥52"), text);
@@ -513,7 +520,7 @@ class BilibiliLiveReportPainterTest {
         liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), 1_700_000_000_000L);
         liveDataService.setLiveEndTime(PLATFORM, STREAMER.getUid(), 1_700_000_000_000L + 3600_000);
 
-        assertEquals("", painter.maintenanceGapText(PLATFORM, STREAMER.getUid()));
+        assertEquals("", painter.collectionGapText(PLATFORM, STREAMER.getUid()));
     }
 
     @Test
@@ -523,16 +530,150 @@ class BilibiliLiveReportPainterTest {
         liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
         liveDataService.setLiveEndTime(PLATFORM, STREAMER.getUid(), start + 3600_000);
         // 停机跨过开播时刻：开播前 10 分钟停到开播后 1 分钟，本场只该算那 1 分钟
-        liveDataService.recordDowntime(start - 600_000, start + 60_000);
+        liveDataService.recordDowntime(start - 600_000, start + 60_000, LiveGap.Reason.MAINTENANCE);
 
-        assertEquals("1 分", painter.maintenanceGapText(PLATFORM, STREAMER.getUid()));
+        assertEquals("采集缺口 共 1 分·维护", painter.collectionGapText(PLATFORM, STREAMER.getUid()));
     }
 
     /**
      * 取图片高度
      */
     private int heightOf(String base64) throws Exception {
-        return javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(Base64.getDecoder().decode(base64))).getHeight();
+        return imageOf(base64).getHeight();
+    }
+
+    /**
+     * 把绘制结果解回一张图，供像素判据取样
+     */
+    private BufferedImage imageOf(String base64) throws Exception {
+        return javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(Base64.getDecoder().decode(base64)));
+    }
+
+    // ================ 缺口斜纹的像素判据 ================
+    // 版式常量在被测类里是私有的，这里按同一份定义抄一份，不从别处推算：
+    // 判据要量的是「画出来的那张图」，拿被测自己的算法去算取样点，等于让它自己给自己出题
+    private static final int GAUGE_MARGIN = 35;
+
+    private static final int GAUGE_CONTENT_WIDTH = 900 - 35 * 2;
+
+    private static final int GAUGE_COLUMN_WIDTH = 2;
+
+    private static final int GAUGE_HATCH_PERIOD = 10;
+
+    /**
+     * 夹具场次的长度（分钟）与时间格数
+     * <p>
+     * 格数是「首尾都算」的，与被测同一条算式但各算各的：夹具知道自己造了多长的一场。
+     */
+    private static final int GAUGE_SESSION_MINUTES = 180;
+
+    private static final int GAUGE_BUCKETS = GAUGE_SESSION_MINUTES + 1;
+
+    /**
+     * 缺口起止（第几分钟）：第 100 分钟落过一次盘，随后进程停到第 120 分钟
+     */
+    private static final int GAUGE_GAP_FROM_MINUTE = 100;
+
+    private static final int GAUGE_GAP_TO_MINUTE = 120;
+
+    /**
+     * 真没互动的那一段（第几分钟）：采集一直在，就是没人说话
+     */
+    private static final int GAUGE_QUIET_MINUTE = 50;
+
+    /**
+     * 一场三小时的直播，中间挖两个不同性质的洞：
+     * <ul>
+     *     <li>第 40～59 分钟<b>真的没人说话</b>——采集一直在，就是没有互动</li>
+     *     <li>第 100～119 分钟<b>没在采</b>——第 100 分钟落过一次盘，随后进程停到第 120 分钟</li>
+     * </ul>
+     * 第 100 分钟这一格<b>两边都占</b>：它落在停机区间里，却因为落盘发生在这一分钟之内而留着数据。
+     * 这一格正是判据的取样点——改之前它按数据画满格面积，缺口在图上根本不存在。
+     * <p>
+     * 开播时刻取整分：时间格的键按绝对分钟对齐，而重采样按开播时刻起算，
+     * 开播落在半分钟上时两套格子会错开一格。<b>那是另一个问题</b>，别让它混进这把尺的读数里。
+     */
+    private long feedGapAndQuietCurve() {
+        long start = (System.currentTimeMillis() - 3 * 3600_000) / 60_000 * 60_000;
+        long end = start + GAUGE_SESSION_MINUTES * 60_000L;
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+        liveDataService.setLiveEndTime(PLATFORM, STREAMER.getUid(), end);
+
+        for (int minute = 0; minute < GAUGE_SESSION_MINUTES; minute++) {
+            boolean quiet = minute >= 40 && minute <= 59;
+            boolean notCollected = minute > GAUGE_GAP_FROM_MINUTE && minute < GAUGE_GAP_TO_MINUTE;
+            if (quiet || notCollected) {
+                continue;
+            }
+            liveDataService.incrementLiveSeries(PLATFORM, STREAMER.getUid(),
+                    BilibiliLiveMetric.DANMU_COUNT, start + minute * 60_000L, 10);
+        }
+        liveDataService.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.DANMU_COUNT, 1610);
+
+        liveDataService.recordDowntime(start + GAUGE_GAP_FROM_MINUTE * 60_000L,
+                start + GAUGE_GAP_TO_MINUTE * 60_000L);
+        return start;
+    }
+
+    /**
+     * 只留互动曲线的版式，让图里除了那一条曲线之外没有别的东西用同一种颜色
+     */
+    private BilibiliLiveReportOptions curvesOnly() {
+        com.alibaba.fastjson2.JSONObject params = new com.alibaba.fastjson2.JSONObject();
+        params.put("cover", false);
+        params.put("cards", false);
+        params.put("fans_change", false);
+        params.put("danmu_ranking", 0);
+        params.put("gift_ranking", 0);
+        params.put("super_chat_ranking", 0);
+        params.put("box_ranking", 0);
+        params.put("box_profit_ranking", 0);
+        params.put("guard_list", false);
+        params.put("danmu_cloud", false);
+        params.put("highlights", false);
+        params.put("title_changes", false);
+        return BilibiliLiveReportOptions.of(params, true);
+    }
+
+    /**
+     * 第 bucket 个时间格最早落在第几像素列
+     * <p>
+     * 列比格多（415 列对 181 格），一格摊到两三列上。取<b>最早</b>那一列，
+     * 才保证这一列量的确实是这一格而不是上一格。
+     */
+    private static int columnOfBucket(int bucket) {
+        int columns = GAUGE_CONTENT_WIDTH / GAUGE_COLUMN_WIDTH;
+        return (int) Math.ceil((double) bucket * columns / GAUGE_BUCKETS);
+    }
+
+    /**
+     * 第 bucket 个时间格那一列的取样 x，取两个列顶点之间那一点
+     * <p>
+     * 顶点上的像素是多边形的边，会被抗锯齿抹成一个中间色——判据要读的是实心的那一点。
+     */
+    private static int sampleXOfBucket(int bucket) {
+        return GAUGE_MARGIN + columnOfBucket(bucket) * GAUGE_COLUMN_WIDTH + 1;
+    }
+
+    /**
+     * 弹幕面积在图上的基线所在行
+     * <p>
+     * 取第 2 像素列上那一段连续的面积色：那一列在夹具里是满格的，找得到就必然是曲线本体。
+     */
+    private static int baselineOf(BufferedImage image) {
+        int x = GAUGE_MARGIN + 2 * GAUGE_COLUMN_WIDTH;
+        int bottom = -1;
+        for (int y = 0; y < image.getHeight(); y++) {
+            if (isColor(image, x, y, BilibiliLiveReportPainter.COLOR_CURVE_DANMU)) {
+                bottom = y;
+            }
+        }
+        assertTrue(bottom > 0, "夹具里第 2 像素列应当是满格面积，图上却一点面积色都没有");
+        return bottom + 1;
+    }
+
+    private static boolean isColor(BufferedImage image, int x, int y, Color color) {
+        return (image.getRGB(x, y) & 0xFFFFFF) == (color.getRGB() & 0xFFFFFF);
     }
 
     /**
@@ -549,30 +690,113 @@ class BilibiliLiveReportPainterTest {
     }
 
     @Test
-    @DisplayName("单房断线缺口与程序停机分两句写，且各自零则不显示")
-    void reportsRoomOutageSeparatelyFromMaintenanceGap() {
+    @DisplayName("缺口那一段画斜纹不画面积，真没互动的那一段仍画贴地面积")
+    void hatchesGapAndKeepsFlatAreaWhenQuiet() throws Exception {
+        feedGapAndQuietCurve();
+
+        Optional<String> base64 = painter.paint(PLATFORM, STREAMER, curvesOnly());
+        assertTrue(base64.isPresent());
+        dump("gap-hatch", base64.get());
+
+        BufferedImage image = imageOf(base64.get());
+        int baseline = baselineOf(image);
+        int midY = baseline - 45;
+
+        int gapX = sampleXOfBucket(GAUGE_GAP_FROM_MINUTE);
+        int quietX = sampleXOfBucket(GAUGE_QUIET_MINUTE);
+        List<Integer> stripes = hatchStripesIn(image, midY);
+
+        // 三处取样一次报齐，不许短路：一条断言拦下之后，另外两处是绿是红就没人知道了，
+        // 而「先红」要的正是这三处各自红在哪
+        assertAll(
+                // 取样点一：缺口里那一格（第 100 分钟）——它有数据，改之前这里画的是满格面积
+                () -> assertFalse(isColor(image, gapX, midY, BilibiliLiveReportPainter.COLOR_CURVE_DANMU),
+                        "缺口那一段不该画面积：那几分钟没在采，画成面积等于把没有说成有"),
+                // 取样点二：整条缺口带里应当看得见斜纹，且斜线是等间距的
+                () -> assertTrue(stripes.size() >= 3, "缺口带里应当量得到至少三道斜线, 实测 " + stripes.size() + " 道"),
+                () -> {
+                    for (int i = 1; i < stripes.size(); i++) {
+                        assertEquals(GAUGE_HATCH_PERIOD, stripes.get(i) - stripes.get(i - 1),
+                                "斜线应当等间距, 第 " + i + " 道与上一道相隔 "
+                                        + (stripes.get(i) - stripes.get(i - 1)) + " 像素");
+                    }
+                },
+                // 取样点三：真没互动的那一段（第 50 分钟）——面积贴着基线，抬头看不见、低头看得见
+                () -> assertFalse(isColor(image, quietX, midY, BilibiliLiveReportPainter.COLOR_CURVE_DANMU),
+                        "没人说话的那几分钟不该有高面积"),
+                () -> assertTrue(isColor(image, quietX, baseline - 1, BilibiliLiveReportPainter.COLOR_CURVE_DANMU),
+                        "没人说话的那几分钟仍要画贴地面积：一片空白与斜纹区就分不出了"),
+                () -> assertFalse(isColor(image, quietX, midY, BilibiliLiveReportPainter.COLOR_CURVE_GAP_HATCH),
+                        "没人说话不是缺口, 不该画成斜纹"));
+    }
+
+    /**
+     * 数出缺口带中线上那几道斜线各自起于第几像素
+     * <p>
+     * 两头各让开两像素：边界细线与被它压掉半截的那道斜线不参与间距核算。
+     */
+    private static List<Integer> hatchStripesIn(BufferedImage image, int midY) {
+        int bandFrom = GAUGE_MARGIN + columnOfBucket(GAUGE_GAP_FROM_MINUTE) * GAUGE_COLUMN_WIDTH + 2;
+        int bandTo = GAUGE_MARGIN + columnOfBucket(GAUGE_GAP_TO_MINUTE) * GAUGE_COLUMN_WIDTH - 2;
+
+        List<Integer> stripes = new ArrayList<>();
+        // 扫描起点若正落在一道斜线里，那一道算不出真正的起点，不计
+        boolean inside = isColor(image, bandFrom, midY, BilibiliLiveReportPainter.COLOR_CURVE_GAP_HATCH);
+        for (int x = bandFrom + 1; x < bandTo; x++) {
+            boolean hatch = isColor(image, x, midY, BilibiliLiveReportPainter.COLOR_CURVE_GAP_HATCH);
+            if (hatch && !inside) {
+                stripes.add(x);
+            }
+            inside = hatch;
+        }
+        return stripes;
+    }
+
+    @Test
+    @DisplayName("三种成因各一段时，概览按成因分栏且各栏之和等于总时长")
+    void breaksTheGapDownByReason() {
         long start = System.currentTimeMillis() - 2 * 3600_000;
         liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
         liveDataService.setLiveEndTime(PLATFORM, STREAMER.getUid(), start + 2 * 3600_000);
 
-        // 先证明这两句在没有缺口时都不出现——否则下面的「出现了」说明不了问题
+        // 先证明这句话在没有缺口时不出现——否则下面的「出现了」说明不了问题
         String before = painter.textReport(PLATFORM, STREAMER,
                 BilibiliLiveReportOptions.of(new com.alibaba.fastjson2.JSONObject(), true));
-        assertFalse(before.contains("因维护未采集"), before);
-        assertFalse(before.contains("因直播间断线未采集"), before);
+        assertFalse(before.contains("采集缺口"), before);
 
-        liveDataService.recordDowntime(start + 600_000, start + 600_000 + 754_000);
+        // 三段互不重叠的缺口，三个成因各一段
+        liveDataService.recordDowntime(start + 600_000, start + 600_000 + 754_000, LiveGap.Reason.MAINTENANCE);
+        liveDataService.recordDowntime(start + 2400_000, start + 2400_000 + 120_000, LiveGap.Reason.RESTART);
+        liveDataService.recordRoomOutage(PLATFORM, STREAMER.getUid(),
+                start + 3600_000, start + 3600_000 + 123_000);
+
+        // 754 + 120 + 123 = 997 秒 = 16 分 37 秒：分栏是真的分栏，各栏加起来正好是那个总数
+        String expected = "采集缺口 共 16 分 37 秒：维护 12 分 34 秒／重启 2 分／断流 2 分 3 秒";
+        String after = painter.textReport(PLATFORM, STREAMER,
+                BilibiliLiveReportOptions.of(new com.alibaba.fastjson2.JSONObject(), true));
+        assertTrue(after.contains(expected), after);
+        assertEquals(expected, painter.collectionGapText(PLATFORM, STREAMER.getUid()));
+    }
+
+    @Test
+    @DisplayName("断线落在停机里时，那几秒只算一次，且算给停机")
+    void overlappingOutageIsCountedOnce() {
+        long start = System.currentTimeMillis() - 2 * 3600_000;
+        long end = start + 2 * 3600_000;
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+        liveDataService.setLiveEndTime(PLATFORM, STREAMER.getUid(), end);
+
+        // 断线那 123 秒整个落在停机那 754 秒里——相加就是把同一秒数了两遍
+        liveDataService.recordDowntime(start + 600_000, start + 600_000 + 754_000, LiveGap.Reason.MAINTENANCE);
         liveDataService.recordRoomOutage(PLATFORM, STREAMER.getUid(),
                 start + 600_000, start + 600_000 + 123_000);
 
-        String after = painter.textReport(PLATFORM, STREAMER,
-                BilibiliLiveReportOptions.of(new com.alibaba.fastjson2.JSONObject(), true));
+        assertEquals("采集缺口 共 12 分 34 秒·维护",
+                painter.collectionGapText(PLATFORM, STREAMER.getUid()),
+                "重叠的那 123 秒既然程序整个停着, 就该记在停机名下, 不另起一栏");
 
-        assertTrue(after.contains("因维护未采集"), after);
-        assertTrue(after.contains("因直播间断线未采集"), after);
-        // 两段是重叠的（断线那 123 秒就落在停机那 754 秒里），
-        // 报告必须分两句写而不是给一个和——给和就是把同一秒数了两遍
-        assertEquals("12 分 34 秒", painter.maintenanceGapText(PLATFORM, STREAMER.getUid()));
-        assertEquals("2 分 3 秒", painter.roomOutageText(PLATFORM, STREAMER.getUid()));
+        // 阴性对照：两个总数各自的口径一个字都没变，改的只是「怎么把它们摆到一起」
+        assertEquals(754_000, liveDataService.downtimeWithin(start, end));
+        assertEquals(123_000, liveDataService.roomOutageWithin(PLATFORM, STREAMER.getUid(), start, end));
     }
 }

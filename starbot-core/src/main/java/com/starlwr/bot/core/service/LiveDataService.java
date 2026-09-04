@@ -1,5 +1,6 @@
 package com.starlwr.bot.core.service;
 
+import com.starlwr.bot.core.model.LiveGap;
 import com.starlwr.bot.core.model.UserScore;
 import lombok.NonNull;
 
@@ -56,24 +57,70 @@ public interface LiveDataService {
     Optional<Long> getLastSaveTime();
 
     /**
+     * <b>上一个进程</b>是不是正常退出的
+     * <p>
+     * 与 {@link #getLastSaveTime} 同一批读出来的水位线信息，一起回答「这段空白是怎么来的」：
+     * 正常退出的那一段是计划内维护，崩溃或被强杀的那一段是重启。<b>两者对主播的含义不同</b>——
+     * 后者是该有人去查的，前者不是。
+     * <p>
+     * 取的同样是<b>启动时读到的那个值</b>：进程一起来就会把这一项改写成「否」，
+     * 几十秒后再问，答的是本次而不是上次。
+     * @return 上次正常退出为 true，崩溃或被强杀为 false；数据文件里没有这一项、
+     *         或本实现根本不记录时为空——<b>空不读成 false</b>，那会把「不知道」说成「崩过」
+     */
+    default Optional<Boolean> wasCleanShutdown() {
+        return Optional.empty();
+    }
+
+    /**
      * 记一段停机（未采集）区间
      * <p>
      * 按<b>全局区间</b>存而不是按主播存：停机是进程层面的事，同时监听 10 个主播时
      * 10 场直播共享同一段缺口，各自的报告只需截取与自己场次重叠的部分。
      * @param from 起始时刻（毫秒，含）
      * @param to 结束时刻（毫秒，含）
+     * @param reason 成因，推不出来时传 {@link LiveGap.Reason#UNKNOWN}
      */
-    void recordDowntime(long from, long to);
+    void recordDowntime(long from, long to, @NonNull LiveGap.Reason reason);
+
+    /**
+     * 记一段成因不明的停机区间
+     * <p>
+     * 落成 {@link LiveGap.Reason#UNKNOWN} 而不是挑一个看起来最像的成因：
+     * 报告上「原因未定」是一句真话，「维护」在这里会是一句编出来的话。
+     * @param from 起始时刻（毫秒，含）
+     * @param to 结束时刻（毫秒，含）
+     */
+    default void recordDowntime(long from, long to) {
+        recordDowntime(from, to, LiveGap.Reason.UNKNOWN);
+    }
+
+    /**
+     * 查询与给定区间重叠的停机区间，按时间先后排列
+     * <p>
+     * 只给重叠的那一部分：一段跨越开播时刻的停机，开播之前那一截不属于本场。
+     * <p>
+     * <b>报告要的是区间不是总数</b>：曲线上得把这几段画成斜纹，概览里得按成因分栏，
+     * 两件事都做不到只知道「一共缺了多久」。
+     * @param from 区间起始（毫秒，含）
+     * @param to 区间结束（毫秒，不含）
+     * @return 已裁剪到 {@code [from, to)} 之内的区间，互不重叠；没有交集时为空表
+     */
+    List<LiveGap> downtimeIntervals(long from, long to);
 
     /**
      * 查询与给定区间重叠的停机总时长
      * <p>
-     * 只算重叠部分：一段跨越开播时刻的停机，开播之前那一截不属于本场。
+     * <b>由 {@link #downtimeIntervals} 求和得出，实现不要单独覆盖。</b>
+     * 「一共缺了多久」与「缺在哪几段」是同一件事的两种问法，各算各的迟早会答出
+     * 两个对不上的数——报告上就成了「说缺了 12 分钟，却一段斜纹都没画」。
      * @param from 区间起始（毫秒，含）
-     * @param to 区间结束（毫秒，含）
+     * @param to 区间结束（毫秒，不含）
      * @return 重叠的停机总毫秒数，没有交集时为 0
      */
-    long downtimeWithin(long from, long to);
+    default long downtimeWithin(long from, long to) {
+        return LiveGap.totalMillis(downtimeIntervals(from, to));
+    }
 
     /**
      * 记一段<b>单个直播间</b>的断线区间
@@ -95,16 +142,32 @@ public interface LiveDataService {
     }
 
     /**
+     * 查询某个直播间与给定区间重叠的断线区间，按时间先后排列
+     * <p>
+     * 只给重叠的那一部分，理由同 {@link #downtimeIntervals}：跨越开播时刻的那一段，
+     * 开播之前那一截不属于本场。成因一律 {@link LiveGap.Reason#STREAM_LOSS}。
+     * <p>
+     * ⚠️ <b>返回的区间必须互不重叠</b>（一次断线尚未恢复又记了一次是实际会发生的），
+     * 实现须先合并再返回，否则同一秒会被数两遍。
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @param from 区间起始（毫秒，含）
+     * @param to 区间结束（毫秒，不含）
+     * @return 已裁剪并合并的断线区间，没有交集或未记录时为空表
+     */
+    default List<LiveGap> roomOutageIntervals(@NonNull String platform, @NonNull Long uid, long from, long to) {
+        return List.of();
+    }
+
+    /**
      * 查询某个直播间与给定区间重叠的断线总时长
      * <p>
-     * 只算重叠部分，理由同 {@link #downtimeWithin}：跨越开播时刻的那一段，开播之前那一截不属于本场。
-     * <p>
-     * ⚠️ <b>区间之间可能互相重叠</b>（一次断线尚未恢复又记了一次），
-     * 实现必须<b>先合并再累加</b>，否则同一秒会被数两遍。
+     * <b>由 {@link #roomOutageIntervals} 求和得出，实现不要单独覆盖</b>，理由同 {@link #downtimeWithin}：
+     * 只覆盖总数不覆盖区间，报告会说得出「断线 2 分 3 秒」却在曲线上画不出那一段。
      * @return 重叠的断线总毫秒数，没有交集或未记录时为 0
      */
     default long roomOutageWithin(@NonNull String platform, @NonNull Long uid, long from, long to) {
-        return 0;
+        return LiveGap.totalMillis(roomOutageIntervals(platform, uid, from, to));
     }
 
     /**
