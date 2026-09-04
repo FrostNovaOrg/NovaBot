@@ -108,8 +108,15 @@ public final class BilibiliPacketCodec {
      * @return 数据包列表，数据非法时返回空列表
      */
     public static List<BilibiliPacket> decode(byte[] data, Limits limits) {
+        Limits effective = limits == null ? DEFAULT_LIMITS : limits;
+        // 预算属于整次解码，不属于任何一层解压：按子包各算一份的话，
+        // 一批「各自不超限」的兄弟子包就能把放大倍数藏在份数里
+        DecompressBudget budget = new DecompressBudget(effective.maxDecompressedBytes());
         List<BilibiliPacket> packets = new ArrayList<>();
-        decodeInto(data, packets, 0, limits == null ? DEFAULT_LIMITS : limits);
+        decodeInto(data, packets, 0, effective, budget);
+        if (budget.isBlown()) {
+            return new ArrayList<>();
+        }
         return packets;
     }
 
@@ -137,8 +144,9 @@ public final class BilibiliPacketCodec {
      * @param data 字节流
      * @param packets 结果收集器
      * @param depth 当前递归层数
+     * @param budget 这次解码全程共用的解压预算
      */
-    private static void decodeInto(byte[] data, List<BilibiliPacket> packets, int depth, Limits limits) {
+    private static void decodeInto(byte[] data, List<BilibiliPacket> packets, int depth, Limits limits, DecompressBudget budget) {
         if (depth > limits.maxNestingDepth()) {
             log.warn("直播间数据包嵌套层数超过 {} 层, 已停止解析", limits.maxNestingDepth());
             return;
@@ -153,8 +161,11 @@ public final class BilibiliPacketCodec {
             int protocolVersion = buffer.getShort() & 0xFFFF;
             int operation = buffer.getInt();
 
-            // 长度字段不可信时立即停止，避免负数或越界长度导致死循环
-            if (packetLength < HEADER_LENGTH || headerLength < HEADER_LENGTH || offset + packetLength > data.length) {
+            // 长度字段不可信时立即停止，避免负数或越界长度导致死循环。
+            // 头长不得超过整包长，否则按整包长切负载会切出负长度；
+            // 越界用减法判：offset + packetLength 在两者都接近上限时会溢出成负数而绕过加法判
+            if (packetLength < HEADER_LENGTH || headerLength < HEADER_LENGTH || headerLength > packetLength
+                    || packetLength > data.length - offset) {
                 log.warn("直播间数据包长度字段异常 (整包 {}, 头部 {}, 剩余 {}), 已停止解析", packetLength, headerLength, data.length - offset);
                 return;
             }
@@ -163,11 +174,16 @@ public final class BilibiliPacketCodec {
             System.arraycopy(data, offset + headerLength, body, 0, body.length);
 
             if (protocolVersion == DataHeaderType.BROTLI_JSON.getCode()) {
-                decompress(body, true, limits).ifPresent(decompressed -> decodeInto(decompressed, packets, depth + 1, limits));
+                decompress(body, true, budget).ifPresent(decompressed -> decodeInto(decompressed, packets, depth + 1, limits, budget));
             } else if (protocolVersion == PROTOCOL_ZLIB) {
-                decompress(body, false, limits).ifPresent(decompressed -> decodeInto(decompressed, packets, depth + 1, limits));
+                decompress(body, false, budget).ifPresent(decompressed -> decodeInto(decompressed, packets, depth + 1, limits, budget));
             } else {
                 packets.add(new BilibiliPacket(operation, protocolVersion, body));
+            }
+
+            // 预算爆过一次，这批数据就不可信了：剩下的子包不再解压，免得每个都白打一条警告
+            if (budget.isBlown()) {
+                return;
             }
 
             offset += packetLength;
@@ -178,21 +194,19 @@ public final class BilibiliPacketCodec {
      * 解压负载
      * @param body 压缩后的负载
      * @param brotli 是否为 brotli 压缩，否则按 zlib 处理
-     * @param limits 解码限额
-     * @return 解压结果，失败时返回空
+     * @param budget 这次解码全程共用的解压预算
+     * @return 解压结果，失败或预算超限时返回空
      */
-    private static Optional<byte[]> decompress(byte[] body, boolean brotli, Limits limits) {
+    private static Optional<byte[]> decompress(byte[] body, boolean brotli, DecompressBudget budget) {
         try (ByteArrayInputStream source = new ByteArrayInputStream(body);
              InputStream input = brotli ? new BrotliInputStream(source) : new InflaterInputStream(source);
              ByteArrayOutputStream output = new ByteArrayOutputStream(Math.min(body.length * 4, DECOMPRESS_BUFFER_SIZE))) {
 
             byte[] buffer = new byte[DECOMPRESS_BUFFER_SIZE];
-            int total = 0;
             int read;
             while ((read = input.read(buffer)) != -1) {
-                total += read;
-                if (total > limits.maxDecompressedBytes()) {
-                    log.warn("直播间数据包解压后超过 {} 字节, 已放弃解析", limits.maxDecompressedBytes());
+                if (!budget.charge(read)) {
+                    log.warn("直播间数据包解压产出合计超过 {} 字节, 已放弃解析", budget.limit);
                     return Optional.empty();
                 }
                 output.write(buffer, 0, read);
@@ -202,6 +216,38 @@ public final class BilibiliPacketCodec {
         } catch (IOException e) {
             log.warn("解压直播间数据包失败 ({})", brotli ? "brotli" : "zlib", e);
             return Optional.empty();
+        }
+    }
+
+    /**
+     * 一次 decode 调用内所有解压（含嵌套、含兄弟子包）共用的预算
+     */
+    private static final class DecompressBudget {
+        private final int limit;
+
+        private long used;
+
+        private boolean blown;
+
+        private DecompressBudget(int limit) {
+            this.limit = limit;
+        }
+
+        /**
+         * 记一笔解压产出
+         * @return 预算内放行；超限或此前已爆则拒绝并记为已爆
+         */
+        private boolean charge(int bytes) {
+            if (blown || bytes > limit - used) {
+                blown = true;
+                return false;
+            }
+            used += bytes;
+            return true;
+        }
+
+        private boolean isBlown() {
+            return blown;
         }
     }
 }
