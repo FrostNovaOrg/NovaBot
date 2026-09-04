@@ -22,7 +22,8 @@ import java.nio.charset.StandardCharsets;
  * 推送接口安全过滤器
  * <p>
  * 依次执行来源 IP 白名单校验、Token 鉴权与频率限制三道检查，任意一道未通过即中断请求。
- * 仅对已注册的推送接口路径生效，其余路径直接放行，不影响插件自行注册的其他接口。
+ * 受不受保护按框架匹配口径认定：凡是会被路由到已注册推送接口的请求——包括尾斜杠、
+ * 矩阵参数、百分号编码这类写法上的变体——一律过闸；其余路径直接放行，不影响插件自行注册的其他接口。
  */
 @Slf4j
 public class PushApiSecurityFilter extends OncePerRequestFilter {
@@ -45,10 +46,22 @@ public class PushApiSecurityFilter extends OncePerRequestFilter {
 
     @Override
     protected void doFilterInternal(@NonNull HttpServletRequest request, @NonNull HttpServletResponse response, @NonNull FilterChain chain) throws ServletException, IOException {
-        String path = request.getRequestURI();
+        String requestUri = request.getRequestURI();
+        String registeredPath;
 
-        // 非推送接口路径不做拦截, 交由后续处理链自行响应
-        if (!tokenStore.isProtected(path)) {
+        try {
+            registeredPath = tokenStore.resolve(requestUri, request.getContextPath());
+        } catch (IllegalArgumentException e) {
+            // 按框架口径解析不了的路径（contextPath 对不上、非法的百分号编码等）视同未鉴权, 默认拒绝:
+            // 这类请求交出去之后容器与框架怎么处置各不相同, 门禁不押注它们的下场
+            audit(requestUri, resolveClientIp(request), "请求路径无法按框架口径解析, 默认拒绝");
+            reject(response, HttpStatus.UNAUTHORIZED, ResultCode.UNAUTHORIZED);
+            return;
+        }
+
+        // 非推送接口路径不做拦截, 交由后续处理链自行响应。
+        // registeredPath 是按框架匹配口径认出来的登记路径: 框架会路由到推送接口的请求在这里不会漏网
+        if (registeredPath == null) {
             chain.doFilter(request, response);
             return;
         }
@@ -56,19 +69,21 @@ public class PushApiSecurityFilter extends OncePerRequestFilter {
         String clientIp = resolveClientIp(request);
 
         if (!ipMatcher.matches(clientIp)) {
-            audit(path, clientIp, "来源 IP 不在白名单内");
+            audit(requestUri, clientIp, "来源 IP 不在白名单内");
             reject(response, HttpStatus.FORBIDDEN, ResultCode.FORBIDDEN_ADDRESS);
             return;
         }
 
-        if (!tokenStore.verify(path, extractToken(request))) {
-            audit(path, clientIp, "Token 校验失败");
+        // 令牌校验与限流都按登记路径记账: 路径变体与本尊共用同一把令牌、落进同一个限流桶,
+        // 写法上的变体刷不掉频率限制
+        if (!tokenStore.verify(registeredPath, extractToken(request))) {
+            audit(requestUri, clientIp, "Token 校验失败");
             reject(response, HttpStatus.UNAUTHORIZED, ResultCode.UNAUTHORIZED);
             return;
         }
 
-        if (properties.getRateLimit().isEnabled() && !rateLimiter.tryAcquire(path + '@' + clientIp)) {
-            audit(path, clientIp, "请求频率超出限制");
+        if (properties.getRateLimit().isEnabled() && !rateLimiter.tryAcquire(registeredPath + '@' + clientIp)) {
+            audit(requestUri, clientIp, "请求频率超出限制");
             reject(response, HttpStatus.TOO_MANY_REQUESTS, ResultCode.RATE_LIMITED);
             return;
         }

@@ -98,10 +98,12 @@ final class CborReader {
             Object key = read(depth + 1);
             Object value = read(depth + 1);
             // 重复键不是「后来的覆盖先来的」，而是这份编码本身不合规范。
-            // 放过去的话，一个精心构造的 COSE 键表可以让「解析出来的算法」与「实际用的公钥」不是一对
-            if (map.put(key, value) != null) {
+            // 放过去的话，一个精心构造的 COSE 键表可以让「解析出来的算法」与「实际用的公钥」不是一对。
+            // 先 containsKey 再放入：put 的返回值是「旧值」，旧值是 null 时它分不清「第一次放」与「重复放」
+            if (map.containsKey(key)) {
                 throw new IllegalArgumentException("CBOR 字典里出现了重复的键: " + key);
             }
+            map.put(key, value);
         }
         return map;
     }
