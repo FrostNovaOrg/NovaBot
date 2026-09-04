@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.adapter.onebot.config.OneBotAdapterPluginProperties;
 import com.starlwr.bot.adapter.onebot.http.OneBotHttpAdapter;
 import com.starlwr.bot.adapter.onebot.model.OneBotSender;
+import com.starlwr.bot.adapter.onebot.service.OneBotConnectionManager;
 import com.starlwr.bot.core.account.BotConnectionTester;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +19,7 @@ import java.util.Optional;
  * <p>
  * 用一次真实的接口调用验证连接信息，并按失败类型给出针对性建议：
  * 「连不上」「Token 不对」「端口填错」的修复方式完全不同，笼统报「连接失败」帮不上忙。
+ * 测通并存下来之后当场把连接接上，那一步交给 {@link OneBotConnectionManager}。
  */
 @Slf4j
 @StarBotComponent
@@ -26,15 +28,24 @@ public class OneBotConnectionTester implements BotConnectionTester {
 
     private final OneBotAdapterPluginProperties properties;
 
+    private final OneBotConnectionManager connections;
+
     @Autowired
-    public OneBotConnectionTester(OneBotHttpAdapter http, OneBotAdapterPluginProperties properties) {
+    public OneBotConnectionTester(OneBotHttpAdapter http, OneBotAdapterPluginProperties properties,
+                                  OneBotConnectionManager connections) {
         this.http = http;
         this.properties = properties;
+        this.connections = connections;
     }
 
     @Override
     public String adapter() {
         return "onebot";
+    }
+
+    @Override
+    public Applied apply(String address, int httpPort, int websocketPort, String httpToken, String websocketToken) {
+        return connections.apply(address, httpPort, websocketPort, httpToken, websocketToken);
     }
 
     @Override

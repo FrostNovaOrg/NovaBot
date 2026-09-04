@@ -1,9 +1,13 @@
 package com.starlwr.bot.core.config.ui;
 
+import com.starlwr.bot.core.service.TotalDataStorage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.core.env.PropertySource;
+import org.springframework.core.io.FileSystemResource;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -210,6 +214,44 @@ class ConfigurationFileServiceTest {
     }
 
     @Test
+    @DisplayName("清空列表元素首字段时，短横要顶到下一字段上")
+    void clearingFirstListItemFieldKeepsTheDash() throws IOException {
+        service.writeListItemFields("starbot.adapter.onebot.senders", 0, Map.of("name", ""));
+
+        String content = content();
+        assertFalse(content.contains("name: qq-onebot"), content);
+        assertTrue(content.matches("(?s).*\\n\\s+- api: /send\\n.*"),
+                "短横必须跟着剩下的第一字段走，否则列表在这里断开:\n" + content);
+        assertTrue(content.contains("delay: 1000"), content);
+    }
+
+    @Test
+    @DisplayName("清空列表元素内部的字段应删掉该字段，而不是留下空值")
+    void clearingListItemFieldRemovesTheField() throws IOException {
+        int changed = service.writeListItemFields("starbot.adapter.onebot.senders", 0,
+                Map.of("api", ""));
+
+        assertEquals(1, changed);
+        String content = content();
+        assertFalse(content.contains("api:"), "空字段应被删掉, 实为:\n" + content);
+        assertFalse(content.contains("api: \"\""), content);
+        // 阴性：同一元素里没被清空的字段、列表外的同名键，一个字不动
+        assertTrue(content.contains("name: qq-onebot"), content);
+        assertTrue(content.contains("delay: 1000"), content);
+        assertEquals("7827", service.read().get("server.port"));
+    }
+
+    @Test
+    @DisplayName("列表元素字段写成非空值时照写")
+    void writesNonEmptyListItemField() throws IOException {
+        service.writeListItemFields("starbot.adapter.onebot.senders", 0, Map.of("api", "/push"));
+
+        String content = content();
+        assertTrue(content.contains("api: /push"), content);
+        assertTrue(content.contains("name: qq-onebot"), content);
+    }
+
+    @Test
     @DisplayName("可修改列表元素内部的字段")
     void writesFieldsInsideListItem() throws IOException {
         int changed = service.writeListItemFields("starbot.adapter.onebot.senders", 0,
@@ -327,22 +369,60 @@ class ConfigurationFileServiceTest {
 
     // ============ 清空即移除（否则程序起不来） ============
 
+    /**
+     * 从写回后的文件里读一个键，走框架自己那套 YAML 加载，不自己按行猜
+     * @param name 完整路径
+     * @return 值，键不在时为 null（与空串不是一回事）
+     */
+    private String property(String name) throws IOException {
+        List<PropertySource<?>> sources =
+                new YamlPropertySourceLoader().load("application", new FileSystemResource(config));
+        for (PropertySource<?> source : sources) {
+            Object value = source.getProperty(name);
+            if (value != null) {
+                return String.valueOf(value);
+            }
+        }
+        return null;
+    }
+
     @Test
     @DisplayName("清空 Redis 地址应删掉整行，而不是留下一个空值")
     void clearingRedisHostRemovesTheLine() throws Exception {
-        // 留下「host: 」会让 Spring 启动时直接抛 'host' must not be empty，
-        // 连配置界面都起不来，只能去手改文件——这个坑真踩过
+        // 旧码（把「空值即删行」那张表掏空后现跑）写出的实值是「      host: 」
+        // （冒号后一个空格、后面什么都没有），不是带引号的 host: ""。
+        // 两种都会让框架绑定到空串，下次启动抛 'host' must not be empty。
         service.write(Map.of("spring.data.redis.host", "127.0.0.1"));
         assertTrue(Files.readString(config).contains("host: 127.0.0.1"));
+        assertEquals("7827", service.read().get("server.port"), "阴性：别的键一个字不动");
 
         service.write(Map.of("spring.data.redis.host", ""));
 
         String content = Files.readString(config);
         assertFalse(content.contains("spring.data.redis.host"), content);
+        assertFalse(content.contains("host: \"\""), content);
         for (String line : content.lines().toList()) {
-            assertFalse(line.strip().equals("host:") || line.strip().startsWith("host: #"),
-                    "不应残留空的 host 行: " + line);
+            String stripped = line.strip();
+            if (stripped.startsWith("host:") && !line.contains("SMTP")) {
+                fail("不应残留空的 Redis host 行: " + line);
+            }
         }
+        assertEquals("7827", service.read().get("server.port"));
+        assertEquals("127.0.0.1", service.read().get("server.address"));
+        assertNull(property("spring.data.redis.host"), "键删掉之后框架读出来必须是「没有」，不是空串");
+        assertFalse(new TotalDataStorage.Settings(property("spring.data.redis.host"), 6379, null, 0).configured(),
+                "删键后运行期判定应是未配置");
+    }
+
+    @Test
+    @DisplayName("全空白与空串一样，清空 Redis 地址也是删行")
+    void clearingHostWhitespaceRemovesTheLine() throws Exception {
+        service.write(Map.of("spring.data.redis.host", "127.0.0.1"));
+        service.write(Map.of("spring.data.redis.host", " \t "));
+
+        assertNull(property("spring.data.redis.host"));
+        assertFalse(new TotalDataStorage.Settings(property("spring.data.redis.host"), 6379, null, 0).configured());
+        assertEquals("7827", service.read().get("server.port"));
     }
 
     @Test
