@@ -21,9 +21,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -243,5 +248,73 @@ class TotpSwitchTest {
         ConfigUiAuthService.LoginResult result = authService.login(PASSWORD.toCharArray(), totpNow(), ip);
         assertTrue(result.success(), "台面：旧口令加动态码应能登入, " + result.message());
         return result.session();
+    }
+
+    @Test
+    @DisplayName("开／关二次验证写盘用的键就是公开常量那两份")
+    void totpSwitchWritesThePublicKeys() throws Exception {
+        StarBotCoreProperties properties = new StarBotCoreProperties();
+        StarBotCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
+        auth.setPassword(PASSWORD);
+        auth.setTotp(true);
+        auth.setTotpSecret(SECRET);
+
+        CapturingFileService capturing = new CapturingFileService(config);
+        ConfigUiAuthService capturingAuth = new ConfigUiAuthService(
+                auth,
+                new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(2)),
+                new LoginThrottle(auth.getMaxFailures(), Duration.ofMinutes(15)),
+                capturing);
+        ConfigUiAuthController capturingController =
+                new ConfigUiAuthController(capturingAuth, capturing, properties);
+
+        ResponseEntity<JSONObject> disabled =
+                capturingController.totpDisable(code(totpNow()), new MockHttpServletRequest());
+        assertEquals(200, disabled.getStatusCode().value(), disabled.getBody().toJSONString());
+
+        JSONObject setup = capturingController.totpSetup();
+        assertTrue(setup.getBooleanValue("success"), setup.toJSONString());
+        String pending = setup.getString("secret");
+        JSONObject enrolled = capturingController.totpEnroll(
+                code(TotpGenerator.currentCode(pending, Instant.now())), new MockHttpServletRequest());
+        assertTrue(enrolled.getBooleanValue("success"), enrolled.toJSONString());
+
+        Set<String> publicKeys = Set.of(
+                ConfigUiAuthService.TOTP_PROPERTY,
+                ConfigUiAuthService.TOTP_SECRET_PROPERTY);
+
+        Map<String, String> closeWrite = null;
+        Map<String, String> openWrite = null;
+        for (Map<String, String> write : capturing.writes) {
+            if (write.size() == 2 && write.containsValue("false") && write.containsValue("")) {
+                closeWrite = write;
+            }
+            if (write.size() == 2 && write.containsValue("true")) {
+                openWrite = write;
+            }
+        }
+        assertNotNull(closeWrite, "关二次验证那一趟没有写盘");
+        assertNotNull(openWrite, "开二次验证那一趟没有写盘");
+        assertEquals(publicKeys, closeWrite.keySet(),
+                "关时写的键必须是公开常量那两份, 实际=" + closeWrite.keySet());
+        assertEquals(publicKeys, openWrite.keySet(),
+                "开时写的键必须是公开常量那两份, 实际=" + openWrite.keySet());
+    }
+
+    /**
+     * 记下每次写盘拿到的键，用来对公开常量
+     */
+    private static final class CapturingFileService extends ConfigurationFileService {
+        private final List<Map<String, String>> writes = new ArrayList<>();
+
+        private CapturingFileService(Path config) {
+            super(config);
+        }
+
+        @Override
+        public synchronized List<String> write(Map<String, String> changes) throws IOException {
+            writes.add(Map.copyOf(changes));
+            return super.write(changes);
+        }
     }
 }

@@ -47,19 +47,6 @@ public class ConfigUiAuthController {
     public static final String PASSWORD_PROPERTY = ConfigUiAuthService.PASSWORD_PROPERTY;
 
     /**
-     * 二次验证密钥所在的配置项，绑定成功后写回此处
-     */
-    private static final String TOTP_SECRET_PROPERTY = "starbot.core.config-ui.auth.totp-secret";
-
-    /**
-     * 二次验证开关所在的配置项
-     * <p>
-     * 绑定成功时一并写 true、关闭时写 false：只改内存那一位的话，重启之后
-     * 这台机器又回到改之前的样子，而界面上那个开关此刻显示的是使用者刚拨过的位置。
-     */
-    private static final String TOTP_PROPERTY = "starbot.core.config-ui.auth.totp";
-
-    /**
      * 新口令的最短长度
      * <p>
      * 拦的是「把口令改成 1234 之后忘了自己改过」。不设上限、不要求混字符：
@@ -356,7 +343,8 @@ public class ConfigUiAuthController {
         // 开关那一位与密钥一起写：只写密钥的话，从设置页拨开的那一次重启后又变回关着
         try {
             fileService.write(new LinkedHashMap<>(Map.of(
-                    TOTP_SECRET_PROPERTY, secret, TOTP_PROPERTY, "true")));
+                    ConfigUiAuthService.TOTP_SECRET_PROPERTY, secret,
+                    ConfigUiAuthService.TOTP_PROPERTY, "true")));
         } catch (IOException e) {
             log.error("写入二次验证密钥失败", e);
             authService.succeedSensitiveTotp(request.getRemoteAddr());
@@ -412,7 +400,8 @@ public class ConfigUiAuthController {
         // 反过来（先关再写）会出现「关掉了，重启后又要输码」，而那时验证器里那把密钥已经没了
         try {
             fileService.write(new LinkedHashMap<>(Map.of(
-                    TOTP_PROPERTY, "false", TOTP_SECRET_PROPERTY, "")));
+                    ConfigUiAuthService.TOTP_PROPERTY, "false",
+                    ConfigUiAuthService.TOTP_SECRET_PROPERTY, "")));
         } catch (IOException e) {
             log.error("关闭二次验证时写入配置失败", e);
             authService.succeedSensitiveTotp(request.getRemoteAddr());

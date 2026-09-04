@@ -132,7 +132,7 @@ function passwordCard() {
   const operator = authState.operatorSession;
   const box = shell('auth-password', '控制台口令',
     operator
-      ? '你是用启动令牌进来的，直接设一个新口令即可。设完记得把令牌通道关掉。'
+      ? '你是用启动令牌进来的，直接设一个新口令即可。设完口令后通道会自动关掉。'
       : '改完当场生效，别处已经登录的会话会一并注销，当前这一个留着。');
 
   const current = operator ? null
