@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.bilibili.event.dynamic.BilibiliDynamicUpdateEvent;
+import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
 import com.starlwr.bot.bilibili.painter.BilibiliDynamicPainter;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
@@ -13,6 +14,7 @@ import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
 import com.starlwr.bot.core.service.AtSubscriptionService;
+import com.starlwr.bot.core.service.LiveDataService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -33,12 +35,16 @@ public class BilibiliDynamicPushHandler implements StarBotEventHandler {
 
     private final AtSubscriptionService subscriptions;
 
+    private final LiveDataService liveDataService;
+
     @Autowired
-    public BilibiliDynamicPushHandler(BilibiliApiUtil api, BilibiliDynamicPainter painter, StarBotMessageSender sender, AtSubscriptionService subscriptions) {
+    public BilibiliDynamicPushHandler(BilibiliApiUtil api, BilibiliDynamicPainter painter, StarBotMessageSender sender,
+                                      AtSubscriptionService subscriptions, LiveDataService liveDataService) {
         this.api = api;
         this.painter = painter;
         this.sender = sender;
         this.subscriptions = subscriptions;
+        this.liveDataService = liveDataService;
     }
 
     @Override
@@ -63,7 +69,18 @@ public class BilibiliDynamicPushHandler implements StarBotEventHandler {
                 .replace("{at}", PushHandlerSupport.atSubscribers(subscriptions.list(
                         target.getPlatform(), target.getNum(), event.getSource().getUid(), "dynamic")));
 
-        PushHandlerSupport.send(sender, target, PushHandlerSupport.withAtAll(params, target, content));
+        // 动态图没送到时与开播封面记在同一项上：报告里那一行说的是「本场有几条推送的图片没送达」，
+        // 使用者要知道的是「有没有图丢了」，而不是「丢的是封面还是动态图」。
+        // 🔴 分开记会让那一行只数得到其中一路，而一个少数了一半的 N，
+        //    和一个数对了的 N，在报告上长得一样。
+        //
+        // ℹ️ 不在直播中时这一笔会落进一个没人读的本场桶，下次开播清零时随之丢掉——
+        // 那是对的：它本来就不属于任何一场。
+        Long uid = event.getSource().getUid();
+        Runnable onImageDegraded = uid == null ? null : () -> liveDataService.incrementLiveMetric(
+                event.getPlatform(), uid, BilibiliLiveMetric.IMAGE_DEGRADED_COUNT, 1);
+
+        PushHandlerSupport.send(sender, target, PushHandlerSupport.withAtAll(params, target, content), onImageDegraded);
     }
 
     /**

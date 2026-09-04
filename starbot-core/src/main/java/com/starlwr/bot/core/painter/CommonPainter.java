@@ -63,6 +63,17 @@ public class CommonPainter {
     public static final Color COLOR_LINK = new Color(23, 139, 207);
 
     /**
+     * 发布仓地址，画在每张图底部的版权行里
+     * <p>
+     * ⚠️ <b>判据不许读这个常量</b>（{@code CommonPainterCopyrightTest} 自己写死同一串）：
+     * 一条拿被测自己的常量当参照物的断言，在这个常量被改成别的仓库地址那天照样是绿的——
+     * 它比较的是「这一行等于那个常量」，而要钉的是「这一行等于约定的那一串」。
+     * 两份要各写各的，改地址时两处一起改，才是判据在拦人。
+     * 书写形态（不带协议头）与由来见 {@link #drawCopyright}。
+     */
+    public static final String REPOSITORY = "github.com/FrostNovaOrg/NovaBot";
+
+    /**
      * 文本被截断时留下的记号
      * <p>
      * 用单字符的省略号而不是三个句点：三个句点占的宽度是它的三倍，
@@ -825,9 +836,18 @@ public class CommonPainter {
      */
     public CommonPainter drawCopyright(List<List<TextWithStyle>> extraMiddle, List<List<TextWithStyle>> extraBottom, int marginRight) {
         // 底部默认版权信息。上游项目的致谢见 README 与 banner。
-        // 这里只写产品名，不写仓库地址：图会发到聊天里，而地址在仓库搬家后就指向不存在的地方，
-        // 收到图的人无从知道它已经失效。要写地址就得有人保证它一直有效，这里保证不了。
-        drawTextRight("Running on NovaBot v" + buildProperties.getVersion(), Color.LIGHT_GRAY, marginRight);
+        //
+        // 这里曾经只写产品名：图会发到聊天里，而地址在仓库搬家后指向一个不存在的地方，
+        // 收到图的人无从知道它已经失效——「要写地址就得有人保证它一直有效」。
+        // 那个顾虑的前提是没人为这条地址负责，而 FrostNovaOrg/NovaBot 就是宣告的发布仓，
+        // 有人负责。反过来，一张不写出处的图，收到的人拿它没办法：
+        // 既问不出这是什么程序，也找不到它从哪来。
+        //
+        // 写成裸的主机加路径而不带 https:// ——图里的字不可点，协议头只让这一行更长，
+        // 而更长的一行在窄图上更容易被挤出右边距。整行与其余版权信息同为浅灰，
+        // 不用链接色：那会让人以为点得动。
+        drawTextRight("Running on NovaBot v" + buildProperties.getVersion() + " · " + REPOSITORY,
+                Color.LIGHT_GRAY, marginRight);
 
         for (List<TextWithStyle> line : extraMiddle) {
             drawTextRightWithStyle(line, marginRight);

@@ -26,23 +26,30 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 版权行不带仓库地址 —— 成图那一层
+ * 版权行的地址不画成链接色 —— 成图那一层
+ *
+ * <h2>这一组换过一次靶子（2026-09-04）</h2>
+ * 原先钉的是「版权行不带仓库地址」，而地址现在<b>是要画上去的</b>
+ *（{@code FrostNovaOrg/NovaBot} 即宣告的发布仓，由来见 {@link CommonPainterCopyrightTest}）。
+ * 🔴 <b>那条判据的绿此刻已经不作数了，而它不会自己红</b>：地址走的是浅灰，
+ * 一组只数链接色像素的尺照样读 0——<b>一个靶子已经拆掉的绿，和一个真的拦住了东西的绿，
+ * 在测试报告上长得一样。</b>所以这一组连同标题一起改判，而不是留着它继续绿。
+ *
+ * <h2>改判之后它钉什么</h2>
+ * 钉<b>这一行不许被画成一条看起来点得动的链接</b>：整行与其余版权信息同为浅灰。
+ * 这是一条还活着的约束——图里的字本来就点不动，画成链接色只会让收到图的人去点它。
  *
  * <h2>为什么另起一组</h2>
- * {@link CommonPainterCopyrightTest} 覆写 {@code drawTextRight} 收文本，拦的是<b>谁调画法</b>：
- * 换一条画法把地址画进图，那一组照绿。这一组数的是<b>成图结果</b>里的像素。
- * 两组不同层，谁也不替谁，谁也不许被读成「这张图是干净的」。
+ * {@link CommonPainterCopyrightTest} 覆写 {@code drawTextRight} 收文本，拦的是<b>谁调画法</b>
+ * 与<b>那一行写了什么</b>；颜色它一个字都答不出。这一组数的是<b>成图结果</b>里的像素。
+ * 两组不同层，谁也不替谁。
  *
  * <h2>这一组数不到什么</h2>
- * 它只认「用链接色画」。<b>换个颜色把地址画进图，它读 0。</b>
- * 另有一件顺带记下：图里的计数今天是结构性的 0——{@code COLOR_LINK} 只在
- * {@code CommonPainter} 里声明了一处，<b>生产面再没有任何一处在用</b>
- *（测试面在用：本组判据自己就要拿它当目标色）。
- * <b>这个 0 买到的是「没人画链接色」，不是「图干净」。</b>
+ * 它只认「离链接色多近」。<b>换一个不像链接的蓝把地址画进图，它读 0。</b>
  * 所以计数旁边还印一个会动的数：<b>最近的像素离链接色有多远</b>。
  * 哪天有人用相近的蓝画了东西，计数仍是 0，而这个距离会掉下来。
  */
-@DisplayName("版权行不带仓库地址（成图那一层）")
+@DisplayName("版权行的地址不画成链接色（成图那一层）")
 class CommonPainterLinkColorPixelTest {
 
     /** 容差：距离不超过它就算一枚。取值见本轮读数，两个方向都量过。 */
@@ -53,10 +60,15 @@ class CommonPainterLinkColorPixelTest {
             Path.of("src/test/java/com/starlwr/bot/core/painter/LinkColorPixels.java");
 
     /**
-     * 曾经画在版权行上的那条地址，原样取自公开历史里的那一行，一个字节没改。
-     * 不另造一条「像地址但从没出现过」的串——那会多出一份要解释的东西。
+     * 阳性对照：把版权行那一串<b>用链接色</b>再画一遍
+     * <p>
+     * 拿现在真的画在图上的那一串，而不是另造一条「像地址但从没出现过」的串：
+     * 后者会多出一份要解释的东西，而且它的宽度与真正那一行不同，
+     * 读出来的像素数答的就是别的问题。
+     * <p>
+     * ⚠️ 这里写死，不读 {@code CommonPainter.REPOSITORY}：理由同该常量的注释。
      */
-    private static final String HISTORICAL_ADDRESS = "https://github.com/rossinova/NovaBot";
+    private static final String ADDRESS_AS_LINK = "github.com/FrostNovaOrg/NovaBot";
 
     private StarBotCoreProperties properties;
     private FontUtil fontUtil;
@@ -85,7 +97,7 @@ class CommonPainterLinkColorPixelTest {
     }
 
     @Test
-    @DisplayName("🔴 干净图里没有链接色像素；同时印出最近的像素有多远")
+    @DisplayName("🔴 真出的那张图里没有链接色像素；同时印出最近的像素有多远")
     void cleanImageHasNoLinkColorPixels() {
         BufferedImage image = cleanImage();
         LinkColorPixels.Reading reading = LinkColorPixels.read(image, CommonPainter.COLOR_LINK, TOLERANCE);
@@ -94,21 +106,21 @@ class CommonPainterLinkColorPixelTest {
         assertTrue(reading.visible() > 0, "图上一个可见像素都没有，这一格什么都没量到");
 
         assertEquals(0, reading.within(),
-                "干净图里出现了链接色像素：" + describe(reading));
+                "版权行被画成了链接色：" + describe(reading));
 
-        System.out.println("干净图　" + describe(reading));
+        System.out.println("真出的图　" + describe(reading));
     }
 
     @Test
-    @DisplayName("🔴 把地址画回去，链接色计数必须为红")
+    @DisplayName("🔴 把地址改用链接色画，计数必须为红")
     void addressDrawnBackIsCounted() {
         BufferedImage image = imageWithAddressDrawnBack();
         LinkColorPixels.Reading reading = LinkColorPixels.read(image, CommonPainter.COLOR_LINK, TOLERANCE);
 
         assertTrue(reading.within() > 0,
-                "地址画回图上了，链接色像素却一枚都没数到：" + describe(reading));
+                "地址用链接色画上去了，链接色像素却一枚都没数到：" + describe(reading));
 
-        System.out.println("画回地址　" + describe(reading));
+        System.out.println("链接色画　" + describe(reading));
     }
 
     @Test
@@ -181,18 +193,18 @@ class CommonPainterLinkColorPixelTest {
         System.out.println("  容差　　　　" + TOLERANCE + "（逐通道差取最大）");
         System.out.println("  量的哪张图　" + clean.width() + "×" + clean.height()
                 + "，由 drawCopyright(20) 出图；可见像素 " + clean.visible() + "／" + clean.total());
-        System.out.println("  画回地址　　" + dirty.within() + " 枚（最近 " + dirty.nearest() + "）");
-        System.out.println("  干净图　　　" + clean.within() + " 枚（最近 " + clean.nearest() + "）");
-        System.out.println("  🔴 干净图这个 0 是结构性的：COLOR_LINK 生产面只有一处声明、零处使用");
+        System.out.println("  链接色画　　" + dirty.within() + " 枚（最近 " + dirty.nearest() + "）");
+        System.out.println("  真出的图　　" + clean.within() + " 枚（最近 " + clean.nearest() + "）");
+        System.out.println("  🔴 这个 0 是结构性的：COLOR_LINK 生产面只有一处声明、零处使用");
         System.out.println("     （测试面在用，本组判据自己就拿它当目标色——所以别把它读成「全树没人碰」）。");
-        System.out.println("     它买到的是「没人画链接色」，不是「图干净」——会动的数是上面那个「最近」。");
+        System.out.println("     它买到的是「版权行没画成链接色」，不是「图干净」——会动的数是上面那个「最近」。");
         // 容差取这个值不是抄来的：两个方向都量一遍，让读的人自己看见它为什么落在中间
         System.out.println("  容差两个方向：");
         for (int t : new int[]{0, 10, 20, 40, 80, 120, 146, 147, 160}) {
             LinkColorPixels.Reading c = LinkColorPixels.read(cleanImage(), CommonPainter.COLOR_LINK, t);
             LinkColorPixels.Reading d = LinkColorPixels.read(imageWithAddressDrawnBack(), CommonPainter.COLOR_LINK, t);
-            System.out.println("    容差 " + t + "：画回地址 " + d.within() + " 枚，干净图 " + c.within() + " 枚"
-                    + (c.within() > 0 ? "  ← 干净图开始被误收" : ""));
+            System.out.println("    容差 " + t + "：链接色画 " + d.within() + " 枚，真出的图 " + c.within() + " 枚"
+                    + (c.within() > 0 ? "  ← 真出的图开始被误收" : ""));
         }
         // 容差 0 与容差 40 之间多出来的那些像素，到底是不是实色块的边缘？
         // 核法：看它们挨不挨着一个颜色一模一样的像素（八邻域）。挨着才叫边缘
@@ -272,7 +284,7 @@ class CommonPainterLinkColorPixelTest {
     }
 
     /**
-     * 把当年那一行原样画回去。走的是产品自己的画法，不是往画布上直接涂像素——
+     * 把地址再用链接色画一遍。走的是产品自己的画法，不是往画布上直接涂像素——
      * 涂像素量到的是计数器，不是产品。
      */
     private static final class AddressPainter extends CommonPainter {
@@ -286,7 +298,7 @@ class CommonPainterLinkColorPixelTest {
                                            List<List<TextWithStyle>> extraBottom,
                                            int marginRight) {
             super.drawCopyright(extraMiddle, extraBottom, marginRight);
-            return drawTextRight(HISTORICAL_ADDRESS, COLOR_LINK, marginRight);
+            return drawTextRight(ADDRESS_AS_LINK, COLOR_LINK, marginRight);
         }
     }
 }
