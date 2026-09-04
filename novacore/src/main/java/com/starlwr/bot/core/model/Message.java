@@ -91,6 +91,19 @@ public class Message {
     private boolean reply;
 
     /**
+     * {@code {at=all}} 没能发出时用来顶替它的文本，为空表示直接摘掉
+     * <p>
+     * @全体成员 会因为两件事发不出去：机器人不是管理员，或当天的额度已经用完。
+     * 两件事都<b>只有到了发送那一刻才知道</b>，而「该改 @ 谁」是配置那一端的事——
+     * 于是替代文本必须由造消息的一方先备好，随消息一起交下来。
+     * <p>
+     * 默认为空，也就是<b>默认摘掉</b>：方向是刻意的。新的推送路径忘了备替代文本，
+     * 结果是那一次不 @ 人；反过来若默认去猜一份名单，猜错的那次会 @ 到一群
+     * 从没订阅过的人，而这件事没有任何现象。
+     */
+    private String atAllFallback;
+
+    /**
      * 发送前拦截回调列表，返回 false 会拦截消息发送，请勿调用阻塞操作
      */
     private List<Predicate<Message>> onBeforeSendInterceptors = new ArrayList<>();

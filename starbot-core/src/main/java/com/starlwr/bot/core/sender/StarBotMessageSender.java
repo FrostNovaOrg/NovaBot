@@ -205,12 +205,14 @@ public class StarBotMessageSender {
     private static final String AT_ALL = MessagePlaceholders.AT_ALL;
 
     /**
-     * 按每日配额处理消息中的 @全体成员
+     * 按权限与每日配额处理消息中的 @全体成员
      * <p>
-     * 额度用尽时把占位符摘掉，退化为普通消息——开播通知本身仍然该发，只是不再 @ 全体。
+     * 发不出去时把占位符摘掉，退化为普通消息——开播通知本身仍然该发，只是不再 @ 全体。
+     * 配置里选了「@全体成员，不行就 @订阅的人」的那一档，摘掉的位置换成
+     * {@link Message#getAtAllFallback() 备好的替代文本}。
      * <p>
      * <b>摘完可能什么都不剩。</b>{@code Message.create} 在 {@code {next}} 处就把消息拆开了，
-     * 而 {@code at_all} 拼出来的正是「{@code {at=all}} + 分条 + 正文」，于是占位符
+     * 而 @ 块拼出来的正是「{@code {at=all}} + 分条 + 正文」，于是占位符
      * <b>往往独占一条消息</b>。这种情况必须整条不发，否则群里会收到一条空消息。
      * @return 是否还应发送这条消息
      */
@@ -224,9 +226,14 @@ public class StarBotMessageSender {
         }
 
         // 权限判定必须排在配额之前：没权限的那次本就发不出 @，
-        // 若先扣配额，等于让一个注定被摘掉的 @ 吃掉账号那份全局额度
-        if (!canAtAll(message) || !atAllQuota.tryConsume(message.getPlatform(), message.getNum())) {
-            return stripAtAll(message);
+        // 若先扣配额，等于让一个注定被摘掉的 @ 吃掉账号那份全局额度。
+        // 两支分开写而不是合成一个或运算，是因为退回时要说得出是哪一件——
+        // 「机器人不是管理员」要人去改群权限，「额度用完了」明天自己就好了
+        if (!canAtAll(message)) {
+            return stripAtAll(message, "机器人不是群主或管理员");
+        }
+        if (!atAllQuota.tryConsume(message.getPlatform(), message.getNum())) {
+            return stripAtAll(message, "今日的 @全体成员 额度已用完");
         }
         return true;
     }
@@ -246,12 +253,28 @@ public class StarBotMessageSender {
     }
 
     /**
-     * 摘掉 @全体成员；摘完为空则整条不发
+     * 摘掉 @全体成员；备了替代文本就换成它，摘完为空则整条不发
+     * <p>
+     * <b>两支都记一条时间线</b>，因为两支在使用者那里是同一个问题——「说好的 @全体成员 呢」。
+     * 日志里那行只有运维看得见，而这件事是配置的人要知道的：不是管理员要去改群权限，
+     * 额度用尽则说明这个群今天已经 @ 过太多次。
+     * @param reason 没发出去的原因，进时间线正文与补充键值
+     * @return 是否还应发送这条消息
      */
-    private boolean stripAtAll(Message message) {
-        String stripped = message.getContent().replace(AT_ALL, "").trim();
+    private boolean stripAtAll(Message message, String reason) {
+        String fallback = StringUtil.isBlank(message.getAtAllFallback()) ? "" : message.getAtAllFallback();
+        String stripped = message.getContent().replace(AT_ALL, fallback).trim();
+
+        timeline.record(TimelineEvent.of(TimelineEventType.AT_ALL_SKIPPED, TimelineEvent.Level.WARN)
+                .channel(describeTarget(message))
+                .text("发往" + describeTarget(message) + "的 @全体成员 未发出（" + reason + "），"
+                        + (fallback.isEmpty() ? "本条不再 @ 人" : "已改为 @ 订阅了提醒的人"))
+                .detail("reason", reason)
+                .detail("platform", message.getPlatform())
+                .build());
+
         if (StringUtil.isBlank(stripped)) {
-            log.info("会话 {} 的 @全体成员 未发出（无权限或超配额）, 该条只有 @全体成员, 整条跳过", message.getNum());
+            log.info("会话 {} 的 @全体成员 未发出（{}）, 摘掉后这一条没有内容了, 整条跳过", message.getNum(), reason);
             return false;
         }
 

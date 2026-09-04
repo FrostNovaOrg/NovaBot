@@ -10,6 +10,7 @@ import com.starlwr.bot.core.handler.StarBotEventHandler;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.sender.AtMode;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
 import com.starlwr.bot.core.service.LiveDataService;
 import lombok.extern.slf4j.Slf4j;
@@ -46,11 +47,15 @@ public class BilibiliLiveOffPushHandler implements StarBotEventHandler {
 
         // 时长取不到时（如程序在开播后才启动，未记录到开播时间）移除 {time} 所在分句，
         // 避免渲染出「……，本场直播时长 」这样的悬空半句
-        String content = PushHandlerSupport.replaceOrDropClause(params.getString("message"), "{time}", formatDuration(event))
+        String template = params.getString("message");
+        String content = PushHandlerSupport.replaceOrDropClause(template, "{time}", formatDuration(event))
                 .replace("{uname}", PushHandlerSupport.resolveUname(api, event.getSource()))
                 .replace("{url}", "https://live.bilibili.com/" + event.getSource().getRoomId());
 
-        PushHandlerSupport.send(sender, target, PushHandlerSupport.withAtAll(params, target, content));
+        // 下播通知没有「@ 订阅的人」这回事（订阅只分开播与动态两类），因此订阅串给空串：
+        // 三选一里剩下的那一档等价于旧的 at_all 开关，取值仍从旧键来
+        PushHandlerSupport.send(sender, target,
+                PushHandlerSupport.withAtBlock(AtMode.of(params), target, template, content, ""));
     }
 
     /**

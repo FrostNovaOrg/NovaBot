@@ -13,6 +13,7 @@ import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.sender.AtMode;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
 import com.starlwr.bot.core.service.AtSubscriptionService;
 import com.starlwr.bot.core.service.LiveDataService;
@@ -71,13 +72,17 @@ public class BilibiliLiveOnPushHandler implements StarBotEventHandler {
             log.error("获取直播间 {} 的标题与封面失败: {}", event.getSource().getRoomIdString(), e.getMessage());
         }
 
-        String content = params.getString("message")
+        AtMode mode = AtMode.of(params);
+        String template = params.getString("message");
+        String subscriberAt = PushHandlerSupport.atSubscribers(subscriptions.list(
+                target.getPlatform(), target.getNum(), event.getSource().getUid(), "live"));
+
+        String content = template
                 .replace("{uname}", uname)
                 .replace("{title}", title)
                 .replace("{url}", "https://live.bilibili.com/" + event.getSource().getRoomId())
                 .replace("{cover}", cover)
-                .replace("{at}", PushHandlerSupport.atSubscribers(subscriptions.list(
-                        target.getPlatform(), target.getNum(), event.getSource().getUid(), "live")));
+                .replace("{at}", subscriberAt);
 
         // 封面没送到时在本场记一笔，下播报告据此注明——日志里那行 WARN 只有运维看得见，
         // 而「今天的开播图怎么没了」是主播能感知的事
@@ -85,7 +90,9 @@ public class BilibiliLiveOnPushHandler implements StarBotEventHandler {
         Runnable onImageDegraded = uid == null ? null : () -> liveDataService.incrementLiveMetric(
                 event.getPlatform(), uid, BilibiliLiveMetric.IMAGE_DEGRADED_COUNT, 1);
 
-        PushHandlerSupport.send(sender, target, PushHandlerSupport.withAtAll(params, target, content), onImageDegraded);
+        PushHandlerSupport.send(sender, target,
+                PushHandlerSupport.withAtBlock(mode, target, template, content, subscriberAt), onImageDegraded,
+                PushHandlerSupport.atAllFallback(mode, target, template, subscriberAt));
     }
 
     @Override
@@ -95,6 +102,12 @@ public class BilibiliLiveOnPushHandler implements StarBotEventHandler {
 
     /**
      * 默认参数
+     * <p>
+     * ℹ️ <b>默认模板里没有 {@code {at}}，「@ 谁」改由 {@code at_mode} 决定</b>
+     * （{@link AtMode}，三档：只 @ 订阅的人／@全体成员／@全体成员不行就 @ 订阅的人）。
+     * 键<b>不写进这里</b>：没写过它就等于没在界面上选过，此时才回头认旧的 {@code at_all}——
+     * 详见 {@link AtMode} 里那段判定顺序。使用者自己改过的模板一个字都不动，
+     * 里面的 {@code {at}} 与 {@code {at=all}} 照旧生效。
      * <p>
      * ℹ️ <b>模板里的 {@code {next}} 落在文字与封面之间。曾经那是文字的可达性保护，
      * 现在不是了</b>——可达性已由发送侧兜底保证（见本段末尾），<b>模板可以自由合并</b>。
@@ -133,8 +146,7 @@ public class BilibiliLiveOnPushHandler implements StarBotEventHandler {
     @Override
     public JSONObject getDefaultParams() {
         JSONObject params = new JSONObject();
-        params.put("at_all", false);
-        params.put("message", "{at}{uname} 正在直播 {title}\n{url}{next}{cover}");
+        params.put("message", "{uname} 正在直播 {title}\n{url}{next}{cover}");
         params.put("reconnect_message", "检测到下播后短时间内重新开播,本次开播不再重复通知");
         return params;
     }

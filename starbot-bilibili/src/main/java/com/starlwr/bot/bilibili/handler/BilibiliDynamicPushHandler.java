@@ -11,6 +11,7 @@ import com.starlwr.bot.core.handler.StarBotEventHandler;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.sender.AtMode;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
 import com.starlwr.bot.core.service.AtSubscriptionService;
 import lombok.extern.slf4j.Slf4j;
@@ -55,15 +56,21 @@ public class BilibiliDynamicPushHandler implements StarBotEventHandler {
                 .map(base64 -> "{image_base64=" + base64 + "}")
                 .orElse("");
 
-        String content = params.getString("message")
+        AtMode mode = AtMode.of(params);
+        String template = params.getString("message");
+        String subscriberAt = PushHandlerSupport.atSubscribers(subscriptions.list(
+                target.getPlatform(), target.getNum(), event.getSource().getUid(), "dynamic"));
+
+        String content = template
                 .replace("{uname}", PushHandlerSupport.resolveUname(api, event.getSource()))
                 .replace("{action}", Optional.ofNullable(event.getAction()).orElse("发布了动态"))
                 .replace("{url}", Optional.ofNullable(event.getUrl()).orElse(""))
                 .replace("{picture}", picture)
-                .replace("{at}", PushHandlerSupport.atSubscribers(subscriptions.list(
-                        target.getPlatform(), target.getNum(), event.getSource().getUid(), "dynamic")));
+                .replace("{at}", subscriberAt);
 
-        PushHandlerSupport.send(sender, target, PushHandlerSupport.withAtAll(params, target, content));
+        PushHandlerSupport.send(sender, target,
+                PushHandlerSupport.withAtBlock(mode, target, template, content, subscriberAt), null,
+                PushHandlerSupport.atAllFallback(mode, target, template, subscriberAt));
     }
 
     /**
@@ -112,6 +119,9 @@ public class BilibiliDynamicPushHandler implements StarBotEventHandler {
     /**
      * 默认参数
      * <p>
+     * ℹ️ <b>默认模板里没有 {@code {at}}，「@ 谁」改由 {@code at_mode} 决定</b>，
+     * 与开播通知同一套，理由见 {@link AtMode}；使用者改过的模板一个字不动。
+     * <p>
      * ℹ️ <b>模板里的 {@code {next}} 落在文字与动态图之间。曾经那是文字的可达性保护，
      * 现在不是了</b>——可达性已由发送侧兜底保证（见下），<b>模板可以自由合并</b>。
      * <b>2026-08-02 真丢过一次动态图</b>：图片重试三次后整条放弃，
@@ -134,8 +144,7 @@ public class BilibiliDynamicPushHandler implements StarBotEventHandler {
     @Override
     public JSONObject getDefaultParams() {
         JSONObject params = new JSONObject();
-        params.put("at_all", false);
-        params.put("message", "{at}{uname} {action}\n{url}{next}{picture}");
+        params.put("message", "{uname} {action}\n{url}{next}{picture}");
         params.put("white_list", List.of());
         params.put("black_list", List.of());
         params.put("only_self_origin", false);

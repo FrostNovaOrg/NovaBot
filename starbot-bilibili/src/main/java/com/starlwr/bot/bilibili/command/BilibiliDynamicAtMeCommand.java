@@ -27,8 +27,8 @@ public class BilibiliDynamicAtMeCommand extends BilibiliAtSubscribeCommand {
     }
 
     @Override
-    protected String type() {
-        return "dynamic";
+    protected BilibiliAtNoticeKind kind() {
+        return BilibiliAtNoticeKind.DYNAMIC;
     }
 
     @Override
