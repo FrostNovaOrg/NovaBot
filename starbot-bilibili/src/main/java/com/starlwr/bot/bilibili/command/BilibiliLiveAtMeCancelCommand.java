@@ -27,8 +27,8 @@ public class BilibiliLiveAtMeCancelCommand extends BilibiliAtSubscribeCommand {
     }
 
     @Override
-    protected String type() {
-        return "live";
+    protected BilibiliAtNoticeKind kind() {
+        return BilibiliAtNoticeKind.LIVE;
     }
 
     @Override

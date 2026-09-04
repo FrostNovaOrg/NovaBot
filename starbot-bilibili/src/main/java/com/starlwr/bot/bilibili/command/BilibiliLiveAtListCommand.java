@@ -27,8 +27,8 @@ public class BilibiliLiveAtListCommand extends BilibiliAtListCommand {
     }
 
     @Override
-    protected String type() {
-        return "live";
+    protected BilibiliAtNoticeKind kind() {
+        return BilibiliAtNoticeKind.LIVE;
     }
 
     @Override

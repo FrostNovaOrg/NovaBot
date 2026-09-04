@@ -12,6 +12,7 @@ import com.starlwr.bot.core.model.HandlerOption;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.sender.AtMode;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
 import com.starlwr.bot.core.service.RevenueVisibilityService;
 import lombok.extern.slf4j.Slf4j;
@@ -66,12 +67,15 @@ public class BilibiliLiveReportPushHandler implements StarBotEventHandler {
                     return painter.textReport(event.getPlatform(), event.getSource(), options);
                 });
 
-        String content = params.getString("message")
+        String template = params.getString("message");
+        String content = template
                 .replace("{uname}", PushHandlerSupport.resolveUname(api, event.getSource()))
                 .replace("{url}", "https://live.bilibili.com/" + event.getSource().getRoomId())
                 .replace("{report}", report);
 
-        PushHandlerSupport.send(sender, target, PushHandlerSupport.withAtAll(params, target, content));
+        // 与下播通知同理：报告没有订阅名单这回事，订阅串给空串
+        PushHandlerSupport.send(sender, target,
+                PushHandlerSupport.withAtBlock(AtMode.of(params), target, template, content, ""));
     }
 
     @Override

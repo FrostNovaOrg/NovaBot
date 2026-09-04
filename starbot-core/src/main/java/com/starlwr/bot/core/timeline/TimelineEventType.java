@@ -33,6 +33,11 @@ public enum TimelineEventType {
     PUSH_FAILED("推送失败"),
 
     /**
+     * @全体成员 没能发出（没有权限，或当天额度用尽）
+     */
+    AT_ALL_SKIPPED("未 @ 全体"),
+
+    /**
      * 某项健康状况发生变化，含恢复正常
      */
     PROBE_CHANGED("状态变化"),

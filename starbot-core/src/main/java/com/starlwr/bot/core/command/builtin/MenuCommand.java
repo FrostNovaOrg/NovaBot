@@ -80,9 +80,10 @@ public class MenuCommand implements StarBotCommand {
         // 不会每次发菜单都换个模样
         Map<String, List<StarBotCommand>> grouped = new LinkedHashMap<>();
         for (StarBotCommand command : instance.all()) {
-            // 本机没开这项能力的命令一并不列：它与被禁用的命令在使用者那里是同一件事——
-            // 列出来只会被照着发一遍，然后收到一句拒绝
-            if (!command.available()) {
+            // 在这个会话里没有意义的命令一并不列：它与被禁用的命令在使用者那里是同一件事——
+            // 列出来只会被照着发一遍，然后收到一句拒绝。问的是带会话的那一问，
+            // 它默认就转交「本机能不能用」，因此本机没开的能力照样会被这一句挡下
+            if (!command.availableIn(context)) {
                 continue;
             }
             if (command.disableable() && settings.isDisabled(context.getPlatform(), context.getNum(), command.name())) {
@@ -100,6 +101,12 @@ public class MenuCommand implements StarBotCommand {
                     text.append(" ").append(command.usage());
                 }
                 text.append(" — ").append(command.description());
+
+                // 补充说明跟在同一行末尾：它说的正是这一条命令，另起一行会让人以为是下一条
+                String note = command.menuNote(context);
+                if (StringUtil.isNotBlank(note)) {
+                    text.append("（").append(note).append("）");
+                }
             }
         }
 

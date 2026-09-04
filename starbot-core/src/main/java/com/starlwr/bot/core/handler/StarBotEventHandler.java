@@ -8,6 +8,7 @@ import com.starlwr.bot.core.model.PushMessageHandler;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * StarBot 事件处理器接口，推送配置中配置的事件处理器实现均应实现此接口，并使用 {@link Component} 等注解注册至 Spring 容器中
@@ -38,6 +39,25 @@ public interface StarBotEventHandler extends PushMessageHandler {
      * @return 默认参数
      */
     JSONObject getDefaultParams();
+
+    /**
+     * 曾经发过、如今已被取代的默认值
+     * <p>
+     * <b>这是「改默认值」这件事唯一能落到已有配置上的路。</b>使用者的推送参数是整份存下来的，
+     * 里面那串模板十有八九就是当初界面预填的默认值；不认得旧默认值的话，改了
+     * {@link #getDefaultParams()} 也只对<b>今后新建的推送</b>生效，而现有的推送一条也不会变——
+     * 于是同一份代码在两台实例上表现不同，差别只在于配置是哪天建的。
+     * <p>
+     * 判据是<b>一字不差</b>：存着的值与其中某一版完全相同才算「使用者没改过」，
+     * 随之跟到新默认；<b>差一个空格都算改过，原样不动</b>。方向是刻意的——
+     * 迁错的那一次会安静地覆盖掉使用者写了很久的模板，而不迁的那一次只是没跟上默认值。
+     * <p>
+     * 旧值<b>只进不出</b>：一版旧默认值从这张表里删掉之后，还留在那一版上的配置就此永远不迁。
+     * @return 键 → 该键历史上发过的默认值，按发出的先后排列；默认无
+     */
+    default Map<String, List<String>> supersededDefaults() {
+        return Map.of();
+    }
 
     /**
      * 展示名称，例如「开播通知」

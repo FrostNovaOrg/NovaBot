@@ -172,16 +172,19 @@ public class ConfigUiRegistrar {
             log.info("已启用口令登录{}", StringUtil.isBlank(auth.getTotpSecret()) ? "" : "与二次验证");
 
             if (auth.isOperatorToken()) {
-                // 令牌仍然有效，它是忘记口令时唯一不必重启就能进去的路。
-                // 这一行必须打出来——否则「运维通道」只存在于代码里，真需要时谁也拿不到令牌
+                // 显式打开了才走到这里。这一行必须打出来——否则「运维通道」只存在于代码里，
+                // 开了它的人也拿不到令牌，那就成了一个只有坏处没有好处的开关
                 log.info("忘记口令时可用以下地址直接进入（该地址等同于口令，请勿分享）:");
                 log.info("  http://{}:{}{}?token={}", address, port, ConfigUiController.BASE_PATH, token);
                 log.info("  ⚠️ 该地址绕过二次验证, 且会进反向代理的访问日志。"
-                        + "确认口令与验证器都能用之后, 建议把 starbot.core.config-ui.auth.operator-token 关掉");
+                        + "用完之后把 starbot.core.config-ui.auth.operator-token 改回 false");
             } else {
                 // 关掉时**不能**照旧打印那个地址：打印一个不管用的地址比不打印更让人困惑，
-                // 而且它仍然是个真令牌，照样会被抄进日志与截图
-                log.info("「忘记口令」的启动令牌通道已关闭。忘记口令时请改配置文件后重启");
+                // 而且它仍然是个真令牌，照样会被抄进日志与截图。
+                // 但得说清怎么把它临时打开——只说「已关闭」的话，忘记口令的人就真被锁在门外了
+                log.info("「忘记口令」的启动令牌通道已关闭（默认）。忘记口令时把 "
+                        + "starbot.core.config-ui.auth.operator-token 改成 true 重启, "
+                        + "启动日志会打印一个可直接进入的地址, 改完口令再改回 false");
             }
             return;
         }

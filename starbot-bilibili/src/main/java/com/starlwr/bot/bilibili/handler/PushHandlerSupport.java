@@ -1,11 +1,11 @@
 package com.starlwr.bot.bilibili.handler;
 
-import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.PushTarget;
+import com.starlwr.bot.core.sender.AtMode;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
 import com.starlwr.bot.core.util.StringUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -22,6 +22,11 @@ final class PushHandlerSupport {
      * @全体成员 的占位符
      */
     private static final String AT_ALL = "{at=all}";
+
+    /**
+     * 订阅名单的占位符
+     */
+    private static final String AT_SUBSCRIBERS = "{at}";
 
     /**
      * 分条发送的分隔符，与 {@link com.starlwr.bot.core.model.Message#create} 的切分规则一致
@@ -126,32 +131,73 @@ final class PushHandlerSupport {
      *                        只有真正含图的那一条可能触发它
      */
     static void send(StarBotMessageSender sender, PushTarget target, String content, Runnable onImageDegraded) {
+        send(sender, target, content, onImageDegraded, null);
+    }
+
+    /**
+     * 发送消息，并备下 @全体成员 发不出去时的替代文本
+     * @param atAllFallback @全体成员 被摘掉时用来顶替它的文本，可为空
+     */
+    static void send(StarBotMessageSender sender, PushTarget target, String content,
+                     Runnable onImageDegraded, String atAllFallback) {
         if (StringUtil.isBlank(content)) {
             return;
         }
 
         List<Message> messages = Message.create(target.getPlatform(), target.getType(), target.getNum(), content);
-        if (onImageDegraded != null) {
-            messages.forEach(message -> message.addOnImageDegradedCallback(onImageDegraded));
+        for (Message message : messages) {
+            if (onImageDegraded != null) {
+                message.addOnImageDegradedCallback(onImageDegraded);
+            }
+            // 挂在每一条上而不是只挂含占位符的那一条：谁含占位符是 {next} 切出来的结果，
+            // 在这里再判一遍等于把切分规则抄第二份，而抄错的那一次没有任何现象
+            if (StringUtil.isNotBlank(atAllFallback)) {
+                message.setAtAllFallback(atAllFallback);
+            }
         }
         messages.forEach(sender::send);
     }
 
     /**
-     * 按配置在消息前追加 @全体成员
+     * 按 @ 模式在消息开头补上 @ 块
      * <p>
-     * 仅群聊支持 @全体成员，且消息中已包含该占位符时不重复添加。
-     * @param params 推送参数
+     * <b>模板里使用者自己写的占位符一律照旧生效</b>，补的这一块只在模板<b>没写</b>时才加：
+     * 两处各 @ 一遍是刷屏，而默认模板正是因此才把 {@code {at}} 去掉、改由模式生成——
+     * 去掉之后「@ 谁」只剩一个说法，不会出现「模板里写了一套、下拉里选了另一套」。
+     * <p>
+     * 仅群聊有 @全体成员，私聊里那两档不补任何东西。
+     * @param mode @ 模式
      * @param target 推送目标
-     * @param content 消息内容
+     * @param template 原始模板，用于判断使用者是否已自己写了占位符
+     * @param content 占位符已替换完毕的消息内容
+     * @param subscriberAt 订阅名单拼成的 @ 串，无人订阅或本类通知没有订阅这回事时为空串
      * @return 处理后的消息内容
      */
-    static String withAtAll(JSONObject params, PushTarget target, String content) {
-        boolean atAll = params.getBooleanValue("at_all")
-                && PushTargetType.GROUP == target.getType()
-                && !content.contains(AT_ALL);
+    static String withAtBlock(AtMode mode, PushTarget target, String template, String content, String subscriberAt) {
+        return switch (mode) {
+            case SUBSCRIBERS -> template.contains(AT_SUBSCRIBERS) || StringUtil.isBlank(subscriberAt)
+                    ? content
+                    : subscriberAt + content;
+            case ALL, ALL_OR_SUBSCRIBERS -> PushTargetType.GROUP != target.getType() || template.contains(AT_ALL)
+                    ? content
+                    : AT_ALL + NEXT + content;
+        };
+    }
 
-        return atAll ? AT_ALL + "{next}" + content : content;
+    /**
+     * @全体成员 发不出去时该顶上来的文本
+     * <p>
+     * 只有「@全体成员，不行就 @订阅的人」这一档有替代文本。模板里已经自己写了
+     * {@code {at}} 的那种情形返回空串：订阅的人在正文里已经被 @ 过一遍了，
+     * 再顶一份上来是同一批人被 @ 两次。
+     * @return 替代文本，没有时为空串
+     */
+    static String atAllFallback(AtMode mode, PushTarget target, String template, String subscriberAt) {
+        boolean applicable = AtMode.ALL_OR_SUBSCRIBERS == mode
+                && PushTargetType.GROUP == target.getType()
+                && !template.contains(AT_SUBSCRIBERS);
+
+        return applicable ? subscriberAt : "";
     }
 
     /**
