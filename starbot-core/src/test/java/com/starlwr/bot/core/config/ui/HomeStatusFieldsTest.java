@@ -23,6 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.ObjectProvider;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -67,6 +68,9 @@ class HomeStatusFieldsTest {
 
     private ConfigUiAuthService authService;
 
+    /** 配置文件。邮件「已配」要问 SMTP 主机，主机不在核心配置对象上 */
+    private ConfigurationFileService fileService;
+
     /** 发送队列。连接页那张卡要按它写「还压着几条」，因此各用例改得到 */
     private StarBotMessageSender messageSender;
 
@@ -74,9 +78,12 @@ class HomeStatusFieldsTest {
     private List<HealthProbe> probes = List.of();
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws IOException {
         properties = new StarBotCoreProperties();
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
+
+        fileService = mock(ConfigurationFileService.class);
+        when(fileService.read()).thenReturn(Map.of());
 
         dataSource = mock(AbstractDataSource.class);
         when(dataSource.getAllUsers()).thenReturn(List.of());
@@ -105,7 +112,7 @@ class HomeStatusFieldsTest {
 
         return new ConfigUiController(
                 mock(ConfigurationMetadataService.class),
-                mock(ConfigurationFileService.class),
+                fileService,
                 properties,
                 dataSource,
                 healthProbes,
@@ -342,19 +349,38 @@ class HomeStatusFieldsTest {
     }
 
     @Test
-    @DisplayName("邮件告警有收件邮箱即已配")
-    void alertsMailWhenRecipientSet() {
+    @DisplayName("邮件告警只填收件、没有主机仍算没配")
+    void alertsMailRecipientWithoutHostIsNotConfigured() {
         properties.getMail().setDefaultTo("ops@example.invalid");
+
+        assertFalse(controller().status().getJSONObject("alerts").getBooleanValue("mail"),
+                "只填收件与设置页药丸的「未配置」要长得一样，两边各判各的会分叉");
+    }
+
+    @Test
+    @DisplayName("邮件告警收件与 SMTP 主机都有才算已配")
+    void alertsMailWhenRecipientAndHostSet() throws IOException {
+        properties.getMail().setDefaultTo("ops@example.invalid");
+        when(fileService.read()).thenReturn(Map.of("spring.mail.host", "smtp.example.invalid"));
 
         assertTrue(controller().status().getJSONObject("alerts").getBooleanValue("mail"));
     }
 
     @Test
+    @DisplayName("邮件告警只有主机、没有收件仍算没配")
+    void alertsMailHostWithoutRecipientIsNotConfigured() throws IOException {
+        when(fileService.read()).thenReturn(Map.of("spring.mail.host", "smtp.example.invalid"));
+
+        assertFalse(controller().status().getJSONObject("alerts").getBooleanValue("mail"));
+    }
+
+    @Test
     @DisplayName("三路各自独立，配齐仍各报各的")
-    void alertsThreeChannelsIndependent() {
+    void alertsThreeChannelsIndependent() throws IOException {
         properties.getAlert().setQqNum(10001L);
         properties.getAlert().setWebhookUrl("https://example.invalid/push");
         properties.getMail().setDefaultTo("ops@example.invalid");
+        when(fileService.read()).thenReturn(Map.of("spring.mail.host", "smtp.example.invalid"));
 
         JSONObject alerts = controller().status().getJSONObject("alerts");
         assertTrue(alerts.getBooleanValue("qq"));

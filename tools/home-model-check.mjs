@@ -287,19 +287,25 @@ same(tileOf(quota([bot()], [group(11, 1)])).more, 0, '不超过 5 个群时没�
 
 same(tileOf(quota([bot({used: 3})])).label, '@全体成员 已用', '格的标签');
 
-// 待办阳／阴。fresh 那一档只留初始设置，Webhook 待办不掺进去
+// 待办四态。催的是掉线时还有一路能叫到人，QQ 配没配都不算出。
+// fresh 那一档只留初始设置，这条不掺进去。
 function todoKeys(patch) {
   return homeModel(status(patch), login(), timeline()).todos.map(item => item.key);
 }
 
 same(todoKeys({alerts: {qq: false, webhook: false, mail: false}}), ['webhook'],
-  '三张告警卡都没配：出 Webhook 软待办');
-same(todoKeys({alerts: {qq: true, webhook: false, mail: false}}), [],
-  '配了 QQ 告警：不出 Webhook 待办');
+  '都没配：出 Webhook 软待办');
+same(todoKeys({alerts: {qq: true, webhook: false, mail: false}}), ['webhook'],
+  '只配了 QQ：仍出待办');
 same(todoKeys({alerts: {qq: false, webhook: true, mail: false}}), [],
-  '配了 Webhook：不出待办');
+  '有 Webhook：不出待办');
+same(todoKeys({alerts: {qq: false, webhook: false, mail: false}}), ['webhook'],
+  '只填收件无主机（后端判未配，mail 为假）：出待办');
 same(todoKeys({alerts: {qq: false, webhook: false, mail: true}}), [],
-  '配了邮件：不出待办');
+  '邮件已配：不出待办');
+same(todoKeys({locked: false, alerts: {qq: false, webhook: false, mail: false}}),
+  ['lock', 'webhook'],
+  '三路都没配时与上锁待办并存、不去重');
 same(todoKeys({alerts: {}}), ['webhook'],
   'alerts 在但三路都缺：作出没配');
 same(todoKeys({}), [],
@@ -310,7 +316,11 @@ const webhookTodo = homeModel(status({alerts: {qq: false, webhook: false, mail: 
 same((webhookTodo || {}).soft, true, 'Webhook 待办是软的');
 same((webhookTodo || {}).href, '#/settings?card=alert',
   '点待办落到设置页告警段');
-same((webhookTodo || {}).title, '建议配一条 Webhook', '待办标题');
+same((webhookTodo || {}).title, 'QQ 告警有死角，建议再配 Webhook', '待办标题');
+same((webhookTodo || {}).body,
+  '机器人掉线时 QQ 那路叫不到你，Webhook 或邮件配好其中一路这条就消失',
+  '待办正文');
+same((webhookTodo || {}).action, '去配', '待办按钮');
 
 // 首次安装只出初始设置，不叠 Webhook 待办
 const freshStatus = status({

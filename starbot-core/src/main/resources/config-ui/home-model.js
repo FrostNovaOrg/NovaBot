@@ -218,19 +218,17 @@ export function totalDataOff(status) {
 }
 
 /**
- * 三张告警卡有没有配好其中一张
+ * Webhook 或邮件配好了没有
  * <p>
- * 首页那条「建议配一条 Webhook」与设置页三张卡右上角的药丸问的是同一件事，
- * 判定只留这一份。各写各的话，首页催人去配、设置页却写着「已配置」。
- * <p>
- * 三路都没有才算出没配：配了 QQ 或邮件，这条待办也不该再出现——它催的是
- * 「出事时有人能接到」，不是「必须用 Webhook 这一种」。
+ * 首页那条「QQ 告警有死角」催的是掉线时还有一路能叫到人，QQ 那路本身会一起掉，
+ * 所以不算。设置页药丸各卡仍各报各的；这条待办只看 Webhook 与邮件两位。
+ * 邮件那一位由服务端按收件＋SMTP 主机同一口径下发，这里不另判。
  * @param status /api/status 回包
- * @return {boolean} 至少一路已配
+ * @return {boolean} Webhook 或邮件至少一路已配
  */
 export function alertConfigured(status) {
   const alerts = (status || {}).alerts || {};
-  return !!(alerts.qq || alerts.webhook || alerts.mail);
+  return !!(alerts.webhook || alerts.mail);
 }
 
 /**
@@ -336,9 +334,9 @@ function todos(status, login, chain, fresh) {
   if (!alertConfigured(status)) {
     list.push({
       key: 'webhook',
-      title: '建议配一条 Webhook',
-      body: '机器人掉线时只有这一路还能叫到你。QQ、Webhook、邮件三张卡配好其中一张，这条就会消失。',
-      action: '去设置', href: '#/settings?card=alert', soft: true,
+      title: 'QQ 告警有死角，建议再配 Webhook',
+      body: '机器人掉线时 QQ 那路叫不到你，Webhook 或邮件配好其中一路这条就消失',
+      action: '去配', href: '#/settings?card=alert', soft: true,
     });
   }
 

@@ -1519,17 +1519,39 @@ public class ConfigUiController {
     /**
      * 三张告警卡各自配好了没有
      * <p>
-     * 首页那条「建议配一条 Webhook」要按这个决定出不出。判定与设置页药丸同源：
-     * QQ 看有没有号码、Webhook 看地址空不空、邮件看收件邮箱空不空。
-     * 三路都没有时才出那条待办，配了任一即不出。
+     * 首页那条「QQ 告警有死角」要按 Webhook 与邮件这两位决定出不出——QQ 配没配都出，
+     * 它催的是掉线时还有一路能叫到人。判定与设置页药丸同源，见 {@link AlertReadiness}：
+     * QQ 看有没有号码、Webhook 看地址空不空、邮件看收件与 SMTP 主机都有没有。
      */
     private JSONObject alerts() {
         JSONObject json = new JSONObject();
         StarBotCoreProperties.Alert alert = properties.getAlert();
         json.put("qq", alert.getQqNum() != null);
         json.put("webhook", StringUtil.isNotBlank(alert.getWebhookUrl()));
-        json.put("mail", StringUtil.isNotBlank(properties.getMail().getDefaultTo()));
+        json.put("mail", AlertReadiness.mailConfigured(properties.getMail().getDefaultTo(), smtpHost()));
         return json;
+    }
+
+    /**
+     * 邮件告警的 SMTP 主机
+     * <p>
+     * 这一项不在核心配置对象上，是 Spring 自己的 {@code spring.mail.host}。
+     * 设置页药丸读的是配置文件里这一栏，这里也读同一份，两边才不会分叉。
+     * 文件不在或读失败按没配算：首页因此会催人去配，比悄悄当成已配要安全。
+     * @return 主机名，没有时为空串
+     */
+    private String smtpHost() {
+        try {
+            Map<String, String> values = fileService.read();
+            if (values == null) {
+                return "";
+            }
+            String host = values.get("spring.mail.host");
+            return host == null ? "" : host;
+        } catch (IOException e) {
+            log.debug("读 SMTP 主机失败，邮件这一路按未配算: {}", e.getMessage());
+            return "";
+        }
     }
 
     /**
