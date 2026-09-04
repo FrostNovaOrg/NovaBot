@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Random;
 
 /**
- * 弹幕词云的排版器：只算「哪个词、多大、放在哪、横着还是竖着、什么颜色」
+ * 弹幕词云的排版器：只算「哪个词、多大、放在哪、什么颜色」
  * <p>
  * 这里<b>不画一个像素</b>，也不认识 {@code Graphics2D}。字体的宽高从外面传进来的
  * {@link Measurer} 问，于是这一整套版式规则可以脱离渲染单独被量——判据读的是
@@ -22,19 +22,19 @@ import java.util.Random;
  *
  * <h2>版式规则</h2>
  * <ol>
- *   <li>字号 {@code 18 + 48·(c−cmin)/(cmax−cmin)}，取整后钳在 18～66；
+ *   <li>字号 {@code 18 + 38·(c−cmin)/(cmax−cmin)}，取整后钳在 18～56；
  *       全场词频相同时分母为零，一律取下限，靠下面的整体放大去填满</li>
  *   <li>按词频从高到低逐个放，位置沿中心向外的<b>椭圆</b>螺旋试探——椭圆的长短轴比
  *       取自框本身，否则在 830×380 这样的扁框里词会挤成一个圆、四角空着</li>
  *   <li>相邻两个词之间隔开 {@value #WORD_GAP}px，词与框边之间留 {@value #FRAME_MARGIN}px</li>
  *   <li>放不下的词丢掉。从大到小放，丢掉的自然是最小的那几个</li>
  *   <li>全部放完后若外包围盒不足框的 {@value #FILL_TARGET_PERCENT}%，字号整体放大一档重排，
- *       直到够了、或者再放大反而更差</li>
- *   <li>前 {@value #HORIZONTAL_HEAD} 名一律横排；其余每 4 个允许 1 个竖排，竖排是汉字直立地摞起来，
- *       不是把整个词转 90 度</li>
- *   <li>颜色按名次分四档，取设计语言册的 token</li>
+ *       直到够了、或者再放大反而更差；放大之后照旧钳在 18～56，头名再多压一道（见
+ *       {@link #effectiveFontSizes}）</li>
+ *   <li>一律横排</li>
+ *   <li>颜色按名次分六档，取设计语言册的 token</li>
  * </ol>
- * 第 2 步的角度起点与第 6 步的「这一组里竖排哪一个」都由种子决定：种子相同，结果逐字节相同。
+ * 第 2 步的角度起点与第 7 步的「这一组里给哪一个点暖色」都由种子决定：种子相同，结果逐字节相同。
  */
 final class WordCloudLayout {
     /**
@@ -52,14 +52,30 @@ final class WordCloudLayout {
     static final int FRAME_MARGIN = 8;
 
     /**
-     * 字号下限与可加的最大增量：{@code 18 + 48} 即上限 66
+     * 字号下限与可加的最大增量：{@code 18 + 38} 即上限 56
      * <p>
      * 下限 18 是<b>可读线</b>：报告里最小的正文字号是 22，词云的尾词比正文再小一档还认得出，
      * 再往下就只是一团色块了——要往里多塞词先动上限，这一头不动
      */
     private static final int FONT_SIZE_MIN = 18;
 
-    private static final int FONT_SIZE_SPAN = 48;
+    private static final int FONT_SIZE_SPAN = 38;
+
+    /**
+     * 🔴 上限管的是<b>最终落到图上的字号</b>，不只是按词频算出来的那一档。
+     * 底下的整体放大是乘上去的：只钳基准字号的话，一句刷屏弹幕把头名顶到基准上限，
+     * 再乘 1.5 倍的放大，图上就是 84px 的一个词压着一片小字——「上限 66」写在常量里，
+     * 量出来是 99
+     */
+    private static final int FONT_SIZE_MAX = FONT_SIZE_MIN + FONT_SIZE_SPAN;
+
+    /**
+     * 头名字号最多是第二名的这个倍数
+     * <p>
+     * 词频悬殊时（首词 99 次、次词 50 次）线性映射会让头名独占一大块，旁边全是小字。
+     * 压的是<b>看上去的悬殊</b>，词频本身照旧决定名次与色档
+     */
+    private static final double TOP_FONT_SIZE_RATIO = 1.3;
 
     /**
      * 外包围盒至少要占到框的这个比例，不足则整体放大字号重排
@@ -74,14 +90,14 @@ final class WordCloudLayout {
     private static final int SCALE_ATTEMPTS = 40;
 
     /**
-     * 前几名一律横排：最大的那几个词竖着摞起来会把整块版式拉成一根柱子
+     * 第几名往后开始点暖色
      */
-    private static final int HORIZONTAL_HEAD = 12;
+    private static final int ACCENT_FROM_RANK = 26;
 
     /**
-     * 第 13 名往后，每几个词里允许一个竖排
+     * 尾档每几个词里点一个暖色，即 {@code dim} 与 {@code c-sc} 之比 3:1
      */
-    private static final int VERTICAL_GROUP = 4;
+    private static final int ACCENT_GROUP = 4;
 
     /**
      * 螺旋每转过一弧度，半径向外走多少像素（一圈约 9px，半个最小字号）
@@ -97,8 +113,11 @@ final class WordCloudLayout {
     private static final double SPIRAL_ARC_STEP = 5.0;
 
     /**
-     * 名次分档的四种颜色，取自设计语言册（丙·星云）的亮色值：
-     * accent2 / accent / cloud3 / dim。成图是白底，用亮色那一列
+     * 名次分档的六种颜色，取自设计语言册（丙·星云）的亮色值：
+     * accent2 / accent / cloud3 / c-guard / dim / c-sc。成图是白底，用亮色那一列。
+     * <p>
+     * 🔴 只许取册上在册的值。词云配色若自己调一个「好看点的」出来，它就不再随主题走，
+     * 报告图与控制台会慢慢变成两套色
      */
     private static final Color COLOR_RANK_TOP = new Color(0xE0, 0x47, 0x9E);
 
@@ -106,7 +125,11 @@ final class WordCloudLayout {
 
     private static final Color COLOR_RANK_MID = new Color(0xA3, 0x8B, 0xFF);
 
+    private static final Color COLOR_RANK_MID_ALT = new Color(0x00, 0xA6, 0xD6);
+
     private static final Color COLOR_RANK_REST = new Color(0x6E, 0x6A, 0x86);
+
+    private static final Color COLOR_RANK_REST_ACCENT = new Color(0xF2, 0xA9, 0x3B);
 
     private WordCloudLayout() {
     }
@@ -123,11 +146,10 @@ final class WordCloudLayout {
      * @param text     词
      * @param rank     名次，从 1 起
      * @param fontSize 字号
-     * @param vertical 是否竖排
      * @param box      包围盒，不含四周留白
      * @param color    颜色
      */
-    record Placement(String text, int rank, int fontSize, boolean vertical, Rectangle box, Color color) {
+    record Placement(String text, int rank, int fontSize, Rectangle box, Color color) {
     }
 
     /**
@@ -148,10 +170,9 @@ final class WordCloudLayout {
         /**
          * @param text     词
          * @param fontSize 字号
-         * @param vertical 竖排为真
          * @return 该词的包围盒尺寸
          */
-        Dimension measure(String text, int fontSize, boolean vertical);
+        Dimension measure(String text, int fontSize);
     }
 
     /**
@@ -174,12 +195,12 @@ final class WordCloudLayout {
         }
 
         int[] baseSizes = baseFontSizes(sorted);
-        boolean[] vertical = verticalFlags(sorted.size(), seed);
+        boolean[] accented = accentFlags(sorted.size(), seed);
 
         Result best = null;
         double scale = 1.0;
         for (int attempt = 0; attempt < SCALE_ATTEMPTS; attempt++) {
-            Result result = placeAll(sorted, baseSizes, vertical, scale, width, height, seed, measurer);
+            Result result = placeAll(sorted, baseSizes, accented, scale, width, height, seed, measurer);
             if (best == null || result.fillRatio() > best.fillRatio()) {
                 best = result;
             }
@@ -214,28 +235,51 @@ final class WordCloudLayout {
     }
 
     private static int clamp(int size) {
-        return Math.max(FONT_SIZE_MIN, Math.min(FONT_SIZE_MIN + FONT_SIZE_SPAN, size));
+        return Math.max(FONT_SIZE_MIN, Math.min(FONT_SIZE_MAX, size));
     }
 
     /**
-     * 定哪些名次竖排：前 {@value #HORIZONTAL_HEAD} 名全横，其后每满 {@value #VERTICAL_GROUP} 个抽一个竖
+     * 这一趟真正用的字号：基准字号乘上整体倍率、钳回 18～56，再把头名压到第二名的
+     * {@value #TOP_FONT_SIZE_RATIO} 倍以内
      * <p>
-     * 只在<b>凑满一组</b>时抽，于是竖排数恰为 {@code ⌊(n−12)/4⌋}：不凑满也抽的话，
-     * 13 个词就会出现 1 个竖排，而 {@code ⌊1/4⌋} 是 0
+     * 🔴 压顶必须落在<b>放大之后</b>。落在基准字号上的话，两个词的比例被整体放大原样带走，
+     * 而钳上限只钳得住头名一个——第二名跟着放大追上来，比例反倒又开了
      */
-    private static boolean[] verticalFlags(int size, long seed) {
+    private static int[] effectiveFontSizes(int[] baseSizes, double scale) {
+        int[] sizes = new int[baseSizes.length];
+        for (int i = 0; i < baseSizes.length; i++) {
+            sizes[i] = clamp((int) Math.round(baseSizes[i] * scale));
+        }
+
+        if (sizes.length >= 2) {
+            // 只会往小里改：第二名字号不小于下限 18，1.3 倍之后仍在下限之上，压不穿
+            sizes[0] = Math.min(sizes[0], (int) (sizes[1] * TOP_FONT_SIZE_RATIO));
+        }
+        return sizes;
+    }
+
+    /**
+     * 定尾档里哪些词点暖色：第 {@value #ACCENT_FROM_RANK} 名起，每满 {@value #ACCENT_GROUP} 个抽一个
+     * <p>
+     * 只在<b>凑满一组</b>时抽，于是暖色数恰为 {@code ⌊(n−25)/4⌋}：不凑满也抽的话，
+     * 26 个词就会点出 1 个暖色，而 {@code ⌊1/4⌋} 是 0
+     */
+    private static boolean[] accentFlags(int size, long seed) {
         boolean[] flags = new boolean[size];
         Random random = new Random(seed);
-        for (int start = HORIZONTAL_HEAD; start + VERTICAL_GROUP <= size; start += VERTICAL_GROUP) {
-            flags[start + random.nextInt(VERTICAL_GROUP)] = true;
+        for (int start = ACCENT_FROM_RANK - 1; start + ACCENT_GROUP <= size; start += ACCENT_GROUP) {
+            flags[start + random.nextInt(ACCENT_GROUP)] = true;
         }
         return flags;
     }
 
     /**
-     * 按名次取颜色：1～3 / 4～10 / 11～25 / 其余
+     * 按名次取颜色：1～3 / 4～10 / 11～25 两色交替 / 其余以 3:1 点暖色
+     * <p>
+     * 中段交替按名次的奇偶走而不再问种子：同一档里挨着的两个词换色，看的人才觉得「颜色多」，
+     * 随机撒的话常常连着三四个同色
      */
-    private static Color colorOf(int rank) {
+    private static Color colorOf(int rank, boolean accented) {
         if (rank <= 3) {
             return COLOR_RANK_TOP;
         }
@@ -243,26 +287,27 @@ final class WordCloudLayout {
             return COLOR_RANK_HIGH;
         }
         if (rank <= 25) {
-            return COLOR_RANK_MID;
+            return rank % 2 == 1 ? COLOR_RANK_MID : COLOR_RANK_MID_ALT;
         }
-        return COLOR_RANK_REST;
+        return accented ? COLOR_RANK_REST_ACCENT : COLOR_RANK_REST;
     }
 
     /**
      * 按给定的整体倍率排一遍
      */
-    private static Result placeAll(List<Word> sorted, int[] baseSizes, boolean[] vertical, double scale,
+    private static Result placeAll(List<Word> sorted, int[] baseSizes, boolean[] accented, double scale,
                                    int width, int height, long seed, Measurer measurer) {
         List<Placement> placements = new ArrayList<>();
         List<Rectangle> occupied = new ArrayList<>();
         int dropped = 0;
 
+        int[] sizes = effectiveFontSizes(baseSizes, scale);
+
         // 角度起点逐词取，同一颗种子给出同一串起点
         Random random = new Random(seed * 31 + 17);
 
         for (int i = 0; i < sorted.size(); i++) {
-            int size = Math.max(FONT_SIZE_MIN, (int) Math.round(baseSizes[i] * scale));
-            Dimension extent = measurer.measure(sorted.get(i).text(), size, vertical[i]);
+            Dimension extent = measurer.measure(sorted.get(i).text(), sizes[i]);
             double phase = random.nextDouble() * Math.PI * 2;
 
             if (extent.width <= 0 || extent.height <= 0) {
@@ -277,7 +322,7 @@ final class WordCloudLayout {
             }
 
             occupied.add(box);
-            placements.add(new Placement(sorted.get(i).text(), i + 1, size, vertical[i], box, colorOf(i + 1)));
+            placements.add(new Placement(sorted.get(i).text(), i + 1, sizes[i], box, colorOf(i + 1, accented[i])));
         }
 
         Rectangle bounds = new Rectangle();

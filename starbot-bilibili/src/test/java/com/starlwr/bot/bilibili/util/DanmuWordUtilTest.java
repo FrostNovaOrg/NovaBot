@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -28,6 +29,33 @@ class DanmuWordUtilTest {
         List<String> words = DanmuWordUtil.extractWords("这个就是我的了");
 
         assertTrue(words.isEmpty(), "全部为停用词与单字时应为空，实际: " + words);
+    }
+
+    /**
+     * 🔴 单字这一条此前靠 {@code String.length()} 把关，数的是 UTF-16 单元而不是字。
+     * 扩展区的汉字一个字占两个单元，于是它<b>不算单字</b>，照样进词云
+     */
+    @Test
+    @DisplayName("扩展区的汉字单字也应过滤")
+    void filtersSingleAstralChar() {
+        List<String> words = DanmuWordUtil.extractWords("𠮷");
+
+        assertTrue(words.isEmpty(), "一个字就是一个字, 不该因为它占两个 char 就放进来，实际: " + words);
+    }
+
+    @Test
+    @DisplayName("字母词应按小写并成一个")
+    void foldsLetterCase() {
+        assertEquals(List.of("dog"), DanmuWordUtil.extractWords("Dog"), "Dog 应折成 dog");
+        assertEquals(List.of("dog"), DanmuWordUtil.extractWords("DOG"), "DOG 应折成 dog");
+        assertEquals(DanmuWordUtil.extractWords("dog"), DanmuWordUtil.extractWords("Dog"),
+                "同一个词大小写不同不该在词云里占两格");
+    }
+
+    @Test
+    @DisplayName("汉字不受大小写折叠影响")
+    void keepsCjkAsIs() {
+        assertTrue(DanmuWordUtil.extractWords("主播唱歌真好听").contains("唱歌"));
     }
 
     @Test
