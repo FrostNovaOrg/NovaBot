@@ -110,7 +110,18 @@ public class JsonDataSource extends AbstractDataSource {
             List<PushUser> users = parse(Files.readString(Path.of(path)));
             add(admit(users));
         } catch (NoSuchFileException e) {
-            throw new DataSourceException("数据源 JSON 文件不存在, 请检查配置的路径是否正确: " + path);
+            // 🔴 文件不在<b>不是错误，是还没配</b>。发行包不再带这个文件，它由控制台在加第一位主播时生成，
+            // 于是「刚装好、还没加过主播」的实例必然走到这里。此前这一支抛异常，而异常是在
+            // ApplicationReadyEvent 里抛出来的——进程当场死掉，使用者看到的是「装好了起不来」，
+            // 而他还没有任何机会去配置。
+            //
+            // 🔴 但它也可能是「路径配错了」——那两件事在这一句 NoSuchFileException 上长得一样，
+            // 而它们该做的事完全不同。不按「路径改没改过」去分成两支：那条分支只改得了日志的级别，
+            // 分完之后没有任何判据量得到走的是哪一支，而一条量不到的分支迟早会走反。
+            // 一行话把两种读法都说出来，判断留给看日志的人——他知道这个路径是不是自己配的。
+            log.warn("没有找到推送配置文件 {}, 先按空的推送配置启动。"
+                    + "刚装好的实例本来就没有它, 在控制台里加第一位主播时会自动生成; "
+                    + "若这个路径是你自己配的, 请核对 starbot.core.datasource.json-path", path);
         } catch (Exception e) {
             throw new DataSourceException("读取数据源 JSON 文件异常", e);
         }

@@ -180,8 +180,9 @@ public class CommandDispatcher {
         }
 
         if (command.disableable() && settings.isDisabled(event.getPlatform(), event.getNum(), command.name())) {
-            // 关掉的命令也要回一句：沉默与「机器人坏了」在使用者眼里长得一样
-            reply(event, type, (group ? "本群" : "") + "已关闭「" + command.name() + "」命令");
+            // 关掉的命令也要回一句：沉默与「机器人坏了」在使用者眼里长得一样。
+            // 「在哪儿」与命令自己说不出主播时那一句同一处取词，见 CommandContext#here
+            reply(event, type, CommandContext.here(type) + "已关闭「" + command.name() + "」命令");
             return;
         }
 

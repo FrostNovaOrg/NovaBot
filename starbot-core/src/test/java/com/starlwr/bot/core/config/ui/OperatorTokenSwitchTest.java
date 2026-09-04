@@ -53,7 +53,12 @@ class OperatorTokenSwitchTest {
         agreement.setAcceptedVersion(ConfigUiAgreement.VERSION);
         agreement.setAcceptedBy(ConfigUiSession.Channel.PASSWORD.wire());
 
-        return new ConfigUiSecurityFilter(TOKEN, new IpMatcher(List.of("0.0.0.0/0", "::/0")), auth, operatorToken, agreement);
+        // 过滤器现在读的是配置对象本体那一位，不是构造时抄下来的布尔——
+        // 「上锁之后自动关掉这条通道」要当场生效，抄一份的写法在那件事上会静静失效
+        StarBotCoreProperties.ConfigUi.Auth authProperties = new StarBotCoreProperties.ConfigUi.Auth();
+        authProperties.setOperatorToken(operatorToken);
+
+        return new ConfigUiSecurityFilter(TOKEN, new IpMatcher(List.of("0.0.0.0/0", "::/0")), auth, authProperties, agreement);
     }
 
     /**

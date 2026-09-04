@@ -10,47 +10,58 @@ package com.starlwr.bot.core.timeline;
  * ⚠️ <b>只进不退</b>：这些名字已经写进磁盘上的 {@code timeline/*.jsonl}。
  * 改名或删项等于让既有记录里的那一行认不出来（读的时候会被跳过），
  * 而那些行是补不回来的。要改叫法请改 {@link #getDescription() 说明}，不要改枚举名。
+ * <p>
+ * <b>每一项都得报出自己归哪个大类</b>（见 {@link TimelineCategory}）。大类由构造参数带着，
+ * 而不是另存一张「类型 → 大类」的对照表：那张表漏一项的表现不是报错，
+ * 而是那一类事件在任何一枚筛选药丸下都<b>筛不到</b>，同时在不筛的时候照常显示——
+ * 没有人会因此觉得哪里不对。写成构造参数之后，新加一项不标大类就编不过。
  */
 public enum TimelineEventType {
     /**
      * 处于静音时段，消息被丢弃
      */
-    PUSH_MUTED("静音丢弃"),
+    PUSH_MUTED("静音丢弃", TimelineCategory.PUSH),
 
     /**
      * 全局推送开关关闭，消息被丢弃
      */
-    PUSH_PAUSED("暂停丢弃"),
+    PUSH_PAUSED("暂停丢弃", TimelineCategory.PUSH),
 
     /**
      * 推送成功
      */
-    PUSH_SENT("推送成功"),
+    PUSH_SENT("推送成功", TimelineCategory.PUSH),
 
     /**
      * 推送失败
      */
-    PUSH_FAILED("推送失败"),
+    PUSH_FAILED("推送失败", TimelineCategory.PUSH),
 
     /**
      * @全体成员 没能发出（没有权限，或当天额度用尽）
      */
-    AT_ALL_SKIPPED("未 @ 全体"),
+    AT_ALL_SKIPPED("未 @ 全体", TimelineCategory.PUSH),
 
     /**
      * 某项健康状况发生变化，含恢复正常
+     * <p>
+     * 暂归「连接」：现有的几项健康状况问的都是「与那一头通着没有」。
+     * 哪天探针开始报与连接无关的事（磁盘、内存），这一项就该拆。
      */
-    PROBE_CHANGED("状态变化"),
+    PROBE_CHANGED("状态变化", TimelineCategory.LINK),
 
     /**
      * 账号登录态由正常转为不正常
      */
-    LOGIN_LOST("登录失效");
+    LOGIN_LOST("登录失效", TimelineCategory.LINK);
 
     private final String description;
 
-    TimelineEventType(String description) {
+    private final TimelineCategory category;
+
+    TimelineEventType(String description, TimelineCategory category) {
         this.description = description;
+        this.category = category;
     }
 
     /**
@@ -62,6 +73,14 @@ public enum TimelineEventType {
      */
     public String getDescription() {
         return description;
+    }
+
+    /**
+     * 归哪个大类，供界面上那一排筛选药丸用
+     * @return 大类
+     */
+    public TimelineCategory getCategory() {
+        return category;
     }
 
     /**

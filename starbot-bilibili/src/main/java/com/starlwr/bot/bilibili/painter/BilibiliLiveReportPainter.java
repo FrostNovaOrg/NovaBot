@@ -25,6 +25,7 @@ import com.starlwr.bot.core.util.ImageUtil;
 import com.starlwr.bot.core.util.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Primary;
 
 import java.awt.Color;
 import java.awt.Font;
@@ -50,8 +51,26 @@ import java.util.function.DoubleFunction;
  * 把本场直播累计的统计指标绘制为报告图片：直播间封面横幅、头像、时长与收益概览、
  * 数据卡片栅格与弹幕词云。为零的条目自动省略，封面或词云不可得时对应区块整体跳过，
  * 冷清场次也能得到一张干净的报告。
+ *
+ * <h2>🔴 为什么这里标 &#64;Primary</h2>
+ * {@link BilibiliLiveReportPreviewPainter} <b>继承</b>本类，而它自己也是一个组件——
+ * 于是容器里 {@code BilibiliLiveReportPainter} 这个类型有两个候选。按类型注入的地方
+ * （下播报告推送、「直播报告」命令）只要一个，容器挑不出来就当场抛
+ * {@code NoUniqueBeanDefinitionException}，<b>整个程序起不来</b>。
+ * <p>
+ * 🔴 这件事<b>整测一个字都不会说</b>：单元测试里每个画手都是自己 {@code new} 出来的，
+ * 谁也不经过容器。2026-09-04 实测的形状就是「整测全绿、打出来的产物起不来」——
+ * 两者之间此前没有任何一处把对方钉住。判据在 {@code ReportPainterBeanResolutionTest}，
+ * 起动那一侧在 {@code tools/boot-smoke.sh}。
+ * <p>
+ * 🔴 标在<b>基类</b>而不是逐个注入点写 {@code @Qualifier}：{@code @Primary} 没有
+ * {@code @Inherited}，不会随继承传给预览画手，因此「两个候选里只有正式的那个是首选」
+ * 这句话由一行注解一次说完；而 {@code @Qualifier} 要在每一个注入点各写一遍，
+ * <b>下一个注入点忘写时的表现仍然是程序起不来</b>。预览那一屏按预览画手的具体类型注入，
+ * 类型上就只有一个候选，不受这行影响。
  */
 @Slf4j
+@Primary
 @StarBotComponent
 public class BilibiliLiveReportPainter {
     /**

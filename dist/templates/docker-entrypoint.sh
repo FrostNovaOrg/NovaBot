@@ -36,9 +36,13 @@ for jar in "$SRC"/plugins/*.jar; do
 done
 cp -f "$SRC"/plugins/*.jar "$DST/plugins/"
 
-# 配置只在缺失时铺默认值，否则每次启动都会把使用者改过的配置冲掉
-for conf in application.yml datasource.json; do
-    if [ ! -f "$DST/$conf" ]; then
+# 🔴 5.1 起，镜像里不再带 application.yml 与 datasource.json：程序自己会在第一次保存设置、
+#    第一次加主播时把它们写出来，写到数据卷上（$DST），也就是<b>本来就该在的地方</b>。
+#    所以这里只把示例铺过去，铺完不再管——铺一份「默认配置」等于替使用者做了一半的事，
+#    而那一半做完之后，控制台再也认不出这是一台还没配过的机器。
+#    仍然只在缺失时铺：镜像重启一次就把使用者改过的示例冲掉，与冲掉配置一样难查。
+for conf in application.example.yml datasource.example.json; do
+    if [ -f "$SRC/$conf" ] && [ ! -f "$DST/$conf" ]; then
         cp "$SRC/$conf" "$DST/$conf"
     fi
 done

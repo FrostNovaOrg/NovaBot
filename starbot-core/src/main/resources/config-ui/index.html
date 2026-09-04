@@ -257,12 +257,19 @@
           <span>只看问题 · 失败、告警，还有降级发出去的那几条</span></label>
 
         <!--
-          三筛的选项由服务端给：类型是枚举闭集，主播与通道取自这一天出现过的那些。
+          大类药丸：一类一枚，点一下筛出一整块事情。清单由服务端给，且只列有类型归属的大类——
+          一枚点下去必然空空如也的药丸比没有那枚更糟，使用者会把空结果读成
+          「这台机器没发生过这类事」。旧地址里带着 type= 时，那一项作为一枚可摘掉的药丸补在后面：
+          筛着却没有任何控件显示它，屏幕上就是「明明筛着、看起来却没筛」。
+        -->
+        <div class="lgpills" id="log-cats"></div>
+
+        <!--
+          两筛的选项由服务端给：主播与通道取自这一天出现过的那些。
           界面自己从这一页事件里凑的话，结果被截断时那张表就缺项——
           而缺了谁，只有想筛它的人才看得见。
         -->
         <div class="backups" id="log-filters">
-          <span>类型</span><select id="log-type" aria-label="按类型筛"></select>
           <span>主播</span><select id="log-streamer" aria-label="按主播筛"></select>
           <span>群 / 私聊</span><select id="log-channel" aria-label="按通道筛"></select>
           <input type="search" id="log-q" placeholder="搜主播、群、关键字" aria-label="搜索日志">
@@ -292,15 +299,30 @@
       </div>
 
       <div class="nv-card hcard">
+        <!--
+          从日志页某一条跳过来时的横幅：写明定位到了哪一刻、以及那一分钟有没有记录。
+          没有记录时不许不说——屏幕上照样高亮着一行，而它不是使用者点过来要看的那一行。
+        -->
+        <div class="note" id="eng-jump" style="display:none"></div>
+
         <div class="backups" id="eng-tools">
           <div class="lgpills" id="eng-levels"></div>
           <input type="search" id="eng-q" placeholder="搜这一段日志" aria-label="搜索工程日志">
+          <span>这一天</span>
+          <input type="date" id="eng-date" aria-label="看哪一天的日志">
           <span>行数</span>
           <select id="eng-limit" aria-label="读多少行">
             <option value="300">最后 300 行</option>
             <option value="1000">最后 1000 行</option>
             <option value="2000">最后 2000 行</option>
           </select>
+          <!--
+            跟随最新只在视窗停在底部时才追加：正翻着旧行时被新行推走，
+            人会以为自己点错了，而屏幕上没有任何东西说明刚才发生了什么。
+          -->
+          <label class="switch"><input type="checkbox" id="eng-follow" checked>
+            <span>跟随最新</span></label>
+          <button type="button" id="eng-copy">复制这一段</button>
           <button type="button" id="eng-reload">重新读</button>
         </div>
         <div class="eng" id="eng-body"></div>

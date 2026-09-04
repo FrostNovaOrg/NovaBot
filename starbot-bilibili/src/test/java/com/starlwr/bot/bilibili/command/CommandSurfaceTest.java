@@ -33,8 +33,11 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -276,6 +279,72 @@ class CommandSurfaceTest {
         for (String name : TOTAL_ONLY) {
             assertFalse(registry.feed(true, name).contains("没开累计数据"), name);
         }
+    }
+
+    @Test
+    @DisplayName("开关与菜单同一问：三种盘面下，菜单列几条，开关就动得了哪几条")
+    void toggleAgreesWithMenu() {
+        // 两处口径不同源时，现象是「菜单里没有这条命令，它却开关得动」——
+        // 开关表里于是躺着一条谁也验证不了的记录。三种盘面各量一遍，
+        // 因为两处答案的分歧只在<b>某一条被藏起来</b>的那些盘面上才显形
+        assertEquals(GROUP_ONLY.size(), menuNames().size(), "默认盘面该是十四条都列得出");
+        assertEquals(menuNames(), toggleFinds(), "默认盘面");
+
+        registry.supportsTotalData(false);
+        assertEquals(GROUP_ONLY.size() - TOTAL_ONLY.size(), menuNames().size(), "本机没开累计数据");
+        assertEquals(menuNames(), toggleFinds(), "本机没开累计数据");
+
+        registry.supportsTotalData(true);
+        registry.atMode(BilibiliAtNoticeKind.LIVE, AtMode.ALL);
+        assertEquals(GROUP_ONLY.size() - LIVE_AT_COMMANDS.size(), menuNames().size(), "本群配成 @全体成员");
+        assertEquals(menuNames(), toggleFinds(), "本群配成 @全体成员");
+    }
+
+    @Test
+    @DisplayName("「在哪儿」两句同一处取词：群里都说「本群」，私聊都说「这里」")
+    void bothSentencesNameTheSamePlace() {
+        // 「说不出主播」与「这条命令被关掉了」出自两个模块，措辞却回答同一个问题。
+        // 各写各的字面量时，改了一处的那天，使用者在私聊里会同时听见「这里」和什么都不带
+        for (boolean group : List.of(true, false)) {
+            long num = group ? GROUP : FRIEND;
+            String word = group ? "本群" : "这里";
+
+            String unknown = registry.feed(group, "直播间数据 主播壬");
+
+            registry.settings.disable(PLATFORM, num, "直播间数据");
+            String disabled = registry.feed(group, "直播间数据");
+            registry.settings.enable(PLATFORM, num, "直播间数据");
+
+            assertTrue(unknown.startsWith(word), "说不出主播那一句：" + unknown);
+            assertTrue(disabled.startsWith(word), "命令被关掉那一句：" + disabled);
+        }
+    }
+
+    /**
+     * 菜单列得出的命令名。每条命令占一行，行首就是命令名
+     */
+    private Set<String> menuNames() {
+        return Arrays.stream(registry.feed(true, "菜单").split("\n"))
+                .filter(line -> line.contains(" — "))
+                .map(line -> line.split(" ")[0])
+                .collect(Collectors.toCollection(TreeSet::new));
+    }
+
+    /**
+     * 「禁用命令」找得到的命令名
+     * <p>
+     * 找不到的那一路回的是「不用开关它」——本机没开与本会话用不上都归它。
+     * 量完随手把状态复原：真被关掉的那几条会从菜单里消失，而这张表下一次还要量菜单。
+     */
+    private Set<String> toggleFinds() {
+        Set<String> found = new TreeSet<>();
+        for (String name : GROUP_ONLY.keySet()) {
+            if (!registry.feed(true, "禁用命令 " + name, "owner").contains("不用开关它")) {
+                found.add(name);
+            }
+            registry.feed(true, "启用命令 " + name, "owner");
+        }
+        return found;
     }
 
     @Test

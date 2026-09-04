@@ -566,8 +566,10 @@ public class StarBotCoreProperties {
              * <p>
              * 留空表示不启用口令登录。可以直接填明文，启动时会哈希后使用，
              * 同时在日志里输出可替换过去的哈希串——<b>填了明文就意味着看得到配置文件的人也就有了口令</b>。
+             * 改完立即生效，不必重启：这台机器的第一把口令一定是在运行期设下的，
+             * 而「设了口令但要等重启才认」的那段时间里，界面说已上锁而门还开着。
              */
-            @ConfigEffect(ConfigEffect.Effect.RESTART)
+            @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
             private String password = "";
 
             /**
@@ -576,8 +578,10 @@ public class StarBotCoreProperties {
              * 默认要求。设了口令却没绑定验证器时，界面会持续提示绑定——<b>只有口令的面板
              * 一旦开到公网，其安全性就完全押在这一个口令上</b>，而口令是会被撞库、被键盘记录、
              * 被肩窥的。真的不想要二次验证时把这一项改成 false，那是一个需要写下来的决定。
+             * 改完立即生效，不必重启：界面上那个开关本来就是当场生效的，
+             * 这一行此前标着「需重启」，于是同一件事在界面上有两种说法。
              */
-            @ConfigEffect(ConfigEffect.Effect.RESTART)
+            @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
             private boolean totp = true;
 
             /**

@@ -168,6 +168,14 @@ class JsonDataSourceTest {
         assertTrue(user.getTargets().isEmpty());
     }
 
+    /**
+     * 文件不存在时那句提示里要带上实际用的路径
+     * <p>
+     * 这一条原先量的是异常消息。5.1 起「文件不存在」不再是错误——发行包不带
+     * {@code datasource.json}，刚装好的实例本来就没有它（另见 {@code MissingDatasourceFileTest}）。
+     * 但<b>「提示里得说清在找哪个文件」这件事没有变</b>：它只是从异常搬到了日志上。
+     * 判据跟着搬，而不是跟着删——删掉的话，那句提示哪天丢了路径也没人知道。
+     */
     @Test
     @DisplayName("文件不存在时应给出包含路径的提示")
     void shouldReportMissingFileWithPath(@TempDir Path directory) {
@@ -175,10 +183,27 @@ class JsonDataSourceTest {
         properties.getDatasource().setJsonPath(directory.resolve("not-exists.json").toString());
         properties.getDatasource().setJsonAutoReload(false);
 
-        DataSourceException exception = assertThrows(DataSourceException.class, () -> newDataSource(properties).load());
+        ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(JsonDataSource.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
 
-        assertTrue(exception.getMessage().contains("not-exists.json"),
-                "提示里要带上实际用的路径, 否则使用者不知道程序在找哪个文件: " + exception.getMessage());
+        try {
+            assertDoesNotThrow(() -> newDataSource(properties).load());
+
+            List<String> warnings = appender.list.stream()
+                    .filter(event -> event.getLevel() == ch.qos.logback.classic.Level.WARN)
+                    .map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage)
+                    .toList();
+
+            assertEquals(1, warnings.size(), "缺文件应当正好说一句, 而不是不吭声也不是刷屏: " + warnings);
+            assertTrue(warnings.get(0).contains("not-exists.json"),
+                    "提示里要带上实际用的路径, 否则使用者不知道程序在找哪个文件: " + warnings.get(0));
+        } finally {
+            logger.detachAppender(appender);
+        }
     }
 
     @Test

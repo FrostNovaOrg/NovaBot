@@ -168,7 +168,7 @@ class TimelineStoreTest {
         store.record(leveled(TimelineEvent.Level.ERROR, "故障一条"));
 
         TimelineStore.Result result = store.query(
-                new TimelineStore.Filter(null, true, null, null, null, null, 0), null);
+                new TimelineStore.Filter(null, true, null, null, null, null, null, 0), null);
 
         assertEquals(List.of("故障一条", "警告一条"), texts(result));
     }
@@ -180,7 +180,7 @@ class TimelineStoreTest {
         store.record(typed(TimelineEventType.PUSH_SENT, "推出去的"));
 
         TimelineStore.Result result = store.query(new TimelineStore.Filter(
-                null, false, TimelineEventType.PUSH_MUTED, null, null, null, 0), null);
+                null, false, null, TimelineEventType.PUSH_MUTED, null, null, null, 0), null);
 
         assertEquals(List.of("静音丢的"), texts(result));
     }
@@ -194,11 +194,11 @@ class TimelineStoreTest {
                 .streamer("乙主播").channel("群 222").text("乙的").build());
 
         assertEquals(List.of("甲的"), texts(store.query(
-                new TimelineStore.Filter(null, false, null, "甲主播", null, null, 0), null)));
+                new TimelineStore.Filter(null, false, null, null, "甲主播", null, null, 0), null)));
         assertEquals(List.of("乙的"), texts(store.query(
-                new TimelineStore.Filter(null, false, null, null, "群 222", null, 0), null)));
+                new TimelineStore.Filter(null, false, null, null, null, "群 222", null, 0), null)));
         assertEquals(List.of(), texts(store.query(
-                new TimelineStore.Filter(null, false, null, "甲主播", "群 222", null, 0), null)),
+                new TimelineStore.Filter(null, false, null, null, "甲主播", "群 222", null, 0), null)),
                 "两项都给时应同时满足");
     }
 
@@ -227,7 +227,7 @@ class TimelineStoreTest {
         }
 
         TimelineStore.Result result = store.query(
-                new TimelineStore.Filter(null, false, null, null, null, null, 2), null);
+                new TimelineStore.Filter(null, false, null, null, null, null, null, 2), null);
 
         assertEquals(2, result.events().size());
         assertEquals(5, result.matched(), "截断了也要说清一共命中多少");
@@ -266,10 +266,10 @@ class TimelineStoreTest {
         TimelineStore.Cursor gone = new TimelineStore.Cursor(today.minusDays(1), 0);
 
         assertEquals(List.of("昨天那条"), texts(store.query(
-                new TimelineStore.Filter(null, false, null, null, null, null, 0),
+                new TimelineStore.Filter(null, false, null, null, null, null, null, 0),
                 new TimelineStore.Cursor(today, 0))), "从今天那条往更旧的翻");
         assertEquals(List.of(), texts(store.query(
-                new TimelineStore.Filter(null, false, null, null, null, null, 0), gone)),
+                new TimelineStore.Filter(null, false, null, null, null, null, null, 0), gone)),
                 "游标指着最旧那一条时, 它前面什么都没有");
     }
 
@@ -307,7 +307,7 @@ class TimelineStoreTest {
         // 筛完还得能改主意。选项跟着筛选一起缩水的话，选了「东方」之后
         // 通道那一栏就只剩「群 111」，使用者再也换不回去，只能清掉整组筛选重来
         TimelineStore.Result narrowed = store.query(
-                new TimelineStore.Filter(null, false, null, "东方", null, null, 0), null);
+                new TimelineStore.Filter(null, false, null, null, "东方", null, null, 0), null);
         assertEquals(List.of("东的"), texts(narrowed));
         assertEquals(List.of("东方", "西门"), narrowed.streamers());
         assertEquals(List.of("群 111", "群 222"), narrowed.channels());
@@ -359,16 +359,16 @@ class TimelineStoreTest {
     // —— 以下为夹具 ——
 
     private TimelineStore.Result query(LocalDate date) {
-        return store.query(new TimelineStore.Filter(date, false, null, null, null, null, 0), null);
+        return store.query(new TimelineStore.Filter(date, false, null, null, null, null, null, 0), null);
     }
 
     /** 一页两条，供翻页那几格用 */
     private TimelineStore.Result page(TimelineStore.Cursor cursor) {
-        return store.query(new TimelineStore.Filter(null, false, null, null, null, null, 2), cursor);
+        return store.query(new TimelineStore.Filter(null, false, null, null, null, null, null, 2), cursor);
     }
 
     private int search(String keyword) {
-        return store.query(new TimelineStore.Filter(null, false, null, null, null, keyword, 0), null).matched();
+        return store.query(new TimelineStore.Filter(null, false, null, null, null, null, keyword, 0), null).matched();
     }
 
     private List<String> texts(TimelineStore.Result result) {

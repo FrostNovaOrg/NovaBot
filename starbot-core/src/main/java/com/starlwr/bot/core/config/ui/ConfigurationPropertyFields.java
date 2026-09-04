@@ -68,6 +68,76 @@ final class ConfigurationPropertyFields {
     }
 
     /**
+     * 沿同一条规则读出一批配置对象<b>此刻的取值</b>
+     * <p>
+     * 与 {@link #scan} 同住一个类、共用 {@link #walk} 那套展开规则，是有意的：
+     * 「哪个键对应哪个字段」写两遍就会有两份。这里多问的只是一句「那个字段现在装着什么」。
+     * <p>
+     * 用途是<b>生成一份完整的配置文件</b>：编译期元数据里的默认值只有写成字面量的那些才有，
+     * 像 {@code allow-ips} 这种在 Java 里初始化成一份清单的，元数据那一栏是空的。
+     * 照元数据写出去等于把「默认放行本机回环」悄悄换成「白名单为空、全部拒绝」——
+     * 🔴 <b>一份「按默认值写出来」的配置，和一份「把默认值抹掉写出来」的配置，
+     * 在「每一项都写全了」这句话上长得一样。</b>
+     * @param beans 配置对象，通常是容器里全部标了 {@code @ConfigurationProperties} 的 bean
+     * @return 配置项名到当前取值，取不到值的项不在其中
+     */
+    static Map<String, Object> values(Collection<?> beans) {
+        Map<String, Object> result = new LinkedHashMap<>();
+
+        for (Object bean : beans) {
+            ConfigurationProperties annotation = AnnotationUtils.findAnnotation(bean.getClass(), ConfigurationProperties.class);
+            if (annotation == null) {
+                continue;
+            }
+
+            String prefix = annotation.prefix().isEmpty() ? annotation.value() : annotation.prefix();
+            Class<?> type = ClassUtils.getUserClass(bean);
+
+            try {
+                walkValues(bean, type, prefix, result, 0);
+            } catch (Exception e) {
+                log.debug("读取 {} 的配置默认值失败: {}", type.getName(), e.getMessage());
+            }
+        }
+
+        return Collections.unmodifiableMap(result);
+    }
+
+    /**
+     * 递归遍历配置对象，逐个字段读出当前值
+     */
+    private static void walkValues(Object instance, Class<?> type, String prefix, Map<String, Object> result, int depth) {
+        if (depth > MAX_DEPTH || type == null || instance == null) {
+            return;
+        }
+
+        for (Field field : type.getDeclaredFields()) {
+            if (field.isSynthetic() || Modifier.isStatic(field.getModifiers())) {
+                continue;
+            }
+
+            String name = prefix.isEmpty() ? toKebab(field.getName()) : prefix + "." + toKebab(field.getName());
+
+            Object value;
+            try {
+                field.setAccessible(true);
+                value = field.get(instance);
+            } catch (RuntimeException | ReflectiveOperationException e) {
+                // 读不到就当没有这一项，不塞一个编出来的值：
+                // 一个「读不到所以没写」的键，和一个「读到了、值就是空」的键，在文件里长得一样
+                log.debug("读取配置字段 {} 失败: {}", name, e.getMessage());
+                continue;
+            }
+
+            if (isNestedConfig(field.getType())) {
+                walkValues(value, field.getType(), name, result, depth + 1);
+            } else {
+                result.putIfAbsent(name, value);
+            }
+        }
+    }
+
+    /**
      * 递归遍历配置类的字段
      */
     private static void walk(Class<?> type, String prefix, Map<String, Field> result, int depth) {

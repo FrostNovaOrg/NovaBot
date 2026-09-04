@@ -281,9 +281,21 @@ for module in "${PLUGIN_MODULES[@]}"; do
 done
 rm -f "$OUT"/plugins-lib/starbot-core-*.jar
 
-# 不吞错误：模板拷贝失败时产物里会没有 application.yml，
+# 不吞错误：模板拷贝失败时产物里会缺掉启动脚本与示例配置，
 # 而那要到运行时才暴露成一句莫名其妙的启动失败
 cp -R dist/templates/. "$OUT/"
+
+# ── 包里不带 application.yml，只带 application.example.yml ────────────────────
+# 程序在第一次保存设置时自己写出一份完整的 application.yml，键与说明取自它自己的配置面。
+# 包里再塞一份手写的，就有了两份互不钉住的「完整配置」——2026-09-04 现算，手写那份
+# 缺了配置面 80 项里的 24 项，而缺项的表现是「设置页上有、配置文件里没有」，
+# 使用者照着文件改，改不到那一项，程序照常启动、什么也不报。
+#
+# 🔴 无条件删，不是「有才删」。理由与下面 datasource.json 那一条同族：archive 那条路上
+#    本来就没有这个文件，而 worktree 那条路上，打包那台机器 dist/templates/ 里若还躺着
+#    改名前留下的 application.yml，`cp -R` 已经原样把它拷进来了。
+#    闸要落在「谁都拦不住的位置」：不问它在不在，一律删。
+rm -f "$OUT/application.yml"
 
 # datasource.json 被 .gitignore 忽略（免得谁把自己的真配置提交上来），因此导出的树里没有它。
 # 🔴 上一版包里那份 datasource.json 是上面 `cp -R dist/templates/.` 从**打包那台机器的
@@ -293,10 +305,13 @@ cp -R dist/templates/. "$OUT/"
 #    ——那条路上本来就没有这个文件；而 worktree 那条路上它**已经被 cp 拷进来了**，
 #    条件不成立，于是本机件原样进包。这正是 v5.0.0-beta2 的病灶形状：
 #    **值只活在打包那一刻的工作区里**，仓库全历史干净，包里却带着它。
-#    覆盖要落在「谁都拦不住的位置」：不问它在不在，一律写成空数组。
-#    填法看旁边的 datasource.example.json；不写这一行，收尾那句
-#    「请编辑 datasource.json」会指向一个不存在的文件。
-echo "[]" > "$OUT/datasource.json"
+#    覆盖要落在「谁都拦不住的位置」：不问它在不在，一律动手。
+#
+# 🔴 5.1 起从「写成空数组」改为「删掉」：这个文件由控制台在加第一位主播时生成，
+#    包里带一份空的等于替使用者做了一半的事——而它与 application.yml 一样，
+#    一旦存在就归使用者所有，程序不会再去动它。删的语义比写空数组准：
+#    「还没配」与「配成了空的」在一个 [] 上长得一样，而只有前者是真的。
+rm -f "$OUT/datasource.json"
 
 # BUILD-INFO 只进产物，不进仓库
 # source= 这一行是给拿到包的人看的：worktree 表示打包源是某人的工作目录
@@ -348,4 +363,5 @@ fi
 
 echo
 echo "构建完成，产物位于 dist/build"
-echo "首次运行前请编辑 $OUT/application.yml 与 $OUT/datasource.json"
+echo "直接起就行，不必先写配置：起来之后打开控制台按初始设置走一遍，"
+echo "程序会自己写出 application.yml 与 datasource.json（想先手写就照 application.example.yml 抄）"

@@ -111,12 +111,14 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
     private final ConfigUiAuthService authService;
 
     /**
-     * 是否保留「忘记口令」的启动令牌通道
+     * 口令登录那一节的配置，本过滤器只读其中的「留不留启动令牌通道」这一位
      * <p>
-     * 传布尔而不是整个配置对象：这个过滤器只关心这一位，
-     * 拿着整份配置反而让「它到底会读什么」变得说不清。
+     * 🔴 <b>拿的是配置对象本体，不是构造时抄下来的那个布尔。</b>抄一份的写法在
+     * 「设下第一把口令就自动关掉这条后门」这件事上会静静失效：配置改了、日志也写了，
+     * 而这道门读的还是启动那一刻抄下来的值——<b>门开着，账上写着关。</b>
+     * 与 {@link #agreement} 同理，那一处的理由也是同一条。
      */
-    private final boolean operatorToken;
+    private final StarBotCoreProperties.ConfigUi.Auth auth;
 
     /**
      * 使用协议的同意记录
@@ -127,11 +129,12 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
     private final StarBotCoreProperties.ConfigUi.Agreement agreement;
 
     public ConfigUiSecurityFilter(String token, IpMatcher ipMatcher, ConfigUiAuthService authService,
-                                  boolean operatorToken, StarBotCoreProperties.ConfigUi.Agreement agreement) {
+                                  StarBotCoreProperties.ConfigUi.Auth auth,
+                                  StarBotCoreProperties.ConfigUi.Agreement agreement) {
         this.token = token;
         this.ipMatcher = ipMatcher;
         this.authService = authService;
-        this.operatorToken = operatorToken;
+        this.auth = auth;
         this.agreement = agreement;
     }
 
@@ -222,7 +225,7 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
         // 🔴 关掉之后这条路整个不存在：不看令牌、不比对、不记失败。
         // 之所以在最前面就返回而不是「比一比再拒」，是因为「比过了但不放行」
         // 仍然会因为耗时差异透露出令牌对不对，而这条路关掉之后本就不该有任何反馈
-        if (!operatorToken) {
+        if (!auth.isOperatorToken()) {
             return Optional.empty();
         }
 

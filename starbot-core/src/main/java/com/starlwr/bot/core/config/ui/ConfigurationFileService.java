@@ -1,6 +1,12 @@
 package com.starlwr.bot.core.config.ui;
 
+import com.starlwr.bot.core.config.DatasourceProperties;
+import com.starlwr.bot.core.config.EventStreamProperties;
+import com.starlwr.bot.core.config.StarBotCoreProperties;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.context.ApplicationContext;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -18,6 +24,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
@@ -78,16 +85,37 @@ public class ConfigurationFileService {
      */
     private final Path configPath;
 
-    public ConfigurationFileService() {
-        this(Path.of("application.yml"));
+    /**
+     * 配置文件不在时，拿它当第一份文件写出去
+     * <p>
+     * 是个 {@code Supplier} 而不是一段现成的文本：算这份模板要把插件的配置项一起算进来，
+     * 而插件是启动之后才装上的——构造时算出来的那一份，恰好缺的就是插件那几节。
+     */
+    private final Supplier<String> initialContent;
+
+    @Autowired
+    public ConfigurationFileService(ConfigurationMetadataService metadata, ApplicationContext context) {
+        this(Path.of("application.yml"), () -> ConfigurationTemplate.render(metadata.getFields(),
+                ConfigurationPropertyFields.values(
+                        context.getBeansWithAnnotation(ConfigurationProperties.class).values())));
     }
 
     /**
      * 指定配置文件路径，便于测试
+     * <p>
+     * 这一支没有容器可问，默认模板因此只算得上<b>核心自己</b>那三份配置对象的默认值。
+     * 判据台架走的正是这一支，而它量的也正是「核心的配置面渲染成文件长什么样」。
      * @param configPath 配置文件路径
      */
     ConfigurationFileService(Path configPath) {
+        this(configPath, () -> ConfigurationTemplate.render(new ConfigurationMetadataService().getFields(),
+                ConfigurationPropertyFields.values(List.of(
+                        new StarBotCoreProperties(), new EventStreamProperties(), new DatasourceProperties()))));
+    }
+
+    ConfigurationFileService(Path configPath, Supplier<String> initialContent) {
         this.configPath = configPath;
+        this.initialContent = initialContent;
     }
 
     /**
@@ -136,7 +164,47 @@ public class ConfigurationFileService {
      * 这个坑是把该配置项搬上界面时踩到的：界面上把地址清空 → 写出 {@code host: } →
      * 下次启动失败。对这类配置项，清空的语义必须是<b>删掉这一行</b>而不是写一个空值。
      */
-    private static final Set<String> BLANK_MEANS_ABSENT = Set.of("spring.data.redis.host");
+    static final Set<String> BLANK_MEANS_ABSENT = Set.of("spring.data.redis.host");
+
+    /**
+     * 配置文件在不在
+     * <p>
+     * 「这台机器配过没有」只此一处判据。装好之后一次也没保存过的实例没有这个文件——
+     * 界面据此把人领到初始设置页去。<b>不另按「口令设没设」之类的现象去猜</b>：
+     * 那种判法在一台配好了、只是没上锁的机器上会把人反复送回初始设置页。
+     * @return 存在时为 true
+     */
+    public boolean exists() {
+        return Files.isRegularFile(configPath);
+    }
+
+    /**
+     * 文件不在就先按配置面写出完整的一份
+     * <p>
+     * 🔴 <b>位置在每一条写口的最前面，不在调用方那边</b>。发行包里不再带 application.yml，
+     * 于是「第一次写配置」这件事有好几条路走得到：设置页保存、第一次上锁、同意使用协议、
+     * 启动时把明文口令换成哈希写回。挑几条去补一句「文件不在就先建」，漏掉的那条
+     * 表现是一个 {@code NoSuchFileException}，而它冒出来的地方与真实原因毫无关系。
+     * <p>
+     * <b>已有的文件一个字节也不动。</b>使用者手改过的配置被一份「完整的默认配置」盖掉，
+     * 是这段代码最坏的失败形态，而它发生之后没有任何现象——除非那个人正好记得自己改过什么。
+     * @return 这一次真的建了文件时为 true
+     * @throws IOException 写入失败时抛出
+     */
+    public synchronized boolean createIfAbsent() throws IOException {
+        if (exists()) {
+            return false;
+        }
+
+        Path parent = configPath.toAbsolutePath().getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+
+        Files.writeString(configPath, initialContent.get(), StandardCharsets.UTF_8);
+        log.info("配置文件不存在, 已按当前配置面写出一份完整的 {}", describeConfigPath());
+        return true;
+    }
 
     /**
      * 拒绝写入含换行的标量值
@@ -184,6 +252,8 @@ public class ConfigurationFileService {
         if (changes.isEmpty()) {
             return List.of();
         }
+
+        createIfAbsent();
 
         List<String> lines = Files.readAllLines(configPath, StandardCharsets.UTF_8);
         List<Line> parsed = parse();
@@ -279,6 +349,8 @@ public class ConfigurationFileService {
         if (fields.isEmpty()) {
             return 0;
         }
+
+        createIfAbsent();
 
         List<String> lines = Files.readAllLines(configPath, StandardCharsets.UTF_8);
         int[] range = locateListItem(lines, listPath, index);

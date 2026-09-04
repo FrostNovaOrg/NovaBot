@@ -2,7 +2,6 @@ package com.starlwr.bot.core.config.ui.auth;
 
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.config.ui.ConfigurationFileService;
-import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.time.Duration;
@@ -85,12 +84,6 @@ public class ConfigUiAuthService {
     private volatile String pendingSecret;
 
     /**
-     * 是否启用了口令登录
-     */
-    @Getter
-    private final boolean enabled;
-
-    /**
      * 取当前时刻。构造时注入是为了判据能把时间往前拨，
      * <b>而不是靠 sleep 去等一个真实的窗口</b>——那种判据慢到最后一定会被人关掉。
      * <p>
@@ -117,11 +110,25 @@ public class ConfigUiAuthService {
         this.passwordHash = resolvePasswordHash(properties.getPassword());
         this.totpEnabled = properties.isTotp();
         this.totpSecret = blankToNull(properties.getTotpSecret());
-        this.enabled = passwordHash != null;
 
-        if (this.enabled && this.totpEnabled && this.totpSecret == null) {
+        if (isEnabled() && this.totpEnabled && this.totpSecret == null) {
             log.warn("配置界面已启用口令登录但尚未绑定验证器, 请在界面上完成绑定");
         }
+    }
+
+    /**
+     * 是否启用了口令登录
+     * <p>
+     * 🔴 <b>现算，不是启动时定死的一位。</b>此前它在构造时就固定了，于是在一台还没上锁的机器上
+     * 设下第一把口令<b>不会让门换成登录形态</b>——界面说「已上锁」，而访问令牌照旧进得来，
+     * 且这件事从界面上看不出任何异常。免配置起步之后这是常态：装好的实例本来就没有口令，
+     * <b>第一把口令一定是在运行期设下的</b>。
+     * <p>
+     * 口令哈希在不在，就是这道门开着还是关着——不另存一位，两处迟早说两种话。
+     * @return 启用时为 true
+     */
+    public boolean isEnabled() {
+        return passwordHash != null;
     }
 
     /**
@@ -135,7 +142,7 @@ public class ConfigUiAuthService {
      * 是否该提示用户去绑定验证器
      */
     public boolean totpPending() {
-        return enabled && totpEnabled && totpSecret == null;
+        return isEnabled() && totpEnabled && totpSecret == null;
     }
 
     /**
@@ -148,7 +155,7 @@ public class ConfigUiAuthService {
      * @return 可以绑定时为 true
      */
     public boolean canEnrollTotp() {
-        return enabled && totpSecret == null;
+        return isEnabled() && totpSecret == null;
     }
 
     /**
@@ -242,6 +249,39 @@ public class ConfigUiAuthService {
     public void applyPasswordHash(String hashed) {
         this.passwordHash = hashed;
         log.info("配置界面的登录口令已更换");
+    }
+
+    /**
+     * 从设置页保存下来的口令即刻生效
+     * <p>
+     * 与启动时读配置那一步<b>走同一条路</b>：明文当场哈希掉并写回文件，哈希则原样认下。
+     * 各写一份的下场是，从设置页填进去的明文会一直躺在盘上，直到有人重启一次才被换掉——
+     * 而那期间文件里明明白白写着口令，界面上却看不出任何区别。
+     * @param configured 配置文件里那一行的取值，明文或哈希
+     */
+    public void applyConfiguredPassword(String configured) {
+        this.passwordHash = resolvePasswordHash(configured);
+        log.info("配置界面的登录口令已更换");
+    }
+
+    /**
+     * 从设置页保存下来的「要不要二次验证」即刻生效
+     * <p>
+     * 关掉时连密钥一起清（同 {@link #disableTotp()}）：留着一个不再用的密钥躺在配置里，
+     * 下次重新打开时它会被直接沿用，而使用者以为自己新绑了一把。
+     * <p>
+     * 打开时<b>不动密钥</b>：没绑过就是「开着但还没绑」，界面会持续提示去绑，
+     * 这正是 {@link #totpPending()} 那一问的形态。
+     * @param required 是否要求二次验证
+     */
+    public void applyConfiguredTotp(boolean required) {
+        if (required) {
+            this.totpEnabled = true;
+            log.info("配置界面已要求二次验证");
+            return;
+        }
+
+        disableTotp();
     }
 
     /**
@@ -373,7 +413,7 @@ public class ConfigUiAuthService {
      * @return 判定与需要等待的时长
      */
     public CredentialCheck checkCredentials(char[] password, String code, String clientIp) {
-        if (!enabled) {
+        if (!isEnabled()) {
             return new CredentialCheck(Verdict.AUTH_DISABLED, Duration.ZERO);
         }
 

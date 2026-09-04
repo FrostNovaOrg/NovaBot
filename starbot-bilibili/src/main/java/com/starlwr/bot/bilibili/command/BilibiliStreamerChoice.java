@@ -9,7 +9,6 @@ import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.LiveSessionArchive;
-import com.starlwr.bot.core.service.StarBotStateStore;
 import com.starlwr.bot.core.util.StringUtil;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -24,22 +23,22 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 多主播的「先猜、再问、再记住」
+ * 多主播时「问是哪一位」
  * <p>
  * 一个群里配着好几位主播时，「直播间数据」这四个字说的是谁？此前的答复是把人名列一遍
- * 让使用者重发一次，而重发时还得把名字打对。这里换成三步：
- * <ol>
- *     <li><b>先猜</b>：这个人上次选过谁，这次还是谁；没选过而只有一位在播，那就是那一位。</li>
- *     <li><b>再问</b>：猜不出来才问，而且问成一份带序号的清单——回一个数字比重打一遍名字容易得多。
- *         在播的排最前，今天播过的其次，剩下的折起来，因为要找的十有八九在前几位。</li>
- *     <li><b>再记住</b>：选过一次就记着，直到这个人自己点名换人。记的是「这个会话里的这个人」，
- *         不是整个群——同一个群里两个人各看各的主播是常事。</li>
- * </ol>
+ * 让使用者重发一次，而重发时还得把名字打对。这里换成一份带序号的清单——
+ * 回一个数字比重打一遍名字容易得多。在播的排最前，今天播过的其次，剩下的折起来，
+ * 因为要找的十有八九在前几位。
+ *
+ * <h2>不替人记上次选的是谁</h2>
+ * 曾经记过：选过一次就一直用那一位，直到他自己点名换人。撤掉了。
+ * 记住的那位与他这一次想看的那位不是同一位时，回来的是另一位主播的数据，
+ * <b>而那张图看起来完全正常</b>；他也无从知道机器人正替他记着什么。
+ * 多位在播就问一遍，恰好一位在播才径直办——那一次也要在回复里说清用的是谁。
  *
  * <h2>序号在追问发出的那一刻就定死</h2>
  * 清单连同序号一起存进那次追问里，而不是等回答到了再排一遍。理由是排序的依据会动：
@@ -49,11 +48,6 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 @StarBotComponent
 public class BilibiliStreamerChoice implements CommandFollowUp {
-    /**
-     * 「记住的选择」在状态存储中的命名空间
-     */
-    private static final String NAMESPACE = "StreamerChoice";
-
     /**
      * 追问的有效期。长到够人读完清单再打个数字，短到不会在半小时后被一句「3」突然翻出来
      */
@@ -87,8 +81,6 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
 
     private final LiveSessionArchive archive;
 
-    private final StarBotStateStore store;
-
     /**
      * 时钟。追问那两分钟的窗口只有靠它才量得到——真等两分钟的测试没人会跑第二遍
      */
@@ -102,16 +94,13 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
     private final Map<String, Pending> pendings = new ConcurrentHashMap<>();
 
     @Autowired
-    public BilibiliStreamerChoice(LiveDataService liveDataService, LiveSessionArchive archive,
-                                  StarBotStateStore store) {
-        this(liveDataService, archive, store, Clock.systemDefaultZone());
+    public BilibiliStreamerChoice(LiveDataService liveDataService, LiveSessionArchive archive) {
+        this(liveDataService, archive, Clock.systemDefaultZone());
     }
 
-    BilibiliStreamerChoice(LiveDataService liveDataService, LiveSessionArchive archive,
-                           StarBotStateStore store, Clock clock) {
+    BilibiliStreamerChoice(LiveDataService liveDataService, LiveSessionArchive archive, Clock clock) {
         this.liveDataService = liveDataService;
         this.archive = archive;
-        this.store = store;
         this.clock = clock;
     }
 
@@ -180,31 +169,6 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
     }
 
     /**
-     * 这个人在这个会话里上次选的是谁
-     * @param context 执行上下文
-     * @param candidates 当前候选；选过的那位若已不在其中，视为没选过
-     * @return 上次选中的主播
-     */
-    public Optional<PushUser> remembered(@NonNull CommandContext context, @NonNull List<PushUser> candidates) {
-        String key = key(context);
-        Long uid = store.read(NAMESPACE, key, data -> data.getLong(key)).orElse(null);
-        if (uid == null) {
-            return Optional.empty();
-        }
-        return candidates.stream().filter(user -> uid.equals(user.getUid())).findFirst();
-    }
-
-    /**
-     * 记住这个人在这个会话里选的是谁
-     * @param context 执行上下文
-     * @param uid 主播 uid
-     */
-    public void remember(@NonNull CommandContext context, @NonNull Long uid) {
-        String key = key(context);
-        store.write(NAMESPACE, data -> data.put(key, uid));
-    }
-
-    /**
      * 发起一次追问，并给出问出去的那句话
      * <p>
      * 同一个人的上一次追问就此作废：清单已经重排过，拿旧序号来答就是答错人。
@@ -255,7 +219,7 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
             text.append("\n还有 ").append(pending.lines().size() - shown)
                     .append(" 位，回「").append(EXPAND).append("」展开");
         }
-        text.append("\n选过一次就记住了，要换人直接说名字：")
+        text.append("\n知道是谁时也可以直接说名字：")
                 .append(pending.command()).append(" ").append(pending.example());
         return text.toString();
     }
@@ -290,13 +254,27 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
             return null;
         }
 
-        // 认领即消费：一个序号能重放的话，隔十分钟的一句「3」会把这个人的选择改掉
+        // 认领即消费：一个序号能重放的话，隔十分钟的一句「3」会突然换来另一位主播的数据
         pendings.remove(key);
         Long chosen = pending.uids().get(index - 1);
-        remember(context, chosen);
         log.info("会话 {} 中 {} 回了序号 {}, 按主播 {} 重跑命令 {}",
                 context.getNum(), context.getSenderUid(), index, chosen, pending.command());
-        return Claimed.rerun(pending.command(), pending.args());
+        return Claimed.rerun(pending.command(), chosenArgs(pending, chosen));
+    }
+
+    /**
+     * 把选中的那位<b>接在原参数末尾</b>，重跑得到的与他自己打了名字那一次一模一样
+     * <p>
+     * 选择不落在任何地方，就地跟着这一次重跑走：存起来的那一版里，这个序号会一直影响
+     * 他后面每一次省掉参数的命令，而他无从知道机器人正替他记着什么。
+     * <p>
+     * 接在末尾而不是放到第一位：这几条命令的主播都是<b>最后那个可选位置参数</b>
+     * （「数据排行榜 礼物 2 〈主播〉」），放到前面会把榜单名挤走。
+     */
+    private static List<String> chosenArgs(Pending pending, Long chosen) {
+        List<String> args = new ArrayList<>(pending.args());
+        args.add(String.valueOf(chosen));
+        return List.copyOf(args);
     }
 
     /**
@@ -321,10 +299,11 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
     }
 
     /**
-     * 键为「平台:会话类型:会话号:发送者」
+     * 追问按谁记：键为「平台:会话类型:会话号:发送者」
      * <p>
      * 会话类型进键的理由与命令冷却相同：群号与好友账号取自两个互不相干的号段，撞号时会互相顶掉。
-     * 发送者也进键：同一个群里两个人各看各的主播是常事，按群记的话，后选的那个人把先选的顶掉了
+     * 发送者也进键：同一个群里两个人同时被问「是哪一位」是常事，按群记的话，
+     * 后问的那次把先问的顶掉，先问的那个人回过去的序号落进了别人的清单
      */
     private String key(CommandContext context) {
         return context.getPlatform() + ":" + context.getType().getCode() + ":"

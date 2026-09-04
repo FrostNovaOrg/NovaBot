@@ -432,6 +432,10 @@ public class TimelineStore implements TimelineWriter {
         json.put("at", event.at());
         json.put("type", event.type().name());
         json.put("typeText", event.type().getDescription());
+        // 大类是由类型算出来的，落盘的这一份只是顺手带上，读回来时一律重算
+        // （见 {@link #parse}）：改了归属之后，旧记录跟着新归属走，而不是各归各的
+        json.put("category", event.type().getCategory().name());
+        json.put("categoryText", event.type().getCategory().getDescription());
         json.put("level", event.level().name().toLowerCase(Locale.ROOT));
         json.put("streamer", event.streamer());
         json.put("channel", event.channel());
@@ -595,21 +599,29 @@ public class TimelineStore implements TimelineWriter {
      *
      * @param date 只看某一天，为空则看全部保留期内的记录
      * @param problemsOnly 只看有问题的（级别非 {@code info}）
+     * @param category 只看某一大类的事件
      * @param type 只看某一类事件
      * @param streamer 只看某位主播，全等匹配
      * @param channel 只看某个通道，全等匹配
      * @param keyword 在正文与补充键值里搜关键词，不区分大小写
      * @param limit 最多返回多少条
      */
-    public record Filter(LocalDate date, boolean problemsOnly, TimelineEventType type,
-                         String streamer, String channel, String keyword, int limit) {
+    public record Filter(LocalDate date, boolean problemsOnly, TimelineCategory category,
+                         TimelineEventType type, String streamer, String channel,
+                         String keyword, int limit) {
         /**
          * 该事件是否命中本条件
+         * <p>
+         * 大类与类型两项<b>同时生效</b>，不是后者盖掉前者：贴过来的地址可以两项都带着，
+         * 只认其中一项的话，对方打开的是一张筛得不一样的页，而它与筛对了的长得一模一样。
          * @param event 事件
          * @return 命中返回 true
          */
         public boolean matches(TimelineEvent event) {
             if (problemsOnly && event.level() == TimelineEvent.Level.INFO) {
+                return false;
+            }
+            if (category != null && event.type().getCategory() != category) {
                 return false;
             }
             if (type != null && event.type() != type) {
