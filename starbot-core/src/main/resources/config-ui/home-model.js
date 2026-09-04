@@ -13,6 +13,8 @@
  * 说明取自探针自己给的那句话。写死一个平台名，这一页就替一件可能没装的东西说了话。
  */
 
+import {esc} from './core.js';
+
 /**
  * 探针级别 → 灯色
  *
@@ -256,12 +258,16 @@ export function atAllTile(quota) {
   const sessions = Array.isArray(quota.sessions) ? quota.sessions.slice() : [];
   sessions.sort((a, b) => Number(b.used || 0) - Number(a.used || 0));
   const shown = sessions.slice(0, 5);
+  const kinds = new Set(shown.map(item => item.platform || '').filter(Boolean));
+  const named = kinds.size >= 2;
+  const names = {'qq-onebot': 'QQ'};
   return {
     value,
     label: '@全体成员 已用',
     details: shown.map(item => {
       const rowUsed = Number(item.used || 0);
       const platform = item.platform || '';
+      const prefix = named && platform ? (names[platform] || platform) + ' 群 ' : '群 ';
       return {
         platform,
         num: item.num,
@@ -269,17 +275,11 @@ export function atAllTile(quota) {
         limit: Number(item.limit || 0),
         limited: !!item.limited,
         text: item.limited ? rowUsed + '/' + Number(item.limit || 0) : String(rowUsed),
-        who: (platform ? platform + ' 群 ' : '群 ') + item.num,
+        who: prefix + item.num,
       };
     }),
     more: Math.max(0, sessions.length - shown.length),
   };
-}
-
-function escapeHtml(v) {
-  return String(v ?? '').replace(/[&<>"']/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  }[c]));
 }
 
 /**
@@ -295,11 +295,11 @@ export function todayAtAllMarkup(tile, expanded) {
   const cell = tile || {value: '—', label: '@全体成员 已用', details: [], more: 0};
   const details = cell.details || [];
   const rows = details.map(item =>
-    '<div class="stat-row"><span>' + escapeHtml(item.who || ('群 ' + item.num)) + '</span><span>'
-    + escapeHtml(item.text) + '</span></div>').join('')
-    + (cell.more ? '<div class="stat-more">还有 ' + escapeHtml(cell.more) + ' 个群</div>' : '');
-  const inner = '<div class="stat-v">' + escapeHtml(cell.value) + '</div>'
-    + '<div class="stat-l">' + escapeHtml(cell.label) + '</div>'
+    '<div class="stat-row"><span>' + esc(item.who || ('群 ' + item.num)) + '</span><span>'
+    + esc(item.text) + '</span></div>').join('')
+    + (cell.more ? '<div class="stat-more">还有 ' + esc(cell.more) + ' 个群</div>' : '');
+  const inner = '<div class="stat-v">' + esc(cell.value) + '</div>'
+    + '<div class="stat-l">' + esc(cell.label) + '</div>'
     + (rows ? '<div class="stat-drop">' + rows + '</div>' : '');
   if (!details.length) {
     return '<div class="stat">' + inner + '</div>';

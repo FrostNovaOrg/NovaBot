@@ -1598,8 +1598,9 @@ class ConfigUiFrontendTest {
      * 主播页 {@code /streamers/{平台}/{uid}} 与 {@code /{开播时刻}}、日志页 {@code #/log/eng}。
      * 解析从模型里那份表认，界面文件里写出的子路径也必须在表上——各写各的话，
      * 新开一条子路由只改了地址拼法、解析仍退回列表或时间线，屏幕上像页面卡住了。
-     * 反向扫描两边都要：只扫 {@code #/log/*} 的话，主播侧新开一条没登记的地址
-     * 构建照样绿。
+     * 主播侧闭集由 {@code STREAMER_VIEWS} 与 {@code parseStreamersHash}／
+     * {@code detailHash}／{@code sessionHash} 同表守：地址第二段是平台名，
+     * 不能拿它去对子视图表。
      */
     @Test
     @DisplayName("主播页与日志页的子路由是闭集，解析从同一份表认")
@@ -1656,12 +1657,6 @@ class ConfigUiFrontendTest {
         while (named.find()) {
             if (!logSubs.contains(named.group(1))) {
                 bad.add("界面里出现了未登记的日志子路由 #/log/" + named.group(1));
-            }
-        }
-        Matcher streamerNamed = Pattern.compile("#/streamers/([A-Za-z][A-Za-z0-9_-]*)").matcher(haystack);
-        while (streamerNamed.find()) {
-            if (!views.contains(streamerNamed.group(1))) {
-                bad.add("界面里出现了未登记的主播子路由 #/streamers/" + streamerNamed.group(1));
             }
         }
 

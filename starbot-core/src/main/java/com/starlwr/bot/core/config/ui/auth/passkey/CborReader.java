@@ -2,6 +2,7 @@ package com.starlwr.bot.core.config.ui.auth.passkey;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -197,21 +198,35 @@ final class CborReader {
     }
 
     /**
-     * 读开头那个字典，后面剩下的字节不管
+     * 读开头那个字典，并交出后面剩下的字节
      * <p>
      * 只给认证器数据里的公钥用：按规范，公钥之后可以跟着扩展数据，
      * 而<b>公钥自己的长度只有 CBOR 解码器知道</b>——外面那一层数不出来。
      * 与 {@link #readMap(byte[])} 分成两个名字，是为了让「这里为什么允许有剩字节」
      * 写在调用点上，而不是靠一个参数悄悄切换严格程度。
      * @param data 待解析的字节
-     * @return 开头那个字典
+     * @return 开头那个字典，以及尚未读的尾部
      */
-    @SuppressWarnings("unchecked")
-    static Map<Object, Object> readLeadingMap(byte[] data) {
-        Object value = new CborReader(data).read();
-        if (!(value instanceof Map)) {
+    static LeadingMap readLeadingMap(byte[] data) {
+        CborReader reader = new CborReader(data);
+        Object value = reader.read();
+        if (!(value instanceof Map<?, ?> map)) {
             throw new IllegalArgumentException("CBOR 顶层不是字典");
         }
-        return (Map<Object, Object>) value;
+        @SuppressWarnings("unchecked")
+        Map<Object, Object> typed = (Map<Object, Object>) map;
+        return new LeadingMap(typed, reader.remainder());
+    }
+
+    private byte[] remainder() {
+        return Arrays.copyOfRange(data, offset, data.length);
+    }
+
+    /**
+     * 开头那个字典，以及它后面还没读的字节
+     * @param map 开头那个字典
+     * @param remainder 字典之后的字节，可能为空
+     */
+    record LeadingMap(Map<Object, Object> map, byte[] remainder) {
     }
 }

@@ -178,40 +178,17 @@ class ConfigurationFileServiceTest {
     }
 
     @Test
-    @DisplayName("写入前会备份原文件")
-    void createsBackup() throws IOException {
+    @DisplayName("写入后磁盘上应留下一份 .bak 备份")
+    void writeLeavesBackupFile() throws IOException {
         service.write(Map.of("starbot.bilibili.dynamic.push-minutes", "30"));
 
-        List<String> backups = service.listBackups();
+        List<Path> backups;
+        try (var files = Files.list(dir)) {
+            backups = files.filter(path -> path.getFileName().toString().endsWith(".bak")).toList();
+        }
         assertEquals(1, backups.size(), "应生成一份备份");
-        assertTrue(service.readBackup(backups.get(0)).contains("push-minutes: 1440"), "备份应保有修改前的内容");
-    }
-
-    @Test
-    @DisplayName("多次保存应各留一份备份, 而非互相覆盖")
-    void keepsBackupPerSave() throws IOException {
-        service.write(Map.of("starbot.bilibili.dynamic.push-minutes", "30"));
-        // 备份名精确到秒，同秒内的两次保存会落到同一文件名，因此此处跨秒再保存一次
-        sleepPastSecond();
-        service.write(Map.of("starbot.bilibili.dynamic.push-minutes", "60"));
-
-        List<String> backups = service.listBackups();
-        assertEquals(2, backups.size(), "两次保存应留下两份备份");
-        assertTrue(service.readBackup(backups.get(0)).contains("push-minutes: 30"), "最新备份应是上一次保存后的内容");
-        assertTrue(service.readBackup(backups.get(1)).contains("push-minutes: 1440"), "较早的备份应是最初的内容");
-    }
-
-    @Test
-    @DisplayName("可回滚至指定备份, 且回滚本身也会先备份")
-    void restoresBackup() throws IOException {
-        service.write(Map.of("starbot.bilibili.dynamic.push-minutes", "30"));
-        String original = service.listBackups().get(0);
-
-        sleepPastSecond();
-        service.restoreBackup(original);
-
-        assertEquals("1440", service.read().get("starbot.bilibili.dynamic.push-minutes"), "内容应已回到备份中的取值");
-        assertTrue(service.listBackups().size() >= 2, "回滚前应先把当前内容也备份下来, 以便再滚回去");
+        assertTrue(Files.readString(backups.get(0), StandardCharsets.UTF_8).contains("push-minutes: 1440"),
+                "备份应保有修改前的内容");
     }
 
     @Test
@@ -329,26 +306,6 @@ class ConfigurationFileServiceTest {
     }
 
     @Test
-    @DisplayName("非法的备份文件名应被拒绝, 防止越权读写")
-    void rejectsIllegalBackupName() {
-        assertThrows(IOException.class, () -> service.readBackup("../../etc/passwd"));
-        assertThrows(IOException.class, () -> service.readBackup("application.yml"));
-        assertThrows(IOException.class, () -> service.readBackup(null));
-    }
-
-    /**
-     * 等到下一秒，使相邻两次保存产生不同的备份文件名
-     */
-    private void sleepPastSecond() {
-        try {
-            Thread.sleep(1100);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            fail("等待被中断");
-        }
-    }
-
-    @Test
     @DisplayName("尚不存在的配置项会被插入到已有父节点之下")
     void insertsMissingProperty() throws IOException {
         List<String> changed = service.write(Map.of("starbot.bilibili.dynamic.auto-save-image", "true"));
@@ -366,15 +323,6 @@ class ConfigurationFileServiceTest {
         assertTrue(content().contains("- https://a.example"), "应写成 YAML 列表:\n" + content());
         assertFalse(content().contains("\"https://a.example"), "不应写成带引号的多行标量:\n" + content());
         assertEquals("https://a.example\nhttps://b.example", service.read().get("starbot.core.plugin.maven-base-urls"));
-    }
-
-    @Test
-    @DisplayName("整体覆盖写入后可原样读回")
-    void writeRawRoundTrip() throws IOException {
-        service.writeRaw("starbot:\n  core:\n    config-ui:\n      enabled: false\n");
-
-        assertEquals("false", service.read().get("starbot.core.config-ui.enabled"));
-        assertEquals(1, service.listBackups().size(), "整体覆盖前同样应先备份");
     }
 
     // ============ 值里带换行 ============

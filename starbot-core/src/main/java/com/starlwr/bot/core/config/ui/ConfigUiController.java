@@ -51,6 +51,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.lang.management.ManagementFactory;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -736,11 +737,18 @@ public class ConfigUiController {
             return result;
         }
 
-        String token = eventStreamTokens.issue(label.trim());
-        result.put("success", true);
-        result.put("token", token);
-        result.put("message", "这是这把口令唯一一次显示，请立即复制保存；关闭后无法再次查看");
-        return result;
+        try {
+            String token = eventStreamTokens.issue(label.trim());
+            result.put("success", true);
+            result.put("token", token);
+            result.put("message", "这是这把口令唯一一次显示，请立即复制保存；关闭后无法再次查看");
+            return result;
+        } catch (UncheckedIOException e) {
+            log.error("配置界面签发只读口令失败", e);
+            result.put("success", false);
+            result.put("message", "签发没能写进磁盘，请检查数据目录后重试");
+            return result;
+        }
     }
 
     /**
@@ -754,11 +762,17 @@ public class ConfigUiController {
     @PostMapping("/api/event-tokens/{fingerprint}/revoke")
     public JSONObject revokeEventToken(@PathVariable String fingerprint) {
         JSONObject result = new JSONObject();
-        boolean found = eventStreamTokens.revoke(fingerprint);
-        result.put("success", found);
-        result.put("message", found
-                ? "已吊销。⚠️ 已经建立的连接不会自动断开，请确认对方已掉线"
-                : "没有找到这把仍然有效的口令（可能已经撤过了）");
+        try {
+            boolean found = eventStreamTokens.revoke(fingerprint);
+            result.put("success", found);
+            result.put("message", found
+                    ? "已吊销。⚠️ 已经建立的连接不会自动断开，请确认对方已掉线"
+                    : "没有找到这把仍然有效的口令（可能已经撤过了）");
+        } catch (UncheckedIOException e) {
+            log.error("配置界面吊销只读口令失败", e);
+            result.put("success", false);
+            result.put("message", "吊销没能写进磁盘，请检查数据目录后重试");
+        }
         return result;
     }
 

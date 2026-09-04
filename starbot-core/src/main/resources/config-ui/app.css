@@ -341,9 +341,6 @@ html.showkeys .keyname{display:block}
   border-radius:50%;background:var(--paper);transition:transform .15s}
 .switch input:checked::after{transform:translateX(16px)}
 .switch span{font-size:13px;color:var(--dim)}
-textarea.full{width:100%;min-height:420px;padding:12px;border:1px solid var(--line);
-  border-radius:var(--r-ctl);background:var(--ground);color:var(--text);font-family:var(--mono);
-  font-size:12.5px;line-height:1.55;resize:vertical}
 .bar{position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-top:1px solid var(--line);
   padding:12px 24px;display:flex;align-items:center;gap:12px;justify-content:flex-end}
 .bar .status{margin-right:auto;font-size:13px}

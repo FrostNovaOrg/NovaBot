@@ -6,7 +6,6 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Arrays;
-import java.util.Map;
 
 /**
  * 认证器数据
@@ -14,9 +13,12 @@ import java.util.Map;
  * 注册与登录两趟里，认证器签名覆盖的都是这一段字节。它的排布是写死的：
  * <pre>
  *   rpIdHash   32 字节   —— 认证器认为自己在为哪个域服务
- *   flags       1 字节   —— 第 0 位「人在场」、第 2 位「验过身份」、第 6 位「带着凭据」
+ *   flags       1 字节   —— 第 0 位「人在场」、第 2 位「验过身份」、
+ *                          第 3 位「可备份」、第 4 位「正在备份」、
+ *                          第 6 位「带着凭据」、第 7 位「带着扩展」
  *   signCount   4 字节   —— 大端计数器，防重放
  *   （注册时随后是凭据数据：aaguid 16、凭据 ID 长度 2、凭据 ID、COSE 公钥）
+ *   （第 7 位亮起时，末尾是扩展数据的 CBOR 字典）
  * </pre>
  * <p>
  * 🔴 <b>rpIdHash 是哈希不是明文</b>，因此只能拿「我方期望的 rpId 的哈希」去比，
@@ -44,7 +46,22 @@ final class AuthenticatorData {
 
     private static final int FLAG_USER_VERIFIED = 0x04;
 
+    /**
+     * 这把钥匙<b>可以</b>备份到另一台设备
+     */
+    private static final int FLAG_BACKUP_ELIGIBLE = 0x08;
+
+    /**
+     * 这把钥匙<b>此刻已经</b>备份出去
+     * <p>
+     * 规范写死：这一位亮着时，上一面「可以备份」必须也亮。只亮这一面、不亮上一面，
+     * 等于一份自相矛盾的声明，按不合规范拒。
+     */
+    private static final int FLAG_BACKUP_STATE = 0x10;
+
     private static final int FLAG_ATTESTED_CREDENTIAL_DATA = 0x40;
+
+    private static final int FLAG_EXTENSION_DATA = 0x80;
 
     private final byte[] rpIdHash;
 
@@ -94,6 +111,12 @@ final class AuthenticatorData {
         int flags = buffer.get() & 0xff;
         long signCount = buffer.getInt() & 0xffffffffL;
 
+        boolean backupEligible = (flags & FLAG_BACKUP_ELIGIBLE) != 0;
+        boolean backedUp = (flags & FLAG_BACKUP_STATE) != 0;
+        if (backedUp && !backupEligible) {
+            throw new IllegalArgumentException("认证器数据的备份标志不合法：标成正在备份，却没有备份资格");
+        }
+
         boolean attested = (flags & FLAG_ATTESTED_CREDENTIAL_DATA) != 0;
         if (expectAttestedCredential != attested) {
             throw new IllegalArgumentException(expectAttestedCredential
@@ -101,7 +124,10 @@ final class AuthenticatorData {
                     : "登录用的认证器数据里不该带凭据信息");
         }
 
+        boolean hasExtensions = (flags & FLAG_EXTENSION_DATA) != 0;
+
         if (!attested) {
+            consumeTail(remaining(buffer), hasExtensions);
             return new AuthenticatorData(rpIdHash, flags, signCount, null, null);
         }
 
@@ -118,13 +144,29 @@ final class AuthenticatorData {
         byte[] credentialId = new byte[credentialIdLength];
         buffer.get(credentialId);
 
-        // 公钥之后可能还跟着扩展数据，因此这里不要求「剩下的全是公钥」——
-        // CBOR 那一侧自己知道读到哪里为止，多出来的字节归扩展，不归我们判
+        CborReader.LeadingMap leading = CborReader.readLeadingMap(remaining(buffer));
+        consumeTail(leading.remainder(), hasExtensions);
+
+        return new AuthenticatorData(rpIdHash, flags, signCount, credentialId, CoseKey.parse(leading.map()));
+    }
+
+    private static byte[] remaining(ByteBuffer buffer) {
         byte[] rest = new byte[buffer.remaining()];
         buffer.get(rest);
-        Map<Object, Object> cose = CborReader.readLeadingMap(rest);
+        return rest;
+    }
 
-        return new AuthenticatorData(rpIdHash, flags, signCount, credentialId, CoseKey.parse(cose));
+    /**
+     * 公钥（或登录时的计数器）之后：有扩展就按字典走完，没有扩展则一个字节都不能剩
+     */
+    private static void consumeTail(byte[] rest, boolean hasExtensions) {
+        if (hasExtensions) {
+            CborReader.readMap(rest);
+            return;
+        }
+        if (rest.length != 0) {
+            throw new IllegalArgumentException("认证器数据解析完成后还有 " + rest.length + " 个多余字节");
+        }
     }
 
     boolean userPresent() {

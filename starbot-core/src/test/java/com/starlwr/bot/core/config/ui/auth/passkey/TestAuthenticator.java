@@ -41,7 +41,13 @@ final class TestAuthenticator {
 
     static final int FLAG_USER_VERIFIED = 0x04;
 
-    private static final int FLAG_ATTESTED = 0x40;
+    static final int FLAG_BACKUP_ELIGIBLE = 0x08;
+
+    static final int FLAG_BACKUP_STATE = 0x10;
+
+    static final int FLAG_ATTESTED = 0x40;
+
+    static final int FLAG_EXTENSION_DATA = 0x80;
 
     private static final int P256_COORDINATE_BYTES = 32;
 
@@ -178,16 +184,58 @@ final class TestAuthenticator {
     }
 
     /**
+     * 造一份认证器数据，给结构校验用
+     */
+    byte[] rawAuthenticatorData(String rpId, int flags, long signCount, boolean attested) {
+        return authenticatorData(rpId, flags, signCount, attested);
+    }
+
+    /**
+     * 在认证器数据末尾接上多余字节
+     */
+    static byte[] withTrailing(byte[] data, byte extra) {
+        byte[] out = java.util.Arrays.copyOf(data, data.length + 1);
+        out[data.length] = extra;
+        return out;
+    }
+
+    /**
+     * 造一份带着凭据的认证器数据，并指定 COSE 算法字段的整数值
+     * <p>
+     * 给「整数超出 int 范围」那一格用：其余字段仍是一把合法的 ES256 公钥，
+     * 只把算法标识换成一个截断后恰好等于 ES256 的超大整数。
+     */
+    byte[] attestedWithCoseAlg(String rpId, int flags, long signCount, long alg) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        out.writeBytes(sha256(rpId.getBytes(StandardCharsets.UTF_8)));
+        out.write(flags);
+        out.write((int) (signCount >> 24) & 0xff);
+        out.write((int) (signCount >> 16) & 0xff);
+        out.write((int) (signCount >> 8) & 0xff);
+        out.write((int) signCount & 0xff);
+        out.writeBytes(new byte[16]);
+        out.write((credentialId.length >> 8) & 0xff);
+        out.write(credentialId.length & 0xff);
+        out.writeBytes(credentialId);
+        out.writeBytes(cosePublicKey(alg));
+        return out.toByteArray();
+    }
+
+    /**
      * 把公钥编成 COSE_Key
      */
     private byte[] cosePublicKey() {
+        return cosePublicKey(algorithm);
+    }
+
+    private byte[] cosePublicKey(long alg) {
         Map<Object, Object> cose = new LinkedHashMap<>();
 
         switch (algorithm) {
             case ES256 -> {
                 ECPublicKey key = (ECPublicKey) keyPair.getPublic();
                 cose.put(1L, 2L);
-                cose.put(3L, (long) ES256);
+                cose.put(3L, alg);
                 cose.put(-1L, 1L);
                 cose.put(-2L, fixed(key.getW().getAffineX(), P256_COORDINATE_BYTES));
                 cose.put(-3L, fixed(key.getW().getAffineY(), P256_COORDINATE_BYTES));
@@ -195,13 +243,13 @@ final class TestAuthenticator {
             case RS256 -> {
                 RSAPublicKey key = (RSAPublicKey) keyPair.getPublic();
                 cose.put(1L, 3L);
-                cose.put(3L, (long) RS256);
+                cose.put(3L, alg);
                 cose.put(-1L, unsigned(key.getModulus()));
                 cose.put(-2L, unsigned(key.getPublicExponent()));
             }
             default -> {
                 cose.put(1L, 1L);
-                cose.put(3L, (long) EDDSA);
+                cose.put(3L, alg);
                 cose.put(-1L, 6L);
                 cose.put(-2L, rawEd25519(keyPair.getPublic()));
             }

@@ -29,7 +29,8 @@ import java.util.function.Supplier;
  *
  * <h2>登录（不必先进得来）</h2>
  * 同样先发挑战，认证器用私钥签「认证器数据 ‖ 客户端数据的哈希」，这一侧用存着的公钥验。
- * 验过就<b>直接签发会话，不经二次验证</b>，理由见 {@link ConfigUiAuthService#issueForPasskey}。
+ * 验过就签发会话，<b>不再另要动态码</b>，理由见 {@link ConfigUiAuthService#issueForPasskey}。
+ * 二次验证开着时，认证器必须已经确认使用者身份（指纹、面容或 PIN），只按一下不够。
  *
  * <h2>每一趟都要判的四件事</h2>
  * <ol>
@@ -41,6 +42,7 @@ import java.util.function.Supplier;
  *   <li><b>人在场</b>——认证器确实让人按了一下，而不是被脚本静默调用</li>
  * </ol>
  * 登录时还多一条：<b>签名计数器不得倒退</b>，见 {@link #signCountAccepted}。
+ * 二次验证开着时再多一条：认证器必须已经确认使用者身份，见 {@link AuthenticatorData#userVerified()}。
  */
 @Slf4j
 public class PasskeyService {
@@ -98,6 +100,15 @@ public class PasskeyService {
      * 真正的原因写进日志——排查的人看得到，试探的人看不到。
      */
     private static final String LOGIN_FAILED = "这把通行密钥没能通过验证，请换一把或改用口令登录";
+
+    /**
+     * 二次验证开着、认证器却只确认了「人在场」时回这一句
+     * <p>
+     * 和 {@link #LOGIN_FAILED} 分开：那一句故意不说是哪一步不对；
+     * 这一句要让人知道该换一把会认指纹／面容／PIN 的设备，或改用口令加动态码。
+     */
+    private static final String LOGIN_NEEDS_USER_VERIFICATION =
+            "这把通行密钥没有确认使用者身份。请用需要指纹、面容或 PIN 的设备，或改用口令加动态码登录";
 
     private final PasskeyStore store;
 
@@ -280,7 +291,8 @@ public class PasskeyService {
         result.put("challenge", challenges.issue(PasskeyChallenges.Purpose.LOGIN, clock.get()));
         result.put("rpId", relyingParty.rpId());
         result.put("timeout", CLIENT_TIMEOUT_MILLIS);
-        result.put("userVerification", "preferred");
+        // 二次验证开着时浏览器也得去要 UV；只改这一项不够，真正拒在 loginVerify
+        result.put("userVerification", authService.totpRequired() ? "required" : "preferred");
         result.put("allowCredentials", descriptors(credentials));
 
         return result;
@@ -331,8 +343,17 @@ public class PasskeyService {
                         + "，来 " + authData.getSignCount() + "），这一次可能是重放");
             }
 
+            if (authService.totpRequired() && !authData.userVerified()) {
+                authService.recordFailedAttempt(clientIp);
+                log.warn("配置界面通行密钥登录失败, 来源: {}, 原因: 二次验证开着但认证器未确认使用者身份", clientIp);
+                return PasskeyLogin.failure(LOGIN_NEEDS_USER_VERIFICATION);
+            }
+
             Instant now = clock.get();
-            store.save(credential.used(authData.getSignCount(), now));
+            if (!store.updateIfSignCount(credential.id(), credential.signCount(),
+                    credential.used(authData.getSignCount(), now))) {
+                throw new IllegalArgumentException("凭据已更新或已撤销");
+            }
 
             log.info("配置界面: 已用通行密钥「{}」登录, 来源: {}", credential.name(), clientIp);
             return PasskeyLogin.success(authService.issueForPasskey(clientIp));

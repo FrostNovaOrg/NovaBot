@@ -311,6 +311,17 @@ same(tileOf(quota([bot({used: 3, limit: 10, limited: true})])).value.includes('�
   '限额格不含全角斜线');
 same((six.details[0] || {}).text.includes('／'), false, '明细不含全角斜线');
 
+same((tileOf(quota([bot({used: 1})], [group(11, 1, {platform: 'qq-onebot'})])).details[0] || {}).who,
+  '群 11', '单平台无前缀');
+same((tileOf(quota([bot({used: 1})], [
+  group(11, 3, {platform: 'qq-onebot'}),
+  group(12, 1, {platform: 'other-bot'}),
+])).details[0] || {}).who, 'QQ 群 11', '双平台 QQ 前缀');
+same((tileOf(quota([bot({used: 1})], [
+  group(11, 3, {platform: 'alpha-bot'}),
+  group(12, 1, {platform: 'beta-bot'}),
+])).details[0] || {}).who, 'alpha-bot 群 11', '未知平台标识');
+
 const twin = tileOf(quota([bot({used: 4})], [
   group(11, 3, {platform: 'alpha-bot'}),
   group(11, 1, {platform: 'beta-bot'}),
