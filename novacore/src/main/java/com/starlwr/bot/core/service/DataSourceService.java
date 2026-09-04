@@ -42,4 +42,16 @@ public interface DataSourceService {
     default Optional<Long> getFansCount(Long uid) {
         return Optional.empty();
     }
+
+    /**
+     * 按直播间号查主播
+     * <p>
+     * 短号由平台接口一次解析成真实房间再拿到 uid。默认不支持：不是每个平台
+     * 都有独立于 uid 的房间号，也不是每个数据源实现都够得着那一趟查询。
+     * @param roomId 直播间号，可以是短号
+     * @return 查到的主播，找不到时为空
+     */
+    default Optional<PushUser> lookupByRoomId(Long roomId) {
+        return Optional.empty();
+    }
 }

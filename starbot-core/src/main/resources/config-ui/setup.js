@@ -590,7 +590,7 @@ function schedulePoll(accounts) {
 
 function stepStreamer(host) {
   heading(host, SETUP_STEPS[3].title,
-    '填主播的 uid，或者直接粘贴他的个人空间链接。');
+    '填主播的 uid 或直播间号，也可以直接粘贴空间链接或直播间链接。');
 
   // 装了哪些直播平台是运行期才知道的事，三种情形都要说清楚——
   // 与推送页「添加主播」那个面板同一条规矩（见 push.js 的 addStreamer）
@@ -619,7 +619,7 @@ function stepStreamer(host) {
   }
 
   const row = el('div', 'su-row');
-  const input = field(row, 'uid 或个人空间链接', 'setup-uid', 'text',
+  const input = field(row, 'uid、直播间号或链接', 'setup-uid', 'text',
     draft.streamer ? String(draft.streamer.uid) : '', null);
   host.appendChild(row);
 

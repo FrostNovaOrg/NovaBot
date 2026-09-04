@@ -27,9 +27,16 @@ final class ConfigUiLoginPage {
      */
     static final String MODEL_MARKER = "//@@login-model@@";
 
+    /**
+     * 口令框显示／隐藏那一份。同样拼进来：登录页不取外部资源，抄一份就有两份
+     */
+    static final String REVEAL_MARKER = "//@@password-reveal@@";
+
     private static final String PAGE_RESOURCE = "config-ui/login.html";
 
     private static final String MODEL_RESOURCE = "config-ui/login-model.js";
+
+    private static final String REVEAL_RESOURCE = "config-ui/password-reveal.js";
 
     /**
      * 拼好的页面。类路径资源在运行期不会变，因此只拼一次
@@ -49,7 +56,8 @@ final class ConfigUiLoginPage {
         if (cached == null) {
             synchronized (ConfigUiLoginPage.class) {
                 if (composed == null) {
-                    composed = compose(read(PAGE_RESOURCE), read(MODEL_RESOURCE));
+                    composed = compose(read(PAGE_RESOURCE), read(MODEL_RESOURCE),
+                            read(REVEAL_RESOURCE));
                 }
                 cached = composed;
             }
@@ -76,6 +84,24 @@ final class ConfigUiLoginPage {
         // 而这件事在页面上看不出任何异常
         return page.replaceFirst(java.util.regex.Pattern.quote(MODEL_MARKER),
                 java.util.regex.Matcher.quoteReplacement(model));
+    }
+
+    /**
+     * 把判定与口令框显示／隐藏两段都拼进页面
+     * @param page 页面模板
+     * @param model 登录判定脚本
+     * @param reveal 口令框显示／隐藏脚本
+     * @return 拼好的页面
+     */
+    static String compose(String page, String model, String reveal) {
+        if (!page.contains(REVEAL_MARKER)) {
+            throw new IllegalStateException("登录页里找不到显示／隐藏脚本的占位 " + REVEAL_MARKER
+                    + "，拼不上它登录页眼睛点了不动");
+        }
+
+        String withReveal = page.replaceFirst(java.util.regex.Pattern.quote(REVEAL_MARKER),
+                java.util.regex.Matcher.quoteReplacement(reveal));
+        return compose(withReveal, model);
     }
 
     private static String read(String resource) throws IOException {

@@ -529,7 +529,8 @@ class ConfigUiFrontendTest {
      * 那一块就<b>安静地从页面上消失</b>了。通行密钥那一块正是这么搬过的。
      */
     private static final List<String> AUTH_CONTROLS = List.of(
-            "auth-cards", "pwd-save", "totp-switch", "passkey-add", "setup-rerun");
+            "auth-cards", "pwd-save", "pwd-current-reveal", "pwd-next-reveal", "pwd-again-reveal",
+            "totp-switch", "passkey-add", "setup-rerun");
 
     /**
      * 「登录与安全」那一组要调的端点，闭集
@@ -1162,7 +1163,7 @@ class ConfigUiFrontendTest {
      * 机器人被踢出群、OneBot 没起）表现完全一样，混在一起就再也分不开。
      * <p>
      * 量的是 {@code index.html} 里推送页那一块：挑选面板由脚本建出来，里面那个
-     * 「uid 或个人空间链接」是主播的账号，不是推送目标的号码，两者不是一回事。
+     * 「uid、直播间号或链接」是主播的账号，不是推送目标的号码，两者不是一回事。
      * @param html index.html 全文
      * @return 问题，没有则为空
      */
