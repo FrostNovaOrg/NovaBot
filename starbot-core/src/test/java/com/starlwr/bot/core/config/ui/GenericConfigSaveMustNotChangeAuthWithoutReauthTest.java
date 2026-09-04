@@ -203,11 +203,11 @@ class GenericConfigSaveMustNotChangeAuthWithoutReauthTest {
         JSONObject result = controller.save(body);
 
         assertFalse(result.getBooleanValue("success"),
-                "放行就会把口令哈希写进配置文件, 重启即换门, 实际 message=" + result.getString("message"));
+                "放行就会把口令明文写进配置文件, 重启即换门, 实际 message=" + result.getString("message"));
         assertTrue(result.getString("message") != null && result.getString("message").contains("登录与安全"),
                 "应把人领去专用口, 实际 message=" + result.getString("message"));
         assertEquals(before, Files.readString(config, StandardCharsets.UTF_8),
-                "拒了配置文件就该逐字同, 哈希写进去等于门已经换了");
+                "拒了配置文件就该逐字同, 明文写进去等于门已经换了");
     }
 
 }

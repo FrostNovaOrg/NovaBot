@@ -3,7 +3,6 @@ package com.starlwr.bot.core.config.ui.auth;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.config.ui.ConfigurationFileService;
 import com.starlwr.bot.core.config.ui.ConfigurationKeyAliases;
-import com.starlwr.bot.core.config.ui.SensitiveFields;
 import lombok.extern.slf4j.Slf4j;
 
 import java.time.Duration;
@@ -50,8 +49,9 @@ public class ConfigUiAuthService {
     /**
      * 这一项是不是只能走专用口的认证键
      * <p>
-     * 口令、二次验证开关、二次验证密钥（以及同一前缀下按机密表认出的密钥类键）
-     * 改的时候要过旧口令或当前动态码。通用保存若直接改，一枚已登录会话就能换掉门。
+     * 闭集只有三项：口令、二次验证开关、二次验证密钥。改的时候要过旧口令或当前动态码。
+     * 通用保存若直接改，一枚已登录会话就能换掉门。
+     * 同一前缀下日后新增的机密键不会自动算进来——要进专用口，须写进本方法并改对应测试。
      * @param name 配置项名，现行键或旧位置均可
      * @return 是专用口那几项时为 true
      */
@@ -61,14 +61,9 @@ public class ConfigUiAuthService {
         }
 
         String current = ConfigurationKeyAliases.currentName(name);
-        if (PASSWORD_PROPERTY.equals(current)
+        return PASSWORD_PROPERTY.equals(current)
                 || TOTP_PROPERTY.equals(current)
-                || TOTP_SECRET_PROPERTY.equals(current)) {
-            return true;
-        }
-
-        return current.startsWith("starbot.core.config-ui.auth.")
-                && SensitiveFields.isSensitive(current, null);
+                || TOTP_SECRET_PROPERTY.equals(current);
     }
 
     /**

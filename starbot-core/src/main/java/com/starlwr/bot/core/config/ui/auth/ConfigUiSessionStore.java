@@ -118,10 +118,18 @@ public class ConfigUiSessionStore {
      * <p>
      * 改口令时用：那一刻要收回的是「别处那些在旧口令下建立的会话」，
      * 而当前这一把刚刚验过口令，把它一并踢掉只会让人以为改口令失败了。
-     * @param keepId 留下的会话标识，为 null 时等同于 {@link #revokeAll()}
+     * <p>
+     * {@code keepId} 为 null 或空白时<b>什么也不注销</b>：调用方没能认出当前这一把，
+     * 此时按「其余」动刀会把所有会话一并踢掉，刚办完的人会以为没办成。
+     * 要清空整张表请走 {@link #revokeAll()}。
+     * @param keepId 留下的会话标识；认不出时传 null，本方法直接返回 0
      * @return 被注销的会话数
      */
     public int revokeAllExcept(String keepId) {
+        if (keepId == null || keepId.isBlank()) {
+            return 0;
+        }
+
         int before = sessions.size();
         sessions.keySet().removeIf(id -> !id.equals(keepId));
         return before - sessions.size();

@@ -115,6 +115,29 @@ class ConfigUiSessionStoreTest {
     }
 
     @Test
+    @DisplayName("指出留下哪一把时，只注销其余的")
+    void revokeAllExceptKeepsTheNamedSession() {
+        ConfigUiSession keep = store.issue("127.0.0.1", NOW, ConfigUiSession.Channel.PASSWORD);
+        ConfigUiSession other = store.issue("10.0.0.2", NOW, ConfigUiSession.Channel.PASSWORD);
+
+        assertEquals(1, store.revokeAllExcept(keep.getId()));
+        assertTrue(store.validate(keep.getId(), NOW).isPresent());
+        assertTrue(store.validate(other.getId(), NOW).isEmpty());
+    }
+
+    @Test
+    @DisplayName("没有当前会话标识时，注销其余不得动任何一把")
+    void revokeAllExceptWithoutKeepIdLeavesEverySession() {
+        ConfigUiSession a = store.issue("127.0.0.1", NOW, ConfigUiSession.Channel.PASSWORD);
+        ConfigUiSession b = store.issue("10.0.0.2", NOW, ConfigUiSession.Channel.PASSWORD);
+
+        assertEquals(0, store.revokeAllExcept(null),
+                "认不出当前这一把时把全部会话注销，刚办完的人会以为没办成");
+        assertTrue(store.validate(a.getId(), NOW).isPresent());
+        assertTrue(store.validate(b.getId(), NOW).isPresent());
+    }
+
+    @Test
     @DisplayName("反复登录不会把会话表撑大")
     void doesNotGrowUnbounded() {
         for (int i = 0; i < 500; i++) {

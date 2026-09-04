@@ -3,9 +3,16 @@ package com.starlwr.bot.core.config.ui.auth;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.io.ClassPathResource;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashSet;
+import java.util.Set;
+import java.util.TreeSet;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -298,5 +305,47 @@ class ConfigUiAuthServiceTest {
 
         assertEquals(GLOBAL_BURST - 3, drainGlobal(now.get()),
                 "三次失败的尝试应当从全局桶里扣掉三个令牌");
+    }
+
+    @Test
+    @DisplayName("专用口键是闭集：现有三项以外，同前缀下的机密键不得自动算进去")
+    void dedicatedAuthKeysAreAClosedSet() throws IOException {
+        Set<String> expected = Set.of(
+                ConfigUiAuthService.PASSWORD_PROPERTY,
+                ConfigUiAuthService.TOTP_PROPERTY,
+                ConfigUiAuthService.TOTP_SECRET_PROPERTY);
+
+        Set<String> actual = new TreeSet<>();
+        for (String name : authKeysOnTheSurface()) {
+            if (ConfigUiAuthService.isDedicatedAuthKey(name)) {
+                actual.add(name);
+            }
+        }
+
+        assertEquals(new TreeSet<>(expected), actual,
+                "专用口键变多或变少都要改这一格，不能靠名字规则自动扩");
+        assertFalse(ConfigUiAuthService.isDedicatedAuthKey(
+                        "starbot.core.config-ui.auth.recovery-secret"),
+                "尚未列入闭集的新机密键不得自动算专用口");
+    }
+
+    private static Set<String> authKeysOnTheSurface() throws IOException {
+        String content;
+        try (InputStream in = new ClassPathResource("configuration-baseline/config-keys.txt")
+                .getInputStream()) {
+            content = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
+
+        Set<String> keys = new LinkedHashSet<>();
+        for (String line : content.split("\n")) {
+            if (line.isEmpty()) {
+                continue;
+            }
+            String name = line.split("\\|")[0];
+            if (name.startsWith("starbot.core.config-ui.auth.")) {
+                keys.add(name);
+            }
+        }
+        return keys;
     }
 }
