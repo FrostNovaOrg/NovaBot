@@ -436,7 +436,6 @@ tr:last-child td{border-bottom:none}
   border-radius:var(--r-ctl);padding:6px 12px;font-size:12.5px;cursor:pointer}
 .account button:hover{border-color:var(--err);color:var(--err)}
 /* .fbox 表单控件样式：机器人连接与只读口令签发两处复用 */
-.group .body{padding:14px 16px}
 .fbox .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
 .fbox label{font-size:12.5px;color:var(--dim);min-width:88px}
 .fbox input{background:var(--ground);color:var(--text);border:1px solid var(--line);

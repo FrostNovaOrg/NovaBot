@@ -27,6 +27,7 @@ fi
 
 UI="starbot-core/src/main/resources/config-ui"
 RED=0
+SYNTAX_RED=0
 
 # —— 阴性对照：这一格自己得先证明它分得出红绿 ——
 # 放在语法检查之前：这几行要是恒绿，下面那一串「语法 绿」一个字也不作数
@@ -46,6 +47,7 @@ for f in "$UI"/push-model.js "$UI"/push.js "$UI"/sessions.js "$UI"/confirm-model
         echo "语法 红 $f"
         node --input-type=module --check < "$f"
         RED=1
+        SYNTAX_RED=1
     fi
 done
 
@@ -56,4 +58,12 @@ if [ $? -ne 0 ]; then
     RED=1
 fi
 
+# —— 末行汇总 ——
+# 档尺（.mjs）的末句只数它自己的格，语法红盖不进去：语法红而档全对时，
+# 整把尺的最后一句会是「N 档全对」，读起来像全绿。末行由本尺自己收
+if [ "$SYNTAX_RED" -ne 0 ]; then
+    echo "汇总：语法 红（名单见上方「语法 红」行），整尺退码 $RED"
+else
+    echo "汇总：语法 绿，整尺退码 $RED"
+fi
 exit "$RED"

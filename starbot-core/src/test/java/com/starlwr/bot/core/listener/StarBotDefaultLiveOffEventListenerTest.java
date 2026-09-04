@@ -3,8 +3,11 @@ package com.starlwr.bot.core.listener;
 import com.starlwr.bot.core.analytics.LiveDetail;
 import com.starlwr.bot.core.enums.LiveEndReason;
 import com.starlwr.bot.core.event.live.common.LiveOffEvent;
+import com.starlwr.bot.core.model.LiveGap;
 import com.starlwr.bot.core.model.LiveSession;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
+import com.starlwr.bot.core.model.SeriesPeak;
+import com.starlwr.bot.core.model.UserScore;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.LiveDetailArchive;
 import com.starlwr.bot.core.service.LiveInterventionTracker;
@@ -16,9 +19,14 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -126,5 +134,141 @@ class StarBotDefaultLiveOffEventListenerTest {
         verify(liveDataService).setLiveStatus(PLATFORM, UID, false);
         verify(liveDataService).setLiveEndTime(PLATFORM, UID, END);
         verify(liveDataService).mergeLiveDataIntoTotal(PLATFORM, UID);
+    }
+
+    /**
+     * 摘下监听器落下的全部 WARN 原文（格式化后），INFO 不进这张单子
+     */
+    private static List<String> captureWarns(Runnable action) {
+        ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(StarBotDefaultLiveOffEventListener.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            action.run();
+            return appender.list.stream()
+                    .filter(event -> event.getLevel() == ch.qos.logback.classic.Level.WARN)
+                    .map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage)
+                    .toList();
+        } finally {
+            logger.detachAppender(appender);
+        }
+    }
+
+    /**
+     * 分支一：非正常下播要喊出来
+     * <p>
+     * 被平台切断的那一场，时长不代表正常水平——场次照归档（统计口径仍要这一场），
+     * 但告警必须落，且那句话里带着成因，读日志的人不必再猜这一场为什么短。
+     */
+    @Test
+    @DisplayName("分支①：endReason≠NORMAL 落一条带成因的 WARN，场次照归档")
+    void cutOffLiveOffWarnsWithReasonAndStillArchives() {
+        when(liveDataService.getLiveStartTime(PLATFORM, UID)).thenReturn(Optional.of(START));
+        when(interventionTracker.endReason(eq(PLATFORM), eq(UID), any(Instant.class))).thenReturn(LiveEndReason.CUT_OFF);
+
+        List<String> warns = captureWarns(() -> listener.onLiveOffEvent(liveOffAt(END)));
+
+        ArgumentCaptor<LiveSession> sessions = ArgumentCaptor.forClass(LiveSession.class);
+        verify(archive).append(sessions.capture());
+        assertEquals(LiveEndReason.CUT_OFF, sessions.getValue().endReason());
+
+        assertEquals(1, warns.size(), "恰一条 WARN，实际: " + warns);
+        assertTrue(warns.get(0).contains("被平台切断"), "告警带成因，实际: " + warns.get(0));
+        assertTrue(warns.get(0).contains("不代表正常水平"), "告警说明时长失真，实际: " + warns.get(0));
+    }
+
+    /**
+     * 分支二：停机与断线两笔缺口各自喊、各自存
+     * <p>
+     * 两句告警分开落：两段成因不同（程序停的／这个房间自己断的），混成一句就没法各自追。
+     * 两个秒数分开存进场次：停机期间所有房间都在断，两段必然重叠，加起来是重复计数。
+     * 各喂一笔，两句话都得在，两个独立字段都得是喂进去的那个数。
+     */
+    @Test
+    @DisplayName("分支②：停机/断线各落一句 WARN，秒数各进自己的场次字段")
+    void downtimeAndRoomOutageEachWarnAndStoreTheirOwnSeconds() {
+        when(liveDataService.getLiveStartTime(PLATFORM, UID)).thenReturn(Optional.of(START));
+        when(interventionTracker.endReason(eq(PLATFORM), eq(UID), any(Instant.class))).thenReturn(LiveEndReason.NORMAL);
+        when(liveDataService.downtimeWithin(START, END)).thenReturn(30_000L);
+        when(liveDataService.roomOutageWithin(PLATFORM, UID, START, END)).thenReturn(45_000L);
+
+        List<String> warns = captureWarns(() -> listener.onLiveOffEvent(liveOffAt(END)));
+
+        ArgumentCaptor<LiveSession> sessions = ArgumentCaptor.forClass(LiveSession.class);
+        verify(archive).append(sessions.capture());
+        assertEquals(30, sessions.getValue().maintenanceGapSeconds(), "停机秒数入 maintenanceGapSeconds");
+        assertEquals(45, sessions.getValue().roomOutageSeconds(), "断线秒数入 roomOutageSeconds");
+
+        assertEquals(2, warns.size(), "停机与断线各一句，实际: " + warns);
+        assertTrue(warns.stream().anyMatch(w -> w.contains("因程序停机未采集") && w.contains("30")),
+                "停机那句带着秒数，实际: " + warns);
+        assertTrue(warns.stream().anyMatch(w -> w.contains("因直播间断线未采集") && w.contains("45")),
+                "断线那句带着秒数，实际: " + warns);
+    }
+
+    /**
+     * 分支三：峰值的时刻与取值必须出自同一格
+     * <p>
+     * 峰是曲线上最高的那一格：值取哪一格的，时刻就得是哪一格的。把最高的那一格
+     * 放在序列中间、两头压低——分两趟各求一次的写法会指错时刻，这里当场现形。
+     * 场次与明细两份归档里留的是同一个峰。
+     */
+    @Test
+    @DisplayName("分支③：峰值的时刻与取值同格，场次与明细同源")
+    void peakMomentAndValueComeFromTheSameBucketInBothArchives() {
+        when(liveDataService.getLiveStartTime(PLATFORM, UID)).thenReturn(Optional.of(START));
+        when(interventionTracker.endReason(eq(PLATFORM), eq(UID), any(Instant.class))).thenReturn(LiveEndReason.NORMAL);
+        when(liveDataService.getLiveSeriesMetrics(PLATFORM, UID)).thenReturn(Set.of("人气"));
+        when(liveDataService.getLiveSeries(PLATFORM, UID, "人气")).thenReturn(Map.of(
+                START + 60_000, 5.0,
+                START + 120_000, 137.0,
+                START + 180_000, 5.0));
+
+        listener.onLiveOffEvent(liveOffAt(END));
+
+        SeriesPeak want = new SeriesPeak(START + 120_000, 137.0);
+        ArgumentCaptor<LiveSession> sessions = ArgumentCaptor.forClass(LiveSession.class);
+        verify(archive).append(sessions.capture());
+        assertEquals(want, sessions.getValue().peak("人气").orElseThrow());
+
+        ArgumentCaptor<LiveDetail> detailCaptor = ArgumentCaptor.forClass(LiveDetail.class);
+        verify(details).store(detailCaptor.capture());
+        assertEquals(want, detailCaptor.getValue().peaks().get("人气"));
+    }
+
+    /**
+     * 分支四：明细的榜取全长，缺口两份合并到互不重叠
+     * <p>
+     * 榜要全量：报告只画前几名是版面所限，留档也砍前几名就把长尾永久丢掉。
+     * 参与人数喂 30、取榜只答得出 30 条那一次调用——取少了这份留档就是残的。
+     * 缺口两份喂一段重叠（停机 [60s,120s)、断线 [90s,180s)）：合并后重叠的 30 秒
+     * 归停机、断线只剩 [120s,180s)，两份相加不再是比整场还长的缺口。
+     */
+    @Test
+    @DisplayName("分支④：榜按参与人数取全长，重叠缺口归停机、合并后互不重叠")
+    void detailKeepsFullRankingAndMergesOverlappingGapsIntoDisjointOnes() {
+        when(liveDataService.getLiveStartTime(PLATFORM, UID)).thenReturn(Optional.of(START));
+        when(interventionTracker.endReason(eq(PLATFORM), eq(UID), any(Instant.class))).thenReturn(LiveEndReason.NORMAL);
+        when(liveDataService.getLiveMetricUserCounts(PLATFORM, UID)).thenReturn(Map.of("弹幕", 30));
+        when(liveDataService.getLiveUserRanking(PLATFORM, UID, "弹幕", 30)).thenReturn(
+                IntStream.rangeClosed(1, 30).mapToObj(i -> new UserScore((long) i, "观众" + i, i)).toList());
+        when(liveDataService.downtimeIntervals(START, END)).thenReturn(List.of(
+                new LiveGap(START + 60_000, START + 120_000, LiveGap.Reason.MAINTENANCE)));
+        when(liveDataService.roomOutageIntervals(PLATFORM, UID, START, END)).thenReturn(List.of(
+                new LiveGap(START + 90_000, START + 180_000, LiveGap.Reason.STREAM_LOSS)));
+
+        listener.onLiveOffEvent(liveOffAt(END));
+
+        ArgumentCaptor<LiveDetail> detailCaptor = ArgumentCaptor.forClass(LiveDetail.class);
+        verify(details).store(detailCaptor.capture());
+        LiveDetail detail = detailCaptor.getValue();
+        assertEquals(30, detail.ranking("弹幕").size(), "榜的条数＝参与人数，一条不少");
+        assertEquals(List.of(
+                new LiveGap(START + 60_000, START + 120_000, LiveGap.Reason.MAINTENANCE),
+                new LiveGap(START + 120_000, START + 180_000, LiveGap.Reason.STREAM_LOSS)),
+                detail.gaps());
     }
 }

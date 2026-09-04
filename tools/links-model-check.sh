@@ -11,7 +11,10 @@
 # 它们是 ES module，没有构建步骤，语法错要等页面加载时才炸，而那时报的是一句与出错文件无关的「载入失败」。
 # node --check 对含 import 的 .js 一律返 0（Node v22 实测），那一格从来没能红过。
 #
-# 退码：0 全对；1 有档对不上或有模块语法不过；2 环境不具备（没装 node）。
+# 🔴 本尺自带阴性对照：把一段必定语法错的模块喂进同一道检查，它必须红；
+#    不红就说明这一格又量不动了（整把尺恒绿），整尺判红。
+#
+# 退码：0 全对；1 有档对不上、有模块语法不过、或阴性对照不红；2 环境不具备（没装 node）。
 
 set -uo pipefail
 
@@ -25,6 +28,16 @@ fi
 
 UI="starbot-core/src/main/resources/config-ui"
 RED=0
+SYNTAX_RED=0
+
+# —— 阴性对照：这一格自己得先证明它分得出红绿 ——
+# 放在语法检查之前：这几行要是恒绿，下面那一串「语法 绿」一个字也不作数
+if printf 'import {a} from "./x.js";\nconst b = ;;;\n' | node --input-type=module --check > /dev/null 2>&1; then
+    echo "阴性对照 红：一段必定语法错的模块被判成了过，这一格量不动" >&2
+    RED=1
+else
+    echo "阴性对照 绿（必错的模块确实被判红）"
+fi
 
 # —— 语法 ——
 # 逐个跑而不是一次传多个文件：一次传一串时后面那些是「查过了」还是「没轮到」分不出来
@@ -34,6 +47,7 @@ for f in "$UI"/links-model.js "$UI"/links.js "$UI"/tokens.js "$UI"/bot.js; do
     else
         echo "语法 红 $f"
         RED=1
+        SYNTAX_RED=1
     fi
 done
 
@@ -44,4 +58,12 @@ if [ $? -ne 0 ]; then
     RED=1
 fi
 
+# —— 末行汇总 ——
+# 档尺（.mjs）的末句只数它自己的格，语法红盖不进去：语法红而档全对时，
+# 整把尺的最后一句会是「十二档全对」，读起来像全绿。末行由本尺自己收
+if [ "$SYNTAX_RED" -ne 0 ]; then
+    echo "汇总：语法 红（名单见上方「语法 红」行），整尺退码 $RED"
+else
+    echo "汇总：语法 绿，整尺退码 $RED"
+fi
 exit "$RED"
