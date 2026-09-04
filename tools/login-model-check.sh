@@ -34,7 +34,9 @@ else
 fi
 
 # —— 语法 ——
-for f in "$UI"/login-model.js; do
+# napcat-resume.js 是引导页（napcat-bootstrap.html）的经典脚本，没有自己的尺；
+# 引导页与登录页同是 index.html 之外的独立页，就近归这把过语法
+for f in "$UI"/login-model.js "$UI"/napcat-resume.js; do
     if node --input-type=module --check < "$f" > /dev/null 2>&1; then
         echo "语法 绿 $f"
     else

@@ -13,7 +13,7 @@
 #    把一段必定语法错的模块喂进去，它必须红；不红就说明这一格又量不动了，整尺判红。
 #
 # 别处已经在量的不在这里重量：main.js、overview.js、core.js、home-model.js
-# 分别由 home-model-check.sh 与 push-model-check.sh 过。
+# 由 home-model-check.sh 一把过（每份 js 恰一把尺，重复量不添判力）。
 #
 # 退码：0 全过；1 有模块语法不过，或阴性对照不红；2 环境不具备（没装 node）。
 
