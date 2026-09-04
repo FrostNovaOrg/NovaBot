@@ -31,9 +31,10 @@ public abstract class BilibiliRankingCommand extends BilibiliScopedDataCommand {
      */
     private static final int MAX_PAGE = 50;
 
-    protected BilibiliRankingCommand(AbstractDataSource dataSource, LiveDataService liveDataService,
+    protected BilibiliRankingCommand(AbstractDataSource dataSource, BilibiliStreamerChoice choice,
+                                     LiveDataService liveDataService,
                                      BilibiliDataQueryPainter painter, RevenueVisibilityService revenueVisibility) {
-        super(dataSource, liveDataService, painter, revenueVisibility);
+        super(dataSource, choice, liveDataService, painter, revenueVisibility);
     }
 
     @Override
@@ -125,9 +126,10 @@ public abstract class BilibiliRankingCommand extends BilibiliScopedDataCommand {
             }
         }
 
-        return painter.paintRanking(header, rows, offset + 1, board.scoreText, footnote)
+        // 理由同「直播间数据」：没点名而由机器人猜出来的那一次，图前面要有一行写清用的是谁
+        return withNotice(resolved, painter.paintRanking(header, rows, offset + 1, board.scoreText, footnote)
                 .map(CommandReply::image)
-                .orElseGet(this::paintFailed);
+                .orElseGet(this::paintFailed));
     }
 
     /**

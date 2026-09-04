@@ -11,8 +11,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 @StarBotComponent
 public class BilibiliDynamicAtListCommand extends BilibiliAtListCommand {
     @Autowired
-    public BilibiliDynamicAtListCommand(AbstractDataSource dataSource, AtSubscriptionService subscriptions) {
-        super(dataSource, subscriptions);
+    public BilibiliDynamicAtListCommand(AbstractDataSource dataSource, BilibiliStreamerChoice choice,
+                                        AtSubscriptionService subscriptions) {
+        super(dataSource, choice, subscriptions);
     }
 
     @Override

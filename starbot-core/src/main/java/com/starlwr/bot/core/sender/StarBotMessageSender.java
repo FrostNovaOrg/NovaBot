@@ -59,6 +59,11 @@ public class StarBotMessageSender {
     private final AtAllQuotaService atAllQuota;
 
     /**
+     * 首次推送后的用法提示
+     */
+    private final FirstPushTipService firstPushTip;
+
+    /**
      * @全体成员 的权限判定，由推送平台适配器提供；没有实现时一律放行
      */
     private final ObjectProvider<AtAllPermissionResolver> atAllPermissionResolvers;
@@ -98,7 +103,8 @@ public class StarBotMessageSender {
     public StarBotMessageSender(HttpUtil http, StarBotSenderService senderService,
                                 PushActivityRecorder activityRecorder, PushGate pushGate,
                                 TimelineWriter timeline, AtAllQuotaService atAllQuota,
-                                ObjectProvider<AtAllPermissionResolver> atAllPermissionResolvers) {
+                                ObjectProvider<AtAllPermissionResolver> atAllPermissionResolvers,
+                                FirstPushTipService firstPushTip) {
         this.http = http;
         this.senderService = senderService;
         this.activityRecorder = activityRecorder;
@@ -106,6 +112,7 @@ public class StarBotMessageSender {
         this.timeline = timeline;
         this.atAllQuota = atAllQuota;
         this.atAllPermissionResolvers = atAllPermissionResolvers;
+        this.firstPushTip = firstPushTip;
     }
 
     /**
@@ -185,7 +192,9 @@ public class StarBotMessageSender {
         Sender sender = senderService.getSender(message.getPlatform())
                 .orElseThrow(() -> new IllegalArgumentException("未找到推送平台 " + message.getPlatform()));
 
-        return doSend(sender, message);
+        // 不当作推送：这是「发送测试消息」按钮，一次点击就该只出去一条。
+        // 首推提示跟在它后面的话，按钮的名字与它干的事就对不上了
+        return doSend(sender, message, false);
     }
 
     /**
@@ -308,7 +317,7 @@ public class StarBotMessageSender {
             while (!Thread.currentThread().isInterrupted()) {
                 try {
                     Message message = queue.take();
-                    doSend(sender, message);
+                    doSend(sender, message, true);
                     Thread.sleep(delay);
                 } catch (InterruptedException e) {
                     // 中断即视为停机：恢复标志后由循环条件退出，此处不必记为错误
@@ -357,9 +366,11 @@ public class StarBotMessageSender {
      * 发送消息
      * @param sender 推送平台信息
      * @param message 消息
+     * @param push 这一条是否走的推送路（{@link #send}）。测试消息与首推提示自己不算，
+     *             它们不该再引出一条首推提示
      * @return 推送接口的原始响应；被拦截器取消发送时返回 null
      */
-    private JSONObject doSend(Sender sender, Message message) {
+    private JSONObject doSend(Sender sender, Message message, boolean push) {
         // 配额检查放在这里而非各推送处理器里：处理器只经手 at_all 参数，
         // 而模板里手写的 {at=all} 同样会 @ 全体。所有消息最终都汇到这一处，
         // 只有在这里拦才拦得全
@@ -400,7 +411,8 @@ public class StarBotMessageSender {
 
         // 响应缺少 code 字段时 getInteger 返回 null，直接与 0 比较会因自动拆箱抛出 NPE，
         // 表现为消息静默丢失而日志指向别处
-        if (Integer.valueOf(0).equals(result.getInteger("code"))) {
+        boolean delivered = Integer.valueOf(0).equals(result.getInteger("code"));
+        if (delivered) {
             message.setId(result.getString("id"));
             activityRecorder.recordSuccess(sender.getName(), describeTarget(message), message.getDisplay());
             log.info("NovaBot -> {} ([{}] {}) [{}]: {}", sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(), message.getDisplay());
@@ -424,7 +436,12 @@ public class StarBotMessageSender {
                 }
             }
 
-            fallbackWithoutImages(sender, headers, params, message, result);
+            delivered = fallbackWithoutImages(sender, headers, params, message, result);
+        }
+
+        // 文字到了才算「这个会话听见过机器人说话」，图片降级那一路同样算
+        if (push && delivered) {
+            tipAfterFirstPush(sender, message);
         }
 
         return result;
@@ -460,25 +477,26 @@ public class StarBotMessageSender {
      * <p>
      * 降级<b>只发一次、不走 {@link #postWithRetry} 的重试</b>，
      * 于是最坏情形是「原内容 N 次 + 纯文字 1 次」而不是 2N 次。
+     * @return 纯文字是否送达
      */
-    private void fallbackWithoutImages(Sender sender, Map<String, String> headers, Map<String, Object> params,
-                                       Message message, JSONObject failure) {
+    private boolean fallbackWithoutImages(Sender sender, Map<String, String> headers, Map<String, Object> params,
+                                          Message message, JSONObject failure) {
         if (!MessagePlaceholders.containsImage(message.getContent())) {
-            return;
+            return false;
         }
 
         String deliveredId = failure.getString("id");
         if (StringUtil.isNotBlank(deliveredId)) {
             log.warn("推送含图片的消息失败, 但响应带着消息 id {}, 无法排除其实已送达, 不重发纯文字: [{}]: {}",
                     deliveredId, message.getSequence(), message.getDisplay());
-            return;
+            return false;
         }
 
         String textOnly = MessagePlaceholders.stripImages(message.getContent()).trim();
         if (StringUtil.isBlank(textOnly)) {
             // 这一条是设计如此，不是异常：开播模板的第二条本就只有封面
             log.debug("消息只含图片段, 剥除后无内容可发, 不重发: [{}]", message.getSequence());
-            return;
+            return false;
         }
 
         Map<String, Object> textParams = new LinkedHashMap<>(params);
@@ -495,7 +513,8 @@ public class StarBotMessageSender {
 
         // 静默降级是看不见的谎言：三种结局各出一行，
         // 且都要说清「图没送到」，并带上原始失败原因——降级不能掩盖根因
-        if (result != null && Integer.valueOf(0).equals(result.getInteger("code"))) {
+        boolean textDelivered = result != null && Integer.valueOf(0).equals(result.getInteger("code"));
+        if (textDelivered) {
             activityRecorder.recordSuccess(sender.getName(), describeTarget(message), message.getDisplay());
             log.warn("推送含图片的消息失败, 已剥除图片段重发纯文字并送达（图片未送达）: NovaBot -> {} ([{}] {}) [{}]: {}；原始失败: {}",
                     sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(),
@@ -513,6 +532,41 @@ public class StarBotMessageSender {
             log.warn("剥除图片段后重发仍然失败, 本条消息完全未送达: NovaBot -> {} ([{}] {}) [{}]: {}；原始失败: {}；重发失败: {}",
                     sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(),
                     textOnly, failure.getString("message"), reason);
+        }
+        return textDelivered;
+    }
+
+    /**
+     * 向某个会话推出第一条之后，紧跟一句用法提示
+     * <p>
+     * <b>紧跟</b>是这件事的一半：它解释的是刚刚那条通知从哪来、还能问点什么，
+     * 隔着几条别的推送再来就成了没头没尾的一句。因此走 {@link #doSend} 直投而不重新入队——
+     * 队列里排着谁不归这里管，而排在后面就不叫紧跟了。
+     * <p>
+     * <b>静音时段与推送开关这里不再判一遍。</b> 能走到这里，说明刚刚有一条推送
+     * 过了 {@link #send} 那道闸<b>并且真的送达了</b>——提示跟的就是它。
+     * 在这里补判一次是一道恒真的闸：拦不住任何东西，却让提示与它所解释的那条推送
+     * 在积压补发那种情形下各行其是（通知发出去了，解释通知的那句没有）。
+     * <p>
+     * 剩下的两道判断各有各的事：
+     * <ul>
+     *     <li><b>回复不算</b>——收件人刚发过一条命令，再教他一遍怎么发命令只是打扰。</li>
+     *     <li><b>认领成功才发</b>——认领与「记下已提示过」是同一个动作，同一时刻推给同一个群的
+     *         两条消息不会各发一句。</li>
+     * </ul>
+     */
+    private void tipAfterFirstPush(Sender sender, Message message) {
+        if (message.isReply()) {
+            return;
+        }
+        if (!firstPushTip.claim(message.getPlatform(), message.getType(), message.getNum())) {
+            return;
+        }
+
+        String text = firstPushTip.text(message.getType());
+        for (Message tip : Message.create(message.getPlatform(), message.getType(), message.getNum(), text)) {
+            // 提示自己不算推送：它引不出第二句提示，也不必再走一遍这一整套判断
+            doSend(sender, tip, false);
         }
     }
 

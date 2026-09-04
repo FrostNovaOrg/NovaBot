@@ -78,6 +78,19 @@ public class Message {
     private Instant completeTime;
 
     /**
+     * 这一条是否为对使用者命令的回复
+     * <p>
+     * 与推送分开，是因为有些事只对<b>主动推送</b>成立：例如「向某个会话推出第一条之后
+     * 附一句用法说明」——那句话是说给「只见过通知、没跟机器人说过话」的人听的，
+     * 而回复的收件人刚刚才发过一条命令，再教他一遍怎么发命令只是打扰。
+     * <p>
+     * 默认 false，也就是<b>默认按推送算</b>。方向是刻意的：新开一条推送路径忘了标记，
+     * 结果是它照常被当成推送对待；反过来把默认设成「回复」的话，新推送路径会安静地
+     * 从这类统计与提示里消失，而消失这件事没有任何现象。
+     */
+    private boolean reply;
+
+    /**
      * 发送前拦截回调列表，返回 false 会拦截消息发送，请勿调用阻塞操作
      */
     private List<Predicate<Message>> onBeforeSendInterceptors = new ArrayList<>();

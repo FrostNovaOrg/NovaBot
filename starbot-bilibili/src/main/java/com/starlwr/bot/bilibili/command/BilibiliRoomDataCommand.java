@@ -30,9 +30,10 @@ public abstract class BilibiliRoomDataCommand extends BilibiliScopedDataCommand 
     private static final DateTimeFormatter TIME_FORMATTER =
             DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(ZoneId.of("Asia/Shanghai"));
 
-    protected BilibiliRoomDataCommand(AbstractDataSource dataSource, LiveDataService liveDataService,
+    protected BilibiliRoomDataCommand(AbstractDataSource dataSource, BilibiliStreamerChoice choice,
+                                      LiveDataService liveDataService,
                                       BilibiliDataQueryPainter painter, RevenueVisibilityService revenueVisibility) {
-        super(dataSource, liveDataService, painter, revenueVisibility);
+        super(dataSource, choice, liveDataService, painter, revenueVisibility);
     }
 
     @Override
@@ -59,15 +60,18 @@ public abstract class BilibiliRoomDataCommand extends BilibiliScopedDataCommand 
 
         List<BilibiliDataQueryPainter.DataCard> cards = buildCards(scope, platform, uid, revenueVisible(context));
         if (cards.isEmpty()) {
+            // 这一句自己带着主播名，不必再加一行说明
             return CommandReply.of(nameOf(streamer) + "的直播间还没有" + scope.getLabel() + "数据");
         }
 
         BilibiliDataQueryPainter.Header header = new BilibiliDataQueryPainter.Header(
                 nameOf(streamer), subtitle(scope, platform, uid), streamer.getFace());
 
-        return painter.paintCards(header, cards, footnote(scope, platform, uid))
+        // 没点名而由机器人猜出来的那一次，图前面要有一行写清用的是谁：
+        // 图里虽然也有主播名，但看图的人未必会去核对，而猜错了的那次正是最该被核对的
+        return withNotice(resolved, painter.paintCards(header, cards, footnote(scope, platform, uid))
                 .map(CommandReply::image)
-                .orElseGet(this::paintFailed);
+                .orElseGet(this::paintFailed));
     }
 
     /**

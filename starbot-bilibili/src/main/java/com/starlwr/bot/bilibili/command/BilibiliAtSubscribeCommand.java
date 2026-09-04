@@ -10,8 +10,9 @@ import com.starlwr.bot.core.service.AtSubscriptionService;
  * 订阅类「@我」命令的共同实现
  */
 public abstract class BilibiliAtSubscribeCommand extends BilibiliAtCommand {
-    protected BilibiliAtSubscribeCommand(AbstractDataSource dataSource, AtSubscriptionService subscriptions) {
-        super(dataSource, subscriptions);
+    protected BilibiliAtSubscribeCommand(AbstractDataSource dataSource, BilibiliStreamerChoice choice,
+                                         AtSubscriptionService subscriptions) {
+        super(dataSource, choice, subscriptions);
     }
 
     /**

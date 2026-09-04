@@ -14,9 +14,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 @StarBotComponent
 public class BilibiliRoomTotalDataCommand extends BilibiliRoomDataCommand {
     @Autowired
-    public BilibiliRoomTotalDataCommand(AbstractDataSource dataSource, LiveDataService liveDataService,
+    public BilibiliRoomTotalDataCommand(AbstractDataSource dataSource, BilibiliStreamerChoice choice,
+                                        LiveDataService liveDataService,
                                         BilibiliDataQueryPainter painter, RevenueVisibilityService revenueVisibility) {
-        super(dataSource, liveDataService, painter, revenueVisibility);
+        super(dataSource, choice, liveDataService, painter, revenueVisibility);
     }
 
     @Override
