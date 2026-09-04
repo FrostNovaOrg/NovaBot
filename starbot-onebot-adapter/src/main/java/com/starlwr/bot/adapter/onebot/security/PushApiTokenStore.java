@@ -2,6 +2,10 @@ package com.starlwr.bot.adapter.onebot.security;
 
 import com.starlwr.bot.core.util.SecureToken;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.server.PathContainer;
+import org.springframework.http.server.RequestPath;
+import org.springframework.web.util.pattern.PathPattern;
+import org.springframework.web.util.pattern.PathPatternParser;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
@@ -24,9 +28,24 @@ public class PushApiTokenStore {
     public static final int MIN_TOKEN_LENGTH = SecureToken.MIN_LENGTH;
 
     /**
+     * 路径匹配口径。与路由用的 {@link org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping}
+     * 同一套默认配置：框架把请求按「解码后的路径、去掉分号后的矩阵参数」去匹配路由，
+     * 鉴权侧若另拿原始 URI 做字符串精确查表，两边口径就会分叉——
+     * {@code /onebot/send;jsessionid=abc} 在查表眼里是没见过的路径（放行），
+     * 在框架眼里却正是登记过的那条（照常路由），门禁就这样被一个分号绕过。
+     * 用框架自己的解析与匹配来认路，两侧口径同源；框架哪天改了折叠或解码的规矩，两侧一起变。
+     */
+    private static final PathPatternParser PATH_PARSER = new PathPatternParser();
+
+    /**
      * 接口路径 -> 期望 Token
      */
     private final Map<String, String> tokens = new ConcurrentHashMap<>();
+
+    /**
+     * 接口路径 -> 该登记路径的匹配模式（框架口径）
+     */
+    private final Map<String, PathPattern> patterns = new ConcurrentHashMap<>();
 
     /**
      * 注册某个推送接口的 Token
@@ -35,6 +54,7 @@ public class PushApiTokenStore {
      */
     public void register(String path, String token) {
         tokens.put(path, token);
+        patterns.put(path, PATH_PARSER.parse(path));
     }
 
     /**
@@ -43,7 +63,26 @@ public class PushApiTokenStore {
      * @return 是否受保护
      */
     public boolean isProtected(String path) {
-        return tokens.containsKey(path);
+        return resolve(path, "") != null;
+    }
+
+    /**
+     * 按框架匹配口径认路：这个请求路径会落到的登记路径
+     * @param requestUri 请求原始 URI（未解码，含 contextPath）
+     * @param contextPath 应用 contextPath，空串表示没有
+     * @return 命中的登记路径；不属于任何推送接口时为 null
+     * @throws IllegalArgumentException 路径按框架口径解析不了（contextPath 对不上、非法的百分号编码等）
+     */
+    public String resolve(String requestUri, String contextPath) {
+        PathContainer withinApplication = RequestPath.parse(requestUri, contextPath).pathWithinApplication();
+
+        for (Map.Entry<String, PathPattern> entry : patterns.entrySet()) {
+            if (entry.getValue().matches(withinApplication)) {
+                return entry.getKey();
+            }
+        }
+
+        return null;
     }
 
     /**
