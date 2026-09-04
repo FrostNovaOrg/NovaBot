@@ -16,6 +16,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -439,6 +441,232 @@ class BilibiliEventParserTest {
         }
     }
 
+    @Nested
+    @DisplayName("SEND_GIFT_V2")
+    class GiftV2 {
+        /**
+         * 构造 SEND_GIFT_V2 的 data.pb（base64）
+         * <p>
+         * 取值与 {@link #giftMessage(String, String)} 的 V1 夹具一致，便于逐字段对照
+         * 两种格式解析出的同一个事件。字段号是 SEND_GIFT_V2 的（见 BilibiliEventParser
+         * 的 GIFT_V2_* 常量），取值全部合成，不含真实观众信息
+         */
+        private String giftV2Pb(String coinType) {
+            PbWriter medal = new PbWriter()
+                    .str(1, "勋章")
+                    .varint(2, 8)
+                    .varint(7, 2)
+                    .str(8, "https://guard.example/2.png")
+                    .varint(9, 1)
+                    .varint(10, 999);
+
+            PbWriter uinfo = new PbWriter()
+                    .varint(1, 555)
+                    .message(2, new PbWriter()
+                            .str(1, "土豪")
+                            .str(2, "https://face.example/3.jpg"))
+                    .message(3, medal);
+
+            PbWriter gift = new PbWriter()
+                    .varint(1, 31036)
+                    .str(2, "辣条")
+                    .varint(3, 3)
+                    // 5（疑原价）与 6（折扣价）故意取不同值：两者相等时，解析读错了单价
+                    // 也全树皆绿——折扣活动一旦上线就会多记收入。价值与单价都该按 6 算
+                    .varint(5, 1200)
+                    .varint(6, 1000)
+                    .varint(7, 3000)
+                    .str(8, coinType)
+                    .varint(10, 1700000002L)
+                    .message(35, new PbWriter().str(1, "https://gift.example/g.png"));
+
+            return new PbWriter()
+                    .varint(1, 555)
+                    .str(2, "土豪")
+                    .message(10, gift)
+                    .message(13, new PbWriter().varint(1, 30))
+                    .message(15, uinfo)
+                    .base64();
+        }
+
+        private Optional<StarBotBaseLiveEvent> parseV2(String pb) {
+            return parse("{\"cmd\":\"SEND_GIFT_V2\",\"data\":{\"dmscore\":3,\"pb\":\"" + pb + "\"}}");
+        }
+
+        @Test
+        @DisplayName("解析 V2 付费礼物，与同值 V1 JSON 逐字段一致")
+        void parsesPaidGiftParityWithV1() {
+            BilibiliPaidGiftEvent v1 = assertInstanceOf(BilibiliPaidGiftEvent.class,
+                    parse(giftMessage("gold", ",\"total_coin\":3000")).orElseThrow());
+            BilibiliPaidGiftEvent v2 = assertInstanceOf(BilibiliPaidGiftEvent.class,
+                    parseV2(giftV2Pb("gold")).orElseThrow());
+
+            BilibiliUserInfo v1Sender = (BilibiliUserInfo) v1.getSender();
+            BilibiliUserInfo v2Sender = (BilibiliUserInfo) v2.getSender();
+            assertEquals(v1Sender.getUid(), v2Sender.getUid());
+            assertEquals(v1Sender.getUname(), v2Sender.getUname());
+            assertEquals(v1Sender.getFace(), v2Sender.getFace());
+            assertEquals(v1Sender.getHonorLevel(), v2Sender.getHonorLevel());
+
+            // 勋章与舰长标志：V1 在 sender_uinfo.medal（JSON），V2 在 uinfo 的子消息 3（protobuf），
+            // 两边子字段号不同，拼夹具时要各按各的表
+            assertEquals(v1Sender.getFansMedal().getUid(), v2Sender.getFansMedal().getUid());
+            assertEquals(v1Sender.getFansMedal().getName(), v2Sender.getFansMedal().getName());
+            assertEquals(v1Sender.getFansMedal().getLevel(), v2Sender.getFansMedal().getLevel());
+            assertEquals(v1Sender.getFansMedal().getLighted(), v2Sender.getFansMedal().getLighted());
+            assertEquals(v1Sender.getGuard().getGuardType(), v2Sender.getGuard().getGuardType());
+            assertEquals(v1Sender.getGuard().getIcon(), v2Sender.getGuard().getIcon());
+
+            assertEquals(v1.getGiftInfo().getId(), v2.getGiftInfo().getId());
+            assertEquals(v1.getGiftInfo().getName(), v2.getGiftInfo().getName());
+            assertEquals(v1.getGiftInfo().getPrice(), v2.getGiftInfo().getPrice());
+            assertEquals(v1.getGiftInfo().getCount(), v2.getGiftInfo().getCount());
+            assertEquals(v1.getGiftInfo().getUrl(), v2.getGiftInfo().getUrl());
+
+            assertEquals(v1.getValue(), v2.getValue(), 0.0001);
+            assertEquals(v1.getCharged(), v2.getCharged(), 0.0001);
+            assertEquals(v1.isFromBag(), v2.isFromBag());
+            assertEquals(v1.getTimestamp(), v2.getTimestamp());
+        }
+
+        @Test
+        @DisplayName("折扣价语义：单价与价值按字段 6（折扣价）算，不按 5（疑原价）")
+        void priceComesFromDiscountFieldNotOriginal() {
+            // 夹具里 5（疑原价）=1200、6（折扣价）=1000：真实样本两者相等，分不出
+            // 解析读的是哪一个——把取值字段搞错的话，折扣活动一上线单价就会多记 20%
+            BilibiliPaidGiftEvent event = assertInstanceOf(BilibiliPaidGiftEvent.class,
+                    parseV2(giftV2Pb("gold")).orElseThrow());
+
+            assertEquals(1.0, event.getGiftInfo().getPrice(), 0.0001,
+                    "单价价格按折扣价 6=1000 算得 1.0 元；若按疑原价 5=1200 算会得出 1.2 元");
+            assertEquals(3.0, event.getValue(), 0.0001, "价值 = 折扣单价 × 数量 3");
+        }
+
+        @Test
+        @DisplayName("V2 银瓜子礼物解析为免费礼物")
+        void parsesFreeGiftV2() {
+            BilibiliFreeGiftEvent event = assertInstanceOf(BilibiliFreeGiftEvent.class,
+                    parseV2(giftV2Pb("silver")).orElseThrow());
+
+            assertEquals(31036L, event.getGiftInfo().getId());
+            assertEquals("辣条", event.getGiftInfo().getName());
+            assertEquals(3, event.getGiftInfo().getCount());
+            assertEquals(1700000002000L, event.getTimestamp());
+        }
+
+        @Test
+        @DisplayName("报文缺失或没有 pb 时不产生事件也不抛异常")
+        void ignoresMissingPayload() {
+            assertTrue(parse("{\"cmd\":\"SEND_GIFT_V2\",\"data\":{\"dmscore\":3}}").isEmpty(), "缺 pb 字段");
+            assertTrue(parseV2("").isEmpty(), "pb 为空串");
+            assertTrue(parse("{\"cmd\":\"SEND_GIFT_V2\"}").isEmpty(), "整个 data 缺失");
+        }
+
+        @Test
+        @DisplayName("pb 不是合法 base64 时不产生事件也不抛异常")
+        void ignoresIllegalBase64() {
+            assertTrue(parseV2("!!!不是 base64!!!").isEmpty());
+        }
+
+        /**
+         * 截断方式：掐掉最后两个字节。夹具里 uinfo（字段 15）写在最后，它的长度前缀
+         * 声明的字节数因此超出剩余——读取器会把整条报文标记为截断并丢掉该字段；
+         * 礼物块（字段 10）在它前面，完好无损。
+         * <p>
+         * 写入器按字段号升序写，只要 15 仍是最大的字段号，掐尾永远落在它身上；
+         * 将来夹具加更大的字段号时，这里的截断点要重选
+         */
+        @Test
+        @DisplayName("被截断的报文仍按已读到的礼物块入账")
+        void stillChargesGiftOnTruncatedPayload() {
+            // 礼物块在报文前部：钱已经在手，不该因为尾巴断了把整条丢弃
+            byte[] full = Base64.getDecoder().decode(giftV2Pb("gold"));
+            byte[] cut = Arrays.copyOf(full, full.length - 2);
+
+            BilibiliPaidGiftEvent event = assertInstanceOf(BilibiliPaidGiftEvent.class,
+                    parseV2(Base64.getEncoder().encodeToString(cut)).orElseThrow());
+
+            assertEquals(3.0, event.getCharged(), 0.0001, "total_coin 在礼物块里，截断之前就该读到");
+            assertEquals(31036L, event.getGiftInfo().getId());
+            BilibiliUserInfo sender = (BilibiliUserInfo) event.getSender();
+            assertEquals(555L, sender.getUid(), "uinfo 没了退回顶层 uid");
+            assertEquals("土豪", sender.getUname(), "uinfo 没了退回顶层昵称");
+            assertNull(sender.getFansMedal(), "截断之后的字段应当缺失而不是被猜出来");
+            assertNull(sender.getGuard());
+        }
+
+        @Test
+        @DisplayName("礼物块带非空 34 号字段（疑盲盒）时按普通礼物入账")
+        void treatsSuspectedBlindBoxAsNormalGift() {
+            // 34 号字段在普通礼物上恒为空串，疑似 V1 original_gift_name 的位置。
+            // 盲盒的真实布局没有样本：按盲盒猜会把金额记错方向，先按普通礼物入账并留日志，
+            // 等真盲盒报文出现再补
+            PbWriter gift = new PbWriter()
+                    .varint(1, 31036)
+                    .str(2, "辣条")
+                    .varint(3, 3)
+                    .varint(6, 1000)
+                    .varint(7, 3000)
+                    .str(8, "gold")
+                    .varint(10, 1700000002L)
+                    .str(34, "开出物");
+
+            BilibiliPaidGiftEvent event = assertInstanceOf(BilibiliPaidGiftEvent.class,
+                    parseV2(new PbWriter().message(10, gift).base64()).orElseThrow());
+
+            assertEquals(3.0, event.getCharged(), 0.0001, "没有盲盒样本之前不猜随机礼物，按 total_coin 入账");
+        }
+
+        /**
+         * 测试用的最小 protobuf 写入器
+         * <p>
+         * 只写 varint、字符串、嵌套消息三种，够拼 SEND_GIFT_V2 夹具即可。
+         * {@code BilibiliProtobufReader} 只做 wire 层不认 schema，写入器同样只做 wire 层，
+         * 字段号由夹具自己指定
+         */
+        private static final class PbWriter {
+            private final ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+            PbWriter varint(int field, long value) {
+                key(field, 0);
+                writeVarint(value);
+                return this;
+            }
+
+            PbWriter str(int field, String value) {
+                byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+                key(field, 2);
+                writeVarint(bytes.length);
+                out.writeBytes(bytes);
+                return this;
+            }
+
+            PbWriter message(int field, PbWriter nested) {
+                byte[] bytes = nested.out.toByteArray();
+                key(field, 2);
+                writeVarint(bytes.length);
+                out.writeBytes(bytes);
+                return this;
+            }
+
+            String base64() {
+                return Base64.getEncoder().encodeToString(out.toByteArray());
+            }
+
+            private void key(int field, int wireType) {
+                writeVarint(((long) field << 3) | wireType);
+            }
+
+            private void writeVarint(long value) {
+                while ((value & ~0x7FL) != 0) {
+                    out.write((int) ((value & 0x7F) | 0x80));
+                    value >>>= 7;
+                }
+                out.write((int) value);
+            }
+        }
+    }
+
     /**
      * 构造礼物消息
      * @param coinType 货币类型
@@ -572,6 +800,19 @@ class BilibiliEventParserTest {
         // 「两个口径确实相等」和「取不到才回退成相等」。回退交给聚合层做
         assertNull(event.getCharged());
         assertEquals(3.0, event.getValue(), 0.0001);
+    }
+
+    @Test
+    @DisplayName("银瓜子礼物带非数值 total_coin 时不被吞：免费礼物照常产出")
+    void silverGiftWithNonNumericTotalCoinStillParses() {
+        // total_coin 只在算实扣时才需要，而银瓜子礼物根本不算实扣。
+        // 在银瓜子早退之前就去读它的话，平台哪天在这个字段里塞了非数值，
+        // 整条礼物会被解析异常吞掉——免费礼物也是礼物，直播报告里不该凭空少一条
+        BilibiliFreeGiftEvent event = assertInstanceOf(BilibiliFreeGiftEvent.class,
+                parse(giftMessage("silver", ",\"total_coin\":\"not-a-number\"")).orElseThrow());
+
+        assertEquals("辣条", event.getGiftInfo().getName());
+        assertEquals(3, event.getGiftInfo().getCount());
     }
 
     /**

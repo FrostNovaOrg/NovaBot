@@ -32,6 +32,7 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiFunction;
+import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -180,6 +181,105 @@ public class BilibiliEventParser {
 
     private static final int V2_LEVEL = 1;
 
+    /**
+     * {@code SEND_GIFT_V2} 的 protobuf 字段号
+     * <p>
+     * 平台同样没有公开 {@code .proto}，字段号由 2026-09-04/05 实抓的 2 条登录态样本反推
+     * （跨 2 个房间，送礼者为同一人，礼物均为 ¥0.1 的牛哇牛哇），并与同时段同房的
+     * 2 条 V1 报文对照过语义。样本量远小于当初 INTERACT_WORD_V2 的 2122 条，
+     * 各字段的把握见下，子布局与 INTERACT_WORD_V2 <b>不通用</b>的地方单独标了 ⚠️。
+     * <pre>
+     *   顶层字段  语义                证据
+     *      1     观众 uid            2/2，与 15.1 一致
+     *      2     观众昵称            2/2，与 15.2.1 一致
+     *      3     观众头像            2/2，与 15.2.2 一致（仅作核对，取值走 uinfo）
+     *      8     旧式勋章            2/2，布局同 V1 的 medal_info；V1 不取它，这里同样忽略
+     *     10     礼物块              2/2，子字段见下
+     *     11     是否首次            2/2，恒为 1，与 V1 的 is_first 对应，不取用
+     *     13     财富等级 {1:等级}    2/2。⚠️ 礼物版 uinfo 里没有 wealth（2/2 无 15.4），
+     *                                等级放在顶层而不是 uinfo.4，与 INTERACT_WORD_V2 相反
+     *     15     观众完整信息 uinfo   2/2，uid 在 1、昵称头像在 2{1,2}（与 INTERACT_WORD_V2
+     *                                一致，那三个常量直接复用）；其余子布局不同，见下
+     * </pre>
+     * <pre>
+     *   礼物块（10）字段  语义              证据
+     *        1           礼物 id           2/2
+     *        2           礼物名            2/2
+     *        3           数量              2/2
+     *        5           疑似原价          2/2，与 6 相等（样本礼物不打折），区分不出，不取用
+     *        6           折扣价            2/2，与 V1 discount_price 对应
+     *        7           实扣 total_coin   2/2，量纲与 V1 一致（千分之一元）
+     *        8           币种              2/2，取值 gold
+     *       10           秒级时间戳        2/2，落在采集窗口内
+     *       12           连击批次号        2/2，不取用
+     *       18           动作文案          2/2，如「投喂」，不取用
+     *       34           疑似开出物名      2/2，恒为<b>空串</b>——恰与 V1 的
+     *                     original_gift_name 在非盲盒时为空串同形，但没有盲盒样本，坐实不了，
+     *                     处理见 {@link #parseGiftV2}
+     *       35           礼物信息 {1:图}   2/2，与 V1 gift_info.img_basic 对应
+     * </pre>
+     * <pre>
+     *   勋章（15.3）字段  语义              证据
+     *        1           勋章名            2/2（字符串）
+     *        2           勋章等级          2/2
+     *        7           疑似大航海等级    0/2，按 V1 medal.guard_level 的位置类推，未经样本证实
+     *        8           疑似大航海图标    0/2，同上
+     *        9           是否点亮          1/2（另一条没有该字段，按 proto3 省略零值读作未点亮）
+     *       10           勋章所属主播 uid  2/2，逐条等于房间主播
+     * </pre>
+     * ⚠️ <b>这套勋章布局与 INTERACT_WORD_V2 的整套不通用</b>：那条的勋章名在子字段 3、
+     * 所属主播在 1、是否点亮在 8；这条完全换了位置。两份表套错会把主播 uid 读成勋章名，
+     * 因此勋章与大航海单独一套方法（{@link #parseGiftFansMedalV2} / {@link #parseGiftGuardV2}），
+     * 不复用 {@link #parseFansMedalV2} / {@link #parseGuardV2}。
+     * <p>
+     * V1 还取 {@code bag_gift}（背包礼物）与 {@code blind_gift}（盲盒）。V2 的 2 条样本里
+     * 两者都没出现，字段号未知：背包礼物暂时认不出来（实扣按 total_coin 照记），
+     * 盲盒见 {@link #parseGiftV2}。等真实样本出现再补。
+     */
+    private static final int GIFT_V2_UID = 1;
+
+    private static final int GIFT_V2_UNAME = 2;
+
+    private static final int GIFT_V2_INFO = 10;
+
+    private static final int GIFT_V2_WEALTH = 13;
+
+    private static final int GIFT_V2_UINFO = 15;
+
+    private static final int GIFT_V2_ID = 1;
+
+    private static final int GIFT_V2_NAME = 2;
+
+    private static final int GIFT_V2_NUM = 3;
+
+    private static final int GIFT_V2_DISCOUNT_PRICE = 6;
+
+    private static final int GIFT_V2_TOTAL_COIN = 7;
+
+    private static final int GIFT_V2_COIN_TYPE = 8;
+
+    private static final int GIFT_V2_TIMESTAMP = 10;
+
+    private static final int GIFT_V2_BLIND = 34;
+
+    private static final int GIFT_V2_GIFT_INFO = 35;
+
+    private static final int GIFT_V2_IMG_BASIC = 1;
+
+    private static final int GIFT_V2_UINFO_MEDAL = 3;
+
+    private static final int GIFT_V2_MEDAL_NAME = 1;
+
+    private static final int GIFT_V2_MEDAL_LEVEL = 2;
+
+    private static final int GIFT_V2_MEDAL_GUARD_LEVEL = 7;
+
+    private static final int GIFT_V2_MEDAL_GUARD_ICON = 8;
+
+    private static final int GIFT_V2_MEDAL_LIGHTED = 9;
+
+    private static final int GIFT_V2_MEDAL_TARGET_UID = 10;
+
     private final StarBotBilibiliProperties properties;
 
     private final BilibiliGiftService giftService;
@@ -208,7 +308,10 @@ public class BilibiliEventParser {
         // 进房、关注、分享会恒为 0 条且没有任何报错。V1 仍然保留，平台随时可能回滚
         parsers.put("INTERACT_WORD", this::parseInteract);
         parsers.put("INTERACT_WORD_V2", this::parseInteractV2);
+        // 礼物同样两种格式并存：2026-09-01 起平台按房间灰度改发 V2（正文在 data.pb），
+        // 只认老格式的房间礼物会整类消失，直播报告随之缺收入。V1 保留，平台随时可能回滚
         parsers.put("SEND_GIFT", this::parseGift);
+        parsers.put("SEND_GIFT_V2", this::parseGiftV2);
         parsers.put("SUPER_CHAT_MESSAGE", this::parseSuperChat);
         parsers.put("USER_TOAST_MSG", this::parseGuard);
         parsers.put("USER_TOAST_MSG_V2", this::parseGuardV2);
@@ -536,7 +639,7 @@ public class BilibiliEventParser {
             return null;
         }
 
-        byte[] payload = decodePayload(meta.getString("pb"), source);
+        byte[] payload = decodePayload(meta.getString("pb"), source, "INTERACT_WORD_V2");
         if (payload == null) {
             return null;
         }
@@ -608,20 +711,22 @@ public class BilibiliEventParser {
     /**
      * 取出并解码 protobuf 正文
      * <p>
-     * 实测 2122 条样本的 {@code pb} 全为标准 base64（字符集只含 {@code A-Za-z0-9+/=}），
-     * 因此用标准解码器。解码失败只留日志不抛出：单条报文的编码出问题不该影响整个直播间。
+     * 实测 INTERACT_WORD_V2 的 2122 条、SEND_GIFT_V2 的 2 条样本的 {@code pb} 全为
+     * 标准 base64（字符集只含 {@code A-Za-z0-9+/=}），因此用标准解码器。
+     * 解码失败只留日志不抛出：单条报文的编码出问题不该影响整个直播间。
+     * @param cmd 消息类型，仅用于日志
      * @return 正文字节，字段缺失或解码失败时为空
      */
-    private byte[] decodePayload(String base64, LiveStreamerInfo source) {
+    private byte[] decodePayload(String base64, LiveStreamerInfo source, String cmd) {
         if (base64 == null || base64.isBlank()) {
-            log.debug("直播间 {} 的 INTERACT_WORD_V2 消息没有 pb 字段, 已忽略", source.getRoomId());
+            log.debug("直播间 {} 的 {} 消息没有 pb 字段, 已忽略", source.getRoomId(), cmd);
             return null;
         }
 
         try {
             return Base64.getDecoder().decode(base64);
         } catch (IllegalArgumentException e) {
-            log.debug("直播间 {} 的 INTERACT_WORD_V2 消息的 pb 不是合法 base64, 已忽略: {}", source.getRoomId(), base64);
+            log.debug("直播间 {} 的 {} 消息的 pb 不是合法 base64, 已忽略: {}", source.getRoomId(), cmd, base64);
             return null;
         }
     }
@@ -748,7 +853,111 @@ public class BilibiliEventParser {
                 Optional.ofNullable(meta.getJSONObject("gift_info")).map(info -> info.getString("img_basic")).orElse(null)
         );
 
-        String coinType = meta.getString("coin_type");
+        // total_coin 惰性读取（lambda 不在此处求值）：银瓜子礼物不算实扣，
+        // 早退前不该碰它——getInteger 对非数值串会抛，会把免费礼物整条吞掉
+        return buildGiftEvent(source, sender, gift, timestamp,
+                meta.getString("coin_type"), () -> meta.getInteger("total_coin"),
+                fromBag(meta), meta.getJSONObject("blind_gift"));
+    }
+
+    /**
+     * 解析礼物消息的新版格式（{@code SEND_GIFT_V2}，正文为 protobuf）
+     * <p>
+     * 与 {@code SEND_GIFT} 是同一件事的两种格式，产出相同的事件，差别只在承载方式，
+     * 字段号的来历与证据见 {@link #GIFT_V2_UID} 处的字段表。
+     * <p>
+     * <b>盲盒：</b>礼物块的 34 号字段在普通礼物上恒为空串，位置恰与 V1 的
+     * {@code original_gift_name}（非盲盒时空串）同形，但至今没有盲盒的 V2 样本，坐实不了。
+     * 按<b>普通礼物</b>入账，34 非空时留一行日志——盲盒若真走这个字段，日志里就是它的原文，
+     * 拿来补字段表。
+     * <p>
+     * <b>背包礼物：</b>V2 里 {@code bag_gift} 的对应字段未知（样本里没出现过），V2 的背包
+     * 礼物暂时认不出来，实扣只能按 {@code total_coin} 照记。等样本。
+     */
+    private StarBotBaseLiveEvent parseGiftV2(JSONObject data, LiveStreamerInfo source) {
+        JSONObject meta = data.getJSONObject("data");
+        if (meta == null) {
+            return null;
+        }
+
+        byte[] payload = decodePayload(meta.getString("pb"), source, "SEND_GIFT_V2");
+        if (payload == null) {
+            return null;
+        }
+
+        BilibiliProtobufReader message = BilibiliProtobufReader.parse(payload);
+        if (message.isTruncated()) {
+            // 与 INTERACT_WORD_V2 同一取舍：礼物块（字段 10）在报文前部，截断通常只伤到尾巴，
+            // 已读到的部分照常入账，只留一行日志
+            log.debug("直播间 {} 的 SEND_GIFT_V2 报文未能读完, 已按读到的 {} 个字段继续: {}",
+                    source.getRoomId(), message.size(), meta.getString("pb"));
+        }
+
+        BilibiliProtobufReader gift = message.message(GIFT_V2_INFO);
+        if (gift == null) {
+            // 礼物块是这条消息的正主，连它都取不到就没有可入账的内容了
+            log.debug("直播间 {} 的 SEND_GIFT_V2 消息取不到礼物块, 已忽略", source.getRoomId());
+            return null;
+        }
+
+        String suspectedBlind = gift.string(GIFT_V2_BLIND);
+        if (suspectedBlind != null && !suspectedBlind.isBlank()) {
+            log.debug("直播间 {} 的 SEND_GIFT_V2 礼物块 34 号字段非空, 疑似盲盒, 按普通礼物处理: {}",
+                    source.getRoomId(), suspectedBlind);
+        }
+
+        BilibiliProtobufReader uinfo = message.message(GIFT_V2_UINFO);
+        BilibiliUserInfo sender = buildSenderFromUinfoV2(uinfo, source);
+        // 礼物版 uinfo 的子布局与 INTERACT_WORD_V2 不通用（见字段表）：勋章字段号整套不同、
+        // 财富等级在顶层 13 而不在 uinfo.4。上面的通用构造只可靠地取到了 uid 与昵称头像
+        // （这些位置两边一致），勋章、大航海与财富等级按礼物自己的表重取
+        sender.setGuard(parseGiftGuardV2(uinfo));
+        sender.setFansMedal(parseGiftFansMedalV2(uinfo == null ? null : uinfo.message(GIFT_V2_UINFO_MEDAL), source));
+        if (sender.getHonorLevel() == null) {
+            sender.setHonorLevel(Optional.ofNullable(message.message(GIFT_V2_WEALTH))
+                    .map(wealth -> wealth.number(V2_LEVEL))
+                    .map(Long::intValue)
+                    .orElse(null));
+        }
+        if (sender.getUid() == null) {
+            sender.setUid(message.number(GIFT_V2_UID));
+        }
+        if (sender.getUname() == null) {
+            sender.setUname(message.string(GIFT_V2_UNAME));
+        }
+
+        Instant timestamp = Optional.ofNullable(epochSecond(gift.number(GIFT_V2_TIMESTAMP))).orElseGet(Instant::now);
+
+        GiftInfo giftInfo = new GiftInfo(
+                gift.number(GIFT_V2_ID),
+                gift.string(GIFT_V2_NAME),
+                toYuan(intValue(gift.number(GIFT_V2_DISCOUNT_PRICE))),
+                intValue(gift.number(GIFT_V2_NUM)),
+                Optional.ofNullable(gift.message(GIFT_V2_GIFT_INFO)).map(info -> info.string(GIFT_V2_IMG_BASIC)).orElse(null)
+        );
+
+        return buildGiftEvent(source, sender, giftInfo, timestamp,
+                gift.string(GIFT_V2_COIN_TYPE), () -> intValue(gift.number(GIFT_V2_TOTAL_COIN)),
+                false, null);
+    }
+
+    /**
+     * 礼物事件的公共收尾：按币种分免费与付费，盲盒另走随机礼物
+     * <p>
+     * V1（JSON）与 V2（protobuf）只是取值位置不同，取完之后的口径完全一致，收在这一处——
+     * 两边各写一份的话，将来改口径（如实扣算法）很容易只改一边。
+     * @param gift 礼物信息，数量从中取
+     * @param coinType 货币类型
+     * @param totalCoin 取实扣（千分之一元）的函数，平台没给时算出 null；惰性求值，见 {@link #chargedOf}
+     * @param fromBag 是否来自背包；V2 认不出背包礼物，恒由调用方按事实传
+     * @param blind V1 的 {@code blind_gift}；V2 尚无盲盒样本，恒传 null
+     * @return 礼物事件，币种不认识时为 null
+     */
+    private StarBotBaseLiveEvent buildGiftEvent(LiveStreamerInfo source, BilibiliUserInfo sender, GiftInfo gift,
+                                                Instant timestamp, String coinType, Supplier<Integer> totalCoin,
+                                                boolean fromBag, JSONObject blind) {
+        Integer count = gift.getCount();
+
         if ("silver".equals(coinType)) {
             return new BilibiliFreeGiftEvent(source, sender, gift, timestamp);
         }
@@ -758,12 +967,11 @@ public class BilibiliEventParser {
             return null;
         }
 
-        JSONObject blind = meta.getJSONObject("blind_gift");
         if (blind == null) {
             Double value = gift.getPrice() == null || count == null ? null : gift.getPrice() * count;
             BilibiliPaidGiftEvent event = new BilibiliPaidGiftEvent(source, sender, gift, value, timestamp);
-            event.setCharged(chargedOf(meta, value));
-            event.setFromBag(fromBag(meta));
+            event.setCharged(chargedOf(totalCoin, fromBag, gift.getName(), value));
+            event.setFromBag(fromBag);
             return event;
         }
 
@@ -782,8 +990,8 @@ public class BilibiliEventParser {
         BilibiliRandomGiftEvent event = new BilibiliRandomGiftEvent(source, sender, randomGift, gift, price, value, timestamp);
         // 盲盒的实扣就是盲盒本身的价，与 total_coin 应当一致。以 total_coin 为准并在不一致时留下日志——
         // 盲盒尚未拿到过真实报文，这行日志就是将来真有一个盲盒送进来时的证据
-        event.setCharged(chargedOf(meta, price));
-        event.setFromBag(fromBag(meta));
+        event.setCharged(chargedOf(totalCoin, fromBag, gift.getName(), price));
+        event.setFromBag(fromBag);
         return event;
     }
 
@@ -814,29 +1022,35 @@ public class BilibiliEventParser {
      * <p>
      * 字段缺失时回退到调用方算出的金额，<b>而不是当作 0</b>——
      * 把「取不到」记成「没花钱」会让营收凭空少一截，且不会有任何报错。
-     * @param meta 礼物消息内容
+     * <p>
+     * {@code totalCoin} 惰性求值：银瓜子早退在 {@link #buildGiftEvent}、背包早退在本方法，
+     * 都先于取值——V1 的 {@code getInteger} 遇到非数值串会抛异常，提前取会把
+     * 根本不算实扣的银瓜子礼物整条吞掉。取值时机与 V2 共用前的旧 V1 代码逐字一致。
+     * @param totalCoin 取服务端实扣（千分之一元）的函数，没给时算出 null
+     * @param fromBag 是否来自背包，判别方式见上
+     * @param giftName 礼物名，仅用于日志
      * @param expected 字段缺失时的回退值
      * @return 实扣金额（元）
      */
-    private Double chargedOf(JSONObject meta, Double expected) {
-        if (meta.getJSONObject("bag_gift") != null) {
+    private Double chargedOf(Supplier<Integer> totalCoin, boolean fromBag, String giftName, Double expected) {
+        if (fromBag) {
             // 背包礼物来自红包、活动或签到，观众没有为这一笔花钱。
             // 这里必须早于 total_coin 判断：它在背包礼物上给的是原价，不是扣除额
             return 0.0;
         }
 
-        Integer totalCoin = meta.getInteger("total_coin");
-        if (totalCoin == null) {
+        Integer coin = totalCoin.get();
+        if (coin == null) {
             // 留空而不是填一个算出来的值：空表示「平台没告诉我们」，
             // 填上则表示「平台就是这么说的」。下游据此才能分辨
             // 「两个口径确实相等」与「取不到才回退成相等」，回退由消费方自己做
             return null;
         }
 
-        double charged = totalCoin / PRICE_UNIT;
+        double charged = coin / PRICE_UNIT;
         if (expected != null && Math.abs(charged - expected) > 0.001) {
             log.debug("礼物 {} 的实扣 {} 与按单价算出的 {} 不一致, 以实扣为准",
-                    meta.getString("giftName"), charged, expected);
+                    giftName, charged, expected);
         }
         return charged;
     }
@@ -1347,6 +1561,63 @@ public class BilibiliEventParser {
     }
 
     /**
+     * 解析礼物消息（V2）里的大航海信息
+     * <p>
+     * 礼物版勋章（uinfo 子字段 3）里疑似大航海等级在 7、图标在 8——按 V1 的
+     * {@code medal.guard_level} / {@code guard_icon} 类推的位置。实抓的 2 条样本里送礼者
+     * 都不是大航海成员，这两个字段一次都没出现过，<b>未经样本证实</b>；取不到就返回 null，
+     * 与「没有大航海」一致，不会造假信息。
+     * @param uinfo 观众完整信息，缺失时为 null
+     * @return 大航海信息，等级取不到或为 0 时为空
+     */
+    private Guard parseGiftGuardV2(BilibiliProtobufReader uinfo) {
+        if (uinfo == null) {
+            return null;
+        }
+
+        Long guardLevel = Optional.ofNullable(uinfo.message(GIFT_V2_UINFO_MEDAL))
+                .map(medal -> medal.number(GIFT_V2_MEDAL_GUARD_LEVEL))
+                .orElse(null);
+        if (guardLevel == null || guardLevel == 0L) {
+            return null;
+        }
+
+        String icon = Optional.ofNullable(uinfo.message(GIFT_V2_UINFO_MEDAL))
+                .map(medal -> medal.string(GIFT_V2_MEDAL_GUARD_ICON))
+                .orElse(null);
+        return new Guard(guardLevel.intValue(), icon);
+    }
+
+    /**
+     * 解析礼物消息（V2）里的粉丝勋章
+     * <p>
+     * ⚠️ 布局与 {@link #parseFansMedalV2}（INTERACT_WORD_V2）<b>不通用</b>：那条的
+     * 勋章名在子字段 3、所属主播在 1、是否点亮在 8；这条的勋章名在 1、等级在 2、
+     * 所属主播在 10、是否点亮在 9。两份表套错会把颜色值或主播 uid 读到错的字段上，
+     * 因此单独一套方法。判据与 V1 的 {@link #parseMedalFansMedal} 一致：
+     * 所属主播 uid 取不到就当没有勋章。
+     */
+    private FansMedal parseGiftFansMedalV2(BilibiliProtobufReader medal, LiveStreamerInfo source) {
+        if (medal == null) {
+            return null;
+        }
+
+        Long uid = medal.number(GIFT_V2_MEDAL_TARGET_UID);
+        if (uid == null || uid == 0L) {
+            return null;
+        }
+
+        Long level = medal.number(GIFT_V2_MEDAL_LEVEL);
+        Long lighted = medal.number(GIFT_V2_MEDAL_LIGHTED);
+        return buildFansMedal(uid, null, null,
+                medal.string(GIFT_V2_MEDAL_NAME),
+                level == null ? null : level.intValue(),
+                // proto3 省略零值：2 条样本一条带 9=1、一条没有，后者是未点亮而非「没说」
+                lighted != null && lighted == 1L,
+                source);
+    }
+
+    /**
      * 解析弹幕消息中以定长数组形式给出的粉丝勋章
      */
     private FansMedal parseArrayFansMedal(JSONArray medal, LiveStreamerInfo source) {
@@ -1413,6 +1684,13 @@ public class BilibiliEventParser {
      */
     private Double toYuan(Integer price) {
         return price == null ? null : price / PRICE_UNIT;
+    }
+
+    /**
+     * protobuf 读出的整数收窄为事件模型用的 Integer，取不到时为 null
+     */
+    private Integer intValue(Long value) {
+        return value == null ? null : value.intValue();
     }
 
     /**
