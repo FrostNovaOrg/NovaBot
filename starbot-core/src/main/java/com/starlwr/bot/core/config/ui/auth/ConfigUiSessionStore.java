@@ -113,6 +113,20 @@ public class ConfigUiSessionStore {
         return size;
     }
 
+    /**
+     * 注销除某一把之外的全部会话
+     * <p>
+     * 改口令时用：那一刻要收回的是「别处那些在旧口令下建立的会话」，
+     * 而当前这一把刚刚验过口令，把它一并踢掉只会让人以为改口令失败了。
+     * @param keepId 留下的会话标识，为 null 时等同于 {@link #revokeAll()}
+     * @return 被注销的会话数
+     */
+    public int revokeAllExcept(String keepId) {
+        int before = sessions.size();
+        sessions.keySet().removeIf(id -> !id.equals(keepId));
+        return before - sessions.size();
+    }
+
     private boolean expired(ConfigUiSession session, Instant now) {
         return !now.isBefore(session.getExpiresAt())
                 || !now.isBefore(session.getLastSeenAt().plus(idleTimeout));

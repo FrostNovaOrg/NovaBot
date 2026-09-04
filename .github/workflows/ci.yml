@@ -23,6 +23,15 @@ jobs:
           distribution: temurin
           cache: maven
 
+      # 控制台前端是不经构建的 ES module，node 是它唯一的可执行环境。设置页那四组判定
+      # 与登录页那八格显隐矩阵都由 JUnit 拉起 node 跑夹具，PATH 上没有它<b>这两格就红</b>
+      # （不是跳过——跳过与通过在构建日志上长得一样）。ubuntu-latest 自带 node，
+      # 但那是运行器镜像的巧合而不是承诺：显式装一次，版本也就写下来了
+      - name: 配置 Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       # starbot-plugin-processor 是各插件模块在 build 阶段调用的 Maven 插件，
       # Maven 无法在同一 reactor 内构建并使用同一个插件，因此需先单独安装
       - name: 安装构建插件

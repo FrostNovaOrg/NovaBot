@@ -55,13 +55,19 @@ public class ConfigUiAuthService {
 
     /**
      * 口令哈希，未启用口令登录时为 null
+     * <p>
+     * 可变的：改口令要<b>当场</b>生效。等下次重启才认新口令的话，中间这段时间里
+     * 界面说「已改」而门上认的还是旧的那一把——而这件事从界面上完全看不出来。
      */
-    private final String passwordHash;
+    private volatile String passwordHash;
 
     /**
      * 是否要求二次验证
+     * <p>
+     * 可变的：在设置页开关它要当场生效，理由同上。开与关都得先过一次验证器
+     * （开要绑定并输一次码，关要输一次现码），因此这一位不会被误拨。
      */
-    private final boolean totpEnabled;
+    private volatile boolean totpEnabled;
 
     /**
      * 已绑定的 2FA 密钥，尚未绑定时为 null
@@ -133,6 +139,30 @@ public class ConfigUiAuthService {
     }
 
     /**
+     * 现在能不能走一遍绑定验证器
+     * <p>
+     * 与 {@link #totpPending()} 分开：那一问答的是「要不要主动提示他去绑」，
+     * 而这一问答的是「他自己点了开关时，绑定这条路走不走得通」。
+     * <b>不看 {@code totpEnabled}</b>——设置页里把二次验证从关拨到开，正是要先绑上再开，
+     * 拿那一位当前提的话，人得先重启一次才绑得了，而重启会断开全部直播间长连接。
+     * @return 可以绑定时为 true
+     */
+    public boolean canEnrollTotp() {
+        return enabled && totpSecret == null;
+    }
+
+    /**
+     * 二次验证此刻开着没有
+     * <p>
+     * 与 {@link #totpRequired()} 分开：那一问答的是「这次登录要不要输码」（还得有密钥才算数），
+     * 而这一问答的是设置页上那个开关的位置。
+     * @return 开着时为 true
+     */
+    public boolean totpEnabled() {
+        return totpEnabled;
+    }
+
+    /**
      * 取出绑定引导用的密钥
      * <p>
      * 同一个进程内始终返回同一个，刷新页面不会换：换了的话先扫的那个二维码就作废了。
@@ -161,12 +191,90 @@ public class ConfigUiAuthService {
 
     /**
      * 启用已确认的密钥
+     * <p>
+     * 顺带把二次验证这一位拨到开：绑定这个动作本身就是「我要用二次验证」的意思，
+     * 而两者分开落的话，会出现「绑好了却还是不问码」——那是最难被发现的一种失效，
+     * 因为它看起来一切正常。
      * @param secret Base32 密钥
      */
     public void activateTotp(String secret) {
         this.totpSecret = secret;
         this.pendingSecret = null;
+        this.totpEnabled = true;
         log.info("配置界面已绑定验证器, 之后登录需要额外输入动态验证码");
+    }
+
+    /**
+     * 校验一个当前有效的验证码
+     * <p>
+     * 给「关掉二次验证」那条路用：关掉这道防线的人得先证明他此刻手里就有那个验证器。
+     * 少了这一步，一枚被偷走的会话 Cookie 就能把二次验证卸掉。
+     * @param code 使用者输入的验证码
+     * @return 密钥还没绑定或验证码不对时为 false
+     */
+    public boolean verifyCurrentCode(String code) {
+        String secret = totpSecret;
+        return secret != null && TotpGenerator.verify(secret, code, clock.get());
+    }
+
+    /**
+     * 关掉二次验证
+     * <p>
+     * <b>连密钥一起清掉</b>，不只是把那一位拨到关：留着一个谁也不再用的密钥躺在配置里，
+     * 下次重新开启时它会被直接沿用，而使用者以为自己是新绑了一把——
+     * 那把「新」的其实是几个月前那把，中间它一直明文躺在盘上。
+     */
+    public void disableTotp() {
+        this.totpSecret = null;
+        this.pendingSecret = null;
+        this.totpEnabled = false;
+        log.warn("配置界面已关闭二次验证, 之后登录只校验口令");
+    }
+
+    /**
+     * 换一个登录口令
+     * <p>
+     * 只改内存里认的那一把，<b>落盘由调用方办</b>：写文件失败时该不该认新口令，
+     * 是一个要由上层决定的问题（认了就出现「重启后又变回旧口令」，不认则界面白改一场），
+     * 藏在这里做主的话，两种后果都没人说得清是谁选的。
+     * @param hashed 新口令的哈希
+     */
+    public void applyPasswordHash(String hashed) {
+        this.passwordHash = hashed;
+        log.info("配置界面的登录口令已更换");
+    }
+
+    /**
+     * 这一串是不是当前的登录口令
+     * <p>
+     * 不走 {@link #checkCredentials}：那一支会连二次验证码一起要，而改口令时手边未必有验证器；
+     * 它还会消耗猜口令的全局预算，让一次正常的改口令挤掉别人的登录额度。
+     * <p>
+     * 不另计失败次数是有意的：走到这里的人已经持有一把有效会话，
+     * 挡在他前面的那道门是会话本身，不是这一次比对。
+     * @param password 明文口令
+     * @return 相符时为 true
+     */
+    public boolean matchesPassword(char[] password) {
+        String hash = passwordHash;
+        return hash != null && PasswordHash.verify(password, hash);
+    }
+
+    /**
+     * 注销除某一把之外的全部会话
+     * <p>
+     * 改口令之后必须走一趟：旧口令下建立的会话仍然畅通的话，「改了口令」这个动作
+     * 就没能把可能已经泄漏的访问权收回来。留下当前这一把是为了不把刚改完口令的人
+     * 当场踢出去——他手上那一把恰恰是刚刚被验过的。
+     * @param keepId 留下的会话标识
+     * @return 被注销的会话数
+     */
+    public int logoutOthers(String keepId) {
+        int count = sessions.revokeAllExcept(keepId);
+        if (count > 0) {
+            log.info("配置界面已注销其余 {} 个登录会话", count);
+        }
+        return count;
     }
 
     /**
