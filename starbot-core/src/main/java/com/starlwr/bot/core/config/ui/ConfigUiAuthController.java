@@ -60,11 +60,6 @@ public class ConfigUiAuthController {
     private static final String TOTP_PROPERTY = "starbot.core.config-ui.auth.totp";
 
     /**
-     * 「忘记口令」启动令牌通道的开关所在的配置项，上锁之后写回 false
-     */
-    private static final String OPERATOR_TOKEN_PROPERTY = "starbot.core.config-ui.auth.operator-token";
-
-    /**
      * 新口令的最短长度
      * <p>
      * 拦的是「把口令改成 1234 之后忘了自己改过」。不设上限、不要求混字符：
@@ -605,7 +600,7 @@ public class ConfigUiAuthController {
 
         properties.setOperatorToken(false);
         try {
-            fileService.write(Map.of(OPERATOR_TOKEN_PROPERTY, "false"));
+            fileService.write(Map.of(ConfigUiAuthService.OPERATOR_TOKEN_PROPERTY, "false"));
             log.warn("配置界面: 已上锁, 「忘记口令」的启动令牌通道随之关闭");
         } catch (Exception e) {
             log.warn("配置界面: 「忘记口令」的启动令牌通道已在本次运行中关闭, 但没能写回配置文件, 重启后会重新打开: {}",

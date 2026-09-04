@@ -22,7 +22,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -205,6 +207,32 @@ class SetupBootstrapTest {
     }
 
     @Test
+    @DisplayName("③ 上锁关通道写盘用的键就是公开常量那一份")
+    void firstLockWritesThePublicOperatorTokenKey() throws Exception {
+        properties.getConfigUi().getAuth().setOperatorToken(true);
+        CapturingFileService capturing = new CapturingFileService(config);
+        ConfigUiAuthService capturingAuth = new ConfigUiAuthService(
+                properties.getConfigUi().getAuth(),
+                new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(2)),
+                new LoginThrottle(properties.getConfigUi().getAuth().getMaxFailures(), Duration.ofMinutes(15)),
+                capturing);
+        ConfigUiAuthController capturingController =
+                new ConfigUiAuthController(capturingAuth, capturing, properties);
+
+        capturingController.setPassword(next(FIRST_PASSWORD), post("/api/auth/password/set"));
+
+        Map<String, String> closeWrite = null;
+        for (Map<String, String> write : capturing.writes) {
+            if (write.size() == 1 && "false".equals(write.values().iterator().next())) {
+                closeWrite = write;
+            }
+        }
+        assertNotNull(closeWrite, "关通道那一趟没有写盘");
+        assertEquals(ConfigUiAuthService.OPERATOR_TOKEN_PROPERTY, closeWrite.keySet().iterator().next(),
+                "关通道写的键必须是公开常量那一份, 实际=" + closeWrite.keySet());
+    }
+
+    @Test
     @DisplayName("③ 上锁那条路只走一次：已经上过锁之后它整个关掉")
     void firstLockIsNotASecondDoor() {
         controller.setPassword(next(FIRST_PASSWORD), post("/api/auth/password/set"));
@@ -341,5 +369,22 @@ class SetupBootstrapTest {
         }
 
         throw new IllegalStateException("未能定位仓库根目录");
+    }
+
+    /**
+     * 记下每次写盘拿到的键，用来对公开常量
+     */
+    private static final class CapturingFileService extends ConfigurationFileService {
+        private final List<Map<String, String>> writes = new ArrayList<>();
+
+        private CapturingFileService(Path config) {
+            super(config);
+        }
+
+        @Override
+        public synchronized List<String> write(Map<String, String> changes) throws IOException {
+            writes.add(Map.copyOf(changes));
+            return super.write(changes);
+        }
     }
 }
