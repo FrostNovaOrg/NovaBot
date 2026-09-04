@@ -576,6 +576,110 @@ class ConfigUiFrontendTest {
     }
 
     /**
+     * 连接页上由 index.html 摆着、由脚本接线的那几处落点，闭集
+     * <p>
+     * 机器人那张卡里的连接表单与「打开 NapCat 界面」、发一条试试那一块的目标下拉、
+     * 刷新名单、发送、结果与提示、以及外部面板卡里的签发表单与清单。
+     */
+    private static final List<String> LINK_CONTROLS = List.of(
+            "link-cards", "bot-form", "napcat-entry", "napcat-open",
+            "test-target", "test-refresh", "test-send", "test-result", "test-hint",
+            "token-issue", "token-list");
+
+    /**
+     * 视图模型给卡片的标识，闭集
+     * <p>
+     * 它们同时是页面上那两张卡的 id（{@code id="card-napcat"}）。平台卡的标识由插件的页签标识拼出，
+     * 运行期才知道，因此不在这张表里。
+     */
+    private static final List<String> LINK_CARD_KEYS = List.of("napcat", "panel");
+
+    private static final String LINKS_MODEL = "links-model.js";
+
+    /**
+     * 连接页三张卡各有落点，且「发一条试试」里没有手填号码的格子
+     * <p>
+     * 前一半与设置页那两条同理：元素与接线缺哪一半都不会报错，而后者在任何一次
+     * 「打开页面看一眼」里都看不出来。
+     * <p>
+     * 🔴 后一半奔着一类具体的退步去：<b>把手填号码的格子加回来</b>。「发一条试试」存在的
+     * 全部意义是把「群号填错」与「Token 不对 / 机器人不在群里 / OneBot 没起」这三类分开——
+     * 它们的表现完全一样，都是什么都不发生。有了手填的格子，第一类错就又混了回去，
+     * 而且是在使用者最相信这一步的时候。加回来的那个改动<b>不会让任何功能变坏</b>，
+     * 因此靠人复查是拦不住的。
+     * <p>
+     * 目标必须来自名单这件事本身由 {@code links-model.js} 的 resolveTarget 判，
+     * 那一格在 tools/links-model-check.sh 里（含四例手填的阳性对照）。这里守的是它的另一半：
+     * 界面上根本没有可以手填的地方。
+     */
+    @Test
+    @DisplayName("连接页三张卡各有落点，发一条试试里没有手填号码的格子")
+    void linksPageIsWiredUp() throws IOException {
+        String html = Files.readString(frontendDir().resolve("index.html"), StandardCharsets.UTF_8);
+        Map<String, String> sources = coreSources();
+        String scripts = String.join("\n", sources.values());
+
+        List<String> bad = new ArrayList<>();
+        for (String id : LINK_CONTROLS) {
+            if (!html.contains("id=\"" + id + "\"")) {
+                bad.add("index.html 上没有 #" + id);
+            }
+            if (!scripts.contains("$('#" + id + "')")) {
+                bad.add("没有任何脚本用到 #" + id + "，它立在那里但点了不管用");
+            }
+        }
+
+        // 卡的 id 是拼出来的（$('#card-' + card.key)），上面那种字面量比对看不见它。
+        // 因此改判两头：页面上有这张卡，而模型里确实有一个同名的标识——
+        // 两头对不上时卡永远不换色，而页面本身完全正常
+        String model = sources.getOrDefault(LINKS_MODEL, "");
+        for (String key : LINK_CARD_KEYS) {
+            if (!html.contains("id=\"card-" + key + "\"")) {
+                bad.add("index.html 上没有 #card-" + key);
+            }
+            if (!model.contains("'" + key + "'")) {
+                bad.add(LINKS_MODEL + " 里没有卡片标识 " + key + "，那张卡永远不会换色");
+            }
+        }
+        if (!scripts.contains("$('#card-' + card.key)")) {
+            bad.add("没有任何脚本按模型给的标识去取那张卡");
+        }
+
+        bad.addAll(testMessageHasNoFreeTextField(html));
+
+        assertTrue(bad.isEmpty(), "连接页少了这几件事的落点:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
+     * 「发一条试试」那一块里只许有下拉框
+     * @param html index.html 全文
+     * @return 问题，没有则为空
+     */
+    private List<String> testMessageHasNoFreeTextField(String html) {
+        List<String> bad = new ArrayList<>();
+
+        int from = html.indexOf("id=\"card-test\"");
+        int to = html.indexOf("id=\"tokens\"", Math.max(from, 0));
+        if (from < 0 || to < 0) {
+            // 找不到那一块时判红而不是跳过：一把量不动却报绿的判据，比没有这把判据更糟
+            bad.add("index.html 里找不到「发一条试试」那一块（#card-test 到 #tokens 之间）");
+            return bad;
+        }
+
+        String block = html.substring(from, to);
+        if (block.contains("<input")) {
+            bad.add("「发一条试试」里出现了输入框。目标只能从机器人自己给的名单里挑——"
+                    + "手填时填错一位数不会有任何报错，消息只是发去了别处");
+        }
+        // 阴性对照：这一格得能分辨。没有这一句的话，那一块整个被删掉也照样「不含输入框」
+        if (!block.contains("<select")) {
+            bad.add("「发一条试试」里没有目标下拉框，上面那条「不含输入框」因此不作数");
+        }
+
+        return bad;
+    }
+
+    /**
      * 插件页是运行时装上来的，不是编译期定死的
      * <p>
      * 静态 {@code import} 一写，那个平台就成了核心的一部分：没装插件时页面加载不了，

@@ -51,6 +51,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.lang.management.ManagementFactory;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -61,6 +62,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Matcher;
@@ -360,6 +362,9 @@ public class ConfigUiController {
      * <p>
      * 界面据此长出页签与页面容器，再按 script 去取各自的脚本。核心的界面文件里因此
      * 一个平台的名字也没有：装了哪些平台，是运行时才知道的事。
+     * <p>
+     * {@code slot} 是这一页挂在哪儿：连接页上的一张卡，还是设置页「高级」下的一张子页。
+     * 由插件自己申报——核心不认识任何一个具体平台，也就无从判断某一页该摆在哪一处。
      * @return 页面清单
      */
     @GetMapping("/api/pages")
@@ -374,6 +379,9 @@ public class ConfigUiController {
             item.put("displayName", page.displayName());
             item.put("script", page.script());
             item.put("order", page.order());
+            // 枚举名一律小写，与界面上那两处落点一一对应；直接吐枚举名会把 Java 的书写习惯
+            // 泄进接口，换个实现语言就得跟着改
+            item.put("slot", page.slot().name().toLowerCase(Locale.ROOT));
             pages.add(item);
         }
 
@@ -1044,6 +1052,11 @@ public class ConfigUiController {
             item.put("loggedIn", provider.isLoggedIn());
             item.put("accountId", provider.accountId().orElse(null));
             item.put("disabledReason", provider.disabledReason().orElse(null));
+            // 凭据还能用多久，以及到期之后会不会自己续上。答不上的平台给 null，
+            // 界面那一侧就不写「还剩几天」——两个字段都写死成一个字段的话，
+            // 「没有到期时刻」与「到期时刻是 0」在浏览器里长得一样
+            item.put("expiresAt", provider.credentialExpiresAt().map(Instant::toEpochMilli).orElse(null));
+            item.put("credentialNote", provider.credentialNote().orElse(null));
 
             provider.pendingQrCodeContent()
                     .flatMap(content -> QrCodeUtil.generateQrCodeAndGetBase64(content, QR_CODE_IMAGE_SIZE))
@@ -1365,7 +1378,26 @@ public class ConfigUiController {
         result.put("quiet", quiet());
         result.put("live", liveNow());
         result.put("today", todayPushCounts());
+        result.put("queue", queue());
         return result;
+    }
+
+    /**
+     * 发送队列此刻积压多少、累计丢过多少
+     * <p>
+     * 机器人掉线时消息不会立刻消失，而是在队列里排着——排到队满才开始丢最旧的那条。
+     * 连接页上那张卡因此要把这个数写出来：光说「连不上」答不了「刚才那条开播通知还在不在」，
+     * 而这两件事使用者关心的程度完全不同。
+     * <p>
+     * 累计丢弃数一并给：积压回落到 0 有两种走法——发出去了，和被丢掉了，
+     * 只看积压数这两种长得一模一样。
+     * @return 队列状况
+     */
+    private JSONObject queue() {
+        JSONObject json = new JSONObject();
+        json.put("pending", messageSender.getPendingCount());
+        json.put("dropped", messageSender.getDroppedCount());
+        return json;
     }
 
     /**

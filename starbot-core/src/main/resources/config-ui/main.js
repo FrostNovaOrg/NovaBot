@@ -4,8 +4,9 @@
  */
 
 import {loadAnalytics} from './analytics.js';
-import {bindBotForm, botFormHtml, fillBotForms, sendTestMessage} from './bot.js';
+import {bindBotForm, botFormHtml, fillBotForms} from './bot.js';
 import {$, api, el, esc, markDirty, say} from './core.js';
+import {focusStation, loadTargets, mountLinkCard, refreshLinks, sendTestMessage} from './links.js';
 import {loadLog, syncLogView} from './log.js';
 import {loadHistory, loadState, refreshHome, renderStatus, runSelfTest, togglePush} from './overview.js';
 import {addStreamer, decoratePushData, renderPlatforms, renderStreamers, serializePush} from './push.js';
@@ -24,12 +25,21 @@ import {clearIssuedToken, loadTokens} from './tokens.js';
 const pages = [];
 
 /**
+ * 落在连接页上的那一档，与服务端下发的 slot 取值一致
+ *
+ * 写成常量而不是三处各写一个字符串：对不上的表现是插件卡挂到了设置页的折页里，
+ * 而两处的代码看起来都对
+ */
+const SLOT_LINKS = 'links';
+
+/**
  * 按注册清单建出入口与页面容器，并装载各自的脚本
  *
  * 逐个装而不是一次性 Promise.all：入口的先后要与清单一致，
  * 而某一页装不上时也只该影响它自己——其余的页照常可用，那一页上写清为什么空着。
  *
- * 六页导航之后，插件页挂在设置页的「高级」下，地址是 #/settings/<页标识>。
+ * 落位由插件自己申报：连接页上的一张卡，还是设置页「高级」下的一张子页
+ * （地址 #/settings/<页标识>）。核心不认识任何一个具体平台，也就无从判断某一页该摆在哪儿。
  * 与插件之间的约定一个字未改：仍是清单里的 id/displayName/script，
  * 加上脚本导出的 render/refresh/status ——它们不知道自己被挂在哪里。
  */
@@ -42,34 +52,46 @@ async function mountPages() {
     return;
   }
 
-  // 一个插件页都没有时整块不显示：一个点开是空的折页，比没有这个折页更费解
-  if (list.length) $('#plugin-adv').style.display = '';
+  // 一个折进设置页的插件页都没有时整块不显示：一个点开是空的折页，比没有这个折页更费解。
+  // 按落位数而不是按清单长度：全都落在连接页上时，那个折页里一张子页也没有
+  if (list.some(meta => meta.slot !== SLOT_LINKS)) $('#plugin-adv').style.display = '';
 
   const slot = $('#page-tabs');
   for (const meta of list) {
-    const button = el('button');
-    button.type = 'button';
-    button.dataset.tab = meta.id;
-    button.textContent = meta.displayName;
-    button.addEventListener('click', () => switchTab(meta.id));
-    slot.appendChild(button);
-
-    const section = el('section', 'pgpage');
-    section.id = meta.id;
-    $('#page-sections').appendChild(section);
+    const container = meta.slot === SLOT_LINKS ? mountLinkCard(meta) : mountSettingsPage(meta, slot);
 
     try {
       const module = await import('/config/assets/' + meta.script);
       pages.push({meta, module});
-      module.render?.(section);
+      module.render?.(container);
     } catch (e) {
       // 装不上的页也要留在清单里。清单是路由认页的唯一依据，不留就等于 #/settings/<页标识>
       // 认不出它，于是下面这句「为什么空着」永远显示不出来——而这句话正是给装不上时看的
       if (!pages.some(item => item.meta.id === meta.id)) pages.push({meta, module: {}});
-      section.innerHTML = '<p class="hint">' + esc(meta.displayName) + ' 的页面没能载入：' + esc(e.message)
+      container.innerHTML = '<p class="hint">' + esc(meta.displayName) + ' 的页面没能载入：' + esc(e.message)
         + '。该插件的其余功能不受影响。</p>';
     }
   }
+}
+
+/**
+ * 建出设置页「高级」下的一张子页与它的入口
+ * @param meta 页面清单里的一项
+ * @param slot 标签条容器
+ * @return {HTMLElement} 插件往里渲染的容器
+ */
+function mountSettingsPage(meta, slot) {
+  const button = el('button');
+  button.type = 'button';
+  button.dataset.tab = meta.id;
+  button.textContent = meta.displayName;
+  button.addEventListener('click', () => switchTab(meta.id));
+  slot.appendChild(button);
+
+  const section = el('section', 'pgpage');
+  section.id = meta.id;
+  $('#page-sections').appendChild(section);
+  return section;
 }
 
 /**
@@ -198,16 +220,32 @@ let route = '';
 /**
  * 解析地址栏。认不出来的路由一律当首页，不留白屏
  *
- * 查询串先切掉再分段：日志页把筛选写在 `#/log/2026-09-01?only=problem` 这样的地址里，
- * 不切的话第二段会连着后面那一串，于是「带筛选的那一天」认不出是哪一天。
- * 查询串本身由各页自己解析——每页要认的参数不是同一批，摊到这里就是一张长不完的表。
- * @return {{name: string, sub: string}} 路由名与子路由（插件页标识、或日志页的日期与子页）
+ * 页签时代的旧地址（#/tokens、#/bot 这类）不当作认不出来：收藏夹与旧文档里留着它们，
+ * 掉回首页的表现是「点进去到了别的地方」，而那看起来像是收藏错了。此处转到它现在所在的页。
+ *
+ * 问号后面那一段是「进去之后看哪一块」（#/links?card=platform），不参与认页——
+ * 拿它一起去查路由表的话，带参数的地址一律认不出来，于是全掉回首页。
+ * @return {{name: string, sub: string, card: string, redirect: string}}
+ *         路由名、子路由（插件页标识）、要看的那一块、旧地址该转去哪
  */
 function parseHash() {
-  const raw = (location.hash || '').replace(/^#\/?/, '').split('?')[0];
-  const parts = raw.split('/').filter(Boolean);
+  const raw = (location.hash || '').replace(/^#\/?/, '');
+  const cut = raw.indexOf('?');
+  const path = cut < 0 ? raw : raw.slice(0, cut);
+  const query = cut < 0 ? '' : raw.slice(cut + 1);
+
+  const parts = path.split('/').filter(Boolean);
   const name = parts[0] || 'home';
-  return {name: PAGE_TAB[name] ? name : 'home', sub: parts[1] || ''};
+  const card = /^card=([A-Za-z0-9_-]+)$/.exec(query);
+
+  return {
+    name: PAGE_TAB[name] ? name : 'home',
+    sub: parts[1] || '',
+    card: card ? card[1] : '',
+    // 名字不叫 legacy：那个词是 store 上一份共享状态的名字（按旧位置生效的配置项），
+    // 在界面文件里裸着出现即为 ReferenceError，因此有一条判据在盯着它——它当场逮住了这一处
+    redirect: !PAGE_TAB[name] && TAB_HASH[name] ? TAB_HASH[name] : '',
+  };
 }
 
 /**
@@ -218,8 +256,18 @@ function parseHash() {
  * @param withData 是否顺带重取本页的数据。首屏那一次只摆版式，数据由随后的整体载入取
  */
 function applyRoute(withData = true) {
-  const {name, sub} = parseHash();
-  const plugin = name === 'settings' && sub ? pages.find(item => item.meta.id === sub) : null;
+  const {name, sub, card, redirect} = parseHash();
+
+  // 旧地址转到它现在所在的页。改地址会再触发一次 hashchange，这一趟到此为止
+  if (redirect) {
+    location.hash = redirect;
+    return;
+  }
+
+  // 插件页只在落到设置页的那一档里找：落在连接页上的那些是卡不是页，
+  // 一起找的话，#/settings/<平台标识> 会打开一张空的折页，而那张卡明明在连接页上
+  const plugin = name === 'settings' && sub
+    ? pages.find(item => item.meta.id === sub && item.meta.slot !== SLOT_LINKS) : null;
 
   // 离开「连接」页就把刚签发的口令从 DOM 里抹掉。界面上写着「离开本页后无法再次查看」，
   // 这一行就是那句话的实现——留着它，那句话只是句话
@@ -247,6 +295,10 @@ function applyRoute(withData = true) {
   // 窄屏上导航是横向滚动的，靠右的项会落在视野外。选中却看不见等于没有选中标记
   $('#nav a[aria-current="page"]')?.scrollIntoView({inline: 'center', block: 'nearest'});
 
+  // 要看哪一块得赶在取数之前记下：真正滚过去是在卡画完之后，
+  // 此刻卡上还是上一刻的高度，滚了也白滚
+  focusStation(name === 'links' ? card : '');
+
   markDirty();
   if (!withData) return;
 
@@ -256,15 +308,17 @@ function applyRoute(withData = true) {
   // 每次进入都重取：群里随时可能有人订阅或关掉命令，缓存的画面会误导人；
   // 最近推送那张表随首页改版挪到了本页，因此跟着这一页刷
   else if (name === 'push') { loadState(); loadHistory(); }
-  else if (name === 'streamers') loadAnalytics();
+  else if (name === 'streamers') { loadAnalytics(); api('/status').then(renderStatus); }
+  // 每次进入都重建只读口令那一块：顺带抹掉上一次留在屏幕上的口令明文。
+  // 三张卡与名单跟着一起重取——群随时会被踢，缓存的名单会让人对着一个已经不在的群发测试消息
+  else if (name === 'links') { loadTokens(); refreshLinks(); refreshPages(); loadTargets(false); }
   // 翻天、改筛选、进出工程日志走的都是改地址栏这一条路，因此每次进来都重取：
   // 日志页的「现在是哪一天、筛了什么」全部只存在地址栏里，本页自己不记
   else if (name === 'log') loadLog();
-  // 每次进入都重建只读口令那一块：顺带抹掉上一次留在屏幕上的口令明文
-  else if (name === 'links') { api('/status').then(renderStatus); loadTokens(); }
   else if (plugin) { api('/status').then(renderStatus); callPage(plugin, 'refresh'); }
 
-  window.scrollTo(0, 0);
+  // 点名要看某一块时不回顶：滚到顶再滚下去，屏幕会先跳一下
+  if (!card) window.scrollTo(0, 0);
 }
 
 /**
@@ -291,6 +345,8 @@ $('#save').addEventListener('click', save);
 $('#discard').addEventListener('click', discard);
 $('#cfg-copy').addEventListener('click', copyConfigPath);
 $('#test-send').addEventListener('click', sendTestMessage);
+// 让机器人重新去问一遍：群是随时会变的，而缓存住的名单会让人对着一个已经退了的群发测试消息
+$('#test-refresh').addEventListener('click', () => loadTargets(true));
 $('#selftest-run').addEventListener('click', runSelfTest);
 // 搜索与「只看改过的」只改可见性，不重绘：重绘会丢掉正在编辑的那一格，
 // 而使用者常常是一边改一边搜下一项

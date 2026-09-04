@@ -197,6 +197,16 @@
     只该有一份实现，见 LiveSessionAnalytics。
   -->
   <section class="page" id="page-streamers">
+    <!--
+      监听中的主播。这张表原先长在平台插件那一页上，可它的每一列都来自 /api/status，
+      与是哪个平台无关——放在插件里的代价是装第二个平台时会出现两张各列一半的表。
+      本页正是「主播」这件事的落点，因此搬到这里。
+      它最终会并进主播页那份带汇总与折线的列表里，那一页还没建，先整份留在这里。
+    -->
+    <h3 class="cat-title">监听中的主播</h3>
+    <table id="users"><thead><tr><th>UID</th><th>昵称</th><th>直播间</th><th>平台</th>
+      <th>推送目标</th><th>状态</th></tr></thead><tbody></tbody></table>
+
     <div id="analytics">
       <p class="hint">数据来自每场直播下播时的归档。<b>只在这里看得到，不会发到群里。</b>
         按周期看趋势，逐场流水看具体某一场发生了什么。</p>
@@ -300,42 +310,62 @@
   </section>
 
   <!-- ============ 连接 #/links ============ -->
+  <!--
+    一页三张卡，答的是同一个问题的三段：直播平台那一头连上了没有、机器人这一头连上了没有、
+    事件往外送的那把口令签了没有。三段各自可能单独坏掉，而坏掉时该做的事完全不同——
+    合成一块「连接状态」的话，屏幕上只剩一句「有问题」，使用者仍然不知道该动哪儿。
+
+    卡的颜色与那句状态说明由 links-model.js 一次算出（见 tools/links-model-check.sh 的十二档），
+    这里只留容器。分散在各处「取一份数据、渲染一张卡」的写法在故障档下会互相矛盾。
+  -->
   <section class="page" id="page-links">
     <div id="bot">
-      <p class="hint">机器人指 NapCat、Lagrange 等 OneBot 实现。NovaBot 通过它把消息发到 QQ，本页负责确认这条链路是通的。</p>
-      <div class="health" id="bot-health"></div>
-
-      <div class="group fbox">
-        <h2>连接参数</h2>
-        <div class="body" id="bot-form"></div>
-      </div>
+      <p class="hint">这台机器与外面的三条连接。哪一段断了，这一页上就只有那一张卡是黄的或红的。</p>
 
       <!--
-        NapCat 的 WebUI 挂在本控制台后面时才显示。没配凭据就整块不显示——
-        一个点了才知道不能用的按钮，比没有那个按钮更费解。
+        直播平台的卡由插件登记进来，装了哪个平台是运行期才知道的事。
+        卡壳（标题、灯、那句状态说明）由核心按运行状态画，卡里的内容由插件自己填——
+        扫码、退出登录这些只有插件做得了，而「这一段此刻是好是坏」只有核心手里有探针。
       -->
-      <div class="group" id="napcat-entry" style="display:none">
-        <h2>NapCat 控制台</h2>
-        <div class="body">
-          <p class="hint" style="margin:0 0 10px">扫码登录 QQ、查看运行日志这些事在 NapCat 自己的界面里做。
-            你已经登录了这个控制台，<b>不必再登录它一次</b>——点开时会替你办好。</p>
-          <div class="backups" style="margin:0">
-            <button type="button" id="napcat-open">打开 NapCat 控制台</button>
+      <div id="link-cards"></div>
+
+      <div class="nv-card lcard" id="card-napcat">
+        <div class="lc-hd"><span class="lamp"></span><b>机器人（NapCat 等）</b><span class="lc-cap"></span></div>
+        <div class="lc-note"></div>
+        <div class="lc-body">
+          <p class="hint">机器人指 NapCat、Lagrange 等 OneBot 实现，NovaBot 通过它把消息发到 QQ。
+            两个 Token 留空表示<b>保持原值</b>，不会被抹掉。</p>
+          <div class="fbox" id="bot-form"></div>
+
+          <!--
+            NapCat 的 WebUI 挂在本控制台后面时才显示。没配凭据就整块不显示——
+            一个点了才知道不能用的按钮，比没有那个按钮更费解。
+          -->
+          <div class="lc-sub" id="napcat-entry" style="display:none">
+            <p class="hint" style="margin:0 0 8px">扫码登录 QQ、查看它自己的运行日志，这些事在 NapCat 的界面里做。
+              你已经登录了这个控制台，<b>不必再登录它一次</b>——点开时会替你办好。</p>
+            <button type="button" class="nv-btn2" id="napcat-open">打开 NapCat 界面 ↗</button>
           </div>
         </div>
       </div>
 
-      <div class="group">
-        <h2>发送测试消息</h2>
-        <div class="body">
-          <p class="hint">群号填错、Token 不对、机器人不在群里，表现都是「什么都不发生」。发一条真消息是最直接的验证方式。</p>
+      <!--
+        发一条试试。它不是第四条连接，而是上面那张卡的验收：群号填错、Token 不对、
+        机器人不在群里、OneBot 没起——这四类错的表现完全一样，什么都不发生。
+
+        目标从机器人自己给的名单里挑，<b>没有手填号码的格子</b>：手填时填错一位数不会有任何报错，
+        消息只是发去了别处，而那正是这一步要排除的第一类错。这条不靠「页面上没有那个框」保证，
+        由 links-model.js 的 resolveTarget 判，见 tools/links-model-check.sh。
+      -->
+      <div class="nv-card lcard" id="card-test">
+        <div class="lc-hd"><b>发一条试试</b><span class="lc-cap">从机器人自己知道的群与好友里挑</span></div>
+        <div class="lc-body">
           <div class="backups" id="selftest">
-            <select id="test-platform"></select>
-            <!-- 取值须与 PushTargetType 的 code 一致：GROUP(1)、FRIEND(0) -->
-            <select id="test-type"><option value="1">群聊</option><option value="0">私聊</option></select>
-            <input id="test-num" placeholder="群号 / QQ 号" inputmode="numeric">
+            <select id="test-target" aria-label="发给谁"></select>
+            <button id="test-refresh" type="button">刷新名单</button>
             <button id="test-send" type="button">发送</button>
           </div>
+          <p class="hint" id="test-hint" style="margin:0"></p>
           <div class="issues" id="test-result"></div>
         </div>
       </div>
@@ -348,18 +378,19 @@
       它与上面两块同属「这台机器与外面怎么连」，因此并在本页。
     -->
     <div id="tokens">
-      <h3 class="cat-title">外部面板</h3>
-      <p class="hint">外部面板（如 VRDash 桌面面板）要连事件流，得有一把只读口令。
-        它<b>只能读</b>——看得到开播、弹幕这些事件，改不了任何配置，也进不了这个控制台。</p>
+      <div class="nv-card lcard" id="card-panel">
+        <div class="lc-hd"><span class="lamp"></span><b>外部面板</b><span class="lc-cap"></span></div>
+        <div class="lc-note"></div>
+        <div class="lc-body">
+          <p class="hint">外部面板要连事件流，得有一把只读口令。它<b>只能读</b>——
+            看得到开播、弹幕这些事件，改不了任何配置，也进不了这个控制台。</p>
 
-      <div class="group fbox">
-        <h2>签发一把新口令</h2>
-        <div class="body" id="token-issue"></div>
-      </div>
+          <h4 class="lc-h">签发一把新口令</h4>
+          <div class="fbox" id="token-issue"></div>
 
-      <div class="group">
-        <h2>已签发的口令</h2>
-        <div class="body" id="token-list"></div>
+          <h4 class="lc-h">已签发的口令</h4>
+          <div id="token-list"></div>
+        </div>
       </div>
     </div>
   </section>

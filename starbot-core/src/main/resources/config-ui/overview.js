@@ -5,7 +5,6 @@
  * 哪一段该是什么颜色，一律在那边判——判断留在这里的话，八档对照就只能靠人点开页面看。
  */
 
-import {renderTestMessage} from './bot.js';
 import {$, api, clock, el, esc, markDirty, say, today} from './core.js';
 import {homeModel} from './home-model.js';
 import {pageStatus} from './main.js';
@@ -22,11 +21,12 @@ const STATION_ICONS = {
 /**
  * 一座站
  *
- * 站是按钮不是链接：它要做的事是「把人带到连接页」，而按钮按下去做什么由脚本说了算——
- * 写成 <a href> 的话，将来要滚到具体某张卡时得改成 preventDefault，那是一层白饶的弯。
+ * 站是按钮不是链接：它要做的事是「把人带到连接页上对应的那张卡」，
+ * 而地址里带着是哪一站（{@code #/links?card=platform}），刷新与收藏也能回到同一张卡。
+ * @param key 站名，与连接页那侧认的一致：platform / self / bot
  */
 function station(key, seg, withLamp) {
-  return '<button class="lm-st" type="button" data-goto="links">'
+  return '<button class="lm-st" type="button" data-goto="' + esc(key) + '">'
     + '<span class="lm-ico"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">'
     + STATION_ICONS[key] + '</svg></span>'
     + '<span class="lm-nm">' + esc(seg.station)
@@ -61,8 +61,10 @@ function renderLinkMap(model) {
     + '<div class="lm-seg" style="min-width:0;padding-top:8px">'
     + '<div class="lm-cap">本机 · ' + esc(model.chain.self.caption || '—') + '</div></div>';
 
+  // 地址里带上是哪一站，由连接页那侧决定滚到哪张卡。写成「跳过去再由这里滚」的话，
+  // 从收藏夹直接打开那条地址就滚不了——而那正是使用者第二次来找同一张卡时会走的路
   $('#linkmap').querySelectorAll('[data-goto]').forEach(btn => {
-    btn.addEventListener('click', () => { location.hash = '#/links'; });
+    btn.addEventListener('click', () => { location.hash = '#/links?card=' + btn.dataset.goto; });
   });
 }
 
@@ -295,6 +297,28 @@ function renderVersion(version) {
 }
 
 /**
+ * 监听中的主播
+ *
+ * 每一列都来自 /api/status，与是哪个平台无关，因此归核心画。这张表原先长在平台插件那一页上，
+ * 装第二个平台时会变成两张各列一半的表——而使用者要的是「这台机器一共在盯着谁」。
+ * @param data /api/status 回包
+ */
+function renderUsers(data) {
+  const body = $('#users tbody');
+  if (!body) return;
+
+  const users = data.users || [];
+  if (!users.length) {
+    body.innerHTML = '<tr><td colspan="6" class="empty">还没有配置任何主播，去「QQ 推送」页添加</td></tr>';
+    return;
+  }
+
+  body.innerHTML = users.map(u => [u.uid, u.uname || '—', u.roomId || '—', u.platform,
+    u.targets, u.enabled === false ? '已停用' : '正常']
+    .map(v => '<td>' + esc(v) + '</td>').join('')).map(tds => '<tr>' + tds + '</tr>').join('');
+}
+
+/**
  * 探针行。插件页要渲染属于自己的那几条，因此这里导出去
  * @param list 探针
  * @param emptyText 一条都没有时说的话
@@ -315,12 +339,8 @@ export function healthRows(list, emptyText) {
  * @param data /api/status 回包
  */
 export function renderStatus(data) {
-  renderTestMessage(data.senders);
   renderVersion(data.version);
-
-  // 机器人页只展示与自己相关的探针，由探针自报 scope 决定归属
-  $('#bot-health').innerHTML = healthRows((data.health || []).filter(h => h.scope === 'BOT'),
-    '未找到机器人适配器，请确认对应插件已加载');
+  renderUsers(data);
 
   const runtime = data.runtime || {};
   $('#run-mem').textContent = runtime.heapUsedMb + ' / ' + runtime.heapMaxMb + ' MB';

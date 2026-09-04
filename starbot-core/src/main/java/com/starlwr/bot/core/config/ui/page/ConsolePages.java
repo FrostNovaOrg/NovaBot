@@ -153,6 +153,14 @@ public final class ConsolePages {
                 continue;
             }
 
+            // 落位与上面几项一样是「向插件要一个值」，同样可能抛。取不到就不登记，
+            // 而不是替它兜一个缺省——兜了的话，一个已经出事的插件会安静地长在某一页上，
+            // 而那一页此刻正是它自己申报不出来的那一页
+            if (read(provider, ConsolePageProvider::slot, "落位") == null) {
+                log.warn("控制台页面 {} 的落位取不到, 已忽略", id);
+                continue;
+            }
+
             if (!seen.add(id)) {
                 log.warn("控制台页面标识 {} 重复, 后一个已忽略: {}", id, provider.getClass().getName());
                 continue;

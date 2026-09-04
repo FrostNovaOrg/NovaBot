@@ -9,6 +9,7 @@ import com.starlwr.bot.core.health.HealthProbe;
 import com.starlwr.bot.core.health.HealthStatus;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.sender.PushGate;
+import com.starlwr.bot.core.sender.StarBotMessageSender;
 import com.starlwr.bot.core.service.EventStreamTokenService;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.StarBotSenderService;
@@ -65,6 +66,9 @@ class HomeStatusFieldsTest {
 
     private ConfigUiAuthService authService;
 
+    /** 发送队列。连接页那张卡要按它写「还压着几条」，因此各用例改得到 */
+    private StarBotMessageSender messageSender;
+
     /** 探针清单由本字段供给，各用例按需改 */
     private List<HealthProbe> probes = List.of();
 
@@ -86,6 +90,8 @@ class HomeStatusFieldsTest {
 
         authService = mock(ConfigUiAuthService.class);
         when(authService.isEnabled()).thenReturn(true);
+
+        messageSender = mock(StarBotMessageSender.class);
     }
 
     @SuppressWarnings("unchecked")
@@ -104,7 +110,7 @@ class HomeStatusFieldsTest {
                 healthProbes,
                 mock(ConfigurationValidator.class),
                 senders,
-                mock(com.starlwr.bot.core.sender.StarBotMessageSender.class),
+                messageSender,
                 mock(ObjectProvider.class),
                 mock(com.starlwr.bot.core.health.PushActivityRecorder.class),
                 mock(com.starlwr.bot.core.service.StarBotEventHandlerService.class),
@@ -157,6 +163,39 @@ class HomeStatusFieldsTest {
         pushUser.setPlatform(platform);
         pushUser.setEnabled(enabled);
         return pushUser;
+    }
+
+    /**
+     * 连接页那张机器人卡要写「队列里还压着几条」
+     * <p>
+     * 掉线时消息不会立刻消失，而是在队列里排着——排到队满才开始丢最旧的那条。
+     * 光说「连不上」答不了「刚才那条开播通知还在不在」，而这两件事使用者关心的程度完全不同。
+     * <p>
+     * 累计丢弃数一并下发：积压回落到 0 有两种走法——发出去了，和被丢掉了，
+     * 只看积压数这两种长得一模一样。
+     */
+    @Test
+    @DisplayName("发送队列的积压数与累计丢弃数一并下发")
+    void queueBacklogIsReported() {
+        when(messageSender.getPendingCount()).thenReturn(7);
+        when(messageSender.getDroppedCount()).thenReturn(3L);
+
+        JSONObject queue = controller().status().getJSONObject("queue");
+
+        assertEquals(7, queue.getIntValue("pending"));
+        assertEquals(3L, queue.getLongValue("dropped"));
+    }
+
+    @Test
+    @DisplayName("队列空着时是 0，不是缺键")
+    void emptyQueueIsZeroNotMissing() {
+        JSONObject queue = controller().status().getJSONObject("queue");
+
+        // 缺键与 0 在浏览器里长得一样（都取到 undefined 之后被当成 0），
+        // 而「没有这个字段」意味着某次改动把它整个丢了——那时卡上再也不会写积压
+        assertNotNull(queue, "队列这一块必须在，哪怕是空的");
+        assertEquals(0, queue.getIntValue("pending"));
+        assertEquals(0L, queue.getLongValue("dropped"));
     }
 
     @Test

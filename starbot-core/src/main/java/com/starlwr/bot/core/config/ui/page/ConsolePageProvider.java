@@ -46,4 +46,16 @@ public interface ConsolePageProvider {
     default int order() {
         return 100;
     }
+
+    /**
+     * 这一页挂到控制台的哪一处
+     * <p>
+     * 缺省是设置页「高级」下的一张子页，也就是本接口原先唯一的那种落法——
+     * 已有的实现一个字都不用改。账号登录这类「这台机器与外面怎么连」的页申报
+     * {@link ConsolePageSlot#LINKS}，会成为连接页上的一张卡。
+     * @return 落位
+     */
+    default ConsolePageSlot slot() {
+        return ConsolePageSlot.SETTINGS;
+    }
 }
