@@ -150,8 +150,30 @@ final class NovaEventSlowConsumerHarness implements AutoCloseable {
      * 心跳一格没走」在两种负载下都是同一句话——因为这把表和心跳吃的是同一份 CPU。
      * <p>
      * 用 {@code ScheduledExecutorService} 而不是 {@code sleep} 循环，是为了和被量的那条
-     * （端点的 {@code heartbeats}）<b>同一种机器</b>：同样的定时器实现、同样的补齐行为。
+     * （端点的 {@code heartbeats}）<b>同一种机器</b>：同样的定时器实现、同样的线程模型。
      * <b>对照要和被对照的东西同形，差出来的才是被测的那件事。</b>
+     *
+     * <h2>🔴 派活用 {@code scheduleWithFixedDelay}，<b>不</b>用 {@code scheduleAtFixedRate}</h2>
+     * 从前两边都用补齐型，理由是「同形」。那句话本身没错，可它管不着这一处：
+     * 这把表在判据里的角色是<b>预算</b>，而<b>补齐型的预算会瞬间烧完</b>。
+     * ticker 那条线程被剥了一会儿 CPU，欠下的几格会紧挨着补出来——
+     * 「走了 2 格」于是可能只对应一百多毫秒。
+     * <p>
+     * 而判据 1 要的是「这段时间里心跳该走过至少一轮」，那是<b>墙钟</b>上的事：
+     * 端点的 {@code heartbeats} 按墙钟到点，一轮 ping 隔一个心跳周期。
+     * 两件事之间还差着<b>两次线程切换</b>——心跳线程入队、泵线程写出去、探针线程读出来记一笔，
+     * 而对照钟那一格只是一次原子自增。两边一起被剥 CPU、一起恢复时，<b>对照钟必先到</b>，
+     * 窗口就在那一轮 ping 落地之前关上了。
+     * <p>
+     * 实录（改前，整类连跑 25 轮撞到一次）：窗口 2 格 / 247ms、<b>本跑实测格长 123ms</b>，
+     * 六条健康连接一轮未推进；同一份读数里卡在关闭帧写里的是 {@code nova-event-sender-*}，
+     * <b>心跳线程一根汗毛没动</b>。另在 75 跑原样码里量到 5 次窗口墙钟短于一个心跳周期
+     * （165／177／181／183／186ms）——那种窗口里心跳一轮都不欠，判据 1 的绿纯属侥幸。
+     * <p>
+     * 换成不补齐之后，相邻两格之间至少隔一个周期的<b>真跑时间</b>，
+     * N 格的窗口必覆盖 ≥ (N−1) 个心跳周期。<b>「负载免疫」一点没丢</b>：机器慢时格自己变长、
+     * 预算跟着变长；丢掉的只是「预算可以瞬间烧完」。
+     * 这一条由台架自检 {@code referenceClockMustNotCatchUp} 拿<b>生效值</b>就地量着。
      */
     static final class ReferenceClock implements AutoCloseable {
         private final java.util.concurrent.ScheduledExecutorService ticker;
@@ -161,6 +183,19 @@ final class NovaEventSlowConsumerHarness implements AutoCloseable {
 
         private final long tickMs;
 
+        /** 上一格落在什么时刻。只由 ticker 那一条线程写 */
+        private volatile long lastTickAt = 0;
+
+        /**
+         * 相邻两格之间<b>最短</b>隔了多久
+         * <p>
+         * 🔴 这把表在判据里的角色是<b>预算</b>，而这个数就是「预算最快能烧多快」。
+         * 它小于一个心跳周期时，「走了 N 格」这句话就不再意味着「心跳该走过 N 轮」——
+         * 判据 1 的整条推理链是断的。见 {@link NovaEventHarnessSelfCheckTest} 里就地量它的那一格。
+         */
+        private final java.util.concurrent.atomic.AtomicLong minGapMs =
+                new java.util.concurrent.atomic.AtomicLong(Long.MAX_VALUE);
+
         ReferenceClock(long periodMs) {
             this.tickMs = periodMs;
             this.ticker = java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
@@ -168,7 +203,26 @@ final class NovaEventSlowConsumerHarness implements AutoCloseable {
                 t.setDaemon(true);
                 return t;
             });
-            ticker.scheduleAtFixedRate(tick::incrementAndGet, periodMs, periodMs, TimeUnit.MILLISECONDS);
+            // 🔴 fixedDelay 而非 fixedRate：见类注释。补齐型的表会把欠下的格紧挨着补出来，
+            //    「走了 N 格」于是不再意味着「墙钟走过 N 个心跳周期」，判据 1 当场假红
+            ticker.scheduleWithFixedDelay(this::onTick, periodMs, periodMs, TimeUnit.MILLISECONDS);
+        }
+
+        private void onTick() {
+            long now = System.currentTimeMillis();
+            long previous = lastTickAt;
+            lastTickAt = now;
+            if (previous != 0) {
+                long gap = now - previous;
+                minGapMs.updateAndGet(m -> Math.min(m, gap));
+            }
+            tick.incrementAndGet();
+        }
+
+        /** 相邻两格最短隔了多久；还没走满两格时为 -1 */
+        long minTickGapMs() {
+            long v = minGapMs.get();
+            return v == Long.MAX_VALUE ? -1 : v;
         }
 
         long read() {
@@ -268,6 +322,23 @@ final class NovaEventSlowConsumerHarness implements AutoCloseable {
             return m;
         }
     }
+
+    /**
+     * 量「相邻两格隔了多久」时留的余量（毫秒）
+     * <p>
+     * 🔴 <b>只为毫秒取整与调度落点留的一点点</b>，不是判据的松紧钮：格是按 {@code nanoTime}
+     * 的死线排的，而这里拿 {@code currentTimeMillis} 的差去量，两把表在整数毫秒上会差一格。
+     * 补齐型的表量出来的是<b>几毫秒到几十毫秒</b>（欠下的格紧挨着补出来），
+     * 不补齐的是<b>一个周期以上</b>——两边差着量级，这点余量挡不住洞。
+     */
+    static final long CLOCK_GAP_SLACK_MS = 5;
+
+    /**
+     * 台架自检量对照钟时走几格
+     * <p>
+     * 取 15 格：够长，让被剥 CPU 的 ticker 至少赶上一次；又不至于把自检拖成一场压测。
+     */
+    static final long CLOCK_SELF_CHECK_TICKS = 15;
 
     /**
      * 判据的观测窗口，以<b>对照格</b>计
@@ -1062,6 +1133,31 @@ final class NovaEventSlowConsumerHarness implements AutoCloseable {
      */
     static final java.util.Set<Thread.State> CLOSE_FRAME_STATE_ALLOWLIST =
             java.util.Set.of(Thread.State.WAITING, Thread.State.RUNNABLE);
+
+    /**
+     * 指名一条线程，看它此刻在干什么
+     * <p>
+     * 🔴 {@link #priorGaugeSomeoneStuckWritingCloseFrame()} 只收「卡在关闭帧写里」的那几条，
+     * 心跳线程要是<b>只是被剥了 CPU</b>（{@code RUNNABLE} 排不上号）或者正停在定时器的
+     * park 上，它一条也不会出现在那份实录里——于是「心跳没被钉住」这件事在读数上是
+     * <b>沉默的</b>，而沉默和「尺没量」长得一样。这一支专补那一栏：判据 1 零推进时
+     * 就地把心跳线程的状态与栈抄下来，红了不必再猜是钉住还是没排上号。
+     *
+     * @param thread 要看的那条线程
+     * @return 名字／线程号／状态／栈摘录
+     */
+    static Map<String, Object> threadSnapshot(Thread thread) {
+        Map<String, Object> outMap = new LinkedHashMap<>();
+        outMap.put("线程名", thread.getName());
+        outMap.put("线程号", thread.getId());
+        outMap.put("线程状态", thread.getState().name());
+        List<String> excerpt = new ArrayList<>();
+        for (StackTraceElement f : thread.getStackTrace()) {
+            excerpt.add(f.getClassName() + "." + f.getMethodName());
+        }
+        outMap.put("栈摘录", excerpt.subList(0, Math.min(12, excerpt.size())));
+        return outMap;
+    }
 
     /**
      * 同一份线程转储里，<b>持着 {@code NioSocketImpl} 那把写锁</b>的线程
