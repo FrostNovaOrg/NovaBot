@@ -4,9 +4,7 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.analytics.LiveMetricCatalog;
 import com.starlwr.bot.core.analytics.LiveSessionAnalytics;
-import com.starlwr.bot.core.enums.LiveEndReason;
 import com.starlwr.bot.core.model.LiveSession;
-import com.starlwr.bot.core.model.RoomInfoSnapshot;
 import com.starlwr.bot.core.service.LiveSessionArchive;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
@@ -170,68 +168,15 @@ public class AnalyticsController {
 
         JSONArray items = new JSONArray();
         for (LiveSession session : page) {
-            items.add(sessionJson(session));
+            // 场次的 JSON 形状与主播详情共用一份，不在这里另写一遍：
+            // 「缺口两项不相加」「名单空不等于零」这几条规矩只该有一处实现
+            items.add(LiveSessionJson.of(session));
         }
         result.put("sessions", items);
         // 截断了就得说，否则界面看起来像是「一共就播过这些场」
         result.put("droppedSessions", Math.max(0, selected.size() - page.size()));
 
         return result;
-    }
-
-    /**
-     * 把一场直播转为界面用的 JSON
-     */
-    private JSONObject sessionJson(LiveSession session) {
-        JSONObject item = new JSONObject();
-        item.put("platform", session.platform());
-        item.put("uid", session.uid());
-        item.put("uname", session.uname());
-        item.put("roomId", session.roomId());
-        item.put("startTime", session.startTime());
-        item.put("endTime", session.endTime());
-        item.put("durationSeconds", session.durationSeconds());
-        item.put("metrics", session.metrics() == null ? new JSONObject() : new JSONObject(session.metrics()));
-        item.put("userCounts", session.userCounts() == null ? new JSONObject() : new JSONObject(session.userCounts()));
-
-        // 被平台中断的场次要能一眼认出来：它的时长与营收和正常场次不可比，
-        // 混在一张表里看就成了「这天状态怎么这么差」
-        LiveEndReason reason = session.endReason() == null ? LiveEndReason.NORMAL : session.endReason();
-        item.put("endReason", reason.name());
-        item.put("endReasonText", reason.getDescription());
-        item.put("interrupted", session.interrupted());
-
-        // 有缺口的场次，各项计数只是下界。不标出来的话，一次维护重启会被读成「这天人气差」
-        item.put("maintenanceGapSeconds", session.maintenanceGapSeconds());
-        // 单房断线缺口。与上面那项**分两个字段给出去，不相加**：
-        // 程序停机期间所有房间都在断，两段必然重叠，相加就是重复计数
-        item.put("roomOutageSeconds", session.roomOutageSeconds());
-
-        // ⚠️ 名单这一项，「空」有两种含义，必须让消费方分得开：
-        // 一是这一场真的没人参与，二是这条记录来自还没有名单功能的年代。
-        // 只丢一个空对象出去的话，历史场次会被显示成「零观众」——
-        // 与缺口读成 0 是同一类误读：**0 是「不知道」，不是「我保证没有」**
-        item.put("hasUserSets", session.hasUserSets());
-        JSONObject userSets = new JSONObject();
-        if (session.userSets() != null) {
-            session.userSets().forEach((metric, uids) -> userSets.put(metric, new JSONArray(uids)));
-        }
-        item.put("userSets", userSets);
-
-        JSONArray titles = new JSONArray();
-        if (session.titles() != null) {
-            for (RoomInfoSnapshot title : session.titles()) {
-                JSONObject entry = new JSONObject();
-                entry.put("at", title.at());
-                entry.put("title", title.title());
-                entry.put("area", title.area());
-                titles.add(entry);
-            }
-        }
-        item.put("titles", titles);
-        item.put("titleChangeCount", session.titleChangeCount());
-
-        return item;
     }
 
     /**

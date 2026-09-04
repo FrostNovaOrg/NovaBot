@@ -931,6 +931,17 @@ public class ConfigUiController {
         result.put("uname", user.getUname());
         result.put("roomId", user.getRoomId());
         result.put("face", user.getFace());
+        // 粉丝数是这张确认小卡上最容易发现「认错人」的一项：uid 打错一位仍可能查到
+        // 一位真实存在的人，昵称与头像未必看得出不对，粉丝数往往差着数量级。
+        // 取不到时给 null 而不是 0——后者会显示成「这位主播一个粉丝都没有」。
+        // 单独兜一次异常：主播已经查到了，不该因为一个附带字段拉不下来就整次判失败
+        Long fans = null;
+        try {
+            fans = service.get().getFansCount(uid).orElse(null);
+        } catch (Exception e) {
+            log.debug("获取 uid {} 的粉丝数失败: {}", uid, e.getMessage());
+        }
+        result.put("fans", fans);
         return result;
     }
 

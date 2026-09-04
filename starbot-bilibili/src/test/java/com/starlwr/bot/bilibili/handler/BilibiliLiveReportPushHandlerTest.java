@@ -11,17 +11,26 @@ import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
 import com.starlwr.bot.bilibili.model.BilibiliLiveReportOptions;
+import com.starlwr.bot.core.service.LiveDataService;
+import com.starlwr.bot.core.service.LiveReportArchive;
 import com.starlwr.bot.core.service.RevenueVisibilityService;
 import com.starlwr.bot.core.service.StarBotStateStore;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Base64;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -47,14 +56,44 @@ class BilibiliLiveReportPushHandlerTest {
 
     private RevenueVisibilityService revenueVisibility;
 
+    private LiveReportArchive reports;
+
+    @TempDir
+    Path dir;
+
+    /** 本场开播时刻，留档以它为键 */
+    private static final long START_TIME = 1757000000000L;
+
     @BeforeEach
     void setUp() {
-        revenueVisibility = new RevenueVisibilityService(new StarBotStateStore(new StarBotCoreProperties()));
+        // 落点全指到临时目录：状态存储与报告留档都会写盘，跑一趟测试不该在仓里留下文件
+        StarBotCoreProperties properties = new StarBotCoreProperties();
+        properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
+
+        revenueVisibility = new RevenueVisibilityService(new StarBotStateStore(properties));
         BilibiliApiUtil api = mock(BilibiliApiUtil.class);
         when(api.getUpInfoByUid(anyLong())).thenThrow(new RuntimeException("接口不可用"));
         painter = mock(BilibiliLiveReportPainter.class);
         sender = mock(StarBotMessageSender.class);
-        handler = new BilibiliLiveReportPushHandler(api, sender, painter, revenueVisibility);
+        reports = new LiveReportArchive(properties);
+
+        LiveDataService liveDataService = mock(LiveDataService.class);
+        when(liveDataService.getLiveStartTime(anyString(), anyLong())).thenReturn(Optional.of(START_TIME));
+
+        handler = new BilibiliLiveReportPushHandler(api, sender, painter, revenueVisibility, reports, liveDataService);
+    }
+
+    /**
+     * 换一份「问不出开播时刻」的处理器
+     * <p>
+     * 那种场次<b>本来也不会被归档</b>（下播事件监听器同样以开播时刻为前提），
+     * 控制台上不存在这一行，留下的图永远没人点得到
+     */
+    private BilibiliLiveReportPushHandler handlerWithoutStartTime() {
+        BilibiliApiUtil api = mock(BilibiliApiUtil.class);
+        LiveDataService liveDataService = mock(LiveDataService.class);
+        when(liveDataService.getLiveStartTime(anyString(), anyLong())).thenReturn(Optional.empty());
+        return new BilibiliLiveReportPushHandler(api, sender, painter, revenueVisibility, reports, liveDataService);
     }
 
     @Test
@@ -158,6 +197,93 @@ class BilibiliLiveReportPushHandlerTest {
         ArgumentCaptor<BilibiliLiveReportOptions> options = ArgumentCaptor.forClass(BilibiliLiveReportOptions.class);
         verify(painter).paint(anyString(), any(), options.capture());
         assertTrue(options.getValue().isShowRevenue());
+    }
+
+    @Test
+    @DisplayName("出图即留一份到本地：文件名带平台·uid·开播时刻，内容与推出去的那张同字节")
+    void archivesTheReportItJustPushed() {
+        byte[] png = "假装这是一张 PNG".getBytes(StandardCharsets.UTF_8);
+        when(painter.paint(anyString(), any(), any()))
+                .thenReturn(Optional.of(Base64.getEncoder().encodeToString(png)));
+
+        handler.handle(event(), pushMessage());
+
+        Path file = dir.resolve("reports").resolve("bilibili-10001-" + START_TIME + ".png");
+        assertTrue(Files.exists(file), "下播出了报告图，控制台的场次表就该点得开它");
+        assertArrayEquals(png, readAll(file), "留下的必须是推出去的那一张，不是另画一张");
+        assertTrue(reports.has("bilibili", 10001L, START_TIME));
+    }
+
+    @Test
+    @DisplayName("没记到开播时刻就不留档：那种场次连归档都没有，图留下也没人点得到")
+    void skipsArchiveWithoutStartTime() {
+        when(painter.paint(anyString(), any(), any())).thenReturn(Optional.of("QUJD"));
+
+        handlerWithoutStartTime().handle(event(), pushMessage());
+
+        assertFalse(Files.exists(dir.resolve("reports")), "问不出开播时刻时不该凭空造一个键");
+    }
+
+    @Test
+    @DisplayName("画不出来改发文字版时不留档：那一场就是没有图")
+    void skipsArchiveWhenPaintFails() {
+        when(painter.paint(anyString(), any(), any())).thenReturn(Optional.empty());
+        when(painter.textReport(anyString(), any(), any())).thenReturn("文字版");
+
+        handler.handle(event(), pushMessage());
+
+        assertFalse(reports.has("bilibili", 10001L, START_TIME),
+                "留一张空图会让人以为是图坏了, 而真相是这一场压根没出图");
+    }
+
+    @Test
+    @DisplayName("同一场推给多个通道只留一份，且金额可见的那份优先")
+    void keepsTheCopyThatShowsRevenue() {
+        byte[] hidden = "群聊版·没有金额".getBytes(StandardCharsets.UTF_8);
+        byte[] visible = "私聊版·带金额".getBytes(StandardCharsets.UTF_8);
+        when(painter.paint(anyString(), any(), any()))
+                .thenReturn(Optional.of(Base64.getEncoder().encodeToString(hidden)))
+                .thenReturn(Optional.of(Base64.getEncoder().encodeToString(visible)));
+
+        // 先推群（默认不带金额），再推私聊（默认带金额）
+        handler.handle(event(), pushMessage());
+        PushMessage friend = pushMessage();
+        friend.getTarget().setType(PushTargetType.FRIEND);
+        friend.getTarget().setNum(2000000002L);
+        handler.handle(event(), friend);
+
+        Path file = dir.resolve("reports").resolve("bilibili-10001-" + START_TIME + ".png");
+        assertArrayEquals(visible, readAll(file),
+                "留档是给这台机器的主人看的, 他本就看得到金额, 不该留一份比自己权限还少的报告");
+        assertEquals(1, Objects.requireNonNull(dir.resolve("reports").toFile().listFiles()).length,
+                "一场只该留一份, 推给几个通道就存几张会让磁盘按通道数翻倍");
+    }
+
+    @Test
+    @DisplayName("金额可见的那份留下之后，后来的不可见版本不许把它盖掉")
+    void visibleCopyIsNotOverwrittenByHiddenOne() {
+        byte[] visible = "私聊版·带金额".getBytes(StandardCharsets.UTF_8);
+        byte[] hidden = "群聊版·没有金额".getBytes(StandardCharsets.UTF_8);
+        when(painter.paint(anyString(), any(), any()))
+                .thenReturn(Optional.of(Base64.getEncoder().encodeToString(visible)))
+                .thenReturn(Optional.of(Base64.getEncoder().encodeToString(hidden)));
+
+        PushMessage friend = pushMessage();
+        friend.getTarget().setType(PushTargetType.FRIEND);
+        friend.getTarget().setNum(2000000002L);
+        handler.handle(event(), friend);
+        handler.handle(event(), pushMessage());
+
+        assertArrayEquals(visible, readAll(dir.resolve("reports").resolve("bilibili-10001-" + START_TIME + ".png")),
+                "顺序反过来结论应当不变, 否则留下哪一份取决于通道在配置里的先后");
+    }
+
+    private byte[] readAll(Path path) {
+        try {
+            return Files.readAllBytes(path);
+        } catch (java.io.IOException e) {
+            throw new AssertionError("读不到留档: " + path, e);
+        }
     }
 
     private BilibiliLiveOffEvent event() {
