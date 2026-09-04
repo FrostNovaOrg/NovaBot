@@ -59,6 +59,22 @@ final class LiveSessionJson {
         }
         item.put("userSets", userSets);
 
+        // ⚠️ 峰值这一项与名单同理，「空」有两种含义：一是这一场那条曲线一个点都没有，
+        // 二是这条记录早于「峰值入归档」。场次表上前者该显示 0，后者该显示「—」——
+        // 只丢一个空对象出去的话，几个月前的场次会显示成「人气峰 0」，
+        // 而那是一句假话：那时候的序列早就没了，我们不是知道它是 0，是不知道它是多少
+        item.put("hasPeaks", session.hasPeaks());
+        JSONObject peaks = new JSONObject();
+        if (session.peaks() != null) {
+            session.peaks().forEach((metric, peak) -> {
+                JSONObject one = new JSONObject();
+                one.put("at", peak.at());
+                one.put("value", peak.value());
+                peaks.put(metric, one);
+            });
+        }
+        item.put("peaks", peaks);
+
         JSONArray titles = new JSONArray();
         if (session.titles() != null) {
             for (RoomInfoSnapshot title : session.titles()) {

@@ -31,6 +31,8 @@ starbot:
       live-data-path: coverage-data.json
       auto-save-live-data-interval: 41
       reconnect-interval: 42
+      detail-retention-days: 43
+      report-cache-days: 44
     paint:
       fonts:
         - CoverageFontA

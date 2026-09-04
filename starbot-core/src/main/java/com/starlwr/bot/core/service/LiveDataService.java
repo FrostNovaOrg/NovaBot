@@ -7,6 +7,7 @@ import lombok.NonNull;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * 直播数据服务接口
@@ -457,6 +458,22 @@ public interface LiveDataService {
      */
     default Map<Long, Double> getLiveSeries(@NonNull String platform, @NonNull Long uid, @NonNull String metric) {
         return Map.of();
+    }
+
+    /**
+     * 获取本场直播<b>有哪些</b>时间序列
+     * <p>
+     * 与 {@link #getLiveSeries} 的分工是「有哪几条」与「某一条长什么样」。
+     * 单列这一个方法，是因为归档明细要把序列<b>整份</b>留下来，
+     * 而<b>核心并不知道有哪些指标</b>——指标名由各平台自行定义。
+     * 按一张写死的名单去逐条取的话，插件新加一条曲线，明细里就会安静地少一条，
+     * 且那一场的序列在下次开播时就没了，事后补不回来。
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @return 有序列记录的指标名，未记录时为空集
+     */
+    default Set<String> getLiveSeriesMetrics(@NonNull String platform, @NonNull Long uid) {
+        return Set.of();
     }
 
     // ================ 累计数据 ================

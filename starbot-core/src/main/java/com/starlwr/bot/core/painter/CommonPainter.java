@@ -844,10 +844,13 @@ public class CommonPainter {
         // 既问不出这是什么程序，也找不到它从哪来。
         //
         // 写成裸的主机加路径而不带 https:// ——图里的字不可点，协议头只让这一行更长，
-        // 而更长的一行在窄图上更容易被挤出右边距。整行与其余版权信息同为浅灰，
-        // 不用链接色：那会让人以为点得动。
-        drawTextRight("Running on NovaBot v" + buildProperties.getVersion() + " · " + REPOSITORY,
-                Color.LIGHT_GRAY, marginRight);
+        // 而更长的一行在窄图上更容易被挤出右边距。开头也不再写「Running on」：头两个词
+        // 不添信息。字号取脚注档（比正文小一档）：这一行是出处不是内容，正文档的宽度
+        // 在 900 宽的图上几乎顶到左边——去掉协议头与开头两个词仍不够，得连字号一起降。
+        // 整行与其余版权信息同为浅灰，不用链接色：那会让人以为点得动
+        drawTextRightWithStyle(List.of(new TextWithStyle(
+                "NovaBot v" + buildProperties.getVersion() + " · " + REPOSITORY,
+                TIP_FONT_SIZE, Color.LIGHT_GRAY, Font.PLAIN)), marginRight);
 
         for (List<TextWithStyle> line : extraMiddle) {
             drawTextRightWithStyle(line, marginRight);

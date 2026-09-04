@@ -1160,6 +1160,25 @@ public class DefaultLiveDataService implements LiveDataService {
         }
     }
 
+    /**
+     * 获取本场直播有哪些时间序列
+     *
+     * @param platform 直播平台
+     * @param uid      主播 UID
+     * @return 有序列记录的指标名，未记录时为空集
+     */
+    @Override
+    public java.util.Set<String> getLiveSeriesMetrics(@NonNull String platform, @NonNull Long uid) {
+        synchronized (metricLock) {
+            JSONObject byMetric = Optional.ofNullable(cache.getJSONObject("LiveSeries:" + platform))
+                    .map(data -> data.getJSONObject(String.valueOf(uid)))
+                    .orElse(null);
+            // 拷一份出去而不是把 keySet 直接给出来：那是缓存对象自己的视图，
+            // 调用方遍历时另一个直播间的事件正在往里写，就是一次 ConcurrentModificationException
+            return byMetric == null ? java.util.Set.of() : new java.util.LinkedHashSet<>(byMetric.keySet());
+        }
+    }
+
     // ================ 其他操作 ================
 
     /**

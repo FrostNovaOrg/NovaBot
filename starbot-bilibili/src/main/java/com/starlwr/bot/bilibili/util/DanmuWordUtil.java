@@ -5,6 +5,7 @@ import com.starlwr.bot.core.util.StringUtil;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 /**
@@ -20,7 +21,11 @@ public final class DanmuWordUtil {
     private static final int MAX_WORDS_PER_DANMU = 20;
 
     /**
-     * 收录的词长范围
+     * 收录的词长范围，单位是<b>字</b>
+     * <p>
+     * 🔴 按码点数而不是 {@code String.length()} 量。后者数的是 UTF-16 单元，
+     * 一个位于扩展区的汉字或一个 emoji 各占两个——「单字不入词云」这条对它们不成立，
+     * 而这类字恰恰是弹幕里最多的
      */
     private static final int MIN_WORD_LENGTH = 2;
 
@@ -68,8 +73,9 @@ public final class DanmuWordUtil {
                 break;
             }
 
-            String trimmed = word.trim();
-            if (trimmed.length() < MIN_WORD_LENGTH || trimmed.length() > MAX_WORD_LENGTH) {
+            String trimmed = foldCase(word.trim());
+            int length = trimmed.codePointCount(0, trimmed.length());
+            if (length < MIN_WORD_LENGTH || length > MAX_WORD_LENGTH) {
                 continue;
             }
             if (STOP_WORDS.contains(trimmed)) {
@@ -83,6 +89,22 @@ public final class DanmuWordUtil {
         }
 
         return words;
+    }
+
+    /**
+     * 纯 ASCII 的词一律转小写，{@code Dog} 与 {@code dog} 才并成一个词
+     * <p>
+     * 只折 ASCII：全角字母、希腊字母这些在弹幕里出现时多半是在当符号用，转了小写反倒把
+     * 原样改掉。{@link Locale#ROOT} 是必须的——土耳其语环境下 {@code "I"} 的小写不是 {@code "i"}，
+     * 同一条弹幕在两台机器上会切出两个词
+     */
+    private static String foldCase(String word) {
+        for (int i = 0; i < word.length(); i++) {
+            if (word.charAt(i) > 0x7F) {
+                return word;
+            }
+        }
+        return word.toLowerCase(Locale.ROOT);
     }
 
     /**

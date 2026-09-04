@@ -30,7 +30,7 @@ final class WordCloudRenderer implements WordCloudLayout.Measurer {
     private final FontUtil fontUtil;
 
     /**
-     * 只为拿到 {@link FontRenderContext} 与 {@link java.awt.FontMetrics}，不往上面画东西
+     * 只为拿到 {@link FontRenderContext}，不往上面画东西
      */
     private final Graphics2D scratch;
 
@@ -53,8 +53,8 @@ final class WordCloudRenderer implements WordCloudLayout.Measurer {
     }
 
     @Override
-    public Dimension measure(String text, int fontSize, boolean vertical) {
-        Composed composed = compose(text, fontSize, vertical);
+    public Dimension measure(String text, int fontSize) {
+        Composed composed = compose(text, fontSize);
         return new Dimension(composed.width, composed.height);
     }
 
@@ -62,23 +62,24 @@ final class WordCloudRenderer implements WordCloudLayout.Measurer {
      * 把一个词画到 {@code graphics} 上，{@code x} {@code y} 是包围盒左上角
      */
     void draw(Graphics2D graphics, WordCloudLayout.Placement placement) {
-        Composed composed = compose(placement.text(), placement.fontSize(), placement.vertical());
+        Composed composed = compose(placement.text(), placement.fontSize());
         graphics.setColor(placement.color());
         for (Stroke stroke : composed.strokes) {
             graphics.setFont(stroke.font);
             graphics.drawString(stroke.text,
                     placement.box().x + stroke.x - composed.offsetX,
-                    placement.box().y + stroke.y - composed.offsetY);
+                    placement.box().y - composed.offsetY);
         }
     }
 
     /**
      * 一次落笔：在哪个位置、用哪个字体、写哪个字
+     * <p>
+     * 一律横排，一个词里各字共用同一条基线，纵向只剩 {@code offsetY} 一处偏移，故不逐笔记
      *
      * @param x 相对起点的横坐标
-     * @param y 相对起点的<b>基线</b>纵坐标
      */
-    private record Stroke(String text, Font font, int x, int y) {
+    private record Stroke(String text, Font font, int x) {
     }
 
     /**
@@ -99,7 +100,7 @@ final class WordCloudRenderer implements WordCloudLayout.Measurer {
     /**
      * 逐字摆开一个词，算出每一笔的落点与整体的墨迹外框
      */
-    private Composed compose(String text, int fontSize, boolean vertical) {
+    private Composed compose(String text, int fontSize) {
         FontRenderContext context = scratch.getFontRenderContext();
         int[] codePoints = text.codePoints().toArray();
 
@@ -109,39 +110,20 @@ final class WordCloudRenderer implements WordCloudLayout.Measurer {
         int maxX = Integer.MIN_VALUE;
         int maxY = Integer.MIN_VALUE;
 
-        // 竖排要让每个字在列内居中，先量一遍各字宽度
-        int columnWidth = 0;
-        if (vertical) {
-            for (int codePoint : codePoints) {
-                columnWidth = Math.max(columnWidth, advanceOf(codePoint, fontSize, context));
-            }
-        }
-
         int pen = 0;
         for (int codePoint : codePoints) {
             Font font = fontFor(codePoint, fontSize);
             String glyph = new String(Character.toChars(codePoint));
-            int advance = advanceOf(codePoint, fontSize, context);
 
-            int x;
-            int baseline;
-            if (vertical) {
-                // 汉字直立地摞起来，不是把整个词转 90 度
-                x = (columnWidth - advance) / 2;
-                baseline = pen + scratch.getFontMetrics(font).getAscent();
-                pen += scratch.getFontMetrics(font).getHeight();
-            } else {
-                x = pen;
-                baseline = 0;
-                pen += advance;
-            }
+            int x = pen;
+            pen += advanceOf(codePoint, fontSize, context);
 
-            strokes.add(new Stroke(glyph, font, x, baseline));
+            strokes.add(new Stroke(glyph, font, x));
 
             // 🔴 取的是「落笔之后哪些像素会变色」而不是字形轮廓的外框。
             // 轮廓外框（getVisualBounds）比真正着色的范围小：抗锯齿会在轮廓外再抹一圈，
             // 于是量出来的框贴着边、画出来的墨压过边——判据是绿的，图上照样越界
-            Rectangle ink = font.createGlyphVector(context, glyph).getPixelBounds(context, x, baseline);
+            Rectangle ink = font.createGlyphVector(context, glyph).getPixelBounds(context, x, 0);
             if (ink.width > 0 && ink.height > 0) {
                 minX = Math.min(minX, ink.x);
                 minY = Math.min(minY, ink.y);

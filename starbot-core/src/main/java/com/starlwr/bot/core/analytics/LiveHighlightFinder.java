@@ -29,6 +29,49 @@ public final class LiveHighlightFinder {
     private LiveHighlightFinder() {
     }
 
+    // ================ 默认判据 ================
+    // 🔴 这四个数只许有这一份。报告图上画的高能时刻与明细里留档的高能时刻
+    // 各自带一套参数的话，同一场直播会挑出两组不同的时刻，而两组看起来都像模像样——
+    // 谁也不会去比对，直到有人拿着报告图去对时间轴。
+
+    /**
+     * 最多列出几个高能时刻
+     * <p>
+     * 三个足够指出一场直播的骨架，再多就成了「把曲线又写了一遍」。
+     */
+    public static final int DEFAULT_LIMIT = 3;
+
+    /**
+     * 两个高能时刻之间至少相隔多久
+     */
+    public static final long DEFAULT_MIN_SEPARATION_MILLIS = 5 * 60_000L;
+
+    /**
+     * 高能时刻至少要达到基线的多少倍
+     */
+    public static final double DEFAULT_MIN_RATIO = 3.0;
+
+    /**
+     * 绝对门槛：这一分钟至少要有这么多条弹幕
+     * <p>
+     * 没有这道门槛，一场总共二十条弹幕的冷场也能凑出三个「三倍于基线」的时刻，
+     * 而那三分钟各自只有三条弹幕。<b>冷场就该老实说没有高能片段。</b>
+     */
+    public static final double DEFAULT_MIN_DANMU = 15;
+
+    /**
+     * 按默认判据找出本场的高能时刻
+     * @param series 按时间分桶的取值，键为桶起始时刻（毫秒）
+     * @param bucketMillis 分桶宽度（毫秒）
+     * @param start 开播时刻（毫秒）
+     * @param end 下播时刻（毫秒）
+     * @return 按取值从高到低排列的高能时刻，没有够格的返回空表
+     */
+    public static List<Highlight> find(@NonNull Map<Long, Double> series, long bucketMillis, long start, long end) {
+        return find(series, bucketMillis, start, end,
+                DEFAULT_LIMIT, DEFAULT_MIN_SEPARATION_MILLIS, DEFAULT_MIN_RATIO, DEFAULT_MIN_DANMU);
+    }
+
     /**
      * 找出本场的高能时刻
      *
