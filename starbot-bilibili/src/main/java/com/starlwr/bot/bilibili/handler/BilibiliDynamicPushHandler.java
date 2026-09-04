@@ -198,4 +198,12 @@ public class BilibiliDynamicPushHandler implements StarBotEventHandler {
     public List<String> placeholders() {
         return List.of("{uname}", "{action}", "{url}", "{picture}", "{at}", "{next}", "{at=all}");
     }
+
+    /**
+     * 动态图展开成一段图片占位符，在模板编辑器里是独占一行的附件块
+     */
+    @Override
+    public List<String> attachmentPlaceholders() {
+        return List.of("{picture}");
+    }
 }

@@ -26,6 +26,7 @@ import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.sender.PushGate;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
 import com.starlwr.bot.core.service.LiveDataService;
+import com.starlwr.bot.core.service.PushTemplateDefaults;
 import com.starlwr.bot.core.service.StarBotEventHandlerService;
 import com.starlwr.bot.core.service.StarBotSenderService;
 import com.starlwr.bot.core.timeline.TimelineEventType;
@@ -83,6 +84,14 @@ public class ConfigUiController {
      * 配置界面根路径
      */
     public static final String BASE_PATH = "/config";
+
+    /**
+     * 机器人连接信息在配置文件里所处的列表
+     * <p>
+     * 元素内部有哪几个键不写在这里——那由适配器答（见 {@link BotConnectionTester.Applied}）。
+     * 这里只记得住「它是一份列表、在配置树的哪个位置」，落盘那一侧要的正是这一句。
+     */
+    static final String BOT_CONNECTION_LIST = "starbot.adapter.onebot.senders";
 
     /**
      * 允许的静态资源文件名
@@ -218,6 +227,11 @@ public class ConfigUiController {
      */
     private final UpdateCheckService updateCheck;
 
+    /**
+     * 这台机器改过的默认模板。模板编辑器的「默认模板」那一页读写的就是它
+     */
+    private final PushTemplateDefaults templateDefaults;
+
     @Autowired
     public ConfigUiController(ConfigurationMetadataService metadataService,
                               ConfigurationFileService fileService,
@@ -243,7 +257,9 @@ public class ConfigUiController {
                               LiveDataService liveDataService,
                               TimelineStore timeline,
                               ConfigUiAuthService authService,
+                              PushTemplateDefaults templateDefaults,
                               UpdateCheckService updateCheck) {
+        this.templateDefaults = templateDefaults;
         this.pushGate = pushGate;
         this.liveDataService = liveDataService;
         this.timeline = timeline;
@@ -821,6 +837,16 @@ public class ConfigUiController {
      * <p>
      * 这些字段位于 senders 列表的元素内部，常规配置页按设计不展示列表元素，
      * 但它们恰恰是唯一一批「不配置就跑不起来」的配置项，因此单独提供写入入口。
+     *
+     * <h2>先接上，再落盘</h2>
+     * 顺序是有意的：<b>要写进文件里的那一条，正是适配器接上之后的现状</b>。
+     * 反着来（先写那一条再去接）的话，核心得自己猜这条元素长什么样——而元素里有哪几个键、
+     * 平台叫什么名字、推送接口挂在哪个路径，都是适配器一侧的事。
+     * （「文件不在就先建一份」是另一回事，它得排在最前面，理由见下面那一段。）
+     * <p>
+     * 因此写文件失败时，连接<b>已经是接上的</b>。这时如实说「已经接上、但没存下来，
+     * 重启后会恢复原状」，而不是笼统报一句保存失败——后者会让人以为什么都没发生，
+     * 于是照着一个其实已经通了的连接反复重试。
      * @param body 请求体，含连接信息
      * @return 保存结果
      */
@@ -828,36 +854,81 @@ public class ConfigUiController {
     public JSONObject saveBot(@RequestBody JSONObject body) {
         JSONObject result = new JSONObject();
 
-        Map<String, String> fields = new LinkedHashMap<>();
-        putIfPresent(fields, "one-bot-address", body.getString("address"));
-        putIfPresent(fields, "one-bot-http-port", body.getString("httpPort"));
-        putIfPresent(fields, "one-bot-websocket-port", body.getString("websocketPort"));
-        putIfPresent(fields, "one-bot-http-token", body.getString("httpToken"));
-        putIfPresent(fields, "one-bot-websocket-token", body.getString("websocketToken"));
+        Optional<BotConnectionTester> tester = connectionTesters.orderedStream().findFirst();
+        if (tester.isEmpty()) {
+            result.put("success", false);
+            result.put("message", "未找到可用的机器人适配器，请确认对应插件已加载");
+            return result;
+        }
 
-        if (fields.isEmpty()) {
+        String address = trimmed(body.getString("address"));
+        String httpToken = trimmed(body.getString("httpToken"));
+        String websocketToken = trimmed(body.getString("websocketToken"));
+
+        int httpPort;
+        int websocketPort;
+        try {
+            httpPort = port(body.getString("httpPort"));
+            websocketPort = port(body.getString("websocketPort"));
+        } catch (NumberFormatException e) {
+            result.put("success", false);
+            result.put("message", "端口只能填数字：" + e.getMessage());
+            return result;
+        }
+
+        if (address.isEmpty() && httpToken.isEmpty() && websocketToken.isEmpty()
+                && httpPort == 0 && websocketPort == 0) {
             result.put("success", false);
             result.put("message", "没有需要保存的内容");
             return result;
         }
 
         try {
-            int changed = fileService.writeListItemFields("starbot.adapter.onebot.senders", 0, fields);
-            result.put("success", true);
-            result.put("message", "已保存 " + changed + " 项，重启后生效");
+            // 🔴 文件不在时先建出来，且必须赶在适配器去动运行中的配置之前。
+            // 这一份是按配置面现算渲染出来的，而适配器接下来要往配置面里添一条连接——
+            // 顺序反过来的话，渲染的就是一份含着刚添那条连接的配置面，而那条连接是个 Java 对象，
+            // 写进 YAML 只会是一行谁也解析不回来的东西（见 ConfigurationTemplate#renderList）。
+            fileService.createIfAbsent();
         } catch (IOException e) {
-            log.error("保存机器人连接信息失败", e);
+            log.error("建立配置文件失败", e);
             result.put("success", false);
             result.put("message", "保存失败: " + e.getMessage());
+            return result;
+        }
+
+        BotConnectionTester.Applied applied =
+                tester.get().apply(address, httpPort, websocketPort, httpToken, websocketToken);
+        result.put("live", applied.live());
+
+        try {
+            fileService.writeListItemFields(BOT_CONNECTION_LIST, 0, applied.configuration());
+            result.put("success", true);
+            result.put("message", applied.live()
+                    ? "已保存，这条连接已经接上了：" + applied.detail()
+                    : "已保存，重启后生效：" + applied.detail());
+        } catch (IOException e) {
+            log.error("保存机器人连接信息失败", e);
+            result.put("success", applied.live());
+            result.put("message", applied.live()
+                    ? "连接已经接上，但没能写进配置文件，重启后将恢复原状: " + e.getMessage()
+                    : "保存失败: " + e.getMessage());
         }
 
         return result;
     }
 
-    private void putIfPresent(Map<String, String> fields, String key, String value) {
-        if (value != null && !value.isBlank()) {
-            fields.put(key, value.trim());
-        }
+    /**
+     * 把端口读成一个数
+     * @param value 请求体里的端口，可为 null 或空白
+     * @return 端口号，没填时为 0（语义是「这一项不改」）
+     */
+    private int port(String value) {
+        String text = trimmed(value);
+        return text.isEmpty() ? 0 : Integer.parseInt(text);
+    }
+
+    private String trimmed(String value) {
+        return value == null ? "" : value.trim();
     }
 
     /**
@@ -1003,7 +1074,13 @@ public class ConfigUiController {
             item.put("description", handler.description());
             item.put("platform", handler.platform());
             item.put("placeholders", handler.placeholders());
-            item.put("defaultParams", handler.getDefaultParams());
+            item.put("attachments", handler.attachmentPlaceholders());
+            // 「默认」是这台机器此刻的默认（出厂默认盖上控制台改过的那几个键），
+            // 不是出厂默认：界面拿它判「这个通道用的是默认还是自定义」，
+            // 拿出厂默认去判的话，改过默认模板之后每一个通道都会显示成「自定义」
+            item.put("defaultParams", templateDefaults.paramsOf(handler));
+            // 出厂默认另给一份：默认模板那一页要答「这一项改过没有」与「恢复出厂」
+            item.put("factoryParams", handler.getDefaultParams());
             item.put("options", handler.options());
             items.add(item);
         });
@@ -1011,6 +1088,59 @@ public class ConfigUiController {
         items.sort(Comparator.comparing(item -> ((JSONObject) item).getString("className")));
         result.put("handlers", items);
         return result;
+    }
+
+    /**
+     * 读这台机器改过的默认模板
+     * <p>
+     * 回的是<b>相对出厂默认的覆盖</b>，没改过的处理器整个不出现。整份默认参数在
+     * {@code /api/handlers} 的 {@code defaultParams} 里，这一支答的是另一个问题：
+     * 「哪几项是人改过的」——两者合一的话，「改成了与出厂一样的值」与「没改过」
+     * 就再也分不开，而默认模板那一页上「恢复出厂」该不该亮正是靠这个分。
+     * @return 覆盖参数
+     */
+    @GetMapping("/api/templates")
+    public JSONObject templates() {
+        JSONObject result = new JSONObject();
+        result.put("success", true);
+        result.put("defaults", templateDefaults.all());
+        return result;
+    }
+
+    /**
+     * 改某一类通知的默认模板
+     * <p>
+     * 一次一个处理器，传的是<b>整份覆盖</b>：某个键不在里面即回到出厂默认，
+     * 空对象即整类回到出厂默认。改这里等于改<b>所有用默认的通道</b>，
+     * 因此校验不过时一个字也不写——半份默认模板会一次落到一批群上。
+     * @param body 请求体，className 为处理器全类名，params 为整份覆盖
+     * @return 保存结果
+     */
+    @PostMapping("/api/templates")
+    public ResponseEntity<JSONObject> saveTemplate(@RequestBody JSONObject body) {
+        JSONObject result = new JSONObject();
+
+        String className = body.getString("className");
+        Optional<com.starlwr.bot.core.handler.StarBotEventHandler> handler =
+                className == null ? Optional.empty() : handlerService.getHandler(className);
+        if (handler.isEmpty()) {
+            result.put("success", false);
+            result.put("message", "没有这样一个推送处理器: " + className);
+            return ResponseEntity.badRequest().body(result);
+        }
+
+        List<String> issues = templateDefaults.save(handler.get(), body.getJSONObject("params"));
+        if (!issues.isEmpty()) {
+            result.put("success", false);
+            result.put("message", "默认模板有误，已拒绝保存");
+            result.put("issues", issues);
+            return ResponseEntity.ok(result);
+        }
+
+        result.put("success", true);
+        result.put("message", "已保存，用默认模板的通道跟着一起变");
+        log.info("配置界面已更新默认模板: {}", className);
+        return ResponseEntity.ok(result);
     }
 
     /**

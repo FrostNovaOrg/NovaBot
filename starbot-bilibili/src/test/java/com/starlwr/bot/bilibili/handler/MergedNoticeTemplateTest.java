@@ -24,6 +24,7 @@ import com.starlwr.bot.core.sender.StarBotMessageSender;
 import com.starlwr.bot.core.service.AtAllQuotaService;
 import com.starlwr.bot.core.service.AtSubscriptionService;
 import com.starlwr.bot.core.service.LiveDataService;
+import com.starlwr.bot.core.service.PushTemplateDefaults;
 import com.starlwr.bot.core.service.StarBotEventHandlerService;
 import com.starlwr.bot.core.service.StarBotSenderService;
 import com.starlwr.bot.core.service.StarBotStateStore;
@@ -120,8 +121,9 @@ class MergedNoticeTemplateTest {
         message.setHandler(handler.getClass().getName());
         message.setParams(saved.toJSONString());
 
-        assertTrue(new StarBotEventHandlerPushMessageInitializer(service).initialize(message),
-                "初始化器没认出这个处理器，本格什么也没量到");
+        StarBotEventHandlerPushMessageInitializer initializer = new StarBotEventHandlerPushMessageInitializer(
+                service, new PushTemplateDefaults(new StarBotCoreProperties()));
+        assertTrue(initializer.initialize(message), "初始化器没认出这个处理器，本格什么也没量到");
         return message.getParamsJsonObject().getString("message");
     }
 

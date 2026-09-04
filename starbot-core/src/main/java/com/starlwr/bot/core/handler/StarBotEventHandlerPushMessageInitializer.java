@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.datasource.PushMessageInitializer;
 import com.starlwr.bot.core.model.PushMessage;
+import com.starlwr.bot.core.service.PushTemplateDefaults;
 import com.starlwr.bot.core.service.StarBotEventHandlerService;
 import com.starlwr.bot.core.util.StringUtil;
 import lombok.NonNull;
@@ -29,9 +30,13 @@ import java.util.Optional;
 public class StarBotEventHandlerPushMessageInitializer implements PushMessageInitializer {
     private final StarBotEventHandlerService handlerService;
 
+    private final PushTemplateDefaults templateDefaults;
+
     @Autowired
-    public StarBotEventHandlerPushMessageInitializer(StarBotEventHandlerService handlerService) {
+    public StarBotEventHandlerPushMessageInitializer(StarBotEventHandlerService handlerService,
+                                                     PushTemplateDefaults templateDefaults) {
         this.handlerService = handlerService;
+        this.templateDefaults = templateDefaults;
     }
 
     @Override
@@ -48,7 +53,9 @@ public class StarBotEventHandlerPushMessageInitializer implements PushMessageIni
         StarBotEventHandler handler = optionalHandler.get();
         message.setHandlerInstance(handler);
         message.setEventClass(handler.getEventType());
-        message.setParamsJsonObject(handler.getDefaultParams());
+        // 不是 handler.getDefaultParams()：控制台上改过的默认模板要落到「所有用默认的通道」，
+        // 而那些通道的配置里本来就没有 message 这个键——它是在这一行被补上的
+        message.setParamsJsonObject(templateDefaults.paramsOf(handler));
 
         if (StringUtil.isNotBlank(message.getParams())) {
             try {

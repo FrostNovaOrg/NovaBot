@@ -157,6 +157,7 @@ class UpdateStatusFieldsTest {
                 liveDataService,
                 timeline,
                 mock(com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService.class),
+                new com.starlwr.bot.core.service.PushTemplateDefaults(properties),
                 updateCheck);
     }
 

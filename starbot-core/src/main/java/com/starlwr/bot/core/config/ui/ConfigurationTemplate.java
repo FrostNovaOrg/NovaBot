@@ -163,6 +163,12 @@ final class ConfigurationTemplate {
      * <p>
      * 写成空白的话，「这一项是个空列表」与「这一项还没填」在文件上长得一样，
      * 而前者是<b>一个已经做出的决定</b>。
+     * <p>
+     * ⚠️ 各项按标量写。<b>元素是对象的列表（如机器人连接）在这里渲染不出来</b>——
+     * 写出去的会是一行对象的 toString。这份模板只在配置文件不存在时生成，
+     * 而那种时候这类列表本来就是空的；要往里添元素得走
+     * {@link ConfigurationFileService#writeListItemFields}，
+     * <b>并且要赶在往配置面里添那条元素之前把这份文件建出来</b>。
      */
     private static void renderList(String name, Collection<?> items, String pad, StringBuilder out) {
         if (items.isEmpty()) {

@@ -12,6 +12,7 @@ import com.starlwr.bot.core.sender.PushGate;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
 import com.starlwr.bot.core.service.EventStreamTokenService;
 import com.starlwr.bot.core.service.LiveDataService;
+import com.starlwr.bot.core.service.PushTemplateDefaults;
 import com.starlwr.bot.core.service.StarBotSenderService;
 import com.starlwr.bot.core.timeline.TimelineEvent;
 import com.starlwr.bot.core.timeline.TimelineEventType;
@@ -128,6 +129,7 @@ class HomeStatusFieldsTest {
                 liveDataService,
                 timeline,
                 authService,
+                new PushTemplateDefaults(new StarBotCoreProperties()),
                 mock(UpdateCheckService.class));
     }
 

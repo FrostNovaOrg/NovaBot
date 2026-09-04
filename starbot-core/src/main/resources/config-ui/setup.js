@@ -452,6 +452,9 @@ function stepBot(host) {
       if (res.success) {
         draft.botOk = true;
         await saveBot(result);
+        // 存下来的那一刻连接就接上了，第 4 步要的名单随之有了着落。
+        // 重问一遍，进度条与后面几步据此算，不必等到刷新页面
+        await refreshFacts();
       }
     } catch (e) {
       report(result, {success: false, message: '测试失败：' + e.message});
@@ -465,18 +468,16 @@ function stepBot(host) {
   host.appendChild(test);
   host.appendChild(result);
 
-  // 🔴 这一句是实话，不是保守说法：OneBot 连接在进程启动时按配置注册，存下来之后
-  // 要重启一次这条连接才真的建立起来。装作已经生效的话，第 4、5 步会在一台连接
-  // 还没建起来的机器上取空名单、发不出消息，而屏幕上没有任何东西解释为什么
+  // 这一步不再要求重启：存下来的那一刻适配器就按新参数把连接接上了。
+  // 保存的回话由服务端给，说的是「现在通了没有」，不是「已保存」——所以这里不另写一句
   if (!(seen.status.senders || []).length) {
-    host.appendChild(note('warn', '这台机器还没有连着的机器人：参数测通并存好之后，'
-      + '要重启一次 NovaBot，这条连接才真的建立起来。重启后回到这一页，前两步会是绿的，'
-      + '接着走第 3 步就行。'));
+    host.appendChild(note('', '填 NapCat 那一侧的地址、端口与两个 Token。'
+      + '测通之后会自动存下来并当场接上，不用重启。'));
   }
 
   /**
    * 测通了就存下来。<b>测通之后才存</b>：存一份连不上的参数，
-   * 表现是重启之后机器人还是不在线，而使用者以为这一步已经过了
+   * 表现是接下来的两步一直取不到名单，而使用者以为这一步已经过了
    */
   async function saveBot(box) {
     try {
@@ -487,8 +488,10 @@ function stepBot(host) {
           httpToken: at.httpToken.trim(), websocketToken: at.wsToken.trim(),
         }),
       });
+      // 存下来之后的回话照实显示：它说的是这条连接此刻通没通，
+      // 而这一句正是使用者点下按钮想知道的
+      report(box, res);
       if (!res.success) {
-        report(box, res);
         draft.botOk = false;
       }
     } catch (e) {

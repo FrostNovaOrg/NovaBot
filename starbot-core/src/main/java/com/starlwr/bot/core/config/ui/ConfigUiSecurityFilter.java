@@ -76,6 +76,11 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
      * 🔴 使用协议那几条<b>不在这里</b>。它们曾经在，而那正是一处缺陷：「同意」是一个签字动作，
      * 签字的人必须先被认出来。放在身份校验之前，任何能连上这个端口的程序都替使用者签得下去，
      * 而那行记录一旦写下，使用者本人就再也不会被问第二次。
+     * <p>
+     * 🔴 <b>这张名单只在口令形态下生效。</b>未配口令时过滤器走 {@link #filterWithToken}，
+     * 令牌本身就是凭据，不会查阅这张表——名单里的路径与其它接口一样，没带令牌一律 401。
+     * 口令形态才需要这几条公开：登录页要先问「要不要登录」再提交口令，这两步都发生在
+     * 认出人之前。令牌形态没有登录页，公开它们等于把进门钥匙从地址栏里拿掉。
      */
     private static final Set<String> PUBLIC_API = Set.of(
             ConfigUiController.BASE_PATH + "/api/auth/state",

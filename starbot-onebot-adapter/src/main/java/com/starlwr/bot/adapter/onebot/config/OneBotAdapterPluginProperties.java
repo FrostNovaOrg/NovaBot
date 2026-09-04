@@ -29,9 +29,14 @@ public class OneBotAdapterPluginProperties {
 
     /**
      * OneBot 推送平台列表
+     * <p>
+     * 标成即时生效，是因为它<b>确实</b>即时生效：控制台「机器人」页与初始设置第 2 步
+     * 存下连接信息之后，适配器当场按新值断旧连新（见 OneBotConnectionManager），
+     * 不必重启。落地动作不在设置页那条通用保存通道上——列表元素按设计不在设置页上展示，
+     * 因此这一项另在 RuntimeConfigurationApplier 的「另有专门入口落地」表里挂了号。
      */
     @Getter
-    @ConfigEffect(ConfigEffect.Effect.RESTART)
+    @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
     private List<OneBotSender> senders = new ArrayList<>();
 
     @Getter

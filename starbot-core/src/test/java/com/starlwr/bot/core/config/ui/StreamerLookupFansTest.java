@@ -11,6 +11,7 @@ import com.starlwr.bot.core.sender.PushGate;
 import com.starlwr.bot.core.service.DataSourceService;
 import com.starlwr.bot.core.service.EventStreamTokenService;
 import com.starlwr.bot.core.service.LiveDataService;
+import com.starlwr.bot.core.service.PushTemplateDefaults;
 import com.starlwr.bot.core.service.StarBotSenderService;
 import com.starlwr.bot.core.timeline.TimelineStore;
 import org.junit.jupiter.api.BeforeEach;
@@ -171,6 +172,7 @@ class StreamerLookupFansTest {
                 mock(LiveDataService.class),
                 mock(TimelineStore.class),
                 mock(ConfigUiAuthService.class),
+                new PushTemplateDefaults(new StarBotCoreProperties()),
                 mock(UpdateCheckService.class));
     }
 }
