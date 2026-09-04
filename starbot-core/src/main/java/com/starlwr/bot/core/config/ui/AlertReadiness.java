@@ -5,13 +5,13 @@ import com.starlwr.bot.core.util.StringUtil;
 /**
  * 告警三路各自「配好了没有」
  * <p>
- * 设置页药丸与首页 {@code /api/status} 的 {@code alerts} 问的是同一件事。
- * 判定只留这一份：两处各写各的话，首页催人去配、设置页却写着「已配置」。
+ * 设置页药丸、首页 {@code /api/status} 的 {@code alerts}、以及邮件通道能不能发，
+ * 问的是同一件事。判定只留这一份：两处各写各的话，首页催人去配、点「发一条测试」却仍走发送。
  * <p>
- * 前端那一份在 {@code settings-alert.js} 的 {@code mailAlertConfigured}，
+ * 前端那一份在 {@code alert-model.js} 的 {@code mailAlertConfigured}，
  * 两处都只认收件与 SMTP 主机这两栏，缺一即未配。
  */
-final class AlertReadiness {
+public final class AlertReadiness {
     private AlertReadiness() {
     }
 
@@ -25,7 +25,7 @@ final class AlertReadiness {
      * @param smtpHost SMTP 主机
      * @return 两栏都有时为 true
      */
-    static boolean mailConfigured(String defaultTo, String smtpHost) {
+    public static boolean mailConfigured(String defaultTo, String smtpHost) {
         return StringUtil.isNotBlank(defaultTo) && StringUtil.isNotBlank(smtpHost);
     }
 }

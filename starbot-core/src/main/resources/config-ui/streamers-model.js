@@ -21,6 +21,14 @@ import {totalDataOff} from './home-model.js';
  */
 export const TABS = [['overview', '概况'], ['sessions', '场次'], ['trend', '趋势']];
 
+/**
+ * 这一页的三块子视图，闭集
+ *
+ * 列表、某位主播的详情、某一场。解析与拼地址都从这张表认——另写一个字符串的话，
+ * 新开一块只改了地址，解析仍退回列表，屏幕上像页面卡住了。
+ */
+export const STREAMER_VIEWS = ['list', 'detail', 'session'];
+
 /** 趋势那一栏的两种周期，与服务端认的值一致 */
 export const PERIODS = [['week', '按周'], ['month', '按月']];
 
@@ -84,7 +92,8 @@ export function parseStreamersHash(hash) {
   const path = (cut < 0 ? raw : raw.slice(0, cut)).split('/').filter(Boolean);
   const query = cut < 0 ? '' : raw.slice(cut + 1);
 
-  const state = {view: 'list', platform: '', uid: '', pane: 'overview', start: '',
+  const [viewList, viewDetail, viewSession] = STREAMER_VIEWS;
+  const state = {view: viewList, platform: '', uid: '', pane: 'overview', start: '',
     page: 1, period: 'week'};
 
   const platform = path[1] || '';
@@ -92,7 +101,7 @@ export function parseStreamersHash(hash) {
   // 平台名与 uid 缺一不可：主键是这两样合起来的，只给一半找不出唯一一位主播
   if (!platform || !DIGITS.test(uid)) return state;
 
-  state.view = 'detail';
+  state.view = viewDetail;
   state.platform = decode(platform);
   state.uid = uid;
 
@@ -100,7 +109,7 @@ export function parseStreamersHash(hash) {
   if (DIGITS.test(seg)) {
     // 第三段是一串数字＝某一场的开播时刻。它与三个页签共用这一段，
     // 靠形状分辨：页签是词，开播时刻是毫秒时间戳
-    state.view = 'session';
+    state.view = viewSession;
     state.start = seg;
   } else if (TABS.some(one => one[0] === seg)) {
     state.pane = seg;

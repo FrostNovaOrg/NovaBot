@@ -16,6 +16,7 @@
 import {
   SETUP_STEPS, allDone, canAdvance, initialRows, railMarks, setupProgress, startAt, summaryLines,
 } from '../../../main/resources/config-ui/setup-model.js';
+import {mailAlertConfigured} from '../../../main/resources/config-ui/alert-model.js';
 
 const failures = [];
 let checks = 0;
@@ -189,6 +190,30 @@ eq(changed.find(r => r.label === '静音时段').text, '23:00 – 08:00', '设�
 eq(changed.find(r => r.label === '告警').text.includes('已配'), true, '配了 Webhook 就说已配');
 eq(changed.find(r => r.label === '日志保留').text.includes('不自动清理'), true, '0 天是不清理，不是留 0 天');
 eq(changed.find(r => r.label === '命令').text.includes('条'), false, '数不到条数时不编一个出来');
+
+eq(mailAlertConfigured('ops@example.invalid', 'smtp.example.invalid'), true, '邮件两栏都有才算已配');
+eq(mailAlertConfigured('ops@example.invalid', ''), false, '只填收件不算已配');
+eq(mailAlertConfigured('', 'smtp.example.invalid'), false, '只填主机不算已配');
+
+const mailed = initialRows({
+  'starbot.core.push.enabled': 'true',
+  'starbot.core.alert.webhook-url': '',
+  'starbot.core.alert.qq-num': '',
+  'starbot.core.mail.default-to': 'ops@example.invalid',
+  'spring.mail.host': 'smtp.example.invalid',
+  'starbot.core.timeline.retention-days': '14',
+}, null);
+eq(mailed.find(r => r.label === '告警').text.includes('已配'), true, '配了邮件就说已配');
+
+const mailOnlyTo = initialRows({
+  'starbot.core.push.enabled': 'true',
+  'starbot.core.alert.webhook-url': '',
+  'starbot.core.alert.qq-num': '',
+  'starbot.core.mail.default-to': 'ops@example.invalid',
+  'spring.mail.host': '',
+  'starbot.core.timeline.retention-days': '14',
+}, null);
+eq(mailOnlyTo.find(r => r.label === '告警').text.includes('未配'), true, '只填收件时初始值仍说未配');
 
 // ---------- 七、完成后的三行小结 ----------
 const lines = summaryLines([true, true, true, true, true], ['', '', '', '', ''], {

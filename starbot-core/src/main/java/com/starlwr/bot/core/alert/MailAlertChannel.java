@@ -1,9 +1,10 @@
 package com.starlwr.bot.core.alert;
 
 import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.ui.AlertReadiness;
 import com.starlwr.bot.core.service.StarBotMailService;
-import com.starlwr.bot.core.util.StringUtil;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
@@ -15,10 +16,14 @@ public class MailAlertChannel implements AlertChannel {
 
     private final StarBotCoreProperties properties;
 
+    private final String smtpHost;
+
     @Autowired
-    public MailAlertChannel(StarBotMailService mailService, StarBotCoreProperties properties) {
+    public MailAlertChannel(StarBotMailService mailService, StarBotCoreProperties properties,
+                            @Value("${spring.mail.host:}") String smtpHost) {
         this.mailService = mailService;
         this.properties = properties;
+        this.smtpHost = smtpHost;
     }
 
     @Override
@@ -33,7 +38,7 @@ public class MailAlertChannel implements AlertChannel {
 
     @Override
     public boolean isAvailable() {
-        return StringUtil.isNotBlank(properties.getMail().getDefaultTo());
+        return AlertReadiness.mailConfigured(properties.getMail().getDefaultTo(), smtpHost);
     }
 
     @Override
