@@ -16,6 +16,9 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -27,7 +30,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Stream;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -36,7 +38,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * 多主播「先猜、再问、再记住」语料回放
+ * 多主播「问是哪一位」语料回放
  * <p>
  * 「这条命令说的是哪位主播」这件事只有一种检验方式靠得住：把真实会发生的对话一句句喂进去，
  * 看机器人办了谁的事、还是反问了一句、反问的那句里都写了什么。分散在各个用例里的断言做不到——
@@ -48,9 +50,22 @@ import static org.mockito.Mockito.when;
  * <b>这一段必须不出现</b>——「不该照着办」这件事没有别的写法，而它恰恰是最要紧的一半：
  * 认错了人，出来的是另一位主播的数据，<b>而那张图看起来完全正常</b>。
  */
-@DisplayName("多主播先猜再问语料")
+@DisplayName("多主播问是哪一位语料")
 class BilibiliStreamerChoiceCorpusTest {
     private static final String PLATFORM = "qq-onebot";
+
+    /**
+     * 「记住的选择」曾经用过的那个命名空间
+     * <p>
+     * <b>逐字写死在这里，不从被测那边取</b>：被测里已经没有这个名字了，
+     * 从它那儿取等于让被测自己出题，删掉命名空间的同时判据也跟着失去了要找的东西。
+     */
+    private static final String NAMESPACE = "StreamerChoice";
+
+    /**
+     * 只为验这把尺看得见命名空间而写进去的一个
+     */
+    private static final String MARKER = "CorpusMarker";
 
     /**
      * 已配置推送的群
@@ -63,11 +78,9 @@ class BilibiliStreamerChoiceCorpusTest {
     private static final long FRIEND = 20001L;
 
     /**
-     * 发命令的人，与 {@link #OTHER} 是同一个群里的两个人
+     * 发命令的人
      */
     private static final long ASKER = 40001L;
-
-    private static final long OTHER = 40002L;
 
     /**
      * 主播的展示名，按序号取用；uid 一律 10000 + 序号
@@ -93,10 +106,6 @@ class BilibiliStreamerChoiceCorpusTest {
 
     private static Say say(String text, String... says) {
         return new Say(ASKER, text, List.of(says));
-    }
-
-    private static Say sayBy(long sender, String text, String... says) {
-        return new Say(sender, text, List.of(says));
     }
 
     /**
@@ -170,22 +179,13 @@ class BilibiliStreamerChoiceCorpusTest {
                 corpus("带 uid —— 一次到位", 8, none(), none(),
                         say("10003", "已出图：主播丙")),
 
-                corpus("点过一次名之后省掉参数 —— 直接办上次那位", 8, none(), none(),
+                corpus("选过一次，下一次仍旧问 —— 不替人记上次那位", 8, none(), none(),
                         say("主播丙", "已出图：主播丙"),
-                        say("", "本次用的是：主播丙", "已出图：主播丙", "!回序号选一位")),
+                        say("", "回序号选一位", "!已出图", "!本次用的是")),
 
-                corpus("再点一次别人的名 —— 记住的换成新的那位", 8, none(), none(),
+                corpus("多位在播 —— 不猜，一律问", 8, at(1, 3), none(),
                         say("主播丙", "已出图：主播丙"),
-                        say("主播丁", "已出图：主播丁"),
-                        say("", "本次用的是：主播丁", "!主播丙")),
-
-                corpus("记住的那位后来在播了别人 —— 仍按他自己选的那位，别替他改主意", 8, at(1), none(),
-                        say("主播丙", "已出图：主播丙"),
-                        say("", "本次用的是：主播丙", "!主播甲")),
-
-                corpus("记住的是发命令的那个人自己 —— 换个人问，照样要问", 8, none(), none(),
-                        say("主播丙", "已出图：主播丙"),
-                        sayBy(OTHER, "", "回序号选一位", "!已出图")),
+                        say("", "回序号选一位", "!已出图")),
 
                 corpus("本群一位主播都没配 —— 不认", 0, none(), none(),
                         say("", "本群没有配置任何哔哩哔哩主播的推送")),
@@ -224,35 +224,41 @@ class BilibiliStreamerChoiceCorpusTest {
     }
 
     @Test
-    @DisplayName("记住的选择落在运行状态里 —— 重启之后还是那一位")
-    void survivesRestart() {
+    @DisplayName("选过之后盘上不留痕 —— 运行状态里没有这个命名空间")
+    void leavesNothingOnDisk(@TempDir Path stateDir) {
         StarBotCoreProperties properties = new StarBotCoreProperties();
-        properties.getLive().setLiveDataPath(dataDir.resolve("data.json").toString());
+        properties.getLive().setLiveDataPath(stateDir.resolve("data.json").toString());
+        StarBotStateStore store = new StarBotStateStore(properties);
 
-        List<PushUser> candidates = List.of(streamer(1), streamer(3));
-        CommandContext context = new CommandContext(PLATFORM, PushTargetType.GROUP, GROUP, ASKER,
-                "直播间数据", List.of(), "直播间数据");
+        AbstractDataSource dataSource = mock(AbstractDataSource.class);
+        when(dataSource.getUsers("bilibili")).thenReturn(List.of(streamer(1), streamer(3)));
 
-        StarBotStateStore before = new StarBotStateStore(properties);
-        BilibiliStreamerChoice choice = choice(before, properties);
-        choice.remember(context, 10003L);
-        assertEquals(Optional.of(10003L), choice.remembered(context, candidates).map(PushUser::getUid));
-        before.save();
+        LiveDataService liveDataService = mock(LiveDataService.class);
+        when(liveDataService.getLiveStatus(anyString(), anyLong())).thenReturn(Optional.of(false));
+        when(liveDataService.getLiveEndTime(anyString(), anyLong())).thenReturn(Optional.empty());
 
-        // 换一份存储，从盘上把它读回来：这一段若断了，现象是「机器人隔一阵就忘了我选过谁」，
-        // 而在内存里量永远量不到——写进去的那个对象自己就是答案
-        StarBotStateStore after = new StarBotStateStore(properties);
-        after.onApplicationReadyEvent();
-        try {
-            assertEquals(Optional.of(10003L),
-                    choice(after, properties).remembered(context, candidates).map(PushUser::getUid));
-        } finally {
-            after.onContextClosedEvent();
-        }
+        // 点名是最明确的一次「选择」：这一路若还往状态里写，写的就是它
+        new ProbeCommand(dataSource, new BilibiliStreamerChoice(liveDataService,
+                new LiveSessionArchive(properties)))
+                .execute(new CommandContext(PLATFORM, PushTargetType.GROUP, GROUP, ASKER,
+                        "直播间数据", List.of("主播丙"), "直播间数据 主播丙"));
+
+        // 阴性对照：这把尺看得见落在文件里的命名空间。少了它，「文件里没有」与
+        // 「压根没写出文件」「这个读法根本看不见命名空间」在报告里长得一样
+        store.write(MARKER, data -> data.put("seen", 1));
+        store.save();
+
+        String saved = readString(stateDir.resolve("state.json"));
+        assertTrue(saved.contains(MARKER), "这把尺连自己刚写进去的命名空间都看不见：" + saved);
+        assertFalse(saved.contains(NAMESPACE), "选择被记到了盘上：" + saved);
     }
 
-    private static BilibiliStreamerChoice choice(StarBotStateStore store, StarBotCoreProperties properties) {
-        return new BilibiliStreamerChoice(mock(LiveDataService.class), new LiveSessionArchive(properties), store);
+    private static String readString(Path path) {
+        try {
+            return Files.readString(path);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     private static PushUser streamer(int index) {
@@ -284,7 +290,7 @@ class BilibiliStreamerChoiceCorpusTest {
     /**
      * 一次回放用的整套零件
      * <p>
-     * 每行语料新建一份：「记住的选择」按会话与人记着，共用一份的话，前一行的选择会落到下一行头上。
+     * 每行语料新建一份：主播名单与在播状态逐行不同，共用一份的话，前一行的盘面会落到下一行头上。
      */
     private static class Fixture {
         private final BilibiliStreamerCommand command;
@@ -315,8 +321,8 @@ class BilibiliStreamerChoiceCorpusTest {
             StarBotCoreProperties properties = new StarBotCoreProperties();
             properties.getLive().setLiveDataPath(dataDir.resolve("data.json").toString());
 
-            command = new ProbeCommand(dataSource, new BilibiliStreamerChoice(liveDataService,
-                    new LiveSessionArchive(properties), new StarBotStateStore(properties)));
+            command = new ProbeCommand(dataSource,
+                    new BilibiliStreamerChoice(liveDataService, new LiveSessionArchive(properties)));
         }
 
         /**

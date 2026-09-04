@@ -19,6 +19,7 @@ import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.LiveSessionArchive;
 import com.starlwr.bot.core.service.StarBotStateStore;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -34,6 +35,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -124,6 +126,11 @@ class BilibiliStreamerFollowUpCorpusTest {
                         at("99", "!已出图"),
                         at("2", "已出图：主播乙")),
 
+                corpus("回过序号之后再省掉参数 —— 还是问一遍，不替人记上次那位",
+                        at("直播间数据", "回序号选一位"),
+                        at("2", "已出图：主播乙"),
+                        atAfter(Duration.ofSeconds(5), "直播间数据", "回序号选一位", "!已出图")),
+
                 corpus("同一次追问只认一个答案 —— 选过之后再回一个序号不再照办",
                         at("直播间数据", "回序号选一位"),
                         at("2", "已出图：主播乙"),
@@ -175,10 +182,42 @@ class BilibiliStreamerFollowUpCorpusTest {
         }
     }
 
+    @Test
+    @DisplayName("重跑时把选中那位接在原参数末尾 —— 榜单与页码都还在")
+    void rerunCarriesTheChoiceAsTheLastArgument() {
+        // 上面那张表走的都是不带参数的命令，量不到这一条：选择既然不再存在任何地方，
+        // 它只能跟着这一次重跑走，而带参数的命令（「数据排行榜 礼物 2」）里，
+        // 放错位置就会把榜单名挤走——现象是回一句「请指明要看哪张榜」，与追问丢了长得一样
+        StarBotCoreProperties properties = new StarBotCoreProperties();
+        properties.getLive().setLiveDataPath(dataDir.resolve("data.json").toString());
+
+        LiveDataService liveDataService = mock(LiveDataService.class);
+        when(liveDataService.getLiveStatus(anyString(), anyLong())).thenReturn(Optional.of(false));
+        when(liveDataService.getLiveEndTime(anyString(), anyLong())).thenReturn(Optional.empty());
+
+        BilibiliStreamerChoice choice = new BilibiliStreamerChoice(liveDataService,
+                new LiveSessionArchive(properties), new Ticking());
+
+        List<PushUser> candidates = new ArrayList<>();
+        for (int index = 1; index <= NAMES.size(); index++) {
+            candidates.add(streamer(index));
+        }
+        choice.ask(new CommandContext(PLATFORM, PushTargetType.GROUP, GROUP, ASKER,
+                "数据排行榜", List.of("礼物", "2"), "数据排行榜 礼物 2"), choice.rank(candidates));
+
+        CommandFollowUp.Claimed claimed = choice.claim(new CommandContext(PLATFORM, PushTargetType.GROUP,
+                GROUP, ASKER, "3", List.of(), "3"));
+
+        assertEquals("数据排行榜", claimed.command());
+        // 「数据排行榜」按「三位以内的纯数字算页码、更长的算 uid」认参数，
+        // 因此接在末尾的这一串走的与他自己打 uid 那一次是同一条路（见该命令自己的那把尺）
+        assertEquals(List.of("礼物", "2", "10003"), claimed.args());
+    }
+
     /**
      * 一次回放用的整套零件
      * <p>
-     * 每行语料新建一份：追问与「记住的选择」都按会话记着，共用一份的话，前一行的痕迹会落到下一行头上。
+     * 每行语料新建一份：追问按会话与人记着，共用一份的话，前一行的痕迹会落到下一行头上。
      */
     private static class Fixture {
         private final List<String> replies = new ArrayList<>();
@@ -209,8 +248,8 @@ class BilibiliStreamerFollowUpCorpusTest {
             properties.getLive().setLiveDataPath(dataDir.resolve("data.json").toString());
 
             CommandSettingsService settings = new CommandSettingsService(new StarBotStateStore(properties));
-            BilibiliStreamerChoice choice = new BilibiliStreamerChoice(liveDataService,
-                    new LiveSessionArchive(properties), new StarBotStateStore(properties), clock);
+            BilibiliStreamerChoice choice =
+                    new BilibiliStreamerChoice(liveDataService, new LiveSessionArchive(properties), clock);
 
             List<StarBotCommand> commands = new ArrayList<>();
             @SuppressWarnings("unchecked")
@@ -245,20 +284,21 @@ class BilibiliStreamerFollowUpCorpusTest {
             return String.join("\n", replies);
         }
 
-        private PushUser streamer(int index) {
-            PushUser user = new PushUser();
-            user.setUid(10000L + index);
-            user.setUname(NAMES.get(index - 1));
-            user.setPlatform("bilibili");
+    }
 
-            PushTarget target = new PushTarget();
-            target.setPlatform(PLATFORM);
-            target.setType(PushTargetType.GROUP);
-            target.setNum(GROUP);
-            target.setMessages(new ArrayList<>());
-            user.setTargets(List.of(target));
-            return user;
-        }
+    private static PushUser streamer(int index) {
+        PushUser user = new PushUser();
+        user.setUid(10000L + index);
+        user.setUname(NAMES.get(index - 1));
+        user.setPlatform("bilibili");
+
+        PushTarget target = new PushTarget();
+        target.setPlatform(PLATFORM);
+        target.setType(PushTargetType.GROUP);
+        target.setNum(GROUP);
+        target.setMessages(new ArrayList<>());
+        user.setTargets(List.of(target));
+        return user;
     }
 
     /**

@@ -678,7 +678,13 @@ td.act button:hover{color:var(--err)}
 .daystep:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
 .daystep:disabled{opacity:.45;cursor:not-allowed}
 #log-daybar b{font-size:14px;color:var(--text)}
-#log-filters{margin:12px 0 4px}
+#log-cats{margin:12px 0 0}
+#log-filters{margin:10px 0 4px}
+/* 一条事件底下那个「在工程日志里看这一刻 →」。默认淡着，鼠标落到这一行上才显出来——
+   一整页每行都亮着一个链接会把正文压下去，而正文才是这一页要读的东西 */
+.tl-go{display:inline-block;margin-top:5px;font-size:12px;color:var(--dim);text-decoration:none}
+.tl-row:hover .tl-go,.tl-go:focus{color:var(--accent)}
+.tl-go:hover{text-decoration:underline}
 #log-filters input[type=search]{flex:1 1 200px;min-width:160px}
 #log-list{margin-top:8px}
 #log-more{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
@@ -705,4 +711,10 @@ td.act button:hover{color:var(--err)}
 .eng .er.warn{border-left-color:var(--warn);background:var(--warnsoft)}
 .eng .er.error{border-left-color:var(--err);background:var(--errsoft)}
 .eng .er.debug{color:var(--dim)}
+/* 从日志页跳过来时定住的那一段。描边而不是只改底色：调试那一档本来就是灰的，
+   只改底色的话，高亮的那一行与它上下几行看起来一样 */
+.eng .er.hl{background:var(--soft);border-left-color:var(--accent);color:var(--text);
+  outline:1px solid var(--accent);outline-offset:-1px}
 #eng-tools input[type=search]{flex:1 1 180px;min-width:140px}
+#eng-tools input[type=date]{font-family:inherit}
+#eng-jump{margin:0 0 12px}

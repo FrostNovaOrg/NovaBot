@@ -15,6 +15,7 @@
 import {
   DEFAULT_LIMIT, emptyState, parseLogHash, logHash, timelineQuery, hasFilter, emptyText,
   olderDay, newerDay, engLevelOf, groupEngLines, engVisible,
+  engQuery, engAtBottom, engFollowing, engCopyText, engEmptyText,
 } from '../../../main/resources/config-ui/log-model.js';
 
 const failures = [];
@@ -48,6 +49,14 @@ eq(parseLogHash('#/log/2026年9月1日', TODAY).date, TODAY, '认不出的日期
 eq(parseLogHash('#/log?only=problem', TODAY).only, true, '只看问题认 only=problem');
 eq(parseLogHash('#/log?only=1', TODAY).only, false, '只认 problem 这一个值，别的值不算开');
 eq(parseLogHash('#/log?type=PUSH_FAILED', TODAY).type, 'PUSH_FAILED', '类型原样取');
+eq(parseLogHash('#/log?cat=PUSH', TODAY).cat, 'PUSH', '大类原样取');
+eq(parseLogHash('#/log/eng?at=20%3A07', TODAY).at, '20:07', '要看哪一分钟走查询串');
+eq(parseLogHash('#/log/eng?at=20:07', TODAY).at, '20:07', '冒号没编码时也认');
+// 认不出的时刻当没给：定位到一个瞎猜的位置，比压根不定位更难查——屏幕上那条「已定位到」
+// 会照常显示，而高亮的是另一刻的行
+eq(parseLogHash('#/log/eng?at=%E6%99%9A%E4%B8%8A%E5%85%AB%E7%82%B9', TODAY).at, '',
+  '认不出的时刻当没给');
+eq(parseLogHash('#/log/eng?at=25:99', TODAY).at, '', '形状对但不存在的时刻也不认');
 eq(parseLogHash('#/log?streamer=%E7%94%B2%E4%B8%BB%E6%92%AD', TODAY).streamer, '甲主播', '主播要解码');
 eq(parseLogHash('#/log?chan=%E7%BE%A4%20111', TODAY).channel, '群 111', '通道要解码');
 eq(parseLogHash('#/log?q=%E5%BC%80%E6%92%AD', TODAY).q, '开播', '关键词要解码');
@@ -60,9 +69,12 @@ eq(logHash(state({date: '2026-09-01'}), TODAY), '#/log/2026-09-01', '别的日�
 eq(logHash(state({only: true}), TODAY), '#/log?only=problem', '只看问题写成 only=problem');
 eq(logHash(state({streamer: '甲主播'}), TODAY), '#/log?streamer=%E7%94%B2%E4%B8%BB%E6%92%AD',
   '主播要编码');
+eq(logHash(state({cat: 'PUSH'}), TODAY), '#/log?cat=PUSH', '大类写成 cat=');
 eq(logHash(state({view: 'eng'}), TODAY), '#/log/eng', '工程日志是子路径');
 eq(logHash(state({view: 'eng', date: '2026-09-01'}), TODAY), '#/log/eng?d=2026-09-01',
   '工程日志把日期挪进查询串');
+eq(logHash(state({view: 'eng', at: '20:07'}), TODAY), '#/log/eng?at=20%3A07',
+  '要看哪一分钟也写进地址栏：日志页那一跳贴给别人，对方落在同一刻');
 eq(logHash(state({date: '2026-09-01', only: true, type: 'PUSH_SENT', q: '开播'}), TODAY),
   '#/log/2026-09-01?only=problem&type=PUSH_SENT&q=%E5%BC%80%E6%92%AD',
   '几项一起时按固定顺序拼，同一份筛选只有一个地址');
@@ -75,12 +87,15 @@ for (const one of [
   state({date: '2026-09-01'}),
   state({only: true}),
   state({type: 'PUSH_FAILED'}),
+  state({cat: 'LINK'}),
   state({streamer: '甲主播'}),
   state({channel: '群 111'}),
   state({q: '开播 & 下播'}),
-  state({date: '2026-08-30', only: true, type: 'AT_ALL_SKIPPED', streamer: '甲主播',
+  state({date: '2026-08-30', only: true, cat: 'PUSH', type: 'AT_ALL_SKIPPED', streamer: '甲主播',
     channel: '私聊 5201314', q: '额度'}),
   state({view: 'eng'}),
+  state({view: 'eng', at: '00:03'}),
+  state({view: 'eng', date: '2026-09-01', at: '20:07'}),
   state({view: 'eng', date: '2026-09-01', only: true, q: '超时'}),
 ]) {
   eq(parseLogHash(logHash(one, TODAY), TODAY), one, '往返：' + logHash(one, TODAY));
@@ -95,6 +110,8 @@ eq(timelineQuery(state({only: true}), 0, ''), '?date=2026-09-04&limit=' + DEFAUL
   + '&problems=true', '只看问题在接口那头叫 problems');
 eq(timelineQuery(state({channel: '群 111'}), 0, ''), '?date=2026-09-04&limit=' + DEFAULT_LIMIT
   + '&channel=%E7%BE%A4%20111', '通道在接口那头叫 channel');
+eq(timelineQuery(state({cat: 'PUSH'}), 0, ''), '?date=2026-09-04&limit=' + DEFAULT_LIMIT
+  + '&category=PUSH', '大类在接口那头叫 category');
 eq(timelineQuery(state({type: 'PUSH_SENT', streamer: '甲主播', q: '开播'}), 50, ''),
   '?date=2026-09-04&limit=50&type=PUSH_SENT&streamer=%E7%94%B2%E4%B8%BB%E6%92%AD&q=%E5%BC%80%E6%92%AD',
   '三筛与条数一起带');
@@ -107,6 +124,7 @@ eq(hasFilter(state({})), false, '什么都没筛');
 eq(hasFilter(state({date: '2026-09-01'})), false, '换一天不算筛——那是翻页不是筛选');
 eq(hasFilter(state({only: true})), true, '只看问题算筛');
 eq(hasFilter(state({type: 'PUSH_SENT'})), true, '类型算筛');
+eq(hasFilter(state({cat: 'PUSH'})), true, '大类算筛');
 eq(hasFilter(state({streamer: '甲主播'})), true, '主播算筛');
 eq(hasFilter(state({channel: '群 111'})), true, '通道算筛');
 eq(hasFilter(state({q: '开播'})), true, '搜索算筛');
@@ -145,9 +163,20 @@ eq(GROUPED.length, 2, '堆栈跟着它那一行走，不算独立的两行');
 eq(GROUPED[0].level, 'error', '整段的级别取头一行的');
 eq(GROUPED[0].text.split('\n').length, 3, '头一行加两行堆栈');
 eq(GROUPED[1].level, 'info', '下一段另起');
-eq(groupEngLines(['\tat a.b.C.d(C.java:1)']), [{level: '', text: '\tat a.b.C.d(C.java:1)'}],
+eq(groupEngLines(['\tat a.b.C.d(C.java:1)']),
+  [{level: '', text: '\tat a.b.C.d(C.java:1)', hl: false}],
   '开头就是续行时（尾部读进来的第一行常常正是这种）不丢它');
 eq(groupEngLines([]), [], '没有行就没有段');
+
+// 高亮的是「那一行所属的整段」，不是那一行本身：服务端给的是原文行号，而屏幕上一段
+// 可能是一行加它的堆栈——只高亮其中一行的话，屏幕上会亮起半个异常，找的人不知道它属于谁
+const MARKED = groupEngLines([HEAD_ERR, '\tat a.b.C.d(C.java:1)', HEAD_INFO], 1);
+eq(MARKED.length, 2, '标高亮不改变分段');
+eq(MARKED[0].hl, true, '堆栈那一行归它头上那一段');
+eq(MARKED[1].hl, false, '别的段不高亮');
+eq(groupEngLines([HEAD_ERR, HEAD_INFO], 1)[1].hl, true, '指到哪一行就亮哪一段');
+eq(groupEngLines([HEAD_ERR, HEAD_INFO]).some(entry => entry.hl), false, '没给行号时一段都不亮');
+eq(groupEngLines([HEAD_ERR, HEAD_INFO], 9).some(entry => entry.hl), false, '行号超出范围时一段都不亮');
 
 // ---------- 八、工程日志：筛 ----------
 const ON = {error: true, warn: true, info: true, debug: true};
@@ -166,6 +195,54 @@ eq(engVisible({level: 'info', text: '发送失败'}, ON, '开播'), false, '搜�
 // 堆栈并进段里之后，搜类名也搜得到它所属的那一行
 eq(engVisible(GROUPED[0], ON, 'C.java'), true, '搜堆栈里的字样也留得住整段');
 eq(engVisible({level: 'info', text: 'x'}, ON, '   '), true, '搜索词只有空白时当没搜');
+
+// ---------- 九、工程日志：查询串 ----------
+// 与 timelineQuery 同理，地址栏那一套名字只在这一个函数里换成接口那一套。
+// 日期一律写明（同 timelineQuery 的 date=），不省今天那一次：省掉的话，哪一天由服务端自己算，
+// 而浏览器与服务端不在同一个时区时，跨零点那几个小时里两边说的「今天」不是同一天
+eq(engQuery(state({view: 'eng'}), 300, -1), '?limit=300&d=2026-09-04',
+  '不定位、不跟随时只带日期与行数');
+eq(engQuery(state({view: 'eng', date: '2026-09-01'}), 300, -1), '?limit=300&d=2026-09-01',
+  '翻别的日子读那一天那一份');
+eq(engQuery(state({view: 'eng', at: '20:07'}), 300, -1), '?limit=300&d=2026-09-04&at=20%3A07',
+  '定位到某一分钟');
+eq(engQuery(state({view: 'eng'}), 300, 4096), '?limit=300&d=2026-09-04&since=4096',
+  '跟随最新只要那个位置之后新写进去的，不是每 3 秒把 300 行重取一遍');
+// 定住与跟随不同时发：跟了就会把定住的那一刻推出视野，而使用者刚点了「看这一刻」
+eq(engQuery(state({view: 'eng', at: '20:07'}), 300, 4096), '?limit=300&d=2026-09-04&at=20%3A07',
+  '定住的时候不跟随');
+
+// ---------- 十、工程日志：跟随最新 ----------
+// 阴性那几格是这一组的重头：跟随做错的方向不是「没跟上」，而是「正翻着旧行时被推走」——
+// 那时人以为自己点错了，而屏幕上没有任何东西说明刚才发生了什么
+eq(engAtBottom(400, 100, 500), true, '滚到底');
+eq(engAtBottom(396, 100, 500), true, '差几像素也算到底——滚轮与触控板停不到整数上');
+eq(engAtBottom(0, 100, 100), true, '内容装得下时本来就在底部');
+eq(engAtBottom(300, 100, 500), false, '离底还远');
+eq(engFollowing(true, true, state({view: 'eng'}), TODAY), true, '开着且停在底部时跟');
+eq(engFollowing(true, false, state({view: 'eng'}), TODAY), false, '不在底部不跟');
+eq(engFollowing(false, true, state({view: 'eng'}), TODAY), false, '开关关着不跟');
+eq(engFollowing(true, true, state({view: 'eng', at: '20:07'}), TODAY), false, '定位到某一分钟时不跟');
+eq(engFollowing(true, true, state({view: 'eng', date: '2026-09-01'}), TODAY), false,
+  '旧日子那一份不会再长，跟它等于每 3 秒问一次同一个答案');
+
+// ---------- 十一、工程日志：复制这一段与空态 ----------
+// 复制的就是屏幕上那几段，不另走一条取数路径。打码发生在服务端读盘那一层
+// （EngineeringLogService.mask，那一头另有判据），因此屏幕上的、复制走的、传到浏览器的
+// 是同一份已经打过码的文本——另开一条「复制时去取原文」的路，才是这一格防的事
+const SHOWN = [{level: 'error', text: '甲\n\tat a.b.C.d(C.java:1)', hl: false},
+  {level: 'info', text: '乙', hl: false}];
+eq(engCopyText(SHOWN), '甲\n\tat a.b.C.d(C.java:1)\n乙', '逐段一行，堆栈跟着它那一段走');
+eq(engCopyText([]), '', '一段都没有时复制出来是空的');
+eq(engCopyText([{level: 'info', text: '登录失败 password: ******', hl: false}]),
+  '登录失败 password: ******', '口令那一行复制出去仍是打过码的那一份');
+eq(engEmptyText(state({view: 'eng'}), TODAY, 0), '这一份日志此刻还没有内容。',
+  '今天这一份还一行都没写过');
+eq(engEmptyText(state({view: 'eng', date: '2026-09-01'}), TODAY, 0), '这一天没有记录。',
+  '那一天的文件不在——与「今天还没写」不是一回事，后者过一会儿自己就有了');
+eq(engEmptyText(state({view: 'eng'}), TODAY, 12), '没有符合条件的行。', '有行而筛没了');
+eq(engEmptyText(state({view: 'eng', date: '2026-09-01'}), TODAY, 12), '没有符合条件的行。',
+  '旧日子里筛没了也是筛没了');
 
 // ---------- 报数 ----------
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
