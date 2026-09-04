@@ -91,7 +91,15 @@ public class ConfigUiSession {
         /**
          * 凭启动日志里那个令牌进来的。未配口令时它就是这套面板唯一的凭据
          */
-        OPERATOR_TOKEN("operator-token");
+        OPERATOR_TOKEN("operator-token"),
+
+        /**
+         * 用通行密钥验过身进来的
+         * <p>
+         * 与 {@link #PASSWORD} 分开记而不是并进去：这条路<b>不经二次验证</b>，
+         * 而使用协议的同意记录里那一行要说得出「当时是怎么进来的」。
+         */
+        PASSKEY("passkey");
 
         private final String wire;
 

@@ -33,6 +33,9 @@
     button:disabled { background: #fbb0c4; cursor: default }
     .msg { margin-top: 14px; font-size: 13px; color: #f56c6c; min-height: 18px; text-align: center }
     .hidden { display: none }
+    /* 通行密钥与口令是并列的两条路，中间给一条分隔 */
+    #passkey { margin-bottom: 14px }
+    p.or { margin: 0 0 18px; font-size: 12px; color: #aaa; text-align: center }
     /* 正文照原样显示：换行与空行是文案的一部分，挤成一坨就没人读了。
        长文案给一个滚动区，按钮始终留在卡片里看得见的位置 */
     #agreement-text {
@@ -71,6 +74,16 @@
   -->
   <input type="text" name="username" value="novabot" autocomplete="username" class="hidden" readonly>
 
+  <!--
+    通行密钥这条路。默认藏着，由脚本问过服务端「这台机器登记过没有」之后才摆出来——
+    一个点了必然失败的按钮，比没有这个按钮更让人不知所措。
+    版式（谁主谁次）与「登录与安全」那一组一并重排，此处只把线接上。
+  -->
+  <div id="passkey-field" class="hidden">
+    <button type="button" id="passkey">用通行密钥登录</button>
+    <p class="or">或者输入口令</p>
+  </div>
+
   <label for="password">口令</label>
   <input type="password" id="password" name="password" autocomplete="current-password" required autofocus>
 
@@ -93,10 +106,85 @@
   // 未配口令的那一形态里没有会话，也就没有这个值——那一形态靠的是令牌 Cookie 与 SameSite
   let csrfToken = null;
 
+  // 凭据里的二进制在浏览器那一侧是 ArrayBuffer，接口两侧一律用 base64url。
+  // 这张页面不取任何外部资源（未登录时由服务端直接吐出来），因此这两行与设置页里那一份
+  // 是各自一份而不是共用——共用就意味着这张页面要在还没登录的时候先去要一个脚本文件
+  const toBuffer = v => Uint8Array.from(atob(v.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+  const toBase64Url = b => btoa(String.fromCharCode(...new Uint8Array(b)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
   function showLogin(state) {
     if (state.totpRequired) show('#code-field');
     show('#form');
     $('#password').focus();
+    offerPasskey();
+  }
+
+  /**
+   * 这台机器登记过通行密钥吗？登记过才摆出那个按钮
+   *
+   * 接口只在安全上下文（https 或 localhost）里存在，内网 http 访问时它直接是 undefined——
+   * 不判这一句的话，点下去只会抛一个使用者看不懂的异常
+   */
+  function offerPasskey() {
+    if (typeof window.PublicKeyCredential !== 'function') return;
+
+    fetch('/config/api/auth/passkey/login/options', {method: 'POST'})
+      .then(r => r.json())
+      .then(options => { if (options.success) show('#passkey-field'); })
+      .catch(() => {});
+  }
+
+  async function loginWithPasskey() {
+    $('#passkey').disabled = true;
+    $('#msg').textContent = '';
+
+    try {
+      // 这一趟要的是一个新挑战：上面那一趟只用来判断「要不要摆这个按钮」，
+      // 它发出去的那个挑战早已作废（挑战是一次性的）
+      const options = await fetch('/config/api/auth/passkey/login/options', {method: 'POST'}).then(r => r.json());
+      if (!options.success) {
+        $('#msg').textContent = options.message || '这台机器还没有登记过通行密钥';
+        return;
+      }
+
+      const credential = await navigator.credentials.get({
+        publicKey: {
+          challenge: toBuffer(options.challenge),
+          rpId: options.rpId,
+          timeout: options.timeout,
+          userVerification: options.userVerification,
+          allowCredentials: (options.allowCredentials || []).map(c => ({type: 'public-key', id: toBuffer(c.id)})),
+        },
+      });
+
+      const r = await fetch('/config/api/auth/passkey/login/verify', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          id: credential.id,
+          response: {
+            clientDataJSON: toBase64Url(credential.response.clientDataJSON),
+            authenticatorData: toBase64Url(credential.response.authenticatorData),
+            signature: toBase64Url(credential.response.signature),
+          },
+        }),
+      });
+      const data = await r.json();
+
+      if (data.success) {
+        // 与口令登录同法走整页跳转。协议若还没同意，/config 会把这张页面再发回来一次
+        location.replace('/config');
+        return;
+      }
+
+      $('#msg').textContent = data.message || '这把通行密钥没能通过验证';
+    } catch (err) {
+      // 使用者按了取消也会走到这里。不说成「出错了」——那会让人以为设备有问题
+      $('#msg').textContent = err.name === 'NotAllowedError' ? '' : '无法使用通行密钥：' + err.message;
+    } finally {
+      $('#passkey').disabled = false;
+    }
   }
 
   function showAgreement() {
@@ -145,6 +233,8 @@
     // 状态问不到时把口令表单摆出来：这样人至少看得见「无法连接到服务器」，
     // 而不是对着一张什么都没有的白页
     .catch(() => show('#form'));
+
+  $('#passkey').addEventListener('click', loginWithPasskey);
 
   $('#accept').addEventListener('click', async () => {
     $('#accept').disabled = true;

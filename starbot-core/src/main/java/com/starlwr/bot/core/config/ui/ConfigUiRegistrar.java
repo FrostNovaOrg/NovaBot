@@ -4,7 +4,10 @@ import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSessionStore;
 import com.starlwr.bot.core.config.ui.auth.LoginThrottle;
+import com.starlwr.bot.core.config.ui.auth.passkey.PasskeyService;
+import com.starlwr.bot.core.config.ui.auth.passkey.PasskeyStore;
 import com.starlwr.bot.core.config.ui.napcat.NapCatCredentialService;
+import com.starlwr.bot.core.service.StarBotStateStore;
 import com.starlwr.bot.core.util.IpMatcher;
 import com.starlwr.bot.core.util.SecureToken;
 import com.starlwr.bot.core.util.StringUtil;
@@ -98,6 +101,22 @@ public class ConfigUiRegistrar {
     public ConfigUiAuthService configUiAuthService(ConfigUiSessionStore sessionStore, LoginThrottle throttle,
                                                   ConfigurationFileService fileService) {
         return new ConfigUiAuthService(properties.getConfigUi().getAuth(), sessionStore, throttle, fileService);
+    }
+
+    /**
+     * 已登记的通行密钥存在哪
+     */
+    @Bean
+    public PasskeyStore passkeyStore(StarBotStateStore stateStore) {
+        return new PasskeyStore(stateStore);
+    }
+
+    /**
+     * 通行密钥的登记与校验
+     */
+    @Bean
+    public PasskeyService passkeyService(PasskeyStore passkeyStore, ConfigUiAuthService authService) {
+        return new PasskeyService(passkeyStore, authService);
     }
 
     /**
