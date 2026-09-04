@@ -22,11 +22,11 @@ import java.util.Random;
  *
  * <h2>版式规则</h2>
  * <ol>
- *   <li>字号 {@code 18 + 54·√((c−cmin)/(cmax−cmin))}，取整后钳在 18～72；
+ *   <li>字号 {@code 18 + 48·(c−cmin)/(cmax−cmin)}，取整后钳在 18～66；
  *       全场词频相同时分母为零，一律取下限，靠下面的整体放大去填满</li>
  *   <li>按词频从高到低逐个放，位置沿中心向外的<b>椭圆</b>螺旋试探——椭圆的长短轴比
  *       取自框本身，否则在 830×380 这样的扁框里词会挤成一个圆、四角空着</li>
- *   <li>每个词的包围盒四周留 {@value #PADDING}px：两两不许相交，也不许出框</li>
+ *   <li>相邻两个词之间隔开 {@value #WORD_GAP}px，词与框边之间留 {@value #FRAME_MARGIN}px</li>
  *   <li>放不下的词丢掉。从大到小放，丢掉的自然是最小的那几个</li>
  *   <li>全部放完后若外包围盒不足框的 {@value #FILL_TARGET_PERCENT}%，字号整体放大一档重排，
  *       直到够了、或者再放大反而更差</li>
@@ -38,16 +38,28 @@ import java.util.Random;
  */
 final class WordCloudLayout {
     /**
-     * 词与词、词与框之间至少留出的空白
+     * 相邻两个词的包围盒之间至少隔开的空白
+     * <p>
+     * 🔴 这是<b>两个词之间实际隔开多少</b>，不是每个词自己四周涨多少。头一版按后者写：
+     * 两个词各涨 8px 再判不相交，于是墨与墨之间隔的其实是 16px，看上去空得发散。
+     * 判据也要按这个形去量——量「各涨 8px 后不相交」的尺子读的是 16
      */
-    static final int PADDING = 8;
+    static final int WORD_GAP = 8;
 
     /**
-     * 字号下限与可加的最大增量：{@code 18 + 54} 即上限 72
+     * 词与框边之间至少留出的空白
+     */
+    static final int FRAME_MARGIN = 8;
+
+    /**
+     * 字号下限与可加的最大增量：{@code 18 + 48} 即上限 66
+     * <p>
+     * 下限 18 是<b>可读线</b>：报告里最小的正文字号是 22，词云的尾词比正文再小一档还认得出，
+     * 再往下就只是一团色块了——要往里多塞词先动上限，这一头不动
      */
     private static final int FONT_SIZE_MIN = 18;
 
-    private static final int FONT_SIZE_SPAN = 54;
+    private static final int FONT_SIZE_SPAN = 48;
 
     /**
      * 外包围盒至少要占到框的这个比例，不足则整体放大字号重排
@@ -72,14 +84,17 @@ final class WordCloudLayout {
     private static final int VERTICAL_GROUP = 4;
 
     /**
-     * 螺旋每转过一弧度，半径向外走多少像素（一圈约 19px，与最小字号同量级）
+     * 螺旋每转过一弧度，半径向外走多少像素（一圈约 9px，半个最小字号）
+     * <p>
+     * 一圈走得比最小的字还宽的话，小词只能落在圈与圈之间那几个位置上，
+     * 明明放得下的空当会被整圈跨过去
      */
-    private static final double SPIRAL_GAIN = 3.0;
+    private static final double SPIRAL_GAIN = 1.5;
 
     /**
      * 螺旋上相邻两个试探点之间的弧长，单位像素
      */
-    private static final double SPIRAL_ARC_STEP = 8.0;
+    private static final double SPIRAL_ARC_STEP = 5.0;
 
     /**
      * 名次分档的四种颜色，取自设计语言册（丙·星云）的亮色值：
@@ -178,7 +193,11 @@ final class WordCloudLayout {
     }
 
     /**
-     * 按词频算基准字号
+     * 按词频算基准字号：<b>字高</b>与词频成正比
+     * <p>
+     * 头一版取的是 √词频，那是让<b>面积</b>与词频成正比。看上去更「公道」，代价是
+     * 排在中游的词个个都还很大：830×380 的框被二十来个大词占满，剩下的全丢掉。
+     * 改成字高成正比之后，头几名照旧醒目，中游往后收得快，同一块地方能多站进一半的词
      */
     private static int[] baseFontSizes(List<Word> sorted) {
         int max = sorted.get(0).count();
@@ -189,7 +208,7 @@ final class WordCloudLayout {
         for (int i = 0; i < sorted.size(); i++) {
             // 全场词频一样时没有「相对大小」可言，一律取下限，由整体放大去决定最终多大
             double ratio = span == 0 ? 0 : (double) (sorted.get(i).count() - min) / span;
-            sizes[i] = clamp((int) Math.round(FONT_SIZE_MIN + FONT_SIZE_SPAN * Math.sqrt(ratio)));
+            sizes[i] = clamp((int) Math.round(FONT_SIZE_MIN + FONT_SIZE_SPAN * ratio));
         }
         return sizes;
     }
@@ -257,7 +276,7 @@ final class WordCloudLayout {
                 continue;
             }
 
-            occupied.add(inflate(box));
+            occupied.add(box);
             placements.add(new Placement(sorted.get(i).text(), i + 1, size, vertical[i], box, colorOf(i + 1)));
         }
 
@@ -283,9 +302,12 @@ final class WordCloudLayout {
         double centerY = height / 2.0;
         // 椭圆的扁平程度跟着框走，词才铺得到左右两头
         double aspect = (double) width / height;
-        // 半径超过半个框高时，椭圆上的点在两个轴向上都已经跑出框外，
-        // 而词是以该点为中心摆的，再往外试没有一个位置可能合规
-        double maxRadius = height / 2.0;
+        // 🔴 停在半个框高上会把四个角整片让出去。螺旋上的点是
+        // (r·aspect·cos t, r·sin t)，横向要在框内即 r·cos t ≤ height/2，
+        // 纵向要在框内即 r·sin t ≤ height/2——两条合起来是个半边长 height/2 的正方形，
+        // 它的外接圆半径是 √2 倍。停在 height/2 只走到正方形的内切圆，
+        // 830×380 的框里那是 78% 的面积，剩下 22% 在四角，一个词也放不进去
+        double maxRadius = height / 2.0 * Math.sqrt(2);
 
         for (double t = 0; ; ) {
             double radius = SPIRAL_GAIN * t;
@@ -301,33 +323,32 @@ final class WordCloudLayout {
                 return candidate;
             }
 
-            t += Math.max(0.05, SPIRAL_ARC_STEP / Math.max(SPIRAL_ARC_STEP, radius));
+            // 角度下限只为保证走得动。定得太大（原先 0.05）时，外圈半径几百像素，
+            // 一步就跨过十几个像素，而空当最多的恰恰是外圈
+            t += Math.max(0.01, SPIRAL_ARC_STEP / Math.max(SPIRAL_ARC_STEP, radius));
         }
     }
 
     /**
-     * 这个位置放得下吗：连同四周留白一起，既要在框内，又不能压到已放下的词
+     * 这个位置放得下吗：离框边够远，也不能贴上已放下的词
      */
     private static boolean fits(Rectangle candidate, List<Rectangle> occupied, int width, int height) {
-        Rectangle padded = inflate(candidate);
-        if (padded.x < 0 || padded.y < 0 || padded.x + padded.width > width || padded.y + padded.height > height) {
+        if (candidate.x < FRAME_MARGIN || candidate.y < FRAME_MARGIN
+                || candidate.x + candidate.width > width - FRAME_MARGIN
+                || candidate.y + candidate.height > height - FRAME_MARGIN) {
             return false;
         }
 
+        // 🔴 只涨候选框这一次，occupied 里存的是原框：一边涨 8px 与不相交合起来，
+        // 恰好是「两个词之间隔开 8px」。两边都涨会变成隔开 16px
+        Rectangle spaced = new Rectangle(candidate.x - WORD_GAP, candidate.y - WORD_GAP,
+                candidate.width + WORD_GAP * 2, candidate.height + WORD_GAP * 2);
         for (Rectangle taken : occupied) {
-            // occupied 里存的已经是涨过的框，这里再涨一次候选框：
-            // 「每个词四周留 8px」两边都要留，于是两个词的墨之间隔的是 16px。
-            // 判据读的也是这个形——两个各自涨 8px 的框不相交
-            if (taken.intersects(padded)) {
+            if (taken.intersects(spaced)) {
                 return false;
             }
         }
 
         return true;
-    }
-
-    private static Rectangle inflate(Rectangle box) {
-        return new Rectangle(box.x - PADDING, box.y - PADDING,
-                box.width + PADDING * 2, box.height + PADDING * 2);
     }
 }
