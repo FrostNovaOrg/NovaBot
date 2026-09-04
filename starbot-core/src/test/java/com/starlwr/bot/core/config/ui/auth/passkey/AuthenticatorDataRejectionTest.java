@@ -3,7 +3,11 @@ package com.starlwr.bot.core.config.ui.auth.passkey;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -57,6 +61,23 @@ class AuthenticatorDataRejectionTest {
         assertDoesNotThrow(() -> AuthenticatorData.parse(Corpus.backupEligibleAndBackedUp(), false));
     }
 
+    @Test
+    @DisplayName("登录用的认证器数据带着扩展字典，照收")
+    void acceptsAssertionWithExtensionMap() {
+        AuthenticatorData parsed = assertDoesNotThrow(
+                () -> AuthenticatorData.parse(Corpus.assertionWithExtensionMap(), false));
+        assertEquals(1L, parsed.getSignCount());
+    }
+
+    @Test
+    @DisplayName("登录用的认证器数据在扩展字典之后还有多余字节，拒收")
+    void rejectsTrailingBytesAfterExtensionMap() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> AuthenticatorData.parse(Corpus.assertionWithExtensionMapAndTrailingByte(), false));
+        assertTrue(error.getMessage().contains("多余"),
+                () -> "应当点出多余字节, 实际: " + error.getMessage());
+    }
+
     /**
      * 负例语料。构造不走被测解析器，只借用判据用的认证器去编合法底座，再改一处。
      */
@@ -104,6 +125,22 @@ class AuthenticatorDataRejectionTest {
                     | TestAuthenticator.FLAG_USER_VERIFIED
                     | TestAuthenticator.FLAG_ATTESTED;
             return authenticator.attestedWithCoseAlg(RP_ID, flags, 5, ALG_THAT_TRUNCATES_TO_ES256);
+        }
+
+        static byte[] assertionWithExtensionMap() {
+            TestAuthenticator authenticator = new TestAuthenticator(TestAuthenticator.ES256);
+            int flags = TestAuthenticator.FLAG_USER_PRESENT | TestAuthenticator.FLAG_EXTENSION_DATA;
+            byte[] wellFormed = authenticator.rawAuthenticatorData(RP_ID, flags, 1, false);
+            Map<Object, Object> extensions = new LinkedHashMap<>();
+            extensions.put(1L, 2L);
+            byte[] encoded = TestAuthenticator.Cbor.map(extensions);
+            byte[] out = java.util.Arrays.copyOf(wellFormed, wellFormed.length + encoded.length);
+            System.arraycopy(encoded, 0, out, wellFormed.length, encoded.length);
+            return out;
+        }
+
+        static byte[] assertionWithExtensionMapAndTrailingByte() {
+            return TestAuthenticator.withTrailing(assertionWithExtensionMap(), (byte) 0x00);
         }
     }
 }
