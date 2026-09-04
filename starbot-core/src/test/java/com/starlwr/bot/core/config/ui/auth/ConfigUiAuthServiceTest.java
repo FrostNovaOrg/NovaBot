@@ -308,12 +308,13 @@ class ConfigUiAuthServiceTest {
     }
 
     @Test
-    @DisplayName("专用口键是闭集：现有三项以外，同前缀下的机密键不得自动算进去")
+    @DisplayName("专用口键是闭集：现有四项以外，同前缀下的机密键不得自动算进去")
     void dedicatedAuthKeysAreAClosedSet() throws IOException {
         Set<String> expected = Set.of(
                 ConfigUiAuthService.PASSWORD_PROPERTY,
                 ConfigUiAuthService.TOTP_PROPERTY,
-                ConfigUiAuthService.TOTP_SECRET_PROPERTY);
+                ConfigUiAuthService.TOTP_SECRET_PROPERTY,
+                ConfigUiAuthService.OPERATOR_TOKEN_PROPERTY);
 
         Set<String> actual = new TreeSet<>();
         for (String name : authKeysOnTheSurface()) {

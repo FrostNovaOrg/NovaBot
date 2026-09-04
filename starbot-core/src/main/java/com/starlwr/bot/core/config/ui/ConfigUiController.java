@@ -593,7 +593,7 @@ public class ConfigUiController {
 
         if (ConfigUiAuthService.containsDedicatedAuthKey(changes.keySet())) {
             result.put("success", false);
-            result.put("message", "登录口令和二次验证请到「登录与安全」里改，这里不能保存这两项");
+            result.put("message", "登录口令、二次验证和「忘记口令」的启动令牌通道请到「登录与安全」里改，这里不能保存这几项");
             return result;
         }
 

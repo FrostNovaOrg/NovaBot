@@ -33,10 +33,10 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * 通用配置保存不得充当改口令／关二次验证的旁路
+ * 通用配置保存不得充当改口令／关二次验证／打开启动令牌通道的旁路
  * <p>
  * 专用改口令要旧口令，关掉二次验证要当前动态码，成功后还要注销其余会话。
- * 通用写口若直接改这两项，一枚已登录会话就能换掉口令并卸掉二次验证，旧会话继续可用。
+ * 通用写口若直接改这几项，一枚已登录会话就能换掉口令、卸掉二次验证，或打开一条绕过二者的直进通道。
  */
 @DisplayName("通用配置保存不得在无复核时改口令或关掉二次验证")
 class GenericConfigSaveMustNotChangeAuthWithoutReauthTest {
@@ -94,7 +94,8 @@ class GenericConfigSaveMustNotChangeAuthWithoutReauthTest {
         ConfigurationMetadataService metadata = mock(ConfigurationMetadataService.class);
         when(metadata.getKnownTypes()).thenReturn(Map.of(
                 ConfigUiAuthService.PASSWORD_PROPERTY, "java.lang.String",
-                "starbot.core.config-ui.auth.totp", "java.lang.Boolean"));
+                "starbot.core.config-ui.auth.totp", "java.lang.Boolean",
+                "starbot.core.config-ui.auth.operator-token", "java.lang.Boolean"));
 
         RuntimeConfigurationApplier applier = RuntimeConfigurationApplier.bench(properties).build();
 
@@ -208,6 +209,23 @@ class GenericConfigSaveMustNotChangeAuthWithoutReauthTest {
                 "应把人领去专用口, 实际 message=" + result.getString("message"));
         assertEquals(before, Files.readString(config, StandardCharsets.UTF_8),
                 "拒了配置文件就该逐字同, 明文写进去等于门已经换了");
+    }
+
+    @Test
+    @DisplayName("🔴 通用保存带启动令牌通道开关必须整单拒，配置文件一个字不动")
+    void genericSaveMustRejectOperatorTokenAndLeaveTheFileUntouched() throws IOException {
+        login();
+        String before = Files.readString(config, StandardCharsets.UTF_8);
+
+        Map<String, String> body = new LinkedHashMap<>();
+        body.put(ConfigUiAuthService.OPERATOR_TOKEN_PROPERTY, "true");
+        JSONObject result = controller.save(body);
+
+        assertFalse(result.getBooleanValue("success"),
+                "放行就会把忘记口令的启动令牌通道打开, 重启后打印一个绕过二次验证的直进地址, 实际 message="
+                        + result.getString("message"));
+        assertEquals(before, Files.readString(config, StandardCharsets.UTF_8),
+                "拒了配置文件就该逐字同");
     }
 
 }

@@ -47,10 +47,17 @@ public class ConfigUiAuthService {
     public static final String TOTP_SECRET_PROPERTY = "starbot.core.config-ui.auth.totp-secret";
 
     /**
+     * 「忘记口令」启动令牌通道开关所在的配置项
+     */
+    public static final String OPERATOR_TOKEN_PROPERTY = "starbot.core.config-ui.auth.operator-token";
+
+    /**
      * 这一项是不是只能走专用口的认证键
      * <p>
-     * 闭集只有三项：口令、二次验证开关、二次验证密钥。改的时候要过旧口令或当前动态码。
-     * 通用保存若直接改，一枚已登录会话就能换掉门。
+     * 闭集只有四项：口令、二次验证开关、二次验证密钥、「忘记口令」的启动令牌通道。
+     * 口令与二次验证改的时候要过旧口令或当前动态码。启动令牌通道打开后，
+     * 启动日志会打印一个绕过口令与二次验证的直进地址。
+     * 通用保存若直接改，一枚已登录会话就能换掉门或打开那条通道。
      * 同一前缀下日后新增的机密键不会自动算进来——要进专用口，须写进本方法并改对应测试。
      * @param name 配置项名，现行键或旧位置均可
      * @return 是专用口那几项时为 true
@@ -63,7 +70,8 @@ public class ConfigUiAuthService {
         String current = ConfigurationKeyAliases.currentName(name);
         return PASSWORD_PROPERTY.equals(current)
                 || TOTP_PROPERTY.equals(current)
-                || TOTP_SECRET_PROPERTY.equals(current);
+                || TOTP_SECRET_PROPERTY.equals(current)
+                || OPERATOR_TOKEN_PROPERTY.equals(current);
     }
 
     /**
