@@ -1,7 +1,7 @@
 server.address|java.lang.String|127.0.0.1|只监听哪个地址。默认 127.0.0.1 表示只有本机连得上；改成 0.0.0.0 会把控制台与推送接口暴露到网络，此时务必配好反向代理、来源 IP 白名单与登录口令
 server.port|java.lang.Integer|7827|控制台与事件流共用的服务端口，默认 7827
-spring.data.redis.database|java.lang.Integer|0|Redis 库号，默认 0。与其他程序共用同一实例时可换一个库避免键冲突
-spring.data.redis.host|java.lang.String|<null>|累计数据存储的 Redis 地址，填了才有跨场次的累计数据。留空时本场数据完整可用，但「我的总数据」「直播间总数据」「总数据排行榜」会明确提示不可用——那类数据随时间无限增长，放在文件里迟早撑不住。只需本机可达，切勿暴露到公网。改完需重启
+spring.data.redis.database|java.lang.Integer|0|Redis 库号，默认 0。与其他程序共用同一实例时可换一个库避免键冲突。改完需重启
+spring.data.redis.host|java.lang.String|<null>|累计数据存储的 Redis 地址，填了才有跨场次的累计数据。留空时本场数据完整可用，但「我的总数据」「直播间总数据」「总数据排行榜」会明确提示不可用——那类数据随时间无限增长，放在文件里迟早撑不住。只需本机可达，切勿暴露到公网。填完即时生效，不用重启；Redis 中途挂了会自动降级为只有本场数据，连回来自己恢复
 spring.data.redis.password|java.lang.String|<null>|Redis 密码，未设密码时留空
 spring.data.redis.port|java.lang.Integer|6379|Redis 端口，默认 6379
 spring.mail.host|java.lang.String|<null>|邮件告警的 SMTP 服务器地址，如 smtp.qq.com。不用邮件告警时留空

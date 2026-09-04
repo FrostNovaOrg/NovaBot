@@ -24,8 +24,8 @@
             <artifactId>novacore</artifactId>
         </dependency>
 
-        <!-- 累计数据存储。未配置 spring.data.redis.host 时相关 Bean 不注册，
-             程序照常以 JSON 运行，仅累计类查询不可用 -->
+        <!-- 累计数据存储。连不连、连哪儿由 TotalDataStorage 在运行期决定：
+             未配置 spring.data.redis.host 时程序照常以 JSON 运行，仅累计类查询不可用 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>
