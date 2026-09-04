@@ -20,6 +20,8 @@ import {
 } from './push-model.js';
 import {renderIncomplete, sessionSettings} from './sessions.js';
 import {store} from './store.js';
+import {buildLayoutEditor, buildTemplateEditor} from './template.js';
+import {isDefault, restoreDefaults, templateAdoption} from './template-model.js';
 
 /** 这一页最近一次取到的运行状态（/api/state），由 loadPushPage 刷新 */
 let runtime = {commands: [], sessions: [], subscriptions: [], incomplete: [], totalDataAvailable: null};
@@ -341,11 +343,13 @@ function renderStranded(host) {
 // ---- 默认模板 ----
 
 /**
- * 默认模板
+ * 默认模板：同一个编辑器，改的是「所有用默认的通道」那一份
  *
- * 这一页此刻只读：模板编辑器（一张卡＝一条消息、块可拖、右侧气泡预览）还没上，
- * 摆一个改不了的输入框比不摆更费解。改默认模板要到服务器上改配置——
- * 这句话在这里说清楚，比让人对着一个点了没反应的按钮猜要好。
+ * 改这里等于一次改一批群，因此页下把影响面逐条列出来——「改一次，所有用默认的通道
+ * 一起变」是这一页的立身之本，而它同时意味着一次误改会同时落到一批群上。
+ *
+ * 存的是<b>相对出厂默认的覆盖</b>（见服务端 PushTemplateDefaults），不是整份参数：
+ * 存整份的话，出厂默认此后再动这台机器一个也跟不上，而屏幕上它仍显示「默认」。
  */
 function renderDefaultTemplates(host) {
   const box = card(host, '默认模板',
@@ -358,18 +362,134 @@ function renderDefaultTemplates(host) {
     return;
   }
 
+  // 这一页的草稿不进底部那条改动条：它存的不是推送配置，走的是自己的保存按钮
+  const draft = {};
+  const line = el('div', 'tplstate');
+  const save = el('button', 'primary');
+  save.type = 'button';
+  save.textContent = '保存默认模板';
+  save.disabled = true;
+  line.appendChild(save);
+
+  let currentHandler = handlers[0];
+
+  const reset = el('button', 'ghost');
+  reset.type = 'button';
+  reset.textContent = '恢复出厂默认';
+  reset.addEventListener('click', () => {
+    if (!confirm('把「' + (currentHandler.displayName || currentHandler.className)
+      + '」的默认模板改回出厂的样子吗？用默认模板的通道会一起变回去。')) return;
+    delete draft[currentHandler.className];
+    saveDefaults(currentHandler, {}, save);
+  });
+  line.appendChild(reset);
+  box.appendChild(line);
+
+  save.addEventListener('click', () => saveDefaults(currentHandler,
+    draft[currentHandler.className] || overridesOf(currentHandler), save));
+
+  buildTemplateEditor(box, {
+    handlers,
+    editable: true,
+    // 默认模板对着<b>出厂默认</b>比，比出来的差集正是要存下来的那一份覆盖
+    base: handler => handler.factoryParams || handler.defaultParams,
+    paramsOf: handler => draft[handler.className] || overridesOf(handler),
+    context: {isGroup: true, admin: null},
+    channelLabel: '群里',
+    onSelect: handler => {
+      currentHandler = handler;
+      save.disabled = !draft[handler.className];
+    },
+    onChange: (handler, params) => {
+      currentHandler = handler;
+      draft[handler.className] = params;
+      save.disabled = false;
+      save.textContent = '保存默认模板';
+    },
+  });
+
+  renderAdoption(host, handlers);
+}
+
+/**
+ * 这一类通知此刻改过的那几个键
+ *
+ * 出厂默认与本机默认之差。服务端两份都给（factoryParams 与 defaultParams），
+ * 合成一份的话，「改成了与出厂一样的值」与「没改过」就再也分不开。
+ */
+function overridesOf(handler) {
+  const factory = handler.factoryParams || {};
+  const now = handler.defaultParams || {};
+  const out = {};
+  for (const key of Object.keys(now)) {
+    if (String(now[key]) !== String(factory[key])) out[key] = now[key];
+  }
+  return out;
+}
+
+/** 把改过的默认模板存下去 */
+async function saveDefaults(handler, params, button) {
+  button.disabled = true;
+  button.textContent = '保存中…';
+  try {
+    const res = await api('/templates', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({className: handler.className, params}),
+    });
+    if (!res.success) {
+      say((res.message || '保存失败') + (res.issues ? '：' + res.issues.join('；') : ''), 'err');
+      button.disabled = false;
+      button.textContent = '保存默认模板';
+      return;
+    }
+    say(res.message || '已保存', 'ok');
+    // 重新取一遍处理器清单：默认变了，树上「模板：默认／自定义」那一列跟着变
+    await reloadHandlers();
+    renderStreamers();
+  } catch (e) {
+    say('保存失败：' + e.message, 'err');
+    button.disabled = false;
+    button.textContent = '保存默认模板';
+  }
+}
+
+/** 默认改了之后，各通道是默认还是自定义要重新算 */
+async function reloadHandlers() {
+  try {
+    const res = await api('/handlers');
+    store.handlerList = res.handlers || store.handlerList;
+  } catch (e) {
+    say('重新读取推送处理器失败，屏幕上的「默认／自定义」可能还是旧的：' + e.message, 'err');
+  }
+}
+
+/** 谁在用默认、谁自定义了 */
+function renderAdoption(host, handlers) {
+  const box = card(host, '谁在用默认模板',
+    '在上面改一次，这里「用默认」的通道全都跟着变；已经自定义的那些不受影响。');
+
   for (const handler of handlers) {
+    const rows = templateAdoption(store.pushData, handler);
     const item = el('div', 'tplrow');
-    item.innerHTML = '<b>' + esc(handler.displayName || handler.className) + '</b>'
-      + '<p class="hint">' + esc(handler.description || '') + '</p>'
-      + '<pre class="tplbody">' + esc((handler.defaultParams || {}).message || '（空模板，不推送内容）')
-      + '</pre>'
-      + '<p class="hint">可用的占位符：' + esc((handler.placeholders || []).join(' ')) + '</p>';
+    item.appendChild(el('b')).textContent = handler.displayName || handler.className;
+    item.appendChild(el('p', 'hint')).textContent =
+      '用默认 ' + rows.following.length + ' 个通道 · 自定义 ' + rows.custom.length + ' 个通道';
+    if (rows.following.length) {
+      item.appendChild(el('p', 'xs dim')).textContent = '跟着变：' + describe(rows.following);
+    }
+    if (rows.custom.length) {
+      item.appendChild(el('p', 'xs dim')).textContent = '不受影响：' + describe(rows.custom);
+    }
     box.appendChild(item);
   }
+}
 
-  box.appendChild(el('div', 'note')).textContent =
-    '模板编辑器还没上，这一页此刻只能看。';
+/** 把几个通道写成一句话，取的是屏幕上那个名字而不是号 */
+function describe(rows) {
+  return rows.map(row => {
+    const session = sessionOf(runtime.sessions, row.platform, row.num);
+    return channelName(session, row, directory);
+  }).join('、');
 }
 
 // ---- 主播级 ----
@@ -512,7 +632,7 @@ function renderChannelLevel(host, user, target) {
     + '同一个群下面还有别的主播时，只有第 4 段「本群设置」是共用的。';
 
   sectionNotices(host, user, target, session);
-  sectionTemplate(host, target);
+  sectionTemplate(host, user, target, session);
   sectionLayout(host, target);
   sectionSession(host, user, target, session);
 }
@@ -598,10 +718,28 @@ function toggleNotice(target, className, on) {
   renderStreamers();
 }
 
+/**
+ * 这个通道此刻解锁了没有
+ *
+ * 「改为自定义」不写任何东西进配置，它只是<b>把编辑器解锁</b>：真正的分叉发生在
+ * 第一次改动落到参数上那一刻。点一下就先写一份与默认一模一样的副本的话，
+ * 此后默认再改这个通道会独自停在原地，而使用者只是点了一下「我想改」。
+ * 解锁状态因此只活在这一次会话里，不进配置、也不进地址栏。
+ */
+const unlocked = new Set();
+
 /** 段 2：消息长什么样 */
-function sectionTemplate(host, target) {
+function sectionTemplate(host, user, target, session) {
   const box = sectionHead(host, 2, '消息长什么样', '一张卡＝一条消息，花括号是可以拖的块');
+  // 只列这个通道<b>开着</b>的那几类：关着的那一类改了模板也不会有人收到，
+  // 而屏幕上它与改好了长得一样
+  const on = noticeSwitches(user, target, store.handlerList)
+    .filter(item => item.hasTemplate && item.on)
+    .map(item => item.className);
+  const handlers = (store.handlerList || []).filter(item => on.includes(item.className));
+  const key = channelKeyOf(user, target);
   const state = templateState(target, store.handlerList);
+  const editable = state.custom || unlocked.has(key);
 
   const line = el('div', 'tplstate');
   const label = el('span');
@@ -609,13 +747,27 @@ function sectionTemplate(host, target) {
     + (state.custom ? ' · 与默认不同' : ' ✓');
   line.appendChild(label);
 
-  const act = el('button', 'ghost');
+  const act = el('button', state.custom ? 'ghost' : 'primary');
   act.type = 'button';
   act.textContent = state.custom ? '恢复默认' : '改为自定义';
-  // 两个按钮都要模板编辑器才有得可改：此刻点下去无事发生，比灰着更费解。
-  // 灰着并写明在等什么，至少这一页说的是真话
-  act.disabled = true;
-  act.title = '模板编辑器还没上';
+  act.addEventListener('click', () => {
+    if (!state.custom) {
+      unlocked.add(key);
+      renderStreamers();
+      return;
+    }
+    // 「恢复默认」丢得掉使用者写了很久的东西，因此先问一句，并说清丢的是什么
+    if (!confirm('这个通道的消息模板会改回默认，自己写的内容会丢掉。'
+      + '此后默认模板再改，这个通道跟着一起变。')) return;
+    for (const message of target.messages || []) {
+      const handler = (store.handlerList || []).find(item => item.className === message.handler);
+      if (!handler || !(handler.placeholders || []).length) continue;
+      message.params = restoreDefaults(message.params, handler);
+    }
+    unlocked.delete(key);
+    markDirty();
+    renderStreamers();
+  });
   line.appendChild(act);
 
   const toDefault = el('a', 'lnkbtn');
@@ -625,8 +777,7 @@ function sectionTemplate(host, target) {
   box.appendChild(line);
 
   box.appendChild(el('p', 'hint')).textContent =
-    '默认模板改一次，所有用默认的通道一起变。某个通道想不一样，就在这里改成自定义。'
-    + '模板编辑器还没上，这一段此刻只说这个通道用的是哪一份。';
+    '默认模板改一次，所有用默认的通道一起变。某个通道想不一样，就在这里改成自定义。';
 
   if (state.custom) {
     const which = (store.handlerList || [])
@@ -634,6 +785,39 @@ function sectionTemplate(host, target) {
       .map(item => item.displayName || item.className);
     box.appendChild(el('div', 'note')).textContent = '与默认不同的是：' + which.join('、');
   }
+
+  buildTemplateEditor(box, {
+    handlers,
+    editable,
+    emptyNote: '这个通道带文字模板的通知一条都没开着。关着的那一类改了模板也不会有人收到，'
+      + '因此这里不列——到上面「推什么」里先开一条。',
+    paramsOf: handler => (messageOf(target, handler.className) || {}).params || {},
+    context: {
+      isGroup: Number(target.type) === 1,
+      admin: adminOf(target),
+    },
+    channelLabel: channelName(session, target, directory),
+    lockedNote: '这是默认模板的样子。要单独给这个通道改，先点上面的「改为自定义」。',
+    onChange: (handler, params) => {
+      const message = messageOf(target, handler.className);
+      if (!message) return;
+      message.params = params;
+      markDirty();
+      label.innerHTML = '本通道用的是：<b>'
+        + (isDefault(params, handler) ? '默认模板' : '自定义') + '</b>';
+    },
+  });
+}
+
+/** 机器人在这个群里是不是管理员。名单取不到时为 null，预览据此不画划掉线 */
+function adminOf(target) {
+  const known = directory[target.platform + '|' + Number(target.type) + '|' + target.num];
+  return known ? known.admin : null;
+}
+
+/** 认一个通道用的键，与 push-model 的 channelKey 同一把 */
+function channelKeyOf(user, target) {
+  return user.platform + '/' + user.uid + '/' + target.platform + ':' + target.num;
 }
 
 /** 段 3：报告长什么样。只有开着带版式的那类通知时才出现 */
@@ -643,7 +827,9 @@ function sectionLayout(host, target) {
 
   const handler = (store.handlerList || []).find(item => item.className === state.className) || {};
   const box = sectionHead(host, 3, (handler.displayName || '报告') + '长什么样',
-    '这一类通知没有文字模板，只有版式');
+    '这一类通知没有文字模板，只有版式：左边调，右边就是发到群里的那张图');
+  const key = 'layout:' + target.platform + ':' + target.num + ':' + state.className;
+  const editable = state.custom || unlocked.has(key);
 
   const line = el('div', 'tplstate');
   const label = el('span');
@@ -651,32 +837,74 @@ function sectionLayout(host, target) {
     + (state.custom ? ' · 与默认不同' : ' ✓');
   line.appendChild(label);
 
-  const act = el('button', 'ghost');
+  const act = el('button', state.custom ? 'ghost' : 'primary');
   act.type = 'button';
   act.textContent = state.custom ? '恢复默认' : '改为自定义';
-  act.disabled = true;
-  act.title = '版式的所见即所得还没上';
+  act.addEventListener('click', () => {
+    if (!state.custom) {
+      unlocked.add(key);
+      renderStreamers();
+      return;
+    }
+    if (!confirm('这个通道的报告版式会改回默认。此后默认版式再改，这个通道跟着一起变。')) return;
+    const message = messageOf(target, state.className);
+    if (message) {
+      const params = Object.assign({}, message.params || {});
+      for (const option of handler.options || []) delete params[option.key];
+      message.params = params;
+    }
+    unlocked.delete(key);
+    markDirty();
+    renderStreamers();
+  });
   line.appendChild(act);
   box.appendChild(line);
 
-  const table = el('table', 'ptable');
-  const params = (messageOf(target, state.className) || {}).params || {};
-  table.innerHTML = '<thead><tr><th>版式项</th><th>本通道</th><th>默认</th></tr></thead><tbody>'
-    + (handler.options || []).map(option => {
-      const value = params[option.key];
-      const now = value === undefined || value === null ? option.defaultValue : value;
-      return '<tr><td>' + esc(option.label || option.key) + '</td>'
-        + '<td>' + esc(readable(now)) + '</td>'
-        + '<td>' + esc(readable(option.defaultValue)) + '</td></tr>';
-    }).join('') + '</tbody>';
-  box.appendChild(table);
+  box.appendChild(el('p', 'hint')).textContent =
+    '预览一律按「金额可见」画：金额藏不藏是这个群自己的事（在下面第 4 段改），不由版式定。';
+
+  buildLayoutEditor(box, {
+    editable,
+    lockedNote: '这是默认版式的样子。要单独给这个通道改，先点上面的「改为自定义」。',
+    items: handler.options || [],
+    paramsOf: () => (messageOf(target, state.className) || {}).params || {},
+    onChange: params => {
+      const message = messageOf(target, state.className);
+      if (!message) return;
+      message.params = params;
+      markDirty();
+      label.innerHTML = '本通道用的是：<b>'
+        + (layoutState(target, store.handlerList).custom ? '自定义版式' : '默认版式') + '</b>';
+    },
+    render: renderLayoutPreview,
+  });
 }
 
-/** 开关类的取值写成人话：屏幕上出现 true / false 等于把内部表示直接端给使用者 */
-function readable(value) {
-  if (value === true) return '开';
-  if (value === false) return '关';
-  return value == null ? '—' : String(value);
+/**
+ * 按当前这套版式画一张
+ *
+ * 图由服务端画，与真出报告读的是同一段解析码：各画各的话，预览会在
+ * 「越界值怎么夹」「缺项取什么默认」这些地方悄悄给出与实际不同的图。
+ * @param params 版式参数
+ * @return 图片地址，画不出来时为空
+ */
+let previewUrl = null;
+async function renderLayoutPreview(params) {
+  try {
+    const res = await fetch('/config/api/report/preview', {
+      method: 'POST',
+      headers: Object.assign({'Content-Type': 'application/json'},
+        store.csrfToken ? {'X-CSRF-Token': store.csrfToken} : {}),
+      body: JSON.stringify(params || {}),
+    });
+    if (!res.ok) return '';
+    // 上一张画完就没用了。不撤销的话，来回调开关几十次会把几十张图一直挂在内存里
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = URL.createObjectURL(await res.blob());
+    return previewUrl;
+  } catch (e) {
+    return '';
+  }
 }
 
 /** 段 4：本群设置 */

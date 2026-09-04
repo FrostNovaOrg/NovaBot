@@ -12,6 +12,7 @@ import com.starlwr.bot.core.sender.PushGate;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
 import com.starlwr.bot.core.service.EventStreamTokenService;
 import com.starlwr.bot.core.service.LiveDataService;
+import com.starlwr.bot.core.service.PushTemplateDefaults;
 import com.starlwr.bot.core.service.StarBotSenderService;
 import com.starlwr.bot.core.timeline.TimelineEvent;
 import com.starlwr.bot.core.timeline.TimelineEventType;
@@ -127,7 +128,8 @@ class HomeStatusFieldsTest {
                 new PushGate(properties),
                 liveDataService,
                 timeline,
-                authService);
+                authService,
+                new PushTemplateDefaults(new StarBotCoreProperties()));
     }
 
     /** 一个只声明范围与登录态位的探针，够本组用例用 */

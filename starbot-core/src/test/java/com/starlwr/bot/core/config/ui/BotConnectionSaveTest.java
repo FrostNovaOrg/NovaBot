@@ -168,7 +168,8 @@ class BotConnectionSaveTest {
                 mock(com.starlwr.bot.core.sender.PushGate.class),
                 mock(com.starlwr.bot.core.service.LiveDataService.class),
                 mock(com.starlwr.bot.core.timeline.TimelineStore.class),
-                mock(com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService.class));
+                mock(com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService.class),
+                new com.starlwr.bot.core.service.PushTemplateDefaults(properties));
     }
 
     private JSONObject body() {

@@ -1,8 +1,10 @@
 package com.starlwr.bot.core.datasource;
 
 import com.starlwr.bot.core.config.DatasourceProperties;
+import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.exception.DataSourceException;
 import com.starlwr.bot.core.handler.StarBotEventHandlerPushMessageInitializer;
+import com.starlwr.bot.core.service.PushTemplateDefaults;
 import com.starlwr.bot.core.service.StarBotEventHandlerService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -46,7 +48,8 @@ class MissingDatasourceFileTest {
         return new JsonDataSource(
                 mock(ApplicationEventPublisher.class),
                 new DataSourceServiceRegistry(List.of()),
-                new StarBotEventHandlerPushMessageInitializer(mock(StarBotEventHandlerService.class)),
+                new StarBotEventHandlerPushMessageInitializer(mock(StarBotEventHandlerService.class),
+                        new PushTemplateDefaults(new StarBotCoreProperties())),
                 properties);
     }
 

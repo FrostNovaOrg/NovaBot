@@ -1,6 +1,7 @@
 package com.starlwr.bot.core.datasource;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
 import com.starlwr.bot.core.event.datasource.change.StarBotDataSourceAddEvent;
@@ -14,6 +15,7 @@ import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.service.DataSourceService;
 import com.starlwr.bot.core.service.DataSourceServiceConfig;
 import com.starlwr.bot.core.handler.StarBotEventHandlerPushMessageInitializer;
+import com.starlwr.bot.core.service.PushTemplateDefaults;
 import com.starlwr.bot.core.service.StarBotEventHandlerService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -67,7 +69,8 @@ class AbstractDataSourceTest {
         when(handlerService.getHandler(argThat(name -> !HANDLER.equals(name)))).thenReturn(Optional.empty());
 
         DataSourceServiceRegistry registry = new DataSourceServiceRegistry(List.of(new BilibiliDataSourceService()));
-        dataSource = new TestDataSource(publisher, registry, new StarBotEventHandlerPushMessageInitializer(handlerService));
+        dataSource = new TestDataSource(publisher, registry, new StarBotEventHandlerPushMessageInitializer(
+                handlerService, new PushTemplateDefaults(new StarBotCoreProperties())));
     }
 
     @Test
