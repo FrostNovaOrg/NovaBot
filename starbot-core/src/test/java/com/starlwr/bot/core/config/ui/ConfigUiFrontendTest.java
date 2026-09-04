@@ -1401,7 +1401,7 @@ class ConfigUiFrontendTest {
             "/status", "/login", "/timeline?date=", "/at-all/quota");
 
     private static final List<String> HOME_MODEL_FUNCTIONS = List.of(
-            "function atAllTile", "function alertConfigured");
+            "function atAllTile", "function alertConfigured", "function todayAtAllMarkup");
 
     @Test
     @DisplayName("首页今日格取额度接口，告警待办落到设置页告警段，判法只有 home-model 一份")
