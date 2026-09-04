@@ -79,6 +79,8 @@ ssh -L 7827:127.0.0.1:7827 用户名@服务器地址
 
 产物在 `dist/build/`：`StarBotCore.jar` 是主程序，`lib/` 为核心依赖，
 `plugins/` 与 `plugins-lib/` 为插件及其依赖。可选 `--skip-tests`。
+构建收尾会把产物拷到临时目录、删掉全部配置文件后真起一次——起不来即构建失败
+（`--no-smoke` 跳过，详见[架构说明](docs/architecture.md#10-构建)）。
 
 > 构建分两步：`starbot-plugin-processor` 是各插件模块在 build 阶段调用的 Maven 插件，
 > 而 Maven 不支持在同一 reactor 内构建并使用同一个插件，因此需先单独安装。`build.sh` 已处理。

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # 起动冒烟尺：把产物放到一台「一份配置都没有」的机器上，它起不起得来
 #
-# 用法：tools/boot-smoke.sh [产物目录]        （默认 dist/build）
-#       BOOT_SMOKE_PORT=7827 tools/boot-smoke.sh dist/build
+# 用法：bash tools/boot-smoke.sh [产物目录]   （默认 dist/build）
+#       BOOT_SMOKE_PORT=7827 bash tools/boot-smoke.sh dist/build
+# （bash 调用：本件在仓库里不带执行位，直接执行会 Permission denied）
 # 退码：0＝起来了并答出 setupDone=false；1＝没起来、答不上来、或量不动
 #
 # ── 为什么单立一把尺 ────────────────────────────────────────────────────
@@ -66,11 +67,18 @@ fi
 # 端口空不空。lsof 无输出即空；lsof 不在时不假装量过。
 # 🔴 /usr/sbin 要单独找一遍：macOS 的 lsof 装在那里，而它不在很多环境的 PATH 上——
 #    只用 command -v 会静默走进「未验」那一支，而「没量」与「量过是空的」长得一样
+#
+# 🔴 BOOT_SMOKE_NO_LSOF=1 强制走下面那条降级路。留这个口子只为一件事：这台 macOS
+#    上 /usr/sbin/lsof 永远在，于是降级那一支在本机一次都跑不到——而它恰恰是给
+#    Linux 运行器写的。**没跑过的分支和跑过且是对的，在日志上长得一样**，
+#    所以要能在本机把它真跑一遍，否则它只能等到 CI 上第一次红的时候才被读到。
 LSOF=""
-if command -v lsof > /dev/null 2>&1; then
-    LSOF="lsof"
-elif [ -x /usr/sbin/lsof ]; then
-    LSOF="/usr/sbin/lsof"
+if [ -z "${BOOT_SMOKE_NO_LSOF:-}" ]; then
+    if command -v lsof > /dev/null 2>&1; then
+        LSOF="lsof"
+    elif [ -x /usr/sbin/lsof ]; then
+        LSOF="/usr/sbin/lsof"
+    fi
 fi
 if [ -n "$LSOF" ]; then
     if [ -n "$("$LSOF" -nP -iTCP:"$PORT" -sTCP:LISTEN 2>/dev/null)" ]; then
@@ -79,7 +87,33 @@ if [ -n "$LSOF" ]; then
         exit 1
     fi
 else
-    echo "    注意：没有 lsof，端口占用未验"
+    # 无 lsof 时降级 /dev/tcp：连得上＝有人听＝不干净。理由：CI 的 Linux 运行器不保证带 lsof，
+    # 而原先这里只打一句「未验」就放行——「没量」与「量过是空的」在放行上长得一样，
+    # 起之后那种红与「装配坏了」的红也就分不开。降级探测不贵：本机回环上无监听时
+    # 连接立即被拒，不会挂。放子进程里：/dev/tcp 连上后开的 fd 随它退出即关。
+    #
+    # 🔴 还要分出第三种答案：bash 可以在编译时关掉 /dev/tcp（--disable-net-redirections，
+    #    有些精简发行版就是这么打的）。那时这条探测必然失败，而**「本机 bash 不支持」
+    #    与「端口没人听」在退码上长得一样**——不分开，这个降级就是个空动作，
+    #    「量不到」会被读成「量过了，是干净的」，正是它本来要治的那个病。
+    #    只能按报错原文分：不支持报 "No such file or directory"，连不上报 "Connection refused"。
+    #    LC_ALL=C 是必需的——这句话由 strerror 出，跟着语言环境走；不钉死语言，
+    #    换一台机器就认不出来，又落回上面那句。
+    PROBE="$(LC_ALL=C bash -c 'exec 3<>"/dev/tcp/127.0.0.1/$1"' 探口 "$PORT" 2>&1)"
+    PROBE_RC=$?
+    if [ "$PROBE_RC" -eq 0 ]; then
+        echo "量不动：端口 $PORT 已被占用（/dev/tcp 探测：可连即有人听），起之前就不干净" >&2
+        exit 1
+    fi
+    case "$PROBE" in
+        *"No such file or directory"*)
+            echo "量不动：没有 lsof，本机 bash 又关掉了 /dev/tcp，端口占用没有办法验" >&2
+            echo "    探测原文：$PROBE" >&2
+            echo "    装一个 lsof，或把 BOOT_SMOKE_PORT 指到一个确定空着的口再跑" >&2
+            exit 1
+            ;;
+    esac
+    echo "    端口 $PORT 空（无 lsof，/dev/tcp 探测：连不上＝没人听）"
 fi
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/novabot-boot-smoke-XXXXXX")"

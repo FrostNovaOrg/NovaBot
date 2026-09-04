@@ -24,7 +24,7 @@ jobs:
           cache: maven
 
       # 控制台前端是不经构建的 ES module，node 是它唯一的可执行环境。设置页那四组判定
-      # 与登录页那八格显隐矩阵都由 JUnit 拉起 node 跑夹具，PATH 上没有它<b>这两格就红</b>
+      # 与登录页那八格显隐矩阵都由 JUnit 拉起 node 跑夹具，PATH 上没有它这两格就红
       # （不是跳过——跳过与通过在构建日志上长得一样）。ubuntu-latest 自带 node，
       # 但那是运行器镜像的巧合而不是承诺：显式装一次，版本也就写下来了
       - name: 配置 Node 20
@@ -32,16 +32,31 @@ jobs:
         with:
           node-version: '20'
 
-      # starbot-plugin-processor 是各插件模块在 build 阶段调用的 Maven 插件，
-      # Maven 无法在同一 reactor 内构建并使用同一个插件，因此需先单独安装
-      - name: 安装构建插件
-        run: mvn -B -f build-tools/starbot-plugin-processor/pom.xml install -DskipTests
-
+      # 构建与汇总走 ./build.sh 这一个入口：它装构建插件、整测、打可运行包，并把
+      # StarBotCore.jar＋lib＋plugins＋plugins-lib＋模板汇总到 dist/build —— 汇总那一步
+      # 若在这里另写一份（三条 mvn），就是同一落点规则的两份拷贝，改一处漏一处。
+      # --no-smoke：冒烟拆成下面单独一步，便于失败时贴长日志尾（build.sh 内置那次只贴短摘要）
       - name: 构建与测试
-        run: mvn -B -Pinstall install
+        run: ./build.sh --no-smoke
 
-      - name: 打包发行产物
-        run: mvn -B -f starbot-core/pom.xml -Ppackage package
+      # 起动冒烟（与本地 ./build.sh 内置的是同一把尺 tools/boot-smoke.sh）：
+      # 整测全绿与「包起得来」是两件事——单测里每个类都是自己 new 的，谁也不经过容器；
+      # 容器到启动那一刻才第一次按类型凑构造参数，凑不齐当场退出。这一步红即本 job 红。
+      # 端口不用默认的 7827：runner 上同端口可能有别的服务在听，撞上时那种红
+      # 与「装配坏了」的红在退码上长得一样。
+      - name: 起动冒烟
+        run: |
+          set -euo pipefail
+          LOG_DIR="$(mktemp -d)"
+          if ! BOOT_SMOKE_PORT=17827 BOOT_SMOKE_LOG="$LOG_DIR/boot.log" \
+               bash tools/boot-smoke.sh dist/build; then
+            # 末 30 行就是这里能带走的全部：$LOG_DIR 在运行器上，job 一结束就没了。
+            # 写成「完整件已留 <路径>」会让人以为事后还能去取，取不到——
+            # 要真留得住得再加一步 upload-artifact，那时再改这一句
+            echo "==> 启动日志末 30 行（完整件只在本次 job 内：$LOG_DIR/boot.log）"
+            tail -n 30 "$LOG_DIR/boot.log" || true
+            exit 1
+          fi
 
       - name: 上传测试报告
         if: always()

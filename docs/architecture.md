@@ -337,6 +337,15 @@ Maven 只往 `target/` 里写，从不为「源码里已经没有的东西」做
 产物是从多处拷进 `dist/build` 的，清理管不着拷进来的那些。这把尺也可单独跑：
 `tools/artifact-ui-resource-check.sh [产物目录]`。
 
+**起动冒烟**：最后一格把产物拷到临时目录、删掉全部配置文件后真起一次
+（`tools/boot-smoke.sh`），答不出「还没做过初始设置」即退非 0。它钉住的是前面所有格子
+都钉不住的那一句：单元测试里每个类都是自己 new 出来的，谁也不经过容器，而容器到启动
+那一刻才第一次按类型去凑构造参数——「整测全绿、包起不来」在结构上可能。机器上没有
+可运行的 JDK、或 CI 把冒烟拆成单独一步时，`--no-smoke` 跳过。单独跑：
+`bash tools/boot-smoke.sh [产物目录]`——**要带 `bash`**，这把尺在仓库里不带执行位，
+直接敲 `tools/boot-smoke.sh` 会 `Permission denied`（不写下来就得每个人自己踩一次）。
+端口与超时用 `BOOT_SMOKE_PORT`／`BOOT_SMOKE_TIMEOUT` 调，默认 7827／90 秒。
+
 **只想跑某一条测试时也不能用 `mvn test`。** 那个插件要求 `starbot-core` 是一个 jar，
 而停在 `test` 阶段时 core 只有 `target/classes`，于是报
 `starbot-core/target/classes (Is a directory)`——`mvn -pl <模块>` 失败是同一个原因。

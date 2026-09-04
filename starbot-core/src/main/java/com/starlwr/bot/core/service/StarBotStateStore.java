@@ -47,6 +47,15 @@ public class StarBotStateStore {
      */
     private final Object lock = new Object();
 
+    /**
+     * 已撤功能「记住的选择」用过的命名空间
+     * <p>
+     * 那一版把每个会话上次选过的主播记在这个命名空间里；功能撤掉后，代码里再没有谁
+     * 写它，可老使用者的状态文件里那一段不会自己消失——写它的代码走了，数据还留在原地。
+     * 启动时见一个清一个，见 {@link #onApplicationReadyEvent}。
+     */
+    private static final String RETIRED_CHOICE_NAMESPACE = "StreamerChoice";
+
     @Autowired
     public StarBotStateStore(StarBotCoreProperties properties) {
         this.properties = properties;
@@ -68,6 +77,11 @@ public class StarBotStateStore {
             // 状态文件损坏不该让程序起不来：丢掉订阅名单是可接受的降级，
             // 而拒绝启动会让推送整个停摆
             log.error("读取运行状态 {} 异常, 将以空状态启动", path, e);
+        }
+
+        if (cache.containsKey(RETIRED_CHOICE_NAMESPACE)) {
+            log.info("清除已撤功能「记住的选择」留在运行状态里的残留段 {}", RETIRED_CHOICE_NAMESPACE);
+            remove(RETIRED_CHOICE_NAMESPACE);
         }
 
         int interval = properties.getLive().getAutoSaveLiveDataInterval();
@@ -164,18 +178,50 @@ public class StarBotStateStore {
     }
 
     /**
+     * 删除一个命名空间并立即落盘
+     * <p>
+     * 给「功能撤掉后清残留」用的口：{@link #write} 只会越写越多，一段被撤功能留下的数据
+     * 没有别的途径离开这个文件。段不存在时不写盘。
+     * <p>
+     * 删到一份不剩也要落盘——{@link #save()} 那条「空了不写」的规矩在这里恰恰是坑：
+     * 它一跳过，盘上留着的还是带着死段的旧文件，下次启动会把刚删的又读回来，
+     * 删除只在内存里成立过。所以这里连空对象也照写。
+     * @param namespace 命名空间
+     */
+    public void remove(@NonNull String namespace) {
+        String content;
+        synchronized (lock) {
+            if (cache.remove(namespace) == null) {
+                return;
+            }
+            content = cache.toJSONString();
+        }
+
+        write(content);
+    }
+
+    /**
      * 立即落盘
      */
     public void save() {
         String content;
         synchronized (lock) {
             if (cache.isEmpty()) {
+                // 从没写过东西的机器上不该凭空多出一个只有 {} 的文件
                 return;
             }
             content = cache.toJSONString();
         }
 
-        // 序列化在锁内、写盘在锁外：磁盘慢时不应阻塞消息线程上的订阅写入
+        write(content);
+    }
+
+    /**
+     * 把序列化好的内容写进状态文件
+     * <p>
+     * 序列化在调用方的锁内、写盘在锁外：磁盘慢时不应阻塞消息线程上的订阅写入
+     */
+    private void write(String content) {
         try {
             Files.writeString(path(), content);
         } catch (Exception e) {
