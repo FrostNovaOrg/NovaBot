@@ -7,6 +7,7 @@ import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.datasource.DataSourceServiceRegistry;
 import com.starlwr.bot.core.health.HealthProbe;
 import com.starlwr.bot.core.model.PushUser;
+import com.starlwr.bot.core.model.StreamerReference;
 import com.starlwr.bot.core.sender.PushGate;
 import com.starlwr.bot.core.service.DataSourceService;
 import com.starlwr.bot.core.service.EventStreamTokenService;
@@ -25,6 +26,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -38,6 +41,9 @@ import static org.mockito.Mockito.when;
  * 除 uid 与空间链接外，短号与直播间链接也要能认出人。uid 与直播间号都像数字时
  * <b>先按 uid 查，查不到再按房间号查一次</b>——反过来会把一个真实存在的 uid
  * 误认成别人的短号。失败走原来那句「未查到」，不加重试。
+ * <p>
+ * 这里量的是查主播口收到「uid 还是直播间号」之后怎么走，因此假平台连域名一起自带：
+ * 链接由平台自己认，本口不认识任何一家真平台的域名。
  */
 @DisplayName("查主播口收直播间号")
 class StreamerLookupRoomTest {
@@ -61,7 +67,7 @@ class StreamerLookupRoomTest {
     @DisplayName("短号命中：先按 uid 查不到，再按房间号查到")
     void shortRoomNumberHitsAfterUidMiss() {
         FakeRooms rooms = FakeRooms.roomOnly(222L, 1001L, "主播甲");
-        when(registry.getDataSourceService("bilibili")).thenReturn(Optional.of(rooms));
+        when(registry.getDataSourceService("fakelive")).thenReturn(Optional.of(rooms));
 
         JSONObject result = controller().lookupStreamer(request("222"));
 
@@ -77,9 +83,9 @@ class StreamerLookupRoomTest {
     @DisplayName("直播间链接命中：只按房间号查一次，不走 uid")
     void liveRoomLinkHitsWithoutUidLookup() {
         FakeRooms rooms = FakeRooms.roomOnly(222L, 1001L, "主播甲");
-        when(registry.getDataSourceService("bilibili")).thenReturn(Optional.of(rooms));
+        when(registry.getDataSourceService("fakelive")).thenReturn(Optional.of(rooms));
 
-        JSONObject result = controller().lookupStreamer(request("https://live.bilibili.com/222"));
+        JSONObject result = controller().lookupStreamer(request("https://live.fake.test/222"));
 
         assertTrue(result.getBooleanValue("success"), result.toString());
         assertEquals(1001L, result.getLongValue("uid"));
@@ -92,7 +98,7 @@ class StreamerLookupRoomTest {
     @DisplayName("找不到：短号两趟都落空，文案仍是原来那句，不加重试")
     void missingShortNumberKeepsExistingCopy() {
         FakeRooms rooms = FakeRooms.empty();
-        when(registry.getDataSourceService("bilibili")).thenReturn(Optional.of(rooms));
+        when(registry.getDataSourceService("fakelive")).thenReturn(Optional.of(rooms));
 
         JSONObject result = controller().lookupStreamer(request("999"));
 
@@ -109,9 +115,9 @@ class StreamerLookupRoomTest {
     @DisplayName("空间链接找不到：原句仍称 uid")
     void missingSpaceLinkKeepsUidCopy() {
         FakeRooms rooms = FakeRooms.empty();
-        when(registry.getDataSourceService("bilibili")).thenReturn(Optional.of(rooms));
+        when(registry.getDataSourceService("fakelive")).thenReturn(Optional.of(rooms));
 
-        JSONObject result = controller().lookupStreamer(request("https://space.bilibili.com/999"));
+        JSONObject result = controller().lookupStreamer(request("https://space.fake.test/999"));
 
         assertFalse(result.getBooleanValue("success"));
         String message = result.getString("message");
@@ -126,9 +132,9 @@ class StreamerLookupRoomTest {
     @DisplayName("直播间链接找不到：改称直播间号")
     void missingLiveLinkUsesRoomCopy() {
         FakeRooms rooms = FakeRooms.empty();
-        when(registry.getDataSourceService("bilibili")).thenReturn(Optional.of(rooms));
+        when(registry.getDataSourceService("fakelive")).thenReturn(Optional.of(rooms));
 
-        JSONObject result = controller().lookupStreamer(request("https://live.bilibili.com/999"));
+        JSONObject result = controller().lookupStreamer(request("https://live.fake.test/999"));
 
         assertFalse(result.getBooleanValue("success"));
         String message = result.getString("message");
@@ -143,7 +149,7 @@ class StreamerLookupRoomTest {
     @DisplayName("uid 优先：数字既能当 uid 又能当房间号时，只按 uid 返回，不打房间号")
     void numericUidWinsOverRoomNumber() {
         FakeRooms rooms = FakeRooms.uidAndRoom(1001L, "主播甲", 222L, 9L, "别人");
-        when(registry.getDataSourceService("bilibili")).thenReturn(Optional.of(rooms));
+        when(registry.getDataSourceService("fakelive")).thenReturn(Optional.of(rooms));
 
         JSONObject result = controller().lookupStreamer(request("1001"));
 
@@ -203,6 +209,22 @@ class StreamerLookupRoomTest {
             }
         }
 
+        /**
+         * 本平台的两种链接：直播间链接给房间号，空间链接给 uid
+         */
+        @Override
+        public Optional<StreamerReference> parseStreamerLink(String text) {
+            Matcher live = Pattern.compile("live\\.fake\\.test/(\\d{1,19})").matcher(text);
+            if (live.find()) {
+                return Optional.of(StreamerReference.roomId(Long.parseLong(live.group(1))));
+            }
+            Matcher space = Pattern.compile("space\\.fake\\.test/(\\d{1,19})").matcher(text);
+            if (space.find()) {
+                return Optional.of(StreamerReference.uid(Long.parseLong(space.group(1))));
+            }
+            return Optional.empty();
+        }
+
         @Override
         public Optional<PushUser> lookupByRoomId(Long roomId) {
             roomCalls.incrementAndGet();
@@ -219,7 +241,7 @@ class StreamerLookupRoomTest {
 
     private JSONObject request(String uid) {
         JSONObject body = new JSONObject();
-        body.put("platform", "bilibili");
+        body.put("platform", "fakelive");
         body.put("uid", uid);
         return body;
     }

@@ -13,7 +13,7 @@
 #    把一段必定语法错的模块喂进去，它必须红；不红就说明这一格又量不动了，整尺判红。
 #
 # 别处已经在量的不在这里重量：main.js、overview.js、core.js、home-model.js
-# 分别由 home-model-check.sh 与 push-model-check.sh 过。
+# 由 home-model-check.sh 一把过（每份 js 恰一把尺，重复量不添判力）。
 #
 # 退码：0 全过；1 有模块语法不过，或阴性对照不红；2 环境不具备（没装 node）。
 
@@ -29,6 +29,7 @@ fi
 
 UI="starbot-core/src/main/resources/config-ui"
 RED=0
+SYNTAX_RED=0
 
 # —— 阴性对照：这一格自己得先证明它分得出红绿 ——
 # 放在语法检查之前：这几行要是恒绿，下面那一串「语法 绿」一个字也不作数
@@ -48,7 +49,16 @@ for f in "$UI"/streamers-model.js "$UI"/streamers.js; do
         echo "语法 红 $f"
         node --input-type=module --check < "$f"
         RED=1
+        SYNTAX_RED=1
     fi
 done
 
+# —— 末行汇总 ——
+# 本尺没有档尺那一段，语法红时原先的最后输出是一段 node 报错原文、没有一个收尾。
+# 末行由本尺自己收，语法格写进最后一句
+if [ "$SYNTAX_RED" -ne 0 ]; then
+    echo "汇总：语法 红（名单见上方「语法 红」行），整尺退码 $RED"
+else
+    echo "汇总：语法 绿，整尺退码 $RED"
+fi
 exit "$RED"

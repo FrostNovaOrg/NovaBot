@@ -1,6 +1,7 @@
 package com.starlwr.bot.core.service;
 
 import com.starlwr.bot.core.model.PushUser;
+import com.starlwr.bot.core.model.StreamerReference;
 
 import java.util.List;
 import java.util.Optional;
@@ -52,6 +53,26 @@ public interface DataSourceService {
      * @return 查到的主播，找不到时为空
      */
     default Optional<PushUser> lookupByRoomId(Long roomId) {
+        return Optional.empty();
+    }
+
+    /**
+     * 从一段文本里认出本平台的主播
+     * <p>
+     * 让使用者自己从链接里抠出那串数字是没必要的一道门槛，而<b>链接长什么样只有平台自己知道</b>：
+     * 域名、路径、参数各家各样，同一串数字在个人空间链接里是 uid、在直播间链接里是直播间号。
+     * 把这件事放在这里，是因为核心一旦写死某一家的域名，就等于承认自己长在那个平台上——
+     * 装第二个平台时，它的链接核心一个都不认得，而第一家的链接核心照单全收，
+     * 于是那串数字会被拿去问一个根本不管这条链接的平台。
+     * <p>
+     * 只认本平台的链接：认不出的一律给空，包括别家平台的链接。<b>不要在这里认「一串纯数字」</b>——
+     * 那不是链接，各平台一样对待，由调用方统一处理。
+     * <p>
+     * 默认认不出任何链接。不是每个平台都有可粘贴的主播链接，也不是每个数据源实现都管这件事。
+     * @param text 输入文本，通常是使用者粘贴进来的一整条链接
+     * @return 认出的 uid 或直播间号，认不出时为空
+     */
+    default Optional<StreamerReference> parseStreamerLink(String text) {
         return Optional.empty();
     }
 }

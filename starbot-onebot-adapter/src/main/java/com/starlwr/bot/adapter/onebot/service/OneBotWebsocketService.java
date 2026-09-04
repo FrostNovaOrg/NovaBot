@@ -114,7 +114,7 @@ public class OneBotWebsocketService {
         }
 
         if (StringUtil.isBlank(sender.getOneBotWebsocketToken())) {
-            log.error("推送平台 {} 未配置 OneBot Websocket Token, 请完善配置", sender.getName());
+            log.warn("推送平台 {} 尚未配置 OneBot Websocket Token, 配好前推送不可用", sender.getName());
             state.websocketDisconnected(sender.getName(), "未配置 Websocket Token");
             return;
         }

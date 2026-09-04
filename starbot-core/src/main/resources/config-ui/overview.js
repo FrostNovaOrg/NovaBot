@@ -6,7 +6,7 @@
  */
 
 import {$, api, clock, el, esc, markDirty, say, today} from './core.js';
-import {homeModel, PROBE_ANCHOR, stationHref, todayAtAllMarkup} from './home-model.js';
+import {homeModel, stationHref, todayAtAllMarkup} from './home-model.js';
 import {pageStatus} from './main.js';
 import {store} from './store.js';
 
@@ -61,17 +61,11 @@ function renderLinkMap(model) {
     + '<div class="lm-seg" style="min-width:0;padding-top:8px">'
     + '<div class="lm-cap">本机 · ' + esc(model.chain.self.caption || '—') + '</div></div>';
 
-  // 去处由 stationHref 一份判法给出。本机那一站已经在本页，地址若没变就当场滚，
-  // 不靠 hashchange——同一条地址再点一次不会触发它
+  // 去处由 stationHref 一份判法给出。地址变了走 hashchange，由 focusCard 滚到那一块。
   $('#linkmap').querySelectorAll('[data-goto]').forEach(btn => {
     btn.addEventListener('click', () => {
       const href = stationHref(btn.dataset.goto);
       if (!href) return;
-      if (location.hash === href) {
-        const box = $('#' + PROBE_ANCHOR);
-        if (box) box.scrollIntoView({block: 'start', behavior: 'smooth'});
-        return;
-      }
       location.hash = href;
     });
   });

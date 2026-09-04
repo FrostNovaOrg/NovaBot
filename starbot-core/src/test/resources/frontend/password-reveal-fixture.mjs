@@ -42,10 +42,7 @@ eq(togglePasswordReveal(togglePasswordReveal(passwordReveal(false))),
   passwordReveal(false), '切两下回到原样');
 
 // ---------- 三、六处共用同一份构件，状态各自独立 ----------
-eq(PASSWORD_REVEAL_SITES.slice().sort(),
-  ['login', 'pwd-again', 'pwd-current', 'pwd-next', 'settings', 'tokens'].sort(),
-  '六处落点闭集：登录一口 + 改口令三栏 + 设置机密行 + 签发口令页');
-
+// 落点闭集改由 login-reveal-wiring-fixture 按源码计数，不在这里对一份自写的名单。
 const states = {};
 for (const site of PASSWORD_REVEAL_SITES) states[site] = passwordReveal(false);
 states.login = togglePasswordReveal(states.login);
@@ -62,14 +59,6 @@ eq(states.settings ? view(states.settings.revealed) : null,
 eq(states.tokens ? view(states.tokens.revealed) : null,
   {revealed: false, type: 'password', label: '显示'},
   '登录页揭开不带动签发口令页');
-
-// 六处调的是同一份函数，不是各写一份：把六处的「默认」都交给它，结果必须逐字相同
-const defaults = PASSWORD_REVEAL_SITES.map(() => passwordReveal(false));
-eq(defaults[0], defaults[1], '六处默认态同一份');
-eq(defaults[1], defaults[2], '六处默认态同一份');
-eq(defaults[2], defaults[3], '六处默认态同一份');
-eq(defaults[3], defaults[4], '六处默认态同一份');
-eq(defaults[4], defaults[5], '六处默认态同一份');
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);

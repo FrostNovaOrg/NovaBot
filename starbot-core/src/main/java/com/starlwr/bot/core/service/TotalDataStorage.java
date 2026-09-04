@@ -480,7 +480,7 @@ public class TotalDataStorage implements DisposableBean {
         }
 
         // 建连超时 spring-data-redis 没有直设口，只能下到 lettuce 的 ClientOptions 这一层；
-        // lettuce 是 spring-boot-starter-data-redis 传递带进来的，本模块没有为它另立声明
+        // lettuce 坐标本模块已自持声明（版本由 parent BOM 管），不再只靠 starter 传递带进来
         LettuceClientConfiguration client = LettuceClientConfiguration.builder()
                 .clientOptions(ClientOptions.builder()
                         .socketOptions(SocketOptions.builder()
