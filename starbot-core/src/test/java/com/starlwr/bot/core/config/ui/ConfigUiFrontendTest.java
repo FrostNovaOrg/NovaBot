@@ -1391,6 +1391,68 @@ class ConfigUiFrontendTest {
     }
 
     /**
+     * 首页「今日」第三格与 Webhook 待办的落点，闭集
+     * <p>
+     * 额度与告警已配没配的判定只许有 {@code home-model.js} 一份。渲染那一层再判一遍的话，
+     * 夹具照样全绿——它量的还是没人调的那一份，而屏幕上跑的是新抄的这一份。
+     */
+    private static final List<String> HOME_ENDPOINTS = List.of(
+            "/status", "/login", "/timeline?date=", "/at-all/quota");
+
+    private static final List<String> HOME_MODEL_FUNCTIONS = List.of(
+            "function atAllTile", "function alertConfigured");
+
+    @Test
+    @DisplayName("首页今日格取额度接口，告警待办落到设置页告警段，判法只有 home-model 一份")
+    void homeTodayTileAndWebhookTodoAreWired() throws IOException {
+        Map<String, String> sources = coreSources();
+        String view = sources.getOrDefault("overview.js", "");
+        String model = sources.getOrDefault("home-model.js", "");
+        String main = sources.getOrDefault("main.js", "");
+        String settings = sources.getOrDefault("settings.js", "");
+
+        List<String> bad = new ArrayList<>();
+        if (view.isBlank()) {
+            bad.add("找不到 overview.js，下面每一格都无从量起");
+        }
+        if (model.isBlank()) {
+            bad.add("找不到 home-model.js，额度格与告警待办的判法没有落脚的地方");
+        }
+
+        for (String endpoint : HOME_ENDPOINTS) {
+            if (!view.contains("'" + endpoint + "'") && !view.contains("\"" + endpoint + "\"")) {
+                // timeline 那一支带 today()，字面量是 '/timeline?date='
+                if (!view.contains(endpoint)) {
+                    bad.add("overview.js 没有调用 " + endpoint + "，那一格此刻空着而不说为什么");
+                }
+            }
+        }
+
+        if (!model.contains("'#/settings?card=alert'")) {
+            bad.add("home-model.js 没有设置页告警段的落点");
+        }
+        if (!main.contains("focusGroup(")) {
+            bad.add("main.js 没有问过 focusGroup，从待办点进设置页会停在页顶");
+        }
+        if (!settings.contains("export function focusGroup")
+                && !Pattern.compile("^export\\s+function\\s+focusGroup\\b", Pattern.MULTILINE)
+                .matcher(settings).find()) {
+            bad.add("settings.js 没有 export focusGroup，上面那条「main.js 问过」因此不作数");
+        }
+
+        for (String function : HOME_MODEL_FUNCTIONS) {
+            if (!model.contains(function)) {
+                bad.add("home-model.js 没有 " + function + "，夹具量的那一份不存在");
+            }
+            if (view.contains(function)) {
+                bad.add("渲染代码里又判了一遍 " + function + "。那几条规则只许有 home-model.js 一份");
+            }
+        }
+
+        assertTrue(bad.isEmpty(), "首页今日格与 Webhook 待办少了这几件事:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
      * 设置页与推送页的危险确认走自绘弹层，不再调用原生 confirm()
      * <p>
      * 原生那一句没有标题、没有后果、也没有取消／确认的颜色区分。

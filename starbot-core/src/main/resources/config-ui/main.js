@@ -11,7 +11,7 @@ import {loadLog, stopFollow, syncLogView} from './log.js';
 import {refreshHome, renderStatus, runSelfTest, togglePush} from './overview.js';
 import {decoratePushData, loadPushPage, renderStreamers, serializePush, showPush} from './push.js';
 import {setAuthState} from './settings-auth.js';
-import {copyConfigPath, discard, filterSettings, renderConfigPath, renderGeneral, save, toggleKeyNames}
+import {copyConfigPath, discard, filterSettings, focusGroup, renderConfigPath, renderGeneral, save, toggleKeyNames}
   from './settings.js';
 import {openSetup, stopSetupPolling} from './setup.js';
 import {store} from './store.js';
@@ -142,6 +142,8 @@ export async function load() {
     store.legacy = v.legacy || {};
     store.dirty = {};
     renderGeneral();
+    const here = parseHash();
+    if (here.name === 'settings' && here.card) focusGroup(here.card);
 
     const [d, st, h, p] = await Promise.all([
       api('/datasource'), api('/status'), api('/handlers'), api('/platforms')]);
@@ -344,6 +346,7 @@ function applyRoute(withData = true) {
     const box = $('#' + PROBE_ANCHOR);
     if (box) box.scrollIntoView({block: 'start', behavior: 'smooth'});
   }
+  if (name === 'settings' && card) focusGroup(card);
 
   markDirty();
   if (!withData) return;

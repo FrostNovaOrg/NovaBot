@@ -32,6 +32,7 @@ import com.starlwr.bot.core.service.StarBotSenderService;
 import com.starlwr.bot.core.timeline.TimelineEventType;
 import com.starlwr.bot.core.timeline.TimelineStore;
 import com.starlwr.bot.core.util.QrCodeUtil;
+import com.starlwr.bot.core.util.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -1511,7 +1512,24 @@ public class ConfigUiController {
         result.put("live", liveNow());
         result.put("today", todayPushCounts());
         result.put("queue", queue());
+        result.put("alerts", alerts());
         return result;
+    }
+
+    /**
+     * 三张告警卡各自配好了没有
+     * <p>
+     * 首页那条「建议配一条 Webhook」要按这个决定出不出。判定与设置页药丸同源：
+     * QQ 看有没有号码、Webhook 看地址空不空、邮件看收件邮箱空不空。
+     * 三路都没有时才出那条待办，配了任一即不出。
+     */
+    private JSONObject alerts() {
+        JSONObject json = new JSONObject();
+        StarBotCoreProperties.Alert alert = properties.getAlert();
+        json.put("qq", alert.getQqNum() != null);
+        json.put("webhook", StringUtil.isNotBlank(alert.getWebhookUrl()));
+        json.put("mail", StringUtil.isNotBlank(properties.getMail().getDefaultTo()));
+        return json;
     }
 
     /**
