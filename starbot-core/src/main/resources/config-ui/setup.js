@@ -21,6 +21,7 @@ import {renderStreamers, serializePush} from './push.js';
 import {SETUP_STEPS, allDone, canAdvance, initialRows, railMarks, startAt, stepFacts, summaryLines}
   from './setup-model.js';
 import {store} from './store.js';
+import {detailHash} from './streamers-model.js';
 
 /**
  * 这一页此刻手里的东西
@@ -687,6 +688,12 @@ function paintFound(host) {
     + (draft.streamer.roomId ? ' · 直播间 ' + draft.streamer.roomId : '')
     + (draft.streamer.fans == null ? '' : ' · 粉丝 ' + draft.streamer.fans);
   card.appendChild(meta);
+
+  const go = el('a', 'ghost su-go');
+  go.id = 'setup-go-streamer';
+  go.href = detailHash(draft.streamer.platform, draft.streamer.uid);
+  go.textContent = '去主播页看看';
+  card.appendChild(go);
 
   host.appendChild(card);
   host.appendChild(targetPicker());

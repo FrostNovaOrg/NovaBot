@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -272,6 +273,50 @@ class ConfigurationFileServiceTest {
 
         // server.port 与列表元素无关，不得被改写
         assertEquals("7827", service.read().get("server.port"));
+    }
+
+    @Test
+    @DisplayName("列表元素字段删尽后整条去掉，列表回到空表")
+    void clearingEveryListItemFieldRemovesTheItem() throws IOException {
+        service.writeListItemFields("starbot.adapter.onebot.senders", 0,
+                Map.of("name", "", "api", "", "delay", ""));
+
+        String text = content();
+        assertFalse(text.contains("name:"), "字段应全部消失:\n" + text);
+        assertFalse(text.contains("api:"), text);
+        assertFalse(text.contains("delay:"), text);
+        assertFalse(text.contains("- {}"), "不该留下空映射:\n" + text);
+        assertFalse(text.matches("(?s).*senders:\\s*\\n\\s+-\\s*(\\n|$).*"),
+                "不该留下只有短横的空元素:\n" + text);
+        assertTrue(text.contains("senders: []"),
+                "唯一一项删尽后应回到空表，否则下次启动读到的是一个空对象:\n" + text);
+    }
+
+    @Test
+    @DisplayName("空表建第一项时跳过空字段，返回的是实际写下的个数")
+    void createFirstItemSkipsBlankFieldsAndDoesNotCountThem() throws IOException {
+        Files.writeString(config, """
+                starbot:
+                  adapter:
+                    onebot:
+                      senders: []
+                """, StandardCharsets.UTF_8);
+        service = new ConfigurationFileService(config);
+
+        Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("name", "qq-onebot");
+        fields.put("api", "/send");
+        fields.put("one-bot-http-token", "");
+        fields.put("one-bot-websocket-token", "  ");
+
+        int changed = service.writeListItemFields("starbot.adapter.onebot.senders", 0, fields);
+
+        assertEquals(2, changed, "空字段不写也不计入返回值");
+        String text = content();
+        assertTrue(text.contains("- name: qq-onebot"), text);
+        assertTrue(text.contains("api: /send"), text);
+        assertFalse(text.contains("one-bot-http-token"), "空令牌不该写成空值行:\n" + text);
+        assertFalse(text.contains("one-bot-websocket-token"), text);
     }
 
     @Test

@@ -80,6 +80,9 @@ public class OneBotController {
      * 已经挂过的直接返回，不再挂第二遍。挂第二遍的后果是接口路径撞号、
      * 平台名撞号（{@code addSender} 直接抛），以及<b>推送接口 Token 换了一把</b>——
      * 未配置时那把 Token 是随机生成的，重新生成一次就等于把已经拿到旧 Token 的调用方全部踢掉。
+     * <p>
+     * 幂等靠平台名（{@link OneBotSender#getName()}）做键。运行期改平台名这条路不通：
+     * 已挂过的仍按旧名认「已经有了」，新名不会另挂一份；界面上也没有改平台名的入口。
      * @param sender OneBot 推送平台信息
      * @return 挂上了或本来就挂着时为 true；缺 HTTP Token 而挂不上时为 false
      */

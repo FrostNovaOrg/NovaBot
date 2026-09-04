@@ -756,7 +756,7 @@ class ConfigUiFrontendTest {
             "setup-lock", "setup-pwd", "setup-pwd2", "setup-passkey",
             "setup-test-bot", "setup-addr", "setup-hport", "setup-wport",
             "setup-htoken", "setup-wtoken",
-            "setup-platform", "setup-uid", "setup-lookup", "setup-targets",
+            "setup-platform", "setup-uid", "setup-lookup", "setup-targets", "setup-go-streamer",
             "setup-send-target", "setup-send", "setup-got", "setup-not-got", "setup-tips",
             "setup-defaults", "setup-enter");
 
@@ -817,6 +817,10 @@ class ConfigUiFrontendTest {
             if (!view.contains("'" + id + "'")) {
                 bad.add(SETUP_VIEW + " 里没有 #" + id + "，那一步少了这件事的落点");
             }
+        }
+
+        if (!view.contains("detailHash(")) {
+            bad.add("第 4 步去主播页的地址必须问 detailHash，自己拼会与主播页那一份分叉");
         }
 
         for (String endpoint : SETUP_ENDPOINTS) {
@@ -1304,6 +1308,11 @@ class ConfigUiFrontendTest {
         }
         if (!model.contains("totalDataOff")) {
             bad.add(STREAMERS_MODEL + " 没有用 totalDataOff，上面那条「渲染代码里没有」因此不作数");
+        }
+
+        if (!view.contains("detailHash(where.platform, where.uid, 'sessions')")) {
+            bad.add("场次详情的返回必须用 detailHash 指回该主播的场次页签；"
+                    + "写死 #/streamers 会回到总列表，人找不到刚才那一场属于谁");
         }
 
         assertTrue(bad.isEmpty(), "主播页少了这几件事:\n  " + String.join("\n  ", bad));
