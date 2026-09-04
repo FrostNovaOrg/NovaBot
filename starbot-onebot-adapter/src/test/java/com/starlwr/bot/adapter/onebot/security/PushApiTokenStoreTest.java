@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 @DisplayName("推送接口 Token 存储")
 class PushApiTokenStoreTest {
@@ -44,6 +45,43 @@ class PushApiTokenStoreTest {
         assertFalse(store.isProtected("/onebot/other"));
         assertFalse(store.verify("/onebot/other", "s3cret-token-value-1234"));
         assertTrue(store.isProtected("/onebot/send"));
+    }
+
+    @Test
+    @DisplayName("坏百分号编码解析不了时 isProtected 静默答 false，不向调用方抛异常")
+    void isProtectedSwallowsMalformedEncoding() {
+        PushApiTokenStore store = new PushApiTokenStore();
+        store.register("/onebot/send", "s3cret-token-value-1234");
+
+        assertFalse(store.isProtected("/onebot/send%zz"));
+        assertFalse(store.isProtected("/onebot/send%2"));
+    }
+
+    @Test
+    @DisplayName("互含的登记模式同时命中时答最具体的那条，答案不随登记顺序漂")
+    void resolvePrefersMostSpecificAmongOverlappingPatterns() {
+        // 每组 {更具体者, 更宽者, 双命中的请求路径}。旧实现在哈希表迭代序上取首个命中:
+        // 两键恰好同桶时桶内即插入序, 同一请求的答案随登记顺序漂（实测 {id}/send 对 */send 组）
+        String[][] cases = {
+                {"/onebot/send", "/onebot/send/**", "/onebot/send"},
+                {"/onebot/{a}", "/onebot/**", "/onebot/send"},
+                {"/onebot/send/*", "/onebot/send/**", "/onebot/send/x"},
+                {"/onebot/send/**", "/**", "/onebot/send/x"},
+                {"/onebot/{id}/send", "/onebot/*/send", "/onebot/42/send"},
+        };
+        for (String[] c : cases) {
+            PushApiTokenStore specificFirst = new PushApiTokenStore();
+            specificFirst.register(c[0], "token-AAAAAAAA-1");
+            specificFirst.register(c[1], "token-BBBBBBBB-2");
+            PushApiTokenStore wideFirst = new PushApiTokenStore();
+            wideFirst.register(c[1], "token-BBBBBBBB-2");
+            wideFirst.register(c[0], "token-AAAAAAAA-1");
+
+            assertEquals(c[0], specificFirst.resolve(c[2], ""),
+                    c[0] + " + " + c[1] + ", 先登具体者: ");
+            assertEquals(c[0], wideFirst.resolve(c[2], ""),
+                    c[0] + " + " + c[1] + ", 先登宽者: ");
+        }
     }
 
     @Test

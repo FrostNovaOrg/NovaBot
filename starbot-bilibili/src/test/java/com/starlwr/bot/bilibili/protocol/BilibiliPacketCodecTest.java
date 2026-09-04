@@ -135,8 +135,8 @@ class BilibiliPacketCodecTest {
     }
 
     @Test
-    @DisplayName("嵌套层数限额为 1 时不再往下展开")
-    void stopsAtNestingLimit() throws Exception {
+    @DisplayName("嵌套层数限额为 1 时一层展开仍放行")
+    void allowsExpansionUpToNestingLimit() throws Exception {
         ByteArrayOutputStream inner = new ByteArrayOutputStream();
         inner.write(jsonPacket("{\"cmd\":\"NESTED_1\"}"));
 
@@ -262,8 +262,9 @@ class BilibiliPacketCodecTest {
     }
 
     @Test
-    @DisplayName("头部长度大于整包长度时停止解析")
-    void rejectsHeaderLongerThanPacket() {
+    @DisplayName("头部长度小于最小头长时停止解析")
+    void rejectsHeaderShorterThanMinimum() {
+        // 头长写成 8，小于固定的 16：走「头长不足」这条拒绝分支（头长盖过整包的格另在下方）
         byte[] data = ByteBuffer.allocate(BilibiliPacketCodec.HEADER_LENGTH)
                 .putInt(BilibiliPacketCodec.HEADER_LENGTH)
                 .putShort((short) 8)
