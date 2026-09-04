@@ -13,6 +13,7 @@ import {addStreamer, decoratePushData, renderPlatforms, renderStreamers, seriali
 import {setAuthState} from './settings-auth.js';
 import {copyConfigPath, discard, filterSettings, renderConfigPath, renderGeneral, save, toggleKeyNames}
   from './settings.js';
+import {openSetup, stopSetupPolling} from './setup.js';
 import {store} from './store.js';
 import {clearIssuedToken, loadTokens} from './tokens.js';
 
@@ -218,6 +219,16 @@ const TAB_HASH = {
 let route = '';
 
 /**
+ * 使用者按过「稍后再说」没有
+ *
+ * 按过之后不再把他从首页转去初始设置页。<b>只记在这一趟里</b>，刷新之后重新拦一次——
+ * 而这只影响连第一步都还没做完的机器：第一步上锁会当场写出配置文件，
+ * 那之后 setupDone 就是真的，这一条根本不再成立。刷新一次又被拦住，
+ * 说的正是「这台机器上一件事也还没配」。
+ */
+let later = false;
+
+/**
  * 解析地址栏。认不出来的路由一律当首页，不留白屏
  *
  * 页签时代的旧地址（#/tokens、#/bot 这类）不当作认不出来：收藏夹与旧文档里留着它们，
@@ -269,7 +280,7 @@ function applyRoute(withData = true) {
   // 只拦这两处，不拦别的：使用者从初始设置页点去连接页看一眼再回来，是正当走法，
   // 拦下来的表现是「除了第一步哪儿也去不了」。而 home 是默认落点——认不出来的地址
   // 也归到它，所以拦住它就等于拦住了「随手打开控制台」这条路。
-  if (store.setupDone === false && name === 'home') {
+  if (store.setupDone === false && name === 'home' && !later) {
     location.hash = '#/setup';
     return;
   }
@@ -285,6 +296,9 @@ function applyRoute(withData = true) {
   // 离开日志页就停掉工程日志那个「跟随最新」：留着的话，使用者在别的页上待一夜，
   // 它还在每 3 秒读一次日志文件
   if (route === 'log' && name !== 'log') stopFollow();
+  // 离开初始设置页就停掉那一页等扫码的轮询：不停的话，使用者点去连接页看一眼，
+  // 那一页还在每 3 秒问一次登录状态，而它已经不在屏幕上了
+  if (route === 'setup' && name !== 'setup') stopSetupPolling();
   route = name;
 
   document.querySelectorAll('#nav a').forEach(a => {
@@ -328,6 +342,9 @@ function applyRoute(withData = true) {
   // 翻天、改筛选、进出工程日志走的都是改地址栏这一条路，因此每次进来都重取：
   // 日志页的「现在是哪一天、筛了什么」全部只存在地址栏里，本页自己不记
   else if (name === 'log') loadLog();
+  // 每次进入都重问一遍这台机器现在什么样：上一趟离开之后使用者可能去别处上了锁、加了主播，
+  // 缓存的画面会把已经做完的那一步画成没做，而那正是这一页唯一要回答的问题
+  else if (name === 'setup') openSetup();
   else if (plugin) { api('/status').then(renderStatus); callPage(plugin, 'refresh'); }
 
   // 点名要看某一块时不回顶：滚到顶再滚下去，屏幕会先跳一下
@@ -358,6 +375,10 @@ $('#save').addEventListener('click', save);
 $('#discard').addEventListener('click', discard);
 $('#cfg-copy').addEventListener('click', copyConfigPath);
 $('#test-send').addEventListener('click', sendTestMessage);
+// 「稍后再说」：地址由 href 带去首页，这里只记下别再把他转回来。
+// 记在这里而不是 setup.js 里，是因为拦人的那一条判断也在这里——两处各记一份的话，
+// 记下了却仍被转回来，表现是这个链接点了没反应
+$('#setup-later').addEventListener('click', () => { later = true; });
 // 让机器人重新去问一遍：群是随时会变的，而缓存住的名单会让人对着一个已经退了的群发测试消息
 $('#test-refresh').addEventListener('click', () => loadTargets(true));
 $('#selftest-run').addEventListener('click', runSelfTest);
