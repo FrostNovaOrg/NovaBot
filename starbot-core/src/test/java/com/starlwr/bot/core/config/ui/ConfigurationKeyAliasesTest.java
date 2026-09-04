@@ -112,7 +112,7 @@ class ConfigurationKeyAliasesTest {
                 // 给个空上下文即可，本组用例不看生效时机
                 new ConfigurationEffectResolver(mock(org.springframework.context.ApplicationContext.class)),
                 new ConfigurationDangerResolver(mock(org.springframework.context.ApplicationContext.class)),
-                new RuntimeConfigurationApplier(properties),
+                RuntimeConfigurationApplier.bench(properties).build(),
                 mock(org.springframework.beans.factory.ObjectProvider.class),
                 mock(org.springframework.beans.factory.ObjectProvider.class),
                 new EventStreamTokenService(properties.getLive()),
@@ -121,7 +121,8 @@ class ConfigurationKeyAliasesTest {
                 mock(com.starlwr.bot.core.service.LiveDataService.class),
                 mock(com.starlwr.bot.core.timeline.TimelineStore.class),
                 mock(com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService.class),
-                new PushTemplateDefaults(new StarBotCoreProperties()));
+                new PushTemplateDefaults(new StarBotCoreProperties()),
+                mock(UpdateCheckService.class));
     }
 
     private JSONObject read() {

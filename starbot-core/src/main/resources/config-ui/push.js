@@ -1103,8 +1103,8 @@ export function addStreamer() {
 
     const input = el('input');
     input.id = 'add-uid';
-    input.placeholder = '输入 uid 或粘贴个人空间链接';
-    input.setAttribute('aria-label', '主播 uid 或个人空间链接');
+    input.placeholder = '输入 uid、直播间号，或粘贴空间／直播间链接';
+    input.setAttribute('aria-label', '主播 uid、直播间号或链接');
     form.appendChild(input);
 
     const go = el('button', 'primary');
@@ -1130,7 +1130,7 @@ async function lookupStreamer(platformNames, input, go, out) {
     : platformNames[0];
   const value = input.value.trim();
   if (!value) {
-    out.textContent = '请先输入 uid 或个人空间链接。';
+    out.textContent = '请先输入 uid、直播间号或链接。';
     return;
   }
 

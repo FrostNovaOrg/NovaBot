@@ -134,7 +134,12 @@ public class ConfigUiController {
     private static final Pattern SPACE_URL_UID = Pattern.compile("space\\.bilibili\\.com/(\\d{1,19})");
 
     /**
-     * 纯数字形式的 uid
+     * 直播间链接中的房间号，短号与真实房间号都是这一串数字
+     */
+    private static final Pattern LIVE_URL_ROOM = Pattern.compile("live\\.bilibili\\.com/(\\d{1,19})");
+
+    /**
+     * 纯数字：可能是 uid，也可能是直播间号
      */
     private static final Pattern PLAIN_UID = Pattern.compile("^(\\d{1,19})$");
 
@@ -224,6 +229,11 @@ public class ConfigUiController {
     private final ConfigUiAuthService authService;
 
     /**
+     * 新版检查。侧栏药丸与首页软待办读同一份结果，「这版先不提醒」也由它记账
+     */
+    private final UpdateCheckService updateCheck;
+
+    /**
      * 这台机器改过的默认模板。模板编辑器的「默认模板」那一页读写的就是它
      */
     private final PushTemplateDefaults templateDefaults;
@@ -253,12 +263,14 @@ public class ConfigUiController {
                               LiveDataService liveDataService,
                               TimelineStore timeline,
                               ConfigUiAuthService authService,
-                              PushTemplateDefaults templateDefaults) {
+                              PushTemplateDefaults templateDefaults,
+                              UpdateCheckService updateCheck) {
         this.templateDefaults = templateDefaults;
         this.pushGate = pushGate;
         this.liveDataService = liveDataService;
         this.timeline = timeline;
         this.authService = authService;
+        this.updateCheck = updateCheck;
         this.effectResolver = effectResolver;
         this.dangerResolver = dangerResolver;
         this.runtimeApplier = runtimeApplier;
@@ -965,7 +977,11 @@ public class ConfigUiController {
      * <p>
      * 添加主播时先把昵称与直播间号显示出来让人确认，避免 uid 打错一位却配了个陌生人——
      * 这类错误在推送真正发生前完全无法察觉。
-     * @param body 请求体，含 platform 与 uid（uid 亦可为个人空间链接）
+     * <p>
+     * 输入除 uid 与个人空间链接外，也收直播间号：纯数字短号，或直播间链接。
+     * 纯数字既像 uid 又像房间号时<b>先按 uid 查，查不到再按房间号查一次</b>；
+     * 链接已经标明是哪一种时只走对应那一趟，不加重试。
+     * @param body 请求体，含 platform 与 uid（uid 亦可为空间链接、直播间号或直播间链接）
      * @return 主播信息
      */
     @PostMapping("/api/streamer/lookup")
@@ -973,11 +989,11 @@ public class ConfigUiController {
         JSONObject result = new JSONObject();
 
         String platform = body.getString("platform");
-        Long uid = extractUid(body.getString("uid"));
+        StreamerQuery query = parseStreamerQuery(body.getString("uid"));
 
-        if (platform == null || platform.isBlank() || uid == null) {
+        if (platform == null || platform.isBlank() || query == null) {
             result.put("success", false);
-            result.put("message", "请填写平台与 uid，也可直接粘贴个人空间链接");
+            result.put("message", "请填写平台与 uid，也可直接粘贴个人空间链接或直播间号");
             return result;
         }
 
@@ -988,22 +1004,27 @@ public class ConfigUiController {
             return result;
         }
 
-        PushUser user = new PushUser();
-        user.setUid(uid);
-        user.setPlatform(platform);
-
+        DataSourceService data = service.get();
+        PushUser user;
         try {
-            service.get().completePushUser(user);
+            if (query.kind() == StreamerIdKind.ROOM) {
+                user = data.lookupByRoomId(query.id()).orElse(null);
+            } else {
+                user = completeByUid(data, platform, query.id());
+                if (missingName(user) && query.kind() == StreamerIdKind.DIGITS) {
+                    user = data.lookupByRoomId(query.id()).orElse(null);
+                }
+            }
         } catch (Exception e) {
-            log.error("查询主播 {} 信息失败", uid, e);
+            log.error("查询主播 {} 信息失败", query.id(), e);
             result.put("success", false);
             result.put("message", "查询失败: " + e.getMessage());
             return result;
         }
 
-        if (user.getUname() == null || user.getUname().isBlank()) {
+        if (missingName(user)) {
             result.put("success", false);
-            result.put("message", "未查到 uid " + uid + " 对应的主播，请确认 uid 是否正确");
+            result.put("message", "未查到 uid " + query.id() + " 对应的主播，请确认 uid 是否正确");
             return result;
         }
 
@@ -1018,35 +1039,63 @@ public class ConfigUiController {
         // 单独兜一次异常：主播已经查到了，不该因为一个附带字段拉不下来就整次判失败
         Long fans = null;
         try {
-            fans = service.get().getFansCount(uid).orElse(null);
+            fans = data.getFansCount(user.getUid()).orElse(null);
         } catch (Exception e) {
-            log.debug("获取 uid {} 的粉丝数失败: {}", uid, e.getMessage());
+            log.debug("获取 uid {} 的粉丝数失败: {}", user.getUid(), e.getMessage());
         }
         result.put("fans", fans);
         return result;
     }
 
+    private PushUser completeByUid(DataSourceService data, String platform, long uid) {
+        PushUser user = new PushUser();
+        user.setUid(uid);
+        user.setPlatform(platform);
+        data.completePushUser(user);
+        return user;
+    }
+
+    private static boolean missingName(PushUser user) {
+        return user == null || user.getUname() == null || user.getUname().isBlank();
+    }
+
     /**
-     * 从输入中提取 uid，兼容直接粘贴个人空间链接
+     * 从输入中提取 uid 或直播间号
      * <p>
      * 让使用者自己去链接里抠出那串数字是没必要的一道门槛。
+     * 直播间链接与空间链接各走各的：两者都像一串数字时，先按 uid 查。
      * @param input 输入内容
-     * @return uid，无法识别时返回 null
+     * @return 解析结果，无法识别时返回 null
      */
-    private Long extractUid(String input) {
+    private StreamerQuery parseStreamerQuery(String input) {
         if (input == null) {
             return null;
         }
 
         String trimmed = input.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+
+        Matcher live = LIVE_URL_ROOM.matcher(trimmed);
+        if (live.find()) {
+            return new StreamerQuery(StreamerIdKind.ROOM, Long.parseLong(live.group(1)));
+        }
 
         Matcher fromUrl = SPACE_URL_UID.matcher(trimmed);
         if (fromUrl.find()) {
-            return Long.parseLong(fromUrl.group(1));
+            return new StreamerQuery(StreamerIdKind.UID, Long.parseLong(fromUrl.group(1)));
         }
 
         Matcher plain = PLAIN_UID.matcher(trimmed);
-        return plain.matches() ? Long.parseLong(plain.group(1)) : null;
+        return plain.matches() ? new StreamerQuery(StreamerIdKind.DIGITS, Long.parseLong(plain.group(1))) : null;
+    }
+
+    private enum StreamerIdKind {
+        UID, ROOM, DIGITS
+    }
+
+    private record StreamerQuery(StreamerIdKind kind, long id) {
     }
 
     /**
@@ -1492,6 +1541,20 @@ public class ConfigUiController {
         // 比显示一个编出来的版本号要好
         BuildProperties build = buildProperties.getIfAvailable();
         result.put("version", build == null ? "" : Optional.ofNullable(build.getVersion()).orElse(""));
+        // 该提示的新版：侧栏药丸、点开的小面板与首页那条软待办共用这一块。没有新版时整块不下发——
+        // 这类字段的读法是「缺席即没有」，与 queue 那种「键必须在、值可以为 0」不是同一种约定，
+        // 多发一个空对象只会让界面多一种两头都没定义的中间态。
+        // 首装机器（配置文件还没建立，即 /auth/state 里 setupDone 的判据）不下发：
+        // 它连一个主播都还没配，最不该在那一屏上被「有新版」带走
+        if (fileService.exists()) {
+            updateCheck.pendingUpdate().ifPresent(update -> {
+                JSONObject updateJson = new JSONObject();
+                updateJson.put("latestVersion", update.version());
+                updateJson.put("notes", update.notes());
+                updateJson.put("url", update.url());
+                result.put("update", updateJson);
+            });
+        }
         // 设置页底部要显示「配置文件在哪」。路径由定位配置文件的那个服务给，不在界面里写死：
         // 写死的那一份在换了工作目录或用 -Dspring.config.location 指过别处时会指错地方
         result.put("configPath", fileService.describeConfigPath());
@@ -1552,6 +1615,27 @@ public class ConfigUiController {
             log.debug("读 SMTP 主机失败，邮件这一路按未配算: {}", e.getMessage());
             return "";
         }
+    }
+
+    /**
+     * 记下「这个版本先不提醒」
+     * <p>
+     * 版本由服务端认定而不是照单全收客户端送来的串：这一动作的真源是页面上那颗按钮，
+     * 而隔了几天才送达的请求或乱填的版本号不该被记成使用者的选择。没记下时
+     * {@code success=false}，界面据此重取一次状态。
+     * @param body 请求体，version 字段为要跳过的版本号
+     * @return 记下了没有
+     */
+    @PostMapping("/api/version/skip")
+    public JSONObject skipVersion(@RequestBody JSONObject body) {
+        JSONObject result = new JSONObject();
+        String version = body == null ? "" : Optional.ofNullable(body.getString("version")).orElse("");
+        boolean recorded = updateCheck.skip(version);
+        result.put("success", recorded);
+        if (recorded) {
+            log.info("配置界面已记下版本 {} 先不提醒", version);
+        }
+        return result;
     }
 
     /**

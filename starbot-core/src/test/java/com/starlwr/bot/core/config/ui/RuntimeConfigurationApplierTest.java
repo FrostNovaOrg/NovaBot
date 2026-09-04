@@ -37,7 +37,7 @@ class RuntimeConfigurationApplierTest {
     @BeforeEach
     void setUp() {
         properties = new StarBotCoreProperties();
-        applier = new RuntimeConfigurationApplier(properties);
+        applier = RuntimeConfigurationApplier.bench(properties).build();
     }
 
     @Test
@@ -142,6 +142,6 @@ class RuntimeConfigurationApplierTest {
                 applier.getPendingRestart(), "即时生效的那一项不该混进待重启名单");
 
         // 记录挂在实例上，实例的寿命就是进程的寿命——换一个实例等于程序重启了一次
-        assertEquals(List.of(), new RuntimeConfigurationApplier(properties).getPendingRestart());
+        assertEquals(List.of(), RuntimeConfigurationApplier.bench(properties).build().getPendingRestart());
     }
 }

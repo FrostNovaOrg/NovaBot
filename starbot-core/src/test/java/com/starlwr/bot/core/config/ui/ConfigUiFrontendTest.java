@@ -530,7 +530,8 @@ class ConfigUiFrontendTest {
      * 那一块就<b>安静地从页面上消失</b>了。通行密钥那一块正是这么搬过的。
      */
     private static final List<String> AUTH_CONTROLS = List.of(
-            "auth-cards", "pwd-save", "totp-switch", "passkey-add", "setup-rerun");
+            "auth-cards", "pwd-save", "pwd-current-reveal", "pwd-next-reveal", "pwd-again-reveal",
+            "totp-switch", "passkey-add", "setup-rerun");
 
     /**
      * 「登录与安全」那一组要调的端点，闭集
@@ -1163,7 +1164,7 @@ class ConfigUiFrontendTest {
      * 机器人被踢出群、OneBot 没起）表现完全一样，混在一起就再也分不开。
      * <p>
      * 量的是 {@code index.html} 里推送页那一块：挑选面板由脚本建出来，里面那个
-     * 「uid 或个人空间链接」是主播的账号，不是推送目标的号码，两者不是一回事。
+     * 「uid、直播间号或链接」是主播的账号，不是推送目标的号码，两者不是一回事。
      * @param html index.html 全文
      * @return 问题，没有则为空
      */
@@ -1392,6 +1393,65 @@ class ConfigUiFrontendTest {
     }
 
     /**
+     * 设置页、推送页与通道页的危险确认走自绘弹层，不再调用原生 confirm()
+     * <p>
+     * 原生那一句没有标题、没有后果、也没有取消／确认的颜色区分。
+     * 改回去的那一下<b>不会让任何功能变坏</b>，因此靠人复查是拦不住的。
+     * <p>
+     * 自绘之后浏览器不再代劳两件事：按 Esc 取消，以及关掉以后把焦点还回刚才那颗按钮。
+     * 少写这两行，键盘和读屏都回不到原点，而点鼠标走主路的人看不出任何变化。
+     */
+    @Test
+    @DisplayName("设置页、推送页与通道页的危险确认走自绘弹层")
+    void settingsPushAndSessionsUsePaintedConfirm() {
+        Map<String, String> sources = coreSources();
+        List<String> bad = new ArrayList<>();
+
+        for (String name : List.of("settings.js", "push.js", "sessions.js")) {
+            String code = codeOnly(sources.getOrDefault(name, ""));
+            if (code.contains("confirm(")) {
+                bad.add(name + " 仍在调用原生 confirm()");
+            }
+            if (!code.contains("ask(")) {
+                bad.add(name + " 没有问过 ask，危险确认此刻点了不弹");
+            }
+        }
+
+        String dialog = sources.getOrDefault("confirm.js", "");
+        String model = sources.getOrDefault("confirm-model.js", "");
+        if (dialog.isBlank()) {
+            bad.add("找不到 confirm.js，自绘弹层没有落脚的地方");
+        }
+        if (model.isBlank()) {
+            bad.add("找不到 confirm-model.js，打开／取消／确认没有可测的一份");
+        }
+        if (!dialog.contains("export function ask") && !dialog.contains("export function ask(")) {
+            // export function ask 已在上面的 EXPORT 扫描里；这里再钉调用方引的就是这个名字
+            if (!Pattern.compile("^export\\s+function\\s+ask\\b", Pattern.MULTILINE).matcher(dialog).find()) {
+                bad.add("confirm.js 没有 export ask");
+            }
+        }
+        if (!dialog.contains("Escape")) {
+            bad.add("confirm.js 没有 Esc＝取消");
+        }
+        if (!dialog.contains("document.activeElement")) {
+            bad.add("confirm.js 打开时没有记下触发钮，关闭后焦点回不去");
+        }
+        if (!model.contains("export function keydown")) {
+            bad.add("confirm-model.js 没有 keydown，Esc＝取消没有可测的一份");
+        }
+
+        for (String name : List.of("settings.js", "push.js", "sessions.js")) {
+            String imported = importedFrom(sources.getOrDefault(name, ""), "confirm.js");
+            if (!imported.contains("ask")) {
+                bad.add(name + " 用了 ask 却没从 confirm.js 引进来");
+            }
+        }
+
+        assertTrue(bad.isEmpty(), "危险确认弹层少了这几件事:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
      * 首页「今日」第三格与 Webhook 待办的落点，闭集
      * <p>
      * 额度与告警已配没配的判定只许有 {@code home-model.js} 一份。渲染那一层再判一遍的话，
@@ -1454,52 +1514,65 @@ class ConfigUiFrontendTest {
     }
 
     /**
-     * 设置页与推送页的危险确认走自绘弹层，不再调用原生 confirm()
+     * 新版提示写在 index.html 里的那两处落点，闭集
      * <p>
-     * 原生那一句没有标题、没有后果、也没有取消／确认的颜色区分。
-     * 改回去的那一下<b>不会让任何功能变坏</b>，因此靠人复查是拦不住的。
+     * 侧栏那枚药丸与它点开的小面板的壳。面板里的内容不写在页面里：每次拿到新的
+     * 运行状态都整块重画，写死的那份会在下一次重画时悄悄变成上一版的信息。
+     */
+    private static final List<String> UPDATE_NOTICE_IN_HTML = List.of("side-update", "update-pop");
+
+    /**
+     * 新版提示由脚本建出来的那一处落点，闭集
+     * <p>
+     * 「知道了，这版先不提醒」。它跟着面板内容一起重画，因此不写在 index.html 里。
+     */
+    private static final List<String> UPDATE_NOTICE_BUILT = List.of("update-skip");
+
+    /**
+     * 新版提示要调的端点，闭集
+     * <p>
+     * 「先不提醒」记在服务器上、按版本记。少接这一条，那个键就是点了没反应，
+     * 而按钮本身看起来完全正常——使用者会以为提醒已经关掉，第二天药丸照样出现。
+     */
+    private static final List<String> UPDATE_NOTICE_ENDPOINTS = List.of("/version/skip");
+
+    /**
+     * 新版药丸与小面板各有落点，「先不提醒」接到了服务器
+     * <p>
+     * 与设置页、连接页那几条同理：元素与接线缺哪一半都不会报错——元素没了，脚本按
+     * id 取到 null（那一条由 {@link #everyReferencedElementIdExists} 管）；脚本没接上，
+     * 药丸就静静地立在那里，点了什么都不发生。
      */
     @Test
-    @DisplayName("设置页与推送页的危险确认走自绘弹层")
-    void settingsAndPushUsePaintedConfirm() {
-        Map<String, String> sources = coreSources();
+    @DisplayName("新版药丸、小面板与先不提醒各有落点")
+    void updateNoticeIsWiredUp() throws IOException {
+        String html = Files.readString(frontendDir().resolve("index.html"), StandardCharsets.UTF_8);
+        String scripts = String.join("\n", coreSources().values());
+
         List<String> bad = new ArrayList<>();
-
-        for (String name : List.of("settings.js", "push.js")) {
-            String code = codeOnly(sources.getOrDefault(name, ""));
-            if (code.contains("confirm(")) {
-                bad.add(name + " 仍在调用原生 confirm()");
+        for (String id : UPDATE_NOTICE_IN_HTML) {
+            if (!html.contains("id=\"" + id + "\"")) {
+                bad.add("index.html 上没有 #" + id);
             }
-            if (!code.contains("ask(")) {
-                bad.add(name + " 没有问过 ask，危险确认此刻点了不弹");
+            if (!scripts.contains("$('#" + id + "')")) {
+                bad.add("没有任何脚本用到 #" + id + "，它立在那里但点了不管用");
             }
         }
-
-        String dialog = sources.getOrDefault("confirm.js", "");
-        String model = sources.getOrDefault("confirm-model.js", "");
-        if (dialog.isBlank()) {
-            bad.add("找不到 confirm.js，自绘弹层没有落脚的地方");
+        for (String id : UPDATE_NOTICE_BUILT) {
+            if (!scripts.contains("id=\"" + id + "\"")) {
+                bad.add("没有任何脚本建出 #" + id);
+            }
+            if (!scripts.contains("$('#" + id + "')")) {
+                bad.add("没有任何脚本取过 #" + id + "，那个键点了没有任何东西接");
+            }
         }
-        if (model.isBlank()) {
-            bad.add("找不到 confirm-model.js，打开／取消／确认没有可测的一份");
-        }
-        if (!dialog.contains("export function ask") && !dialog.contains("export function ask(")) {
-            // export function ask 已在上面的 EXPORT 扫描里；这里再钉调用方引的就是这个名字
-            if (!Pattern.compile("^export\\s+function\\s+ask\\b", Pattern.MULTILINE).matcher(dialog).find()) {
-                bad.add("confirm.js 没有 export ask");
+        for (String endpoint : UPDATE_NOTICE_ENDPOINTS) {
+            if (!scripts.contains("'" + endpoint + "'")) {
+                bad.add("没有任何脚本调用 " + endpoint + "，「先不提醒」此刻点了不管用");
             }
         }
 
-        String settingsImport = importedFrom(sources.getOrDefault("settings.js", ""), "confirm.js");
-        if (!settingsImport.contains("ask")) {
-            bad.add("settings.js 用了 ask 却没从 confirm.js 引进来");
-        }
-        String pushImport = importedFrom(sources.getOrDefault("push.js", ""), "confirm.js");
-        if (!pushImport.contains("ask")) {
-            bad.add("push.js 用了 ask 却没从 confirm.js 引进来");
-        }
-
-        assertTrue(bad.isEmpty(), "危险确认弹层少了这几件事:\n  " + String.join("\n  ", bad));
+        assertTrue(bad.isEmpty(), "新版提示少了这几件事的落点:\n  " + String.join("\n  ", bad));
     }
 
     /**

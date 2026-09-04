@@ -36,8 +36,14 @@ class ConfigUiLoginPageTest {
                 "拼好的登录页里应当带着 loginView，缺了它页面上点什么都不动");
         assertTrue(html.contains("export function lockText"),
                 "锁定文案那一支同样要在页面上，否则锁定横条永远是空的");
+        assertTrue(html.contains("export function passwordReveal"),
+                "口令框显示／隐藏那一份也要拼进去，否则登录页眼睛点了不动");
+        assertTrue(html.contains("id=\"password-reveal\""),
+                "登录页口令框旁边应当有显示／隐藏按钮");
         assertFalse(html.contains(ConfigUiLoginPage.MODEL_MARKER),
                 "占位应当已被顶替，留着它说明这一趟根本没拼进去");
+        assertFalse(html.contains(ConfigUiLoginPage.REVEAL_MARKER),
+                "显示／隐藏那一处占位应当已被顶替");
         // 判定脚本必须落在 module 脚本里：拼进普通 <script> 的话，那几个 export 是语法错误，
         // 整段脚本一行都不会跑，而页面照样显示得出来
         assertTrue(html.contains("<script type=\"module\">"),

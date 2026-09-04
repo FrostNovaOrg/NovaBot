@@ -1,14 +1,15 @@
 /**
- * 首页视图模型的八档对照
+ * 首页视图模型的九档对照
  *
  * 首页要在八种情形下都对得上，而这八种在真机上凑齐一次的代价极高：QQ 掉线、直播间断流、
  * 接口变慢这几档要么等故障发生，要么去改线上配置。视图模型因此被切成一个纯函数
- * （home-model.js，不碰 DOM），本文件喂它八份回包，逐档核对链路三段的灯色、顶部横条、
- * 待办与「今天发生了什么」的条数。
+ * （home-model.js，不碰 DOM），本文件喂它回包，逐档核对链路三段的灯色、顶部横条、
+ * 待办与「今天发生了什么」的条数。第九档（有新版）是后来加的：它给待办表添了一条，
+ * 恰好也压着「待办只放要人动手的事」这条规矩的边界。
  *
  * 用 node 直接跑：
  *   node tools/home-model-check.mjs
- * 退码 0 即八档全对；任一档对不上打印差异并以 1 退出。
+ * 退码 0 即九档全对；任一档对不上打印差异并以 1 退出。
  */
 
 import {homeModel, PROBE_ANCHOR, stationHref, todayAtAllMarkup} from '../starbot-core/src/main/resources/config-ui/home-model.js';
@@ -72,7 +73,7 @@ function timeline(events) {
   ]};
 }
 
-// ── 八档 ───────────────────────────────────────────────────────────────
+// ── 九档 ───────────────────────────────────────────────────────────────
 // 每档写明：改了哪几处回包字段（驱动字段），以及首页该长成什么样（应）
 const CASES = [
   {
@@ -170,6 +171,19 @@ const CASES = [
     timeline: timeline(),
     expect: {chain: ['ok', 'ok', 'off'], banner: 'paused', todos: [], events: 8},
   },
+  {
+    name: '有新版',
+    // 服务器判「该提示」时 /api/status 才有 update 这一块：版本、说明与站外链接同形
+    status: status({update: {
+      latestVersion: 'v5.2.0',
+      notes: ['修了开播误报', '第二行说明', '第三行说明'],
+      url: 'https://example.invalid/release',
+    }}),
+    login: login(),
+    timeline: timeline(),
+    // 软待办一条，排在最后；机器一切正常，链路横条都不动
+    expect: {chain: ['ok', 'ok', 'ok'], banner: null, todos: ['update'], events: 8, updateTodo: true},
+  },
 ];
 
 // ── 跑 ─────────────────────────────────────────────────────────────────
@@ -191,6 +205,12 @@ for (const item of CASES) {
   if (todos.join(',') !== want.todos.join(',')) fail.push(`待办 期望 [${want.todos}] 实得 [${todos}]`);
   if (events !== want.events) fail.push(`短条条数 期望 ${want.events} 实得 ${events}`);
   if (want.gap && !model.now.note) fail.push('断流档「现在」卡缺采集缺口注');
+  if (want.updateTodo) {
+    const t = model.todos.find(x => x.key === 'update');
+    if (!t || t.soft !== true || String(t.href).indexOf('http') !== 0) {
+      fail.push('新版待办应是一条软的、指向站外说明的待办');
+    }
+  }
 
   rows.push([item.name, chain.join('/'), String(banner), '[' + todos + ']', String(events),
     fail.length ? '红' : '绿'].join('\t'));
@@ -220,7 +240,7 @@ if (bad.length || hrefBad.length) {
   process.exit(1);
 }
 console.log('本机站\t' + stationHref('self') + '\t锚 #' + PROBE_ANCHOR + '\t绿');
-console.log('\n八档全对，本机站落到首页探针区');
+console.log('\n九档全对，本机站落到首页探针区');
 
 // ── 「今日」第三格与 Webhook 待办 ──────────────────────────────────────
 // 这两块是后补上的：额度接口与告警三卡交付之后，首页才有真数据可摆。
