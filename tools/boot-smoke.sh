@@ -108,7 +108,7 @@ cp -R "$OUT/." "$WORK/"
 # 前提：无配置。见文件头
 rm -f "$WORK/application.yml" "$WORK/datasource.json"
 
-echo "==> 起：$JAVA_BIN -jar StarBotCore.jar --server.port=$PORT （工作目录 $WORK）"
+echo "==> 起：$JAVA_BIN -jar StarBotCore.jar --server.port=$PORT （工作目录 ${WORK}）"
 "$JAVA_BIN" -version > "$LOG" 2>&1
 (
     cd "$WORK" || exit 1
@@ -133,7 +133,7 @@ while [ "$SECONDS" -lt "$DEADLINE" ]; do
     if ! kill -0 "$PID" 2>/dev/null; then
         wait "$PID"; code=$?
         echo
-        echo "红：进程在答出之前就退了（退码 $code）"
+        echo "红：进程在答出之前就退了（退码 ${code}）"
         RESULT=1
         break
     fi
