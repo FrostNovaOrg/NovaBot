@@ -7,7 +7,7 @@ import {loadAnalytics} from './analytics.js';
 import {bindBotForm, botFormHtml, fillBotForms} from './bot.js';
 import {$, api, el, esc, markDirty, say} from './core.js';
 import {focusStation, loadTargets, mountLinkCard, refreshLinks, sendTestMessage} from './links.js';
-import {loadLog, syncLogView} from './log.js';
+import {loadLog, stopFollow, syncLogView} from './log.js';
 import {loadHistory, loadState, refreshHome, renderStatus, runSelfTest, togglePush} from './overview.js';
 import {addStreamer, decoratePushData, renderPlatforms, renderStreamers, serializePush} from './push.js';
 import {setAuthState} from './settings-auth.js';
@@ -272,6 +272,9 @@ function applyRoute(withData = true) {
   // 离开「连接」页就把刚签发的口令从 DOM 里抹掉。界面上写着「离开本页后无法再次查看」，
   // 这一行就是那句话的实现——留着它，那句话只是句话
   if (route === 'links' && name !== 'links') clearIssuedToken();
+  // 离开日志页就停掉工程日志那个「跟随最新」：留着的话，使用者在别的页上待一夜，
+  // 它还在每 3 秒读一次日志文件
+  if (route === 'log' && name !== 'log') stopFollow();
   route = name;
 
   document.querySelectorAll('#nav a').forEach(a => {

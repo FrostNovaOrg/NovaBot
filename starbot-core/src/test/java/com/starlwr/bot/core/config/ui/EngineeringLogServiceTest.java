@@ -9,6 +9,9 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -130,6 +133,155 @@ class EngineeringLogServiceTest {
         assertEquals(1, lines.size());
         assertFalse(lines.get(0).contains("hunter2"), "打码不许只做在某一个调用点上");
         assertTrue(lines.get(0).contains("登录失败"), "该留的话要留住");
+    }
+
+    /**
+     * 翻别的日子读的是<b>那一天那份文件</b>
+     * <p>
+     * 落点由 {@code logback.xml} 里那条 {@code fileNamePattern} 定，因此这里量的是
+     * 「按模板算得对不对」，而不是「今天这台机器的日志在哪」——后者随 LOG_HOME 变，
+     * 拿它当判据就是把此刻的盘面钉进判据里。
+     */
+    @Test
+    @DisplayName("按模板算得出某一天那份文件")
+    void resolvesTheFileForAGivenDay() {
+        String pattern = "/tmp/nova/logs/%d{yyyy-MM,aux}/starbot-%d{yyyy-MM-dd}.log";
+
+        assertEquals(Path.of("/tmp/nova/logs/2026-09/starbot-2026-09-01.log"),
+                EngineeringLogService.fileOn(pattern, LocalDate.of(2026, 9, 1)).orElse(null),
+                "月份那一段与日期那一段都得跟着换：只换文件名的话，跨月那几天读到的是不存在的路径");
+        assertEquals(Path.of("/tmp/nova/logs/2026-08/starbot-2026-08-31.log"),
+                EngineeringLogService.fileOn(pattern, LocalDate.of(2026, 8, 31)).orElse(null));
+
+        // 模板里没有日期占位符时算出来的是个常量。这一路在现行 logback.xml 下走不到
+        // （不按天滚动的部署根本不给模板，见 pattern()），此处钉的是这个纯函数自己的口径
+        assertEquals(Path.of("/tmp/nova/starbot.log"),
+                EngineeringLogService.fileOn("/tmp/nova/starbot.log", LocalDate.of(2026, 9, 1))
+                        .orElse(null));
+        assertTrue(EngineeringLogService.fileOn(null, LocalDate.of(2026, 9, 1)).isEmpty(),
+                "没有模板时说不出路径, 不许猜一个出来");
+    }
+
+    /**
+     * 三天各一份、每份多行的夹具：读的必须是点名那一天那一份
+     */
+    @Test
+    @DisplayName("定位到点名的那一分钟, 并给出它前后各若干行")
+    void locatesTheRequestedMinute() throws IOException {
+        Path second = threeDays();
+
+        EngineeringLogService.Window window = service.around(second, LocalTime.of(20, 7), 2);
+
+        assertTrue(window.exact(), "那一分钟确实有记录");
+        assertEquals("20:07", window.nearest());
+        assertEquals(5, window.lines().size(), "前后各 2 行加它自己");
+        assertEquals(2, window.highlight(), "高亮的是点名那一行");
+        assertTrue(window.lines().get(2).contains("第 3 行"));
+        // 读的是点名那一天那一份：串到别的日子上去的话，屏幕上那一刻是对的、内容是别天的
+        for (String line : window.lines()) {
+            assertTrue(line.contains("2026-09-02") || line.startsWith("\t"),
+                    "串进了别的日子那一份: " + line);
+        }
+    }
+
+    @Test
+    @DisplayName("那一分钟没有记录时给最近的一行, 并说明它不是点名的那一刻")
+    void fallsBackToTheNearestLine() throws IOException {
+        Path second = threeDays();
+
+        // 阴性一：点名的时刻在这一天所有记录之后
+        EngineeringLogService.Window after = service.around(second, LocalTime.of(21, 30), 2);
+        assertFalse(after.exact(), "没有那一分钟就得说, 不许假装定位到了");
+        assertEquals("20:09", after.nearest(), "取最近的那一行");
+        assertTrue(after.lines().get(after.highlight()).contains("第 6 行"));
+
+        // 阴性二：点名的时刻在这一天所有记录之前
+        EngineeringLogService.Window before = service.around(second, LocalTime.of(0, 1), 2);
+        assertFalse(before.exact());
+        assertEquals("20:05", before.nearest());
+        assertTrue(before.lines().get(before.highlight()).contains("第 1 行"));
+
+        // 阴性三：那一天一行都没有
+        EngineeringLogService.Window empty = service.around(dir.resolve("没有这一天.log"),
+                LocalTime.of(20, 7), 2);
+        assertTrue(empty.lines().isEmpty());
+        assertFalse(empty.exact());
+        assertEquals(-1, empty.highlight(), "没有可高亮的行时不许指到第 0 行上");
+    }
+
+    @Test
+    @DisplayName("跟随最新只取那个位置之后新写进去的, 写了一半的行不算")
+    void followReadsOnlyWhatWasAppended() throws IOException {
+        write(line(1), line(2));
+        long offset = service.tail(file, 10).offset();
+
+        // 阴性：一个字节都没新写时给空表，而不是把已经显示过的行再发一遍
+        assertTrue(service.since(file, offset).lines().isEmpty(), "没有新行时不该重复给旧行");
+
+        append(line(3) + System.lineSeparator());
+        EngineeringLogService.Appended one = service.since(file, offset);
+        assertEquals(List.of(line(3)), one.lines(), "只给新写的那一行");
+        assertFalse(one.reset());
+
+        // 写了一半的行先不给：给了的话，剩下半行随后会作为另一行出现，
+        // 而两个半行里的凭据各自都躲得过按整行判的打码
+        append("2026-09-04 20:08:01.100  INFO 1 --- [main] c.s.b.core.StarBot : 半");
+        EngineeringLogService.Appended half = service.since(file, one.offset());
+        assertTrue(half.lines().isEmpty(), "半行先不给");
+        assertEquals(one.offset(), half.offset(), "位置停在最后一个完整行的末尾");
+
+        append("行" + System.lineSeparator());
+        EngineeringLogService.Appended whole = service.since(file, half.offset());
+        assertEquals(1, whole.lines().size());
+        assertTrue(whole.lines().get(0).endsWith("半行"), "写完了整行才给出去");
+
+        // 文件被换掉（滚动、清空）时说出来：从头当成新行的话，屏幕上会突然多出一整份日志
+        assertTrue(service.since(file, whole.offset() + 10_000).reset(),
+                "位置比文件还长, 说明这已经不是刚才那一份了");
+    }
+
+    @Test
+    @DisplayName("定位与跟随两条路上的行同样打码")
+    void newReadPathsAlsoMask() throws IOException {
+        write("2026-09-04 20:05:01.100  INFO 1 --- [main] x : 起来了",
+                "2026-09-04 20:07:03.221 ERROR 1 --- [main] x : 登录失败 password: hunter2");
+
+        EngineeringLogService.Window window = service.around(file, LocalTime.of(20, 7), 2);
+        assertFalse(String.join("\n", window.lines()).contains("hunter2"),
+                "打码不许只做在尾读那一个调用点上");
+
+        long offset = 0L;
+        EngineeringLogService.Appended appended = service.since(file, offset);
+        assertFalse(String.join("\n", appended.lines()).contains("hunter2"));
+    }
+
+    /**
+     * 三天各一份，中间那一天六行（含一行堆栈）
+     * @return 中间那一天的文件
+     */
+    private Path threeDays() throws IOException {
+        Files.writeString(dir.resolve("starbot-2026-09-01.log"),
+                "2026-09-01 20:07:01.100  INFO 1 --- [main] x : 前一天也有 20:07"
+                        + System.lineSeparator(), StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("starbot-2026-09-03.log"),
+                "2026-09-03 20:07:01.100  INFO 1 --- [main] x : 后一天也有 20:07"
+                        + System.lineSeparator(), StandardCharsets.UTF_8);
+
+        Path second = dir.resolve("starbot-2026-09-02.log");
+        Files.writeString(second, String.join(System.lineSeparator(),
+                "2026-09-02 20:05:01.100  INFO 1 --- [main] x : 第 1 行",
+                "2026-09-02 20:06:01.100  INFO 1 --- [main] x : 第 2 行",
+                "2026-09-02 20:07:03.221 ERROR 1 --- [main] x : 第 3 行",
+                "\tat a.b.C.d(C.java:1)",
+                "2026-09-02 20:08:01.100  INFO 1 --- [main] x : 第 5 行",
+                "2026-09-02 20:09:01.100  INFO 1 --- [main] x : 第 6 行") + System.lineSeparator(),
+                StandardCharsets.UTF_8);
+        return second;
+    }
+
+    private void append(String text) throws IOException {
+        Files.writeString(file, text, StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE, StandardOpenOption.APPEND);
     }
 
     private void assertMasked(String line, String secret) {

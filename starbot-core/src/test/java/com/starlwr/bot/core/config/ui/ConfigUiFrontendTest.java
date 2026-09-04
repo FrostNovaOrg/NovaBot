@@ -680,6 +680,48 @@ class ConfigUiFrontendTest {
     }
 
     /**
+     * 日志页两半上那几件事各自的落点，闭集
+     * <p>
+     * 上一半（时间线）：日期条、只看问题、大类药丸、主播与通道两栏、搜索、清掉筛选、
+     * 列表与页脚、保留期那句话；下一半（工程日志）：级别药丸、搜索、翻日子、行数、跟随最新、
+     * 复制这一段、重新读、正文、页脚、从日志页跳过来那条横幅。
+     */
+    private static final List<String> LOG_CONTROLS = List.of(
+            "log-daybar", "log-only", "log-cats", "log-streamer", "log-channel", "log-q",
+            "log-clear", "log-list", "log-more", "log-retention", "log-eng-open", "log-back",
+            "eng-levels", "eng-q", "eng-date", "eng-limit", "eng-follow", "eng-copy",
+            "eng-reload", "eng-body", "eng-foot", "eng-jump", "eng-napcat");
+
+    /**
+     * 日志页那几件事各有落点
+     * <p>
+     * 与设置页、连接页那两条同理：元素与接线缺哪一半都不会报错——元素没了，脚本按 id 取到 null；
+     * 脚本没接上，控件就静静地立在那里，点它什么也不发生。后者在任何一次「打开页面看一眼」里
+     * 都看不出来，而这一页恰恰是出事时来看的那一页。
+     * <p>
+     * 这一格量的是「落点都在」，量不到的是「点下去筛得对不对」——那几件事是纯函数，
+     * 由 {@link LogModelTest} 喂值跑。
+     */
+    @Test
+    @DisplayName("日志页的日期条、大类药丸、三筛、跟随最新、复制这一段各有落点")
+    void logPageControlsAreWiredUp() throws IOException {
+        String html = Files.readString(frontendDir().resolve("index.html"), StandardCharsets.UTF_8);
+        String scripts = String.join("\n", coreSources().values());
+
+        List<String> bad = new ArrayList<>();
+        for (String id : LOG_CONTROLS) {
+            if (!html.contains("id=\"" + id + "\"")) {
+                bad.add("index.html 上没有 #" + id);
+            }
+            if (!scripts.contains("$('#" + id + "')")) {
+                bad.add("没有任何脚本用到 #" + id + "，它立在那里但点了不管用");
+            }
+        }
+
+        assertTrue(bad.isEmpty(), "日志页少了这几件事的落点:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
      * 插件页是运行时装上来的，不是编译期定死的
      * <p>
      * 静态 {@code import} 一写，那个平台就成了核心的一部分：没装插件时页面加载不了，

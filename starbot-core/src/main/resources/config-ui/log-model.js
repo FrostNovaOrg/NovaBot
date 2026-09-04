@@ -15,6 +15,14 @@ export const ENG_LEVELS = [['error', '错误'], ['warn', '警告'], ['info', '�
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
+ * 点名要看工程日志里的哪一分钟
+ *
+ * 形状对还不够，值也得是个存在的时刻：25:99 那种地址进来时当没点名，
+ * 而不是拿它去问服务端——服务端会答「这一分钟没有记录」，于是屏幕上高亮着一行别的日志。
+ */
+const MINUTE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/**
  * 日志文件里一行的行首：时刻加级别，与 logback.xml 里那个 pattern 对应
  *
  * 认不出来只影响这一行的颜色与它归哪一档，不影响它显示——
@@ -28,7 +36,8 @@ const HEAD = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\s+(TRACE|DEBUG|INFO|WA
  * @return 筛选状态
  */
 export function emptyState(today) {
-  return {view: 'timeline', date: today, only: false, type: '', streamer: '', channel: '', q: ''};
+  return {view: 'timeline', date: today, only: false, cat: '', type: '',
+    streamer: '', channel: '', q: '', at: ''};
 }
 
 /**
@@ -57,12 +66,15 @@ export function parseLogHash(hash, today) {
     const value = eq < 0 ? '' : decode(part.slice(eq + 1));
     // 只看问题认一个值。写成「有这个参数就算开」的话，写错值的地址会静默按开处理
     if (key === 'only') state.only = value === 'problem';
+    // 大类与类型两项一起认：药丸那一排换成大类之后，旧地址里带的 type= 仍然筛得动
+    else if (key === 'cat') state.cat = value;
     else if (key === 'type') state.type = value;
     else if (key === 'streamer') state.streamer = value;
     else if (key === 'chan') state.channel = value;
     else if (key === 'q') state.q = value;
     // 工程日志那一档路径里已经写着 eng，日期只好走查询串
     else if (key === 'd' && DATE.test(value)) state.date = value;
+    else if (key === 'at' && MINUTE.test(value)) state.at = value;
   }
   return state;
 }
@@ -92,11 +104,14 @@ export function logHash(state, today) {
   if (state.view === 'eng') {
     path += '/eng';
     if (state.date && state.date !== today) query.push('d=' + state.date);
+    // 定位到哪一分钟也写进地址栏：日志页上那一跳贴给别人，对方落在同一刻
+    if (state.at) query.push('at=' + encodeURIComponent(state.at));
   } else if (state.date && state.date !== today) {
     path += '/' + state.date;
   }
 
   if (state.only) query.push('only=problem');
+  if (state.cat) query.push('cat=' + encodeURIComponent(state.cat));
   if (state.type) query.push('type=' + encodeURIComponent(state.type));
   if (state.streamer) query.push('streamer=' + encodeURIComponent(state.streamer));
   if (state.channel) query.push('chan=' + encodeURIComponent(state.channel));
@@ -119,6 +134,7 @@ export function logHash(state, today) {
 export function timelineQuery(state, limit, cursor) {
   const query = ['date=' + encodeURIComponent(state.date), 'limit=' + (limit || DEFAULT_LIMIT)];
   if (state.only) query.push('problems=true');
+  if (state.cat) query.push('category=' + encodeURIComponent(state.cat));
   if (state.type) query.push('type=' + encodeURIComponent(state.type));
   if (state.streamer) query.push('streamer=' + encodeURIComponent(state.streamer));
   if (state.channel) query.push('channel=' + encodeURIComponent(state.channel));
@@ -138,7 +154,7 @@ export function timelineQuery(state, limit, cursor) {
  * @return 筛了返回 true
  */
 export function hasFilter(state) {
-  return !!(state.only || state.type || state.streamer || state.channel || state.q);
+  return !!(state.only || state.cat || state.type || state.streamer || state.channel || state.q);
 }
 
 /**
@@ -204,17 +220,27 @@ export function engLevelOf(line) {
  *
  * 不合的话，筛与搜都会把堆栈从它所属的那一行上撕下来——关掉「错误」那一档，
  * 屏幕上会留下一堆无主的 {@code at ...}；而搜一个类名，搜到的是几行光秃秃的栈帧。
+ *
+ * 要高亮的那一行由服务端按<b>原文行号</b>给，因此这里顺手把它落到所属的那一段上：
+ * 只亮其中一行的话，屏幕上会亮起半个异常，而找的人不知道它属于谁。
  * @param lines 原文行，最旧的在前
- * @return 段，每段 {level, text}
+ * @param highlight 要高亮的原文行号，不高亮时留空
+ * @return 段，每段 {level, text, hl}
  */
-export function groupEngLines(lines) {
+export function groupEngLines(lines, highlight = -1) {
   const out = [];
+  let index = 0;
   for (const line of lines || []) {
     const level = engLevelOf(line);
     const text = String(line ?? '');
+    const hl = index === highlight;
     // 开头就是续行的情况真会发生：尾巴是从文件中间切进来的
-    if (level || !out.length) out.push({level, text});
-    else out[out.length - 1].text += '\n' + text;
+    if (level || !out.length) out.push({level, text, hl});
+    else {
+      out[out.length - 1].text += '\n' + text;
+      if (hl) out[out.length - 1].hl = true;
+    }
+    index++;
   }
   return out;
 }
@@ -233,4 +259,86 @@ export function engVisible(entry, levelsOn, q) {
   if (entry.level && levelsOn[entry.level] === false) return false;
   const needle = String(q || '').trim().toLowerCase();
   return !needle || entry.text.toLowerCase().includes(needle);
+}
+
+/**
+ * 筛选状态 → /api/engineering-log 的查询串
+ *
+ * 与 timelineQuery 同理：地址栏那一套名字（d / at）与接口那一套只在这一个函数里对一次。
+ *
+ * 定住某一刻时<b>不带 since</b>：跟随会把定住的那一刻一点点推出视野，
+ * 而使用者刚刚才点了「看这一刻」。
+ * @param state 筛选状态
+ * @param limit 读多少行
+ * @param since 上一次读到哪个字节，小于 0 表示不接着读
+ * @return 查询串，以 ? 开头
+ */
+export function engQuery(state, limit, since) {
+  const query = ['limit=' + (limit || 0)];
+  if (state.date) query.push('d=' + encodeURIComponent(state.date));
+  if (state.at) query.push('at=' + encodeURIComponent(state.at));
+  else if (since >= 0) query.push('since=' + since);
+  return '?' + query.join('&');
+}
+
+/**
+ * 视窗停在底部了没有
+ *
+ * 留几像素的余量：滚轮与触控板停不到整数上，一个像素的差在屏幕上看不出来，
+ * 而按严格相等判的话，「跟随最新」在大多数时候都是关着的——<b>而开关看起来是开着的</b>。
+ * @param scrollTop 滚到哪儿了
+ * @param clientHeight 视窗高
+ * @param scrollHeight 内容高
+ * @param slack 余量，像素
+ * @return 在底部返回 true
+ */
+export function engAtBottom(scrollTop, clientHeight, scrollHeight, slack = 24) {
+  return scrollHeight - clientHeight - scrollTop <= slack;
+}
+
+/**
+ * 这一刻该不该去尾读
+ *
+ * 三种情形一律不跟：开关关着、视窗不在底部、以及正定住某一刻或翻在别的日子上。
+ * 中间那一条是这一组的重头——正翻着旧行时被新行推走，人会以为自己点错了，
+ * 而屏幕上没有任何东西说明刚才发生了什么。
+ * @param on 跟随开关
+ * @param atBottom 视窗在不在底部
+ * @param state 筛选状态
+ * @param today 今天
+ * @return 该去尾读返回 true
+ */
+export function engFollowing(on, atBottom, state, today) {
+  if (!on || !atBottom) return false;
+  if (state.at) return false;
+  // 别的日子那一份不会再长，跟它等于每 3 秒问一次同一个答案
+  return !state.date || state.date === today;
+}
+
+/**
+ * 复制这一段：屏幕上此刻显示的那几段，逐段一行
+ *
+ * 复制的就是显示的那一份，<b>不另走一条取数路径</b>：口令与 Cookie 是在服务端读盘那一层
+ * 就打掉的（见 EngineeringLogService.mask），另开一条「复制时去取原文」的路，
+ * 等于把那道打码绕过去——而复制这个动作的下一步往往是贴进聊天窗口。
+ * @param entries 此刻显示的段
+ * @return 一整段文本
+ */
+export function engCopyText(entries) {
+  return (entries || []).map(entry => entry.text).join('\n');
+}
+
+/**
+ * 工程日志一行都没显示时说哪句话
+ *
+ * 三句各答一件事：筛没了、这一天没有文件、今天这一份还没写过。合成一句的话，
+ * 翻到一个没开机的日子会看到「日志还没有内容」，而那台机器那天根本没跑。
+ * @param state 筛选状态
+ * @param today 今天
+ * @param total 这一份一共读到几段（不看筛选）
+ * @return 那句话
+ */
+export function engEmptyText(state, today, total) {
+  if (total) return '没有符合条件的行。';
+  return state.date && state.date !== today ? '这一天没有记录。' : '这一份日志此刻还没有内容。';
 }

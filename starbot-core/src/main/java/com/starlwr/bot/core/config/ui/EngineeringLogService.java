@@ -5,6 +5,7 @@ import ch.qos.logback.core.Appender;
 import ch.qos.logback.core.FileAppender;
 import ch.qos.logback.core.rolling.RollingFileAppender;
 import ch.qos.logback.core.rolling.TimeBasedRollingPolicy;
+import ch.qos.logback.core.rolling.helper.FileNamePattern;
 import ch.qos.logback.core.spi.AppenderAttachable;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.ILoggerFactory;
@@ -12,15 +13,25 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.ByteBuffer;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.channels.SeekableByteChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.time.Duration;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
@@ -66,6 +77,19 @@ public class EngineeringLogService {
     public static final int MAX_LIMIT = 2000;
 
     /**
+     * 定位到某一分钟时，前后各给多少行
+     * <p>
+     * 点这一下的人要的是「那一刻前后发生了什么」，几十行装得下一次启动或一次推送的全过程；
+     * 再多就得往回滚了，而那时他还不如直接看整份尾巴。
+     */
+    public static final int DEFAULT_SPAN = 60;
+
+    /**
+     * 前后各最多给多少行
+     */
+    public static final int MAX_SPAN = 500;
+
+    /**
      * 打码后留下的痕迹
      * <p>
      * 与设置页遮机密项用的是<b>同一串</b>（见 {@link SensitiveFields#MASK}）：
@@ -91,6 +115,16 @@ public class EngineeringLogService {
      */
     private static final Pattern HEADER = Pattern.compile(
             "(?i)\\b(set-cookie|cookie|proxy-authorization|authorization)(\\s*[:=]\\s*)\\S.*");
+
+    /**
+     * 一行日志的行首时刻，与 {@code logback.xml} 里那个 pattern 对应
+     * <p>
+     * 认不出来只意味着这一行没有自己的时刻（堆栈那几行就是），不影响它显示——
+     * 换了 pattern 之后表现是「看这一刻」定位不准，而每一行都还在。
+     * 界面那一侧另有一份同形的判法（{@code log-model.js} 的 HEAD），它认的是级别，这里认的是时刻。
+     */
+    private static final Pattern HEAD = Pattern.compile(
+            "^\\d{4}-\\d{2}-\\d{2} (\\d{2}):(\\d{2}):(\\d{2})\\.\\d{3}\\b");
 
     /**
      * {@code 键=值}、{@code 键: 值}，以及它们带引号的那一形态（{@code "键": "值"}）
@@ -122,29 +156,7 @@ public class EngineeringLogService {
      * @return 文件路径；日志没有落到文件上时为空
      */
     public Optional<Path> file() {
-        ILoggerFactory factory = LoggerFactory.getILoggerFactory();
-        if (!(factory instanceof LoggerContext context)) {
-            // 换了别的日志实现（或者根本没装）时说不出路径。这不是错，但也不许悄悄回一份空的尾巴
-            return Optional.empty();
-        }
-        return fileOf(context.getLogger(Logger.ROOT_LOGGER_NAME).iteratorForAppenders());
-    }
-
-    /**
-     * 在一串 appender 里找出写文件的那一个，含套在异步 appender 里的
-     */
-    private Optional<Path> fileOf(Iterator<? extends Appender<?>> appenders) {
-        while (appenders.hasNext()) {
-            Appender<?> appender = appenders.next();
-
-            // 文件 appender 通常套在 AsyncAppender 里，不往里看就一个也找不到
-            if (appender instanceof AppenderAttachable<?> nested) {
-                Optional<Path> inner = fileOf(nested.iteratorForAppenders());
-                if (inner.isPresent()) {
-                    return inner;
-                }
-            }
-
+        return appender().flatMap(appender -> {
             // 按天滚动时没有 <file> 元素，此刻在写哪一份得问滚动策略
             if (appender instanceof RollingFileAppender<?> rolling
                     && rolling.getRollingPolicy() instanceof TimeBasedRollingPolicy<?> policy) {
@@ -153,9 +165,101 @@ public class EngineeringLogService {
                     return Optional.of(Path.of(active));
                 }
             }
+            return appender.getFile() == null ? Optional.empty() : Optional.of(Path.of(appender.getFile()));
+        });
+    }
 
-            if (appender instanceof FileAppender<?> plain && plain.getFile() != null) {
-                return Optional.of(Path.of(plain.getFile()));
+    /**
+     * 某一天那份日志文件
+     * <p>
+     * 「翻别的日子」要的那一份。落点由 {@code logback.xml} 里那条 {@code fileNamePattern} 定，
+     * 这里<b>拿它自己去算</b>而不是在这边再拼一遍路径：拼一遍的那份迟早与模板分叉，
+     * 而分叉的表现是这一页安静地显示另一个文件的内容——它照样有行、照样能滚。
+     * <p>
+     * 今天那一份仍走 {@link #file()}：配了 {@code <file>} 元素时，此刻在写的那一份
+     * 与模板算出来的不是同一个名字。
+     * @param day 哪一天，为空即今天
+     * @return 文件路径；算不出来时为空。<b>文件在不在不由这里答</b>——那一天没有记录是个正当状态
+     */
+    public Optional<Path> file(LocalDate day) {
+        if (day == null || day.equals(LocalDate.now())) {
+            return file();
+        }
+        return fileOn(pattern().orElse(null), day);
+    }
+
+    /**
+     * 按 logback 的落点模板算出某一天那份文件
+     * <p>
+     * 交给 logback 自己的 {@link FileNamePattern} 去算，不在这边解析 {@code %d{...}}：
+     * 模板里那两处日期（月份目录与文件名）用的是同一个时刻，而它们的格式各写各的。
+     * <p>
+     * ⚠️ 模板带压缩后缀（{@code .gz}）时算出来的是压缩包的路径，这一页读不了它——
+     * 表现是那一天显示「没有记录」。现行 {@code logback.xml} 不压缩，改成压缩的那天要连这里一起改。
+     * @param pattern 落点模板，即 {@code fileNamePattern} 的原文
+     * @param day 哪一天
+     * @return 文件路径；模板为空或算不出来时为空
+     */
+    static Optional<Path> fileOn(String pattern, LocalDate day) {
+        if (pattern == null || pattern.isBlank() || day == null) {
+            return Optional.empty();
+        }
+
+        try {
+            FileNamePattern compiled = new FileNamePattern(pattern, new LoggerContext());
+            String name = compiled.convert(
+                    Date.from(day.atStartOfDay(ZoneId.systemDefault()).toInstant()));
+            return name == null || name.isBlank() ? Optional.empty() : Optional.of(Path.of(name));
+        } catch (RuntimeException e) {
+            log.warn("按落点模板 {} 算 {} 那一天的日志文件失败: {}", pattern, day, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * 根 logger 上那个文件 appender 的落点模板
+     * <p>
+     * 不按天滚动时<b>没有模板</b>：那样的部署只有一份日志文件，「翻别的日子」这件事
+     * 在它身上根本不成立。此时回空，让调用方说出「翻不了」——把今天那一份端出去
+     * 当成别的日子，屏幕上会是一份内容与日期对不上的日志。
+     */
+    private Optional<String> pattern() {
+        return appender()
+                .filter(appender -> appender instanceof RollingFileAppender<?> rolling
+                        && rolling.getRollingPolicy() instanceof TimeBasedRollingPolicy<?>)
+                .map(appender -> ((TimeBasedRollingPolicy<?>) ((RollingFileAppender<?>) appender)
+                        .getRollingPolicy()).getFileNamePattern());
+    }
+
+    /**
+     * 根 logger 上写文件的那个 appender
+     */
+    private Optional<FileAppender<?>> appender() {
+        ILoggerFactory factory = LoggerFactory.getILoggerFactory();
+        if (!(factory instanceof LoggerContext context)) {
+            // 换了别的日志实现（或者根本没装）时说不出路径。这不是错，但也不许悄悄回一份空的尾巴
+            return Optional.empty();
+        }
+        return appenderIn(context.getLogger(Logger.ROOT_LOGGER_NAME).iteratorForAppenders());
+    }
+
+    /**
+     * 在一串 appender 里找出写文件的那一个，含套在异步 appender 里的
+     */
+    private Optional<FileAppender<?>> appenderIn(Iterator<? extends Appender<?>> appenders) {
+        while (appenders.hasNext()) {
+            Appender<?> appender = appenders.next();
+
+            // 文件 appender 通常套在 AsyncAppender 里，不往里看就一个也找不到
+            if (appender instanceof AppenderAttachable<?> nested) {
+                Optional<FileAppender<?>> inner = appenderIn(nested.iteratorForAppenders());
+                if (inner.isPresent()) {
+                    return inner;
+                }
+            }
+
+            if (appender instanceof FileAppender<?> plain) {
+                return Optional.of(plain);
             }
         }
         return Optional.empty();
@@ -187,10 +291,11 @@ public class EngineeringLogService {
         int want = effectiveLimit(limit);
         if (file == null || !Files.isRegularFile(file)) {
             // 刚起来还没写第一行时文件确实不存在，这是正常状态，不是故障
-            return new Tail(List.of(), false, 0L);
+            return new Tail(List.of(), false, 0L, 0L);
         }
 
-        String text;
+        byte[] bytes;
+        int length;
         long size;
         long from;
         try (SeekableByteChannel channel = Files.newByteChannel(file, StandardOpenOption.READ)) {
@@ -202,12 +307,16 @@ public class EngineeringLogService {
             while (buffer.hasRemaining() && channel.read(buffer) > 0) {
                 // 读满为止
             }
-            text = new String(buffer.array(), 0, buffer.position(), StandardCharsets.UTF_8);
+            bytes = buffer.array();
+            length = buffer.position();
         }
 
+        String text = new String(bytes, 0, length, StandardCharsets.UTF_8);
         List<String> lines = new ArrayList<>(Arrays.asList(text.split("\r?\n", -1)));
-        // 文件末尾那个换行会切出一个空串，它不是一行
-        if (!lines.isEmpty() && lines.get(lines.size() - 1).isEmpty()) {
+        // 末尾那一段总是要去掉：文件以换行结尾时它是个空串，不以换行结尾时它是<b>写了一半的行</b>。
+        // 半行不给出去，是因为「跟随最新」随后会把整行再送来一次——两次之间那半行里的凭据
+        // 各自都躲得过按整行判的打码
+        if (!lines.isEmpty()) {
             lines.remove(lines.size() - 1);
         }
 
@@ -221,7 +330,202 @@ public class EngineeringLogService {
             more = true;
         }
 
-        return new Tail(lines.stream().map(EngineeringLogService::mask).toList(), more, size);
+        return new Tail(lines.stream().map(EngineeringLogService::mask).toList(), more, size,
+                lastLineEnd(bytes, length, from));
+    }
+
+    /**
+     * 缓冲区里最后一个完整行的末尾落在文件的哪个字节上
+     * <p>
+     * 「跟随最新」下一次就从这里接着读。取行末而不是文件末，是因为文件末可能停在一行的中间。
+     */
+    private static long lastLineEnd(byte[] bytes, int length, long from) {
+        for (int i = length - 1; i >= 0; i--) {
+            if (bytes[i] == '\n') {
+                return from + i + 1;
+            }
+        }
+        return from;
+    }
+
+    /**
+     * 那个位置之后新写进去的行，供「跟随最新」用
+     * <p>
+     * 只取新写的那几行，不是每 3 秒把几百行重取一遍：后者在一台开着控制台过夜的机器上
+     * 是几十兆的无谓流量，而它给出的画面与这一份一模一样。
+     * <p>
+     * <b>写了一半的行先不给</b>：给了的话，剩下的半行随后会作为另一行出现——
+     * 两个半行拼起来才是一句话，而按整行判的打码在任何一半上都认不出那是个凭据。
+     * @param file 日志文件
+     * @param offset 上一次读到哪个字节
+     * @return 新写的行；文件被换掉或落下太多时 {@code reset} 为真，此时调用方应重取整段尾巴
+     * @throws IOException 读不了时抛出，由调用方明说
+     */
+    public Appended since(Path file, long offset) throws IOException {
+        if (file == null || !Files.isRegularFile(file)) {
+            return new Appended(List.of(), 0L, false);
+        }
+
+        long size = Files.size(file);
+        // 位置比文件还长：这已经不是刚才那一份了（滚动、清空、换了一台机器的日志）。
+        // 不说出来的话，屏幕上会从头再长出一整份日志，而看的人以为那是刚发生的事
+        if (offset < 0 || offset > size) {
+            return new Appended(List.of(), size, true);
+        }
+        // 落下太多时同样交回去重取尾巴：这一路的上限与尾读是同一道闸
+        if (size - offset > MAX_BYTES) {
+            return new Appended(List.of(), size, true);
+        }
+        if (size == offset) {
+            return new Appended(List.of(), offset, false);
+        }
+
+        byte[] bytes = new byte[(int) (size - offset)];
+        int length;
+        try (SeekableByteChannel channel = Files.newByteChannel(file, StandardOpenOption.READ)) {
+            channel.position(offset);
+            ByteBuffer buffer = ByteBuffer.wrap(bytes);
+            while (buffer.hasRemaining() && channel.read(buffer) > 0) {
+                // 读满为止
+            }
+            length = buffer.position();
+        }
+
+        long end = lastLineEnd(bytes, length, offset);
+        if (end == offset) {
+            // 一个换行都没有：新写进去的只是半行，等它写完
+            return new Appended(List.of(), offset, false);
+        }
+
+        String text = new String(bytes, 0, (int) (end - offset), StandardCharsets.UTF_8);
+        List<String> lines = new ArrayList<>(Arrays.asList(text.split("\r?\n", -1)));
+        lines.remove(lines.size() - 1);
+
+        return new Appended(lines.stream().map(EngineeringLogService::mask).toList(), end, false);
+    }
+
+    /**
+     * 定位到某一分钟，给出那一行与它前后各若干行
+     * <p>
+     * 日志页上一条事件旁边那个「在工程日志里看这一刻 →」要的就是这一份。
+     * 定位做在服务端而不是把整天的日志端到浏览器里再找：那一份开着调试开关时有几十兆，
+     * 而这一次要看的只是那前后几十行。
+     * <p>
+     * <b>那一分钟没有记录时不许假装定位到了</b>：取最近的一行，并由 {@link Window#exact()}
+     * 说明这不是点名的那一刻。假装定位的表现是屏幕上高亮着一行毫不相干的日志，
+     * 而页面上那句「已定位到 20:07」照常显示。
+     * @param file 日志文件
+     * @param minute 点名的那一分钟
+     * @param span 前后各给多少行
+     * @return 那一段；文件不在或一行都没有时是空窗
+     * @throws IOException 读不了时抛出，由调用方明说
+     */
+    public Window around(Path file, LocalTime minute, int span) throws IOException {
+        if (file == null || !Files.isRegularFile(file) || minute == null) {
+            return new Window(List.of(), -1, false, null);
+        }
+
+        int want = span <= 0 ? DEFAULT_SPAN : Math.min(span, MAX_SPAN);
+        Anchor anchor = locate(file, minute.truncatedTo(ChronoUnit.MINUTES));
+        if (anchor.index() < 0) {
+            return new Window(List.of(), -1, false, null);
+        }
+
+        int from = Math.max(0, anchor.index() - want);
+        int to = anchor.index() + want;
+        List<String> lines = new ArrayList<>();
+        int index = 0;
+        try (BufferedReader reader = reader(file)) {
+            for (String line = reader.readLine(); line != null && index <= to; line = reader.readLine()) {
+                if (index >= from) {
+                    lines.add(mask(line));
+                }
+                index++;
+            }
+        }
+
+        return new Window(lines, anchor.index() - from, anchor.exact(), anchor.at());
+    }
+
+    /**
+     * 点名那一分钟落在第几行
+     * <p>
+     * 单独走一趟只数行号、不留内容：留内容就得把定位点之前的整段都攒在内存里，
+     * 而定位点可能在一份几十兆的文件的末尾。
+     */
+    private Anchor locate(Path file, LocalTime minute) throws IOException {
+        int index = 0;
+        int best = -1;
+        long nearest = Long.MAX_VALUE;
+        LocalTime bestAt = null;
+
+        try (BufferedReader reader = reader(file)) {
+            for (String line = reader.readLine(); line != null; line = reader.readLine()) {
+                LocalTime at = timeOf(line);
+                if (at != null) {
+                    if (at.truncatedTo(ChronoUnit.MINUTES).equals(minute)) {
+                        // 那一分钟里的第一行就是要跳过去的位置
+                        return new Anchor(index, true, format(at));
+                    }
+
+                    long distance = Math.abs(Duration.between(minute, at).getSeconds());
+                    if (distance < nearest) {
+                        nearest = distance;
+                        best = index;
+                        bestAt = at;
+                    } else if (at.isAfter(minute)) {
+                        // 行是按时间写下去的，越往后离点名那一刻只会越远，不必读完整份文件
+                        break;
+                    }
+                }
+                index++;
+            }
+        }
+
+        if (best < 0 && index > 0) {
+            // 一行都认不出时刻（整份都是堆栈）时仍给出内容，只是说不出定位到了哪一刻
+            return new Anchor(0, false, null);
+        }
+        return new Anchor(best, false, bestAt == null ? null : format(bestAt));
+    }
+
+    /**
+     * 一行日志的时刻，行首认不出时为 {@code null}
+     */
+    private static LocalTime timeOf(String line) {
+        Matcher found = HEAD.matcher(line);
+        if (!found.find()) {
+            return null;
+        }
+        try {
+            return LocalTime.of(Integer.parseInt(found.group(1)), Integer.parseInt(found.group(2)),
+                    Integer.parseInt(found.group(3)));
+        } catch (NumberFormatException | java.time.DateTimeException e) {
+            return null;
+        }
+    }
+
+    private static String format(LocalTime at) {
+        return String.format("%02d:%02d", at.getHour(), at.getMinute());
+    }
+
+    /**
+     * 逐行读一份日志文件
+     * <p>
+     * 坏字节换成替代字符而不是抛出：这份文件正被另一头写着，读到一个被切开的多字节字符
+     * 是常事，而那一刻整页都读不出来的代价，比一行里多一个问号大得多。
+     */
+    private static BufferedReader reader(Path file) throws IOException {
+        CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPLACE)
+                .onUnmappableCharacter(CodingErrorAction.REPLACE);
+        return new BufferedReader(new InputStreamReader(Files.newInputStream(file), decoder));
+    }
+
+    /**
+     * 定位结果：落在第几行、是不是点名那一分钟、那一行是几点
+     */
+    private record Anchor(int index, boolean exact, String at) {
     }
 
     /**
@@ -261,7 +565,30 @@ public class EngineeringLogService {
      * @param lines 已打码的行，最旧的在前，与文件里的顺序一致
      * @param more 上面还有没给出来的行。<b>不说的话，「这就是全部」与「只给了尾巴」在屏幕上长得一样</b>
      * @param size 文件字节数
+     * @param offset 最后一个完整行的末尾落在哪个字节上，「跟随最新」下一次从这里接着读
      */
-    public record Tail(List<String> lines, boolean more, long size) {
+    public record Tail(List<String> lines, boolean more, long size, long offset) {
+    }
+
+    /**
+     * 上一次读过之后新写进去的那几行
+     *
+     * @param lines 已打码的行，最旧的在前
+     * @param offset 这一次读到哪个字节，下一次从这里接着读
+     * @param reset 文件已经不是上一次那一份了（滚动、清空），调用方应重取整段尾巴
+     */
+    public record Appended(List<String> lines, long offset, boolean reset) {
+    }
+
+    /**
+     * 某一刻前后那一段
+     *
+     * @param lines 已打码的行，最旧的在前
+     * @param highlight 点名那一刻落在 {@code lines} 的第几行，没有可高亮的行时为 {@code -1}
+     * @param exact 是不是真定位到了点名的那一分钟。<b>假不了</b>：假装定位到的表现是
+     *              屏幕上高亮着一行毫不相干的日志，而「已定位到」那句话照常显示
+     * @param nearest 高亮那一行是几点（{@code HH:mm}），认不出时刻时为空
+     */
+    public record Window(List<String> lines, int highlight, boolean exact, String nearest) {
     }
 }
