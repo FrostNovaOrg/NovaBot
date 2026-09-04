@@ -86,28 +86,14 @@ public class BilibiliLiveReportPushHandler implements StarBotEventHandler {
     /**
      * 报告版式选项
      * <p>
-     * <b>这里是默认值的唯一出处</b>：{@link #getDefaultParams()} 与配置界面都从它派生。
-     * 若两处各写一份，改了一处忘了另一处，界面上勾的与实际生效的就会对不上——
+     * <b>取自 {@link BilibiliLiveReportOptions#layoutOptions()}，这里不另存一份。</b>
+     * 版式项的名字、默认值与取值范围原本在这里抄了一遍，而真正生效的是那个类的字段初值——
+     * 两处各写一份，改了一处忘了另一处，界面上勾的与实际生效的就会对不上，
      * 而这种不一致不会有任何报错，只会让人以为「配了没用」。
      * <p>
-     * 排行榜类填的是「展示前多少名」，0 为不展示；上限 20 与
-     * {@link BilibiliLiveReportOptions} 的夹取区间一致。
+     * {@link #getDefaultParams()}、配置界面与版式枚举接口自此读的是同一张表。
      */
-    private static final List<HandlerOption> OPTIONS = List.of(
-            HandlerOption.bool("cover", "直播间封面", "报告顶部的封面横幅", true),
-            HandlerOption.bool("cards", "数据卡片", "弹幕、礼物、点赞等概览卡片", true),
-            HandlerOption.bool("fans_change", "本场变化", "粉丝、粉丝团、大航海的涨幅，每次出报告要多打三个接口", true),
-            HandlerOption.bool("interaction_curve", "互动曲线", "弹幕、礼物等随时间的变化曲线", true),
-            HandlerOption.bool("guard_list", "大航海名单", "本场新开通大航海的观众", true),
-            HandlerOption.bool("danmu_cloud", "弹幕词云", "本场弹幕的词云图", true),
-            HandlerOption.bool("highlights", "高能时刻", "弹幕最密集的几个时段，对应可剪切片的时间点", true),
-            HandlerOption.bool("title_changes", "标题变化", "本场改过的直播间标题，没改过时不占版面", true),
-            HandlerOption.integer("danmu_ranking", "弹幕排行", "展示前几名，0 为不展示", 5, 0, 20),
-            HandlerOption.integer("gift_ranking", "礼物排行", "展示前几名，0 为不展示", 5, 0, 20),
-            HandlerOption.integer("super_chat_ranking", "醒目留言排行", "展示前几名，0 为不展示", 5, 0, 20),
-            // 盲盒两榜默认关闭：多数直播间没有盲盒数据，开着只会让报告多两块空白
-            HandlerOption.integer("box_ranking", "盲盒排行", "展示前几名，0 为不展示", 0, 0, 20),
-            HandlerOption.integer("box_profit_ranking", "盲盒盈亏排行", "展示前几名，0 为不展示", 0, 0, 20));
+    private static final List<HandlerOption> OPTIONS = BilibiliLiveReportOptions.layoutOptions();
 
     @Override
     public JSONObject getDefaultParams() {

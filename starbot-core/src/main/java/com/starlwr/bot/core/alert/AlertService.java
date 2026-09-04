@@ -55,6 +55,16 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 @Service
 public class AlertService {
+    /**
+     * 测试告警的标题与正文
+     * <p>
+     * 写明是人按出来的：收到的人第一反应是「出事了」，而这条恰恰不是。
+     */
+    private static final String TEST_SUBJECT = "NovaBot 告警通道测试";
+
+    private static final String TEST_CONTENT = "这是一条测试消息，由控制台上的「发一条测试」按出来，不代表出了任何问题。"
+            + "能收到它，说明这一路告警通道是通的。";
+
     private final StarBotCoreProperties properties;
 
     private final ObjectProvider<AlertChannel> channels;
@@ -151,6 +161,85 @@ public class AlertService {
         }
 
         enqueue(new PendingAlert(key, subject, content, now, 1));
+    }
+
+    /**
+     * 往某一路通道发一条测试告警
+     * <p>
+     * <b>走的是这条通道真正的发送路径</b>，不是模拟。「配好了没有」这件事只有真发一条才答得出：
+     * Webhook 地址填错一个字母、发件授权码过期、机器人被踢出那个群，三者在配置文件上
+     * 都长得完全正常，而它们的共同后果是<b>真出事的那天没有人收到告警</b>。
+     * <p>
+     * 不过收敛闸门，也不入重投队列：这是使用者主动按下的一次动作，他要的就是当场的结果——
+     * 收敛会让第二次点击悄无声息，而入队重投会让「没发出去」变成一句延后的、他看不见的话。
+     * @param id 通道标识，见 {@link AlertChannel#id()}
+     * @return 结果
+     */
+    public TestResult test(String id) {
+        AlertChannel channel = channels.orderedStream()
+                .filter(item -> item.id().equals(id))
+                .findFirst()
+                .orElse(null);
+
+        if (channel == null) {
+            return new TestResult(TestResult.Status.UNKNOWN, id, null, "没有这一路告警通道");
+        }
+
+        if (!channel.isAvailable()) {
+            return new TestResult(TestResult.Status.NOT_CONFIGURED, id, channel.name(),
+                    channel.name() + " 这一路还没配好，先把上面几栏填完并保存。");
+        }
+
+        try {
+            channel.send(TEST_SUBJECT, TEST_CONTENT);
+            return new TestResult(TestResult.Status.DELIVERED, id, channel.name(),
+                    "已经往 " + channel.name() + " 发了一条测试告警，去看看收到没有。");
+        } catch (Exception e) {
+            log.error("测试 {} 告警通道失败", channel.name(), e);
+            return new TestResult(TestResult.Status.FAILED, id, channel.name(),
+                    channel.name() + " 这一路发不出去：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 一次测试的结果
+     * <p>
+     * 四个态分开而不是一个 {@code boolean}：「没这一路」「还没配」「发不出去」「发出去了」
+     * 的下一步各不相同——分别是查参数、去把栏填完、看错误信息、去手机上看。
+     * 压成一个「失败」的话，界面只能给出一句对三种情况都不痛不痒的话。
+     *
+     * @param status 结果
+     * @param id 通道标识
+     * @param name 通道名称，通道不存在时为 null
+     * @param message 给使用者看的一句话
+     */
+    public record TestResult(Status status, String id, String name, String message) {
+        public enum Status {
+            /**
+             * 没有这一路通道
+             */
+            UNKNOWN,
+            /**
+             * 通道在，但还没配好
+             */
+            NOT_CONFIGURED,
+            /**
+             * 发送时抛了
+             */
+            FAILED,
+            /**
+             * 发出去了
+             */
+            DELIVERED
+        }
+
+        /**
+         * 是不是真的发出去了
+         * @return 发出去了返回 true
+         */
+        public boolean delivered() {
+            return status == Status.DELIVERED;
+        }
     }
 
     /**

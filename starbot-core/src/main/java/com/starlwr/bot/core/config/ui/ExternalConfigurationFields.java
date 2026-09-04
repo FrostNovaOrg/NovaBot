@@ -20,7 +20,7 @@ import java.util.Map;
  * 说明由此处自行撰写而非取自框架元数据：框架的说明是英文的，且讲的是它自己的用途，
  * 不会告诉使用者「配了这个，NovaBot 会多出什么能力」——而后者才是他们要判断的事。
  */
-final class ExternalConfigurationFields {
+public final class ExternalConfigurationFields {
     /**
      * 配置项及其重要程度与生效时机
      * <p>
@@ -37,11 +37,11 @@ final class ExternalConfigurationFields {
                         + "会明确提示不可用——那类数据随时间无限增长，放在文件里迟早撑不住。"
                         + "只需本机可达，切勿暴露到公网。改完需重启");
         put("spring.data.redis.port", "java.lang.Integer", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.RESTART,
-                "Redis 端口，默认 6379");
+                6379, "Redis 端口，默认 6379");
         put("spring.data.redis.password", "java.lang.String", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.RESTART,
                 "Redis 密码，未设密码时留空");
         put("spring.data.redis.database", "java.lang.Integer", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.RESTART,
-                "Redis 库号，默认 0。与其他程序共用同一实例时可换一个库避免键冲突");
+                0, "Redis 库号，默认 0。与其他程序共用同一实例时可换一个库避免键冲突");
 
         // ---- 邮件告警的发件服务 ----
         // 收件人是 starbot.core.mail.default-to，在界面上找得到；
@@ -54,7 +54,30 @@ final class ExternalConfigurationFields {
                 "SMTP 登录账号，通常就是发件邮箱地址");
         put("spring.mail.password", "java.lang.String", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.RESTART,
                 "SMTP 密码或授权码。多数邮箱服务要求的是「授权码」而非登录密码");
+
+        // ---- 控制台自己怎么被端出来 ----
+        // 监听地址是四个危险项之一，界面上得有它才谈得上围栏；此前它压根不在界面上，
+        // 于是「把接口暴露到网络」这件事只能在服务器上改文件完成，控制台连提醒的机会都没有
+        put("server.port", "java.lang.Integer", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.RESTART,
+                7827, "控制台与事件流共用的服务端口，默认 7827");
+        put("server.address", "java.lang.String", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.RESTART,
+                "127.0.0.1", "只监听哪个地址。默认 127.0.0.1 表示只有本机连得上；"
+                        + "改成 0.0.0.0 会把控制台与推送接口暴露到网络，"
+                        + "此时务必配好反向代理、来源 IP 白名单与登录口令");
     }
+
+    /**
+     * 这几项里改到某个值之后后果不小的
+     * <p>
+     * 这几项没有字段可标 {@link com.starlwr.bot.core.config.ConfigDanger}，声明只能写在这里。
+     * 表与上面那张字段表分开，因此可能落单——一条指向界面上已不存在之物的危险声明，
+     * 界面上看不出任何异常。{@code ConfigurationConsistencyTest} 里有一格盯着这件事。
+     */
+    private static final Map<String, ConfigurationDangerResolver.Danger> DANGERS = Map.of(
+            "server.address", new ConfigurationDangerResolver.Danger("0.0.0.0",
+                    "监听地址改成 0.0.0.0？",
+                    "会把控制台与推送接口暴露到网络上，任何能连到这台机器的人都够得着。"
+                            + "没有配好反向代理、来源 IP 白名单与登录口令就别开。"));
 
     /**
      * 这几项的重要程度与生效时机
@@ -68,7 +91,19 @@ final class ExternalConfigurationFields {
 
     private static void put(String name, String type, ConfigLevel.Level level, ConfigEffect.Effect effect,
                             String description) {
-        FIELDS.put(new ConfigurationMetadataService.ConfigurationField(name, type, description, null),
+        put(name, type, level, effect, null, description);
+    }
+
+    /**
+     * 带默认值的那一支
+     * <p>
+     * 框架元数据里这几项本来是有默认值的，只是被这张表覆盖掉了。设置页上「默认：X · 恢复默认」
+     * 那一行照默认值显示，缺了它这几项会写成「默认：未设」——而 {@code server.address}
+     * 的默认值恰恰是那个安全的 127.0.0.1，「恢复默认」在它身上最该管用。
+     */
+    private static void put(String name, String type, ConfigLevel.Level level, ConfigEffect.Effect effect,
+                            Object defaultValue, String description) {
+        FIELDS.put(new ConfigurationMetadataService.ConfigurationField(name, type, description, defaultValue),
                 new Marks(level, effect));
     }
 
@@ -80,6 +115,18 @@ final class ExternalConfigurationFields {
      */
     static List<ConfigurationMetadataService.ConfigurationField> fields() {
         return List.copyOf(FIELDS.keySet());
+    }
+
+    /**
+     * 额外展示的配置项名
+     * <p>
+     * 公开的只有名字这一栏，供构建期那道「每个配置项都归了组」的判据现算分母用。
+     * 界面上摆着的配置项<b>不止 starbot 命名空间那一批</b>，分母漏掉这几项的话，
+     * 少归一组的正好是没人会想起来的那几个。
+     * @return 配置项名，顺序与界面一致
+     */
+    public static List<String> names() {
+        return FIELDS.keySet().stream().map(ConfigurationMetadataService.ConfigurationField::name).toList();
     }
 
     /**
@@ -101,5 +148,20 @@ final class ExternalConfigurationFields {
         Map<String, ConfigEffect.Effect> result = new LinkedHashMap<>();
         FIELDS.forEach((field, marks) -> result.put(field.name(), marks.effect()));
         return result;
+    }
+
+    /**
+     * 这几项里的危险项
+     */
+    static Map<String, ConfigurationDangerResolver.Danger> dangers() {
+        return DANGERS;
+    }
+
+    /**
+     * 危险声明覆盖到的配置项名，供构建期那道判据核对
+     * @return 配置项名
+     */
+    public static List<String> dangerousNames() {
+        return List.copyOf(DANGERS.keySet());
     }
 }

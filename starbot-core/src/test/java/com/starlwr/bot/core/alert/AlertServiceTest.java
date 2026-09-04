@@ -48,13 +48,24 @@ class AlertServiceTest {
      * 可控的假通道：能配置「可用与否」「这次发不发得出去」，并记下收到的内容
      */
     private static class FakeChannel implements AlertChannel {
+        private final String id;
         private final String name;
         boolean available = true;
         boolean failing;
         final List<String> received = new ArrayList<>();
 
         FakeChannel(String name) {
+            this("fake", name);
+        }
+
+        FakeChannel(String id, String name) {
+            this.id = id;
             this.name = name;
+        }
+
+        @Override
+        public String id() {
+            return id;
         }
 
         @Override

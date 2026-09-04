@@ -31,6 +31,11 @@ public class QqAlertChannel implements AlertChannel {
     }
 
     @Override
+    public String id() {
+        return "qq";
+    }
+
+    @Override
     public String name() {
         return "QQ";
     }
