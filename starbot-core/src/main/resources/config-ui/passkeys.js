@@ -63,11 +63,20 @@ function time(value) {
   return isNaN(at) ? esc(value) : esc(at.toLocaleString('zh-CN', {hour12: false}).replace(/:\d\d$/, ''));
 }
 
-export async function registerPasskey() {
+/**
+ * 登记一把通行密钥
+ *
+ * 🔴 <b>按钮由调用方传进来</b>，不在这里按 id 取：初始设置页第 1 步也要登记一把，
+ * 而它与设置页那个按钮同时存在于这份文档里。按 id 取的话两处必须共用一个 id，
+ * 那是重复 id——document 里重复 id 不报错，取到的永远是靠前的那一个，
+ * 表现是使用者在初始设置页点了按钮，转圈的却是设置页上那个他看不见的按钮。
+ * @param trigger 触发这次登记的按钮，登记期间置灰它；没有时传 null
+ */
+export async function registerPasskey(trigger) {
   if (!supported()) return;
 
-  const button = $('#passkey-add');
-  button.disabled = true;
+  const button = trigger || $('#passkey-add');
+  if (button) button.disabled = true;
 
   try {
     const options = await api('/auth/passkey/register/options', {method: 'POST'});
@@ -121,7 +130,7 @@ export async function registerPasskey() {
     say(e.name === 'NotAllowedError' ? '已取消登记' : '登记失败：' + e.message,
       e.name === 'NotAllowedError' ? '' : 'err');
   } finally {
-    button.disabled = false;
+    if (button) button.disabled = false;
   }
 }
 

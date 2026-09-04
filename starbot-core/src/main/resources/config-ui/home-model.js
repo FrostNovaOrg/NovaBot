@@ -95,32 +95,48 @@ function platformName(login) {
 }
 
 /**
- * 初始设置这五步走完了几步
+ * 初始设置那五步各自成立了没有
  *
- * 第 5 步「发一条试试」没有独立的判定依据：这台机器有没有真的发过一条试试，
- * 现在没有任何地方记着（那件事归初始设置页自己记）。此处按「前四步都成立」算——
- * 能把消息推出去的前提正是前四步都成立。换成「今天推成功过」的话，
+ * <b>这五个布尔是这条规则唯一的一份实现</b>：首页那条待办要拿它算「5 步里完成了 N 步」，
+ * 初始设置页要拿它画进度条与决定从第几步接着走。两处各判一遍的话，同一台机器上
+ * 首页说「完成了 3 步」而设置页停在第 2 步，而两边的代码看起来都对。
+ * 摆在本文件里是因为前四步全部读探针（见 {@link probesIn}），设置页那一侧反过来引它。
+ *
+ * 第 5 步「发一条试试」没有任何服务端事实可推——这台机器有没有真的发过一条，
+ * 只有初始设置页自己记得住（见 /api/setup/state 的 testSentAt）。因此它由调用方交进来：
+ * 不交（{@code null}）时按「前四步都成立」算，那是首页那条待办的读法——
+ * 能把消息推出去的前提正是前四步都成立，换成「今天推成功过」的话，
  * 这条待办会在每天零点自己复活，催一件早就做完的事。
  * @param status /api/status 回包
  * @param login /api/login 回包
- * @return {number} 完成的步数，0 到 5
+ * @param sent 第 5 步的事实；不知道时传 null
+ * @return {boolean[]} 五步各自成立与否
  */
-export function setupDone(status, login) {
+export function setupSteps(status, login, sent) {
   const accounts = (login && login.accounts) || [];
-  const steps = [
+  const first = [
     // 上锁：设了控制台口令（通行密钥跟着口令登录走，没有口令时它签出来的会话打不开任何门）
     !!status.locked,
     // 连上机器人：这一档的探针没有报红
     worstLamp(probesIn(status, 'BOT').map(item => item.lamp)) === 'ok',
-    // 登录直播平台：每个平台要么登录了，要么被配置明确关掉了（例如匿名模式）。
+    // 登录直播平台：每个平台要么登录了，要么被配置明确关掉了（例如免登录模式）。
     // 一个平台插件都没装时这一步不是「没做完」，是没得做，因此算它已定
     accounts.every(item => !!(item.loggedIn || item.disabledReason)),
     // 第一位主播
     ((status.users || []).length > 0),
   ];
 
-  const done = steps.filter(Boolean).length;
-  return done === steps.length ? 5 : done;
+  return [...first, sent === null || sent === undefined ? first.every(Boolean) : !!sent];
+}
+
+/**
+ * 初始设置这五步走完了几步
+ * @param status /api/status 回包
+ * @param login /api/login 回包
+ * @return {number} 完成的步数，0 到 5
+ */
+export function setupDone(status, login) {
+  return setupSteps(status, login, null).filter(Boolean).length;
 }
 
 /**
@@ -203,7 +219,10 @@ function todos(status, login, chain, fresh) {
     return [{
       key: 'setup',
       title: '初始设置还没完成 · 5 步里完成了 ' + done + ' 步',
-      body: '上锁 → 连机器人 → 登录直播平台 → 加第一位主播 → 发一条试试。走完就生效，不用重启。',
+      // 不写「走完就生效，不用重启」：连接参数是进程启动时按配置注册的，
+      // 第 2 步存下来之后要重启一次那条连接才真的建立起来。写一句不成立的承诺，
+      // 换来的是使用者在第 4 步对着一份空名单猜自己填错了什么
+      body: '上锁 → 连机器人 → 登录直播平台 → 加第一位主播 → 发一条试试。每一步做完当场落盘。',
       action: '去继续', href: '#/setup', soft: false,
     }];
   }
