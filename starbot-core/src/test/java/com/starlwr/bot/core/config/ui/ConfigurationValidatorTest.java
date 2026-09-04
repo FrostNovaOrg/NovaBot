@@ -6,7 +6,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -27,87 +26,10 @@ class ConfigurationValidatorTest {
 
     @BeforeEach
     void setUp() {
-        // 类型表含框架自身的配置项：server.port 不在界面上展示，但同样写错就起不来
-        ConfigurationMetadataService metadata = mock(ConfigurationMetadataService.class);
-        when(metadata.getKnownTypes()).thenReturn(Map.of(
-                "server.port", "java.lang.Integer",
-                "starbot.core.config-ui.enabled", "java.lang.Boolean",
-                "starbot.bilibili.account.cookie-path", "java.lang.String"
-        ));
-
         StarBotEventHandlerService handlers = mock(StarBotEventHandlerService.class);
         when(handlers.getRegisteredHandlerClasses()).thenReturn(Set.of(HANDLER));
 
-        validator = new ConfigurationValidator(metadata, handlers);
-    }
-
-    @Test
-    @DisplayName("合法的 application.yml 应通过")
-    void acceptsValidYaml() {
-        assertTrue(validator.validateApplicationYaml("""
-                server:
-                  port: 7827
-                starbot:
-                  core:
-                    config-ui:
-                      enabled: true
-                """).isEmpty());
-    }
-
-    @Test
-    @DisplayName("缩进错乱的 YAML 应被拒绝并指出行号")
-    void rejectsBrokenIndentation() {
-        List<String> issues = validator.validateApplicationYaml("""
-                server:
-                  port: 7827
-                    address: 127.0.0.1
-                """);
-
-        assertEquals(1, issues.size());
-        assertTrue(issues.get(0).contains("第 3 行"), "应指出出错行号: " + issues.get(0));
-    }
-
-    @Test
-    @DisplayName("整数配置项填了非数字应被拒绝")
-    void rejectsNonNumericInteger() {
-        List<String> issues = validator.validateApplicationYaml("""
-                server:
-                  port: abc
-                """);
-
-        assertEquals(1, issues.size());
-        assertTrue(issues.get(0).contains("server.port"), issues.get(0));
-        assertTrue(issues.get(0).contains("整数"), issues.get(0));
-    }
-
-    @Test
-    @DisplayName("布尔配置项填了其他取值应被拒绝")
-    void rejectsNonBoolean() {
-        List<String> issues = validator.validateApplicationYaml("""
-                starbot:
-                  core:
-                    config-ui:
-                      enabled: 是
-                """);
-
-        assertEquals(1, issues.size());
-        assertTrue(issues.get(0).contains("true 或 false"), issues.get(0));
-    }
-
-    @Test
-    @DisplayName("元数据中没有的配置项应放行, 不得误伤")
-    void ignoresUnknownProperty() {
-        assertTrue(validator.validateApplicationYaml("""
-                some:
-                  unknown-plugin-option: 任意内容
-                """).isEmpty());
-    }
-
-    @Test
-    @DisplayName("空内容应被拒绝")
-    void rejectsEmptyContent() {
-        assertFalse(validator.validateApplicationYaml("").isEmpty());
-        assertFalse(validator.validateApplicationYaml("   ").isEmpty());
+        validator = new ConfigurationValidator(handlers);
     }
 
     @Test
@@ -209,15 +131,12 @@ class ConfigurationValidatorTest {
         StarBotEventHandlerService empty = mock(StarBotEventHandlerService.class);
         when(empty.getRegisteredHandlerClasses()).thenReturn(Set.of());
 
-        ConfigurationMetadataService metadata = mock(ConfigurationMetadataService.class);
-        when(metadata.getKnownTypes()).thenReturn(Map.of());
-
         String json = """
                 [{"uid":1,"platform":"bilibili","targets":[
                   {"platform":"qq-onebot","type":1,"num":1,"messages":[{"handler":"com.example.Any"}]}
                 ]}]
                 """;
 
-        assertTrue(new ConfigurationValidator(metadata, empty).validateDatasource(json, Set.of("qq-onebot")).isEmpty());
+        assertTrue(new ConfigurationValidator(empty).validateDatasource(json, Set.of("qq-onebot")).isEmpty());
     }
 }

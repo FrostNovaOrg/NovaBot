@@ -682,30 +682,6 @@ public class ConfigurationFileService {
     }
 
     /**
-     * 读取配置文件原始文本
-     * @return 原始文本
-     * @throws IOException 读取失败时抛出
-     */
-    public synchronized String readRaw() throws IOException {
-        return Files.readString(configPath, StandardCharsets.UTF_8);
-    }
-
-    /**
-     * 覆盖写入配置文件原始文本
-     * <p>
-     * ⚠️ 控制台已不再提供配置文件编辑，本方法当前没有调用方。整份覆盖的正门是安全模式
-     * （{@code SafeModeServer}），那条路只在程序起不来时才走得到。
-     * 要重新给它接一个界面入口之前，请先读设置页底部那行路径旁边的理由。
-     * @param content 新内容
-     * @throws IOException 写入失败时抛出
-     */
-    public synchronized void writeRaw(String content) throws IOException {
-        backup();
-        Files.writeString(configPath, content, StandardCharsets.UTF_8);
-        log.info("配置界面已整体覆盖 application.yml, 重启后生效");
-    }
-
-    /**
      * 备份当前配置文件
      * <p>
      * 每次保存生成一份带时间戳的独立备份并保留最近若干份。此前只有单个 .bak 文件且每次覆盖，
@@ -744,69 +720,6 @@ public class ConfigurationFileService {
             // 备份清理失败不应影响保存本身
             log.debug("清理旧备份失败: {}", e.getMessage());
         }
-    }
-
-    /**
-     * 列出全部可用备份，按时间倒序
-     * @return 备份文件名列表
-     */
-    public synchronized List<String> listBackups() {
-        try (Stream<Path> files = Files.list(directory())) {
-            return files.filter(this::isBackup)
-                    .map(path -> path.getFileName().toString())
-                    .sorted(Comparator.reverseOrder())
-                    .toList();
-        } catch (IOException e) {
-            log.error("列出配置备份失败", e);
-            return List.of();
-        }
-    }
-
-    /**
-     * 读取指定备份的内容
-     * @param name 备份文件名
-     * @return 备份内容
-     * @throws IOException 读取失败或文件名非法时抛出
-     */
-    public synchronized String readBackup(String name) throws IOException {
-        Path path = resolveBackup(name);
-        return Files.readString(path, StandardCharsets.UTF_8);
-    }
-
-    /**
-     * 回滚至指定备份
-     * <p>
-     * 回滚本身也会先备份当前内容，因此误回滚同样可以再滚回来。
-     * @param name 备份文件名
-     * @throws IOException 读取或写入失败时抛出
-     */
-    public synchronized void restoreBackup(String name) throws IOException {
-        String content = readBackup(name);
-        backup();
-        Files.writeString(configPath, content, StandardCharsets.UTF_8);
-        log.info("配置界面已回滚 application.yml 至备份 {}, 重启后生效", name);
-    }
-
-    /**
-     * 解析备份文件名为路径
-     * <p>
-     * 只接受本目录下符合命名规则的备份文件：文件名来自接口入参，若直接拼接路径，
-     * 传入 ../ 即可读取或覆盖任意文件。
-     * @param name 备份文件名
-     * @return 备份文件路径
-     * @throws IOException 文件名非法或文件不存在时抛出
-     */
-    private Path resolveBackup(String name) throws IOException {
-        if (name == null || !isBackupName(name)) {
-            throw new IOException("非法的备份文件名: " + name);
-        }
-
-        Path path = directory().resolve(name).normalize();
-        if (!path.getParent().equals(directory()) || !Files.isRegularFile(path)) {
-            throw new IOException("备份文件不存在: " + name);
-        }
-
-        return path;
     }
 
     /**
