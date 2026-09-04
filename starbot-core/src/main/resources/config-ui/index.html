@@ -255,6 +255,24 @@
       <div id="groups"></div>
 
       <!--
+        通行密钥。摆在设置页里而不是登录页：登记这件事只有已经进得来的人才做得了，
+        而登录页上的人恰好还没进来。整块的版式从简，与「登录与安全」那一组一并重排。
+        未启用口令登录时整块不显示——那一形态下签发出来的会话打不开任何门，
+        摆一个登记按钮等于发一把没有锁的钥匙。
+      -->
+      <div class="group" id="passkey-box" style="display:none">
+        <h2>通行密钥</h2>
+        <div class="body">
+          <p class="hint">登记之后，登录时按一下指纹或面容即可，<b>不用再输动态验证码</b>——
+            私钥一直在你自己的设备上，这台机器只存得下一把开不了门的公钥。</p>
+          <div class="backups" style="margin:0 0 10px">
+            <button type="button" id="passkey-add">登记这台设备</button>
+          </div>
+          <div id="passkey-list"></div>
+        </div>
+      </div>
+
+      <!--
         页底只留配置文件在哪，不提供编辑。
         在控制台上直接改整份 application.yml 这条路已经撤了：它改坏之后程序下次起不来，
         而控制台随之一同挂掉——远程部署时人就被挡在门外。要直接改文件请到服务器上改，
