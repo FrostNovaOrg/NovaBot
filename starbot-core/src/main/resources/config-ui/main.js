@@ -6,6 +6,7 @@
 import {loadAnalytics} from './analytics.js';
 import {bindBotForm, botFormHtml, fillBotForms} from './bot.js';
 import {$, api, el, esc, markDirty, say} from './core.js';
+import {PROBE_ANCHOR} from './home-model.js';
 import {focusStation, loadTargets, mountLinkCard, refreshLinks, sendTestMessage} from './links.js';
 import {loadLog, stopFollow, syncLogView} from './log.js';
 import {refreshHome, renderStatus, runSelfTest, togglePush} from './overview.js';
@@ -333,6 +334,10 @@ function applyRoute(withData = true) {
   // 要看哪一块得赶在取数之前记下：真正滚过去是在卡画完之后，
   // 此刻卡上还是上一刻的高度，滚了也白滚
   focusStation(name === 'links' ? card : '');
+  if (name === 'home' && card === 'probes') {
+    const box = $('#' + PROBE_ANCHOR);
+    if (box) box.scrollIntoView({block: 'start', behavior: 'smooth'});
+  }
 
   markDirty();
   if (!withData) return;

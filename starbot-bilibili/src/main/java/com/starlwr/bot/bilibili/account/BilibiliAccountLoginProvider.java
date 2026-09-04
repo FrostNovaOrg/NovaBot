@@ -1,9 +1,12 @@
 package com.starlwr.bot.bilibili.account;
 
 import com.starlwr.bot.bilibili.BilibiliPlatform;
+import com.starlwr.bot.bilibili.model.Up;
 import com.starlwr.bot.bilibili.service.BilibiliAccountService;
+import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.account.AccountLoginProvider;
 import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.util.StringUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.TaskScheduler;
@@ -23,11 +26,22 @@ public class BilibiliAccountLoginProvider implements AccountLoginProvider {
 
     private final TaskScheduler scheduler;
 
+    private final BilibiliApiUtil api;
+
+    /**
+     * 昵称只问平台一次。失败也算问过：界面退回只显示 uid，不在每次刷新登录态时再打一遍。
+     */
+    private volatile boolean nameTried;
+
+    private volatile String name;
+
     @Autowired
     public BilibiliAccountLoginProvider(BilibiliAccountService accountService,
-                                        @Qualifier("bilibiliTaskScheduler") TaskScheduler scheduler) {
+                                        @Qualifier("bilibiliTaskScheduler") TaskScheduler scheduler,
+                                        BilibiliApiUtil api) {
         this.accountService = accountService;
         this.scheduler = scheduler;
+        this.api = api;
     }
 
     @Override
@@ -48,6 +62,26 @@ public class BilibiliAccountLoginProvider implements AccountLoginProvider {
     @Override
     public Optional<String> accountId() {
         return Optional.ofNullable(accountService.getLoginUid()).map(String::valueOf);
+    }
+
+    @Override
+    public Optional<String> accountName() {
+        Long uid = accountService.getLoginUid();
+        if (uid == null || !accountService.isLoggedIn()) {
+            return Optional.empty();
+        }
+        if (!nameTried) {
+            nameTried = true;
+            try {
+                Up up = api.getUpInfoByUid(uid);
+                if (up != null && StringUtil.isNotBlank(up.getUname())) {
+                    name = up.getUname();
+                }
+            } catch (Exception ignored) {
+                // 失败静默：卡上只显 uid。这里打错误日志的话，首页每次刷新都会刷屏
+            }
+        }
+        return Optional.ofNullable(name);
     }
 
     @Override
@@ -73,6 +107,8 @@ public class BilibiliAccountLoginProvider implements AccountLoginProvider {
 
     @Override
     public void logout() {
+        nameTried = false;
+        name = null;
         accountService.logout();
 
         // 退出后立即发起新一轮扫码，界面上随即就能看到新的二维码；

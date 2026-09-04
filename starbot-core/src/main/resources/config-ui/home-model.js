@@ -393,3 +393,30 @@ export function homeModel(status, login, timeline) {
     pushOn: state.pushEnabled !== false,
   };
 }
+
+/**
+ * 首页链路图上某一站，点下去该去哪
+ *
+ * 「本机」去本页健康自检那一块，另外两站去连接页对应的卡。
+ * 落点写在这一份而不是写在渲染代码里：渲染那边写死 {@code #/links?card=} 的话，
+ * 本机那一站会跟着跳去连接页，而连接页上没有它的卡——地址栏变了、屏幕没动，
+ * 看起来像页面卡住了。
+ *
+ * 未知的站名回空串，不编一个去处。
+ */
+export const STATION_HREF = {
+  platform: '#/links?card=platform',
+  self: '#/home?card=probes',
+  bot: '#/links?card=bot',
+};
+
+/** 首页健康自检那一张卡的 id，与 index.html 上那一块对得上 */
+export const PROBE_ANCHOR = 'home-probes';
+
+/**
+ * @param station 站名，platform / self / bot
+ * @return {string} 地址，没有去处时为空串
+ */
+export function stationHref(station) {
+  return STATION_HREF[station] || '';
+}

@@ -841,6 +841,17 @@ button.danger:hover{border-color:var(--err);color:var(--err)}
 .statline .st-v{color:var(--dim)}
 .statline .st-w{flex-basis:100%;color:var(--err)}
 /* 挑选面板：盖住整页，一次只问一件事 */
+/* 危险确认：盖住整页，一次只问一件事。z-index 高于挑选面板，避免抽屉还开着时确认被挡住 */
+.ask{position:fixed;inset:0;background:var(--overlay);display:flex;align-items:center;
+  justify-content:center;z-index:40;padding:16px}
+.ask[hidden]{display:none}
+.ask-card{width:min(400px,100%);background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--r-card);box-shadow:var(--shadow);padding:20px 22px}
+.ask-card h3{margin:0 0 8px;font-size:16px;font-weight:600}
+.ask-card p{margin:0 0 18px;color:var(--dim);font-size:13.5px;line-height:1.55}
+.ask-act{display:flex;justify-content:flex-end;gap:8px}
+.ask-ok{background:var(--err);color:var(--paper)}
+.ask-ok:hover{filter:brightness(1.05)}
 .drawer{position:fixed;inset:0;background:var(--overlay);display:flex;justify-content:flex-end;
   z-index:20}
 .drawer[hidden]{display:none}

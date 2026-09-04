@@ -25,6 +25,19 @@ public class BilibiliLoginHealthProbe implements HealthProbe {
      */
     private static final int STALE_FACTOR = 2;
 
+    /**
+     * 卡上已经摆着二维码时的指引。首页与连接页读的是同一句，
+     * 所以不写「本页」——首页上并没有那张码。
+     */
+    static final String ADVICE_WITH_QR =
+            "动态推送与自动关注不可用，直播推送不受影响。请扫描连接卡上的二维码完成登录";
+
+    /**
+     * 卡上还没有二维码时的指引。启动日志里那张字符画是退路。
+     */
+    static final String ADVICE_WITHOUT_QR =
+            "动态推送与自动关注不可用，直播推送不受影响。请扫描启动日志中的二维码完成登录";
+
     private final BilibiliAccountService accountService;
 
     private final StarBotBilibiliProperties properties;
@@ -65,9 +78,10 @@ public class BilibiliLoginHealthProbe implements HealthProbe {
         }
 
         if (!accountService.isLoggedIn()) {
+            boolean hasQr = accountService.getPendingQrCodeContent() != null;
             return HealthStatus.down(
-                    accountService.getPendingQrCodeContent() != null ? "等待扫码登录" : "未登录",
-                    "动态推送与自动关注不可用，直播推送不受影响。请扫描启动日志中的二维码完成登录"
+                    hasQr ? "等待扫码登录" : "未登录",
+                    hasQr ? ADVICE_WITH_QR : ADVICE_WITHOUT_QR
             );
         }
 
