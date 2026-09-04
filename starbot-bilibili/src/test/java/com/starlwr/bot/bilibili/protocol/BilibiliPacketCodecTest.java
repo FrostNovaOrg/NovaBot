@@ -311,4 +311,26 @@ class BilibiliPacketCodecTest {
         // 默认预算（32 MB）下同一份数据能全解开——证明上面拒收是因为合计超限，不是数据本身坏了
         assertTrue(BilibiliPacketCodec.decode(outer).size() > 0);
     }
+
+    @Test
+    @DisplayName("前一个子包爆预算后，后续子包不再解压，整次解码按整批拒收返回空")
+    void stopsParsingSiblingsAfterBudgetBlown() throws Exception {
+        // 一批三个子包：普通包、解压即超限的压缩包、再一个普通包。
+        // 中间的包爆掉共享预算后：后面的普通包不该再被产出，整次 decode 也按整批拒收返回空，
+        // 连前面已经解出的那个普通包都不留
+        ByteArrayOutputStream stream = new ByteArrayOutputStream();
+        stream.write(jsonPacket("{\"cmd\":\"BEFORE\"}"));
+        stream.write(packet(DataPackType.NOTICE.getCode(), 2, zlib(jsonPacketStream(64 * 1024))));
+        stream.write(jsonPacket("{\"cmd\":\"AFTER\"}"));
+
+        List<BilibiliPacket> packets = BilibiliPacketCodec.decode(
+                stream.toByteArray(), new BilibiliPacketCodec.Limits(1024, 3));
+        assertTrue(packets.isEmpty(), "预算爆过一次后应整批拒收，实际返回 " + packets.size() + " 个包");
+
+        // 同一批数据去掉中间那个超限包后能解出前后两个包——证明为空是预算爆的锅，不是数据本身坏了
+        ByteArrayOutputStream sane = new ByteArrayOutputStream();
+        sane.write(jsonPacket("{\"cmd\":\"BEFORE\"}"));
+        sane.write(jsonPacket("{\"cmd\":\"AFTER\"}"));
+        assertEquals(2, BilibiliPacketCodec.decode(sane.toByteArray()).size());
+    }
 }

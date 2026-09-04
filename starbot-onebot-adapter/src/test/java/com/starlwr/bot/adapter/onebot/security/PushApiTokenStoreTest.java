@@ -60,8 +60,8 @@ class PushApiTokenStoreTest {
     @Test
     @DisplayName("互含的登记模式同时命中时答最具体的那条，答案不随登记顺序漂")
     void resolvePrefersMostSpecificAmongOverlappingPatterns() {
-        // 每组 {更具体者, 更宽者, 双命中的请求路径}。旧实现在哈希表迭代序上取首个命中:
-        // 两键恰好同桶时桶内即插入序, 同一请求的答案随登记顺序漂（实测 {id}/send 对 */send 组）
+        // 每组 {更具体者, 更宽者, 双命中的请求路径}。存储侧按登记先后保序迭代:
+        // 若实现退化成「取首个命中」, 先登宽者的那份必答宽者——任何 JDK 下都必红, 不靠哈希迭代序的运气
         String[][] cases = {
                 {"/onebot/send", "/onebot/send/**", "/onebot/send"},
                 {"/onebot/{a}", "/onebot/**", "/onebot/send"},
