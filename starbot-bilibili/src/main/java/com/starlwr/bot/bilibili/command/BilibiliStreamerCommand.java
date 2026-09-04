@@ -10,7 +10,6 @@ import com.starlwr.bot.core.util.StringUtil;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 
 /**
  * 针对某位主播的命令
@@ -19,14 +18,15 @@ import java.util.Optional;
  * 一个群可能同时推送多位主播，参数可能是 uid 也可能是昵称片段，还可能干脆没带参数。
  * 这套解析规则收在这里，各命令只管拿到主播之后做自己的事。
  * <p>
- * 没带参数那一路交给 {@link BilibiliStreamerChoice}「先猜、再问、再记住」；
- * 猜出来的那一次带回一句 {@link Resolved#notice()}，命令用 {@link #withNotice} 把它加在回复前面。
+ * 没带参数那一路交给 {@link BilibiliStreamerChoice} 去问；
+ * 替他定下来的那一次带回一句 {@link Resolved#notice()}，命令用 {@link #withNotice}
+ * 把它加在回复前面。
  */
 public abstract class BilibiliStreamerCommand implements StarBotCommand {
     protected final AbstractDataSource dataSource;
 
     /**
-     * 多主播的「先猜、再问、再记住」
+     * 多主播时「问是哪一位」
      */
     protected final BilibiliStreamerChoice choice;
 
@@ -38,16 +38,19 @@ public abstract class BilibiliStreamerCommand implements StarBotCommand {
     /**
      * 解析出本命令要操作的主播
      * <p>
-     * 本群只配了一位时省略参数即可；配了多位又没指明时先猜——这个人上次选过谁就还是谁，
-     * 没选过而只有一位在播就是那一位；猜不出来才回一份带序号的清单让其挑。
-     * 猜出来的那一次要在回复里说清用的是谁，否则「怎么出的是别人的数据」无从查起。
+     * 规则只有三条：点了名（uid 或昵称片段）一次到位；没点名而本会话<b>恰好一位</b>能定下来
+     * ——只配了一位，或多位里只有一位在播——就径直办，并在回复里说清用的是谁；
+     * 其余一律回一份带序号的清单让他自己挑。
+     * <p>
+     * <b>不记他上次选的是谁。</b>记着的那一位与他这一次想看的那一位不是同一位时，
+     * 回来的是另一位主播的数据，而那张图看起来完全正常；他也无从知道机器人正替他记着什么。
      * @param context 执行上下文
      * @param keyword 主播关键字，为空表示未指定
      * @return 解析结果，失败时带着给使用者的说明
      */
     protected Resolved resolve(CommandContext context, String keyword) {
         List<PushUser> candidates = streamersOf(context);
-        String here = here(context);
+        String here = context.here();
         if (candidates.isEmpty()) {
             return Resolved.failed(here + "没有配置任何哔哩哔哩主播的推送");
         }
@@ -57,20 +60,11 @@ public abstract class BilibiliStreamerCommand implements StarBotCommand {
             if (matched == null) {
                 return Resolved.failed(here + "没有配置「" + keyword + "」的推送，当前可选：\n" + describe(candidates));
             }
-            // 点名即换人：说出名字这件事本身就是「这次开始用这一位」
-            choice.remember(context, matched.getUid());
             return Resolved.of(matched);
         }
 
         if (candidates.size() == 1) {
             return Resolved.of(candidates.get(0));
-        }
-
-        // 记住的选择排在「只有一位在播」前面：那是这个人亲口说的，而在播只是一个猜测。
-        // 反过来的话，别人一开播就把他的选择顶掉了，而他没有任何办法说「我就要看这一位」
-        Optional<PushUser> remembered = choice.remembered(context, candidates);
-        if (remembered.isPresent()) {
-            return Resolved.of(remembered.get(), "本次用的是：" + nameOf(remembered.get()) + "（要换人直接说名字）");
         }
 
         BilibiliStreamerChoice.Ranked ranked = choice.rank(candidates);
@@ -80,17 +74,6 @@ public abstract class BilibiliStreamerCommand implements StarBotCommand {
         }
 
         return Resolved.failed(choice.ask(context, ranked));
-    }
-
-    /**
-     * 说不出主播时那两句话里的「在哪儿」
-     * <p>
-     * 数据查询这几条命令在<b>已配了推送的好友会话</b>里同样能用，而那里没有「本群」这回事：
-     * 私聊里说「本群没有配置」，问的人会去群里找一个并不存在的配置，
-     * 而他要改的其实是这个好友会话自己的那份推送。
-     */
-    private String here(CommandContext context) {
-        return context.isGroup() ? "本群" : "这里";
     }
 
     /**
@@ -173,7 +156,7 @@ public abstract class BilibiliStreamerCommand implements StarBotCommand {
      * 主播解析结果
      * @param streamer 解析出的主播，失败时为 null
      * @param error 失败时给使用者的说明
-     * @param notice 猜出来的那一次要说清用的是谁，点了名时为空
+     * @param notice 替他定下来的那一次要说清用的是谁，点了名时为空
      */
     protected record Resolved(PushUser streamer, CommandReply error, String notice) {
         static Resolved of(PushUser streamer) {

@@ -61,14 +61,19 @@ public abstract class ToggleCommand implements StarBotCommand {
             return CommandReply.of("请指明命令名，例如：" + name() + " 直播报告");
         }
 
-        StarBotCommand command = resolve(target);
+        StarBotCommand command = resolve(context, target);
         if (command == null) {
-            // 「本机没开」与「没有这条命令」要分得开：前者去配一份存储就回来了，
-            // 后者该去看菜单。说成同一句的话，能力没配好的那个人会一直在改自己的措辞
+            // 三种情形要分得开：能力没配好、这个会话里用不上、名字打错了。
+            // 说成同一句的话，前两种的人会一直在改自己的措辞，而他要动的根本不是措辞
             StarBotCommand unavailable = first(target, item -> !item.available());
             if (unavailable != null) {
                 return CommandReply.of("「" + unavailable.name() + "」在本机没开，不用开关它，"
                         + "把它要的能力配好之后会自动回来");
+            }
+            StarBotCommand hidden = first(target, item -> !item.availableIn(context));
+            if (hidden != null) {
+                return CommandReply.of("「" + hidden.name() + "」在" + context.here() + "用不上，"
+                        + "菜单里也没有它，不用开关它");
             }
             return CommandReply.of("没有名为「" + target + "」的命令，发送「菜单」可查看全部命令");
         }
@@ -91,15 +96,20 @@ public abstract class ToggleCommand implements StarBotCommand {
     }
 
     /**
-     * 按命令名或别名找到目标命令，<b>只在本机可用的那些里找</b>
+     * 按命令名或别名找到目标命令，<b>只在这个会话里列得进菜单的那些里找</b>
      * <p>
-     * 不可用说的是整台机器缺着这条命令要靠的能力（如累计数据要外部存储），
-     * 那样的命令菜单里已经不列了，开关它同样不会有任何效果：关掉的是一条本来就用不了的命令，
-     * 而这条记录留在状态文件里，界面上看得见、群里却怎么也验证不了。
-     * 能力配好之后它自己就回来了，那才是使用者要做的那一件事。
+     * 问的与「菜单」是同一问 {@link StarBotCommand#availableIn}，不是只问机器整体的
+     * {@link StarBotCommand#available}：两处口径分开的那一版里，本群的开播通知
+     * 配成「@全体成员」时「开播@我」菜单里没有、却仍开关得动，
+     * 于是状态文件里留下一条界面上看得见、群里怎么也验证不了的记录。
+     * <p>
+     * 两种够不着的理由都不是使用者能靠改措辞解决的：能力配好、或本会话的配置改回来之后，
+     * 那条命令自己就回菜单了，那才是他要做的那一件事。
+     * @param context 执行上下文
+     * @param name 命令名或别名
      */
-    private StarBotCommand resolve(String name) {
-        return first(name, StarBotCommand::available);
+    private StarBotCommand resolve(CommandContext context, String name) {
+        return first(name, command -> command.availableIn(context));
     }
 
     /**
