@@ -274,28 +274,6 @@ function renderVersion(version) {
 }
 
 /**
- * 监听中的主播
- *
- * 每一列都来自 /api/status，与是哪个平台无关，因此归核心画。这张表原先长在平台插件那一页上，
- * 装第二个平台时会变成两张各列一半的表——而使用者要的是「这台机器一共在盯着谁」。
- * @param data /api/status 回包
- */
-function renderUsers(data) {
-  const body = $('#users tbody');
-  if (!body) return;
-
-  const users = data.users || [];
-  if (!users.length) {
-    body.innerHTML = '<tr><td colspan="6" class="empty">还没有配置任何主播，去「QQ 推送」页添加</td></tr>';
-    return;
-  }
-
-  body.innerHTML = users.map(u => [u.uid, u.uname || '—', u.roomId || '—', u.platform,
-    u.targets, u.enabled === false ? '已停用' : '正常']
-    .map(v => '<td>' + esc(v) + '</td>').join('')).map(tds => '<tr>' + tds + '</tr>').join('');
-}
-
-/**
  * 探针行。插件页要渲染属于自己的那几条，因此这里导出去
  * @param list 探针
  * @param emptyText 一条都没有时说的话
@@ -317,7 +295,6 @@ export function healthRows(list, emptyText) {
  */
 export function renderStatus(data) {
   renderVersion(data.version);
-  renderUsers(data);
 
   const runtime = data.runtime || {};
   $('#run-mem').textContent = runtime.heapUsedMb + ' / ' + runtime.heapMaxMb + ' MB';

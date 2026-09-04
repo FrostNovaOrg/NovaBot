@@ -56,8 +56,12 @@ class ConfigUiFrontendTest {
 
     /**
      * 已知的合法同名局部变量：函数内部自己声明的，与 store 无关
+     * <p>
+     * 现在一条也没有。唯一那条豁免属于 {@code analytics.js}，那一页已经并进主播页——
+     * <b>空着比留着一条指向不存在的文件的豁免好</b>：后者会在有人恰好把新文件叫回那个名字时
+     * 悄悄生效，而没有任何东西会提起它。
      */
-    private static final Set<String> ALLOWED_LOCALS = Set.of("analytics.js:values");
+    private static final Set<String> ALLOWED_LOCALS = Set.of();
 
     /**
      * 核心自己的页签，闭集，也就是 {@code store.tab} 的取值域
@@ -1036,6 +1040,129 @@ class ConfigUiFrontendTest {
         }
 
         return bad;
+    }
+
+    /**
+     * 主播页那份判法
+     */
+    private static final String STREAMERS_MODEL = "streamers-model.js";
+
+    /**
+     * 主播页那份渲染
+     */
+    private static final String STREAMERS_VIEW = "streamers.js";
+
+    /**
+     * 主播页三块子视图的外壳，写在 {@code index.html} 里，闭集
+     * <p>
+     * 列表、详情、场次详情三块共用一个页容器 {@code #page-streamers}——它们是同一页的三种样子，
+     * 地址都是 {@code #/streamers} 底下的。分成三个 {@code .page} 容器的话，路由那一侧
+     * 认页只看第一段，后两块永远不会被显示出来，而三处的代码看起来都对。
+     * <p>
+     * 每一块里的内容全部由脚本建出来，不写在页面里——同一件事在页面与脚本里各有一份的话，
+     * 两份分叉时屏幕上不会有任何异常。
+     */
+    private static final List<String> STREAMERS_SHELL = List.of(
+            "sv-list", "st-all", "st-list", "st-unlisted",
+            "sv-detail", "sd-back", "sd-head", "sd-tabs", "sd-body",
+            "sv-session", "sx-back", "sx-title", "sx-body");
+
+    /**
+     * 主播页自己要调的端点，闭集
+     * <p>
+     * 少接一条，那一块就变成一片说不出为什么空着的地方。这些端点别处也在用，
+     * 因此只在 {@code streamers.js} 里找：拿全部脚本找的话，这一页把某条丢了也照样绿。
+     */
+    private static final List<String> STREAMERS_ENDPOINTS = List.of("/streamers", "/status");
+
+    /**
+     * 渲染那一层必须问过判法的那几件事，闭集
+     */
+    private static final List<String> STREAMERS_MODEL_CALLS = List.of(
+            "parseStreamersHash(", "statusChip(", "sparkline(", "seriesValues(", "peakCell(",
+            "gapCells(", "totalDataBanner(", "snapshotRows(", "detailHash(", "sessionHash(",
+            "reportPath(", "reportView(", "pageBar(", "barGeometry(");
+
+    /**
+     * 抄进渲染代码就算退步的那几条判法，闭集
+     */
+    private static final List<String> STREAMERS_MODEL_FUNCTIONS = List.of(
+            "function parseStreamersHash", "function statusChip", "function sparkline",
+            "function peakCell", "function gapCells", "function totalDataBanner",
+            "function snapshotRows", "function barGeometry");
+
+    /**
+     * 主播页三块各有落点，且状态标、折线、人气峰那几条判法只有 streamers-model 一份
+     * <p>
+     * 与设置页、连接页、日志页、推送页那几条同理：元素与接线缺哪一半都不会报错——元素没了，
+     * 脚本按 id 取到 null；脚本没接上，那一块就静静地空着。
+     * <p>
+     * 🔴 后半截奔着两类具体的退步去：
+     * <ul>
+     *   <li><b>把地址解析、状态标、人气峰那几条判法抄一份到渲染代码里。</b>它们由
+     *   {@code streamers-model.js} 现算，那一份有 node 夹具逐格在量；抄进渲染代码之后，
+     *   夹具照样全绿——它量的还是那份没人调的判法，而屏幕上跑的是新抄的这一份。</li>
+     *   <li><b>自己判「这台机器开没开累计数据」。</b>那一条与首页那条软待办问的是同一件事，
+     *   判定只许有 {@code home-model.js} 的 {@code totalDataOff} 一份：各判各的那天，
+     *   首页说没开而这一页说开着，两边的代码看起来都对。</li>
+     * </ul>
+     * 两种改动<b>都不会让任何功能变坏</b>，因此靠人复查是拦不住的。
+     */
+    @Test
+    @DisplayName("主播页列表、详情、场次三块各有落点，状态标与折线的判法只有 streamers-model 一份")
+    void streamersPageIsWiredUp() throws IOException {
+        String html = Files.readString(frontendDir().resolve("index.html"), StandardCharsets.UTF_8);
+        Map<String, String> sources = coreSources();
+        String scripts = String.join("\n", sources.values());
+        String view = sources.getOrDefault(STREAMERS_VIEW, "");
+        String model = sources.getOrDefault(STREAMERS_MODEL, "");
+
+        List<String> bad = new ArrayList<>();
+        // 找不到那两份时判红而不是跳过：一把量不动却报绿的判据，比没有这把判据更糟
+        if (view.isBlank()) {
+            bad.add("找不到 " + STREAMERS_VIEW + "，下面每一格都无从量起");
+        }
+        if (model.isBlank()) {
+            bad.add("找不到 " + STREAMERS_MODEL + "，状态标与折线的判法没有落脚的地方");
+        }
+
+        for (String id : STREAMERS_SHELL) {
+            if (!html.contains("id=\"" + id + "\"")) {
+                bad.add("index.html 上没有 #" + id);
+            }
+            if (!scripts.contains("$('#" + id + "')")) {
+                bad.add("没有任何脚本用到 #" + id + "，它立在那里但点了不管用");
+            }
+        }
+
+        for (String endpoint : STREAMERS_ENDPOINTS) {
+            if (!view.contains("'" + endpoint + "'")) {
+                bad.add(STREAMERS_VIEW + " 没有调用 " + endpoint + "，那一块此刻空着而不说为什么");
+            }
+        }
+
+        for (String call : STREAMERS_MODEL_CALLS) {
+            if (!view.contains(call)) {
+                bad.add(STREAMERS_VIEW + " 没有问过 " + call + "，那一块画的是别处算的");
+            }
+        }
+        for (String function : STREAMERS_MODEL_FUNCTIONS) {
+            if (view.contains(function)) {
+                bad.add("渲染代码里又判了一遍 " + function + "。那几条规则只许有 " + STREAMERS_MODEL
+                        + " 一份——抄一份进来之后，夹具量的还是没人调的那一份");
+            }
+        }
+
+        // 「这台机器开没开累计数据」的判定只许有一份，且必须是首页那一份
+        if (view.contains("totalDataAvailable")) {
+            bad.add(STREAMERS_VIEW + " 自己读了 totalDataAvailable。这一条与首页那条软待办"
+                    + "问的是同一件事，判定经 home-model.js 的 totalDataOff 一处消费");
+        }
+        if (!model.contains("totalDataOff")) {
+            bad.add(STREAMERS_MODEL + " 没有用 totalDataOff，上面那条「渲染代码里没有」因此不作数");
+        }
+
+        assertTrue(bad.isEmpty(), "主播页少了这几件事:\n  " + String.join("\n  ", bad));
     }
 
     /**
