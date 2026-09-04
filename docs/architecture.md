@@ -210,7 +210,7 @@ META-INF/spring-configuration-metadata.json
 能读到全部模块的元数据）在构建时强制以下三条，破坏任一条都会让构建失败：
 
 1. **不存在声明了却从未生效的配置项**——即改了没反应的虚空配置
-2. **`dist/templates/application.yml` 中不含已删除的配置项**
+2. **`dist/templates/application.example.yml` 中不含已删除的配置项**
 3. **每个配置项都有中文说明**——界面依赖它生成字段提示
 
 这个测试已经拦下过两次真实的回归。改配置类时如果它红了，先看是不是真的漏了什么，

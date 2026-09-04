@@ -80,4 +80,13 @@ export const store = {
    * 界面必须照这一位来显示验证码框，否则说明文字与服务端的实际要求就会各说各话
    */
   totpRequired: false,
+  /**
+   * 这台机器配过没有，来自 /auth/state 的 setupDone
+   *
+   * 三态而不是布尔：null 是「还没问到」。发行包不带 application.yml，从没配过的实例
+   * 要被领到初始设置页去；而首屏那一趟摆版式是赶在接口回来之前跑的，
+   * 那时把 undefined 当成「没配过」的话，每一台配好了的机器都会先闪一下初始设置页。
+   * 只有实打实收到 false 才跳。
+   */
+  setupDone: null,
 };

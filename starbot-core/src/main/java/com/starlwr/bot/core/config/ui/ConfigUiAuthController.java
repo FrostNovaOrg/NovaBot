@@ -60,6 +60,11 @@ public class ConfigUiAuthController {
     private static final String TOTP_PROPERTY = "starbot.core.config-ui.auth.totp";
 
     /**
+     * 「忘记口令」启动令牌通道的开关所在的配置项，上锁之后写回 false
+     */
+    private static final String OPERATOR_TOKEN_PROPERTY = "starbot.core.config-ui.auth.operator-token";
+
+    /**
      * 新口令的最短长度
      * <p>
      * 拦的是「把口令改成 1234 之后忘了自己改过」。不设上限、不要求混字符：
@@ -123,6 +128,21 @@ public class ConfigUiAuthController {
         result.put("success", true);
         result.put("enabled", authService.isEnabled());
         result.put("totpRequired", authService.totpRequired());
+
+        // 这台机器配过没有。发行包不带 application.yml，装好第一次打开控制台时它还不存在——
+        // 界面据此把人领到初始设置页，而不是摆一个「0 个主播、0 条推送」的空首页。
+        //
+        // 🔴 与登录状态放在同一条接口上，是因为界面在<b>取到这一位之前不该决定摆哪一页</b>：
+        // 各问各的话，首页会先画出来再跳走，而那一闪对已经配好的机器是纯粹的噪音。
+        // 判据是「配置文件在不在」，不是「五步走完没走完」——后者是初始设置页自己的事，
+        // 一台配好了只是没上锁的机器，不该被反复送回第一步。
+        //
+        // 配置文件那一侧拿不到时<b>不作答</b>：这一位只有配过、没配过两种取值，
+        // 而「答不上来」不是其中之一。填 false 会把人钉死在初始设置页上——那页要做的事
+        // 正是写配置文件；填 true 则是拿一个没有根据的值去答一个本来查得到的问题。
+        if (fileService != null) {
+            result.put("setupDone", fileService.exists());
+        }
 
         // 协议这一问与「有没有登录」是两件事，未登录也如实回答：
         // 前端要靠这两个值决定摆出口令表单还是协议面板
@@ -377,6 +397,38 @@ public class ConfigUiAuthController {
     }
 
     /**
+     * 上第一把锁
+     * <p>
+     * 这台机器还没设过口令时唯一的一条路。<b>没有它，「初始设置第一步：上锁」走不通</b>——
+     * 改口令那条路要旧口令，重设那条路要启动令牌会话，而刚装好的实例两样都没有。
+     * <p>
+     * <b>凭什么放这个人进来：</b>此刻这台面板还是令牌形态，来人是拿着启动日志里那个令牌
+     * （或它换下的 Cookie）过了安全过滤器才走到这里的，而能读到启动日志的人对这台机器
+     * 本来就有完全控制权。已经上过锁之后这条路整个关掉——留着它等于给面板开第二扇门，
+     * 而那扇门不要旧口令。
+     * @param body 请求体，next 为要设的口令
+     * @return 结果
+     */
+    @PostMapping("/password/set")
+    public ResponseEntity<JSONObject> setPassword(@RequestBody JSONObject body, HttpServletRequest request) {
+        JSONObject result = new JSONObject();
+
+        if (authService.isEnabled()) {
+            result.put("success", false);
+            result.put("message", "这台机器已经上过锁了，改口令请填现在的口令");
+            return ResponseEntity.badRequest().body(result);
+        }
+
+        JSONObject replaced = replacePassword(body.getString("next"), request);
+        if (Boolean.TRUE.equals(replaced.getBoolean("success"))) {
+            log.warn("配置界面: 已设下第一把口令, 访问令牌自此不再是凭据, 来源: {}", request.getRemoteAddr());
+            replaced.put("message", "已上锁。这台机器从现在起要口令才进得来，地址栏里的令牌不再管用");
+        }
+
+        return ResponseEntity.ok(replaced);
+    }
+
+    /**
      * 改口令
      * <p>
      * 要旧口令：一枚被偷走的会话 Cookie 若能直接换掉口令，真正的主人就被锁在了门外，
@@ -443,7 +495,7 @@ public class ConfigUiAuthController {
     /**
      * 换上新口令：校验、落盘、当场生效、收回别处的会话
      * <p>
-     * 三条路（改口令、令牌重设）走到这里就没有区别了，因此只此一份——
+     * 三条路（上第一把锁、改口令、令牌重设）走到这里就没有区别了，因此只此一份——
      * 各写一份的话，「改口令要不要注销别处的会话」这件事迟早会有两个答案。
      * @param next 新口令明文
      * @param request 请求，用于留下当前这一把会话
@@ -480,6 +532,10 @@ public class ConfigUiAuthController {
         }
 
         authService.applyPasswordHash(hashed);
+        // 内存里那一份跟着走：下次启动打不打印令牌地址读的是它，
+        // 两处对不上的表现是「上了锁的实例照旧在启动日志里印一个等同于口令的地址」
+        properties.setPassword(hashed);
+        closeOperatorTokenChannel();
         int revoked = authService.logoutOthers(sessionId(request));
 
         result.put("success", true);
@@ -489,6 +545,33 @@ public class ConfigUiAuthController {
                 : "口令已改。下次登录用新口令");
 
         return result;
+    }
+
+    /**
+     * 上锁之后关掉「忘记口令」的启动令牌通道
+     * <p>
+     * 那条通道<b>绕过口令与二次验证</b>，且令牌走地址栏、会进反向代理的访问日志。它存在的理由
+     * 只有一个——忘记口令时还进得来；而人刚刚才设下一把口令，这个理由此刻正好不成立。
+     * <p>
+     * 不是「设了口令就永远不许开」：使用者随时可以把这一项改回 true 重启。关掉的是
+     * <b>「上了锁却还留着一扇不问口令的门，而这件事没有任何现象」</b>那一形。
+     * <p>
+     * 写不进文件也照样关掉内存里那一位并写日志：门此刻确实关上了，只是重启后会回来——
+     * 反过来（写成功了内存没关）才是真正说不清的那一种。
+     */
+    private void closeOperatorTokenChannel() {
+        if (!properties.isOperatorToken()) {
+            return;
+        }
+
+        properties.setOperatorToken(false);
+        try {
+            fileService.write(Map.of(OPERATOR_TOKEN_PROPERTY, "false"));
+            log.warn("配置界面: 已上锁, 「忘记口令」的启动令牌通道随之关闭");
+        } catch (Exception e) {
+            log.warn("配置界面: 「忘记口令」的启动令牌通道已在本次运行中关闭, 但没能写回配置文件, 重启后会重新打开: {}",
+                    e.getMessage());
+        }
     }
 
     /**

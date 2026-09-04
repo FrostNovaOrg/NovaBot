@@ -1,7 +1,9 @@
 package com.starlwr.bot.core.config.ui;
 
 import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -13,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.BiConsumer;
+import java.util.function.Supplier;
 
 /**
  * 把保存下来的配置改动落到运行中的程序上
@@ -71,6 +74,20 @@ public class RuntimeConfigurationApplier {
     }
 
     /**
+     * 得经登录校验那一侧才落得下的配置项
+     * <p>
+     * 这两项写回配置对象<b>没有用</b>：认口令的是 {@code ConfigUiAuthService} 里那个哈希，
+     * 不是配置对象上那一行。只写配置对象的话，界面会照着「即时生效」的声明说已生效，
+     * 而门上认的还是旧的那一把——<b>而这件事从界面上看不出任何异常</b>。
+     * <p>
+     * 单列一张表而不是塞进上面那张：上面那张的签名只拿得到配置对象，
+     * 为这两项把签名改宽，等于让每一条都有能力去动登录校验。
+     */
+    private static final Map<String, BiConsumer<ConfigUiAuthService, String>> AUTH_APPLIERS = Map.of(
+            "starbot.core.config-ui.auth.password", ConfigUiAuthService::applyConfiguredPassword,
+            "starbot.core.config-ui.auth.totp", (auth, value) -> auth.applyConfiguredTotp(Boolean.parseBoolean(value)));
+
+    /**
      * 保存过、但要等重启才生效的配置项
      * <p>
      * 记在进程里而不是浏览器里，「等到重启」这件事才是准的：重启之后进程换了一个，这份记录随之消失，
@@ -81,9 +98,39 @@ public class RuntimeConfigurationApplier {
 
     private final StarBotCoreProperties properties;
 
+    /**
+     * 登录校验，配置界面关掉时不存在
+     * <p>
+     * 用 {@code ObjectProvider} 而不是直接注入：本类是每台实例都有的，而登录校验那个 bean
+     * 只在配置界面开着时才存在。直接注入等于让「关掉配置界面」这条路起不来。
+     */
+    private final Supplier<ConfigUiAuthService> authService;
+
     @Autowired
-    public RuntimeConfigurationApplier(StarBotCoreProperties properties) {
+    public RuntimeConfigurationApplier(StarBotCoreProperties properties, ObjectProvider<ConfigUiAuthService> authService) {
+        this(properties, (Supplier<ConfigUiAuthService>) authService::getIfAvailable);
+    }
+
+    /**
+     * 不带登录校验的那一支，供判据台架用
+     * <p>
+     * 台架里量的是「配置写回运行中的配置对象」这件事，与登录校验无关；而它此时的行为
+     * <b>与真实的「配置界面被关掉」那一形一致</b>——两项口令配置落不下去，按需重启处理。
+     */
+    RuntimeConfigurationApplier(StarBotCoreProperties properties) {
+        this(properties, () -> null);
+    }
+
+    /**
+     * 带登录校验的那一支，供判据台架用
+     */
+    RuntimeConfigurationApplier(StarBotCoreProperties properties, ConfigUiAuthService authService) {
+        this(properties, () -> authService);
+    }
+
+    private RuntimeConfigurationApplier(StarBotCoreProperties properties, Supplier<ConfigUiAuthService> authService) {
         this.properties = properties;
+        this.authService = authService;
     }
 
     /**
@@ -91,7 +138,9 @@ public class RuntimeConfigurationApplier {
      * @return 能即时生效的配置项名
      */
     public static Set<String> supportedKeys() {
-        return Collections.unmodifiableSet(APPLIERS.keySet());
+        Set<String> keys = new LinkedHashSet<>(APPLIERS.keySet());
+        keys.addAll(AUTH_APPLIERS.keySet());
+        return Collections.unmodifiableSet(keys);
     }
 
     /**
@@ -105,14 +154,14 @@ public class RuntimeConfigurationApplier {
         List<String> restartRequired = new ArrayList<>();
 
         for (Map.Entry<String, String> change : changes.entrySet()) {
-            BiConsumer<StarBotCoreProperties, String> applier = APPLIERS.get(change.getKey());
+            Runnable applier = resolve(change.getKey(), change.getValue());
             if (applier == null) {
                 restartRequired.add(change.getKey());
                 continue;
             }
 
             try {
-                applier.accept(properties, change.getValue());
+                applier.run();
                 log.info("配置项 {} 已即时生效", change.getKey());
             } catch (RuntimeException e) {
                 // 值的形式不对时不当作已生效：界面写「已生效」而实际没变，比多重启一次糟得多
@@ -124,6 +173,31 @@ public class RuntimeConfigurationApplier {
 
         pendingRestart.addAll(restartRequired);
         return restartRequired;
+    }
+
+    /**
+     * 找出把这一项落到运行中的程序上的那个动作
+     * <p>
+     * 登录校验那一侧拿不到时回 null，也就是按需重启处理：配置界面被整个关掉的实例里
+     * 没有这个 bean，而那种实例本来也没有设置页可以保存这两项。
+     * <b>不静静跳过</b>——跳过等于对着一个没落下去的改动说「已生效」。
+     * @param name 配置项名
+     * @param value 取值
+     * @return 落地动作，落不下时为 null
+     */
+    private Runnable resolve(String name, String value) {
+        BiConsumer<StarBotCoreProperties, String> applier = APPLIERS.get(name);
+        if (applier != null) {
+            return () -> applier.accept(properties, value);
+        }
+
+        BiConsumer<ConfigUiAuthService, String> auth = AUTH_APPLIERS.get(name);
+        if (auth == null) {
+            return null;
+        }
+
+        ConfigUiAuthService service = authService.get();
+        return service == null ? null : () -> auth.accept(service, value);
     }
 
     /**

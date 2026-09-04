@@ -145,7 +145,7 @@ public class ConfigUiRegistrar {
 
         FilterRegistrationBean<ConfigUiSecurityFilter> registration = new FilterRegistrationBean<>();
         registration.setFilter(new ConfigUiSecurityFilter(token, ipMatcher, authService,
-                properties.getConfigUi().getAuth().isOperatorToken(), properties.getConfigUi().getAgreement()));
+                properties.getConfigUi().getAuth(), properties.getConfigUi().getAgreement()));
         registration.addUrlPatterns(ConfigUiController.BASE_PATH, ConfigUiController.BASE_PATH + "/*");
         registration.setOrder(FILTER_ORDER);
         registration.setName("configUiSecurityFilter");

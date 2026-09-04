@@ -393,7 +393,7 @@ fi
 # 两处源头，都在核心一侧：
 #   ① 核心主码里作为配置前缀出现的字面量：@ConfigurationProperties(prefix = "…")，
 #      以及被它引用的 …PREFIX… 常量（值以 starbot. 开头的那些）
-#   ② 发行模板 dist/templates/application.yml 里核心那一节的键（starbot.core.* 全部路径）
+#   ② 发行模板 dist/templates/application.example.yml 里核心那一节的键（starbot.core.* 全部路径）
 # 平台名清单与格1 共用，从 LivePlatform 现算。
 #
 # —— 例外表：每条写明理由与到期条件，没有到期条件的例外一律不许加 ——
@@ -448,8 +448,19 @@ fi
 
 # —— 源头②：发行模板里核心那一节的键 ——
 # 只看键，不看注释：注释里提到旧位置是在教人怎么迁，正是该写的话
-TEMPLATE_YML="dist/templates/application.yml"
-if [ -f "$TEMPLATE_YML" ]; then
+# 🔴 名字改过一次（5.1：发行包不再带 application.yml，改带 application.example.yml），
+#    所以这里不写死一个名字，现找。而且**找不到就红**：原来那句 `if [ -f ]` 在文件改名的
+#    那一刻会静静跳过整个源头②，受查键数少一半而这一格照报绿——
+#    一个「模板里没有平台名」的绿，和一个「我没找到模板」的绿，在那一行输出上长得一样。
+TEMPLATE_YML=""
+for candidate in dist/templates/application.example.yml dist/templates/application.yml; do
+    [ -f "$candidate" ] && TEMPLATE_YML="$candidate" && break
+done
+if [ -z "$TEMPLATE_YML" ]; then
+    g5_hits="${g5_hits}dist/templates/:0(找不到发行配置模板，源头②整段没量到) "
+    g5_n=$((g5_n + 1))
+fi
+if [ -n "$TEMPLATE_YML" ]; then
     while IFS= read -r entry; do
         [ -z "$entry" ] && continue
         lineno="${entry%%:*}"

@@ -60,7 +60,7 @@ class LogLevelConfigTest {
     @Test
     @DisplayName("模板不许把日志级别发成空值")
     void templateShipsExplicitLevels() throws IOException {
-        String yaml = read("dist/templates/application.yml");
+        String yaml = read("dist/templates/application.example.yml");
         for (String key : new String[]{"console", "file"}) {
             String value = valueOf(yaml, key);
             assertTrue(value != null && !value.isEmpty(),

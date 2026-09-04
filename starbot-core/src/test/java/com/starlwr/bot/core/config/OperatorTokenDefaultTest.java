@@ -121,7 +121,7 @@ class OperatorTokenDefaultTest {
     void allThreePlacesAgree() throws IOException {
         boolean field = new StarBotCoreProperties().getConfigUi().getAuth().isOperatorToken();
 
-        String yaml = Files.readString(root().resolve("dist/templates/application.yml"), StandardCharsets.UTF_8);
+        String yaml = Files.readString(root().resolve("dist/templates/application.example.yml"), StandardCharsets.UTF_8);
         String template = valueOf(yaml, "operator-token");
         assertNotNull(template, "模板里找不到 operator-token 那一行");
 
@@ -134,7 +134,7 @@ class OperatorTokenDefaultTest {
     @Test
     @DisplayName("模板里那段说明要写明「怎么临时打开」")
     void templateTellsHowToTurnItBackOn() throws IOException {
-        String yaml = Files.readString(root().resolve("dist/templates/application.yml"), StandardCharsets.UTF_8);
+        String yaml = Files.readString(root().resolve("dist/templates/application.example.yml"), StandardCharsets.UTF_8);
         int at = yaml.indexOf("operator-token:");
         assertTrue(at >= 0, "模板里找不到 operator-token 那一行");
 

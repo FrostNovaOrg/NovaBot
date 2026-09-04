@@ -133,7 +133,19 @@ class ConfigUiAgreementGateTest {
      */
     private ConfigUiSecurityFilter filter() {
         return new ConfigUiSecurityFilter(TOKEN, new IpMatcher(List.of("0.0.0.0/0", "::/0")),
-                authService, true, agreement());
+                authService, operatorTokenOn(), agreement());
+    }
+
+    /**
+     * 开着令牌通道的那一份口令配置
+     * <p>
+     * 这几组用例问的是协议那道闸，令牌通道得开着才走得到「凭令牌换会话」那一支。
+     * 过滤器读的是配置对象本体那一位，因此这里给的是对象不是布尔。
+     */
+    private StarBotCoreProperties.ConfigUi.Auth operatorTokenOn() {
+        StarBotCoreProperties.ConfigUi.Auth auth = new StarBotCoreProperties.ConfigUi.Auth();
+        auth.setOperatorToken(true);
+        return auth;
     }
 
     private JSONObject state() {
@@ -284,7 +296,7 @@ class ConfigUiAgreementGateTest {
         assertFalse(noPassword.isEnabled(), "这一组问的正是「没配口令」那一形态，前提先自证，免得测成了口令形态");
 
         return new ConfigUiSecurityFilter(TOKEN, new IpMatcher(List.of("0.0.0.0/0", "::/0")),
-                noPassword, true, agreement());
+                noPassword, operatorTokenOn(), agreement());
     }
 
     /**

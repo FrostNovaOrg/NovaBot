@@ -56,8 +56,9 @@ class PasskeyEndpointAccessTest {
 
         // 令牌通道关掉：开着的话，未登录的那几趟会被它换成会话而放行，
         // 于是这一组量到的是「令牌通道开着没有」，不是「这条路要不要先登录」
+        // auth 那份配置对象的 operator-token 默认就是关，过滤器读的正是它这一位
         filter = new ConfigUiSecurityFilter(TOKEN, new IpMatcher(List.of("0.0.0.0/0", "::/0")),
-                authService, false, agreement);
+                authService, auth, agreement);
     }
 
     private MockFilterChain visit(String path, String sessionId) throws Exception {

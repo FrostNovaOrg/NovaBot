@@ -264,6 +264,16 @@ function applyRoute(withData = true) {
     return;
   }
 
+  // 从没配过的机器上，首页与根地址一律转初始设置页。
+  //
+  // 只拦这两处，不拦别的：使用者从初始设置页点去连接页看一眼再回来，是正当走法，
+  // 拦下来的表现是「除了第一步哪儿也去不了」。而 home 是默认落点——认不出来的地址
+  // 也归到它，所以拦住它就等于拦住了「随手打开控制台」这条路。
+  if (store.setupDone === false && name === 'home') {
+    location.hash = '#/setup';
+    return;
+  }
+
   // 插件页只在落到设置页的那一档里找：落在连接页上的那些是卡不是页，
   // 一起找的话，#/settings/<平台标识> 会打开一张空的折页，而那张卡明明在连接页上
   const plugin = name === 'settings' && sub
@@ -438,6 +448,9 @@ api('/auth/state')
     store.csrfToken = state.csrfToken || '';
     // 签发只读口令要重新校验一次凭据，验证码框显示与否照这一位来，不照配置项猜
     store.totpRequired = !!state.totpRequired;
+    // 这台机器配过没有。接口没这一栏时留 null（＝不知道），不当成「没配过」——
+    // 旧版服务端配着新版界面时，猜错的那一头是把配好的机器整台锁进初始设置页
+    store.setupDone = typeof state.setupDone === 'boolean' ? state.setupDone : null;
     $('#auth-actions').style.display = state.enabled ? '' : 'none';
     // 「登录与安全」那一组要按这几位决定摆哪一版（改口令还是重设口令、开关在哪一档），
     // 因此必须赶在下面那趟整体载入之前交进去——那一趟里就要画它了

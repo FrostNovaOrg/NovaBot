@@ -270,17 +270,33 @@ for keep in application.yml datasource.json; do
     fi
 done
 
-if [ "$PORT" != "7827" ]; then
-    $SUDO sed -i "s/^  port: 7827/  port: $PORT/" "$INSTALL_DIR/application.yml"
-fi
+# 🔴 5.1 起，发行包不再带 application.yml —— 它由程序在第一次保存设置时自己写出来。
+#    所以全新安装的目录里这个文件是不存在的，下面两条都得先问一句它在不在：
+#    不问的话，`sed -i` 对一个不存在的文件报错，而本脚本开着 set -e，整个安装当场中止，
+#    错误信息是一句「No such file or directory」——与真正的原因隔着一层。
+if [ -f "$INSTALL_DIR/application.yml" ]; then
+    if [ "$PORT" != "7827" ]; then
+        $SUDO sed -i "s/^  port: 7827/  port: $PORT/" "$INSTALL_DIR/application.yml"
+    fi
 
-# 升级时保留的是旧 application.yml，其中的端口未必是 7827，上面的替换会静默落空。
-# 结尾提示的地址以文件里的实际取值为准，否则会给出一个打不开的地址
-EFFECTIVE_PORT="$($SUDO awk 'match($0, /^  port: [0-9]+/) { gsub(/[^0-9]/, "", $0); print; exit }' "$INSTALL_DIR/application.yml")"
-EFFECTIVE_PORT="${EFFECTIVE_PORT:-$PORT}"
-if [ "$EFFECTIVE_PORT" != "$PORT" ]; then
-    warn "application.yml 中的端口是 $EFFECTIVE_PORT，与 --port $PORT 不一致（升级时保留了原有配置）。
+    # 升级时保留的是旧 application.yml，其中的端口未必是 7827，上面的替换会静默落空。
+    # 结尾提示的地址以文件里的实际取值为准，否则会给出一个打不开的地址
+    EFFECTIVE_PORT="$($SUDO awk 'match($0, /^  port: [0-9]+/) { gsub(/[^0-9]/, "", $0); print; exit }' "$INSTALL_DIR/application.yml")"
+    EFFECTIVE_PORT="${EFFECTIVE_PORT:-$PORT}"
+    if [ "$EFFECTIVE_PORT" != "$PORT" ]; then
+        warn "application.yml 中的端口是 $EFFECTIVE_PORT，与 --port $PORT 不一致（升级时保留了原有配置）。
      如需改用 $PORT，请手动编辑 $INSTALL_DIR/application.yml"
+    fi
+else
+    # 全新安装：还没有配置文件可改，端口就是程序自己的默认值。
+    # 不为了 --port 先造一个配置文件出来：那个文件一旦存在，程序就认为这台机器已经配过，
+    # 首次打开控制台时不会再把人领到初始设置页——为了一个端口号换掉整条初始路径，不划算。
+    EFFECTIVE_PORT=7827
+    if [ "$PORT" != "$EFFECTIVE_PORT" ]; then
+        warn "--port $PORT 这次没有落到任何地方：全新安装还没有 application.yml（它由程序首次保存设置时生成）。
+     先按默认的 $EFFECTIVE_PORT 起，进控制台走完初始设置后在「设置 → 服务端口」里改；
+     想在启动前就定下来，用 JAVA_OPTS=\"-Dserver.port=$PORT\" 起 start.sh"
+    fi
 fi
 
 $SUDO chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"

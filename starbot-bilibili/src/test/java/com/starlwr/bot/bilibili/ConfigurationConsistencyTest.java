@@ -502,13 +502,24 @@ class ConfigurationConsistencyTest {
                 "以下配置项在代码中从未被读取，属于改了不生效的虚空配置，请接线或删除:\n  " + String.join("\n  ", dead));
     }
 
+    /**
+     * 随发行包交付的那份配置示例
+     * <p>
+     * 🔴 <b>找不到就红，不是找不到就跳过。</b>这三条判据原先都写着「文件不在就 return」，
+     * 于是 5.1 把它从 {@code application.yml} 改名成 {@code application.example.yml} 的那一刻，
+     * 三条一起变成空跑——而空跑的绿与真的量过一遍的绿，在测试报告上长得一样。
+     * @return 模板路径
+     */
+    private Path releaseTemplate() {
+        Path template = repositoryRoot().resolve("dist/templates/application.example.yml");
+        assertTrue(Files.exists(template), "找不到发行包的配置示例 " + template + " —— 改过名就把这里一起改");
+        return template;
+    }
+
     @Test
     @DisplayName("配置模板中不含已不存在的配置项")
     void templateHasNoUnknownProperties() throws IOException {
-        Path template = repositoryRoot().resolve("dist/templates/application.yml");
-        if (!Files.exists(template)) {
-            return;
-        }
+        Path template = releaseTemplate();
 
         Set<String> known = new LinkedHashSet<>();
         for (JSONObject property : properties()) {
@@ -524,7 +535,9 @@ class ConfigurationConsistencyTest {
         int listIndent = -1;
 
         for (String raw : Files.readAllLines(template, StandardCharsets.UTF_8)) {
-            String line = raw.split("#")[0];
+            // 限 2 段：整行只有一个 "#" 时，不限段数的 split 会把两侧的空串都丢掉、
+            // 返回长度为 0 的数组，取 [0] 当场数组越界 —— 判据不是红，是崩
+            String line = raw.split("#", 2)[0];
             if (line.isBlank()) {
                 continue;
             }
@@ -574,10 +587,7 @@ class ConfigurationConsistencyTest {
     @Test
     @DisplayName("⚠️ 配置模板本身能被解析：模板起不来，等于发行包开箱即坏")
     void templateIsParseable() throws IOException {
-        Path template = repositoryRoot().resolve("dist/templates/application.yml");
-        if (!Files.exists(template)) {
-            return;
-        }
+        Path template = releaseTemplate();
 
         // 用启动时真正在跑的那个加载器来解析，而不是自己写一遍。
         // 上面那条按行扫键路径的检查看不见「同一个键写了两遍」这类结构性错误:
@@ -600,11 +610,10 @@ class ConfigurationConsistencyTest {
         List<String> stale = new ArrayList<>();
         Path root = repositoryRoot();
 
-        for (String relative : List.of("dist/templates/application.yml", "docs/user-guide.md", "CHANGELOG.md")) {
+        for (String relative : List.of("dist/templates/application.example.yml", "docs/user-guide.md", "CHANGELOG.md")) {
             Path file = root.resolve(relative);
-            if (!Files.exists(file)) {
-                continue;
-            }
+            // 三份都在册，缺一份就是有人改了名而没改这里——跳过它等于把这一格量成空集
+            assertTrue(Files.exists(file), "找不到 " + relative + " —— 改过名就把这里一起改");
             List<String> lines = Files.readAllLines(file);
             for (int i = 0; i < lines.size(); i++) {
                 Matcher matcher = mention.matcher(lines.get(i));
