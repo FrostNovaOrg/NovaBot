@@ -3,16 +3,20 @@ package com.starlwr.bot.core.config.ui;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
+import com.starlwr.bot.core.config.ui.auth.ConfigUiSession;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSessionStore;
 import com.starlwr.bot.core.config.ui.auth.LoginThrottle;
 import com.starlwr.bot.core.datasource.JsonDataSource;
 import com.starlwr.bot.core.util.IpMatcher;
+import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.context.annotation.Profile;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -118,6 +122,17 @@ class SetupBootstrapTest {
         return body;
     }
 
+    private String sessionIdOf(String setCookie) {
+        String prefix = ConfigUiSecurityFilter.SESSION_COOKIE + "=";
+        for (String part : setCookie.split(";")) {
+            String piece = part.strip();
+            if (piece.startsWith(prefix)) {
+                return piece.substring(prefix.length());
+            }
+        }
+        return null;
+    }
+
     @Test
     @DisplayName("① 没有配置文件时，/auth/state 说这台机器还没配过")
     void stateReportsSetupNotDone() {
@@ -177,6 +192,59 @@ class SetupBootstrapTest {
                         + "而这件事从界面上看不出任何异常");
         assertTrue(authService.login(FIRST_PASSWORD.toCharArray(), null, "127.0.0.1").success(),
                 "新设的口令登不上，那这把锁把主人也锁在了门外");
+    }
+
+    @Test
+    @DisplayName("上第一把锁的响应下发口令会话，拿它调 /api/status 是 200")
+    void firstLockIssuesAPasswordSession() throws Exception {
+        // 令牌形态从来没有会话 Cookie：过滤器走的是地址栏令牌，sessionId(request) 为空。
+        // logoutOthers 在 keepId 为空时什么也不撤——401 不是「把当前会话撤了」，
+        // 是上锁之后过滤器切到口令形态，而这一趟没下发过会话。
+        MockHttpServletRequest post = post("/api/auth/password/set");
+        ResponseEntity<JSONObject> response = controller.setPassword(next(FIRST_PASSWORD), post);
+        assertNotNull(response.getBody());
+        assertTrue(response.getBody().getBooleanValue("success"), response.getBody().toJSONString());
+
+        String setCookie = response.getHeaders().getFirst(HttpHeaders.SET_COOKIE);
+        assertNotNull(setCookie, "上锁响应必须下发会话 Cookie，否则下一步接口 401、整页刷新落到登录页");
+        String sessionId = sessionIdOf(setCookie);
+        assertNotNull(sessionId, "Set-Cookie 里应有会话标识: " + setCookie);
+
+        assertTrue(authService.validate(sessionId).isPresent(), "刚下发的会话必须立刻可用");
+        assertEquals(ConfigUiSession.Channel.PASSWORD,
+                authService.validate(sessionId).orElseThrow().getChannel(),
+                "这一把必须是口令通道：启动令牌通道这一趟已经关了");
+        assertNotNull(response.getBody().getString("csrfToken"),
+                "同一响应里要带 CSRF，否则第 2 步的写请求会被挡");
+
+        MockHttpServletRequest status = new MockHttpServletRequest("GET",
+                ConfigUiController.BASE_PATH + "/api/status");
+        status.setRemoteAddr("127.0.0.1");
+        status.setCookies(new Cookie(ConfigUiSecurityFilter.SESSION_COOKIE, sessionId));
+        MockHttpServletResponse out = new MockHttpServletResponse();
+        filter().doFilter(status, out, new MockFilterChain());
+        assertEquals(HttpStatus.OK.value(), out.getStatus(),
+                "拿上锁响应里那把会话调 /api/status 必须 200，实际=" + out.getStatus());
+
+        MockHttpServletRequest naked = new MockHttpServletRequest("GET",
+                ConfigUiController.BASE_PATH + "/api/status");
+        naked.setRemoteAddr("127.0.0.1");
+        MockHttpServletResponse denied = new MockHttpServletResponse();
+        filter().doFilter(naked, denied, new MockFilterChain());
+        assertEquals(HttpStatus.UNAUTHORIZED.value(), denied.getStatus(),
+                "上锁之后不带会话必须 401");
+    }
+
+    @Test
+    @DisplayName("口令太短时不上锁，也不下发会话")
+    void aTooShortPasswordIssuesNoSession() {
+        ResponseEntity<JSONObject> response =
+                controller.setPassword(next("short"), post("/api/auth/password/set"));
+        assertNotNull(response.getBody());
+        assertFalse(response.getBody().getBooleanValue("success"));
+        assertNull(response.getHeaders().getFirst(HttpHeaders.SET_COOKIE),
+                "被拒的那一趟不该下发会话");
+        assertFalse(authService.isEnabled());
     }
 
     @Test

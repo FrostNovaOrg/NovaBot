@@ -846,6 +846,32 @@ class ConfigUiFrontendTest {
         assertTrue(bad.isEmpty(), "初始设置页少了这几件事:\n  " + String.join("\n  ", bad));
     }
 
+    @Test
+    @DisplayName("登录页口令框占满余宽，「显示」钮不吃整行")
+    void loginSecretFieldDoesNotCollapse() throws IOException {
+        String html = Files.readString(frontendDir().resolve("login.html"), StandardCharsets.UTF_8);
+        String button = cssBlock(html, ".secret button");
+        String input = cssBlock(html, ".secret input");
+
+        assertFalse(button.isBlank(), "login.html 里找不到 .secret button");
+        assertFalse(input.isBlank(), "login.html 里找不到 .secret input");
+        assertTrue(button.contains("width:") && !button.contains("width: 100%") && !button.contains("width:100%"),
+                ".secret button 须有自己的 width（非 100%），否则通用 button{width:100%} 把它撑满整行: " + button);
+        assertTrue(input.contains("min-width:0") || input.contains("min-width: 0"),
+                ".secret input 须含 min-width:0，否则口令框被挤到最小: " + input);
+    }
+
+    @Test
+    @DisplayName("登录后落点带着原来的 hash")
+    void loginRedirectKeepsTheHash() throws IOException {
+        String html = Files.readString(frontendDir().resolve("login.html"), StandardCharsets.UTF_8);
+        Matcher bare = Pattern.compile("location\\.replace\\('/config'\\)").matcher(html);
+        assertFalse(bare.find(),
+                "四处 location.replace 不得写成 '/config' 丢掉 hash，否则从 #/settings 进来登录完会落到首页");
+        assertTrue(html.contains("location.replace('/config' + location.hash)"),
+                "登录后落点应是 '/config' + location.hash，无 hash 时与原来相同");
+    }
+
     /**
      * 推送页那份判法
      */
@@ -1786,6 +1812,15 @@ class ConfigUiFrontendTest {
             out.add(item.group(1));
         }
         return out;
+    }
+
+    /**
+     * 某条 CSS 选择器的第一份声明块
+     */
+    private String cssBlock(String css, String selector) {
+        Matcher m = Pattern.compile("(?:^|[\\n}])\\s*" + Pattern.quote(selector) + "\\s*\\{([^}]+)\\}")
+                .matcher(css);
+        return m.find() ? m.group(1) : "";
     }
 
     /**

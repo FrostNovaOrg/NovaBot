@@ -370,6 +370,9 @@ function stepLock(host) {
       });
       report(result, res);
       if (res.success) {
+        // 上锁响应里带着新会话的 CSRF：过滤器此刻已经切到口令形态，
+        // 第 2 步的写请求没有它会被挡。Cookie 由这一趟的 Set-Cookie 落下。
+        if (res.csrfToken) store.csrfToken = res.csrfToken;
         // 口令一存下去这台机器就上了锁，第一步随之成立。重画是为了把那一格变绿、
         // 顺带把通行密钥那个按钮解开——这一步已经没有正在填的格子要保
         await refreshFacts();
@@ -689,12 +692,6 @@ function paintFound(host) {
     + (draft.streamer.roomId ? ' · 直播间 ' + draft.streamer.roomId : '')
     + (draft.streamer.fans == null ? '' : ' · 粉丝 ' + draft.streamer.fans);
   card.appendChild(meta);
-
-  const go = el('a', 'ghost su-go');
-  go.id = 'setup-go-streamer';
-  go.href = detailHash(draft.streamer.platform, draft.streamer.uid);
-  go.textContent = '去主播页看看';
-  card.appendChild(go);
 
   host.appendChild(card);
   host.appendChild(targetPicker());
@@ -1043,6 +1040,14 @@ function renderDone(host) {
     item.textContent = '· ' + line;
     host.appendChild(item);
   });
+
+  if (draft.streamer && facts[3]) {
+    const go = el('a', 'ghost su-go');
+    go.id = 'setup-go-streamer';
+    go.href = detailHash(draft.streamer.platform, draft.streamer.uid);
+    go.textContent = '去主播页看看';
+    host.appendChild(go);
+  }
 
   const bar = el('div', 'su-f');
   const go = el('button', 'primary');

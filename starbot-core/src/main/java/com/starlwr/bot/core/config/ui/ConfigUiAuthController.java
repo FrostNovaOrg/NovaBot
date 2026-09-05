@@ -440,12 +440,21 @@ public class ConfigUiAuthController {
         }
 
         JSONObject replaced = replacePassword(body.getString("next"), request);
-        if (Boolean.TRUE.equals(replaced.getBoolean("success"))) {
-            log.warn("配置界面: 已设下第一把口令, 访问令牌自此不再是凭据, 来源: {}", request.getRemoteAddr());
-            replaced.put("message", "已上锁。这台机器从现在起要口令才进得来，地址栏里的令牌不再管用");
+        if (!Boolean.TRUE.equals(replaced.getBoolean("success"))) {
+            return ResponseEntity.ok(replaced);
         }
 
-        return ResponseEntity.ok(replaced);
+        log.warn("配置界面: 已设下第一把口令, 访问令牌自此不再是凭据, 来源: {}", request.getRemoteAddr());
+        replaced.put("message", "已上锁。这台机器从现在起要口令才进得来，地址栏里的令牌不再管用");
+
+        // 令牌形态没有会话 Cookie。上锁之后过滤器切到口令形态，不在这一趟下发会话，
+        // 下一步接口一律 401，整页刷新落到登录页，初始设置就断在第一步。
+        ConfigUiSession session = authService.issueForPassword(request.getRemoteAddr());
+        authService.logoutOthers(session.getId());
+        replaced.put("csrfToken", session.getCsrfToken());
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, sessionCookie(session.getId(), request).toString())
+                .body(replaced);
     }
 
     /**

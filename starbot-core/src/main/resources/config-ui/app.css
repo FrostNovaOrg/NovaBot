@@ -323,7 +323,7 @@ html.showkeys .keyname{display:block}
 #auth-cards .alcard button{margin-top:4px;padding:6px 14px;font-size:12.5px}
 #auth-cards .alcard .secret{display:flex;gap:6px;align-items:center}
 #auth-cards .alcard .secret input{width:auto;flex:1;min-width:0}
-#auth-cards .alcard .secret button{margin-top:0;padding:6px 10px;font-size:12px;flex:none}
+#auth-cards .alcard .secret button{margin-top:0;padding:6px 10px;font-size:12px;flex:none;width:auto}
 #auth-cards table{width:100%;font-size:12.5px}
 /* 开与关各自要问的那一段，摆在开关下面；不问的时候整块不占位 */
 .totp-flow:not(:empty){margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
@@ -394,9 +394,9 @@ tr:last-child td{border-bottom:none}
 .issues.ok li,.issues.ok b{color:var(--ok)}
 /* 机密字段：输入框 + 一个显示/隐藏开关 */
 .secret{display:flex;gap:6px;align-items:center}
-.secret input{flex:1}
+.secret input{flex:1;min-width:0}
 .secret button{background:var(--surface);color:var(--dim);border:1px solid var(--line);
-  border-radius:var(--r-ctl);padding:6px 10px;font-size:12px;cursor:pointer;font-family:inherit;flex:none}
+  border-radius:var(--r-ctl);padding:6px 10px;font-size:12px;cursor:pointer;font-family:inherit;flex:none;width:auto}
 .secret button:hover{border-color:var(--dim);color:var(--text)}
 /* 绑定验证器的引导。用强调色描边而非报错色：这是建议，不是故障 */
 .totp-setup{background:var(--surface);border:1px solid var(--accent);border-radius:var(--r-card);

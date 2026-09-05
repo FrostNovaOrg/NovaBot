@@ -375,6 +375,19 @@ public class ConfigUiAuthService {
     }
 
     /**
+     * 为刚刚设下第一把口令的人签发会话
+     * <p>
+     * 这一趟他已经写下了口令，不必再登一次。不签发的话，上锁这一刻过滤器切到口令形态，
+     * 而令牌形态从来没有过会话 Cookie，下一步接口一律 401，整页刷新落到登录页——
+     * 初始设置就断在第一步。
+     * @param clientIp 来源 IP
+     * @return 新会话
+     */
+    public ConfigUiSession issueForPassword(String clientIp) {
+        return sessions.issue(clientIp, clock.get(), ConfigUiSession.Channel.PASSWORD);
+    }
+
+    /**
      * 为通行密钥验过身的人签发会话
      * <p>
      * <b>不经二次验证，这是有意的。</b>二次验证要补的是「口令可能被撞库、被键盘记录、被肩窥」这件事，
