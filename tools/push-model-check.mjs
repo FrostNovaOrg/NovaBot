@@ -14,7 +14,8 @@
 
 import {
   atAllStatus, buildDirectory, channelIndex, channelName, commandGroups, commandSummary,
-  layoutState, menuKnown, noticeSwitches, pushTree, recentPushes, revenueSummary,
+  layoutState, menuKnown, noticeSwitches, previewRequestBody, previewRevenueCaption,
+  pushTree, recentPushes, revenueSummary,
   sessionOf, strandedSessions, subscriptionSummary, templateState,
 } from '../starbot-core/src/main/resources/config-ui/push-model.js';
 import {targetOptions} from '../starbot-core/src/main/resources/config-ui/links-model.js';
@@ -420,6 +421,38 @@ const CASES = [
       };
     },
     expect: {'取到的': '第二个', '没有的': 'null'},
+  },
+  {
+    name: '预览请求体带通道',
+    run: () => {
+      const group = previewRequestBody({cover: false}, {platform: 'qq-onebot', type: 1, num: 12345});
+      const none = previewRequestBody({cover: true}, null);
+      const friend = previewRequestBody({}, {platform: 'qq-onebot', type: 0, num: 99});
+      return {
+        '带平台': group.platform,
+        '带类型': group.type,
+        '带号': group.num,
+        '版式还在': group.cover,
+        '没通道不带平台': none.platform === undefined ? '无' : none.platform,
+        '没通道仍带版式': none.cover,
+        '好友类型零也带': friend.type,
+        '群隐藏': previewRevenueCaption({revenueVisible: false}, {type: 1}),
+        '群显示': previewRevenueCaption({revenueVisible: true}, {type: 1}),
+        '私聊无会话': previewRevenueCaption(null, {type: 0}),
+      };
+    },
+    expect: {
+      '带平台': 'qq-onebot',
+      '带类型': 1,
+      '带号': 12345,
+      '版式还在': false,
+      '没通道不带平台': '无',
+      '没通道仍带版式': true,
+      '好友类型零也带': 0,
+      '群隐藏': '按本群金额可见画：隐藏',
+      '群显示': '按本群金额可见画：显示',
+      '私聊无会话': '按本群金额可见画：显示',
+    },
   },
 ];
 

@@ -923,7 +923,8 @@ class ConfigUiFrontendTest {
             "pushTree(", "channelIndex(", "templateState(", "layoutState(", "noticeSwitches(",
             "commandGroups(", "commandSummary(", "recentPushes(", "atAllStatus(",
             "subscriptionSummary(", "revenueSummary(", "strandedSessions(", "channelName(",
-            "templateAdoption(", "restoreDefaults(", "isDefault(");
+            "templateAdoption(", "restoreDefaults(", "isDefault(",
+            "previewRequestBody(", "previewRevenueCaption(");
 
     /**
      * 抄进渲染代码就算退步的那几条判法，闭集
@@ -931,7 +932,8 @@ class ConfigUiFrontendTest {
     private static final List<String> PUSH_MODEL_FUNCTIONS = List.of(
             "function pushTree", "function channelIndex", "function templateState",
             "function layoutState", "function commandGroups", "function commandSummary",
-            "function recentPushes", "function atAllStatus");
+            "function recentPushes", "function atAllStatus",
+            "function previewRequestBody", "function previewRevenueCaption");
 
     /**
      * 模板编辑器那份渲染

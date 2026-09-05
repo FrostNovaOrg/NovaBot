@@ -5,8 +5,10 @@ import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.model.BilibiliLiveReportOptions;
 import com.starlwr.bot.bilibili.painter.BilibiliLiveReportPreviewPainter;
 import com.starlwr.bot.core.config.ui.ConfigUiController;
+import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.model.HandlerOption;
 import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.service.RevenueVisibilityService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
@@ -49,8 +51,12 @@ public class BilibiliReportLayoutController {
 
     private final BilibiliLiveReportPreviewPainter preview;
 
-    public BilibiliReportLayoutController(BilibiliLiveReportPreviewPainter preview) {
+    private final RevenueVisibilityService revenueVisibility;
+
+    public BilibiliReportLayoutController(BilibiliLiveReportPreviewPainter preview,
+                                          RevenueVisibilityService revenueVisibility) {
         this.preview = preview;
+        this.revenueVisibility = revenueVisibility;
     }
 
     /**
@@ -90,14 +96,15 @@ public class BilibiliReportLayoutController {
      * <b>预览与真出报告读的是同一段解析码</b>。各解析各的话，预览会在「越界值怎么夹」
      * 「缺项取什么默认」这些地方悄悄给出与实际不同的图，而那正是所见即所得要防的事。
      * <p>
-     * 金额一律按<b>可见</b>画：金额藏不藏由会话决定（推给谁看），不由版式决定，
-     * 在这一屏上没有对应的开关。预览要展示的是「这套版式最全时长什么样」。
-     * @param params 版式参数，可为空
+     * 金额按当前通道的「金额可见」画：预览与真发到这个群里的是同一张。
+     * 没带通道（platform／num）时仍按可见画，与改之前同一条路。
+     * 金额藏不藏只在本群设置改，这里不另给勾。
+     * @param params 版式参数，可带当前通道的 platform、type、num；可为空
      * @return PNG 图片
      */
     @PostMapping(value = PREVIEW_PATH, produces = MediaType.IMAGE_PNG_VALUE)
     public ResponseEntity<byte[]> preview(@RequestBody(required = false) JSONObject params) {
-        BilibiliLiveReportOptions options = BilibiliLiveReportOptions.of(params, true);
+        BilibiliLiveReportOptions options = BilibiliLiveReportOptions.of(params, showRevenueFor(params));
 
         Optional<byte[]> image = preview.render(options);
         if (image.isEmpty()) {
@@ -111,5 +118,29 @@ public class BilibiliReportLayoutController {
                 .contentType(MediaType.IMAGE_PNG)
                 .cacheControl(CacheControl.noStore())
                 .body(image.get());
+    }
+
+    /**
+     * 这份预览该不该带金额
+     * <p>
+     * 带了通道就问会话级设置，与真出报告同一条路；没带通道沿用旧行为（可见）。
+     * type 缺省时按群聊处理——不确定就按更保守的那一边。
+     * @param body 请求体
+     * @return 是否画金额
+     */
+    private boolean showRevenueFor(JSONObject body) {
+        if (body == null) {
+            return true;
+        }
+
+        String platform = body.getString("platform");
+        Long num = body.getLong("num");
+        if (platform == null || platform.isBlank() || num == null) {
+            return true;
+        }
+
+        Integer typeCode = body.getInteger("type");
+        PushTargetType type = typeCode == null ? null : PushTargetType.of(typeCode);
+        return revenueVisibility.isVisible(platform, type, num);
     }
 }

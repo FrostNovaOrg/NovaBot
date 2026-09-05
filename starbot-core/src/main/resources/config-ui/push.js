@@ -16,7 +16,8 @@ import {$, api, dropDisplayOnly, el, esc, markDirty, say} from './core.js';
 import {resolveTarget, targetOptions} from './links-model.js';
 import {
   atAllStatus, buildDirectory, channelIndex, channelName, commandGroups, commandSummary,
-  layoutState, messageOf, noticeSwitches, pushTree, recentPushes, revenueSummary, sessionOf,
+  layoutState, messageOf, noticeSwitches, previewRequestBody, previewRevenueCaption,
+  pushTree, recentPushes, revenueSummary, sessionOf,
   streamerName, strandedSessions, subscriptionSummary, templateState, typeName,
 } from './push-model.js';
 import {renderIncomplete, sessionSettings} from './sessions.js';
@@ -640,7 +641,7 @@ function renderChannelLevel(host, user, target) {
 
   sectionNotices(host, user, target, session);
   sectionTemplate(host, user, target, session);
-  sectionLayout(host, target);
+  sectionLayout(host, target, session);
   sectionSession(host, user, target, session);
 }
 
@@ -829,7 +830,7 @@ function channelKeyOf(user, target) {
 }
 
 /** 段 3：报告长什么样。只有开着带版式的那类通知时才出现 */
-function sectionLayout(host, target) {
+function sectionLayout(host, target, session) {
   const state = layoutState(target, store.handlerList);
   if (!state.present) return;
 
@@ -869,14 +870,12 @@ function sectionLayout(host, target) {
   line.appendChild(act);
   box.appendChild(line);
 
-  box.appendChild(el('p', 'hint')).textContent =
-    '预览一律按「金额可见」画：金额藏不藏是这个群自己的事（在下面第 4 段改），不由版式定。';
-
   buildLayoutEditor(box, {
     editable,
     lockedNote: '这是默认版式的样子。要单独给这个通道改，先点上面的「改为自定义」。',
     items: handler.options || [],
     paramsOf: () => (messageOf(target, state.className) || {}).params || {},
+    caption: previewRevenueCaption(session, target),
     onChange: params => {
       const message = messageOf(target, state.className);
       if (!message) return;
@@ -885,7 +884,7 @@ function sectionLayout(host, target) {
       label.innerHTML = '本通道用的是：<b>'
         + (layoutState(target, store.handlerList).custom ? '自定义版式' : '默认版式') + '</b>';
     },
-    render: renderLayoutPreview,
+    render: params => renderLayoutPreview(params, target),
   });
 }
 
@@ -894,17 +893,19 @@ function sectionLayout(host, target) {
  *
  * 图由服务端画，与真出报告读的是同一段解析码：各画各的话，预览会在
  * 「越界值怎么夹」「缺项取什么默认」这些地方悄悄给出与实际不同的图。
+ * 请求体带上当前通道，服务端按这个群的「金额可见」画。
  * @param params 版式参数
+ * @param target 当前通道
  * @return 图片地址，画不出来时为空
  */
 let previewUrl = null;
-async function renderLayoutPreview(params) {
+async function renderLayoutPreview(params, target) {
   try {
     const res = await fetch('/config/api/report/preview', {
       method: 'POST',
       headers: Object.assign({'Content-Type': 'application/json'},
         store.csrfToken ? {'X-CSRF-Token': store.csrfToken} : {}),
-      body: JSON.stringify(params || {}),
+      body: JSON.stringify(previewRequestBody(params, target)),
     });
     if (!res.ok) return '';
     // 上一张画完就没用了。不撤销的话，来回调开关几十次会把几十张图一直挂在内存里

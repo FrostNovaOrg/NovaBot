@@ -504,6 +504,48 @@ export function revenueSummary(session) {
 }
 
 /**
+ * 预览请求体：版式参数加上当前通道
+ *
+ * 通道字段与改金额可见那一支同一套定位（platform／type／num）。
+ * 没通道时只带版式，服务端按金额可见画。
+ * type 为 0（私聊）也必须带上：写成 if (target.type) 会把私聊当成没通道。
+ * @param params 版式参数
+ * @param target 当前通道，可为空
+ * @return 请求体
+ */
+export function previewRequestBody(params, target) {
+  const body = Object.assign({}, params || {});
+  if (!target || target.platform == null || target.platform === ''
+      || target.num == null || target.num === '') {
+    return body;
+  }
+  body.platform = target.platform;
+  if (target.type != null && target.type !== '') {
+    body.type = Number(target.type);
+  }
+  body.num = Number(target.num);
+  return body;
+}
+
+/**
+ * 预览图旁那一行：按本群金额可见画：隐藏／显示
+ *
+ * 有会话时跟本群设置走；没有会话时按类型默认（群聊隐藏、私聊显示）。
+ * @param session 当前会话，可为空
+ * @param target 当前通道，可为空
+ * @return 那一行字
+ */
+export function previewRevenueCaption(session, target) {
+  let visible;
+  if (session && Object.prototype.hasOwnProperty.call(session, 'revenueVisible')) {
+    visible = !!session.revenueVisible;
+  } else {
+    visible = Number((target || {}).type) !== 1;
+  }
+  return '按本群金额可见画：' + (visible ? '显示' : '隐藏');
+}
+
+/**
  * 「本群设置」第 3 行：提醒订阅
  *
  * 按订阅类型分行报人数。改「谁会被 @」不在这一行——那一档配在通道的模板里，

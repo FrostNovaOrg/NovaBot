@@ -688,6 +688,11 @@ export function buildLayoutEditor(host, options) {
   const image = el('div', 'rep-img');
   image.id = 'rep-preview';
   view.appendChild(image);
+  if (opts.caption) {
+    const cap = el('p', 'hint');
+    cap.textContent = opts.caption;
+    view.appendChild(cap);
+  }
   box.appendChild(view);
   host.appendChild(box);
 

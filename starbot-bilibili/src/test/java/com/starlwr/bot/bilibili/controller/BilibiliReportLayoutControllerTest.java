@@ -4,7 +4,10 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.model.BilibiliLiveReportOptions;
 import com.starlwr.bot.bilibili.painter.BilibiliLiveReportPreviewPainter;
+import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.model.HandlerOption;
+import com.starlwr.bot.core.service.RevenueVisibilityService;
+import com.starlwr.bot.core.service.StarBotStateStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -46,12 +49,15 @@ class BilibiliReportLayoutControllerTest {
 
     private BilibiliLiveReportPreviewPainter preview;
 
+    private RevenueVisibilityService revenueVisibility;
+
     private BilibiliReportLayoutController controller;
 
     @BeforeEach
     void setUp() {
         preview = mock(BilibiliLiveReportPreviewPainter.class);
-        controller = new BilibiliReportLayoutController(preview);
+        revenueVisibility = new RevenueVisibilityService(new StarBotStateStore(new StarBotCoreProperties()));
+        controller = new BilibiliReportLayoutController(preview, revenueVisibility);
 
         when(preview.render(any())).thenReturn(Optional.of(FAKE_PNG));
     }
@@ -147,6 +153,45 @@ class BilibiliReportLayoutControllerTest {
 
         verify(preview).render(org.mockito.ArgumentMatchers.argThat(options ->
                 !options.isCover() && options.getDanmuRanking() == 20));
+    }
+
+    @Test
+    @DisplayName("🔴 通道金额不可见时，预览按隐藏金额画")
+    void previewHidesRevenueWhenChannelHidesIt() {
+        JSONObject body = new JSONObject();
+        body.put("platform", "qq-onebot");
+        body.put("type", 1);
+        body.put("num", 10000003L);
+
+        controller.preview(body);
+
+        verify(preview).render(org.mockito.ArgumentMatchers.argThat(options ->
+                !options.isShowRevenue()));
+    }
+
+    @Test
+    @DisplayName("🔴 没传通道时预览仍按金额可见画")
+    void previewWithoutChannelKeepsRevenueVisible() {
+        controller.preview(new JSONObject());
+
+        verify(preview).render(org.mockito.ArgumentMatchers.argThat(
+                BilibiliLiveReportOptions::isShowRevenue));
+    }
+
+    @Test
+    @DisplayName("🔴 通道金额改为可见后，预览跟着画金额")
+    void previewShowsRevenueWhenChannelShowsIt() {
+        revenueVisibility.set("qq-onebot", 10000003L, true);
+
+        JSONObject body = new JSONObject();
+        body.put("platform", "qq-onebot");
+        body.put("type", 1);
+        body.put("num", 10000003L);
+
+        controller.preview(body);
+
+        verify(preview).render(org.mockito.ArgumentMatchers.argThat(
+                BilibiliLiveReportOptions::isShowRevenue));
     }
 
     @Test

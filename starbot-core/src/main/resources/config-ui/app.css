@@ -1007,6 +1007,7 @@ button.danger:hover{border-color:var(--err);color:var(--err)}
 .rep-img{padding:10px;background:var(--ground);border:1px solid var(--line);
   border-radius:var(--r-ctl);min-height:120px}
 .rep-shot{display:block;width:100%;height:auto;border-radius:6px}
+.rep-view>.hint{margin:8px 2px 0;font-size:12px;color:var(--dim)}
 @media (max-width:900px){
   .tpl-wrap,.rep-wrap{grid-template-columns:minmax(0,1fr)}
 }
