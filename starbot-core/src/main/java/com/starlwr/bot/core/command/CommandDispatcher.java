@@ -146,10 +146,10 @@ public class CommandDispatcher {
         String name = parts.isEmpty() ? "" : parts.remove(0);
         StarBotCommand command = name.isEmpty() ? null : find(name);
 
-        // 私聊里撞上仅限群聊的命令：保持沉默，不回菜单。
-        // 回菜单会把这条用不了的命令再推荐一遍，使用者照着发第二次，还是同一份菜单
+        // 私聊里撞上仅限群聊的命令：按认不出处理，回菜单。
+        // 菜单此时已按会话过滤，不会把这条用不了的命令再推荐一遍
         if (command != null && command.groupOnly() && !group) {
-            return;
+            command = null;
         }
 
         // 认不出的消息先问一句「有谁在等这个答案吗」。这一步必须排在冷却之前：

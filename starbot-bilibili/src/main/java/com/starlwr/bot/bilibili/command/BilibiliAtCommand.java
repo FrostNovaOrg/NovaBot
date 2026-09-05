@@ -58,7 +58,7 @@ public abstract class BilibiliAtCommand extends BilibiliStreamerCommand {
 
     @Override
     public boolean availableIn(CommandContext context) {
-        return available() && !atsEveryone(context);
+        return super.availableIn(context) && !atsEveryone(context);
     }
 
     @Override

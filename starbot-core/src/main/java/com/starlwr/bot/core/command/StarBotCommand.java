@@ -84,14 +84,14 @@ public interface StarBotCommand {
      * 但在<b>某一个会话</b>里做什么都不会有效果——本群的开播通知配成了 @全体成员 时，
      * 「开播@我」就是这样一条。列出来只会被照着发一遍，然后收到一句解释。
      * <p>
-     * 默认<b>转交</b> {@link #available()} 而不是另立一条规矩：两个互不相干的开关摆在一起，
+     * 默认：本机可用，且（群聊，或本命令不限群聊）。个别命令还可以再叠一层
+     * （例如本群开播通知配成了 @全体成员）。两个互不相干的开关摆在一起，
      * 漏改一处的表现是菜单与实际能不能用对不上，而这两者本就该是同一个答案的两问。
-     * 命令仍然认得出来、收到时照样回一句，隐藏只发生在菜单上。
      * @param context 执行上下文
      * @return 是否在这个会话里列进菜单
      */
     default boolean availableIn(CommandContext context) {
-        return available();
+        return available() && (context.isGroup() || !groupOnly());
     }
 
     /**

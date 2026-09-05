@@ -13,7 +13,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -32,6 +34,20 @@ class MenuCommandTest {
     private static final String PLATFORM = "qq-onebot";
 
     private static final Long GROUP = 30003L;
+
+    /**
+     * 不限群聊的六条：私聊菜单只该列这些
+     */
+    private static final List<String> PRIVATE_OK = List.of(
+            "菜单", "直播报告", "数据排行榜", "总数据排行榜", "直播间数据", "直播间总数据");
+
+    /**
+     * 仅限群聊的八条：私聊菜单不该出现
+     */
+    private static final List<String> GROUP_ONLY_NAMES = List.of(
+            "开播@我", "取消开播@我", "开播@名单",
+            "动态@我", "取消动态@我", "动态@名单",
+            "启用命令", "禁用命令");
 
     private CommandSettingsService settings;
 
@@ -98,6 +114,23 @@ class MenuCommandTest {
         assertTrue(text.contains("直播间数据"), text);
     }
 
+    @Test
+    @DisplayName("私聊菜单只列能在私聊用的六条，群聊十四条照旧")
+    void privateMenuOmitsGroupOnlyCommands() {
+        MenuCommand full = menuOfFourteen();
+        List<String> groupNames = listedNames(full.execute(context(PushTargetType.GROUP)).content());
+        String friendText = full.execute(context(PushTargetType.FRIEND)).content();
+        List<String> friendNames = listedNames(friendText);
+
+        assertEquals(14, groupNames.size(), "群聊菜单：" + groupNames);
+        assertEquals(Set.copyOf(allFourteenNames()), Set.copyOf(groupNames));
+        assertEquals(6, friendNames.size(), "私聊菜单：" + friendText);
+        assertEquals(Set.copyOf(PRIVATE_OK), Set.copyOf(friendNames));
+        for (String name : GROUP_ONLY_NAMES) {
+            assertFalse(friendNames.contains(name), name + " 不该出现在私聊菜单：" + friendText);
+        }
+    }
+
     private int count(String text, String token) {
         int total = 0;
         for (int i = text.indexOf(token); i >= 0; i = text.indexOf(token, i + token.length())) {
@@ -115,6 +148,10 @@ class MenuCommandTest {
     }
 
     private StarBotCommand stub(String name, String category, boolean available) {
+        return stub(name, category, available, true);
+    }
+
+    private StarBotCommand stub(String name, String category, boolean available, boolean groupOnly) {
         return new StarBotCommand() {
             @Override
             public String name() {
@@ -137,9 +174,56 @@ class MenuCommandTest {
             }
 
             @Override
+            public boolean groupOnly() {
+                return groupOnly;
+            }
+
+            @Override
             public CommandReply execute(CommandContext context) {
                 return CommandReply.none();
             }
         };
+    }
+
+    private MenuCommand menuOfFourteen() {
+        List<StarBotCommand> commands = new ArrayList<>();
+        for (String name : PRIVATE_OK) {
+            commands.add(stub(name, categoryOf(name), true, false));
+        }
+        for (String name : GROUP_ONLY_NAMES) {
+            commands.add(stub(name, categoryOf(name), true, true));
+        }
+        CommandDispatcher dispatcher = mock(CommandDispatcher.class);
+        when(dispatcher.all()).thenReturn(commands);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<CommandDispatcher> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(dispatcher);
+        return new MenuCommand(provider, settings);
+    }
+
+    private List<String> allFourteenNames() {
+        List<String> names = new ArrayList<>(PRIVATE_OK);
+        names.addAll(GROUP_ONLY_NAMES);
+        return names;
+    }
+
+    private String categoryOf(String name) {
+        if (name.endsWith("@我") || name.endsWith("@名单")) {
+            return "提醒订阅";
+        }
+        if ("菜单".equals(name) || name.endsWith("命令")) {
+            return "命令管理";
+        }
+        return "数据查询";
+    }
+
+    private List<String> listedNames(String menu) {
+        List<String> names = new ArrayList<>();
+        for (String line : menu.split("\n")) {
+            if (line.contains(" — ")) {
+                names.add(line.split(" ")[0]);
+            }
+        }
+        return names;
     }
 }
