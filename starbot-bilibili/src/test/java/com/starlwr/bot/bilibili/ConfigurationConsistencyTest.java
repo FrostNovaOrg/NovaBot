@@ -7,15 +7,22 @@ import com.starlwr.bot.bilibili.protocol.NovaEventMapper;
 import com.starlwr.bot.core.config.ConfigDanger;
 import com.starlwr.bot.core.config.ConfigEffect;
 import com.starlwr.bot.core.config.ui.ConfigurationGroups;
+import com.starlwr.bot.core.config.ui.ConfigurationMetadataService;
 import com.starlwr.bot.core.config.ui.ExternalConfigurationFields;
 import com.starlwr.bot.core.config.ui.RuntimeConfigurationApplier;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.env.YamlPropertySourceLoader;
 import org.springframework.core.io.FileSystemResource;
+import org.yaml.snakeyaml.LoaderOptions;
+import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 import java.io.IOException;
+import java.io.Reader;
+import java.lang.reflect.Method;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
@@ -23,9 +30,12 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -54,6 +64,12 @@ class ConfigurationConsistencyTest {
      * 各模块生成的配置元数据相对仓库根目录的路径
      */
     private static final String METADATA_PATH = "target/classes/META-INF/spring-configuration-metadata.json";
+
+    /**
+     * 生成件写到这里再读回来
+     */
+    @TempDir
+    Path dir;
 
     /**
      * 从聚合工程的 pom 里现算参与检查的模块
@@ -605,6 +621,182 @@ class ConfigurationConsistencyTest {
         } catch (Exception e) {
             fail("发行包的配置模板无法被解析，照它安装的人会直接进安全模式: " + e.getMessage());
         }
+    }
+
+    /**
+     * 首次保存写出的那份 application.yml，键集必须涵盖全部模块——含插件键
+     *
+     * <h2>为什么放在插件侧的模块里量</h2>
+     * 核心侧 {@code ConfigurationTemplateTest} 的键集判据只跑在核心模块的类路径上，
+     * 而插件键（{@code starbot.bilibili.*}、{@code starbot.adapter.onebot.*}）不在那条
+     * 类路径上——<b>那几格量不到它们，生成件真缺了插件键也照样绿</b>。本类站在反应堆里
+     * 最后构建的模块，读得到全部模块的编译期元数据，正好把分母补全。生产码本身不缺：
+     * {@link ConfigurationMetadataService} 在运行时既扫类路径、也读 plugins/ 目录下的插件 jar。
+     *
+     * <h2>两侧各走什么路</h2>
+     * 期望一侧用本类现成的多模块聚合（{@link #displayedProperties()}），不另抄清单；
+     * 实际一侧把插件 jar 摆进 plugins/ 目录，让生产加载器把「类路径＋插件」两条来路走齐，
+     * 再走生产渲染器写出（{@code ConfigurationTemplate} 是 config.ui 包的包私有件，
+     * 不为这一格把它放宽成 public，从外头借一口）。比对只量「期望的每一键都有它的一行」，
+     * 不量「一行不多」：期望侧读各模块的源码元数据、实际侧读类路径与 jar，来路不同，
+     * 实际侧带出旧构建残留的键不构成使用者的损失——判红只该发生在「设置页上有、文件里没有」。
+     */
+    @Test
+    @DisplayName("⚠️ 生成件键集 —— 插件键与核心键同进首次保存写出的文件, 期望的每一键都有它的一行")
+    void generatedFileCarriesEveryModulesKeys() throws Exception {
+        Set<String> expected = displayedProperties();
+        assertTrue(expected.stream().anyMatch(name -> name.startsWith("starbot.bilibili.")),
+                "分母自证：哔哩哔哩插件键一个都不在期望集里，这一格会量在空集上");
+        assertTrue(expected.stream().anyMatch(name -> name.startsWith("starbot.adapter.onebot.")),
+                "分母自证：适配器插件键一个都不在期望集里，这一格量不到插件来路");
+
+        // plugins/ 是运行时元数据的第二条来路（适配器与扩展的键只能从这条路来）。
+        // 目录建在进程工作目录下，与 ConfigurationMetadataService 的 PLUGIN_DIRECTORY 同址；
+        // 只有这一格自己建的目录才在收尾时删，别的进程放进去的件不动
+        Path plugins = Path.of("plugins");
+        boolean owned = Files.notExists(plugins);
+        if (owned) {
+            Files.createDirectory(plugins);
+        }
+
+        List<Path> installed = new ArrayList<>();
+        try {
+            Path root = repositoryRoot();
+            for (String module : pluginModules()) {
+                Path target = root.resolve(module).resolve("target");
+                if (!Files.isDirectory(target)) {
+                    continue;
+                }
+                try (Stream<Path> jars = Files.list(target)) {
+                    for (Path jar : jars.filter(path -> path.getFileName().toString().endsWith(".jar")).toList()) {
+                        Path copy = plugins.resolve(jar.getFileName());
+                        Files.copy(jar, copy);
+                        installed.add(copy);
+                    }
+                }
+            }
+            assertFalse(installed.isEmpty(),
+                    "一个插件 jar 都没摆进 plugins/ —— 单模块跑这一格前先整盘构建一次");
+
+            // 实际一侧全程走生产件：加载器的两条来路，加渲染器本身
+            List<ConfigurationMetadataService.ConfigurationField> fields =
+                    new ConfigurationMetadataService().getFields();
+            Method render = Class.forName("com.starlwr.bot.core.config.ui.ConfigurationTemplate")
+                    .getDeclaredMethod("render", List.class, Map.class);
+            render.setAccessible(true);
+            String yaml = (String) render.invoke(null, fields, Map.of());
+
+            Path file = dir.resolve("application.yml");
+            Files.writeString(file, yaml, StandardCharsets.UTF_8);
+
+            Set<String> actual = new TreeSet<>(load(file).keySet());
+            actual.addAll(commentedKeys(file, expected));
+
+            List<String> missing = new ArrayList<>(expected);
+            missing.removeAll(actual);
+            assertTrue(missing.isEmpty(),
+                    "首次保存写出的文件缺了以下配置项（期望 " + expected.size() + " 项，缺 "
+                            + missing.size() + " 项）。设置页上有、文件里没有，使用者照着文件改不到那一项，"
+                            + "程序照常启动、什么也不报:\n  " + String.join("\n  ", missing));
+        } finally {
+            for (Path copy : installed) {
+                Files.deleteIfExists(copy);
+            }
+            if (owned) {
+                Files.deleteIfExists(plugins);
+            }
+        }
+    }
+
+    /**
+     * 会作为插件装进 plugins/ 目录的模块
+     * <p>
+     * 按 {@code target/plugin.json} 认定：插件处理器只给插件模块生成它，与部署形态同源，
+     * 不手写名单。手写名单的失败形态是「新插件不在名单里，它的键悄悄免检」；
+     * 现算的失败形态是「新插件的键在期望侧、不在实际侧，这一格当场红」——红的才是对的。
+     * 整盘跑到本模块的测试时，本模块自己的 jar 还没打出来（温树上带着的旧件摆进去也无妨：
+     * 比对只量「期望的每一键都有一行」）；它的键走类路径那条来路取到。
+     * @return 模块目录名
+     */
+    private List<String> pluginModules() {
+        Path root = repositoryRoot();
+
+        List<String> plugins = new ArrayList<>();
+        for (String module : modules()) {
+            if (Files.exists(root.resolve(module).resolve("target").resolve("plugin.json"))) {
+                plugins.add(module);
+            }
+        }
+        return plugins;
+    }
+
+    /**
+     * 拿启动时真正在解析这份件的那个解析器读它，取其中的键与值
+     * <p>
+     * 判法与核心侧 {@code ConfigurationTemplateTest} 同源（那边量核心单模块的定盘星，
+     * 这边量全部模块的键集），改摊平规则时两处一起改。自己写的摊平有一条硬规则：
+     * <b>空表也是叶子</b>——现成的 {@code YamlPropertySourceLoader} 遇到空 map 会递归进去，
+     * 写成空表的那一项于是无声消失，而「写了空表」与「压根没有这一项」必须分得开。
+     * @param file 配置文件
+     * @return 键到值
+     */
+    private static Map<String, Object> load(Path file) throws IOException {
+        LoaderOptions options = new LoaderOptions();
+        options.setAllowDuplicateKeys(false);
+
+        Object root;
+        try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+            root = new Yaml(new SafeConstructor(options)).load(reader);
+        }
+
+        Map<String, Object> values = new LinkedHashMap<>();
+        flattenNode("", root, values);
+        return values;
+    }
+
+    /**
+     * 把解析出来的树摊成「键路径 → 值」：非空 map 继续往下走，其余就地当叶子
+     * @param prefix 到这一层为止的键路径
+     * @param node 这一层的值
+     * @param out 摊平的结果
+     */
+    private static void flattenNode(String prefix, Object node, Map<String, Object> out) {
+        if (node instanceof Map<?, ?> map && !map.isEmpty()) {
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                String key = prefix.isEmpty() ? String.valueOf(entry.getKey()) : prefix + "." + entry.getKey();
+                flattenNode(key, entry.getValue(), out);
+            }
+            return;
+        }
+
+        out.put(prefix, node);
+    }
+
+    /**
+     * 文件里被整行注释掉、但名字仍留着的配置项
+     * <p>
+     * 只认最后一段（判法同核心侧）：注释块里没有缩进关系可循，硬去还原路径反而会认出
+     * 一堆并不存在的键。
+     * @param file 配置文件
+     * @param expected 期望在文件里的键名
+     * @return 被注释掉的键名
+     */
+    private static Set<String> commentedKeys(Path file, Set<String> expected) throws IOException {
+        Set<String> live = load(file).keySet();
+        String text = Files.readString(file, StandardCharsets.UTF_8);
+
+        Set<String> commented = new LinkedHashSet<>();
+        for (String key : expected) {
+            if (live.contains(key)) {
+                continue;
+            }
+            String leaf = key.substring(key.lastIndexOf('.') + 1);
+            if (text.contains("# " + leaf + ":")) {
+                commented.add(key);
+            }
+        }
+
+        return commented;
     }
 
     @Test
