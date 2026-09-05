@@ -807,7 +807,7 @@ public class BilibiliLiveReportPainter {
         curves.add(new Curve("看过人数", BilibiliLiveMetric.WATCHED_COUNT, COLOR_CURVE_WATCHED,
                 peak -> Math.round(peak) + " 人看过"));
         curves.add(new Curve("在线人数", BilibiliLiveMetric.ONLINE_COUNT, COLOR_CURVE_ONLINE,
-                peak -> Math.round(peak) + " 人", true, "登录观众数，B 站高能榜口径"));
+                peak -> Math.round(peak) + " 人", true, "登录观众数，哔哩哔哩高能榜口径"));
 
         // 缺口表整段算一次：各条曲线共用同一条时间轴，缺口落在哪几列对它们是同一个答案
         List<LiveGap> gaps = collectionGaps(platform, uid, start.get(), end.get());

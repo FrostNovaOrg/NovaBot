@@ -16,6 +16,9 @@ import java.util.List;
  * 得到的既不是月初也不是月末的粉丝数，是个无中生有的数。
  * 想看粉丝增长得记每场的涨幅（终值减快照），归档里没有这一项，硬凑不如不给。
  * <p>
+ * <b>在线人数与高能用户也被排除</b>——它们是每场的瞬时峰值，周月统计只会把各场峰值相加，
+ * 得到的既不是同时在线人数也不是高能用户人次，是个看起来合理的错数。
+ * <p>
  * 顺序即界面展示顺序，按运营关心的程度排：先看互动量，再看收入，最后是长尾。
  */
 @StarBotComponent
@@ -38,8 +41,6 @@ public class BilibiliLiveMetricCatalog implements LiveMetricCatalog {
             // 单位写「人次」而不是「人」：单场是这场的独立人数，而周月汇总是把各场相加，
             // 同一个人两场都来会被算两次。与已有的点赞总数（同为服务端下发的累计值）口径一致
             Metric.count(BilibiliLiveMetric.WATCHED_COUNT, "看过", "人次"),
-            Metric.count(BilibiliLiveMetric.ONLINE_RANK_COUNT, "高能用户", "人次"),
-            Metric.count(BilibiliLiveMetric.ONLINE_COUNT, "在线人数", "人"),
             Metric.count(BilibiliLiveMetric.BOX_COUNT, "盲盒", "个"),
             Metric.money(BilibiliLiveMetric.BOX_PROFIT, "盲盒盈亏"),
             Metric.count(BilibiliLiveMetric.FREE_GIFT_COUNT, "免费礼物", "个")

@@ -212,18 +212,16 @@ public final class BilibiliLiveMetric {
     public static final String WATCHED_COUNT = "watched_count";
 
     /**
-     * 高能用户数
+     * 高能榜人数（{@code count} 字段）
      * <p>
-     * 高能榜口径的登录观众数。
-     * 与只增不减的看过人数不同，它会随时间涨落。同样是瞬时量，取最大而非累加。
+     * 与只增不减的看过人数不同，它会随时间涨落。瞬时量，取最大而非累加。
      */
     public static final String ONLINE_RANK_COUNT = "online_rank_count";
 
     /**
-     * 在线人数
+     * 在线人数（{@code online_count} 字段，高能榜头部显示的登录观众数）
      * <p>
-     * 高能榜头部显示的登录观众数。瞬时量，每分钟取最大。
-     * 消息缺 {@code online_count} 时回落到 {@link #ONLINE_RANK_COUNT} 所用的 {@code count}。
+     * 瞬时量，每分钟取最大。缺该字段时回落到 {@link #ONLINE_RANK_COUNT} 所用的 {@code count}。
      */
     public static final String ONLINE_COUNT = "online_count";
 
