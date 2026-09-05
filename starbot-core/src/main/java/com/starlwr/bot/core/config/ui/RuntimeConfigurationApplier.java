@@ -51,6 +51,9 @@ public class RuntimeConfigurationApplier {
         // PushGate 每次判断都重新读这一项，因此写回即生效
         APPLIERS.put("starbot.core.push.enabled", (properties, value) ->
                 properties.getPush().setEnabled(Boolean.parseBoolean(value)));
+        // 每次跟提示前都现读，写回即生效。关掉时不认领，留给以后打开时的第一条
+        APPLIERS.put("starbot.core.push.first-push-tip", (properties, value) ->
+                properties.getPush().setFirstPushTip(Boolean.parseBoolean(value)));
 
         // ---- 静音时段 ----
         // 同上，PushGate 每条推送都现读一次起止时刻

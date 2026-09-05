@@ -80,6 +80,7 @@ starbot.core.plugin.maven-base-urls[1]=https://example.invalid/two
 starbot.core.push.at-all-daily-limit=91
 starbot.core.push.at-all-session-daily-limit=92
 starbot.core.push.enabled=false
+starbot.core.push.first-push-tip=false
 starbot.core.push.quiet-end=07:45
 starbot.core.push.quiet-start=23:30
 starbot.core.sender[0].delay=121

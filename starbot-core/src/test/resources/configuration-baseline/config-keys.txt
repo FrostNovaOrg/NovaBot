@@ -79,6 +79,7 @@ starbot.core.plugin.maven-base-urls|java.util.List<java.lang.String>|<null>|用�
 starbot.core.push.at-all-daily-limit|java.lang.Integer|10|机器人账号每日最多 @全体成员 的次数，0 或负数表示不限制 QQ 本身有每日上限，用超之后**平台会静默忽略**——消息照发但 @ 不生效， 配置的人往往过很久才发现「怎么没人被 @ 到」。因此在自己这一侧先记账， 超额时主动退化为普通消息并记日志，而不是把额度花在注定无效的调用上。 这份额度由该账号推送的全部会话共享（实测：往一个群发一次， 其他群看到的账号剩余次数同步减一）。默认 10 与 QQ 实测值一致， 它才是真正会先卡住的那一道。
 starbot.core.push.at-all-session-daily-limit|java.lang.Integer|20|单个会话每日最多 @全体成员 的次数，0 或负数表示不限制 与账号额度是两个维度：群的额度由群里所有有权限的人共用，机器人只是其中之一。 默认 20 与 QQ 实测值一致。通常先撞到的是账号额度，本项是第二道保险。
 starbot.core.push.enabled|java.lang.Boolean|true|全局推送开关 关闭后所有推送都会被丢弃，用于调试或临时静音，无需逐条改推送配置。改完立即生效，不必重启。
+starbot.core.push.first-push-tip|java.lang.Boolean|true|机器人第一次推送到一个群或好友后，附一句怎么用它的提示（只发一次） 关掉之后不再附这句，也不把这次算作已经提示过——下次打开时的第一条还会带上。改完立即生效，不必重启。
 starbot.core.push.quiet-end|java.lang.String||静音时段结束时间，格式 HH:mm 允许跨零点：开始 23:00、结束 08:00 表示当晚 23 点至次日 8 点。改完立即生效，不必重启。
 starbot.core.push.quiet-start|java.lang.String||静音时段开始时间，格式 HH:mm，与结束时间任一为空即视为不启用 半夜被机器人吵醒是这类通知产品被投诉最多的点，因此内置该能力而不是让使用者自行想办法。 改完立即生效，不必重启。
 starbot.core.sender|java.util.List<com.starlwr.bot.core.model.Sender>|<null>|非插件实现的推送平台配置

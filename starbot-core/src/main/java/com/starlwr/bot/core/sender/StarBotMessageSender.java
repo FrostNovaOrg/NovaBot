@@ -584,15 +584,20 @@ public class StarBotMessageSender {
      * 在这里补判一次是一道恒真的闸：拦不住任何东西，却让提示与它所解释的那条推送
      * 在积压补发那种情形下各行其是（通知发出去了，解释通知的那句没有）。
      * <p>
-     * 剩下的两道判断各有各的事：
+     * 剩下的几道判断各有各的事：
      * <ul>
      *     <li><b>回复不算</b>——收件人刚发过一条命令，再教他一遍怎么发命令只是打扰。</li>
+     *     <li><b>开关关着不发、也不认领</b>——关掉是「先别教」，不是「当作已经教过」；
+     *         认领了，打开之后的第一条也不会再来。</li>
      *     <li><b>认领成功才发</b>——认领与「记下已提示过」是同一个动作，同一时刻推给同一个群的
      *         两条消息不会各发一句。</li>
      * </ul>
      */
     private void tipAfterFirstPush(Sender sender, Message message) {
         if (message.isReply()) {
+            return;
+        }
+        if (!firstPushTip.enabled()) {
             return;
         }
         if (!firstPushTip.claim(message.getPlatform(), message.getType(), message.getNum())) {

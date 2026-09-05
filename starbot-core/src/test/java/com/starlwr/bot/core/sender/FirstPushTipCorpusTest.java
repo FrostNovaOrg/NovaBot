@@ -5,6 +5,8 @@ import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.health.PushActivityRecorder;
 import com.starlwr.bot.core.model.Message;
+import com.starlwr.bot.core.model.PushTarget;
+import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.model.Sender;
 import com.starlwr.bot.core.service.AtAllQuotaService;
 import com.starlwr.bot.core.service.StarBotSenderService;
@@ -223,13 +225,83 @@ class FirstPushTipCorpusTest {
         }
     }
 
+    @Test
+    @DisplayName("升级后把已配置的会话记成已提示；有标记后新加的会话仍会提示一次")
+    void seedsConfiguredSessionsOnce() {
+        StarBotCoreProperties properties = new StarBotCoreProperties();
+        properties.getLive().setLiveDataPath(dataDir.resolve("seed.json").toString());
+
+        StarBotStateStore store = new StarBotStateStore(properties);
+        FirstPushTipService service = new FirstPushTipService(store);
+        service.seedExisting(List.of(
+                session(PLATFORM, PushTargetType.GROUP, GROUP_A),
+                session(PLATFORM, PushTargetType.FRIEND, FRIEND)));
+
+        assertFalse(service.claim(PLATFORM, PushTargetType.GROUP, GROUP_A),
+                "老群升级后被当成新群：已经在用的群还会再收到那句「想用我，先 @ 我」");
+        assertFalse(service.claim(PLATFORM, PushTargetType.FRIEND, FRIEND),
+                "老好友升级后被当成新会话：已经在用的好友还会再收到那句用法提示");
+        assertTrue(service.claim(PLATFORM, PushTargetType.GROUP, GROUP_B),
+                "补记当时还不在配置里的会话，第一次推送仍该提示");
+        assertTrue(store.namespace("FirstPushTip").containsKey(FirstPushTipService.SEEDED_KEY),
+                "补记之后要留下标记，下次启动才知道已经做过");
+        assertFalse(service.claim(PLATFORM, PushTargetType.GROUP, GROUP_A),
+                "标记键不得被当成某个会话：认领老群仍然只看会话键");
+
+        store.save();
+        StarBotStateStore again = new StarBotStateStore(properties);
+        again.onApplicationReadyEvent();
+        try {
+            long third = 30005L;
+            FirstPushTipService restarted = new FirstPushTipService(again);
+            restarted.seedExisting(List.of(
+                    session(PLATFORM, PushTargetType.GROUP, GROUP_A),
+                    session(PLATFORM, PushTargetType.FRIEND, FRIEND),
+                    session(PLATFORM, PushTargetType.GROUP, third)));
+            assertTrue(restarted.claim(PLATFORM, PushTargetType.GROUP, third),
+                    "已经补记过一次之后，后来才加进来的第三个会话不该被二次补记盖住");
+            assertFalse(restarted.claim(PLATFORM, PushTargetType.GROUP, GROUP_A),
+                    "已经补记过的老群，再启动一次也不该再算第一次");
+        } finally {
+            again.onContextClosedEvent();
+        }
+    }
+
+    @Test
+    @DisplayName("关掉首次提示时不发也不认领，打开后第一条才发")
+    void switchOffSkipsTipAndClaim() {
+        Fixture fixture = new Fixture();
+        fixture.properties.getPush().setFirstPushTip(false);
+
+        List<String> off = fixture.push(toGroup(GROUP_A, null));
+        assertEquals(1, off.size(),
+                "关着时不该附那句用法提示，老群升级后被当新群的那一句会在关着时仍发出去");
+        assertTrue(off.get(0).contains("开播啦"), "关着时推送本身仍该发出");
+
+        fixture.properties.getPush().setFirstPushTip(true);
+        List<String> on = fixture.push(toGroup(GROUP_A, "先 @ 我"));
+        assertEquals(2, on.size(),
+                "关着时若已经认领，打开后第一条也不会再提示——关着必须不认领");
+        assertTrue(on.get(1).contains("先 @ 我"), "打开后第一条该带用法提示");
+    }
+
+    private static PushUser session(String platform, PushTargetType type, long num) {
+        PushUser user = new PushUser();
+        PushTarget target = new PushTarget();
+        target.setPlatform(platform);
+        target.setType(type);
+        target.setNum(num);
+        user.getTargets().add(target);
+        return user;
+    }
+
     /**
      * 一次回放用的整套零件
      * <p>
      * 每行语料新建一份：「已提示过」按会话记着，共用一份的话，前一行的痕迹会落到下一行头上。
      */
     private static class Fixture {
-        private final StarBotCoreProperties properties = new StarBotCoreProperties();
+        final StarBotCoreProperties properties = new StarBotCoreProperties();
 
         private final List<String> delivered = Collections.synchronizedList(new ArrayList<>());
 
@@ -262,7 +334,7 @@ class FirstPushTipCorpusTest {
             sender = new StarBotMessageSender(http, senderService,
                     new PushActivityRecorder(TimelineWriter.NONE), new PushGate(properties),
                     TimelineWriter.NONE, new AtAllQuotaService(properties), resolvers,
-                    new FirstPushTipService(new StarBotStateStore(properties)));
+                    new FirstPushTipService(new StarBotStateStore(properties), properties));
         }
 
         /**

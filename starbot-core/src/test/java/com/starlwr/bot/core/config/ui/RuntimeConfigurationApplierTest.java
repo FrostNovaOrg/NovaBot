@@ -111,6 +111,17 @@ class RuntimeConfigurationApplierTest {
     }
 
     @Test
+    @DisplayName("首次推送提示开关：关掉之后当场不再附那句用法提示")
+    void appliesFirstPushTipSwitch() {
+        assertTrue(properties.getPush().isFirstPushTip(), "默认应开着");
+
+        List<String> restart = applier.applyAndTrack(Map.of("starbot.core.push.first-push-tip", "false"));
+
+        assertFalse(properties.getPush().isFirstPushTip(), "关掉应当场生效");
+        assertEquals(List.of(), restart);
+    }
+
+    @Test
     @DisplayName("备份保留份数：改完当场写回运行中的配置")
     void appliesBackupKeep() {
         List<String> restart = applier.applyAndTrack(Map.of("starbot.core.config-ui.backup-keep", "3"));

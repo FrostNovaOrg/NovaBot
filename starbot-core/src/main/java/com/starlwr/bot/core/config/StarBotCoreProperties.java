@@ -229,6 +229,16 @@ public class StarBotCoreProperties {
         private boolean enabled = true;
 
         /**
+         * 机器人第一次推送到一个群或好友后，附一句怎么用它的提示（只发一次）
+         * <p>
+         * 关掉之后不再附这句，也不把这次算作已经提示过——下次打开时的第一条还会带上。改完立即生效，不必重启。
+         */
+        // 之所以能即时生效：每次跟提示前都现读。关掉必须立刻停，否则关了还会再发一句
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
+        private boolean firstPushTip = true;
+
+        /**
          * 机器人账号每日最多 @全体成员 的次数，0 或负数表示不限制
          * <p>
          * QQ 本身有每日上限，用超之后**平台会静默忽略**——消息照发但 @ 不生效，

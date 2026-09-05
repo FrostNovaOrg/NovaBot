@@ -89,6 +89,7 @@ starbot:
       retry-max-attempts: 85
     push:
       enabled: false
+      first-push-tip: false
       at-all-daily-limit: 91
       at-all-session-daily-limit: 92
       quiet-start: "23:30"
