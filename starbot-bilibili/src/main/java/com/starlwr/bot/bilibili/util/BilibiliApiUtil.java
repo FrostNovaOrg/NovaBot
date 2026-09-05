@@ -99,6 +99,21 @@ public class BilibiliApiUtil {
      */
     private static final String GUARD_LIST_API = "https://api.live.bilibili.com/xlive/app-room/v2/guardTab/topListNew?page=1&page_size=1";
 
+    /**
+     * 大航海名单翻页用的同一端点，不带写死的 page / page_size
+     */
+    private static final String GUARD_TAB_API = "https://api.live.bilibili.com/xlive/app-room/v2/guardTab/topListNew";
+
+    /**
+     * 名单单页条数。人数接口仍走 page_size=1，这里要的是名单本身
+     */
+    private static final int GUARD_LIST_PAGE_SIZE = 20;
+
+    /**
+     * 翻页硬上限，防止 info.page 给错时一直要
+     */
+    private static final int GUARD_LIST_MAX_PAGES = 50;
+
     private static final String ROOM_STATUS_API = "https://api.live.bilibili.com/room/v1/Room/get_status_info_by_uids";
 
     private static final String DANMU_INFO_API = "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo";
@@ -1175,6 +1190,128 @@ public class BilibiliApiUtil {
             log.debug("获取直播间 {} 的大航海人数失败: {}", roomId, e.getMessage());
             return Optional.empty();
         }
+    }
+
+    /**
+     * 获取大航海名单
+     * <p>
+     * 按页去翻 {@code topListNew}，把 {@code top3} 与 {@code list} 去重后一并收下。
+     * 请求失败时为空，不抛。
+     * @param roomId 直播间号
+     * @param ruid 主播 uid
+     * @return 名单；拉不到时为空
+     */
+    public Optional<List<GuardMember>> getGuardList(@NonNull Long roomId, @NonNull Long ruid) {
+        Map<Long, GuardMember> unique = new LinkedHashMap<>();
+        Integer total = null;
+        Integer totalPages = null;
+        try {
+            for (int page = 1; page <= GUARD_LIST_MAX_PAGES; page++) {
+                if (totalPages != null && page > totalPages) {
+                    break;
+                }
+                if (total != null && unique.size() >= total) {
+                    break;
+                }
+
+                JSONObject data;
+                try {
+                    data = requestBilibiliApi(GUARD_TAB_API
+                            + "?page=" + page
+                            + "&page_size=" + GUARD_LIST_PAGE_SIZE
+                            + "&roomid=" + roomId
+                            + "&ruid=" + ruid);
+                } catch (Exception e) {
+                    log.debug("获取直播间 {} 的大航海名单第 {} 页失败: {}", roomId, page, e.getMessage());
+                    if (page == 1) {
+                        return Optional.empty();
+                    }
+                    break;
+                }
+                if (data == null) {
+                    if (page == 1) {
+                        return Optional.empty();
+                    }
+                    break;
+                }
+
+                JSONObject info = data.getJSONObject("info");
+                if (info != null) {
+                    if (total == null) {
+                        total = info.getInteger("num");
+                    }
+                    if (totalPages == null) {
+                        totalPages = info.getInteger("page");
+                    }
+                }
+
+                int before = unique.size();
+                addGuardMembers(unique, data.getJSONArray("top3"));
+                addGuardMembers(unique, data.getJSONArray("list"));
+                if (unique.size() == before) {
+                    break;
+                }
+
+                JSONArray list = data.getJSONArray("list");
+                if (list == null || list.size() < GUARD_LIST_PAGE_SIZE) {
+                    break;
+                }
+            }
+        } catch (Exception e) {
+            log.debug("获取直播间 {} 的大航海名单失败: {}", roomId, e.getMessage());
+            return Optional.empty();
+        }
+
+        List<GuardMember> members = new ArrayList<>(unique.values());
+        members.sort(Comparator
+                .comparingInt((GuardMember member) -> member.level() <= 0 ? 99 : member.level())
+                .thenComparing(Comparator.comparingLong(GuardMember::score).reversed()));
+        return Optional.of(members);
+    }
+
+    private static void addGuardMembers(Map<Long, GuardMember> unique, JSONArray items) {
+        if (items == null) {
+            return;
+        }
+        for (int i = 0; i < items.size(); i++) {
+            GuardMember member = parseGuardMember(items.getJSONObject(i));
+            if (member != null) {
+                unique.putIfAbsent(member.uid(), member);
+            }
+        }
+    }
+
+    private static GuardMember parseGuardMember(JSONObject item) {
+        if (item == null) {
+            return null;
+        }
+
+        Long uid = null;
+        String name = null;
+        int level = 0;
+        JSONObject uinfo = item.getJSONObject("uinfo");
+        if (uinfo != null) {
+            uid = uinfo.getLong("uid");
+            JSONObject base = uinfo.getJSONObject("base");
+            if (base != null) {
+                name = base.getString("name");
+            }
+            JSONObject guard = uinfo.getJSONObject("guard");
+            if (guard != null && guard.getInteger("level") != null) {
+                level = guard.getInteger("level");
+            }
+        } else {
+            uid = item.getLong("uid");
+            name = item.getString("username");
+            if (item.getInteger("guard_level") != null) {
+                level = item.getInteger("guard_level");
+            }
+        }
+        if (uid == null) {
+            return null;
+        }
+        long score = item.getLong("score") == null ? 0L : item.getLong("score");
+        return new GuardMember(uid, name == null ? "" : name, level, score);
     }
 
     /**

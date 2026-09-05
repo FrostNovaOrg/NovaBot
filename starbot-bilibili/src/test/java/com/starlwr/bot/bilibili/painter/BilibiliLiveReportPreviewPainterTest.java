@@ -148,6 +148,7 @@ class BilibiliLiveReportPreviewPainterTest {
         minimal.put("fans_change", false);
         minimal.put("interaction_curve", false);
         minimal.put("guard_list", false);
+        minimal.put("guard_list_all", false);
         minimal.put("danmu_cloud", false);
         minimal.put("highlights", false);
         minimal.put("title_changes", false);

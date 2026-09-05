@@ -3,6 +3,7 @@ package com.starlwr.bot.bilibili.painter;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
 import com.starlwr.bot.bilibili.model.BilibiliLiveReportOptions;
+import com.starlwr.bot.bilibili.model.GuardMember;
 import com.starlwr.bot.bilibili.model.Room;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
@@ -101,6 +102,7 @@ class BilibiliLiveReportPainterTest {
         room.setTitle("测试直播间");
         room.setCover("https://pic.example/cover.jpg");
         when(api.getLiveInfoByRoomId(anyLong())).thenReturn(room);
+        when(api.getGuardList(anyLong(), anyLong())).thenReturn(Optional.of(List.of()));
 
         liveDataService = new DefaultLiveDataService(new StarBotCoreProperties());
         roomInfoHistory = new LiveRoomInfoHistory(new StarBotStateStore(new StarBotCoreProperties()));
@@ -294,6 +296,7 @@ class BilibiliLiveReportPainterTest {
         params.put("gift_ranking", 0);
         params.put("super_chat_ranking", 0);
         params.put("guard_list", false);
+        params.put("guard_list_all", false);
         params.put("danmu_cloud", false);
         params.put("highlights", false);
         params.put("title_changes", false);
@@ -515,6 +518,51 @@ class BilibiliLiveReportPainterTest {
     }
 
     @Test
+    @DisplayName("全名单段画出覆写钩子给的三位")
+    void paintsFullGuardRosterFromHook() throws Exception {
+        BilibiliLiveReportPainter hooked = painterWithGuards(Optional.of(List.of(
+                new GuardMember(11L, "甲总督", 1, 300),
+                new GuardMember(22L, "乙提督", 2, 200),
+                new GuardMember(33L, "丙舰长", 3, 100))));
+
+        String text = hooked.textReport(PLATFORM, STREAMER, BilibiliLiveReportOptions.of(null, true));
+        assertAll(
+                () -> assertTrue(text.contains("大航海名单（全部）"), text),
+                () -> assertTrue(text.contains("甲总督"), text),
+                () -> assertTrue(text.contains("乙提督"), text),
+                () -> assertTrue(text.contains("丙舰长"), text));
+
+        Optional<String> image = hooked.paint(PLATFORM, STREAMER, BilibiliLiveReportOptions.of(null, true));
+        assertTrue(image.isPresent(), "有名单也应出图");
+        dump("guard-roster", image.get());
+
+        int without = heightOf(painter.paint(PLATFORM, STREAMER,
+                BilibiliLiveReportOptions.of(null, true)).orElseThrow());
+        assertTrue(heightOf(image.get()) > without, "全名单段应让报告变高");
+    }
+
+    @Test
+    @DisplayName("名单拉不到时画一行说明，整张报告仍然出得来")
+    void paintsUnavailableGuardRosterWithoutFailing() {
+        BilibiliLiveReportPainter hooked = painterWithGuards(Optional.empty());
+
+        String text = hooked.textReport(PLATFORM, STREAMER, BilibiliLiveReportOptions.of(null, true));
+        assertTrue(text.contains("名单暂时拉不到"), text);
+        assertTrue(hooked.paint(PLATFORM, STREAMER, BilibiliLiveReportOptions.of(null, true)).isPresent(),
+                "拉不到名单也不该让整张报告失败");
+    }
+
+    private BilibiliLiveReportPainter painterWithGuards(Optional<List<GuardMember>> members) {
+        return new BilibiliLiveReportPainter(factory, api, liveDataService, fontUtil,
+                new StarBotBilibiliProperties(), roomInfoHistory) {
+            @Override
+            protected Optional<List<GuardMember>> guardList(Long roomId, Long uid) {
+                return members;
+            }
+        };
+    }
+
+    @Test
     @DisplayName("没有缺口时不该多出一句话")
     void saysNothingWithoutGap() {
         liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), 1_700_000_000_000L);
@@ -629,6 +677,7 @@ class BilibiliLiveReportPainterTest {
         params.put("box_ranking", 0);
         params.put("box_profit_ranking", 0);
         params.put("guard_list", false);
+        params.put("guard_list_all", false);
         params.put("danmu_cloud", false);
         params.put("highlights", false);
         params.put("title_changes", false);

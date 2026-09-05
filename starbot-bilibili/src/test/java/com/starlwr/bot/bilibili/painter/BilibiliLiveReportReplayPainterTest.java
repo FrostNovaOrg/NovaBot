@@ -244,6 +244,9 @@ class BilibiliLiveReportReplayPainterTest {
         org.mockito.Mockito.when(liveApi.getGuardCount(org.mockito.ArgumentMatchers.anyLong(),
                         org.mockito.ArgumentMatchers.anyLong()))
                 .thenReturn(Optional.empty());
+        org.mockito.Mockito.when(liveApi.getGuardList(org.mockito.ArgumentMatchers.anyLong(),
+                        org.mockito.ArgumentMatchers.anyLong()))
+                .thenReturn(Optional.of(List.of()));
 
         LiveRoomInfoHistory history = mock(LiveRoomInfoHistory.class);
         org.mockito.Mockito.when(history.history(org.mockito.ArgumentMatchers.anyString(),

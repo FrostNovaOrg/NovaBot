@@ -4,6 +4,7 @@ import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
 import com.starlwr.bot.bilibili.model.BilibiliLiveReportOptions;
+import com.starlwr.bot.bilibili.model.GuardMember;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.factory.StarBotCommonPainterFactory;
@@ -137,6 +138,14 @@ public class BilibiliLiveReportPreviewPainter extends BilibiliLiveReportPainter 
     @Override
     protected Optional<Integer> guardCount(Long roomId, Long uid) {
         return Optional.of(38);
+    }
+
+    @Override
+    protected Optional<List<GuardMember>> guardList(Long roomId, Long uid) {
+        return Optional.of(List.of(
+                new GuardMember(PREVIEW_VIEWERS[0], PREVIEW_VIEWER_NAMES[0], 1, 3000),
+                new GuardMember(PREVIEW_VIEWERS[1], PREVIEW_VIEWER_NAMES[1], 2, 2000),
+                new GuardMember(PREVIEW_VIEWERS[2], PREVIEW_VIEWER_NAMES[2], 3, 1000)));
     }
 
     @Override

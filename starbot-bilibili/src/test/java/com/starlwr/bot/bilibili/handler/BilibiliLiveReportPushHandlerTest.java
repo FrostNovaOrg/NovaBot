@@ -160,7 +160,11 @@ class BilibiliLiveReportPushHandlerTest {
         handler.options().stream()
                 .filter(option -> option.type() == HandlerOption.Type.INTEGER)
                 .forEach(option -> {
-                    assertEquals(0, option.min(), option.key() + " 的下限应为 0（即不展示）");
+                    assertEquals(0, option.min(), option.key() + " 的下限应为 0");
+                    if ("guard_list_limit".equals(option.key())) {
+                        assertEquals(1000, option.max(), option.key() + " 的上限应与版式夹取区间一致");
+                        return;
+                    }
                     assertEquals(20, option.max(), option.key() + " 的上限应与 BilibiliLiveReportOptions 一致");
                 });
     }

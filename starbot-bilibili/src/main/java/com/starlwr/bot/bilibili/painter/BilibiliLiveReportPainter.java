@@ -4,8 +4,10 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import javax.imageio.ImageIO;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.enums.GuardType;
 import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
 import com.starlwr.bot.bilibili.model.BilibiliLiveReportOptions;
+import com.starlwr.bot.bilibili.model.GuardMember;
 import com.starlwr.bot.bilibili.model.Room;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.bilibili.util.DurationFormatUtil;
@@ -390,6 +392,8 @@ public class BilibiliLiveReportPainter {
             text.append("\n盲盒 ").append(boxes).append(" 个");
         }
 
+        appendGuardRoster(text, source, options);
+
         long follow = count(platform, uid, BilibiliLiveMetric.FOLLOW_COUNT);
         int enterUsers = liveDataService.getLiveMetricUserCount(platform, uid, BilibiliLiveMetric.ENTER_USERS);
         if (follow > 0 || enterUsers > 0) {
@@ -430,6 +434,9 @@ public class BilibiliLiveReportPainter {
                 drawTitleChanges(painter, platform, source.getUid());
             }
             drawRankings(painter, platform, source.getUid(), options);
+            if (options.isGuardListAll()) {
+                drawGuardRoster(painter, source, options);
+            }
             if (options.isDanmuCloud()) {
                 drawWordCloud(painter, platform, source.getUid());
             }
@@ -1234,6 +1241,69 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
+     * 绘制当前全部大航海。拉不到时写一行说明，不让整张报告失败
+     */
+    private void drawGuardRoster(CommonPainter painter, LiveStreamerInfo source, BilibiliLiveReportOptions options) {
+        Optional<List<GuardMember>> fetched = guardList(source.getRoomId(), source.getUid());
+        if (fetched.isPresent() && fetched.get().isEmpty()) {
+            return;
+        }
+
+        painter.movePos(0, 10);
+        painter.drawTextWithStyle(List.of(new TextWithStyle("大航海名单（全部）",
+                CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN)));
+        if (fetched.isEmpty()) {
+            painter.drawTextWithStyle(
+                    List.of(new TextWithStyle("名单暂时拉不到", 24, COLOR_TEXT, Font.PLAIN)),
+                    null, true, MARGIN);
+            painter.movePos(0, 8);
+            return;
+        }
+
+        painter.movePos(0, 6);
+        for (GuardMember member : sortAndLimit(fetched.get(), options.getGuardListLimit())) {
+            String line = guardRankName(member.level()) + "  " + member.name();
+            TextWithStyle row = new TextWithStyle(line, 24, COLOR_TEXT, Font.PLAIN);
+            row.setText(painter.truncateToWidth(row, CONTENT_WIDTH));
+            painter.drawTextWithStyle(List.of(row));
+        }
+        painter.movePos(0, 8);
+    }
+
+    private void appendGuardRoster(StringBuilder text, LiveStreamerInfo source, BilibiliLiveReportOptions options) {
+        if (!options.isGuardListAll()) {
+            return;
+        }
+        Optional<List<GuardMember>> fetched = guardList(source.getRoomId(), source.getUid());
+        if (fetched.isPresent() && fetched.get().isEmpty()) {
+            return;
+        }
+        text.append("\n大航海名单（全部）");
+        if (fetched.isEmpty()) {
+            text.append("\n名单暂时拉不到");
+            return;
+        }
+        for (GuardMember member : sortAndLimit(fetched.get(), options.getGuardListLimit())) {
+            text.append('\n').append(guardRankName(member.level())).append("  ").append(member.name());
+        }
+    }
+
+    private static List<GuardMember> sortAndLimit(List<GuardMember> members, int limit) {
+        List<GuardMember> sorted = new ArrayList<>(members);
+        sorted.sort(Comparator
+                .comparingInt((GuardMember member) -> member.level() <= 0 ? 99 : member.level())
+                .thenComparing(Comparator.comparingLong(GuardMember::score).reversed()));
+        if (limit > 0 && sorted.size() > limit) {
+            return new ArrayList<>(sorted.subList(0, limit));
+        }
+        return sorted;
+    }
+
+    private static String guardRankName(int level) {
+        return GuardType.of(level).getName();
+    }
+
+    /**
      * 绘制一张排行榜
      * @param title 榜单标题
      * @param metric 用户计分表指标名
@@ -1736,6 +1806,25 @@ public class BilibiliLiveReportPainter {
      */
     protected Optional<Integer> guardCount(Long roomId, Long uid) {
         return api.getGuardCount(roomId, uid);
+    }
+
+    /**
+     * 这位主播当前的大航海名单，取不到时为空
+     * <p>
+     * 这份名单是现拉的「此刻在舰的人」，不是本场新开通的那张计分表。
+     * 预览与历史重画必须覆写这一口，否则会拿夹具或去年的场次去打今天的接口。
+     */
+    protected Optional<List<GuardMember>> guardList(Long roomId, Long uid) {
+        if (roomId == null || uid == null) {
+            return Optional.empty();
+        }
+        try {
+            Optional<List<GuardMember>> fetched = api.getGuardList(roomId, uid);
+            return fetched == null ? Optional.empty() : fetched;
+        } catch (RuntimeException e) {
+            log.debug("获取直播间 {} 的大航海名单失败: {}", roomId, e.getMessage());
+            return Optional.empty();
+        }
     }
 
     /**

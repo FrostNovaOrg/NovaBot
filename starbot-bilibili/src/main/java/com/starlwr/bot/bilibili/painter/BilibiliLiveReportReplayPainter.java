@@ -2,6 +2,7 @@ package com.starlwr.bot.bilibili.painter;
 
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.model.BilibiliLiveReportOptions;
+import com.starlwr.bot.bilibili.model.GuardMember;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.analytics.LiveDetail;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
@@ -120,6 +121,14 @@ public class BilibiliLiveReportReplayPainter extends BilibiliLiveReportPainter {
     @Override
     protected Optional<Integer> guardCount(Long roomId, Long uid) {
         return Optional.empty();
+    }
+
+    /**
+     * 当时的全名单明细里没有，现拉会变成今天的人画在去年的报告上
+     */
+    @Override
+    protected Optional<List<GuardMember>> guardList(Long roomId, Long uid) {
+        return Optional.of(List.of());
     }
 
     /**

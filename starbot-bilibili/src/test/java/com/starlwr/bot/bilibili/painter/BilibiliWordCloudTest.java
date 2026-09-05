@@ -199,6 +199,7 @@ class BilibiliWordCloudTest {
         room.setTitle("测试直播间");
         room.setCover("https://pic.example/cover.jpg");
         when(api.getLiveInfoByRoomId(anyLong())).thenReturn(room);
+        when(api.getGuardList(anyLong(), anyLong())).thenReturn(Optional.of(List.of()));
 
         liveDataService = new DefaultLiveDataService(new StarBotCoreProperties());
         LiveRoomInfoHistory roomInfoHistory = new LiveRoomInfoHistory(new StarBotStateStore(new StarBotCoreProperties()));

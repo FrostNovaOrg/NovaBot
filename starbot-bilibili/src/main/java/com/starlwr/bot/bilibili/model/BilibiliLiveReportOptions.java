@@ -37,6 +37,16 @@ public class BilibiliLiveReportOptions {
     private static final int MAX_RANKING_COUNT = 20;
 
     /**
+     * 全名单最多展示的人数。0 表示不限，上限挡住把报告拉成几千行的配置
+     */
+    private static final int MAX_GUARD_LIST_ALL = 1000;
+
+    /**
+     * 全名单默认展示的人数
+     */
+    private static final int DEFAULT_GUARD_LIST_ALL = 30;
+
+    /**
      * 是否展示直播间封面横幅
      */
     private boolean cover = true;
@@ -75,6 +85,16 @@ public class BilibiliLiveReportOptions {
      * 是否展示本场开通大航海的观众名单
      */
     private boolean guardList = true;
+
+    /**
+     * 是否展示这位主播当前的全部大航海，不只本场新开通的
+     */
+    private boolean guardListAll = true;
+
+    /**
+     * 全名单展示前多少人，0 为不限
+     */
+    private int guardListLimit = DEFAULT_GUARD_LIST_ALL;
 
     /**
      * 是否展示粉丝、粉丝团与大航海的本场变化
@@ -144,6 +164,11 @@ public class BilibiliLiveReportOptions {
             HandlerOption.bool("fans_change", "本场变化", "粉丝、粉丝团、大航海的涨幅，每次出报告要多打三个接口", DEFAULTS.fansChange),
             HandlerOption.bool("interaction_curve", "互动曲线", "弹幕、礼物等随时间的变化曲线", DEFAULTS.interactionCurve),
             HandlerOption.bool("guard_list", "大航海名单", "本场新开通大航海的观众", DEFAULTS.guardList),
+            HandlerOption.bool("guard_list_all", "大航海全名单",
+                    "这位主播当前全部大航海，不只本场新开通。拉不到时这一段会写明，不会让整张报告失败",
+                    DEFAULTS.guardListAll),
+            HandlerOption.integer("guard_list_limit", "全名单人数", "展示前几名，0 为不限",
+                    DEFAULTS.guardListLimit, 0, MAX_GUARD_LIST_ALL),
             HandlerOption.bool("danmu_cloud", "弹幕词云", "本场弹幕的词云图", DEFAULTS.danmuCloud),
             HandlerOption.bool("highlights", "高能时刻", "弹幕最密集的几个时段，对应可剪切片的时间点", DEFAULTS.highlights),
             HandlerOption.bool("title_changes", "标题变化", "本场改过的直播间标题，没改过时不占版面", DEFAULTS.titleChanges),
@@ -192,6 +217,8 @@ public class BilibiliLiveReportOptions {
         options.boxRanking = ranking(params, "box_ranking", options.boxRanking);
         options.boxProfitRanking = ranking(params, "box_profit_ranking", options.boxProfitRanking);
         options.guardList = bool(params, "guard_list", options.guardList);
+        options.guardListAll = bool(params, "guard_list_all", options.guardListAll);
+        options.guardListLimit = bounded(params, "guard_list_limit", options.guardListLimit, 0, MAX_GUARD_LIST_ALL);
         options.fansChange = bool(params, "fans_change", options.fansChange);
         options.interactionCurve = bool(params, "interaction_curve", options.interactionCurve);
         options.danmuCloud = bool(params, "danmu_cloud", options.danmuCloud);
@@ -216,5 +243,16 @@ public class BilibiliLiveReportOptions {
             return defaultValue;
         }
         return Math.max(0, Math.min(MAX_RANKING_COUNT, value));
+    }
+
+    /**
+     * 读取一个整数并夹到合法区间
+     */
+    private static int bounded(JSONObject params, String key, int defaultValue, int min, int max) {
+        Integer value = params.getInteger(key);
+        if (value == null) {
+            return defaultValue;
+        }
+        return Math.max(min, Math.min(max, value));
     }
 }

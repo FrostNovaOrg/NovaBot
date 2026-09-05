@@ -3,6 +3,7 @@ package com.starlwr.bot.bilibili.painter;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
 import com.starlwr.bot.bilibili.model.BilibiliLiveReportOptions;
+import com.starlwr.bot.bilibili.model.GuardMember;
 import com.starlwr.bot.bilibili.model.Room;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
@@ -79,6 +80,10 @@ class BilibiliLiveReportLayoutTest {
 
     private StarBotCommonPainterFactory factory;
 
+    private FontUtil fontUtil;
+
+    private LiveRoomInfoHistory roomInfoHistory;
+
     @BeforeAll
     static void headless() {
         System.setProperty("java.awt.headless", "true");
@@ -90,7 +95,7 @@ class BilibiliLiveReportLayoutTest {
         // 用核心内置字体，免得版式结论取决于跑测试这台机器装了什么字体
         coreProperties.getPaint().getFonts().add("内置");
 
-        FontUtil fontUtil = new FontUtil(new DefaultResourceLoader(), coreProperties);
+        fontUtil = new FontUtil(new DefaultResourceLoader(), coreProperties);
         fontUtil.init();
 
         Properties buildInfo = new Properties();
@@ -114,9 +119,10 @@ class BilibiliLiveReportLayoutTest {
         room.setTitle("测试直播间");
         room.setCover("https://pic.example/cover.jpg");
         when(api.getLiveInfoByRoomId(anyLong())).thenReturn(room);
+        when(api.getGuardList(anyLong(), anyLong())).thenReturn(Optional.of(List.of()));
 
         liveDataService = new DefaultLiveDataService(new StarBotCoreProperties());
-        LiveRoomInfoHistory roomInfoHistory = new LiveRoomInfoHistory(new StarBotStateStore(new StarBotCoreProperties()));
+        roomInfoHistory = new LiveRoomInfoHistory(new StarBotStateStore(new StarBotCoreProperties()));
         painter = new BilibiliLiveReportPainter(factory, api, liveDataService, fontUtil,
                 new StarBotBilibiliProperties(), roomInfoHistory);
     }
@@ -488,6 +494,27 @@ class BilibiliLiveReportLayoutTest {
         int[] gap = inkInCardGaps(image);
         assertEquals(0, gap[0],
                 "卡片之间的缝里有 " + gap[0] + " 个墨点, 最上面一处在 y=" + gap[1] + ", 有卡片盖到了隔壁");
+    }
+
+    @Test
+    @DisplayName("全名单段写出三位长名字时不画进右边距")
+    void fullGuardRosterStaysInsideTheCanvas() throws Exception {
+        String longName = "甲".repeat(40);
+        painter = new BilibiliLiveReportPainter(factory, api, liveDataService, fontUtil,
+                new StarBotBilibiliProperties(), roomInfoHistory) {
+            @Override
+            protected Optional<List<GuardMember>> guardList(Long roomId, Long uid) {
+                return Optional.of(List.of(
+                        new GuardMember(11L, longName + "总督", 1, 300),
+                        new GuardMember(22L, longName + "提督", 2, 200),
+                        new GuardMember(33L, longName + "舰长", 3, 100)));
+            }
+        };
+
+        BufferedImage image = render(aSessionLikeTheScreenshot("测试主播"), "guard-roster");
+        int[] margin = inkInRightMargin(image);
+        assertEquals(0, margin[0],
+                "右边距里有 " + margin[0] + " 个墨点, 最上面一处在 y=" + margin[1] + ", 全名单昵称画到了版心外");
     }
 
     /**
