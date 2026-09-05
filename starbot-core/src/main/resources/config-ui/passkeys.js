@@ -6,6 +6,7 @@
  * 从这里 import 会让它多一次请求，而那次请求恰好发生在还没登录的时候。
  */
 
+import {ask} from './confirm.js';
 import {$, api, el, esc, say} from './core.js';
 
 /**
@@ -135,7 +136,8 @@ export async function registerPasskey(trigger) {
 }
 
 async function remove(id) {
-  if (!confirm('删了以后这台设备就只能用口令进。确定删除？')) return;
+  if (!await ask({title: '确定删除？',
+    body: '删了以后这台设备就只能用口令进。'})) return;
 
   const result = await api('/auth/passkeys/' + encodeURIComponent(id), {method: 'DELETE'});
   say(result.message, result.success ? 'ok' : 'err');

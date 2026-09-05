@@ -16,6 +16,7 @@ import {copyConfigPath, discard, filterSettings, focusGroup, renderConfigPath, r
 import {openSetup, stopSetupPolling} from './setup.js';
 import {store} from './store.js';
 import {loadStreamers, releaseReport, syncStreamersView} from './streamers.js';
+import {ask} from './confirm.js';
 import {clearIssuedToken, loadTokens} from './tokens.js';
 
 /**
@@ -482,7 +483,8 @@ $('#logout').addEventListener('click', async () => {
   location.reload();
 });
 $('#logout-all').addEventListener('click', async () => {
-  if (!confirm('将注销所有设备上的登录，包括当前这一个。继续？')) return;
+  if (!await ask({title: '继续？',
+    body: '将注销所有设备上的登录，包括当前这一个。'})) return;
   await api('/auth/logout?all=true', {method: 'POST'});
   location.reload();
 });

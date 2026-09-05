@@ -9,6 +9,7 @@
  * 于是这三项收成一张卡，各自带着自己的流程与端点，改完<b>当场生效</b>，不进改动条。
  */
 
+import {ask} from './confirm.js';
 import {$, api, el, esc, say} from './core.js';
 import {bindPasswordReveal} from './password-reveal.js';
 import {loadPasskeys, registerPasskey} from './passkeys.js';
@@ -306,7 +307,8 @@ function disableFlow(flow, result, settle) {
 function passkeyCard() {
   const box = shell('auth-passkey', '通行密钥',
     '登记之后，登录时按一下指纹或面容即可，不用再输动态验证码——'
-    + '私钥一直在你自己的设备上，这台机器只存得下一把开不了门的公钥。');
+    + '私钥一直在你自己的设备上，这台机器只存得下一把开不了门的公钥。'
+    + '通行密钥认的是当前访问地址，换了地址（如从局域网换成域名）要重新登记。');
 
   box.body.innerHTML = '<div id="passkey-list"></div>';
   const add = el('button', 'ghost');
@@ -341,7 +343,8 @@ function rerunCard() {
   box.body.appendChild(button);
 
   button.addEventListener('click', async () => {
-    if (!confirm('会从第一步开始走一遍，已经配好的东西不会被清掉。要走吗？')) return;
+    if (!await ask({title: '要走吗？',
+      body: '会从第一步开始走一遍，已经配好的东西不会被清掉。'})) return;
 
     button.disabled = true;
     try {

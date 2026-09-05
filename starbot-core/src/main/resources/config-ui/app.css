@@ -67,12 +67,6 @@
   --paper:#FFFFFF; --on-accent:#14121F;
   --overlay:rgba(10,8,18,.58);
 }
-/* 旧变量名留一版别名。页面脚本里若有按旧名取色的地方，换名当天不会突然读到空值；
-   各页版式改造把引用逐处换到新名之后，这一块就可以整块删掉。 */
-:root{
-  --bg:var(--ground); --panel:var(--surface); --border:var(--line); --muted:var(--dim);
-  --accent-soft:var(--soft); --code:var(--ground);
-}
 
 /* 组件基类。本轮只把样式备好，页面结构一处未动，由后续各页改造时挂上去。 */
 .nv-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);

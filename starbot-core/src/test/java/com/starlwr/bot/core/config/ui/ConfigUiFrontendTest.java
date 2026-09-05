@@ -1468,6 +1468,45 @@ class ConfigUiFrontendTest {
     }
 
     /**
+     * 其余六处危险确认同样走自绘弹层，config-ui 里原生 confirm() 的调用钉在 0
+     * <p>
+     * 改回去同样不会让任何功能变坏。六处是接线不是新判法，所以这一格走静态扫描，
+     * 不另起一份纯模型夹具——打开／取消／确认那一份已经在量弹层本身。
+     */
+    @Test
+    @DisplayName("其余危险确认也不再调用原生 confirm")
+    void remainingDangerConfirmsUsePaintedDialog() {
+        Map<String, String> sources = coreSources();
+        List<String> bad = new ArrayList<>();
+
+        for (String name : List.of("main.js", "settings-auth.js", "setup.js", "passkeys.js", "tokens.js")) {
+            String text = sources.getOrDefault(name, "");
+            if (text.isBlank()) {
+                bad.add(name + " 找不到");
+                continue;
+            }
+            String code = codeOnly(text);
+            if (code.contains("confirm(")) {
+                bad.add(name + " 仍在调用原生 confirm()");
+            }
+            if (!code.contains("ask(")) {
+                bad.add(name + " 没有问过 ask，危险确认此刻点了不弹");
+            }
+            if (!importedFrom(text, "confirm.js").contains("ask")) {
+                bad.add(name + " 用了 ask 却没从 confirm.js 引进来");
+            }
+        }
+
+        sources.forEach((name, text) -> {
+            if (codeOnly(text).contains("confirm(")) {
+                bad.add(name + " 仍有原生 confirm() 调用");
+            }
+        });
+
+        assertTrue(bad.isEmpty(), "其余危险确认少了这几件事:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
      * 首页「今日」第三格与 Webhook 待办的落点，闭集
      * <p>
      * 额度与告警已配没配的判定只许有 {@code home-model.js} 一份。渲染那一层再判一遍的话，

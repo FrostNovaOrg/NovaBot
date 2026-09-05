@@ -14,6 +14,7 @@
  * 卡上写的名字取自 /api/login 里那个由插件自报的显示名。
  */
 
+import {ask} from './confirm.js';
 import {$, api, el, esc, markDirty, say} from './core.js';
 import {resolveTarget, targetOptions} from './links-model.js';
 import {registerPasskey} from './passkeys.js';
@@ -530,10 +531,10 @@ function stepAccount(host) {
  * 使用者要过很久才会发现「怎么弹幕这么少」。进度条上这一格也不打勾，打的是一个警告点：
  * 这一步确实定了，但它定的是一个有后果的决定。
  */
-function chooseAnonymous() {
-  if (!confirm('不登录的话：个人主播的直播间实测只能拿到约一成弹幕，'
-    + '发送者的号会被抹成 0、昵称只留首字；动态推送与自动关注都用不了。直播推送不受影响。\n\n'
-    + '确定先不登录吗？')) return;
+async function chooseAnonymous() {
+  if (!await ask({title: '确定先不登录吗？',
+    body: '不登录的话：个人主播的直播间实测只能拿到约一成弹幕，'
+      + '发送者的号会被抹成 0、昵称只留首字；动态推送与自动关注都用不了。直播推送不受影响。'})) return;
 
   draft.anonymousConfirmed = true;
   finishStep('anon');
@@ -748,9 +749,10 @@ function targetPicker() {
  * 「先不加主播」。<b>要过一次确认</b>：不加主播的话这台 NovaBot 起来什么都不做，
  * 而一路点下去的人不会意识到这一点
  */
-function skipStreamer() {
-  if (!confirm('不加主播的话，这台 NovaBot 起来什么都不做——不采集，也不推送。'
-    + '之后可以在「QQ 推送」页里加。确定先不加吗？')) return;
+async function skipStreamer() {
+  if (!await ask({title: '确定先不加吗？',
+    body: '不加主播的话，这台 NovaBot 起来什么都不做——不采集，也不推送。'
+      + '之后可以在「QQ 推送」页里加。'})) return;
 
   draft.noStreamerConfirmed = true;
   finishStep('skip');

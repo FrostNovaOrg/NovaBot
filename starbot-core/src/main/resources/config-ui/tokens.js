@@ -10,6 +10,7 @@
  *    没有那一句，这行文案就只是句话。ConfigUiFrontendTest 会在每次构建时检查前三条。
  */
 
+import {ask} from './confirm.js';
 import {$, api, esc, say} from './core.js';
 import {refreshLinks} from './links.js';
 import {bindPasswordReveal} from './password-reveal.js';
@@ -236,8 +237,8 @@ function renderTokenList(tokens) {
 }
 
 async function revoke(token) {
-  if (!confirm('确定吊销「' + token.label + '」这把口令吗？\n\n'
-      + '⚠️ 已经连上的面板不会因此掉线——吊销只对新连接生效。撤完请确认对方确实断开了。')) return;
+  if (!await ask({title: '确定吊销这把口令吗？',
+    body: '「' + token.label + '」吊销之后，已经连上的面板不会因此掉线——吊销只对新连接生效。撤完请确认对方确实断开了。'})) return;
 
   try {
     const result = await api('/event-tokens/' + encodeURIComponent(token.fingerprint) + '/revoke',
