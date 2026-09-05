@@ -97,6 +97,21 @@ class AtAllQuotaServiceTest {
     }
 
     @Test
+    @DisplayName("平台名带冒号时，账号维度与会话维度不混在一条账上")
+    void colonInPlatformNameKeepsDimensionsApart() {
+        AtAllQuotaService service = service(100, 100);
+
+        // 平台 "a:1" 的账号维度用一次；平台 a 在群 1 的会话维度用一次。
+        // 计数键若按 platform + ":" + num 拼字符串，这两个维度会拼出同一个 "a:1"，
+        // 一条账被两个维度各记一次——这正是配额要分维度记时最不能有的混法
+        assertTrue(service.tryConsume("a:1", 9L));
+        assertTrue(service.tryConsume("a", 1L));
+
+        assertEquals(1, service.usedByBot("a:1"), "平台 a:1 的账号额度只记自己花的那次");
+        assertEquals(1, service.used("a", 1L), "平台 a 群 1 的会话额度只记自己花的那次");
+    }
+
+    @Test
     @DisplayName("上限为 0 或负数时该维度不限制")
     void zeroMeansUnlimited() {
         AtAllQuotaService unlimited = service(0, 0);

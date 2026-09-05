@@ -50,8 +50,20 @@ public class BilibiliDataSourceService implements DataSourceService {
 
     @Override
     public void completePushUser(PushUser user) {
+        // 粉丝数与昵称、房间号出自同一份响应，那一趟已顺路把它带回来，此处只是用不上
+        completeStreamerWithFans(user);
+    }
+
+    /**
+     * 补全主播信息，粉丝数随同一趟带回
+     * <p>
+     * 与 {@link #completePushUser} 是同一趟接口调用：粉丝数就躺在补全那份响应里
+     * （{@code follower_num}），不为它另打一趟——控制台「找一下」要的正是这一趟。
+     */
+    @Override
+    public StreamerWithFans completeStreamerWithFans(PushUser user) {
         if (user == null || user.getUid() == null) {
-            return;
+            return new StreamerWithFans(user, null);
         }
 
         try {
@@ -66,19 +78,21 @@ public class BilibiliDataSourceService implements DataSourceService {
             if (StringUtil.isBlank(user.getFace())) {
                 user.setFace(up.getFace());
             }
+            return new StreamerWithFans(user, up.getFans());
         } catch (Exception e) {
             // 补全失败不应导致该主播被整体丢弃：直播间号缺失只影响直播推送，动态推送仍可正常工作
             log.error("补全 uid {} 的信息失败, 该主播的直播推送可能不可用: {}", user.getUid(), e.getMessage());
+            return new StreamerWithFans(user, null);
         }
     }
 
     /**
      * 获取粉丝数
      * <p>
-     * ⚠️ 它与 {@link #completePushUser} 打的是<b>同一个接口</b>（主播信息），
-     * 因此查一次主播会往平台去两趟。没有把两者并成一次，是因为补全推送用户
-     * 在加载配置时对每一位主播都会跑一遍，而粉丝数只有添加主播那一屏要——
-     * 并起来会让每次重载配置都多拉一份没人看的数据。
+     * ⚠️ 它与 {@link #completePushUser} 打的是<b>同一个接口</b>（主播信息）。
+     * 两者都要的场合（控制台「找一下」）应改走 {@link #completeStreamerWithFans}，
+     * 那一趟把粉丝数顺路带回；这个口子留给只要粉丝数的场合——在补全旁边再调它
+     * 一次，就退回了两趟。
      * @param uid UID
      * @return 粉丝数，取不到时为空
      */
@@ -108,22 +122,28 @@ public class BilibiliDataSourceService implements DataSourceService {
         log.info("哔哩哔哩主播信息补全完毕");
     }
 
-    /**
-     * 按直播间号查主播
-     * <p>
-     * 短号由平台接口一次解析成真实房间再拿到 uid。找不到或接口失败时给空，
-     * 不加重试——查主播口会把空收成原来那句「未查到」。
-     */
     @Override
     public Optional<PushUser> lookupByRoomId(Long roomId) {
+        return Optional.ofNullable(lookupByRoomIdWithFans(roomId).user());
+    }
+
+    /**
+     * 按直播间号查主播，粉丝数随同一趟带回
+     * <p>
+     * 房间号先由房间信息接口解析成 uid，再按 uid 取主播信息——粉丝数在后者那份
+     * 响应里顺路带回，不另打一趟。找不到或接口失败时给空，不加重试——查主播口
+     * 会把空收成原来那句「未查到」。
+     */
+    @Override
+    public StreamerWithFans lookupByRoomIdWithFans(Long roomId) {
         if (roomId == null) {
-            return Optional.empty();
+            return new StreamerWithFans(null, null);
         }
 
         try {
             Up up = api.getUpInfoByRoomId(roomId);
             if (up == null || StringUtil.isBlank(up.getUname())) {
-                return Optional.empty();
+                return new StreamerWithFans(null, null);
             }
 
             PushUser user = new PushUser();
@@ -132,10 +152,10 @@ public class BilibiliDataSourceService implements DataSourceService {
             user.setRoomId(up.getRoomId() != null ? up.getRoomId() : roomId);
             user.setFace(up.getFace());
             user.setPlatform(BilibiliPlatform.BILIBILI.id());
-            return Optional.of(user);
+            return new StreamerWithFans(user, up.getFans());
         } catch (Exception e) {
             log.debug("按直播间号 {} 查询主播失败: {}", roomId, e.getMessage());
-            return Optional.empty();
+            return new StreamerWithFans(null, null);
         }
     }
 

@@ -11,6 +11,15 @@ import java.util.Optional;
  */
 public interface DataSourceService {
     /**
+     * 查到（或补全）的主播，连同粉丝数
+     * <p>
+     * 粉丝数不进 {@link PushUser}（原因见 {@link #getFansCount}），由这个载体随主播一并带回；
+     * 主播没查到时 {@link #user()} 为 null，粉丝数取不到时为 null——两个 null 都要与 0 分开。
+     */
+    record StreamerWithFans(PushUser user, Long fans) {
+    }
+
+    /**
      * 补全推送用户信息
      * @param user 推送用户
      */
@@ -24,6 +33,21 @@ public interface DataSourceService {
         for (PushUser user : users) {
             completePushUser(user);
         }
+    }
+
+    /**
+     * 补全主播信息，并把粉丝数一并带回
+     * <p>
+     * 控制台「找一下」那张确认小卡要的是昵称、直播间号与粉丝数，而它们出自同一个主播信息接口：
+     * 分别调 {@link #completePushUser} 与 {@link #getFansCount} 会向平台打两趟。
+     * 默认实现正是这两趟的组合，够不着一份响应的平台照用；粉丝数就躺在补全那份响应里的
+     * 平台应覆盖本方法，一趟全带回来。
+     * @param user 待补全的推送用户，uid 已填
+     * @return 补全后的主播与粉丝数
+     */
+    default StreamerWithFans completeStreamerWithFans(PushUser user) {
+        completePushUser(user);
+        return new StreamerWithFans(user, fansQuietly(user));
     }
 
     /**
@@ -57,6 +81,19 @@ public interface DataSourceService {
     }
 
     /**
+     * 按直播间号查主播，并把粉丝数一并带回
+     * <p>
+     * 与 {@link #completeStreamerWithFans} 同理：默认按「查一次＋取一次粉丝数」两趟组合，
+     * 平台能在解析房间号的同一份响应里捎回粉丝数时应覆盖本方法。
+     * @param roomId 直播间号，可以是短号
+     * @return 查到的主播与粉丝数，找不到时 user 为 null
+     */
+    default StreamerWithFans lookupByRoomIdWithFans(Long roomId) {
+        PushUser user = lookupByRoomId(roomId).orElse(null);
+        return new StreamerWithFans(user, fansQuietly(user));
+    }
+
+    /**
      * 从一段文本里认出本平台的主播
      * <p>
      * 让使用者自己从链接里抠出那串数字是没必要的一道门槛，而<b>链接长什么样只有平台自己知道</b>：
@@ -74,5 +111,21 @@ public interface DataSourceService {
      */
     default Optional<StreamerReference> parseStreamerLink(String text) {
         return Optional.empty();
+    }
+
+    /**
+     * 取粉丝数，取不到时不声张
+     * <p>
+     * 粉丝数是附带字段：主播已经查到了，不该因为它拉不下来就让整次查询判失败。
+     */
+    private Long fansQuietly(PushUser user) {
+        if (user == null || user.getUid() == null) {
+            return null;
+        }
+        try {
+            return getFansCount(user.getUid()).orElse(null);
+        } catch (Exception e) {
+            return null;
+        }
     }
 }

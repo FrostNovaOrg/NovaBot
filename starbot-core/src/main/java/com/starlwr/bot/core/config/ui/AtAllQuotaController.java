@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -108,13 +109,15 @@ public class AtAllQuotaController {
      */
     private Set<PushTarget> groups() {
         Set<PushTarget> targets = new LinkedHashSet<>();
-        Set<String> seen = new LinkedHashSet<>();
+        Set<Map.Entry<String, Long>> seen = new LinkedHashSet<>();
         for (PushUser user : dataSource.getAllUsers()) {
             for (PushTarget target : user.getTargets()) {
                 if (PushTargetType.GROUP != target.getType() || target.getNum() == null) {
                     continue;
                 }
-                if (seen.add(target.getPlatform() + ":" + target.getNum())) {
+                // 按平台与群号这一对去重，不拼字符串：配额的计数键已因平台名带冒号
+                // 改成成对的键，同一个身份不该在这里又养出另一种拼法
+                if (seen.add(Map.entry(target.getPlatform(), target.getNum()))) {
                     targets.add(target);
                 }
             }
