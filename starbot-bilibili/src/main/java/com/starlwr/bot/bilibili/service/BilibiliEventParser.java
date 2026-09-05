@@ -186,7 +186,8 @@ public class BilibiliEventParser {
      * <p>
      * 平台同样没有公开 {@code .proto}，字段号由 2026-09-04/05 实抓的 2 条登录态样本反推
      * （跨 2 个房间，送礼者为同一人，礼物均为 ¥0.1 的牛哇牛哇），并与同时段同房的
-     * 2 条 V1 报文对照过语义。样本量远小于当初 INTERACT_WORD_V2 的 2122 条，
+     * 2 条 V1 报文对照过语义；2026-09-05 生产又核到同一对真样（粉丝团灯牌与粉丝手幅），
+     * 34 与 37 号的读法出自这一对。样本量远小于当初 INTERACT_WORD_V2 的 2122 条，
      * 各字段的把握见下，子布局与 INTERACT_WORD_V2 <b>不通用</b>的地方单独标了 ⚠️。
      * <pre>
      *   顶层字段  语义                证据
@@ -213,10 +214,13 @@ public class BilibiliEventParser {
      *       10           秒级时间戳        2/2，落在采集窗口内
      *       12           连击批次号        2/2，不取用
      *       18           动作文案          2/2，如「投喂」，不取用
-     *       34           疑似开出物名      2/2，恒为<b>空串</b>——恰与 V1 的
-     *                     original_gift_name 在非盲盒时为空串同形，但没有盲盒样本，坐实不了，
-     *                     处理见 {@link #parseGiftV2}
+     *       34           表情特效          2/2 空；2026-09-05 生产实样定读：灯牌为
+     *                     {1:id, 2:type}    {id:5632012, type:1}，手幅为空。face_effect 一类，
+     *                                       非盲盒（初版 2 条恒空曾疑开出物名，方向错了），
+     *                                       与入账无关，TRACE 留 id/type
      *       35           礼物信息 {1:图}   2/2，与 V1 gift_info.img_basic 对应
+     *       37           特效清单          2/2 空；生产实样灯牌为 {1:1; 2:{id,type} ×2}
+     *                     repeated {1,2}    （repeated 子消息），手幅为空。用途未知，不取用
      * </pre>
      * <pre>
      *   勋章（15.3）字段  语义              证据
@@ -260,7 +264,11 @@ public class BilibiliEventParser {
 
     private static final int GIFT_V2_TIMESTAMP = 10;
 
-    private static final int GIFT_V2_BLIND = 34;
+    private static final int GIFT_V2_FACE_EFFECT = 34;
+
+    private static final int GIFT_V2_FACE_EFFECT_ID = 1;
+
+    private static final int GIFT_V2_FACE_EFFECT_TYPE = 2;
 
     private static final int GIFT_V2_GIFT_INFO = 35;
 
@@ -866,10 +874,8 @@ public class BilibiliEventParser {
      * 与 {@code SEND_GIFT} 是同一件事的两种格式，产出相同的事件，差别只在承载方式，
      * 字段号的来历与证据见 {@link #GIFT_V2_UID} 处的字段表。
      * <p>
-     * <b>盲盒：</b>礼物块的 34 号字段在普通礼物上恒为空串，位置恰与 V1 的
-     * {@code original_gift_name}（非盲盒时空串）同形，但至今没有盲盒的 V2 样本，坐实不了。
-     * 按<b>普通礼物</b>入账，34 非空时留一行日志——盲盒若真走这个字段，日志里就是它的原文，
-     * 拿来补字段表。
+     * <b>盲盒：</b>V2 里盲盒走哪个字段未知——至今的样本里没有盲盒，不按位置猜。
+     * 任何礼物一律按<b>普通礼物</b>入账（34 号是表情特效，不是开出物名，见字段表）。
      * <p>
      * <b>背包礼物：</b>V2 里 {@code bag_gift} 的对应字段未知（样本里没出现过），V2 的背包
      * 礼物暂时认不出来，实扣只能按 {@code total_coin} 照记。等样本。
@@ -900,10 +906,14 @@ public class BilibiliEventParser {
             return null;
         }
 
-        String suspectedBlind = gift.string(GIFT_V2_BLIND);
-        if (suspectedBlind != null && !suspectedBlind.isBlank()) {
-            log.debug("直播间 {} 的 SEND_GIFT_V2 礼物块 34 号字段非空, 疑似盲盒, 按普通礼物处理: {}",
-                    source.getRoomId(), suspectedBlind);
+        // 34 号是表情特效子消息 {1:id, 2:type}（见字段表），与入账无关。留痕只到 TRACE
+        // 且只打取到的两个数：字段语义尚未被平台文档证实，打整块字节只会得到乱码
+        BilibiliProtobufReader faceEffect = gift.message(GIFT_V2_FACE_EFFECT);
+        Long faceEffectId = faceEffect == null ? null : faceEffect.number(GIFT_V2_FACE_EFFECT_ID);
+        Long faceEffectType = faceEffect == null ? null : faceEffect.number(GIFT_V2_FACE_EFFECT_TYPE);
+        if (log.isTraceEnabled() && (faceEffectId != null || faceEffectType != null)) {
+            log.trace("直播间 {} 的 SEND_GIFT_V2 礼物带表情特效: id={}, type={}",
+                    source.getRoomId(), faceEffectId, faceEffectType);
         }
 
         BilibiliProtobufReader uinfo = message.message(GIFT_V2_UINFO);

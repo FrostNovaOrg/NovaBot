@@ -595,12 +595,42 @@ class BilibiliEventParserTest {
             assertNull(sender.getGuard());
         }
 
+        /**
+         * 在采集解析日志的开关下解析一条 V2 报文
+         * <p>
+         * 34 号字段的新读法只在 TRACE 留痕，因此采集前把解析器 logger 抬到 TRACE，
+         * 结束后恢复原级别并摘除采集器——日志断言只该约束自己这一条报文的解析
+         * @param pb data.pb（base64）
+         * @param logsOut 采集到的日志文本，按产出顺序追加
+         * @return 解析产出，没有产出时为 {@code null}
+         */
+        private StarBotBaseLiveEvent parseV2CollectingLogs(String pb, List<String> logsOut) {
+            ch.qos.logback.classic.Logger logger =
+                    (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(BilibiliEventParser.class);
+            ch.qos.logback.classic.Level previousLevel = logger.getLevel();
+            logger.setLevel(ch.qos.logback.classic.Level.TRACE);
+            ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                    new ch.qos.logback.core.read.ListAppender<>();
+            appender.start();
+            logger.addAppender(appender);
+            try {
+                StarBotBaseLiveEvent event = parseV2(pb).orElse(null);
+                logsOut.addAll(appender.list.stream()
+                        .map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage)
+                        .toList());
+                return event;
+            } finally {
+                logger.detachAppender(appender);
+                logger.setLevel(previousLevel);
+            }
+        }
+
         @Test
-        @DisplayName("礼物块带非空 34 号字段（疑盲盒）时按普通礼物入账")
-        void treatsSuspectedBlindBoxAsNormalGift() {
-            // 34 号字段在普通礼物上恒为空串，疑似 V1 original_gift_name 的位置。
-            // 盲盒的真实布局没有样本：按盲盒猜会把金额记错方向，先按普通礼物入账并留日志，
-            // 等真盲盒报文出现再补
+        @DisplayName("礼物块 34 号是表情特效子消息（灯牌样）：按普通礼物入账，日志无乱码")
+        void treatsFaceEffectGiftAsNormalGift() {
+            // 2026-09-05 生产实样的布局：灯牌礼物的 34 号是子消息 {1: 特效 id, 2: 特效 type}
+            // （face_effect 一类），37 号是 repeated {1,2} 清单。旧读法把 34 当字符串、疑为
+            // 开出物名——真样本下会把特效字节按文本打出乱码，且盲盒的方向是错的
             PbWriter gift = new PbWriter()
                     .varint(1, 31036)
                     .str(2, "辣条")
@@ -609,12 +639,48 @@ class BilibiliEventParserTest {
                     .varint(7, 3000)
                     .str(8, "gold")
                     .varint(10, 1700000002L)
-                    .str(34, "开出物");
+                    .message(34, new PbWriter().varint(1, 5632012).varint(2, 1))
+                    .message(37, new PbWriter()
+                            .varint(1, 1)
+                            .message(2, new PbWriter().varint(1, 6036469).varint(2, 2))
+                            .message(2, new PbWriter().varint(1, 5632012).varint(2, 1)));
 
+            List<String> logs = new ArrayList<>();
             BilibiliPaidGiftEvent event = assertInstanceOf(BilibiliPaidGiftEvent.class,
-                    parseV2(new PbWriter().message(10, gift).base64()).orElseThrow());
+                    parseV2CollectingLogs(new PbWriter().message(10, gift).base64(), logs));
 
-            assertEquals(3.0, event.getCharged(), 0.0001, "没有盲盒样本之前不猜随机礼物，按 total_coin 入账");
+            assertEquals(3.0, event.getCharged(), 0.0001, "特效不是盲盒，照常按 total_coin 实扣入账");
+            assertEquals(1.0, event.getGiftInfo().getPrice(), 0.0001, "单价仍按折扣价（字段 6）算");
+            assertTrue(logs.stream().noneMatch(message -> message.contains("\uFFFD")),
+                    "日志不得出现乱码——34 号是子消息，字节不是文本");
+            assertFalse(logs.stream().anyMatch(message -> message.contains("疑似盲盒")),
+                    "盲盒猜判与其 debug 行已撤");
+            assertTrue(logs.stream().anyMatch(message -> message.contains("id=5632012") && message.contains("type=1")),
+                    "新读法按子消息取到 id 与 type（TRACE 留痕）");
+        }
+
+        @Test
+        @DisplayName("34 号为空串的礼物（手幅样）不留特效痕迹，照常入账")
+        void parsesGiftWithEmptyFaceEffectField() {
+            // 同批另一条实样：不带特效的礼物 34 号为空串。按子消息读是一条空消息，
+            // id 与 type 都缺席——不能因此打出 id=null 一类的噪声行
+            PbWriter gift = new PbWriter()
+                    .varint(1, 31036)
+                    .str(2, "辣条")
+                    .varint(3, 3)
+                    .varint(6, 1000)
+                    .varint(7, 3000)
+                    .str(8, "gold")
+                    .varint(10, 1700000002L)
+                    .str(34, "");
+
+            List<String> logs = new ArrayList<>();
+            BilibiliPaidGiftEvent event = assertInstanceOf(BilibiliPaidGiftEvent.class,
+                    parseV2CollectingLogs(new PbWriter().message(10, gift).base64(), logs));
+
+            assertEquals(3.0, event.getCharged(), 0.0001);
+            assertTrue(logs.stream().noneMatch(message -> message.contains("\uFFFD")));
+            assertFalse(logs.stream().anyMatch(message -> message.contains("表情特效")), "空特效不留痕");
         }
 
         /**
