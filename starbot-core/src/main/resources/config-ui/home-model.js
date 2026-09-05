@@ -142,6 +142,23 @@ export function setupDone(status, login) {
 }
 
 /**
+ * 打开控制台该不该直接落到初始设置页
+ * <p>
+ * 只看五步完成了 0 步。配置文件在不在不算：同意使用协议就会写出 application.yml，
+ * 若按文件在不在判，刚装好的机器会停在空首页。
+ * <p>
+ * 「稍后再说」由调用方自己记（只活在这一趟里），本函数不看。
+ * status 还没取到时回 false：当成「没配过」会让已经配好的机器先闪一下初始设置页。
+ * @param status /api/status 回包；还没有时传 null
+ * @param login /api/login 回包
+ * @return {boolean} 该落到初始设置页为 true
+ */
+export function shouldOpenSetup(status, login) {
+  if (!status) return false;
+  return setupDone(status, login) === 0;
+}
+
+/**
  * 顶部横条
  *
  * 一次只出一条，按「使用者此刻最需要知道哪件事」排序：暂停排在静音前面，

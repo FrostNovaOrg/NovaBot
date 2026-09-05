@@ -125,8 +125,8 @@ class SetupBootstrapTest {
 
         JSONObject state = controller.state(new MockHttpServletRequest());
         assertEquals(Boolean.FALSE, state.getBoolean("setupDone"),
-                "界面靠这一栏决定把人领到初始设置页还是摆首页。"
-                        + "缺了它，刚装好的机器上摆出来的是一个 0 主播 0 推送的空首页");
+                "这一栏是配置文件在不在。文件还不在时必须是 false，"
+                        + "缺了它，还在认这一栏的旧界面无从判断");
     }
 
     @Test
@@ -137,7 +137,7 @@ class SetupBootstrapTest {
         fileService.createIfAbsent();
 
         assertEquals(Boolean.TRUE, controller.state(new MockHttpServletRequest()).getBoolean("setupDone"),
-                "判据是「配置文件在不在」。恒 false 的话，配好了的机器每次打开都被送回初始设置页");
+                "这一栏是配置文件在不在。恒 false 的话，还在认这一栏的旧界面会把已有文件的机器当成没配过");
     }
 
     @Test

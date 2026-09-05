@@ -7,7 +7,7 @@
 
 import {$, api, clock, el, esc, markDirty, say, today} from './core.js';
 import {homeModel, stationHref, todayAtAllMarkup} from './home-model.js';
-import {pageStatus} from './main.js';
+import {considerSetupRedirect, pageStatus} from './main.js';
 import {store} from './store.js';
 
 /** 链路图上三座站的图标。画在这里而不是插件里：这三座站是产品形态本身，不随装了什么插件变 */
@@ -246,6 +246,7 @@ export async function refreshHome() {
       api('/status'), api('/login'), api('/timeline?date=' + today()),
       api('/at-all/quota').catch(() => null),
     ]);
+    if (considerSetupRedirect(status, login)) return status;
     renderStatus(status);
     renderHome(status, login, timeline, quota);
     return status;

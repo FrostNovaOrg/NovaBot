@@ -1582,9 +1582,10 @@ public class ConfigUiController {
         // 该提示的新版：侧栏药丸、点开的小面板与首页那条软待办共用这一块。没有新版时整块不下发——
         // 这类字段的读法是「缺席即没有」，与 queue 那种「键必须在、值可以为 0」不是同一种约定，
         // 多发一个空对象只会让界面多一种两头都没定义的中间态。
-        // 首装机器（配置文件还没建立，即 /auth/state 里 setupDone 的判据）不下发：
-        // 它连一个主播都还没配，最不该在那一屏上被「有新版」带走
-        if (fileService.exists()) {
+        // 还没配主播的机器不下发：它连一个主播都还没配，最不该在那一屏上被「有新版」带走。
+        // 不按配置文件在不在判——同意使用协议就会写出 application.yml，按文件判的话
+        // 刚装好的机器也会挂药丸。
+        if (!users.isEmpty()) {
             updateCheck.pendingUpdate().ifPresent(update -> {
                 JSONObject updateJson = new JSONObject();
                 updateJson.put("latestVersion", update.version());

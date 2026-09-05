@@ -5,6 +5,7 @@ import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.datasource.DataSourceServiceRegistry;
 import com.starlwr.bot.core.health.PushActivityRecorder;
+import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.service.EventStreamTokenService;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.StarBotEventHandlerService;
@@ -54,6 +55,8 @@ class UpdateStatusFieldsTest {
 
     private ConfigurationFileService fileService;
 
+    private AbstractDataSource dataSource;
+
     /** 假来源说最新版是 v5.1.0，当前跑着 5.0.0：足够构造出「该提示」的那一档 */
     private UpdateCheckService updateCheck;
 
@@ -64,6 +67,8 @@ class UpdateStatusFieldsTest {
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
 
         fileService = mock(ConfigurationFileService.class);
+        dataSource = mock(AbstractDataSource.class);
+        when(dataSource.getAllUsers()).thenReturn(List.of());
 
         JSONObject release = new JSONObject();
         release.put("tag_name", "v5.1.0");
@@ -77,6 +82,12 @@ class UpdateStatusFieldsTest {
     @DisplayName("有新版且已配过：版本、说明、链接一并下发")
     void updateBlockCarriesVersionNotesAndUrl() {
         when(fileService.exists()).thenReturn(true);
+        PushUser user = new PushUser();
+        user.setUid(3493L);
+        user.setUname("柚子");
+        user.setPlatform("bilibili");
+        user.setEnabled(true);
+        when(dataSource.getAllUsers()).thenReturn(List.of(user));
 
         JSONObject update = controller().status().getJSONObject("update");
 
@@ -89,13 +100,12 @@ class UpdateStatusFieldsTest {
     @Test
     @DisplayName("首装机器：哪怕有新版也不下发这一块")
     void firstInstallGetsNoUpdateBlock() {
-        // 配置文件还没建立＝/auth/state 里 setupDone 的同一判据。首装那一屏引导的是「先配一个主播」，
-        // 「有新版」出现在那里，排在前面的永远该是自己这台机器还没跑起来这件事
-        when(fileService.exists()).thenReturn(false);
+        // 同意协议会写出配置文件，但还没有主播。按文件在不在判的话这里会下发药丸
+        when(fileService.exists()).thenReturn(true);
 
         JSONObject status = controller().status();
 
-        assertFalse(status.containsKey("update"), "首装机器不该见到这枚药丸，缺席即没有");
+        assertFalse(status.containsKey("update"), "还没配主播的机器不该见到这枚药丸，缺席即没有");
     }
 
     @Test
@@ -107,6 +117,12 @@ class UpdateStatusFieldsTest {
         updateCheck = new UpdateCheckService(properties, new StarBotStateStore(properties), buildOf("5.0.0"), url -> sameVersion);
         updateCheck.checkNow();
         when(fileService.exists()).thenReturn(true);
+        PushUser user = new PushUser();
+        user.setUid(3493L);
+        user.setUname("柚子");
+        user.setPlatform("bilibili");
+        user.setEnabled(true);
+        when(dataSource.getAllUsers()).thenReturn(List.of(user));
 
         JSONObject status = controller().status();
 
@@ -115,9 +131,6 @@ class UpdateStatusFieldsTest {
 
     @SuppressWarnings("unchecked")
     private ConfigUiController controller() {
-        AbstractDataSource dataSource = mock(AbstractDataSource.class);
-        when(dataSource.getAllUsers()).thenReturn(List.of());
-
         ObjectProvider healthProbes = mock(ObjectProvider.class);
         when(healthProbes.orderedStream()).thenAnswer(invocation -> List.of().stream());
 

@@ -1507,6 +1507,46 @@ class ConfigUiFrontendTest {
     }
 
     /**
+     * 刚装好的机器打开控制台应落到初始设置，判法是五步全没做
+     * <p>
+     * 旧写法看 {@code /auth/state} 的 {@code setupDone}（配置文件在不在）。同意使用协议
+     * 会把 {@code agreement:} 写进 application.yml，文件一旦存在这一位就变成 true，
+     * 人就停在空首页。改回去同样不会让任何功能变坏——首页照样能打开，只是刚装好的
+     * 机器少被领到该去的那一页。
+     */
+    @Test
+    @DisplayName("从没配过的机器进首页转到初始设置，判法是五步全没做")
+    void blankMachineHomeRedirectsToSetupUsingSetupSteps() {
+        Map<String, String> sources = coreSources();
+        String main = sources.getOrDefault("main.js", "");
+        String model = sources.getOrDefault("home-model.js", "");
+        List<String> bad = new ArrayList<>();
+
+        if (model.isBlank()) {
+            bad.add("找不到 home-model.js，五步的判法没有落脚的地方");
+        } else if (!model.contains("function shouldOpenSetup")) {
+            bad.add("home-model.js 没有 shouldOpenSetup。进首页该不该转到初始设置必须问这一份");
+        }
+
+        if (main.isBlank()) {
+            bad.add("找不到 main.js，进首页的跳转没有落脚的地方");
+        } else {
+            if (!importedFrom(main, "home-model.js").contains("shouldOpenSetup")) {
+                bad.add("main.js 没有从 home-model.js 引进 shouldOpenSetup");
+            }
+            if (!codeOnly(main).contains("shouldOpenSetup(")) {
+                bad.add("main.js 没有问过 shouldOpenSetup，进首页的跳转此刻仍看配置文件在不在");
+            }
+            if (codeOnly(main).contains("store.setupDone === false")) {
+                bad.add("main.js 仍用 store.setupDone === false 决定跳转。"
+                        + "同意协议会写出配置文件，这一位变成 true，人就停在首页");
+            }
+        }
+
+        assertTrue(bad.isEmpty(), "首装进首页的跳转少了这几件事:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
      * 首页「今日」第三格与 Webhook 待办的落点，闭集
      * <p>
      * 额度与告警已配没配的判定只许有 {@code home-model.js} 一份。渲染那一层再判一遍的话，

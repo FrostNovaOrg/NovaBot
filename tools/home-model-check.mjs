@@ -12,7 +12,7 @@
  * 退码 0 即九档全对；任一档对不上打印差异并以 1 退出。
  */
 
-import {homeModel, PROBE_ANCHOR, stationHref, todayAtAllMarkup} from '../starbot-core/src/main/resources/config-ui/home-model.js';
+import {homeModel, PROBE_ANCHOR, setupDone, shouldOpenSetup, stationHref, todayAtAllMarkup} from '../starbot-core/src/main/resources/config-ui/home-model.js';
 
 /** 探针的原样形态，与 /api/status 里 health 那一项逐字段同形 */
 function probe(name, scope, level, summary, advice, loginState) {
@@ -406,6 +406,20 @@ const freshStatus = status({
 });
 same(homeModel(freshStatus, login(), timeline()).todos.map(item => item.key), ['setup'],
   '首次安装只出初始设置待办');
+
+function blankLogin() {
+  return login({
+    accounts: [{platform: 'bilibili', displayName: '哔哩哔哩', loggedIn: false, accountId: null}],
+  });
+}
+
+same(shouldOpenSetup(null, blankLogin()), false, '还没取到回包时不拦——配好的机器不能先闪初始设置');
+same(setupDone(freshStatus, blankLogin()), 0, '同意协议后五步仍是 0（文件在不在不算）');
+same(shouldOpenSetup(freshStatus, blankLogin()), true, '五步全没做：进首页该转到初始设置');
+same(shouldOpenSetup(status(), login()), false, '五步都齐了：不转');
+same(shouldOpenSetup(Object.assign({}, freshStatus, {locked: true}), blankLogin()), false,
+  '只上了锁也算做了一步，不转');
+same(shouldOpenSetup(freshStatus, login()), false, '已经登录直播平台：不是 0 步');
 
 if (tileFails.length) {
   console.error('\n今日格／待办对不上 ' + tileFails.length + ' 处（共跑了 ' + tileChecks + ' 格）：');

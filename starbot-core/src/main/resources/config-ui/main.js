@@ -5,7 +5,7 @@
 
 import {bindBotForm, botFormHtml, fillBotForms} from './bot.js';
 import {$, api, el, esc, markDirty, say} from './core.js';
-import {PROBE_ANCHOR} from './home-model.js';
+import {PROBE_ANCHOR, shouldOpenSetup} from './home-model.js';
 import {focusStation, loadTargets, mountLinkCard, refreshLinks, sendTestMessage} from './links.js';
 import {loadLog, stopFollow, syncLogView} from './log.js';
 import {refreshHome, renderStatus, runSelfTest, togglePush} from './overview.js';
@@ -224,11 +224,18 @@ let route = '';
  * 使用者按过「稍后再说」没有
  *
  * 按过之后不再把他从首页转去初始设置页。<b>只记在这一趟里</b>，刷新之后重新拦一次——
- * 而这只影响连第一步都还没做完的机器：第一步上锁会当场写出配置文件，
- * 那之后 setupDone 就是真的，这一条根本不再成立。刷新一次又被拦住，
+ * 而这只影响五步一件都还没做的机器。刷新一次又被拦住，
  * 说的正是「这台机器上一件事也还没配」。
  */
 let later = false;
+
+/**
+ * 最近一次 /api/status 与 /api/login，供进首页时问五步做了没
+ *
+ * 还没取到时为 null：按「没配过」拦的话，已经配好的机器会先闪一下初始设置页。
+ */
+let homeStatus = null;
+let homeLogin = null;
 
 /**
  * 解析地址栏。认不出来的路由一律当首页，不留白屏
@@ -282,6 +289,23 @@ function focusCard(name, card) {
 }
 
 /**
+ * 记下这一趟首页用的两份回包，并在「五步全没做、正要画首页、没点稍后再说」时转到初始设置
+ * @param status /api/status 回包
+ * @param login /api/login 回包
+ * @return {boolean} 已经改了地址、调用方不该再画首页
+ */
+export function considerSetupRedirect(status, login) {
+  homeStatus = status || null;
+  homeLogin = login || null;
+  const {name} = parseHash();
+  if (shouldOpenSetup(homeStatus, homeLogin) && name === 'home' && !later) {
+    location.hash = '#/setup';
+    return true;
+  }
+  return false;
+}
+
+/**
  * 按地址栏切页
  *
  * 只认地址栏、不认「谁点了哪个链接」：刷新、收藏、后退三种进法走的都是这一条路，
@@ -302,7 +326,10 @@ function applyRoute(withData = true) {
   // 只拦这两处，不拦别的：使用者从初始设置页点去连接页看一眼再回来，是正当走法，
   // 拦下来的表现是「除了第一步哪儿也去不了」。而 home 是默认落点——认不出来的地址
   // 也归到它，所以拦住它就等于拦住了「随手打开控制台」这条路。
-  if (store.setupDone === false && name === 'home' && !later) {
+  //
+  // 看的是五步完成了 0 步，不是配置文件在不在。同意协议会写出 application.yml，
+  // 按文件在不在判的话，刚装好的机器会停在空首页。
+  if (shouldOpenSetup(homeStatus, homeLogin) && name === 'home' && !later) {
     location.hash = '#/setup';
     return;
   }
@@ -508,8 +535,7 @@ api('/auth/state')
     store.csrfToken = state.csrfToken || '';
     // 签发只读口令要重新校验一次凭据，验证码框显示与否照这一位来，不照配置项猜
     store.totpRequired = !!state.totpRequired;
-    // 这台机器配过没有。接口没这一栏时留 null（＝不知道），不当成「没配过」——
-    // 旧版服务端配着新版界面时，猜错的那一头是把配好的机器整台锁进初始设置页
+    // 配置文件在不在。进首页该不该转到初始设置不看这一位（看五步），仍收下以免别处读它
     store.setupDone = typeof state.setupDone === 'boolean' ? state.setupDone : null;
     $('#auth-actions').style.display = state.enabled ? '' : 'none';
     // 「登录与安全」那一组要按这几位决定摆哪一版（改口令还是重设口令、开关在哪一档），
@@ -521,6 +547,14 @@ api('/auth/state')
     if (state.totpSetupNeeded) renderTotpSetup();
   })
   .catch(() => {})
+  // 五步做了没要 /status 与 /login。跟登录态一起取，applyRoute 才问得着「该不该落到初始设置」
+  .then(() => Promise.all([
+    api('/status').catch(() => null),
+    api('/login').catch(() => null),
+  ]).then(([status, login]) => {
+    homeStatus = status;
+    homeLogin = login;
+  }))
   // 插件页要先挂上去，随后那一趟整体载入才有东西可刷
   .finally(() => mountPages().finally(() => { applyRoute(); load(); }));
 
