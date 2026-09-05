@@ -2,10 +2,14 @@ package com.starlwr.bot.adapter.onebot.security;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -61,7 +65,8 @@ class PushApiTokenStoreTest {
     @DisplayName("互含的登记模式同时命中时答最具体的那条，答案不随登记顺序漂")
     void resolvePrefersMostSpecificAmongOverlappingPatterns() {
         // 每组 {更具体者, 更宽者, 双命中的请求路径}。存储侧按登记先后保序迭代:
-        // 若实现退化成「取首个命中」, 先登宽者的那份必答宽者——任何 JDK 下都必红, 不靠哈希迭代序的运气
+        // 若实现退化成「取首个命中」, 先登宽者的那份必答宽者——任何 JDK 下都必红, 不靠哈希迭代序的运气。
+        // 断言逐条独立执行 (assertAll): 一组红了不遮蔽其余组, 突变下红几条就读得出几条
         String[][] cases = {
                 {"/onebot/send", "/onebot/send/**", "/onebot/send"},
                 {"/onebot/{a}", "/onebot/**", "/onebot/send"},
@@ -69,6 +74,7 @@ class PushApiTokenStoreTest {
                 {"/onebot/send/**", "/**", "/onebot/send/x"},
                 {"/onebot/{id}/send", "/onebot/*/send", "/onebot/42/send"},
         };
+        List<Executable> assertions = new ArrayList<>();
         for (String[] c : cases) {
             PushApiTokenStore specificFirst = new PushApiTokenStore();
             specificFirst.register(c[0], "token-AAAAAAAA-1");
@@ -77,11 +83,12 @@ class PushApiTokenStoreTest {
             wideFirst.register(c[1], "token-BBBBBBBB-2");
             wideFirst.register(c[0], "token-AAAAAAAA-1");
 
-            assertEquals(c[0], specificFirst.resolve(c[2], ""),
-                    c[0] + " + " + c[1] + ", 先登具体者: ");
-            assertEquals(c[0], wideFirst.resolve(c[2], ""),
-                    c[0] + " + " + c[1] + ", 先登宽者: ");
+            assertions.add(() -> assertEquals(c[0], specificFirst.resolve(c[2], ""),
+                    c[0] + " + " + c[1] + ", 先登具体者: "));
+            assertions.add(() -> assertEquals(c[0], wideFirst.resolve(c[2], ""),
+                    c[0] + " + " + c[1] + ", 先登宽者: "));
         }
+        assertAll("互含模式须答最具体者", assertions);
     }
 
     @Test
