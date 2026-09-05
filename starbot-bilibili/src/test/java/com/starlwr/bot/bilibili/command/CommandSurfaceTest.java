@@ -176,10 +176,28 @@ class CommandSurfaceTest {
     }
 
     @Test
-    @DisplayName("菜单条数：群聊与私聊各列同样十四条")
-    void menuListsFourteenInBothKinds() {
-        assertEquals(GROUP_ONLY.size(), entryCount(registry.feed(true, "菜单")));
-        assertEquals(GROUP_ONLY.size(), entryCount(registry.feed(false, "菜单")));
+    @DisplayName("菜单条数：群聊十四条，私聊只列能在私聊用的六条")
+    void menuListsFourteenInGroupAndSixInPrivate() {
+        String groupMenu = registry.feed(true, "菜单");
+        String friendMenu = registry.feed(false, "菜单");
+        List<String> privateOk = GROUP_ONLY.entrySet().stream()
+                .filter(entry -> !entry.getValue())
+                .map(Map.Entry::getKey)
+                .sorted()
+                .toList();
+
+        assertEquals(GROUP_ONLY.size(), entryCount(groupMenu));
+        assertEquals(6, privateOk.size());
+        assertEquals(privateOk.size(), entryCount(friendMenu), friendMenu);
+        for (String name : privateOk) {
+            assertTrue(friendMenu.contains("\n" + name + " "), name + " 该出现在私聊菜单：" + friendMenu);
+        }
+        for (Map.Entry<String, Boolean> entry : GROUP_ONLY.entrySet()) {
+            if (entry.getValue()) {
+                assertFalse(friendMenu.contains("\n" + entry.getKey() + " "),
+                        entry.getKey() + " 不该出现在私聊菜单：" + friendMenu);
+            }
+        }
     }
 
     @Test
