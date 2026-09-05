@@ -437,6 +437,16 @@ public class StarBotCoreProperties {
         private List<String> allowIps = new ArrayList<>(List.of("127.0.0.1/32", "::1/128"));
 
         /**
+         * 配置文件备份保留份数
+         * <p>
+         * 每次保存 application.yml 或主播推送配置时都会另留一份带时间的备份。
+         * 超出这个数目的旧备份会被删掉。默认 10 份，可在 1 到 100 之间改。改完立即生效，不必重启。
+         */
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
+        private int backupKeep = 10;
+
+        /**
          * 口令登录相关
          */
         @Getter
