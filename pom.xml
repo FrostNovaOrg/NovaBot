@@ -12,7 +12,7 @@
 
     <groupId>com.starlwr</groupId>
     <artifactId>starbot-parent</artifactId>
-    <version>5.1.0</version>
+    <version>5.1.1</version>
     <packaging>pom</packaging>
 
     <name>NovaBot</name>
@@ -59,8 +59,8 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
         <!-- StarBot 自身构件版本 -->
-        <novacore.version>5.1.0</novacore.version>
-        <starbot-core.version>5.1.0</starbot-core.version>
+        <novacore.version>5.1.1</novacore.version>
+        <starbot-core.version>5.1.1</starbot-core.version>
         <starbot-plugin-processor.version>1.0.0</starbot-plugin-processor.version>
 
         <!-- 构建期判据用的插件，版本钉死：判据本身跟着上游漂就不成其为判据 -->
