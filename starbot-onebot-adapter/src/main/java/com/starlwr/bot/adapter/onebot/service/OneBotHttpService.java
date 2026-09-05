@@ -157,7 +157,12 @@ public class OneBotHttpService {
                 result = http.sendPrivateMsg(sender, params);
             } else if (message.getType() == PushTargetType.GROUP) {
                 params.put("group_id", String.valueOf(message.getNum()));
-                result = http.sendGroupMsg(sender, params);
+                // QQ 会把同一条里的 @全体成员 降成文字；有图时拆成两次发
+                if (needsAtAllImageSplit(elements)) {
+                    result = sendGroupAtAllThenImage(sender, params, elements);
+                } else {
+                    result = http.sendGroupMsg(sender, params);
+                }
             } else {
                 return new JSONObject().fluentPut("code", ResultCode.UNKNOWN_TARGET_TYPE.getCode()).fluentPut("message", ResultCode.UNKNOWN_TARGET_TYPE.getMsg()).fluentPut("id", null);
             }
@@ -169,6 +174,68 @@ public class OneBotHttpService {
             log.error("OneBot HTTP 发送消息异常", e);
             return new JSONObject().fluentPut("code", ResultCode.UNKNOWN.getCode()).fluentPut("message", "OneBot HTTP 发送消息异常, 请检查插件日志错误信息").fluentPut("id", null);
         }
+    }
+
+    /**
+     * QQ 把 @全体成员 和图片放在同一条里时，会把 @全体成员 降成普通文字，
+     * 额度不扣、群友也收不到提醒。文字先发、图片紧跟一条。
+     * 图片那条失败只记警告：文字已经送到了，再按失败回报会让上游剥图重发，群里就变成两条文字。
+     */
+    private JSONObject sendGroupAtAllThenImage(OneBotSender sender, JSONObject params, JSONArray elements) {
+        JSONArray text = new JSONArray();
+        JSONArray images = new JSONArray();
+        for (int i = 0; i < elements.size(); i++) {
+            JSONObject element = elements.getJSONObject(i);
+            if (isImage(element)) {
+                images.add(element);
+            } else {
+                text.add(element);
+            }
+        }
+
+        JSONObject firstParams = new JSONObject();
+        firstParams.put("group_id", params.get("group_id"));
+        firstParams.put("message", text);
+        JSONObject first = http.sendGroupMsg(sender, firstParams);
+
+        JSONObject secondParams = new JSONObject();
+        secondParams.put("group_id", params.get("group_id"));
+        secondParams.put("message", images);
+        try {
+            http.sendGroupMsg(sender, secondParams);
+        } catch (Exception e) {
+            log.warn("群消息图片补发失败, @全体成员与文字已送达: {}", e.getMessage());
+        }
+        return first;
+    }
+
+    private static boolean needsAtAllImageSplit(JSONArray elements) {
+        boolean atAll = false;
+        boolean image = false;
+        for (int i = 0; i < elements.size(); i++) {
+            JSONObject element = elements.getJSONObject(i);
+            if (isAtAll(element)) {
+                atAll = true;
+            } else if (isImage(element)) {
+                image = true;
+            }
+            if (atAll && image) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isAtAll(JSONObject element) {
+        if (element == null || !"at".equals(element.getString("type"))) {
+            return false;
+        }
+        JSONObject data = element.getJSONObject("data");
+        return data != null && "all".equals(data.getString("qq"));
+    }
+
+    private static boolean isImage(JSONObject element) {
+        return element != null && "image".equals(element.getString("type"));
     }
 
     /**

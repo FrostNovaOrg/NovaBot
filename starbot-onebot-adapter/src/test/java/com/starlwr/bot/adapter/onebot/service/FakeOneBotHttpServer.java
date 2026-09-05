@@ -1,5 +1,6 @@
 package com.starlwr.bot.adapter.onebot.service;
 
+import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.sun.net.httpserver.HttpExchange;
@@ -10,6 +11,8 @@ import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 一个假的 OneBot HTTP 服务端
@@ -33,6 +36,17 @@ final class FakeOneBotHttpServer implements AutoCloseable {
 
     private final HttpServer server;
 
+    /**
+     * 按到达顺序记下的 {@code /send_group_msg} 请求体。
+     * 拆成两条发时，这里会有两条，第一条没有图、第二条只有图
+     */
+    private final List<JSONObject> groupMessages = new ArrayList<>();
+
+    /**
+     * 第几次群消息故意失败。0 表示都不失败
+     */
+    private int groupMessageFailAt;
+
     FakeOneBotHttpServer() throws IOException {
         server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
         server.createContext("/", this::handle);
@@ -43,11 +57,49 @@ final class FakeOneBotHttpServer implements AutoCloseable {
         return server.getAddress().getPort();
     }
 
-    private void handle(HttpExchange exchange) throws IOException {
-        JSONObject body = new JSONObject();
-        body.put("retcode", 0);
-        body.put("data", dataOf(exchange.getRequestURI().getPath()));
+    List<JSONObject> groupMessages() {
+        return List.copyOf(groupMessages);
+    }
 
+    void failGroupMessageAt(int n) {
+        this.groupMessageFailAt = n;
+    }
+
+    private void handle(HttpExchange exchange) throws IOException {
+        JSONObject request = readJson(exchange);
+        String path = exchange.getRequestURI().getPath();
+
+        JSONObject body = new JSONObject();
+        if ("/send_group_msg".equals(path)) {
+            groupMessages.add(request);
+            if (groupMessages.size() == groupMessageFailAt) {
+                body.put("retcode", 1);
+                body.put("message", "image send failed");
+                body.put("data", null);
+                write(exchange, body);
+                return;
+            }
+            body.put("retcode", 0);
+            body.put("data", new JSONObject().fluentPut("message_id", String.valueOf(groupMessages.size())));
+            write(exchange, body);
+            return;
+        }
+
+        body.put("retcode", 0);
+        body.put("data", dataOf(path));
+        write(exchange, body);
+    }
+
+    private JSONObject readJson(HttpExchange exchange) throws IOException {
+        byte[] raw = exchange.getRequestBody().readAllBytes();
+        if (raw.length == 0) {
+            return new JSONObject();
+        }
+        JSONObject parsed = JSON.parseObject(new String(raw, StandardCharsets.UTF_8));
+        return parsed == null ? new JSONObject() : parsed;
+    }
+
+    private void write(HttpExchange exchange, JSONObject body) throws IOException {
         byte[] payload = body.toJSONString().getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().add("Content-Type", "application/json");
         exchange.sendResponseHeaders(200, payload.length);
