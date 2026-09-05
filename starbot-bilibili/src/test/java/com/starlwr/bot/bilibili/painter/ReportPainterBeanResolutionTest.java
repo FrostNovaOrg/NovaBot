@@ -1,6 +1,7 @@
 package com.starlwr.bot.bilibili.painter;
 
 import com.starlwr.bot.bilibili.command.BilibiliLiveReportCommand;
+import com.starlwr.bot.bilibili.command.BilibiliStreamerChoice;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.controller.BilibiliReportLayoutController;
 import com.starlwr.bot.bilibili.handler.BilibiliLiveReportPushHandler;
@@ -96,6 +97,7 @@ class ReportPainterBeanResolutionTest {
         beans.registerSingleton("revenueVisibilityService", mock(RevenueVisibilityService.class));
         beans.registerSingleton("liveReportArchive", mock(LiveReportArchive.class));
         beans.registerSingleton("abstractDataSource", mock(AbstractDataSource.class));
+        beans.registerSingleton("bilibiliStreamerChoice", mock(BilibiliStreamerChoice.class));
 
         registerAsPluginLoaderDoes(BilibiliLiveReportPainter.class);
         registerAsPluginLoaderDoes(BilibiliLiveReportPreviewPainter.class);
