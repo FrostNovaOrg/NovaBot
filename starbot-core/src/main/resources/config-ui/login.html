@@ -60,11 +60,11 @@
     input:focus { outline: none; border-color: var(--accent) }
     input:disabled { background: var(--ground); color: var(--dim) }
     .secret { display: flex; gap: 6px; align-items: center }
-    .secret input { flex: 1 }
+    .secret input { flex: 1; min-width: 0 }
     .secret button {
       background: var(--surface); color: var(--dim); border: 1px solid var(--line);
       border-radius: var(--r-ctl); padding: 6px 10px; font-size: 12px; cursor: pointer;
-      font-family: inherit; flex: none;
+      font-family: inherit; flex: none; width: auto;
     }
     .secret button:hover { border-color: var(--dim); color: var(--text) }
     button {
@@ -346,7 +346,7 @@
 
       if (data.success) {
         // 与口令登录同法走整页跳转。协议若还没同意，/config 会把这张页面再发回来一次
-        location.replace('/config');
+        location.replace('/config' + location.hash);
         return;
       }
 
@@ -396,7 +396,7 @@
     }
 
     // 已经登录、协议也过了却停在登录页，多半是点了后退，直接回控制台
-    location.replace('/config');
+    location.replace('/config' + location.hash);
   }
 
   fetch('/config/api/auth/state')
@@ -446,7 +446,7 @@
 
       // 同意之前就已经登录过了，这一步之后控制台就开着
       hide('#agreement');
-      location.replace('/config');
+      location.replace('/config' + location.hash);
     } catch (err) {
       $('#agreement-msg').textContent = '无法连接到服务器';
     } finally {
@@ -470,7 +470,7 @@
       if (data.success) {
         // 交给浏览器保存口令：submit 事件里改用整页跳转，密码管理器才会认为这是一次成功登录。
         // 协议若还没同意，/config 会把这张页面再发回来一次，那一次摆出来的就是协议面板
-        location.replace('/config');
+        location.replace('/config' + location.hash);
         return;
       }
 
