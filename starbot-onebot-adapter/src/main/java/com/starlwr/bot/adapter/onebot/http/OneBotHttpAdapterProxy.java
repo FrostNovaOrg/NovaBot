@@ -55,12 +55,16 @@ public class OneBotHttpAdapterProxy implements InvocationHandler {
                 log.debug("OneBotApi <- : {} {}", api.url(), StringUtil.getOmitString(params.toJSONString(), sender.getDebugLogMaxLength()));
                 String url = apiBaseUrl + api.url();
 
-                // 每个 OneBot 接口调用都从这里过，是记录往返耗时唯一不会漏的地方。
+                // 每个 OneBot 接口调用都从这里过，是记录往返耗时的唯一口子；标了
+                // latency = false 的名单类批量拉取除外——它们又多又慢，会把 20 格耗时窗
+                // 整轮冲掉，让「推送变慢」的探针改量名单拉取。
                 // 耗时是一个健康维度：接口调得通但每次要好几秒时，图片推送会因为
                 // 没有工作线程去读那个大请求体而超时丢弃，而连通性检查全程看不出异常
                 long startTime = System.currentTimeMillis();
                 JSONObject result = http.postJson(url, headers, params);
-                state.recordLatency(sender.getName(), System.currentTimeMillis() - startTime);
+                if (api.latency()) {
+                    state.recordLatency(sender.getName(), System.currentTimeMillis() - startTime);
+                }
 
                 log.debug("OneBotApi -> : {} {}", api.url(), result.toJSONString());
 

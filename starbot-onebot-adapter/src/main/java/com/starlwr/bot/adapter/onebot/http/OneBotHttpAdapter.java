@@ -22,13 +22,15 @@ public interface OneBotHttpAdapter {
     @OneBotApi(name = "获取状态信息", url = "/get_status")
     JSONObject getStatus(OneBotSender sender, JSONObject params);
 
-    @OneBotApi(name = "获取群成员信息", url = "/get_group_member_info")
+    // 名单类三支标 latency = false：见 @OneBotApi#latency()。OneBotTargetDirectory 每轮
+    // 要打「群数加三」次这类请求，是它们把「推送变慢」的耗时窗整轮冲掉的
+    @OneBotApi(name = "获取群成员信息", url = "/get_group_member_info", latency = false)
     JSONObject getGroupMemberInfo(OneBotSender sender, JSONObject params);
 
-    @OneBotApi(name = "获取群列表", url = "/get_group_list")
+    @OneBotApi(name = "获取群列表", url = "/get_group_list", latency = false)
     JSONArray getGroupList(OneBotSender sender, JSONObject params);
 
-    @OneBotApi(name = "获取好友列表", url = "/get_friend_list")
+    @OneBotApi(name = "获取好友列表", url = "/get_friend_list", latency = false)
     JSONArray getFriendList(OneBotSender sender, JSONObject params);
 
     @OneBotApi(name = "发送私聊消息", url = "/send_private_msg")
