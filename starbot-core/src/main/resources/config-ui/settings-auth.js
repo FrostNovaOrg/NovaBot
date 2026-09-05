@@ -311,6 +311,7 @@ function passkeyCard() {
     + '通行密钥认的是当前访问地址，换了地址（如从局域网换成域名）要重新登记。');
 
   box.body.innerHTML = '<div id="passkey-list"></div>';
+  const list = box.body.firstElementChild;
   const add = el('button', 'ghost');
   add.type = 'button';
   add.id = 'passkey-add';
@@ -320,7 +321,7 @@ function passkeyCard() {
   // 两处按 id 取就得共用一个 id，而重复 id 取到的永远是靠前的那一个
   add.addEventListener('click', () => registerPasskey(add));
 
-  loadPasskeys();
+  loadPasskeys(list, add);
   return box.card;
 }
 

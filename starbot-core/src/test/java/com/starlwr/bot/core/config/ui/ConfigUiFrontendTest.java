@@ -582,6 +582,65 @@ class ConfigUiFrontendTest {
     }
 
     /**
+     * 通行密钥列表必须按调用方传入的容器画，不能按 id 从文档里取
+     * <p>
+     * 设置页那张卡是游离节点：建出来时还没挂进文档。按 id 从 document 取会静默拿不到，
+     * 卡片里既没有已登记的设备，也没有「还没有登记过通行密钥」那句提示——
+     * <b>登记后列表空白</b>。登记成功那一刻列表出现过、刷新页面又没了，就是这个原因：
+     * 成功回调时卡片已经在文档里，刷新后再画时还不在。
+     * <p>
+     * 登记按钮那一路已经写明「按钮由调用方传进来，不在这里按 id 取」，列表这一路漏了同样的处理。
+     */
+    @Test
+    @DisplayName("通行密钥列表按传入的容器画，不按 id 从文档里取")
+    void passkeyListLoadsFromPassedContainer() {
+        Map<String, String> sources = coreSources();
+        String settingsAuth = sources.getOrDefault("settings-auth.js", "");
+        String passkeys = sources.getOrDefault("passkeys.js", "");
+        List<String> bad = new ArrayList<>();
+
+        if (settingsAuth.isBlank()) {
+            bad.add("找不到 settings-auth.js");
+        }
+        if (passkeys.isBlank()) {
+            bad.add("找不到 passkeys.js");
+        }
+
+        Matcher calls = Pattern.compile("loadPasskeys\\s*\\(([^)]*)\\)").matcher(codeOnly(settingsAuth));
+        int hits = 0;
+        while (calls.find()) {
+            hits++;
+            if (calls.group(1).strip().isEmpty()) {
+                bad.add("settings-auth.js 调 loadPasskeys 没传容器。"
+                        + "卡片建出来时还没挂进文档，按 id 从文档里取会静默拿不到，登记后列表空白。");
+            }
+        }
+        if (!settingsAuth.isBlank() && hits == 0) {
+            bad.add("settings-auth.js 没有调 loadPasskeys，通行密钥列表不会画");
+        }
+
+        if (!passkeys.contains("function loadPasskeys")) {
+            bad.add("passkeys.js 没有 loadPasskeys，通行密钥列表不会画");
+        } else {
+            Pattern mainPath = Pattern.compile("(?:const|let|var)\\s+box\\s*=\\s*\\$\\('#passkey-list'\\)");
+            String[] lines = passkeys.split("\n", -1);
+            for (int i = 0; i < lines.length; i++) {
+                String line = lines[i].strip();
+                if (line.startsWith("//") || line.startsWith("*") || line.startsWith("/*")) {
+                    continue;
+                }
+                if (mainPath.matcher(lines[i]).find()) {
+                    bad.add("passkeys.js:" + (i + 1)
+                            + " 的 loadPasskeys 主路径仍按 id 取 #passkey-list。"
+                            + "卡片还没挂进文档时取不到，登记后列表空白。");
+                }
+            }
+        }
+
+        assertTrue(bad.isEmpty(), "通行密钥列表少了这几件事:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
      * 连接页上由 index.html 摆着、由脚本接线的那几处落点，闭集
      * <p>
      * 机器人那张卡里的连接表单与「打开 NapCat 界面」、发一条试试那一块的目标下拉、

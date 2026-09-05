@@ -26,14 +26,34 @@ const toBase64Url = buffer => btoa(String.fromCharCode(...new Uint8Array(buffer)
  */
 const supported = () => typeof window.PublicKeyCredential === 'function';
 
-export async function loadPasskeys() {
-  const box = $('#passkey-list');
+/** 最近一次传入的列表容器与登记按钮，登记成功／删除后再画时用同一对 */
+let lastBox;
+let lastAdd;
+
+/**
+ * 画出已登记的通行密钥
+ *
+ * 🔴 <b>列表节点与登记按钮由调用方传进来</b>，不在这里按 id 取：设置页那张卡是游离节点，
+ * 建出来时还没挂进文档。按 id 从 document 取会静默拿不到，卡片里既没有已登记的设备，
+ * 也没有「还没有登记过通行密钥」那句提示——登记后列表空白。
+ * 登记按钮那一路已经是调用方传入；列表这一路必须同样处理。
+ *
+ * 缺参时才退回按 id 取一次，只为兼容。
+ * @param box 列表容器
+ * @param addButton 登记按钮；浏览器不支持通行密钥时置灰它
+ */
+export async function loadPasskeys(box, addButton) {
+  if (!box) box = $('#passkey-list');
+  if (!addButton) addButton = $('#passkey-add');
   if (!box) return;
+
+  lastBox = box;
+  lastAdd = addButton;
 
   if (!supported()) {
     box.innerHTML = '<p class="hint">这个浏览器（或这个地址）用不了通行密钥。'
       + '通行密钥只在 https 或 localhost 下可用。</p>';
-    $('#passkey-add').disabled = true;
+    if (addButton) addButton.disabled = true;
     return;
   }
 
@@ -125,7 +145,7 @@ export async function registerPasskey(trigger) {
     });
 
     say(result.message, result.success ? 'ok' : 'err');
-    if (result.success) await loadPasskeys();
+    if (result.success) await loadPasskeys(lastBox, lastAdd);
   } catch (e) {
     // 使用者按了取消也会走到这里。不说成「出错了」——那会让人以为设备有问题
     say(e.name === 'NotAllowedError' ? '已取消登记' : '登记失败：' + e.message,
@@ -141,5 +161,5 @@ async function remove(id) {
 
   const result = await api('/auth/passkeys/' + encodeURIComponent(id), {method: 'DELETE'});
   say(result.message, result.success ? 'ok' : 'err');
-  await loadPasskeys();
+  await loadPasskeys(lastBox, lastAdd);
 }
