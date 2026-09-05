@@ -16,6 +16,7 @@ import com.starlwr.bot.core.datasource.MonitorLimit;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.model.StreamerReference;
 import com.starlwr.bot.core.service.DataSourceService;
+import com.starlwr.bot.core.service.DataSourceService.StreamerWithFans;
 import com.starlwr.bot.core.account.AccountLoginProvider;
 import com.starlwr.bot.core.account.BotConnectionTester;
 import com.starlwr.bot.core.enums.PushTargetType;
@@ -1000,14 +1001,14 @@ public class ConfigUiController {
             return result;
         }
 
-        PushUser user;
+        StreamerWithFans found;
         try {
             if (query.kind() == StreamerIdKind.ROOM) {
-                user = data.lookupByRoomId(query.id()).orElse(null);
+                found = data.lookupByRoomIdWithFans(query.id());
             } else {
-                user = completeByUid(data, platform, query.id());
-                if (missingName(user) && query.kind() == StreamerIdKind.DIGITS) {
-                    user = data.lookupByRoomId(query.id()).orElse(null);
+                found = data.completeStreamerWithFans(incompleteUser(platform, query.id()));
+                if (missingName(found.user()) && query.kind() == StreamerIdKind.DIGITS) {
+                    found = data.lookupByRoomIdWithFans(query.id());
                 }
             }
         } catch (Exception e) {
@@ -1016,6 +1017,8 @@ public class ConfigUiController {
             result.put("message", "查询失败: " + e.getMessage());
             return result;
         }
+
+        PushUser user = found.user();
 
         if (missingName(user)) {
             result.put("success", false);
@@ -1033,22 +1036,19 @@ public class ConfigUiController {
         // 粉丝数是这张确认小卡上最容易发现「认错人」的一项：uid 打错一位仍可能查到
         // 一位真实存在的人，昵称与头像未必看得出不对，粉丝数往往差着数量级。
         // 取不到时给 null 而不是 0——后者会显示成「这位主播一个粉丝都没有」。
-        // 单独兜一次异常：主播已经查到了，不该因为一个附带字段拉不下来就整次判失败
-        Long fans = null;
-        try {
-            fans = data.getFansCount(user.getUid()).orElse(null);
-        } catch (Exception e) {
-            log.debug("获取 uid {} 的粉丝数失败: {}", user.getUid(), e.getMessage());
-        }
-        result.put("fans", fans);
+        // 它与昵称、房间号由数据源同一趟带回（见 DataSourceService#completeStreamerWithFans），
+        // 取不到已在那一趟里收住，不会连累整次查询
+        result.put("fans", found.fans());
         return result;
     }
 
-    private PushUser completeByUid(DataSourceService data, String platform, long uid) {
+    /**
+     * 只填了 uid 与平台的半成品推送用户，其余字段待数据源补全
+     */
+    private PushUser incompleteUser(String platform, long uid) {
         PushUser user = new PushUser();
         user.setUid(uid);
         user.setPlatform(platform);
-        data.completePushUser(user);
         return user;
     }
 

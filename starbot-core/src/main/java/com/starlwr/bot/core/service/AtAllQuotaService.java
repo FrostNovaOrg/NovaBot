@@ -42,9 +42,13 @@ public class AtAllQuotaService {
     private final StarBotCoreProperties properties;
 
     /**
-     * 计数表，键为「账号维度的 platform」或「会话维度的 platform:num」
+     * 计数表：账号维度（target 为 null）与会话维度（target 为群号）各记各的
+     * <p>
+     * 键是 {@link QuotaKey} 而不是「platform 拼上 num」的字符串：平台名里带冒号时
+     * （如 {@code a:1}），它的账号行与平台 {@code a} 在群 {@code 1} 的会话行会拼出
+     * 同一个键，两个维度混进一条账——配额恰恰要分维度才成立。
      */
-    private final Map<String, DailyCount> counts = new ConcurrentHashMap<>();
+    private final Map<QuotaKey, DailyCount> counts = new ConcurrentHashMap<>();
 
     @Autowired
     public AtAllQuotaService(StarBotCoreProperties properties) {
@@ -65,8 +69,8 @@ public class AtAllQuotaService {
         int sessionLimit = properties.getPush().getAtAllSessionDailyLimit();
         LocalDate today = LocalDate.now(ZONE);
 
-        String botKey = platform;
-        String sessionKey = platform + ":" + num;
+        QuotaKey botKey = new QuotaKey(platform, null);
+        QuotaKey sessionKey = new QuotaKey(platform, num);
 
         if (botLimit > 0 && used(botKey, today) >= botLimit) {
             log.warn("推送平台 {} 今日的 @全体成员 已用满 {} 次（该额度由全部会话共享），本条将退化为普通消息。" +
@@ -88,14 +92,14 @@ public class AtAllQuotaService {
      * 某个会话今日已用的次数，供排障查看
      */
     public int used(@NonNull String platform, @NonNull Long num) {
-        return used(platform + ":" + num, LocalDate.now(ZONE));
+        return used(new QuotaKey(platform, num), LocalDate.now(ZONE));
     }
 
     /**
      * 某个推送平台今日已用的次数，即账号维度的用量
      */
     public int usedByBot(@NonNull String platform) {
-        return used(platform, LocalDate.now(ZONE));
+        return used(new QuotaKey(platform, null), LocalDate.now(ZONE));
     }
 
     /**
@@ -110,16 +114,22 @@ public class AtAllQuotaService {
         return LocalDate.now(ZONE);
     }
 
-    private int used(String key, LocalDate today) {
+    private int used(QuotaKey key, LocalDate today) {
         DailyCount current = counts.get(key);
         return current == null || !current.date().equals(today) ? 0 : current.used();
     }
 
-    private void increment(String key, LocalDate today) {
+    private void increment(QuotaKey key, LocalDate today) {
         counts.compute(key, (ignored, current) ->
                 current == null || !current.date().equals(today)
                         ? new DailyCount(today, 1)
                         : new DailyCount(today, current.used() + 1));
+    }
+
+    /**
+     * 计数键：账号维度的 target 为 null，会话维度的为群号
+     */
+    private record QuotaKey(String platform, Long target) {
     }
 
     /**

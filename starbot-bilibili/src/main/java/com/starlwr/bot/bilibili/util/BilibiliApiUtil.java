@@ -1126,8 +1126,8 @@ public class BilibiliApiUtil {
 
         JSONObject info = Optional.ofNullable(data.getJSONObject("info")).orElseGet(JSONObject::new);
         Long roomId = Optional.ofNullable(data.getLong("room_id")).filter(id -> id != 0L).orElse(null);
-
-        return new Up(uid, info.getString("uname"), roomId, info.getString("face"));
+        // follower_num 与 info、room_id 同在这份响应里，顺路取走就不必为粉丝数再打一趟
+        return new Up(uid, info.getString("uname"), roomId, info.getString("face"), data.getLong("follower_num"));
     }
 
     /**
