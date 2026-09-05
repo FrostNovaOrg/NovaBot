@@ -10,7 +10,7 @@
  */
 
 import {ask} from './confirm.js';
-import {$, api, el, esc, say} from './core.js';
+import {$, api, el, esc, say, switchControl} from './core.js';
 import {bindPasswordReveal} from './password-reveal.js';
 import {loadPasskeys, registerPasskey} from './passkeys.js';
 import {store} from './store.js';
@@ -198,16 +198,8 @@ function totpCard() {
     '只管口令登录这条路。用通行密钥登录不经过这一步——私钥一直在你自己的设备上，'
     + '而设备在签名之前已经问过一次指纹或面容了。');
 
-  const line = el('div', 'al-fld');
-  const label = el('label', 'switch');
-  const input = el('input');
-  input.type = 'checkbox';
-  input.id = 'totp-switch';
-  input.checked = on;
-  input.setAttribute('aria-label', '二次验证');
-  const text = el('span');
-  text.textContent = on ? '已启用' : '已关闭';
-  label.append(input, text);
+  const line = el('div');
+  const {label, input, text} = switchControl('totp-switch', on, '二次验证');
   line.appendChild(label);
   keyLine(line, 'starbot.core.config-ui.auth.totp');
   keyLine(line, 'starbot.core.config-ui.auth.totp-secret');

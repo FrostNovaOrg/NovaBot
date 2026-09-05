@@ -438,7 +438,7 @@ document.querySelectorAll('#nav a').forEach(a => {
 
 $('#save').addEventListener('click', save);
 $('#discard').addEventListener('click', discard);
-$('#cfg-copy').addEventListener('click', copyConfigPath);
+$('#cfg-path').addEventListener('click', copyConfigPath);
 $('#test-send').addEventListener('click', sendTestMessage);
 // 「稍后再说」：地址由 href 带去首页，这里只记下别再把他转回来。
 // 记在这里而不是 setup.js 里，是因为拦人的那一条判断也在这里——两处各记一份的话，

@@ -8,7 +8,7 @@
  */
 
 import {ask} from './confirm.js';
-import {$, api, el, esc, markDirty, saveTarget, say} from './core.js';
+import {$, api, el, esc, markDirty, saveTarget, say, switchControl} from './core.js';
 import {load} from './main.js';
 import {bindPasswordReveal} from './password-reveal.js';
 import {serializePush} from './push.js';
@@ -67,19 +67,9 @@ function valuesOf(field) {
  */
 function buildControl(field, value, cell) {
   if (field.widget === 'boolean') {
-    const label = el('label', 'switch');
-    const input = el('input');
-    input.type = 'checkbox';
-    input.checked = String(value) === 'true';
-    const text = el('span');
-    // 开关旁边那两个字由 syncLabel 更新，而不是挂一个 change 监听：
-    // 「把控件退回原样」那条路要能在不触发任何 change 的前提下改动它——
-    // 靠 dispatchEvent 退回去的话，退回这个动作自己又会走一遍确认流程
-    input.syncLabel = () => { text.textContent = input.checked ? '已启用' : '已关闭'; };
-    input.syncLabel();
-    label.append(input, text);
-    cell.appendChild(label);
-    return input;
+    const sw = switchControl('', String(value) === 'true');
+    cell.appendChild(sw.label);
+    return sw.input;
   }
 
   if (field.widget === 'complex') {
@@ -177,7 +167,7 @@ function buildRow(field, groupAllRestart) {
   meta.appendChild(line);
   row.appendChild(meta);
 
-  const cell = el('div');
+  const cell = el('div', field.widget === 'boolean' ? 'boolcell' : '');
   const {saved, current} = valuesOf(field);
   const input = buildControl(field, current, cell);
   row.appendChild(cell);
@@ -446,7 +436,6 @@ export function toggleKeyNames() {
  */
 export function renderConfigPath(path) {
   $('#cfg-path').textContent = path || '（未能确定）';
-  $('#cfg-copy').disabled = !path;
 }
 
 /**

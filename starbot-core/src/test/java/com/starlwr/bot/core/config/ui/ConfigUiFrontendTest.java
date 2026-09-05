@@ -508,18 +508,127 @@ class ConfigUiFrontendTest {
                 bad.add("没有任何脚本用到 #" + id + "，它立在那里但点了不管用");
             }
         }
+        if (html.contains("id=\"cfg-copy\"")) {
+            bad.add("index.html 上仍有 #cfg-copy。复制路径按钮应已撤掉，改由路径本身点一下复制");
+        }
+        if (scripts.contains("$('#cfg-copy')")) {
+            bad.add("仍有脚本按 #cfg-copy 去取。接线应挂在 #cfg-path 的点击上");
+        }
+        if (!scripts.contains("$('#cfg-path').addEventListener('click'")) {
+            bad.add("#cfg-path 没有挂点击接线，点路径不会复制");
+        }
+        if (!html.contains("id=\"cfg-path\"") || !html.contains("title=\"点一下复制\"")) {
+            bad.add("#cfg-path 没有 title「点一下复制」");
+        }
+        if (html.contains("nv-card cfgpath") || html.contains("cfgpath nv-card")) {
+            bad.add("配置文件路径仍套着 .nv-card，页脚不应再是一张卡片");
+        }
 
         assertTrue(bad.isEmpty(), "设置页少了这几件事的落点:\n  " + String.join("\n  ", bad));
     }
 
     /**
+     * 布尔行的生效标记必须和开关在同一行、垂直居中。
+     * <p>
+     * 全局 {@code .badge} 带 {@code margin-top:8px}，是给文本／数字／下拉那些
+     * 「标记在输入框下方」的行用的。布尔行如果走同一份，标记会被压到开关下缘之下。
+     * 这一格钉的是布尔行另有一份居中规则，且不改全局 {@code .badge}——改全局会把
+     * 非布尔行的标记也拽上去。
+     */
+    @Test
+    @DisplayName("布尔行生效标记与开关同一行垂直居中，全局徽章规则不动")
+    void booleanRowBadgeSitsBesideTheSwitch() throws IOException {
+        String css = Files.readString(frontendDir().resolve("app.css"), StandardCharsets.UTF_8);
+        String settings = coreSources().getOrDefault("settings.js", "");
+
+        List<String> bad = new ArrayList<>();
+        String cell = cssBlock(css, ".boolcell");
+        if (cell.isBlank()) {
+            bad.add("app.css 没有 .boolcell，布尔行的开关与标记会各走一块");
+        } else {
+            if (!cell.contains("inline-flex")) {
+                bad.add(".boolcell 不是 inline-flex，开关与标记不在一行: " + cell.strip());
+            }
+            if (!cell.contains("align-items:center") && !cell.contains("align-items: center")) {
+                bad.add(".boolcell 没有垂直居中: " + cell.strip());
+            }
+            if (!cell.contains("gap:10px") && !cell.contains("gap: 10px")) {
+                bad.add(".boolcell 间距不是约 10px: " + cell.strip());
+            }
+        }
+        String beside = cssBlock(css, ".boolcell .badge");
+        if (beside.isBlank()) {
+            bad.add("app.css 没有 .boolcell .badge，布尔行仍吃全局 margin-top:8px");
+        } else if (!beside.contains("margin-top:0") && !beside.contains("margin-top: 0")) {
+            bad.add(".boolcell .badge 没有去掉 margin-top: " + beside.strip());
+        }
+        String global = cssBlock(css, ".badge");
+        if (!global.contains("margin-top:8px") && !global.contains("margin-top: 8px")) {
+            bad.add("全局 .badge 的 margin-top:8px 被改掉了，非布尔行的标记会贴上输入框: "
+                    + global.strip());
+        }
+        if (!settings.contains("'boolcell'") && !settings.contains("\"boolcell\"")) {
+            bad.add("settings.js 没有给布尔行加上 boolcell");
+        }
+
+        assertTrue(bad.isEmpty(), "布尔行生效标记与开关没对齐:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
+     * 二次验证开关必须和设置页布尔行同一套构造，且不能套进 {@code .al-fld}。
+     * <p>
+     * {@code .al-fld label} 是 {@code display:block}，{@code .al-fld input} 带输入框的
+     * padding 与边框。开关是 {@code label.switch > input}，套进去之后滑块 {@code ::after}
+     * 仍按 38×22、无内边距定位，看起来错位。两处各写一份 DOM 的话，修一处另一处还会漂。
+     */
+    @Test
+    @DisplayName("二次验证开关与设置页布尔行同一套构造，不套进告警字段容器")
+    void totpSwitchMatchesSettingsBooleanSwitch() {
+        Map<String, String> sources = coreSources();
+        String core = sources.getOrDefault("core.js", "");
+        String settings = sources.getOrDefault("settings.js", "");
+        String auth = sources.getOrDefault("settings-auth.js", "");
+        String totp = functionBodyAny(auth, "totpCard");
+
+        List<String> bad = new ArrayList<>();
+        if (!core.contains("export function switchControl")) {
+            bad.add("core.js 没有导出 switchControl，两处开关会再各写一份");
+        }
+        if (!settings.contains("switchControl(")) {
+            bad.add("settings.js 布尔行没有走 switchControl");
+        }
+        if (!auth.contains("switchControl(")) {
+            bad.add("settings-auth.js 二次验证开关没有走 switchControl");
+        }
+        if (totp.isBlank()) {
+            bad.add("找不到 totpCard，下面两条无从量起");
+        } else {
+            if (totp.contains("'al-fld'") || totp.contains("\"al-fld\"")) {
+                bad.add("totpCard 仍把开关放进 .al-fld：那一组规则是给输入框的，会把滑块撑歪");
+            }
+            if (!totp.contains("switchControl('totp-switch'") && !totp.contains("input.id = 'totp-switch'")) {
+                bad.add("totpCard 没有建出 #totp-switch");
+            }
+            if (!totp.contains("'二次验证'")) {
+                bad.add("totpCard 丢了 aria-label「二次验证」");
+            }
+            if (!totp.contains("input.checked") || !totp.contains("text.textContent")) {
+                bad.add("totpCard 的 settle 不再更新 input.checked / text.textContent");
+            }
+        }
+
+        assertTrue(bad.isEmpty(), "二次验证开关与别处不是同一套:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
      * 设置页上这几件事各自的落点，闭集
      * <p>
-     * 搜索框、显示键名、只看改过的、计数、组目录药丸、组容器、配置文件路径与复制。
+     * 搜索框、显示键名、只看改过的、计数、组目录药丸、组容器、配置文件路径。
+     * 路径本身点一下复制，不再另立复制按钮。
      */
     private static final List<String> SETTINGS_CONTROLS = List.of(
             "set-search", "show-keys", "only-changed", "set-count", "grp-nav", "groups",
-            "cfg-path", "cfg-copy");
+            "cfg-path");
 
     /**
      * 「登录与安全」那一组里由脚本建出来的落点，闭集
@@ -559,7 +668,9 @@ class ConfigUiFrontendTest {
 
         List<String> bad = new ArrayList<>();
         for (String id : AUTH_CONTROLS) {
-            if (!scripts.contains("id=\"" + id + "\"") && !scripts.contains(".id = '" + id + "'")) {
+            if (!scripts.contains("id=\"" + id + "\"")
+                    && !scripts.contains(".id = '" + id + "'")
+                    && !scripts.contains("switchControl('" + id + "'")) {
                 bad.add("没有任何脚本建出 #" + id);
             }
         }
@@ -1891,6 +2002,20 @@ class ConfigUiFrontendTest {
             return "";
         }
         Matcher next = Pattern.compile("\\nexport ").matcher(text);
+        next.region(m.end(), text.length());
+        int to = next.find() ? next.start() : text.length();
+        return text.substring(m.start(), to);
+    }
+
+    /**
+     * 某个 function（含未导出的）到下一个 function 之间的正文
+     */
+    private String functionBodyAny(String text, String name) {
+        Matcher m = Pattern.compile("(?:async\\s+)?function " + name + "\\s*\\(").matcher(text);
+        if (!m.find()) {
+            return "";
+        }
+        Matcher next = Pattern.compile("\\n(?:async\\s+)?function ").matcher(text);
         next.region(m.end(), text.length());
         int to = next.find() ? next.start() : text.length();
         return text.substring(m.start(), to);

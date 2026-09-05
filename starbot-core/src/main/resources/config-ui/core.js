@@ -31,6 +31,33 @@ export const el = (t, c) => { const e = document.createElement(t); if (c) e.clas
 // 主播昵称等内容来自各平台的接口，属于外部数据，拼进 innerHTML 前必须转义
 export const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+/**
+ * 设置页布尔行与登录安全卡共用的开关
+ *
+ * 两处各写一份的话，样式漂了只会修到看见的那一处。构造必须同一份：
+ * {@code label.switch > input[type=checkbox] + span}，旁注「已启用／已关闭」。
+ * @param {string} [id] 落在 input 上的 id，没有就空着
+ * @param {boolean} checked 初始是否打开
+ * @param {string} [ariaLabel] 读屏用的名字
+ * @return {{label: HTMLElement, input: HTMLInputElement, text: HTMLElement}}
+ */
+export function switchControl(id, checked, ariaLabel) {
+  const label = el('label', 'switch');
+  const input = el('input');
+  input.type = 'checkbox';
+  input.checked = !!checked;
+  if (id) input.id = id;
+  if (ariaLabel) input.setAttribute('aria-label', ariaLabel);
+  const text = el('span');
+  // 旁注由 syncLabel 更新，而不是挂一个 change 监听：
+  // 「把控件退回原样」那条路要能在不触发任何 change 的前提下改动它——
+  // 靠 dispatchEvent 退回去的话，退回这个动作自己又会走一遍确认流程
+  input.syncLabel = () => { text.textContent = input.checked ? '已启用' : '已关闭'; };
+  input.syncLabel();
+  label.append(input, text);
+  return {label, input, text};
+}
+
 
 /**
  * 时:分。事件时刻是毫秒时间戳，按浏览器所在时区显示——看的人和机器往往不在同一个时区
