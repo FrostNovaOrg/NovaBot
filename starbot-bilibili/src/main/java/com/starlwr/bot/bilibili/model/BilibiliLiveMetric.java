@@ -214,10 +214,18 @@ public final class BilibiliLiveMetric {
     /**
      * 高能用户数
      * <p>
-     * 高能榜只收有过消费的观众，所以这个数远小于观看人数，更接近「有多少人真的掏了钱」。
+     * 高能榜口径的登录观众数。
      * 与只增不减的看过人数不同，它会随时间涨落。同样是瞬时量，取最大而非累加。
      */
     public static final String ONLINE_RANK_COUNT = "online_rank_count";
+
+    /**
+     * 在线人数
+     * <p>
+     * 高能榜头部显示的登录观众数。瞬时量，每分钟取最大。
+     * 消息缺 {@code online_count} 时回落到 {@link #ONLINE_RANK_COUNT} 所用的 {@code count}。
+     */
+    public static final String ONLINE_COUNT = "online_count";
 
     // 以下三项是**开播那一刻的快照**，由 setLiveMetric 写入而非累加。
     // 报告展示的是「现在多少、这场涨了多少」，涨幅由绘制时的实时值减去快照得到——

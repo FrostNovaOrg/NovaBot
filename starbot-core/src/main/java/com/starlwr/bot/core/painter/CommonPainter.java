@@ -295,6 +295,48 @@ public class CommonPainter {
         return this;
     }
 
+    /**
+     * 绘制一条折线，此方法不会移动绘图坐标，也不填充折线围成的区域
+     *
+     * @param points      折线顶点，少于两个点时不画
+     * @param color       线条颜色
+     * @param strokeWidth 笔宽（像素）
+     * @return 当前绘图器实例
+     */
+    public CommonPainter drawPolyline(@NonNull List<Point> points, @NonNull Color color, int strokeWidth) {
+        if (points.size() < 2 || strokeWidth <= 0) {
+            return this;
+        }
+
+        int[] xPoints = new int[points.size()];
+        int[] yPoints = new int[points.size()];
+        int maxY = 0;
+
+        for (int i = 0; i < points.size(); i++) {
+            Point point = points.get(i);
+            xPoints[i] = point.x;
+            yPoints[i] = point.y;
+            maxY = Math.max(maxY, yPoints[i]);
+        }
+
+        int pad = (strokeWidth + 1) / 2;
+        expandHeightIfNeeded(maxY + pad);
+
+        Color originalColor = this.draw.getColor();
+        Stroke originalStroke = this.draw.getStroke();
+
+        try {
+            this.draw.setColor(color);
+            this.draw.setStroke(new BasicStroke(strokeWidth, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            this.draw.drawPolyline(xPoints, yPoints, points.size());
+        } finally {
+            this.draw.setColor(originalColor);
+            this.draw.setStroke(originalStroke);
+        }
+
+        return this;
+    }
+
 
     /**
      * 在当前绘图坐标绘制一张图片，并自动移动绘图坐标至下次绘图适合位置

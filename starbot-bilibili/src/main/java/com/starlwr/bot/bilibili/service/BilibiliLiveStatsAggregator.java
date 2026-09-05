@@ -253,7 +253,10 @@ public class BilibiliLiveStatsAggregator {
     }
 
     /**
-     * 高能用户数更新
+     * 高能用户数与在线人数更新
+     * <p>
+     * {@code online_count} 是高能榜头部的登录观众数；缺这个字段时回落到 {@code count}。
+     * 两个字段同时在时以 {@code online_count} 为准，不取两者较大。
      */
     @EventListener(BilibiliOnlineRankCountUpdateEvent.class)
     public void onOnlineRankCountUpdate(BilibiliOnlineRankCountUpdateEvent event) {
@@ -261,6 +264,11 @@ public class BilibiliLiveStatsAggregator {
         if (count != null) {
             max(event, BilibiliLiveMetric.ONLINE_RANK_COUNT, count);
             maxSeries(event, BilibiliLiveMetric.ONLINE_RANK_COUNT, count);
+        }
+        Integer online = event.getOnlineCount() != null ? event.getOnlineCount() : count;
+        if (online != null) {
+            max(event, BilibiliLiveMetric.ONLINE_COUNT, online);
+            maxSeries(event, BilibiliLiveMetric.ONLINE_COUNT, online);
         }
     }
 

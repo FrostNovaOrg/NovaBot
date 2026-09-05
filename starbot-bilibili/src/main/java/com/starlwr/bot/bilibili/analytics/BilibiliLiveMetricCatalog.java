@@ -39,6 +39,7 @@ public class BilibiliLiveMetricCatalog implements LiveMetricCatalog {
             // 同一个人两场都来会被算两次。与已有的点赞总数（同为服务端下发的累计值）口径一致
             Metric.count(BilibiliLiveMetric.WATCHED_COUNT, "看过", "人次"),
             Metric.count(BilibiliLiveMetric.ONLINE_RANK_COUNT, "高能用户", "人次"),
+            Metric.count(BilibiliLiveMetric.ONLINE_COUNT, "在线人数", "人"),
             Metric.count(BilibiliLiveMetric.BOX_COUNT, "盲盒", "个"),
             Metric.money(BilibiliLiveMetric.BOX_PROFIT, "盲盒盈亏"),
             Metric.count(BilibiliLiveMetric.FREE_GIFT_COUNT, "免费礼物", "个")

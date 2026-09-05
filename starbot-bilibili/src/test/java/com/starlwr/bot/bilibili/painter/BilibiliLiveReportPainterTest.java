@@ -246,6 +246,68 @@ class BilibiliLiveReportPainterTest {
     }
 
     @Test
+    @DisplayName("在线人数画成折线而不是面积：峰值列只占约笔宽，基线到折线之间有空白")
+    void paintsOnlineCurveAsPolylineNotArea() throws Exception {
+        long start = 1_700_000_000_000L / 60_000L * 60_000L;
+        int minutes = 60;
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+        liveDataService.setLiveEndTime(PLATFORM, STREAMER.getUid(), start + minutes * 60_000L);
+
+        for (int minute = 0; minute <= minutes; minute++) {
+            double value = (minute >= 20 && minute <= 40) ? 100.0 : 10.0;
+            liveDataService.maxLiveSeries(PLATFORM, STREAMER.getUid(),
+                    BilibiliLiveMetric.ONLINE_COUNT, start + minute * 60_000L, value);
+        }
+
+        Optional<String> base64 = painter.paint(PLATFORM, STREAMER, curvesOnly());
+        assertTrue(base64.isPresent(), "只喂在线人数序列也应出图");
+        dump("online-polyline", base64.get());
+
+        BufferedImage image = imageOf(base64.get());
+        Color online = BilibiliLiveReportPainter.COLOR_CURVE_ONLINE;
+
+        int peakX = -1;
+        int peakY = image.getHeight();
+        for (int x = GAUGE_MARGIN; x < GAUGE_MARGIN + GAUGE_CONTENT_WIDTH; x++) {
+            for (int y = 0; y < image.getHeight(); y++) {
+                if (isColor(image, x, y, online) && y < peakY) {
+                    peakY = y;
+                    peakX = x;
+                }
+            }
+        }
+        assertTrue(peakX >= 0, "图上没有在线人数曲线色：第七条没画出来");
+
+        int run = 0;
+        int longest = 0;
+        int longestEnd = 0;
+        for (int y = 0; y < image.getHeight(); y++) {
+            if (isColor(image, peakX, y, online)) {
+                run++;
+                if (run > longest) {
+                    longest = run;
+                    longestEnd = y;
+                }
+            } else {
+                run = 0;
+            }
+        }
+
+        int blanks = 0;
+        int scanTo = Math.min(image.getHeight(), longestEnd + 50);
+        for (int y = longestEnd + 1; y < scanTo; y++) {
+            if (!isColor(image, peakX, y, online)) {
+                blanks++;
+            }
+        }
+
+        assertTrue(longest >= 1 && longest <= 8,
+                "折线色应只占约笔宽的一段连续像素, 实测连续 " + longest + "（面积图会从基线填到峰）");
+        assertTrue(blanks >= 10,
+                "基线到折线之间应有空白像素, 实测 " + blanks);
+    }
+
+    @Test
     @DisplayName("没有时间序列时曲线区块应整体跳过")
     void skipsCurvesWithoutSeries() {
         liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), 1_700_000_000_000L);

@@ -29,6 +29,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -295,6 +296,34 @@ class BilibiliLiveStatsAggregatorTest {
         aggregator.onOnlineRankCountUpdate(new BilibiliOnlineRankCountUpdateEvent(STREAMER, 2100, 2100, "2100"));
 
         assertEquals(3831.0, metric(BilibiliLiveMetric.ONLINE_RANK_COUNT), 0.0001);
+    }
+
+    @Test
+    @DisplayName("有 online_count 时按该字段记在线人数，不以 count 取大")
+    void onlineCountFieldIsRecordedNotMaxedWithCount() {
+        aggregator.onOnlineRankCountUpdate(new BilibiliOnlineRankCountUpdateEvent(STREAMER, 5000, 11921, "1万+"));
+
+        assertEquals(11921.0, metric(BilibiliLiveMetric.ONLINE_COUNT), 0.0001);
+        assertEquals(5000.0, metric(BilibiliLiveMetric.ONLINE_RANK_COUNT), 0.0001,
+                "count 仍记高能用户数，不与 online_count 取大");
+
+        Map<Long, Double> series = liveDataService.getLiveSeries(PLATFORM, STREAMER.getUid(),
+                BilibiliLiveMetric.ONLINE_COUNT);
+        assertEquals(1, series.size());
+        assertEquals(11921.0, series.values().iterator().next(), 0.0001);
+    }
+
+    @Test
+    @DisplayName("消息缺 online_count 时回落到 count")
+    void missingOnlineCountFallsBackToCount() {
+        aggregator.onOnlineRankCountUpdate(new BilibiliOnlineRankCountUpdateEvent(STREAMER, 23, null, null));
+
+        assertEquals(23.0, metric(BilibiliLiveMetric.ONLINE_COUNT), 0.0001);
+
+        Map<Long, Double> series = liveDataService.getLiveSeries(PLATFORM, STREAMER.getUid(),
+                BilibiliLiveMetric.ONLINE_COUNT);
+        assertEquals(1, series.size());
+        assertEquals(23.0, series.values().iterator().next(), 0.0001);
     }
 
     @Test

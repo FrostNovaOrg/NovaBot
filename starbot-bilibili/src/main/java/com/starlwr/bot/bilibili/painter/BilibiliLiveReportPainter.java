@@ -193,6 +193,11 @@ public class BilibiliLiveReportPainter {
     private static final int CURVE_COLUMN_WIDTH = 2;
 
     /**
+     * 在线人数折线的笔宽（像素）
+     */
+    private static final int CURVE_LINE_STROKE = 3;
+
+    /**
      * 面积的最小可见高度
      * <p>
      * 一整分钟一条弹幕都没有时，面积高度算出来是 0，画出来什么都没有——
@@ -217,6 +222,11 @@ public class BilibiliLiveReportPainter {
      * 各条曲线的配色，礼物沿用主题粉（{@link #COLOR_NAME}）
      */
     private static final Color COLOR_CURVE_WATCHED = new Color(110, 199, 122);
+
+    /**
+     * 在线人数折线的配色。包内可见：像素判据要靠它认出折线而不是面积
+     */
+    static final Color COLOR_CURVE_ONLINE = new Color(255, 99, 132);
 
     /**
      * 弹幕曲线的配色。包内可见：像素判据要靠它认出「哪几列画的是面积」，
@@ -768,9 +778,9 @@ public class BilibiliLiveReportPainter {
     /**
      * 绘制互动曲线
      * <p>
-     * 每项指标一条独立的面积图，各自按自身峰值缩放。<b>刻意不把它们叠在同一张图上</b>：
-     * 弹幕以「条」计、礼物以「元」计，量级动辄差两个数量级，共用纵轴的结果是
-     * 除了最大的那条以外全部压成一条直线。
+     * 每项指标一条独立的图，各自按自身峰值缩放。在线人数走折线，其余走面积。
+     * <b>刻意不把它们叠在同一张图上</b>：弹幕以「条」计、礼物以「元」计，量级动辄差两个数量级，
+     * 共用纵轴的结果是除了最大的那条以外全部压成一条直线。
      */
     private void drawCurves(CommonPainter painter, String platform, Long uid, BilibiliLiveReportOptions options) {
         Optional<Long> start = liveDataService.getLiveStartTime(platform, uid);
@@ -796,8 +806,10 @@ public class BilibiliLiveReportPainter {
         // 峰值标的是本场最终看过多少人，因此文案是「人看过」而不是「人/分」
         curves.add(new Curve("看过人数", BilibiliLiveMetric.WATCHED_COUNT, COLOR_CURVE_WATCHED,
                 peak -> Math.round(peak) + " 人看过"));
+        curves.add(new Curve("在线人数", BilibiliLiveMetric.ONLINE_COUNT, COLOR_CURVE_ONLINE,
+                peak -> Math.round(peak) + " 人", true, "登录观众数，B 站高能榜口径"));
 
-        // 缺口表整段算一次：六条曲线共用同一条时间轴，缺口落在哪几列对它们是同一个答案
+        // 缺口表整段算一次：各条曲线共用同一条时间轴，缺口落在哪几列对它们是同一个答案
         List<LiveGap> gaps = collectionGaps(platform, uid, start.get(), end.get());
 
         boolean first = true;
@@ -971,10 +983,18 @@ public class BilibiliLiveReportPainter {
         }
         painter.drawTextWithStyle(title, new Point(MARGIN, top));
 
-        int chartTop = top + 34;
+        int heading = 34;
+        if (curve.caption() != null && !curve.caption().isBlank()) {
+            painter.drawTextWithStyle(
+                    List.of(new TextWithStyle(curve.caption(), 20, COLOR_TIP, Font.PLAIN)),
+                    new Point(MARGIN, top + 28));
+            heading = 52;
+        }
+
+        int chartTop = top + heading;
         int baseline = chartTop + CURVE_HEIGHT;
 
-        // 按「有没有采到」把列切成一段一段：采到的画面积，没采到的画斜纹
+        // 按「有没有采到」把列切成一段一段：采到的画面积或折线，没采到的画斜纹
         int from = 0;
         while (from < columns) {
             int to = from;
@@ -983,6 +1003,8 @@ public class BilibiliLiveReportPainter {
             }
             if (missing[from]) {
                 drawGapHatch(painter, columnX(from), columnX(to + 1), chartTop, baseline);
+            } else if (curve.polyline()) {
+                drawLineRun(painter, values, peak, from, to, baseline, curve.color);
             } else {
                 drawAreaRun(painter, values, peak, from, to, baseline, curve.color);
             }
@@ -1021,6 +1043,27 @@ public class BilibiliLiveReportPainter {
         }
         area.add(new Point(columnX(to), baseline));
         painter.drawPolygon(area, color);
+    }
+
+    /**
+     * 画一段折线：从第 from 列到第 to 列（含），不填充
+     * <p>
+     * 缺口段仍走斜纹，与面积曲线同一套「没采到」的说法。
+     */
+    private void drawLineRun(CommonPainter painter, double[] values, double peak,
+                             int from, int to, int baseline, Color color) {
+        List<Point> points = new ArrayList<>(Math.max(2, to - from + 1));
+        for (int i = from; i <= to; i++) {
+            points.add(new Point(columnX(i), baseline - areaHeight(values[i], peak)));
+        }
+        if (points.size() == 1) {
+            int x = points.get(0).x;
+            int y = points.get(0).y;
+            painter.drawPolyline(List.of(new Point(x, y), new Point(x + CURVE_COLUMN_WIDTH, y)),
+                    color, CURVE_LINE_STROKE);
+            return;
+        }
+        painter.drawPolyline(points, color, CURVE_LINE_STROKE);
     }
 
     /**
@@ -1860,20 +1903,19 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
-     * 一条互动曲线的定义
-     * @param title 曲线标题
-     * @param metric 时间序列的指标名
-     * @param color 面积配色
-     * @param peakText 峰值的展示文案
-     */
-    /**
      * 一条互动曲线
      *
      * @param title 曲线标题
      * @param metric 指标名
-     * @param color 面积配色
+     * @param color 面积或折线配色
      * @param peakText 峰值文案，为 null 时不标峰值（金额曲线在不展示金额的会话里即为此情形）
+     * @param polyline true 时画折线（不填充），false 时画面积
+     * @param caption 标题下一行小字，null 则不画
      */
-    private record Curve(String title, String metric, Color color, DoubleFunction<String> peakText) {
+    private record Curve(String title, String metric, Color color, DoubleFunction<String> peakText,
+                         boolean polyline, String caption) {
+        private Curve(String title, String metric, Color color, DoubleFunction<String> peakText) {
+            this(title, metric, color, peakText, false, null);
+        }
     }
 }

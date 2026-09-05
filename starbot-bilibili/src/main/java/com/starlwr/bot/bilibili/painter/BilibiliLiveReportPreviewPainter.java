@@ -195,6 +195,7 @@ public class BilibiliLiveReportPreviewPainter extends BilibiliLiveReportPainter 
         data.maxLiveMetric(platform, PREVIEW_UID, BilibiliLiveMetric.LIKE_TOTAL, 2_573);
         data.maxLiveMetric(platform, PREVIEW_UID, BilibiliLiveMetric.WATCHED_COUNT, 8_642);
         data.maxLiveMetric(platform, PREVIEW_UID, BilibiliLiveMetric.ONLINE_RANK_COUNT, 137);
+        data.maxLiveMetric(platform, PREVIEW_UID, BilibiliLiveMetric.ONLINE_COUNT, 1_186);
 
         // 开播那一刻的快照，「本场变化」拿它与上面那三个现值相减
         data.setLiveMetric(platform, PREVIEW_UID, BilibiliLiveMetric.FANS_AT_START, 12_314);
@@ -273,6 +274,12 @@ public class BilibiliLiveReportPreviewPainter extends BilibiliLiveReportPainter 
             }
             data.maxLiveSeries(platform, PREVIEW_UID, BilibiliLiveMetric.WATCHED_COUNT,
                     at, 900 + minute * 62L);
+            double online = 720 + 180 * Math.sin(minute / 11.0);
+            if (minute > 36 && minute < 46) {
+                online += 280;
+            }
+            data.maxLiveSeries(platform, PREVIEW_UID, BilibiliLiveMetric.ONLINE_COUNT,
+                    at, Math.round(online));
         }
     }
 
