@@ -287,6 +287,9 @@ html.showkeys .keyname{display:block}
   padding:1px 8px;border:1px solid var(--line);color:var(--dim)}
 .badge.now{color:var(--ok);border-color:var(--ok)}
 .badge.restart{color:var(--warn);border-color:var(--warn)}
+/* 布尔行：开关与生效标记同一行垂直居中。非布尔行的标记仍在输入框下方，走上面的 margin-top */
+.boolcell{display:inline-flex;align-items:center;gap:10px}
+.boolcell .badge{margin-top:0}
 /* 四个危险项：一道边框加一个警示符。改到危险那一档时另外还会问一句 */
 .field.danger{border-left:3px solid var(--warn)}
 .dgm{color:var(--warn)}
@@ -342,9 +345,9 @@ html.showkeys .keyname{display:block}
 .bar .status.err{color:var(--err)}
 /* 数字用等宽字形：改动条上的 N 每变一次都会让整行左右抽动，读起来像界面在闪 */
 .change-count{font-size:13px;color:var(--dim);font-variant-numeric:tabular-nums}
-.cfgpath{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:13px;color:var(--dim)}
-.cfgpath code{font-family:var(--mono);font-size:12.5px;color:var(--text)}
-.cfgpath button{flex-shrink:0}
+.cfgpath{margin:14px 0;font-size:13px;color:var(--dim);line-height:1.6}
+.cfgpath code{font-family:var(--mono);font-size:12.5px;color:var(--text);
+  cursor:pointer;user-select:all}
 button.primary{background:var(--accent);color:var(--on-accent);border:none;padding:8px 20px;
   border-radius:var(--r-ctl);cursor:pointer;font-size:14px;font-family:inherit;font-weight:500}
 button.primary:disabled{opacity:.45;cursor:not-allowed}
