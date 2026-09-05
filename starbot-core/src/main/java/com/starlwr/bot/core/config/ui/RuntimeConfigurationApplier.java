@@ -72,6 +72,12 @@ public class RuntimeConfigurationApplier {
                 properties.getAlert().setWebhookUrl(value));
         APPLIERS.put("starbot.core.mail.default-to", (properties, value) ->
                 properties.getMail().setDefaultTo(value));
+
+        // ---- 配置备份保留份数 ----
+        // 下次保存时现读，写回即生效
+        APPLIERS.put("starbot.core.config-ui.backup-keep", (properties, value) ->
+                properties.getConfigUi().setBackupKeep(
+                        TimestampedFileBackup.clamp(Integer.parseInt(value.trim()))));
     }
 
     /**

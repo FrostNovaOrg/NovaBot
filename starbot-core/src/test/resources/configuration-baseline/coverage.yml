@@ -46,6 +46,7 @@ starbot:
       default-to: coverage@example.invalid
     config-ui:
       enabled: false
+      backup-keep: 12
       token: coverage-console-token
       allow-ips:
         - 10.0.0.0/8

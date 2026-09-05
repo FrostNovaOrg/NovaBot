@@ -26,6 +26,7 @@ starbot.core.config-ui.auth.password=coverage-password
 starbot.core.config-ui.auth.session-hours=61
 starbot.core.config-ui.auth.totp-secret=COVERAGESECRET
 starbot.core.config-ui.auth.totp=false
+starbot.core.config-ui.backup-keep=12
 starbot.core.config-ui.enabled=false
 starbot.core.config-ui.napcat.address=http://127.0.0.1:16099
 starbot.core.config-ui.napcat.token-hash=coverage-napcat-hash

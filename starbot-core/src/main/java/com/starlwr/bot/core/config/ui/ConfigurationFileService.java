@@ -13,20 +13,15 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.time.Instant;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
-import java.util.stream.Stream;
 
 /**
  * 配置文件读写服务
@@ -58,29 +53,6 @@ public class ConfigurationFileService {
     private static final Pattern OBJECT_ITEM = Pattern.compile("^[A-Za-z_][A-Za-z0-9_.-]*\\s*:(\\s|$)");
 
     /**
-     * 备份文件名后缀
-     */
-    private static final String BACKUP_SUFFIX = ".bak";
-
-    /**
-     * 备份保留份数
-     */
-    private static final int BACKUP_KEEP = 10;
-
-    /**
-     * 备份文件名的时间戳格式，形如 20260803-172530
-     */
-    private static final DateTimeFormatter BACKUP_STAMP =
-            DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").withZone(ZoneId.systemDefault());
-
-    /**
-     * 备份文件名的判定模式
-     * <p>
-     * 备份名来自接口入参，必须严格校验：直接拿它拼路径的话，传入 ../ 即可读取或覆盖任意文件。
-     */
-    private static final Pattern BACKUP_NAME = Pattern.compile("^[A-Za-z0-9_.-]+\\.\\d{8}-\\d{6}\\.bak$");
-
-    /**
      * 主配置文件路径
      */
     private final Path configPath;
@@ -93,11 +65,17 @@ public class ConfigurationFileService {
      */
     private final Supplier<String> initialContent;
 
+    private final TimestampedFileBackup backups;
+
+    private final IntSupplier backupKeep;
+
     @Autowired
-    public ConfigurationFileService(ConfigurationMetadataService metadata, ApplicationContext context) {
+    public ConfigurationFileService(ConfigurationMetadataService metadata, ApplicationContext context,
+                                    StarBotCoreProperties properties) {
         this(Path.of("application.yml"), () -> ConfigurationTemplate.render(metadata.getFields(),
                 ConfigurationPropertyFields.values(
-                        context.getBeansWithAnnotation(ConfigurationProperties.class).values())));
+                        context.getBeansWithAnnotation(ConfigurationProperties.class).values())),
+                () -> properties.getConfigUi().getBackupKeep());
     }
 
     /**
@@ -114,8 +92,14 @@ public class ConfigurationFileService {
     }
 
     ConfigurationFileService(Path configPath, Supplier<String> initialContent) {
+        this(configPath, initialContent, () -> TimestampedFileBackup.DEFAULT_KEEP);
+    }
+
+    ConfigurationFileService(Path configPath, Supplier<String> initialContent, IntSupplier backupKeep) {
         this.configPath = configPath;
         this.initialContent = initialContent;
+        this.backups = new TimestampedFileBackup(configPath);
+        this.backupKeep = backupKeep;
     }
 
     /**
@@ -689,59 +673,7 @@ public class ConfigurationFileService {
      * @throws IOException 备份失败时抛出
      */
     private void backup() throws IOException {
-        if (!Files.exists(configPath)) {
-            return;
-        }
-
-        String name = configPath.getFileName() + "." + BACKUP_STAMP.format(Instant.now()) + BACKUP_SUFFIX;
-        Files.copy(configPath, configPath.resolveSibling(name), StandardCopyOption.REPLACE_EXISTING);
-        log.debug("已备份原配置至 {}", name);
-
-        pruneBackups();
-    }
-
-    /**
-     * 删除超出保留数量的旧备份
-     */
-    private void pruneBackups() {
-        try (Stream<Path> files = Files.list(directory())) {
-            files.filter(this::isBackup)
-                    // 备份名内含形如 20260803-172530 的时间戳，字典序即时间序
-                    .sorted(Comparator.comparing((Path p) -> p.getFileName().toString()).reversed())
-                    .skip(BACKUP_KEEP)
-                    .forEach(path -> {
-                        try {
-                            Files.deleteIfExists(path);
-                        } catch (IOException e) {
-                            log.debug("删除旧备份 {} 失败: {}", path, e.getMessage());
-                        }
-                    });
-        } catch (IOException e) {
-            // 备份清理失败不应影响保存本身
-            log.debug("清理旧备份失败: {}", e.getMessage());
-        }
-    }
-
-    /**
-     * 配置文件所在目录
-     */
-    private Path directory() {
-        Path parent = configPath.toAbsolutePath().getParent();
-        return parent == null ? Path.of(".").toAbsolutePath().normalize() : parent;
-    }
-
-    /**
-     * 判断是否为本服务生成的备份文件
-     */
-    private boolean isBackup(Path path) {
-        return Files.isRegularFile(path) && isBackupName(path.getFileName().toString());
-    }
-
-    /**
-     * 判断文件名是否符合备份命名规则
-     */
-    private boolean isBackupName(String name) {
-        return BACKUP_NAME.matcher(name).matches();
+        backups.backup(backupKeep.getAsInt());
     }
 
     /**

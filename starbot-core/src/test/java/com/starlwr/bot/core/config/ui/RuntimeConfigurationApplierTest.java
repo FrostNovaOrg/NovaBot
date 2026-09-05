@@ -111,6 +111,15 @@ class RuntimeConfigurationApplierTest {
     }
 
     @Test
+    @DisplayName("备份保留份数：改完当场写回运行中的配置")
+    void appliesBackupKeep() {
+        List<String> restart = applier.applyAndTrack(Map.of("starbot.core.config-ui.backup-keep", "3"));
+
+        assertEquals(3, properties.getConfigUi().getBackupKeep());
+        assertEquals(List.of(), restart);
+    }
+
+    @Test
     @DisplayName("⚠️ 阴性：不在名单里的配置项只写文件，运行中的值一动不动")
     void doesNotTouchRestartOnlyProperties() {
         int before = properties.getAlert().getConvergenceInterval();

@@ -54,6 +54,7 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.lang.management.ManagementFactory;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -227,6 +228,11 @@ public class ConfigUiController {
      * 这台机器改过的默认模板。模板编辑器的「默认模板」那一页读写的就是它
      */
     private final PushTemplateDefaults templateDefaults;
+
+    /**
+     * 推送配置备份用的钟。测试换成固定钟，免得同一秒内连存两份撞名覆盖。
+     */
+    Clock backupClock = Clock.systemDefaultZone();
 
     @Autowired
     public ConfigUiController(ConfigurationMetadataService metadataService,
@@ -1484,7 +1490,8 @@ public class ConfigUiController {
         try {
             Path path = Path.of(properties.getDatasource().getJsonPath());
             if (Files.exists(path)) {
-                Files.copy(path, path.resolveSibling(path.getFileName() + ".bak"), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                new TimestampedFileBackup(path, backupClock)
+                        .backup(properties.getConfigUi().getBackupKeep());
             }
             Files.writeString(path, content, StandardCharsets.UTF_8);
 
