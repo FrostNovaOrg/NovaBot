@@ -1,6 +1,7 @@
 package com.starlwr.bot.core.config.ui;
 
 import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.sender.PushGate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -8,6 +9,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -143,5 +145,43 @@ class RuntimeConfigurationApplierTest {
 
         // 记录挂在实例上，实例的寿命就是进程的寿命——换一个实例等于程序重启了一次
         assertEquals(List.of(), RuntimeConfigurationApplier.bench(properties).build().getPendingRestart());
+    }
+
+    @Test
+    @DisplayName("专用口闭集里每一项，通用即时通道都必须拒写")
+    void shrinkingTheDedicatedAuthKeySetMustFail() {
+        List<String> dedicated = List.of(
+                ConfigUiAuthService.PASSWORD_PROPERTY,
+                ConfigUiAuthService.TOTP_PROPERTY,
+                ConfigUiAuthService.TOTP_SECRET_PROPERTY,
+                ConfigUiAuthService.OPERATOR_TOKEN_PROPERTY);
+
+        StarBotCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
+        String passwordBefore = auth.getPassword();
+        boolean totpBefore = auth.isTotp();
+        String secretBefore = auth.getTotpSecret();
+        boolean operatorBefore = auth.isOperatorToken();
+
+        Map<String, String> attempts = new LinkedHashMap<>();
+        attempts.put(ConfigUiAuthService.PASSWORD_PROPERTY, "changed-password");
+        attempts.put(ConfigUiAuthService.TOTP_PROPERTY, "false");
+        attempts.put(ConfigUiAuthService.TOTP_SECRET_PROPERTY, "JBSWY3DPEHPK3PXP");
+        attempts.put(ConfigUiAuthService.OPERATOR_TOKEN_PROPERTY, "true");
+
+        for (String key : dedicated) {
+            assertTrue(ConfigUiAuthService.isDedicatedAuthKey(key),
+                    "闭集缺了 " + key + "：专用口键变少必须红");
+        }
+
+        List<String> restart = applier.applyAndTrack(attempts);
+        for (String key : dedicated) {
+            assertTrue(restart.contains(key),
+                    "通用写入必须拒 " + key + ", 实际待重启=" + restart);
+        }
+
+        assertEquals(passwordBefore, auth.getPassword(), "口令不得被通用写入改掉");
+        assertEquals(totpBefore, auth.isTotp(), "二次验证开关不得被通用写入改掉");
+        assertEquals(secretBefore, auth.getTotpSecret(), "二次验证密钥不得被通用写入改掉");
+        assertEquals(operatorBefore, auth.isOperatorToken(), "启动令牌通道不得被通用写入改掉");
     }
 }
