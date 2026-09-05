@@ -333,4 +333,39 @@ class BilibiliPacketCodecTest {
         sane.write(jsonPacket("{\"cmd\":\"AFTER\"}"));
         assertEquals(2, BilibiliPacketCodec.decode(sane.toByteArray()).size());
     }
+
+    @Test
+    @DisplayName("预算爆掉后同批剩余子包不再进解压，解压账目停在第 k 个子包上")
+    void stopsDecompressingSiblingsAfterBudgetBlown() throws Exception {
+        // 一批四个压缩子包：第 1 个解压通过、第 2 个把预算撑爆、其后两个本可正常解压。
+        // 产出列表上这分不出「没再解压」与「解压完再整批丢」（外层兜底都返空），
+        // 解压尝试次数才分得开：提前返回在的话它停在第 2 个上
+        byte[] first = jsonPacketStream(4 * 1024);
+        byte[] second = jsonPacketStream(4 * 1024);
+
+        ByteArrayOutputStream stream = new ByteArrayOutputStream();
+        stream.write(packet(DataPackType.NOTICE.getCode(), 2, zlib(first)));
+        stream.write(packet(DataPackType.NOTICE.getCode(), 2, zlib(second)));
+        for (int i = 0; i < 2; i++) {
+            stream.write(packet(DataPackType.NOTICE.getCode(), 2, zlib(jsonPacketStream(1024))));
+        }
+
+        // 预算放得过第 1 个子包、放不过第 2 个
+        BilibiliPacketCodec.Limits limits = new BilibiliPacketCodec.Limits(first.length + second.length / 2, 3);
+        BilibiliPacketCodec.DecompressBudget budget = new BilibiliPacketCodec.DecompressBudget(limits.maxDecompressedBytes());
+        List<BilibiliPacket> packets = BilibiliPacketCodec.decode(stream.toByteArray(), limits, budget);
+
+        assertTrue(packets.isEmpty(), "预算爆过一次应整批拒收，实际返回 " + packets.size() + " 个包");
+        assertEquals(2, budget.decompressAttempts(),
+                "解压尝试应停在第 2 个子包上，其后两个不得再进解压，实际 " + budget.decompressAttempts() + " 次");
+        assertEquals(first.length, budget.usedBytes(), "已消耗字节应停在第 1 个子包的产出上");
+
+        // 后两个子包在宽预算下都能正常解出——证明上面断言卡的是提前返回，不是数据本身坏了
+        ByteArrayOutputStream remaining = new ByteArrayOutputStream();
+        for (int i = 0; i < 2; i++) {
+            remaining.write(packet(DataPackType.NOTICE.getCode(), 2, zlib(jsonPacketStream(1024))));
+        }
+        assertTrue(BilibiliPacketCodec.decode(remaining.toByteArray(),
+                new BilibiliPacketCodec.Limits(1024 * 1024, 3)).size() > 0, "后两个子包本应可解压");
+    }
 }

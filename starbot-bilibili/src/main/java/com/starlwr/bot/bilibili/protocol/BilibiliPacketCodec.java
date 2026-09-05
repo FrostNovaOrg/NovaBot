@@ -111,9 +111,23 @@ public final class BilibiliPacketCodec {
         Limits effective = limits == null ? DEFAULT_LIMITS : limits;
         // 预算属于整次解码，不属于任何一层解压：按子包各算一份的话，
         // 一批「各自不超限」的兄弟子包就能把放大倍数藏在份数里
-        DecompressBudget budget = new DecompressBudget(effective.maxDecompressedBytes());
+        return decode(data, effective, new DecompressBudget(effective.maxDecompressedBytes()));
+    }
+
+    /**
+     * 按给定限额与既有的预算解码一段字节流
+     * <p>
+     * 预算由调用方持有并传入，限额须与它同源（预算的上限就是这份限额的 maxDecompressedBytes）。
+     * 这个重载是给测试的观察口：预算爆掉后整批返空，这从产出列表上分不出
+     * 「后面的子包没再解压」与「解压完又整批丢掉」——持有预算才能读到解压账目停在了哪个子包上。
+     * @param data 字节流
+     * @param limits 解码限额
+     * @param budget 这次解码全程共用的解压预算
+     * @return 数据包列表，数据非法时返回空列表
+     */
+    static List<BilibiliPacket> decode(byte[] data, Limits limits, DecompressBudget budget) {
         List<BilibiliPacket> packets = new ArrayList<>();
-        decodeInto(data, packets, 0, effective, budget);
+        decodeInto(data, packets, 0, limits, budget);
         if (budget.isBlown()) {
             return new ArrayList<>();
         }
@@ -198,6 +212,7 @@ public final class BilibiliPacketCodec {
      * @return 解压结果，失败或预算超限时返回空
      */
     private static Optional<byte[]> decompress(byte[] body, boolean brotli, DecompressBudget budget) {
+        budget.recordAttempt();
         try (ByteArrayInputStream source = new ByteArrayInputStream(body);
              InputStream input = brotli ? new BrotliInputStream(source) : new InflaterInputStream(source);
              ByteArrayOutputStream output = new ByteArrayOutputStream(Math.min(body.length * 4, DECOMPRESS_BUFFER_SIZE))) {
@@ -221,15 +236,22 @@ public final class BilibiliPacketCodec {
 
     /**
      * 一次 decode 调用内所有解压（含嵌套、含兄弟子包）共用的预算
+     * <p>
+     * 包内可见并带读数口：它同时是测试的观察口，用来分辨「爆预算后不再解压」与「解压完再整批丢」。
      */
-    private static final class DecompressBudget {
+    static final class DecompressBudget {
         private final int limit;
 
         private long used;
 
         private boolean blown;
 
-        private DecompressBudget(int limit) {
+        /**
+         * 解压尝试次数，含被预算拒绝的那几次
+         */
+        private int attempts;
+
+        DecompressBudget(int limit) {
             this.limit = limit;
         }
 
@@ -248,6 +270,24 @@ public final class BilibiliPacketCodec {
 
         private boolean isBlown() {
             return blown;
+        }
+
+        private void recordAttempt() {
+            attempts++;
+        }
+
+        /**
+         * 已计入预算的解压字节数
+         */
+        long usedBytes() {
+            return used;
+        }
+
+        /**
+         * 解压尝试次数：爆预算后同批剩余子包不再解压时，这个数停在第 k 个子包上
+         */
+        int decompressAttempts() {
+            return attempts;
         }
     }
 }

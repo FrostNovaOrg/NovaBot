@@ -73,5 +73,5 @@ snapshots.jsonl
 EventDebug/
 NetworkDebug/
 
-# 本地草稿目录，不入库
-scratch/
+# 本地草稿目录，不入库（锚到仓根：别处的同名子目录不跟着被忽略）
+/scratch/
