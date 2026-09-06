@@ -26,6 +26,7 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -203,12 +204,15 @@ class GenericConfigSaveMustNotChangeAuthWithoutReauthTest {
         body.put(ConfigUiAuthService.PASSWORD_PROPERTY, NEW_PASSWORD);
         JSONObject result = controller.save(body);
 
-        assertFalse(result.getBooleanValue("success"),
-                "放行就会把口令明文写进配置文件, 重启即换门, 实际 message=" + result.getString("message"));
-        assertTrue(result.getString("message") != null && result.getString("message").contains("登录与安全"),
-                "应把人领去专用口, 实际 message=" + result.getString("message"));
-        assertEquals(before, Files.readString(config, StandardCharsets.UTF_8),
-                "拒了配置文件就该逐字同, 明文写进去等于门已经换了");
+        assertAll(
+                () -> assertFalse(result.getBooleanValue("success"),
+                        "success 必须为 false：放行就会把口令明文写进配置文件, 重启即换门, 实际 message="
+                                + result.getString("message")),
+                () -> assertTrue(result.getString("message") != null
+                                && result.getString("message").contains("登录与安全"),
+                        "应把人领去专用口, 实际 message=" + result.getString("message")),
+                () -> assertEquals(before, Files.readString(config, StandardCharsets.UTF_8),
+                        "yml 含明文口令等于门已经换了, 拒了配置文件就该逐字同"));
     }
 
     @Test
@@ -221,11 +225,12 @@ class GenericConfigSaveMustNotChangeAuthWithoutReauthTest {
         body.put(ConfigUiAuthService.OPERATOR_TOKEN_PROPERTY, "true");
         JSONObject result = controller.save(body);
 
-        assertFalse(result.getBooleanValue("success"),
-                "放行就会把忘记口令的启动令牌通道打开, 重启后打印一个绕过二次验证的直进地址, 实际 message="
-                        + result.getString("message"));
-        assertEquals(before, Files.readString(config, StandardCharsets.UTF_8),
-                "拒了配置文件就该逐字同");
+        assertAll(
+                () -> assertFalse(result.getBooleanValue("success"),
+                        "success 必须为 false：放行就会把忘记口令的启动令牌通道打开, 重启后打印一个绕过二次验证的直进地址, 实际 message="
+                                + result.getString("message")),
+                () -> assertEquals(before, Files.readString(config, StandardCharsets.UTF_8),
+                        "yml 含明文口令等于门已经换了, 拒了配置文件就该逐字同"));
     }
 
 }
