@@ -559,4 +559,28 @@ class ConfigurationFileServiceTest {
 
         assertTrue(content().contains("quiet-start: \"23:00\""), content());
     }
+
+    // ============ 值里带引号 ============
+
+    @Test
+    @DisplayName("值含引号时行尾注释不再吞进值")
+    void valueWithQuoteKeepsTrailingCommentOutOfValue() throws IOException {
+        // ① 撇号只是普通字符：旧判法把它当开了个没闭上的引号，后面的整段行尾注释被当成值回显
+        service.write(Map.of("starbot.core.push.quiet-start", "It's"));
+        assertEquals("It's", service.read().get("starbot.core.push.quiet-start"),
+                "行尾注释不该被吞进值里");
+
+        // ② 界面拿着回显值再存一次：回显值若已带注释，render 见 " #" 会加引号，注释真成了值的一部分
+        List<String> rewritten = service.write(Map.of("starbot.core.push.quiet-start",
+                service.read().get("starbot.core.push.quiet-start")));
+        assertEquals(List.of(), rewritten, "盘上值与回显值一致时，再存一次应当没有任何改动");
+        String line = content().lines().filter(l -> l.contains("quiet-start")).findFirst().orElseThrow();
+        assertFalse(line.contains("\"It's"), "回显值再存不得把注释包进引号里: " + line);
+        assertTrue(line.contains("# 静音时段开始"), "行尾注释应原样保留: " + line);
+
+        // ③ 阳性对照：值本身以引号开头、引号内含 " #"，# 不能被当成注释起点提前截断
+        service.write(Map.of("starbot.core.push.quiet-start", "\"a # b\""));
+        String quoted = service.read().get("starbot.core.push.quiet-start");
+        assertTrue(quoted.contains("a # b"), "引号内的 # 不是注释起点: " + quoted);
+    }
 }
