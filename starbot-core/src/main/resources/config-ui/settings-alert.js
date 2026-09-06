@@ -200,6 +200,10 @@ function shell(id, title, desc) {
   return {card, head, body, pill, result};
 }
 
+function testOutcomeText(base, note) {
+  return note ? base + '（' + note + '）' : base;
+}
+
 /**
  * 真的发一条出去
  *
@@ -210,10 +214,11 @@ function shell(id, title, desc) {
  */
 async function sendTest(channel, button) {
   const box = button.parentElement.querySelector('.al-r');
-  if (Object.keys(store.dirty).length) {
+  const note = Object.keys(store.dirty).length ? '有改动还没保存，这一条测试用的是保存过的那份配置。' : '';
+  if (note) {
     // 发送用的是服务端此刻的配置，不是屏幕上这一份。不说清的话，
     // 使用者会以为自己刚填的地址已经被试过了
-    box.textContent = '有改动还没保存，这一条测试用的是保存过的那份配置。';
+    box.textContent = note;
     box.className = 'al-r warn';
   } else {
     box.textContent = '发送中…';
@@ -223,10 +228,10 @@ async function sendTest(channel, button) {
   button.disabled = true;
   try {
     const res = await api('/alert/test?channel=' + encodeURIComponent(channel), {method: 'POST'});
-    box.textContent = res.message || (res.success ? '已发出' : '没发出去');
+    box.textContent = testOutcomeText(res.message || (res.success ? '已发出' : '没发出去'), note);
     box.className = 'al-r ' + (res.success ? 'ok' : 'err');
   } catch (e) {
-    box.textContent = '发不出去：' + e.message;
+    box.textContent = testOutcomeText('发不出去：' + e.message, note);
     box.className = 'al-r err';
   }
   button.disabled = false;
