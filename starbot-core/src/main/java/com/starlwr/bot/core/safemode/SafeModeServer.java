@@ -68,6 +68,8 @@ public class SafeModeServer {
         this.failure = failure;
     }
 
+    String token() { return token; } // 访问令牌读取口：只为同包的尺，不对外
+
     /**
      * 启动安全模式并阻塞当前线程
      * <p>
@@ -97,7 +99,7 @@ public class SafeModeServer {
     /**
      * 处理请求
      */
-    private void handle(HttpExchange exchange) throws IOException {
+    void handle(HttpExchange exchange) throws IOException {
         try {
             if (!authorized(exchange)) {
                 respond(exchange, 403, "text/plain; charset=utf-8", "访问令牌无效，请使用启动日志中输出的完整地址");
