@@ -142,15 +142,26 @@ public class SafeModeServer {
      */
     private void save(HttpExchange exchange) throws IOException {
         String content = readBody(exchange);
+        respond(exchange, 200, "text/html; charset=utf-8", handleSaveBody(content));
+    }
 
-        String problem = applySave(content);
+    /**
+     * 保存请求的正文处理：校验、备份、写盘，并给出应答页面
+     * <p>
+     * 成功与被拒都是 200 的 HTML 页，差别只在页面内容，因此返回页面本身即可；
+     * {@link #save} 只剩读体与应答两件事。抽出来是因为「保存」这条路的判据
+     * 要直接调它——经 HTTP 层进来的话，令牌生成在构造里且没有读取口，测试够不着。
+     * @param yaml 请求体里的配置正文
+     * @return 应答页面 HTML
+     */
+    String handleSaveBody(String yaml) throws IOException {
+        String problem = applySave(yaml);
         if (problem != null) {
-            respond(exchange, 200, "text/html; charset=utf-8", page(content, problem));
-            return;
+            return page(yaml, problem);
         }
 
         log.info("安全模式已保存 application.yml, 请重启程序");
-        respond(exchange, 200, "text/html; charset=utf-8", page(content, null, "已保存。请重启程序，若配置无误将正常启动。"));
+        return page(yaml, null, "已保存。请重启程序，若配置无误将正常启动。");
     }
 
     /**
