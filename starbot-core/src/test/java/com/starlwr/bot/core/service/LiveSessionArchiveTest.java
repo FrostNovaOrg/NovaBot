@@ -1,7 +1,10 @@
 package com.starlwr.bot.core.service;
 
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.model.LiveSession;
+import com.starlwr.bot.core.model.RoomInfoSnapshot;
 import com.starlwr.bot.core.model.SeriesPeak;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -11,10 +14,13 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -169,6 +175,47 @@ class LiveSessionArchiveTest {
         assertEquals(0, session.maintenanceGapSeconds());
         assertFalse(session.hasMaintenanceGap(), "读成 0 表示「当年没在算」，不表示「保证一秒没漏」");
         assertEquals(455.0, session.metric("danmu_count"));
+    }
+
+    @Test
+    @DisplayName("落盘一行的键集是对外接口，钉死")
+    void lineKeySetIsTheInterface() throws Exception {
+        // 一行里的键名是外部工具直接消费的接口面：给 LiveSession 加一个字段、
+        // 换一种序列化配置，都会悄悄改掉这一行的形状而仓内无一处报错。
+        // 这一格把现状钉死——多一个键、少一个键都红。
+        archive.append(new LiveSession("bilibili", STREAMER_UID, "测试主播", ROOM_ID,
+                1_000_000L, 1_003_600_000L, 3600,
+                Map.of("danmu_count", 455.0),
+                Map.of("danmu_users", 2),
+                com.starlwr.bot.core.enums.LiveEndReason.NORMAL,
+                List.of(new RoomInfoSnapshot(1_000_000L, "开播时的标题", "虚拟主播")),
+                7,
+                Map.of("danmu_users", List.of(19427650908284L, 19471545457530L)),
+                3,
+                Map.of("danmu_count", new SeriesPeak(1_002_520_000L, 34))));
+
+        JSONObject line = JSON.parseObject(Files.readAllLines(
+                dir.resolve("sessions.jsonl"), StandardCharsets.UTF_8).get(0));
+
+        List<String> red = new ArrayList<>();
+        try {
+            assertEquals(Set.of("platform", "uid", "uname", "roomId", "startTime", "endTime", "durationSeconds",
+                    "metrics", "userCounts", "endReason", "titles", "maintenanceGapSeconds", "userSets",
+                    "roomOutageSeconds", "peaks"), line.keySet(), "① 顶层键集");
+        } catch (Throwable t) {
+            red.add("① " + t.getMessage());
+        }
+        try {
+            assertEquals(Set.of("at", "title", "area"), line.getJSONArray("titles").getJSONObject(0).keySet(),
+                    "② titles[0] 键集");
+            assertEquals(Set.of("at", "value"), line.getJSONObject("peaks").getJSONObject("danmu_count").keySet(),
+                    "② peaks 值键集");
+        } catch (Throwable t) {
+            red.add("② " + t.getMessage());
+        }
+        if (!red.isEmpty()) {
+            fail(red.size() + " 问红：" + String.join("；", red));
+        }
     }
 
     // ⚠️ 夹具一律用保留段假值。

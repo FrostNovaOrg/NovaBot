@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
@@ -365,6 +366,37 @@ class LiveDetailArchiveTest {
         assertTrue(detailBytes + danmuBytes < 8L * 1024 * 1024,
                 "「默认永久保留」这个决定是建立在单场量级之上的: 单场若真到几十 MB, "
                         + "永久保留就是替使用者决定了把盘写满, 而这件事要到写满那天才看得见");
+    }
+
+    @Test
+    @DisplayName("detail.json 顶层键集钉死")
+    void detailFileKeySetIsPinned() throws Exception {
+        // 这份 JSON 的顶层键名同样是外部工具直接消费的接口面。
+        // 手写序列化挡得住反射带来的悄悄变形，挡不住「顺手再加一个键」——
+        // 这一格把现状钉死：多一个键、少一个键都红。
+        archive.store(detail(1, 1, 1));
+
+        JSONObject json = JSON.parseObject(Files.readString(dir.resolve("details")
+                .resolve(PLATFORM + "-" + UID + "-" + START).resolve("detail.json"), StandardCharsets.UTF_8));
+
+        List<String> red = new ArrayList<>();
+        try {
+            assertEquals(Set.of("version", "platform", "uid", "uname", "roomId", "startTime", "endTime",
+                    "durationSeconds", "metrics", "userCounts", "series", "rankings", "words",
+                    "highlights", "titles", "gaps", "peaks"), json.keySet(), "① 顶层键集");
+        } catch (Throwable t) {
+            red.add("① " + t.getMessage());
+        }
+        try {
+            assertEquals(Set.of("uid", "uname", "face", "score"),
+                    json.getJSONObject("rankings").getJSONArray("danmu_users").getJSONObject(0).keySet(),
+                    "② 榜项键集（名次由数组下标给出，不落键）");
+        } catch (Throwable t) {
+            red.add("② " + t.getMessage());
+        }
+        if (!red.isEmpty()) {
+            fail(red.size() + " 问红：" + String.join("；", red));
+        }
     }
 
     /**
