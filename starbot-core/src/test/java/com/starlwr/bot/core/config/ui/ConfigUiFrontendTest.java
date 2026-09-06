@@ -2085,26 +2085,152 @@ class ConfigUiFrontendTest {
         for (String checker : checkers) {
             checkerTexts.put(checker, Files.readString(tools.resolve(checker), StandardCharsets.UTF_8));
         }
+        Set<String> looped = new LinkedHashSet<>();
+        for (String text : checkerTexts.values()) {
+            looped.addAll(jsNamedInSyntaxLoops(text));
+        }
         for (String model : VIEW_MODELS_WITHOUT_OWN_CHECKER) {
             if (!models.contains(model)) {
                 bad.add("豁免名单里的 " + model + " 在界面目录里已经没有了，名单该更新");
                 continue;
             }
-            boolean covered = false;
-            for (String text : checkerTexts.values()) {
-                if (text.contains(model)) {
-                    covered = true;
-                    break;
-                }
-            }
-            if (!covered) {
-                bad.add("豁免件 " + model + " 没有任何一把尺的语法循环收进它，构建连语法都不量");
+            if (!looped.contains(model)) {
+                bad.add("豁免件 " + model + " 没有任何一把尺的语法循环代码行收进它，构建连语法都不量");
             }
         }
 
         assertTrue(bad.isEmpty(), "视图模型三向闭集对不上:\n  " + String.join("\n  ", bad));
         assertFalse(models.isEmpty() || checkers.isEmpty() || listed.isEmpty(),
                 "上面那条「闭集在」因此不作数");
+    }
+
+    /**
+     * 上锁成功后必须回灌登录态
+     * <p>
+     * {@code authState} 只在载入时由 {@code /auth/state} 下发一次。上锁成功若只
+     * {@code refreshFacts} 再 {@code render}，设置页「登录与安全」仍画「还没设口令」，
+     * 顶栏「退出登录」也不出——整页刷新才正。回灌必须是一次点名调用，写在成功分支里：
+     * 写在别处，这一步成功时仍不会走。
+     */
+    @Test
+    @DisplayName("上锁成功后回灌登录态")
+    void lockSuccessRefreshesAuthState() throws IOException {
+        String setup = Files.readString(frontendDir().resolve("setup.js"), StandardCharsets.UTF_8);
+        String lock = functionBodyAny(setup, "stepLock");
+        assertFalse(lock.isBlank(), "找不到 stepLock，本格无从量起");
+
+        int success = lock.indexOf("res.success");
+        assertTrue(success >= 0, "stepLock 里没有 res.success 分支");
+        String branch = lock.substring(success).replaceAll("//[^\\n]*", "");
+        assertTrue(Pattern.compile("\\brefreshAuthState\\s*\\(").matcher(branch).find(),
+                "上锁成功分支没有调用 refreshAuthState");
+
+        String refresh = functionBodyAny(setup, "refreshAuthState");
+        assertFalse(refresh.isBlank(), "找不到 refreshAuthState");
+        assertTrue(refresh.contains("/auth/state"),
+                "refreshAuthState 没有取 /auth/state，回灌没有数据源");
+        assertTrue(refresh.contains("setAuthState("),
+                "refreshAuthState 没有交给 setAuthState，设置页仍按载入时那一份画");
+    }
+
+    /**
+     * 界面目录与插件页目录里的每一份 .js 都要被至少一把尺的语法循环收进
+     * <p>
+     * 视图模型那 12 份另有专尺闭集。其余脚本同样没有构建步骤，语法错同样要等页面加载才炸。
+     * 插件页 {@code config-ui-pages/*.js} 若漏掉，核心那一把尺全绿也看不见。
+     * 只认 {@code for f in} 的代码行：注释里写到文件名不算收进。
+     */
+    @Test
+    @DisplayName("界面与插件页全部 .js 都在某把尺的语法循环代码行里")
+    void allFrontendScriptsAreCoveredBySyntaxLoops() throws IOException {
+        Set<String> scripts = new LinkedHashSet<>();
+        scripts.addAll(coreSources().keySet());
+        scripts.addAll(pageSources().keySet());
+
+        Set<String> covered = jsNamedInAllSyntaxLoops();
+
+        List<String> bad = new ArrayList<>();
+        for (String name : scripts) {
+            if (!covered.contains(name)) {
+                bad.add(name + " 没有任何一把尺的语法循环代码行收进它");
+            }
+        }
+        assertTrue(bad.isEmpty(), "这些脚本构建连语法都不量:\n  " + String.join("\n  ", bad));
+        assertFalse(scripts.isEmpty() || covered.isEmpty(), "上面那条「有名单」因此不作数");
+        assertTrue(scripts.contains("bilibili.js"),
+                "插件页目录里找不到 bilibili.js，本格对它的覆盖因此不作数");
+    }
+
+    /**
+     * 把 {@code tokens-model.js} 从 for 行挪进注释必须让覆盖判法认不出来
+     * <p>
+     * 旧判法是全文 {@code contains}，注释里提到也算收进。本格在内存里做一次突变，
+     * 不改盘上的尺。
+     */
+    @Test
+    @DisplayName("语法循环覆盖不认注释里的文件名")
+    void syntaxLoopCoverageIgnoresCommentedFileNames() throws IOException {
+        String original = Files.readString(
+                repoRoot().resolve("tools/links-model-check.sh"), StandardCharsets.UTF_8);
+        assertTrue(jsNamedInSyntaxLoops(original).contains("tokens-model.js"),
+                "本格的阴性对照要先有阳性：原尺代码行里必须有 tokens-model.js");
+        assertTrue(original.contains(" \"$UI\"/tokens-model.js"),
+                "原尺没有「 $UI/tokens-model.js」这一段，突变无从做起");
+
+        String without = original.replace(" \"$UI\"/tokens-model.js", "");
+        String mutated = without.replaceFirst("(?m)^(for f in )", "# tokens-model.js\n$1");
+        assertTrue(mutated.contains("# tokens-model.js"), "突变没把文件名写进注释");
+        assertFalse(jsNamedInSyntaxLoops(mutated).contains("tokens-model.js"),
+                "把 tokens-model.js 从 for 行挪进注释后仍算收进，这一格量不动");
+    }
+
+    /**
+     * 一把尺脚本里，语法循环 {@code for f in …} 的代码行点到的 .js 文件名
+     * <p>
+     * 注释行不算：把文件名从 for 行挪进注释之后，全文 contains 仍绿，这一格就量不动了。
+     */
+    private Set<String> jsNamedInSyntaxLoops(String script) {
+        StringBuilder code = new StringBuilder();
+        for (String raw : script.split("\n", -1)) {
+            String line = raw.replaceFirst("#.*", "");
+            if (line.endsWith("\\")) {
+                code.append(line, 0, line.length() - 1).append(' ');
+            } else {
+                code.append(line).append('\n');
+            }
+        }
+        Set<String> names = new LinkedHashSet<>();
+        Matcher loop = Pattern.compile("for\\s+f\\s+in\\s+([^;]+)").matcher(code);
+        while (loop.find()) {
+            Matcher js = Pattern.compile("([A-Za-z0-9._-]+\\.js)").matcher(loop.group(1));
+            while (js.find()) {
+                names.add(js.group(1));
+            }
+        }
+        return names;
+    }
+
+    /**
+     * {@code tools/*-check.sh} 里所有语法循环代码行点到的 .js 文件名
+     */
+    private Set<String> jsNamedInAllSyntaxLoops() throws IOException {
+        Path tools = repoRoot().resolve("tools");
+        Set<String> names = new LinkedHashSet<>();
+        try (Stream<Path> files = Files.list(tools)) {
+            files.filter(Files::isRegularFile)
+                    .map(p -> p.getFileName().toString())
+                    .filter(n -> n.endsWith("-check.sh"))
+                    .sorted()
+                    .forEach(name -> {
+                        try {
+                            names.addAll(jsNamedInSyntaxLoops(
+                                    Files.readString(tools.resolve(name), StandardCharsets.UTF_8)));
+                        } catch (IOException e) {
+                            throw new UncheckedIOException(e);
+                        }
+                    });
+        }
+        return names;
     }
 
     /**

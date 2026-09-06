@@ -9,6 +9,7 @@
 #
 # 顺带把连接页那几个前端模块过一遍语法（node --input-type=module --check < 文件）：
 # 它们是 ES module，没有构建步骤，语法错要等页面加载时才炸，而那时报的是一句与出错文件无关的「载入失败」。
+# 连接页上的插件卡没有自己的尺，就近归这把过语法。
 # node --check 对含 import 的 .js 一律返 0（Node v22 实测），那一格从来没能红过。
 #
 # 🔴 本尺自带阴性对照：把一段必定语法错的模块喂进同一道检查，它必须红；
@@ -27,6 +28,7 @@ if ! command -v node > /dev/null 2>&1; then
 fi
 
 UI="starbot-core/src/main/resources/config-ui"
+PAGES="starbot-bilibili/src/main/resources/config-ui-pages"
 RED=0
 SYNTAX_RED=0
 
@@ -41,7 +43,8 @@ fi
 
 # —— 语法 ——
 # 逐个跑而不是一次传多个文件：一次传一串时后面那些是「查过了」还是「没轮到」分不出来
-for f in "$UI"/links-model.js "$UI"/links.js "$UI"/tokens.js "$UI"/tokens-model.js "$UI"/bot.js; do
+for f in "$UI"/links-model.js "$UI"/links.js "$UI"/tokens.js "$UI"/tokens-model.js "$UI"/bot.js \
+         "$PAGES"/bilibili.js; do
     if node --input-type=module --check < "$f"; then
         echo "语法 绿 $f"
     else
