@@ -12,7 +12,7 @@ import {readFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {passwordReveal, togglePasswordReveal, PASSWORD_REVEAL_SITES,
-  bindPasswordReveal, boundPasswordRevealIds}
+  bindPasswordReveal}
   from '../../../main/resources/config-ui/password-reveal.js';
 
 const failures = [];
@@ -59,9 +59,46 @@ for (const site of PASSWORD_REVEAL_SITES) {
   }
 }
 
-// ---------- 四、运行期登记：最小桩 DOM 触发一次渲染 ----------
+// ---------- 四、桩 DOM 用生产 id：接线标记、点一下 type 恰翻一次 ----------
 const ui = join(dirname(fileURLToPath(import.meta.url)), '../../../main/resources/config-ui');
 const read = name => readFileSync(join(ui, name), 'utf8');
+
+const SITE_TO_ID = {
+  login: 'password-reveal',
+  'pwd-current': 'pwd-current-reveal',
+  'pwd-next': 'pwd-next-reveal',
+  'pwd-again': 'pwd-again-reveal',
+  settings: '',
+  tokens: 'tk-reveal',
+};
+const SITE_TO_PAGE = {
+  login: 'login.html',
+  'pwd-current': 'settings-auth.js',
+  'pwd-next': 'settings-auth.js',
+  'pwd-again': 'settings-auth.js',
+  settings: 'settings.js',
+  tokens: 'tokens.js',
+};
+
+function scanRevealIds(src) {
+  const ids = [];
+  const seen = {};
+  const re = /(?:\bid\s*=\s*['"]([\w-]+-reveal)['"]|\.id\s*=\s*['"]([\w-]+-reveal)['"]|\$\(\s*['"]#([\w-]+-reveal)['"]\s*\))/g;
+  let m;
+  while ((m = re.exec(src))) {
+    const id = m[1] || m[2] || m[3];
+    if (id && !seen[id]) {
+      seen[id] = true;
+      ids.push(id);
+    }
+  }
+  return ids.sort();
+}
+
+function selfWrittenTypeToggle(src) {
+  return /type\s*===\s*['"]password['"]\s*\?\s*['"]text['"]/.test(src)
+      || /type\s*===\s*['"]text['"]\s*\?\s*['"]password['"]/.test(src);
+}
 
 function wiredSites() {
   const sites = [];
@@ -81,12 +118,14 @@ function wiredSites() {
 
 function stubPair(id) {
   const listeners = {};
+  const dataset = {};
   const input = {type: 'password', disabled: false};
   const button = {
-    id,
+    id: id || '',
     type: 'button',
     disabled: false,
     textContent: '',
+    dataset,
     setAttribute() {},
     addEventListener(type, fn) {
       (listeners[type] ||= []).push(fn);
@@ -98,26 +137,55 @@ function stubPair(id) {
   return {input, button};
 }
 
+const listedIds = Object.keys(SITE_TO_ID)
+  .map(site => SITE_TO_ID[site])
+  .filter(Boolean)
+  .sort();
+const scannedIds = scanRevealIds(
+  read('login.html') + '\n' + read('settings-auth.js') + '\n' + read('tokens.js'));
+eq(scannedIds, listedIds, '清单＝源码扫出集合');
+
+const pageSrc = {};
+for (const name of ['login.html', 'settings-auth.js', 'settings.js', 'tokens.js']) {
+  pageSrc[name] = read(name);
+}
+
 const pairs = {};
 for (const site of wiredSites()) {
-  pairs[site] = stubPair(site);
+  pairs[site] = stubPair(SITE_TO_ID[site]);
   bindPasswordReveal(pairs[site].input, pairs[site].button);
+  const src = pageSrc[SITE_TO_PAGE[site]] || '';
+  if (selfWrittenTypeToggle(src)) {
+    const input = pairs[site].input;
+    pairs[site].button.addEventListener('click', () => {
+      input.type = input.type === 'password' ? 'text' : 'password';
+    });
+  }
 }
-eq(boundPasswordRevealIds().slice().sort(), PASSWORD_REVEAL_SITES.slice().sort(),
-  '登记表＝闭集');
+
+const boundIds = [];
+for (const site of PASSWORD_REVEAL_SITES) {
+  const pair = pairs[site];
+  if (pair && pair.button.dataset.revealBound === '1' && pair.button.id) {
+    boundIds.push(pair.button.id);
+  }
+}
+eq(boundIds.slice().sort(), listedIds, '登记表＝闭集');
 
 for (const site of PASSWORD_REVEAL_SITES) {
   const pair = pairs[site];
   eq(!!pair, true, site + ' 已接线');
   if (!pair) continue;
+  eq(pair.button.dataset.revealBound, '1', site + ' 已标接线');
+  eq(pair.button.id, SITE_TO_ID[site], site + ' 桩 DOM 用生产 id');
   pair.button.click();
-  eq(pair.input.type, 'text', site + ' 点一下变明文');
+  eq(pair.input.type, 'text', site + ' 点一下 type 恰翻一次');
   for (const other of PASSWORD_REVEAL_SITES) {
     if (other === site || !pairs[other]) continue;
     eq(pairs[other].input.type, 'password', site + ' 不带动 ' + other);
   }
   pair.button.click();
-  eq(pair.input.type, 'password', site + ' 再点切回');
+  eq(pair.input.type, 'password', site + ' 再点翻回');
 }
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

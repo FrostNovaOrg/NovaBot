@@ -14,17 +14,6 @@ export const PASSWORD_REVEAL_SITES = [
   'login', 'pwd-current', 'pwd-next', 'pwd-again', 'settings', 'tokens',
 ];
 
-/** bindPasswordReveal 运行期按 button.id 登过的落点 */
-const boundRevealIds = [];
-
-/**
- * 这一趟 bindPasswordReveal 登记过的 button.id，按首次接线顺序
- * @return {string[]}
- */
-export function boundPasswordRevealIds() {
-  return boundRevealIds.slice();
-}
-
 /**
  * 这一刻口令框该长什么样
  * @param revealed 是否已经揭开
@@ -49,7 +38,7 @@ export function togglePasswordReveal(state) {
 }
 
 /**
- * 把算出来的显隐挂到一对输入框与按钮上
+ * 把算出来的显隐挂到一对输入框与按钮上。接上之后 button.dataset.revealBound 为 '1'。
  * @param input 口令框
  * @param button 显示／隐藏按钮
  * @return {{setRevealed: function(boolean): void}} 需要从别处揭开时用（签发口令页剪贴板失败那一路）
@@ -59,9 +48,8 @@ export function bindPasswordReveal(input, button) {
     return {setRevealed() {}};
   }
 
-  const id = button.id;
-  if (id && boundRevealIds.indexOf(id) < 0) {
-    boundRevealIds.push(id);
+  if (button.dataset) {
+    button.dataset.revealBound = '1';
   }
 
   let state = passwordReveal(false);

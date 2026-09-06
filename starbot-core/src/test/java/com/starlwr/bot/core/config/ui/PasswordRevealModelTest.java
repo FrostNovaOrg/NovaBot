@@ -43,7 +43,7 @@ class PasswordRevealModelTest {
     }
 
     @Test
-    @DisplayName("默认隐藏、切换、六处共用同一份构件、运行期登记与桩 DOM 翻面")
+    @DisplayName("默认隐藏、切换、六处共用同一份构件、生产 id 闭集与桩 DOM 翻面")
     void revealTogglesAndSixSitesShareOneModule() throws IOException, InterruptedException {
         Path fixture = repoRoot().resolve(FIXTURE);
         assertTrue(Files.exists(fixture), "夹具不见了，这一格此刻什么也没量: " + fixture);
@@ -68,5 +68,11 @@ class PasswordRevealModelTest {
         assertEquals(0, process.exitValue(), "口令框显示隐藏与预期不符:\n" + output);
         assertTrue(output.contains("跑了") && !output.contains("跑了 0 格"),
                 "夹具没报出跑了几格，或者一格都没跑:\n" + output);
+    }
+
+    @Test
+    @DisplayName("点眼睛 type 恰翻一次；双份 toggle 会回到原状")
+    void clickFlipsTypeOnceOnEachProductionId() throws IOException, InterruptedException {
+        FrontendFixture.run(FIXTURE, "点眼睛 type 恰翻一次");
     }
 }
