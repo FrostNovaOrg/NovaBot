@@ -214,6 +214,7 @@ function totpCard() {
     input.checked = state;
     text.textContent = state ? '已启用' : '已关闭';
     authState.totpEnabled = state;
+    store.totpRequired = state;
     flow.innerHTML = '';
   };
 
