@@ -52,6 +52,7 @@ public class ConfigurationFileService {
     private static final String INDICATOR_START = "-?:,[]{}#&*!|>'\"%@`";
 
     private static final Pattern OBJECT_ITEM = Pattern.compile("^[A-Za-z_][A-Za-z0-9_.-]*\\s*:(\\s|$)");
+    private static final Pattern CLOCK_TIME = Pattern.compile("^[+-]?\\d+(:[0-5]?\\d)+$");
 
     /**
      * 主配置文件路径
@@ -734,9 +735,11 @@ public class ConfigurationFileService {
 
         // 按 YAML 的实际规则判断是否必须加引号，而不是见到冒号就加：
         // 冒号只有后接空格时才构成映射，因此 https://example 这类值无需引号。
+        // 时:分这类「数字:数字」例外：冒号后无空格,但 SnakeYAML 按 YAML 1.1 六十进制把它读成整数。
         boolean needQuote = !value.strip().equals(value)
                 || value.contains(": ") || value.endsWith(":")
                 || value.contains(" #")
+                || CLOCK_TIME.matcher(value).matches()
                 || INDICATOR_START.indexOf(value.charAt(0)) >= 0;
 
         return needQuote ? "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"" : value;

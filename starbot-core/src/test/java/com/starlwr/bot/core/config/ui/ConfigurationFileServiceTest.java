@@ -8,6 +8,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.env.YamlPropertySourceLoader;
 import org.springframework.core.env.PropertySource;
 import org.springframework.core.io.FileSystemResource;
+import org.yaml.snakeyaml.Yaml;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -537,12 +538,25 @@ class ConfigurationFileServiceTest {
     @DisplayName("其余配置项留空仍是有意义的取值，不能一并删掉")
     void clearingOtherPropertiesKeepsTheLine() throws Exception {
         service.write(Map.of("starbot.core.push.quiet-start", "23:00"));
-        assertTrue(Files.readString(config).contains("quiet-start: 23:00"));
+        assertTrue(Files.readString(config).contains("quiet-start: \"23:00\""));
 
         // 静音时段留空表示不启用，这一行必须留着
         service.write(Map.of("starbot.core.push.quiet-start", ""));
 
         assertTrue(Files.readString(config).contains("quiet-start"),
                 "留空是有效取值的配置项不该被删行");
+    }
+
+    @Test
+    @DisplayName("时:分取值落盘要带引号，重启后读回仍是字符串而非六十进制整数")
+    void clockTimeValueIsQuotedOnDisk() throws Exception {
+        service.write(Map.of("starbot.core.push.quiet-start", "23:00"));
+
+        Map<?, ?> root = new Yaml().load(content());
+        Map<?, ?> push = (Map<?, ?>) ((Map<?, ?>) ((Map<?, ?>) root.get("starbot")).get("core")).get("push");
+        assertEquals("23:00", push.get("quiet-start"),
+                "裸写 quiet-start: 23:00 时 SnakeYAML 按 YAML 1.1 六十进制把它读成整数 1380");
+
+        assertTrue(content().contains("quiet-start: \"23:00\""), content());
     }
 }
