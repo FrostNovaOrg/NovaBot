@@ -298,13 +298,10 @@ public class SafeModeServer {
             if (parsed instanceof Map<?, ?> root && root.get("server") instanceof Map<?, ?> server) {
                 Object port = server.get("port");
                 if (port instanceof Number number) {
-                    return number.intValue();
+                    return clampPort(number.intValue());
                 }
                 if (port instanceof CharSequence cs) {
-                    int value = Integer.parseInt(cs.toString().strip());
-                    if (value >= 1 && value <= 65535) {
-                        return value;
-                    }
+                    return clampPort(Integer.parseInt(cs.toString().strip()));
                 }
             }
         } catch (Exception e) {
@@ -312,6 +309,11 @@ public class SafeModeServer {
         }
 
         return FALLBACK_PORT;
+    }
+
+    /** 端口夹在 1–65535：落在界外时回退 {@link #FALLBACK_PORT}，不照原样去监听一个监听不了的端口 */
+    private static int clampPort(int value) {
+        return value >= 1 && value <= 65535 ? value : FALLBACK_PORT;
     }
 
     /** 尽力读出 yml 里配的备份保留份数（starbot.core.config-ui.backup-keep），口径同 {@link #resolvePort()} */
