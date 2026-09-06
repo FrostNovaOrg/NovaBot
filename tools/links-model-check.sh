@@ -41,7 +41,7 @@ fi
 
 # —— 语法 ——
 # 逐个跑而不是一次传多个文件：一次传一串时后面那些是「查过了」还是「没轮到」分不出来
-for f in "$UI"/links-model.js "$UI"/links.js "$UI"/tokens.js "$UI"/bot.js; do
+for f in "$UI"/links-model.js "$UI"/links.js "$UI"/tokens.js "$UI"/tokens-model.js "$UI"/bot.js; do
     if node --input-type=module --check < "$f"; then
         echo "语法 绿 $f"
     else

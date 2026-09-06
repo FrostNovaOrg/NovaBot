@@ -1988,6 +1988,126 @@ class ConfigUiFrontendTest {
     }
 
     /**
+     * 搭车走别人语法循环、不单独立尺的视图模型
+     * <p>
+     * 这三份没有 {@code *-model-check.sh}。构建仍须至少一把尺的文本里写出文件名，
+     * 否则语法错要等页面加载才炸。
+     */
+    private static final List<String> VIEW_MODELS_WITHOUT_OWN_CHECKER = List.of(
+            "alert-model.js", "confirm-model.js", "tokens-model.js");
+
+    /**
+     * 视图模型文件、专尺脚本、build.sh 名单三向闭集
+     * <p>
+     * 新增一份 {@code *-model.js} 不加尺，或加了尺不写进 {@code MODEL_CHECKERS}，
+     * 构建仍全绿——测试不执行构建脚本，只读它和 {@code tools/} 的文本。
+     * 三份集合对不上就红。
+     */
+    @Test
+    @DisplayName("视图模型、专尺、build.sh 名单三向闭集")
+    void viewModelsCheckersAndBuildListAreClosedSet() throws IOException {
+        Path root = repoRoot();
+        Path ui = frontendDir();
+        Path tools = root.resolve("tools");
+
+        Set<String> models = new LinkedHashSet<>();
+        try (Stream<Path> files = Files.list(ui)) {
+            files.filter(Files::isRegularFile)
+                    .map(p -> p.getFileName().toString())
+                    .filter(n -> n.endsWith("-model.js"))
+                    .sorted()
+                    .forEach(models::add);
+        }
+
+        Set<String> checkers = new LinkedHashSet<>();
+        try (Stream<Path> files = Files.list(tools)) {
+            files.filter(Files::isRegularFile)
+                    .map(p -> p.getFileName().toString())
+                    .filter(n -> n.endsWith("-model-check.sh"))
+                    .sorted()
+                    .forEach(checkers::add);
+        }
+
+        String build = Files.readString(root.resolve("build.sh"), StandardCharsets.UTF_8);
+        Matcher array = Pattern.compile("MODEL_CHECKERS=\\(([^)]*)\\)", Pattern.DOTALL).matcher(build);
+        assertTrue(array.find(), "build.sh 里找不到 MODEL_CHECKERS=(…) 数组，闭集没有落脚的地方");
+        List<String> listed = new ArrayList<>();
+        for (String line : array.group(1).split("\n")) {
+            String stripped = line.replaceFirst("#.*", "").trim();
+            if (stripped.isEmpty()) {
+                continue;
+            }
+            for (String token : stripped.split("\\s+")) {
+                if (!token.isEmpty()) {
+                    listed.add(token);
+                }
+            }
+        }
+        Set<String> listedSet = new LinkedHashSet<>(listed);
+
+        List<String> bad = new ArrayList<>();
+        for (String name : checkers) {
+            if (!listedSet.contains(name)) {
+                bad.add("尺 " + name + " 没接进 build.sh 的 MODEL_CHECKERS，构建不会跑它");
+            }
+        }
+        for (String name : listed) {
+            if (!checkers.contains(name)) {
+                bad.add("build.sh 的 MODEL_CHECKERS 写了 " + name + "，tools/ 里没有这把尺");
+            }
+        }
+
+        Set<String> exempt = new LinkedHashSet<>(VIEW_MODELS_WITHOUT_OWN_CHECKER);
+        Set<String> expectedStems = new LinkedHashSet<>();
+        for (String model : models) {
+            if (!exempt.contains(model)) {
+                expectedStems.add(model.substring(0, model.length() - ".js".length()));
+            }
+        }
+        Set<String> checkerStems = new LinkedHashSet<>();
+        for (String checker : checkers) {
+            if (checker.endsWith("-check.sh")) {
+                checkerStems.add(checker.substring(0, checker.length() - "-check.sh".length()));
+            }
+        }
+        for (String stem : expectedStems) {
+            if (!checkerStems.contains(stem)) {
+                bad.add("模型 " + stem + ".js 没有专尺 " + stem + "-check.sh");
+            }
+        }
+        for (String stem : checkerStems) {
+            if (!expectedStems.contains(stem)) {
+                bad.add("尺 " + stem + "-check.sh 对不上「有专尺」那份模型名单");
+            }
+        }
+
+        Map<String, String> checkerTexts = new LinkedHashMap<>();
+        for (String checker : checkers) {
+            checkerTexts.put(checker, Files.readString(tools.resolve(checker), StandardCharsets.UTF_8));
+        }
+        for (String model : VIEW_MODELS_WITHOUT_OWN_CHECKER) {
+            if (!models.contains(model)) {
+                bad.add("豁免名单里的 " + model + " 在界面目录里已经没有了，名单该更新");
+                continue;
+            }
+            boolean covered = false;
+            for (String text : checkerTexts.values()) {
+                if (text.contains(model)) {
+                    covered = true;
+                    break;
+                }
+            }
+            if (!covered) {
+                bad.add("豁免件 " + model + " 没有任何一把尺的语法循环收进它，构建连语法都不量");
+            }
+        }
+
+        assertTrue(bad.isEmpty(), "视图模型三向闭集对不上:\n  " + String.join("\n  ", bad));
+        assertFalse(models.isEmpty() || checkers.isEmpty() || listed.isEmpty(),
+                "上面那条「闭集在」因此不作数");
+    }
+
+    /**
      * 模型文件里导出的字符串数组
      */
     private List<String> exportedStringArray(String text, String name) {
