@@ -196,7 +196,7 @@ public class RuntimeConfigurationApplier {
     /**
      * 把一批已写入配置文件的改动尽量落到运行中的程序上
      * <p>
-     * 落不下的（不在名单里，或值的形式不对）一律计入待重启，并记在本实例上直到进程结束。
+     * 落不下的（不在名单里，或值的形式不对）一律计入待重启记在本实例上，改对了的键当场划掉。
      * @param changes 已写入的配置项名到取值
      * @return 其中要等重启才生效的那些，按传入顺序
      */
@@ -213,6 +213,7 @@ public class RuntimeConfigurationApplier {
             try {
                 applier.run();
                 log.info("配置项 {} 已即时生效", change.getKey());
+                pendingRestart.remove(change.getKey());
             } catch (RuntimeException e) {
                 // 值的形式不对时不当作已生效：界面写「已生效」而实际没变，比多重启一次糟得多
                 log.warn("配置项 {} 的取值 {} 无法即时生效, 已按需重启处理: {}",

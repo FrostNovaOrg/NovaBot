@@ -170,6 +170,25 @@ class RuntimeConfigurationApplierTest {
     }
 
     @Test
+    @DisplayName("值的形式改对之后当场生效，待重启名单里那条当场划掉；够不着的键仍留着")
+    void correctedValueDropsOutOfPendingRestart() {
+        applier.applyAndTrack(Map.of("starbot.core.alert.qq-type", "群聊"));
+        assertTrue(applier.getPendingRestart().contains("starbot.core.alert.qq-type"),
+                "值的形式不对时应记入待重启");
+
+        applier.applyAndTrack(Map.of("starbot.core.alert.qq-type", "1"));
+
+        assertEquals(1, properties.getAlert().getQqType(), "改对之后应当场生效");
+        assertEquals(List.of(), applier.getPendingRestart(),
+                "已生效的那一项不该继续挂在待重启名单上");
+
+        // 阳性对照：够不着运行值的键仍按原样留在名单里，划掉不得误伤它们
+        applier.applyAndTrack(Map.of("starbot.core.alert.convergence-interval", "7200"));
+        assertEquals(List.of("starbot.core.alert.convergence-interval"), applier.getPendingRestart(),
+                "无即时生效口的键仍要留在待重启名单里");
+    }
+
+    @Test
     @DisplayName("专用口闭集里每一项，通用即时通道都必须拒写")
     void shrinkingTheDedicatedAuthKeySetMustFail() {
         List<String> dedicated = List.of(
