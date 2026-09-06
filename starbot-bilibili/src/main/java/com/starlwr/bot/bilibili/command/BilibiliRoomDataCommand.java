@@ -115,9 +115,7 @@ public abstract class BilibiliRoomDataCommand extends BilibiliScopedDataCommand 
             cards.add(card("+" + guards, revenue ? "大航海 · ¥" + yuan(guardValue) : "大航海"));
         }
         if (box > 0) {
-            cards.add(card(box + " 个", revenue
-                    ? "盲盒 · " + (boxProfit >= 0 ? "盈利" : "亏损") + " ¥" + yuan(Math.abs(boxProfit))
-                    : "盲盒"));
+            cards.add(card(box + " 个", revenue ? "盲盒 · " + boxText(boxProfit) : "盲盒"));
         }
         if (likeTotal > 0) {
             cards.add(card(String.valueOf(likeTotal), "点赞"));
@@ -139,6 +137,16 @@ public abstract class BilibiliRoomDataCommand extends BilibiliScopedDataCommand 
 
     private BilibiliDataQueryPainter.DataCard card(String value, String label) {
         return new BilibiliDataQueryPainter.DataCard(value, label);
+    }
+
+    private static String boxText(double boxProfit) {
+        if (boxProfit > 0) {
+            return "盈利 ¥" + yuan(boxProfit);
+        }
+        if (boxProfit < 0) {
+            return "亏损 ¥" + yuan(Math.abs(boxProfit));
+        }
+        return "持平";
     }
 
     private long count(BilibiliDataScope scope, String platform, Long uid, String metric) {
