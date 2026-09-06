@@ -132,6 +132,12 @@ public abstract class BilibiliRankingCommand extends BilibiliScopedDataCommand {
                 .orElseGet(this::paintFailed));
     }
 
+    private static String profitLabel(double score) {
+        if (score > 0) return "+¥" + yuan(score);
+        if (score < 0) return "-¥" + yuan(-score);
+        return "¥" + yuan(0);
+    }
+
     /**
      * 可查的榜单
      */
@@ -143,7 +149,7 @@ public abstract class BilibiliRankingCommand extends BilibiliScopedDataCommand {
                 null, "SC", "sc"),
         BOX("盲盒", BilibiliLiveMetric.BOX_USERS, false, score -> Math.round(score) + " 个", null),
         BOX_PROFIT("盲盒盈亏", BilibiliLiveMetric.BOX_PROFIT_USERS, true,
-                score -> (score >= 0 ? "+¥" : "-¥") + yuan(Math.abs(score)), null, "盈亏"),
+                BilibiliRankingCommand::profitLabel, null, "盈亏"),
         GUARD("大航海", BilibiliLiveMetric.GUARD_USERS, false, score -> Math.round(score) + " 次", null, "舰长");
 
         private final String title;
