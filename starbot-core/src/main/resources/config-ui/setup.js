@@ -441,20 +441,31 @@ function passkeyBlock(host) {
 
 // ============ 第 2 步：连上 QQ 机器人 ============
 
+function invalidateBot(draft) {
+  draft.botOk = false;
+  return draft;
+}
+
 function stepBot(host) {
   heading(host, SETUP_STEPS[1].title,
     '机器人指 NapCat 这类 OneBot 实现，NovaBot 通过它把消息发到 QQ。这一步不能跳过。');
 
   const at = draft.bot;
+  const result = el('div', 'su-r');
+  const retest = () => {
+    invalidateBot(draft);
+    result.textContent = '参数改了，请重新测试连接';
+    result.className = 'su-r';
+    syncFoot();
+  };
   const row = el('div', 'su-row');
-  field(row, '地址', 'setup-addr', 'text', at.address, v => { at.address = v; });
-  field(row, 'HTTP 端口', 'setup-hport', 'text', at.httpPort, v => { at.httpPort = v; });
-  field(row, 'WS 端口', 'setup-wport', 'text', at.wsPort, v => { at.wsPort = v; });
-  field(row, 'HTTP Token', 'setup-htoken', 'password', at.httpToken, v => { at.httpToken = v; });
-  field(row, 'WS Token', 'setup-wtoken', 'password', at.wsToken, v => { at.wsToken = v; });
+  field(row, '地址', 'setup-addr', 'text', at.address, v => { at.address = v; retest(); });
+  field(row, 'HTTP 端口', 'setup-hport', 'text', at.httpPort, v => { at.httpPort = v; retest(); });
+  field(row, 'WS 端口', 'setup-wport', 'text', at.wsPort, v => { at.wsPort = v; retest(); });
+  field(row, 'HTTP Token', 'setup-htoken', 'password', at.httpToken, v => { at.httpToken = v; retest(); });
+  field(row, 'WS Token', 'setup-wtoken', 'password', at.wsToken, v => { at.wsToken = v; retest(); });
   host.appendChild(row);
 
-  const result = el('div', 'su-r');
   const test = el('button', 'ghost');
   test.type = 'button';
   test.id = 'setup-test-bot';
