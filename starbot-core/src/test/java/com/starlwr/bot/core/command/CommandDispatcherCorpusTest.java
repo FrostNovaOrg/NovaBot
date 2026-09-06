@@ -158,6 +158,9 @@ class CommandDispatcherCorpusTest {
                 one("私聊直接发命令名 —— 执行", Msg.dm("私聊命令"), Outcome.EXECUTED),
                 one("私聊发的不是命令 —— 回菜单", Msg.dm("在吗"), Outcome.MENU),
                 one("私聊发仅限群聊的命令 —— 回菜单", Msg.dm("测试命令"), Outcome.MENU),
+                new Corpus("私聊发仅限群聊的命令回菜单后连发闲话 —— 第二条沉默", null,
+                        List.of(Msg.dm("测试命令"), Msg.dm("在吗")),
+                        List.of(Outcome.MENU, Outcome.SILENT)),
                 // 「菜单」是私聊里唯一一定要能直呼的命令：它顶行那句写的就是私聊怎么用。
                 // 它若也仅限群聊，私聊里发对了名字反而沉默，而发错了倒能收到菜单
                 one("私聊直呼「菜单」—— 回菜单", Msg.dm("菜单"), Outcome.MENU),

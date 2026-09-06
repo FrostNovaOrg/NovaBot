@@ -30,21 +30,24 @@ import static org.mockito.Mockito.when;
  * 否则它自己就成了刷屏的那一条。
  */
 @DisplayName("菜单命令")
-class MenuCommandTest {
+public class MenuCommandTest {
     private static final String PLATFORM = "qq-onebot";
 
     private static final Long GROUP = 30003L;
 
     /**
      * 不限群聊的六条：私聊菜单只该列这些
+     * <p>
+     * 控制台会话卡片的 {@code menuHidden} 与菜单正文共用这一份，改一处漏一处会让
+     * 私聊菜单和通道页置灰对不上。
      */
-    private static final List<String> PRIVATE_OK = List.of(
+    public static final List<String> PRIVATE_OK = List.of(
             "菜单", "直播报告", "数据排行榜", "总数据排行榜", "直播间数据", "直播间总数据");
 
     /**
      * 仅限群聊的八条：私聊菜单不该出现
      */
-    private static final List<String> GROUP_ONLY_NAMES = List.of(
+    public static final List<String> GROUP_ONLY_NAMES = List.of(
             "开播@我", "取消开播@我", "开播@名单",
             "动态@我", "取消动态@我", "动态@名单",
             "启用命令", "禁用命令");

@@ -7,6 +7,7 @@ import com.starlwr.bot.core.command.CommandDispatcher;
 import com.starlwr.bot.core.command.CommandReply;
 import com.starlwr.bot.core.command.CommandSettingsService;
 import com.starlwr.bot.core.command.StarBotCommand;
+import com.starlwr.bot.core.command.builtin.MenuCommandTest;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.model.PushTarget;
@@ -18,8 +19,10 @@ import org.junit.jupiter.api.Test;
 import java.lang.reflect.Constructor;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -54,6 +57,8 @@ class ChannelSettingsSurfaceTest {
     private static final String PLATFORM = "qq";
 
     private static final long GROUP_NUM = 12345L;
+
+    private static final long FRIEND_NUM = 67890L;
 
     /** 本会话里不列进菜单的那一条，理由由它自己给 */
     private static final String HIDDEN = "开播@我";
@@ -92,12 +97,35 @@ class ChannelSettingsSurfaceTest {
     @Test
     @DisplayName("阳：会话里不列进菜单的那几条与它们的说明，从状态里读得到")
     void stateCarriesPerSessionMenuVisibility() {
-        JSONObject session = onlySession();
+        JSONObject session = sessionOf(PushTargetType.GROUP, GROUP_NUM);
 
-        assertEquals(List.of(HIDDEN), session.getJSONArray("menuHidden").toList(String.class),
-                "本会话不列的那一条没有出现在状态里，控制台就只能自己判一遍: " + session);
+        assertNotNull(session.getJSONArray("menuHidden"),
+                "群会话该有一份菜单口径，哪怕一条都不藏: " + session);
+        assertFalse(session.getJSONArray("menuHidden").toList(String.class).contains(HIDDEN),
+                "群会话不该把仅限群聊的命令藏掉: " + session);
         assertEquals("本群开播通知会先 @全体成员", session.getJSONObject("menuNotes").getString(HIDDEN),
                 "菜单里那句会话相关的说明没带过来，控制台只能另拼一句: " + session);
+    }
+
+    @Test
+    @DisplayName("阳：好友会话藏掉全部仅限群聊的命令，群会话不藏；可见的六条与菜单同一份名单")
+    void friendSessionHidesGroupOnlyCommands() {
+        JSONObject group = sessionOf(PushTargetType.GROUP, GROUP_NUM);
+        JSONObject friend = sessionOf(PushTargetType.FRIEND, FRIEND_NUM);
+        List<String> groupHidden = group.getJSONArray("menuHidden").toList(String.class);
+        List<String> friendHidden = friend.getJSONArray("menuHidden").toList(String.class);
+
+        for (String name : MenuCommandTest.GROUP_ONLY_NAMES) {
+            assertTrue(friendHidden.contains(name), "好友会话该藏「" + name + "」: " + friendHidden);
+            assertFalse(groupHidden.contains(name), "群会话不该藏「" + name + "」: " + groupHidden);
+        }
+        assertEquals(6, 14 - friendHidden.size(), "好友会话可见条数该是 6: " + friendHidden);
+
+        Set<String> visible = new LinkedHashSet<>(MenuCommandTest.PRIVATE_OK);
+        visible.addAll(MenuCommandTest.GROUP_ONLY_NAMES);
+        friendHidden.forEach(visible::remove);
+        assertEquals(Set.copyOf(MenuCommandTest.PRIVATE_OK), visible,
+                "好友会话可见的名字该与私聊菜单同一份: " + visible);
     }
 
     @Test
@@ -196,10 +224,16 @@ class ChannelSettingsSurfaceTest {
         return request;
     }
 
-    private JSONObject onlySession() {
-        List<JSONObject> all = sessions();
-        assertEquals(1, all.size(), "会话清单该只有配了推送的那一个: " + all);
-        return all.get(0);
+    private JSONObject sessionOf(PushTargetType type, long num) {
+        JSONObject found = null;
+        for (JSONObject item : sessions()) {
+            if (item.getLongValue("num") == num && type.getStr().equals(item.getString("type"))) {
+                found = item;
+                break;
+            }
+        }
+        assertNotNull(found, "找不到 " + type.getStr() + " " + num + " 这条会话: " + sessions());
+        return found;
     }
 
     private List<JSONObject> sessions() {
@@ -212,55 +246,68 @@ class ChannelSettingsSurfaceTest {
     }
 
     private PushUser streamer() {
-        PushTarget target = new PushTarget();
-        target.setPlatform(PLATFORM);
-        target.setType(PushTargetType.GROUP);
-        target.setNum(GROUP_NUM);
-
         PushUser user = new PushUser();
         user.setUid(3493L);
         user.setUname("柚子");
-        user.setTargets(List.of(target));
+        user.setTargets(List.of(
+                target(PushTargetType.GROUP, GROUP_NUM),
+                target(PushTargetType.FRIEND, FRIEND_NUM)));
         return user;
     }
 
-    /**
-     * 三条命令：一条正常、一条本会话不列（自带一句说明）、一条关不得
-     */
-    private List<StarBotCommand> commands() {
-        return List.of(
-                simple("直播报告", true),
-                new StarBotCommand() {
-                    @Override
-                    public String name() {
-                        return HIDDEN;
-                    }
-
-                    @Override
-                    public String description() {
-                        return "开播时 @ 我";
-                    }
-
-                    @Override
-                    public boolean availableIn(CommandContext context) {
-                        return false;
-                    }
-
-                    @Override
-                    public String menuNote(CommandContext context) {
-                        return "本群开播通知会先 @全体成员";
-                    }
-
-                    @Override
-                    public CommandReply execute(CommandContext context) {
-                        return CommandReply.none();
-                    }
-                },
-                simple("数据排行榜", true),
-                simple(LOCKED, false));
+    private PushTarget target(PushTargetType type, long num) {
+        PushTarget target = new PushTarget();
+        target.setPlatform(PLATFORM);
+        target.setType(type);
+        target.setNum(num);
+        return target;
     }
 
-    private StarBotCommand simple(String name, boolean disableable) {
+    /**
+     * 十四条命令：六条私聊可用、八条仅限群聊；「开播@我」另带一句会话说明。
+     * 仅限群聊的那八条靠 {@code groupOnly()}，不再硬写 {@code availableIn}。
+     */
+    private List<StarBotCommand> commands() {
+        List<StarBotCommand> commands = new ArrayList<>();
+        for (String name : MenuCommandTest.PRIVATE_OK) {
+            commands.add(simple(name, !LOCKED.equals(name), false));
+        }
+        for (String name : MenuCommandTest.GROUP_ONLY_NAMES) {
+            commands.add(HIDDEN.equals(name) ? hiddenSubscribe() : simple(name, true, true));
+        }
+        return commands;
+    }
+
+    private StarBotCommand hiddenSubscribe() {
+        return new StarBotCommand() {
+            @Override
+            public String name() {
+                return HIDDEN;
+            }
+
+            @Override
+            public String description() {
+                return "开播时 @ 我";
+            }
+
+            @Override
+            public boolean groupOnly() {
+                return true;
+            }
+
+            @Override
+            public String menuNote(CommandContext context) {
+                return "本群开播通知会先 @全体成员";
+            }
+
+            @Override
+            public CommandReply execute(CommandContext context) {
+                return CommandReply.none();
+            }
+        };
+    }
+
+    private StarBotCommand simple(String name, boolean disableable, boolean groupOnly) {
         return new StarBotCommand() {
             @Override
             public String name() {
@@ -275,6 +322,11 @@ class ChannelSettingsSurfaceTest {
             @Override
             public boolean disableable() {
                 return disableable;
+            }
+
+            @Override
+            public boolean groupOnly() {
+                return groupOnly;
             }
 
             @Override
