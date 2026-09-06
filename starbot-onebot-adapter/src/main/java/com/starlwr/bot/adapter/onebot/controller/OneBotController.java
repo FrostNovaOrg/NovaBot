@@ -122,8 +122,9 @@ public class OneBotController {
         // url 仍然记着：它是对外推送接口的地址，配置界面与文档都要用。
         // 但核心自己投递不再走它，改为下面的进程内直调，理由见 Sender.LocalDelivery
         String url = "http://127.0.0.1:" + webContext.getWebServer().getPort() + path;
+        // 显示名由本适配器自报，不写进配置。核心只原样转给界面。
         senderService.addSender(new Sender(sender.getName(), url, apiToken, sender.getDelay(),
-                (headers, params) -> send(toMessage(params))));
+                (headers, params) -> send(toMessage(params))), "QQ");
 
         httpService.register(sender);
         return true;

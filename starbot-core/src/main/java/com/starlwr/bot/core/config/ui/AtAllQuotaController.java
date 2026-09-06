@@ -8,6 +8,7 @@ import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.service.AtAllQuotaService;
+import com.starlwr.bot.core.service.StarBotSenderService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -47,12 +48,15 @@ public class AtAllQuotaController {
 
     private final StarBotCoreProperties properties;
 
+    private final StarBotSenderService senders;
+
     @Autowired
     public AtAllQuotaController(AtAllQuotaService quota, AbstractDataSource dataSource,
-                                StarBotCoreProperties properties) {
+                                StarBotCoreProperties properties, StarBotSenderService senders) {
         this.quota = quota;
         this.dataSource = dataSource;
         this.properties = properties;
+        this.senders = senders;
     }
 
     /**
@@ -88,11 +92,14 @@ public class AtAllQuotaController {
      * <p>
      * {@code limited} 单列一栏，而不是让界面自己按「上限 ≤ 0」去认：那条约定写在配额服务里，
      * 抄到界面上的第二份迟早与它对不上，而对不上的表现是「不限」的那台机器上画出一个 0 的分母。
+     * {@code platformName} 是适配器登记时自报的人话名；没报过就等于 {@code platform}。
+     * 界面拿它做前缀，拿 {@code platform} 做键，两份不能在这里合成一份映射。
      * @param num 会话号，账号维度那一行为 null
      */
     private JSONObject usage(String platform, Long num, int used, int limit) {
         JSONObject item = new JSONObject();
         item.put("platform", platform);
+        item.put("platformName", senders.displayName(platform));
         if (num != null) {
             item.put("num", num);
         }

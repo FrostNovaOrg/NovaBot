@@ -275,16 +275,16 @@ export function atAllTile(quota) {
   const sessions = Array.isArray(quota.sessions) ? quota.sessions.slice() : [];
   sessions.sort((a, b) => Number(b.used || 0) - Number(a.used || 0));
   const shown = sessions.slice(0, 5);
-  const kinds = new Set(shown.map(item => item.platform || '').filter(Boolean));
+  const kinds = new Set(sessions.map(item => item.platform || '').filter(Boolean));
   const named = kinds.size >= 2;
-  const names = {'qq-onebot': 'QQ'};
   return {
     value,
     label: '@全体成员 已用',
     details: shown.map(item => {
       const rowUsed = Number(item.used || 0);
       const platform = item.platform || '';
-      const prefix = named && platform ? (names[platform] || platform) + ' 群 ' : '群 ';
+      const label = item.platformName || platform;
+      const prefix = named && platform ? label + ' 群 ' : '群 ';
       return {
         platform,
         num: item.num,

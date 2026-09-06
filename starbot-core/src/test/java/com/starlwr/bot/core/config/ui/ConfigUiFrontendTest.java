@@ -19,6 +19,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -1804,6 +1805,24 @@ class ConfigUiFrontendTest {
         }
 
         assertTrue(bad.isEmpty(), "首页今日格与 Webhook 待办少了这几件事:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
+     * 首页今日格的平台前缀不写死任何一个推送平台标识
+     * <p>
+     * 显示名由适配器在运行期自报、经额度接口下发。界面文件里写死一份映射，
+     * 装第二套推送平台的那天前缀就会对不上，而对不上的方向是把接口标识直接画到屏幕上。
+     */
+    @Test
+    @DisplayName("首页今日格不写死推送平台标识")
+    void homeModelDoesNotHardcodePushPlatformId() {
+        String model = coreSources().getOrDefault("home-model.js", "");
+        assertTrue(!model.isBlank(), "找不到 home-model.js，不写死平台标识的规矩没有落脚的地方");
+        int hits = 0;
+        for (int from = 0; (from = model.indexOf("qq-onebot", from)) >= 0; from++) {
+            hits++;
+        }
+        assertEquals(0, hits, "home-model.js 源码不得出现 qq-onebot，显示名由接口下发；命中 " + hits + " 次");
     }
 
     /**
