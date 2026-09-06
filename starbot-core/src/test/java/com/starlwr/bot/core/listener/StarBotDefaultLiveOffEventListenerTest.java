@@ -1,8 +1,10 @@
 package com.starlwr.bot.core.listener;
 
 import com.starlwr.bot.core.analytics.LiveDetail;
+import com.starlwr.bot.core.analytics.LiveHighlightFinder;
 import com.starlwr.bot.core.enums.LiveEndReason;
 import com.starlwr.bot.core.event.live.common.LiveOffEvent;
+import com.starlwr.bot.core.model.DanmuRecord;
 import com.starlwr.bot.core.model.LiveGap;
 import com.starlwr.bot.core.model.LiveSession;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
@@ -19,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -26,6 +29,7 @@ import java.util.Set;
 import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -270,5 +274,108 @@ class StarBotDefaultLiveOffEventListenerTest {
                 new LiveGap(START + 60_000, START + 120_000, LiveGap.Reason.MAINTENANCE),
                 new LiveGap(START + 120_000, START + 180_000, LiveGap.Reason.STREAM_LOSS)),
                 detail.gaps());
+    }
+
+    /**
+     * 残留一：高能时刻只数计入弹幕条数的那几类
+     * <p>
+     * 文字弹幕与表情弹幕计入密度，付费留言不算——把它算进去，一条 30 元的留言
+     * 在曲线上就等价于一句「哈哈」。明细里看不到 danmuSeries 本身，高能时刻就是
+     * 那张表的出口：计为弹幕的那一分钟应被挑出，且取值只含前者；付费留言独占的
+     * 那一分钟不应出现。过滤条件改坏（把非弹幕也计入）时，取值会被抬高、不该在的
+     * 分钟也会进表。
+     */
+    @Test
+    @DisplayName("残留①：highlights 只含计入弹幕的分钟，取值不含付费留言")
+    void highlightsKeepOnlyDanmuAndEmojiBuckets() {
+        when(liveDataService.getLiveStartTime(PLATFORM, UID)).thenReturn(Optional.of(START));
+        when(interventionTracker.endReason(eq(PLATFORM), eq(UID), any(Instant.class))).thenReturn(LiveEndReason.NORMAL);
+
+        long countedAt = START + 10 * 60_000L;
+        long ignoredAt = START + 20 * 60_000L;
+        List<DanmuRecord> records = new ArrayList<>();
+        records.addAll(copies(countedAt, DanmuRecord.Type.DANMU, 16));
+        records.addAll(copies(countedAt, DanmuRecord.Type.EMOJI, 4));
+        records.addAll(copies(countedAt, DanmuRecord.Type.SUPER_CHAT, 30));
+        records.addAll(copies(ignoredAt, DanmuRecord.Type.SUPER_CHAT, 50));
+        when(details.readDanmu(eq(PLATFORM), eq(UID), eq(START))).thenReturn(records);
+
+        listener.onLiveOffEvent(liveOffAt(END));
+
+        ArgumentCaptor<LiveDetail> detailCaptor = ArgumentCaptor.forClass(LiveDetail.class);
+        verify(details).store(detailCaptor.capture());
+        List<LiveHighlightFinder.Highlight> highlights = detailCaptor.getValue().highlights();
+        long countedBucket = countedAt / LiveDataService.SERIES_BUCKET_MILLIS * LiveDataService.SERIES_BUCKET_MILLIS;
+        long ignoredBucket = ignoredAt / LiveDataService.SERIES_BUCKET_MILLIS * LiveDataService.SERIES_BUCKET_MILLIS;
+        assertEquals(1, highlights.size(), "只应挑出计入弹幕的那一分钟，实际: " + highlights);
+        assertEquals(countedBucket, highlights.get(0).at());
+        assertEquals(20.0, highlights.get(0).value(), "取值＝文字+表情，不含同分钟的付费留言");
+        assertFalse(highlights.stream().anyMatch(h -> h.at() == ignoredBucket),
+                "付费留言独占的分钟不应进高能时刻，实际: " + highlights);
+    }
+
+    /**
+     * 残留二：时钟回拨时时长夹到 0，场次与明细仍归档
+     * <p>
+     * 下播时刻早于开播时刻（时钟回拨或数据异常）时，时长必须是 0 而不是负数——
+     * 统计里出现负时长会把平均值、合计全部带歪。没有开播时刻才跳过归档；
+     * 有开播时刻只是顺序反了，这一场仍然发生过，两份归档都要留下。
+     */
+    @Test
+    @DisplayName("残留②：下播早于开播时 duration 夹 0，场次与明细仍归档")
+    void clockRollbackClampsDurationToZeroAndStillArchives() {
+        when(liveDataService.getLiveStartTime(PLATFORM, UID)).thenReturn(Optional.of(START));
+        when(interventionTracker.endReason(eq(PLATFORM), eq(UID), any(Instant.class))).thenReturn(LiveEndReason.NORMAL);
+
+        long endBeforeStart = START - 60_000L;
+        listener.onLiveOffEvent(liveOffAt(endBeforeStart));
+
+        ArgumentCaptor<LiveSession> sessions = ArgumentCaptor.forClass(LiveSession.class);
+        verify(archive).append(sessions.capture());
+        LiveSession session = sessions.getValue();
+        assertEquals(START, session.startTime());
+        assertEquals(endBeforeStart, session.endTime());
+        assertEquals(0, session.durationSeconds(), "回拨须夹到 0，不能把负数写进统计");
+
+        ArgumentCaptor<LiveDetail> detailCaptor = ArgumentCaptor.forClass(LiveDetail.class);
+        verify(details).store(detailCaptor.capture());
+        assertEquals(0, detailCaptor.getValue().durationSeconds(), "明细时长与场次同一套夹 0");
+    }
+
+    /**
+     * 残留三：全程无数据的曲线不进归档序列表，也不产生峰值
+     * <p>
+     * 「这条曲线一个点都没有」与「峰值为 0」是两回事。空表写进序列表会让读的人
+     * 以为这场采过这条曲线只是全是零；峰值项缺席才表示没有可取的峰。
+     * 另一条有点的曲线仍应在表里、仍应有峰——免得空判把整张表都吞掉。
+     */
+    @Test
+    @DisplayName("残留③：空序列不入归档表，peaks 无该键；有点的曲线照留")
+    void emptySeriesDoesNotEnterArchiveOrPeaks() {
+        when(liveDataService.getLiveStartTime(PLATFORM, UID)).thenReturn(Optional.of(START));
+        when(interventionTracker.endReason(eq(PLATFORM), eq(UID), any(Instant.class))).thenReturn(LiveEndReason.NORMAL);
+        when(liveDataService.getLiveSeriesMetrics(PLATFORM, UID)).thenReturn(Set.of("人气", "空序列"));
+        when(liveDataService.getLiveSeries(PLATFORM, UID, "人气")).thenReturn(Map.of(START + 60_000, 5.0));
+        when(liveDataService.getLiveSeries(PLATFORM, UID, "空序列")).thenReturn(Map.of());
+
+        listener.onLiveOffEvent(liveOffAt(END));
+
+        ArgumentCaptor<LiveSession> sessions = ArgumentCaptor.forClass(LiveSession.class);
+        verify(archive).append(sessions.capture());
+        LiveSession session = sessions.getValue();
+        assertEquals(new SeriesPeak(START + 60_000, 5.0), session.peak("人气").orElseThrow());
+        assertTrue(session.peak("空序列").isEmpty(), "空序列不产生峰值项");
+
+        ArgumentCaptor<LiveDetail> detailCaptor = ArgumentCaptor.forClass(LiveDetail.class);
+        verify(details).store(detailCaptor.capture());
+        LiveDetail detail = detailCaptor.getValue();
+        assertTrue(detail.series().containsKey("人气"), "有点的曲线仍应在序列表");
+        assertFalse(detail.series().containsKey("空序列"), "全程无数据的曲线不应写进归档序列表");
+        assertFalse(detail.peaks().containsKey("空序列"), "空序列不在 peaks");
+        assertEquals(new SeriesPeak(START + 60_000, 5.0), detail.peaks().get("人气"));
+    }
+
+    private static List<DanmuRecord> copies(long at, DanmuRecord.Type type, int n) {
+        return IntStream.range(0, n).mapToObj(i -> new DanmuRecord(at, 1L, "观众甲", "话", type)).toList();
     }
 }
