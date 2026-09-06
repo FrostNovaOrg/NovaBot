@@ -19,6 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
+import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.stream.Stream;
@@ -110,8 +111,36 @@ class SafeModeServerGateTest {
         assertEquals(0, backupCount(config), "GET 不许产生备份");
     }
 
+    @Test
+    @DisplayName("端口认带引号的数字：\"8080\" 也接管 8080；裸数字照旧；非数字仍回默认")
+    void resolvePortReadsQuotedNumber() throws IOException {
+        Path config = dir.resolve("application.yml");
+
+        List<String> unresolved = new ArrayList<>();
+        Files.writeString(config, "server:\n  port: \"8080\"\n", StandardCharsets.UTF_8);
+        tally(unresolved, 8080, newServer().resolvePort(), "带引号的 8080 应被认出");
+        Files.writeString(config, "server:\n  port: 8080\n", StandardCharsets.UTF_8);
+        tally(unresolved, 8080, newServer().resolvePort(), "裸数字 8080 应照旧被认出");
+        Files.writeString(config, "server:\n  port: \"abc\"\n", StandardCharsets.UTF_8);
+        tally(unresolved, 7827, newServer().resolvePort(), "非数字串应回默认端口 7827");
+
+        assertTrue(unresolved.isEmpty(),
+                () -> "端口三问中 " + unresolved.size() + " 问未销: " + String.join("; ", unresolved));
+    }
+
     private SafeModeServer newServer() {
         return new SafeModeServer(dir.resolve("application.yml"), "测试用的启动失败原因");
+    }
+
+    /**
+     * 三问各自捕获、末尾汇总，一问红不许短路其余两问
+     */
+    private static void tally(List<String> unresolved, int expected, int actual, String question) {
+        try {
+            assertEquals(expected, actual, question);
+        } catch (AssertionError e) {
+            unresolved.add(e.getMessage());
+        }
     }
 
     /**
