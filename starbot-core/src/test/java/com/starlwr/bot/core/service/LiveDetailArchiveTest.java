@@ -28,6 +28,7 @@ import java.util.TreeMap;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -168,6 +169,21 @@ class LiveDetailArchiveTest {
             assertTrue(missing.isEmpty(), "③ 缺场次应空");
         } catch (Throwable t) {
             red.add("③ " + t.getMessage());
+        }
+        try {
+            Map<String, Object> withAt = new LinkedHashMap<>(gift);
+            withAt.put("at", 1L);
+            assertThrows(IllegalArgumentException.class,
+                    () -> archive.appendEvent(PLATFORM, UID, START, START, "gift", withAt),
+                    "④ 含 at");
+            Map<String, Object> withT = new LinkedHashMap<>(gift);
+            withT.put("t", "x");
+            assertThrows(IllegalArgumentException.class,
+                    () -> archive.appendEvent(PLATFORM, UID, START, START, "gift", withT),
+                    "④ 含 t");
+            assertEquals(2, archive.readEvents(PLATFORM, UID, START).size(), "④ 拒收后仍 2 条");
+        } catch (Throwable t) {
+            red.add("④ " + t.getMessage());
         }
         if (!red.isEmpty()) {
             fail(red.size() + " 问红：" + String.join("；", red));

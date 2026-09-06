@@ -181,6 +181,9 @@ public class LiveDetailArchive {
     /** 追加一条事件流水。失败只记日志；本场已封存时直接跳过。 */
     public void appendEvent(@NonNull String platform, @NonNull Long uid, long startTime, long at,
                             @NonNull String type, @NonNull Map<String, Object> fields) {
+        if (fields.containsKey("at") || fields.containsKey("t")) {
+            throw new IllegalArgumentException("fields must not contain at or t");
+        }
         Optional<Path> dir = directory(platform, uid, startTime);
         if (dir.isEmpty()) {
             return;
