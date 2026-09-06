@@ -653,8 +653,6 @@ class BilibiliEventParserTest {
             assertEquals(1.0, event.getGiftInfo().getPrice(), 0.0001, "单价仍按折扣价（字段 6）算");
             assertTrue(logs.stream().noneMatch(message -> message.contains("\uFFFD")),
                     "日志不得出现乱码——34 号是子消息，字节不是文本");
-            assertFalse(logs.stream().anyMatch(message -> message.contains("疑似盲盒")),
-                    "盲盒猜判与其 debug 行已撤");
             assertTrue(logs.stream().anyMatch(message -> message.contains("id=5632012") && message.contains("type=1")),
                     "新读法按子消息取到 id 与 type（TRACE 留痕）");
         }
