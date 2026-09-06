@@ -29,6 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * 每场明细留档
@@ -119,6 +120,58 @@ class LiveDetailArchiveTest {
                 () -> assertEquals("观众甲", read.uname()),
                 () -> assertEquals("好听", read.text()),
                 () -> assertEquals(DanmuRecord.Type.DANMU, read.type()));
+    }
+
+    @Test
+    @DisplayName("事件流水：写读往返、封存后不写、缺场次空表")
+    void eventStreamWriteReadSealAndMissing() {
+        List<String> red = new ArrayList<>();
+        Map<String, Object> gift = new LinkedHashMap<>();
+        gift.put("gid", 31036);
+        gift.put("gn", "小花花");
+        gift.put("n", 2);
+        gift.put("val", 100);
+        Map<String, Object> follow = new LinkedHashMap<>();
+        follow.put("uid", 19338207415562L);
+        follow.put("un", "观众甲");
+        long giftAt = START + MINUTE;
+        long followAt = START + 2 * MINUTE;
+
+        try {
+            archive.appendEvent(PLATFORM, UID, START, giftAt, "gift", gift);
+            archive.appendEvent(PLATFORM, UID, START, followAt, "follow", follow);
+            List<Map<String, Object>> events = archive.readEvents(PLATFORM, UID, START);
+            assertEquals(2, events.size(), "① 条数");
+            assertEventRoundTrip(events.get(0), giftAt, "gift", gift);
+            assertEventRoundTrip(events.get(1), followAt, "follow", follow);
+            Path path = dir.resolve("details").resolve(PLATFORM + "-" + UID + "-" + START).resolve("events.jsonl");
+            List<String> lines = Files.readAllLines(path, StandardCharsets.UTF_8);
+            assertEquals(2, lines.size(), "① JSON 行数");
+            for (String line : lines) {
+                JSONObject json = JSON.parseObject(line);
+                List<String> keys = new ArrayList<>(json.keySet());
+                assertEquals("at", keys.get(0), line);
+                assertEquals("t", keys.get(1), line);
+            }
+        } catch (Throwable t) {
+            red.add("① " + t.getMessage());
+        }
+        try {
+            archive.store(detail(1, 1, 1));
+            archive.appendEvent(PLATFORM, UID, START, START + 10 * MINUTE, "gift", gift);
+            assertEquals(2, archive.readEvents(PLATFORM, UID, START).size(), "② 封存后仍 2 条");
+        } catch (Throwable t) {
+            red.add("② " + t.getMessage());
+        }
+        try {
+            List<Map<String, Object>> missing = archive.readEvents(PLATFORM, UID, START + 1);
+            assertTrue(missing.isEmpty(), "③ 缺场次应空");
+        } catch (Throwable t) {
+            red.add("③ " + t.getMessage());
+        }
+        if (!red.isEmpty()) {
+            fail(red.size() + " 问红：" + String.join("；", red));
+        }
     }
 
     @Test
@@ -359,6 +412,20 @@ class LiveDetailArchiveTest {
 
     private DanmuRecord danmu(long at, String text) {
         return new DanmuRecord(at, 19338207415562L, "观众甲", text, DanmuRecord.Type.DANMU);
+    }
+
+    private void assertEventRoundTrip(Map<String, Object> event, long at, String type, Map<String, Object> fields) {
+        assertEquals(at, ((Number) event.get("at")).longValue(), "at");
+        assertEquals(type, event.get("t"), "t");
+        for (Map.Entry<String, Object> entry : fields.entrySet()) {
+            Object actual = event.get(entry.getKey());
+            Object expected = entry.getValue();
+            if (expected instanceof Number && actual instanceof Number) {
+                assertEquals(((Number) expected).longValue(), ((Number) actual).longValue(), entry.getKey());
+            } else {
+                assertEquals(String.valueOf(expected), String.valueOf(actual), entry.getKey());
+            }
+        }
     }
 
     private LiveDetail detail(int seriesPoints, int rankingRows, int wordCount) {
