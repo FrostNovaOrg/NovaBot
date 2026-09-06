@@ -7,6 +7,7 @@ import com.starlwr.bot.bilibili.event.live.BilibiliGovernorEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliDanmuEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliEnterRoomEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliFollowEvent;
+import com.starlwr.bot.bilibili.event.live.BilibiliLikeEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliLikeUpdateEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliPaidGiftEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliOnlineRankCountUpdateEvent;
@@ -28,11 +29,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * 本场直播数据聚合器测试
@@ -444,6 +447,51 @@ class BilibiliLiveStatsAggregatorTest {
         aggregator.onEmoji(new BilibiliEmojiEvent(STREAMER, user(2L), null));
 
         assertTrue(details.readDanmu(PLATFORM, STREAMER.getUid(), start).isEmpty());
+    }
+
+    @Test
+    @DisplayName("礼物、盲盒、上舰、关注逐条落入 events.jsonl；进场与点赞不落；未开播不落")
+    void recordsGiftBoxGuardFollowAndIgnoresEnterLikeWithoutStart() {
+        List<String> red = new ArrayList<>();
+        long start = 1_700_000_000_000L;
+
+        try {
+            liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+            aggregator.onPaidGift(new BilibiliPaidGiftEvent(STREAMER, user(1L),
+                    new GiftInfo(31036L, "小花花", 5.2, 1, null), 5.2));
+            aggregator.onRandomGift(new BilibiliRandomGiftEvent(STREAMER, user(2L),
+                    new GiftInfo(2L, "心动盲盒", 9.9, 1, null),
+                    new GiftInfo(3L, "嘉年华", 6.6, 1, null), 9.9, 6.6));
+            aggregator.onCaptain(new BilibiliCaptainEvent(STREAMER, user(3L), 138.0, 1, "月"));
+            aggregator.onFollow(new BilibiliFollowEvent(STREAMER, user(4L)));
+            List<Map<String, Object>> events = details.readEvents(PLATFORM, STREAMER.getUid(), start);
+            assertEquals(4, events.size(), "① 条数");
+            assertEquals(List.of("gift", "box", "guard", "follow"),
+                    events.stream().map(e -> e.get("t")).toList());
+            assertEquals("小花花", events.get(0).get("gn"));
+            assertEquals(-3.3, ((Number) events.get(1).get("pft")).doubleValue(), 0.0001);
+            assertEquals(3, ((Number) events.get(2).get("lv")).intValue());
+            assertEquals("用户4", events.get(3).get("un"));
+        } catch (Throwable t) {
+            red.add("① " + t.getMessage());
+        }
+        try {
+            aggregator.onEnterRoom(new BilibiliEnterRoomEvent(STREAMER, user(5L)));
+            aggregator.onLike(new BilibiliLikeEvent(STREAMER, user(6L)));
+            assertEquals(4, details.readEvents(PLATFORM, STREAMER.getUid(), start).size(), "② 仍 4 条");
+        } catch (Throwable t) {
+            red.add("② " + t.getMessage());
+        }
+        try {
+            LiveStreamerInfo other = new LiveStreamerInfo(10002L, "主播乙", 20003L);
+            aggregator.onPaidGift(new BilibiliPaidGiftEvent(other, user(1L), gift(1.0, 1), 1.0));
+            assertEquals(0, details.readEvents(PLATFORM, other.getUid(), start).size(), "③ 未开播 0 条");
+        } catch (Throwable t) {
+            red.add("③ " + t.getMessage());
+        }
+        if (!red.isEmpty()) {
+            fail(red.size() + " 问红：" + String.join("；", red));
+        }
     }
 
     private double metric(String name) {

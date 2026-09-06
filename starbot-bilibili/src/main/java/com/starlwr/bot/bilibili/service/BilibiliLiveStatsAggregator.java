@@ -19,6 +19,7 @@ import com.starlwr.bot.bilibili.event.live.BilibiliSuperChatEvent;
 import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
 import com.starlwr.bot.bilibili.util.DanmuWordUtil;
 import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
+import com.starlwr.bot.core.event.live.common.MembershipEvent;
 import com.starlwr.bot.core.model.DanmuRecord;
 import com.starlwr.bot.core.model.UserInfo;
 import com.starlwr.bot.core.plugin.StarBotComponent;
@@ -29,6 +30,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -104,6 +107,12 @@ public class BilibiliLiveStatsAggregator {
         // 记到手价值而不是实扣——与 GIFT_VALUE 同口径，卡片与榜单必须能相加对上，
         // 理由与背包礼物那个反例见 BilibiliLiveMetric.GIFT_USERS
         scoreUser(event, BilibiliLiveMetric.GIFT_USERS, event.getSender(), value);
+        var gift = event.getGiftInfo();
+        recordEvent(event, "gift", eventFields(event.getSender(),
+                "gid", gift == null ? null : gift.getId(),
+                "gn", gift == null ? null : gift.getName(),
+                "n", gift == null ? null : gift.getCount(),
+                "val", value, "pay", charged, "bag", event.isFromBag()));
     }
 
     /**
@@ -156,6 +165,14 @@ public class BilibiliLiveStatsAggregator {
         scoreUser(event, BilibiliLiveMetric.GIFT_USERS, event.getSender(), value);
         scoreUser(event, BilibiliLiveMetric.BOX_USERS, event.getSender(), count);
         scoreUser(event, BilibiliLiveMetric.BOX_PROFIT_USERS, event.getSender(), value - price);
+        var box = event.getRandomGiftInfo();
+        var gift = event.getGiftInfo();
+        recordEvent(event, "box", eventFields(event.getSender(),
+                "bn", box == null ? null : box.getName(), "bp", price,
+                "gid", gift == null ? null : gift.getId(),
+                "gn", gift == null ? null : gift.getName(),
+                "n", gift == null ? null : gift.getCount(),
+                "val", value, "pft", value - price));
     }
 
     /**
@@ -179,6 +196,7 @@ public class BilibiliLiveStatsAggregator {
         increment(event, BilibiliLiveMetric.CAPTAIN_COUNT, 1);
         increment(event, BilibiliLiveMetric.GUARD_VALUE, Optional.ofNullable(event.getValue()).orElse(0.0));
         scoreUser(event, BilibiliLiveMetric.GUARD_USERS, event.getSender(), 1);
+        recordGuard(event, 3);
     }
 
     /**
@@ -189,6 +207,7 @@ public class BilibiliLiveStatsAggregator {
         increment(event, BilibiliLiveMetric.COMMANDER_COUNT, 1);
         increment(event, BilibiliLiveMetric.GUARD_VALUE, Optional.ofNullable(event.getValue()).orElse(0.0));
         scoreUser(event, BilibiliLiveMetric.GUARD_USERS, event.getSender(), 1);
+        recordGuard(event, 2);
     }
 
     /**
@@ -199,6 +218,7 @@ public class BilibiliLiveStatsAggregator {
         increment(event, BilibiliLiveMetric.GOVERNOR_COUNT, 1);
         increment(event, BilibiliLiveMetric.GUARD_VALUE, Optional.ofNullable(event.getValue()).orElse(0.0));
         scoreUser(event, BilibiliLiveMetric.GUARD_USERS, event.getSender(), 1);
+        recordGuard(event, 1);
     }
 
     /**
@@ -207,6 +227,7 @@ public class BilibiliLiveStatsAggregator {
     @EventListener(BilibiliFollowEvent.class)
     public void onFollow(BilibiliFollowEvent event) {
         increment(event, BilibiliLiveMetric.FOLLOW_COUNT, 1);
+        recordEvent(event, "follow", eventFields(event.getSender()));
     }
 
     /**
@@ -379,6 +400,33 @@ public class BilibiliLiveStatsAggregator {
                 sender == null ? null : sender.getUname(),
                 text,
                 type));
+    }
+
+    /** 与 {@link #recordDanmu} 同守卫：无开播时刻即不留。 */
+    private void recordEvent(StarBotBaseLiveEvent event, String type, Map<String, Object> fields) {
+        if (event.getSource() == null || event.getSource().getUid() == null) {
+            return;
+        }
+        Long uid = event.getSource().getUid();
+        liveDataService.getLiveStartTime(event.getPlatform(), uid).ifPresent(start ->
+                details.appendEvent(event.getPlatform(), uid, start, event.getTimestamp(), type, fields));
+    }
+
+    private void recordGuard(MembershipEvent event, int level) {
+        recordEvent(event, "guard", eventFields(event.getSender(),
+                "lv", level, "n", event.getCount(), "u", event.getUnit(),
+                "days", event.getCompanionDays(), "val", event.getValue(),
+                "pay", Optional.ofNullable(event.getCharged()).orElse(event.getValue())));
+    }
+
+    private static Map<String, Object> eventFields(UserInfo sender, Object... kv) {
+        Map<String, Object> fields = new LinkedHashMap<>();
+        fields.put("uid", sender == null ? null : sender.getUid());
+        fields.put("un", sender == null ? null : sender.getUname());
+        for (int i = 0; i < kv.length; i += 2) {
+            fields.put((String) kv[i], kv[i + 1]);
+        }
+        return fields;
     }
 
     /**
