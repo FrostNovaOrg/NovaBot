@@ -747,21 +747,25 @@ public class ConfigurationFileService {
 
     /**
      * 找出一行中注释的起始位置
+     * <p>
+     * 引号只在值本身以引号开头时才是定界符，且只配对到闭引号（双引号内的 \" 不是闭引号）：
+     * 否则 It's 里的撇号只是个只开不闭的普通字符，会把后面的行尾注释整段关进「引号内」。
+     * # 也按 YAML 的规矩来：前面有空白才算注释，a#b 里的 # 是值的一部分。
      * @param text 冒号之后的内容
      * @return 注释起始下标，无注释时返回 -1
      */
     private int commentIndex(String text) {
-        boolean inSingle = false;
-        boolean inDouble = false;
+        String value = text.stripLeading();
+        char quote = !value.isEmpty() && (value.charAt(0) == '\'' || value.charAt(0) == '"') ? value.charAt(0) : 0;
 
-        for (int i = 0; i < text.length(); i++) {
-            char c = text.charAt(i);
-            if (c == '\'' && !inDouble) {
-                inSingle = !inSingle;
-            } else if (c == '"' && !inSingle) {
-                inDouble = !inDouble;
-            } else if (c == '#' && !inSingle && !inDouble) {
-                return i;
+        for (int i = quote > 0 ? 1 : 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (quote == '"' && c == '\\') {
+                i++;
+            } else if (quote > 0 && c == quote) {
+                quote = 0;
+            } else if (c == '#' && quote == 0 && (i == 0 || Character.isWhitespace(value.charAt(i - 1)))) {
+                return i + (text.length() - value.length());
             }
         }
 
