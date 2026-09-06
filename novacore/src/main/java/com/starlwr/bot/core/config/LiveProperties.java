@@ -47,10 +47,4 @@ public class LiveProperties {
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     private int detailRetentionDays = 0;
-
-    /**
-     * 下播报告图片的缓存天数，过期后删除，查看时从明细数据重新绘制，0 表示永久保留
-     */
-    @ConfigEffect(ConfigEffect.Effect.RESTART)
-    private int reportCacheDays = 30;
 }

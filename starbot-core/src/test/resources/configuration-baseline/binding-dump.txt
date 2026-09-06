@@ -52,7 +52,6 @@ starbot.core.live.auto-save-live-data-interval=41
 starbot.core.live.detail-retention-days=43
 starbot.core.live.live-data-path=coverage-data.json
 starbot.core.live.reconnect-interval=42
-starbot.core.live.report-cache-days=44
 starbot.core.live.save-live-data=false
 starbot.core.log.console=WARN
 starbot.core.log.event-log=true

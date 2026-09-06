@@ -91,7 +91,7 @@ public class LiveDetailArchive {
     /**
      * 允许的平台名形状
      * <p>
-     * 与 {@link LiveReportArchive} 同一条：平台名会成为目录名的一部分，
+     * 平台名会成为目录名的一部分，
      * 而查看明细那一支是从<b>请求路径</b>里取它的。白名单里容不下一个点号，
      * 路径穿越连拼都拼不出来。
      */
@@ -353,7 +353,7 @@ public class LiveDetailArchive {
     /**
      * 启动时清一次过期明细
      * <p>
-     * 清理<b>只挂在启动上</b>，理由与 {@link LiveReportArchive#purgeOnStartup} 同：
+     * 清理<b>只挂在启动上</b>：
      * 挂到落盘上的话，一场开播时刻已在保留窗口外的直播会把自己刚写的明细当场删掉。
      * 默认永久保留，因此这一趟默认什么都不做。
      */
