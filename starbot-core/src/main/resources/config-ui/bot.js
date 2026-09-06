@@ -16,9 +16,18 @@ export function botFormHtml(p) {
     + '<div class="out" id="' + p + '-out"></div>';
 }
 
+function invalidateBotForm(p) {
+  $('#' + p + '-save').disabled = true;
+  $('#' + p + '-out').textContent = '参数改了，请重新测试连接';
+  $('#' + p + '-out').className = 'out';
+}
+
 export function bindBotForm(p) {
   $('#' + p + '-test').addEventListener('click', () => testBotConnection(p));
   $('#' + p + '-save').addEventListener('click', () => saveBotConnection(p));
+  ['addr', 'hport', 'htoken', 'wport', 'wtoken'].forEach(k => {
+    $('#' + p + '-' + k).addEventListener('input', () => invalidateBotForm(p));
+  });
 }
 
 // 回填已配置的地址与端口，免得改一个字段要把整套重敲一遍。
@@ -65,6 +74,7 @@ async function testBotConnection(p) {
   } catch (e) {
     out.className = 'out err';
     out.textContent = '测试失败：' + e.message;
+    $('#' + p + '-save').disabled = true;
   }
 
   $('#' + p + '-test').disabled = false;
