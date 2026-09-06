@@ -119,13 +119,43 @@ class ChannelSettingsSurfaceTest {
             assertTrue(friendHidden.contains(name), "好友会话该藏「" + name + "」: " + friendHidden);
             assertFalse(groupHidden.contains(name), "群会话不该藏「" + name + "」: " + groupHidden);
         }
-        assertEquals(6, 14 - friendHidden.size(), "好友会话可见条数该是 6: " + friendHidden);
+        assertEquals(MenuCommandTest.PRIVATE_OK.size(),
+                commands().size() - friendHidden.size(),
+                "好友会话可见条数该是私聊可用的那些: " + friendHidden);
 
         Set<String> visible = new LinkedHashSet<>(MenuCommandTest.PRIVATE_OK);
         visible.addAll(MenuCommandTest.GROUP_ONLY_NAMES);
         friendHidden.forEach(visible::remove);
         assertEquals(Set.copyOf(MenuCommandTest.PRIVATE_OK), visible,
                 "好友会话可见的名字该与私聊菜单同一份: " + visible);
+    }
+
+    @Test
+    @DisplayName("阳：命令把 availableIn 覆写成假时，群会话 menuHidden 恰含它，好友会话亦含")
+    void groupSessionHidesCommandWhenAvailableInOverridesToFalse() {
+        CommandDispatcher dispatcher = dependency(CommandDispatcher.class);
+        List<StarBotCommand> roster = new ArrayList<>();
+        for (String name : MenuCommandTest.PRIVATE_OK) {
+            roster.add(simple(name, !LOCKED.equals(name), false));
+        }
+        for (String name : MenuCommandTest.GROUP_ONLY_NAMES) {
+            roster.add(HIDDEN.equals(name) ? hiddenByAvailableIn() : simple(name, true, true));
+        }
+        when(dispatcher.all()).thenReturn(roster);
+
+        JSONObject group = sessionOf(PushTargetType.GROUP, GROUP_NUM);
+        JSONObject friend = sessionOf(PushTargetType.FRIEND, FRIEND_NUM);
+        List<String> groupHidden = group.getJSONArray("menuHidden").toList(String.class);
+        List<String> friendHidden = friend.getJSONArray("menuHidden").toList(String.class);
+
+        assertEquals(List.of(HIDDEN), groupHidden,
+                "群会话该只因覆写藏这一条: " + groupHidden);
+        assertTrue(friendHidden.contains(HIDDEN),
+                "好友会话也该藏它: " + friendHidden);
+        for (String name : MenuCommandTest.GROUP_ONLY_NAMES) {
+            assertTrue(friendHidden.contains(name),
+                    "覆写不得冲掉好友会话对仅限群聊命令的隐藏: " + friendHidden);
+        }
     }
 
     @Test
@@ -264,8 +294,8 @@ class ChannelSettingsSurfaceTest {
     }
 
     /**
-     * 十四条命令：六条私聊可用、八条仅限群聊；「开播@我」另带一句会话说明。
-     * 仅限群聊的那八条靠 {@code groupOnly()}，不再硬写 {@code availableIn}。
+     * 命令表：私聊可用的那些，加上仅限群聊的那些；「开播@我」另带一句会话说明。
+     * 仅限群聊的那些靠 {@code groupOnly()}，不再硬写 {@code availableIn}。
      */
     private List<StarBotCommand> commands() {
         List<StarBotCommand> commands = new ArrayList<>();
@@ -276,6 +306,39 @@ class ChannelSettingsSurfaceTest {
             commands.add(HIDDEN.equals(name) ? hiddenSubscribe() : simple(name, true, true));
         }
         return commands;
+    }
+
+    /**
+     * 本群配成 @全体成员 时「开播@我」自己把 {@code availableIn} 覆写成假。
+     * 与 {@link #hiddenSubscribe()} 的差别只在这一覆写：群会话也必须把它藏进 menuHidden。
+     */
+    private StarBotCommand hiddenByAvailableIn() {
+        return new StarBotCommand() {
+            @Override
+            public String name() {
+                return HIDDEN;
+            }
+
+            @Override
+            public String description() {
+                return "开播时 @ 我";
+            }
+
+            @Override
+            public boolean groupOnly() {
+                return true;
+            }
+
+            @Override
+            public boolean availableIn(CommandContext context) {
+                return false;
+            }
+
+            @Override
+            public CommandReply execute(CommandContext context) {
+                return CommandReply.none();
+            }
+        };
     }
 
     private StarBotCommand hiddenSubscribe() {

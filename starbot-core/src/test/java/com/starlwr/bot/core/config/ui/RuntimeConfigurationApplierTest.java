@@ -7,11 +7,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Field;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.BiConsumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -203,5 +205,33 @@ class RuntimeConfigurationApplierTest {
         assertEquals(totpBefore, auth.isTotp(), "二次验证开关不得被通用写入改掉");
         assertEquals(secretBefore, auth.getTotpSecret(), "二次验证密钥不得被通用写入改掉");
         assertEquals(operatorBefore, auth.isOperatorToken(), "启动令牌通道不得被通用写入改掉");
+    }
+
+    @Test
+    @DisplayName("认证键即使被登记进即时通道，resolve 开头仍拒写且记入待重启")
+    void dedicatedAuthKeyIsRejectedEvenWhenRegisteredAsApplier() throws Exception {
+        String key = ConfigUiAuthService.PASSWORD_PROPERTY;
+        StarBotCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
+        auth.setPassword("keep-me");
+
+        Field field = RuntimeConfigurationApplier.class.getDeclaredField("APPLIERS");
+        field.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, BiConsumer<StarBotCoreProperties, String>> appliers =
+                (Map<String, BiConsumer<StarBotCoreProperties, String>>) field.get(null);
+
+        BiConsumer<StarBotCoreProperties, String> previous = appliers.put(key,
+                (props, value) -> props.getConfigUi().getAuth().setPassword(value));
+        assertNull(previous, "口令键本就不该出现在即时落地表里");
+        try {
+            List<String> restart = applier.applyAndTrack(Map.of(key, "changed-password"));
+
+            assertEquals("keep-me", auth.getPassword(),
+                    "口令不得被通用即时通道改掉，哪怕该键被登记进了落地表");
+            assertTrue(restart.contains(key),
+                    "拒写必须记入待重启，实际=" + restart);
+        } finally {
+            appliers.remove(key);
+        }
     }
 }
