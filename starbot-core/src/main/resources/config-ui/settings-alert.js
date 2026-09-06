@@ -394,9 +394,11 @@ export function alertCards() {
     port.value = shape.port;
     setValue('spring.mail.host', shape.host);
     setValue('spring.mail.port', shape.port);
+    mailReady();
   };
   mailPreset.addEventListener('change', applyMail);
-  mailPreset.value = Object.keys(MAIL_PRESETS).find(k => MAIL_PRESETS[k].host === valueOf('spring.mail.host'))
+  mailPreset.value = Object.keys(MAIL_PRESETS).find(k => MAIL_PRESETS[k].host === valueOf('spring.mail.host')
+    && (!valueOf('spring.mail.port') || String(MAIL_PRESETS[k].port) === String(valueOf('spring.mail.port'))))
     || CUSTOM;
   mailCustom.classList.toggle('hide', !!MAIL_PRESETS[mailPreset.value]);
 
