@@ -7,7 +7,9 @@ import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
+import com.starlwr.bot.core.model.Sender;
 import com.starlwr.bot.core.service.AtAllQuotaService;
+import com.starlwr.bot.core.service.StarBotSenderService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -110,10 +112,54 @@ class AtAllQuotaSurfaceTest {
                         + "两个数对不上正是它要传达的信息，别把它抹平成一样");
     }
 
+    @Test
+    @DisplayName("bots 与 sessions 都带非空 platformName；未配显示名时等于 platform，且 platform 原值不变")
+    void reportsPlatformNameFallingBackToPlatformId() {
+        StarBotCoreProperties properties = new StarBotCoreProperties();
+        AtAllQuotaService quota = new AtAllQuotaService(properties);
+
+        JSONObject state = controller(quota, properties).quota();
+        JSONObject bot = only(state.getJSONArray("bots"));
+        JSONObject session = state.getJSONArray("sessions").getJSONObject(0);
+
+        assertEquals(PLATFORM, bot.getString("platform"), "platform 原值不能改");
+        assertEquals(PLATFORM, bot.getString("platformName"), "未配显示名时回落等于 platform");
+        assertTrue(bot.getString("platformName") != null && !bot.getString("platformName").isBlank(),
+                "platformName 不得空或 null");
+
+        assertEquals(PLATFORM, session.getString("platform"), "会话行 platform 原值不能改");
+        assertEquals(PLATFORM, session.getString("platformName"), "会话行未配显示名时回落等于 platform");
+        assertTrue(session.getString("platformName") != null && !session.getString("platformName").isBlank(),
+                "会话行 platformName 不得空或 null");
+    }
+
+    @Test
+    @DisplayName("适配器自报过显示名时，bots 与 sessions 用人话名，platform 仍是标识串")
+    void reportsAdapterDisplayNameWithoutChangingPlatformId() {
+        StarBotCoreProperties properties = new StarBotCoreProperties();
+        AtAllQuotaService quota = new AtAllQuotaService(properties);
+        StarBotSenderService senders = new StarBotSenderService(properties);
+        senders.addSender(new Sender(PLATFORM, "http://127.0.0.1/onebot/send"), "QQ");
+
+        JSONObject state = controller(quota, properties, senders).quota();
+        JSONObject bot = only(state.getJSONArray("bots"));
+        JSONObject session = state.getJSONArray("sessions").getJSONObject(0);
+
+        assertEquals(PLATFORM, bot.getString("platform"), "platform 仍是登记用的标识串");
+        assertEquals("QQ", bot.getString("platformName"), "账号行用人话名");
+        assertEquals(PLATFORM, session.getString("platform"), "会话行 platform 仍是标识串");
+        assertEquals("QQ", session.getString("platformName"), "会话行用人话名");
+    }
+
     /**
      * 配好推送的两个群与一个好友会话，共用一个真的配额服务
      */
     private AtAllQuotaController controller(AtAllQuotaService quota, StarBotCoreProperties properties) {
+        return controller(quota, properties, new StarBotSenderService(properties));
+    }
+
+    private AtAllQuotaController controller(AtAllQuotaService quota, StarBotCoreProperties properties,
+                                            StarBotSenderService senders) {
         PushUser user = new PushUser();
         user.setUid(10001L);
         user.setPlatform("bilibili");
@@ -123,7 +169,7 @@ class AtAllQuotaSurfaceTest {
         AbstractDataSource dataSource = mock(AbstractDataSource.class);
         when(dataSource.getAllUsers()).thenReturn(List.of(user));
 
-        return new AtAllQuotaController(quota, dataSource, properties);
+        return new AtAllQuotaController(quota, dataSource, properties, senders);
     }
 
     private PushTarget target(PushTargetType type, long num) {

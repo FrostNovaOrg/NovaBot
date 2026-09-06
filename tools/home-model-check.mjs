@@ -314,13 +314,34 @@ same((six.details[0] || {}).text.includes('／'), false, '明细不含全角斜�
 same((tileOf(quota([bot({used: 1})], [group(11, 1, {platform: 'qq-onebot'})])).details[0] || {}).who,
   '群 11', '单平台无前缀');
 same((tileOf(quota([bot({used: 1})], [
-  group(11, 3, {platform: 'qq-onebot'}),
+  group(11, 3, {platform: 'qq-onebot', platformName: 'QQ'}),
   group(12, 1, {platform: 'other-bot'}),
 ])).details[0] || {}).who, 'QQ 群 11', '双平台 QQ 前缀');
 same((tileOf(quota([bot({used: 1})], [
   group(11, 3, {platform: 'alpha-bot'}),
   group(12, 1, {platform: 'beta-bot'}),
 ])).details[0] || {}).who, 'alpha-bot 群 11', '未知平台标识');
+
+const twoPlat = tileOf(quota([bot({used: 1})], [
+  group(11, 1, {platform: 'alpha-bot', platformName: '甲'}),
+  group(12, 1, {platform: 'beta-bot', platformName: '乙'}),
+]));
+same((twoPlat.details[0] || {}).who !== '群 11' && (twoPlat.details[1] || {}).who !== '群 12', true,
+  '两平台各 1 行：两行 who 均带前缀');
+same((twoPlat.details[0] || {}).who, '甲 群 11', '两平台各 1 行：第一行人话前缀');
+same((twoPlat.details[1] || {}).who, '乙 群 12', '两平台各 1 行：第二行人话前缀');
+
+const hiddenKind = tileOf(quota([bot({used: 1})], [
+  group(11, 10, {platform: 'alpha-bot', platformName: '甲'}),
+  group(12, 9, {platform: 'alpha-bot', platformName: '甲'}),
+  group(13, 8, {platform: 'alpha-bot', platformName: '甲'}),
+  group(14, 7, {platform: 'alpha-bot', platformName: '甲'}),
+  group(15, 6, {platform: 'alpha-bot', platformName: '甲'}),
+  group(16, 1, {platform: 'beta-bot', platformName: '乙'}),
+]));
+same((hiddenKind.details[0] || {}).who, '甲 群 11',
+  '前 5 行同平台、第 6 行另一平台：按全量判定前缀');
+same(hiddenKind.more, 1, '第 6 个群仍进「还有」');
 
 const twin = tileOf(quota([bot({used: 4})], [
   group(11, 3, {platform: 'alpha-bot'}),

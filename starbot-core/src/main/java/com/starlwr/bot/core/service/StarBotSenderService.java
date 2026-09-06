@@ -26,6 +26,12 @@ public class StarBotSenderService {
 
     private final Map<String, Sender> senders = new HashMap<>();
 
+    /**
+     * 适配器登记时自报的显示名，只给人看。没报过的平台不进这张表，
+     * {@link #displayName(String)} 回落成标识串本身。
+     */
+    private final Map<String, String> displayNames = new HashMap<>();
+
     @Autowired
     public StarBotSenderService(StarBotCoreProperties properties) {
         this.properties = properties;
@@ -66,6 +72,17 @@ public class StarBotSenderService {
      * @param sender 推送平台信息
      */
     public synchronized void addSender(@NonNull Sender sender) {
+        addSender(sender, null);
+    }
+
+    /**
+     * 添加推送平台，并记下给人看的名字
+     * <p>
+     * 显示名由适配器在登记时自报，不是配置项。没报或报空时，界面与接口都回落成标识串。
+     * @param sender 推送平台信息
+     * @param displayName 给人看的名字；空则不记
+     */
+    public synchronized void addSender(@NonNull Sender sender, String displayName) {
         if (sender.getName() == null) {
             throw new IllegalArgumentException("推送平台名称不能为空, 请检查 application.yml 配置文件");
         }
@@ -75,6 +92,25 @@ public class StarBotSenderService {
         }
 
         senders.put(sender.getName(), sender);
+        if (displayName != null && !displayName.isBlank()) {
+            displayNames.put(sender.getName(), displayName.trim());
+        }
         log.info("已注册推送平台 {}", sender.getName());
+    }
+
+    /**
+     * 推送平台给人看的名字
+     * <p>
+     * 适配器登记时自报过就用那一份；没报过、报空、或这个标识根本没登记过，
+     * 都回落成标识串本身，不会给出空或 null。
+     * @param platform 推送平台标识
+     * @return 显示名；{@code platform} 为 null 时给空串
+     */
+    public String displayName(String platform) {
+        if (platform == null) {
+            return "";
+        }
+        String name = displayNames.get(platform);
+        return (name == null || name.isBlank()) ? platform : name;
     }
 }
