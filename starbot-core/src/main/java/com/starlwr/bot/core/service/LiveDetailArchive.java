@@ -54,6 +54,11 @@ import java.util.stream.Stream;
  *     <li>{@code detail.json} —— 曲线、排行、词频、高能、标题、缺口，<b>下播时整份落盘</b>。
  *         这些在直播中一直在变，只有下播那一刻的值才是「这一场的」。</li>
  * </ul>
+ * <p>
+ * 同目录另有 {@code events.jsonl}：非弹幕事件的逐条流水，与弹幕原文同一把写锁、
+ * 同一道封存闸、同一条数上限；失败只记日志。一行 JSON 以 {@code at}、{@code t} 打头，
+ * 其余字段按调用方插入顺序附上。
+ * <p>
  * <b>{@code detail.json} 的存在同时是「本场已封存」的标记</b>：它落盘之后，
  * 这一场的弹幕原文不再接收新的追加。没有这道闸的话，下播到次日开播之间的零星弹幕
  * 会继续追加进已归档的那一场——那些弹幕在统计里本就该被丢弃（开播清零时一并丢），
@@ -81,6 +86,7 @@ public class LiveDetailArchive {
      * 弹幕原文的文件名
      */
     private static final String DANMU_FILE = "danmu.jsonl";
+    private static final String EVENT_FILE = "events.jsonl";
 
     /**
      * 允许的平台名形状
@@ -168,6 +174,42 @@ public class LiveDetailArchive {
                 danmuCounts.get(path.toString()).incrementAndGet();
             } catch (IOException e) {
                 log.debug("留档弹幕原文失败: {}", e.getMessage());
+            }
+        }
+    }
+
+    /** 追加一条事件流水。失败只记日志；本场已封存时直接跳过。 */
+    public void appendEvent(@NonNull String platform, @NonNull Long uid, long startTime, long at,
+                            @NonNull String type, @NonNull Map<String, Object> fields) {
+        Optional<Path> dir = directory(platform, uid, startTime);
+        if (dir.isEmpty()) {
+            return;
+        }
+        Path path = dir.get().resolve(EVENT_FILE);
+        synchronized (writeLock) {
+            if (Files.exists(dir.get().resolve(DETAIL_FILE))) {
+                log.debug("{} 的这一场已封存, 不再收录事件流水", uid);
+                return;
+            }
+            long count = danmuCounts.computeIfAbsent(path.toString(), key -> new AtomicLong(countLines(path))).get();
+            if (count >= DANMU_LIMIT) {
+                if (count == DANMU_LIMIT) {
+                    log.warn("主播 {} 本场事件流水已达上限 {} 条, 后续不再留档", uid, DANMU_LIMIT);
+                    danmuCounts.get(path.toString()).incrementAndGet();
+                }
+                return;
+            }
+            try {
+                JSONObject json = new JSONObject();
+                json.put("at", at);
+                json.put("t", type);
+                fields.forEach(json::put);
+                Files.createDirectories(dir.get());
+                Files.writeString(path, json.toJSONString() + System.lineSeparator(),
+                        StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+                danmuCounts.get(path.toString()).incrementAndGet();
+            } catch (IOException e) {
+                log.debug("留档事件流水失败: {}", e.getMessage());
             }
         }
     }
@@ -260,6 +302,33 @@ public class LiveDetailArchive {
             return List.of();
         } catch (IOException e) {
             log.error("读取弹幕原文失败", e);
+            return List.of();
+        }
+        return result;
+    }
+
+    /** 读一场的事件流水。文件不存在回空列表；坏行跳过。 */
+    public List<Map<String, Object>> readEvents(@NonNull String platform, @NonNull Long uid, long startTime) {
+        Optional<Path> dir = directory(platform, uid, startTime);
+        if (dir.isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, Object>> result = new ArrayList<>();
+        try (Stream<String> lines = Files.lines(dir.get().resolve(EVENT_FILE), StandardCharsets.UTF_8)) {
+            lines.forEach(line -> {
+                try {
+                    JSONObject json = JSON.parseObject(line);
+                    if (json != null) {
+                        result.add(json);
+                    }
+                } catch (Exception e) {
+                    log.debug("跳过事件流水里无法解析的一行: {}", e.getMessage());
+                }
+            });
+        } catch (NoSuchFileException e) {
+            return List.of();
+        } catch (IOException e) {
+            log.error("读取事件流水失败", e);
             return List.of();
         }
         return result;
