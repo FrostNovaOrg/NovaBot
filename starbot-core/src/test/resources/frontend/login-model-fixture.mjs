@@ -11,7 +11,7 @@
  * 在服务端拼进自己那张页面里的同一份字节。
  */
 
-import {loginView, lockText} from '../../../main/resources/config-ui/login-model.js';
+import {loginView, lockText, loginControlState} from '../../../main/resources/config-ui/login-model.js';
 
 const failures = [];
 let checks = 0;
@@ -80,6 +80,29 @@ eq(lockText(60).includes('别急着去改'), true, '文案劝住「去改密码�
 // 拿变量拼出来的秒数是这条判据的要害：写死一个「15 分钟」的话，
 // 屏幕上那个数字与真实剩余时间无关，而两者长得一模一样
 eq(lockText(7) === lockText(8), false, '不同剩余时长给出不同文案');
+
+// ---------- 四、锁定时五颗控件的 disabled（闭集） ----------
+//
+// 键就是页面上那五颗控件的 id。少一项等于那一颗锁定期仍能点——
+// 眼睛漏了的那一版，锁定期仍能把口令揭开。
+const CONTROL_IDS = ['passkey', 'password', 'password-reveal', 'code', 'submit'];
+
+function controls(over) {
+  return loginControlState(loginView(Object.assign(
+    {hasPasskey: false, totpRequired: false, lockedSeconds: 0}, over)));
+}
+
+function keysOf(state) {
+  return Object.keys(state).sort();
+}
+
+const lockedControls = controls({lockedSeconds: 90});
+eq(keysOf(lockedControls), CONTROL_IDS.slice().sort(), '锁定态键集恰五个');
+for (const id of CONTROL_IDS) eq(lockedControls[id], true, '锁定 90 秒时 ' + id + ' 禁');
+
+const freeControls = controls({lockedSeconds: 0});
+eq(keysOf(freeControls), CONTROL_IDS.slice().sort(), '未锁定键集恰五个');
+for (const id of CONTROL_IDS) eq(freeControls[id], false, '未锁定时 ' + id + ' 不禁');
 
 // ---------- 报数 ----------
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

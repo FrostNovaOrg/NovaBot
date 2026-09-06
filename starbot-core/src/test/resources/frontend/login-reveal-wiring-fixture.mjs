@@ -1,19 +1,18 @@
 /**
- * 登录页锁定接线与机密按钮样式、加主播空输入句的夹具
+ * 登录页 paint 接线、机密按钮样式、加主播空输入句的夹具
  *
- * 量四件事，都是源码里写了才成立、漏写页面上照样能用：
- *   锁定时「显示」是否跟着禁（paint 漏了这一颗，锁定期仍能揭开口令）；
+ * 量三件事，都是源码里写了才成立、漏写页面上照样能用：
+ *   paint 是否按 loginControlState 遍历挂 disabled；
  *   登录页内联 .secret button 与 app.css 那一份数字是否相同；
- *   加主播空输入句与 placeholder 是否同一条常量；
- *   眼睛接线落点数是否等于闭集长度，改口令三栏是否真接到共用构件。
+ *   加主播空输入句与 placeholder 是否同一条常量（推送页与初始设置页）。
  *
+ * 眼睛落点改由 password-reveal-fixture 运行期登记。
  * 由 LoginRevealWiringTest 拉起。引用的是源码树里那几份，不是构建产物里的副本。
  */
 
 import {readFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {PASSWORD_REVEAL_SITES} from '../../../main/resources/config-ui/password-reveal.js';
 
 const ui = join(dirname(fileURLToPath(import.meta.url)), '../../../main/resources/config-ui');
 const read = name => readFileSync(join(ui, name), 'utf8');
@@ -33,8 +32,8 @@ const paintStart = login.indexOf('function paint()');
 const paintEnd = login.indexOf('function tick()');
 eq(paintStart >= 0 && paintEnd > paintStart, true, 'login.html 里找得到 paint');
 const paint = paintStart >= 0 && paintEnd > paintStart ? login.slice(paintStart, paintEnd) : '';
-eq(paint.includes("$('#password-reveal').disabled = view.disabled"), true,
-  '锁定时眼睛随 locked 禁');
+eq(paint.includes('loginControlState('), true, 'paint 问 loginControlState');
+eq(/for\s*\(\s*const id of Object\.keys\(/.test(paint), true, 'paint 遍历挂 disabled');
 
 function secretButtonProps(css) {
   const match = css.match(/(?:^|[\n}])\s*\.secret button\s*\{([^}]+)\}/);
@@ -62,43 +61,19 @@ eq(push.includes("placeholder = '输入 ' + STREAMER_INPUT_HINT"), true,
 eq(push.includes("'请先输入 ' + STREAMER_INPUT_HINT"), true, '空输入句用同一条常量');
 eq(push.includes('请先输入 uid、直播间号或链接'), false, '旧空输入句已撤');
 
-const settings = read('settings.js');
-const tokens = read('tokens.js');
-eq(settings.includes("from './password-reveal.js'"), true, 'settings.js 接到共用构件');
-eq(tokens.includes("from './password-reveal.js'"), true, 'tokens.js 接到共用构件');
-eq(settings.includes('bindPasswordReveal'), true, 'settings.js 调用 bindPasswordReveal');
-eq(tokens.includes('bindPasswordReveal'), true, 'tokens.js 调用 bindPasswordReveal');
-eq((settings.match(/type === 'password'/g) || []).length, 0,
-  'settings.js 不再自写 type === password 切换');
-eq((tokens.match(/type === 'password'/g) || []).length, 0,
-  'tokens.js 不再自写 type === password 切换');
-
-function dropCount(src) {
-  // attachEye 体内那一次 bindPasswordReveal 是共用构件的接线，不是第六处落点
-  const withoutHelper = src.replace(
-    /function\s+attachEye\s*\([^)]*\)\s*\{[\s\S]*?\n\}/,
-    '',
-  );
-  const binds = withoutHelper.match(/\bbindPasswordReveal\s*\(/g) || [];
-  const eyes = withoutHelper.match(/\battachEye\s*\(/g) || [];
-  return binds.length + eyes.length;
-}
-
-const auth = read('settings-auth.js');
-const drops = dropCount(read('login.html'))
-  + dropCount(settings)
-  + dropCount(tokens)
-  + dropCount(auth);
-eq(drops, PASSWORD_REVEAL_SITES.length,
-  '四份界面的 bindPasswordReveal／attachEye 落点数＝闭集长度');
-eq(/function\s+attachEye[\s\S]*?\bbindPasswordReveal\s*\(/.test(auth), true,
-  'attachEye 接到共用构件');
-eq(auth.includes('attachEye(current)') && auth.includes("currentEye.id = 'pwd-current-reveal'"),
-  true, 'pwd-current 经 attachEye 接线');
-eq(auth.includes('attachEye(next)') && auth.includes("nextEye.id = 'pwd-next-reveal'"),
-  true, 'pwd-next 经 attachEye 接线');
-eq(auth.includes('attachEye(again)') && auth.includes("againEye.id = 'pwd-again-reveal'"),
-  true, 'pwd-again 经 attachEye 接线');
+const setup = read('setup.js');
+eq(setup.includes('STREAMER_INPUT_HINT'), true, 'setup.js 用同一条常量');
+eq(setup.includes("'uid、直播间号或链接'"), false, 'setup 旧标签已撤');
+const lookupClick = (() => {
+  const from = setup.indexOf("look.id = 'setup-lookup'");
+  const to = setup.indexOf('host.appendChild(look)');
+  return from >= 0 && to > from ? setup.slice(from, to) : '';
+})();
+eq(lookupClick.length > 0, true, '找得到 setup 找一下的接线');
+eq(lookupClick.includes('STREAMER_INPUT_HINT'), true, 'setup 空输入句用同一条常量');
+const emptyGuard = lookupClick.indexOf('if (!value)');
+const lookupCall = lookupClick.indexOf("api('/streamer/lookup'");
+eq(emptyGuard >= 0 && lookupCall > emptyGuard, true, 'setup 空值在发请求前拦住');
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);

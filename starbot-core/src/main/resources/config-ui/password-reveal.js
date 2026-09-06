@@ -14,6 +14,17 @@ export const PASSWORD_REVEAL_SITES = [
   'login', 'pwd-current', 'pwd-next', 'pwd-again', 'settings', 'tokens',
 ];
 
+/** bindPasswordReveal 运行期按 button.id 登过的落点 */
+const boundRevealIds = [];
+
+/**
+ * 这一趟 bindPasswordReveal 登记过的 button.id，按首次接线顺序
+ * @return {string[]}
+ */
+export function boundPasswordRevealIds() {
+  return boundRevealIds.slice();
+}
+
 /**
  * 这一刻口令框该长什么样
  * @param revealed 是否已经揭开
@@ -46,6 +57,11 @@ export function togglePasswordReveal(state) {
 export function bindPasswordReveal(input, button) {
   if (!input || !button) {
     return {setRevealed() {}};
+  }
+
+  const id = button.id;
+  if (id && boundRevealIds.indexOf(id) < 0) {
+    boundRevealIds.push(id);
   }
 
   let state = passwordReveal(false);

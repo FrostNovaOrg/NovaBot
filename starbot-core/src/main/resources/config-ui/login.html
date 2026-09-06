@@ -257,11 +257,10 @@
     $('#lock').classList.toggle('hidden', !view.locked);
     $('#lock').textContent = view.lockText;
 
-    $('#passkey').disabled = view.disabled;
-    $('#password').disabled = view.disabled;
-    $('#password-reveal').disabled = view.disabled;
-    $('#code').disabled = view.disabled;
-    $('#submit').disabled = view.disabled;
+    const controls = loginControlState(view);
+    for (const id of Object.keys(controls)) {
+      $('#' + id).disabled = controls[id];
+    }
   }
 
   /**

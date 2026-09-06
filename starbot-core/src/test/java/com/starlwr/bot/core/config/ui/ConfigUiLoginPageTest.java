@@ -51,6 +51,16 @@ class ConfigUiLoginPageTest {
     }
 
     @Test
+    @DisplayName("拼好的登录页带着锁定控件表")
+    void realPageCarriesControlState() throws IOException {
+        String html = ConfigUiLoginPage.html();
+        assertTrue(html.contains("export function loginControlState"),
+                "锁定时禁哪几颗由 loginControlState 算，缺了它 paint 遍历无从问起");
+        assertTrue(html.contains("'password-reveal'"),
+                "控件表里须有眼睛那一颗，漏了锁定期仍能揭开口令");
+    }
+
+    @Test
     @DisplayName("🔴 页面里没有占位时当场抛，不静默发一张点不动的页出去")
     void missingMarkerThrows() {
         IllegalStateException error = assertThrows(IllegalStateException.class,

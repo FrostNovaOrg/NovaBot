@@ -18,7 +18,7 @@ import {ask} from './confirm.js';
 import {$, api, el, esc, markDirty, say} from './core.js';
 import {resolveTarget, targetOptions} from './links-model.js';
 import {registerPasskey} from './passkeys.js';
-import {renderStreamers, serializePush} from './push.js';
+import {renderStreamers, serializePush, STREAMER_INPUT_HINT} from './push.js';
 import {SETUP_STEPS, allDone, canAdvance, initialRows, railMarks, startAt, stepFacts, summaryLines}
   from './setup-model.js';
 import {store} from './store.js';
@@ -594,7 +594,7 @@ function schedulePoll(accounts) {
 
 function stepStreamer(host) {
   heading(host, SETUP_STEPS[3].title,
-    '填主播的 uid 或直播间号，也可以直接粘贴空间链接或直播间链接。');
+    '填主播的 ' + STREAMER_INPUT_HINT + '。');
 
   // 装了哪些直播平台是运行期才知道的事，三种情形都要说清楚——
   // 与推送页「添加主播」那个面板同一条规矩（见 push.js 的 addStreamer）
@@ -623,7 +623,7 @@ function stepStreamer(host) {
   }
 
   const row = el('div', 'su-row');
-  const input = field(row, 'uid、直播间号或链接', 'setup-uid', 'text',
+  const input = field(row, STREAMER_INPUT_HINT, 'setup-uid', 'text',
     draft.streamer ? String(draft.streamer.uid) : '', null);
   host.appendChild(row);
 
@@ -635,6 +635,13 @@ function stepStreamer(host) {
   look.id = 'setup-lookup';
   look.textContent = '找一下';
   look.addEventListener('click', async () => {
+    const value = input.value.trim();
+    if (!value) {
+      result.textContent = '请先输入 ' + STREAMER_INPUT_HINT + '。';
+      result.className = 'su-r';
+      return;
+    }
+
     look.disabled = true;
     result.textContent = '查询中…';
     result.className = 'su-r';
@@ -643,7 +650,7 @@ function stepStreamer(host) {
     try {
       const res = await api('/streamer/lookup', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({platform: chosen, uid: input.value.trim()}),
+        body: JSON.stringify({platform: chosen, uid: value}),
       });
       if (res.success) {
         draft.streamer = {platform: chosen, uid: res.uid, uname: res.uname, roomId: res.roomId,

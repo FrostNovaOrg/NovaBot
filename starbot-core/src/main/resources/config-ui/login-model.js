@@ -70,3 +70,24 @@ export function loginView(state) {
     lockText: lockText(seconds),
   };
 }
+
+/**
+ * 锁定时哪几颗控件该禁
+ *
+ * 返回表的键就是页面上那五颗控件的 id，闭集：少一项等于那一颗锁定期仍能点。
+ * 眼睛漏写的那一版，锁定期仍能把口令揭开。paint 只按表挂 disabled，
+ * 不在这里判谁该禁——判在 {@link loginView}。
+ * @param view {@link loginView} 的返回值
+ * @return {{passkey: boolean, password: boolean, 'password-reveal': boolean,
+ *   code: boolean, submit: boolean}}
+ */
+export function loginControlState(view) {
+  const on = !!(view && view.disabled);
+  return {
+    passkey: on,
+    password: on,
+    'password-reveal': on,
+    code: on,
+    submit: on,
+  };
+}

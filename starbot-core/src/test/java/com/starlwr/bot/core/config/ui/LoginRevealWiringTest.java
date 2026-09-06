@@ -20,7 +20,7 @@ class LoginRevealWiringTest {
             "starbot-core/src/test/resources/frontend/login-reveal-wiring-fixture.mjs";
 
     @Test
-    @DisplayName("锁定禁眼睛、两份 .secret 数字相同、空输入句与 placeholder 同一常量、眼睛落点按源码计数")
+    @DisplayName("paint 遍历挂 disabled、两份 .secret 数字相同、空输入句与 placeholder 同一常量")
     void lockEyeSecretCopyAndSixSites() throws IOException, InterruptedException {
         FrontendFixture.run(FIXTURE, "登录页眼睛接线与加主播空输入句");
     }
