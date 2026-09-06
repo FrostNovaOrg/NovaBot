@@ -77,6 +77,19 @@ export function stopSetupPolling() {
 }
 
 /**
+ * 已配过则回填地址端口并清空 Token，草稿回到与盘上一致；未配过原样返回
+ */
+function syncBotDraft(draft, bot) {
+  if (!bot.configured) return draft;
+  if (bot.address) draft.bot.address = String(bot.address);
+  if (bot.httpPort) draft.bot.httpPort = String(bot.httpPort);
+  if (bot.websocketPort) draft.bot.wsPort = String(bot.websocketPort);
+  draft.bot.httpToken = '';
+  draft.bot.wsToken = '';
+  return draft;
+}
+
+/**
  * 打开初始设置页：取事实、定落点、画出来
  *
  * 三份回包一起等再画：分三次画的话，进度条已经按新的一份变绿，而正文还是上一份算出来的。
@@ -91,13 +104,8 @@ export async function openSetup() {
       api('/status'), api('/login'), api('/setup/state'), api('/setup/bot')]);
     seen = {status, login, mark};
     // 已经配过的地址与端口回填，免得「重新跑一遍」的人对着 127.0.0.1 重敲一遍自己的地址。
-    // 两个 Token 有意不回填：回填只省几次输入，却让凭据白白多经过一次浏览器；
-    // 保存端对空白字段是「保持原值」，留空不会把已有的抹掉
-    if (bot.configured) {
-      if (bot.address) draft.bot.address = String(bot.address);
-      if (bot.httpPort) draft.bot.httpPort = String(bot.httpPort);
-      if (bot.websocketPort) draft.bot.wsPort = String(bot.websocketPort);
-    }
+    // Token 清空：重进时草稿须回到与盘上一致；保存端对空白字段仍是「保持原值」。
+    syncBotDraft(draft, bot);
   } catch (e) {
     main.textContent = '';
     main.appendChild(note('err', '载入失败：' + e.message
