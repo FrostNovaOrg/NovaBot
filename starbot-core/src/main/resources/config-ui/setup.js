@@ -19,6 +19,8 @@ import {$, api, el, esc, markDirty, say} from './core.js';
 import {resolveTarget, targetOptions} from './links-model.js';
 import {registerPasskey} from './passkeys.js';
 import {renderStreamers, serializePush, STREAMER_INPUT_HINT} from './push.js';
+import {setAuthState} from './settings-auth.js';
+import {renderGeneral} from './settings.js';
 import {SETUP_STEPS, allDone, canAdvance, initialRows, railMarks, startAt, stepFacts, summaryLines}
   from './setup-model.js';
 import {store} from './store.js';
@@ -209,6 +211,27 @@ async function refreshFacts() {
   }
 }
 
+/**
+ * 上锁之后把登录态从服务端再取一遍
+ *
+ * 载入时那一份还是「没口令」。不回灌的话，设置页「登录与安全」仍画「还没设口令」，
+ * 顶栏「退出登录」也不出，整页刷新才正。
+ */
+async function refreshAuthState() {
+  try {
+    const state = await api('/auth/state');
+    if (state.csrfToken) store.csrfToken = state.csrfToken;
+    store.totpRequired = !!state.totpRequired;
+    if (typeof state.setupDone === 'boolean') store.setupDone = state.setupDone;
+    setAuthState(state);
+    $('#auth-actions').style.display = state.enabled ? '' : 'none';
+    $('#op-banner').style.display = state.operatorSession ? '' : 'none';
+    renderGeneral();
+  } catch (e) {
+    // 口令已经落下。这一趟取不到的话，设置页与顶栏仍是上锁前的画面，刷新即正
+  }
+}
+
 // ============ 页面零件 ============
 
 function heading(host, title, desc) {
@@ -376,6 +399,7 @@ function stepLock(host) {
         // 口令一存下去这台机器就上了锁，第一步随之成立。重画是为了把那一格变绿、
         // 顺带把通行密钥那个按钮解开——这一步已经没有正在填的格子要保
         await refreshFacts();
+        await refreshAuthState();
         render();
         return;
       }
