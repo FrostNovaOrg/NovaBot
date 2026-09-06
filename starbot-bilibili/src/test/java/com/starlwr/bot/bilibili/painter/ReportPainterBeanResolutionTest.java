@@ -11,7 +11,6 @@ import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.factory.StarBotCommonPainterFactory;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
 import com.starlwr.bot.core.service.LiveDataService;
-import com.starlwr.bot.core.service.LiveReportArchive;
 import com.starlwr.bot.core.service.LiveRoomInfoHistory;
 import com.starlwr.bot.core.service.RevenueVisibilityService;
 import com.starlwr.bot.core.util.FontUtil;
@@ -95,7 +94,6 @@ class ReportPainterBeanResolutionTest {
         beans.registerSingleton("liveDataService", mock(LiveDataService.class));
         beans.registerSingleton("starBotMessageSender", mock(StarBotMessageSender.class));
         beans.registerSingleton("revenueVisibilityService", mock(RevenueVisibilityService.class));
-        beans.registerSingleton("liveReportArchive", mock(LiveReportArchive.class));
         beans.registerSingleton("abstractDataSource", mock(AbstractDataSource.class));
         beans.registerSingleton("bilibiliStreamerChoice", mock(BilibiliStreamerChoice.class));
 

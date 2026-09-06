@@ -408,7 +408,7 @@ export function pageBar(page) {
  *
  * 取图这件事在屏幕上有三种样子，缺一种就会有一段时间什么也不说：
  * <ul>
- *   <li>正在取——缓存过期的老场次要现画，几百毫秒到几秒。不说的话，
+ *   <li>正在取——每次都按当场数据现画，几百毫秒到几秒。不说的话，
  *   那几秒里屏幕上是一片空白，而空白与「这一场没有报告」长得一样。</li>
  *   <li>拿到了——显示图。</li>
  *   <li>没有——照服务端给的那句人话说。它分得清「没开下播报告」与「早于留明细那个功能」，
@@ -421,7 +421,7 @@ export function pageBar(page) {
 export function reportView(phase, message) {
   if (phase === 'ok') return {image: true, text: ''};
   if (phase === 'loading') {
-    return {image: false, text: '正在取这一场的报告图。缓存过期的老场次要现画，请稍候。'};
+    return {image: false, text: '正在取这一场的报告图。每次都按当场数据现画，请稍候。'};
   }
   return {
     image: false,

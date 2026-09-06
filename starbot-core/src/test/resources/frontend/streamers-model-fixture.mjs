@@ -226,7 +226,7 @@ eq(pageBar({total: 5, page: 1, size: 20, pages: 1}).page, 1, '页码以服务端
 // ---------- 十一、报告图三态 ----------
 eq(reportView('ok'), {image: true, text: ''}, '拿到了就显示图');
 eq(reportView('loading'),
-  {image: false, text: '正在取这一场的报告图。缓存过期的老场次要现画，请稍候。'},
+  {image: false, text: '正在取这一场的报告图。每次都按当场数据现画，请稍候。'},
   '正在取要说一句——不说的话，那几秒的空白与「这一场没有报告」长得一样');
 eq(reportView('missing', '这一场没有报告图，也没有留下明细数据，重新绘制不出来：可能没开下播报告'),
   {image: false, text: '这一场没有报告图，也没有留下明细数据，重新绘制不出来：可能没开下播报告'},
