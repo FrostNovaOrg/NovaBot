@@ -12,6 +12,7 @@ import org.yaml.snakeyaml.Yaml;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -558,6 +559,44 @@ class ConfigurationFileServiceTest {
                 "裸写 quiet-start: 23:00 时 SnakeYAML 按 YAML 1.1 六十进制把它读成整数 1380");
 
         assertTrue(content().contains("quiet-start: \"23:00\""), content());
+    }
+
+    @Test
+    @DisplayName("# 前无空白不算注释：a#b、链接锚点整个是值；空白后的 # 才是注释")
+    void hashWithoutLeadingWhitespaceIsNotComment() throws IOException {
+        String key = "starbot.core.push.quiet-start";
+        List<String> unresolved = new ArrayList<>();
+
+        // ① # 紧贴前文：写盘再读回必须是整个值，行尾注释不丢，回显值再存不该有改动
+        try {
+            service.write(Map.of(key, "a#b"));
+            assertEquals("a#b", service.read().get(key), "a#b 里的 # 是值的一部分, 不该在 # 前截断");
+            List<String> rewritten = service.write(Map.of(key, service.read().get(key)));
+            assertEquals(List.of(), rewritten, "盘上值与回显值一致时, 再存一次应当没有任何改动");
+            String line = content().lines().filter(l -> l.contains("quiet-start")).findFirst().orElseThrow();
+            assertTrue(line.contains("# 静音时段开始"), "行尾注释应原样保留: " + line);
+        } catch (AssertionError | IOException e) {
+            unresolved.add("① a#b: " + e.getMessage());
+        }
+
+        // ② URL 锚点的 # 同样是值的一部分
+        try {
+            service.write(Map.of(key, "http://x/#frag"));
+            assertEquals("http://x/#frag", service.read().get(key), "链接锚点不该在 # 前截断");
+        } catch (AssertionError | IOException e) {
+            unresolved.add("② http://x/#frag: " + e.getMessage());
+        }
+
+        // ③ 阳性对照：# 前有空白才是注释起点；含 " #" 的值 render 会加引号，读回是完整值
+        try {
+            service.write(Map.of(key, "x #y"));
+            assertEquals("x #y", service.read().get(key), "含空格井号的值落盘带引号, 读回应是完整值");
+        } catch (AssertionError | IOException e) {
+            unresolved.add("③ x #y: " + e.getMessage());
+        }
+
+        assertTrue(unresolved.isEmpty(),
+                () -> "井号三问中 " + unresolved.size() + " 问未销: " + String.join("; ", unresolved));
     }
 
     // ============ 值里带引号 ============
