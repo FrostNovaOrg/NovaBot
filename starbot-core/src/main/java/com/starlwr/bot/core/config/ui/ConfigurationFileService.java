@@ -261,7 +261,7 @@ public class ConfigurationFileService {
      * 而事后再算一遍得到的是「现在有哪些项与默认值不同」，答的已经是另一个问题了。
      * @param changes 待写入的配置项名到取值
      * @return 实际发生改动的配置项名
-     * @throws IOException 读写失败或存在含换行的标量值时抛出
+     * @throws IOException 读写失败、存在含换行的标量值或有配置项在文件里找不到上级块时抛出
      */
     public synchronized List<String> write(Map<String, String> changes) throws IOException {
         if (changes.isEmpty()) {
@@ -327,13 +327,19 @@ public class ConfigurationFileService {
             }
         }
 
-        // 配置文件中尚不存在的项追加到其最近的已有祖先之下
+        // 配置文件中尚不存在的项追加到其最近的已有祖先之下；有一项插不进去则整批不落盘（见下方抛错）
+        List<String> unplaceable = new ArrayList<>();
         for (Map.Entry<String, String> entry : missing) {
             if (insert(lines, entry.getKey(), entry.getValue())) {
                 changed.add(entry.getKey());
             } else {
-                log.warn("配置项 {} 无法定位到合适的插入位置, 已跳过", entry.getKey());
+                unplaceable.add(entry.getKey());
             }
+        }
+
+        if (!unplaceable.isEmpty()) {
+            throw new IOException("配置项 " + String.join(", ", unplaceable)
+                    + " 在文件里没有它的任何上级块, 本批全部未保存, 请先在配置文件里补上该块");
         }
 
         if (!changed.isEmpty()) {
