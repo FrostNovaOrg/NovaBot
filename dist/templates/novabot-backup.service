@@ -1,0 +1,20 @@
+# NovaBot 直播数据备份（一次性任务，由 novabot-backup.timer 触发）
+#
+# 启用前改两处：
+#   1. ExecStart 末尾的目标路径（本机目录或 user@host:/path）
+#   2. 若安装目录不是 /opt/starbot，同步改脚本路径与数据目录
+#
+# 装上：把本文件与 novabot-backup.timer 拷到 /etc/systemd/system/，改完占位后
+#   sudo systemctl daemon-reload && sudo systemctl enable --now novabot-backup.timer
+
+[Unit]
+Description=NovaBot live data backup
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=starbot
+Group=starbot
+WorkingDirectory=/opt/starbot
+ExecStart=/opt/starbot/tools/data-backup.sh /opt/starbot/data <目标占位>
