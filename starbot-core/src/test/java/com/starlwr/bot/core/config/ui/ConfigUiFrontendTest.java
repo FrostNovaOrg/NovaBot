@@ -2094,7 +2094,14 @@ class ConfigUiFrontendTest {
                 bad.add("豁免名单里的 " + model + " 在界面目录里已经没有了，名单该更新");
                 continue;
             }
-            if (!looped.contains(model)) {
+            boolean named = false;
+            for (String path : looped) {
+                if (path.equals(model) || path.endsWith("/" + model)) {
+                    named = true;
+                    break;
+                }
+            }
+            if (!named) {
                 bad.add("豁免件 " + model + " 没有任何一把尺的语法循环代码行收进它，构建连语法都不量");
             }
         }
@@ -2121,7 +2128,8 @@ class ConfigUiFrontendTest {
 
         int success = lock.indexOf("res.success");
         assertTrue(success >= 0, "stepLock 里没有 res.success 分支");
-        String branch = lock.substring(success).replaceAll("//[^\\n]*", "");
+        String branch = bracedBlockAfter(lock, success).replaceAll("//[^\\n]*", "");
+        assertFalse(branch.isBlank(), "res.success 所在 if 没有配平的花括号，成功分支无从量起");
         assertTrue(Pattern.compile("\\brefreshAuthState\\s*\\(").matcher(branch).find(),
                 "上锁成功分支没有调用 refreshAuthState");
 
@@ -2143,10 +2151,7 @@ class ConfigUiFrontendTest {
     @Test
     @DisplayName("界面与插件页全部 .js 都在某把尺的语法循环代码行里")
     void allFrontendScriptsAreCoveredBySyntaxLoops() throws IOException {
-        Set<String> scripts = new LinkedHashSet<>();
-        scripts.addAll(coreSources().keySet());
-        scripts.addAll(pageSources().keySet());
-
+        Set<String> scripts = frontendScriptKeys();
         Set<String> covered = jsNamedInAllSyntaxLoops();
 
         List<String> bad = new ArrayList<>();
@@ -2157,8 +2162,8 @@ class ConfigUiFrontendTest {
         }
         assertTrue(bad.isEmpty(), "这些脚本构建连语法都不量:\n  " + String.join("\n  ", bad));
         assertFalse(scripts.isEmpty() || covered.isEmpty(), "上面那条「有名单」因此不作数");
-        assertTrue(scripts.contains("bilibili.js"),
-                "插件页目录里找不到 bilibili.js，本格对它的覆盖因此不作数");
+        assertTrue(scripts.contains("config-ui-pages/bilibili.js"),
+                "插件页目录里找不到 config-ui-pages/bilibili.js，本格对它的覆盖因此不作数");
     }
 
     /**
@@ -2172,22 +2177,65 @@ class ConfigUiFrontendTest {
     void syntaxLoopCoverageIgnoresCommentedFileNames() throws IOException {
         String original = Files.readString(
                 repoRoot().resolve("tools/links-model-check.sh"), StandardCharsets.UTF_8);
-        assertTrue(jsNamedInSyntaxLoops(original).contains("tokens-model.js"),
-                "本格的阴性对照要先有阳性：原尺代码行里必须有 tokens-model.js");
+        assertTrue(jsNamedInSyntaxLoops(original).contains("config-ui/tokens-model.js"),
+                "本格的阴性对照要先有阳性：原尺代码行里必须有 config-ui/tokens-model.js");
         assertTrue(original.contains(" \"$UI\"/tokens-model.js"),
                 "原尺没有「 $UI/tokens-model.js」这一段，突变无从做起");
 
         String without = original.replace(" \"$UI\"/tokens-model.js", "");
         String mutated = without.replaceFirst("(?m)^(for f in )", "# tokens-model.js\n$1");
         assertTrue(mutated.contains("# tokens-model.js"), "突变没把文件名写进注释");
-        assertFalse(jsNamedInSyntaxLoops(mutated).contains("tokens-model.js"),
+        assertFalse(jsNamedInSyntaxLoops(mutated).contains("config-ui/tokens-model.js"),
                 "把 tokens-model.js 从 for 行挪进注释后仍算收进，这一格量不动");
     }
 
     /**
-     * 一把尺脚本里，语法循环 {@code for f in …} 的代码行点到的 .js 文件名
+     * 尺只点 {@code $UI/setup.js} 时，同名的插件页脚本不得算收进
+     * <p>
+     * 旧判法只比文件名：名单里再放一份 {@code config-ui-pages/setup.js}，尺没点它也绿。
+     * 本格在内存里构造这一对，不改盘上的尺。
+     */
+    @Test
+    @DisplayName("语法循环覆盖按相对路径区分同名异目录")
+    void syntaxLoopCoverageDistinguishesSameNameInDifferentDirs() {
+        String ruler = "for f in \"$UI\"/setup.js; do :; done\n";
+        Set<String> covered = jsNamedInSyntaxLoops(ruler);
+
+        Set<String> oldBasenames = new LinkedHashSet<>();
+        Matcher bare = Pattern.compile("([A-Za-z0-9._-]+\\.js)").matcher(ruler);
+        while (bare.find()) {
+            oldBasenames.add(bare.group(1));
+        }
+        Set<String> listed = new LinkedHashSet<>();
+        listed.add("config-ui/setup.js");
+        listed.add("config-ui-pages/setup.js");
+
+        assertTrue(oldBasenames.contains("setup.js"),
+                "旧对照坏了：尺文本里应有 setup.js 这个文件名");
+        boolean oldWouldCoverBoth = true;
+        for (String name : listed) {
+            String base = name.substring(name.lastIndexOf('/') + 1);
+            if (!oldBasenames.contains(base)) {
+                oldWouldCoverBoth = false;
+                break;
+            }
+        }
+        assertTrue(oldWouldCoverBoth,
+                "旧对照坏了：按文件名会把两个目录的 setup.js 都算收进");
+
+        assertTrue(covered.contains("config-ui/setup.js"),
+                "尺点了 $UI/setup.js，应按相对路径收进 config-ui/setup.js");
+        assertFalse(covered.contains("config-ui-pages/setup.js"),
+                "尺只点 $UI/setup.js 却把 config-ui-pages/setup.js 也算收进");
+    }
+
+    /**
+     * 一把尺脚本里，语法循环 {@code for f in …} 的代码行点到的 .js 相对路径
      * <p>
      * 注释行不算：把文件名从 for 行挪进注释之后，全文 contains 仍绿，这一格就量不动了。
+     * 路径按尺里的目录变量映射：{@code $UI} → {@code config-ui/}，
+     * {@code $PAGES} → {@code config-ui-pages/}。只比文件名的话，
+     * {@code config-ui/x.js} 与 {@code config-ui-pages/x.js} 同名时收进一份也判两份都在。
      */
     private Set<String> jsNamedInSyntaxLoops(String script) {
         StringBuilder code = new StringBuilder();
@@ -2202,16 +2250,39 @@ class ConfigUiFrontendTest {
         Set<String> names = new LinkedHashSet<>();
         Matcher loop = Pattern.compile("for\\s+f\\s+in\\s+([^;]+)").matcher(code);
         while (loop.find()) {
-            Matcher js = Pattern.compile("([A-Za-z0-9._-]+\\.js)").matcher(loop.group(1));
+            Matcher js = Pattern.compile("\"\\$(UI|PAGES)\"/([A-Za-z0-9._-]+\\.js)").matcher(loop.group(1));
             while (js.find()) {
-                names.add(js.group(1));
+                String dir = "UI".equals(js.group(1)) ? "config-ui/" : "config-ui-pages/";
+                names.add(dir + js.group(2));
             }
         }
         return names;
     }
 
     /**
-     * {@code tools/*-check.sh} 里所有语法循环代码行点到的 .js 文件名
+     * 界面目录与插件页目录里每一份 .js 的相对路径，相对 {@link #frontendDir()} 的上一级
+     * <p>
+     * 插件页不在那一层下面，键仍用 {@code config-ui-pages/} 前缀，与尺里 {@code $PAGES} 对齐。
+     */
+    private Set<String> frontendScriptKeys() throws IOException {
+        Set<String> names = new LinkedHashSet<>();
+        try (Stream<Path> files = Files.list(frontendDir())) {
+            files.filter(p -> p.getFileName().toString().endsWith(".js"))
+                    .sorted()
+                    .forEach(p -> names.add("config-ui/" + p.getFileName()));
+        }
+        for (Path dir : pageDirs()) {
+            try (Stream<Path> files = Files.list(dir)) {
+                files.filter(p -> p.getFileName().toString().endsWith(".js"))
+                        .sorted()
+                        .forEach(p -> names.add("config-ui-pages/" + p.getFileName()));
+            }
+        }
+        return names;
+    }
+
+    /**
+     * {@code tools/*-check.sh} 里所有语法循环代码行点到的 .js 相对路径
      */
     private Set<String> jsNamedInAllSyntaxLoops() throws IOException {
         Path tools = repoRoot().resolve("tools");
@@ -2284,5 +2355,31 @@ class ConfigUiFrontendTest {
         next.region(m.end(), text.length());
         int to = next.find() ? next.start() : text.length();
         return text.substring(m.start(), to);
+    }
+
+    /**
+     * 从 {@code from} 之后第一对配平花括号截出那一块，含括号本身
+     * <p>
+     * 用来取 {@code if (res.success) { … }} 的成功分支：从条件截到函数尾会把
+     * {@code else}／{@code catch} 也算进去，调用写在失败路径里照样绿。
+     */
+    private String bracedBlockAfter(String text, int from) {
+        int open = text.indexOf('{', from);
+        if (open < 0) {
+            return "";
+        }
+        int depth = 0;
+        for (int i = open; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '{') {
+                depth++;
+            } else if (c == '}') {
+                depth--;
+                if (depth == 0) {
+                    return text.substring(open, i + 1);
+                }
+            }
+        }
+        return "";
     }
 }
