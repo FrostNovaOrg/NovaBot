@@ -28,12 +28,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -457,8 +460,10 @@ class BilibiliLiveStatsAggregatorTest {
 
         try {
             liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
-            aggregator.onPaidGift(new BilibiliPaidGiftEvent(STREAMER, user(1L),
-                    new GiftInfo(31036L, "小花花", 5.2, 1, null), 5.2));
+            BilibiliPaidGiftEvent paid = new BilibiliPaidGiftEvent(STREAMER, user(1L),
+                    new GiftInfo(31036L, "小花花", 5.2, 1, null), 5.2);
+            paid.setCharged(3.0);
+            aggregator.onPaidGift(paid);
             aggregator.onRandomGift(new BilibiliRandomGiftEvent(STREAMER, user(2L),
                     new GiftInfo(2L, "心动盲盒", 9.9, 1, null),
                     new GiftInfo(3L, "嘉年华", 6.6, 1, null), 9.9, 6.6));
@@ -488,6 +493,65 @@ class BilibiliLiveStatsAggregatorTest {
             assertEquals(0, details.readEvents(PLATFORM, other.getUid(), start).size(), "③ 未开播 0 条");
         } catch (Throwable t) {
             red.add("③ " + t.getMessage());
+        }
+        try {
+            List<Map<String, Object>> events = details.readEvents(PLATFORM, STREAMER.getUid(), start);
+            assertEquals(5.2, ((Number) events.get(0).get("val")).doubleValue(), 0.0001, "④ val");
+            assertEquals(3.0, ((Number) events.get(0).get("pay")).doubleValue(), 0.0001, "④ pay");
+        } catch (Throwable t) {
+            red.add("④ " + t.getMessage());
+        }
+        try {
+            List<Map<String, Object>> events = details.readEvents(PLATFORM, STREAMER.getUid(), start);
+            assertEquals("心动盲盒", events.get(1).get("bn"), "⑤ bn");
+            assertEquals("嘉年华", events.get(1).get("gn"), "⑤ gn");
+            assertNotEquals(events.get(1).get("bn"), events.get(1).get("gn"), "⑤ bn≠gn");
+        } catch (Throwable t) {
+            red.add("⑤ " + t.getMessage());
+        }
+        try {
+            aggregator.onCommander(new BilibiliCommanderEvent(STREAMER, user(13L), 1998.0, 1, "月"));
+            aggregator.onGovernor(new BilibiliGovernorEvent(STREAMER, user(14L), 19998.0, 1, "月"));
+            List<Integer> levels = details.readEvents(PLATFORM, STREAMER.getUid(), start).stream()
+                    .filter(e -> "guard".equals(e.get("t")))
+                    .map(e -> ((Number) e.get("lv")).intValue())
+                    .toList();
+            assertEquals(1, levels.stream().filter(lv -> lv == 2).count(), "⑥ 提督 lv=2");
+            assertEquals(1, levels.stream().filter(lv -> lv == 1).count(), "⑥ 总督 lv=1");
+            BilibiliCaptainEvent noCharged = new BilibiliCaptainEvent(STREAMER, user(16L), 138.0, 1, "月");
+            aggregator.onCaptain(noCharged);
+            Map<String, Object> row = details.readEvents(PLATFORM, STREAMER.getUid(), start).stream()
+                    .filter(e -> "guard".equals(e.get("t")) && ((Number) e.get("uid")).longValue() == 16L)
+                    .findFirst()
+                    .orElseThrow();
+            assertEquals(((Number) row.get("val")).doubleValue(),
+                    ((Number) row.get("pay")).doubleValue(), 0.0001, "⑥ pay=val");
+        } catch (Throwable t) {
+            red.add("⑥ " + t.getMessage());
+        }
+        try {
+            Path isolatedDir = dir.resolve("nostart");
+            StarBotCoreProperties isolatedProps = new StarBotCoreProperties();
+            isolatedProps.getLive().setLiveDataPath(isolatedDir.resolve("data.json").toString());
+            DefaultLiveDataService isolatedLive = new DefaultLiveDataService(isolatedProps);
+            LiveDetailArchive isolatedDetails = new LiveDetailArchive(isolatedProps);
+            BilibiliLiveStatsAggregator isolatedAgg =
+                    new BilibiliLiveStatsAggregator(isolatedLive, isolatedDetails);
+            isolatedAgg.onPaidGift(new BilibiliPaidGiftEvent(STREAMER, user(1L),
+                    new GiftInfo(31036L, "小花花", 5.2, 1, null), 5.2));
+            isolatedAgg.onRandomGift(new BilibiliRandomGiftEvent(STREAMER, user(2L),
+                    new GiftInfo(2L, "心动盲盒", 9.9, 1, null),
+                    new GiftInfo(3L, "嘉年华", 6.6, 1, null), 9.9, 6.6));
+            isolatedAgg.onCaptain(new BilibiliCaptainEvent(STREAMER, user(3L), 138.0, 1, "月"));
+            isolatedAgg.onFollow(new BilibiliFollowEvent(STREAMER, user(4L)));
+            Path detailsRoot = isolatedDir.resolve("details");
+            Files.createDirectories(detailsRoot);
+            try (Stream<Path> walk = Files.walk(detailsRoot)) {
+                assertEquals(0, walk.filter(p -> "events.jsonl".equals(p.getFileName().toString())).count(),
+                        "⑦ 无开播不落");
+            }
+        } catch (Throwable t) {
+            red.add("⑦ " + t.getMessage());
         }
         if (!red.isEmpty()) {
             fail(red.size() + " 问红：" + String.join("；", red));
