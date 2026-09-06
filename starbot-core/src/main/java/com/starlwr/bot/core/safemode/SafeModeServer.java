@@ -292,13 +292,19 @@ public class SafeModeServer {
      * <p>
      * 配置若连解析都过不了就退回默认端口——此时也确实无从得知使用者配了什么。
      */
-    private int resolvePort() {
+    int resolvePort() { // 与 token() 同：只为同包的尺放开，不对外
         try {
             Object parsed = new Yaml().load(Files.readString(configPath, StandardCharsets.UTF_8));
             if (parsed instanceof Map<?, ?> root && root.get("server") instanceof Map<?, ?> server) {
                 Object port = server.get("port");
                 if (port instanceof Number number) {
                     return number.intValue();
+                }
+                if (port instanceof CharSequence cs) {
+                    int value = Integer.parseInt(cs.toString().strip());
+                    if (value >= 1 && value <= 65535) {
+                        return value;
+                    }
                 }
             }
         } catch (Exception e) {
