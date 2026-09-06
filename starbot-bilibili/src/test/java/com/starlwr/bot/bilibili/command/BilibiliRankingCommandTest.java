@@ -21,7 +21,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.DoubleFunction;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -205,6 +207,36 @@ class BilibiliRankingCommandTest {
         command.execute(context("礼物", String.valueOf(STREAMER)));
 
         verify(painter).paintRanking(any(), any(), eq(1), any(), any());
+    }
+
+    @Test
+    @DisplayName("盲盒盈亏零无号、正负带号")
+    void boxProfitScoreTextZeroUnsignedPositiveAndNegativeSigned() {
+        withRanking(1);
+
+        command.execute(context("盲盒盈亏"));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<DoubleFunction<String>> scoreText = ArgumentCaptor.forClass(DoubleFunction.class);
+        verify(painter).paintRanking(any(), any(), anyInt(), scoreText.capture(), any());
+        DoubleFunction<String> fmt = scoreText.getValue();
+
+        assertAll(
+                () -> {
+                    String label = fmt.apply(0.0);
+                    assertFalse(label.startsWith("+"), label);
+                    assertFalse(label.startsWith("-"), label);
+                    assertTrue(label.contains("¥"), label);
+                },
+                () -> {
+                    String label = fmt.apply(150.0);
+                    assertTrue(label.startsWith("+¥"), label);
+                },
+                () -> {
+                    String label = fmt.apply(-150.0);
+                    assertTrue(label.startsWith("-¥"), label);
+                }
+        );
     }
 
     /**
