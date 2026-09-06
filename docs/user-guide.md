@@ -767,7 +767,15 @@ starbot:
 
 掉登录的表现是动态推送静默停止（直播推送不受影响），健康自检会明确告警，重新扫码即可。
 
-## 9. 安全须知
+## 9. 异地备份
+
+直播数据可用一条命令同步到本机另一目录或另一台机器（不删目标已有文件，不同步 `reports/` 与 `*.tmp`）：
+
+    bash /opt/starbot/tools/data-backup.sh /opt/starbot/data user@backup-host:/var/backups/novabot
+
+每日凌晨 4 点自动跑：把安装目录下的 `novabot-backup.service` 与 `novabot-backup.timer` 拷到 `/etc/systemd/system/`；改 service 里的目标路径（安装目录若不是 `/opt/starbot`，脚本路径和数据目录一并改）；然后 `sudo systemctl enable --now novabot-backup.timer`。恢复：把备份目录整份拷回数据目录即可。
+
+## 10. 安全须知
 
 - 配置界面**默认只监听本机回环地址**并要求访问令牌。要从外网访问，请走 SSH 隧道，
   不要直接把端口暴露到公网
@@ -778,7 +786,7 @@ starbot:
   命令以参数数组执行而非交给 shell，因此昵称、弹幕内容无法逃逸成命令
 - 详见 [SECURITY.md](../SECURITY.md)
 
-## 10. 资源占用
+## 11. 资源占用
 
 空载实测常驻内存 105–110 MB；**带负载**（4.1.0，监听 2 位主播、直播间长连接与 OneBot 双通道
 均已建立、Redis 已启用）实测约 476 MB——**按后者规划机器内存**，512 MB 的机器不够用。
