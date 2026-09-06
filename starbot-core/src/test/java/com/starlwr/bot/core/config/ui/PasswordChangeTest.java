@@ -169,6 +169,25 @@ class PasswordChangeTest {
     }
 
     @Test
+    @DisplayName("不带会话 Cookie 改口令：注销数为 0，既有两把会话仍有效")
+    void changeWithoutCookieLeavesEverySession() {
+        ConfigUiSession first = authService.login(OLD.toCharArray(), null, "10.0.0.1").session();
+        ConfigUiSession second = authService.login(OLD.toCharArray(), null, "10.0.0.2").session();
+
+        ResponseEntity<JSONObject> response =
+                controller.changePassword(body(OLD, NEW), request(null));
+
+        assertEquals(200, response.getStatusCode().value());
+        assertTrue(response.getBody().getBooleanValue("success"), response.getBody().toJSONString());
+        assertEquals(0, response.getBody().getIntValue("revoked"),
+                "认不出当前这一把时把别处一并踢掉，刚办完的人会以为没办成");
+        assertTrue(authService.validate(first.getId()).isPresent(),
+                "不带 Cookie 不得注销第一把既有会话");
+        assertTrue(authService.validate(second.getId()).isPresent(),
+                "不带 Cookie 不得注销第二把既有会话");
+    }
+
+    @Test
     @DisplayName("新口令太短就拒")
     void shortPasswordIsRejected() {
         ResponseEntity<JSONObject> response =
