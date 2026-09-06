@@ -1179,8 +1179,9 @@ async function lookupStreamer(platformNames, input, go, out) {
     out.appendChild(found);
   } catch (e) {
     out.textContent = '查询失败：' + e.message;
+  } finally {
+    go.disabled = false;
   }
-  go.disabled = false;
 }
 
 // ============ 存盘与补全 ============
