@@ -228,40 +228,49 @@ function totpCard() {
   return box.card;
 }
 
+function recoverToggle(result, settle, prev, e) {
+  report(result, {success: false, message: '请求没发出去：' + e.message});
+  settle(prev);
+}
+
 /**
  * 从关拨到开：先绑定，再算开
  */
 async function enrollFlow(flow, result, settle) {
-  const setup = await api('/auth/totp/setup');
-  if (!setup.success) {
-    report(result, setup);
-    settle(false);
-    return;
-  }
+  try {
+    const setup = await api('/auth/totp/setup');
+    if (!setup.success) {
+      report(result, setup);
+      settle(false);
+      return;
+    }
 
-  flow.innerHTML =
-    '<p class="al-note">用任意验证器应用扫这个码，再填上它给出的 6 位数字。取消就退回原样。</p>'
-    + '<div class="totp-body">'
-    + (setup.qrCode ? '<img src="data:image/png;base64,' + esc(setup.qrCode) + '" alt="二维码">' : '')
-    + '<div class="totp-side">'
-    + '<label for="totp-enroll-code">不方便扫码时手动输入这串密钥</label>'
-    + '<code>' + esc(setup.secret) + '</code>'
-    + '<div class="totp-confirm">'
-    + '<input id="totp-enroll-code" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="6 位数字">'
-    + '<button type="button" id="totp-enroll-ok">确认开启</button>'
-    + '<button type="button" id="totp-enroll-no">取消</button>'
-    + '</div></div></div>';
+    flow.innerHTML =
+      '<p class="al-note">用任意验证器应用扫这个码，再填上它给出的 6 位数字。取消就退回原样。</p>'
+      + '<div class="totp-body">'
+      + (setup.qrCode ? '<img src="data:image/png;base64,' + esc(setup.qrCode) + '" alt="二维码">' : '')
+      + '<div class="totp-side">'
+      + '<label for="totp-enroll-code">不方便扫码时手动输入这串密钥</label>'
+      + '<code>' + esc(setup.secret) + '</code>'
+      + '<div class="totp-confirm">'
+      + '<input id="totp-enroll-code" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="6 位数字">'
+      + '<button type="button" id="totp-enroll-ok">确认开启</button>'
+      + '<button type="button" id="totp-enroll-no">取消</button>'
+      + '</div></div></div>';
 
-  $('#totp-enroll-no').addEventListener('click', () => settle(false));
-  $('#totp-enroll-ok').addEventListener('click', async () => {
-    const res = await api('/auth/totp/enroll', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({code: $('#totp-enroll-code').value}),
+    $('#totp-enroll-no').addEventListener('click', () => settle(false));
+    $('#totp-enroll-ok').addEventListener('click', async () => {
+      try {
+        const res = await api('/auth/totp/enroll', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({code: $('#totp-enroll-code').value}),
+        });
+        report(result, res);
+        // 没绑上就把开关拨回去：留在「已启用」上会让人以为绑好了，而下次登录他进不来
+        if (res.success) settle(true);
+      } catch (e) { recoverToggle(result, settle, false, e); }
     });
-    report(result, res);
-    // 没绑上就把开关拨回去：留在「已启用」上会让人以为绑好了，而下次登录他进不来
-    if (res.success) settle(true);
-  });
+  } catch (e) { recoverToggle(result, settle, false, e); }
 }
 
 /**
@@ -279,12 +288,14 @@ function disableFlow(flow, result, settle) {
 
   $('#totp-off-no').addEventListener('click', () => settle(true));
   $('#totp-off-ok').addEventListener('click', async () => {
-    const res = await api('/auth/totp/disable', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({code: $('#totp-off-code').value}),
-    });
-    report(result, res);
-    settle(!res.success);
+    try {
+      const res = await api('/auth/totp/disable', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({code: $('#totp-off-code').value}),
+      });
+      report(result, res);
+      settle(!res.success);
+    } catch (e) { recoverToggle(result, settle, true, e); }
   });
 }
 
