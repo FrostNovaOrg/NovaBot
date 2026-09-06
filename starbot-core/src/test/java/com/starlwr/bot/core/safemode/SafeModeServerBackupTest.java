@@ -1,5 +1,6 @@
 package com.starlwr.bot.core.safemode;
 
+import com.starlwr.bot.core.config.ui.TimestampedFileBackup;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -17,8 +18,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 安全模式保存配置时的带时间戳备份
  * <p>
- * 此刻主程序已经起不来，读不到 yml 里配的保留份数——备份份数与清旧份的行为
- * 因此只跟组件的默认值走，这里钉住的就是「跟组件走」这件事本身。
+ * 保留份数尽量照 yml 里配的走（starbot.core.config-ui.backup-keep），读不到时
+ * 才退回组件默认份数——这里钉住的是「照配置走、读不到有兜底」这件事本身。
  */
 @DisplayName("安全模式保存配置的备份")
 class SafeModeServerBackupTest {
@@ -64,6 +65,48 @@ class SafeModeServerBackupTest {
             assertTrue(name.matches("application\\.yml\\.\\d{8}-\\d{6}(-\\d+)?\\.bak"),
                     "备份名应与组件生成的同形: " + name);
         }
+    }
+
+    @Test
+    @DisplayName("配置写 backup-keep: 3：连存 5 次只留 3 份")
+    void safeModeBackupsFollowConfiguredKeep() throws IOException {
+        Path config = dir.resolve("application.yml");
+        Files.writeString(config, """
+                starbot:
+                  core:
+                    config-ui:
+                      backup-keep: 3
+                """, StandardCharsets.UTF_8);
+        SafeModeServer server = new SafeModeServer(config, "测试用的启动失败原因");
+
+        for (int i = 0; i < 5; i++) {
+            server.backupBeforeSave();
+        }
+
+        List<String> names = stampedBackupNames(config);
+        assertEquals(3, names.size(), "配置写的保留份数应被采用, 实际留了 " + names.size() + " 份");
+    }
+
+    @Test
+    @DisplayName("配置写 backup-keep: 500：按 1–100 收口，连存 3 次不报错、份数不越界")
+    void safeModeBackupsClampOversizedKeep() throws IOException {
+        Path config = dir.resolve("application.yml");
+        Files.writeString(config, """
+                starbot:
+                  core:
+                    config-ui:
+                      backup-keep: 500
+                """, StandardCharsets.UTF_8);
+        SafeModeServer server = new SafeModeServer(config, "测试用的启动失败原因");
+
+        for (int i = 0; i < 3; i++) {
+            server.backupBeforeSave();
+        }
+
+        List<String> names = stampedBackupNames(config);
+        assertTrue(names.size() <= TimestampedFileBackup.MAX_KEEP,
+                "超界的保留份数应按上限 " + TimestampedFileBackup.MAX_KEEP + " 收口, 实际 " + names.size() + " 份");
+        assertEquals(3, names.size(), "上限远未触到, 连存的 3 份都应在");
     }
 
     private static List<String> stampedBackupNames(Path config) throws IOException {
