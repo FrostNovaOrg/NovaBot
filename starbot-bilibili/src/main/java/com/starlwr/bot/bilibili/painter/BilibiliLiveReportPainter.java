@@ -1293,9 +1293,9 @@ public class BilibiliLiveReportPainter {
                 superChatRanking, score -> "¥" + yuan(score), null);
         drawRanking(painter, platform, uid, "盲盒排行", BilibiliLiveMetric.BOX_USERS,
                 options.getBoxRanking(), score -> Math.round(score) + " 个", null);
-        // 盲盒盈亏可正可负，正数补个加号，让盈亏方向一眼可辨
+        // 盲盒盈亏可正可负，正数补加号、负数补减号；零没有方向，不带号
         drawRanking(painter, platform, uid, "盲盒盈亏排行", BilibiliLiveMetric.BOX_PROFIT_USERS,
-                boxProfitRanking, score -> (score >= 0 ? "+¥" : "-¥") + yuan(Math.abs(score)), null);
+                boxProfitRanking, BilibiliLiveReportPainter::profitLabel, null);
 
         if (options.isGuardList()) {
             drawRanking(painter, platform, uid, "本场开通大航海", BilibiliLiveMetric.GUARD_USERS,
@@ -1804,9 +1804,19 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
+     * 盲盒盈亏排行金额：正数带加号、负数带减号、零无方向不带号。
+     */
+    static String profitLabel(double score) {
+        if (score == 0) {
+            return "¥0";
+        }
+        return (score > 0 ? "+¥" : "-¥") + yuan(Math.abs(score));
+    }
+
+    /**
      * 金额格式化：保留一位小数，整数金额省略小数位
      */
-    private String yuan(double value) {
+    private static String yuan(double value) {
         long rounded = Math.round(value * 10);
         if (rounded % 10 == 0) {
             return String.valueOf(rounded / 10);

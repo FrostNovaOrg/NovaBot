@@ -177,6 +177,27 @@ class BilibiliLiveReportPainterTest {
         );
     }
 
+    @Test
+    @DisplayName("盲盒盈亏排行：零无号、正负带号")
+    void profitLabelZeroUnsignedPositiveAndNegativeSigned() {
+        assertAll(
+                () -> {
+                    String label = BilibiliLiveReportPainter.profitLabel(0);
+                    assertEquals("¥0", label);
+                    assertFalse(label.startsWith("+"), label);
+                    assertFalse(label.startsWith("-"), label);
+                },
+                () -> {
+                    String label = BilibiliLiveReportPainter.profitLabel(150);
+                    assertTrue(label.contains("+¥"), label);
+                },
+                () -> {
+                    String label = BilibiliLiveReportPainter.profitLabel(-150);
+                    assertTrue(label.contains("-¥"), label);
+                }
+        );
+    }
+
     /**
      * 只喂盲盒数量与盈亏，从建卡结果里取出盲盒卡文案。
      */
