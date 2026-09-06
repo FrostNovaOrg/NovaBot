@@ -154,7 +154,7 @@ class SafeModeServerGateTest {
     }
 
     /**
-     * 三问各自捕获、末尾汇总，一问红不许短路其余两问
+     * 逐问各自捕获、末尾汇总，一问红不许短路其余问
      */
     private static void tally(List<String> unresolved, int expected, int actual, String question) {
         try {

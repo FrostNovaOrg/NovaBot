@@ -56,7 +56,7 @@ import java.util.stream.Stream;
  * </ul>
  * <p>
  * 同目录另有 {@code events.jsonl}：非弹幕事件的逐条流水，与弹幕原文同一把写锁、
- * 同一道封存闸、同一条数上限；失败只记日志。一行 JSON 以 {@code at}、{@code t} 打头，
+ * 同一道封存闸、同一条数上限（各自 50 万行，互不占额）；失败只记日志。一行 JSON 以 {@code at}、{@code t} 打头，
  * 其余字段按调用方插入顺序附上。
  * <p>
  * <b>{@code detail.json} 的存在同时是「本场已封存」的标记</b>：它落盘之后，
@@ -98,14 +98,15 @@ public class LiveDetailArchive {
     private static final Pattern PLATFORM = Pattern.compile("[A-Za-z0-9_-]{1,32}");
 
     /**
-     * 一场最多留多少条弹幕原文
+     * 一份 jsonl 文件最多留多少行
      * <p>
+     * 每个 jsonl 文件各自 50 万行（弹幕、事件各算各的）。
      * 一场 12 小时、每秒 5 条是 216000 条，此为其上界再留余量。
      * 到顶之后不再收录并记一条日志，<b>而不是继续写</b>：
      * 无上界的追加写在异常场次（如没有正确下播、一直在收）下会把磁盘写满，
      * 而磁盘写满会连累的是整个程序，不只是这一份留档。
      */
-    private static final int DANMU_LIMIT = 500_000;
+    private static final int LINE_LIMIT = 500_000;
 
     private final StarBotCoreProperties properties;
 
@@ -115,13 +116,13 @@ public class LiveDetailArchive {
     private final Object writeLock = new Object();
 
     /**
-     * 各场已留档的弹幕条数，按文件路径计
+     * 各 jsonl 文件已留档的行数，按文件路径计（弹幕原文与事件流水各记各的）
      * <p>
-     * 只服务于上限判定。<b>它不是弹幕条数的权威出处</b>——那一份是落盘的 JSONL 本身，
-     * {@link #readDanmu} 数出来的才作数。两处若不一致，以文件为准：
+     * 只服务于上限判定。<b>它不是行数的权威出处</b>——那一份是落盘的 JSONL 本身，
+     * {@link #readDanmu} 与 {@link #readEvents} 数出来的才作数。两处若不一致，以文件为准：
      * 这份计数在进程重启后从文件重建，本就是文件的一个影子。
      */
-    private final java.util.concurrent.ConcurrentHashMap<String, AtomicLong> danmuCounts =
+    private final java.util.concurrent.ConcurrentHashMap<String, AtomicLong> lineCounts =
             new java.util.concurrent.ConcurrentHashMap<>();
 
     @Autowired
@@ -158,11 +159,11 @@ public class LiveDetailArchive {
             // 条数记在内存里，而不是每条都去数一遍文件行数：那是每条弹幕一次全文件扫描，
             // 一场几万条就是几亿行的读——上限本是防磁盘写满的，别让它自己成为性能事故。
             // 首次遇到这一场时数一遍（进程中途重启后接着数），此后只加一
-            long count = danmuCounts.computeIfAbsent(path.toString(), key -> new AtomicLong(countLines(path))).get();
-            if (count >= DANMU_LIMIT) {
-                if (count == DANMU_LIMIT) {
-                    log.warn("主播 {} 本场弹幕原文已达上限 {} 条, 后续不再留档", uid, DANMU_LIMIT);
-                    danmuCounts.get(path.toString()).incrementAndGet();
+            long count = lineCounts.computeIfAbsent(path.toString(), key -> new AtomicLong(countLines(path))).get();
+            if (count >= LINE_LIMIT) {
+                if (count == LINE_LIMIT) {
+                    log.warn("主播 {} 本场弹幕原文已达上限 {} 条, 后续不再留档", uid, LINE_LIMIT);
+                    lineCounts.get(path.toString()).incrementAndGet();
                 }
                 return;
             }
@@ -171,7 +172,7 @@ public class LiveDetailArchive {
                 Files.createDirectories(dir.get());
                 Files.writeString(path, toJson(record).toJSONString() + System.lineSeparator(),
                         StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-                danmuCounts.get(path.toString()).incrementAndGet();
+                lineCounts.get(path.toString()).incrementAndGet();
             } catch (IOException e) {
                 log.debug("留档弹幕原文失败: {}", e.getMessage());
             }
@@ -194,11 +195,11 @@ public class LiveDetailArchive {
                 log.debug("{} 的这一场已封存, 不再收录事件流水", uid);
                 return;
             }
-            long count = danmuCounts.computeIfAbsent(path.toString(), key -> new AtomicLong(countLines(path))).get();
-            if (count >= DANMU_LIMIT) {
-                if (count == DANMU_LIMIT) {
-                    log.warn("主播 {} 本场事件流水已达上限 {} 条, 后续不再留档", uid, DANMU_LIMIT);
-                    danmuCounts.get(path.toString()).incrementAndGet();
+            long count = lineCounts.computeIfAbsent(path.toString(), key -> new AtomicLong(countLines(path))).get();
+            if (count >= LINE_LIMIT) {
+                if (count == LINE_LIMIT) {
+                    log.warn("主播 {} 本场事件流水已达上限 {} 条, 后续不再留档", uid, LINE_LIMIT);
+                    lineCounts.get(path.toString()).incrementAndGet();
                 }
                 return;
             }
@@ -210,7 +211,7 @@ public class LiveDetailArchive {
                 Files.createDirectories(dir.get());
                 Files.writeString(path, json.toJSONString() + System.lineSeparator(),
                         StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-                danmuCounts.get(path.toString()).incrementAndGet();
+                lineCounts.get(path.toString()).incrementAndGet();
             } catch (IOException e) {
                 log.debug("留档事件流水失败: {}", e.getMessage());
             }
