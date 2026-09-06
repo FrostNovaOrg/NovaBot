@@ -268,6 +268,48 @@ class FirstPushTipCorpusTest {
     }
 
     @Test
+    @DisplayName("补记跳过停用目标 —— 日后启用第一条仍会提示")
+    void seedExistingSkipsDisabledTargets() {
+        StarBotCoreProperties properties = new StarBotCoreProperties();
+        properties.getLive().setLiveDataPath(dataDir.resolve("seed-disabled.json").toString());
+
+        StarBotStateStore store = new StarBotStateStore(properties);
+        FirstPushTipService service = new FirstPushTipService(store);
+
+        PushUser disabled = session(PLATFORM, PushTargetType.GROUP, GROUP_B);
+        disabled.getTargets().get(0).setEnabled(false);
+
+        service.seedExisting(List.of(
+                session(PLATFORM, PushTargetType.GROUP, GROUP_A),
+                disabled));
+
+        assertFalse(service.claim(PLATFORM, PushTargetType.GROUP, GROUP_A),
+                "启用目标升级后不该再提示");
+        assertTrue(service.claim(PLATFORM, PushTargetType.GROUP, GROUP_B),
+                "停用目标被补记成已提示过：日后启用第一条推送永远收不到首次用法提示");
+    }
+
+    @Test
+    @DisplayName("空名单不钉已补过 —— 配好之后再补一次")
+    void seedExistingEmptyListDoesNotPinSeeded() {
+        StarBotCoreProperties properties = new StarBotCoreProperties();
+        properties.getLive().setLiveDataPath(dataDir.resolve("seed-empty.json").toString());
+
+        StarBotStateStore store = new StarBotStateStore(properties);
+        FirstPushTipService service = new FirstPushTipService(store);
+
+        service.seedExisting(List.of());
+        assertFalse(store.namespace("FirstPushTip").containsKey(FirstPushTipService.SEEDED_KEY),
+                "名单为空仍钉「已补过」：数据源配错那一趟空表被钉死，配好重启后老群没人补记");
+
+        service.seedExisting(List.of(session(PLATFORM, PushTargetType.GROUP, GROUP_A)));
+        assertTrue(store.namespace("FirstPushTip").containsKey(FirstPushTipService.SEEDED_KEY),
+                "非空名单补记之后才该留下标记");
+        assertFalse(service.claim(PLATFORM, PushTargetType.GROUP, GROUP_A),
+                "非空名单里的会话该被记成已提示");
+    }
+
+    @Test
     @DisplayName("关掉首次提示时不发也不认领，打开后第一条才发")
     void switchOffSkipsTipAndClaim() {
         Fixture fixture = new Fixture();

@@ -107,10 +107,18 @@ public class FirstPushTipService {
                     if (!complete(target)) {
                         continue;
                     }
+                    if (Boolean.FALSE.equals(target.getEnabled())) {
+                        continue;
+                    }
                     claim(target.getPlatform(), target.getType(), target.getNum());
                     marked++;
                 }
             }
+        }
+        if (marked == 0) {
+            // 空名单多半是数据源没配好，宁可下次再补一遍
+            log.info("名单为空，不钉标记");
+            return;
         }
         store.write(NAMESPACE, data -> {
             if (!data.containsKey(SEEDED_KEY)) {
