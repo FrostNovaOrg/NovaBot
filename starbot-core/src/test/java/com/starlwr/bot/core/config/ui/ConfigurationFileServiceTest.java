@@ -13,9 +13,14 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -78,6 +83,22 @@ class ConfigurationFileServiceTest {
 
     private String content() throws IOException {
         return Files.readString(config, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * 带时间戳的备份名（含同一秒加序号的变体）
+     */
+    private List<String> stampedBackupNames() throws IOException {
+        String prefix = config.getFileName() + ".";
+        try (var files = Files.list(dir)) {
+            return files.map(path -> path.getFileName().toString())
+                    .filter(name -> name.startsWith(prefix) && name.endsWith(".bak"))
+                    .filter(name -> name.length() > prefix.length() + ".bak".length())
+                    .filter(name -> name.substring(prefix.length(), name.length() - ".bak".length())
+                            .matches("\\d{8}-\\d{6}(-\\d+)?"))
+                    .sorted()
+                    .toList();
+        }
     }
 
     @Test
@@ -189,6 +210,38 @@ class ConfigurationFileServiceTest {
         assertEquals(1, backups.size(), "应生成一份备份");
         assertTrue(Files.readString(backups.get(0), StandardCharsets.UTF_8).contains("push-minutes: 1440"),
                 "备份应保有修改前的内容");
+    }
+
+    @Test
+    @DisplayName("保留份数取自配置而不是默认值：连写 5 次只留 3 份")
+    void backupKeepComesFromConfiguration() throws IOException {
+        service = new ConfigurationFileService(config, () -> TEMPLATE, () -> 3);
+
+        for (int i = 0; i < 5; i++) {
+            service.write(Map.of("server.port", String.valueOf(7000 + i)));
+        }
+
+        assertEquals(3, stampedBackupNames().size(), "backupKeep=3 时连写 5 次应裁到 3 份");
+    }
+
+    @Test
+    @DisplayName("同一秒连存两次：两份备份都在，内容各是各的")
+    void sameSecondSavesKeepBothBackups() throws IOException {
+        service = new ConfigurationFileService(config, () -> TEMPLATE, () -> 10,
+                Clock.fixed(Instant.parse("2026-09-05T10:00:00Z"), ZoneOffset.UTC));
+
+        service.write(Map.of("server.port", "7000"));
+        String afterFirst = content();
+        service.write(Map.of("server.port", "7001"));
+
+        List<String> names = stampedBackupNames();
+        assertEquals(2, names.size(), "同一秒的第二份备份不该覆盖第一份");
+
+        Set<String> contents = new HashSet<>();
+        for (String name : names) {
+            contents.add(Files.readString(dir.resolve(name), StandardCharsets.UTF_8));
+        }
+        assertEquals(Set.of(TEMPLATE, afterFirst), contents, "两份备份应分别是两次保存前的旧文");
     }
 
     @Test

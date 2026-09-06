@@ -22,6 +22,7 @@ import java.util.Set;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
+import java.time.Clock;
 
 /**
  * 配置文件读写服务
@@ -96,9 +97,17 @@ public class ConfigurationFileService {
     }
 
     ConfigurationFileService(Path configPath, Supplier<String> initialContent, IntSupplier backupKeep) {
+        this(configPath, initialContent, backupKeep, Clock.systemDefaultZone());
+    }
+
+    /**
+     * 指定命名备份用的钟，便于测试把两次保存钉在同一秒内
+     * @param clock 备份命名的钟
+     */
+    ConfigurationFileService(Path configPath, Supplier<String> initialContent, IntSupplier backupKeep, Clock clock) {
         this.configPath = configPath;
         this.initialContent = initialContent;
-        this.backups = new TimestampedFileBackup(configPath);
+        this.backups = new TimestampedFileBackup(configPath, clock);
         this.backupKeep = backupKeep;
     }
 
