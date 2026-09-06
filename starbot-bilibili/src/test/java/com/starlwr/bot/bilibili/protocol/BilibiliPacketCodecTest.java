@@ -313,28 +313,6 @@ class BilibiliPacketCodecTest {
     }
 
     @Test
-    @DisplayName("前一个子包爆预算后，后续子包不再解压，整次解码按整批拒收返回空")
-    void stopsParsingSiblingsAfterBudgetBlown() throws Exception {
-        // 一批三个子包：普通包、解压即超限的压缩包、再一个普通包。
-        // 中间的包爆掉共享预算后：后面的普通包不该再被产出，整次 decode 也按整批拒收返回空，
-        // 连前面已经解出的那个普通包都不留
-        ByteArrayOutputStream stream = new ByteArrayOutputStream();
-        stream.write(jsonPacket("{\"cmd\":\"BEFORE\"}"));
-        stream.write(packet(DataPackType.NOTICE.getCode(), 2, zlib(jsonPacketStream(64 * 1024))));
-        stream.write(jsonPacket("{\"cmd\":\"AFTER\"}"));
-
-        List<BilibiliPacket> packets = BilibiliPacketCodec.decode(
-                stream.toByteArray(), new BilibiliPacketCodec.Limits(1024, 3));
-        assertTrue(packets.isEmpty(), "预算爆过一次后应整批拒收，实际返回 " + packets.size() + " 个包");
-
-        // 同一批数据去掉中间那个超限包后能解出前后两个包——证明为空是预算爆的锅，不是数据本身坏了
-        ByteArrayOutputStream sane = new ByteArrayOutputStream();
-        sane.write(jsonPacket("{\"cmd\":\"BEFORE\"}"));
-        sane.write(jsonPacket("{\"cmd\":\"AFTER\"}"));
-        assertEquals(2, BilibiliPacketCodec.decode(sane.toByteArray()).size());
-    }
-
-    @Test
     @DisplayName("预算爆掉后同批剩余子包不再进解压，解压账目停在第 k 个子包上")
     void stopsDecompressingSiblingsAfterBudgetBlown() throws Exception {
         // 一批四个压缩子包：第 1 个解压通过、第 2 个把预算撑爆、其后两个本可正常解压。
@@ -365,7 +343,7 @@ class BilibiliPacketCodecTest {
         for (int i = 0; i < 2; i++) {
             remaining.write(packet(DataPackType.NOTICE.getCode(), 2, zlib(jsonPacketStream(1024))));
         }
-        assertTrue(BilibiliPacketCodec.decode(remaining.toByteArray(),
-                new BilibiliPacketCodec.Limits(1024 * 1024, 3)).size() > 0, "后两个子包本应可解压");
+        assertEquals(2, BilibiliPacketCodec.decode(remaining.toByteArray(),
+                new BilibiliPacketCodec.Limits(1024 * 1024, 3)).size(), "后两个子包本应各自可解压");
     }
 }
