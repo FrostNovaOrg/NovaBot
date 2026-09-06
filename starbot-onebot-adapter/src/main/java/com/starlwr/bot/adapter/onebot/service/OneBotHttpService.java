@@ -174,6 +174,9 @@ public class OneBotHttpService {
             return new JSONObject().fluentPut("code", ResultCode.SUCCESS.getCode()).fluentPut("message", ResultCode.SUCCESS.getMsg()).fluentPut("id", result.getString("message_id"));
         } catch (OneBotApiException e) {
             return new JSONObject().fluentPut("code", ResultCode.API_ERROR.getCode()).fluentPut("message", ResultCode.API_ERROR.getMsg() + ": " + e.getMsg()).fluentPut("id", null);
+        } catch (HttpClientErrorException.Forbidden e) {
+            log.warn("{} 的 OneBot HTTP Token 配置不正确, 请检查 Token 配置", message.getPlatform());
+            return new JSONObject().fluentPut("code", ResultCode.UNAUTHORIZED.getCode()).fluentPut("message", "Token 配置不正确").fluentPut("id", null);
         } catch (Exception e) {
             log.error("OneBot HTTP 发送消息异常", e);
             return new JSONObject().fluentPut("code", ResultCode.UNKNOWN.getCode()).fluentPut("message", "OneBot HTTP 发送消息异常, 请检查插件日志错误信息").fluentPut("id", null);

@@ -46,6 +46,7 @@ final class FakeOneBotHttpServer implements AutoCloseable {
      * 第几次群消息故意失败。0 表示都不失败
      */
     private int groupMessageFailAt;
+    private boolean forbidSends;
 
     FakeOneBotHttpServer() throws IOException {
         server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
@@ -65,10 +66,17 @@ final class FakeOneBotHttpServer implements AutoCloseable {
         this.groupMessageFailAt = n;
     }
 
+    void forbidSends() { this.forbidSends = true; }
+
     private void handle(HttpExchange exchange) throws IOException {
         JSONObject request = readJson(exchange);
         String path = exchange.getRequestURI().getPath();
 
+        if (forbidSends && ("/send_group_msg".equals(path) || "/send_private_msg".equals(path))) {
+            exchange.sendResponseHeaders(403, 0);
+            exchange.close();
+            return;
+        }
         JSONObject body = new JSONObject();
         if ("/send_group_msg".equals(path)) {
             groupMessages.add(request);
