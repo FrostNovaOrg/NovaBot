@@ -16,7 +16,8 @@ public enum ResultCode {
     EMPTY_MESSAGE(4, "消息内容为空"),
     UNAUTHORIZED(5, "推送接口 Token 校验失败"),
     FORBIDDEN_ADDRESS(6, "来源 IP 不在白名单内"),
-    RATE_LIMITED(7, "请求频率超出限制");
+    RATE_LIMITED(7, "请求频率超出限制"),
+    UNKNOWN_PLATFORM(8, "推送平台未注册");
 
     private final int code;
     private final String msg;

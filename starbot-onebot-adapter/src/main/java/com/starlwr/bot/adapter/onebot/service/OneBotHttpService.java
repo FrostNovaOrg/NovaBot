@@ -140,6 +140,10 @@ public class OneBotHttpService {
      */
     public JSONObject send(MessageDTO message) {
         OneBotSender sender = senders.get(message.getPlatform());
+        if (sender == null) {
+            log.warn("推送平台 {} 未注册, 已注册: {}", message.getPlatform(), senders.keySet());
+            return new JSONObject().fluentPut("code", ResultCode.UNKNOWN_PLATFORM.getCode()).fluentPut("message", "推送平台 " + message.getPlatform() + " 未注册").fluentPut("id", null);
+        }
 
         try {
             JSONObject params = new JSONObject();
