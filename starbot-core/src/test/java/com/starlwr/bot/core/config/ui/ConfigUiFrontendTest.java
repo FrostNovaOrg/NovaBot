@@ -1667,7 +1667,7 @@ class ConfigUiFrontendTest {
     }
 
     /**
-     * 其余六处危险确认同样走自绘弹层，config-ui 里原生 confirm() 的调用钉在 0
+     * 其余六处危险确认同样走自绘弹层，核心与插件页里原生 confirm() 的调用钉在 0
      * <p>
      * 改回去同样不会让任何功能变坏。六处是接线不是新判法，所以这一格走静态扫描，
      * 不另起一份纯模型夹具——打开／取消／确认那一份已经在量弹层本身。
@@ -1675,7 +1675,7 @@ class ConfigUiFrontendTest {
     @Test
     @DisplayName("其余危险确认也不再调用原生 confirm")
     void remainingDangerConfirmsUsePaintedDialog() {
-        Map<String, String> sources = coreSources();
+        Map<String, String> sources = sources();
         List<String> bad = new ArrayList<>();
 
         for (String name : List.of("main.js", "settings-auth.js", "setup.js", "passkeys.js", "tokens.js")) {

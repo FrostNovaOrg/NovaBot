@@ -13,6 +13,7 @@
  * 留在这里的代价是装第二个平台时会出现两张各列一半的表。
  */
 
+import {ask} from './confirm.js';
 import {$, api, esc, say} from './core.js';
 import {healthRows, refreshHome} from './overview.js';
 import {store} from './store.js';
@@ -110,7 +111,7 @@ async function loadAccounts() {
 }
 
 async function logout(platform) {
-  if (!confirm('确定退出登录吗？退出后需要重新扫码，期间动态推送会停。')) return;
+  if (!await ask({title: '确定退出登录吗？', body: '退出后需要重新扫码，期间动态推送会停。'})) return;
   say('正在退出…');
   try {
     const res = await api('/login/logout', {
