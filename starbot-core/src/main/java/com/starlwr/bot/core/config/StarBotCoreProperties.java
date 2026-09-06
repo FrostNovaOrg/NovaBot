@@ -1,15 +1,18 @@
 package com.starlwr.bot.core.config;
 
+import com.starlwr.bot.core.config.ui.TimestampedFileBackup;
 import com.starlwr.bot.core.model.Sender;
 import com.starlwr.bot.core.model.TextWithStyle;
 import jakarta.annotation.PostConstruct;
 import lombok.Getter;
 import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * StarBotCore 配置类
@@ -419,6 +422,7 @@ public class StarBotCoreProperties {
     /**
      * 配置界面相关
      */
+    @Slf4j
     @Getter
     @Setter
     public static class ConfigUi {
@@ -455,6 +459,25 @@ public class StarBotCoreProperties {
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         private int backupKeep = 10;
+
+        /**
+         * 越界的 backup-keep 只警告一次：配置绑定后这个值不会自己变，刷屏没有新信息。
+         */
+        private static final AtomicBoolean BACKUP_KEEP_WARNED = new AtomicBoolean();
+
+        /**
+         * 实际生效的备份保留份数
+         * <p>
+         * 配置文件里可以写成任意整数，裁剪只认 1 到 100。读的时候给出生效值，
+         * 避免「页面写着 500、落盘只留 100」这种口是心非。
+         */
+        public int getBackupKeep() {
+            int effective = TimestampedFileBackup.clamp(backupKeep);
+            if (effective != backupKeep && BACKUP_KEEP_WARNED.compareAndSet(false, true)) {
+                log.warn("backup-keep 写的是 {}, 超出 1–100，按 {} 生效", backupKeep, effective);
+            }
+            return effective;
+        }
 
         /**
          * 口令登录相关
