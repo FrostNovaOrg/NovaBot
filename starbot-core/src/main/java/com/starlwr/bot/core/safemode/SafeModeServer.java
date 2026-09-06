@@ -1,5 +1,6 @@
 package com.starlwr.bot.core.safemode;
 
+import com.starlwr.bot.core.config.ui.TimestampedFileBackup;
 import com.starlwr.bot.core.util.SecureToken;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -16,10 +17,6 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.time.Instant;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.Map;
 
 /**
@@ -43,9 +40,6 @@ public class SafeModeServer {
      * 请求体大小上限，防止畸形请求耗尽内存
      */
     private static final int MAX_BODY_BYTES = 1024 * 1024;
-
-    private static final DateTimeFormatter STAMP =
-            DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").withZone(ZoneId.systemDefault());
 
     private final Path configPath;
 
@@ -155,14 +149,22 @@ public class SafeModeServer {
             return;
         }
 
-        if (Files.exists(configPath)) {
-            Path backup = configPath.resolveSibling(configPath.getFileName() + "." + STAMP.format(Instant.now()) + ".bak");
-            Files.copy(configPath, backup, StandardCopyOption.REPLACE_EXISTING);
-        }
+        backupBeforeSave();
         Files.writeString(configPath, content, StandardCharsets.UTF_8);
 
         log.info("安全模式已保存 application.yml, 请重启程序");
         respond(exchange, 200, "text/html; charset=utf-8", page(content, null, "已保存。请重启程序，若配置无误将正常启动。"));
+    }
+
+    /**
+     * 保存前给当前配置留一份带时间戳的备份，并按默认保留份数清掉旧份
+     * <p>
+     * 与主程序里的 {@code TimestampedFileBackup} 同一套命名与裁剪，而不是在这里再写一份
+     * 形状相同的备份逻辑——两份实现迟早一份改了另一份没跟上。此刻主程序起不来，
+     * 读不到 yml 里配的保留份数，所以按组件默认值走；文件不在时组件自己会跳过。
+     */
+    void backupBeforeSave() throws IOException {
+        new TimestampedFileBackup(configPath).backup(TimestampedFileBackup.DEFAULT_KEEP);
     }
 
     /**
