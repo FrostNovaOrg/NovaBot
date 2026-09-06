@@ -178,6 +178,7 @@ public abstract class BilibiliRoomDataCommand extends BilibiliScopedDataCommand 
         Optional<Long> end = living
                 ? Optional.of(System.currentTimeMillis())
                 : liveDataService.getLiveEndTime(platform, uid).filter(time -> time >= start.get());
-        return end.map(time -> "直播时长 " + DurationFormatUtil.format((time - start.get()) / 1000)).orElse(null);
+        String duration = end.map(time -> DurationFormatUtil.format((time - start.get()) / 1000)).orElse("");
+        return duration.isBlank() ? null : "直播时长 " + duration;
     }
 }
