@@ -741,6 +741,7 @@ public class ConfigUiController {
             result.put("success", false);
             // 没有标签就无法定向吊销，只能一次全撤——那就退回了复用控制台令牌时的粒度
             result.put("message", "请填写这把口令签给谁，否则日后无法单独吊销它");
+            result.put("reason", "missing_label");
             return result;
         }
 
@@ -754,6 +755,7 @@ public class ConfigUiController {
             log.error("配置界面签发只读口令失败", e);
             result.put("success", false);
             result.put("message", "签发没能写进磁盘，请检查数据目录后重试");
+            result.put("reason", "write_failed");
             return result;
         }
     }
@@ -775,10 +777,16 @@ public class ConfigUiController {
             result.put("message", found
                     ? "已吊销。⚠️ 已经建立的连接不会自动断开，请确认对方已掉线"
                     : "没有找到这把仍然有效的口令（可能已经撤过了）");
+            // not_found 多半是清单过期（别处已经撤过），界面据此重取；写盘失败则不能重取——
+            // 盘上还是旧账，刷新只会把同一份旧账再画一遍。两者原先只靠文案区分，而文案是会改的
+            if (!found) {
+                result.put("reason", "not_found");
+            }
         } catch (UncheckedIOException e) {
             log.error("配置界面吊销只读口令失败", e);
             result.put("success", false);
             result.put("message", "吊销没能写进磁盘，请检查数据目录后重试");
+            result.put("reason", "write_failed");
         }
         return result;
     }

@@ -19,6 +19,8 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -257,5 +259,78 @@ class ReadOnlyTokenControllerTest {
         assertNull(result.get("token"), "写盘失败不该交出明文");
         assertTrue(result.getString("message").contains("磁盘"),
                 () -> "应当用人话说明写盘失败, 实际: " + result.getString("message"));
+    }
+
+    /**
+     * 每个失败分支都同时带 reason（机器分派）与 message（人话）
+     * <p>
+     * 只有 reason 的话，不接分派表的调用方（手 curl 的运营者、还不认识这套 reason 的面板）
+     * 拿到的只是一句暗号；只有 message 的话，分派就只能去猜文案，而文案恰恰是会改的东西。
+     * 前端 {@code tokens.js} 的 {@code explain} 原本正是按 reason 分派的——
+     * 写盘失败这一支没有 reason，那句人话被整个吞成了「HTTP 500」。
+     */
+    @Test
+    @DisplayName("🔴 每个失败分支都同时带 reason（分派）与 message（人话）")
+    void everyFailureCarriesReasonAndMessage() throws Exception {
+        List<String> bad = new ArrayList<>();
+
+        refuseAndCheck(controller(PASSWORD, ""), body("wrong", "面板"), 401, "bad_credentials", bad);
+        refuseAndCheck(controller("", ""), body("whatever", "面板"), 400, "auth_disabled", bad);
+
+        ReadOnlyTokenController locked = controller(PASSWORD, "");
+        StarBotCoreProperties.ConfigUi.Auth defaults = new StarBotCoreProperties.ConfigUi.Auth();
+        for (int i = 0; i < defaults.getMaxFailures(); i++) {
+            post(locked, body("wrong", "面板"));
+        }
+        refuseAndCheck(locked, body(PASSWORD, "面板"), 429, "locked_out", bad);
+
+        ReadOnlyTokenController saturated = controller(PASSWORD, "");
+        assertTrue(throttle.tryAcquireSlot());
+        assertTrue(throttle.tryAcquireSlot());
+        refuseAndCheck(saturated, body(PASSWORD, "面板"), 503, "busy", bad);
+
+        // 写盘失败这一支原先只有 message 没有 reason——就是本笔要补的那一半
+        Path blocker = dir.resolve("not-a-directory");
+        Files.writeString(blocker, "occupied");
+        StarBotCoreProperties properties = new StarBotCoreProperties();
+        properties.getLive().setLiveDataPath(blocker.resolve("data.json").toString());
+        ReadOnlyTokenController broken = new ReadOnlyTokenController(
+                provider(passwordOnlyService()), new EventStreamTokenService(properties.getLive()));
+        refuseAndCheck(broken, body(PASSWORD, "面板"), 500, "write_failed", bad);
+
+        assertTrue(bad.isEmpty(), "以下失败分支缺了哪一半，都是把人话藏起来:\n  " + String.join("\n  ", bad));
+    }
+
+    private void refuseAndCheck(ReadOnlyTokenController controller, JSONObject requestBody,
+            int expectedStatus, String expectedReason, List<String> bad) {
+        ResponseEntity<String> response = post(controller, requestBody);
+        if (response.getStatusCode().value() != expectedStatus) {
+            bad.add(expectedReason + "：状态码应为 " + expectedStatus
+                    + ", 实际 " + response.getStatusCode().value());
+        }
+        JSONObject result = JSONObject.parseObject(response.getBody());
+        if (!expectedReason.equals(result.getString("reason"))) {
+            bad.add(expectedReason + "：reason 应为 " + expectedReason
+                    + ", 实际 " + result.getString("reason"));
+        }
+        String message = result.getString("message");
+        if (message == null || message.isBlank()) {
+            bad.add(expectedReason + "：message 缺席或为空, 不接分派表的调用方只能拿到一句暗号");
+        }
+    }
+
+    private ConfigUiAuthService passwordOnlyService() {
+        StarBotCoreProperties.ConfigUi.Auth auth = new StarBotCoreProperties.ConfigUi.Auth();
+        auth.setPassword(PASSWORD);
+        return new ConfigUiAuthService(auth,
+                new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(2)),
+                new LoginThrottle(auth.getMaxFailures(), Duration.ofMinutes(15)), null);
+    }
+
+    @SuppressWarnings("unchecked")
+    private ObjectProvider<ConfigUiAuthService> provider(ConfigUiAuthService service) {
+        ObjectProvider<ConfigUiAuthService> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(service);
+        return provider;
     }
 }
