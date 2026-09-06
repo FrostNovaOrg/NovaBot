@@ -620,6 +620,25 @@ public class BilibiliLiveReportPainter {
      * 只是不带走具体数额——那正是想给大群看的部分。
      */
     private void drawCards(CommonPainter painter, String platform, Long uid, BilibiliLiveReportOptions options) {
+        List<Card> cards = buildCards(platform, uid, options);
+
+        int startY = painter.getY();
+        for (int i = 0; i < cards.size(); i++) {
+            int row = i / CARD_COLUMNS;
+            int column = i % CARD_COLUMNS;
+            int x = MARGIN + column * (CARD_WIDTH + CARD_GAP);
+            int y = startY + row * (CARD_HEIGHT + CARD_GAP);
+            drawCard(painter, cards.get(i), x, y);
+        }
+
+        int rows = (cards.size() + CARD_COLUMNS - 1) / CARD_COLUMNS;
+        painter.setPos(MARGIN, startY + rows * (CARD_HEIGHT + CARD_GAP) + 8);
+    }
+
+    /**
+     * 本场数据卡片列表。为零的条目不入列。
+     */
+    List<Card> buildCards(String platform, Long uid, BilibiliLiveReportOptions options) {
         long danmu = count(platform, uid, BilibiliLiveMetric.DANMU_COUNT);
         int danmuUsers = liveDataService.getLiveMetricUserCount(platform, uid, BilibiliLiveMetric.DANMU_USERS);
         double giftValue = liveDataService.getLiveMetric(platform, uid, BilibiliLiveMetric.GIFT_VALUE);
@@ -664,9 +683,8 @@ public class BilibiliLiveReportPainter {
                     revenue ? "大航海 · ¥" + yuan(guardValue) : "大航海"));
         }
         if (box > 0) {
-            String direction = boxProfit >= 0 ? "盈利" : "亏损";
             cards.add(new Card(box + " 个",
-                    revenue ? "盲盒 · " + direction + " ¥" + yuan(Math.abs(boxProfit)) : "盲盒"));
+                    revenue ? "盲盒 · " + boxText(boxProfit) : "盲盒"));
         }
         if (freeGift > 0) {
             cards.add(new Card(freeGift + " 个", "免费礼物"));
@@ -674,18 +692,20 @@ public class BilibiliLiveReportPainter {
         if (share > 0) {
             cards.add(new Card(share + " 次", "分享"));
         }
+        return cards;
+    }
 
-        int startY = painter.getY();
-        for (int i = 0; i < cards.size(); i++) {
-            int row = i / CARD_COLUMNS;
-            int column = i % CARD_COLUMNS;
-            int x = MARGIN + column * (CARD_WIDTH + CARD_GAP);
-            int y = startY + row * (CARD_HEIGHT + CARD_GAP);
-            drawCard(painter, cards.get(i), x, y);
+    /**
+     * 盲盒盈亏文案：正盈利、负亏损、零持平（不带金额）。
+     */
+    private String boxText(double boxProfit) {
+        if (boxProfit > 0) {
+            return "盈利 ¥" + yuan(boxProfit);
         }
-
-        int rows = (cards.size() + CARD_COLUMNS - 1) / CARD_COLUMNS;
-        painter.setPos(MARGIN, startY + rows * (CARD_HEIGHT + CARD_GAP) + 8);
+        if (boxProfit < 0) {
+            return "亏损 ¥" + yuan(Math.abs(boxProfit));
+        }
+        return "持平";
     }
 
     /**
@@ -1899,7 +1919,7 @@ public class BilibiliLiveReportPainter {
     /**
      * 数据卡片：取值与标签
      */
-    private record Card(String value, String label) {
+    record Card(String value, String label) {
     }
 
     /**

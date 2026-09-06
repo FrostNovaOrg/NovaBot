@@ -156,6 +156,45 @@ class BilibiliLiveReportPainterTest {
     }
 
     @Test
+    @DisplayName("盲盒盈亏三分：零持平、正盈利、负亏损")
+    void boxCardShowsBreakEvenProfitAndLoss() {
+        assertAll(
+                () -> {
+                    String label = boxLabel(0);
+                    assertEquals("盲盒 · 持平", label);
+                    assertFalse(label.contains("¥"), label);
+                },
+                () -> {
+                    String label = boxLabel(150);
+                    assertTrue(label.contains("盈利"), label);
+                    assertTrue(label.contains("150"), label);
+                },
+                () -> {
+                    String label = boxLabel(-150);
+                    assertTrue(label.contains("亏损"), label);
+                    assertTrue(label.contains("150"), label);
+                }
+        );
+    }
+
+    /**
+     * 只喂盲盒数量与盈亏，从建卡结果里取出盲盒卡文案。
+     */
+    private String boxLabel(double boxProfit) {
+        DefaultLiveDataService data = new DefaultLiveDataService(new StarBotCoreProperties());
+        data.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.BOX_COUNT, 3);
+        data.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.BOX_PROFIT, boxProfit);
+        BilibiliLiveReportPainter reportPainter = new BilibiliLiveReportPainter(
+                factory, api, data, fontUtil, new StarBotBilibiliProperties(), roomInfoHistory);
+        return reportPainter.buildCards(PLATFORM, STREAMER.getUid(), BilibiliLiveReportOptions.of(null, true))
+                .stream()
+                .map(BilibiliLiveReportPainter.Card::label)
+                .filter(label -> label.startsWith("盲盒"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("没有盲盒卡"));
+    }
+
+    @Test
     @DisplayName("有排行榜数据时应画出榜单")
     void paintsRankings() {
         liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), 1_700_000_000_000L);
