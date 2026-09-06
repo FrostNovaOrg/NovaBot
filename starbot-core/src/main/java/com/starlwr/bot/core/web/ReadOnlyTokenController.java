@@ -75,7 +75,7 @@ public class ReadOnlyTokenController {
      * 所以这里走的是「只校验、不签会话」的那条路，不是控制台的 {@code login}。
      * @param body 请求体：password、可选的 code、label
      * @param request 请求，取来源 IP 用
-     * @return 成功时 {@code {token, expiresAt}}，失败时 {@code {reason}}
+     * @return 成功时 {@code {token, expiresAt}}，失败时 {@code {reason, message}}
      */
     @PostMapping(value = PATH, produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> issue(@RequestBody(required = false) JSONObject body, HttpServletRequest request) {
@@ -126,6 +126,9 @@ public class ReadOnlyTokenController {
         } catch (UncheckedIOException e) {
             log.error("只读口令代签发写盘失败, 来源: {}", clientIp, e);
             JSONObject result = new JSONObject();
+            // reason 与 message 必须成对出现：只带 message 的话，按 reason 分派的调用方
+            // 只能拿到一句它不认识的人话；只带 reason 的话，不接分派表的一方拿到一句暗号
+            result.put("reason", "write_failed");
             result.put("message", "签发没能写进磁盘，请检查数据目录后重试");
             return json(HttpStatus.INTERNAL_SERVER_ERROR, result);
         }
@@ -150,11 +153,27 @@ public class ReadOnlyTokenController {
     private static ResponseEntity<String> refuse(HttpStatus status, ConfigUiAuthService.Verdict verdict, long retryAfterSeconds) {
         JSONObject result = new JSONObject();
         result.put("reason", verdict.wire());
+        result.put("message", humanText(verdict));
         if (verdict == ConfigUiAuthService.Verdict.LOCKED_OUT) {
             result.put("retryAfterSeconds", retryAfterSeconds);
         }
 
         return json(status, result);
+    }
+
+    /**
+     * reason 那一半的分派表：同一句话，说给不认识 reason 的调用方（手 curl 的运营者、
+     * 还没接分派表的面板）。文案与 {@link #statusOf} 一样按 verdict 分开，
+     * 锁定与口令错混在一句里的话，人会去重置一个没问题的密码。
+     */
+    private static String humanText(ConfigUiAuthService.Verdict verdict) {
+        return switch (verdict) {
+            case BAD_CREDENTIALS -> "控制台口令或动态验证码不正确";
+            case LOCKED_OUT -> "连续失败太多次，这个来源已被暂时锁定；锁定期内即使输对也会被拒";
+            case BUSY -> "同时在校验的请求太多，请稍几秒再试";
+            case AUTH_DISABLED -> "这台机器没有设置控制台登录口令，没有可校验的凭据";
+            default -> throw new IllegalArgumentException("不该有第五种拒绝: " + verdict);
+        };
     }
 
     /**

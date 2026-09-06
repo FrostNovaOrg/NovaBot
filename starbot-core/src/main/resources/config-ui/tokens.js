@@ -15,6 +15,7 @@ import {$, api, esc, say} from './core.js';
 import {refreshLinks} from './links.js';
 import {bindPasswordReveal} from './password-reveal.js';
 import {store} from './store.js';
+import {explain, revokeOutcome} from './tokens-model.js';
 
 /**
  * 进入本页时调用，重建签发表单
@@ -117,34 +118,6 @@ async function issue() {
   }
 }
 
-/**
- * 把契约里的 reason 翻成人话
- *
- * 🔴 locked_out 与 bad_credentials 必须分开说：锁定期内输对的口令也会被拒，
- * 此时说「口令不对」会让人去重置一个根本没问题的密码。
- */
-function explain(status, data) {
-  switch (data.reason) {
-    case 'bad_credentials':
-      return '控制台口令' + (store.totpRequired ? '或动态验证码' : '') + '不对。'
-        + '要填的是登录这个控制台用的那一个——不是机器人（NapCat 等）WebUI 的口令，两者互不相干';
-    case 'locked_out':
-      return '连续失败太多次，你这个来源已被暂时锁定，' + waitText(data.retryAfterSeconds) + '后再试。'
-        + '⚠️ 锁定期内即使输对也会被拒，这不代表口令错了，别急着去改密码';
-    case 'busy':
-      return '同时在校验的请求太多，等几秒再点一次';
-    case 'auth_disabled':
-      return '这台机器没有启用控制台登录口令，因此没有可校验的凭据。请先在「设置」里配置登录口令';
-    default:
-      return '签发失败（HTTP ' + status + '）';
-  }
-}
-
-function waitText(seconds) {
-  const value = Number(seconds) || 0;
-  return value >= 60 ? Math.ceil(value / 60) + ' 分钟' : Math.max(1, value) + ' 秒';
-}
-
 function fail(text) {
   const box = $('#tk-msg');
   box.textContent = text || '';
@@ -243,8 +216,10 @@ async function revoke(token) {
   try {
     const result = await api('/event-tokens/' + encodeURIComponent(token.fingerprint) + '/revoke',
         {method: 'POST'});
-    say(result.message || (result.success ? '已吊销' : '操作失败'), result.success ? 'ok' : 'err');
-    if (result.success) refreshTokens();
+    // 显哪句、什么颜色、要不要重取，都在 revokeOutcome 里判——这里只管接线
+    const outcome = revokeOutcome(result);
+    say(outcome.text, outcome.kind);
+    if (outcome.refresh) refreshTokens();
   } catch (e) {
     say('吊销失败：' + e.message, 'err');
   }

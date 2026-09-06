@@ -237,6 +237,48 @@ class EventTokenEndpointsTest {
         }
     }
 
+    /**
+     * 两口的每个失败分支都带机器可读的 reason，与文案分开
+     * <p>
+     * 吊销「没找到」与「写不进盘」原先只靠文案区分，而界面不能拿文案当分派键——
+     * 文案是会改的东西，改的那天前端就把「清单已过期，该重取」错读成「写坏了，别动」。
+     */
+    @Test
+    @DisplayName("🔴 两口的每个失败分支都带机器可读的 reason，与文案分开")
+    void failureBodiesCarryMachineReadableReason() throws Exception {
+        JSONObject missingLabel = controller.issueEventToken(Map.of());
+        assertFalse(missingLabel.getBooleanValue("success"));
+        assertEquals("missing_label", missingLabel.getString("reason"));
+        assertFalse(missingLabel.getString("message").isBlank(), "message 得在，reason 不是文案的替代");
+
+        Path blocker = dir.resolve("not-a-directory");
+        Files.writeString(blocker, "occupied");
+        JSONObject issueFailed = controllerFor(blocker.resolve("data.json"))
+                .issueEventToken(Map.of("label", "面板-丁"));
+        assertFalse(issueFailed.getBooleanValue("success"));
+        assertEquals("write_failed", issueFailed.getString("reason"));
+        assertFalse(issueFailed.getString("message").isBlank());
+
+        JSONObject missing = controller.revokeEventToken("no-such-token");
+        assertFalse(missing.getBooleanValue("success"));
+        assertEquals("not_found", missing.getString("reason"));
+        assertFalse(missing.getString("message").isBlank());
+
+        controller.issueEventToken(Map.of("label", "面板-己"));
+        String fingerprint = tokens.fingerprintOf(tokens.list().get(0));
+        Path ledger = dir.resolve("event-stream-tokens.jsonl");
+        var original = Files.getPosixFilePermissions(ledger);
+        Files.setPosixFilePermissions(ledger, PosixFilePermissions.fromString("r--r--r--"));
+        try {
+            JSONObject revokeFailed = controller.revokeEventToken(fingerprint);
+            assertFalse(revokeFailed.getBooleanValue("success"));
+            assertEquals("write_failed", revokeFailed.getString("reason"));
+            assertFalse(revokeFailed.getString("message").isBlank());
+        } finally {
+            Files.setPosixFilePermissions(ledger, original);
+        }
+    }
+
     private ConfigUiController controllerFor(Path dataFile) {
         StarBotCoreProperties properties = new StarBotCoreProperties();
         properties.getLive().setLiveDataPath(dataFile.toString());
