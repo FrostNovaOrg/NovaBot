@@ -64,6 +64,33 @@ class StreamerLookupRoomTest {
     }
 
     @Test
+    @DisplayName("空输入同时提到直播间号与直播间链接")
+    void blankInputMentionsRoomNumberAndLiveLink() {
+        assertBlankInputCopy(controller().lookupStreamer(request("")));
+    }
+
+    @Test
+    @DisplayName("只填空白时同样提到直播间号与直播间链接")
+    void whitespaceInputMentionsRoomNumberAndLiveLink() {
+        assertBlankInputCopy(controller().lookupStreamer(request("   ")));
+    }
+
+    @Test
+    @DisplayName("请求里没有 uid 时同样提到直播间号与直播间链接")
+    void missingUidMentionsRoomNumberAndLiveLink() {
+        JSONObject body = new JSONObject();
+        body.put("platform", "fakelive");
+        assertBlankInputCopy(controller().lookupStreamer(body));
+    }
+
+    private static void assertBlankInputCopy(JSONObject result) {
+        assertFalse(result.getBooleanValue("success"), result.toString());
+        String message = result.getString("message");
+        assertTrue(message.contains("直播间号"), "空输入句须提到直播间号: " + message);
+        assertTrue(message.contains("直播间链接"), "空输入句须提到直播间链接: " + message);
+    }
+
+    @Test
     @DisplayName("短号命中：先按 uid 查不到，再按房间号查到")
     void shortRoomNumberHitsAfterUidMiss() {
         FakeRooms rooms = FakeRooms.roomOnly(222L, 1001L, "主播甲");

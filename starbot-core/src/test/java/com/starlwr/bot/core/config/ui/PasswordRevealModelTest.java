@@ -43,7 +43,7 @@ class PasswordRevealModelTest {
     }
 
     @Test
-    @DisplayName("默认隐藏、切换、六处共用同一份构件")
+    @DisplayName("默认隐藏、切换、六处共用同一份构件、运行期登记与桩 DOM 翻面")
     void revealTogglesAndSixSitesShareOneModule() throws IOException, InterruptedException {
         Path fixture = repoRoot().resolve(FIXTURE);
         assertTrue(Files.exists(fixture), "夹具不见了，这一格此刻什么也没量: " + fixture);

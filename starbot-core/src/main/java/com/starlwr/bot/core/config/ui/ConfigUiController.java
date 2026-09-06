@@ -994,7 +994,7 @@ public class ConfigUiController {
 
         if (platform == null || platform.isBlank() || input == null || input.isBlank()) {
             result.put("success", false);
-            result.put("message", "请填写平台与 uid，也可直接粘贴个人空间链接或直播间号");
+            result.put("message", "请填写平台与 uid，也可直接粘贴个人空间链接、直播间号或直播间链接");
             return result;
         }
 
