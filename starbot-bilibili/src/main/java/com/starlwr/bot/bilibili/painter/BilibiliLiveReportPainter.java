@@ -784,15 +784,27 @@ public class BilibiliLiveReportPainter {
      * 没有开播快照时（如程序在直播中途才启动）只显示当前值，不显示涨幅——
      * 拿不到基准就别编一个出来。
      */
-    private Card changeCard(String platform, Long uid, long current, String startMetric, String label) {
+    Card changeCard(String platform, Long uid, long current, String startMetric, String label) {
         double start = liveDataService.getLiveMetric(platform, uid, startMetric);
         if (start <= 0) {
             return new Card(String.valueOf(current), label);
         }
 
         long delta = current - Math.round(start);
-        String sign = delta >= 0 ? "+" : "";
-        return new Card(String.valueOf(current), label + " · 本场 " + sign + delta);
+        return new Card(String.valueOf(current), label + " · 本场 " + deltaLabel(delta));
+    }
+
+    /**
+     * 本场净变化：正数带加号、负数自带减号、零写持平。
+     */
+    static String deltaLabel(long delta) {
+        if (delta > 0) {
+            return "+" + delta;
+        }
+        if (delta < 0) {
+            return String.valueOf(delta);
+        }
+        return "持平";
     }
 
     /**

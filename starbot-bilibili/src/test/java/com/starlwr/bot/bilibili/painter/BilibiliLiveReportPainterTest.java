@@ -36,6 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -198,6 +199,33 @@ class BilibiliLiveReportPainterTest {
         );
     }
 
+    @Test
+    @DisplayName("本场变化三分：零持平、正负带号、接线持平")
+    void deltaLabelZeroIsTiePositiveAndNegativeSignedAndWired() {
+        List<String> red = new ArrayList<>();
+        try {
+            assertEquals("持平", BilibiliLiveReportPainter.deltaLabel(0));
+        } catch (Throwable t) {
+            red.add("① " + t.getMessage());
+        }
+        try {
+            assertEquals("+5", BilibiliLiveReportPainter.deltaLabel(5));
+            assertEquals("-5", BilibiliLiveReportPainter.deltaLabel(-5));
+        } catch (Throwable t) {
+            red.add("② " + t.getMessage());
+        }
+        try {
+            String label = fansChangeLabel(243);
+            assertTrue(label.contains("本场 持平"), label);
+            assertFalse(label.contains("+0"), label);
+        } catch (Throwable t) {
+            red.add("③ " + t.getMessage());
+        }
+        if (!red.isEmpty()) {
+            fail(red.size() + " 问红：" + String.join("；", red));
+        }
+    }
+
     /**
      * 只喂盲盒数量与盈亏，从建卡结果里取出盲盒卡文案。
      */
@@ -213,6 +241,18 @@ class BilibiliLiveReportPainterTest {
                 .filter(label -> label.startsWith("盲盒"))
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("没有盲盒卡"));
+    }
+
+    /**
+     * 开播快照与当前粉丝数相等时，粉丝变化卡副标题。
+     */
+    private String fansChangeLabel(long fans) {
+        DefaultLiveDataService data = new DefaultLiveDataService(new StarBotCoreProperties());
+        data.setLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.FANS_AT_START, fans);
+        BilibiliLiveReportPainter reportPainter = new BilibiliLiveReportPainter(
+                factory, api, data, fontUtil, new StarBotBilibiliProperties(), roomInfoHistory);
+        return reportPainter.changeCard(PLATFORM, STREAMER.getUid(), fans,
+                BilibiliLiveMetric.FANS_AT_START, "粉丝").label();
     }
 
     @Test
