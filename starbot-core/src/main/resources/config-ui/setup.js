@@ -616,6 +616,11 @@ function schedulePoll(accounts) {
 
 // ============ 第 4 步：第一位主播，推到哪 ============
 
+function invalidateStreamer(draft) {
+  draft.streamer = null;
+  return draft;
+}
+
 function stepStreamer(host) {
   heading(host, SETUP_STEPS[3].title,
     '填主播的 ' + STREAMER_INPUT_HINT + '。');
@@ -630,6 +635,7 @@ function stepStreamer(host) {
   }
 
   let chosen = (draft.streamer && draft.streamer.platform) || known[0];
+  const found = el('div');
   if (known.length > 1) {
     const wrap = el('div', 'su-fld');
     const label = el('label');
@@ -641,17 +647,17 @@ function stepStreamer(host) {
     picker.id = 'setup-platform';
     picker.innerHTML = known.map(one => '<option value="' + esc(one) + '">' + esc(one) + '</option>').join('');
     picker.value = chosen;
-    picker.addEventListener('change', () => { chosen = picker.value; });
+    picker.addEventListener('change', () => { chosen = picker.value; invalidateStreamer(draft); paintFound(found); syncFoot(); });
     wrap.appendChild(picker);
     host.appendChild(wrap);
   }
 
   const row = el('div', 'su-row');
   const input = field(row, STREAMER_INPUT_HINT, 'setup-uid', 'text',
-    draft.streamer ? String(draft.streamer.uid) : '', null);
+    draft.streamer ? String(draft.streamer.uid) : '',
+    () => { invalidateStreamer(draft); paintFound(found); syncFoot(); });
   host.appendChild(row);
 
-  const found = el('div');
   const result = el('div', 'su-r');
 
   const look = el('button', 'ghost');
