@@ -183,14 +183,14 @@ public class SafeModeServer {
     }
 
     /**
-     * 保存前给当前配置留一份带时间戳的备份，并按默认保留份数清掉旧份
+     * 保存前给当前配置留一份带时间戳的备份，并按配置里写的保留份数清掉旧份
      * <p>
      * 与主程序里的 {@code TimestampedFileBackup} 同一套命名与裁剪，而不是在这里再写一份
      * 形状相同的备份逻辑——两份实现迟早一份改了另一份没跟上。此刻主程序起不来，
-     * 读不到 yml 里配的保留份数，所以按组件默认值走；文件不在时组件自己会跳过。
+     * 保留份数尽力照 yml 里配的走，读不到时才按组件默认值；文件不在时组件自己会跳过。
      */
     void backupBeforeSave() throws IOException {
-        new TimestampedFileBackup(configPath).backup(TimestampedFileBackup.DEFAULT_KEEP);
+        new TimestampedFileBackup(configPath).backup(resolveBackupKeep());
     }
 
     /**
@@ -306,6 +306,21 @@ public class SafeModeServer {
         }
 
         return FALLBACK_PORT;
+    }
+
+    /** 尽力读出 yml 里配的备份保留份数（starbot.core.config-ui.backup-keep），口径同 {@link #resolvePort()} */
+    private int resolveBackupKeep() {
+        try {
+            if (new Yaml().load(Files.readString(configPath, StandardCharsets.UTF_8)) instanceof Map<?, ?> root
+                    && root.get("starbot") instanceof Map<?, ?> starbot
+                    && starbot.get("core") instanceof Map<?, ?> core
+                    && core.get("config-ui") instanceof Map<?, ?> ui && ui.get("backup-keep") instanceof Number keep) {
+                return TimestampedFileBackup.clamp(keep.intValue());
+            }
+        } catch (Exception e) {
+            log.debug("安全模式读不到 backup-keep, 按默认 {}: {}", TimestampedFileBackup.DEFAULT_KEEP, e.getMessage());
+        }
+        return TimestampedFileBackup.DEFAULT_KEEP;
     }
 
     private void respond(HttpExchange exchange, int status, String contentType, String body) throws IOException {
