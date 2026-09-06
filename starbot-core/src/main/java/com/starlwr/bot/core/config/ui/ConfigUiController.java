@@ -539,6 +539,12 @@ public class ConfigUiController {
         try {
             result.put("success", true);
             Map<String, String> values = fileService.read();
+            String backupKeepKey = "starbot.core.config-ui.backup-keep";
+            if (values.containsKey(backupKeepKey)) {
+                // 文件里可能写着越界值，程序按 1–100 生效。界面要显示生效值，
+                // 不然看起来能留 500 份，实际只留 100。
+                values.put(backupKeepKey, Integer.toString(properties.getConfigUi().getBackupKeep()));
+            }
             // 先补旧位置再遮机密：补进来的项同样可能是机密，顺序反了就会漏出去
             result.put("legacy", ConfigurationKeyAliases.resolve(values));
             // 口令、令牌与密钥不出这道门：面板可能在直播画面里被打开。

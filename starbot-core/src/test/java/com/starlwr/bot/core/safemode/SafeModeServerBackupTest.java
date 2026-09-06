@@ -27,6 +27,24 @@ class SafeModeServerBackupTest {
     Path dir;
 
     @Test
+    @DisplayName("经保存路径写一次：备份目录多出一份且名与组件同形")
+    void applySaveCreatesAComponentShapedBackup() throws IOException {
+        Path config = dir.resolve("application.yml");
+        Files.writeString(config, "seed: 1\n", StandardCharsets.UTF_8);
+        SafeModeServer server = new SafeModeServer(config, "测试用的启动失败原因");
+
+        assertEquals(0, stampedBackupNames(config).size(), "保存前不应已有带戳备份");
+        assertEquals(null, server.applySave("ok: true\n"), "合法 YAML 应保存成功");
+
+        List<String> names = stampedBackupNames(config);
+        assertEquals(1, names.size(), "经保存路径写一次应多出一份备份");
+        assertTrue(names.get(0).matches("application\\.yml\\.\\d{8}-\\d{6}(-\\d+)?\\.bak"),
+                "备份名应与组件生成的同形: " + names.get(0));
+        assertEquals("ok: true\n", Files.readString(config, StandardCharsets.UTF_8),
+                "本体应是这次保存的内容");
+    }
+
+    @Test
     @DisplayName("连存 12 次：备份名与组件同形，只留 10 份")
     void safeModeBackupsShareTheComponentShapeAndKeepTen() throws IOException {
         Path config = dir.resolve("application.yml");

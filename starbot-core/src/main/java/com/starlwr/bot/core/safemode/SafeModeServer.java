@@ -143,17 +143,30 @@ public class SafeModeServer {
     private void save(HttpExchange exchange) throws IOException {
         String content = readBody(exchange);
 
-        String problem = validate(content);
+        String problem = applySave(content);
         if (problem != null) {
             respond(exchange, 200, "text/html; charset=utf-8", page(content, problem));
             return;
         }
 
-        backupBeforeSave();
-        Files.writeString(configPath, content, StandardCharsets.UTF_8);
-
         log.info("安全模式已保存 application.yml, 请重启程序");
         respond(exchange, 200, "text/html; charset=utf-8", page(content, null, "已保存。请重启程序，若配置无误将正常启动。"));
+    }
+
+    /**
+     * 校验 YAML、备份、写盘。HTTP 应答仍由 {@link #save} 写。
+     * @param yaml 待保存的配置正文
+     * @return 未通过校验时的问题描述；通过并已写盘时返回 {@code null}
+     */
+    String applySave(String yaml) throws IOException {
+        String problem = validate(yaml);
+        if (problem != null) {
+            return problem;
+        }
+
+        backupBeforeSave();
+        Files.writeString(configPath, yaml, StandardCharsets.UTF_8);
+        return null;
     }
 
     /**
