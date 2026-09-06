@@ -13,10 +13,13 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -98,6 +101,26 @@ class ConfigurationFileServiceTest {
                             .matches("\\d{8}-\\d{6}(-\\d+)?"))
                     .sorted()
                     .toList();
+        }
+    }
+
+    /**
+     * 配置文件当前内容的摘要，用于断言「整批被拒时盘上一个字节没动」
+     */
+    private String sha256() throws IOException {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(config)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("JVM 必须提供 SHA-256", e);
+        }
+    }
+
+    /**
+     * 目录里 .bak 备份的个数
+     */
+    private long backupCount() throws IOException {
+        try (var files = Files.list(dir)) {
+            return files.filter(path -> path.getFileName().toString().endsWith(".bak")).count();
         }
     }
 
@@ -376,6 +399,34 @@ class ConfigurationFileServiceTest {
         assertTrue(content().contains("- https://a.example"), "应写成 YAML 列表:\n" + content());
         assertFalse(content().contains("\"https://a.example"), "不应写成带引号的多行标量:\n" + content());
         assertEquals("https://a.example\nhttps://b.example", service.read().get("starbot.core.plugin.maven-base-urls"));
+    }
+
+    @Test
+    @DisplayName("找不到任何上级块的配置项: 整批不落盘, 报错点名是哪一项")
+    void orphanKeyRejectsWholeBatch() throws IOException {
+        String before = sha256();
+
+        IOException error = assertThrows(IOException.class,
+                () -> service.write(Map.of("logging.level.root", "DEBUG")));
+
+        assertTrue(error.getMessage().contains("logging.level.root"), "报错要说清是哪一项: " + error.getMessage());
+        assertEquals(before, sha256(), "整批被拒时文件必须一个字节不动");
+        assertEquals(0, backupCount(), "整批被拒时不应生成备份");
+    }
+
+    @Test
+    @DisplayName("孤儿键混着能插的键: 同样整批拒绝, 能插的那项也不落盘")
+    void orphanKeyInMixedBatchWritesNothing() throws IOException {
+        String before = sha256();
+
+        IOException error = assertThrows(IOException.class, () -> service.write(Map.of(
+                "starbot.bilibili.dynamic.draw-logo", "true",
+                "logging.level.root", "DEBUG")));
+
+        assertTrue(error.getMessage().contains("logging.level.root"), "报错要说清是哪一项: " + error.getMessage());
+        assertEquals(before, sha256(), "能插进去的那一项也不许单独落盘");
+        assertFalse(content().contains("draw-logo"), "混批必须整体拒绝, 不能一半落一半不落:\n" + content());
+        assertEquals(0, backupCount(), "整批被拒时不应生成备份");
     }
 
     // ============ 值里带换行 ============
