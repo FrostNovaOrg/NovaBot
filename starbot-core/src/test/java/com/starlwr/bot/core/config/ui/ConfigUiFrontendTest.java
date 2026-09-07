@@ -1064,6 +1064,52 @@ class ConfigUiFrontendTest {
     }
 
     /**
+     * 两处功能照常、只是长得不对的退步，机器也得拦
+     * <ul>
+     *   <li>登录页「用口令登录」折叠头：折着时它是这条路的入口，得是个按钮的形，
+     *       而不是一行没边没底的小字。摊开之后它退居小字标题。</li>
+     *   <li>通道一览六列全部 nowrap，表格布局里 td 的 max-width 不生效，卡片又没有 overflow——
+     *       列一多整张表把卡片顶破。外包一层 .tblwrap 让它横向滚，做法与主播页历史表一致。</li>
+     * </ul>
+     * 三问各自记下，末尾一起红。
+     */
+    @Test
+    @DisplayName("登录页口令折叠头有按钮形、通道一览表格有横向滚动容器")
+    void loginFoldHeaderIsAButtonAndPushIndexTableScrolls() throws IOException {
+        List<String> reds = new ArrayList<>();
+
+        try {
+            String html = Files.readString(frontendDir().resolve("login.html"), StandardCharsets.UTF_8);
+            String summary = cssBlock(html, "details > summary");
+            assertFalse(summary.isBlank(), "login.html 里找不到 details > summary 这条规则");
+            assertTrue(summary.contains("border:"),
+                    "「用口令登录」折着时是这条路的入口，须有按钮形（border），此刻: " + summary);
+        } catch (AssertionError e) {
+            reds.add("① " + e.getMessage());
+        }
+
+        try {
+            String push = Files.readString(frontendDir().resolve("push.js"), StandardCharsets.UTF_8);
+            String render = functionBodyAny(push, "renderIndex");
+            assertFalse(render.isBlank(), "push.js 里找不到 renderIndex");
+            assertTrue(render.contains("'tblwrap'"),
+                    "通道一览的表须包进 el('div','tblwrap')，否则六列 nowrap 会把卡片顶破");
+        } catch (AssertionError e) {
+            reds.add("② " + e.getMessage());
+        }
+
+        try {
+            String css = Files.readString(frontendDir().resolve("app.css"), StandardCharsets.UTF_8);
+            assertTrue(css.contains(".tblwrap{overflow-x:auto"),
+                    "app.css 须有 .tblwrap{overflow-x:auto}，横向滚动容器是全站通用类");
+        } catch (AssertionError e) {
+            reds.add("③ " + e.getMessage());
+        }
+
+        assertTrue(reds.isEmpty(), () -> "三问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+    }
+
+    /**
      * 推送页那份判法
      */
     private static final String PUSH_MODEL = "push-model.js";

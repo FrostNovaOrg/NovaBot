@@ -295,7 +295,11 @@ function renderIndex(host) {
     box.appendChild(el('p', 'hint')).textContent =
       '还没有通道。左边加一位主播，再给它挑一个群或好友。';
   } else {
+    // 六列全 nowrap，宽了在卡片里横着滚，而不是把卡片顶破——做法与主播页历史表一致
+    const wrap = el('div', 'tblwrap');
     const table = el('table', 'ptable');
+    table.style.width = 'max-content';
+    table.style.minWidth = '100%';
     table.innerHTML = '<thead><tr><th>主播</th><th>通道</th><th>号</th>'
       + '<th>开着的通知</th><th>模板</th><th></th></tr></thead><tbody>'
       + rows.map(row => '<tr><td>' + esc(row.streamer) + '</td>'
@@ -305,7 +309,8 @@ function renderIndex(host) {
         + '<td>' + (row.custom ? '自定义' : '默认') + '</td>'
         + '<td><a href="#/push/' + esc(row.uid) + '/' + esc(row.num) + '">打开</a></td></tr>').join('')
       + '</tbody>';
-    box.appendChild(table);
+    wrap.appendChild(table);
+    box.appendChild(wrap);
   }
 
   renderStranded(host);
