@@ -167,16 +167,19 @@ export function startAt(facts, rerun, steps) {
  *        那是 store 上一份共享状态的名字，在界面文件里裸着出现即为 ReferenceError，
  *        因此有一条判据在盯着它——它当场逮住了这一处
  * @param commandCount 运行期认得的命令条数，数不到时传 null
+ * @param terms 插件申报的词表
+ * @param status /api/status 回包；机器人告警是否已配读其中 alerts.qq，不认已迁走的键名
  * @return {{label: string, text: string, href: string, key: string}[]} 每行
  */
-export function initialRows(configValues, commandCount, terms) {
+export function initialRows(configValues, commandCount, terms, status) {
   const at = configValues || {};
   const read = key => String(at[key] ?? '').trim();
+  const alerts = (status || {}).alerts || {};
 
   const quietStart = read('starbot.core.push.quiet-start');
   const quietEnd = read('starbot.core.push.quiet-end');
   const retention = Number(read('starbot.core.timeline.retention-days'));
-  const alerted = !!read('starbot.core.alert.webhook-url') || !!read('starbot.core.alert.qq-num')
+  const alerted = !!read('starbot.core.alert.webhook-url') || !!alerts.qq
     || mailAlertConfigured(read('starbot.core.mail.default-to'), read('spring.mail.host'));
 
   return [

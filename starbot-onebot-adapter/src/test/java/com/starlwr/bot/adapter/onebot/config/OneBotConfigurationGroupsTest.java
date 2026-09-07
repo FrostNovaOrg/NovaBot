@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 class OneBotConfigurationGroupsTest {
     private static final List<String> EXPECTED = List.of(
             "starbot.adapter.onebot.extension.napcat.enable-backup-at-all",
+            "starbot.adapter.onebot.alert",
             "starbot.adapter.onebot.base-url",
             "starbot.adapter.onebot.senders",
             "starbot.adapter.onebot.security",
@@ -29,7 +30,7 @@ class OneBotConfigurationGroupsTest {
             "starbot.adapter.onebot.extension");
 
     @Test
-    @DisplayName("申报七条、合并表最长前缀胜、与核心表撞前缀须抛")
+    @DisplayName("申报八条、合并表最长前缀胜、与核心表撞前缀须抛")
     void contributorDeclaresSevenPrefixesAndMerges() {
         List<String> red = new ArrayList<>();
         OneBotConfigurationGroups contributor = new OneBotConfigurationGroups();
@@ -37,11 +38,14 @@ class OneBotConfigurationGroupsTest {
         try {
             Map<String, ConfigurationGroups.Group> declared = contributor.prefixes();
             assertEquals(EXPECTED, List.copyOf(declared.keySet()),
-                    "申报须恰 7 条且顺序为 enable-backup-at-all 再其余六");
+                    "申报须恰 8 条且顺序为 enable-backup-at-all、alert 再其余六");
             assertEquals(ConfigurationGroups.PUSH,
                     declared.get("starbot.adapter.onebot.extension.napcat.enable-backup-at-all"),
                     "enable-backup-at-all 须落推送");
-            for (int i = 1; i < EXPECTED.size(); i++) {
+            assertEquals(ConfigurationGroups.ALERT,
+                    declared.get("starbot.adapter.onebot.alert"),
+                    "alert 须落告警");
+            for (int i = 2; i < EXPECTED.size(); i++) {
                 String prefix = EXPECTED.get(i);
                 assertEquals(ConfigurationGroups.SERVICE, declared.get(prefix),
                         prefix + " 须落服务");
@@ -58,6 +62,9 @@ class OneBotConfigurationGroupsTest {
             assertEquals(ConfigurationGroups.PUSH,
                     groups.groupOf("starbot.adapter.onebot.extension.napcat.enable-backup-at-all"),
                     "enable-backup-at-all 须落推送（最长前缀胜）");
+            assertEquals(ConfigurationGroups.ALERT,
+                    groups.groupOf("starbot.adapter.onebot.alert.platform"),
+                    "alert.platform 须落告警");
         } catch (AssertionError e) {
             red.add("②" + e.getMessage());
         }

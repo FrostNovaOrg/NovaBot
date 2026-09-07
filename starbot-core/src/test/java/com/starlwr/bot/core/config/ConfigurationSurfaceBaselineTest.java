@@ -75,11 +75,11 @@ class ConfigurationSurfaceBaselineTest {
     private static final List<String> PLATFORM_WORDS = List.of("QQ", "NapCat", "OneBot");
 
     /**
-     * 迁移途中暂豁免的两节：告警的 QQ 目标三键与代登录凭据四键。
-     * 整节迁去插件之后，基线里不再有这两个前缀的键，问②会红——那是在提醒把豁免一并删掉。
+     * 迁移途中暂豁免的一节：代登录凭据四键。告警目标三项已迁走。
+     * 整节迁去插件之后，基线里不再有这个前缀的键，问②会红——那是在提醒把豁免一并删掉。
      */
     private static final List<String> MIGRATING_PREFIXES =
-            List.of("starbot.core.alert.qq-", "starbot.core.config-ui.napcat.");
+            List.of("starbot.core.config-ui.napcat.");
 
     @Test
     @DisplayName("① 键全集 —— 键名、类型、默认值、说明逐项与样本同串")
@@ -133,7 +133,7 @@ class ConfigurationSurfaceBaselineTest {
     }
 
     @Test
-    @DisplayName("④ 留核键说明零平台词 —— 非豁免键的说明不含 QQ／NapCat／OneBot；豁免恰两前缀且各有键；行数与键数同")
+    @DisplayName("④ 留核键说明零平台词 —— 非豁免键的说明不含 QQ／NapCat／OneBot；豁免恰一前缀且仍有键；行数与键数同")
     void retainedKeyDescriptionsHaveNoPlatformWords() throws IOException {
         List<String> baseline = readBaseline(KEYS_FILE);
         List<String> unresolved = new ArrayList<>();
@@ -154,14 +154,14 @@ class ConfigurationSurfaceBaselineTest {
             unresolved.add("问① " + e.getMessage());
         }
 
-        // 问②：豁免恰两前缀，且各自在基线中仍有键——键迁走后此问红，提醒删豁免
+        // 问②：豁免恰一前缀，且在基线中仍有键——键迁走后此问红，提醒删豁免
         try {
             for (String prefix : MIGRATING_PREFIXES) {
                 assertTrue(baseline.stream().anyMatch(line -> line.startsWith(prefix)),
                         "豁免前缀 " + prefix + " 在基线中已无键——这一节已迁走，把豁免删掉");
             }
-            assertEquals(2, MIGRATING_PREFIXES.size(),
-                    "豁免须恰两前缀：告警的 QQ 目标与代登录凭据——增删豁免须是一次显式决定");
+            assertEquals(1, MIGRATING_PREFIXES.size(),
+                    "豁免须恰一前缀：代登录凭据——增删豁免须是一次显式决定");
         } catch (AssertionError e) {
             unresolved.add("问② " + e.getMessage());
         }

@@ -1,6 +1,6 @@
 package com.starlwr.bot.adapter.onebot.alert;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.adapter.onebot.config.OneBotAdapterPluginProperties;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
@@ -24,7 +24,7 @@ class QqAlertChannelTest {
     @Test
     @DisplayName("配置完整且类型合法时应判定为可用")
     void shouldBeAvailableWithValidConfiguration() {
-        StarBotCoreProperties properties = properties(PushTargetType.FRIEND.getCode(), 10000L);
+        OneBotAdapterPluginProperties properties = properties(PushTargetType.FRIEND.getCode(), 10000L);
 
         assertTrue(new QqAlertChannel(properties, mock(StarBotMessageSender.class)).isAvailable());
     }
@@ -44,7 +44,7 @@ class QqAlertChannelTest {
     @DisplayName("类型取值非法时应判定为不可用, 而不是发出一条注定被丢弃的告警")
     void shouldBeUnavailableWithInvalidType() {
         // 2 是曾经写在文档与默认值里的错误取值，它会被解析为 UNKNOWN
-        StarBotCoreProperties properties = properties(2, 10000L);
+        OneBotAdapterPluginProperties properties = properties(2, 10000L);
 
         assertEquals(PushTargetType.UNKNOWN, PushTargetType.of(2), "前置条件: 2 不是合法取值");
         assertFalse(new QqAlertChannel(properties, mock(StarBotMessageSender.class)).isAvailable());
@@ -58,15 +58,15 @@ class QqAlertChannelTest {
         assertFalse(new QqAlertChannel(properties(PushTargetType.FRIEND.getCode(), null), sender).isAvailable(),
                 "未填号码时不可用");
 
-        StarBotCoreProperties noPlatform = properties(PushTargetType.FRIEND.getCode(), 10000L);
-        noPlatform.getAlert().setQqPlatform("");
+        OneBotAdapterPluginProperties noPlatform = properties(PushTargetType.FRIEND.getCode(), 10000L);
+        noPlatform.getAlert().setPlatform("");
         assertFalse(new QqAlertChannel(noPlatform, sender).isAvailable(), "未填平台名时不可用");
     }
 
     @Test
     @DisplayName("发送的告警应带上配置的目标类型与号码")
     void shouldSendToConfiguredTarget() {
-        StarBotCoreProperties properties = properties(PushTargetType.GROUP.getCode(), 12345L);
+        OneBotAdapterPluginProperties properties = properties(PushTargetType.GROUP.getCode(), 12345L);
         StarBotMessageSender sender = mock(StarBotMessageSender.class);
 
         new QqAlertChannel(properties, sender).send("标题", "正文");
@@ -86,11 +86,11 @@ class QqAlertChannelTest {
      * @param qqNum 群号或 QQ 号
      * @return 配置
      */
-    private StarBotCoreProperties properties(int qqType, Long qqNum) {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
-        properties.getAlert().setQqPlatform("qq-onebot");
-        properties.getAlert().setQqType(qqType);
-        properties.getAlert().setQqNum(qqNum);
+    private OneBotAdapterPluginProperties properties(int type, Long num) {
+        OneBotAdapterPluginProperties properties = new OneBotAdapterPluginProperties();
+        properties.getAlert().setPlatform("qq-onebot");
+        properties.getAlert().setType(type);
+        properties.getAlert().setNum(num);
         return properties;
     }
 }

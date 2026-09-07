@@ -2,6 +2,8 @@ package com.starlwr.bot.core.config.ui;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.starlwr.bot.core.alert.AlertChannel;
+import com.starlwr.bot.core.alert.AlertService;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
@@ -77,6 +79,9 @@ class HomeStatusFieldsTest {
     /** 探针清单由本字段供给，各用例按需改 */
     private List<HealthProbe> probes = List.of();
 
+    /** 告警通道清单由本字段供给，各用例按需改 */
+    private List<AlertChannel> alertChannels = List.of();
+
     @BeforeEach
     void setUp() throws IOException {
         properties = new StarBotCoreProperties();
@@ -137,7 +142,38 @@ class HomeStatusFieldsTest {
                 timeline,
                 authService,
                 new PushTemplateDefaults(new StarBotCoreProperties()),
-                mock(UpdateCheckService.class));
+                mock(UpdateCheckService.class),
+                alertService());
+    }
+
+    @SuppressWarnings("unchecked")
+    private AlertService alertService() {
+        ObjectProvider<AlertChannel> provider = mock(ObjectProvider.class);
+        when(provider.orderedStream()).thenAnswer(invocation -> alertChannels.stream());
+        return new AlertService(properties, provider);
+    }
+
+    private static AlertChannel availableQqChannel() {
+        return new AlertChannel() {
+            @Override
+            public String id() {
+                return "qq";
+            }
+
+            @Override
+            public String name() {
+                return "QQ";
+            }
+
+            @Override
+            public boolean isAvailable() {
+                return true;
+            }
+
+            @Override
+            public void send(String subject, String content) {
+            }
+        };
     }
 
     /** 一个只声明范围与登录态位的探针，够本组用例用 */
@@ -339,9 +375,9 @@ class HomeStatusFieldsTest {
     }
 
     @Test
-    @DisplayName("QQ 告警有号码即已配")
+    @DisplayName("QQ 告警通道可用即已配")
     void alertsQqWhenNumSet() {
-        properties.getAlert().setQqNum(10001L);
+        alertChannels = List.of(availableQqChannel());
 
         JSONObject alerts = controller().status().getJSONObject("alerts");
         assertTrue(alerts.getBooleanValue("qq"));
@@ -378,7 +414,7 @@ class HomeStatusFieldsTest {
     @Test
     @DisplayName("三路各自独立，配齐仍各报各的")
     void alertsThreeChannelsIndependent() throws IOException {
-        properties.getAlert().setQqNum(10001L);
+        alertChannels = List.of(availableQqChannel());
         properties.getAlert().setWebhookUrl("https://example.invalid/push");
         properties.getMail().setDefaultTo("ops@example.invalid");
         when(fileService.read()).thenReturn(Map.of("spring.mail.host", "smtp.example.invalid"));

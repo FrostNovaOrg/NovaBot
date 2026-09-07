@@ -20,6 +20,10 @@
             <groupId>com.starlwr</groupId>
             <artifactId>starbot-core</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-configuration-processor</artifactId>
+        </dependency>
         <!--
             只在判据里用：把 config-ui 下那段续登逻辑真的跑一遍。
             test 作用域，不进任何交付产物。

@@ -83,20 +83,6 @@ class RuntimeConfigurationApplierTest {
     }
 
     @Test
-    @DisplayName("告警接收人：平台、类型与号码三项一起当场换到新地址")
-    void appliesAlertRecipient() {
-        applier.applyAndTrack(Map.of(
-                "starbot.core.alert.qq-platform", "onebot",
-                "starbot.core.alert.qq-type", "1",
-                "starbot.core.alert.qq-num", "10001"));
-
-        StarBotCoreProperties.Alert alert = properties.getAlert();
-        assertEquals("onebot", alert.getQqPlatform());
-        assertEquals(1, alert.getQqType());
-        assertEquals(10001L, alert.getQqNum());
-    }
-
-    @Test
     @DisplayName("告警接收人：Webhook 地址与收件邮箱同样当场生效")
     void appliesWebhookAndMailRecipient() {
         applier.applyAndTrack(Map.of(
@@ -105,15 +91,6 @@ class RuntimeConfigurationApplierTest {
 
         assertEquals("https://example.invalid/hook", properties.getAlert().getWebhookUrl());
         assertEquals("ops@example.invalid", properties.getMail().getDefaultTo());
-    }
-
-    @Test
-    @DisplayName("告警号码留空即取消 QQ 告警，而不是把空串塞进一个数字里")
-    void clearingAlertNumberYieldsNull() {
-        applier.applyAndTrack(Map.of("starbot.core.alert.qq-num", "10001"));
-        applier.applyAndTrack(Map.of("starbot.core.alert.qq-num", ""));
-
-        assertNull(properties.getAlert().getQqNum());
     }
 
     @Test
@@ -151,12 +128,12 @@ class RuntimeConfigurationApplierTest {
     @Test
     @DisplayName("⚠️ 阴性：值的形式不对时按需重启处理，不当作已生效")
     void unparsableValueCountsAsRestartRequired() {
-        int before = properties.getAlert().getQqType();
+        int before = properties.getConfigUi().getBackupKeep();
 
-        List<String> restart = applier.applyAndTrack(Map.of("starbot.core.alert.qq-type", "群聊"));
+        List<String> restart = applier.applyAndTrack(Map.of("starbot.core.config-ui.backup-keep", "很多"));
 
-        assertEquals(before, properties.getAlert().getQqType());
-        assertEquals(List.of("starbot.core.alert.qq-type"), restart);
+        assertEquals(before, properties.getConfigUi().getBackupKeep());
+        assertEquals(List.of("starbot.core.config-ui.backup-keep"), restart);
     }
 
     @Test
@@ -176,13 +153,13 @@ class RuntimeConfigurationApplierTest {
     @Test
     @DisplayName("值的形式改对之后当场生效，待重启名单里那条当场划掉；够不着的键仍留着")
     void correctedValueDropsOutOfPendingRestart() {
-        applier.applyAndTrack(Map.of("starbot.core.alert.qq-type", "群聊"));
-        assertTrue(applier.getPendingRestart().contains("starbot.core.alert.qq-type"),
+        applier.applyAndTrack(Map.of("starbot.core.config-ui.backup-keep", "很多"));
+        assertTrue(applier.getPendingRestart().contains("starbot.core.config-ui.backup-keep"),
                 "值的形式不对时应记入待重启");
 
-        applier.applyAndTrack(Map.of("starbot.core.alert.qq-type", "1"));
+        applier.applyAndTrack(Map.of("starbot.core.config-ui.backup-keep", "3"));
 
-        assertEquals(1, properties.getAlert().getQqType(), "改对之后应当场生效");
+        assertEquals(3, properties.getConfigUi().getBackupKeep(), "改对之后应当场生效");
         assertEquals(List.of(), applier.getPendingRestart(),
                 "已生效的那一项不该继续挂在待重启名单上");
 

@@ -9,6 +9,8 @@ import com.starlwr.bot.core.config.ui.page.ConsolePageProvider;
 import com.starlwr.bot.core.config.ui.page.ConsolePages;
 import com.starlwr.bot.core.config.ui.vocab.ConsoleVocabularies;
 import com.starlwr.bot.core.config.ui.vocab.ConsoleVocabulary;
+import com.starlwr.bot.core.alert.AlertChannel;
+import com.starlwr.bot.core.alert.AlertService;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.model.EventStreamToken;
 import com.starlwr.bot.core.service.EventStreamTokenService;
@@ -221,6 +223,11 @@ public class ConfigUiController {
     private final ObjectProvider<ConfigurationKeyAliasContributor> aliasContributors;
 
     /**
+     * 告警通道。首页 alerts.qq 问通道可用性，不认核心里已经迁走的键名
+     */
+    private final AlertService alertService;
+
+    /**
      * 构建信息，版本号从这里来
      * <p>
      * 用 ObjectProvider 取：这个 Bean 由 build-info 生成的属性文件撑着，
@@ -295,7 +302,43 @@ public class ConfigUiController {
                 dataSourceServiceRegistry, levelResolver, effectResolver, dangerResolver, runtimeApplier,
                 connectionTesters, pageProviders, eventStreamTokens, buildProperties, pushGate,
                 liveDataService, timeline, authService, templateDefaults, updateCheck,
-                noGroupContributors(), noVocabularies(), noAliasContributors());
+                noGroupContributors(), noVocabularies(), noAliasContributors(),
+                defaultAlertService(properties));
+    }
+
+    ConfigUiController(ConfigurationMetadataService metadataService,
+                       ConfigurationFileService fileService,
+                       StarBotCoreProperties properties,
+                       AbstractDataSource dataSource,
+                       ObjectProvider<HealthProbe> healthProbes,
+                       ConfigurationValidator validator,
+                       StarBotSenderService senderService,
+                       StarBotMessageSender messageSender,
+                       ObjectProvider<AccountLoginProvider> loginProviders,
+                       PushActivityRecorder activityRecorder,
+                       StarBotEventHandlerService handlerService,
+                       DataSourceServiceRegistry dataSourceServiceRegistry,
+                       ConfigurationLevelResolver levelResolver,
+                       ConfigurationEffectResolver effectResolver,
+                       ConfigurationDangerResolver dangerResolver,
+                       RuntimeConfigurationApplier runtimeApplier,
+                       ObjectProvider<BotConnectionTester> connectionTesters,
+                       ObjectProvider<ConsolePageProvider> pageProviders,
+                       EventStreamTokenService eventStreamTokens,
+                       ObjectProvider<BuildProperties> buildProperties,
+                       PushGate pushGate,
+                       LiveDataService liveDataService,
+                       TimelineStore timeline,
+                       ConfigUiAuthService authService,
+                       PushTemplateDefaults templateDefaults,
+                       UpdateCheckService updateCheck,
+                       AlertService alertService) {
+        this(metadataService, fileService, properties, dataSource, healthProbes, validator,
+                senderService, messageSender, loginProviders, activityRecorder, handlerService,
+                dataSourceServiceRegistry, levelResolver, effectResolver, dangerResolver, runtimeApplier,
+                connectionTesters, pageProviders, eventStreamTokens, buildProperties, pushGate,
+                liveDataService, timeline, authService, templateDefaults, updateCheck,
+                noGroupContributors(), noVocabularies(), noAliasContributors(), alertService);
     }
 
     @Autowired
@@ -327,7 +370,8 @@ public class ConfigUiController {
                               UpdateCheckService updateCheck,
                               ObjectProvider<ConfigurationGroupContributor> groupContributors,
                               ObjectProvider<ConsoleVocabulary> vocabProviders,
-                              ObjectProvider<ConfigurationKeyAliasContributor> aliasContributors) {
+                              ObjectProvider<ConfigurationKeyAliasContributor> aliasContributors,
+                              AlertService alertService) {
         this.templateDefaults = templateDefaults;
         this.pushGate = pushGate;
         this.liveDataService = liveDataService;
@@ -343,6 +387,7 @@ public class ConfigUiController {
         this.vocabProviders = vocabProviders;
         this.groupContributors = groupContributors;
         this.aliasContributors = aliasContributors;
+        this.alertService = alertService;
         this.levelResolver = levelResolver;
         this.connectionTesters = connectionTesters;
         this.activityRecorder = activityRecorder;
@@ -468,6 +513,49 @@ public class ConfigUiController {
 
             @Override
             public Stream<ConfigurationKeyAliasContributor> orderedStream() {
+                return Stream.empty();
+            }
+        };
+    }
+
+    /**
+     * 测试直接 new 时没有告警通道
+     * @param properties 核心配置
+     * @return 空通道的告警服务
+     */
+    private static AlertService defaultAlertService(StarBotCoreProperties properties) {
+        return new AlertService(properties, noAlertChannels());
+    }
+
+    private static ObjectProvider<AlertChannel> noAlertChannels() {
+        return new ObjectProvider<>() {
+            @Override
+            public AlertChannel getObject() {
+                throw new NoSuchBeanDefinitionException(AlertChannel.class);
+            }
+
+            @Override
+            public AlertChannel getObject(Object... args) {
+                throw new NoSuchBeanDefinitionException(AlertChannel.class);
+            }
+
+            @Override
+            public AlertChannel getIfAvailable() {
+                return null;
+            }
+
+            @Override
+            public AlertChannel getIfUnique() {
+                return null;
+            }
+
+            @Override
+            public Stream<AlertChannel> stream() {
+                return Stream.empty();
+            }
+
+            @Override
+            public Stream<AlertChannel> orderedStream() {
                 return Stream.empty();
             }
         };
@@ -1854,12 +1942,12 @@ public class ConfigUiController {
      * <p>
      * 首页那条「QQ 告警有死角」要按 Webhook 与邮件这两位决定出不出——QQ 配没配都出，
      * 它催的是掉线时还有一路能叫到人。判定与设置页药丸同源，见 {@link AlertReadiness}：
-     * QQ 看有没有号码、Webhook 看地址空不空、邮件看收件与 SMTP 主机都有没有。
+     * QQ 问告警通道是否可用、Webhook 看地址空不空、邮件看收件与 SMTP 主机都有没有。
      */
     private JSONObject alerts() {
         JSONObject json = new JSONObject();
         StarBotCoreProperties.Alert alert = properties.getAlert();
-        json.put("qq", alert.getQqNum() != null);
+        json.put("qq", alertService.isChannelAvailable("qq"));
         json.put("webhook", StringUtil.isNotBlank(alert.getWebhookUrl()));
         json.put("mail", AlertReadiness.mailConfigured(properties.getMail().getDefaultTo(), smtpHost()));
         return json;

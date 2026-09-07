@@ -73,9 +73,6 @@ starbot:
     alert:
       enabled: false
       convergence-interval: 81
-      qq-platform: coverage-channel
-      qq-type: 1
-      qq-num: 82
       webhook-url: http://127.0.0.1:18080/hook
       webhook-method: GET
       webhook-title-field: coverage-title

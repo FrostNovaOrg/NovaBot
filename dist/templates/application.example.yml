@@ -50,6 +50,11 @@ spring:
 starbot:
   adapter:
     onebot:
+      alert:
+        platform:                  # 接收告警的推送平台名，填 senders 中的某个 name，留空则不用机器人告警。
+        type: 0                    # 1 为群聊，0 为私聊。与 datasource.json 中推送目标的 type 同一套编码
+        num:                       # 接收告警的群号或用户号
+
       security:
         enabled: true                 # 推送接口安全校验总开关，仅在完全可信的隔离网络中才建议关闭
         allow-ips:                    # 允许调用推送接口的来源，支持 CIDR
@@ -277,12 +282,7 @@ starbot:
       enabled: true                 # 是否启用告警。关闭后登录失效、连接中断等问题只写日志，不主动通知
       convergence-interval: 3600    # 同一问题的最短告警间隔，单位：秒。
                                     # 故障往往持续存在，不收敛会反复推送同一条消息，最终使人对告警脱敏
-      qq-platform:                  # 接收告警的推送平台名，填 senders 中的某个 name，留空则不用 QQ 告警。
-                                    # 相比邮件，直接推到管理员 QQ 无需另配发件服务，更实用
-      qq-type: 0                    # 1 为群聊，0 为私聊。与 datasource.json 中推送目标的 type 同一套编码
-      qq-num:                       # 接收告警的群号或 QQ 号
-
-      # ⚠️ QQ 告警走的是机器人自身的推送链路：OneBot 掉线或 QQ 掉登录时，
+      # ⚠️ 机器人告警走的是机器人自身的推送链路：掉线或掉登录时，
       #    需要告警的正是这种时候，而 QQ 告警本身也一并失效了。
       #    强烈建议同时配置下面两者之一，它们不经过机器人链路。
 

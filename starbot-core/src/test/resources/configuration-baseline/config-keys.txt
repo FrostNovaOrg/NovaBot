@@ -10,9 +10,6 @@ spring.mail.port|java.lang.Integer|<null>|SMTP 端口，如 465（SSL）或 587�
 spring.mail.username|java.lang.String|<null>|SMTP 登录账号，通常就是发件邮箱地址
 starbot.core.alert.convergence-interval|java.lang.Integer|3600|同一问题的最短告警间隔，单位：秒 故障往往持续存在，不做收敛就会反复推送同一条消息，最终使人对告警彻底脱敏。
 starbot.core.alert.enabled|java.lang.Boolean|true|是否启用告警 关闭后登录失效、连接中断、队列积压等问题只会写进日志，不会主动通知。
-starbot.core.alert.qq-num|java.lang.Long|<null>|接收告警的群号或 QQ 号，改完立即生效，不必重启
-starbot.core.alert.qq-platform|java.lang.String||接收告警的推送平台名，留空则不通过 QQ 告警 对本项目的使用者而言，告警直接推到管理员 QQ 远比邮件实用——大多数人并不会为 一个机器人专门配置发件邮箱。改完立即生效，不必重启。
-starbot.core.alert.qq-type|java.lang.Integer|0|接收告警的目标类型，1 为群聊，0 为私聊 取值必须与 PushTargetType 的 code 一致： GROUP(1)、FRIEND(0)。此处曾误写为「2 为私聊」，而 2 会被解析为 UNKNOWN，告警在发送阶段被直接丢弃，且不留任何痕迹——与 datasource.json 中 推送目标的 type 是同一套编码，不要凭直觉另立一套。改完立即生效，不必重启。
 starbot.core.alert.retry-interval|java.lang.Integer|60|发送失败的告警的重投间隔，单位：秒，设为 0 关闭重投 需要告警的时候往往正是发不出去的时候：出网劣化、机器人掉登录、Webhook 服务抖动， 三者都会让告警本身失败，而失败之后此前没有下文——「没收到告警」于是被读成「没出事」。
 starbot.core.alert.retry-max-attempts|java.lang.Integer|10|单条告警的最大重投次数，超过后放弃并写日志
 starbot.core.alert.retry-queue-size|java.lang.Integer|50|待重投队列的容量上限 满了之后丢最旧的，并在日志里说明丢了哪一条。不静默截断： 悄悄丢掉的告警比没有重投更糟，它会让人以为队列在正常工作。

@@ -1201,7 +1201,7 @@ function defaultsBlock() {
 
   // 命令条数没有任何接口给得出来，因此交 null 进去，由那边说「全开」而不写个数。
   // 随手写一个数摆在一排算出来的值中间，是这几行里最难被发现的一处错
-  initialRows(store.values, null, store.vocab).forEach(item => {
+  initialRows(store.values, null, store.vocab, seen && seen.status).forEach(item => {
     const line = el('div', 'su-def');
     const text = el('div');
     const name = el('b');
