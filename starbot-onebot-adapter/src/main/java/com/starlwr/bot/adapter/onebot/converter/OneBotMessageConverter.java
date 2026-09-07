@@ -2,175 +2,135 @@ package com.starlwr.bot.adapter.onebot.converter;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.starlwr.bot.core.model.MessagePlaceholders;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.util.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
- * OneBot 消息转换器
+ * 把占位符写法翻译成 OneBot 认得的消息段
  * <ul>
- *     <li>{next}: 消息分条，已由 StarBot 内部处理，无需手动处理</li>
- *     <li>{face=1}: 表情</li>
- *     <li>{at=all}: @全体成员</li>
- *     <li>{at=123456}: @指定成员</li>
- *     <li>{image_url=https://example.com/image.jpg}: 网络图片</li>
- *     <li>{image_path=/opt/image.jpg}: 本地图片</li>
- *     <li>{image_base64=...}: Base64 图片</li>
+ *     <li>{next}: 消息分条，核心已在造消息时处理掉，转换器见不到它</li>
+ *     <li>{face=1}: 表情。{at=all}、{at=123456}: @全体成员 与 @指定成员</li>
+ *     <li>{image_url=...}、{image_path=...}、{image_base64=...}: 三种图片</li>
  * </ul>
+ * <p>
+ * 两种「填错了」刻意走相反的路：值<b>空着</b>的占位符整段丢掉（宁可少 @ 一个人，也不把
+ * <code>{at=}</code> 原样发进群里）；表情 ID <b>解析不了</b>时原样留成文本，那多半正是使用者想发的字。
  */
 @Slf4j
 @Component
 @StarBotComponent
 public class OneBotMessageConverter {
+    private static final String FACE_PREFIX = "{face=";
+
+    private static final String AT_PREFIX = "{at=";
+
     /**
      * 将可包含占位符的原始消息转换为 OneBot 可识别的格式
+     * <p>
+     * 占位符取的是「从 <code>{</code> 到<b>最近一个</b> <code>}</code>」，与
+     * {@link MessagePlaceholders} 的非贪婪口径一致；认不出的写法一律原样留成文本，
+     * 让使用者在群里看见自己写错的那几个字，而不是安静地少一段内容。
      * @param content 可包含占位符的消息内容
      * @return 转换后的 JSON 数组
      */
     public JSONArray convert(String content) {
         JSONArray elements = new JSONArray();
 
-        int braceStart = content.indexOf("{");
-
-        while (!content.isEmpty()) {
+        int cursor = 0;
+        while (cursor < content.length()) {
+            int braceStart = content.indexOf('{', cursor);
             if (braceStart == -1) {
-                elements.add(createTextElement(content));
-                content = "";
-            } else if (braceStart != 0) {
-                elements.add(createTextElement(content.substring(0, braceStart)));
-                content = content.substring(braceStart);
-            } else {
-                int braceEnd = content.indexOf("}");
-
-                if (braceEnd == -1) {
-                    elements.add(createTextElement(content));
-                    content = "";
-                } else {
-                    String placeholder = content.substring(0, braceEnd + 1);
-
-                    if (placeholder.startsWith("{face=")) {
-                        try {
-                            int faceId = Integer.parseInt(placeholder.substring(6, placeholder.length() - 1));
-                            elements.add(createFaceElement(faceId));
-                        } catch (NumberFormatException e) {
-                            log.error("表情 ID 格式错误: {}", placeholder, e);
-                            elements.add(createTextElement(placeholder));
-                        }
-                    } else if (placeholder.startsWith("{at=")) {
-                        String target = placeholder.substring(4, placeholder.length() - 1);
-                        if (StringUtil.isNotBlank(target)) {
-                            elements.add(createAtElement(target));
-                        }
-                    } else if (placeholder.startsWith("{image_url=")) {
-                        String url = placeholder.substring(11, placeholder.length() - 1);
-                        if (StringUtil.isNotBlank(url)) {
-                            elements.add(createUrlImageElement(url));
-                        }
-                    } else if (placeholder.startsWith("{image_path=")) {
-                        String path = placeholder.substring(12, placeholder.length() - 1);
-                        if (StringUtil.isNotBlank(path)) {
-                            elements.add(createPathImageElement(path));
-                        }
-                    } else if (placeholder.startsWith("{image_base64=")) {
-                        String base64 = placeholder.substring(14, placeholder.length() - 1);
-                        if (StringUtil.isNotBlank(base64)) {
-                            elements.add(createBase64ImageElement(base64));
-                        }
-                    } else {
-                        elements.add(createTextElement(placeholder));
-                    }
-
-                    content = content.substring(braceEnd + 1);
-                }
+                elements.add(element("text", "text", content.substring(cursor)));
+                break;
             }
 
-            braceStart = content.indexOf("{");
+            if (braceStart > cursor) {
+                elements.add(element("text", "text", content.substring(cursor, braceStart)));
+            }
+
+            int braceEnd = content.indexOf('}', braceStart);
+            if (braceEnd == -1) {
+                // 左花括号没有配对的右花括号，从它到结尾都不可能是占位符
+                elements.add(element("text", "text", content.substring(braceStart)));
+                break;
+            }
+
+            addPlaceholder(elements, content.substring(braceStart, braceEnd + 1));
+            cursor = braceEnd + 1;
         }
 
         return elements;
     }
 
     /**
-     * 创建文本元素
-     * @param text 文本内容
-     * @return 文本元素
+     * 把一个完整的占位符翻译成一个消息段，认不出或值为空时另作处理
+     * @param elements 转换结果，翻译得出的消息段追加在这里
+     * @param placeholder 含首尾花括号的整个占位符
      */
-    private JSONObject createTextElement(String text) {
-        JSONObject element = new JSONObject();
-        element.put("type", "text");
-        JSONObject data = new JSONObject();
-        data.put("text", text);
-        element.put("data", data);
-        return element;
+    private void addPlaceholder(JSONArray elements, String placeholder) {
+        if (placeholder.startsWith(FACE_PREFIX)) {
+            String faceId = valueOf(placeholder, FACE_PREFIX);
+            try {
+                elements.add(element("face", "id", Integer.parseInt(faceId)));
+            } catch (NumberFormatException e) {
+                log.error("表情 ID 格式错误: {}", placeholder, e);
+                elements.add(element("text", "text", placeholder));
+            }
+        } else if (placeholder.startsWith(AT_PREFIX)) {
+            addIfPresent(elements, "at", "qq", valueOf(placeholder, AT_PREFIX), "");
+        } else if (placeholder.startsWith(MessagePlaceholders.IMAGE_URL_PREFIX)) {
+            addIfPresent(elements, "image", "file", valueOf(placeholder, MessagePlaceholders.IMAGE_URL_PREFIX), "");
+        } else if (placeholder.startsWith(MessagePlaceholders.IMAGE_PATH_PREFIX)) {
+            addIfPresent(elements, "image", "file", valueOf(placeholder, MessagePlaceholders.IMAGE_PATH_PREFIX), "file://");
+        } else if (placeholder.startsWith(MessagePlaceholders.IMAGE_BASE64_PREFIX)) {
+            addIfPresent(elements, "image", "file", valueOf(placeholder, MessagePlaceholders.IMAGE_BASE64_PREFIX), "base64://");
+        } else {
+            elements.add(element("text", "text", placeholder));
+        }
     }
 
     /**
-     * 创建表情元素
-     * @param faceId 表情 ID
-     * @return 表情元素
+     * 取出占位符等号后面那一段
+     * <p>
+     * 长度从前缀常量现算，不写死偏移量：偏移量与前缀改一处漏一处时，
+     * 截出来的仍是一个像模像样的字符串，错处要到消息发进群里才看得见
      */
-    private JSONObject createFaceElement(int faceId) {
-        JSONObject element = new JSONObject();
-        element.put("type", "face");
-        JSONObject data = new JSONObject();
-        data.put("id", faceId);
-        element.put("data", data);
-        return element;
+    private String valueOf(String placeholder, String prefix) {
+        return placeholder.substring(prefix.length(), placeholder.length() - 1);
     }
 
     /**
-     * 创建 @ 元素
-     * @param target @ 目标
-     * @return @ 元素
+     * 值不为空时才追加这一段
+     * <p>
+     * 空值整段丢掉而不是留成文本：使用者的模板里留了个没填的位置，
+     * 把 <code>{at=}</code> 原样发进群里只会让人以为机器人坏了
+     * @param scheme 值的前缀，OneBot 靠它分辨本地文件与 Base64；没有前缀时传空串
      */
-    private JSONObject createAtElement(String target) {
-        JSONObject element = new JSONObject();
-        element.put("type", "at");
-        JSONObject data = new JSONObject();
-        data.put("qq", target);
-        element.put("data", data);
-        return element;
+    private void addIfPresent(JSONArray elements, String type, String dataKey, String value, String scheme) {
+        if (StringUtil.isNotBlank(value)) {
+            elements.add(element(type, dataKey, scheme + value));
+        }
     }
 
     /**
-     * 创建网络图片元素
-     * @param url 图片 URL
-     * @return 网络图片元素
+     * 造一个消息段
+     * <p>
+     * 五种段的形状是同一个：一个 {@code type} 加一个只有一项的 {@code data}。
+     * 各写一遍的那一版里，改动要在五处之间逐个对照才知道漏没漏
+     * @param type 段类型
+     * @param dataKey {@code data} 里那一项的键名，各类型不同
+     * @param dataValue 那一项的值
+     * @return 消息段
      */
-    private JSONObject createUrlImageElement(String url) {
-        JSONObject element = new JSONObject();
-        element.put("type", "image");
+    private JSONObject element(String type, String dataKey, Object dataValue) {
         JSONObject data = new JSONObject();
-        data.put("file", url);
-        element.put("data", data);
-        return element;
-    }
+        data.put(dataKey, dataValue);
 
-    /**
-     * 创建本地图片元素
-     * @param path 图片路径
-     * @return 本地图片元素
-     */
-    private JSONObject createPathImageElement(String path) {
         JSONObject element = new JSONObject();
-        element.put("type", "image");
-        JSONObject data = new JSONObject();
-        data.put("file", "file://" + path);
-        element.put("data", data);
-        return element;
-    }
-
-    /**
-     * 创建 Base64 图片元素
-     * @param base64 Base64 字符串
-     * @return Base64 图片元素
-     */
-    private JSONObject createBase64ImageElement(String base64) {
-        JSONObject element = new JSONObject();
-        element.put("type", "image");
-        JSONObject data = new JSONObject();
-        data.put("file", "base64://" + base64);
+        element.put("type", type);
         element.put("data", data);
         return element;
     }
