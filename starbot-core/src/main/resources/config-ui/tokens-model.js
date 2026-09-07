@@ -33,7 +33,7 @@ function say(terms, key, withTerm, without) {
 export function explain(status, data, terms) {
   switch (data.reason) {
     case 'bad_credentials':
-      return '控制台口令' + (store.totpRequired ? '或动态验证码' : '') + '不对。'
+      return '密码' + (store.totpRequired ? '或动态验证码' : '') + '不对。'
         + '要填的是登录这个控制台用的那一个——'
         + say(terms, 'bot.impl',
           v => '不是机器人（' + v + ' 等）WebUI 的口令，两者互不相干',
@@ -44,7 +44,7 @@ export function explain(status, data, terms) {
     case 'busy':
       return '同时在校验的请求太多，等几秒再点一次';
     case 'auth_disabled':
-      return '这台机器没有启用控制台登录口令，因此没有可校验的凭据。请先在「设置」里配置登录口令';
+      return '这台机器没有启用密码，因此没有可校验的凭据。请先在「设置」里配置密码';
     case 'write_failed':
       // 后端已把原因写成一句人话带过来，原样透出——转述一道就是多一处会走样的地方
       return data.message || '签发失败（HTTP ' + status + '）';

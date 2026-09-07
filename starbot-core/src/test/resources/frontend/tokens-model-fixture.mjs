@@ -59,10 +59,10 @@ outcome(() => {
   includes(mod.explain(500, {}), 'HTTP 500', '啥都没有：维持 HTTP 句');
 
   // 既有四支的文案不能被这次改动碰歪（回归护栏）
-  includes(mod.explain(401, {reason: 'bad_credentials'}), '控制台口令', 'bad_credentials 文案');
+  includes(mod.explain(401, {reason: 'bad_credentials'}), '密码', 'bad_credentials 文案');
   includes(mod.explain(429, {reason: 'locked_out', retryAfterSeconds: 30}), '30 秒', '锁定文案带等待时长');
   includes(mod.explain(503, {reason: 'busy'}), '同时在校验', 'busy 文案');
-  includes(mod.explain(400, {reason: 'auth_disabled'}), '登录口令', 'auth_disabled 文案');
+  includes(mod.explain(400, {reason: 'auth_disabled'}), '密码', 'auth_disabled 文案');
 }, 'explain 翻译');
 
 outcome(() => {

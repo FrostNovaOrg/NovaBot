@@ -11,16 +11,16 @@
 
 /**
  * 收起、还没问过
- * @return {{status: string, title: string, body: string, accepted: boolean|null, calls: number, trigger: *}}
+ * @return {{status: string, title: string, body: string, accepted: boolean|null, calls: number, trigger: *, fields: Array, danger: boolean}}
  */
 export function idle() {
-  return {status: 'idle', title: '', body: '', accepted: null, calls: 0, trigger: null};
+  return {status: 'idle', title: '', body: '', accepted: null, calls: 0, trigger: null, fields: [], danger: false};
 }
 
 /**
  * 打开一层。标题与后果原样带上，缺的不编字。
  * @param _state 上一份（打开不读它，每次都是新的一层）
- * @param spec {title, body, trigger}
+ * @param spec {title, body, trigger, fields, danger}
  * @return 打开态
  */
 export function open(_state, spec) {
@@ -32,6 +32,8 @@ export function open(_state, spec) {
     accepted: null,
     calls: 0,
     trigger: s.trigger == null ? null : s.trigger,
+    fields: Array.isArray(s.fields) ? s.fields.slice() : [],
+    danger: s.danger !== false,
   };
 }
 
@@ -57,6 +59,8 @@ export function settle(state, accepted, onDone) {
     accepted: ok,
     calls: 1,
     trigger: state.trigger,
+    fields: Array.isArray(state.fields) ? state.fields.slice() : [],
+    danger: !!state.danger,
   };
 }
 

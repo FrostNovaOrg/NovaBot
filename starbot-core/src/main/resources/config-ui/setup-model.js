@@ -92,7 +92,7 @@ export function canAdvance(index, draft, steps) {
   switch (step.key) {
     case 'lock':
       return it.locked ? pass()
-        : stop('先设一把控制台口令。这一步不能跳过——没上锁的控制台，任何能连上这台机器的人都进得来');
+        : stop('先设一把密码。这一步不能跳过——没上锁的控制台，任何能连上这台机器的人都进得来');
     case 'bot':
       return it.botOk ? pass()
         : stop('先按「测试连接」，通过了才能往下走。这一步不能跳过——连不上机器人，一条消息也发不出去');

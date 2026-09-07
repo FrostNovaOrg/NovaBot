@@ -504,12 +504,12 @@ function stepLock(host) {
   }
 
   const row = el('div', 'su-row');
-  const first = field(row, '控制台口令', 'setup-pwd', 'password', '', null);
+  const first = field(row, '密码', 'setup-pwd', 'password', '', null);
   const again = field(row, '再输一遍', 'setup-pwd2', 'password', '', null);
   host.appendChild(row);
   host.appendChild(note('', phrase('bot.family',
-    v => '至少 8 个字符。填的是这个控制台的登录口令，与 ' + v + ' 那边的界面口令互不相干。',
-    '至少 8 个字符。填的是这个控制台的登录口令，与机器人那边的界面口令互不相干。')));
+    v => '至少 8 个字符。填的是这个控制台的密码，与 ' + v + ' 那边的界面口令互不相干。',
+    '至少 8 个字符。填的是这个控制台的密码，与机器人那边的界面口令互不相干。')));
 
   const result = el('div', 'su-r');
   const save = el('button', 'primary');

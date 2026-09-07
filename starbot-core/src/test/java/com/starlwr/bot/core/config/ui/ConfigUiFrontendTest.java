@@ -2653,6 +2653,139 @@ class ConfigUiFrontendTest {
     }
 
     /**
+     * 「登录与安全」四项必须和其他设置项同一套横行，不能再走告警那套卡片。
+     * <p>
+     * 卡片最窄 260px，通行密钥四列表会撑出组边。改成 {@code .setitem} 之后，
+     * 右侧只留一颗控件，列表另起整行。三问各自记下，末尾一起红。
+     */
+    @Test
+    @DisplayName("登录与安全四项走 .setitem 行、settings-auth.js 不再有 alcard")
+    void authGroupUsesSetitemRowsNotAlcard() throws IOException {
+        Map<String, String> sources = coreSources();
+        String auth = sources.getOrDefault("settings-auth.js", "");
+        List<String> reds = new ArrayList<>();
+
+        try {
+            assertFalse(auth.isBlank(), "找不到 settings-auth.js");
+            assertTrue(auth.contains("setitem"),
+                    "settings-auth.js 没有 .setitem，四项还不是和其他设置同一套横行");
+            String cards = functionBodyAny(auth, "authCards");
+            assertTrue(cards.contains("passwordCard(") && cards.contains("totpCard(")
+                            && cards.contains("passkeyCard(") && cards.contains("rerunCard("),
+                    "authCards 应仍组装四项");
+        } catch (AssertionError e) {
+            reds.add("① " + e.getMessage());
+        }
+
+        try {
+            assertFalse(auth.contains("alcard"),
+                    "settings-auth.js 仍有 alcard，登录与安全还在走卡片");
+        } catch (AssertionError e) {
+            reds.add("② " + e.getMessage());
+        }
+
+        try {
+            String filter = functionBodyAny(auth, "filterAuthCards");
+            assertFalse(filter.isBlank(), "找不到 filterAuthCards");
+            assertTrue(filter.contains(".setitem"),
+                    "filterAuthCards 没有按 .setitem 筛，搜「密码」时这一组筛不到");
+            assertFalse(filter.contains(".alcard"),
+                    "filterAuthCards 仍按 .alcard 筛");
+        } catch (AssertionError e) {
+            reds.add("③ " + e.getMessage());
+        }
+
+        assertTrue(reds.isEmpty(), () -> "三问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+    }
+
+    /**
+     * 通行密钥起名必须走自绘弹层，不能再调浏览器原生 prompt()。
+     * <p>
+     * 原生那一句没有标题、也没有和确认框同一套取消／确认。改回去不会让登记变坏，
+     * 因此靠人复查是拦不住的。形制照 {@link #settingsPushAndSessionsUsePaintedConfirm}。
+     */
+    @Test
+    @DisplayName("passkeys.js 不调原生 prompt")
+    void passkeysDoNotCallNativePrompt() {
+        Map<String, String> sources = coreSources();
+        String passkeys = sources.getOrDefault("passkeys.js", "");
+        String register = functionBodyAny(passkeys, "registerPasskey");
+        List<String> reds = new ArrayList<>();
+
+        try {
+            assertFalse(passkeys.isBlank(), "找不到 passkeys.js");
+            assertFalse(codeOnly(passkeys).contains("prompt("),
+                    "passkeys.js 仍在调用原生 prompt()");
+        } catch (AssertionError e) {
+            reds.add("① " + e.getMessage());
+        }
+
+        try {
+            assertFalse(register.isBlank(), "找不到 registerPasskey");
+            assertTrue(register.contains("fields"),
+                    "registerPasskey 没有走 ask 的 fields 槽，设备名仍会落到原生输入框");
+        } catch (AssertionError e) {
+            reds.add("② " + e.getMessage());
+        }
+
+        try {
+            assertTrue(register.contains("value: '我的设备'") || register.contains("value:'我的设备'"),
+                    "设备名默认值应经 fields.value 带上，而不是 prompt 的第二参");
+        } catch (AssertionError e) {
+            reds.add("③ " + e.getMessage());
+        }
+
+        assertTrue(reds.isEmpty(), () -> "三问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+    }
+
+    /**
+     * 通行密钥列表必须外包横向滚动容器，表本身按内容宽、且不窄于一行。
+     * <p>
+     * 四列（名字／登记时间／上次使用／删除）并排时最小宽大约 450px，
+     * 不包 {@code .tblwrap} 就会撑出设置组。三问各自记下，末尾一起红。
+     */
+    @Test
+    @DisplayName("通行密钥列表外有 tblwrap")
+    void passkeyListIsWrappedForOverflow() throws IOException {
+        Map<String, String> sources = coreSources();
+        String auth = sources.getOrDefault("settings-auth.js", "");
+        String passkeys = sources.getOrDefault("passkeys.js", "");
+        String css = Files.readString(frontendDir().resolve("app.css"), StandardCharsets.UTF_8);
+        List<String> reds = new ArrayList<>();
+
+        try {
+            String card = functionBodyAny(auth, "passkeyCard");
+            assertFalse(card.isBlank(), "找不到 passkeyCard");
+            assertTrue(card.contains("tblwrap"),
+                    "passkeyCard 没有外包 tblwrap，列表过宽时会撑出设置组");
+            assertTrue(card.contains("passkey-list"),
+                    "passkeyCard 应仍建出 #passkey-list");
+        } catch (AssertionError e) {
+            reds.add("① " + e.getMessage());
+        }
+
+        try {
+            String block = cssBlock(css, ".tblwrap");
+            assertFalse(block.isBlank(), "app.css 没有 .tblwrap");
+            assertTrue(block.contains("overflow-x:auto") || block.contains("overflow-x: auto"),
+                    ".tblwrap 没有 overflow-x:auto: " + block.strip());
+        } catch (AssertionError e) {
+            reds.add("② " + e.getMessage());
+        }
+
+        try {
+            assertTrue(passkeys.contains("max-content"),
+                    "passkeys.js 的表没有 width max-content，过宽时仍会挤列");
+            assertTrue(passkeys.contains("minWidth") || passkeys.contains("min-width"),
+                    "passkeys.js 的表没有 min-width 100%，窄屏时表会缩得比一行还窄");
+        } catch (AssertionError e) {
+            reds.add("③ " + e.getMessage());
+        }
+
+        assertTrue(reds.isEmpty(), () -> "三问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+    }
+
+    /**
      * 扫核心 Java 源：非注释、非 Javadoc 行上的双引号字面量
      */
     private List<String> platformWordsInJavaSources(Path javaRoot) throws IOException {

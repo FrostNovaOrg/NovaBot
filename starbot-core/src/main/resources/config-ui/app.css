@@ -320,14 +320,10 @@ html.showkeys .keyname{display:block}
 .al-r.ok{color:var(--ok)}
 .al-r.err{color:var(--err)}
 .al-r.warn{color:var(--warn)}
-/* ---------- 登录与安全：四张卡，沿用告警那一套卡片版式 ----------
-   通行密钥那张要摆一张表，四列并排挤在 260px 里会折成一团，因此这一组的最小列宽放宽。 */
-#auth-cards{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
-#auth-cards .alcard button{margin-top:4px;padding:6px 14px;font-size:12.5px}
-#auth-cards .alcard .secret{display:flex;gap:6px;align-items:center}
-#auth-cards .alcard .secret input{width:auto;flex:1;min-width:0}
-#auth-cards .alcard .secret button{margin-top:0;padding:6px 10px;font-size:12px;flex:none;width:auto}
-#auth-cards table{width:100%;font-size:12.5px}
+/* ---------- 登录与安全：与其他设置同一套横行 ---------- */
+#auth-cards .tblwrap,#auth-cards .totp-flow,#auth-cards .al-r{grid-column:1/-1}
+#auth-cards table{font-size:12.5px}
+.tblwrap{overflow-x:auto}
 /* 开与关各自要问的那一段，摆在开关下面；不问的时候整块不占位 */
 .totp-flow:not(:empty){margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
 .switch{display:inline-flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
@@ -875,6 +871,12 @@ button.danger:hover{border-color:var(--err);color:var(--err)}
   border-radius:var(--r-card);box-shadow:var(--shadow);padding:20px 22px}
 .ask-card h3{margin:0 0 8px;font-size:16px;font-weight:600}
 .ask-card p{margin:0 0 18px;color:var(--dim);font-size:13.5px;line-height:1.55}
+.ask-card p[hidden]{display:none}
+.ask-fields{display:grid;gap:10px;margin:0 0 18px}
+.ask-fld label{display:block;font-size:12px;color:var(--dim);margin-bottom:4px}
+.ask-fld input{width:100%;padding:6px 9px;border:1px solid var(--line);border-radius:var(--r-ctl);
+  background:var(--ground);color:var(--text);font-family:inherit;font-size:13px}
+.ask-fld input:focus{outline:none;border-color:var(--accent)}
 .ask-act{display:flex;justify-content:flex-end;gap:8px}
 .ask-ok{background:var(--err);color:var(--paper)}
 .ask-ok:hover{filter:brightness(1.05)}
