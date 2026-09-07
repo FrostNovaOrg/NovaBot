@@ -61,14 +61,14 @@ public class PushActivityHealthProbe implements HealthProbe {
             summary += "；最近成功于 " + TIME.format(success);
         }
 
-        // 队列积压说明消息发得比来得慢，多半是 OneBot 侧出了问题；
+        // 队列积压说明消息发得比来得慢，多半是机器人侧出了问题；
         // 已经开始丢弃则意味着确实丢了消息，必须让人知道
         long dropped = messageSender.getObject().getDroppedCount();
         int pending = messageSender.getObject().getPendingCount();
 
         if (dropped > 0) {
             return HealthStatus.degraded(summary + "；队列积压 " + pending + " 条，已累计丢弃 " + dropped + " 条",
-                    "发送速度跟不上产生速度，通常是 OneBot 侧不可用或响应过慢，请检查机器人连接");
+                    "发送速度跟不上产生速度，通常是机器人侧不可用或响应过慢，请检查机器人连接");
         }
 
         if (pending > PENDING_WARN_THRESHOLD) {

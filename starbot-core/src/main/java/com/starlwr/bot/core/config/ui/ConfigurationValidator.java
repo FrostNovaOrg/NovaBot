@@ -128,7 +128,7 @@ public class ConfigurationValidator {
             }
 
             if (target.getLong("num") == null) {
-                issues.add(at + "缺少 num（群号或 QQ 号），或其不是数字");
+                issues.add(at + "缺少 num（群号或用户号），或其不是数字");
             }
 
             checkMessages(target.getJSONArray("messages"), at, handlers, issues);
