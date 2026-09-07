@@ -11,7 +11,7 @@
  */
 
 import {
-  AT_MODES, blockLabel, blockSpec, isAttachment, normalizeCards,
+  AT_MODES, atPlan, blockLabel, blockSpec, isAttachment, normalizeCards,
   parseTemplate, placeholderBlock, textBlock, toTemplateText,
 } from '../starbot-core/src/main/resources/config-ui/template-model.js';
 
@@ -62,4 +62,62 @@ eq(nested[0].blocks.every(block => !block.blocks), true, '捋直之后没有一�
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);
-process.exit(failures.length ? 1 : 0);
+if (failures.length) process.exit(1);
+
+// ── terms 三档：有词＝适配器七键／无词＝{}／只缺 bot.impl ────────────────
+// 三问各自 try/catch，末尾汇总，不得短路。
+const ADAPTER_TERMS = {
+  'bot.platform': 'QQ',
+  'bot.impl': 'NapCat',
+  'bot.family': 'OneBot 实现',
+  'bot.impl.hint': 'NapCat、Lagrange 等 OneBot 实现',
+  'bot.target.group': '群号',
+  'bot.target.user': 'QQ 号',
+  'bot.targets': '群与好友',
+};
+const NO_IMPL = Object.assign({}, ADAPTER_TERMS);
+delete NO_IMPL['bot.impl'];
+
+const phraseReds = [];
+function askPhrase(name, fn) {
+  try {
+    fn();
+  } catch (err) {
+    phraseReds.push(name + '：' + (err && err.message ? err.message : String(err)));
+  }
+}
+function mustHas(actual, needle, what) {
+  if (!String(actual).includes(needle)) {
+    throw new Error(what + ' 得到 ' + JSON.stringify(actual) + ' 应含 ' + JSON.stringify(needle));
+  }
+}
+function mustNot(actual, needle, what) {
+  if (String(actual).includes(needle)) {
+    throw new Error(what + ' 得到 ' + JSON.stringify(actual) + ' 不应含 ' + JSON.stringify(needle));
+  }
+}
+function allNote(terms) {
+  const cards = parseTemplate('{uname} 正在直播', SPEC);
+  return atPlan(cards, 'all', {isGroup: true, admin: true}, terms).note || '';
+}
+
+askPhrase('①有词', () => {
+  mustHas(allNote(ADAPTER_TERMS), '不绕过 QQ 权限', '说明');
+});
+
+askPhrase('②无词', () => {
+  const got = allNote({});
+  mustHas(got, '不绕过机器人权限', '说明');
+  mustNot(got, 'QQ', '说明');
+});
+
+askPhrase('③只缺 bot.impl', () => {
+  mustHas(allNote(NO_IMPL), '不绕过 QQ 权限', '说明仍用 platform');
+});
+
+console.log('terms 三档\t跑了 3 格\t红 ' + phraseReds.length + ' 格\t' + (phraseReds.length ? '红' : '绿'));
+if (phraseReds.length) {
+  console.error('\nterms 三档对不上 ' + phraseReds.length + ' 处：');
+  phraseReds.forEach(line => console.error('  ' + line));
+  process.exit(1);
+}

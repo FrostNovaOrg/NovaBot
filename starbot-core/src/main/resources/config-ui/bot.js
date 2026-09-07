@@ -2,15 +2,17 @@
  * 机器人页：连接参数表单与测试消息
  */
 
-import {$, api} from './core.js';
+import {$, api, term} from './core.js';
 
 // 同一文档里不能有两个相同 id，因此按前缀生成 DOM，逻辑仍只写一份。
 export function botFormHtml(p) {
   return '<div class="row"><label>地址</label><input id="' + p + '-addr" value="127.0.0.1"></div>'
     + '<div class="row"><label>HTTP 端口</label><input id="' + p + '-hport" value="3000" inputmode="numeric"></div>'
-    + '<div class="row"><label>HTTP Token</label><input id="' + p + '-htoken" placeholder="与 OneBot 实现中配置的一致"></div>'
+    + '<div class="row"><label>HTTP Token</label><input id="' + p + '-htoken" placeholder="与 '
+    + term('bot.family', '机器人程序') + '中配置的一致"></div>'
     + '<div class="row"><label>WS 端口</label><input id="' + p + '-wport" value="3001" inputmode="numeric"></div>'
-    + '<div class="row"><label>WS Token</label><input id="' + p + '-wtoken" placeholder="与 OneBot 实现中配置的一致"></div>'
+    + '<div class="row"><label>WS Token</label><input id="' + p + '-wtoken" placeholder="与 '
+    + term('bot.family', '机器人程序') + '中配置的一致"></div>'
     + '<div class="row"><button id="' + p + '-test" type="button">测试连接</button>'
     + '<button id="' + p + '-save" type="button" disabled>保存</button></div>'
     + '<div class="out" id="' + p + '-out"></div>';

@@ -10,7 +10,7 @@
  * 三者在配置文件上都长得完全正常，而它们的共同后果是真出事那天没有人收到告警。
  */
 
-import {$, api, el, markDirty} from './core.js';
+import {$, api, el, markDirty, term} from './core.js';
 import {store} from './store.js';
 import {mailAlertConfigured} from './alert-model.js';
 
@@ -282,7 +282,7 @@ async function qqTarget(box, pill) {
 
   const options = [];
   // 空档要能选回来：配过之后想撤掉这一路，除了选「不发到 QQ」没有别的路
-  options.push({key: '', text: '不发到 QQ'});
+  options.push({key: '', text: '不发到 ' + term('bot.platform', '机器人')});
   if (currentKey) options.push({key: currentKey, text: '当前：' + (platform || '未知平台') + ' '
     + (String(type) === '1' ? '群' : '好友') + ' ' + num});
 
@@ -337,7 +337,8 @@ export function alertCards() {
   wrap.id = 'alert-cards';
 
   // ---- QQ ----
-  const qq = shell('qq', 'QQ', '走机器人自己的推送链路。QQ 掉线的时候，这一路也一起掉——'
+  const qq = shell('qq', term('bot.platform', '机器人'), '走机器人自己的推送链路。'
+    + term('bot.platform', '机器人') + ' 掉线的时候，这一路也一起掉——'
     + '而那正是最需要收到告警的时刻，所以别只配这一路。');
   qqTarget(qq.body, qq.pill);
   wrap.appendChild(qq.card);
@@ -380,7 +381,8 @@ export function alertCards() {
   wrap.appendChild(hook.card);
 
   // ---- 邮件 ----
-  const mail = shell('mail', '邮件', '慢一点，但不跟 QQ 一起挂掉。发件那栏填的是授权码，不是登录密码。');
+  const mail = shell('mail', '邮件', '慢一点，但不跟 ' + term('bot.platform', '机器人')
+    + ' 一起挂掉。发件那栏填的是授权码，不是登录密码。');
   const mailCustom = el('div', 'al-cus');
   const mailPreset = presetField(mail.body, Object.keys(MAIL_PRESETS).concat(CUSTOM));
   const to = field(mail.body, '收件邮箱', 'starbot.core.mail.default-to', {ph: '收告警的邮箱'});
