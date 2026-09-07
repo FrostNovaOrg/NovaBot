@@ -40,6 +40,19 @@ public abstract class BilibiliAtCommand extends BilibiliStreamerCommand {
     protected abstract BilibiliAtNoticeKind kind();
 
     /**
+     * 「@全体成员」那两句给人看的话：群里说「本群」，私聊说「这里」。
+     * <p>
+     * 取词走 {@link CommandContext#here()}，与数据查询命令同一处口径。
+     * {@code fallback} 为真是菜单那句（先 @ 全体，不成再按名单），为假是发过来时那句。
+     */
+    private String everyoneNotice(CommandContext context, boolean fallback) {
+        return context.here() + kind().noticeName()
+                + (fallback
+                        ? "通知会先 @全体成员，@ 不成时才按这份名单 @ 人"
+                        : "通知会 @全体成员，不用单独订阅");
+    }
+
+    /**
      * 订阅类型：live 或 dynamic
      */
     protected final String type() {
@@ -64,7 +77,7 @@ public abstract class BilibiliAtCommand extends BilibiliStreamerCommand {
     @Override
     public String menuNote(CommandContext context) {
         return hasFallbackToSubscribers(context)
-                ? "本群" + kind().noticeName() + "通知会先 @全体成员，@ 不成时才按这份名单 @ 人"
+                ? everyoneNotice(context, true)
                 : "";
     }
 
@@ -73,7 +86,7 @@ public abstract class BilibiliAtCommand extends BilibiliStreamerCommand {
         // 排在解析主播之前：这一句与「说的是哪位主播」无关，本群配成 @全体成员 时
         // 任何一位主播的订阅都同样不起作用，先问一遍主播只会多出一次追问
         if (atsEveryone(context)) {
-            return CommandReply.of("本群" + kind().noticeName() + "通知会 @全体成员，不用单独订阅");
+            return CommandReply.of(everyoneNotice(context, false));
         }
 
         Resolved resolved = resolve(context, context.arg(0));
