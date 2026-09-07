@@ -1,5 +1,9 @@
 package com.starlwr.bot.core.sender;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.enums.PushTargetType;
@@ -18,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 
 import java.nio.file.Path;
@@ -36,6 +41,7 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -310,6 +316,61 @@ class FirstPushTipCorpusTest {
     }
 
     @Test
+    @DisplayName("全停用名单不钉、文案无可补记；空名单仍写名单为空")
+    void seedExistingAllDisabledDoesNotPinLogsNothingToSeed() {
+        List<String> red = new ArrayList<>();
+
+        Logger logger = (Logger) LoggerFactory.getLogger(FirstPushTipService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            StarBotCoreProperties properties = new StarBotCoreProperties();
+            properties.getLive().setLiveDataPath(dataDir.resolve("seed-all-disabled.json").toString());
+            StarBotStateStore store = new StarBotStateStore(properties);
+            FirstPushTipService service = new FirstPushTipService(store);
+
+            PushUser disabledGroup = session(PLATFORM, PushTargetType.GROUP, GROUP_A);
+            disabledGroup.getTargets().get(0).setEnabled(false);
+            PushUser disabledFriend = session(PLATFORM, PushTargetType.FRIEND, FRIEND);
+            disabledFriend.getTargets().get(0).setEnabled(false);
+            service.seedExisting(List.of(disabledGroup, disabledFriend));
+
+            try {
+                assertFalse(store.namespace("FirstPushTip").containsKey(FirstPushTipService.SEEDED_KEY),
+                        "名单非空但全停用仍钉「已补过」：启用后重启会被当成已提示");
+            } catch (Throwable t) {
+                red.add("① " + t.getMessage());
+            }
+            try {
+                String joined = infoMessages(appender);
+                assertTrue(joined.contains("无可补记"), "全停用名单日志应含「无可补记」，实际: " + joined);
+            } catch (Throwable t) {
+                red.add("② " + t.getMessage());
+            }
+
+            appender.list.clear();
+            StarBotCoreProperties emptyProps = new StarBotCoreProperties();
+            emptyProps.getLive().setLiveDataPath(dataDir.resolve("seed-empty-log.json").toString());
+            StarBotStateStore emptyStore = new StarBotStateStore(emptyProps);
+            new FirstPushTipService(emptyStore).seedExisting(List.of());
+            try {
+                String joined = infoMessages(appender);
+                assertTrue(joined.contains("名单为空"), "真空名单日志应仍含「名单为空」，实际: " + joined);
+                assertFalse(joined.contains("无可补记"), "真空名单不该写成「无可补记」，实际: " + joined);
+            } catch (Throwable t) {
+                red.add("③ " + t.getMessage());
+            }
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        if (!red.isEmpty()) {
+            fail(red.size() + " 问红：" + String.join("；", red));
+        }
+    }
+
+    @Test
     @DisplayName("关掉首次提示时不发也不认领，打开后第一条才发")
     void switchOffSkipsTipAndClaim() {
         Fixture fixture = new Fixture();
@@ -325,6 +386,20 @@ class FirstPushTipCorpusTest {
         assertEquals(2, on.size(),
                 "关着时若已经认领，打开后第一条也不会再提示——关着必须不认领");
         assertTrue(on.get(1).contains("先 @ 我"), "打开后第一条该带用法提示");
+    }
+
+    private static String infoMessages(ListAppender<ILoggingEvent> appender) {
+        StringBuilder text = new StringBuilder();
+        for (ILoggingEvent event : appender.list) {
+            if (event.getLevel() != Level.INFO) {
+                continue;
+            }
+            if (!text.isEmpty()) {
+                text.append('\n');
+            }
+            text.append(event.getFormattedMessage());
+        }
+        return text.toString();
     }
 
     private static PushUser session(String platform, PushTargetType type, long num) {
