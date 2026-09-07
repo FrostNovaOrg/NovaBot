@@ -6,6 +6,7 @@ import com.starlwr.bot.core.plugin.StarBotComponent;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -102,11 +103,48 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
                     + "检查登录态是否正常，以及建连是否绕过了全局连接闸门");
         }
 
-        if (problems.isEmpty()) {
-            return HealthStatus.ok(summary(http412, code352, gaia, missing, disconnects));
+        long unknownOp = metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_OP, DAY);
+        if (unknownOp >= 1) {
+            String opDetail = metrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_OP).orElse("op=?");
+            String firstSeen = metrics.last(BilibiliRiskMetrics.Kind.UNKNOWN_OP)
+                    .map(Instant::toString)
+                    .orElse("?");
+            problems.add("协议层出现未知操作码 " + opDetail + "（首见 " + firstSeen + "）");
+            advices.add("多半是 B 站长连协议改了，看日志并抓语料");
         }
 
-        return HealthStatus.degraded(String.join("；", problems), String.join(" ", advices));
+        String unknownCmdLine = unknownCmdSummaryLine();
+
+        if (problems.isEmpty()) {
+            return HealthStatus.ok(summary(http412, code352, gaia, missing, disconnects) + unknownCmdLine);
+        }
+
+        return HealthStatus.degraded(String.join("；", problems) + unknownCmdLine, String.join(" ", advices));
+    }
+
+    /**
+     * 未知消息类型只进摘要、不改档位：出现新 cmd 不等于连接坏了，但首页得看得见。
+     */
+    private String unknownCmdSummaryLine() {
+        long n = metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_CMD, DAY);
+        if (n <= 0) {
+            return "";
+        }
+        String detail = metrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_CMD).orElse("");
+        String name = detail.isBlank() ? "?" : detail.split("\\s+")[0];
+        String unique = "1";
+        int idx = detail.indexOf("unique=");
+        if (idx >= 0) {
+            int start = idx + "unique=".length();
+            int end = start;
+            while (end < detail.length() && Character.isDigit(detail.charAt(end))) {
+                end++;
+            }
+            if (end > start) {
+                unique = detail.substring(start, end);
+            }
+        }
+        return "，近 24h 未知消息类型 " + unique + " 种（最近 " + name + "）";
     }
 
     /**

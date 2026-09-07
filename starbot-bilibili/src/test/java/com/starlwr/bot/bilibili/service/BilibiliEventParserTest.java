@@ -3,6 +3,7 @@ package com.starlwr.bot.bilibili.service;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.health.BilibiliRiskMetrics;
 import com.starlwr.bot.bilibili.enums.GuardOperateType;
 import com.starlwr.bot.bilibili.enums.GuardType;
 import com.starlwr.bot.bilibili.event.live.*;
@@ -44,6 +45,7 @@ class BilibiliEventParserTest {
     private static final LiveStreamerInfo SOURCE = new LiveStreamerInfo(19805387116684L, "主播", 47731877194803L);
 
     private StarBotBilibiliProperties properties;
+    private BilibiliRiskMetrics riskMetrics;
     private BilibiliEventParser parser;
 
     /**
@@ -59,6 +61,7 @@ class BilibiliEventParserTest {
     @BeforeEach
     void setUp() {
         properties = new StarBotBilibiliProperties();
+        riskMetrics = new BilibiliRiskMetrics();
         published = new ArrayList<>();
 
         // 这个测试只管字段映射，不管「等 toast」的时序，因此把定时器换成立刻执行。
@@ -74,7 +77,8 @@ class BilibiliEventParserTest {
         apiSupport = mock(BilibiliApiSupport.class);
         parser = new BilibiliEventParser(properties, mock(BilibiliGiftService.class), apiSupport,
                 new BilibiliGuardReconciler(event -> published.add((StarBotBaseLiveEvent) event),
-                        immediate, Duration.ZERO));
+                        immediate, Duration.ZERO),
+                riskMetrics);
     }
 
     private Optional<StarBotBaseLiveEvent> parse(String json) {
@@ -116,6 +120,57 @@ class BilibiliEventParserTest {
                 + "[],[],0,0,null,{},0,0,null,null,0,210,"
                 + "[27]"
                 + "]}";
+    }
+
+    @Test
+    @DisplayName("未知 cmd 首见记一次、重复千次只再记量级、名表去重、detail 不含报文正文")
+    void unknownCmdFirstSeenAndMagnitudes() {
+        List<String> reds = new ArrayList<>();
+        String payload = "SECRET_PAYLOAD_BODY_XYZ";
+
+        try {
+            Optional<StarBotBaseLiveEvent> event = parse(
+                    "{\"cmd\":\"BRAND_NEW_CMD\",\"data\":\"" + payload + "\"}");
+            assertTrue(event.isEmpty(), "未知 cmd 不应解析成事件");
+            assertEquals(1, riskMetrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_CMD, Duration.ofMinutes(1)),
+                    "首见应恰好记一次");
+            String detail = riskMetrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_CMD).orElse("");
+            assertTrue(detail.contains("BRAND_NEW_CMD"), "detail 应含 cmd 名，实际: " + detail);
+        } catch (AssertionError e) {
+            reds.add("① " + e.getMessage());
+        }
+
+        try {
+            for (int i = 0; i < 999; i++) {
+                parse("{\"cmd\":\"BRAND_NEW_CMD\",\"data\":\"" + payload + "\"}");
+            }
+            assertEquals(4, riskMetrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_CMD, Duration.ofMinutes(1)),
+                    "千次应只在 1/10/100/1000 四处记，实际 "
+                            + riskMetrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_CMD, Duration.ofMinutes(1)));
+        } catch (AssertionError e) {
+            reds.add("② " + e.getMessage());
+        }
+
+        try {
+            parse("{\"cmd\":\"ANOTHER_NEW_CMD:1:2:3\",\"body\":\"" + payload + "\"}");
+            assertEquals(5, riskMetrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_CMD, Duration.ofMinutes(1)),
+                    "另一 cmd 名应另记首见，截断后去重");
+            String detail = riskMetrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_CMD).orElse("");
+            assertTrue(detail.contains("ANOTHER_NEW_CMD"), "最近一条应是截断后的名，实际: " + detail);
+            assertFalse(detail.contains("ANOTHER_NEW_CMD:1:2:3"), "detail 不应保留冒号后缀");
+        } catch (AssertionError e) {
+            reds.add("③ " + e.getMessage());
+        }
+
+        try {
+            String detail = riskMetrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_CMD).orElse("");
+            assertFalse(detail.contains(payload), "detail 不得含报文正文，实际: " + detail);
+            assertFalse(detail.contains("SECRET_"), "detail 不得含报文片段");
+        } catch (AssertionError e) {
+            reds.add("④ " + e.getMessage());
+        }
+
+        assertTrue(reds.isEmpty(), () -> "四问中 " + reds.size() + " 问红: " + String.join("; ", reds));
     }
 
     @Test

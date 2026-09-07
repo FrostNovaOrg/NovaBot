@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.enums.ConnectStatus;
 import com.starlwr.bot.bilibili.health.BilibiliDisconnectCause;
+import com.starlwr.bot.bilibili.health.BilibiliRiskMetrics;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -553,6 +554,56 @@ class BilibiliLiveRoomConnectorTest {
                     org.mockito.ArgumentMatchers.anyLong(),
                     org.mockito.ArgumentMatchers.anyLong(),
                     org.mockito.ArgumentMatchers.anyLong());
+        }
+    }
+
+    @Nested
+    @DisplayName("未知操作码")
+    class UnknownOperation {
+        @Test
+        @DisplayName("未知 op 记 UNKNOWN_OP、已知非 NOTICE op 不记")
+        void recordsUnknownOpAndIgnoresKnownNonNotice() {
+            java.util.List<String> reds = new java.util.ArrayList<>();
+            BilibiliRiskMetrics metrics = new BilibiliRiskMetrics();
+            java.util.concurrent.ConcurrentHashMap<Integer, java.util.concurrent.atomic.AtomicLong> ledger =
+                    new java.util.concurrent.ConcurrentHashMap<>();
+
+            try {
+                assertTrue(BilibiliLiveRoomConnector.isUnknownOperation(9), "9 不在枚举内，应判未知");
+                BilibiliLiveRoomConnector.noteUnknownOperation(9, ledger, metrics);
+                assertEquals(1, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_OP, java.time.Duration.ofMinutes(1)),
+                        "未知 op 首见应记一次");
+                assertEquals("op=9", metrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_OP).orElse(""));
+            } catch (AssertionError e) {
+                reds.add("① " + e.getMessage());
+            }
+
+            try {
+                long before = metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_OP, java.time.Duration.ofMinutes(1));
+                int[] known = {2, 3, 5, 7, 8};
+                for (int op : known) {
+                    assertFalse(BilibiliLiveRoomConnector.isUnknownOperation(op),
+                            "已知码 " + op + " 不应判未知");
+                    BilibiliLiveRoomConnector.noteUnknownOperation(op, ledger, metrics);
+                }
+                assertEquals(before, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_OP, java.time.Duration.ofMinutes(1)),
+                        "已知非 NOTICE op 不得记 UNKNOWN_OP");
+            } catch (AssertionError e) {
+                reds.add("② " + e.getMessage());
+            }
+
+            try {
+                for (int i = 0; i < 9; i++) {
+                    BilibiliLiveRoomConnector.noteUnknownOperation(9, ledger, metrics);
+                }
+                assertEquals(2, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_OP, java.time.Duration.ofMinutes(1)),
+                        "同 op 到 10 次只再记一档，实际 "
+                                + metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_OP, java.time.Duration.ofMinutes(1)));
+            } catch (AssertionError e) {
+                reds.add("③ " + e.getMessage());
+            }
+
+            assertTrue(reds.isEmpty(), () -> "三问中 " + reds.size() + " 问红: " + String.join("; ", reds));
         }
     }
 }

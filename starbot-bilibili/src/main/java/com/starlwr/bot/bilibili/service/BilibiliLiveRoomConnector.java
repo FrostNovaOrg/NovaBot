@@ -41,9 +41,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 直播间长连接连接器
@@ -215,6 +217,41 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
      * 只在 {@code detectRisk} 里读写，而它由单线程的调度器串行调用，因此不用加锁。
      */
     private boolean reconnectedForStall;
+
+    /**
+     * 未知操作码计数。按码去重，只在 1/10/100… 量级写入指标。
+     */
+    private final ConcurrentHashMap<Integer, AtomicLong> unknownOps = new ConcurrentHashMap<>();
+
+    /**
+     * 是否为 {@link DataPackType} 枚举未收录的操作码。
+     * 已知但非 NOTICE 的码（心跳、认证等）不算未知。
+     */
+    static boolean isUnknownOperation(int operation) {
+        for (DataPackType type : DataPackType.values()) {
+            if (type.getCode() == operation) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * 未知操作码首见与量级记账。已知码直接忽略。
+     * @return 是否写入了一次指标
+     */
+    static boolean noteUnknownOperation(int operation, ConcurrentHashMap<Integer, AtomicLong> ledger,
+                                        BilibiliRiskMetrics metrics) {
+        if (!isUnknownOperation(operation) || ledger == null || metrics == null) {
+            return false;
+        }
+        long count = ledger.computeIfAbsent(operation, key -> new AtomicLong()).incrementAndGet();
+        if (Long.toString(count).matches("10*")) {
+            metrics.record(BilibiliRiskMetrics.Kind.UNKNOWN_OP, "op=" + operation);
+            return true;
+        }
+        return false;
+    }
 
     public BilibiliLiveRoomConnector(@NonNull LiveStreamerInfo source,
                                      @NonNull BilibiliApiUtil api,
@@ -453,6 +490,9 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
         }
 
         if (packet.getOperation() != DataPackType.NOTICE.getCode()) {
+            if (noteUnknownOperation(packet.getOperation(), unknownOps, riskMetrics)) {
+                log.warn("直播间 {} 收到未知操作码 {}", source.getRoomId(), packet.getOperation());
+            }
             return;
         }
 

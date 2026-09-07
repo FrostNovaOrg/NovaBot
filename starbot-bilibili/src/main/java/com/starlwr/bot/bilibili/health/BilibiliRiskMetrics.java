@@ -78,7 +78,21 @@ public class BilibiliRiskMetrics {
          * 报告里那张卡整个消失，唯一痕迹是一条 debug 日志。
          * <b>按「数值为 0」去告警永远不会触发，必须按「项缺失」判定。</b>
          */
-        SNAPSHOT_MISSING("开播快照项缺失");
+        SNAPSHOT_MISSING("开播快照项缺失"),
+
+        /**
+         * 长连接业务消息出现分派表里没有的 cmd。
+         * <p>
+         * 结构性信号：未知令牌出现，不是数量判据。
+         */
+        UNKNOWN_CMD("未知消息类型"),
+
+        /**
+         * 长连接数据包出现 {@code DataPackType} 枚举外的操作码。
+         * <p>
+         * 结构性信号：未知令牌出现，不是数量判据。
+         */
+        UNKNOWN_OP("未知操作码");
 
         private final String label;
 
