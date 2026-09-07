@@ -1,4 +1,4 @@
-package com.starlwr.bot.core.config.ui;
+package com.starlwr.bot.console.controller;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -19,7 +19,7 @@ class TemplateModelTest {
     /**
      * 夹具在仓库里的位置。引用的是源码树里的 template-model.js，不是构建产物里的副本
      */
-    private static final String FIXTURE = "starbot-core/src/test/resources/frontend/template-model-fixture.mjs";
+    private static final String FIXTURE = "starbot-novabot-console/src/test/resources/frontend/template-model-fixture.mjs";
 
     @Test
     @DisplayName("块表换算、排序、不可嵌套、@ 三档与默认影响面逐格与预期相同")

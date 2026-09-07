@@ -1,4 +1,4 @@
-package com.starlwr.bot.core.config.ui;
+package com.starlwr.bot.console.controller;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -17,7 +17,7 @@ import java.io.IOException;
 @DisplayName("添加主播查询失败后按钮解锁")
 class PushLookupUnlockTest {
     private static final String FIXTURE =
-            "starbot-core/src/test/resources/frontend/push-lookup-unlock-fixture.mjs";
+            "starbot-novabot-console/src/test/resources/frontend/push-lookup-unlock-fixture.mjs";
 
     @Test
     @DisplayName("查不到或已在列表后按钮解开；抛错同样解开并报查询失败")

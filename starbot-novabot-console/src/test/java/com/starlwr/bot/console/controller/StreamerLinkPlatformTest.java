@@ -1,4 +1,4 @@
-package com.starlwr.bot.core.config.ui;
+package com.starlwr.bot.console.controller;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
@@ -232,43 +232,8 @@ class StreamerLinkPlatformTest {
         return body;
     }
 
-    @SuppressWarnings("unchecked")
-    private ConfigUiController controller() {
-        ObjectProvider<HealthProbe> healthProbes = mock(ObjectProvider.class);
-        when(healthProbes.orderedStream()).thenAnswer(invocation -> java.util.stream.Stream.<HealthProbe>of());
-
-        StarBotSenderService senders = mock(StarBotSenderService.class);
-        when(senders.getSenderNames()).thenReturn(Set.of("默认"));
-
-        AbstractDataSource dataSource = mock(AbstractDataSource.class);
-        when(dataSource.getAllUsers()).thenReturn(List.of());
-
-        return new ConfigUiController(
-                mock(ConfigurationMetadataService.class),
-                mock(ConfigurationFileService.class),
-                properties,
-                dataSource,
-                healthProbes,
-                mock(ConfigurationValidator.class),
-                senders,
-                mock(com.starlwr.bot.core.sender.StarBotMessageSender.class),
-                mock(ObjectProvider.class),
-                mock(com.starlwr.bot.core.health.PushActivityRecorder.class),
-                mock(com.starlwr.bot.core.service.StarBotEventHandlerService.class),
-                registry,
-                mock(ConfigurationLevelResolver.class),
-                new ConfigurationEffectResolver(mock(org.springframework.context.ApplicationContext.class)),
-                new ConfigurationDangerResolver(mock(org.springframework.context.ApplicationContext.class)),
-                mock(RuntimeConfigurationApplier.class),
-                mock(ObjectProvider.class),
-                mock(ObjectProvider.class),
-                new EventStreamTokenService(properties.getLive()),
-                mock(ObjectProvider.class),
-                new PushGate(properties),
-                mock(LiveDataService.class),
-                mock(TimelineStore.class),
-                mock(ConfigUiAuthService.class),
-                new PushTemplateDefaults(new StarBotCoreProperties()),
-                mock(UpdateCheckService.class));
+    private StreamerLookupController controller() {
+        return new StreamerLookupController(registry);
     }
+
 }

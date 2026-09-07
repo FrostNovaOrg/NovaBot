@@ -11,7 +11,7 @@ import {readFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
-const ui = join(dirname(fileURLToPath(import.meta.url)), '../../../main/resources/config-ui');
+const ui = join(dirname(fileURLToPath(import.meta.url)), '../../../main/resources/config-ui-pages');
 const src = readFileSync(join(ui, 'push.js'), 'utf8');
 
 const failures = [];

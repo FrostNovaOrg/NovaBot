@@ -1,4 +1,4 @@
-package com.starlwr.bot.core.config.ui;
+package com.starlwr.bot.console.controller;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
@@ -23,7 +23,6 @@ import org.junit.jupiter.api.io.TempDir;
 import org.springframework.context.ApplicationEventPublisher;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -52,12 +51,13 @@ import static org.mockito.Mockito.mock;
 @DisplayName("未填完的推送配置")
 class UnfilledDatasourceEntryTest {
     /**
-     * 发行包示例在测试资源中的副本
+     * 发行包示例在核心测试资源中的副本
      * <p>
-     * 不另抄一份：这份副本与发行包里那份逐字相同，由 {@code PushUserWireFormTest} 守着。
+     * 不另抄一份：这份副本与发行包里那份逐字相同，由核心 {@code PushUserWireFormTest} 守着。
      * 就地重写一份「示例大概长这样」的字面量，守的就不再是真正发出去的那一份了。
      */
-    private static final String EXAMPLE = "/pushuser-wire/datasource-example.json";
+    private static final String EXAMPLE =
+            "starbot-core/src/test/resources/pushuser-wire/datasource-example.json";
 
     /**
      * 示例里那位主播所属的直播平台
@@ -188,15 +188,14 @@ class UnfilledDatasourceEntryTest {
     }
 
     /**
-     * 读取测试资源
-     * @param name 资源路径
+     * 读取核心测试资源树上的那一份，不另抄
+     * @param name 相对仓库根的路径
      * @return 内容
      */
     private static String resource(String name) throws IOException {
-        try (InputStream in = UnfilledDatasourceEntryTest.class.getResourceAsStream(name)) {
-            assertNotNull(in, "测试资源缺席: " + name);
-            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
-        }
+        Path path = FrontendFixture.repoRoot().resolve(name);
+        assertTrue(Files.exists(path), "测试资源缺席: " + path);
+        return Files.readString(path, StandardCharsets.UTF_8);
     }
 
     /**

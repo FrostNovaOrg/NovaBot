@@ -1,4 +1,4 @@
-package com.starlwr.bot.core.config.ui;
+package com.starlwr.bot.console.controller;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
@@ -7,7 +7,6 @@ import com.starlwr.bot.core.command.CommandDispatcher;
 import com.starlwr.bot.core.command.CommandReply;
 import com.starlwr.bot.core.command.CommandSettingsService;
 import com.starlwr.bot.core.command.StarBotCommand;
-import com.starlwr.bot.core.command.builtin.MenuCommandTest;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.model.PushTarget;
@@ -66,6 +65,19 @@ class ChannelSettingsSurfaceTest {
     /** 关不得的那一条：关掉之后群里就再没有把它开回来的入口了 */
     private static final String LOCKED = "菜单";
 
+    /**
+     * 不限群聊的六条：与菜单命令测试那一份同字。
+     * 控制台测不能引用核心测试类，因此在这里各留一份。
+     */
+    private static final List<String> PRIVATE_OK = List.of(
+            "菜单", "直播报告", "数据排行榜", "总数据排行榜", "直播间数据", "直播间总数据");
+
+    /** 仅限群聊的八条：私聊菜单不该出现 */
+    private static final List<String> GROUP_ONLY_NAMES = List.of(
+            "开播@我", "取消开播@我", "开播@名单",
+            "动态@我", "取消动态@我", "动态@名单",
+            "启用命令", "禁用命令");
+
     private final Map<Class<?>, Object> dependencies = new LinkedHashMap<>();
 
     private RuntimeStateController controller;
@@ -115,18 +127,18 @@ class ChannelSettingsSurfaceTest {
         List<String> groupHidden = group.getJSONArray("menuHidden").toList(String.class);
         List<String> friendHidden = friend.getJSONArray("menuHidden").toList(String.class);
 
-        for (String name : MenuCommandTest.GROUP_ONLY_NAMES) {
+        for (String name : GROUP_ONLY_NAMES) {
             assertTrue(friendHidden.contains(name), "好友会话该藏「" + name + "」: " + friendHidden);
             assertFalse(groupHidden.contains(name), "群会话不该藏「" + name + "」: " + groupHidden);
         }
-        assertEquals(MenuCommandTest.PRIVATE_OK.size(),
+        assertEquals(PRIVATE_OK.size(),
                 commands().size() - friendHidden.size(),
                 "好友会话可见条数该是私聊可用的那些: " + friendHidden);
 
-        Set<String> visible = new LinkedHashSet<>(MenuCommandTest.PRIVATE_OK);
-        visible.addAll(MenuCommandTest.GROUP_ONLY_NAMES);
+        Set<String> visible = new LinkedHashSet<>(PRIVATE_OK);
+        visible.addAll(GROUP_ONLY_NAMES);
         friendHidden.forEach(visible::remove);
-        assertEquals(Set.copyOf(MenuCommandTest.PRIVATE_OK), visible,
+        assertEquals(Set.copyOf(PRIVATE_OK), visible,
                 "好友会话可见的名字该与私聊菜单同一份: " + visible);
     }
 
@@ -135,10 +147,10 @@ class ChannelSettingsSurfaceTest {
     void groupSessionHidesCommandWhenAvailableInOverridesToFalse() {
         CommandDispatcher dispatcher = dependency(CommandDispatcher.class);
         List<StarBotCommand> roster = new ArrayList<>();
-        for (String name : MenuCommandTest.PRIVATE_OK) {
+        for (String name : PRIVATE_OK) {
             roster.add(simple(name, !LOCKED.equals(name), false));
         }
-        for (String name : MenuCommandTest.GROUP_ONLY_NAMES) {
+        for (String name : GROUP_ONLY_NAMES) {
             roster.add(HIDDEN.equals(name) ? hiddenByAvailableIn() : simple(name, true, true));
         }
         when(dispatcher.all()).thenReturn(roster);
@@ -152,7 +164,7 @@ class ChannelSettingsSurfaceTest {
                 "群会话该只因覆写藏这一条: " + groupHidden);
         assertTrue(friendHidden.contains(HIDDEN),
                 "好友会话也该藏它: " + friendHidden);
-        for (String name : MenuCommandTest.GROUP_ONLY_NAMES) {
+        for (String name : GROUP_ONLY_NAMES) {
             assertTrue(friendHidden.contains(name),
                     "覆写不得冲掉好友会话对仅限群聊命令的隐藏: " + friendHidden);
         }
@@ -299,10 +311,10 @@ class ChannelSettingsSurfaceTest {
      */
     private List<StarBotCommand> commands() {
         List<StarBotCommand> commands = new ArrayList<>();
-        for (String name : MenuCommandTest.PRIVATE_OK) {
+        for (String name : PRIVATE_OK) {
             commands.add(simple(name, !LOCKED.equals(name), false));
         }
-        for (String name : MenuCommandTest.GROUP_ONLY_NAMES) {
+        for (String name : GROUP_ONLY_NAMES) {
             commands.add(HIDDEN.equals(name) ? hiddenSubscribe() : simple(name, true, true));
         }
         return commands;

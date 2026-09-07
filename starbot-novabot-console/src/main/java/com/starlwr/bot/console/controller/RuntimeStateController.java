@@ -1,4 +1,4 @@
-package com.starlwr.bot.core.config.ui;
+package com.starlwr.bot.console.controller;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
@@ -6,10 +6,12 @@ import com.starlwr.bot.core.command.CommandContext;
 import com.starlwr.bot.core.command.CommandDispatcher;
 import com.starlwr.bot.core.command.CommandSettingsService;
 import com.starlwr.bot.core.command.StarBotCommand;
+import com.starlwr.bot.core.config.ui.ConfigUiController;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.enums.PushTargetType;
+import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.service.AtSubscriptionService;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.RevenueVisibilityService;
@@ -54,6 +56,7 @@ import java.util.Set;
  * {@code /config/*} 注册，本类同样受其保护。
  */
 @Slf4j
+@StarBotComponent
 @RestController
 @RequestMapping(ConfigUiController.BASE_PATH + "/api/state")
 @ConditionalOnProperty(name = "starbot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)

@@ -22,7 +22,7 @@ if ! command -v node > /dev/null 2>&1; then
     exit 2
 fi
 
-UI="starbot-core/src/main/resources/config-ui"
+PAGES="starbot-novabot-console/src/main/resources/config-ui-pages"
 RED=0
 SYNTAX_RED=0
 
@@ -35,7 +35,7 @@ else
 fi
 
 # —— 语法 ——
-for f in "$UI"/template-model.js "$UI"/template.js; do
+for f in "$PAGES"/template-model.js "$PAGES"/template.js; do
     if node --input-type=module --check < "$f" > /dev/null 2>&1; then
         echo "语法 绿 $f"
     else
