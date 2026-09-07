@@ -47,6 +47,15 @@ public final class ConsolePages {
     private static final Pattern SCRIPT = Pattern.compile("[A-Za-z0-9_-]+\\.js");
 
     /**
+     * 控制台内置页的路由名
+     * <p>
+     * 顶级插件页的标识会原样成为地址 {@code #/<页标识>}，与这些名字撞车就会盖住内置页。
+     * 只拦 {@link ConsolePageSlot#TOP}：设置页子页的地址是 {@code #/settings/<页标识>}，不占这一段。
+     */
+    private static final Set<String> BUILTIN_PAGE_IDS = Set.of(
+            "home", "push", "streamers", "log", "links", "settings", "setup");
+
+    /**
      * 已通过登记的一项：注册项本身，加上登记时读到的标识与顺序值
      * <p>
      * 排序要用标识与顺序值，而<b>再问注册项一次就是再给它一次抛异常的机会</b>——
@@ -156,8 +165,14 @@ public final class ConsolePages {
             // 落位与上面几项一样是「向插件要一个值」，同样可能抛。取不到就不登记，
             // 而不是替它兜一个缺省——兜了的话，一个已经出事的插件会安静地长在某一页上，
             // 而那一页此刻正是它自己申报不出来的那一页
-            if (read(provider, ConsolePageProvider::slot, "落位") == null) {
+            ConsolePageSlot slot = read(provider, ConsolePageProvider::slot, "落位");
+            if (slot == null) {
                 log.warn("控制台页面 {} 的落位取不到, 已忽略", id);
+                continue;
+            }
+
+            if (slot == ConsolePageSlot.TOP && BUILTIN_PAGE_IDS.contains(id)) {
+                log.warn("控制台页面标识 {} 与内置页同名, 已忽略: {}", id, provider.getClass().getName());
                 continue;
             }
 
