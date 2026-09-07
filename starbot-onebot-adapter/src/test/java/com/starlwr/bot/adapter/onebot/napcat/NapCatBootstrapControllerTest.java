@@ -4,10 +4,19 @@ import com.alibaba.fastjson2.JSONObject;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.ResponseEntity;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -94,5 +103,92 @@ class NapCatBootstrapControllerTest {
 
         assertEquals("mint_failed", result.getString("reason"));
         assertTrue(result.getString("message").contains("配置"));
+    }
+
+    @Test
+    @DisplayName("引导页改引适配器自己端的续登脚本")
+    void pageHtmlPointsAtAdapterResumeScript() {
+        List<String> red = new ArrayList<>();
+        try {
+            ResponseEntity<String> response = controllerReturning(
+                    NapCatCredentialService.Outcome.OK).page();
+            String html = response.getBody() == null ? "" : response.getBody();
+            String src = "src=\"" + NapCatBootstrapController.PAGE_PATH + "/napcat-resume.js\"";
+            try {
+                assertTrue(html.contains(src), "引导页须含 " + src + "，实为：" + snippet(html, "napcat-resume"));
+            } catch (AssertionError e) {
+                red.add(e.getMessage());
+            }
+            try {
+                assertFalse(html.contains("/config/assets/napcat-resume.js"),
+                        "不得再引核心 /config/assets/napcat-resume.js");
+            } catch (AssertionError e) {
+                red.add(e.getMessage());
+            }
+        } catch (Exception e) {
+            red.add(e.toString());
+        }
+        if (!red.isEmpty()) {
+            fail("红格 " + red.size() + "：" + String.join("；", red));
+        }
+    }
+
+    @Test
+    @DisplayName("适配器端出续登脚本，字节与资源件相同")
+    void resumeScriptMatchesTheResourceFile() {
+        List<String> red = new ArrayList<>();
+        try {
+            ResponseEntity<byte[]> response = controllerReturning(
+                    NapCatCredentialService.Outcome.OK).resumeScript();
+            try {
+                assertEquals(200, response.getStatusCode().value(),
+                        "新路由须 200，实为 " + response.getStatusCode());
+            } catch (AssertionError e) {
+                red.add(e.getMessage());
+            }
+            try {
+                String type = String.valueOf(response.getHeaders().getContentType());
+                assertTrue(type.toLowerCase().contains("javascript"),
+                        "Content-Type 须含 javascript，实为 " + type);
+            } catch (AssertionError e) {
+                red.add(e.getMessage());
+            }
+            try {
+                Path file = repositoryRoot().resolve(
+                        "starbot-onebot-adapter/src/main/resources/config-ui-pages/napcat-resume.js");
+                byte[] expected = Files.readAllBytes(file);
+                byte[] body = response.getBody() == null ? new byte[0] : response.getBody();
+                assertTrue(Arrays.equals(expected, body),
+                        "body 须与资源件逐字节同（期望 " + expected.length + " 字节，实为 " + body.length + "）");
+            } catch (AssertionError e) {
+                red.add(e.getMessage());
+            }
+        } catch (Exception e) {
+            red.add(e.toString());
+        }
+        if (!red.isEmpty()) {
+            fail("红格 " + red.size() + "：" + String.join("；", red));
+        }
+    }
+
+    private static Path repositoryRoot() {
+        Path current = Path.of("").toAbsolutePath();
+        while (current != null) {
+            if (Files.exists(current.resolve("build.sh")) && Files.exists(current.resolve("pom.xml"))) {
+                return current;
+            }
+            current = current.getParent();
+        }
+        throw new IllegalStateException("未能定位仓库根目录");
+    }
+
+    private static String snippet(String html, String needle) {
+        int at = html.indexOf(needle);
+        if (at < 0) {
+            return "（正文不含 " + needle + "）";
+        }
+        int from = Math.max(0, at - 40);
+        int to = Math.min(html.length(), at + needle.length() + 40);
+        return html.substring(from, to);
     }
 }

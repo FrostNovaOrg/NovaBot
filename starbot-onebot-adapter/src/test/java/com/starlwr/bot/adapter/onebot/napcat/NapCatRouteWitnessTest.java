@@ -313,7 +313,7 @@ class NapCatRouteWitnessTest {
         @DisplayName("服务端见证与页面识别用的是同一个路由字面量")
         void theLiteralMatchesTheOneInTheResumeScript() {
             Path script = repositoryRoot()
-                    .resolve("starbot-core/src/main/resources/config-ui/napcat-resume.js");
+                    .resolve("starbot-onebot-adapter/src/main/resources/config-ui-pages/napcat-resume.js");
             assertTrue(Files.exists(script), "续登层脚本不在了？");
 
             String text;

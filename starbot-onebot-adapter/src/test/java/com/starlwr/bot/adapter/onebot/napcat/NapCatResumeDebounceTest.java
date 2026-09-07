@@ -58,7 +58,7 @@ class NapCatResumeDebounceTest {
     @BeforeAll
     static void loadTheRealScript() throws ScriptException {
         Path script = repositoryRoot()
-                .resolve("starbot-core/src/main/resources/config-ui/napcat-resume.js");
+                .resolve("starbot-onebot-adapter/src/main/resources/config-ui-pages/napcat-resume.js");
         String source;
         try {
             source = Files.readString(script, StandardCharsets.UTF_8);
