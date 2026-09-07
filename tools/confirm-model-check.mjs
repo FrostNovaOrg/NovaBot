@@ -24,9 +24,9 @@ function eq(actual, expected, what) {
 
 // —— 档一：收起与打开（空串／缺字段）——
 eq(idle().status, 'idle', '收起');
-eq(idle(), {status: 'idle', title: '', body: '', accepted: null, calls: 0, trigger: null}, '收起整份');
-eq(open(idle(), null), {status: 'open', title: '', body: '', accepted: null, calls: 0, trigger: null}, '没给说明不编字');
-eq(open(idle(), {title: '', body: '  '}), {status: 'open', title: '', body: '  ', accepted: null, calls: 0, trigger: null}, '标题空串、正文空白原样带上');
+eq(idle(), {status: 'idle', title: '', body: '', accepted: null, calls: 0, trigger: null, fields: [], danger: false}, '收起整份');
+eq(open(idle(), null), {status: 'open', title: '', body: '', accepted: null, calls: 0, trigger: null, fields: [], danger: true}, '没给说明不编字');
+eq(open(idle(), {title: '', body: '  '}), {status: 'open', title: '', body: '  ', accepted: null, calls: 0, trigger: null, fields: [], danger: true}, '标题空串、正文空白原样带上');
 eq(open(idle(), {title: '删', body: '不可恢复', trigger: 1}).trigger, 1, '触发钮原样记住');
 
 // —— 档二：结算（只填一半：未打开／已收掉不再调）——
@@ -39,7 +39,7 @@ const layer = open(idle(), {title: '删', body: '后果'});
 n = 0;
 const done = settle(layer, true, (ok) => { n++; eq(ok, true, '确认回调参数'); });
 eq(n, 1, '确认调一次');
-eq(done, {status: 'done', title: '删', body: '后果', accepted: true, calls: 1, trigger: null}, '确认后整份');
+eq(done, {status: 'done', title: '删', body: '后果', accepted: true, calls: 1, trigger: null, fields: [], danger: true}, '确认后整份');
 
 n = 0;
 eq(settle(done, false, () => { n++; }) === done, true, '已经收掉再点取消原样返回');
@@ -68,6 +68,14 @@ eq(n, 0, '对不上的键不调回调');
 n = 0;
 eq(keydown(idle(), 'Escape', () => { n++; }).status, 'idle', '还没打开时 Esc 也不调');
 eq(n, 0, '还没打开按 Esc 不调回调');
+
+// —— 档四：输入槽与危险钮（空数组／缺字段／显式关掉红底）——
+eq(open(idle(), {fields: [{label: '名', value: '我的设备'}]}).fields[0].value, '我的设备', 'fields 原样带上');
+eq(open(idle(), {fields: null}).fields, [], 'fields 缺则空数组');
+eq(open(idle(), {danger: false}).danger, false, 'danger 可关');
+eq(open(idle(), {}).danger, true, '没写 danger 仍按危险确认');
+eq(settle(open(idle(), {fields: [{id: 'n'}], danger: false}), true).fields[0].id, 'n', '结算后 fields 还在');
+eq(settle(open(idle(), {danger: false}), true).danger, false, '结算后 danger 还在');
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);

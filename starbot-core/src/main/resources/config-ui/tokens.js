@@ -51,7 +51,7 @@ export function clearIssuedToken() {
 }
 
 function issueFormHtml() {
-  return '<p class="hint">签发要<b>再输一次</b>控制台口令'
+  return '<p class="hint">签发要<b>再输一次</b>密码'
     + (store.totpRequired ? '与动态验证码' : '')
     + '。这一步是有意留的：用当前这个已登录的会话直接签，就等于「浏览器里有枚 Cookie 就能签出口令」——'
     + '借走一台没锁屏的电脑也签得出来，而签出来的口令长期有效。签发是低频动作，多这一步买断这条路。</p>'
@@ -62,7 +62,7 @@ function issueFormHtml() {
     + '这个名字会原样出现在下面的清单里，日后单独吊销就靠它。'
     + '<b>别填带真名的机器名</b>——「某某的 MacBook」会把一个人名留在这台服务器上。</span></div>'
 
-    + '<div class="row"><label for="tk-pass">控制台口令</label>'
+    + '<div class="row"><label for="tk-pass">密码</label>'
     + '<input type="password" id="tk-pass" autocomplete="off"></div>'
 
     // 验证器没绑就不显示这一格。上一次事故正出在这里：说明文字写的是「没开两步验证就直接回车」，
@@ -85,7 +85,7 @@ async function issue() {
   const code = codeInput ? codeInput.value.trim() : '';
 
   if (!label) return fail('先填「签给谁」。没有它日后只能一次全撤，把别的面板一起踢下线');
-  if (!password) return fail('请输入控制台口令');
+  if (!password) return fail('请输入密码');
   if (store.totpRequired && !/^\d{6}$/.test(code)) return fail('动态验证码是 6 位数字，请从验证器应用里读取');
 
   const body = {label, password};

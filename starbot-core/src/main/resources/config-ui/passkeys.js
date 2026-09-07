@@ -71,6 +71,9 @@ export async function loadPasskeys(box, addButton) {
       + (item.lastUsedAt ? time(item.lastUsedAt) : '还没用过')
       + '</td><td><button type="button" class="ghost" data-id="' + esc(item.id) + '">删除</button></td></tr>').join('')
     + '</tbody></table>';
+  const table = box.querySelector('table');
+  table.style.width = 'max-content';
+  table.style.minWidth = '100%';
 
   box.querySelectorAll('button[data-id]').forEach(
     button => button.addEventListener('click', () => remove(button.dataset.id)));
@@ -126,10 +129,15 @@ export async function registerPasskey(trigger) {
       },
     });
 
-    const name = prompt('给这把通行密钥起个名字，好在列表里认出它（最长 '
-      + (options.nameLimit || 40) + ' 个字）', '我的设备');
+    const nameLimit = options.nameLimit || 40;
+    const named = await ask({
+      title: '给这把通行密钥起个名字',
+      fields: [{label: '给这把通行密钥起个名字', value: '我的设备', maxlength: nameLimit}],
+      danger: false,
+    });
     // 取消了就是取消：这一步之后才提交，因此认证器上那把钥匙不会留下一个没人认领的登记
-    if (name === null) return;
+    if (!named) return;
+    const name = Object.values(named)[0];
 
     const result = await api('/auth/passkey/register/verify', {
       method: 'POST',
