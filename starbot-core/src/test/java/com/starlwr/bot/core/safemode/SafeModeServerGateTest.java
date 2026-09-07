@@ -129,7 +129,7 @@ class SafeModeServerGateTest {
     }
 
     @Test
-    @DisplayName("端口越界夹默认：裸 99999／0／65536 回 7827，界上沿 65535 与界内 8080 照用")
+    @DisplayName("端口越界夹默认：裸 99999／0／-1／65536 回 7827，界上沿 65535 与界内 8080 照用")
     void resolvePortClampsBareNumberOutOfRange() throws IOException {
         Path config = dir.resolve("application.yml");
 
@@ -138,6 +138,8 @@ class SafeModeServerGateTest {
         tally(unresolved, 7827, newServer().resolvePort(), "裸数字 99999 越界应夹回默认端口 7827");
         Files.writeString(config, "server:\n  port: 0\n", StandardCharsets.UTF_8);
         tally(unresolved, 7827, newServer().resolvePort(), "裸数字 0 越界应夹回默认端口 7827");
+        Files.writeString(config, "server:\n  port: -1\n", StandardCharsets.UTF_8);
+        tally(unresolved, 7827, newServer().resolvePort(), "裸数字 -1 越界应夹回默认端口 7827");
         Files.writeString(config, "server:\n  port: 8080\n", StandardCharsets.UTF_8);
         tally(unresolved, 8080, newServer().resolvePort(), "阳性对照: 界内 8080 照用");
         Files.writeString(config, "server:\n  port: 65535\n", StandardCharsets.UTF_8);
@@ -146,7 +148,7 @@ class SafeModeServerGateTest {
         tally(unresolved, 7827, newServer().resolvePort(), "裸数字 65536 越界一格应夹回默认端口 7827");
 
         assertTrue(unresolved.isEmpty(),
-                () -> "端口越界五问中 " + unresolved.size() + " 问未销: " + String.join("; ", unresolved));
+                () -> "端口越界六问中 " + unresolved.size() + " 问未销: " + String.join("; ", unresolved));
     }
 
     private SafeModeServer newServer() {
