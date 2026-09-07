@@ -195,6 +195,7 @@ public class BilibiliEventParser {
      *      2     观众昵称            2/2，与 15.2.1 一致
      *      3     观众头像            2/2，与 15.2.2 一致（仅作核对，取值走 uinfo）
      *      8     旧式勋章            2/2，布局同 V1 的 medal_info；V1 不取它，这里同样忽略
+     *      9     盲盒子消息           6/29 样本 2026-09-07（只在盲盒条出现），子字段见下
      *     10     礼物块              2/2，子字段见下
      *     11     是否首次            2/2，恒为 1，与 V1 的 is_first 对应，不取用
      *     13     财富等级 {1:等级}    2/2。⚠️ 礼物版 uinfo 里没有 wealth（2/2 无 15.4），
@@ -223,6 +224,15 @@ public class BilibiliEventParser {
      *                     repeated {1,2}    （repeated 子消息），手幅为空。用途未知，不取用
      * </pre>
      * <pre>
+     *   盲盒（9）字段     语义              证据
+     *        1           盲盒配置 id      6/6，对应 V1 blind_gift_config_id，记而不取
+     *        2           投入的盒子 id    6/6，对应 V1 original_gift_id
+     *        3           投入的盒子名     6/6，对应 V1 original_gift_name
+     *        5           动作文案         6/6，对应 V1 gift_action（如「爆出」），记而不取
+     *        6           盒价             6/6，对应 V1 original_gift_price（千分之一元）
+     * </pre>
+     * 9.4 与 V1 gift_tip_price 在样本里都没有对应，不取。
+     * <pre>
      *   勋章（15.3）字段  语义              证据
      *        1           勋章名            2/2（字符串）
      *        2           勋章等级          2/2
@@ -236,15 +246,23 @@ public class BilibiliEventParser {
      * 因此勋章与大航海单独一套方法（{@link #parseGiftFansMedalV2} / {@link #parseGiftGuardV2}），
      * 不复用 {@link #parseFansMedalV2} / {@link #parseGuardV2}。
      * <p>
-     * V1 还取 {@code bag_gift}（背包礼物）与 {@code blind_gift}（盲盒）。V2 的 2 条样本里
-     * 两者都没出现，字段号未知：背包礼物暂时认不出来（实扣按 total_coin 照记），
-     * 盲盒见 {@link #parseGiftV2}。等真实样本出现再补。
+     * V1 还取 {@code bag_gift}（背包礼物）与 {@code blind_gift}（盲盒）。背包礼物在 V2
+     * 里字段号未知（样本里没出现过），暂时认不出来，实扣按 total_coin 照记。盲盒是顶层
+     * 9 号子消息，见 {@link #parseGiftV2}。
      */
     private static final int GIFT_V2_UID = 1;
 
     private static final int GIFT_V2_UNAME = 2;
 
+    private static final int GIFT_V2_BLIND = 9;
+
     private static final int GIFT_V2_INFO = 10;
+
+    private static final int GIFT_V2_BLIND_ORIGINAL_ID = 2;
+
+    private static final int GIFT_V2_BLIND_ORIGINAL_NAME = 3;
+
+    private static final int GIFT_V2_BLIND_ORIGINAL_PRICE = 6;
 
     private static final int GIFT_V2_WEALTH = 13;
 
@@ -865,7 +883,7 @@ public class BilibiliEventParser {
         // 早退前不该碰它——getInteger 对非数值串会抛，会把免费礼物整条吞掉
         return buildGiftEvent(source, sender, gift, timestamp,
                 meta.getString("coin_type"), () -> meta.getInteger("total_coin"),
-                fromBag(meta), meta.getJSONObject("blind_gift"));
+                fromBag(meta), fromBlindGift(meta.getJSONObject("blind_gift")));
     }
 
     /**
@@ -874,8 +892,9 @@ public class BilibiliEventParser {
      * 与 {@code SEND_GIFT} 是同一件事的两种格式，产出相同的事件，差别只在承载方式，
      * 字段号的来历与证据见 {@link #GIFT_V2_UID} 处的字段表。
      * <p>
-     * <b>盲盒：</b>V2 里盲盒走哪个字段未知——至今的样本里没有盲盒，不按位置猜。
-     * 任何礼物一律按<b>普通礼物</b>入账（34 号是表情特效，不是开出物名，见字段表）。
+     * <b>盲盒：</b>顶层 9 号子消息是投入的盒子（id／名／价对应 V1 {@code blind_gift}
+     * 的 original_gift_*），礼物块（10 号）仍是开出物。没有 9 号时按普通礼物入账。
+     * 34 号是表情特效，不是开出物名，见字段表。
      * <p>
      * <b>背包礼物：</b>V2 里 {@code bag_gift} 的对应字段未知（样本里没出现过），V2 的背包
      * 礼物暂时认不出来，实扣只能按 {@code total_coin} 照记。等样本。
@@ -948,7 +967,7 @@ public class BilibiliEventParser {
 
         return buildGiftEvent(source, sender, giftInfo, timestamp,
                 gift.string(GIFT_V2_COIN_TYPE), () -> intValue(gift.number(GIFT_V2_TOTAL_COIN)),
-                false, null);
+                false, parseBlindV2(message));
     }
 
     /**
@@ -960,12 +979,12 @@ public class BilibiliEventParser {
      * @param coinType 货币类型
      * @param totalCoin 取实扣（千分之一元）的函数，平台没给时算出 null；惰性求值，见 {@link #chargedOf}
      * @param fromBag 是否来自背包；V2 认不出背包礼物，恒由调用方按事实传
-     * @param blind V1 的 {@code blind_gift}；V2 尚无盲盒样本，恒传 null
+     * @param blind 投入的盒子；V1 从 {@code blind_gift} 读出，V2 从顶层 9 号读出，没有则为 null
      * @return 礼物事件，币种不认识时为 null
      */
     private StarBotBaseLiveEvent buildGiftEvent(LiveStreamerInfo source, BilibiliUserInfo sender, GiftInfo gift,
                                                 Instant timestamp, String coinType, Supplier<Integer> totalCoin,
-                                                boolean fromBag, JSONObject blind) {
+                                                boolean fromBag, BlindBox blind) {
         Integer count = gift.getCount();
 
         if ("silver".equals(coinType)) {
@@ -985,11 +1004,11 @@ public class BilibiliEventParser {
             return event;
         }
 
-        Long randomGiftId = blind.getLong("original_gift_id");
+        Long randomGiftId = blind.originalGiftId();
         GiftInfo randomGift = new GiftInfo(
                 randomGiftId,
-                blind.getString("original_gift_name"),
-                toYuan(blind.getInteger("original_gift_price")),
+                blind.originalGiftName(),
+                toYuan(blind.originalGiftPrice()),
                 count,
                 properties.getLive().isCompleteEvent() ? giftService.getGiftUrl(randomGiftId).orElse(null) : null
         );
@@ -998,11 +1017,45 @@ public class BilibiliEventParser {
         Double value = gift.getPrice() == null || count == null ? null : gift.getPrice() * count;
 
         BilibiliRandomGiftEvent event = new BilibiliRandomGiftEvent(source, sender, randomGift, gift, price, value, timestamp);
-        // 盲盒的实扣就是盲盒本身的价，与 total_coin 应当一致。以 total_coin 为准并在不一致时留下日志——
-        // 盲盒尚未拿到过真实报文，这行日志就是将来真有一个盲盒送进来时的证据
+        // 盲盒的实扣就是盲盒本身的价，与 total_coin 应当一致。以 total_coin 为准并在不一致时留下日志
         event.setCharged(chargedOf(totalCoin, fromBag, gift.getName(), price));
         event.setFromBag(fromBag);
         return event;
+    }
+
+    /**
+     * 把 V1 {@code blind_gift} 对象收成 {@link BlindBox}。缺席时为 null，行为与原先直接传 JSONObject 一致
+     */
+    private BlindBox fromBlindGift(JSONObject blind) {
+        if (blind == null) {
+            return null;
+        }
+        return new BlindBox(
+                blind.getLong("original_gift_id"),
+                blind.getString("original_gift_name"),
+                blind.getInteger("original_gift_price")
+        );
+    }
+
+    /**
+     * 从 SEND_GIFT_V2 顶层 9 号子消息读盲盒。没有 9 号时为 null，按普通礼物入账
+     */
+    private BlindBox parseBlindV2(BilibiliProtobufReader message) {
+        BilibiliProtobufReader blind = message.message(GIFT_V2_BLIND);
+        if (blind == null) {
+            return null;
+        }
+        return new BlindBox(
+                blind.number(GIFT_V2_BLIND_ORIGINAL_ID),
+                blind.string(GIFT_V2_BLIND_ORIGINAL_NAME),
+                intValue(blind.number(GIFT_V2_BLIND_ORIGINAL_PRICE))
+        );
+    }
+
+    /**
+     * 盲盒入账用的盒子：id／名／价（千分之一元）。V1、V2 取值位置不同，收成同一份再交给 {@link #buildGiftEvent}
+     */
+    private record BlindBox(Long originalGiftId, String originalGiftName, Integer originalGiftPrice) {
     }
 
     /**
