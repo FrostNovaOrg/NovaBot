@@ -20,8 +20,8 @@ import {$, api, dropDisplayOnly, el, esc, markDirty, say, term} from './core.js'
 import {resolveTarget, targetOptions} from './links-model.js';
 import {
   atAllStatus, buildDirectory, channelIndex, channelName, commandGroups, commandSummary,
-  layoutState, messageOf, noticeSwitches, previewRequestBody, previewRevenueCaption,
-  pushTree, recentPushes, revenueSummary, sessionOf,
+  handlerNames, handlerOf, layoutState, messageOf, noticeSwitches, previewRequestBody,
+  previewRevenueCaption, pushTree, recentPushes, revenueSummary, sessionOf,
   streamerName, strandedSessions, subscriptionSummary, templateState, typeName,
 } from './push-model.js';
 import {renderIncomplete, sessionSettings} from './sessions.js';
@@ -1092,14 +1092,32 @@ function sectionNotices(host, user, target, session) {
  *
  * 勾上＝在这个通道的消息里加一条，取消＝把那条去掉。键形与推送配置里原本的一模一样
  * （只有 handler 一个必填键，其余参数由处理器的默认值补齐），不在这里另造一种写法。
+ *
+ * 🔴 <b>「这一类通知」认的是主名与它的全部旧名</b>（见 push-model 的 handlerNames）。
+ * 只认主名的话，老配置里写着旧名的那一条：取消勾选删不掉它，它留在文件里继续推；
+ * 勾上又会另加一条主名的，同一类通知在配置里变成两条，群里收两遍。
+ *
+ * 旧名那一条<b>就地扶正成主名</b>，而这只发生在使用者动了这个开关之后：
+ * 迁移由这一下点击触发、看得见，不是后台趁读一次配置偷偷改人家的文件。
  */
 function toggleNotice(target, className, on) {
   target.messages = target.messages || [];
+  const handler = handlerOf({handler: className}, store.handlerList) || {className, aliases: []};
+  const names = handlerNames(handler);
+  const mine = target.messages.filter(item => names.includes(item.handler));
+
   if (on) {
     // 已经有就不重复添加，以免覆盖掉使用者写过的参数
-    if (!messageOf(target, className)) target.messages.push({handler: className});
+    if (!mine.length) {
+      target.messages.push({handler: handler.className});
+    } else {
+      // 留第一条并把名字扶正，同类的其余条目去掉：进来时就是两条的配置（旧名与主名各一条）
+      // 若原样留着，这一类通知每次都推两遍
+      mine[0].handler = handler.className;
+      target.messages = target.messages.filter(item => item === mine[0] || !names.includes(item.handler));
+    }
   } else {
-    target.messages = target.messages.filter(item => item.handler !== className);
+    target.messages = target.messages.filter(item => !names.includes(item.handler));
   }
   markDirty();
   renderStreamers();
@@ -1148,7 +1166,9 @@ function sectionTemplate(host, user, target, session) {
       body: '这个通道的消息模板会改回默认，自己写的内容会丢掉。'
         + '此后默认模板再改，这个通道跟着一起变。'})) return;
     for (const message of target.messages || []) {
-      const handler = (store.handlerList || []).find(item => item.className === message.handler);
+      // 按主名与旧名一起认：老配置里写着旧名的那一条按主名找不着，「恢复默认」会静静地跳过它，
+      // 而屏幕上这个通道已经写着「默认模板」
+      const handler = handlerOf(message, store.handlerList);
       if (!handler || !(handler.placeholders || []).length) continue;
       message.params = restoreDefaults(message.params, handler);
     }
@@ -1179,7 +1199,7 @@ function sectionTemplate(host, user, target, session) {
     editable,
     emptyNote: '这个通道带文字模板的通知一条都没开着。关着的那一类改了模板也不会有人收到，'
       + '因此这里不列——到上面「推什么」里先开一条。',
-    paramsOf: handler => (messageOf(target, handler.className) || {}).params || {},
+    paramsOf: handler => (messageOf(target, handler) || {}).params || {},
     context: {
       isGroup: Number(target.type) === 1,
       admin: adminOf(target),
@@ -1188,7 +1208,7 @@ function sectionTemplate(host, user, target, session) {
     channelLabel: channelName(session, target, directory),
     lockedNote: '这是默认模板的样子。要单独给这个通道改，先点上面的「改为自定义」。',
     onChange: (handler, params) => {
-      const message = messageOf(target, handler.className);
+      const message = messageOf(target, handler);
       if (!message) return;
       message.params = params;
       markDirty();
@@ -1214,7 +1234,9 @@ function sectionLayout(host, target, session) {
   const state = layoutState(target, store.handlerList);
   if (!state.present) return;
 
-  const handler = (store.handlerList || []).find(item => item.className === state.className) || {};
+  // 处理器整项由 layoutState 一并给回来，不在这里按 className 回头再查一遍：
+  // 两处查法差一点，旧名那一条就会在其中一处掉出去
+  const handler = state.handler || {};
   const box = sectionHead(host, 3, (handler.displayName || '报告') + '长什么样',
     '这一类通知没有文字模板，只有版式：左边调，右边就是发到群里的那张图');
   const key = 'layout:' + target.platform + ':' + target.num + ':' + state.className;
@@ -1237,7 +1259,7 @@ function sectionLayout(host, target, session) {
     }
     if (!await ask({title: '恢复默认？',
       body: '这个通道的报告版式会改回默认。此后默认版式再改，这个通道跟着一起变。'})) return;
-    const message = messageOf(target, state.className);
+    const message = messageOf(target, handler);
     if (message) {
       const params = Object.assign({}, message.params || {});
       for (const option of handler.options || []) delete params[option.key];
@@ -1254,10 +1276,10 @@ function sectionLayout(host, target, session) {
     editable,
     lockedNote: '这是默认版式的样子。要单独给这个通道改，先点上面的「改为自定义」。',
     items: handler.options || [],
-    paramsOf: () => (messageOf(target, state.className) || {}).params || {},
+    paramsOf: () => (messageOf(target, handler) || {}).params || {},
     caption: previewRevenueCaption(session, target),
     onChange: params => {
-      const message = messageOf(target, state.className);
+      const message = messageOf(target, handler);
       if (!message) return;
       message.params = params;
       markDirty();

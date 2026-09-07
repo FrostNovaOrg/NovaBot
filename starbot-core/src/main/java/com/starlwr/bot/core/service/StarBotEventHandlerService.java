@@ -10,8 +10,11 @@ import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -136,5 +139,30 @@ public class StarBotEventHandlerService {
      */
     public Map<String, StarBotEventHandler> getRegisteredHandlers() {
         return Map.copyOf(cache);
+    }
+
+    /**
+     * 每个处理器认得的旧全类名：真类名 → 它的旧名
+     * <p>
+     * 反着读的就是 {@link #getHandler(String)} 回落时用的那张别名表本身，不另建一份。
+     * 配置界面要认出「使用者这一条配的就是这一类通知」，用的必须与运行期认处理器的是同一张表——
+     * 两张表分叉的那天，界面上写着「关」而机器人照推，而两处的代码看起来都对。
+     * <p>
+     * 与 {@link #getRegisteredHandlers()} 分开给，不是把旧名并进那份清单：勾选项、随包示例
+     * 一律只认真类名，旧名混进去就等于把一个已经不存在的类名重新发给使用者。这一份答的是
+     * 另一问——「这一类通知在老配置里还可能写成什么」。
+     * <p>
+     * 没有旧名的处理器<b>不出现</b>在结果里；旧名按字典序，同一份清单每次读到的次序一样。
+     * @return 真类名 → 旧全类名
+     */
+    public Map<String, List<String>> getLegacyClassNames() {
+        Map<String, List<String>> result = new HashMap<>();
+        aliases.forEach((legacy, handler) ->
+                result.computeIfAbsent(handler.getClass().getName(), name -> new ArrayList<>()).add(legacy));
+        result.replaceAll((name, legacyNames) -> {
+            legacyNames.sort(Comparator.naturalOrder());
+            return List.copyOf(legacyNames);
+        });
+        return Map.copyOf(result);
     }
 }

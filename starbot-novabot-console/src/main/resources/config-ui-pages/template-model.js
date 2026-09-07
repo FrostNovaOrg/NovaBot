@@ -25,6 +25,10 @@
  * 程序见模板里已经有了就不再补，两处各写一套的话群里会被 @ 两遍。
  */
 
+// 「配置里这一条是不是这一类通知」只有 push-model 那一份判法：处理器搬过包之后，
+// 老配置里写的是旧名，这里自己按主名比一遍的话，那几个通道在本页整个消失而不报错
+import {messageOf} from './push-model.js';
+
 /**
  * 「@ 谁」的三档，与 AtMode 的取值一一对应
  *
@@ -630,12 +634,12 @@ export function applyEdit(params, base, cards, atMode) {
 export function templateAdoption(users, handler, terms) {
   const following = [];
   const custom = [];
-  const className = (handler || {}).className;
 
   for (const user of users || []) {
     for (const target of ((user || {}).targets) || []) {
-      const message = (((target || {}).messages) || [])
-        .find(item => item.handler === className);
+      // 认这一条用的是 messageOf，与推送页的开关、模板、版式同一把：这一页自己按主名比的话，
+      // 老配置里写着旧名的那些通道在这张表上一个也不出现，而「改一次影响到谁」正是这一页的立身之本
+      const message = messageOf(target, handler);
       if (!message || message.enabled === false) continue;
 
       const row = {uid: user.uid, platform: target.platform, num: target.num, type: Number(target.type)};
