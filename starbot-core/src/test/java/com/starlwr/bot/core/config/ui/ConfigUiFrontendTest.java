@@ -43,7 +43,7 @@ class ConfigUiFrontendTest {
     private static final List<String> SHARED = List.of(
             "schema", "values", "legacy", "dirty", "tab", "csrfToken", "pushData", "pushSaved",
             "handlerList", "senderList", "pushEnabled", "accountTimer",
-            "platforms", "totpRequired");
+            "platforms", "totpRequired", "vocab");
 
     /**
      * 凭据绝不能流进去的地方
@@ -2406,6 +2406,96 @@ class ConfigUiFrontendTest {
                 "尺点了 $UI/setup.js，应按相对路径收进 config-ui/setup.js");
         assertFalse(covered.contains("config-ui-pages/setup.js"),
                 "尺只点 $UI/setup.js 却把 config-ui-pages/setup.js 也算收进");
+    }
+
+    /**
+     * 连接面四件非注释行不得出现平台词
+     * <p>
+     * 核心界面不自带平台名：带名字的那一版由插件在运行时填回来。注释里提到也不算——
+     * 量的是会画到屏幕上、或会作为标识符跑起来的那些行。
+     */
+    @Test
+    @DisplayName("连接面四件非注释行零平台词")
+    void connectionSurfaceHasNoPlatformWords() throws IOException {
+        List<String> files = List.of("index.html", "links-model.js", "links.js", "log.js");
+        List<String> words = List.of("QQ", "NapCat", "OneBot");
+        Path dir = frontendDir();
+        List<String> hits = new ArrayList<>();
+
+        for (String name : files) {
+            List<String> lines = Files.readAllLines(dir.resolve(name), StandardCharsets.UTF_8);
+            for (int i = 0; i < lines.size(); i++) {
+                String raw = lines.get(i);
+                String trimmed = raw.strip();
+                if (trimmed.startsWith("//") || trimmed.startsWith("*")
+                        || trimmed.startsWith("/*") || trimmed.startsWith("<!--")) {
+                    continue;
+                }
+                for (String word : words) {
+                    if (raw.contains(word)) {
+                        hits.add(name + ":" + (i + 1));
+                        break;
+                    }
+                }
+                if (!hits.isEmpty() && hits.get(hits.size() - 1).startsWith(name + ":")) {
+                    break;
+                }
+            }
+        }
+
+        assertTrue(hits.isEmpty(),
+                "连接面四件非注释行仍有平台词，各件首个命中: " + String.join("；", hits));
+    }
+
+    /**
+     * 词表从 /api/vocab 接到 store，再经 term() 读
+     */
+    @Test
+    @DisplayName("词表接线")
+    void vocabIsWired() throws IOException {
+        List<String> reds = new ArrayList<>();
+        Path dir = frontendDir();
+
+        try {
+            assertTrue(nonCommentContains(dir.resolve("main.js"), "api('/vocab')"),
+                    "main.js 代码行应含 api('/vocab')");
+        } catch (AssertionError e) {
+            reds.add("① " + e.getMessage());
+        }
+        try {
+            assertTrue(nonCommentContains(dir.resolve("core.js"), "export function term("),
+                    "core.js 代码行应含 export function term(");
+        } catch (AssertionError e) {
+            reds.add("② " + e.getMessage());
+        }
+        try {
+            assertTrue(nonCommentContains(dir.resolve("store.js"), "vocab"),
+                    "store.js 代码行应含 vocab");
+        } catch (AssertionError e) {
+            reds.add("③ " + e.getMessage());
+        }
+
+        assertTrue(reds.isEmpty(), () -> "三问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+    }
+
+    /**
+     * 去掉注释行后，文件是否含这一串
+     * @param file 界面文件
+     * @param needle 要找的字面
+     * @return 非注释行里找得到时为真
+     */
+    private boolean nonCommentContains(Path file, String needle) throws IOException {
+        for (String raw : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+            String trimmed = raw.strip();
+            if (trimmed.startsWith("//") || trimmed.startsWith("*")
+                    || trimmed.startsWith("/*") || trimmed.startsWith("<!--")) {
+                continue;
+            }
+            if (raw.contains(needle)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

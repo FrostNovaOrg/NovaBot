@@ -35,7 +35,7 @@
     </div>
     <nav class="nav" id="nav">
       <a href="#/home" data-page="home"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 6.5 8 2l6 4.5V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/><path d="M6.2 14V9h3.6v5"/></svg>首页</a>
-      <a href="#/push" data-page="push"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 4.2A1.2 1.2 0 0 1 3.2 3h9.6A1.2 1.2 0 0 1 14 4.2v6.1a1.2 1.2 0 0 1-1.2 1.2H6.4L3.4 14V11.5H3.2A1.2 1.2 0 0 1 2 10.3z"/></svg>QQ 推送</a>
+      <a href="#/push" data-page="push"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 4.2A1.2 1.2 0 0 1 3.2 3h9.6A1.2 1.2 0 0 1 14 4.2v6.1a1.2 1.2 0 0 1-1.2 1.2H6.4L3.4 14V11.5H3.2A1.2 1.2 0 0 1 2 10.3z"/></svg>推送</a>
       <a href="#/streamers" data-page="streamers"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="5.2" r="2.6"/><path d="M2.8 14c0-2.9 2.3-4.6 5.2-4.6s5.2 1.7 5.2 4.6"/></svg>主播</a>
       <a href="#/log" data-page="log"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="3.6" cy="3.8" r="1.3"/><circle cx="3.6" cy="8" r="1.3"/><circle cx="3.6" cy="12.2" r="1.3"/><path d="M7 3.8h6.4M7 8h6.4M7 12.2h4.2"/></svg>日志</a>
       <a href="#/links" data-page="links"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M6.6 9.4a2.6 2.6 0 0 0 3.9.3l2-2a2.6 2.6 0 0 0-3.7-3.7l-1.1 1.1"/><path d="M9.4 6.6a2.6 2.6 0 0 0-3.9-.3l-2 2a2.6 2.6 0 0 0 3.7 3.7l1.1-1.1"/></svg>连接</a>
@@ -139,7 +139,7 @@
     </div>
   </section>
 
-  <!-- ============ QQ 推送 #/push ============ -->
+  <!-- ============ 推送 #/push ============ -->
   <!--
     左边一棵「主播 → 通道」两级树，右边随选中项换成主播级或通道级。
     地址形态：#/push（通道一览）｜ #/push/default（默认模板）｜ #/push/<uid> ｜ #/push/<uid>/<号>，
@@ -306,7 +306,7 @@
             口令与 Cookie 这类串在送到这里之前已经打码。</p>
         </div>
         <!--
-          NapCat 的日志不进控制台：把别人的日志代理进来，
+          机器人自己的日志不进控制台：把别人的日志代理进来，
           等于替一个我们既管不着、也说不清它写了什么的程序背书。这里只留一个去它自己界面的入口，
           凭据没配好时整块只剩上面那句话——一个点了才知道不能用的按钮，比没有那个按钮更费解。
         -->
@@ -367,28 +367,28 @@
       <div id="link-cards"></div>
 
       <div class="nv-card lcard" id="card-napcat">
-        <div class="lc-hd"><span class="lamp"></span><b>机器人（NapCat 等）</b><span class="lc-cap"></span></div>
+        <div class="lc-hd"><span class="lamp"></span><b>机器人</b><span class="lc-cap"></span></div>
         <div class="lc-note"></div>
         <div class="lc-body">
-          <p class="hint">机器人指 NapCat、Lagrange 等 OneBot 实现，NovaBot 通过它把消息发到 QQ。
+          <p class="hint">机器人把消息发到聊天平台。
             两个 Token 留空表示<b>保持原值</b>，不会被抹掉。</p>
           <div class="fbox" id="bot-form"></div>
 
           <!--
-            NapCat 的 WebUI 挂在本控制台后面时才显示。没配凭据就整块不显示——
+            机器人自己的界面挂在本控制台后面时才显示。没配凭据就整块不显示——
             一个点了才知道不能用的按钮，比没有那个按钮更费解。
           -->
           <div class="lc-sub" id="napcat-entry" style="display:none">
-            <p class="hint" style="margin:0 0 8px">扫码登录 QQ、查看它自己的运行日志，这些事在 NapCat 的界面里做。
+            <p class="hint" style="margin:0 0 8px">扫码登录、查看它自己的运行日志，这些事在机器人自己的界面里做。
               你已经登录了这个控制台，<b>不必再登录它一次</b>——点开时会替你办好。</p>
-            <button type="button" class="nv-btn2" id="napcat-open">打开 NapCat 界面 ↗</button>
+            <button type="button" class="nv-btn2" id="napcat-open">打开机器人界面 ↗</button>
           </div>
         </div>
       </div>
 
       <!--
         发一条试试。它不是第四条连接，而是上面那张卡的验收：群号填错、Token 不对、
-        机器人不在群里、OneBot 没起——这四类错的表现完全一样，什么都不发生。
+        机器人不在群里、机器人没起——这四类错的表现完全一样，什么都不发生。
 
         目标从机器人自己给的名单里挑，<b>没有手填号码的格子</b>：手填时填错一位数不会有任何报错，
         消息只是发去了别处，而那正是这一步要排除的第一类错。这条不靠「页面上没有那个框」保证，

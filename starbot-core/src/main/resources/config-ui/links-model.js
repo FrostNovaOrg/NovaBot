@@ -146,10 +146,11 @@ function day(at) {
  * 那种也算没有，因为它同样发不出消息。此处只看推送平台、不看主播——主播配没配是另一页的事，
  * 而这一页答的是「这条链路通没通」。
  * @param status /api/status 回包
+ * @param title 卡片标题，由调用点传入（插件申报的人话词）
  * @return 卡片视图模型
  */
-function napcatCard(status) {
-  const base = {key: NAPCAT_KEY, kind: 'napcat', title: '机器人（NapCat 等）',
+function napcatCard(status, title) {
+  const base = {key: NAPCAT_KEY, kind: 'napcat', title: title || '机器人',
     show: true, level: 'off', caption: '', note: '', advice: ''};
 
   if (!(status.senders || []).length) {
@@ -233,16 +234,17 @@ function panelCard(tokens) {
  * @param login /api/login 回包
  * @param cards 插件登记的连接卡，[{id, displayName}]
  * @param tokens 只读口令清单，来自 /api/event-tokens
+ * @param botTitle 机器人卡标题，由调用点传入
  * @return 连接页视图模型
  */
-export function linksModel(status, login, cards, tokens) {
+export function linksModel(status, login, cards, tokens, botTitle) {
   const state = status || {};
   const accounts = ((login || {}).accounts) || [];
   const list = (cards || []).map(card => platformCard(card, state, accounts));
 
   // 平台卡在前：定稿的顺序是「先连上直播平台，再连上机器人，最后才谈把事件送到外面去」，
   // 这也正是使用者第一次配置时的先后
-  return {cards: list.concat([napcatCard(state), panelCard(tokens || [])])};
+  return {cards: list.concat([napcatCard(state, botTitle), panelCard(tokens || [])])};
 }
 
 /**

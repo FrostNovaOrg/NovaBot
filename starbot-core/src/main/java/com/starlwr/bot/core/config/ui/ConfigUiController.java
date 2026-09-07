@@ -7,6 +7,8 @@ import com.starlwr.bot.core.config.ConfigLevel;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.config.ui.page.ConsolePageProvider;
 import com.starlwr.bot.core.config.ui.page.ConsolePages;
+import com.starlwr.bot.core.config.ui.vocab.ConsoleVocabularies;
+import com.starlwr.bot.core.config.ui.vocab.ConsoleVocabulary;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.model.EventStreamToken;
 import com.starlwr.bot.core.service.EventStreamTokenService;
@@ -194,6 +196,15 @@ public class ConfigUiController {
     private final ObjectProvider<ConsolePageProvider> pageProviders;
 
     /**
+     * 各插件申报的控制台人话词
+     * <p>
+     * 与页面同形，用 ObjectProvider 取：词来自插件，而插件的 Bean 定义由
+     * BeanDefinitionRegistryPostProcessor 注册，延迟解析才不受注册与注入的先后顺序影响。
+     * 核心自身零实现，没有插件时得到空表。
+     */
+    private final ObjectProvider<ConsoleVocabulary> vocabProviders;
+
+    /**
      * 各插件申报的设置页分组前缀
      * <p>
      * 与页面同形，用 ObjectProvider 取：前缀来自插件，而插件的 Bean 定义由
@@ -276,7 +287,7 @@ public class ConfigUiController {
                 dataSourceServiceRegistry, levelResolver, effectResolver, dangerResolver, runtimeApplier,
                 connectionTesters, pageProviders, eventStreamTokens, buildProperties, pushGate,
                 liveDataService, timeline, authService, templateDefaults, updateCheck,
-                noGroupContributors());
+                noGroupContributors(), noVocabularies());
     }
 
     @Autowired
@@ -306,7 +317,8 @@ public class ConfigUiController {
                               ConfigUiAuthService authService,
                               PushTemplateDefaults templateDefaults,
                               UpdateCheckService updateCheck,
-                              ObjectProvider<ConfigurationGroupContributor> groupContributors) {
+                              ObjectProvider<ConfigurationGroupContributor> groupContributors,
+                              ObjectProvider<ConsoleVocabulary> vocabProviders) {
         this.templateDefaults = templateDefaults;
         this.pushGate = pushGate;
         this.liveDataService = liveDataService;
@@ -319,6 +331,7 @@ public class ConfigUiController {
         this.buildProperties = buildProperties;
         this.eventStreamTokens = eventStreamTokens;
         this.pageProviders = pageProviders;
+        this.vocabProviders = vocabProviders;
         this.groupContributors = groupContributors;
         this.levelResolver = levelResolver;
         this.connectionTesters = connectionTesters;
@@ -369,6 +382,44 @@ public class ConfigUiController {
 
             @Override
             public Stream<ConfigurationGroupContributor> orderedStream() {
+                return Stream.empty();
+            }
+        };
+    }
+
+    /**
+     * 无词表供方：旧构造与测试直接 new 时走空表。
+     * @return 空的 ObjectProvider
+     */
+    private static ObjectProvider<ConsoleVocabulary> noVocabularies() {
+        return new ObjectProvider<>() {
+            @Override
+            public ConsoleVocabulary getObject() {
+                throw new NoSuchBeanDefinitionException(ConsoleVocabulary.class);
+            }
+
+            @Override
+            public ConsoleVocabulary getObject(Object... args) {
+                throw new NoSuchBeanDefinitionException(ConsoleVocabulary.class);
+            }
+
+            @Override
+            public ConsoleVocabulary getIfAvailable() {
+                return null;
+            }
+
+            @Override
+            public ConsoleVocabulary getIfUnique() {
+                return null;
+            }
+
+            @Override
+            public Stream<ConsoleVocabulary> stream() {
+                return Stream.empty();
+            }
+
+            @Override
+            public Stream<ConsoleVocabulary> orderedStream() {
                 return Stream.empty();
             }
         };
@@ -497,6 +548,22 @@ public class ConfigUiController {
         }
 
         result.put("pages", pages);
+        return result;
+    }
+
+    /**
+     * 插件申报的控制台人话词
+     * <p>
+     * 界面据此把中性兜底换成带平台名的那一版。核心自身零实现，没有插件时
+     * {@code terms} 是空表，前端继续用中性词，不报错。
+     * @return 词表
+     */
+    @GetMapping("/api/vocab")
+    public JSONObject vocab() {
+        JSONObject result = new JSONObject();
+        JSONObject terms = new JSONObject();
+        terms.putAll(ConsoleVocabularies.merge(vocabProviders.orderedStream().toList()));
+        result.put("terms", terms);
         return result;
     }
 

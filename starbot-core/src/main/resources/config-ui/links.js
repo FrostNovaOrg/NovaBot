@@ -9,7 +9,7 @@
  * 卡里的内容由插件自己填。写死一个平台名，这一页就替一件可能没装的东西立了张卡。
  */
 
-import {$, api, el, esc, say} from './core.js';
+import {$, api, el, esc, phrase, say, term} from './core.js';
 import {cardAnchor, linksModel, resolveTarget, targetOptions} from './links-model.js';
 import {renderStatus} from './overview.js';
 import {renderTokens} from './tokens.js';
@@ -95,7 +95,8 @@ export async function refreshLinks() {
       api('/status'), api('/login'), api('/event-tokens')]);
 
     renderStatus(status);
-    model = linksModel(status, login, linkCards, tokens.tokens || []);
+    model = linksModel(status, login, linkCards, tokens.tokens || [],
+      phrase('bot.impl', v => '机器人（' + v + ' 等）', '机器人'));
     model.cards.forEach(paint);
     renderTokens(tokens.tokens || []);
     scrollToWanted();
@@ -236,7 +237,7 @@ function renderTestResult(res, targetText) {
     + '<li>机器人此刻在不在线：看本页上面那张卡，账号掉线时接口照样通，消息却没人收得到。</li>'
     + '<li>推送是不是被停着：首页那个「暂停全部推送」按下去之后，这一条也会被丢掉；'
     + '静音时段里同理。</li>'
-    + '<li>OneBot 那侧的日志：填对了地址与 Token 却仍不通时，答案通常只在它自己的日志里。</li>'
+    + '<li>' + esc(term('bot.family', '机器人程序')) + ' 那侧的日志：填对了地址与 Token 却仍不通时，答案通常只在它自己的日志里。</li>'
     + '</ul>'
     + (res.raw ? '<p class="tr-advice">接口原始响应：' + esc(JSON.stringify(res.raw)) + '</p>' : '');
 }

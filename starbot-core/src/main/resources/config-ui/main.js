@@ -4,7 +4,7 @@
  */
 
 import {bindBotForm, botFormHtml, fillBotForms} from './bot.js';
-import {$, api, el, esc, markDirty, say} from './core.js';
+import {$, api, el, esc, markDirty, phrase, say, term} from './core.js';
 import {PROBE_ANCHOR, shouldOpenSetup} from './home-model.js';
 import {focusStation, loadTargets, mountLinkCard, refreshLinks, sendTestMessage} from './links.js';
 import {loadLog, stopFollow, syncLogView} from './log.js';
@@ -211,6 +211,36 @@ export function pageStatus(data) {
   pages.forEach(page => callPage(page, 'status', data));
 }
 
+/**
+ * 把连接面上写死的中性词换成插件申报的带名版
+ *
+ * HTML 里只留中性兜底，启动后再填：核心自身零词表时屏幕上仍是「机器人」，
+ * 装了适配器才出现实现名。取不到词表不弹条，保留 HTML 里那一版。
+ */
+function applyConnectionVocab() {
+  const title = $('#card-napcat .lc-hd b');
+  if (title) {
+    title.textContent = phrase('bot.impl', v => '机器人（' + v + ' 等）', '机器人');
+  }
+  const hint = $('#card-napcat .lc-body > p.hint');
+  if (hint) {
+    hint.innerHTML = '机器人指 ' + esc(term('bot.impl.hint', '机器人程序'))
+      + '，NovaBot 通过它把消息发到 ' + esc(term('bot.platform', '聊天平台'))
+      + '。两个 Token 留空表示<b>保持原值</b>，不会被抹掉。';
+  }
+  const entryHint = $('#napcat-entry p.hint');
+  if (entryHint) {
+    entryHint.innerHTML = '扫码登录 ' + esc(term('bot.platform', '聊天平台'))
+      + '、查看它自己的运行日志，'
+      + phrase('bot.impl', v => '这些事在 ' + esc(v) + ' 的界面里做', '这些事在机器人的界面里做')
+      + '。你已经登录了这个控制台，<b>不必再登录它一次</b>——点开时会替你办好。';
+  }
+  const open = $('#napcat-open');
+  if (open) {
+    open.textContent = phrase('bot.impl', v => '打开 ' + v + ' 界面 ↗', '打开机器人界面 ↗');
+  }
+}
+
 export async function load() {
   say('载入中…');
   try {
@@ -260,6 +290,12 @@ export async function load() {
     }
     renderStreamers();
     decoratePushData();
+    try {
+      store.vocab = (await api('/vocab')).terms || {};
+    } catch (e) {
+      store.vocab = {};
+    }
+    applyConnectionVocab();
     refreshPages();
     loadPushPage();
     // 首页要四份数据一起算，与这一趟里的 /status 各取各的：它那一趟晚一点回来，

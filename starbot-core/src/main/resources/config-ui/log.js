@@ -10,7 +10,7 @@
  * 而页脚那句「共 N 条」说的还是服务端那个数——屏幕上的两个数字对不上。
  */
 
-import {$, api, clock, el, esc, say, today} from './core.js';
+import {$, api, clock, el, esc, phrase, say, today, term} from './core.js';
 import {
   ENG_LEVELS, emptyText, engAtBottom, engCopyText, engEmptyText, engFollowing, engQuery,
   engVisible, groupEngLines, hasFilter, logHash, newerDay, olderDay, parseLogHash, timelineQuery,
@@ -116,7 +116,7 @@ export function loadLog() {
   stopFollow();
   if (syncLogView()) {
     renderEngTools();
-    renderNapCatEntry();
+    renderBotLogEntry();
     loadEng();
     return;
   }
@@ -531,16 +531,18 @@ async function copyEng() {
 }
 
 /**
- * NapCat 的日志不在这里，只留一个去它自己界面的入口——凭据没配好就只剩那句话
+ * 机器人自己的日志不在这里，只留一个去它自己界面的入口——凭据没配好就只剩那句话
  *
  * 头一次真进到这个子页时才问一趟。摆在模块加载处的话，从没打开过日志页的人
  * 也会在每次载入控制台时多打一个请求，而这一整块他一眼都看不到。
  */
-async function renderNapCatEntry() {
+async function renderBotLogEntry() {
   const box = $('#eng-napcat');
   if (box.childElementCount || box.textContent) return;
 
-  box.textContent = 'QQ 那头（NapCat）的日志不在这里，到它自己的控制台看。';
+  box.textContent = phrase('bot.impl',
+    v => term('bot.platform', '聊天平台') + ' 那头（' + v + '）的日志不在这里，到它自己的控制台看。',
+    '机器人那头的日志不在这里，到它自己的控制台看。');
   try {
     const napcat = await api('/napcat/state');
     if (!napcat.configured) return;
@@ -549,7 +551,9 @@ async function renderNapCatEntry() {
   }
   box.insertAdjacentHTML('beforeend',
     '<div style="margin-top:8px"><a class="daystep" id="eng-napcat-open" '
-    + 'href="/config/napcat-bootstrap" target="_blank" rel="noopener">打开 NapCat 界面 ↗</a>'
+    + 'href="/config/napcat-bootstrap" target="_blank" rel="noopener">'
+    + phrase('bot.impl', v => '打开 ' + v + ' 界面 ↗', '打开机器人界面 ↗')
+    + '</a>'
     + '<span class="dim"> NovaBot 自己知道它在哪，不用另填。</span></div>');
 }
 
