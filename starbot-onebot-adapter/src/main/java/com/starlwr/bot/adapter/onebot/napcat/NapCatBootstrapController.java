@@ -5,6 +5,7 @@ import com.starlwr.bot.core.config.ui.ConfigUiController;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -69,10 +70,35 @@ public class NapCatBootstrapController {
      */
     @GetMapping(value = PAGE_PATH, produces = MediaType.TEXT_HTML_VALUE)
     public ResponseEntity<String> page() throws IOException {
-        try (var stream = new ClassPathResource("config-ui/napcat-bootstrap.html").getInputStream()) {
+        try (var stream = new ClassPathResource("config-ui-pages/napcat-bootstrap.html").getInputStream()) {
             return ResponseEntity.ok()
                     .contentType(MediaType.valueOf("text/html;charset=UTF-8"))
                     .body(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
+        }
+    }
+
+    /**
+     * 续登层脚本
+     * <p>
+     * 这段脚本不是控制台登记页，核心 {@code /config/assets} 的回落只端
+     * {@code ConsolePages.byScript} 登记过的文件名，搬走之后再走那条路会 404。
+     * 由本控制器自己端，路径挂在引导页下面，与页同属 {@code /config} 那道闸。
+     */
+    @GetMapping(PAGE_PATH + "/napcat-resume.js")
+    public ResponseEntity<byte[]> resumeScript() {
+        ClassPathResource resource = new ClassPathResource("config-ui-pages/napcat-resume.js");
+        if (!resource.exists()) {
+            log.error("NapCat 续登脚本不在适配器资源里");
+            return ResponseEntity.notFound().build();
+        }
+        try (var stream = resource.getInputStream()) {
+            return ResponseEntity.ok()
+                    .contentType(MediaType.valueOf("text/javascript;charset=UTF-8"))
+                    .cacheControl(CacheControl.noCache())
+                    .body(stream.readAllBytes());
+        } catch (IOException e) {
+            log.error("读取 NapCat 续登脚本失败", e);
+            return ResponseEntity.notFound().build();
         }
     }
 
