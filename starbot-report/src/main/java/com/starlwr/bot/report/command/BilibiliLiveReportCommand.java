@@ -97,7 +97,9 @@ public class BilibiliLiveReportCommand extends BilibiliStreamerCommand {
                 .filter(target -> context.getNum().equals(target.getNum()))
                 .flatMap(target -> target.getMessages().stream())
                 .filter(message -> !Boolean.FALSE.equals(message.getEnabled()))
-                .filter(message -> BilibiliLiveReportPushHandler.class.getName().equals(message.getHandler()))
+                // 比解析出来的类名而不是配置里那一串：老配置写的是本处理器搬包之前的全类名，
+                // 按字面比认不出来，于是这条命令悄悄改用默认版式，看起来像是推送里的版式没生效
+                .filter(message -> BilibiliLiveReportPushHandler.class.getName().equals(message.handlerClassName()))
                 .findFirst()
                 .map(PushMessage::getParamsJsonObject)
                 .orElse(null);

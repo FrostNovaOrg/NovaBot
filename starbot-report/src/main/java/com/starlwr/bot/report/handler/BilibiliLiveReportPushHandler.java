@@ -113,6 +113,17 @@ public class BilibiliLiveReportPushHandler implements StarBotEventHandler {
         return OPTIONS;
     }
 
+    /**
+     * 本类原在 {@code com.starlwr.bot.bilibili.handler} 下，随报告插件拆出时搬到了本模块。
+     * 使用者的 {@code datasource.json} 与 {@code template-defaults.json} 里存的仍是那一串。
+     *
+     * @see StarBotEventHandler#legacyClassNames() 为什么搬包必须连这张表一起改
+     */
+    @Override
+    public List<String> legacyClassNames() {
+        return List.of("com.starlwr.bot.bilibili.handler.BilibiliLiveReportPushHandler");
+    }
+
     @Override
     public String displayName() {
         return "下播报告";

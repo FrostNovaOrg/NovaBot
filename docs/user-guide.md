@@ -317,14 +317,19 @@ starbot:
 
 内置处理器与各自可用的占位符：
 
-| 处理器 | 触发时机 | 可用占位符 |
+| 处理器全限定名 | 触发时机 | 可用占位符 |
 |---|---|---|
-| `BilibiliLiveOnPushHandler` | 开播 | `{uname}` `{title}` `{cover}` `{url}` |
-| `BilibiliLiveOffPushHandler` | 下播 | `{uname}` `{time}` `{url}` |
-| `BilibiliDynamicPushHandler` | 动态更新 | `{uname}` `{action}` `{url}` `{picture}` |
+| `com.starlwr.bot.bilibili.handler.BilibiliLiveOnPushHandler` | 开播 | `{uname}` `{title}` `{cover}` `{url}` |
+| `com.starlwr.bot.bilibili.handler.BilibiliLiveOffPushHandler` | 下播 | `{uname}` `{time}` `{url}` |
+| `com.starlwr.bot.report.handler.BilibiliDynamicPushHandler` | 动态更新 | `{uname}` `{action}` `{url}` `{picture}` |
+| `com.starlwr.bot.report.handler.BilibiliLiveReportPushHandler` | 下播报告 | `{uname}` `{report}` `{url}` |
 
-在 `datasource.json` 里它们要写全限定名，前缀是 `com.starlwr.bot.bilibili.handler.`。
+在 `datasource.json` 里它们要写全限定名，照上表抄。**前缀不止一种**：动态通知与下播报告
+住在报告插件里，前缀是 `com.starlwr.bot.report.handler.`，其余在哔哩哔哩插件里。
 用界面配置时不需要接触这些类名。
+
+> 从旧版升上来的话，这两个处理器<u>原先</u>都在 `com.starlwr.bot.bilibili.handler.` 下。
+> 老名字这一版仍然认，启动日志里会各提醒一条；照上表改过来即可，改之前推送照常。
 
 ### 下播报告的版式
 

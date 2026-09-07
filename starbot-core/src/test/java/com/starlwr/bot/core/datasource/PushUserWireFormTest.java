@@ -58,6 +58,16 @@ class PushUserWireFormTest {
     private static final String EXAMPLE_ROUNDTRIP = BASE + "datasource-example-roundtrip.json";
 
     /**
+     * 搬包之前那份示例，逐字留着当「老配置」用
+     * <p>
+     * 这份<b>不跟着发行包走</b>，也不许跟着改名：它代表的是已经装在使用者机器上的那份文件，
+     * 而那份文件不会因为我们改了包名就跟着变。把旧名从判据里删干净，等于把「老配置还读不读得开」
+     * 这件事一起删掉。旧名解析成哪个实例是处理器那一侧的事（见 {@code LegacyHandlerClassNameTest}），
+     * 这里只守它在线上形态这一层仍解得开、串还原样。
+     */
+    private static final String LEGACY = BASE + "datasource-legacy-handler.json";
+
+    /**
      * 全字段推送用户的序列化基线
      */
     private static final String FULL = BASE + "pushuser-full.json";
@@ -106,8 +116,23 @@ class PushUserWireFormTest {
         assertEquals(
                 List.of("com.starlwr.bot.bilibili.handler.BilibiliLiveOnPushHandler",
                         "com.starlwr.bot.bilibili.handler.BilibiliLiveOffPushHandler",
-                        "com.starlwr.bot.bilibili.handler.BilibiliDynamicPushHandler"),
+                        "com.starlwr.bot.report.handler.BilibiliDynamicPushHandler"),
                 target.getMessages().stream().map(PushMessage::getHandler).toList());
+    }
+
+    @Test
+    @DisplayName("搬包之前那份配置仍解得开, handler 串原样保留")
+    void shouldStillParseConfigWrittenBeforeHandlersMoved() throws IOException {
+        List<PushUser> users = newDataSource().parse(resource(LEGACY));
+
+        assertEquals(1, users.size());
+        assertEquals(
+                List.of("com.starlwr.bot.bilibili.handler.BilibiliLiveOnPushHandler",
+                        "com.starlwr.bot.bilibili.handler.BilibiliLiveOffPushHandler",
+                        "com.starlwr.bot.bilibili.handler.BilibiliDynamicPushHandler"),
+                users.get(0).getTargets().get(0).getMessages().stream().map(PushMessage::getHandler).toList(),
+                "解析这一层不许动 handler 串: 认旧名是处理器那一侧的事, 这里改一个字, "
+                        + "使用者文件里到底写的什么就再也查不出来了");
     }
 
     @Test
