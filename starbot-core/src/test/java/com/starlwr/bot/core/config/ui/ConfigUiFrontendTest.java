@@ -68,6 +68,18 @@ class ConfigUiFrontendTest {
     private static final Set<String> ALLOWED_LOCALS = Set.of();
 
     /**
+     * 邮件服务商示例，不是推送平台名，扫描时放行
+     */
+    private static final String MAIL_SMTP_EXAMPLE =
+            "邮件告警的 SMTP 服务器地址，如 smtp.qq.com。不用邮件告警时留空";
+
+    private static final Pattern JAVA_STRING_LITERAL =
+            Pattern.compile("\"(?:[^\"\\\\]|\\\\.)*\"");
+
+    private static final Pattern STARBOT_KEY_LITERAL =
+            Pattern.compile("starbot\\.[a-z0-9.-]+");
+
+    /**
      * 核心自己的页签，闭集，也就是 {@code store.tab} 的取值域
      * <p>
      * 这一条是边界：<b>核心的界面文件里不许出现这几个以外的页签</b>。平台页由对应插件带进来，
@@ -2510,6 +2522,52 @@ class ConfigUiFrontendTest {
     }
 
     /**
+     * 核心 Java 侧给人看的句子不得带平台名
+     * <p>
+     * 校验器与探针里的句子不该去 Bean 取词，因此这里只量源码里的双引号字面量。
+     * 注释和 Javadoc 不算；配置键名 {@code starbot.*} 与邮件服务商示例
+     * {@code smtp.qq.com} 也不是推送平台名。
+     */
+    @Test
+    @DisplayName("Java 侧用户文案零平台词")
+    void javaUserFacingCopyHasNoPlatformWords() throws IOException {
+        List<String> reds = new ArrayList<>();
+        Path javaRoot = repoRoot().resolve("starbot-core/src/main/java");
+        List<String> hits = platformWordsInJavaSources(javaRoot);
+
+        try {
+            assertTrue(hits.isEmpty(),
+                    "Java 侧用户文案仍有平台词: " + String.join("；", hits));
+        } catch (AssertionError e) {
+            reds.add("① " + e.getMessage());
+        }
+
+        try {
+            String mail = Files.readString(
+                    javaRoot.resolve("com/starlwr/bot/core/config/ui/ExternalConfigurationFields.java"),
+                    StandardCharsets.UTF_8);
+            assertTrue(mail.contains(MAIL_SMTP_EXAMPLE),
+                    "ExternalConfigurationFields 的 smtp.qq.com 示例句应仍在");
+        } catch (AssertionError e) {
+            reds.add("② " + e.getMessage());
+        }
+
+        try {
+            List<String> sample = List.of(
+                    "    // 注释里写 QQ 或 OneBot 不算",
+                    "    String key = \"starbot.core.alert.qq-num\";",
+                    "    String bad = \"常见原因：群号或 QQ 号填错\";",
+                    "    String mail = \"" + MAIL_SMTP_EXAMPLE + "\";");
+            assertEquals(List.of("probe.java:3"), platformWordsInLines(sample, "probe.java"),
+                    "尺应对含 QQ 的字面量红，并放过注释、键名与邮件示例");
+        } catch (AssertionError e) {
+            reds.add("③ " + e.getMessage());
+        }
+
+        assertTrue(reds.isEmpty(), () -> "三问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+    }
+
+    /**
      * 词表从 /api/vocab 接到 store，再经 term() 读
      */
     @Test
@@ -2538,6 +2596,64 @@ class ConfigUiFrontendTest {
         }
 
         assertTrue(reds.isEmpty(), () -> "三问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+    }
+
+    /**
+     * 扫核心 Java 源：非注释、非 Javadoc 行上的双引号字面量
+     */
+    private List<String> platformWordsInJavaSources(Path javaRoot) throws IOException {
+        List<String> hits = new ArrayList<>();
+        try (Stream<Path> walk = Files.walk(javaRoot)) {
+            List<Path> files = walk
+                    .filter(p -> p.getFileName().toString().endsWith(".java"))
+                    .sorted()
+                    .toList();
+            for (Path file : files) {
+                hits.addAll(platformWordsInLines(
+                        Files.readAllLines(file, StandardCharsets.UTF_8),
+                        file.getFileName().toString()));
+            }
+        }
+        return hits;
+    }
+
+    /**
+     * 一行里抽双引号字面量，命中平台词则记 文件:行
+     * <p>
+     * 白名单两条：邮件 SMTP 示例整句、以及整段匹配 {@code starbot.[a-z0-9.-]+} 的键名。
+     */
+    private List<String> platformWordsInLines(List<String> lines, String fileName) {
+        List<String> words = List.of("QQ", "NapCat", "OneBot");
+        List<String> hits = new ArrayList<>();
+        for (int i = 0; i < lines.size(); i++) {
+            String raw = lines.get(i);
+            if (isCommentOrJavadocLine(raw)) {
+                continue;
+            }
+            Matcher m = JAVA_STRING_LITERAL.matcher(raw);
+            while (m.find()) {
+                String content = m.group().substring(1, m.group().length() - 1);
+                if (MAIL_SMTP_EXAMPLE.equals(content)
+                        || STARBOT_KEY_LITERAL.matcher(content).matches()) {
+                    continue;
+                }
+                for (String word : words) {
+                    if (content.contains(word)) {
+                        hits.add(fileName + ":" + (i + 1));
+                        break;
+                    }
+                }
+            }
+        }
+        return hits;
+    }
+
+    /**
+     * 整行是注释或 Javadoc 续行
+     */
+    private boolean isCommentOrJavadocLine(String raw) {
+        String trimmed = raw.strip();
+        return trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*");
     }
 
     /**

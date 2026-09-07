@@ -1577,7 +1577,7 @@ public class ConfigUiController {
                         : "已发送（有 " + skipped + " 条被跳过，多为 @全体成员 无权限或超出每日配额），请到对应会话中确认");
             } else if (failure != null) {
                 result.put("message", "发送失败：" + failure.getString("message"));
-                result.put("advice", "常见原因：群号或 QQ 号填错、机器人不在该群、OneBot 实现未启动、Token 不匹配。"
+                result.put("advice", "常见原因：目标号填错、机器人不在该群、机器人程序未启动、Token 不匹配。"
                         + "可对照「运行状态」页的机器人连接项排查");
             } else {
                 result.put("message", "消息全部被跳过，未实际发出");
