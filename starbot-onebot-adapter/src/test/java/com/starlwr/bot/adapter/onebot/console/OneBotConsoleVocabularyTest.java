@@ -18,13 +18,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @DisplayName("OneBot 控制台词表")
 class OneBotConsoleVocabularyTest {
     @Test
-    @DisplayName("terms 恰六键、皆非空白、皆在闭集内")
+    @DisplayName("terms 恰七键、皆非空白、皆在闭集内")
     void sixFilledKeysInsideClosedSet() {
         List<String> reds = new ArrayList<>();
         Map<String, String> terms = new OneBotConsoleVocabulary().terms();
 
         try {
-            assertEquals(6, terms.size(), "应恰六键，实际 " + terms.size() + "：" + terms.keySet());
+            assertEquals(7, terms.size(), "应恰七键，实际 " + terms.size() + "：" + terms.keySet());
         } catch (AssertionError e) {
             reds.add("① " + e.getMessage());
         }

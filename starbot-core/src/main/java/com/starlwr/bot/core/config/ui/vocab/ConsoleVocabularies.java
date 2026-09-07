@@ -25,7 +25,8 @@ public final class ConsoleVocabularies {
             "bot.family",
             "bot.impl.hint",
             "bot.target.group",
-            "bot.target.user");
+            "bot.target.user",
+            "bot.targets");
 
     private ConsoleVocabularies() {
     }

@@ -246,7 +246,7 @@ async function pluginFacts(status, login) {
  * @param pluginDone 插件步事实
  */
 function renderHome(status, login, timeline, quota, pages, pluginDone) {
-  const model = homeModel(status, login, timeline, quota, pages, pluginDone);
+  const model = homeModel(status, login, timeline, quota, pages, pluginDone, store.vocab);
   renderBanner(model);
   renderLinkMap(model);
   renderTodos(model);

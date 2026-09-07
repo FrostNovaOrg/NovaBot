@@ -20,8 +20,19 @@ import {mailAlertConfigured} from './alert-model.js';
 
 export {SETUP_STEPS};
 
-export function withPluginSteps(pages) {
-  return home.withPluginSteps(pages);
+/** 同义 core.js 的 term：有键用词，无键用中性兜底。模型不读全局。 */
+function word(terms, key, fallback) {
+  return (terms && terms[key]) || fallback;
+}
+
+/** 同义 core.js 的 phrase：词在则套进 withTerm，词缺则整句退成中性 without。 */
+function say(terms, key, withTerm, without) {
+  const v = terms && terms[key];
+  return v ? withTerm(v) : without;
+}
+
+export function withPluginSteps(pages, terms) {
+  return home.withPluginSteps(pages, terms);
 }
 
 /**
@@ -158,7 +169,7 @@ export function startAt(facts, rerun, steps) {
  * @param commandCount 运行期认得的命令条数，数不到时传 null
  * @return {{label: string, text: string, href: string, key: string}[]} 每行
  */
-export function initialRows(configValues, commandCount) {
+export function initialRows(configValues, commandCount, terms) {
   const at = configValues || {};
   const read = key => String(at[key] ?? '').trim();
 
@@ -177,7 +188,8 @@ export function initialRows(configValues, commandCount) {
     row('金额可见', '群聊隐藏、私聊显示', '#/push', ''),
     row('命令', (commandCount ? commandCount + ' 条' : '') + '全开、只认 @ 机器人',
       '#/settings', 'starbot.core.command.admins'),
-    row('告警', alerted ? '已配' : '未配。建议配一条 Webhook，QQ 掉线时只有它能叫到你',
+    row('告警', alerted ? '已配' : '未配。建议配一条 Webhook，'
+      + say(terms, 'bot.platform', v => v + ' 掉线时只有它能叫到你', '机器人掉线时只有它能叫到你'),
       '#/settings', 'starbot.core.alert.webhook-url'),
     // 0 与负数是「不自动清理」，不是「留 0 天」——后者读起来像日志当天就没了
     row('日志保留', Number.isFinite(retention) && retention > 0 ? retention + ' 天' : '不自动清理',
@@ -199,7 +211,7 @@ const row = (label, text, href, key) => ({label, text, href, key});
  * @param steps 步骤表，缺省 {@link SETUP_STEPS}
  * @return {string[]} 三行
  */
-export function summaryLines(facts, skips, counts, steps) {
+export function summaryLines(facts, skips, counts, steps, terms) {
   const it = counts || {};
   const accounts = it.accounts || [];
   const table = steps || SETUP_STEPS;
@@ -219,7 +231,10 @@ export function summaryLines(facts, skips, counts, steps) {
     : '还没加主播——这台 NovaBot 起来暂时什么都不做';
 
   return [
-    fact('bot') ? 'QQ 机器人 已连上' : 'QQ 机器人 还没连上，推送发不出去',
+    fact('bot')
+      ? say(terms, 'bot.platform', v => v + ' 机器人 已连上', '机器人 已连上')
+      : say(terms, 'bot.platform', v => v + ' 机器人 还没连上，推送发不出去',
+        '机器人 还没连上，推送发不出去'),
     account,
     streamer,
   ];

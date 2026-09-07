@@ -32,6 +32,7 @@ public class OneBotConsoleVocabulary implements ConsoleVocabulary {
         terms.put("bot.impl.hint", "NapCat、Lagrange 等 OneBot 实现");
         terms.put("bot.target.group", "群号");
         terms.put("bot.target.user", "QQ 号");
+        terms.put("bot.targets", "群与好友");
         return Map.copyOf(terms);
     }
 }

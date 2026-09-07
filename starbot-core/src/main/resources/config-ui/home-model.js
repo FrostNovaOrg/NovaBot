@@ -15,6 +15,17 @@
 
 import {esc} from './core.js';
 
+/** 同义 core.js 的 term：有键用词，无键用中性兜底。模型不读全局。 */
+function word(terms, key, fallback) {
+  return (terms && terms[key]) || fallback;
+}
+
+/** 同义 core.js 的 phrase：词在则套进 withTerm，词缺则整句退成中性 without。 */
+function say(terms, key, withTerm, without) {
+  const v = terms && terms[key];
+  return v ? withTerm(v) : without;
+}
+
 /**
  * 内置五步，闭集
  *
@@ -25,7 +36,7 @@ import {esc} from './core.js';
  */
 export const SETUP_STEPS = [
   {key: 'lock', title: '给控制台上把锁', skippable: false},
-  {key: 'bot', title: '连上 QQ 机器人', skippable: false},
+  {key: 'bot', title: '连上机器人', skippable: false},
   {key: 'account', title: '登录直播平台', skippable: true},
   {key: 'streamer', title: '第一位主播，推到哪', skippable: true},
   {key: 'test', title: '发一条试试', skippable: false},
@@ -41,7 +52,7 @@ const BUILTIN_STEP_KEYS = new Set(SETUP_STEPS.map(step => step.key));
  * @param pages /api/pages 的 pages 清单
  * @return {{key: string, title: string, skippable?: boolean, plugin?: boolean}[]}
  */
-export function withPluginSteps(pages) {
+export function withPluginSteps(pages, terms) {
   const extra = (Array.isArray(pages) ? pages : [])
     .filter(page => page
       && page.slot === 'setup_step'
@@ -53,9 +64,14 @@ export function withPluginSteps(pages) {
       return order !== 0 ? order : String(a.id).localeCompare(String(b.id));
     })
     .map(page => ({key: page.id, title: page.displayName, plugin: true}));
-  if (!extra.length) return SETUP_STEPS;
-  const streamerAt = SETUP_STEPS.findIndex(step => step.key === 'streamer');
-  return [...SETUP_STEPS.slice(0, streamerAt + 1), ...extra, ...SETUP_STEPS.slice(streamerAt + 1)];
+  let table = SETUP_STEPS;
+  if (extra.length) {
+    const streamerAt = SETUP_STEPS.findIndex(step => step.key === 'streamer');
+    table = [...SETUP_STEPS.slice(0, streamerAt + 1), ...extra, ...SETUP_STEPS.slice(streamerAt + 1)];
+  }
+  return table.map(step => step.key !== 'bot' ? step : Object.assign({}, step, {
+    title: say(terms, 'bot.platform', v => '连上 ' + v + ' 机器人', '连上机器人'),
+  }));
 }
 
 /**
@@ -383,7 +399,7 @@ export function todayAtAllMarkup(tile, expanded) {
  * 只放「要人动手，不动就一直不好」的事。会自己恢复的异常不进这里——
  * 它们在探针那一栏里逐条列着，混进待办只会让这张单子长到没人看。
  */
-function todos(status, login, chain, fresh, pages, pluginDone) {
+function todos(status, login, chain, fresh, pages, pluginDone, terms) {
   // 「初始设置还没完成」只在刚装好那一档出现，而且此时它是唯一的一条：
   // 那五步里第 1 步就是上锁、第 2 步就是连机器人，再摆几条说同一件事的待办，
   // 使用者会以为是几件事。
@@ -410,7 +426,7 @@ function todos(status, login, chain, fresh, pages, pluginDone) {
   if (chain.bot.level === 'err') {
     list.push({
       key: 'bot',
-      title: '重新登录 NapCat',
+      title: say(terms, 'bot.impl', v => '重新登录 ' + v, '重新登录机器人'),
       body: chain.bot.advice || chain.bot.caption,
       action: '去连接页', href: '#/links', soft: false,
     });
@@ -438,8 +454,11 @@ function todos(status, login, chain, fresh, pages, pluginDone) {
   if (!alertConfigured(status)) {
     list.push({
       key: 'webhook',
-      title: 'QQ 告警有死角，建议再配 Webhook',
-      body: '机器人掉线时 QQ 那路叫不到你，Webhook 或邮件配好其中一路这条就消失',
+      title: say(terms, 'bot.platform', v => v + ' 告警有死角，建议再配 Webhook',
+        '机器人告警有死角，建议再配 Webhook'),
+      body: say(terms, 'bot.platform',
+        v => '机器人掉线时 ' + v + ' 那路叫不到你，Webhook 或邮件配好其中一路这条就消失',
+        '机器人掉线时告警那路叫不到你，Webhook 或邮件配好其中一路这条就消失'),
       action: '去配', href: '#/settings?card=alert', soft: true,
     });
   }
@@ -521,9 +540,10 @@ function shortStrip(timeline) {
  * @param quota /api/at-all/quota 回包；没有或失败时可不传
  * @return 首页视图模型
  */
-export function homeModel(status, login, timeline, quota, pages, pluginDone) {
+export function homeModel(status, login, timeline, quota, pages, pluginDone, terms) {
   const state = status || {};
   const account = login || {};
+  const words = terms || {};
 
   // 刚装好、还没连上任何机器人的那一档。判据是「一个推送平台都没注册出来」——
   // 配置文件里写了但 Token 空着的那种也算没有，因为它同样发不出消息。
@@ -542,7 +562,7 @@ export function homeModel(status, login, timeline, quota, pages, pluginDone) {
       {station: 'NovaBot', sub: '本机', advice: ''},
       segment(self, '还没开始干活')),
     bot: Object.assign(
-      {station: 'QQ', sub: '群与好友', advice: ''},
+      {station: word(words, 'bot.platform', '机器人'), sub: word(words, 'bot.targets', '会话'), advice: ''},
       segment(bot, '还没连上机器人')),
   };
 
@@ -577,7 +597,7 @@ export function homeModel(status, login, timeline, quota, pages, pluginDone) {
       advice: item.advice || '',
     })),
     banner: banner(state, chain, fresh),
-    todos: todos(state, account, chain, fresh, pages, pluginDone),
+    todos: todos(state, account, chain, fresh, pages, pluginDone, words),
     now: now(state, chain, fresh),
     today: {
       sent: (state.today && state.today.sent) || 0,

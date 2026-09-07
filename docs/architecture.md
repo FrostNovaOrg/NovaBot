@@ -42,7 +42,7 @@
 | `StarBotCommand` | `core.command` | 各模块 | 群内聊天命令 |
 | `AtAllPermissionResolver` | `core.sender` | OneBot 适配器 | 机器人在某会话能否 @全体成员 |
 | `LiveMetricCatalog` | `core.analytics` | 哔哩哔哩 | 直播指标的中文名与**能否累加** |
-| `ConsoleVocabulary` | `core.config.ui.vocab` | OneBot 适配器 | 控制台人话平台词；核心界面只写中性兜底 |
+| `ConsoleVocabulary` | `core.config.ui.vocab` | OneBot 适配器 | 控制台人话平台词（`bot.platform`／`bot.impl`／`bot.family`／`bot.impl.hint`／`bot.target.group`／`bot.target.user`／`bot.targets`）；核心界面只写中性兜底 |
 
 新增一个跨模块能力时，先问「核心需不需要 import 插件的类」。需要，就说明该抽成 SPI。
 
