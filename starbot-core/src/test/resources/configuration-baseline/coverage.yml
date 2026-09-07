@@ -58,11 +58,6 @@ starbot:
         idle-hours: 62
         max-failures: 63
         lockout-minutes: 64
-      napcat:
-        token: coverage-napcat-token
-        token-hash: coverage-napcat-hash
-        totp-secret: COVERAGENAPCAT
-        address: http://127.0.0.1:16099
       agreement:
         accepted-version: 71
         accepted-at: "2026-01-02T03:04:05"

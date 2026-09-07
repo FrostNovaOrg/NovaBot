@@ -21,6 +21,7 @@ public class OneBotConfigurationGroups implements ConfigurationGroupContributor 
         // 备用的全体提醒方案属于「怎么发」，不属于适配器的工程参数
         prefixes.put("starbot.adapter.onebot.extension.napcat.enable-backup-at-all", ConfigurationGroups.PUSH);
         prefixes.put("starbot.adapter.onebot.alert", ConfigurationGroups.ALERT);
+        prefixes.put("starbot.adapter.onebot.napcat", ConfigurationGroups.SERVICE);
         // 适配器这几段逐段登记而不写一条 starbot.adapter.onebot 兜底：
         // 兜底会让此后每一个新加的适配器配置项自动落进折起来的高级区，且没有任何东西会提起这件事
         prefixes.put("starbot.adapter.onebot.base-url", ConfigurationGroups.SERVICE);
