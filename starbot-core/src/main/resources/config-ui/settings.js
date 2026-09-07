@@ -435,7 +435,10 @@ export function toggleKeyNames() {
  * @param path 配置文件的绝对路径，来自 /status
  */
 export function renderConfigPath(path) {
-  $('#cfg-path').textContent = path || '（未能确定）';
+  const node = $('#cfg-path');
+  node.textContent = path || '（未能确定）';
+  // 以 /status 传来的 path 为准，不从显示文本反推。空串＝未确定。
+  node.dataset.path = path || '';
 }
 
 /**
@@ -446,7 +449,11 @@ export function renderConfigPath(path) {
  * 而使用者无从知道是没复制上还是复制了。
  */
 export async function copyConfigPath() {
-  const path = $('#cfg-path').textContent;
+  const path = $('#cfg-path').dataset.path;
+  if (!path) {
+    say('路径还没确定，没法复制', 'err');
+    return;
+  }
   try {
     await navigator.clipboard.writeText(path);
     say('已复制路径', 'ok');
