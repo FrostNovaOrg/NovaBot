@@ -1,5 +1,6 @@
 package com.starlwr.bot.core.config.ui;
 
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -8,7 +9,7 @@ import java.util.Map;
  * 设置页的分组
  * <p>
  * 此前设置页是按配置键的前缀自动分组的——{@code starbot.core.push} 一组、
- * {@code starbot.bilibili.live} 一组，共二十余组。那是<b>照程序结构摆的</b>：
+ * {@code starbot.core.live} 一组，共二十余组。那是<b>照程序结构摆的</b>：
  * 使用者要办一件事（「让它别在半夜发消息」），得先猜这件事在代码里归哪个类管。
  * 这里改成按「要办的事」分组，常用六组在上，工程用的两组折到页底。
  *
@@ -75,82 +76,117 @@ public final class ConfigurationGroups {
             List.of(PUSH, ALERT, COMMAND, COLLECT, REPORT, AUTH, LOG_DEBUG, SERVICE);
 
     /**
+     * 核心自有前缀表。插件前缀由 {@link ConfigurationGroupContributor} 申报，不写在这里。
+     */
+    private static final ConfigurationGroups CORE = buildCore();
+
+    /**
      * 配置键前缀 → 组
      * <p>
      * 取最长匹配。键 {@code k} 命中前缀 {@code p} 的条件是 {@code k} 等于 {@code p}，
      * 或以 {@code p.} 开头——不写后面这个点的话，{@code starbot.core.push} 会把
      * {@code starbot.core.pushover} 一并吃掉。
      */
-    private static final Map<String, Group> PREFIXES = new LinkedHashMap<>();
+    private final Map<String, Group> prefixes;
 
-    static {
-        // ---- 推送 ----
-        map("starbot.core.push", PUSH);
-        map("starbot.core.sender", PUSH);
-        // 备用的全体提醒方案属于「怎么发」，不属于适配器的工程参数
-        map("starbot.adapter.onebot.extension.napcat.enable-backup-at-all", PUSH);
-
-        // ---- 告警 ----
-        map("starbot.core.alert", ALERT);
-        map("starbot.core.mail", ALERT);
-        map("spring.mail", ALERT);
-
-        // ---- 命令与权限 ----
-        map("starbot.core.command", COMMAND);
-
-        // ---- 采集 ----
-        map("starbot.bilibili.account", COLLECT);
-        map("starbot.bilibili.live", COLLECT);
-        map("starbot.bilibili.dynamic", COLLECT);
-        map("starbot.core.live", COLLECT);
-        // 累计存储答的是「跨场次的数据存到哪」，与「本场数据怎么采」是同一件事的两头
-        map("spring.data.redis", COLLECT);
-
-        // ---- 报告外观 ----
-        map("starbot.core.paint", REPORT);
-        // 这两张图片长在采集那两段的前缀底下，靠最长前缀单独摘出来
-        map("starbot.bilibili.live.report-logo-path", REPORT);
-        map("starbot.bilibili.dynamic.logo-path", REPORT);
-
-        // ---- 登录与安全 ----
-        map("starbot.core.config-ui", AUTH);
-
-        // ---- 日志与调试 ----
-        map("starbot.core.log", LOG_DEBUG);
-        map("starbot.core.timeline", LOG_DEBUG);
-        map("starbot.bilibili.debug", LOG_DEBUG);
-
-        // ---- 服务 ----
-        map("server", SERVICE);
-        map("starbot.core.event-stream", SERVICE);
-        map("starbot.core.exec", SERVICE);
-        map("starbot.core.network", SERVICE);
-        map("starbot.core.network-thread", SERVICE);
-        map("starbot.core.plugin", SERVICE);
-        map("starbot.core.datasource", SERVICE);
-        // 那两项是「NapCat 界面怎么打开」的凭据，界面上的正门在连接页
-        map("starbot.core.config-ui.napcat", SERVICE);
-        map("starbot.bilibili.bilibili-thread", SERVICE);
-        map("starbot.bilibili.network", SERVICE);
-        // 适配器这几段逐段登记而不写一条 starbot.adapter.onebot 兜底：
-        // 兜底会让此后每一个新加的适配器配置项自动落进折起来的高级区，且没有任何东西会提起这件事
-        map("starbot.adapter.onebot.base-url", SERVICE);
-        map("starbot.adapter.onebot.senders", SERVICE);
-        map("starbot.adapter.onebot.security", SERVICE);
-        map("starbot.adapter.onebot.websocket-thread", SERVICE);
-        map("starbot.adapter.onebot.detect", SERVICE);
-        map("starbot.adapter.onebot.extension", SERVICE);
+    private ConfigurationGroups(Map<String, Group> prefixes) {
+        this.prefixes = prefixes;
     }
 
-    private static void map(String prefix, Group group) {
-        Group previous = PREFIXES.put(prefix, group);
+    /**
+     * 只含核心自有前缀的分组表：{@code starbot.core.*}／{@code spring.*}／{@code starbot.adapter.onebot.*}。
+     * @return 核心表
+     */
+    public static ConfigurationGroups core() {
+        return CORE;
+    }
+
+    /**
+     * 核心表与各贡献者申报的前缀合并。无贡献者时即核心表。
+     * <p>
+     * 跨方重复前缀抛 {@link IllegalStateException}，文案与核心自己的前缀表重复登记相同。
+     * @param contributors 插件申报，顺序即合并顺序
+     * @return 合并后的表
+     */
+    public static ConfigurationGroups of(Collection<ConfigurationGroupContributor> contributors) {
+        if (contributors == null || contributors.isEmpty()) {
+            return core();
+        }
+
+        Map<String, Group> merged = new LinkedHashMap<>(core().prefixes);
+        for (ConfigurationGroupContributor contributor : contributors) {
+            if (contributor == null) {
+                continue;
+            }
+            Map<String, Group> declared = contributor.prefixes();
+            if (declared == null) {
+                continue;
+            }
+            for (Map.Entry<String, Group> entry : declared.entrySet()) {
+                map(merged, entry.getKey(), entry.getValue());
+            }
+        }
+        return new ConfigurationGroups(merged);
+    }
+
+    private static ConfigurationGroups buildCore() {
+        Map<String, Group> map = new LinkedHashMap<>();
+        // ---- 推送 ----
+        map(map, "starbot.core.push", PUSH);
+        map(map, "starbot.core.sender", PUSH);
+        // 备用的全体提醒方案属于「怎么发」，不属于适配器的工程参数
+        map(map, "starbot.adapter.onebot.extension.napcat.enable-backup-at-all", PUSH);
+
+        // ---- 告警 ----
+        map(map, "starbot.core.alert", ALERT);
+        map(map, "starbot.core.mail", ALERT);
+        map(map, "spring.mail", ALERT);
+
+        // ---- 命令与权限 ----
+        map(map, "starbot.core.command", COMMAND);
+
+        // ---- 采集 ----
+        map(map, "starbot.core.live", COLLECT);
+        // 累计存储答的是「跨场次的数据存到哪」，与「本场数据怎么采」是同一件事的两头
+        map(map, "spring.data.redis", COLLECT);
+
+        // ---- 报告外观 ----
+        map(map, "starbot.core.paint", REPORT);
+
+        // ---- 登录与安全 ----
+        map(map, "starbot.core.config-ui", AUTH);
+
+        // ---- 日志与调试 ----
+        map(map, "starbot.core.log", LOG_DEBUG);
+        map(map, "starbot.core.timeline", LOG_DEBUG);
+
+        // ---- 服务 ----
+        map(map, "server", SERVICE);
+        map(map, "starbot.core.event-stream", SERVICE);
+        map(map, "starbot.core.exec", SERVICE);
+        map(map, "starbot.core.network", SERVICE);
+        map(map, "starbot.core.network-thread", SERVICE);
+        map(map, "starbot.core.plugin", SERVICE);
+        map(map, "starbot.core.datasource", SERVICE);
+        // 那两项是「NapCat 界面怎么打开」的凭据，界面上的正门在连接页
+        map(map, "starbot.core.config-ui.napcat", SERVICE);
+        // 适配器这几段逐段登记而不写一条 starbot.adapter.onebot 兜底：
+        // 兜底会让此后每一个新加的适配器配置项自动落进折起来的高级区，且没有任何东西会提起这件事
+        map(map, "starbot.adapter.onebot.base-url", SERVICE);
+        map(map, "starbot.adapter.onebot.senders", SERVICE);
+        map(map, "starbot.adapter.onebot.security", SERVICE);
+        map(map, "starbot.adapter.onebot.websocket-thread", SERVICE);
+        map(map, "starbot.adapter.onebot.detect", SERVICE);
+        map(map, "starbot.adapter.onebot.extension", SERVICE);
+        return new ConfigurationGroups(map);
+    }
+
+    private static void map(Map<String, Group> prefixes, String prefix, Group group) {
+        Group previous = prefixes.put(prefix, group);
         if (previous != null) {
             throw new IllegalStateException("配置分组前缀 " + prefix + " 被写了两次: "
                     + previous.id() + " 与 " + group.id());
         }
-    }
-
-    private ConfigurationGroups() {
     }
 
     /**
@@ -168,8 +204,8 @@ public final class ConfigurationGroups {
      * 它多半是某个键改名或删掉之后留下的，而留着它只会让下一个人以为那一段已经归好了组。
      * @return 前缀，登记顺序
      */
-    public static List<String> prefixes() {
-        return List.copyOf(PREFIXES.keySet());
+    public List<String> prefixes() {
+        return List.copyOf(prefixes.keySet());
     }
 
     /**
@@ -177,7 +213,7 @@ public final class ConfigurationGroups {
      * @param name 配置键完整路径
      * @return 组，一条前缀也匹配不上时为 {@code null}
      */
-    public static Group groupOf(String name) {
+    public Group groupOf(String name) {
         if (name == null) {
             return null;
         }
@@ -185,7 +221,7 @@ public final class ConfigurationGroups {
         Group hit = null;
         int longest = -1;
 
-        for (Map.Entry<String, Group> entry : PREFIXES.entrySet()) {
+        for (Map.Entry<String, Group> entry : prefixes.entrySet()) {
             String prefix = entry.getKey();
             if (!name.equals(prefix) && !name.startsWith(prefix + ".")) {
                 continue;
