@@ -1,5 +1,6 @@
 package com.starlwr.bot.bilibili.service;
 
+import com.starlwr.bot.bilibili.service.BilibiliLiveRoomRiskDetector.Judgment;
 import com.starlwr.bot.bilibili.service.BilibiliLiveRoomRiskDetector.Window;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -31,8 +32,8 @@ class BilibiliLiveRoomRiskDetectorTest {
         return new BilibiliLiveRoomRiskDetector(WINDOWS);
     }
 
-    private Optional<String> feed(BilibiliLiveRoomRiskDetector d, Window... windows) {
-        Optional<String> last = Optional.empty();
+    private Optional<Judgment> feed(BilibiliLiveRoomRiskDetector d, Window... windows) {
+        Optional<Judgment> last = Optional.empty();
         for (Window w : windows) {
             last = d.accept(w);
         }
@@ -45,13 +46,13 @@ class BilibiliLiveRoomRiskDetectorTest {
         // 判据的触发条件：环境消息还在来，而弹幕礼物为零。
         // 注意这不是「真被限流时的形状」——实测限流两类一起按比例削，
         // 这里只是说「业务连续为零」这个可观测事实值得报出来
-        Optional<String> r = feed(detector(),
+        Optional<Judgment> r = feed(detector(),
                 new Window(20, 0, 15),
                 new Window(18, 0, 13),
                 new Window(22, 0, 17));
 
         assertTrue(r.isPresent());
-        assertTrue(r.get().contains("业务消息"), "描述里要写明是业务消息为零");
+        assertTrue(r.get().observation().contains("业务消息"), "描述里要写明是业务消息为零");
     }
 
     @Test
@@ -67,7 +68,7 @@ class BilibiliLiveRoomRiskDetectorTest {
     @Test
     @DisplayName("中间只要有一条业务消息就不报")
     void singleBusinessMessageBreaksTheStreak() {
-        Optional<String> r = feed(detector(),
+        Optional<Judgment> r = feed(detector(),
                 new Window(20, 0, 15),
                 new Window(18, 1, 13),
                 new Window(22, 0, 17));
@@ -79,7 +80,7 @@ class BilibiliLiveRoomRiskDetectorTest {
     @DisplayName("误报案例：进房占比过半但弹幕照收，不报")
     void doesNotReportBusyRoomWithManyEntrances() {
         // 2026-08-07 实测：41 万人气游戏区，进房占比 53%，每分钟 71 条弹幕，到达率 93.3%
-        Optional<String> r = feed(detector(),
+        Optional<Judgment> r = feed(detector(),
                 new Window(134, 71, 71),
                 new Window(140, 74, 74),
                 new Window(128, 68, 68));
@@ -90,7 +91,7 @@ class BilibiliLiveRoomRiskDetectorTest {
     @Test
     @DisplayName("冷清房间不报：没人说话不等于收不到")
     void doesNotReportQuietRoom() {
-        Optional<String> r = feed(detector(),
+        Optional<Judgment> r = feed(detector(),
                 new Window(3, 0, 2),
                 new Window(2, 0, 1),
                 new Window(4, 0, 3));
@@ -107,7 +108,7 @@ class BilibiliLiveRoomRiskDetectorTest {
         //
         // 旧判据拿「消息总量」当样本量下限，13 ≥ 10 轻松越过，于是把「安静」读成了「断流」。
         // 这条测试守的正是那个错：**总量能被定时推送撑起来，逐用户事件不能。**
-        Optional<String> r = feed(detector(),
+        Optional<Judgment> r = feed(detector(),
                 new Window(5, 0, 1),
                 new Window(4, 0, 0),
                 new Window(4, 0, 0));
@@ -157,7 +158,7 @@ class BilibiliLiveRoomRiskDetectorTest {
         String msg = feed(detector(),
                 new Window(20, 0, 15),
                 new Window(18, 0, 13),
-                new Window(22, 0, 17)).orElseThrow();
+                new Window(22, 0, 17)).map(Judgment::observation).orElseThrow();
 
         // 原先这里写的是 contains("60") || contains("条")，而右边那半恒真——
         // 任何一句中文描述都含「条」，等于这条断言什么都没查。改成两个数都必须出现：
@@ -222,7 +223,7 @@ class BilibiliLiveRoomRiskDetectorTest {
         String msg = feed(detector(),
                 new Window(20, 0, 15),
                 new Window(18, 0, 13),
-                new Window(22, 0, 17)).orElseThrow();
+                new Window(22, 0, 17)).map(Judgment::observation).orElseThrow();
 
         // 进房数不再只是「说清观测」：它与业务数一起构成样本量下限的分子，
         // 所以这个数写不写进描述，决定了读日志的人能不能复核这次判定
@@ -265,5 +266,74 @@ class BilibiliLiveRoomRiskDetectorTest {
     @DisplayName("三参数的 Window 视为在播，保持旧调用方语义不变")
     void threeArgWindowMeansLiving() {
         assertTrue(new Window(1, 0, 0).living());
+    }
+
+    @Test
+    @DisplayName("业务为零而解析失败非零：报「解析降级」而不是「没消息」")
+    void reportsParseDegradedWhenBusinessZeroButParseFailuresNonzero() {
+        // 协议一变的形状：包照收（总量在涨）、进房类还有量（下限过得去）、
+        // 业务消息为零而解析失败在涨——这与「房间没人说话」是两件事，必须分得开
+        Optional<Judgment> r = feed(detector(),
+                new Window(23, 0, 15, 3, true),
+                new Window(20, 0, 13, 2, true),
+                new Window(26, 0, 17, 4, true));
+
+        assertTrue(r.isPresent());
+        assertTrue(r.get().parseDegraded(), "解析失败非零时判定要带上降级标志");
+        String msg = r.get().observation();
+        assertTrue(msg.contains("解析降级"), "描述要说得出口这是解析出了问题: " + msg);
+        assertTrue(msg.contains("9"), "三个窗口共 9 条解析失败，条数要说出来: " + msg);
+        // 底数仍然要报：读日志的人得能核对总量与逐用户事件，才知道下限是怎么过的
+        assertTrue(msg.contains("69"), "总量 23+20+26 应照旧说出来: " + msg);
+        assertTrue(msg.contains("45"), "逐用户事件 45 应照旧说出来: " + msg);
+    }
+
+    @Test
+    @DisplayName("解析失败为零：照旧报「没消息」，不提解析降级")
+    void reportsQuietWhenNoParseFailures() {
+        Optional<Judgment> r = feed(detector(),
+                new Window(20, 0, 15, 0, true),
+                new Window(18, 0, 13, 0, true),
+                new Window(22, 0, 17, 0, true));
+
+        assertTrue(r.isPresent());
+        assertFalse(r.get().parseDegraded(), "没有解析失败时不得带降级标志");
+        String msg = r.get().observation();
+        assertFalse(msg.contains("解析降级"), "没有解析失败时描述不得提降级: " + msg);
+        assertTrue(msg.contains("定时推送"), "描述应仍是原来那句观测");
+    }
+
+    @Test
+    @DisplayName("解析降级的描述也不得断言原因")
+    void degradedMessageStatesObservationOnly() {
+        String msg = feed(detector(),
+                new Window(23, 0, 15, 3, true),
+                new Window(20, 0, 13, 2, true),
+                new Window(26, 0, 17, 4, true)).map(Judgment::observation).orElseThrow();
+
+        // 与 messageStatesObservationOnly 同一页纪律：说「有 N 条解析失败」是观测，
+        // 说「被平台改了协议」是断言——后者我们证不了
+        for (String forbidden : new String[]{"风控", "被限制", "无法接收", "收不到"}) {
+            assertFalse(msg.contains(forbidden),
+                    "降级描述同样不得断言原因：命中「" + forbidden + "」: " + msg);
+        }
+    }
+
+    @Test
+    @DisplayName("解析失败不参与样本量下限：逐用户事件不够时仍不判")
+    void parseFailuresDoNotCountTowardTheFloor() {
+        // 只有定时推送和解析失败、没有任何逐用户事件：下限不过，什么都不报。
+        // 否则协议全断（连进房都解析不出来）时会拿解析失败自己凑下限报降级
+        assertFalse(feed(detector(),
+                new Window(30, 0, 0, 10, true),
+                new Window(30, 0, 0, 10, true),
+                new Window(30, 0, 0, 10, true)).isPresent(),
+                "解析失败不是逐用户事件，不能把下限顶上去");
+    }
+
+    @Test
+    @DisplayName("四参数的 Window 视为无解析失败，保持旧调用方语义不变")
+    void fourArgWindowMeansNoParseFailures() {
+        assertTrue(new Window(1, 0, 0, true).parseFailed() == 0);
     }
 }

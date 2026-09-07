@@ -20,6 +20,7 @@ import com.starlwr.bot.bilibili.protocol.BilibiliPacket;
 import com.starlwr.bot.bilibili.protocol.BilibiliPacketCodec;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
+import com.starlwr.bot.core.model.LiveGap;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.service.LiveDataService;
 import lombok.Getter;
@@ -204,9 +205,26 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
     private final AtomicInteger businessMessages = new AtomicInteger();
 
     /**
+     * 风控检测窗口内收到但解析失败的条数（未知 cmd 与解析异常）
+     * <p>
+     * 与业务、进房分开记：解析失败的条目算进哪一类，哪一类就会被污染——
+     * 算进业务会把「弹幕还在到达只是解析不出」伪装成业务恢复，断流判定从此永远不触发。
+     * 它也<b>不参与</b>样本量下限，见 {@link BilibiliLiveRoomRiskDetector.Window}。
+     */
+    private final AtomicInteger parseFailedMessages = new AtomicInteger();
+
+    /**
      * 跨窗口的判定器
      */
     private final BilibiliLiveRoomRiskDetector riskDetector;
+
+    /**
+     * 判定所需的连续窗口数
+     * <p>
+     * 判定成立时解析降级缺口要按「窗口数 × 窗口时长」回溯区间，因此留存一份。
+     * 窗口时长与 {@link BilibiliLiveRoomService} 里调度 detectRisk 的间隔同一取法。
+     */
+    private final int riskWindows;
 
     /**
      * 本段断流是否已经用掉那一次「先重连再判」的机会
@@ -302,8 +320,8 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
         this.riskMetrics = riskMetrics;
         this.disconnectDigest = disconnectDigest;
         this.liveDataService = liveDataService;
-        this.riskDetector = new BilibiliLiveRoomRiskDetector(
-                properties.getLive().getAutoDetectLiveRoomRiskWindows());
+        this.riskWindows = properties.getLive().getAutoDetectLiveRoomRiskWindows();
+        this.riskDetector = new BilibiliLiveRoomRiskDetector(riskWindows);
     }
 
     /**
@@ -534,14 +552,18 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
             return;
         }
 
-        countForRiskDetection(data);
-
         // 单条消息的处理失败不应影响同批次的其他消息
+        BilibiliEventParser.ParsedMessage parsed;
         try {
-            parser.parse(data, source).ifPresent(this::publish);
+            parsed = parser.parseMessage(data, source);
         } catch (Exception e) {
             log.error("处理直播间 {} 的消息异常", source.getRoomId(), e);
+            return;
         }
+
+        // 计数在解析之后：解析失败的条目按降级类目记账，不再混进业务或进房
+        countForRiskDetection(data, parsed.degraded());
+        parsed.event().ifPresent(this::publish);
     }
 
     /**
@@ -571,10 +593,11 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
      * 累计风控检测所需的计数
      * <p>
      * 判据是业务消息是否断流；进房类与业务一起构成样本量下限的分子，理由见
-     * {@link BilibiliLiveRoomRiskDetector}。
+     * {@link BilibiliLiveRoomRiskDetector}。解析失败单列一类，不与它们相混。
      * @param data 消息内容
+     * @param degraded 这条消息是否解析降级（未知 cmd 或解析异常）
      */
-    private void countForRiskDetection(JSONObject data) {
+    private void countForRiskDetection(JSONObject data, boolean degraded) {
         if (!properties.getLive().isAutoDetectLiveRoomRisk()) {
             return;
         }
@@ -584,7 +607,9 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
         if (cmd == null) {
             return;
         }
-        if (cmd.startsWith("INTERACT_WORD")) {
+        if (degraded) {
+            parseFailedMessages.incrementAndGet();
+        } else if (cmd.startsWith("INTERACT_WORD")) {
             interactMessages.incrementAndGet();
         } else if (BUSINESS_COMMANDS.contains(cmd)) {
             businessMessages.incrementAndGet();
@@ -604,21 +629,21 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
         // 而排行、观看人数这些环境消息照旧在来，样本量下限挡不住，判据会稳定误报
         BilibiliLiveRoomRiskDetector.Window window = new BilibiliLiveRoomRiskDetector.Window(
                 totalMessages.getAndSet(0), businessMessages.getAndSet(0), interactMessages.getAndSet(0),
-                stateGate.isLiving(source.getUid()));
+                parseFailedMessages.getAndSet(0), stateGate.isLiving(source.getUid()));
 
         if (window.business() > 0) {
             // 业务消息回来了，这一段断流结束，下一段可以重新用掉那次重连机会
             reconnectedForStall = false;
         }
 
-        return riskDetector.accept(window).map(observation -> {
+        return riskDetector.accept(window).map(judgment -> {
             // 先重连一次再判：重连是我们手上最便宜的动作（退避与闸门都现成），
             // 而它恰好就是区分「连接半死」与「平台真限制」的那个实验——
             // 半死的连接重连即恢复，真被限制时换一条连接照样收不到。
             // 少了这一步，一个重连就能自愈的故障会被报成平台问题，人也就白查一趟
             if (!reconnectedForStall) {
                 reconnectedForStall = true;
-                log.warn("直播间 {} 业务消息疑似断流, 先重连一次验证: {}", source.getRoomId(), observation);
+                log.warn("直播间 {} 业务消息疑似断流, 先重连一次验证: {}", source.getRoomId(), judgment.observation());
                 // 判定历史由 afterConnectionClosed 清空，重连后从零重新攒窗口
                 reconnect();
                 return false;
@@ -627,8 +652,20 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
             // 重连之后仍然断流，才升级为判定。只陈述观测到了什么，不断言原因——
             // 从这里分不清是平台限制了下发、协议变更导致业务消息解析不出来、
             // 还是主播那边确实没人说话但有人进出
-            log.warn("直播间 {} 重连后业务消息仍然断流: {}", source.getRoomId(), observation);
+            log.warn("直播间 {} 重连后业务消息仍然断流: {}", source.getRoomId(), judgment.observation());
             status = ConnectStatus.RISK;
+
+            // 业务为零且确有解析失败：这一段采集缺口的成因是解析降级，与断流分开记。
+            // 连接一直在、消息照收，缺口长度按判定窗口回溯——窗口时长与
+            // BilibiliLiveRoomService 调度 detectRisk 的间隔同一取法。
+            // 只有判据报了降级才允许写这个成因，普通断流绝不许落（报告两栏靠它分开）
+            if (judgment.parseDegraded()) {
+                long windowMillis = Duration.ofSeconds(
+                        Math.max(10, properties.getLive().getAutoDetectLiveRoomRiskInterval())).toMillis();
+                long now = System.currentTimeMillis();
+                liveDataService.recordRoomOutage(BilibiliPlatform.BILIBILI.id(), source.getUid(),
+                        now - (long) riskWindows * windowMillis, now, LiveGap.Reason.PARSE_DEGRADED);
+            }
             return true;
         }).orElse(false);
     }
@@ -648,6 +685,7 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
         totalMessages.set(0);
         businessMessages.set(0);
         interactMessages.set(0);
+        parseFailedMessages.set(0);
 
         // 1006 是「连接被切断且没有关闭帧」。单次属正常抖动，成串出现才是风暴，
         // 计数交给健康探针按窗口判定，这里只如实记一笔

@@ -17,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -373,6 +374,70 @@ class LiveSessionRecoveryTest {
             // 没有水位线就定不出结束时刻，时长记 0，但那一场仍然留下来
             assertTrue(recovery.archiveUnclosedIfAny(PLATFORM, STREAMER, System.currentTimeMillis()));
             assertEquals(0, archived().get(0).durationSeconds());
+        }
+
+        @Test
+        @DisplayName("⚠️ 断线缺口带成因：解析降级读得回、旧记录读回断流、认不出的名字落未定、不抛")
+        void roomOutageReasonRoundTripAndLegacyReadback() throws Exception {
+            List<String> reds = new ArrayList<>();
+            long base = System.currentTimeMillis() - 3_600_000;
+            long uid = STREAMER.getUid();
+            Path data = dir.resolve("data.json");
+
+            try {
+                // 五参数写入端只在确有解析失败计数时才许落 PARSE_DEGRADED（连接器那侧的格守着那条线）；
+                // 这里量存储层本身：写下去的成因，重启之后要原样读得回来
+                DefaultLiveDataService before = boot();
+                before.recordRoomOutage(PLATFORM, uid, base, base + 10_000, LiveGap.Reason.PARSE_DEGRADED);
+                before.saveNow(false);
+
+                DefaultLiveDataService after = boot();
+                assertEquals(List.of(new LiveGap(base, base + 10_000, LiveGap.Reason.PARSE_DEGRADED)),
+                        after.roomOutageIntervals(PLATFORM, uid, base - 1000, base + 60_000),
+                        "解析降级的断线缺口要原样读得回来");
+            } catch (AssertionError e) {
+                reds.add("① " + e.getMessage());
+            }
+
+            try {
+                // 成因字段出现之前的老记录：只有 from 与 to
+                Files.writeString(data, "{\"RoomOutages:bilibili\":{\"114514\":"
+                                + "[{\"from\":" + (base + 100_000) + ",\"to\":" + (base + 110_000) + "}]}}",
+                        StandardCharsets.UTF_8);
+                List<LiveGap> legacy = boot().roomOutageIntervals(PLATFORM, uid, base - 1000, base + 200_000);
+                assertEquals(1, legacy.size(), "老记录必须原样读得回，一条都不能丢");
+                assertEquals(LiveGap.Reason.STREAM_LOSS, legacy.get(0).reason(),
+                        "没有成因字段的断线记录说的就是断流——这一项在加成因之前只由断线重连写入");
+            } catch (AssertionError e) {
+                reds.add("② " + e.getMessage());
+            }
+
+            try {
+                DefaultLiveDataService service = boot();
+                // 断线重连仍在用的四参数重载：落下来的成因必须还是断流
+                service.recordRoomOutage(PLATFORM, uid, base + 200_000, base + 210_000);
+                assertEquals(LiveGap.Reason.STREAM_LOSS,
+                        service.roomOutageIntervals(PLATFORM, uid, base + 199_000, base + 220_000).get(0).reason(),
+                        "四参数重载是断线那条路在用，不许悄悄变成解析降级或未定");
+            } catch (AssertionError e) {
+                reds.add("③ " + e.getMessage());
+            }
+
+            try {
+                // 比当前枚举还新的名字（某个值将来被删掉后，老文件里就是这个形状）：不抛，落未定
+                Files.writeString(data, "{\"RoomOutages:bilibili\":{\"114514\":"
+                                + "[{\"from\":" + (base + 300_000) + ",\"to\":" + (base + 310_000)
+                                + ",\"reason\":\"SOME_REMOVED_VALUE\"}]}}",
+                        StandardCharsets.UTF_8);
+                List<LiveGap> unknown = boot().roomOutageIntervals(PLATFORM, uid, base + 299_000, base + 320_000);
+                assertEquals(1, unknown.size());
+                assertEquals(LiveGap.Reason.UNKNOWN, unknown.get(0).reason(),
+                        "认不出的成因按未定处理，与停机那边同一判法");
+            } catch (AssertionError e) {
+                reds.add("④ " + e.getMessage());
+            }
+
+            assertTrue(reds.isEmpty(), () -> "四问中 " + reds.size() + " 问红: " + String.join("; ", reds));
         }
     }
 

@@ -310,7 +310,8 @@ public class DefaultLiveDataService implements LiveDataService {
     private static final String KEY_ROOM_OUTAGES = "RoomOutages:";
 
     @Override
-    public void recordRoomOutage(@NonNull String platform, @NonNull Long uid, long from, long to) {
+    public void recordRoomOutage(@NonNull String platform, @NonNull Long uid, long from, long to,
+                                  @NonNull LiveGap.Reason reason) {
         if (to <= from) {
             return;
         }
@@ -334,11 +335,34 @@ public class DefaultLiveDataService implements LiveDataService {
             JSONObject entry = new JSONObject();
             entry.put("from", from);
             entry.put("to", to);
+            // 存枚举名而不是中文说明，理由与停机那边同一条
+            entry.put(FIELD_REASON, reason.name());
             outages.add(entry);
         }
 
-        log.debug("已记录直播间 {} 的一段断线: {} ~ {}, 共 {} 秒",
-                uid, localTime(from), localTime(to), (to - from) / 1000);
+        log.debug("已记录直播间 {} 的一段断线: {} ~ {}, 共 {} 秒, 成因 {}",
+                uid, localTime(from), localTime(to), (to - from) / 1000, reason.getDescription());
+    }
+
+    /**
+     * 读出一条断线记录的成因
+     * <p>
+     * 与停机那边的 {@link #reasonOf} 判法不同：<b>缺字段读回 {@link LiveGap.Reason#STREAM_LOSS}
+     * 而不是 UNKNOWN</b>——成因字段出现之前的断线记录全由断线重连那条路写入，
+     * 那时落的就是断流，读回断流是还原事实而非猜测。认不出的名字仍按未定处理，
+     * 与停机同一取舍。
+     */
+    private static LiveGap.Reason outageReasonOf(JSONObject entry) {
+        String name = entry.getString(FIELD_REASON);
+        if (name == null) {
+            return LiveGap.Reason.STREAM_LOSS;
+        }
+        try {
+            return LiveGap.Reason.valueOf(name);
+        } catch (IllegalArgumentException e) {
+            log.warn("直播数据里的断线成因 {} 不认得, 按原因未定处理", name);
+            return LiveGap.Reason.UNKNOWN;
+        }
     }
 
     /**
@@ -369,7 +393,7 @@ public class DefaultLiveDataService implements LiveDataService {
                 if (entry == null) {
                     continue;
                 }
-                new LiveGap(entry.getLongValue("from"), entry.getLongValue("to"), LiveGap.Reason.STREAM_LOSS)
+                new LiveGap(entry.getLongValue("from"), entry.getLongValue("to"), outageReasonOf(entry))
                         .overlap(from, to).ifPresent(clipped::add);
             }
         }

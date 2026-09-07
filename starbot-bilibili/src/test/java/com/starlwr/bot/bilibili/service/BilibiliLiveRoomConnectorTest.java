@@ -1,18 +1,26 @@
 package com.starlwr.bot.bilibili.service;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.enums.ConnectStatus;
 import com.starlwr.bot.bilibili.health.BilibiliDisconnectCause;
 import com.starlwr.bot.bilibili.health.BilibiliRiskMetrics;
+import com.starlwr.bot.core.model.LiveGap;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static com.starlwr.bot.bilibili.service.BilibiliConnectorHarness.*;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 /**
  * 直播间连接器测试
@@ -343,6 +351,66 @@ class BilibiliLiveRoomConnectorTest {
             harness.runQueuedReconnects();
             assertEquals(handshakesBefore, harness.handshakes(), "安静不是故障，不该为它重连");
             assertNotEquals(ConnectStatus.RISK, harness.connector().getStatus());
+        }
+
+        /**
+         * 攒满一段「解析降级」的断流：进房类还有量（下限过得去）、业务消息为零
+         * 且解析失败在涨——协议变更时的可观测形状
+         */
+        private boolean degradedStall(BilibiliConnectorHarness harness, int windows) {
+            boolean judged = false;
+            for (int window = 0; window < windows; window++) {
+                for (int i = 0; i < 10; i++) {
+                    harness.receive("INTERACT_WORD_V2");
+                }
+                for (int i = 0; i < 3; i++) {
+                    // 弹幕还在到达，只是解析不出来——桩已在 parseDegradedFor 里按这个 cmd 打开
+                    harness.receive("DANMU_MSG");
+                }
+                judged = harness.connector().detectRisk();
+            }
+            return judged;
+        }
+
+        @Test
+        @DisplayName("⚠️ 解析失败而业务为零：缺口成因落 PARSE_DEGRADED；解析全好时绝不落")
+        void parseDegradedGapRecordedOnlyWhenParseFailuresExist() {
+            List<String> reds = new ArrayList<>();
+
+            BilibiliConnectorHarness degraded = new BilibiliConnectorHarness().living();
+            degraded.connect();
+            degraded.parseDegradedFor("DANMU_MSG");
+            assertFalse(degradedStall(degraded, WINDOWS), "第一段只重连");
+            degraded.fireConnectionClosed(1000);
+            degraded.runQueuedReconnects();
+            assertTrue(degradedStall(degraded, WINDOWS), "重连后业务仍然全在解析失败，这次要判定");
+            assertEquals(ConnectStatus.RISK, degraded.connector().getStatus());
+
+            try {
+                verify(degraded.getLiveDataService()).recordRoomOutage(
+                        eq(BilibiliPlatform.BILIBILI.id()), eq(STREAMER_UID),
+                        anyLong(), anyLong(), eq(LiveGap.Reason.PARSE_DEGRADED));
+            } catch (AssertionError e) {
+                reds.add("① " + e.getMessage());
+            }
+
+            try {
+                // 阴性对照：普通断流（解析一切正常）判定的缺口，成因绝不许是 PARSE_DEGRADED——
+                // 这一项一旦写歪，报告里的「断流」与「解析降级」两栏就再也分不开了
+                BilibiliConnectorHarness normal = new BilibiliConnectorHarness().living();
+                normal.connect();
+                assertFalse(stall(normal, WINDOWS));
+                normal.fireConnectionClosed(1000);
+                normal.runQueuedReconnects();
+                assertTrue(stall(normal, WINDOWS));
+                assertEquals(ConnectStatus.RISK, normal.connector().getStatus());
+                verify(normal.getLiveDataService(), never()).recordRoomOutage(
+                        any(), any(), anyLong(), anyLong(), eq(LiveGap.Reason.PARSE_DEGRADED));
+            } catch (AssertionError e) {
+                reds.add("② " + e.getMessage());
+            }
+
+            assertTrue(reds.isEmpty(), () -> "两问中 " + reds.size() + " 问红: " + String.join("; ", reds));
         }
     }
 

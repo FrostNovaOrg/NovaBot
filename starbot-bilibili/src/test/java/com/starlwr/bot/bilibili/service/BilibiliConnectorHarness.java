@@ -37,6 +37,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
@@ -170,6 +171,7 @@ class BilibiliConnectorHarness {
 
         stubSession();
         stubApi();
+        stubParser();
         stubScheduler();
         stubClient();
         stubConnectGate();
@@ -265,6 +267,18 @@ class BilibiliConnectorHarness {
             // 收消息这条路上抛异常本身就是缺陷，别让调用方每处都写 throws 把它藏进签名里
             throw new IllegalStateException("喂消息时连接器抛了异常: " + cmd, e);
         }
+    }
+
+    /**
+     * 让解析器把某个 cmd 的消息报成「解析失败」（事件照旧为空、降级标志为真）。
+     * <p>
+     * 复现协议变更的形状：包还在收、归类还在走，只是解析不出来。
+     * 具体桩要压在构造体里的默认桩之上，因此只对指名的 cmd 生效
+     * @param cmd 要标成解析失败的 cmd 名
+     */
+    void parseDegradedFor(String cmd) {
+        when(parser.parseMessage(argThat((JSONObject data) -> cmd.equals(data.getString("cmd"))), any()))
+                .thenAnswer(invocation -> new BilibiliEventParser.ParsedMessage(Optional.empty(), true));
     }
 
     /** 断线缺口记到哪儿去了，供断言 */
@@ -461,6 +475,17 @@ class BilibiliConnectorHarness {
         // 认证包若去重新读这个值，就会发出 token 与 uid 对不上的组合——8eafd67 修的就是它
         when(api.getLoginUid()).thenReturn(LOGGED_IN_UID);
         // liveRoomHeartbeat 返回 void，mock 默认就是空实现，不需要打桩
+    }
+
+    /**
+     * 解析器默认桩：一切消息都解析成功且不产出事件（与旧 {@code parse} 的默认行为等价）。
+     * <p>
+     * {@code parseMessage} 返回的是 record，mock 对没打桩的方法返回 null——
+     * 不给这条默认桩的话，连接器数消息那一步会静默 NPE，所有断流测试一起失真
+     */
+    private void stubParser() {
+        when(parser.parseMessage(any(), any())).thenAnswer(invocation ->
+                new BilibiliEventParser.ParsedMessage(Optional.empty(), false));
     }
 
     private void stubScheduler() {
