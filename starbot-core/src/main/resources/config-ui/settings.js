@@ -11,7 +11,6 @@ import {ask} from './confirm.js';
 import {$, api, el, esc, markDirty, saveTarget, say, switchControl} from './core.js';
 import {load} from './main.js';
 import {bindPasswordReveal} from './password-reveal.js';
-import {serializePush} from './push.js';
 import {alertCards, CARD_FIELDS, filterCards} from './settings-alert.js';
 import {authCards, AUTH_CARD_FIELDS, filterAuthCards} from './settings-auth.js';
 import {defaultText, defaultValue, effectOf, isChanged, isDangerous, dangerOf, isVisible}
@@ -477,27 +476,18 @@ function showIssues(issues) {
 
 export async function save() {
   const target = saveTarget();
-  if (!target) return;
+  if (target !== 'values') return;
 
   $('#save').disabled = true;
   showIssues(null);
   say('保存中…');
 
   try {
-    let res;
-    if (target === 'values') {
-      res = await api('/values', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(store.dirty)
-      });
-    } else {
-      res = await api('/datasource', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: serializePush() })
-      });
-    }
+    const res = await api('/values', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(store.dirty)
+    });
 
     // 保存成功就整体重取一遍，草稿态与「还欠一次重启」都由那一趟自己算。
     // 在这里按 store.dirty 顺手把新值抄进 store.values 是不行的：真正落盘的是哪几项

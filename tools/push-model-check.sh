@@ -26,6 +26,7 @@ if ! command -v node > /dev/null 2>&1; then
 fi
 
 UI="starbot-core/src/main/resources/config-ui"
+PAGES="starbot-novabot-console/src/main/resources/config-ui-pages"
 RED=0
 SYNTAX_RED=0
 
@@ -40,7 +41,7 @@ fi
 
 # —— 语法 ——
 # 逐个跑而不是一次传多个：一次传一串时，后面那些是「查过了」还是「没轮到」分不出来
-for f in "$UI"/push-model.js "$UI"/push.js "$UI"/sessions.js "$UI"/confirm.js; do
+for f in "$PAGES"/push-model.js "$PAGES"/push.js "$PAGES"/sessions.js "$UI"/confirm.js; do
     if node --input-type=module --check < "$f" > /dev/null 2>&1; then
         echo "语法 绿 $f"
     else

@@ -14,7 +14,9 @@ import {readFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
-const ui = join(dirname(fileURLToPath(import.meta.url)), '../../../main/resources/config-ui');
+const here = dirname(fileURLToPath(import.meta.url));
+const ui = join(here, '../../../main/resources/config-ui');
+const pages = join(here, '../../../../../starbot-novabot-console/src/main/resources/config-ui-pages');
 const read = name => readFileSync(join(ui, name), 'utf8');
 
 const failures = [];
@@ -54,7 +56,7 @@ const appSecret = secretButtonProps(read('app.css'));
 eq(!!loginSecret && !!appSecret, true, '两份 .secret button 都找得到');
 eq(loginSecret, appSecret, '.secret button 数值与 app.css 相同');
 
-const push = read('push.js');
+const push = readFileSync(join(pages, 'push.js'), 'utf8');
 eq(/export const STREAMER_INPUT_HINT\s*=/.test(push), true, 'push.js 导出 STREAMER_INPUT_HINT');
 eq(push.includes("placeholder = '输入 ' + STREAMER_INPUT_HINT"), true,
   'placeholder 用同一条常量');

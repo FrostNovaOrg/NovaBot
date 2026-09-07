@@ -39,7 +39,7 @@ import java.util.function.Consumer;
  *
  * <h2>不在名单里的那两类</h2>
  * 「命令开关」与「金额可见」同样是即时生效的，但它们<b>不是 application.yml 里的配置项</b>——
- * 两者都按会话记在运行状态里，走 {@link RuntimeStateController} 那条路，本类够不着也不该够得着。
+ * 两者都按会话记在运行状态里，走运行状态接口那条路，本类够不着也不该够得着。
  */
 @Slf4j
 @Service

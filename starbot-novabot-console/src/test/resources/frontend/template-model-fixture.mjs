@@ -17,7 +17,7 @@ import {
   dropIndex, editableKeys, insertBlock, isAttachment, isDefault, moveBlock, moveCard,
   normalizeCards, parseTemplate, placeholderBlock, previewBubbles, removeBlock, removeCard,
   restoreDefaults, splitText, templateAdoption, textBlock, toTemplateText, usesBlock,
-} from '../../../main/resources/config-ui/template-model.js';
+} from '../../../main/resources/config-ui-pages/template-model.js';
 
 const failures = [];
 let checks = 0;

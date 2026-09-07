@@ -1,4 +1,4 @@
-package com.starlwr.bot.core.config.ui;
+package com.starlwr.bot.console.controller;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
@@ -45,7 +45,7 @@ class TemplateEndpointsTest {
 
     private FakeHandler handler;
 
-    private ConfigUiController controller;
+    private PushController controller;
 
     @BeforeEach
     void setUp() {
@@ -124,36 +124,15 @@ class TemplateEndpointsTest {
     }
 
     @SuppressWarnings("unchecked")
-    private ConfigUiController controller(StarBotCoreProperties properties,
-                                         PushTemplateDefaults templateDefaults,
-                                         StarBotEventHandlerService handlers) {
-        return new ConfigUiController(
-                mock(ConfigurationMetadataService.class),
-                mock(ConfigurationFileService.class),
-                properties,
-                mock(com.starlwr.bot.core.datasource.AbstractDataSource.class),
-                mock(ObjectProvider.class),
-                mock(ConfigurationValidator.class),
-                mock(com.starlwr.bot.core.service.StarBotSenderService.class),
-                mock(com.starlwr.bot.core.sender.StarBotMessageSender.class),
-                mock(ObjectProvider.class),
-                mock(com.starlwr.bot.core.health.PushActivityRecorder.class),
+    private PushController controller(StarBotCoreProperties properties,
+                                     PushTemplateDefaults templateDefaults,
+                                     StarBotEventHandlerService handlers) {
+        return new PushController(
+                mock(com.starlwr.bot.core.config.ui.RuntimeConfigurationApplier.class),
+                mock(com.starlwr.bot.core.config.ui.ConfigurationFileService.class),
                 handlers,
-                mock(com.starlwr.bot.core.datasource.DataSourceServiceRegistry.class),
-                mock(ConfigurationLevelResolver.class),
-                new ConfigurationEffectResolver(mock(org.springframework.context.ApplicationContext.class)),
-                new ConfigurationDangerResolver(mock(org.springframework.context.ApplicationContext.class)),
-                RuntimeConfigurationApplier.bench(properties).build(),
-                mock(ObjectProvider.class),
-                mock(ObjectProvider.class),
-                mock(com.starlwr.bot.core.service.EventStreamTokenService.class),
-                mock(ObjectProvider.class),
-                mock(com.starlwr.bot.core.sender.PushGate.class),
-                mock(com.starlwr.bot.core.service.LiveDataService.class),
-                mock(com.starlwr.bot.core.timeline.TimelineStore.class),
-                mock(com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService.class),
                 templateDefaults,
-                mock(UpdateCheckService.class));
+                mock(com.starlwr.bot.core.health.PushActivityRecorder.class));
     }
 
     private static final class FakeHandler implements StarBotEventHandler {

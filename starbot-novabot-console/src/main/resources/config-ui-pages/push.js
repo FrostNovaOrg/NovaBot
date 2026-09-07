@@ -1,5 +1,9 @@
 /**
- * QQ 推送页：左边一棵「主播 → 通道」两级树，右边随选中项换成主播级或通道级
+ * 推送页：左边一棵「主播 → 通道」两级树，右边随选中项换成主播级或通道级
+ *
+ * 本文件随控制台插件走，由控制台按注册清单装载，落在顶级导航。
+ * 三个导出就是与控制台之间的全部约定：render 建出页容器与抽屉、
+ * refresh 按地址栏取数、leave 离开本页时收起抽屉。
  *
  * 本文件只管把 push-model.js 算好的东西摆上屏幕。树上标什么记号、模板算默认还是自定义、
  * 「本群设置」那四行摘要写什么，一律在那边判——判断留在这里的话，那几档就只能靠人
@@ -24,6 +28,374 @@ import {renderIncomplete, sessionSettings} from './sessions.js';
 import {store} from './store.js';
 import {buildLayoutEditor, buildTemplateEditor} from './template.js';
 import {isDefault, restoreDefaults, templateAdoption} from './template-model.js';
+
+const PAGE_STYLE = `
+/* ==================== QQ 推送 ====================
+   左边一棵「主播 → 通道」两级树，右边随选中项换。版式取自 5.1 原型，
+   色值一律引本文件顶部的 token，这一段里不写任何十六进制色。 */
+.pushwrap{display:grid;grid-template-columns:236px 1fr;gap:16px;align-items:start}
+.ptree{position:sticky;top:calc(var(--head-h) + 16px);background:var(--surface);
+  border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(--shadow);padding:10px}
+.ptop{display:grid;gap:6px;margin-bottom:10px}
+.ptop>*{justify-self:stretch;text-align:left;background:var(--surface);color:var(--text);
+  border:1px solid var(--line);border-radius:var(--r-ctl);padding:6px 10px;font-size:12.5px;
+  cursor:pointer;font-family:inherit;text-decoration:none}
+.ptop>*:hover{border-color:var(--accent);color:var(--accent)}
+.ptree-t{font-size:11.5px;color:var(--dim);padding:4px 6px}
+.tgroup{margin-bottom:2px}
+.tnode{display:flex;align-items:center;gap:6px;width:100%;background:none;border:none;
+  border-radius:var(--r-ctl);padding:6px 8px;font:inherit;font-size:13px;color:var(--text);
+  cursor:pointer;text-align:left}
+.tnode:hover{background:var(--soft)}
+.tnode.on{background:var(--soft);font-weight:600}
+.tnode.tchan{padding-left:24px;font-size:12.5px}
+.tnode .caret{width:14px;flex:none;color:var(--dim);font-size:10px}
+.tnode .tn-ico{flex:none;width:18px;height:18px;border-radius:var(--r-ctl);background:var(--soft);
+  color:var(--dim);font-size:10.5px;display:inline-flex;align-items:center;justify-content:center}
+.tnode .tn-nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 记号挤成一竖排会把整行撑高，树上一行一行地错开就看不出层级了 */
+.tnode .tn-marks{flex:none;display:flex;gap:4px;max-width:96px;overflow:hidden}
+.tempty{padding:6px 8px 6px 24px;font-size:12px;color:var(--dim)}
+.pnarrow{display:none;margin-bottom:12px}
+.pnarrow label{display:block;font-size:12.5px;color:var(--dim);margin-bottom:4px}
+.pnarrow select{width:100%;background:var(--surface);color:var(--text);border:1px solid var(--line);
+  border-radius:var(--r-ctl);padding:8px 10px;font-size:13px;font-family:inherit}
+.pright{min-width:0}
+/* 窄屏：左树摆不下，改成上面那个下拉。树不是「藏起来」而是换了一种画法——
+   直接横过来摆的话，正文只剩半屏宽，而通道页四段每一段都是整行的开关 */
+@media (max-width:900px){
+  .pushwrap{display:block}
+  .ptree{display:none}
+  .pnarrow{display:block}
+}
+.psec>h3{display:flex;align-items:center;gap:8px}
+.psec-n{flex:none;width:20px;height:20px;border-radius:50%;background:var(--soft);
+  color:var(--accent);font-size:11.5px;display:inline-flex;align-items:center;justify-content:center}
+.psec h4{margin:18px 0 6px;font-size:12.5px;font-weight:600;color:var(--dim)}
+.ptable{margin-bottom:8px}
+.ptable td.n{font-variant-numeric:tabular-nums;color:var(--dim)}
+.ptable td{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ptable .good{color:var(--ok)}
+.ptable .bad{color:var(--err)}
+/* 主播级的头 */
+.shead{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.sav{width:40px;height:40px;border-radius:50%;flex:none;background:var(--line);object-fit:cover}
+.sh-m{flex:1 1 180px;min-width:0}
+.sh-nm{font-size:17px;font-weight:600}
+.sh-id{color:var(--dim);font-size:12.5px}
+.sh-side{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+button.danger:hover{border-color:var(--err);color:var(--err)}
+/* 通道行 */
+.rowcard{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 0;
+  border-top:1px solid var(--line)}
+.rowcard:first-of-type{border-top:none}
+.rc-main{flex:1 1 240px;min-width:0}
+.rc-nm{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:14px}
+.rc-nm a{color:inherit;text-decoration:none}
+.rc-nm a:hover{color:var(--accent)}
+.rc-sub{color:var(--dim);font-size:12px;margin-top:1px}
+.rc-tg{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
+.rc-side{display:flex;align-items:center;gap:8px;flex:none}
+.addrow{width:100%;margin-top:10px;background:none;border:1px dashed var(--line);color:var(--dim);
+  border-radius:var(--r-ctl);padding:7px 12px;font-size:12.5px;cursor:pointer;font-family:inherit}
+.addrow:hover{border-color:var(--accent);color:var(--accent)}
+/* 通道级的头 */
+.chead{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ch-nm{font-size:17px;font-weight:600}
+.ch-id{color:var(--dim);font-size:12.5px}
+.chead .ghost{margin-left:auto}
+/* 开关一行：左边开关、右边名字与一句说明 */
+.swrow{display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-top:1px solid var(--line)}
+.swrow:first-of-type{border-top:none}
+.swrow>.switch{flex:none;margin-top:2px}
+.swtxt{flex:1;min-width:0;font-size:13px}
+.swtxt b{font-weight:600}
+.swtxt .dim{color:var(--dim);font-weight:400;font-size:11.5px}
+.swtxt p{margin:2px 0 0;color:var(--dim);font-size:12.5px}
+/* 群里本来就不列的那几条：淡下去但仍然看得见。整行藏掉的话，
+   使用者会以为这条命令不存在，而它只是在这个会话里不列 */
+.swrow.dimmed{opacity:.6}
+.cmdmark{margin-left:8px;font-size:11.5px;color:var(--dim);font-weight:400}
+.cmdlock{flex:none;width:38px;font-size:11px;color:var(--dim);line-height:22px}
+/* 模板那一行的读态 */
+.tplstate{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--soft);
+  border:1px solid var(--softline);border-radius:var(--r-ctl);padding:9px 12px;
+  margin-bottom:10px;font-size:13px}
+.tplstate>span:first-child{flex:1 1 auto}
+.tplrow{padding:10px 0;border-top:1px solid var(--line)}
+.tplrow:first-of-type{border-top:none}
+.tplbody{margin:0 0 8px;padding:9px 11px;background:var(--ground);border:1px solid var(--line);
+  border-radius:var(--r-ctl);font-family:var(--mono);font-size:12.5px;white-space:pre-wrap;
+  word-break:break-all}
+/* 本群设置：四行摘要 */
+.crow{border-top:1px solid var(--line)}
+.crow:first-of-type{border-top:none}
+.crow>summary{display:flex;align-items:baseline;gap:10px;padding:10px 0;cursor:pointer;
+  list-style:none;font-size:13px}
+.crow>summary::-webkit-details-marker{display:none}
+.crow>summary::before{content:"▸";color:var(--dim);flex:none}
+.crow[open]>summary::before{content:"▾"}
+.cr-t{flex:none;min-width:76px;font-weight:600}
+.cr-sum{flex:1;min-width:0;color:var(--dim);font-size:12.5px}
+.cr-body{padding:2px 0 14px 16px}
+.cgroup{border-top:1px solid var(--line);padding:2px 0}
+.cgroup>.swrow{border-top:none}
+.cgroup>.swrow>.ghost{flex:none;padding:4px 12px;font-size:12px}
+.cfine{padding-left:24px}
+.strand{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0;
+  border-top:1px solid var(--line);font-size:12.5px}
+.strand:first-of-type{border-top:none}
+/* @全体成员：状态行，不是设置 */
+.statline{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;border-top:1px solid var(--line);
+  padding:10px 0 2px;font-size:12.5px}
+.statline .st-nm{flex:none;min-width:76px;font-weight:600;font-size:13px}
+.statline .st-v{color:var(--dim)}
+.statline .st-w{flex-basis:100%;color:var(--err)}
+/* 挑选面板：盖住整页，一次只问一件事 */
+/* 危险确认：盖住整页，一次只问一件事。z-index 高于挑选面板，避免抽屉还开着时确认被挡住 */
+.drawer{position:fixed;inset:0;background:var(--overlay);display:flex;justify-content:flex-end;
+  z-index:20}
+.drawer[hidden]{display:none}
+.drawer .dw{width:min(420px,100%);height:100%;overflow-y:auto;background:var(--surface);
+  border-left:1px solid var(--line);padding:18px 20px}
+.dw-hd{display:flex;align-items:center;gap:12px;margin-bottom:4px}
+.dw-hd h3{margin:0;font-size:15px;flex:1}
+.dwbar{display:flex;gap:8px;margin-bottom:10px}
+.dwbar input{flex:1;min-width:0;background:var(--ground);color:var(--text);
+  border:1px solid var(--line);border-radius:var(--r-ctl);padding:7px 10px;font-size:13px;
+  font-family:inherit}
+.dwbar .ghost{flex:none;padding:7px 12px;font-size:12.5px}
+.dwlist{display:grid;gap:4px}
+.dwrow{display:grid;gap:1px;text-align:left;background:none;border:1px solid transparent;
+  border-radius:var(--r-ctl);padding:8px 10px;cursor:pointer;font-family:inherit}
+.dwrow:hover:not(:disabled){background:var(--soft);border-color:var(--softline)}
+.dwrow:disabled{cursor:not-allowed;opacity:.5}
+.dw-nm{font-size:13.5px;color:var(--text)}
+.dw-sub{font-size:11.5px;color:var(--dim)}
+.dw-tag{font-size:11px;color:var(--dim)}
+.dwform{display:grid;gap:8px;margin-bottom:12px}
+.dwform input,.dwform select{background:var(--ground);color:var(--text);border:1px solid var(--line);
+  border-radius:var(--r-ctl);padding:8px 10px;font-size:13px;font-family:inherit}
+.dwout{font-size:12.5px;color:var(--dim)}
+.dwfound{display:grid;gap:4px;background:var(--soft);border:1px solid var(--softline);
+  border-radius:var(--r-ctl);padding:10px 12px}
+.dwfound span{font-size:12px;color:var(--dim)}
+.dwfound button{margin-top:6px;justify-self:start}
+.dwsub{padding:10px 0;border-top:1px solid var(--line)}
+.dwsub:first-of-type{border-top:none}
+.dwsub-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;font-size:13px}
+.dwsub-h span{color:var(--dim);font-size:12px}
+.dwsub-h .ghost{margin-left:auto;padding:4px 10px;font-size:12px}
+.dwpills{display:flex;gap:5px;flex-wrap:wrap}
+.dwpills .nv-pill{cursor:pointer;font-family:var(--mono)}
+.dwpills .nv-pill:hover{border-color:var(--err);color:var(--err)}
+
+/* ---------- 模板编辑器：左边一张张消息卡，右边 QQ 气泡 ---------- */
+/* 两栏，窄屏落成上下两段：气泡预览挤成一条竖线的话，它就答不了「群里长什么样」 */
+.tpl-wrap{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:14px;
+  margin-top:10px}
+.tpl-left{min-width:0}
+.tpl-right{min-width:0}
+.tpl-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.tpl-tab{background:none;border:1px solid var(--line);border-radius:var(--r-pill);
+  padding:4px 14px;cursor:pointer;color:var(--dim);font-size:12.5px;font-family:inherit}
+.tpl-tab.on{border-color:var(--softline);background:var(--soft);color:var(--accent)}
+.tpl-note{margin:0 0 8px}
+.tpl-note[hidden]{display:none}
+/* 调色板 */
+.tpl-pal{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:8px 10px;
+  background:var(--soft);border:1px solid var(--softline);border-radius:var(--r-ctl)}
+.tpl-pal>.xs{flex:1 0 100%;margin-bottom:2px}
+.tpl-blk{background:var(--surface);border:1px solid var(--softline);border-radius:var(--r-pill);
+  padding:3px 11px;font-size:12px;font-family:var(--mono);color:var(--accent);cursor:grab}
+.tpl-blk:disabled{opacity:.4;cursor:not-allowed}
+.tpl-blk.att{border-style:dashed}
+/* 一张卡＝一条消息 */
+.tpl-cards{margin-top:10px}
+.tpl-card{display:flex;gap:8px;padding:10px;border:1px solid var(--line);
+  border-radius:var(--r-ctl);margin-bottom:8px;background:var(--surface)}
+.tpl-card.over{border-color:var(--accent);background:var(--soft)}
+.tpl-c-side{flex:none;display:flex;flex-direction:column;align-items:center;gap:4px}
+.tpl-c-h{cursor:grab;color:var(--dim);font-size:13px;line-height:1;user-select:none}
+.tpl-c-x{background:none;border:none;color:var(--dim);cursor:pointer;font-size:14px;padding:0;
+  line-height:1;font-family:inherit}
+.tpl-c-x:hover:not(:disabled){color:var(--err)}
+.tpl-c-x:disabled{opacity:.35;cursor:not-allowed}
+.tpl-c-main{flex:1 1 auto;min-width:0}
+.tpl-c-n{font-size:11.5px;color:var(--dim);margin-bottom:4px}
+.tpl-c-body{min-height:34px;padding:7px 9px;border:1px solid var(--line);
+  border-radius:var(--r-ctl);background:var(--ground);font-size:13px;white-space:pre-wrap;
+  word-break:break-word;line-height:1.9}
+.tpl-c-body:focus{outline:2px solid var(--softline);outline-offset:-1px}
+/* 药丸。整行的附件块自己占一行，与它在 QQ 里的样子一致 */
+.tpl-pill,.tpl-att{display:inline-flex;align-items:center;gap:3px;border-radius:var(--r-pill);
+  padding:1px 4px 1px 9px;margin:0 2px;font-size:12px;font-family:var(--mono);
+  background:var(--soft);border:1px solid var(--softline);color:var(--accent);
+  cursor:grab;user-select:none;vertical-align:baseline}
+.tpl-att{display:flex;margin:4px 0;border-style:dashed;justify-content:space-between}
+.tpl-x{background:none;border:none;color:inherit;cursor:pointer;font-size:12px;padding:0 3px;
+  line-height:1;opacity:.55;font-family:inherit}
+.tpl-x:hover{opacity:1;color:var(--err)}
+.tpl-add{width:100%;background:none;border:1px dashed var(--line);color:var(--dim);
+  border-radius:var(--r-ctl);padding:7px;cursor:pointer;font-size:12.5px;font-family:inherit}
+.tpl-add:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+.tpl-add:disabled{opacity:.5;cursor:not-allowed}
+/* @ 谁：钉在第一张卡的开头，不能拖也不能删 */
+.tpl-at{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;font-size:12.5px}
+.tpl-at-t{flex:none;color:var(--dim)}
+.tpl-at-s{border:1px solid var(--softline);background:var(--soft);color:var(--accent);
+  border-radius:var(--r-ctl);padding:3px 8px;font-size:12.5px;font-family:inherit}
+.tpl-at .xs{flex:1 1 100%;margin:0}
+/* 文本形式：给老使用者对照，只能看 */
+.tpl-raw{margin-top:10px;font-size:12.5px;color:var(--dim)}
+.tpl-raw>summary{cursor:pointer}
+.tpl-raw>pre{margin:8px 0 4px;padding:9px 11px;background:var(--ground);
+  border:1px solid var(--line);border-radius:var(--r-ctl);font-family:var(--mono);
+  font-size:12px;white-space:pre-wrap;word-break:break-all;color:var(--text)}
+/* 右边：QQ 气泡 */
+.tpl-pv-h{display:flex;align-items:baseline;gap:8px;font-size:12.5px;color:var(--dim);
+  margin-bottom:8px}
+.tpl-pv-h>.xs{margin-left:auto}
+.tpl-pv{padding:12px;background:var(--ground);border:1px solid var(--line);
+  border-radius:var(--r-ctl)}
+.qq-msg{display:flex;gap:8px;margin-bottom:10px}
+.qq-av{flex:none;width:28px;height:28px;border-radius:8px;background:var(--brand-fill)}
+.qq-bub{display:inline-block;max-width:100%;padding:7px 11px;border-radius:10px;
+  background:var(--surface);border:1px solid var(--line);font-size:13px;
+  white-space:pre-wrap;word-break:break-word}
+.qq-at{color:var(--accent)}
+.qq-atall{color:var(--accent2);font-weight:600}
+/* 会被摘掉的那一次画成划掉：注在旁边而不是画出来的话，「配了却没 @ 到人」没有任何现象 */
+.qq-atall.gone{text-decoration:line-through;opacity:.6}
+.qq-ph{display:inline-block;padding:0 5px;margin:0 1px;border-radius:4px;background:var(--soft);
+  color:var(--accent);font-family:var(--mono);font-size:11.5px}
+.qq-img{margin-top:5px;padding:16px 10px;border:1px dashed var(--line);border-radius:8px;
+  text-align:center;color:var(--dim);font-size:12px;background:var(--surface)}
+/* ---------- 报告版式：左边开关，右边照着开关画出来的那张图 ---------- */
+.rep-wrap{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:14px;
+  margin-top:10px}
+.rep-row{display:flex;align-items:flex-start;gap:10px;padding:7px 0;
+  border-top:1px solid var(--line)}
+.rep-row:first-of-type{border-top:none}
+.rep-txt{min-width:0}
+.rep-txt>b{font-size:13px;font-weight:500}
+.rep-txt>p{margin:2px 0 0;font-size:12px;color:var(--dim)}
+.rep-n{width:78px;flex:none;border:1px solid var(--line);border-radius:var(--r-ctl);
+  padding:4px 8px;font-size:13px;font-family:inherit;background:var(--surface);color:var(--text)}
+.rep-img{padding:10px;background:var(--ground);border:1px solid var(--line);
+  border-radius:var(--r-ctl);min-height:120px}
+.rep-shot{display:block;width:100%;height:auto;border-radius:6px}
+.rep-view>.hint{margin:8px 2px 0;font-size:12px;color:var(--dim)}
+@media (max-width:900px){
+  .tpl-wrap,.rep-wrap{grid-template-columns:minmax(0,1fr)}
+}
+`;
+
+/**
+ * 把推送页自己的样式注入一次。附属脚本口只收 .js，样式进不了 assets。
+ */
+function ensureStyle() {
+  if (document.getElementById('push-page-style')) return;
+  const style = document.createElement('style');
+  style.id = 'push-page-style';
+  style.textContent = PAGE_STYLE;
+  document.head.appendChild(style);
+}
+
+/**
+ * 抽屉盖住整页，必须挂在 body 上。放进页容器的话，离开本页时容器 display:none，
+ * 固定定位也看不见。
+ */
+function ensureDrawer() {
+  if (document.getElementById('push-drawer')) return;
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `
+<div class="drawer" id="push-drawer" hidden>
+  <div class="dw" role="dialog" aria-modal="true" aria-labelledby="push-drawer-title">
+    <div class="dw-hd">
+      <h3 id="push-drawer-title">面板</h3>
+      <button class="ghost" type="button" id="push-drawer-close">关闭</button>
+    </div>
+    <p class="hint" id="push-drawer-lead"></p>
+    <div id="push-drawer-body"></div>
+  </div>
+</div>`;
+  document.body.appendChild(wrap.firstElementChild);
+}
+
+/** 是否正停在这一页。页内换选中项不重取名单，刚进来才取 */
+let pageLive = false;
+
+/**
+ * 建出推送页外壳。控制台只给一个空的 section#page-push。
+ * @param section 控制台按落位建好的空容器
+ */
+export function render(section) {
+  ensureStyle();
+  ensureDrawer();
+  section.innerHTML = `
+    <p class="hint">推谁、推到哪、推什么，按主播管。左边先选一位主播看它推到哪几个通道；
+      再点开通道，定这个通道收到什么、消息长什么样、这个群怎么设。</p>
+    <div id="sess-incomplete"></div>
+    <div class="pnarrow">
+      <label for="push-nav">选一位主播或一个通道</label>
+      <select id="push-nav"></select>
+    </div>
+    <div class="pushwrap">
+      <aside class="ptree">
+        <div class="ptop">
+          <a class="lnkbtn" id="push-default-tpl" href="#/push/default">默认模板</a>
+          <button type="button" id="push-add-streamer">＋ 添加主播</button>
+        </div>
+        <div class="ptree-t">主播</div>
+        <div id="push-tree"></div>
+      </aside>
+      <div class="pright" id="push-right"></div>
+    </div>`;
+  bindShell();
+}
+
+function routeFromHash() {
+  const raw = (location.hash || '').replace(/^#\/?/, '');
+  const cut = raw.indexOf('?');
+  const path = cut < 0 ? raw : raw.slice(0, cut);
+  const parts = path.split('/').filter(Boolean);
+  return {sub: parts[1] || '', tail: parts[2] || ''};
+}
+
+/**
+ * 按地址栏取这一页该看的那一份。顶级页刷新会带上 {sub, tail}。
+ * 页内换选中项不重取名单与额度。
+ */
+export function refresh(route) {
+  const r = route && typeof route.sub === 'string' ? route : routeFromHash();
+  const entering = !pageLive;
+  pageLive = true;
+  showPush(r.sub, r.tail);
+  if (entering) return loadPushPage();
+}
+
+/** 离开本页时收起抽屉 */
+export function leave() {
+  pageLive = false;
+  closeDrawer();
+}
+
+function bindShell() {
+  $('#push-nav').addEventListener('change', event => {
+    const value = event.target.value;
+    if (!value) { location.hash = '#/push'; return; }
+    if (value === 'default') { location.hash = '#/push/default'; return; }
+    const parts = value.split(':');
+    location.hash = parts[0] === 's' ? '#/push/' + parts[1] : '#/push/' + parts[1] + '/' + parts[2];
+  });
+  $('#push-add-streamer').addEventListener('click', addStreamer);
+  $('#push-drawer-close').addEventListener('click', closeDrawer);
+  $('#push-drawer').addEventListener('click', event => {
+    if (event.target === $('#push-drawer')) closeDrawer();
+  });
+}
+
 
 /** 这一页最近一次取到的运行状态（/api/state），由 loadPushPage 刷新 */
 let runtime = {commands: [], sessions: [], subscriptions: [], incomplete: [], totalDataAvailable: null};
@@ -113,7 +485,7 @@ export async function loadPushPage() {
     directory = {};
   }
 
-  renderStreamers();
+  await decoratePushData();
 }
 
 /**
@@ -1207,6 +1579,26 @@ export function serializePush() {
 }
 
 /**
+ * 把当前推送配置写回 datasource.json。设置页不再夹带这一份。
+ */
+export async function save() {
+  $('#save').disabled = true;
+  say('保存中…');
+  try {
+    const res = await api('/datasource', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({content: serializePush()}),
+    });
+    if (res.success) store.pushSaved = serializePush();
+    say(res.message || (res.success ? '已保存' : '保存失败'), res.success ? 'ok' : 'err');
+  } catch (e) {
+    say('保存失败：' + e.message, 'err');
+  }
+  markDirty();
+}
+
+/**
  * 配置文件里只有 uid，昵称要另行补全才显示得出来
  */
 export async function decoratePushData() {
@@ -1249,18 +1641,3 @@ export async function restoreCommands(platform, num, names) {
   }
 }
 
-// ============ 接线 ============
-
-$('#push-nav').addEventListener('change', event => {
-  const value = event.target.value;
-  if (!value) { location.hash = '#/push'; return; }
-  if (value === 'default') { location.hash = '#/push/default'; return; }
-  const parts = value.split(':');
-  location.hash = parts[0] === 's' ? '#/push/' + parts[1] : '#/push/' + parts[1] + '/' + parts[2];
-});
-$('#push-add-streamer').addEventListener('click', addStreamer);
-$('#push-drawer-close').addEventListener('click', closeDrawer);
-// 点面板外面就关：面板盖住整页，没有这一下就只剩右上角那一个出口
-$('#push-drawer').addEventListener('click', event => {
-  if (event.target === $('#push-drawer')) closeDrawer();
-});

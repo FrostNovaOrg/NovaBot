@@ -35,7 +35,6 @@
     </div>
     <nav class="nav" id="nav">
       <a href="#/home" data-page="home"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 6.5 8 2l6 4.5V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/><path d="M6.2 14V9h3.6v5"/></svg>首页</a>
-      <a href="#/push" data-page="push"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 4.2A1.2 1.2 0 0 1 3.2 3h9.6A1.2 1.2 0 0 1 14 4.2v6.1a1.2 1.2 0 0 1-1.2 1.2H6.4L3.4 14V11.5H3.2A1.2 1.2 0 0 1 2 10.3z"/></svg>推送</a>
       <a href="#/log" data-page="log"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="3.6" cy="3.8" r="1.3"/><circle cx="3.6" cy="8" r="1.3"/><circle cx="3.6" cy="12.2" r="1.3"/><path d="M7 3.8h6.4M7 8h6.4M7 12.2h4.2"/></svg>日志</a>
       <a href="#/links" data-page="links"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M6.6 9.4a2.6 2.6 0 0 0 3.9.3l2-2a2.6 2.6 0 0 0-3.7-3.7l-1.1 1.1"/><path d="M9.4 6.6a2.6 2.6 0 0 0-3.9-.3l-2 2a2.6 2.6 0 0 0 3.7 3.7l1.1-1.1"/></svg>连接</a>
       <a href="#/settings" data-page="settings"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v1.6M8 12.6v1.6M14.2 8h-1.6M3.4 8H1.8M12.4 3.6l-1.1 1.1M4.7 11.3l-1.1 1.1M12.4 12.4l-1.1-1.1M4.7 4.7 3.6 3.6"/></svg>设置</a>
@@ -135,49 +134,6 @@
         <div class="tl" id="home-timeline"></div>
         <div class="tl-foot"><a href="#/log">看全部 → 日志</a></div>
       </div>
-    </div>
-  </section>
-
-  <!-- ============ 推送 #/push ============ -->
-  <!--
-    左边一棵「主播 → 通道」两级树，右边随选中项换成主播级或通道级。
-    地址形态：#/push（通道一览）｜ #/push/default（默认模板）｜ #/push/<uid> ｜ #/push/<uid>/<号>，
-    因此某一个通道的页面能收藏、能贴给别人。
-
-    一位主播 × 一个群（或一位好友）＝ 一个通道。同一个群出现在多位主播下是正常的，
-    而「本群设置」那一段是这个群自己的事、对推给它的所有主播共用——两件事摆在同一页上，
-    改哪一边影响谁才说得清；分成两页时，「配好了却不响应」要在两个入口之间来回对照才看得出来。
-
-    这里只留容器：树、右区四段与那四行摘要全部由 push-model.js 一次算出
-    （见 tools/push-model-check.sh 的各档），渲染那一层只管把算好的摆上去。
-  -->
-  <section class="page" id="page-push">
-    <p class="hint">推谁、推到哪、推什么，按主播管。左边先选一位主播看它推到哪几个通道；
-      再点开通道，定这个通道收到什么、消息长什么样、这个群怎么设。</p>
-
-    <!--
-      推送配置里没填完的条目。它们没被加载，因此树上一个通道也不会有——
-      不在这里说一句，这一页看起来就只是「什么都没有」，而使用者刚刚明明配过。
-      一条都没有时整块不渲染，见 renderIncomplete
-    -->
-    <div id="sess-incomplete"></div>
-
-    <!-- 窄屏上左树摆不下，改成一个下拉。两处是同一棵树的两种画法，选中项由同一个地址定 -->
-    <div class="pnarrow">
-      <label for="push-nav">选一位主播或一个通道</label>
-      <select id="push-nav"></select>
-    </div>
-
-    <div class="pushwrap">
-      <aside class="ptree">
-        <div class="ptop">
-          <a class="lnkbtn" id="push-default-tpl" href="#/push/default">默认模板</a>
-          <button type="button" id="push-add-streamer">＋ 添加主播</button>
-        </div>
-        <div class="ptree-t">主播</div>
-        <div id="push-tree"></div>
-      </aside>
-      <div class="pright" id="push-right"></div>
     </div>
   </section>
 
@@ -445,22 +401,6 @@
   </section>
 
   </main>
-</div>
-
-<!--
-  挑选面板：添加通道、添加主播、管理订阅名单都在这里摊开。
-  摆在各页之外、盖在整页之上：它一次只问一件事，而那件事问完之前，底下那一页上的东西
-  一个也不该被点到。内容由 push.js 按当次要问的事建出来。
--->
-<div class="drawer" id="push-drawer" hidden>
-  <div class="dw" role="dialog" aria-modal="true" aria-labelledby="push-drawer-title">
-    <div class="dw-hd">
-      <h3 id="push-drawer-title">面板</h3>
-      <button class="ghost" type="button" id="push-drawer-close">关闭</button>
-    </div>
-    <p class="hint" id="push-drawer-lead"></p>
-    <div id="push-drawer-body"></div>
-  </div>
 </div>
 
 <!--

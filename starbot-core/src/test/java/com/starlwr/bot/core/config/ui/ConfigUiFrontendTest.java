@@ -101,7 +101,7 @@ class ConfigUiFrontendTest {
      * 界面文件里一个平台的名字也没有。
      */
     private static final Set<String> CORE_ROUTES = Set.of(
-            "home", "push", "log", "links", "settings", "setup");
+            "home", "log", "links", "settings", "setup");
 
     /**
      * 插件放页面脚本的资源目录名，与服务端取资源时用的是同一个常量
@@ -152,8 +152,11 @@ class ConfigUiFrontendTest {
 
     /**
      * 模板字符串。整块跳过是不行的——{@code ${}} 里面是真代码
+     * <p>
+     * 写成「非反引号／反斜杠的一段，夹逃脱」而不是 {@code (?:x|\\\\.)* }：
+     * 后一种在几百行的样式常量上会把 Java 正则的栈撑爆。
      */
-    private static final Pattern TEMPLATE = Pattern.compile("`(?:[^`\\\\]|\\\\.)*`", Pattern.DOTALL);
+    private static final Pattern TEMPLATE = Pattern.compile("`[^`\\\\]*(?:\\\\.[^`\\\\]*)*`", Pattern.DOTALL);
 
     private static final Pattern IMPORT = Pattern.compile(
             "^import\\s*\\{([^}]*)}\\s*from\\s*'\\./([^']+)';", Pattern.MULTILINE);
@@ -1089,7 +1092,7 @@ class ConfigUiFrontendTest {
         }
 
         try {
-            String push = Files.readString(frontendDir().resolve("push.js"), StandardCharsets.UTF_8);
+            String push = pageSources().getOrDefault("push.js", "");
             String render = functionBodyAny(push, "renderIndex");
             assertFalse(render.isBlank(), "push.js 里找不到 renderIndex");
             assertTrue(render.contains("'tblwrap'"),
@@ -1255,7 +1258,7 @@ class ConfigUiFrontendTest {
     @Test
     @DisplayName("模板编辑器各有落点，块表与 @ 的判法只有 template-model 一份")
     void templateEditorIsWiredUp() {
-        Map<String, String> sources = coreSources();
+        Map<String, String> sources = pageSources();
         String view = sources.getOrDefault(TEMPLATE_VIEW, "");
         String model = sources.getOrDefault(TEMPLATE_MODEL, "");
 
@@ -1344,11 +1347,11 @@ class ConfigUiFrontendTest {
     @Test
     @DisplayName("推送页左树、四段与本群设置各有落点，树与摘要的判法只有 push-model 一份")
     void pushPageIsWiredUp() throws IOException {
-        String html = Files.readString(frontendDir().resolve("index.html"), StandardCharsets.UTF_8);
-        Map<String, String> sources = coreSources();
+        Map<String, String> pages = pageSources();
+        Map<String, String> sources = sources();
         String scripts = String.join("\n", sources.values());
-        String view = sources.getOrDefault(PUSH_VIEW, "");
-        String settings = sources.getOrDefault(PUSH_SETTINGS, "");
+        String view = pages.getOrDefault(PUSH_VIEW, "");
+        String settings = pages.getOrDefault(PUSH_SETTINGS, "");
 
         List<String> bad = new ArrayList<>();
         // 找不到那两份渲染时判红而不是跳过：一把量不动却报绿的判据，比没有这把判据更糟
@@ -1363,8 +1366,8 @@ class ConfigUiFrontendTest {
         }
 
         for (String id : PUSH_SHELL) {
-            if (!html.contains("id=\"" + id + "\"")) {
-                bad.add("index.html 上没有 #" + id);
+            if (!view.contains("id=\"" + id + "\"")) {
+                bad.add(PUSH_VIEW + " 没有建出 #" + id);
             }
         }
         for (String id : PUSH_WIRED) {
@@ -1416,7 +1419,7 @@ class ConfigUiFrontendTest {
                     + "消息只是发去了别处，而挑选面板存在的意义正是把那种错拦在配置阶段");
         }
 
-        bad.addAll(pushPageHasNoFreeTextField(html));
+        bad.addAll(pushPageHasNoFreeTextField(view));
 
         assertTrue(bad.isEmpty(), "推送页少了这几件事:\n  " + String.join("\n  ", bad));
     }
@@ -1428,25 +1431,21 @@ class ConfigUiFrontendTest {
      * 任何报错，消息只是发去了别处；而「配好了群里没动静」的另外几类错（Token 不对、
      * 机器人被踢出群、OneBot 没起）表现完全一样，混在一起就再也分不开。
      * <p>
-     * 量的是 {@code index.html} 里推送页那一块：挑选面板由脚本建出来，里面那个
+     * 量的是 {@code push.js} 里 {@code render} 建出的外壳：挑选面板由脚本另建，里面那个
      * 「uid、直播间号或链接」是主播的账号，不是推送目标的号码，两者不是一回事。
-     * @param html index.html 全文
+     * @param view push.js 全文
      * @return 问题，没有则为空
      */
-    private List<String> pushPageHasNoFreeTextField(String html) {
+    private List<String> pushPageHasNoFreeTextField(String view) {
         List<String> bad = new ArrayList<>();
 
-        int from = html.indexOf("id=\"page-push\"");
-        int to = html.indexOf("id=\"page-log\"", Math.max(from, 0));
-        if (from < 0 || to < 0) {
-            // 找不到那一块时判红而不是跳过
-            bad.add("index.html 里找不到推送页那一块（#page-push 到 #page-log 之间）");
+        String block = functionBody(view, "render");
+        if (block.isBlank()) {
+            bad.add(PUSH_VIEW + " 里找不到 render，推送页外壳无从量起");
             return bad;
         }
-
-        String block = html.substring(from, to);
         if (block.contains("<input")) {
-            bad.add("推送页上出现了输入框。推送目标只能从机器人自己给的名单里挑——"
+            bad.add("推送页外壳上出现了输入框。推送目标只能从机器人自己给的名单里挑——"
                     + "手填时填错一位数不会有任何报错，消息只是发去了别处");
         }
         // 阴性对照：这一格得能分辨。没有这一句的话，那一块整个被删掉也照样「不含输入框」
@@ -1605,6 +1604,26 @@ class ConfigUiFrontendTest {
     }
 
     /**
+     * 推送整套已随控制台插件走，核心界面目录里不许再留那五份脚本
+     * <p>
+     * 留着的话，{@code /assets/{name}} 会先取核心那一份，插件申报同名脚本就会被登记关口丢掉，
+     * 侧栏入口也永远是核心写死的那一条——插件卸掉之后入口还在，点开是空的。
+     */
+    @Test
+    @DisplayName("核心 config-ui 目录不得再有 push.js／push-model.js／sessions.js／template.js／template-model.js")
+    void coreConfigUiMustNotShipPushPages() {
+        Path ui = frontendDir();
+        List<String> leftover = new ArrayList<>();
+        for (String name : List.of("push.js", "push-model.js", "sessions.js", "template.js", "template-model.js")) {
+            if (Files.exists(ui.resolve(name))) {
+                leftover.add(name);
+            }
+        }
+        assertTrue(leftover.isEmpty(),
+                "推送页已随控制台插件走，核心 config-ui 里不该再有: " + leftover);
+    }
+
+    /**
      * 插件页是运行时装上来的，不是编译期定死的
      * <p>
      * 静态 {@code import} 一写，那个平台就成了核心的一部分：没装插件时页面加载不了，
@@ -1627,6 +1646,10 @@ class ConfigUiFrontendTest {
                 if (pages.contains(imported)) {
                     // 向导主播步仍从这份模型取 detailHash；那一步搬走之前，这一条还在
                     if ("setup.js".equals(name) && STREAMERS_MODEL.equals(imported)) {
+                        continue;
+                    }
+                    // 向导主播步仍从推送页取 renderStreamers／serializePush；那一步搬走之前，这一条还在
+                    if ("setup.js".equals(name) && PUSH_VIEW.equals(imported)) {
                         continue;
                     }
                     bad.add(name + " 静态引用了插件页 " + imported);
@@ -1709,7 +1732,7 @@ class ConfigUiFrontendTest {
     @Test
     @DisplayName("设置页、推送页与通道页的危险确认走自绘弹层")
     void settingsPushAndSessionsUsePaintedConfirm() {
-        Map<String, String> sources = coreSources();
+        Map<String, String> sources = sources();
         List<String> bad = new ArrayList<>();
 
         for (String name : List.of("settings.js", "push.js", "sessions.js")) {
@@ -2577,8 +2600,8 @@ class ConfigUiFrontendTest {
     void connectionSurfaceHasNoPlatformWords() throws IOException {
         List<String> files = List.of("index.html", "links-model.js", "links.js", "log.js",
                 "setup.js", "setup-model.js", "home-model.js",
-                "settings-alert.js", "push.js", "bot.js", "tokens-model.js",
-                "settings-auth.js", "template-model.js", "login.html");
+                "settings-alert.js", "bot.js", "tokens-model.js",
+                "settings-auth.js", "login.html");
         List<String> words = List.of("QQ", "NapCat", "OneBot");
         Path dir = frontendDir();
         List<String> hits = new ArrayList<>();
@@ -2588,9 +2611,11 @@ class ConfigUiFrontendTest {
             toScan.add(dir.resolve(name));
         }
         for (Path pageDir : pageDirs()) {
-            Path streamers = pageDir.resolve("streamers.js");
-            if (Files.exists(streamers)) {
-                toScan.add(streamers);
+            for (String name : List.of("streamers.js", "push.js", "template-model.js")) {
+                Path page = pageDir.resolve(name);
+                if (Files.exists(page)) {
+                    toScan.add(page);
+                }
             }
         }
 

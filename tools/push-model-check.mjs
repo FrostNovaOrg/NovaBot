@@ -17,7 +17,7 @@ import {
   layoutState, menuKnown, noticeSwitches, previewRequestBody, previewRevenueCaption,
   pushTree, recentPushes, revenueSummary,
   sessionOf, strandedSessions, subscriptionSummary, templateState,
-} from '../starbot-core/src/main/resources/config-ui/push-model.js';
+} from '../starbot-novabot-console/src/main/resources/config-ui-pages/push-model.js';
 import {targetOptions} from '../starbot-core/src/main/resources/config-ui/links-model.js';
 
 const PLATFORM = 'bilibili';

@@ -4,12 +4,11 @@
  */
 
 import {bindBotForm, botFormHtml, fillBotForms} from './bot.js';
-import {$, api, el, esc, markDirty, phrase, say, term} from './core.js';
+import {$, api, dropDisplayOnly, el, esc, markDirty, phrase, say, term} from './core.js';
 import {PROBE_ANCHOR, shouldOpenSetup} from './home-model.js';
 import {focusStation, loadTargets, mountLinkCard, refreshLinks, sendTestMessage} from './links.js';
 import {loadLog, stopFollow, syncLogView} from './log.js';
 import {refreshHome, renderStatus, runSelfTest, togglePush} from './overview.js';
-import {decoratePushData, loadPushPage, renderStreamers, serializePush, showPush} from './push.js';
 import {setAuthState} from './settings-auth.js';
 import {copyConfigPath, discard, filterSettings, focusGroup, renderConfigPath, renderGeneral, save, toggleKeyNames}
   from './settings.js';
@@ -277,7 +276,7 @@ export async function load() {
       store.pushData = JSON.parse(d.content || '[]');
       // 快照要取序列化之后的形态，与改动计数比的是同一把尺；
       // 直接存 d.content 的话，文件里的缩进与键序都会算成「改动」
-      store.pushSaved = serializePush();
+      store.pushSaved = JSON.stringify(store.pushData, dropDisplayOnly, 2);
     } catch (e) {
       // 内容不合法时不在界面上开一个编辑器让人现场改文件——那条路已经撤了。
       // 这里只把话说清楚：改哪个文件、在哪儿改，路径就显示在设置页底部
@@ -287,8 +286,6 @@ export async function load() {
       say('推送配置 datasource.json 不是合法 JSON，界面上暂时看不到已配好的主播。'
         + '请到服务器上修正该文件后重新载入', 'err');
     }
-    renderStreamers();
-    decoratePushData();
     try {
       store.vocab = (await api('/vocab')).terms || {};
     } catch (e) {
@@ -296,7 +293,6 @@ export async function load() {
     }
     applyConnectionVocab();
     refreshPages();
-    loadPushPage();
     // 首页要四份数据一起算，与这一趟里的 /status 各取各的：它那一趟晚一点回来，
     // 画出来的是更新的一份，不会与这里的运行状态互相矛盾
     refreshHome();
@@ -322,7 +318,7 @@ export async function load() {
  * （见 saveTarget）。「群与成员」与「只读口令」都是改完立刻落盘的，不占这一位。
  */
 const PAGE_TAB = {
-  home: 'overview', push: 'push',
+  home: 'overview',
   log: 'log', links: 'bot', settings: 'settings', setup: 'setup',
 };
 
@@ -476,9 +472,6 @@ function applyRoute(withData = true) {
     const leavingTop = pages.find(item => item.meta.slot === SLOT_TOP && item.meta.id === route);
     if (leavingTop) callPage(leavingTop, 'leave');
   }
-  // 是不是刚从别的页进来。推送页在页内换选中项也走改地址栏这条路，
-  // 每换一次都重取一遍名单与额度的话，点树上一行要等四个请求回来才动
-  const entering = route !== name;
   route = name;
 
   document.querySelectorAll('#nav a').forEach(a => {
@@ -494,9 +487,6 @@ function applyRoute(withData = true) {
   // 日志页有两半（时间线与工程日志），哪一半该显示由地址栏定，与取不取数据无关——
   // 合进下面那一趟的话，直接打开 #/log/eng 会先闪一下时间线那一半
   if (name === 'log') syncLogView();
-  // 推送页选中的是哪一位主播、哪一个通道同理：它只由地址栏定，与取不取数据无关。
-  // 合进下面那一趟的话，点树上一行会先闪一下上一次选中的那一页
-  if (name === 'push') showPush(sub, tail);
   // 插件页是折起来的，点它的入口进来时要替使用者展开，否则地址对了而屏幕上什么都没变
   if (plugin) $('#plugin-adv').open = true;
 
@@ -515,9 +505,6 @@ function applyRoute(withData = true) {
   clearTimeout(store.accountTimer);
   // 首页四份数据一起取，见 refreshHome
   if (name === 'home') { refreshHome(); refreshPages(); }
-  // 每次进入都重取：群里随时可能有人订阅或关掉命令，缓存的画面会误导人。
-  // 页内换选中项不重取——那一下没有任何东西会变，重取只是让点一行慢四个请求
-  else if (name === 'push') { if (entering) loadPushPage(); }
   // 每次进入都重建只读口令那一块：顺带抹掉上一次留在屏幕上的口令明文。
   // 三张卡与名单跟着一起重取——群随时会被踢，缓存的名单会让人对着一个已经不在的群发测试消息
   else if (name === 'links') { loadTokens(); refreshLinks(); refreshPages(); loadTargets(false); }
@@ -554,7 +541,14 @@ document.querySelectorAll('#nav a').forEach(a => {
   a.addEventListener('click', () => { if (location.hash === a.getAttribute('href')) applyRoute(); });
 });
 
-$('#save').addEventListener('click', save);
+$('#save').addEventListener('click', () => {
+  const top = pages.find(item => item.meta.slot === SLOT_TOP && item.meta.id === store.tab);
+  if (top && typeof top.module.save === 'function') {
+    callPage(top, 'save');
+    return;
+  }
+  save();
+});
 $('#discard').addEventListener('click', discard);
 $('#cfg-path').addEventListener('click', copyConfigPath);
 $('#test-send').addEventListener('click', sendTestMessage);
