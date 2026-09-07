@@ -220,6 +220,52 @@ class BilibiliEventParserTest {
     }
 
     @Test
+    @DisplayName("parseMessage 的降级标志：未知 cmd 与解析异常为真，正常解析与合法空返回为假")
+    void parseMessageFlagsDegradedOnlyOnUnknownCmdAndParseFailure() {
+        List<String> reds = new ArrayList<>();
+
+        try {
+            BilibiliEventParser.ParsedMessage unknown = parser.parseMessage(
+                    JSON.parseObject("{\"cmd\":\"BRAND_NEW_CMD\",\"data\":1}"), SOURCE);
+            assertTrue(unknown.event().isEmpty(), "未知 cmd 不应解析成事件");
+            assertTrue(unknown.degraded(), "未知 cmd 应标降级");
+        } catch (AssertionError e) {
+            reds.add("① " + e.getMessage());
+        }
+
+        try {
+            BilibiliEventParser.ParsedMessage failed = parser.parseMessage(
+                    JSON.parseObject("{\"cmd\":\"LIVE\",\"live_time\":{}}"), SOURCE);
+            assertTrue(failed.event().isEmpty(), "解析异常应被吞掉并返回空");
+            assertTrue(failed.degraded(), "已知 cmd 解析抛异常应标降级");
+        } catch (AssertionError e) {
+            reds.add("② " + e.getMessage());
+        }
+
+        try {
+            // 合法的空返回不是降级：LIVE 不带 live_time 时返回空事件，这是「没这一条」，
+            // 不是「解析不出来」。把它也算降级的话，「解析失败」这个数就永远对不上
+            BilibiliEventParser.ParsedMessage legitEmpty = parser.parseMessage(
+                    JSON.parseObject("{\"cmd\":\"LIVE\"}"), SOURCE);
+            assertTrue(legitEmpty.event().isEmpty());
+            assertFalse(legitEmpty.degraded(), "合法的空返回不得标降级");
+        } catch (AssertionError e) {
+            reds.add("③ " + e.getMessage());
+        }
+
+        try {
+            BilibiliEventParser.ParsedMessage ok = parser.parseMessage(
+                    JSON.parseObject("{\"cmd\":\"WATCHED_CHANGE\",\"data\":{\"num\":42}}"), SOURCE);
+            assertTrue(ok.event().isPresent(), "正常解析应给出事件");
+            assertFalse(ok.degraded(), "正常解析不得标降级");
+        } catch (AssertionError e) {
+            reds.add("④ " + e.getMessage());
+        }
+
+        assertTrue(reds.isEmpty(), () -> "四问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+    }
+
+    @Test
     @DisplayName("截断的 pb 与过短的弹幕 info 记 FIELD_MISSING：行为不变、按名去重、量级记账")
     void truncatedPbAndShortInfoRecordFieldMissing() {
         List<String> reds = new ArrayList<>();

@@ -138,15 +138,30 @@ public interface LiveDataService {
      * @param uid 主播 UID
      * @param from 起始时刻（毫秒，含）
      * @param to 结束时刻（毫秒，含）
+     * @param reason 成因。解析降级一类「连接在、消息也到、只是解析不出」的缺口
+     *               只有带上成因才与断流分得开，<b>没有解析失败计数时不许落
+     *               {@link LiveGap.Reason#PARSE_DEGRADED}</b>，分栏靠它成立
+     */
+    default void recordRoomOutage(@NonNull String platform, @NonNull Long uid, long from, long to,
+                                  @NonNull LiveGap.Reason reason) {
+    }
+
+    /**
+     * 记一段<b>单个直播间</b>的断线区间，成因记 {@link LiveGap.Reason#STREAM_LOSS}
+     * <p>
+     * 断线重连那条路在用：能走到重连成功，说明缺口就是连接断了，直接落断流。
      */
     default void recordRoomOutage(@NonNull String platform, @NonNull Long uid, long from, long to) {
+        recordRoomOutage(platform, uid, from, to, LiveGap.Reason.STREAM_LOSS);
     }
 
     /**
      * 查询某个直播间与给定区间重叠的断线区间，按时间先后排列
      * <p>
      * 只给重叠的那一部分，理由同 {@link #downtimeIntervals}：跨越开播时刻的那一段，
-     * 开播之前那一截不属于本场。成因一律 {@link LiveGap.Reason#STREAM_LOSS}。
+     * 开播之前那一截不属于本场。成因是<b>写入时落下的那一个</b>——断流或解析降级各归各；
+     * 成因字段出现之前的旧记录一律读回 {@link LiveGap.Reason#STREAM_LOSS}，那时只有
+     * 断线重连一条路在写这一项。
      * <p>
      * ⚠️ <b>返回的区间必须互不重叠</b>（一次断线尚未恢复又记了一次是实际会发生的），
      * 实现须先合并再返回，否则同一秒会被数两遍。

@@ -243,8 +243,9 @@ public class CompositeLiveDataService implements LiveDataService {
     }
 
     @Override
-    public void recordRoomOutage(@NonNull String platform, @NonNull Long uid, long from, long to) {
-        delegate.recordRoomOutage(platform, uid, from, to);
+    public void recordRoomOutage(@NonNull String platform, @NonNull Long uid, long from, long to,
+                                  @NonNull LiveGap.Reason reason) {
+        delegate.recordRoomOutage(platform, uid, from, to, reason);
     }
 
     @Override

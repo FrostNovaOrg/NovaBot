@@ -357,7 +357,7 @@ public class BilibiliEventParser {
 
         parsers.put("LIVE", this::parseLiveOn);
         parsers.put("PREPARING", this::parseLiveOff);
-        parsers.put("DANMU_MSG", this::parseMessage);
+        parsers.put("DANMU_MSG", this::parseDanmu);
         // 两种格式都要收。2026-08 起平台改发 V2，三次抓包都是 0 条 V1——只认老格式的话
         // 进房、关注、分享会恒为 0 条且没有任何报错。V1 仍然保留，平台随时可能回滚
         parsers.put("INTERACT_WORD", this::parseInteract);
@@ -383,19 +383,31 @@ public class BilibiliEventParser {
     }
 
     /**
-     * 解析一条直播间消息
+     * 一条消息的解析产出
+     *
+     * @param event 解析出的事件，消息类型不受支持或解析失败时为空
+     * @param degraded 是否<b>解析降级</b>：未知 cmd 或已知 cmd 解析抛异常。
+     *                 注意「合法的空返回」（如开播消息不带开播时间）不是降级——
+     *                 那是「没这一条」，不是「解析不出来」，算进去的话
+     *                 解析失败计数永远对不上
+     */
+    public record ParsedMessage(Optional<StarBotBaseLiveEvent> event, boolean degraded) {
+    }
+
+    /**
+     * 解析一条直播间消息，并给出解析降级标志
      * @param data 消息内容
      * @param source 直播间信息
-     * @return 解析出的事件，消息类型不受支持或解析失败时返回空
+     * @return 解析产出（事件＋降级标志）
      */
-    public Optional<StarBotBaseLiveEvent> parse(JSONObject data, LiveStreamerInfo source) {
+    public ParsedMessage parseMessage(JSONObject data, LiveStreamerInfo source) {
         if (data == null) {
-            return Optional.empty();
+            return new ParsedMessage(Optional.empty(), false);
         }
 
         String type = data.getString("cmd");
         if (type == null) {
-            return Optional.empty();
+            return new ParsedMessage(Optional.empty(), false);
         }
 
         // 部分消息的 cmd 带有形如 DANMU_MSG:4:0:2:2:2:0 的后缀
@@ -411,7 +423,7 @@ public class BilibiliEventParser {
         BiFunction<JSONObject, LiveStreamerInfo, StarBotBaseLiveEvent> parser = parsers.get(type);
         if (parser == null) {
             noteUnknownCmd(type);
-            return Optional.empty();
+            return new ParsedMessage(Optional.empty(), true);
         }
 
         try {
@@ -422,13 +434,23 @@ public class BilibiliEventParser {
                 // 详见 StarBotBaseLiveEvent.rawMessage
                 event.setRawMessage(data);
             }
-            return Optional.ofNullable(event);
+            return new ParsedMessage(Optional.ofNullable(event), false);
         } catch (Exception e) {
             log.error("解析直播间 {} 的 {} 类型消息异常, 内容: {}", source.getRoomId(), type, data.toJSONString(), e);
             // 异常被吞掉等于这条消息没来过。按 cmd 记一笔，同 cmd 只在量级处再记
             noteNamed(BilibiliRiskMetrics.Kind.PARSE_FAILURE, type);
-            return Optional.empty();
+            return new ParsedMessage(Optional.empty(), true);
         }
+    }
+
+    /**
+     * 解析一条直播间消息
+     * @param data 消息内容
+     * @param source 直播间信息
+     * @return 解析出的事件，消息类型不受支持或解析失败时返回空
+     */
+    public Optional<StarBotBaseLiveEvent> parse(JSONObject data, LiveStreamerInfo source) {
+        return parseMessage(data, source).event();
     }
 
     /**
@@ -453,8 +475,11 @@ public class BilibiliEventParser {
 
     /**
      * 解析弹幕与表情弹幕消息
+     * <p>
+     * 原名 {@code parseMessage}，与带降级标志的公开入口 {@link #parseMessage} 重名冲突后改名，
+     * 顺带与其他按消息命名的解析方法（parseGift、parseGuard…）对齐
      */
-    private StarBotBaseLiveEvent parseMessage(JSONObject data, LiveStreamerInfo source) {
+    private StarBotBaseLiveEvent parseDanmu(JSONObject data, LiveStreamerInfo source) {
         // info 中只有下标 0 是必需的，粉丝勋章与荣耀等级所在的下标可能不存在，按可选处理
         JSONArray primary = arrayAt(data.getJSONArray("info"), 0);
         if (primary == null || primary.size() < 16) {
