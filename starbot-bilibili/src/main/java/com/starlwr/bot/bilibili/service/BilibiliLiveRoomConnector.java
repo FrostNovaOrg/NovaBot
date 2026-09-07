@@ -224,6 +224,11 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
     private final ConcurrentHashMap<Integer, AtomicLong> unknownOps = new ConcurrentHashMap<>();
 
     /**
+     * 未知协议版本计数。按版本去重，只在 1/10/100… 量级写入指标。
+     */
+    private final ConcurrentHashMap<Integer, AtomicLong> unknownVers = new ConcurrentHashMap<>();
+
+    /**
      * 是否为 {@link DataPackType} 枚举未收录的操作码。
      * 已知但非 NOTICE 的码（心跳、认证等）不算未知。
      */
@@ -248,6 +253,26 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
         long count = ledger.computeIfAbsent(operation, key -> new AtomicLong()).incrementAndGet();
         if (Long.toString(count).matches("10*")) {
             metrics.record(BilibiliRiskMetrics.Kind.UNKNOWN_OP, "op=" + operation);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 未知协议版本首见与量级记账。
+     * <p>
+     * 判定不在这里：是不是未知版本由 {@link com.starlwr.bot.bilibili.protocol.BilibiliPacketCodec}
+     * 的解码入口说了算（它才有完整的已知版本表），这里只对 sink 转来的版本记账。
+     * @return 是否写入了一次指标
+     */
+    static boolean noteUnknownVersion(int version, ConcurrentHashMap<Integer, AtomicLong> ledger,
+                                      BilibiliRiskMetrics metrics) {
+        if (ledger == null || metrics == null) {
+            return false;
+        }
+        long count = ledger.computeIfAbsent(version, key -> new AtomicLong()).incrementAndGet();
+        if (Long.toString(count).matches("10*")) {
+            metrics.record(BilibiliRiskMetrics.Kind.UNKNOWN_VER, "ver=" + version);
             return true;
         }
         return false;
@@ -437,7 +462,12 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
                 properties.getLive().getMaxDecompressedBytes(),
                 properties.getLive().getMaxDecodeNestingDepth());
 
-        for (BilibiliPacket packet : BilibiliPacketCodec.decode(data, limits)) {
+        for (BilibiliPacket packet : BilibiliPacketCodec.decode(data, limits, version -> {
+            // 是不是未知版本由解码器判定，这里只管记账与留一条人能看见的日志
+            if (noteUnknownVersion(version, unknownVers, riskMetrics)) {
+                log.warn("直播间 {} 收到未知协议版本 {}", source.getRoomId(), version);
+            }
+        })) {
             handlePacket(packet);
         }
     }

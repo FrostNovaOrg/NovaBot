@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.zip.DeflaterOutputStream;
 
@@ -345,5 +346,41 @@ class BilibiliPacketCodecTest {
         }
         assertEquals(2, BilibiliPacketCodec.decode(remaining.toByteArray(),
                 new BilibiliPacketCodec.Limits(1024 * 1024, 3)).size(), "后两个子包本应各自可解压");
+    }
+
+    @Test
+    @DisplayName("未知协议版本上报 sink：未知 ver 调、已知 ver 不调、返回仍当裸负载")
+    void unknownVersionReportedToSink() {
+        List<String> reds = new ArrayList<>();
+        byte[] unknown = packet(DataPackType.NOTICE.getCode(), 5, "{\"cmd\":\"X\"}".getBytes(StandardCharsets.UTF_8));
+        byte[] known = jsonPacket("{\"cmd\":\"DANMU_MSG\"}");
+
+        try {
+            List<Integer> seen = new ArrayList<>();
+            BilibiliPacketCodec.decode(unknown, null, seen::add);
+            assertEquals(List.of(5), seen, "未知 ver 应原样上报给 sink，实际: " + seen);
+        } catch (AssertionError e) {
+            reds.add("① " + e.getMessage());
+        }
+
+        try {
+            List<Integer> seen = new ArrayList<>();
+            BilibiliPacketCodec.decode(known, null, seen::add);
+            assertEquals(List.of(), seen, "已知 ver 不应上报，实际: " + seen);
+        } catch (AssertionError e) {
+            reds.add("② " + e.getMessage());
+        }
+
+        try {
+            List<BilibiliPacket> withSink = BilibiliPacketCodec.decode(unknown, null, version -> { });
+            assertEquals(1, withSink.size(), "sink 不得改变返回的包数");
+            assertEquals(5, withSink.get(0).getProtocolVersion(), "未知 ver 仍应作为裸负载原样入包");
+            assertEquals(DataPackType.NOTICE.getCode(), withSink.get(0).getOperation());
+            assertEquals("{\"cmd\":\"X\"}", withSink.get(0).getBodyAsText(), "负载字节不得因上报而改变");
+        } catch (AssertionError e) {
+            reds.add("③ " + e.getMessage());
+        }
+
+        assertTrue(reds.isEmpty(), () -> "三问中 " + reds.size() + " 问红: " + String.join("; ", reds));
     }
 }

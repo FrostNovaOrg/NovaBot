@@ -606,4 +606,47 @@ class BilibiliLiveRoomConnectorTest {
             assertTrue(reds.isEmpty(), () -> "三问中 " + reds.size() + " 问红: " + String.join("; ", reds));
         }
     }
+
+    @Nested
+    @DisplayName("未知协议版本")
+    class UnknownVersion {
+        @Test
+        @DisplayName("sink 转来的 ver 记 UNKNOWN_VER、首见即记、十次只再记量级")
+        void recordsUnknownVersionWithMagnitudes() {
+            java.util.List<String> reds = new java.util.ArrayList<>();
+            BilibiliRiskMetrics metrics = new BilibiliRiskMetrics();
+            java.util.concurrent.ConcurrentHashMap<Integer, java.util.concurrent.atomic.AtomicLong> ledger =
+                    new java.util.concurrent.ConcurrentHashMap<>();
+
+            try {
+                assertTrue(BilibiliLiveRoomConnector.noteUnknownVersion(5, ledger, metrics),
+                        "首见应返回已记一次");
+                assertEquals(1, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_VER, java.time.Duration.ofMinutes(1)),
+                        "未知 ver 首见应记一次");
+                assertEquals("ver=5", metrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_VER).orElse(""));
+            } catch (AssertionError e) {
+                reds.add("① " + e.getMessage());
+            }
+
+            try {
+                assertEquals(0, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_OP, java.time.Duration.ofMinutes(1)),
+                        "记 ver 不得写错到未知操作码上");
+            } catch (AssertionError e) {
+                reds.add("② " + e.getMessage());
+            }
+
+            try {
+                for (int i = 0; i < 9; i++) {
+                    BilibiliLiveRoomConnector.noteUnknownVersion(5, ledger, metrics);
+                }
+                assertEquals(2, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_VER, java.time.Duration.ofMinutes(1)),
+                        "同 ver 到 10 次只再记一档，实际 "
+                                + metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_VER, java.time.Duration.ofMinutes(1)));
+            } catch (AssertionError e) {
+                reds.add("③ " + e.getMessage());
+            }
+
+            assertTrue(reds.isEmpty(), () -> "三问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+        }
+    }
 }

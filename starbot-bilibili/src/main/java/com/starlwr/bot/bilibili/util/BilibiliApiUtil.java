@@ -31,7 +31,9 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 /**
@@ -394,7 +396,7 @@ public class BilibiliApiUtil {
         for (int attempt = 1; attempt <= maxTimes; attempt++) {
             try {
                 JSONObject response = doRequest(url, method, headers, params);
-                return extractData(response);
+                return extractData(response, url);
             } catch (ResponseCodeException e) {
                 // 业务错误代码通常重试也不会变化，直接抛出交由调用方判断
                 throw e;
@@ -441,9 +443,10 @@ public class BilibiliApiUtil {
     /**
      * 校验响应错误代码并取出 data 字段
      * @param response 完整响应
-     * @return data 字段
+     * @param url 请求地址，只在应答缺 data 时按端点记账用
+     * @return data 字段，应答缺 data 时为空对象（与旧行为一致）
      */
-    private JSONObject extractData(JSONObject response) {
+    private JSONObject extractData(JSONObject response, String url) {
         if (response == null) {
             throw new NetworkException("接口未返回任何内容");
         }
@@ -457,7 +460,13 @@ public class BilibiliApiUtil {
         }
 
         JSONObject data = response.getJSONObject("data");
-        return data == null ? new JSONObject() : data;
+        if (data == null) {
+            // code=0 却没有 data：原先一声不响地返回空对象，不记就等于没有发现机制。
+            // 返回值保持不变，只补一笔账
+            noteDataMissing(url, riskMetrics, dataMissingEndpoints);
+            return new JSONObject();
+        }
+        return data;
     }
 
     /**
@@ -574,7 +583,8 @@ public class BilibiliApiUtil {
         headers.put("Referer", MAIN_SITE);
 
         try {
-            JSONObject ticket = extractData(http.postJsonWithHeaders(BilibiliTicketUtil.buildTicketUrl(cookies.getBiliJct()), headers));
+            String ticketUrl = BilibiliTicketUtil.buildTicketUrl(cookies.getBiliJct());
+            JSONObject ticket = extractData(http.postJsonWithHeaders(ticketUrl, headers), ticketUrl);
             sign.setTicket(ticket.getString("ticket"));
             sign.setTicketExpires(ticket.getInteger("created_at") == null || ticket.getInteger("ttl") == null
                     ? (int) (Instant.now().getEpochSecond() + 259200)
@@ -619,7 +629,7 @@ public class BilibiliApiUtil {
         headers.put("Referer", MAIN_SITE);
 
         try {
-            JSONObject finger = extractData(http.getJson(FINGER_SPI_API, headers));
+            JSONObject finger = extractData(http.getJson(FINGER_SPI_API, headers), FINGER_SPI_API);
             String b3 = finger.getString("b_3");
             String b4 = finger.getString("b_4");
             if (StringUtil.isNotBlank(b3)) {
@@ -630,7 +640,7 @@ public class BilibiliApiUtil {
             log.debug("指纹接口获取设备标识失败, 退回旧接口: {}", e.getMessage());
         }
 
-        return extractData(http.getJson(BUVID_API, headers)).getString("buvid");
+        return extractData(http.getJson(BUVID_API, headers), BUVID_API).getString("buvid");
     }
 
     /**
@@ -1065,7 +1075,7 @@ public class BilibiliApiUtil {
         String url = COOKIE_INFO_API + (params.isEmpty() ? ""
                 : "?csrf=" + URLEncoder.encode(cookies.getBiliJct(), StandardCharsets.UTF_8));
 
-        JSONObject data = extractData(http.getJson(url, getBilibiliHeaders()));
+        JSONObject data = extractData(http.getJson(url, getBilibiliHeaders()), url);
         return new CookieRefreshHint(Boolean.TRUE.equals(data.getBoolean("refresh")),
                 data.getLongValue("timestamp"));
     }
@@ -1098,7 +1108,7 @@ public class BilibiliApiUtil {
         params.put("refresh_token", refreshToken);
 
         ResponseEntity<String> response = http.postAsFormForEntity(COOKIE_REFRESH_API, getBilibiliHeaders(), params);
-        JSONObject data = extractData(JSON.parseObject(response.getBody()));
+        JSONObject data = extractData(JSON.parseObject(response.getBody()), COOKIE_REFRESH_API);
 
         String newRefreshToken = data.getString("refresh_token");
         if (StringUtil.isBlank(newRefreshToken)) {
@@ -1128,7 +1138,7 @@ public class BilibiliApiUtil {
         params.put("csrf", cookies.getBiliJct());
         params.put("refresh_token", oldRefreshToken);
 
-        extractData(http.postJsonAsForm(CONFIRM_REFRESH_API, getBilibiliHeaders(), params));
+        extractData(http.postJsonAsForm(CONFIRM_REFRESH_API, getBilibiliHeaders(), params), CONFIRM_REFRESH_API);
     }
 
     /**
@@ -1420,11 +1430,34 @@ public class BilibiliApiUtil {
     }
 
     /**
-     * 截取 URL 的路径部分，避免把查询参数（含签名与凭据）写进健康页
+     * 截取 URL 的路径部分，避免把查询参数（含签名与凭据）写进健康页。
+     * 静态方法：实例态与静态记账（{@link #noteDataMissing}）共用同一把截法
      */
-    private String shortUrl(String url) {
+    private static String shortUrl(String url) {
         int q = url.indexOf('?');
         return q < 0 ? url : url.substring(0, q);
+    }
+
+    /**
+     * 缺 data 端点计数。按端点（去 query）去重，只在 1/10/100… 量级写入指标。
+     */
+    private final ConcurrentHashMap<String, AtomicLong> dataMissingEndpoints = new ConcurrentHashMap<>();
+
+    /**
+     * 接口应答缺 data 的记账：按去掉查询参数的端点去重，量级各记一次。
+     * <p>
+     * detail 只含端点路径、计数与端点数——query 里是签名与凭据，一个字符都不能进健康页。
+     */
+    static void noteDataMissing(String url, BilibiliRiskMetrics metrics, ConcurrentHashMap<String, AtomicLong> ledger) {
+        if (url == null || url.isBlank() || metrics == null || ledger == null) {
+            return;
+        }
+        String endpoint = shortUrl(url);
+        long count = ledger.computeIfAbsent(endpoint, key -> new AtomicLong()).incrementAndGet();
+        if (Long.toString(count).matches("10*")) {
+            metrics.record(BilibiliRiskMetrics.Kind.API_DATA_MISSING,
+                    endpoint + " count=" + count + " unique=" + ledger.size());
+        }
     }
 
     /**
