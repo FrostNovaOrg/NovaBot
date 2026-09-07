@@ -89,7 +89,7 @@ class SafeModeServerBackupTest {
     }
 
     @Test
-    @DisplayName("配置写 backup-keep: 500：按 1–100 收口，连存 3 次不报错、份数不越界")
+    @DisplayName("配置写 backup-keep: 500：按 1–100 收口，连存 101 次恰留 100 份，返回值也收口到 100")
     void safeModeBackupsClampOversizedKeep() throws IOException {
         Path config = dir.resolve("application.yml");
         Files.writeString(config, """
@@ -100,14 +100,15 @@ class SafeModeServerBackupTest {
                 """, StandardCharsets.UTF_8);
         SafeModeServer server = new SafeModeServer(config, "测试用的启动失败原因");
 
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < 101; i++) {
             server.backupBeforeSave();
         }
 
         List<String> names = stampedBackupNames(config);
-        assertTrue(names.size() <= TimestampedFileBackup.MAX_KEEP,
-                "超界的保留份数应按上限 " + TimestampedFileBackup.MAX_KEEP + " 收口, 实际 " + names.size() + " 份");
-        assertEquals(3, names.size(), "上限远未触到, 连存的 3 份都应在");
+        assertEquals(TimestampedFileBackup.MAX_KEEP, names.size(),
+                "超界的保留份数应按上限 " + TimestampedFileBackup.MAX_KEEP + " 收口, 实际留了 " + names.size() + " 份");
+        assertEquals(TimestampedFileBackup.MAX_KEEP, server.resolveBackupKeep(),
+                "resolveBackupKeep 应把 500 收口到 " + TimestampedFileBackup.MAX_KEEP + " 再返回, 实际回了 " + server.resolveBackupKeep());
     }
 
     @Test
