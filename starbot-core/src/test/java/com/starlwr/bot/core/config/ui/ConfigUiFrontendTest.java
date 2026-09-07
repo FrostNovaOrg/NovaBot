@@ -548,6 +548,101 @@ class ConfigUiFrontendTest {
     }
 
     /**
+     * 源码地址。与界面里那一份是同一个串，两份分叉时这一格会红
+     */
+    private static final String SOURCE_URL = "https://github.com/FrostNovaOrg/NovaBot";
+
+    /**
+     * 写死的版本号长什么样：{@code 5.2.0} 这种三段数字
+     * <p>
+     * {@code AGPL-3.0} 只有两段，不落进来。
+     */
+    private static final Pattern HARDCODED_VERSION = Pattern.compile("\\d+\\.\\d+\\.\\d+");
+
+    /**
+     * 设置页页底那一行许可与源码地址
+     * <p>
+     * AGPL-3.0 要求使用者拿得到这个程序对应的源码，而使用者常常只见得到这张控制台——
+     * 只写在仓库的 README 里等于只告诉了已经找到仓库的那些人。因此这一行是发布义务的落点，
+     * 不是一句装饰，得由机器守着。
+     * <p>
+     * 版本那一半奔着一类具体的退步去：<b>图省事在这一行里写死一个版本号</b>。
+     * 写死的那个与产物脱节的那一天屏幕上不会有任何异常——它照样显示一个像模像样的版本，
+     * 而使用者正是照着它判断该不该换 jar。所以这里查三样：函数体里没有三段式的版本字面量、
+     * 那个值确实来自参数，以及<b>那个参数确实接在 {@code /api/status} 的 version 上</b>。
+     * 少了末一样，把 {@code renderAbout} 接到任何一个别的字符串上都照样绿。
+     */
+    @Test
+    @DisplayName("设置页页底有许可与源码地址一行，版本取自 /api/status 而非写死")
+    void aboutLineShowsLicenseAndSource() throws IOException {
+        String html = Files.readString(frontendDir().resolve("index.html"), StandardCharsets.UTF_8);
+        String overview = coreSources().getOrDefault("overview.js", "");
+        // 只截 renderAbout 自己那一段。functionBodyAny 截到「下一个未导出的函数」，
+        // 中间夹着的几个 export function 会一并落进来——那样「没有写死的版本号」
+        // 量的就是别人家的正文，而别人家添一个三段数字这一格就假红
+        int head = overview.indexOf("function renderAbout(");
+        int tail = head < 0 ? -1 : overview.indexOf("\n}", head);
+        String about = head < 0 ? ""
+                : overview.substring(head, tail < 0 ? overview.length() : tail);
+
+        List<String> bad = new ArrayList<>();
+
+        // 落点必须在设置页那一段里。摆在别处的话，判据说「页面上有」而设置页上读不到
+        int from = html.indexOf("id=\"page-settings\"");
+        int to = html.indexOf("id=\"page-setup\"", Math.max(from, 0));
+        if (from < 0 || to < 0) {
+            // 找不到那一段时判红而不是跳过：一把量不动却报绿的判据，比没有这把判据更糟
+            bad.add("index.html 里找不到设置页那一段（#page-settings 到 #page-setup 之间）");
+        } else if (!html.substring(from, to).contains("id=\"about-line\"")) {
+            bad.add("设置页那一段里没有 #about-line，页底读不到许可与源码地址");
+        }
+
+        if (about.isBlank()) {
+            bad.add("overview.js 里找不到 renderAbout，下面几条无从量起");
+        } else {
+            if (!about.contains("AGPL-3.0")) {
+                bad.add("那一行没有写出许可证 AGPL-3.0");
+            }
+            if (!overview.contains(SOURCE_URL)) {
+                bad.add("overview.js 里没有源码地址 " + SOURCE_URL);
+            }
+            if (!about.contains("<a href=")) {
+                bad.add("源码地址不是可点的链接，使用者得自己把它抄进地址栏");
+            }
+            if (!about.contains("$('#about-line')")) {
+                bad.add("renderAbout 没有往 #about-line 上写，那一行永远空着");
+            }
+            if (HARDCODED_VERSION.matcher(about).find()) {
+                bad.add("renderAbout 里写死了版本号。写死的那个与产物脱节时屏幕上不会有任何异常: "
+                        + about.strip());
+            }
+            if (!about.contains("version")) {
+                bad.add("renderAbout 没有用上传进来的版本");
+            }
+        }
+
+        // 接线：那个参数确实一路接到 /api/status 的 version 上。
+        // 在 renderVersion 的正文里找而不是在整份文件里找——整份文件里
+        // `function renderAbout(version) {` 这个声明本身就含着那个串，那样查是恒真的
+        int callerHead = overview.indexOf("function renderVersion(");
+        int callerTail = callerHead < 0 ? -1 : overview.indexOf("\n}", callerHead);
+        String caller = callerHead < 0 ? ""
+                : overview.substring(callerHead, callerTail < 0 ? overview.length() : callerTail);
+        if (caller.isBlank()) {
+            bad.add("overview.js 里找不到 renderVersion，接线无从量起");
+        } else if (!caller.contains("renderAbout(version)")) {
+            bad.add("renderVersion 没有把自己收到的 version 传给 renderAbout，"
+                    + "那一行的版本与侧栏版本位不同源: " + caller.strip());
+        }
+        if (!overview.contains("renderVersion(data.version)")) {
+            bad.add("renderStatus 没有把 /api/status 的 version 传给 renderVersion，"
+                    + "上面那条「取自参数」因此不作数");
+        }
+
+        assertTrue(bad.isEmpty(), "设置页那一行许可与源码地址有问题:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
      * 布尔行的生效标记必须和开关在同一行、垂直居中。
      * <p>
      * 全局 {@code .badge} 带 {@code margin-top:8px}，是给文本／数字／下拉那些

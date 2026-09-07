@@ -43,11 +43,9 @@ StarBot Python 版（1.x / 2.x，自 2025-06-09 起仅修复缺陷）: https://g
    将上游分散的多个仓库整合为单一 Maven 多模块工程，新增聚合 pom 统一管理依赖版本；
    构建期使用的 Maven 插件移至 build-tools/，第三方插件开发模板移至 templates/。
 
-2. 推送接口鉴权（安全修复）
-   上游 OneBotController 注册的推送接口未做任何身份校验，任何可访问该端口的程序
-   均可借由 StarBot 发送任意消息。本仓库补全了核心中已预留但未实现的 Token 校验契约
-   （见 com.starlwr.bot.core.model.Sender#token 的原始注释），并增加来源 IP 白名单、
-   频率限制与审计日志。
+2. 推送接口鉴权
+   本仓库的推送接口在服务端口上校验 Token，并加来源 IP 白名单、频率限制与审计日志。
+   校验契约取自核心中已有的 Token 字段（见 com.starlwr.bot.core.model.Sender#token）。
 
 3. 凭据保护
    哔哩哔哩登录凭据由明文落盘改为加密存储，并收紧文件权限。

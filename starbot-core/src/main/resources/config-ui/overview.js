@@ -264,6 +264,24 @@ export async function refreshHome() {
  */
 function renderVersion(version) {
   $('#side-version').textContent = version ? 'NovaBot ' + version : 'NovaBot';
+  renderAbout(version);
+}
+
+/** 源码地址。AGPL-3.0 下这是使用者取得源码的入口，因此写在界面上而不只写在仓库里 */
+const SOURCE_URL = 'https://github.com/FrostNovaOrg/NovaBot';
+
+/**
+ * 设置页页底那一行：产品名与版本、许可证、源码地址
+ *
+ * 版本与侧栏版本位取自同一个字段，因此这一行也随每次运行状态更新——
+ * 在这里另写一个版本号的话，两处会各说各的，而屏幕上不会有任何异常。
+ * 没有版本时只报产品名，与侧栏同一种退法：源码地址与许可证跟版本无关，任何时候都该在。
+ * @param version 当前版本，没有则不显示
+ */
+function renderAbout(version) {
+  $('#about-line').innerHTML = esc(version ? 'NovaBot v' + version : 'NovaBot')
+    + ' · AGPL-3.0 · 源码 <a href="' + SOURCE_URL + '" target="_blank" rel="noopener">'
+    + esc(SOURCE_URL) + '</a>';
 }
 
 /**
