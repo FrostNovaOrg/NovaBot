@@ -682,6 +682,66 @@ class BilibiliEventParserTest {
         }
 
         /**
+         * 合成一条带顶层 9 号盲盒块的 SEND_GIFT_V2。取值全合成，不含真实观众。
+         * 数字照 2026-09-07 样本：盒 35206／5000、开出物 35208／5200、total_coin 5000
+         */
+        private String giftV2BlindPb(boolean withBlind) {
+            PbWriter won = new PbWriter()
+                    .varint(1, 35208)
+                    .str(2, "开出物")
+                    .varint(3, 1)
+                    .varint(6, 5200)
+                    .varint(7, 5000)
+                    .str(8, "gold")
+                    .varint(10, 1700000002L);
+            PbWriter message = new PbWriter();
+            if (withBlind) {
+                message.message(9, new PbWriter()
+                        .varint(1, 144)
+                        .varint(2, 35206)
+                        .str(3, "幸运盲盒")
+                        .str(5, "爆出")
+                        .varint(6, 5000));
+            }
+            return message.message(10, won).base64();
+        }
+
+        /**
+         * 逐问各自捕获、末尾汇总，一问红不许短路其余问
+         */
+        private static void tally(List<String> reds, String question, Runnable check) {
+            try {
+                check.run();
+            } catch (AssertionError | RuntimeException e) {
+                reds.add(question + " " + e.getMessage());
+            }
+        }
+
+        @Test
+        @DisplayName("V2 盲盒：顶层 9 号是投入的盒子，礼物块是开出物")
+        void parsesBlindBoxFromTopLevelField9() {
+            List<String> reds = new ArrayList<>();
+            StarBotBaseLiveEvent withBlind = parseV2(giftV2BlindPb(true)).orElse(null);
+            StarBotBaseLiveEvent withoutBlind = parseV2(giftV2BlindPb(false)).orElse(null);
+
+            tally(reds, "①", () -> assertInstanceOf(BilibiliRandomGiftEvent.class, withBlind));
+            tally(reds, "②", () -> {
+                BilibiliRandomGiftEvent event = (BilibiliRandomGiftEvent) withBlind;
+                assertEquals("幸运盲盒", event.getRandomGiftInfo().getName(), "randomGiftInfo 是投入的盒子");
+                assertEquals("开出物", event.getGiftInfo().getName(), "giftInfo 是开出的礼物");
+            });
+            tally(reds, "③", () -> {
+                BilibiliRandomGiftEvent event = (BilibiliRandomGiftEvent) withBlind;
+                assertEquals(5.0, event.getPrice(), 0.0001, "price 是盒价×数量");
+                assertEquals(5.2, event.getValue(), 0.0001, "value 是开出物面值×数量");
+                assertEquals(5.0, event.getCharged(), 0.0001, "实扣跟盒子的 total_coin");
+            });
+            tally(reds, "④", () -> assertInstanceOf(BilibiliPaidGiftEvent.class, withoutBlind));
+
+            assertTrue(reds.isEmpty(), () -> reds.size() + " 问红：" + String.join("；", reds));
+        }
+
+        /**
          * 测试用的最小 protobuf 写入器
          * <p>
          * 只写 varint、字符串、嵌套消息三种，够拼 SEND_GIFT_V2 夹具即可。
