@@ -225,25 +225,245 @@ class BilibiliEventParserTest {
     @DisplayName("INTERACT_WORD_V2")
     class InteractV2 {
         /**
-         * 以下 base64 全部脱敏自 2026-08-10 在单个直播间实抓的登录态语料。
+         * 全字段合成，结构按字段表。
          * <p>
-         * <b>只替换了承载身份的标量</b>——观众 uid 与昵称、头像地址、勋章所属主播与房间号、
-         * 勋章名称。字段号、wire type、嵌套层次、字段出现顺序，以及等级、颜色、时间戳、
-         * 大航海到期时间和那些语义未明的字段，全部是平台原样下发的字节重新序列化而来。
-         * 因此这些固件测的是<b>真实报文的结构</b>，而不含任何真实观众信息。
-         * <p>
-         * 主播 uid 与房间号已改写成与 {@link BilibiliEventParserTest#SOURCE} 一致，
-         * 便于直接核对勋章归属。
+         * 字段号、wire type、嵌套层次、字段出现顺序按 {@link BilibiliEventParser}
+         * 的 INTERACT_WORD_V2 字段表。取值全部合成：时间戳落在 1700000000–1700000999 秒，
+         * 身份与头像用占位值，等级／颜色用合成数。每份 uinfo 另带 98 号空子消息与 99 号 varint，
+         * 确认解析器跳过不认识的字段。主播 uid 与房间号与 {@link BilibiliEventParserTest#SOURCE} 一致。
          */
-        private static final String ENTER_WITH_GUARD = "CJFOEg/ov5vmiL/op4LkvJfnlLIiAwYDASgBMLPY1oyX7Qo4v+Di0wZAuKjH0f8zSjwIjKHB6LTABBAoGgzmtYvor5Xli4vnq6Agi8L9ByiLwv0HMISh/wc4/9GfA0ABSANgs9jWjJftCmiWzBJiAHjttYKCuqeM5RiAAQOaAQCyAfECCJFOEkAKD+i/m+aIv+inguS8l+eUshIkaHR0cHM6Ly9mYWNlLmV4YW1wbGUvZW50ZXItZ3VhcmQuanBnQgcjMDBEMUYxGrsBCgzmtYvor5Xli4vnq6AQKBiLwv0HIISh/wco/9GfAzCLwv0HOL6nEUgBUIyhwei0wARYA2CWzBJqSmh0dHBzOi8vaTAuaGRzbGIuY29tL2Jmcy9saXZlLzQ4MzYwYzhmM2I3ZGU4MDMxZTg2ZmYxZWY0YTJkZmMwZWMyYTYxYzIucG5negkjNEM3REZGOTmCAQkjNEM3REZGOTmKAQcjNThBMUY4kgEHI0ZGRkZGRpoBCSM0QzdERkZFNiICCCUyFwgDEhMyMDI2LTA4LTE0IDIzOjU5OjU5Ok8I7w0SSmh0dHBzOi8vaTAuaGRzbGIuY29tL2Jmcy9saXZlLzgwZjczMjk0M2NjMzM2NzAyOWRmNjVlMjY3OTYwZDU2NzM2YTgyZWUucG5nugEAwgEA";
+        private static final String ENTER_WITH_GUARD = enterWithGuardPb();
 
-        private static final String ENTER_WITH_PROMOTION = "CJJOEg/ov5vmiL/op4LkvJfkuZkiAQEoATCz2NaMl+0KOOHk4tMGQPvl47v+M0oAUAFaByNGRjY0OUViAGoP5rWB6YeP5YyF5o6o5bm/eMvUnKivt4zlGJoBALIBhAEIkk4SfwoP6L+b5oi/6KeC5LyX5LmZEiVodHRwczovL2ZhY2UuZXhhbXBsZS9lbnRlci1zcHJlYWQuanBnMjgKD+i/m+aIv+inguS8l+S5mRIlaHR0cHM6Ly9mYWNlLmV4YW1wbGUvZW50ZXItc3ByZWFkLmpwZzoLIP///////////wG6AQDCAQA=";
+        private static final String ENTER_WITH_PROMOTION = enterWithPromotionPb();
 
-        private static final String ENTER_PLAIN = "CJNOEg/ov5vmiL/op4LkvJfkuJkiAQEoATCz2NaMl+0KOKLf4tMGQK6ouLv+M2IAeKvs1ejyoozlGJoBALIBQgiTThI3Cg/ov5vmiL/op4LkvJfkuJkSJGh0dHBzOi8vZmFjZS5leGFtcGxlL2VudGVyLXBsYWluLmpwZyICCAcyALoBAMIBAA==";
+        private static final String ENTER_PLAIN = enterPlainPb();
 
-        private static final String FOLLOW_WITH_MEDAL = "CJROEgzlhbPms6jop4LkvJciAgMBKAIws9jWjJftCjjl6OLTBkCf1OXA/jNKOAiMocHotMAEEAMaDOa1i+ivleWLi+eroCCOrfICKI6t8gIwjq3yAjiOrfICQAFgs9jWjJftCmgKYgB467rniavGjOUYmgEAsgHfAQiUThJtCgzlhbPms6jop4LkvJcSH2h0dHBzOi8vZmFjZS5leGFtcGxlL2ZvbGxvdy5qcGcyLwoM5YWz5rOo6KeC5LyXEh9odHRwczovL2ZhY2UuZXhhbXBsZS9mb2xsb3cuanBnOgsg////////////ARppCgzmtYvor5Xli4vnq6AQAxiOrfICII6t8gIojq3yAjCOrfICSAFQjKHB6LTABGAKegkjNTc2MkE3OTmCAQkjNTc2MkE3OTmKAQkjNTc2MkE3OTmSAQcjRkZGRkZGmgEJIzU3NjJBN0U2MgC6AQA=";
+        private static final String FOLLOW_WITH_MEDAL = followWithMedalPb();
 
-        private static final String SHARE = "CJVOEgzliIbkuqvop4LkvJciAQEoAzCz2NaMl+0KOLns4tMGQIqjn7z+M0o3CIyhwei0wAQQDhoM5rWL6K+V5YuL56ugIIbN+QUowIGDBjDAgYMGOMCBgwZgs9jWjJftCmjXA2IAeL6un+SC1IzlGJoBALIB3AEIlU4SawoM5YiG5Lqr6KeC5LyXEh5odHRwczovL2ZhY2UuZXhhbXBsZS9zaGFyZS5qcGcyLgoM5YiG5Lqr6KeC5LyXEh5odHRwczovL2ZhY2UuZXhhbXBsZS9zaGFyZS5qcGc6CyD///////////8BGmgKDOa1i+ivleWLi+eroBAOGMCBgwYgwIGDBijAgYMGMIbN+QVQjKHB6LTABGDXA3oJIzkxOTI5OENDggEJIzkxOTI5OENDigEJIzkxOTI5OENDkgEHI0ZGRkZGRpoBCSM5MTkyOThFNjIAugEA";
+        private static final String SHARE = sharePb();
+
+        private static final long STREAMER_UID = 19805387116684L;
+
+        private static final long STREAMER_ROOM = 47731877194803L;
+
+        /**
+         * 本房间勋章子消息（顶层字段 9）。点亮与大航海档按夹具需要选写——proto3 省略零值
+         */
+        private static PbWriter roomMedal(int level, boolean lighted, boolean withGuardType) {
+            PbWriter medal = new PbWriter()
+                    .varint(1, STREAMER_UID)
+                    .varint(2, level)
+                    .str(3, "测试勋章")
+                    .varint(4, 0x111111)
+                    .varint(5, 0x111111)
+                    .varint(6, 0x222222)
+                    .varint(7, 0x333333);
+            if (lighted) {
+                medal.varint(8, 1);
+            }
+            if (withGuardType) {
+                medal.varint(9, 3);
+            }
+            return medal.varint(12, STREAMER_ROOM).varint(13, 1);
+        }
+
+        private static PbWriter withUnknownFields(PbWriter message) {
+            return message.message(98, new PbWriter()).varint(99, 1);
+        }
+
+        private static String enterWithGuardPb() {
+            PbWriter uinfoMedal = new PbWriter()
+                    .str(1, "测试勋章")
+                    .varint(2, 40)
+                    .varint(3, 0x111111)
+                    .varint(4, 0x222222)
+                    .varint(5, 0x333333)
+                    .varint(6, 0x111111)
+                    .varint(7, 1)
+                    .varint(9, 1)
+                    .varint(10, STREAMER_UID)
+                    .varint(11, 3)
+                    .varint(12, 1)
+                    .str(13, "https://guard.example/captain.png")
+                    .str(15, "#111111")
+                    .str(16, "#111111")
+                    .str(17, "#222222")
+                    .str(18, "#FFFFFF")
+                    .str(19, "#333333");
+            PbWriter uinfo = withUnknownFields(new PbWriter()
+                    .varint(1, 10001)
+                    .message(2, new PbWriter()
+                            .str(1, "进房观众甲")
+                            .str(2, "https://face.example/enter-guard.jpg")
+                            .str(8, "#111111"))
+                    .message(3, uinfoMedal)
+                    .message(4, new PbWriter().varint(1, 37))
+                    .message(6, new PbWriter().varint(1, 3).str(2, "2023-11-14 00:01:40"))
+                    .message(7, new PbWriter().varint(1, 1).str(2, "https://guard.example/badge.png")));
+            return new PbWriter()
+                    .varint(1, 10001)
+                    .str(2, "进房观众甲")
+                    .str(4, "syn")
+                    .varint(5, 1)
+                    .varint(6, STREAMER_ROOM)
+                    .varint(7, 1700000100L)
+                    .varint(8, 1700000100L)
+                    .message(9, roomMedal(40, true, true))
+                    .str(12, "")
+                    .varint(15, 1001)
+                    .varint(16, 3)
+                    .str(19, "")
+                    .message(22, uinfo)
+                    .str(23, "")
+                    .str(24, "")
+                    .base64();
+        }
+
+        private static String enterWithPromotionPb() {
+            PbWriter origin = new PbWriter()
+                    .str(1, "进房观众乙")
+                    .str(2, "https://face.example/enter-spread.jpg");
+            PbWriter uinfo = withUnknownFields(new PbWriter()
+                    .varint(1, 10002)
+                    .message(2, new PbWriter()
+                            .str(1, "进房观众乙")
+                            .str(2, "https://face.example/enter-spread.jpg")
+                            .message(6, origin)
+                            .message(7, new PbWriter().varint(4, 1))));
+            return new PbWriter()
+                    .varint(1, 10002)
+                    .str(2, "进房观众乙")
+                    .str(4, "x")
+                    .varint(5, 1)
+                    .varint(6, STREAMER_ROOM)
+                    .varint(7, 1700000200L)
+                    .varint(8, 1700000200L)
+                    .str(9, "")
+                    .varint(10, 1)
+                    .str(11, "#111111")
+                    .str(12, "")
+                    .str(13, "流量包推广")
+                    .varint(15, 1002)
+                    .str(19, "")
+                    .message(22, uinfo)
+                    .str(23, "")
+                    .str(24, "")
+                    .base64();
+        }
+
+        private static String enterPlainPb() {
+            PbWriter uinfo = withUnknownFields(new PbWriter()
+                    .varint(1, 10003)
+                    .message(2, new PbWriter()
+                            .str(1, "进房观众丙")
+                            .str(2, "https://face.example/enter-plain.jpg"))
+                    .message(4, new PbWriter().varint(1, 7))
+                    .str(6, ""));
+            return new PbWriter()
+                    .varint(1, 10003)
+                    .str(2, "进房观众丙")
+                    .str(4, "x")
+                    .varint(5, 1)
+                    .varint(6, STREAMER_ROOM)
+                    .varint(7, 1700000300L)
+                    .varint(8, 1700000300L)
+                    .str(12, "")
+                    .varint(15, 1003)
+                    .str(19, "")
+                    .message(22, uinfo)
+                    .str(23, "")
+                    .str(24, "")
+                    .base64();
+        }
+
+        private static String followWithMedalPb() {
+            PbWriter origin = new PbWriter()
+                    .str(1, "关注观众")
+                    .str(2, "https://face.example/follow.jpg");
+            PbWriter uinfoMedal = new PbWriter()
+                    .str(1, "测试勋章")
+                    .varint(2, 3)
+                    .varint(3, 0x111111)
+                    .varint(4, 0x111111)
+                    .varint(5, 0x111111)
+                    .varint(6, 0x111111)
+                    .varint(9, 1)
+                    .varint(10, STREAMER_UID)
+                    .varint(12, 1)
+                    .str(15, "#111111")
+                    .str(16, "#111111")
+                    .str(17, "#111111")
+                    .str(18, "#FFFFFF")
+                    .str(19, "#222222");
+            PbWriter uinfo = withUnknownFields(new PbWriter()
+                    .varint(1, 10004)
+                    .message(2, new PbWriter()
+                            .str(1, "关注观众")
+                            .str(2, "https://face.example/follow.jpg")
+                            .message(6, origin)
+                            .message(7, new PbWriter().varint(4, 1)))
+                    .message(3, uinfoMedal)
+                    .str(6, ""));
+            return new PbWriter()
+                    .varint(1, 10004)
+                    .str(2, "关注观众")
+                    .str(4, "xy")
+                    .varint(5, 2)
+                    .varint(6, STREAMER_ROOM)
+                    .varint(7, 1700000400L)
+                    .varint(8, 1700000400L)
+                    .message(9, roomMedal(3, true, false))
+                    .str(12, "")
+                    .varint(15, 1004)
+                    .str(19, "")
+                    .message(22, uinfo)
+                    .str(23, "")
+                    .base64();
+        }
+
+        private static String sharePb() {
+            PbWriter origin = new PbWriter()
+                    .str(1, "分享观众")
+                    .str(2, "https://face.example/share.jpg");
+            PbWriter uinfoMedal = new PbWriter()
+                    .str(1, "测试勋章")
+                    .varint(2, 14)
+                    .varint(3, 0x111111)
+                    .varint(4, 0x111111)
+                    .varint(5, 0x111111)
+                    .varint(6, 0x111111)
+                    .varint(10, STREAMER_UID)
+                    .varint(12, 1)
+                    .str(15, "#111111")
+                    .str(16, "#111111")
+                    .str(17, "#111111")
+                    .str(18, "#FFFFFF")
+                    .str(19, "#222222");
+            PbWriter uinfo = withUnknownFields(new PbWriter()
+                    .varint(1, 10005)
+                    .message(2, new PbWriter()
+                            .str(1, "分享观众")
+                            .str(2, "https://face.example/share.jpg")
+                            .message(6, origin)
+                            .message(7, new PbWriter().varint(4, 1)))
+                    .message(3, uinfoMedal)
+                    .str(6, ""));
+            return new PbWriter()
+                    .varint(1, 10005)
+                    .str(2, "分享观众")
+                    .str(4, "x")
+                    .varint(5, 3)
+                    .varint(6, STREAMER_ROOM)
+                    .varint(7, 1700000500L)
+                    .varint(8, 1700000500L)
+                    .message(9, roomMedal(14, false, false))
+                    .str(12, "")
+                    .varint(15, 1005)
+                    .str(19, "")
+                    .message(22, uinfo)
+                    .str(23, "")
+                    .base64();
+        }
 
         /**
          * 手工按 wire format 拼的报文，取值 {@code msg_type=99}。语料里没有这种消息
@@ -276,10 +496,10 @@ class BilibiliEventParserTest {
             assertEquals(37, sender.getHonorLevel());
 
             // 字段 7 是秒级，事件对外给出的必须是毫秒
-            assertEquals(1786294335000L, event.getTimestamp());
+            assertEquals(1700000100000L, event.getTimestamp());
 
             assertEquals(GuardType.Captain, sender.getGuard().getGuardType());
-            assertEquals("https://i0.hdslb.com/bfs/live/48360c8f3b7de8031e86ff1ef4a2dfc0ec2a61c2.png",
+            assertEquals("https://guard.example/captain.png",
                     sender.getGuard().getIcon());
 
             FansMedal medal = sender.getFansMedal();
@@ -301,7 +521,7 @@ class BilibiliEventParserTest {
             assertEquals(10002L, event.getSender().getUid());
             assertTrue(event.isFromPromotion());
             assertEquals("流量包推广", event.getPromotionSource());
-            assertEquals(1786294881000L, event.getTimestamp());
+            assertEquals(1700000200000L, event.getTimestamp());
 
             BilibiliUserInfo sender = (BilibiliUserInfo) event.getSender();
             // 这条报文带着一条空的勋章子消息。空不等于缺失，但同样应当得出「没有勋章」
@@ -328,14 +548,13 @@ class BilibiliEventParserTest {
         @Test
         @DisplayName("解析关注消息")
         void parseFollow() {
-            // 样本量不足：全部语料里只有 4 条 msg_type=2。这一条只能证明枚举值确实会下发、
-            // 且字段布局与进房一致，不构成对关注这条通路的验收
+            // 合成夹具：msg_type=2，字段布局与进房一致
             BilibiliFollowEvent event = assertInstanceOf(BilibiliFollowEvent.class, parseV2(FOLLOW_WITH_MEDAL).orElseThrow());
 
             BilibiliUserInfo sender = (BilibiliUserInfo) event.getSender();
             assertEquals(10004L, sender.getUid());
             assertEquals("关注观众", sender.getUname());
-            assertEquals(1786295397000L, event.getTimestamp());
+            assertEquals(1700000400000L, event.getTimestamp());
             assertEquals(3, sender.getFansMedal().getLevel());
             assertTrue(sender.getFansMedal().getLighted());
         }
@@ -343,13 +562,13 @@ class BilibiliEventParserTest {
         @Test
         @DisplayName("解析分享消息")
         void parseShare() {
-            // 样本量不足：全部语料里只有 1 条 msg_type=3，同上，不构成验收
+            // 合成夹具：msg_type=3，字段布局与进房一致
             BilibiliShareEvent event = assertInstanceOf(BilibiliShareEvent.class, parseV2(SHARE).orElseThrow());
 
             BilibiliUserInfo sender = (BilibiliUserInfo) event.getSender();
             assertEquals(10005L, sender.getUid());
             assertEquals("分享观众", sender.getUname());
-            assertEquals(1786295865000L, event.getTimestamp());
+            assertEquals(1700000500000L, event.getTimestamp());
             assertEquals(14, sender.getFansMedal().getLevel());
             // 这条的勋章没有点亮标志。proto3 省略零值，未点亮时字段整个消失
             assertFalse(sender.getFansMedal().getLighted());
@@ -411,7 +630,7 @@ class BilibiliEventParserTest {
 
             assertEquals(10001L, event.getSender().getUid());
             assertEquals("进房观众甲", event.getSender().getUname());
-            assertEquals(1786294335000L, event.getTimestamp(),
+            assertEquals(1700000100000L, event.getTimestamp(),
                     "时间戳被切到截断点外面了——报文头是变长 varint，值一改字节数就变，TRUNCATE_AT 要跟着往后挪");
             assertNull(((BilibiliUserInfo) event.getSender()).getFansMedal(), "截断之后的字段应当缺失而不是被猜出来");
         }
@@ -741,54 +960,6 @@ class BilibiliEventParserTest {
             assertTrue(reds.isEmpty(), () -> reds.size() + " 问红：" + String.join("；", reds));
         }
 
-        /**
-         * 测试用的最小 protobuf 写入器
-         * <p>
-         * 只写 varint、字符串、嵌套消息三种，够拼 SEND_GIFT_V2 夹具即可。
-         * {@code BilibiliProtobufReader} 只做 wire 层不认 schema，写入器同样只做 wire 层，
-         * 字段号由夹具自己指定
-         */
-        private static final class PbWriter {
-            private final ByteArrayOutputStream out = new ByteArrayOutputStream();
-
-            PbWriter varint(int field, long value) {
-                key(field, 0);
-                writeVarint(value);
-                return this;
-            }
-
-            PbWriter str(int field, String value) {
-                byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
-                key(field, 2);
-                writeVarint(bytes.length);
-                out.writeBytes(bytes);
-                return this;
-            }
-
-            PbWriter message(int field, PbWriter nested) {
-                byte[] bytes = nested.out.toByteArray();
-                key(field, 2);
-                writeVarint(bytes.length);
-                out.writeBytes(bytes);
-                return this;
-            }
-
-            String base64() {
-                return Base64.getEncoder().encodeToString(out.toByteArray());
-            }
-
-            private void key(int field, int wireType) {
-                writeVarint(((long) field << 3) | wireType);
-            }
-
-            private void writeVarint(long value) {
-                while ((value & ~0x7FL) != 0) {
-                    out.write((int) ((value & 0x7F) | 0x80));
-                    value >>>= 7;
-                }
-                out.write((int) value);
-            }
-        }
     }
 
     /**
@@ -1414,5 +1585,54 @@ class BilibiliEventParserTest {
         BilibiliDanmuEvent danmu = assertInstanceOf(BilibiliDanmuEvent.class, parse(json).orElseThrow());
         assertEquals("嗨", danmu.getContent());
         assertNull(((BilibiliUserInfo) danmu.getSender()).getHonorLevel());
+    }
+
+    /**
+     * 测试用的最小 protobuf 写入器
+     * <p>
+     * 只写 varint、字符串、嵌套消息三种，够拼 INTERACT_WORD_V2 与 SEND_GIFT_V2 夹具。
+     * {@code BilibiliProtobufReader} 只做 wire 层不认 schema，写入器同样只做 wire 层，
+     * 字段号由夹具自己指定
+     */
+    private static final class PbWriter {
+        private final ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+        PbWriter varint(int field, long value) {
+            key(field, 0);
+            writeVarint(value);
+            return this;
+        }
+
+        PbWriter str(int field, String value) {
+            byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+            key(field, 2);
+            writeVarint(bytes.length);
+            out.writeBytes(bytes);
+            return this;
+        }
+
+        PbWriter message(int field, PbWriter nested) {
+            byte[] bytes = nested.out.toByteArray();
+            key(field, 2);
+            writeVarint(bytes.length);
+            out.writeBytes(bytes);
+            return this;
+        }
+
+        String base64() {
+            return Base64.getEncoder().encodeToString(out.toByteArray());
+        }
+
+        private void key(int field, int wireType) {
+            writeVarint(((long) field << 3) | wireType);
+        }
+
+        private void writeVarint(long value) {
+            while ((value & ~0x7FL) != 0) {
+                out.write((int) ((value & 0x7F) | 0x80));
+                value >>>= 7;
+            }
+            out.write((int) value);
+        }
     }
 }
