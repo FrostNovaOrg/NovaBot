@@ -486,15 +486,16 @@ starbot:
 
 ```yaml
 starbot:
-  core:
-    alert:
-      enabled: true
-      qq-platform: qq-onebot   # 填 senders 里的某个 name
-      qq-type: 0               # 1 群聊、0 私聊
-      qq-num: 你的QQ号
+  adapter:
+    onebot:
+      alert:
+        platform: qq-onebot   # 填 senders 里的某个 name
+        type: 0               # 1 群聊、0 私聊
+        num: 你的号码
 ```
 
-> `qq-type` 与推送目标的 `type` 是同一套编码：**1 是群聊，0 是私聊**。填其他数字告警发不出去。
+> `type` 与推送目标的 `type` 是同一套编码：**1 是群聊，0 是私聊**。填其他数字告警发不出去。
+> 旧键 `starbot.core.alert.qq-platform`／`qq-type`／`qq-num` 仍然认得。
 
 **但只配 QQ 告警有个死角**：告警本身也走机器人的推送链路，QQ 掉线时它跟着一起失效——
 而「QQ 掉线」恰恰是最需要知道的那类故障。因此还可以配一路不经过 QQ 的 Webhook，

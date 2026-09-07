@@ -2,6 +2,7 @@ package com.starlwr.bot.adapter.onebot.config;
 
 import com.starlwr.bot.adapter.onebot.model.OneBotSender;
 import com.starlwr.bot.core.config.ConfigEffect;
+import com.starlwr.bot.core.config.ConfigLevel;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import lombok.Getter;
 import lombok.Setter;
@@ -47,6 +48,9 @@ public class OneBotAdapterPluginProperties {
 
     @Getter
     private Security security = new Security();
+
+    @Getter
+    private Alert alert = new Alert();
 
     /**
      * 推送接口安全相关
@@ -209,5 +213,44 @@ public class OneBotAdapterPluginProperties {
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         private int websocketSilenceTimeout = 120;
 
+    }
+
+    /**
+     * 机器人告警目标
+     */
+    @Getter
+    @Setter
+    public static class Alert {
+        /**
+         * 接收告警的推送平台名，留空则不通过机器人告警
+         * <p>
+         * 改完立即生效，不必重启。
+         */
+        // 收件人这几项之所以能即时生效：告警通道每次发送前都重新读它们。
+        // 需要告警的时候往往正是配错了的时候，要等重启才生效的话，改对了也得先没有告警地跑到下次启动
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
+        private String platform = "";
+
+        /**
+         * 接收告警的目标类型，1 为群聊，0 为私聊
+         * <p>
+         * 取值必须与 {@link com.starlwr.bot.core.enums.PushTargetType} 的 code 一致：
+         * {@code GROUP(1)}、{@code FRIEND(0)}。此处曾误写为「2 为私聊」，而 2 会被解析为
+         * {@code UNKNOWN}，告警在发送阶段被直接丢弃，且不留任何痕迹——与 datasource.json 中
+         * 推送目标的 type 是同一套编码，不要凭直觉另立一套。改完立即生效，不必重启。
+         */
+        // 与平台名、号码同进退：三项合起来才是一个收件地址，只让其中一项立刻生效，
+        // 群改私聊之后那条告警会发到上一个地址去
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
+        private int type = 0;
+
+        /**
+         * 接收告警的群号或用户号，改完立即生效，不必重启
+         */
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
+        private Long num;
     }
 }

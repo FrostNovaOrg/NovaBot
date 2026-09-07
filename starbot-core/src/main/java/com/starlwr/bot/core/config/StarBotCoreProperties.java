@@ -311,39 +311,6 @@ public class StarBotCoreProperties {
         private int convergenceInterval = 3600;
 
         /**
-         * 接收告警的推送平台名，留空则不通过 QQ 告警
-         * <p>
-         * 对本项目的使用者而言，告警直接推到管理员 QQ 远比邮件实用——大多数人并不会为
-         * 一个机器人专门配置发件邮箱。改完立即生效，不必重启。
-         */
-        // 收件人这几项之所以能即时生效：告警通道每次发送前都重新读它们。
-        // 需要告警的时候往往正是配错了的时候，要等重启才生效的话，改对了也得先没有告警地跑到下次启动
-        @ConfigLevel(ConfigLevel.Level.COMMON)
-        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
-        private String qqPlatform = "";
-
-        /**
-         * 接收告警的目标类型，1 为群聊，0 为私聊
-         * <p>
-         * 取值必须与 {@link com.starlwr.bot.core.enums.PushTargetType} 的 code 一致：
-         * {@code GROUP(1)}、{@code FRIEND(0)}。此处曾误写为「2 为私聊」，而 2 会被解析为
-         * {@code UNKNOWN}，告警在发送阶段被直接丢弃，且不留任何痕迹——与 datasource.json 中
-         * 推送目标的 type 是同一套编码，不要凭直觉另立一套。改完立即生效，不必重启。
-         */
-        // 与平台名、号码同进退：三项合起来才是一个收件地址，只让其中一项立刻生效，
-        // 群改私聊之后那条告警会发到上一个地址去
-        @ConfigLevel(ConfigLevel.Level.COMMON)
-        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
-        private int qqType = 0;
-
-        /**
-         * 接收告警的群号或 QQ 号，改完立即生效，不必重启
-         */
-        @ConfigLevel(ConfigLevel.Level.COMMON)
-        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
-        private Long qqNum;
-
-        /**
          * Webhook 告警地址，留空则不启用
          * <p>
          * <b>机器人推送与邮件之外唯一不依赖机器人自身链路的通道。</b>机器人告警走的是机器人的推送链路，

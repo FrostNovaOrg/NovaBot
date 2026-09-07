@@ -175,11 +175,28 @@ public class AlertService {
      * @param id 通道标识，见 {@link AlertChannel#id()}
      * @return 结果
      */
-    public TestResult test(String id) {
-        AlertChannel channel = channels.orderedStream()
+    /**
+     * 某一路通道当前是否可用
+     * <p>
+     * 首页「这一路配好了没有」与测试发送共用同一条判定：按 id 取通道，再问 {@link AlertChannel#isAvailable()}。
+     * 没有这一路时按不可用算，不另编一个「没装插件」态——首页那三张卡要的是能不能叫到人。
+     * @param id 通道标识，见 {@link AlertChannel#id()}
+     * @return 通道在且可用
+     */
+    public boolean isChannelAvailable(String id) {
+        AlertChannel channel = channel(id);
+        return channel != null && channel.isAvailable();
+    }
+
+    private AlertChannel channel(String id) {
+        return channels.orderedStream()
                 .filter(item -> item.id().equals(id))
                 .findFirst()
                 .orElse(null);
+    }
+
+    public TestResult test(String id) {
+        AlertChannel channel = channel(id);
 
         if (channel == null) {
             return new TestResult(TestResult.Status.UNKNOWN, id, null, "没有这一路告警通道");

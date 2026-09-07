@@ -1,8 +1,5 @@
 starbot.core.alert.convergence-interval=81
 starbot.core.alert.enabled=false
-starbot.core.alert.qq-num=82
-starbot.core.alert.qq-platform=coverage-channel
-starbot.core.alert.qq-type=1
 starbot.core.alert.retry-interval=83
 starbot.core.alert.retry-max-attempts=85
 starbot.core.alert.retry-queue-size=84

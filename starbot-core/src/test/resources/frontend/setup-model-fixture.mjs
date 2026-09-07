@@ -164,7 +164,6 @@ const rows = initialRows({
   'starbot.core.push.quiet-start': '',
   'starbot.core.push.quiet-end': '',
   'starbot.core.alert.webhook-url': '',
-  'starbot.core.alert.qq-num': '',
   'starbot.core.timeline.retention-days': '14',
 }, 14);
 
@@ -198,7 +197,6 @@ eq(mailAlertConfigured('', 'smtp.example.invalid'), false, '只填主机不算�
 const mailed = initialRows({
   'starbot.core.push.enabled': 'true',
   'starbot.core.alert.webhook-url': '',
-  'starbot.core.alert.qq-num': '',
   'starbot.core.mail.default-to': 'ops@example.invalid',
   'spring.mail.host': 'smtp.example.invalid',
   'starbot.core.timeline.retention-days': '14',
@@ -208,12 +206,18 @@ eq(mailed.find(r => r.label === '告警').text.includes('已配'), true, '配了
 const mailOnlyTo = initialRows({
   'starbot.core.push.enabled': 'true',
   'starbot.core.alert.webhook-url': '',
-  'starbot.core.alert.qq-num': '',
   'starbot.core.mail.default-to': 'ops@example.invalid',
   'spring.mail.host': '',
   'starbot.core.timeline.retention-days': '14',
 }, null);
 eq(mailOnlyTo.find(r => r.label === '告警').text.includes('未配'), true, '只填收件时初始值仍说未配');
+
+const qqAlerted = initialRows({
+  'starbot.core.push.enabled': 'true',
+  'starbot.core.alert.webhook-url': '',
+  'starbot.core.timeline.retention-days': '14',
+}, null, undefined, {alerts: {qq: true}});
+eq(qqAlerted.find(r => r.label === '告警').text.includes('已配'), true, '通道可用性为真时初始值说已配');
 
 // ---------- 七、完成后的三行小结 ----------
 const lines = summaryLines([true, true, true, true, true], ['', '', '', '', ''], {

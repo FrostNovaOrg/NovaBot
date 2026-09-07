@@ -66,14 +66,6 @@ public class RuntimeConfigurationApplier {
                 properties.getPush().setQuietEnd(value));
 
         // ---- 告警接收人 ----
-        // QQ 这一路的收件人是「平台 + 类型 + 号码」三项合起来的一个地址，
-        // 只让号码即时生效而类型要等重启，改一次群/私聊就会发到上一个地址去
-        APPLIERS.put("starbot.core.alert.qq-platform", (properties, value) ->
-                properties.getAlert().setQqPlatform(value));
-        APPLIERS.put("starbot.core.alert.qq-type", (properties, value) ->
-                properties.getAlert().setQqType(Integer.parseInt(value.trim())));
-        APPLIERS.put("starbot.core.alert.qq-num", (properties, value) ->
-                properties.getAlert().setQqNum(value == null || value.isBlank() ? null : Long.parseLong(value.trim())));
         APPLIERS.put("starbot.core.alert.webhook-url", (properties, value) ->
                 properties.getAlert().setWebhookUrl(value));
         APPLIERS.put("starbot.core.mail.default-to", (properties, value) ->

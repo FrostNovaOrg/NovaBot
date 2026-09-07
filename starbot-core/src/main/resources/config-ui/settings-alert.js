@@ -21,7 +21,7 @@ import {mailAlertConfigured} from './alert-model.js';
  * 卡片这边据它把这几项摆进卡里。两处各写一份的话，摘走了却没人摆的那一项会凭空消失。
  */
 export const CARD_FIELDS = new Set([
-  'starbot.core.alert.qq-platform', 'starbot.core.alert.qq-type', 'starbot.core.alert.qq-num',
+  'starbot.adapter.onebot.alert.platform', 'starbot.adapter.onebot.alert.type', 'starbot.adapter.onebot.alert.num',
   'starbot.core.alert.webhook-url', 'starbot.core.alert.webhook-method',
   'starbot.core.alert.webhook-title-field', 'starbot.core.alert.webhook-content-field',
   'starbot.core.mail.default-to',
@@ -271,13 +271,13 @@ async function qqTarget(box, pill) {
   const hint = el('div', 'al-note');
   wrap.appendChild(hint);
   const key = el('div', 'keyname');
-  key.textContent = 'starbot.core.alert.qq-num';
+  key.textContent = 'starbot.adapter.onebot.alert.num';
   wrap.appendChild(key);
   box.appendChild(wrap);
 
-  const platform = valueOf('starbot.core.alert.qq-platform');
-  const type = valueOf('starbot.core.alert.qq-type');
-  const num = valueOf('starbot.core.alert.qq-num');
+  const platform = valueOf('starbot.adapter.onebot.alert.platform');
+  const type = valueOf('starbot.adapter.onebot.alert.type');
+  const num = valueOf('starbot.adapter.onebot.alert.num');
   const currentKey = num ? platform + '|' + type + '|' + num : '';
 
   const options = [];
@@ -319,9 +319,9 @@ async function qqTarget(box, pill) {
 
   select.addEventListener('change', () => {
     const parts = select.value ? select.value.split('|') : ['', '0', ''];
-    setValue('starbot.core.alert.qq-platform', parts[0]);
-    setValue('starbot.core.alert.qq-type', parts[1]);
-    setValue('starbot.core.alert.qq-num', parts[2]);
+    setValue('starbot.adapter.onebot.alert.platform', parts[0]);
+    setValue('starbot.adapter.onebot.alert.type', parts[1]);
+    setValue('starbot.adapter.onebot.alert.num', parts[2]);
     pillState(pill, !!parts[2]);
   });
 

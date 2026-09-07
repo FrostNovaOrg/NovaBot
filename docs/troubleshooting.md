@@ -305,8 +305,8 @@ systemd 部署：`sudo journalctl -u starbot -f`。手动运行：直接输出�
 
 **出了问题能主动通知我吗？**
 
-能，配置 `starbot.core.alert` 把告警发到你的 QQ。
-注意 `qq-type` 是 **1 群聊 / 0 私聊**。
+能，配置 `starbot.adapter.onebot.alert` 把告警发到机器人。
+注意 `type` 是 **1 群聊 / 0 私聊**。旧键 `starbot.core.alert.qq-*` 仍然认得。
 
 **半夜收到「Websocket 未收到任何消息」的告警，可连接明明是好的？**
 

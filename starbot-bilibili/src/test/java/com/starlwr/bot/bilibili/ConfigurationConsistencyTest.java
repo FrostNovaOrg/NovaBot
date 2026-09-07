@@ -463,7 +463,7 @@ class ConfigurationConsistencyTest {
      */
     private List<RuntimeConfigurationApplierContributor> applierContributors() {
         return loadOptionalContributor(RuntimeConfigurationApplierContributor.class,
-                "com.starlwr.bot.adapter.onebot.config.OneBotRuntimeConfigurationAppliers");
+                "com.starlwr.bot.adapter.onebot.config.OneBotRuntimeAppliers");
     }
 
     private <T> List<T> loadOptionalContributor(Class<T> type, String className) {
