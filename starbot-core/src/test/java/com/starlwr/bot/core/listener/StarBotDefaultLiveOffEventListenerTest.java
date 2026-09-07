@@ -35,6 +35,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -373,6 +374,52 @@ class StarBotDefaultLiveOffEventListenerTest {
         assertFalse(detail.series().containsKey("空序列"), "全程无数据的曲线不应写进归档序列表");
         assertFalse(detail.peaks().containsKey("空序列"), "空序列不在 peaks");
         assertEquals(new SeriesPeak(START + 60_000, 5.0), detail.peaks().get("人气"));
+    }
+
+    /**
+     * 分支五：明细里排行榜抛 RuntimeException 时，场次归档已经落下，异常不得冒出监听者
+     * <p>
+     * 排行榜是明细组装里第一处会向监听者冒 RuntimeException 的调用，场次归档在它之前。
+     * 冒出去的话，同一事件上排在后面的监听者整段跳过，下播推送与报告都不会跑。
+     */
+    @Test
+    @DisplayName("分支⑤：明细归档抛 RuntimeException 时场次归档已落、监听者不抛")
+    void archiveDetailRuntimeExceptionDoesNotEscapeAndSessionArchiveStays() {
+        List<String> reds = new ArrayList<>();
+
+        when(liveDataService.getLiveStartTime(PLATFORM, UID)).thenReturn(Optional.of(START));
+        when(interventionTracker.endReason(eq(PLATFORM), eq(UID), any(Instant.class))).thenReturn(LiveEndReason.NORMAL);
+        when(liveDataService.getLiveMetricUserCounts(PLATFORM, UID)).thenReturn(Map.of("弹幕", 1));
+        when(liveDataService.getLiveUserRanking(PLATFORM, UID, "弹幕", 1))
+                .thenThrow(new RuntimeException("ranking boom"));
+
+        try {
+            listener.onLiveOffEvent(liveOffAt(END));
+        } catch (RuntimeException e) {
+            reds.add("① onLiveOffEvent 抛了: " + e);
+        } catch (AssertionError e) {
+            reds.add("① " + e.getMessage());
+        }
+
+        try {
+            verify(archive, times(1)).append(any());
+        } catch (AssertionError e) {
+            reds.add("② archive.append 应恰一次: " + e.getMessage());
+        }
+
+        setUp();
+        when(liveDataService.getLiveStartTime(PLATFORM, UID)).thenReturn(Optional.of(START));
+        when(interventionTracker.endReason(eq(PLATFORM), eq(UID), any(Instant.class))).thenReturn(LiveEndReason.NORMAL);
+        try {
+            listener.onLiveOffEvent(liveOffAt(END));
+            verify(details, times(1)).store(any());
+        } catch (RuntimeException e) {
+            reds.add("③ 不打桩时抛了: " + e);
+        } catch (AssertionError e) {
+            reds.add("③ 不打桩时 details.store 应恰一次: " + e.getMessage());
+        }
+
+        assertTrue(reds.isEmpty(), () -> "三问中 " + reds.size() + " 问红: " + String.join("; ", reds));
     }
 
     private static List<DanmuRecord> copies(long at, DanmuRecord.Type type, int n) {

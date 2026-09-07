@@ -143,7 +143,11 @@ public class StarBotDefaultLiveOffEventListener {
                 outage,
                 peaks));
 
-        archiveDetail(event, source, start.get(), endTime, duration, series, peaks);
+        try {
+            archiveDetail(event, source, start.get(), endTime, duration, series, peaks);
+        } catch (RuntimeException e) {
+            log.error("留档直播明细失败, 该场的报告将无法重新绘制", e);
+        }
     }
 
     /**
