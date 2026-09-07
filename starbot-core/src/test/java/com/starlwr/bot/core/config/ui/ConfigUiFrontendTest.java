@@ -2346,6 +2346,67 @@ class ConfigUiFrontendTest {
     }
 
     /**
+     * 界面目录与插件页目录里的每一份 .js 都要恰好被一把尺的语法循环收进
+     * <p>
+     * {@link #allFrontendScriptsAreCoveredBySyntaxLoops()} 只判至少一把。两把都点同一份
+     * 不添判力，只添两边清单不同步的空当。次数按尺文件计。本格在内存里拼两把都点
+     * {@code $UI/x.js} 的假尺，盘上的尺不改。
+     */
+    @Test
+    @DisplayName("界面每份 .js 恰在一把尺的语法循环里")
+    void eachFrontendScriptIsInExactlyOneSyntaxLoop() throws IOException {
+        List<String> red = new ArrayList<>();
+        Set<String> scripts = frontendScriptKeys();
+        Map<String, List<String>> byScript = syntaxLoopRulersByScript(diskSyntaxLoopRulerTexts());
+
+        try {
+            List<String> doubled = new ArrayList<>();
+            for (String script : scripts) {
+                List<String> rulers = byScript.getOrDefault(script, List.of());
+                if (rulers.size() >= 2) {
+                    String base = script.substring(script.lastIndexOf('/') + 1);
+                    doubled.add(base + " → " + String.join("、", rulers)
+                            + "（" + rulers.size() + " 把尺）");
+                }
+            }
+            assertTrue(doubled.isEmpty(), String.join("\n", doubled));
+        } catch (Throwable t) {
+            red.add("① " + t.getMessage());
+        }
+
+        try {
+            List<String> missing = new ArrayList<>();
+            for (String script : scripts) {
+                List<String> rulers = byScript.getOrDefault(script, List.of());
+                if (rulers.isEmpty()) {
+                    missing.add(script + " 没有任何一把尺的语法循环代码行收进它");
+                }
+            }
+            assertTrue(missing.isEmpty(),
+                    "这些脚本构建连语法都不量:\n  " + String.join("\n  ", missing));
+            assertFalse(scripts.isEmpty() || byScript.isEmpty(), "上面那条「有名单」因此不作数");
+        } catch (Throwable t) {
+            red.add("② " + t.getMessage());
+        }
+
+        try {
+            Map<String, String> fake = new LinkedHashMap<>();
+            fake.put("a-check.sh", "for f in \"$UI\"/x.js; do :; done\n");
+            fake.put("b-check.sh", "for f in \"$UI\"/other.js \"$UI\"/x.js; do :; done\n");
+            Map<String, List<String>> fakeHits = syntaxLoopRulersByScript(fake);
+            List<String> rulers = fakeHits.getOrDefault("config-ui/x.js", List.of());
+            assertEquals(2, rulers.size(),
+                    "两把假尺都点 $UI/x.js 应判出重量，实际: " + rulers);
+        } catch (Throwable t) {
+            red.add("③ " + t.getMessage());
+        }
+
+        if (!red.isEmpty()) {
+            fail(red.size() + " 问红：" + String.join("；", red));
+        }
+    }
+
+    /**
      * 把 {@code tokens-model.js} 从 for 行挪进注释必须让覆盖判法认不出来
      * <p>
      * 旧判法是全文 {@code contains}，注释里提到也算收进。本格在内存里做一次突变，
@@ -2355,14 +2416,14 @@ class ConfigUiFrontendTest {
     @DisplayName("语法循环覆盖不认注释里的文件名")
     void syntaxLoopCoverageIgnoresCommentedFileNames() throws IOException {
         String original = Files.readString(
-                repoRoot().resolve("tools/links-model-check.sh"), StandardCharsets.UTF_8);
+                repoRoot().resolve("tools/tokens-model-check.sh"), StandardCharsets.UTF_8);
         assertTrue(jsNamedInSyntaxLoops(original).contains("config-ui/tokens-model.js"),
                 "本格的阴性对照要先有阳性：原尺代码行里必须有 config-ui/tokens-model.js");
         assertTrue(original.contains(" \"$UI\"/tokens-model.js"),
                 "原尺没有「 $UI/tokens-model.js」这一段，突变无从做起");
 
-        String without = original.replace(" \"$UI\"/tokens-model.js", "");
-        String mutated = without.replaceFirst("(?m)^(for f in )", "# tokens-model.js\n$1");
+        String mutated = original.replaceFirst("(?m)^(for f in )", "# tokens-model.js\n$1")
+                .replace(" \"$UI\"/tokens-model.js", "");
         assertTrue(mutated.contains("# tokens-model.js"), "突变没把文件名写进注释");
         assertFalse(jsNamedInSyntaxLoops(mutated).contains("config-ui/tokens-model.js"),
                 "把 tokens-model.js 从 for 行挪进注释后仍算收进，这一格量不动");
@@ -2481,6 +2542,41 @@ class ConfigUiFrontendTest {
                     });
         }
         return names;
+    }
+
+    /**
+     * {@code tools/*-check.sh} 文件名到正文
+     */
+    private Map<String, String> diskSyntaxLoopRulerTexts() throws IOException {
+        Path tools = repoRoot().resolve("tools");
+        Map<String, String> texts = new LinkedHashMap<>();
+        try (Stream<Path> files = Files.list(tools)) {
+            files.filter(Files::isRegularFile)
+                    .map(p -> p.getFileName().toString())
+                    .filter(n -> n.endsWith("-check.sh"))
+                    .sorted()
+                    .forEach(name -> {
+                        try {
+                            texts.put(name, Files.readString(tools.resolve(name), StandardCharsets.UTF_8));
+                        } catch (IOException e) {
+                            throw new UncheckedIOException(e);
+                        }
+                    });
+        }
+        return texts;
+    }
+
+    /**
+     * 每份被语法循环点到的 .js 相对路径 → 点到它的尺文件名
+     */
+    private Map<String, List<String>> syntaxLoopRulersByScript(Map<String, String> rulerTexts) {
+        Map<String, List<String>> byScript = new LinkedHashMap<>();
+        for (Map.Entry<String, String> e : rulerTexts.entrySet()) {
+            for (String js : jsNamedInSyntaxLoops(e.getValue())) {
+                byScript.computeIfAbsent(js, k -> new ArrayList<>()).add(e.getKey());
+            }
+        }
+        return byScript;
     }
 
     /**

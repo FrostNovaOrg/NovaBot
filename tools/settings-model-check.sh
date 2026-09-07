@@ -36,7 +36,7 @@ fi
 
 # —— 语法 ——
 for f in "$UI"/settings-model.js "$UI"/settings.js "$UI"/settings-alert.js "$UI"/settings-auth.js \
-         "$UI"/alert-model.js "$UI"/passkeys.js "$UI"/password-reveal.js; do
+         "$UI"/passkeys.js "$UI"/password-reveal.js; do
     if node --input-type=module --check < "$f" > /dev/null 2>&1; then
         echo "语法 绿 $f"
     else
