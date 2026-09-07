@@ -8,7 +8,7 @@ import {$, api, dropDisplayOnly, el, esc, markDirty, phrase, say, term} from './
 import {PROBE_ANCHOR, shouldOpenSetup} from './home-model.js';
 import {focusStation, loadTargets, mountLinkCard, refreshLinks, sendTestMessage} from './links.js';
 import {loadLog, stopFollow, syncLogView} from './log.js';
-import {refreshHome, renderStatus, runSelfTest, togglePush} from './overview.js';
+import {refreshHome, renderStatus, runSelfTest} from './overview.js';
 import {setAuthState} from './settings-auth.js';
 import {copyConfigPath, discard, filterSettings, focusGroup, renderConfigPath, renderGeneral, save, toggleKeyNames}
   from './settings.js';
@@ -325,11 +325,14 @@ const PAGE_TAB = {
 /**
  * 旧页签名 → 它现在所在的地址
  *
- * 旧页签在新导航里不再一一对应一页：群与成员并进了「QQ 推送」，只读口令并进了「连接」。
+ * 旧页签在新导航里不再一一对应一页：只读口令并进了「连接」。
  * 调用方只知道自己要去的那个页签叫什么，这张表因此由这里维护，调用点一处未改。
+ *
+ * {@code sessions} 那一条是旧页签名的一次性转址；目标页现由插件提供，
+ * 插件缺席时 parseHash 认不出那个名字，自然回落首页。
  */
 const TAB_HASH = {
-  overview: '#/home', push: '#/push', sessions: '#/push',
+  overview: '#/home', sessions: '#/push',
   log: '#/log', bot: '#/links', tokens: '#/links', settings: '#/settings', setup: '#/setup',
 };
 
@@ -378,7 +381,7 @@ function parseHash() {
   return {
     name: known ? name : 'home',
     sub: parts[1] || '',
-    // 推送页有三段：#/push/<主播>/<通道号>。第三段只这一页用得上，
+    // 有的插件页有三段：#/<页标识>/<第二段>/<第三段>。第三段只个别页用得上，
     // 但解析放在这里而不是那一页自己再切一遍地址栏——两处各切一遍的话，
     // 「认页」与「认页里的哪一个」会按两套规则来
     tail: parts[2] || '',
@@ -559,14 +562,13 @@ $('#setup-later').addEventListener('click', () => { later = true; });
 // 让机器人重新去问一遍：群是随时会变的，而缓存住的名单会让人对着一个已经退了的群发测试消息
 $('#test-refresh').addEventListener('click', () => loadTargets(true));
 $('#selftest-run').addEventListener('click', runSelfTest);
-// 「添加主播」与整棵树的接线都在 push.js 里：它建出来的那些控件不写在 index.html 上，
-// 在这里按 id 取只会取到 null
+// 插件页自己建出来的控件不在这里接线：它们不写在 index.html 上，
+// 在这里按 id 取只会取到 null。那些页的接线由页自己在 render 里做
 // 搜索与「只看改过的」只改可见性，不重绘：重绘会丢掉正在编辑的那一格，
 // 而使用者常常是一边改一边搜下一项
 $('#set-search').addEventListener('input', filterSettings);
 $('#only-changed').addEventListener('change', filterSettings);
 $('#show-keys').addEventListener('change', toggleKeyNames);
-$('#toggle-push').addEventListener('click', togglePush);
 /**
  * 未绑定验证器时的引导卡片
  *

@@ -1,8 +1,11 @@
 /**
  * 首页视图模型
  *
- * 把 /api/status、/api/login、/api/timeline、/api/at-all/quota 四份回包算成屏幕上要显示的东西：
- * 链路三段的灯色与说明、六项探针、顶部横条、待办、现在与今日（含 @全体成员 已用）、今天发生了什么。
+ * 把 /api/status、/api/login、/api/timeline 三份回包算成屏幕上要显示的东西：
+ * 链路三段的灯色与说明、六项探针、顶部横条、待办、现在、今天发生了什么。
+ *
+ * 「今日」那张卡（三个数与推送总开关）已随控制台插件走：它问的是推送这件事今天怎么样，
+ * 而推送本身是产品形态。留在这里的表现不是报错，是卸掉那个插件之后三个数永远写着 0。
  *
  * 刻意不碰 DOM，也不发请求。首页要在八种情形下都说得对——正常、首次安装、机器人掉线、
  * 直播平台掉登录、直播间断流、推送变慢、静音时段中、已暂停推送——而这八种情形
@@ -12,8 +15,6 @@
  * 本文件里没有任何一个直播平台的名字：站名取自运行时下发的账号显示名，
  * 说明取自探针自己给的那句话。写死一个平台名，这一页就替一件可能没装的东西说了话。
  */
-
-import {esc} from './core.js';
 
 /** 同义 core.js 的 term：有键用词，无键用中性兜底。模型不读全局。 */
 function word(terms, key, fallback) {
@@ -27,31 +28,34 @@ function say(terms, key, withTerm, without) {
 }
 
 /**
- * 内置五步，闭集
+ * 内置四步，闭集
  *
  * {@code skippable} 是「界面上给不给跳过按钮」，不是「不填也能过」——
- * 第 3 步跳过等于选了免登录（要先过一段后果确认），第 4 步跳过等于不加主播（同样要确认）。
+ * 第 3 步跳过等于选了免登录，要先过一段后果确认。
  * 第 1、2 步不给跳过按钮：没上锁的控制台谁都进得来，没连上机器人一条消息也发不出去。
- * 插件步插在「主播」之后、「试发」之前，见 {@link withPluginSteps}。
+ * 插件步插在「登录直播平台」之后、「试发」之前，见 {@link withPluginSteps}。
+ *
+ * 「第一位主播，推到哪」不在这张表上：查主播、挑推送目标、往数据源写一位主播全是产品形态，
+ * 那一步由控制台插件按 {@code setup_step} 槽自己带来。留在这里的话，核心就得认识
+ * 一个它管不着的页里的判定，而卸掉那个插件之后这一步会永远走不完。
  */
 export const SETUP_STEPS = [
   {key: 'lock', title: '给控制台上把锁', skippable: false},
   {key: 'bot', title: '连上机器人', skippable: false},
   {key: 'account', title: '登录直播平台', skippable: true},
-  {key: 'streamer', title: '第一位主播，推到哪', skippable: true},
   {key: 'test', title: '发一条试试', skippable: false},
 ];
 
 const BUILTIN_STEP_KEYS = new Set(SETUP_STEPS.map(step => step.key));
 
 /**
- * 内置五步加上插件申报的向导步骤
+ * 内置四步加上插件申报的向导步骤
  *
  * 只收 {@code slot === 'setup_step'} 的页。插在内置锚点之后、「试发」之前，
  * 按 order 升序（同 order 按 id）。无插件页时返回 {@link SETUP_STEPS} 本身。
  * @param pages /api/pages 的 pages 清单
  * @param terms 词表，缺则机器人那一步仍说「连上机器人」
- * @param afterKey 插件步插在哪一步之后，缺省 {@code 'streamer'}
+ * @param afterKey 插件步插在哪一步之后，缺省 {@code 'account'}
  * @return {{key: string, title: string, skippable?: boolean, plugin?: boolean}[]}
  */
 export function withPluginSteps(pages, terms, afterKey) {
@@ -68,9 +72,9 @@ export function withPluginSteps(pages, terms, afterKey) {
     .map(page => ({key: page.id, title: page.displayName, plugin: true}));
   let table = SETUP_STEPS;
   if (extra.length) {
-    const want = afterKey || 'streamer';
+    const want = afterKey || 'account';
     let at = SETUP_STEPS.findIndex(step => step.key === want);
-    if (at < 0) at = SETUP_STEPS.findIndex(step => step.key === 'streamer');
+    if (at < 0) at = SETUP_STEPS.findIndex(step => step.key === 'account');
     table = [...SETUP_STEPS.slice(0, at + 1), ...extra, ...SETUP_STEPS.slice(at + 1)];
   }
   return table.map(step => step.key !== 'bot' ? step : Object.assign({}, step, {
@@ -163,19 +167,22 @@ function platformName(login) {
  * 初始设置各步各自成立了没有
  *
  * <b>这组布尔是这条规则唯一的一份实现</b>：首页那条待办要拿它算「N 步里完成了 M 步」
- * （N 为步骤表长度，无插件时为 5），初始设置页要拿它画进度条与决定从第几步接着走。
+ * （N 为步骤表长度，无插件时为 4），初始设置页要拿它画进度条与决定从第几步接着走。
  * 两处各判一遍的话，同一台机器上首页说「完成了 3 步」而设置页停在第 2 步，
- * 而两边的代码看起来都对。摆在本文件里是因为前四步全部读探针（见 {@link probesIn}），
+ * 而两边的代码看起来都对。摆在本文件里是因为内置那几步全部读探针（见 {@link probesIn}），
  * 设置页那一侧反过来引它。
  *
- * 第 5 步「发一条试试」没有任何服务端事实可推——这台机器有没有真的发过一条，
+ * 末步「发一条试试」没有任何服务端事实可推——这台机器有没有真的发过一条，
  * 只有初始设置页自己记得住（见 /api/setup/state 的 testSentAt）。因此它由调用方交进来：
- * 不交（{@code null}）时按「前四步都成立」算，那是首页那条待办的读法——
- * 能把消息推出去的前提正是前四步都成立，换成「今天推成功过」的话，
+ * 不交（{@code null}）时按「它前面那几步都成立」算，那是首页那条待办的读法——
+ * 能把消息推出去的前提正是前面几步都成立，换成「今天推成功过」的话，
  * 这条待办会在每天零点自己复活，催一件早就做完的事。
+ * <p>
+ * 「前面那几步」<b>连插件步一起算</b>，不是写死的前四位：主播那一步已经是插件带来的，
+ * 按写死的下标算等于把它排除在外，于是一台还没加主播的机器上末步会自己变绿。
  * @param status /api/status 回包
  * @param login /api/login 回包
- * @param sent 第 5 步的事实；不知道时传 null
+ * @param sent 末步的事实；不知道时传 null
  * @param pages /api/pages 的 pages 清单；缺＝无插件
  * @param pluginDone 插件步事实，{@code {key: boolean}}；缺键＝假
  * @return {boolean[]} 与步骤表等长，各步成立与否
@@ -189,15 +196,13 @@ export function setupSteps(status, login, sent, pages, pluginDone) {
   // 登录直播平台：每个平台要么登录了，要么被配置明确关掉了（例如免登录模式）。
   // 一个平台插件都没装时这一步不是「没做完」，是没得做，因此算它已定
   const account = accounts.every(item => !!(item.loggedIn || item.disabledReason));
-  const streamer = ((status.users || []).length > 0);
-  const first = [lock, bot, account, streamer];
-  const test = sent === null || sent === undefined ? first.every(Boolean) : !!sent;
-  const builtin = {lock, bot, account, streamer, test};
+  const builtin = {lock, bot, account};
   const done = pluginDone || {};
-  return withPluginSteps(pages).map(step => {
-    if (step.plugin) return done[step.key] === true;
-    return !!builtin[step.key];
-  });
+  const table = withPluginSteps(pages);
+  const settled = step => (step.plugin ? done[step.key] === true : !!builtin[step.key]);
+  const before = table.filter(step => step.key !== 'test').map(settled);
+  const test = sent === null || sent === undefined ? before.every(Boolean) : !!sent;
+  return table.map(step => (step.key === 'test' ? test : settled(step)));
 }
 
 /**
@@ -215,7 +220,7 @@ export function setupDone(status, login, pages, pluginDone) {
 /**
  * 打开控制台该不该直接落到初始设置页
  * <p>
- * 只看五步完成了 0 步。配置文件在不在不算：同意使用协议就会写出 application.yml，
+ * 只看这几步完成了 0 步。配置文件在不在不算：同意使用协议就会写出 application.yml，
  * 若按文件在不在判，刚装好的机器会停在空首页。
  * <p>
  * 「稍后再说」由调用方自己记（只活在这一趟里），本函数不看。
@@ -240,10 +245,13 @@ function banner(status, chain, fresh) {
   const quiet = status.quiet || {};
 
   if (status.pushEnabled === false) {
+    // 🔴 这一条<b>不带按钮</b>：把推送恢复回来的那一趟已经随「今日」卡去了控制台插件，
+    // 而横条是宿主画的。留一个按钮在这里的话，卸掉那个插件之后它按下去是 404，
+    // 而屏幕上只有一句「切换失败」。开关就在同一页那张卡上，隔着一屏不到
     return {
       kind: 'paused', level: 'err',
       text: '已暂停，所有推送都会被丢弃',
-      action: {text: '恢复推送', href: ''},
+      action: null,
     };
   }
 
@@ -258,7 +266,7 @@ function banner(status, chain, fresh) {
   if (fresh) {
     return {
       kind: 'setup', level: 'warn',
-      text: '还没配置完 · 初始设置五步走完，就能收到第一条推送',
+      text: '还没配置完 · 初始设置走完，就能收到第一条推送',
       action: {text: '去初始设置', href: '#/setup'},
     };
   }
@@ -322,82 +330,6 @@ export function alertConfigured(status) {
 }
 
 /**
- * 「今日」第三格：账号维度的 @全体成员 已用
- * <p>
- * 数字取自 /api/at-all/quota。无机器人或接口失败时写「—」，不编一个 0/10——
- * 0 看起来像今天一次都没用，而「—」说的是这台机器此刻无从谈起。
- * {@code limited} 为假时不画分母：上限是 0 或负数在配额服务里都是「不限」，
- * 画成 3/0 会让人以为今天已经用完了。
- * @param quota /api/at-all/quota 回包；没有或失败时传 null
- * @return {{value: string, label: string, details: object[], more: number}}
- */
-export function atAllTile(quota) {
-  const empty = {value: '—', label: '@全体成员 已用', details: [], more: 0};
-  if (!quota || quota.success === false) return empty;
-
-  const bots = Array.isArray(quota.bots) ? quota.bots : [];
-  if (!bots.length) return empty;
-
-  const used = bots.reduce((n, item) => n + Number(item.used || 0), 0);
-  const capped = bots.every(item => item.limited);
-  const limit = bots.reduce((n, item) => n + (item.limited ? Number(item.limit || 0) : 0), 0);
-  const value = capped ? used + '/' + limit : String(used);
-
-  const sessions = Array.isArray(quota.sessions) ? quota.sessions.slice() : [];
-  sessions.sort((a, b) => Number(b.used || 0) - Number(a.used || 0));
-  const shown = sessions.slice(0, 5);
-  const kinds = new Set(sessions.map(item => item.platform || '').filter(Boolean));
-  const named = kinds.size >= 2;
-  return {
-    value,
-    label: '@全体成员 已用',
-    details: shown.map(item => {
-      const rowUsed = Number(item.used || 0);
-      const platform = item.platform || '';
-      const label = item.platformName || platform;
-      const prefix = named && platform ? label + ' 群 ' : '群 ';
-      return {
-        platform,
-        num: item.num,
-        used: rowUsed,
-        limit: Number(item.limit || 0),
-        limited: !!item.limited,
-        text: item.limited ? rowUsed + '/' + Number(item.limit || 0) : String(rowUsed),
-        who: prefix + item.num,
-      };
-    }),
-    more: Math.max(0, sessions.length - shown.length),
-  };
-}
-
-/**
- * 今日第三格的 HTML。expanded 只在有明细时有意义。
- * <p>
- * 有明细才是按钮（能开合、带 aria-expanded）；没明细与旁边两格一样是普通格，
- * 点了不会摊开任何东西。
- * @param tile {@link atAllTile} 的返回值
- * @param expanded 此刻是否摊开
- * @return {string}
- */
-export function todayAtAllMarkup(tile, expanded) {
-  const cell = tile || {value: '—', label: '@全体成员 已用', details: [], more: 0};
-  const details = cell.details || [];
-  const rows = details.map(item =>
-    '<div class="stat-row"><span>' + esc(item.who || ('群 ' + item.num)) + '</span><span>'
-    + esc(item.text) + '</span></div>').join('')
-    + (cell.more ? '<div class="stat-more">还有 ' + esc(cell.more) + ' 个群</div>' : '');
-  const inner = '<div class="stat-v">' + esc(cell.value) + '</div>'
-    + '<div class="stat-l">' + esc(cell.label) + '</div>'
-    + (rows ? '<div class="stat-drop">' + rows + '</div>' : '');
-  if (!details.length) {
-    return '<div class="stat">' + inner + '</div>';
-  }
-  return '<button class="stat stat-exp' + (expanded ? ' open' : '')
-    + '" type="button" id="today-atall" aria-expanded="' + (expanded ? 'true' : 'false') + '">'
-    + inner + '</button>';
-}
-
-/**
  * 待办
  *
  * 只放「要人动手，不动就一直不好」的事。会自己恢复的异常不进这里——
@@ -412,15 +344,19 @@ function todos(status, login, chain, fresh, pages, pluginDone, terms) {
   //    等于把一次运行期故障说成使用者没配好，而他明明配过——那条待办会在故障期间
   //    一直挂着催他重走一遍五步，而重走一遍并不能让登录态自己回来。
   if (fresh) {
-    const table = withPluginSteps(pages);
+    const table = withPluginSteps(pages, terms);
     const done = setupDone(status, login, pages, pluginDone);
     return [{
       key: 'setup',
       title: '初始设置还没完成 · ' + table.length + ' 步里完成了 ' + done + ' 步',
+      // 这一行按步骤表现拼，不写死一串步名：装了插件的机器上会多出几步
+      // （「第一位主播，推到哪」就是其中一步），写死的那份会漏掉它们，
+      // 而漏掉的表现是使用者照着这行字走完却发现进度条还差一格。
+      //
       // 不写「走完就生效，不用重启」：连接参数是进程启动时按配置注册的，
       // 第 2 步存下来之后要重启一次那条连接才真的建立起来。写一句不成立的承诺，
-      // 换来的是使用者在第 4 步对着一份空名单猜自己填错了什么
-      body: '上锁 → 连机器人 → 登录直播平台 → 加第一位主播 → 发一条试试。每一步做完当场落盘。',
+      // 换来的是使用者对着一份空名单猜自己填错了什么
+      body: table.map(step => step.title).join(' → ') + '。每一步做完当场落盘。',
       action: '去继续', href: '#/setup', soft: false,
     }];
   }
@@ -541,10 +477,9 @@ function shortStrip(timeline) {
  * @param status /api/status 回包
  * @param login /api/login 回包
  * @param timeline /api/timeline?date=今天 回包
- * @param quota /api/at-all/quota 回包；没有或失败时可不传
  * @return 首页视图模型
  */
-export function homeModel(status, login, timeline, quota, pages, pluginDone, terms) {
+export function homeModel(status, login, timeline, pages, pluginDone, terms) {
   const state = status || {};
   const account = login || {};
   const words = terms || {};
@@ -603,20 +538,11 @@ export function homeModel(status, login, timeline, quota, pages, pluginDone, ter
     banner: banner(state, chain, fresh),
     todos: todos(state, account, chain, fresh, pages, pluginDone, words),
     now: now(state, chain, fresh),
-    today: {
-      sent: (state.today && state.today.sent) || 0,
-      failed: (state.today && state.today.failed) || 0,
-      atAll: atAllTile(quota),
-    },
     events: shortStrip(timeline),
     // 空态那句话分两种：刚装好的机器与「今天真的没发生什么」不是一回事
     eventsEmpty: fresh
       ? '今天还没有任何事件。配置完成、收到第一条推送之后，这里会一条条记下来。'
       : '这一天没有记录。',
-    // 刻意不叫 pushEnabled：那个名字属于 store 上的共享状态，
-    // 界面文件里裸着出现即为 ReferenceError，因此有一条判据在盯着它（见 ConfigUiFrontendTest）。
-    // 这里换个名字，而不是去给那条判据开一个豁免——豁免多了它就形同虚设
-    pushOn: state.pushEnabled !== false,
   };
 }
 

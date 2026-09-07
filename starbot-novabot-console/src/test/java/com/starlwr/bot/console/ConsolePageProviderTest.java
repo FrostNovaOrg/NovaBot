@@ -97,6 +97,58 @@ class ConsolePageProviderTest {
         }
     }
 
+    /**
+     * 向导「主播」步与首页「今日」卡：两处落位、两个脚本
+     * <p>
+     * 两件一起量，因为它们是同一件事的两面：产品形态从宿主搬进插件之后，
+     * <b>宿主那边删干净了、这边没登记上</b>的表现是屏幕上少一块，而不是任何一处报错——
+     * 向导少一步就直接跳到「发一条试试」，首页少一张卡就只是空了一截。
+     * <p>
+     * 落位各自要紧：向导步走 {@code SETUP_STEP}（宿主的向导页自己去取），
+     * 首页卡走 {@code HOME_CARD}（挂在探针卡后面）。填成缺省的 {@code SETTINGS} 的话，
+     * 两块都会跑到设置页「高级」折页里去，而那里根本不该有它们。
+     */
+    @Test
+    @DisplayName("SETUP_STEP 槽登记主播步、HOME_CARD 槽登记今日卡，两个 script 在 classpath 可读")
+    void setupStepAndHomeCardAreRegistered() {
+        List<String> red = new ArrayList<>();
+
+        try {
+            ConsolePageProvider step = new SetupStreamerStepProvider();
+            assertEquals("streamer", step.id(), "向导步的标识必须是 streamer，步骤表上的 key 就是它");
+            assertEquals(ConsolePageSlot.SETUP_STEP, step.slot(), "主播步挂向导步槽");
+            assertEquals("setup-streamer.js", step.script(), "主脚本必须是 setup-streamer.js");
+            assertEquals(List.of("streamer"),
+                    ConsolePages.valid(List.of(step)).stream().map(ConsolePageProvider::id).toList(),
+                    "内置向导步闭集不得再拦 streamer，否则这一步登记不上");
+        } catch (Throwable t) {
+            red.add("① " + t);
+        }
+
+        try {
+            ConsolePageProvider card = new TodayHomeCardProvider();
+            assertEquals("today", card.id(), "首页卡的标识必须是 today，它会原样成为那张卡的 DOM id");
+            assertEquals(ConsolePageSlot.HOME_CARD, card.slot(), "今日卡挂首页卡槽");
+            assertEquals("today.js", card.script(), "主脚本必须是 today.js");
+            assertEquals(List.of("today-model.js"), card.assets(),
+                    "附属脚本必须登记 today-model.js，否则 import 解析到 404");
+        } catch (Throwable t) {
+            red.add("② " + t);
+        }
+
+        try {
+            assertReadable("config-ui-pages/setup-streamer.js");
+            assertReadable("config-ui-pages/today.js");
+            assertReadable("config-ui-pages/today-model.js");
+        } catch (Throwable t) {
+            red.add("③ " + t);
+        }
+
+        if (!red.isEmpty()) {
+            fail(red.size() + " 问红：" + String.join("；", red));
+        }
+    }
+
     private static void assertReadable(String resource) {
         InputStream in = ConsolePageProviderTest.class.getClassLoader().getResourceAsStream(resource);
         assertTrue(in != null, resource + " 在 classpath 上读不到");

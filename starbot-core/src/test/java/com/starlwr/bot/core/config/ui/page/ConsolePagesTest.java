@@ -297,17 +297,22 @@ class ConsolePagesTest {
     /**
      * 向导步骤落位：标识与内置步骤键撞车则弃掉
      * <p>
-     * 插件步的标识会原样成为步骤表上的 key。撞上 lock／bot／account／streamer／test
+     * 插件步的标识会原样成为步骤表上的 key。撞上 lock／bot／account／test
      * 就会盖住内置那一步，和顶级页撞内置页名是同一形。
+     * <p>
+     * 🔴 {@code streamer} 是这里的第二个阴性对照，且它是<b>点名要留下</b>的那个：
+     * 「第一位主播，推到哪」已随控制台插件走，用的正是这个键。闭集里再留着它的话，
+     * 那一步会在登记时被静默弃掉，而屏幕上的表现是向导少了一步、日志里只有一行 warn。
      */
     @Test
-    @DisplayName("向导步骤：撞内置步骤名弃掉")
+    @DisplayName("向导步骤：撞内置步骤名弃掉，streamer 与 danmu 都留下")
     void setupStepSlotDropsBuiltinStepIds() {
         List<ConsolePageProvider> kept = ConsolePages.valid(list(
-                new Slotted("streamer", "主播", "streamer-step.js", 50, ConsolePageSlot.SETUP_STEP),
+                new Slotted("account", "登录", "account-step.js", 50, ConsolePageSlot.SETUP_STEP),
+                new Slotted("streamer", "主播", "setup-streamer.js", 40, ConsolePageSlot.SETUP_STEP),
                 new Slotted("danmu", "弹幕", "danmu.js", 50, ConsolePageSlot.SETUP_STEP)));
-        assertEquals(List.of("danmu"), kept.stream().map(ConsolePageProvider::id).toList(),
-                "slot=SETUP_STEP 且标识为 streamer 的应当弃掉，danmu 是阴性对照应当保留");
+        assertEquals(List.of("streamer", "danmu"), kept.stream().map(ConsolePageProvider::id).toList(),
+                "slot=SETUP_STEP 且标识为 account 的应当弃掉；streamer 与 danmu 是阴性对照应当保留");
     }
 
     /**

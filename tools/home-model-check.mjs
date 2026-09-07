@@ -12,7 +12,7 @@
  * 退码 0 即九档全对；任一档对不上打印差异并以 1 退出。
  */
 
-import {homeModel, PROBE_ANCHOR, setupDone, setupSteps, shouldOpenSetup, stationHref, todayAtAllMarkup, withPluginSteps} from '../starbot-core/src/main/resources/config-ui/home-model.js';
+import {homeModel, PROBE_ANCHOR, setupDone, setupSteps, shouldOpenSetup, stationHref, withPluginSteps} from '../starbot-core/src/main/resources/config-ui/home-model.js';
 
 /** 探针的原样形态，与 /api/status 里 health 那一项逐字段同形 */
 function probe(name, scope, level, summary, advice, loginState) {
@@ -242,9 +242,12 @@ if (bad.length || hrefBad.length) {
 console.log('本机站\t' + stationHref('self') + '\t锚 #' + PROBE_ANCHOR + '\t绿');
 console.log('\n九档全对，本机站落到首页探针区');
 
-// ── 「今日」第三格与 Webhook 待办 ──────────────────────────────────────
-// 这两块是后补上的：额度接口与告警三卡交付之后，首页才有真数据可摆。
+// ── Webhook 待办与步骤表 ──────────────────────────────────────────────
 // 判法只留 home-model 一份。下面逐格喂回包对答案，不碰 DOM。
+//
+// 「今日」第三格那一族（额度三态、明细排序与截断、开合 HTML）不在这里：那张卡随
+// 控制台插件走了，量它的是 tools/today-model-check.mjs。搬过去而不是在这里留一份
+// 转述——留下来的那一份会量着一个没人调的函数，而它照样全绿。
 
 const tileFails = [];
 let tileChecks = 0;
@@ -254,126 +257,6 @@ function same(actual, expected, what) {
   const a = JSON.stringify(actual);
   const b = JSON.stringify(expected);
   if (a !== b) tileFails.push(what + '：得到 ' + a + '，应为 ' + b);
-}
-
-function tileOf(quota) {
-  const model = homeModel(status(), login(), timeline(), quota);
-  return model.today.atAll || {value: null, label: null, details: [], more: 0};
-}
-
-function quota(bots, sessions) {
-  return {success: true, date: '2026-09-04', bots: bots || [], sessions: sessions || []};
-}
-
-function bot(over) {
-  return Object.assign({platform: 'onebot', used: 0, limit: 10, limited: true}, over);
-}
-
-function group(num, used, over) {
-  return Object.assign({platform: 'onebot', num, used, limit: 20, limited: true}, over);
-}
-
-// 格三态
-same(tileOf(quota([bot({used: 3, limit: 10, limited: true})])).value, '3/10',
-  '限额：账号已用画分母');
-same(tileOf(quota([bot({used: 3, limit: 0, limited: false})])).value, '3',
-  '不限额：只显已用、不画分母');
-same(tileOf(quota([])).value, '—', '无机器人显「—」');
-same(tileOf(null).value, '—', '接口失败显「—」');
-same(tileOf(undefined).value, '—', '没交额度回包显「—」');
-same(tileOf({success: false}).value, '—', '回包声明失败显「—」');
-
-// 多账号合计：两路都限额则分母相加；一路不限额则整格不画分母
-same(tileOf(quota([
-  bot({platform: 'a', used: 3, limit: 10, limited: true}),
-  bot({platform: 'b', used: 2, limit: 10, limited: true}),
-])).value, '5/20', '两个限额账号合计已用与上限');
-same(tileOf(quota([
-  bot({platform: 'a', used: 3, limit: 10, limited: true}),
-  bot({platform: 'b', used: 2, limit: 0, limited: false}),
-])).value, '5', '有一个不限额则整格不画分母');
-
-// 明细：按 used 降序、最多 5 行、其余报还有 N 个群
-const six = tileOf(quota([bot({used: 1})], [
-  group(11, 1), group(12, 8), group(13, 3), group(14, 8), group(15, 0), group(16, 5),
-]));
-same(six.details.map(item => item.num), [12, 14, 16, 13, 11],
-  '明细按已用降序取前 5，used 相同的保持原序');
-same(six.more, 1, '第 6 个群进「还有 N 个群」');
-same((six.details[0] || {}).text, '8/20', '限额群的明细也画分母');
-same((tileOf(quota([bot()], [group(11, 4, {limited: false, limit: 0})])).details[0] || {}).text, '4',
-  '不限额群的明细不画分母');
-same(tileOf(quota([bot()], [group(11, 1)])).more, 0, '不超过 5 个群时没有「还有」');
-
-same(tileOf(quota([bot({used: 3})])).label, '@全体成员 已用', '格的标签');
-
-same(tileOf(quota([bot({used: 3, limit: 10, limited: true})])).value.includes('／'), false,
-  '限额格不含全角斜线');
-same((six.details[0] || {}).text.includes('／'), false, '明细不含全角斜线');
-
-same((tileOf(quota([bot({used: 1})], [group(11, 1, {platform: 'qq-onebot'})])).details[0] || {}).who,
-  '群 11', '单平台无前缀');
-same((tileOf(quota([bot({used: 1})], [
-  group(11, 3, {platform: 'qq-onebot', platformName: 'QQ'}),
-  group(12, 1, {platform: 'other-bot'}),
-])).details[0] || {}).who, 'QQ 群 11', '双平台 QQ 前缀');
-same((tileOf(quota([bot({used: 1})], [
-  group(11, 3, {platform: 'alpha-bot'}),
-  group(12, 1, {platform: 'beta-bot'}),
-])).details[0] || {}).who, 'alpha-bot 群 11', '未知平台标识');
-
-const twoPlat = tileOf(quota([bot({used: 1})], [
-  group(11, 1, {platform: 'alpha-bot', platformName: '甲'}),
-  group(12, 1, {platform: 'beta-bot', platformName: '乙'}),
-]));
-same((twoPlat.details[0] || {}).who !== '群 11' && (twoPlat.details[1] || {}).who !== '群 12', true,
-  '两平台各 1 行：两行 who 均带前缀');
-same((twoPlat.details[0] || {}).who, '甲 群 11', '两平台各 1 行：第一行人话前缀');
-same((twoPlat.details[1] || {}).who, '乙 群 12', '两平台各 1 行：第二行人话前缀');
-
-const hiddenKind = tileOf(quota([bot({used: 1})], [
-  group(11, 10, {platform: 'alpha-bot', platformName: '甲'}),
-  group(12, 9, {platform: 'alpha-bot', platformName: '甲'}),
-  group(13, 8, {platform: 'alpha-bot', platformName: '甲'}),
-  group(14, 7, {platform: 'alpha-bot', platformName: '甲'}),
-  group(15, 6, {platform: 'alpha-bot', platformName: '甲'}),
-  group(16, 1, {platform: 'beta-bot', platformName: '乙'}),
-]));
-same((hiddenKind.details[0] || {}).who, '甲 群 11',
-  '前 5 行同平台、第 6 行另一平台：按全量判定前缀');
-same(hiddenKind.more, 1, '第 6 个群仍进「还有」');
-
-const twin = tileOf(quota([bot({used: 4})], [
-  group(11, 3, {platform: 'alpha-bot'}),
-  group(11, 1, {platform: 'beta-bot'}),
-]));
-const whoA = (twin.details[0] || {}).who;
-const whoB = (twin.details[1] || {}).who;
-tileChecks++;
-if (whoA === whoB) {
-  tileFails.push('同号异平台两条明细文本不应相同：得到 '
-    + JSON.stringify(whoA) + ' 与 ' + JSON.stringify(whoB));
-}
-const twinHtml = todayAtAllMarkup(twin, false);
-tileChecks++;
-if (!(whoA && whoB && twinHtml.includes(String(whoA)) && twinHtml.includes(String(whoB)))) {
-  tileFails.push('明细 HTML 应带上两条不同的平台群名，得到 ' + twinHtml);
-}
-
-const emptyHtml = todayAtAllMarkup(tileOf(quota([bot({used: 0})])), false);
-tileChecks++;
-if (emptyHtml.includes('<button')) {
-  tileFails.push('无明细不应渲染 button，得到 ' + emptyHtml);
-}
-const closedHtml = todayAtAllMarkup(tileOf(quota([bot({used: 1})], [group(11, 1)])), false);
-tileChecks++;
-if (!closedHtml.includes('aria-expanded="false"')) {
-  tileFails.push('有明细收起时应 aria-expanded="false"，得到 ' + closedHtml);
-}
-const openedHtml = todayAtAllMarkup(tileOf(quota([bot({used: 1})], [group(11, 1)])), true);
-tileChecks++;
-if (!openedHtml.includes('aria-expanded="true"')) {
-  tileFails.push('有明细摊开后应 aria-expanded="true"，得到 ' + openedHtml);
 }
 
 // 待办四态。催的是掉线时还有一路能叫到人，QQ 配没配都不算出。
@@ -431,34 +314,42 @@ function blankLogin() {
 }
 
 same(shouldOpenSetup(null, blankLogin()), false, '还没取到回包时不拦——配好的机器不能先闪初始设置');
-same(setupDone(freshStatus, blankLogin()), 0, '同意协议后五步仍是 0（文件在不在不算）');
-same(shouldOpenSetup(freshStatus, blankLogin()), true, '五步全没做：进首页该转到初始设置');
-same(shouldOpenSetup(status(), login()), false, '五步都齐了：不转');
+same(setupDone(freshStatus, blankLogin()), 0, '同意协议后仍是 0 步（文件在不在不算）');
+same(shouldOpenSetup(freshStatus, blankLogin()), true, '一步都没做：进首页该转到初始设置');
+same(shouldOpenSetup(status(), login()), false, '几步都齐了：不转');
 same(shouldOpenSetup(Object.assign({}, freshStatus, {locked: true}), blankLogin()), false,
   '只上了锁也算做了一步，不转');
 same(shouldOpenSetup(freshStatus, login()), false, '已经登录直播平台：不是 0 步');
 
 const PLUGIN_PAGE = {id: 'danmu', displayName: '弹幕', order: 50, slot: 'setup_step'};
 same(withPluginSteps([PLUGIN_PAGE]).map(step => step.key),
-  ['lock', 'bot', 'account', 'streamer', 'danmu', 'test'],
-  '步骤表由本文件导出，插件步插在主播之后、试发之前');
-same(setupSteps(status(), login(), true).every(Boolean), true, '无插件时五步全真');
+  ['lock', 'bot', 'account', 'danmu', 'test'],
+  '步骤表由本文件导出，插件步插在登录直播平台之后、试发之前');
+same(setupSteps(status(), login(), true).every(Boolean), true, '无插件时内置四步全真');
 same(setupSteps(status(), login(), true, [PLUGIN_PAGE], {}).every(Boolean), false,
   'pluginDone 假时不全真');
 same(setupSteps(status(), login(), true, [PLUGIN_PAGE], {danmu: true}).every(Boolean), true,
   'pluginDone 真时与无插件时同答案');
-same(setupDone(status(), login(), [PLUGIN_PAGE], {}), 5,
-  'pluginDone 假时完成数不含未完成的插件步');
-same(setupDone(status(), login(), [PLUGIN_PAGE], {danmu: true}), 6,
+// 3 而不是 4：末步的事实不交时按「前面几步都成立」算，插件步没完成时它也跟着不成立。
+// 这里若写成 4，等于承认插件步可以被末步绕过去
+same(setupDone(status(), login(), [PLUGIN_PAGE], {}), 3,
+  'pluginDone 假时完成数既不含插件步，也不含被它拖住的末步');
+same(setupDone(status(), login(), [PLUGIN_PAGE], {danmu: true}), 5,
   '首页进度计数含插件步');
-same(setupDone(status(), login()), 5, '无插件时完成数一字不变');
+same(setupDone(status(), login()), 4, '无插件时完成数一字不变');
+// 末步不许绕过插件步自己变绿：sent 不交时它按「前面几步都成立」算，
+// 而主播那一步已经是插件带来的——按写死的前四位算的话，这一格会是 true
+same(setupSteps(status(), login(), null, [PLUGIN_PAGE], {}).at(-1), false,
+  '末步不交事实时，插件步没完成它就不算成立');
+same(setupSteps(status(), login(), null, [PLUGIN_PAGE], {danmu: true}).at(-1), true,
+  '插件步完成后末步才按「前面都成立」算');
 
 if (tileFails.length) {
-  console.error('\n今日格／待办对不上 ' + tileFails.length + ' 处（共跑了 ' + tileChecks + ' 格）：');
+  console.error('\n待办／步骤表对不上 ' + tileFails.length + ' 处（共跑了 ' + tileChecks + ' 格）：');
   tileFails.forEach(line => console.error('  ' + line));
   process.exit(1);
 }
-console.log('今日格／待办\t跑了 ' + tileChecks + ' 格，全绿');
+console.log('待办／步骤表\t跑了 ' + tileChecks + ' 格，全绿');
 
 // ── terms 三档：有词＝适配器七键／无词＝{}／只缺 bot.impl ────────────────
 // 三问各自 try/catch，末尾汇总，不得短路。待办标题那两问改走这里。
@@ -488,7 +379,7 @@ function mustEq(actual, expected, what) {
   }
 }
 function homeOf(patch, terms) {
-  return homeModel(status(patch), login(), timeline(), undefined, undefined, undefined, terms);
+  return homeModel(status(patch), login(), timeline(), undefined, undefined, terms);
 }
 function botDownPatch() {
   return {

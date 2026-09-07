@@ -60,9 +60,12 @@ public final class ConsolePages {
      * <p>
      * 向导步骤插件页的标识会原样成为步骤表上的 key，与这些名字撞车就会盖住内置步骤。
      * 只拦 {@link ConsolePageSlot#SETUP_STEP}：其它落位不占这一段。
+     * <p>
+     * {@code streamer} 不在这里：「第一位主播，推到哪」已随控制台插件走，它正是要用这个键
+     * 登记进来的。留在名单上的话，那一步会被这道关口丢掉，而向导只是少一步——不报任何错。
      */
     private static final Set<String> BUILTIN_SETUP_STEP_IDS = Set.of(
-            "lock", "bot", "account", "streamer", "test");
+            "lock", "bot", "account", "test");
 
     /**
      * 已通过登记的一项：注册项本身，加上登记时读到的标识与顺序值

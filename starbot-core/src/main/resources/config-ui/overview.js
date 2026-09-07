@@ -6,7 +6,7 @@
  */
 
 import {$, api, clock, el, esc, markDirty, say, today} from './core.js';
-import {homeModel, stationHref, todayAtAllMarkup} from './home-model.js';
+import {homeModel, stationHref} from './home-model.js';
 import {considerSetupRedirect, pageStatus, refreshPages} from './main.js';
 import {store} from './store.js';
 
@@ -83,17 +83,12 @@ function renderBanner(model) {
   text.textContent = banner.text;
   row.appendChild(text);
 
+  // 只画有去处的那一条。没有去处的横条只说事，不办事——「已暂停」那一条要办的事
+  // 已经随「今日」卡去了控制台插件，画一颗这里点不动的按钮比不画更费解
   if (banner.action && banner.action.href) {
     const go = el('a', 'b-sp');
     go.href = banner.action.href;
     go.textContent = banner.action.text;
-    row.appendChild(go);
-  } else if (banner.action) {
-    // 「恢复推送」没有去处，它就在这里当场办
-    const go = el('button', 'b-sp');
-    go.type = 'button';
-    go.textContent = banner.action.text;
-    go.addEventListener('click', togglePush);
     row.appendChild(go);
   }
 
@@ -153,31 +148,6 @@ function renderNow(model) {
   }
 
   box.innerHTML = parts.join('');
-}
-
-/** 今日三个数。第三格点开是各群明细，没有数据时写「—」，不编一个分数 */
-function renderToday(model) {
-  const atAll = model.today.atAll || {value: '—', label: '@全体成员 已用', details: [], more: 0};
-  const cells = [
-    {value: model.today.sent, label: '推送（条）'},
-    {value: model.today.failed, label: '失败（条）'},
-    {value: atAll.value, label: atAll.label, tile: atAll},
-  ];
-  $('#today-stats').innerHTML = cells.map(cell => {
-    if (!cell.tile) {
-      return '<div class="stat"><div class="stat-v">' + esc(cell.value) + '</div>'
-        + '<div class="stat-l">' + esc(cell.label) + '</div></div>';
-    }
-    return todayAtAllMarkup(cell.tile, false);
-  }).join('');
-
-  const btn = $('#today-atall');
-  if (btn && (atAll.details || []).length) {
-    btn.addEventListener('click', () => {
-      const open = btn.classList.toggle('open');
-      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-    });
-  }
 }
 
 /** 六项探针 */
@@ -241,40 +211,36 @@ async function pluginFacts(status, login) {
  * @param status /api/status 回包
  * @param login /api/login 回包
  * @param timeline /api/timeline 回包
- * @param quota /api/at-all/quota 回包；没有或失败时可不传
  * @param pages /api/pages 里 slot=setup_step 的清单
  * @param pluginDone 插件步事实
  */
-function renderHome(status, login, timeline, quota, pages, pluginDone) {
-  const model = homeModel(status, login, timeline, quota, pages, pluginDone, store.vocab);
+function renderHome(status, login, timeline, pages, pluginDone) {
+  const model = homeModel(status, login, timeline, pages, pluginDone, store.vocab);
   renderBanner(model);
   renderLinkMap(model);
   renderTodos(model);
   renderNow(model);
-  renderToday(model);
   renderProbes(model);
   renderStrip(model);
-  renderPushSwitch(model.pushOn);
 }
 
 /**
- * 取四份数据再一次性画完
+ * 取三份数据再一次性画完
  *
- * 四个请求并发发出、一起等：分几次画的话，链路已经按新的一份数据变红，
+ * 三个请求并发发出、一起等：分几次画的话，链路已经按新的一份数据变红，
  * 而待办还是上一份算出来的——两块说的是同一件事，屏幕上却互相矛盾。
- * 额度那一份单独失败时其余三份照画，那一格写「—」，不让整页跟着空白。
+ * 插件带来的首页卡各自取自己那一份，由随后的 refreshPages 通知它们。
  * @return 这一趟取到的运行状态，取不到时为 null
  */
 export async function refreshHome() {
   try {
-    const [status, login, timeline, quota] = await Promise.all([
+    const [status, login, timeline] = await Promise.all([
       api('/status'), api('/login'), api('/timeline?date=' + today()),
-      api('/at-all/quota').catch(() => null),
     ]);
     const extra = await pluginFacts(status, login);
     if (considerSetupRedirect(status, login)) return status;
     renderStatus(status);
-    renderHome(status, login, timeline, quota, extra.pages, extra.pluginDone);
+    renderHome(status, login, timeline, extra.pages, extra.pluginDone);
     refreshPages();
     return status;
   } catch (e) {
@@ -283,35 +249,11 @@ export async function refreshHome() {
   }
 }
 
-// 推送记录那张表随推送页改版挪去了通道页的「推什么」那一段：
-// 每个通道各看自己的 5 条，见 push.js 的 sectionNotices。整份表不再有摆放的地方——
-// 「刚才那条推了吗」问的总是某一个群，而整份表要人自己在里面找。
-
-function renderPushSwitch(enabled) {
-  store.pushEnabled = enabled !== false;
-  $('#toggle-push').textContent = store.pushEnabled ? '暂停全部推送' : '恢复推送';
-  $('#push-hint').textContent = store.pushEnabled ? '当前正常推送' : '已暂停，所有推送都会被丢弃';
-  $('#push-hint').style.color = store.pushEnabled ? '' : 'var(--err)';
-}
-
-export async function togglePush() {
-  const next = !store.pushEnabled;
-  $('#toggle-push').disabled = true;
-  try {
-    const res = await api('/push/toggle', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled: next })
-    });
-    say(res.message, res.success ? 'ok' : 'err');
-    // 整页重画而不是只把开关拨过去：暂停会同时改横条、链路 QQ 段与「现在」那张卡，
-    // 只拨开关的话，屏幕上会出现「已暂停」与一段绿灯并存的画面
-    await refreshHome();
-  } catch (e) {
-    say('切换失败：' + e.message, 'err');
-  }
-  $('#toggle-push').disabled = false;
-}
+// 推送记录那张表随推送页改版挪去了通道页的「推什么」那一段：每个通道各看自己的 5 条。
+// 整份表不再有摆放的地方——「刚才那条推了吗」问的总是某一个群，而整份表要人自己在里面找。
+//
+// 「今日」那三个数与推送总开关随控制台插件走：它们问的是推送这件事今天怎么样，
+// 而恢复推送那一趟本来就在那个插件里。
 
 /**
  * 侧栏底部的版本位

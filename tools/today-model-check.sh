@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# 初始设置页视图模型尺：语法 + 至少三档对照
+# 首页「今日」卡那两个前端模块的语法 + 判定各档
 #
-# 语法那一串连插件带来的向导步一起过（setup-streamer.js）：它与本页的其余几步
-# 画在同一个容器里，坏了的表现是那一步空着，而不是任何一处报错。
+# 这张卡（三个数与推送总开关）住在控制台插件里。行为判据由 today-model-check.mjs 逐格量：
+# 三个数格该写什么、「—」与 0 分不分得开、不限额那一档画不画分母、明细怎么排怎么截、
+# 群名前面加不加平台前缀。它们全是纯函数，在真机上凑齐一次的代价极高——
+# 要点出「不限额不画分母」得先去线上把配额上限改成 0。
 #
-# 五步放行、进度条记号、从哪一步接着走，全是纯函数
-# （config-ui/setup-model.js，不碰 DOM）。本尺喂它几份草稿对答案，
-# 并顺带把这一页那几个前端模块过一遍语法。
+# 顺带把这一卡的渲染那一份（today.js）过一遍语法：它碰不到夹具（满篇 DOM），
+# 而它是控制台按注册清单装上来的——一个语法错会让这张卡载入失败，
+# 屏幕上只剩一句与出错文件无关的报错。
 #
 # 🔴 用 `node --input-type=module --check < 文件` 而不是 `node --check 文件`：
 #    后者对含 import 的 .js 一律返 0（Node v22 实测），也就是说那一格从来没能红过——
@@ -25,12 +27,12 @@ if ! command -v node > /dev/null 2>&1; then
     exit 2
 fi
 
-UI="starbot-core/src/main/resources/config-ui"
 PAGES="starbot-novabot-console/src/main/resources/config-ui-pages"
 RED=0
 SYNTAX_RED=0
 
 # —— 阴性对照：这一格自己得先证明它分得出红绿 ——
+# 放在语法检查之前：这几行要是恒绿，下面那一串「语法 绿」一个字也不作数
 if printf 'import {a} from "./x.js";\nconst b = ;;;\n' | node --input-type=module --check > /dev/null 2>&1; then
     echo "阴性对照 红：一段必定语法错的模块被判成了过，这一格量不动" >&2
     RED=1
@@ -39,9 +41,8 @@ else
 fi
 
 # —— 语法 ——
-# 主播那一步住在控制台插件里，语法一样要过：它是向导按注册清单装上来的，
-# 一个语法错的表现是那一步画不出来，而屏幕上只写「这一步的界面没装上」
-for f in "$UI"/setup-model.js "$UI"/setup.js "$PAGES"/setup-streamer.js; do
+# 逐个跑而不是一次传多个：一次传一串时，后面那些是「查过了」还是「没轮到」分不出来
+for f in "$PAGES"/today-model.js "$PAGES"/today.js; do
     if node --input-type=module --check < "$f" > /dev/null 2>&1; then
         echo "语法 绿 $f"
     else
@@ -53,7 +54,8 @@ for f in "$UI"/setup-model.js "$UI"/setup.js "$PAGES"/setup-streamer.js; do
 done
 
 # —— 各档 ——
-node tools/setup-model-check.mjs
+# 退码单独读：写成管道时 $? 读到的是管道末端那个命令的退码，与被测无关
+node tools/today-model-check.mjs
 if [ $? -ne 0 ]; then
     RED=1
 fi

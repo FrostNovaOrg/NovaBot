@@ -1,7 +1,7 @@
 /**
- * 向导插件步：源码契约、步骤表插位、事实两态
+ * 向导插件步：源码契约、步骤表插位、事实两态、放行与跳过的转交
  *
- * 七问各自 try/catch，末尾汇总红格数，不靠 assert 短路。
+ * 九问各自 try/catch，末尾汇总红格数，不靠 assert 短路。
  * 用 node 直接跑：
  *   node tools/setup-plugin-step-fixture.mjs
  * 入口：bash tools/setup-plugin-step-fixture.sh
@@ -31,6 +31,18 @@ function ask(name, fn) {
 
 function src(name) {
   return readFileSync(join(ui, name), 'utf8');
+}
+
+/** 从声明处截到下一个顶层 function 之前 */
+function fnBody(text, marker) {
+  const from = text.indexOf(marker);
+  if (from < 0) return '';
+  let to = text.length;
+  const next = text.indexOf('\nfunction ', from + 1);
+  const nextAsync = text.indexOf('\nasync function ', from + 1);
+  if (next >= 0) to = Math.min(to, next);
+  if (nextAsync >= 0) to = Math.min(to, nextAsync);
+  return text.slice(from, to);
 }
 
 function count(hay, needle) {
@@ -71,18 +83,18 @@ ask("③ home-model.js 不含 from './setup-model.js'", () => {
   }
 });
 
-ask('④ 假页清单插在主播之后、试发之前', () => {
+ask('④ 假页清单插在登录直播平台之后、试发之前', () => {
   const pages = [{id: 'danmu', displayName: '弹幕', order: 50, slot: 'setup_step'}];
   const table = withPluginSteps(pages);
   const keys = table.map(step => step.key);
-  if (table.length !== 6) {
-    throw new Error('步数得到 ' + table.length + '，应为 6');
+  if (table.length !== 5) {
+    throw new Error('步数得到 ' + table.length + '，应为 5');
   }
-  const streamerAt = keys.indexOf('streamer');
+  const accountAt = keys.indexOf('account');
   const danmuAt = keys.indexOf('danmu');
   const testAt = keys.indexOf('test');
-  if (!(streamerAt >= 0 && danmuAt === streamerAt + 1 && testAt === danmuAt + 1)) {
-    throw new Error('键序得到 ' + JSON.stringify(keys) + '，danmu 应在 streamer 后、test 前');
+  if (!(accountAt >= 0 && danmuAt === accountAt + 1 && testAt === danmuAt + 1)) {
+    throw new Error('键序得到 ' + JSON.stringify(keys) + '，danmu 应在 account 后、test 前');
   }
 });
 
@@ -92,7 +104,6 @@ ask('⑤ pluginDone 两态下 allDone 相反', () => {
   const status = {
     locked: true,
     health: [{scope: 'BOT', level: 'OK', name: '机器人连接'}],
-    users: [{uid: 1}],
   };
   const login = {accounts: [{loggedIn: true}]};
   const yes = allDone(stepFacts(status, login, true, {danmu: true}, pages), table);
@@ -126,17 +137,10 @@ ask("⑥ main.js 含 SLOT_SETUP_STEP = 'setup_step' 且分派处引用它", () =
 });
 
 ask('⑦ skippable 步 foot 出跳过、非 skippable 不出', () => {
-  const text = src('setup.js');
-  const from = text.indexOf('function renderPlugin(');
-  if (from < 0) {
+  const body = fnBody(src('setup.js'), 'function renderPlugin(');
+  if (!body) {
     throw new Error('找不到 renderPlugin');
   }
-  let to = text.length;
-  const next = text.indexOf('\nfunction ', from + 1);
-  const nextAsync = text.indexOf('\nasync function ', from + 1);
-  if (next >= 0) to = Math.min(to, next);
-  if (nextAsync >= 0) to = Math.min(to, nextAsync);
-  const body = text.slice(from, to);
   if (!body.includes('skippable')) {
     throw new Error('renderPlugin 未读 skippable');
   }
@@ -145,6 +149,46 @@ ask('⑦ skippable 步 foot 出跳过、非 skippable 不出', () => {
   }
   if (body.includes('foot(host, null,')) {
     throw new Error('renderPlugin 的 foot 仍写死 onSkip=null，skippable 步出不了跳过');
+  }
+});
+
+ask('⑧ 放行与跳过都转交给那一步自己判', () => {
+  const text = src('setup.js');
+  const body = fnBody(text, 'function renderPlugin(');
+  if (!body.includes('pluginNext(') || !body.includes('skipPlugin(')) {
+    throw new Error('renderPlugin 的 foot 没转交 next／skip，插件步会变成点一下就过');
+  }
+  const next = fnBody(text, 'async function pluginNext(');
+  if (!next || !next.includes('mod.next(') || !next.includes('return true')) {
+    throw new Error('pluginNext 没问过 mod.next，或没有「插件步不报 next 就放行」的兜底');
+  }
+  const skip = fnBody(text, 'async function skipPlugin(');
+  if (!skip || !skip.includes('mod.skip(') || !skip.includes('finishStep')) {
+    throw new Error('skipPlugin 没问过 mod.skip，或问完不跳');
+  }
+});
+
+ask('⑨ 走完那一页的去处问插件要，核心不自己拼地址', () => {
+  const body = fnBody(src('setup.js'), 'function renderDone(');
+  if (!body) {
+    throw new Error('找不到 renderDone');
+  }
+  if (!body.includes('doneLink')) {
+    throw new Error('renderDone 没问过插件步的 doneLink');
+  }
+  if (!body.includes('link.href')) {
+    throw new Error('renderDone 没用插件给的那个地址，等于白问了一趟');
+  }
+  // 这一段里写得出的地址只许是核心自己那几条路由。插件页的地址由那一页自己拼，
+  // 核心抄一份的话，两份分叉的那天点进去会落到别处，而屏幕上看不出任何异常
+  const CORE_ROUTES = ['home', 'log', 'links', 'settings', 'setup'];
+  const written = [...body.matchAll(/'#\/([A-Za-z0-9_-]*)/g)].map(m => m[1]);
+  const stray = written.filter(name => !CORE_ROUTES.includes(name));
+  if (stray.length) {
+    throw new Error('renderDone 自己拼了非核心路由的地址：' + JSON.stringify(stray));
+  }
+  if (!written.length) {
+    throw new Error('地址扫描 0 命中：「进控制台」那一句应留在这里，写法已变而扫描没跟上');
   }
 });
 

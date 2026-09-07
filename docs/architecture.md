@@ -299,7 +299,7 @@ systemd 下的进程树也不正确。
 
 | 扩展点 | 核心接口（相对路径） | 现有实现（模块） | 一句话 |
 |---|---|---|---|
-| 控制台页 | `config/ui/page/ConsolePageProvider` | `BilibiliConsolePageProvider` 与页面脚本 `config-ui-pages/bilibili.js`（starbot-bilibili）；主播页 `StreamersConsolePageProvider`、推送页 `PushConsolePageProvider`（starbot-novabot-console） | 往控制台添自己的页；挂在连接页、设置页、顶级页、首页卡还是向导步骤由 `ConsolePageSlot` 申报；除 `script()` 外可再报 `assets()`（同目录其它 `.js`，按登记名取）。顶级页的 `refresh` 会收到 `{sub, tail}`（地址栏第二、三段） |
+| 控制台页 | `config/ui/page/ConsolePageProvider` | `BilibiliConsolePageProvider` 与页面脚本 `config-ui-pages/bilibili.js`（starbot-bilibili）；主播页 `StreamersConsolePageProvider`、推送页 `PushConsolePageProvider`、向导主播步 `SetupStreamerStepProvider`、首页今日卡 `TodayHomeCardProvider`（starbot-novabot-console） | 往控制台添自己的页；挂在连接页、设置页、顶级页、首页卡还是向导步骤由 `ConsolePageSlot` 申报；除 `script()` 外可再报 `assets()`（同目录其它 `.js`，按登记名取）。顶级页的 `refresh` 会收到 `{sub, tail}`（地址栏第二、三段） |
 | 配置节 | `@ConfigurationProperties`（编译期元数据由 `config/ui/ConfigurationMetadataService` 读取） | 各模块的配置类 | 配置类加了项，设置页表单自动出现；核心前缀在 `config/ui/ConfigurationGroups` 登记，平台前缀由各插件的 `ConfigurationGroupContributor` 申报，新前缀不登记就没有组 |
 | 聊天命令 | `command/StarBotCommand` | `command/` 下的一族命令（starbot-bilibili 与 starbot-report） | 实现接口并注册为 Bean，群里即多一条命令 |
 | 健康探针 | `health/HealthProbe` | 直播间、登录、风控三件（starbot-bilibili）与 `OneBotHealthProbe`（onebot-adapter） | 探测结果汇总进总览页，与告警共用 |
@@ -309,7 +309,14 @@ systemd 下的进程树也不正确。
 | 消息出口 | `service/StarBotSenderService` 登记的 `model/Sender` | `OneBotController`（onebot-adapter） | 推送平台向核心登记出口，核心按名字投递 |
 | REST 接口 | 无专用接口：`@RestController` 照常写，仍需 `@StarBotComponent` | `BilibiliReportLayoutController`（starbot-report）、`OneBotTargetController`（onebot-adapter） | 插件 jar 里的控制器与核心的合在同一个 Web 服务里 |
 
-`config-ui-pages/<script>` 对 `setup_step` 槽须 `export function render(host, ctx)`（把这一步画进 host）与 `export async function done(ctx)` → boolean（这一步成立了没有）；`ctx`＝`{status, login, api}`（`api` 即初始设置页现用的请求函数）。可再 `export const skippable`（缺省 false）；真时向导该步底下出「跳过」。装不上时该步 `done` 恒假，界面画一句「这一步的界面没装上」，不让整页失败。
+`config-ui-pages/<script>` 对 `setup_step` 槽须 `export function render(host, ctx)`（把这一步画进 host）与 `export async function done(ctx)` → boolean（这一步成立了没有）；`ctx`＝`{status, login, api, pickTargets}`（`api` 即初始设置页现用的请求函数，`pickTargets(keys)` 把这一步选中的推送目标交回向导，供小结那几行用）。四个可选导出：
+
+- `export const skippable`：缺省 false；真时该步底下出跳过按钮。**写成串就是按钮上的字**（「先不加主播」这类）——只当真假用的话，每个许跳过的步都只能写「跳过」，而跳过它们各自意味着什么并不相同。
+- `export async function next(ctx)` → boolean：**放行由那一步自己判**，回 `false` 即不往下走（拦住的理由由这一步自己说）。核心不知道它在收什么、缺什么算没填完；缺这个导出时一律放行，那一步就变成点一下就过，而它该做的落盘根本没发生。
+- `export async function skip(ctx)` → boolean：跳过前的那段后果确认由这一步自己弹（它才知道后果是什么），回 `false` 即取消、留在原地。
+- `export function doneLink(ctx)` → `{text, href}` 或 null：向导走完那一屏上多一个去处。地址由这一页自己拼——核心抄一份的话，两份分叉的那天点进去会落到别处，而屏幕上看不出任何异常。
+
+装不上时该步 `done` 恒假，界面画一句「这一步的界面没装上」，不让整页失败。
 
 这张表不改变第 1 节定下的依赖方向：核心只保管清单上的接口，不认识任何一个具体平台。
 

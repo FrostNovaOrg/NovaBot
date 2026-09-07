@@ -1,5 +1,5 @@
 /**
- * 初始设置页 #/setup：五步引导（独立版式，不显示侧栏）
+ * 初始设置页 #/setup：分步引导（独立版式，不显示侧栏）
  *
  * 刚装好的机器上第一段路。本文件只管把 setup-model.js 算好的东西摆上屏幕并接上端点——
  * 「这一步放不放行」「进度条上画什么」「从第几步接着走」一律在那边判。判断留在这里的话，
@@ -7,24 +7,26 @@
  * 只是那一步变成点一下就过。
  *
  * <b>每一步做完当场落盘</b>，没有草稿态，因此底部那条改动条在这一页上不出现（版式已隐藏）。
- * 五步各自走到哪也不记在浏览器里：前四步各有服务端事实可查，第 5 步记在 /api/setup/state。
+ * 各步走到哪也不记在浏览器里：内置那几步各有服务端事实可查，末步记在 /api/setup/state。
  * 记在浏览器里的话，换台电脑打开就从头开始，而这台机器明明配好了。
  *
  * 本文件里没有任何一个直播平台的名字：第 3 步的标题按通名说「直播平台」，
  * 卡上写的名字取自 /api/login 里那个由插件自报的显示名。
+ *
+ * 「第一位主播，推到哪」不在本文件里：那一步是产品形态，由控制台插件按 setup_step 槽带来
+ * （见 docs/architecture.md 的插件步契约）。本文件只负责把它摆进流程、问它成立了没有、
+ * 并把它的「下一步」「跳过」转交给它自己判——判在这里的话，核心就得认识一个它管不着的页。
  */
 
 import {ask} from './confirm.js';
 import {$, api, el, esc, markDirty, phrase, say, term} from './core.js';
 import {resolveTarget, targetOptions} from './links-model.js';
 import {registerPasskey} from './passkeys.js';
-import {renderStreamers, serializePush, STREAMER_INPUT_HINT} from './push.js';
 import {setAuthState} from './settings-auth.js';
 import {renderGeneral} from './settings.js';
 import {allDone, canAdvance, initialRows, railMarks, startAt, stepFacts, summaryLines, withPluginSteps}
   from './setup-model.js';
 import {store} from './store.js';
-import {detailHash} from './streamers-model.js';
 
 /**
  * 这一页此刻手里的东西
@@ -37,17 +39,17 @@ import {detailHash} from './streamers-model.js';
  */
 const draft = {
   locked: false, botOk: false, accountsReady: false, anonymousConfirmed: false,
-  streamer: null, targets: [], noStreamerConfirmed: false, sent: false,
+  targets: [], sent: false,
   bot: {address: '127.0.0.1', httpPort: '3000', wsPort: '3001', httpToken: '', wsToken: ''},
 };
 
 /** 每一步被跳过的方式，'' / 'skip' / 'anon' */
-let skips = ['', '', '', '', ''];
+let skips = ['', '', '', ''];
 
 /** 各步各自成立了没有，来自服务端事实与插件 done */
-let facts = [false, false, false, false, false];
+let facts = [false, false, false, false];
 
-/** 当前步骤表（内置五步 ± 插件步） */
+/** 当前步骤表（内置四步 ± 插件步） */
 let steps = withPluginSteps(undefined, store.vocab);
 
 /** slot=setup_step 的页清单 */
@@ -165,8 +167,24 @@ async function loadPluginModules(list) {
   return mods;
 }
 
+/**
+ * 交给插件步的那份上下文
+ *
+ * {@code pickTargets} 是这一页自己的东西：末步「发一条试试」只在刚选定的那几个目标里挑，
+ * 而选目标那一步已经是插件带来的。不给这个口子的话，末步会退回「在全部群与好友里挑」——
+ * 它要验的正是刚配好的那条路通不通，换个别的目标发通了说明的是另一回事。
+ */
+function pluginCtx() {
+  return {
+    status: seen.status,
+    login: seen.login,
+    api,
+    pickTargets: keys => { draft.targets = Array.isArray(keys) ? keys.slice() : []; },
+  };
+}
+
 async function collectPluginDone() {
-  const ctx = {status: seen.status, login: seen.login, api};
+  const ctx = pluginCtx();
   const done = {};
   for (const meta of pluginPages) {
     const mod = pluginMods[meta.id];
@@ -271,7 +289,7 @@ function render() {
     return;
   }
   const dispatch = {
-    lock: stepLock, bot: stepBot, account: stepAccount, streamer: stepStreamer, test: stepTest,
+    lock: stepLock, bot: stepBot, account: stepAccount, test: stepTest,
   };
   const step = steps[current];
   if (step && step.plugin) renderPlugin(main, step);
@@ -283,22 +301,61 @@ function render() {
  */
 function renderPlugin(host, step) {
   const mod = pluginMods[step.key];
-  const ctx = {status: seen.status, login: seen.login, api};
   if (!mod || typeof mod.render !== 'function') {
     host.appendChild(note('warn', '这一步的界面没装上'));
   } else {
     try {
-      mod.render(host, ctx);
+      mod.render(host, pluginCtx());
     } catch (e) {
       host.appendChild(note('warn', '这一步的界面没装上'));
     }
   }
-  const skippable = !!(mod && mod.skippable);
+  // skippable 可以是一个串，那就是按钮上要写的字（「先不加主播」这类）；
+  // 只当真假用的话，每一个许跳过的插件步都只能写「跳过」，而跳过它各自意味着什么并不相同
+  const skippable = (mod && mod.skippable) || false;
   step.skippable = skippable;
-  foot(host, skippable ? () => finishStep('skip') : null, skippable ? '跳过' : '', async () => {
-    await refreshFacts();
-    return true;
-  });
+  foot(host, skippable ? () => skipPlugin(step) : null,
+    typeof skippable === 'string' ? skippable : '跳过', async () => {
+      if (await pluginNext(step) === false) return false;
+      await refreshFacts();
+      return true;
+    });
+}
+
+/**
+ * 插件步的「下一步」
+ *
+ * 🔴 <b>放行由那一步自己判</b>：核心不知道它在收什么、缺什么算没填完。
+ * 这里一律放行的话，那一步会变成点一下就过——而它该做的落盘根本没发生，
+ * 屏幕上却不会有任何异常。没有 {@code next} 的插件步照旧一律放行。
+ * @return {Promise<boolean>} 假即不往下走
+ */
+async function pluginNext(step) {
+  const mod = pluginMods[step.key];
+  if (!mod || typeof mod.next !== 'function') return true;
+  try {
+    return await mod.next(pluginCtx()) !== false;
+  } catch (e) {
+    say('这一步没能完成：' + e.message, 'err');
+    return false;
+  }
+}
+
+/**
+ * 插件步的「跳过」
+ *
+ * 跳过一步常常是个有后果的决定（「不加主播的话这台机器起来什么都不做」），
+ * 那段确认由插件自己弹——它才知道后果是什么。回假即取消，本步留在原地。
+ */
+async function skipPlugin(step) {
+  const mod = pluginMods[step.key];
+  try {
+    if (mod && typeof mod.skip === 'function' && await mod.skip(pluginCtx()) === false) return;
+  } catch (e) {
+    say('这一步没能跳过：' + e.message, 'err');
+    return;
+  }
+  finishStep('skip');
 }
 
 /**
@@ -631,7 +688,7 @@ function stepBot(host) {
       if (res.success) {
         draft.botOk = true;
         await saveBot(result);
-        // 存下来的那一刻连接就接上了，第 4 步要的名单随之有了着落。
+        // 存下来的那一刻连接就接上了，「推到哪」要的名单随之有了着落。
         // 重问一遍，进度条与后面几步据此算，不必等到刷新页面
         await refreshFacts();
       }
@@ -767,186 +824,13 @@ function schedulePoll(accounts) {
   }, 3000);
 }
 
-// ============ 第 4 步：第一位主播，推到哪 ============
-
-function invalidateStreamer(draft) {
-  draft.streamer = null;
-  return draft;
-}
-
-function stepStreamer(host) {
-  heading(host, titleOf('streamer'),
-    '填主播的 ' + STREAMER_INPUT_HINT + '。');
-
-  // 装了哪些直播平台是运行期才知道的事，三种情形都要说清楚——
-  // 与推送页「添加主播」那个面板同一条规矩（见 push.js 的 addStreamer）
-  const known = store.platforms || [];
-  if (!known.length) {
-    host.appendChild(note('warn', '没有装任何直播平台插件，加不了主播。'));
-    foot(host, skipStreamer, '先不加主播', null);
-    return;
-  }
-
-  let chosen = (draft.streamer && draft.streamer.platform) || known[0];
-  const found = el('div');
-  if (known.length > 1) {
-    const wrap = el('div', 'su-fld');
-    const label = el('label');
-    label.textContent = '平台';
-    label.setAttribute('for', 'setup-platform');
-    wrap.appendChild(label);
-
-    const picker = el('select');
-    picker.id = 'setup-platform';
-    picker.innerHTML = known.map(one => '<option value="' + esc(one) + '">' + esc(one) + '</option>').join('');
-    picker.value = chosen;
-    picker.addEventListener('change', () => { chosen = picker.value; invalidateStreamer(draft); paintFound(found); syncFoot(); });
-    wrap.appendChild(picker);
-    host.appendChild(wrap);
-  }
-
-  const row = el('div', 'su-row');
-  const input = field(row, STREAMER_INPUT_HINT, 'setup-uid', 'text',
-    draft.streamer ? String(draft.streamer.uid) : '',
-    () => { invalidateStreamer(draft); paintFound(found); syncFoot(); });
-  host.appendChild(row);
-
-  const result = el('div', 'su-r');
-
-  const look = el('button', 'ghost');
-  look.type = 'button';
-  look.id = 'setup-lookup';
-  look.textContent = '找一下';
-  look.addEventListener('click', async () => {
-    const value = input.value.trim();
-    if (!value) {
-      result.textContent = '请先输入 ' + STREAMER_INPUT_HINT + '。';
-      result.className = 'su-r';
-      return;
-    }
-
-    look.disabled = true;
-    result.textContent = '查询中…';
-    result.className = 'su-r';
-    draft.streamer = null;
-
-    try {
-      const res = await api('/streamer/lookup', {
-        method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({platform: chosen, uid: value}),
-      });
-      if (res.success) {
-        draft.streamer = {platform: chosen, uid: res.uid, uname: res.uname, roomId: res.roomId,
-          face: res.face, fans: res.fans};
-        result.textContent = '';
-        result.className = 'su-r';
-      } else {
-        report(result, res);
-      }
-    } catch (e) {
-      report(result, {success: false, message: '查询失败：' + e.message});
-    }
-
-    look.disabled = false;
-    paintFound(found);
-    syncFoot();
-  });
-
-  host.appendChild(look);
-  host.appendChild(result);
-  host.appendChild(found);
-  paintFound(found);
-  foot(host, skipStreamer, '先不加主播', saveStreamer);
-
-  // 名单可能还没回来：回来之后把「推到哪」补上，而不是让那一块一直写着取不到
-  loadOptions().then(() => { if (current === 3 && !finished) paintFound(found); });
-}
-
-/**
- * 找到的那位主播，连同「推到哪」
- */
-function paintFound(host) {
-  host.innerHTML = '';
-  if (!draft.streamer) return;
-
-  const card = el('div', 'su-card');
-  const who = el('div', 'su-nm');
-  who.textContent = '找到了：' + draft.streamer.uname;
-  card.appendChild(who);
-
-  // 粉丝数是这张小卡上最容易发现「认错人」的一项：uid 打错一位仍可能查到一位真实存在的人，
-  // 昵称与头像未必看得出不对，而粉丝数常常差着数量级。取不到时不写 0——
-  // 那会被读成「这人一个粉丝也没有」
-  const meta = el('div', 'su-sub');
-  meta.textContent = 'uid ' + draft.streamer.uid
-    + (draft.streamer.roomId ? ' · 直播间 ' + draft.streamer.roomId : '')
-    + (draft.streamer.fans == null ? '' : ' · 粉丝 ' + draft.streamer.fans);
-  card.appendChild(meta);
-
-  host.appendChild(card);
-  host.appendChild(targetPicker());
-}
-
-/**
- * 「推到哪」：从机器人已经在的群、已经加的好友里挑，可以多选
- *
- * 🔴 <b>没有手填号码的格子</b>，与「发一条试试」同一条理由：填错一位数不会有任何报错，
- * 消息只是发去了别处，而这一步存在的意义正是把那种错拦在配置阶段。
- */
-function targetPicker() {
-  const box = el('div', 'su-pick');
-  const title = el('div', 'su-d');
-  title.textContent = '推到哪（可多选）';
-  box.appendChild(title);
-
-  if (!options.length) {
-    box.appendChild(note('warn', '暂时取不到群与好友名单：先把机器人连上（第 2 步），'
-      + '或者把它拉进一个群、加个好友，再回来选。'));
-    return box;
-  }
-
-  const list = el('div', 'su-targets');
-  list.id = 'setup-targets';
-  options.forEach(item => {
-    const label = el('label');
-    const check = el('input');
-    check.type = 'checkbox';
-    check.checked = draft.targets.includes(item.key);
-    check.addEventListener('change', () => {
-      draft.targets = check.checked
-        ? draft.targets.concat([item.key])
-        : draft.targets.filter(key => key !== item.key);
-      syncFoot();
-    });
-    label.appendChild(check);
-
-    const text = el('span');
-    text.textContent = item.text + (item.configured ? ' · 已配推送' : '');
-    label.appendChild(text);
-    list.appendChild(label);
-  });
-  box.appendChild(list);
-
-  box.appendChild(note('', '开播、下播、下播报告、动态这几种通知默认全开、用默认模板，'
-    + '之后在「推送」页里细调。'));
-  return box;
-}
-
-/**
- * 「先不加主播」。<b>要过一次确认</b>：不加主播的话这台 NovaBot 起来什么都不做，
- * 而一路点下去的人不会意识到这一点
- */
-async function skipStreamer() {
-  if (!await ask({title: '确定先不加吗？',
-    body: '不加主播的话，这台 NovaBot 起来什么都不做——不采集，也不推送。'
-      + '之后可以在「推送」页里加。'})) return;
-
-  draft.noStreamerConfirmed = true;
-  finishStep('skip');
-}
+// ============ 推送目标名单 ============
 
 /**
  * 取一次群与好友名单
+ *
+ * 末步「发一条试试」要在这份名单里挑收件人。插件步（例如「第一位主播，推到哪」）
+ * 自己另取一份：它跑在自己的模块里，取不到本文件的局部变量。
  */
 async function loadOptions() {
   try {
@@ -954,69 +838,12 @@ async function loadOptions() {
       api('/onebot/targets?type=group'), api('/onebot/targets?type=friend')]);
     options = targetOptions(groups, friends);
   } catch (e) {
-    // 取不到时不退回手填：那等于把「填错一位数不报错」那个失败形态请回来。
-    // 界面上另有一句说明，见 targetPicker
+    // 取不到就空着。这一页不退回手填：那等于把「填错一位数不报错」那个失败形态请回来
     options = [];
   }
 }
 
-/**
- * 把这位主播连同推送目标一起落盘
- *
- * 四种通知按「这个平台注册出来的处理器」全开，界面不写死任何一份清单——
- * 处理器由插件带来，写死的话，插件加一种通知这里就少一种，而屏幕上不会有任何异常。
- * @return {Promise<boolean>} 存下去了没有。没存下去就不往下走，
- *         否则第 5 步会在一台其实什么也没配的机器上发消息
- */
-async function saveStreamer() {
-  const one = draft.streamer;
-  // 「先不加主播」那条路上没有主播可存，直接过
-  if (!one) return true;
-
-  const messages = (store.handlerList || [])
-    .filter(handler => !handler.platform || handler.platform === one.platform)
-    .map(handler => ({handler: handler.className}));
-
-  const targets = draft.targets
-    .map(key => options.find(item => item.key === key))
-    .filter(Boolean)
-    .map(item => ({platform: item.sender, type: item.type, num: item.num, enabled: true, messages}));
-
-  const before = store.pushData;
-  // 回上一步改完再走一遍是正当走法，因此同一位主播先去重再加——
-  // 不去重的话，配置文件里会出现两条同 uid 的记录，而那台机器每场直播推两遍
-  store.pushData = before
-    .filter(user => !(Number(user.uid) === Number(one.uid) && user.platform === one.platform))
-    .concat([{
-      uid: one.uid, platform: one.platform, enabled: true, targets,
-      _uname: one.uname, _roomId: one.roomId, _face: one.face,
-    }]);
-
-  try {
-    const res = await api('/datasource', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({content: serializePush()}),
-    });
-    if (!res.success) {
-      store.pushData = before;
-      say(res.message || '没能存下这位主播', 'err');
-      return false;
-    }
-  } catch (e) {
-    store.pushData = before;
-    say('没能存下这位主播：' + e.message, 'err');
-    return false;
-  }
-
-  // 快照跟着走，否则推送页那条改动条会显示「还有 1 处没保存」——而它已经存下去了
-  store.pushSaved = serializePush();
-  renderStreamers();
-  markDirty();
-  await refreshFacts();
-  return true;
-}
-
-// ============ 第 5 步：发一条试试 ============
+// ============ 末步：发一条试试 ============
 
 /**
  * 试发的那句话
@@ -1092,7 +919,7 @@ function stepTest(host) {
  * 发出去之后屏幕上显示什么
  *
  * 🔴 「发出去了」与「那头收到了」是两件事：接口通、Token 对、机器人却被踢出了群，
- * 表现是什么都不发生。因此第 5 步这一位只由<b>看见了的那个人</b>按下来，
+ * 表现是什么都不发生。因此末步这一位只由<b>看见了的那个人</b>按下来，
  * 不由「发送成功」自动记上。
  */
 function paintSent(host, res, targetText) {
@@ -1230,7 +1057,7 @@ function defaultsBlock() {
 // ============ 走完之后 ============
 
 function renderDone(host) {
-  heading(host, '初始设置完成', '这五步定的东西都已经生效。之后想改，全在设置页与「推送」页里。');
+  heading(host, '初始设置完成', '这几步定的东西都已经生效。之后想改，全在设置页与各功能页里。');
 
   summaryLines(facts, skips, {
     accounts: seen.login.accounts || [],
@@ -1242,12 +1069,24 @@ function renderDone(host) {
     host.appendChild(item);
   });
 
-  if (draft.streamer && facts[3]) {
-    const go = el('a', 'ghost su-go');
-    go.id = 'setup-go-streamer';
-    go.href = detailHash(draft.streamer.platform, draft.streamer.uid);
-    go.textContent = '去主播页看看';
-    host.appendChild(go);
+  // 插件步各自可以在这里留一个去处（「去主播页看看」这类）。地址由那一步自己给：
+  // 它的页在哪、地址怎么拼，核心一概不知道；自己拼一份的话，两份分叉的那天
+  // 点进去会落到别处，而屏幕上看不出任何异常。
+  // id 由步骤键拼出来（setup-go-<键>），不收插件报上来的串——那个串会原样成为 DOM 里的 id
+  for (const meta of pluginPages) {
+    const mod = pluginMods[meta.id];
+    let link = null;
+    try {
+      link = mod && typeof mod.doneLink === 'function' ? mod.doneLink(pluginCtx()) : null;
+    } catch (e) {
+      link = null;
+    }
+    if (!link || !link.href) continue;
+    const to = el('a', 'ghost su-go');
+    to.id = 'setup-go-' + meta.id;
+    to.href = link.href;
+    to.textContent = link.text || '去看看';
+    host.appendChild(to);
   }
 
   const bar = el('div', 'su-f');
