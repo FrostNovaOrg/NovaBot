@@ -10,17 +10,34 @@
 
 import {store} from './store.js';
 
+/** 同义 core.js 的 term：有键用词，无键用中性兜底。模型不读全局。 */
+function word(terms, key, fallback) {
+  return (terms && terms[key]) || fallback;
+}
+
+/** 同义 core.js 的 phrase：词在则套进 withTerm，词缺则整句退成中性 without。 */
+function say(terms, key, withTerm, without) {
+  const v = terms && terms[key];
+  return v ? withTerm(v) : without;
+}
+
 /**
  * 把契约里的 reason 翻成人话
  *
  * 🔴 locked_out 与 bad_credentials 必须分开说：锁定期内输对的口令也会被拒，
  * 此时说「口令不对」会让人去重置一个根本没问题的密码。
+ * @param status HTTP 状态
+ * @param data 失败体
+ * @param terms /api/vocab 七键；缺则中性兜底
  */
-export function explain(status, data) {
+export function explain(status, data, terms) {
   switch (data.reason) {
     case 'bad_credentials':
       return '控制台口令' + (store.totpRequired ? '或动态验证码' : '') + '不对。'
-        + '要填的是登录这个控制台用的那一个——不是机器人（NapCat 等）WebUI 的口令，两者互不相干';
+        + '要填的是登录这个控制台用的那一个——'
+        + say(terms, 'bot.impl',
+          v => '不是机器人（' + v + ' 等）WebUI 的口令，两者互不相干',
+          '不是机器人程序界面的口令，两者互不相干');
     case 'locked_out':
       return '连续失败太多次，你这个来源已被暂时锁定，' + waitText(data.retryAfterSeconds) + '后再试。'
         + '⚠️ 锁定期内即使输对也会被拒，这不代表口令错了，别急着去改密码';

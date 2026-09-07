@@ -12,7 +12,7 @@
  */
 
 import {ask} from './confirm.js';
-import {$, api, dropDisplayOnly, el, esc, markDirty, say} from './core.js';
+import {$, api, dropDisplayOnly, el, esc, markDirty, say, term} from './core.js';
 import {resolveTarget, targetOptions} from './links-model.js';
 import {
   atAllStatus, buildDirectory, channelIndex, channelName, commandGroups, commandSummary,
@@ -400,7 +400,7 @@ function renderDefaultTemplates(host) {
     // 默认模板对着<b>出厂默认</b>比，比出来的差集正是要存下来的那一份覆盖
     base: handler => handler.factoryParams || handler.defaultParams,
     paramsOf: handler => draft[handler.className] || overridesOf(handler),
-    context: {isGroup: true, admin: null},
+    context: {isGroup: true, admin: null, terms: store.vocab},
     channelLabel: '群里',
     onSelect: handler => {
       currentHandler = handler;
@@ -475,7 +475,7 @@ function renderAdoption(host, handlers) {
     '在上面改一次，这里「用默认」的通道全都跟着变；已经自定义的那些不受影响。');
 
   for (const handler of handlers) {
-    const rows = templateAdoption(store.pushData, handler);
+    const rows = templateAdoption(store.pushData, handler, store.vocab);
     const item = el('div', 'tplrow');
     item.appendChild(el('b')).textContent = handler.displayName || handler.className;
     item.appendChild(el('p', 'hint')).textContent =
@@ -581,7 +581,8 @@ function channelRow(user, target) {
   main.appendChild(title);
 
   const sub = el('div', 'rc-sub');
-  sub.textContent = (Number(target.type) === 1 ? '群号 ' : 'QQ 号 ') + target.num;
+  sub.textContent = (Number(target.type) === 1
+    ? term('bot.target.group', '群号') : term('bot.target.user', '用户号')) + ' ' + target.num;
   main.appendChild(sub);
 
   const tags = el('div', 'rc-tg');
@@ -619,7 +620,8 @@ function renderChannelLevel(host, user, target) {
   line.appendChild(title);
   line.appendChild(pill(typeName(session, target)));
   const num = el('span', 'ch-id');
-  num.textContent = (Number(target.type) === 1 ? '群号 ' : 'QQ 号 ') + target.num;
+  num.textContent = (Number(target.type) === 1
+    ? term('bot.target.group', '群号') : term('bot.target.user', '用户号')) + ' ' + target.num;
   line.appendChild(num);
 
   const remove = el('button', 'ghost danger');
@@ -804,6 +806,7 @@ function sectionTemplate(host, user, target, session) {
     context: {
       isGroup: Number(target.type) === 1,
       admin: adminOf(target),
+      terms: store.vocab,
     },
     channelLabel: channelName(session, target, directory),
     lockedNote: '这是默认模板的样子。要单独给这个通道改，先点上面的「改为自定义」。',
@@ -1028,7 +1031,9 @@ function pickTarget(opts) {
         row.type = 'button';
         row.disabled = taken;
         row.innerHTML = '<span class="dw-nm">' + esc(item.name || item.num) + '</span>'
-          + '<span class="dw-sub">' + (item.type === 1 ? '群 ' : 'QQ ') + esc(item.num)
+          + '<span class="dw-sub">' + (item.type === 1
+            ? term('bot.target.group', '群号') + ' ' : term('bot.target.user', '用户号') + ' ')
+          + esc(item.num)
           + (item.memberCount ? ' · ' + esc(item.memberCount) + ' 人' : '')
           + (item.admin ? ' · 机器人是管理员' : '') + '</span>'
           + (taken ? '<span class="dw-tag">已是通道</span>' : '');

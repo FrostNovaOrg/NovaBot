@@ -10,7 +10,7 @@
  */
 
 import {ask} from './confirm.js';
-import {$, api, el, esc, say, switchControl} from './core.js';
+import {$, api, el, esc, phrase, say, switchControl} from './core.js';
 import {bindPasswordReveal} from './password-reveal.js';
 import {loadPasskeys, registerPasskey} from './passkeys.js';
 import {store} from './store.js';
@@ -138,7 +138,8 @@ function passwordCard() {
 
   const current = operator ? null
     : field(box.body, '现在的口令', 'pwd-current', 'password',
-      '填的是这个控制台的登录口令，不是 NapCat 界面的口令。');
+      '填的是这个控制台的登录口令，'
+      + phrase('bot.impl', v => '不是 ' + v + ' 界面的口令。', '不是机器人程序界面的口令。'));
   const next = field(box.body, '新口令', 'pwd-next', 'password', '至少 8 个字符。');
   const again = field(box.body, '再输一遍', 'pwd-again', 'password');
   if (current) {

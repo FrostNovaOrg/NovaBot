@@ -61,4 +61,63 @@ eq(revokeOutcome({success: 1, reason: 'write_failed'}).refresh, true, 'success �
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);
-process.exit(failures.length ? 1 : 0);
+if (failures.length) process.exit(1);
+
+// ── terms 三档：有词＝适配器七键／无词＝{}／只缺 bot.impl ────────────────
+// 三问各自 try/catch，末尾汇总，不得短路。
+const ADAPTER_TERMS = {
+  'bot.platform': 'QQ',
+  'bot.impl': 'NapCat',
+  'bot.family': 'OneBot 实现',
+  'bot.impl.hint': 'NapCat、Lagrange 等 OneBot 实现',
+  'bot.target.group': '群号',
+  'bot.target.user': 'QQ 号',
+  'bot.targets': '群与好友',
+};
+const NO_IMPL = Object.assign({}, ADAPTER_TERMS);
+delete NO_IMPL['bot.impl'];
+
+const phraseReds = [];
+function askPhrase(name, fn) {
+  try {
+    fn();
+  } catch (err) {
+    phraseReds.push(name + '：' + (err && err.message ? err.message : String(err)));
+  }
+}
+function mustEq(actual, expected, what) {
+  if (actual !== expected) {
+    throw new Error(what + ' 得到 ' + JSON.stringify(actual) + ' 应为 ' + JSON.stringify(expected));
+  }
+}
+function cred(terms) {
+  return explain(401, {reason: 'bad_credentials'}, terms);
+}
+
+askPhrase('①有词', () => {
+  const got = cred(ADAPTER_TERMS);
+  if (!got.includes('不是机器人（NapCat 等）WebUI 的口令')) {
+    throw new Error('实得 ' + JSON.stringify(got));
+  }
+});
+
+askPhrase('②无词', () => {
+  const got = cred({});
+  if (got.includes('NapCat') || got.includes('（') || !got.includes('不是机器人程序界面的口令')) {
+    throw new Error('实得 ' + JSON.stringify(got));
+  }
+});
+
+askPhrase('③只缺 bot.impl', () => {
+  const got = cred(NO_IMPL);
+  if (got.includes('NapCat') || got.includes('（') || !got.includes('不是机器人程序界面的口令')) {
+    throw new Error('实得 ' + JSON.stringify(got));
+  }
+});
+
+console.log('terms 三档\t跑了 3 格\t红 ' + phraseReds.length + ' 格\t' + (phraseReds.length ? '红' : '绿'));
+if (phraseReds.length) {
+  console.error('\nterms 三档对不上 ' + phraseReds.length + ' 处：');
+  phraseReds.forEach(line => console.error('  ' + line));
+  process.exit(1);
+}

@@ -426,6 +426,17 @@ export function atModeInfo(mode) {
   return AT_MODES.find(item => item.key === mode) || AT_MODES[0];
 }
 
+/** 同义 core.js 的 term：有键用词，无键用中性兜底。模型不读全局。 */
+function word(terms, key, fallback) {
+  return (terms && terms[key]) || fallback;
+}
+
+/** 同义 core.js 的 phrase：词在则套进 withTerm，词缺则整句退成中性 without。 */
+function say(terms, key, withTerm, without) {
+  const v = terms && terms[key];
+  return v ? withTerm(v) : without;
+}
+
 /**
  * 发出去的时候 @ 会落在哪
  *
@@ -434,14 +445,16 @@ export function atModeInfo(mode) {
  * 而这两种错都要等真发到群里才看得见。
  * @param cards 卡
  * @param mode @ 档
- * @param context {{isGroup: boolean, admin: boolean|null}} 这个通道是群聊吗、机器人是不是管理员
+ * @param context {{isGroup: boolean, admin: boolean|null, terms?: Object}} 这个通道是群聊吗、机器人是不是管理员
+ * @param terms /api/vocab 七键；缺则看 context.terms，再缺则中性兜底
  * @return {{prepend: string, inline: boolean, dropped: boolean, fallback: boolean, note: string}}
  *         正文前面补什么（none/all/subscribers）、模板里是否自己写了 @、
  *         这一次会不会被摘掉、摘掉后是否改 @ 订阅名单、以及一句说明
  */
-export function atPlan(cards, mode, context) {
+export function atPlan(cards, mode, context, terms) {
   const text = toTemplateText(cards);
   const isGroup = !!(context || {}).isGroup;
+  const words = terms || (context || {}).terms;
   const admin = (context || {}).admin;
   const hasAt = text.includes(AT_LITERALS[0]);
   const hasAtAll = text.includes(AT_LITERALS[1]);
@@ -473,7 +486,9 @@ export function atPlan(cards, mode, context) {
       + (dropped
         ? '机器人不是本群管理员，@全体成员 会被自动摘掉，正文照发。'
           + (fallback ? '这一次改 @ 订阅名单。' : '')
-        : '@全体成员 不绕过 QQ 权限，额度用尽或不是管理员时会被摘掉，正文照发。'
+        : say(words, 'bot.platform',
+            v => '@全体成员 不绕过 ' + v + ' 权限，额度用尽或不是管理员时会被摘掉，正文照发。',
+            '@全体成员 不绕过机器人权限，额度用尽或不是管理员时会被摘掉，正文照发。')
           + (fallback ? '被摘掉的那一次改 @ 订阅名单。' : '')),
   };
 }
@@ -490,8 +505,8 @@ export function atPlan(cards, mode, context) {
  * @param context 见 atPlan
  * @return 每条消息一项：{at, atDropped, parts, images}
  */
-export function previewBubbles(cards, mode, context) {
-  const plan = atPlan(cards, mode, context);
+export function previewBubbles(cards, mode, context, terms) {
+  const plan = atPlan(cards, mode, context, terms);
   const bubbles = [];
 
   (cards || []).forEach((card, index) => {
@@ -608,10 +623,11 @@ export function applyEdit(params, base, cards, atMode) {
  * 是这一页的立身之本，而它同时意味着<b>一次误改会同时落到一批群上</b>。
  * @param users 推送配置里的主播
  * @param handler 处理器
+ * @param terms /api/vocab；本函数不读词，接线处一并传入以免漏传
  * @return {{following: Array, custom: Array}} 跟着默认走的通道与已经分叉的通道
  *         每项形如 {uid, platform, num, type}
  */
-export function templateAdoption(users, handler) {
+export function templateAdoption(users, handler, terms) {
   const following = [];
   const custom = [];
   const className = (handler || {}).className;

@@ -109,7 +109,7 @@ async function issue() {
     } else {
       // 失败时也把口令框清空：留着上一次输错的内容，再点一次还是同样的错
       $('#tk-pass').value = '';
-      fail(explain(response.status, data));
+      fail(explain(response.status, data, store.vocab));
     }
   } catch (e) {
     fail('无法连接到服务器');

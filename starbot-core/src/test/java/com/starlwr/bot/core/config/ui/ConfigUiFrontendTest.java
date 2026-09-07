@@ -2491,7 +2491,9 @@ class ConfigUiFrontendTest {
     @DisplayName("界面件非注释行零平台词")
     void connectionSurfaceHasNoPlatformWords() throws IOException {
         List<String> files = List.of("index.html", "links-model.js", "links.js", "log.js",
-                "setup.js", "setup-model.js", "home-model.js");
+                "setup.js", "setup-model.js", "home-model.js",
+                "settings-alert.js", "push.js", "bot.js", "tokens-model.js",
+                "settings-auth.js", "streamers.js", "template-model.js", "login.html");
         List<String> words = List.of("QQ", "NapCat", "OneBot");
         Path dir = frontendDir();
         List<String> hits = new ArrayList<>();
@@ -2503,6 +2505,9 @@ class ConfigUiFrontendTest {
                 String trimmed = raw.strip();
                 if (trimmed.startsWith("//") || trimmed.startsWith("*")
                         || trimmed.startsWith("/*") || trimmed.startsWith("<!--")) {
+                    continue;
+                }
+                if (raw.contains("smtp.qq.com")) {
                     continue;
                 }
                 for (String word : words) {

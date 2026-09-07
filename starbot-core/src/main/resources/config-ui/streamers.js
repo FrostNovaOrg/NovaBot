@@ -120,7 +120,7 @@ function renderRows(list, days) {
 
   if (!list.length) {
     host.appendChild(el('div', 'empty'));
-    host.lastChild.textContent = '还没有配置任何主播。到「QQ 推送」页左上角点「＋ 添加主播」。';
+    host.lastChild.textContent = '还没有配置任何主播。到「推送」页左上角点「＋ 添加主播」。';
     return;
   }
 
