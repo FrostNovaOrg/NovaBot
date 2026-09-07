@@ -113,6 +113,37 @@ try {
 }
 eq(q4, false, '④ 阳性对照 recoverToggle(r, s, false, …) settle 收 false');
 
+function loadEnroll(api, report, $, esc) {
+  const rec = bracedFrom(src, 'function recoverToggle');
+  const enroll = bracedFrom(src, 'async function enrollFlow');
+  if (!rec || !enroll) throw new Error('no enrollFlow');
+  return new Function('api', 'report', '$', 'esc',
+    rec + '\n' + enroll + '\nreturn enrollFlow;')(api, report, $, esc);
+}
+
+// ⑤ 真执行 enrollFlow：setup 抛错 → settle(false) 且开关回关闭档
+let q5 = 'missing';
+try {
+  const fn = loadEnroll(
+    async () => { throw new Error('setup-down'); },
+    (box, payload) => { box.payload = payload; },
+    () => ({addEventListener() {}}),
+    String);
+  const sw = {checked: true, text: '已启用'};
+  const settle = state => {
+    sw.checked = state;
+    sw.text = state ? '已启用' : '已关闭';
+  };
+  const result = {};
+  await fn({innerHTML: ''}, result, settle);
+  q5 = sw.checked === false && sw.text === '已关闭'
+    && result.payload && result.payload.success === false
+    && String(result.payload.message).includes('setup-down');
+} catch (e) {
+  q5 = 'error:' + e.message;
+}
+eq(q5, true, '⑤ enrollFlow setup 抛错 settle(false) 且开关回关闭档');
+
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);
 process.exit(failures.length ? 1 : 0);

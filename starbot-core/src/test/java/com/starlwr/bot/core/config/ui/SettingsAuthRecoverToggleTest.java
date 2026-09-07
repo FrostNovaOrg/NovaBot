@@ -20,7 +20,7 @@ class SettingsAuthRecoverToggleTest {
             "starbot-core/src/test/resources/frontend/settings-auth-recover-toggle-fixture.mjs";
 
     @Test
-    @DisplayName("recoverToggle 拨回原档并报失败；开／关两路 catch 都调它")
+    @DisplayName("recoverToggle 拨回原档；enrollFlow setup 抛错回关闭档")
     void recoverToggleRevertsAndReports() throws IOException, InterruptedException {
         FrontendFixture.run(FIXTURE, "二次验证开关请求失败即拨回原档");
     }
