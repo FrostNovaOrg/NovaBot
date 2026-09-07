@@ -31,6 +31,7 @@
 - 更多配置项的说明改说「平台」「机器人」，不再写出具体聊天平台名。
 - 机器人告警的目标三项从 `starbot.core.alert.qq-platform`／`qq-type`／`qq-num` 挪到了 `starbot.adapter.onebot.alert`（`platform`／`type`／`num`）。**旧键仍然认得**，只写旧位置的照常生效，启动时会打一条提醒；两处都写时以新位置为准，新位置没写到的项才取旧位置的值。改不改、什么时候改，由你决定。
 - NapCat 代登录凭据四项从 `starbot.core.config-ui.napcat` 挪到了 `starbot.adapter.onebot.napcat`（`token`／`token-hash`／`totp-secret`／`address`）。**旧键仍然认得**，只写旧位置的照常生效，启动时会打一条提醒；两处都写时以新位置为准。若旧位置还留着 token 明文，启动时会换算成哈希写到新位置并把旧位置清空。
+- 重写了核心的图像、字体、二维码、邮件等工具件，行为未变。
 
 ### 修复
 
