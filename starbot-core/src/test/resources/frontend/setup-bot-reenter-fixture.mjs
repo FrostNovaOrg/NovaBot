@@ -193,6 +193,21 @@ const newHits = (timerSrc.match(/\/opt\/starbot/g) || []).length;
 eq(oldHits, 0, '⑤ timer 不含 /opt/novabot');
 eq(newHits >= 1, true, '⑤ timer 含 /opt/starbot');
 
+// ⑥ 真执行 syncBotDraft 后 botSynced 与 botSnapshot 同一份
+let q6 = 'missing';
+try {
+  const fns = loadFns(setupSrc);
+  const draft = seed(fns);
+  if (!fns.syncBotDraft || !fns.botSnapshot) {
+    throw new Error('missing fn');
+  }
+  fns.syncBotDraft(draft, savedBot());
+  q6 = draft.botSynced === fns.botSnapshot(draft.bot);
+} catch (e) {
+  q6 = 'error:' + e.message;
+}
+eq(q6, true, '⑥ syncBotDraft 后 botSynced === botSnapshot(draft.bot)');
+
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);
 process.exit(failures.length ? 1 : 0);
