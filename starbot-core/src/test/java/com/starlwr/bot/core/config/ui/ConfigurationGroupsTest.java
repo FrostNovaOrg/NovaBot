@@ -143,4 +143,22 @@ class ConfigurationGroupsTest {
         assertTrue(prefixes.size() >= all.size(),
                 "前缀比组还少，至少有一组一条前缀都没有");
     }
+
+    @Test
+    @DisplayName("核心表零适配器前缀")
+    void coreTableHasNoAdapterPrefixes() {
+        List<String> prefixes = ConfigurationGroups.core().prefixes();
+        List<String> adapter = new ArrayList<>();
+        for (String prefix : prefixes) {
+            if (prefix.startsWith("starbot.adapter.")) {
+                adapter.add(prefix);
+            }
+        }
+
+        assertTrue(prefixes.contains("starbot.core.push"),
+                "阳性锚：核心表须含 starbot.core.push");
+        assertTrue(adapter.isEmpty(),
+                "核心表不得含适配器前缀，命中 " + adapter.size() + " 条：\n  "
+                        + String.join("\n  ", adapter));
+    }
 }

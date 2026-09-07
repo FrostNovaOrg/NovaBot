@@ -94,7 +94,7 @@ public final class ConfigurationGroups {
     }
 
     /**
-     * 只含核心自有前缀的分组表：{@code starbot.core.*}／{@code spring.*}／{@code starbot.adapter.onebot.*}。
+     * 只含核心自有前缀的分组表：{@code starbot.core.*}／{@code spring.*}。
      * @return 核心表
      */
     public static ConfigurationGroups core() {
@@ -134,8 +134,6 @@ public final class ConfigurationGroups {
         // ---- 推送 ----
         map(map, "starbot.core.push", PUSH);
         map(map, "starbot.core.sender", PUSH);
-        // 备用的全体提醒方案属于「怎么发」，不属于适配器的工程参数
-        map(map, "starbot.adapter.onebot.extension.napcat.enable-backup-at-all", PUSH);
 
         // ---- 告警 ----
         map(map, "starbot.core.alert", ALERT);
@@ -170,14 +168,6 @@ public final class ConfigurationGroups {
         map(map, "starbot.core.datasource", SERVICE);
         // 那两项是「NapCat 界面怎么打开」的凭据，界面上的正门在连接页
         map(map, "starbot.core.config-ui.napcat", SERVICE);
-        // 适配器这几段逐段登记而不写一条 starbot.adapter.onebot 兜底：
-        // 兜底会让此后每一个新加的适配器配置项自动落进折起来的高级区，且没有任何东西会提起这件事
-        map(map, "starbot.adapter.onebot.base-url", SERVICE);
-        map(map, "starbot.adapter.onebot.senders", SERVICE);
-        map(map, "starbot.adapter.onebot.security", SERVICE);
-        map(map, "starbot.adapter.onebot.websocket-thread", SERVICE);
-        map(map, "starbot.adapter.onebot.detect", SERVICE);
-        map(map, "starbot.adapter.onebot.extension", SERVICE);
         return new ConfigurationGroups(map);
     }
 

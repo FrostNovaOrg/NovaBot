@@ -7,6 +7,7 @@ import com.starlwr.bot.bilibili.config.BilibiliConfigurationGroups;
 import com.starlwr.bot.bilibili.protocol.NovaEventMapper;
 import com.starlwr.bot.core.config.ConfigDanger;
 import com.starlwr.bot.core.config.ConfigEffect;
+import com.starlwr.bot.core.config.ui.ConfigurationGroupContributor;
 import com.starlwr.bot.core.config.ui.ConfigurationGroups;
 import com.starlwr.bot.core.config.ui.ConfigurationMetadataService;
 import com.starlwr.bot.core.config.ui.ExternalConfigurationFields;
@@ -421,11 +422,26 @@ class ConfigurationConsistencyTest {
     }
 
     /**
-     * 核心自有前缀加上本插件申报的那八条。
+     * 核心自有前缀加上本插件与适配器申报的前缀。
+     * <p>
+     * 适配器不在本模块的编译依赖里。分母含适配器键，须把适配器申报并进来，
+     * 否则核心表抽走那些前缀之后适配器键会全部变成未归组。
      * @return 合并后的分组表
      */
     private ConfigurationGroups groups() {
-        return ConfigurationGroups.of(List.of(new BilibiliConfigurationGroups()));
+        return ConfigurationGroups.of(List.of(new BilibiliConfigurationGroups(), oneBotContributor()));
+    }
+
+    private ConfigurationGroupContributor oneBotContributor() {
+        try {
+            Class<?> type = Class.forName(
+                    "com.starlwr.bot.adapter.onebot.config.OneBotConfigurationGroups",
+                    true,
+                    modulesClassLoader());
+            return (ConfigurationGroupContributor) type.getDeclaredConstructor().newInstance();
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("装不上适配器的配置分组申报", e);
+        }
     }
 
     @Test
