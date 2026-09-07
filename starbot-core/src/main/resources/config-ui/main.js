@@ -128,7 +128,41 @@ function mountSettingsPage(meta, slot) {
 }
 
 /**
+ * 导航图标的外壳
+ *
+ * 插件只给壳里面那几笔形状，外壳由这里统一套上：笔画粗细与取色因此与内置那几条一模一样，
+ * 插件写不进 stroke-width，也就画不出一条比别条粗的入口。
+ */
+const NAV_ICON_SHELL = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">';
+
+/**
+ * 没给图标、或给的图标没过白名单时画的那一个
+ *
+ * 空着不行：内置四条都是「图标＋文字」，空着的那条文字会顶到最左边，
+ * 六条入口的文字于是彼此错开——那正是这次要修的毛病本身。
+ */
+const NAV_ICON_DEFAULT = '<rect x="2.9" y="2.9" width="10.2" height="10.2" rx="2.6"/>';
+
+/**
+ * 一条导航入口的图标：插件给了形状就画它，没给就画中性缺省图标
+ *
+ * 这一串会拼进页面，而它出自插件——白名单不在这里，在服务端那一侧：
+ * 元素与属性都过了关口才随清单发下来，不合规的在那里就退成了空串，
+ * 那一行「是哪一页、为什么」也写在那边的日志里。两处各设一道的话，
+ * 前面那道死掉的那天，后面这道会替它把红藏起来。
+ * @param meta 页面清单里的一项
+ * @return {string} 连外壳的一整段 svg
+ */
+function navIcon(meta) {
+  const shape = typeof meta.icon === 'string' ? meta.icon.trim() : '';
+  return NAV_ICON_SHELL + (shape || NAV_ICON_DEFAULT) + '</svg>';
+}
+
+/**
  * 建出与内置页并列的一整页：侧栏入口在「设置」之前，容器追加到主区
+ *
+ * 入口是「图标在前、文字在后」，与内置四条同形：先写图标再补文字，
+ * 反过来写的话，后一句会把前一句整块换掉，而屏幕上只是又少了一个图标。
  * @param meta 页面清单里的一项
  * @return {HTMLElement} 插件往里渲染的容器
  */
@@ -140,7 +174,8 @@ function mountTopPage(meta) {
   const link = el('a');
   link.href = '#/' + meta.id;
   link.dataset.page = meta.id;
-  link.textContent = meta.displayName;
+  link.innerHTML = navIcon(meta);
+  link.append(meta.displayName);
   if (settings) nav.insertBefore(link, settings);
   else if (nav) nav.appendChild(link);
   // 内置入口在载入时绑过「再点当前项也走一遍」；动态加上的这一条当时还不在

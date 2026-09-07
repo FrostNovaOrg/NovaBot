@@ -40,6 +40,15 @@ public class PushConsolePageProvider implements ConsolePageProvider {
         return 20;
     }
 
+    /**
+     * 一只对话气泡。这一笔形状是这一页搬出核心之前导航上就在画的那一只，逐字照抄
+     */
+    @Override
+    public String icon() {
+        return "<path d=\"M2 4.2A1.2 1.2 0 0 1 3.2 3h9.6A1.2 1.2 0 0 1 14 4.2v6.1a1.2 1.2 0 0 1-1.2 1.2H6.4"
+                + "L3.4 14V11.5H3.2A1.2 1.2 0 0 1 2 10.3z\"/>";
+    }
+
     @Override
     public ConsolePageSlot slot() {
         return ConsolePageSlot.TOP;

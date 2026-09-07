@@ -149,6 +149,43 @@ class ConsolePageProviderTest {
         }
     }
 
+    /**
+     * 两条导航入口的图标，与搬家前画的那两笔逐字相同
+     * <p>
+     * 这两串的出处不是这两个类，而是<b>它们还写在核心界面文件里的时候</b>：
+     * 推送与主播两页搬进插件之后，建入口那一处只写文字，于是侧栏上这两条自搬家之日起
+     * 就是光秃秃的——而其余四条都有图标。补回来时照抄原文，不另画。
+     * <p>
+     * 因此这一格钉的是一件源码本身答不出的事：<b>画的还是不是原来那两笔</b>。
+     * 换了图案不会有任何报错，只是这两条入口从此与谁都对不上号。
+     * 外壳（{@code viewBox}／{@code stroke-width} 那些）不在这里，它由核心统一套。
+     */
+    @Test
+    @DisplayName("推送与主播两条入口的图标与搬家前的原文逐字相同")
+    void topPageIconsMatchTheDrawingsFromBeforeTheMove() {
+        List<String> red = new ArrayList<>();
+
+        try {
+            assertEquals("<path d=\"M2 4.2A1.2 1.2 0 0 1 3.2 3h9.6A1.2 1.2 0 0 1 14 4.2v6.1a1.2 1.2 0 0 1-1.2 1.2"
+                            + "H6.4L3.4 14V11.5H3.2A1.2 1.2 0 0 1 2 10.3z\"/>",
+                    new PushConsolePageProvider().icon(), "推送那只对话气泡");
+        } catch (Throwable t) {
+            red.add("① " + t.getMessage());
+        }
+
+        try {
+            assertEquals("<circle cx=\"8\" cy=\"5.2\" r=\"2.6\"/>"
+                            + "<path d=\"M2.8 14c0-2.9 2.3-4.6 5.2-4.6s5.2 1.7 5.2 4.6\"/>",
+                    new StreamersConsolePageProvider().icon(), "主播那个头肩");
+        } catch (Throwable t) {
+            red.add("② " + t.getMessage());
+        }
+
+        if (!red.isEmpty()) {
+            fail(red.size() + " 问红：" + String.join("；", red));
+        }
+    }
+
     private static void assertReadable(String resource) {
         InputStream in = ConsolePageProviderTest.class.getClassLoader().getResourceAsStream(resource);
         assertTrue(in != null, resource + " 在 classpath 上读不到");

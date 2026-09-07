@@ -658,6 +658,10 @@ public class ConfigUiController {
             item.put("displayName", page.displayName());
             item.put("script", page.script());
             item.put("order", page.order());
+            // 导航入口上那个图标，只有壳里面的形状：外壳由界面统一套，插件改不动笔画。
+            // 过关口的是这一串本身，不合规的在这里就退成空串（界面照空串画中性缺省图标），
+            // 而这一页照常在清单里——「图标写坏了所以整页从导航上消失」比没有图标更坏
+            item.put("icon", ConsolePages.icon(page));
             // 枚举名一律小写，与界面上各落点一一对应；直接吐枚举名会把 Java 的书写习惯
             // 泄进接口，换个实现语言就得跟着改
             item.put("slot", page.slot().name().toLowerCase(Locale.ROOT));
