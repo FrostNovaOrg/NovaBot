@@ -2,7 +2,7 @@
 #
 # 占位改在配套的 novabot-backup.service，本文件一般不用改。启用前确认两处已改：
 #   1. service 里 ExecStart 末尾的目标路径
-#   2. 若安装目录不是 /opt/novabot，service 里的脚本路径与数据目录
+#   2. 若安装目录不是 /opt/starbot，service 里的脚本路径与数据目录
 # 若要换时间点，改下面的 OnCalendar。
 
 [Unit]
