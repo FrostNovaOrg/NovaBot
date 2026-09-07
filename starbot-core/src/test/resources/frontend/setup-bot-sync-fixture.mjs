@@ -68,9 +68,13 @@ function bracedFrom(src, marker) {
 }
 
 function loadSync() {
-  const body = bracedFrom(setupSrc, 'function syncBotDraft');
-  if (!body) throw new Error('no function');
-  return new Function(body + '\nreturn syncBotDraft;')();
+  const pieces = [
+    bracedFrom(setupSrc, 'function botSnapshot'),
+    bracedFrom(setupSrc, 'function rememberBotDraft'),
+    bracedFrom(setupSrc, 'function syncBotDraft'),
+  ];
+  if (!pieces.every(Boolean)) throw new Error('no function');
+  return new Function(pieces.join('\n') + '\nreturn syncBotDraft;')();
 }
 
 function seed() {

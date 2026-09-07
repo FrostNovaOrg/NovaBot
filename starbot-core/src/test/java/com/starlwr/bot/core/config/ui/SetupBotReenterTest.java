@@ -20,7 +20,7 @@ class SetupBotReenterTest {
             "starbot-core/src/test/resources/frontend/setup-bot-reenter-fixture.mjs";
 
     @Test
-    @DisplayName("改参重进 botOk 仍假且 Token 仍是编辑值；未改参采既成事实；旧写法放回即红；timer 注释现行安装目录")
+    @DisplayName("改参重进 botOk 仍假且 Token 仍是编辑值；未改参采既成事实；旧写法放回即红；timer 注释现行安装目录；syncBotDraft 后 botSynced 与 botSnapshot 同一份")
     void reenteringSetupKeepsInvalidatedBotOkAndTimerPath() throws IOException, InterruptedException {
         FrontendFixture.run(FIXTURE, "重进向导不把作废的测通翻回真");
     }

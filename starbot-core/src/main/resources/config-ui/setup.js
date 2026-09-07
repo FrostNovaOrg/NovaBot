@@ -119,15 +119,7 @@ function syncBotDraft(draft, bot) {
   if (bot.websocketPort) draft.bot.wsPort = String(bot.websocketPort);
   draft.bot.httpToken = '';
   draft.bot.wsToken = '';
-  // 快照内联：本函数会被单独切出去跑，不能调兄弟函数
-  draft.botSynced = JSON.stringify({
-    address: String(draft.bot.address || ''),
-    httpPort: String(draft.bot.httpPort || ''),
-    wsPort: String(draft.bot.wsPort || ''),
-    httpToken: '',
-    wsToken: '',
-  });
-  return draft;
+  return rememberBotDraft(draft);
 }
 
 /**
