@@ -287,6 +287,26 @@ systemd 下的进程树也不正确。
 
 动态事件只有一个：`com.starlwr.bot.bilibili.event.dynamic.BilibiliDynamicUpdateEvent`。
 
+### 扩展点清单
+
+前面几小节讲的是插件怎么被装进来、能监听哪些事件。这一节反过来列**插件能往核心贡献什么**。
+接口路径相对 `com.starlwr.bot.core` 包根书写；「现有实现」取自仓库自带的两个平台插件
+（starbot-bilibili、onebot-adapter，见第 1 节），写新插件时可以逐行当参照。
+
+| 扩展点 | 核心接口（相对路径） | 现有实现（模块） | 一句话 |
+|---|---|---|---|
+| 控制台页 | `config/ui/page/ConsolePageProvider` | `BilibiliConsolePageProvider` 与页面脚本 `config-ui-pages/bilibili.js`（starbot-bilibili） | 往控制台添自己的页；挂在连接页还是设置页由 `ConsolePageSlot` 申报，可落的位置就这两处 |
+| 配置节 | `@ConfigurationProperties`（编译期元数据由 `config/ui/ConfigurationMetadataService` 读取） | 各模块的配置类 | 配置类加了项，设置页表单自动出现；分组按前缀在 `config/ui/ConfigurationGroups` 登记，新前缀不登记就没有组 |
+| 聊天命令 | `command/StarBotCommand` | `command/` 下的一族命令（starbot-bilibili） | 实现接口并注册为 Bean，群里即多一条命令 |
+| 健康探针 | `health/HealthProbe` | 直播间、登录、风控三件（starbot-bilibili）与 `OneBotHealthProbe`（onebot-adapter） | 探测结果汇总进总览页，与告警共用 |
+| 账号登录 | `account/AccountLoginProvider` | `BilibiliAccountLoginProvider`（starbot-bilibili） | 界面内扫码登录、退出登录 |
+| 机器人连接测试 | `account/BotConnectionTester` | `OneBotConnectionTester`（onebot-adapter） | 连接页上的连通性测试与连接参数回填 |
+| @全体权限 | `sender/AtAllPermissionResolver` | `OneBotAtAllPermissionService`（onebot-adapter） | 「能不能 @全体成员」由平台侧回答，核心只拿答案决定摘不摘 |
+| 消息出口 | `service/StarBotSenderService` 登记的 `model/Sender` | `OneBotController`（onebot-adapter） | 推送平台向核心登记出口，核心按名字投递 |
+| REST 接口 | 无专用接口：`@RestController` 照常写，仍需 `@StarBotComponent` | `BilibiliReportLayoutController`（starbot-bilibili）、`OneBotTargetController`（onebot-adapter） | 插件 jar 里的控制器与核心的合在同一个 Web 服务里 |
+
+这张表不改变第 1 节定下的依赖方向：核心只保管清单上的接口，不认识任何一个具体平台。
+
 ## 8. 反射相关的坑
 
 一处**只有踩过才知道**的行为：标注了 `@Configuration` 的类会被 CGLIB 代理，
