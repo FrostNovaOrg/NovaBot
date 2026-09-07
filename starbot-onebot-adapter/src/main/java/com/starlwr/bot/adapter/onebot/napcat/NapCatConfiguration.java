@@ -1,11 +1,15 @@
 package com.starlwr.bot.adapter.onebot.napcat;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.adapter.onebot.config.OneBotAdapterPluginProperties;
+import com.starlwr.bot.adapter.onebot.config.OneBotNapCatPropertiesBinder;
 import com.starlwr.bot.core.config.ui.ConfigurationFileService;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.client.RestTemplate;
+
+import java.time.Instant;
+import java.util.List;
 
 /**
  * NapCat WebUI 代登录组件
@@ -13,10 +17,14 @@ import org.springframework.web.client.RestTemplate;
 @Configuration
 @StarBotComponent
 public class NapCatConfiguration {
-    private final StarBotCoreProperties properties;
+    private final OneBotAdapterPluginProperties properties;
 
-    public NapCatConfiguration(StarBotCoreProperties properties) {
+    private final OneBotNapCatPropertiesBinder.OneBotNapCatKeyBinding binding;
+
+    public NapCatConfiguration(OneBotAdapterPluginProperties properties,
+                               OneBotNapCatPropertiesBinder.OneBotNapCatKeyBinding binding) {
         this.properties = properties;
+        this.binding = binding;
     }
 
     /**
@@ -29,6 +37,10 @@ public class NapCatConfiguration {
     @Bean
     public NapCatCredentialService napCatCredentialService(ConfigurationFileService fileService,
                                                            RestTemplate restTemplate) {
-        return new NapCatCredentialService(properties.getConfigUi().getNapcat(), fileService, restTemplate);
+        return new NapCatCredentialService(properties.getNapcat(), fileService, restTemplate,
+                Instant::now, null,
+                binding.legacyTokenPresent()
+                        ? List.of(OneBotNapCatPropertiesBinder.LEGACY_TOKEN)
+                        : List.of());
     }
 }

@@ -16,7 +16,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.mock.env.MockEnvironment;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -207,11 +206,10 @@ class OneBotAlertKeyMigrationTest {
 
         try {
             Map<String, String> renamed = new OneBotConfigurationKeyAliases().renamed();
-            Map<String, String> expected = new LinkedHashMap<>();
-            expected.put(CURRENT_PLATFORM, LEGACY_PLATFORM);
-            expected.put(CURRENT_TYPE, LEGACY_TYPE);
-            expected.put(CURRENT_NUM, LEGACY_NUM);
-            assertEquals(expected, renamed, "须逐键申报现行→旧，恰三条");
+            assertEquals(LEGACY_PLATFORM, renamed.get(CURRENT_PLATFORM), "告警 platform 别名");
+            assertEquals(LEGACY_TYPE, renamed.get(CURRENT_TYPE), "告警 type 别名");
+            assertEquals(LEGACY_NUM, renamed.get(CURRENT_NUM), "告警 num 别名");
+            assertEquals(7, renamed.size(), "须申报告警三条加代登录四条");
         } catch (AssertionError e) {
             red.add("① " + e.getMessage());
         }
@@ -235,7 +233,7 @@ class OneBotAlertKeyMigrationTest {
 
         try {
             Map<String, ConfigurationGroups.Group> prefixes = new OneBotConfigurationGroups().prefixes();
-            assertEquals(8, prefixes.size(), "申报须恰 8 条");
+            assertEquals(9, prefixes.size(), "申报须恰 9 条");
             assertEquals(ConfigurationGroups.ALERT, prefixes.get("starbot.adapter.onebot.alert"),
                     "alert 前缀须落告警组");
         } catch (AssertionError e) {

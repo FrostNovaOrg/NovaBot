@@ -1,6 +1,5 @@
 package com.starlwr.bot.adapter.onebot.napcat;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -216,8 +215,9 @@ class NapCatRouteWitnessTest {
     @Nested
     @DisplayName("挂在凭据签发上")
     class HookedOnMinting {
-        private StarBotCoreProperties.ConfigUi.NapCat props() {
-            StarBotCoreProperties.ConfigUi.NapCat p = new StarBotCoreProperties.ConfigUi.NapCat();
+        private com.starlwr.bot.adapter.onebot.config.OneBotAdapterPluginProperties.NapCat props() {
+            com.starlwr.bot.adapter.onebot.config.OneBotAdapterPluginProperties.NapCat p =
+                    new com.starlwr.bot.adapter.onebot.config.OneBotAdapterPluginProperties.NapCat();
             p.setTokenHash("0".repeat(64));
             p.setAddress(BASE);
             return p;

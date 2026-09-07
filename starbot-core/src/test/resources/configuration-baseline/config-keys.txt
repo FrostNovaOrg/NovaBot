@@ -33,10 +33,6 @@ starbot.core.config-ui.auth.totp-secret|java.lang.String||二次验证密钥（T
 starbot.core.config-ui.auth.totp|java.lang.Boolean|true|是否要求二次验证 默认要求。设了口令却没绑定验证器时，界面会持续提示绑定——只有口令的面板 一旦开到公网，其安全性就完全押在这一个口令上，而口令是会被撞库、被键盘记录、 被肩窥的。真的不想要二次验证时把这一项改成 false，那是一个需要写下来的决定。 改完立即生效，不必重启：界面上那个开关本来就是当场生效的， 这一行此前标着「需重启」，于是同一件事在界面上有两种说法。
 starbot.core.config-ui.backup-keep|java.lang.Integer|10|配置文件备份保留份数 每次保存 application.yml 或主播推送配置时都会另留一份带时间的备份。 超出这个数目的旧备份会被删掉。默认 10 份，可在 1 到 100 之间改。改完立即生效，不必重启。
 starbot.core.config-ui.enabled|java.lang.Boolean|true|是否启用配置界面
-starbot.core.config-ui.napcat.address|java.lang.String|http://127.0.0.1:6099|NapCat WebUI 在本机的地址 默认回环。不该改成非回环地址：代登录是拿着凭据去换凭据， 这条请求一旦离开本机，凭据就上了网线。
-starbot.core.config-ui.napcat.token-hash|java.lang.String||上一项换算出来的哈希，由程序写回，不必手填 形态是 SHA-256(token + ".napcat") 的十六进制串——这不是我们选的， 是 NapCat 的登录接口就收这个。
-starbot.core.config-ui.napcat.token|java.lang.String||NapCat WebUI 的 token 填明文即可，启动时会立刻换算成登录用的哈希写回，明文不留在盘上。 🔴 换算出来的哈希与 token 在权限上完全等价——NapCat 的登录接口收的就是它， 拿到哈希的人照样登得进去。所以这一步的收益不是「更安全」， 而是「不在这台机器上多造一份 token 的副本」：原文在 NapCat 自己的配置里本来就有， NovaBot 不需要第二份。别把它当成加密后就可以放松保管的东西。
-starbot.core.config-ui.napcat.totp-secret|java.lang.String||NapCat WebUI 的二次验证密钥（Base32） 它开了 2FA 才需要填。只能明文保存：代登录时要用它现算验证码， 而算码需要密钥本身——这一点没有折中办法，因此配置文件的权限必须收紧到仅属主可读。
 starbot.core.config-ui.token|java.lang.String||配置界面访问令牌 留空时每次启动自动生成一个随机令牌并输出到日志。配合默认仅监听回环地址的设置， 单机部署无需任何配置即可安全使用；需要从其他机器访问时在此显式设置一个随机串。
 starbot.core.config-ui.update.enabled|java.lang.Boolean|true|是否检查新版 关掉之后侧栏药丸与首页那条软待办都不会再出现。程序不会自己更新， 这一检查是使用者得知「该去换 jar 了」的唯一入口，默认开着。
 starbot.core.config-ui.update.source|java.lang.String|https://api.github.com/repos/FrostNovaOrg/NovaBot/releases/latest|新版信息的来源地址 默认指向发布仓的 latest release 接口，取回的 JSON 里要有 tag_name（版本）、body（更新说明）与 html_url（链接）。 自建镜像或换发布渠道时改这里。取不到或取回的东西认不出来时静默跳过—— 「查不到新版」不该变成控制台上的一条故障。

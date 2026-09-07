@@ -166,8 +166,6 @@ public final class ConfigurationGroups {
         map(map, "starbot.core.network-thread", SERVICE);
         map(map, "starbot.core.plugin", SERVICE);
         map(map, "starbot.core.datasource", SERVICE);
-        // 那两项是「NapCat 界面怎么打开」的凭据，界面上的正门在连接页
-        map(map, "starbot.core.config-ui.napcat", SERVICE);
         return new ConfigurationGroups(map);
     }
 

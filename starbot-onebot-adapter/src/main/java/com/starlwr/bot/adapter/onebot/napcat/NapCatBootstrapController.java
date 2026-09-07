@@ -123,7 +123,7 @@ public class NapCatBootstrapController {
             case NOT_CONFIGURED -> {
                 result.put("success", false);
                 result.put("reason", "not_configured");
-                result.put("message", "尚未在 starbot.core.config-ui.napcat 下配置 NapCat 的 token");
+                result.put("message", "尚未在 starbot.adapter.onebot.napcat 下配置 NapCat 的 token");
             }
             case THROTTLED -> {
                 // 🔴 这一支必须与 mint_failed 分开。两者的下一步动作完全相反：

@@ -14,12 +14,14 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.Mockito.mock;
 
 /**
@@ -61,6 +63,12 @@ class ConfigValueMaskingTest {
                 redis:
                   password: redis-secret-value
             starbot:
+              adapter:
+                onebot:
+                  napcat:
+                    token: napcat-token-value
+                    token-hash: napcat-token-hash-value
+                    totp-secret: napcat-totp-secret-value
               core:
                 config-ui:
                   enabled: true
@@ -69,10 +77,6 @@ class ConfigValueMaskingTest {
                     password: bcrypt-hash-value
                     totp-secret: totp-secret-value
                     operator-token: true
-                  napcat:
-                    token: napcat-token-value
-                    token-hash: napcat-token-hash-value
-                    totp-secret: napcat-totp-secret-value
                 event-stream:
                   enabled: true
                   require-token: true
@@ -99,9 +103,9 @@ class ConfigValueMaskingTest {
             "starbot.core.config-ui.token",
             "starbot.core.config-ui.auth.password",
             "starbot.core.config-ui.auth.totp-secret",
-            "starbot.core.config-ui.napcat.token",
-            "starbot.core.config-ui.napcat.token-hash",
-            "starbot.core.config-ui.napcat.totp-secret",
+            "starbot.adapter.onebot.napcat.token",
+            "starbot.adapter.onebot.napcat.token-hash",
+            "starbot.adapter.onebot.napcat.totp-secret",
             "spring.mail.password",
             "spring.data.redis.password");
 
@@ -212,6 +216,44 @@ class ConfigValueMaskingTest {
         for (String name : REAL_SECRETS) {
             assertEquals(SensitiveFields.MASK, values.getString(name),
                     name + " 是真机密, 面板可能正开在直播画面上");
+        }
+    }
+
+    @Test
+    @DisplayName("旧键名同样遮蔽")
+    void legacyNapcatKeysStayMasked() throws IOException {
+        List<String> red = new ArrayList<>();
+        start("""
+                starbot:
+                  core:
+                    config-ui:
+                      enabled: true
+                      napcat:
+                        token: napcat-legacy-token-value
+                        token-hash: napcat-legacy-hash-value
+                        totp-secret: napcat-legacy-totp-value
+                """);
+        JSONObject values = values();
+        try {
+            assertEquals(SensitiveFields.MASK, values.getString("starbot.core.config-ui.napcat.token"),
+                    "旧 token 仍须遮");
+        } catch (AssertionError e) {
+            red.add("①" + e.getMessage());
+        }
+        try {
+            assertEquals(SensitiveFields.MASK, values.getString("starbot.core.config-ui.napcat.token-hash"),
+                    "旧 token-hash 仍须遮");
+        } catch (AssertionError e) {
+            red.add("②" + e.getMessage());
+        }
+        try {
+            assertEquals(SensitiveFields.MASK, values.getString("starbot.core.config-ui.napcat.totp-secret"),
+                    "旧 totp-secret 仍须遮");
+        } catch (AssertionError e) {
+            red.add("③" + e.getMessage());
+        }
+        if (!red.isEmpty()) {
+            fail("旧键名同样遮蔽三问中 " + red.size() + " 问未销: " + String.join("；", red));
         }
     }
 

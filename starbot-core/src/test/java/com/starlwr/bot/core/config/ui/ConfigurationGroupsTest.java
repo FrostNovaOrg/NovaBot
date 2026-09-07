@@ -91,7 +91,7 @@ class ConfigurationGroupsTest {
         assertEquals(ConfigurationGroups.AUTH,
                 groups.groupOf("starbot.core.config-ui.auth.password"));
         assertEquals(ConfigurationGroups.SERVICE,
-                groups.groupOf("starbot.core.config-ui.napcat.address"));
+                groups.groupOf("starbot.core.event-stream.enabled"));
     }
 
     @Test

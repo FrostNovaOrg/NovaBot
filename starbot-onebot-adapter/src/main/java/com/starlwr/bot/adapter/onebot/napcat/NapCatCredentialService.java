@@ -1,7 +1,7 @@
 package com.starlwr.bot.adapter.onebot.napcat;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.adapter.onebot.config.OneBotAdapterPluginProperties;
 import com.starlwr.bot.core.config.ui.ConfigurationFileService;
 import com.starlwr.bot.core.config.ui.auth.TotpGenerator;
 import lombok.extern.slf4j.Slf4j;
@@ -16,7 +16,10 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Supplier;
@@ -55,9 +58,11 @@ public class NapCatCredentialService {
      */
     private static final String HASH_SUFFIX = ".napcat";
 
-    public static final String TOKEN_PROPERTY = "starbot.core.config-ui.napcat.token";
+    public static final String TOKEN_PROPERTY = "starbot.adapter.onebot.napcat.token";
 
-    public static final String TOKEN_HASH_PROPERTY = "starbot.core.config-ui.napcat.token-hash";
+    public static final String TOKEN_HASH_PROPERTY = "starbot.adapter.onebot.napcat.token-hash";
+
+    public static final String TOTP_SECRET_PROPERTY = "starbot.adapter.onebot.napcat.totp-secret";
 
     /**
      * 凭据的实际寿命（秒），取自 NapCat 的 {@code MAX_CREDENTIAL_VALID_SECONDS}
@@ -147,12 +152,12 @@ public class NapCatCredentialService {
      */
     private final NapCatRouteWitness routeWitness;
 
-    public NapCatCredentialService(StarBotCoreProperties.ConfigUi.NapCat properties,
+    public NapCatCredentialService(OneBotAdapterPluginProperties.NapCat properties,
                                    ConfigurationFileService fileService, RestTemplate restTemplate) {
         this(properties, fileService, restTemplate, Instant::now);
     }
 
-    NapCatCredentialService(StarBotCoreProperties.ConfigUi.NapCat properties,
+    NapCatCredentialService(OneBotAdapterPluginProperties.NapCat properties,
                             ConfigurationFileService fileService, RestTemplate restTemplate,
                             Supplier<Instant> clock) {
         this(properties, fileService, restTemplate, clock, null);
@@ -163,12 +168,22 @@ public class NapCatCredentialService {
      *                让判据能塞进一个<b>必然出岔子</b>的见证，验「见证垮了签发也不垮」——
      *                够不着的守卫等于没有守卫
      */
-    NapCatCredentialService(StarBotCoreProperties.ConfigUi.NapCat properties,
+    NapCatCredentialService(OneBotAdapterPluginProperties.NapCat properties,
                             ConfigurationFileService fileService, RestTemplate restTemplate,
                             Supplier<Instant> clock, NapCatRouteWitness witness) {
+        this(properties, fileService, restTemplate, clock, witness, List.of());
+    }
+
+    /**
+     * @param extraKeysToClear 写回哈希时一并清空的键，通常是旧位置的 token 明文
+     */
+    NapCatCredentialService(OneBotAdapterPluginProperties.NapCat properties,
+                            ConfigurationFileService fileService, RestTemplate restTemplate,
+                            Supplier<Instant> clock, NapCatRouteWitness witness,
+                            Collection<String> extraKeysToClear) {
         this.restTemplate = restTemplate;
         this.baseUrl = trimTrailingSlash(properties.getAddress());
-        this.tokenHash = resolveHash(properties, fileService);
+        this.tokenHash = resolveHash(properties, fileService, extraKeysToClear);
         this.totpSecret = blankToNull(properties.getTotpSecret());
         this.clock = clock;
         this.routeWitness = witness != null ? witness : new NapCatRouteWitness(this.baseUrl, restTemplate);
@@ -341,7 +356,7 @@ public class NapCatCredentialService {
         // 走到这里意味着 NapCat 开了 2FA 而我们这边没配密钥——要说清楚该去填哪
         if (Boolean.TRUE.equals(data.getBoolean("require2FA"))) {
             log.error("NapCat 开启了二次验证, 但 {} 未配置其密钥, 无法代登录",
-                    "starbot.core.config-ui.napcat.totp-secret");
+                    TOTP_SECRET_PROPERTY);
             return Optional.empty();
         }
 
@@ -382,8 +397,9 @@ public class NapCatCredentialService {
     /**
      * 拿到登录哈希：配置里填了明文 token 就当场换算并写回，明文不留在盘上
      */
-    private static String resolveHash(StarBotCoreProperties.ConfigUi.NapCat properties,
-                                      ConfigurationFileService fileService) {
+    private static String resolveHash(OneBotAdapterPluginProperties.NapCat properties,
+                                      ConfigurationFileService fileService,
+                                      Collection<String> extraKeysToClear) {
         String plain = blankToNull(properties.getToken());
         String existing = blankToNull(properties.getTokenHash());
 
@@ -399,7 +415,19 @@ public class NapCatCredentialService {
 
         try {
             // 两项一起写：只写哈希不清明文，等于配置里同时躺着两份等价凭据
-            fileService.write(Map.of(TOKEN_HASH_PROPERTY, hashed, TOKEN_PROPERTY, ""));
+            Map<String, String> changes = new LinkedHashMap<>();
+            changes.put(TOKEN_HASH_PROPERTY, hashed);
+            changes.put(TOKEN_PROPERTY, "");
+            Collection<String> extra = extraKeysToClear == null ? List.of() : extraKeysToClear;
+            for (String key : extra) {
+                if (key != null && !key.isBlank()) {
+                    changes.put(key, "");
+                }
+            }
+            fileService.write(changes);
+            if (!extra.isEmpty()) {
+                log.warn("旧位置明文已清、请把 napcat 段迁到 starbot.adapter.onebot");
+            }
             log.info("NapCat 的 token 已换算为登录哈希保存, 配置文件中不再有明文");
         } catch (Exception e) {
             log.warn("NapCat 的 token 未能换算保存, 文件中仍是明文: {}", e.getMessage());

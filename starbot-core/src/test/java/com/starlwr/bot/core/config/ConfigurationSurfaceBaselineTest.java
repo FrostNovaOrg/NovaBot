@@ -46,8 +46,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *   <li>③ <b>字段表项数</b>：配置界面的字段表由元数据分组而来，其项数须与 ① 的键数相等。
  *       分组这一步会按键名的最后一段拆分，<b>漏掉一整组是它独有的失败形态</b>。</li>
  *   <li>④ <b>留核键说明零平台词</b>：留在核心的键，说明只说「平台」「机器人」，
- *       不写具体平台名——平台名属于插件。迁移中的两节暂豁免，整节迁走后豁免也删，
- *       问②会在基线里找不到它们的键时提醒。</li>
+ *       不写具体平台名——平台名属于插件。豁免须空：告警与代登录均已迁走。</li>
  * </ul>
  * <p>
  * 样本对不上时，实际值会写到 {@code target/configuration-baseline/} 下，便于逐行比对；
@@ -75,11 +74,9 @@ class ConfigurationSurfaceBaselineTest {
     private static final List<String> PLATFORM_WORDS = List.of("QQ", "NapCat", "OneBot");
 
     /**
-     * 迁移途中暂豁免的一节：代登录凭据四键。告警目标三项已迁走。
-     * 整节迁去插件之后，基线里不再有这个前缀的键，问②会红——那是在提醒把豁免一并删掉。
+     * 迁移途中暂豁免的前缀。告警与代登录均已迁走，须保持空表。
      */
-    private static final List<String> MIGRATING_PREFIXES =
-            List.of("starbot.core.config-ui.napcat.");
+    private static final List<String> MIGRATING_PREFIXES = List.of();
 
     @Test
     @DisplayName("① 键全集 —— 键名、类型、默认值、说明逐项与样本同串")
@@ -133,7 +130,7 @@ class ConfigurationSurfaceBaselineTest {
     }
 
     @Test
-    @DisplayName("④ 留核键说明零平台词 —— 非豁免键的说明不含 QQ／NapCat／OneBot；豁免恰一前缀且仍有键；行数与键数同")
+    @DisplayName("④ 留核键说明零平台词 —— 非豁免键的说明不含 QQ／NapCat／OneBot；豁免须空；行数与键数同")
     void retainedKeyDescriptionsHaveNoPlatformWords() throws IOException {
         List<String> baseline = readBaseline(KEYS_FILE);
         List<String> unresolved = new ArrayList<>();
@@ -154,14 +151,10 @@ class ConfigurationSurfaceBaselineTest {
             unresolved.add("问① " + e.getMessage());
         }
 
-        // 问②：豁免恰一前缀，且在基线中仍有键——键迁走后此问红，提醒删豁免
+        // 问②：豁免须空——两节均已迁走，再加豁免须是一次显式决定
         try {
-            for (String prefix : MIGRATING_PREFIXES) {
-                assertTrue(baseline.stream().anyMatch(line -> line.startsWith(prefix)),
-                        "豁免前缀 " + prefix + " 在基线中已无键——这一节已迁走，把豁免删掉");
-            }
-            assertEquals(1, MIGRATING_PREFIXES.size(),
-                    "豁免须恰一前缀：代登录凭据——增删豁免须是一次显式决定");
+            assertTrue(MIGRATING_PREFIXES.isEmpty(),
+                    "豁免须空：告警与代登录均已迁走——增删豁免须是一次显式决定");
         } catch (AssertionError e) {
             unresolved.add("问② " + e.getMessage());
         }

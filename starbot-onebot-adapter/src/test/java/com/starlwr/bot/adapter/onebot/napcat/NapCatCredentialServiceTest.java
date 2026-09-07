@@ -1,7 +1,9 @@
 package com.starlwr.bot.adapter.onebot.napcat;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.adapter.onebot.config.OneBotAdapterPluginProperties;
+import com.starlwr.bot.adapter.onebot.config.OneBotNapCatPropertiesBinder;
 import com.starlwr.bot.core.config.ui.ConfigurationFileService;
+import org.springframework.mock.env.MockEnvironment;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -20,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -40,8 +43,8 @@ class NapCatCredentialServiceTest {
      */
     private static final String HASH_OF_TEST = "5a0bb1dce4f71e9780db03560ce68b765bc524ee2ca7653df2633de291e68aca";
 
-    private StarBotCoreProperties.ConfigUi.NapCat props(String token, String hash, String secret) {
-        StarBotCoreProperties.ConfigUi.NapCat p = new StarBotCoreProperties.ConfigUi.NapCat();
+    private OneBotAdapterPluginProperties.NapCat props(String token, String hash, String secret) {
+        OneBotAdapterPluginProperties.NapCat p = new OneBotAdapterPluginProperties.NapCat();
         p.setToken(token);
         p.setTokenHash(hash);
         p.setTotpSecret(secret);
@@ -97,6 +100,85 @@ class NapCatCredentialServiceTest {
             assertEquals(HASH_OF_TEST, written.get(NapCatCredentialService.TOKEN_HASH_PROPERTY));
             // 只写哈希不清明文的话，配置里会同时躺着两份等价凭据
             assertEquals("", written.get(NapCatCredentialService.TOKEN_PROPERTY));
+        }
+
+        @Test
+        @DisplayName("只写旧键代登录仍通")
+        void legacyKeysStillAllowLogin() {
+            List<String> red = new ArrayList<>();
+            MockEnvironment environment = new MockEnvironment();
+            environment.setProperty(OneBotNapCatPropertiesBinder.LEGACY_TOKEN, "test");
+            environment.setProperty(OneBotNapCatPropertiesBinder.LEGACY_PREFIX + ".address",
+                    "http://127.0.0.1:6099");
+
+            OneBotAdapterPluginProperties properties = new OneBotAdapterPluginProperties();
+            OneBotNapCatPropertiesBinder.apply(environment, properties.getNapcat());
+
+            try {
+                assertEquals("test", properties.getNapcat().getToken(), "旧 token 应落到现行字段");
+            } catch (AssertionError e) {
+                red.add("①" + e.getMessage());
+            }
+
+            NapCatCredentialService service = new NapCatCredentialService(
+                    properties.getNapcat(), mock(ConfigurationFileService.class), mock(RestTemplate.class));
+            try {
+                assertTrue(service.isConfigured(), "只写旧键时代登录仍应可用");
+            } catch (AssertionError e) {
+                red.add("②" + e.getMessage());
+            }
+
+            if (!red.isEmpty()) {
+                fail("只写旧键代登录仍通两问中 " + red.size() + " 问未销: " + String.join("；", red));
+            }
+        }
+
+        @Test
+        @DisplayName("写回落新键且旧位置明文不留")
+        void writeBackLandsOnNewKeysAndClearsLegacyPlaintext() throws Exception {
+            List<String> red = new ArrayList<>();
+            ConfigurationFileService files = mock(ConfigurationFileService.class);
+            Map<String, String> written = new HashMap<>();
+            doAnswer(call -> {
+                written.putAll(call.getArgument(0));
+                return 2;
+            }).when(files).write(any());
+
+            MockEnvironment environment = new MockEnvironment();
+            environment.setProperty(OneBotNapCatPropertiesBinder.LEGACY_TOKEN, "test");
+            OneBotAdapterPluginProperties properties = new OneBotAdapterPluginProperties();
+            OneBotNapCatPropertiesBinder.OneBotNapCatKeyBinding binding =
+                    OneBotNapCatPropertiesBinder.apply(environment, properties.getNapcat());
+
+            new NapCatCredentialService(properties.getNapcat(), files, mock(RestTemplate.class),
+                    java.time.Instant::now, null,
+                    binding.legacyTokenPresent()
+                            ? List.of(OneBotNapCatPropertiesBinder.LEGACY_TOKEN)
+                            : List.of());
+
+            try {
+                assertEquals(HASH_OF_TEST, written.get(NapCatCredentialService.TOKEN_HASH_PROPERTY),
+                        "哈希须落新键");
+            } catch (AssertionError e) {
+                red.add("①" + e.getMessage());
+            }
+            try {
+                assertEquals("", written.get(NapCatCredentialService.TOKEN_PROPERTY),
+                        "新位置明文须清空");
+            } catch (AssertionError e) {
+                red.add("②" + e.getMessage());
+            }
+            try {
+                assertEquals("", written.get(OneBotNapCatPropertiesBinder.LEGACY_TOKEN),
+                        "旧位置明文须清空");
+            } catch (AssertionError e) {
+                red.add("③" + e.getMessage());
+            }
+
+            if (!red.isEmpty()) {
+                fail("写回落新键且旧位置明文不留三问中 " + red.size() + " 问未销: "
+                        + String.join("；", red));
+            }
         }
 
         @Test

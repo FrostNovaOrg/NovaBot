@@ -22,6 +22,7 @@ class OneBotConfigurationGroupsTest {
     private static final List<String> EXPECTED = List.of(
             "starbot.adapter.onebot.extension.napcat.enable-backup-at-all",
             "starbot.adapter.onebot.alert",
+            "starbot.adapter.onebot.napcat",
             "starbot.adapter.onebot.base-url",
             "starbot.adapter.onebot.senders",
             "starbot.adapter.onebot.security",
@@ -30,7 +31,7 @@ class OneBotConfigurationGroupsTest {
             "starbot.adapter.onebot.extension");
 
     @Test
-    @DisplayName("申报八条、合并表最长前缀胜、与核心表撞前缀须抛")
+    @DisplayName("申报九条、合并表最长前缀胜、与核心表撞前缀须抛")
     void contributorDeclaresSevenPrefixesAndMerges() {
         List<String> red = new ArrayList<>();
         OneBotConfigurationGroups contributor = new OneBotConfigurationGroups();
@@ -38,7 +39,7 @@ class OneBotConfigurationGroupsTest {
         try {
             Map<String, ConfigurationGroups.Group> declared = contributor.prefixes();
             assertEquals(EXPECTED, List.copyOf(declared.keySet()),
-                    "申报须恰 8 条且顺序为 enable-backup-at-all、alert 再其余六");
+                    "申报须恰 9 条且顺序为 enable-backup-at-all、alert、napcat 再其余六");
             assertEquals(ConfigurationGroups.PUSH,
                     declared.get("starbot.adapter.onebot.extension.napcat.enable-backup-at-all"),
                     "enable-backup-at-all 须落推送");
