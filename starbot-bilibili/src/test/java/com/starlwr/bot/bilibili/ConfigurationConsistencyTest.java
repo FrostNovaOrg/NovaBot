@@ -9,9 +9,12 @@ import com.starlwr.bot.core.config.ConfigDanger;
 import com.starlwr.bot.core.config.ConfigEffect;
 import com.starlwr.bot.core.config.ui.ConfigurationGroupContributor;
 import com.starlwr.bot.core.config.ui.ConfigurationGroups;
+import com.starlwr.bot.core.config.ui.ConfigurationKeyAliasContributor;
+import com.starlwr.bot.core.config.ui.ConfigurationKeyAliases;
 import com.starlwr.bot.core.config.ui.ConfigurationMetadataService;
 import com.starlwr.bot.core.config.ui.ExternalConfigurationFields;
 import com.starlwr.bot.core.config.ui.RuntimeConfigurationApplier;
+import com.starlwr.bot.core.config.ui.RuntimeConfigurationApplierContributor;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -377,7 +380,8 @@ class ConfigurationConsistencyTest {
 
         // 声明与名单是同一条规则的两个读者。只对其中一边加项，界面会照着声明说「已生效」，
         // 而保存那一步压根没碰运行中的配置——改了不生效，且没有任何提示说它没生效
-        Set<String> applied = RuntimeConfigurationApplier.supportedKeys();
+        ConfigurationKeyAliases.of(aliasContributors());
+        Set<String> applied = RuntimeConfigurationApplier.supportedKeys(applierContributors());
 
         List<String> promisedOnly = new ArrayList<>(declared);
         promisedOnly.removeAll(applied);
@@ -441,6 +445,35 @@ class ConfigurationConsistencyTest {
             return (ConfigurationGroupContributor) type.getDeclaredConstructor().newInstance();
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException("装不上适配器的配置分组申报", e);
+        }
+    }
+
+    /**
+     * 适配器申报的配置键别名。没有实现时为空集，尺仍须过。
+     * @return 贡献者，没有实现时为空
+     */
+    private List<ConfigurationKeyAliasContributor> aliasContributors() {
+        return loadOptionalContributor(ConfigurationKeyAliasContributor.class,
+                "com.starlwr.bot.adapter.onebot.config.OneBotConfigurationKeyAliases");
+    }
+
+    /**
+     * 适配器申报的即时生效应用器。没有实现时为空集，尺仍须过。
+     * @return 贡献者，没有实现时为空
+     */
+    private List<RuntimeConfigurationApplierContributor> applierContributors() {
+        return loadOptionalContributor(RuntimeConfigurationApplierContributor.class,
+                "com.starlwr.bot.adapter.onebot.config.OneBotRuntimeConfigurationAppliers");
+    }
+
+    private <T> List<T> loadOptionalContributor(Class<T> type, String className) {
+        try {
+            Class<?> found = Class.forName(className, true, modulesClassLoader());
+            return List.of(type.cast(found.getDeclaredConstructor().newInstance()));
+        } catch (ClassNotFoundException e) {
+            return List.of();
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("装不上适配器的 " + type.getSimpleName(), e);
         }
     }
 

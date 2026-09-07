@@ -14,10 +14,14 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
@@ -201,5 +205,124 @@ class ConfigurationKeyAliasesTest {
         JSONObject after = read();
         assertEquals("false", after.getJSONObject("values").getString(CURRENT_KEY), "存完再读, 以现行位置为准");
         assertNull(after.getJSONObject("legacy").getString(CURRENT_KEY), "已迁到现行位置, 提示随之消失");
+    }
+
+    @Test
+    @DisplayName("贡献者申报的旧键同样解析")
+    void contributorLegacyKeysResolve() {
+        List<String> reds = new ArrayList<>();
+        String current = "starbot.demo.alert.platform";
+        String legacy = "starbot.demo.alert.qq-platform";
+        ConfigurationKeyAliasContributor contributor = () -> {
+            Map<String, String> renamed = new LinkedHashMap<>();
+            renamed.put(current, legacy);
+            return renamed;
+        };
+        ConfigurationKeyAliases aliases = ConfigurationKeyAliases.of(List.of(contributor));
+
+        try {
+            assertEquals(current, aliases.currentName(legacy),
+                    "贡献者申报的旧键应换算成现行键");
+        } catch (AssertionError e) {
+            reds.add("① " + e.getMessage());
+        }
+
+        try {
+            Map<String, String> values = new LinkedHashMap<>();
+            values.put(legacy, "onebot");
+            Map<String, String> fallbacks = aliases.resolve(values);
+            assertEquals("onebot", values.get(current), "只写旧位置时读数应按现行键补上");
+            assertEquals(legacy, fallbacks.get(current), "落回旧位置的项应标出来源");
+        } catch (AssertionError e) {
+            reds.add("② " + e.getMessage());
+        }
+
+        try {
+            assertEquals(EventStreamProperties.PREFIX + ".enabled",
+                    aliases.currentName(EventStreamProperties.LEGACY_PREFIX + ".enabled"),
+                    "核心表原有前缀映射不得因合并而丢");
+        } catch (AssertionError e) {
+            reds.add("③ " + e.getMessage());
+        }
+
+        assertTrue(reds.isEmpty(), () -> "三问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+    }
+
+    @Test
+    @DisplayName("逐键映射不吞邻键（同前缀下未申报的键不受影响）")
+    void perKeyMappingDoesNotSwallowNeighbors() {
+        List<String> reds = new ArrayList<>();
+        String current = "starbot.demo.alert.platform";
+        String legacy = "starbot.demo.alert.qq-platform";
+        String neighbor = "starbot.demo.alert.qq-type";
+        String other = "starbot.demo.alert.qq-num";
+        ConfigurationKeyAliasContributor contributor = () -> Map.of(current, legacy);
+        ConfigurationKeyAliases aliases = ConfigurationKeyAliases.of(List.of(contributor));
+
+        try {
+            assertEquals(current, aliases.currentName(legacy), "申报的那一键应解析");
+        } catch (AssertionError e) {
+            reds.add("① " + e.getMessage());
+        }
+
+        try {
+            assertEquals(neighbor, aliases.currentName(neighbor), "同前缀未申报的邻键应原样返回");
+            assertEquals(other, aliases.currentName(other), "另一邻键同样不受影响");
+        } catch (AssertionError e) {
+            reds.add("② " + e.getMessage());
+        }
+
+        try {
+            Map<String, String> values = new LinkedHashMap<>();
+            values.put(legacy, "onebot");
+            values.put(neighbor, "1");
+            aliases.resolve(values);
+            assertEquals("onebot", values.get(current), "申报的那一键应补到现行位置");
+            assertEquals("1", values.get(neighbor), "邻键应留在原位");
+            assertNull(values.get("starbot.demo.alert.type"), "不得凭空给邻键编一个现行键");
+        } catch (AssertionError e) {
+            reds.add("③ " + e.getMessage());
+        }
+
+        assertTrue(reds.isEmpty(), () -> "三问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+    }
+
+    @Test
+    @DisplayName("撞键抛")
+    void collidingCurrentKeyThrows() {
+        List<String> reds = new ArrayList<>();
+
+        try {
+            ConfigurationKeyAliasContributor clash = () -> Map.of(
+                    EventStreamProperties.PREFIX, "starbot.elsewhere.event-stream");
+            IllegalStateException ex = assertThrows(IllegalStateException.class,
+                    () -> ConfigurationKeyAliases.of(List.of(clash)),
+                    "与核心表重复申报现行前缀须抛 IllegalStateException");
+            assertTrue(ex.getMessage().contains(EventStreamProperties.PREFIX),
+                    "文案应点名撞上的现行键, 实际=" + ex.getMessage());
+        } catch (AssertionError e) {
+            reds.add("① " + e.getMessage());
+        }
+
+        try {
+            ConfigurationKeyAliasContributor first = () -> Map.of("starbot.demo.a", "starbot.old.a");
+            ConfigurationKeyAliasContributor second = () -> Map.of("starbot.demo.a", "starbot.old.b");
+            assertThrows(IllegalStateException.class,
+                    () -> ConfigurationKeyAliases.of(List.of(first, second)),
+                    "两贡献者申报同一条现行键须抛");
+        } catch (AssertionError e) {
+            reds.add("② " + e.getMessage());
+        }
+
+        try {
+            ConfigurationKeyAliasContributor ok = () -> Map.of("starbot.demo.x", "starbot.old.x");
+            ConfigurationKeyAliases merged = ConfigurationKeyAliases.of(List.of(ok));
+            assertEquals("starbot.demo.x", merged.currentName("starbot.old.x"),
+                    "未撞的申报应合并进去");
+        } catch (AssertionError e) {
+            reds.add("③ " + e.getMessage());
+        }
+
+        assertTrue(reds.isEmpty(), () -> "三问中 " + reds.size() + " 问红: " + String.join("; ", reds));
     }
 }

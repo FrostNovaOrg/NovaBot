@@ -4,10 +4,12 @@ import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.service.TotalDataStorage;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -15,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 /**
  * 把保存下来的配置改动落到运行中的程序上
@@ -135,10 +138,59 @@ public class RuntimeConfigurationApplier {
      */
     private final TotalDataStorage totalDataStorage;
 
+    /**
+     * 插件申报的即时生效项。核心自有表不在这里。
+     */
+    private final Map<String, Consumer<String>> contributedAppliers;
+
     @Autowired
-    public RuntimeConfigurationApplier(StarBotCoreProperties properties, TotalDataStorage totalDataStorage) {
+    public RuntimeConfigurationApplier(StarBotCoreProperties properties, TotalDataStorage totalDataStorage,
+                                       ObjectProvider<RuntimeConfigurationApplierContributor> contributors) {
+        this(properties, totalDataStorage, contributors.orderedStream().toList());
+    }
+
+    RuntimeConfigurationApplier(StarBotCoreProperties properties, TotalDataStorage totalDataStorage) {
+        this(properties, totalDataStorage, List.of());
+    }
+
+    RuntimeConfigurationApplier(StarBotCoreProperties properties, TotalDataStorage totalDataStorage,
+                                Collection<RuntimeConfigurationApplierContributor> contributors) {
         this.properties = properties;
         this.totalDataStorage = totalDataStorage;
+        this.contributedAppliers = mergeAppliers(contributors);
+    }
+
+    private static Map<String, Consumer<String>> mergeAppliers(
+            Collection<RuntimeConfigurationApplierContributor> contributors) {
+        if (contributors == null || contributors.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<String, Consumer<String>> merged = new LinkedHashMap<>();
+        for (RuntimeConfigurationApplierContributor contributor : contributors) {
+            if (contributor == null) {
+                continue;
+            }
+            Map<String, Consumer<String>> declared = contributor.appliers();
+            if (declared == null) {
+                continue;
+            }
+            for (Map.Entry<String, Consumer<String>> entry : declared.entrySet()) {
+                String key = entry.getKey();
+                Consumer<String> applier = entry.getValue();
+                if (key == null || applier == null) {
+                    continue;
+                }
+                if (APPLIERS.containsKey(key)
+                        || APPLIED_ELSEWHERE.containsKey(key)
+                        || REDIS_APPLIERS.containsKey(key)
+                        || merged.containsKey(key)) {
+                    throw new IllegalStateException("即时生效配置项 " + key + " 被写了两次");
+                }
+                merged.put(key, applier);
+            }
+        }
+        return Collections.unmodifiableMap(merged);
     }
 
     /**
@@ -159,6 +211,7 @@ public class RuntimeConfigurationApplier {
     static final class Bench {
         private final StarBotCoreProperties properties;
         private TotalDataStorage totalDataStorage;
+        private Collection<RuntimeConfigurationApplierContributor> contributors = List.of();
 
         private Bench(StarBotCoreProperties properties) {
             this.properties = properties;
@@ -175,21 +228,43 @@ public class RuntimeConfigurationApplier {
         }
 
         /**
+         * 带上插件申报的即时生效项
+         * @param contributors 插件申报
+         * @return 本构造器
+         */
+        Bench contributors(Collection<RuntimeConfigurationApplierContributor> contributors) {
+            this.contributors = contributors == null ? List.of() : List.copyOf(contributors);
+            return this;
+        }
+
+        /**
          * @return 按给出的侧件装配好的实例
          */
         RuntimeConfigurationApplier build() {
-            return new RuntimeConfigurationApplier(properties, totalDataStorage);
+            return new RuntimeConfigurationApplier(properties, totalDataStorage, contributors);
         }
+    }
+
+    /**
+     * 核心自有名单与贡献者申报合并后的即时生效键
+     * <p>
+     * 构建期那道尺在别的模块里，够不着判据台架的包内构造口，走这一条。
+     * @param contributors 插件申报，空或 null 时即核心自有名单
+     * @return 保存之后不需要重启的配置项名
+     */
+    public static Set<String> supportedKeys(Collection<RuntimeConfigurationApplierContributor> contributors) {
+        return new RuntimeConfigurationApplier(new StarBotCoreProperties(), null, contributors).supportedKeys();
     }
 
     /**
      * 名单里有哪些键
      * @return 保存之后不需要重启的配置项名，含 {@link #APPLIED_ELSEWHERE} 里那些
      */
-    public static Set<String> supportedKeys() {
+    public Set<String> supportedKeys() {
         Set<String> keys = new LinkedHashSet<>(APPLIERS.keySet());
         keys.addAll(APPLIED_ELSEWHERE.keySet());
         keys.addAll(REDIS_APPLIERS.keySet());
+        keys.addAll(contributedAppliers.keySet());
         return Collections.unmodifiableSet(keys);
     }
 
@@ -249,6 +324,11 @@ public class RuntimeConfigurationApplier {
         BiConsumer<TotalDataStorage, String> redis = REDIS_APPLIERS.get(name);
         if (redis != null) {
             return totalDataStorage == null ? null : () -> redis.accept(totalDataStorage, value);
+        }
+
+        Consumer<String> contributed = contributedAppliers.get(name);
+        if (contributed != null) {
+            return () -> contributed.accept(value);
         }
 
         return null;
