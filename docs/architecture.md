@@ -305,6 +305,8 @@ systemd 下的进程树也不正确。
 | 消息出口 | `service/StarBotSenderService` 登记的 `model/Sender` | `OneBotController`（onebot-adapter） | 推送平台向核心登记出口，核心按名字投递 |
 | REST 接口 | 无专用接口：`@RestController` 照常写，仍需 `@StarBotComponent` | `BilibiliReportLayoutController`（starbot-bilibili）、`OneBotTargetController`（onebot-adapter） | 插件 jar 里的控制器与核心的合在同一个 Web 服务里 |
 
+`config-ui-pages/<script>` 对 `setup_step` 槽须 `export function render(host, ctx)`（把这一步画进 host）与 `export async function done(ctx)` → boolean（这一步成立了没有）；`ctx`＝`{status, login, api}`（`api` 即初始设置页现用的请求函数）。装不上时该步 `done` 恒假，界面画一句「这一步的界面没装上」，不让整页失败。
+
 这张表不改变第 1 节定下的依赖方向：核心只保管清单上的接口，不认识任何一个具体平台。
 
 ## 8. 反射相关的坑

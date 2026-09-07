@@ -214,14 +214,39 @@ function renderStrip(model) {
 }
 
 /**
+ * 向导插件步的页清单与 done 事实。清单取 /api/pages，模块装法与入口相同。
+ */
+async function pluginFacts(status, login) {
+  let pages = [];
+  try {
+    pages = ((await api('/pages')).pages || []).filter(meta => meta && meta.slot === 'setup_step');
+  } catch (e) {
+    pages = [];
+  }
+  const pluginDone = {};
+  const ctx = {status: status || {}, login: login || {}, api};
+  for (const meta of pages) {
+    try {
+      const mod = await import('/config/assets/' + meta.script);
+      pluginDone[meta.id] = !!(typeof mod.done === 'function' && await mod.done(ctx));
+    } catch (e) {
+      pluginDone[meta.id] = false;
+    }
+  }
+  return {pages, pluginDone};
+}
+
+/**
  * 首页整页重画
  * @param status /api/status 回包
  * @param login /api/login 回包
  * @param timeline /api/timeline 回包
  * @param quota /api/at-all/quota 回包；没有或失败时可不传
+ * @param pages /api/pages 里 slot=setup_step 的清单
+ * @param pluginDone 插件步事实
  */
-function renderHome(status, login, timeline, quota) {
-  const model = homeModel(status, login, timeline, quota);
+function renderHome(status, login, timeline, quota, pages, pluginDone) {
+  const model = homeModel(status, login, timeline, quota, pages, pluginDone);
   renderBanner(model);
   renderLinkMap(model);
   renderTodos(model);
@@ -246,9 +271,10 @@ export async function refreshHome() {
       api('/status'), api('/login'), api('/timeline?date=' + today()),
       api('/at-all/quota').catch(() => null),
     ]);
+    const extra = await pluginFacts(status, login);
     if (considerSetupRedirect(status, login)) return status;
     renderStatus(status);
-    renderHome(status, login, timeline, quota);
+    renderHome(status, login, timeline, quota, extra.pages, extra.pluginDone);
     refreshPages();
     return status;
   } catch (e) {

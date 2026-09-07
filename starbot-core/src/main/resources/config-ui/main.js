@@ -51,6 +51,11 @@ const SLOT_TOP = 'top';
 const SLOT_HOME_CARD = 'home_card';
 
 /**
+ * 初始设置向导里的一步。向导页自己从 /api/pages 取并渲染，这里不挂任何地方
+ */
+const SLOT_SETUP_STEP = 'setup_step';
+
+/**
  * 已挂上的顶级插件页标识。parseHash 靠它认 #/<id>，不把这些名字写进 PAGE_TAB
  */
 const topPageIds = new Set();
@@ -86,7 +91,9 @@ async function mountPages() {
     const container = meta.slot === SLOT_LINKS ? mountLinkCard(meta)
       : meta.slot === SLOT_TOP ? mountTopPage(meta)
       : meta.slot === SLOT_HOME_CARD ? mountHomeCard(meta)
+      : meta.slot === SLOT_SETUP_STEP ? null
       : mountSettingsPage(meta, slot);
+    if (!container) continue;
 
     try {
       const module = await import('/config/assets/' + meta.script);

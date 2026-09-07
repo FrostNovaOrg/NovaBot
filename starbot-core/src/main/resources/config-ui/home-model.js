@@ -14,7 +14,49 @@
  */
 
 import {esc} from './core.js';
-import {withPluginSteps} from './setup-model.js';
+
+/**
+ * 内置五步，闭集
+ *
+ * {@code skippable} 是「界面上给不给跳过按钮」，不是「不填也能过」——
+ * 第 3 步跳过等于选了免登录（要先过一段后果确认），第 4 步跳过等于不加主播（同样要确认）。
+ * 第 1、2 步不给跳过按钮：没上锁的控制台谁都进得来，没连上机器人一条消息也发不出去。
+ * 插件步插在「主播」之后、「试发」之前，见 {@link withPluginSteps}。
+ */
+export const SETUP_STEPS = [
+  {key: 'lock', title: '给控制台上把锁', skippable: false},
+  {key: 'bot', title: '连上 QQ 机器人', skippable: false},
+  {key: 'account', title: '登录直播平台', skippable: true},
+  {key: 'streamer', title: '第一位主播，推到哪', skippable: true},
+  {key: 'test', title: '发一条试试', skippable: false},
+];
+
+const BUILTIN_STEP_KEYS = new Set(SETUP_STEPS.map(step => step.key));
+
+/**
+ * 内置五步加上插件申报的向导步骤
+ *
+ * 只收 {@code slot === 'setup_step'} 的页。插在内置「主播」之后、「试发」之前，
+ * 按 order 升序（同 order 按 id）。无插件页时返回 {@link SETUP_STEPS} 本身。
+ * @param pages /api/pages 的 pages 清单
+ * @return {{key: string, title: string, skippable?: boolean, plugin?: boolean}[]}
+ */
+export function withPluginSteps(pages) {
+  const extra = (Array.isArray(pages) ? pages : [])
+    .filter(page => page
+      && page.slot === 'setup_step'
+      && page.id
+      && !BUILTIN_STEP_KEYS.has(page.id))
+    .slice()
+    .sort((a, b) => {
+      const order = (Number(a.order) || 0) - (Number(b.order) || 0);
+      return order !== 0 ? order : String(a.id).localeCompare(String(b.id));
+    })
+    .map(page => ({key: page.id, title: page.displayName, plugin: true}));
+  if (!extra.length) return SETUP_STEPS;
+  const streamerAt = SETUP_STEPS.findIndex(step => step.key === 'streamer');
+  return [...SETUP_STEPS.slice(0, streamerAt + 1), ...extra, ...SETUP_STEPS.slice(streamerAt + 1)];
+}
 
 /**
  * 探针级别 → 灯色
@@ -98,12 +140,13 @@ function platformName(login) {
 }
 
 /**
- * 初始设置那五步各自成立了没有
+ * 初始设置各步各自成立了没有
  *
- * <b>这五个布尔是这条规则唯一的一份实现</b>：首页那条待办要拿它算「5 步里完成了 N 步」，
- * 初始设置页要拿它画进度条与决定从第几步接着走。两处各判一遍的话，同一台机器上
- * 首页说「完成了 3 步」而设置页停在第 2 步，而两边的代码看起来都对。
- * 摆在本文件里是因为前四步全部读探针（见 {@link probesIn}），设置页那一侧反过来引它。
+ * <b>这组布尔是这条规则唯一的一份实现</b>：首页那条待办要拿它算「N 步里完成了 M 步」
+ * （N 为步骤表长度，无插件时为 5），初始设置页要拿它画进度条与决定从第几步接着走。
+ * 两处各判一遍的话，同一台机器上首页说「完成了 3 步」而设置页停在第 2 步，
+ * 而两边的代码看起来都对。摆在本文件里是因为前四步全部读探针（见 {@link probesIn}），
+ * 设置页那一侧反过来引它。
  *
  * 第 5 步「发一条试试」没有任何服务端事实可推——这台机器有没有真的发过一条，
  * 只有初始设置页自己记得住（见 /api/setup/state 的 testSentAt）。因此它由调用方交进来：
@@ -340,7 +383,7 @@ export function todayAtAllMarkup(tile, expanded) {
  * 只放「要人动手，不动就一直不好」的事。会自己恢复的异常不进这里——
  * 它们在探针那一栏里逐条列着，混进待办只会让这张单子长到没人看。
  */
-function todos(status, login, chain, fresh) {
+function todos(status, login, chain, fresh, pages, pluginDone) {
   // 「初始设置还没完成」只在刚装好那一档出现，而且此时它是唯一的一条：
   // 那五步里第 1 步就是上锁、第 2 步就是连机器人，再摆几条说同一件事的待办，
   // 使用者会以为是几件事。
@@ -349,10 +392,11 @@ function todos(status, login, chain, fresh) {
   //    等于把一次运行期故障说成使用者没配好，而他明明配过——那条待办会在故障期间
   //    一直挂着催他重走一遍五步，而重走一遍并不能让登录态自己回来。
   if (fresh) {
-    const done = setupDone(status, login);
+    const table = withPluginSteps(pages);
+    const done = setupDone(status, login, pages, pluginDone);
     return [{
       key: 'setup',
-      title: '初始设置还没完成 · 5 步里完成了 ' + done + ' 步',
+      title: '初始设置还没完成 · ' + table.length + ' 步里完成了 ' + done + ' 步',
       // 不写「走完就生效，不用重启」：连接参数是进程启动时按配置注册的，
       // 第 2 步存下来之后要重启一次那条连接才真的建立起来。写一句不成立的承诺，
       // 换来的是使用者在第 4 步对着一份空名单猜自己填错了什么
@@ -477,7 +521,7 @@ function shortStrip(timeline) {
  * @param quota /api/at-all/quota 回包；没有或失败时可不传
  * @return 首页视图模型
  */
-export function homeModel(status, login, timeline, quota) {
+export function homeModel(status, login, timeline, quota, pages, pluginDone) {
   const state = status || {};
   const account = login || {};
 
@@ -533,7 +577,7 @@ export function homeModel(status, login, timeline, quota) {
       advice: item.advice || '',
     })),
     banner: banner(state, chain, fresh),
-    todos: todos(state, account, chain, fresh),
+    todos: todos(state, account, chain, fresh, pages, pluginDone),
     now: now(state, chain, fresh),
     today: {
       sent: (state.today && state.today.sent) || 0,

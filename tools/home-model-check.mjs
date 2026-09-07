@@ -12,7 +12,7 @@
  * 退码 0 即九档全对；任一档对不上打印差异并以 1 退出。
  */
 
-import {homeModel, PROBE_ANCHOR, setupDone, setupSteps, shouldOpenSetup, stationHref, todayAtAllMarkup} from '../starbot-core/src/main/resources/config-ui/home-model.js';
+import {homeModel, PROBE_ANCHOR, setupDone, setupSteps, shouldOpenSetup, stationHref, todayAtAllMarkup, withPluginSteps} from '../starbot-core/src/main/resources/config-ui/home-model.js';
 
 /** 探针的原样形态，与 /api/status 里 health 那一项逐字段同形 */
 function probe(name, scope, level, summary, advice, loginState) {
@@ -443,6 +443,9 @@ same(shouldOpenSetup(Object.assign({}, freshStatus, {locked: true}), blankLogin(
 same(shouldOpenSetup(freshStatus, login()), false, '已经登录直播平台：不是 0 步');
 
 const PLUGIN_PAGE = {id: 'danmu', displayName: '弹幕', order: 50, slot: 'setup_step'};
+same(withPluginSteps([PLUGIN_PAGE]).map(step => step.key),
+  ['lock', 'bot', 'account', 'streamer', 'danmu', 'test'],
+  '步骤表由本文件导出，插件步插在主播之后、试发之前');
 same(setupSteps(status(), login(), true).every(Boolean), true, '无插件时五步全真');
 same(setupSteps(status(), login(), true, [PLUGIN_PAGE], {}).every(Boolean), false,
   'pluginDone 假时不全真');
