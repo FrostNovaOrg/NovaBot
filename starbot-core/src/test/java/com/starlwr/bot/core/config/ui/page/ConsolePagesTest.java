@@ -172,6 +172,126 @@ class ConsolePagesTest {
     }
 
     /**
+     * 没申报图标的页缺省是空串，已有的实现一个字都不用改
+     * <p>
+     * 空串在界面那一侧的意思是「画中性缺省图标」。缺省要是给了 {@code null}，
+     * 那些在它之前写好的插件会在升级到这一版之后<b>连页都登记不上</b>——
+     * 取不到图标这一条会把它们逐个丢掉，而它们一个字都没改过。
+     */
+    @Test
+    @DisplayName("没申报图标的页 icon() 是空串，不是 null")
+    void iconDefaultsToEmptyString() {
+        assertEquals("", new Page("a", "甲", "a.js", 100).icon());
+    }
+
+    /**
+     * 申报图标的注册项。{@link Page} 不覆盖 {@code icon()}，才能守住缺省仍是空串那一条
+     */
+    private record WithIcon(String id, String displayName, String script, int order, String icon)
+            implements ConsolePageProvider {
+    }
+
+    private static String icon(String shape) {
+        return ConsolePages.icon(new WithIcon("demo", "演示", "demo.js", 100, shape));
+    }
+
+    /**
+     * 图标白名单：几何形状放行，其余整条退成空串
+     * <p>
+     * 这一串会拼进界面上那个 {@code <svg>} 壳里，而它出自插件——因此这里是关口。
+     * 放行的写法与不放行的写法一起量：只列不放行的那些，一道恒假的关口同样全绿，
+     * 而它的表现是<b>所有插件的图标都画不出来</b>。
+     */
+    @Test
+    @DisplayName("图标白名单：几何形状放行，脚本、事件属性、别的元素整条退成空串")
+    void iconWhitelistKeepsShapesAndDropsTheRest() {
+        List<String> red = new ArrayList<>();
+
+        try {
+            assertEquals("<circle cx=\"8\" cy=\"5.2\" r=\"2.6\"/>", icon("<circle cx=\"8\" cy=\"5.2\" r=\"2.6\"/>"),
+                    "一笔形状应原样放行");
+            assertEquals("<circle cx=\"8\" cy=\"8\" r=\"4\"/><path d=\"M2 8h12\"/>",
+                    icon("<circle cx=\"8\" cy=\"8\" r=\"4\"/><path d=\"M2 8h12\"/>"),
+                    "拼在一起的两笔也应放行，真图标就是这个形状");
+            assertEquals("<line x1=\"2\" y1=\"2\" x2=\"14\" y2=\"14\"/>",
+                    icon("  <line x1=\"2\" y1=\"2\" x2=\"14\" y2=\"14\"/>  "),
+                    "首尾空白去掉即可，属性名里带数字的不许因此落到白名单外");
+            assertEquals("<rect x=\"2\" y=\"2\" width=\"12\" height=\"12\" rx=\"2\"/>",
+                    icon("<rect x=\"2\" y=\"2\" width=\"12\" height=\"12\" rx=\"2\"/>"));
+        } catch (Throwable t) {
+            red.add("① " + t.getMessage());
+        }
+
+        try {
+            assertEquals("", icon("<script>alert(1)</script>"), "脚本不放行");
+            assertEquals("", icon("<path d=\"M2 2h12\" onload=\"boom()\"/>"), "事件属性不放行");
+            assertEquals("", icon("<foreignObject width=\"16\" height=\"16\"><b>x</b></foreignObject>"),
+                    "另一棵文档树不放行");
+            assertEquals("", icon("<image href=\"http://example.invalid/x.png\"/>"), "外链不放行");
+            assertEquals("", icon("<path d=\"M2 2h12\" style=\"stroke-width:9\"/>"),
+                    "style 不放行，否则插件能画出比别条粗的笔画");
+        } catch (Throwable t) {
+            red.add("② " + t.getMessage());
+        }
+
+        try {
+            assertEquals("", icon("<path d=\"M2 2h12\">"), "没闭合的形状元素不放行");
+            assertEquals("", icon("<circle cx=\"8\" cy=\"8\" r=\"4\"/><script>boom()</script>"),
+                    "合规形状后面跟着的东西不许搭车过关");
+            assertEquals("", icon("<circle cx=\"8\" cy=\"8\" r=\"4\"/>x<path d=\"M2 8h12\"/>"),
+                    "两笔之间夹着的东西不许被跳过去");
+        } catch (Throwable t) {
+            red.add("③ " + t.getMessage());
+        }
+
+        try {
+            assertEquals("", icon(""), "没给图标就是空串");
+            assertEquals("", icon("   "), "只有空白也是空串");
+            assertEquals("", icon(null), "给了 null 也不该抛");
+            assertEquals("", ConsolePages.icon(new Exploding("icon")), "问都问不出来时退成空串");
+        } catch (Throwable t) {
+            red.add("④ " + t.getMessage());
+        }
+
+        if (!red.isEmpty()) {
+            fail(red.size() + " 问红：" + String.join("；", red));
+        }
+    }
+
+    /**
+     * 图标不合规只丢图标，不丢这一页
+     * <p>
+     * 「图标写坏了所以整页从导航上消失」比没有图标更坏：少一页看得见，为什么少的看不见。
+     * 登记那一步因此完全不看图标——{@code icon()} 抛异常的那一页也照常在清单里。
+     */
+    @Test
+    @DisplayName("图标不合规或取不到，这一页照常登记")
+    void badIconNeverUnregistersThePage() {
+        List<String> red = new ArrayList<>();
+
+        try {
+            assertEquals(List.of("demo"), ConsolePages.valid(list(
+                            new WithIcon("demo", "演示", "demo.js", 100, "<script>alert(1)</script>")))
+                            .stream().map(ConsolePageProvider::id).toList(),
+                    "图标不合规的页应当照常登记");
+        } catch (Throwable t) {
+            red.add("① " + t.getMessage());
+        }
+
+        try {
+            assertEquals(List.of("boom-icon"), ConsolePages.valid(list(new Exploding("icon")))
+                            .stream().map(ConsolePageProvider::id).toList(),
+                    "icon() 抛异常的页应当照常登记");
+        } catch (Throwable t) {
+            red.add("② " + t.getMessage());
+        }
+
+        if (!red.isEmpty()) {
+            fail(red.size() + " 问红：" + String.join("；", red));
+        }
+    }
+
+    /**
      * 顶级页落位：合法项保留、撞内置名弃掉、枚举名与前端接线对得上
      * <p>
      * 四问各自记下，末尾一起红：①红就 return 的话，③④还没跑过，接线断了也看不见。
@@ -548,6 +668,14 @@ class ConsolePagesTest {
                 throw new IllegalStateException("插件的 order() 抛了异常");
             }
             return 100;
+        }
+
+        @Override
+        public String icon() {
+            if ("icon".equals(where)) {
+                throw new IllegalStateException("插件的 icon() 抛了异常");
+            }
+            return "";
         }
 
         @Override

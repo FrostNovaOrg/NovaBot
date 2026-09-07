@@ -40,6 +40,15 @@ public class StreamersConsolePageProvider implements ConsolePageProvider {
         return 30;
     }
 
+    /**
+     * 一个人的头肩。这一笔形状是这一页搬出核心之前导航上就在画的那一个，逐字照抄
+     */
+    @Override
+    public String icon() {
+        return "<circle cx=\"8\" cy=\"5.2\" r=\"2.6\"/>"
+                + "<path d=\"M2.8 14c0-2.9 2.3-4.6 5.2-4.6s5.2 1.7 5.2 4.6\"/>";
+    }
+
     @Override
     public ConsolePageSlot slot() {
         return ConsolePageSlot.TOP;

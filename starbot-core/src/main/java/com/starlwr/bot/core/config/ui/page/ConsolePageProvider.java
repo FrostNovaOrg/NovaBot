@@ -66,6 +66,25 @@ public interface ConsolePageProvider {
     }
 
     /**
+     * 导航入口上那个图标，只给<b>外壳里面的那几笔形状</b>
+     * <p>
+     * 例如 {@code <circle cx="8" cy="5.2" r="2.6"/>}。{@code <svg>} 外壳连同
+     * {@code viewBox}／{@code fill}／{@code stroke}／{@code stroke-width} 由核心统一套上，
+     * 插件改不动——笔画粗细与配色因此与内置那几条一模一样，不会有一条粗一条细。
+     * <p>
+     * 这一串会拼进页面，所以核心那一侧还有一道白名单：元素只放行
+     * {@code path}／{@code circle}／{@code rect}／{@code line}／{@code polyline}／{@code polygon}，
+     * 属性只放行几何量。不合规的<b>整条丢掉、改画一个中性缺省图标</b>，并在日志里点名说是哪一页——
+     * 这一页照常登记，因为「图标不合规」不该让整页从导航上消失。
+     * <p>
+     * 缺省是空串，也就是画那个中性缺省图标。已有的实现一个字都不用改。
+     * @return 图标形状，可为空串，不可为 {@code null}
+     */
+    default String icon() {
+        return "";
+    }
+
+    /**
      * 这一页挂到控制台的哪一处
      * <p>
      * 缺省是设置页「高级」下的一张子页，也就是本接口原先唯一的那种落法——
