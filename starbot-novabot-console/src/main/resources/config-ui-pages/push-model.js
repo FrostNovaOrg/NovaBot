@@ -124,27 +124,69 @@ export function buildDirectory(options) {
 }
 
 /**
+ * 这一类通知在配置里可能写成哪几个名字
+ *
+ * 🔴 处理器搬过包之后，使用者 {@code datasource.json} 里那一条写的仍是旧名。因此屏幕上
+ * 每一处「这一条配的是不是这一类通知」都得先<b>归一到主名</b>再比，一处漏了的表现是：
+ * 开关显示成「关」而机器人照推、取消勾选删不掉、旧名下的自定义模板读不到而页面报「默认模板」，
+ * 三样都不报错。
+ *
+ * 旧名<b>不在前端写</b>：它随 /api/handlers 一项的 aliases 送来，真源是后端那张别名表
+ * （运行期认处理器用的也是它）。在这里另存一份的话，两份清单迟早对不上，而那正是这个毛病的成因。
+ * @param handler /api/handlers 的一项，或任何带 className 与 aliases 的东西
+ * @return {string[]} 主名在前，其后是旧名
+ */
+export function handlerNames(handler) {
+  const main = (handler || {}).className;
+  const names = main == null || main === '' ? [] : [main];
+  for (const alias of ((handler || {}).aliases) || []) {
+    if (alias != null && alias !== '' && !names.includes(alias)) names.push(alias);
+  }
+  return names;
+}
+
+/**
+ * 配置里这一条消息归哪一类通知
+ *
+ * 反着问 {@link handlerNames}：拿配置里存的那一串（可能是旧名）找回处理器。
+ * 按主名严格比的话，旧名那一条会被当成「不认得的通知」而在界面上整条消失。
+ * @param message 推送配置里的一条消息
+ * @param handlers /api/handlers 的 handlers
+ * @return 处理器，认不出则为 null
+ */
+export function handlerOf(message, handlers) {
+  const name = (message || {}).handler;
+  if (name == null) return null;
+  return (handlers || []).find(handler => handlerNames(handler).includes(name)) || null;
+}
+
+/**
  * 这条通知此刻开着没有
  *
  * 推送配置里「没有这条消息」与「有这条消息但 enabled 为假」都算关着。前者是没勾过，
  * 后者是勾过又关掉——对使用者是同一件事：这个通道收不到这类通知。
  * @param target 推送目标
- * @param className 处理器类名
+ * @param handler /api/handlers 的一项
  * @return {boolean} 是否开着
  */
-export function noticeOn(target, className) {
-  const message = messageOf(target, className);
+export function noticeOn(target, handler) {
+  const message = messageOf(target, handler);
   return !!message && message.enabled !== false;
 }
 
 /**
  * 取这个通道上某一类通知的那条消息
+ *
+ * 主名与旧名都算这一类（见 {@link handlerNames}）。参数收的是<b>处理器整项</b>而不是一个类名串：
+ * 只给类名的话，调用处就得自己去凑那份旧名清单，而凑漏一处正是这个毛病的形状。
  * @param target 推送目标
- * @param className 处理器类名
+ * @param handler /api/handlers 的一项
  * @return 消息，没有则为 null
  */
-export function messageOf(target, className) {
-  return ((target || {}).messages || []).find(item => item.handler === className) || null;
+export function messageOf(target, handler) {
+  const names = handlerNames(handler);
+  if (!names.length) return null;
+  return ((target || {}).messages || []).find(item => names.includes(item.handler)) || null;
 }
 
 /**
@@ -163,9 +205,12 @@ export function noticeSwitches(user, target, handlers) {
     .filter(handler => !handler.platform || handler.platform === user.platform)
     .map(handler => ({
       className: handler.className,
+      // 旧名一并带上：开关那一行改完要把「这一类通知」整个交给 toggleNotice，
+      // 而删掉的得是主名与它的全部旧名。少带这一栏，取消勾选就只删得掉主名那条
+      aliases: (handler.aliases) || [],
       displayName: handler.displayName || handler.className,
       description: handler.description || '',
-      on: noticeOn(target, handler.className),
+      on: noticeOn(target, handler),
       // 「消息长什么样」只对有文字模板的那几类成立；「报告长什么样」只对自带版式项的那类成立。
       // 两者都由处理器自己声明，界面不认得任何一类通知的名字
       hasTemplate: ((handler.placeholders) || []).length > 0,
@@ -190,7 +235,7 @@ export function noticeSwitches(user, target, handlers) {
 export function templateState(target, handlers) {
   const changed = [];
   for (const handler of handlers || []) {
-    const message = messageOf(target, handler.className);
+    const message = messageOf(target, handler);
     if (!message || message.enabled === false) continue;
     if (paramsDiffer(message.params, handler.defaultParams)) changed.push(handler.className);
   }
@@ -203,22 +248,23 @@ export function templateState(target, handlers) {
  * 「哪一类通知有版式」由处理器自报（options 非空），界面不认得「下播报告」这四个字。
  * @param target 推送目标
  * @param handlers /api/handlers 的 handlers
- * @return {{present: boolean, custom: boolean, className: string}}
- *         这个通道开着带版式的那类通知没有、版式改过没有、是哪一类
+ * @return {{present: boolean, custom: boolean, className: string, handler: object}}
+ *         这个通道开着带版式的那类通知没有、版式改过没有、是哪一类、那一类的整项
  */
 export function layoutState(target, handlers) {
   for (const handler of handlers || []) {
     if (!((handler.options) || []).length) continue;
-    if (!noticeOn(target, handler.className)) continue;
+    if (!noticeOn(target, handler)) continue;
 
-    const params = (messageOf(target, handler.className) || {}).params || {};
+    const params = (messageOf(target, handler) || {}).params || {};
     const custom = handler.options.some(option => {
       const value = params[option.key];
       return value !== undefined && value !== null && String(value) !== String(option.defaultValue);
     });
-    return {present: true, custom, className: handler.className};
+    // 连整项一起给回去：拿 className 回头再查一遍的调用处，查法与这里差一点就会漏掉旧名那一条
+    return {present: true, custom, className: handler.className, handler};
   }
-  return {present: false, custom: false, className: ''};
+  return {present: false, custom: false, className: '', handler: null};
 }
 
 /**

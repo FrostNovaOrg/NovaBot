@@ -105,6 +105,12 @@ public class PushController {
      * <p>
      * 界面据此渲染「推送哪些事件」的勾选项。处理器的全限定类名属于实现细节，
      * 不该要求使用者手抄，此处把它连同展示名一并给出，由界面完成映射。
+     * <p>
+     * 每一项还带上它的<b>旧全类名</b>：处理器搬过包之后，老使用者的 {@code datasource.json}
+     * 里写的仍是旧名，界面按真类名严格比就对不上——开关显示成「关」而机器人照推，
+     * 旧名下的自定义模板读不到而页面报「默认模板」，三样都不报错。旧名逐字取自
+     * {@link StarBotEventHandlerService#getLegacyClassNames()}，也就是运行期认处理器用的那张表：
+     * 在这里另手写一份的话，两份清单迟早对不上，而那正是这个毛病本来的成因。
      * @return 处理器列表
      */
     @GetMapping("/api/handlers")
@@ -112,10 +118,15 @@ public class PushController {
         JSONObject result = new JSONObject();
         result.put("success", true);
 
+        Map<String, List<String>> legacyNames = handlerService.getLegacyClassNames();
+
         JSONArray items = new JSONArray();
         handlerService.getRegisteredHandlers().forEach((className, handler) -> {
             JSONObject item = new JSONObject();
             item.put("className", className);
+            // 没有旧名时给一张空表而不是不给这一栏：缺栏与空表在前端 `|| []` 底下长得一样，
+            // 而「这个处理器没搬过家」与「这一版后端还不答这一问」要人做的事不是同一件
+            item.put("aliases", legacyNames.getOrDefault(className, List.of()));
             item.put("displayName", handler.displayName());
             item.put("description", handler.description());
             item.put("platform", handler.platform());
