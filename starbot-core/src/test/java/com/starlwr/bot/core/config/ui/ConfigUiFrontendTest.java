@@ -2232,6 +2232,94 @@ class ConfigUiFrontendTest {
         }
     }
 
+    @Test
+    @DisplayName("无花括号单语句含对象字面量不得截断")
+    void bracedBlockAfterKeepsObjectLiteralInUnbracedStatement() {
+        List<String> red = new ArrayList<>();
+        String snippet = "if (ok) return { a: 1 };\n} catch (e) {";
+        int from = snippet.indexOf("ok");
+
+        try {
+            int closeParen = -1;
+            int depth = 1;
+            for (int i = from; i < snippet.length(); i++) {
+                char c = snippet.charAt(i);
+                if (c == '(') {
+                    depth++;
+                } else if (c == ')') {
+                    depth--;
+                    if (depth == 0) {
+                        closeParen = i;
+                        break;
+                    }
+                }
+            }
+            int i = closeParen >= 0 ? closeParen + 1 : from;
+            while (i < snippet.length() && Character.isWhitespace(snippet.charAt(i))) {
+                i++;
+            }
+            String oldBranch = "";
+            if (i < snippet.length() && snippet.charAt(i) == '{') {
+                int braceDepth = 0;
+                int close = i;
+                for (int j = i; j < snippet.length(); j++) {
+                    char c = snippet.charAt(j);
+                    if (c == '{') {
+                        braceDepth++;
+                    } else if (c == '}') {
+                        braceDepth--;
+                        if (braceDepth == 0) {
+                            close = j;
+                            break;
+                        }
+                    }
+                }
+                oldBranch = snippet.substring(i, close + 1);
+            } else {
+                int end = i;
+                while (end < snippet.length()) {
+                    char c = snippet.charAt(end);
+                    if (c == ';') {
+                        oldBranch = snippet.substring(i, end + 1);
+                        break;
+                    }
+                    if (c == '{' || c == '}') {
+                        oldBranch = snippet.substring(i, end).trim();
+                        break;
+                    }
+                    end++;
+                    if (end == snippet.length()) {
+                        oldBranch = snippet.substring(i).trim();
+                    }
+                }
+            }
+            boolean truncatedAtObject = "return".equals(oldBranch.trim())
+                    || (oldBranch.contains("{ a: 1 }") && !oldBranch.contains("return { a: 1 };"));
+            boolean tookCatch = oldBranch.contains("catch");
+            assertTrue(truncatedAtObject || tookCatch,
+                    "旧尺应截在 { a: 1 } 或误入 catch，实际: " + oldBranch);
+        } catch (Throwable t) {
+            red.add("① " + t.getMessage());
+        }
+        String branch = bracedBlockAfter(snippet, from);
+        try {
+            assertTrue(branch.contains("return { a: 1 };"),
+                    "应收进整句含对象字面量，实际: " + branch);
+        } catch (Throwable t) {
+            red.add("② " + t.getMessage());
+        }
+        try {
+            assertFalse(branch.contains("catch"),
+                    "不得把 catch 算进该句，实际: " + branch);
+        } catch (Throwable t) {
+            red.add("③ " + t.getMessage());
+        }
+
+        if (!red.isEmpty()) {
+            fail(red.size() + " 问红：" + String.join("；", red));
+        }
+    }
+
     /**
      * 界面目录与插件页目录里的每一份 .js 都要被至少一把尺的语法循环收进
      * <p>
@@ -2464,6 +2552,7 @@ class ConfigUiFrontendTest {
      * 用来取 {@code if (res.success) { … }} 的成功分支：从条件截到函数尾会把
      * {@code else}／{@code catch} 也算进去，调用写在失败路径里照样绿。
      * 成功分支若是无花括号单语句，不能再扫后面第一对花括号——那会截到 {@code catch}。
+     * 无花括号单语句里的对象字面量是该句的一部分，截到第一个左花括号会把返回值截断。
      */
     private String bracedBlockAfter(String text, int from) {
         int closeParen = -1;
@@ -2503,13 +2592,48 @@ class ConfigUiFrontendTest {
             return "";
         }
         int end = i;
+        int braceDepth = 0;
+        char quote = 0;
         while (end < text.length()) {
             char c = text.charAt(end);
-            if (c == ';') {
-                return text.substring(i, end + 1);
+            char prev = end > 0 ? text.charAt(end - 1) : 0;
+            if (quote != 0) {
+                if (c == quote && prev != '\\') {
+                    quote = 0;
+                }
+                end++;
+                continue;
             }
-            if (c == '{' || c == '}') {
+            if (c == '"' || c == '\'' || c == '`') {
+                quote = c;
+                end++;
+                continue;
+            }
+            if (c == '/' && end + 1 < text.length() && text.charAt(end + 1) == '/') {
+                int nl = text.indexOf('\n', end);
+                end = nl < 0 ? text.length() : nl;
+                continue;
+            }
+            if (c == '/' && end + 1 < text.length() && text.charAt(end + 1) == '*') {
+                int closeComment = text.indexOf("*/", end + 2);
+                end = closeComment < 0 ? text.length() : closeComment + 2;
+                continue;
+            }
+            if (c == '{') {
+                braceDepth++;
+                end++;
+                continue;
+            }
+            if (c == '}') {
+                if (braceDepth > 0) {
+                    braceDepth--;
+                    end++;
+                    continue;
+                }
                 return text.substring(i, end).trim();
+            }
+            if (c == ';' && braceDepth == 0) {
+                return text.substring(i, end + 1);
             }
             end++;
         }

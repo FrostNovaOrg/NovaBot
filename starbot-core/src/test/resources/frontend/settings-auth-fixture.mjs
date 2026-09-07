@@ -5,8 +5,8 @@
  * 签发表单仍按进页时那一份画：刚绑上会少一格，刚关掉会多要一格。
  * 签发表单读的是 store.totpRequired，不是 authState 那一位。
  *
- * 切段按花括号配平截到块尾。由 SettingsAuthViewTest 拉起。
- * 量的是源码树里那一份，不是构建产物里的副本。
+ * 切段按花括号配平截到块尾后真执行，不是只 includes。
+ * 由 SettingsAuthViewTest 拉起。量的是源码树里那一份，不是构建产物里的副本。
  */
 
 import {readFileSync} from 'node:fs';
@@ -68,9 +68,37 @@ function bracedFrom(src, marker) {
   return '';
 }
 
-const settle = bracedFrom(read('settings-auth.js'), 'const settle = state =>');
-eq(settle.length > 0, true, '找得到 settle');
-eq(settle.includes('store.totpRequired'), true, 'settle 回灌 store.totpRequired');
+const settleSrc = bracedFrom(read('settings-auth.js'), 'const settle = state =>');
+eq(settleSrc.length > 0, true, '找得到 settle');
+eq(settleSrc.includes('store.totpRequired'), true, 'settle 文本含 store.totpRequired');
+
+function runSettle(state) {
+  const store = {};
+  const authState = {};
+  const input = {checked: false};
+  const text = {textContent: ''};
+  const flow = {innerHTML: ''};
+  const settle = new Function('store', 'authState', 'input', 'text', 'flow',
+    settleSrc + '\nreturn settle;')(store, authState, input, text, flow);
+  settle(state);
+  return store.totpRequired;
+}
+
+let qTrue = 'missing';
+try {
+  qTrue = runSettle(true);
+} catch (e) {
+  qTrue = 'error:' + e.message;
+}
+eq(qTrue, true, 'settle(true) 后 store.totpRequired === true');
+
+let qFalse = 'missing';
+try {
+  qFalse = runSettle(false);
+} catch (e) {
+  qFalse = 'error:' + e.message;
+}
+eq(qFalse, false, 'settle(false) 后 store.totpRequired === false');
 
 const form = bracedFrom(read('tokens.js'), 'function issueFormHtml');
 eq(form.length > 0, true, '找得到签发表单');
