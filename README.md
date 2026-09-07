@@ -125,15 +125,6 @@ Redis 已启用）实测约 476 MB——**按后者规划机器内存**，512 MB
 声明立场是为了确立设计目标与支持范围，不是假装能够强制执行。
 完整表述见 [SECURITY.md](SECURITY.md)。
 
-## 关于上游
-
-本仓库源自 [StarBot](https://github.com/Starlwr/StarBot)（作者 [LWR](https://github.com/Starlwr)），
-在其基础上整合为单一 Maven 工程并做了大量重构，含一项**推送接口鉴权的安全修复**。
-包名与配置键沿用 `com.starlwr` / `starbot`。
-
-完整的改动清单见 [CHANGELOG.md](CHANGELOG.md)，与上游的对应关系与命名取舍见 [NOTICE](NOTICE)，
-安全修复详情见 [SECURITY.md](SECURITY.md)。
-
 ## 许可证
 
-AGPL-3.0，见 [LICENSE](LICENSE)。
+AGPL-3.0，见 [LICENSE](LICENSE)。本程序是一个修改版本，与来源项目的关系、改动说明见 [NOTICE](NOTICE) 与 [CHANGELOG.md](CHANGELOG.md)。

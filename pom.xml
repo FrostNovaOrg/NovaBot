@@ -27,17 +27,6 @@
         </license>
     </licenses>
 
-    <developers>
-        <developer>
-            <id>LWR</id>
-            <name>LWR</name>
-            <email>lwr1104@qq.com</email>
-            <roles>
-                <role>StarBot 原作者</role>
-            </roles>
-        </developer>
-    </developers>
-
     <!--
         build-tools/starbot-plugin-processor 是本工程各插件模块在 build 阶段调用的 Maven 插件。
         Maven 无法在同一 reactor 内构建并使用同一个插件，因此它不在此处的模块列表中，
@@ -65,7 +54,7 @@
         <starbot-core.version>5.2.0</starbot-core.version>
         <starbot-plugin-processor.version>1.0.0</starbot-plugin-processor.version>
 
-        <!-- 构建期判据用的插件，版本钉死：判据本身跟着上游漂就不成其为判据 -->
+        <!-- 构建期判据用的插件，版本钉死：判据本身跟着插件发布方漂就不成其为判据 -->
         <maven-enforcer-plugin.version>3.5.0</maven-enforcer-plugin.version>
 
         <!-- 第三方依赖版本，集中在此管理，模块内不再各写各的 -->
