@@ -762,4 +762,44 @@ else
     fi
 fi
 
+# ============================================================
+# 格8：report 包在场，且 bilibili 主码零引用它
+#
+# 两问都要成立才绿：
+#   ① 源码里有 com.starlwr.bot.report 这个包（从各模块 src/main 现算）
+#   ② starbot-bilibili 的 src/main 零处出现 com.starlwr.bot.report
+#
+# 只问 ② 的尺在包还不存在时恒真（零引用），会把「还没拆」报成绿。
+# 所以 ① 是门槛：现码 report 包不在场，先红于这一问。
+# ============================================================
+
+g8_report_dirs=""
+g8_pkg_n=0
+for mod in */; do
+    mod="${mod%/}"
+    [ -d "$mod/src/main/java/com/starlwr/bot/report" ] || continue
+    g8_report_dirs="${g8_report_dirs}${mod}/src/main/java/com/starlwr/bot/report "
+    g8_pkg_n=$((g8_pkg_n + 1))
+done
+
+g8_refs=0
+g8_hits=""
+if [ -d "starbot-bilibili/src/main" ]; then
+    while IFS= read -r hit; do
+        [ -z "$hit" ] && continue
+        g8_refs=$((g8_refs + 1))
+        g8_hits="${g8_hits}${hit%%:*}:$(printf '%s' "$hit" | cut -d: -f2) "
+    done <<< "$(grep -rn 'com\.starlwr\.bot\.report' --include='*.java' starbot-bilibili/src/main 2>/dev/null | sort -u)"
+fi
+
+if [ "$g8_pkg_n" -eq 0 ]; then
+    echo "格8 红 report 包不在场（①） bilibili引用${g8_refs}处（②）"
+    RED=1
+elif [ "$g8_refs" -ne 0 ]; then
+    echo "格8 红 report 包在场${g8_pkg_n} 但 bilibili 主码引用${g8_refs}处（②） ${g8_hits% }"
+    RED=1
+else
+    echo "格8 绿 report 包在场${g8_pkg_n}(${g8_report_dirs% }) bilibili 主码零引用"
+fi
+
 exit "$RED"

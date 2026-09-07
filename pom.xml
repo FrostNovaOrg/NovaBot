@@ -52,6 +52,7 @@
         <module>starbot-onebot-adapter-napcat-extension</module>
         <module>starbot-bilibili</module>
         <module>starbot-novabot-console</module>
+        <module>starbot-report</module>
     </modules>
 
     <properties>

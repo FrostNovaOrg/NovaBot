@@ -17,7 +17,7 @@ import java.util.List;
  * 推送处理器公共逻辑
  */
 @Slf4j
-final class PushHandlerSupport {
+public final class PushHandlerSupport {
     /**
      * @全体成员 的占位符
      */
@@ -120,7 +120,7 @@ final class PushHandlerSupport {
      * @param target 推送目标
      * @param content 消息内容
      */
-    static void send(StarBotMessageSender sender, PushTarget target, String content) {
+    public static void send(StarBotMessageSender sender, PushTarget target, String content) {
         send(sender, target, content, null);
     }
 
@@ -130,7 +130,7 @@ final class PushHandlerSupport {
      *                        所以「文字一条 + 封面一条」的默认模板下，
      *                        只有真正含图的那一条可能触发它
      */
-    static void send(StarBotMessageSender sender, PushTarget target, String content, Runnable onImageDegraded) {
+    public static void send(StarBotMessageSender sender, PushTarget target, String content, Runnable onImageDegraded) {
         send(sender, target, content, onImageDegraded, null);
     }
 
@@ -138,7 +138,7 @@ final class PushHandlerSupport {
      * 发送消息，并备下 @全体成员 发不出去时的替代文本
      * @param atAllFallback @全体成员 被摘掉时用来顶替它的文本，可为空
      */
-    static void send(StarBotMessageSender sender, PushTarget target, String content,
+    public static void send(StarBotMessageSender sender, PushTarget target, String content,
                      Runnable onImageDegraded, String atAllFallback) {
         if (StringUtil.isBlank(content)) {
             return;
@@ -179,7 +179,7 @@ final class PushHandlerSupport {
      * @param subscriberAt 订阅名单拼成的 @ 串，无人订阅或本类通知没有订阅这回事时为空串
      * @return 处理后的消息内容
      */
-    static String withAtBlock(AtMode mode, PushTarget target, String template, String content, String subscriberAt) {
+    public static String withAtBlock(AtMode mode, PushTarget target, String template, String content, String subscriberAt) {
         return switch (mode) {
             case SUBSCRIBERS -> template.contains(AT_SUBSCRIBERS) || StringUtil.isBlank(subscriberAt)
                     ? content
@@ -198,7 +198,7 @@ final class PushHandlerSupport {
      * 再顶一份上来是同一批人被 @ 两次。
      * @return 替代文本，没有时为空串
      */
-    static String atAllFallback(AtMode mode, PushTarget target, String template, String subscriberAt) {
+    public static String atAllFallback(AtMode mode, PushTarget target, String template, String subscriberAt) {
         boolean applicable = AtMode.ALL_OR_SUBSCRIBERS == mode
                 && PushTargetType.GROUP == target.getType()
                 && !template.contains(AT_SUBSCRIBERS);
@@ -213,7 +213,7 @@ final class PushHandlerSupport {
      * @param subscribers 订阅者账号
      * @return @ 串
      */
-    static String atSubscribers(List<Long> subscribers) {
+    public static String atSubscribers(List<Long> subscribers) {
         if (subscribers == null || subscribers.isEmpty()) {
             return "";
         }
@@ -233,7 +233,7 @@ final class PushHandlerSupport {
      * @param source 主播信息
      * @return 昵称
      */
-    static String resolveUname(BilibiliApiUtil api, LiveStreamerInfo source) {
+    public static String resolveUname(BilibiliApiUtil api, LiveStreamerInfo source) {
         try {
             String uname = api.getUpInfoByUid(source.getUid()).getUname();
             if (StringUtil.isNotBlank(uname)) {
