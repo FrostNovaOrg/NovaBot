@@ -579,10 +579,14 @@ class ConfigurationFileServiceTest {
             unresolved.add("① a#b: " + e.getMessage());
         }
 
-        // ② URL 锚点的 # 同样是值的一部分
+        // ② URL 锚点的 # 同样是值的一部分：回显、再存都与 ① 同形
         try {
             service.write(Map.of(key, "http://x/#frag"));
             assertEquals("http://x/#frag", service.read().get(key), "链接锚点不该在 # 前截断");
+            List<String> rewritten = service.write(Map.of(key, service.read().get(key)));
+            assertEquals(List.of(), rewritten, "盘上值与回显值一致时, 再存一次应当没有任何改动");
+            String line = content().lines().filter(l -> l.contains("quiet-start")).findFirst().orElseThrow();
+            assertTrue(line.contains("# 静音时段开始"), "行尾注释应原样保留: " + line);
         } catch (AssertionError | IOException e) {
             unresolved.add("② http://x/#frag: " + e.getMessage());
         }
