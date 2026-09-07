@@ -2604,6 +2604,55 @@ class ConfigUiFrontendTest {
     }
 
     /**
+     * 顶级页 refresh 要把地址栏已经解析好的子路径带给插件
+     * <p>
+     * 三问各自记下，末尾一起红：只看 applyRoute 取数段里含 topPage 的那一支，
+     * 避免把推送页的 {@code showPush(sub, tail)} 算进来。
+     */
+    @Test
+    @DisplayName("顶级页 refresh 把子路由带给插件")
+    void topPageRefreshPassesSubAndTail() throws IOException {
+        List<String> red = new ArrayList<>();
+        String main = Files.readString(frontendDir().resolve("main.js"), StandardCharsets.UTF_8);
+        String body = functionBodyAny(main, "applyRoute");
+        int data = body.indexOf("if (!withData) return");
+        String load = data >= 0 ? body.substring(data) : body;
+
+        try {
+            assertTrue(load.contains("topPage"),
+                    "applyRoute 取数段应对顶级页走分支");
+        } catch (Throwable t) {
+            red.add("① " + t.getMessage());
+        }
+
+        try {
+            int call = load.indexOf("callPage");
+            assertTrue(call >= 0, "applyRoute 取数段应 callPage");
+            String invocation = load.substring(call, Math.min(load.length(), call + 96));
+            assertTrue(invocation.contains("refresh"),
+                    "顶级页分支应调 refresh: " + invocation.strip());
+        } catch (Throwable t) {
+            red.add("② " + t.getMessage());
+        }
+
+        try {
+            int call = load.indexOf("callPage");
+            assertTrue(call >= 0, "applyRoute 取数段应 callPage");
+            String invocation = load.substring(call, Math.min(load.length(), call + 96));
+            assertTrue(invocation.contains("sub"),
+                    "顶级页 refresh 应带 sub: " + invocation.strip());
+            assertTrue(invocation.contains("tail"),
+                    "顶级页 refresh 应带 tail: " + invocation.strip());
+        } catch (Throwable t) {
+            red.add("③ " + t.getMessage());
+        }
+
+        if (!red.isEmpty()) {
+            fail(red.size() + " 问红：" + String.join("；", red));
+        }
+    }
+
+    /**
      * 扫核心 Java 源：非注释、非 Javadoc 行上的双引号字面量
      */
     private List<String> platformWordsInJavaSources(Path javaRoot) throws IOException {

@@ -534,7 +534,8 @@ function applyRoute(withData = true) {
   // 每次进入都重问一遍这台机器现在什么样：上一趟离开之后使用者可能去别处上了锁、加了主播，
   // 缓存的画面会把已经做完的那一步画成没做，而那正是这一页唯一要回答的问题
   else if (name === 'setup') openSetup();
-  else if (plugin || topPage) { api('/status').then(renderStatus); callPage(plugin || topPage, 'refresh'); }
+  else if (topPage) { api('/status').then(renderStatus); callPage(topPage, 'refresh', {sub, tail}); }
+  else if (plugin) { api('/status').then(renderStatus); callPage(plugin, 'refresh'); }
 
   // 点名要看某一块时不回顶：滚到顶再滚下去，屏幕会先跳一下
   if (!card) window.scrollTo(0, 0);

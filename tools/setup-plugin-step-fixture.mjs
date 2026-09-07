@@ -1,7 +1,7 @@
 /**
  * 向导插件步：源码契约、步骤表插位、事实两态
  *
- * 六问各自 try/catch，末尾汇总红格数，不靠 assert 短路。
+ * 七问各自 try/catch，末尾汇总红格数，不靠 assert 短路。
  * 用 node 直接跑：
  *   node tools/setup-plugin-step-fixture.mjs
  * 入口：bash tools/setup-plugin-step-fixture.sh
@@ -122,6 +122,29 @@ ask("⑥ main.js 含 SLOT_SETUP_STEP = 'setup_step' 且分派处引用它", () =
   const body = text.slice(from, to);
   if (!body.includes('meta.slot === SLOT_SETUP_STEP')) {
     throw new Error('分派处未引用 SLOT_SETUP_STEP');
+  }
+});
+
+ask('⑦ skippable 步 foot 出跳过、非 skippable 不出', () => {
+  const text = src('setup.js');
+  const from = text.indexOf('function renderPlugin(');
+  if (from < 0) {
+    throw new Error('找不到 renderPlugin');
+  }
+  let to = text.length;
+  const next = text.indexOf('\nfunction ', from + 1);
+  const nextAsync = text.indexOf('\nasync function ', from + 1);
+  if (next >= 0) to = Math.min(to, next);
+  if (nextAsync >= 0) to = Math.min(to, nextAsync);
+  const body = text.slice(from, to);
+  if (!body.includes('skippable')) {
+    throw new Error('renderPlugin 未读 skippable');
+  }
+  if (!body.includes('跳过')) {
+    throw new Error('skippable 步 foot 未出「跳过」');
+  }
+  if (body.includes('foot(host, null,')) {
+    throw new Error('renderPlugin 的 foot 仍写死 onSkip=null，skippable 步出不了跳过');
   }
 });
 

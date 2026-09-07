@@ -123,6 +123,7 @@ public final class ConsolePages {
 
         List<Entry> kept = new ArrayList<>();
         Set<String> seen = new HashSet<>();
+        Set<String> claimedFiles = new HashSet<>();
 
         for (ConsolePageProvider provider : providers) {
             if (provider == null) {
@@ -166,6 +167,38 @@ public final class ConsolePages {
                 continue;
             }
 
+            List<String> extras = read(provider, ConsolePageProvider::assets, "附属脚本");
+            if (extras == null) {
+                log.warn("控制台页面 {} 的附属脚本取不到, 已忽略", id);
+                continue;
+            }
+
+            boolean assetsOk = true;
+            Set<String> namesHere = new HashSet<>();
+            namesHere.add(script);
+            for (String extra : extras) {
+                if (extra == null || !SCRIPT.matcher(extra).matches()) {
+                    log.warn("控制台页面 {} 的附属脚本名不合规, 已忽略该页: {}", id, extra);
+                    assetsOk = false;
+                    break;
+                }
+                if (collidesWithCoreAsset(extra)) {
+                    log.warn("控制台页面 {} 申报的附属脚本名 {} 与配置界面自带的资源同名, 已忽略该页, 请改用其他文件名: {}",
+                            id, extra, provider.getClass().getName());
+                    assetsOk = false;
+                    break;
+                }
+                if (!namesHere.add(extra) || claimedFiles.contains(extra)) {
+                    log.warn("控制台页面 {} 申报的附属脚本名 {} 与其他脚本同名, 已忽略该页: {}",
+                            id, extra, provider.getClass().getName());
+                    assetsOk = false;
+                    break;
+                }
+            }
+            if (!assetsOk) {
+                continue;
+            }
+
             Integer order = read(provider, ConsolePageProvider::order, "顺序值");
             if (order == null) {
                 continue;
@@ -195,6 +228,7 @@ public final class ConsolePages {
                 continue;
             }
 
+            claimedFiles.addAll(namesHere);
             kept.add(new Entry(provider, id, order));
         }
 
@@ -206,6 +240,7 @@ public final class ConsolePages {
      * 按脚本文件名查找注册项
      * <p>
      * 只在<b>整理过的清单</b>里找：没登记上的那些，名字对得再准也取不到东西。
+     * 主脚本与 {@link ConsolePageProvider#assets()} 里报过的附属脚本都算已登记。
      * 这条路正是页面脚本的出口，白名单在这里，不在调用方。
      * @param providers 原始注册项
      * @param script 脚本文件名
@@ -217,7 +252,18 @@ public final class ConsolePages {
         }
 
         return valid(providers).stream()
-                .filter(provider -> script.equals(read(provider, ConsolePageProvider::script, "脚本名")))
+                .filter(provider -> ownsScript(provider, script))
                 .findFirst();
+    }
+
+    /**
+     * 这个文件名是不是该页已登记的主脚本或附属脚本
+     */
+    private static boolean ownsScript(ConsolePageProvider provider, String script) {
+        if (script.equals(read(provider, ConsolePageProvider::script, "脚本名"))) {
+            return true;
+        }
+        List<String> extras = read(provider, ConsolePageProvider::assets, "附属脚本");
+        return extras != null && extras.contains(script);
     }
 }

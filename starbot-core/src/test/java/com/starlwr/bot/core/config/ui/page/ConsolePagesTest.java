@@ -48,6 +48,13 @@ class ConsolePagesTest {
             implements ConsolePageProvider {
     }
 
+    /**
+     * 申报附属脚本的注册项。{@link Page} 不覆盖 {@code assets()}，才能守住缺省仍是空清单那一条
+     */
+    private record WithAssets(String id, String displayName, String script, int order, List<String> assets)
+            implements ConsolePageProvider {
+    }
+
     private Path repoRoot() {
         Path current = Path.of("").toAbsolutePath();
         while (current != null) {
@@ -386,6 +393,117 @@ class ConsolePagesTest {
         List<ConsolePageProvider> providers = list(page("Upper", "shady.js"));
 
         assertEquals(Optional.empty(), ConsolePages.byScript(providers, "shady.js"));
+    }
+
+    /**
+     * 附属脚本按登记名端出
+     * <p>
+     * 三问各自记下，末尾一起红：①红就 return 的话，③还没跑过，byScript 没扩也看不见。
+     */
+    @Test
+    @DisplayName("assets 可按名端出、byScript 找得到")
+    void extraAssetsAreServedByName() {
+        List<String> red = new ArrayList<>();
+        ConsolePageProvider demo = new WithAssets("demo", "演示", "demo.js", 100,
+                List.of("demo-model.js", "demo-extra.js"));
+        List<ConsolePageProvider> providers = list(demo);
+
+        try {
+            assertEquals(List.of(), new Page("x", "甲", "x.js", 100).assets(),
+                    "没报附属脚本的页，assets() 应为空清单");
+        } catch (Throwable t) {
+            red.add("① " + t.getMessage());
+        }
+
+        try {
+            assertEquals(List.of("demo"), ConsolePages.valid(providers).stream()
+                            .map(ConsolePageProvider::id).toList(),
+                    "只报合规附属脚本的页应当保留");
+        } catch (Throwable t) {
+            red.add("② " + t.getMessage());
+        }
+
+        try {
+            assertEquals("demo", ConsolePages.byScript(providers, "demo.js")
+                    .map(ConsolePageProvider::id).orElse(null), "主脚本仍按名找得到");
+            assertEquals("demo", ConsolePages.byScript(providers, "demo-model.js")
+                    .map(ConsolePageProvider::id).orElse(null),
+                    "附属脚本应按名找得到，否则 /assets 端不出");
+            assertEquals("demo", ConsolePages.byScript(providers, "demo-extra.js")
+                    .map(ConsolePageProvider::id).orElse(null));
+            assertEquals(Optional.empty(), ConsolePages.byScript(providers, "other.js"),
+                    "没报的名字仍找不到");
+        } catch (Throwable t) {
+            red.add("③ " + t.getMessage());
+        }
+
+        if (!red.isEmpty()) {
+            fail(red.size() + " 问红：" + String.join("；", red));
+        }
+    }
+
+    /**
+     * 附属脚本越界、撞核心同名、撞其他插件，整页拒
+     * <p>
+     * 三问各自记下，末尾一起红：①红就 return 的话，②③还没跑过，撞名仍端得出也看不见。
+     */
+    @Test
+    @DisplayName("assets 越界名／撞核心同名拒")
+    void extraAssetsOutOfBoundsOrCollidingAreRejected() {
+        List<String> red = new ArrayList<>();
+
+        try {
+            List<ConsolePageProvider> bad = list(
+                    new WithAssets("a", "甲", "a.js", 100, List.of("../evil.js")),
+                    new WithAssets("b", "乙", "b.js", 100, List.of("foo/bar.js")),
+                    new WithAssets("c", "丙", "c.js", 100, List.of("page.css")),
+                    new WithAssets("d", "丁", "d.js", 100, List.of("ok.js")));
+            assertEquals(List.of("d"), ConsolePages.valid(bad).stream()
+                            .map(ConsolePageProvider::id).toList(),
+                    "越界名的页应整页拒，合规附属脚本的页保留");
+            assertEquals(Optional.empty(), ConsolePages.byScript(bad, "../evil.js"));
+            assertEquals("d", ConsolePages.byScript(bad, "ok.js").map(ConsolePageProvider::id).orElse(null));
+        } catch (Throwable t) {
+            red.add("① " + t.getMessage());
+        }
+
+        try {
+            List<ConsolePageProvider> collide = list(
+                    new WithAssets("shadow", "影", "shadow.js", 100, List.of("core.js")),
+                    new WithAssets("ok", "好", "somewhere-else.js", 100, List.of()));
+            assertEquals(List.of("ok"), ConsolePages.valid(collide).stream()
+                            .map(ConsolePageProvider::id).toList(),
+                    "附属脚本撞核心同名应整页拒，不撞的那页照常在");
+            assertEquals(Optional.empty(), ConsolePages.byScript(collide, "core.js"),
+                    "撞核心同名的附属脚本按名也取不到");
+            assertEquals(Optional.empty(), ConsolePages.byScript(collide, "shadow.js"),
+                    "附属脚本撞核心时整页拒，主脚本也取不到");
+        } catch (Throwable t) {
+            red.add("② " + t.getMessage());
+        }
+
+        try {
+            List<ConsolePageProvider> clash = list(
+                    page("alpha", "alpha.js"),
+                    new WithAssets("beta", "乙", "beta.js", 100, List.of("alpha.js")),
+                    new WithAssets("gamma", "丙", "gamma.js", 100, List.of("extra.js")),
+                    new WithAssets("delta", "丁", "delta.js", 100, List.of("extra.js")));
+            assertEquals(List.of("alpha", "gamma"), ConsolePages.valid(clash).stream()
+                            .map(ConsolePageProvider::id).toList(),
+                    "附属脚本撞其他插件的主脚本或附属脚本应整页拒");
+            assertEquals("alpha", ConsolePages.byScript(clash, "alpha.js")
+                    .map(ConsolePageProvider::id).orElse(null));
+            assertEquals(Optional.empty(), ConsolePages.byScript(clash, "beta.js"));
+            assertEquals("gamma", ConsolePages.byScript(clash, "extra.js")
+                    .map(ConsolePageProvider::id).orElse(null));
+            assertEquals(Optional.empty(), ConsolePages.byScript(clash, "delta.js"));
+        } catch (Throwable t) {
+            red.add("③ " + t.getMessage());
+        }
+
+        if (!red.isEmpty()) {
+            fail(red.size() + " 问红：" + String.join("；", red));
+        }
     }
 
     /**
