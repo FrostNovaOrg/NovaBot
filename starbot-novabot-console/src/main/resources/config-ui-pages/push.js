@@ -16,7 +16,7 @@
  */
 
 import {ask} from './confirm.js';
-import {$, api, dropDisplayOnly, el, esc, markDirty, say, term} from './core.js';
+import {$, api, el, esc, markDirty, say, term} from './core.js';
 import {resolveTarget, targetOptions} from './links-model.js';
 import {
   atAllStatus, buildDirectory, channelIndex, channelName, commandGroups, commandSummary,
@@ -397,6 +397,25 @@ function bindShell() {
 }
 
 
+/**
+ * datasource.json 解析结果，改动直接作用其上以保留表单未覆盖的字段
+ *
+ * 这一份从前摆在宿主的 store 上，由宿主开机去取、由宿主按主播比出改动数。
+ * 而本页随插件走：插件卸掉之后宿主仍会去取那份文件、仍按一份取不到的东西算数，
+ * 屏幕上却不会有任何异常。现在它住在这里，宿主经改动条的供数方问（见 changeCount／save／reload）。
+ */
+let pushData = [];
+
+/**
+ * 上一次载入时的推送配置快照，序列化后的字符串
+ *
+ * 改动条要答「改了几处」，而本页的改动是直接落在 pushData 上的，没有逐项记账。
+ * 拿它与快照比即可现算出条数。存序列化后的字符串而不是对象引用：存引用的话，
+ * 它与 pushData 指向同一批对象，改动会同时反映到「快照」上——那时两边永远相等，
+ * 改动条恒显示 0，而这件事在界面上看不出任何异常
+ */
+let pushSaved = '[]';
+
 /** 这一页最近一次取到的运行状态（/api/state），由 loadPushPage 刷新 */
 let runtime = {commands: [], sessions: [], subscriptions: [], incomplete: [], totalDataAvailable: null};
 
@@ -503,7 +522,7 @@ export function setRuntimeState(data) {
 function paintTree() {
   const host = $('#push-tree');
   const nav = $('#push-nav');
-  const tree = pushTree(store.pushData, runtime.sessions, store.handlerList, directory);
+  const tree = pushTree(pushData, runtime.sessions, store.handlerList, directory);
 
   host.innerHTML = '';
   nav.innerHTML = '<option value="">通道一览</option><option value="default">默认模板</option>';
@@ -618,7 +637,7 @@ function paintRight() {
     return;
   }
 
-  const user = (store.pushData || []).find(item => String(item.uid) === String(picked.uid));
+  const user = (pushData || []).find(item => String(item.uid) === String(picked.uid));
   if (!picked.uid || !user) {
     renderIndex(host);
     return;
@@ -658,7 +677,7 @@ function card(host, title, desc) {
 // ---- 通道一览 ----
 
 function renderIndex(host) {
-  const rows = channelIndex(store.pushData, runtime.sessions, store.handlerList, directory);
+  const rows = channelIndex(pushData, runtime.sessions, store.handlerList, directory);
   const box = card(host, '通道一览',
     '一位主播 × 一个群（或一位好友）＝ 一个通道。同一个群出现在多位主播下是正常的，'
     + '而「本群设置」那一段是这个群自己的事，对推给它的所有主播共用。');
@@ -695,7 +714,7 @@ function renderIndex(host) {
  * 这一块正是让那种「配好了却不响应」现出形来的地方。
  */
 function renderStranded(host) {
-  const rows = strandedSessions(store.pushData, runtime.sessions);
+  const rows = strandedSessions(pushData, runtime.sessions);
   if (!rows.length) return;
 
   const box = card(host, '配置里已经没有、状态里还留着的会话',
@@ -852,7 +871,7 @@ function renderAdoption(host, handlers) {
     '在上面改一次，这里「用默认」的通道全都跟着变；已经自定义的那些不受影响。');
 
   for (const handler of handlers) {
-    const rows = templateAdoption(store.pushData, handler, store.vocab);
+    const rows = templateAdoption(pushData, handler, store.vocab);
     const item = el('div', 'tplrow');
     item.appendChild(el('b')).textContent = handler.displayName || handler.className;
     item.appendChild(el('p', 'hint')).textContent =
@@ -905,7 +924,7 @@ function renderStreamerLevel(host, user) {
     if (!await ask({title: '删除这位主播？',
       body: '「' + streamerName(user) + '」的 '
         + (user.targets || []).length + ' 个通道会一起没掉，历史场次数据保留。'})) return;
-    store.pushData.splice(store.pushData.indexOf(user), 1);
+    pushData.splice(pushData.indexOf(user), 1);
     expanded.delete(String(user.uid));
     markDirty();
     location.hash = '#/push';
@@ -1555,7 +1574,7 @@ async function lookupStreamer(platformNames, input, go, out) {
       out.textContent = res.message;
       return;
     }
-    if ((store.pushData || []).some(item => Number(item.uid) === Number(res.uid))) {
+    if ((pushData || []).some(item => Number(item.uid) === Number(res.uid))) {
       out.textContent = '主播 ' + res.uname + ' 已经在列表里了。';
       return;
     }
@@ -1568,7 +1587,7 @@ async function lookupStreamer(platformNames, input, go, out) {
     add.type = 'button';
     add.textContent = '就是它，加进来';
     add.addEventListener('click', () => {
-      store.pushData.push({
+      pushData.push({
         uid: res.uid, platform, enabled: true, targets: [],
         _uname: res.uname, _roomId: res.roomId, _face: res.face,
       });
@@ -1591,13 +1610,109 @@ async function lookupStreamer(platformNames, input, go, out) {
 // ============ 存盘与补全 ============
 
 /**
+ * 推送配置此刻手里那一份
+ *
+ * 给向导那一步用：它要先看有没有同一位主播，再整份换掉。
+ * @return {Array} 直接就是本页手里那个数组，改它即改本页的草稿态
+ */
+export function pushEntries() {
+  return pushData;
+}
+
+/**
+ * 整份换掉
+ *
+ * 向导那一步落盘失败时要整份退回上一刻的样子，逐项撤是撤不干净的。
+ * @param list 新的一份
+ */
+export function setPushEntries(list) {
+  pushData = list;
+}
+
+/**
+ * 把快照对齐到此刻这一份
+ *
+ * 本页之外还有人往 /datasource 写（向导第一位主播那一步）。写完不对齐的话，
+ * 改动条会一直说「还有 1 处没保存」——而它已经存下去了。
+ */
+export function markPushSaved() {
+  pushSaved = serializePush();
+}
+
+// 下划线开头的字段仅供界面展示（昵称、头像等），既不写进配置文件，也不该算作改动
+function dropDisplayOnly(key, value) {
+  return key.startsWith('_') ? undefined : value;
+}
+
+/**
  * 下划线开头的字段仅供界面展示（昵称、头像等），不应写进配置文件。
  *
  * 「哪些字段只是给人看的」这条规则只有 dropDisplayOnly 一份：写两份的话，
  * 改动计数与真正写盘的内容会按两套规则算，于是「有改动却存不出东西」这种事没人查得出来
  */
 export function serializePush() {
-  return JSON.stringify(store.pushData, dropDisplayOnly, 2);
+  return JSON.stringify(pushData, dropDisplayOnly, 2);
+}
+
+/**
+ * 本页此刻有几处改过还没保存：按主播逐条比，不是「一整份变了没有」
+ *
+ * 整份比只能得出 0 或 1，而屏幕上写的是「N 处改动」——那个 1 会被读成「只改了一处」。
+ * 两边都是现算，没有「改动次数」的累加器：累加器的毛病是改回原样它也照加，
+ * 屏幕上会显示「1 处改动」而实际什么都没变。
+ *
+ * 这是宿主改动条问本页的三件事之一（另两件是 save 与 reload），见 core.js 的
+ * registerChangeSource。宿主不知道这个数是怎么算出来的，也不该知道。
+ * @return {number} 改过未保存的主播数
+ */
+export function changeCount() {
+  const byKey = list => {
+    const map = new Map();
+    for (const user of list || []) {
+      map.set(user.platform + ':' + user.uid, JSON.stringify(user, dropDisplayOnly));
+    }
+    return map;
+  };
+
+  let saved;
+  try {
+    saved = byKey(JSON.parse(pushSaved || '[]'));
+  } catch (e) {
+    // 快照都解析不了时不猜数：本页此刻处于「文件内容不合法」的状态，界面上另有说明
+    return 0;
+  }
+
+  const now = byKey(pushData);
+  let n = 0;
+  now.forEach((value, key) => { if (saved.get(key) !== value) n++; });
+  saved.forEach((value, key) => { if (!now.has(key)) n++; });
+  return n;
+}
+
+/**
+ * 重取本页那一份，宿主整体载入与「放弃改动」时各走一趟
+ *
+ * 自己取而不是等宿主喂：这份配置是本页的产品形状，宿主卸掉本插件之后
+ * 不该还认得 /datasource 这条接口。
+ *
+ * 内容不合法时不在界面上开一个编辑器让人现场改文件——那条路已经撤了。
+ * 这里只把话说清楚：改哪个文件、在哪儿改，路径就显示在设置页底部。
+ * @return {Promise<boolean|undefined>} 回 false 表示已在状态栏上写了话，宿主别替它清掉
+ */
+export async function reload() {
+  const res = await api('/datasource');
+  try {
+    pushData = JSON.parse(res.content || '[]');
+    // 快照要取序列化之后的形态，与改动计数比的是同一把尺；
+    // 直接存 res.content 的话，文件里的缩进与键序都会算成「改动」
+    pushSaved = serializePush();
+  } catch (e) {
+    pushData = [];
+    pushSaved = '[]';
+    say('推送配置 datasource.json 不是合法 JSON，界面上暂时看不到已配好的主播。'
+      + '请到服务器上修正该文件后重新载入', 'err');
+    return false;
+  }
 }
 
 /**
@@ -1612,7 +1727,7 @@ export async function save() {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({content: serializePush()}),
     });
-    if (res.success) store.pushSaved = serializePush();
+    if (res.success) markPushSaved();
     say(res.message || (res.success ? '已保存' : '保存失败'), res.success ? 'ok' : 'err');
   } catch (e) {
     say('保存失败：' + e.message, 'err');
@@ -1624,7 +1739,7 @@ export async function save() {
  * 配置文件里只有 uid，昵称要另行补全才显示得出来
  */
 export async function decoratePushData() {
-  await Promise.all((store.pushData || []).map(async user => {
+  await Promise.all((pushData || []).map(async user => {
     // 补昵称要靠对应平台的数据源服务，没注册的平台查不了，照 uid 显示就是
     if (user._uname || !(store.platforms || []).includes(user.platform)) return;
     try {

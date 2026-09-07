@@ -11,11 +11,19 @@
 
 import {api, esc, say} from './core.js';
 import {refreshHome} from './overview.js';
-import {store} from './store.js';
 import {todayAtAllMarkup, todayModel} from './today-model.js';
 
 /** 宿主给的那块容器，卡的正文 */
 let box = null;
+
+/**
+ * 此刻推送是开着还是暂停，由 paint 按 /api/status 现算的那一位记下
+ *
+ * 记在这里而不是宿主的 store 上：这个开关连同它背后的 /push/toggle 都在本插件里，
+ * 摆进宿主的话，卸掉本插件之后宿主还留着一份没人再更新的状态。
+ * 只有本文件读写它——按下开关时要知道「现在是开着的，那就该关」。
+ */
+let pushOn = true;
 
 /** 最近一份运行状态与额度回包。两份分别到，画的时候要一起用 */
 let seen = {status: null, quota: null};
@@ -85,7 +93,7 @@ function paint() {
 
   // 开关的字与那句提示由同一位算出来，不各写各的：分叉时按钮写着「暂停全部推送」
   // 而旁边那句写着「已暂停」，两句话说的是相反的事
-  store.pushEnabled = model.pushOn;
+  pushOn = model.pushOn;
   const toggle = box.querySelector('#toggle-push');
   const hint = box.querySelector('#push-hint');
   toggle.textContent = model.pushOn ? '暂停全部推送' : '恢复推送';
@@ -100,7 +108,7 @@ function paint() {
  * 只拨开关的话，屏幕上会出现「已暂停」与一段绿灯并存的画面。
  */
 export async function togglePush() {
-  const next = !store.pushEnabled;
+  const next = !pushOn;
   const toggle = box && box.querySelector('#toggle-push');
   if (toggle) toggle.disabled = true;
   try {

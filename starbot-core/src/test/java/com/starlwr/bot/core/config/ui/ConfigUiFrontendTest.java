@@ -41,10 +41,15 @@ import static org.junit.jupiter.api.Assertions.fail;
 class ConfigUiFrontendTest {
     /**
      * 跨页签共享的可变状态，全部挂在 store 上。裸着出现即为 ReferenceError
+     * <p>
+     * 推送那三项（{@code pushData}／{@code pushSaved}／{@code pushEnabled}）不在这张表里：
+     * 它们已随推送页搬进控制台插件，成了那一页自己的模块变量——在那里裸着出现是正当写法。
+     * 「核心的界面文件里不许再出现它们」由 {@link ChangeBarSourceTest} 守着，那一格连
+     * 「开机还取不取 /datasource」一起量。
      */
     private static final List<String> SHARED = List.of(
-            "schema", "values", "legacy", "dirty", "tab", "csrfToken", "pushData", "pushSaved",
-            "handlerList", "senderList", "pushEnabled", "accountTimer",
+            "schema", "values", "legacy", "dirty", "tab", "csrfToken",
+            "handlerList", "senderList", "accountTimer",
             "platforms", "totpRequired", "vocab");
 
     /**
@@ -91,9 +96,13 @@ class ConfigUiFrontendTest {
      * <p>
      * 六页导航之后这仍是页签名而不是路由名：{@code store.tab} 是插件页读得到的东西，
      * 换成路由名等于改了对插件的约定。路由那一侧另有 {@link #CORE_ROUTES}。
+     * <p>
+     * {@code push} 已经不在这张表里：底部改动条从前写着 {@code store.tab === 'push'}，
+     * 现在它按登记在册的供数方认（见 core.js 的 registerChangeSource），核心因此
+     * 一个平台页的页签名也不认识了。
      */
     private static final Set<String> CORE_TABS = Set.of(
-            "overview", "push", "bot", "sessions", "tokens", "settings", "log", "setup");
+            "overview", "bot", "sessions", "tokens", "settings", "log", "setup");
 
     /**
      * 核心自己的六页导航与初始设置页，闭集
