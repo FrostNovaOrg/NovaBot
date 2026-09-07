@@ -157,7 +157,15 @@ if [ "$ok5" -eq 1 ]; then
     fi
 fi
 if [ "$ok5" -eq 1 ]; then
-    echo "⑤ 绿：三件在 dist/templates 下，ExecStart 以 /opt/starbot/ 开头，User 与 starbot.service 同"
+    novabot_n=$(grep -c "/opt/novabot" "$TMR" || true)
+    starbot_n=$(grep -c "/opt/starbot" "$TMR" || true)
+    if [ "$novabot_n" -ne 0 ] || [ "$starbot_n" -lt 1 ]; then
+        ok5=0
+        reason5="timer 注释仍写 /opt/novabot 或未写 /opt/starbot（novabot=${novabot_n} starbot=${starbot_n}）"
+    fi
+fi
+if [ "$ok5" -eq 1 ]; then
+    echo "⑤ 绿：三件在 dist/templates 下，ExecStart 以 /opt/starbot/ 开头，User 与 starbot.service 同，timer 注释现行安装目录"
 else
     echo "⑤ 红：${reason5}"
     RED=$((RED + 1))

@@ -77,6 +77,39 @@ export function stopSetupPolling() {
 }
 
 /**
+ * 机器人草稿五格的对照串。键序写死，只给 {@link botDraftMatchesSaved} 用。
+ */
+function botSnapshot(bot) {
+  return JSON.stringify({
+    address: String(bot.address || ''),
+    httpPort: String(bot.httpPort || ''),
+    wsPort: String(bot.wsPort || ''),
+    httpToken: String(bot.httpToken || ''),
+    wsToken: String(bot.wsToken || ''),
+  });
+}
+
+/**
+ * 草稿与上次记下的盘上是否同一套参数
+ *
+ * 还没对过盘时，Token 非空即未保存的编辑。对过之后按五格逐字比。
+ */
+function botDraftMatchesSaved(draft) {
+  if (!draft.botSynced) {
+    return !draft.bot.httpToken && !draft.bot.wsToken;
+  }
+  return botSnapshot(draft.bot) === draft.botSynced;
+}
+
+/**
+ * 把此刻草稿记成「与盘上一致」。测通存下或从盘上回填之后走这里。
+ */
+function rememberBotDraft(draft) {
+  draft.botSynced = botSnapshot(draft.bot);
+  return draft;
+}
+
+/**
  * 已配过则回填地址端口并清空 Token，草稿回到与盘上一致；未配过原样返回
  */
 function syncBotDraft(draft, bot) {
@@ -86,6 +119,26 @@ function syncBotDraft(draft, bot) {
   if (bot.websocketPort) draft.bot.wsPort = String(bot.websocketPort);
   draft.bot.httpToken = '';
   draft.bot.wsToken = '';
+  // 快照内联：本函数会被单独切出去跑，不能调兄弟函数
+  draft.botSynced = JSON.stringify({
+    address: String(draft.bot.address || ''),
+    httpPort: String(draft.bot.httpPort || ''),
+    wsPort: String(draft.bot.wsPort || ''),
+    httpToken: '',
+    wsToken: '',
+  });
+  return draft;
+}
+
+/**
+ * 重进时：有未保存编辑则不得把已作废的测通翻回真；与盘上一致才采既成事实
+ */
+function applyBotOkFromFacts(draft, facts) {
+  if (botDraftMatchesSaved(draft)) {
+    draft.botOk = draft.botOk || facts[1];
+  } else {
+    draft.botOk = false;
+  }
   return draft;
 }
 
@@ -104,8 +157,10 @@ export async function openSetup() {
       api('/status'), api('/login'), api('/setup/state'), api('/setup/bot')]);
     seen = {status, login, mark};
     // 已经配过的地址与端口回填，免得「重新跑一遍」的人对着 127.0.0.1 重敲一遍自己的地址。
-    // Token 清空：重进时草稿须回到与盘上一致；保存端对空白字段仍是「保持原值」。
-    syncBotDraft(draft, bot);
+    // 有未保存编辑则留着（两个 Token 不从盘上回填）；与盘上一致时才清空 Token 并回填地址端口。
+    if (botDraftMatchesSaved(draft)) {
+      syncBotDraft(draft, bot);
+    }
   } catch (e) {
     main.textContent = '';
     main.appendChild(note('err', '载入失败：' + e.message
@@ -117,7 +172,7 @@ export async function openSetup() {
   // 既成事实要盖进草稿：这台机器本来就上了锁、本来就连着机器人时，
   // 那两步不该因为「这一趟里没做过」而拦着人往下走
   draft.locked = facts[0];
-  draft.botOk = draft.botOk || facts[1];
+  applyBotOkFromFacts(draft, facts);
   draft.accountsReady = facts[2];
   draft.sent = facts[4];
 
@@ -541,6 +596,8 @@ function stepBot(host) {
       report(box, res);
       if (!res.success) {
         draft.botOk = false;
+      } else {
+        rememberBotDraft(draft);
       }
     } catch (e) {
       report(box, {success: false, message: '连接是通的，但没能存下来：' + e.message});
