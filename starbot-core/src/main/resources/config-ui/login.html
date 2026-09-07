@@ -88,12 +88,20 @@
       display: flex; align-items: center; gap: 10px;
     }
     p.or::before, p.or::after { content: ""; flex: 1; height: 1px; background: var(--line) }
-    /* 口令那条路折起来时才有摘要行；摊开时（没登记过通行密钥）摘要整行不出 */
+    /* 口令那条路折起来时才有摘要行；摊开时（没登记过通行密钥）摘要整行不出。
+       折着时它是这条路的入口，做成与主按钮同宽的次级按钮形，而不是一行小字 */
     details > summary {
-      cursor: pointer; font-size: 13px; color: var(--accent); list-style: none;
-      padding: 4px 0; margin-bottom: 8px;
+      display: block; text-align: center; padding: 9px; font-size: 14px; font-weight: 600;
+      color: var(--text); background: var(--surface); cursor: pointer; list-style: none;
+      border: 1px solid var(--line); border-radius: var(--r-ctl); margin-bottom: 8px;
     }
+    details > summary:hover { border-color: var(--accent) }
     details > summary::-webkit-details-marker { display: none }
+    /* 摊开之后头部收成小字：按钮形只在它还是「另一条路」的入口时才有意义 */
+    details[open] > summary {
+      border: none; background: none; padding: 0; font-size: 12.5px; font-weight: 400;
+      color: var(--accent); text-align: center;
+    }
     details.bare > summary { display: none }
     .links { margin-top: 16px; display: flex; gap: 14px; justify-content: center }
     .lnk {

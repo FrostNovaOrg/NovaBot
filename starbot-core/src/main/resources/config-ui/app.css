@@ -84,6 +84,8 @@
 .nv-pill.err{border-color:var(--err);color:var(--err);background:var(--errsoft)}
 .nv-pill.acc{border-color:var(--softline);color:var(--accent);background:var(--soft)}
 .nv-soft{background:var(--soft);border:1px solid var(--softline);border-radius:var(--r-ctl)}
+/* 宽表的横向滚动容器：列多而全 nowrap 的表外包一层，在卡片里滚而不是把卡片顶破 */
+.tblwrap{overflow-x:auto}
 
 *{box-sizing:border-box}
 body{margin:0;background:var(--ground);color:var(--text);
