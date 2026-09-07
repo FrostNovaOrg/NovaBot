@@ -10,7 +10,7 @@
  * 退码 0 即各档全对；任一档对不上打印差异并以 1 退出。
  */
 
-import {loginView, lockText} from '../starbot-core/src/main/resources/config-ui/login-model.js';
+import {loginView, lockText, landing} from '../starbot-core/src/main/resources/config-ui/login-model.js';
 
 const failures = [];
 let checks = 0;
@@ -46,6 +46,11 @@ eq(lockText(120).includes('秒'), false, '整分钟不拖一个 0 秒');
 eq(lockText(125).includes('2 分 5 秒'), true, '零头分秒都写');
 eq(lockText(60).includes('输对'), true, '文案说明锁定期内输对也会被拒');
 eq(lockText(7) === lockText(8), false, '不同剩余时长给出不同文案');
+
+// —— 档四：落点 ——
+eq(landing('http://h/config#/settings', '#/settings').reload, true, '同址带片段：replace 只做片段导航，须改重载');
+eq(landing('http://h/config', ''), {reload: false, url: '/config'}, '无片段时不重载，落点是 /config');
+eq(landing('http://h/config?token=x', '').reload, false, '带 query 的现址与落点不同，replace 照常整页导航');
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);

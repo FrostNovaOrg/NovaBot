@@ -1047,14 +1047,20 @@ class ConfigUiFrontendTest {
     }
 
     @Test
-    @DisplayName("登录后落点带着原来的 hash")
+    @DisplayName("登录后经落点助手进控制台：带着原来的 hash，同址带片段时整页重载")
     void loginRedirectKeepsTheHash() throws IOException {
         String html = Files.readString(frontendDir().resolve("login.html"), StandardCharsets.UTF_8);
         Matcher bare = Pattern.compile("location\\.replace\\('/config'\\)").matcher(html);
         assertFalse(bare.find(),
-                "四处 location.replace 不得写成 '/config' 丢掉 hash，否则从 #/settings 进来登录完会落到首页");
-        assertTrue(html.contains("location.replace('/config' + location.hash)"),
-                "登录后落点应是 '/config' + location.hash，无 hash 时与原来相同");
+                "任何 location.replace 不得写成 '/config' 丢掉 hash，否则从 #/settings 进来登录完会落到首页");
+        assertFalse(html.contains("location.replace('/config' + location.hash)"),
+                "登录成功的落点须经落点助手走。裸写 replace 的话，地址栏已是 /config#/… 时目标与当前"
+                        + "完全相同，浏览器只做片段导航不重取页面——登录成功了也进不了控制台，刷新才进得去");
+        int uses = html.split("enterConsole\\(", -1).length - 1;
+        assertTrue(uses >= 5,
+                "enterConsole 应有定义一处加四处登录成功调用，此刻只有 " + uses + " 处");
+        assertTrue(html.contains("location.reload()"),
+                "落点与当前同址（带片段）时必须整页重载，否则片段导航进不了控制台");
     }
 
     /**

@@ -91,3 +91,22 @@ export function loginControlState(view) {
     submit: on,
   };
 }
+
+/**
+ * 登录成功后去哪儿
+ *
+ * 未登录访问 /config 时安全过滤器把登录页<b>原地</b>吐出来，地址栏不变——
+ * 因此「登录成功」的那一刻，目标地址可能恰好就是当前这一条。replace 落在与当前
+ * 完全相同且带片段的地址上时，浏览器只做片段导航、不重取页面，登录成功了也进不了控制台；
+ * 目标不带片段时 replace 本就是整页导航，照常走。
+ * @param href 当前的完整地址（location.href）
+ * @param hash 当前的片段（location.hash），形如 '#/settings' 或空串
+ * @return {{reload: boolean, url: string}} reload 为真时须整页重载，否则 replace 到 url
+ */
+export function landing(href, hash) {
+  const url = '/config' + hash;
+  // 「与当前同址」按解析后的完整地址比：query（令牌那一趟留下的）与片段都算数。
+  // 同址还要带片段才须重载——不带片段的 replace 本就是整页导航，重载反而多走一趟
+  const reload = hash !== '' && new URL(url, href).href === href;
+  return {reload, url};
+}
