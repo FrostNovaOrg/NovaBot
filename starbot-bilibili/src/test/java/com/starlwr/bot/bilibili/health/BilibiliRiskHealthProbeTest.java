@@ -174,4 +174,50 @@ class BilibiliRiskHealthProbeTest {
 
         assertTrue(reds.isEmpty(), () -> "三问中 " + reds.size() + " 问红: " + String.join("; ", reds));
     }
+
+    @Test
+    @DisplayName("UNKNOWN_VER 一条即 degraded；解析失败/缺字段/接口缺 data 只进 summary 不降档")
+    void unknownVerDegradesSilentLossStaysSummary() {
+        java.util.List<String> reds = new java.util.ArrayList<>();
+
+        try {
+            BilibiliRiskMetrics verOnly = new BilibiliRiskMetrics();
+            BilibiliRiskHealthProbe verProbe = new BilibiliRiskHealthProbe(verOnly);
+            verOnly.record(BilibiliRiskMetrics.Kind.UNKNOWN_VER, "ver=5 count=1 unique=1");
+            HealthStatus status = verProbe.check();
+            assertEquals(HealthStatus.Level.DEGRADED, status.level(), "未知协议版本一条即应降档");
+            assertTrue(status.summary().contains("未知协议版本"), "summary 应写未知协议版本，实际: " + status.summary());
+            assertTrue(status.summary().contains("ver=5"), "summary 应带 ver=N，实际: " + status.summary());
+        } catch (AssertionError e) {
+            reds.add("① " + e.getMessage());
+        }
+
+        try {
+            BilibiliRiskMetrics silent = new BilibiliRiskMetrics();
+            BilibiliRiskHealthProbe silentProbe = new BilibiliRiskHealthProbe(silent);
+            silent.record(BilibiliRiskMetrics.Kind.PARSE_FAILURE, "LIVE count=1 unique=2");
+            silent.record(BilibiliRiskMetrics.Kind.FIELD_MISSING, "DANMU_MSG:info<16 count=1 unique=3");
+            silent.record(BilibiliRiskMetrics.Kind.API_DATA_MISSING,
+                    "https://api.example.com/x count=1 unique=4");
+            HealthStatus status = silentProbe.check();
+            assertEquals(HealthStatus.Level.OK, status.level(), "三类静默损失只进 summary，不得降档");
+            assertTrue(status.summary().contains("解析失败 2 类"), "应写解析失败类数，实际: " + status.summary());
+            assertTrue(status.summary().contains("缺字段 3 类"), "应写缺字段类数，实际: " + status.summary());
+            assertTrue(status.summary().contains("接口缺 data 4 个端点"), "应写缺 data 端点数，实际: " + status.summary());
+            assertTrue(status.summary().contains("最近 LIVE"), "应带最近解析失败的 cmd，实际: " + status.summary());
+        } catch (AssertionError e) {
+            reds.add("② " + e.getMessage());
+        }
+
+        try {
+            HealthStatus quiet = probe.check();
+            assertFalse(quiet.summary().contains("解析失败"), "没发生就不该出现这行，实际: " + quiet.summary());
+            assertFalse(quiet.summary().contains("缺字段"), "没发生就不该出现这行，实际: " + quiet.summary());
+            assertFalse(quiet.summary().contains("接口缺 data"), "没发生就不该出现这行，实际: " + quiet.summary());
+        } catch (AssertionError e) {
+            reds.add("③ " + e.getMessage());
+        }
+
+        assertTrue(reds.isEmpty(), () -> "三问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+    }
 }

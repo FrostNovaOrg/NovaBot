@@ -174,6 +174,141 @@ class BilibiliEventParserTest {
     }
 
     @Test
+    @DisplayName("解析异常按 cmd 记 PARSE_FAILURE：首见即记、十次只记量级、detail 不含报文")
+    void parseFailureRecordedPerCmdWithMagnitudes() {
+        List<String> reds = new ArrayList<>();
+
+        try {
+            assertTrue(parse("{\"cmd\":\"LIVE\",\"live_time\":{}}").isEmpty(), "解析异常应被吞掉并返回空");
+            assertEquals(1, riskMetrics.count(BilibiliRiskMetrics.Kind.PARSE_FAILURE, Duration.ofMinutes(1)),
+                    "首见应恰好记一次");
+            String detail = riskMetrics.lastDetail(BilibiliRiskMetrics.Kind.PARSE_FAILURE).orElse("");
+            assertTrue(detail.contains("LIVE"), "detail 应含 cmd 名，实际: " + detail);
+        } catch (AssertionError e) {
+            reds.add("① " + e.getMessage());
+        }
+
+        try {
+            for (int i = 0; i < 9; i++) {
+                parse("{\"cmd\":\"LIVE\",\"live_time\":{}}");
+            }
+            assertEquals(2, riskMetrics.count(BilibiliRiskMetrics.Kind.PARSE_FAILURE, Duration.ofMinutes(1)),
+                    "十次应只在 1 与 10 两处记，实际 "
+                            + riskMetrics.count(BilibiliRiskMetrics.Kind.PARSE_FAILURE, Duration.ofMinutes(1)));
+        } catch (AssertionError e) {
+            reds.add("② " + e.getMessage());
+        }
+
+        try {
+            assertTrue(parse("{\"cmd\":\"WATCHED_CHANGE\",\"data\":{\"num\":{}}}").isEmpty());
+            assertEquals(3, riskMetrics.count(BilibiliRiskMetrics.Kind.PARSE_FAILURE, Duration.ofMinutes(1)),
+                    "另一 cmd 应另记首见");
+            String detail = riskMetrics.lastDetail(BilibiliRiskMetrics.Kind.PARSE_FAILURE).orElse("");
+            assertTrue(detail.contains("WATCHED_CHANGE"), "最近一条应是新 cmd，实际: " + detail);
+        } catch (AssertionError e) {
+            reds.add("③ " + e.getMessage());
+        }
+
+        try {
+            String detail = riskMetrics.lastDetail(BilibiliRiskMetrics.Kind.PARSE_FAILURE).orElse("");
+            assertFalse(detail.contains("live_time"), "detail 不得含报文字段，实际: " + detail);
+        } catch (AssertionError e) {
+            reds.add("④ " + e.getMessage());
+        }
+
+        assertTrue(reds.isEmpty(), () -> "四问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+    }
+
+    @Test
+    @DisplayName("截断的 pb 与过短的弹幕 info 记 FIELD_MISSING：行为不变、按名去重、量级记账")
+    void truncatedPbAndShortInfoRecordFieldMissing() {
+        List<String> reds = new ArrayList<>();
+        // 勋章子消息（字段 9）垫尾，再切掉最后 2 字节：长度前缀比剩余字节长，读取器置截断位
+        byte[] interactFull = Base64.getDecoder().decode(new PbWriter()
+                .varint(1, 10001L)
+                .str(2, "观众")
+                .varint(5, 1)
+                .varint(7, 1700000100L)
+                .message(9, new PbWriter()
+                        .str(1, "勋章")
+                        .varint(2, 8)
+                        .varint(9, 1)
+                        .varint(10, 999))
+                .base64());
+        String interactPb = Base64.getEncoder()
+                .encodeToString(Arrays.copyOf(interactFull, interactFull.length - 2));
+        byte[] giftFull = Base64.getDecoder().decode(new PbWriter()
+                .varint(1, 555)
+                .str(2, "土豪")
+                .message(10, new PbWriter()
+                        .varint(1, 31036)
+                        .str(2, "辣条")
+                        .varint(3, 1)
+                        .varint(6, 1000)
+                        .str(8, "gold")
+                        .varint(10, 1700000002L))
+                .message(15, new PbWriter()
+                        .varint(1, 555)
+                        .str(2, "https://face.example/3.jpg")
+                        .message(3, new PbWriter()
+                                .str(1, "勋章")
+                                .varint(2, 8)
+                                .varint(9, 1)
+                                .varint(10, 999)))
+                .base64());
+        String giftPb = Base64.getEncoder()
+                .encodeToString(Arrays.copyOf(giftFull, giftFull.length - 2));
+
+        try {
+            Optional<StarBotBaseLiveEvent> event = parse(
+                    "{\"cmd\":\"INTERACT_WORD_V2\",\"data\":{\"dmscore\":3,\"pb\":\"" + interactPb + "\"}}");
+            assertTrue(event.isPresent(), "截断的进房报文仍应产出事件，行为不得改变");
+            assertEquals(1, riskMetrics.count(BilibiliRiskMetrics.Kind.FIELD_MISSING, Duration.ofMinutes(1)),
+                    "首见应恰好记一次");
+            String detail = riskMetrics.lastDetail(BilibiliRiskMetrics.Kind.FIELD_MISSING).orElse("");
+            assertTrue(detail.contains("INTERACT_WORD_V2:pb-truncated"),
+                    "detail 应含 cmd 与截断标记，实际: " + detail);
+        } catch (AssertionError e) {
+            reds.add("① " + e.getMessage());
+        }
+
+        try {
+            for (int i = 0; i < 9; i++) {
+                parse("{\"cmd\":\"INTERACT_WORD_V2\",\"data\":{\"dmscore\":3,\"pb\":\"" + interactPb + "\"}}");
+            }
+            assertEquals(2, riskMetrics.count(BilibiliRiskMetrics.Kind.FIELD_MISSING, Duration.ofMinutes(1)),
+                    "十次应只在 1 与 10 两处记，实际 "
+                            + riskMetrics.count(BilibiliRiskMetrics.Kind.FIELD_MISSING, Duration.ofMinutes(1)));
+        } catch (AssertionError e) {
+            reds.add("② " + e.getMessage());
+        }
+
+        try {
+            Optional<StarBotBaseLiveEvent> event = parse(
+                    "{\"cmd\":\"SEND_GIFT_V2\",\"data\":{\"dmscore\":3,\"pb\":\"" + giftPb + "\"}}");
+            assertTrue(event.isPresent(), "礼物块完好的截断报文仍应产出事件");
+            assertEquals(3, riskMetrics.count(BilibiliRiskMetrics.Kind.FIELD_MISSING, Duration.ofMinutes(1)),
+                    "另一截断名应另记首见");
+            String detail = riskMetrics.lastDetail(BilibiliRiskMetrics.Kind.FIELD_MISSING).orElse("");
+            assertTrue(detail.contains("SEND_GIFT_V2:pb-truncated"), "detail 应含礼物截断名，实际: " + detail);
+        } catch (AssertionError e) {
+            reds.add("③ " + e.getMessage());
+        }
+
+        try {
+            assertTrue(parse("{\"cmd\":\"DANMU_MSG\",\"info\":[[0,1]]}").isEmpty(), "info[0] 过短仍应丢弃");
+            assertEquals(4, riskMetrics.count(BilibiliRiskMetrics.Kind.FIELD_MISSING, Duration.ofMinutes(1)),
+                    "过短弹幕应记 FIELD_MISSING");
+            String detail = riskMetrics.lastDetail(BilibiliRiskMetrics.Kind.FIELD_MISSING).orElse("");
+            assertTrue(detail.contains("DANMU_MSG:info<16"), "detail 应含过短弹幕名，实际: " + detail);
+        } catch (AssertionError e) {
+            reds.add("④ " + e.getMessage());
+        }
+
+        assertTrue(reds.isEmpty(), () -> "四问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+    }
+
+    @Test
     @DisplayName("解析普通弹幕")
     void parseDanmu() {
         Optional<StarBotBaseLiveEvent> event = parse(danmuMessage("{\"content\":\"你好\",\"reply_mid\":0}", "\"\""));

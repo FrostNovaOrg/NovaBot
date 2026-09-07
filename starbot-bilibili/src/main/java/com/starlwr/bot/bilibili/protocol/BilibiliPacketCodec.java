@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.IntConsumer;
 import java.util.zip.InflaterInputStream;
 
 /**
@@ -108,14 +109,36 @@ public final class BilibiliPacketCodec {
      * @return 数据包列表，数据非法时返回空列表
      */
     public static List<BilibiliPacket> decode(byte[] data, Limits limits) {
-        Limits effective = limits == null ? DEFAULT_LIMITS : limits;
-        // 预算属于整次解码，不属于任何一层解压：按子包各算一份的话，
-        // 一批「各自不超限」的兄弟子包就能把放大倍数藏在份数里
-        return decode(data, effective, new DecompressBudget(effective.maxDecompressedBytes()));
+        return decode(data, limits, (IntConsumer) null);
     }
 
     /**
-     * 按给定限额与既有的预算解码一段字节流
+     * 按给定限额解码一段字节流，未知协议版本上报给 sink
+     * <p>
+     * sink 只在上报、不参与判定：未知版本仍当裸负载原样入包（与旧签名行为一致），
+     * 说了什么由 sink 决定。这个类是无状态工具，指标与去重都在调用方——
+     * 一个带计数的静态字段会让「这次记的是哪个版本」要靠时序去推。
+     * @param data 字节流
+     * @param limits 解码限额
+     * @param unknownVersionSink 未知协议版本上报口，可为 null（等于不上报）
+     * @return 数据包列表，数据非法时返回空列表
+     */
+    public static List<BilibiliPacket> decode(byte[] data, Limits limits, IntConsumer unknownVersionSink) {
+        Limits effective = limits == null ? DEFAULT_LIMITS : limits;
+        // 预算属于整次解码，不属于任何一层解压：按子包各算一份的话，
+        // 一批「各自不超限」的兄弟子包就能把放大倍数藏在份数里
+        return decode(data, effective, new DecompressBudget(effective.maxDecompressedBytes()), unknownVersionSink);
+    }
+
+    /**
+     * {@link #decode(byte[], Limits, DecompressBudget, IntConsumer)} 的不带 sink 版本
+     */
+    static List<BilibiliPacket> decode(byte[] data, Limits limits, DecompressBudget budget) {
+        return decode(data, limits, budget, null);
+    }
+
+    /**
+     * 按给定限额与既有的预算解码一段字节流，未知协议版本上报给 sink
      * <p>
      * 预算由调用方持有并传入，限额须与它同源（预算的上限就是这份限额的 maxDecompressedBytes）。
      * 这个重载是给测试的观察口：预算爆掉后整批返空，这从产出列表上分不出
@@ -123,11 +146,12 @@ public final class BilibiliPacketCodec {
      * @param data 字节流
      * @param limits 解码限额
      * @param budget 这次解码全程共用的解压预算
+     * @param unknownVersionSink 未知协议版本上报口，可为 null（等于不上报）
      * @return 数据包列表，数据非法时返回空列表
      */
-    static List<BilibiliPacket> decode(byte[] data, Limits limits, DecompressBudget budget) {
+    static List<BilibiliPacket> decode(byte[] data, Limits limits, DecompressBudget budget, IntConsumer unknownVersionSink) {
         List<BilibiliPacket> packets = new ArrayList<>();
-        decodeInto(data, packets, 0, limits, budget);
+        decodeInto(data, packets, 0, limits, budget, unknownVersionSink);
         if (budget.isBlown()) {
             return new ArrayList<>();
         }
@@ -159,8 +183,10 @@ public final class BilibiliPacketCodec {
      * @param packets 结果收集器
      * @param depth 当前递归层数
      * @param budget 这次解码全程共用的解压预算
+     * @param unknownVersionSink 未知协议版本上报口，可为 null（等于不上报）
      */
-    private static void decodeInto(byte[] data, List<BilibiliPacket> packets, int depth, Limits limits, DecompressBudget budget) {
+    private static void decodeInto(byte[] data, List<BilibiliPacket> packets, int depth, Limits limits,
+                                   DecompressBudget budget, IntConsumer unknownVersionSink) {
         if (depth > limits.maxNestingDepth()) {
             log.warn("直播间数据包嵌套层数超过 {} 层, 已停止解析", limits.maxNestingDepth());
             return;
@@ -188,10 +214,17 @@ public final class BilibiliPacketCodec {
             System.arraycopy(data, offset + headerLength, body, 0, body.length);
 
             if (protocolVersion == DataHeaderType.BROTLI_JSON.getCode()) {
-                decompress(body, true, budget).ifPresent(decompressed -> decodeInto(decompressed, packets, depth + 1, limits, budget));
+                decompress(body, true, budget).ifPresent(decompressed -> decodeInto(decompressed, packets, depth + 1, limits, budget, unknownVersionSink));
             } else if (protocolVersion == PROTOCOL_ZLIB) {
-                decompress(body, false, budget).ifPresent(decompressed -> decodeInto(decompressed, packets, depth + 1, limits, budget));
+                decompress(body, false, budget).ifPresent(decompressed -> decodeInto(decompressed, packets, depth + 1, limits, budget, unknownVersionSink));
             } else {
+                // 裸负载分支里混着两种已知版本（裸 JSON 与心跳），排掉它们剩下的才是「未知」——
+                // 判定只在这里做，调用方拿到的一定是未知版本
+                if (protocolVersion != DataHeaderType.RAW_JSON.getCode()
+                        && protocolVersion != DataHeaderType.HEARTBEAT.getCode()
+                        && unknownVersionSink != null) {
+                    unknownVersionSink.accept(protocolVersion);
+                }
                 packets.add(new BilibiliPacket(operation, protocolVersion, body));
             }
 

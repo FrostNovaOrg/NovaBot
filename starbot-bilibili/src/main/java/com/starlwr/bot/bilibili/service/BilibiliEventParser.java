@@ -75,15 +75,13 @@ public class BilibiliEventParser {
     private final Map<String, Instant> seenRedPockets = new ConcurrentHashMap<>();
 
     /**
-     * 因 {@code info[0]} 过短而被整条丢弃的弹幕数
+     * 按名记账的静默损失计数：解析失败的 cmd、截断的 pb、过短的弹幕 info 共用一本账
      * <p>
-     * 这一处丢弃原先<b>一声不响</b>：格式一旦变了，弹幕会静默消失而日志上什么都看不到。
-     * 计数按 1、10、100… 报，既不会淹掉日志，也不会让「丢了多少」无从得知。
-     * <p>
-     * 实测截至 2026-08-10，八个房间 656 条弹幕的 {@code info[0]} 长度恒为 18，一次都没触发过——
-     * 但「没触发过」这个结论只对量过的语料成立，所以这个计数器不是多余的。
+     * {@code info[0]} 过短原先只有计数、解析失败与 pb 截断原先<b>一声不响</b>：
+     * 格式一旦变了，消息会静默消失而任何地方都看不到。计数按 1、10、100… 报，
+     * 既不会淹掉日志与指标，也不会让「丢了多少」无从得知。
      */
-    private final AtomicLong shortInfoDropped = new AtomicLong();
+    private final ConcurrentHashMap<String, AtomicLong> namedEventCounts = new ConcurrentHashMap<>();
 
     /**
      * 分派表外的 cmd 名计数，按名去重。超过 {@link #MAX_UNKNOWN_CMD_NAMES} 的新名只累加总数。
@@ -427,6 +425,8 @@ public class BilibiliEventParser {
             return Optional.ofNullable(event);
         } catch (Exception e) {
             log.error("解析直播间 {} 的 {} 类型消息异常, 内容: {}", source.getRoomId(), type, data.toJSONString(), e);
+            // 异常被吞掉等于这条消息没来过。按 cmd 记一笔，同 cmd 只在量级处再记
+            noteNamed(BilibiliRiskMetrics.Kind.PARSE_FAILURE, type);
             return Optional.empty();
         }
     }
@@ -553,10 +553,26 @@ public class BilibiliEventParser {
     }
 
     /**
-     * 1、10、100、1000… 这样的量级。与 {@link #reportShortInfo} 同一套判据。
+     * 1、10、100、1000… 这样的量级。与 {@link #noteNamed} 同一套判据。
      */
     private static boolean isMagnitude(long count) {
         return Long.toString(count).matches("10*");
+    }
+
+    /**
+     * 按名量级记账一条静默损失（解析失败的 cmd、截断的 pb、过短的弹幕 info）。
+     * 同名只在 1/10/100… 量级处写入指标，detail 只含名、计数与种数，不写入报文。
+     * @return 该名累计到的次数（含这一次），没记成时为 0
+     */
+    private long noteNamed(BilibiliRiskMetrics.Kind kind, String name) {
+        if (name == null || name.isBlank() || riskMetrics == null) {
+            return 0;
+        }
+        long count = namedEventCounts.computeIfAbsent(name, key -> new AtomicLong()).incrementAndGet();
+        if (isMagnitude(count)) {
+            riskMetrics.record(kind, name + " count=" + count + " unique=" + namedEventCounts.size());
+        }
+        return count;
     }
 
     /**
@@ -566,8 +582,8 @@ public class BilibiliEventParser {
      * 逐条打日志只会把日志本身冲垮，而完全不打就等于让弹幕静默消失。
      */
     private void reportShortInfo(JSONArray primary) {
-        long count = shortInfoDropped.incrementAndGet();
-        if (Long.toString(count).matches("10*")) {
+        long count = noteNamed(BilibiliRiskMetrics.Kind.FIELD_MISSING, "DANMU_MSG:info<16");
+        if (isMagnitude(count)) {
             log.warn("已有 {} 条弹幕因 info[0] 过短被丢弃（本条 {} 项，需要至少 16 项）。"
                             + "若这个数在持续增长，说明报文格式变了，需要重新核对下标",
                     count, primary == null ? 0 : primary.size());
@@ -737,7 +753,8 @@ public class BilibiliEventParser {
         BilibiliProtobufReader message = BilibiliProtobufReader.parse(payload);
         if (message.isTruncated()) {
             // 报文读到一半就断了。已读到的字段仍然可用（uid 与 msg_type 都在开头），
-            // 因此照常往下走，只留一行日志——格式真的变了才有迹可循
+            // 因此照常往下走，只留一行日志并记一笔缺字段——格式真的变了才有迹可循
+            noteNamed(BilibiliRiskMetrics.Kind.FIELD_MISSING, "INTERACT_WORD_V2:pb-truncated");
             log.debug("直播间 {} 的 INTERACT_WORD_V2 报文未能读完, 已按读到的 {} 个字段继续: {}",
                     source.getRoomId(), message.size(), meta.getString("pb"));
         }
@@ -977,7 +994,8 @@ public class BilibiliEventParser {
         BilibiliProtobufReader message = BilibiliProtobufReader.parse(payload);
         if (message.isTruncated()) {
             // 与 INTERACT_WORD_V2 同一取舍：礼物块（字段 10）在报文前部，截断通常只伤到尾巴，
-            // 已读到的部分照常入账，只留一行日志
+            // 已读到的部分照常入账，只留一行日志并记一笔缺字段
+            noteNamed(BilibiliRiskMetrics.Kind.FIELD_MISSING, "SEND_GIFT_V2:pb-truncated");
             log.debug("直播间 {} 的 SEND_GIFT_V2 报文未能读完, 已按读到的 {} 个字段继续: {}",
                     source.getRoomId(), message.size(), meta.getString("pb"));
         }
@@ -985,6 +1003,7 @@ public class BilibiliEventParser {
         BilibiliProtobufReader gift = message.message(GIFT_V2_INFO);
         if (gift == null) {
             // 礼物块是这条消息的正主，连它都取不到就没有可入账的内容了
+            noteNamed(BilibiliRiskMetrics.Kind.FIELD_MISSING, "SEND_GIFT_V2:gift");
             log.debug("直播间 {} 的 SEND_GIFT_V2 消息取不到礼物块, 已忽略", source.getRoomId());
             return null;
         }

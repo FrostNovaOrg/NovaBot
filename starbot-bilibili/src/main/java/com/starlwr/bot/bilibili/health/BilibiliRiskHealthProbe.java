@@ -113,13 +113,28 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
             advices.add("多半是 B 站长连协议改了，看日志并抓语料");
         }
 
-        String unknownCmdLine = unknownCmdSummaryLine();
-
-        if (problems.isEmpty()) {
-            return HealthStatus.ok(summary(http412, code352, gaia, missing, disconnects) + unknownCmdLine);
+        // 与未知操作码同档：版本号不认识意味着可能解不开平台新出的压缩格式
+        long unknownVer = metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_VER, DAY);
+        if (unknownVer >= 1) {
+            String verDetail = metrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_VER).orElse("ver=?");
+            String firstSeen = metrics.last(BilibiliRiskMetrics.Kind.UNKNOWN_VER)
+                    .map(Instant::toString)
+                    .orElse("?");
+            problems.add("协议层出现未知协议版本 " + verDetail + "（首见 " + firstSeen + "）");
+            advices.add("不认识的版本号会当裸负载处理，压缩格式改了会整批丢消息；看日志并抓语料");
         }
 
-        return HealthStatus.degraded(String.join("；", problems) + unknownCmdLine, String.join(" ", advices));
+        String unknownCmdLine = unknownCmdSummaryLine();
+        String silentLines = silentLossLine(BilibiliRiskMetrics.Kind.PARSE_FAILURE, "解析失败", "类")
+                + silentLossLine(BilibiliRiskMetrics.Kind.FIELD_MISSING, "缺字段", "类")
+                + silentLossLine(BilibiliRiskMetrics.Kind.API_DATA_MISSING, "接口缺 data", "个端点");
+
+        if (problems.isEmpty()) {
+            return HealthStatus.ok(summary(http412, code352, gaia, missing, disconnects) + unknownCmdLine + silentLines);
+        }
+
+        return HealthStatus.degraded(String.join("；", problems) + unknownCmdLine + silentLines,
+                String.join(" ", advices));
     }
 
     /**
@@ -132,19 +147,37 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
         }
         String detail = metrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_CMD).orElse("");
         String name = detail.isBlank() ? "?" : detail.split("\\s+")[0];
-        String unique = "1";
-        int idx = detail.indexOf("unique=");
-        if (idx >= 0) {
-            int start = idx + "unique=".length();
-            int end = start;
-            while (end < detail.length() && Character.isDigit(detail.charAt(end))) {
-                end++;
-            }
-            if (end > start) {
-                unique = detail.substring(start, end);
-            }
+        return "，近 24h 未知消息类型 " + uniqueOf(detail) + " 种（最近 " + name + "）";
+    }
+
+    /**
+     * 三类静默损失（解析失败、缺字段、接口缺 data）只进摘要、不改档位：
+     * 它们说明「有些消息或应答被丢了」，不是连接坏了，但首页得看得见丢的是什么。
+     */
+    private String silentLossLine(BilibiliRiskMetrics.Kind kind, String label, String unit) {
+        long n = metrics.count(kind, DAY);
+        if (n <= 0) {
+            return "";
         }
-        return "，近 24h 未知消息类型 " + unique + " 种（最近 " + name + "）";
+        String detail = metrics.lastDetail(kind).orElse("");
+        String name = detail.isBlank() ? "?" : detail.split("\\s+")[0];
+        return "，近 24h " + label + " " + uniqueOf(detail) + " " + unit + "（最近 " + name + "）";
+    }
+
+    /**
+     * 从记账 detail 里取出 {@code unique=N} 的种数；读不到时退回 1——能走到这里至少发生过一种
+     */
+    private static String uniqueOf(String detail) {
+        int idx = detail.indexOf("unique=");
+        if (idx < 0) {
+            return "1";
+        }
+        int start = idx + "unique=".length();
+        int end = start;
+        while (end < detail.length() && Character.isDigit(detail.charAt(end))) {
+            end++;
+        }
+        return end > start ? detail.substring(start, end) : "1";
     }
 
     /**
