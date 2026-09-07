@@ -114,64 +114,82 @@ export function say(text, kind) {
   if (text && kind === 'ok') setTimeout(() => { if (s.textContent === text) say(''); }, 4000);
 }
 
-// 底部的保存按钮只服务于有「草稿态」的两个页签。机器人连接参数另带独立的保存入口——
-// 它改的是一批关联字段，混进同一个按钮容易误触
+/**
+ * 底部改动条的供数方：页标识 → 那一页自己那份草稿态
+ *
+ * 核心只认识四件事——有哪些供数方、各报几处改动、各自怎么保存、各自怎么重取；
+ * 一位报的到底是什么东西，它不知道，也不该知道。从前这里按页签名写死了推送那一页，
+ * 而推送页随控制台插件走：插件卸掉之后核心仍会去取那份配置、仍按一份取不到的东西算数，
+ * 屏幕上却不会有任何异常。
+ *
+ * 键取的就是页标识，与 store.tab 同一个值（见 main.js 里那一句赋值）——
+ * 两处各写一个名字的话，对不上的表现是底部保存按钮在那一页上根本不出现。
+ */
+const changeSources = new Map();
+
+/**
+ * 登记一位供数方。同一个标识登记两次即以后一次为准
+ * @param {string} id 页标识，与 store.tab 取的是同一个值
+ * @param {{displayName: string, changeCount: function(): number, save: function(),
+ *          reload: function(): (Promise|undefined)}} source 那一页自己的草稿态
+ */
+export function registerChangeSource(id, source) {
+  changeSources.set(id, source);
+}
+
+/**
+ * 当前页那一位供数方
+ * @return {?object} 没有即 null
+ */
+export function currentChangeSource() {
+  return changeSources.get(store.tab) || null;
+}
+
+/**
+ * 让各供数方重取自己那一份
+ *
+ * 一位抛出来只算它自己那一份没取到：不拦的话，整体载入会跟着一起失败，
+ * 屏幕上只剩一句与出事那一页毫无关系的「载入失败」，而其余各页本来都取到了。
+ *
+ * 回值答的是「状态栏还能不能替它们清掉」：某一位取回来的东西有问题时，
+ * 那句话由它自己说（只有它知道该说什么），而调用方随后那句 say('') 会把刚写上去的话抹掉。
+ * @return {Promise<boolean>} 没有任何一位在状态栏上写过话
+ */
+export async function reloadChangeSources() {
+  let quiet = true;
+  for (const source of changeSources.values()) {
+    try {
+      if (await source.reload?.() === false) quiet = false;
+    } catch (e) {
+      say(source.displayName + ' 的数据没能载入：' + e.message, 'err');
+      quiet = false;
+    }
+  }
+  return quiet;
+}
+
+// 底部的保存按钮只服务于有「草稿态」的页：设置页，加上自报了供数方的那些插件页。
+// 机器人连接参数另带独立的保存入口——它改的是一批关联字段，混进同一个按钮容易误触
 export function saveTarget() {
   if (store.tab === 'settings') return 'values';
-  if (store.tab === 'push') return 'push';
+  if (changeSources.has(store.tab)) return store.tab;
   return null;
 }
 
 /**
  * 当前页有几处改过还没保存
  *
- * 两页各有各的草稿形态，因此各算各的，不共用一个计数器：
- * 设置页的草稿是「哪几个字段改了」，逐项记在 store.dirty 上；
- * 推送页的改动直接落在 store.pushData 上，没有逐项的记账，
- * 于是拿它与上一次载入时的快照按主播逐条比——两边都是现算，
- * 谁也没有一个「改动次数」的累加器。累加器的毛病是改回原样它也照加，
+ * 各页各算各的，不共用一个计数器：设置页的草稿是「哪几个字段改了」，逐项记在
+ * store.dirty 上；插件页的草稿长什么样只有它自己知道，因此由它自己报。
+ *
+ * 两边都是现算，谁也没有一个「改动次数」的累加器。累加器的毛病是改回原样它也照加，
  * 屏幕上会显示「1 处改动」而实际什么都没变。
  * @return {number} 改过未保存的项数
  */
 export function changeCount() {
-  const target = saveTarget();
-  if (target === 'values') return Object.keys(store.dirty).length;
-  if (target === 'push') return pushChangeCount();
-  return 0;
-}
-
-/**
- * 推送配置改了几条：按主播逐条比，不是「一整份变了没有」
- *
- * 整份比只能得出 0 或 1，而屏幕上写的是「N 处改动」——那个 1 会被读成「只改了一处」。
- */
-function pushChangeCount() {
-  const byKey = list => {
-    const map = new Map();
-    for (const user of list || []) {
-      map.set(user.platform + ':' + user.uid, JSON.stringify(user, dropDisplayOnly));
-    }
-    return map;
-  };
-
-  let saved;
-  try {
-    saved = byKey(JSON.parse(store.pushSaved || '[]'));
-  } catch (e) {
-    // 快照都解析不了时不猜数：这一页此刻处于「文件内容不合法」的状态，界面上另有说明
-    return 0;
-  }
-
-  const now = byKey(store.pushData);
-  let n = 0;
-  now.forEach((value, key) => { if (saved.get(key) !== value) n++; });
-  saved.forEach((value, key) => { if (!now.has(key)) n++; });
-  return n;
-}
-
-// 下划线开头的字段仅供界面展示（昵称、头像等），既不写进配置文件，也不该算作改动
-export function dropDisplayOnly(key, value) {
-  return key.startsWith('_') ? undefined : value;
+  if (saveTarget() === 'values') return Object.keys(store.dirty).length;
+  const source = currentChangeSource();
+  return source ? source.changeCount() : 0;
 }
 
 /**
@@ -201,7 +219,7 @@ function changeText(n) {
 
   if (!n) return pending ? pending + ' 处改动需重启生效' : '';
 
-  // 需重启的项数只在设置页算得出：推送页的改动不是配置项，没有生效时机可言
+  // 需重启的项数只在设置页算得出：插件页改的不是配置项，没有生效时机可言
   const m = saveTarget() === 'values' ? Object.keys(store.dirty).filter(needsRestart).length : 0;
   return n + ' 处改动' + (m ? ' · 其中 ' + m + ' 处需重启生效' : '');
 }
@@ -211,8 +229,8 @@ export function markDirty() {
   const n = changeCount();
   $('#save').style.display = target ? '' : 'none';
   $('#discard').style.display = target ? '' : 'none';
-  // 推送页的保存按钮一直可按：「添加主播」之外还有一批改动落在 store.pushData 上，
-  // 而按 N 禁用意味着算漏一处就等于把保存这条路堵死
+  // 插件页的保存按钮一直可按：它那份草稿态的改动未必都进得了 N，
+  // 而按 N 禁用意味着那一页算漏一处就等于把保存这条路堵死
   $('#save').disabled = !target || (target === 'values' && n === 0);
   $('#discard').disabled = n === 0;
   $('#change-count').textContent = changeText(n);

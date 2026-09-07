@@ -16,7 +16,8 @@
 import {ask} from './confirm.js';
 import {api, el, esc, markDirty, say} from './core.js';
 import {targetOptions} from './links-model.js';
-import {renderStreamers, serializePush, STREAMER_INPUT_HINT} from './push.js';
+import {markPushSaved, pushEntries, renderStreamers, serializePush, setPushEntries, STREAMER_INPUT_HINT}
+  from './push.js';
 import {store} from './store.js';
 import {detailHash} from './streamers-model.js';
 
@@ -353,15 +354,15 @@ async function saveStreamer() {
     .filter(Boolean)
     .map(item => ({platform: item.sender, type: item.type, num: item.num, enabled: true, messages}));
 
-  const before = store.pushData;
+  const before = pushEntries();
   // 回上一步改完再走一遍是正当走法，因此同一位主播先去重再加——
   // 不去重的话，配置文件里会出现两条同 uid 的记录，而那台机器每场直播推两遍
-  store.pushData = before
+  setPushEntries(before
     .filter(user => !(Number(user.uid) === Number(one.uid) && user.platform === one.platform))
     .concat([{
       uid: one.uid, platform: one.platform, enabled: true, targets,
       _uname: one.uname, _roomId: one.roomId, _face: one.face,
-    }]);
+    }]));
 
   try {
     const res = await api('/datasource', {
@@ -369,18 +370,18 @@ async function saveStreamer() {
       body: JSON.stringify({content: serializePush()}),
     });
     if (!res.success) {
-      store.pushData = before;
+      setPushEntries(before);
       say(res.message || '没能存下这位主播', 'err');
       return false;
     }
   } catch (e) {
-    store.pushData = before;
+    setPushEntries(before);
     say('没能存下这位主播：' + e.message, 'err');
     return false;
   }
 
   // 快照跟着走，否则推送页那条改动条会显示「还有 1 处没保存」——而它已经存下去了
-  store.pushSaved = serializePush();
+  markPushSaved();
   renderStreamers();
   markDirty();
   // 末步「发一条试试」只在刚选定的这几个目标里挑：这一步要验的正是那条路通不通，

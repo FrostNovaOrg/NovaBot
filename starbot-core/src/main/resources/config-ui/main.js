@@ -4,7 +4,8 @@
  */
 
 import {bindBotForm, botFormHtml, fillBotForms} from './bot.js';
-import {$, api, dropDisplayOnly, el, esc, markDirty, phrase, say, term} from './core.js';
+import {$, api, currentChangeSource, el, esc, markDirty, phrase, registerChangeSource, reloadChangeSources, say, term}
+  from './core.js';
 import {PROBE_ANCHOR, shouldOpenSetup} from './home-model.js';
 import {focusStation, loadTargets, mountLinkCard, refreshLinks, sendTestMessage} from './links.js';
 import {loadLog, stopFollow, syncLogView} from './log.js';
@@ -95,7 +96,9 @@ async function mountPages() {
 
     try {
       const module = await import('/config/assets/' + meta.script);
-      pages.push({meta, module});
+      const page = {meta, module};
+      pages.push(page);
+      registerPageChangeSource(page);
       module.render?.(container);
     } catch (e) {
       // 装不上的页也要留在清单里。清单是路由认页的唯一依据，不留就等于 #/settings/<页标识>
@@ -105,6 +108,27 @@ async function mountPages() {
         + '。该插件的其余功能不受影响。</p>';
     }
   }
+}
+
+/**
+ * 报得出改动数的页，登记成底部改动条的供数方
+ *
+ * 只登记自报了 changeCount 的那些：一律登记的话，没有草稿态的页（主播页这类）
+ * 上也会冒出保存与放弃两个按钮，而它们按下去无事可做。
+ *
+ * 登记的键取 meta.id，与 store.tab 同一个值，不另起一个名字：两处各写一个的话，
+ * 对不上的表现是保存按钮在那一页上根本不出现，而两处的代码看起来都对。
+ * 保存那一路仍经 callPage——它跑的是插件的代码，抛出来只算它自己那一页出事。
+ * @param page 已装上的一页 {meta, module}
+ */
+function registerPageChangeSource(page) {
+  if (typeof page.module.changeCount !== 'function') return;
+  registerChangeSource(page.meta.id, {
+    displayName: page.meta.displayName,
+    changeCount: () => page.module.changeCount(),
+    save: () => callPage(page, 'save'),
+    reload: () => page.module.reload?.(),
+  });
 }
 
 /**
@@ -294,8 +318,11 @@ export async function load() {
     const here = parseHash();
     focusCard(here.name, here.card);
 
-    const [d, st, h, p] = await Promise.all([
-      api('/datasource'), api('/status'), api('/handlers'), api('/platforms')]);
+    // 各供数方那一份与这一趟并行取：它们要赶在下面 refreshPages 之前进来，
+    // 晚一步的话页面先按空的画一遍，而没有任何东西会再画第二遍
+    const sources = reloadChangeSources();
+    const [st, h, p] = await Promise.all([
+      api('/status'), api('/handlers'), api('/platforms')]);
     // 上一次保存留下的「还欠一次重启」也在这一趟里进来，见 renderStatus
     renderStatus(st);
     renderConfigPath(st.configPath);
@@ -304,23 +331,9 @@ export async function load() {
     store.senderList = st.senders || [];
     // 能添加哪些平台的主播由已注册的数据源服务决定，界面不替任何一个平台作主
     store.platforms = p.platforms || [];
-    // 推送配置解析不了是这一趟里唯一「载入成功了但有话要说」的情况。
-    // 记一位是因为末尾那句 say('') 会把状态栏清空——不记的话，这条提示刚显示就被自己抹掉
-    let pushBroken = false;
-    try {
-      store.pushData = JSON.parse(d.content || '[]');
-      // 快照要取序列化之后的形态，与改动计数比的是同一把尺；
-      // 直接存 d.content 的话，文件里的缩进与键序都会算成「改动」
-      store.pushSaved = JSON.stringify(store.pushData, dropDisplayOnly, 2);
-    } catch (e) {
-      // 内容不合法时不在界面上开一个编辑器让人现场改文件——那条路已经撤了。
-      // 这里只把话说清楚：改哪个文件、在哪儿改，路径就显示在设置页底部
-      store.pushData = [];
-      store.pushSaved = '[]';
-      pushBroken = true;
-      say('推送配置 datasource.json 不是合法 JSON，界面上暂时看不到已配好的主播。'
-        + '请到服务器上修正该文件后重新载入', 'err');
-    }
+    // 某一位取回来的东西有问题时那句话由它自己说，这里只记一位「别替它清状态栏」：
+    // 末尾那句 say('') 会把状态栏清空，不记的话那条提示刚显示就被自己抹掉
+    const quiet = await sources;
     try {
       store.vocab = (await api('/vocab')).terms || {};
     } catch (e) {
@@ -335,7 +348,7 @@ export async function load() {
 
     const count = store.schema.reduce((n, g) => n + g.fields.length, 0);
     $('#head-sub').textContent = count + ' 个配置项 · ' + store.schema.length + ' 个分组';
-    if (!pushBroken) say('');
+    if (quiet) say('');
   } catch (e) {
     say('载入失败：' + e.message, 'err');
   }
@@ -579,10 +592,12 @@ document.querySelectorAll('#nav a').forEach(a => {
   a.addEventListener('click', () => { if (location.hash === a.getAttribute('href')) applyRoute(); });
 });
 
+// 存去哪问的是改动条那份供数方名单，不另走一条 pages.find：两份名单分叉的那天，
+// 保存按钮会在一页上显示着却点了不管用，而两处的代码看起来都对
 $('#save').addEventListener('click', () => {
-  const top = pages.find(item => item.meta.slot === SLOT_TOP && item.meta.id === store.tab);
-  if (top && typeof top.module.save === 'function') {
-    callPage(top, 'save');
+  const source = currentChangeSource();
+  if (source) {
+    source.save();
     return;
   }
   save();
