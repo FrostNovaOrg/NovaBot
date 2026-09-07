@@ -1,4 +1,4 @@
-package com.starlwr.bot.core.alert;
+package com.starlwr.bot.adapter.onebot.alert;
 
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.enums.PushTargetType;
