@@ -36,7 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 而失效的样子是「那一项悄悄回到默认值」——程序照常启动，看不出任何异常。
  * <b>因此配置面的改动必须是一次显式的决定，不能是一次重构的副产品。</b>
  * <p>
- * 三格各钉一层，任一格红都说明配置面动了：
+ * 前三格各钉一层，任一格红都说明配置面动了；第四格钉的是说明里的平台词：
  * <ul>
  *   <li>① <b>键全集</b>：编译期生成的配置元数据里，展示给使用者的每一个键的
  *       「键名｜类型｜默认值｜说明」逐字与样本相同。少一项、多一项、改一项都红。</li>
@@ -45,6 +45,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *       键名没动而字段搬了家时，只有这一格会红。</li>
  *   <li>③ <b>字段表项数</b>：配置界面的字段表由元数据分组而来，其项数须与 ① 的键数相等。
  *       分组这一步会按键名的最后一段拆分，<b>漏掉一整组是它独有的失败形态</b>。</li>
+ *   <li>④ <b>留核键说明零平台词</b>：留在核心的键，说明只说「平台」「机器人」，
+ *       不写具体平台名——平台名属于插件。迁移中的两节暂豁免，整节迁走后豁免也删，
+ *       问②会在基线里找不到它们的键时提醒。</li>
  * </ul>
  * <p>
  * 样本对不上时，实际值会写到 {@code target/configuration-baseline/} 下，便于逐行比对；
@@ -65,6 +68,18 @@ class ConfigurationSurfaceBaselineTest {
     private static final String BINDING_FILE = "binding-dump.txt";
 
     private static final String COVERAGE_YML = "coverage.yml";
+
+    /**
+     * 说明里不许出现的平台名——留在核心的键，说明只说「平台」「机器人」
+     */
+    private static final List<String> PLATFORM_WORDS = List.of("QQ", "NapCat", "OneBot");
+
+    /**
+     * 迁移途中暂豁免的两节：告警的 QQ 目标三键与代登录凭据四键。
+     * 整节迁去插件之后，基线里不再有这两个前缀的键，问②会红——那是在提醒把豁免一并删掉。
+     */
+    private static final List<String> MIGRATING_PREFIXES =
+            List.of("starbot.core.alert.qq-", "starbot.core.config-ui.napcat.");
 
     @Test
     @DisplayName("① 键全集 —— 键名、类型、默认值、说明逐项与样本同串")
@@ -115,6 +130,58 @@ class ConfigurationSurfaceBaselineTest {
             assertTrue(field.widget() != null && !field.widget().isBlank(),
                     "配置项 " + field.name() + " 推不出控件类型，界面上会是一个空位");
         }
+    }
+
+    @Test
+    @DisplayName("④ 留核键说明零平台词 —— 非豁免键的说明不含 QQ／NapCat／OneBot；豁免恰两前缀且各有键；行数与键数同")
+    void retainedKeyDescriptionsHaveNoPlatformWords() throws IOException {
+        List<String> baseline = readBaseline(KEYS_FILE);
+        List<String> unresolved = new ArrayList<>();
+
+        // 问①：非豁免键的说明不得含平台词，红文列出键名；行缺说明段时拿整行受检，别让格式破了溜过去
+        try {
+            List<String> offenders = new ArrayList<>();
+            for (String line : baseline) {
+                String[] parts = line.split("\\|", 4);
+                String description = parts.length < 4 ? line : parts[3];
+                if (!isMigrating(parts[0]) && PLATFORM_WORDS.stream().anyMatch(description::contains)) {
+                    offenders.add(parts.length < 4 ? parts[0] + "（行缺说明段）" : parts[0]);
+                }
+            }
+            assertTrue(offenders.isEmpty(),
+                    "说明含平台词（" + String.join("／", PLATFORM_WORDS) + "）的留核键: " + String.join("、", offenders));
+        } catch (AssertionError e) {
+            unresolved.add("问① " + e.getMessage());
+        }
+
+        // 问②：豁免恰两前缀，且各自在基线中仍有键——键迁走后此问红，提醒删豁免
+        try {
+            for (String prefix : MIGRATING_PREFIXES) {
+                assertTrue(baseline.stream().anyMatch(line -> line.startsWith(prefix)),
+                        "豁免前缀 " + prefix + " 在基线中已无键——这一节已迁走，把豁免删掉");
+            }
+            assertEquals(2, MIGRATING_PREFIXES.size(),
+                    "豁免须恰两前缀：告警的 QQ 目标与代登录凭据——增删豁免须是一次显式决定");
+        } catch (AssertionError e) {
+            unresolved.add("问② " + e.getMessage());
+        }
+
+        // 问③：样本行数与现行键数相等——改说明的那只手不许顺带改键数
+        try {
+            assertEquals(baseline.size(), describeFields().size(), "样本行数与现行键数不等——说明之外键数也动了");
+        } catch (AssertionError e) {
+            unresolved.add("问③ " + e.getMessage());
+        }
+
+        assertTrue(unresolved.isEmpty(),
+                () -> "留核键说明零平台词三问中 " + unresolved.size() + " 问未销: " + String.join("; ", unresolved));
+    }
+
+    /**
+     * 判断一个键是否属于迁移途中暂豁免的两节
+     */
+    private static boolean isMigrating(String key) {
+        return MIGRATING_PREFIXES.stream().anyMatch(key::startsWith);
     }
 
     /**
