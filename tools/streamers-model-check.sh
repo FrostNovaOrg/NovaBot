@@ -4,8 +4,8 @@
 # 这一页的行为判据不在这里——地址栏往返、状态四档、折线几何、人气峰三态、缺口分列
 # 由 StreamersModelTest 拉起 streamers-model-fixture.mjs 逐格量，接在整盘里跑。
 # 本尺补的是那一份量不到的另一半：**渲染那一份（streamers.js）的语法**。
-# 它不碰得到夹具（满篇 DOM），而它是 main.js 直接 import 的——一个语法错会让
-# 整个控制台加载不出来，屏幕上只剩一句与出错文件无关的「载入失败」。
+# 它不碰得到夹具（满篇 DOM），而它是控制台按注册清单装上来的——一个语法错会让
+# 这一页载入失败，屏幕上只剩一句与出错文件无关的「载入失败」。
 #
 # 🔴 用 `node --input-type=module --check < 文件` 而不是 `node --check 文件`：
 #    后者对含 import 的 .js 一律返 0（Node v22 实测），也就是说那一格从来没能红过——
@@ -27,7 +27,7 @@ if ! command -v node > /dev/null 2>&1; then
     exit 2
 fi
 
-UI="starbot-core/src/main/resources/config-ui"
+PAGES="starbot-novabot-console/src/main/resources/config-ui-pages"
 RED=0
 SYNTAX_RED=0
 
@@ -42,7 +42,7 @@ fi
 
 # —— 语法 ——
 # 逐个跑而不是一次传多个：一次传一串时，后面那些是「查过了」还是「没轮到」分不出来
-for f in "$UI"/streamers-model.js "$UI"/streamers.js; do
+for f in "$PAGES"/streamers-model.js "$PAGES"/streamers.js; do
     if node --input-type=module --check < "$f" > /dev/null 2>&1; then
         echo "语法 绿 $f"
     else

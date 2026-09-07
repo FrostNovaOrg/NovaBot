@@ -1,5 +1,5 @@
 /**
- * 入口：整体载入、六页路由与事件绑定
+ * 入口：整体载入、主导航路由与事件绑定
  * 必须最后加载——它在解析时就会调用其余模块里的函数。
  */
 
@@ -15,7 +15,6 @@ import {copyConfigPath, discard, filterSettings, focusGroup, renderConfigPath, r
   from './settings.js';
 import {openSetup, stopSetupPolling} from './setup.js';
 import {store} from './store.js';
-import {loadStreamers, releaseReport, syncStreamersView} from './streamers.js';
 import {ask} from './confirm.js';
 import {clearIssuedToken, loadTokens} from './tokens.js';
 
@@ -313,7 +312,7 @@ export async function load() {
 }
 
 /**
- * 六页导航的路由名 → 该页当家的那个旧页签
+ * 主导航的路由名 → 该页当家的那个旧页签
  *
  * store.tab 仍取旧页签名，没有跟着改成路由名：它是插件页读得到的东西
  * （带扫码登录的那类插件页据 `store.tab === 'overview'` 决定要不要接着轮询二维码），
@@ -323,7 +322,7 @@ export async function load() {
  * （见 saveTarget）。「群与成员」与「只读口令」都是改完立刻落盘的，不占这一位。
  */
 const PAGE_TAB = {
-  home: 'overview', push: 'push', streamers: 'analytics',
+  home: 'overview', push: 'push',
   log: 'log', links: 'bot', settings: 'settings', setup: 'setup',
 };
 
@@ -334,7 +333,7 @@ const PAGE_TAB = {
  * 调用方只知道自己要去的那个页签叫什么，这张表因此由这里维护，调用点一处未改。
  */
 const TAB_HASH = {
-  overview: '#/home', push: '#/push', sessions: '#/push', analytics: '#/streamers',
+  overview: '#/home', push: '#/push', sessions: '#/push',
   log: '#/log', bot: '#/links', tokens: '#/links', settings: '#/settings', setup: '#/setup',
 };
 
@@ -472,9 +471,11 @@ function applyRoute(withData = true) {
   // 离开初始设置页就停掉那一页等扫码的轮询：不停的话，使用者点去连接页看一眼，
   // 那一页还在每 3 秒问一次登录状态，而它已经不在屏幕上了
   if (route === 'setup' && name !== 'setup') stopSetupPolling();
-  // 离开主播页就把报告图那个临时地址撤掉：一张几百 KB 的图会一直被它拴在内存里，
-  // 而屏幕上早就换了别的页
-  if (route === 'streamers' && name !== 'streamers') releaseReport();
+  // 离开顶级插件页时通知它自己收尾巴（报告图临时地址这类）。核心不认识任何一页的内部状态
+  if (route && route !== name) {
+    const leavingTop = pages.find(item => item.meta.slot === SLOT_TOP && item.meta.id === route);
+    if (leavingTop) callPage(leavingTop, 'leave');
+  }
   // 是不是刚从别的页进来。推送页在页内换选中项也走改地址栏这条路，
   // 每换一次都重取一遍名单与额度的话，点树上一行要等四个请求回来才动
   const entering = route !== name;
@@ -493,9 +494,6 @@ function applyRoute(withData = true) {
   // 日志页有两半（时间线与工程日志），哪一半该显示由地址栏定，与取不取数据无关——
   // 合进下面那一趟的话，直接打开 #/log/eng 会先闪一下时间线那一半
   if (name === 'log') syncLogView();
-  // 主播页三块（列表、详情、某一场）同理：哪一块该显示由地址栏定，与取不取数据无关。
-  // 合进下面那一趟的话，直接打开某一场的地址会先闪一下列表
-  if (name === 'streamers') syncStreamersView();
   // 推送页选中的是哪一位主播、哪一个通道同理：它只由地址栏定，与取不取数据无关。
   // 合进下面那一趟的话，点树上一行会先闪一下上一次选中的那一页
   if (name === 'push') showPush(sub, tail);
@@ -520,11 +518,6 @@ function applyRoute(withData = true) {
   // 每次进入都重取：群里随时可能有人订阅或关掉命令，缓存的画面会误导人。
   // 页内换选中项不重取——那一下没有任何东西会变，重取只是让点一行慢四个请求
   else if (name === 'push') { if (entering) loadPushPage(); }
-  // 在本页里点开一位主播、翻一页场次走的都是改地址栏这一条路，因此每次进来都重取：
-  // 这一页现在是哪一块、哪一位、第几页，全部只存在地址栏里，本页自己不记。
-  // 侧栏那三行运行状态由这里刷，不由主播页刷——那一页去调 renderStatus 的话，
-  // 它与 overview.js 会互相 import 成环，而环里谁先求值取决于加载顺序
-  else if (name === 'streamers') { loadStreamers(); api('/status').then(renderStatus); }
   // 每次进入都重建只读口令那一块：顺带抹掉上一次留在屏幕上的口令明文。
   // 三张卡与名单跟着一起重取——群随时会被踢，缓存的名单会让人对着一个已经不在的群发测试消息
   else if (name === 'links') { loadTokens(); refreshLinks(); refreshPages(); loadTargets(false); }

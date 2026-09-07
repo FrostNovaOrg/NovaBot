@@ -1,10 +1,11 @@
-package com.starlwr.bot.core.config.ui;
+package com.starlwr.bot.console.controller;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.analytics.LiveDetail;
 import com.starlwr.bot.core.analytics.LiveMetricCatalog;
 import com.starlwr.bot.core.analytics.LiveSessionAnalytics;
+import com.starlwr.bot.core.config.ui.ConfigUiController;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.model.LiveSession;
 import com.starlwr.bot.core.model.PushUser;
@@ -14,6 +15,7 @@ import com.starlwr.bot.core.service.LiveDetailArchive;
 import com.starlwr.bot.core.service.LiveReportRedrawer;
 import com.starlwr.bot.core.service.LiveSessionArchive;
 import com.starlwr.bot.core.service.StreamerDirectory;
+import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.service.StreamerSnapshotArchive;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -55,6 +57,7 @@ import java.util.Set;
  * 平台作为路径变量出现，那是在说「这一位主播属于哪个平台」，不是把界面绑到某个平台上。
  */
 @Slf4j
+@StarBotComponent
 @RestController
 @RequestMapping(ConfigUiController.BASE_PATH + "/api/streamers")
 @ConditionalOnProperty(name = "starbot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)

@@ -20,11 +20,11 @@
 
 <div id="app">
   <!--
-    左侧六页导航。页按「用户此刻想干什么」划分，而不是按数据存在哪个文件里：
+    左侧主导航。页按「用户此刻想干什么」划分，而不是按数据存在哪个文件里：
     早先的常规配置/推送配置/配置文件/运行状态是后者，使用者得先知道
     「登录态属于运行状态、机器人端口属于配置文件」才找得到入口。
 
-    地址是 hash 路由（#/home 等六个）。用 hash 而不用 history.pushState：
+    地址是 hash 路由（#/home 等）。用 hash 而不用 history.pushState：
     控制台是挂在 /config 下的单张页面，服务端并没有为每条路由各备一份响应——
     改成 pushState 的话，在 #/settings 上按刷新，浏览器会去要 /config/settings 而得到 404。
   -->
@@ -36,7 +36,6 @@
     <nav class="nav" id="nav">
       <a href="#/home" data-page="home"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 6.5 8 2l6 4.5V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/><path d="M6.2 14V9h3.6v5"/></svg>首页</a>
       <a href="#/push" data-page="push"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 4.2A1.2 1.2 0 0 1 3.2 3h9.6A1.2 1.2 0 0 1 14 4.2v6.1a1.2 1.2 0 0 1-1.2 1.2H6.4L3.4 14V11.5H3.2A1.2 1.2 0 0 1 2 10.3z"/></svg>推送</a>
-      <a href="#/streamers" data-page="streamers"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="5.2" r="2.6"/><path d="M2.8 14c0-2.9 2.3-4.6 5.2-4.6s5.2 1.7 5.2 4.6"/></svg>主播</a>
       <a href="#/log" data-page="log"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="3.6" cy="3.8" r="1.3"/><circle cx="3.6" cy="8" r="1.3"/><circle cx="3.6" cy="12.2" r="1.3"/><path d="M7 3.8h6.4M7 8h6.4M7 12.2h4.2"/></svg>日志</a>
       <a href="#/links" data-page="links"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M6.6 9.4a2.6 2.6 0 0 0 3.9.3l2-2a2.6 2.6 0 0 0-3.7-3.7l-1.1 1.1"/><path d="M9.4 6.6a2.6 2.6 0 0 0-3.9-.3l-2 2a2.6 2.6 0 0 0 3.7 3.7l1.1-1.1"/></svg>连接</a>
       <a href="#/settings" data-page="settings"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v1.6M8 12.6v1.6M14.2 8h-1.6M3.4 8H1.8M12.4 3.6l-1.1 1.1M4.7 11.3l-1.1 1.1M12.4 12.4l-1.1-1.1M4.7 4.7 3.6 3.6"/></svg>设置</a>
@@ -179,70 +178,6 @@
         <div id="push-tree"></div>
       </aside>
       <div class="pright" id="push-right"></div>
-    </div>
-  </section>
-
-  <!-- ============ 主播 #/streamers ============ -->
-  <!--
-    每位主播播了什么、播得怎么样，都在这里。三块子视图共用这一个页容器：
-    列表（#/streamers）、详情（#/streamers/<平台>/<uid>，三个页签）、
-    某一场（#/streamers/<平台>/<uid>/<开播时刻>）。
-
-    🔴 三块<b>不</b>各占一个 .page 容器：路由那一侧认页只看地址第一段（见 main.js 的 parseHash），
-    后两块因此永远不会被显示出来，而三处的代码看起来都对。哪一块显示由 syncStreamersView 定。
-
-    数据源是 /api/streamers。跨零点归属、按本地时区分周、空日补零、状态四档的优先级
-    这几条规则只该有一份实现，都在服务端（LiveSessionAnalytics 与 StreamerController）；
-    这一页只管把算好的摆上去，判断那一半在 streamers-model.js 里。
-
-    原先这里是「监听中的主播」那张表加一块运营分析，两块各答半个问题——
-    前者只说此刻在盯着谁、不说播得怎么样，后者只按周期堆总数、点不进任何一场。
-    它们已经并进下面这份列表与它的详情页。
-  -->
-  <section class="page" id="page-streamers">
-    <div id="sv-list">
-      <p class="hint">数据来自每场直播下播时的归档。<b>只在这里看得到，不会发到群里。</b>
-        点一位主播看他的概况、场次与趋势；点一场看那一场的报告。</p>
-
-      <div class="nv-card hcard">
-        <h3>全部主播 <span class="h-note" id="st-window"></span></h3>
-        <div class="stats" id="st-all"></div>
-      </div>
-
-      <div class="nv-card hcard">
-        <h3>每位主播 <span class="h-note">右边那条小折线是最近几天的场次</span></h3>
-        <div id="st-list"></div>
-      </div>
-
-      <!--
-        归档里有、在册名单里没有的那几位。从推送配置里删掉的主播，他过去的场次仍在归档里——
-        不单列一段的话，那些场次就成了「查不到主人的数据」：列表上没有他，
-        而总数里又算着他。服务端把差集点名报出来（不是报个数），这里照名字列。
-        一位都没有时整块不显示。
-      -->
-      <div id="st-unlisted"></div>
-    </div>
-
-    <div id="sv-detail" style="display:none">
-      <div class="loghead">
-        <div>
-          <a class="daystep" id="sd-back" href="#/streamers">‹ 回主播列表</a>
-        </div>
-      </div>
-      <div class="nv-card hcard" id="sd-head"></div>
-      <!-- 三个页签。地址就是页签本身，因此它们是链接不是按钮：能收藏、能贴给别人 -->
-      <div class="lgpills" id="sd-tabs"></div>
-      <div id="sd-body"></div>
-    </div>
-
-    <div id="sv-session" style="display:none">
-      <div class="loghead">
-        <div>
-          <a class="daystep" id="sx-back" href="#/streamers">‹ 回场次列表</a>
-        </div>
-      </div>
-      <h3 class="cat-title" id="sx-title">场次</h3>
-      <div id="sx-body"></div>
     </div>
   </section>
 

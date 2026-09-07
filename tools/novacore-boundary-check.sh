@@ -112,6 +112,14 @@ for mod in */; do
 
     while IFS= read -r f; do
         [ -z "$f" ] && continue
+        # 连接卡与账号登录的显示名才是平台名（「哔哩哔哩」）。顶级页／首页卡／向导步
+        # 的显示名是产品功能名（「主播」），写进平台名清单会把核心界面里所有「主播」
+        # 都判成把平台写死——那不是这一格要守的边界。
+        if grep -q 'implements ConsolePageProvider' "$f" 2>/dev/null; then
+            if grep -qE 'return ConsolePageSlot\.(TOP|HOME_CARD|SETUP_STEP)' "$f" 2>/dev/null; then
+                continue
+            fi
+        fi
         grep -A3 'String displayName()' "$f" 2>/dev/null \
             | grep -oE 'return "[^"]*"' \
             | sed -E 's/^return "(.*)"$/\1/' >> "$TOKENS"
