@@ -1,7 +1,8 @@
-package com.starlwr.bot.core.config.ui.napcat;
+package com.starlwr.bot.adapter.onebot.napcat;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.config.ui.ConfigUiController;
+import com.starlwr.bot.core.plugin.StarBotComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.MediaType;
@@ -35,6 +36,7 @@ import java.nio.charset.StandardCharsets;
  */
 @Slf4j
 @RestController
+@StarBotComponent
 public class NapCatBootstrapController {
     public static final String PAGE_PATH = ConfigUiController.BASE_PATH + "/napcat-bootstrap";
 

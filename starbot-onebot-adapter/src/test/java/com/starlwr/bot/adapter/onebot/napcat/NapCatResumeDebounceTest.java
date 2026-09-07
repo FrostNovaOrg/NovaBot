@@ -1,4 +1,4 @@
-package com.starlwr.bot.core.config.ui.napcat;
+package com.starlwr.bot.adapter.onebot.napcat;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;

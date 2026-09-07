@@ -1,4 +1,4 @@
-package com.starlwr.bot.core.config.ui.napcat;
+package com.starlwr.bot.adapter.onebot.napcat;
 
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.config.ui.ConfigurationFileService;

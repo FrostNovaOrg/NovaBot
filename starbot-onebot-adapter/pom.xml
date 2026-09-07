@@ -20,6 +20,16 @@
             <groupId>com.starlwr</groupId>
             <artifactId>starbot-core</artifactId>
         </dependency>
+        <!--
+            只在判据里用：把 config-ui 下那段续登逻辑真的跑一遍。
+            test 作用域，不进任何交付产物。
+        -->
+        <dependency>
+            <groupId>org.openjdk.nashorn</groupId>
+            <artifactId>nashorn-core</artifactId>
+            <version>15.6</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
