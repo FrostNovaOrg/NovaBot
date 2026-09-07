@@ -2,6 +2,8 @@ package com.starlwr.bot.core.config.ui;
 
 import com.starlwr.bot.core.config.EventStreamProperties;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -39,15 +41,74 @@ import java.util.Map;
  */
 public final class ConfigurationKeyAliases {
     /**
-     * 改过名的配置键前缀：现行前缀 → 旧前缀
+     * 核心自有的改名表：现行键（或前缀） → 旧键（或前缀）
      * <p>
      * 取自各配置类自己声明的常量，不在这里另抄一份字面量：抄一份就会与真正参与绑定的那一份漂开，
      * 而漂开之后界面与程序又会各说各话——正是这个类要治的那种病。
+     * 插件侧的改名由 {@link ConfigurationKeyAliasContributor} 申报，不写在这里。
      */
-    private static final Map<String, String> RENAMED_PREFIXES = Map.of(
+    private static final Map<String, String> CORE_RENAMED = Map.of(
             EventStreamProperties.PREFIX, EventStreamProperties.LEGACY_PREFIX);
 
-    private ConfigurationKeyAliases() {
+    private static final ConfigurationKeyAliases CORE = new ConfigurationKeyAliases(CORE_RENAMED);
+
+    /**
+     * 现行键（或前缀） → 旧键（或前缀）
+     * <p>
+     * 解析取最长匹配。值是完整键时，同前缀下未申报的邻键不会被吃掉；
+     * 值是前缀时，该前缀下每一项都按现行前缀换算。
+     */
+    private final Map<String, String> renamed;
+
+    private ConfigurationKeyAliases(Map<String, String> renamed) {
+        this.renamed = Map.copyOf(renamed);
+    }
+
+    /**
+     * 只含核心自有改名的表。
+     * @return 核心表
+     */
+    public static ConfigurationKeyAliases core() {
+        return CORE;
+    }
+
+    /**
+     * 核心表与各贡献者申报的改名合并。无贡献者时即核心表。
+     * <p>
+     * 跨方重复现行键抛 {@link IllegalStateException}，文案与核心自己的表重复登记相同。
+     * @param contributors 插件申报，顺序即合并顺序
+     * @return 合并后的表
+     */
+    public static ConfigurationKeyAliases of(Collection<ConfigurationKeyAliasContributor> contributors) {
+        if (contributors == null || contributors.isEmpty()) {
+            return core();
+        }
+
+        Map<String, String> merged = new LinkedHashMap<>(CORE_RENAMED);
+        for (ConfigurationKeyAliasContributor contributor : contributors) {
+            if (contributor == null) {
+                continue;
+            }
+            Map<String, String> declared = contributor.renamed();
+            if (declared == null) {
+                continue;
+            }
+            for (Map.Entry<String, String> entry : declared.entrySet()) {
+                put(merged, entry.getKey(), entry.getValue());
+            }
+        }
+        return new ConfigurationKeyAliases(merged);
+    }
+
+    private static void put(Map<String, String> renamed, String current, String legacy) {
+        if (current == null || legacy == null) {
+            return;
+        }
+        String previous = renamed.put(current, legacy);
+        if (previous != null) {
+            throw new IllegalStateException("配置键别名 " + current + " 被写了两次: "
+                    + previous + " 与 " + legacy);
+        }
     }
 
     /**
@@ -62,19 +123,42 @@ public final class ConfigurationKeyAliases {
      * @param name 配置项完整路径，可能写在旧位置
      * @return 对应的现行键；本来就是现行键、或与改名无关时原样返回
      */
-    public static String currentName(String name) {
+    public String currentName(String name) {
         if (name == null) {
             return null;
         }
 
-        for (Map.Entry<String, String> entry : RENAMED_PREFIXES.entrySet()) {
-            String prefix = entry.getValue() + ".";
-            if (name.startsWith(prefix)) {
-                return entry.getKey() + "." + name.substring(prefix.length());
+        String hitCurrent = null;
+        String hitLegacy = null;
+        int longest = -1;
+
+        for (Map.Entry<String, String> entry : renamed.entrySet()) {
+            String current = entry.getKey();
+            String legacy = entry.getValue();
+            if (legacy == null || current == null) {
+                continue;
+            }
+
+            boolean exact = name.equals(legacy);
+            boolean prefix = name.startsWith(legacy + ".");
+            if (!exact && !prefix) {
+                continue;
+            }
+
+            if (legacy.length() > longest) {
+                longest = legacy.length();
+                hitCurrent = current;
+                hitLegacy = legacy;
             }
         }
 
-        return name;
+        if (hitCurrent == null) {
+            return name;
+        }
+        if (name.equals(hitLegacy)) {
+            return hitCurrent;
+        }
+        return hitCurrent + "." + name.substring(hitLegacy.length() + 1);
     }
 
     /**
@@ -85,28 +169,24 @@ public final class ConfigurationKeyAliases {
      * @param values 配置文件里的键值表，就地补齐
      * @return 落回旧位置的项：现行键 → 它实际生效的那个旧键，界面据此标出来源
      */
-    public static Map<String, String> resolve(Map<String, String> values) {
+    public Map<String, String> resolve(Map<String, String> values) {
         Map<String, String> fallbacks = new LinkedHashMap<>();
 
-        RENAMED_PREFIXES.forEach((current, legacy) -> {
-            String prefix = legacy + ".";
-
-            // 先收齐再补，避免边遍历边往同一张表里写
-            List<Map.Entry<String, String>> legacyEntries = values.entrySet().stream()
-                    .filter(entry -> entry.getKey().startsWith(prefix))
-                    .toList();
-
-            for (Map.Entry<String, String> entry : legacyEntries) {
-                String name = current + "." + entry.getKey().substring(prefix.length());
-                if (values.containsKey(name)) {
-                    // 现行键写了就以它为准，与绑定时的顺序一致
-                    continue;
-                }
-
-                values.put(name, entry.getValue());
-                fallbacks.put(name, entry.getKey());
+        // 先收齐再补，避免边遍历边往同一张表里写
+        List<Map.Entry<String, String>> snapshot = new ArrayList<>(values.entrySet());
+        for (Map.Entry<String, String> entry : snapshot) {
+            String current = currentName(entry.getKey());
+            if (current == null || current.equals(entry.getKey())) {
+                continue;
             }
-        });
+            if (values.containsKey(current)) {
+                // 现行键写了就以它为准，与绑定时的顺序一致
+                continue;
+            }
+
+            values.put(current, entry.getValue());
+            fallbacks.put(current, entry.getKey());
+        }
 
         return fallbacks;
     }

@@ -213,6 +213,14 @@ public class ConfigUiController {
     private final ObjectProvider<ConfigurationGroupContributor> groupContributors;
 
     /**
+     * 各插件申报的配置键改名别名
+     * <p>
+     * 与分组前缀同形，用 ObjectProvider 取：别名来自插件，而插件的 Bean 定义由
+     * BeanDefinitionRegistryPostProcessor 注册，延迟解析才不受注册与注入的先后顺序影响。
+     */
+    private final ObjectProvider<ConfigurationKeyAliasContributor> aliasContributors;
+
+    /**
      * 构建信息，版本号从这里来
      * <p>
      * 用 ObjectProvider 取：这个 Bean 由 build-info 生成的属性文件撑着，
@@ -287,7 +295,7 @@ public class ConfigUiController {
                 dataSourceServiceRegistry, levelResolver, effectResolver, dangerResolver, runtimeApplier,
                 connectionTesters, pageProviders, eventStreamTokens, buildProperties, pushGate,
                 liveDataService, timeline, authService, templateDefaults, updateCheck,
-                noGroupContributors(), noVocabularies());
+                noGroupContributors(), noVocabularies(), noAliasContributors());
     }
 
     @Autowired
@@ -318,7 +326,8 @@ public class ConfigUiController {
                               PushTemplateDefaults templateDefaults,
                               UpdateCheckService updateCheck,
                               ObjectProvider<ConfigurationGroupContributor> groupContributors,
-                              ObjectProvider<ConsoleVocabulary> vocabProviders) {
+                              ObjectProvider<ConsoleVocabulary> vocabProviders,
+                              ObjectProvider<ConfigurationKeyAliasContributor> aliasContributors) {
         this.templateDefaults = templateDefaults;
         this.pushGate = pushGate;
         this.liveDataService = liveDataService;
@@ -333,6 +342,7 @@ public class ConfigUiController {
         this.pageProviders = pageProviders;
         this.vocabProviders = vocabProviders;
         this.groupContributors = groupContributors;
+        this.aliasContributors = aliasContributors;
         this.levelResolver = levelResolver;
         this.connectionTesters = connectionTesters;
         this.activityRecorder = activityRecorder;
@@ -420,6 +430,44 @@ public class ConfigUiController {
 
             @Override
             public Stream<ConsoleVocabulary> orderedStream() {
+                return Stream.empty();
+            }
+        };
+    }
+
+    /**
+     * 无别名贡献者：旧构造与测试直接 new 时走核心表。
+     * @return 空的 ObjectProvider
+     */
+    private static ObjectProvider<ConfigurationKeyAliasContributor> noAliasContributors() {
+        return new ObjectProvider<>() {
+            @Override
+            public ConfigurationKeyAliasContributor getObject() {
+                throw new NoSuchBeanDefinitionException(ConfigurationKeyAliasContributor.class);
+            }
+
+            @Override
+            public ConfigurationKeyAliasContributor getObject(Object... args) {
+                throw new NoSuchBeanDefinitionException(ConfigurationKeyAliasContributor.class);
+            }
+
+            @Override
+            public ConfigurationKeyAliasContributor getIfAvailable() {
+                return null;
+            }
+
+            @Override
+            public ConfigurationKeyAliasContributor getIfUnique() {
+                return null;
+            }
+
+            @Override
+            public Stream<ConfigurationKeyAliasContributor> stream() {
+                return Stream.empty();
+            }
+
+            @Override
+            public Stream<ConfigurationKeyAliasContributor> orderedStream() {
                 return Stream.empty();
             }
         };
@@ -699,7 +747,7 @@ public class ConfigUiController {
                 values.put(backupKeepKey, Integer.toString(properties.getConfigUi().getBackupKeep()));
             }
             // 先补旧位置再遮机密：补进来的项同样可能是机密，顺序反了就会漏出去
-            result.put("legacy", ConfigurationKeyAliases.resolve(values));
+            result.put("legacy", aliases().resolve(values));
             // 口令、令牌与密钥不出这道门：面板可能在直播画面里被打开。
             // 带上类型表，开关才不会因为名字里有 token 被遮成占位值——遮了它界面上就恒显「已关闭」
             Map<String, String> types = metadataService.getKnownTypes();
@@ -723,13 +771,21 @@ public class ConfigUiController {
      * @param name 配置项完整路径
      * @return 类型全限定名，未知时为 {@code null}
      */
-    private static String typeOf(Map<String, String> types, String name) {
+    private String typeOf(Map<String, String> types, String name) {
         if (types == null) {
             return null;
         }
 
         String type = types.get(name);
-        return type != null ? type : types.get(ConfigurationKeyAliases.currentName(name));
+        return type != null ? type : types.get(aliases().currentName(name));
+    }
+
+    /**
+     * 核心表与插件申报合并后的改名表。无插件时即核心表。
+     * @return 合并后的别名表
+     */
+    private ConfigurationKeyAliases aliases() {
+        return ConfigurationKeyAliases.of(aliasContributors.orderedStream().toList());
     }
 
     /**
@@ -757,7 +813,7 @@ public class ConfigUiController {
         Map<String, String> types = metadataService.getKnownTypes();
         SensitiveFields.dropUnchanged(changes, name -> typeOf(types, name));
 
-        if (ConfigUiAuthService.containsDedicatedAuthKey(changes.keySet())) {
+        if (ConfigUiAuthService.containsDedicatedAuthKey(changes.keySet(), aliases())) {
             result.put("success", false);
             result.put("message", "登录口令和二次验证请到「登录与安全」里改；「忘记口令」的启动令牌通道这里也改不了——那个页面关得了、开不了，要开须改配置文件再重启");
             return result;

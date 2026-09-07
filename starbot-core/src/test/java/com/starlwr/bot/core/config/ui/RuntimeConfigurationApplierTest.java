@@ -10,14 +10,18 @@ import org.junit.jupiter.api.Test;
 import java.lang.reflect.Field;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -252,5 +256,52 @@ class RuntimeConfigurationApplierTest {
         } finally {
             appliers.remove(key);
         }
+    }
+
+    @Test
+    @DisplayName("贡献者登记的键计入 supportedKeys 且能应用")
+    void contributorKeysAreSupportedAndApplied() {
+        List<String> reds = new ArrayList<>();
+        String key = "starbot.demo.runtime.flag";
+        AtomicReference<String> seen = new AtomicReference<>();
+        RuntimeConfigurationApplierContributor contributor = () -> {
+            Map<String, Consumer<String>> appliers = new LinkedHashMap<>();
+            appliers.put(key, seen::set);
+            return appliers;
+        };
+        RuntimeConfigurationApplier with = RuntimeConfigurationApplier.bench(properties)
+                .contributors(List.of(contributor))
+                .build();
+
+        try {
+            assertTrue(with.supportedKeys().contains(key),
+                    "贡献者登记的键应计入 supportedKeys");
+            assertTrue(with.supportedKeys().contains("starbot.core.push.enabled"),
+                    "核心自有键仍须在名单里");
+        } catch (AssertionError e) {
+            reds.add("① " + e.getMessage());
+        }
+
+        try {
+            List<String> restart = with.applyAndTrack(Map.of(key, "on"));
+            assertEquals("on", seen.get(), "贡献者登记的键应当场应用");
+            assertEquals(List.of(), restart, "已应用的键不该进待重启");
+        } catch (AssertionError e) {
+            reds.add("② " + e.getMessage());
+        }
+
+        try {
+            RuntimeConfigurationApplierContributor clash = () -> Map.of(
+                    "starbot.core.push.enabled", value -> { });
+            assertThrows(IllegalStateException.class,
+                    () -> RuntimeConfigurationApplier.bench(properties)
+                            .contributors(List.of(clash))
+                            .build(),
+                    "与核心自有表撞键须抛 IllegalStateException");
+        } catch (AssertionError e) {
+            reds.add("③ " + e.getMessage());
+        }
+
+        assertTrue(reds.isEmpty(), () -> "三问中 " + reds.size() + " 问红: " + String.join("; ", reds));
     }
 }

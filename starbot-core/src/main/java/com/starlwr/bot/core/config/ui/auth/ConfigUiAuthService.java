@@ -63,11 +63,21 @@ public class ConfigUiAuthService {
      * @return 是专用口那几项时为 true
      */
     public static boolean isDedicatedAuthKey(String name) {
+        return isDedicatedAuthKey(name, ConfigurationKeyAliases.core());
+    }
+
+    /**
+     * 这一项是不是只能走专用口的认证键
+     * @param name 配置项名，现行键或旧位置均可
+     * @param aliases 合并后的改名表
+     * @return 是专用口那几项时为 true
+     */
+    public static boolean isDedicatedAuthKey(String name, ConfigurationKeyAliases aliases) {
         if (name == null || name.isBlank()) {
             return false;
         }
 
-        String current = ConfigurationKeyAliases.currentName(name);
+        String current = aliases.currentName(name);
         return PASSWORD_PROPERTY.equals(current)
                 || TOTP_PROPERTY.equals(current)
                 || TOTP_SECRET_PROPERTY.equals(current)
@@ -80,11 +90,21 @@ public class ConfigUiAuthService {
      * @return 有则为 true
      */
     public static boolean containsDedicatedAuthKey(Iterable<String> names) {
+        return containsDedicatedAuthKey(names, ConfigurationKeyAliases.core());
+    }
+
+    /**
+     * 这批键里有没有只能走专用口的认证项
+     * @param names 配置项名
+     * @param aliases 合并后的改名表
+     * @return 有则为 true
+     */
+    public static boolean containsDedicatedAuthKey(Iterable<String> names, ConfigurationKeyAliases aliases) {
         if (names == null) {
             return false;
         }
         for (String name : names) {
-            if (isDedicatedAuthKey(name)) {
+            if (isDedicatedAuthKey(name, aliases)) {
                 return true;
             }
         }
