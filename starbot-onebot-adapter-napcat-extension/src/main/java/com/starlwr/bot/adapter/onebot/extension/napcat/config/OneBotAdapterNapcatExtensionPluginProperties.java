@@ -9,6 +9,10 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * NapCat 扩展插件的配置
+ * <p>
+ * 只有一项开关。「打给谁、用哪个 Token」不在这里配：那几项跟着推送平台自己的配置走
+ * （见 {@code OneBotSender}），一台机器上连着几个 OneBot 实例就各有各的一份，
+ * 提到这里来只会剩一份。
  */
 @Getter
 @Setter

@@ -12,12 +12,17 @@ import org.springframework.stereotype.Component;
  * 把占位符写法翻译成 OneBot 认得的消息段
  * <ul>
  *     <li>{next}: 消息分条，核心已在造消息时处理掉，转换器见不到它</li>
- *     <li>{face=1}: 表情。{at=all}、{at=123456}: @全体成员 与 @指定成员</li>
- *     <li>{image_url=...}、{image_path=...}、{image_base64=...}: 三种图片</li>
+ *     <li>{face=1}: 表情</li>
+ *     <li>{at=all}: @全体成员</li>
+ *     <li>{at=123456}: @指定成员</li>
+ *     <li>{image_url=https://example.com/image.jpg}: 网络图片</li>
+ *     <li>{image_path=/opt/image.jpg}: 本地图片</li>
+ *     <li>{image_base64=...}: Base64 图片</li>
  * </ul>
  * <p>
  * 两种「填错了」刻意走相反的路：值<b>空着</b>的占位符整段丢掉（宁可少 @ 一个人，也不把
- * <code>{at=}</code> 原样发进群里）；表情 ID <b>解析不了</b>时原样留成文本，那多半正是使用者想发的字。
+ * <code>{at=}</code> 原样发进群里）；表情 ID <b>解析不了</b>时原样留成文本，
+ * 那多半正是使用者想发的字。
  */
 @Slf4j
 @Component
