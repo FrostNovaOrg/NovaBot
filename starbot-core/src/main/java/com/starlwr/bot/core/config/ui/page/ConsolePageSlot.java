@@ -3,11 +3,12 @@ package com.starlwr.bot.core.config.ui.page;
 /**
  * 插件页在控制台里挂到哪一处
  * <p>
- * 四种落位由插件自己申报：<b>核心不认识任何一个具体平台</b>，也就无从判断某一页该摆在哪儿。
+ * 五种落位由插件自己申报：<b>核心不认识任何一个具体平台</b>，也就无从判断某一页该摆在哪儿。
  * 直播平台的账号登录属于「这台机器与外面怎么连」，因此落 {@link #LINKS}；
  * 与连接无关、也不需要独占一整页的，仍落 {@link #SETTINGS}；
  * 需要与首页／推送／主播等并列的一整页，落 {@link #TOP}；
- * 只在首页放一张卡、不占导航也没有独立地址的，落 {@link #HOME_CARD}。
+ * 只在首页放一张卡、不占导航也没有独立地址的，落 {@link #HOME_CARD}；
+ * 向导里的一步、不占导航也没有独立地址的，落 {@link #SETUP_STEP}。
  */
 public enum ConsolePageSlot {
     /**
@@ -37,5 +38,10 @@ public enum ConsolePageSlot {
     /**
      * 首页一张卡，不占导航、无独立地址
      */
-    HOME_CARD
+    HOME_CARD,
+
+    /**
+     * 向导里的一步，不占导航、无独立地址
+     */
+    SETUP_STEP
 }

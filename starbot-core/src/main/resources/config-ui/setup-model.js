@@ -36,15 +36,44 @@ export const SETUP_STEPS = [
   {key: 'test', title: '发一条试试', skippable: false},
 ];
 
+const BUILTIN_STEP_KEYS = new Set(SETUP_STEPS.map(step => step.key));
+
 /**
- * 五步各自成立了没有
+ * 内置五步加上插件申报的向导步骤
+ *
+ * 只收 {@code slot === 'setup_step'} 的页。插在内置「主播」之后、「试发」之前，
+ * 按 order 升序（同 order 按 id）。无插件页时返回 {@link SETUP_STEPS} 本身。
+ * @param pages /api/pages 的 pages 清单
+ * @return {{key: string, title: string, skippable?: boolean, plugin?: boolean}[]}
+ */
+export function withPluginSteps(pages) {
+  const extra = (Array.isArray(pages) ? pages : [])
+    .filter(page => page
+      && page.slot === 'setup_step'
+      && page.id
+      && !BUILTIN_STEP_KEYS.has(page.id))
+    .slice()
+    .sort((a, b) => {
+      const order = (Number(a.order) || 0) - (Number(b.order) || 0);
+      return order !== 0 ? order : String(a.id).localeCompare(String(b.id));
+    })
+    .map(page => ({key: page.id, title: page.displayName, plugin: true}));
+  if (!extra.length) return SETUP_STEPS;
+  const streamerAt = SETUP_STEPS.findIndex(step => step.key === 'streamer');
+  return [...SETUP_STEPS.slice(0, streamerAt + 1), ...extra, ...SETUP_STEPS.slice(streamerAt + 1)];
+}
+
+/**
+ * 各步各自成立了没有
  * @param status /api/status 回包
  * @param login /api/login 回包
  * @param sent 第 5 步的事实，来自 /api/setup/state；不知道时传 null
- * @return {boolean[]} 五个布尔
+ * @param pluginDone 插件步事实，{@code {key: boolean}}；缺这一位或该键不为 true 都算假
+ * @param pages /api/pages 的 pages 清单；缺＝无插件
+ * @return {boolean[]} 与步骤表等长的布尔
  */
-export function stepFacts(status, login, sent) {
-  return setupSteps(status || {}, login || {}, sent);
+export function stepFacts(status, login, sent, pluginDone, pages) {
+  return setupSteps(status || {}, login || {}, sent, pages, pluginDone);
 }
 
 /**
@@ -54,17 +83,19 @@ export function stepFacts(status, login, sent) {
  * @param sent 第 5 步的事实；不知道时传 null
  * @return {number} 0 到 5
  */
-export function setupProgress(status, login, sent) {
-  return stepFacts(status, login, sent).filter(Boolean).length;
+export function setupProgress(status, login, sent, pluginDone, pages) {
+  return stepFacts(status, login, sent, pluginDone, pages).filter(Boolean).length;
 }
 
 /**
- * 五步都齐了吗
+ * 步骤表上每一步都齐了吗
  * @param facts {@link stepFacts} 的结果
+ * @param steps 步骤表，缺省 {@link SETUP_STEPS}
  * @return {boolean} 齐了为 true
  */
-export function allDone(facts) {
-  return (facts || []).length === SETUP_STEPS.length && facts.every(Boolean);
+export function allDone(facts, steps) {
+  const table = steps || SETUP_STEPS;
+  return (facts || []).length === table.length && facts.every(Boolean);
 }
 
 /**
@@ -75,32 +106,36 @@ export function allDone(facts) {
  * 第 2 步与第 4 步要人做的事完全不同，却写着同一行字。
  *
  * 认不出来的步号一律不放行：这张表将来多一步少一步的时候，宁可卡住也不许默默放过去。
+ * 按步骤表上的 key 判，不按写死的下标——插件步插进来之后，试发不再是第 5 格。
  * @param index 第几步，0 起
  * @param draft 这一页此刻手里的东西
+ * @param steps 步骤表，缺省 {@link SETUP_STEPS}
  * @return {{ok: boolean, reason: string}} 放行与否，以及拦住的理由
  */
-export function canAdvance(index, draft) {
+export function canAdvance(index, draft, steps) {
   const it = draft || {};
+  const step = (steps || SETUP_STEPS)[index];
+  if (!step) return stop('认不出这一步，不放行');
 
-  switch (index) {
-    case 0:
+  switch (step.key) {
+    case 'lock':
       return it.locked ? pass()
         : stop('先设一把控制台口令。这一步不能跳过——没上锁的控制台，任何能连上这台机器的人都进得来');
-    case 1:
+    case 'bot':
       return it.botOk ? pass()
         : stop('先按「测试连接」，通过了才能往下走。这一步不能跳过——连不上机器人，一条消息也发不出去');
-    case 2:
+    case 'account':
       return it.accountsReady || it.anonymousConfirmed ? pass()
         : stop('扫码登录，或者点「不登录，先用免登录模式」并确认那一段后果');
-    case 3:
+    case 'streamer':
       if (it.noStreamerConfirmed) return pass();
       if (!it.streamer) return stop('先填 uid 找到一位主播；确实不想现在加的话，点「先不加主播」');
       return (it.targets || []).length ? pass()
         : stop('至少选一个群或一位好友，否则这位主播的开播通知没有地方可去');
-    case 4:
+    case 'test':
       return it.sent ? pass() : stop('先发一条试试，群里看得到才说明整条链路是通的');
     default:
-      return stop('认不出这一步，不放行');
+      return step.plugin ? pass() : stop('认不出这一步，不放行');
   }
 }
 
@@ -118,10 +153,11 @@ const stop = reason => ({ok: false, reason});
  * @param facts {@link stepFacts} 的结果
  * @param skips 每一步被跳过的方式，'' / 'skip' / 'anon'
  * @param current 正在做第几步
+ * @param steps 步骤表，缺省 {@link SETUP_STEPS}
  * @return {{state: string, note: string}[]} 每步的记号与那行小字
  */
-export function railMarks(facts, skips, current) {
-  return SETUP_STEPS.map((step, i) => {
+export function railMarks(facts, skips, current, steps) {
+  return (steps || SETUP_STEPS).map((step, i) => {
     if ((skips || [])[i] === 'anon') return {state: 'warn', note: '免登录模式'};
     if ((facts || [])[i]) return {state: 'done', note: '完成'};
     if ((skips || [])[i]) return {state: 'skip', note: '跳过了'};
@@ -137,12 +173,14 @@ export function railMarks(facts, skips, current) {
  * 与「点了没反应」在屏幕上长得一样。
  * @param facts {@link stepFacts} 的结果
  * @param rerun 有没有人要求重来一遍
+ * @param steps 步骤表，缺省 {@link SETUP_STEPS}
  * @return {number} 落在第几步
  */
-export function startAt(facts, rerun) {
+export function startAt(facts, rerun, steps) {
   if (rerun) return 0;
+  const table = steps || SETUP_STEPS;
   const at = (facts || []).findIndex(done => !done);
-  return at < 0 ? SETUP_STEPS.length - 1 : at;
+  return at < 0 ? table.length - 1 : at;
 }
 
 /**
@@ -197,11 +235,17 @@ const row = (label, text, href, key) => ({label, text, href, key});
  * @param facts {@link stepFacts} 的结果
  * @param skips 每一步被跳过的方式
  * @param counts {accounts, streamers, targets}
+ * @param steps 步骤表，缺省 {@link SETUP_STEPS}
  * @return {string[]} 三行
  */
-export function summaryLines(facts, skips, counts) {
+export function summaryLines(facts, skips, counts, steps) {
   const it = counts || {};
   const accounts = it.accounts || [];
+  const table = steps || SETUP_STEPS;
+  const fact = key => {
+    const i = table.findIndex(step => step.key === key);
+    return i >= 0 && !!(facts || [])[i];
+  };
 
   const account = accounts.length
     ? accounts.map(one => (one.displayName || '直播平台') + ' '
@@ -209,12 +253,12 @@ export function summaryLines(facts, skips, counts) {
       .join(' · ')
     : '没有装任何直播平台插件，这台 NovaBot 采不到直播事件';
 
-  const streamer = (facts || [])[3] && it.streamers
+  const streamer = fact('streamer') && it.streamers
     ? it.streamers + ' 位主播 → ' + (it.targets || 0) + ' 个推送目标'
     : '还没加主播——这台 NovaBot 起来暂时什么都不做';
 
   return [
-    (facts || [])[1] ? 'QQ 机器人 已连上' : 'QQ 机器人 还没连上，推送发不出去',
+    fact('bot') ? 'QQ 机器人 已连上' : 'QQ 机器人 还没连上，推送发不出去',
     account,
     streamer,
   ];

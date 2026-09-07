@@ -287,6 +287,59 @@ class ConsolePagesTest {
         }
     }
 
+    /**
+     * 向导步骤落位：标识与内置步骤键撞车则弃掉
+     * <p>
+     * 插件步的标识会原样成为步骤表上的 key。撞上 lock／bot／account／streamer／test
+     * 就会盖住内置那一步，和顶级页撞内置页名是同一形。
+     */
+    @Test
+    @DisplayName("向导步骤：撞内置步骤名弃掉")
+    void setupStepSlotDropsBuiltinStepIds() {
+        List<ConsolePageProvider> kept = ConsolePages.valid(list(
+                new Slotted("streamer", "主播", "streamer-step.js", 50, ConsolePageSlot.SETUP_STEP),
+                new Slotted("danmu", "弹幕", "danmu.js", 50, ConsolePageSlot.SETUP_STEP)));
+        assertEquals(List.of("danmu"), kept.stream().map(ConsolePageProvider::id).toList(),
+                "slot=SETUP_STEP 且标识为 streamer 的应当弃掉，danmu 是阴性对照应当保留");
+    }
+
+    /**
+     * 向导步骤落位：合法项保留、枚举名小写与 /api/pages 的 slot 串对齐
+     * <p>
+     * 两问各自记下，末尾一起红：①红就 return 的话，②还没跑过，接口字面漂了也看不见。
+     * 本笔不改 ConfigUiController：slot 串由枚举名 {@code toLowerCase} 现算。
+     */
+    @Test
+    @DisplayName("向导步骤：合法项保留、slot 字面为 setup_step")
+    void setupStepSlotKeepsLegalAndWiresPagesApi() throws IOException {
+        List<String> red = new ArrayList<>();
+        String controller = Files.readString(
+                repoRoot().resolve("starbot-core/src/main/java/com/starlwr/bot/core/config/ui/ConfigUiController.java"),
+                StandardCharsets.UTF_8);
+
+        try {
+            List<ConsolePageProvider> kept = ConsolePages.valid(list(
+                    new Slotted("danmu", "弹幕", "danmu.js", 50, ConsolePageSlot.SETUP_STEP)));
+            assertEquals(List.of("danmu"), kept.stream().map(ConsolePageProvider::id).toList(),
+                    "slot=SETUP_STEP 且标识合规、不撞内置步骤的，应当保留");
+        } catch (Throwable t) {
+            red.add("① " + t.getMessage());
+        }
+
+        try {
+            assertEquals("setup_step", ConsolePageSlot.SETUP_STEP.name().toLowerCase(Locale.ROOT),
+                    "SETUP_STEP 的枚举名小写必须是 setup_step，接口才吐得出 slot=setup_step");
+            assertTrue(controller.contains("page.slot().name().toLowerCase(Locale.ROOT)"),
+                    "/api/pages 应按枚举名小写吐 slot");
+        } catch (Throwable t) {
+            red.add("② " + t.getMessage());
+        }
+
+        if (!red.isEmpty()) {
+            fail(red.size() + " 问红：" + String.join("；", red));
+        }
+    }
+
     private static int indexOfFunction(String text, String name) {
         int async = text.indexOf("async function " + name + "(");
         if (async >= 0) {

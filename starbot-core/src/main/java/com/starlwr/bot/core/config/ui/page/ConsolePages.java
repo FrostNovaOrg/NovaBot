@@ -56,6 +56,15 @@ public final class ConsolePages {
             "home", "push", "streamers", "log", "links", "settings", "setup");
 
     /**
+     * 向导内置步骤的键
+     * <p>
+     * 向导步骤插件页的标识会原样成为步骤表上的 key，与这些名字撞车就会盖住内置步骤。
+     * 只拦 {@link ConsolePageSlot#SETUP_STEP}：其它落位不占这一段。
+     */
+    private static final Set<String> BUILTIN_SETUP_STEP_IDS = Set.of(
+            "lock", "bot", "account", "streamer", "test");
+
+    /**
      * 已通过登记的一项：注册项本身，加上登记时读到的标识与顺序值
      * <p>
      * 排序要用标识与顺序值，而<b>再问注册项一次就是再给它一次抛异常的机会</b>——
@@ -173,6 +182,11 @@ public final class ConsolePages {
 
             if (slot == ConsolePageSlot.TOP && BUILTIN_PAGE_IDS.contains(id)) {
                 log.warn("控制台页面标识 {} 与内置页同名, 已忽略: {}", id, provider.getClass().getName());
+                continue;
+            }
+
+            if (slot == ConsolePageSlot.SETUP_STEP && BUILTIN_SETUP_STEP_IDS.contains(id)) {
+                log.warn("控制台页面标识 {} 与向导内置步骤重名, 已忽略: {}", id, provider.getClass().getName());
                 continue;
             }
 

@@ -14,6 +14,7 @@
  */
 
 import {esc} from './core.js';
+import {withPluginSteps} from './setup-model.js';
 
 /**
  * 探针级别 → 灯色
@@ -112,33 +113,40 @@ function platformName(login) {
  * @param status /api/status 回包
  * @param login /api/login 回包
  * @param sent 第 5 步的事实；不知道时传 null
- * @return {boolean[]} 五步各自成立与否
+ * @param pages /api/pages 的 pages 清单；缺＝无插件
+ * @param pluginDone 插件步事实，{@code {key: boolean}}；缺键＝假
+ * @return {boolean[]} 与步骤表等长，各步成立与否
  */
-export function setupSteps(status, login, sent) {
+export function setupSteps(status, login, sent, pages, pluginDone) {
   const accounts = (login && login.accounts) || [];
-  const first = [
-    // 上锁：设了控制台口令（通行密钥跟着口令登录走，没有口令时它签出来的会话打不开任何门）
-    !!status.locked,
-    // 连上机器人：这一档的探针没有报红
-    worstLamp(probesIn(status, 'BOT').map(item => item.lamp)) === 'ok',
-    // 登录直播平台：每个平台要么登录了，要么被配置明确关掉了（例如免登录模式）。
-    // 一个平台插件都没装时这一步不是「没做完」，是没得做，因此算它已定
-    accounts.every(item => !!(item.loggedIn || item.disabledReason)),
-    // 第一位主播
-    ((status.users || []).length > 0),
-  ];
-
-  return [...first, sent === null || sent === undefined ? first.every(Boolean) : !!sent];
+  // 上锁：设了控制台口令（通行密钥跟着口令登录走，没有口令时它签出来的会话打不开任何门）
+  const lock = !!status.locked;
+  // 连上机器人：这一档的探针没有报红
+  const bot = worstLamp(probesIn(status, 'BOT').map(item => item.lamp)) === 'ok';
+  // 登录直播平台：每个平台要么登录了，要么被配置明确关掉了（例如免登录模式）。
+  // 一个平台插件都没装时这一步不是「没做完」，是没得做，因此算它已定
+  const account = accounts.every(item => !!(item.loggedIn || item.disabledReason));
+  const streamer = ((status.users || []).length > 0);
+  const first = [lock, bot, account, streamer];
+  const test = sent === null || sent === undefined ? first.every(Boolean) : !!sent;
+  const builtin = {lock, bot, account, streamer, test};
+  const done = pluginDone || {};
+  return withPluginSteps(pages).map(step => {
+    if (step.plugin) return done[step.key] === true;
+    return !!builtin[step.key];
+  });
 }
 
 /**
- * 初始设置这五步走完了几步
+ * 初始设置这几步走完了几步
  * @param status /api/status 回包
  * @param login /api/login 回包
- * @return {number} 完成的步数，0 到 5
+ * @param pages /api/pages 的 pages 清单；缺＝无插件
+ * @param pluginDone 插件步事实；缺＝无插件
+ * @return {number} 完成的步数，含插件步
  */
-export function setupDone(status, login) {
-  return setupSteps(status, login, null).filter(Boolean).length;
+export function setupDone(status, login, pages, pluginDone) {
+  return setupSteps(status, login, null, pages, pluginDone).filter(Boolean).length;
 }
 
 /**
