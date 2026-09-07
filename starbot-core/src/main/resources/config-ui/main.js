@@ -36,13 +36,29 @@ const pages = [];
 const SLOT_LINKS = 'links';
 
 /**
+ * 落在设置页「高级」折页里的那一档
+ */
+const SLOT_SETTINGS = 'settings';
+
+/**
+ * 与首页／推送／主播等并列的一整页，地址 #/<页标识>
+ */
+const SLOT_TOP = 'top';
+
+/**
+ * 已挂上的顶级插件页标识。parseHash 靠它认 #/<id>，不把这些名字写进 PAGE_TAB
+ */
+const topPageIds = new Set();
+
+/**
  * 按注册清单建出入口与页面容器，并装载各自的脚本
  *
  * 逐个装而不是一次性 Promise.all：入口的先后要与清单一致，
  * 而某一页装不上时也只该影响它自己——其余的页照常可用，那一页上写清为什么空着。
  *
- * 落位由插件自己申报：连接页上的一张卡，还是设置页「高级」下的一张子页
- * （地址 #/settings/<页标识>）。核心不认识任何一个具体平台，也就无从判断某一页该摆在哪儿。
+ * 落位由插件自己申报：连接页上的一张卡、设置页「高级」下的一张子页
+ * （地址 #/settings/<页标识>），或与内置页并列的一整页（地址 #/<页标识>）。
+ * 核心不认识任何一个具体平台，也就无从判断某一页该摆在哪儿。
  * 与插件之间的约定一个字未改：仍是清单里的 id/displayName/script，
  * 加上脚本导出的 render/refresh/status ——它们不知道自己被挂在哪里。
  */
@@ -56,12 +72,14 @@ async function mountPages() {
   }
 
   // 一个折进设置页的插件页都没有时整块不显示：一个点开是空的折页，比没有这个折页更费解。
-  // 按落位数而不是按清单长度：全都落在连接页上时，那个折页里一张子页也没有
-  if (list.some(meta => meta.slot !== SLOT_LINKS)) $('#plugin-adv').style.display = '';
+  // 只数 SETTINGS：顶级页与连接卡都不进这个折页，有它们不等于折页里有子页
+  if (list.some(meta => meta.slot === SLOT_SETTINGS)) $('#plugin-adv').style.display = '';
 
   const slot = $('#page-tabs');
   for (const meta of list) {
-    const container = meta.slot === SLOT_LINKS ? mountLinkCard(meta) : mountSettingsPage(meta, slot);
+    const container = meta.slot === SLOT_LINKS ? mountLinkCard(meta)
+      : meta.slot === SLOT_TOP ? mountTopPage(meta)
+      : mountSettingsPage(meta, slot);
 
     try {
       const module = await import('/config/assets/' + meta.script);
@@ -94,6 +112,31 @@ function mountSettingsPage(meta, slot) {
   const section = el('section', 'pgpage');
   section.id = meta.id;
   $('#page-sections').appendChild(section);
+  return section;
+}
+
+/**
+ * 建出与内置页并列的一整页：侧栏入口在「设置」之前，容器追加到主区
+ * @param meta 页面清单里的一项
+ * @return {HTMLElement} 插件往里渲染的容器
+ */
+function mountTopPage(meta) {
+  topPageIds.add(meta.id);
+
+  const nav = $('#nav');
+  const settings = nav && nav.querySelector('[data-page="settings"]');
+  const link = el('a');
+  link.href = '#/' + meta.id;
+  link.dataset.page = meta.id;
+  link.textContent = meta.displayName;
+  if (settings) nav.insertBefore(link, settings);
+  else if (nav) nav.appendChild(link);
+  // 内置入口在载入时绑过「再点当前项也走一遍」；动态加上的这一条当时还不在
+  link.addEventListener('click', () => { if (location.hash === link.getAttribute('href')) applyRoute(); });
+
+  const section = el('section', 'page');
+  section.id = 'page-' + meta.id;
+  $('#main').appendChild(section);
   return section;
 }
 
@@ -257,9 +300,10 @@ function parseHash() {
   const parts = path.split('/').filter(Boolean);
   const name = parts[0] || 'home';
   const card = /^card=([A-Za-z0-9_-]+)$/.exec(query);
+  const known = PAGE_TAB[name] || topPageIds.has(name);
 
   return {
-    name: PAGE_TAB[name] ? name : 'home',
+    name: known ? name : 'home',
     sub: parts[1] || '',
     // 推送页有三段：#/push/<主播>/<通道号>。第三段只这一页用得上，
     // 但解析放在这里而不是那一页自己再切一遍地址栏——两处各切一遍的话，
@@ -268,7 +312,7 @@ function parseHash() {
     card: card ? card[1] : '',
     // 名字不叫 legacy：那个词是 store 上一份共享状态的名字（按旧位置生效的配置项），
     // 在界面文件里裸着出现即为 ReferenceError，因此有一条判据在盯着它——它当场逮住了这一处
-    redirect: !PAGE_TAB[name] && TAB_HASH[name] ? TAB_HASH[name] : '',
+    redirect: !known && TAB_HASH[name] ? TAB_HASH[name] : '',
   };
 }
 
@@ -334,10 +378,12 @@ function applyRoute(withData = true) {
     return;
   }
 
-  // 插件页只在落到设置页的那一档里找：落在连接页上的那些是卡不是页，
-  // 一起找的话，#/settings/<平台标识> 会打开一张空的折页，而那张卡明明在连接页上
+  // 设置页折页里的插件页只在落到设置页的那一档里找：落在连接页上的那些是卡不是页，
+  // 一起找的话，#/settings/<平台标识> 会打开一张空的折页，而那张卡明明在连接页上。
+  // 顶级页走 #/<id>，高亮与开关靠下面 .page／data-page 那两句，不另写一套
   const plugin = name === 'settings' && sub
-    ? pages.find(item => item.meta.id === sub && item.meta.slot !== SLOT_LINKS) : null;
+    ? pages.find(item => item.meta.id === sub && item.meta.slot === SLOT_SETTINGS) : null;
+  const topPage = pages.find(item => item.meta.slot === SLOT_TOP && item.meta.id === name);
 
   // 离开「连接」页就把刚签发的口令从 DOM 里抹掉。界面上写着「离开本页后无法再次查看」，
   // 这一行就是那句话的实现——留着它，那句话只是句话
@@ -378,7 +424,7 @@ function applyRoute(withData = true) {
   // 插件页是折起来的，点它的入口进来时要替使用者展开，否则地址对了而屏幕上什么都没变
   if (plugin) $('#plugin-adv').open = true;
 
-  store.tab = plugin ? plugin.meta.id : PAGE_TAB[name];
+  store.tab = plugin ? plugin.meta.id : (topPage ? topPage.meta.id : PAGE_TAB[name]);
 
   // 窄屏上导航是横向滚动的，靠右的项会落在视野外。选中却看不见等于没有选中标记
   $('#nav a[aria-current="page"]')?.scrollIntoView({inline: 'center', block: 'nearest'});
@@ -410,7 +456,7 @@ function applyRoute(withData = true) {
   // 每次进入都重问一遍这台机器现在什么样：上一趟离开之后使用者可能去别处上了锁、加了主播，
   // 缓存的画面会把已经做完的那一步画成没做，而那正是这一页唯一要回答的问题
   else if (name === 'setup') openSetup();
-  else if (plugin) { api('/status').then(renderStatus); callPage(plugin, 'refresh'); }
+  else if (plugin || topPage) { api('/status').then(renderStatus); callPage(plugin || topPage, 'refresh'); }
 
   // 点名要看某一块时不回顶：滚到顶再滚下去，屏幕会先跳一下
   if (!card) window.scrollTo(0, 0);

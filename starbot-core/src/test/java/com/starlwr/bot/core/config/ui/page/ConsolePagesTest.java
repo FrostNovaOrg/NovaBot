@@ -3,14 +3,20 @@ package com.starlwr.bot.core.config.ui.page;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * 控制台页面清单
@@ -33,6 +39,24 @@ class ConsolePagesTest {
 
     private static List<ConsolePageProvider> list(ConsolePageProvider... items) {
         return new ArrayList<>(Arrays.asList(items));
+    }
+
+    /**
+     * 显式申报落位的注册项。{@link Page} 不覆盖 {@code slot()}，才能守住缺省仍是设置页那一条
+     */
+    private record Slotted(String id, String displayName, String script, int order, ConsolePageSlot slot)
+            implements ConsolePageProvider {
+    }
+
+    private Path repoRoot() {
+        Path current = Path.of("").toAbsolutePath();
+        while (current != null) {
+            if (Files.exists(current.resolve("build.sh")) && Files.exists(current.resolve("pom.xml"))) {
+                return current;
+            }
+            current = current.getParent();
+        }
+        throw new IllegalStateException("未能定位仓库根目录");
     }
 
     @Test
@@ -138,6 +162,85 @@ class ConsolePagesTest {
     @DisplayName("没申报落位的页落在设置页，不会被悄悄挪到别处")
     void slotDefaultsToSettings() {
         assertEquals(ConsolePageSlot.SETTINGS, new Page("a", "甲", "a.js", 100).slot());
+    }
+
+    /**
+     * 顶级页落位：合法项保留、撞内置名弃掉、枚举名与前端接线对得上
+     * <p>
+     * 四问各自记下，末尾一起红：①红就 return 的话，③④还没跑过，接线断了也看不见。
+     */
+    @Test
+    @DisplayName("顶级页：合法项保留、撞内置名弃、slot 字面与接线")
+    void topSlotKeepsLegalDropsBuiltinAndWiresFrontend() throws IOException {
+        List<String> red = new ArrayList<>();
+        String main = Files.readString(
+                repoRoot().resolve("starbot-core/src/main/resources/config-ui/main.js"),
+                StandardCharsets.UTF_8);
+
+        try {
+            List<ConsolePageProvider> kept = ConsolePages.valid(list(
+                    new Slotted("demo", "演示", "demo.js", 100, ConsolePageSlot.TOP)));
+            assertEquals(List.of("demo"), kept.stream().map(ConsolePageProvider::id).toList(),
+                    "slot=TOP 且标识不撞内置页的，应当保留");
+        } catch (Throwable t) {
+            red.add("① " + t.getMessage());
+        }
+
+        try {
+            List<ConsolePageProvider> kept = ConsolePages.valid(list(
+                    new Slotted("settings", "设置", "settings-plugin.js", 100, ConsolePageSlot.TOP),
+                    new Slotted("settings2", "设置二", "settings2.js", 100, ConsolePageSlot.TOP)));
+            assertEquals(List.of("settings2"), kept.stream().map(ConsolePageProvider::id).toList(),
+                    "slot=TOP 且标识为 settings 的应当弃掉，settings2 是阴性对照应当保留");
+        } catch (Throwable t) {
+            red.add("② " + t.getMessage());
+        }
+
+        try {
+            assertEquals("top", ConsolePageSlot.TOP.name().toLowerCase(Locale.ROOT),
+                    "TOP 的枚举名小写必须是 top，接口才吐得出 slot=top");
+            assertTrue(main.contains("SLOT_TOP = 'top'"),
+                    "main.js 应有 SLOT_TOP = 'top'，与服务端 toLowerCase 对齐");
+        } catch (Throwable t) {
+            red.add("③ " + t.getMessage());
+        }
+
+        try {
+            assertTrue(main.contains("mountTopPage("), "main.js 应有 mountTopPage(");
+            int from = indexOfFunction(main, "mountPages");
+            assertTrue(from >= 0, "找不到 mountPages，分派处无从量起");
+            int to = nextFunction(main, from);
+            String body = main.substring(from, to);
+            assertTrue(body.contains("SLOT_TOP"),
+                    "mountPages 分派处应引用 SLOT_TOP");
+        } catch (Throwable t) {
+            red.add("④ " + t.getMessage());
+        }
+
+        if (!red.isEmpty()) {
+            fail(red.size() + " 问红：" + String.join("；", red));
+        }
+    }
+
+    private static int indexOfFunction(String text, String name) {
+        int async = text.indexOf("async function " + name + "(");
+        if (async >= 0) {
+            return async;
+        }
+        return text.indexOf("function " + name + "(");
+    }
+
+    private static int nextFunction(String text, int from) {
+        int next = text.indexOf("\nfunction ", from + 1);
+        int nextAsync = text.indexOf("\nasync function ", from + 1);
+        int to = text.length();
+        if (next >= 0) {
+            to = Math.min(to, next);
+        }
+        if (nextAsync >= 0) {
+            to = Math.min(to, nextAsync);
+        }
+        return to;
     }
 
     @Test
