@@ -1,4 +1,4 @@
-package com.starlwr.bot.core.config.ui.napcat;
+package com.starlwr.bot.adapter.onebot.napcat;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;

@@ -1,4 +1,4 @@
-package com.starlwr.bot.core.config.ui.napcat;
+package com.starlwr.bot.adapter.onebot.napcat;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
