@@ -1,6 +1,10 @@
 /**
  * 主播页：列表、详情（概况／场次／趋势）、某一场
  *
+ * 本文件随控制台插件走，由控制台按注册清单装载，落在顶级导航。
+ * 三个导出就是与控制台之间的全部约定：render 建出页容器里的三块、
+ * refresh 按地址栏取数、leave 离开本页时撤掉报告图的临时地址。
+ *
  * 本文件只管把东西摆上屏幕。地址栏怎么读怎么拼、状态标写哪几个字、折线与柱图的几何、
  * 人气峰该显示 0 还是「—」、两种缺口怎么分开说、快照那些裸键换成什么人话——
  * 一律在 streamers-model.js 里判。判断留在这里的话，「几个月前那一场的人气峰」
@@ -18,6 +22,89 @@ import {
   seriesValues, sessionHash, sessionTitle, shownMetrics, snapshotRows, sparkline,
   statusChip, summaryTotals, totalDataBanner, uncoveredStatuses,
 } from './streamers-model.js';
+
+const PAGE_STYLE = `
+.chart{margin-bottom:2px}
+.chart .plot{position:relative;padding-top:6px}
+.chart svg{display:block;width:100%;height:110px}
+.chart .bar{fill:var(--accent)}
+.chart .bar.zero{fill:var(--line)}
+.chart .xlab{display:flex;justify-content:space-between;margin-top:6px;font-size:11px;color:var(--dim)}
+.spark{width:88px;height:26px;flex:none;color:var(--dim)}
+.spark.up{color:var(--accent)}
+a.lgpill{text-decoration:none}
+a.lgpill[aria-current="page"]{border-color:var(--accent);color:var(--accent);background:var(--soft)}
+#sd-tabs{margin:0 0 14px}
+#sd-body td.n,#sd-body th.n{text-align:right;font-variant-numeric:tabular-nums}
+#sd-body tr.empty-row td{color:var(--dim)}
+#sd-body tbody tr:hover{background:var(--soft)}
+#sx-body img{max-width:100%;height:auto}
+`;
+
+/**
+ * 把主播页自己的样式注入一次。附属脚本口只收 .js，样式进不了 assets。
+ */
+function ensureStyle() {
+  if (document.getElementById('streamers-page-style')) return;
+  const style = document.createElement('style');
+  style.id = 'streamers-page-style';
+  style.textContent = PAGE_STYLE;
+  document.head.appendChild(style);
+}
+
+/**
+ * 建出列表、详情、某一场三块外壳。控制台只给一个空的 section#page-streamers。
+ * @param section 控制台按落位建好的空容器
+ */
+export function render(section) {
+  ensureStyle();
+  section.innerHTML = `
+    <div id="sv-list">
+      <p class="hint">数据来自每场直播下播时的归档。<b>只在这里看得到，不会发到群里。</b>
+        点一位主播看他的概况、场次与趋势；点一场看那一场的报告。</p>
+      <div class="nv-card hcard">
+        <h3>全部主播 <span class="h-note" id="st-window"></span></h3>
+        <div class="stats" id="st-all"></div>
+      </div>
+      <div class="nv-card hcard">
+        <h3>每位主播 <span class="h-note">右边那条小折线是最近几天的场次</span></h3>
+        <div id="st-list"></div>
+      </div>
+      <div id="st-unlisted"></div>
+    </div>
+    <div id="sv-detail" style="display:none">
+      <div class="loghead">
+        <div>
+          <a class="daystep" id="sd-back" href="#/streamers">‹ 回主播列表</a>
+        </div>
+      </div>
+      <div class="nv-card hcard" id="sd-head"></div>
+      <div class="lgpills" id="sd-tabs"></div>
+      <div id="sd-body"></div>
+    </div>
+    <div id="sv-session" style="display:none">
+      <div class="loghead">
+        <div>
+          <a class="daystep" id="sx-back" href="#/streamers">‹ 回场次列表</a>
+        </div>
+      </div>
+      <h3 class="cat-title" id="sx-title">场次</h3>
+      <div id="sx-body"></div>
+    </div>`;
+}
+
+/**
+ * 按地址栏取这一页该看的那一份。顶级页刷新会带上 {sub, tail}，
+ * 解析仍走 parseStreamersHash(location.hash)，与拼地址用的是同一份。
+ */
+export function refresh() {
+  loadStreamers();
+}
+
+/** 离开本页时把报告图的临时地址撤掉 */
+export function leave() {
+  releaseReport();
+}
 
 /** 当前落在哪一块，真源是地址栏 */
 let where = parseStreamersHash('');

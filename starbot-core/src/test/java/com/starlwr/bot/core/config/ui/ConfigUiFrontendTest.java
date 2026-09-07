@@ -91,7 +91,7 @@ class ConfigUiFrontendTest {
      * 换成路由名等于改了对插件的约定。路由那一侧另有 {@link #CORE_ROUTES}。
      */
     private static final Set<String> CORE_TABS = Set.of(
-            "overview", "push", "bot", "sessions", "analytics", "tokens", "settings", "log", "setup");
+            "overview", "push", "bot", "sessions", "tokens", "settings", "log", "setup");
 
     /**
      * 核心自己的六页导航与初始设置页，闭集
@@ -101,7 +101,7 @@ class ConfigUiFrontendTest {
      * 界面文件里一个平台的名字也没有。
      */
     private static final Set<String> CORE_ROUTES = Set.of(
-            "home", "push", "streamers", "log", "links", "settings", "setup");
+            "home", "push", "log", "links", "settings", "setup");
 
     /**
      * 插件放页面脚本的资源目录名，与服务端取资源时用的是同一个常量
@@ -1391,10 +1391,10 @@ class ConfigUiFrontendTest {
         List<String> bad = new ArrayList<>();
 
         int from = html.indexOf("id=\"page-push\"");
-        int to = html.indexOf("id=\"page-streamers\"", Math.max(from, 0));
+        int to = html.indexOf("id=\"page-log\"", Math.max(from, 0));
         if (from < 0 || to < 0) {
             // 找不到那一块时判红而不是跳过
-            bad.add("index.html 里找不到推送页那一块（#page-push 到 #page-streamers 之间）");
+            bad.add("index.html 里找不到推送页那一块（#page-push 到 #page-log 之间）");
             return bad;
         }
 
@@ -1422,14 +1422,13 @@ class ConfigUiFrontendTest {
     private static final String STREAMERS_VIEW = "streamers.js";
 
     /**
-     * 主播页三块子视图的外壳，写在 {@code index.html} 里，闭集
+     * 主播页三块子视图的外壳，由页脚本自己建，闭集
      * <p>
      * 列表、详情、场次详情三块共用一个页容器 {@code #page-streamers}——它们是同一页的三种样子，
      * 地址都是 {@code #/streamers} 底下的。分成三个 {@code .page} 容器的话，路由那一侧
      * 认页只看第一段，后两块永远不会被显示出来，而三处的代码看起来都对。
      * <p>
-     * 每一块里的内容全部由脚本建出来，不写在页面里——同一件事在页面与脚本里各有一份的话，
-     * 两份分叉时屏幕上不会有任何异常。
+     * 外壳与每一块里的内容都由脚本建出来，不写在核心的 {@code index.html} 里。
      */
     private static final List<String> STREAMERS_SHELL = List.of(
             "sv-list", "st-all", "st-list", "st-unlisted",
@@ -1480,11 +1479,11 @@ class ConfigUiFrontendTest {
     @Test
     @DisplayName("主播页列表、详情、场次三块各有落点，状态标与折线的判法只有 streamers-model 一份")
     void streamersPageIsWiredUp() throws IOException {
-        String html = Files.readString(frontendDir().resolve("index.html"), StandardCharsets.UTF_8);
-        Map<String, String> sources = coreSources();
+        Map<String, String> pages = pageSources();
+        Map<String, String> sources = sources();
         String scripts = String.join("\n", sources.values());
-        String view = sources.getOrDefault(STREAMERS_VIEW, "");
-        String model = sources.getOrDefault(STREAMERS_MODEL, "");
+        String view = pages.getOrDefault(STREAMERS_VIEW, "");
+        String model = pages.getOrDefault(STREAMERS_MODEL, "");
 
         List<String> bad = new ArrayList<>();
         // 找不到那两份时判红而不是跳过：一把量不动却报绿的判据，比没有这把判据更糟
@@ -1496,8 +1495,8 @@ class ConfigUiFrontendTest {
         }
 
         for (String id : STREAMERS_SHELL) {
-            if (!html.contains("id=\"" + id + "\"")) {
-                bad.add("index.html 上没有 #" + id);
+            if (!view.contains("id=\"" + id + "\"")) {
+                bad.add(STREAMERS_VIEW + " 没有建出 #" + id);
             }
             if (!scripts.contains("$('#" + id + "')")) {
                 bad.add("没有任何脚本用到 #" + id + "，它立在那里但点了不管用");
@@ -1540,6 +1539,26 @@ class ConfigUiFrontendTest {
     }
 
     /**
+     * 主播页已随控制台插件走，核心界面目录里不许再留那两份脚本
+     * <p>
+     * 留着的话，{@code /assets/{name}} 会先取核心那一份，插件申报同名脚本就会被登记关口丢掉，
+     * 侧栏入口也永远是核心写死的那一条——插件卸掉之后入口还在，点开是空的。
+     */
+    @Test
+    @DisplayName("核心 config-ui 目录不得再有 streamers.js／streamers-model.js")
+    void coreConfigUiMustNotShipStreamersPage() {
+        Path ui = frontendDir();
+        List<String> leftover = new ArrayList<>();
+        for (String name : List.of("streamers.js", "streamers-model.js")) {
+            if (Files.exists(ui.resolve(name))) {
+                leftover.add(name);
+            }
+        }
+        assertTrue(leftover.isEmpty(),
+                "主播页已随控制台插件走，核心 config-ui 里不该再有: " + leftover);
+    }
+
+    /**
      * 插件页是运行时装上来的，不是编译期定死的
      * <p>
      * 静态 {@code import} 一写，那个平台就成了核心的一部分：没装插件时页面加载不了，
@@ -1558,8 +1577,13 @@ class ConfigUiFrontendTest {
 
             Matcher m = IMPORT.matcher(text);
             while (m.find()) {
-                if (pages.contains(m.group(2))) {
-                    bad.add(name + " 静态引用了插件页 " + m.group(2));
+                String imported = m.group(2);
+                if (pages.contains(imported)) {
+                    // 向导主播步仍从这份模型取 detailHash；那一步搬走之前，这一条还在
+                    if ("setup.js".equals(name) && STREAMERS_MODEL.equals(imported)) {
+                        continue;
+                    }
+                    bad.add(name + " 静态引用了插件页 " + imported);
                 }
             }
         });
@@ -1921,7 +1945,7 @@ class ConfigUiFrontendTest {
     @Test
     @DisplayName("主播页与日志页的子路由是闭集，解析从同一份表认")
     void subRoutesAreClosedSet() throws IOException {
-        Map<String, String> sources = coreSources();
+        Map<String, String> sources = sources();
         String streamers = sources.getOrDefault(STREAMERS_MODEL, "");
         String logs = sources.getOrDefault("log-model.js", "");
         String html = Files.readString(frontendDir().resolve("index.html"), StandardCharsets.UTF_8);
@@ -2037,6 +2061,15 @@ class ConfigUiFrontendTest {
                     .filter(n -> n.endsWith("-model.js"))
                     .sorted()
                     .forEach(models::add);
+        }
+        for (Path dir : pageDirs()) {
+            try (Stream<Path> files = Files.list(dir)) {
+                files.filter(Files::isRegularFile)
+                        .map(p -> p.getFileName().toString())
+                        .filter(n -> n.endsWith("-model.js"))
+                        .sorted()
+                        .forEach(models::add);
+            }
         }
 
         Set<String> checkers = new LinkedHashSet<>();
@@ -2499,13 +2532,25 @@ class ConfigUiFrontendTest {
         List<String> files = List.of("index.html", "links-model.js", "links.js", "log.js",
                 "setup.js", "setup-model.js", "home-model.js",
                 "settings-alert.js", "push.js", "bot.js", "tokens-model.js",
-                "settings-auth.js", "streamers.js", "template-model.js", "login.html");
+                "settings-auth.js", "template-model.js", "login.html");
         List<String> words = List.of("QQ", "NapCat", "OneBot");
         Path dir = frontendDir();
         List<String> hits = new ArrayList<>();
 
+        List<Path> toScan = new ArrayList<>();
         for (String name : files) {
-            List<String> lines = Files.readAllLines(dir.resolve(name), StandardCharsets.UTF_8);
+            toScan.add(dir.resolve(name));
+        }
+        for (Path pageDir : pageDirs()) {
+            Path streamers = pageDir.resolve("streamers.js");
+            if (Files.exists(streamers)) {
+                toScan.add(streamers);
+            }
+        }
+
+        for (Path file : toScan) {
+            String name = file.getFileName().toString();
+            List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
             for (int i = 0; i < lines.size(); i++) {
                 String raw = lines.get(i);
                 String trimmed = raw.strip();

@@ -1,7 +1,7 @@
 /**
  * 主播页那几组纯函数的夹具
  *
- * 量的是 config-ui/streamers-model.js 里的这几件事：地址栏解析与回拼、状态四档的措辞与
+ * 量的是控制台插件里 streamers-model.js 的这几件事：地址栏解析与回拼、状态四档的措辞与
  * 闭集覆盖、七天折线的取值与几何、人气峰三态、两种缺口分开列、累计数据那条小横条的条件、
  * 快照裸键换人话、分页与报告图三态。它们全不碰 DOM，因此可以在 node 上直接喂值跑。
  *
@@ -13,15 +13,20 @@
  *
  * 由 StreamersModelTest 拉起，退码 0 ＝ 全绿；非 0 ＝ 有格子红了，红的那几条会逐条印出来。
  * 引用路径是相对的，量的是源码树里的那一份，不是构建产物里的副本。
+ * 模型对宿主模块写 './home-model.js'（与浏览器 /config/assets 同形），夹具先挂加载器再动态 import。
  */
 
-import {
+import {register} from 'node:module';
+import {totalDataOff} from '../../../main/resources/config-ui/home-model.js';
+
+register(new URL('./alias-core-modules.mjs', import.meta.url));
+
+const {
   PERIODS, TABS, barGeometry, detailHash, fmtDuration, fmtGap, fmtMetric, fmtTime,
   gapCells, pageBar, parseStreamersHash, peakCell, reportPath, reportView, rowSubtitle,
   seriesValues, sessionHash, sessionTitle, shownMetrics, snapshotRows, sparkline,
   statusChip, summaryTotals, totalDataBanner, uncoveredStatuses,
-} from '../../../main/resources/config-ui/streamers-model.js';
-import {totalDataOff} from '../../../main/resources/config-ui/home-model.js';
+} = await import('../../../../../starbot-novabot-console/src/main/resources/config-ui-pages/streamers-model.js');
 
 const failures = [];
 let checks = 0;

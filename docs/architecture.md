@@ -296,7 +296,7 @@ systemd 下的进程树也不正确。
 
 | 扩展点 | 核心接口（相对路径） | 现有实现（模块） | 一句话 |
 |---|---|---|---|
-| 控制台页 | `config/ui/page/ConsolePageProvider` | `BilibiliConsolePageProvider` 与页面脚本 `config-ui-pages/bilibili.js`（starbot-bilibili） | 往控制台添自己的页；挂在连接页、设置页、顶级页、首页卡还是向导步骤由 `ConsolePageSlot` 申报；除 `script()` 外可再报 `assets()`（同目录其它 `.js`，按登记名取）。顶级页的 `refresh` 会收到 `{sub, tail}`（地址栏第二、三段） |
+| 控制台页 | `config/ui/page/ConsolePageProvider` | `BilibiliConsolePageProvider` 与页面脚本 `config-ui-pages/bilibili.js`（starbot-bilibili）；主播页 `StreamersConsolePageProvider`（starbot-novabot-console） | 往控制台添自己的页；挂在连接页、设置页、顶级页、首页卡还是向导步骤由 `ConsolePageSlot` 申报；除 `script()` 外可再报 `assets()`（同目录其它 `.js`，按登记名取）。顶级页的 `refresh` 会收到 `{sub, tail}`（地址栏第二、三段） |
 | 配置节 | `@ConfigurationProperties`（编译期元数据由 `config/ui/ConfigurationMetadataService` 读取） | 各模块的配置类 | 配置类加了项，设置页表单自动出现；核心前缀在 `config/ui/ConfigurationGroups` 登记，平台前缀由各插件的 `ConfigurationGroupContributor` 申报，新前缀不登记就没有组 |
 | 聊天命令 | `command/StarBotCommand` | `command/` 下的一族命令（starbot-bilibili） | 实现接口并注册为 Bean，群里即多一条命令 |
 | 健康探针 | `health/HealthProbe` | 直播间、登录、风控三件（starbot-bilibili）与 `OneBotHealthProbe`（onebot-adapter） | 探测结果汇总进总览页，与告警共用 |

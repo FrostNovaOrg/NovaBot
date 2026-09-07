@@ -53,7 +53,7 @@ public final class ConsolePages {
      * 只拦 {@link ConsolePageSlot#TOP}：设置页子页的地址是 {@code #/settings/<页标识>}，不占这一段。
      */
     private static final Set<String> BUILTIN_PAGE_IDS = Set.of(
-            "home", "push", "streamers", "log", "links", "settings", "setup");
+            "home", "push", "log", "links", "settings", "setup");
 
     /**
      * 向导内置步骤的键

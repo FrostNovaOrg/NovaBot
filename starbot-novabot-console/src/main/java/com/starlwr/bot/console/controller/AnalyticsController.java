@@ -1,10 +1,12 @@
-package com.starlwr.bot.core.config.ui;
+package com.starlwr.bot.console.controller;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.analytics.LiveMetricCatalog;
 import com.starlwr.bot.core.analytics.LiveSessionAnalytics;
+import com.starlwr.bot.core.config.ui.ConfigUiController;
 import com.starlwr.bot.core.model.LiveSession;
+import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.service.LiveSessionArchive;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
@@ -33,6 +35,7 @@ import java.util.Set;
  * 空周期补零这几条规则只该有一份实现，放在 {@link LiveSessionAnalytics} 里连同边界一起测。
  */
 @Slf4j
+@StarBotComponent
 @RestController
 @RequestMapping(ConfigUiController.BASE_PATH + "/api/analytics")
 @ConditionalOnProperty(name = "starbot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
