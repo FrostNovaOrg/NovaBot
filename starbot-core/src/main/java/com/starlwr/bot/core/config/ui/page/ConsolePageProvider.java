@@ -55,6 +55,7 @@ public interface ConsolePageProvider {
      * {@link ConsolePageSlot#LINKS}，会成为连接页上的一张卡。
      * 需要与首页／推送／主播等并列的一整页申报 {@link ConsolePageSlot#TOP}，
      * 导航里会多一个入口，地址是 {@code #/<页标识>}。
+     * 只要在首页放一张卡、不占导航的，申报 {@link ConsolePageSlot#HOME_CARD}。
      * @return 落位
      */
     default ConsolePageSlot slot() {

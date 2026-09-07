@@ -46,6 +46,11 @@ const SLOT_SETTINGS = 'settings';
 const SLOT_TOP = 'top';
 
 /**
+ * 首页一张卡，不占导航、无独立地址
+ */
+const SLOT_HOME_CARD = 'home_card';
+
+/**
  * 已挂上的顶级插件页标识。parseHash 靠它认 #/<id>，不把这些名字写进 PAGE_TAB
  */
 const topPageIds = new Set();
@@ -57,7 +62,8 @@ const topPageIds = new Set();
  * 而某一页装不上时也只该影响它自己——其余的页照常可用，那一页上写清为什么空着。
  *
  * 落位由插件自己申报：连接页上的一张卡、设置页「高级」下的一张子页
- * （地址 #/settings/<页标识>），或与内置页并列的一整页（地址 #/<页标识>）。
+ * （地址 #/settings/<页标识>）、与内置页并列的一整页（地址 #/<页标识>），
+ * 或首页一张卡（不占导航、无独立地址）。
  * 核心不认识任何一个具体平台，也就无从判断某一页该摆在哪儿。
  * 与插件之间的约定一个字未改：仍是清单里的 id/displayName/script，
  * 加上脚本导出的 render/refresh/status ——它们不知道自己被挂在哪里。
@@ -72,13 +78,14 @@ async function mountPages() {
   }
 
   // 一个折进设置页的插件页都没有时整块不显示：一个点开是空的折页，比没有这个折页更费解。
-  // 只数 SETTINGS：顶级页与连接卡都不进这个折页，有它们不等于折页里有子页
+  // 只数 SETTINGS：顶级页、连接卡与首页卡都不进这个折页，有它们不等于折页里有子页
   if (list.some(meta => meta.slot === SLOT_SETTINGS)) $('#plugin-adv').style.display = '';
 
   const slot = $('#page-tabs');
   for (const meta of list) {
     const container = meta.slot === SLOT_LINKS ? mountLinkCard(meta)
       : meta.slot === SLOT_TOP ? mountTopPage(meta)
+      : meta.slot === SLOT_HOME_CARD ? mountHomeCard(meta)
       : mountSettingsPage(meta, slot);
 
     try {
@@ -138,6 +145,34 @@ function mountTopPage(meta) {
   section.id = 'page-' + meta.id;
   $('#main').appendChild(section);
   return section;
+}
+
+/**
+ * 已挂上的首页卡，按清单顺序排在探针卡后面
+ */
+const homeCards = [];
+
+/**
+ * 建出首页一张卡：形制与「探针」相同，插在它后面、同级
+ * @param meta 页面清单里的一项
+ * @return {HTMLElement} 插件往里渲染的容器
+ */
+function mountHomeCard(meta) {
+  const card = el('div', 'nv-card hcard');
+  card.id = meta.id;
+  const heading = el('h3');
+  heading.textContent = meta.displayName;
+  card.appendChild(heading);
+  const body = el('div');
+  card.appendChild(body);
+
+  const probes = $('#home-probes');
+  const after = homeCards.length ? homeCards[homeCards.length - 1] : probes;
+  if (after && after.parentNode) {
+    after.parentNode.insertBefore(card, after.nextSibling);
+  }
+  homeCards.push(card);
+  return body;
 }
 
 /**

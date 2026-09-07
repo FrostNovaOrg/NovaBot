@@ -389,8 +389,8 @@ public class ConfigUiController {
      * 界面据此长出页签与页面容器，再按 script 去取各自的脚本。核心的界面文件里因此
      * 一个平台的名字也没有：装了哪些平台，是运行时才知道的事。
      * <p>
-     * {@code slot} 是这一页挂在哪儿：连接页上的一张卡、设置页「高级」下的一张子页，
-     * 还是与内置页并列的一整页。由插件自己申报——核心不认识任何一个具体平台，
+     * {@code slot} 是这一页挂在哪儿：连接页上的一张卡、设置页「高级」下的一张子页、
+     * 与内置页并列的一整页，或首页一张卡。由插件自己申报——核心不认识任何一个具体平台，
      * 也就无从判断某一页该摆在哪一处。
      * @return 页面清单
      */
@@ -406,7 +406,7 @@ public class ConfigUiController {
             item.put("displayName", page.displayName());
             item.put("script", page.script());
             item.put("order", page.order());
-            // 枚举名一律小写，与界面上那两处落点一一对应；直接吐枚举名会把 Java 的书写习惯
+            // 枚举名一律小写，与界面上各落点一一对应；直接吐枚举名会把 Java 的书写习惯
             // 泄进接口，换个实现语言就得跟着改
             item.put("slot", page.slot().name().toLowerCase(Locale.ROOT));
             pages.add(item);

@@ -222,6 +222,71 @@ class ConsolePagesTest {
         }
     }
 
+    /**
+     * 首页卡落位：合法项保留、枚举名与前端常量对齐、分派与「高级」折页各守各的
+     * <p>
+     * 四问各自记下，末尾一起红：①红就 return 的话，③④还没跑过，接线断了也看不见。
+     */
+    @Test
+    @DisplayName("首页卡：合法项保留、slot 字面与接线、高级折页只数设置页")
+    void homeCardSlotKeepsLegalAndWiresFrontend() throws IOException {
+        List<String> red = new ArrayList<>();
+        String main = Files.readString(
+                repoRoot().resolve("starbot-core/src/main/resources/config-ui/main.js"),
+                StandardCharsets.UTF_8);
+
+        try {
+            List<ConsolePageProvider> kept = ConsolePages.valid(list(
+                    new Slotted("card1", "卡片一", "card1.js", 100, ConsolePageSlot.HOME_CARD)));
+            assertEquals(List.of("card1"), kept.stream().map(ConsolePageProvider::id).toList(),
+                    "slot=HOME_CARD 且标识合规的，应当保留");
+        } catch (Throwable t) {
+            red.add("① " + t.getMessage());
+        }
+
+        try {
+            assertEquals("home_card", ConsolePageSlot.HOME_CARD.name().toLowerCase(Locale.ROOT),
+                    "HOME_CARD 的枚举名小写必须是 home_card，接口才吐得出 slot=home_card");
+            assertTrue(main.contains("SLOT_HOME_CARD = 'home_card'"),
+                    "main.js 应有 SLOT_HOME_CARD = 'home_card'，与服务端 toLowerCase 对齐");
+        } catch (Throwable t) {
+            red.add("② " + t.getMessage());
+        }
+
+        try {
+            assertTrue(main.contains("mountHomeCard("), "main.js 应有 mountHomeCard(");
+            int from = indexOfFunction(main, "mountPages");
+            assertTrue(from >= 0, "找不到 mountPages，分派处无从量起");
+            int to = nextFunction(main, from);
+            String body = main.substring(from, to);
+            assertTrue(body.contains("SLOT_HOME_CARD"),
+                    "mountPages 分派处应引用 SLOT_HOME_CARD");
+        } catch (Throwable t) {
+            red.add("③ " + t.getMessage());
+        }
+
+        try {
+            int adv = main.indexOf("$('#plugin-adv')");
+            assertTrue(adv >= 0, "找不到高级折页显隐");
+            int lineStart = main.lastIndexOf('\n', adv) + 1;
+            int lineEnd = main.indexOf('\n', adv);
+            if (lineEnd < 0) {
+                lineEnd = main.length();
+            }
+            String line = main.substring(lineStart, lineEnd);
+            assertTrue(line.contains("SLOT_SETTINGS"),
+                    "高级折页显隐应只数 SLOT_SETTINGS: " + line);
+            assertTrue(!line.contains("SLOT_HOME_CARD"),
+                    "高级折页显隐不应含 SLOT_HOME_CARD: " + line);
+        } catch (Throwable t) {
+            red.add("④ " + t.getMessage());
+        }
+
+        if (!red.isEmpty()) {
+            fail(red.size() + " 问红：" + String.join("；", red));
+        }
+    }
+
     private static int indexOfFunction(String text, String name) {
         int async = text.indexOf("async function " + name + "(");
         if (async >= 0) {
