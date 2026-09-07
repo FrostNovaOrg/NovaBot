@@ -3,6 +3,7 @@ package com.starlwr.bot.bilibili;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.starlwr.bot.bilibili.config.BilibiliConfigurationGroups;
 import com.starlwr.bot.bilibili.protocol.NovaEventMapper;
 import com.starlwr.bot.core.config.ConfigDanger;
 import com.starlwr.bot.core.config.ConfigEffect;
@@ -419,14 +420,23 @@ class ConfigurationConsistencyTest {
         return names;
     }
 
+    /**
+     * 核心自有前缀加上本插件申报的那八条。
+     * @return 合并后的分组表
+     */
+    private ConfigurationGroups groups() {
+        return ConfigurationGroups.of(List.of(new BilibiliConfigurationGroups()));
+    }
+
     @Test
     @DisplayName("⚠️ 每个配置项都归了设置页的某一组：没有组的那一项，界面上没有它的位置")
     void everyPropertyBelongsToOneGroup() {
         Set<String> names = displayedProperties();
+        ConfigurationGroups groups = groups();
 
         List<String> orphans = new ArrayList<>();
         for (String name : names) {
-            if (ConfigurationGroups.groupOf(name) == null) {
+            if (groups.groupOf(name) == null) {
                 orphans.add(name);
             }
         }
@@ -440,9 +450,10 @@ class ConfigurationConsistencyTest {
     @DisplayName("分组表里没有指不到任何配置项的死前缀")
     void everyGroupPrefixStillMatchesSomething() {
         Set<String> names = displayedProperties();
+        ConfigurationGroups groups = groups();
 
         List<String> dead = new ArrayList<>();
-        for (String prefix : ConfigurationGroups.prefixes()) {
+        for (String prefix : groups.prefixes()) {
             boolean used = names.stream().anyMatch(name -> name.equals(prefix) || name.startsWith(prefix + "."));
             if (!used) {
                 dead.add(prefix);
@@ -451,6 +462,16 @@ class ConfigurationConsistencyTest {
 
         assertTrue(dead.isEmpty(), "以下分组前缀指不到任何现存配置项，多半是键改名或删掉后留下的:\n  "
                 + String.join("\n  ", dead));
+    }
+
+    @Test
+    @DisplayName("取最长前缀：整段归采集时，报告用的标识图片归报告外观")
+    void longestPrefixWinsForPluginKeys() {
+        ConfigurationGroups groups = groups();
+        assertEquals(ConfigurationGroups.COLLECT,
+                groups.groupOf("starbot.bilibili.live.backup-live-push"));
+        assertEquals(ConfigurationGroups.REPORT,
+                groups.groupOf("starbot.bilibili.live.report-logo-path"));
     }
 
     @Test
@@ -495,10 +516,11 @@ class ConfigurationConsistencyTest {
     @DisplayName("八个组每组都有配置项，没有点开是空的组")
     void noEmptyGroup() {
         Set<String> names = displayedProperties();
+        ConfigurationGroups groups = groups();
 
         List<String> empty = new ArrayList<>();
         for (ConfigurationGroups.Group group : ConfigurationGroups.all()) {
-            if (names.stream().noneMatch(name -> group.equals(ConfigurationGroups.groupOf(name)))) {
+            if (names.stream().noneMatch(name -> group.equals(groups.groupOf(name)))) {
                 empty.add(group.id() + "（" + group.title() + "）");
             }
         }

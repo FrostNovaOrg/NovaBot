@@ -35,6 +35,7 @@ import com.starlwr.bot.core.timeline.TimelineStore;
 import com.starlwr.bot.core.util.QrCodeUtil;
 import com.starlwr.bot.core.util.StringUtil;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -71,6 +72,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 /**
  * 配置界面接口
@@ -192,6 +194,14 @@ public class ConfigUiController {
     private final ObjectProvider<ConsolePageProvider> pageProviders;
 
     /**
+     * 各插件申报的设置页分组前缀
+     * <p>
+     * 与页面同形，用 ObjectProvider 取：前缀来自插件，而插件的 Bean 定义由
+     * BeanDefinitionRegistryPostProcessor 注册，延迟解析才不受注册与注入的先后顺序影响。
+     */
+    private final ObjectProvider<ConfigurationGroupContributor> groupContributors;
+
+    /**
      * 构建信息，版本号从这里来
      * <p>
      * 用 ObjectProvider 取：这个 Bean 由 build-info 生成的属性文件撑着，
@@ -235,7 +245,6 @@ public class ConfigUiController {
      */
     Clock backupClock = Clock.systemDefaultZone();
 
-    @Autowired
     public ConfigUiController(ConfigurationMetadataService metadataService,
                               ConfigurationFileService fileService,
                               StarBotCoreProperties properties,
@@ -262,6 +271,42 @@ public class ConfigUiController {
                               ConfigUiAuthService authService,
                               PushTemplateDefaults templateDefaults,
                               UpdateCheckService updateCheck) {
+        this(metadataService, fileService, properties, dataSource, healthProbes, validator,
+                senderService, messageSender, loginProviders, activityRecorder, handlerService,
+                dataSourceServiceRegistry, levelResolver, effectResolver, dangerResolver, runtimeApplier,
+                connectionTesters, pageProviders, eventStreamTokens, buildProperties, pushGate,
+                liveDataService, timeline, authService, templateDefaults, updateCheck,
+                noGroupContributors());
+    }
+
+    @Autowired
+    public ConfigUiController(ConfigurationMetadataService metadataService,
+                              ConfigurationFileService fileService,
+                              StarBotCoreProperties properties,
+                              AbstractDataSource dataSource,
+                              ObjectProvider<HealthProbe> healthProbes,
+                              ConfigurationValidator validator,
+                              StarBotSenderService senderService,
+                              StarBotMessageSender messageSender,
+                              ObjectProvider<AccountLoginProvider> loginProviders,
+                              PushActivityRecorder activityRecorder,
+                              StarBotEventHandlerService handlerService,
+                              DataSourceServiceRegistry dataSourceServiceRegistry,
+                              ConfigurationLevelResolver levelResolver,
+                              ConfigurationEffectResolver effectResolver,
+                              ConfigurationDangerResolver dangerResolver,
+                              RuntimeConfigurationApplier runtimeApplier,
+                              ObjectProvider<BotConnectionTester> connectionTesters,
+                              ObjectProvider<ConsolePageProvider> pageProviders,
+                              EventStreamTokenService eventStreamTokens,
+                              ObjectProvider<BuildProperties> buildProperties,
+                              PushGate pushGate,
+                              LiveDataService liveDataService,
+                              TimelineStore timeline,
+                              ConfigUiAuthService authService,
+                              PushTemplateDefaults templateDefaults,
+                              UpdateCheckService updateCheck,
+                              ObjectProvider<ConfigurationGroupContributor> groupContributors) {
         this.templateDefaults = templateDefaults;
         this.pushGate = pushGate;
         this.liveDataService = liveDataService;
@@ -274,6 +319,7 @@ public class ConfigUiController {
         this.buildProperties = buildProperties;
         this.eventStreamTokens = eventStreamTokens;
         this.pageProviders = pageProviders;
+        this.groupContributors = groupContributors;
         this.levelResolver = levelResolver;
         this.connectionTesters = connectionTesters;
         this.activityRecorder = activityRecorder;
@@ -288,6 +334,44 @@ public class ConfigUiController {
         this.senderService = senderService;
         this.messageSender = messageSender;
         this.loginProviders = loginProviders;
+    }
+
+    /**
+     * 无贡献者：旧构造与测试直接 new 时走核心表。
+     * @return 空的 ObjectProvider
+     */
+    private static ObjectProvider<ConfigurationGroupContributor> noGroupContributors() {
+        return new ObjectProvider<>() {
+            @Override
+            public ConfigurationGroupContributor getObject() {
+                throw new NoSuchBeanDefinitionException(ConfigurationGroupContributor.class);
+            }
+
+            @Override
+            public ConfigurationGroupContributor getObject(Object... args) {
+                throw new NoSuchBeanDefinitionException(ConfigurationGroupContributor.class);
+            }
+
+            @Override
+            public ConfigurationGroupContributor getIfAvailable() {
+                return null;
+            }
+
+            @Override
+            public ConfigurationGroupContributor getIfUnique() {
+                return null;
+            }
+
+            @Override
+            public Stream<ConfigurationGroupContributor> stream() {
+                return Stream.empty();
+            }
+
+            @Override
+            public Stream<ConfigurationGroupContributor> orderedStream() {
+                return Stream.empty();
+            }
+        };
     }
 
     /**
@@ -456,12 +540,13 @@ public class ConfigUiController {
 
         // 组是闭集，先按组开好桶再往里放：这样八个组的先后由那张表定，
         // 而不是由「哪一组的第一个配置项先出现」定
+        ConfigurationGroups groupTable = ConfigurationGroups.of(groupContributors.orderedStream().toList());
         Map<ConfigurationGroups.Group, JSONArray> buckets = new LinkedHashMap<>();
         ConfigurationGroups.all().forEach(group -> buckets.put(group, new JSONArray()));
         JSONArray orphans = new JSONArray();
 
         for (ConfigurationMetadataService.ConfigurationField field : metadataService.getFields()) {
-            ConfigurationGroups.Group group = ConfigurationGroups.groupOf(field.name());
+            ConfigurationGroups.Group group = groupTable.groupOf(field.name());
 
             JSONObject item = new JSONObject();
             item.put("name", field.name());

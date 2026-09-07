@@ -4,11 +4,14 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -77,36 +80,54 @@ class ConfigurationGroupsTest {
     @Test
     @DisplayName("取最长前缀：整段归一组时，其中单独指名的那一项归它自己那一组")
     void longestPrefixWins() {
-        // 报告用的那两张标识图片长在采集那两段的前缀底下，靠最长前缀单独摘出来
-        assertEquals(ConfigurationGroups.COLLECT,
-                ConfigurationGroups.groupOf("starbot.bilibili.live.backup-live-push"));
-        assertEquals(ConfigurationGroups.REPORT,
-                ConfigurationGroups.groupOf("starbot.bilibili.live.report-logo-path"));
+        Map<String, ConfigurationGroups.Group> contributed = new LinkedHashMap<>();
+        contributed.put("starbot.test.foo", ConfigurationGroups.COLLECT);
+        contributed.put("starbot.test.foo.logo", ConfigurationGroups.REPORT);
+        ConfigurationGroups groups = ConfigurationGroups.of(List.of(() -> contributed));
+
+        // 贡献者的前缀并进核心表之后，最长前缀跨合并表仍成立
+        assertEquals(ConfigurationGroups.COLLECT, groups.groupOf("starbot.test.foo.backup"));
+        assertEquals(ConfigurationGroups.REPORT, groups.groupOf("starbot.test.foo.logo"));
         assertEquals(ConfigurationGroups.AUTH,
-                ConfigurationGroups.groupOf("starbot.core.config-ui.auth.password"));
+                groups.groupOf("starbot.core.config-ui.auth.password"));
         assertEquals(ConfigurationGroups.SERVICE,
-                ConfigurationGroups.groupOf("starbot.core.config-ui.napcat.address"));
+                groups.groupOf("starbot.core.config-ui.napcat.address"));
+    }
+
+    @Test
+    @DisplayName("两方申报同一前缀须抛 IllegalStateException")
+    void duplicatePrefixAcrossPartiesIsRejected() {
+        Map<String, ConfigurationGroups.Group> first = new LinkedHashMap<>();
+        first.put("starbot.test.dup", ConfigurationGroups.COLLECT);
+        Map<String, ConfigurationGroups.Group> second = new LinkedHashMap<>();
+        second.put("starbot.test.dup", ConfigurationGroups.REPORT);
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> ConfigurationGroups.of(List.of(() -> first, () -> second)));
+        assertEquals("配置分组前缀 starbot.test.dup 被写了两次: collect 与 report", ex.getMessage());
     }
 
     @Test
     @DisplayName("前缀只在整段边界上命中，不吃掉名字更长的兄弟键")
     void prefixMatchesOnSegmentBoundary() {
-        assertEquals(ConfigurationGroups.SERVICE, ConfigurationGroups.groupOf("starbot.core.network.read-timeout"));
-        assertEquals(ConfigurationGroups.SERVICE, ConfigurationGroups.groupOf("starbot.core.network-thread.max-pool-size"));
+        ConfigurationGroups groups = ConfigurationGroups.core();
+        assertEquals(ConfigurationGroups.SERVICE, groups.groupOf("starbot.core.network.read-timeout"));
+        assertEquals(ConfigurationGroups.SERVICE, groups.groupOf("starbot.core.network-thread.max-pool-size"));
         // 前缀本身也是一个键时照样命中：starbot.core.sender 是叶子，不是一段
-        assertEquals(ConfigurationGroups.PUSH, ConfigurationGroups.groupOf("starbot.core.sender"));
+        assertEquals(ConfigurationGroups.PUSH, groups.groupOf("starbot.core.sender"));
         // 而它不该把名字以它开头的另一个键一起吃掉
-        assertNull(ConfigurationGroups.groupOf("starbot.core.senders-extra"),
+        assertNull(groups.groupOf("starbot.core.senders-extra"),
                 "前缀吃掉了名字更长的兄弟键，那一项会被摆进一个跟它无关的组里");
     }
 
     @Test
     @DisplayName("归不了组的回 null，不悄悄兜进某一组")
     void unmatchedKeyGetsNoGroup() {
-        assertNull(ConfigurationGroups.groupOf("starbot.brandnew.something"),
+        ConfigurationGroups groups = ConfigurationGroups.core();
+        assertNull(groups.groupOf("starbot.brandnew.something"),
                 "兜底会给此后每一个新配置项签一张免检牌：它安静地待在某个组里，没有任何东西会再提起这件事");
-        assertNull(ConfigurationGroups.groupOf(null));
-        assertNull(ConfigurationGroups.groupOf("完全不相干的东西"));
+        assertNull(groups.groupOf(null));
+        assertNull(groups.groupOf("完全不相干的东西"));
     }
 
     @Test
@@ -117,8 +138,9 @@ class ConfigurationGroupsTest {
             assertEquals(i, ConfigurationGroups.orderOf(all.get(i)), all.get(i).id() + " 的序号不对");
         }
 
-        assertNotNull(ConfigurationGroups.prefixes());
-        assertTrue(ConfigurationGroups.prefixes().size() >= all.size(),
+        List<String> prefixes = ConfigurationGroups.core().prefixes();
+        assertNotNull(prefixes);
+        assertTrue(prefixes.size() >= all.size(),
                 "前缀比组还少，至少有一组一条前缀都没有");
     }
 }
