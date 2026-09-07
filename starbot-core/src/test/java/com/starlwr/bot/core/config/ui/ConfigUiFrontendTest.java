@@ -2470,15 +2470,16 @@ class ConfigUiFrontendTest {
     }
 
     /**
-     * 连接面四件非注释行不得出现平台词
+     * 界面件非注释行不得出现平台词
      * <p>
      * 核心界面不自带平台名：带名字的那一版由插件在运行时填回来。注释里提到也不算——
      * 量的是会画到屏幕上、或会作为标识符跑起来的那些行。
      */
     @Test
-    @DisplayName("连接面四件非注释行零平台词")
+    @DisplayName("界面件非注释行零平台词")
     void connectionSurfaceHasNoPlatformWords() throws IOException {
-        List<String> files = List.of("index.html", "links-model.js", "links.js", "log.js");
+        List<String> files = List.of("index.html", "links-model.js", "links.js", "log.js",
+                "setup.js", "setup-model.js", "home-model.js");
         List<String> words = List.of("QQ", "NapCat", "OneBot");
         Path dir = frontendDir();
         List<String> hits = new ArrayList<>();
@@ -2505,7 +2506,7 @@ class ConfigUiFrontendTest {
         }
 
         assertTrue(hits.isEmpty(),
-                "连接面四件非注释行仍有平台词，各件首个命中: " + String.join("；", hits));
+                "界面件非注释行仍有平台词，各件首个命中: " + String.join("；", hits));
     }
 
     /**

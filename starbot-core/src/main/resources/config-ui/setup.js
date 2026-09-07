@@ -15,7 +15,7 @@
  */
 
 import {ask} from './confirm.js';
-import {$, api, el, esc, markDirty, say} from './core.js';
+import {$, api, el, esc, markDirty, phrase, say, term} from './core.js';
 import {resolveTarget, targetOptions} from './links-model.js';
 import {registerPasskey} from './passkeys.js';
 import {renderStreamers, serializePush, STREAMER_INPUT_HINT} from './push.js';
@@ -48,7 +48,7 @@ let skips = ['', '', '', '', ''];
 let facts = [false, false, false, false, false];
 
 /** 当前步骤表（内置五步 ± 插件步） */
-let steps = withPluginSteps();
+let steps = withPluginSteps(undefined, store.vocab);
 
 /** slot=setup_step 的页清单 */
 let pluginPages = [];
@@ -200,7 +200,7 @@ export async function openSetup() {
       syncBotDraft(draft, bot);
     }
     pluginPages = (pagePack.pages || []).filter(meta => meta && meta.slot === 'setup_step');
-    steps = withPluginSteps(pluginPages);
+    steps = withPluginSteps(pluginPages, store.vocab);
     pluginMods = await loadPluginModules(pluginPages);
     skips = steps.map((_, i) => skips[i] || '');
   } catch (e) {
@@ -505,7 +505,9 @@ function stepLock(host) {
   const first = field(row, '控制台口令', 'setup-pwd', 'password', '', null);
   const again = field(row, '再输一遍', 'setup-pwd2', 'password', '', null);
   host.appendChild(row);
-  host.appendChild(note('', '至少 8 个字符。填的是这个控制台的登录口令，与 OneBot 实现那边的界面口令互不相干。'));
+  host.appendChild(note('', phrase('bot.family',
+    v => '至少 8 个字符。填的是这个控制台的登录口令，与 ' + v + ' 那边的界面口令互不相干。',
+    '至少 8 个字符。填的是这个控制台的登录口令，与机器人那边的界面口令互不相干。')));
 
   const result = el('div', 'su-r');
   const save = el('button', 'primary');
@@ -581,7 +583,9 @@ function invalidateBot(draft) {
 
 function stepBot(host) {
   heading(host, titleOf('bot'),
-    '机器人指 NapCat 这类 OneBot 实现，NovaBot 通过它把消息发到 QQ。这一步不能跳过。');
+    '机器人指 ' + term('bot.impl.hint', '机器人程序')
+    + '，NovaBot 通过它把消息发到 ' + term('bot.platform', '聊天平台')
+    + '。这一步不能跳过。');
 
   const at = draft.bot;
   const result = el('div', 'su-r');
@@ -644,8 +648,9 @@ function stepBot(host) {
   // 这一步不再要求重启：存下来的那一刻适配器就按新参数把连接接上了。
   // 保存的回话由服务端给，说的是「现在通了没有」，不是「已保存」——所以这里不另写一句
   if (!(seen.status.senders || []).length) {
-    host.appendChild(note('', '填 NapCat 那一侧的地址、端口与两个 Token。'
-      + '测通之后会自动存下来并当场接上，不用重启。'));
+    host.appendChild(note('', phrase('bot.impl',
+      v => '填 ' + v + ' 那一侧的地址、端口与两个 Token。测通之后会自动存下来并当场接上，不用重启。',
+      '填机器人那一侧的地址、端口与两个 Token。测通之后会自动存下来并当场接上，不用重启。')));
   }
 
   /**
@@ -921,7 +926,7 @@ function targetPicker() {
   box.appendChild(list);
 
   box.appendChild(note('', '开播、下播、下播报告、动态这几种通知默认全开、用默认模板，'
-    + '之后在「QQ 推送」页里细调。'));
+    + '之后在「推送」页里细调。'));
   return box;
 }
 
@@ -932,7 +937,7 @@ function targetPicker() {
 async function skipStreamer() {
   if (!await ask({title: '确定先不加吗？',
     body: '不加主播的话，这台 NovaBot 起来什么都不做——不采集，也不推送。'
-      + '之后可以在「QQ 推送」页里加。'})) return;
+      + '之后可以在「推送」页里加。'})) return;
 
   draft.noStreamerConfirmed = true;
   finishStep('skip');
@@ -1151,9 +1156,20 @@ function paintSent(host, res, targetText) {
 function troubleshooting() {
   const box = el('div', 'su-tips');
   box.id = 'setup-tips';
-  [['机器人被踢出群了', '到 QQ 里看一眼机器人还在不在那个群。不在就拉回去，再回上一步重选一次。'],
-    ['Token 与 OneBot 那头不一致', '回第 2 步重测一次；两个 Token 要和 OneBot 实现的配置里一模一样。'],
-    ['OneBot 那头的 QQ 掉线了', '接口通不代表 QQ 在线。到它自己的界面看登录状态，掉了就重新扫码。']]
+  [['机器人被踢出群了',
+      phrase('bot.platform',
+        v => '到 ' + v + ' 里看一眼机器人还在不在那个群。不在就拉回去，再回上一步重选一次。',
+        '到聊天软件里看一眼机器人还在不在那个群。不在就拉回去，再回上一步重选一次。')],
+    [phrase('bot.family', v => 'Token 与 ' + v + ' 那头不一致', 'Token 与机器人那头不一致'),
+      phrase('bot.family',
+        v => '回第 2 步重测一次；两个 Token 要和 ' + v + ' 的配置里一模一样。',
+        '回第 2 步重测一次；两个 Token 要和机器人配置里一模一样。')],
+    [phrase('bot.family',
+        v => phrase('bot.platform', p => v + ' 那头的 ' + p + ' 掉线了', v + ' 那头掉线了'),
+        phrase('bot.platform', p => '机器人那头的 ' + p + ' 掉线了', '机器人那头掉线了')),
+      phrase('bot.platform',
+        v => '接口通不代表 ' + v + ' 在线。到它自己的界面看登录状态，掉了就重新扫码。',
+        '接口通不代表账号在线。到它自己的界面看登录状态，掉了就重新扫码。')]]
     .forEach(pair => {
       const item = el('div', 'su-tip');
       const title = el('b');
@@ -1183,7 +1199,7 @@ function defaultsBlock() {
 
   // 命令条数没有任何接口给得出来，因此交 null 进去，由那边说「全开」而不写个数。
   // 随手写一个数摆在一排算出来的值中间，是这几行里最难被发现的一处错
-  initialRows(store.values, null).forEach(item => {
+  initialRows(store.values, null, store.vocab).forEach(item => {
     const line = el('div', 'su-def');
     const text = el('div');
     const name = el('b');
@@ -1212,13 +1228,13 @@ function defaultsBlock() {
 // ============ 走完之后 ============
 
 function renderDone(host) {
-  heading(host, '初始设置完成', '这五步定的东西都已经生效。之后想改，全在设置页与「QQ 推送」页里。');
+  heading(host, '初始设置完成', '这五步定的东西都已经生效。之后想改，全在设置页与「推送」页里。');
 
   summaryLines(facts, skips, {
     accounts: seen.login.accounts || [],
     streamers: (seen.status.users || []).length,
     targets: (seen.status.users || []).reduce((n, one) => n + (one.targets || 0), 0),
-  }, steps).forEach(line => {
+  }, steps, store.vocab).forEach(line => {
     const item = el('div', 'su-sum');
     item.textContent = '· ' + line;
     host.appendChild(item);

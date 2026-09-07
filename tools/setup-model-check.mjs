@@ -12,9 +12,9 @@
  */
 
 import {
-  SETUP_STEPS, allDone, canAdvance, railMarks, startAt,
+  SETUP_STEPS, allDone, canAdvance, initialRows, railMarks, startAt, summaryLines,
+  withPluginSteps,
 } from '../starbot-core/src/main/resources/config-ui/setup-model.js';
-import {withPluginSteps} from '../starbot-core/src/main/resources/config-ui/home-model.js';
 
 const failures = [];
 let checks = 0;
@@ -81,4 +81,71 @@ eq(startAt([true, true, true, true, false, true], false, pluginSteps), 4,
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);
-process.exit(failures.length ? 1 : 0);
+if (failures.length) process.exit(1);
+
+// ── terms 三档：有词＝适配器七键／无词＝{}／只缺 bot.impl ────────────────
+// 三问各自 try/catch，末尾汇总，不得短路。
+const ADAPTER_TERMS = {
+  'bot.platform': 'QQ',
+  'bot.impl': 'NapCat',
+  'bot.family': 'OneBot 实现',
+  'bot.impl.hint': 'NapCat、Lagrange 等 OneBot 实现',
+  'bot.target.group': '群号',
+  'bot.target.user': 'QQ 号',
+  'bot.targets': '群与好友',
+};
+const NO_IMPL = Object.assign({}, ADAPTER_TERMS);
+delete NO_IMPL['bot.impl'];
+
+const phraseReds = [];
+function askPhrase(name, fn) {
+  try {
+    fn();
+  } catch (err) {
+    phraseReds.push(name + '：' + (err && err.message ? err.message : String(err)));
+  }
+}
+function mustEq(actual, expected, what) {
+  if (actual !== expected) {
+    throw new Error(what + ' 得到 ' + JSON.stringify(actual) + ' 应为 ' + JSON.stringify(expected));
+  }
+}
+function alertText(terms) {
+  return (initialRows({}, null, terms).find(row => row.label === '告警') || {}).text || '';
+}
+
+askPhrase('①有词', () => {
+  mustEq((withPluginSteps(undefined, ADAPTER_TERMS).find(s => s.key === 'bot') || {}).title,
+    '连上 QQ 机器人', '步名');
+  const alert = alertText(ADAPTER_TERMS);
+  if (!alert.includes('QQ 掉线')) throw new Error('告警行 ' + JSON.stringify(alert));
+  mustEq(summaryLines([true, true, true, true, true], ['', '', '', '', ''], {}, undefined, ADAPTER_TERMS)[0],
+    'QQ 机器人 已连上', '小结已连');
+});
+
+askPhrase('②无词', () => {
+  mustEq((withPluginSteps(undefined, {}).find(s => s.key === 'bot') || {}).title,
+    '连上机器人', '步名');
+  const alert = alertText({});
+  if (alert.includes('QQ') || !alert.includes('机器人掉线')) {
+    throw new Error('告警行 ' + JSON.stringify(alert));
+  }
+  mustEq(summaryLines([true, true, true, true, true], ['', '', '', '', ''], {}, undefined, {})[0],
+    '机器人 已连上', '小结已连');
+});
+
+askPhrase('③只缺 bot.impl', () => {
+  mustEq((withPluginSteps(undefined, NO_IMPL).find(s => s.key === 'bot') || {}).title,
+    '连上 QQ 机器人', '步名仍用 platform');
+  const alert = alertText(NO_IMPL);
+  if (!alert.includes('QQ 掉线')) throw new Error('告警行 ' + JSON.stringify(alert));
+  mustEq(summaryLines([false, false, false, false, false], ['', '', '', '', ''], {}, undefined, NO_IMPL)[0],
+    'QQ 机器人 还没连上，推送发不出去', '小结未连');
+});
+
+console.log('terms 三档\t跑了 3 格\t红 ' + phraseReds.length + ' 格\t' + (phraseReds.length ? '红' : '绿'));
+if (phraseReds.length) {
+  console.error('\nterms 三档对不上 ' + phraseReds.length + ' 处：');
+  phraseReds.forEach(line => console.error('  ' + line));
+  process.exit(1);
+}

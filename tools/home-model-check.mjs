@@ -405,10 +405,6 @@ const webhookTodo = homeModel(status({alerts: {qq: false, webhook: false, mail: 
 same((webhookTodo || {}).soft, true, 'Webhook 待办是软的');
 same((webhookTodo || {}).href, '#/settings?card=alert',
   '点待办落到设置页告警段');
-same((webhookTodo || {}).title, 'QQ 告警有死角，建议再配 Webhook', '待办标题');
-same((webhookTodo || {}).body,
-  '机器人掉线时 QQ 那路叫不到你，Webhook 或邮件配好其中一路这条就消失',
-  '待办正文');
 same((webhookTodo || {}).action, '去配', '待办按钮');
 
 // 首次安装只出初始设置，不叠 Webhook 待办
@@ -463,4 +459,80 @@ if (tileFails.length) {
   process.exit(1);
 }
 console.log('今日格／待办\t跑了 ' + tileChecks + ' 格，全绿');
+
+// ── terms 三档：有词＝适配器七键／无词＝{}／只缺 bot.impl ────────────────
+// 三问各自 try/catch，末尾汇总，不得短路。待办标题那两问改走这里。
+const ADAPTER_TERMS = {
+  'bot.platform': 'QQ',
+  'bot.impl': 'NapCat',
+  'bot.family': 'OneBot 实现',
+  'bot.impl.hint': 'NapCat、Lagrange 等 OneBot 实现',
+  'bot.target.group': '群号',
+  'bot.target.user': 'QQ 号',
+  'bot.targets': '群与好友',
+};
+const NO_IMPL = Object.assign({}, ADAPTER_TERMS);
+delete NO_IMPL['bot.impl'];
+
+const phraseReds = [];
+function askPhrase(name, fn) {
+  try {
+    fn();
+  } catch (err) {
+    phraseReds.push(name + '：' + (err && err.message ? err.message : String(err)));
+  }
+}
+function mustEq(actual, expected, what) {
+  if (actual !== expected) {
+    throw new Error(what + ' 得到 ' + JSON.stringify(actual) + ' 应为 ' + JSON.stringify(expected));
+  }
+}
+function homeOf(patch, terms) {
+  return homeModel(status(patch), login(), timeline(), undefined, undefined, undefined, terms);
+}
+function botDownPatch() {
+  return {
+    health: OK_PROBES().map(p => p.name === '机器人连接'
+      ? probe(p.name, p.scope, 'DOWN', '掉线', '') : p),
+  };
+}
+
+askPhrase('①有词', () => {
+  const m = homeOf({alerts: {qq: false, webhook: false, mail: false}}, ADAPTER_TERMS);
+  const t = m.todos.find(x => x.key === 'webhook') || {};
+  mustEq(t.title, 'QQ 告警有死角，建议再配 Webhook', '待办标题');
+  mustEq(t.body, '机器人掉线时 QQ 那路叫不到你，Webhook 或邮件配好其中一路这条就消失', '待办正文');
+  mustEq(m.chain.bot.station, 'QQ', '站名');
+  mustEq(m.chain.bot.sub, '群与好友', '站副');
+  mustEq((homeOf(botDownPatch(), ADAPTER_TERMS).todos.find(x => x.key === 'bot') || {}).title,
+    '重新登录 NapCat', '重登');
+});
+
+askPhrase('②无词', () => {
+  const m = homeOf({alerts: {qq: false, webhook: false, mail: false}}, {});
+  const t = m.todos.find(x => x.key === 'webhook') || {};
+  mustEq(t.title, '机器人告警有死角，建议再配 Webhook', '待办标题');
+  mustEq(t.body, '机器人掉线时告警那路叫不到你，Webhook 或邮件配好其中一路这条就消失', '待办正文');
+  mustEq(m.chain.bot.station, '机器人', '站名');
+  mustEq(m.chain.bot.sub, '会话', '站副');
+  mustEq((homeOf(botDownPatch(), {}).todos.find(x => x.key === 'bot') || {}).title,
+    '重新登录机器人', '重登');
+});
+
+askPhrase('③只缺 bot.impl', () => {
+  const m = homeOf({alerts: {qq: false, webhook: false, mail: false}}, NO_IMPL);
+  const t = m.todos.find(x => x.key === 'webhook') || {};
+  mustEq(t.title, 'QQ 告警有死角，建议再配 Webhook', '待办标题仍用 platform');
+  mustEq((homeOf(botDownPatch(), NO_IMPL).todos.find(x => x.key === 'bot') || {}).title,
+    '重新登录机器人', '重登缺 impl');
+  mustEq(m.chain.bot.station, 'QQ', '站名仍用 platform');
+  mustEq(m.chain.bot.sub, '群与好友', '站副仍用 targets');
+});
+
+console.log('terms 三档\t跑了 3 格\t红 ' + phraseReds.length + ' 格\t' + (phraseReds.length ? '红' : '绿'));
+if (phraseReds.length) {
+  console.error('\nterms 三档对不上 ' + phraseReds.length + ' 处：');
+  phraseReds.forEach(line => console.error('  ' + line));
+  process.exit(1);
+}
 console.log('跑了 ' + (CASES.length + tileChecks) + ' 格，全绿');
