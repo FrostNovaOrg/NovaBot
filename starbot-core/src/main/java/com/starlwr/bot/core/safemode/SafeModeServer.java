@@ -317,18 +317,46 @@ public class SafeModeServer {
     }
 
     /** 尽力读出 yml 里配的备份保留份数（starbot.core.config-ui.backup-keep），口径同 {@link #resolvePort()} */
-    private int resolveBackupKeep() {
+    int resolveBackupKeep() { // 与 resolvePort() 同：只为同包的尺放开，不对外
         try {
             if (new Yaml().load(Files.readString(configPath, StandardCharsets.UTF_8)) instanceof Map<?, ?> root
                     && root.get("starbot") instanceof Map<?, ?> starbot
-                    && starbot.get("core") instanceof Map<?, ?> core
-                    && core.get("config-ui") instanceof Map<?, ?> ui && ui.get("backup-keep") instanceof Number keep) {
-                return TimestampedFileBackup.clamp(keep.intValue());
+                    && starbot.get("core") instanceof Map<?, ?> core) {
+                // 主应用的 Spring 宽松绑定认驼峰（configUi 下的 backupKeep），安全模式读的是同一份文件，键的读法须与之一致
+                Integer keep = readBackupKeep(core.get("config-ui"));
+                if (keep == null) {
+                    keep = readBackupKeep(core.get("configUi"));
+                }
+                if (keep != null) {
+                    return TimestampedFileBackup.clamp(keep);
+                }
             }
         } catch (Exception e) {
             log.debug("安全模式读不到 backup-keep, 按默认 {}: {}", TimestampedFileBackup.DEFAULT_KEEP, e.getMessage());
         }
         return TimestampedFileBackup.DEFAULT_KEEP;
+    }
+
+    /**
+     * 从 config-ui 段（或其驼峰写法 configUi）里读保留份数：值认裸数字与带引号的数字串
+     * （口径同 {@link #resolvePort()} 认端口），没配或形状不对回 null 由调用处落回组件默认；
+     * 非数字串抛出的 {@code NumberFormatException} 也由调用处收口回默认。
+     */
+    private static Integer readBackupKeep(Object uiNode) {
+        if (!(uiNode instanceof Map<?, ?> ui)) {
+            return null;
+        }
+        Object value = ui.get("backup-keep");
+        if (value == null) {
+            value = ui.get("backupKeep");
+        }
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value instanceof CharSequence cs) {
+            return Integer.parseInt(cs.toString().strip());
+        }
+        return null;
     }
 
     private void respond(HttpExchange exchange, int status, String contentType, String body) throws IOException {
