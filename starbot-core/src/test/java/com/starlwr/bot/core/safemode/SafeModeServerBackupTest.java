@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
 
@@ -107,6 +108,94 @@ class SafeModeServerBackupTest {
         assertTrue(names.size() <= TimestampedFileBackup.MAX_KEEP,
                 "超界的保留份数应按上限 " + TimestampedFileBackup.MAX_KEEP + " 收口, 实际 " + names.size() + " 份");
         assertEquals(3, names.size(), "上限远未触到, 连存的 3 份都应在");
+    }
+
+    @Test
+    @DisplayName("backup-keep 收口断返回值：500→100、0→1、-1→1，界上 100 与界下 1 照用")
+    void resolveBackupKeepClampsReturnValue() throws IOException {
+        List<String> unresolved = new ArrayList<>();
+        askKeep(unresolved, """
+                starbot:
+                  core:
+                    config-ui:
+                      backup-keep: 500
+                """, 100, "500 应按上限 100 收口");
+        askKeep(unresolved, """
+                starbot:
+                  core:
+                    config-ui:
+                      backup-keep: 0
+                """, 1, "0 应按下限 1 收口");
+        askKeep(unresolved, """
+                starbot:
+                  core:
+                    config-ui:
+                      backup-keep: -1
+                """, 1, "-1 应按下限 1 收口");
+        askKeep(unresolved, """
+                starbot:
+                  core:
+                    config-ui:
+                      backup-keep: 100
+                """, 100, "阳性对照: 界上沿 100 照用");
+        askKeep(unresolved, """
+                starbot:
+                  core:
+                    config-ui:
+                      backup-keep: 1
+                """, 1, "阳性对照: 界下沿 1 照用");
+
+        assertTrue(unresolved.isEmpty(),
+                () -> "份数收口五问中 " + unresolved.size() + " 问未销: " + String.join("; ", unresolved));
+    }
+
+    @Test
+    @DisplayName("backup-keep 认带引号数字与驼峰键：\"5\"→5、configUi.backupKeep 5→5 与 \"7\"→7、读不到回默认 10")
+    void resolveBackupKeepReadsQuotedNumberAndCamelCaseKey() throws IOException {
+        List<String> unresolved = new ArrayList<>();
+        askKeep(unresolved, """
+                starbot:
+                  core:
+                    config-ui:
+                      backup-keep: "5"
+                """, 5, "带引号的 5 应被认出");
+        askKeep(unresolved, """
+                starbot:
+                  core:
+                    configUi:
+                      backupKeep: 5
+                """, 5, "驼峰键 configUi.backupKeep 的 5 应被认出");
+        askKeep(unresolved, """
+                starbot:
+                  core:
+                    configUi:
+                      backupKeep: "7"
+                """, 7, "驼峰键带引号的 7 应被认出");
+        askKeep(unresolved, "seed: 1\n", TimestampedFileBackup.DEFAULT_KEEP,
+                "没配 backup-keep 应回默认份数 " + TimestampedFileBackup.DEFAULT_KEEP);
+        askKeep(unresolved, """
+                starbot:
+                  core:
+                    config-ui:
+                      backup-keep: "abc"
+                """, TimestampedFileBackup.DEFAULT_KEEP,
+                "非数字串应回默认份数 " + TimestampedFileBackup.DEFAULT_KEEP);
+
+        assertTrue(unresolved.isEmpty(),
+                () -> "读法五问中 " + unresolved.size() + " 问未销: " + String.join("; ", unresolved));
+    }
+
+    /**
+     * 写一份配置、问一次 {@code resolveBackupKeep()} 的返回值；逐问各自捕获、末尾汇总，一问红不许短路其余问
+     */
+    private void askKeep(List<String> unresolved, String yaml, int expected, String question) throws IOException {
+        Path config = dir.resolve("application.yml");
+        Files.writeString(config, yaml, StandardCharsets.UTF_8);
+        try {
+            assertEquals(expected, new SafeModeServer(config, "测试用的启动失败原因").resolveBackupKeep(), question);
+        } catch (AssertionError e) {
+            unresolved.add(e.getMessage());
+        }
     }
 
     private static List<String> stampedBackupNames(Path config) throws IOException {
