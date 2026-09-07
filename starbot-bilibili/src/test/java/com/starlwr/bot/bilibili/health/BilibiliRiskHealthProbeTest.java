@@ -130,4 +130,48 @@ class BilibiliRiskHealthProbeTest {
         metrics.record(BilibiliRiskMetrics.Kind.HTTP_412, "x");
         assertTrue(metrics.last(BilibiliRiskMetrics.Kind.HTTP_412).isPresent());
     }
+
+    @Test
+    @DisplayName("UNKNOWN_OP 一条即 degraded；UNKNOWN_CMD 只进 summary 不降档")
+    void unknownOpDegradesUnknownCmdStaysOk() {
+        java.util.List<String> reds = new java.util.ArrayList<>();
+
+        try {
+            metrics.record(BilibiliRiskMetrics.Kind.UNKNOWN_OP, "op=9");
+            HealthStatus status = probe.check();
+            assertEquals(HealthStatus.Level.DEGRADED, status.level(), "未知操作码一条即应降档");
+            assertTrue(status.summary().contains("未知操作码"), "summary 应写未知操作码，实际: " + status.summary());
+            assertTrue(status.summary().contains("op=9"), "summary 应带 op=N，实际: " + status.summary());
+            assertTrue(status.advice().contains("长连协议") || status.advice().contains("语料"),
+                    "advice 应提示协议改了并抓语料，实际: " + status.advice());
+        } catch (AssertionError e) {
+            reds.add("① " + e.getMessage());
+        }
+
+        try {
+            BilibiliRiskMetrics cmdOnly = new BilibiliRiskMetrics();
+            BilibiliRiskHealthProbe cmdProbe = new BilibiliRiskHealthProbe(cmdOnly);
+            cmdOnly.record(BilibiliRiskMetrics.Kind.UNKNOWN_CMD, "FOO count=1 unique=1");
+            HealthStatus status = cmdProbe.check();
+            assertEquals(HealthStatus.Level.OK, status.level(), "未知消息类型不得降档");
+            assertTrue(status.summary().contains("未知消息类型"), "summary 应含未知消息类型，实际: " + status.summary());
+            assertTrue(status.summary().contains("FOO"), "summary 应含最近 cmd 名，实际: " + status.summary());
+        } catch (AssertionError e) {
+            reds.add("② " + e.getMessage());
+        }
+
+        try {
+            BilibiliRiskMetrics many = new BilibiliRiskMetrics();
+            BilibiliRiskHealthProbe manyProbe = new BilibiliRiskHealthProbe(many);
+            for (int i = 0; i < 20; i++) {
+                many.record(BilibiliRiskMetrics.Kind.UNKNOWN_CMD, "BAR count=" + (i + 1) + " unique=1");
+            }
+            assertEquals(HealthStatus.Level.OK, manyProbe.check().level(),
+                    "未知消息类型记多次仍不得降档");
+        } catch (AssertionError e) {
+            reds.add("③ " + e.getMessage());
+        }
+
+        assertTrue(reds.isEmpty(), () -> "三问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+    }
 }

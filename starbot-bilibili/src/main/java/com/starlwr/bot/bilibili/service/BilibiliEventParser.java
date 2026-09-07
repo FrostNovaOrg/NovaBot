@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.health.BilibiliRiskMetrics;
 import com.starlwr.bot.bilibili.enums.GuardOperateType;
 import com.starlwr.bot.bilibili.event.live.*;
 import com.starlwr.bot.bilibili.model.BilibiliEmojiInfo;
@@ -83,6 +84,26 @@ public class BilibiliEventParser {
      * 但「没触发过」这个结论只对量过的语料成立，所以这个计数器不是多余的。
      */
     private final AtomicLong shortInfoDropped = new AtomicLong();
+
+    /**
+     * 分派表外的 cmd 名计数，按名去重。超过 {@link #MAX_UNKNOWN_CMD_NAMES} 的新名只累加总数。
+     */
+    private final ConcurrentHashMap<String, AtomicLong> unknownCmds = new ConcurrentHashMap<>();
+
+    /**
+     * 各未知 cmd 的首次出现时刻，写入指标 detail 用。
+     */
+    private final ConcurrentHashMap<String, Instant> unknownCmdFirstSeen = new ConcurrentHashMap<>();
+
+    /**
+     * 名表已满后仍碰到的新 cmd 条数
+     */
+    private final AtomicLong unknownCmdOverflow = new AtomicLong();
+
+    /**
+     * 未知 cmd 名表上限，与风控指标每类条数上限对齐
+     */
+    private static final int MAX_UNKNOWN_CMD_NAMES = 512;
 
     /**
      * 红包记录的条目上限，防止长期运行后无限增长
@@ -314,18 +335,27 @@ public class BilibiliEventParser {
 
     private final BilibiliGuardReconciler guardReconciler;
 
+    private final BilibiliRiskMetrics riskMetrics;
+
     /**
      * 消息类型到解析方法的映射
      */
     private final Map<String, BiFunction<JSONObject, LiveStreamerInfo, StarBotBaseLiveEvent>> parsers = new HashMap<>();
 
-    @Autowired
     public BilibiliEventParser(StarBotBilibiliProperties properties, BilibiliGiftService giftService,
                                BilibiliApiSupport apiSupport, BilibiliGuardReconciler guardReconciler) {
+        this(properties, giftService, apiSupport, guardReconciler, new BilibiliRiskMetrics());
+    }
+
+    @Autowired
+    public BilibiliEventParser(StarBotBilibiliProperties properties, BilibiliGiftService giftService,
+                               BilibiliApiSupport apiSupport, BilibiliGuardReconciler guardReconciler,
+                               BilibiliRiskMetrics riskMetrics) {
         this.properties = properties;
         this.giftService = giftService;
         this.apiSupport = apiSupport;
         this.guardReconciler = guardReconciler;
+        this.riskMetrics = riskMetrics;
 
         parsers.put("LIVE", this::parseLiveOn);
         parsers.put("PREPARING", this::parseLiveOff);
@@ -382,6 +412,7 @@ public class BilibiliEventParser {
 
         BiFunction<JSONObject, LiveStreamerInfo, StarBotBaseLiveEvent> parser = parsers.get(type);
         if (parser == null) {
+            noteUnknownCmd(type);
             return Optional.empty();
         }
 
@@ -493,6 +524,39 @@ public class BilibiliEventParser {
         event.setReply(parseReply(extra, source));
 
         return event;
+    }
+
+    /**
+     * 登记一条分派表外的 cmd：按名去重，首见与 10/100/1000… 量级各记一次指标。
+     * detail 只含 cmd 名、计数、种数与首见时刻，不写入报文。
+     */
+    private void noteUnknownCmd(String cmd) {
+        if (cmd == null || cmd.isBlank() || riskMetrics == null) {
+            return;
+        }
+        AtomicLong existing = unknownCmds.get(cmd);
+        if (existing == null && unknownCmds.size() >= MAX_UNKNOWN_CMD_NAMES) {
+            long overflow = unknownCmdOverflow.incrementAndGet();
+            if (isMagnitude(overflow)) {
+                riskMetrics.record(BilibiliRiskMetrics.Kind.UNKNOWN_CMD,
+                        "overflow count=" + overflow + " unique=" + unknownCmds.size());
+            }
+            return;
+        }
+        long count = unknownCmds.computeIfAbsent(cmd, key -> new AtomicLong()).incrementAndGet();
+        Instant first = unknownCmdFirstSeen.computeIfAbsent(cmd, key -> Instant.now());
+        if (isMagnitude(count)) {
+            riskMetrics.record(BilibiliRiskMetrics.Kind.UNKNOWN_CMD,
+                    cmd + " count=" + count + " unique=" + unknownCmds.size() + " at=" + first);
+            log.warn("未知直播间消息类型 {} 已出现 {} 次（已登记 {} 种）", cmd, count, unknownCmds.size());
+        }
+    }
+
+    /**
+     * 1、10、100、1000… 这样的量级。与 {@link #reportShortInfo} 同一套判据。
+     */
+    private static boolean isMagnitude(long count) {
+        return Long.toString(count).matches("10*");
     }
 
     /**
