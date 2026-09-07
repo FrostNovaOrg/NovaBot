@@ -32,6 +32,30 @@ export const el = (t, c) => { const e = document.createElement(t); if (c) e.clas
 export const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 /**
+ * 插件申报的人话词。没有供这个键时用中性兜底，界面不自带平台名。
+ * @param {string} key 词表键
+ * @param {string} fallback 中性兜底
+ * @return {string}
+ */
+export function term(key, fallback) {
+  return store.vocab[key] || fallback;
+}
+
+/**
+ * 带名短语：词在则套进 withTerm，词缺则整句退成中性 without。
+ * 括注、「打开 … 界面」这类带名短语必须走这里，不能把兜底词塞进括号。
+ * 单词位仍用 {@link term}。
+ * @param {string} key 词表键
+ * @param {function(string): string} withTerm 词在时的带名句
+ * @param {string} without 词缺时的中性整句
+ * @return {string}
+ */
+export function phrase(key, withTerm, without) {
+  const word = store.vocab[key];
+  return word ? withTerm(word) : without;
+}
+
+/**
  * 设置页布尔行与登录安全卡共用的开关
  *
  * 两处各写一份的话，样式漂了只会修到看见的那一处。构造必须同一份：

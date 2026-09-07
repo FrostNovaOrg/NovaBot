@@ -21,6 +21,8 @@
 
 import {accountCaption, cardAnchor, linksModel, resolveTarget, targetOptions}
   from '../starbot-core/src/main/resources/config-ui/links-model.js';
+import {phrase, term} from '../starbot-core/src/main/resources/config-ui/core.js';
+import {store} from '../starbot-core/src/main/resources/config-ui/store.js';
 
 /** 探针的原样形态，与 /api/status 里 health 那一项逐字段同形 */
 function probe(name, scope, level, summary, advice, loginState) {
@@ -199,4 +201,51 @@ if (bad.length || pickBad.length || capBad.length) {
   process.exit(1);
 }
 console.log('昵称\t阳显名 / 阴显 uid\t' + (capBad.length ? '红' : '绿'));
-console.log('\n十二档全对，目标名单四例手填全拒，昵称两向对照过');
+
+// ── phrase 三档：有词／无词／只缺 bot.impl ────────────────────────────────
+// 三问各自 try/catch，末尾汇总，不得 assert 短路。
+const phraseReds = [];
+const prevVocab = store.vocab;
+
+function askPhrase(name, fn) {
+  try {
+    fn();
+  } catch (err) {
+    phraseReds.push(name + '：' + (err && err.message ? err.message : String(err)));
+  }
+}
+
+askPhrase('①有词含「NapCat 等」', () => {
+  store.vocab = {'bot.impl': 'NapCat', 'bot.platform': 'QQ'};
+  const got = phrase('bot.impl', v => '机器人（' + v + ' 等）', '机器人');
+  if (!got.includes('NapCat 等')) {
+    throw new Error('实得「' + got + '」');
+  }
+});
+
+askPhrase('②无词恰为「机器人」且不含「（」', () => {
+  store.vocab = {};
+  const got = phrase('bot.impl', v => '机器人（' + v + ' 等）', '机器人');
+  if (got !== '机器人' || got.includes('（')) {
+    throw new Error('实得「' + got + '」');
+  }
+});
+
+askPhrase('③log 那句无词时不含「（」且含「机器人那头」', () => {
+  store.vocab = {'bot.platform': 'QQ'};
+  const got = phrase('bot.impl',
+    v => term('bot.platform', '聊天平台') + ' 那头（' + v + '）的日志不在这里，到它自己的控制台看。',
+    '机器人那头的日志不在这里，到它自己的控制台看。');
+  if (got.includes('（') || !got.includes('机器人那头')) {
+    throw new Error('实得「' + got + '」');
+  }
+});
+
+store.vocab = prevVocab;
+console.log('phrase 三档\t跑了 3 格\t红 ' + phraseReds.length + ' 格\t' + (phraseReds.length ? '红' : '绿'));
+if (phraseReds.length) {
+  console.error('\nphrase 三档对不上 ' + phraseReds.length + ' 处：');
+  phraseReds.forEach(line => console.error('  ' + line));
+  process.exit(1);
+}
+console.log('\n十二档全对，目标名单四例手填全拒，昵称两向对照过，phrase 三档过');
