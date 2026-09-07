@@ -357,7 +357,8 @@ echo "==> [5/8] 校验产物界面资源"
 # ── [6/8] 界面视图模型 ──────────────────────────────────────────────────
 # 名单写死一处：少写一把，那一页的模型从此只靠人手跑，
 # 而「人手跑过」和「没跑」在构建日志上长得一样。任一红即本构建红。
-# 本树已有主播页那一把，名单九把（首页／推送／连接／主播／日志／初始设置／模板／设置／登录）。
+# 本树已有主播页那一把，名单十三把（首页／推送／连接／主播／日志／初始设置／模板／今日卡／
+# 设置／登录／告警／确认／只读口令）。
 echo
 echo "==> [6/8] 校验界面视图模型"
 MODEL_CHECKERS=(
@@ -368,6 +369,7 @@ MODEL_CHECKERS=(
     log-model-check.sh
     setup-model-check.sh
     template-model-check.sh
+    today-model-check.sh
     settings-model-check.sh
     login-model-check.sh
     alert-model-check.sh

@@ -108,25 +108,25 @@
 
       <div id="home-todo"></div>
 
+      <!--
+        「今日」那张卡（三个数与推送总开关）已随控制台插件走，挂在探针卡后面的 home_card 槽上：
+        它问的是推送这件事今天怎么样，而推送是产品形态。这里因此只剩「现在」一张——
+        并排的位子留着（.split 仍在），第二张卡由谁来摆不由这份版式定。
+      -->
       <div class="split">
         <div class="nv-card hcard" style="flex:1 1 380px">
           <h3>现在</h3>
           <div id="now-box"></div>
-        </div>
-        <div class="nv-card hcard" style="flex:1 1 260px">
-          <h3>今日</h3>
-          <div class="stats" id="today-stats"></div>
-          <div class="quickbar">
-            <button id="toggle-push" type="button">…</button>
-            <button id="selftest-run" type="button">立即自检</button>
-            <span id="push-hint"></span>
-          </div>
         </div>
       </div>
 
       <div class="nv-card hcard" id="home-probes">
         <h3>健康自检 <span class="h-note">六项探针</span></h3>
         <div id="probe-list"></div>
+        <!-- 「立即自检」问的是这台机器此刻健不健康，与探针那一栏同一件事，因此留在宿主这张卡上 -->
+        <div class="quickbar">
+          <button id="selftest-run" type="button">立即自检</button>
+        </div>
       </div>
 
       <div class="nv-card hcard">

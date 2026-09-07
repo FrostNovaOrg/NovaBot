@@ -1,12 +1,12 @@
 /**
- * 初始设置五步的判定：走到哪、放不放行、进度条上画什么、初始值那几行写什么
+ * 初始设置各步的判定：走到哪、放不放行、进度条上画什么、初始值那几行写什么
  *
  * 一个 DOM 也不碰、一个请求也不发——这一页上真正会把人卡住的东西全在这里：
  * 哪一步不许跳过、少了什么不许往下走、「重新跑一遍」之后从第几步接着走。
  * 混在渲染代码里的话，这几件事就只能靠人打开一台没配过的机器手点，
  * 而放行条件写反了<b>不会有任何报错</b>，只是那一步变成点一下就过。
  *
- * 五步各自成不成立由 {@link setupSteps} 现算（在 home-model.js 里），本文件不另判一遍：
+ * 各步各自成不成立由 {@link setupSteps} 现算（在 home-model.js 里），本文件不另判一遍：
  * 首页那条待办与这一页的进度条说的是同一件事，两份实现分叉的表现是
  * 首页写着「完成了 3 步」而这一页停在第 2 步，且两处的代码看起来都对。
  *
@@ -74,11 +74,16 @@ export function allDone(facts, steps) {
  * 这一步放不放行
  *
  * 拦下来时连理由一起给：只回一个 false 的话，屏幕上的表现是「下一步这个按钮点不动」，
- * 而使用者看不出还差什么。五条理由各写各的——抄成同一句的话，
- * 第 2 步与第 4 步要人做的事完全不同，却写着同一行字。
+ * 而使用者看不出还差什么。几条理由各写各的——抄成同一句的话，
+ * 第 2 步与末步要人做的事完全不同，却写着同一行字。
  *
  * 认不出来的步号一律不放行：这张表将来多一步少一步的时候，宁可卡住也不许默默放过去。
- * 按步骤表上的 key 判，不按写死的下标——插件步插进来之后，试发不再是第 5 格。
+ * 按步骤表上的 key 判，不按写死的下标——插件步插进来之后，试发不再是最后一格。
+ *
+ * 🔴 <b>插件步先认出来再进 switch</b>：它的 key 由插件申报，可以是任何一个词，
+ * 包括恰好与某个曾经的内置键同名（例如主播那一步搬进插件之后仍叫 streamer）。
+ * 先进 switch 的话，那一步会被拿一份早已不存在的核心草稿去判，而屏幕上的表现是
+ * 「下一步永远点不动」——插件步该不该放行由那一步自己判，见 setup.js 的 pluginNext。
  * @param index 第几步，0 起
  * @param draft 这一页此刻手里的东西
  * @param steps 步骤表，缺省 {@link SETUP_STEPS}
@@ -88,6 +93,7 @@ export function canAdvance(index, draft, steps) {
   const it = draft || {};
   const step = (steps || SETUP_STEPS)[index];
   if (!step) return stop('认不出这一步，不放行');
+  if (step.plugin) return pass();
 
   switch (step.key) {
     case 'lock':
@@ -99,15 +105,10 @@ export function canAdvance(index, draft, steps) {
     case 'account':
       return it.accountsReady || it.anonymousConfirmed ? pass()
         : stop('扫码登录，或者点「不登录，先用免登录模式」并确认那一段后果');
-    case 'streamer':
-      if (it.noStreamerConfirmed) return pass();
-      if (!it.streamer) return stop('先填 uid 找到一位主播；确实不想现在加的话，点「先不加主播」');
-      return (it.targets || []).length ? pass()
-        : stop('至少选一个群或一位好友，否则这位主播的开播通知没有地方可去');
     case 'test':
       return it.sent ? pass() : stop('先发一条试试，群里看得到才说明整条链路是通的');
     default:
-      return step.plugin ? pass() : stop('认不出这一步，不放行');
+      return stop('认不出这一步，不放行');
   }
 }
 
@@ -208,6 +209,10 @@ const row = (label, text, href, key) => ({label, text, href, key});
  * 三行分别答：机器人连上没有、直播平台这一头定成了什么、推给谁。
  * <b>跳过的那几步如实写出后果</b>——「还没加主播」这台 NovaBot 起来什么都不做，
  * 而一句「初始设置完成」会让人以为它已经在干活了。
+ * <p>
+ * 第三行只看这台机器上此刻有几位主播（{@code counts.streamers}），不问某一步做了没：
+ * 加主播那一步已经是插件带来的，按步骤键去问等于把插件的键名写进核心，
+ * 而两处答的本来就是同一份 {@code /api/status} 的 users。
  * @param facts {@link stepFacts} 的结果
  * @param skips 每一步被跳过的方式
  * @param counts {accounts, streamers, targets}
@@ -229,7 +234,7 @@ export function summaryLines(facts, skips, counts, steps, terms) {
       .join(' · ')
     : '没有装任何直播平台插件，这台 NovaBot 采不到直播事件';
 
-  const streamer = fact('streamer') && it.streamers
+  const streamer = it.streamers
     ? it.streamers + ' 位主播 → ' + (it.targets || 0) + ' 个推送目标'
     : '还没加主播——这台 NovaBot 起来暂时什么都不做';
 

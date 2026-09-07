@@ -1,4 +1,4 @@
-package com.starlwr.bot.core.config.ui;
+package com.starlwr.bot.console.controller;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;

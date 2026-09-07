@@ -63,19 +63,23 @@ eq(push.includes("placeholder = '输入 ' + STREAMER_INPUT_HINT"), true,
 eq(push.includes("'请先输入 ' + STREAMER_INPUT_HINT"), true, '空输入句用同一条常量');
 eq(push.includes('请先输入 uid、直播间号或链接'), false, '旧空输入句已撤');
 
-const setup = read('setup.js');
-eq(setup.includes('STREAMER_INPUT_HINT'), true, 'setup.js 用同一条常量');
-eq(setup.includes("'uid、直播间号或链接'"), false, 'setup 旧标签已撤');
+// 向导里那一步已随控制台插件走，因此这三格量的是插件那一份。留在核心 setup.js 上量的话，
+// 它会永远绿着——那里已经没有这段接线了，而「找不到就当没这回事」与「查过了」长得一样
+const setupStreamer = readFileSync(join(pages, 'setup-streamer.js'), 'utf8');
+eq(setupStreamer.includes('STREAMER_INPUT_HINT'), true, '向导主播步用同一条常量');
+eq(setupStreamer.includes("'uid、直播间号或链接'"), false, '向导主播步旧标签已撤');
+// 核心那一侧不许再留一份：留着的话，两份分叉的那天向导上写着一句、推送页上写着另一句
+eq(read('setup.js').includes('STREAMER_INPUT_HINT'), false, '核心 setup.js 不再自带这条常量');
 const lookupClick = (() => {
-  const from = setup.indexOf("look.id = 'setup-lookup'");
-  const to = setup.indexOf('host.appendChild(look)');
-  return from >= 0 && to > from ? setup.slice(from, to) : '';
+  const from = setupStreamer.indexOf("look.id = 'setup-lookup'");
+  const to = setupStreamer.indexOf('host.appendChild(look)');
+  return from >= 0 && to > from ? setupStreamer.slice(from, to) : '';
 })();
-eq(lookupClick.length > 0, true, '找得到 setup 找一下的接线');
-eq(lookupClick.includes('STREAMER_INPUT_HINT'), true, 'setup 空输入句用同一条常量');
+eq(lookupClick.length > 0, true, '找得到向导主播步「找一下」的接线');
+eq(lookupClick.includes('STREAMER_INPUT_HINT'), true, '向导主播步空输入句用同一条常量');
 const emptyGuard = lookupClick.indexOf('if (!value)');
 const lookupCall = lookupClick.indexOf("api('/streamer/lookup'");
-eq(emptyGuard >= 0 && lookupCall > emptyGuard, true, 'setup 空值在发请求前拦住');
+eq(emptyGuard >= 0 && lookupCall > emptyGuard, true, '向导主播步空值在发请求前拦住');
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);

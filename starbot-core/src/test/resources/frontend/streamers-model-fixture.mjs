@@ -14,12 +14,13 @@
  * 由 StreamersModelTest 拉起，退码 0 ＝ 全绿；非 0 ＝ 有格子红了，红的那几条会逐条印出来。
  * 引用路径是相对的，量的是源码树里的那一份，不是构建产物里的副本。
  * 模型对宿主模块写 './home-model.js'（与浏览器 /config/assets 同形），夹具先挂加载器再动态 import。
+ * 加载器在 tools/ 里，与量插件页的其余几把尺共用一份——两份分叉时，其中一份认得的宿主模块另一份不认得。
  */
 
 import {register} from 'node:module';
 import {totalDataOff} from '../../../main/resources/config-ui/home-model.js';
 
-register(new URL('./alias-core-modules.mjs', import.meta.url));
+register(new URL('../../../../../tools/alias-core-modules.mjs', import.meta.url));
 
 const {
   PERIODS, TABS, barGeometry, detailHash, fmtDuration, fmtGap, fmtMetric, fmtTime,

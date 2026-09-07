@@ -1,5 +1,7 @@
 package com.starlwr.bot.core.config.ui;
 
+import com.starlwr.bot.core.config.ui.page.ConsolePageProvider;
+import com.starlwr.bot.core.config.ui.page.ConsolePageSlot;
 import com.starlwr.bot.core.config.ui.page.ConsolePages;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -928,30 +930,32 @@ class ConfigUiFrontendTest {
     /**
      * 初始设置页的外壳，写在 {@code index.html} 里，闭集
      * <p>
-     * 进度条、正文与「稍后再说」。五步的内容全部由脚本建出来，不写在页面里——
+     * 进度条、正文与「稍后再说」。各步的内容全部由脚本建出来，不写在页面里——
      * 同一件事在页面与脚本里各有一份的话，两份分叉时屏幕上不会有任何异常。
      */
     private static final List<String> SETUP_SHELL = List.of(
             "setup-steps", "setup-main", "setup-later");
 
     /**
-     * 五步各自那几件事的落点，由 {@code setup.js} 建出来，闭集
+     * 各步各自那几件事的落点，由 {@code setup.js} 建出来，闭集
      * <p>
      * 底下那一条（上一步／跳过／下一步／拦住的理由）、第 1 步的两遍口令与通行密钥、
-     * 第 2 步的五格连接参数与测试、第 4 步的平台与 uid、找一下、推到哪，
-     * 第 5 步的发给谁、发一条、收到了／没收到与那三条排查，以及初始值那一摊与「进控制台」。
+     * 第 2 步的五格连接参数与测试、末步的发给谁、发一条、收到了／没收到与那三条排查，
+     * 以及初始值那一摊与「进控制台」。
+     * <p>
+     * 主播那一步的落点（平台、uid、找一下、推到哪、走完那个「去主播页看看」）不在这里：
+     * 那一步已随控制台插件走，它自己那份落点由 console 模块的判据量。
      */
     private static final List<String> SETUP_CONTROLS = List.of(
             "setup-back", "setup-next", "setup-why", "setup-skip",
             "setup-lock", "setup-pwd", "setup-pwd2", "setup-passkey",
             "setup-test-bot", "setup-addr", "setup-hport", "setup-wport",
             "setup-htoken", "setup-wtoken",
-            "setup-platform", "setup-uid", "setup-lookup", "setup-targets", "setup-go-streamer",
             "setup-send-target", "setup-send", "setup-got", "setup-not-got", "setup-tips",
             "setup-defaults", "setup-enter");
 
     /**
-     * 五步各自要调的端点，闭集
+     * 各步各自要调的端点，闭集
      * <p>
      * 少接一条，那一步就变成一个点了没反应的按钮——而按钮本身看起来完全正常。
      * 这些端点别处也在用，因此只在 {@code setup.js} 里找：拿全部脚本找的话，
@@ -960,16 +964,15 @@ class ConfigUiFrontendTest {
     private static final List<String> SETUP_ENDPOINTS = List.of(
             "/status", "/login", "/setup/state", "/setup/rerun/consumed", "/setup/test-sent",
             "/auth/password/set", "/setup/test-bot", "/setup/bot",
-            "/streamer/lookup", "/onebot/targets?type=group", "/onebot/targets?type=friend",
-            "/datasource", "/test-message");
+            "/onebot/targets?type=group", "/onebot/targets?type=friend", "/test-message");
 
     /**
-     * 初始设置五步各有落点，且放行的判法只有 setup-model 一份
+     * 初始设置各步各有落点，且放行的判法只有 setup-model 一份
      * <p>
      * 与设置页、连接页、日志页那三条同理：元素与接线缺哪一半都不会报错。
      * <p>
      * 🔴 后半截奔着一类具体的退步去：<b>把「这一步放不放行」抄一份到渲染代码里</b>。
-     * 那几条规则（第 1 步不许跳、第 4 步 0 主播不许过、第 3 步不登录必须先过确认）
+     * 那几条规则（第 1 步不许跳、第 3 步不登录必须先过确认、末步没发过不算完）
      * 由 {@code setup-model.js} 现算，那一份有 node 夹具逐格在量；抄进渲染代码之后，
      * 夹具照样全绿——它量的还是那份没人调的判法，而屏幕上跑的是新抄的这一份。
      * 抄的那一下<b>不会让任何功能变坏</b>，因此靠人复查是拦不住的。
@@ -978,7 +981,7 @@ class ConfigUiFrontendTest {
      * 这一条判在 {@code links-model.js} 的 resolveTarget 里，本页必须调它而不是自己认。
      */
     @Test
-    @DisplayName("初始设置五步各有落点，放行的判法只有 setup-model 一份")
+    @DisplayName("初始设置各步各有落点，放行的判法只有 setup-model 一份")
     void setupPageIsWiredUp() throws IOException {
         String html = Files.readString(frontendDir().resolve("index.html"), StandardCharsets.UTF_8);
         Map<String, String> sources = coreSources();
@@ -991,7 +994,7 @@ class ConfigUiFrontendTest {
             bad.add("找不到 " + SETUP_VIEW + "，下面每一格都无从量起");
         }
         if (!sources.containsKey(SETUP_MODEL)) {
-            bad.add("找不到 " + SETUP_MODEL + "，五步的判法没有落脚的地方");
+            bad.add("找不到 " + SETUP_MODEL + "，各步的判法没有落脚的地方");
         }
 
         for (String id : SETUP_SHELL) {
@@ -1009,10 +1012,6 @@ class ConfigUiFrontendTest {
             }
         }
 
-        if (!view.contains("detailHash(")) {
-            bad.add("第 4 步去主播页的地址必须问 detailHash，自己拼会与主播页那一份分叉");
-        }
-
         for (String endpoint : SETUP_ENDPOINTS) {
             if (!view.contains("'" + endpoint + "'")) {
                 bad.add(SETUP_VIEW + " 没有调用 " + endpoint + "，那一步此刻点了不管用");
@@ -1023,7 +1022,7 @@ class ConfigUiFrontendTest {
             bad.add(SETUP_VIEW + " 没有问过 canAdvance，「下一步」此刻谁都拦不住");
         }
         if (view.contains("function canAdvance") || view.contains("function stepFacts")) {
-            bad.add(SETUP_VIEW + " 自己又判了一遍五步。那几条规则只许有 " + SETUP_MODEL
+            bad.add(SETUP_VIEW + " 自己又判了一遍那几步。那几条规则只许有 " + SETUP_MODEL
                     + " 一份——抄一份进来之后，夹具量的还是没人调的那一份");
         }
         if (!view.contains("resolveTarget(")) {
@@ -1031,7 +1030,58 @@ class ConfigUiFrontendTest {
                     + "消息只是发去了别处，而这两步存在的意义正是把那种错拦在配置阶段");
         }
 
+        // 主播步已随控制台插件走：内置步只剩四步，插件步的锚点跟着挪到「登录直播平台」之后。
+        // 锚点还指着 streamer 的话，装了插件的机器上 findIndex 落空、插件步一律挤到最后一步之后，
+        // 而无插件的机器上一切正常——这种错只在装了插件的那台机器上现形
+        String home = sources.getOrDefault("home-model.js", "");
+        if (home.isBlank()) {
+            bad.add("找不到 home-model.js，步骤表与插件步锚点无从量起");
+        }
+        if (home.contains("key: 'streamer'")) {
+            bad.add("home-model.js 的 SETUP_STEPS 仍含 streamer，那一步已随控制台插件走");
+        }
+        if (home.contains("'streamer'")) {
+            bad.add("home-model.js 仍按名字认得 streamer，插件步的键不该写进核心");
+        }
+        if (!home.contains("afterKey || 'account'")) {
+            bad.add("withPluginSteps 的缺省锚不是 'account'，主播步搬走后它指着一个不存在的键");
+        }
+        if (ConsolePages.valid(List.of(setupStepPage("streamer", "setup-streamer.js"))).isEmpty()) {
+            bad.add("ConsolePages 的内置向导步闭集仍拦着 streamer，控制台插件那一步登记不上");
+        }
+        // 阴性对照：仍是内置步的那几个照旧拦住，免得上一条靠「闭集整个空掉」蒙混过关
+        if (!ConsolePages.valid(List.of(setupStepPage("lock", "setup-lock.js"))).isEmpty()) {
+            bad.add("内置向导步闭集把 lock 也放行了，它整个失效了");
+        }
+
         assertTrue(bad.isEmpty(), "初始设置页少了这几件事:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
+     * 一个只报 id 与脚本名的向导步注册项，用来问登记关口收不收
+     */
+    private static ConsolePageProvider setupStepPage(String id, String script) {
+        return new ConsolePageProvider() {
+            @Override
+            public String id() {
+                return id;
+            }
+
+            @Override
+            public String displayName() {
+                return id;
+            }
+
+            @Override
+            public String script() {
+                return script;
+            }
+
+            @Override
+            public ConsolePageSlot slot() {
+                return ConsolePageSlot.SETUP_STEP;
+            }
+        };
     }
 
     @Test
@@ -1624,6 +1674,45 @@ class ConfigUiFrontendTest {
     }
 
     /**
+     * 向导「主播」步已随控制台插件走，核心那份渲染里不许再留它
+     * <p>
+     * 这一步要 uid、要查主播、要往 {@code /datasource} 写一位主播——三件都是产品形态，
+     * 不是壳。留在核心的表现不是报错：它照常跑，只是<b>核心得先认识推送页那几个导出</b>
+     * （{@code renderStreamers}／{@code serializePush}／{@code STREAMER_INPUT_HINT}），
+     * 于是卸掉控制台插件之后这一页在 import 那一行就断了，屏幕上只剩一句「载入失败」。
+     * <p>
+     * 连着量六样：两句 import、那一步本身、三个借来的符号、以及它独用的两条端点。
+     * 只量 import 的话，把 import 改成动态取而正文照抄一份仍然绿。
+     */
+    @Test
+    @DisplayName("核心 setup.js 不再引推送页，也不再自带主播步")
+    void coreSetupViewNoLongerCarriesStreamerStep() throws IOException {
+        String setup = Files.readString(frontendDir().resolve("setup.js"), StandardCharsets.UTF_8);
+        List<String> bad = new ArrayList<>();
+
+        for (String imported : List.of("./push.js", "./streamers-model.js")) {
+            if (setup.contains("from '" + imported + "'")) {
+                bad.add("setup.js 仍 import " + imported + "，那是控制台插件的页，核心卸得掉它才算搬走");
+            }
+        }
+        if (setup.contains("stepStreamer")) {
+            bad.add("setup.js 里仍有 stepStreamer，主播步该由 SETUP_STEP 槽的插件页画");
+        }
+        for (String symbol : List.of("renderStreamers", "serializePush", "STREAMER_INPUT_HINT", "detailHash")) {
+            if (setup.contains(symbol)) {
+                bad.add("setup.js 仍用着插件页的 " + symbol + "，那一步没搬干净");
+            }
+        }
+        for (String endpoint : List.of("/streamer/lookup", "/datasource")) {
+            if (setup.contains("'" + endpoint + "'")) {
+                bad.add("setup.js 仍直接调 " + endpoint + "，这两条是主播步独用的，随它走");
+            }
+        }
+
+        assertTrue(bad.isEmpty(), "向导主播步没搬干净:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
      * 插件页是运行时装上来的，不是编译期定死的
      * <p>
      * 静态 {@code import} 一写，那个平台就成了核心的一部分：没装插件时页面加载不了，
@@ -1644,14 +1733,8 @@ class ConfigUiFrontendTest {
             while (m.find()) {
                 String imported = m.group(2);
                 if (pages.contains(imported)) {
-                    // 向导主播步仍从这份模型取 detailHash；那一步搬走之前，这一条还在
-                    if ("setup.js".equals(name) && STREAMERS_MODEL.equals(imported)) {
-                        continue;
-                    }
-                    // 向导主播步仍从推送页取 renderStreamers／serializePush；那一步搬走之前，这一条还在
-                    if ("setup.js".equals(name) && PUSH_VIEW.equals(imported)) {
-                        continue;
-                    }
+                    // 豁免一条也没有了：向导主播步搬进控制台插件之后，
+                    // 核心的界面文件里不再有任何一句指向插件页的 import
                     bad.add(name + " 静态引用了插件页 " + imported);
                 }
             }
@@ -1859,19 +1942,28 @@ class ConfigUiFrontendTest {
     }
 
     /**
-     * 首页「今日」第三格与 Webhook 待办的落点，闭集
+     * 首页三份回包与 Webhook 待办的落点，闭集
      * <p>
-     * 额度与告警已配没配的判定只许有 {@code home-model.js} 一份。渲染那一层再判一遍的话，
+     * 告警已配没配的判定只许有 {@code home-model.js} 一份。渲染那一层再判一遍的话，
      * 夹具照样全绿——它量的还是没人调的那一份，而屏幕上跑的是新抄的这一份。
+     * <p>
+     * 额度那一条不在这张表上：「今日」卡与它背后的 {@code /at-all/quota} 已随控制台插件走，
+     * 核心这一侧再列它就成了「核心必须调一条插件的端点」，而那正是搬家要去掉的东西。
+     * 反过来量：额度那两个判法<b>不许</b>再出现在核心界面里。
      */
     private static final List<String> HOME_ENDPOINTS = List.of(
-            "/status", "/login", "/timeline?date=", "/at-all/quota");
+            "/status", "/login", "/timeline?date=");
 
-    private static final List<String> HOME_MODEL_FUNCTIONS = List.of(
-            "function atAllTile", "function alertConfigured", "function todayAtAllMarkup");
+    private static final List<String> HOME_MODEL_FUNCTIONS = List.of("function alertConfigured");
+
+    /**
+     * 随「今日」卡搬走的那几位，核心界面里一处也不许再有
+     */
+    private static final List<String> MOVED_TO_TODAY_CARD = List.of(
+            "atAllTile", "todayAtAllMarkup", "at-all/quota", "toggle-push", "push-hint", "today-stats");
 
     @Test
-    @DisplayName("首页今日格取额度接口，告警待办落到设置页告警段，判法只有 home-model 一份")
+    @DisplayName("首页三份回包与告警待办落到设置页告警段，判法只有 home-model 一份；今日卡那几位已搬空")
     void homeTodayTileAndWebhookTodoAreWired() throws IOException {
         Map<String, String> sources = coreSources();
         String view = sources.getOrDefault("overview.js", "");
@@ -1917,25 +2009,48 @@ class ConfigUiFrontendTest {
             }
         }
 
-        assertTrue(bad.isEmpty(), "首页今日格与 Webhook 待办少了这几件事:\n  " + String.join("\n  ", bad));
+        // 「今日」卡随控制台插件走：核心这三份界面件里一处也不该再提它。
+        // 留一处的表现不是报错——那一段代码照常跑，只是它取的元素已经不在核心的页面上了
+        for (String name : List.of("home-model.js", "overview.js", "main.js")) {
+            String text = sources.getOrDefault(name, "");
+            for (String moved : MOVED_TO_TODAY_CARD) {
+                if (text.contains(moved)) {
+                    bad.add(name + " 里仍有「今日」卡的 " + moved + "，那张卡已随控制台插件走");
+                }
+            }
+        }
+
+        assertTrue(bad.isEmpty(), "首页那几份回包与 Webhook 待办少了这几件事:\n  " + String.join("\n  ", bad));
     }
 
     /**
-     * 首页今日格的平台前缀不写死任何一个推送平台标识
+     * 视图模型一律不写死推送平台标识
      * <p>
-     * 显示名由适配器在运行期自报、经额度接口下发。界面文件里写死一份映射，
+     * 显示名由适配器在运行期自报、经接口下发。界面文件里写死一份映射，
      * 装第二套推送平台的那天前缀就会对不上，而对不上的方向是把接口标识直接画到屏幕上。
+     * <p>
+     * 量的是全部 {@code *-model.js}，不点名某一份：会写死这种映射的那一份，
+     * 正是此刻还没搬到、或者明天才新写的那一份。「今日」卡的平台前缀就从核心
+     * 搬去了控制台插件——按名字点的判据会跟着它一起变成空跑，而空跑与全绿长得一样。
      */
     @Test
-    @DisplayName("首页今日格不写死推送平台标识")
-    void homeModelDoesNotHardcodePushPlatformId() {
-        String model = coreSources().getOrDefault("home-model.js", "");
-        assertTrue(!model.isBlank(), "找不到 home-model.js，不写死平台标识的规矩没有落脚的地方");
-        int hits = 0;
-        for (int from = 0; (from = model.indexOf("qq-onebot", from)) >= 0; from++) {
-            hits++;
-        }
-        assertEquals(0, hits, "home-model.js 源码不得出现 qq-onebot，显示名由接口下发；命中 " + hits + " 次");
+    @DisplayName("视图模型不写死推送平台标识")
+    void viewModelsDoNotHardcodePushPlatformId() {
+        Map<String, String> models = new LinkedHashMap<>();
+        sources().forEach((name, text) -> {
+            if (name.endsWith("-model.js")) {
+                models.put(name, text);
+            }
+        });
+        assertFalse(models.isEmpty(), "一份 *-model.js 也没找到，这条规矩没有落脚的地方");
+
+        List<String> hits = new ArrayList<>();
+        models.forEach((name, text) -> {
+            if (text.contains("qq-onebot")) {
+                hits.add(name);
+            }
+        });
+        assertEquals(List.of(), hits, "视图模型源码不得出现 qq-onebot，显示名由接口下发；命中: " + hits);
     }
 
     /**
