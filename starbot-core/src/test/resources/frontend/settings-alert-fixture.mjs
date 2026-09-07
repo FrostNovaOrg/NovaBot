@@ -127,7 +127,7 @@ function harness() {
   };
   const host = {value: ''};
   const port = {value: ''};
-  const to = {value: 'a@b.com'};
+  const to = {value: 'a@example.invalid'};
   const mailPreset = {value: ''};
   const dirty = {};
   const setValue = (name, value) => { dirty[name] = String(value); };
