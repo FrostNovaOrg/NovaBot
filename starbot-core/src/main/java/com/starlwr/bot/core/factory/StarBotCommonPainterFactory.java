@@ -9,6 +9,12 @@ import org.springframework.stereotype.Component;
 
 /**
  * StarBot 绘图器工厂
+ * <p>
+ * 绘图器要三样东西才画得全：版本号（画在版权行上）、配置（版面尺寸与配色）、字体表（挑字与量宽）。
+ * 报告图那一路自己不持有这三样，全靠这里在造绘图器时一并塞进去——
+ * 少塞一样不会在造的时候报错，会等到画到那一处时才炸。
+ * <p>
+ * 每次都造一张<b>新画布</b>：绘图器带着当前坐标这个状态，共用一张会让两张报告画到对方身上。
  */
 @Component
 public class StarBotCommonPainterFactory {
@@ -32,6 +38,8 @@ public class StarBotCommonPainterFactory {
      * @return 绘图器
      */
     public CommonPainter create(int width, int height) {
+        // 不自动加高：高度事先算得出的那些图（卡片、榜单）用这一版，
+        // 画超了就该在版面上看出来，而不是让画布悄悄长高
         return create(width, height, false);
     }
 
