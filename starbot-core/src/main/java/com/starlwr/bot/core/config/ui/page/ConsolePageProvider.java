@@ -1,5 +1,7 @@
 package com.starlwr.bot.core.config.ui.page;
 
+import java.util.List;
+
 /**
  * 控制台页面注册点
  * <p>
@@ -38,6 +40,22 @@ public interface ConsolePageProvider {
      * @return 脚本文件名
      */
     String script();
+
+    /**
+     * 同目录下还要端出去的其它 {@code .js} 文件名
+     * <p>
+     * 主脚本里 {@code import './x.js'} 会解析到 {@code /config/assets/x.js}。只登记
+     * {@link #script()} 的话，那几个文件名对不上白名单，请求就是 404。
+     * 名字与 {@link #script()} 同一套规则：只接受字母数字、下划线与连字符，扩展名只认
+     * {@code .js}，不含路径分隔符。与配置界面自带资源同名、与其它插件已登记的文件名撞车，
+     * 或名字不合规，这一页不予登记。
+     * <p>
+     * 缺省是空清单。已有的实现一个字都不用改。
+     * @return 附属脚本文件名，可为空，不可为 {@code null}
+     */
+    default List<String> assets() {
+        return List.of();
+    }
 
     /**
      * 页签在标签条上的先后，数小的在前，相同时按标识排

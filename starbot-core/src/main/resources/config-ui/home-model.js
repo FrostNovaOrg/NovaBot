@@ -47,12 +47,14 @@ const BUILTIN_STEP_KEYS = new Set(SETUP_STEPS.map(step => step.key));
 /**
  * 内置五步加上插件申报的向导步骤
  *
- * 只收 {@code slot === 'setup_step'} 的页。插在内置「主播」之后、「试发」之前，
+ * 只收 {@code slot === 'setup_step'} 的页。插在内置锚点之后、「试发」之前，
  * 按 order 升序（同 order 按 id）。无插件页时返回 {@link SETUP_STEPS} 本身。
  * @param pages /api/pages 的 pages 清单
+ * @param terms 词表，缺则机器人那一步仍说「连上机器人」
+ * @param afterKey 插件步插在哪一步之后，缺省 {@code 'streamer'}
  * @return {{key: string, title: string, skippable?: boolean, plugin?: boolean}[]}
  */
-export function withPluginSteps(pages, terms) {
+export function withPluginSteps(pages, terms, afterKey) {
   const extra = (Array.isArray(pages) ? pages : [])
     .filter(page => page
       && page.slot === 'setup_step'
@@ -66,8 +68,10 @@ export function withPluginSteps(pages, terms) {
     .map(page => ({key: page.id, title: page.displayName, plugin: true}));
   let table = SETUP_STEPS;
   if (extra.length) {
-    const streamerAt = SETUP_STEPS.findIndex(step => step.key === 'streamer');
-    table = [...SETUP_STEPS.slice(0, streamerAt + 1), ...extra, ...SETUP_STEPS.slice(streamerAt + 1)];
+    const want = afterKey || 'streamer';
+    let at = SETUP_STEPS.findIndex(step => step.key === want);
+    if (at < 0) at = SETUP_STEPS.findIndex(step => step.key === 'streamer');
+    table = [...SETUP_STEPS.slice(0, at + 1), ...extra, ...SETUP_STEPS.slice(at + 1)];
   }
   return table.map(step => step.key !== 'bot' ? step : Object.assign({}, step, {
     title: say(terms, 'bot.platform', v => '连上 ' + v + ' 机器人', '连上机器人'),

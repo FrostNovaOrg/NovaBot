@@ -293,7 +293,9 @@ function renderPlugin(host, step) {
       host.appendChild(note('warn', '这一步的界面没装上'));
     }
   }
-  foot(host, null, '', async () => {
+  const skippable = !!(mod && mod.skippable);
+  step.skippable = skippable;
+  foot(host, skippable ? () => finishStep('skip') : null, skippable ? '跳过' : '', async () => {
     await refreshFacts();
     return true;
   });
