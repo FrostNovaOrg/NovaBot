@@ -14,53 +14,14 @@
  * 平台叫什么由 /api/login 里那个显示名带进来。写死一个，没装它的人会看见一步他走不到的流程。
  */
 
-import {setupSteps} from './home-model.js';
+import {SETUP_STEPS, setupSteps} from './home-model.js';
+import * as home from './home-model.js';
 import {mailAlertConfigured} from './alert-model.js';
 
-/**
- * 五步，闭集
- *
- * {@code skippable} 是「界面上给不给跳过按钮」，不是「不填也能过」——
- * 第 3 步跳过等于选了免登录（要先过一段后果确认），第 4 步跳过等于不加主播（同样要确认），
- * 两者的放行仍归 {@link canAdvance} 判。
- *
- * 🔴 第 1、2 步不给跳过按钮：没上锁的控制台谁都进得来，没连上机器人的 NovaBot
- * 一条消息也发不出去——这两件事跳过之后，剩下三步做了也没有意义。
- * 第 1 步曾经也给过「先跳过」，后来撤了：跳过它之后，剩下四步配好的东西全摆在一扇开着的门后面。
- */
-export const SETUP_STEPS = [
-  {key: 'lock', title: '给控制台上把锁', skippable: false},
-  {key: 'bot', title: '连上 QQ 机器人', skippable: false},
-  {key: 'account', title: '登录直播平台', skippable: true},
-  {key: 'streamer', title: '第一位主播，推到哪', skippable: true},
-  {key: 'test', title: '发一条试试', skippable: false},
-];
+export {SETUP_STEPS};
 
-const BUILTIN_STEP_KEYS = new Set(SETUP_STEPS.map(step => step.key));
-
-/**
- * 内置五步加上插件申报的向导步骤
- *
- * 只收 {@code slot === 'setup_step'} 的页。插在内置「主播」之后、「试发」之前，
- * 按 order 升序（同 order 按 id）。无插件页时返回 {@link SETUP_STEPS} 本身。
- * @param pages /api/pages 的 pages 清单
- * @return {{key: string, title: string, skippable?: boolean, plugin?: boolean}[]}
- */
 export function withPluginSteps(pages) {
-  const extra = (Array.isArray(pages) ? pages : [])
-    .filter(page => page
-      && page.slot === 'setup_step'
-      && page.id
-      && !BUILTIN_STEP_KEYS.has(page.id))
-    .slice()
-    .sort((a, b) => {
-      const order = (Number(a.order) || 0) - (Number(b.order) || 0);
-      return order !== 0 ? order : String(a.id).localeCompare(String(b.id));
-    })
-    .map(page => ({key: page.id, title: page.displayName, plugin: true}));
-  if (!extra.length) return SETUP_STEPS;
-  const streamerAt = SETUP_STEPS.findIndex(step => step.key === 'streamer');
-  return [...SETUP_STEPS.slice(0, streamerAt + 1), ...extra, ...SETUP_STEPS.slice(streamerAt + 1)];
+  return home.withPluginSteps(pages);
 }
 
 /**

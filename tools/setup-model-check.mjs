@@ -12,8 +12,9 @@
  */
 
 import {
-  SETUP_STEPS, allDone, canAdvance, railMarks, startAt, withPluginSteps,
+  SETUP_STEPS, allDone, canAdvance, railMarks, startAt,
 } from '../starbot-core/src/main/resources/config-ui/setup-model.js';
+import {withPluginSteps} from '../starbot-core/src/main/resources/config-ui/home-model.js';
 
 const failures = [];
 let checks = 0;

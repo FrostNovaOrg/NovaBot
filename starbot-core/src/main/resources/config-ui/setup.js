@@ -21,7 +21,7 @@ import {registerPasskey} from './passkeys.js';
 import {renderStreamers, serializePush, STREAMER_INPUT_HINT} from './push.js';
 import {setAuthState} from './settings-auth.js';
 import {renderGeneral} from './settings.js';
-import {SETUP_STEPS, allDone, canAdvance, initialRows, railMarks, startAt, stepFacts, summaryLines}
+import {allDone, canAdvance, initialRows, railMarks, startAt, stepFacts, summaryLines, withPluginSteps}
   from './setup-model.js';
 import {store} from './store.js';
 import {detailHash} from './streamers-model.js';
@@ -44,8 +44,17 @@ const draft = {
 /** 每一步被跳过的方式，'' / 'skip' / 'anon' */
 let skips = ['', '', '', '', ''];
 
-/** 五步各自成立了没有，来自服务端事实 */
+/** 各步各自成立了没有，来自服务端事实与插件 done */
 let facts = [false, false, false, false, false];
+
+/** 当前步骤表（内置五步 ± 插件步） */
+let steps = withPluginSteps();
+
+/** slot=setup_step 的页清单 */
+let pluginPages = [];
+
+/** 已装上的插件步模块，装不上的键为 null */
+let pluginMods = {};
 
 /** 正在做第几步 */
 let current = 0;
@@ -134,6 +143,42 @@ function applyBotOkFromFacts(draft, facts) {
   return draft;
 }
 
+function factAt(key) {
+  const i = steps.findIndex(step => step.key === key);
+  return i >= 0 && !!(facts[i]);
+}
+
+function titleOf(key) {
+  const hit = steps.find(step => step.key === key);
+  return hit ? hit.title : '';
+}
+
+async function loadPluginModules(list) {
+  const mods = {};
+  for (const meta of list) {
+    try {
+      mods[meta.id] = await import('/config/assets/' + meta.script);
+    } catch (e) {
+      mods[meta.id] = null;
+    }
+  }
+  return mods;
+}
+
+async function collectPluginDone() {
+  const ctx = {status: seen.status, login: seen.login, api};
+  const done = {};
+  for (const meta of pluginPages) {
+    const mod = pluginMods[meta.id];
+    try {
+      done[meta.id] = !!(mod && typeof mod.done === 'function' && await mod.done(ctx));
+    } catch (e) {
+      done[meta.id] = false;
+    }
+  }
+  return done;
+}
+
 /**
  * 打开初始设置页：取事实、定落点、画出来
  *
@@ -145,14 +190,19 @@ export async function openSetup() {
   loadOptions();
 
   try {
-    const [status, login, mark, bot] = await Promise.all([
-      api('/status'), api('/login'), api('/setup/state'), api('/setup/bot')]);
+    const [status, login, mark, bot, pagePack] = await Promise.all([
+      api('/status'), api('/login'), api('/setup/state'), api('/setup/bot'),
+      api('/pages').catch(() => ({pages: []}))]);
     seen = {status, login, mark};
     // 已经配过的地址与端口回填，免得「重新跑一遍」的人对着 127.0.0.1 重敲一遍自己的地址。
     // 有未保存编辑则留着（两个 Token 不从盘上回填）；与盘上一致时才清空 Token 并回填地址端口。
     if (botDraftMatchesSaved(draft)) {
       syncBotDraft(draft, bot);
     }
+    pluginPages = (pagePack.pages || []).filter(meta => meta && meta.slot === 'setup_step');
+    steps = withPluginSteps(pluginPages);
+    pluginMods = await loadPluginModules(pluginPages);
+    skips = steps.map((_, i) => skips[i] || '');
   } catch (e) {
     main.textContent = '';
     main.appendChild(note('err', '载入失败：' + e.message
@@ -160,17 +210,18 @@ export async function openSetup() {
     return;
   }
 
-  facts = stepFacts(seen.status, seen.login, seen.mark.testSent);
+  facts = stepFacts(seen.status, seen.login, seen.mark.testSent,
+    await collectPluginDone(), pluginPages);
   // 既成事实要盖进草稿：这台机器本来就上了锁、本来就连着机器人时，
   // 那两步不该因为「这一趟里没做过」而拦着人往下走
   draft.locked = facts[0];
   applyBotOkFromFacts(draft, facts);
   draft.accountsReady = facts[2];
-  draft.sent = facts[4];
+  draft.sent = factAt('test');
 
   const rerun = !!seen.mark.rerunRequested;
-  current = startAt(facts, rerun);
-  finished = allDone(facts) && !rerun;
+  current = startAt(facts, rerun, steps);
+  finished = allDone(facts, steps) && !rerun;
 
   // 标记收下就算用过了。不收的话，此后每一次打开这一页都被拉回第一步，
   // 而使用者只按过那一次「重新跑一遍」
@@ -188,7 +239,7 @@ function render() {
   rail.innerHTML = '';
   main.innerHTML = '';
 
-  railMarks(facts, skips, finished ? -1 : current).forEach((mark, i) => {
+  railMarks(facts, skips, finished ? -1 : current, steps).forEach((mark, i) => {
     const item = el('button', 'su-st');
     item.type = 'button';
     // 还走不到的那几步点不动。点得动的话，第一步没做完就能跳到第五步，
@@ -201,7 +252,7 @@ function render() {
 
     const text = el('div');
     const title = el('div', 'su-t');
-    title.textContent = SETUP_STEPS[i].title;
+    title.textContent = steps[i].title;
     text.appendChild(title);
     if (mark.note) {
       const small = el('span', 'su-x');
@@ -219,7 +270,33 @@ function render() {
     renderDone(main);
     return;
   }
-  [stepLock, stepBot, stepAccount, stepStreamer, stepTest][current](main);
+  const dispatch = {
+    lock: stepLock, bot: stepBot, account: stepAccount, streamer: stepStreamer, test: stepTest,
+  };
+  const step = steps[current];
+  if (step && step.plugin) renderPlugin(main, step);
+  else if (step && dispatch[step.key]) dispatch[step.key](main);
+}
+
+/**
+ * 插件步：模块 render 把这一步画进 host；装不上画一句说明，不整页红
+ */
+function renderPlugin(host, step) {
+  const mod = pluginMods[step.key];
+  const ctx = {status: seen.status, login: seen.login, api};
+  if (!mod || typeof mod.render !== 'function') {
+    host.appendChild(note('warn', '这一步的界面没装上'));
+  } else {
+    try {
+      mod.render(host, ctx);
+    } catch (e) {
+      host.appendChild(note('warn', '这一步的界面没装上'));
+    }
+  }
+  foot(host, null, '', async () => {
+    await refreshFacts();
+    return true;
+  });
 }
 
 /**
@@ -227,7 +304,7 @@ function render() {
  */
 function goStep(index) {
   stopSetupPolling();
-  current = Math.max(0, Math.min(SETUP_STEPS.length - 1, index));
+  current = Math.max(0, Math.min(steps.length - 1, index));
   finished = false;
   render();
 }
@@ -238,7 +315,7 @@ function goStep(index) {
  */
 function finishStep(how) {
   skips = skips.map((value, i) => (i === current ? (how || '') : value));
-  if (current < SETUP_STEPS.length - 1) {
+  if (current < steps.length - 1) {
     goStep(current + 1);
     return;
   }
@@ -258,7 +335,8 @@ async function refreshFacts() {
     const [status, login] = await Promise.all([api('/status'), api('/login')]);
     seen.status = status;
     seen.login = login;
-    facts = stepFacts(status, login, seen.mark.testSent || draft.sent);
+    facts = stepFacts(status, login, seen.mark.testSent || draft.sent,
+      await collectPluginDone(), pluginPages);
     draft.locked = facts[0];
     draft.accountsReady = facts[2];
   } catch (e) {
@@ -361,7 +439,7 @@ function foot(host, onSkip, skipLabel, onNext) {
   bar.appendChild(back);
   bar.appendChild(el('span', 'su-sp'));
 
-  if (onSkip && SETUP_STEPS[current].skippable) {
+  if (onSkip && steps[current].skippable) {
     const skip = el('button', 'ghost');
     skip.type = 'button';
     skip.id = 'setup-skip';
@@ -373,7 +451,7 @@ function foot(host, onSkip, skipLabel, onNext) {
   const next = el('button', 'primary');
   next.type = 'button';
   next.id = 'setup-next';
-  next.textContent = current === SETUP_STEPS.length - 1 ? '完成' : '下一步';
+  next.textContent = current === steps.length - 1 ? '完成' : '下一步';
   next.addEventListener('click', async () => {
     next.disabled = true;
     const ok = onNext ? await onNext() : true;
@@ -396,7 +474,7 @@ function foot(host, onSkip, skipLabel, onNext) {
  * 而放行条件恰恰是随着那几格一起变的
  */
 function syncFoot() {
-  const gate = canAdvance(current, draft);
+  const gate = canAdvance(current, draft, steps);
   const next = $('#setup-next');
   const why = $('#setup-why');
   if (next) next.disabled = !gate.ok;
@@ -413,7 +491,7 @@ function syncFoot() {
  * 而后面四步配好的东西全在它后面。原型上那个「先跳过」据此作废。
  */
 function stepLock(host) {
-  heading(host, SETUP_STEPS[0].title,
+  heading(host, titleOf('lock'),
     '设了口令，访问这个控制台才要登录。这一步不能跳过。');
 
   if (draft.locked) {
@@ -502,7 +580,7 @@ function invalidateBot(draft) {
 }
 
 function stepBot(host) {
-  heading(host, SETUP_STEPS[1].title,
+  heading(host, titleOf('bot'),
     '机器人指 NapCat 这类 OneBot 实现，NovaBot 通过它把消息发到 QQ。这一步不能跳过。');
 
   const at = draft.bot;
@@ -604,7 +682,7 @@ function stepBot(host) {
 
 function stepAccount(host) {
   const accounts = seen.login.accounts || [];
-  heading(host, SETUP_STEPS[2].title,
+  heading(host, titleOf('account'),
     '登录之后才有动态推送与自动关注；直播推送不登录也照常。');
 
   if (!accounts.length) {
@@ -690,7 +768,7 @@ function invalidateStreamer(draft) {
 }
 
 function stepStreamer(host) {
-  heading(host, SETUP_STEPS[3].title,
+  heading(host, titleOf('streamer'),
     '填主播的 ' + STREAMER_INPUT_HINT + '。');
 
   // 装了哪些直播平台是运行期才知道的事，三种情形都要说清楚——
@@ -943,7 +1021,7 @@ async function saveStreamer() {
 const TEST_TEXT = '这是一条来自 NovaBot 的测试消息，收到即表示推送链路正常。';
 
 function stepTest(host) {
-  heading(host, SETUP_STEPS[4].title,
+  heading(host, titleOf('test'),
     '往一个群或一位好友发一条，那头看得到就说明整条链路是通的。');
 
   const result = el('div');
@@ -1140,7 +1218,7 @@ function renderDone(host) {
     accounts: seen.login.accounts || [],
     streamers: (seen.status.users || []).length,
     targets: (seen.status.users || []).reduce((n, one) => n + (one.targets || 0), 0),
-  }).forEach(line => {
+  }, steps).forEach(line => {
     const item = el('div', 'su-sum');
     item.textContent = '· ' + line;
     host.appendChild(item);
