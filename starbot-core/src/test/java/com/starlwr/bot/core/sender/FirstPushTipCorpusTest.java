@@ -371,6 +371,61 @@ class FirstPushTipCorpusTest {
     }
 
     @Test
+    @DisplayName("名单非空但目标全空／null 不钉、文案无可补记；真空名单仍写名单为空")
+    void seedExistingAllEmptyTargetsDoesNotPinLogsNothingToSeed() {
+        List<String> red = new ArrayList<>();
+
+        Logger logger = (Logger) LoggerFactory.getLogger(FirstPushTipService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            StarBotCoreProperties properties = new StarBotCoreProperties();
+            properties.getLive().setLiveDataPath(dataDir.resolve("seed-empty-targets.json").toString());
+            StarBotStateStore store = new StarBotStateStore(properties);
+            FirstPushTipService service = new FirstPushTipService(store);
+
+            PushUser emptyTargets = new PushUser();
+            PushUser nullTargets = new PushUser();
+            nullTargets.setTargets(null);
+            service.seedExisting(List.of(emptyTargets, nullTargets));
+
+            try {
+                assertFalse(store.namespace("FirstPushTip").containsKey(FirstPushTipService.SEEDED_KEY),
+                        "名单非空但目标全空／null 仍钉「已补过」：配好目标后重启会被当成已提示");
+            } catch (Throwable t) {
+                red.add("① " + t.getMessage());
+            }
+            try {
+                String joined = infoMessages(appender);
+                assertTrue(joined.contains("无可补记"), "目标全空／null 日志应含「无可补记」，实际: " + joined);
+                assertFalse(joined.contains("名单为空"), "目标全空／null 不该写成「名单为空」，实际: " + joined);
+            } catch (Throwable t) {
+                red.add("② " + t.getMessage());
+            }
+
+            appender.list.clear();
+            StarBotCoreProperties emptyProps = new StarBotCoreProperties();
+            emptyProps.getLive().setLiveDataPath(dataDir.resolve("seed-empty-targets-vac.json").toString());
+            StarBotStateStore emptyStore = new StarBotStateStore(emptyProps);
+            new FirstPushTipService(emptyStore).seedExisting(List.of());
+            try {
+                String joined = infoMessages(appender);
+                assertTrue(joined.contains("名单为空"), "真空名单日志应仍含「名单为空」，实际: " + joined);
+                assertFalse(joined.contains("无可补记"), "真空名单不该写成「无可补记」，实际: " + joined);
+            } catch (Throwable t) {
+                red.add("③ " + t.getMessage());
+            }
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        if (!red.isEmpty()) {
+            fail(red.size() + " 问红：" + String.join("；", red));
+        }
+    }
+
+    @Test
     @DisplayName("关掉首次提示时不发也不认领，打开后第一条才发")
     void switchOffSkipsTipAndClaim() {
         Fixture fixture = new Fixture();

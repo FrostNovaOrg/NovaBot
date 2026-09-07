@@ -3,6 +3,7 @@ package com.starlwr.bot.core.config.ui;
 import com.starlwr.bot.core.config.ui.page.ConsolePages;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -22,6 +23,7 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * 配置界面前端的静态检查
@@ -2094,14 +2096,7 @@ class ConfigUiFrontendTest {
                 bad.add("豁免名单里的 " + model + " 在界面目录里已经没有了，名单该更新");
                 continue;
             }
-            boolean named = false;
-            for (String path : looped) {
-                if (path.equals(model) || path.endsWith("/" + model)) {
-                    named = true;
-                    break;
-                }
-            }
-            if (!named) {
+            if (!syntaxLoopCoversExemptModel(model, looped)) {
                 bad.add("豁免件 " + model + " 没有任何一把尺的语法循环代码行收进它，构建连语法都不量");
             }
         }
@@ -2139,6 +2134,102 @@ class ConfigUiFrontendTest {
                 "refreshAuthState 没有取 /auth/state，回灌没有数据源");
         assertTrue(refresh.contains("setAuthState("),
                 "refreshAuthState 没有交给 setAuthState，设置页仍按载入时那一份画");
+    }
+
+    @Test
+    @DisplayName("豁免件按完整相对路径认，同名异目录不能互抵")
+    void exemptModelMatchUsesFullRelativePath(@TempDir Path tmp) throws IOException {
+        List<String> red = new ArrayList<>();
+        Path ui = tmp.resolve("config-ui");
+        Path other = tmp.resolve("elsewhere");
+        Files.createDirectories(ui);
+        Files.createDirectories(other);
+        String model = "alert-model.js";
+        Files.writeString(ui.resolve(model), "export const fromUi = 1;\n");
+        Files.writeString(other.resolve(model), "export const fromElsewhere = 2;\n");
+        String uiRel = tmp.relativize(ui.resolve(model)).toString().replace('\\', '/');
+        String otherRel = tmp.relativize(other.resolve(model)).toString().replace('\\', '/');
+
+        try {
+            boolean oldWouldCover = false;
+            for (String path : Set.of(otherRel)) {
+                if (path.equals(model) || path.endsWith("/" + model)) {
+                    oldWouldCover = true;
+                    break;
+                }
+            }
+            assertTrue(oldWouldCover, "旧尺应把同名异目录互抵成绿：异目录 " + otherRel + " 对豁免件 " + model);
+            assertEquals("config-ui/" + model, uiRel, "临时目录里界面副本的相对路径应对上 config-ui/ 前缀");
+        } catch (Throwable t) {
+            red.add("① " + t.getMessage());
+        }
+        try {
+            assertFalse(syntaxLoopCoversExemptModel(model, Set.of(otherRel)),
+                    "尺只点了异目录同名件 " + otherRel + "，豁免件仍算收进");
+        } catch (Throwable t) {
+            red.add("② " + t.getMessage());
+        }
+        try {
+            assertTrue(syntaxLoopCoversExemptModel(model, Set.of(uiRel)),
+                    "尺点了 " + uiRel + "，豁免件应收进");
+        } catch (Throwable t) {
+            red.add("③ " + t.getMessage());
+        }
+
+        if (!red.isEmpty()) {
+            fail(red.size() + " 问红：" + String.join("；", red));
+        }
+    }
+
+    @Test
+    @DisplayName("无花括号成功分支不得截到后面的 catch")
+    void bracedBlockAfterDoesNotTakeFollowingCatch() {
+        List<String> red = new ArrayList<>();
+        String snippet = "try {\n  if (res.success)\n    doSuccess();\n} catch (e) { refreshAuthState(); }\n";
+        int from = snippet.indexOf("res.success");
+
+        try {
+            int open = snippet.indexOf('{', from);
+            assertTrue(open >= 0, "旧尺前提：from 之后应有花括号");
+            int depth = 0;
+            int close = -1;
+            for (int i = open; i < snippet.length(); i++) {
+                char c = snippet.charAt(i);
+                if (c == '{') {
+                    depth++;
+                } else if (c == '}') {
+                    depth--;
+                    if (depth == 0) {
+                        close = i;
+                        break;
+                    }
+                }
+            }
+            assertTrue(close > open, "旧尺前提：花括号应配平");
+            String oldBranch = snippet.substring(open, close + 1);
+            assertTrue(oldBranch.contains("refreshAuthState"),
+                    "旧尺应截到 catch 而假绿，实际: " + oldBranch);
+            assertFalse(oldBranch.contains("doSuccess"),
+                    "旧尺前提坏了：截到的块不应含成功句，实际: " + oldBranch);
+        } catch (Throwable t) {
+            red.add("① " + t.getMessage());
+        }
+        String branch = bracedBlockAfter(snippet, from);
+        try {
+            assertTrue(branch.contains("doSuccess"), "成功分支应收进无花括号那句，实际: " + branch);
+        } catch (Throwable t) {
+            red.add("② " + t.getMessage());
+        }
+        try {
+            assertFalse(branch.contains("refreshAuthState"),
+                    "不得把 catch 算进成功分支，实际: " + branch);
+        } catch (Throwable t) {
+            red.add("③ " + t.getMessage());
+        }
+
+        if (!red.isEmpty()) {
+            fail(red.size() + " 问红：" + String.join("；", red));
+        }
     }
 
     /**
@@ -2358,28 +2449,70 @@ class ConfigUiFrontendTest {
     }
 
     /**
-     * 从 {@code from} 之后第一对配平花括号截出那一块，含括号本身
+     * 豁免件是否被某把尺的语法循环收进
+     * <p>
+     * 只认界面目录下的完整相对路径。按文件名 {@code endsWith} 的话，
+     * 插件页里一份同名件就能把没被收进的豁免件抵成绿。
+     */
+    private boolean syntaxLoopCoversExemptModel(String model, Set<String> looped) {
+        return looped.contains("config-ui/" + model);
+    }
+
+    /**
+     * 从 {@code from} 所在条件之后截出那一块语法块
      * <p>
      * 用来取 {@code if (res.success) { … }} 的成功分支：从条件截到函数尾会把
      * {@code else}／{@code catch} 也算进去，调用写在失败路径里照样绿。
+     * 成功分支若是无花括号单语句，不能再扫后面第一对花括号——那会截到 {@code catch}。
      */
     private String bracedBlockAfter(String text, int from) {
-        int open = text.indexOf('{', from);
-        if (open < 0) {
-            return "";
-        }
-        int depth = 0;
-        for (int i = open; i < text.length(); i++) {
+        int closeParen = -1;
+        int depth = 1;
+        for (int i = from; i < text.length(); i++) {
             char c = text.charAt(i);
-            if (c == '{') {
+            if (c == '(') {
                 depth++;
-            } else if (c == '}') {
+            } else if (c == ')') {
                 depth--;
                 if (depth == 0) {
-                    return text.substring(open, i + 1);
+                    closeParen = i;
+                    break;
                 }
             }
         }
-        return "";
+        int i = closeParen >= 0 ? closeParen + 1 : from;
+        while (i < text.length() && Character.isWhitespace(text.charAt(i))) {
+            i++;
+        }
+        if (i >= text.length()) {
+            return "";
+        }
+        if (text.charAt(i) == '{') {
+            int braceDepth = 0;
+            for (int j = i; j < text.length(); j++) {
+                char c = text.charAt(j);
+                if (c == '{') {
+                    braceDepth++;
+                } else if (c == '}') {
+                    braceDepth--;
+                    if (braceDepth == 0) {
+                        return text.substring(i, j + 1);
+                    }
+                }
+            }
+            return "";
+        }
+        int end = i;
+        while (end < text.length()) {
+            char c = text.charAt(end);
+            if (c == ';') {
+                return text.substring(i, end + 1);
+            }
+            if (c == '{' || c == '}') {
+                return text.substring(i, end).trim();
+            }
+            end++;
+        }
+        return text.substring(i).trim();
     }
 }

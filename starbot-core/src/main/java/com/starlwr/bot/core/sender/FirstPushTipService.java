@@ -98,7 +98,6 @@ public class FirstPushTipService {
             return;
         }
         int marked = 0;
-        int skippedDisabled = 0;
         if (users != null) {
             for (PushUser user : users) {
                 if (user == null || user.getTargets() == null) {
@@ -109,7 +108,6 @@ public class FirstPushTipService {
                         continue;
                     }
                     if (Boolean.FALSE.equals(target.getEnabled())) {
-                        skippedDisabled++;
                         continue;
                     }
                     claim(target.getPlatform(), target.getType(), target.getNum());
@@ -119,8 +117,9 @@ public class FirstPushTipService {
         }
         if (marked == 0) {
             // 空名单多半是数据源没配好，宁可下次再补一遍。
-            // 全是停用目标同样不钉，但日志不能写成「名单为空」——名单在，只是没有可补记的会话。
-            if (skippedDisabled > 0) {
+            // 名单在但没有可补记的会话（全停用、目标列表空／null）同样不钉，
+            // 「名单为空」只留给真空名单。
+            if (users != null && !users.isEmpty()) {
                 log.info("无可补记，不钉标记");
             } else {
                 log.info("名单为空，不钉标记");
