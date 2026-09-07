@@ -60,7 +60,10 @@ public class ConfigurationValidator {
 
         List<String> issues = new ArrayList<>();
         Set<String> seenUsers = new HashSet<>();
-        Set<String> handlers = handlerService.getRegisteredHandlerClasses();
+        // 取「认得的」而不是「已注册的」：处理器换过包名之后，老配置里写的是旧名，
+        // 运行期按别名回落照样认得出。这里若按主表拦，就成了「跑得起来却存不下去」——
+        // 使用者被自己那份还能用的配置挡在保存之外，而界面不会告诉他该改哪儿
+        Set<String> handlers = handlerService.getAcceptedHandlerClasses();
 
         for (int i = 0; i < users.size() && issues.size() < MAX_ISSUES; i++) {
             JSONObject user;

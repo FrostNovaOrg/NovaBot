@@ -58,6 +58,22 @@ public class PushMessage {
      */
     private Boolean enabled;
 
+    /**
+     * 这条推送实际用上的处理器全类名
+     * <p>
+     * 与 {@link #getHandler()} 只在一种情形下不同：配置里写的是<b>旧名字</b>。
+     * 处理器解析走的是别名回落，旧名认得出；而拿 {@code handler} 这个字面串去比
+     * 「这条推送是不是那一类通知」的地方认不出来，于是升级之后那些判断一律落空——
+     * 不报错，只是相关的命令与联动安静地当作「本群没配过这类推送」。
+     * <p>
+     * 还没解析过（或压根认不出来）时退回配置里写的那一串：那一刻本来就无从知道
+     * 它对应哪个类，退回原串至少与解析之前的行为一致。
+     * @return 解析出实例时取实例的类名，否则取配置里写的那一串
+     */
+    public String handlerClassName() {
+        return handlerInstance == null ? handler : handlerInstance.getClass().getName();
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;

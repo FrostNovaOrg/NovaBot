@@ -99,7 +99,7 @@ public class PushTemplateDefaults {
             params = new JSONObject();
         }
 
-        JSONObject stored = overridesOf(handler.getClass().getName());
+        JSONObject stored = overridesOf(handler);
         for (Map.Entry<String, Object> entry : stored.entrySet()) {
             params.put(entry.getKey(), entry.getValue());
         }
@@ -114,6 +114,31 @@ public class PushTemplateDefaults {
     public JSONObject overridesOf(@NonNull String className) {
         synchronized (lock) {
             JSONObject stored = load().getJSONObject(className);
+            return stored == null ? new JSONObject() : stored.clone();
+        }
+    }
+
+    /**
+     * 某个处理器改过的那几个键：先按它现在的类名读，读不到再按它声明过的旧名回落读一次
+     * <p>
+     * 这张表的键是处理器全类名，而处理器<b>换过包名</b>之后，使用者机器上那份文件里存的
+     * 仍是旧名。按新名读不到就当成没改过的话，屏幕上一切正常，发出去的模板却已经
+     * 悄悄回到出厂默认——使用者改了很久的那段话就这么没了，而且没有任何提示。
+     * @param handler 处理器
+     * @return 覆盖参数的拷贝
+     */
+    public JSONObject overridesOf(@NonNull StarBotEventHandler handler) {
+        synchronized (lock) {
+            JSONObject data = load();
+            JSONObject stored = data.getJSONObject(handler.getClass().getName());
+            for (String legacy : handler.legacyClassNames()) {
+                if (stored != null) {
+                    break;
+                }
+                if (legacy != null && !legacy.isBlank()) {
+                    stored = data.getJSONObject(legacy);
+                }
+            }
             return stored == null ? new JSONObject() : stored.clone();
         }
     }
@@ -151,6 +176,12 @@ public class PushTemplateDefaults {
         String className = handler.getClass().getName();
         synchronized (lock) {
             JSONObject data = load();
+            // 存过旧名的那一份一并清掉：留着的话，「恢复默认」把新名下那份删干净之后，
+            // 读的一侧又会按旧名回落读回来——屏幕上显示已回到默认，发出去的还是那份旧覆盖
+            for (String legacy : handler.legacyClassNames()) {
+                data.remove(legacy);
+            }
+
             if (wanted.isEmpty()) {
                 data.remove(className);
             } else {

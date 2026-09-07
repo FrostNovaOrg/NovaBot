@@ -27,7 +27,7 @@ class ConfigurationValidatorTest {
     @BeforeEach
     void setUp() {
         StarBotEventHandlerService handlers = mock(StarBotEventHandlerService.class);
-        when(handlers.getRegisteredHandlerClasses()).thenReturn(Set.of(HANDLER));
+        when(handlers.getAcceptedHandlerClasses()).thenReturn(Set.of(HANDLER));
 
         validator = new ConfigurationValidator(handlers);
     }
@@ -125,11 +125,34 @@ class ConfigurationValidatorTest {
         assertFalse(validator.validateDatasource("{ 不是数组 }", Set.of()).isEmpty());
     }
 
+    /**
+     * 处理器换过包名之后，老配置里写的是旧全类名，运行期按别名回落照样认得出。
+     * 这里若按主表拦，使用者就落到「跑得起来却存不下去」——那份配置在推送上一切正常，
+     * 一到控制台按保存就被判成写错了类名，而界面并不会告诉他该改成什么。
+     */
+    @Test
+    @DisplayName("运行期认得的旧类名, 保存时不许拦")
+    void acceptsLegacyHandlerClassNameThatStillResolves() {
+        String legacy = "com.starlwr.bot.bilibili.handler.BilibiliDynamicPushHandler";
+        StarBotEventHandlerService handlers = mock(StarBotEventHandlerService.class);
+        // 主表里只有真类名，旧名只在「认得的」那一份里——校验读错哪一份，这一格就红
+        when(handlers.getRegisteredHandlerClasses()).thenReturn(Set.of(HANDLER));
+        when(handlers.getAcceptedHandlerClasses()).thenReturn(Set.of(HANDLER, legacy));
+
+        String json = """
+                [{"uid":1,"platform":"bilibili","targets":[
+                  {"platform":"qq-onebot","type":1,"num":12345,"messages":[{"handler":"%s"}]}
+                ]}]
+                """.formatted(legacy);
+
+        assertTrue(new ConfigurationValidator(handlers).validateDatasource(json, Set.of("qq-onebot")).isEmpty());
+    }
+
     @Test
     @DisplayName("处理器尚未注册完毕时不应误报")
     void skipsHandlerCheckBeforeRegistration() {
         StarBotEventHandlerService empty = mock(StarBotEventHandlerService.class);
-        when(empty.getRegisteredHandlerClasses()).thenReturn(Set.of());
+        when(empty.getAcceptedHandlerClasses()).thenReturn(Set.of());
 
         String json = """
                 [{"uid":1,"platform":"bilibili","targets":[

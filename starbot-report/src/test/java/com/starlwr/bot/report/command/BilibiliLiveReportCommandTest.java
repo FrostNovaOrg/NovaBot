@@ -4,6 +4,8 @@ import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.command.BilibiliStreamerChoice;
 import com.starlwr.bot.report.handler.BilibiliLiveReportPushHandler;
 import com.starlwr.bot.bilibili.model.BilibiliLiveReportOptions;
+import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
+import com.starlwr.bot.core.sender.StarBotMessageSender;
 import com.starlwr.bot.report.painter.BilibiliLiveReportPainter;
 import com.starlwr.bot.core.command.CommandContext;
 import com.starlwr.bot.core.command.CommandReply;
@@ -128,9 +130,38 @@ class BilibiliLiveReportCommandTest {
         assertTrue(options.isCards(), "未写的项仍是默认");
     }
 
+    @Test
+    @DisplayName("推送里写的是处理器旧类名: 版式照样用那一条, 不悄悄改回默认")
+    void usesPushLayoutWhenHandlerIsWrittenUnderItsLegacyName() {
+        JSONObject params = new JSONObject();
+        params.put("cover", false);
+        params.put("danmu_ranking", 10);
+        Fixture fixture = new Fixture(List.of(legacyStreamer(1, params)), Set.of(1));
+
+        fixture.command.execute(context());
+
+        BilibiliLiveReportOptions options = fixture.capturedOptions();
+        assertFalse(options.isCover(), "老配置里的版式没被认出来, 报告悄悄换回默认版式");
+        assertEquals(10, options.getDanmuRanking());
+    }
+
     private static CommandContext context(String... args) {
         return new CommandContext(PLATFORM, PushTargetType.FRIEND, FRIEND, SENDER,
                 "直播报告", List.of(args), args.length == 0 ? "直播报告" : "直播报告 " + String.join(" ", args));
+    }
+
+    /**
+     * 搬包之前那份配置：{@code handler} 里写的是旧全类名，实例由核心按别名回落解出来。
+     * 老使用者机器上的 datasource.json 正是这个样子
+     */
+    private static PushUser legacyStreamer(int index, JSONObject reportParams) {
+        PushUser user = streamer(index, reportParams);
+        PushMessage message = user.getTargets().get(0).getMessages().get(0);
+        message.setHandler("com.starlwr.bot.bilibili.handler.BilibiliLiveReportPushHandler");
+        message.setHandlerInstance(new BilibiliLiveReportPushHandler(mock(BilibiliApiUtil.class),
+                mock(StarBotMessageSender.class), mock(BilibiliLiveReportPainter.class),
+                mock(RevenueVisibilityService.class)));
+        return user;
     }
 
     private static PushUser streamer(int index, JSONObject reportParams) {

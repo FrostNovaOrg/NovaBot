@@ -3,6 +3,7 @@ package com.starlwr.bot.bilibili.command;
 import com.starlwr.bot.core.command.CommandContext;
 import com.starlwr.bot.core.command.CommandReply;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
+import com.starlwr.bot.core.handler.StarBotEventHandler;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
@@ -137,8 +138,7 @@ public abstract class BilibiliAtCommand extends BilibiliStreamerCommand {
                 }
                 for (PushMessage message : target.getMessages()) {
                     // 关掉的那条通知不推，它配成什么都影响不到群里的人
-                    if (Boolean.FALSE.equals(message.getEnabled())
-                            || !kind().handlerName().equals(message.getHandler())) {
+                    if (Boolean.FALSE.equals(message.getEnabled()) || !isKind(message)) {
                         continue;
                     }
                     modes.add(AtMode.of(message.getParamsJsonObject()));
@@ -146,6 +146,28 @@ public abstract class BilibiliAtCommand extends BilibiliStreamerCommand {
             }
         }
         return modes;
+    }
+
+    /**
+     * 这条推送是不是本命令管的那一类通知
+     * <p>
+     * 三种写法都得认，缺一种就有一批配置读成「本群没配过这类通知」——那时菜单照列、
+     * 命令照办，谁都看不出订阅其实早已不起作用：
+     * <ul>
+     *   <li>解析出来的真类名：处理器就住在它现在这个名字下，新写的配置走这条；</li>
+     *   <li>配置里那一串：处理器还没解析出来（认不出、或压根没装那个插件）时只有它；</li>
+     *   <li>处理器自己声明的旧名：{@link BilibiliAtNoticeKind} 给的可能是搬走之前那一串
+     *       （本模块不许指名别的插件的类），而新配置里写的是搬完之后的名字，
+     *       两头对不上，只能由处理器自己把两个名字挂起来。</li>
+     * </ul>
+     */
+    private boolean isKind(PushMessage message) {
+        String wanted = kind().handlerName();
+        if (wanted.equals(message.handlerClassName()) || wanted.equals(message.getHandler())) {
+            return true;
+        }
+        return message.getHandlerInstance() instanceof StarBotEventHandler handler
+                && handler.legacyClassNames().contains(wanted);
     }
 
     /**
