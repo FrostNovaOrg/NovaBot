@@ -370,6 +370,9 @@ MODEL_CHECKERS=(
     template-model-check.sh
     settings-model-check.sh
     login-model-check.sh
+    alert-model-check.sh
+    confirm-model-check.sh
+    tokens-model-check.sh
 )
 for checker in "${MODEL_CHECKERS[@]}"; do
     bash "$ROOT/tools/$checker"

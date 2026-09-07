@@ -1992,11 +1992,11 @@ class ConfigUiFrontendTest {
     /**
      * 搭车走别人语法循环、不单独立尺的视图模型
      * <p>
-     * 这三份没有 {@code *-model-check.sh}。构建仍须至少一把尺的文本里写出文件名，
-     * 否则语法错要等页面加载才炸。
+     * 现在一条也没有。告警、确认、只读口令三份已经各自有 {@code *-model-check.sh}。
+     * 空着比留着一条已经有专尺的名字好：后者会让「有专尺」那份名单对不上，
+     * 而专尺自己又量不到这件事。
      */
-    private static final List<String> VIEW_MODELS_WITHOUT_OWN_CHECKER = List.of(
-            "alert-model.js", "confirm-model.js", "tokens-model.js");
+    private static final List<String> VIEW_MODELS_WITHOUT_OWN_CHECKER = List.of();
 
     /**
      * 视图模型文件、专尺脚本、build.sh 名单三向闭集
