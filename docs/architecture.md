@@ -20,9 +20,12 @@
 │ bilibili     │ │ onebot-       │ │ (templates/ 下有模板) │
 │              │ │ adapter       │ └───────────────────────┘
 │ 采集侧       │ │ 投递侧        │        ┌──────────────────────────────┐
-└──────────────┘ └──────┬────────┘        │ napcat-extension              │
-                        └─────────────────┤ 依赖 onebot-adapter           │
-                                          └──────────────────────────────┘
+└──────┬───────┘ └──────┬────────┘        │ napcat-extension              │
+       │                └─────────────────┤ 依赖 onebot-adapter           │
+┌──────┴───────┐                          └──────────────────────────────┘
+│ starbot-     │
+│ report       │  下播报告 / 动态图 / 数据查询图（依赖 starbot-bilibili）
+└──────────────┘
 ```
 
 **依赖方向只有一个：插件依赖核心，核心永不依赖插件。**
@@ -41,7 +44,7 @@
 | `AlertChannel` | `core.alert` | 核心（邮件、QQ） | 告警投递 |
 | `StarBotCommand` | `core.command` | 各模块 | 群内聊天命令 |
 | `AtAllPermissionResolver` | `core.sender` | OneBot 适配器 | 机器人在某会话能否 @全体成员 |
-| `LiveMetricCatalog` | `core.analytics` | 哔哩哔哩 | 直播指标的中文名与**能否累加** |
+| `LiveMetricCatalog` | `core.analytics` | 报告插件（starbot-report） | 直播指标的中文名与**能否累加** |
 | `ConsoleVocabulary` | `core.config.ui.vocab` | OneBot 适配器 | 控制台人话平台词（`bot.platform`／`bot.impl`／`bot.family`／`bot.impl.hint`／`bot.target.group`／`bot.target.user`／`bot.targets`）；核心界面只写中性兜底 |
 
 新增一个跨模块能力时，先问「核心需不需要 import 插件的类」。需要，就说明该抽成 SPI。
@@ -291,20 +294,20 @@ systemd 下的进程树也不正确。
 ### 扩展点清单
 
 前面几小节讲的是插件怎么被装进来、能监听哪些事件。这一节反过来列**插件能往核心贡献什么**。
-接口路径相对 `com.starlwr.bot.core` 包根书写；「现有实现」取自仓库自带的两个平台插件
-（starbot-bilibili、onebot-adapter，见第 1 节），写新插件时可以逐行当参照。
+接口路径相对 `com.starlwr.bot.core` 包根书写；「现有实现」取自仓库自带的平台插件
+（starbot-bilibili、onebot-adapter、starbot-report，见第 1 节），写新插件时可以逐行当参照。
 
 | 扩展点 | 核心接口（相对路径） | 现有实现（模块） | 一句话 |
 |---|---|---|---|
 | 控制台页 | `config/ui/page/ConsolePageProvider` | `BilibiliConsolePageProvider` 与页面脚本 `config-ui-pages/bilibili.js`（starbot-bilibili）；主播页 `StreamersConsolePageProvider`（starbot-novabot-console） | 往控制台添自己的页；挂在连接页、设置页、顶级页、首页卡还是向导步骤由 `ConsolePageSlot` 申报；除 `script()` 外可再报 `assets()`（同目录其它 `.js`，按登记名取）。顶级页的 `refresh` 会收到 `{sub, tail}`（地址栏第二、三段） |
 | 配置节 | `@ConfigurationProperties`（编译期元数据由 `config/ui/ConfigurationMetadataService` 读取） | 各模块的配置类 | 配置类加了项，设置页表单自动出现；核心前缀在 `config/ui/ConfigurationGroups` 登记，平台前缀由各插件的 `ConfigurationGroupContributor` 申报，新前缀不登记就没有组 |
-| 聊天命令 | `command/StarBotCommand` | `command/` 下的一族命令（starbot-bilibili） | 实现接口并注册为 Bean，群里即多一条命令 |
+| 聊天命令 | `command/StarBotCommand` | `command/` 下的一族命令（starbot-bilibili 与 starbot-report） | 实现接口并注册为 Bean，群里即多一条命令 |
 | 健康探针 | `health/HealthProbe` | 直播间、登录、风控三件（starbot-bilibili）与 `OneBotHealthProbe`（onebot-adapter） | 探测结果汇总进总览页，与告警共用 |
 | 账号登录 | `account/AccountLoginProvider` | `BilibiliAccountLoginProvider`（starbot-bilibili） | 界面内扫码登录、退出登录 |
 | 机器人连接测试 | `account/BotConnectionTester` | `OneBotConnectionTester`（onebot-adapter） | 连接页上的连通性测试与连接参数回填 |
 | @全体权限 | `sender/AtAllPermissionResolver` | `OneBotAtAllPermissionService`（onebot-adapter） | 「能不能 @全体成员」由平台侧回答，核心只拿答案决定摘不摘 |
 | 消息出口 | `service/StarBotSenderService` 登记的 `model/Sender` | `OneBotController`（onebot-adapter） | 推送平台向核心登记出口，核心按名字投递 |
-| REST 接口 | 无专用接口：`@RestController` 照常写，仍需 `@StarBotComponent` | `BilibiliReportLayoutController`（starbot-bilibili）、`OneBotTargetController`（onebot-adapter） | 插件 jar 里的控制器与核心的合在同一个 Web 服务里 |
+| REST 接口 | 无专用接口：`@RestController` 照常写，仍需 `@StarBotComponent` | `BilibiliReportLayoutController`（starbot-report）、`OneBotTargetController`（onebot-adapter） | 插件 jar 里的控制器与核心的合在同一个 Web 服务里 |
 
 `config-ui-pages/<script>` 对 `setup_step` 槽须 `export function render(host, ctx)`（把这一步画进 host）与 `export async function done(ctx)` → boolean（这一步成立了没有）；`ctx`＝`{status, login, api}`（`api` 即初始设置页现用的请求函数）。可再 `export const skippable`（缺省 false）；真时向导该步底下出「跳过」。装不上时该步 `done` 恒假，界面画一句「这一步的界面没装上」，不让整页失败。
 

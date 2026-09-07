@@ -253,7 +253,7 @@ mvn "${MAVEN_ARGS[@]}" -f starbot-core/pom.xml -Ppackage package
 
 echo "==> [4/8] 汇总产物至 dist/build"
 OUT="$ROOT/dist/build"
-PLUGIN_MODULES=(starbot-onebot-adapter starbot-onebot-adapter-napcat-extension starbot-bilibili starbot-novabot-console)
+PLUGIN_MODULES=(starbot-onebot-adapter starbot-onebot-adapter-napcat-extension starbot-bilibili starbot-novabot-console starbot-report)
 
 rm -rf "$OUT"
 mkdir -p "$OUT/plugins" "$OUT/lib" "$OUT/plugins-lib"

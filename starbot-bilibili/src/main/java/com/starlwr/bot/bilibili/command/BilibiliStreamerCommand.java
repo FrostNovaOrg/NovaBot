@@ -174,7 +174,7 @@ public abstract class BilibiliStreamerCommand implements StarBotCommand {
         /**
          * 是否未能确定主播
          */
-        boolean failed() {
+        public boolean failed() {
             return streamer == null;
         }
     }

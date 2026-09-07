@@ -1,9 +1,5 @@
 package com.starlwr.bot.bilibili.command;
 
-import com.starlwr.bot.bilibili.handler.BilibiliDynamicPushHandler;
-import com.starlwr.bot.bilibili.handler.BilibiliLiveOnPushHandler;
-import com.starlwr.bot.core.handler.StarBotEventHandler;
-
 /**
  * 「@我」订阅对应的通知类别
  * <p>
@@ -14,25 +10,26 @@ import com.starlwr.bot.core.handler.StarBotEventHandler;
  * 收成枚举而不是在某处写一张「live 对应哪个处理器」的对照表：对照表漏一项的表现是
  * 那一类通知的联动<b>安静地不生效</b>，菜单照列、命令照办，谁都看不出来。
  * 枚举则由命令基类的抽象方法逼着每一条命令认领一项，新增一类订阅时编译期就得回答。
+ * 处理器按全类名字符串认领。
  */
 public enum BilibiliAtNoticeKind {
     /**
      * 开播通知
      */
-    LIVE("live", "开播", BilibiliLiveOnPushHandler.class),
+    LIVE("live", "开播", "com.starlwr.bot.bilibili.handler.BilibiliLiveOnPushHandler"),
 
     /**
      * 动态通知
      */
-    DYNAMIC("dynamic", "动态", BilibiliDynamicPushHandler.class);
+    DYNAMIC("dynamic", "动态", "com.starlwr.bot.bilibili.handler.BilibiliDynamicPushHandler");
 
     private final String type;
 
     private final String noticeName;
 
-    private final Class<? extends StarBotEventHandler> handler;
+    private final String handler;
 
-    BilibiliAtNoticeKind(String type, String noticeName, Class<? extends StarBotEventHandler> handler) {
+    BilibiliAtNoticeKind(String type, String noticeName, String handler) {
         this.type = type;
         this.noticeName = noticeName;
         this.handler = handler;
@@ -59,6 +56,6 @@ public enum BilibiliAtNoticeKind {
      * @return 全类名
      */
     public String handlerName() {
-        return handler.getName();
+        return handler;
     }
 }
