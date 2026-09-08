@@ -131,16 +131,21 @@ try {
 }
 eq(q2, true, '② 五格各挂一个 input，触发任一个后 save.disabled===true');
 
-// ③ 文本断言：testBotConnection 块的 catch 段内含 -save').disabled = true
+// ③ 切出 testBotConnection 真执行：api 抛错 → save.disabled===true
 let q3 = 'missing';
 try {
-  const testFn = bracedFrom(src, 'function testBotConnection');
-  const caught = bracedFrom(testFn, 'catch');
-  q3 = caught.includes("-save').disabled = true");
+  const body = bracedFrom(src, 'async function testBotConnection');
+  if (!body) throw new Error('no testBotConnection');
+  const {$, byId} = fakeDom();
+  const api = async () => { throw new Error('down'); };
+  const fn = new Function('$', 'api', body + '\nreturn testBotConnection;')($, api);
+  $('#bot-save').disabled = false;
+  await fn('bot');
+  q3 = byId['bot-save'].disabled === true;
 } catch (e) {
   q3 = 'error:' + e.message;
 }
-eq(q3, true, "③ testBotConnection 的 catch 段内含 -save').disabled = true");
+eq(q3, true, '③ testBotConnection 抛错后 save.disabled===true');
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);

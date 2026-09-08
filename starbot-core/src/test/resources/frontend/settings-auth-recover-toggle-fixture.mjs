@@ -99,10 +99,55 @@ const enroll = bracedFrom(src, 'async function enrollFlow');
 eq(enroll.includes('catch') && enroll.includes('recoverToggle('),
   true, '② enrollFlow 块内含 catch 且调用 recoverToggle(');
 
-// ③ disableFlow 块内含 catch 且调用 recoverToggle(
-const disable = bracedFrom(src, 'function disableFlow');
-eq(disable.includes('catch') && disable.includes('recoverToggle('),
-  true, '③ disableFlow 块内含 catch 且调用 recoverToggle(');
+function fakeAuthDom() {
+  const byId = {};
+  function el() {
+    return {
+      value: '123456',
+      listeners: {},
+      addEventListener(type, fn) {
+        (this.listeners[type] ||= []).push(fn);
+      },
+    };
+  }
+  function $(sel) {
+    const id = String(sel).replace(/^#/, '');
+    if (!byId[id]) byId[id] = el();
+    return byId[id];
+  }
+  return {$, byId};
+}
+
+function loadDisable(api, report, $, esc) {
+  const rec = bracedFrom(src, 'function recoverToggle');
+  const dis = bracedFrom(src, 'function disableFlow');
+  if (!rec || !dis) throw new Error('no disableFlow');
+  return new Function('api', 'report', '$', 'esc',
+    rec + '\n' + dis + '\nreturn disableFlow;')(api, report, $, esc);
+}
+
+// ③ 切出 disableFlow 真执行：确认关闭时 api 抛错 → settle(true) 拨回开启档
+let q3 = 'missing';
+try {
+  const {$, byId} = fakeAuthDom();
+  const fn = loadDisable(
+    async () => { throw new Error('disable-down'); },
+    (box, payload) => { box.payload = payload; },
+    $,
+    String);
+  const settled = [];
+  const result = {};
+  fn({innerHTML: ''}, result, state => settled.push(state));
+  const clicks = byId['totp-off-ok'] && byId['totp-off-ok'].listeners.click;
+  if (!clicks || !clicks[0]) throw new Error('no totp-off-ok click');
+  await clicks[0]();
+  q3 = settled[0] === true
+    && result.payload && result.payload.success === false
+    && String(result.payload.message).includes('disable-down');
+} catch (e) {
+  q3 = 'error:' + e.message;
+}
+eq(q3, true, '③ disableFlow 确认关闭时 api 抛错 settle(true) 拨回开启档');
 
 // ④ 阳性对照：recoverToggle(r, s, false, …) → settle 收到 false
 let q4 = 'missing';

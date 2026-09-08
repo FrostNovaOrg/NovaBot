@@ -29,6 +29,43 @@ function eq(actual, expected, what) {
   if (a !== b) failures.push(what + '：得到 ' + a + '，应为 ' + b);
 }
 
+function bracedFrom(text, marker) {
+  const start = text.indexOf(marker);
+  if (start < 0) return '';
+  const open = text.indexOf('{', start + marker.length);
+  if (open < 0) return '';
+  let depth = 0;
+  let quote = '';
+  for (let i = open; i < text.length; i++) {
+    const c = text[i];
+    const prev = i > 0 ? text[i - 1] : '';
+    if (quote) {
+      if (c === quote && prev !== '\\') quote = '';
+      continue;
+    }
+    if (c === '"' || c === "'" || c === '`') {
+      quote = c;
+      continue;
+    }
+    if (c === '/' && text[i + 1] === '/') {
+      const nl = text.indexOf('\n', i);
+      i = nl < 0 ? text.length : nl;
+      continue;
+    }
+    if (c === '/' && text[i + 1] === '*') {
+      const end = text.indexOf('*/', i + 2);
+      i = end < 0 ? text.length : end + 1;
+      continue;
+    }
+    if (c === '{') depth++;
+    else if (c === '}') {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return '';
+}
+
 const login = read('login.html');
 const paintStart = login.indexOf('function paint()');
 const paintEnd = login.indexOf('function tick()');
@@ -58,10 +95,65 @@ eq(loginSecret, appSecret, '.secret button 数值与 app.css 相同');
 
 const push = readFileSync(join(pages, 'push.js'), 'utf8');
 eq(/export const STREAMER_INPUT_HINT\s*=/.test(push), true, 'push.js 导出 STREAMER_INPUT_HINT');
-eq(push.includes("placeholder = '输入 ' + STREAMER_INPUT_HINT"), true,
-  'placeholder 用同一条常量');
-eq(push.includes("'请先输入 ' + STREAMER_INPUT_HINT"), true, '空输入句用同一条常量');
 eq(push.includes('请先输入 uid、直播间号或链接'), false, '旧空输入句已撤');
+
+const hintMatch = push.match(/export const STREAMER_INPUT_HINT\s*=\s*'([^']+)'/);
+const streamerHint = hintMatch ? hintMatch[1] : '';
+
+function el(tag, cls) {
+  return {
+    tag, className: cls || '', id: '', placeholder: '', type: '', textContent: '',
+    kids: [],
+    setAttribute() {},
+    appendChild(child) { this.kids.push(child); return child; },
+    addEventListener() {},
+    focus() {},
+  };
+}
+function openDrawer(title, sub, fill) {
+  const body = {kids: [], appendChild(child) { this.kids.push(child); return child; }};
+  fill(body);
+  return body;
+}
+function findById(node, id) {
+  if (!node) return null;
+  if (node.id === id) return node;
+  for (const child of node.kids || []) {
+    const hit = findById(child, id);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+let qPlaceholder = 'missing';
+try {
+  const addBody = bracedFrom(push, 'function addStreamer');
+  if (!addBody) throw new Error('no addStreamer');
+  let captured;
+  const wrap = (title, sub, fill) => { captured = openDrawer(title, sub, fill); };
+  const addStreamer = new Function('store', 'el', 'openDrawer', 'esc', 'STREAMER_INPUT_HINT',
+    addBody + '\nreturn addStreamer;')({platforms: ['bilibili']}, el, wrap, String, streamerHint);
+  addStreamer();
+  const input = findById(captured, 'add-uid');
+  qPlaceholder = input && input.placeholder === '输入 ' + streamerHint;
+} catch (e) {
+  qPlaceholder = 'error:' + e.message;
+}
+eq(qPlaceholder, true, 'placeholder 用同一条常量且等于「输入 」+ STREAMER_INPUT_HINT');
+
+let qEmpty = 'missing';
+try {
+  const lookupBody = bracedFrom(push, 'async function lookupStreamer');
+  if (!lookupBody) throw new Error('no lookupStreamer');
+  const lookupStreamer = new Function('STREAMER_INPUT_HINT', 'api', '$',
+    lookupBody + '\nreturn lookupStreamer;')(streamerHint, null, null);
+  const out = {textContent: ''};
+  await lookupStreamer(['bilibili'], {value: '  '}, {disabled: false}, out);
+  qEmpty = out.textContent === '请先输入 ' + streamerHint + '。';
+} catch (e) {
+  qEmpty = 'error:' + e.message;
+}
+eq(qEmpty, true, '空输入句用同一条常量且等于「请先输入 」+ STREAMER_INPUT_HINT +「。」');
 
 // 向导里那一步已随控制台插件走，因此这三格量的是插件那一份。留在核心 setup.js 上量的话，
 // 它会永远绿着——那里已经没有这段接线了，而「找不到就当没这回事」与「查过了」长得一样
