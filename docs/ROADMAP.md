@@ -124,7 +124,7 @@ Python 版用 Redis 存两套数据：
 
 ## 第三阶段：命令系统与 @我 订阅
 
-地基已在上一轮铺好：`StarBotRemoteMessageEvent` 事件总线（OneBot 适配器
+地基已在上一轮铺好：`NovaRemoteMessageEvent` 事件总线（OneBot 适配器
 把群消息发布到事件总线）。本阶段把它扩展成完整的命令框架。
 
 - [x] 命令注册与分发框架：统一前缀（可配置）、命令名、参数解析、帮助文本

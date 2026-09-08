@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.event.remote;
 
-import com.starlwr.bot.core.event.StarBotInternalBaseEvent;
+import com.starlwr.bot.core.event.NovaInternalBaseEvent;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -19,7 +19,7 @@ import java.time.Instant;
 @Setter
 @NoArgsConstructor
 @ToString(callSuper = true)
-public class StarBotRemoteMessageEvent extends StarBotInternalBaseEvent {
+public class NovaRemoteMessageEvent extends NovaInternalBaseEvent {
     /**
      * 推送平台名，如 qq-onebot
      */
@@ -64,16 +64,16 @@ public class StarBotRemoteMessageEvent extends StarBotInternalBaseEvent {
      */
     private boolean mentionsBot;
 
-    public StarBotRemoteMessageEvent(String platform, String messageType, Long num, Long senderUid, String text) {
+    public NovaRemoteMessageEvent(String platform, String messageType, Long num, Long senderUid, String text) {
         this(platform, messageType, num, senderUid, text, (String) null);
     }
 
-    public StarBotRemoteMessageEvent(String platform, String messageType, Long num, Long senderUid,
+    public NovaRemoteMessageEvent(String platform, String messageType, Long num, Long senderUid,
                                      String text, String senderRole) {
         this(platform, messageType, num, senderUid, text, senderRole, false);
     }
 
-    public StarBotRemoteMessageEvent(String platform, String messageType, Long num, Long senderUid,
+    public NovaRemoteMessageEvent(String platform, String messageType, Long num, Long senderUid,
                                      String text, String senderRole, boolean mentionsBot) {
         this.platform = platform;
         this.messageType = messageType;
@@ -84,7 +84,7 @@ public class StarBotRemoteMessageEvent extends StarBotInternalBaseEvent {
         this.mentionsBot = mentionsBot;
     }
 
-    public StarBotRemoteMessageEvent(String platform, String messageType, Long num, Long senderUid, String text, Instant instant) {
+    public NovaRemoteMessageEvent(String platform, String messageType, Long num, Long senderUid, String text, Instant instant) {
         super(instant);
         this.platform = platform;
         this.messageType = messageType;

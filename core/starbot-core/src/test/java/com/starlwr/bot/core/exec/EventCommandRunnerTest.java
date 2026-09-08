@@ -83,7 +83,7 @@ class EventCommandRunnerTest {
     @DisplayName("按事件基类配置应能命中各平台的具体事件")
     void matchesAlongInheritanceChain() {
         assertTrue(runner.matches(rule("LiveOnEvent"), event("测试主播")));
-        assertTrue(runner.matches(rule("StarBotLiveStatusChangeEvent"), event("测试主播")), "配基类应命中子类");
+        assertTrue(runner.matches(rule("NovaLiveStatusChangeEvent"), event("测试主播")), "配基类应命中子类");
         assertTrue(runner.matches(rule("com.starlwr.bot.core.event.live.common.LiveOnEvent"), event("测试主播")),
                 "全限定名同样应命中");
         assertFalse(runner.matches(rule("LiveOffEvent"), event("测试主播")), "别的事件不该被命中");

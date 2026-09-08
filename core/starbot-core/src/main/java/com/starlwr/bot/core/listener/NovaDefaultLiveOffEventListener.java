@@ -32,7 +32,7 @@ import java.util.Optional;
  */
 @Slf4j
 @Component
-public class StarBotDefaultLiveOffEventListener {
+public class NovaDefaultLiveOffEventListener {
     private final LiveDataService liveDataService;
 
     private final LiveSessionArchive archive;
@@ -47,7 +47,7 @@ public class StarBotDefaultLiveOffEventListener {
     private final LiveDetailArchive details;
 
     @Autowired
-    public StarBotDefaultLiveOffEventListener(LiveDataService liveDataService, LiveSessionArchive archive,
+    public NovaDefaultLiveOffEventListener(LiveDataService liveDataService, LiveSessionArchive archive,
                                               LiveInterventionTracker interventionTracker, LiveRoomInfoHistory roomInfoHistory,
                                               LiveDetailArchive details) {
         this.liveDataService = liveDataService;

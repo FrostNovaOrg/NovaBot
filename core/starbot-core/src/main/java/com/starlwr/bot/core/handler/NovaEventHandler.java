@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.handler;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
+import com.starlwr.bot.core.event.NovaExternalBaseEvent;
 import com.starlwr.bot.core.model.HandlerOption;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushMessageHandler;
@@ -24,13 +24,13 @@ public interface NovaEventHandler extends PushMessageHandler {
      * @param baseEvent 事件
      * @param pushMessage 推送消息
      */
-    void handle(StarBotExternalBaseEvent baseEvent, PushMessage pushMessage);
+    void handle(NovaExternalBaseEvent baseEvent, PushMessage pushMessage);
 
     /**
      * 获取事件处理器处理的事件类型
      * @return 事件类型
      */
-    Class<? extends StarBotExternalBaseEvent> getEventType();
+    Class<? extends NovaExternalBaseEvent> getEventType();
 
     /**
      * 获取事件处理器默认参数

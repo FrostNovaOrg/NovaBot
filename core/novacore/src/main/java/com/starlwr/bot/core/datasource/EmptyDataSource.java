@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.datasource;
 
-import com.starlwr.bot.core.event.datasource.other.StarBotDataSourceLoadCompleteEvent;
+import com.starlwr.bot.core.event.datasource.other.NovaDataSourceLoadCompleteEvent;
 import com.starlwr.bot.core.model.PushUser;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -43,7 +43,7 @@ public class EmptyDataSource extends AbstractDataSource {
         log.warn("未选用任何数据源, 将以空数据源启动, 请配置 spring.profiles.active 以选用数据源");
         log.warn("当前可用的数据源实现: {}", names);
 
-        eventPublisher.publishEvent(new StarBotDataSourceLoadCompleteEvent(new ArrayList<>()));
+        eventPublisher.publishEvent(new NovaDataSourceLoadCompleteEvent(new ArrayList<>()));
     }
 
     /**

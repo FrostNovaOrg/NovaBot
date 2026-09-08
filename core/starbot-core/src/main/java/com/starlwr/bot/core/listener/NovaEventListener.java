@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.listener;
 
-import com.starlwr.bot.core.event.StarBotBaseEvent;
+import com.starlwr.bot.core.event.NovaBaseEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -14,7 +14,7 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @ConditionalOnProperty(name = "novabot.core.log.event-log", havingValue = "true")
-public class StarBotEventListener {
+public class NovaEventListener {
     private static final Logger eventLogger = LoggerFactory.getLogger("EventLogger");
 
     /**
@@ -23,7 +23,7 @@ public class StarBotEventListener {
      */
     @Order(Ordered.HIGHEST_PRECEDENCE)
     @EventListener
-    public void onStarBotBaseEvent(StarBotBaseEvent event) {
+    public void onNovaBaseEvent(NovaBaseEvent event) {
         eventLogger.debug("[{}][{}] {}", event.getClass().getSimpleName(), Integer.toHexString(System.identityHashCode(event)), event);
     }
 }

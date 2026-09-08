@@ -3,10 +3,10 @@ package com.starlwr.bot.core.datasource;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.enums.PushTargetType;
-import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
-import com.starlwr.bot.core.event.datasource.change.StarBotDataSourceAddEvent;
-import com.starlwr.bot.core.event.datasource.change.StarBotDataSourceRemoveEvent;
-import com.starlwr.bot.core.event.datasource.change.StarBotDataSourceUpdateEvent;
+import com.starlwr.bot.core.event.NovaExternalBaseEvent;
+import com.starlwr.bot.core.event.datasource.change.NovaDataSourceAddEvent;
+import com.starlwr.bot.core.event.datasource.change.NovaDataSourceRemoveEvent;
+import com.starlwr.bot.core.event.datasource.change.NovaDataSourceUpdateEvent;
 import com.starlwr.bot.core.exception.DataSourceException;
 import com.starlwr.bot.core.handler.NovaEventHandler;
 import com.starlwr.bot.core.model.PushMessage;
@@ -54,7 +54,7 @@ class AbstractDataSourceTest {
         handlerService = mock(StarBotEventHandlerService.class);
 
         NovaEventHandler handler = mock(NovaEventHandler.class);
-        doReturn(StarBotExternalBaseEvent.class).when(handler).getEventType();
+        doReturn(NovaExternalBaseEvent.class).when(handler).getEventType();
         // 每次返回新实例：initPushMessageParams 会往返回值里写入自定义参数，
         // 返回共享实例会让不同推送消息的参数互相串味
         when(handler.getDefaultParams()).thenAnswer(invocation -> {
@@ -81,7 +81,7 @@ class AbstractDataSourceTest {
         assertEquals(1, dataSource.getAllUsers().size());
         assertEquals("主播1", dataSource.getUser(PLATFORM, 1L).orElseThrow().getUname(), "应由平台数据源服务补全昵称");
 
-        verify(publisher).publishEvent(any(StarBotDataSourceAddEvent.class));
+        verify(publisher).publishEvent(any(NovaDataSourceAddEvent.class));
     }
 
     @Test
@@ -148,7 +148,7 @@ class AbstractDataSourceTest {
         assertTrue(dataSource.getUser(PLATFORM, 1L).isEmpty());
         assertTrue(dataSource.getUsers(PLATFORM).isEmpty());
         assertTrue(dataSource.getAllUsers().isEmpty());
-        verify(publisher).publishEvent(any(StarBotDataSourceRemoveEvent.class));
+        verify(publisher).publishEvent(any(NovaDataSourceRemoveEvent.class));
     }
 
     @Test
@@ -167,8 +167,8 @@ class AbstractDataSourceTest {
 
         assertTrue(dataSource.getUser(PLATFORM, 1L).isEmpty(), "已禁用的用户应被移除");
         assertTrue(dataSource.getUser(PLATFORM, 2L).isPresent(), "新出现的用户应被新增");
-        verify(publisher).publishEvent(any(StarBotDataSourceAddEvent.class));
-        verify(publisher).publishEvent(any(StarBotDataSourceRemoveEvent.class));
+        verify(publisher).publishEvent(any(NovaDataSourceAddEvent.class));
+        verify(publisher).publishEvent(any(NovaDataSourceRemoveEvent.class));
     }
 
     @Test
@@ -196,7 +196,7 @@ class AbstractDataSourceTest {
 
         dataSource.update(user(1L, true));
 
-        verify(publisher, never()).publishEvent(any(StarBotDataSourceUpdateEvent.class));
+        verify(publisher, never()).publishEvent(any(NovaDataSourceUpdateEvent.class));
     }
 
     @Test
@@ -209,7 +209,7 @@ class AbstractDataSourceTest {
         updated.getTargets().add(target(3333L, true, message(HANDLER, true)));
         dataSource.update(updated);
 
-        ArgumentCaptor<StarBotDataSourceUpdateEvent> captor = ArgumentCaptor.forClass(StarBotDataSourceUpdateEvent.class);
+        ArgumentCaptor<NovaDataSourceUpdateEvent> captor = ArgumentCaptor.forClass(NovaDataSourceUpdateEvent.class);
         verify(publisher).publishEvent(captor.capture());
         assertEquals(1, captor.getValue().getOldUser().getTargets().size());
         assertEquals(2, captor.getValue().getUser().getTargets().size());

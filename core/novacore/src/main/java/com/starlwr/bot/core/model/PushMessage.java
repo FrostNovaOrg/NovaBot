@@ -2,7 +2,7 @@ package com.starlwr.bot.core.model;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.annotation.JSONField;
-import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
+import com.starlwr.bot.core.event.NovaExternalBaseEvent;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -40,7 +40,7 @@ public class PushMessage {
      * 事件处理器处理的事件类型，自动根据事件处理器解析
      */
     @JSONField(serialize = false)
-    private Class<? extends StarBotExternalBaseEvent> eventClass;
+    private Class<? extends NovaExternalBaseEvent> eventClass;
 
     /**
      * JSON 格式推送参数

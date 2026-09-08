@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.event.live.common;
 
 import com.starlwr.bot.core.enums.LivePlatform;
-import com.starlwr.bot.core.event.live.base.StarBotLiveMessageEvent;
+import com.starlwr.bot.core.event.live.base.NovaLiveMessageEvent;
 import com.starlwr.bot.core.model.EmojiInfo;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.UserInfo;
@@ -19,7 +19,7 @@ import java.time.Instant;
 @Setter
 @NoArgsConstructor
 @ToString(callSuper = true)
-public class EmojiEvent extends StarBotLiveMessageEvent {
+public class EmojiEvent extends NovaLiveMessageEvent {
     /**
      * 表情信息
      */

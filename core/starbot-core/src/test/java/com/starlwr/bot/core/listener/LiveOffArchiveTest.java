@@ -62,7 +62,7 @@ class LiveOffArchiveTest {
 
     private LiveDetailArchive details;
 
-    private StarBotDefaultLiveOffEventListener listener;
+    private NovaDefaultLiveOffEventListener listener;
 
     @BeforeEach
     void setUp() {
@@ -73,7 +73,7 @@ class LiveOffArchiveTest {
         liveData = new DefaultLiveDataService(properties);
         sessions = new LiveSessionArchive(properties);
         details = new LiveDetailArchive(properties);
-        listener = new StarBotDefaultLiveOffEventListener(liveData, sessions,
+        listener = new NovaDefaultLiveOffEventListener(liveData, sessions,
                 new LiveInterventionTracker(), new LiveRoomInfoHistory(new StarBotStateStore(properties)), details);
     }
 

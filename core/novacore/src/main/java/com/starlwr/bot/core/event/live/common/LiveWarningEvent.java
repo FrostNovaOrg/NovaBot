@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.event.live.common;
 
 import com.starlwr.bot.core.enums.LivePlatform;
-import com.starlwr.bot.core.event.live.base.StarBotLiveInterventionEvent;
+import com.starlwr.bot.core.event.live.base.NovaLiveInterventionEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -20,7 +20,7 @@ import java.time.Instant;
 @Setter
 @NoArgsConstructor
 @ToString(callSuper = true)
-public class LiveWarningEvent extends StarBotLiveInterventionEvent {
+public class LiveWarningEvent extends NovaLiveInterventionEvent {
     public LiveWarningEvent(String platform, LiveStreamerInfo source, String reason) {
         super(platform, source, reason);
     }

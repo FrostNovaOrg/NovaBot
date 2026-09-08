@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.event.dynamic;
 
 import com.starlwr.bot.core.enums.LivePlatform;
-import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
+import com.starlwr.bot.core.event.NovaExternalBaseEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -17,20 +17,20 @@ import java.time.Instant;
 @Setter
 @NoArgsConstructor
 @ToString(callSuper = true)
-public class StarBotBaseDynamicEvent extends StarBotExternalBaseEvent {
-    public StarBotBaseDynamicEvent(String platform, LiveStreamerInfo source) {
+public class NovaBaseDynamicEvent extends NovaExternalBaseEvent {
+    public NovaBaseDynamicEvent(String platform, LiveStreamerInfo source) {
         super(platform, source);
     }
 
-    public StarBotBaseDynamicEvent(String platform, LiveStreamerInfo source, Instant instant) {
+    public NovaBaseDynamicEvent(String platform, LiveStreamerInfo source, Instant instant) {
         super(platform, source, instant);
     }
 
-    public StarBotBaseDynamicEvent(LivePlatform platform, LiveStreamerInfo source) {
+    public NovaBaseDynamicEvent(LivePlatform platform, LiveStreamerInfo source) {
         super(platform, source);
     }
 
-    public StarBotBaseDynamicEvent(LivePlatform platform, LiveStreamerInfo source, Instant instant) {
+    public NovaBaseDynamicEvent(LivePlatform platform, LiveStreamerInfo source, Instant instant) {
         super(platform, source, instant);
     }
 }

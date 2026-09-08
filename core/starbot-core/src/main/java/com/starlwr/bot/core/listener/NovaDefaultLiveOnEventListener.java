@@ -18,7 +18,7 @@ import java.util.Optional;
  */
 @Slf4j
 @Component
-public class StarBotDefaultLiveOnEventListener {
+public class NovaDefaultLiveOnEventListener {
     private final StarBotCoreProperties properties;
 
     private final LiveDataService liveDataService;
@@ -26,7 +26,7 @@ public class StarBotDefaultLiveOnEventListener {
     private final LiveSessionRecovery sessionRecovery;
 
     @Autowired
-    public StarBotDefaultLiveOnEventListener(StarBotCoreProperties properties, LiveDataService liveDataService,
+    public NovaDefaultLiveOnEventListener(StarBotCoreProperties properties, LiveDataService liveDataService,
                                              LiveSessionRecovery sessionRecovery) {
         this.properties = properties;
         this.liveDataService = liveDataService;

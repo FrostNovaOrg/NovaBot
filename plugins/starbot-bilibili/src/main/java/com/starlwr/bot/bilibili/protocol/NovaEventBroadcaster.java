@@ -3,8 +3,8 @@ package com.starlwr.bot.bilibili.protocol;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.core.properties.EventStreamProperties;
-import com.starlwr.bot.core.event.datasource.change.StarBotDataSourceRemoveEvent;
-import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
+import com.starlwr.bot.core.event.datasource.change.NovaDataSourceRemoveEvent;
+import com.starlwr.bot.core.event.live.NovaBaseLiveEvent;
 import com.starlwr.bot.core.event.live.common.ConnectedEvent;
 import com.starlwr.bot.core.event.live.common.DisconnectedEvent;
 import com.starlwr.bot.core.event.live.common.LikeUpdateEvent;
@@ -98,8 +98,8 @@ public class NovaEventBroadcaster {
      * 监听基类即可覆盖全部直播事件，逐个类型注册只会在新增事件类型时漏掉。
      * @param event 事件
      */
-    @EventListener(StarBotBaseLiveEvent.class)
-    public void onEvent(StarBotBaseLiveEvent event) {
+    @EventListener(NovaBaseLiveEvent.class)
+    public void onEvent(NovaBaseLiveEvent event) {
         if (!enabled) {
             return;
         }
@@ -123,8 +123,8 @@ public class NovaEventBroadcaster {
      * <b>永远停在「已连接」</b>，看着像还在采集，其实一条都不会再来。
      * @param event 数据源移除事件
      */
-    @EventListener(StarBotDataSourceRemoveEvent.class)
-    public void onRemoved(StarBotDataSourceRemoveEvent event) {
+    @EventListener(NovaDataSourceRemoveEvent.class)
+    public void onRemoved(NovaDataSourceRemoveEvent event) {
         if (!enabled) {
             return;
         }
@@ -143,7 +143,7 @@ public class NovaEventBroadcaster {
         }
     }
 
-    private void dispatch(StarBotBaseLiveEvent event) {
+    private void dispatch(NovaBaseLiveEvent event) {
         Long room = roomOf(event);
         if (room == null) {
             return;
@@ -252,7 +252,7 @@ public class NovaEventBroadcaster {
      * @param envelope 信封
      * @param event 事件，用于附带原始报文；房间统计这类由我们自己合成的消息没有对应事件，传 {@code null}
      */
-    private void publish(JSONObject envelope, StarBotBaseLiveEvent event) {
+    private void publish(JSONObject envelope, NovaBaseLiveEvent event) {
         // rawJson 是协议之外的附加字段。序列化推迟到这里做: 事件输出关闭时一次都不做，
         // 开启时也只做一次
         JSONObject raw = event == null ? null : event.getRawMessage();
@@ -264,7 +264,7 @@ public class NovaEventBroadcaster {
         return rooms.computeIfAbsent(room, key -> new RoomState());
     }
 
-    private Long roomOf(StarBotBaseLiveEvent event) {
+    private Long roomOf(NovaBaseLiveEvent event) {
         LiveStreamerInfo source = event.getSource();
         return source == null ? null : source.getRoomId();
     }

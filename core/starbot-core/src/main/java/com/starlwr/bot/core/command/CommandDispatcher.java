@@ -3,7 +3,7 @@ package com.starlwr.bot.core.command;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.PushTargetType;
-import com.starlwr.bot.core.event.remote.StarBotRemoteMessageEvent;
+import com.starlwr.bot.core.event.remote.NovaRemoteMessageEvent;
 import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
@@ -31,7 +31,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 命令分发器
  * <p>
- * 订阅 {@link StarBotRemoteMessageEvent}，解析出命令并路由到对应实现。
+ * 订阅 {@link NovaRemoteMessageEvent}，解析出命令并路由到对应实现。
  * 命令实现只需注册为 Bean 即可被发现，核心不维护任何注册表。
  *
  * <h2>什么算一条命令</h2>
@@ -140,8 +140,8 @@ public class CommandDispatcher {
         this.clock = clock;
     }
 
-    @EventListener(StarBotRemoteMessageEvent.class)
-    public void onRemoteMessage(StarBotRemoteMessageEvent event) {
+    @EventListener(NovaRemoteMessageEvent.class)
+    public void onRemoteMessage(NovaRemoteMessageEvent event) {
         if (event.getNum() == null) {
             return;
         }
@@ -239,7 +239,7 @@ public class CommandDispatcher {
      * 而在这里挑一个「更合适的」只会让那个错误更难被发现。
      * @return 认领结果，无人认领时为 null
      */
-    private CommandFollowUp.Claimed claim(StarBotRemoteMessageEvent event, PushTargetType type,
+    private CommandFollowUp.Claimed claim(NovaRemoteMessageEvent event, PushTargetType type,
                                           String name, List<String> args) {
         if (name.isEmpty()) {
             return null;
@@ -271,7 +271,7 @@ public class CommandDispatcher {
      * @param name 命令名，仅用于日志
      * @return 是否放行
      */
-    private boolean acquireCooldown(StarBotRemoteMessageEvent event, PushTargetType type, String name) {
+    private boolean acquireCooldown(NovaRemoteMessageEvent event, PushTargetType type, String name) {
         String key = event.getPlatform() + ":" + event.getMessageType() + ":" + event.getNum();
         Instant now = clock.instant();
         Instant last = lastExecuted.get(key);
@@ -317,7 +317,7 @@ public class CommandDispatcher {
      * 会让日志页上认不出的命令各占两行，而后一行看起来像是命令跑成了。
      * @return 执行过程中没有抛异常
      */
-    private boolean run(NovaCommand command, StarBotRemoteMessageEvent event, PushTargetType type,
+    private boolean run(NovaCommand command, NovaRemoteMessageEvent event, PushTargetType type,
                         List<String> args, boolean admin) {
         CommandContext context = new CommandContext(event.getPlatform(), type, event.getNum(),
                 event.getSenderUid(), command.name(), args, event.getText(), admin);
@@ -338,7 +338,7 @@ public class CommandDispatcher {
     /**
      * 向消息来源的会话回一条消息
      */
-    private void reply(StarBotRemoteMessageEvent event, PushTargetType type, String content) {
+    private void reply(NovaRemoteMessageEvent event, PushTargetType type, String content) {
         Message.create(event.getPlatform(), type, event.getNum(), content).forEach(message -> {
             // 标成回复而不是推送：这一条是有人先开口才有的，凡是「只对主动推送成立」的事都不该算上它
             message.setReply(true);
@@ -355,7 +355,7 @@ public class CommandDispatcher {
      * <b>私聊一律不算管理员</b>：私聊没有群角色，若在此放行，任何人私聊机器人
      * 都能改动群里的命令开关。
      */
-    private boolean isAdmin(StarBotRemoteMessageEvent event) {
+    private boolean isAdmin(NovaRemoteMessageEvent event) {
         Long senderUid = event.getSenderUid();
         if (senderUid == null) {
             return false;

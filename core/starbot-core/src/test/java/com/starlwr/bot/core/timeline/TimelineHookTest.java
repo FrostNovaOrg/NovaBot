@@ -15,13 +15,13 @@ import com.starlwr.bot.core.config.ui.RuntimeConfigurationApplier;
 import com.starlwr.bot.core.config.ui.RuntimeConfigurationApplierContributor;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.PushTargetType;
-import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
-import com.starlwr.bot.core.event.remote.StarBotRemoteMessageEvent;
+import com.starlwr.bot.core.event.NovaExternalBaseEvent;
+import com.starlwr.bot.core.event.remote.NovaRemoteMessageEvent;
 import com.starlwr.bot.core.handler.NovaEventHandler;
 import com.starlwr.bot.core.health.HealthProbe;
 import com.starlwr.bot.core.health.HealthStatus;
 import com.starlwr.bot.core.health.PushActivityRecorder;
-import com.starlwr.bot.core.listener.StarBotHandlerListener;
+import com.starlwr.bot.core.listener.NovaHandlerListener;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.PushMessage;
@@ -175,7 +175,7 @@ class TimelineHookTest {
         properties.getPush().setQuietEnd(now.plusHours(1).format(DateTimeFormatter.ofPattern("HH:mm")));
 
         Capture capture = new Capture();
-        listener(properties, capture, 3).onStarBotExternalBaseEvent(liveEvent());
+        listener(properties, capture, 3).onNovaExternalBaseEvent(liveEvent());
 
         TimelineEvent event = capture.only();
         assertEquals(TimelineEventType.PUSH_MUTED, event.type());
@@ -193,7 +193,7 @@ class TimelineHookTest {
         properties.getPush().setEnabled(false);
 
         Capture capture = new Capture();
-        listener(properties, capture, 2).onStarBotExternalBaseEvent(liveEvent());
+        listener(properties, capture, 2).onNovaExternalBaseEvent(liveEvent());
 
         TimelineEvent event = capture.only();
         assertEquals(TimelineEventType.PUSH_PAUSED, event.type(),
@@ -208,7 +208,7 @@ class TimelineHookTest {
         properties.getPush().setEnabled(false);
 
         Capture capture = new Capture();
-        listener(properties, capture, 0).onStarBotExternalBaseEvent(liveEvent());
+        listener(properties, capture, 0).onNovaExternalBaseEvent(liveEvent());
 
         assertTrue(capture.events.isEmpty(),
                 "没人订阅的事件本来就不会推, 静音期间为它记一条「丢弃」是凭空造出来的坏消息: "
@@ -220,9 +220,9 @@ class TimelineHookTest {
     void dispatchesNormallyWhenAllowed() {
         Capture capture = new Capture();
         CountingHandler handler = new CountingHandler();
-        StarBotHandlerListener listener = listener(new StarBotCoreProperties(), capture, 3, handler);
+        NovaHandlerListener listener = listener(new StarBotCoreProperties(), capture, 3, handler);
 
-        listener.onStarBotExternalBaseEvent(liveEvent());
+        listener.onNovaExternalBaseEvent(liveEvent());
 
         assertEquals(3, handler.handled, "三个目标各处理一次");
         assertTrue(capture.events.isEmpty(), "没拦下就没有「丢弃」这回事: " + capture.events);
@@ -402,8 +402,8 @@ class TimelineHookTest {
     /**
      * 一条群消息，已 @ 了机器人、来自配好推送的那个群
      */
-    private StarBotRemoteMessageEvent commandEvent(String text) {
-        return new StarBotRemoteMessageEvent(PLATFORM, "group", 30003L, 1L, text, null, true);
+    private NovaRemoteMessageEvent commandEvent(String text) {
+        return new NovaRemoteMessageEvent(PLATFORM, "group", 30003L, 1L, text, null, true);
     }
 
     private CommandDispatcher dispatcher(TimelineWriter timeline, Clock clock) {
@@ -545,13 +545,13 @@ class TimelineHookTest {
         private int handled;
 
         @Override
-        public void handle(StarBotExternalBaseEvent baseEvent, PushMessage pushMessage) {
+        public void handle(NovaExternalBaseEvent baseEvent, PushMessage pushMessage) {
             handled++;
         }
 
         @Override
-        public Class<? extends StarBotExternalBaseEvent> getEventType() {
-            return StarBotExternalBaseEvent.class;
+        public Class<? extends NovaExternalBaseEvent> getEventType() {
+            return NovaExternalBaseEvent.class;
         }
 
         @Override
@@ -560,18 +560,18 @@ class TimelineHookTest {
         }
     }
 
-    private StarBotExternalBaseEvent liveEvent() {
-        return new StarBotExternalBaseEvent(LIVE_PLATFORM, new LiveStreamerInfo(10001L, "主播甲", 20002L));
+    private NovaExternalBaseEvent liveEvent() {
+        return new NovaExternalBaseEvent(LIVE_PLATFORM, new LiveStreamerInfo(10001L, "主播甲", 20002L));
     }
 
-    private StarBotHandlerListener listener(StarBotCoreProperties properties, TimelineWriter timeline, int targets) {
+    private NovaHandlerListener listener(StarBotCoreProperties properties, TimelineWriter timeline, int targets) {
         return listener(properties, timeline, targets, new CountingHandler());
     }
 
     /**
      * 造一个订阅了本事件的主播，名下挂 {@code targets} 个推送目标
      */
-    private StarBotHandlerListener listener(StarBotCoreProperties properties, TimelineWriter timeline,
+    private NovaHandlerListener listener(StarBotCoreProperties properties, TimelineWriter timeline,
                                             int targets, NovaEventHandler handler) {
         PushUser user = new PushUser();
         user.setPlatform(LIVE_PLATFORM);
@@ -587,7 +587,7 @@ class TimelineHookTest {
             PushMessage message = new PushMessage();
             message.setTarget(target);
             message.setHandlerInstance(handler);
-            message.setEventClass(StarBotExternalBaseEvent.class);
+            message.setEventClass(NovaExternalBaseEvent.class);
             target.getMessages().add(message);
             user.getTargets().add(target);
         }
@@ -595,7 +595,7 @@ class TimelineHookTest {
         AbstractDataSource dataSource = mock(AbstractDataSource.class);
         when(dataSource.getUser(LIVE_PLATFORM, 10001L)).thenReturn(Optional.of(user));
 
-        return new StarBotHandlerListener(dataSource, new PushGate(properties), timeline);
+        return new NovaHandlerListener(dataSource, new PushGate(properties), timeline);
     }
 
     private HealthAlertMonitor monitor(HealthProbe probe, TimelineWriter timeline) {

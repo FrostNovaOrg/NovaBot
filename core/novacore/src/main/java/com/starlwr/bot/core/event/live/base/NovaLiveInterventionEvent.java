@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.event.live.base;
 
 import com.starlwr.bot.core.enums.LivePlatform;
-import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
+import com.starlwr.bot.core.event.live.NovaBaseLiveEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -21,28 +21,28 @@ import java.time.Instant;
 @Setter
 @NoArgsConstructor
 @ToString(callSuper = true)
-public class StarBotLiveInterventionEvent extends StarBotBaseLiveEvent {
+public class NovaLiveInterventionEvent extends NovaBaseLiveEvent {
     /**
      * 平台给出的说明文案，例如「违反直播着装规范，请立即调整」
      */
     private String reason;
 
-    public StarBotLiveInterventionEvent(String platform, LiveStreamerInfo source, String reason) {
+    public NovaLiveInterventionEvent(String platform, LiveStreamerInfo source, String reason) {
         super(platform, source);
         this.reason = reason;
     }
 
-    public StarBotLiveInterventionEvent(String platform, LiveStreamerInfo source, String reason, Instant instant) {
+    public NovaLiveInterventionEvent(String platform, LiveStreamerInfo source, String reason, Instant instant) {
         super(platform, source, instant);
         this.reason = reason;
     }
 
-    public StarBotLiveInterventionEvent(LivePlatform platform, LiveStreamerInfo source, String reason) {
+    public NovaLiveInterventionEvent(LivePlatform platform, LiveStreamerInfo source, String reason) {
         super(platform, source);
         this.reason = reason;
     }
 
-    public StarBotLiveInterventionEvent(LivePlatform platform, LiveStreamerInfo source, String reason, Instant instant) {
+    public NovaLiveInterventionEvent(LivePlatform platform, LiveStreamerInfo source, String reason, Instant instant) {
         super(platform, source, instant);
         this.reason = reason;
     }

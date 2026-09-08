@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.event.datasource;
 
-import com.starlwr.bot.core.event.StarBotInternalBaseEvent;
+import com.starlwr.bot.core.event.NovaInternalBaseEvent;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -15,8 +15,8 @@ import java.time.Instant;
 @Setter
 @NoArgsConstructor
 @ToString(callSuper = true)
-public class StarBotBaseDataSourceEvent extends StarBotInternalBaseEvent {
-    public StarBotBaseDataSourceEvent(Instant instant) {
+public class NovaBaseDataSourceEvent extends NovaInternalBaseEvent {
+    public NovaBaseDataSourceEvent(Instant instant) {
         super(instant);
     }
 }

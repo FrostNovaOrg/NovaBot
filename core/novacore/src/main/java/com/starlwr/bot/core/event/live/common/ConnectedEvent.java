@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.event.live.common;
 
 import com.starlwr.bot.core.enums.LivePlatform;
-import com.starlwr.bot.core.event.live.base.StarBotLiveConnectionEvent;
+import com.starlwr.bot.core.event.live.base.NovaLiveConnectionEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -17,7 +17,7 @@ import java.time.Instant;
 @Setter
 @NoArgsConstructor
 @ToString(callSuper = true)
-public class ConnectedEvent extends StarBotLiveConnectionEvent {
+public class ConnectedEvent extends NovaLiveConnectionEvent {
     public ConnectedEvent(String platform, LiveStreamerInfo source) {
         super(platform, source);
     }

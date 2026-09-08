@@ -4,7 +4,7 @@ import com.starlwr.bot.core.command.builtin.MenuCommand;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.PushTargetType;
-import com.starlwr.bot.core.event.remote.StarBotRemoteMessageEvent;
+import com.starlwr.bot.core.event.remote.NovaRemoteMessageEvent;
 import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
@@ -252,7 +252,7 @@ class CommandDispatcherCorpusTest {
             replies.clear();
             int before = groupCommand.executions + privateCommand.executions + adminCommand.executions;
 
-            dispatcher.onRemoteMessage(new StarBotRemoteMessageEvent(PLATFORM,
+            dispatcher.onRemoteMessage(new NovaRemoteMessageEvent(PLATFORM,
                     input.group() ? "group" : "private", input.num(), 1L, input.text(),
                     input.role(), input.mentionsBot()));
 

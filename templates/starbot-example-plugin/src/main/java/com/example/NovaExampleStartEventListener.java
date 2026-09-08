@@ -13,7 +13,7 @@ import org.springframework.core.annotation.Order;
  */
 @Slf4j
 @NovaComponent // 使用该注解将此类注册为 StarBot 组件，会被 StarBot 扫描并注册至 Spring 容器中
-public class StarBotExampleStartEventListener {
+public class NovaExampleStartEventListener {
     @Order(0) // 如需指定执行顺序，使用 @Order 注解，数值越小，执行时机越早
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationEvent() {

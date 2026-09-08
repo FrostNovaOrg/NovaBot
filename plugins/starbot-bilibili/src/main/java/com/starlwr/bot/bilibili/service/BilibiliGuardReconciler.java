@@ -1,6 +1,6 @@
 package com.starlwr.bot.bilibili.service;
 
-import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
+import com.starlwr.bot.core.event.live.NovaBaseLiveEvent;
 import com.starlwr.bot.core.plugin.NovaComponent;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -120,7 +120,7 @@ public class BilibiliGuardReconciler {
      * @param at 消息时刻
      * @param event 已解析好的事件
      */
-    public void holdGuardBuy(Long uid, Integer guardLevel, Instant at, StarBotBaseLiveEvent event) {
+    public void holdGuardBuy(Long uid, Integer guardLevel, Instant at, NovaBaseLiveEvent event) {
         if (event == null) {
             return;
         }
@@ -200,7 +200,7 @@ public class BilibiliGuardReconciler {
         return true;
     }
 
-    private void publish(StarBotBaseLiveEvent event) {
+    private void publish(NovaBaseLiveEvent event) {
         try {
             publisher.publishEvent(event);
         } catch (Exception e) {

@@ -1,8 +1,8 @@
 package com.starlwr.bot.core.datasource;
 
-import com.starlwr.bot.core.event.datasource.change.StarBotDataSourceAddEvent;
-import com.starlwr.bot.core.event.datasource.change.StarBotDataSourceRemoveEvent;
-import com.starlwr.bot.core.event.datasource.change.StarBotDataSourceUpdateEvent;
+import com.starlwr.bot.core.event.datasource.change.NovaDataSourceAddEvent;
+import com.starlwr.bot.core.event.datasource.change.NovaDataSourceRemoveEvent;
+import com.starlwr.bot.core.event.datasource.change.NovaDataSourceUpdateEvent;
 import com.starlwr.bot.core.exception.DataSourceException;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
@@ -122,7 +122,7 @@ public abstract class AbstractDataSource {
 
             log.info("新增推送用户: (UID: {}, 昵称: {}, 房间号: {}, 平台: {})", user.getUid(), user.getUname(), user.getRoomIdString(), user.getPlatform());
 
-            StarBotDataSourceAddEvent event = new StarBotDataSourceAddEvent(user, Instant.now());
+            NovaDataSourceAddEvent event = new NovaDataSourceAddEvent(user, Instant.now());
             eventPublisher.publishEvent(event);
         }
     }
@@ -156,7 +156,7 @@ public abstract class AbstractDataSource {
 
         log.info("移除推送用户: (UID: {}, 昵称: {}, 房间号: {}, 平台: {})", user.getUid(), user.getUname(), user.getRoomIdString(), user.getPlatform());
 
-        StarBotDataSourceRemoveEvent event = new StarBotDataSourceRemoveEvent(user, Instant.now());
+        NovaDataSourceRemoveEvent event = new NovaDataSourceRemoveEvent(user, Instant.now());
         eventPublisher.publishEvent(event);
     }
 
@@ -247,7 +247,7 @@ public abstract class AbstractDataSource {
                 log.info("推送用户 (UID: {}, 昵称: {}, 房间号: {}, 平台: {}) 推送配置已更新", user.getUid(), user.getUname(), user.getRoomIdString(), user.getPlatform());
             }
 
-            StarBotDataSourceUpdateEvent event = new StarBotDataSourceUpdateEvent(oldUser, user, Instant.now());
+            NovaDataSourceUpdateEvent event = new NovaDataSourceUpdateEvent(oldUser, user, Instant.now());
             eventPublisher.publishEvent(event);
         }
     }

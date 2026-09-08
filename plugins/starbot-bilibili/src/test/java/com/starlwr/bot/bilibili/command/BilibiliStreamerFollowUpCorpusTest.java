@@ -10,7 +10,7 @@ import com.starlwr.bot.core.command.builtin.MenuCommand;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.PushTargetType;
-import com.starlwr.bot.core.event.remote.StarBotRemoteMessageEvent;
+import com.starlwr.bot.core.event.remote.NovaRemoteMessageEvent;
 import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
@@ -281,7 +281,7 @@ class BilibiliStreamerFollowUpCorpusTest {
         String feed(long sender, Duration after, String text) {
             clock.advance(after);
             replies.clear();
-            dispatcher.onRemoteMessage(new StarBotRemoteMessageEvent(PLATFORM, "group", GROUP, sender,
+            dispatcher.onRemoteMessage(new NovaRemoteMessageEvent(PLATFORM, "group", GROUP, sender,
                     text, "member", true));
             return String.join("\n", replies);
         }

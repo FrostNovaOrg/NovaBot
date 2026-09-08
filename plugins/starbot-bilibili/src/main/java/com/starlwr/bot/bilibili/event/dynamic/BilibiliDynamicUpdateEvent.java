@@ -2,7 +2,7 @@ package com.starlwr.bot.bilibili.event.dynamic;
 
 import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.bilibili.model.Dynamic;
-import com.starlwr.bot.core.event.dynamic.StarBotBaseDynamicEvent;
+import com.starlwr.bot.core.event.dynamic.NovaBaseDynamicEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -18,7 +18,7 @@ import java.time.Instant;
 @Setter
 @NoArgsConstructor
 @ToString(callSuper = true)
-public class BilibiliDynamicUpdateEvent extends StarBotBaseDynamicEvent {
+public class BilibiliDynamicUpdateEvent extends NovaBaseDynamicEvent {
     /**
      * 动态内容
      */

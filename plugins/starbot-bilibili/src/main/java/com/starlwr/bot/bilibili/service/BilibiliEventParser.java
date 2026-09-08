@@ -12,7 +12,7 @@ import com.starlwr.bot.bilibili.model.BilibiliUserInfo;
 import com.starlwr.bot.bilibili.model.FansMedal;
 import com.starlwr.bot.bilibili.model.Guard;
 import com.starlwr.bot.bilibili.protocol.BilibiliProtobufReader;
-import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
+import com.starlwr.bot.core.event.live.NovaBaseLiveEvent;
 import com.starlwr.bot.core.model.GiftInfo;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.UserInfo;
@@ -394,7 +394,7 @@ public class BilibiliEventParser {
     /**
      * 消息类型到解析方法的映射
      */
-    private final Map<String, BiFunction<JSONObject, LiveStreamerInfo, StarBotBaseLiveEvent>> parsers = new HashMap<>();
+    private final Map<String, BiFunction<JSONObject, LiveStreamerInfo, NovaBaseLiveEvent>> parsers = new HashMap<>();
 
     public BilibiliEventParser(StarBotBilibiliProperties properties, BilibiliGiftService giftService,
                                BilibiliApiSupport apiSupport, BilibiliGuardReconciler guardReconciler) {
@@ -449,7 +449,7 @@ public class BilibiliEventParser {
      *                 那是「没这一条」，不是「解析不出来」，算进去的话
      *                 解析失败计数永远对不上
      */
-    public record ParsedMessage(Optional<StarBotBaseLiveEvent> event, boolean degraded) {
+    public record ParsedMessage(Optional<NovaBaseLiveEvent> event, boolean degraded) {
     }
 
     /**
@@ -478,18 +478,18 @@ public class BilibiliEventParser {
             log.debug("{}: {} -> {}", type, source.getRoomId(), data.toJSONString());
         }
 
-        BiFunction<JSONObject, LiveStreamerInfo, StarBotBaseLiveEvent> parser = parsers.get(type);
+        BiFunction<JSONObject, LiveStreamerInfo, NovaBaseLiveEvent> parser = parsers.get(type);
         if (parser == null) {
             noteUnknownCmd(type);
             return new ParsedMessage(Optional.empty(), true);
         }
 
         try {
-            StarBotBaseLiveEvent event = parser.apply(data, source);
+            NovaBaseLiveEvent event = parser.apply(data, source);
             if (event != null) {
                 // 原始报文随事件一起走：事件输出协议要把它透传给下游，排障时也要对着它看
                 // 「解析出来的字段」与「平台实际下发的内容」是不是一回事。存引用不做序列化，
-                // 详见 StarBotBaseLiveEvent.rawMessage
+                // 详见 NovaBaseLiveEvent.rawMessage
                 event.setRawMessage(data);
             }
             return new ParsedMessage(Optional.ofNullable(event), false);
@@ -507,14 +507,14 @@ public class BilibiliEventParser {
      * @param source 直播间信息
      * @return 解析出的事件，消息类型不受支持或解析失败时返回空
      */
-    public Optional<StarBotBaseLiveEvent> parse(JSONObject data, LiveStreamerInfo source) {
+    public Optional<NovaBaseLiveEvent> parse(JSONObject data, LiveStreamerInfo source) {
         return parseMessage(data, source).event();
     }
 
     /**
      * 解析开播消息
      */
-    private StarBotBaseLiveEvent parseLiveOn(JSONObject data, LiveStreamerInfo source) {
+    private NovaBaseLiveEvent parseLiveOn(JSONObject data, LiveStreamerInfo source) {
         Long liveTime = data.getLong("live_time");
         if (liveTime == null) {
             // 开播消息在直播间连接建立时也会重复下发，此时不带开播时间，不应视为一次新的开播
@@ -527,7 +527,7 @@ public class BilibiliEventParser {
     /**
      * 解析下播消息
      */
-    private StarBotBaseLiveEvent parseLiveOff(JSONObject data, LiveStreamerInfo source) {
+    private NovaBaseLiveEvent parseLiveOff(JSONObject data, LiveStreamerInfo source) {
         return new BilibiliLiveOffEvent(source);
     }
 
@@ -537,7 +537,7 @@ public class BilibiliEventParser {
      * 原名 {@code parseMessage}，与带降级标志的公开入口 {@link #parseMessage} 重名冲突后改名，
      * 顺带与其他按消息命名的解析方法（parseGift、parseGuard…）对齐
      */
-    private StarBotBaseLiveEvent parseDanmu(JSONObject data, LiveStreamerInfo source) {
+    private NovaBaseLiveEvent parseDanmu(JSONObject data, LiveStreamerInfo source) {
         // info 中只有下标 0 是必需的，粉丝勋章与荣耀等级所在的下标可能不存在，按可选处理
         JSONArray primary = arrayAt(data.getJSONArray("info"), 0);
         if (primary == null || primary.size() < 16) {
@@ -822,7 +822,7 @@ public class BilibiliEventParser {
     /**
      * 解析进房、关注与分享消息
      */
-    private StarBotBaseLiveEvent parseInteract(JSONObject data, LiveStreamerInfo source) {
+    private NovaBaseLiveEvent parseInteract(JSONObject data, LiveStreamerInfo source) {
         JSONObject meta = requireData(data, "INTERACT_WORD");
         if (meta == null) {
             return null;
@@ -913,7 +913,7 @@ public class BilibiliEventParser {
      * 不能看分享计数。
      * 对下播报告的影响见 {@link com.starlwr.bot.bilibili.model.BilibiliLiveMetric#FOLLOW_COUNT}。
      */
-    private StarBotBaseLiveEvent parseInteractV2(JSONObject data, LiveStreamerInfo source) {
+    private NovaBaseLiveEvent parseInteractV2(JSONObject data, LiveStreamerInfo source) {
         JSONObject meta = requireData(data, "INTERACT_WORD_V2");
         if (meta == null) {
             return null;
@@ -1116,7 +1116,7 @@ public class BilibiliEventParser {
     /**
      * 解析礼物消息
      */
-    private StarBotBaseLiveEvent parseGift(JSONObject data, LiveStreamerInfo source) {
+    private NovaBaseLiveEvent parseGift(JSONObject data, LiveStreamerInfo source) {
         JSONObject meta = requireData(data, "SEND_GIFT");
         if (meta == null) {
             return null;
@@ -1162,7 +1162,7 @@ public class BilibiliEventParser {
      * <b>背包礼物：</b>V2 里 {@code bag_gift} 的对应字段未知（样本里没出现过），V2 的背包
      * 礼物暂时认不出来，实扣只能按 {@code total_coin} 照记。等样本。
      */
-    private StarBotBaseLiveEvent parseGiftV2(JSONObject data, LiveStreamerInfo source) {
+    private NovaBaseLiveEvent parseGiftV2(JSONObject data, LiveStreamerInfo source) {
         JSONObject meta = requireData(data, "SEND_GIFT_V2");
         if (meta == null) {
             return null;
@@ -1251,7 +1251,7 @@ public class BilibiliEventParser {
      * @param blind 投入的盒子；V1 从 {@code blind_gift} 读出，V2 从顶层 9 号读出，没有则为 null
      * @return 礼物事件，币种不认识时为 null
      */
-    private StarBotBaseLiveEvent buildGiftEvent(String cmd, LiveStreamerInfo source, BilibiliUserInfo sender, GiftInfo gift,
+    private NovaBaseLiveEvent buildGiftEvent(String cmd, LiveStreamerInfo source, BilibiliUserInfo sender, GiftInfo gift,
                                                 Instant timestamp, String coinType, Supplier<Integer> totalCoin,
                                                 boolean fromBag, BlindBox blind) {
         Integer count = gift.getCount();
@@ -1332,7 +1332,7 @@ public class BilibiliEventParser {
      * 判断礼物是否来自背包
      * <p>
      * 判别字段是 {@code bag_gift}：背包礼物为一个对象，普通礼物为 {@code null}。
-     * <b>不要拿金额去反推</b>——理由见 {@code StarBotLiveGiftEvent.fromBag} 的契约说明。
+     * <b>不要拿金额去反推</b>——理由见 {@code NovaLiveGiftEvent.fromBag} 的契约说明。
      * @param meta 礼物消息体
      * @return 是否来自背包
      */
@@ -1391,7 +1391,7 @@ public class BilibiliEventParser {
     /**
      * 解析醒目留言消息
      */
-    private StarBotBaseLiveEvent parseSuperChat(JSONObject data, LiveStreamerInfo source) {
+    private NovaBaseLiveEvent parseSuperChat(JSONObject data, LiveStreamerInfo source) {
         JSONObject meta = requireData(data, "SUPER_CHAT_MESSAGE");
         if (meta == null) {
             return null;
@@ -1444,7 +1444,7 @@ public class BilibiliEventParser {
      * @param source 主播信息
      * @return 红包事件，无法识别或属于重播时为空
      */
-    private StarBotBaseLiveEvent parseRedPocket(String cmd, JSONObject data, LiveStreamerInfo source) {
+    private NovaBaseLiveEvent parseRedPocket(String cmd, JSONObject data, LiveStreamerInfo source) {
         JSONObject meta = requireData(data, cmd);
         if (meta == null) {
             return null;
@@ -1514,7 +1514,7 @@ public class BilibiliEventParser {
      * 这条带的 {@code price} 是<b>实际成交价</b>，与 {@code GUARD_BUY} 的挂牌价不是一回事，
      * 取舍见 {@link BilibiliGuardReconciler}。
      */
-    private StarBotBaseLiveEvent parseGuard(JSONObject data, LiveStreamerInfo source) {
+    private NovaBaseLiveEvent parseGuard(JSONObject data, LiveStreamerInfo source) {
         JSONObject meta = requireData(data, "USER_TOAST_MSG");
         if (meta == null) {
             return null;
@@ -1549,7 +1549,7 @@ public class BilibiliEventParser {
      * 且没有 {@code GUARD_BUY} 兜底——只认老格式就会让这 14% 完全消失，而且不会有任何报错。
      * 重复的那部分靠 {@code payflow_id} 去重。
      */
-    private StarBotBaseLiveEvent parseGuardV2(JSONObject data, LiveStreamerInfo source) {
+    private NovaBaseLiveEvent parseGuardV2(JSONObject data, LiveStreamerInfo source) {
         JSONObject meta = requireData(data, "USER_TOAST_MSG_V2");
         if (meta == null) {
             return null;
@@ -1597,7 +1597,7 @@ public class BilibiliEventParser {
      * 字段也更少：实测 35 条<b>全都没有 {@code unit}</b>，且 {@code start_time == end_time}，
      * 所以 {@link #unitOf} 的两条路都走不通，单位只能是空——这也是宁可等 toast 的理由之一。
      */
-    private StarBotBaseLiveEvent parseGuardBuy(JSONObject data, LiveStreamerInfo source) {
+    private NovaBaseLiveEvent parseGuardBuy(JSONObject data, LiveStreamerInfo source) {
         JSONObject meta = requireData(data, "GUARD_BUY");
         if (meta == null) {
             return null;
@@ -1668,7 +1668,7 @@ public class BilibiliEventParser {
      * @param companionDays 陪伴天数，{@code GUARD_BUY} 没有文案可解析，传空
      * @return 等级不认识时返回 null
      */
-    private StarBotBaseLiveEvent buildGuardEvent(String cmd, LiveStreamerInfo source, Long senderUid, String username,
+    private NovaBaseLiveEvent buildGuardEvent(String cmd, LiveStreamerInfo source, Long senderUid, String username,
                                                  String iconName, Integer guardLevel, Double price, Integer count,
                                                  String unit, GuardOperateType operateType, Integer companionDays,
                                                  Instant timestamp) {
@@ -1741,7 +1741,7 @@ public class BilibiliEventParser {
     /**
      * 解析点赞消息
      */
-    private StarBotBaseLiveEvent parseLike(JSONObject data, LiveStreamerInfo source) {
+    private NovaBaseLiveEvent parseLike(JSONObject data, LiveStreamerInfo source) {
         JSONObject meta = requireData(data, "LIKE_INFO_V3_CLICK");
         if (meta == null) {
             return null;
@@ -1762,7 +1762,7 @@ public class BilibiliEventParser {
     /**
      * 解析点赞数更新消息
      */
-    private StarBotBaseLiveEvent parseLikeUpdate(JSONObject data, LiveStreamerInfo source) {
+    private NovaBaseLiveEvent parseLikeUpdate(JSONObject data, LiveStreamerInfo source) {
         JSONObject meta = requireData(data, "LIKE_INFO_V3_UPDATE");
         if (meta == null) {
             return null;
@@ -1774,7 +1774,7 @@ public class BilibiliEventParser {
     /**
      * 解析看过人数更新消息
      */
-    private StarBotBaseLiveEvent parseWatchedUpdate(JSONObject data, LiveStreamerInfo source) {
+    private NovaBaseLiveEvent parseWatchedUpdate(JSONObject data, LiveStreamerInfo source) {
         JSONObject meta = requireData(data, "WATCHED_CHANGE");
         if (meta == null) {
             return null;
@@ -1789,7 +1789,7 @@ public class BilibiliEventParser {
      * {@code online_count} 与 {@code count_text} 只在部分版本的消息里出现，
      * 取不到时为空即可——这两项都只是展示用，缺了不影响 {@code count} 这个正主。
      */
-    private StarBotBaseLiveEvent parseOnlineRankCount(JSONObject data, LiveStreamerInfo source) {
+    private NovaBaseLiveEvent parseOnlineRankCount(JSONObject data, LiveStreamerInfo source) {
         JSONObject meta = requireData(data, "ONLINE_RANK_COUNT");
         if (meta == null) {
             return null;
@@ -1802,7 +1802,7 @@ public class BilibiliEventParser {
     /**
      * 解析直播间标题与分区变更消息
      */
-    private StarBotBaseLiveEvent parseRoomInfoChange(JSONObject data, LiveStreamerInfo source) {
+    private NovaBaseLiveEvent parseRoomInfoChange(JSONObject data, LiveStreamerInfo source) {
         JSONObject meta = requireData(data, "ROOM_CHANGE");
         if (meta == null) {
             return null;
@@ -1817,14 +1817,14 @@ public class BilibiliEventParser {
     /**
      * 解析违规警告消息
      */
-    private StarBotBaseLiveEvent parseWarning(JSONObject data, LiveStreamerInfo source) {
+    private NovaBaseLiveEvent parseWarning(JSONObject data, LiveStreamerInfo source) {
         return new BilibiliLiveWarningEvent(source, data.getString("msg"));
     }
 
     /**
      * 解析直播流被切断消息
      */
-    private StarBotBaseLiveEvent parseCutOff(JSONObject data, LiveStreamerInfo source) {
+    private NovaBaseLiveEvent parseCutOff(JSONObject data, LiveStreamerInfo source) {
         return new BilibiliCutOffEvent(source, data.getString("msg"));
     }
 
@@ -1833,7 +1833,7 @@ public class BilibiliEventParser {
      * <p>
      * 该消息只给解封时刻、不给理由，与警告和切流的字段结构不同。
      */
-    private StarBotBaseLiveEvent parseRoomLock(JSONObject data, LiveStreamerInfo source) {
+    private NovaBaseLiveEvent parseRoomLock(JSONObject data, LiveStreamerInfo source) {
         return new BilibiliRoomLockEvent(source, data.getString("msg"), parseShanghaiTime(data.getString("expire")));
     }
 

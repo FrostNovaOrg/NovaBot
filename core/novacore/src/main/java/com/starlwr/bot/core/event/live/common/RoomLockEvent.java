@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.event.live.common;
 
 import com.starlwr.bot.core.enums.LivePlatform;
-import com.starlwr.bot.core.event.live.base.StarBotLiveInterventionEvent;
+import com.starlwr.bot.core.event.live.base.NovaLiveInterventionEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -21,7 +21,7 @@ import java.time.Instant;
 @Setter
 @NoArgsConstructor
 @ToString(callSuper = true)
-public class RoomLockEvent extends StarBotLiveInterventionEvent {
+public class RoomLockEvent extends NovaLiveInterventionEvent {
     /**
      * 解封时刻，平台未给出或无法解析时为空
      */
