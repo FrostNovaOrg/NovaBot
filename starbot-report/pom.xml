@@ -54,8 +54,14 @@
                         <configuration>
                             <outputDirectory>${project.build.outputDirectory}</outputDirectory>
                             <resources>
+                                <!--
+                                    只取 starbot-plugin-processor 生成的两个描述文件。
+                                    若照搬整个 target 目录，test-classes 也会被打进插件 jar，
+                                    而 jar 里的测试类落在本模块自报类的组件扫描范围内，
+                                    启动时被一并扫进容器，测试期依赖又不在运行期产物里，
+                                    结果是 NoClassDefFoundError，整个应用起不来。
+                                -->
                                 <resource>
-                                    <!-- 仅取插件描述文件，避免 test-classes 被打入 jar，详见 starbot-onebot-adapter 中的说明 -->
                                     <directory>${project.build.directory}</directory>
                                     <includes>
                                         <include>plugin.json</include>
