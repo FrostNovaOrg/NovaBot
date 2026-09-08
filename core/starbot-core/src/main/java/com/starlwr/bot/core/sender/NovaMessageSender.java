@@ -8,7 +8,7 @@ import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.MessagePlaceholders;
 import com.starlwr.bot.core.model.Sender;
 import com.starlwr.bot.core.service.AtAllQuotaService;
-import com.starlwr.bot.core.service.StarBotSenderService;
+import com.starlwr.bot.core.service.NovaSenderService;
 import com.starlwr.bot.core.timeline.TimelineEvent;
 import com.starlwr.bot.core.timeline.TimelineEventType;
 import com.starlwr.bot.core.timeline.TimelineWriter;
@@ -36,10 +36,10 @@ import java.util.function.Predicate;
  */
 @Slf4j
 @Service
-public class StarBotMessageSender {
+public class NovaMessageSender {
     private final HttpUtil http;
 
-    private final StarBotSenderService senderService;
+    private final NovaSenderService senderService;
 
     private final PushActivityRecorder activityRecorder;
 
@@ -100,7 +100,7 @@ public class StarBotMessageSender {
     private final AtomicLong droppedCount = new AtomicLong();
 
     @Autowired
-    public StarBotMessageSender(HttpUtil http, StarBotSenderService senderService,
+    public NovaMessageSender(HttpUtil http, NovaSenderService senderService,
                                 PushActivityRecorder activityRecorder, PushGate pushGate,
                                 TimelineWriter timeline, AtAllQuotaService atAllQuota,
                                 ObjectProvider<AtAllPermissionResolver> atAllPermissionResolvers,

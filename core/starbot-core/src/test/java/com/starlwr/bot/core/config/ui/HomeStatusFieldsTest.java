@@ -12,12 +12,12 @@ import com.starlwr.bot.core.health.HealthProbe;
 import com.starlwr.bot.core.health.HealthStatus;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.sender.PushGate;
-import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.sender.NovaMessageSender;
 import com.starlwr.bot.core.protocol.EventStreamTokenService;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.PushTemplateDefaults;
-import com.starlwr.bot.core.service.StarBotMailService;
-import com.starlwr.bot.core.service.StarBotSenderService;
+import com.starlwr.bot.core.service.NovaMailService;
+import com.starlwr.bot.core.service.NovaSenderService;
 import com.starlwr.bot.core.timeline.TimelineEvent;
 import com.starlwr.bot.core.timeline.TimelineEventType;
 import com.starlwr.bot.core.timeline.TimelineStore;
@@ -77,7 +77,7 @@ class HomeStatusFieldsTest {
     private ConfigurationFileService fileService;
 
     /** 发送队列。连接页那张卡要按它写「还压着几条」，因此各用例改得到 */
-    private StarBotMessageSender messageSender;
+    private NovaMessageSender messageSender;
 
     /** 探针清单由本字段供给，各用例按需改 */
     private List<HealthProbe> probes = List.of();
@@ -106,7 +106,7 @@ class HomeStatusFieldsTest {
         authService = mock(ConfigUiAuthService.class);
         when(authService.isEnabled()).thenReturn(true);
 
-        messageSender = mock(StarBotMessageSender.class);
+        messageSender = mock(NovaMessageSender.class);
     }
 
     @SuppressWarnings("unchecked")
@@ -114,7 +114,7 @@ class HomeStatusFieldsTest {
         ObjectProvider<HealthProbe> healthProbes = mock(ObjectProvider.class);
         when(healthProbes.orderedStream()).thenAnswer(invocation -> probes.stream());
 
-        StarBotSenderService senders = mock(StarBotSenderService.class);
+        NovaSenderService senders = mock(NovaSenderService.class);
         when(senders.getSenderNames()).thenReturn(Set.of("默认"));
 
         return new ConfigUiController(
@@ -186,7 +186,7 @@ class HomeStatusFieldsTest {
      * 这里直接传值正是那一份运行值的替身；不发信，只答「配好了没有」。
      */
     private AlertChannel mailChannel(String smtpHost) {
-        return new MailAlertChannel(mock(StarBotMailService.class), properties, smtpHost);
+        return new MailAlertChannel(mock(NovaMailService.class), properties, smtpHost);
     }
 
     /** 一个只声明范围与登录态位的探针，够本组用例用 */

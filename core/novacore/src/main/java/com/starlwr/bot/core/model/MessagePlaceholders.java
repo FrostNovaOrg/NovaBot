@@ -15,7 +15,7 @@ import java.util.regex.Pattern;
  * <b>最近一个</b> <code>}</code>」，所以本类的正则一律用非贪婪，
  * 与 {@link Message#getDisplay()} 的写法也是同一套。
  *
- * @see com.starlwr.bot.core.sender.StarBotMessageSender 含图消息失败后的纯文字兜底
+ * @see com.starlwr.bot.core.sender.NovaMessageSender 含图消息失败后的纯文字兜底
  */
 public final class MessagePlaceholders {
     private MessagePlaceholders() {

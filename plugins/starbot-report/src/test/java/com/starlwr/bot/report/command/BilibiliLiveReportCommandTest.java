@@ -5,7 +5,7 @@ import com.starlwr.bot.bilibili.command.BilibiliStreamerChoice;
 import com.starlwr.bot.report.handler.BilibiliLiveReportPushHandler;
 import com.starlwr.bot.bilibili.model.BilibiliLiveReportOptions;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
-import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.sender.NovaMessageSender;
 import com.starlwr.bot.report.painter.BilibiliLiveReportPainter;
 import com.starlwr.bot.core.command.CommandContext;
 import com.starlwr.bot.core.command.CommandReply;
@@ -159,7 +159,7 @@ class BilibiliLiveReportCommandTest {
         PushMessage message = user.getTargets().get(0).getMessages().get(0);
         message.setHandler("com.starlwr.bot.bilibili.handler.BilibiliLiveReportPushHandler");
         message.setHandlerInstance(new BilibiliLiveReportPushHandler(mock(BilibiliApiUtil.class),
-                mock(StarBotMessageSender.class), mock(BilibiliLiveReportPainter.class),
+                mock(NovaMessageSender.class), mock(BilibiliLiveReportPainter.class),
                 mock(RevenueVisibilityService.class)));
         return user;
     }

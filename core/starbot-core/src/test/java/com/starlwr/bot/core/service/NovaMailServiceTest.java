@@ -41,7 +41,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 一条要连外网才跑得动的判据，会在断网那天变成一条没人相信的红。
  */
 @DisplayName("邮件发送")
-class StarBotMailServiceTest {
+class NovaMailServiceTest {
     private static final String FROM = "robot@example.invalid";
 
     private static final String DEFAULT_TO = "owner@example.invalid";
@@ -92,17 +92,17 @@ class StarBotMailServiceTest {
         return beanFactory.getBeanProvider(JavaMailSender.class);
     }
 
-    private static StarBotMailService service(String defaultTo, JavaMailSender... senders) {
+    private static NovaMailService service(String defaultTo, JavaMailSender... senders) {
         StarBotCoreProperties properties = new StarBotCoreProperties();
         properties.getMail().setDefaultTo(defaultTo);
 
-        StarBotMailService service = new StarBotMailService(providerOf(senders), properties);
+        NovaMailService service = new NovaMailService(providerOf(senders), properties);
         ReflectionTestUtils.setField(service, "from", FROM);
         return service;
     }
 
     private static List<String> logsOf(Level level, Runnable action) {
-        Logger logger = (Logger) LoggerFactory.getLogger(StarBotMailService.class);
+        Logger logger = (Logger) LoggerFactory.getLogger(NovaMailService.class);
         ListAppender<ILoggingEvent> appender = new ListAppender<>();
         appender.start();
         logger.addAppender(appender);
@@ -159,7 +159,7 @@ class StarBotMailServiceTest {
         @Test
         @DisplayName("发信失败时只记一笔，不把调用方拖下水")
         void swallowsSendFailure() {
-            StarBotMailService service = service(DEFAULT_TO, new FailingMailSender());
+            NovaMailService service = service(DEFAULT_TO, new FailingMailSender());
 
             List<String> errors = logsOf(Level.ERROR, () ->
                     assertDoesNotThrow(() -> service.sendMail(SUBJECT, CONTENT)));
@@ -218,7 +218,7 @@ class StarBotMailServiceTest {
         @Test
         @DisplayName("发信失败时只记一笔，不把调用方拖下水")
         void swallowsSendFailure() {
-            StarBotMailService service = service(DEFAULT_TO, new FailingMailSender());
+            NovaMailService service = service(DEFAULT_TO, new FailingMailSender());
 
             List<String> errors = logsOf(Level.ERROR, () ->
                     assertDoesNotThrow(() -> service.sendMimeMail(SUBJECT, CONTENT)));
@@ -235,7 +235,7 @@ class StarBotMailServiceTest {
         @DisplayName("没配收件人：说一句，一封不发")
         void missingReceiverWarnsAndSendsNothing() {
             CapturingMailSender sender = new CapturingMailSender();
-            StarBotMailService service = service(null, sender);
+            NovaMailService service = service(null, sender);
 
             List<String> warnings = logsOf(Level.WARN, () -> service.sendMail(SUBJECT, CONTENT));
 
@@ -256,7 +256,7 @@ class StarBotMailServiceTest {
         @Test
         @DisplayName("没配发信服务：说一句，不抛")
         void missingSenderWarnsAndDoesNotThrow() {
-            StarBotMailService service = service(DEFAULT_TO);
+            NovaMailService service = service(DEFAULT_TO);
 
             List<String> warnings = logsOf(Level.WARN, () ->
                     assertDoesNotThrow(() -> service.sendMail(SUBJECT, CONTENT)));
@@ -275,7 +275,7 @@ class StarBotMailServiceTest {
         void ambiguousSenderCountsAsMissing() {
             CapturingMailSender first = new CapturingMailSender();
             CapturingMailSender second = new CapturingMailSender();
-            StarBotMailService service = service(DEFAULT_TO, first, second);
+            NovaMailService service = service(DEFAULT_TO, first, second);
 
             List<String> warnings = logsOf(Level.WARN, () -> service.sendMail(SUBJECT, CONTENT));
 
@@ -291,7 +291,7 @@ class StarBotMailServiceTest {
         @Test
         @DisplayName("两样都没配时先报收件人")
         void receiverIsCheckedFirst() {
-            StarBotMailService service = service(null);
+            NovaMailService service = service(null);
 
             List<String> warnings = logsOf(Level.WARN, () -> service.sendMail(SUBJECT, CONTENT));
 

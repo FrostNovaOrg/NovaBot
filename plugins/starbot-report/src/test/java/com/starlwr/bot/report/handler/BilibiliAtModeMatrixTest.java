@@ -19,11 +19,11 @@ import com.starlwr.bot.core.sender.AtAllPermissionResolver;
 import com.starlwr.bot.core.sender.AtMode;
 import com.starlwr.bot.core.sender.FirstPushTipService;
 import com.starlwr.bot.core.sender.PushGate;
-import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.sender.NovaMessageSender;
 import com.starlwr.bot.core.service.AtAllQuotaService;
 import com.starlwr.bot.core.service.AtSubscriptionService;
 import com.starlwr.bot.core.service.LiveDataService;
-import com.starlwr.bot.core.service.StarBotSenderService;
+import com.starlwr.bot.core.service.NovaSenderService;
 import com.starlwr.bot.core.service.StarBotStateStore;
 import com.starlwr.bot.core.timeline.TimelineEventType;
 import com.starlwr.bot.core.timeline.TimelineWriter;
@@ -272,10 +272,10 @@ class BilibiliAtModeMatrixTest {
      */
     private JSONObject defaultParams(Notice notice) {
         return notice == Notice.LIVE
-                ? new BilibiliLiveOnPushHandler(mock(BilibiliApiUtil.class), mock(StarBotMessageSender.class),
+                ? new BilibiliLiveOnPushHandler(mock(BilibiliApiUtil.class), mock(NovaMessageSender.class),
                         mock(AtSubscriptionService.class), mock(LiveDataService.class)).getDefaultParams()
                 : new BilibiliDynamicPushHandler(mock(BilibiliApiUtil.class), mock(BilibiliDynamicPainter.class),
-                        mock(StarBotMessageSender.class), mock(AtSubscriptionService.class),
+                        mock(NovaMessageSender.class), mock(AtSubscriptionService.class),
                         mock(LiveDataService.class)).getDefaultParams();
     }
 
@@ -296,7 +296,7 @@ class BilibiliAtModeMatrixTest {
          */
         private List<String> run(JSONObject params, Notice notice) {
             List<Message> produced = new ArrayList<>();
-            StarBotMessageSender collector = mock(StarBotMessageSender.class);
+            NovaMessageSender collector = mock(NovaMessageSender.class);
             doAnswer(invocation -> produced.add(invocation.getArgument(0))).when(collector).send(any());
 
             handle(collector, params, notice);
@@ -309,7 +309,7 @@ class BilibiliAtModeMatrixTest {
                 return new JSONObject().fluentPut("code", 0).fluentPut("id", "1");
             });
 
-            StarBotMessageSender real = realSender(http);
+            NovaMessageSender real = realSender(http);
             produced.forEach(real::sendNow);
             return sent;
         }
@@ -317,7 +317,7 @@ class BilibiliAtModeMatrixTest {
         /**
          * 让推送处理器把消息造出来
          */
-        private void handle(StarBotMessageSender collector, JSONObject params, Notice notice) {
+        private void handle(NovaMessageSender collector, JSONObject params, Notice notice) {
             BilibiliApiUtil api = mock(BilibiliApiUtil.class);
             // 昵称与直播间信息都取不到：本类量的是 @ 谁，与这两者无关
             when(api.getUpInfoByUid(anyLong())).thenThrow(new RuntimeException("接口不可用"));
@@ -355,13 +355,13 @@ class BilibiliAtModeMatrixTest {
         /**
          * 真发送器：真配额、真权限判定、真时间线
          */
-        private StarBotMessageSender realSender(HttpUtil http) {
+        private NovaMessageSender realSender(HttpUtil http) {
             Sender platform = new Sender();
             platform.setName(PLATFORM);
             platform.setUrl("http://127.0.0.1:7827/onebot/send");
             platform.setDelay(0);
 
-            StarBotSenderService senderService = mock(StarBotSenderService.class);
+            NovaSenderService senderService = mock(NovaSenderService.class);
             when(senderService.getSender(PLATFORM)).thenReturn(Optional.of(platform));
 
             StarBotCoreProperties properties = new StarBotCoreProperties();
@@ -378,7 +378,7 @@ class BilibiliAtModeMatrixTest {
                 }
             };
 
-            return new StarBotMessageSender(http, senderService, new PushActivityRecorder(TimelineWriter.NONE),
+            return new NovaMessageSender(http, senderService, new PushActivityRecorder(TimelineWriter.NONE),
                     new PushGate(properties), timeline, quota, resolvers(situation.admin),
                     new FirstPushTipService(new StarBotStateStore(properties)));
         }

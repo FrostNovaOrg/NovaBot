@@ -23,7 +23,7 @@ import org.springframework.stereotype.Service;
  */
 @Slf4j
 @Service
-public class StarBotMailService {
+public class NovaMailService {
     @Value("${spring.mail.username:}")
     private String from;
 
@@ -32,7 +32,7 @@ public class StarBotMailService {
     private final StarBotCoreProperties properties;
 
     @Autowired
-    public StarBotMailService(ObjectProvider<JavaMailSender> mailSenderProvider, StarBotCoreProperties properties) {
+    public NovaMailService(ObjectProvider<JavaMailSender> mailSenderProvider, StarBotCoreProperties properties) {
         this.mailSenderProvider = mailSenderProvider;
         this.properties = properties;
     }

@@ -190,7 +190,7 @@ public final class BilibiliLiveMetric {
     /**
      * 本场有几条推送<b>文字送到了、图片没送到</b>
      * <p>
-     * 由发送侧的兜底触发（{@link com.starlwr.bot.core.sender.StarBotMessageSender} 剥掉图片段
+     * 由发送侧的兜底触发（{@link com.starlwr.bot.core.sender.NovaMessageSender} 剥掉图片段
      * 重发纯文字并送达时记一次）。<b>它不是平台指标，是我们自己的投递质量指标。</b>
      * <p>
      * ⚠️ <b>为什么要占报告的版面</b>：兜底之后开播通知不再整条丢失，

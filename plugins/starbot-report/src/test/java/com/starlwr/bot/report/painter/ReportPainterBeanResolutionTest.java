@@ -8,7 +8,7 @@ import com.starlwr.bot.report.handler.BilibiliLiveReportPushHandler;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
-import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.sender.NovaMessageSender;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.LiveRoomInfoHistory;
 import com.starlwr.bot.core.service.RevenueVisibilityService;
@@ -92,7 +92,7 @@ class ReportPainterBeanResolutionTest {
         beans.registerSingleton("bilibiliApiUtil", mock(BilibiliApiUtil.class));
         beans.registerSingleton("liveRoomInfoHistory", mock(LiveRoomInfoHistory.class));
         beans.registerSingleton("liveDataService", mock(LiveDataService.class));
-        beans.registerSingleton("starBotMessageSender", mock(StarBotMessageSender.class));
+        beans.registerSingleton("novaMessageSender", mock(NovaMessageSender.class));
         beans.registerSingleton("revenueVisibilityService", mock(RevenueVisibilityService.class));
         beans.registerSingleton("abstractDataSource", mock(AbstractDataSource.class));
         beans.registerSingleton("bilibiliStreamerChoice", mock(BilibiliStreamerChoice.class));

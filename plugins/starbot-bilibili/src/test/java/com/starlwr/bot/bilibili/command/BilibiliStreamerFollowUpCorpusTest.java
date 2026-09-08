@@ -14,7 +14,7 @@ import com.starlwr.bot.core.event.remote.NovaRemoteMessageEvent;
 import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
-import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.sender.NovaMessageSender;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.LiveSessionArchive;
 import com.starlwr.bot.core.service.StarBotStateStore;
@@ -241,7 +241,7 @@ class BilibiliStreamerFollowUpCorpusTest {
             when(liveDataService.getLiveStatus(anyString(), anyLong())).thenReturn(Optional.of(false));
             when(liveDataService.getLiveEndTime(anyString(), anyLong())).thenReturn(Optional.empty());
 
-            StarBotMessageSender sender = mock(StarBotMessageSender.class);
+            NovaMessageSender sender = mock(NovaMessageSender.class);
             doAnswer(invocation -> replies.add(((Message) invocation.getArgument(0)).getContent()))
                     .when(sender).send(any());
 

@@ -7,7 +7,7 @@ import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
-import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.sender.NovaMessageSender;
 import com.starlwr.bot.core.service.LiveDataService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -32,7 +32,7 @@ import static org.mockito.Mockito.verify;
 class BilibiliLiveOffPushHandlerTest {
     private BilibiliApiUtil api;
 
-    private StarBotMessageSender sender;
+    private NovaMessageSender sender;
 
     private LiveDataService liveDataService;
 
@@ -41,7 +41,7 @@ class BilibiliLiveOffPushHandlerTest {
     @BeforeEach
     void setUp() {
         api = mock(BilibiliApiUtil.class);
-        sender = mock(StarBotMessageSender.class);
+        sender = mock(NovaMessageSender.class);
         liveDataService = mock(LiveDataService.class);
         handler = new BilibiliLiveOffPushHandler(api, sender, liveDataService);
 

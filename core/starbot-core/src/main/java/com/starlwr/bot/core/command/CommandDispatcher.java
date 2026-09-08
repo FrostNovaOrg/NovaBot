@@ -7,7 +7,7 @@ import com.starlwr.bot.core.event.remote.NovaRemoteMessageEvent;
 import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
-import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.sender.NovaMessageSender;
 import com.starlwr.bot.core.timeline.TimelineEvent;
 import com.starlwr.bot.core.timeline.TimelineEventType;
 import com.starlwr.bot.core.timeline.TimelineWriter;
@@ -86,7 +86,7 @@ public class CommandDispatcher {
 
     private final AbstractDataSource dataSource;
 
-    private final StarBotMessageSender sender;
+    private final NovaMessageSender sender;
 
     private final StarBotCoreProperties properties;
 
@@ -116,7 +116,7 @@ public class CommandDispatcher {
     @Autowired
     public CommandDispatcher(ObjectProvider<NovaCommand> commands, ObjectProvider<CommandFollowUp> followUps,
                              CommandSettingsService settings, AbstractDataSource dataSource,
-                             StarBotMessageSender sender, StarBotCoreProperties properties,
+                             NovaMessageSender sender, StarBotCoreProperties properties,
                              TimelineWriter timeline) {
         this(commands, followUps, settings, dataSource, sender, properties, timeline, Clock.systemDefaultZone());
     }
@@ -128,7 +128,7 @@ public class CommandDispatcher {
      */
     public CommandDispatcher(ObjectProvider<NovaCommand> commands, ObjectProvider<CommandFollowUp> followUps,
                              CommandSettingsService settings, AbstractDataSource dataSource,
-                             StarBotMessageSender sender, StarBotCoreProperties properties,
+                             NovaMessageSender sender, StarBotCoreProperties properties,
                              TimelineWriter timeline, Clock clock) {
         this.commands = commands;
         this.followUps = followUps;

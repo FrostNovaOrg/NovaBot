@@ -6,7 +6,7 @@ import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.sender.AtMode;
-import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.sender.NovaMessageSender;
 import com.starlwr.bot.core.lang.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 
@@ -120,7 +120,7 @@ public final class PushHandlerSupport {
      * @param target 推送目标
      * @param content 消息内容
      */
-    public static void send(StarBotMessageSender sender, PushTarget target, String content) {
+    public static void send(NovaMessageSender sender, PushTarget target, String content) {
         send(sender, target, content, null);
     }
 
@@ -130,7 +130,7 @@ public final class PushHandlerSupport {
      *                        所以「文字一条 + 封面一条」的默认模板下，
      *                        只有真正含图的那一条可能触发它
      */
-    public static void send(StarBotMessageSender sender, PushTarget target, String content, Runnable onImageDegraded) {
+    public static void send(NovaMessageSender sender, PushTarget target, String content, Runnable onImageDegraded) {
         send(sender, target, content, onImageDegraded, null);
     }
 
@@ -138,7 +138,7 @@ public final class PushHandlerSupport {
      * 发送消息，并备下 @全体成员 发不出去时的替代文本
      * @param atAllFallback @全体成员 被摘掉时用来顶替它的文本，可为空
      */
-    public static void send(StarBotMessageSender sender, PushTarget target, String content,
+    public static void send(NovaMessageSender sender, PushTarget target, String content,
                      Runnable onImageDegraded, String atAllFallback) {
         if (StringUtil.isBlank(content)) {
             return;

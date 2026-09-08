@@ -21,13 +21,13 @@ import com.starlwr.bot.core.model.Sender;
 import com.starlwr.bot.core.sender.AtAllPermissionResolver;
 import com.starlwr.bot.core.sender.FirstPushTipService;
 import com.starlwr.bot.core.sender.PushGate;
-import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.sender.NovaMessageSender;
 import com.starlwr.bot.core.service.AtAllQuotaService;
 import com.starlwr.bot.core.service.AtSubscriptionService;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.PushTemplateDefaults;
 import com.starlwr.bot.core.service.StarBotEventHandlerService;
-import com.starlwr.bot.core.service.StarBotSenderService;
+import com.starlwr.bot.core.service.NovaSenderService;
 import com.starlwr.bot.core.service.StarBotStateStore;
 import com.starlwr.bot.core.timeline.TimelineWriter;
 import com.starlwr.bot.core.util.HttpUtil;
@@ -96,13 +96,13 @@ class MergedNoticeTemplateTest {
             "{uname} {action}\n{url}{next}{picture}");
 
     private NovaEventHandler liveOn() {
-        return new BilibiliLiveOnPushHandler(mock(BilibiliApiUtil.class), mock(StarBotMessageSender.class),
+        return new BilibiliLiveOnPushHandler(mock(BilibiliApiUtil.class), mock(NovaMessageSender.class),
                 mock(AtSubscriptionService.class), mock(LiveDataService.class));
     }
 
     private NovaEventHandler dynamic() {
         return new BilibiliDynamicPushHandler(mock(BilibiliApiUtil.class), mock(BilibiliDynamicPainter.class),
-                mock(StarBotMessageSender.class), mock(AtSubscriptionService.class), mock(LiveDataService.class));
+                mock(NovaMessageSender.class), mock(AtSubscriptionService.class), mock(LiveDataService.class));
     }
 
     /**
@@ -194,7 +194,7 @@ class MergedNoticeTemplateTest {
     @DisplayName("合并之后，带封面的开播通知只发一条")
     void liveNoticeWithCoverIsASingleMessage() {
         List<Message> produced = new ArrayList<>();
-        StarBotMessageSender collector = mock(StarBotMessageSender.class);
+        NovaMessageSender collector = mock(NovaMessageSender.class);
         doAnswer(invocation -> produced.add(invocation.getArgument(0))).when(collector).send(any());
 
         Room room = new Room();
@@ -255,7 +255,7 @@ class MergedNoticeTemplateTest {
      */
     private List<String> runWithFailingCover(String template, LiveDataService liveData) {
         List<Message> produced = new ArrayList<>();
-        StarBotMessageSender collector = mock(StarBotMessageSender.class);
+        NovaMessageSender collector = mock(NovaMessageSender.class);
         doAnswer(invocation -> produced.add(invocation.getArgument(0))).when(collector).send(any());
 
         Room room = new Room();
@@ -286,7 +286,7 @@ class MergedNoticeTemplateTest {
                     : new JSONObject().fluentPut("code", 0).fluentPut("id", "1");
         });
 
-        StarBotMessageSender real = realSender(http);
+        NovaMessageSender real = realSender(http);
         produced.forEach(real::sendNow);
         return sent;
     }
@@ -294,13 +294,13 @@ class MergedNoticeTemplateTest {
     /**
      * 真发送器：真闸门、真配额、真时间线口子（本件只用它走一次「失败后剥图重发」）
      */
-    private StarBotMessageSender realSender(HttpUtil http) {
+    private NovaMessageSender realSender(HttpUtil http) {
         Sender platform = new Sender();
         platform.setName(PLATFORM);
         platform.setUrl("http://127.0.0.1:7827/onebot/send");
         platform.setDelay(0);
 
-        StarBotSenderService senderService = mock(StarBotSenderService.class);
+        NovaSenderService senderService = mock(NovaSenderService.class);
         when(senderService.getSender(PLATFORM)).thenReturn(Optional.of(platform));
 
         @SuppressWarnings("unchecked")
@@ -308,7 +308,7 @@ class MergedNoticeTemplateTest {
         when(resolvers.iterator()).thenAnswer(invocation -> List.<AtAllPermissionResolver>of().iterator());
 
         StarBotCoreProperties properties = new StarBotCoreProperties();
-        return new StarBotMessageSender(http, senderService, new PushActivityRecorder(TimelineWriter.NONE),
+        return new NovaMessageSender(http, senderService, new PushActivityRecorder(TimelineWriter.NONE),
                 new PushGate(properties), TimelineWriter.NONE, new AtAllQuotaService(properties), resolvers,
                 new FirstPushTipService(new StarBotStateStore(properties)));
     }

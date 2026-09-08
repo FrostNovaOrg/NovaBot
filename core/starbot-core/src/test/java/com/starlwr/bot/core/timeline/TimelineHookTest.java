@@ -31,9 +31,9 @@ import com.starlwr.bot.core.model.Sender;
 import com.starlwr.bot.core.sender.AtAllPermissionResolver;
 import com.starlwr.bot.core.sender.FirstPushTipService;
 import com.starlwr.bot.core.sender.PushGate;
-import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.sender.NovaMessageSender;
 import com.starlwr.bot.core.service.AtAllQuotaService;
-import com.starlwr.bot.core.service.StarBotSenderService;
+import com.starlwr.bot.core.service.NovaSenderService;
 import com.starlwr.bot.core.service.StarBotStateStore;
 import com.starlwr.bot.core.util.HttpUtil;
 import org.junit.jupiter.api.DisplayName;
@@ -435,7 +435,7 @@ class TimelineHookTest {
         StarBotCoreProperties properties = new StarBotCoreProperties();
         return new CommandDispatcher(commands, followUps,
                 new CommandSettingsService(new StarBotStateStore(properties)),
-                dataSource, mock(StarBotMessageSender.class), properties, timeline, clock);
+                dataSource, mock(NovaMessageSender.class), properties, timeline, clock);
     }
 
     private AlertService alertService(TimelineWriter timeline, AlertChannel... channels) {
@@ -606,20 +606,20 @@ class TimelineHookTest {
         return new HealthAlertMonitor(probes, mock(AlertService.class), timeline);
     }
 
-    private StarBotMessageSender sender(StarBotCoreProperties properties, TimelineWriter timeline) {
+    private NovaMessageSender sender(StarBotCoreProperties properties, TimelineWriter timeline) {
         Sender target = new Sender();
         target.setName(PLATFORM);
         target.setUrl("http://127.0.0.1:7827/onebot/send");
         target.setDelay(0);
 
-        StarBotSenderService senderService = mock(StarBotSenderService.class);
+        NovaSenderService senderService = mock(NovaSenderService.class);
         when(senderService.getSender(PLATFORM)).thenReturn(Optional.of(target));
 
         @SuppressWarnings("unchecked")
         ObjectProvider<AtAllPermissionResolver> resolvers = mock(ObjectProvider.class);
         when(resolvers.iterator()).thenAnswer(invocation -> List.<AtAllPermissionResolver>of().iterator());
 
-        return new StarBotMessageSender(mock(HttpUtil.class), senderService,
+        return new NovaMessageSender(mock(HttpUtil.class), senderService,
                 new PushActivityRecorder(TimelineWriter.NONE), new PushGate(properties),
                 timeline, new AtAllQuotaService(properties), resolvers,
                 new FirstPushTipService(new StarBotStateStore(properties)));

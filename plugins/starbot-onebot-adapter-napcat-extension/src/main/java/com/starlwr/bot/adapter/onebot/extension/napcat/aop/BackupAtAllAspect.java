@@ -49,7 +49,7 @@ public class BackupAtAllAspect {
         this.http = http;
     }
 
-    @Pointcut("execution(* com.starlwr.bot.core.sender.StarBotMessageSender.send(..))")
+    @Pointcut("execution(* com.starlwr.bot.core.sender.NovaMessageSender.send(..))")
     public void sendMethod() {}
 
     @Around("sendMethod()")

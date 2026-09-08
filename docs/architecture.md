@@ -97,7 +97,7 @@
 | `oneBotThreadPool` | `ThreadPoolTaskExecutor` Bean | Spring |
 | `bilibiliTaskScheduler` | `ThreadPoolTaskScheduler` Bean | Spring |
 | `JsonDataSource.executor` / `.scheduler` | 手工创建 | 自身的 `@PreDestroy` |
-| `StarBotMessageSender.executor` | 手工创建 | 自身的 `@PreDestroy` |
+| `NovaMessageSender.executor` | 手工创建 | 自身的 `@PreDestroy` |
 | `DefaultLiveDataService.scheduler` | 手工创建 | 自身监听 `ContextClosedEvent` 时关闭 |
 
 **手工创建的线程池必须自己关。** Spring 只负责它自己创建的 Bean；`Executors.newXxx()` 出来的
@@ -317,7 +317,7 @@ META-INF/spring-configuration-metadata.json
 | 告警通道 | `alert/AlertChannel` | `MailAlertChannel`、`WebhookAlertChannel`（核心自带）与 `QqAlertChannel`（onebot-adapter） | 告警往哪儿投；`isAvailable()` 由通道自己答，没配好的通道核心不去试 |
 | 直播指标目录 | `analytics/LiveMetricCatalog` | `BilibiliLiveMetricCatalog`（starbot-report） | 把归档里的裸键换成人话，并声明哪几项能相加；快照指标另走 `snapshotMetrics()`，一律不进可累加集 |
 | 控制台词表 | `config/ui/vocab/ConsoleVocabulary` | `OneBotConsoleVocabulary`（onebot-adapter） | 控制台上的平台词（`bot.platform` 一族）由平台插件供，核心界面只写中性兜底 |
-| 消息出口 | `service/StarBotSenderService` 登记的 `model/Sender` | `OneBotController`（onebot-adapter） | 推送平台向核心登记出口，核心按名字投递 |
+| 消息出口 | `service/NovaSenderService` 登记的 `model/Sender` | `OneBotController`（onebot-adapter） | 推送平台向核心登记出口，核心按名字投递 |
 | REST 接口 | 无专用接口：`@RestController` 照常写，仍需 `@NovaComponent` | `BilibiliReportLayoutController`（starbot-report）、`OneBotTargetController`（onebot-adapter） | 插件 jar 里的控制器与核心的合在同一个 Web 服务里 |
 
 `config-ui-pages/<script>` 对 `setup_step` 槽须 `export function render(host, ctx)`（把这一步画进 host）与 `export async function done(ctx)` → boolean（这一步成立了没有）；`ctx`＝`{status, login, api, pickTargets}`（`api` 即初始设置页现用的请求函数，`pickTargets(keys)` 把这一步选中的推送目标交回向导，供小结那几行用）。四个可选导出：

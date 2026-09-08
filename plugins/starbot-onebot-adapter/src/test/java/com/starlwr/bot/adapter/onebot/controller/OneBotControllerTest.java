@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("推送参数转换")
 class OneBotControllerTest {
     /**
-     * 与 {@code StarBotMessageSender} 实际构造的参数完全一致
+     * 与 {@code NovaMessageSender} 实际构造的参数完全一致
      */
     private Map<String, Object> params() {
         Map<String, Object> params = new LinkedHashMap<>();

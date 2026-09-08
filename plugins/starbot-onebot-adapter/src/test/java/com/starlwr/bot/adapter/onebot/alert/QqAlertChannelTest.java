@@ -3,7 +3,7 @@ package com.starlwr.bot.adapter.onebot.alert;
 import com.starlwr.bot.adapter.onebot.config.OneBotAdapterPluginProperties;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.model.Message;
-import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.sender.NovaMessageSender;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -26,13 +26,13 @@ class QqAlertChannelTest {
     void shouldBeAvailableWithValidConfiguration() {
         OneBotAdapterPluginProperties properties = properties(PushTargetType.FRIEND.getCode(), 10000L);
 
-        assertTrue(new QqAlertChannel(properties, mock(StarBotMessageSender.class)).isAvailable());
+        assertTrue(new QqAlertChannel(properties, mock(NovaMessageSender.class)).isAvailable());
     }
 
     @Test
     @DisplayName("群聊与私聊两种合法取值都应被接受")
     void shouldAcceptBothValidTypes() {
-        StarBotMessageSender sender = mock(StarBotMessageSender.class);
+        NovaMessageSender sender = mock(NovaMessageSender.class);
 
         assertTrue(new QqAlertChannel(properties(PushTargetType.GROUP.getCode(), 10000L), sender).isAvailable(),
                 "群聊（1）应可用");
@@ -47,13 +47,13 @@ class QqAlertChannelTest {
         OneBotAdapterPluginProperties properties = properties(2, 10000L);
 
         assertEquals(PushTargetType.UNKNOWN, PushTargetType.of(2), "前置条件: 2 不是合法取值");
-        assertFalse(new QqAlertChannel(properties, mock(StarBotMessageSender.class)).isAvailable());
+        assertFalse(new QqAlertChannel(properties, mock(NovaMessageSender.class)).isAvailable());
     }
 
     @Test
     @DisplayName("未配置平台或号码时应判定为不可用")
     void shouldBeUnavailableWithoutTarget() {
-        StarBotMessageSender sender = mock(StarBotMessageSender.class);
+        NovaMessageSender sender = mock(NovaMessageSender.class);
 
         assertFalse(new QqAlertChannel(properties(PushTargetType.FRIEND.getCode(), null), sender).isAvailable(),
                 "未填号码时不可用");
@@ -67,7 +67,7 @@ class QqAlertChannelTest {
     @DisplayName("发送的告警应带上配置的目标类型与号码")
     void shouldSendToConfiguredTarget() {
         OneBotAdapterPluginProperties properties = properties(PushTargetType.GROUP.getCode(), 12345L);
-        StarBotMessageSender sender = mock(StarBotMessageSender.class);
+        NovaMessageSender sender = mock(NovaMessageSender.class);
 
         new QqAlertChannel(properties, sender).send("标题", "正文");
 
