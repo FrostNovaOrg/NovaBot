@@ -119,8 +119,13 @@
                         <configuration>
                             <outputDirectory>${project.build.outputDirectory}</outputDirectory>
                             <resources>
+                                <!-- 仅取插件描述文件，避免 test-classes 被打入 jar，详见 starbot-onebot-adapter 中的说明 -->
                                 <resource>
                                     <directory>${project.build.directory}</directory>
+                                    <includes>
+                                        <include>plugin.json</include>
+                                        <include>dependency.json</include>
+                                    </includes>
                                 </resource>
                             </resources>
                         </configuration>
