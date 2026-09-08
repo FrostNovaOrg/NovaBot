@@ -42,6 +42,7 @@
 - 控制台底部那条保存条只在有未保存的改动、有等重启才生效的项、或有一句提示要说的时候才出现；其余时间整条不占位，页底也不再留出它那么高的一截空白。
 - 插件改由 Spring Boot 的自动配置装载，自带的那台插件加载器退休了。插件还是放在 `plugins/` 目录，放哪儿没变；用附带的 `start.sh`／`start.bat`（含 Docker 与 systemd 两种部署）启动的，什么都不用改。**自己写启动命令的要把 `plugins` 加进 `-Dloader.path`**，现在是 `-Dloader.path=lib,plugins,plugins-lib`；少了它，插件会安安静静地整个不见。**按旧办法构建的第三方插件不再被装载**：插件 jar 里现在必须带一份 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`，只有 `plugin.json` 的插件装不上，需要重新构建一次。插件与核心从此共用同一份依赖版本，插件不能再自带与核心不同版本的依赖。
 - 插件依赖缺失时的自动下载、以及随之而来的退出码 90 重启，不再发生：缺哪些依赖原先由插件加载器读插件 jar 得出，那条路已随它一起退休。插件的运行期依赖需要随插件一起放好。
+- 随自动下载一起去掉的还有 `starbot.core.plugin.auto-download-dependency` 与 `starbot.core.plugin.maven-base-urls` 两项配置，设置页上也不再有它们。**旧的 `application.yml` 里留着这两行不影响启动**，删不删都行。
 - 下播报告的弹幕词云改版：词少也画、高度随词量、不再留大空隙。
 - 示例插件模板跟上了插件的自动装载：模板自带自报文件与自报类，README 与构建配置改按新的装载办法讲述，第三方依赖的说明也改成了实情。
 

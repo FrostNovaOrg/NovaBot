@@ -164,7 +164,6 @@ public final class ConfigurationGroups {
         map(map, "starbot.core.exec", SERVICE);
         map(map, "starbot.core.network", SERVICE);
         map(map, "starbot.core.network-thread", SERVICE);
-        map(map, "starbot.core.plugin", SERVICE);
         map(map, "starbot.core.datasource", SERVICE);
         return new ConfigurationGroups(map);
     }

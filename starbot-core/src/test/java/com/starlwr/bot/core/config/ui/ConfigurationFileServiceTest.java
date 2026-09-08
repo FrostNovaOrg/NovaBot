@@ -41,9 +41,11 @@ class ConfigurationFileServiceTest {
     /**
      * 测试用配置文件内容
      * <p>
-     * <b>请勿向本模板添加 {@code starbot.bilibili.dynamic.auto-save-image}</b>：
-     * {@link #insertsMissingProperty()} 依赖该键「不存在」来验证插入逻辑，一旦加入该用例即失效。
-     * 需要新的样例配置项时，请另选一个本模板与该用例都未使用的键。
+     * <b>请勿向本模板添加 {@code starbot.bilibili.dynamic.auto-save-image} 或
+     * {@code starbot.core.paint.fonts}</b>：{@link #insertsMissingProperty()} 与
+     * {@link #insertsMissingList()} 分别依赖这两个键「不存在」来验证插入逻辑，一旦加入用例即失效。
+     * 需要新的样例配置项时，请另选一个本模板与这两个用例都未使用的键；
+     * 列表那一个还须是元数据里当真登记过的列表型键。
      */
     private static final String TEMPLATE = """
             server:
@@ -429,12 +431,12 @@ class ConfigurationFileServiceTest {
     @Test
     @DisplayName("尚不存在的列表配置项写成 YAML 列表而非多行标量")
     void insertsMissingList() throws IOException {
-        List<String> changed = service.write(Map.of("starbot.core.plugin.maven-base-urls", "https://a.example\nhttps://b.example"));
+        List<String> changed = service.write(Map.of("starbot.core.paint.fonts", "https://a.example\nhttps://b.example"));
 
-        assertEquals(List.of("starbot.core.plugin.maven-base-urls"), changed);
+        assertEquals(List.of("starbot.core.paint.fonts"), changed);
         assertTrue(content().contains("- https://a.example"), "应写成 YAML 列表:\n" + content());
         assertFalse(content().contains("\"https://a.example"), "不应写成带引号的多行标量:\n" + content());
-        assertEquals("https://a.example\nhttps://b.example", service.read().get("starbot.core.plugin.maven-base-urls"));
+        assertEquals("https://a.example\nhttps://b.example", service.read().get("starbot.core.paint.fonts"));
     }
 
     @Test
