@@ -373,6 +373,136 @@ class BilibiliEventParserTest {
     }
 
     @Test
+    @DisplayName("缺 data 的十四种直播间消息各记一笔缺字段，仍不产出事件")
+    void missingDataObjectRecordsFieldMissingForEachWsCmd() {
+        List<String> reds = new ArrayList<>();
+        String[] cmds = {
+                "INTERACT_WORD", "INTERACT_WORD_V2", "SEND_GIFT", "SEND_GIFT_V2",
+                "SUPER_CHAT_MESSAGE", "POPULARITY_RED_POCKET_START", "USER_TOAST_MSG",
+                "USER_TOAST_MSG_V2", "GUARD_BUY", "LIKE_INFO_V3_CLICK", "LIKE_INFO_V3_UPDATE",
+                "WATCHED_CHANGE", "ONLINE_RANK_COUNT", "ROOM_CHANGE"
+        };
+        try {
+            for (String cmd : cmds) {
+                assertTrue(parse("{\"cmd\":\"" + cmd + "\"}").isEmpty(), cmd + " 缺 data 仍应丢弃");
+            }
+            assertEquals(14, riskMetrics.count(BilibiliRiskMetrics.Kind.FIELD_MISSING, Duration.ofMinutes(1)),
+                    "十四个 cmd 应各记一次 FIELD_MISSING，实际 "
+                            + riskMetrics.count(BilibiliRiskMetrics.Kind.FIELD_MISSING, Duration.ofMinutes(1)));
+            String detail = riskMetrics.lastDetail(BilibiliRiskMetrics.Kind.FIELD_MISSING).orElse("");
+            assertTrue(detail.contains(":data"), "最近一条应是 cmd:data，实际: " + detail);
+        } catch (AssertionError e) {
+            reds.add("① " + e.getMessage());
+        }
+        assertTrue(reds.isEmpty(), () -> "一问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+    }
+
+    @Test
+    @DisplayName("结构必需键缺失记缺字段，仍不产出事件")
+    void missingRequiredKeysRecordFieldMissing() {
+        List<String> reds = new ArrayList<>();
+        String danmuNoUser = "{\"cmd\":\"DANMU_MSG\",\"info\":["
+                + "[0,1,25,16777215,1700000000000,0,0,\"\",0,0,0,\"\",0,\"\",\"\",{\"extra\":\"{}\"}],"
+                + "\"x\",[1,\"a\",0,0,0,0,1,\"\"],[]]}";
+        String[][] cases = {
+                {danmuNoUser, "DANMU_MSG:user"},
+                {"{\"cmd\":\"INTERACT_WORD\",\"data\":{}}", "INTERACT_WORD:msg_type"},
+                {"{\"cmd\":\"POPULARITY_RED_POCKET_START\",\"data\":{}}", "POPULARITY_RED_POCKET_START:lot_id"},
+                {"{\"cmd\":\"POPULARITY_RED_POCKET_START\",\"data\":{\"lot_id\":1}}",
+                        "POPULARITY_RED_POCKET_START:sender"},
+                {"{\"cmd\":\"USER_TOAST_MSG\",\"data\":{}}", "USER_TOAST_MSG:guard_level"},
+                {"{\"cmd\":\"USER_TOAST_MSG_V2\",\"data\":{}}", "USER_TOAST_MSG_V2:guard_info|pay_info"},
+                {"{\"cmd\":\"USER_TOAST_MSG_V2\",\"data\":{\"guard_info\":{},\"pay_info\":{}}}",
+                        "USER_TOAST_MSG_V2:guard_level"},
+                {"{\"cmd\":\"GUARD_BUY\",\"data\":{}}", "GUARD_BUY:guard_level"}
+        };
+        for (int i = 0; i < cases.length; i++) {
+            String json = cases[i][0];
+            String name = cases[i][1];
+            try {
+                long before = riskMetrics.count(BilibiliRiskMetrics.Kind.FIELD_MISSING, Duration.ofMinutes(1));
+                assertTrue(parse(json).isEmpty(), name + " 仍应丢弃");
+                assertEquals(before + 1,
+                        riskMetrics.count(BilibiliRiskMetrics.Kind.FIELD_MISSING, Duration.ofMinutes(1)),
+                        name + " 应记一次，实际 "
+                                + riskMetrics.count(BilibiliRiskMetrics.Kind.FIELD_MISSING, Duration.ofMinutes(1)));
+                String detail = riskMetrics.lastDetail(BilibiliRiskMetrics.Kind.FIELD_MISSING).orElse("");
+                assertTrue(detail.contains(name), name + " 应出现在 detail，实际: " + detail);
+            } catch (AssertionError e) {
+                reds.add("①." + (i + 1) + " " + e.getMessage());
+            }
+        }
+        assertTrue(reds.isEmpty(), () -> reds.size() + " 问红: " + String.join("; ", reds));
+    }
+
+    @Test
+    @DisplayName("pb 缺失记缺字段、非法 base64 记解析失败，调用方不另记")
+    void missingOrInvalidPbRecordsDecodeLoss() {
+        List<String> reds = new ArrayList<>();
+        try {
+            assertTrue(parse("{\"cmd\":\"INTERACT_WORD_V2\",\"data\":{\"dmscore\":3}}").isEmpty());
+            assertEquals(1, riskMetrics.count(BilibiliRiskMetrics.Kind.FIELD_MISSING, Duration.ofMinutes(1)),
+                    "缺 pb 应记 FIELD_MISSING，实际 "
+                            + riskMetrics.count(BilibiliRiskMetrics.Kind.FIELD_MISSING, Duration.ofMinutes(1)));
+            String detail = riskMetrics.lastDetail(BilibiliRiskMetrics.Kind.FIELD_MISSING).orElse("");
+            assertTrue(detail.contains("INTERACT_WORD_V2:pb"), "实际: " + detail);
+            assertFalse(detail.contains("pb-b64"), "缺字段不应记成解码失败");
+            assertEquals(0, riskMetrics.count(BilibiliRiskMetrics.Kind.PARSE_FAILURE, Duration.ofMinutes(1)),
+                    "缺 pb 不得记 PARSE_FAILURE");
+        } catch (AssertionError e) {
+            reds.add("① " + e.getMessage());
+        }
+        try {
+            assertTrue(parse("{\"cmd\":\"INTERACT_WORD_V2\",\"data\":{\"pb\":\"!!!\"}}").isEmpty());
+            assertEquals(1, riskMetrics.count(BilibiliRiskMetrics.Kind.PARSE_FAILURE, Duration.ofMinutes(1)),
+                    "非法 base64 应记 PARSE_FAILURE，实际 "
+                            + riskMetrics.count(BilibiliRiskMetrics.Kind.PARSE_FAILURE, Duration.ofMinutes(1)));
+            String detail = riskMetrics.lastDetail(BilibiliRiskMetrics.Kind.PARSE_FAILURE).orElse("");
+            assertTrue(detail.contains("INTERACT_WORD_V2:pb-b64"), "实际: " + detail);
+            assertEquals(1, riskMetrics.count(BilibiliRiskMetrics.Kind.FIELD_MISSING, Duration.ofMinutes(1)),
+                    "非法 base64 不应再加 FIELD_MISSING");
+        } catch (AssertionError e) {
+            reds.add("② " + e.getMessage());
+        }
+        assertTrue(reds.isEmpty(), () -> "两问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+    }
+
+    @Test
+    @DisplayName("未知枚举值记未知字段，detail 为 cmd:键=值且值截 32 字符")
+    void unknownEnumValuesRecordUnknownFieldDetail() {
+        List<String> reds = new ArrayList<>();
+        try {
+            assertTrue(parse("{\"cmd\":\"INTERACT_WORD\",\"data\":{\"msg_type\":99,\"uid\":777,"
+                    + "\"uinfo\":{\"uid\":777,\"base\":{\"name\":\"观众\"}}}}").isEmpty());
+            assertEquals(1, riskMetrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, Duration.ofMinutes(1)),
+                    "未知 msg_type 应记 UNKNOWN_FIELD，实际 "
+                            + riskMetrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, Duration.ofMinutes(1)));
+            String detail = riskMetrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD).orElse("");
+            assertTrue(detail.contains("INTERACT_WORD:msg_type=99"), "实际: " + detail);
+        } catch (AssertionError e) {
+            reds.add("① " + e.getMessage());
+        }
+        try {
+            String longType = "abcdefghijklmnopqrstuvwxyz0123456789";
+            assertTrue(parse(giftMessage(longType, "")).isEmpty());
+            String detail = riskMetrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD).orElse("");
+            assertTrue(detail.contains("SEND_GIFT:coin_type=abcdefghijklmnopqrstuvwxyz012345"),
+                    "值应截 32 字符，实际: " + detail);
+            assertFalse(detail.contains("abcdefghijklmnopqrstuvwxyz0123456"), "第 33 个字符不得出现");
+        } catch (AssertionError e) {
+            reds.add("② " + e.getMessage());
+        }
+        try {
+            assertTrue(parse(guardMessage(9)).isEmpty());
+            String detail = riskMetrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD).orElse("");
+            assertTrue(detail.contains("USER_TOAST_MSG:guard_level=9"), "实际: " + detail);
+        } catch (AssertionError e) {
+            reds.add("③ " + e.getMessage());
+        }
+        assertTrue(reds.isEmpty(), () -> "三问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+    }
+
+    @Test
     @DisplayName("解析普通弹幕")
     void parseDanmu() {
         Optional<StarBotBaseLiveEvent> event = parse(danmuMessage("{\"content\":\"你好\",\"reply_mid\":0}", "\"\""));
