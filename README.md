@@ -92,8 +92,14 @@ ssh -L 7827:127.0.0.1:7827 用户名@服务器地址
 ## 插件开发
 
 复制 [templates/starbot-example-plugin](templates/starbot-example-plugin) 作为起点。
-插件用 `@StarBotComponent` 注册组件（**不是** Spring 的 `@Component`），用 `@EventListener` 监听事件；
+插件用 `@StarBotComponent` 注册组件（它的元注解就是 Spring 的 `@Component`，
+按约定一律用它，源码里一眼看得出哪些类属于插件），用 `@EventListener` 监听事件；
 实现 `StarBotEventHandler` 即可作为推送处理器。
+
+插件被容器看见的唯一通道，是模块内那份
+`META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` 自报文件：
+插件 jar 放进 `plugins/`，它的第三方依赖随构建一次放进 `plugins-lib/`——
+**运行期不会替你下载**，两个目录都在启动参数 `-Dloader.path=lib,plugins,plugins-lib` 上。
 
 弹幕、礼物、上舰等事件不带默认处理器，需自行监听——
 [可监听的事件类型](docs/architecture.md#可监听的事件类型)列出了全部事件。

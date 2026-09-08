@@ -66,8 +66,9 @@
                                 <!--
                                     只取 starbot-plugin-processor 生成的两个描述文件。
                                     若照搬整个 target 目录，test-classes 也会被打进插件 jar，
-                                    插件加载器扫描到测试类时会因类名不匹配抛出 NoClassDefFoundError，
-                                    导致整个应用无法启动。
+                                    而 jar 里的测试类落在本模块自报类的组件扫描范围内，
+                                    启动时被一并扫进容器，测试期依赖又不在运行期产物里，
+                                    结果是 NoClassDefFoundError，整个应用起不来。
                                 -->
                                 <resource>
                                     <directory>${project.build.directory}</directory>
