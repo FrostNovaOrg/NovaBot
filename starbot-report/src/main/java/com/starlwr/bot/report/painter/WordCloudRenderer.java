@@ -157,6 +157,12 @@ final class WordCloudRenderer implements WordCloudLayout.Measurer {
         Graphics2D graphics = image.createGraphics();
         applyHints(graphics);
         try {
+            if(result.placements().isEmpty()) {
+                String label="暂无有效弹幕词";
+                Composed c=compose(label,20);
+                draw(graphics,new WordCloudLayout.Placement(label,0,20,
+                    new Rectangle((width-c.width)/2,(height-c.height)/2,c.width,c.height),new Color(0x6E6A86)));
+            }
             for (WordCloudLayout.Placement placement : result.placements()) {
                 draw(graphics, placement);
             }

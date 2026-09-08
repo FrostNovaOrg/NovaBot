@@ -23,7 +23,6 @@ import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
-import java.io.ByteArrayInputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -56,6 +55,16 @@ import static org.mockito.Mockito.when;
  * 🔴 <b>不重叠这一条只有几何量得出来。</b>成图上两个词挨得再近也还是墨，
  * 从像素反推不出「这一块属于哪个词」——所以判据必须够得着排版结果本身，
  * 而不是只够得着最后那张图。
+ *
+ * <h2>换了一版排版规则之后，这里的判据整类重量过</h2>
+ * 新版排版器按锚点撒主词、全画布评分找位，间距改成<b>横纵两轴分开</b>算，
+ * 也不再为了填满外包围盒去整体放大字号。于是三族旧判据连同它们量的那件事一起退休：
+ * 「词距＝0.35×较大字号」（换成两轴各一条线）、「外包围盒占满 85%」
+ * （新版明写 fillRatio 只作统计、不再是目标，版面用没用起来改由落词总数判，
+ * 门槛同时从改前的 1.5 倍提到 2.0 倍）、
+ * 「第 26 名起每 4 个点 1 个暖色」（换成按名次分档 + 尾档交错取色）。
+ * <b>留在这里的每一条都在新版上重新跑出过读数</b>，不是照抄上一版。
+ * 词量分档与场景适应性另有 {@code WordCloudHeightTest} 与 {@code WordCloudScenarioTest} 两把尺。
  */
 @DisplayName("弹幕词云几何")
 class BilibiliWordCloudTest {
@@ -66,48 +75,25 @@ class BilibiliWordCloudTest {
      */
     private static final int CONTENT_WIDTH = 830;
 
-    private static final int CLOUD_HEIGHT = 380;
+    private static final int CLOUD_MAX_HEIGHT = 380;
 
     private static final int CLOUD_MAX_WORDS = 72;
 
     /**
      * 🔴 <b>下面这几个数字写死在判据里，不许从被测那边取。</b>
-     * 引 {@code WordCloudLayout.WORD_GAP} 看着更「不重复」，
-     * 可那样一来把留白改成 0、把填充目标改成 0，判据会跟着一起松开——
-     * 判据就再也逮不住它本来要逮的那件事了
+     * 引 {@code WordCloudLayout.FRAME_MARGIN} 看着更「不重复」，
+     * 可那样一来把留白改成 0，判据会跟着一起松开——判据就再也逮不住
+     * 它本来要逮的那件事了
      * <p>
-     * {@code WORD_GAP} 量的是<b>两个词之间实际隔开多少</b>。它与「每个词四周涨多少」
-     * 差一倍：各涨 8px 再判不相交，词与词之间隔的是 16px
+     * 相邻两词至少隔开：横 {@value #MIN_GAP_X}px <b>或</b>纵 {@value #MIN_GAP_Y}px。
+     * 两轴取「或」而不是「与」，是因为词是横排的：上下两行字挨得近仍分得开，
+     * 左右两个词贴在一起才会被读成一个词
      */
-    private static final int WORD_GAP = 8;
+    private static final int MIN_GAP_X = 6;
 
-    /**
-     * 词距随字号的系数：相邻两词最小间距 = max(8, round(本系数 × 两词中较大字号))。
-     * 同上面那几个数字的纪律：<b>写死在判据侧，不从被测取</b>——引 {@code WordCloudLayout}
-     * 的常量的话，把系数改成 0、词距退回固定 8px，判据会跟着一起松，头名粘连这件事
-     * 就再也量不出来了。封顶字对另有一条不取整的硬线：实距 ≥ 本系数 × 56（见
-     * {@code geometryHoldsAcrossRandomCorpora} 末尾的封顶判）
-     */
-    private static final double WORD_GAP_PER_FONT = 0.35;
+    private static final int MIN_GAP_Y = 5;
 
-    private static final int FRAME_MARGIN = 8;
-
-    private static final int FILL_TARGET_PERCENT = 85;
-
-    /**
-     * 铺不满整框的唯一正当理由：连<b>最小</b>的那个词都已经放大到这个字号以上，
-     * 再整体放大只会把词挤掉
-     * <p>
-     * 字号封顶之后，词少的场次铺不满是算术上的必然：十来个词，一个 {@value #FONT_SIZE_MAX}px
-     * 封顶的词占不满 830×380。此前它靠把字号放大到 99px 去凑填充率，而那正是要改掉的事。
-     * <p>
-     * 🔴 这一条<b>不是把填充率判据放宽</b>：32 是量出来的——词数 5～90 各两颗种子扫一遍，
-     * 凡填充率不足 85% 的那 21 个词数，最小字号实测都在 38 以上（最低 38＝17 词那组），
-     * 取 32 留 6px 余量。词距随字号加宽后重排，同一组升到 41，余量只宽不窄。
-     * 把整体放大那一段拆掉，最小字号会停在 18，两条都不成立即红；
-     * 反过来「一律画成最大」也过不去，落词总数那一条会先红
-     */
-    private static final int FILL_EXEMPT_FONT_SIZE = 32;
+    private static final int FRAME_MARGIN = 24;
 
     /**
      * 词云允许的最小字号。报告里最小的正文字号是 22，词云尾词比正文再小一档尚可读，
@@ -118,8 +104,8 @@ class BilibiliWordCloudTest {
     /**
      * 词云允许的最大字号，量的是<b>落到图上的字号</b>
      * <p>
-     * 🔴 这一条不是「常量 {@code FONT_SIZE_SPAN} 别调大」的另一种写法。排版会为了填满框
-     * 把全体字号整体放大，只钳按词频算出来的那一档时，图上真正量到的是 99——
+     * 🔴 这一条不是「按词频算出来那一档别调大」的另一种写法。上一版排版为了填满框
+     * 会把全体字号整体乘一个倍率，只钳基准那一档时，图上真正量到的是 99——
      * 「上限」写在源码里而版式规则并不遵守它
      */
     private static final int FONT_SIZE_MAX = 56;
@@ -128,13 +114,6 @@ class BilibiliWordCloudTest {
      * 头名字号最多是第二名的多少倍。词频悬殊的场次里，线性映射会让头名独吞版面
      */
     private static final double TOP_FONT_SIZE_RATIO = 1.3;
-
-    /**
-     * 尾档每几个词点一个暖色
-     */
-    private static final int ACCENT_GROUP = 4;
-
-    private static final int ACCENT_FROM_RANK = 26;
 
     /**
      * 改前同一批语料的落词总数：**2026-09-04 实测于 lane-c 3c03438**
@@ -146,6 +125,16 @@ class BilibiliWordCloudTest {
     private static final int PLACED_BEFORE = 467;
 
     /**
+     * 落词总数至少要是改前的这个倍数。**2026-09-08 于新版排版器实测 1079**（改前 467 的 2.31 倍），
+     * 取 2.0 留一成半余量
+     * <p>
+     * 这一条接下上一版「外包围盒占满 85%」的班：那一条问的是<b>版面有没有被用起来</b>，
+     * 而外包围盒撑得开并不等于里面站满了词——新版明写 fillRatio 只作统计、不再是目标，
+     * 换成直接数落了几个词
+     */
+    private static final double PLACED_TARGET_RATIO = 2.0;
+
+    /**
      * 设计语言册（丙·星云）亮色值：accent2 / accent / cloud3 / c-guard / dim / c-sc。
      * 六个值逐字节抄自册上，不从被测那边取——被测把配色调成一片灰时判据得跟着红
      */
@@ -153,13 +142,30 @@ class BilibiliWordCloudTest {
 
     private static final Color RANK_4_TO_10 = new Color(0x7A, 0x4D, 0xFF);
 
-    private static final Color RANK_11_TO_25_ODD = new Color(0xA3, 0x8B, 0xFF);
+    private static final Color CLOUD3 = new Color(0xA3, 0x8B, 0xFF);
 
-    private static final Color RANK_11_TO_25_EVEN = new Color(0x00, 0xA6, 0xD6);
+    private static final Color C_GUARD = new Color(0x00, 0xA6, 0xD6);
 
-    private static final Color RANK_REST = new Color(0x6E, 0x6A, 0x86);
+    private static final Color DIM = new Color(0x6E, 0x6A, 0x86);
 
-    private static final Color RANK_REST_ACCENT = new Color(0xF2, 0xA9, 0x3B);
+    private static final Color C_SC = new Color(0xF2, 0xA9, 0x3B);
+
+    /**
+     * 第 11 名往后可用的四个值。单看一个词判不出该是哪一个，只判「在不在册上」；
+     * 「够不够花」由每组的用色数另判（见 {@link #MIN_DISTINCT_COLORS}）
+     */
+    private static final List<Color> TAIL_COLORS = List.of(CLOUD3, C_GUARD, DIM, C_SC);
+
+    /**
+     * 词多的组里至少要用到几种颜色。**实测 20 组皆为 6**，取 5 留一档余量——
+     * 尾档全部取同一个值时这一条红，而「配色在册」那一条照样绿
+     */
+    private static final int MIN_DISTINCT_COLORS = 5;
+
+    /**
+     * 用色数这一条从多少个词起判：词太少时名次不够，用不满六档也是对的
+     */
+    private static final int DISTINCT_COLOR_FROM_SIZE = 26;
 
     private DefaultLiveDataService liveDataService;
 
@@ -256,44 +262,19 @@ class BilibiliWordCloudTest {
                 "同一场直播两次成图应当逐字节相同, 实际长度 " + first.length + " 对 " + second.length);
     }
 
-    /**
-     * 判据②：词数 4 不出、5 出
-     */
-    @Test
-    @DisplayName("判据②：词数 4 不出词云、5 出")
-    void skipsCloudBelowFiveWords() throws Exception {
-        LiveStreamerInfo four = aSession();
-        corpus(4, 1L).forEach((word, count) ->
-                liveDataService.incrementLiveWordFrequency(PLATFORM, four.getUid(), word));
-        int heightWithFour = ImageIO.read(new ByteArrayInputStream(
-                Base64.getDecoder().decode(painter.paint(PLATFORM, four).orElseThrow()))).getHeight();
-
-        setUp();
-        LiveStreamerInfo five = aSession();
-        corpus(5, 1L).forEach((word, count) ->
-                liveDataService.incrementLiveWordFrequency(PLATFORM, five.getUid(), word));
-        int heightWithFive = ImageIO.read(new ByteArrayInputStream(
-                Base64.getDecoder().decode(painter.paint(PLATFORM, five).orElseThrow()))).getHeight();
-
-        // 读数落盘：绿的时候也要留下实值，否则「过了」与「量到了什么」在事后是两回事
-        Path dir = Path.of("target", "painter-output");
-        Files.createDirectories(dir);
-        Files.write(dir.resolve("wordcloud-threshold.txt"),
-                ("4 词报告高 " + heightWithFour + "\n5 词报告高 " + heightWithFive
-                        + "\n差 " + (heightWithFive - heightWithFour) + "（词云块高 " + CLOUD_HEIGHT + "）\n").getBytes());
-
-        assertTrue(heightWithFive - heightWithFour >= CLOUD_HEIGHT,
-                "5 个词应当多出一整块词云, 实际高度 " + heightWithFour + " 对 " + heightWithFive);
-    }
+    // 判据②「词数 4 不出词云、5 出」随「少于 5 词整块不画」那条产品规则一并退休：
+    // 现在 0 个词也画（画成空态），词少只是块矮一档。接它的是
+    // WordCloudReportBlockTest——那把尺子量的是同一件事的另一头：块画没画、块占多高
 
     /**
      * 判据③④⑤⑥⑦与「隔多远」「放多少」「多小的字」「多大的字」：随机语料逐组量几何
      * <p>
      * 一组语料一行读数，全部合规才算绿；任何一条不合规都把那一组的实值报出来。
-     * 三条跨组的判据（最小实距、落词总数、最小字号）在 20 组跑完之后一并判
+     * 三条跨组的判据（最小实距、落词总数、最小字号）在 20 组跑完之后一并判。
+     * 20 组的种子与词数与上一版排版器那一轮<b>逐个相同</b>，落词总数才比得出「比改前多放了多少」
      */
     @Test
-    @DisplayName("判据③④⑤⑥⑦：20 组随机语料逐组量包围盒、实距、落词数、填充率、字号与配色")
+    @DisplayName("判据③④⑤⑥⑦：20 组随机语料逐组量包围盒、实距、落词数、内部空洞、字号与配色")
     void geometryHoldsAcrossRandomCorpora() throws Exception {
         List<String> readings = new ArrayList<>();
         List<String> failures = new ArrayList<>();
@@ -301,11 +282,9 @@ class BilibiliWordCloudTest {
         int minFontSize = Integer.MAX_VALUE;
         int maxFontSize = 0;
         int placedTotal = 0;
-        // 逐对折算出的期望间距里最小的那档——「下限有没有被走到过」拿它对照（见方法末尾）
-        int minExpected = Integer.MAX_VALUE;
-        // 较大字号封顶的词对：个数与最小实距。个数也要记，空集时封顶判恒真
-        int topPairs = 0;
-        int topPairMinClearance = Integer.MAX_VALUE;
+        int worstHole = 0;
+        // 词多的组数也要记：一组都没有时「内部空洞」那一条恒真, 连红都红不出来
+        int denseGroups = 0;
 
         for (int group = 0; group < 20; group++) {
             long seed = 92_000L + group;
@@ -317,39 +296,35 @@ class BilibiliWordCloudTest {
             WordCloudLayout.Result result = painter.layoutWordCloud(PLATFORM, streamer.getUid(), words);
 
             int laid = Math.min(size, CLOUD_MAX_WORDS);
-            double fill = result.fillRatio() * 100;
+            // 画布高度按词量分档。🔴 分档表写在判据侧，不问被测——问被测的话，
+            // 分档改成一律 380px 时越界判会跟着一起挪，永远量不到越界
+            int height = bandHeight(laid);
 
             placedTotal += result.placements().size();
 
-            // ③ 两两隔开：≥8 下限，再往上随两词中较大的字号走（隔开 <0 即压叠）、
-            //    全在框内且离框边 ≥8px
+            // ③ 两两隔开：横 ≥6px 或纵 ≥5px（两轴都不足即粘连，两轴都为负即压叠）、
+            //    全在框内且离框边 ≥24px
             List<WordCloudLayout.Placement> placed = result.placements();
             int groupMinClearance = Integer.MAX_VALUE;
             for (int i = 0; i < placed.size(); i++) {
                 Rectangle a = placed.get(i).box();
                 if (a.x < FRAME_MARGIN || a.y < FRAME_MARGIN
                         || a.x + a.width > CONTENT_WIDTH - FRAME_MARGIN
-                        || a.y + a.height > CLOUD_HEIGHT - FRAME_MARGIN) {
+                        || a.y + a.height > height - FRAME_MARGIN) {
                     failures.add("第" + group + "组「" + placed.get(i).text() + "」离框边不足 "
-                            + FRAME_MARGIN + "px " + a);
+                            + FRAME_MARGIN + "px " + a + "（框 " + CONTENT_WIDTH + "×" + height + "）");
                 }
                 for (int j = i + 1; j < placed.size(); j++) {
-                    int clearance = clearance(a, placed.get(j).box());
-                    groupMinClearance = Math.min(groupMinClearance, clearance);
+                    Rectangle b = placed.get(j).box();
+                    int gapX = gap(a.x, a.width, b.x, b.width);
+                    int gapY = gap(a.y, a.height, b.y, b.height);
+                    groupMinClearance = Math.min(groupMinClearance, Math.max(gapX, gapY));
 
-                    int larger = Math.max(placed.get(i).fontSize(), placed.get(j).fontSize());
-                    int expected = expectedGap(larger);
-                    minExpected = Math.min(minExpected, expected);
-                    if (clearance < expected) {
+                    if (gapX < MIN_GAP_X && gapY < MIN_GAP_Y) {
                         failures.add("第" + group + "组「" + placed.get(i).text() + "」与「"
-                                + placed.get(j).text() + "」只隔开 " + clearance + "px, 较大字号 "
-                                + larger + " 应 ≥" + expected + "px " + a + " 与 " + placed.get(j).box());
-                    }
-
-                    // 封顶字对单独记：这一档是「56px 相邻两词肉眼分得开」的正主
-                    if (larger == FONT_SIZE_MAX) {
-                        topPairs++;
-                        topPairMinClearance = Math.min(topPairMinClearance, clearance);
+                                + placed.get(j).text() + "」横隔 " + gapX + "px 纵隔 " + gapY
+                                + "px, 两轴都不足（" + MIN_GAP_X + "／" + MIN_GAP_Y + "）"
+                                + a + " 与 " + b);
                     }
                 }
             }
@@ -365,16 +340,21 @@ class BilibiliWordCloudTest {
             }
             maxFontSize = Math.max(maxFontSize, groupMaxFontSize);
 
+            int hole = largestInteriorHole(result);
             int colors = (int) result.placements().stream().map(WordCloudLayout.Placement::color).distinct().count();
-            readings.add(String.format("第%02d组 词数%3d 落%3d 丢%2d 填充%5.1f%% 字号%2d~%2d 首次比%5.3f 用色%d 最小实距%3s",
-                    group, size, placed.size(), result.dropped(), fill,
+            readings.add(String.format("第%02d组 词数%3d 落%3d 丢%2d 框高%3d 字号%2d~%2d 首次比%5.3f 用色%d 最小实距%3s 最大空洞%3d",
+                    group, size, placed.size(), result.dropped(), height,
                     groupMinFontSize, groupMaxFontSize, topRatio(result), colors,
-                    groupMinClearance == Integer.MAX_VALUE ? "—" : String.valueOf(groupMinClearance)));
+                    groupMinClearance == Integer.MAX_VALUE ? "—" : String.valueOf(groupMinClearance), hole));
 
-            // ④ 填充率；铺不满时字号必须已经放大到顶（见 FILL_EXEMPT_FONT_SIZE）
-            if (fill < FILL_TARGET_PERCENT && groupMinFontSize < FILL_EXEMPT_FONT_SIZE) {
-                failures.add(String.format("第%d组 填充率 %.1f%% 不足 %d%%, 而最小字号才 %d——还放得大, 不是铺不满",
-                        group, fill, FILL_TARGET_PERCENT, groupMinFontSize));
+            // ④ 内部空洞：只留读数，<b>没有立成判据</b>。
+            // 🔴 阈值定完要验它还抓不抓得住洞：把新版的局部微调那一段（refineInterior）
+            // 拆掉再跑同一批语料，逐组读数确实升了（第18组 12→17、第16组 11→15、第02组 20→25），
+            // 可 20 组里最大的那个仍是 25（第19组两边都是 25）——按「最大空洞 ≤ 阈值」立的闸
+            // 一次都拦不住它。拦不住的闸和没有这条判据长得一样，故只落读数不断言
+            if (placed.size() >= 40) {
+                denseGroups++;
+                worstHole = Math.max(worstHole, hole);
             }
 
             // ⑤ 头名不许独吞版面
@@ -383,54 +363,47 @@ class BilibiliWordCloudTest {
                         group, topRatio(result), TOP_FONT_SIZE_RATIO));
             }
 
-            // ⑥ 色级逐名次：前 25 名逐名钉死，尾档只钉「非此即彼」，比例在下面按组数另算
+            // ⑥ 配色只许取册上在册的六个值：前 3 名与 4～10 名逐名钉死，
+            // 第 11 名往后钉「在那四个里」——取哪一个由名次交错定，逐名钉死就成了照抄实现
             for (WordCloudLayout.Placement placement : result.placements()) {
-                Color expected = expectedColor(placement.rank(), placement.color());
-                if (!expected.equals(placement.color())) {
-                    failures.add("第" + group + "组 第" + placement.rank() + "名「" + placement.text()
-                            + "」配色 " + placement.color() + " 应为 " + expected);
+                String wrong = colorFailure(placement);
+                if (wrong != null) {
+                    failures.add("第" + group + "组 第" + placement.rank() + "名「" + placement.text() + "」" + wrong);
                 }
             }
 
-            // ⑦ 尾档暖色恰好 3:1——每满 4 名点 1 个。
-            // 🔴 不许照抄被测的抽签逻辑去比「点中的是哪一个」：那样两边同一个来路，
-            // 抽签改成「一组点两个」照样两边一起变。这里只数每一组里点了几个
-            failures.addAll(accentRatioFailures(group, result, laid));
+            // ⑦ 够不够花：尾档四个值全取成同一个时，上面那一条照样绿
+            if (placed.size() >= DISTINCT_COLOR_FROM_SIZE && colors < MIN_DISTINCT_COLORS) {
+                failures.add("第" + group + "组 落了 " + placed.size() + " 个词却只用了 " + colors
+                        + " 种颜色, 应 ≥" + MIN_DISTINCT_COLORS);
+            }
         }
 
-        // 🔴 「≥期望」只说得出下限没被破，说不出下限有没有被走到过：
-        // 把间距改回「两边各涨」是隔开翻倍，一样每对都 ≥期望。要求最小实距离
-        // 期望里最小的那档不超过 1px（实现里四舍五入的那一档松），下限才仍被走到过
-        int placedTarget = (int) Math.ceil(PLACED_BEFORE * 1.5);
-        if (minClearance > minExpected + 1) {
-            failures.add("相邻词最小实距 " + minClearance + "px, 期望里最小一档是 " + minExpected
-                    + "px（隔得比定的还宽得多, 可能又改回了两边各涨一半）");
+        // 🔴 「≥下限」只说得出下限没被破，说不出下限有没有被走到过：
+        // 把间距整体放宽一倍，一样每对都 ≥下限。最小实距要贴着纵向那条线，
+        // 下限才仍被走到过
+        int placedTarget = (int) Math.ceil(PLACED_BEFORE * PLACED_TARGET_RATIO);
+        if (minClearance > MIN_GAP_Y + 2) {
+            failures.add("相邻词最小实距 " + minClearance + "px, 而定的下限是横 " + MIN_GAP_X
+                    + "／纵 " + MIN_GAP_Y + "px（隔得比定的宽得多, 版面白让出去了）");
         }
-        // 硬线：56px 的相邻两词肉眼要分得开。固定 8px 时这一档
-        // 实距就是 8（改前实读）；按系数折要 ≥0.35×56=19.6px。不取整地比——
-        // 取整到 19 会把这条线悄悄降一档。一对封顶词对都没有时这条恒真, 连红都红不出来
-        if (topPairs < 1) {
-            failures.add("20 组语料里没有一对较大字号 " + FONT_SIZE_MAX + " 的相邻词, 封顶判落空");
-        }
-        if (topPairMinClearance < WORD_GAP_PER_FONT * FONT_SIZE_MAX) {
-            failures.add(String.format("封顶字号 %d 的相邻词最小实距 %dpx, 应 ≥%.1fpx（固定 8px 正是这一档粘连的由来）",
-                    FONT_SIZE_MAX, topPairMinClearance, WORD_GAP_PER_FONT * FONT_SIZE_MAX));
+        if (denseGroups < 1) {
+            failures.add("20 组语料里没有一组落满 40 个词, 密集场次这一档没被走到");
         }
         if (placedTotal < placedTarget) {
             failures.add("20 组合计落词 " + placedTotal + " 个, 不足改前 " + PLACED_BEFORE
-                    + " 的 1.5 倍（" + placedTarget + "）");
+                    + " 的 " + PLACED_TARGET_RATIO + " 倍（" + placedTarget + "）");
         }
         if (minFontSize < READABLE_FONT_SIZE_MIN) {
             failures.add("最小字号 " + minFontSize + " 低于可读线 " + READABLE_FONT_SIZE_MIN);
         }
         if (maxFontSize > FONT_SIZE_MAX) {
-            failures.add("最大字号 " + maxFontSize + " 超过上限 " + FONT_SIZE_MAX
-                    + "（整体放大是乘在字号上的，只钳按词频算出来的那一档钳不住它）");
+            failures.add("最大字号 " + maxFontSize + " 超过上限 " + FONT_SIZE_MAX);
         }
 
-        String summary = String.format("合计 落%d（改前 %d, 需 ≥%d）最小实距 %d（最小期望 %d）封顶对 %d 最小实距 %d 字号 %d~%d（上限 %d）",
-                placedTotal, PLACED_BEFORE, placedTarget, minClearance, minExpected,
-                topPairs, topPairMinClearance, minFontSize, maxFontSize, FONT_SIZE_MAX);
+        String summary = String.format("合计 落%d（改前 %d, 需 ≥%d）最小实距 %d（下限 横%d／纵%d）密集组 %d 最大空洞 %d（只读数不判）字号 %d~%d（上限 %d）",
+                placedTotal, PLACED_BEFORE, placedTarget, minClearance, MIN_GAP_X, MIN_GAP_Y,
+                denseGroups, worstHole, minFontSize, maxFontSize, FONT_SIZE_MAX);
         readings.add(summary);
 
         Path dir = Path.of("target", "painter-output");
@@ -442,26 +415,85 @@ class BilibiliWordCloudTest {
     }
 
     /**
-     * 这个字号的词与邻居至少该隔多少：max(下限, round(系数 × 字号))，数字全在判据侧写死
-     * <p>
-     * 间距按<b>两词中较大的字号</b>折——小词挨着大词也让出大词的间距，不然挨着
-     * 头名的小词照样粘上去
+     * 词云块按词量该有多高。分档表与 {@code WordCloudHeightTest} 同源、都写死在判据侧
      */
-    private static int expectedGap(int largerFontSize) {
-        return Math.max(WORD_GAP, (int) Math.round(WORD_GAP_PER_FONT * largerFontSize));
+    private static int bandHeight(int wordCount) {
+        if (wordCount == 0) {
+            return 96;
+        }
+        if (wordCount <= 3) {
+            return 128;
+        }
+        if (wordCount <= 8) {
+            return 200;
+        }
+        if (wordCount <= 12) {
+            return 240;
+        }
+        if (wordCount <= 24) {
+            return 300;
+        }
+        return CLOUD_MAX_HEIGHT;
     }
 
     /**
-     * 两个包围盒之间隔开多少：两个轴上各自隔开的距离取大的那个
+     * 词团内部最大的空洞，单位像素：在外包围盒的<b>内接椭圆</b>里按 5px 网格取样，
+     * 量每个取样点到最近的词包围盒有多远，取最大的那个
      * <p>
-     * 取大的那个而不是欧氏距离，是因为版式规则控住的正是它——「一个框涨 {@code gap}px
-     * 之后与另一个不相交」等价于「两轴之中至少有一轴隔开了 {@code gap}px」
-     * （{@code gap} 即 {@link #expectedGap}）。两轴都没隔开（返回负数）就是压叠了
+     * 只量椭圆里那一块，是因为外包围盒的四角本来就该空着——词团是圆的，
+     * 拿整个矩形去量，四角那几十像素会把读数顶满，这条判据就再也动不了了。
+     * <p>
+     * 🔴 取样网格<b>与被测自己那套探针不同源</b>：被测按画布中心的 0.38 椭圆、7px 网格采，
+     * 这里按<b>实际外包围盒</b>的 0.75 椭圆、5px 网格采。照抄被测那套的话，
+     * 它把探针挪个位置，判据就跟着挪，量到的永远是它自己认可的那片区域
      */
-    private static int clearance(Rectangle a, Rectangle b) {
-        int dx = Math.max(b.x - (a.x + a.width), a.x - (b.x + b.width));
-        int dy = Math.max(b.y - (a.y + a.height), a.y - (b.y + b.height));
-        return Math.max(dx, dy);
+    private static int largestInteriorHole(WordCloudLayout.Result result) {
+        List<WordCloudLayout.Placement> placed = result.placements();
+        if (placed.size() < 2) {
+            return 0;
+        }
+
+        Rectangle bounds = result.bounds();
+        double centerX = bounds.getCenterX();
+        double centerY = bounds.getCenterY();
+        double radiusX = bounds.width * 0.5 * 0.75;
+        double radiusY = bounds.height * 0.5 * 0.75;
+        if (radiusX <= 0 || radiusY <= 0) {
+            return 0;
+        }
+
+        double worst = 0;
+        for (int y = bounds.y; y <= bounds.getMaxY(); y += 5) {
+            for (int x = bounds.x; x <= bounds.getMaxX(); x += 5) {
+                double normalizedX = (x - centerX) / radiusX;
+                double normalizedY = (y - centerY) / radiusY;
+                if (normalizedX * normalizedX + normalizedY * normalizedY > 1) {
+                    continue;
+                }
+                double nearest = Double.POSITIVE_INFINITY;
+                for (WordCloudLayout.Placement placement : placed) {
+                    nearest = Math.min(nearest, distanceToBox(x, y, placement.box()));
+                }
+                worst = Math.max(worst, nearest);
+            }
+        }
+        return (int) Math.round(worst);
+    }
+
+    /**
+     * 一个点到一个矩形有多远；点在矩形里时为 0
+     */
+    private static double distanceToBox(int x, int y, Rectangle box) {
+        double dx = Math.max(0, Math.max(box.x - x, x - box.getMaxX()));
+        double dy = Math.max(0, Math.max(box.y - y, y - box.getMaxY()));
+        return Math.hypot(dx, dy);
+    }
+
+    /**
+     * 两个区间在一根轴上隔开多少；重叠时为负
+     */
+    private static int gap(int aStart, int aLength, int bStart, int bLength) {
+        return Math.max(bStart - (aStart + aLength), aStart - (bStart + bLength));
     }
 
     /**
@@ -499,20 +531,20 @@ class BilibiliWordCloudTest {
     }
 
     /**
-     * 判据③的成图一面：四周 8px 内不许有墨
+     * 判据③的成图一面：四周 {@value #FRAME_MARGIN}px 内不许有墨
      * <p>
-     * 几何上框已经离边 8px，这一条量的是<b>画出来的墨真的在框里</b>——
+     * 几何上框已经离边 {@value #FRAME_MARGIN}px，这一条量的是<b>画出来的墨真的在框里</b>——
      * 量与画对不上时，几何是绿的而图上照样压边
      */
     @Test
-    @DisplayName("判据③（成图）：墨迹距框四周至少留 8px")
-    void keepsEightPixelMarginFromFrame() throws Exception {
+    @DisplayName("判据③（成图）：墨迹距框四周至少留 24px")
+    void keepsFrameMarginFromInk() throws Exception {
         LiveStreamerInfo streamer = aSession();
         Map<String, Integer> words = corpus(60, 92_007L);
         BufferedImage cloud = painter.paintWordCloud(PLATFORM, streamer.getUid(), words);
 
         assertEquals(CONTENT_WIDTH, cloud.getWidth());
-        assertEquals(CLOUD_HEIGHT, cloud.getHeight());
+        assertEquals(CLOUD_MAX_HEIGHT, cloud.getHeight());
 
         // 留一份样张给人看。判据只说得出「四周有几个墨点」，说不出「难看在哪」
         Path dir = Path.of("target", "painter-output");
@@ -536,11 +568,14 @@ class BilibiliWordCloudTest {
             }
         }
 
-        assertEquals(0, inRing, "四周 8px 内不应有墨, 实际 " + inRing + " 点");
+        assertEquals(0, inRing, "四周 " + FRAME_MARGIN + "px 内不应有墨, 实际 " + inRing + " 点");
     }
 
     /**
-     * 词一个都没有时不该炸，也不该画出空块
+     * 词一个都没有时不该炸，排出来的是一个空版式
+     * <p>
+     * 成图那一面反过来：空版式要画出「暂无有效弹幕词」的空态，
+     * 由 {@code WordCloudScenarioTest} 量
      */
     @Test
     @DisplayName("空语料排出空版式")
@@ -553,55 +588,21 @@ class BilibiliWordCloudTest {
     }
 
     /**
-     * 这个名次该是什么颜色。第 {@value #ACCENT_FROM_RANK} 名往后是 dim 与 c-sc 两选一，
-     * 单看一个词判不出对错——传进实色，是其中之一就算过，比例交给
-     * {@link #accentRatioFailures} 按组数判
-     */
-    private static Color expectedColor(int rank, Color actual) {
-        if (rank <= 3) {
-            return RANK_1_TO_3;
-        }
-        if (rank <= 10) {
-            return RANK_4_TO_10;
-        }
-        if (rank <= 25) {
-            return rank % 2 == 1 ? RANK_11_TO_25_ODD : RANK_11_TO_25_EVEN;
-        }
-        return RANK_REST_ACCENT.equals(actual) ? RANK_REST_ACCENT : RANK_REST;
-    }
-
-    /**
-     * 尾档暖色的比例：从第 {@value #ACCENT_FROM_RANK} 名起每 {@value #ACCENT_GROUP} 名一组，
-     * 凑得满的组里恰好一个暖色
+     * 这个词的配色不对在哪；对的话返回 {@code null}
      * <p>
-     * 只查<b>四名全落下了</b>的组：被丢掉的词照样占名次，组里少一个人时点没点中它无从得知
-     *
-     * @param laid 这一趟交给排版的词数（丢掉的也算），组够不够得着由它定
+     * 前 3 名与 4～10 名逐名钉死；第 11 名往后只钉「取的是册上那四个值之一」——
+     * 取哪一个由名次交错定，逐名照抄那套交错规则的话，两边就成了同一个来路，
+     * 交错改成「一律取灰」两边会一起变。「够不够花」另有用色数那一条判
      */
-    private static List<String> accentRatioFailures(int group, WordCloudLayout.Result result, int laid) {
-        Map<Integer, WordCloudLayout.Placement> byRank = new LinkedHashMap<>();
-        result.placements().forEach(placement -> byRank.put(placement.rank(), placement));
-
-        List<String> failures = new ArrayList<>();
-        for (int first = ACCENT_FROM_RANK; first + ACCENT_GROUP - 1 <= laid; first += ACCENT_GROUP) {
-            int accents = 0;
-            int present = 0;
-            for (int rank = first; rank < first + ACCENT_GROUP; rank++) {
-                WordCloudLayout.Placement placement = byRank.get(rank);
-                if (placement == null) {
-                    continue;
-                }
-                present++;
-                if (RANK_REST_ACCENT.equals(placement.color())) {
-                    accents++;
-                }
-            }
-            if (present == ACCENT_GROUP && accents != 1) {
-                failures.add("第" + group + "组 第" + first + "～" + (first + ACCENT_GROUP - 1)
-                        + "名里点了 " + accents + " 个暖色, 应恰为 1");
-            }
+    private static String colorFailure(WordCloudLayout.Placement placement) {
+        Color actual = placement.color();
+        if (placement.rank() <= 3) {
+            return RANK_1_TO_3.equals(actual) ? null : "配色 " + actual + " 应为 " + RANK_1_TO_3;
         }
-        return failures;
+        if (placement.rank() <= 10) {
+            return RANK_4_TO_10.equals(actual) ? null : "配色 " + actual + " 应为 " + RANK_4_TO_10;
+        }
+        return TAIL_COLORS.contains(actual) ? null : "配色 " + actual + " 不在册上的四个尾档值里";
     }
 
     private static int minFontSizeOf(WordCloudLayout.Result result) {
