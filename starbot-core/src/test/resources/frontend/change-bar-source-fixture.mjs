@@ -98,7 +98,18 @@ function node(selector) {
   return nodes[id];
 }
 
-globalThis.document = {querySelector: node};
+/** 挂在 <html> 上的那几个类。底部那条藏不藏由它一处定，见 core.js 的 paintBar */
+const htmlClasses = new Set();
+
+globalThis.document = {
+  querySelector: node,
+  documentElement: {
+    classList: {
+      toggle: (name, on) => { if (on) htmlClasses.add(name); else htmlClasses.delete(name); },
+      contains: name => htmlClasses.has(name),
+    },
+  },
+};
 globalThis.fetch = (path, opt) => {
   requests.push({path, opt});
   return Promise.resolve({status: 200, json: () => Promise.resolve({})});

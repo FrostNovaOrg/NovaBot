@@ -107,10 +107,17 @@ export const today = () => {
     + String(now.getDate()).padStart(2, '0');
 };
 
+/**
+ * 状态栏。这句话也是底部那条出不出来的三条理由之一，因此写完要重画一次
+ *
+ * 「ok」那种四秒后自己清掉，清掉那一下走的还是这里，条于是跟着一起没。
+ * 报错那句不自动清——它得留到有人看见为止，条也就跟着留。
+ */
 export function say(text, kind) {
   const s = $('#status-text');
   s.textContent = text || '';
   s.className = 'status' + (kind ? ' ' + kind : '');
+  paintBar();
   if (text && kind === 'ok') setTimeout(() => { if (s.textContent === text) say(''); }, 4000);
 }
 
@@ -224,14 +231,48 @@ function changeText(n) {
   return n + ' 处改动' + (m ? ' · 其中 ' + m + ' 处需重启生效' : '');
 }
 
+/**
+ * 底部那条现在出不出来
+ *
+ * 它从前是常驻页脚，一处没改、一句话没说也横在屏幕最下面，还占掉一截高度——
+ * 因为状态栏住在里面。三件事各自都是「有话要说」，有一件成立它就得在：
+ * 改了还没保存的那几处、保存下来正等重启的那些、以及状态栏此刻说着的那句话。
+ * 「消息在多久，条在多久」因此不是额外一条规矩，就是这里的第三个参数。
+ *
+ * 判定单独成一份而不是写在渲染代码里：抄一份进去之后，喂值跑的那把尺量的还是
+ * 没人调的这一份，而屏幕上跑的是新抄的那一份，两者分叉时不会有任何异常。
+ * @param {number} n 本页改过还没保存的项数
+ * @param {number} pending 保存过、仍等重启才生效的项数
+ * @param {string} [message] 状态栏此刻显示的话，空串即没有
+ * @return {boolean} 条要不要出现
+ */
+export function barVisible(n, pending, message) {
+  return n > 0 || pending > 0 || String(message ?? '') !== '';
+}
+
+/**
+ * 按此刻的三件事重画底部那条
+ *
+ * 挂在 <html> 上而不是直接改那条的 style：页底得空出条那么高的一截，最后一行才不会被盖住，
+ * 而藏了条还空着一截就成了一段无缘无故的留白。两件事同一个开关，样式表里一处写全
+ * （见 app.css 的 html.nobar）；分成两处切的话，它们迟早会各切各的。
+ */
+function paintBar() {
+  const on = barVisible(changeCount(), store.restartPending.length, $('#status-text').textContent);
+  document.documentElement.classList.toggle('nobar', !on);
+}
+
 export function markDirty() {
   const target = saveTarget();
   const n = changeCount();
   $('#save').style.display = target ? '' : 'none';
   $('#discard').style.display = target ? '' : 'none';
   // 插件页的保存按钮一直可按：它那份草稿态的改动未必都进得了 N，
-  // 而按 N 禁用意味着那一页算漏一处就等于把保存这条路堵死
+  // 而按 N 禁用意味着那一页算漏一处就等于把保存这条路堵死。
+  // 🔴 条现在也按 N 显隐，算漏一类的代价从「按钮灰着」变成了「整条不出来」——
+  // 供数方那一侧因此得有一把尺逐类量「每一类可改的字段都算进了 N」
   $('#save').disabled = !target || (target === 'values' && n === 0);
   $('#discard').disabled = n === 0;
   $('#change-count').textContent = changeText(n);
+  paintBar();
 }

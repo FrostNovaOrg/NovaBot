@@ -61,7 +61,18 @@ const requests = [];
 /** 下一趟 GET /datasource 回什么。第 ⑥ 问要把它换成一份坏文件 */
 let datasourceBody = '';
 
-globalThis.document = {querySelector: node};
+/** 挂在 <html> 上的那几个类。底部那条藏不藏由它一处定，见宿主 core.js 的 paintBar */
+const htmlClasses = new Set();
+
+globalThis.document = {
+  querySelector: node,
+  documentElement: {
+    classList: {
+      toggle: (name, on) => { if (on) htmlClasses.add(name); else htmlClasses.delete(name); },
+      contains: name => htmlClasses.has(name),
+    },
+  },
+};
 globalThis.fetch = (path, opt) => {
   const method = ((opt || {}).method || 'GET').toUpperCase();
   requests.push({path, method, body: (opt || {}).body});
