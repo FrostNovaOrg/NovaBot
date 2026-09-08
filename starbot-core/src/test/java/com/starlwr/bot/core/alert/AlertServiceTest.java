@@ -1,6 +1,7 @@
 package com.starlwr.bot.core.alert;
 
 import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.timeline.TimelineWriter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -41,7 +42,8 @@ class AlertServiceTest {
         // orderedStream() 每次调用都要拿到一条新的流，用 thenAnswer 而不是 thenReturn
         when(provider.orderedStream()).thenAnswer(invocation -> channels.stream());
 
-        service = new AlertService(properties, provider);
+        // 这一件问的是收敛、入队与重投，一条也不问日志页；时间线那一头由 TimelineHookTest 量
+        service = new AlertService(properties, provider, TimelineWriter.NONE);
     }
 
     /**

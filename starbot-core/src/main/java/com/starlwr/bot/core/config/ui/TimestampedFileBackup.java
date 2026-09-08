@@ -7,7 +7,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -70,12 +72,18 @@ public final class TimestampedFileBackup {
      * 把当前文件复制成一份带时间戳的备份，再裁掉超出 {@code keep} 的旧份。
      * <p>
      * 文件还不在时什么也不做。保留份数落到 [{@link #MIN_KEEP}, {@link #MAX_KEEP}] 后再裁。
+     * <p>
+     * <b>返回被裁掉的是哪几份</b>，而不是把删除咽在肚子里：这个类自己不该去写日志页
+     * （它是个不认得 Spring 的工具类，安全模式下也在用它，那时时间线根本不在），
+     * 但「旧备份被删了」是使用者要能看见的事——去翻备份目录却发现少了几份，
+     * 而没有任何地方说过它们是被谁、什么时候删的。
      * @param keep 打算留下的份数
+     * @return 本次删掉的备份文件名，按删除顺序；一份没删时为空表
      * @throws IOException 复制失败时抛出；裁剪失败不影响这次备份本身
      */
-    public void backup(int keep) throws IOException {
+    public List<String> backup(int keep) throws IOException {
         if (!Files.exists(file)) {
-            return;
+            return List.of();
         }
 
         String stamp = STAMP.withZone(clock.getZone()).format(clock.instant());
@@ -89,7 +97,7 @@ public final class TimestampedFileBackup {
         Files.copy(file, target);
         log.debug("已备份 {} 至 {}", file.getFileName(), target.getFileName());
 
-        prune(clamp(keep));
+        return prune(clamp(keep));
     }
 
     private String backupFileName(String stamp, String suffix) {
@@ -111,14 +119,24 @@ public final class TimestampedFileBackup {
         return keep;
     }
 
-    private void prune(int keep) {
+    /**
+     * 裁掉超出保留份数的旧份
+     * @return 真的删掉了的那几份的文件名；删不动的不算，它们还在盘上
+     */
+    private List<String> prune(int keep) {
+        List<String> pruned = new ArrayList<>();
+
         try (Stream<Path> files = Files.list(directory())) {
             files.filter(this::isBackup)
                     .sorted(Comparator.comparing(this::stamp).reversed())
                     .skip(keep)
                     .forEach(path -> {
                         try {
-                            Files.deleteIfExists(path);
+                            // 只把「确实不在了」的记进去：deleteIfExists 答 false 的那一份
+                            // 本来就没在，报它被删掉等于凭空多出一条
+                            if (Files.deleteIfExists(path)) {
+                                pruned.add(path.getFileName().toString());
+                            }
                         } catch (IOException e) {
                             log.debug("删除旧备份 {} 失败: {}", path, e.getMessage());
                         }
@@ -126,6 +144,8 @@ public final class TimestampedFileBackup {
         } catch (IOException e) {
             log.debug("清理旧备份失败: {}", e.getMessage());
         }
+
+        return pruned;
     }
 
     /**

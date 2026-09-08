@@ -1,12 +1,22 @@
 package com.starlwr.bot.core.timeline;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.starlwr.bot.core.alert.AlertChannel;
 import com.starlwr.bot.core.alert.AlertService;
 import com.starlwr.bot.core.alert.HealthAlertMonitor;
+import com.starlwr.bot.core.command.CommandContext;
+import com.starlwr.bot.core.command.CommandDispatcher;
+import com.starlwr.bot.core.command.CommandFollowUp;
+import com.starlwr.bot.core.command.CommandReply;
+import com.starlwr.bot.core.command.CommandSettingsService;
+import com.starlwr.bot.core.command.StarBotCommand;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.ui.RuntimeConfigurationApplier;
+import com.starlwr.bot.core.config.ui.RuntimeConfigurationApplierContributor;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
+import com.starlwr.bot.core.event.remote.StarBotRemoteMessageEvent;
 import com.starlwr.bot.core.handler.StarBotEventHandler;
 import com.starlwr.bot.core.health.HealthProbe;
 import com.starlwr.bot.core.health.HealthStatus;
@@ -30,27 +40,37 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * 时间线六个接入点各一阳性
+ * 时间线各接入点各一阳性
  * <p>
- * <b>为什么六个凑在一件里</b>：接入点这种东西，删掉一处的表现是「时间线上从此少一类事件」，
+ * <b>为什么都凑在一件里</b>：接入点这种东西，删掉一处的表现是「时间线上从此少一类事件」，
  * 而少的那一类平时本来就少见——一年不出一次的登录失效，没人会因为它不出现而起疑。
- * 一件里六格并排，删掉一处当场少一格，比散在六个文件里各自沉默要看得见。
+ * 一件里十几格并排，删掉一处当场少一格，比散在十几个文件里各自沉默要看得见。
  * <p>
- * 这里只证「现场会往时间线上写、写的是哪一类」；写进磁盘那一层由
- * {@link TimelineStoreTest} 证，不在这里重复。
+ * 这里只证「现场会往时间线上写、写的是哪一类」；写进磁盘、经接口下发、
+ * 在药丸上出得来那三环由 {@link FourCategoriesEndToEndTest} 走一遍，
+ * 写进磁盘那一层本身由 {@link TimelineStoreTest} 证，都不在这里重复。
+ * <p>
+ * 备份清理那一处（{@code BACKUP_PRUNED}）不在这里：它的现场是
+ * {@code ConfigurationFileService}，那个包内构造口在本包里够不着，格摆在同包的
+ * {@code ConfigurationFileServiceTest} 里。
  */
 @DisplayName("时间线接入点")
 class TimelineHookTest {
@@ -287,7 +307,201 @@ class TimelineHookTest {
         assertEquals(TimelineEventType.PROBE_CHANGED, capture.only().type());
     }
 
+    @Test
+    @DisplayName("⑦ 认不出的那一句应记成「认不出的命令」, 并带上会话")
+    void recordsUnknownCommand() {
+        Capture capture = new Capture();
+        dispatcher(capture, Clock.systemDefaultZone()).onRemoteMessage(commandEvent("这不是命令"));
+
+        TimelineEvent event = capture.only();
+        assertEquals(TimelineEventType.COMMAND_UNKNOWN, event.type());
+        assertEquals("群 30003", event.channel());
+        assertEquals("这不是命令", event.detail().get("command"));
+    }
+
+    @Test
+    @DisplayName("⑦ 打进来的一整段话只留前 16 个字, 不整段抄进时间线")
+    void shortensWhatTheUserTyped() {
+        Capture capture = new Capture();
+        String tooLong = "一二三四五六七八九十一二三四五六七八九十";
+        dispatcher(capture, Clock.systemDefaultZone()).onRemoteMessage(commandEvent(tooLong));
+
+        assertEquals("一二三四五六七八九十一二三四五六…", capture.only().detail().get("command"),
+                "命令名取自消息正文的第一段, 长度不受任何约束: 粘一整段话进来, 整段都会被记进每一行");
+    }
+
+    @Test
+    @DisplayName("⑧ 撞在冷却上的那一句应记成「冷却忽略」, 而不是与认不出混成一类")
+    void recordsCooledDown() {
+        Capture capture = new Capture();
+        // 两句挨着发，第二句必然落在 3 秒冷却里。钟钉死才不会在慢机器上偶尔跑过冷却
+        CommandDispatcher dispatcher = dispatcher(capture, Clock.fixed(Instant.now(), ZoneId.systemDefault()));
+        dispatcher.onRemoteMessage(commandEvent("测试命令"));
+        dispatcher.onRemoteMessage(commandEvent("测试命令"));
+
+        assertEquals(List.of(TimelineEventType.COMMAND_EXECUTED, TimelineEventType.COMMAND_COOLED_DOWN),
+                capture.events.stream().map(TimelineEvent::type).toList(),
+                "使用者看到的都是「机器人没搭理我」, 而等三秒与打错了命令名的下一步完全不同");
+        assertEquals("群 30003", capture.events.get(1).channel());
+    }
+
+    @Test
+    @DisplayName("⑨ 通道抛了应记成「告警发不出」, 并带上是哪一路")
+    void recordsAlertFailure() {
+        Capture capture = new Capture();
+        alertService(capture, new ThrowingChannel()).alert("机器人连接", "NovaBot 异常告警：机器人连接", "连不上");
+
+        TimelineEvent event = capture.only();
+        assertEquals(TimelineEventType.ALERT_FAILED, event.type());
+        assertEquals(TimelineEvent.Level.ERROR, event.level());
+        assertEquals("邮件", event.channel(), "邮件通了而 Webhook 挂了是常事, 汇总成一条会把挂掉的那一路藏起来");
+        assertTrue(event.detail().get("reason").contains("发不出去"), event.detail().get("reason"));
+    }
+
+    @Test
+    @DisplayName("⑨ 一路通道都没配好时同样记一条, 它不属于任何一路")
+    void recordsAlertWithNoChannelAtAll() {
+        Capture capture = new Capture();
+        alertService(capture).alert("机器人连接", "NovaBot 异常告警：机器人连接", "连不上");
+
+        TimelineEvent event = capture.only();
+        assertEquals(TimelineEventType.ALERT_FAILED, event.type());
+        assertEquals(TimelineEvent.Level.WARN, event.level());
+        assertNull(event.channel(), "没有哪一路可写, 编一个通道名出来比留空更糟");
+    }
+
+    @Test
+    @DisplayName("⑩ 落不下去的配置项应记成「设置待重启」, 只写组名与条数")
+    void recordsSettingsPendingRestart() {
+        Capture capture = new Capture();
+        applier(capture).applyAndTrack(Map.of("starbot.core.live.live-data-path", "/tmp/x.json"));
+
+        TimelineEvent event = capture.only();
+        assertEquals(TimelineEventType.SETTINGS_RESTART_PENDING, event.type());
+        assertEquals("starbot.core.live", event.detail().get("groups"));
+        assertEquals("1", event.detail().get("count"));
+        assertFalse(String.join(" ", event.detail().values()).contains("/tmp/x.json"),
+                "取值一个字都不许进来: 时间线是逐行落在磁盘上的, 而经这条路的键里就有口令");
+        assertFalse(event.text().contains("/tmp/x.json"), event.text());
+    }
+
+    @Test
+    @DisplayName("⑪ 退出时应记成「停止」, 并带上这一程跑了多久")
+    void recordsShutdown() {
+        Capture capture = new Capture();
+        new SystemTimelineRecorder(capture).onContextClosedEvent();
+
+        TimelineEvent event = capture.only();
+        assertEquals(TimelineEventType.SYSTEM_STOPPING, event.type());
+        assertTrue(event.detail().containsKey("uptime_s"),
+                "「昨晚八点到十点为什么一条推送都没有」, 答案常常是那两个小时它没在跑");
+    }
+
     // —— 以下为夹具 ——
+
+    /**
+     * 一条群消息，已 @ 了机器人、来自配好推送的那个群
+     */
+    private StarBotRemoteMessageEvent commandEvent(String text) {
+        return new StarBotRemoteMessageEvent(PLATFORM, "group", 30003L, 1L, text, null, true);
+    }
+
+    private CommandDispatcher dispatcher(TimelineWriter timeline, Clock clock) {
+        PushTarget target = new PushTarget();
+        target.setPlatform(PLATFORM);
+        target.setType(PushTargetType.GROUP);
+        target.setNum(30003L);
+        target.setMessages(new ArrayList<>());
+
+        PushUser user = new PushUser();
+        user.setUid(10001L);
+        user.setUname("主播甲");
+        user.setPlatform(LIVE_PLATFORM);
+        user.setTargets(List.of(target));
+
+        AbstractDataSource dataSource = mock(AbstractDataSource.class);
+        when(dataSource.getAllUsers()).thenReturn(List.of(user));
+
+        StarBotCommand command = new StubCommand();
+        @SuppressWarnings("unchecked")
+        ObjectProvider<StarBotCommand> commands = mock(ObjectProvider.class);
+        when(commands.iterator()).thenAnswer(invocation -> List.of(command).iterator());
+        when(commands.orderedStream()).thenAnswer(invocation -> java.util.stream.Stream.of(command));
+
+        @SuppressWarnings("unchecked")
+        ObjectProvider<CommandFollowUp> followUps = mock(ObjectProvider.class);
+        when(followUps.iterator()).thenAnswer(invocation -> List.<CommandFollowUp>of().iterator());
+
+        StarBotCoreProperties properties = new StarBotCoreProperties();
+        return new CommandDispatcher(commands, followUps,
+                new CommandSettingsService(new StarBotStateStore(properties)),
+                dataSource, mock(StarBotMessageSender.class), properties, timeline, clock);
+    }
+
+    private AlertService alertService(TimelineWriter timeline, AlertChannel... channels) {
+        @SuppressWarnings("unchecked")
+        ObjectProvider<AlertChannel> provider = mock(ObjectProvider.class);
+        when(provider.orderedStream()).thenAnswer(invocation -> java.util.stream.Stream.of(channels));
+        return new AlertService(new StarBotCoreProperties(), provider, timeline);
+    }
+
+    private RuntimeConfigurationApplier applier(TimelineWriter timeline) {
+        @SuppressWarnings("unchecked")
+        ObjectProvider<RuntimeConfigurationApplierContributor> contributors = mock(ObjectProvider.class);
+        when(contributors.orderedStream())
+                .thenAnswer(invocation -> java.util.stream.Stream.<RuntimeConfigurationApplierContributor>of());
+        return new RuntimeConfigurationApplier(new StarBotCoreProperties(), null, contributors, timeline);
+    }
+
+    /**
+     * 一条什么也不做、只答应一声的命令
+     */
+    private static final class StubCommand implements StarBotCommand {
+        @Override
+        public String name() {
+            return "测试命令";
+        }
+
+        @Override
+        public List<String> aliases() {
+            return List.of();
+        }
+
+        @Override
+        public String description() {
+            return "供判据使用";
+        }
+
+        @Override
+        public CommandReply execute(CommandContext context) {
+            return CommandReply.of("已执行");
+        }
+    }
+
+    /**
+     * 配好了、但发的时候抛的通道
+     */
+    private static final class ThrowingChannel implements AlertChannel {
+        @Override
+        public String id() {
+            return "mail";
+        }
+
+        @Override
+        public String name() {
+            return "邮件";
+        }
+
+        @Override
+        public boolean isAvailable() {
+            return true;
+        }
+
+        @Override
+        public void send(String subject, String content) {
+            throw new IllegalStateException("发不出去");
+        }
+    }
 
     /**
      * 可摆布状态的探针

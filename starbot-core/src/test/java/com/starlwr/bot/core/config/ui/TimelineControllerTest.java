@@ -127,8 +127,10 @@ class TimelineControllerTest {
         assertEquals("推送这条",
                 byCategory("PUSH").getJSONArray("events").getJSONObject(0).getString("text"));
         assertEquals(1, byCategory("LINK").getIntValue("matched"));
+        // 系统那一类是认得的（启动、停止、清理旧备份都归它），只是这台机器上一条也没发生过——
+        // 「认不出的大类」在上一格里已按报错处理，两者不是一回事
         assertEquals(0, byCategory("SYSTEM").getIntValue("matched"),
-                "一个类型都没归到它名下的大类, 筛出来就该是空的");
+                "认得这一类、但一条也没发生过时, 筛出来该是空的而不是报错");
 
         // 旧地址里带着 type= 的仍认，两项一起给时同时满足：
         // 只保留其中一项的话，贴过来的地址打开是一张筛得不一样的页

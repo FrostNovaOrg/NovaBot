@@ -8,6 +8,9 @@ import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.timeline.TimelineEvent;
+import com.starlwr.bot.core.timeline.TimelineEventType;
+import com.starlwr.bot.core.timeline.TimelineWriter;
 import com.starlwr.bot.core.util.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
@@ -67,6 +70,11 @@ public class CommandDispatcher {
      */
     private static final Duration COOLDOWN = Duration.ofSeconds(3);
 
+    /**
+     * 记进时间线的命令名最多留几个字
+     */
+    private static final int NAME_IN_RECORD = 16;
+
     private final ObjectProvider<StarBotCommand> commands;
 
     /**
@@ -97,11 +105,20 @@ public class CommandDispatcher {
      */
     private final Clock clock;
 
+    /**
+     * 事件时间线
+     * <p>
+     * 「我刚才在群里说的那句它怎么没理我」——这个问题此前只能翻运行日志回答，
+     * 而其中最常见的那一种（撞在冷却上）默认级别下根本不写。
+     */
+    private final TimelineWriter timeline;
+
     @Autowired
     public CommandDispatcher(ObjectProvider<StarBotCommand> commands, ObjectProvider<CommandFollowUp> followUps,
                              CommandSettingsService settings, AbstractDataSource dataSource,
-                             StarBotMessageSender sender, StarBotCoreProperties properties) {
-        this(commands, followUps, settings, dataSource, sender, properties, Clock.systemDefaultZone());
+                             StarBotMessageSender sender, StarBotCoreProperties properties,
+                             TimelineWriter timeline) {
+        this(commands, followUps, settings, dataSource, sender, properties, timeline, Clock.systemDefaultZone());
     }
 
     /**
@@ -111,13 +128,15 @@ public class CommandDispatcher {
      */
     public CommandDispatcher(ObjectProvider<StarBotCommand> commands, ObjectProvider<CommandFollowUp> followUps,
                              CommandSettingsService settings, AbstractDataSource dataSource,
-                             StarBotMessageSender sender, StarBotCoreProperties properties, Clock clock) {
+                             StarBotMessageSender sender, StarBotCoreProperties properties,
+                             TimelineWriter timeline, Clock clock) {
         this.commands = commands;
         this.followUps = followUps;
         this.settings = settings;
         this.dataSource = dataSource;
         this.sender = sender;
         this.properties = properties;
+        this.timeline = timeline;
         this.clock = clock;
     }
 
@@ -165,13 +184,19 @@ public class CommandDispatcher {
         }
 
         // 以下四条出声的路径共用这一份冷却；被认领的应答已在上面走掉
-        if (claimed == null && !acquireCooldown(event, name)) {
+        if (claimed == null && !acquireCooldown(event, type, name)) {
             return;
         }
 
         if (command == null) {
             // 已经 @ 了（或在私聊里），这话就是对机器人说的。认不出来时回菜单，
             // 顶行写清怎么用——沉默只会让人换个说法再试一遍
+            timeline.record(TimelineEvent.of(TimelineEventType.COMMAND_UNKNOWN, TimelineEvent.Level.INFO)
+                    .channel(describe(type, event.getNum()))
+                    .text("认不出「" + shorten(name) + "」，已回菜单")
+                    .detail("command", shorten(name))
+                    .build());
+
             StarBotCommand menu = find(MENU_COMMAND_NAME);
             if (menu != null) {
                 run(menu, event, type, List.of(), false);
@@ -195,7 +220,16 @@ public class CommandDispatcher {
             return;
         }
 
-        run(command, event, type, List.copyOf(parts), admin);
+        // 记在成功那一支上：抛了异常的那一次群里什么都没有，
+        // 把它也记成「执行」会让「这条命令到底管不管用」再也查不出来
+        if (run(command, event, type, List.copyOf(parts), admin)) {
+            timeline.record(TimelineEvent.of(TimelineEventType.COMMAND_EXECUTED, TimelineEvent.Level.INFO)
+                    .channel(describe(type, event.getNum()))
+                    .text("执行了「" + command.name() + "」")
+                    .detail("command", command.name())
+                    .detail("admin", admin ? "是" : "否")
+                    .build());
+        }
     }
 
     /**
@@ -233,15 +267,23 @@ public class CommandDispatcher {
      * 冷却按会话计，<b>会话类型也进键</b>：群号与好友账号取自两个互不相干的号段，
      * 只按号码算的话，两者撞号时会互相消耗对方的冷却。
      * @param event 消息事件
+     * @param type 会话类型，记时间线时用来说清是哪个群
      * @param name 命令名，仅用于日志
      * @return 是否放行
      */
-    private boolean acquireCooldown(StarBotRemoteMessageEvent event, String name) {
+    private boolean acquireCooldown(StarBotRemoteMessageEvent event, PushTargetType type, String name) {
         String key = event.getPlatform() + ":" + event.getMessageType() + ":" + event.getNum();
         Instant now = clock.instant();
         Instant last = lastExecuted.get(key);
         if (last != null && now.isBefore(last.plus(COOLDOWN))) {
             log.debug("会话 {} 处于冷却期, 已忽略: {}", event.getNum(), name);
+            // 冷却掉的那一句在屏幕上什么痕迹都没有：机器人不出声，日志是 debug 级别。
+            // 「连着问了两遍，第二遍没反应」正是这一条答的问题
+            timeline.record(TimelineEvent.of(TimelineEventType.COMMAND_COOLED_DOWN, TimelineEvent.Level.INFO)
+                    .channel(describe(type, event.getNum()))
+                    .text("冷却期内，「" + shorten(name) + "」这一句没有回")
+                    .detail("command", shorten(name))
+                    .build());
             return false;
         }
         lastExecuted.put(key, now);
@@ -249,10 +291,34 @@ public class CommandDispatcher {
     }
 
     /**
-     * 执行命令并把回复发回原会话
+     * 描述会话，形如「群 12345」，与推送记录里那一栏同一套写法
      */
-    private void run(StarBotCommand command, StarBotRemoteMessageEvent event, PushTargetType type,
-                     List<String> args, boolean admin) {
+    private static String describe(PushTargetType type, Long num) {
+        return type.getStr() + " " + num;
+    }
+
+    /**
+     * 把使用者打进来的那串字截短
+     * <p>
+     * 命令名取自消息正文的第一段，长度不受任何约束——有人往群里粘一整段话，
+     * 整段都会被当成「命令名」记进时间线的每一行里。截短的是<b>记录</b>，
+     * 不是判定：认不认得出这条命令仍按原样比。
+     */
+    private static String shorten(String name) {
+        return name.length() <= NAME_IN_RECORD ? name : name.substring(0, NAME_IN_RECORD) + "…";
+    }
+
+    /**
+     * 执行命令并把回复发回原会话
+     * <p>
+     * 返回值答的是「跑完了没抛」，供调用方决定要不要记一条时间线。
+     * 回菜单那一支<b>刻意不看这个返回值</b>：那一次已经由
+     * {@link TimelineEventType#COMMAND_UNKNOWN} 记过，再记一条「执行了菜单」
+     * 会让日志页上认不出的命令各占两行，而后一行看起来像是命令跑成了。
+     * @return 执行过程中没有抛异常
+     */
+    private boolean run(StarBotCommand command, StarBotRemoteMessageEvent event, PushTargetType type,
+                        List<String> args, boolean admin) {
         CommandContext context = new CommandContext(event.getPlatform(), type, event.getNum(),
                 event.getSenderUid(), command.name(), args, event.getText(), admin);
 
@@ -261,9 +327,11 @@ public class CommandDispatcher {
             if (commandReply != null && commandReply.hasContent()) {
                 reply(event, type, commandReply.content());
             }
+            return true;
         } catch (Exception e) {
             // 一个命令出错不应影响其他命令，也不该把异常细节回给群里
             log.error("执行命令 {} 时发生异常", command.name(), e);
+            return false;
         }
     }
 

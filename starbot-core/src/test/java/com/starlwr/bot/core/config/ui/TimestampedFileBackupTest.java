@@ -34,6 +34,32 @@ class TimestampedFileBackupTest {
     @TempDir
     Path dir;
 
+    /**
+     * 备份要说出自己裁掉了哪几份
+     * <p>
+     * 这个类是个不认得 Spring 的工具类（安全模式下也在用它，那时时间线根本不在），
+     * 所以它自己不写日志页，只把「删了哪几份」交出去。交不出来的话，
+     * 调用方就只能靠数目录里剩几份来猜，而两次保存之间还可能有别人在动那个目录。
+     */
+    @Test
+    @DisplayName("裁掉的是哪几份要交代出来，一份没裁时交空表")
+    void tellsWhichBackupsWerePruned() throws IOException {
+        Path file = dir.resolve("application.yml");
+        Files.writeString(file, "seed", StandardCharsets.UTF_8);
+
+        // 前两次都在保留份数内：一份没裁，交的就该是空表而不是「不知道」
+        assertEquals(List.of(), new TimestampedFileBackup(file, clockAt(0)).backup(2));
+        assertEquals(List.of(), new TimestampedFileBackup(file, clockAt(1)).backup(2));
+
+        List<String> pruned = new TimestampedFileBackup(file, clockAt(2)).backup(2);
+        assertEquals(List.of("application.yml." + STAMP.format(START) + ".bak"), pruned,
+                "裁掉的该是最旧那一份, 而且得报得出名字");
+        assertFalse(stampedBackupNames(file).contains(pruned.get(0)), "报了被裁掉, 盘上就不该还在");
+
+        // 文件还不在时连备份都不做，自然也没有裁掉什么
+        assertEquals(List.of(), new TimestampedFileBackup(dir.resolve("nothing.yml")).backup(2));
+    }
+
     @Test
     @DisplayName("写 12 次只留最新 10 份，按时间戳名排序")
     void keepsTheNewestTenByStampName() throws IOException {

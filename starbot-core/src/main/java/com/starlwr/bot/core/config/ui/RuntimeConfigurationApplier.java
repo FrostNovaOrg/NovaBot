@@ -3,6 +3,9 @@ package com.starlwr.bot.core.config.ui;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.service.TotalDataStorage;
+import com.starlwr.bot.core.timeline.TimelineEvent;
+import com.starlwr.bot.core.timeline.TimelineEventType;
+import com.starlwr.bot.core.timeline.TimelineWriter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -135,21 +138,30 @@ public class RuntimeConfigurationApplier {
      */
     private final Map<String, Consumer<String>> contributedAppliers;
 
+    /**
+     * 事件时间线
+     * <p>
+     * 🔴 <b>只记改了哪一组，不记改成了什么。</b>时间线是逐行落在磁盘上的
+     * {@code timeline/*.jsonl}，而经这里过的键里就有 Redis 口令与告警接收人；
+     * 把取值抄进去，等于给配置文件里那几项做了一份不设防的副本。
+     * 「昨天谁动了推送那一组」这个问题，光靠组名就答得了。
+     */
+    private final TimelineWriter timeline;
+
     @Autowired
     public RuntimeConfigurationApplier(StarBotCoreProperties properties, TotalDataStorage totalDataStorage,
-                                       ObjectProvider<RuntimeConfigurationApplierContributor> contributors) {
-        this(properties, totalDataStorage, contributors.orderedStream().toList());
-    }
-
-    RuntimeConfigurationApplier(StarBotCoreProperties properties, TotalDataStorage totalDataStorage) {
-        this(properties, totalDataStorage, List.of());
+                                       ObjectProvider<RuntimeConfigurationApplierContributor> contributors,
+                                       TimelineWriter timeline) {
+        this(properties, totalDataStorage, contributors.orderedStream().toList(), timeline);
     }
 
     RuntimeConfigurationApplier(StarBotCoreProperties properties, TotalDataStorage totalDataStorage,
-                                Collection<RuntimeConfigurationApplierContributor> contributors) {
+                                Collection<RuntimeConfigurationApplierContributor> contributors,
+                                TimelineWriter timeline) {
         this.properties = properties;
         this.totalDataStorage = totalDataStorage;
         this.contributedAppliers = mergeAppliers(contributors);
+        this.timeline = timeline;
     }
 
     private static Map<String, Consumer<String>> mergeAppliers(
@@ -204,6 +216,7 @@ public class RuntimeConfigurationApplier {
         private final StarBotCoreProperties properties;
         private TotalDataStorage totalDataStorage;
         private Collection<RuntimeConfigurationApplierContributor> contributors = List.of();
+        private TimelineWriter timeline = TimelineWriter.NONE;
 
         private Bench(StarBotCoreProperties properties) {
             this.properties = properties;
@@ -230,10 +243,23 @@ public class RuntimeConfigurationApplier {
         }
 
         /**
+         * 带上时间线写入口，缺省是不记
+         * <p>
+         * 缺省不记与别的侧件同法：大多数判据问的是「落没落下去」，
+         * 那几条不该因为要记一条时间线而各自准备一个收集器。
+         * @param timeline 时间线写入口
+         * @return 本构造器
+         */
+        Bench timeline(TimelineWriter timeline) {
+            this.timeline = timeline == null ? TimelineWriter.NONE : timeline;
+            return this;
+        }
+
+        /**
          * @return 按给出的侧件装配好的实例
          */
         RuntimeConfigurationApplier build() {
-            return new RuntimeConfigurationApplier(properties, totalDataStorage, contributors);
+            return new RuntimeConfigurationApplier(properties, totalDataStorage, contributors, timeline);
         }
     }
 
@@ -245,7 +271,9 @@ public class RuntimeConfigurationApplier {
      * @return 保存之后不需要重启的配置项名
      */
     public static Set<String> supportedKeys(Collection<RuntimeConfigurationApplierContributor> contributors) {
-        return new RuntimeConfigurationApplier(new StarBotCoreProperties(), null, contributors).supportedKeys();
+        // 这一支只把几张表的键名并起来，一个字也不往运行中的程序上落，因此没有可记的
+        return new RuntimeConfigurationApplier(new StarBotCoreProperties(), null, contributors,
+                TimelineWriter.NONE).supportedKeys();
     }
 
     /**
@@ -269,6 +297,7 @@ public class RuntimeConfigurationApplier {
      */
     public List<String> applyAndTrack(Map<String, String> changes) {
         List<String> restartRequired = new ArrayList<>();
+        List<String> applied = new ArrayList<>();
 
         for (Map.Entry<String, String> change : changes.entrySet()) {
             Runnable applier = resolve(change.getKey(), change.getValue());
@@ -281,6 +310,7 @@ public class RuntimeConfigurationApplier {
                 applier.run();
                 log.info("配置项 {} 已即时生效", change.getKey());
                 pendingRestart.remove(change.getKey());
+                applied.add(change.getKey());
             } catch (RuntimeException e) {
                 // 值的形式不对时不当作已生效：界面写「已生效」而实际没变，比多重启一次糟得多
                 log.warn("配置项 {} 的取值 {} 无法即时生效, 已按需重启处理: {}",
@@ -289,8 +319,51 @@ public class RuntimeConfigurationApplier {
             }
         }
 
+        // 两种结局各记一条：合成一条「保存了」的话，「明明改了却没生效」
+        // 与「改了、等重启」在日志页上长得一样，而后者是要人去点重启的
+        record(TimelineEventType.SETTINGS_APPLIED, "已即时生效", applied);
+        record(TimelineEventType.SETTINGS_RESTART_PENDING, "要等重启才生效", restartRequired);
+
         pendingRestart.addAll(restartRequired);
         return restartRequired;
+    }
+
+    /**
+     * 把一批键记成一条时间线，<b>只写组名与条数</b>
+     * <p>
+     * 🔴 取值一个字都不进来，理由见 {@link #timeline}。连完整键名也不写：
+     * {@code spring.data.redis.password} 这样的键名本身就把「这台机器的 Redis 有口令」
+     * 说了出去，而日志页是登录后随手就能翻的一页。
+     * @param type 记成哪一类
+     * @param what 一句人话里的动词部分
+     * @param keys 本次的配置项名，空表时不记
+     */
+    private void record(TimelineEventType type, String what, List<String> keys) {
+        if (keys.isEmpty()) {
+            return;
+        }
+
+        Set<String> groups = new LinkedHashSet<>();
+        for (String key : keys) {
+            groups.add(groupOf(key));
+        }
+
+        timeline.record(TimelineEvent.of(type, TimelineEvent.Level.INFO)
+                .text("改了" + String.join("、", groups) + " " + keys.size() + " 项，" + what)
+                .detail("groups", String.join(",", groups))
+                .detail("count", String.valueOf(keys.size()))
+                .build());
+    }
+
+    /**
+     * 配置项名属于哪一组：去掉最后一段
+     * <p>
+     * 最后一段正是「改的是哪一项」，而组名答的是「动的是哪一摊」。
+     * 没有点号的键（不该出现，但外部传进来的东西不该让这里抛）整段当组名。
+     */
+    private static String groupOf(String key) {
+        int cut = key.lastIndexOf('.');
+        return cut <= 0 ? key : key.substring(0, cut);
     }
 
     /**

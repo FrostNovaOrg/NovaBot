@@ -1,6 +1,9 @@
 package com.starlwr.bot.core.alert;
 
 import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.timeline.TimelineEvent;
+import com.starlwr.bot.core.timeline.TimelineEventType;
+import com.starlwr.bot.core.timeline.TimelineWriter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -70,6 +73,15 @@ public class AlertService {
     private final ObjectProvider<AlertChannel> channels;
 
     /**
+     * 事件时间线
+     * <p>
+     * 记的是「这条告警报没报出去」，与 {@link HealthAlertMonitor} 记的「哪一项状态变了」
+     * 是两件事。最坏的一种故障里两者同时发生：出网断了，于是既该告警、又发不出告警——
+     * 而「没收到告警」在使用者眼里与「没出事」长得一模一样。
+     */
+    private final TimelineWriter timeline;
+
+    /**
      * 各问题标识最近一次告警的时间
      */
     private final Map<String, Instant> lastAlertAt = new ConcurrentHashMap<>();
@@ -86,9 +98,11 @@ public class AlertService {
     });
 
     @Autowired
-    public AlertService(StarBotCoreProperties properties, ObjectProvider<AlertChannel> channels) {
+    public AlertService(StarBotCoreProperties properties, ObjectProvider<AlertChannel> channels,
+                        TimelineWriter timeline) {
         this.properties = properties;
         this.channels = channels;
+        this.timeline = timeline;
     }
 
     /**
@@ -322,6 +336,11 @@ public class AlertService {
 
     /**
      * 投一次，返回「有没有通道可试」与「有没有成功」
+     * <p>
+     * 时间线<b>一路一条</b>，不是一次投递一条：邮件通了而 Webhook 挂了这种情形，
+     * 汇总成一条「发出去了」会把挂掉的那一路藏起来——而它挂了多久没人知道。
+     * 一条通道都没配好时另记一条，那一种同样是「没人会收到」，
+     * 却不属于任何一路通道，按通道记的话它一行都不会出现。
      */
     private Delivery deliver(String subject, String content) {
         boolean attempted = false;
@@ -336,13 +355,43 @@ public class AlertService {
             try {
                 channel.send(subject, content);
                 delivered = true;
+                timeline.record(TimelineEvent.of(TimelineEventType.ALERT_SENT, TimelineEvent.Level.INFO)
+                        .channel(channel.name())
+                        .text(channel.name() + "已报出：" + shorten(subject))
+                        .detail("subject", subject)
+                        .build());
             } catch (Exception e) {
                 // 单个通道失败不应影响其他通道
                 log.error("通过 {} 通道发送告警失败", channel.name(), e);
+                timeline.record(TimelineEvent.of(TimelineEventType.ALERT_FAILED, TimelineEvent.Level.ERROR)
+                        .channel(channel.name())
+                        .text(channel.name() + "发不出去：" + shorten(subject))
+                        .detail("subject", subject)
+                        .detail("reason", e.toString())
+                        .build());
             }
         }
 
+        if (!attempted) {
+            timeline.record(TimelineEvent.of(TimelineEventType.ALERT_FAILED, TimelineEvent.Level.WARN)
+                    .text("没有配好的告警通道：" + shorten(subject))
+                    .detail("subject", subject)
+                    .build());
+        }
+
         return new Delivery(attempted, delivered);
+    }
+
+    /**
+     * 记进时间线的标题最多留几个字
+     * <p>
+     * 标题由调用方拼，长度不受约束（问题标识本身可以很长）。日志页那一行是一句人话，
+     * 让它撑成一整段的话，同屏能看见的记录就只剩两三条了。全文留在补充键值里。
+     */
+    private static final int SUBJECT_IN_RECORD = 24;
+
+    private static String shorten(String subject) {
+        return subject.length() <= SUBJECT_IN_RECORD ? subject : subject.substring(0, SUBJECT_IN_RECORD) + "…";
     }
 
     /**
