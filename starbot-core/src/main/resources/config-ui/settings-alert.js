@@ -248,21 +248,34 @@ function pillState(pill, configured) {
 }
 
 /**
+ * 运行值没取到时药丸的「未知」态
+ *
+ * 卡片右上角标着「以运行值为准」：取不到时若退回按编辑框判，药丸答的又变回了
+ * 文件值，两种口径同屏比明说「没取到」更误导。样式沿用中性底色，与「未配置」同色不同字。
+ * @param pill 药丸元素
+ */
+function pillUnknown(pill) {
+  pill.className = 'pill';
+  pill.textContent = '运行值未取到';
+}
+
+/**
  * 邮件药丸的初值问运行值，不问编辑框里的文件值
  *
  * spring.mail.host 可以被环境变量越过文件改掉，真的发信认的是启动时的那一份，
  * /api/status 的 alerts.mail 答的正是它。编辑框照旧显示文件值，所以两栏会差——
  * 初值若按文件判，「文件里明明填着」与「药丸说未配置」同屏，看起来像坏了。
- * 取不到状态时退回按编辑框判：页面还是得给个初值，宁可保守也不留空。
+ * 取不到状态时药丸说「没取到」，不退回文件判（见 pillUnknown）。
  * @param pill 药丸元素
- * @param fromDraft 按编辑框重判，取不到状态时的退路
+ * @param draftTookOver 草稿回评是否已接管：status 在途时敲过键或切过预设即为真，
+ *   此后落定的结果——取到没取到都一样——不再回头覆盖那次回评
  */
-async function mailPillFromStatus(pill, fromDraft) {
+async function mailPillFromStatus(pill, draftTookOver) {
   try {
     const st = await api('/status');
-    pillState(pill, !!(st.alerts && st.alerts.mail));
+    if (!draftTookOver()) pillState(pill, !!(st.alerts && st.alerts.mail));
   } catch (e) {
-    fromDraft();
+    if (!draftTookOver()) pillUnknown(pill);
   }
 }
 
@@ -434,11 +447,16 @@ export function alertCards() {
     || CUSTOM;
   mailCustom.classList.toggle('hide', !!MAIL_PRESETS[mailPreset.value]);
 
-  const mailReady = () => pillState(mail.pill, mailAlertConfigured(to.value, host.value));
+  // status 落定前敲过键（或切过预设），草稿回评即接管药丸：后到的运行值不再回头覆盖
+  let draftTookOver = false;
+  const mailReady = () => {
+    draftTookOver = true;
+    pillState(mail.pill, mailAlertConfigured(to.value, host.value));
+  };
   to.addEventListener('input', mailReady);
   host.addEventListener('input', mailReady);
   // 初值问运行值；敲键盘时按草稿即时回评，保存写文件不改运行值——重刷后仍以运行值为准
-  mailPillFromStatus(mail.pill, mailReady);
+  mailPillFromStatus(mail.pill, () => draftTookOver);
   wrap.appendChild(mail.card);
 
   return wrap;
