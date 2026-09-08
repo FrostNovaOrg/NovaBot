@@ -25,7 +25,19 @@ export const AUTH_CARD_FIELDS = new Set([
   'starbot.core.config-ui.auth.password',
   'starbot.core.config-ui.auth.totp',
   'starbot.core.config-ui.auth.totp-secret',
+  // 同意记录那三项由程序写、由「使用协议」那张卡读。摊成普通输入框的话，
+  // 使用者改得动「我是什么时候同意的」——那不是一个填得出来的值
+  'starbot.core.config-ui.agreement.accepted-version',
+  'starbot.core.config-ui.agreement.accepted-at',
+  'starbot.core.config-ui.agreement.accepted-by',
 ]);
+
+/** 同意记录那三项的配置键，卡片按它们显示，设置页按它们摘走 */
+const AGREEMENT_VERSION_KEY = 'starbot.core.config-ui.agreement.accepted-version';
+
+const AGREEMENT_TIME_KEY = 'starbot.core.config-ui.agreement.accepted-at';
+
+const AGREEMENT_BY_KEY = 'starbot.core.config-ui.agreement.accepted-by';
 
 /** 登录状态里与这张卡有关的那几位，由 main.js 在取到 /auth/state 之后交进来 */
 const authState = {enabled: false, totpEnabled: false, operatorSession: false};
@@ -361,6 +373,109 @@ function rerunCard() {
   return box.row;
 }
 
+/** 同意记录里那个通道名的人话版。认不出来的原样显示，不猜 */
+function channelText(wire) {
+  if (wire === 'password') return '输口令登录之后';
+  if (wire === 'operator-token') return '凭启动令牌进来之后';
+  if (wire === 'passkey') return '用通行密钥登录之后';
+  return wire;
+}
+
+/**
+ * 这台机器上那笔同意记录读出来是什么样
+ *
+ * 取的是配置里那三行本身，而不是另攒一份：界面上写着「9 月 2 日同意的」而盘上是别的日子，
+ * 这种不一致没有任何现象。三项缺一就照实说不出来——半行记录比没有记录更容易被人当真。
+ */
+function acceptedLine() {
+  const version = store.values[AGREEMENT_VERSION_KEY];
+  const at = store.values[AGREEMENT_TIME_KEY];
+  const by = store.values[AGREEMENT_BY_KEY];
+
+  if (!version || !at || !by) return '这台机器上还没有完整的同意记录。';
+  return '已同意第 ' + version + ' 版，时间 ' + at + '，' + channelText(by) + '点的。';
+}
+
+/**
+ * 使用协议那张卡
+ *
+ * 正文<b>只有服务端那一份</b>：向 /auth/agreement 要，页面里不留副本。抄一份进来的话，
+ * 改了 agreement.txt 而没改这里，卡片上显示的就不是使用者当初签的那一份，
+ * 而这件事从界面上完全看不出来。
+ *
+ * 撤回那颗按钮是红的，且要过一次确认：撤回把整台机器打回未签态，所有人都要重新同意
+ * 才进得了控制台。一次误点之后<b>什么也没坏</b>，只是全体被关在门外——那看起来像面板故障，
+ * 没人会想到是自己刚才碰了一下。
+ */
+function agreementCard() {
+  const box = authRow('auth-agreement', '使用协议',
+    '进控制台之前要先同意的那一份。撤回之后这台机器回到未签协议的状态：'
+    + '所有人都要重新同意一次才进得来。');
+  keyLine(box.meta, AGREEMENT_VERSION_KEY);
+  keyLine(box.meta, AGREEMENT_TIME_KEY);
+  keyLine(box.meta, AGREEMENT_BY_KEY);
+
+  const button = el('button', 'danger');
+  button.type = 'button';
+  button.id = 'agreement-revoke';
+  button.textContent = '撤回同意';
+  box.cell.appendChild(button);
+
+  const record = el('div', 'desc');
+  record.id = 'agreement-record';
+  record.textContent = acceptedLine();
+  box.row.appendChild(record);
+
+  const full = el('div', 'agreement-full');
+  full.id = 'agreement-full';
+  full.textContent = '正在取协议正文…';
+  box.row.appendChild(full);
+
+  const result = el('div', 'al-r');
+  box.row.appendChild(result);
+
+  api('/auth/agreement')
+    .then(res => {
+      // textContent 而非 innerHTML：正文是文字，不该被当成标记解释
+      full.textContent = res.text || '';
+      if (!res.success) report(result, res);
+    })
+    .catch(e => report(result, {success: false, message: '读不到协议正文：' + e.message}));
+
+  button.addEventListener('click', () => revokeAgreement(button, result));
+  return box.row;
+}
+
+/**
+ * 撤回对使用协议的同意：先问一次，确认了才发请求
+ *
+ * 确认之前<b>一个请求也不发</b>。反过来（先发再问、或问的同时已经发出去）的话，
+ * 点了「取消」的人其实已经把自己锁在门外了。
+ */
+async function revokeAgreement(button, result) {
+  if (!await ask({
+    title: '撤回对使用协议的同意？',
+    body: '撤回之后这台机器回到未签协议的状态：所有人都要重新同意一次才进得了控制台，'
+      + '当前这一个登录会立刻结束。已经配好的东西不会被清掉。',
+    danger: true,
+  })) return;
+
+  button.disabled = true;
+  try {
+    const res = await api('/auth/agreement/revoke', {method: 'POST'});
+    if (res.success) {
+      // 撤回之后这一页什么也读不到了（协议闸把控制台整个关上）。整页回到面板地址，
+      // 由服务端给出该给的那一屏——留在原地只会看见一片接连失败的请求
+      location.assign('/config');
+      return;
+    }
+    report(result, res);
+  } catch (e) {
+    report(result, {success: false, message: '没能撤回：' + e.message});
+  }
+  button.disabled = false;
+}
+
 /**
  * 建出「登录与安全」组里那几行
  *
@@ -380,6 +495,9 @@ export function authCards() {
     note.textContent = '这台机器还没设密码，因此不出登录页，进来就是控制台。'
       + '要上锁的话，到初始设置页走第 1 步。';
     wrap.appendChild(note);
+    // 协议这张卡与「上没上锁」无关：没配口令的那一形态里，同意也是凭令牌进来的人点下的，
+    // 撤回同样要有地方点——只摆在上过锁的机器上，等于这一形态的使用者一辈子撤不回来
+    wrap.appendChild(agreementCard());
     return wrap;
   }
 
@@ -387,6 +505,7 @@ export function authCards() {
   wrap.appendChild(totpCard());
   wrap.appendChild(passkeyCard());
   wrap.appendChild(rerunCard());
+  wrap.appendChild(agreementCard());
   return wrap;
 }
 

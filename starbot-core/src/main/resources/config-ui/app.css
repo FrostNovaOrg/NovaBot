@@ -349,6 +349,16 @@ button.primary{background:var(--accent);color:var(--on-accent);border:none;paddi
 button.primary:disabled{opacity:.45;cursor:not-allowed}
 button.ghost{background:none;border:1px solid var(--line);color:var(--text);padding:8px 16px;
   border-radius:var(--r-ctl);cursor:pointer;font-size:14px;font-family:inherit}
+/* 一按就把别人也关在门外的那种按钮。红只是提醒，真正拦住误点的是它后面那道二次确认 */
+button.danger{background:var(--err);color:var(--paper);border:none;padding:8px 16px;
+  border-radius:var(--r-ctl);cursor:pointer;font-size:14px;font-family:inherit}
+button.danger:hover{filter:brightness(1.05)}
+button.danger:disabled{opacity:.45;cursor:not-allowed}
+/* 协议正文照原样显示：换行与空行是文案的一部分，挤成一坨就没人读了。
+   与登录页那份同一副形状，长文案给一个滚动区 */
+.agreement-full{margin-top:10px;padding:12px 14px;max-height:38vh;overflow-y:auto;
+  white-space:pre-wrap;font-size:12.5px;line-height:1.8;color:var(--dim);
+  background:var(--ground);border:1px solid var(--line);border-radius:var(--r-ctl)}
 table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--line);
   border-radius:var(--r-card)}
 th,td{padding:12px 14px;height:44px;text-align:left;border-bottom:1px solid var(--line);font-size:13px}

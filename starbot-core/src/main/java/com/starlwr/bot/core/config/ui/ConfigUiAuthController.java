@@ -239,39 +239,111 @@ public class ConfigUiAuthController {
         agreement.setAcceptedVersion(ConfigUiAgreement.VERSION);
         agreement.setAcceptedAt(OffsetDateTime.now().truncatedTo(ChronoUnit.SECONDS).toString());
         agreement.setAcceptedBy(channel.wire());
-        persistAgreement(request.getRemoteAddr());
+
+        // 🔴 <b>写不进去也照常放行</b>：人已经看过并点了同意，这件事已经发生了；
+        // 写盘失败的后果只是下次启动还要再点一次，而反过来让一次写盘失败把人挡在控制台外面，
+        // 是把一件小事办成了故障。撤回那一侧的取舍正好相反，见 {@link #revokeAgreement}
+        if (persistAgreement(ConfigUiAgreement.VERSION, agreement.getAcceptedAt(), agreement.getAcceptedBy())) {
+            log.info("配置界面: 已同意第 {} 版使用协议, 时间 {}, 通道 {}, 来源 {}",
+                    ConfigUiAgreement.VERSION, agreement.getAcceptedAt(), agreement.getAcceptedBy(),
+                    request.getRemoteAddr());
+        } else {
+            log.warn("配置界面的使用协议同意记录未能保存, 下次启动会再次要求确认");
+        }
 
         return ResponseEntity.ok(state(request));
     }
 
     /**
+     * 撤回对使用协议的同意
+     * <p>
+     * 撤回之后这台机器回到<b>未签态</b>：{@link ConfigUiAgreement#required} 转真，
+     * 安全过滤器那道闸随之关上，所有人（包括别处仍开着的会话）都要重新同意才进得了控制台。
+     * 不必在这里逐条去关什么——闸只此一处，撤回只负责把记录抹掉。
+     * <p>
+     * <b>三道门</b>：
+     * <ul>
+     *   <li><b>要有身份</b>——与「同意」同理，撤回撤的是一次签字，门外的人撤不了别人的字</li>
+     *   <li><b>得先同意过</b>——撤一个不存在的同意，写下的是一行没有对应事实的记录</li>
+     *   <li><b>先落盘再认</b>——与 accept 相反：那一侧写盘失败照常放行（人确实看过了），
+     *       而这一侧写盘失败若照样放行，盘上还写着同意，重启之后它<b>就又作数了</b>，
+     *       而屏幕上撤回那一刻显示的是「已撤回」</li>
+     * </ul>
+     * 点撤回的那一把会话当场注销：人刚说了「我不同意了」，不该还捏着一把开着的钥匙。
+     * 别处的会话不动——那是「注销全部设备」那颗按钮的事，协议这道闸管的是控制台，不是回收钥匙。
+     * @return 撤回之后的结果
+     */
+    @PostMapping("/agreement/revoke")
+    public ResponseEntity<JSONObject> revokeAgreement(HttpServletRequest request) {
+        JSONObject result = new JSONObject();
+
+        ConfigUiSession.Channel channel = ConfigUiSession.Channel.fromWire(
+                String.valueOf(request.getAttribute(ConfigUiSecurityFilter.CHANNEL_ATTRIBUTE)));
+        if (channel == null) {
+            result.put("success", false);
+            result.put("message", "请先登录，再撤回对使用协议的同意");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(result);
+        }
+
+        if (ConfigUiAgreement.required(agreement)) {
+            result.put("success", false);
+            result.put("message", "这台机器本来就没有同意过使用协议");
+            return ResponseEntity.badRequest().body(result);
+        }
+
+        // 落盘用的是「未签」那一组值，而不是内存里当前那一组：先改内存再写、写失败再改回来的话，
+        // 中间那一小段时间里别的请求读到的是一个并没有发生的撤回
+        if (!persistAgreement(0, "", "")) {
+            result.put("success", false);
+            result.put("message", "保存失败，同意记录没有改动");
+            return ResponseEntity.internalServerError().body(result);
+        }
+
+        agreement.setAcceptedVersion(0);
+        agreement.setAcceptedAt("");
+        agreement.setAcceptedBy("");
+        authService.logout(sessionId(request));
+
+        log.warn("配置界面: 已撤回对使用协议的同意, 控制台自此要求重新确认, 通道 {}, 来源 {}",
+                channel.wire(), request.getRemoteAddr());
+
+        result.put("success", true);
+        result.put("message", "已撤回。这台机器回到未同意使用协议的状态，控制台要重新同意才进得来");
+        return ResponseEntity.ok(result);
+    }
+
+    /**
      * 把同意记录写回配置文件
      * <p>
-     * 与口令哈希写回是同一副形状：先认下、再落盘，<b>写不进去也照常放行</b>——
-     * 人已经看过并点了同意，这件事已经发生了；写盘失败的后果只是下次启动还要再点一次，
-     * 而反过来让一次写盘失败把人挡在控制台外面，是把一件小事办成了故障。
+     * 同意与撤回<b>共用这一条写路</b>：各写一份的话，「撤回要不要连时间一起抹掉」这件事
+     * 迟早会有两个答案，而多留下的那一行是一份指向已被撤回的同意的凭据。
+     * <p>
+     * 收的是三个显式的值而不是读内存里那一份：撤回要先落盘再改内存（写不进去就当没撤过），
+     * 读内存的写法逼着调用方先改后写，而那正是这一侧不能接受的顺序。
      * <p>
      * 通道写进配置，来源 IP 只写进日志：配置文件里那三行是给使用者看的凭据，
      * 多一个他看不懂也用不上的地址只会碍事；而排查「这是谁点的」时要的恰恰是日志里那一行。
-     * @param clientIp 点同意的那一端的地址
+     * @param version 要写下的版本号，撤回时为 0
+     * @param acceptedAt 要写下的时间，撤回时为空串
+     * @param acceptedBy 要写下的通道，撤回时为空串
+     * @return 真的写进文件时为 true
      */
-    private void persistAgreement(String clientIp) {
+    private boolean persistAgreement(int version, String acceptedAt, String acceptedBy) {
         if (fileService == null) {
-            log.warn("配置界面的使用协议同意记录未能保存, 下次启动会再次要求确认");
-            return;
+            return false;
         }
 
         Map<String, String> changes = new LinkedHashMap<>();
-        changes.put(AGREEMENT_VERSION_PROPERTY, String.valueOf(ConfigUiAgreement.VERSION));
-        changes.put(AGREEMENT_TIME_PROPERTY, agreement.getAcceptedAt());
-        changes.put(AGREEMENT_BY_PROPERTY, agreement.getAcceptedBy());
+        changes.put(AGREEMENT_VERSION_PROPERTY, String.valueOf(version));
+        changes.put(AGREEMENT_TIME_PROPERTY, acceptedAt);
+        changes.put(AGREEMENT_BY_PROPERTY, acceptedBy);
 
         try {
             fileService.write(changes);
-            log.info("配置界面: 已同意第 {} 版使用协议, 时间 {}, 通道 {}, 来源 {}",
-                    ConfigUiAgreement.VERSION, agreement.getAcceptedAt(), agreement.getAcceptedBy(), clientIp);
+            return true;
         } catch (Exception e) {
-            log.warn("配置界面的使用协议同意记录未能写入配置文件, 下次启动会再次要求确认: {}", e.getMessage());
+            log.warn("配置界面的使用协议记录未能写入配置文件: {}", e.getMessage());
+            return false;
         }
     }
 
