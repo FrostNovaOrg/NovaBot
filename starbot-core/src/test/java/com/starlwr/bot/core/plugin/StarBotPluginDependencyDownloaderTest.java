@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("插件依赖下载器")
 class StarBotPluginDependencyDownloaderTest {
     private final StarBotPluginDependencyDownloader downloader =
-            new StarBotPluginDependencyDownloader(null, null, null, null, null);
+            new StarBotPluginDependencyDownloader(null, null, null, null);
 
     @Test
     @DisplayName("正常的 Maven 坐标应通过校验")

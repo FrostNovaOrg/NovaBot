@@ -45,7 +45,7 @@ trap forward_signal TERM INT
 # systemd 下的进程树也不正确
 while true; do
   set +e
-  java $JVM_OPTS -Dloader.path=lib,plugins-lib -jar StarBotCore.jar "$@" &
+  java $JVM_OPTS -Dloader.path=lib,plugins,plugins-lib -jar StarBotCore.jar "$@" &
   child=$!
 
   # wait 被信号打断时会立刻返回 128+信号号，而此时 java 才刚开始停机。

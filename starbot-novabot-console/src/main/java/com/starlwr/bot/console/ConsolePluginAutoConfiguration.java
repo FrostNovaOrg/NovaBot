@@ -1,8 +1,10 @@
 package com.starlwr.bot.console;
 
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.AutoConfigureOrder;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
+import org.springframework.core.Ordered;
 
 /**
  * 本插件对 Spring 的自报：「我在这里，扫我」
@@ -12,6 +14,7 @@ import org.springframework.context.annotation.FilterType;
  * 此处不复述。
  */
 @AutoConfiguration
+@AutoConfigureOrder(Ordered.LOWEST_PRECEDENCE)
 @ComponentScan(
         excludeFilters = @ComponentScan.Filter(
                 type = FilterType.ASSIGNABLE_TYPE,

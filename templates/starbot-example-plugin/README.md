@@ -16,7 +16,7 @@
 ## 快速开始
 
 1. 克隆本示例项目作为模板创建新项目
-2. 修改 `pom.xml` 中的项目信息, 该部分信息会作为插件元数据, 在被 StarBot 加载时输出到控制台和日志中 (groupId, artifactId, version, name, description, url, developers 等)
+2. 修改 `pom.xml` 中的项目信息, 该部分信息会作为插件元数据 (groupId, artifactId, version, name, description, url, developers 等)
 3. 开发你的插件功能, 开发时可正常使用绝大多数 Spring 注解 (可参考 `StarBotExampleStartEventListener.java`、`StarBotExampleDanmuEventListener.java` 和 `StarBotExampleMeowAdder.java` 示例)
 4. 使用 Maven 构建项目: `mvn clean package`
 5. 将 `target` 中生成的 JAR 文件放入 StarBot 的 `plugins` 目录
@@ -45,9 +45,11 @@ starbot-example-plugin/
 
 ### 插件信息
 
-每个 StarBot 插件都需要在 `pom.xml` 文件中定义其元数据, 其内容将在被 StarBot 加载时输出到控制台和日志中：
+每个 StarBot 插件都需要在 `pom.xml` 文件中定义其元数据 (坐标、名称、作者、许可证等)：
 
-> 2025-11-22 01:58:39.062  INFO 64528 --- [                main] c.s.bot.core.plugin.StarBotPluginLoader  : 已注册插件 StarBotExamplePlugin v1.0.0 --Author: Example Plugin For StarBot
+> 元数据不再被输出到日志中, 装载本身也不单独打一行日志。插件有没有被装上, 由插件自己的输出判读
+> ——本示例插件装上后, 日志里会出现 `StarBotExampleStartEventListener` 打的
+> 「主程序已启动完毕，示例插件已开始监听弹幕事件」那一行; 没有它就是没装上。
 
 ```xml
 <!-- 组名，通常使用反向域名，必填，与 artifactId 共同构成插件唯一标识 -->

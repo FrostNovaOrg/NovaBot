@@ -36,6 +36,8 @@
 - NapCat 代登录凭据四项从 `starbot.core.config-ui.napcat` 挪到了 `starbot.adapter.onebot.napcat`（`token`／`token-hash`／`totp-secret`／`address`）。**旧键仍然认得**，只写旧位置的照常生效，启动时会打一条提醒；两处都写时以新位置为准。若旧位置还留着 token 明文，启动时会换算成哈希写到新位置并把旧位置清空。
 - 重写了核心的图像、字体、二维码、邮件等工具件，行为未变。
 - 底部那条「N 处改动」改由各页自己报数与保存。装着控制台插件时与原先一样；卸掉之后控制台不再去读 `datasource.json`，也不会再冒出与推送有关的提示。
+- 插件改由 Spring Boot 的自动配置装载，自带的那台插件加载器退休了。插件还是放在 `plugins/` 目录，放哪儿没变；用附带的 `start.sh`／`start.bat`（含 Docker 与 systemd 两种部署）启动的，什么都不用改。**自己写启动命令的要把 `plugins` 加进 `-Dloader.path`**，现在是 `-Dloader.path=lib,plugins,plugins-lib`；少了它，插件会安安静静地整个不见。**按旧办法构建的第三方插件不再被装载**：插件 jar 里现在必须带一份 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`，只有 `plugin.json` 的插件装不上，需要重新构建一次。插件与核心从此共用同一份依赖版本，插件不能再自带与核心不同版本的依赖。
+- 插件依赖缺失时的自动下载、以及随之而来的退出码 90 重启，不再发生：缺哪些依赖原先由插件加载器读插件 jar 得出，那条路已随它一起退休。插件的运行期依赖需要随插件一起放好。
 
 ### 修复
 

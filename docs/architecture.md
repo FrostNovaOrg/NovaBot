@@ -247,29 +247,40 @@ META-INF/spring-configuration-metadata.json
 
 ### 注册
 
-插件的组件用 **`@StarBotComponent`**，不是 Spring 的 `@Component`。
-`StarBotPluginLoader`（一个 `BeanDefinitionRegistryPostProcessor`）扫描插件 jar 中带该注解的类
-并注册为 Bean 定义。写成 `@Component` 的类不会被扫到，表现是启动时报「找不到某个依赖的 Bean」。
+插件的组件用 **`@StarBotComponent`**。它的元注解就是 Spring 的 `@Component`，
+因此由组件扫描当成普通组件收走；按约定一律用它而不用 `@Component`，
+是为了在源码里一眼看出哪些类属于插件。
+
+每个插件模块自带一份
+`META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`，
+里面写着本模块那个 `@AutoConfiguration @ComponentScan` 类的全类名。启动时 Spring Boot
+用 `ClassLoader.getResources` 收齐类路径上所有同名文件，把里面写的配置类逐个装进容器，
+配置类上的 `@ComponentScan` 再把本模块的组件扫进来。应用自身的扫描基包只有
+`com.starlwr.bot.core`，插件的包都在那之外，这份自报就是它们被看见的唯一通道。
+
+这条通道要插件 jar 在应用类路径上才开：启动参数是
+`-Dloader.path=lib,plugins,plugins-lib`，少了 `plugins` 一段，插件 jar 谁也看不见，
+表现是那些插件安安静静地整个不见。
 
 ### 类加载
 
-`StarBotClassLoader` 是**插件优先**（先问插件加载器，找不到再委派父加载器），
-与 JDK 默认的双亲委派相反。这样插件可以携带与核心不同版本的依赖。
+插件与核心在**同一个应用类加载器**里：没有插件优先，也没有版本隔离，
+插件用的是核心解析出来的那一份依赖版本。
 
-代价与限制：
+由此而来的两条：
 
-- 插件与核心**共享**核心导出的类（事件、模型、SPI 接口），这些必须由父加载器加载，
-  否则会出现「同名不同类」的 `ClassCastException`
-- 插件之间的隔离是**不完全的**：它们共用 `plugins-lib/` 目录下的依赖
+- 插件与核心天生共享核心导出的类（事件、模型、SPI 接口），不会出现「同名不同类」的
+  `ClassCastException`
+- 插件之间没有隔离：它们共用 `lib/` 与 `plugins-lib/` 下的依赖。同一个库的两个版本同时
+  出现在这两个目录里时，谁被先找到并不确定，构建产物因此要去重（`build.sh` 已经这么做）
 
 ### 依赖下载
 
-插件声明的依赖若缺失，`StarBotPluginDependencyDownloader` 会下载到 `plugins-lib/`，
-然后以**退出码 90** 退出，由 `start.sh` 的循环重新拉起——新 jar 无法在已运行的 JVM 里生效。
-下载带 SHA-1 校验与路径穿越防护，写入用「临时文件 + 原子移动」。
-
-不在程序内部 fork 子进程重启：父进程得一直驻留等子进程结束，白占一份内存，
-systemd 下的进程树也不正确。
+`StarBotPluginDependencyDownloader` 曾在插件依赖缺失时把它们下载到 `plugins-lib/`，
+再以**退出码 90** 退出、由 `start.sh` 的循环重新拉起。缺失依赖原先由插件加载器读插件 jar 里的
+`dependency.json` 得出，那条路已随加载器一并退休，因此它现在不再做任何事，
+将在后续版本连同 `starbot.core.plugin.*` 两个配置键与重启循环一并移除。
+插件的运行期依赖须由构建产物一次放齐。
 
 ### 可监听的事件类型
 
