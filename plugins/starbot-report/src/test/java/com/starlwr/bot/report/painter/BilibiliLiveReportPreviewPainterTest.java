@@ -7,7 +7,7 @@ import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.service.DefaultLiveDataService;
 import com.starlwr.bot.core.service.LiveRoomInfoHistory;
-import com.starlwr.bot.report.factory.StarBotCommonPainterFactory;
+import com.starlwr.bot.report.factory.NovaCommonPainterFactory;
 import com.starlwr.bot.report.util.FontUtil;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -73,8 +73,8 @@ class BilibiliLiveReportPreviewPainterTest {
         buildInfo.setProperty("artifact", "starbot-core");
         buildInfo.setProperty("name", "StarBotCore");
 
-        StarBotCommonPainterFactory factory =
-                new StarBotCommonPainterFactory(new BuildProperties(buildInfo), coreProperties, fontUtil);
+        NovaCommonPainterFactory factory =
+                new NovaCommonPainterFactory(new BuildProperties(buildInfo), coreProperties, fontUtil);
 
         // 🔴 两个都不打桩：任何一次调用都是「预览联网了」的实证
         api = mock(BilibiliApiUtil.class);

@@ -21,7 +21,7 @@ import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.LiveRoomInfoHistory;
 import com.starlwr.bot.core.lang.StringUtil;
-import com.starlwr.bot.report.factory.StarBotCommonPainterFactory;
+import com.starlwr.bot.report.factory.NovaCommonPainterFactory;
 import com.starlwr.bot.report.util.FontUtil;
 import com.starlwr.bot.report.util.ImageUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -264,7 +264,7 @@ public class BilibiliLiveReportPainter {
      */
     private static final int TITLE_MAX_WIDTH = CONTENT_WIDTH - 180;
 
-    private final StarBotCommonPainterFactory factory;
+    private final NovaCommonPainterFactory factory;
 
     private final BilibiliApiUtil api;
 
@@ -308,7 +308,7 @@ public class BilibiliLiveReportPainter {
     private BufferedImage logo;
 
     @Autowired
-    public BilibiliLiveReportPainter(StarBotCommonPainterFactory factory, BilibiliApiUtil api,
+    public BilibiliLiveReportPainter(NovaCommonPainterFactory factory, BilibiliApiUtil api,
                                      LiveDataService liveDataService, FontUtil fontUtil,
                                      NovaBilibiliProperties properties, LiveRoomInfoHistory roomInfoHistory) {
         this.factory = factory;

@@ -26,7 +26,7 @@ class AtSubscriptionServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new AtSubscriptionService(new StarBotStateStore(new NovaCoreProperties()));
+        service = new AtSubscriptionService(new NovaStateStore(new NovaCoreProperties()));
     }
 
     @Test

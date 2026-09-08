@@ -17,7 +17,7 @@ import com.starlwr.bot.core.model.UserScore;
 import com.starlwr.bot.core.service.DefaultLiveDataService;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.LiveRoomInfoHistory;
-import com.starlwr.bot.report.factory.StarBotCommonPainterFactory;
+import com.starlwr.bot.report.factory.NovaCommonPainterFactory;
 import com.starlwr.bot.report.util.FontUtil;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -82,7 +82,7 @@ class BilibiliLiveReportReplayPainterTest {
 
     private BilibiliApiUtil api;
 
-    private StarBotCommonPainterFactory factory;
+    private NovaCommonPainterFactory factory;
 
     private FontUtil fontUtil;
 
@@ -106,7 +106,7 @@ class BilibiliLiveReportReplayPainterTest {
         buildInfo.setProperty("group", "com.starlwr");
         buildInfo.setProperty("artifact", "starbot-core");
         buildInfo.setProperty("name", "StarBotCore");
-        factory = new StarBotCommonPainterFactory(new BuildProperties(buildInfo), coreProperties, fontUtil);
+        factory = new NovaCommonPainterFactory(new BuildProperties(buildInfo), coreProperties, fontUtil);
 
         // 🔴 一个方法都不打桩：重画侧的任何一次调用都是「重画联网了」的实证。
         // 出图侧那一趟另建一个会打桩的 mock，见 paintLive()

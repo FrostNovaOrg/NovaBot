@@ -23,7 +23,7 @@ class RevenueVisibilityServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new RevenueVisibilityService(new StarBotStateStore(new NovaCoreProperties()));
+        service = new RevenueVisibilityService(new NovaStateStore(new NovaCoreProperties()));
     }
 
     @Test

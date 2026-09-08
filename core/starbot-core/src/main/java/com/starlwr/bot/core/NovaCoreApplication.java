@@ -18,7 +18,7 @@ import java.nio.file.Path;
 @EnableScheduling
 @EnableAspectJAutoProxy(exposeProxy = true)
 @SpringBootApplication
-public class StarBotCoreApplication {
+public class NovaCoreApplication {
     /**
      * 主配置文件路径
      */
@@ -26,7 +26,7 @@ public class StarBotCoreApplication {
 
     public static void main(String[] args) {
         try {
-            SpringApplication.run(StarBotCoreApplication.class, args);
+            SpringApplication.run(NovaCoreApplication.class, args);
         } catch (Exception e) {
             if (!isConfigurationFailure(e)) {
                 throw e;

@@ -34,7 +34,7 @@ import com.starlwr.bot.core.sender.PushGate;
 import com.starlwr.bot.core.sender.NovaMessageSender;
 import com.starlwr.bot.core.service.AtAllQuotaService;
 import com.starlwr.bot.core.service.NovaSenderService;
-import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.NovaStateStore;
 import com.starlwr.bot.core.util.HttpUtil;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -434,7 +434,7 @@ class TimelineHookTest {
 
         NovaCoreProperties properties = new NovaCoreProperties();
         return new CommandDispatcher(commands, followUps,
-                new CommandSettingsService(new StarBotStateStore(properties)),
+                new CommandSettingsService(new NovaStateStore(properties)),
                 dataSource, mock(NovaMessageSender.class), properties, timeline, clock);
     }
 
@@ -622,7 +622,7 @@ class TimelineHookTest {
         return new NovaMessageSender(mock(HttpUtil.class), senderService,
                 new PushActivityRecorder(TimelineWriter.NONE), new PushGate(properties),
                 timeline, new AtAllQuotaService(properties), resolvers,
-                new FirstPushTipService(new StarBotStateStore(properties)));
+                new FirstPushTipService(new NovaStateStore(properties)));
     }
 
     private Message message() {

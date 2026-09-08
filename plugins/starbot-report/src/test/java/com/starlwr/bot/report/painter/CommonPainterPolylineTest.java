@@ -1,7 +1,7 @@
 package com.starlwr.bot.report.painter;
 
 import com.starlwr.bot.core.config.NovaCoreProperties;
-import com.starlwr.bot.report.factory.StarBotCommonPainterFactory;
+import com.starlwr.bot.report.factory.NovaCommonPainterFactory;
 import com.starlwr.bot.report.util.FontUtil;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -46,7 +46,7 @@ class CommonPainterPolylineTest {
         buildInfo.setProperty("artifact", "starbot-core");
         buildInfo.setProperty("name", "StarBotCore");
 
-        painter = new StarBotCommonPainterFactory(new BuildProperties(buildInfo), properties, fontUtil)
+        painter = new NovaCommonPainterFactory(new BuildProperties(buildInfo), properties, fontUtil)
                 .create(200, 120, false);
     }
 

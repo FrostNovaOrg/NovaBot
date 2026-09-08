@@ -10,7 +10,7 @@ import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.RoomInfoSnapshot;
 import com.starlwr.bot.core.service.DefaultLiveDataService;
 import com.starlwr.bot.core.service.LiveRoomInfoHistory;
-import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.NovaStateStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -62,7 +62,7 @@ class BilibiliRoomStatsSnapshotterTest {
         when(api.getLiveInfoByRoomId(anyLong())).thenReturn(new Room(1, null, "早八人的自习室", null));
 
         liveDataService = new DefaultLiveDataService(new NovaCoreProperties());
-        roomInfoHistory = new LiveRoomInfoHistory(new StarBotStateStore(new NovaCoreProperties()));
+        roomInfoHistory = new LiveRoomInfoHistory(new NovaStateStore(new NovaCoreProperties()));
         riskMetrics = new BilibiliRiskMetrics();
         snapshotter = new BilibiliRoomStatsSnapshotter(liveDataService, api, roomInfoHistory, riskMetrics);
     }

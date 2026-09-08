@@ -63,6 +63,10 @@
   `StarBotCoreThreadPoolConfig` → `NovaCoreThreadPoolConfig`；
   `StarBotBilibiliProperties` → `NovaBilibiliProperties`；
   `StarBotBilibiliThreadPoolConfig` → `NovaBilibiliThreadPoolConfig`。
+- 启动主类、状态仓与画手工厂三个类改用 `Nova` 前缀。**这三个类不留别名**；包名未变，注入旧类型的第三方插件须改用新名；画手工厂的 bean 名随之从 `starBotCommonPainterFactory` 变为 `novaCommonPainterFactory`，按旧 bean 名取件的代码须改用新名。主类名变更，显式指定 main class 的启动方式须改用新名。对照：
+  `StarBotCoreApplication` → `NovaCoreApplication`；
+  `StarBotStateStore` → `NovaStateStore`；
+  `StarBotCommonPainterFactory` → `NovaCommonPainterFactory`。
 - 插件扩展点的三个名字换了新名：组件注解 `StarBotComponent` 改叫 `NovaComponent`，推送处理器接口 `StarBotEventHandler` 改叫 `NovaEventHandler`，聊天命令接口 `StarBotCommand` 改叫 `NovaCommand`。**旧名字仍然认得**：旧插件一个字都不用改照样装载，同一个类上同时标新旧两个注解也只登记一次；新代码请用新名，旧名将在下一发行版删除。包名、方法与参数一律未变，示例插件模板已改用新名。
 - 配置项前缀从 `starbot.*` 改成 `novabot.*`（`novabot.core`、`novabot.bilibili`、`novabot.adapter.onebot` 等）。**旧键仍然认得**：只写 `starbot.*` 的 `application.yml` 照常生效，启动时每个用到的前缀会打一行提醒；两处都写时以新位置为准。设置页保存只写新前缀；若旧 `starbot:` 树每个叶键在新树都有对应，保存时会删掉旧树。文档、登录页里的键名已改成新前缀。
 - 更早一档写在 `starbot.core.alert.qq-platform`／`qq-type`／`qq-num` 的告警三项，保存时按现行 `novabot.adapter.onebot.alert.*` 认作已对应，旧树可以一并删掉。
@@ -100,7 +104,7 @@
 - 示例插件模板跟上了插件的自动装载：模板自带自报文件与自报类，README 与构建配置改按新的装载办法讲述，第三方依赖的说明也改成了实情。
 - 画图整个挪进了报告插件：`com.starlwr.bot.core.painter.CommonPainter` 改叫 `com.starlwr.bot.report.painter.CommonPainter`，`com.starlwr.bot.core.factory.StarBotCommonPainterFactory` 改叫 `com.starlwr.bot.report.factory.StarBotCommonPainterFactory`（字体与图片两个工具件一并挪进 `com.starlwr.bot.report.util`）。只有自己写插件、并且在代码里直接引用了核心这几个绘图类的人才受影响：改一下 import，方法名、参数和画出来的图都没变。配置项没有变动，`starbot.core.paint` 那一节照旧。
 - 核心里三个类换了包：数据源服务接口 `com.starlwr.bot.core.service.DataSourceService` 与它的实现类注解 `com.starlwr.bot.core.service.DataSourceServiceConfig` 改到 `com.starlwr.bot.core.datasource`，事件流只读口令 `com.starlwr.bot.core.service.EventStreamTokenService` 改到 `com.starlwr.bot.core.protocol`。只有自己写平台插件、代码里直接引用了这三个类的人才受影响：改一下 import，类名、方法名和参数都没变。配置项、日志用词和行为一律未变。
-- 核心里八个配置类换了包：`com.starlwr.bot.core.config.ConfigEffect`／`CoreConfigurationSections`／`DatasourceProperties`／`EventStreamProperties`／`LiveProperties`／`LogProperties`／`NetworkProperties`／`NetworkThreadProperties` 改到 `com.starlwr.bot.core.properties`。只有自己写插件、代码里直接引用了这几个类的人才受影响（最常见的是给自家配置项标 `@ConfigEffect`）：改一下 import，类名、方法名和参数都没变。`com.starlwr.bot.core.config` 这个包还在，`ConfigLevel`／`ConfigDanger`／`StarBotCoreProperties` 和整个 `config.ui` 都没有挪动。`starbot.core.*` 的配置键一个也没改，行为一律未变。
+- 核心里八个配置类换了包：`com.starlwr.bot.core.config.ConfigEffect`／`CoreConfigurationSections`／`DatasourceProperties`／`EventStreamProperties`／`LiveProperties`／`LogProperties`／`NetworkProperties`／`NetworkThreadProperties` 改到 `com.starlwr.bot.core.properties`。只有自己写插件、代码里直接引用了这几个类的人才受影响（最常见的是给自家配置项标 `@ConfigEffect`）：改一下 import，类名、方法名和参数都没变。`com.starlwr.bot.core.config` 这个包还在，`ConfigLevel`／`ConfigDanger`／`NovaCoreProperties` 和整个 `config.ui` 都没有挪动。`starbot.core.*` 的配置键一个也没改，行为一律未变。
 - 核心里四个工具类换了包：`com.starlwr.bot.core.util.CollectionUtil`／`MathUtil`／`SecureToken`／`StringUtil` 改到 `com.starlwr.bot.core.lang`。只有自己写插件、代码里直接引用了这四个类的人才受影响：改一下 import，类名、方法名和参数都没变。`com.starlwr.bot.core.util` 这个包还在，里面别的工具类（二维码、网络、掩码等）没有挪动。配置项、日志用词和行为一律未变。
 - 自己写的插件如果代码里直接用到核心里层的类，需要在 pom 里申报 novacore 依赖；仓库里的示例插件模板已经带上这一条。
 - 扫码登录与 TV 端登录的应答里缺了登录凭据键、跳转地址是空的、大航海名单里有成员不带 uid 时，此前只留一条日志就悄悄返回空，健康栏一格都不会动；现在各记一笔「接口应答缺数据」（只记接口与键名，不记内容）。取登录 uid 失败时，网络故障与未登录也分得开了。

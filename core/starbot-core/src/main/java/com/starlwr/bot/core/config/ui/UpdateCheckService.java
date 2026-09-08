@@ -2,7 +2,7 @@ package com.starlwr.bot.core.config.ui;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.config.NovaCoreProperties;
-import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.NovaStateStore;
 import com.starlwr.bot.core.util.HttpUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
@@ -66,7 +66,7 @@ public class UpdateCheckService {
 
     private final NovaCoreProperties properties;
 
-    private final StarBotStateStore state;
+    private final NovaStateStore state;
 
     /**
      * 构建信息，版本号从这里来
@@ -94,12 +94,12 @@ public class UpdateCheckService {
     private volatile String latestUrl;
 
     @Autowired
-    public UpdateCheckService(NovaCoreProperties properties, HttpUtil http, StarBotStateStore state,
+    public UpdateCheckService(NovaCoreProperties properties, HttpUtil http, NovaStateStore state,
                               ObjectProvider<BuildProperties> buildProperties) {
         this(properties, state, buildProperties, http::getJson);
     }
 
-    UpdateCheckService(NovaCoreProperties properties, StarBotStateStore state,
+    UpdateCheckService(NovaCoreProperties properties, NovaStateStore state,
                        ObjectProvider<BuildProperties> buildProperties, SourceClient source) {
         this.properties = properties;
         this.state = state;

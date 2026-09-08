@@ -28,7 +28,7 @@ import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.PushTemplateDefaults;
 import com.starlwr.bot.core.service.StarBotEventHandlerService;
 import com.starlwr.bot.core.service.NovaSenderService;
-import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.NovaStateStore;
 import com.starlwr.bot.core.timeline.TimelineWriter;
 import com.starlwr.bot.core.util.HttpUtil;
 import org.junit.jupiter.api.DisplayName;
@@ -310,7 +310,7 @@ class MergedNoticeTemplateTest {
         NovaCoreProperties properties = new NovaCoreProperties();
         return new NovaMessageSender(http, senderService, new PushActivityRecorder(TimelineWriter.NONE),
                 new PushGate(properties), TimelineWriter.NONE, new AtAllQuotaService(properties), resolvers,
-                new FirstPushTipService(new StarBotStateStore(properties)));
+                new FirstPushTipService(new NovaStateStore(properties)));
     }
 
     private PushMessage pushMessage(JSONObject params) {

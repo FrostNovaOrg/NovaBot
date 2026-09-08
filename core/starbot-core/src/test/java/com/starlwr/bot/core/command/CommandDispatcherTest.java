@@ -8,7 +8,7 @@ import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.sender.NovaMessageSender;
-import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.NovaStateStore;
 import com.starlwr.bot.core.timeline.TimelineWriter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -56,7 +56,7 @@ class CommandDispatcherTest {
         when(dataSource.getAllUsers()).thenReturn(List.of(configuredUser()));
 
         sender = mock(NovaMessageSender.class);
-        settings = new CommandSettingsService(new StarBotStateStore(new NovaCoreProperties()));
+        settings = new CommandSettingsService(new NovaStateStore(new NovaCoreProperties()));
         command = new RecordingCommand();
 
         // 这一件问的是「谁应了、谁没应」，不问日志页；命令记事那一头由 TimelineHookTest 量

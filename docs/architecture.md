@@ -141,7 +141,7 @@ lifecycleProcessor.onClose()     ← 停 SmartLifecycle，默认最多等 30 秒
 
 | 文件 | 谁写 | 内容 | 丢了会怎样 |
 |---|---|---|---|
-| `state.json` | `StarBotStateStore` | 各群禁用了哪些命令、`@我` 订阅名单、账号绑定 | 群成员的设置全部回到默认 |
+| `state.json` | `NovaStateStore` | 各群禁用了哪些命令、`@我` 订阅名单、账号绑定 | 群成员的设置全部回到默认 |
 | `sessions.jsonl` | `LiveSessionArchive` | 每场直播的时长与全部指标 | **运营分析的历史永久消失，补不回来** |
 | `data.json` | `DefaultLiveDataService` | 本场与累计的直播数据 | 累计数据归零 |
 
@@ -236,7 +236,7 @@ META-INF/spring-configuration-metadata.json
 ### 配置写坏了怎么办
 
 `application.yml` 语法错误会让 Spring 直接启动失败，那时配置界面也起不来——人就被锁在门外了。
-为此 `StarBotCoreApplication` 捕获**仅限配置类**的启动失败（`BindException`、snakeyaml 异常、
+为此 `NovaCoreApplication` 捕获**仅限配置类**的启动失败（`BindException`、snakeyaml 异常、
 `ConfigDataResourceNotFoundException` 等），转而启动安全模式。
 
 安全模式**刻意不是 Spring 应用**，用的是 JDK 自带的 `HttpServer`：一份坏掉的 `application.yml`

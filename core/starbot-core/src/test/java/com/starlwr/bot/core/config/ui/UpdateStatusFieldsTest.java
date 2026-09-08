@@ -10,7 +10,7 @@ import com.starlwr.bot.core.protocol.EventStreamTokenService;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.StarBotEventHandlerService;
 import com.starlwr.bot.core.service.NovaSenderService;
-import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.NovaStateStore;
 import com.starlwr.bot.core.sender.PushGate;
 import com.starlwr.bot.core.sender.NovaMessageSender;
 import com.starlwr.bot.core.timeline.TimelineStore;
@@ -74,7 +74,7 @@ class UpdateStatusFieldsTest {
         release.put("tag_name", "v5.1.0");
         release.put("body", "修了开播误报\n第二行说明\n第三行说明");
         release.put("html_url", "https://example.invalid/release");
-        updateCheck = new UpdateCheckService(properties, new StarBotStateStore(properties), buildOf("5.0.0"), url -> release);
+        updateCheck = new UpdateCheckService(properties, new NovaStateStore(properties), buildOf("5.0.0"), url -> release);
         updateCheck.checkNow();
     }
 
@@ -114,7 +114,7 @@ class UpdateStatusFieldsTest {
         JSONObject sameVersion = new JSONObject();
         sameVersion.put("tag_name", "v5.0.0");
         sameVersion.put("html_url", "https://example.invalid/release");
-        updateCheck = new UpdateCheckService(properties, new StarBotStateStore(properties), buildOf("5.0.0"), url -> sameVersion);
+        updateCheck = new UpdateCheckService(properties, new NovaStateStore(properties), buildOf("5.0.0"), url -> sameVersion);
         updateCheck.checkNow();
         when(fileService.exists()).thenReturn(true);
         PushUser user = new PushUser();

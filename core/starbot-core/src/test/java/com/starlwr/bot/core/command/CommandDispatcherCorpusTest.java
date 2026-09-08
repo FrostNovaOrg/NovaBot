@@ -9,7 +9,7 @@ import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.sender.NovaMessageSender;
-import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.NovaStateStore;
 import com.starlwr.bot.core.timeline.TimelineWriter;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -207,7 +207,7 @@ class CommandDispatcherCorpusTest {
         private final List<String> replies = new ArrayList<>();
 
         private final CommandSettingsService settings =
-                new CommandSettingsService(new StarBotStateStore(new NovaCoreProperties()));
+                new CommandSettingsService(new NovaStateStore(new NovaCoreProperties()));
 
         private final RecordingCommand groupCommand = new RecordingCommand("测试命令", List.of("别名"), true, false);
 

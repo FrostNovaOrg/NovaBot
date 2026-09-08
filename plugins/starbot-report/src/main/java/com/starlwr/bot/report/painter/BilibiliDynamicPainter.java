@@ -7,7 +7,7 @@ import com.starlwr.bot.bilibili.model.Dynamic;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.lang.StringUtil;
-import com.starlwr.bot.report.factory.StarBotCommonPainterFactory;
+import com.starlwr.bot.report.factory.NovaCommonPainterFactory;
 import com.starlwr.bot.report.util.ImageUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -81,7 +81,7 @@ public class BilibiliDynamicPainter {
     private static final DateTimeFormatter TIME_FORMATTER =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.of("Asia/Shanghai"));
 
-    private final StarBotCommonPainterFactory factory;
+    private final NovaCommonPainterFactory factory;
 
     private final BilibiliApiUtil api;
 
@@ -98,7 +98,7 @@ public class BilibiliDynamicPainter {
     private volatile boolean logoLoaded;
 
     @Autowired
-    public BilibiliDynamicPainter(StarBotCommonPainterFactory factory, BilibiliApiUtil api, NovaBilibiliProperties properties) {
+    public BilibiliDynamicPainter(NovaCommonPainterFactory factory, BilibiliApiUtil api, NovaBilibiliProperties properties) {
         this.factory = factory;
         this.api = api;
         this.properties = properties;

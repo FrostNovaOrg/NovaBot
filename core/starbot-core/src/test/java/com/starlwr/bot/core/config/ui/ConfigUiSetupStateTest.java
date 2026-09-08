@@ -2,7 +2,7 @@ package com.starlwr.bot.core.config.ui;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.config.NovaCoreProperties;
-import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.NovaStateStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -39,7 +39,7 @@ class ConfigUiSetupStateTest {
         // 状态文件与直播数据同目录，因此指到临时目录里去：不指的话它会写到跑测试那个目录下，
         // 而下一跑读到的是上一跑留下的标记
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
-        controller = new ConfigUiSetupController(new StarBotStateStore(properties));
+        controller = new ConfigUiSetupController(new NovaStateStore(properties));
     }
 
     @Test

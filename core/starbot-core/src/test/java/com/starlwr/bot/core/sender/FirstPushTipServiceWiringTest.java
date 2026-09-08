@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.sender;
 
 import com.starlwr.bot.core.config.NovaCoreProperties;
-import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.NovaStateStore;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -57,8 +57,8 @@ class FirstPushTipServiceWiringTest {
         }
 
         @Bean
-        StarBotStateStore starBotStateStore(NovaCoreProperties properties) {
-            return new StarBotStateStore(properties);
+        NovaStateStore novaStateStore(NovaCoreProperties properties) {
+            return new NovaStateStore(properties);
         }
     }
 }

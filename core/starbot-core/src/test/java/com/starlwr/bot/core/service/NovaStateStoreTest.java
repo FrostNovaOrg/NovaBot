@@ -25,14 +25,14 @@ import static org.junit.jupiter.api.Assertions.*;
  * 遍历中途结构变化就会抛异常，偏偏是在最要紧的那一刻打断推送。
  */
 @DisplayName("运行状态存储")
-class StarBotStateStoreTest {
+class NovaStateStoreTest {
     private static final String NAMESPACE = "Test";
 
-    private StarBotStateStore store;
+    private NovaStateStore store;
 
     @BeforeEach
     void setUp() {
-        store = new StarBotStateStore(new NovaCoreProperties());
+        store = new NovaStateStore(new NovaCoreProperties());
     }
 
     @Test
@@ -139,10 +139,10 @@ class StarBotStateStoreTest {
     private static final String RETIRED = "StreamerChoice";
     private static final String MARKER = "CorpusMarker";
 
-    private StarBotStateStore storeAt(@TempDir Path dir) {
+    private NovaStateStore storeAt(@TempDir Path dir) {
         NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
-        return new StarBotStateStore(properties);
+        return new NovaStateStore(properties);
     }
 
     @Test
@@ -151,7 +151,7 @@ class StarBotStateStoreTest {
         Path state = dir.resolve("state.json");
         Files.writeString(state, "{\"" + RETIRED + "\":{\"10001:20001\":30001},\"" + MARKER + "\":{\"seen\":true}}");
 
-        StarBotStateStore opened = storeAt(dir);
+        NovaStateStore opened = storeAt(dir);
         opened.onApplicationReadyEvent();
         opened.onContextClosedEvent();
 
@@ -160,7 +160,7 @@ class StarBotStateStoreTest {
         assertTrue(saved.contains(MARKER), "清死段时误伤了别的命名空间: " + saved);
 
         // 重读一遍：不是「这回没看见」，而是下一次启动读到的确实已经没有它
-        StarBotStateStore reopened = storeAt(dir);
+        NovaStateStore reopened = storeAt(dir);
         reopened.onApplicationReadyEvent();
         reopened.onContextClosedEvent();
         assertTrue(reopened.namespace(MARKER).getBoolean("seen"), "陪衬段经一轮启停后内容变了");
@@ -173,7 +173,7 @@ class StarBotStateStoreTest {
         Path state = dir.resolve("state.json");
         Files.writeString(state, "{\"" + MARKER + "\":{\"seen\":true}}");
 
-        StarBotStateStore opened = storeAt(dir);
+        NovaStateStore opened = storeAt(dir);
         opened.onApplicationReadyEvent();
         opened.onContextClosedEvent();
 
@@ -188,7 +188,7 @@ class StarBotStateStoreTest {
         Path state = dir.resolve("state.json");
         Files.writeString(state, "{\"" + RETIRED + "\":{\"10001:20001\":30001}}");
 
-        StarBotStateStore opened = storeAt(dir);
+        NovaStateStore opened = storeAt(dir);
         opened.onApplicationReadyEvent();
         opened.onContextClosedEvent();
 
@@ -200,7 +200,7 @@ class StarBotStateStoreTest {
     @Test
     @DisplayName("remove 删段后不等停机就已经在盘上")
     void removePersistsToDiskImmediately(@TempDir Path dir) throws Exception {
-        StarBotStateStore opened = storeAt(dir);
+        NovaStateStore opened = storeAt(dir);
         opened.onApplicationReadyEvent();
 
         opened.write(RETIRED, data -> data.put("10001:20001", 30001));
@@ -217,7 +217,7 @@ class StarBotStateStoreTest {
     @Test
     @DisplayName("remove 不存在的段是安全的空操作")
     void removeMissingSegmentIsNoOp(@TempDir Path dir) throws Exception {
-        StarBotStateStore opened = storeAt(dir);
+        NovaStateStore opened = storeAt(dir);
         opened.onApplicationReadyEvent();
 
         opened.write(MARKER, data -> data.put("seen", true));

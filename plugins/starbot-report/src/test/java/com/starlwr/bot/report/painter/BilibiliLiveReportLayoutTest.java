@@ -11,8 +11,8 @@ import com.starlwr.bot.core.model.TextWithStyle;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.service.DefaultLiveDataService;
 import com.starlwr.bot.core.service.LiveRoomInfoHistory;
-import com.starlwr.bot.core.service.StarBotStateStore;
-import com.starlwr.bot.report.factory.StarBotCommonPainterFactory;
+import com.starlwr.bot.core.service.NovaStateStore;
+import com.starlwr.bot.report.factory.NovaCommonPainterFactory;
 import com.starlwr.bot.report.util.FontUtil;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -78,7 +78,7 @@ class BilibiliLiveReportLayoutTest {
 
     private BilibiliLiveReportPainter painter;
 
-    private StarBotCommonPainterFactory factory;
+    private NovaCommonPainterFactory factory;
 
     private FontUtil fontUtil;
 
@@ -104,7 +104,7 @@ class BilibiliLiveReportLayoutTest {
         buildInfo.setProperty("artifact", "starbot-core");
         buildInfo.setProperty("name", "StarBotCore");
 
-        factory = new StarBotCommonPainterFactory(new BuildProperties(buildInfo), coreProperties, fontUtil);
+        factory = new NovaCommonPainterFactory(new BuildProperties(buildInfo), coreProperties, fontUtil);
 
         BufferedImage placeholder = new BufferedImage(640, 360, BufferedImage.TYPE_INT_ARGB);
         Graphics2D graphics = placeholder.createGraphics();
@@ -122,7 +122,7 @@ class BilibiliLiveReportLayoutTest {
         when(api.getGuardList(anyLong(), anyLong())).thenReturn(Optional.of(List.of()));
 
         liveDataService = new DefaultLiveDataService(new NovaCoreProperties());
-        roomInfoHistory = new LiveRoomInfoHistory(new StarBotStateStore(new NovaCoreProperties()));
+        roomInfoHistory = new LiveRoomInfoHistory(new NovaStateStore(new NovaCoreProperties()));
         painter = new BilibiliLiveReportPainter(factory, api, liveDataService, fontUtil,
                 new NovaBilibiliProperties(), roomInfoHistory);
     }

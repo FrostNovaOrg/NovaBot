@@ -20,7 +20,7 @@ import com.starlwr.bot.core.event.remote.NovaRemoteMessageEvent;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.sender.NovaMessageSender;
-import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.NovaStateStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -223,7 +223,7 @@ class FourCategoriesEndToEndTest {
         when(followUps.iterator()).thenAnswer(invocation -> List.<CommandFollowUp>of().iterator());
 
         return new CommandDispatcher(commands, followUps,
-                new CommandSettingsService(new StarBotStateStore(new NovaCoreProperties())),
+                new CommandSettingsService(new NovaStateStore(new NovaCoreProperties())),
                 dataSource, mock(NovaMessageSender.class), new NovaCoreProperties(), store);
     }
 

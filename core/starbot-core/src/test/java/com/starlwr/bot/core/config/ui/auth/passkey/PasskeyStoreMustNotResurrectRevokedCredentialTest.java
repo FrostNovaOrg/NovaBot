@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.config.ui.auth.passkey;
 
 import com.starlwr.bot.core.config.NovaCoreProperties;
-import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.NovaStateStore;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -29,7 +29,7 @@ class PasskeyStoreMustNotResurrectRevokedCredentialTest {
     void updateAfterRemoveDoesNotResurrect() {
         NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(directory.resolve("data.json").toString());
-        PasskeyStore store = new PasskeyStore(new StarBotStateStore(properties));
+        PasskeyStore store = new PasskeyStore(new NovaStateStore(properties));
 
         Instant created = Instant.parse("2026-09-05T00:00:00Z");
         PasskeyCredential original = new PasskeyCredential(

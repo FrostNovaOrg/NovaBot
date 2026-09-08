@@ -12,7 +12,7 @@ import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.sender.NovaMessageSender;
 import com.starlwr.bot.bilibili.model.BilibiliLiveReportOptions;
 import com.starlwr.bot.core.service.RevenueVisibilityService;
-import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.NovaStateStore;
 import com.starlwr.bot.core.config.NovaCoreProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -57,7 +57,7 @@ class BilibiliLiveReportPushHandlerTest {
         NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
 
-        revenueVisibility = new RevenueVisibilityService(new StarBotStateStore(properties));
+        revenueVisibility = new RevenueVisibilityService(new NovaStateStore(properties));
         BilibiliApiUtil api = mock(BilibiliApiUtil.class);
         when(api.getUpInfoByUid(anyLong())).thenThrow(new RuntimeException("接口不可用"));
         painter = mock(BilibiliLiveReportPainter.class);

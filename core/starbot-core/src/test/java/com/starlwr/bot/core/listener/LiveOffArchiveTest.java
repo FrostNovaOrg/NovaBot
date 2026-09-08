@@ -14,7 +14,7 @@ import com.starlwr.bot.core.service.LiveDetailArchive;
 import com.starlwr.bot.core.service.LiveInterventionTracker;
 import com.starlwr.bot.core.service.LiveRoomInfoHistory;
 import com.starlwr.bot.core.service.LiveSessionArchive;
-import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.NovaStateStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -74,7 +74,7 @@ class LiveOffArchiveTest {
         sessions = new LiveSessionArchive(properties);
         details = new LiveDetailArchive(properties);
         listener = new NovaDefaultLiveOffEventListener(liveData, sessions,
-                new LiveInterventionTracker(), new LiveRoomInfoHistory(new StarBotStateStore(properties)), details);
+                new LiveInterventionTracker(), new LiveRoomInfoHistory(new NovaStateStore(properties)), details);
     }
 
     @Test

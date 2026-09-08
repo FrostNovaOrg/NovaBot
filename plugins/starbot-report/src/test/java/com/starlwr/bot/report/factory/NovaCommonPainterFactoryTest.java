@@ -29,12 +29,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 所以这里量的不是「返回了一个非 null 的绘图器」，是造出来的绘图器<b>三样都能用</b>。
  */
 @DisplayName("绘图器工厂")
-class StarBotCommonPainterFactoryTest {
+class NovaCommonPainterFactoryTest {
     private static final int WIDTH = 400;
 
     private static final int HEIGHT = 200;
 
-    private StarBotCommonPainterFactory factory;
+    private NovaCommonPainterFactory factory;
 
     private NovaCoreProperties properties;
 
@@ -58,7 +58,7 @@ class StarBotCommonPainterFactoryTest {
         buildInfo.setProperty("artifact", "starbot-core");
         buildInfo.setProperty("name", "StarBotCore");
 
-        factory = new StarBotCommonPainterFactory(new BuildProperties(buildInfo), properties, fontUtil);
+        factory = new NovaCommonPainterFactory(new BuildProperties(buildInfo), properties, fontUtil);
     }
 
     @Test

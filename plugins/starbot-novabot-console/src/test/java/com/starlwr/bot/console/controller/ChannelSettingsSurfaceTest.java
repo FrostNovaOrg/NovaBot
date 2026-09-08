@@ -242,8 +242,8 @@ class ChannelSettingsSurfaceTest {
     @Test
     @DisplayName("一条也没真改到时不落盘，改到了才落盘")
     void savesOnlyWhenSomethingActuallyChanged() {
-        com.starlwr.bot.core.service.StarBotStateStore store =
-                dependency(com.starlwr.bot.core.service.StarBotStateStore.class);
+        com.starlwr.bot.core.service.NovaStateStore store =
+                dependency(com.starlwr.bot.core.service.NovaStateStore.class);
         assertNotNull(store, "控制器没接状态存储，落盘那一步无从量起");
 
         when(settings.enable(anyString(), any(), eq("直播报告"))).thenReturn(false);

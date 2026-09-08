@@ -29,10 +29,10 @@ public class UserBindingService {
      */
     private static final String NAMESPACE = "UserBindings";
 
-    private final StarBotStateStore store;
+    private final NovaStateStore store;
 
     @Autowired
-    public UserBindingService(StarBotStateStore store) {
+    public UserBindingService(NovaStateStore store) {
         this.store = store;
     }
 

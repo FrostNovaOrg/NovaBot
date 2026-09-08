@@ -12,7 +12,7 @@ import com.starlwr.bot.core.sender.NovaMessageSender;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.LiveRoomInfoHistory;
 import com.starlwr.bot.core.service.RevenueVisibilityService;
-import com.starlwr.bot.report.factory.StarBotCommonPainterFactory;
+import com.starlwr.bot.report.factory.NovaCommonPainterFactory;
 import com.starlwr.bot.report.util.FontUtil;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -85,8 +85,8 @@ class ReportPainterBeanResolutionTest {
 
         // 画手与消费者的构造参数：这一格量的是「容器挑哪一个」，不是它们各自干得对不对，
         // 所以除画图必需的那几件外一律给替身
-        beans.registerSingleton("starBotCommonPainterFactory",
-                new StarBotCommonPainterFactory(new BuildProperties(buildInfo), coreProperties, fontUtil));
+        beans.registerSingleton("novaCommonPainterFactory",
+                new NovaCommonPainterFactory(new BuildProperties(buildInfo), coreProperties, fontUtil));
         beans.registerSingleton("fontUtil", fontUtil);
         beans.registerSingleton("novaBilibiliProperties", new NovaBilibiliProperties());
         beans.registerSingleton("bilibiliApiUtil", mock(BilibiliApiUtil.class));

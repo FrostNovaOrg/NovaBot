@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.config.ui.auth.passkey;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.NovaStateStore;
 import lombok.extern.slf4j.Slf4j;
 
 import java.time.Instant;
@@ -41,9 +41,9 @@ public class PasskeyStore {
 
     private static final String LAST_USED_AT = "lastUsedAt";
 
-    private final StarBotStateStore state;
+    private final NovaStateStore state;
 
-    public PasskeyStore(StarBotStateStore state) {
+    public PasskeyStore(NovaStateStore state) {
         this.state = state;
     }
 

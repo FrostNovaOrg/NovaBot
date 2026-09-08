@@ -13,7 +13,7 @@ import com.starlwr.bot.core.model.UserScore;
 import com.starlwr.bot.core.service.DefaultLiveDataService;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.LiveRoomInfoHistory;
-import com.starlwr.bot.report.factory.StarBotCommonPainterFactory;
+import com.starlwr.bot.report.factory.NovaCommonPainterFactory;
 import com.starlwr.bot.report.util.FontUtil;
 import lombok.extern.slf4j.Slf4j;
 
@@ -63,7 +63,7 @@ public class BilibiliLiveReportReplayPainter extends BilibiliLiveReportPainter {
 
     private final BufferedImage rankingFace;
 
-    public BilibiliLiveReportReplayPainter(StarBotCommonPainterFactory factory, BilibiliApiUtil api,
+    public BilibiliLiveReportReplayPainter(NovaCommonPainterFactory factory, BilibiliApiUtil api,
                                            FontUtil fontUtil, NovaBilibiliProperties properties,
                                            LiveRoomInfoHistory roomInfoHistory, LiveDetail detail) {
         super(factory, api, replayData(detail), fontUtil, properties, roomInfoHistory);

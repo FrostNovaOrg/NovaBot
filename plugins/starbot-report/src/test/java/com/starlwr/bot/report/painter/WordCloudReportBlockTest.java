@@ -14,8 +14,8 @@ import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.service.DefaultLiveDataService;
 import com.starlwr.bot.core.service.LiveRoomInfoHistory;
-import com.starlwr.bot.core.service.StarBotStateStore;
-import com.starlwr.bot.report.factory.StarBotCommonPainterFactory;
+import com.starlwr.bot.core.service.NovaStateStore;
+import com.starlwr.bot.report.factory.NovaCommonPainterFactory;
 import com.starlwr.bot.report.util.FontUtil;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -95,8 +95,8 @@ class WordCloudReportBlockTest {
         buildInfo.setProperty("group", "com.starlwr");
         buildInfo.setProperty("artifact", "starbot-core");
         buildInfo.setProperty("name", "StarBotCore");
-        StarBotCommonPainterFactory factory =
-                new StarBotCommonPainterFactory(new BuildProperties(buildInfo), coreProperties, fontUtil);
+        NovaCommonPainterFactory factory =
+                new NovaCommonPainterFactory(new BuildProperties(buildInfo), coreProperties, fontUtil);
 
         BufferedImage placeholder = new BufferedImage(640, 360, BufferedImage.TYPE_INT_ARGB);
         Graphics2D graphics = placeholder.createGraphics();
@@ -113,7 +113,7 @@ class WordCloudReportBlockTest {
         when(api.getGuardList(anyLong(), anyLong())).thenReturn(Optional.of(List.of()));
 
         liveDataService = new DefaultLiveDataService(new NovaCoreProperties());
-        LiveRoomInfoHistory roomInfoHistory = new LiveRoomInfoHistory(new StarBotStateStore(new NovaCoreProperties()));
+        LiveRoomInfoHistory roomInfoHistory = new LiveRoomInfoHistory(new NovaStateStore(new NovaCoreProperties()));
         painter = new BilibiliLiveReportPainter(factory, api, liveDataService, fontUtil,
                 new NovaBilibiliProperties(), roomInfoHistory);
     }

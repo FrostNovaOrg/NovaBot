@@ -9,7 +9,7 @@ import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.LiveSessionArchive;
-import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.NovaStateStore;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -228,7 +228,7 @@ class BilibiliStreamerChoiceCorpusTest {
     void leavesNothingOnDisk(@TempDir Path stateDir) {
         NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(stateDir.resolve("data.json").toString());
-        StarBotStateStore store = new StarBotStateStore(properties);
+        NovaStateStore store = new NovaStateStore(properties);
 
         AbstractDataSource dataSource = mock(AbstractDataSource.class);
         when(dataSource.getUsers("bilibili")).thenReturn(List.of(streamer(1), streamer(3)));

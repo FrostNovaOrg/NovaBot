@@ -24,7 +24,7 @@ import com.starlwr.bot.core.service.AtAllQuotaService;
 import com.starlwr.bot.core.service.AtSubscriptionService;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.NovaSenderService;
-import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.NovaStateStore;
 import com.starlwr.bot.core.timeline.TimelineEventType;
 import com.starlwr.bot.core.timeline.TimelineWriter;
 import com.starlwr.bot.core.util.HttpUtil;
@@ -380,7 +380,7 @@ class BilibiliAtModeMatrixTest {
 
             return new NovaMessageSender(http, senderService, new PushActivityRecorder(TimelineWriter.NONE),
                     new PushGate(properties), timeline, quota, resolvers(situation.admin),
-                    new FirstPushTipService(new StarBotStateStore(properties)));
+                    new FirstPushTipService(new NovaStateStore(properties)));
         }
 
         private ObjectProvider<AtAllPermissionResolver> resolvers(boolean admin) {

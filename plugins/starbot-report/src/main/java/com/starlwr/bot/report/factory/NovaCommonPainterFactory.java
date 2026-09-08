@@ -17,7 +17,7 @@ import org.springframework.stereotype.Component;
  * 每次都造一张<b>新画布</b>：绘图器带着当前坐标这个状态，共用一张会让两张报告画到对方身上。
  */
 @Component
-public class StarBotCommonPainterFactory {
+public class NovaCommonPainterFactory {
     private final BuildProperties buildProperties;
 
     private final NovaCoreProperties properties;
@@ -25,7 +25,7 @@ public class StarBotCommonPainterFactory {
     private final FontUtil fontUtil;
 
     @Autowired
-    public StarBotCommonPainterFactory(BuildProperties buildProperties, NovaCoreProperties properties, FontUtil fontUtil) {
+    public NovaCommonPainterFactory(BuildProperties buildProperties, NovaCoreProperties properties, FontUtil fontUtil) {
         this.buildProperties = buildProperties;
         this.properties = properties;
         this.fontUtil = fontUtil;

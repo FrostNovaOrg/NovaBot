@@ -7,7 +7,7 @@ import com.starlwr.bot.report.painter.BilibiliLiveReportPreviewPainter;
 import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.model.HandlerOption;
 import com.starlwr.bot.core.service.RevenueVisibilityService;
-import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.NovaStateStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -56,7 +56,7 @@ class BilibiliReportLayoutControllerTest {
     @BeforeEach
     void setUp() {
         preview = mock(BilibiliLiveReportPreviewPainter.class);
-        revenueVisibility = new RevenueVisibilityService(new StarBotStateStore(new NovaCoreProperties()));
+        revenueVisibility = new RevenueVisibilityService(new NovaStateStore(new NovaCoreProperties()));
         controller = new BilibiliReportLayoutController(preview, revenueVisibility);
 
         when(preview.render(any())).thenReturn(Optional.of(FAKE_PNG));
