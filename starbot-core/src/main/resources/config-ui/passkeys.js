@@ -26,10 +26,6 @@ const toBase64Url = buffer => btoa(String.fromCharCode(...new Uint8Array(buffer)
  */
 const supported = () => typeof window.PublicKeyCredential === 'function';
 
-/** 最近一次传入的列表容器与登记按钮，登记成功／删除后再画时用同一对 */
-let lastBox;
-let lastAdd;
-
 /**
  * 画出已登记的通行密钥
  *
@@ -46,9 +42,6 @@ export async function loadPasskeys(box, addButton) {
   if (!box) box = $('#passkey-list');
   if (!addButton) addButton = $('#passkey-add');
   if (!box) return;
-
-  lastBox = box;
-  lastAdd = addButton;
 
   if (!supported()) {
     box.innerHTML = '<p class="hint">这个浏览器（或这个地址）用不了通行密钥。'
@@ -75,8 +68,9 @@ export async function loadPasskeys(box, addButton) {
   table.style.width = 'max-content';
   table.style.minWidth = '100%';
 
+  // 回调带上当次的容器与按钮：删除之后要重画的就是接线这一张，不认「最近一次」
   box.querySelectorAll('button[data-id]').forEach(
-    button => button.addEventListener('click', () => remove(button.dataset.id)));
+    button => button.addEventListener('click', () => remove(button.dataset.id, box, addButton)));
 }
 
 /**
@@ -153,7 +147,9 @@ export async function registerPasskey(trigger) {
     });
 
     say(result.message, result.success ? 'ok' : 'err');
-    if (result.success) await loadPasskeys(lastBox, lastAdd);
+    // 登记成功后重画：按钮是点进来那一颗，列表取文档里现行的那张——
+    // 设置页的卡在场就重画它；初始设置那一步没有列表，画不进也不必画
+    if (result.success) await loadPasskeys(null, trigger);
   } catch (e) {
     // 使用者按了取消也会走到这里。不说成「出错了」——那会让人以为设备有问题
     say(e.name === 'NotAllowedError' ? '已取消登记' : '登记失败：' + e.message,
@@ -163,11 +159,15 @@ export async function registerPasskey(trigger) {
   }
 }
 
-async function remove(id) {
+/**
+ * 删除按钮接线时把当次那一对传进来，删完重画的就是同一张——
+ * 卡若已被重画换掉，也不去认全局的「最近一次」
+ */
+async function remove(id, box, addButton) {
   if (!await ask({title: '确定删除？',
     body: '删了以后这台设备就只能用口令进。'})) return;
 
   const result = await api('/auth/passkeys/' + encodeURIComponent(id), {method: 'DELETE'});
   say(result.message, result.success ? 'ok' : 'err');
-  await loadPasskeys(lastBox, lastAdd);
+  await loadPasskeys(box, addButton);
 }
