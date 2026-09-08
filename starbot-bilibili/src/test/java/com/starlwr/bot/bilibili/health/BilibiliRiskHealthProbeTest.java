@@ -222,7 +222,7 @@ class BilibiliRiskHealthProbeTest {
     }
 
     @Test
-    @DisplayName("UNKNOWN_FIELD 只进摘要不降档：写种数与最近一个字段号，平静时这一行不出现")
+    @DisplayName("UNKNOWN_FIELD 只进摘要不降档：写种数与最近一项，平静时这一行不出现")
     void unknownFieldStaysInSummary() {
         java.util.List<String> reds = new java.util.ArrayList<>();
 
@@ -234,7 +234,8 @@ class BilibiliRiskHealthProbeTest {
             HealthStatus status = probe.check();
 
             assertEquals(HealthStatus.Level.OK, status.level(), "未知字段不得降档");
-            assertTrue(status.summary().contains("弹幕协议未知字段 2 个"),
+            assertTrue(status.summary().contains(
+                            "未知字段：协议 pb 字段号／接口顶层键／枚举取值（detail 形：报文类型:字段号｜端点:键｜CMD:键=值） 2 个"),
                     "summary 应写未知字段种数，实际: " + status.summary());
             assertTrue(status.summary().contains("最近 INTERACT_WORD_V2:99"),
                     "summary 应带最近一个字段号，实际: " + status.summary());
