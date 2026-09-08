@@ -19,6 +19,7 @@ import com.starlwr.bot.core.service.StarBotSenderService;
 import com.starlwr.bot.core.timeline.TimelineEvent;
 import com.starlwr.bot.core.timeline.TimelineEventType;
 import com.starlwr.bot.core.timeline.TimelineStore;
+import com.starlwr.bot.core.timeline.TimelineWriter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -150,7 +151,8 @@ class HomeStatusFieldsTest {
     private AlertService alertService() {
         ObjectProvider<AlertChannel> provider = mock(ObjectProvider.class);
         when(provider.orderedStream()).thenAnswer(invocation -> alertChannels.stream());
-        return new AlertService(properties, provider);
+        // 首页问的是「这一路配好了没有」，一条也不发；发不发得出去那一头才记时间线
+        return new AlertService(properties, provider, TimelineWriter.NONE);
     }
 
     private static AlertChannel availableQqChannel() {

@@ -10,6 +10,7 @@ import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
 import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.timeline.TimelineWriter;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -230,7 +231,9 @@ class CommandDispatcherCorpusTest {
             when(provider.iterator()).thenAnswer(invocation -> new ArrayList<>(commands).iterator());
             when(provider.orderedStream()).thenAnswer(invocation -> new ArrayList<>(commands).stream());
 
-            dispatcher = new CommandDispatcher(provider, noFollowUps(), settings, dataSource, sender, new StarBotCoreProperties());
+            // 语料回放问的是「回了什么话」，不问日志页
+            dispatcher = new CommandDispatcher(provider, noFollowUps(), settings, dataSource, sender,
+                    new StarBotCoreProperties(), TimelineWriter.NONE);
 
             @SuppressWarnings("unchecked")
             ObjectProvider<CommandDispatcher> self = mock(ObjectProvider.class);

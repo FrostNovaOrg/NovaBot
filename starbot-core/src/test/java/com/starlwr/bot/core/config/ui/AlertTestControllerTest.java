@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.alert.AlertChannel;
 import com.starlwr.bot.core.alert.AlertService;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.timeline.TimelineWriter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -42,7 +43,9 @@ class AlertTestControllerTest {
         // orderedStream() 每次调用都要拿到一条新的流，用 thenAnswer 而不是 thenReturn
         when(provider.orderedStream()).thenAnswer(invocation -> channels.stream());
 
-        controller = new AlertTestController(new AlertService(new StarBotCoreProperties(), provider));
+        // 「发一条试试」走的是 AlertService#test，那一支不经投递路径，本就不记时间线
+        controller = new AlertTestController(
+                new AlertService(new StarBotCoreProperties(), provider, TimelineWriter.NONE));
     }
 
     /**

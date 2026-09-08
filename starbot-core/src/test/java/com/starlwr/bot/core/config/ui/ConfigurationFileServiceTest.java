@@ -1,6 +1,8 @@
 package com.starlwr.bot.core.config.ui;
 
 import com.starlwr.bot.core.service.TotalDataStorage;
+import com.starlwr.bot.core.timeline.TimelineEvent;
+import com.starlwr.bot.core.timeline.TimelineEventType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -247,6 +249,38 @@ class ConfigurationFileServiceTest {
         }
 
         assertEquals(3, stampedBackupNames().size(), "backupKeep=3 时连写 5 次应裁到 3 份");
+    }
+
+    /**
+     * 旧备份被裁掉时应往日志页记一条
+     * <p>
+     * 删除发生在保存的顺带一步里，此前只在 debug 级别留过一行。使用者去翻备份目录
+     * 却发现少了几份，而没有任何地方说过它们是被谁、什么时候删的——
+     * 「我明明存过那一版」与「被裁掉了」在目录里长得一模一样。
+     * <p>
+     * 阴性对照是<b>没裁掉任何东西的那几次保存</b>：每次保存都记一条「清理了 0 份」的话，
+     * 真正删掉东西的那几条会淹在里面，而这一格照样绿。
+     */
+    @Test
+    @DisplayName("裁掉旧备份时记一条「清理旧备份」，没裁到东西的那几次一条不记")
+    void prunedBackupsLandOnTheLogPage() throws IOException {
+        List<TimelineEvent> recorded = new ArrayList<>();
+        service = new ConfigurationFileService(config, () -> TEMPLATE, () -> 2,
+                Clock.systemDefaultZone(), recorded::add);
+
+        // 前两次留在保留份数内，一份也裁不掉
+        service.write(Map.of("server.port", "7000"));
+        service.write(Map.of("server.port", "7001"));
+        assertTrue(recorded.isEmpty(), "一份没裁的时候不该记, 否则真删掉东西的那几条会淹在里面: " + recorded);
+
+        service.write(Map.of("server.port", "7002"));
+
+        assertEquals(1, recorded.size(), "第三次保存挤掉最旧的一份, 该记一条: " + recorded);
+        TimelineEvent event = recorded.get(0);
+        assertEquals(TimelineEventType.BACKUP_PRUNED, event.type());
+        assertEquals("2", event.detail().get("keep"));
+        assertEquals(1, event.detail().get("pruned").split(",").length, event.detail().get("pruned"));
+        assertEquals(2, stampedBackupNames().size(), "记下来的那一条得与盘上真剩几份对得上");
     }
 
     @Test

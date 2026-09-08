@@ -3,6 +3,9 @@ package com.starlwr.bot.core.config.ui;
 import com.starlwr.bot.core.config.DatasourceProperties;
 import com.starlwr.bot.core.config.EventStreamProperties;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.timeline.TimelineEvent;
+import com.starlwr.bot.core.timeline.TimelineEventType;
+import com.starlwr.bot.core.timeline.TimelineWriter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -71,13 +74,21 @@ public class ConfigurationFileService {
 
     private final IntSupplier backupKeep;
 
+    /**
+     * 事件时间线
+     * <p>
+     * 只记一件事：旧备份被裁掉了几份。备份目录里少了几份文件是使用者迟早会撞上的现象，
+     * 而删除本身发生在保存的顺带一步里，此前没有任何地方说过它。
+     */
+    private final TimelineWriter timeline;
+
     @Autowired
     public ConfigurationFileService(ConfigurationMetadataService metadata, ApplicationContext context,
-                                    StarBotCoreProperties properties) {
+                                    StarBotCoreProperties properties, TimelineWriter timeline) {
         this(Path.of("application.yml"), () -> ConfigurationTemplate.render(metadata.getFields(),
                 ConfigurationPropertyFields.values(
                         context.getBeansWithAnnotation(ConfigurationProperties.class).values())),
-                () -> properties.getConfigUi().getBackupKeep());
+                () -> properties.getConfigUi().getBackupKeep(), Clock.systemDefaultZone(), timeline);
     }
 
     /**
@@ -103,13 +114,26 @@ public class ConfigurationFileService {
 
     /**
      * 指定命名备份用的钟，便于测试把两次保存钉在同一秒内
+     * <p>
+     * 这一支<b>明写不记时间线</b>：判据台架问的是文件写成了什么样，没有一条要看日志页。
+     * 写成「可以不传、不传就不记」的话，漏传与故意不传长得一模一样，
+     * 而漏传的表现是时间线上安静地少一类事件（见 {@link TimelineWriter#NONE}）。
      * @param clock 备份命名的钟
      */
     ConfigurationFileService(Path configPath, Supplier<String> initialContent, IntSupplier backupKeep, Clock clock) {
+        this(configPath, initialContent, backupKeep, clock, TimelineWriter.NONE);
+    }
+
+    /**
+     * @param timeline 时间线写入口，生产装配走这一支
+     */
+    ConfigurationFileService(Path configPath, Supplier<String> initialContent, IntSupplier backupKeep,
+                             Clock clock, TimelineWriter timeline) {
         this.configPath = configPath;
         this.initialContent = initialContent;
         this.backups = new TimestampedFileBackup(configPath, clock);
         this.backupKeep = backupKeep;
+        this.timeline = timeline;
     }
 
     /**
@@ -689,7 +713,18 @@ public class ConfigurationFileService {
      * @throws IOException 备份失败时抛出
      */
     private void backup() throws IOException {
-        backups.backup(backupKeep.getAsInt());
+        List<String> pruned = backups.backup(backupKeep.getAsInt());
+        if (pruned.isEmpty()) {
+            return;
+        }
+
+        // 一份没删的时候什么也不记：每次保存都记一条「清理了 0 份」，
+        // 会让日志页上真正删掉东西的那几条淹在里面
+        timeline.record(TimelineEvent.of(TimelineEventType.BACKUP_PRUNED, TimelineEvent.Level.INFO)
+                .text("配置备份留 " + backupKeep.getAsInt() + " 份，清掉最旧的 " + pruned.size() + " 份")
+                .detail("keep", String.valueOf(backupKeep.getAsInt()))
+                .detail("pruned", String.join(",", pruned))
+                .build());
     }
 
     /**

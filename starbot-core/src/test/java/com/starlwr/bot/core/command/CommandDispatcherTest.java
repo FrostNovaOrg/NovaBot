@@ -9,6 +9,7 @@ import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
 import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.timeline.TimelineWriter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -58,7 +59,9 @@ class CommandDispatcherTest {
         settings = new CommandSettingsService(new StarBotStateStore(new StarBotCoreProperties()));
         command = new RecordingCommand();
 
-        dispatcher = new CommandDispatcher(providerOf(command), noFollowUps(), settings, dataSource, sender, new StarBotCoreProperties());
+        // 这一件问的是「谁应了、谁没应」，不问日志页；命令记事那一头由 TimelineHookTest 量
+        dispatcher = new CommandDispatcher(providerOf(command), noFollowUps(), settings, dataSource, sender,
+                new StarBotCoreProperties(), TimelineWriter.NONE);
     }
 
     @Test
@@ -203,7 +206,8 @@ class CommandDispatcherTest {
 
         AbstractDataSource dataSource = mock(AbstractDataSource.class);
         when(dataSource.getAllUsers()).thenReturn(List.of(configuredUser()));
-        CommandDispatcher withAdmins = new CommandDispatcher(providerOf(command), noFollowUps(), settings, dataSource, sender, properties);
+        CommandDispatcher withAdmins = new CommandDispatcher(providerOf(command), noFollowUps(), settings,
+                dataSource, sender, properties, TimelineWriter.NONE);
         command.adminOnly = true;
 
         // 发送者 uid 为 1，角色是普通成员，但在超管名单里

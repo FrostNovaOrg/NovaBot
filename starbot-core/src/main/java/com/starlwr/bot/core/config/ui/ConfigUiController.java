@@ -32,6 +32,7 @@ import com.starlwr.bot.core.service.StarBotEventHandlerService;
 import com.starlwr.bot.core.service.StarBotSenderService;
 import com.starlwr.bot.core.timeline.TimelineEventType;
 import com.starlwr.bot.core.timeline.TimelineStore;
+import com.starlwr.bot.core.timeline.TimelineWriter;
 import com.starlwr.bot.core.util.QrCodeUtil;
 import com.starlwr.bot.core.util.StringUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -504,7 +505,8 @@ public class ConfigUiController {
      * @return 空通道的告警服务
      */
     private static AlertService defaultAlertService(StarBotCoreProperties properties) {
-        return new AlertService(properties, noAlertChannels());
+        // 一路通道都没有的告警服务本来就报不出任何东西，时间线上也就没有可记的
+        return new AlertService(properties, noAlertChannels(), TimelineWriter.NONE);
     }
 
     private static ObjectProvider<AlertChannel> noAlertChannels() {

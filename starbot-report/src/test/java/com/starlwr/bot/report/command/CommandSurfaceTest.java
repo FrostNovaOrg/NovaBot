@@ -22,6 +22,7 @@ import com.starlwr.bot.core.service.DefaultLiveDataService;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.StarBotStateStore;
 import com.starlwr.bot.core.service.TotalDataStorage;
+import com.starlwr.bot.core.timeline.TimelineWriter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -628,8 +629,9 @@ class CommandSurfaceTest {
          */
         String feed(boolean group, String text, String role) {
             replies.clear();
+            // 这一件量的是命令回了什么话，不问日志页
             CommandDispatcher dispatcher = new CommandDispatcher(provider, noFollowUps(), settings, dataSource, sender,
-                    new StarBotCoreProperties());
+                    new StarBotCoreProperties(), TimelineWriter.NONE);
             current.set(dispatcher);
 
             dispatcher.onRemoteMessage(new StarBotRemoteMessageEvent(PLATFORM, group ? "group" : "private",

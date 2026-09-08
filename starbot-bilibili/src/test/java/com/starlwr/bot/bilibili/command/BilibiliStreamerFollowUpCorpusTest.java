@@ -18,6 +18,7 @@ import com.starlwr.bot.core.sender.StarBotMessageSender;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.LiveSessionArchive;
 import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.timeline.TimelineWriter;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -263,7 +264,8 @@ class BilibiliStreamerFollowUpCorpusTest {
 
             // 分发器与追问共用这一把钟：两者各读各的时间时，「过期之后重新问」那一行
             // 会撞在读真钟的那道冷却上，而撞上冷却与「追问表没清干净」在回复里长得一样（都是一个字不说）
-            dispatcher = new CommandDispatcher(provider, followUps, settings, dataSource, sender, properties, clock);
+            dispatcher = new CommandDispatcher(provider, followUps, settings, dataSource, sender, properties,
+                    TimelineWriter.NONE, clock);
 
             @SuppressWarnings("unchecked")
             ObjectProvider<CommandDispatcher> self = mock(ObjectProvider.class);

@@ -53,7 +53,66 @@ public enum TimelineEventType {
     /**
      * 账号登录态由正常转为不正常
      */
-    LOGIN_LOST("登录失效", TimelineCategory.LINK);
+    LOGIN_LOST("登录失效", TimelineCategory.LINK),
+
+    /**
+     * 一条命令被认了出来并执行完
+     */
+    COMMAND_EXECUTED("命令执行", TimelineCategory.COMMAND),
+
+    /**
+     * 对机器人说了话，但认不出是哪条命令，已回菜单
+     */
+    COMMAND_UNKNOWN("认不出的命令", TimelineCategory.COMMAND),
+
+    /**
+     * 会话处于冷却期，这一句没有回
+     * <p>
+     * 与「认不出」分开记：使用者看到的都是「机器人没搭理我」，而两者的下一步完全不同——
+     * 一个是等三秒再说，一个是命令名打错了。
+     */
+    COMMAND_COOLED_DOWN("冷却忽略", TimelineCategory.COMMAND),
+
+    /**
+     * 一路告警通道把消息发出去了
+     */
+    ALERT_SENT("告警发出", TimelineCategory.ALERT),
+
+    /**
+     * 告警没能发出去（通道抛了，或压根没有配好的通道）
+     * <p>
+     * 与 {@link #PROBE_CHANGED} 记的不是一回事：那一条记「哪一项状态变了」，
+     * 这一条记「这件事报没报出去」。最要紧的一种故障恰恰是两者同时发生——
+     * 出网断了，于是既该告警、又发不出告警。
+     */
+    ALERT_FAILED("告警发不出", TimelineCategory.ALERT),
+
+    /**
+     * 保存下来的配置改动当场落到了运行中的程序上
+     */
+    SETTINGS_APPLIED("设置即时生效", TimelineCategory.SETTINGS),
+
+    /**
+     * 保存下来了，但要等重启才生效
+     */
+    SETTINGS_RESTART_PENDING("设置待重启", TimelineCategory.SETTINGS),
+
+    /**
+     * 程序启动完成
+     */
+    SYSTEM_STARTED("启动", TimelineCategory.SYSTEM),
+
+    /**
+     * 程序开始退出
+     * <p>
+     * 记的是「开始退」而不是「退完了」：退完之后就没有谁还能往时间线上写了。
+     */
+    SYSTEM_STOPPING("停止", TimelineCategory.SYSTEM),
+
+    /**
+     * 超出保留份数的旧配置备份被删掉
+     */
+    BACKUP_PRUNED("清理旧备份", TimelineCategory.SYSTEM);
 
     private final String description;
 
