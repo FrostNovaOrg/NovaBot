@@ -799,7 +799,7 @@ public class BilibiliApiUtil {
             return false;
         }
 
-        Cookies logged = extractTvLoginCookies(data);
+        Cookies logged = extractTvLoginCookies(data, TV_QR_CODE_POLL_API);
         if (logged == null) {
             // 只列字段名，绝不输出取值：这里面就有等同于账号密码的 SESSDATA
             log.error("TV 端扫码登录成功但未能解析出登录凭据; 响应字段: {}", data.keySet());
@@ -817,12 +817,15 @@ public class BilibiliApiUtil {
     /**
      * 从 TV 端登录响应中取出登录凭据与续期令牌
      * @param data 响应中的 data 对象
+     * @param endpoint 端点常量：轮询与续期共用此法，缺键记数要记到真实来路
      * @return 登录凭据，缺少必要字段时为 null
      */
-    private Cookies extractTvLoginCookies(JSONObject data) {
+    private Cookies extractTvLoginCookies(JSONObject data, String endpoint) {
         JSONObject cookieInfo = data.getJSONObject("cookie_info");
         JSONArray items = cookieInfo == null ? null : cookieInfo.getJSONArray("cookies");
         if (items == null) {
+            noteDataMissing(endpoint, cookieInfo == null ? "cookie_info" : "cookie_info.cookies",
+                    riskMetrics, dataMissingEndpoints);
             return null;
         }
 
@@ -848,6 +851,8 @@ public class BilibiliApiUtil {
         }
 
         if (StringUtil.isBlank(logged.getSessData()) || StringUtil.isBlank(logged.getBiliJct())) {
+            noteDataMissing(endpoint, StringUtil.isBlank(logged.getSessData()) ? "SESSDATA" : "bili_jct",
+                    riskMetrics, dataMissingEndpoints);
             return null;
         }
 
@@ -905,7 +910,7 @@ public class BilibiliApiUtil {
 
         JSONObject data = body.getJSONObject("data");
         noteUnknownTopKeys(OAUTH2_REFRESH_TOKEN_API, data);
-        Cookies refreshed = data == null ? null : extractTvLoginCookies(data);
+        Cookies refreshed = data == null ? null : extractTvLoginCookies(data, OAUTH2_REFRESH_TOKEN_API);
         if (refreshed == null) {
             throw new IllegalStateException("续期响应中未能解析出登录凭据, 响应字段: "
                     + (data == null ? "无 data" : data.keySet().toString()));
@@ -1087,6 +1092,10 @@ public class BilibiliApiUtil {
      */
     private Cookies parseLoginUrl(String url) {
         if (StringUtil.isBlank(url) || !url.contains("?")) {
+            // 两支分开：空 url 是应答没给该给的键；畸形 url（不含 ?）只是取不出查询串，不算缺键、不记
+            if (StringUtil.isBlank(url)) {
+                noteDataMissing(QR_CODE_POLL_API, "url", riskMetrics, dataMissingEndpoints);
+            }
             return null;
         }
 
@@ -1101,6 +1110,8 @@ public class BilibiliApiUtil {
         String sessData = query.get("SESSDATA");
         String biliJct = query.get("bili_jct");
         if (StringUtil.isBlank(sessData) || StringUtil.isBlank(biliJct)) {
+            noteDataMissing(QR_CODE_POLL_API, StringUtil.isBlank(sessData) ? "SESSDATA" : "bili_jct",
+                    riskMetrics, dataMissingEndpoints);
             return null;
         }
 
@@ -1119,6 +1130,12 @@ public class BilibiliApiUtil {
             return fetchLoginUid();
         } catch (Exception e) {
             log.debug("获取登录账号 uid 失败: {}", e.getMessage());
+            // 未登录走业务码（ResponseCodeException），不算解析失败、不记；其余异常记一笔，
+            // 否则网络故障与健康态在这句日志里永远分不开
+            if (riskMetrics != null && !(e instanceof ResponseCodeException)) {
+                riskMetrics.record(BilibiliRiskMetrics.Kind.PARSE_FAILURE,
+                        "MY_INFO_API:exception:" + e.getClass().getSimpleName());
+            }
             return null;
         }
     }
@@ -1337,8 +1354,8 @@ public class BilibiliApiUtil {
                 }
 
                 int before = unique.size();
-                addGuardMembers(unique, data.getJSONArray("top3"));
-                addGuardMembers(unique, data.getJSONArray("list"));
+                addGuardMembers(unique, data.getJSONArray("top3"), riskMetrics, dataMissingEndpoints);
+                addGuardMembers(unique, data.getJSONArray("list"), riskMetrics, dataMissingEndpoints);
                 if (unique.size() == before) {
                     break;
                 }
@@ -1360,19 +1377,21 @@ public class BilibiliApiUtil {
         return Optional.of(members);
     }
 
-    private static void addGuardMembers(Map<Long, GuardMember> unique, JSONArray items) {
+    private static void addGuardMembers(Map<Long, GuardMember> unique, JSONArray items,
+            BilibiliRiskMetrics metrics, ConcurrentHashMap<String, AtomicLong> ledger) {
         if (items == null) {
             return;
         }
         for (int i = 0; i < items.size(); i++) {
-            GuardMember member = parseGuardMember(items.getJSONObject(i));
+            GuardMember member = parseGuardMember(items.getJSONObject(i), metrics, ledger);
             if (member != null) {
                 unique.putIfAbsent(member.uid(), member);
             }
         }
     }
 
-    private static GuardMember parseGuardMember(JSONObject item) {
+    private static GuardMember parseGuardMember(JSONObject item,
+            BilibiliRiskMetrics metrics, ConcurrentHashMap<String, AtomicLong> ledger) {
         if (item == null) {
             return null;
         }
@@ -1399,6 +1418,8 @@ public class BilibiliApiUtil {
             }
         }
         if (uid == null) {
+            // extractData 段只记整段 data 缺失，成员级 uid 缺失此前一点痕迹不留
+            noteDataMissing(GUARD_TAB_API, "uid", metrics, ledger);
             return null;
         }
         long score = item.getLong("score") == null ? 0L : item.getLong("score");

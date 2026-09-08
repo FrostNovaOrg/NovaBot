@@ -54,6 +54,7 @@
 - 核心里八个配置类换了包：`com.starlwr.bot.core.config.ConfigEffect`／`CoreConfigurationSections`／`DatasourceProperties`／`EventStreamProperties`／`LiveProperties`／`LogProperties`／`NetworkProperties`／`NetworkThreadProperties` 改到 `com.starlwr.bot.core.properties`。只有自己写插件、代码里直接引用了这几个类的人才受影响（最常见的是给自家配置项标 `@ConfigEffect`）：改一下 import，类名、方法名和参数都没变。`com.starlwr.bot.core.config` 这个包还在，`ConfigLevel`／`ConfigDanger`／`StarBotCoreProperties` 和整个 `config.ui` 都没有挪动。`starbot.core.*` 的配置键一个也没改，行为一律未变。
 - 核心里四个工具类换了包：`com.starlwr.bot.core.util.CollectionUtil`／`MathUtil`／`SecureToken`／`StringUtil` 改到 `com.starlwr.bot.core.lang`。只有自己写插件、代码里直接引用了这四个类的人才受影响：改一下 import，类名、方法名和参数都没变。`com.starlwr.bot.core.util` 这个包还在，里面别的工具类（二维码、网络、掩码等）没有挪动。配置项、日志用词和行为一律未变。
 - 自己写的插件如果代码里直接用到核心里层的类，需要在 pom 里申报 novacore 依赖；仓库里的示例插件模板已经带上这一条。
+- 扫码登录与 TV 端登录的应答里缺了登录凭据键、跳转地址是空的、大航海名单里有成员不带 uid 时，此前只留一条日志就悄悄返回空，健康栏一格都不会动；现在各记一笔「接口应答缺数据」（只记接口与键名，不记内容）。取登录 uid 失败时，网络故障与未登录也分得开了。
 
 ### 修复
 
