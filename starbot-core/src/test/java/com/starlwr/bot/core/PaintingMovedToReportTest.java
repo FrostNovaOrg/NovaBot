@@ -34,20 +34,37 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * </ul>
  * 四问各自捕获、末尾汇总，先红时一次看清还差哪几处；每问各带一个阳性锚，
  * 免得路径整个解析错时四问一起「绿」。
+ *
+ * <h2>为什么按包路径现找模块，而不写模块目录名</h2>
+ * 本格问的是「类落在哪个<b>包</b>里」，模块目录叫什么名字与这个问题无关。写死目录名的代价
+ * 是安静的：目录重排的那一天，写着旧名的路径解析成一个不存在的目录，问①②量到的是空——
+ * 而空目录里当然没有 {@code painter} 包，四问会一起变绿。所以模块根一律现找：仓根下
+ * 摆着 {@code pom.xml} 的直接子目录就是模块，再看它的主码里有没有那个包路径。
+ * <p>
+ * 核心那个包根<b>横跨两个模块</b>（里层与运行壳各一份），故问①②对找到的每一个都问一遍；
+ * 只挑一个的话，画图的包被挪进另一个模块时本格不会说话。
  */
 @DisplayName("画图已迁出核心")
 class PaintingMovedToReportTest {
-    /** 核心主码的包根 */
-    private static final String CORE_MAIN = "starbot-core/src/main/java/com/starlwr/bot/core";
+    /** Maven 布局里主码与主资源的位置，与模块叫什么名字无关 */
+    private static final String MAIN_JAVA = "src/main/java";
 
-    /** 报告图插件主码的包根 */
-    private static final String REPORT_MAIN = "starbot-report/src/main/java/com/starlwr/bot/report";
+    private static final String MAIN_RESOURCES = "src/main/resources";
+
+    /** 核心的包根，相对主码目录 */
+    private static final String CORE_PACKAGE = "com/starlwr/bot/core";
+
+    /** 报告图插件的包根，相对主码目录 */
+    private static final String REPORT_PACKAGE = "com/starlwr/bot/report";
 
     /** 这两个包目录整个不该再出现在核心主码下 */
     private static final List<String> GONE_PACKAGES = List.of("painter", "factory");
 
     /** 阳性锚：核心主码下确实还留着的一个包，用来证明本格当真找对了源码根 */
     private static final String LIVE_PACKAGE = "service";
+
+    /** 阳性锚：核心的主资源里确实还留着的一个目录，用来证明问④看的是核心的资源根 */
+    private static final String LIVE_RESOURCE_DIR = "config-ui";
 
     /** 搬过去的四个类，相对报告图插件的包根 */
     private static final List<String> LANDED = List.of(
@@ -63,16 +80,24 @@ class PaintingMovedToReportTest {
     @DisplayName("核心主码里没了这两个包、不再引它们, 四个类落在报告图插件里, 内置字体跟着走")
     void paintingNoLongerLivesInCore() {
         List<String> unresolved = new ArrayList<>();
+        List<Path> coreModules = modulesHolding(CORE_PACKAGE);
+        List<Path> reportModules = modulesHolding(REPORT_PACKAGE);
 
         // 问①：两个包目录不在核心主码下
         try {
-            assertTrue(Files.isDirectory(repoRoot().resolve(CORE_MAIN).resolve(LIVE_PACKAGE)),
-                    "阳性锚: 核心主码下该看得见 " + LIVE_PACKAGE + " 包, 看不见说明本格找错了源码根");
+            assertTrue(!coreModules.isEmpty(),
+                    "阳性锚: 该有模块的主码带着 " + CORE_PACKAGE + " 包根, 一个都找不到说明本格没找对源码根");
+            for (Path module : coreModules) {
+                assertTrue(Files.isDirectory(mainPackage(module, CORE_PACKAGE).resolve(LIVE_PACKAGE)),
+                        "阳性锚: " + relative(module) + " 的核心主码下该看得见 " + LIVE_PACKAGE + " 包");
+            }
 
             List<String> left = new ArrayList<>();
-            for (String pkg : GONE_PACKAGES) {
-                if (Files.exists(repoRoot().resolve(CORE_MAIN).resolve(pkg))) {
-                    left.add(pkg);
+            for (Path module : coreModules) {
+                for (String pkg : GONE_PACKAGES) {
+                    if (Files.exists(mainPackage(module, CORE_PACKAGE).resolve(pkg))) {
+                        left.add(relative(module) + " 的 " + pkg);
+                    }
                 }
             }
             assertTrue(left.isEmpty(), "核心主码下仍留着画图的包: " + String.join("、", left));
@@ -82,7 +107,8 @@ class PaintingMovedToReportTest {
 
         // 问②：核心主码零处引用那两个包
         try {
-            List<String> coreSources = javaSourcesUnder(repoRoot().resolve(CORE_MAIN));
+            List<String> coreSources = new ArrayList<>();
+            coreModules.forEach(module -> coreSources.addAll(javaSourcesUnder(mainPackage(module, CORE_PACKAGE))));
             assertTrue(coreSources.size() > 100,
                     "阳性锚: 核心主码该有上百个 java 件, 只数出 " + coreSources.size() + " 个说明本问什么也没扫到");
 
@@ -102,13 +128,14 @@ class PaintingMovedToReportTest {
 
         // 问③：四个类当真在报告图插件里（答「那它在哪」）
         try {
-            assertTrue(Files.isDirectory(repoRoot().resolve(REPORT_MAIN)),
-                    "阳性锚: 报告图插件的包根须在, 不在说明本问的路径整个解析错了");
+            assertTrue(!reportModules.isEmpty(),
+                    "阳性锚: 该有模块的主码带着 " + REPORT_PACKAGE + " 包根, 找不到说明本问的路径整个解析错了");
 
             List<String> missing = new ArrayList<>();
             for (String relative : LANDED) {
-                Path landed = repoRoot().resolve(REPORT_MAIN).resolve(relative + ".java");
-                if (!Files.isRegularFile(landed)) {
+                boolean landed = reportModules.stream().anyMatch(module ->
+                        Files.isRegularFile(mainPackage(module, REPORT_PACKAGE).resolve(relative + ".java")));
+                if (!landed) {
                     missing.add(relative);
                 }
             }
@@ -120,22 +147,55 @@ class PaintingMovedToReportTest {
 
         // 问④：内置字体跟着 FontUtil 走
         try {
-            Path coreResources = repoRoot().resolve("starbot-core/src/main/resources");
-            assertTrue(Files.isDirectory(coreResources.resolve("config-ui")),
+            assertTrue(coreModules.stream().anyMatch(module ->
+                            Files.isDirectory(module.resolve(MAIN_RESOURCES).resolve(LIVE_RESOURCE_DIR))),
                     "阳性锚: 核心的界面资源目录须在, 不在说明本问看的不是核心的资源根");
 
-            assertTrue(Files.isRegularFile(
-                            repoRoot().resolve("starbot-report/src/main/resources").resolve(BUNDLED_FONT)),
+            assertTrue(reportModules.stream().anyMatch(module ->
+                            Files.isRegularFile(module.resolve(MAIN_RESOURCES).resolve(BUNDLED_FONT))),
                     "内置字体没跟着 FontUtil 走: 报告图插件的 jar 里没有 " + BUNDLED_FONT
                             + ", classpath 读不到它, 画第一张图时才会炸");
-            assertTrue(!Files.exists(coreResources.resolve(BUNDLED_FONT)),
-                    "核心的 jar 里还留着一份 " + BUNDLED_FONT + ", 已经没有谁读它了");
+
+            List<String> stale = coreModules.stream()
+                    .filter(module -> Files.exists(module.resolve(MAIN_RESOURCES).resolve(BUNDLED_FONT)))
+                    .map(PaintingMovedToReportTest::relative)
+                    .toList();
+            assertTrue(stale.isEmpty(),
+                    "核心的 jar 里还留着一份 " + BUNDLED_FONT + ", 已经没有谁读它了: " + String.join("、", stale));
         } catch (AssertionError e) {
             unresolved.add("问④ " + e.getMessage());
         }
 
         assertTrue(unresolved.isEmpty(),
                 () -> "四问中 " + unresolved.size() + " 问未销: " + String.join("; ", unresolved));
+    }
+
+    /** 主码里带着这个包路径的模块根；模块叫什么名字本格不认 */
+    private static List<Path> modulesHolding(String packagePath) {
+        return moduleRoots().stream()
+                .filter(module -> Files.isDirectory(mainPackage(module, packagePath)))
+                .toList();
+    }
+
+    /** 仓根下的模块根：直接子目录里摆着 {@code pom.xml} 的那些 */
+    private static List<Path> moduleRoots() {
+        try (Stream<Path> children = Files.list(repoRoot())) {
+            return children.filter(Files::isDirectory)
+                    .filter(child -> Files.isRegularFile(child.resolve("pom.xml")))
+                    .sorted()
+                    .toList();
+        } catch (IOException e) {
+            throw new UncheckedIOException("读不到仓库根目录下的模块", e);
+        }
+    }
+
+    private static Path mainPackage(Path module, String packagePath) {
+        return module.resolve(MAIN_JAVA).resolve(packagePath);
+    }
+
+    /** 报错时给人看的位置：相对仓根，这样说得出是哪个模块，而源码里不必写死它的名字 */
+    private static String relative(Path module) {
+        return repoRoot().relativize(module).toString();
     }
 
     /** 目录下所有 java 件的正文；目录不在时回空表，让阳性锚去报这件事 */
