@@ -84,7 +84,7 @@ class BilibiliApiUtilUnknownFieldTest {
             for (Map.Entry<String, BilibiliApiUtil.KnownDataKeys> entry
                     : BilibiliApiUtil.KNOWN_DATA_KEYS_BY_PATH.entrySet()) {
                 JSONObject data = keys(entry.getValue().keys().toArray(String[]::new));
-                zeroApi.noteUnknownTopKeys(entry.getKey(), data);
+                feedKnownKeys(zeroApi, entry, data);
             }
             assertEquals(0, zeroMetrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW),
                     "表内每一路只含已知键应恒 0，实际 "
@@ -98,7 +98,7 @@ class BilibiliApiUtilUnknownFieldTest {
                         new StarBotBilibiliProperties(), metrics);
                 JSONObject data = keys(entry.getValue().keys().toArray(String[]::new));
                 data.put("x_extra", 0);
-                api.noteUnknownTopKeys(entry.getKey(), data);
+                feedKnownKeys(api, entry, data);
                 String name = entry.getValue().constantName();
                 assertEquals(1, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW),
                         name + " 已知键＋x_extra 应恰 1，实际 "
@@ -151,7 +151,7 @@ class BilibiliApiUtilUnknownFieldTest {
     }
 
     @Test
-    @DisplayName("CONFIRM_REFRESH 进表后未知键 0→1；ROOM_STATUS／NAV／扫码轮询／TV／心跳解析处给未知键应记")
+    @DisplayName("CONFIRM_REFRESH 进表后未知键 0→1；ROOM_STATUS／NAV／扫码轮询／TV／OAUTH2 解析处给未知键应记；心跳取用为空不记")
     void confirmRefreshAndEndpointsOutsideExtractData() {
         List<String> reds = new ArrayList<>();
 
@@ -280,17 +280,51 @@ class BilibiliApiUtilUnknownFieldTest {
             when(http.getJson(any(), any())).thenReturn(wrap(hb));
             BilibiliApiUtil api = new BilibiliApiUtil(http, new StarBotBilibiliProperties(), metrics);
             api.liveRoomHeartbeat(1L, 60);
-            assertEquals(1, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW),
-                    "心跳多一个顶层键应 0→1，实际 "
+            assertEquals(0, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW),
+                    "心跳取用为空整路不记，实际 "
                             + metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW));
-            String detail = metrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD).orElse("");
-            assertTrue(detail.contains("LIVE_HEARTBEAT_API:x_extra"),
-                    "键形应为 LIVE_HEARTBEAT_API:x_extra，实际: " + detail);
         } catch (AssertionError | RuntimeException e) {
             reds.add("心跳 " + e.getMessage());
         }
 
         assertTrue(reds.isEmpty(), () -> "六问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+    }
+
+    @Test
+    @DisplayName("OAUTH2 续期解析处给未知键应记")
+    void oauth2RefreshUnknownTopKey() {
+        BilibiliRiskMetrics metrics = new BilibiliRiskMetrics();
+        HttpUtil http = mock(HttpUtil.class);
+        JSONObject data = new JSONObject();
+        JSONObject cookieInfo = new JSONObject();
+        JSONArray cookiesArr = new JSONArray();
+        JSONObject sess = new JSONObject();
+        sess.put("name", "SESSDATA");
+        sess.put("value", "s");
+        JSONObject jct = new JSONObject();
+        jct.put("name", "bili_jct");
+        jct.put("value", "j");
+        cookiesArr.add(sess);
+        cookiesArr.add(jct);
+        cookieInfo.put("cookies", cookiesArr);
+        data.put("cookie_info", cookieInfo);
+        data.put("access_token", "a");
+        data.put("refresh_token", "r");
+        data.put("expires_in", 1);
+        data.put("x_extra", 0);
+        when(http.postAsForm(any(), any(), any())).thenReturn(wrap(data).toJSONString());
+        BilibiliApiUtil api = new BilibiliApiUtil(http, new StarBotBilibiliProperties(), metrics);
+        Cookies cookies = new Cookies();
+        cookies.setAccessToken("old-a");
+        cookies.setRefreshToken("old-r");
+        api.setCookies(cookies);
+        api.refreshAppToken();
+        assertEquals(1, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW),
+                "OAUTH2 多一个顶层键应 0→1，实际 "
+                        + metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW));
+        String detail = metrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD).orElse("");
+        assertTrue(detail.contains("OAUTH2_REFRESH_TOKEN_API:x_extra"),
+                "键形应为 OAUTH2_REFRESH_TOKEN_API:x_extra，实际: " + detail);
     }
 
     private static JSONObject keys(String... names) {
@@ -308,6 +342,27 @@ class BilibiliApiUtilUnknownFieldTest {
             body.put("data", data);
         }
         return body;
+    }
+
+    private static final Set<String> OUTSIDE_EXTRACT_DATA = Set.of(
+            "NAV_API",
+            "TV_QR_CODE_GENERATE_API",
+            "TV_QR_CODE_POLL_API",
+            "QR_CODE_POLL_API",
+            "LIVE_HEARTBEAT_API",
+            "OAUTH2_REFRESH_TOKEN_API"
+    );
+
+    /**
+     * 走 {@code extractData} 的路喂整段应答；其余经 {@code noteUnknownTopKeys}。
+     */
+    private static void feedKnownKeys(BilibiliApiUtil api,
+            Map.Entry<String, BilibiliApiUtil.KnownDataKeys> entry, JSONObject data) {
+        if (entry.getValue().nested() || OUTSIDE_EXTRACT_DATA.contains(entry.getValue().constantName())) {
+            api.noteUnknownTopKeys(entry.getKey(), data);
+            return;
+        }
+        api.extractData(wrap(data), entry.getKey());
     }
 
     private static BilibiliApiUtil apiReturning(String url, JSONObject body, BilibiliRiskMetrics metrics) {
