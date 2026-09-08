@@ -149,7 +149,9 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
         String silentLines = silentLossLine(BilibiliRiskMetrics.Kind.PARSE_FAILURE, "解析失败", "类")
                 + silentLossLine(BilibiliRiskMetrics.Kind.FIELD_MISSING, "缺字段", "类")
                 + silentLossLine(BilibiliRiskMetrics.Kind.API_DATA_MISSING, "接口缺 data", "个端点")
-                + silentLossLine(BilibiliRiskMetrics.Kind.PACKET_CORRUPT, "数据包异常", "类");
+                + silentLossLine(BilibiliRiskMetrics.Kind.PACKET_CORRUPT, "数据包异常", "类")
+                + silentLossLine(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, "弹幕协议未知字段", "个")
+                + overflowLine();
 
         if (problems.isEmpty()) {
             return HealthStatus.ok(summary(http412, code352, gaia, missing, disconnects) + unknownCmdLine + silentLines);
@@ -157,6 +159,31 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
 
         return HealthStatus.degraded(String.join("；", problems) + unknownCmdLine + silentLines,
                 String.join(" ", advices));
+    }
+
+    /**
+     * 计数顶到每类保留上限、被挤出去的那一截
+     * <p>
+     * {@code count()} 封顶在保留上限，顶到之后「恰好顶格」与「二十万次」读出来一模一样，
+     * 而这两种要做的事完全不同。有溢出才出这一段——一类都没顶到时，这一行必须与
+     * 加这一段之前<b>逐字相同</b>，否则首页文案会莫名其妙地长出一截。
+     * <p>
+     * 只进摘要、不改档也不动任何阈值：读数封顶说明的是「量太大」，不是「坏了」，
+     * 该由哪一类的阈值降档，那一类自己已经在上面判过了。
+     */
+    private String overflowLine() {
+        List<String> spilled = new ArrayList<>();
+        for (BilibiliRiskMetrics.Kind kind : BilibiliRiskMetrics.Kind.values()) {
+            long dropped = metrics.overflow(kind);
+            if (dropped > 0) {
+                spilled.add(kind.getLabel() + " " + dropped + " 条");
+            }
+        }
+
+        if (spilled.isEmpty()) {
+            return "";
+        }
+        return "，计数已顶到保留上限，另有 " + String.join("、", spilled) + " 被挤掉（真实次数还要加上这些）";
     }
 
     /**
@@ -173,11 +200,13 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
     }
 
     /**
-     * 四类静默损失（解析失败、缺字段、接口缺 data、数据包异常）只进摘要、不改档位：
-     * 它们说明「有些消息或应答被丢了」，不是连接坏了，但首页得看得见丢的是什么。
+     * 五类静默信号（解析失败、缺字段、接口缺 data、数据包异常、弹幕协议未知字段）
+     * 只进摘要、不改档位：它们说明「有些消息或应答被丢了」或「报文里多了点什么」，
+     * 不是连接坏了，但首页得看得见。
      * <p>
      * 数据包异常是其中最贵的一类——协议层没读下来时丢的是<b>整批</b>，
-     * 一批里可能有几十条弹幕与礼物。
+     * 一批里可能有几十条弹幕与礼物。未知字段则是另一头：<b>今天什么都没丢</b>，
+     * 但平台已经在报文里放了我们不认识的东西，这往往是数据搬家的前一步。
      */
     private String silentLossLine(BilibiliRiskMetrics.Kind kind, String label, String unit) {
         long n = metrics.count(kind, DAY);

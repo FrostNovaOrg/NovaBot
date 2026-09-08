@@ -131,8 +131,8 @@ public final class BilibiliPacketCodec {
     /**
      * 按给定限额解码一段字节流，未知协议版本与数据包异常分别上报给两个 sink
      * <p>
-     * 数据包异常单开一个上报口而不是复用日志：解压失败、预算爆掉、长度字段异常
-     * 都会让<b>整批</b>数据包被丢掉，而这三种此前只有一条 warn 日志——
+     * 数据包异常单开一个上报口而不是复用日志：解压失败、预算爆掉、长度字段异常、嵌套超深
+     * 都会让<b>整批</b>数据包被丢掉，而这四种此前只有一条 warn 日志——
      * 一批里可能有几十条弹幕与礼物，丢掉之后计数上完全说得通，没有任何计数会变。
      * @param data 字节流
      * @param limits 解码限额
@@ -150,7 +150,7 @@ public final class BilibiliPacketCodec {
     }
 
     /**
-     * 数据包在协议层就没读下来的三种形态
+     * 数据包在协议层就没读下来的四种形态
      * <p>
      * 名字里的 token 会原样进健康页的文本样本，因此一律 ASCII。
      */
@@ -168,7 +168,12 @@ public final class BilibiliPacketCodec {
         /**
          * 头部的长度字段自相矛盾或越界，从这里往后不再解析
          */
-        BAD_LENGTH("bad-length");
+        BAD_LENGTH("bad-length"),
+
+        /**
+         * 递归展开压缩包超过了层数限额，这一层里的数据包一个都不展开
+         */
+        NESTING_TOO_DEEP("nesting-too-deep");
 
         private final String token;
 
@@ -244,6 +249,7 @@ public final class BilibiliPacketCodec {
                                    Consumer<PacketAnomaly> packetAnomalySink) {
         if (depth > limits.maxNestingDepth()) {
             log.warn("直播间数据包嵌套层数超过 {} 层, 已停止解析", limits.maxNestingDepth());
+            report(packetAnomalySink, PacketAnomaly.NESTING_TOO_DEEP);
             return;
         }
 

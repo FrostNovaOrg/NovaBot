@@ -1,8 +1,12 @@
 package com.starlwr.bot.bilibili.protocol;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 最小 protobuf wire-format 读取器
@@ -179,6 +183,40 @@ public final class BilibiliProtobufReader {
      */
     public int size() {
         return fields.size();
+    }
+
+    /**
+     * 本条报文读到的字段号里，不在已知集内的那些（升序）
+     * <p>
+     * <b>只读</b>：不改变取值语义，也不影响 {@link #has}／{@link #number} 等任何一个取值口。
+     * 未知字段照旧被跳过，这个方法只是把「跳过了哪些」说出来——平台在 pb 里新增字段
+     * 是今天唯一一种<b>一点痕迹都不留</b>的接口变化，读取器不说就没有任何地方会知道。
+     * <p>
+     * 全部字段都在已知集里时返回<b>共享的空表</b>，不分配、不排序：调用点是每秒数十条的
+     * 长连接热路径，绝大多数报文一个未知字段都没有，这条路径上不该有任何多余开销。
+     * <p>
+     * 已知集由调用方给出——本类不认识任何字段号的含义（见类注释）。传 {@code null}
+     * 等于「什么都不认识」，此时读到的字段号会被整个报出来。
+     * @param known 已知字段号集合
+     * @return 未知字段号，升序；没有时为空表
+     */
+    public List<Integer> unknownFields(Set<Integer> known) {
+        List<Integer> unknown = null;
+        for (Integer field : fields.keySet()) {
+            if (known != null && known.contains(field)) {
+                continue;
+            }
+            if (unknown == null) {
+                unknown = new ArrayList<>(2);
+            }
+            unknown.add(field);
+        }
+
+        if (unknown == null) {
+            return List.of();
+        }
+        Collections.sort(unknown);
+        return unknown;
     }
 
     /**

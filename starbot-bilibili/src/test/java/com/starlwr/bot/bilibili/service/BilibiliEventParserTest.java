@@ -1216,6 +1216,190 @@ class BilibiliEventParserTest {
 
     }
 
+    @Nested
+    @DisplayName("pb 未知字段")
+    class UnknownPbFields {
+        /**
+         * 一份顶层字段全在 {@code SEND_GIFT_V2} 字段表里的礼物报文，用作阴性对照
+         */
+        private static final String GIFT = giftPb();
+
+        private static String giftPb() {
+            return new PbWriter()
+                    .varint(1, 555)
+                    .str(2, "土豪")
+                    .message(10, new PbWriter()
+                            .varint(1, 31036)
+                            .str(2, "辣条")
+                            .varint(3, 1)
+                            .varint(6, 1000)
+                            .varint(7, 1000)
+                            .str(8, "gold")
+                            .varint(10, 1700000002L))
+                    .message(13, new PbWriter().varint(1, 30))
+                    .message(15, new PbWriter()
+                            .varint(1, 555)
+                            .message(2, new PbWriter()
+                                    .str(1, "土豪")
+                                    .str(2, "https://face.example/3.jpg")))
+                    .base64();
+        }
+
+        /**
+         * 在一份现成夹具的末尾追加一个字段
+         * <p>
+         * protobuf 与字段顺序无关，追加在尾部与平台在任意位置新增一个字段是同一件事。
+         * 夹具本身一字不改——量的是「同一份报文多了一个字段号」，不是另一份报文。
+         */
+        private static String withExtraField(String pb, int field, long value) {
+            byte[] base = Base64.getDecoder().decode(pb);
+            byte[] extra = new PbWriter().varint(field, value).toBytes();
+            byte[] merged = Arrays.copyOf(base, base.length + extra.length);
+            System.arraycopy(extra, 0, merged, base.length, extra.length);
+            return Base64.getEncoder().encodeToString(merged);
+        }
+
+        /**
+         * 全部风控类目的计数合计
+         * <p>
+         * <b>这一问故意不指名任何一类</b>：pb 报文出现字段表外的新字段号时，
+         * 全仓有没有<b>任何一个</b>计数会动。平台在 pb 里加字段是今天唯一
+         * 「一点痕迹都不留」的变化形态，先要有痕迹，才谈得上记在哪一类。
+         */
+        private long recordedAcrossAllKinds() {
+            long total = 0;
+            for (BilibiliRiskMetrics.Kind kind : BilibiliRiskMetrics.Kind.values()) {
+                total += riskMetrics.count(kind, Duration.ofMinutes(1));
+            }
+            return total;
+        }
+
+        private Optional<StarBotBaseLiveEvent> parseInteract(String pb) {
+            return parse("{\"cmd\":\"INTERACT_WORD_V2\",\"data\":{\"dmscore\":3,\"pb\":\"" + pb + "\"}}");
+        }
+
+        private Optional<StarBotBaseLiveEvent> parseGift(String pb) {
+            return parse("{\"cmd\":\"SEND_GIFT_V2\",\"data\":{\"dmscore\":3,\"pb\":\"" + pb + "\"}}");
+        }
+
+        private long unknownFieldCount() {
+            return riskMetrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, Duration.ofMinutes(1));
+        }
+
+        private String unknownFieldDetail() {
+            return riskMetrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD).orElse("");
+        }
+
+        @Test
+        @DisplayName("进房报文多出字段号 99：留下痕迹，喂 20 次记 20 次、种数仍是 1")
+        void unknownFieldOnInteractIsCountedEveryTime() {
+            List<String> reds = new ArrayList<>();
+            String extended = withExtraField(InteractV2.ENTER_WITH_GUARD, 99, 1);
+
+            try {
+                assertEquals(0, recordedAcrossAllKinds(), "开工前不该有任何记账");
+                assertTrue(parseInteract(extended).isPresent(), "多一个字段不该影响取值，事件照出");
+                assertEquals(1, recordedAcrossAllKinds(), "字段表外的新字段号必须留下痕迹");
+                assertEquals(1, unknownFieldCount(), "这一笔要记在未知字段这一类上");
+                assertTrue(unknownFieldDetail().contains("INTERACT_WORD_V2:99"),
+                        "detail 要说得出是哪种报文的哪个字段号，实际: " + unknownFieldDetail());
+            } catch (AssertionError e) {
+                reds.add("① " + e.getMessage());
+            }
+
+            try {
+                for (int i = 0; i < 19; i++) {
+                    parseInteract(extended);
+                }
+                assertEquals(20, recordedAcrossAllKinds(),
+                        "计数是发生次数不是写入次数，实际 " + recordedAcrossAllKinds());
+                assertEquals(20, unknownFieldCount());
+                assertTrue(unknownFieldDetail().contains("count=10") && unknownFieldDetail().contains("unique=1"),
+                        "同一个字段号去重后种数恒 1，文本样本只在量级处换，实际: " + unknownFieldDetail());
+            } catch (AssertionError e) {
+                reds.add("② " + e.getMessage());
+            }
+
+            try {
+                // 礼物用的是另一张表：拿进房那张去量礼物报文，13 与 15 会被判成未知
+                assertTrue(parseGift(withExtraField(GIFT, 99, 1)).isPresent());
+                assertEquals(21, unknownFieldCount(), "礼物报文的未知字段进同一本账");
+                assertTrue(unknownFieldDetail().contains("SEND_GIFT_V2:99"),
+                        "detail 要分得出是哪一种报文，实际: " + unknownFieldDetail());
+            } catch (AssertionError e) {
+                reds.add("③ " + e.getMessage());
+            }
+
+            assertTrue(reds.isEmpty(), () -> "三问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+        }
+
+        @Test
+        @DisplayName("detail 只写名、计数、种数与首见时刻，不写新字段里装的值")
+        void detailNeverCarriesTheValue() {
+            // 新字段里装的很可能正是观众信息，而 detail 是要显示在健康页上的。
+            // 这一条钉的是硬约束：报文正文一个字节都不许进 detail
+            String secret = "SECRET_FIELD_VALUE_XYZ";
+            byte[] base = Base64.getDecoder().decode(InteractV2.ENTER_PLAIN);
+            byte[] extra = new PbWriter().str(99, secret).toBytes();
+            byte[] merged = Arrays.copyOf(base, base.length + extra.length);
+            System.arraycopy(extra, 0, merged, base.length, extra.length);
+
+            assertTrue(parseInteract(Base64.getEncoder().encodeToString(merged)).isPresent());
+
+            String detail = unknownFieldDetail();
+            assertTrue(detail.contains("INTERACT_WORD_V2:99"), "应记下字段号，实际: " + detail);
+            assertFalse(detail.contains(secret), "detail 不得含报文里的取值，实际: " + detail);
+            assertTrue(detail.contains("at="), "首见时刻要在 detail 里，实际: " + detail);
+        }
+
+        @Test
+        @DisplayName("阴性对照：五份进房与一份礼物原样夹具各喂 10 次，一条记账都不产生")
+        void fieldsInsideTheTablesRaiseNothing() {
+            for (String pb : List.of(InteractV2.ENTER_WITH_GUARD, InteractV2.ENTER_WITH_PROMOTION,
+                    InteractV2.ENTER_PLAIN, InteractV2.FOLLOW_WITH_MEDAL, InteractV2.SHARE)) {
+                for (int i = 0; i < 10; i++) {
+                    assertTrue(parseInteract(pb).isPresent(), "原样夹具应照常产出事件");
+                }
+            }
+            for (int i = 0; i < 10; i++) {
+                assertTrue(parseGift(GIFT).isPresent(), "原样礼物夹具应照常产出事件");
+            }
+
+            assertEquals(0, recordedAcrossAllKinds(),
+                    "字段号全在两张表里时不得有任何记账，实际 " + recordedAcrossAllKinds());
+        }
+
+        @Test
+        @DisplayName("名表上限对照：522 个不同字段号，逐条照记、种数封顶 512、溢出 10")
+        void unknownFieldNameTableIsCapped() {
+            List<String> reds = new ArrayList<>();
+            for (int i = 0; i < 522; i++) {
+                parseInteract(withExtraField(InteractV2.ENTER_PLAIN, 1000 + i, 1));
+            }
+
+            try {
+                assertEquals(522, recordedAcrossAllKinds(),
+                        "名表满了之后计数不得停，实际 " + recordedAcrossAllKinds());
+                assertEquals(522, unknownFieldCount());
+            } catch (AssertionError e) {
+                reds.add("① " + e.getMessage());
+            }
+
+            try {
+                // 名表没有上限的话，长期跑下去它就是一个无限增长的 map；
+                // 有上限而不记溢出的话，「种数不再涨」与「确实没有新字段了」读出来一样
+                assertTrue(unknownFieldDetail().contains("unique=512"),
+                        "种数应封顶在 512，实际: " + unknownFieldDetail());
+                assertTrue(unknownFieldDetail().contains("overflow count=10"),
+                        "名表满后的 10 个新字段号应记进溢出，实际: " + unknownFieldDetail());
+            } catch (AssertionError e) {
+                reds.add("② " + e.getMessage());
+            }
+
+            assertTrue(reds.isEmpty(), () -> "两问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+        }
+    }
+
     /**
      * 构造礼物消息
      * @param coinType 货币类型
@@ -1871,6 +2055,10 @@ class BilibiliEventParserTest {
             writeVarint(bytes.length);
             out.writeBytes(bytes);
             return this;
+        }
+
+        byte[] toBytes() {
+            return out.toByteArray();
         }
 
         String base64() {

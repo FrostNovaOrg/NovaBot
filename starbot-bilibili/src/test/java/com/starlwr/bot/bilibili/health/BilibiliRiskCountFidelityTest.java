@@ -137,6 +137,23 @@ class BilibiliRiskCountFidelityTest {
     }
 
     @Test
+    @DisplayName("嵌套层数超限时记一次数据包异常，原因串是 nesting-too-deep")
+    void nestingTooDeepIsCountedAsPacketAnomaly() {
+        // 与另外三种同样是<b>整批</b>丢弃：超限的那一层里所有数据包一个都不会展开，
+        // 而此前它只有一条 warn 日志，计数上完全说得通
+        properties.getLive().setMaxDecodeNestingDepth(1);
+        BilibiliLiveRoomConnector connector = newConnector(metrics);
+
+        receive(connector, zlibPacket(zlibPacket(
+                BilibiliPacketCodec.encode(DataPackType.NOTICE, "{\"cmd\":\"LIVE\"}"))));
+
+        assertEquals(1, packetAnomalies(), "嵌套超限是整批消息消失，必须记账");
+        assertEquals("nesting-too-deep",
+                metrics.lastDetail(BilibiliRiskMetrics.Kind.PACKET_CORRUPT).orElse("").split("\\s+")[0],
+                "detail 第一段要分得出是四种里的哪一种");
+    }
+
+    @Test
     @DisplayName("阴性对照：正常包不产生任何解析失败或数据包异常")
     void normalPacketsRaiseNothing() {
         BilibiliLiveRoomConnector connector = newConnector(metrics);

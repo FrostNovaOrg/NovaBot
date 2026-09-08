@@ -6,7 +6,10 @@ import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -234,6 +237,63 @@ class BilibiliProtobufReaderTest {
             assertFalse(message.isTruncated());
             assertEquals(3L, message.number(3));
             assertEquals(2L, message.number(536870911));
+        }
+
+        @Test
+        @DisplayName("差集口报出字段表外的字段号：升序、四种 wire type 一视同仁、不改取值")
+        void unknownFieldsReportsFieldNumbersOutsideTheKnownSet() {
+            List<String> reds = new ArrayList<>();
+            byte[] data = writer()
+                    .varint(1, 5L)
+                    .string(2, "已知")
+                    .varint(99, 1L)
+                    .string(41, "新来的文本")
+                    .fixed32(40, 0x11223344)
+                    .build();
+            BilibiliProtobufReader message = BilibiliProtobufReader.parse(data);
+
+            try {
+                assertEquals(List.of(40, 41, 99), message.unknownFields(Set.of(1, 2)),
+                        "差集要按字段号升序给出，四种 wire type 都算");
+            } catch (AssertionError e) {
+                reds.add("① " + e.getMessage());
+            }
+
+            try {
+                assertEquals(5L, message.number(1), "只读口不得动取值");
+                assertEquals("已知", message.string(2));
+                assertEquals(1L, message.number(99), "未知字段本来就读得到，报出来之后仍然读得到");
+                assertEquals(List.of(40, 41, 99), message.unknownFields(Set.of(1, 2)),
+                        "问第二次答案要一样——它是只读的");
+            } catch (AssertionError e) {
+                reds.add("② " + e.getMessage());
+            }
+
+            try {
+                assertEquals(List.of(1, 2, 40, 41, 99), message.unknownFields(Set.of()),
+                        "空的已知集等于什么都不认识");
+                assertEquals(List.of(1, 2, 40, 41, 99), message.unknownFields(null),
+                        "null 与空集同义，不得抛异常");
+            } catch (AssertionError e) {
+                reds.add("③ " + e.getMessage());
+            }
+
+            assertTrue(reds.isEmpty(), () -> "三问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+        }
+
+        @Test
+        @DisplayName("字段全在已知集里时返回共享空表：热路径上一次分配都没有")
+        void unknownFieldsAllocatesNothingWhenEverythingIsKnown() {
+            // 调用点是每秒数十条的长连接热路径，绝大多数报文一个未知字段都没有。
+            // assertTrue(isEmpty()) 分不出「返回了一个新建的空表」与「什么都没建」——
+            // 前者每条消息一次分配，而这条路径每天要走上百万次
+            BilibiliProtobufReader message = BilibiliProtobufReader.parse(
+                    writer().varint(1, 5L).string(2, "已知").varint(7, 1700000000L).build());
+
+            assertSame(List.of(), message.unknownFields(Set.of(1, 2, 7)),
+                    "全是已知字段时应当返回共享空表，而不是新建一个");
+            assertSame(List.of(), BilibiliProtobufReader.parse(new byte[0]).unknownFields(Set.of(1)),
+                    "空报文同理");
         }
     }
 

@@ -220,4 +220,74 @@ class BilibiliRiskHealthProbeTest {
 
         assertTrue(reds.isEmpty(), () -> "三问中 " + reds.size() + " 问红: " + String.join("; ", reds));
     }
+
+    @Test
+    @DisplayName("UNKNOWN_FIELD 只进摘要不降档：写种数与最近一个字段号，平静时这一行不出现")
+    void unknownFieldStaysInSummary() {
+        java.util.List<String> reds = new java.util.ArrayList<>();
+
+        try {
+            // 出现新字段不等于坏了：它说明平台在报文里放了我们不认识的东西，
+            // 取值一切照常。降档会让首页天天黄着，而真正的降级信号就此贬值
+            metrics.record(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD,
+                    "INTERACT_WORD_V2:99 count=1 unique=2 at=2026-09-08T09:00:00Z");
+            HealthStatus status = probe.check();
+
+            assertEquals(HealthStatus.Level.OK, status.level(), "未知字段不得降档");
+            assertTrue(status.summary().contains("弹幕协议未知字段 2 个"),
+                    "summary 应写未知字段种数，实际: " + status.summary());
+            assertTrue(status.summary().contains("最近 INTERACT_WORD_V2:99"),
+                    "summary 应带最近一个字段号，实际: " + status.summary());
+        } catch (AssertionError e) {
+            reds.add("① " + e.getMessage());
+        }
+
+        try {
+            HealthStatus quiet = new BilibiliRiskHealthProbe(new BilibiliRiskMetrics()).check();
+            assertFalse(quiet.summary().contains("未知字段"), "没发生就不该出现这行，实际: " + quiet.summary());
+        } catch (AssertionError e) {
+            reds.add("② " + e.getMessage());
+        }
+
+        assertTrue(reds.isEmpty(), () -> "两问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+    }
+
+    /**
+     * 平静时的摘要原文
+     * <p>
+     * 溢出段是「有才出」的：一类都没顶到上限时，这一行必须与加这一段之前<b>逐字相同</b>。
+     * 只断言「不含溢出字样」的话，把摘要改成别的样子也照样绿。
+     */
+    private static final String QUIET_SUMMARY =
+            "412 0 次/7 天，-352 0 次/时，质询 0 次/日，快照缺失 0 次/日，1006 0 次/时（0 次/日）";
+
+    @Test
+    @DisplayName("计数上限溢出：全 0 时摘要逐字不变，任一类溢出才多一段且不改档")
+    void overflowAppendsOneSegmentOnlyWhenNonZero() {
+        java.util.List<String> reds = new java.util.ArrayList<>();
+
+        try {
+            assertEquals(QUIET_SUMMARY, probe.check().summary(), "没有一类溢出时摘要不得改动");
+        } catch (AssertionError e) {
+            reds.add("① " + e.getMessage());
+        }
+
+        try {
+            BilibiliRiskMetrics spilled = new BilibiliRiskMetrics();
+            BilibiliRiskHealthProbe spilledProbe = new BilibiliRiskHealthProbe(spilled);
+            // 未知消息类型本身不改档，溢出段也不该改档：它说的是「读数封顶了」，不是「坏了」
+            for (int i = 0; i < 2010; i++) {
+                spilled.record(BilibiliRiskMetrics.Kind.UNKNOWN_CMD, null);
+            }
+            HealthStatus status = spilledProbe.check();
+
+            assertEquals(HealthStatus.Level.OK, status.level(), "溢出不得改档");
+            assertTrue(status.summary().contains("未知消息类型 10 条"),
+                    "溢出段要写明是哪一类被挤掉了几条，实际: " + status.summary());
+        } catch (AssertionError e) {
+            reds.add("② " + e.getMessage());
+        }
+
+        assertTrue(reds.isEmpty(), () -> "两问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+    }
 }
