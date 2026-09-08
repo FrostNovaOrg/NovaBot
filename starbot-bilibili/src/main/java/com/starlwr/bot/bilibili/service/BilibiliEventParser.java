@@ -97,7 +97,7 @@ public class BilibiliEventParser {
     /**
      * 名表已满后仍碰到的新 cmd 条数
      */
-    private final AtomicLong unknownCmdOverflow = new AtomicLong();
+    private final AtomicLong unknownCmdNameTableOverflow = new AtomicLong();
 
     /**
      * 未知 cmd 名表上限，与风控指标每类条数上限对齐
@@ -118,7 +118,7 @@ public class BilibiliEventParser {
     /**
      * 名表已满后仍碰到的新字段号条数
      */
-    private final AtomicLong unknownFieldOverflow = new AtomicLong();
+    private final AtomicLong unknownFieldNameTableOverflow = new AtomicLong();
 
     /**
      * 未知字段名表上限，与未知 cmd 名表同一个数
@@ -617,9 +617,9 @@ public class BilibiliEventParser {
         }
         AtomicLong existing = unknownCmds.get(cmd);
         if (existing == null && unknownCmds.size() >= MAX_UNKNOWN_CMD_NAMES) {
-            long overflow = unknownCmdOverflow.incrementAndGet();
+            long overflow = unknownCmdNameTableOverflow.incrementAndGet();
             riskMetrics.record(BilibiliRiskMetrics.Kind.UNKNOWN_CMD, isMagnitude(overflow)
-                    ? "overflow count=" + overflow + " unique=" + unknownCmds.size()
+                    ? "名表溢出 count=" + overflow + " unique=" + unknownCmds.size()
                     : null);
             return;
         }
@@ -668,9 +668,9 @@ public class BilibiliEventParser {
     private void noteUnknownField(String name) {
         AtomicLong existing = unknownFields.get(name);
         if (existing == null && unknownFields.size() >= MAX_UNKNOWN_FIELD_NAMES) {
-            long overflow = unknownFieldOverflow.incrementAndGet();
+            long overflow = unknownFieldNameTableOverflow.incrementAndGet();
             riskMetrics.record(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, isMagnitude(overflow)
-                    ? "overflow count=" + overflow + " unique=" + unknownFields.size()
+                    ? "名表溢出 count=" + overflow + " unique=" + unknownFields.size()
                     : null);
             return;
         }

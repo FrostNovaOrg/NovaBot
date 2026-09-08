@@ -1390,7 +1390,7 @@ class BilibiliEventParserTest {
                 // 有上限而不记溢出的话，「种数不再涨」与「确实没有新字段了」读出来一样
                 assertTrue(unknownFieldDetail().contains("unique=512"),
                         "种数应封顶在 512，实际: " + unknownFieldDetail());
-                assertTrue(unknownFieldDetail().contains("overflow count=10"),
+                assertTrue(unknownFieldDetail().contains("名表溢出 count=10"),
                         "名表满后的 10 个新字段号应记进溢出，实际: " + unknownFieldDetail());
             } catch (AssertionError e) {
                 reds.add("② " + e.getMessage());

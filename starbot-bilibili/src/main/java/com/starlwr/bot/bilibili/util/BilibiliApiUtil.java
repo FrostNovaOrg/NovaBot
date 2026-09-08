@@ -155,6 +155,58 @@ public class BilibiliApiUtil {
     private static final int FOLLOWING_PAGE_SIZE = 50;
 
     /**
+     * 各 HTTP 端点应答 {@code data} 顶层已知键。
+     * <p>
+     * 表的查找键是去掉 query 的路径，与 {@link #extractData} 收到的 url 对齐。
+     * 已知键是该端点解析方法实际取用的顶层键，同一路径被两个方法用时取并集，
+     * 登录态／匿名态字段并集。未进表的端点（应答顶层键随 uid 变化、或不经
+     * {@link #extractData}）不比对。
+     */
+    private static final Map<String, KnownDataKeys> KNOWN_DATA_KEYS_BY_PATH = knownDataKeysTable();
+
+    private record KnownDataKeys(String constantName, Set<String> keys) {
+    }
+
+    private static Map<String, KnownDataKeys> knownDataKeysTable() {
+        Map<String, KnownDataKeys> table = new LinkedHashMap<>();
+        registerKnownKeys(table, FINGER_SPI_API, "FINGER_SPI_API", "b_3", "b_4");
+        registerKnownKeys(table, BUVID_API, "BUVID_API", "buvid");
+        registerKnownKeys(table, QR_CODE_GENERATE_API, "QR_CODE_GENERATE_API", "url", "qrcode_key");
+        registerKnownKeys(table, MY_INFO_API, "MY_INFO_API", "profile");
+        registerKnownKeys(table, COOKIE_INFO_API, "COOKIE_INFO_API", "refresh", "timestamp");
+        registerKnownKeys(table, COOKIE_REFRESH_API, "COOKIE_REFRESH_API", "refresh_token");
+        registerKnownKeys(table, MASTER_INFO_API, "MASTER_INFO_API", "info", "room_id", "follower_num");
+        registerKnownKeys(table, FANS_MEDAL_RANK_API, "FANS_MEDAL_RANK_API", "num");
+        registerKnownKeys(table, GUARD_TAB_API, "GUARD_TAB_API", "info", "top3", "list");
+        registerKnownKeys(table, GUARD_LIST_API, "GUARD_TAB_API", "info");
+        registerKnownKeys(table, ROOM_INFO_API, "ROOM_INFO_API",
+                "uid", "live_status", "live_time", "title", "user_cover");
+        registerKnownKeys(table, DANMU_INFO_API, "DANMU_INFO_API", "host_list", "token");
+        registerKnownKeys(table, DANMU_HISTORY_API, "DANMU_HISTORY_API", "room");
+        registerKnownKeys(table, GIFT_CONFIG_API, "GIFT_CONFIG_API",
+                "global_config", "list", "guard_resources");
+        registerKnownKeys(table, DYNAMIC_FEED_API, "DYNAMIC_FEED_API", "items");
+        registerKnownKeys(table, FOLLOWINGS_API, "FOLLOWINGS_API", "list");
+        registerKnownKeys(table,
+                "https://api.bilibili.com/bapis/bilibili.api.ticket.v1.Ticket/GenWebTicket",
+                "TICKET_API", "ticket", "created_at", "ttl", "nav");
+        return Map.copyOf(table);
+    }
+
+    private static void registerKnownKeys(Map<String, KnownDataKeys> table, String endpointUrl,
+            String constantName, String... keys) {
+        String path = shortUrl(endpointUrl);
+        KnownDataKeys existing = table.get(path);
+        if (existing == null) {
+            table.put(path, new KnownDataKeys(constantName, Set.copyOf(List.of(keys))));
+            return;
+        }
+        Set<String> merged = new LinkedHashSet<>(existing.keys());
+        merged.addAll(List.of(keys));
+        table.put(path, new KnownDataKeys(existing.constantName(), Set.copyOf(merged)));
+    }
+
+    /**
      * 「账号未登录」的业务错误代码
      * <p>
      * 需要登录态的接口在凭据失效时统一返回该代码，据此可把「确实掉登录」与网络故障区分开。
@@ -463,9 +515,10 @@ public class BilibiliApiUtil {
         if (data == null) {
             // code=0 却没有 data：原先一声不响地返回空对象，不记就等于没有发现机制。
             // 返回值保持不变，只补一笔账
-            noteDataMissing(url, riskMetrics, dataMissingEndpoints);
+            noteDataMissing(url, "data", riskMetrics, dataMissingEndpoints);
             return new JSONObject();
         }
+        noteUnknownDataKeys(url, data);
         return data;
     }
 
@@ -1449,14 +1502,102 @@ public class BilibiliApiUtil {
      * detail 只含端点路径、计数与端点数——query 里是签名与凭据，一个字符都不能进健康页。
      */
     static void noteDataMissing(String url, BilibiliRiskMetrics metrics, ConcurrentHashMap<String, AtomicLong> ledger) {
+        noteDataMissing(url, "data", metrics, ledger);
+    }
+
+    /**
+     * 接口应答缺字段的记账。detail 形为「端点:键」，计数仍是发生次数。
+     * @param key 缺的顶层键；整段 data 缺失时为 {@code data}
+     */
+    static void noteDataMissing(String url, String key, BilibiliRiskMetrics metrics,
+            ConcurrentHashMap<String, AtomicLong> ledger) {
         if (url == null || url.isBlank() || metrics == null || ledger == null) {
             return;
         }
         String endpoint = shortUrl(url);
-        long count = ledger.computeIfAbsent(endpoint, key -> new AtomicLong()).incrementAndGet();
+        String name = (key == null || key.isBlank()) ? endpoint : endpoint + ":" + key;
+        long count = ledger.computeIfAbsent(name, ignored -> new AtomicLong()).incrementAndGet();
         metrics.record(BilibiliRiskMetrics.Kind.API_DATA_MISSING, Long.toString(count).matches("10*")
-                ? endpoint + " count=" + count + " unique=" + ledger.size()
+                ? name + " count=" + count + " unique=" + ledger.size()
                 : null);
+    }
+
+    /**
+     * HTTP 应答 {@code data} 顶层未知键。按「端点常量名:键名」去重，复用未知字段那一类。
+     * <p>
+     * <b>热路径</b>：字符串拼接排在「已判定有未知键」之后。已知键表命中且无未知键时
+     * 一次拼接都不做。detail 只写名，不写取值。
+     */
+    private void noteUnknownDataKeys(String url, JSONObject data) {
+        if (url == null || url.isBlank() || data == null || riskMetrics == null) {
+            return;
+        }
+        KnownDataKeys known = KNOWN_DATA_KEYS_BY_PATH.get(shortUrl(url));
+        if (known == null) {
+            return;
+        }
+        boolean hasUnknown = false;
+        for (String key : data.keySet()) {
+            if (!known.keys().contains(key)) {
+                hasUnknown = true;
+                break;
+            }
+        }
+        if (!hasUnknown) {
+            return;
+        }
+        for (String key : data.keySet()) {
+            if (!known.keys().contains(key)) {
+                noteUnknownHttpField(known.constantName() + ":" + key);
+            }
+        }
+    }
+
+    /**
+     * HTTP 应答 data 顶层未知键名表，按「端点常量名:键名」去重。
+     */
+    private final ConcurrentHashMap<String, AtomicLong> unknownHttpFields = new ConcurrentHashMap<>();
+
+    /**
+     * 各未知 HTTP 顶层键的首次出现时刻，写入指标 detail 用。
+     */
+    private final ConcurrentHashMap<String, Instant> unknownHttpFieldFirstSeen = new ConcurrentHashMap<>();
+
+    /**
+     * 名表已满后仍碰到的新 HTTP 顶层键条数
+     */
+    private final AtomicLong unknownHttpFieldNameTableOverflow = new AtomicLong();
+
+    private static final int MAX_UNKNOWN_HTTP_FIELD_NAMES = 512;
+
+    /**
+     * 登记一个 HTTP 未知顶层键：<b>每次都计数</b>，按名去重的只是 detail 里那份文本样本。
+     * 名表满后新名只累加溢出数。
+     */
+    private void noteUnknownHttpField(String name) {
+        AtomicLong existing = unknownHttpFields.get(name);
+        if (existing == null && unknownHttpFields.size() >= MAX_UNKNOWN_HTTP_FIELD_NAMES) {
+            long overflow = unknownHttpFieldNameTableOverflow.incrementAndGet();
+            riskMetrics.record(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, isMagnitude(overflow)
+                    ? "名表溢出 count=" + overflow + " unique=" + unknownHttpFields.size()
+                    : null);
+            return;
+        }
+        long count = unknownHttpFields.computeIfAbsent(name, key -> new AtomicLong()).incrementAndGet();
+        Instant first = unknownHttpFieldFirstSeen.computeIfAbsent(name, key -> Instant.now());
+        boolean sample = isMagnitude(count);
+        riskMetrics.record(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, sample
+                ? name + " count=" + count + " unique=" + unknownHttpFields.size() + " at=" + first
+                : null);
+        if (sample) {
+            log.warn("接口应答 {} 出现未知顶层键, 已出现 {} 次（已登记 {} 种）。"
+                            + "这多半是平台加了新字段, 取值不受影响, 但已知键表该复核了",
+                    name, count, unknownHttpFields.size());
+        }
+    }
+
+    private static boolean isMagnitude(long count) {
+        return Long.toString(count).matches("10*");
     }
 
     /**
