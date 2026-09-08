@@ -30,6 +30,7 @@ import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.PushTemplateDefaults;
 import com.starlwr.bot.core.service.StarBotEventHandlerService;
 import com.starlwr.bot.core.service.StarBotSenderService;
+import com.starlwr.bot.core.timeline.TimelineEvent;
 import com.starlwr.bot.core.timeline.TimelineEventType;
 import com.starlwr.bot.core.timeline.TimelineStore;
 import com.starlwr.bot.core.timeline.TimelineWriter;
@@ -1458,8 +1459,8 @@ public class ConfigUiController {
         try {
             Path path = Path.of(properties.getDatasource().getJsonPath());
             if (Files.exists(path)) {
-                new TimestampedFileBackup(path, backupClock)
-                        .backup(properties.getConfigUi().getBackupKeep());
+                recordPrunedBackups(new TimestampedFileBackup(path, backupClock)
+                        .backup(properties.getConfigUi().getBackupKeep()));
             }
             Files.writeString(path, content, StandardCharsets.UTF_8);
 
@@ -1475,6 +1476,28 @@ public class ConfigUiController {
         }
 
         return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 备份被裁掉了旧份时往日志页记一条
+     * <p>
+     * 与 {@link ConfigurationFileService} 里配置文件那一路同一套字段：同一件事在日志页上
+     * 时有时无，比两边都不记更难查——使用者会以为「这一次没删」。
+     * @param pruned 本次删掉的备份文件名
+     */
+    private void recordPrunedBackups(List<String> pruned) {
+        if (pruned.isEmpty()) {
+            return;
+        }
+
+        // 一份没删的时候什么也不记：每次保存都记一条「清理了 0 份」，
+        // 会让日志页上真正删掉东西的那几条淹在里面
+        int keep = properties.getConfigUi().getBackupKeep();
+        timeline.record(TimelineEvent.of(TimelineEventType.BACKUP_PRUNED, TimelineEvent.Level.INFO)
+                .text("推送配置备份留 " + keep + " 份，清掉最旧的 " + pruned.size() + " 份")
+                .detail("keep", String.valueOf(keep))
+                .detail("pruned", String.join(",", pruned))
+                .build());
     }
 
     /**

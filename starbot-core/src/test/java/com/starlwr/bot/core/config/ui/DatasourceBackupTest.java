@@ -7,10 +7,14 @@ import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.health.HealthProbe;
 import com.starlwr.bot.core.service.PushTemplateDefaults;
 import com.starlwr.bot.core.service.StarBotSenderService;
+import com.starlwr.bot.core.timeline.TimelineEvent;
+import com.starlwr.bot.core.timeline.TimelineEventType;
+import com.starlwr.bot.core.timeline.TimelineStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.ResponseEntity;
 
@@ -32,6 +36,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -50,6 +56,8 @@ class DatasourceBackupTest {
     private StarBotCoreProperties properties;
 
     private ConfigUiController controller;
+
+    private TimelineStore timeline;
 
     private final AtomicInteger ticks = new AtomicInteger();
 
@@ -74,6 +82,8 @@ class DatasourceBackupTest {
         ObjectProvider<HealthProbe> healthProbes = mock(ObjectProvider.class);
         when(healthProbes.orderedStream()).thenReturn(Stream.empty());
 
+        timeline = mock(TimelineStore.class);
+
         controller = new ConfigUiController(
                 mock(ConfigurationMetadataService.class),
                 mock(ConfigurationFileService.class),
@@ -97,7 +107,7 @@ class DatasourceBackupTest {
                 mock(ObjectProvider.class),
                 mock(com.starlwr.bot.core.sender.PushGate.class),
                 mock(com.starlwr.bot.core.service.LiveDataService.class),
-                mock(com.starlwr.bot.core.timeline.TimelineStore.class),
+                timeline,
                 mock(com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService.class),
                 new PushTemplateDefaults(new StarBotCoreProperties()),
                 mock(UpdateCheckService.class));
@@ -144,6 +154,38 @@ class DatasourceBackupTest {
         assertEquals("legacy-copy", Files.readString(legacy, StandardCharsets.UTF_8),
                 "旧的单份 datasource.json.bak 不应被覆盖");
         assertEquals(1, stampedBackupNames().size(), "这一趟应另写一份带时间戳的备份");
+    }
+
+    /**
+     * 旧备份被裁掉时应往日志页记一条
+     * <p>
+     * 配置文件那一路（{@code ConfigurationFileService}）已经在记，推送配置这一路当时没接：
+     * 同一件事在日志页上时有时无，比两边都不记更难查——使用者会以为「这次没删」。
+     * <p>
+     * 阴性对照是<b>没裁掉任何东西的那几次保存</b>：每次保存都记一条「清理了 0 份」的话，
+     * 真正删掉东西的那几条会淹在里面，而这一格照样绿。
+     */
+    @Test
+    @DisplayName("裁掉旧备份时记一条「清理旧备份」，没裁到东西的那几次一条不记")
+    void prunedBackupsLandOnTheLogPage() throws IOException {
+        properties.getConfigUi().setBackupKeep(2);
+
+        // 前两次留在保留份数内，一份也裁不掉
+        assertTrue(save(users(1)).getBody().getBooleanValue("success"));
+        tick();
+        assertTrue(save(users(2)).getBody().getBooleanValue("success"));
+        tick();
+        verify(timeline, never()).record(any());
+
+        assertTrue(save(users(3)).getBody().getBooleanValue("success"));
+
+        ArgumentCaptor<TimelineEvent> captor = ArgumentCaptor.forClass(TimelineEvent.class);
+        verify(timeline).record(captor.capture());
+        TimelineEvent event = captor.getValue();
+        assertEquals(TimelineEventType.BACKUP_PRUNED, event.type());
+        assertEquals("2", event.detail().get("keep"));
+        assertEquals(1, event.detail().get("pruned").split(",").length, event.detail().get("pruned"));
+        assertEquals(2, stampedBackupNames().size(), "记下来的那一条得与盘上真剩几份对得上");
     }
 
     private void tick() {
