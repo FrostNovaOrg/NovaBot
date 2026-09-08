@@ -35,13 +35,13 @@
     -->
     <modules>
         <!-- novacore 排在最前：starbot-core 编译期依赖它，reactor 按声明顺序解析 -->
-        <module>novacore</module>
-        <module>starbot-core</module>
-        <module>starbot-onebot-adapter</module>
-        <module>starbot-onebot-adapter-napcat-extension</module>
-        <module>starbot-bilibili</module>
-        <module>starbot-novabot-console</module>
-        <module>starbot-report</module>
+        <module>core/novacore</module>
+        <module>core/starbot-core</module>
+        <module>plugins/starbot-onebot-adapter</module>
+        <module>plugins/starbot-onebot-adapter-napcat-extension</module>
+        <module>plugins/starbot-bilibili</module>
+        <module>plugins/starbot-novabot-console</module>
+        <module>plugins/starbot-report</module>
     </modules>
 
     <properties>

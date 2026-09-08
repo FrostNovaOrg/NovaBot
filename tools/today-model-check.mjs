@@ -21,7 +21,7 @@ import {register} from 'node:module';
 register(new URL('./alias-core-modules.mjs', import.meta.url));
 
 const {todayAtAllMarkup, todayModel} =
-  await import('../starbot-novabot-console/src/main/resources/config-ui-pages/today-model.js');
+  await import('../plugins/starbot-novabot-console/src/main/resources/config-ui-pages/today-model.js');
 
 const failures = [];
 let checks = 0;

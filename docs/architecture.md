@@ -401,7 +401,7 @@ Maven 只往 `target/` 里写，从不为「源码里已经没有的东西」做
 
 **只想跑某一条测试时也不能用 `mvn test`。** 那个插件要求 `starbot-core` 是一个 jar，
 而停在 `test` 阶段时 core 只有 `target/classes`，于是报
-`starbot-core/target/classes (Is a directory)`——`mvn -pl <模块>` 失败是同一个原因。
+`core/starbot-core/target/classes (Is a directory)`——`mvn -pl <模块>` 失败是同一个原因。
 正确写法是走到 `install`，用 `-Dtest=` 挑测试：
 
 ```bash

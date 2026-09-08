@@ -22,7 +22,7 @@ if ! command -v node > /dev/null 2>&1; then
     exit 2
 fi
 
-PAGES="starbot-novabot-console/src/main/resources/config-ui-pages"
+PAGES="plugins/starbot-novabot-console/src/main/resources/config-ui-pages"
 RED=0
 SYNTAX_RED=0
 

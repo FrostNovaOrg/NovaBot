@@ -14,7 +14,7 @@
 import {
   SETUP_STEPS, allDone, canAdvance, initialRows, railMarks, startAt, summaryLines,
   withPluginSteps,
-} from '../starbot-core/src/main/resources/config-ui/setup-model.js';
+} from '../core/starbot-core/src/main/resources/config-ui/setup-model.js';
 
 const failures = [];
 let checks = 0;

@@ -247,22 +247,23 @@ echo "==> [2/8] 构建全部模块（库形态）"
 mvn "${MAVEN_ARGS[@]}" -Pinstall ${CLEAN} install
 
 echo "==> [3/8] 打包可运行的 StarBotCore"
-# 这一步不带 clean：[2/8] 刚把 starbot-core/target 清空并重建过，此刻目录里只有那一次的产物。
+# 这一步不带 clean：[2/8] 刚把 core/starbot-core/target 清空并重建过，此刻目录里只有那一次的产物。
 # 在这里再清一次，等于把上一步刚编好的东西删掉重编一遍，清掉的却是同一批文件。
-mvn "${MAVEN_ARGS[@]}" -f starbot-core/pom.xml -Ppackage package
+mvn "${MAVEN_ARGS[@]}" -f core/starbot-core/pom.xml -Ppackage package
 
 echo "==> [4/8] 汇总产物至 dist/build"
 OUT="$ROOT/dist/build"
-PLUGIN_MODULES=(starbot-onebot-adapter starbot-onebot-adapter-napcat-extension starbot-bilibili starbot-novabot-console starbot-report)
+PLUGIN_MODULES=(plugins/starbot-onebot-adapter plugins/starbot-onebot-adapter-napcat-extension plugins/starbot-bilibili plugins/starbot-novabot-console plugins/starbot-report)
 
 rm -rf "$OUT"
 mkdir -p "$OUT/plugins" "$OUT/lib" "$OUT/plugins-lib"
 
-cp starbot-core/target/dist/StarBotCore.jar "$OUT/"
-cp starbot-core/target/lib/*.jar "$OUT/lib/"
+cp core/starbot-core/target/dist/StarBotCore.jar "$OUT/"
+cp core/starbot-core/target/lib/*.jar "$OUT/lib/"
 
 for module in "${PLUGIN_MODULES[@]}"; do
-    cp "$module"/target/"$module"-*.jar "$OUT/plugins/"
+    artifact="${module##*/}"
+    cp "$module"/target/"$artifact"-*.jar "$OUT/plugins/"
 
     # 插件自身的运行期依赖放入 plugins-lib（启动参数 -Dloader.path=lib,plugins,plugins-lib 会加载此目录）。
     # 若缺失，插件的类装载时会报 NoClassDefFoundError，表现是那个插件的功能整个不见。
@@ -281,7 +282,8 @@ for jar in "$OUT"/plugins-lib/*.jar; do
 done
 # 插件模块自身的 jar 已在 plugins 目录，无需在 plugins-lib 中重复
 for module in "${PLUGIN_MODULES[@]}"; do
-    rm -f "$OUT"/plugins-lib/"$module"-*.jar
+    artifact="${module##*/}"
+    rm -f "$OUT"/plugins-lib/"$artifact"-*.jar
 done
 rm -f "$OUT"/plugins-lib/starbot-core-*.jar
 

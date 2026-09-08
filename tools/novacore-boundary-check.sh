@@ -37,14 +37,14 @@
 set -uo pipefail
 
 # —— 允许承载「核心」的模块目录名（拆模块后把新名加进来即可，不必改判据逻辑）——
-ALLOWED_CORE_MODULES="starbot-core novacore starbot-novacore"
+ALLOWED_CORE_MODULES="core/starbot-core core/novacore"
 
 # 缺省量本仓。NOVACORE_CHECK_ROOT 只为把上面那些「射程为空」的分支跑出来用：
 # 指向一棵空树跑一趟，本尺该整片判红；若还有格子报绿，那一格就是绿在空集上。
 REPO_ROOT="${NOVACORE_CHECK_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "$REPO_ROOT" || exit 2
 
-CORE_UI="starbot-core/src/main/resources/config-ui"
+CORE_UI="core/starbot-core/src/main/resources/config-ui"
 RED=0
 
 WORK="$(mktemp -d)"
@@ -131,7 +131,7 @@ TOKENS="$WORK/tokens"
 : > "$TOKENS"
 
 # —— 平台标识件的位置现算，不写死模块名 ——
-# 写死 starbot-core/... 的那一版有一个安静的失败形态：核心件搬进新模块的那一刻文件就不在了，
+# 写死 core/starbot-core/... 的那一版有一个安静的失败形态：核心件搬进新模块的那一刻文件就不在了，
 # 而格3 的两个「件内」计数在文件缺席时双双为 0，于是它报绿——报的绿是「这个文件里没有平台申报」，
 # 而实情是「这个文件不在这里」。判据落在空集上恒真，看起来和守住了一模一样。
 LP=""
@@ -342,10 +342,12 @@ else
     while IFS= read -r f; do
         [ -z "$f" ] && continue
         g2_total=$((g2_total + 1))
-        mod="${f%%/*}"
+        # 不取路径第一段：模块在 core/novacore 时第一段是 core，对不上 ALLOWED 整串。
         ok=0
         for allowed in $ALLOWED_CORE_MODULES; do
-            [ "$mod" = "$allowed" ] && ok=1
+            case "$f" in
+                "$allowed"/*) ok=1 ;;
+            esac
         done
         if [ "$ok" -eq 0 ]; then
             g2_bad="${g2_bad}${f} "
@@ -876,7 +878,7 @@ while IFS= read -r mod; do
 done < "$MODULES"
 
 # ② 那一侧的射程：bilibili 插件的主码在哪个模块，按**包名**现找，不写死目录名。
-# 原来这里写死 starbot-bilibili/src/main，模块一改名 `if [ -d ]` 不成立，
+# 原来这里写死 plugins/starbot-bilibili/src/main，模块一改名 `if [ -d ]` 不成立，
 # ② 整问跳过、g8_refs 恒为 0，而这一格只要 ① 成立就报绿——报的是「没引用」，
 # 实情是「没查」。找不到就红，与 ① 同格待遇。
 G8_BILI_MAIN=""
@@ -977,7 +979,7 @@ fi
 # 通配 import（…​.*）折成目录来找；内部类（…Outer.Inner）折不出件时逐级退一段再找。
 #
 # 射程两块：①兄弟插件 import 须在 pom 申报那个模块（原判据）；②插件主码直接 import
-# 里层包（包名按 novacore/src/main/java/com/starlwr/bot/core/ 第一级目录现算，不写死）
+# 里层包（包名按 core/novacore/src/main/java/com/starlwr/bot/core/ 第一级目录现算，不写死）
 # 须在 pom 申报 novacore——今天靠 starbot-core 传递带进来，拆仓那天里层单独出包就断。
 # ② 的受查面＝根 pom <module> 列的、starbot-core 与 novacore 之外，外加 templates/*/pom.xml
 # （模板插件同口径，不豁免；processor 仍不在 reactor 里）。
@@ -1080,8 +1082,8 @@ done < "$MODULES"
 
 # 里层包名按工作树现算，不写死。受查模块按根 pom <module> 现算。
 G10_INNER="$WORK/g10inner"
-tree_files 'novacore/src/main/java/com/starlwr/bot/core/*' \
-    | sed -nE 's|^novacore/src/main/java/com/starlwr/bot/core/([^/]+)/.*$|\1|p' \
+tree_files 'core/novacore/src/main/java/com/starlwr/bot/core/*' \
+    | sed -nE 's|^core/novacore/src/main/java/com/starlwr/bot/core/([^/]+)/.*$|\1|p' \
     | sort -u > "$G10_INNER"
 g10_inner_pkg_n=$(count_lines "$G10_INNER")
 
@@ -1128,7 +1130,7 @@ if [ "$g10_mods" -eq 0 ]; then
     echo "格10 红 射程为空 一个插件模块也枚举不到(在册模块${module_n}个)"
     RED=1
 elif [ "$g10_inner_pkg_n" -eq 0 ]; then
-    echo "格10 红 射程为空 里层包名枚举不到(novacore/src/main/java/com/starlwr/bot/core 第一级目录 0 个) $g10_read"
+    echo "格10 红 射程为空 里层包名枚举不到(core/novacore/src/main/java/com/starlwr/bot/core 第一级目录 0 个) $g10_read"
     RED=1
 elif [ "$g10_n" -eq 0 ]; then
     echo "格10 绿 命中0 兄弟插件引用都在 pom 里申报过 $g10_read"
@@ -1163,7 +1165,7 @@ fi
 # ============================================================
 # 格12：写死了模块目录名的在册件数只减不增
 #
-# 目录重排真正的工作量在这里：这些件里写着 starbot-core/ 这样的**路径**，
+# 目录重排真正的工作量在这里：这些件里写着 core/starbot-core/ 这样的**路径**，
 # 目录一改它们全部失灵——而其中大半（脚本、判据、配置）失灵的方式是安静的。
 # 一次改不完，那就立个账：现值封在下面这个上限里，新写一处就红。
 # 只减不增——改一件、把上限调低一，账才会往下走；上限只许由「改完一件」的那一笔调。
@@ -1172,10 +1174,10 @@ fi
 # 数的是**件数**不是处数：一件里写十处，改的时候是一件事。
 # ============================================================
 
-# 现值上限（2026-09-08 实测 82；正则改为 novacore/ 后现算，只认目录名）。改掉一件就把它调低一，绝不许调高。
-HARDCODED_MODULE_PATH_CAP=82
+# 现值上限（2026-09-08 实测 77；正则带 core/／plugins/ 前缀后现算，只认目录名）。改掉一件就把它调低一，绝不许调高。
+HARDCODED_MODULE_PATH_CAP=77
 
-G12_RE='starbot-core/|novacore/|starbot-bilibili/|starbot-novabot-console/|starbot-onebot-adapter|starbot-report/'
+G12_RE='core/starbot-core/|core/novacore/|plugins/starbot-bilibili/|plugins/starbot-novabot-console/|plugins/starbot-onebot-adapter|plugins/starbot-report/'
 G12_LIST="$WORK/g12"
 : > "$G12_LIST"
 # 件清单走 tree_files 再自己 grep，不走 git grep：git grep 只搜在册件，

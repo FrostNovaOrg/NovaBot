@@ -14,7 +14,7 @@
 import {
   emptyState, parseLogHash, logHash, hasFilter, emptyText,
   olderDay, newerDay, engLevelOf, groupEngLines,
-} from '../starbot-core/src/main/resources/config-ui/log-model.js';
+} from '../core/starbot-core/src/main/resources/config-ui/log-model.js';
 
 const TODAY = '2026-09-04';
 const failures = [];
