@@ -5,11 +5,10 @@ import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.model.Dynamic;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
-import com.starlwr.bot.core.factory.StarBotCommonPainterFactory;
-import com.starlwr.bot.core.painter.CommonPainter;
 import com.starlwr.bot.core.plugin.StarBotComponent;
-import com.starlwr.bot.core.util.ImageUtil;
 import com.starlwr.bot.core.util.StringUtil;
+import com.starlwr.bot.report.factory.StarBotCommonPainterFactory;
+import com.starlwr.bot.report.util.ImageUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 

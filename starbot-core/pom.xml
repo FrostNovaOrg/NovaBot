@@ -55,8 +55,9 @@
         </dependency>
         <!--
           本项目不再使用 Spring Data，此处仅为 org.springframework.data.util.Pair。
-          该类型出现在 FontUtil 与 CommonPainter 的公开方法签名里（返回文本的宽与高），
-          换成自定义类型会破坏第三方绘图插件的兼容性，故保留这 1.6 MB。
+          核心自己的主码已经不用它：用到它的 FontUtil 与 CommonPainter 已随画图整个迁往
+          报告图插件，这条依赖现在是传给插件侧的。那两个类的公开方法签名里仍带着这个类型
+          （返回文本的宽与高），换成自定义类型会破坏第三方绘图插件的兼容性，故保留这 1.6 MB。
           原先它随 spring-boot-starter-data-jpa 间接引入，移除 JPA 后必须显式声明
         -->
         <dependency>

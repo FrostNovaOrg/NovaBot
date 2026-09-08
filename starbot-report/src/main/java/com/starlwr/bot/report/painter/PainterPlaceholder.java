@@ -1,6 +1,6 @@
 package com.starlwr.bot.report.painter;
 
-import com.starlwr.bot.core.util.ImageUtil;
+import com.starlwr.bot.report.util.ImageUtil;
 
 import java.awt.Color;
 import java.awt.GradientPaint;

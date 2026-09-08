@@ -1,4 +1,4 @@
-package com.starlwr.bot.core.util;
+package com.starlwr.bot.report.util;
 
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;

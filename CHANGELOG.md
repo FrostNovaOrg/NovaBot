@@ -45,6 +45,7 @@
 - 随自动下载一起去掉的还有 `starbot.core.plugin.auto-download-dependency` 与 `starbot.core.plugin.maven-base-urls` 两项配置，设置页上也不再有它们。**旧的 `application.yml` 里留着这两行不影响启动**，删不删都行。
 - 下播报告的弹幕词云改版：词少也画、高度随词量、不再留大空隙。
 - 示例插件模板跟上了插件的自动装载：模板自带自报文件与自报类，README 与构建配置改按新的装载办法讲述，第三方依赖的说明也改成了实情。
+- 画图整个挪进了报告插件：`com.starlwr.bot.core.painter.CommonPainter` 改叫 `com.starlwr.bot.report.painter.CommonPainter`，`com.starlwr.bot.core.factory.StarBotCommonPainterFactory` 改叫 `com.starlwr.bot.report.factory.StarBotCommonPainterFactory`（字体与图片两个工具件一并挪进 `com.starlwr.bot.report.util`）。只有自己写插件、并且在代码里直接引用了核心这几个绘图类的人才受影响：改一下 import，方法名、参数和画出来的图都没变。配置项没有变动，`starbot.core.paint` 那一节照旧。
 
 ### 修复
 

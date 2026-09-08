@@ -1,9 +1,9 @@
-package com.starlwr.bot.core.painter;
+package com.starlwr.bot.report.painter;
 
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.model.TextWithStyle;
-import com.starlwr.bot.core.util.FontUtil;
 import com.starlwr.bot.core.util.StringUtil;
+import com.starlwr.bot.report.util.FontUtil;
 import jakarta.annotation.Nullable;
 import lombok.Getter;
 import lombok.NonNull;
