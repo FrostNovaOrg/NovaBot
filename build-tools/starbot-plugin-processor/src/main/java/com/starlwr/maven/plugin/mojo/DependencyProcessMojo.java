@@ -74,11 +74,18 @@ public class DependencyProcessMojo extends AbstractMojo {
 
     /**
      * 判断依赖是否为 StarBot 插件
+     * <p>
+     * reactor 里未打包的依赖拿到的是 target/classes 目录而非 jar——
+     * -pl 定向 test 周期里的 reactor 内模块正是这种形态, 照 JarFile 开会整个目标失败;
+     * 目录形时 plugin.json 就在类路径根上, 直接看该文件在不在。
      * @param artifact 依赖
      * @return 是否为 StarBot 插件
      */
     private boolean isPlugin(Artifact artifact) throws MojoExecutionException {
         File jar = artifact.getFile();
+        if (jar.isDirectory()) {
+            return new File(jar, "plugin.json").isFile();
+        }
         try {
             try (JarFile jarFile = new JarFile(jar)) {
                 Enumeration<JarEntry> entries = jarFile.entries();

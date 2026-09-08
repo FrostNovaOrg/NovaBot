@@ -2,6 +2,7 @@ package com.starlwr.bot.bilibili.timeline;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.starlwr.bot.bilibili.event.live.BilibiliLiveOffEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliLiveOnEvent;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.config.ui.TimelineController;
@@ -57,6 +58,16 @@ class LiveCategoryEndToEndTest {
 
         TimelineEvent event = assertLanded(TimelineCategory.LIVE, TimelineEventType.LIVE_ON);
         assertEquals("主播甲", event.channel(), "哪个主播开的播, 是这一条最要紧的一栏");
+    }
+
+    @Test
+    @DisplayName("下播: 主播下了播, 日志页的「直播」类里多一条下播")
+    void liveOffLandsOnTheLogPage() {
+        new BilibiliLiveTimelineRecorder(store)
+                .onLiveOff(new BilibiliLiveOffEvent(new LiveStreamerInfo(10001L, "主播甲", 20002L)));
+
+        TimelineEvent event = assertLanded(TimelineCategory.LIVE, TimelineEventType.LIVE_OFF);
+        assertEquals("主播甲", event.channel(), "哪个主播下的播, 是这一条最要紧的一栏");
     }
 
     /**
