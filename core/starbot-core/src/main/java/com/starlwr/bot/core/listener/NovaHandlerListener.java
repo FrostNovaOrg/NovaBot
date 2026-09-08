@@ -19,7 +19,7 @@ import org.springframework.stereotype.Component;
 import java.util.Optional;
 
 /**
- * StarBot 监听外部事件触发事件处理
+ * NovaBot 监听外部事件触发事件处理
  * <p>
  * 静音时段与「已暂停推送」在这里就把整个事件挡下来，而不是让它一路展开成 N 条消息
  * 再逐条被发送器丢掉。两件事因此才做得到：

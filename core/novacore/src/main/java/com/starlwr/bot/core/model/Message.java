@@ -48,7 +48,7 @@ public class Message {
     private String content;
 
     /**
-     * StarBot 内部消息创建顺序号，通过 create 方法创建时自动生成，无需手动设置
+     * NovaBot 内部消息创建顺序号，通过 create 方法创建时自动生成，无需手动设置
      */
     private Long sequence;
 

@@ -31,7 +31,7 @@ public class PluginInfoProcessMojo extends AbstractMojo {
 
     @Override
     public void execute() throws MojoExecutionException {
-        getLog().info("Starting process StarBot plugin info");
+        getLog().info("Starting process NovaBot plugin info");
         getLog().info(project.getGroupId() + ":" + project.getArtifactId() + "-v" + project.getVersion());
 
         JSONObject result = new JSONObject();
@@ -55,6 +55,6 @@ public class PluginInfoProcessMojo extends AbstractMojo {
             throw new MojoExecutionException("Failed write info JSON file", e);
         }
 
-        getLog().info("Completed process StarBot plugin info");
+        getLog().info("Completed process NovaBot plugin info");
     }
 }

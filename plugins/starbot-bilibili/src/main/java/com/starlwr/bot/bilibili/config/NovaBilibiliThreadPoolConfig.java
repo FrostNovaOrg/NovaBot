@@ -5,7 +5,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
 /**
- * StarBotBilibili 线程池配置
+ * NovaBilibili 线程池配置
  */
 @NovaComponent
 public class NovaBilibiliThreadPoolConfig {

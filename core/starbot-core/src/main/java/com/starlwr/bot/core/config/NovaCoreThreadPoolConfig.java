@@ -11,7 +11,7 @@ import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadPoolExecutor;
 
 /**
- * StarBotCore 线程池配置类
+ * NovaCore 线程池配置类
  */
 @Slf4j
 @Configuration

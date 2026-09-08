@@ -17,6 +17,6 @@ import org.springframework.core.Ordered;
         basePackages = "com.example",
         excludeFilters = @ComponentScan.Filter(
                 type = FilterType.ASSIGNABLE_TYPE,
-                classes = StarBotExamplePluginAutoConfiguration.class))
-public class StarBotExamplePluginAutoConfiguration {
+                classes = NovaExamplePluginAutoConfiguration.class))
+public class NovaExamplePluginAutoConfiguration {
 }

@@ -32,7 +32,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Predicate;
 
 /**
- * StarBot 消息发送器
+ * NovaBot 消息发送器
  */
 @Slf4j
 @Service

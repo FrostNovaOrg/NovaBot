@@ -78,7 +78,7 @@ class CommonPainterCopyrightTest {
         buildInfo.setProperty("version", VERSION);
         buildInfo.setProperty("group", "com.starlwr");
         buildInfo.setProperty("artifact", "starbot-core");
-        buildInfo.setProperty("name", "StarBotCore");
+        buildInfo.setProperty("name", "NovaBot");
 
         painter = new CapturingPainter(new BuildProperties(buildInfo), properties, fontUtil);
     }

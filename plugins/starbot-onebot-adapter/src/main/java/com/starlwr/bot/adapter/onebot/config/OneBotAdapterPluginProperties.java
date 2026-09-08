@@ -13,7 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * StarBotOneBotAdapterPlugin 配置类
+ * OneBot 适配器插件 配置类
  */
 @Getter
 @Setter
@@ -70,7 +70,7 @@ public class OneBotAdapterPluginProperties {
         /**
          * 允许调用推送接口的来源 IP 白名单，支持精确 IP 与 CIDR 网段
          * <p>
-         * 默认仅放行本机回环地址。StarBot 核心通过回环调用自身推送接口，因此默认值可满足单机部署；
+         * 默认仅放行本机回环地址。NovaBot 核心通过回环调用自身推送接口，因此默认值可满足单机部署；
          * 需要由外部程序调用推送接口时，在此追加对应地址。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
@@ -79,7 +79,7 @@ public class OneBotAdapterPluginProperties {
         /**
          * 是否信任反向代理设置的 X-Forwarded-For / X-Real-IP 请求头
          * <p>
-         * 仅当 StarBot 确实部署在 Nginx 等反向代理之后时才可开启，否则来源 IP 可被任意伪造。
+         * 仅当 NovaBot 确实部署在 Nginx 等反向代理之后时才可开启，否则来源 IP 可被任意伪造。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         private boolean trustProxy = false;

@@ -10,7 +10,7 @@ import lombok.ToString;
 import java.time.Instant;
 
 /**
- * StarBot 外部事件基类，由外部来源触发，需外界按需处理的事件
+ * NovaBot 外部事件基类，由外部来源触发，需外界按需处理的事件
  */
 @Getter
 @Setter

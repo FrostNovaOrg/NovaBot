@@ -17,7 +17,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * StarBot 推送平台服务，各推送平台实现应调用 addSender 方法将相关信息注册至 StarBot 中
+ * NovaBot 推送平台服务，各推送平台实现应调用 addSender 方法将相关信息注册至 NovaBot 中
  */
 @Slf4j
 @Service

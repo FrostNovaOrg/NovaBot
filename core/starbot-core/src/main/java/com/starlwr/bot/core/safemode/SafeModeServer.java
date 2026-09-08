@@ -250,7 +250,7 @@ public class SafeModeServer {
         StringBuilder html = new StringBuilder();
         html.append("<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">")
                 .append("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">")
-                .append("<title>StarBot 安全模式</title><style>")
+                .append("<title>NovaBot 安全模式</title><style>")
                 .append("body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;padding:24px;")
                 .append("background:#12141a;color:#e6e8ee;line-height:1.6}")
                 .append("h1{font-size:19px;margin:0 0 4px}.sub{color:#8b93a7;font-size:13px;margin-bottom:18px}")
@@ -263,7 +263,7 @@ public class SafeModeServer {
                 .append("button{margin-top:12px;background:#3b6fe0;color:#fff;border:0;border-radius:7px;")
                 .append("padding:9px 20px;font-size:14px;cursor:pointer}")
                 .append("</style></head><body>")
-                .append("<h1>StarBot 安全模式</h1>")
+                .append("<h1>NovaBot 安全模式</h1>")
                 .append("<div class=\"sub\">主程序因配置问题未能启动，当前仅配置界面可用。修正后请重启程序。</div>");
 
         if (notice != null) {

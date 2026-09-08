@@ -11,12 +11,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 示例 3: 拦截并修改 StarBot 全局默认行为
- * 示例 StarBot 消息推送拦截器
- * 该拦截器会拦截 StarBot 全局消息发送方法，并修改即将要推送的消息内容，为所有中文消息后添加一个 “喵” 后缀
+ * 示例 3: 拦截并修改 NovaBot 全局默认行为
+ * 示例 NovaBot 消息推送拦截器
+ * 该拦截器会拦截 NovaBot 全局消息发送方法，并修改即将要推送的消息内容，为所有中文消息后添加一个 “喵” 后缀
  */
 @Aspect
-@NovaComponent // 使用该注解将此类注册为 StarBot 组件，会被 StarBot 扫描并注册至 Spring 容器中
+@NovaComponent // 使用该注解将此类注册为 NovaBot 组件，会被 NovaBot 扫描并注册至 Spring 容器中
 public class StarBotExampleMeowAdder {
     /**
      * 要添加的后缀
@@ -29,7 +29,7 @@ public class StarBotExampleMeowAdder {
     private static final String CHINESE_END_PATTERN = ".*[\\u4e00-\\u9fa5]$";
 
     /**
-     * 拦截 StarBot 全局消息发送方法
+     * 拦截 NovaBot 全局消息发送方法
      */
     @Pointcut("execution(* com.starlwr.bot.core.sender.NovaMessageSender.send(..))")
     public void sendMethod() {}

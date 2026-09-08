@@ -1332,7 +1332,7 @@ public class ConfigUiController {
 
         String content = body.getString("content");
         if (content == null || content.isBlank()) {
-            content = "这是一条来自 StarBot 的测试消息，收到即表示推送链路正常。";
+            content = "这是一条来自 NovaBot 的测试消息，收到即表示推送链路正常。";
         }
 
         // 必须走 create：它负责填充顺序号与创建时间，并处理 {next} 分条，直接 new 会漏字段

@@ -44,7 +44,7 @@ class CommonPainterPolylineTest {
         buildInfo.setProperty("version", "4.3.0");
         buildInfo.setProperty("group", "com.starlwr");
         buildInfo.setProperty("artifact", "starbot-core");
-        buildInfo.setProperty("name", "StarBotCore");
+        buildInfo.setProperty("name", "NovaBot");
 
         painter = new NovaCommonPainterFactory(new BuildProperties(buildInfo), properties, fontUtil)
                 .create(200, 120, false);

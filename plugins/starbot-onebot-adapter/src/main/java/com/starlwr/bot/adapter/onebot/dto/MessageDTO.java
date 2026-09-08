@@ -36,7 +36,7 @@ public class MessageDTO {
     private String content;
 
     /**
-     * StarBot 内部消息创建顺序号
+     * NovaBot 内部消息创建顺序号
      */
     private Long sequence;
 

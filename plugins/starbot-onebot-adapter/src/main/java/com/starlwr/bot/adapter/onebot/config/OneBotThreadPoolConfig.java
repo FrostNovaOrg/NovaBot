@@ -10,7 +10,7 @@ import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadPoolExecutor;
 
 /**
- * StarBotOneBotAdapterPlugin 线程池配置类
+ * OneBot 适配器插件 线程池配置类
  */
 @Slf4j
 @NovaComponent

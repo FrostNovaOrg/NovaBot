@@ -11,7 +11,7 @@ import lombok.ToString;
 import java.time.Instant;
 
 /**
- * StarBot 动态事件基类
+ * NovaBot 动态事件基类
  */
 @Getter
 @Setter

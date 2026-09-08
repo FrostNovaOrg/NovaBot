@@ -21,7 +21,7 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * StarBotCore 配置类
+ * NovaCore 配置类
  * <p>
  * <b>本类是配置的绑定根，不是一份按层划好的配置</b>：{@code novabot.core.*} 下的每一节
  * 都挂在这里，从连接超时到控制台口令、从绘图字体到告警通道。<b>各节自身的层次并不相同</b>——

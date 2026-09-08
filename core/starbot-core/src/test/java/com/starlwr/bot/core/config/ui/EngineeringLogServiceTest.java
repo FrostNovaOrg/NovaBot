@@ -114,7 +114,7 @@ class EngineeringLogServiceTest {
                 "直播间 22345678 业务消息断流, 已重连 3 次",
                 "推送队列 push#8812 第 1/3 次重投, 30 秒后再试",
                 "GET https://x.example/api?room_id=22345678&platform=qq",
-                "\tat com.starlwr.bot.core.StarBot.main(StarBot.java:42)",
+                "\tat com.starlwr.bot.core.NovaBot.main(NovaBot.java:42)",
                 "监听地址 server.address=0.0.0.0 端口 8080",
                 "解析失败 {\"room_id\":\"22345678\",\"port\":8080}",
                 // 名字里带 key 三个字母、但并不是密钥的那些
@@ -225,7 +225,7 @@ class EngineeringLogServiceTest {
 
         // 写了一半的行先不给：给了的话，剩下半行随后会作为另一行出现，
         // 而两个半行里的凭据各自都躲得过按整行判的打码
-        append("2026-09-04 20:08:01.100  INFO 1 --- [main] c.s.b.core.StarBot : 半");
+        append("2026-09-04 20:08:01.100  INFO 1 --- [main] c.s.b.core.NovaBot : 半");
         EngineeringLogService.Appended half = service.since(file, one.offset());
         assertTrue(half.lines().isEmpty(), "半行先不给");
         assertEquals(one.offset(), half.offset(), "位置停在最后一个完整行的末尾");
@@ -291,7 +291,7 @@ class EngineeringLogServiceTest {
     }
 
     private String line(int no) {
-        return "2026-09-04 20:0" + no + ":01.100  INFO 1 --- [main] c.s.b.core.StarBot : 第 " + no + " 行";
+        return "2026-09-04 20:0" + no + ":01.100  INFO 1 --- [main] c.s.b.core.NovaBot : 第 " + no + " 行";
     }
 
     private void write(String... lines) throws IOException {

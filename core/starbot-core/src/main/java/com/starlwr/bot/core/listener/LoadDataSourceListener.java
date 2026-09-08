@@ -9,7 +9,7 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
- * StarBot 应用就绪后加载数据源
+ * NovaBot 应用就绪后加载数据源
  */
 @Slf4j
 @Component
