@@ -1,6 +1,7 @@
 package com.starlwr.bot.core.protocol;
 
 import com.starlwr.bot.core.properties.EventStreamProperties;
+import com.starlwr.bot.core.properties.NovaBotPrefixes;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.boot.context.properties.bind.Bindable;
@@ -48,7 +49,7 @@ public class NovaEventStreamConfiguration implements DisposableBean {
      * 解析事件输出配置，新旧两套键都认
      * <p>
      * <b>逐项覆盖，不是整段二选一。</b> 先按旧键 {@code starbot.bilibili.event-stream} 绑一趟，
-     * 再按现行键 {@code starbot.core.event-stream} 绑第二趟：第二趟只会写入真的出现在配置里的项，
+     * 再按现行键 {@code novabot.core.event-stream} 绑第二趟：第二趟只会写入真的出现在配置里的项，
      * 没写的项原样留着第一趟的值。于是「新键在场时压过旧键、缺的项由旧键补上」这句话
      * 落在每一项上而不只是整段上，两套键都没写的项拿到的则是字段自带的默认值。
      * <p>
@@ -62,13 +63,14 @@ public class NovaEventStreamConfiguration implements DisposableBean {
         EventStreamProperties properties = new EventStreamProperties();
         Binder binder = Binder.get(environment);
 
-        boolean legacy = binder.bind(EventStreamProperties.LEGACY_PREFIX, Bindable.ofInstance(properties)).isBound();
+        boolean oldest = binder.bind(EventStreamProperties.LEGACY_PREFIX, Bindable.ofInstance(properties)).isBound();
+        boolean previous = binder.bind(NovaBotPrefixes.EVENT_STREAM_LEGACY, Bindable.ofInstance(properties)).isBound();
         boolean current = binder.bind(EventStreamProperties.PREFIX, Bindable.ofInstance(properties)).isBound();
 
-        if (legacy) {
+        if (oldest) {
             log.warn("配置项 {}.* 已改名为 {}.*, 旧键仍然有效, 但请尽快改过来{}",
                     EventStreamProperties.LEGACY_PREFIX, EventStreamProperties.PREFIX,
-                    current ? "。两套键同时存在时以新键为准, 新键未写到的项才取旧键的值" : "");
+                    (previous || current) ? "。两套键同时存在时以新键为准, 新键未写到的项才取旧键的值" : "");
         }
 
         return properties;

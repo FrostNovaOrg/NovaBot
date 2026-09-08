@@ -24,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.fail;
  */
 @DisplayName("适配器配置面定盘星")
 class ConfigurationSurfaceBaselineTest {
-    private static final String PREFIX = "starbot.adapter.onebot.";
+    private static final String PREFIX = "novabot.adapter.onebot.";
 
     private static final String BASELINE = "configuration-baseline/";
 
@@ -57,7 +57,7 @@ class ConfigurationSurfaceBaselineTest {
 
         try {
             List<String> mixed = actual.stream()
-                    .filter(line -> line.startsWith("starbot.core."))
+                    .filter(line -> line.startsWith("novabot.core."))
                     .toList();
             assertTrue(mixed.isEmpty(), "适配器定盘星混入了核心键: " + mixed);
         } catch (AssertionError e) {

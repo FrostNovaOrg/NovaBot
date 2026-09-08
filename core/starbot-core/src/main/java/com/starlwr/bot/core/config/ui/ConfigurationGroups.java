@@ -1,5 +1,7 @@
 package com.starlwr.bot.core.config.ui;
 
+import com.starlwr.bot.core.properties.NovaBotPrefixes;
+
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -8,8 +10,8 @@ import java.util.Map;
 /**
  * 设置页的分组
  * <p>
- * 此前设置页是按配置键的前缀自动分组的——{@code starbot.core.push} 一组、
- * {@code starbot.core.live} 一组，共二十余组。那是<b>照程序结构摆的</b>：
+ * 此前设置页是按配置键的前缀自动分组的——{@code novabot.core.push} 一组、
+ * {@code novabot.core.live} 一组，共二十余组。那是<b>照程序结构摆的</b>：
  * 使用者要办一件事（「让它别在半夜发消息」），得先猜这件事在代码里归哪个类管。
  * 这里改成按「要办的事」分组，常用六组在上，工程用的两组折到页底。
  *
@@ -84,8 +86,8 @@ public final class ConfigurationGroups {
      * 配置键前缀 → 组
      * <p>
      * 取最长匹配。键 {@code k} 命中前缀 {@code p} 的条件是 {@code k} 等于 {@code p}，
-     * 或以 {@code p.} 开头——不写后面这个点的话，{@code starbot.core.push} 会把
-     * {@code starbot.core.pushover} 一并吃掉。
+     * 或以 {@code p.} 开头——不写后面这个点的话，{@code novabot.core.push} 会把
+     * {@code novabot.core.pushover} 一并吃掉。
      */
     private final Map<String, Group> prefixes;
 
@@ -94,7 +96,7 @@ public final class ConfigurationGroups {
     }
 
     /**
-     * 只含核心自有前缀的分组表：{@code starbot.core.*}／{@code spring.*}。
+     * 只含核心自有前缀的分组表：{@code novabot.core.*}／{@code spring.*}。
      * @return 核心表
      */
     public static ConfigurationGroups core() {
@@ -132,39 +134,39 @@ public final class ConfigurationGroups {
     private static ConfigurationGroups buildCore() {
         Map<String, Group> map = new LinkedHashMap<>();
         // ---- 推送 ----
-        map(map, "starbot.core.push", PUSH);
-        map(map, "starbot.core.sender", PUSH);
+        map(map, NovaBotPrefixes.CORE + ".push", PUSH);
+        map(map, NovaBotPrefixes.CORE + ".sender", PUSH);
 
         // ---- 告警 ----
-        map(map, "starbot.core.alert", ALERT);
-        map(map, "starbot.core.mail", ALERT);
+        map(map, NovaBotPrefixes.CORE + ".alert", ALERT);
+        map(map, NovaBotPrefixes.CORE + ".mail", ALERT);
         map(map, "spring.mail", ALERT);
 
         // ---- 命令与权限 ----
-        map(map, "starbot.core.command", COMMAND);
+        map(map, NovaBotPrefixes.CORE + ".command", COMMAND);
 
         // ---- 采集 ----
-        map(map, "starbot.core.live", COLLECT);
+        map(map, NovaBotPrefixes.CORE + ".live", COLLECT);
         // 累计存储答的是「跨场次的数据存到哪」，与「本场数据怎么采」是同一件事的两头
         map(map, "spring.data.redis", COLLECT);
 
         // ---- 报告外观 ----
-        map(map, "starbot.core.paint", REPORT);
+        map(map, NovaBotPrefixes.CORE + ".paint", REPORT);
 
         // ---- 登录与安全 ----
-        map(map, "starbot.core.config-ui", AUTH);
+        map(map, NovaBotPrefixes.CORE + ".config-ui", AUTH);
 
         // ---- 日志与调试 ----
-        map(map, "starbot.core.log", LOG_DEBUG);
-        map(map, "starbot.core.timeline", LOG_DEBUG);
+        map(map, NovaBotPrefixes.CORE + ".log", LOG_DEBUG);
+        map(map, NovaBotPrefixes.CORE + ".timeline", LOG_DEBUG);
 
         // ---- 服务 ----
         map(map, "server", SERVICE);
-        map(map, "starbot.core.event-stream", SERVICE);
-        map(map, "starbot.core.exec", SERVICE);
-        map(map, "starbot.core.network", SERVICE);
-        map(map, "starbot.core.network-thread", SERVICE);
-        map(map, "starbot.core.datasource", SERVICE);
+        map(map, NovaBotPrefixes.EVENT_STREAM, SERVICE);
+        map(map, NovaBotPrefixes.CORE + ".exec", SERVICE);
+        map(map, NovaBotPrefixes.CORE + ".network", SERVICE);
+        map(map, NovaBotPrefixes.CORE + ".network-thread", SERVICE);
+        map(map, NovaBotPrefixes.CORE + ".datasource", SERVICE);
         return new ConfigurationGroups(map);
     }
 

@@ -3,6 +3,7 @@ package com.starlwr.bot.bilibili.config;
 import com.starlwr.bot.core.config.ui.ConfigurationGroupContributor;
 import com.starlwr.bot.core.config.ui.ConfigurationGroups;
 import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.properties.NovaBotPrefixes;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -18,14 +19,14 @@ public class BilibiliConfigurationGroups implements ConfigurationGroupContributo
     @Override
     public Map<String, ConfigurationGroups.Group> prefixes() {
         Map<String, ConfigurationGroups.Group> prefixes = new LinkedHashMap<>();
-        prefixes.put("starbot.bilibili.account", ConfigurationGroups.COLLECT);
-        prefixes.put("starbot.bilibili.live", ConfigurationGroups.COLLECT);
-        prefixes.put("starbot.bilibili.dynamic", ConfigurationGroups.COLLECT);
-        prefixes.put("starbot.bilibili.live.report-logo-path", ConfigurationGroups.REPORT);
-        prefixes.put("starbot.bilibili.dynamic.logo-path", ConfigurationGroups.REPORT);
-        prefixes.put("starbot.bilibili.debug", ConfigurationGroups.LOG_DEBUG);
-        prefixes.put("starbot.bilibili.bilibili-thread", ConfigurationGroups.SERVICE);
-        prefixes.put("starbot.bilibili.network", ConfigurationGroups.SERVICE);
+        prefixes.put(NovaBotPrefixes.BILIBILI + ".account", ConfigurationGroups.COLLECT);
+        prefixes.put(NovaBotPrefixes.BILIBILI + ".live", ConfigurationGroups.COLLECT);
+        prefixes.put(NovaBotPrefixes.BILIBILI + ".dynamic", ConfigurationGroups.COLLECT);
+        prefixes.put(NovaBotPrefixes.BILIBILI + ".live.report-logo-path", ConfigurationGroups.REPORT);
+        prefixes.put(NovaBotPrefixes.BILIBILI + ".dynamic.logo-path", ConfigurationGroups.REPORT);
+        prefixes.put(NovaBotPrefixes.BILIBILI + ".debug", ConfigurationGroups.LOG_DEBUG);
+        prefixes.put(NovaBotPrefixes.BILIBILI + ".bilibili-thread", ConfigurationGroups.SERVICE);
+        prefixes.put(NovaBotPrefixes.BILIBILI + ".network", ConfigurationGroups.SERVICE);
         return prefixes;
     }
 }

@@ -29,7 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @DisplayName("明文口令自动哈希")
 class PasswordAutoHashTest {
     private static final String TEMPLATE = """
-            starbot:
+            novabot:
               core:
                 config-ui:
                   enabled: true

@@ -73,7 +73,7 @@ class LogLevelConfigTest {
     @DisplayName("springProperty 必须带 defaultValue，管住配置项被整行删掉的情形")
     void springPropertyHasDefaultValue() throws IOException {
         String xml = read("core/starbot-core/src/main/resources/logback.xml");
-        Matcher m = Pattern.compile("<springProperty[^>]*source=\"starbot\\.core\\.log\\.(console|file)\"[^>]*>")
+        Matcher m = Pattern.compile("<springProperty[^>]*source=\"novabot\\.core\\.log\\.(console|file)\"[^>]*>")
                 .matcher(xml);
 
         int found = 0;

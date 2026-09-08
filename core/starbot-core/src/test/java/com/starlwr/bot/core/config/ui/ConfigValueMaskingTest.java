@@ -29,10 +29,10 @@ import static org.mockito.Mockito.mock;
  *
  * <h2>它治的是哪一种病</h2>
  * 遮蔽此前只看配置项名字里有没有 token / password 这类字眼。
- * <b>而「要不要口令」本身是个开关</b>——{@code starbot.core.event-stream.require-token} 的值只有
+ * <b>而「要不要口令」本身是个开关</b>——{@code novabot.core.event-stream.require-token} 的值只有
  * true 与 false 两种，名字里却带着 token。它被当成机密遮成占位值之后，
  * 界面上的开关拿占位值去比 {@code 'true'}，比不中，于是<b>恒显「已关闭」</b>。
- * 同一形态还有第二项：{@code starbot.core.config-ui.auth.operator-token}
+ * 同一形态还有第二项：{@code novabot.core.config-ui.auth.operator-token}
  * ——「忘记口令」的启动令牌通道开着，界面上却写着已关闭。
  * <p>
  * 两项都不是功能坏了，是<b>界面读数骗人</b>：使用者照着界面判断「这道门关着」，
@@ -62,7 +62,7 @@ class ConfigValueMaskingTest {
               data:
                 redis:
                   password: redis-secret-value
-            starbot:
+            novabot:
               adapter:
                 onebot:
                   napcat:
@@ -100,12 +100,12 @@ class ConfigValueMaskingTest {
      * 在册的真机密，逐条列出——每一条都必须继续遮住
      */
     private static final List<String> REAL_SECRETS = List.of(
-            "starbot.core.config-ui.token",
-            "starbot.core.config-ui.auth.password",
-            "starbot.core.config-ui.auth.totp-secret",
-            "starbot.adapter.onebot.napcat.token",
-            "starbot.adapter.onebot.napcat.token-hash",
-            "starbot.adapter.onebot.napcat.totp-secret",
+            "novabot.core.config-ui.token",
+            "novabot.core.config-ui.auth.password",
+            "novabot.core.config-ui.auth.totp-secret",
+            "novabot.adapter.onebot.napcat.token",
+            "novabot.adapter.onebot.napcat.token-hash",
+            "novabot.adapter.onebot.napcat.totp-secret",
             "spring.mail.password",
             "spring.data.redis.password");
 
@@ -113,7 +113,7 @@ class ConfigValueMaskingTest {
 
     private static final String LEGACY_REQUIRE_TOKEN = EventStreamProperties.LEGACY_PREFIX + ".require-token";
 
-    private static final String OPERATOR_TOKEN = "starbot.core.config-ui.auth.operator-token";
+    private static final String OPERATOR_TOKEN = "novabot.core.config-ui.auth.operator-token";
 
     @TempDir
     Path dir;
@@ -261,7 +261,7 @@ class ConfigValueMaskingTest {
     @DisplayName("元数据里没有的机密项照旧遮住：判不出类型就往安全的方向失败")
     void unknownFieldFallsBackToMasking() throws IOException {
         start("""
-                starbot:
+                novabot:
                   core:
                     config-ui:
                       enabled: true
@@ -272,7 +272,7 @@ class ConfigValueMaskingTest {
 
         JSONObject values = values();
 
-        assertEquals(SensitiveFields.MASK, values.getString("starbot.plugin.some-unreleased-thing.access-token"),
+        assertEquals(SensitiveFields.MASK, values.getString("novabot.plugin.some-unreleased-thing.access-token"),
                 "元数据里查不到类型时不许当成普通字段放出去, 插件的配置项随时可能是新的");
     }
 
@@ -288,8 +288,8 @@ class ConfigValueMaskingTest {
         start(CURRENT_POSITION);
         JSONObject values = values();
         assertEquals("7827", values.getString("server.port"), "普通字段照原样回");
-        assertNull(values.getString("starbot.core.event-stream.path"), "文件里没写的项不该凭空多出一个值");
-        assertNotEquals(SensitiveFields.MASK, values.getString("starbot.core.config-ui.enabled"),
+        assertNull(values.getString("novabot.core.event-stream.path"), "文件里没写的项不该凭空多出一个值");
+        assertNotEquals(SensitiveFields.MASK, values.getString("novabot.core.config-ui.enabled"),
                 "开关一律不遮, 与名字无关");
     }
 }

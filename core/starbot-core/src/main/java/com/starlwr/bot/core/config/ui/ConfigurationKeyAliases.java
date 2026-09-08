@@ -1,6 +1,7 @@
 package com.starlwr.bot.core.config.ui;
 
 import com.starlwr.bot.core.properties.EventStreamProperties;
+import com.starlwr.bot.core.properties.NovaBotPrefixes;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -48,7 +49,8 @@ public final class ConfigurationKeyAliases {
      * 插件侧的改名由 {@link ConfigurationKeyAliasContributor} 申报，不写在这里。
      */
     private static final Map<String, String> CORE_RENAMED = Map.of(
-            EventStreamProperties.PREFIX, EventStreamProperties.LEGACY_PREFIX);
+            EventStreamProperties.PREFIX, EventStreamProperties.LEGACY_PREFIX,
+            NovaBotPrefixes.CORE, NovaBotPrefixes.CORE_LEGACY);
 
     private static final ConfigurationKeyAliases CORE = new ConfigurationKeyAliases(CORE_RENAMED);
 

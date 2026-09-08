@@ -18,7 +18,7 @@ import java.util.Map;
  * 运行时数据落点守卫
  * <p>
  * 运行时数据（{@code data.json}、{@code state.json}、{@code sessions.jsonl}、
- * {@code snapshots.jsonl}、{@code timeline/}）的路径由 {@code starbot.core.live.live-data-path} 一个配置项派生，
+ * {@code snapshots.jsonl}、{@code timeline/}）的路径由 {@code novabot.core.live.live-data-path} 一个配置项派生，
  * 默认值 {@code data.json} 是<b>相对当前工作目录</b>的。
  * <p>
  * 生产的两种部署方式都依赖这一点，<b>不能改</b>：
@@ -51,7 +51,7 @@ public class DataLocationGuard implements EnvironmentPostProcessor {
     /**
      * 数据文件路径配置项。其余运行时文件与目录都由它派生：取它的父目录。
      */
-    static final String KEY = "starbot.core.live.live-data-path";
+    static final String KEY = "novabot.core.live.live-data-path";
 
     /**
      * 与 {@link LiveProperties#getLiveDataPath()} 的默认值一致。

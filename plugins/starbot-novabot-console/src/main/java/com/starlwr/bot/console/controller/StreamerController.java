@@ -60,7 +60,7 @@ import java.util.Set;
 @StarBotComponent
 @RestController
 @RequestMapping(ConfigUiController.BASE_PATH + "/api/streamers")
-@ConditionalOnProperty(name = "starbot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(name = "novabot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
 public class StreamerController {
     /**
      * 列表里那条小折线画几天

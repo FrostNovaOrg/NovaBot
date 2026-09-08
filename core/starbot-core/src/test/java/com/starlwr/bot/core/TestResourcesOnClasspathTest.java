@@ -42,7 +42,7 @@ class TestResourcesOnClasspathTest {
 
         try (InputStream in = TestResourcesOnClasspathTest.class.getResourceAsStream(PROBE)) {
             assertNotNull(in, "定位得到却读不出内容: " + PROBE);
-            assertTrue(new String(in.readAllBytes()).contains("starbot.core."),
+            assertTrue(new String(in.readAllBytes()).contains("novabot.core."),
                     "读到的不是预期的那份基线文件: " + PROBE);
         }
     }

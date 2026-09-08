@@ -28,7 +28,7 @@ import java.util.regex.Pattern;
 @StarBotComponent
 @RestController
 @RequestMapping(ConfigUiController.BASE_PATH)
-@ConditionalOnProperty(name = "starbot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(name = "novabot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
 public class StreamerLookupController {
     /**
      * 纯数字：可能是 uid，也可能是直播间号

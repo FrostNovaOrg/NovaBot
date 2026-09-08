@@ -31,7 +31,7 @@ import java.util.Optional;
 @Slf4j
 @RestController
 @RequestMapping(ConfigUiController.BASE_PATH + "/api/engineering-log")
-@ConditionalOnProperty(name = "starbot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(name = "novabot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
 public class EngineeringLogController {
     /**
      * 点名那一刻的写法：只到分钟

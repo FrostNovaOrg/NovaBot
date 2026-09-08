@@ -59,7 +59,7 @@ import java.util.Set;
 @StarBotComponent
 @RestController
 @RequestMapping(ConfigUiController.BASE_PATH + "/api/state")
-@ConditionalOnProperty(name = "starbot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(name = "novabot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
 public class RuntimeStateController {
     /**
      * 订阅类型的中文说法

@@ -54,7 +54,7 @@ public class QqAlertChannel implements AlertChannel {
         // 类型非法时消息会在发送阶段被静默丢弃。告警本就是「出问题时唯一的提示」，
         // 它自己失效却不作声是最糟的情况，因此在这里就判定为不可用并说清原因
         if (PushTargetType.of(alert.getType()) == PushTargetType.UNKNOWN) {
-            log.error("QQ 告警通道的 starbot.adapter.onebot.alert.type 取值 {} 无效, 告警不会送达; "
+            log.error("QQ 告警通道的 novabot.adapter.onebot.alert.type 取值 {} 无效, 告警不会送达; "
                     + "应填 {}（群聊）或 {}（私聊）",
                     alert.getType(), PushTargetType.GROUP.getCode(), PushTargetType.FRIEND.getCode());
             return false;

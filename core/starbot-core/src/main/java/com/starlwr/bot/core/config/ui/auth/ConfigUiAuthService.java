@@ -34,22 +34,22 @@ public class ConfigUiAuthService {
     /**
      * 登录口令所在的配置项，明文会在启动时哈希后写回此处
      */
-    public static final String PASSWORD_PROPERTY = "starbot.core.config-ui.auth.password";
+    public static final String PASSWORD_PROPERTY = "novabot.core.config-ui.auth.password";
 
     /**
      * 二次验证开关所在的配置项
      */
-    public static final String TOTP_PROPERTY = "starbot.core.config-ui.auth.totp";
+    public static final String TOTP_PROPERTY = "novabot.core.config-ui.auth.totp";
 
     /**
      * 二次验证密钥所在的配置项
      */
-    public static final String TOTP_SECRET_PROPERTY = "starbot.core.config-ui.auth.totp-secret";
+    public static final String TOTP_SECRET_PROPERTY = "novabot.core.config-ui.auth.totp-secret";
 
     /**
      * 「忘记口令」启动令牌通道开关所在的配置项
      */
-    public static final String OPERATOR_TOKEN_PROPERTY = "starbot.core.config-ui.auth.operator-token";
+    public static final String OPERATOR_TOKEN_PROPERTY = "novabot.core.config-ui.auth.operator-token";
 
     /**
      * 这一项是不是只能走专用口的认证键

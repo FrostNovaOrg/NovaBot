@@ -32,7 +32,7 @@ spring:
     port:                   # SMTP 端口，如 465（SSL）或 587（STARTTLS）
     username:               # 发件账号
     password:               # 发件账号的授权码（多数邮箱服务需在网页端单独申请，不是登录密码）
-    # 收件地址填在下方的 starbot.core.alert.mail.default-to，四项发件配置与收件地址缺一不可
+    # 收件地址填在下方的 novabot.core.alert.mail.default-to，四项发件配置与收件地址缺一不可
   # 累计数据存储（可选）。不配则只有本场数据，「我的总数据」「直播间总数据」
   # 「总数据排行榜」会明确提示不可用。要启用就去掉下面四行的注释并填上地址，
   # 或直接在配置界面的「采集」分组里填 —— 在界面上填的话地址、端口、密码三项即时生效，
@@ -47,7 +47,7 @@ spring:
   #     password:           # 未设密码时可省略此行
   #     database: 0         # 与其他程序共用同一实例时可换一个库避免键冲突
 
-starbot:
+novabot:
   adapter:
     onebot:
       alert:

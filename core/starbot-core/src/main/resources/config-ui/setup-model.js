@@ -177,27 +177,27 @@ export function initialRows(configValues, commandCount, terms, status) {
   const read = key => String(at[key] ?? '').trim();
   const alerts = (status || {}).alerts || {};
 
-  const quietStart = read('starbot.core.push.quiet-start');
-  const quietEnd = read('starbot.core.push.quiet-end');
-  const retention = Number(read('starbot.core.timeline.retention-days'));
-  const alerted = !!read('starbot.core.alert.webhook-url') || !!alerts.qq
-    || mailAlertConfigured(read('starbot.core.mail.default-to'), read('spring.mail.host'));
+  const quietStart = read('novabot.core.push.quiet-start');
+  const quietEnd = read('novabot.core.push.quiet-end');
+  const retention = Number(read('novabot.core.timeline.retention-days'));
+  const alerted = !!read('novabot.core.alert.webhook-url') || !!alerts.qq
+    || mailAlertConfigured(read('novabot.core.mail.default-to'), read('spring.mail.host'));
 
   return [
-    row('推送总开关', read('starbot.core.push.enabled') === 'false' ? '关' : '开',
-      '#/settings', 'starbot.core.push.enabled'),
+    row('推送总开关', read('novabot.core.push.enabled') === 'false' ? '关' : '开',
+      '#/settings', 'novabot.core.push.enabled'),
     row('静音时段', quietStart && quietEnd ? quietStart + ' – ' + quietEnd : '未设（半夜被吵到再来设）',
-      '#/settings', 'starbot.core.push.quiet-start'),
+      '#/settings', 'novabot.core.push.quiet-start'),
     // 金额可见没有一个总的配置键：它按会话来，默认群聊隐藏、私聊显示，改在推送页上
     row('金额可见', '群聊隐藏、私聊显示', '#/push', ''),
     row('命令', (commandCount ? commandCount + ' 条' : '') + '全开、只认 @ 机器人',
-      '#/settings', 'starbot.core.command.admins'),
+      '#/settings', 'novabot.core.command.admins'),
     row('告警', alerted ? '已配' : '未配。建议配一条 Webhook，'
       + say(terms, 'bot.platform', v => v + ' 掉线时只有它能叫到你', '机器人掉线时只有它能叫到你'),
-      '#/settings', 'starbot.core.alert.webhook-url'),
+      '#/settings', 'novabot.core.alert.webhook-url'),
     // 0 与负数是「不自动清理」，不是「留 0 天」——后者读起来像日志当天就没了
     row('日志保留', Number.isFinite(retention) && retention > 0 ? retention + ' 天' : '不自动清理',
-      '#/settings', 'starbot.core.timeline.retention-days'),
+      '#/settings', 'novabot.core.timeline.retention-days'),
   ];
 }
 

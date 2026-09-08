@@ -83,7 +83,7 @@ import java.util.stream.Stream;
 @Slf4j
 @RestController
 @RequestMapping(ConfigUiController.BASE_PATH)
-@ConditionalOnProperty(name = "starbot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(name = "novabot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
 public class ConfigUiController {
     /**
      * 配置界面根路径
@@ -96,7 +96,7 @@ public class ConfigUiController {
      * 元素内部有哪几个键不写在这里——那由适配器答（见 {@link BotConnectionTester.Applied}）。
      * 这里只记得住「它是一份列表、在配置树的哪个位置」，落盘那一侧要的正是这一句。
      */
-    static final String BOT_CONNECTION_LIST = "starbot.adapter.onebot.senders";
+    static final String BOT_CONNECTION_LIST = "novabot.adapter.onebot.senders";
 
     /**
      * 允许的静态资源文件名
@@ -816,7 +816,7 @@ public class ConfigUiController {
         try {
             result.put("success", true);
             Map<String, String> values = fileService.read();
-            String backupKeepKey = "starbot.core.config-ui.backup-keep";
+            String backupKeepKey = "novabot.core.config-ui.backup-keep";
             if (values.containsKey(backupKeepKey)) {
                 // 文件里可能写着越界值，程序按 1–100 生效。界面要显示生效值，
                 // 不然看起来能留 500 份，实际只留 100。

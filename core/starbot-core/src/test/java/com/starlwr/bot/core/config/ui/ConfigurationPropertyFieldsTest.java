@@ -53,10 +53,10 @@ class ConfigurationPropertyFieldsTest {
     void expandsNestedConfigurationClasses() {
         Map<String, Field> fields = scan();
 
-        assertTrue(fields.containsKey("starbot.core.push.enabled"), "一层嵌套应展开: " + fields.keySet());
-        assertTrue(fields.containsKey("starbot.core.config-ui.auth.password"), "两层嵌套应展开");
+        assertTrue(fields.containsKey("novabot.core.push.enabled"), "一层嵌套应展开: " + fields.keySet());
+        assertTrue(fields.containsKey("novabot.core.config-ui.auth.password"), "两层嵌套应展开");
         // 单独成件、随事件源迁到核心模块的那几节同样要能扫到，否则它们的标注一个也读不到
-        assertTrue(fields.containsKey("starbot.core.log.network-log-suppress-window"), "外部件里的那几节应展开");
+        assertTrue(fields.containsKey("novabot.core.log.network-log-suppress-window"), "外部件里的那几节应展开");
     }
 
     @Test
@@ -64,7 +64,7 @@ class ConfigurationPropertyFieldsTest {
     void yieldsAnnotatableFields() {
         Map<String, Field> fields = scan();
 
-        Field pushEnabled = fields.get("starbot.core.push.enabled");
+        Field pushEnabled = fields.get("novabot.core.push.enabled");
         assertNotNull(pushEnabled);
         assertEquals(ConfigEffect.Effect.IMMEDIATE, pushEnabled.getAnnotation(ConfigEffect.class).value());
         assertEquals(ConfigLevel.Level.COMMON, pushEnabled.getAnnotation(ConfigLevel.class).value());
@@ -75,8 +75,8 @@ class ConfigurationPropertyFieldsTest {
     void stopsAtCollections() {
         Map<String, Field> fields = scan();
 
-        assertTrue(fields.containsKey("starbot.core.exec.rules"), "列表本身是配置项");
-        assertNull(fields.get("starbot.core.exec.rules.event"), "列表元素内部的字段不该有键路径");
+        assertTrue(fields.containsKey("novabot.core.exec.rules"), "列表本身是配置项");
+        assertNull(fields.get("novabot.core.exec.rules.event"), "列表元素内部的字段不该有键路径");
     }
 
     @Test

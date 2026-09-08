@@ -22,22 +22,22 @@ import {store} from './store.js';
  * 两处各写一份的话，摘走了却没人摆的那一项会凭空消失。
  */
 export const AUTH_CARD_FIELDS = new Set([
-  'starbot.core.config-ui.auth.password',
-  'starbot.core.config-ui.auth.totp',
-  'starbot.core.config-ui.auth.totp-secret',
+  'novabot.core.config-ui.auth.password',
+  'novabot.core.config-ui.auth.totp',
+  'novabot.core.config-ui.auth.totp-secret',
   // 同意记录那三项由程序写、由「使用协议」那张卡读。摊成普通输入框的话，
   // 使用者改得动「我是什么时候同意的」——那不是一个填得出来的值
-  'starbot.core.config-ui.agreement.accepted-version',
-  'starbot.core.config-ui.agreement.accepted-at',
-  'starbot.core.config-ui.agreement.accepted-by',
+  'novabot.core.config-ui.agreement.accepted-version',
+  'novabot.core.config-ui.agreement.accepted-at',
+  'novabot.core.config-ui.agreement.accepted-by',
 ]);
 
 /** 同意记录那三项的配置键，卡片按它们显示，设置页按它们摘走 */
-const AGREEMENT_VERSION_KEY = 'starbot.core.config-ui.agreement.accepted-version';
+const AGREEMENT_VERSION_KEY = 'novabot.core.config-ui.agreement.accepted-version';
 
-const AGREEMENT_TIME_KEY = 'starbot.core.config-ui.agreement.accepted-at';
+const AGREEMENT_TIME_KEY = 'novabot.core.config-ui.agreement.accepted-at';
 
-const AGREEMENT_BY_KEY = 'starbot.core.config-ui.agreement.accepted-by';
+const AGREEMENT_BY_KEY = 'novabot.core.config-ui.agreement.accepted-by';
 
 /** 登录状态里与这张卡有关的那几位，由 main.js 在取到 /auth/state 之后交进来 */
 const authState = {enabled: false, totpEnabled: false, operatorSession: false};
@@ -121,7 +121,7 @@ function passwordCard() {
     operator
       ? '你是用启动令牌进来的，直接设一个新口令即可。设完口令后通道会自动关掉。'
       : '改完当场生效，别处已经登录的会话会一并注销，当前这一个留着。');
-  keyLine(box.meta, 'starbot.core.config-ui.auth.password');
+  keyLine(box.meta, 'novabot.core.config-ui.auth.password');
 
   const button = el('button', 'ghost');
   button.type = 'button';
@@ -196,8 +196,8 @@ function totpCard() {
   box.cell.className = 'boolcell';
   const {label, input, text} = switchControl('totp-switch', on, '二次验证');
   box.cell.appendChild(label);
-  keyLine(box.meta, 'starbot.core.config-ui.auth.totp');
-  keyLine(box.meta, 'starbot.core.config-ui.auth.totp-secret');
+  keyLine(box.meta, 'novabot.core.config-ui.auth.totp');
+  keyLine(box.meta, 'novabot.core.config-ui.auth.totp-secret');
 
   // 开与关各自要问的那一段，另起整行摆在开关下面，不套进输入栏容器
   const flow = el('div', 'totp-flow');

@@ -78,14 +78,14 @@ class ConfigUiAgreementGateTest {
      */
     private static final String TEXT_SHA256 = "c210e0709a699dfcf05435491e84c1e9afba357570ee563cf6a5db456a383b48";
 
-    private static final String ACCEPTED_VERSION_KEY = "starbot.core.config-ui.agreement.accepted-version";
+    private static final String ACCEPTED_VERSION_KEY = "novabot.core.config-ui.agreement.accepted-version";
 
-    private static final String ACCEPTED_AT_KEY = "starbot.core.config-ui.agreement.accepted-at";
+    private static final String ACCEPTED_AT_KEY = "novabot.core.config-ui.agreement.accepted-at";
 
-    private static final String ACCEPTED_BY_KEY = "starbot.core.config-ui.agreement.accepted-by";
+    private static final String ACCEPTED_BY_KEY = "novabot.core.config-ui.agreement.accepted-by";
 
     private static final String TEMPLATE = """
-            starbot:
+            novabot:
               core:
                 config-ui:
                   enabled: true
@@ -366,7 +366,7 @@ class ConfigUiAgreementGateTest {
         StarBotCoreProperties reloaded = new StarBotCoreProperties();
         new Binder(ConfigurationPropertySources.from(
                 new YamlPropertySourceLoader().load("撤回之后再读一遍", new FileSystemResource(config.toFile()))))
-                .bind("starbot.core", Bindable.ofInstance(reloaded));
+                .bind("novabot.core", Bindable.ofInstance(reloaded));
 
         assertTrue(ConfigUiAgreement.required(reloaded.getConfigUi().getAgreement()),
                 "重启之后仍要是未签态——这才是「进入未签协议的状态」的全部意思");
@@ -818,7 +818,7 @@ class ConfigUiAgreementGateTest {
         StarBotCoreProperties reloaded = new StarBotCoreProperties();
         new Binder(ConfigurationPropertySources.from(
                 new YamlPropertySourceLoader().load("重启后再读一遍", new FileSystemResource(config.toFile()))))
-                .bind("starbot.core", Bindable.ofInstance(reloaded));
+                .bind("novabot.core", Bindable.ofInstance(reloaded));
 
         assertEquals(written, reloaded.getConfigUi().getAgreement().getAcceptedAt(),
                 "盘上那行与重启后内存里的值必须逐字相同。不加引号时 YAML 会把它当日期解掉，"

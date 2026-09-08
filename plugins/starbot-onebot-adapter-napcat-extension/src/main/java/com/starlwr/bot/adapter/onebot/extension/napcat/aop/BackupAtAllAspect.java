@@ -37,7 +37,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 @Slf4j
 @Aspect
 @StarBotComponent
-@ConditionalOnProperty(name = "starbot.adapter.onebot.extension.napcat.enable-backup-at-all", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(name = "novabot.adapter.onebot.extension.napcat.enable-backup-at-all", havingValue = "true", matchIfMissing = true)
 public class BackupAtAllAspect {
     private final NapcatServiceHolder holder;
 

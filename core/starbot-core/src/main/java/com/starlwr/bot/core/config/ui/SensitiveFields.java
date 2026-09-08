@@ -18,9 +18,9 @@ import java.util.function.UnaryOperator;
  * 而注解方案里漏标一次就是泄漏一次——这类判断必须往安全的方向失败。
  *
  * <h2>为什么名字不能自己说了算：开关一律不遮</h2>
- * 光看名字会把<b>开关</b>也判成机密：{@code starbot.core.event-stream.require-token}
+ * 光看名字会把<b>开关</b>也判成机密：{@code novabot.core.event-stream.require-token}
  * 问的是「要不要口令」，值只有 true 与 false 两种，名字里却带着 token；
- * {@code starbot.core.config-ui.auth.operator-token} 问的是「留不留启动令牌通道」，同一形态。
+ * {@code novabot.core.config-ui.auth.operator-token} 问的是「留不留启动令牌通道」，同一形态。
  * 遮住之后界面拿占位值去比 {@code 'true'}，比不中，开关<b>恒显「已关闭」</b>——
  * 而门实际开着。使用者照着界面判断「这道门关着」，装了反向代理却以为开了口令校验，等于没有鉴权。
  * <p>

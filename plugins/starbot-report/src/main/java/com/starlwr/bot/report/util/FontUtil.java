@@ -22,7 +22,7 @@ import java.util.stream.Collectors;
  * 字体工具类
  * <p>
  * 每一张图上的每一个字都从这里过两趟：先按字挑一个显示得出它的字体，再拿这个字体量宽。
- * 字体表按配置项 {@code starbot.core.paint.fonts} 的顺序排，<b>顺序即优先级</b>——
+ * 字体表按配置项 {@code novabot.core.paint.fonts} 的顺序排，<b>顺序即优先级</b>——
  * 排在前面的字体先被问到，所以正文字体该排在只补表情、只补符号的那几个之前。
  */
 @Slf4j
@@ -68,7 +68,7 @@ public class FontUtil {
                 .collect(Collectors.toSet());
 
         List<String> configured = properties.getPaint().getFonts();
-        log.info("已指定使用字体列表: {}, 可使用配置项 starbot.core.paint.fonts 自定义字体列表", configured);
+        log.info("已指定使用字体列表: {}, 可使用配置项 novabot.core.paint.fonts 自定义字体列表", configured);
 
         // 装不上的那一项直接跳过，不占位置：留个空位在表里，挑字体时会挑到一个 null
         for (String fontDefinition : configured) {

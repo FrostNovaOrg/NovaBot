@@ -64,6 +64,7 @@ class ConfigurationKeyAliasesTest {
                 event-stream:
                   enabled: true
                   buffer-size: 4000
+            novabot:
               core:
                 event-stream:
                   enabled: false
@@ -172,7 +173,7 @@ class ConfigurationKeyAliasesTest {
     @DisplayName("两处都没写时不编造读数，界面自己落回默认值")
     void neitherWrittenFabricatesNothing() throws IOException {
         start("""
-                starbot:
+                novabot:
                   core:
                     config-ui:
                       enabled: true

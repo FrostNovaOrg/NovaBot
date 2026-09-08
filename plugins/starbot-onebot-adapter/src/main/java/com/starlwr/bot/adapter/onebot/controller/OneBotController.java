@@ -152,7 +152,7 @@ public class OneBotController {
                 throw new IllegalStateException(message);
             }
 
-            log.error("{} (可将 starbot.adapter.onebot.security.fail-on-weak-config 设为 true 以在弱配置时直接终止启动)", message);
+            log.error("{} (可将 novabot.adapter.onebot.security.fail-on-weak-config 设为 true 以在弱配置时直接终止启动)", message);
         }
 
         return configured;

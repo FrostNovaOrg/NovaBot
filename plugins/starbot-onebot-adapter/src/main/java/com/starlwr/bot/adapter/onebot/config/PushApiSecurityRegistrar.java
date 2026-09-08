@@ -35,7 +35,7 @@ public class PushApiSecurityRegistrar {
         IpMatcher matcher = new IpMatcher(properties.getSecurity().getAllowIps());
 
         if (matcher.isEmpty()) {
-            log.error("推送接口 IP 白名单为空, 所有请求都将被拒绝, 请检查 starbot.adapter.onebot.security.allow-ips 配置");
+            log.error("推送接口 IP 白名单为空, 所有请求都将被拒绝, 请检查 novabot.adapter.onebot.security.allow-ips 配置");
         }
 
         return matcher;

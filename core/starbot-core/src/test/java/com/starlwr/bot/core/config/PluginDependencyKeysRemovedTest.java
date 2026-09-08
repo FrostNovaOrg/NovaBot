@@ -24,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 插件依赖自动下载那一节已从配置面上撤走
  * <p>
- * 自动下载随插件加载器一起退休之后，{@code starbot.core.plugin} 那一节就是一具死码：
+ * 自动下载随插件加载器一起退休之后，{@code novabot.core.plugin} 那一节就是一具死码：
  * 它仍出现在设置页上、仍能被写进 {@code application.yml}，而改它不产生任何效果。
  * <b>「界面上有、改了没用」比「界面上没有」更糟</b>——使用者会以为自己配好了。
  * <p>
@@ -46,19 +46,19 @@ class PluginDependencyKeysRemovedTest {
     /**
      * 已撤走的那一节的配置前缀
      */
-    private static final String REMOVED_PREFIX = "starbot.core.plugin";
+    private static final String REMOVED_PREFIX = "novabot.core.plugin";
 
     /**
      * 阳性锚：仍在册的一节与一个键，用来证明本格的三种取值方式当真取得到东西
      */
     private static final String LIVE_NESTED_SECTION = "Paint";
 
-    private static final String LIVE_PREFIX = "starbot.core.push";
+    private static final String LIVE_PREFIX = "novabot.core.push";
 
-    private static final String LIVE_KEY = "starbot.core.paint.fonts";
+    private static final String LIVE_KEY = "novabot.core.paint.fonts";
 
     @Test
-    @DisplayName("绑定根、分组表、键全集三处都不再有 starbot.core.plugin 那一节")
+    @DisplayName("绑定根、分组表、键全集三处都不再有 novabot.core.plugin 那一节")
     void removedSectionLeavesNothingBehind() {
         List<String> unresolved = new ArrayList<>();
 

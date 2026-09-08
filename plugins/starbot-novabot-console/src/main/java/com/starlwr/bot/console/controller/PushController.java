@@ -36,7 +36,7 @@ import java.util.Optional;
 @StarBotComponent
 @RestController
 @RequestMapping(ConfigUiController.BASE_PATH)
-@ConditionalOnProperty(name = "starbot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(name = "novabot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
 public class PushController {
     /**
      * 推送记录的时间格式
@@ -82,7 +82,7 @@ public class PushController {
         // 走与设置页保存同一条通道，而不是在这里再写一次 setEnabled：
         // 「这一项怎么落到运行中的程序上」有两处实现的话，改了其中一处的另一处不会跟着变，
         // 而两条路在界面上看起来是同一个开关
-        Map<String, String> change = Map.of("starbot.core.push.enabled", String.valueOf(enabled));
+        Map<String, String> change = Map.of("novabot.core.push.enabled", String.valueOf(enabled));
         runtimeApplier.applyAndTrack(change);
 
         try {

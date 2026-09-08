@@ -53,7 +53,7 @@ public class OneBotHealthProbe implements HealthProbe {
         Map<String, OneBotConnectionState.Entry> all = state.all();
         if (all.isEmpty()) {
             return HealthStatus.down("未配置任何机器人",
-                    "请在配置文件中填写 starbot.adapter.onebot.senders，至少配置一个 OneBot 连接");
+                    "请在配置文件中填写 novabot.adapter.onebot.senders，至少配置一个 OneBot 连接");
         }
 
         List<String> summaries = new ArrayList<>();

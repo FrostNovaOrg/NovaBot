@@ -41,8 +41,8 @@ class ConfigurationFileServiceTest {
     /**
      * 测试用配置文件内容
      * <p>
-     * <b>请勿向本模板添加 {@code starbot.bilibili.dynamic.auto-save-image} 或
-     * {@code starbot.core.paint.fonts}</b>：{@link #insertsMissingProperty()} 与
+     * <b>请勿向本模板添加 {@code novabot.bilibili.dynamic.auto-save-image} 或
+     * {@code novabot.core.paint.fonts}</b>：{@link #insertsMissingProperty()} 与
      * {@link #insertsMissingList()} 分别依赖这两个键「不存在」来验证插入逻辑，一旦加入用例即失效。
      * 需要新的样例配置项时，请另选一个本模板与这两个用例都未使用的键；
      * 列表那一个还须是元数据里当真登记过的列表型键。
@@ -56,7 +56,7 @@ class ConfigurationFileServiceTest {
               mail:
                 host:                   # SMTP 服务器地址
 
-            starbot:
+            novabot:
               core:
                 push:
                   quiet-start:          # 静音时段开始
@@ -136,14 +136,14 @@ class ConfigurationFileServiceTest {
         Map<String, String> values = service.read();
 
         assertEquals("7827", values.get("server.port"));
-        assertEquals("true", values.get("starbot.core.config-ui.enabled"));
-        assertEquals("1440", values.get("starbot.bilibili.dynamic.push-minutes"));
+        assertEquals("true", values.get("novabot.core.config-ui.enabled"));
+        assertEquals("1440", values.get("novabot.bilibili.dynamic.push-minutes"));
     }
 
     @Test
     @DisplayName("字符串列表按行读出")
     void readsStringList() throws IOException {
-        assertEquals("127.0.0.1/32\n::1/128", service.read().get("starbot.core.config-ui.allow-ips"));
+        assertEquals("127.0.0.1/32\n::1/128", service.read().get("novabot.core.config-ui.allow-ips"));
     }
 
     @Test
@@ -151,24 +151,24 @@ class ConfigurationFileServiceTest {
     void ignoresObjectListItems() throws IOException {
         Map<String, String> values = service.read();
 
-        assertFalse(values.containsKey("starbot.adapter.onebot.senders.api"));
-        assertFalse(values.containsKey("starbot.adapter.onebot.senders.delay"));
+        assertFalse(values.containsKey("novabot.adapter.onebot.senders.api"));
+        assertFalse(values.containsKey("novabot.adapter.onebot.senders.delay"));
     }
 
     @Test
     @DisplayName("修改标量值后文件内容随之改变")
     void writesScalar() throws IOException {
-        List<String> changed = service.write(Map.of("starbot.bilibili.dynamic.push-minutes", "720"));
+        List<String> changed = service.write(Map.of("novabot.bilibili.dynamic.push-minutes", "720"));
 
-        assertEquals(List.of("starbot.bilibili.dynamic.push-minutes"), changed);
+        assertEquals(List.of("novabot.bilibili.dynamic.push-minutes"), changed);
         assertTrue(content().contains("push-minutes: 720"));
-        assertEquals("720", service.read().get("starbot.bilibili.dynamic.push-minutes"));
+        assertEquals("720", service.read().get("novabot.bilibili.dynamic.push-minutes"));
     }
 
     @Test
     @DisplayName("修改后行尾注释仍然保留")
     void keepsTrailingComment() throws IOException {
-        service.write(Map.of("starbot.bilibili.dynamic.auto-follow", "false"));
+        service.write(Map.of("novabot.bilibili.dynamic.auto-follow", "false"));
 
         String line = content().lines().filter(l -> l.contains("auto-follow")).findFirst().orElseThrow();
         assertTrue(line.contains("false"), "值应已更新: " + line);
@@ -179,7 +179,7 @@ class ConfigurationFileServiceTest {
     @DisplayName("仅改动目标行，其余内容逐行不变")
     void touchesOnlyTargetLines() throws IOException {
         List<String> before = content().lines().toList();
-        service.write(Map.of("starbot.bilibili.dynamic.auto-follow", "false"));
+        service.write(Map.of("novabot.bilibili.dynamic.auto-follow", "false"));
         List<String> after = content().lines().toList();
 
         assertEquals(before.size(), after.size());
@@ -197,10 +197,10 @@ class ConfigurationFileServiceTest {
     @Test
     @DisplayName("字符串列表整块替换且缩进正确")
     void writesStringList() throws IOException {
-        List<String> changed = service.write(Map.of("starbot.core.config-ui.allow-ips", "10.0.0.0/8\n192.168.0.0/16\n127.0.0.1/32"));
+        List<String> changed = service.write(Map.of("novabot.core.config-ui.allow-ips", "10.0.0.0/8\n192.168.0.0/16\n127.0.0.1/32"));
 
-        assertEquals(List.of("starbot.core.config-ui.allow-ips"), changed);
-        assertEquals("10.0.0.0/8\n192.168.0.0/16\n127.0.0.1/32", service.read().get("starbot.core.config-ui.allow-ips"));
+        assertEquals(List.of("novabot.core.config-ui.allow-ips"), changed);
+        assertEquals("10.0.0.0/8\n192.168.0.0/16\n127.0.0.1/32", service.read().get("novabot.core.config-ui.allow-ips"));
 
         assertTrue(content().contains("      - 10.0.0.0/8"), "列表项缩进应与原文件一致:\n" + content());
         assertFalse(content().contains("::1/128"), "旧的列表项应被移除");
@@ -210,27 +210,27 @@ class ConfigurationFileServiceTest {
     @DisplayName("同时修改列表与标量互不干扰")
     void writesListAndScalarTogether() throws IOException {
         service.write(Map.of(
-                "starbot.core.config-ui.allow-ips", "10.0.0.0/8",
-                "starbot.bilibili.dynamic.push-minutes", "60",
+                "novabot.core.config-ui.allow-ips", "10.0.0.0/8",
+                "novabot.bilibili.dynamic.push-minutes", "60",
                 "server.port", "8080"
         ));
 
         Map<String, String> values = service.read();
-        assertEquals("10.0.0.0/8", values.get("starbot.core.config-ui.allow-ips"));
-        assertEquals("60", values.get("starbot.bilibili.dynamic.push-minutes"));
+        assertEquals("10.0.0.0/8", values.get("novabot.core.config-ui.allow-ips"));
+        assertEquals("60", values.get("novabot.bilibili.dynamic.push-minutes"));
         assertEquals("8080", values.get("server.port"));
     }
 
     @Test
     @DisplayName("值未变化时不计入改动")
     void noChangeWhenValueIdentical() throws IOException {
-        assertEquals(List.of(), service.write(Map.of("starbot.bilibili.dynamic.push-minutes", "1440")));
+        assertEquals(List.of(), service.write(Map.of("novabot.bilibili.dynamic.push-minutes", "1440")));
     }
 
     @Test
     @DisplayName("写入后磁盘上应留下一份 .bak 备份")
     void writeLeavesBackupFile() throws IOException {
-        service.write(Map.of("starbot.bilibili.dynamic.push-minutes", "30"));
+        service.write(Map.of("novabot.bilibili.dynamic.push-minutes", "30"));
 
         List<Path> backups;
         try (var files = Files.list(dir)) {
@@ -308,7 +308,7 @@ class ConfigurationFileServiceTest {
     @Test
     @DisplayName("清空列表元素首字段时，短横要顶到下一字段上")
     void clearingFirstListItemFieldKeepsTheDash() throws IOException {
-        service.writeListItemFields("starbot.adapter.onebot.senders", 0, Map.of("name", ""));
+        service.writeListItemFields("novabot.adapter.onebot.senders", 0, Map.of("name", ""));
 
         String content = content();
         assertFalse(content.contains("name: qq-onebot"), content);
@@ -320,7 +320,7 @@ class ConfigurationFileServiceTest {
     @Test
     @DisplayName("清空列表元素内部的字段应删掉该字段，而不是留下空值")
     void clearingListItemFieldRemovesTheField() throws IOException {
-        int changed = service.writeListItemFields("starbot.adapter.onebot.senders", 0,
+        int changed = service.writeListItemFields("novabot.adapter.onebot.senders", 0,
                 Map.of("api", ""));
 
         assertEquals(1, changed);
@@ -336,7 +336,7 @@ class ConfigurationFileServiceTest {
     @Test
     @DisplayName("列表元素字段写成非空值时照写")
     void writesNonEmptyListItemField() throws IOException {
-        service.writeListItemFields("starbot.adapter.onebot.senders", 0, Map.of("api", "/push"));
+        service.writeListItemFields("novabot.adapter.onebot.senders", 0, Map.of("api", "/push"));
 
         String content = content();
         assertTrue(content.contains("api: /push"), content);
@@ -346,7 +346,7 @@ class ConfigurationFileServiceTest {
     @Test
     @DisplayName("可修改列表元素内部的字段")
     void writesFieldsInsideListItem() throws IOException {
-        int changed = service.writeListItemFields("starbot.adapter.onebot.senders", 0,
+        int changed = service.writeListItemFields("novabot.adapter.onebot.senders", 0,
                 Map.of("api", "/push", "delay", "2000"));
 
         assertEquals(2, changed);
@@ -360,7 +360,7 @@ class ConfigurationFileServiceTest {
     @Test
     @DisplayName("修改列表元素字段时不应影响列表之外的同名键")
     void doesNotTouchSameKeyOutsideList() throws IOException {
-        service.writeListItemFields("starbot.adapter.onebot.senders", 0, Map.of("port", "9999"));
+        service.writeListItemFields("novabot.adapter.onebot.senders", 0, Map.of("port", "9999"));
 
         // server.port 与列表元素无关，不得被改写
         assertEquals("7827", service.read().get("server.port"));
@@ -369,7 +369,7 @@ class ConfigurationFileServiceTest {
     @Test
     @DisplayName("列表元素字段删尽后整条去掉，列表回到空表")
     void clearingEveryListItemFieldRemovesTheItem() throws IOException {
-        service.writeListItemFields("starbot.adapter.onebot.senders", 0,
+        service.writeListItemFields("novabot.adapter.onebot.senders", 0,
                 Map.of("name", "", "api", "", "delay", ""));
 
         String text = content();
@@ -387,7 +387,7 @@ class ConfigurationFileServiceTest {
     @DisplayName("空表建第一项时跳过空字段，返回的是实际写下的个数")
     void createFirstItemSkipsBlankFieldsAndDoesNotCountThem() throws IOException {
         Files.writeString(config, """
-                starbot:
+                novabot:
                   adapter:
                     onebot:
                       senders: []
@@ -400,7 +400,7 @@ class ConfigurationFileServiceTest {
         fields.put("one-bot-http-token", "");
         fields.put("one-bot-websocket-token", "  ");
 
-        int changed = service.writeListItemFields("starbot.adapter.onebot.senders", 0, fields);
+        int changed = service.writeListItemFields("novabot.adapter.onebot.senders", 0, fields);
 
         assertEquals(2, changed, "空字段不写也不计入返回值");
         String text = content();
@@ -414,7 +414,7 @@ class ConfigurationFileServiceTest {
     @DisplayName("列表或元素不存在时应明确报错, 而非静默无操作")
     void failsWhenListItemMissing() {
         assertThrows(IOException.class,
-                () -> service.writeListItemFields("starbot.adapter.onebot.senders", 5, Map.of("api", "/x")));
+                () -> service.writeListItemFields("novabot.adapter.onebot.senders", 5, Map.of("api", "/x")));
         assertThrows(IOException.class,
                 () -> service.writeListItemFields("starbot.not.exist", 0, Map.of("api", "/x")));
     }
@@ -422,21 +422,21 @@ class ConfigurationFileServiceTest {
     @Test
     @DisplayName("尚不存在的配置项会被插入到已有父节点之下")
     void insertsMissingProperty() throws IOException {
-        List<String> changed = service.write(Map.of("starbot.bilibili.dynamic.auto-save-image", "true"));
+        List<String> changed = service.write(Map.of("novabot.bilibili.dynamic.auto-save-image", "true"));
 
-        assertEquals(List.of("starbot.bilibili.dynamic.auto-save-image"), changed);
-        assertEquals("true", service.read().get("starbot.bilibili.dynamic.auto-save-image"));
+        assertEquals(List.of("novabot.bilibili.dynamic.auto-save-image"), changed);
+        assertEquals("true", service.read().get("novabot.bilibili.dynamic.auto-save-image"));
     }
 
     @Test
     @DisplayName("尚不存在的列表配置项写成 YAML 列表而非多行标量")
     void insertsMissingList() throws IOException {
-        List<String> changed = service.write(Map.of("starbot.core.paint.fonts", "https://a.example\nhttps://b.example"));
+        List<String> changed = service.write(Map.of("novabot.core.paint.fonts", "https://a.example\nhttps://b.example"));
 
-        assertEquals(List.of("starbot.core.paint.fonts"), changed);
+        assertEquals(List.of("novabot.core.paint.fonts"), changed);
         assertTrue(content().contains("- https://a.example"), "应写成 YAML 列表:\n" + content());
         assertFalse(content().contains("\"https://a.example"), "不应写成带引号的多行标量:\n" + content());
-        assertEquals("https://a.example\nhttps://b.example", service.read().get("starbot.core.paint.fonts"));
+        assertEquals("https://a.example\nhttps://b.example", service.read().get("novabot.core.paint.fonts"));
     }
 
     @Test
@@ -458,7 +458,7 @@ class ConfigurationFileServiceTest {
         String before = sha256();
 
         IOException error = assertThrows(IOException.class, () -> service.write(Map.of(
-                "starbot.bilibili.dynamic.draw-logo", "true",
+                "novabot.bilibili.dynamic.draw-logo", "true",
                 "logging.level.root", "DEBUG")));
 
         assertTrue(error.getMessage().contains("logging.level.root"), "报错要说清是哪一项: " + error.getMessage());
@@ -477,19 +477,19 @@ class ConfigurationFileServiceTest {
         // 不带冒号的那行不会被加引号，会顶在第 0 列，整份配置从此解析不了，
         // 而接口照样回报「已保存」——问题要到下次重启才暴露成安全模式
         IOException error = assertThrows(IOException.class,
-                () -> service.write(Map.of("starbot.core.push.quiet-start", "22:00\nevil")));
+                () -> service.write(Map.of("novabot.core.push.quiet-start", "22:00\nevil")));
 
-        assertTrue(error.getMessage().contains("starbot.core.push.quiet-start"), "报错要说清是哪一项: " + error.getMessage());
+        assertTrue(error.getMessage().contains("novabot.core.push.quiet-start"), "报错要说清是哪一项: " + error.getMessage());
         assertEquals(before, content(), "拒绝时文件必须原样不动");
     }
 
     @Test
     @DisplayName("字符串列表的换行是分隔符，不受影响")
     void allowsMultilineForStringList() throws IOException {
-        service.write(Map.of("starbot.core.config-ui.allow-ips", "127.0.0.1/32\n10.0.0.0/8"));
+        service.write(Map.of("novabot.core.config-ui.allow-ips", "127.0.0.1/32\n10.0.0.0/8"));
 
         // 读回来仍是以换行连接的一个串，与界面上的多行输入框一一对应
-        assertEquals("127.0.0.1/32\n10.0.0.0/8", service.read().get("starbot.core.config-ui.allow-ips"));
+        assertEquals("127.0.0.1/32\n10.0.0.0/8", service.read().get("novabot.core.config-ui.allow-ips"));
     }
 
     @Test
@@ -497,9 +497,9 @@ class ConfigurationFileServiceTest {
     void multilineCannotInjectKeys() throws IOException {
         // 这一条即使当前已被拒绝也要留着：将来若放宽了限制，注入才是真正危险的那一面
         assertThrows(IOException.class,
-                () -> service.write(Map.of("starbot.core.push.quiet-start", "x\n      enabled: false")));
+                () -> service.write(Map.of("novabot.core.push.quiet-start", "x\n      enabled: false")));
 
-        assertEquals("true", service.read().get("starbot.core.config-ui.enabled"), "既有配置项不该被顶掉");
+        assertEquals("true", service.read().get("novabot.core.config-ui.enabled"), "既有配置项不该被顶掉");
     }
 
     // ============ 清空即移除（否则程序起不来） ============
@@ -574,11 +574,11 @@ class ConfigurationFileServiceTest {
     @Test
     @DisplayName("其余配置项留空仍是有意义的取值，不能一并删掉")
     void clearingOtherPropertiesKeepsTheLine() throws Exception {
-        service.write(Map.of("starbot.core.push.quiet-start", "23:00"));
+        service.write(Map.of("novabot.core.push.quiet-start", "23:00"));
         assertTrue(Files.readString(config).contains("quiet-start: \"23:00\""));
 
         // 静音时段留空表示不启用，这一行必须留着
-        service.write(Map.of("starbot.core.push.quiet-start", ""));
+        service.write(Map.of("novabot.core.push.quiet-start", ""));
 
         assertTrue(Files.readString(config).contains("quiet-start"),
                 "留空是有效取值的配置项不该被删行");
@@ -587,10 +587,10 @@ class ConfigurationFileServiceTest {
     @Test
     @DisplayName("时:分取值落盘要带引号，重启后读回仍是字符串而非六十进制整数")
     void clockTimeValueIsQuotedOnDisk() throws Exception {
-        service.write(Map.of("starbot.core.push.quiet-start", "23:00"));
+        service.write(Map.of("novabot.core.push.quiet-start", "23:00"));
 
         Map<?, ?> root = new Yaml().load(content());
-        Map<?, ?> push = (Map<?, ?>) ((Map<?, ?>) ((Map<?, ?>) root.get("starbot")).get("core")).get("push");
+        Map<?, ?> push = (Map<?, ?>) ((Map<?, ?>) ((Map<?, ?>) root.get("novabot")).get("core")).get("push");
         assertEquals("23:00", push.get("quiet-start"),
                 "裸写 quiet-start: 23:00 时 SnakeYAML 按 YAML 1.1 六十进制把它读成整数 1380");
 
@@ -600,7 +600,7 @@ class ConfigurationFileServiceTest {
     @Test
     @DisplayName("# 前无空白不算注释：a#b、链接锚点整个是值；空白后的 # 才是注释")
     void hashWithoutLeadingWhitespaceIsNotComment() throws IOException {
-        String key = "starbot.core.push.quiet-start";
+        String key = "novabot.core.push.quiet-start";
         List<String> unresolved = new ArrayList<>();
 
         // ① # 紧贴前文：写盘再读回必须是整个值，行尾注释不丢，回显值再存不该有改动
@@ -645,21 +645,21 @@ class ConfigurationFileServiceTest {
     @DisplayName("值含引号时行尾注释不再吞进值")
     void valueWithQuoteKeepsTrailingCommentOutOfValue() throws IOException {
         // ① 撇号只是普通字符：旧判法把它当开了个没闭上的引号，后面的整段行尾注释被当成值回显
-        service.write(Map.of("starbot.core.push.quiet-start", "It's"));
-        assertEquals("It's", service.read().get("starbot.core.push.quiet-start"),
+        service.write(Map.of("novabot.core.push.quiet-start", "It's"));
+        assertEquals("It's", service.read().get("novabot.core.push.quiet-start"),
                 "行尾注释不该被吞进值里");
 
         // ② 界面拿着回显值再存一次：回显值若已带注释，render 见 " #" 会加引号，注释真成了值的一部分
-        List<String> rewritten = service.write(Map.of("starbot.core.push.quiet-start",
-                service.read().get("starbot.core.push.quiet-start")));
+        List<String> rewritten = service.write(Map.of("novabot.core.push.quiet-start",
+                service.read().get("novabot.core.push.quiet-start")));
         assertEquals(List.of(), rewritten, "盘上值与回显值一致时，再存一次应当没有任何改动");
         String line = content().lines().filter(l -> l.contains("quiet-start")).findFirst().orElseThrow();
         assertFalse(line.contains("\"It's"), "回显值再存不得把注释包进引号里: " + line);
         assertTrue(line.contains("# 静音时段开始"), "行尾注释应原样保留: " + line);
 
         // ③ 阳性对照：值本身以引号开头、引号内含 " #"，# 不能被当成注释起点提前截断
-        service.write(Map.of("starbot.core.push.quiet-start", "\"a # b\""));
-        String quoted = service.read().get("starbot.core.push.quiet-start");
+        service.write(Map.of("novabot.core.push.quiet-start", "\"a # b\""));
+        String quoted = service.read().get("novabot.core.push.quiet-start");
         assertTrue(quoted.contains("a # b"), "引号内的 # 不是注释起点: " + quoted);
     }
 }

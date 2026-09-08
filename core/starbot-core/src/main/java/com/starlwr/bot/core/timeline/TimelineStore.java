@@ -44,7 +44,7 @@ import java.util.stream.Stream;
  * 不依赖外部服务、追加写不会因崩在中途而毁掉既有记录、人能直接看直接导出。
  * <p>
  * 与场次归档不同的是<b>它会被删</b>：时间线是排障线索不是业务数据，
- * 留 {@code starbot.core.timeline.retention-days} 天，过期的整日文件删掉。
+ * 留 {@code novabot.core.timeline.retention-days} 天，过期的整日文件删掉。
  * 按日分文件正是为了这一点——删一天就是删一个文件，不必读改写。
  * <p>
  * <b>进程内另有一份索引</b>（各日条数 ＋ 最近若干条），启动时扫一遍现有文件建起来。

@@ -18,7 +18,7 @@ spring:
 server:
   port: 7827
 
-starbot:
+novabot:
   core:
     log:
       console: INFO

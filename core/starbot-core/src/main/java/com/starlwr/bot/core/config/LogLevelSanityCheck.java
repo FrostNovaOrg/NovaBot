@@ -33,7 +33,7 @@ public class LogLevelSanityCheck {
      * 会落进这个坑的配置项
      */
     private static final List<String> PROPERTIES = List.of(
-            "starbot.core.log.console", "starbot.core.log.file");
+            "novabot.core.log.console", "novabot.core.log.file");
 
     private final Environment environment;
 

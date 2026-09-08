@@ -663,7 +663,7 @@ async function renderTotpSetup() {
   $('#totp-skip').addEventListener('click', async () => {
     await api('/auth/totp/skip', {method: 'POST'});
     box.style.display = 'none';
-    // 只跳过这一次登录。要永久关掉得去改 starbot.core.config-ui.auth.totp，
+    // 只跳过这一次登录。要永久关掉得去改 novabot.core.config-ui.auth.totp，
     // 那是个该显式做出的决定，不该由一次「等会儿再说」代劳
     say('本次登录不再提示。要永久关闭请改配置项 auth.totp');
   });

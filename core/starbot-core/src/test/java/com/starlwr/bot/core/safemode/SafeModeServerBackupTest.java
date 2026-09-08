@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 安全模式保存配置时的带时间戳备份
  * <p>
- * 保留份数尽量照 yml 里配的走（starbot.core.config-ui.backup-keep），读不到时
+ * 保留份数尽量照 yml 里配的走（novabot.core.config-ui.backup-keep），读不到时
  * 才退回组件默认份数——这里钉住的是「照配置走、读不到有兜底」这件事本身。
  */
 @DisplayName("安全模式保存配置的备份")
@@ -73,7 +73,7 @@ class SafeModeServerBackupTest {
     void safeModeBackupsFollowConfiguredKeep() throws IOException {
         Path config = dir.resolve("application.yml");
         Files.writeString(config, """
-                starbot:
+                novabot:
                   core:
                     config-ui:
                       backup-keep: 3
@@ -93,7 +93,7 @@ class SafeModeServerBackupTest {
     void safeModeBackupsClampOversizedKeep() throws IOException {
         Path config = dir.resolve("application.yml");
         Files.writeString(config, """
-                starbot:
+                novabot:
                   core:
                     config-ui:
                       backup-keep: 500
@@ -116,31 +116,31 @@ class SafeModeServerBackupTest {
     void resolveBackupKeepClampsReturnValue() throws IOException {
         List<String> unresolved = new ArrayList<>();
         askKeep(unresolved, """
-                starbot:
+                novabot:
                   core:
                     config-ui:
                       backup-keep: 500
                 """, 100, "500 应按上限 100 收口");
         askKeep(unresolved, """
-                starbot:
+                novabot:
                   core:
                     config-ui:
                       backup-keep: 0
                 """, 1, "0 应按下限 1 收口");
         askKeep(unresolved, """
-                starbot:
+                novabot:
                   core:
                     config-ui:
                       backup-keep: -1
                 """, 1, "-1 应按下限 1 收口");
         askKeep(unresolved, """
-                starbot:
+                novabot:
                   core:
                     config-ui:
                       backup-keep: 100
                 """, 100, "阳性对照: 界上沿 100 照用");
         askKeep(unresolved, """
-                starbot:
+                novabot:
                   core:
                     config-ui:
                       backup-keep: 1
@@ -155,19 +155,19 @@ class SafeModeServerBackupTest {
     void resolveBackupKeepReadsQuotedNumberAndCamelCaseKey() throws IOException {
         List<String> unresolved = new ArrayList<>();
         askKeep(unresolved, """
-                starbot:
+                novabot:
                   core:
                     config-ui:
                       backup-keep: "5"
                 """, 5, "带引号的 5 应被认出");
         askKeep(unresolved, """
-                starbot:
+                novabot:
                   core:
                     configUi:
                       backupKeep: 5
                 """, 5, "驼峰键 configUi.backupKeep 的 5 应被认出");
         askKeep(unresolved, """
-                starbot:
+                novabot:
                   core:
                     configUi:
                       backupKeep: "7"
@@ -175,7 +175,7 @@ class SafeModeServerBackupTest {
         askKeep(unresolved, "seed: 1\n", TimestampedFileBackup.DEFAULT_KEEP,
                 "没配 backup-keep 应回默认份数 " + TimestampedFileBackup.DEFAULT_KEEP);
         askKeep(unresolved, """
-                starbot:
+                novabot:
                   core:
                     config-ui:
                       backup-keep: "abc"

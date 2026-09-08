@@ -2,6 +2,7 @@ package com.starlwr.bot.core.config.ui;
 
 import com.starlwr.bot.core.properties.DatasourceProperties;
 import com.starlwr.bot.core.properties.EventStreamProperties;
+import com.starlwr.bot.core.properties.NovaBotPrefixes;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.timeline.TimelineEvent;
 import com.starlwr.bot.core.timeline.TimelineEventType;
@@ -139,7 +140,7 @@ public class ConfigurationFileService {
     /**
      * 读取配置文件中的全部键值
      * <p>
-     * 返回的键为完整路径，例如 starbot.bilibili.dynamic.draw-logo。列表结构不在此处展开，
+     * 返回的键为完整路径，例如 novabot.bilibili.dynamic.draw-logo。列表结构不在此处展开，
      * 由界面通过独立接口处理。
      * @return 键值映射
      * @throws IOException 读取失败时抛出
@@ -183,9 +184,9 @@ public class ConfigurationFileService {
      */
     static final Set<String> BLANK_MEANS_ABSENT = Set.of(
             "spring.data.redis.host",
-            "starbot.adapter.onebot.senders.one-bot-http-token",
-            "starbot.adapter.onebot.senders.one-bot-websocket-token",
-            "starbot.adapter.onebot.senders.api-token");
+            "novabot.adapter.onebot.senders.one-bot-http-token",
+            "novabot.adapter.onebot.senders.one-bot-websocket-token",
+            "novabot.adapter.onebot.senders.api-token");
 
     /**
      * 某个列表元素内部的字段是不是「留空＝未配置」
@@ -397,7 +398,7 @@ public class ConfigurationFileService {
      * 「找不到第 1 个元素」于是成了全新机器上的<b>必然</b>结果，而它的表现是引导流程第二步
      * 报一句「保存失败」——那台机器因此一步也走不下去。所以下标 0 且列表为空时建一个出来，
      * 字段与顺序由调用方给：写进去的必须是<b>整条</b>元素，缺了平台名的那一条会让下次启动直接失败。
-     * @param listPath 列表的完整路径，例如 starbot.adapter.onebot.senders
+     * @param listPath 列表的完整路径，例如 novabot.adapter.onebot.senders
      * @param index 元素下标，从 0 开始
      * @param fields 待修改的字段名到取值，字段名为元素内部的键；建新元素时即为元素全文
      * @return 实际改动的字段数。建新元素时空值字段不写进文件、也不计入这个数，
@@ -868,6 +869,30 @@ public class ConfigurationFileService {
                 inserted.add(" ".repeat(indent) + leaf + ": " + render(value));
             }
 
+            lines.addAll(insertAt, inserted);
+            return true;
+        }
+
+        // 产品前缀改名后，只写着上一档根的既有文件里没有 novabot 这一层。
+        // 写现行键时把根建在文件末尾，中间层级一并补齐。
+        if (segments.length >= 2 && NovaBotPrefixes.CORE.startsWith(segments[0] + ".")) {
+            int insertAt = lines.size();
+            List<String> inserted = new ArrayList<>();
+            int indent = 0;
+            for (int i = 0; i < segments.length - 1; i++) {
+                inserted.add(" ".repeat(indent) + segments[i] + ":");
+                indent += INDENT;
+            }
+            String leaf = segments[segments.length - 1];
+            List<String> items = splitItems(value);
+            if (items.size() > 1 || value.contains("\n")) {
+                inserted.add(" ".repeat(indent) + leaf + ":");
+                for (String item : items) {
+                    inserted.add(" ".repeat(indent + INDENT) + "- " + render(item));
+                }
+            } else {
+                inserted.add(" ".repeat(indent) + leaf + ": " + render(value));
+            }
             lines.addAll(insertAt, inserted);
             return true;
         }

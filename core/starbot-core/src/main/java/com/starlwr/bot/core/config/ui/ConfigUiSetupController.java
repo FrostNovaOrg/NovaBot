@@ -29,7 +29,7 @@ import java.time.temporal.ChronoUnit;
 @Slf4j
 @RestController
 @RequestMapping(ConfigUiController.BASE_PATH + "/api/setup")
-@ConditionalOnProperty(name = "starbot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(name = "novabot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
 public class ConfigUiSetupController {
     /**
      * 运行状态里的命名空间
