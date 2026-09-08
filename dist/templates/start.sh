@@ -24,9 +24,6 @@ JVM_OPTS="$JVM_OPTS -Dfile.encoding=UTF-8"
 # 放前面的话 JAVA_OPTS="-Xmx1g" ./start.sh 会被下面的默认值悄悄盖掉
 JVM_OPTS="$JVM_OPTS ${JAVA_OPTS:-}"
 
-# 下载完插件依赖后需要重启才能加载，程序会以该退出码退出
-RESTART_EXIT_CODE=90
-
 child=""
 
 # 容器里本脚本是 1 号进程，停机信号只送到它这里，不转发的话 java 根本收不到 SIGTERM，
@@ -40,25 +37,20 @@ forward_signal() {
 }
 trap forward_signal TERM INT
 
-# systemd 部署时由 Restart=on-failure 负责拉起，此处的循环是给手动运行与容器用的。
+# 一次运行，退出码原样交给 systemd／容器。
+# systemd 部署时由 Restart=on-failure 负责拉起；容器用 --restart unless-stopped。
 # 不在程序内部自行派生子进程重启：那样父进程要一直驻留等子进程结束，白占一份内存，
 # systemd 下的进程树也不正确
-while true; do
-  set +e
-  java $JVM_OPTS -Dloader.path=lib,plugins,plugins-lib -jar StarBotCore.jar "$@" &
-  child=$!
+set +e
+java $JVM_OPTS -Dloader.path=lib,plugins,plugins-lib -jar StarBotCore.jar "$@" &
+child=$!
 
-  # wait 被信号打断时会立刻返回 128+信号号，而此时 java 才刚开始停机。
-  # 必须接着等它真正退出，否则容器会在停机做到一半时就把进程收走
+# wait 被信号打断时会立刻返回 128+信号号，而此时 java 才刚开始停机。
+# 必须接着等它真正退出，否则容器会在停机做到一半时就把进程收走
+wait "$child"; code=$?
+while [ "$code" -gt 128 ] && kill -0 "$child" 2>/dev/null; do
   wait "$child"; code=$?
-  while [ "$code" -gt 128 ] && kill -0 "$child" 2>/dev/null; do
-    wait "$child"; code=$?
-  done
-  set -e
-
-  if [ "$code" -ne "$RESTART_EXIT_CODE" ]; then
-    exit "$code"
-  fi
-
-  echo "插件依赖已下载完毕，正在重启以加载…"
 done
+set -e
+
+exit "$code"

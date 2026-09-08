@@ -49,5 +49,5 @@ ENV TZ=Asia/Shanghai
 EXPOSE 7827
 
 # 入口脚本 exec 到 start.sh，由它接住 docker stop 的 SIGTERM 并转发给 java，
-# 直接 exec java 则会绕过 start.sh 的插件依赖重启逻辑（退出码 90）
+# 并把 JVM 参数与 loader.path 集中在 start.sh 一处；直接 exec java 会绕过这两件事
 ENTRYPOINT ["/opt/starbot/docker-entrypoint.sh"]
