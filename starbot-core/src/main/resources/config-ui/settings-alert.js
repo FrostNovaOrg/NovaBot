@@ -248,6 +248,25 @@ function pillState(pill, configured) {
 }
 
 /**
+ * 邮件药丸的初值问运行值，不问编辑框里的文件值
+ *
+ * spring.mail.host 可以被环境变量越过文件改掉，真的发信认的是启动时的那一份，
+ * /api/status 的 alerts.mail 答的正是它。编辑框照旧显示文件值，所以两栏会差——
+ * 初值若按文件判，「文件里明明填着」与「药丸说未配置」同屏，看起来像坏了。
+ * 取不到状态时退回按编辑框判：页面还是得给个初值，宁可保守也不留空。
+ * @param pill 药丸元素
+ * @param fromDraft 按编辑框重判，取不到状态时的退路
+ */
+async function mailPillFromStatus(pill, fromDraft) {
+  try {
+    const st = await api('/status');
+    pillState(pill, !!(st.alerts && st.alerts.mail));
+  } catch (e) {
+    fromDraft();
+  }
+}
+
+/**
  * QQ 那一路的「发给谁」
  *
  * 从机器人自己知道的群与好友里挑，<b>没有手填号码的格子</b>：填错一位数不会有任何报错，
@@ -383,6 +402,12 @@ export function alertCards() {
   // ---- 邮件 ----
   const mail = shell('mail', '邮件', '慢一点，但不跟 ' + term('bot.platform', '机器人')
     + ' 一起挂掉。发件那栏填的是授权码，不是登录密码。');
+  // 药丸说的是运行值，编辑框显示的是文件值，两栏会差：不注明的话，
+  // 「文件里明明填着」与「药丸说未配置」同屏，看起来像坏了
+  const runtimeNote = el('span', 'hint');
+  runtimeNote.textContent = '以运行值为准';
+  runtimeNote.style.margin = '0';
+  mail.head.appendChild(runtimeNote);
   const mailCustom = el('div', 'al-cus');
   const mailPreset = presetField(mail.body, Object.keys(MAIL_PRESETS).concat(CUSTOM));
   const to = field(mail.body, '收件邮箱', 'starbot.core.mail.default-to', {ph: '收告警的邮箱'});
@@ -412,7 +437,8 @@ export function alertCards() {
   const mailReady = () => pillState(mail.pill, mailAlertConfigured(to.value, host.value));
   to.addEventListener('input', mailReady);
   host.addEventListener('input', mailReady);
-  mailReady();
+  // 初值问运行值；敲键盘时按草稿即时回评，保存写文件不改运行值——重刷后仍以运行值为准
+  mailPillFromStatus(mail.pill, mailReady);
   wrap.appendChild(mail.card);
 
   return wrap;

@@ -1,9 +1,11 @@
 /**
- * 邮件告警卡：选预设后药丸要跟着变；认预设要把端口算进去
+ * 邮件告警卡：选预设后药丸要跟着变；认预设要把端口算进去；初值问运行值
  *
  * 程序给输入框赋值不触发 input，药丸若只听 input 就会停在「未配置」。
  * 只按服务器名认预设时，端口对不上也会把自定义栏藏起来，465 和 587 从界面上看不见。
  * 切段按花括号配平截到块尾后真执行，不是只 includes。
+ * 药丸初值答的是「此刻真的能发吗」：/api/status 说不配而文件里两栏都填着
+ * （spring.mail.host 可以被环境变量越过文件），初值仍要写「未配置」。
  *
  * 由 SettingsAlertViewTest 拉起。量的是源码树里那一份，不是构建产物里的副本。
  */
@@ -70,6 +72,19 @@ function bracedFrom(text, marker) {
 
 function constArrow(text, name) {
   return bracedFrom(text, 'const ' + name + ' = ');
+}
+
+/**
+ * 从 marker 起，取到本行行尾（含行尾分号）
+ *
+ * 表达式体箭头（const x = () => ...;）没有花括号，配平切段会越过本行、
+ * 落到后面无关的块上切出非法段；旧形态的初值函数正是这种单行箭头。
+ */
+function lineFrom(text, marker) {
+  const start = text.indexOf(marker);
+  if (start < 0) return '';
+  const nl = text.indexOf('\n', start);
+  return text.slice(start, nl < 0 ? text.length : nl);
 }
 
 const sample = [
@@ -191,6 +206,41 @@ const recognize = from >= 0 && findAt > from && to > findAt
   : '';
 eq(recognize.length > 0, true, '找得到认预设');
 eq(recognize.includes("'spring.mail.port'"), true, '认预设要比端口');
+
+// ④ 药丸初值问运行值：status 说不配而文件里两栏都填着，初值仍写「未配置」。
+//    新形态切段真执行（status 那趟成功时不许落回草稿判法）；改前形态（初值由草稿写）
+//    落到 else 支真跑旧初值：两栏填好时药丸被写成「已配置」，这一格红——
+//    红的是旧行为本身，不是切段失败
+let q4 = 'missing';
+try {
+  const pill = {className: 'pill', textContent: '未配置'};
+  const to = {value: 'a@example.invalid'};
+  const host = {value: 'smtp.example.invalid'};
+  const state = loadPillState();
+  const configured = loadMailConfigured();
+  let asked = '';
+  let fallbackCalls = 0;
+  const api = async path => { asked = path; return {alerts: {mail: false}}; };
+  const fromDraft = () => { fallbackCalls++; state(pill, configured(to.value, host.value)); };
+  const runtime = bracedFrom(src, 'async function mailPillFromStatus');
+  if (runtime) {
+    const mailPillFromStatus = new Function('api', 'pillState',
+      runtime + '\nreturn mailPillFromStatus;')(api, state);
+    await mailPillFromStatus(pill, fromDraft);
+    q4 = asked === '/status' && fallbackCalls === 0
+      && pill.textContent === '未配置' && !String(pill.className).includes('ok');
+  } else {
+    const line = lineFrom(src, 'const mailReady = ');
+    if (!line) throw new Error('no mailReady');
+    const mailReady = new Function('pillState', 'mailAlertConfigured', 'to', 'host', 'mail',
+      line + '\nreturn mailReady;')(state, configured, to, host, {pill});
+    mailReady();
+    q4 = pill.textContent === '未配置' && !String(pill.className).includes('ok');
+  }
+} catch (e) {
+  q4 = 'error:' + e.message;
+}
+eq(q4, true, '④ status 说不配而文件里 host 已填，药丸初值仍显示未配置');
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);

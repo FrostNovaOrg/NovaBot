@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.alert.AlertChannel;
 import com.starlwr.bot.core.alert.AlertService;
+import com.starlwr.bot.core.alert.MailAlertChannel;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
@@ -15,6 +16,7 @@ import com.starlwr.bot.core.sender.StarBotMessageSender;
 import com.starlwr.bot.core.protocol.EventStreamTokenService;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.PushTemplateDefaults;
+import com.starlwr.bot.core.service.StarBotMailService;
 import com.starlwr.bot.core.service.StarBotSenderService;
 import com.starlwr.bot.core.timeline.TimelineEvent;
 import com.starlwr.bot.core.timeline.TimelineEventType;
@@ -71,7 +73,7 @@ class HomeStatusFieldsTest {
 
     private ConfigUiAuthService authService;
 
-    /** 配置文件。邮件「已配」要问 SMTP 主机，主机不在核心配置对象上 */
+    /** 配置文件服务。状态页只问它「配置文件在哪」；邮件「已配」改问通道运行值，不读文件 */
     private ConfigurationFileService fileService;
 
     /** 发送队列。连接页那张卡要按它写「还压着几条」，因此各用例改得到 */
@@ -89,7 +91,6 @@ class HomeStatusFieldsTest {
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
 
         fileService = mock(ConfigurationFileService.class);
-        when(fileService.read()).thenReturn(Map.of());
 
         dataSource = mock(AbstractDataSource.class);
         when(dataSource.getAllUsers()).thenReturn(List.of());
@@ -176,6 +177,16 @@ class HomeStatusFieldsTest {
             public void send(String subject, String content) {
             }
         };
+    }
+
+    /**
+     * 邮件通道，主机按调用方给的算
+     * <p>
+     * 真的那一位里 SMTP 主机是 Spring 启动时定的（环境变量能越过文件改掉它），
+     * 这里直接传值正是那一份运行值的替身；不发信，只答「配好了没有」。
+     */
+    private AlertChannel mailChannel(String smtpHost) {
+        return new MailAlertChannel(mock(StarBotMailService.class), properties, smtpHost);
     }
 
     /** 一个只声明范围与登录态位的探针，够本组用例用 */
@@ -390,6 +401,7 @@ class HomeStatusFieldsTest {
     @Test
     @DisplayName("邮件告警只填收件、没有主机仍算没配")
     void alertsMailRecipientWithoutHostIsNotConfigured() {
+        alertChannels = List.of(mailChannel(""));
         properties.getMail().setDefaultTo("ops@example.invalid");
 
         assertFalse(controller().status().getJSONObject("alerts").getBooleanValue("mail"),
@@ -398,28 +410,39 @@ class HomeStatusFieldsTest {
 
     @Test
     @DisplayName("邮件告警收件与 SMTP 主机都有才算已配")
-    void alertsMailWhenRecipientAndHostSet() throws IOException {
+    void alertsMailWhenRecipientAndHostSet() {
+        alertChannels = List.of(mailChannel("smtp.example.invalid"));
         properties.getMail().setDefaultTo("ops@example.invalid");
-        when(fileService.read()).thenReturn(Map.of("spring.mail.host", "smtp.example.invalid"));
 
-        assertTrue(controller().status().getJSONObject("alerts").getBooleanValue("mail"));
+        assertTrue(controller().status().getJSONObject("alerts").getBooleanValue("mail"),
+                "已配认的是通道运行值：这里文件里一栏也没有，已配只能来自运行值那一份");
     }
 
     @Test
     @DisplayName("邮件告警只有主机、没有收件仍算没配")
-    void alertsMailHostWithoutRecipientIsNotConfigured() throws IOException {
-        when(fileService.read()).thenReturn(Map.of("spring.mail.host", "smtp.example.invalid"));
+    void alertsMailHostWithoutRecipientIsNotConfigured() {
+        alertChannels = List.of(mailChannel("smtp.example.invalid"));
 
         assertFalse(controller().status().getJSONObject("alerts").getBooleanValue("mail"));
     }
 
     @Test
-    @DisplayName("三路各自独立，配齐仍各报各的")
-    void alertsThreeChannelsIndependent() throws IOException {
-        alertChannels = List.of(availableQqChannel());
-        properties.getAlert().setWebhookUrl("https://example.invalid/push");
+    @DisplayName("邮件已配认运行值：文件里填着主机、运行值为空仍算没配")
+    void alertsMailFileHostWithoutRuntimeHostIsNotConfigured() throws IOException {
+        alertChannels = List.of(mailChannel(""));
         properties.getMail().setDefaultTo("ops@example.invalid");
         when(fileService.read()).thenReturn(Map.of("spring.mail.host", "smtp.example.invalid"));
+
+        assertFalse(controller().status().getJSONObject("alerts").getBooleanValue("mail"),
+                "发信认的是运行值：文件里填着而运行值为空，首页与设置页药丸都得说没配");
+    }
+
+    @Test
+    @DisplayName("三路各自独立，配齐仍各报各的")
+    void alertsThreeChannelsIndependent() {
+        alertChannels = List.of(availableQqChannel(), mailChannel("smtp.example.invalid"));
+        properties.getAlert().setWebhookUrl("https://example.invalid/push");
+        properties.getMail().setDefaultTo("ops@example.invalid");
 
         JSONObject alerts = controller().status().getJSONObject("alerts");
         assertTrue(alerts.getBooleanValue("qq"));
