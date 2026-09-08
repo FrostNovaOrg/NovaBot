@@ -4,7 +4,7 @@ import com.starlwr.bot.core.util.IpMatcher;
 import com.starlwr.bot.adapter.onebot.security.PushApiSecurityFilter;
 import com.starlwr.bot.adapter.onebot.security.PushApiTokenStore;
 import com.starlwr.bot.adapter.onebot.security.RateLimiter;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
@@ -14,7 +14,7 @@ import org.springframework.core.Ordered;
  * 推送接口安全组件注册器
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 public class PushApiSecurityRegistrar {
     /**
      * 推送接口 Token 存储

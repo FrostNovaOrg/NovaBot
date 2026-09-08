@@ -7,7 +7,7 @@ import com.starlwr.bot.bilibili.model.Up;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.model.StreamerSnapshot;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.service.StreamerSnapshotArchive;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,7 +30,7 @@ import java.util.Map;
  * 真正缺的是两场之间。
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 public class BilibiliStreamerSnapshotService {
     /**
      * 每位主播之间的请求间隔

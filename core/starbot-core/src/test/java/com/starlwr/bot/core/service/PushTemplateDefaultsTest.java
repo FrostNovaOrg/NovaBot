@@ -3,7 +3,7 @@ package com.starlwr.bot.core.service;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
-import com.starlwr.bot.core.handler.StarBotEventHandler;
+import com.starlwr.bot.core.handler.NovaEventHandler;
 import com.starlwr.bot.core.model.HandlerOption;
 import com.starlwr.bot.core.model.PushMessage;
 import org.junit.jupiter.api.BeforeEach;
@@ -195,7 +195,7 @@ class PushTemplateDefaultsTest {
     /**
      * 一个只为这几格存在的处理器：出厂默认两项，另外自报一个可配置项
      */
-    private static final class FakeHandler implements StarBotEventHandler {
+    private static final class FakeHandler implements NovaEventHandler {
         @Override
         public void handle(StarBotExternalBaseEvent baseEvent, PushMessage pushMessage) {
         }

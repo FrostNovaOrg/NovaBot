@@ -2,7 +2,7 @@ package com.starlwr.bot.console;
 
 import com.starlwr.bot.core.config.ui.page.ConsolePageProvider;
 import com.starlwr.bot.core.config.ui.page.ConsolePageSlot;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 
 import java.util.List;
 
@@ -13,7 +13,7 @@ import java.util.List;
  * 所以挂在顶级导航，地址 {@code #/streamers}。装上本插件才有这一页；
  * 卸掉之后入口跟着消失，而不是点开一张空页。
  */
-@StarBotComponent
+@NovaComponent
 public class StreamersConsolePageProvider implements ConsolePageProvider {
     @Override
     public String id() {

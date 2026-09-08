@@ -3,7 +3,7 @@ package com.starlwr.bot.report.analytics;
 import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
 import com.starlwr.bot.bilibili.model.BilibiliStreamerMetric;
 import com.starlwr.bot.core.analytics.LiveMetricCatalog;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 
 import java.util.List;
 
@@ -25,7 +25,7 @@ import java.util.List;
  * <p>
  * 顺序即界面展示顺序，按运营关心的程度排：先看互动量，再看收入，最后是长尾。
  */
-@StarBotComponent
+@NovaComponent
 public class BilibiliLiveMetricCatalog implements LiveMetricCatalog {
     private static final List<Metric> METRICS = List.of(
             Metric.count(BilibiliLiveMetric.DANMU_COUNT, "弹幕", "条"),

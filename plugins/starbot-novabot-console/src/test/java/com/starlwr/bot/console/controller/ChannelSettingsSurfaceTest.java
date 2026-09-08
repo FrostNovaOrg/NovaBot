@@ -6,7 +6,7 @@ import com.starlwr.bot.core.command.CommandContext;
 import com.starlwr.bot.core.command.CommandDispatcher;
 import com.starlwr.bot.core.command.CommandReply;
 import com.starlwr.bot.core.command.CommandSettingsService;
-import com.starlwr.bot.core.command.StarBotCommand;
+import com.starlwr.bot.core.command.NovaCommand;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.model.PushTarget;
@@ -146,7 +146,7 @@ class ChannelSettingsSurfaceTest {
     @DisplayName("阳：命令把 availableIn 覆写成假时，群会话 menuHidden 恰含它，好友会话亦含")
     void groupSessionHidesCommandWhenAvailableInOverridesToFalse() {
         CommandDispatcher dispatcher = dependency(CommandDispatcher.class);
-        List<StarBotCommand> roster = new ArrayList<>();
+        List<NovaCommand> roster = new ArrayList<>();
         for (String name : PRIVATE_OK) {
             roster.add(simple(name, !LOCKED.equals(name), false));
         }
@@ -309,8 +309,8 @@ class ChannelSettingsSurfaceTest {
      * 命令表：私聊可用的那些，加上仅限群聊的那些；「开播@我」另带一句会话说明。
      * 仅限群聊的那些靠 {@code groupOnly()}，不再硬写 {@code availableIn}。
      */
-    private List<StarBotCommand> commands() {
-        List<StarBotCommand> commands = new ArrayList<>();
+    private List<NovaCommand> commands() {
+        List<NovaCommand> commands = new ArrayList<>();
         for (String name : PRIVATE_OK) {
             commands.add(simple(name, !LOCKED.equals(name), false));
         }
@@ -324,8 +324,8 @@ class ChannelSettingsSurfaceTest {
      * 本群配成 @全体成员 时「开播@我」自己把 {@code availableIn} 覆写成假。
      * 与 {@link #hiddenSubscribe()} 的差别只在这一覆写：群会话也必须把它藏进 menuHidden。
      */
-    private StarBotCommand hiddenByAvailableIn() {
-        return new StarBotCommand() {
+    private NovaCommand hiddenByAvailableIn() {
+        return new NovaCommand() {
             @Override
             public String name() {
                 return HIDDEN;
@@ -353,8 +353,8 @@ class ChannelSettingsSurfaceTest {
         };
     }
 
-    private StarBotCommand hiddenSubscribe() {
-        return new StarBotCommand() {
+    private NovaCommand hiddenSubscribe() {
+        return new NovaCommand() {
             @Override
             public String name() {
                 return HIDDEN;
@@ -382,8 +382,8 @@ class ChannelSettingsSurfaceTest {
         };
     }
 
-    private StarBotCommand simple(String name, boolean disableable, boolean groupOnly) {
-        return new StarBotCommand() {
+    private NovaCommand simple(String name, boolean disableable, boolean groupOnly) {
+        return new NovaCommand() {
             @Override
             public String name() {
                 return name;

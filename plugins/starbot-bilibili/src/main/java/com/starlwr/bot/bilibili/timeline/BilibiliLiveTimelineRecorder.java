@@ -3,7 +3,7 @@ package com.starlwr.bot.bilibili.timeline;
 import com.starlwr.bot.bilibili.event.live.BilibiliLiveOffEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliLiveOnEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.timeline.TimelineEvent;
 import com.starlwr.bot.core.timeline.TimelineEventType;
 import com.starlwr.bot.core.timeline.TimelineWriter;
@@ -25,7 +25,7 @@ import org.springframework.context.event.EventListener;
  * 只记事，不打接口：标题与封面不在事件里，要拿得再调一次直播间的接口，
  * 为一条流水去打外网不值当（要标题的那一路自己去拿，见开播推送处理器）。
  */
-@StarBotComponent
+@NovaComponent
 public class BilibiliLiveTimelineRecorder {
     private final TimelineWriter timeline;
 

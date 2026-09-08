@@ -6,7 +6,7 @@ import com.starlwr.bot.adapter.onebot.http.OneBotHttpAdapter;
 import com.starlwr.bot.adapter.onebot.model.OneBotSender;
 import com.starlwr.bot.adapter.onebot.service.OneBotConnectionManager;
 import com.starlwr.bot.core.account.BotConnectionTester;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.client.HttpClientErrorException;
@@ -22,7 +22,7 @@ import java.util.Optional;
  * 测通并存下来之后当场把连接接上，那一步交给 {@link OneBotConnectionManager}。
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 public class OneBotConnectionTester implements BotConnectionTester {
     private final OneBotHttpAdapter http;
 

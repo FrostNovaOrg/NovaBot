@@ -10,7 +10,7 @@ import com.starlwr.bot.bilibili.exception.RequestFailedException;
 import com.starlwr.bot.bilibili.exception.ResponseCodeException;
 import com.starlwr.bot.bilibili.health.BilibiliRiskMetrics;
 import com.starlwr.bot.bilibili.model.*;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.util.HttpUtil;
 import com.starlwr.bot.core.lang.StringUtil;
 import lombok.Getter;
@@ -43,7 +43,7 @@ import java.util.stream.Collectors;
  * 所有方法均只访问哔哩哔哩的公开接口。
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 public class BilibiliApiUtil {
     private static final String MAIN_SITE = "https://www.bilibili.com";
 

@@ -7,7 +7,7 @@ import com.starlwr.bot.adapter.onebot.model.OneBotSender;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.MessagePlaceholders;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.lang.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
@@ -36,7 +36,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
  */
 @Slf4j
 @Aspect
-@StarBotComponent
+@NovaComponent
 @ConditionalOnProperty(name = "novabot.adapter.onebot.extension.napcat.enable-backup-at-all", havingValue = "true", matchIfMissing = true)
 public class BackupAtAllAspect {
     private final NapcatServiceHolder holder;

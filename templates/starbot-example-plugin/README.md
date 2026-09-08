@@ -85,19 +85,20 @@ starbot-example-plugin/
 ### 注意事项
 
 >- 开发插件时, 可以使用绝大多数的 Spring 注解, 例如使用 `@Controller` 创建 API 接口, 使用 `@EventListener` 监听事件等
->- 需要注册至 Spring 容器或使用 Spring 机制 (例如事件机制) 的类, 需要在类上使用 `@StarBotComponent` 注解, 该注解会将类注册为 StarBot 组件, 并被 StarBot 扫描并注册至 Spring 容器中  
->- 使用了 `@StarBotComponent` 注解的类, 类名不可以与 StarBot 本体或其他插件中的类名重复, 请命名时尽量避免过于简单或过于通用的命名
+>- 需要注册至 Spring 容器或使用 Spring 机制 (例如事件机制) 的类, 需要在类上使用 `@NovaComponent` 注解, 该注解会将类注册为 StarBot 组件, 并被 StarBot 扫描并注册至 Spring 容器中  
+>- 使用了 `@NovaComponent` 注解的类, 类名不可以与 StarBot 本体或其他插件中的类名重复, 请命名时尽量避免过于简单或过于通用的命名
 >- StarBot 内部大量使用了 Spring 的事件机制, 插件可以通过创建事件监听器来处理这些事件, 常用事件类型请参考 [StarBotCore](https://github.com/Starlwr/StarBotCore) 项目相关文档
 
 ### 本仓库提供的扩展点
 
-除了监听事件，插件还可以实现下列接口来接入核心的能力。实现类同样用 `@StarBotComponent` 注册，
+除了监听事件，插件还可以实现下列接口来接入核心的能力。实现类同样用 `@NovaComponent` 注册，
 核心用 `ObjectProvider` 取——**没有实现时是空流而不是启动失败**，所以插件装不装都不影响核心启动。
+旧名 `@StarBotComponent`、`StarBotEventHandler`、`StarBotCommand` 仍然认得，旧插件无需改动。
 
 | 接口 | 用途 |
 |---|---|
-| `StarBotEventHandler` | 推送处理器，可被配置在 `datasource.json` 里 |
-| `StarBotCommand` | 群内聊天命令，自动出现在 `菜单` 里 |
+| `NovaEventHandler` | 推送处理器，可被配置在 `datasource.json` 里 |
+| `NovaCommand` | 群内聊天命令，自动出现在 `菜单` 里 |
 | `HealthProbe` | 往总览页的健康自检里加一项 |
 | `AlertChannel` | 新的告警投递通道 |
 | `AccountLoginProvider` | 在配置界面里完成某个平台的登录 |

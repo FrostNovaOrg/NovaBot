@@ -5,7 +5,7 @@ import com.starlwr.bot.bilibili.command.BilibiliAtNoticeKind;
 import com.starlwr.bot.core.command.CommandDispatcher;
 import com.starlwr.bot.core.command.CommandFollowUp;
 import com.starlwr.bot.core.command.CommandSettingsService;
-import com.starlwr.bot.core.command.StarBotCommand;
+import com.starlwr.bot.core.command.NovaCommand;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.PushTargetType;
@@ -64,7 +64,7 @@ import static org.mockito.Mockito.when;
  * <p>
  * 命令清单<b>当场从类路径上算</b>，不手抄：手抄的名单会给后来新增的命令签一张免检票——
  * 「不在名单里」与「查过了」在报告里长得一样。取的是 Spring 真正认的那条判据：
- * 类上有没有 {@code @Component}（{@code @StarBotComponent} 是它的元注解）。
+ * 类上有没有 {@code @Component}（{@code @NovaComponent} 是它的元注解）。
  * <p>
  * 命令实例是拿真类构造出来的，依赖换成替身；分发器、菜单、命令开关都用真件。
  * 于是「发一句话过去，机器人说了什么」这一问，答的与线上是同一套代码。
@@ -143,14 +143,14 @@ class CommandSurfaceTest {
     @DisplayName("已注册的命令与清单逐条对得上，多一条少一条都算")
     void registryMatchesTheList() {
         assertEquals(GROUP_ONLY.keySet().stream().sorted().toList(),
-                registry.commands.stream().map(StarBotCommand::name).sorted().toList());
+                registry.commands.stream().map(NovaCommand::name).sorted().toList());
     }
 
     @Test
     @DisplayName("每条命令的会话范围逐条对表")
     void sessionScopeMatchesTheList() {
         Map<String, Boolean> actual = new TreeMap<>();
-        for (StarBotCommand command : registry.commands) {
+        for (NovaCommand command : registry.commands) {
             actual.put(command.name(), command.groupOnly());
         }
 
@@ -525,7 +525,7 @@ class CommandSurfaceTest {
 
         private final AtomicReference<CommandDispatcher> current = new AtomicReference<>();
 
-        private final List<StarBotCommand> commands = new ArrayList<>();
+        private final List<NovaCommand> commands = new ArrayList<>();
 
         private final AbstractDataSource dataSource = mock(AbstractDataSource.class);
 
@@ -541,7 +541,7 @@ class CommandSurfaceTest {
 
         private final StarBotMessageSender sender = mock(StarBotMessageSender.class);
 
-        private final ObjectProvider<StarBotCommand> provider = provider();
+        private final ObjectProvider<NovaCommand> provider = provider();
 
         /**
          * 唯一那位主播，各用例要改它在本群的 @ 模式，因此留成字段
@@ -649,7 +649,7 @@ class CommandSurfaceTest {
             List<Class<?>> types = new ArrayList<>();
             for (BeanDefinition definition : scanner.findCandidateComponents("com.starlwr.bot")) {
                 Class<?> type = ClassUtils.resolveClassName(definition.getBeanClassName(), null);
-                if (StarBotCommand.class.isAssignableFrom(type)) {
+                if (NovaCommand.class.isAssignableFrom(type)) {
                     types.add(type);
                 }
             }
@@ -659,7 +659,7 @@ class CommandSurfaceTest {
         /**
          * 用真构造方法造一个命令，参数取共用替身
          */
-        private StarBotCommand instantiate(Class<?> type) {
+        private NovaCommand instantiate(Class<?> type) {
             Constructor<?> chosen = null;
             for (Constructor<?> candidate : type.getDeclaredConstructors()) {
                 if (candidate.isAnnotationPresent(Autowired.class)) {
@@ -676,7 +676,7 @@ class CommandSurfaceTest {
                     .toArray();
             try {
                 chosen.setAccessible(true);
-                return (StarBotCommand) chosen.newInstance(args);
+                return (NovaCommand) chosen.newInstance(args);
             } catch (ReflectiveOperationException e) {
                 throw new IllegalStateException("造不出命令 " + type.getName(), e);
             }
@@ -696,9 +696,9 @@ class CommandSurfaceTest {
             return mocked;
         }
 
-        private ObjectProvider<StarBotCommand> provider() {
+        private ObjectProvider<NovaCommand> provider() {
             @SuppressWarnings("unchecked")
-            ObjectProvider<StarBotCommand> mocked = mock(ObjectProvider.class);
+            ObjectProvider<NovaCommand> mocked = mock(ObjectProvider.class);
             when(mocked.iterator()).thenAnswer(invocation -> new ArrayList<>(commands).iterator());
             when(mocked.orderedStream()).thenAnswer(invocation -> new ArrayList<>(commands).stream());
             return mocked;

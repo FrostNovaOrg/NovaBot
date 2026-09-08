@@ -8,7 +8,7 @@ import com.starlwr.bot.bilibili.service.BilibiliLiveRoomService;
 import com.starlwr.bot.bilibili.service.BilibiliStreamerSnapshotService;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.event.datasource.base.StarBotDataSourceChangeEvent;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * 因此整个流程放在调度线程上执行，不阻塞主程序启动。
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 public class BilibiliStartupListener {
     private final BilibiliAccountService accountService;
 

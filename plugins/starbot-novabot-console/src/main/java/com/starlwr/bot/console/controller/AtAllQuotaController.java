@@ -8,7 +8,7 @@ import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.service.AtAllQuotaService;
 import com.starlwr.bot.core.service.StarBotSenderService;
 import lombok.extern.slf4j.Slf4j;
@@ -40,7 +40,7 @@ import java.util.Set;
  * 少了它，跨零点那一刻的一次刷新看起来就像「数字自己回去了」。
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 @RestController
 @RequestMapping(ConfigUiController.BASE_PATH + "/api/at-all/quota")
 @ConditionalOnProperty(name = "novabot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)

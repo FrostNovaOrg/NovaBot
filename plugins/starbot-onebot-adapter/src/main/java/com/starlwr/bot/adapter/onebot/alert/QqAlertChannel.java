@@ -4,7 +4,7 @@ import com.starlwr.bot.adapter.onebot.config.OneBotAdapterPluginProperties;
 import com.starlwr.bot.core.alert.AlertChannel;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.model.Message;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
 import com.starlwr.bot.core.lang.StringUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -21,7 +21,7 @@ import java.util.List;
  */
 @Slf4j
 @Component
-@StarBotComponent
+@NovaComponent
 public class QqAlertChannel implements AlertChannel {
     private final OneBotAdapterPluginProperties properties;
 

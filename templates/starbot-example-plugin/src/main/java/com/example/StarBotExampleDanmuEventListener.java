@@ -1,7 +1,7 @@
 package com.example;
 
 import com.starlwr.bot.core.event.live.common.DanmuEvent;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 
@@ -11,7 +11,7 @@ import org.springframework.context.event.EventListener;
  * 该监听器会在接收到弹幕事件时打印发送者和内容
  */
 @Slf4j
-@StarBotComponent // 使用该注解将此类注册为 StarBot 组件，会被 StarBot 扫描并注册至 Spring 容器中
+@NovaComponent // 使用该注解将此类注册为 StarBot 组件，会被 StarBot 扫描并注册至 Spring 容器中
 public class StarBotExampleDanmuEventListener {
     @EventListener
     public void handle(DanmuEvent event) {

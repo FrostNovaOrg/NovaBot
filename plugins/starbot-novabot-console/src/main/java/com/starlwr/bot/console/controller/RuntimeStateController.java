@@ -5,13 +5,13 @@ import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.command.CommandContext;
 import com.starlwr.bot.core.command.CommandDispatcher;
 import com.starlwr.bot.core.command.CommandSettingsService;
-import com.starlwr.bot.core.command.StarBotCommand;
+import com.starlwr.bot.core.command.NovaCommand;
 import com.starlwr.bot.core.config.ui.ConfigUiController;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.enums.PushTargetType;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.service.AtSubscriptionService;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.RevenueVisibilityService;
@@ -56,7 +56,7 @@ import java.util.Set;
  * {@code /config/*} 注册，本类同样受其保护。
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 @RestController
 @RequestMapping(ConfigUiController.BASE_PATH + "/api/state")
 @ConditionalOnProperty(name = "novabot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
@@ -137,7 +137,7 @@ public class RuntimeStateController {
         // 只有「禁用」才校验命令存在与否。启用等同于删掉一条记录，对已改名或已删除的
         // 命令同样应当放行——否则状态文件里的残留就成了界面清不掉的死结
         if (disabled) {
-            Optional<StarBotCommand> command = dispatcher.all().stream()
+            Optional<NovaCommand> command = dispatcher.all().stream()
                     .filter(item -> item.name().equals(name))
                     .findFirst();
             if (command.isEmpty()) {
@@ -206,7 +206,7 @@ public class RuntimeStateController {
 
         if (Boolean.TRUE.equals(disabled)) {
             for (String name : wanted) {
-                Optional<StarBotCommand> command = dispatcher.all().stream()
+                Optional<NovaCommand> command = dispatcher.all().stream()
                         .filter(item -> item.name().equals(name))
                         .findFirst();
                 if (command.isEmpty()) {
@@ -332,7 +332,7 @@ public class RuntimeStateController {
     private JSONArray commands() {
         JSONArray items = new JSONArray();
 
-        for (StarBotCommand command : dispatcher.all()) {
+        for (NovaCommand command : dispatcher.all()) {
             JSONObject item = new JSONObject();
             item.put("name", command.name());
             item.put("description", command.description());
@@ -450,7 +450,7 @@ public class RuntimeStateController {
         }
 
         List<String> hidden = new ArrayList<>();
-        for (StarBotCommand command : dispatcher.all()) {
+        for (NovaCommand command : dispatcher.all()) {
             if (!command.availableIn(context(platform, num, type, command))) {
                 hidden.add(command.name());
             }
@@ -472,7 +472,7 @@ public class RuntimeStateController {
             return notes;
         }
 
-        for (StarBotCommand command : dispatcher.all()) {
+        for (NovaCommand command : dispatcher.all()) {
             String note = command.menuNote(context(platform, num, type, command));
             if (note != null && !note.isBlank()) {
                 notes.put(command.name(), note);
@@ -488,7 +488,7 @@ public class RuntimeStateController {
      * 那与谁发的、带了什么参数无关。管理员一律按否——多列一条的代价是使用者点开发现用不了，
      * 而反过来把一条真能用的藏掉，界面上不会有任何东西提示它去哪儿了。
      */
-    private CommandContext context(String platform, Long num, PushTargetType type, StarBotCommand command) {
+    private CommandContext context(String platform, Long num, PushTargetType type, NovaCommand command) {
         return new CommandContext(platform, type, num, null, command.name(), List.of(), "");
     }
 

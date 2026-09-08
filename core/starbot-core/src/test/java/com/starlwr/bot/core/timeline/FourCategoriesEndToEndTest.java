@@ -9,7 +9,7 @@ import com.starlwr.bot.core.command.CommandDispatcher;
 import com.starlwr.bot.core.command.CommandFollowUp;
 import com.starlwr.bot.core.command.CommandReply;
 import com.starlwr.bot.core.command.CommandSettingsService;
-import com.starlwr.bot.core.command.StarBotCommand;
+import com.starlwr.bot.core.command.NovaCommand;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.config.ui.RuntimeConfigurationApplier;
 import com.starlwr.bot.core.config.ui.RuntimeConfigurationApplierContributor;
@@ -213,8 +213,8 @@ class FourCategoriesEndToEndTest {
         when(dataSource.getAllUsers()).thenReturn(List.of(configuredUser()));
 
         @SuppressWarnings("unchecked")
-        ObjectProvider<StarBotCommand> commands = mock(ObjectProvider.class);
-        StarBotCommand command = new StubCommand();
+        ObjectProvider<NovaCommand> commands = mock(ObjectProvider.class);
+        NovaCommand command = new StubCommand();
         when(commands.iterator()).thenAnswer(invocation -> List.of(command).iterator());
         when(commands.orderedStream()).thenAnswer(invocation -> Stream.of(command));
 
@@ -264,7 +264,7 @@ class FourCategoriesEndToEndTest {
     /**
      * 一条什么也不做、只答应一声的命令
      */
-    private static final class StubCommand implements StarBotCommand {
+    private static final class StubCommand implements NovaCommand {
         @Override
         public String name() {
             return "测试命令";

@@ -4,7 +4,7 @@ import com.starlwr.bot.core.command.CommandContext;
 import com.starlwr.bot.core.command.CommandDispatcher;
 import com.starlwr.bot.core.command.CommandReply;
 import com.starlwr.bot.core.command.CommandSettingsService;
-import com.starlwr.bot.core.command.StarBotCommand;
+import com.starlwr.bot.core.command.NovaCommand;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.service.StarBotStateStore;
@@ -150,12 +150,12 @@ public class MenuCommandTest {
         return new CommandContext(PLATFORM, type, GROUP, 1L, "菜单", List.of(), "菜单");
     }
 
-    private StarBotCommand stub(String name, String category, boolean available) {
+    private NovaCommand stub(String name, String category, boolean available) {
         return stub(name, category, available, true);
     }
 
-    private StarBotCommand stub(String name, String category, boolean available, boolean groupOnly) {
-        return new StarBotCommand() {
+    private NovaCommand stub(String name, String category, boolean available, boolean groupOnly) {
+        return new NovaCommand() {
             @Override
             public String name() {
                 return name;
@@ -189,7 +189,7 @@ public class MenuCommandTest {
     }
 
     private MenuCommand menuOfFourteen() {
-        List<StarBotCommand> commands = new ArrayList<>();
+        List<NovaCommand> commands = new ArrayList<>();
         for (String name : PRIVATE_OK) {
             commands.add(stub(name, categoryOf(name), true, false));
         }

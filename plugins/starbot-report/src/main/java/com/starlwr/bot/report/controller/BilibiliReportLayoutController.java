@@ -7,7 +7,7 @@ import com.starlwr.bot.report.painter.BilibiliLiveReportPreviewPainter;
 import com.starlwr.bot.core.config.ui.ConfigUiController;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.model.HandlerOption;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.service.RevenueVisibilityService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.CacheControl;
@@ -43,7 +43,7 @@ import java.util.Optional;
  */
 @Slf4j
 @RestController
-@StarBotComponent
+@NovaComponent
 public class BilibiliReportLayoutController {
     static final String LAYOUT_OPTIONS_PATH = ConfigUiController.BASE_PATH + "/api/report/layout-options";
 

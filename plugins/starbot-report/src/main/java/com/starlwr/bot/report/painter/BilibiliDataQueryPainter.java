@@ -5,7 +5,7 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.model.TextWithStyle;
 import com.starlwr.bot.core.model.UserScore;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.lang.StringUtil;
 import com.starlwr.bot.report.factory.StarBotCommonPainterFactory;
 import com.starlwr.bot.report.util.ImageUtil;
@@ -32,7 +32,7 @@ import java.util.function.DoubleFunction;
  * 查询结果是随手一问的东西，不该像报告那样占满整个聊天窗口。
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 public class BilibiliDataQueryPainter {
     /**
      * 图片总宽度。比下播报告（900）窄，查询结果是随手看的，不必占满屏

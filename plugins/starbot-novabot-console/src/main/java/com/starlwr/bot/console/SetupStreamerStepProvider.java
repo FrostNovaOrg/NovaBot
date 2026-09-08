@@ -2,7 +2,7 @@ package com.starlwr.bot.console;
 
 import com.starlwr.bot.core.config.ui.page.ConsolePageProvider;
 import com.starlwr.bot.core.config.ui.page.ConsolePageSlot;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 
 import java.util.List;
 
@@ -15,7 +15,7 @@ import java.util.List;
  * 标识就是步骤表上的 key，因此必须是 {@code streamer}：首页那条待办、进度条上的记号
  * 与「从第几步接着走」都按这个键认。
  */
-@StarBotComponent
+@NovaComponent
 public class SetupStreamerStepProvider implements ConsolePageProvider {
     @Override
     public String id() {

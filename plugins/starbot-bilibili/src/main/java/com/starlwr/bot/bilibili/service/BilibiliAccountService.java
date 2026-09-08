@@ -5,7 +5,7 @@ import com.starlwr.bot.bilibili.exception.ResponseCodeException;
 import com.starlwr.bot.bilibili.model.Cookies;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.bilibili.util.BilibiliCookieRefreshUtil;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.util.QrCodeUtil;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -29,7 +29,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * 负责登录凭据的加载、扫码登录与凭据持久化。凭据默认加密存储，详见 {@link BilibiliCredentialStore}。
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 public class BilibiliAccountService {
     /**
      * 匿名模式的如实说明
@@ -737,7 +737,7 @@ public class BilibiliAccountService {
     /**
      * 登录凭据存储注册器
      */
-    @StarBotComponent
+    @NovaComponent
     public static class CredentialStoreRegistrar {
         /**
          * 注册登录凭据存储

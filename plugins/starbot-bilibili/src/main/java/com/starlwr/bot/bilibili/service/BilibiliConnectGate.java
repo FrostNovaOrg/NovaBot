@@ -1,7 +1,7 @@
 package com.starlwr.bot.bilibili.service;
 
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -25,7 +25,7 @@ import java.time.Instant;
  * 都应当是自我约束的，不依赖平台来教我们做人。
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 public class BilibiliConnectGate {
     private final StarBotBilibiliProperties properties;
 

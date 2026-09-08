@@ -12,7 +12,7 @@ import com.starlwr.bot.adapter.onebot.extension.napcat.http.NapcatHttpAdapterPro
 import com.starlwr.bot.adapter.onebot.extension.napcat.util.NapcatServiceHolder;
 import com.starlwr.bot.adapter.onebot.model.OneBotSender;
 import com.starlwr.bot.core.properties.ConfigEffect;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.util.HttpUtil;
 import org.aspectj.lang.annotation.Aspect;
 import org.junit.jupiter.api.DisplayName;
@@ -146,10 +146,10 @@ class NapcatExtensionSurfaceTest {
         @Test
         @DisplayName("四个由容器托管的类都还挂着 StarBot 组件注解, 少一个就整条功能不上线")
         void componentsStayScanned() {
-            assertTrue(NapcatHttpAdapterRegistrar.class.isAnnotationPresent(StarBotComponent.class));
-            assertTrue(NapcatServiceHolder.class.isAnnotationPresent(StarBotComponent.class));
-            assertTrue(BackupAtAllAspect.class.isAnnotationPresent(StarBotComponent.class));
-            assertTrue(NapCatServiceDiscoveryAspect.class.isAnnotationPresent(StarBotComponent.class));
+            assertTrue(NapcatHttpAdapterRegistrar.class.isAnnotationPresent(NovaComponent.class));
+            assertTrue(NapcatServiceHolder.class.isAnnotationPresent(NovaComponent.class));
+            assertTrue(BackupAtAllAspect.class.isAnnotationPresent(NovaComponent.class));
+            assertTrue(NapCatServiceDiscoveryAspect.class.isAnnotationPresent(NovaComponent.class));
 
             assertTrue(BackupAtAllAspect.class.isAnnotationPresent(Aspect.class));
             assertTrue(NapCatServiceDiscoveryAspect.class.isAnnotationPresent(Aspect.class));
@@ -167,7 +167,7 @@ class NapcatExtensionSurfaceTest {
 
             assertEquals("novabot.adapter.onebot.extension.napcat", properties.prefix());
             assertTrue(OneBotAdapterNapcatExtensionPluginProperties.class.isAnnotationPresent(Configuration.class));
-            assertTrue(OneBotAdapterNapcatExtensionPluginProperties.class.isAnnotationPresent(StarBotComponent.class));
+            assertTrue(OneBotAdapterNapcatExtensionPluginProperties.class.isAnnotationPresent(NovaComponent.class));
         }
 
         @Test

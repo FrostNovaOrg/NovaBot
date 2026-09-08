@@ -6,7 +6,7 @@ import com.starlwr.bot.core.command.CommandFollowUp;
 import com.starlwr.bot.core.command.CommandReply;
 import com.starlwr.bot.core.model.LiveSession;
 import com.starlwr.bot.core.model.PushUser;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.LiveSessionArchive;
 import com.starlwr.bot.core.lang.StringUtil;
@@ -46,7 +46,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 使用者照着自己看到的清单回了个 2，收到的是另一位主播的数据，<b>而那张图看起来完全正常</b>。
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 public class BilibiliStreamerChoice implements CommandFollowUp {
     /**
      * 追问的有效期。长到够人读完清单再打个数字，短到不会在半小时后被一句「3」突然翻出来

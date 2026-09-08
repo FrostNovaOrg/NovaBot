@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.health;
 
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
@@ -31,7 +31,7 @@ import java.util.Optional;
  * 而误判（比如读不到 cgroup、或者估算的余量对某些部署偏保守）不该拦住任何人开机。
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 public class MemoryLimitStartupCheck {
     /**
      * 堆与元空间之外还要留的余量：线程栈、代码缓存、GC 元数据、直接内存

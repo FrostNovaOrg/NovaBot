@@ -5,7 +5,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.adapter.onebot.config.OneBotAdapterPluginProperties;
 import com.starlwr.bot.adapter.onebot.converter.OneBotIncomingMessage;
 import com.starlwr.bot.adapter.onebot.model.OneBotSender;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.adapter.onebot.health.OneBotConnectionState;
 import com.starlwr.bot.adapter.onebot.health.OneBotLivenessTracker;
 import com.starlwr.bot.core.event.remote.StarBotRemoteMessageEvent;
@@ -36,7 +36,7 @@ import java.util.concurrent.*;
  * OneBot Websocket 服务
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 public class OneBotWebsocketService {
     /**
      * 存活检测的执行周期

@@ -5,7 +5,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.model.Dynamic;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.lang.StringUtil;
 import com.starlwr.bot.report.factory.StarBotCommonPainterFactory;
 import com.starlwr.bot.report.util.ImageUtil;
@@ -32,7 +32,7 @@ import java.util.Optional;
  * 所有取值均做空值防护：任一模块缺失只会导致该部分不被绘制，不会中断整张图片的生成。
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 public class BilibiliDynamicPainter {
     /**
      * 图片总宽度

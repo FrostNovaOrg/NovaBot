@@ -32,7 +32,7 @@ import java.util.Map;
  * 既不占路径也不起心跳线程。
  *
  * <h2>装配方式</h2>
- * 普通的 {@code @Configuration}，由核心自身的组件扫描拾取。<b>不挂 {@code @StarBotComponent}</b>——
+ * 普通的 {@code @Configuration}，由核心自身的组件扫描拾取。<b>不挂 {@code @NovaComponent}</b>——
  * 核心不是插件，事件输出是它自带的能力，装配也就不该绕经按约定只给插件用的那个注解。
  */
 @Slf4j

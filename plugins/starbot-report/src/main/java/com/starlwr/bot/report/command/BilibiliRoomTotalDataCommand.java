@@ -4,7 +4,7 @@ import com.starlwr.bot.bilibili.command.BilibiliStreamerChoice;
 import com.starlwr.bot.bilibili.model.BilibiliDataScope;
 import com.starlwr.bot.report.painter.BilibiliDataQueryPainter;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.RevenueVisibilityService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,7 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 /**
  * 「直播间总数据」命令：查询直播间跨场次累计的整体数据
  */
-@StarBotComponent
+@NovaComponent
 public class BilibiliRoomTotalDataCommand extends BilibiliRoomDataCommand {
     @Autowired
     public BilibiliRoomTotalDataCommand(AbstractDataSource dataSource, BilibiliStreamerChoice choice,

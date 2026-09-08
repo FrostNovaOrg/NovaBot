@@ -3,7 +3,7 @@ package com.starlwr.bot.adapter.onebot.config;
 import com.starlwr.bot.adapter.onebot.model.OneBotSender;
 import com.starlwr.bot.core.properties.ConfigEffect;
 import com.starlwr.bot.core.config.ConfigLevel;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -18,7 +18,7 @@ import java.util.List;
 @Getter
 @Setter
 @Configuration
-@StarBotComponent
+@NovaComponent
 @ConfigurationProperties(prefix = "novabot.adapter.onebot")
 public class OneBotAdapterPluginProperties {
     /**

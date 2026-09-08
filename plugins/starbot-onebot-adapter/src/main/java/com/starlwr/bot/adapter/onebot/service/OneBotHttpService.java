@@ -11,7 +11,7 @@ import com.starlwr.bot.adapter.onebot.http.OneBotHttpAdapter;
 import com.starlwr.bot.adapter.onebot.dto.MessageDTO;
 import com.starlwr.bot.adapter.onebot.model.OneBotSender;
 import com.starlwr.bot.core.enums.PushTargetType;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -32,7 +32,7 @@ import java.util.concurrent.ScheduledFuture;
  * OneBot HTTP 服务
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 public class OneBotHttpService {
     private final TaskScheduler taskScheduler;
 

@@ -10,7 +10,7 @@ import com.starlwr.bot.report.painter.BilibiliDynamicPainter;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.enums.PushTargetType;
-import com.starlwr.bot.core.handler.StarBotEventHandler;
+import com.starlwr.bot.core.handler.NovaEventHandler;
 import com.starlwr.bot.core.handler.StarBotEventHandlerPushMessageInitializer;
 import com.starlwr.bot.core.health.PushActivityRecorder;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
@@ -95,12 +95,12 @@ class MergedNoticeTemplateTest {
             "{at}{uname} {action}\n{url}{next}{picture}",
             "{uname} {action}\n{url}{next}{picture}");
 
-    private StarBotEventHandler liveOn() {
+    private NovaEventHandler liveOn() {
         return new BilibiliLiveOnPushHandler(mock(BilibiliApiUtil.class), mock(StarBotMessageSender.class),
                 mock(AtSubscriptionService.class), mock(LiveDataService.class));
     }
 
-    private StarBotEventHandler dynamic() {
+    private NovaEventHandler dynamic() {
         return new BilibiliDynamicPushHandler(mock(BilibiliApiUtil.class), mock(BilibiliDynamicPainter.class),
                 mock(StarBotMessageSender.class), mock(AtSubscriptionService.class), mock(LiveDataService.class));
     }
@@ -111,7 +111,7 @@ class MergedNoticeTemplateTest {
      * 走的是真的初始化器：迁移只有落在这条路上才对<b>已经存在的配置</b>生效，
      * 写在处理器里的判断只对新建的推送生效，而那正是本格要防的那种绿。
      */
-    private String effectiveMessage(StarBotEventHandler handler, String stored) {
+    private String effectiveMessage(NovaEventHandler handler, String stored) {
         StarBotEventHandlerService service = mock(StarBotEventHandlerService.class);
         when(service.getHandler(handler.getClass().getName())).thenReturn(Optional.of(handler));
 
@@ -131,7 +131,7 @@ class MergedNoticeTemplateTest {
     @Test
     @DisplayName("新的默认模板里不再有 {next}")
     void defaultTemplateNoLongerSplits() {
-        for (StarBotEventHandler handler : List.of(liveOn(), dynamic())) {
+        for (NovaEventHandler handler : List.of(liveOn(), dynamic())) {
             String template = handler.getDefaultParams().getString("message");
             assertFalse(template.contains("{next}"),
                     handler.displayName() + "的默认模板仍然分条: " + template);
@@ -141,14 +141,14 @@ class MergedNoticeTemplateTest {
     @Test
     @DisplayName("阳性：两版旧默认值都要迁到新默认")
     void legacyDefaultsMigrate() {
-        StarBotEventHandler live = liveOn();
+        NovaEventHandler live = liveOn();
         String liveNow = live.getDefaultParams().getString("message");
         for (String legacy : LEGACY_LIVE) {
             assertEquals(liveNow, effectiveMessage(live, legacy),
                     "存着的是旧默认值「" + legacy + "」，没改过的配置应当跟着新默认走");
         }
 
-        StarBotEventHandler dynamic = dynamic();
+        NovaEventHandler dynamic = dynamic();
         String dynamicNow = dynamic.getDefaultParams().getString("message");
         for (String legacy : LEGACY_DYNAMIC) {
             assertEquals(dynamicNow, effectiveMessage(dynamic, legacy),
@@ -166,7 +166,7 @@ class MergedNoticeTemplateTest {
                 "{uname} 开播啦 {title}\n{url}{next}{cover}",
                 "{uname} 正在直播 {title}\n{url}{cover}{next}");
 
-        StarBotEventHandler live = liveOn();
+        NovaEventHandler live = liveOn();
         for (String template : customised) {
             assertEquals(template, effectiveMessage(live, template),
                     "改过的模板被迁走了，使用者的配置就此丢失: " + template);
@@ -176,7 +176,7 @@ class MergedNoticeTemplateTest {
     @Test
     @DisplayName("判据自己先能认出「没迁」：拿新默认当旧默认写一遍，阳性格必须报不相等")
     void theRulerRecognisesAFailedMigration() {
-        StarBotEventHandler live = liveOn();
+        NovaEventHandler live = liveOn();
         String custom = "{uname} 自己写的模板 {url}";
         assertNotEquals(live.getDefaultParams().getString("message"), effectiveMessage(live, custom),
                 "连自定义模板都被当成迁移结果，阳性那一格就是恒真绿");

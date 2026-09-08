@@ -37,7 +37,7 @@
 | `AccountLoginProvider` | `core.account` | 哔哩哔哩 | 界面内扫码登录、退出登录 |
 | `BotConnectionTester` | `core.account` | OneBot 适配器 | 连通性测试与连接参数回填 |
 | `AlertChannel` | `core.alert` | 核心（邮件、Webhook）、OneBot 适配器（QQ） | 告警投递 |
-| `StarBotCommand` | `core.command` | 各模块 | 群内聊天命令 |
+| `NovaCommand` | `core.command` | 各模块 | 群内聊天命令 |
 | `AtAllPermissionResolver` | `core.sender` | OneBot 适配器 | 机器人在某会话能否 @全体成员 |
 | `LiveMetricCatalog` | `core.analytics` | 报告插件（starbot-report） | 直播指标的中文名与**能否累加**；快照指标（粉丝数等）的名称另由 `snapshotMetrics()` 自报，一律不进可累加集 |
 | `ConsoleVocabulary` | `core.config.ui.vocab` | OneBot 适配器 | 控制台人话平台词（`bot.platform`／`bot.impl`／`bot.family`／`bot.impl.hint`／`bot.target.group`／`bot.target.user`／`bot.targets`）；核心界面只写中性兜底 |
@@ -181,7 +181,7 @@ lifecycleProcessor.onClose()     ← 停 SmartLifecycle，默认最多等 30 秒
 `CommandDispatcher` 收到消息事件后按「命令名开头」匹配，因此群里正常聊天时
 随口说到某个命令名不会触发。**机器人只在已配置推送的群里应答**，其他群一律沉默。
 
-命令实现 `StarBotCommand`，用 `@StarBotComponent` 注册（插件模块）或 `@Component`（核心）。
+命令实现 `NovaCommand`，用 `@NovaComponent` 注册（插件模块）或 `@Component`（核心）。
 接口上有两个决定行为的方法：
 
 - `category()` —— `菜单` 据此分组，按首次出现顺序排列
@@ -247,9 +247,10 @@ META-INF/spring-configuration-metadata.json
 
 ### 注册
 
-插件的组件用 **`@StarBotComponent`**。它的元注解就是 Spring 的 `@Component`，
+插件的组件用 **`@NovaComponent`**。它的元注解就是 Spring 的 `@Component`，
 因此由组件扫描当成普通组件收走；按约定一律用它而不用 `@Component`，
-是为了在源码里一眼看出哪些类属于插件。
+是为了在源码里一眼看出哪些类属于插件。旧名 `@StarBotComponent` 仍认得，
+两名同标在一个类上只登记一次。
 
 每个插件模块自带一份
 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`，
@@ -308,7 +309,7 @@ META-INF/spring-configuration-metadata.json
 |---|---|---|---|
 | 控制台页 | `config/ui/page/ConsolePageProvider` | `BilibiliConsolePageProvider` 与页面脚本 `config-ui-pages/bilibili.js`（starbot-bilibili）；主播页 `StreamersConsolePageProvider`、推送页 `PushConsolePageProvider`、向导主播步 `SetupStreamerStepProvider`、首页今日卡 `TodayHomeCardProvider`（starbot-novabot-console） | 往控制台添自己的页；挂在连接页、设置页、顶级页、首页卡还是向导步骤由 `ConsolePageSlot` 申报；除 `script()` 外可再报 `assets()`（同目录其它 `.js`，按登记名取）。顶级页的 `refresh` 会收到 `{sub, tail}`（地址栏第二、三段） |
 | 配置节 | `@ConfigurationProperties`（编译期元数据由 `config/ui/ConfigurationMetadataService` 读取） | 各模块的配置类 | 配置类加了项，设置页表单自动出现；核心前缀在 `config/ui/ConfigurationGroups` 登记，平台前缀由各插件的 `ConfigurationGroupContributor` 申报，新前缀不登记就没有组 |
-| 聊天命令 | `command/StarBotCommand` | `command/` 下的一族命令（starbot-bilibili 与 starbot-report） | 实现接口并注册为 Bean，群里即多一条命令 |
+| 聊天命令 | `command/NovaCommand` | `command/` 下的一族命令（starbot-bilibili 与 starbot-report） | 实现接口并注册为 Bean，群里即多一条命令 |
 | 健康探针 | `health/HealthProbe` | 直播间、登录、风控三件（starbot-bilibili）与 `OneBotHealthProbe`（onebot-adapter） | 探测结果汇总进总览页，与告警共用 |
 | 账号登录 | `account/AccountLoginProvider` | `BilibiliAccountLoginProvider`（starbot-bilibili） | 界面内扫码登录、退出登录 |
 | 机器人连接测试 | `account/BotConnectionTester` | `OneBotConnectionTester`（onebot-adapter） | 连接页上的连通性测试与连接参数回填 |
@@ -317,7 +318,7 @@ META-INF/spring-configuration-metadata.json
 | 直播指标目录 | `analytics/LiveMetricCatalog` | `BilibiliLiveMetricCatalog`（starbot-report） | 把归档里的裸键换成人话，并声明哪几项能相加；快照指标另走 `snapshotMetrics()`，一律不进可累加集 |
 | 控制台词表 | `config/ui/vocab/ConsoleVocabulary` | `OneBotConsoleVocabulary`（onebot-adapter） | 控制台上的平台词（`bot.platform` 一族）由平台插件供，核心界面只写中性兜底 |
 | 消息出口 | `service/StarBotSenderService` 登记的 `model/Sender` | `OneBotController`（onebot-adapter） | 推送平台向核心登记出口，核心按名字投递 |
-| REST 接口 | 无专用接口：`@RestController` 照常写，仍需 `@StarBotComponent` | `BilibiliReportLayoutController`（starbot-report）、`OneBotTargetController`（onebot-adapter） | 插件 jar 里的控制器与核心的合在同一个 Web 服务里 |
+| REST 接口 | 无专用接口：`@RestController` 照常写，仍需 `@NovaComponent` | `BilibiliReportLayoutController`（starbot-report）、`OneBotTargetController`（onebot-adapter） | 插件 jar 里的控制器与核心的合在同一个 Web 服务里 |
 
 `config-ui-pages/<script>` 对 `setup_step` 槽须 `export function render(host, ctx)`（把这一步画进 host）与 `export async function done(ctx)` → boolean（这一步成立了没有）；`ctx`＝`{status, login, api, pickTargets}`（`api` 即初始设置页现用的请求函数，`pickTargets(keys)` 把这一步选中的推送目标交回向导，供小结那几行用）。四个可选导出：
 

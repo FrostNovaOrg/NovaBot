@@ -6,7 +6,7 @@ import com.starlwr.bot.core.config.ui.ConfigUiController;
 import com.starlwr.bot.core.config.ui.ConfigurationFileService;
 import com.starlwr.bot.core.config.ui.RuntimeConfigurationApplier;
 import com.starlwr.bot.core.health.PushActivityRecorder;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.service.PushTemplateDefaults;
 import com.starlwr.bot.core.service.StarBotEventHandlerService;
 import lombok.extern.slf4j.Slf4j;
@@ -33,7 +33,7 @@ import java.util.Optional;
  * 路径不变，仍挂在 {@code /config/api/…} 下。
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 @RestController
 @RequestMapping(ConfigUiController.BASE_PATH)
 @ConditionalOnProperty(name = "novabot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
@@ -178,7 +178,7 @@ public class PushController {
         JSONObject result = new JSONObject();
 
         String className = body.getString("className");
-        Optional<com.starlwr.bot.core.handler.StarBotEventHandler> handler =
+        Optional<com.starlwr.bot.core.handler.NovaEventHandler> handler =
                 className == null ? Optional.empty() : handlerService.getHandler(className);
         if (handler.isEmpty()) {
             result.put("success", false);

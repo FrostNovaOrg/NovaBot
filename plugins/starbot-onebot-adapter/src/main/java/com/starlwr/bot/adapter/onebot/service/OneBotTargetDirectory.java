@@ -5,7 +5,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.adapter.onebot.config.OneBotAdapterPluginProperties;
 import com.starlwr.bot.adapter.onebot.http.OneBotHttpAdapter;
 import com.starlwr.bot.adapter.onebot.model.OneBotSender;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -35,7 +35,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 另外标明它是什么时候取的、以及现在已经取不到了，由界面照实告诉使用者。
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 public class OneBotTargetDirectory {
     /**
      * 名单的有效期

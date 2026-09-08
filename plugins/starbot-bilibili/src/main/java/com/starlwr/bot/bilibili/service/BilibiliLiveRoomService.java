@@ -12,7 +12,7 @@ import com.starlwr.bot.core.datasource.MonitorLimit;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.service.LiveDataService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,7 +40,7 @@ import java.util.stream.Collectors;
  * 依据推送配置维护每个直播间的长连接，并按配置的间隔逐个建立连接，避免短时间内大量连接触发风控。
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 public class BilibiliLiveRoomService {
     /**
      * 直播事件所在的包名前缀，用于判断某个推送目标是否订阅了直播事件

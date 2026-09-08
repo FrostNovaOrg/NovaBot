@@ -3,7 +3,7 @@ package com.starlwr.bot.adapter.onebot.health;
 import com.starlwr.bot.adapter.onebot.config.OneBotAdapterPluginProperties;
 import com.starlwr.bot.core.health.HealthProbe;
 import com.starlwr.bot.core.health.HealthStatus;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.ArrayList;
@@ -21,7 +21,7 @@ import java.util.Optional;
  * 最后一项是 2026-08-10 那次故障补上的——当时接口每次要 2~11 秒，前三项全绿了十个小时，
  * 而带图的推送一直在丢。「通不通」答不了「够不够用」。
  */
-@StarBotComponent
+@NovaComponent
 public class OneBotHealthProbe implements HealthProbe {
     private final OneBotConnectionState state;
 

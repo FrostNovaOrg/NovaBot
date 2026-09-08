@@ -5,7 +5,7 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import com.starlwr.bot.bilibili.model.Up;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -20,7 +20,7 @@ import java.util.Optional;
  * 且失败结果也会短暂缓存，避免对同一个不存在的 uid 反复重试。
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 public class BilibiliApiSupport {
     /**
      * 补全结果的缓存时长

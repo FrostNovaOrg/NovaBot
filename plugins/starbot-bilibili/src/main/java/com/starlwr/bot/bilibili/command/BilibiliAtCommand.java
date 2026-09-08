@@ -3,7 +3,7 @@ package com.starlwr.bot.bilibili.command;
 import com.starlwr.bot.core.command.CommandContext;
 import com.starlwr.bot.core.command.CommandReply;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
-import com.starlwr.bot.core.handler.StarBotEventHandler;
+import com.starlwr.bot.core.handler.NovaEventHandler;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
@@ -166,7 +166,7 @@ public abstract class BilibiliAtCommand extends BilibiliStreamerCommand {
         if (wanted.equals(message.handlerClassName()) || wanted.equals(message.getHandler())) {
             return true;
         }
-        return message.getHandlerInstance() instanceof StarBotEventHandler handler
+        return message.getHandlerInstance() instanceof NovaEventHandler handler
                 && handler.legacyClassNames().contains(wanted);
     }
 

@@ -1,7 +1,7 @@
 package com.example;
 
 import com.starlwr.bot.core.model.Message;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
@@ -16,7 +16,7 @@ import java.util.List;
  * 该拦截器会拦截 StarBot 全局消息发送方法，并修改即将要推送的消息内容，为所有中文消息后添加一个 “喵” 后缀
  */
 @Aspect
-@StarBotComponent // 使用该注解将此类注册为 StarBot 组件，会被 StarBot 扫描并注册至 Spring 容器中
+@NovaComponent // 使用该注解将此类注册为 StarBot 组件，会被 StarBot 扫描并注册至 Spring 容器中
 public class StarBotExampleMeowAdder {
     /**
      * 要添加的后缀

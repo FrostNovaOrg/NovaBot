@@ -3,7 +3,7 @@ package com.starlwr.bot.console.controller;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
-import com.starlwr.bot.core.handler.StarBotEventHandler;
+import com.starlwr.bot.core.handler.NovaEventHandler;
 import com.starlwr.bot.core.model.HandlerOption;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.service.PushTemplateDefaults;
@@ -135,7 +135,7 @@ class TemplateEndpointsTest {
                 mock(com.starlwr.bot.core.health.PushActivityRecorder.class));
     }
 
-    private static final class FakeHandler implements StarBotEventHandler {
+    private static final class FakeHandler implements NovaEventHandler {
         @Override
         public void handle(StarBotExternalBaseEvent baseEvent, PushMessage pushMessage) {
         }

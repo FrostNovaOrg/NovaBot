@@ -6,7 +6,7 @@ import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.config.ui.ConfigurationFileService;
 import com.starlwr.bot.core.config.ui.RuntimeConfigurationApplier;
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
-import com.starlwr.bot.core.handler.StarBotEventHandler;
+import com.starlwr.bot.core.handler.NovaEventHandler;
 import com.starlwr.bot.core.health.PushActivityRecorder;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.service.PushTemplateDefaults;
@@ -52,12 +52,12 @@ class PushHandlerAliasSurfaceTest {
      * mock 掉的话，量的就只是「控制器有没有调这个方法」，而不是两处读的是不是同一张表
      */
     private static StarBotEventHandlerService service() {
-        Map<String, StarBotEventHandler> beans = new LinkedHashMap<>();
+        Map<String, NovaEventHandler> beans = new LinkedHashMap<>();
         beans.put("moved", new Moved());
         beans.put("stayed", new Stayed());
 
         ApplicationContext context = mock(ApplicationContext.class);
-        when(context.getBeansOfType(StarBotEventHandler.class)).thenReturn(beans);
+        when(context.getBeansOfType(NovaEventHandler.class)).thenReturn(beans);
 
         StarBotEventHandlerService service = new StarBotEventHandlerService(context);
         service.onContextRefreshedEvent();
@@ -133,7 +133,7 @@ class PushHandlerAliasSurfaceTest {
     /**
      * 只为让处理器表建得起来：本类量的是名字，处理什么事件与之无关
      */
-    private abstract static class FakeHandler implements StarBotEventHandler {
+    private abstract static class FakeHandler implements NovaEventHandler {
         @Override
         public void handle(StarBotExternalBaseEvent baseEvent, PushMessage pushMessage) {
         }

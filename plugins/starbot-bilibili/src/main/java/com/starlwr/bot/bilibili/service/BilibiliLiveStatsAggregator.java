@@ -22,7 +22,7 @@ import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
 import com.starlwr.bot.core.event.live.common.MembershipEvent;
 import com.starlwr.bot.core.model.DanmuRecord;
 import com.starlwr.bot.core.model.UserInfo;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.LiveDetailArchive;
 import com.starlwr.bot.core.lang.StringUtil;
@@ -46,7 +46,7 @@ import java.util.Set;
  * 不会出现在任何一场报告里。
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 public class BilibiliLiveStatsAggregator {
     private final LiveDataService liveDataService;
 

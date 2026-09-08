@@ -92,9 +92,9 @@ ssh -L 7827:127.0.0.1:7827 用户名@服务器地址
 ## 插件开发
 
 复制 [templates/starbot-example-plugin](templates/starbot-example-plugin) 作为起点。
-插件用 `@StarBotComponent` 注册组件（它的元注解就是 Spring 的 `@Component`，
-按约定一律用它，源码里一眼看得出哪些类属于插件），用 `@EventListener` 监听事件；
-实现 `StarBotEventHandler` 即可作为推送处理器。
+插件用 `@NovaComponent` 注册组件（它的元注解就是 Spring 的 `@Component`，
+按约定一律用它，源码里一眼看得出哪些类属于插件；旧名 `@StarBotComponent` 仍认得），
+用 `@EventListener` 监听事件；实现 `NovaEventHandler` 即可作为推送处理器。
 
 插件被容器看见的唯一通道，是模块内那份
 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` 自报文件：

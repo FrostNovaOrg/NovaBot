@@ -1,6 +1,6 @@
 package com.starlwr.bot.bilibili.health;
 
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import lombok.extern.slf4j.Slf4j;
 
 import java.time.Duration;
@@ -25,7 +25,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * 会造成大量误匹配，这个坑上位调研踩过。
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 public class BilibiliRiskMetrics {
     /**
      * 每类事件保留的最大条数，防止长期运行后无限增长

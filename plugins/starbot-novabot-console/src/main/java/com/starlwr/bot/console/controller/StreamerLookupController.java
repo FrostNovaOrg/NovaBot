@@ -5,7 +5,7 @@ import com.starlwr.bot.core.config.ui.ConfigUiController;
 import com.starlwr.bot.core.datasource.DataSourceServiceRegistry;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.model.StreamerReference;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.datasource.DataSourceService;
 import com.starlwr.bot.core.datasource.DataSourceService.StreamerWithFans;
 import lombok.extern.slf4j.Slf4j;
@@ -25,7 +25,7 @@ import java.util.regex.Pattern;
  * 从核心配置界面拆出，随控制台插件走。路径不变。
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 @RestController
 @RequestMapping(ConfigUiController.BASE_PATH)
 @ConditionalOnProperty(name = "novabot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)

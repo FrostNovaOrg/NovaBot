@@ -2,7 +2,7 @@ package com.starlwr.bot.console;
 
 import com.starlwr.bot.core.config.ui.page.ConsolePageProvider;
 import com.starlwr.bot.core.config.ui.page.ConsolePageSlot;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 
 import java.util.List;
 
@@ -14,7 +14,7 @@ import java.util.List;
  * <p>
  * 「立即自检」不在这张卡上：它问的是这台机器此刻健不健康，归宿主的健康自检那一块。
  */
-@StarBotComponent
+@NovaComponent
 public class TodayHomeCardProvider implements ConsolePageProvider {
     @Override
     public String id() {

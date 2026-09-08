@@ -16,7 +16,7 @@ import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
 import com.starlwr.bot.core.model.GiftInfo;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.UserInfo;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -46,7 +46,7 @@ import java.util.regex.Pattern;
  * 都只影响该条消息，不会中断整个直播间的消息处理。
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 public class BilibiliEventParser {
     /**
      * 礼物与大航海接口返回的价格单位为电池的千分之一，1000 对应 1 元

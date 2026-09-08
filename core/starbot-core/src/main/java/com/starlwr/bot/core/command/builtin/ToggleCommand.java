@@ -4,7 +4,7 @@ import com.starlwr.bot.core.command.CommandContext;
 import com.starlwr.bot.core.command.CommandDispatcher;
 import com.starlwr.bot.core.command.CommandReply;
 import com.starlwr.bot.core.command.CommandSettingsService;
-import com.starlwr.bot.core.command.StarBotCommand;
+import com.starlwr.bot.core.command.NovaCommand;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 
@@ -16,7 +16,7 @@ import java.util.function.Predicate;
  * 两者除方向外逻辑完全一致，合成一个基类避免两份几乎相同的代码各自演化。
  */
 @Slf4j
-public abstract class ToggleCommand implements StarBotCommand {
+public abstract class ToggleCommand implements NovaCommand {
     /**
      * 分发器反过来依赖全部命令，用 ObjectProvider 延迟取用以打破循环依赖
      */
@@ -61,16 +61,16 @@ public abstract class ToggleCommand implements StarBotCommand {
             return CommandReply.of("请指明命令名，例如：" + name() + " 直播报告");
         }
 
-        StarBotCommand command = resolve(context, target);
+        NovaCommand command = resolve(context, target);
         if (command == null) {
             // 三种情形要分得开：能力没配好、这个会话里用不上、名字打错了。
             // 说成同一句的话，前两种的人会一直在改自己的措辞，而他要动的根本不是措辞
-            StarBotCommand unavailable = first(target, item -> !item.available());
+            NovaCommand unavailable = first(target, item -> !item.available());
             if (unavailable != null) {
                 return CommandReply.of("「" + unavailable.name() + "」在本机没开，不用开关它，"
                         + "把它要的能力配好之后会自动回来");
             }
-            StarBotCommand hidden = first(target, item -> !item.availableIn(context));
+            NovaCommand hidden = first(target, item -> !item.availableIn(context));
             if (hidden != null) {
                 return CommandReply.of("「" + hidden.name() + "」在" + context.here() + "用不上，"
                         + "菜单里也没有它，不用开关它");
@@ -98,8 +98,8 @@ public abstract class ToggleCommand implements StarBotCommand {
     /**
      * 按命令名或别名找到目标命令，<b>只在这个会话里列得进菜单的那些里找</b>
      * <p>
-     * 问的与「菜单」是同一问 {@link StarBotCommand#availableIn}，不是只问机器整体的
-     * {@link StarBotCommand#available}：两处口径分开的那一版里，本群的开播通知
+     * 问的与「菜单」是同一问 {@link NovaCommand#availableIn}，不是只问机器整体的
+     * {@link NovaCommand#available}：两处口径分开的那一版里，本群的开播通知
      * 配成「@全体成员」时「开播@我」菜单里没有、却仍开关得动，
      * 于是状态文件里留下一条界面上看得见、群里怎么也验证不了的记录。
      * <p>
@@ -108,7 +108,7 @@ public abstract class ToggleCommand implements StarBotCommand {
      * @param context 执行上下文
      * @param name 命令名或别名
      */
-    private StarBotCommand resolve(CommandContext context, String name) {
+    private NovaCommand resolve(CommandContext context, String name) {
         return first(name, command -> command.availableIn(context));
     }
 
@@ -118,7 +118,7 @@ public abstract class ToggleCommand implements StarBotCommand {
      * @param filter 候选范围
      * @return 找到的命令，没有时为 null
      */
-    private StarBotCommand first(String name, Predicate<StarBotCommand> filter) {
+    private NovaCommand first(String name, Predicate<NovaCommand> filter) {
         CommandDispatcher instance = dispatcher.getIfAvailable();
         if (instance == null) {
             return null;

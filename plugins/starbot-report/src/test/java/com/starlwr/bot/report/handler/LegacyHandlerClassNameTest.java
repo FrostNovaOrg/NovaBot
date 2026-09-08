@@ -12,7 +12,7 @@ import com.starlwr.bot.core.command.CommandContext;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.PushTargetType;
-import com.starlwr.bot.core.handler.StarBotEventHandler;
+import com.starlwr.bot.core.handler.NovaEventHandler;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
@@ -92,12 +92,12 @@ class LegacyHandlerClassNameTest {
      * 按容器里真有这两个处理器的样子建一份处理器表
      */
     private StarBotEventHandlerService service() {
-        Map<String, StarBotEventHandler> beans = new LinkedHashMap<>();
+        Map<String, NovaEventHandler> beans = new LinkedHashMap<>();
         beans.put("bilibiliDynamicPushHandler", dynamic);
         beans.put("bilibiliLiveReportPushHandler", report);
 
         ApplicationContext context = mock(ApplicationContext.class);
-        when(context.getBeansOfType(StarBotEventHandler.class)).thenReturn(beans);
+        when(context.getBeansOfType(NovaEventHandler.class)).thenReturn(beans);
 
         StarBotEventHandlerService service = new StarBotEventHandlerService(context);
         service.onContextRefreshedEvent();
@@ -111,12 +111,12 @@ class LegacyHandlerClassNameTest {
     void legacyClassNameStillResolves() {
         StarBotEventHandlerService service = service();
 
-        Optional<StarBotEventHandler> byOldDynamic = service.getHandler(OLD_DYNAMIC);
+        Optional<NovaEventHandler> byOldDynamic = service.getHandler(OLD_DYNAMIC);
         assertTrue(byOldDynamic.isPresent(), "老 datasource.json 里写的 " + OLD_DYNAMIC + " 查不到处理器, "
                 + "升级后这一类推送不发也不报错");
         assertSame(dynamic, byOldDynamic.get());
 
-        Optional<StarBotEventHandler> byOldReport = service.getHandler(OLD_REPORT);
+        Optional<NovaEventHandler> byOldReport = service.getHandler(OLD_REPORT);
         assertTrue(byOldReport.isPresent(), "老 datasource.json 里写的 " + OLD_REPORT + " 查不到处理器");
         assertSame(report, byOldReport.get());
     }
@@ -226,7 +226,7 @@ class LegacyHandlerClassNameTest {
     /**
      * 一个处理器认得的全部名字：真类名加它声明过的旧名
      */
-    private static List<String> namesOf(StarBotEventHandler handler) {
+    private static List<String> namesOf(NovaEventHandler handler) {
         List<String> names = new ArrayList<>();
         names.add(handler.getClass().getName());
         names.addAll(handler.legacyClassNames());
@@ -331,7 +331,7 @@ class LegacyHandlerClassNameTest {
      * 「动态@我」在这个群里说的那句话。推送里配的是 @全体成员，因此命令该直接答
      * 「不用单独订阅」——答不上来就说明这条推送没被认成动态通知
      */
-    private String atMeReply(String handlerName, StarBotEventHandler instance) {
+    private String atMeReply(String handlerName, NovaEventHandler instance) {
         PushUser streamer = streamerWithDynamicPush(handlerName, instance, "all");
         AbstractDataSource dataSource = mock(AbstractDataSource.class);
         when(dataSource.getUsers("bilibili")).thenReturn(List.of(streamer));
@@ -358,7 +358,7 @@ class LegacyHandlerClassNameTest {
      * @param instance 核心解析出来的处理器实例，{@code null} 表示还没解析出来
      * @param atMode @ 谁那一档
      */
-    private static PushUser streamerWithDynamicPush(String handlerName, StarBotEventHandler instance, String atMode) {
+    private static PushUser streamerWithDynamicPush(String handlerName, NovaEventHandler instance, String atMode) {
         PushUser user = new PushUser();
         user.setUid(10001L);
         user.setUname("测试主播");

@@ -1,6 +1,6 @@
 package com.starlwr.bot.adapter.onebot.config;
 
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.properties.NovaBotPrefixes;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.bind.BindResult;
@@ -20,7 +20,7 @@ import org.springframework.core.env.Environment;
  */
 @Slf4j
 @Configuration
-@StarBotComponent
+@NovaComponent
 public class OneBotAlertPropertiesBinder {
     /**
      * 现行配置键前缀
