@@ -43,6 +43,16 @@ public enum TimelineEventType {
     AT_ALL_SKIPPED("未 @ 全体", TimelineCategory.PUSH),
 
     /**
+     * 主播开播
+     */
+    LIVE_ON("开播", TimelineCategory.LIVE),
+
+    /**
+     * 主播下播
+     */
+    LIVE_OFF("下播", TimelineCategory.LIVE),
+
+    /**
      * 某项健康状况发生变化，含恢复正常
      * <p>
      * 暂归「连接」：现有的几项健康状况问的都是「与那一头通着没有」。

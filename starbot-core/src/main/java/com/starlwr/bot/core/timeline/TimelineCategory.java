@@ -29,8 +29,8 @@ public enum TimelineCategory {
     /**
      * 直播：开播、下播、断流与场次
      * <p>
-     * 此刻还没有任何类型归到它名下——直播那几类记事由报告与数据那一侧记，
-     * 记进来之前它不会出现在药丸上（见 {@link #inUse(Collection)}）。
+     * 断流与场次那几类记事由报告与数据那一侧记，记进来之前药丸上只有开播与下播
+     * （见 {@link #inUse(Collection)}）。
      */
     LIVE("直播"),
 
