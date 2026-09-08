@@ -21,11 +21,6 @@ starbot:
     datasource:
       json-path: coverage-datasource.json
       json-auto-reload: false
-    plugin:
-      auto-download-dependency: false
-      maven-base-urls:
-        - https://example.invalid/one
-        - https://example.invalid/two
     live:
       save-live-data: false
       live-data-path: coverage-data.json

@@ -281,11 +281,7 @@ META-INF/spring-configuration-metadata.json
 
 ### 依赖下载
 
-`StarBotPluginDependencyDownloader` 曾在插件依赖缺失时把它们下载到 `plugins-lib/`，
-再以**退出码 90** 退出、由 `start.sh` 的循环重新拉起。缺失依赖原先由插件加载器读插件 jar 里的
-`dependency.json` 得出，那条路已随加载器一并退休，因此它现在不再做任何事，
-将在后续版本连同 `starbot.core.plugin.*` 两个配置键与重启循环一并移除。
-插件的运行期依赖须由构建产物一次放齐。
+插件的运行期依赖须由构建产物一次放齐，核心不再下载依赖。
 
 ### 可监听的事件类型
 

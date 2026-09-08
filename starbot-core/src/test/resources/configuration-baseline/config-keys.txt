@@ -66,8 +66,6 @@ starbot.core.network.read-timeout|java.lang.Integer|60|网络请求读取超时�
 starbot.core.paint.auto-expand-height|java.lang.Integer|5000|绘图器自动扩展高度时扩展像素数，设置过大会导致占用较大内存，设置过小会频繁自动扩展导致效率降低
 starbot.core.paint.extra-copyrights|java.util.List<com.starlwr.bot.core.model.TextWithStyle>|<null>|自定义绘图器底部额外版权信息
 starbot.core.paint.fonts|java.util.List<java.lang.String>|<null>|绘图器字体列表，支持配置为字体名称或字体文件路径
-starbot.core.plugin.auto-download-dependency|java.lang.Boolean|true|是否自动下载插件依赖，可使用 --skip-download-dependency 命令行参数临时跳过自动下载
-starbot.core.plugin.maven-base-urls|java.util.List<java.lang.String>|<null>|用于自动下载插件依赖的 Maven 地址
 starbot.core.push.at-all-daily-limit|java.lang.Integer|10|机器人账号每日最多 @全体成员 的次数，0 或负数表示不限制 平台本身有每日上限，用超之后**平台会静默忽略**——消息照发但 @ 不生效， 配置的人往往过很久才发现「怎么没人被 @ 到」。因此在自己这一侧先记账， 超额时主动退化为普通消息并记日志，而不是把额度花在注定无效的调用上。 这份额度由该账号推送的全部会话共享（实测：往一个群发一次， 其他群看到的账号剩余次数同步减一）。默认 10 与平台实测值一致， 它才是真正会先卡住的那一道。
 starbot.core.push.at-all-session-daily-limit|java.lang.Integer|20|单个会话每日最多 @全体成员 的次数，0 或负数表示不限制 与账号额度是两个维度：群的额度由群里所有有权限的人共用，机器人只是其中之一。 默认 20 与平台实测值一致。通常先撞到的是账号额度，本项是第二道保险。
 starbot.core.push.enabled|java.lang.Boolean|true|全局推送开关 关闭后所有推送都会被丢弃，用于调试或临时静音，无需逐条改推送配置。改完立即生效，不必重启。

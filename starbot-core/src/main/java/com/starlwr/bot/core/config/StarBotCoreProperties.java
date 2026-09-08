@@ -62,9 +62,6 @@ public class StarBotCoreProperties {
     private final DatasourceProperties datasource = new DatasourceProperties();
 
     @Getter
-    private final Plugin plugin = new Plugin();
-
-    @Getter
     private final LiveProperties live = new LiveProperties();
 
     @Getter
@@ -638,25 +635,6 @@ public class StarBotCoreProperties {
             @ConfigEffect(ConfigEffect.Effect.RESTART)
             private int lockoutMinutes = 15;
         }
-    }
-
-    /**
-     * 插件相关
-     */
-    @Getter
-    @Setter
-    public static class Plugin {
-        /**
-         * 是否自动下载插件依赖，可使用 --skip-download-dependency 命令行参数临时跳过自动下载
-         */
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
-        private boolean autoDownloadDependency = true;
-
-        /**
-         * 用于自动下载插件依赖的 Maven 地址
-         */
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
-        private List<String> mavenBaseUrls = new ArrayList<>(Arrays.asList("https://maven.aliyun.com/repository/public", "https://repo1.maven.org/maven2"));
     }
 
     /**
