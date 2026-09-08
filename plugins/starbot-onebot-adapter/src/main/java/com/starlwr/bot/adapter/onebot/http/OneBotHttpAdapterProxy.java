@@ -16,7 +16,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * StarBot OneBot HTTP 服务代理
+ * NovaBot OneBot HTTP 服务代理
  */
 @Slf4j
 public class OneBotHttpAdapterProxy implements InvocationHandler {

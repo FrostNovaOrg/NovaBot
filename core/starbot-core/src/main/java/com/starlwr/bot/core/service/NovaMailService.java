@@ -13,7 +13,7 @@ import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
 /**
- * StarBot 邮件服务
+ * NovaBot 邮件服务
  * <p>
  * 告警走这里出去，所以这里<b>什么都不往外抛</b>：没配好、发不出去，都只留一笔日志。
  * 一条报警的路自己把调用它的那条路掀翻，报的就不再是原来那件事了。

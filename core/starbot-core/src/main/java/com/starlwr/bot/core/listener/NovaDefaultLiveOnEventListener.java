@@ -14,7 +14,7 @@ import org.springframework.stereotype.Component;
 import java.util.Optional;
 
 /**
- * StarBot 开播事件监听器
+ * NovaBot 开播事件监听器
  */
 @Slf4j
 @Component

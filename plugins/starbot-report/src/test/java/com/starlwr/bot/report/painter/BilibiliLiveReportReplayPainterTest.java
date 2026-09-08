@@ -105,7 +105,7 @@ class BilibiliLiveReportReplayPainterTest {
         buildInfo.setProperty("version", "5.1.0");
         buildInfo.setProperty("group", "com.starlwr");
         buildInfo.setProperty("artifact", "starbot-core");
-        buildInfo.setProperty("name", "StarBotCore");
+        buildInfo.setProperty("name", "NovaBot");
         factory = new NovaCommonPainterFactory(new BuildProperties(buildInfo), coreProperties, fontUtil);
 
         // 🔴 一个方法都不打桩：重画侧的任何一次调用都是「重画联网了」的实证。

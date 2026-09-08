@@ -81,7 +81,7 @@ class ReportPainterBeanResolutionTest {
         buildInfo.setProperty("version", "5.1.0");
         buildInfo.setProperty("group", "com.starlwr");
         buildInfo.setProperty("artifact", "starbot-core");
-        buildInfo.setProperty("name", "StarBotCore");
+        buildInfo.setProperty("name", "NovaBot");
 
         // 画手与消费者的构造参数：这一格量的是「容器挑哪一个」，不是它们各自干得对不对，
         // 所以除画图必需的那几件外一律给替身

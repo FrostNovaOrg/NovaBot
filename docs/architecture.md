@@ -65,7 +65,7 @@
 ```
 采集                       事件总线                  匹配                渲染         投递
 ─────────────────────────  ────────────────────────  ─────────────────  ──────────  ──────────────
-直播间 WebSocket 长连接 ┐                            StarBotHandler-     各 Push-    StarBotMessage-
+直播间 WebSocket 长连接 ┐                            NovaHandler-     各 Push-    NovaMessage-
 动态轮询               ├→ ApplicationEventPublisher  Listener            Handler     Sender
 备用直播状态轮询       ┘   (Interruptible-           ↓                   ↓           ↓
                            EventMulticaster)         按 uid 查数据源     生成文本    队列 → OneBot

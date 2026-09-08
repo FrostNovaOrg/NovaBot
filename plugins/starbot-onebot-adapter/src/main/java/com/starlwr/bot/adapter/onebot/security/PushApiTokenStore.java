@@ -15,7 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 推送接口 Token 存储，维护「接口路径 -> 期望 Token」的映射
  * <p>
- * 未显式配置 Token 的推送平台会在启动时自动生成一个高强度随机 Token。由于 StarBot 核心
+ * 未显式配置 Token 的推送平台会在启动时自动生成一个高强度随机 Token。由于 NovaBot 核心
  * 是通过本机回环地址调用自身推送接口的，自动生成的 Token 会同步注册给核心，对默认部署完全透明；
  * 而外部调用方若要接入，则必须在配置文件中显式设置 Token，从而杜绝「零配置即裸奔」的情况。
  * <p>

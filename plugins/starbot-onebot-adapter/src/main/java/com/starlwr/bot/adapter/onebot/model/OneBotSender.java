@@ -23,7 +23,7 @@ public class OneBotSender {
     /**
      * 本推送接口的访问 Token，调用方需通过 Authorization: Bearer &lt;token&gt; 请求头携带
      * <p>
-     * 留空时 StarBot 会在启动时自动生成一个高强度随机 Token 并注册给核心，
+     * 留空时 NovaBot 会在启动时自动生成一个高强度随机 Token 并注册给核心，
      * 默认的本机部署无需任何配置即可安全运行；需要由外部程序调用推送接口时，在此显式设置。
      */
     private String apiToken;

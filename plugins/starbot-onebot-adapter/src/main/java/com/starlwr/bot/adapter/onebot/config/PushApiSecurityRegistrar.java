@@ -75,7 +75,7 @@ public class PushApiSecurityRegistrar {
 
         if (!properties.getSecurity().isEnabled()) {
             registration.setEnabled(false);
-            log.error("推送接口安全校验已被关闭, 任何能访问到本服务端口的程序都可以借由 StarBot 发送消息, 请仅在完全可信的隔离网络中使用此配置");
+            log.error("推送接口安全校验已被关闭, 任何能访问到本服务端口的程序都可以借由 NovaBot 发送消息, 请仅在完全可信的隔离网络中使用此配置");
         }
 
         return registration;

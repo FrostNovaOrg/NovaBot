@@ -8,7 +8,7 @@ import org.springframework.boot.info.BuildProperties;
 import org.springframework.stereotype.Component;
 
 /**
- * StarBot 绘图器工厂
+ * NovaBot 绘图器工厂
  * <p>
  * 绘图器要三样东西才画得全：版本号（画在版权行上）、配置（版面尺寸与配色）、字体表（挑字与量宽）。
  * 报告图那一路自己不持有这三样，全靠这里在造绘图器时一并塞进去——

@@ -94,7 +94,7 @@ class WordCloudReportBlockTest {
         buildInfo.setProperty("version", "4.3.0");
         buildInfo.setProperty("group", "com.starlwr");
         buildInfo.setProperty("artifact", "starbot-core");
-        buildInfo.setProperty("name", "StarBotCore");
+        buildInfo.setProperty("name", "NovaBot");
         NovaCommonPainterFactory factory =
                 new NovaCommonPainterFactory(new BuildProperties(buildInfo), coreProperties, fontUtil);
 

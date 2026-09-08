@@ -6,7 +6,7 @@ import com.starlwr.bot.adapter.onebot.annotation.OneBotApi;
 import com.starlwr.bot.adapter.onebot.model.OneBotSender;
 
 /**
- * StarBot OneBot HTTP 服务接口
+ * NovaBot OneBot HTTP 服务接口
  * <p>
  * <b>返回类型不是装饰</b>：代理按方法声明的返回类型去取 {@code data}。
  * 列表类接口的 {@code data} 是数组，写成 {@link JSONObject} 会<b>安静地拿到 null</b>

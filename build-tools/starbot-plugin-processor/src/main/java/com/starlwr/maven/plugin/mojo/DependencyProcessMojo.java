@@ -32,7 +32,7 @@ public class DependencyProcessMojo extends AbstractMojo {
 
     @Override
     public void execute() throws MojoExecutionException {
-        getLog().info("Starting process StarBot plugin dependencies");
+        getLog().info("Starting process NovaBot plugin dependencies");
         getLog().info(project.getGroupId() + ":" + project.getArtifactId() + "-v" + project.getVersion());
 
         Map<String, List<Dependency>> result = new LinkedHashMap<>();
@@ -69,17 +69,17 @@ public class DependencyProcessMojo extends AbstractMojo {
         }
         getLog().info("Processed " + dependencies.size() + " dependencies");
 
-        getLog().info("Completed process StarBot plugin dependencies");
+        getLog().info("Completed process NovaBot plugin dependencies");
     }
 
     /**
-     * 判断依赖是否为 StarBot 插件
+     * 判断依赖是否为 NovaBot 插件
      * <p>
      * reactor 里未打包的依赖拿到的是 target/classes 目录而非 jar——
      * -pl 定向 test 周期里的 reactor 内模块正是这种形态, 照 JarFile 开会整个目标失败;
      * 目录形时 plugin.json 就在类路径根上, 直接看该文件在不在。
      * @param artifact 依赖
-     * @return 是否为 StarBot 插件
+     * @return 是否为 NovaBot 插件
      */
     private boolean isPlugin(Artifact artifact) throws MojoExecutionException {
         File jar = artifact.getFile();
@@ -97,7 +97,7 @@ public class DependencyProcessMojo extends AbstractMojo {
                 }
             }
         } catch (Exception e) {
-            throw new MojoExecutionException("Failed process StarBot plugin dependencies", e);
+            throw new MojoExecutionException("Failed process NovaBot plugin dependencies", e);
         }
 
         return false;

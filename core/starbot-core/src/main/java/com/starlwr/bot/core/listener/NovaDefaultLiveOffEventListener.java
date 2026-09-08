@@ -28,7 +28,7 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * StarBot 下播事件监听器
+ * NovaBot 下播事件监听器
  */
 @Slf4j
 @Component

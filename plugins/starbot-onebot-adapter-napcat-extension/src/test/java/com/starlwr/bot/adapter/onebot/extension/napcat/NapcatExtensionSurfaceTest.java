@@ -144,7 +144,7 @@ class NapcatExtensionSurfaceTest {
         }
 
         @Test
-        @DisplayName("四个由容器托管的类都还挂着 StarBot 组件注解, 少一个就整条功能不上线")
+        @DisplayName("四个由容器托管的类都还挂着 NovaBot 组件注解, 少一个就整条功能不上线")
         void componentsStayScanned() {
             assertTrue(NapcatHttpAdapterRegistrar.class.isAnnotationPresent(NovaComponent.class));
             assertTrue(NapcatServiceHolder.class.isAnnotationPresent(NovaComponent.class));

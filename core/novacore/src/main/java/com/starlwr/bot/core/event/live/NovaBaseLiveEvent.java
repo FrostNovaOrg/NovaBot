@@ -13,7 +13,7 @@ import lombok.ToString;
 import java.time.Instant;
 
 /**
- * StarBot 直播事件基类
+ * NovaBot 直播事件基类
  */
 @Getter
 @Setter

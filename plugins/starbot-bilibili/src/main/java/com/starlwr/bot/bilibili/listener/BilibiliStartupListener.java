@@ -22,7 +22,7 @@ import java.time.Instant;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * StarBotBilibili 启动监听器
+ * NovaBilibili 启动监听器
  * <p>
  * 在主程序启动完毕后依次完成登录与各项服务的启动。登录可能需要等待用户扫码，
  * 因此整个流程放在调度线程上执行，不阻塞主程序启动。
@@ -110,7 +110,7 @@ public class BilibiliStartupListener {
         startDynamicChannel(loggedIn);
 
         servicesStarted.set(true);
-        log.info("StarBotBilibili 已就绪{}", accountService.isAnonymous() ? "（匿名模式）" : "");
+        log.info("NovaBilibili 已就绪{}", accountService.isAnonymous() ? "（匿名模式）" : "");
     }
 
     /**

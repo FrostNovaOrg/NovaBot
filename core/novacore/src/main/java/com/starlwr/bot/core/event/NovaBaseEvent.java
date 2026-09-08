@@ -12,7 +12,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 
 /**
- * StarBot 事件基类
+ * NovaBot 事件基类
  */
 @Getter
 @Setter

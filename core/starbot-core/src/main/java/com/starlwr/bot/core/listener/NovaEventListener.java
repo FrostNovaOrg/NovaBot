@@ -10,7 +10,7 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
- * StarBot 事件监听器
+ * NovaBot 事件监听器
  */
 @Component
 @ConditionalOnProperty(name = "novabot.core.log.event-log", havingValue = "true")
@@ -18,7 +18,7 @@ public class NovaEventListener {
     private static final Logger eventLogger = LoggerFactory.getLogger("EventLogger");
 
     /**
-     * 监听所有 StarBot 事件记录日志
+     * 监听所有 NovaBot 事件记录日志
      * @param event 事件
      */
     @Order(Ordered.HIGHEST_PRECEDENCE)
