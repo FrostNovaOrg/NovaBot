@@ -9,7 +9,7 @@ import org.springframework.core.Ordered;
 /**
  * 本插件对 Spring 的自报：「我在这里，扫我」
  * <p>
- * 五个插件模块各有一份同形的自报类。为什么需要它、为什么当前版本它是不生效的、
+ * 五个插件模块各有一份同形的自报类。为什么需要它、为什么它要排在最后装、
  * 为什么要排除自身，一并写在 {@code OneBotAdapterPluginAutoConfiguration} 的类注释里，
  * 此处不复述。
  */

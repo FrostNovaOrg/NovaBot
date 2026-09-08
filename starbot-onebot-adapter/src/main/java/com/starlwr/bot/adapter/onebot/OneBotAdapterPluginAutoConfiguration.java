@@ -25,6 +25,16 @@ import org.springframework.core.Ordered;
  * 时可见的插件自报文件数为 0，带上时为 5。它坏掉的表现不是报错，
  * 而是这些插件<b>安安静静地整个不见</b>。
  * <p>
+ * <b>这是唯一的通道</b>：早先还有一台自己读插件 jar 的加载机，它已经退休，
+ * 插件今天能不能被看见，只取决于上面这份自报文件与 {@code loader.path}。
+ * <p>
+ * <b>为什么要排在最后</b>：类上的 {@code @AutoConfigureOrder(LOWEST_PRECEDENCE)} 不是装饰。
+ * 不写这个注解时自动配置类的次序值是 0，而 Spring Boot 那份提供默认 {@code taskScheduler} 的
+ * {@code TaskSchedulingAutoConfiguration} 也是 0；同序之间按类名先后排，谁在前只是巧合。
+ * 插件排到它前面时，插件自己的调度器先进容器，那份带 {@code @ConditionalOnMissingBean}
+ * 的默认调度器就整个不出现，核心里没点名调度器的定时任务与重试于是被挤到插件的线程池上跑。
+ * 这一条坏掉同样不报错，只是线程名换了一个。
+ * <p>
  * <b>为什么要排除自身</b>：被 {@code @AutoConfiguration} 装进来的配置类以<b>全类名</b>作 bean 名，
  * 而组件扫描给同一个类起的是<b>短名</b>，两个名字互不相识；不排除，同一个配置类会进容器两次。
  * <p>
