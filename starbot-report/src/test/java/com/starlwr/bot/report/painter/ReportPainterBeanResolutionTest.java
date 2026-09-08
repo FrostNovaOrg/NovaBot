@@ -46,11 +46,11 @@ import static org.mockito.Mockito.mock;
  * 容器里同一个类型就有了两个候选；按类型注入的地方要一个，容器不知道该给哪一个，
  * 上下文当场装不起来，进程退出。而那一刻整测是全绿的。
  *
- * <h2>为什么按插件加载器那条路注册</h2>
- * 这两个类在真实运行时不是被 Spring 扫进来的，而是由插件加载器读 jar 之后
- * 逐个建 {@link AnnotatedGenericBeanDefinition} 注册的。注解要不要生效、
- * 生效到哪一层，取决于走的是哪条注册路——所以这里照抄那条路，
- * 而不是图省事用 {@code context.register(...)}。
+ * <h2>为什么按组件扫描那条路注册</h2>
+ * 这两个类在真实运行时由本模块自报类上的 {@code @ComponentScan} 扫进容器。注解要不要生效、
+ * 生效到哪一层，取决于走的是哪条注册路——所以这里照扫描器的做法建
+ * {@link AnnotatedGenericBeanDefinition}、跑一遍 {@code processCommonDefinitionAnnotations}、
+ * 用同一个 bean 名生成器，而不是图省事用 {@code context.register(...)}。
  *
  * <p>另一侧同样要钉住：预览那一屏必须仍然拿到<b>预览</b>画手。
  * 只钉「别再撞了」的话，把预览画手从容器里摘掉也能过——而那会让版式预览整屏消失。
@@ -97,11 +97,11 @@ class ReportPainterBeanResolutionTest {
         beans.registerSingleton("abstractDataSource", mock(AbstractDataSource.class));
         beans.registerSingleton("bilibiliStreamerChoice", mock(BilibiliStreamerChoice.class));
 
-        registerAsPluginLoaderDoes(BilibiliLiveReportPainter.class);
-        registerAsPluginLoaderDoes(BilibiliLiveReportPreviewPainter.class);
-        registerAsPluginLoaderDoes(BilibiliLiveReportPushHandler.class);
-        registerAsPluginLoaderDoes(BilibiliLiveReportCommand.class);
-        registerAsPluginLoaderDoes(BilibiliReportLayoutController.class);
+        registerAsComponentScanDoes(BilibiliLiveReportPainter.class);
+        registerAsComponentScanDoes(BilibiliLiveReportPreviewPainter.class);
+        registerAsComponentScanDoes(BilibiliLiveReportPushHandler.class);
+        registerAsComponentScanDoes(BilibiliLiveReportCommand.class);
+        registerAsComponentScanDoes(BilibiliReportLayoutController.class);
     }
 
     @AfterEach
@@ -176,9 +176,9 @@ class ReportPainterBeanResolutionTest {
     }
 
     /**
-     * 照插件加载器那条路注册一个组件类
+     * 照组件扫描那条路注册一个组件类
      */
-    private void registerAsPluginLoaderDoes(Class<?> clazz) {
+    private void registerAsComponentScanDoes(Class<?> clazz) {
         AnnotatedGenericBeanDefinition definition = new AnnotatedGenericBeanDefinition(clazz);
         AnnotationConfigUtils.processCommonDefinitionAnnotations(definition);
         String name = AnnotationBeanNameGenerator.INSTANCE.generateBeanName(definition, beans);

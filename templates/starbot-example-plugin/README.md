@@ -47,7 +47,7 @@ starbot-example-plugin/
 
 ### 插件信息
 
-每个 StarBot 插件都需要在 `pom.xml` 文件中定义其元数据, 构建时它们会被生成到插件描述文件 `plugin.json` 中, 随插件 JAR 一同打包。插件自报后由 Spring Boot 装载, 启动完毕后示例监听器会在日志中打出这一句：
+每个 StarBot 插件都需要在 `pom.xml` 文件中定义其元数据, 构建时它们会被生成到插件描述文件 `plugin.json` 中, 随插件 JAR 一同打包。元数据不再被输出到日志中, 装载本身也不单独打一行日志; 插件有没有被装上, 由插件自己的输出判读——本示例插件装上后, 日志里会出现 `StarBotExampleStartEventListener` 打的这一行, 没有它就是没装上：
 
 > 2025-11-22 01:58:39.062  INFO 64528 --- [                main] c.example.StarBotExampleStartEventListener  : 主程序已启动完毕，示例插件已开始监听弹幕事件
 

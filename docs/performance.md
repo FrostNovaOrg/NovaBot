@@ -216,13 +216,13 @@ JAVA_OPTS="-Xms96m -Xmx320m" ./start.sh
 把类元数据预先归档，可缩短启动时间：
 
 ```bash
-java -XX:ArchiveClassesAtExit=starbot.jsa -Dloader.path=lib,plugins-lib -jar StarBotCore.jar
+java -XX:ArchiveClassesAtExit=starbot.jsa -Dloader.path=lib,plugins,plugins-lib -jar StarBotCore.jar
 ```
 
 之后启动时带上归档：
 
 ```bash
-java -XX:SharedArchiveFile=starbot.jsa -Dloader.path=lib,plugins-lib -jar StarBotCore.jar
+java -XX:SharedArchiveFile=starbot.jsa -Dloader.path=lib,plugins,plugins-lib -jar StarBotCore.jar
 ```
 
 ## 关于用其他语言重写

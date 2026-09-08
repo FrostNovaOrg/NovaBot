@@ -264,8 +264,8 @@ cp starbot-core/target/lib/*.jar "$OUT/lib/"
 for module in "${PLUGIN_MODULES[@]}"; do
     cp "$module"/target/"$module"-*.jar "$OUT/plugins/"
 
-    # 插件自身的运行期依赖放入 plugins-lib（启动参数 -Dloader.path=lib,plugins-lib 会加载此目录）。
-    # 若缺失，StarBot 会在启动后检测到依赖不全并触发一次自动下载与重启，推送接口也就无法及时注册。
+    # 插件自身的运行期依赖放入 plugins-lib（启动参数 -Dloader.path=lib,plugins,plugins-lib 会加载此目录）。
+    # 若缺失，插件的类装载时会报 NoClassDefFoundError，表现是那个插件的功能整个不见。
     mvn "${MAVEN_ARGS[@]}" -f "$module/pom.xml" dependency:copy-dependencies \
         -DincludeScope=runtime \
         -DoutputDirectory="$OUT/plugins-lib" \

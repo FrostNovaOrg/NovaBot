@@ -159,7 +159,11 @@ public class BilibiliLiveReportPainter {
     private static final int NAME_MAX_WIDTH = 300 - (40 + RANKING_AVATAR_SIZE + 10) - 12;
 
     /**
-     * 词云绘制尺寸
+     * 词云绘制的<b>最大</b>高度。实际高度按本场词数向下取档，见
+     * {@link WordCloudLayout#recommendedHeight}
+     * <p>
+     * 🔴 这个数只是上限，<b>不是预留的位置</b>。十来个词的冷清场次排出来是一小团，
+     * 仍按 380px 挪下一块的话，图上就是一小团词底下吊着二百多像素的空白
      */
     private static final int CLOUD_HEIGHT = 380;
 
@@ -167,11 +171,6 @@ public class BilibiliLiveReportPainter {
      * 词云最多收录的词数
      */
     private static final int CLOUD_MAX_WORDS = 72;
-
-    /**
-     * 词云至少需要的独立词数，低于此数画出来只有零星几个词，不如不画
-     */
-    private static final int CLOUD_MIN_WORDS = 5;
 
     private static final Color COLOR_NAME = new Color(251, 114, 153);
 
@@ -1513,13 +1512,14 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
-     * 绘制弹幕词云，词数不足或渲染失败时整体跳过
+     * 绘制弹幕词云，渲染失败时整体跳过
+     * <p>
+     * 🔴 <b>不再按词数决定画不画。</b>此前少于 5 个词整块跳过：冷清场次的报告里
+     * 连「本场没什么人说话」都看不出来，与「词云画崩了」在图上长得一模一样。
+     * 现在词少排成一小团、一个词都没有画成空态，块高随词量走
      */
     private void drawWordCloud(CommonPainter painter, String platform, Long uid) {
         Map<String, Integer> frequencies = liveDataService.getLiveWordFrequencies(platform, uid);
-        if (frequencies.size() < CLOUD_MIN_WORDS) {
-            return;
-        }
 
         try {
             BufferedImage cloud = paintWordCloud(platform, uid, frequencies);
@@ -1540,21 +1540,55 @@ public class BilibiliLiveReportPainter {
      * 从成品图上反推「哪几个像素是哪个词」做不到
      */
     BufferedImage paintWordCloud(String platform, Long uid, Map<String, Integer> frequencies) {
-        return cloudRenderer().render(layoutWordCloud(platform, uid, frequencies), CONTENT_WIDTH, CLOUD_HEIGHT);
+        WordCloud cloud = composeWordCloud(platform, uid, frequencies);
+
+        // 放不下的词被静默丢掉，报告看上去仍然完整——「这一场少了几十个词」只有日志说得出来。
+        // 恰一行：每丢一个词打一行会把日志刷爆，一行不打就是静默
+        if (cloud.layout().dropped() > 0) {
+            int total = cloud.layout().placements().size() + cloud.layout().dropped();
+            log.warn("绘制 {} {} 的弹幕词云: 本场取词 {} 个, 版面放不下 {} 个",
+                    platform, uid, total, cloud.layout().dropped());
+        }
+
+        return cloudRenderer().render(cloud.layout(), CONTENT_WIDTH, cloud.height());
     }
 
     /**
      * 排一次词云版式
      */
     WordCloudLayout.Result layoutWordCloud(String platform, Long uid, Map<String, Integer> frequencies) {
+        return composeWordCloud(platform, uid, frequencies).layout();
+    }
+
+    /**
+     * 一块词云：实际高度与按这个高度排出来的版式
+     * <p>
+     * 🔴 高度与版式<b>必须同源</b>。分成两处各算一遍的话，排版按一个高度摆字、
+     * 出图按另一个高度裁画布，越界的词被裁掉半截而两边都不报错
+     *
+     * @param height 这一块实际占多高，报告里下一块按它挪
+     */
+    private record WordCloud(int height, WordCloudLayout.Result layout) {
+    }
+
+    /**
+     * 收词、定高、排版，三件事一趟做完
+     */
+    private WordCloud composeWordCloud(String platform, Long uid, Map<String, Integer> frequencies) {
+        // 🔴 词频相同时按词本身排，且排序要落在 limit 之前：只按词频排的话，
+        // 尾部同频的那一批里究竟哪几个进得了前 72 名，由 Map 的遍历顺序决定
         List<WordCloudLayout.Word> words = frequencies.entrySet().stream()
-                .sorted(Map.Entry.<String, Integer>comparingByValue(Comparator.reverseOrder()))
+                .filter(entry -> entry.getKey() != null && !entry.getKey().isBlank()
+                        && entry.getValue() != null && entry.getValue() > 0)
+                .sorted(Map.Entry.<String, Integer>comparingByValue(Comparator.reverseOrder())
+                        .thenComparing(Map.Entry.comparingByKey()))
                 .limit(CLOUD_MAX_WORDS)
                 .map(entry -> new WordCloudLayout.Word(entry.getKey(), entry.getValue()))
                 .toList();
 
-        return WordCloudLayout.layout(words, CONTENT_WIDTH, CLOUD_HEIGHT,
-                cloudSeed(platform, uid), cloudRenderer());
+        int height = WordCloudLayout.recommendedHeight(words.size(), CLOUD_HEIGHT);
+        return new WordCloud(height, WordCloudLayout.layout(words, CONTENT_WIDTH, height,
+                cloudSeed(platform, uid), cloudRenderer()));
     }
 
     /**

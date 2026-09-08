@@ -561,10 +561,12 @@ async function renderBotLogEntry() {
 $('#log-only').addEventListener('change', event => changed({only: event.target.checked}));
 $('#log-streamer').addEventListener('change', event => changed({streamer: event.target.value}));
 $('#log-channel').addEventListener('change', event => changed({channel: event.target.value}));
+// 绑 change 不绑 input：这一格每改一次都要重问一趟接口，绑 input 就是边打字边发请求
 $('#log-q').addEventListener('change', event => changed({q: event.target.value.trim()}));
 $('#log-clear').addEventListener('click', () => changed({
   only: false, cat: '', type: '', streamer: '', channel: '', q: '',
 }));
+// 绑 input 不绑 change：这一格只在已经读进来的那几段里筛，不出网，边打字边出结果才对
 $('#eng-q').addEventListener('input', event => { engSearch = event.target.value; renderEngList(); });
 $('#eng-limit').addEventListener('change', loadEng);
 $('#eng-reload').addEventListener('click', loadEng);

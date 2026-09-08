@@ -48,7 +48,7 @@ public class ConfigurationMetadataService {
     private static final String METADATA_ENTRY = "META-INF/spring-configuration-metadata.json";
 
     /**
-     * 插件目录，与插件加载器保持一致
+     * 插件目录，与启动参数 loader.path 里的那一段同名
      */
     private static final String PLUGIN_DIRECTORY = "plugins";
 

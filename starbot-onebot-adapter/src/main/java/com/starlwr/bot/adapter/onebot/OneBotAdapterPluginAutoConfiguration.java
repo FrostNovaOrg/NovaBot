@@ -1,8 +1,10 @@
 package com.starlwr.bot.adapter.onebot;
 
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.AutoConfigureOrder;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
+import org.springframework.core.Ordered;
 
 /**
  * 本插件对 Spring 的自报：「我在这里，扫我」
@@ -17,16 +19,21 @@ import org.springframework.context.annotation.FilterType;
  * 开出：Spring Boot 启动时用 {@code ClassLoader.getResources} 收齐类路径上所有同名文件，
  * 逐个把里面写的配置类装进容器；本类上的 {@code @ComponentScan} 再把本模块的组件扫进来。
  * <p>
- * 🔴 <b>当前版本这份自报是不生效的</b>，而且这正是它此刻该有的样子：启动参数是
- * {@code -Dloader.path=lib,plugins-lib}，{@code plugins} 目录不在其中，
- * 于是插件 jar 根本不在应用类路径上，上面那次 {@code getResources} 一份都收不到——
- * 实测：不带 {@code plugins} 时可见的插件自报文件数为 0，带上时为 5。
- * 插件今天仍由 {@code StarBotPluginLoader} 自己开一个类加载器装进容器。
- * <b>两条路同时开着会当场撞车</b>：同一个类被扫描器与加载器各注册一次，
- * 而 Spring Boot 默认不许覆盖 bean 定义，程序起不来（实测退码 1，
- * 报 {@code The bean '...' could not be registered ... overriding is disabled}）。
- * 所以「把 {@code plugins} 加进 {@code loader.path}」与「退休那台加载器」必须同一次做完；
- * 这五份文件只是先把该说的话说在这里，让那一次只剩翻开关。
+ * 🔴 <b>它要插件 jar 在应用类路径上才生效</b>：启动参数是
+ * {@code -Dloader.path=lib,plugins,plugins-lib}，少了 {@code plugins} 那一段，
+ * 上面那次 {@code getResources} 一份插件自报都收不到——实测：不带 {@code plugins}
+ * 时可见的插件自报文件数为 0，带上时为 5。它坏掉的表现不是报错，
+ * 而是这些插件<b>安安静静地整个不见</b>。
+ * <p>
+ * <b>这是唯一的通道</b>：早先还有一台自己读插件 jar 的加载机，它已经退休，
+ * 插件今天能不能被看见，只取决于上面这份自报文件与 {@code loader.path}。
+ * <p>
+ * <b>为什么要排在最后</b>：类上的 {@code @AutoConfigureOrder(LOWEST_PRECEDENCE)} 不是装饰。
+ * 不写这个注解时自动配置类的次序值是 0，而 Spring Boot 那份提供默认 {@code taskScheduler} 的
+ * {@code TaskSchedulingAutoConfiguration} 也是 0；同序之间按类名先后排，谁在前只是巧合。
+ * 插件排到它前面时，插件自己的调度器先进容器，那份带 {@code @ConditionalOnMissingBean}
+ * 的默认调度器就整个不出现，核心里没点名调度器的定时任务与重试于是被挤到插件的线程池上跑。
+ * 这一条坏掉同样不报错，只是线程名换了一个。
  * <p>
  * <b>为什么要排除自身</b>：被 {@code @AutoConfiguration} 装进来的配置类以<b>全类名</b>作 bean 名，
  * 而组件扫描给同一个类起的是<b>短名</b>，两个名字互不相识；不排除，同一个配置类会进容器两次。
@@ -38,6 +45,7 @@ import org.springframework.context.annotation.FilterType;
  * 按 {@code extension} 这一段排除而不是点名某个模块：日后再挂第二个扩展，这一条照样管得住。
  */
 @AutoConfiguration
+@AutoConfigureOrder(Ordered.LOWEST_PRECEDENCE)
 @ComponentScan(
         excludeFilters = {
                 @ComponentScan.Filter(

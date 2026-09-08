@@ -64,17 +64,14 @@ public class StarBotPluginDependencyDownloader {
 
     private final ApplicationArguments arguments;
 
-    private final StarBotPluginLoader loader;
-
     private final StarBotCoreProperties properties;
 
     private final HttpUtil http;
 
     @Autowired
-    public StarBotPluginDependencyDownloader(ApplicationContext context, ApplicationArguments arguments, StarBotPluginLoader loader, StarBotCoreProperties properties, HttpUtil http) {
+    public StarBotPluginDependencyDownloader(ApplicationContext context, ApplicationArguments arguments, StarBotCoreProperties properties, HttpUtil http) {
         this.context = context;
         this.arguments = arguments;
-        this.loader = loader;
         this.properties = properties;
         this.http = http;
     }
@@ -85,7 +82,10 @@ public class StarBotPluginDependencyDownloader {
     @Order(Ordered.HIGHEST_PRECEDENCE)
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReadyEvent() {
-        Set<Dependency> dependencies = loader.getNeedDownloadDependencies().values().stream().flatMap(Collection::stream).collect(Collectors.toSet());
+        // 缺失依赖原先由插件加载器逐个 jar 读 dependency.json 得出。插件改由 Spring Boot 自动配置
+        // 装载后那条路不复存在，这里恒为空集，本类因而不再做任何事——它与两个 starbot.core.plugin.*
+        // 配置键、以及退出码 90 的重启循环，将在后续版本一并移除。
+        Set<Dependency> dependencies = Set.of();
         if (dependencies.isEmpty()) {
             return;
         }
