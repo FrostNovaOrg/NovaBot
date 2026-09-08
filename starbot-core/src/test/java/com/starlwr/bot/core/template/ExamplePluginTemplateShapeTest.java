@@ -57,8 +57,15 @@ class ExamplePluginTemplateShapeTest {
         String source = read(classFile);
         assertTrue(source.contains("@AutoConfiguration"),
                 declared + " 没挂 @AutoConfiguration, 写进自报文件也不会被装进容器");
-        assertTrue(source.contains("@ComponentScan(\"com.example\")"),
-                declared + " 没挂 @ComponentScan(\"com.example\"), 装进来了也扫不到插件的组件");
+        // 与仓内五份自报类同形：basePackages 圈定自己的包, excludeFilters 排除自身,
+        // 不排除自身的话同一个配置类会经 .imports 与组件扫描进容器两次
+        String simpleName = declared.substring(declared.lastIndexOf('.') + 1);
+        assertTrue(source.contains("basePackages"),
+                declared + " 的 @ComponentScan 没写 basePackages, 装进来了也扫不到插件的组件");
+        assertTrue(source.contains("excludeFilters"),
+                declared + " 的 @ComponentScan 没有 excludeFilters, 配置类会被 .imports 与扫描双注册");
+        assertTrue(source.contains("classes = " + simpleName + ".class"),
+                declared + " 的 excludeFilters 排除的不是本类");
     }
 
     @Test
@@ -99,7 +106,7 @@ class ExamplePluginTemplateShapeTest {
     }
 
     @Test
-    @DisplayName("⑤ 六份 pom 的 includes 段各有「只取描述文件」注释")
+    @DisplayName("⑤ 六份 pom 的 includes 段各有「只取描述文件」注释, 且首行逐字同")
     void sixPomsCommentTheirIncludes() {
         List<String> withoutComment = new ArrayList<>();
         for (String relative : POMS_WITH_DESCRIPTOR_INCLUDES) {
@@ -108,6 +115,13 @@ class ExamplePluginTemplateShapeTest {
             }
         }
         assertTrue(withoutComment.isEmpty(), "includes 段缺「只取描述文件」注释的 pom: " + withoutComment);
+        // 说法还得一致：六份的注释首行逐字同, 分叉了照抄的人不知道以哪份为准
+        List<String> firstLines = new ArrayList<>();
+        for (String relative : POMS_WITH_DESCRIPTOR_INCLUDES) {
+            firstLines.add(descriptorIncludesCommentFirstLine(read(repoRoot().resolve(relative))));
+        }
+        List<String> distinct = firstLines.stream().distinct().toList();
+        assertEquals(1, distinct.size(), "六份 pom includes 段注释首行不一致: " + distinct);
     }
 
     private static Path repoRoot() {
@@ -154,6 +168,23 @@ class ExamplePluginTemplateShapeTest {
         int start = pom.lastIndexOf("<execution>", id);
         int end = pom.indexOf("</execution>", id);
         return pom.substring(start, end);
+    }
+
+    /** 六份同段的比对锚：注释块里 <!-- 之后第一个非空行, 拿它逐字比六份说法是否一致 */
+    private static String descriptorIncludesCommentFirstLine(String pom) {
+        int include = pom.indexOf("<include>plugin.json</include>");
+        assertTrue(include >= 0, "pom 里没有 plugin.json 的 include");
+        int resources = pom.lastIndexOf("<resources>", include);
+        int open = pom.indexOf("<!--", resources);
+        int close = pom.indexOf("-->", open);
+        String comment = pom.substring(open + 4, close);
+        for (String line : comment.split("\\R")) {
+            String trimmed = line.trim();
+            if (!trimmed.isEmpty()) {
+                return trimmed;
+            }
+        }
+        return "";
     }
 
     /** 注释与 includes 都以「所属的 <resources> 块」为窗：注释写在 <resource> 之上还是之下，两种摆法都认 */
