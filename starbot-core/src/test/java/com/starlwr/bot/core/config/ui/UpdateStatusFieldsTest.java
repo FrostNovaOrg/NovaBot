@@ -6,7 +6,7 @@ import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.datasource.DataSourceServiceRegistry;
 import com.starlwr.bot.core.health.PushActivityRecorder;
 import com.starlwr.bot.core.model.PushUser;
-import com.starlwr.bot.core.service.EventStreamTokenService;
+import com.starlwr.bot.core.protocol.EventStreamTokenService;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.StarBotEventHandlerService;
 import com.starlwr.bot.core.service.StarBotSenderService;

@@ -1,4 +1,4 @@
-package com.starlwr.bot.core.service;
+package com.starlwr.bot.core.datasource;
 
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.model.StreamerReference;

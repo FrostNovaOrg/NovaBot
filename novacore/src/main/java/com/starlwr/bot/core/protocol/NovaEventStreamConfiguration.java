@@ -1,7 +1,6 @@
 package com.starlwr.bot.core.protocol;
 
 import com.starlwr.bot.core.config.EventStreamProperties;
-import com.starlwr.bot.core.service.EventStreamTokenService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.boot.context.properties.bind.Bindable;

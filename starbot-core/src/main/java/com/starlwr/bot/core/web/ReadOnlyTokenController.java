@@ -3,7 +3,7 @@ package com.starlwr.bot.core.web;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
-import com.starlwr.bot.core.service.EventStreamTokenService;
+import com.starlwr.bot.core.protocol.EventStreamTokenService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;

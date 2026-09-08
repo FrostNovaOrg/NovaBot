@@ -3,7 +3,7 @@ package com.starlwr.bot.bilibili.service;
 import com.starlwr.bot.bilibili.model.Up;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.model.PushUser;
-import com.starlwr.bot.core.service.DataSourceService.StreamerWithFans;
+import com.starlwr.bot.core.datasource.DataSourceService.StreamerWithFans;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

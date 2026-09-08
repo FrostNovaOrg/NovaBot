@@ -1,7 +1,5 @@
 package com.starlwr.bot.core.datasource;
 
-import com.starlwr.bot.core.service.DataSourceServiceConfig;
-import com.starlwr.bot.core.service.DataSourceService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 

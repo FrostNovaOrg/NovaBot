@@ -606,8 +606,9 @@ fi
 #   config/CoreConfigurationSections —— 上面那几节的元数据出处。默认值取自字段初始值、
 #                          说明取自 Javadoc，两者只存在于源码里，因此这一份声明必须与
 #                          那几个类同模块；放到壳侧生成出来的就是一列空值。它不参与绑定
-#   service/EventStreamTokenService —— 事件输出协议的只读令牌，属第④层
-#   service/DataSourceService / DataSourceServiceConfig —— 采集范围的接口面与实现注解
+#   （EventStreamTokenService 与 DataSourceService / DataSourceServiceConfig 原先在这张表上，
+#     现已并入 protocol／datasource 两个包——那两个包在上面的「整目录收」里，
+#     再在表上点一次是空条目：路径下次一改它谁也匹配不到，而表照旧看着是满的）
 #   enums/LivePlatform / LiveEndReason / PushTargetType —— 平台标识与事件模型枚举；
 #                          PushTargetType 是 PushTarget 的字段类型，随推送模型一起走，
 #                          它留在壳侧的话 PushTarget 根本编不过
@@ -629,9 +630,6 @@ config/LogProperties.java
 config/LiveProperties.java
 config/DatasourceProperties.java
 config/EventStreamProperties.java
-service/EventStreamTokenService.java
-service/DataSourceService.java
-service/DataSourceServiceConfig.java
 enums/LivePlatform.java
 enums/LiveEndReason.java
 enums/PushTargetType.java
@@ -912,8 +910,10 @@ fi
 # ============================================================
 
 # —— 现状声明：这几个包同时落在两个以上模块里。解开一个，从这里划掉一个 ——
-#    今天的三个都是 novacore 与 starbot-core 之间的分割包（协议真源迁出去时留下的）。
-KNOWN_SPLIT_PACKAGES="config service util"
+#    今天的两个都是 novacore 与 starbot-core 之间的分割包（协议真源迁出去时留下的）。
+#    service 已解开：novacore 侧那三件并进了 datasource／protocol 两个既有包，
+#    core.service 现在只剩 starbot-core 一个模块在写。
+KNOWN_SPLIT_PACKAGES="config util"
 
 G9_PAIRS="$WORK/g9pairs"
 # 模块×包 的全对：按 /src/main/java/com/starlwr/bot/core/ 截，模块目录在哪一层都算得对

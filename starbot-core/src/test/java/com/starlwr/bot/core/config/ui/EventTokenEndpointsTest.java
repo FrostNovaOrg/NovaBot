@@ -3,7 +3,7 @@ package com.starlwr.bot.core.config.ui;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
-import com.starlwr.bot.core.service.EventStreamTokenService;
+import com.starlwr.bot.core.protocol.EventStreamTokenService;
 import com.starlwr.bot.core.service.PushTemplateDefaults;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
