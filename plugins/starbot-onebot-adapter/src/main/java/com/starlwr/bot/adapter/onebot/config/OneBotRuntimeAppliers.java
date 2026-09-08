@@ -1,7 +1,7 @@
 package com.starlwr.bot.adapter.onebot.config;
 
 import com.starlwr.bot.core.config.ui.RuntimeConfigurationApplierContributor;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.LinkedHashMap;
@@ -11,7 +11,7 @@ import java.util.function.Consumer;
 /**
  * OneBot 适配器申报的即时生效应用器：告警目标三项写回运行中的适配器属性
  */
-@StarBotComponent
+@NovaComponent
 public class OneBotRuntimeAppliers implements RuntimeConfigurationApplierContributor {
     private final OneBotAdapterPluginProperties properties;
 

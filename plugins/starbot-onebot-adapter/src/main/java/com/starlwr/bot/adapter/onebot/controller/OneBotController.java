@@ -8,7 +8,7 @@ import com.starlwr.bot.adapter.onebot.security.PushApiTokenStore;
 import com.starlwr.bot.adapter.onebot.service.OneBotHttpService;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.model.Sender;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.service.StarBotSenderService;
 import com.starlwr.bot.core.lang.StringUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -33,7 +33,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @Slf4j
 @RestController
-@StarBotComponent
+@NovaComponent
 public class OneBotController {
     private final WebServerApplicationContext webContext;
 

@@ -5,7 +5,7 @@ import com.starlwr.bot.adapter.onebot.controller.OneBotController;
 import com.starlwr.bot.adapter.onebot.health.OneBotConnectionState;
 import com.starlwr.bot.adapter.onebot.model.OneBotSender;
 import com.starlwr.bot.core.account.BotConnectionTester;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.lang.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,7 +28,7 @@ import java.util.Map;
  * 谁来保证四件事按顺序发生、且只发生一次，得有个地方写下来。
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 public class OneBotConnectionManager {
     /**
      * 这台机器上第一台机器人的平台名

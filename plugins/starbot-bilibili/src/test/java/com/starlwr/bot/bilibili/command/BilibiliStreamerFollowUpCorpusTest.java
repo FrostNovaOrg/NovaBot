@@ -5,7 +5,7 @@ import com.starlwr.bot.core.command.CommandDispatcher;
 import com.starlwr.bot.core.command.CommandFollowUp;
 import com.starlwr.bot.core.command.CommandReply;
 import com.starlwr.bot.core.command.CommandSettingsService;
-import com.starlwr.bot.core.command.StarBotCommand;
+import com.starlwr.bot.core.command.NovaCommand;
 import com.starlwr.bot.core.command.builtin.MenuCommand;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
@@ -252,9 +252,9 @@ class BilibiliStreamerFollowUpCorpusTest {
             BilibiliStreamerChoice choice =
                     new BilibiliStreamerChoice(liveDataService, new LiveSessionArchive(properties), clock);
 
-            List<StarBotCommand> commands = new ArrayList<>();
+            List<NovaCommand> commands = new ArrayList<>();
             @SuppressWarnings("unchecked")
-            ObjectProvider<StarBotCommand> provider = mock(ObjectProvider.class);
+            ObjectProvider<NovaCommand> provider = mock(ObjectProvider.class);
             when(provider.iterator()).thenAnswer(invocation -> new ArrayList<>(commands).iterator());
             when(provider.orderedStream()).thenAnswer(invocation -> new ArrayList<>(commands).stream());
 

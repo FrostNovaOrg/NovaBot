@@ -6,7 +6,7 @@ import com.starlwr.bot.bilibili.model.BilibiliLiveReportOptions;
 import com.starlwr.bot.report.painter.BilibiliLiveReportReplayPainter;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.analytics.LiveDetail;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.service.LiveReportRedrawer;
 import com.starlwr.bot.core.service.LiveRoomInfoHistory;
 import com.starlwr.bot.report.factory.StarBotCommonPainterFactory;
@@ -31,7 +31,7 @@ import java.util.Optional;
  * 差的是显示哪几块，不是数据本身——数据面全部来自明细。
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 public class BilibiliLiveReportRedrawer implements LiveReportRedrawer {
     private final StarBotCommonPainterFactory factory;
 

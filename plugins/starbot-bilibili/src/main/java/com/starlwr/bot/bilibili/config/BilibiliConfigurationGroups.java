@@ -2,7 +2,7 @@ package com.starlwr.bot.bilibili.config;
 
 import com.starlwr.bot.core.config.ui.ConfigurationGroupContributor;
 import com.starlwr.bot.core.config.ui.ConfigurationGroups;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.properties.NovaBotPrefixes;
 
 import java.util.LinkedHashMap;
@@ -14,7 +14,7 @@ import java.util.Map;
  * 此前这八条写死在核心的分组表里，于是没装本插件的实例也背着这些键名。
  * 装了本插件才把账号／直播／动态等前缀登记进对应的组；插件挪走，前缀跟着消失。
  */
-@StarBotComponent
+@NovaComponent
 public class BilibiliConfigurationGroups implements ConfigurationGroupContributor {
     @Override
     public Map<String, ConfigurationGroups.Group> prefixes() {

@@ -8,7 +8,7 @@ import com.starlwr.bot.bilibili.model.Dynamic;
 import com.starlwr.bot.bilibili.model.Up;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.util.FixedSizeSetQueue;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,7 +31,7 @@ import java.util.stream.Collectors;
  * 需要先确保配置了动态推送的 UP 主均已被关注。
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 public class BilibiliDynamicService {
     /**
      * 已推送动态 ID 的记忆容量，用于跨轮次去重

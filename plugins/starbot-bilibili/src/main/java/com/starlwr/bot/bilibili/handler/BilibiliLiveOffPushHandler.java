@@ -6,10 +6,10 @@ import com.starlwr.bot.bilibili.event.live.BilibiliLiveOffEvent;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.bilibili.util.DurationFormatUtil;
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
-import com.starlwr.bot.core.handler.StarBotEventHandler;
+import com.starlwr.bot.core.handler.NovaEventHandler;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.sender.AtMode;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
 import com.starlwr.bot.core.service.LiveDataService;
@@ -24,8 +24,8 @@ import java.util.Optional;
  * 下播推送处理器
  */
 @Slf4j
-@StarBotComponent
-public class BilibiliLiveOffPushHandler implements StarBotEventHandler {
+@NovaComponent
+public class BilibiliLiveOffPushHandler implements NovaEventHandler {
     private final BilibiliApiUtil api;
 
     private final StarBotMessageSender sender;

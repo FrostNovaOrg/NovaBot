@@ -3,7 +3,7 @@ package com.starlwr.bot.bilibili.command;
 import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.core.command.CommandContext;
 import com.starlwr.bot.core.command.CommandReply;
-import com.starlwr.bot.core.command.StarBotCommand;
+import com.starlwr.bot.core.command.NovaCommand;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.lang.StringUtil;
@@ -22,7 +22,7 @@ import java.util.List;
  * 替他定下来的那一次带回一句 {@link Resolved#notice()}，命令用 {@link #withNotice}
  * 把它加在回复前面。
  */
-public abstract class BilibiliStreamerCommand implements StarBotCommand {
+public abstract class BilibiliStreamerCommand implements NovaCommand {
     protected final AbstractDataSource dataSource;
 
     /**

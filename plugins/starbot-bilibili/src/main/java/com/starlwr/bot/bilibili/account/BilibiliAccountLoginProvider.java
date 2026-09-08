@@ -5,7 +5,7 @@ import com.starlwr.bot.bilibili.model.Up;
 import com.starlwr.bot.bilibili.service.BilibiliAccountService;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.account.AccountLoginProvider;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.lang.StringUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -20,7 +20,7 @@ import java.util.Optional;
  * 把账号服务中已有的登录状态与待扫码内容暴露给配置界面。这些状态本就存在，
  * 此前只有终端里的字符画二维码在用。
  */
-@StarBotComponent
+@NovaComponent
 public class BilibiliAccountLoginProvider implements AccountLoginProvider {
     private final BilibiliAccountService accountService;
 

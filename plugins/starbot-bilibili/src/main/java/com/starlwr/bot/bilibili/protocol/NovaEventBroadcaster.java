@@ -15,7 +15,7 @@ import com.starlwr.bot.core.event.live.common.RoomInfoChangeEvent;
 import com.starlwr.bot.core.event.live.common.WatchedUpdateEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.PushUser;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.protocol.NovaEventStream;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,7 +43,7 @@ import java.util.function.Consumer;
  * 既不映射也不序列化——用不到这个能力的部署不该为它付任何代价。
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 public class NovaEventBroadcaster {
     /**
      * {@code room_stat} 的最快推送间隔。与协议的 ROOM_STAT_MIN_INTERVAL_MS 对齐

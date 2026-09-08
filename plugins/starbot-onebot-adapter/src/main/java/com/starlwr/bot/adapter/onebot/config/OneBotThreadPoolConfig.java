@@ -1,6 +1,6 @@
 package com.starlwr.bot.adapter.onebot.config;
 
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
@@ -13,7 +13,7 @@ import java.util.concurrent.ThreadPoolExecutor;
  * StarBotOneBotAdapterPlugin 线程池配置类
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 public class OneBotThreadPoolConfig {
     private final OneBotAdapterPluginProperties properties;
 

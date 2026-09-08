@@ -8,11 +8,11 @@ import com.starlwr.bot.bilibili.model.Room;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
-import com.starlwr.bot.core.handler.StarBotEventHandler;
+import com.starlwr.bot.core.handler.NovaEventHandler;
 import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.sender.AtMode;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
 import com.starlwr.bot.core.service.AtSubscriptionService;
@@ -28,8 +28,8 @@ import java.util.Map;
  * 开播推送处理器
  */
 @Slf4j
-@StarBotComponent
-public class BilibiliLiveOnPushHandler implements StarBotEventHandler {
+@NovaComponent
+public class BilibiliLiveOnPushHandler implements NovaEventHandler {
     private final BilibiliApiUtil api;
 
     private final StarBotMessageSender sender;
@@ -139,7 +139,7 @@ public class BilibiliLiveOnPushHandler implements StarBotEventHandler {
      * <p>
      * 存着其中一串的推送等于「使用者从没改过这个模板」，随新默认走；差一个字符都算改过。
      *
-     * @see StarBotEventHandler#supersededDefaults() 为什么改默认值必须连这张表一起改
+     * @see NovaEventHandler#supersededDefaults() 为什么改默认值必须连这张表一起改
      */
     @Override
     public Map<String, List<String>> supersededDefaults() {

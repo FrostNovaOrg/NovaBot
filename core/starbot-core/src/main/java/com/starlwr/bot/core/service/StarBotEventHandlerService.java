@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.service;
 
-import com.starlwr.bot.core.handler.StarBotEventHandler;
+import com.starlwr.bot.core.handler.NovaEventHandler;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,16 +28,16 @@ import java.util.concurrent.ConcurrentHashMap;
 public class StarBotEventHandlerService {
     private final ApplicationContext applicationContext;
 
-    private final Map<String, StarBotEventHandler> cache = new HashMap<>();
+    private final Map<String, NovaEventHandler> cache = new HashMap<>();
 
     /**
-     * 旧全类名 → 处理器，见 {@link StarBotEventHandler#legacyClassNames()}
+     * 旧全类名 → 处理器，见 {@link NovaEventHandler#legacyClassNames()}
      * <p>
      * <b>与主表分开放</b>：主表是「现在有哪些处理器」，配置界面的勾选项、随包示例与
      * 保存前校验都按它来；旧名只是「以前这么写过」，混进主表就等于把一个已经不存在的
      * 类名重新发给使用者。
      */
-    private final Map<String, StarBotEventHandler> aliases = new HashMap<>();
+    private final Map<String, NovaEventHandler> aliases = new HashMap<>();
 
     /**
      * 已经提醒过的旧名。提醒每个旧名只出一条：查处理器这件事每推一条消息就发生一次，
@@ -56,18 +56,18 @@ public class StarBotEventHandlerService {
     @Order(0)
     @EventListener(ContextRefreshedEvent.class)
     public void onContextRefreshedEvent() {
-        for (StarBotEventHandler handler : applicationContext.getBeansOfType(StarBotEventHandler.class).values()) {
+        for (NovaEventHandler handler : applicationContext.getBeansOfType(NovaEventHandler.class).values()) {
             cache.put(handler.getClass().getName(), handler);
         }
 
         // 主表建完才建别名表：某个旧名如今正好是另一个处理器的真类名时，那个真类名说了算
-        for (StarBotEventHandler handler : cache.values()) {
+        for (NovaEventHandler handler : cache.values()) {
             for (String legacy : handler.legacyClassNames()) {
                 if (legacy == null || legacy.isBlank() || cache.containsKey(legacy)) {
                     continue;
                 }
 
-                StarBotEventHandler previous = aliases.put(legacy, handler);
+                NovaEventHandler previous = aliases.put(legacy, handler);
                 if (previous != null && previous != handler) {
                     log.error("旧处理器类名 {} 被 {} 与 {} 同时认领, 本次按后者办, 请检查插件",
                             legacy, previous.getClass().getName(), handler.getClass().getName());
@@ -84,13 +84,13 @@ public class StarBotEventHandlerService {
      * @param handlerClass 处理器全类名
      * @return 事件处理器
      */
-    public Optional<StarBotEventHandler> getHandler(@NonNull String handlerClass) {
-        StarBotEventHandler handler = cache.get(handlerClass);
+    public Optional<NovaEventHandler> getHandler(@NonNull String handlerClass) {
+        NovaEventHandler handler = cache.get(handlerClass);
         if (handler != null) {
             return Optional.of(handler);
         }
 
-        StarBotEventHandler byLegacyName = aliases.get(handlerClass);
+        NovaEventHandler byLegacyName = aliases.get(handlerClass);
         if (byLegacyName == null) {
             return Optional.empty();
         }
@@ -137,7 +137,7 @@ public class StarBotEventHandlerService {
      * 不需要前端硬编码任何类名。
      * @return 处理器全类名到实例的映射
      */
-    public Map<String, StarBotEventHandler> getRegisteredHandlers() {
+    public Map<String, NovaEventHandler> getRegisteredHandlers() {
         return Map.copyOf(cache);
     }
 

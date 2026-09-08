@@ -8,7 +8,7 @@ import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -37,7 +37,7 @@ import java.util.Set;
  */
 @Slf4j
 @RestController
-@StarBotComponent
+@NovaComponent
 public class OneBotTargetController {
     static final String TARGETS_PATH = ConfigUiController.BASE_PATH + "/api/onebot/targets";
 

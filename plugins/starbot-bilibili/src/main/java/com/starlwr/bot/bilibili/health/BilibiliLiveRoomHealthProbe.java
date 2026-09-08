@@ -5,7 +5,7 @@ import com.starlwr.bot.bilibili.enums.ConnectStatus;
 import com.starlwr.bot.bilibili.service.BilibiliLiveRoomService;
 import com.starlwr.bot.core.health.HealthProbe;
 import com.starlwr.bot.core.health.HealthStatus;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.Map;
@@ -13,7 +13,7 @@ import java.util.Map;
 /**
  * 直播间长连接健康探针
  */
-@StarBotComponent
+@NovaComponent
 public class BilibiliLiveRoomHealthProbe implements HealthProbe {
     private final BilibiliLiveRoomService liveRoomService;
 

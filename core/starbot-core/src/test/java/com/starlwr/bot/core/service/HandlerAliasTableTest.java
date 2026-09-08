@@ -2,7 +2,7 @@ package com.starlwr.bot.core.service;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
-import com.starlwr.bot.core.handler.StarBotEventHandler;
+import com.starlwr.bot.core.handler.NovaEventHandler;
 import com.starlwr.bot.core.model.PushMessage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -41,14 +41,14 @@ class HandlerAliasTableTest {
     /**
      * 按容器里真有这几个处理器的样子建一份处理器表
      */
-    private static StarBotEventHandlerService service(StarBotEventHandler... handlers) {
-        Map<String, StarBotEventHandler> beans = new LinkedHashMap<>();
-        for (StarBotEventHandler handler : handlers) {
+    private static StarBotEventHandlerService service(NovaEventHandler... handlers) {
+        Map<String, NovaEventHandler> beans = new LinkedHashMap<>();
+        for (NovaEventHandler handler : handlers) {
             beans.put(handler.getClass().getName(), handler);
         }
 
         ApplicationContext context = mock(ApplicationContext.class);
-        when(context.getBeansOfType(StarBotEventHandler.class)).thenReturn(beans);
+        when(context.getBeansOfType(NovaEventHandler.class)).thenReturn(beans);
 
         StarBotEventHandlerService service = new StarBotEventHandlerService(context);
         service.onContextRefreshedEvent();
@@ -67,7 +67,7 @@ class HandlerAliasTableTest {
 
         for (Map.Entry<String, List<String>> entry : table.entrySet()) {
             for (String legacy : entry.getValue()) {
-                StarBotEventHandler got = service.getHandler(legacy).orElse(null);
+                NovaEventHandler got = service.getHandler(legacy).orElse(null);
                 assertTrue(got != null, "反读出来的 " + legacy + " 在运行期反而查不到处理器, 两处不是同一张表");
                 assertEquals(entry.getKey(), got.getClass().getName(),
                         legacy + " 反读时挂在 " + entry.getKey() + " 名下, 运行期却解到了别的处理器");
@@ -123,7 +123,7 @@ class HandlerAliasTableTest {
     /**
      * 只为让处理器表建得起来：本类量的是名字，处理什么事件与之无关
      */
-    private abstract static class FakeHandler implements StarBotEventHandler {
+    private abstract static class FakeHandler implements NovaEventHandler {
         @Override
         public void handle(StarBotExternalBaseEvent baseEvent, PushMessage pushMessage) {
         }

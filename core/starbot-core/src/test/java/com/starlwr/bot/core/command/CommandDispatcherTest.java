@@ -258,9 +258,9 @@ class CommandDispatcherTest {
     /**
      * 把单个命令包装成 ObjectProvider
      */
-    private ObjectProvider<StarBotCommand> providerOf(StarBotCommand command) {
+    private ObjectProvider<NovaCommand> providerOf(NovaCommand command) {
         @SuppressWarnings("unchecked")
-        ObjectProvider<StarBotCommand> provider = mock(ObjectProvider.class);
+        ObjectProvider<NovaCommand> provider = mock(ObjectProvider.class);
         when(provider.iterator()).thenAnswer(invocation -> List.of(command).iterator());
         when(provider.orderedStream()).thenAnswer(invocation -> Stream.of(command));
         return provider;
@@ -276,7 +276,7 @@ class CommandDispatcherTest {
     /**
      * 记录调用情况的测试命令
      */
-    private static class RecordingCommand implements StarBotCommand {
+    private static class RecordingCommand implements NovaCommand {
         private int executions;
         private List<String> lastArgs;
         private boolean explode;

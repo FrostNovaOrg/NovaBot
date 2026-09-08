@@ -41,7 +41,7 @@ public class StarBotEventHandlerPushMessageInitializer implements PushMessageIni
 
     @Override
     public boolean initialize(@NonNull PushMessage message) {
-        Optional<StarBotEventHandler> optionalHandler = handlerService.getHandler(message.getHandler());
+        Optional<NovaEventHandler> optionalHandler = handlerService.getHandler(message.getHandler());
         if (optionalHandler.isEmpty()) {
             message.setHandlerInstance(null);
             message.setEventClass(null);
@@ -50,7 +50,7 @@ public class StarBotEventHandlerPushMessageInitializer implements PushMessageIni
             return false;
         }
 
-        StarBotEventHandler handler = optionalHandler.get();
+        NovaEventHandler handler = optionalHandler.get();
         message.setHandlerInstance(handler);
         message.setEventClass(handler.getEventType());
         // 不是 handler.getDefaultParams()：控制台上改过的默认模板要落到「所有用默认的通道」，
@@ -87,7 +87,7 @@ public class StarBotEventHandlerPushMessageInitializer implements PushMessageIni
      * 方向是刻意的——迁错的那一次会安静地覆盖掉使用者写了很久的模板，
      * 而不迁的那一次只是没跟上默认值，后者可逆、前者不可逆。
      */
-    private boolean isSupersededDefault(StarBotEventHandler handler, String key, Object value) {
+    private boolean isSupersededDefault(NovaEventHandler handler, String key, Object value) {
         return value instanceof String text && handler.supersededDefaults()
                 .getOrDefault(key, List.of())
                 .contains(text);

@@ -1,7 +1,7 @@
 package com.starlwr.bot.adapter.onebot.console;
 
 import com.starlwr.bot.core.config.ui.vocab.ConsoleVocabulary;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -16,7 +16,7 @@ import java.util.Map;
  */
 @Slf4j
 @Component
-@StarBotComponent
+@NovaComponent
 public class OneBotConsoleVocabulary implements ConsoleVocabulary {
     @Override
     public String id() {

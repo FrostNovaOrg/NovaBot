@@ -7,7 +7,7 @@ import com.starlwr.bot.bilibili.model.Room;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.event.live.common.LiveOnEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.LiveRoomInfoHistory;
 import lombok.extern.slf4j.Slf4j;
@@ -29,7 +29,7 @@ import java.util.List;
  * 因而排在其后——反过来的话，刚记下的快照会被立刻抹掉。
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 public class BilibiliRoomStatsSnapshotter {
     private final LiveDataService liveDataService;
 

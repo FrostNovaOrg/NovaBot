@@ -9,7 +9,7 @@ import com.starlwr.bot.core.command.CommandDispatcher;
 import com.starlwr.bot.core.command.CommandFollowUp;
 import com.starlwr.bot.core.command.CommandReply;
 import com.starlwr.bot.core.command.CommandSettingsService;
-import com.starlwr.bot.core.command.StarBotCommand;
+import com.starlwr.bot.core.command.NovaCommand;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.config.ui.RuntimeConfigurationApplier;
 import com.starlwr.bot.core.config.ui.RuntimeConfigurationApplierContributor;
@@ -17,7 +17,7 @@ import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
 import com.starlwr.bot.core.event.remote.StarBotRemoteMessageEvent;
-import com.starlwr.bot.core.handler.StarBotEventHandler;
+import com.starlwr.bot.core.handler.NovaEventHandler;
 import com.starlwr.bot.core.health.HealthProbe;
 import com.starlwr.bot.core.health.HealthStatus;
 import com.starlwr.bot.core.health.PushActivityRecorder;
@@ -422,9 +422,9 @@ class TimelineHookTest {
         AbstractDataSource dataSource = mock(AbstractDataSource.class);
         when(dataSource.getAllUsers()).thenReturn(List.of(user));
 
-        StarBotCommand command = new StubCommand();
+        NovaCommand command = new StubCommand();
         @SuppressWarnings("unchecked")
-        ObjectProvider<StarBotCommand> commands = mock(ObjectProvider.class);
+        ObjectProvider<NovaCommand> commands = mock(ObjectProvider.class);
         when(commands.iterator()).thenAnswer(invocation -> List.of(command).iterator());
         when(commands.orderedStream()).thenAnswer(invocation -> java.util.stream.Stream.of(command));
 
@@ -456,7 +456,7 @@ class TimelineHookTest {
     /**
      * 一条什么也不做、只答应一声的命令
      */
-    private static final class StubCommand implements StarBotCommand {
+    private static final class StubCommand implements NovaCommand {
         @Override
         public String name() {
             return "测试命令";
@@ -541,7 +541,7 @@ class TimelineHookTest {
      * 分发这一层到底拦没拦——拦住了与照常走一遍再被发送器丢掉，结果一模一样。
      * 数调用次数才分得开：拦住的那一次，处理器一次也不该被叫到。
      */
-    private static final class CountingHandler implements StarBotEventHandler {
+    private static final class CountingHandler implements NovaEventHandler {
         private int handled;
 
         @Override
@@ -572,7 +572,7 @@ class TimelineHookTest {
      * 造一个订阅了本事件的主播，名下挂 {@code targets} 个推送目标
      */
     private StarBotHandlerListener listener(StarBotCoreProperties properties, TimelineWriter timeline,
-                                            int targets, StarBotEventHandler handler) {
+                                            int targets, NovaEventHandler handler) {
         PushUser user = new PushUser();
         user.setPlatform(LIVE_PLATFORM);
         user.setUid(10001L);

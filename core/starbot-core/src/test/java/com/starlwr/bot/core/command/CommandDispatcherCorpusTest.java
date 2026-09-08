@@ -225,9 +225,9 @@ class CommandDispatcherCorpusTest {
             doAnswer(invocation -> replies.add(((Message) invocation.getArgument(0)).getContent()))
                     .when(sender).send(any());
 
-            List<StarBotCommand> commands = new ArrayList<>();
+            List<NovaCommand> commands = new ArrayList<>();
             @SuppressWarnings("unchecked")
-            ObjectProvider<StarBotCommand> provider = mock(ObjectProvider.class);
+            ObjectProvider<NovaCommand> provider = mock(ObjectProvider.class);
             when(provider.iterator()).thenAnswer(invocation -> new ArrayList<>(commands).iterator());
             when(provider.orderedStream()).thenAnswer(invocation -> new ArrayList<>(commands).stream());
 
@@ -302,7 +302,7 @@ class CommandDispatcherCorpusTest {
     /**
      * 只记录被调用过的测试命令
      */
-    private static class RecordingCommand implements StarBotCommand {
+    private static class RecordingCommand implements NovaCommand {
         private final String name;
         private final List<String> aliases;
         private final boolean groupOnly;

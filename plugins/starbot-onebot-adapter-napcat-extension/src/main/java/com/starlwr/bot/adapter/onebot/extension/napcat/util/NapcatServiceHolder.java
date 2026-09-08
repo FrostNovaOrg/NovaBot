@@ -1,7 +1,7 @@
 package com.starlwr.bot.adapter.onebot.extension.napcat.util;
 
 import com.starlwr.bot.adapter.onebot.model.OneBotSender;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -18,7 +18,7 @@ import java.util.NoSuchElementException;
  * 按平台<b>名称</b>存而不是按地址：同一个 NapCat 可以被配成两个推送平台，
  * 而消息上带着的正是平台名称。
  */
-@StarBotComponent
+@NovaComponent
 public class NapcatServiceHolder {
     private final Map<String, OneBotSender> senders = new HashMap<>();
 

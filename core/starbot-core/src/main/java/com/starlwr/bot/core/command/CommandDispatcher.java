@@ -75,7 +75,7 @@ public class CommandDispatcher {
      */
     private static final int NAME_IN_RECORD = 16;
 
-    private final ObjectProvider<StarBotCommand> commands;
+    private final ObjectProvider<NovaCommand> commands;
 
     /**
      * 追问应答的认领方。没有任何实现时，认不出的消息照旧回菜单
@@ -114,7 +114,7 @@ public class CommandDispatcher {
     private final TimelineWriter timeline;
 
     @Autowired
-    public CommandDispatcher(ObjectProvider<StarBotCommand> commands, ObjectProvider<CommandFollowUp> followUps,
+    public CommandDispatcher(ObjectProvider<NovaCommand> commands, ObjectProvider<CommandFollowUp> followUps,
                              CommandSettingsService settings, AbstractDataSource dataSource,
                              StarBotMessageSender sender, StarBotCoreProperties properties,
                              TimelineWriter timeline) {
@@ -126,7 +126,7 @@ public class CommandDispatcher {
      *
      * @see #clock 为什么这把钟必须能换
      */
-    public CommandDispatcher(ObjectProvider<StarBotCommand> commands, ObjectProvider<CommandFollowUp> followUps,
+    public CommandDispatcher(ObjectProvider<NovaCommand> commands, ObjectProvider<CommandFollowUp> followUps,
                              CommandSettingsService settings, AbstractDataSource dataSource,
                              StarBotMessageSender sender, StarBotCoreProperties properties,
                              TimelineWriter timeline, Clock clock) {
@@ -163,7 +163,7 @@ public class CommandDispatcher {
         List<String> parts = new ArrayList<>(Arrays.asList(
                 StringUtil.isBlank(event.getText()) ? new String[0] : event.getText().trim().split("\\s+")));
         String name = parts.isEmpty() ? "" : parts.remove(0);
-        StarBotCommand command = name.isEmpty() ? null : find(name);
+        NovaCommand command = name.isEmpty() ? null : find(name);
 
         // 私聊里撞上仅限群聊的命令：按认不出处理，回菜单。
         // 菜单此时已按会话过滤，不会把这条用不了的命令再推荐一遍
@@ -197,7 +197,7 @@ public class CommandDispatcher {
                     .detail("command", shorten(name))
                     .build());
 
-            StarBotCommand menu = find(MENU_COMMAND_NAME);
+            NovaCommand menu = find(MENU_COMMAND_NAME);
             if (menu != null) {
                 run(menu, event, type, List.of(), false);
             }
@@ -317,7 +317,7 @@ public class CommandDispatcher {
      * 会让日志页上认不出的命令各占两行，而后一行看起来像是命令跑成了。
      * @return 执行过程中没有抛异常
      */
-    private boolean run(StarBotCommand command, StarBotRemoteMessageEvent event, PushTargetType type,
+    private boolean run(NovaCommand command, StarBotRemoteMessageEvent event, PushTargetType type,
                         List<String> args, boolean admin) {
         CommandContext context = new CommandContext(event.getPlatform(), type, event.getNum(),
                 event.getSenderUid(), command.name(), args, event.getText(), admin);
@@ -373,8 +373,8 @@ public class CommandDispatcher {
     /**
      * 按命令名或别名查找命令
      */
-    private StarBotCommand find(String name) {
-        for (StarBotCommand command : commands) {
+    private NovaCommand find(String name) {
+        for (NovaCommand command : commands) {
             if (command.name().equals(name) || command.aliases().contains(name)) {
                 return command;
             }
@@ -406,10 +406,10 @@ public class CommandDispatcher {
      * 列出全部已注册命令，按命令名排序
      * @return 命令列表
      */
-    public List<StarBotCommand> all() {
-        Map<String, StarBotCommand> byName = new LinkedHashMap<>();
+    public List<NovaCommand> all() {
+        Map<String, NovaCommand> byName = new LinkedHashMap<>();
         commands.orderedStream().forEach(command -> byName.putIfAbsent(command.name(), command));
-        List<StarBotCommand> result = new ArrayList<>(byName.values());
+        List<NovaCommand> result = new ArrayList<>(byName.values());
         result.sort((a, b) -> a.name().compareTo(b.name()));
         return result;
     }

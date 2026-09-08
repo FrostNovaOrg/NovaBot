@@ -2,7 +2,7 @@ package com.starlwr.bot.core.listener;
 
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
-import com.starlwr.bot.core.handler.StarBotEventHandler;
+import com.starlwr.bot.core.handler.NovaEventHandler;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
@@ -73,7 +73,7 @@ public class StarBotHandlerListener {
 
         for (PushTarget target : user.getTargets()) {
             for (PushMessage message : target.getMessages()) {
-                if (handles(event, message) && message.getHandlerInstance() instanceof StarBotEventHandler handler) {
+                if (handles(event, message) && message.getHandlerInstance() instanceof NovaEventHandler handler) {
                     try {
                         handler.handle(event, message);
                     } catch (Exception e) {
@@ -93,7 +93,7 @@ public class StarBotHandlerListener {
      */
     private boolean handles(StarBotExternalBaseEvent event, PushMessage message) {
         return event.getClass().equals(message.getEventClass())
-                && message.getHandlerInstance() instanceof StarBotEventHandler;
+                && message.getHandlerInstance() instanceof NovaEventHandler;
     }
 
     /**

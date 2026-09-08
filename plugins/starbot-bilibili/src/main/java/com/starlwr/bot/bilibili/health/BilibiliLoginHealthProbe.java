@@ -4,7 +4,7 @@ import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.service.BilibiliAccountService;
 import com.starlwr.bot.core.health.HealthProbe;
 import com.starlwr.bot.core.health.HealthStatus;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.Duration;
@@ -15,7 +15,7 @@ import java.time.Instant;
  * <p>
  * 只读取账号服务中已有的内存状态，不发起网络请求：实际的探测由定期复检任务完成。
  */
-@StarBotComponent
+@NovaComponent
 public class BilibiliLoginHealthProbe implements HealthProbe {
     /**
      * 复检结果被视为「过期」的宽限倍数

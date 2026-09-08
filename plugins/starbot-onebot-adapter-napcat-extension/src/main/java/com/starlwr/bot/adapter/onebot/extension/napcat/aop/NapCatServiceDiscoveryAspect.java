@@ -3,7 +3,7 @@ package com.starlwr.bot.adapter.onebot.extension.napcat.aop;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.adapter.onebot.extension.napcat.util.NapcatServiceHolder;
 import com.starlwr.bot.adapter.onebot.model.OneBotSender;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
@@ -25,7 +25,7 @@ import org.springframework.beans.factory.annotation.Autowired;
  */
 @Slf4j
 @Aspect
-@StarBotComponent
+@NovaComponent
 public class NapCatServiceDiscoveryAspect {
     /**
      * 对面自称的实现名里带这一段就算 NapCat

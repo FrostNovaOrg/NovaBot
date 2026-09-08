@@ -7,7 +7,7 @@ import com.starlwr.bot.core.sender.AtAllPermissionResolver;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -33,7 +33,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 使用者明确配置过的 @全体成员。
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 public class OneBotAtAllPermissionService implements AtAllPermissionResolver {
     /**
      * 判定结果的缓存时长

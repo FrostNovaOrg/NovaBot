@@ -1,14 +1,14 @@
 package com.starlwr.bot.bilibili.command;
 
 import com.starlwr.bot.core.datasource.AbstractDataSource;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.service.AtSubscriptionService;
 import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * 「动态@名单」命令
  */
-@StarBotComponent
+@NovaComponent
 public class BilibiliDynamicAtListCommand extends BilibiliAtListCommand {
     @Autowired
     public BilibiliDynamicAtListCommand(AbstractDataSource dataSource, BilibiliStreamerChoice choice,

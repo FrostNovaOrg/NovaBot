@@ -1,7 +1,7 @@
 package com.starlwr.bot.bilibili.service;
 
 import com.starlwr.bot.bilibili.BilibiliPlatform;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.service.LiveDataService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,7 +23,7 @@ import java.util.Map;
  * 完全可能早于长连接先看到状态变化——那时重复的顺序正好反过来。因此两条路径都要过这道闸门。
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 public class BilibiliLiveStateGate {
     private final LiveDataService liveDataService;
 

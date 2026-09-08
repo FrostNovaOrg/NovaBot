@@ -17,7 +17,7 @@ import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.RoomInfoSnapshot;
 import com.starlwr.bot.core.model.TextWithStyle;
 import com.starlwr.bot.core.model.UserScore;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.LiveRoomInfoHistory;
 import com.starlwr.bot.core.lang.StringUtil;
@@ -72,7 +72,7 @@ import java.util.function.DoubleFunction;
  */
 @Slf4j
 @Primary
-@StarBotComponent
+@NovaComponent
 public class BilibiliLiveReportPainter {
     /**
      * 图片总宽度，与动态图片一致

@@ -9,10 +9,10 @@ import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
 import com.starlwr.bot.report.painter.BilibiliDynamicPainter;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
-import com.starlwr.bot.core.handler.StarBotEventHandler;
+import com.starlwr.bot.core.handler.NovaEventHandler;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.sender.AtMode;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
 import com.starlwr.bot.core.service.AtSubscriptionService;
@@ -28,8 +28,8 @@ import java.util.Optional;
  * 动态推送处理器
  */
 @Slf4j
-@StarBotComponent
-public class BilibiliDynamicPushHandler implements StarBotEventHandler {
+@NovaComponent
+public class BilibiliDynamicPushHandler implements NovaEventHandler {
     private final BilibiliApiUtil api;
 
     private final BilibiliDynamicPainter painter;
@@ -171,7 +171,7 @@ public class BilibiliDynamicPushHandler implements StarBotEventHandler {
     /**
      * 历史上发过的两版默认模板：{@code {at}} 还写在模板里的那一版，与去掉它之后分两条的那一版
      *
-     * @see StarBotEventHandler#supersededDefaults() 为什么改默认值必须连这张表一起改
+     * @see NovaEventHandler#supersededDefaults() 为什么改默认值必须连这张表一起改
      */
     @Override
     public Map<String, List<String>> supersededDefaults() {
@@ -184,7 +184,7 @@ public class BilibiliDynamicPushHandler implements StarBotEventHandler {
      * 本类原在 {@code com.starlwr.bot.bilibili.handler} 下，随报告插件拆出时搬到了本模块。
      * 使用者的 {@code datasource.json} 与 {@code template-defaults.json} 里存的仍是那一串。
      *
-     * @see StarBotEventHandler#legacyClassNames() 为什么搬包必须连这张表一起改
+     * @see NovaEventHandler#legacyClassNames() 为什么搬包必须连这张表一起改
      */
     @Override
     public List<String> legacyClassNames() {

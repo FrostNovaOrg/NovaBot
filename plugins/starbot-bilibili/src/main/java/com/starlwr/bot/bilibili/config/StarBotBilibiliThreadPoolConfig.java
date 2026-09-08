@@ -1,13 +1,13 @@
 package com.starlwr.bot.bilibili.config;
 
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import org.springframework.context.annotation.Bean;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
 /**
  * StarBotBilibili 线程池配置
  */
-@StarBotComponent
+@NovaComponent
 public class StarBotBilibiliThreadPoolConfig {
     /**
      * 哔哩哔哩相关的定时任务调度器

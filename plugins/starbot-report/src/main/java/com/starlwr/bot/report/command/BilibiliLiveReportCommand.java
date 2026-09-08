@@ -13,7 +13,7 @@ import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushUser;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.RevenueVisibilityService;
 import lombok.extern.slf4j.Slf4j;
@@ -29,7 +29,7 @@ import org.springframework.beans.factory.annotation.Autowired;
  * 还会把本场统计清零。本命令只读统计数据，完全不触碰状态机。
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 public class BilibiliLiveReportCommand extends BilibiliStreamerCommand {
     private final LiveDataService liveDataService;
 

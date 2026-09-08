@@ -3,7 +3,7 @@ package com.starlwr.bot.bilibili.console;
 import com.starlwr.bot.bilibili.BilibiliPlatform;
 import com.starlwr.bot.core.config.ui.page.ConsolePageProvider;
 import com.starlwr.bot.core.config.ui.page.ConsolePageSlot;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 
 /**
  * 哔哩哔哩的控制台页面
@@ -15,7 +15,7 @@ import com.starlwr.bot.core.plugin.StarBotComponent;
  * 落位是连接页上的一张卡：这一页上做的事是扫码登录与查看登录态，
  * 也就是「这台机器与外面怎么连」，与机器人连接、外部面板口令是同一类事。
  */
-@StarBotComponent
+@NovaComponent
 public class BilibiliConsolePageProvider implements ConsolePageProvider {
     @Override
     public String id() {

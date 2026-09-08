@@ -8,7 +8,7 @@ import com.starlwr.bot.core.event.datasource.change.StarBotDataSourceAddEvent;
 import com.starlwr.bot.core.event.datasource.change.StarBotDataSourceRemoveEvent;
 import com.starlwr.bot.core.event.datasource.change.StarBotDataSourceUpdateEvent;
 import com.starlwr.bot.core.exception.DataSourceException;
-import com.starlwr.bot.core.handler.StarBotEventHandler;
+import com.starlwr.bot.core.handler.NovaEventHandler;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
@@ -53,7 +53,7 @@ class AbstractDataSourceTest {
         publisher = mock(ApplicationEventPublisher.class);
         handlerService = mock(StarBotEventHandlerService.class);
 
-        StarBotEventHandler handler = mock(StarBotEventHandler.class);
+        NovaEventHandler handler = mock(NovaEventHandler.class);
         doReturn(StarBotExternalBaseEvent.class).when(handler).getEventType();
         // 每次返回新实例：initPushMessageParams 会往返回值里写入自定义参数，
         // 返回共享实例会让不同推送消息的参数互相串味

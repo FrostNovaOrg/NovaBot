@@ -3,7 +3,7 @@ package com.starlwr.bot.bilibili.config;
 import com.starlwr.bot.core.config.ConfigDanger;
 import com.starlwr.bot.core.properties.ConfigEffect;
 import com.starlwr.bot.core.config.ConfigLevel;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -15,7 +15,7 @@ import org.springframework.context.annotation.Configuration;
 @Getter
 @Setter
 @Configuration
-@StarBotComponent
+@NovaComponent
 @ConfigurationProperties(prefix = "novabot.bilibili")
 public class StarBotBilibiliProperties {
     private final BilibiliThread bilibiliThread = new BilibiliThread();

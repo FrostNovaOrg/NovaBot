@@ -18,7 +18,7 @@ package com.starlwr.bot.bilibili.command;
  * <p>
  * 靠得住的不是这串名字本身，而是比对的方式：见 {@code BilibiliAtCommand} 的
  * {@code isKind}，除真类名外还比处理器自己声明的旧名
- * （{@code StarBotEventHandler.legacyClassNames()}），两种写法都对得上。
+ * （{@code NovaEventHandler.legacyClassNames()}），两种写法都对得上。
  * 这串名字与哪个处理器对得上，由报告插件那一侧的判据看着
  * （{@code LegacyHandlerClassNameTest}，那里两边都在类路径上）。
  */

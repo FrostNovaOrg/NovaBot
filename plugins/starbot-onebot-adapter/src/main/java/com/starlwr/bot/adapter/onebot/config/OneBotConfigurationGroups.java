@@ -2,7 +2,7 @@ package com.starlwr.bot.adapter.onebot.config;
 
 import com.starlwr.bot.core.config.ui.ConfigurationGroupContributor;
 import com.starlwr.bot.core.config.ui.ConfigurationGroups;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.properties.NovaBotPrefixes;
 
 import java.util.LinkedHashMap;
@@ -14,7 +14,7 @@ import java.util.Map;
  * 此前这些前缀写死在核心的分组表里，于是没装本适配器的实例也背着这些键名。
  * 装了本适配器才把连接／安全／探测等前缀登记进对应的组；适配器挪走，前缀跟着消失。
  */
-@StarBotComponent
+@NovaComponent
 public class OneBotConfigurationGroups implements ConfigurationGroupContributor {
     @Override
     public Map<String, ConfigurationGroups.Group> prefixes() {

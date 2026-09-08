@@ -8,11 +8,11 @@ import com.starlwr.bot.bilibili.model.BilibiliLiveReportOptions;
 import com.starlwr.bot.report.painter.BilibiliLiveReportPainter;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
-import com.starlwr.bot.core.handler.StarBotEventHandler;
+import com.starlwr.bot.core.handler.NovaEventHandler;
 import com.starlwr.bot.core.model.HandlerOption;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.sender.AtMode;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
 import com.starlwr.bot.core.service.RevenueVisibilityService;
@@ -29,8 +29,8 @@ import java.util.Optional;
  * 与「下播通知」相互独立，可单独启用或同时启用。
  */
 @Slf4j
-@StarBotComponent
-public class BilibiliLiveReportPushHandler implements StarBotEventHandler {
+@NovaComponent
+public class BilibiliLiveReportPushHandler implements NovaEventHandler {
     private final BilibiliApiUtil api;
 
     private final StarBotMessageSender sender;
@@ -117,7 +117,7 @@ public class BilibiliLiveReportPushHandler implements StarBotEventHandler {
      * 本类原在 {@code com.starlwr.bot.bilibili.handler} 下，随报告插件拆出时搬到了本模块。
      * 使用者的 {@code datasource.json} 与 {@code template-defaults.json} 里存的仍是那一串。
      *
-     * @see StarBotEventHandler#legacyClassNames() 为什么搬包必须连这张表一起改
+     * @see NovaEventHandler#legacyClassNames() 为什么搬包必须连这张表一起改
      */
     @Override
     public List<String> legacyClassNames() {

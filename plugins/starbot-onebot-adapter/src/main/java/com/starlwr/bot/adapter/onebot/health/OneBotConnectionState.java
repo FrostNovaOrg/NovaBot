@@ -1,6 +1,6 @@
 package com.starlwr.bot.adapter.onebot.health;
 
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import lombok.Getter;
 
 import java.time.Instant;
@@ -17,7 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 此处集中记录各推送平台的连通状况，供健康探针读取——探针必须廉价且不阻塞，
  * 因此实际探测由既有的定时任务完成，探针只读这里缓存的结果。
  */
-@StarBotComponent
+@NovaComponent
 public class OneBotConnectionState {
     /**
      * 连接测试用的保留平台名

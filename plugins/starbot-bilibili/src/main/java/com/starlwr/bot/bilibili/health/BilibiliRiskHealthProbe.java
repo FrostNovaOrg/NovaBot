@@ -2,7 +2,7 @@ package com.starlwr.bot.bilibili.health;
 
 import com.starlwr.bot.core.health.HealthProbe;
 import com.starlwr.bot.core.health.HealthStatus;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.Duration;
@@ -28,7 +28,7 @@ import java.util.List;
  *   <li>长连接 1006 ≥ 10 次 / 1 小时 —— 单次属正常抖动，成串出现才是风暴</li>
  * </ul>
  */
-@StarBotComponent
+@NovaComponent
 public class BilibiliRiskHealthProbe implements HealthProbe {
     private static final Duration WEEK = Duration.ofDays(7);
 

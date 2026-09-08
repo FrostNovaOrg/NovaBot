@@ -5,7 +5,7 @@ import com.github.benmanes.caffeine.cache.LoadingCache;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.model.Gift;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -23,7 +23,7 @@ import java.util.stream.Collectors;
  * 因此整体缓存一份配置并按配置的过期时间刷新。
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 public class BilibiliGiftService {
     /**
      * 缓存键，礼物配置整体作为一个条目缓存

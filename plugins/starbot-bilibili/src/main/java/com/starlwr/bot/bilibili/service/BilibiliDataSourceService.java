@@ -5,7 +5,7 @@ import com.starlwr.bot.bilibili.model.Up;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.model.StreamerReference;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.datasource.DataSourceService;
 import com.starlwr.bot.core.datasource.DataSourceServiceConfig;
 import com.starlwr.bot.core.lang.StringUtil;
@@ -25,7 +25,7 @@ import java.util.regex.Pattern;
  * 对应平台的推送配置会被整体丢弃。
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 @DataSourceServiceConfig(name = "bilibili")
 public class BilibiliDataSourceService implements DataSourceService {
     /**

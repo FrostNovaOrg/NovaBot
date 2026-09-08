@@ -9,7 +9,7 @@ import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.RoomInfoSnapshot;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.service.DefaultLiveDataService;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.LiveRoomInfoHistory;
@@ -46,7 +46,7 @@ import java.util.Optional;
  * 取「现在」会让预览每分钟都变一点，而<b>一张每次都不一样的预览，没法拿来比较两套版式</b>。
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 public class BilibiliLiveReportPreviewPainter extends BilibiliLiveReportPainter {
     /**
      * 夹具主播的 uid 与房间号

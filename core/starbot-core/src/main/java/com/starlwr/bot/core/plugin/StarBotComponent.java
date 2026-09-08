@@ -8,8 +8,12 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * StarBot 插件组件注解，使用此注解的类将被 StarBot 自动扫描并注册至 Spring 容器
+ * 旧名组件注解，已由 {@link NovaComponent} 取代，下一发行版删
+ * <p>
+ * 旧名仍然认得：与新名一样带着 {@link Component} 元注解，扫描注册两名皆认，
+ * 旧插件不改也能继续注册；新代码请用 {@link NovaComponent}。
  */
+@Deprecated
 @Component
 @Target({ElementType.TYPE})
 @Retention(RetentionPolicy.RUNTIME)

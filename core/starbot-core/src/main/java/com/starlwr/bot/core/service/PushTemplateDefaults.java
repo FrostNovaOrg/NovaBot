@@ -2,7 +2,7 @@ package com.starlwr.bot.core.service;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
-import com.starlwr.bot.core.handler.StarBotEventHandler;
+import com.starlwr.bot.core.handler.NovaEventHandler;
 import com.starlwr.bot.core.model.HandlerOption;
 import com.starlwr.bot.core.sender.AtMode;
 import lombok.NonNull;
@@ -87,13 +87,13 @@ public class PushTemplateDefaults {
     /**
      * 这台机器此刻的默认参数：出厂默认盖上改过的那几个键
      * <p>
-     * <b>每次调用都返回新实例</b>，与 {@link StarBotEventHandler#getDefaultParams()} 同一条约定：
+     * <b>每次调用都返回新实例</b>，与 {@link NovaEventHandler#getDefaultParams()} 同一条约定：
      * 推送消息会把使用者的参数直接写进这个返回值，共用一份的话，一个推送目标的自定义参数
      * 会串到其他目标上。
      * @param handler 处理器
      * @return 默认参数
      */
-    public JSONObject paramsOf(@NonNull StarBotEventHandler handler) {
+    public JSONObject paramsOf(@NonNull NovaEventHandler handler) {
         JSONObject params = handler.getDefaultParams();
         if (params == null) {
             params = new JSONObject();
@@ -127,7 +127,7 @@ public class PushTemplateDefaults {
      * @param handler 处理器
      * @return 覆盖参数的拷贝
      */
-    public JSONObject overridesOf(@NonNull StarBotEventHandler handler) {
+    public JSONObject overridesOf(@NonNull NovaEventHandler handler) {
         synchronized (lock) {
             JSONObject data = load();
             JSONObject stored = data.getJSONObject(handler.getClass().getName());
@@ -166,7 +166,7 @@ public class PushTemplateDefaults {
      * @param overrides 整份覆盖，可为空对象
      * @return 问题清单，为空即已写盘
      */
-    public List<String> save(@NonNull StarBotEventHandler handler, JSONObject overrides) {
+    public List<String> save(@NonNull NovaEventHandler handler, JSONObject overrides) {
         JSONObject wanted = overrides == null ? new JSONObject() : overrides;
         List<String> issues = validate(handler, wanted);
         if (!issues.isEmpty()) {
@@ -217,7 +217,7 @@ public class PushTemplateDefaults {
      * @param overrides 整份覆盖
      * @return 问题清单
      */
-    private List<String> validate(StarBotEventHandler handler, JSONObject overrides) {
+    private List<String> validate(NovaEventHandler handler, JSONObject overrides) {
         List<String> issues = new ArrayList<>();
         Set<String> allowed = writableKeys(handler);
 
@@ -251,7 +251,7 @@ public class PushTemplateDefaults {
      * @param value 模板
      * @return 问题清单
      */
-    private List<String> validateMessage(StarBotEventHandler handler, Object value) {
+    private List<String> validateMessage(NovaEventHandler handler, Object value) {
         List<String> issues = new ArrayList<>();
         if (!(value instanceof String text)) {
             issues.add("message 必须是一段文字");
@@ -283,7 +283,7 @@ public class PushTemplateDefaults {
      * @param handler 处理器
      * @return 可改的键
      */
-    private Set<String> writableKeys(StarBotEventHandler handler) {
+    private Set<String> writableKeys(NovaEventHandler handler) {
         Set<String> keys = new LinkedHashSet<>();
         JSONObject factory = handler.getDefaultParams();
         if (factory != null) {

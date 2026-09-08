@@ -1,7 +1,7 @@
 package com.starlwr.bot.bilibili.service;
 
 import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -41,7 +41,7 @@ import java.util.concurrent.TimeUnit;
  * 正确解法是把「纸面价值」与「实收」拆成两个字段分别存。见任务 #45。
  */
 @Slf4j
-@StarBotComponent
+@NovaComponent
 public class BilibiliGuardReconciler {
     /**
      * {@code GUARD_BUY} 等待 toast 的时长

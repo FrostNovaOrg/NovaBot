@@ -3,7 +3,7 @@ package com.starlwr.bot.adapter.onebot.napcat;
 import com.starlwr.bot.adapter.onebot.config.OneBotAdapterPluginProperties;
 import com.starlwr.bot.adapter.onebot.config.OneBotNapCatPropertiesBinder;
 import com.starlwr.bot.core.config.ui.ConfigurationFileService;
-import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.plugin.NovaComponent;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.client.RestTemplate;
@@ -15,7 +15,7 @@ import java.util.List;
  * NapCat WebUI 代登录组件
  */
 @Configuration
-@StarBotComponent
+@NovaComponent
 public class NapCatConfiguration {
     private final OneBotAdapterPluginProperties properties;
 
