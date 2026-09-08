@@ -147,7 +147,7 @@ echo "==> 起：$JAVA_BIN -jar StarBotCore.jar --server.port=$PORT （工作目�
 (
     cd "$WORK" || exit 1
     exec "$JAVA_BIN" -Djava.awt.headless=true -Dfile.encoding=UTF-8 \
-        -Dloader.path=lib,plugins-lib -jar StarBotCore.jar \
+        -Dloader.path=lib,plugins,plugins-lib -jar StarBotCore.jar \
         --server.port="$PORT" >> "$LOG" 2>&1
 ) &
 PID=$!
