@@ -288,7 +288,7 @@ class NovaMessageSenderTest {
 
         return new NovaMessageSender(http, senderService, new PushActivityRecorder(TimelineWriter.NONE), new PushGate(properties),
                 TimelineWriter.NONE, new com.starlwr.bot.core.service.AtAllQuotaService(properties), resolvers,
-                new FirstPushTipService(new com.starlwr.bot.core.service.StarBotStateStore(properties)));
+                new FirstPushTipService(new com.starlwr.bot.core.service.NovaStateStore(properties)));
     }
 
     /**
@@ -432,7 +432,7 @@ class NovaMessageSenderTest {
         NovaCoreProperties properties = new NovaCoreProperties();
         return new NovaMessageSender(http, senderService, new PushActivityRecorder(TimelineWriter.NONE), new PushGate(properties),
                 TimelineWriter.NONE, new com.starlwr.bot.core.service.AtAllQuotaService(properties), resolvers,
-                new FirstPushTipService(new com.starlwr.bot.core.service.StarBotStateStore(properties)));
+                new FirstPushTipService(new com.starlwr.bot.core.service.NovaStateStore(properties)));
     }
 
     /**

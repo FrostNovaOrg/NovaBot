@@ -34,10 +34,10 @@ public class AtSubscriptionService {
      */
     private static final int LIMIT = 200;
 
-    private final StarBotStateStore store;
+    private final NovaStateStore store;
 
     @Autowired
-    public AtSubscriptionService(StarBotStateStore store) {
+    public AtSubscriptionService(NovaStateStore store) {
         this.store = store;
     }
 

@@ -14,7 +14,7 @@ import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.model.Sender;
 import com.starlwr.bot.core.service.AtAllQuotaService;
 import com.starlwr.bot.core.service.NovaSenderService;
-import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.NovaStateStore;
 import com.starlwr.bot.core.timeline.TimelineWriter;
 import com.starlwr.bot.core.util.HttpUtil;
 import org.junit.jupiter.api.DisplayName;
@@ -212,14 +212,14 @@ class FirstPushTipCorpusTest {
         NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dataDir.resolve("data.json").toString());
 
-        StarBotStateStore before = new StarBotStateStore(properties);
+        NovaStateStore before = new NovaStateStore(properties);
         assertTrue(new FirstPushTipService(before).claim(PLATFORM, PushTargetType.GROUP, GROUP_A),
                 "同一个群第一次推送该认成第一次");
         before.save();
 
         // 换一份存储，从盘上把它读回来：这一段若断了，现象是「机器人每重启一次就把同一句话再教一遍」，
         // 而在内存里量永远量不到——写进去的那个对象自己就是答案
-        StarBotStateStore after = new StarBotStateStore(properties);
+        NovaStateStore after = new NovaStateStore(properties);
         after.onApplicationReadyEvent();
         try {
             assertFalse(new FirstPushTipService(after).claim(PLATFORM, PushTargetType.GROUP, GROUP_A),
@@ -237,7 +237,7 @@ class FirstPushTipCorpusTest {
         NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dataDir.resolve("seed.json").toString());
 
-        StarBotStateStore store = new StarBotStateStore(properties);
+        NovaStateStore store = new NovaStateStore(properties);
         FirstPushTipService service = new FirstPushTipService(store);
         service.seedExisting(List.of(
                 session(PLATFORM, PushTargetType.GROUP, GROUP_A),
@@ -255,7 +255,7 @@ class FirstPushTipCorpusTest {
                 "标记键不得被当成某个会话：认领老群仍然只看会话键");
 
         store.save();
-        StarBotStateStore again = new StarBotStateStore(properties);
+        NovaStateStore again = new NovaStateStore(properties);
         again.onApplicationReadyEvent();
         try {
             long third = 30005L;
@@ -279,7 +279,7 @@ class FirstPushTipCorpusTest {
         NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dataDir.resolve("seed-disabled.json").toString());
 
-        StarBotStateStore store = new StarBotStateStore(properties);
+        NovaStateStore store = new NovaStateStore(properties);
         FirstPushTipService service = new FirstPushTipService(store);
 
         PushUser disabled = session(PLATFORM, PushTargetType.GROUP, GROUP_B);
@@ -301,7 +301,7 @@ class FirstPushTipCorpusTest {
         NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dataDir.resolve("seed-empty.json").toString());
 
-        StarBotStateStore store = new StarBotStateStore(properties);
+        NovaStateStore store = new NovaStateStore(properties);
         FirstPushTipService service = new FirstPushTipService(store);
 
         service.seedExisting(List.of());
@@ -327,7 +327,7 @@ class FirstPushTipCorpusTest {
         try {
             NovaCoreProperties properties = new NovaCoreProperties();
             properties.getLive().setLiveDataPath(dataDir.resolve("seed-all-disabled.json").toString());
-            StarBotStateStore store = new StarBotStateStore(properties);
+            NovaStateStore store = new NovaStateStore(properties);
             FirstPushTipService service = new FirstPushTipService(store);
 
             PushUser disabledGroup = session(PLATFORM, PushTargetType.GROUP, GROUP_A);
@@ -352,7 +352,7 @@ class FirstPushTipCorpusTest {
             appender.list.clear();
             NovaCoreProperties emptyProps = new NovaCoreProperties();
             emptyProps.getLive().setLiveDataPath(dataDir.resolve("seed-empty-log.json").toString());
-            StarBotStateStore emptyStore = new StarBotStateStore(emptyProps);
+            NovaStateStore emptyStore = new NovaStateStore(emptyProps);
             new FirstPushTipService(emptyStore).seedExisting(List.of());
             try {
                 String joined = infoMessages(appender);
@@ -382,7 +382,7 @@ class FirstPushTipCorpusTest {
         try {
             NovaCoreProperties properties = new NovaCoreProperties();
             properties.getLive().setLiveDataPath(dataDir.resolve("seed-empty-targets.json").toString());
-            StarBotStateStore store = new StarBotStateStore(properties);
+            NovaStateStore store = new NovaStateStore(properties);
             FirstPushTipService service = new FirstPushTipService(store);
 
             PushUser emptyTargets = new PushUser();
@@ -407,7 +407,7 @@ class FirstPushTipCorpusTest {
             appender.list.clear();
             NovaCoreProperties emptyProps = new NovaCoreProperties();
             emptyProps.getLive().setLiveDataPath(dataDir.resolve("seed-empty-targets-vac.json").toString());
-            StarBotStateStore emptyStore = new StarBotStateStore(emptyProps);
+            NovaStateStore emptyStore = new NovaStateStore(emptyProps);
             new FirstPushTipService(emptyStore).seedExisting(List.of());
             try {
                 String joined = infoMessages(appender);
@@ -506,7 +506,7 @@ class FirstPushTipCorpusTest {
             sender = new NovaMessageSender(http, senderService,
                     new PushActivityRecorder(TimelineWriter.NONE), new PushGate(properties),
                     TimelineWriter.NONE, new AtAllQuotaService(properties), resolvers,
-                    new FirstPushTipService(new StarBotStateStore(properties), properties));
+                    new FirstPushTipService(new NovaStateStore(properties), properties));
         }
 
         /**

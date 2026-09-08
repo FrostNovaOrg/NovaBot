@@ -9,7 +9,7 @@ import com.starlwr.bot.core.analytics.LiveDetail;
 import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.service.LiveReportRedrawer;
 import com.starlwr.bot.core.service.LiveRoomInfoHistory;
-import com.starlwr.bot.report.factory.StarBotCommonPainterFactory;
+import com.starlwr.bot.report.factory.NovaCommonPainterFactory;
 import com.starlwr.bot.report.util.FontUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,7 +33,7 @@ import java.util.Optional;
 @Slf4j
 @NovaComponent
 public class BilibiliLiveReportRedrawer implements LiveReportRedrawer {
-    private final StarBotCommonPainterFactory factory;
+    private final NovaCommonPainterFactory factory;
 
     private final BilibiliApiUtil api;
 
@@ -44,7 +44,7 @@ public class BilibiliLiveReportRedrawer implements LiveReportRedrawer {
     private final LiveRoomInfoHistory roomInfoHistory;
 
     @Autowired
-    public BilibiliLiveReportRedrawer(StarBotCommonPainterFactory factory, BilibiliApiUtil api, FontUtil fontUtil,
+    public BilibiliLiveReportRedrawer(NovaCommonPainterFactory factory, BilibiliApiUtil api, FontUtil fontUtil,
                                       NovaBilibiliProperties properties, LiveRoomInfoHistory roomInfoHistory) {
         this.factory = factory;
         this.api = api;

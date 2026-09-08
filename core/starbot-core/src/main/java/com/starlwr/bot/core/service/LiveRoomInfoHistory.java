@@ -42,10 +42,10 @@ public class LiveRoomInfoHistory {
      */
     private static final int MAX_ENTRIES = 50;
 
-    private final StarBotStateStore store;
+    private final NovaStateStore store;
 
     @Autowired
-    public LiveRoomInfoHistory(StarBotStateStore store) {
+    public LiveRoomInfoHistory(NovaStateStore store) {
         this.store = store;
     }
 

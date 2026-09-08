@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.config.ui;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.NovaStateStore;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -24,7 +24,7 @@ import java.time.temporal.ChronoUnit;
  *
  * 这是<b>程序自己产生的状态</b>，不是使用者手写的配置。写进 application.yml 等于
  * 给配置面多一个键，而那个键使用者既不该手填也不该看见；
- * {@link StarBotStateStore} 正是为这类东西准备的，且它同样落盘、重启后还在。
+ * {@link NovaStateStore} 正是为这类东西准备的，且它同样落盘、重启后还在。
  */
 @Slf4j
 @RestController
@@ -60,9 +60,9 @@ public class ConfigUiSetupController {
      */
     static final String RERUN_CONSUMED_KEY = "rerunConsumed";
 
-    private final StarBotStateStore stateStore;
+    private final NovaStateStore stateStore;
 
-    public ConfigUiSetupController(StarBotStateStore stateStore) {
+    public ConfigUiSetupController(NovaStateStore stateStore) {
         this.stateStore = stateStore;
     }
 

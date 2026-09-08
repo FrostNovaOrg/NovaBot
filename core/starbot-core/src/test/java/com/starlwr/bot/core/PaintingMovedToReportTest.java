@@ -78,7 +78,7 @@ class PaintingMovedToReportTest {
     /** 搬过去的四个类，相对报告图插件的包根 */
     private static final List<String> LANDED = List.of(
             "painter/CommonPainter",
-            "factory/StarBotCommonPainterFactory",
+            "factory/NovaCommonPainterFactory",
             "util/FontUtil",
             "util/ImageUtil");
 

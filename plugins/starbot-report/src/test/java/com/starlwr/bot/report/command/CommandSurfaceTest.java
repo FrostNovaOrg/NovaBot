@@ -20,7 +20,7 @@ import com.starlwr.bot.core.service.AtSubscriptionService;
 import com.starlwr.bot.core.service.CompositeLiveDataService;
 import com.starlwr.bot.core.service.DefaultLiveDataService;
 import com.starlwr.bot.core.service.LiveDataService;
-import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.NovaStateStore;
 import com.starlwr.bot.core.service.TotalDataStorage;
 import com.starlwr.bot.core.timeline.TimelineWriter;
 import org.junit.jupiter.api.BeforeEach;
@@ -521,7 +521,7 @@ class CommandSurfaceTest {
         private final Map<Class<?>, Object> dependencies = new LinkedHashMap<>();
 
         private final CommandSettingsService settings =
-                new CommandSettingsService(new StarBotStateStore(new NovaCoreProperties()));
+                new CommandSettingsService(new NovaStateStore(new NovaCoreProperties()));
 
         private final AtomicReference<CommandDispatcher> current = new AtomicReference<>();
 
@@ -578,7 +578,7 @@ class CommandSurfaceTest {
             dependencies.put(ObjectProvider.class, self);
             // 订阅服务用真件：「切换模式之后名单还在不在」这一问，替身答不了
             dependencies.put(AtSubscriptionService.class,
-                    new AtSubscriptionService(new StarBotStateStore(new NovaCoreProperties())));
+                    new AtSubscriptionService(new NovaStateStore(new NovaCoreProperties())));
 
             for (Class<?> type : scan()) {
                 commands.add(instantiate(type));

@@ -2,7 +2,7 @@ package com.starlwr.bot.core.config.ui;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.config.NovaCoreProperties;
-import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.NovaStateStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -41,14 +41,14 @@ class UpdateCheckServiceTest {
 
     private NovaCoreProperties properties;
 
-    private StarBotStateStore state;
+    private NovaStateStore state;
 
     @BeforeEach
     void setUp() {
         properties = new NovaCoreProperties();
         // 跳过要落盘，把状态文件引到临时目录里，别落在仓库树里
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
-        state = new StarBotStateStore(properties);
+        state = new NovaStateStore(properties);
     }
 
     @Test
@@ -143,7 +143,7 @@ class UpdateCheckServiceTest {
      * 跳过记录的落盘那一半
      * <p>
      * 上面那条与它共用同一个内存里的状态对象，验的是判定逻辑；真重启之后还认不认，
-     * 只有换一个新 {@link StarBotStateStore}、让它从盘上读一遍才算验过——
+     * 只有换一个新 {@link NovaStateStore}、让它从盘上读一遍才算验过——
      * 跳过若没落盘，「点一下别烦我」只活到下次重启，而那正是它唯一被点下的场合。
      */
     @Test
@@ -153,7 +153,7 @@ class UpdateCheckServiceTest {
         before.checkNow();
         before.skip("v5.1.0");
 
-        StarBotStateStore reloaded = new StarBotStateStore(properties);
+        NovaStateStore reloaded = new NovaStateStore(properties);
         reloaded.onApplicationReadyEvent();
         UpdateCheckService after = new UpdateCheckService(properties, reloaded, buildOf("5.0.0"), release("v5.1.0", "内容"));
         after.checkNow();

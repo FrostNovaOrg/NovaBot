@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.command;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.NovaStateStore;
 import lombok.NonNull;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -23,10 +23,10 @@ public class CommandSettingsService {
      */
     private static final String NAMESPACE = "DisabledCommands";
 
-    private final StarBotStateStore store;
+    private final NovaStateStore store;
 
     @Autowired
-    public CommandSettingsService(StarBotStateStore store) {
+    public CommandSettingsService(NovaStateStore store) {
         this.store = store;
     }
 

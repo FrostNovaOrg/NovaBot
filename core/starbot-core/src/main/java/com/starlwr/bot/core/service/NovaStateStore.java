@@ -34,7 +34,7 @@ import java.util.function.Function;
  */
 @Slf4j
 @Service
-public class StarBotStateStore {
+public class NovaStateStore {
     private final NovaCoreProperties properties;
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
@@ -57,7 +57,7 @@ public class StarBotStateStore {
     private static final String RETIRED_CHOICE_NAMESPACE = "StreamerChoice";
 
     @Autowired
-    public StarBotStateStore(NovaCoreProperties properties) {
+    public NovaStateStore(NovaCoreProperties properties) {
         this.properties = properties;
     }
 
@@ -145,7 +145,7 @@ public class StarBotStateStore {
     public JSONObject namespace(@NonNull String namespace) {
         synchronized (lock) {
             return Optional.ofNullable(cache.getJSONObject(namespace))
-                    .map(StarBotStateStore::deepCopy)
+                    .map(NovaStateStore::deepCopy)
                     .orElseGet(JSONObject::new);
         }
     }

@@ -29,7 +29,7 @@ class UserBindingServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new UserBindingService(new StarBotStateStore(new NovaCoreProperties()));
+        service = new UserBindingService(new NovaStateStore(new NovaCoreProperties()));
     }
 
     @Test

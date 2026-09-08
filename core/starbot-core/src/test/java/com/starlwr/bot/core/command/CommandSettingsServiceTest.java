@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.command;
 
 import com.starlwr.bot.core.config.NovaCoreProperties;
-import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.NovaStateStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -25,7 +25,7 @@ class CommandSettingsServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new CommandSettingsService(new StarBotStateStore(new NovaCoreProperties()));
+        service = new CommandSettingsService(new NovaStateStore(new NovaCoreProperties()));
     }
 
     @Test

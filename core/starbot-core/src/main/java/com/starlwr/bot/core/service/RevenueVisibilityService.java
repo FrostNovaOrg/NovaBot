@@ -35,10 +35,10 @@ public class RevenueVisibilityService {
      */
     private static final String NAMESPACE = "RevenueVisibility";
 
-    private final StarBotStateStore store;
+    private final NovaStateStore store;
 
     @Autowired
-    public RevenueVisibilityService(StarBotStateStore store) {
+    public RevenueVisibilityService(NovaStateStore store) {
         this.store = store;
     }
 

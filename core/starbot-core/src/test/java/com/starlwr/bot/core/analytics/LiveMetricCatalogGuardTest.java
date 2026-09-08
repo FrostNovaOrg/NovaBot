@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.analytics;
 
-import com.starlwr.bot.core.StarBotCoreApplication;
+import com.starlwr.bot.core.NovaCoreApplication;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.SmartInitializingSingleton;
@@ -115,7 +115,7 @@ class LiveMetricCatalogGuardTest {
                 "守卫没带组件注解: 上面四问是本格自己把它登记进容器的, 真起动时没有谁会装它");
 
         assertTrue(LiveMetricCatalogGuard.class.getPackageName()
-                        .startsWith(StarBotCoreApplication.class.getPackageName() + "."),
+                        .startsWith(NovaCoreApplication.class.getPackageName() + "."),
                 "守卫落在核心起动类的扫描射程外, 带了注解也扫不到");
 
         assertTrue(SmartInitializingSingleton.class.isAssignableFrom(LiveMetricCatalogGuard.class),

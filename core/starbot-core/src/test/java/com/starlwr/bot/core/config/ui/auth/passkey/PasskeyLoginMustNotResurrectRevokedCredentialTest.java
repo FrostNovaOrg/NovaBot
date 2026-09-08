@@ -6,7 +6,7 @@ import com.starlwr.bot.core.config.ui.ConfigUiPasskeyController;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSessionStore;
 import com.starlwr.bot.core.config.ui.auth.LoginThrottle;
-import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.NovaStateStore;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -42,7 +42,7 @@ class PasskeyLoginMustNotResurrectRevokedCredentialTest {
         auth.setPassword(PasskeyTestSupport.PASSWORD);
         auth.setTotp(false);
 
-        RemoveAfterFindStore store = new RemoveAfterFindStore(new StarBotStateStore(properties));
+        RemoveAfterFindStore store = new RemoveAfterFindStore(new NovaStateStore(properties));
         ConfigUiAuthService authService = new ConfigUiAuthService(auth,
                 new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(2)),
                 new LoginThrottle(auth.getMaxFailures(), Duration.ofMinutes(15)), null);
@@ -92,7 +92,7 @@ class PasskeyLoginMustNotResurrectRevokedCredentialTest {
     private static final class RemoveAfterFindStore extends PasskeyStore {
         private volatile boolean armed;
 
-        private RemoveAfterFindStore(StarBotStateStore state) {
+        private RemoveAfterFindStore(NovaStateStore state) {
             super(state);
         }
 

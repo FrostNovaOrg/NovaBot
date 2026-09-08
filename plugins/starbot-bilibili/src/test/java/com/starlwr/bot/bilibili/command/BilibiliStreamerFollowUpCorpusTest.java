@@ -17,7 +17,7 @@ import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.sender.NovaMessageSender;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.LiveSessionArchive;
-import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.NovaStateStore;
 import com.starlwr.bot.core.timeline.TimelineWriter;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -248,7 +248,7 @@ class BilibiliStreamerFollowUpCorpusTest {
             NovaCoreProperties properties = new NovaCoreProperties();
             properties.getLive().setLiveDataPath(dataDir.resolve("data.json").toString());
 
-            CommandSettingsService settings = new CommandSettingsService(new StarBotStateStore(properties));
+            CommandSettingsService settings = new CommandSettingsService(new NovaStateStore(properties));
             BilibiliStreamerChoice choice =
                     new BilibiliStreamerChoice(liveDataService, new LiveSessionArchive(properties), clock);
 

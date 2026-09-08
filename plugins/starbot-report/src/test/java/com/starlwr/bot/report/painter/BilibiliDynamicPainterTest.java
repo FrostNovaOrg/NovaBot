@@ -5,7 +5,7 @@ import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.model.Dynamic;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.config.NovaCoreProperties;
-import com.starlwr.bot.report.factory.StarBotCommonPainterFactory;
+import com.starlwr.bot.report.factory.NovaCommonPainterFactory;
 import com.starlwr.bot.report.util.FontUtil;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -63,8 +63,8 @@ class BilibiliDynamicPainterTest {
         buildInfo.setProperty("artifact", "starbot-core");
         buildInfo.setProperty("name", "StarBotCore");
 
-        StarBotCommonPainterFactory factory =
-                new StarBotCommonPainterFactory(new BuildProperties(buildInfo), coreProperties, fontUtil);
+        NovaCommonPainterFactory factory =
+                new NovaCommonPainterFactory(new BuildProperties(buildInfo), coreProperties, fontUtil);
 
         // 所有图片请求返回同一张占位位图，避免测试依赖网络。填充可见颜色以便人工核对版面
         BufferedImage placeholder = new BufferedImage(200, 200, BufferedImage.TYPE_INT_ARGB);

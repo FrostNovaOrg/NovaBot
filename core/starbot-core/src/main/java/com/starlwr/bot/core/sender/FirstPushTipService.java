@@ -5,7 +5,7 @@ import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
-import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.NovaStateStore;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,7 +43,7 @@ public class FirstPushTipService {
      */
     static final String SEEDED_KEY = "_seeded";
 
-    private final StarBotStateStore store;
+    private final NovaStateStore store;
 
     private final NovaCoreProperties properties;
 
@@ -52,16 +52,16 @@ public class FirstPushTipService {
     /**
      * 判据台架：不注入配置时按默认（提示开着）
      */
-    public FirstPushTipService(StarBotStateStore store) {
+    public FirstPushTipService(NovaStateStore store) {
         this(store, new NovaCoreProperties(), null);
     }
 
-    FirstPushTipService(StarBotStateStore store, NovaCoreProperties properties) {
+    FirstPushTipService(NovaStateStore store, NovaCoreProperties properties) {
         this(store, properties, null);
     }
 
     @Autowired
-    public FirstPushTipService(StarBotStateStore store, NovaCoreProperties properties,
+    public FirstPushTipService(NovaStateStore store, NovaCoreProperties properties,
                                @Autowired(required = false) AbstractDataSource dataSource) {
         this.store = store;
         this.properties = properties;
@@ -71,7 +71,7 @@ public class FirstPushTipService {
     /**
      * 应用就绪后，把升级前就已经在用的会话记成已经提示过
      * <p>
-     * 须排在状态加载（{@code StarBotStateStore} {@code @Order(-10000)}）
+     * 须排在状态加载（{@code NovaStateStore} {@code @Order(-10000)}）
      * 与数据源加载（{@code LoadDataSourceListener} {@code @Order(0)}）之后、
      * 发件线程真正送出第一条之前。排在数据源之前会把空名单写成「已经补过」，
      * 之后配置里那些老群仍然会被当成第一次。

@@ -13,7 +13,7 @@ import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.service.DefaultLiveDataService;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.LiveRoomInfoHistory;
-import com.starlwr.bot.report.factory.StarBotCommonPainterFactory;
+import com.starlwr.bot.report.factory.NovaCommonPainterFactory;
 import com.starlwr.bot.report.util.FontUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -86,7 +86,7 @@ public class BilibiliLiveReportPreviewPainter extends BilibiliLiveReportPainter 
     private final BufferedImage rankingFace;
 
     @Autowired
-    public BilibiliLiveReportPreviewPainter(StarBotCommonPainterFactory factory, BilibiliApiUtil api,
+    public BilibiliLiveReportPreviewPainter(NovaCommonPainterFactory factory, BilibiliApiUtil api,
                                             FontUtil fontUtil, NovaBilibiliProperties properties,
                                             LiveRoomInfoHistory roomInfoHistory) {
         super(factory, api, fixtureData(), fontUtil, properties, roomInfoHistory);

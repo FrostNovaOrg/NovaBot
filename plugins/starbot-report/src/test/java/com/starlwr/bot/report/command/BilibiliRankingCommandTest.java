@@ -11,7 +11,7 @@ import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.model.UserScore;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.RevenueVisibilityService;
-import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.NovaStateStore;
 import com.starlwr.bot.core.config.NovaCoreProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -62,7 +62,7 @@ class BilibiliRankingCommandTest {
 
     @BeforeEach
     void setUp() {
-        revenueVisibility = new RevenueVisibilityService(new StarBotStateStore(new NovaCoreProperties()));
+        revenueVisibility = new RevenueVisibilityService(new NovaStateStore(new NovaCoreProperties()));
         // 本类测的是翻页与匹配，与金额可见性无关。群聊默认不展示金额，
         // 若不显式放开，礼物榜会被直接拒掉，测到的就不是翻页了
         revenueVisibility.set(PLATFORM, GROUP, true);

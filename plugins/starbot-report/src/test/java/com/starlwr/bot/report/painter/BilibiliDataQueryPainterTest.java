@@ -3,7 +3,7 @@ package com.starlwr.bot.report.painter;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.model.UserScore;
-import com.starlwr.bot.report.factory.StarBotCommonPainterFactory;
+import com.starlwr.bot.report.factory.NovaCommonPainterFactory;
 import com.starlwr.bot.report.util.FontUtil;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -58,8 +58,8 @@ class BilibiliDataQueryPainterTest {
         buildInfo.setProperty("artifact", "starbot-core");
         buildInfo.setProperty("name", "StarBotCore");
 
-        StarBotCommonPainterFactory factory =
-                new StarBotCommonPainterFactory(new BuildProperties(buildInfo), coreProperties, fontUtil);
+        NovaCommonPainterFactory factory =
+                new NovaCommonPainterFactory(new BuildProperties(buildInfo), coreProperties, fontUtil);
 
         BufferedImage placeholder = new BufferedImage(200, 200, BufferedImage.TYPE_INT_ARGB);
         Graphics2D graphics = placeholder.createGraphics();

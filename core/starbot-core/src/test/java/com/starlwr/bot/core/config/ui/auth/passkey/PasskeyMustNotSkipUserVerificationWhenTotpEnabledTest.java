@@ -7,7 +7,7 @@ import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSessionStore;
 import com.starlwr.bot.core.config.ui.auth.LoginThrottle;
 import com.starlwr.bot.core.config.ui.auth.TotpGenerator;
-import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.NovaStateStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -60,7 +60,7 @@ class PasskeyMustNotSkipUserVerificationWhenTotpEnabledTest {
         auth.setTotp(true);
         auth.setTotpSecret(SECRET);
 
-        PasskeyStore store = new PasskeyStore(new StarBotStateStore(properties));
+        PasskeyStore store = new PasskeyStore(new NovaStateStore(properties));
         authService = new ConfigUiAuthService(auth,
                 new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(2)),
                 new LoginThrottle(auth.getMaxFailures(), Duration.ofMinutes(15)), null);

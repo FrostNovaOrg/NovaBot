@@ -6,7 +6,7 @@ import com.starlwr.bot.core.config.ui.ConfigUiPasskeyController;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSessionStore;
 import com.starlwr.bot.core.config.ui.auth.LoginThrottle;
-import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.NovaStateStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -56,7 +56,7 @@ abstract class PasskeyTestSupport {
         // 二次验证与本组无关，且通行密钥这条路本来就不经它——开着只会让台面多一个变量
         auth.setTotp(false);
 
-        store = new PasskeyStore(new StarBotStateStore(properties));
+        store = new PasskeyStore(new NovaStateStore(properties));
         // fileService 传 null：本组不把哈希写回配置文件
         authService = new ConfigUiAuthService(auth,
                 new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(2)),

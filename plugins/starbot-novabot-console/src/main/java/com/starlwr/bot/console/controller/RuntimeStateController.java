@@ -15,7 +15,7 @@ import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.service.AtSubscriptionService;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.RevenueVisibilityService;
-import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.NovaStateStore;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -75,7 +75,7 @@ public class RuntimeStateController {
 
     private final AtSubscriptionService subscriptions;
 
-    private final StarBotStateStore store;
+    private final NovaStateStore store;
 
     private final AbstractDataSource dataSource;
 
@@ -86,7 +86,7 @@ public class RuntimeStateController {
     @Autowired
     public RuntimeStateController(CommandDispatcher dispatcher, CommandSettingsService settings,
                                   AtSubscriptionService subscriptions,
-                                  StarBotStateStore store, AbstractDataSource dataSource,
+                                  NovaStateStore store, AbstractDataSource dataSource,
                                   RevenueVisibilityService revenueVisibility, LiveDataService liveDataService) {
         this.dispatcher = dispatcher;
         this.settings = settings;

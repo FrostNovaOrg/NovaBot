@@ -7,7 +7,7 @@ import com.starlwr.bot.core.model.TextWithStyle;
 import com.starlwr.bot.core.model.UserScore;
 import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.lang.StringUtil;
-import com.starlwr.bot.report.factory.StarBotCommonPainterFactory;
+import com.starlwr.bot.report.factory.NovaCommonPainterFactory;
 import com.starlwr.bot.report.util.ImageUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -96,7 +96,7 @@ public class BilibiliDataQueryPainter {
 
     private static final Color COLOR_CARD = new Color(246, 247, 249);
 
-    private final StarBotCommonPainterFactory factory;
+    private final NovaCommonPainterFactory factory;
 
     private final BilibiliApiUtil api;
 
@@ -111,7 +111,7 @@ public class BilibiliDataQueryPainter {
             .build();
 
     @Autowired
-    public BilibiliDataQueryPainter(StarBotCommonPainterFactory factory, BilibiliApiUtil api) {
+    public BilibiliDataQueryPainter(NovaCommonPainterFactory factory, BilibiliApiUtil api) {
         this.factory = factory;
         this.api = api;
     }

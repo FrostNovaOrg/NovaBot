@@ -16,7 +16,7 @@ import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.PushTemplateDefaults;
 import com.starlwr.bot.core.service.RevenueVisibilityService;
 import com.starlwr.bot.core.service.StarBotEventHandlerService;
-import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.NovaStateStore;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -176,7 +176,7 @@ class UnfilledDatasourceEntryTest {
                 properties.getDatasource());
         dataSource.load();
 
-        StarBotStateStore store = new StarBotStateStore(properties);
+        NovaStateStore store = new NovaStateStore(properties);
         return new RuntimeStateController(
                 mock(CommandDispatcher.class),
                 mock(CommandSettingsService.class),

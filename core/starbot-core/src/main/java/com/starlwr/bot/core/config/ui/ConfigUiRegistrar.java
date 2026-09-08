@@ -6,7 +6,7 @@ import com.starlwr.bot.core.config.ui.auth.ConfigUiSessionStore;
 import com.starlwr.bot.core.config.ui.auth.LoginThrottle;
 import com.starlwr.bot.core.config.ui.auth.passkey.PasskeyService;
 import com.starlwr.bot.core.config.ui.auth.passkey.PasskeyStore;
-import com.starlwr.bot.core.service.StarBotStateStore;
+import com.starlwr.bot.core.service.NovaStateStore;
 import com.starlwr.bot.core.util.IpMatcher;
 import com.starlwr.bot.core.lang.SecureToken;
 import com.starlwr.bot.core.lang.StringUtil;
@@ -105,7 +105,7 @@ public class ConfigUiRegistrar {
      * 已登记的通行密钥存在哪
      */
     @Bean
-    public PasskeyStore passkeyStore(StarBotStateStore stateStore) {
+    public PasskeyStore passkeyStore(NovaStateStore stateStore) {
         return new PasskeyStore(stateStore);
     }
 

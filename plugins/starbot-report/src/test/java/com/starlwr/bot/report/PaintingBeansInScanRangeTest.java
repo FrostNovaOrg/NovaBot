@@ -1,6 +1,6 @@
 package com.starlwr.bot.report;
 
-import com.starlwr.bot.report.factory.StarBotCommonPainterFactory;
+import com.starlwr.bot.report.factory.NovaCommonPainterFactory;
 import com.starlwr.bot.report.painter.BilibiliLiveReportPainter;
 import com.starlwr.bot.report.util.FontUtil;
 import org.junit.jupiter.api.DisplayName;
@@ -46,7 +46,7 @@ class PaintingBeansInScanRangeTest {
 
     /** 这两个类是从核心搬过来的带注解组件，搬完必须仍在射程内 */
     private static final List<Class<?>> MOVED_COMPONENTS =
-            List.of(StarBotCommonPainterFactory.class, FontUtil.class);
+            List.of(NovaCommonPainterFactory.class, FontUtil.class);
 
     @Test
     @DisplayName("按自报类注解上的基包与排除规则扫一遍, 绘图器工厂与字体工具都在候选里")
