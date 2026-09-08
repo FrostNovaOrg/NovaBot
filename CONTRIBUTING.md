@@ -15,7 +15,7 @@
 `build-tools/starbot-plugin-processor` 需要先单独安装，`build.sh` 已处理。若要单独构建某个模块：
 
 ```bash
-mvn -Pinstall -f starbot-bilibili/pom.xml test
+mvn -Pinstall -f plugins/starbot-bilibili/pom.xml test
 ```
 
 注意 `-Pinstall`：`starbot-core` 的默认 profile 会做 Spring Boot 重打包，产出的 jar 无法作为依赖使用。

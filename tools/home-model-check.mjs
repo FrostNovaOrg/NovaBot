@@ -12,7 +12,7 @@
  * 退码 0 即九档全对；任一档对不上打印差异并以 1 退出。
  */
 
-import {homeModel, PROBE_ANCHOR, setupDone, setupSteps, shouldOpenSetup, stationHref, withPluginSteps} from '../starbot-core/src/main/resources/config-ui/home-model.js';
+import {homeModel, PROBE_ANCHOR, setupDone, setupSteps, shouldOpenSetup, stationHref, withPluginSteps} from '../core/starbot-core/src/main/resources/config-ui/home-model.js';
 
 /** 探针的原样形态，与 /api/status 里 health 那一项逐字段同形 */
 function probe(name, scope, level, summary, advice, loginState) {

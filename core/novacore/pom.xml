@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.starlwr</groupId>
+        <artifactId>starbot-parent</artifactId>
+        <version>5.2.0</version>
+        <relativePath>../../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>novacore</artifactId>
+    <name>NovaCore</name>
+    <description>直播事件源：连接、身份、解析与事件模型、事件输出协议、采集范围</description>
+
+    <!--
+        本模块是「一个礼貌的、能登录的直播事件源」——连接、身份、解析与事件模型、
+        事件输出协议、采集范围五层。控制台、登录、推送、聚合、存储都不在这里。
+
+        🔴 **不许声明对运行壳模块的依赖。** 这不是一条风格约定，它是本模块存在的理由：
+        依赖一旦加上，核心里写一句对壳侧类的引用就照样编得过，边界从此只剩一把
+        要靠人记得跑的 grep 在守。没有这条依赖，同样一句话在编译当场就红。
+        判据见 tools/novacore-boundary-check.sh 格7（模块名现算，不认字面量）。
+
+        需要壳侧提供能力时的做法是反过来的：核心定接口，壳侧实现并在装配时交进来
+        （现成的例子是 model/PushMessageHandler 与 datasource/PushMessageInitializer）。
+    -->
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+        <!--
+            事件输出协议 /nova/events 是一条 WebSocket：端点、握手拦截、处理器映射
+            都在 protocol 包里，因此这两个 starter 属核心自身的构件面，不是壳借来的。
+            核心该不该自带 HTTP/WS 服务器是模块化段另一问，答案改了这里跟着改。
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+
+        <!--
+            EventStreamProperties 带 @ConfigurationProperties，配置元数据由它生成。
+            漏掉这一项不会报错：nova.events.* 整节从元数据里消失，程序照常读得到值，
+            控制台的字段表却少一块——与单独成件的那几节漏标注解是同一种失效形态。
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-configuration-processor</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.alibaba.fastjson2</groupId>
+            <artifactId>fastjson2</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.reflections</groupId>
+            <artifactId>reflections</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!--
+                把测试域也打成一个构件（test-jar）。唯一的用途是事件输出协议的校验器
+                NovaProtocolSchema：协议真源在核心，各平台插件的映射器测试要按同一把尺
+                校验自己产出的信封。让插件仓各抄一份的话，抄出来的那份第二天就会和协议漂开，
+                而漂开的校验器不会红，只会安静地放行错的信封。
+                test 作用域，不进任何交付产物。
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>test-jar</id>
+                        <goals>
+                            <goal>test-jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

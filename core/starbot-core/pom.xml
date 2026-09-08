@@ -1,0 +1,268 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.starlwr</groupId>
+        <artifactId>starbot-parent</artifactId>
+        <version>5.2.0</version>
+        <relativePath>../../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>starbot-core</artifactId>
+    <name>StarBotCore</name>
+    <description>StarBot Core</description>
+
+    <dependencies>
+        <!--
+            事件源本体。依赖是单向的：壳依赖核心，核心不依赖壳——
+            反过来加一条，模块化这一步买到的编译期边界当场作废。
+        -->
+        <dependency>
+            <groupId>com.starlwr</groupId>
+            <artifactId>novacore</artifactId>
+        </dependency>
+
+        <!-- 累计数据存储。连不连、连哪儿由 TotalDataStorage 在运行期决定：
+             未配置 spring.data.redis.host 时程序照常以 JSON 运行，仅累计类查询不可用 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+        <!-- 上面 starter 传递带进来的那套 Redis 客户端, 主码在直接用 (见 TotalDataStorage 的
+             建连超时), 坐标由本模块自持一条; 版本仍交 parent BOM 管, 故不写 -->
+        <dependency>
+            <groupId>io.lettuce</groupId>
+            <artifactId>lettuce-core</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aspectj</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-cache</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <!--
+          本项目不再使用 Spring Data，此处仅为 org.springframework.data.util.Pair。
+          核心自己的主码已经不用它：用到它的 FontUtil 与 CommonPainter 已随画图整个迁往
+          报告图插件，这条依赖现在是传给插件侧的。那两个类的公开方法签名里仍带着这个类型
+          （返回文本的宽与高），换成自定义类型会破坏第三方绘图插件的兼容性，故保留这 1.6 MB。
+          原先它随 spring-boot-starter-data-jpa 间接引入，移除 JPA 后必须显式声明
+        -->
+        <dependency>
+            <groupId>org.springframework.data</groupId>
+            <artifactId>spring-data-commons</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-configuration-processor</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.retry</groupId>
+            <artifactId>spring-retry</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.alibaba.fastjson2</groupId>
+            <artifactId>fastjson2</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.reflections</groupId>
+            <artifactId>reflections</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.twelvemonkeys.imageio</groupId>
+            <artifactId>imageio-webp</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.google.zxing</groupId>
+            <artifactId>core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.google.zxing</groupId>
+            <artifactId>javase</artifactId>
+        </dependency>
+
+        <!--
+            只在判据里用：把 config-ui 下那段续登逻辑真的跑一遍。
+            🔴 一段代码会不会循环，只有喂给它一串输入跑一遍才知道，grep 看不出来。
+            test 作用域，不进任何交付产物。
+        -->
+        <dependency>
+            <groupId>org.openjdk.nashorn</groupId>
+            <artifactId>nashorn-core</artifactId>
+            <version>15.6</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <!--
+        测试域构件（test-jar）随 NovaProtocolSchema 一并去了 novacore：
+        校验器跟着协议真源走，真源在哪个模块，供插件引用的那个构件就该由哪个模块出。
+        留一份在这里只会多打一个没人引用的 jar，而下一个人读到它会以为校验器还在这边。
+    -->
+
+    <profiles>
+        <!-- package：构建可直接运行的发行产物，依赖输出至 target/lib -->
+        <profile>
+            <id>package</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <build>
+                <finalName>StarBotCore</finalName>
+                <plugins>
+                    <plugin>
+                        <groupId>org.springframework.boot</groupId>
+                        <artifactId>spring-boot-maven-plugin</artifactId>
+                        <configuration>
+                            <layout>ZIP</layout>
+                            <!--
+                                重打包产物输出至独立目录，避免覆盖 target/StarBotCore.jar。
+                                后者是各插件模块编译期依赖的普通库 jar，一旦被替换成 BOOT-INF 布局，
+                                增量构建时下游模块就会找不到 com.starlwr.bot.core 下的类。
+                            -->
+                            <outputDirectory>${project.build.directory}/dist</outputDirectory>
+                            <attach>false</attach>
+                            <additionalProperties>
+                                <version>${project.version}</version>
+                            </additionalProperties>
+                            <includes>
+                                <include>
+                                    <groupId>non-exists</groupId>
+                                    <artifactId>non-exists</artifactId>
+                                </include>
+                            </includes>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <goals>
+                                    <goal>repackage</goal>
+                                    <goal>build-info</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-jar-plugin</artifactId>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-dependency-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>copy-dependencies</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>copy-dependencies</goal>
+                                </goals>
+                                <configuration>
+                                    <includeScope>runtime</includeScope>
+                                    <stripVersion>false</stripVersion>
+                                    <excludeTransitive>false</excludeTransitive>
+                                    <outputDirectory>${project.build.directory}/lib/</outputDirectory>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <!--
+                        ⚠️ resources 这一段必须待在 execution 内，不能上提到 plugin 层。
+                        本插件的 resources 与 testResources 两个目标共用同一个参数名 resources：
+                        一旦写在 plugin 层，testResources 也会读到它，于是 src/test/resources
+                        被 src/main/resources 顶掉，测试资源根本不上测试类路径——
+                        不报错、不警告，只是读不到。判据见 TestResourcesOnClasspathTest。
+                    -->
+                    <plugin>
+                        <artifactId>maven-resources-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>default-resources</id>
+                                <goals>
+                                    <goal>resources</goal>
+                                </goals>
+                                <configuration>
+                                    <resources>
+                                        <resource>
+                                            <directory>src/main/resources</directory>
+                                            <excludes>
+                                                <exclude>application-dev.yml</exclude>
+                                            </excludes>
+                                        </resource>
+                                    </resources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!-- install：安装为供插件模块依赖的普通库，剥离运行期配置文件 -->
+        <profile>
+            <id>install</id>
+            <build>
+                <finalName>StarBotCore</finalName>
+                <plugins>
+                    <!-- resources 这一段同样必须待在 execution 内，理由见 package profile 那一处 -->
+                    <plugin>
+                        <artifactId>maven-resources-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>default-resources</id>
+                                <goals>
+                                    <goal>resources</goal>
+                                </goals>
+                                <configuration>
+                                    <resources>
+                                        <resource>
+                                            <directory>src/main/resources</directory>
+                                            <excludes>
+                                                <exclude>application.yml</exclude>
+                                                <exclude>application-dev.yml</exclude>
+                                                <exclude>banner.txt</exclude>
+                                                <exclude>logback.xml</exclude>
+                                            </excludes>
+                                        </resource>
+                                    </resources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <goals>
+                                    <goal>jar-no-fork</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>

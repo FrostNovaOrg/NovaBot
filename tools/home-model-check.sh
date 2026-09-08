@@ -28,7 +28,7 @@ if ! command -v node > /dev/null 2>&1; then
     exit 2
 fi
 
-UI="starbot-core/src/main/resources/config-ui"
+UI="core/starbot-core/src/main/resources/config-ui"
 RED=0
 SYNTAX_RED=0
 

@@ -10,7 +10,7 @@
  * 退码 0 即各档全对；任一档对不上打印差异并以 1 退出。
  */
 
-import {mailAlertConfigured} from '../starbot-core/src/main/resources/config-ui/alert-model.js';
+import {mailAlertConfigured} from '../core/starbot-core/src/main/resources/config-ui/alert-model.js';
 
 const failures = [];
 let checks = 0;

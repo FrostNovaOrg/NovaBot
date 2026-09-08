@@ -17,7 +17,7 @@
 import {existsSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 
-const CORE_UI = '../starbot-core/src/main/resources/config-ui/';
+const CORE_UI = '../core/starbot-core/src/main/resources/config-ui/';
 
 export async function resolve(specifier, context, nextResolve) {
   if (/^\.\/[A-Za-z0-9_-]+\.js$/.test(specifier)) {

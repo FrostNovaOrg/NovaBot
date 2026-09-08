@@ -13,7 +13,7 @@
 import {
   AT_MODES, atPlan, blockLabel, blockSpec, isAttachment, normalizeCards,
   parseTemplate, placeholderBlock, textBlock, toTemplateText,
-} from '../starbot-novabot-console/src/main/resources/config-ui-pages/template-model.js';
+} from '../plugins/starbot-novabot-console/src/main/resources/config-ui-pages/template-model.js';
 
 const failures = [];
 let checks = 0;
