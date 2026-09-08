@@ -246,7 +246,7 @@ mvn "${MAVEN_ARGS[@]}" -f build-tools/starbot-plugin-processor/pom.xml ${CLEAN} 
 echo "==> [2/8] 构建全部模块（库形态）"
 mvn "${MAVEN_ARGS[@]}" -Pinstall ${CLEAN} install
 
-echo "==> [3/8] 打包可运行的 StarBotCore"
+echo "==> [3/8] 打包可运行的 NovaBot"
 # 这一步不带 clean：[2/8] 刚把 core/starbot-core/target 清空并重建过，此刻目录里只有那一次的产物。
 # 在这里再清一次，等于把上一步刚编好的东西删掉重编一遍，清掉的却是同一批文件。
 mvn "${MAVEN_ARGS[@]}" -f core/starbot-core/pom.xml -Ppackage package
@@ -258,7 +258,9 @@ PLUGIN_MODULES=(plugins/starbot-onebot-adapter plugins/starbot-onebot-adapter-na
 rm -rf "$OUT"
 mkdir -p "$OUT/plugins" "$OUT/lib" "$OUT/plugins-lib"
 
-cp core/starbot-core/target/dist/StarBotCore.jar "$OUT/"
+cp core/starbot-core/target/dist/NovaBot.jar "$OUT/"
+# 双名期：下一发行版删
+cp "$OUT/NovaBot.jar" "$OUT/StarBotCore.jar"
 cp core/starbot-core/target/lib/*.jar "$OUT/lib/"
 
 for module in "${PLUGIN_MODULES[@]}"; do

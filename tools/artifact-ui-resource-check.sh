@@ -134,7 +134,7 @@ else
     echo "  出厂覆盖件 绿 产物里没有 template-defaults.json"
 fi
 
-check_one "$OUT/StarBotCore.jar" "$CORE_UI_IN_JAR" "$CORE_UI_SRC" "核心界面"
+check_one "$OUT/NovaBot.jar" "$CORE_UI_IN_JAR" "$CORE_UI_SRC" "核心界面"
 
 # 插件那一侧按目录里实际有哪些 jar 来量，不写死任何一个插件的名字：
 # 写死一个，这把尺守的就只是那一个插件，下一个插件带着脏条目进包照样是绿的。

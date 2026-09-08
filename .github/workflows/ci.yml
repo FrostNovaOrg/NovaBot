@@ -33,7 +33,7 @@ jobs:
           node-version: '22'
 
       # 构建与汇总走 ./build.sh 这一个入口：它装构建插件、整测、打可运行包，并把
-      # StarBotCore.jar＋lib＋plugins＋plugins-lib＋模板汇总到 dist/build —— 汇总那一步
+      # NovaBot.jar＋lib＋plugins＋plugins-lib＋模板汇总到 dist/build —— 汇总那一步
       # 若在这里另写一份（三条 mvn），就是同一落点规则的两份拷贝，改一处漏一处。
       # --no-smoke：冒烟拆成下面单独一步，便于失败时贴长日志尾（build.sh 内置那次只贴短摘要）
       - name: 构建与测试

@@ -11,7 +11,7 @@
     </parent>
 
     <artifactId>starbot-core</artifactId>
-    <name>StarBotCore</name>
+    <name>NovaBot</name>
     <description>StarBot Core</description>
 
     <dependencies>
@@ -130,7 +130,7 @@
                 <activeByDefault>true</activeByDefault>
             </activation>
             <build>
-                <finalName>StarBotCore</finalName>
+                <finalName>NovaBot</finalName>
                 <plugins>
                     <plugin>
                         <groupId>org.springframework.boot</groupId>
@@ -138,7 +138,7 @@
                         <configuration>
                             <layout>ZIP</layout>
                             <!--
-                                重打包产物输出至独立目录，避免覆盖 target/StarBotCore.jar。
+                                重打包产物输出至独立目录，避免覆盖 target/NovaBot.jar。
                                 后者是各插件模块编译期依赖的普通库 jar，一旦被替换成 BOOT-INF 布局，
                                 增量构建时下游模块就会找不到 com.starlwr.bot.core 下的类。
                             -->
@@ -222,7 +222,7 @@
         <profile>
             <id>install</id>
             <build>
-                <finalName>StarBotCore</finalName>
+                <finalName>NovaBot</finalName>
                 <plugins>
                     <!-- resources 这一段同样必须待在 execution 内，理由见 package profile 那一处 -->
                     <plugin>

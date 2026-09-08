@@ -25,6 +25,7 @@
 
 ### 变更
 
+- 主程序产物改名为 `NovaBot.jar`。本发行版同时附带一份内容相同的 `StarBotCore.jar`，下一发行版去掉这份副本。新安装使用 `novabot` 服务名；机器上已经有 `starbot` 服务的，安装脚本沿用旧名、不改单元文件。
 - 配置项前缀从 `starbot.*` 改成 `novabot.*`（`novabot.core`、`novabot.bilibili`、`novabot.adapter.onebot` 等）。**旧键仍然认得**：只写 `starbot.*` 的 `application.yml` 照常生效，启动时每个用到的前缀会打一行提醒；两处都写时以新位置为准。设置页保存只写新前缀。示例配置已改用新前缀。
 - 仓库目录按核心／插件分层（`core/` 与 `plugins/`），Maven 坐标不变。
 - 首页健康栏的未知字段同时覆盖 protobuf 字段号、接口顶层键、以及直播间消息里不认识的互动类型／货币／大航海档；明细会写明是哪一种报文、哪个接口、还是哪条命令的哪个取值。

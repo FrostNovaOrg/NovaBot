@@ -42,7 +42,7 @@ trap forward_signal TERM INT
 # 不在程序内部自行派生子进程重启：那样父进程要一直驻留等子进程结束，白占一份内存，
 # systemd 下的进程树也不正确
 set +e
-java $JVM_OPTS -Dloader.path=lib,plugins,plugins-lib -jar StarBotCore.jar "$@" &
+java $JVM_OPTS -Dloader.path=lib,plugins,plugins-lib -jar NovaBot.jar "$@" &
 child=$!
 
 # wait 被信号打断时会立刻返回 128+信号号，而此时 java 才刚开始停机。
