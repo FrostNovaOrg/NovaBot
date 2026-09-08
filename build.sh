@@ -41,7 +41,7 @@ MAVEN_ARGS=(-B)
 #    不是改一行看一眼的内循环；用它换「包里的东西都出自源码」这句话能当真，值。
 #
 # 🔴 清不到的地方要写明：`mvn clean` 走的是 reactor，而 build-tools/starbot-plugin-processor
-#    与 templates/starbot-example-plugin 都不在模块列表里（理由见 pom.xml:41-46）。
+#    与 templates/starbot-example-plugin 都不在模块列表里（理由见 pom.xml:30-35）。
 #    前者由下面 [1/8] 用 -f 单独构建，那一步同样带上 clean；后者本脚本根本不构建，
 #    它的 target/ 里有什么都进不了 dist/build。
 #
