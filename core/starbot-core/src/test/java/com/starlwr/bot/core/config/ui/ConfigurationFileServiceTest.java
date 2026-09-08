@@ -803,6 +803,69 @@ class ConfigurationFileServiceTest {
         }
     }
 
+    /**
+     * 更早一档告警三项在 core.alert.qq-*，现行在 adapter.onebot.alert。
+     * 值故意写成新树与旧树不同，用来钉「留下的是新树那份」。
+     */
+    private static final String ALERT_QQ_KEYS_MIRRORED = """
+            starbot:
+              core:
+                alert:
+                  qq-platform: qq-onebot
+                  qq-type: 1
+                  qq-num: 12345
+            novabot:
+              adapter:
+                onebot:
+                  alert:
+                    platform: other
+                    type: 0
+                    num: 99999
+            """;
+
+    @Test
+    @DisplayName("旧树只含告警 qq 三键且新树有对应：保存后去掉 starbot 根")
+    void saveDropsLegacyRootWhenOnlyAlertQqKeysAreMirrored() throws Exception {
+        Files.writeString(config, ALERT_QQ_KEYS_MIRRORED, StandardCharsets.UTF_8);
+        List<String> unresolved = new ArrayList<>();
+
+        try {
+            service.write(Map.of("novabot.adapter.onebot.alert.num", "88888"));
+            String text = content();
+            assertTrue(text.lines().noneMatch(line -> line.startsWith("starbot:")),
+                    "告警三键在新树有对应时，保存后不应再留 starbot 根:\n" + text);
+            assertTrue(text.contains("novabot:"), "新树应仍在:\n" + text);
+        } catch (AssertionError | IOException e) {
+            unresolved.add("① 保存后无 starbot 根: " + e.getMessage());
+        }
+
+        try {
+            Map<String, String> values = service.read();
+            assertEquals("88888", values.get("novabot.adapter.onebot.alert.num"), "值以新树为准");
+            assertEquals("other", values.get("novabot.adapter.onebot.alert.platform"));
+            assertEquals("0", values.get("novabot.adapter.onebot.alert.type"));
+            assertFalse(values.containsKey("starbot.core.alert.qq-num"),
+                    "旧树删掉后读口不应再看到旧键: " + values.keySet());
+            assertFalse(values.containsKey("starbot.core.alert.qq-platform"),
+                    "旧树删掉后读口不应再看到旧键: " + values.keySet());
+        } catch (AssertionError | IOException e) {
+            unresolved.add("② 新树取值: " + e.getMessage());
+        }
+
+        try {
+            List<String> logs = new ArrayList<>();
+            MockEnvironment environment = environmentFromSavedFile();
+            alias(logs).postProcessEnvironment(environment, null);
+            List<String> rename = logs.stream().filter(line -> line.contains("读到旧键")).toList();
+            assertEquals(List.of(), rename, "迁完再起不应再提示读到旧键, 实有: " + rename);
+        } catch (AssertionError | IOException e) {
+            unresolved.add("③ 再绑零条读到旧键: " + e.getMessage());
+        }
+
+        assertTrue(unresolved.isEmpty(),
+                () -> "告警三键全对应三问中 " + unresolved.size() + " 问未销: " + String.join("; ", unresolved));
+    }
+
     private MockEnvironment environmentFromSavedFile() throws IOException {
         MockEnvironment environment = new MockEnvironment();
         List<PropertySource<?>> sources =

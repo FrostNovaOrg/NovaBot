@@ -16,9 +16,9 @@ public class OneBotConfigurationKeyAliases implements ConfigurationKeyAliasContr
     public Map<String, String> renamed() {
         Map<String, String> renamed = new LinkedHashMap<>();
         renamed.put(NovaBotPrefixes.ADAPTER, NovaBotPrefixes.ADAPTER_LEGACY);
-        renamed.put(NovaBotPrefixes.ADAPTER_ALERT + ".platform", "starbot.core.alert.qq-platform");
-        renamed.put(NovaBotPrefixes.ADAPTER_ALERT + ".type", "starbot.core.alert.qq-type");
-        renamed.put(NovaBotPrefixes.ADAPTER_ALERT + ".num", "starbot.core.alert.qq-num");
+        for (Map.Entry<String, String> relocated : NovaBotPrefixes.RELOCATED.entrySet()) {
+            renamed.put(relocated.getValue(), relocated.getKey());
+        }
         renamed.put(NovaBotPrefixes.ADAPTER_NAPCAT + ".token", "starbot.core.config-ui.napcat.token");
         renamed.put(NovaBotPrefixes.ADAPTER_NAPCAT + ".token-hash", "starbot.core.config-ui.napcat.token-hash");
         renamed.put(NovaBotPrefixes.ADAPTER_NAPCAT + ".totp-secret", "starbot.core.config-ui.napcat.totp-secret");

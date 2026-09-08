@@ -7,8 +7,7 @@ import java.util.Map;
  * 配置键产品前缀：现行 {@code novabot.*} 与上一档 {@code starbot.*}
  * <p>
  * 读侧两套都认、现行键在场时压过旧键；写侧只写现行前缀。
- * 位置迁过的键（事件输出曾在哔哩哔哩插件下、告警 qq-*、NapCat 曾在 config-ui 下）
- * 仍由各自的绑定器认更早的那一档，不写在这张 1:1 表里。
+ * 上一档搬过位的告警 qq-* 见 {@link #RELOCATED}；事件输出与 NapCat 仍由各自的绑定器认更早的那一档。
  */
 public final class NovaBotPrefixes {
     private NovaBotPrefixes() {
@@ -36,6 +35,14 @@ public final class NovaBotPrefixes {
     public static final String NAPCAT_EXT_LEGACY = "starbot.adapter.onebot.extension.napcat";
 
     /**
+     * 上一档搬过位的键（不是同位换名）：旧完整路径 → 现行完整路径
+     */
+    public static final Map<String, String> RELOCATED = Map.of(
+            "starbot.core.alert.qq-platform", ADAPTER_ALERT + ".platform",
+            "starbot.core.alert.qq-type", ADAPTER_ALERT + ".type",
+            "starbot.core.alert.qq-num", ADAPTER_ALERT + ".num");
+
+    /**
      * 现行前缀 → 上一档前缀，最长者在前，用来给启动日志归到「每前缀一行」
      */
     public static final List<Map.Entry<String, String>> CURRENT_TO_LEGACY = List.of(
@@ -55,6 +62,10 @@ public final class NovaBotPrefixes {
     public static String toCurrent(String name) {
         if (name == null) {
             return null;
+        }
+        String relocated = RELOCATED.get(name);
+        if (relocated != null) {
+            return relocated;
         }
         if (name.equals("starbot.core") || name.startsWith("starbot.core.")
                 || name.equals("starbot.bilibili") || name.startsWith("starbot.bilibili.")
