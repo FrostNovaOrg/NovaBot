@@ -13,7 +13,7 @@
 import {$, api, clock, el, esc, phrase, say, today, term} from './core.js';
 import {
   ENG_LEVELS, emptyText, engAtBottom, engCopyText, engEmptyText, engFollowing, engQuery,
-  engVisible, groupEngLines, hasFilter, logHash, newerDay, olderDay, parseLogHash, timelineQuery,
+  engSegments, hasFilter, logHash, newerDay, olderDay, parseLogHash, timelineQuery,
 } from './log-model.js';
 
 /** 当前筛选状态，真源是地址栏，见 syncFromHash */
@@ -433,8 +433,8 @@ function renderEngJump(found) {
 
 function renderEngList() {
   const box = $('#eng-body');
-  const all = groupEngLines(engLines, engHighlight);
-  const shown = all.filter(entry => engVisible(entry, engLevels, engSearch));
+  // 与「复制这一段」问的是同一个口子：各筛各的话，剪贴板里会是一份没在屏幕上出现过的日志
+  const {all, shown} = engSegments(engLines, engHighlight, engLevels, engSearch);
 
   box.innerHTML = shown.length
     ? shown.map(entry => '<div class="er' + (entry.level ? ' ' + entry.level : '')
@@ -509,8 +509,7 @@ async function followTick() {
  * 而不是让按钮点下去毫无反应。
  */
 async function copyEng() {
-  const shown = groupEngLines(engLines, engHighlight)
-    .filter(entry => engVisible(entry, engLevels, engSearch));
+  const {shown} = engSegments(engLines, engHighlight, engLevels, engSearch);
   const text = engCopyText(shown);
   if (!text) {
     say('这里没有可复制的行', 'err');

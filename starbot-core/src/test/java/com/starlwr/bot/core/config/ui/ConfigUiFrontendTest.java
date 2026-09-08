@@ -2320,6 +2320,47 @@ class ConfigUiFrontendTest {
     }
 
     /**
+     * 工程日志「画上去」与「复制走」问的是同一份可见性判定
+     * <p>
+     * 屏幕上显示哪几段是一条判定：分段之后按四档开关与搜索词筛。这条判定<b>只许有一份</b>——
+     * 画一处、复制时再自己筛一遍的话，两份会各自漂，而漂开的表现是
+     * <b>剪贴板里那一份从来没在屏幕上出现过</b>：使用者把它贴给别人排障，
+     * 两边看的不是同一份日志，且没有任何一侧会报错。
+     * <p>
+     * 判定本身算得对不对由 {@link LogModelTest} 拉起的夹具喂值跑；这一格只钉接线——
+     * 那把夹具量的是 {@code engSegments} 这个函数，而调用点改回自己拼时它照样全绿。
+     */
+    @Test
+    @DisplayName("工程日志画与复制走同一份可见性判定")
+    void engineeringLogCopyPaintsWhatIsOnScreen() {
+        String source = codeOnly(coreSources().getOrDefault("log.js", ""));
+        assertFalse(source.isBlank(), "log.js 没读到，下面几条量的是空的");
+
+        List<String> bad = new ArrayList<>();
+        for (String fn : List.of("renderEngList", "copyEng")) {
+            String body = functionBodyAny(source, fn);
+            if (body.isBlank()) {
+                bad.add("log.js 里找不到 " + fn + "，这一格的射程已经不在了");
+            } else if (!body.contains("engSegments(")) {
+                bad.add(fn + " 没有问过 engSegments，屏幕与剪贴板可以是两份");
+            }
+        }
+        // 问过了还不够：engSegments 给的是两半，复制的必须是筛完那一半。
+        // 只查「调用过」的话，改成复制 all 照样绿，而那正是这一格要防的事
+        if (!functionBodyAny(source, "copyEng").contains("engCopyText(shown)")) {
+            bad.add("copyEng 复制的不是 engSegments 给的 shown，剪贴板里会多出屏幕上没有的段");
+        }
+        // 调用点自己再拼一遍等于把判定又变回两份：那时上面几条照样绿
+        for (String own : List.of("groupEngLines(", "engVisible(")) {
+            if (source.contains(own)) {
+                bad.add("log.js 仍自己拼 " + own + "，可见性判定又成了两份");
+            }
+        }
+
+        assertTrue(bad.isEmpty(), "工程日志的可见性判定不止一份:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
      * 搭车走别人语法循环、不单独立尺的视图模型
      * <p>
      * 现在一条也没有。告警、确认、只读口令三份已经各自有 {@code *-model-check.sh}。
