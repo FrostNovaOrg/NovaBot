@@ -10,23 +10,18 @@
 ## 1. 模块与依赖方向
 
 ```
-                 ┌──────────────┐
-                 │ starbot-core │  事件总线 / 插件加载 / 数据源 / 消息发送 / 绘图 / 配置界面
-                 └──────┬───────┘
-        ┌───────────────┼────────────────┐
-        │               │                │
-┌───────┴──────┐ ┌──────┴────────┐ ┌─────┴─────────────────┐
-│ starbot-     │ │ starbot-      │ │ 第三方插件            │
-│ bilibili     │ │ onebot-       │ │ (templates/ 下有模板) │
-│              │ │ adapter       │ └───────────────────────┘
-│ 采集侧       │ │ 投递侧        │        ┌──────────────────────────────┐
-└──────┬───────┘ └──────┬────────┘        │ napcat-extension              │
-       │                └─────────────────┤ 依赖 onebot-adapter           │
-┌──────┴───────┐                          └──────────────────────────────┘
-│ starbot-     │
-│ report       │  下播报告 / 动态图 / 数据查询图（依赖 starbot-bilibili）
-└──────────────┘
+仓根
+├── core/novacore/                                      核心：事件模型、事件输出协议、数据源接口
+├── core/starbot-core/                                  壳：应用宿主、控制台、配置、推送与命令框架
+├── plugins/starbot-bilibili/                           采集侧
+├── plugins/starbot-onebot-adapter/                     投递侧
+├── plugins/starbot-onebot-adapter-napcat-extension/    依赖 onebot-adapter
+├── plugins/starbot-report/                             下播报告 / 动态图 / 数据查询图（依赖 starbot-bilibili）
+├── plugins/starbot-novabot-console/                    控制台产品页（主播 / 推送 / 向导）
+└── templates/                                          第三方插件模板
 ```
+
+核心（`novacore`）保管事件与协议；壳（`starbot-core`）是能跑起来的宿主；插件放在 `plugins/`，第三方从 `templates/` 照抄。
 
 **依赖方向只有一个：插件依赖核心，核心永不依赖插件。**
 
@@ -411,3 +406,4 @@ mvn -B -Pinstall install -Dtest=某个测试类 -DfailIfNoTests=false \
 
 产物在 `dist/build/`，其中 `application.yml` 来自 `dist/templates/`。
 **本机联调用的令牌只写在 `dist/build/`**（构建产物，已 gitignore），不要写进 `dist/templates/`。
+
