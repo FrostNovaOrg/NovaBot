@@ -1088,11 +1088,12 @@ final class NovaEventSlowConsumerHarness implements AutoCloseable {
     // ══════════════════════════ 先验尺 ══════════════════════════
 
     /**
-     * 连续采样次数与间隔。6 × 50 ms ≈ 300 ms：短写几毫秒即完，
-     * 管道灌满后卡住的写会撑满整段窗口；任一次不在 write 栈即判未卡住。
+     * 连续采样次数与间隔。5 × 20 ms ≈ 100 ms：合法短写几毫秒即完，
+     * 100 ms 内五次皆在 write 只可能是卡住；等复现轮询 1200 ms 内仍有 ≥10 次重试。
+     * 任一次不在 write 栈即判未卡住。
      */
-    static final int STUCK_WRITE_SAMPLE_COUNT = 6;
-    static final long STUCK_WRITE_SAMPLE_INTERVAL_MS = 50L;
+    static final int STUCK_WRITE_SAMPLE_COUNT = 5;
+    static final long STUCK_WRITE_SAMPLE_INTERVAL_MS = 20L;
 
     /**
      * 先验尺：慢客户端的发送线程<b>确实</b>卡在 socket 写里，且<b>正持着那个客户端的写锁</b>。
