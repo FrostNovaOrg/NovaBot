@@ -197,7 +197,10 @@ public class BilibiliApiUtil {
         registerKnownKeys(table, TV_QR_CODE_GENERATE_API, "TV_QR_CODE_GENERATE_API", "url", "auth_code");
         registerKnownKeys(table, TV_QR_CODE_POLL_API, "TV_QR_CODE_POLL_API",
                 "cookie_info", "token_info", "access_token", "refresh_token", "expires_in");
-        registerKnownKeys(table, LIVE_HEARTBEAT_API, "LIVE_HEARTBEAT_API", "next_interval");
+        registerKnownKeys(table, OAUTH2_REFRESH_TOKEN_API, "OAUTH2_REFRESH_TOKEN_API",
+                "cookie_info", "token_info", "access_token", "refresh_token", "expires_in");
+        // 观看心跳解析处不取 data 字段；空集且整路不记，避免按拍把常驻键记成未知
+        registerKnownKeys(table, LIVE_HEARTBEAT_API, "LIVE_HEARTBEAT_API");
         return Map.copyOf(table);
     }
 
@@ -517,7 +520,7 @@ public class BilibiliApiUtil {
      * @param url 请求地址，只在应答缺 data 时按端点记账用
      * @return data 字段，应答缺 data 时为空对象（与旧行为一致）
      */
-    private JSONObject extractData(JSONObject response, String url) {
+    JSONObject extractData(JSONObject response, String url) {
         if (response == null) {
             throw new NetworkException("接口未返回任何内容");
         }
@@ -901,6 +904,7 @@ public class BilibiliApiUtil {
         }
 
         JSONObject data = body.getJSONObject("data");
+        noteUnknownTopKeys(OAUTH2_REFRESH_TOKEN_API, data);
         Cookies refreshed = data == null ? null : extractTvLoginCookies(data);
         if (refreshed == null) {
             throw new IllegalStateException("续期响应中未能解析出登录凭据, 响应字段: "
@@ -1691,9 +1695,9 @@ public class BilibiliApiUtil {
         try {
             String payload = intervalSeconds + "|" + roomId + "|1|0";
             String hb = Base64.getEncoder().encodeToString(payload.getBytes(StandardCharsets.UTF_8));
-            JSONObject response = http.getJson(LIVE_HEARTBEAT_API + URLEncoder.encode(hb, StandardCharsets.UTF_8),
+            http.getJson(LIVE_HEARTBEAT_API + URLEncoder.encode(hb, StandardCharsets.UTF_8),
                     getBilibiliHeaders());
-            noteUnknownTopKeys(LIVE_HEARTBEAT_API, response == null ? null : response.getJSONObject("data"));
+            // 取用为空：整路不记未知顶层键，避免观看心跳按拍累加
         } catch (Exception e) {
             log.debug("上报直播间 {} 观看心跳失败: {}", roomId, e.getMessage());
         }
