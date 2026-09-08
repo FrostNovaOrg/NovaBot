@@ -48,7 +48,7 @@ import static org.mockito.Mockito.when;
  * 两把尺互补：真依赖那边换掉实现时这里不红，这里编排变动时那边也不红。
  */
 @DisplayName("下播监听：正常下播主路")
-class StarBotDefaultLiveOffEventListenerTest {
+class NovaDefaultLiveOffEventListenerTest {
     private static final String PLATFORM = "bilibili";
     private static final long UID = 42L;
     private static final long ROOM_ID = 1001L;
@@ -60,7 +60,7 @@ class StarBotDefaultLiveOffEventListenerTest {
     private LiveInterventionTracker interventionTracker;
     private LiveRoomInfoHistory roomInfoHistory;
     private LiveDetailArchive details;
-    private StarBotDefaultLiveOffEventListener listener;
+    private NovaDefaultLiveOffEventListener listener;
 
     @BeforeEach
     void setUp() {
@@ -69,7 +69,7 @@ class StarBotDefaultLiveOffEventListenerTest {
         interventionTracker = mock(LiveInterventionTracker.class);
         roomInfoHistory = mock(LiveRoomInfoHistory.class);
         details = mock(LiveDetailArchive.class);
-        listener = new StarBotDefaultLiveOffEventListener(
+        listener = new NovaDefaultLiveOffEventListener(
                 liveDataService, archive, interventionTracker, roomInfoHistory, details);
     }
 
@@ -146,7 +146,7 @@ class StarBotDefaultLiveOffEventListenerTest {
      */
     private static List<String> captureWarns(Runnable action) {
         ch.qos.logback.classic.Logger logger =
-                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(StarBotDefaultLiveOffEventListener.class);
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(NovaDefaultLiveOffEventListener.class);
         ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
                 new ch.qos.logback.core.read.ListAppender<>();
         appender.start();

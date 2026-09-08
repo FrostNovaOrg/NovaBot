@@ -78,7 +78,7 @@
 - **事件总线就是 Spring 的 `ApplicationEventPublisher`**，没有另造一套。
   `InterruptibleEventMulticaster` 只加了一件事：事件被标记为 `stopped` 后不再投给后续监听器，
   供插件拦截事件。
-- **匹配发生在 `StarBotHandlerListener`**：按 `事件平台 + uid` 从数据源找到 `PushUser`，
+- **匹配发生在 `NovaHandlerListener`**：按 `事件平台 + uid` 从数据源找到 `PushUser`，
   再遍历其 `targets → messages`，事件类与 `message.eventClass` 相同才调用对应处理器。
   配错 uid 的表现是「什么都不发生」，因为这里根本匹配不上——这也是配置界面要在添加主播时
   先拉昵称让人确认的原因。

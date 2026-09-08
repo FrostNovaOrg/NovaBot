@@ -16,7 +16,7 @@ import java.time.Instant;
 @Setter
 @NoArgsConstructor
 @ToString(callSuper = true)
-public class StarBotExternalBaseEvent extends StarBotBaseEvent {
+public class NovaExternalBaseEvent extends NovaBaseEvent {
     /**
      * 直播平台
      */
@@ -27,23 +27,23 @@ public class StarBotExternalBaseEvent extends StarBotBaseEvent {
      */
     private LiveStreamerInfo source;
 
-    public StarBotExternalBaseEvent(String platform, LiveStreamerInfo source) {
+    public NovaExternalBaseEvent(String platform, LiveStreamerInfo source) {
         this.platform = platform;
         this.source = source;
     }
 
-    public StarBotExternalBaseEvent(String platform, LiveStreamerInfo source, Instant instant) {
+    public NovaExternalBaseEvent(String platform, LiveStreamerInfo source, Instant instant) {
         super(instant);
         this.platform = platform;
         this.source = source;
     }
 
-    public StarBotExternalBaseEvent(LivePlatform platform, LiveStreamerInfo source) {
+    public NovaExternalBaseEvent(LivePlatform platform, LiveStreamerInfo source) {
         this.platform = platform.id();
         this.source = source;
     }
 
-    public StarBotExternalBaseEvent(LivePlatform platform, LiveStreamerInfo source, Instant instant) {
+    public NovaExternalBaseEvent(LivePlatform platform, LiveStreamerInfo source, Instant instant) {
         super(instant);
         this.platform = platform.id();
         this.source = source;

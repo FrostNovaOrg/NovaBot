@@ -7,7 +7,7 @@ import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
 import com.starlwr.bot.bilibili.model.Room;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.enums.PushTargetType;
-import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
+import com.starlwr.bot.core.event.NovaExternalBaseEvent;
 import com.starlwr.bot.core.handler.NovaEventHandler;
 import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.PushMessage;
@@ -48,7 +48,7 @@ public class BilibiliLiveOnPushHandler implements NovaEventHandler {
     }
 
     @Override
-    public void handle(StarBotExternalBaseEvent baseEvent, PushMessage pushMessage) {
+    public void handle(NovaExternalBaseEvent baseEvent, PushMessage pushMessage) {
         BilibiliLiveOnEvent event = (BilibiliLiveOnEvent) baseEvent;
         JSONObject params = pushMessage.getParamsJsonObject();
         PushTarget target = pushMessage.getTarget();
@@ -97,7 +97,7 @@ public class BilibiliLiveOnPushHandler implements NovaEventHandler {
     }
 
     @Override
-    public Class<? extends StarBotExternalBaseEvent> getEventType() {
+    public Class<? extends NovaExternalBaseEvent> getEventType() {
         return BilibiliLiveOnEvent.class;
     }
 

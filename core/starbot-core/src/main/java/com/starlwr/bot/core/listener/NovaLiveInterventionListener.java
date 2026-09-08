@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.listener;
 
 import com.starlwr.bot.core.alert.AlertService;
-import com.starlwr.bot.core.event.live.base.StarBotLiveInterventionEvent;
+import com.starlwr.bot.core.event.live.base.NovaLiveInterventionEvent;
 import com.starlwr.bot.core.event.live.common.LiveCutOffEvent;
 import com.starlwr.bot.core.event.live.common.LiveWarningEvent;
 import com.starlwr.bot.core.event.live.common.RoomLockEvent;
@@ -24,14 +24,14 @@ import java.time.format.DateTimeFormatter;
  */
 @Slf4j
 @Component
-public class StarBotLiveInterventionListener {
+public class NovaLiveInterventionListener {
     private static final DateTimeFormatter EXPIRE_FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
 
     private final AlertService alertService;
 
     @Autowired
-    public StarBotLiveInterventionListener(AlertService alertService) {
+    public NovaLiveInterventionListener(AlertService alertService) {
         this.alertService = alertService;
     }
 
@@ -70,7 +70,7 @@ public class StarBotLiveInterventionListener {
                 describe(event) + " 的直播间已被封禁：" + reasonOf(event) + "\n" + expire + "。");
     }
 
-    private void alert(StarBotLiveInterventionEvent event, String kind, String subject, String content) {
+    private void alert(NovaLiveInterventionEvent event, String kind, String subject, String content) {
         LiveStreamerInfo source = event.getSource();
         Long uid = source == null ? null : source.getUid();
         alertService.alert("live-intervention:" + kind + ":" + event.getPlatform() + ":" + uid, subject, content);
@@ -79,7 +79,7 @@ public class StarBotLiveInterventionListener {
     /**
      * 主播的可读描述
      */
-    private String describe(StarBotLiveInterventionEvent event) {
+    private String describe(NovaLiveInterventionEvent event) {
         LiveStreamerInfo source = event.getSource();
         if (source == null) {
             return "未知主播";
@@ -90,7 +90,7 @@ public class StarBotLiveInterventionListener {
     /**
      * 平台说明文案，缺失时给出中性描述而不是留空
      */
-    private String reasonOf(StarBotLiveInterventionEvent event) {
+    private String reasonOf(NovaLiveInterventionEvent event) {
         String reason = event.getReason();
         return reason == null || reason.isBlank() ? "平台未给出说明" : reason;
     }

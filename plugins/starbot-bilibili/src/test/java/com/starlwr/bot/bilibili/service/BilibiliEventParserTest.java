@@ -9,8 +9,8 @@ import com.starlwr.bot.bilibili.enums.GuardType;
 import com.starlwr.bot.bilibili.event.live.*;
 import com.starlwr.bot.bilibili.model.BilibiliUserInfo;
 import com.starlwr.bot.bilibili.model.FansMedal;
-import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
-import com.starlwr.bot.core.event.live.base.StarBotLivePurchaseEvent;
+import com.starlwr.bot.core.event.live.NovaBaseLiveEvent;
+import com.starlwr.bot.core.event.live.base.NovaLivePurchaseEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -56,7 +56,7 @@ class BilibiliEventParserTest {
     /**
      * 归并器发出的事件。{@code GUARD_BUY} 不由 {@code parse} 返回，只能从这里取
      */
-    private List<StarBotBaseLiveEvent> published;
+    private List<NovaBaseLiveEvent> published;
 
     @BeforeEach
     void setUp() {
@@ -76,12 +76,12 @@ class BilibiliEventParserTest {
         // 事件补全默认关闭，此时解析过程不会触碰任何接口
         apiSupport = mock(BilibiliApiSupport.class);
         parser = new BilibiliEventParser(properties, mock(BilibiliGiftService.class), apiSupport,
-                new BilibiliGuardReconciler(event -> published.add((StarBotBaseLiveEvent) event),
+                new BilibiliGuardReconciler(event -> published.add((NovaBaseLiveEvent) event),
                         immediate, Duration.ZERO),
                 riskMetrics);
     }
 
-    private Optional<StarBotBaseLiveEvent> parse(String json) {
+    private Optional<NovaBaseLiveEvent> parse(String json) {
         return parser.parse(JSON.parseObject(json), SOURCE);
     }
 
@@ -91,7 +91,7 @@ class BilibiliEventParserTest {
      * 这条消息不会由 {@code parse} 返回——它要先被压住等 toast，见 {@link BilibiliGuardReconciler}
      * @return 发出的事件，一条都没发出时为空
      */
-    private Optional<StarBotBaseLiveEvent> parseGuardBuy(String json) {
+    private Optional<NovaBaseLiveEvent> parseGuardBuy(String json) {
         published.clear();
         assertTrue(parse(json).isEmpty(), "GUARD_BUY 不应由 parse 直接返回，它要先等 toast");
         return published.stream().findFirst();
@@ -129,7 +129,7 @@ class BilibiliEventParserTest {
         String payload = "SECRET_PAYLOAD_BODY_XYZ";
 
         try {
-            Optional<StarBotBaseLiveEvent> event = parse(
+            Optional<NovaBaseLiveEvent> event = parse(
                     "{\"cmd\":\"BRAND_NEW_CMD\",\"data\":\"" + payload + "\"}");
             assertTrue(event.isEmpty(), "未知 cmd 不应解析成事件");
             assertEquals(1, riskMetrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_CMD, Duration.ofMinutes(1)),
@@ -322,7 +322,7 @@ class BilibiliEventParserTest {
                 .encodeToString(Arrays.copyOf(giftFull, giftFull.length - 2));
 
         try {
-            Optional<StarBotBaseLiveEvent> event = parse(
+            Optional<NovaBaseLiveEvent> event = parse(
                     "{\"cmd\":\"INTERACT_WORD_V2\",\"data\":{\"dmscore\":3,\"pb\":\"" + interactPb + "\"}}");
             assertTrue(event.isPresent(), "截断的进房报文仍应产出事件，行为不得改变");
             assertEquals(1, riskMetrics.count(BilibiliRiskMetrics.Kind.FIELD_MISSING, Duration.ofMinutes(1)),
@@ -348,7 +348,7 @@ class BilibiliEventParserTest {
         }
 
         try {
-            Optional<StarBotBaseLiveEvent> event = parse(
+            Optional<NovaBaseLiveEvent> event = parse(
                     "{\"cmd\":\"SEND_GIFT_V2\",\"data\":{\"dmscore\":3,\"pb\":\"" + giftPb + "\"}}");
             assertTrue(event.isPresent(), "礼物块完好的截断报文仍应产出事件");
             assertEquals(11, riskMetrics.count(BilibiliRiskMetrics.Kind.FIELD_MISSING, Duration.ofMinutes(1)),
@@ -543,7 +543,7 @@ class BilibiliEventParserTest {
     @Test
     @DisplayName("解析普通弹幕")
     void parseDanmu() {
-        Optional<StarBotBaseLiveEvent> event = parse(danmuMessage("{\"content\":\"你好\",\"reply_mid\":0}", "\"\""));
+        Optional<NovaBaseLiveEvent> event = parse(danmuMessage("{\"content\":\"你好\",\"reply_mid\":0}", "\"\""));
 
         assertTrue(event.isPresent());
         BilibiliDanmuEvent danmu = assertInstanceOf(BilibiliDanmuEvent.class, event.get());
@@ -602,7 +602,7 @@ class BilibiliEventParserTest {
     @DisplayName("info[0][13] 为对象时解析为表情弹幕")
     void parseEmojiDanmu() {
         String thirteenth = "{\"emoticon_unique\":\"official_23\",\"url\":\"https://emo.example/o.png\",\"width\":200,\"height\":200}";
-        Optional<StarBotBaseLiveEvent> event = parse(danmuMessage("{\"content\":\"official_23\"}", thirteenth));
+        Optional<NovaBaseLiveEvent> event = parse(danmuMessage("{\"content\":\"official_23\"}", thirteenth));
 
         BilibiliEmojiEvent emoji = assertInstanceOf(BilibiliEmojiEvent.class, event.orElseThrow());
         assertEquals("official_23", emoji.getEmoji().getId());
@@ -902,7 +902,7 @@ class BilibiliEventParserTest {
          */
         private static final String UINFO_WITHOUT_BASE = "CIkGEgzpobblsYLmmLXnp7AoATiB4s+qBrIBAwiJBg==";
 
-        private Optional<StarBotBaseLiveEvent> parseV2(String pb) {
+        private Optional<NovaBaseLiveEvent> parseV2(String pb) {
             return parse("{\"cmd\":\"INTERACT_WORD_V2\",\"data\":{\"dmscore\":3,\"pb\":\"" + pb + "\"}}");
         }
 
@@ -1130,7 +1130,7 @@ class BilibiliEventParserTest {
                     .base64();
         }
 
-        private Optional<StarBotBaseLiveEvent> parseV2(String pb) {
+        private Optional<NovaBaseLiveEvent> parseV2(String pb) {
             return parse("{\"cmd\":\"SEND_GIFT_V2\",\"data\":{\"dmscore\":3,\"pb\":\"" + pb + "\"}}");
         }
 
@@ -1245,7 +1245,7 @@ class BilibiliEventParserTest {
          * @param logsOut 采集到的日志文本，按产出顺序追加
          * @return 解析产出，没有产出时为 {@code null}
          */
-        private StarBotBaseLiveEvent parseV2CollectingLogs(String pb, List<String> logsOut) {
+        private NovaBaseLiveEvent parseV2CollectingLogs(String pb, List<String> logsOut) {
             ch.qos.logback.classic.Logger logger =
                     (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(BilibiliEventParser.class);
             ch.qos.logback.classic.Level previousLevel = logger.getLevel();
@@ -1255,7 +1255,7 @@ class BilibiliEventParserTest {
             appender.start();
             logger.addAppender(appender);
             try {
-                StarBotBaseLiveEvent event = parseV2(pb).orElse(null);
+                NovaBaseLiveEvent event = parseV2(pb).orElse(null);
                 logsOut.addAll(appender.list.stream()
                         .map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage)
                         .toList());
@@ -1362,8 +1362,8 @@ class BilibiliEventParserTest {
         @DisplayName("V2 盲盒：顶层 9 号是投入的盒子，礼物块是开出物")
         void parsesBlindBoxFromTopLevelField9() {
             List<String> reds = new ArrayList<>();
-            StarBotBaseLiveEvent withBlind = parseV2(giftV2BlindPb(true)).orElse(null);
-            StarBotBaseLiveEvent withoutBlind = parseV2(giftV2BlindPb(false)).orElse(null);
+            NovaBaseLiveEvent withBlind = parseV2(giftV2BlindPb(true)).orElse(null);
+            NovaBaseLiveEvent withoutBlind = parseV2(giftV2BlindPb(false)).orElse(null);
 
             tally(reds, "①", () -> assertInstanceOf(BilibiliRandomGiftEvent.class, withBlind));
             tally(reds, "②", () -> {
@@ -1442,11 +1442,11 @@ class BilibiliEventParserTest {
             return total;
         }
 
-        private Optional<StarBotBaseLiveEvent> parseInteract(String pb) {
+        private Optional<NovaBaseLiveEvent> parseInteract(String pb) {
             return parse("{\"cmd\":\"INTERACT_WORD_V2\",\"data\":{\"dmscore\":3,\"pb\":\"" + pb + "\"}}");
         }
 
-        private Optional<StarBotBaseLiveEvent> parseGift(String pb) {
+        private Optional<NovaBaseLiveEvent> parseGift(String pb) {
             return parse("{\"cmd\":\"SEND_GIFT_V2\",\"data\":{\"dmscore\":3,\"pb\":\"" + pb + "\"}}");
         }
 
@@ -1774,12 +1774,12 @@ class BilibiliEventParserTest {
     @Test
     @DisplayName("红包记成互动而不是收入：主播没有从这一笔拿到钱")
     void redPocketIsNotRevenue() {
-        StarBotBaseLiveEvent parsed = parse(RED_POCKET).orElseThrow();
+        NovaBaseLiveEvent parsed = parse(RED_POCKET).orElseThrow();
 
         // 关键：它不能是购买事件，否则会被算进营收——而钱进的是红包，不是主播。
         // 这里刻意用基类接收再判断：若直接用 BilibiliRedPocketEvent 声明，
         // 编译器会因为「两个类型不可能相交」而拒绝编译，反倒看不出这条断言在防什么
-        assertFalse(parsed instanceof StarBotLivePurchaseEvent, "红包不该是购买事件");
+        assertFalse(parsed instanceof NovaLivePurchaseEvent, "红包不该是购买事件");
 
         BilibiliRedPocketEvent event = assertInstanceOf(BilibiliRedPocketEvent.class, parsed);
         assertEquals(555L, event.getSender().getUid());

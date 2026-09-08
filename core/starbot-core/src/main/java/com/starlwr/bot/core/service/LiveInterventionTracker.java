@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.service;
 
 import com.starlwr.bot.core.enums.LiveEndReason;
-import com.starlwr.bot.core.event.live.base.StarBotLiveInterventionEvent;
+import com.starlwr.bot.core.event.live.base.NovaLiveInterventionEvent;
 import com.starlwr.bot.core.event.live.common.LiveCutOffEvent;
 import com.starlwr.bot.core.event.live.common.LiveOnEvent;
 import com.starlwr.bot.core.event.live.common.RoomLockEvent;
@@ -108,7 +108,7 @@ public class LiveInterventionTracker {
         return intervention == null || intervention.detail() == null ? "" : intervention.detail();
     }
 
-    private void record(StarBotLiveInterventionEvent event, LiveEndReason reason) {
+    private void record(NovaLiveInterventionEvent event, LiveEndReason reason) {
         if (event.getSource() == null || event.getSource().getUid() == null) {
             return;
         }

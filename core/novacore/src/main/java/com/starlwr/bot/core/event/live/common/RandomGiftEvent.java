@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.event.live.common;
 
 import com.starlwr.bot.core.enums.LivePlatform;
-import com.starlwr.bot.core.event.live.base.StarBotLiveGiftEvent;
+import com.starlwr.bot.core.event.live.base.NovaLiveGiftEvent;
 import com.starlwr.bot.core.model.GiftInfo;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.UserInfo;
@@ -20,7 +20,7 @@ import java.time.Instant;
 @Setter
 @NoArgsConstructor
 @ToString(callSuper = true)
-public class RandomGiftEvent extends StarBotLiveGiftEvent {
+public class RandomGiftEvent extends NovaLiveGiftEvent {
     /**
      * 随机礼物信息
      */

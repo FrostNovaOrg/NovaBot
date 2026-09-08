@@ -5,7 +5,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.config.ui.ConfigurationFileService;
 import com.starlwr.bot.core.config.ui.RuntimeConfigurationApplier;
-import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
+import com.starlwr.bot.core.event.NovaExternalBaseEvent;
 import com.starlwr.bot.core.handler.NovaEventHandler;
 import com.starlwr.bot.core.health.PushActivityRecorder;
 import com.starlwr.bot.core.model.PushMessage;
@@ -135,12 +135,12 @@ class PushHandlerAliasSurfaceTest {
      */
     private abstract static class FakeHandler implements NovaEventHandler {
         @Override
-        public void handle(StarBotExternalBaseEvent baseEvent, PushMessage pushMessage) {
+        public void handle(NovaExternalBaseEvent baseEvent, PushMessage pushMessage) {
         }
 
         @Override
-        public Class<? extends StarBotExternalBaseEvent> getEventType() {
-            return StarBotExternalBaseEvent.class;
+        public Class<? extends NovaExternalBaseEvent> getEventType() {
+            return NovaExternalBaseEvent.class;
         }
 
         @Override

@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.event.live.common;
 
 import com.starlwr.bot.core.enums.LivePlatform;
-import com.starlwr.bot.core.event.live.base.StarBotLiveOperationEvent;
+import com.starlwr.bot.core.event.live.base.NovaLiveOperationEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.UserInfo;
 import lombok.Getter;
@@ -18,7 +18,7 @@ import java.time.Instant;
 @Setter
 @NoArgsConstructor
 @ToString(callSuper = true)
-public class FollowEvent extends StarBotLiveOperationEvent {
+public class FollowEvent extends NovaLiveOperationEvent {
     public FollowEvent(String platform, LiveStreamerInfo source, UserInfo sender) {
         super(platform, source, sender);
     }

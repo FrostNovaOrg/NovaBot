@@ -17,7 +17,7 @@ import java.time.Instant;
 @Setter
 @NoArgsConstructor
 @ToString(callSuper = true)
-public class StarBotLivePurchaseEvent extends StarBotLiveInteractionEvent {
+public class NovaLivePurchaseEvent extends NovaLiveInteractionEvent {
     /**
      * 总价值，即<b>主播这一笔收到了多少</b>
      */
@@ -40,22 +40,22 @@ public class StarBotLivePurchaseEvent extends StarBotLiveInteractionEvent {
      */
     private Double charged;
 
-    public StarBotLivePurchaseEvent(String platform, LiveStreamerInfo source, UserInfo sender, Double value) {
+    public NovaLivePurchaseEvent(String platform, LiveStreamerInfo source, UserInfo sender, Double value) {
         super(platform, source, sender);
         this.value = value;
     }
 
-    public StarBotLivePurchaseEvent(String platform, LiveStreamerInfo source, UserInfo sender, Double value, Instant instant) {
+    public NovaLivePurchaseEvent(String platform, LiveStreamerInfo source, UserInfo sender, Double value, Instant instant) {
         super(platform, source, sender, instant);
         this.value = value;
     }
 
-    public StarBotLivePurchaseEvent(LivePlatform platform, LiveStreamerInfo source, UserInfo sender, Double value) {
+    public NovaLivePurchaseEvent(LivePlatform platform, LiveStreamerInfo source, UserInfo sender, Double value) {
         super(platform, source, sender);
         this.value = value;
     }
 
-    public StarBotLivePurchaseEvent(LivePlatform platform, LiveStreamerInfo source, UserInfo sender, Double value, Instant instant) {
+    public NovaLivePurchaseEvent(LivePlatform platform, LiveStreamerInfo source, UserInfo sender, Double value, Instant instant) {
         super(platform, source, sender, instant);
         this.value = value;
     }

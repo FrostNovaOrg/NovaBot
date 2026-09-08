@@ -3,7 +3,7 @@ package com.starlwr.bot.core.service;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.enums.LiveEndReason;
 import com.starlwr.bot.core.event.live.common.LiveOnEvent;
-import com.starlwr.bot.core.listener.StarBotDefaultLiveOnEventListener;
+import com.starlwr.bot.core.listener.NovaDefaultLiveOnEventListener;
 import com.starlwr.bot.core.model.LiveGap;
 import com.starlwr.bot.core.model.LiveSession;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
@@ -456,7 +456,7 @@ class LiveSessionRecoveryTest {
             before.saveNow(false);
 
             DefaultLiveDataService after = boot();
-            StarBotDefaultLiveOnEventListener listener = new StarBotDefaultLiveOnEventListener(
+            NovaDefaultLiveOnEventListener listener = new NovaDefaultLiveOnEventListener(
                     properties, after, new LiveSessionRecovery(after, archive));
 
             LiveOnEvent event = new LiveOnEvent(PLATFORM, STREAMER, Instant.now());
@@ -483,7 +483,7 @@ class LiveSessionRecoveryTest {
             before.saveNow(false);
 
             DefaultLiveDataService after = boot();
-            StarBotDefaultLiveOnEventListener listener = new StarBotDefaultLiveOnEventListener(
+            NovaDefaultLiveOnEventListener listener = new NovaDefaultLiveOnEventListener(
                     properties, after, new LiveSessionRecovery(after, archive));
 
             LiveOnEvent event = new LiveOnEvent(PLATFORM, STREAMER, Instant.ofEpochMilli(now));

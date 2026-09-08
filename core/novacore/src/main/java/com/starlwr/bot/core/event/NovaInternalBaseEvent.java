@@ -14,8 +14,8 @@ import java.time.Instant;
 @Setter
 @NoArgsConstructor
 @ToString(callSuper = true)
-public class StarBotInternalBaseEvent extends StarBotBaseEvent {
-    public StarBotInternalBaseEvent(Instant instant) {
+public class NovaInternalBaseEvent extends NovaBaseEvent {
+    public NovaInternalBaseEvent(Instant instant) {
         super(instant);
     }
 }

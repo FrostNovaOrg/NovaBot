@@ -16,7 +16,7 @@ import com.starlwr.bot.core.config.ui.RuntimeConfigurationApplierContributor;
 import com.starlwr.bot.core.config.ui.TimelineController;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.PushTargetType;
-import com.starlwr.bot.core.event.remote.StarBotRemoteMessageEvent;
+import com.starlwr.bot.core.event.remote.NovaRemoteMessageEvent;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
@@ -86,7 +86,7 @@ class FourCategoriesEndToEndTest {
     @Test
     @DisplayName("命令：群里执行一条命令, 日志页上出现「命令」这一类")
     void commandLandsOnTheLogPage() {
-        dispatcher().onRemoteMessage(new StarBotRemoteMessageEvent(
+        dispatcher().onRemoteMessage(new NovaRemoteMessageEvent(
                 PLATFORM, "group", GROUP, 1L, "测试命令", null, true));
 
         TimelineEvent event = assertLanded(TimelineCategory.COMMAND, TimelineEventType.COMMAND_EXECUTED);

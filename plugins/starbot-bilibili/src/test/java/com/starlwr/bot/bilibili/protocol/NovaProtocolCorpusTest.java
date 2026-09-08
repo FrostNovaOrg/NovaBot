@@ -9,7 +9,7 @@ import com.starlwr.bot.bilibili.service.BilibiliApiSupport;
 import com.starlwr.bot.bilibili.service.BilibiliEventParser;
 import com.starlwr.bot.bilibili.service.BilibiliGiftService;
 import com.starlwr.bot.bilibili.service.BilibiliGuardReconciler;
-import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
+import com.starlwr.bot.core.event.live.NovaBaseLiveEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.protocol.NovaProtocolSchema;
 import org.junit.jupiter.api.DisplayName;
@@ -58,12 +58,12 @@ class NovaProtocolCorpusTest {
     void everyEnvelopePassesTheSchema() throws IOException {
         // 归并器发出的事件。GUARD_BUY 不由 parse 返回，只能从这里取。
         // 它由归并器的后台线程发出，因此这个表必须是并发安全的
-        List<StarBotBaseLiveEvent> published = new CopyOnWriteArrayList<>();
+        List<NovaBaseLiveEvent> published = new CopyOnWriteArrayList<>();
 
         // 用公开构造器，即真定时器与真宽限期（5 秒）——GUARD_BUY 要等 toast，
         // 语料几毫秒就放完了，所以回放结束后必须再等一等把迟到的那批收进来
         BilibiliGuardReconciler reconciler =
-                new BilibiliGuardReconciler(event -> published.add((StarBotBaseLiveEvent) event));
+                new BilibiliGuardReconciler(event -> published.add((NovaBaseLiveEvent) event));
 
         // 事件补全默认关闭，解析过程不会碰任何接口——语料回放必须是纯离线的
         BilibiliEventParser parser = new BilibiliEventParser(
@@ -88,7 +88,7 @@ class NovaProtocolCorpusTest {
 
         // 分两趟：先整批解析，再统一映射校验。
         // 不能边解析边收 GUARD_BUY——它要等满宽限期才发出，那时回放早结束了
-        List<StarBotBaseLiveEvent> events = new ArrayList<>();
+        List<NovaBaseLiveEvent> events = new ArrayList<>();
         Path corpus = Path.of(System.getProperty("novabot.corpus"));
         try (BufferedReader reader = Files.newBufferedReader(corpus, StandardCharsets.UTF_8)) {
             String line;
@@ -101,7 +101,7 @@ class NovaProtocolCorpusTest {
                 long roomId = entry.getLongValue("room");
                 LiveStreamerInfo source = new LiveStreamerInfo(1L, "主播", roomId);
 
-                Optional<StarBotBaseLiveEvent> parsed =
+                Optional<NovaBaseLiveEvent> parsed =
                         parser.parse(JSON.parseObject(entry.getString("msg")), source);
                 if (parsed.isPresent()) {
                     events.add(parsed.get());
@@ -128,7 +128,7 @@ class NovaProtocolCorpusTest {
         unparsed -= lateFromReconciler;      // 它们并不是「解析不出来」，只是迟到
         events.addAll(published);
 
-        for (StarBotBaseLiveEvent event : events) {
+        for (NovaBaseLiveEvent event : events) {
             JSONObject envelope = NovaEventMapper.map(event);
             if (envelope == null) {
                 // 映射器不输出的事件按类名记下来。这一栏有 4000 多个，

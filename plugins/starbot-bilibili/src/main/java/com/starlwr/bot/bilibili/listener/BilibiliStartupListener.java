@@ -7,7 +7,7 @@ import com.starlwr.bot.bilibili.service.BilibiliDynamicService;
 import com.starlwr.bot.bilibili.service.BilibiliLiveRoomService;
 import com.starlwr.bot.bilibili.service.BilibiliStreamerSnapshotService;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
-import com.starlwr.bot.core.event.datasource.base.StarBotDataSourceChangeEvent;
+import com.starlwr.bot.core.event.datasource.base.NovaDataSourceChangeEvent;
 import com.starlwr.bot.core.plugin.NovaComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -197,7 +197,7 @@ public class BilibiliStartupListener {
      * 启动完成前的变更事件一律忽略——彼时登录尚未完成，提前建连会以匿名身份取令牌，
      * 与登录态身份不符，认证会被服务端拒绝。
      */
-    @EventListener(StarBotDataSourceChangeEvent.class)
+    @EventListener(NovaDataSourceChangeEvent.class)
     public void onDataSourceChangeEvent() {
         if (!servicesStarted.get() || accountService.isStopping()) {
             return;

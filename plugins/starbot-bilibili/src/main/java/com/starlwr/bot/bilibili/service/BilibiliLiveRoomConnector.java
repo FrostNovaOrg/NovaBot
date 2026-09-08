@@ -19,7 +19,7 @@ import com.starlwr.bot.bilibili.model.ConnectInfo;
 import com.starlwr.bot.bilibili.protocol.BilibiliPacket;
 import com.starlwr.bot.bilibili.protocol.BilibiliPacketCodec;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
-import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
+import com.starlwr.bot.core.event.live.NovaBaseLiveEvent;
 import com.starlwr.bot.core.model.LiveGap;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.service.LiveDataService;
@@ -612,7 +612,7 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
      * 发布事件
      * @param event 事件
      */
-    private void publish(StarBotBaseLiveEvent event) {
+    private void publish(NovaBaseLiveEvent event) {
         // 开播与下播另有备用轮询这条发现路径，同一次状态变化只应推送一次，
         // 因此两条路径都要先过共享闸门。弹幕、礼物等事件只有长连接一条来源，不需要
         if (event instanceof BilibiliLiveOnEvent && !stateGate.admit(source.getUid(), true)) {

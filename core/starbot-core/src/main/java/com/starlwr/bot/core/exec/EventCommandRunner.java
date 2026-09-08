@@ -2,7 +2,7 @@ package com.starlwr.bot.core.exec;
 
 import com.alibaba.fastjson2.JSON;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
-import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
+import com.starlwr.bot.core.event.NovaExternalBaseEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -86,7 +86,7 @@ public class EventCommandRunner {
      * 事件到达时执行匹配的命令
      */
     @EventListener
-    public void onEvent(StarBotExternalBaseEvent event) {
+    public void onEvent(NovaExternalBaseEvent event) {
         StarBotCoreProperties.Exec exec = properties.getExec();
         if (!exec.isEnabled() || exec.getRules().isEmpty()) {
             return;
@@ -106,7 +106,7 @@ public class EventCommandRunner {
      * {@code BilibiliLiveOnEvent}——按平台细分是少数需求，按事件种类配才是常态。
      * 类名写简名或全限定名都可以。
      */
-    boolean matches(StarBotCoreProperties.ExecRule rule, StarBotExternalBaseEvent event) {
+    boolean matches(StarBotCoreProperties.ExecRule rule, NovaExternalBaseEvent event) {
         String configured = rule.getEvent();
         if (configured == null || configured.isBlank()) {
             return false;
@@ -123,7 +123,7 @@ public class EventCommandRunner {
     /**
      * 提交一次执行
      */
-    private void submit(StarBotCoreProperties.ExecRule rule, StarBotExternalBaseEvent event) {
+    private void submit(StarBotCoreProperties.ExecRule rule, NovaExternalBaseEvent event) {
         List<String> command = resolve(rule.getCommand(), event);
         if (command.isEmpty()) {
             log.warn("事件命令规则 {} 没有配置可执行的命令, 已跳过", rule.getEvent());
@@ -150,7 +150,7 @@ public class EventCommandRunner {
      * <b>逐个参数替换，绝不拼成一整行。</b>替换结果无论含空格、引号还是分号，
      * 都仍然是原来那一个参数。
      */
-    List<String> resolve(List<String> template, StarBotExternalBaseEvent event) {
+    List<String> resolve(List<String> template, NovaExternalBaseEvent event) {
         if (template == null) {
             return List.of();
         }
@@ -277,7 +277,7 @@ public class EventCommandRunner {
      * 弹幕类事件序列化出来可能很大，塞进参数会撞上系统的参数长度上限，
      * 让本来能跑的命令莫名其妙地失败。
      */
-    private String json(StarBotExternalBaseEvent event) {
+    private String json(NovaExternalBaseEvent event) {
         try {
             String text = JSON.toJSONString(event);
             return text.length() <= MAX_JSON_CHARS ? text : "";

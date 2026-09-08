@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.event.live.common;
 
 import com.starlwr.bot.core.enums.LivePlatform;
-import com.starlwr.bot.core.event.live.base.StarBotLiveInteractionEvent;
+import com.starlwr.bot.core.event.live.base.NovaLiveInteractionEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.UserInfo;
 import lombok.Getter;
@@ -17,7 +17,7 @@ import java.time.Instant;
  * 观众自掏腰包在直播间发红包，抽中的人拿到电池或礼物。
  * <p>
  * <b>主播不会因为这一笔有任何收益。</b>钱进的是红包，只有中奖者把奖品换成礼物送出，
- * 主播才参与分成。所以本事件<b>刻意不继承 {@link com.starlwr.bot.core.event.live.base.StarBotLivePurchaseEvent}</b>——
+ * 主播才参与分成。所以本事件<b>刻意不继承 {@link com.starlwr.bot.core.event.live.base.NovaLivePurchaseEvent}</b>——
  * 它没有「主播收到多少」这个口径，算进营收就会凭空多出一笔主播根本没拿到的钱。
  * <p>
  * 但它<b>值得播报</b>：红包会把人吸引进直播间，主播通常都会当场感谢送红包的人。
@@ -31,7 +31,7 @@ import java.time.Instant;
 @Setter
 @NoArgsConstructor
 @ToString(callSuper = true)
-public class RedPocketEvent extends StarBotLiveInteractionEvent {
+public class RedPocketEvent extends NovaLiveInteractionEvent {
     /**
      * 红包的唯一标识
      * <p>

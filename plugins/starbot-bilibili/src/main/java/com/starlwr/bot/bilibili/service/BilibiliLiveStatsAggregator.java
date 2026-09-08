@@ -18,7 +18,7 @@ import com.starlwr.bot.bilibili.event.live.BilibiliShareEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliSuperChatEvent;
 import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
 import com.starlwr.bot.bilibili.util.DanmuWordUtil;
-import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
+import com.starlwr.bot.core.event.live.NovaBaseLiveEvent;
 import com.starlwr.bot.core.event.live.common.MembershipEvent;
 import com.starlwr.bot.core.model.DanmuRecord;
 import com.starlwr.bot.core.model.UserInfo;
@@ -315,7 +315,7 @@ public class BilibiliLiveStatsAggregator {
             BilibiliLiveMetric.BOX_PROFIT,
             BilibiliLiveMetric.GUARD_VALUE);
 
-    private void increment(StarBotBaseLiveEvent event, String metric, double delta) {
+    private void increment(NovaBaseLiveEvent event, String metric, double delta) {
         if (event.getSource() == null || event.getSource().getUid() == null) {
             return;
         }
@@ -329,7 +329,7 @@ public class BilibiliLiveStatsAggregator {
         }
     }
 
-    private void max(StarBotBaseLiveEvent event, String metric, double value) {
+    private void max(NovaBaseLiveEvent event, String metric, double value) {
         if (event.getSource() == null || event.getSource().getUid() == null) {
             return;
         }
@@ -342,7 +342,7 @@ public class BilibiliLiveStatsAggregator {
      * 与 {@link #increment} 里那段曲线写入的区别在这里：那边是累加增量，
      * 而这些指标每次给的都是「当前是多少」，累加会得出天文数字。
      */
-    private void maxSeries(StarBotBaseLiveEvent event, String metric, double value) {
+    private void maxSeries(NovaBaseLiveEvent event, String metric, double value) {
         if (event.getSource() == null || event.getSource().getUid() == null) {
             return;
         }
@@ -350,7 +350,7 @@ public class BilibiliLiveStatsAggregator {
                 metric, event.getTimestamp(), value);
     }
 
-    private void recordUser(StarBotBaseLiveEvent event, String metric, UserInfo sender) {
+    private void recordUser(NovaBaseLiveEvent event, String metric, UserInfo sender) {
         scoreUser(event, metric, sender, 1);
     }
 
@@ -359,7 +359,7 @@ public class BilibiliLiveStatsAggregator {
      * <p>
      * 计分表的大小即独立人数，因此计人数与计分共用同一份数据。
      */
-    private void scoreUser(StarBotBaseLiveEvent event, String metric, UserInfo sender, double delta) {
+    private void scoreUser(NovaBaseLiveEvent event, String metric, UserInfo sender, double delta) {
         if (event.getSource() == null || event.getSource().getUid() == null
                 || sender == null || sender.getUid() == null) {
             return;
@@ -383,7 +383,7 @@ public class BilibiliLiveStatsAggregator {
      * <p>
      * 空文本不留：一条没有内容的记录占着行数，却答不出任何问题。
      */
-    private void recordDanmu(StarBotBaseLiveEvent event, UserInfo sender, String text, DanmuRecord.Type type) {
+    private void recordDanmu(NovaBaseLiveEvent event, UserInfo sender, String text, DanmuRecord.Type type) {
         if (event.getSource() == null || event.getSource().getUid() == null || StringUtil.isBlank(text)) {
             return;
         }
@@ -403,7 +403,7 @@ public class BilibiliLiveStatsAggregator {
     }
 
     /** 与 {@link #recordDanmu} 同守卫：无开播时刻即不留。 */
-    private void recordEvent(StarBotBaseLiveEvent event, String type, Map<String, Object> fields) {
+    private void recordEvent(NovaBaseLiveEvent event, String type, Map<String, Object> fields) {
         if (event.getSource() == null || event.getSource().getUid() == null) {
             return;
         }
@@ -432,7 +432,7 @@ public class BilibiliLiveStatsAggregator {
     /**
      * 弹幕分词入词频表，供弹幕词云绘制
      */
-    private void recordWords(StarBotBaseLiveEvent event, String text) {
+    private void recordWords(NovaBaseLiveEvent event, String text) {
         if (event.getSource() == null || event.getSource().getUid() == null) {
             return;
         }

@@ -4,7 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.properties.DatasourceProperties;
 import com.starlwr.bot.core.enums.PushTargetType;
-import com.starlwr.bot.core.event.datasource.other.StarBotDataSourceLoadCompleteEvent;
+import com.starlwr.bot.core.event.datasource.other.NovaDataSourceLoadCompleteEvent;
 import com.starlwr.bot.core.exception.DataSourceException;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
@@ -128,7 +128,7 @@ public class JsonDataSource extends AbstractDataSource {
 
         log.info("成功从 JSON 中导入了 {} 个主播", this.users.size());
 
-        eventPublisher.publishEvent(new StarBotDataSourceLoadCompleteEvent(new ArrayList<>(this.users)));
+        eventPublisher.publishEvent(new NovaDataSourceLoadCompleteEvent(new ArrayList<>(this.users)));
 
         if (properties.isJsonAutoReload()) {
             watchFileUpdate();

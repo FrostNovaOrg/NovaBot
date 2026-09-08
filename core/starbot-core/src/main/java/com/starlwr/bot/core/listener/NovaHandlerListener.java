@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.listener;
 
 import com.starlwr.bot.core.datasource.AbstractDataSource;
-import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
+import com.starlwr.bot.core.event.NovaExternalBaseEvent;
 import com.starlwr.bot.core.handler.NovaEventHandler;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
@@ -37,7 +37,7 @@ import java.util.Optional;
  */
 @Slf4j
 @Component
-public class StarBotHandlerListener {
+public class NovaHandlerListener {
     private final AbstractDataSource dataSource;
 
     private final PushGate pushGate;
@@ -45,7 +45,7 @@ public class StarBotHandlerListener {
     private final TimelineWriter timeline;
 
     @Autowired
-    public StarBotHandlerListener(AbstractDataSource dataSource, PushGate pushGate, TimelineWriter timeline) {
+    public NovaHandlerListener(AbstractDataSource dataSource, PushGate pushGate, TimelineWriter timeline) {
         this.dataSource = dataSource;
         this.pushGate = pushGate;
         this.timeline = timeline;
@@ -57,7 +57,7 @@ public class StarBotHandlerListener {
      */
     @Order(0)
     @EventListener
-    public void onStarBotExternalBaseEvent(StarBotExternalBaseEvent event) {
+    public void onNovaExternalBaseEvent(NovaExternalBaseEvent event) {
         Optional<PushUser> optionalUser = dataSource.getUser(event.getPlatform(), event.getSource().getUid());
         if (optionalUser.isEmpty()) {
             return;
@@ -91,7 +91,7 @@ public class StarBotHandlerListener {
      * 各写一份的话，改了分发这一处而漏了计数那一处，<b>时间线上的目标数就与真会发出去的条数
      * 对不上，而对不上这件事没有任何现象</b>——那个数看起来永远像是对的。
      */
-    private boolean handles(StarBotExternalBaseEvent event, PushMessage message) {
+    private boolean handles(NovaExternalBaseEvent event, PushMessage message) {
         return event.getClass().equals(message.getEventClass())
                 && message.getHandlerInstance() instanceof NovaEventHandler;
     }
@@ -103,7 +103,7 @@ public class StarBotHandlerListener {
      * 等于凭空造一条坏消息——而直播间里每分钟都有事件，那一条会把时间线淹掉。
      * 🔴 <b>「什么都没丢」与「丢了一堆」在一条不带数的记录上长得一样</b>，所以目标数要现算。
      */
-    private void recordDrop(StarBotExternalBaseEvent event, PushUser user) {
+    private void recordDrop(NovaExternalBaseEvent event, PushUser user) {
         int targets = 0;
         for (PushTarget target : user.getTargets()) {
             for (PushMessage message : target.getMessages()) {

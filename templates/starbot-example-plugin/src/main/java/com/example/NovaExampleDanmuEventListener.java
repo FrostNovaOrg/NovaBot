@@ -12,7 +12,7 @@ import org.springframework.context.event.EventListener;
  */
 @Slf4j
 @NovaComponent // 使用该注解将此类注册为 StarBot 组件，会被 StarBot 扫描并注册至 Spring 容器中
-public class StarBotExampleDanmuEventListener {
+public class NovaExampleDanmuEventListener {
     @EventListener
     public void handle(DanmuEvent event) {
         log.info("示例插件接收到弹幕事件: {} -> {}", event.getSender().getUname(), event.getContent());

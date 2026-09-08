@@ -3,7 +3,7 @@ package com.starlwr.bot.core.command;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.PushTargetType;
-import com.starlwr.bot.core.event.remote.StarBotRemoteMessageEvent;
+import com.starlwr.bot.core.event.remote.NovaRemoteMessageEvent;
 import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
@@ -229,11 +229,11 @@ class CommandDispatcherTest {
      * 群聊消息一律带上「@ 了机器人」——不带 @ 的消息根本进不了分发这一步，
      * 那条判定归语料表管
      */
-    private StarBotRemoteMessageEvent roleEvent(Long group, String text, String role) {
-        return new StarBotRemoteMessageEvent(PLATFORM, "group", group, 1L, text, role, true);
+    private NovaRemoteMessageEvent roleEvent(Long group, String text, String role) {
+        return new NovaRemoteMessageEvent(PLATFORM, "group", group, 1L, text, role, true);
     }
 
-    private StarBotRemoteMessageEvent event(Long group, String text) {
+    private NovaRemoteMessageEvent event(Long group, String text) {
         return roleEvent(group, text, null);
     }
 

@@ -2,7 +2,7 @@ package com.starlwr.bot.adapter.onebot.service;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.adapter.onebot.model.OneBotSender;
-import com.starlwr.bot.core.event.remote.StarBotRemoteMessageEvent;
+import com.starlwr.bot.core.event.remote.NovaRemoteMessageEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -76,7 +76,7 @@ class OneBotRawMessageReplyTest {
     void messageStillReachesTheCore() throws Exception {
         handler.handleMessage(session, message("菜单"));
 
-        verify(publisher).publishEvent(any(StarBotRemoteMessageEvent.class));
+        verify(publisher).publishEvent(any(NovaRemoteMessageEvent.class));
     }
 
     /**

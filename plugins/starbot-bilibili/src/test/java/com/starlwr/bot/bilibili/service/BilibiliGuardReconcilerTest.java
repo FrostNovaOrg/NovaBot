@@ -2,7 +2,7 @@ package com.starlwr.bot.bilibili.service;
 
 import com.starlwr.bot.bilibili.event.live.BilibiliCaptainEvent;
 import com.starlwr.bot.bilibili.model.BilibiliUserInfo;
-import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
+import com.starlwr.bot.core.event.live.NovaBaseLiveEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,7 +40,7 @@ class BilibiliGuardReconcilerTest {
      */
     private static final Duration GRACE = Duration.ofMillis(150);
 
-    private final List<StarBotBaseLiveEvent> published = new CopyOnWriteArrayList<>();
+    private final List<NovaBaseLiveEvent> published = new CopyOnWriteArrayList<>();
 
     private ScheduledExecutorService scheduler;
     private BilibiliGuardReconciler reconciler;
@@ -48,7 +48,7 @@ class BilibiliGuardReconcilerTest {
     @BeforeEach
     void setUp() {
         scheduler = Executors.newSingleThreadScheduledExecutor();
-        reconciler = new BilibiliGuardReconciler(event -> published.add((StarBotBaseLiveEvent) event), scheduler, GRACE);
+        reconciler = new BilibiliGuardReconciler(event -> published.add((NovaBaseLiveEvent) event), scheduler, GRACE);
     }
 
     @AfterEach
@@ -56,7 +56,7 @@ class BilibiliGuardReconcilerTest {
         scheduler.shutdownNow();
     }
 
-    private StarBotBaseLiveEvent captainEvent(long uid) {
+    private NovaBaseLiveEvent captainEvent(long uid) {
         return new BilibiliCaptainEvent(SOURCE, new BilibiliUserInfo(uid, "大哥", null), 198.0, 1, null, NOW);
     }
 

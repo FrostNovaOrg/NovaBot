@@ -1,8 +1,8 @@
 package com.starlwr.bot.core.model;
 
 import com.starlwr.bot.core.enums.LivePlatform;
-import com.starlwr.bot.core.event.dynamic.StarBotBaseDynamicEvent;
-import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
+import com.starlwr.bot.core.event.dynamic.NovaBaseDynamicEvent;
+import com.starlwr.bot.core.event.live.NovaBaseLiveEvent;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -100,7 +100,7 @@ public class PushUser {
                 .map(PushTarget::getMessages)
                 .flatMap(List::stream)
                 .map(PushMessage::getEventClass)
-                .anyMatch(StarBotBaseLiveEvent.class::isAssignableFrom);
+                .anyMatch(NovaBaseLiveEvent.class::isAssignableFrom);
     }
 
     /**
@@ -112,6 +112,6 @@ public class PushUser {
                 .map(PushTarget::getMessages)
                 .flatMap(List::stream)
                 .map(PushMessage::getEventClass)
-                .anyMatch(StarBotBaseDynamicEvent.class::isAssignableFrom);
+                .anyMatch(NovaBaseDynamicEvent.class::isAssignableFrom);
     }
 }

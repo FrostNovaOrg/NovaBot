@@ -5,7 +5,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
 import com.starlwr.bot.bilibili.event.live.BilibiliDanmuEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliEmojiEvent;
-import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
+import com.starlwr.bot.core.event.live.NovaBaseLiveEvent;
 import com.starlwr.bot.bilibili.model.BilibiliEmojiInfo;
 import com.starlwr.bot.bilibili.model.BilibiliUserInfo;
 import com.starlwr.bot.core.event.live.common.FreeGiftEvent;
@@ -338,7 +338,7 @@ class NovaEventMapperTest {
                 new BilibiliEmojiInfo("official_1", "[官方]", "https://x/o.png", 200, 200, null), java.time.Instant.now());
 
         long seq = 1;
-        for (StarBotBaseLiveEvent event : List.of(inline, plain, pure)) {
+        for (NovaBaseLiveEvent event : List.of(inline, plain, pure)) {
             JSONObject envelope = NovaEventMapper.map(event);
             // seq 由端点盖章、映射层不管，这里补上再验，让断言只针对 data 段的规则
             envelope.put("seq", seq++);

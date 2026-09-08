@@ -8,7 +8,7 @@ import com.starlwr.bot.adapter.onebot.model.OneBotSender;
 import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.adapter.onebot.health.OneBotConnectionState;
 import com.starlwr.bot.adapter.onebot.health.OneBotLivenessTracker;
-import com.starlwr.bot.core.event.remote.StarBotRemoteMessageEvent;
+import com.starlwr.bot.core.event.remote.NovaRemoteMessageEvent;
 import com.starlwr.bot.core.lang.StringUtil;
 import jakarta.websocket.ContainerProvider;
 import jakarta.websocket.WebSocketContainer;
@@ -460,7 +460,7 @@ public class OneBotWebsocketService {
                                     warnOnceIfSelfIdMissing(rawMessage, messageType);
                                     OneBotIncomingMessage incoming = OneBotIncomingMessage.of(rawMessage);
 
-                                    service.publisher.publishEvent(new StarBotRemoteMessageEvent(
+                                    service.publisher.publishEvent(new NovaRemoteMessageEvent(
                                             sender.getName(), messageType, num,
                                             rawMessage.getLong("user_id"), incoming.text(),
                                             senderRole, incoming.mentionsBot()));

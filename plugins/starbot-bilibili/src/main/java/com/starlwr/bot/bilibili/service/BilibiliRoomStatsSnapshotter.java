@@ -24,7 +24,7 @@ import java.util.List;
  * 粉丝数、粉丝团人数、大航海人数都不在弹幕流里，只能主动去问接口。开播时记下一份，
  * 报告绘制时再取一次实时值，两者相减就是这场直播的涨幅。
  * <p>
- * <b>顺序上必须晚于清零。</b>核心的 {@code StarBotDefaultLiveOnEventListener}
+ * <b>顺序上必须晚于清零。</b>核心的 {@code NovaDefaultLiveOnEventListener}
  * 用 {@code @Order(-10000)} 抢在最前面重置本场数据，本监听器不声明顺序，
  * 因而排在其后——反过来的话，刚记下的快照会被立刻抹掉。
  */

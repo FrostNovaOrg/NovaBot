@@ -6,8 +6,8 @@ import com.starlwr.bot.bilibili.event.live.BilibiliDanmuEvent;
 import com.starlwr.bot.bilibili.model.BilibiliEmojiInfo;
 import com.starlwr.bot.bilibili.model.BilibiliUserInfo;
 import com.starlwr.bot.bilibili.model.FansMedal;
-import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
-import com.starlwr.bot.core.event.live.base.StarBotLivePurchaseEvent;
+import com.starlwr.bot.core.event.live.NovaBaseLiveEvent;
+import com.starlwr.bot.core.event.live.base.NovaLivePurchaseEvent;
 import com.starlwr.bot.core.event.live.common.*;
 import com.starlwr.bot.core.model.EmojiInfo;
 import com.starlwr.bot.core.model.GiftInfo;
@@ -49,7 +49,7 @@ import java.util.Set;
  * <ul>
  *   <li><b>背包礼物改读字段。</b> 原实现从 {@code charged == 0 && value > 0} 反推，
  *       那是它写的时候字段还不存在。现在事件上有 {@code fromBag}，直接读——
- *       理由见 {@code StarBotLiveGiftEvent.fromBag} 的契约说明。</li>
+ *       理由见 {@code NovaLiveGiftEvent.fromBag} 的契约说明。</li>
  *   <li><b>补上表情弹幕。</b> 纯表情弹幕在我们这边是独立的 {@link EmojiEvent}，
  *       原实现没有处理它，会被整条丢掉。</li>
  *   <li><b>补上弹幕内联表情与 @回复。</b> 我们的 {@link BilibiliDanmuEvent}
@@ -81,7 +81,7 @@ public final class NovaEventMapper {
      * @param event 事件
      * @return 协议信封，不认识的事件返回 {@code null}——协议只承载它列出的那些
      */
-    public static JSONObject map(StarBotBaseLiveEvent event) {
+    public static JSONObject map(NovaBaseLiveEvent event) {
         if (event instanceof RandomGiftEvent e) return blindBox(e);
         if (event instanceof FreeGiftEvent e) return freeGift(e);
         if (event instanceof PaidGiftEvent e) return paidGift(e);
@@ -353,11 +353,11 @@ public final class NovaEventMapper {
     // ── 金额 ────────────────────────────────────────────────────────────────
 
     /** 铁律一：{@code charged ?? value}，取不到时回退而不是当 0 */
-    private static double chargedOf(StarBotLivePurchaseEvent e) {
+    private static double chargedOf(NovaLivePurchaseEvent e) {
         return chargedOf(e, e.getValue());
     }
 
-    private static double chargedOf(StarBotLivePurchaseEvent e, Double fallback) {
+    private static double chargedOf(NovaLivePurchaseEvent e, Double fallback) {
         Double charged = e.getCharged();
         return charged != null ? charged : orZero(fallback);
     }
@@ -458,7 +458,7 @@ public final class NovaEventMapper {
      * sender 由调用方传进来而不是从事件上取：进房 / 关注 / 分享走的是操作事件那一支，
      * 和礼物那支没有共同的「带 sender」父类。
      */
-    private static JSONObject envelope(StarBotBaseLiveEvent e, UserInfo sender, String kind, JSONObject data) {
+    private static JSONObject envelope(NovaBaseLiveEvent e, UserInfo sender, String kind, JSONObject data) {
         LiveStreamerInfo source = e.getSource();
         JSONObject env = new JSONObject();
         env.put("v", PROTOCOL_VERSION);

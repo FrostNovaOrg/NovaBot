@@ -17,20 +17,20 @@ import java.time.Instant;
 @Setter
 @NoArgsConstructor
 @ToString(callSuper = true)
-public class StarBotLiveMessageEvent extends StarBotLiveInteractionEvent {
-    public StarBotLiveMessageEvent(String platform, LiveStreamerInfo source, UserInfo sender) {
+public class NovaLiveMessageEvent extends NovaLiveInteractionEvent {
+    public NovaLiveMessageEvent(String platform, LiveStreamerInfo source, UserInfo sender) {
         super(platform, source, sender);
     }
 
-    public StarBotLiveMessageEvent(String platform, LiveStreamerInfo source, UserInfo sender, Instant instant) {
+    public NovaLiveMessageEvent(String platform, LiveStreamerInfo source, UserInfo sender, Instant instant) {
         super(platform, source, sender, instant);
     }
 
-    public StarBotLiveMessageEvent(LivePlatform platform, LiveStreamerInfo source, UserInfo sender) {
+    public NovaLiveMessageEvent(LivePlatform platform, LiveStreamerInfo source, UserInfo sender) {
         super(platform, source, sender);
     }
 
-    public StarBotLiveMessageEvent(LivePlatform platform, LiveStreamerInfo source, UserInfo sender, Instant instant) {
+    public NovaLiveMessageEvent(LivePlatform platform, LiveStreamerInfo source, UserInfo sender, Instant instant) {
         super(platform, source, sender, instant);
     }
 }

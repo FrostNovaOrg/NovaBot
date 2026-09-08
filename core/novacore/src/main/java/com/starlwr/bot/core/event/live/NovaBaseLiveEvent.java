@@ -3,7 +3,7 @@ package com.starlwr.bot.core.event.live;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.annotation.JSONField;
 import com.starlwr.bot.core.enums.LivePlatform;
-import com.starlwr.bot.core.event.StarBotExternalBaseEvent;
+import com.starlwr.bot.core.event.NovaExternalBaseEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -19,7 +19,7 @@ import java.time.Instant;
 @Setter
 @NoArgsConstructor
 @ToString(callSuper = true)
-public class StarBotBaseLiveEvent extends StarBotExternalBaseEvent {
+public class NovaBaseLiveEvent extends NovaExternalBaseEvent {
     /**
      * 平台下发的原始报文，供事件输出协议透传与排障使用，取不到时为空
      * <p>
@@ -39,19 +39,19 @@ public class StarBotBaseLiveEvent extends StarBotExternalBaseEvent {
     @JSONField(serialize = false)
     private transient JSONObject rawMessage;
 
-    public StarBotBaseLiveEvent(String platform, LiveStreamerInfo source) {
+    public NovaBaseLiveEvent(String platform, LiveStreamerInfo source) {
         super(platform, source);
     }
 
-    public StarBotBaseLiveEvent(String platform, LiveStreamerInfo source, Instant instant) {
+    public NovaBaseLiveEvent(String platform, LiveStreamerInfo source, Instant instant) {
         super(platform, source, instant);
     }
 
-    public StarBotBaseLiveEvent(LivePlatform platform, LiveStreamerInfo source) {
+    public NovaBaseLiveEvent(LivePlatform platform, LiveStreamerInfo source) {
         super(platform, source);
     }
 
-    public StarBotBaseLiveEvent(LivePlatform platform, LiveStreamerInfo source, Instant instant) {
+    public NovaBaseLiveEvent(LivePlatform platform, LiveStreamerInfo source, Instant instant) {
         super(platform, source, instant);
     }
 }

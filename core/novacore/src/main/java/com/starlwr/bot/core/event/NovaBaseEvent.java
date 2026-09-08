@@ -16,7 +16,7 @@ import java.time.ZoneId;
  */
 @Getter
 @Setter
-public class StarBotBaseEvent extends ApplicationEvent {
+public class NovaBaseEvent extends ApplicationEvent {
     private static final Logger eventLogger = LoggerFactory.getLogger("EventLogger");
 
     /**
@@ -24,11 +24,11 @@ public class StarBotBaseEvent extends ApplicationEvent {
      */
     private boolean stopped = false;
 
-    public StarBotBaseEvent() {
+    public NovaBaseEvent() {
         super(new Object());
     }
 
-    public StarBotBaseEvent(Instant instant) {
+    public NovaBaseEvent(Instant instant) {
         super(new Object(), Clock.fixed(instant, ZoneId.systemDefault()));
     }
 
@@ -43,6 +43,6 @@ public class StarBotBaseEvent extends ApplicationEvent {
 
     @Override
     public String toString() {
-        return "StarBotBaseEvent(" + "timestamp=" + getTimestamp() + ")";
+        return "NovaBaseEvent(" + "timestamp=" + getTimestamp() + ")";
     }
 }

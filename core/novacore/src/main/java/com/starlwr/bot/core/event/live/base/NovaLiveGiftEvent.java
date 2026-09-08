@@ -19,7 +19,7 @@ import java.time.Instant;
 @Setter
 @NoArgsConstructor
 @ToString(callSuper = true)
-public class StarBotLiveGiftEvent extends StarBotLivePurchaseEvent {
+public class NovaLiveGiftEvent extends NovaLivePurchaseEvent {
     /**
      * 礼物信息
      */
@@ -43,42 +43,42 @@ public class StarBotLiveGiftEvent extends StarBotLivePurchaseEvent {
      */
     private boolean fromBag;
 
-    public StarBotLiveGiftEvent(String platform, LiveStreamerInfo source, UserInfo sender, GiftInfo giftInfo) {
+    public NovaLiveGiftEvent(String platform, LiveStreamerInfo source, UserInfo sender, GiftInfo giftInfo) {
         super(platform, source, sender, MathUtil.multiply(giftInfo.getPrice(), giftInfo.getCount()));
         this.giftInfo = giftInfo;
     }
 
-    public StarBotLiveGiftEvent(String platform, LiveStreamerInfo source, UserInfo sender, GiftInfo giftInfo, Instant instant) {
+    public NovaLiveGiftEvent(String platform, LiveStreamerInfo source, UserInfo sender, GiftInfo giftInfo, Instant instant) {
         super(platform, source, sender, MathUtil.multiply(giftInfo.getPrice(), giftInfo.getCount()), instant);
         this.giftInfo = giftInfo;
     }
 
-    public StarBotLiveGiftEvent(String platform, LiveStreamerInfo source, UserInfo sender, GiftInfo giftInfo, Double value) {
+    public NovaLiveGiftEvent(String platform, LiveStreamerInfo source, UserInfo sender, GiftInfo giftInfo, Double value) {
         super(platform, source, sender, value);
         this.giftInfo = giftInfo;
     }
 
-    public StarBotLiveGiftEvent(String platform, LiveStreamerInfo source, UserInfo sender, GiftInfo giftInfo, Double value, Instant instant) {
+    public NovaLiveGiftEvent(String platform, LiveStreamerInfo source, UserInfo sender, GiftInfo giftInfo, Double value, Instant instant) {
         super(platform, source, sender, value, instant);
         this.giftInfo = giftInfo;
     }
 
-    public StarBotLiveGiftEvent(LivePlatform platform, LiveStreamerInfo source, UserInfo sender, GiftInfo giftInfo) {
+    public NovaLiveGiftEvent(LivePlatform platform, LiveStreamerInfo source, UserInfo sender, GiftInfo giftInfo) {
         super(platform, source, sender, MathUtil.multiply(giftInfo.getPrice(), giftInfo.getCount()));
         this.giftInfo = giftInfo;
     }
 
-    public StarBotLiveGiftEvent(LivePlatform platform, LiveStreamerInfo source, UserInfo sender, GiftInfo giftInfo, Instant instant) {
+    public NovaLiveGiftEvent(LivePlatform platform, LiveStreamerInfo source, UserInfo sender, GiftInfo giftInfo, Instant instant) {
         super(platform, source, sender, MathUtil.multiply(giftInfo.getPrice(), giftInfo.getCount()), instant);
         this.giftInfo = giftInfo;
     }
 
-    public StarBotLiveGiftEvent(LivePlatform platform, LiveStreamerInfo source, UserInfo sender, GiftInfo giftInfo, Double value) {
+    public NovaLiveGiftEvent(LivePlatform platform, LiveStreamerInfo source, UserInfo sender, GiftInfo giftInfo, Double value) {
         super(platform, source, sender, value);
         this.giftInfo = giftInfo;
     }
 
-    public StarBotLiveGiftEvent(LivePlatform platform, LiveStreamerInfo source, UserInfo sender, GiftInfo giftInfo, Double value, Instant instant) {
+    public NovaLiveGiftEvent(LivePlatform platform, LiveStreamerInfo source, UserInfo sender, GiftInfo giftInfo, Double value, Instant instant) {
         super(platform, source, sender, value, instant);
         this.giftInfo = giftInfo;
     }

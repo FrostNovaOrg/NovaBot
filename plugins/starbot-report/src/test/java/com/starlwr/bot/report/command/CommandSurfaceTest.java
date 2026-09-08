@@ -9,7 +9,7 @@ import com.starlwr.bot.core.command.NovaCommand;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.PushTargetType;
-import com.starlwr.bot.core.event.remote.StarBotRemoteMessageEvent;
+import com.starlwr.bot.core.event.remote.NovaRemoteMessageEvent;
 import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
@@ -634,7 +634,7 @@ class CommandSurfaceTest {
                     new StarBotCoreProperties(), TimelineWriter.NONE);
             current.set(dispatcher);
 
-            dispatcher.onRemoteMessage(new StarBotRemoteMessageEvent(PLATFORM, group ? "group" : "private",
+            dispatcher.onRemoteMessage(new NovaRemoteMessageEvent(PLATFORM, group ? "group" : "private",
                     group ? GROUP : FRIEND, SENDER, text, role, group));
 
             return String.join("\n", replies);
