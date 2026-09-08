@@ -548,6 +548,7 @@ public class BilibiliEventParser {
         JSONObject meta = primary.getJSONObject(15);
         JSONObject senderInfo = meta == null ? null : meta.getJSONObject("user");
         if (senderInfo == null) {
+            noteNamed(BilibiliRiskMetrics.Kind.FIELD_MISSING, "DANMU_MSG:user");
             return null;
         }
 
@@ -715,6 +716,25 @@ public class BilibiliEventParser {
     }
 
     /**
+     * 取出直播间消息的 {@code data} 对象。缺了就记一笔缺字段并返回空——调用方仍按原样丢掉这条消息。
+     */
+    private JSONObject requireData(JSONObject json, String cmd) {
+        JSONObject meta = json.getJSONObject("data");
+        if (meta == null) {
+            noteNamed(BilibiliRiskMetrics.Kind.FIELD_MISSING, cmd + ":data");
+        }
+        return meta;
+    }
+
+    /**
+     * 枚举值写进记账名时截到 32 个字符，避免把整段异常文本写进健康栏。
+     */
+    private static String clipped(Object value) {
+        String raw = String.valueOf(value);
+        return raw.length() <= 32 ? raw : raw.substring(0, 32);
+    }
+
+    /**
      * 登记一条「负载根本不是合法 JSON」的解析失败
      * <p>
      * 与分派表内解析抛异常走同一本账（同一张去重表、同一个 {@code unique=} 口径）：
@@ -801,7 +821,7 @@ public class BilibiliEventParser {
      * 解析进房、关注与分享消息
      */
     private StarBotBaseLiveEvent parseInteract(JSONObject data, LiveStreamerInfo source) {
-        JSONObject meta = data.getJSONObject("data");
+        JSONObject meta = requireData(data, "INTERACT_WORD");
         if (meta == null) {
             return null;
         }
@@ -819,6 +839,7 @@ public class BilibiliEventParser {
 
         Integer msgType = meta.getInteger("msg_type");
         if (msgType == null) {
+            noteNamed(BilibiliRiskMetrics.Kind.FIELD_MISSING, "INTERACT_WORD:msg_type");
             return null;
         }
 
@@ -837,6 +858,7 @@ public class BilibiliEventParser {
             }
             default -> {
                 log.debug("未处理的直播间互动消息类型: {}", msgType);
+                noteNamed(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, "INTERACT_WORD:msg_type=" + clipped(msgType));
                 return null;
             }
         }
@@ -890,7 +912,7 @@ public class BilibiliEventParser {
      * 对下播报告的影响见 {@link com.starlwr.bot.bilibili.model.BilibiliLiveMetric#FOLLOW_COUNT}。
      */
     private StarBotBaseLiveEvent parseInteractV2(JSONObject data, LiveStreamerInfo source) {
-        JSONObject meta = data.getJSONObject("data");
+        JSONObject meta = requireData(data, "INTERACT_WORD_V2");
         if (meta == null) {
             return null;
         }
@@ -916,7 +938,8 @@ public class BilibiliEventParser {
         Long msgType = message.number(V2_MSG_TYPE);
         if (msgType == null) {
             // proto3 不序列化零值，取不到既可能是缺字段也可能是 msg_type=0。
-            // 而 0 不在已知取值 1/2/3 里，两种情况都该丢弃
+            // 而 0 不在已知取值 1/2/3 里，两种情况都该丢弃。
+            // 因此这里不记 FIELD_MISSING：记了会把「类型 0」算成缺字段。
             log.debug("直播间 {} 的 INTERACT_WORD_V2 消息取不到互动类型, 已忽略", source.getRoomId());
             return null;
         }
@@ -964,6 +987,7 @@ public class BilibiliEventParser {
             case 3 -> new BilibiliShareEvent(source, sender, timestamp);
             default -> {
                 log.debug("未处理的直播间互动消息类型: {}", msgType);
+                noteNamed(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, "INTERACT_WORD_V2:msg_type=" + clipped(msgType));
                 yield null;
             }
         };
@@ -980,6 +1004,7 @@ public class BilibiliEventParser {
      */
     private byte[] decodePayload(String base64, LiveStreamerInfo source, String cmd) {
         if (base64 == null || base64.isBlank()) {
+            noteNamed(BilibiliRiskMetrics.Kind.FIELD_MISSING, cmd + ":pb");
             log.debug("直播间 {} 的 {} 消息没有 pb 字段, 已忽略", source.getRoomId(), cmd);
             return null;
         }
@@ -987,6 +1012,7 @@ public class BilibiliEventParser {
         try {
             return Base64.getDecoder().decode(base64);
         } catch (IllegalArgumentException e) {
+            noteNamed(BilibiliRiskMetrics.Kind.PARSE_FAILURE, cmd + ":pb-b64");
             log.debug("直播间 {} 的 {} 消息的 pb 不是合法 base64, 已忽略: {}", source.getRoomId(), cmd, base64);
             return null;
         }
@@ -1089,7 +1115,7 @@ public class BilibiliEventParser {
      * 解析礼物消息
      */
     private StarBotBaseLiveEvent parseGift(JSONObject data, LiveStreamerInfo source) {
-        JSONObject meta = data.getJSONObject("data");
+        JSONObject meta = requireData(data, "SEND_GIFT");
         if (meta == null) {
             return null;
         }
@@ -1135,7 +1161,7 @@ public class BilibiliEventParser {
      * 礼物暂时认不出来，实扣只能按 {@code total_coin} 照记。等样本。
      */
     private StarBotBaseLiveEvent parseGiftV2(JSONObject data, LiveStreamerInfo source) {
-        JSONObject meta = data.getJSONObject("data");
+        JSONObject meta = requireData(data, "SEND_GIFT_V2");
         if (meta == null) {
             return null;
         }
@@ -1233,6 +1259,7 @@ public class BilibiliEventParser {
 
         if (!"gold".equals(coinType)) {
             log.debug("未处理的直播间礼物货币类型: {}", coinType);
+            noteNamed(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, "SEND_GIFT:coin_type=" + clipped(coinType));
             return null;
         }
 
@@ -1362,7 +1389,7 @@ public class BilibiliEventParser {
      * 解析醒目留言消息
      */
     private StarBotBaseLiveEvent parseSuperChat(JSONObject data, LiveStreamerInfo source) {
-        JSONObject meta = data.getJSONObject("data");
+        JSONObject meta = requireData(data, "SUPER_CHAT_MESSAGE");
         if (meta == null) {
             return null;
         }
@@ -1414,7 +1441,7 @@ public class BilibiliEventParser {
      * @return 红包事件，无法识别或属于重播时为空
      */
     private StarBotBaseLiveEvent parseRedPocket(JSONObject data, LiveStreamerInfo source) {
-        JSONObject meta = data.getJSONObject("data");
+        JSONObject meta = requireData(data, "POPULARITY_RED_POCKET_START");
         if (meta == null) {
             return null;
         }
@@ -1422,6 +1449,7 @@ public class BilibiliEventParser {
         Object lotId = meta.get("lot_id");
         if (lotId == null) {
             // 认不出是哪个红包就没法挡重播。按本项目一贯的取舍，宁可漏播一次也不要反复感谢
+            noteNamed(BilibiliRiskMetrics.Kind.FIELD_MISSING, "POPULARITY_RED_POCKET_START:lot_id");
             log.debug("红包消息缺少 lot_id, 已忽略");
             return null;
         }
@@ -1442,6 +1470,7 @@ public class BilibiliEventParser {
         String face = Optional.ofNullable(base).map(info -> info.getString("face")).orElseGet(() -> meta.getString("sender_face"));
         if (uid == null && uname == null) {
             // 连是谁发的都取不到，这条就没有播报价值了。留一行日志，格式变了才有迹可循
+            noteNamed(BilibiliRiskMetrics.Kind.FIELD_MISSING, "POPULARITY_RED_POCKET_START:sender");
             log.debug("红包消息认不出发送者, 已忽略: lot={}", lotId);
             return null;
         }
@@ -1482,13 +1511,14 @@ public class BilibiliEventParser {
      * 取舍见 {@link BilibiliGuardReconciler}。
      */
     private StarBotBaseLiveEvent parseGuard(JSONObject data, LiveStreamerInfo source) {
-        JSONObject meta = data.getJSONObject("data");
+        JSONObject meta = requireData(data, "USER_TOAST_MSG");
         if (meta == null) {
             return null;
         }
 
         Integer guardLevel = meta.getInteger("guard_level");
         if (guardLevel == null) {
+            noteNamed(BilibiliRiskMetrics.Kind.FIELD_MISSING, "USER_TOAST_MSG:guard_level");
             return null;
         }
 
@@ -1516,7 +1546,7 @@ public class BilibiliEventParser {
      * 重复的那部分靠 {@code payflow_id} 去重。
      */
     private StarBotBaseLiveEvent parseGuardV2(JSONObject data, LiveStreamerInfo source) {
-        JSONObject meta = data.getJSONObject("data");
+        JSONObject meta = requireData(data, "USER_TOAST_MSG_V2");
         if (meta == null) {
             return null;
         }
@@ -1524,11 +1554,13 @@ public class BilibiliEventParser {
         JSONObject guardInfo = meta.getJSONObject("guard_info");
         JSONObject payInfo = meta.getJSONObject("pay_info");
         if (guardInfo == null || payInfo == null) {
+            noteNamed(BilibiliRiskMetrics.Kind.FIELD_MISSING, "USER_TOAST_MSG_V2:guard_info|pay_info");
             return null;
         }
 
         Integer guardLevel = guardInfo.getInteger("guard_level");
         if (guardLevel == null) {
+            noteNamed(BilibiliRiskMetrics.Kind.FIELD_MISSING, "USER_TOAST_MSG_V2:guard_level");
             return null;
         }
 
@@ -1562,13 +1594,14 @@ public class BilibiliEventParser {
      * 所以 {@link #unitOf} 的两条路都走不通，单位只能是空——这也是宁可等 toast 的理由之一。
      */
     private StarBotBaseLiveEvent parseGuardBuy(JSONObject data, LiveStreamerInfo source) {
-        JSONObject meta = data.getJSONObject("data");
+        JSONObject meta = requireData(data, "GUARD_BUY");
         if (meta == null) {
             return null;
         }
 
         Integer guardLevel = meta.getInteger("guard_level");
         if (guardLevel == null) {
+            noteNamed(BilibiliRiskMetrics.Kind.FIELD_MISSING, "GUARD_BUY:guard_level");
             return null;
         }
 
@@ -1663,6 +1696,7 @@ public class BilibiliEventParser {
             }
             default -> {
                 log.debug("未处理的直播间大航海类型: {}", guardLevel);
+                noteNamed(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, "USER_TOAST_MSG:guard_level=" + clipped(guardLevel));
                 yield null;
             }
         };
@@ -1703,7 +1737,7 @@ public class BilibiliEventParser {
      * 解析点赞消息
      */
     private StarBotBaseLiveEvent parseLike(JSONObject data, LiveStreamerInfo source) {
-        JSONObject meta = data.getJSONObject("data");
+        JSONObject meta = requireData(data, "LIKE_INFO_V3_CLICK");
         if (meta == null) {
             return null;
         }
@@ -1724,7 +1758,7 @@ public class BilibiliEventParser {
      * 解析点赞数更新消息
      */
     private StarBotBaseLiveEvent parseLikeUpdate(JSONObject data, LiveStreamerInfo source) {
-        JSONObject meta = data.getJSONObject("data");
+        JSONObject meta = requireData(data, "LIKE_INFO_V3_UPDATE");
         if (meta == null) {
             return null;
         }
@@ -1736,7 +1770,7 @@ public class BilibiliEventParser {
      * 解析看过人数更新消息
      */
     private StarBotBaseLiveEvent parseWatchedUpdate(JSONObject data, LiveStreamerInfo source) {
-        JSONObject meta = data.getJSONObject("data");
+        JSONObject meta = requireData(data, "WATCHED_CHANGE");
         if (meta == null) {
             return null;
         }
@@ -1751,7 +1785,7 @@ public class BilibiliEventParser {
      * 取不到时为空即可——这两项都只是展示用，缺了不影响 {@code count} 这个正主。
      */
     private StarBotBaseLiveEvent parseOnlineRankCount(JSONObject data, LiveStreamerInfo source) {
-        JSONObject meta = data.getJSONObject("data");
+        JSONObject meta = requireData(data, "ONLINE_RANK_COUNT");
         if (meta == null) {
             return null;
         }
@@ -1764,7 +1798,7 @@ public class BilibiliEventParser {
      * 解析直播间标题与分区变更消息
      */
     private StarBotBaseLiveEvent parseRoomInfoChange(JSONObject data, LiveStreamerInfo source) {
-        JSONObject meta = data.getJSONObject("data");
+        JSONObject meta = requireData(data, "ROOM_CHANGE");
         if (meta == null) {
             return null;
         }
