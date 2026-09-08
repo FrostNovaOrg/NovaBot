@@ -187,7 +187,7 @@ lifecycleProcessor.onClose()     ← 停 SmartLifecycle，默认最多等 30 秒
 - `category()` —— `菜单` 据此分组，按首次出现顺序排列
 - `requiresAdmin()` —— 是否只有管理员能用
 
-**管理员 = 群主 / 群管理员 / 配置的超管名单**（`starbot.core.command.admins`）。
+**管理员 = 群主 / 群管理员 / 配置的超管名单**（`novabot.core.command.admins`）。
 群主与管理员的角色由推送平台在消息事件里带上；超管名单是跨群生效的，
 因为机器人的主人未必是每个群的管理员。**私聊一律不算管理员**——
 私聊没有「群管理员」这个概念，放行等于给所有人开后门。授权与拒绝都会记日志。
@@ -349,7 +349,7 @@ Class<?> type = ClassUtils.getUserClass(bean);
   真实系统中并不存在的元数据而被漏掉，端到端跑一遍才发现
 - 涉及时间的测试用假调度器/假时钟，不要 `Thread.sleep` 等真实时间
 - 测试 fixture 里的隐性依赖**就地写注释**。例如 `ConfigurationFileServiceTest` 的 YAML
-  fixture 中不能加入 `starbot.bilibili.dynamic.auto-save-image`，因为另一个用例依赖该键不存在——
+  fixture 中不能加入 `novabot.bilibili.dynamic.auto-save-image`，因为另一个用例依赖该键不存在——
   这条注释就写在 fixture 上方
 
 ### 界面 JS 怎么验证

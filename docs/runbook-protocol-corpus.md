@@ -23,7 +23,7 @@
 `application.yml` 里打开原始报文日志：
 
 ```yaml
-starbot:
+novabot:
   bilibili:
     account:
       anonymous: true               # 不用凭据
@@ -31,7 +31,7 @@ starbot:
       live-room-raw-message-log: true
 ```
 
-再把控制台级别调到 `DEBUG`（`starbot.core.log.console: DEBUG`），
+再把控制台级别调到 `DEBUG`（`novabot.core.log.console: DEBUG`），
 平台的每一条报文就会原样出现在日志里。
 
 **房间要挑杂一些。** 同一个分区的报文形状高度相似，

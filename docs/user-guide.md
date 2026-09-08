@@ -145,7 +145,7 @@ ssh -L 7827:127.0.0.1:7827 用户名@服务器地址
 可以免登录跑：
 
 ```yaml
-starbot:
+novabot:
   bilibili:
     account:
       anonymous: true
@@ -403,9 +403,9 @@ starbot:
 于是「大群只放词云和弹幕数、自己私聊看全量」不需要维护两套版式——
 同一份版式配置，推给谁就按谁的可见性来。
 
-想在报告底部打自己社群的标，在设置页填 `starbot.bilibili.live.report-logo-path`
+想在报告底部打自己社群的标，在设置页填 `novabot.bilibili.live.report-logo-path`
 （本地图片路径），图片会按固定高度等比缩放，绘制在署名之上。
-动态图片的标识是另一项 `starbot.bilibili.dynamic.logo-path`，两者分开配置——
+动态图片的标识是另一项 `novabot.bilibili.dynamic.logo-path`，两者分开配置——
 要一致的话填成同一个路径即可。
 
 ## 6. 群里能用的命令
@@ -442,7 +442,7 @@ starbot:
 - **同一个会话 3 秒内只回一次**，防止刷屏。执行命令、回菜单、回「已关闭」、
   回「没权限」共用这一份冷却，不是各算各的
 - **`启用命令` / `禁用命令` 只有管理员能用**。群主、群管理员自动有权限；
-  机器人的主人未必是每个群的管理员，可在设置页的 `starbot.core.command.admins`
+  机器人的主人未必是每个群的管理员，可在设置页的 `novabot.core.command.admins`
   里填一份跨群生效的超级管理员 QQ 号名单。其余命令（`@我`、`绑定`、`我的数据` 等）
   只影响自己，任何人都能用
 - **绑定核对的是 uid 有没有打错，不是账号归属**。没有接口能证明
@@ -475,7 +475,7 @@ starbot:
 半夜被机器人吵醒是这类工具最常见的抱怨。设置页搜「静音」：
 
 ```yaml
-starbot:
+novabot:
   core:
     push:
       quiet-start: "23:00"
@@ -489,7 +489,7 @@ starbot:
 登录失效、连接中断、队列积压默认只写日志。要主动收到通知，配置告警接收方：
 
 ```yaml
-starbot:
+novabot:
   adapter:
     onebot:
       alert:
@@ -579,7 +579,7 @@ NovaBot 两个维度都记账，任一用尽就把 @ 摘掉、退化为普通消
 可以挂一个外部程序：
 
 ```yaml
-starbot:
+novabot:
   core:
     exec:
       enabled: true          # ⚠️ 默认关闭
@@ -616,7 +616,7 @@ starbot:
 > [在本机把真源跑起来](runbook-local-source.md)——零凭据，不用扫码也不用配 QQ 机器人。
 
 ```yaml
-starbot:
+novabot:
   core:
     event-stream:
       enabled: true               # 默认关闭
@@ -625,8 +625,8 @@ starbot:
 ```
 
 > 这一段以前写在 `starbot.bilibili` 下。事件输出由核心提供，与接的是哪个平台无关，
-> 配置也就跟着挪到了 `starbot.core`。**旧位置仍然认得**：只写旧位置照常生效，
-> 启动时会打一条提醒；两处都写时以 `starbot.core` 为准，它没写到的项才取旧位置的值。
+> 配置也就跟着挪到了 `novabot.core`。**旧位置仍然认得**：只写旧位置照常生效，
+> 启动时会打一条提醒；两处都写时以 `novabot.core` 为准，它没写到的项才取旧位置的值。
 
 打开后地址是 `ws://127.0.0.1:<server.port>/nova/events`，与配置界面共用端口。
 连上后服务端先发一条 `hello`（带会话标识与能力集），随后是实时事件；
@@ -763,7 +763,7 @@ starbot:
 ### 凭据会不会掉
 
 **一般不会。** 扫码登录走的是电视端接口，拿到的令牌有效期 180 天，
-到期前 30 天程序会自动续期（`starbot.bilibili.account.auto-refresh-cookie`，默认开启）。
+到期前 30 天程序会自动续期（`novabot.bilibili.account.auto-refresh-cookie`，默认开启）。
 
 启动日志会明说拿到的是哪一种凭据，出问题先看这一行：
 
@@ -791,7 +791,7 @@ starbot:
 - 推送接口有 Token 鉴权与来源 IP 白名单，默认只放行本机
 - `cookies.json` 等同于哔哩哔哩账号的完整控制权，默认加密存储，密钥在 `cookies.key`。
   **两个文件都要妥善保管，也都不要提交到任何仓库**
-- `starbot.core.exec` 能执行任意程序，**默认关闭**。打开前请确认清楚要跑的是什么；
+- `novabot.core.exec` 能执行任意程序，**默认关闭**。打开前请确认清楚要跑的是什么；
   命令以参数数组执行而非交给 shell，因此昵称、弹幕内容无法逃逸成命令
 - 详见 [SECURITY.md](../SECURITY.md)
 
