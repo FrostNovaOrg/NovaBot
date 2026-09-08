@@ -157,14 +157,14 @@ public class BilibiliApiUtil {
     /**
      * 各 HTTP 端点应答 {@code data} 顶层已知键。
      * <p>
-     * 表的查找键是去掉 query 的路径，与 {@link #extractData} 收到的 url 对齐。
-     * 已知键是该端点解析方法实际取用的顶层键，同一路径被两个方法用时取并集，
-     * 登录态／匿名态字段并集。未进表的端点（应答顶层键随 uid 变化、或不经
-     * {@link #extractData}）不比对。
+     * 表的查找键是去掉 query 的路径。已知键是该端点解析方法实际取用的顶层键，
+     * 同一路径被两个方法用时取并集，登录态／匿名态字段并集。
+     * {@code nested} 的条目（房间状态按 uid 分桶）不在 {@link #extractData} 比对，
+     * 而在解析处对桶内对象调用 {@link #noteUnknownTopKeys}。
      */
-    private static final Map<String, KnownDataKeys> KNOWN_DATA_KEYS_BY_PATH = knownDataKeysTable();
+    static final Map<String, KnownDataKeys> KNOWN_DATA_KEYS_BY_PATH = knownDataKeysTable();
 
-    private record KnownDataKeys(String constantName, Set<String> keys) {
+    record KnownDataKeys(String constantName, Set<String> keys, boolean nested) {
     }
 
     private static Map<String, KnownDataKeys> knownDataKeysTable() {
@@ -172,38 +172,57 @@ public class BilibiliApiUtil {
         registerKnownKeys(table, FINGER_SPI_API, "FINGER_SPI_API", "b_3", "b_4");
         registerKnownKeys(table, BUVID_API, "BUVID_API", "buvid");
         registerKnownKeys(table, QR_CODE_GENERATE_API, "QR_CODE_GENERATE_API", "url", "qrcode_key");
+        registerKnownKeys(table, QR_CODE_POLL_API, "QR_CODE_POLL_API", "code", "url", "refresh_token");
         registerKnownKeys(table, MY_INFO_API, "MY_INFO_API", "profile");
         registerKnownKeys(table, COOKIE_INFO_API, "COOKIE_INFO_API", "refresh", "timestamp");
         registerKnownKeys(table, COOKIE_REFRESH_API, "COOKIE_REFRESH_API", "refresh_token");
+        registerKnownKeys(table, CONFIRM_REFRESH_API, "CONFIRM_REFRESH_API");
         registerKnownKeys(table, MASTER_INFO_API, "MASTER_INFO_API", "info", "room_id", "follower_num");
         registerKnownKeys(table, FANS_MEDAL_RANK_API, "FANS_MEDAL_RANK_API", "num");
         registerKnownKeys(table, GUARD_TAB_API, "GUARD_TAB_API", "info", "top3", "list");
         registerKnownKeys(table, GUARD_LIST_API, "GUARD_TAB_API", "info");
         registerKnownKeys(table, ROOM_INFO_API, "ROOM_INFO_API",
                 "uid", "live_status", "live_time", "title", "user_cover");
+        registerNestedKnownKeys(table, ROOM_STATUS_API, "ROOM_STATUS_API",
+                "live_status", "live_time", "title", "cover_from_user");
         registerKnownKeys(table, DANMU_INFO_API, "DANMU_INFO_API", "host_list", "token");
         registerKnownKeys(table, DANMU_HISTORY_API, "DANMU_HISTORY_API", "room");
         registerKnownKeys(table, GIFT_CONFIG_API, "GIFT_CONFIG_API",
                 "global_config", "list", "guard_resources");
         registerKnownKeys(table, DYNAMIC_FEED_API, "DYNAMIC_FEED_API", "items");
         registerKnownKeys(table, FOLLOWINGS_API, "FOLLOWINGS_API", "list");
-        registerKnownKeys(table,
-                "https://api.bilibili.com/bapis/bilibili.api.ticket.v1.Ticket/GenWebTicket",
-                "TICKET_API", "ticket", "created_at", "ttl", "nav");
+        registerKnownKeys(table, BilibiliTicketUtil.TICKET_API, "TICKET_API",
+                "ticket", "created_at", "ttl", "nav");
+        registerKnownKeys(table, NAV_API, "NAV_API", "wbi_img");
+        registerKnownKeys(table, TV_QR_CODE_GENERATE_API, "TV_QR_CODE_GENERATE_API", "url", "auth_code");
+        registerKnownKeys(table, TV_QR_CODE_POLL_API, "TV_QR_CODE_POLL_API",
+                "cookie_info", "token_info", "access_token", "refresh_token", "expires_in");
+        registerKnownKeys(table, LIVE_HEARTBEAT_API, "LIVE_HEARTBEAT_API", "next_interval");
         return Map.copyOf(table);
     }
 
     private static void registerKnownKeys(Map<String, KnownDataKeys> table, String endpointUrl,
             String constantName, String... keys) {
+        putKnownKeys(table, endpointUrl, constantName, false, keys);
+    }
+
+    private static void registerNestedKnownKeys(Map<String, KnownDataKeys> table, String endpointUrl,
+            String constantName, String... keys) {
+        putKnownKeys(table, endpointUrl, constantName, true, keys);
+    }
+
+    private static void putKnownKeys(Map<String, KnownDataKeys> table, String endpointUrl,
+            String constantName, boolean nested, String... keys) {
         String path = shortUrl(endpointUrl);
         KnownDataKeys existing = table.get(path);
         if (existing == null) {
-            table.put(path, new KnownDataKeys(constantName, Set.copyOf(List.of(keys))));
+            table.put(path, new KnownDataKeys(constantName, Set.copyOf(List.of(keys)), nested));
             return;
         }
         Set<String> merged = new LinkedHashSet<>(existing.keys());
         merged.addAll(List.of(keys));
-        table.put(path, new KnownDataKeys(existing.constantName(), Set.copyOf(merged)));
+        table.put(path, new KnownDataKeys(existing.constantName(), Set.copyOf(merged),
+                existing.nested() || nested));
     }
 
     /**
@@ -655,7 +674,9 @@ public class BilibiliApiUtil {
 
         if (StringUtil.isBlank(sign.getImgKey()) || StringUtil.isBlank(sign.getSubKey())) {
             try {
-                JSONObject wbi = http.getJson(NAV_API, headers).getJSONObject("data").getJSONObject("wbi_img");
+                JSONObject navData = http.getJson(NAV_API, headers).getJSONObject("data");
+                noteUnknownTopKeys(NAV_API, navData);
+                JSONObject wbi = navData.getJSONObject("wbi_img");
                 sign.setImgKey(BilibiliWbiUtil.extractKey(wbi.getString("img_url")));
                 sign.setSubKey(BilibiliWbiUtil.extractKey(wbi.getString("sub_url")));
             } catch (Exception e) {
@@ -736,6 +757,7 @@ public class BilibiliApiUtil {
         }
 
         JSONObject data = body.getJSONObject("data");
+        noteUnknownTopKeys(TV_QR_CODE_GENERATE_API, data);
         return new QrCodeLogin(data.getString("url"), data.getString("auth_code"));
     }
 
@@ -763,12 +785,13 @@ public class BilibiliApiUtil {
         }
 
         Integer code = body == null ? null : body.getInteger("code");
+        JSONObject data = body == null ? null : body.getJSONObject("data");
+        noteUnknownTopKeys(TV_QR_CODE_POLL_API, data);
         if (code == null || code != 0) {
             // 86038 二维码失效、86039 尚未确认、86090 已扫码待确认
             return false;
         }
 
-        JSONObject data = body.getJSONObject("data");
         if (data == null) {
             return false;
         }
@@ -911,6 +934,7 @@ public class BilibiliApiUtil {
 
         JSONObject body = response.getBody() == null ? null : JSON.parseObject(response.getBody());
         JSONObject data = body == null ? null : body.getJSONObject("data");
+        noteUnknownTopKeys(QR_CODE_POLL_API, data);
         if (data == null) {
             return false;
         }
@@ -1527,13 +1551,37 @@ public class BilibiliApiUtil {
      * <p>
      * <b>热路径</b>：字符串拼接排在「已判定有未知键」之后。已知键表命中且无未知键时
      * 一次拼接都不做。detail 只写名，不写取值。
+     * {@code nested} 条目不在此处比对，改由解析处调用 {@link #noteUnknownTopKeys}。
      */
     private void noteUnknownDataKeys(String url, JSONObject data) {
-        if (url == null || url.isBlank() || data == null || riskMetrics == null) {
+        KnownDataKeys known = lookupKnownKeys(url);
+        if (known == null || known.nested()) {
             return;
         }
-        KnownDataKeys known = KNOWN_DATA_KEYS_BY_PATH.get(shortUrl(url));
+        noteUnknownKeys(known, data);
+    }
+
+    /**
+     * 与 {@link #noteUnknownDataKeys} 同一底：按端点常量对应的已知键集比对 {@code jsonObject}。
+     * 供不走 {@link #extractData} 的解析处、以及房间状态这种 uid 分桶的内层对象调用。
+     */
+    void noteUnknownTopKeys(String endpointConst, JSONObject jsonObject) {
+        KnownDataKeys known = lookupKnownKeys(endpointConst);
         if (known == null) {
+            return;
+        }
+        noteUnknownKeys(known, jsonObject);
+    }
+
+    private KnownDataKeys lookupKnownKeys(String endpointConst) {
+        if (endpointConst == null || endpointConst.isBlank()) {
+            return null;
+        }
+        return KNOWN_DATA_KEYS_BY_PATH.get(shortUrl(endpointConst));
+    }
+
+    private void noteUnknownKeys(KnownDataKeys known, JSONObject data) {
+        if (data == null || riskMetrics == null) {
             return;
         }
         boolean hasUnknown = false;
@@ -1643,7 +1691,9 @@ public class BilibiliApiUtil {
         try {
             String payload = intervalSeconds + "|" + roomId + "|1|0";
             String hb = Base64.getEncoder().encodeToString(payload.getBytes(StandardCharsets.UTF_8));
-            http.getJson(LIVE_HEARTBEAT_API + URLEncoder.encode(hb, StandardCharsets.UTF_8), getBilibiliHeaders());
+            JSONObject response = http.getJson(LIVE_HEARTBEAT_API + URLEncoder.encode(hb, StandardCharsets.UTF_8),
+                    getBilibiliHeaders());
+            noteUnknownTopKeys(LIVE_HEARTBEAT_API, response == null ? null : response.getJSONObject("data"));
         } catch (Exception e) {
             log.debug("上报直播间 {} 观看心跳失败: {}", roomId, e.getMessage());
         }
@@ -1750,6 +1800,7 @@ public class BilibiliApiUtil {
             if (item == null) {
                 continue;
             }
+            noteUnknownTopKeys(ROOM_STATUS_API, item);
 
             rooms.put(uid, new Room(
                     item.getInteger("live_status"),

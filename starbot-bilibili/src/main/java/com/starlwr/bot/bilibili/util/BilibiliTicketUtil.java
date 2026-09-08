@@ -12,7 +12,7 @@ import java.util.Optional;
  * 请求签发接口换取。密钥与签发方式均为公开信息。
  */
 public final class BilibiliTicketUtil {
-    private static final String TICKET_API = "https://api.bilibili.com/bapis/bilibili.api.ticket.v1.Ticket/GenWebTicket";
+    static final String TICKET_API = "https://api.bilibili.com/bapis/bilibili.api.ticket.v1.Ticket/GenWebTicket";
 
     /**
      * 签发接口使用的密钥标识
