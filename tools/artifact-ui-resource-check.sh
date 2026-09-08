@@ -55,6 +55,21 @@ list_jar_entries() {
     return 2
 }
 
+# 由 jar 去掉版本号得到的模块名，到源码目录：在 plugins/ 与 core/ 下按目录名现找。
+# 不写死任何一个插件的名字。找不到就红并印出 jar 名——拼到一个不存在的目录上，
+# 源码侧是空集，子集尺会静默绿。
+find_module_dir() {
+    local name="$1"
+    local d
+    for d in plugins/"$name" core/"$name"; do
+        if [ -d "$d" ]; then
+            printf '%s\n' "$d"
+            return 0
+        fi
+    done
+    return 1
+}
+
 # 一格：某个 jar 的某个资源目录 ⊆ 某个源码目录
 #   $1 jar 路径   $2 jar 内目录前缀（不带末尾斜杠）   $3 源码目录   $4 这一格叫什么
 check_one() {
@@ -123,7 +138,7 @@ check_one "$OUT/StarBotCore.jar" "$CORE_UI_IN_JAR" "$CORE_UI_SRC" "核心界面"
 
 # 插件那一侧按目录里实际有哪些 jar 来量，不写死任何一个插件的名字：
 # 写死一个，这把尺守的就只是那一个插件，下一个插件带着脏条目进包照样是绿的。
-# 模块名由 jar 文件名去掉版本号得出，源码目录即该模块的 config-ui-pages/。
+# 模块名由 jar 文件名去掉版本号得出；源码目录在 plugins/ 与 core/ 下按该名现找。
 shopt -s nullglob
 plugin_jars=("$OUT"/plugins/*.jar)
 shopt -u nullglob
@@ -134,7 +149,13 @@ else
     for jar in "${plugin_jars[@]}"; do
         base="$(basename "$jar" .jar)"
         module="$(echo "$base" | sed -E 's/-[0-9][^-]*(-SNAPSHOT)?$//')"
-        check_one "$jar" "$PLUGIN_UI_DIR" "$module/src/main/resources/$PLUGIN_UI_DIR" "插件页面[$module]"
+        src_mod=""
+        if ! src_mod="$(find_module_dir "$module")"; then
+            echo "  插件页面[$module] 红 源码树找不到模块目录 $(basename "$jar")"
+            RED=1
+            continue
+        fi
+        check_one "$jar" "$PLUGIN_UI_DIR" "$src_mod/src/main/resources/$PLUGIN_UI_DIR" "插件页面[$module]"
     done
 fi
 
