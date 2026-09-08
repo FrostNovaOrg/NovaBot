@@ -41,7 +41,7 @@
 | `HealthProbe` | `core.health` | 各模块 | 汇总健康状况，供总览页、告警共用 |
 | `AccountLoginProvider` | `core.account` | 哔哩哔哩 | 界面内扫码登录、退出登录 |
 | `BotConnectionTester` | `core.account` | OneBot 适配器 | 连通性测试与连接参数回填 |
-| `AlertChannel` | `core.alert` | 核心（邮件、QQ） | 告警投递 |
+| `AlertChannel` | `core.alert` | 核心（邮件、Webhook）、OneBot 适配器（QQ） | 告警投递 |
 | `StarBotCommand` | `core.command` | 各模块 | 群内聊天命令 |
 | `AtAllPermissionResolver` | `core.sender` | OneBot 适配器 | 机器人在某会话能否 @全体成员 |
 | `LiveMetricCatalog` | `core.analytics` | 报告插件（starbot-report） | 直播指标的中文名与**能否累加**；快照指标（粉丝数等）的名称另由 `snapshotMetrics()` 自报，一律不进可累加集 |

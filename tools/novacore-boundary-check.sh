@@ -15,13 +15,30 @@
 #   格4 从「引用方向」判：核心引用了插件，就是核心依赖了平台，文件放在哪个目录都不作数。
 #   格5 从「配置键」判：键名带平台名，等于把平台写进了核心对外的接口面，改名要惊动所有使用者。
 # 两格都不写死任何平台名或插件包名，一律从源码现算，理由同格1。
+#
+# —— 「射程为空即红」与格9–12 为什么要加（2026-09-08 加严）——
+# 八格全绿的那一天，其中四格是**哑的**：格1 的射程是一个写死的界面目录，格4 的插件包靠
+# 「仓根一级目录名」枚举，格5 与格6 的射程由核心模块名拼出来。目录一改名或往下挪一层，
+# 这四格的射程当场变成空集——而空集上的判据恒真，它们照报绿、退码照样是 0。
+# 一个「查过了，没有违规」的绿，和一个「我什么都没查到」的绿，在那一行输出上长得一模一样。
+# 因此本次给每一处射程加了空集守卫：射程为空 ⇒ 判红并印「射程为空」，宁可红错也不许绿在空集上。
+# 同一条道理格5 的源头②（找不到发行模板就红）与格7（两侧件集有一侧为空就红）早已用过，
+# 这次是把它补齐到全部射程上。跑法：`NOVACORE_CHECK_ROOT=$(mktemp -d) bash tools/novacore-boundary-check.sh`
+# 应当整片判红——那趟是这些守卫自己的阳性对照，绿了就说明守卫没接上。
+#
+# 模块枚举一律走 `git ls-files '*/pom.xml'`（任意深度、只认在册件），不再按仓根一级目录名。
+# 新增四格补的是另外四条缝：⑨同一个 java 包跨模块（撞包，今天就有三个，用闭集钉住不许长）、
+# ⑩插件 import 了兄弟插件却没在 pom 里申报那个模块、⑪核心界面目录在且非空（格1 射程的正面读数）、
+# ⑫写死了模块目录名的在册件数只减不增（给目录重排立账，改一件销一件）。
 
 set -uo pipefail
 
 # —— 允许承载「核心」的模块目录名（拆模块后把新名加进来即可，不必改判据逻辑）——
 ALLOWED_CORE_MODULES="starbot-core novacore starbot-novacore"
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# 缺省量本仓。NOVACORE_CHECK_ROOT 只为把上面那些「射程为空」的分支跑出来用：
+# 指向一棵空树跑一趟，本尺该整片判红；若还有格子报绿，那一格就是绿在空集上。
+REPO_ROOT="${NOVACORE_CHECK_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "$REPO_ROOT" || exit 2
 
 CORE_UI="starbot-core/src/main/resources/config-ui"
@@ -29,6 +46,35 @@ RED=0
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
+
+# 数一个清单件有几行（空行不计）
+#
+# 不写 `$(grep -cv … || echo 0)`：空文件时 grep 已经把 "0" 印在标准输出上、退码才是 1，
+# 于是 `|| echo 0` 再补一个 0，取回来的是**两行**「0」。拿它去 `[ "$n" -gt 0 ]` 比，
+# bash 报 integer expression expected（在标准错误里，没人看）并判假——
+# 判假恰好就是「跳过这一格」的那条路。射程为空的守卫要是也踩这个坑，守卫本身就是哑的。
+count_lines() {
+    cl_n="$(grep -cv '^[[:space:]]*$' "$1" 2>/dev/null)"
+    printf '%s' "${cl_n:-0}"
+}
+
+# —— 在册模块目录现算（格1／格4／格8／格10／格11 共用）——
+# 按 pom.xml 找、任意深度：原来那句 `for mod in */` 枚举的是**仓根一级目录名**，
+# 模块往 plugins/ 底下一挪，它枚举得 0，而依赖这份枚举的几格全部静默转绿。
+# 用 git ls-files 不用 find：只认在册件——构建产物里的 pom 副本、未入册的试验目录都不是模块，
+# 也就不必再逐层排除 target/。core.quotepath=false 免得非 ASCII 路径被转义成八进制而对不上。
+MODULES="$WORK/modules"
+git -c core.quotepath=false ls-files '*/pom.xml' 2>/dev/null \
+    | sed 's|/pom\.xml$||' | sort -u > "$MODULES"
+module_n=$(count_lines "$MODULES")
+
+# 模块目录是不是「允许承载核心」的那几个
+is_core_module() {
+    for icm_allowed in $ALLOWED_CORE_MODULES; do
+        [ "$1" = "$icm_allowed" ] && return 0
+    done
+    return 1
+}
 
 # ============================================================
 # 格1：core 的界面目录里不许出现任何一个直播平台的名字
@@ -69,18 +115,14 @@ for allowed in $ALLOWED_CORE_MODULES; do
     [ -f "$candidate" ] && LP="$candidate" && break
 done
 
-# —— 插件模块的主码目录，供源头① 与格3 使用 ——
+# —— 插件模块的主码目录，供源头① 与格3 使用（模块清单现算，见上）——
 PLUGIN_MAINS=""
-for mod in */; do
-    mod="${mod%/}"
+while IFS= read -r mod; do
+    [ -z "$mod" ] && continue
     [ -d "$mod/src/main" ] || continue
-    skip=0
-    for allowed in $ALLOWED_CORE_MODULES; do
-        [ "$mod" = "$allowed" ] && skip=1
-    done
-    [ "$skip" -eq 1 ] && continue
+    is_core_module "$mod" && continue
     PLUGIN_MAINS="${PLUGIN_MAINS}${mod}/src/main "
-done
+done < "$MODULES"
 
 # —— 源头①：各插件模块登记平台的地方 ——
 g1_registrations=0
@@ -101,14 +143,10 @@ if [ -n "$PLUGIN_MAINS" ]; then
         | sed -E 's/.*[[:space:]]([A-Z][A-Z_0-9]*)[[:space:]]*=$/\1/' | sort -u)"
 fi
 
-for mod in */; do
-    mod="${mod%/}"
+while IFS= read -r mod; do
+    [ -z "$mod" ] && continue
     [ -d "$mod/src/main" ] || continue
-    skip=0
-    for allowed in $ALLOWED_CORE_MODULES; do
-        [ "$mod" = "$allowed" ] && skip=1
-    done
-    [ "$skip" -eq 1 ] && continue
+    is_core_module "$mod" && continue
 
     while IFS= read -r f; do
         [ -z "$f" ] && continue
@@ -125,7 +163,7 @@ for mod in */; do
             | sed -E 's/^return "(.*)"$/\1/' >> "$TOKENS"
     done <<< "$(grep -rl 'implements ConsolePageProvider\|implements AccountLoginProvider' \
         --include='*.java' "$mod/src/main" 2>/dev/null)"
-done
+done < "$MODULES"
 
 grep -v '^[[:space:]]*$' "$TOKENS" | sort -u > "$WORK/all"
 grep -E '^[ -~]+$' "$WORK/all" | awk 'length($0) >= 4' > "$WORK/long"
@@ -201,7 +239,16 @@ core_code_hits() {
 g1_hits=""
 g1_n=0
 
-if [ -d "$CORE_UI" ]; then
+# —— 射程为空即红（两条射程各一条）——
+# ① 被查的那个目录：原来这里只有 `if [ -d ]` 而没有 else，目录一改名整格静静地什么都不查；
+# ② 平台名清单：清单是从插件侧现算的，插件模块枚举不到时它是空的，
+#    而空清单喂给 grep -f 一处也匹配不上——查了整个目录、拿着一张白名单，报的绿名副其实是空的。
+# 谁负责哪一条：本条只问「目录在不在、清单空不空」，目录**在而空**由格11 答（另一形态，另一读数）。
+g1_scope=""
+[ -d "$CORE_UI" ] || g1_scope="${g1_scope}核心界面目录不在($CORE_UI) "
+[ "$g1_tokens" -eq 0 ] && g1_scope="${g1_scope}平台名清单为空(插件模块枚举${module_n}个) "
+
+if [ -z "$g1_scope" ] && [ -d "$CORE_UI" ]; then
     # 文件名本身带平台名的（整份平台专页放在核心资源里就是这一形）
     while IFS= read -r f; do
         [ -z "$f" ] && continue
@@ -241,7 +288,10 @@ if [ -d "$CORE_UI" ]; then
     done < "$WORK/hits"
 fi
 
-if [ "$g1_n" -eq 0 ]; then
+if [ -n "$g1_scope" ]; then
+    echo "格1 红 射程为空 ${g1_scope% }"
+    RED=1
+elif [ "$g1_n" -eq 0 ]; then
     echo "格1 绿 命中0 核心界面无平台字样 平台名${g1_tokens}个(现算自插件侧登记${g1_registrations}处)"
 else
     echo "格1 红 命中${g1_n} ${g1_hits% } 平台名${g1_tokens}个(现算自插件侧登记${g1_registrations}处)"
@@ -356,26 +406,28 @@ fi
 G4_PKGS="$WORK/g4pkgs"
 : > "$G4_PKGS"
 
-for mod in */; do
-    mod="${mod%/}"
+while IFS= read -r mod; do
+    [ -z "$mod" ] && continue
     [ -d "$mod/src/main/java/com/starlwr/bot" ] || continue
-    skip=0
-    for allowed in $ALLOWED_CORE_MODULES; do
-        [ "$mod" = "$allowed" ] && skip=1
-    done
-    [ "$skip" -eq 1 ] && continue
+    is_core_module "$mod" && continue
 
     find "$mod/src/main/java/com/starlwr/bot" -mindepth 1 -maxdepth 1 -type d 2>/dev/null \
         | sed 's|.*/||' >> "$G4_PKGS"
-done
+done < "$MODULES"
 
 sort -u "$G4_PKGS" -o "$G4_PKGS"
-g4_pkg_n=$(grep -cv '^[[:space:]]*$' "$G4_PKGS" 2>/dev/null || echo 0)
+g4_pkg_n=$(count_lines "$G4_PKGS")
 
 g4_hits=""
 g4_n=0
 
-if [ -n "$CORE_MAINS" ] && [ "$g4_pkg_n" -gt 0 ]; then
+# 射程两条，缺一即红（原来是「两条都在才查」，于是缺一条就跳过整格而报绿）：
+# 被查的一侧＝核心主码目录，拿来查的一侧＝插件包名清单。
+g4_scope=""
+[ -z "$CORE_MAINS" ] && g4_scope="${g4_scope}核心主码目录为空(受查模块:$ALLOWED_CORE_MODULES) "
+[ "$g4_pkg_n" -eq 0 ] && g4_scope="${g4_scope}插件包清单为空(在册模块${module_n}个) "
+
+if [ -z "$g4_scope" ]; then
     sed -E 's|^|com\\.starlwr\\.bot\\.|; s|$|([^A-Za-z0-9_]\|$)|' "$G4_PKGS" > "$WORK/g4re"
     while IFS= read -r hit; do
         [ -z "$hit" ] && continue
@@ -384,7 +436,10 @@ if [ -n "$CORE_MAINS" ] && [ "$g4_pkg_n" -gt 0 ]; then
     done <<< "$(grep -rnE -f "$WORK/g4re" --include='*.java' $CORE_MAINS 2>/dev/null | sort -u)"
 fi
 
-if [ "$g4_n" -eq 0 ]; then
+if [ -n "$g4_scope" ]; then
+    echo "格4 红 射程为空 ${g4_scope% }"
+    RED=1
+elif [ "$g4_n" -eq 0 ]; then
     echo "格4 绿 命中0 核心不引用插件包 插件包${g4_pkg_n}个(现算): $(tr '\n' ',' < "$G4_PKGS" | sed 's/,$//')"
 else
     echo "格4 红 命中${g4_n} ${g4_hits% } 插件包${g4_pkg_n}个(现算)"
@@ -422,7 +477,13 @@ g5_n=0
 g5_keys=0
 
 # —— 源头①：核心主码里的配置前缀字面量 ——
-if [ -n "$CORE_MAINS" ]; then
+# 🔴 找不到核心主码就红，理由与下面源头② 的「找不到模板就红」一字不差：
+#    CORE_MAINS 是由核心模块名拼出来的，模块一改名它就是空串，源头① 整段没量到，
+#    而这一格只凭源头② 的模板键照报绿——受查键数少一半，那一行输出上看不出来。
+if [ -z "$CORE_MAINS" ]; then
+    g5_hits="${g5_hits}$(printf '%s' "$ALLOWED_CORE_MODULES" | tr ' ' ','):0(找不到核心主码目录，源头①整段没量到) "
+    g5_n=$((g5_n + 1))
+else
     while IFS= read -r hit; do
         [ -z "$hit" ] && continue
         file="${hit%%:*}"
@@ -591,7 +652,7 @@ for allowed in $ALLOWED_CORE_MODULES; do
     [ -d "$allowed/src/main/java" ] && find "$allowed/src/main/java" -name '*.java' -type f >> "$G6_ALL"
 done
 sort -u "$G6_ALL" -o "$G6_ALL"
-g6_total=$(grep -cv '^[[:space:]]*$' "$G6_ALL" 2>/dev/null || echo 0)
+g6_total=$(count_lines "$G6_ALL")
 
 G6_CORE="$WORK/g6core"
 : > "$G6_CORE"
@@ -605,13 +666,13 @@ if [ "$g6_total" -gt 0 ]; then
     done <<< "$G6_CORE_FILES"
 fi
 sort -u "$G6_CORE" -o "$G6_CORE"
-g6_core_n=$(grep -cv '^[[:space:]]*$' "$G6_CORE" 2>/dev/null || echo 0)
+g6_core_n=$(count_lines "$G6_CORE")
 
 G6_SHELL="$WORK/g6shell"
 : > "$G6_SHELL"
 [ "$g6_core_n" -gt 0 ] && grep -vxFf "$G6_CORE" "$G6_ALL" > "$G6_SHELL"
 sed 's|.*/||; s|\.java$||' "$G6_SHELL" | sort -u > "$WORK/g6names"
-g6_shell_n=$(grep -cv '^[[:space:]]*$' "$WORK/g6names" 2>/dev/null || echo 0)
+g6_shell_n=$(count_lines "$WORK/g6names")
 
 g6_hits=""
 g6_n=0
@@ -644,7 +705,20 @@ if [ "$g6_shell_n" -gt 0 ] && [ "$g6_core_n" -gt 0 ]; then
 fi
 
 g6_read="核心件${g6_core_n}/${g6_total} 壳侧件${g6_shell_n} 例外${#G6_EXEMPT[@]}条"
-if [ "$g6_n" -eq 0 ]; then
+
+# —— 射程为空即红 ——
+# 两条都是「什么都没量到」而不是「量过了没问题」：件集空了，比对整段跳过；
+# 核心件集空了（上面那张点名表一件都没对上，路径变了就是这一形），补集＝全部件，
+# 于是「核心件引用壳侧件」这句话没有主语，一处也命不中。
+# 壳侧件为 0 不判红：那是核心模块里只剩核心件的终局形态，读数在上面那行看得见。
+g6_scope=""
+[ "$g6_total" -eq 0 ] && g6_scope="${g6_scope}核心模块主码为空(受查模块:$ALLOWED_CORE_MODULES) "
+[ "$g6_total" -gt 0 ] && [ "$g6_core_n" -eq 0 ] && g6_scope="${g6_scope}核心件集为空(点名表与整目录都没对上任何件) "
+
+if [ -n "$g6_scope" ]; then
+    echo "格6 红 射程为空 ${g6_scope% } $g6_read"
+    RED=1
+elif [ "$g6_n" -eq 0 ]; then
     echo "格6 绿 命中0 核心件不引用壳侧件 $g6_read"
 else
     echo "格6 红 命中${g6_n} ${g6_hits% } $g6_read"
@@ -710,8 +784,11 @@ module_artifact() {
         | awk -F'[<>]' '{print $3}'
 }
 
+# 一份件清单落在哪几个模块目录里
+# 按 /src/main/java/ 截，不取路径第一段：模块挪进 plugins/ 之后第一段是 "plugins"，
+# 于是本格拿 plugins/pom.xml 去找依赖——找不到，判红，而红的理由与要守的那件事无关。
 modules_of() {
-    awk -F/ '{print $1}' "$1" 2>/dev/null | sort -u | grep -v '^[[:space:]]*$'
+    sed -E 's|/src/main/java/.*$||' "$1" 2>/dev/null | sort -u | grep -v '^[[:space:]]*$'
 }
 
 g7_core_mods="$(modules_of "$G6_CORE" | tr '\n' ' ')"
@@ -775,31 +852,259 @@ fi
 
 g8_report_dirs=""
 g8_pkg_n=0
-for mod in */; do
-    mod="${mod%/}"
+while IFS= read -r mod; do
+    [ -z "$mod" ] && continue
     [ -d "$mod/src/main/java/com/starlwr/bot/report" ] || continue
     g8_report_dirs="${g8_report_dirs}${mod}/src/main/java/com/starlwr/bot/report "
     g8_pkg_n=$((g8_pkg_n + 1))
-done
+done < "$MODULES"
+
+# ② 那一侧的射程：bilibili 插件的主码在哪个模块，按**包名**现找，不写死目录名。
+# 原来这里写死 starbot-bilibili/src/main，模块一改名 `if [ -d ]` 不成立，
+# ② 整问跳过、g8_refs 恒为 0，而这一格只要 ① 成立就报绿——报的是「没引用」，
+# 实情是「没查」。找不到就红，与 ① 同格待遇。
+G8_BILI_MAIN=""
+while IFS= read -r mod; do
+    [ -z "$mod" ] && continue
+    [ -d "$mod/src/main/java/com/starlwr/bot/bilibili" ] || continue
+    G8_BILI_MAIN="${G8_BILI_MAIN}${mod}/src/main "
+done < "$MODULES"
 
 g8_refs=0
 g8_hits=""
-if [ -d "starbot-bilibili/src/main" ]; then
+if [ -n "$G8_BILI_MAIN" ]; then
     while IFS= read -r hit; do
         [ -z "$hit" ] && continue
         g8_refs=$((g8_refs + 1))
         g8_hits="${g8_hits}${hit%%:*}:$(printf '%s' "$hit" | cut -d: -f2) "
-    done <<< "$(grep -rn 'com\.starlwr\.bot\.report' --include='*.java' starbot-bilibili/src/main 2>/dev/null | sort -u)"
+    done <<< "$(grep -rn 'com\.starlwr\.bot\.report' --include='*.java' $G8_BILI_MAIN 2>/dev/null | sort -u)"
 fi
 
-if [ "$g8_pkg_n" -eq 0 ]; then
+if [ -z "$G8_BILI_MAIN" ]; then
+    echo "格8 红 射程为空 找不到 com.starlwr.bot.bilibili 的主码模块(在册模块${module_n}个)，②整问没量到 report包在场${g8_pkg_n}（①）"
+    RED=1
+elif [ "$g8_pkg_n" -eq 0 ]; then
     echo "格8 红 report 包不在场（①） bilibili引用${g8_refs}处（②）"
     RED=1
 elif [ "$g8_refs" -ne 0 ]; then
     echo "格8 红 report 包在场${g8_pkg_n} 但 bilibili 主码引用${g8_refs}处（②） ${g8_hits% }"
     RED=1
 else
-    echo "格8 绿 report 包在场${g8_pkg_n}(${g8_report_dirs% }) bilibili 主码零引用"
+    echo "格8 绿 report 包在场${g8_pkg_n}(${g8_report_dirs% }) bilibili 主码零引用(${G8_BILI_MAIN% })"
+fi
+
+# ============================================================
+# 格9：同一个 java 包不得跨模块（撞包）
+#
+# 两个模块往同一个包根里写件，Java 允许，Maven 也不拦，而它有三处代价：
+# 一是拆仓那天这个包得整个跟着走，走不了就得先改包名；二是模块边界在源码上看不见——
+# 打开 com.starlwr.bot.core.config 那个目录，看不出里面一半的件属于另一个模块；
+# 三是分割包在模块化（JPMS）下直接不合法。
+#
+# 判据是**闭集**：撞包的现状写在下面这行声明里，多一个少一个都判红。
+#   多一个 ⇒ 新长出来的撞包，当场逮住（这正是这一格要防的事）；
+#   少一个 ⇒ 有一笔把某个包解开了，那一笔顺手把它从声明里划掉——
+#            闭集不许「解开了但没人改声明」，否则这行声明会慢慢变成一张过期的名单。
+# 「不许有撞包」的写法今天就是红的，红着的判据没人看，一个月后跟没有一样；
+# 闭集在同样的现状上是绿的，而它一样拦得住新增。
+#
+# 受查面为空（一个核心包也数不出来）判红：那不是「没有撞包」，是没量到。
+# ============================================================
+
+# —— 现状声明：这几个包同时落在两个以上模块里。解开一个，从这里划掉一个 ——
+#    今天的三个都是 novacore 与 starbot-core 之间的分割包（协议真源迁出去时留下的）。
+KNOWN_SPLIT_PACKAGES="config service util"
+
+G9_PAIRS="$WORK/g9pairs"
+# 模块×包 的全对：按 /src/main/java/com/starlwr/bot/core/ 截，模块目录在哪一层都算得对
+git -c core.quotepath=false ls-files '*/src/main/java/com/starlwr/bot/core/*' 2>/dev/null \
+    | sed -nE 's|^(.*)/src/main/java/com/starlwr/bot/core/([^/]+)/.*$|\1 \2|p' \
+    | sort -u > "$G9_PAIRS"
+g9_pkg_total=$(awk '{print $2}' "$G9_PAIRS" | sort -u | grep -cv '^[[:space:]]*$')
+g9_actual="$(awk '{print $2}' "$G9_PAIRS" | sort | uniq -d | tr '\n' ' ')"
+g9_actual="${g9_actual% }"
+g9_declared="$(printf '%s\n' $KNOWN_SPLIT_PACKAGES | sort | tr '\n' ' ')"
+g9_declared="${g9_declared% }"
+g9_pairs_n=$(count_lines "$G9_PAIRS")
+g9_read="撞包实况[${g9_actual}] 声明[${g9_declared}] 受查包${g9_pkg_total}个 模块×包${g9_pairs_n}对"
+
+if [ "$g9_pkg_total" -eq 0 ]; then
+    echo "格9 红 射程为空 数不出任何 com.starlwr.bot.core 包(在册模块${module_n}个) $g9_read"
+    RED=1
+elif [ "$g9_actual" = "$g9_declared" ]; then
+    echo "格9 绿 撞包与声明一致 $g9_read"
+else
+    echo "格9 红 撞包与声明不符（多一个＝新长出来的，少一个＝解开了没划掉声明） $g9_read"
+    RED=1
+fi
+
+# ============================================================
+# 格10：插件 import 了兄弟插件，本模块 pom 里就得申报那个模块
+#
+# 兄弟插件之间的引用本身不违规（报告插件画的是哔哩哔哩的直播报告，它必须认得那些模型）。
+# 违规的是**引用了却不申报**：靠别人的传递依赖编得过，那个中间人一改依赖，这个模块当场编不了；
+# 拆仓时更看不出该带谁走。这一格问的就是「pom 上写没写」，不是「能不能引用」。
+#
+# 归属按**件的落点**现算，不按包名前缀：napcat 扩展自己的包就是 com.starlwr.bot.adapter.onebot.extension.napcat，
+# 与 onebot 适配器同一个包根——按前缀分，它 import 自己的兄弟和 import 自己长得一模一样。
+# 把 import 的全限定名折成源码路径、去在册件里找它落在哪个模块，才分得开。
+# 通配 import（…​.*）折成目录来找；内部类（…Outer.Inner）折不出件时逐级退一段再找。
+#
+# 射程只到兄弟**插件**：import 核心侧的件不在本格之内——插件申报的是 starbot-core，
+# novacore 由它传递带出来，那是核心一侧刻意保留的形态（格7 守核心不反向依赖壳），
+# 拿本格去判它会把一个设计判成违规。
+# ============================================================
+
+G10_INDEX="$WORK/g10index"
+git -c core.quotepath=false ls-files '*/src/main/java/*.java' 2>/dev/null | sort > "$G10_INDEX"
+
+# 一个 java 全限定名（或通配包名）落在哪个模块目录里；找不到印空串
+owner_module_of() {
+    omo_fqn="$1"
+    omo_try=""
+    case "$omo_fqn" in
+        *'.*')
+            # 通配 import：折成目录，取该目录下任意一件的模块
+            omo_try="/src/main/java/$(printf '%s' "${omo_fqn%.*}" | tr '.' '/')/"
+            grep -F "$omo_try" "$G10_INDEX" | head -1 | sed -E 's|/src/main/java/.*$||'
+            return 0
+            ;;
+    esac
+    # 整名、去掉一段、再去掉一段：够覆盖 Outer.Inner 与 Outer.Inner.Deeper
+    for omo_drop in 0 1 2; do
+        omo_path="/src/main/java/$(printf '%s' "$omo_fqn" | tr '.' '/').java"
+        grep -F "$omo_path" "$G10_INDEX" | head -1 | sed -E 's|/src/main/java/.*$||'
+        grep -qF "$omo_path" "$G10_INDEX" && return 0
+        omo_fqn="${omo_fqn%.*}"
+        case "$omo_fqn" in *.*) ;; *) break ;; esac
+    done
+    return 0
+}
+
+# 一个模块 pom 里 <dependency> 段申报了哪些 artifactId
+# 只取 <dependency> 里的：<parent> 的坐标、<build><plugins> 里的构建插件坐标都不是依赖申报，
+# 拿它们凑数的话，一个模块只要恰好用了同名的构建插件就能免检。
+# （dependencyManagement 段里的 <dependency> 会一并算进来；本仓模块 pom 均无该段，根 pom 才有。）
+# 先去 XML 注释：pom 里写一句「本模块不依赖某某」是该写的话，让它把自己判绿同样是错的。
+declared_artifacts_of() {
+    strip_xml_comments "$1/pom.xml" 2>/dev/null \
+        | awk '/<dependency>/{inside=1} /<\/dependency>/{inside=0} inside' \
+        | grep -oE '<artifactId>[^<]+</artifactId>' \
+        | awk -F'[<>]' '{print $3}' | sort -u
+}
+
+g10_hits=""
+g10_n=0
+g10_pairs=""
+g10_mods=0
+g10_imports=0
+g10_unknown=0
+
+while IFS= read -r mod; do
+    [ -z "$mod" ] && continue
+    [ -d "$mod/src/main" ] || continue
+    is_core_module "$mod" && continue
+    g10_mods=$((g10_mods + 1))
+
+    declared_artifacts_of "$mod" > "$WORK/g10deps"
+
+    while IFS= read -r fqn; do
+        [ -z "$fqn" ] && continue
+        owner="$(owner_module_of "$fqn")"
+        # 归属认不出来的不默认成「自己的」也不默认成「违规」，但要**报出个数**：
+        # com.starlwr 这个组名不只本仓在用（上游 StarBot 的产物也是它），落在本仓外的 import 不归本格管；
+        # 而一个悄悄增长的「认不出」数，正是本格失灵最先看得见的样子。
+        if [ -z "$owner" ]; then
+            g10_unknown=$((g10_unknown + 1))
+            continue
+        fi
+        [ "$owner" = "$mod" ] && continue             # 自己引自己
+        is_core_module "$owner" && continue           # 核心侧，见上面射程那一段
+        g10_imports=$((g10_imports + 1))
+
+        owner_artifact="$(module_artifact "$owner")"
+        if [ -z "$owner_artifact" ]; then
+            g10_hits="${g10_hits}${mod}->${owner}(取不到 artifactId) "
+            g10_n=$((g10_n + 1))
+            continue
+        fi
+        if grep -qxF "$owner_artifact" "$WORK/g10deps"; then
+            case " $g10_pairs " in
+                *" ${mod}->${owner_artifact} "*) ;;
+                *) g10_pairs="${g10_pairs}${mod}->${owner_artifact} " ;;
+            esac
+        else
+            g10_hits="${g10_hits}${mod}/pom.xml(未申报 ${owner_artifact}，为 ${fqn}) "
+            g10_n=$((g10_n + 1))
+        fi
+    done <<< "$(grep -rhoE '^import[[:space:]]+(static[[:space:]]+)?com\.starlwr\.[A-Za-z0-9_.]*(\*)?' \
+        --include='*.java' "$mod/src/main" 2>/dev/null \
+        | sed -E 's/^import[[:space:]]+(static[[:space:]]+)?//' | sort -u)"
+done < "$MODULES"
+
+g10_read="受查插件模块${g10_mods}个 兄弟 import ${g10_imports}处(去重后的全限定名，非行数) 本仓外${g10_unknown}处 已申报[${g10_pairs% }]"
+if [ "$g10_mods" -eq 0 ]; then
+    echo "格10 红 射程为空 一个插件模块也枚举不到(在册模块${module_n}个)"
+    RED=1
+elif [ "$g10_n" -eq 0 ]; then
+    echo "格10 绿 命中0 兄弟插件引用都在 pom 里申报过 $g10_read"
+else
+    echo "格10 红 命中${g10_n} ${g10_hits% } $g10_read"
+    RED=1
+fi
+
+# ============================================================
+# 格11：核心界面目录在、且里面有件
+#
+# 与格1 的分工写在格1 那一段里：格1 问「目录在不在、平台名清单空不空」，
+# 本格问「目录里还有没有件」。分开两格是因为它们红的成因不同、修法也不同——
+# 目录不在是**搬走了**（格1 里的路径要跟着改），目录在而空是**掏空了**
+# （界面件搬去了别处，而格1 的扫描射程还落在这个空壳上，它照样报绿）。
+# 数的是这个目录下的**全部件**，与格1 扫的是同一片：格1 用 find 递归扫，本格就用 find 递归数，
+# 换成只数在册件的话，两格量的population 不同，本格的绿就担保不了格1 的射程。
+# ============================================================
+g11_files=0
+[ -d "$CORE_UI" ] && g11_files=$(find "$CORE_UI" -type f 2>/dev/null | wc -l | tr -d ' ')
+
+if [ ! -d "$CORE_UI" ]; then
+    echo "格11 红 核心界面目录不在 ${CORE_UI}"
+    RED=1
+elif [ "$g11_files" -eq 0 ]; then
+    echo "格11 红 核心界面目录在而无件 ${CORE_UI}"
+    RED=1
+else
+    echo "格11 绿 核心界面目录在且有件${g11_files} ${CORE_UI}"
+fi
+
+# ============================================================
+# 格12：写死了模块目录名的在册件数只减不增
+#
+# 目录重排真正的工作量在这里：这些件里写着 starbot-core/ 这样的**路径**，
+# 目录一改它们全部失灵——而其中大半（脚本、判据、配置）失灵的方式是安静的。
+# 一次改不完，那就立个账：现值封在下面这个上限里，新写一处就红。
+# 只减不增——改一件、把上限调低一，账才会往下走；上限只许由「改完一件」的那一笔调。
+#
+# 排除 *.md：文档里写模块路径是在教人怎么跑命令，跟着改是文档的事，不是这一格要拦的东西。
+# 数的是**件数**不是处数：一件里写十处，改的时候是一件事。
+# ============================================================
+
+# 现值上限（2026-09-08 实测 87）。改掉一件就把它调低一，绝不许调高。
+HARDCODED_MODULE_PATH_CAP=87
+
+G12_RE='starbot-core/|novacore|starbot-bilibili/|starbot-novabot-console/|starbot-onebot-adapter|starbot-report/'
+G12_LIST="$WORK/g12"
+git -c core.quotepath=false grep -l -E "$G12_RE" -- ':!*.md' > "$G12_LIST" 2>/dev/null
+g12_n=$(count_lines "$G12_LIST")
+
+if [ "$g12_n" -eq 0 ]; then
+    # 一件都数不出来，多半是模块名整套换过了（或不在 git 树里跑），不是「改完了」
+    echo "格12 红 射程为空 数不出任何写死模块目录名的在册件(在册模块${module_n}个) 上限${HARDCODED_MODULE_PATH_CAP}"
+    RED=1
+elif [ "$g12_n" -le "$HARDCODED_MODULE_PATH_CAP" ]; then
+    echo "格12 绿 写死模块目录名的在册件${g12_n} ≤ 上限${HARDCODED_MODULE_PATH_CAP}"
+else
+    echo "格12 红 写死模块目录名的在册件${g12_n} > 上限${HARDCODED_MODULE_PATH_CAP}（新写了 $((g12_n - HARDCODED_MODULE_PATH_CAP)) 件）"
+    RED=1
 fi
 
 exit "$RED"
