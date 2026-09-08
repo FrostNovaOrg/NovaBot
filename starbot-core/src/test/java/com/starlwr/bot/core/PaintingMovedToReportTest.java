@@ -60,8 +60,17 @@ class PaintingMovedToReportTest {
     /** 这两个包目录整个不该再出现在核心主码下 */
     private static final List<String> GONE_PACKAGES = List.of("painter", "factory");
 
-    /** 阳性锚：核心主码下确实还留着的一个包，用来证明本格当真找对了源码根 */
-    private static final String LIVE_PACKAGE = "service";
+    /**
+     * 阳性锚：核心主码下确实还留着的包，用来证明本格当真找对了源码根
+     * <p>
+     * 写成候选表而不是一个包名，是因为核心那个包根横跨的两个模块，底下留着的包并不同名：
+     * 里层剩 {@code datasource}，运行壳剩 {@code service}，两边的包集眼下没有交集。写死单个
+     * 名字的话，填哪一个都会在另一个模块上判红——所以每个模块命中表里任意一个即算找对。
+     * <p>
+     * 表里刻意避开 {@code util} 与 {@code config}：这两个名字当下两个模块都有，看着最像锚，
+     * 可它们正是接下来要从里层搬走的包，拿来当锚等于把本格钉在一次搬家的中途。
+     */
+    private static final List<String> LIVE_PACKAGES = List.of("datasource", "service");
 
     /** 阳性锚：核心的主资源里确实还留着的一个目录，用来证明问④看的是核心的资源根 */
     private static final String LIVE_RESOURCE_DIR = "config-ui";
@@ -88,8 +97,10 @@ class PaintingMovedToReportTest {
             assertTrue(!coreModules.isEmpty(),
                     "阳性锚: 该有模块的主码带着 " + CORE_PACKAGE + " 包根, 一个都找不到说明本格没找对源码根");
             for (Path module : coreModules) {
-                assertTrue(Files.isDirectory(mainPackage(module, CORE_PACKAGE).resolve(LIVE_PACKAGE)),
-                        "阳性锚: " + relative(module) + " 的核心主码下该看得见 " + LIVE_PACKAGE + " 包");
+                Path packageRoot = mainPackage(module, CORE_PACKAGE);
+                assertTrue(LIVE_PACKAGES.stream().anyMatch(pkg -> Files.isDirectory(packageRoot.resolve(pkg))),
+                        "阳性锚: " + relative(module) + " 的核心主码下该看得见 "
+                                + String.join("、", LIVE_PACKAGES) + " 里的至少一个包");
             }
 
             List<String> left = new ArrayList<>();
