@@ -4,15 +4,17 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.health.BilibiliRiskMetrics;
+import com.starlwr.bot.bilibili.model.Cookies;
 import com.starlwr.bot.core.util.HttpUtil;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.ResponseEntity;
 
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -33,14 +35,8 @@ class BilibiliApiUtilUnknownFieldTest {
     private static final String ROOM_INFO =
             "https://api.live.bilibili.com/room/v1/Room/get_info?room_id=1";
 
-    /**
-     * 各端点夹具：键＝该端点解析方法实际取用的 data 顶层键。
-     * 这格是「已知键表抄漏」的闸——夹具原样不得记未知字段。
-     */
-    private static final Map<String, String[]> ENDPOINT_FIXTURES = fixtures();
-
     @Test
-    @DisplayName("多余顶层键 0→1 且键形对；同应答×20 计数 20 种数 1；全部端点夹具恒 0；空/非对象不记不抛；缺字段 detail 含端点:键")
+    @DisplayName("多余顶层键 0→1 且键形对；同应答×20 计数 20 种数 1；表内每路已知键恒 0、已知+x_extra 恰 1；空/非对象不记不抛；缺字段 detail 含端点:键")
     void unknownTopLevelKeysAndMissingFieldDetail() {
         List<String> reds = new ArrayList<>();
 
@@ -82,25 +78,35 @@ class BilibiliApiUtilUnknownFieldTest {
         }
 
         try {
-            BilibiliRiskMetrics metrics = new BilibiliRiskMetrics();
-            HttpUtil http = mock(HttpUtil.class);
-            when(http.getJson(any(), any())).thenAnswer(invocation -> {
-                String url = invocation.getArgument(0);
-                String[] known = matchFixture(url);
-                if (known == null) {
-                    throw new IllegalStateException("夹具未覆盖端点: " + url);
-                }
-                return wrap(keys(known));
-            });
-            BilibiliApiUtil api = new BilibiliApiUtil(http, new StarBotBilibiliProperties(), metrics);
-            for (String url : ENDPOINT_FIXTURES.keySet()) {
-                api.requestBilibiliApi(url);
+            BilibiliRiskMetrics zeroMetrics = new BilibiliRiskMetrics();
+            BilibiliApiUtil zeroApi = new BilibiliApiUtil(mock(HttpUtil.class),
+                    new StarBotBilibiliProperties(), zeroMetrics);
+            for (Map.Entry<String, BilibiliApiUtil.KnownDataKeys> entry
+                    : BilibiliApiUtil.KNOWN_DATA_KEYS_BY_PATH.entrySet()) {
+                JSONObject data = keys(entry.getValue().keys().toArray(String[]::new));
+                zeroApi.noteUnknownTopKeys(entry.getKey(), data);
             }
-            assertEquals(0, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW),
-                    "全部端点夹具原样应恒 0，实际 "
-                            + metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW)
+            assertEquals(0, zeroMetrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW),
+                    "表内每一路只含已知键应恒 0，实际 "
+                            + zeroMetrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW)
                             + " detail="
-                            + metrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD).orElse(""));
+                            + zeroMetrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD).orElse(""));
+            for (Map.Entry<String, BilibiliApiUtil.KnownDataKeys> entry
+                    : BilibiliApiUtil.KNOWN_DATA_KEYS_BY_PATH.entrySet()) {
+                BilibiliRiskMetrics metrics = new BilibiliRiskMetrics();
+                BilibiliApiUtil api = new BilibiliApiUtil(mock(HttpUtil.class),
+                        new StarBotBilibiliProperties(), metrics);
+                JSONObject data = keys(entry.getValue().keys().toArray(String[]::new));
+                data.put("x_extra", 0);
+                api.noteUnknownTopKeys(entry.getKey(), data);
+                String name = entry.getValue().constantName();
+                assertEquals(1, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW),
+                        name + " 已知键＋x_extra 应恰 1，实际 "
+                                + metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW));
+                String detail = metrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD).orElse("");
+                assertTrue(detail.contains(name + ":x_extra"),
+                        name + " detail 应为常量名:x_extra，实际: " + detail);
+            }
         } catch (AssertionError | RuntimeException e) {
             reds.add("③ " + e.getMessage());
         }
@@ -144,53 +150,147 @@ class BilibiliApiUtilUnknownFieldTest {
         assertTrue(reds.isEmpty(), () -> "五问中 " + reds.size() + " 问红: " + String.join("; ", reds));
     }
 
-    private static Map<String, String[]> fixtures() {
-        Map<String, String[]> map = new LinkedHashMap<>();
-        map.put("https://api.bilibili.com/x/frontend/finger/spi",
-                new String[] {"b_3", "b_4"});
-        map.put("https://api.bilibili.com/x/web-frontend/getbuvid",
-                new String[] {"buvid"});
-        map.put("https://passport.bilibili.com/x/passport-login/web/qrcode/generate",
-                new String[] {"url", "qrcode_key"});
-        map.put("https://api.bilibili.com/x/space/v2/myinfo",
-                new String[] {"profile"});
-        map.put("https://passport.bilibili.com/x/passport-login/web/cookie/info",
-                new String[] {"refresh", "timestamp"});
-        map.put("https://passport.bilibili.com/x/passport-login/web/cookie/refresh",
-                new String[] {"refresh_token"});
-        map.put("https://api.live.bilibili.com/live_user/v1/Master/info?uid=1",
-                new String[] {"info", "room_id", "follower_num"});
-        map.put("https://api.live.bilibili.com/xlive/general-interface/v1/rank/getFansMembersRank?page=1&page_size=1&ruid=1",
-                new String[] {"num"});
-        map.put("https://api.live.bilibili.com/xlive/app-room/v2/guardTab/topListNew",
-                new String[] {"info", "top3", "list"});
-        map.put(ROOM_INFO,
-                new String[] {"uid", "live_status", "live_time", "title", "user_cover"});
-        map.put("https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo",
-                new String[] {"host_list", "token"});
-        map.put("https://api.live.bilibili.com/xlive/web-room/v1/dM/gethistory?roomid=1",
-                new String[] {"room"});
-        map.put("https://api.live.bilibili.com/xlive/web-room/v1/giftPanel/roomGiftConfig?platform=pc",
-                new String[] {"global_config", "list", "guard_resources"});
-        map.put("https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all?features=itemOpusStyle",
-                new String[] {"items"});
-        map.put("https://api.bilibili.com/x/relation/followings?vmid=1",
-                new String[] {"list"});
-        map.put("https://api.bilibili.com/bapis/bilibili.api.ticket.v1.Ticket/GenWebTicket",
-                new String[] {"ticket", "created_at", "ttl", "nav"});
-        return Map.copyOf(map);
-    }
+    @Test
+    @DisplayName("CONFIRM_REFRESH 进表后未知键 0→1；ROOM_STATUS／NAV／扫码轮询／TV／心跳解析处给未知键应记")
+    void confirmRefreshAndEndpointsOutsideExtractData() {
+        List<String> reds = new ArrayList<>();
 
-    private static String[] matchFixture(String url) {
-        String path = url == null ? "" : (url.indexOf('?') < 0 ? url : url.substring(0, url.indexOf('?')));
-        for (Map.Entry<String, String[]> entry : ENDPOINT_FIXTURES.entrySet()) {
-            String known = entry.getKey();
-            String knownPath = known.indexOf('?') < 0 ? known : known.substring(0, known.indexOf('?'));
-            if (path.equals(knownPath)) {
-                return entry.getValue();
-            }
+        try {
+            BilibiliRiskMetrics metrics = new BilibiliRiskMetrics();
+            HttpUtil http = mock(HttpUtil.class);
+            when(http.postJsonAsForm(any(), any(), any())).thenReturn(wrap(keys("x_extra")));
+            BilibiliApiUtil api = new BilibiliApiUtil(http, new StarBotBilibiliProperties(), metrics);
+            Cookies cookies = new Cookies();
+            cookies.setBiliJct("csrf");
+            api.setCookies(cookies);
+            api.confirmCookieRefresh("old-token");
+            assertEquals(1, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW),
+                    "CONFIRM_REFRESH 多一个顶层键应 0→1，实际 "
+                            + metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW));
+            String detail = metrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD).orElse("");
+            assertTrue(detail.contains("CONFIRM_REFRESH_API:x_extra"),
+                    "键形应为 CONFIRM_REFRESH_API:x_extra，实际: " + detail);
+        } catch (AssertionError | RuntimeException e) {
+            reds.add("CONFIRM_REFRESH " + e.getMessage());
         }
-        return null;
+
+        try {
+            BilibiliRiskMetrics metrics = new BilibiliRiskMetrics();
+            JSONObject inner = keys("live_status", "live_time", "title", "cover_from_user");
+            inner.put("x_extra", 0);
+            JSONObject data = new JSONObject();
+            data.put("1", inner);
+            BilibiliApiUtil api = apiReturning(
+                    "https://api.live.bilibili.com/room/v1/Room/get_status_info_by_uids",
+                    wrap(data), metrics);
+            api.getLiveInfoByUids(Set.of(1L));
+            assertEquals(1, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW),
+                    "ROOM_STATUS 内层多一个键应 0→1，实际 "
+                            + metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW));
+            String detail = metrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD).orElse("");
+            assertTrue(detail.contains("ROOM_STATUS_API:x_extra"),
+                    "键形应为 ROOM_STATUS_API:x_extra，实际: " + detail);
+        } catch (AssertionError | RuntimeException e) {
+            reds.add("ROOM_STATUS " + e.getMessage());
+        }
+
+        try {
+            BilibiliRiskMetrics metrics = new BilibiliRiskMetrics();
+            HttpUtil http = mock(HttpUtil.class);
+            when(http.postJsonWithHeaders(any(), any())).thenThrow(new RuntimeException("no ticket"));
+            JSONObject nav = new JSONObject();
+            JSONObject wbi = new JSONObject();
+            wbi.put("img_url", "https://example.invalid/i.png");
+            wbi.put("sub_url", "https://example.invalid/s.png");
+            nav.put("wbi_img", wbi);
+            nav.put("x_extra", 0);
+            when(http.getJson(any(), any())).thenReturn(wrap(nav));
+            BilibiliApiUtil api = new BilibiliApiUtil(http, new StarBotBilibiliProperties(), metrics);
+            api.generateWebSign();
+            assertEquals(1, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW),
+                    "NAV 多一个顶层键应 0→1，实际 "
+                            + metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW));
+            String detail = metrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD).orElse("");
+            assertTrue(detail.contains("NAV_API:x_extra"),
+                    "键形应为 NAV_API:x_extra，实际: " + detail);
+        } catch (AssertionError | RuntimeException e) {
+            reds.add("NAV " + e.getMessage());
+        }
+
+        try {
+            BilibiliRiskMetrics metrics = new BilibiliRiskMetrics();
+            HttpUtil http = mock(HttpUtil.class);
+            JSONObject poll = keys("code");
+            poll.put("code", 86101);
+            poll.put("x_extra", 0);
+            when(http.getForEntity(any(), any())).thenReturn(ResponseEntity.ok(wrap(poll).toJSONString()));
+            BilibiliApiUtil api = new BilibiliApiUtil(http, new StarBotBilibiliProperties(), metrics);
+            api.getQrCodeLoginStatus("poll-key");
+            assertEquals(1, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW),
+                    "扫码轮询多一个顶层键应 0→1，实际 "
+                            + metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW));
+            String detail = metrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD).orElse("");
+            assertTrue(detail.contains("QR_CODE_POLL_API:x_extra"),
+                    "键形应为 QR_CODE_POLL_API:x_extra，实际: " + detail);
+        } catch (AssertionError | RuntimeException e) {
+            reds.add("扫码轮询 " + e.getMessage());
+        }
+
+        try {
+            BilibiliRiskMetrics metrics = new BilibiliRiskMetrics();
+            HttpUtil http = mock(HttpUtil.class);
+            JSONObject tvData = keys("url", "auth_code");
+            tvData.put("x_extra", 0);
+            when(http.postAsForm(any(), any(), any())).thenReturn(wrap(tvData).toJSONString());
+            BilibiliApiUtil api = new BilibiliApiUtil(http, new StarBotBilibiliProperties(), metrics);
+            api.getTvQrCodeLoginInfo();
+            assertEquals(1, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW),
+                    "TV 生成多一个顶层键应 0→1，实际 "
+                            + metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW));
+            String detail = metrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD).orElse("");
+            assertTrue(detail.contains("TV_QR_CODE_GENERATE_API:x_extra"),
+                    "键形应为 TV_QR_CODE_GENERATE_API:x_extra，实际: " + detail);
+
+            BilibiliRiskMetrics pollMetrics = new BilibiliRiskMetrics();
+            HttpUtil pollHttp = mock(HttpUtil.class);
+            JSONObject pollData = new JSONObject();
+            pollData.put("x_extra", 0);
+            JSONObject pollBody = new JSONObject();
+            pollBody.put("code", 86039);
+            pollBody.put("data", pollData);
+            when(pollHttp.postAsForm(any(), any(), any())).thenReturn(pollBody.toJSONString());
+            BilibiliApiUtil pollApi = new BilibiliApiUtil(pollHttp, new StarBotBilibiliProperties(), pollMetrics);
+            pollApi.getTvQrCodeLoginStatus("auth");
+            assertEquals(1, pollMetrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW),
+                    "TV 轮询多一个顶层键应 0→1，实际 "
+                            + pollMetrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW));
+            String pollDetail = pollMetrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD).orElse("");
+            assertTrue(pollDetail.contains("TV_QR_CODE_POLL_API:x_extra"),
+                    "键形应为 TV_QR_CODE_POLL_API:x_extra，实际: " + pollDetail);
+        } catch (AssertionError | RuntimeException e) {
+            reds.add("TV " + e.getMessage());
+        }
+
+        try {
+            BilibiliRiskMetrics metrics = new BilibiliRiskMetrics();
+            HttpUtil http = mock(HttpUtil.class);
+            JSONObject hb = new JSONObject();
+            hb.put("next_interval", 60);
+            hb.put("x_extra", 0);
+            when(http.getJson(any(), any())).thenReturn(wrap(hb));
+            BilibiliApiUtil api = new BilibiliApiUtil(http, new StarBotBilibiliProperties(), metrics);
+            api.liveRoomHeartbeat(1L, 60);
+            assertEquals(1, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW),
+                    "心跳多一个顶层键应 0→1，实际 "
+                            + metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW));
+            String detail = metrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD).orElse("");
+            assertTrue(detail.contains("LIVE_HEARTBEAT_API:x_extra"),
+                    "键形应为 LIVE_HEARTBEAT_API:x_extra，实际: " + detail);
+        } catch (AssertionError | RuntimeException e) {
+            reds.add("心跳 " + e.getMessage());
+        }
+
+        assertTrue(reds.isEmpty(), () -> "六问中 " + reds.size() + " 问红: " + String.join("; ", reds));
     }
 
     private static JSONObject keys(String... names) {
