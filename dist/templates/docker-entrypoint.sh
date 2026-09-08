@@ -18,7 +18,7 @@ DST=/app
 mkdir -p "$DST/plugins" "$DST/plugins-lib"
 
 # 程序文件每次启动都覆盖，这样升级镜像就等于升级程序
-cp -f "$SRC/StarBotCore.jar" "$SRC/start.sh" "$DST/"
+cp -f "$SRC/NovaBot.jar" "$SRC/start.sh" "$DST/"
 rm -rf "$DST/lib"
 cp -R "$SRC/lib" "$DST/lib"
 

@@ -6,5 +6,5 @@ set JAVA_OPTS=-Xms128m -Xmx512m -XX:+UseSerialGC -Xss256k -XX:MaxMetaspaceSize=1
 set JAVA_OPTS=%JAVA_OPTS% -XX:+ExitOnOutOfMemoryError -Djava.awt.headless=true
 set JAVA_OPTS=%JAVA_OPTS% -Duser.timezone=Asia/Shanghai -Dfile.encoding=UTF-8
 
-java %JAVA_OPTS% -Dloader.path=lib,plugins,plugins-lib -jar StarBotCore.jar
+java %JAVA_OPTS% -Dloader.path=lib,plugins,plugins-lib -jar NovaBot.jar
 pause

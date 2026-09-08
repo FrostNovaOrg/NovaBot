@@ -55,7 +55,7 @@ Linux 上一条命令完成安装——自动检查并安装 JDK 17 与中文字
 启动并查看日志：
 
 ```bash
-sudo systemctl start starbot && sudo journalctl -u starbot -af
+sudo systemctl start novabot && sudo journalctl -u novabot -af
 ```
 
 日志里有**配置界面地址**（含访问令牌）和**登录二维码**。打开前者，总览页顶部的四步向导
@@ -77,7 +77,7 @@ ssh -L 7827:127.0.0.1:7827 用户名@服务器地址
 ./build.sh
 ```
 
-产物在 `dist/build/`：`StarBotCore.jar` 是主程序，`lib/` 为核心依赖，
+产物在 `dist/build/`：`NovaBot.jar` 是主程序，`lib/` 为核心依赖，
 `plugins/` 与 `plugins-lib/` 为插件及其依赖。可选 `--skip-tests`。
 构建收尾会把产物拷到临时目录、删掉全部配置文件后真起一次——起不来即构建失败
 （`--no-smoke` 跳过，详见[架构说明](docs/architecture.md#10-构建)）。

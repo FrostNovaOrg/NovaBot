@@ -1,14 +1,14 @@
 # NovaBot systemd 单元文件
 #
-# 既有安装用。新安装改用 novabot.service（本发行版双名期）。
+# 新安装用本单元。既有安装若已有 starbot.service，install.sh 沿用旧名、不改那份文件。
 #
 # 安装：
 #   sudo useradd --system --home-dir /opt/starbot --shell /usr/sbin/nologin starbot
 #   sudo cp -r dist/build /opt/starbot && sudo chown -R starbot:starbot /opt/starbot
-#   sudo cp dist/templates/starbot.service /etc/systemd/system/
-#   sudo systemctl daemon-reload && sudo systemctl enable --now starbot
+#   sudo cp dist/templates/novabot.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now novabot
 #
-# 首次启动需要扫码登录，先用 journalctl -u starbot -f 查看二维码。
+# 首次启动需要扫码登录，先用 journalctl -u novabot -f 查看二维码。
 
 [Unit]
 Description=NovaBot - 哔哩哔哩直播与动态推送机器人
@@ -27,7 +27,7 @@ RestartSec=10s
 
 # 143 = 128 + SIGTERM(15)，也就是 `systemctl stop` 之后 JVM 正常退出的码。
 # 不声明它的话每次正常停机都会在 journal 里留一行
-# 「starbot.service: Failed with result 'exit-code'」——关停其实是干净的
+# 「novabot.service: Failed with result 'exit-code'」——关停其实是干净的
 # （data.json 已保存、tomcat graceful shutdown complete）。
 # 那行纯噪声，但它训练人忽略 `Failed` 字样，而下一次真的失败长得一模一样。
 SuccessExitStatus=143
@@ -84,7 +84,7 @@ MemoryMax=1.5G
 
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=starbot
+SyslogIdentifier=novabot
 
 [Install]
 WantedBy=multi-user.target

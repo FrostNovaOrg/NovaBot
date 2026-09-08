@@ -48,8 +48,8 @@ fi
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 [ -d "$OUT" ] || OUT="$REPO_ROOT/$OUT"
 
-if [ ! -f "$OUT/StarBotCore.jar" ]; then
-    echo "量不动：$OUT 里没有 StarBotCore.jar" >&2
+if [ ! -f "$OUT/NovaBot.jar" ]; then
+    echo "量不动：$OUT 里没有 NovaBot.jar" >&2
     exit 1
 fi
 OUT="$(cd "$OUT" && pwd)"
@@ -142,12 +142,12 @@ cp -R "$OUT/." "$WORK/"
 # 前提：无配置。见文件头
 rm -f "$WORK/application.yml" "$WORK/datasource.json"
 
-echo "==> 起：$JAVA_BIN -jar StarBotCore.jar --server.port=$PORT （工作目录 ${WORK}）"
+echo "==> 起：$JAVA_BIN -jar NovaBot.jar --server.port=$PORT （工作目录 ${WORK}）"
 "$JAVA_BIN" -version > "$LOG" 2>&1
 (
     cd "$WORK" || exit 1
     exec "$JAVA_BIN" -Djava.awt.headless=true -Dfile.encoding=UTF-8 \
-        -Dloader.path=lib,plugins,plugins-lib -jar StarBotCore.jar \
+        -Dloader.path=lib,plugins,plugins-lib -jar NovaBot.jar \
         --server.port="$PORT" >> "$LOG" 2>&1
 ) &
 PID=$!

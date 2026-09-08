@@ -210,7 +210,14 @@ else
     SOURCE_DIR="$ROOT"
 fi
 
-[ -f "$SOURCE_DIR/StarBotCore.jar" ] || die "未找到构建产物 StarBotCore.jar"
+# 双名期：NovaBot.jar 优先，旧名 StarBotCore.jar 仍认
+if [ -f "$SOURCE_DIR/NovaBot.jar" ]; then
+    :
+elif [ -f "$SOURCE_DIR/StarBotCore.jar" ]; then
+    :
+else
+    die "未找到构建产物 NovaBot.jar"
+fi
 
 # ---------------------------------------------------------------- 安装
 
@@ -239,7 +246,7 @@ done
 
 # INSTALL_DIR 由命令行指定，误传 /usr 之类的路径会让清理毁掉系统。
 # 只在目标目录确实是既有安装时才清理，认不出来就停下来问，不硬着头皮删
-if [ -f "$INSTALL_DIR/StarBotCore.jar" ]; then
+if [ -f "$INSTALL_DIR/NovaBot.jar" ] || [ -f "$INSTALL_DIR/StarBotCore.jar" ]; then
     # 这两个目录完全由新版本重新生成
     $SUDO rm -rf "$INSTALL_DIR/lib" "$INSTALL_DIR/plugins-lib"
 
@@ -257,7 +264,7 @@ if [ -f "$INSTALL_DIR/StarBotCore.jar" ]; then
         $SUDO find "$INSTALL_DIR/plugins" -maxdepth 1 -type f -name "$artifact-[0-9]*.jar" -delete
     done
 elif [ -e "$INSTALL_DIR/lib" ] || [ -e "$INSTALL_DIR/plugins" ]; then
-    die "$INSTALL_DIR 下已有 lib/ 或 plugins/，但没有 StarBotCore.jar，不像 NovaBot 的安装目录。
+    die "$INSTALL_DIR 下已有 lib/ 或 plugins/，但没有 NovaBot.jar（亦无 StarBotCore.jar），不像 NovaBot 的安装目录。
      为免误删，请换一个目录，或先自行确认该目录内容"
 fi
 
@@ -306,15 +313,24 @@ $SUDO chmod 600 "$INSTALL_DIR"/cookies.* 2>/dev/null || true
 
 # ---------------------------------------------------------------- 服务
 
+# 既有机器上的 starbot.service 沿用；新装用 novabot
+SERVICE_UNIT="novabot"
+if [ -f /etc/systemd/system/starbot.service ]; then
+    SERVICE_UNIT="starbot"
+fi
+
 if [ "$CREATE_SERVICE" = "yes" ] && command -v systemctl > /dev/null 2>&1; then
-    info "创建 systemd 服务"
-
-    $SUDO sed -e "s#/opt/starbot#$INSTALL_DIR#g" -e "s/^User=.*/User=$SERVICE_USER/" -e "s/^Group=.*/Group=$SERVICE_USER/" \
-        "$INSTALL_DIR/starbot.service" | $SUDO tee /etc/systemd/system/starbot.service > /dev/null
-
-    $SUDO systemctl daemon-reload
-    $SUDO systemctl enable starbot > /dev/null 2>&1
-    info "服务已创建并设为开机自启"
+    if [ "$SERVICE_UNIT" = "starbot" ]; then
+        info "沿用 starbot 服务名"
+    else
+        info "创建 systemd 服务"
+        [ -f "$INSTALL_DIR/novabot.service" ] || die "缺少 $INSTALL_DIR/novabot.service"
+        $SUDO sed -e "s#/opt/starbot#$INSTALL_DIR#g" -e "s/^User=.*/User=$SERVICE_USER/" -e "s/^Group=.*/Group=$SERVICE_USER/" \
+            "$INSTALL_DIR/novabot.service" | $SUDO tee /etc/systemd/system/novabot.service > /dev/null
+        $SUDO systemctl daemon-reload
+        $SUDO systemctl enable novabot > /dev/null 2>&1
+        info "服务已创建并设为开机自启"
+    fi
 fi
 
 # ---------------------------------------------------------------- 完成
@@ -324,10 +340,10 @@ cat <<EOF
 安装完成，接下来：
 
   1. 启动服务
-       sudo systemctl start starbot
+       sudo systemctl start $SERVICE_UNIT
 
   2. 查看启动日志，其中包含配置界面地址与首次登录的二维码
-       sudo journalctl -u starbot -f
+       sudo journalctl -u $SERVICE_UNIT -f
 
   3. 在浏览器中打开日志里输出的配置界面地址完成配置
        该地址形如 http://127.0.0.1:$EFFECTIVE_PORT/config?token=xxxxx
