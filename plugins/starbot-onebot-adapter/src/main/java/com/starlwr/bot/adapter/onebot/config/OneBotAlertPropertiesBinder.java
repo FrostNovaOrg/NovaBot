@@ -10,6 +10,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -44,6 +46,16 @@ public class OneBotAlertPropertiesBinder {
         throw new IllegalStateException("no relocated key maps to " + current);
     }
 
+    private static String relocatedLegacyKeys(String oldPrefix) {
+        List<String> keys = new ArrayList<>();
+        for (Map.Entry<String, String> e : NovaBotPrefixes.RELOCATED.entrySet()) {
+            if (e.getKey().startsWith(oldPrefix)) {
+                keys.add(e.getKey());
+            }
+        }
+        return String.join("／", keys);
+    }
+
     /**
      * 把新旧两套键落到告警节上
      * @param environment 运行环境
@@ -74,7 +86,7 @@ public class OneBotAlertPropertiesBinder {
         boolean current = binder.bind(PREFIX, Bindable.ofInstance(alert)).isBound();
         if (legacy) {
             log.warn("配置项 {} 已改名为 {}.*, 旧键仍然有效, 但请尽快改过来{}",
-                    String.join("／", NovaBotPrefixes.RELOCATED.keySet()),
+                    relocatedLegacyKeys("starbot.core.alert."),
                     PREFIX,
                     (previous || current) ? "。两套键同时存在时以新键为准, 新键未写到的项才取旧键的值" : "");
         }
