@@ -44,7 +44,7 @@
 | `AlertChannel` | `core.alert` | 核心（邮件、QQ） | 告警投递 |
 | `StarBotCommand` | `core.command` | 各模块 | 群内聊天命令 |
 | `AtAllPermissionResolver` | `core.sender` | OneBot 适配器 | 机器人在某会话能否 @全体成员 |
-| `LiveMetricCatalog` | `core.analytics` | 报告插件（starbot-report） | 直播指标的中文名与**能否累加** |
+| `LiveMetricCatalog` | `core.analytics` | 报告插件（starbot-report） | 直播指标的中文名与**能否累加**；快照指标（粉丝数等）的名称另由 `snapshotMetrics()` 自报，一律不进可累加集 |
 | `ConsoleVocabulary` | `core.config.ui.vocab` | OneBot 适配器 | 控制台人话平台词（`bot.platform`／`bot.impl`／`bot.family`／`bot.impl.hint`／`bot.target.group`／`bot.target.user`／`bot.targets`）；核心界面只写中性兜底 |
 
 新增一个跨模块能力时，先问「核心需不需要 import 插件的类」。需要，就说明该抽成 SPI。
@@ -58,7 +58,12 @@
 - `LiveMetricCatalog` —— 归档里的指标是 `danmu_count` 这样的裸键，核心既不知道它叫什么，
   **也不知道它能不能相加**。后者不是格式问题而是对错问题：把「开播时的粉丝数」在一个月里
   累加十次，得到的数字纯属无中生有。因此聚合只处理明确声明为可累加的指标，
-  没有对应实现时降级为只统计场次与时长——这两项核心自己就算得出，且永远正确
+  没有对应实现时降级为只统计场次与时长——这两项核心自己就算得出，且永远正确。
+  `snapshotMetrics()` 说的是另一档：快照记的是「开播那一刻的粉丝数」这类**存量**，
+  按固定间隔采样留档、与某一场直播无关，所以一律不进可累加集，理由与上一句是同一个。
+  两边的键因此不许重合——同一个键既算得又算不得，看的人无从分辨。
+  不实现时回空表，界面照旧原样显示裸键：**裸键不许藏起来**，藏起来之后，
+  插件新采了一项指标的那一天，屏幕上不会有任何变化
 
 ## 2. 事件流
 
@@ -317,6 +322,9 @@ META-INF/spring-configuration-metadata.json
 | 账号登录 | `account/AccountLoginProvider` | `BilibiliAccountLoginProvider`（starbot-bilibili） | 界面内扫码登录、退出登录 |
 | 机器人连接测试 | `account/BotConnectionTester` | `OneBotConnectionTester`（onebot-adapter） | 连接页上的连通性测试与连接参数回填 |
 | @全体权限 | `sender/AtAllPermissionResolver` | `OneBotAtAllPermissionService`（onebot-adapter） | 「能不能 @全体成员」由平台侧回答，核心只拿答案决定摘不摘 |
+| 告警通道 | `alert/AlertChannel` | `MailAlertChannel`、`WebhookAlertChannel`（核心自带）与 `QqAlertChannel`（onebot-adapter） | 告警往哪儿投；`isAvailable()` 由通道自己答，没配好的通道核心不去试 |
+| 直播指标目录 | `analytics/LiveMetricCatalog` | `BilibiliLiveMetricCatalog`（starbot-report） | 把归档里的裸键换成人话，并声明哪几项能相加；快照指标另走 `snapshotMetrics()`，一律不进可累加集 |
+| 控制台词表 | `config/ui/vocab/ConsoleVocabulary` | `OneBotConsoleVocabulary`（onebot-adapter） | 控制台上的平台词（`bot.platform` 一族）由平台插件供，核心界面只写中性兜底 |
 | 消息出口 | `service/StarBotSenderService` 登记的 `model/Sender` | `OneBotController`（onebot-adapter） | 推送平台向核心登记出口，核心按名字投递 |
 | REST 接口 | 无专用接口：`@RestController` 照常写，仍需 `@StarBotComponent` | `BilibiliReportLayoutController`（starbot-report）、`OneBotTargetController`（onebot-adapter） | 插件 jar 里的控制器与核心的合在同一个 Web 服务里 |
 
