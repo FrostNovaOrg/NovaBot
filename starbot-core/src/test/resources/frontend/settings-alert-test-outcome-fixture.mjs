@@ -86,11 +86,43 @@ try {
 }
 eq(q1, true, '① testOutcomeText 有 note 同时含结果与提醒；空 note 恰原文');
 
-// ② 切出 sendTest 文本，成功／异常两处 box.textContent = 皆经 testOutcomeText(
-const send = bracedFrom(src, 'async function sendTest');
-eq(send.includes('box.textContent = testOutcomeText(res.message')
-  && send.includes("box.textContent = testOutcomeText('发不出去：'"),
-  true, '② sendTest 成功／异常两处 box.textContent 皆经 testOutcomeText(');
+function loadSend(store, api) {
+  const outcome = bracedFrom(src, 'function testOutcomeText');
+  const send = bracedFrom(src, 'async function sendTest');
+  if (!send) throw new Error('no sendTest');
+  return new Function('store', 'api', outcome + '\n' + send + '\nreturn sendTest;')(store, api);
+}
+
+function fakeAlertButton() {
+  const box = {textContent: '', className: ''};
+  const button = {disabled: false, parentElement: {querySelector() { return box; }}};
+  return {box, button};
+}
+
+// ② 切出 sendTest 真执行：有改动时成功／异常两路 box 都留结果与未保存提醒
+let q2ok = 'missing';
+try {
+  const {box, button} = fakeAlertButton();
+  const fn = loadSend({dirty: {a: 1}}, async () => ({success: true, message: '已发出'}));
+  await fn('webhook', button);
+  q2ok = String(box.textContent).includes('已发出')
+    && String(box.textContent).includes('有改动还没保存');
+} catch (e) {
+  q2ok = 'error:' + e.message;
+}
+eq(q2ok, true, '② sendTest 成功且有改动：结果与未保存提醒都在 box');
+
+let q2err = 'missing';
+try {
+  const {box, button} = fakeAlertButton();
+  const fn = loadSend({dirty: {a: 1}}, async () => { throw new Error('net'); });
+  await fn('webhook', button);
+  q2err = String(box.textContent).includes('发不出去')
+    && String(box.textContent).includes('有改动还没保存');
+} catch (e) {
+  q2err = 'error:' + e.message;
+}
+eq(q2err, true, '② sendTest 异常且有改动：发不出去与未保存提醒都在 box');
 
 // ③ 阳性对照：切段真执行 testOutcomeText('x','')==='x'
 let q3 = 'missing';

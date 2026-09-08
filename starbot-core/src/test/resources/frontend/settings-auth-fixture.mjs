@@ -102,8 +102,30 @@ eq(qFalse, false, 'settle(false) 后 store.totpRequired === false');
 
 const form = bracedFrom(read('tokens.js'), 'function issueFormHtml');
 eq(form.length > 0, true, '找得到签发表单');
-eq(form.includes('store.totpRequired'), true, '签发表单读 store.totpRequired');
-eq(form.includes('authState.totpEnabled'), false, '签发表单不读 authState.totpEnabled');
+
+function runIssueForm(totpRequired) {
+  const store = {totpRequired};
+  const issueFormHtml = new Function('store', form + '\nreturn issueFormHtml;')(store);
+  return issueFormHtml();
+}
+
+let qFormOn = 'missing';
+try {
+  const html = runIssueForm(true);
+  qFormOn = html.includes('id="tk-code"') && html.includes('动态验证码');
+} catch (e) {
+  qFormOn = 'error:' + e.message;
+}
+eq(qFormOn, true, 'store.totpRequired===true 签发表单含验证码栏');
+
+let qFormOff = 'missing';
+try {
+  const html = runIssueForm(false);
+  qFormOff = !html.includes('id="tk-code"');
+} catch (e) {
+  qFormOff = 'error:' + e.message;
+}
+eq(qFormOff, true, 'store.totpRequired===false 签发表单不含验证码栏');
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);
