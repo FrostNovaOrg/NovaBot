@@ -29,7 +29,7 @@
 # 模块枚举一律走 `git ls-files '*/pom.xml'`（任意深度、只认在册件），不再按仓根一级目录名。
 # 新增四格补的是另外四条缝：⑨同一个 java 包跨模块（撞包，立格时有三个，三刀解完已清零，
 # 闭集照旧钉住不许再长）、
-# ⑩插件 import 了兄弟插件却没在 pom 里申报那个模块、⑪核心界面目录在且非空（格1 射程的正面读数）、
+# ⑩插件 import 了兄弟插件却没在 pom 里申报那个模块、以及主码直引里层包却没申报 novacore、⑪核心界面目录在且非空（格1 射程的正面读数）、
 # ⑫写死了模块目录名的在册件数只减不增（给目录重排立账，改一件销一件）。
 
 set -uo pipefail
@@ -962,7 +962,8 @@ else
 fi
 
 # ============================================================
-# 格10：插件 import 了兄弟插件，本模块 pom 里就得申报那个模块
+# 格10：插件 import 了兄弟插件，本模块 pom 里就得申报那个模块；
+#       主码直接 import 里层 novacore 包的，pom 里就得申报 novacore
 #
 # 兄弟插件之间的引用本身不违规（报告插件画的是哔哩哔哩的直播报告，它必须认得那些模型）。
 # 违规的是**引用了却不申报**：靠别人的传递依赖编得过，那个中间人一改依赖，这个模块当场编不了；
@@ -973,9 +974,12 @@ fi
 # 把 import 的全限定名折成源码路径、去在册件里找它落在哪个模块，才分得开。
 # 通配 import（…​.*）折成目录来找；内部类（…Outer.Inner）折不出件时逐级退一段再找。
 #
-# 射程只到兄弟**插件**：import 核心侧的件不在本格之内——插件申报的是 starbot-core，
-# novacore 由它传递带出来，那是核心一侧刻意保留的形态（格7 守核心不反向依赖壳），
-# 拿本格去判它会把一个设计判成违规。
+# 射程两块：①兄弟插件 import 须在 pom 申报那个模块（原判据）；②插件主码直接 import
+# 里层包（包名按 novacore/src/main/java/com/starlwr/bot/core/ 第一级目录现算，不写死）
+# 须在 pom 申报 novacore——今天靠 starbot-core 传递带进来，拆仓那天里层单独出包就断。
+# ② 的受查面＝根 pom <module> 列的、starbot-core 与 novacore 之外，外加 templates/*/pom.xml
+# （模板插件同口径，不豁免；processor 仍不在 reactor 里）。
+# 壳侧包（starbot-core 下那些）仍不在本格之内（格7 守核心不反向依赖壳）。
 # ============================================================
 
 # 件清单走 tree_files（按工作树现算，理由见其注释）：本格的归属全靠这份清单查落点，
@@ -1026,6 +1030,9 @@ g10_pairs=""
 g10_mods=0
 g10_imports=0
 g10_unknown=0
+g10_inner_pkg_n=0
+g10_inner_mods=0
+g10_inner_declared=0
 
 while IFS= read -r mod; do
     [ -z "$mod" ] && continue
@@ -1069,9 +1076,57 @@ while IFS= read -r mod; do
         | sed -E 's/^import[[:space:]]+(static[[:space:]]+)?//' | sort -u)"
 done < "$MODULES"
 
-g10_read="受查插件模块${g10_mods}个 兄弟 import ${g10_imports}处(去重后的全限定名，非行数) 本仓外${g10_unknown}处 已申报[${g10_pairs% }]"
+# 里层包名按工作树现算，不写死。受查模块按根 pom <module> 现算。
+G10_INNER="$WORK/g10inner"
+tree_files 'novacore/src/main/java/com/starlwr/bot/core/*' \
+    | sed -nE 's|^novacore/src/main/java/com/starlwr/bot/core/([^/]+)/.*$|\1|p' \
+    | sort -u > "$G10_INNER"
+g10_inner_pkg_n=$(count_lines "$G10_INNER")
+
+G10_PLUGIN_MODS="$WORK/g10plugins"
+strip_xml_comments pom.xml \
+    | awk '/<modules>/{inside=1} /<\/modules>/{inside=0} inside' \
+    | grep -oE '<module>[^<]+</module>' \
+    | awk -F'[<>]' '{print $3}' > "$WORK/g10rootmod"
+: > "$G10_PLUGIN_MODS"
+while IFS= read -r g10pm; do
+    [ -z "$g10pm" ] && continue
+    is_core_module "$g10pm" && continue
+    printf '%s\n' "$g10pm" >> "$G10_PLUGIN_MODS"
+done < "$WORK/g10rootmod"
+for g10tpom in templates/*/pom.xml; do
+    [ -f "$g10tpom" ] || continue
+    printf '%s\n' "$(dirname "$g10tpom")" >> "$G10_PLUGIN_MODS"
+done
+
+if [ "$g10_inner_pkg_n" -gt 0 ]; then
+    g10_inner_re="$(tr '\n' '|' < "$G10_INNER")"
+    g10_inner_re="${g10_inner_re%|}"
+    while IFS= read -r mod; do
+        [ -z "$mod" ] && continue
+        [ -d "$mod/src/main/java" ] || continue
+        g10_ikey="$(printf '%s' "$mod" | tr '/' '_')"
+        grep -rlE "^import[[:space:]]+(static[[:space:]]+)?com\\.starlwr\\.bot\\.core\\.(${g10_inner_re})\\." \
+            --include='*.java' "$mod/src/main/java" > "$WORK/g10if_${g10_ikey}" 2>/dev/null || true
+        g10_inner_files=$(count_lines "$WORK/g10if_${g10_ikey}")
+        [ "$g10_inner_files" -eq 0 ] && continue
+        g10_inner_mods=$((g10_inner_mods + 1))
+        declared_artifacts_of "$mod" > "$WORK/g10deps_inner"
+        if grep -qxF "novacore" "$WORK/g10deps_inner"; then
+            g10_inner_declared=$((g10_inner_declared + 1))
+        else
+            g10_hits="${g10_hits}${mod}/pom.xml(未申报 novacore，里层直引 ${g10_inner_files}件) "
+            g10_n=$((g10_n + 1))
+        fi
+    done < "$G10_PLUGIN_MODS"
+fi
+
+g10_read="受查插件模块${g10_mods}个 兄弟 import ${g10_imports}处(去重后的全限定名，非行数) 本仓外${g10_unknown}处 已申报[${g10_pairs% }] 里层直引 ${g10_inner_mods} 模块／已申报 ${g10_inner_declared}"
 if [ "$g10_mods" -eq 0 ]; then
     echo "格10 红 射程为空 一个插件模块也枚举不到(在册模块${module_n}个)"
+    RED=1
+elif [ "$g10_inner_pkg_n" -eq 0 ]; then
+    echo "格10 红 射程为空 里层包名枚举不到(novacore/src/main/java/com/starlwr/bot/core 第一级目录 0 个) $g10_read"
     RED=1
 elif [ "$g10_n" -eq 0 ]; then
     echo "格10 绿 命中0 兄弟插件引用都在 pom 里申报过 $g10_read"
@@ -1115,10 +1170,10 @@ fi
 # 数的是**件数**不是处数：一件里写十处，改的时候是一件事。
 # ============================================================
 
-# 现值上限（2026-09-08 实测 87）。改掉一件就把它调低一，绝不许调高。
-HARDCODED_MODULE_PATH_CAP=87
+# 现值上限（2026-09-08 实测 82；正则改为 novacore/ 后现算，只认目录名）。改掉一件就把它调低一，绝不许调高。
+HARDCODED_MODULE_PATH_CAP=82
 
-G12_RE='starbot-core/|novacore|starbot-bilibili/|starbot-novabot-console/|starbot-onebot-adapter|starbot-report/'
+G12_RE='starbot-core/|novacore/|starbot-bilibili/|starbot-novabot-console/|starbot-onebot-adapter|starbot-report/'
 G12_LIST="$WORK/g12"
 : > "$G12_LIST"
 # 件清单走 tree_files 再自己 grep，不走 git grep：git grep 只搜在册件，

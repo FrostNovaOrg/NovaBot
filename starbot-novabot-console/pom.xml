@@ -20,6 +20,10 @@
             <groupId>com.starlwr</groupId>
             <artifactId>starbot-core</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.starlwr</groupId>
+            <artifactId>novacore</artifactId>
+        </dependency>
     </dependencies>
 
     <build>

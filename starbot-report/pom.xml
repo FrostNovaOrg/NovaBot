@@ -22,6 +22,10 @@
         </dependency>
         <dependency>
             <groupId>com.starlwr</groupId>
+            <artifactId>novacore</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.starlwr</groupId>
             <artifactId>starbot-bilibili</artifactId>
             <version>1.0.0</version>
         </dependency>

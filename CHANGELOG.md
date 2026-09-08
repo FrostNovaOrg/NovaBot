@@ -50,6 +50,7 @@
 - 核心里三个类换了包：数据源服务接口 `com.starlwr.bot.core.service.DataSourceService` 与它的实现类注解 `com.starlwr.bot.core.service.DataSourceServiceConfig` 改到 `com.starlwr.bot.core.datasource`，事件流只读口令 `com.starlwr.bot.core.service.EventStreamTokenService` 改到 `com.starlwr.bot.core.protocol`。只有自己写平台插件、代码里直接引用了这三个类的人才受影响：改一下 import，类名、方法名和参数都没变。配置项、日志用词和行为一律未变。
 - 核心里八个配置类换了包：`com.starlwr.bot.core.config.ConfigEffect`／`CoreConfigurationSections`／`DatasourceProperties`／`EventStreamProperties`／`LiveProperties`／`LogProperties`／`NetworkProperties`／`NetworkThreadProperties` 改到 `com.starlwr.bot.core.properties`。只有自己写插件、代码里直接引用了这几个类的人才受影响（最常见的是给自家配置项标 `@ConfigEffect`）：改一下 import，类名、方法名和参数都没变。`com.starlwr.bot.core.config` 这个包还在，`ConfigLevel`／`ConfigDanger`／`StarBotCoreProperties` 和整个 `config.ui` 都没有挪动。`starbot.core.*` 的配置键一个也没改，行为一律未变。
 - 核心里四个工具类换了包：`com.starlwr.bot.core.util.CollectionUtil`／`MathUtil`／`SecureToken`／`StringUtil` 改到 `com.starlwr.bot.core.lang`。只有自己写插件、代码里直接引用了这四个类的人才受影响：改一下 import，类名、方法名和参数都没变。`com.starlwr.bot.core.util` 这个包还在，里面别的工具类（二维码、网络、掩码等）没有挪动。配置项、日志用词和行为一律未变。
+- 自己写的插件如果代码里直接用到核心里层的类，需要在 pom 里申报 novacore 依赖；仓库里的示例插件模板已经带上这一条。
 
 ### 修复
 

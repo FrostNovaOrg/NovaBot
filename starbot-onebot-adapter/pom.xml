@@ -21,6 +21,10 @@
             <artifactId>starbot-core</artifactId>
         </dependency>
         <dependency>
+            <groupId>com.starlwr</groupId>
+            <artifactId>novacore</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-configuration-processor</artifactId>
         </dependency>
