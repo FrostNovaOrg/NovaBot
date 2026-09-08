@@ -10,10 +10,12 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 
+import java.util.Map;
+
 /**
  * 告警目标新旧两套键都认
  * <p>
- * 先按旧键 {@code starbot.core.alert.qq-*} 绑一趟，再按现行键
+ * 先按 {@link NovaBotPrefixes#RELOCATED} 里的旧键绑一趟，再按现行键
  * {@code novabot.adapter.onebot.alert} 绑第二趟：第二趟只会写入真的出现在配置里的项，
  * 没写的项原样留着第一趟的值。于是「新键在场时压过旧键、缺的项由旧键补上」落在每一项上。
  * 旧键在场时启动打一条提醒，不在每次发送重读时刷。
@@ -27,11 +29,20 @@ public class OneBotAlertPropertiesBinder {
      */
     public static final String PREFIX = NovaBotPrefixes.ADAPTER_ALERT;
 
-    private static final String LEGACY_PLATFORM = "starbot.core.alert.qq-platform";
+    private static final String LEGACY_PLATFORM = relocatedLegacy(PREFIX + ".platform");
 
-    private static final String LEGACY_TYPE = "starbot.core.alert.qq-type";
+    private static final String LEGACY_TYPE = relocatedLegacy(PREFIX + ".type");
 
-    private static final String LEGACY_NUM = "starbot.core.alert.qq-num";
+    private static final String LEGACY_NUM = relocatedLegacy(PREFIX + ".num");
+
+    private static String relocatedLegacy(String current) {
+        for (Map.Entry<String, String> e : NovaBotPrefixes.RELOCATED.entrySet()) {
+            if (current.equals(e.getValue())) {
+                return e.getKey();
+            }
+        }
+        throw new IllegalStateException("no relocated key maps to " + current);
+    }
 
     /**
      * 把新旧两套键落到告警节上
@@ -62,7 +73,8 @@ public class OneBotAlertPropertiesBinder {
         boolean previous = binder.bind(NovaBotPrefixes.ADAPTER_ALERT_LEGACY, Bindable.ofInstance(alert)).isBound();
         boolean current = binder.bind(PREFIX, Bindable.ofInstance(alert)).isBound();
         if (legacy) {
-            log.warn("配置项 starbot.core.alert.qq-* 已改名为 {}.*, 旧键仍然有效, 但请尽快改过来{}",
+            log.warn("配置项 {} 已改名为 {}.*, 旧键仍然有效, 但请尽快改过来{}",
+                    String.join("／", NovaBotPrefixes.RELOCATED.keySet()),
                     PREFIX,
                     (previous || current) ? "。两套键同时存在时以新键为准, 新键未写到的项才取旧键的值" : "");
         }
