@@ -2361,6 +2361,125 @@ class ConfigUiFrontendTest {
     }
 
     /**
+     * 底部那条的显隐只由一处决定，页底那截留白跟着它切
+     * <p>
+     * 条出现当且仅当三件事之一成立：本页有未保存的改动、有保存过等重启的项、状态栏正说着话。
+     * 这条判定是纯函数 {@code barVisible}，由 {@link ChangeBarVisibilityTest} 拉起的夹具逐档喂值跑。
+     * 这一格钉的是它的另一半——<b>调用点确实问过它</b>：抄一份进渲染代码之后那把夹具照样全绿，
+     * 它量的还是那份没人调的判法，而屏幕上跑的是新抄的这一份。
+     * <p>
+     * 「改动变了」与「说了话」是两条各自成立的路，因此 {@code markDirty} 与 {@code say} 都得走一遍：
+     * 少接 {@code say} 那一路，一句话说出来时条不出现，状态栏就成了个看不见的东西；
+     * 少接 {@code markDirty} 那一路，改了东西条不出现，保存这条路直接没了。
+     * <p>
+     * 后半截查那截留白：{@code .bar} 是固定在底的，页底得空出它那么高才不会盖住最后一行。
+     * 藏了条却还空着一截的话，屏幕最下面留着一条无缘无故的空白——因此两处必须同一个开关。
+     * 这里比的是「藏起来时那截留白确实更小」而不是钉住某个像素值：钉值会让日后调条高的人
+     * 为一个数字回来改判据。
+     */
+    @Test
+    @DisplayName("底部改动条的显隐只由一处决定，页底留白跟着切")
+    void changeBarVisibilityHasSingleDecisionPoint() throws IOException {
+        String source = coreSources().getOrDefault("core.js", "");
+        assertFalse(source.isBlank(), "core.js 没读到，下面几条量的是空的");
+        String css = Files.readString(frontendDir().resolve("app.css"), StandardCharsets.UTF_8);
+
+        List<String> bad = new ArrayList<>();
+
+        if (!source.contains("export function barVisible(")) {
+            bad.add("core.js 没有导出 barVisible，藏不藏的判定没有单独的一份");
+        }
+
+        // 挂类那一手只许有一处。第二处一出现，「谁说了算」就有了两个答案，
+        // 而分叉时的表现是条在某些操作之后再也不出来了。
+        // 这里数的是原文不是 codeOnly：那一步把字符串挖成空白，而 'nobar' 正是要数的东西
+        int toggles = countOccurrences(source, "classList.toggle('nobar'");
+        if (toggles != 1) {
+            bad.add("core.js 里挂 nobar 那一手有 " + toggles + " 处，应恰 1 处");
+        }
+
+        String paint = functionBodyAny(source, "paintBar");
+        if (paint.isBlank()) {
+            bad.add("core.js 里找不到 paintBar，这一格的射程已经不在了");
+        } else if (!paint.contains("barVisible(")) {
+            bad.add("paintBar 没有问过 barVisible，条藏不藏又成了两份判定");
+        }
+
+        for (String caller : List.of("markDirty", "say")) {
+            String body = functionBody(source, caller);
+            if (body.isBlank()) {
+                bad.add("core.js 里找不到 " + caller + "，这一格的射程已经不在了");
+            } else if (!body.contains("paintBar(")) {
+                bad.add(caller + " 没有调 paintBar，那一路上条不会跟着变");
+            }
+        }
+
+        if (cssBlock(css, "html.nobar .bar").isBlank()) {
+            bad.add("app.css 没有 html.nobar .bar，挂上类之后条照样在屏幕上");
+        }
+        // 阴性对照：条本来就是固定在底、要占位的。它哪天不占位了，
+        // 上面那条「藏起来」量的就不是原来那件事，而这一格照样绿
+        String bar = cssBlock(css, ".bar");
+        if (!bar.contains("position:fixed")) {
+            bad.add(".bar 已经不是固定在底的了，「藏起来省出一截」这件事无从谈起: " + bar.strip());
+        }
+
+        int roomy = paddingBottomOf(cssBlock(css, "#main"));
+        int tight = paddingBottomOf(cssBlock(css, "html.nobar #main"));
+        if (roomy <= 0) {
+            bad.add("#main 读不出页底留白，下面那条比不了");
+        } else if (tight < 0) {
+            bad.add("app.css 没有 html.nobar #main：条藏了，页底却还空着条那么高的一截");
+        } else if (tight >= roomy) {
+            bad.add("藏起来时页底留白 " + tight + "px，不比出条时的 " + roomy + "px 小");
+        }
+
+        assertTrue(bad.isEmpty(), "底部改动条的显隐接线有问题:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
+     * 一段文本里某个片段出现了几次
+     */
+    private int countOccurrences(String text, String piece) {
+        int count = 0;
+        int at = text.indexOf(piece);
+        while (at >= 0) {
+            count++;
+            at = text.indexOf(piece, at + piece.length());
+        }
+        return count;
+    }
+
+    /**
+     * 一份声明块的下内边距，单位 px。读不出来时为 -1
+     * <p>
+     * {@code padding-bottom} 与 {@code padding} 简写都认：只认前者的话，
+     * 写成简写的那一份读出来是「没有」，而屏幕上它明明留着一截。
+     */
+    private int paddingBottomOf(String block) {
+        if (block == null || block.isBlank()) {
+            return -1;
+        }
+        Matcher own = Pattern.compile("padding-bottom\\s*:\\s*(\\d+)px").matcher(block);
+        if (own.find()) {
+            return Integer.parseInt(own.group(1));
+        }
+        Matcher shorthand = Pattern.compile("(?<![\\w-])padding\\s*:\\s*([^;}]+)").matcher(block);
+        if (!shorthand.find()) {
+            return -1;
+        }
+        String[] parts = shorthand.group(1).strip().split("\\s+");
+        // 一值四边同、两值上下与左右、三值上／左右／下、四值上右下左
+        String bottom = switch (parts.length) {
+            case 1, 2 -> parts[0];
+            case 3, 4 -> parts[2];
+            default -> "";
+        };
+        Matcher px = Pattern.compile("^(\\d+)px$").matcher(bottom);
+        return px.matches() ? Integer.parseInt(px.group(1)) : -1;
+    }
+
+    /**
      * 搭车走别人语法循环、不单独立尺的视图模型
      * <p>
      * 现在一条也没有。告警、确认、只读口令三份已经各自有 {@code *-model-check.sh}。

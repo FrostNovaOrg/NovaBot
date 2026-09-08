@@ -168,6 +168,12 @@ header #auth-actions button:hover{color:var(--accent);border-color:var(--accent)
    还没上锁的机器走的就是这条路，此时页头上的「退出登录」无从谈起 */
 html.chromeless header,html.chromeless #side,html.chromeless .bar{display:none}
 html.chromeless #main{max-width:760px;margin:0 auto;padding-top:60px}
+/* 底部那条没话说的时候整条不出现：一处没改、没有等重启的项、状态栏也空着。
+   页底那截留白跟着一起收——#main 的下内边距本来是空给条的高度，
+   藏了条还留着它，屏幕最下面就是一段无缘无故的空白。两件事同一个类，
+   分成两处切的话它们迟早各切各的（挂类那一手在 core.js 的 paintBar） */
+html.nobar .bar{display:none}
+html.nobar #main{padding-bottom:20px}
 #setup-shell{padding:20px 22px}
 #setup-shell h2{margin:0 0 6px;font-size:16px}
 .su-top{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
