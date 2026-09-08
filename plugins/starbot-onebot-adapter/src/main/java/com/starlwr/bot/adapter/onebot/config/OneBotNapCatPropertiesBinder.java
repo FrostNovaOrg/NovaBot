@@ -10,10 +10,12 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 
+import java.util.Map;
+
 /**
  * NapCat 代登录凭据新旧两套键都认
  * <p>
- * 先按旧键 {@code starbot.core.config-ui.napcat} 绑一趟，再按现行键
+ * 先按 {@link NovaBotPrefixes#RELOCATED} 里的 NapCat 旧键绑一趟，再按现行键
  * {@code novabot.adapter.onebot.napcat} 绑第二趟：第二趟只会写入真的出现在配置里的项，
  * 没写的项原样留着第一趟的值。于是「新键在场时压过旧键、缺的项由旧键补上」落在每一项上。
  * 旧键在场时启动打一条提醒，不在每次读取时刷。
@@ -28,14 +30,28 @@ public class OneBotNapCatPropertiesBinder {
     public static final String PREFIX = NovaBotPrefixes.ADAPTER_NAPCAT;
 
     /**
-     * 改名前的配置键前缀
+     * 改名前的配置键前缀，从 {@link NovaBotPrefixes#RELOCATED} 反查
      */
-    public static final String LEGACY_PREFIX = "starbot.core.config-ui.napcat";
+    public static final String LEGACY_PREFIX;
 
     /**
      * 旧位置的 token 明文键，写回哈希时若在场须一并清空
      */
-    public static final String LEGACY_TOKEN = LEGACY_PREFIX + ".token";
+    public static final String LEGACY_TOKEN = relocatedLegacy(PREFIX + ".token");
+
+    static {
+        int dot = LEGACY_TOKEN.lastIndexOf('.');
+        LEGACY_PREFIX = LEGACY_TOKEN.substring(0, dot);
+    }
+
+    private static String relocatedLegacy(String current) {
+        for (Map.Entry<String, String> e : NovaBotPrefixes.RELOCATED.entrySet()) {
+            if (current.equals(e.getValue())) {
+                return e.getKey();
+            }
+        }
+        throw new IllegalStateException("no relocated key maps to " + current);
+    }
 
     /**
      * 把新旧两套键落到代登录节上

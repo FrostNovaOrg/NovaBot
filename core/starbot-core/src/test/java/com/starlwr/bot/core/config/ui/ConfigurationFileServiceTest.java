@@ -866,6 +866,73 @@ class ConfigurationFileServiceTest {
                 () -> "告警三键全对应三问中 " + unresolved.size() + " 问未销: " + String.join("; ", unresolved));
     }
 
+    /**
+     * 更早一档代登录四项在 core.config-ui.napcat.*，现行在 adapter.onebot.napcat。
+     * 值故意写成新树与旧树不同，用来钉「留下的是新树那份」。
+     */
+    private static final String NAPCAT_KEYS_MIRRORED = """
+            starbot:
+              core:
+                config-ui:
+                  napcat:
+                    token: old-token
+                    token-hash: old-hash
+                    totp-secret: old-secret
+                    address: http://127.0.0.1:6099
+            novabot:
+              adapter:
+                onebot:
+                  napcat:
+                    token: ""
+                    token-hash: new-hash
+                    totp-secret: new-secret
+                    address: http://127.0.0.1:1
+            """;
+
+    @Test
+    @DisplayName("旧树只含 napcat 四键且新树有对应：保存后去掉 starbot 根")
+    void saveDropsLegacyRootWhenOnlyNapCatKeysAreMirrored() throws Exception {
+        Files.writeString(config, NAPCAT_KEYS_MIRRORED, StandardCharsets.UTF_8);
+        List<String> unresolved = new ArrayList<>();
+
+        try {
+            service.write(Map.of("novabot.adapter.onebot.napcat.address", "http://127.0.0.1:2"));
+            String text = content();
+            assertTrue(text.lines().noneMatch(line -> line.startsWith("starbot:")),
+                    "代登录四键在新树有对应时，保存后不应再留 starbot 根:\n" + text);
+            assertTrue(text.contains("novabot:"), "新树应仍在:\n" + text);
+        } catch (AssertionError | IOException e) {
+            unresolved.add("① 保存后无 starbot 根: " + e.getMessage());
+        }
+
+        try {
+            Map<String, String> values = service.read();
+            assertEquals("http://127.0.0.1:2", values.get("novabot.adapter.onebot.napcat.address"),
+                    "值以新树为准");
+            assertEquals("new-hash", values.get("novabot.adapter.onebot.napcat.token-hash"));
+            assertEquals("new-secret", values.get("novabot.adapter.onebot.napcat.totp-secret"));
+            assertFalse(values.containsKey("starbot.core.config-ui.napcat.token"),
+                    "旧树删掉后读口不应再看到旧键: " + values.keySet());
+            assertFalse(values.containsKey("starbot.core.config-ui.napcat.address"),
+                    "旧树删掉后读口不应再看到旧键: " + values.keySet());
+        } catch (AssertionError | IOException e) {
+            unresolved.add("② 新树取值: " + e.getMessage());
+        }
+
+        try {
+            List<String> logs = new ArrayList<>();
+            MockEnvironment environment = environmentFromSavedFile();
+            alias(logs).postProcessEnvironment(environment, null);
+            List<String> rename = logs.stream().filter(line -> line.contains("读到旧键")).toList();
+            assertEquals(List.of(), rename, "迁完再起不应再提示读到旧键, 实有: " + rename);
+        } catch (AssertionError | IOException e) {
+            unresolved.add("③ 再绑零条读到旧键: " + e.getMessage());
+        }
+
+        assertTrue(unresolved.isEmpty(),
+                () -> "代登录四键全对应三问中 " + unresolved.size() + " 问未销: " + String.join("; ", unresolved));
+    }
+
     private MockEnvironment environmentFromSavedFile() throws IOException {
         MockEnvironment environment = new MockEnvironment();
         List<PropertySource<?>> sources =

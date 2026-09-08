@@ -7,7 +7,7 @@ import java.util.Map;
  * 配置键产品前缀：现行 {@code novabot.*} 与上一档 {@code starbot.*}
  * <p>
  * 读侧两套都认、现行键在场时压过旧键；写侧只写现行前缀。
- * 上一档搬过位的告警 qq-* 见 {@link #RELOCATED}；事件输出与 NapCat 仍由各自的绑定器认更早的那一档。
+ * 上一档搬过位的告警 qq-* 与 NapCat 代登录键见 {@link #RELOCATED}；事件输出仍由绑定器认更早的那一档。
  */
 public final class NovaBotPrefixes {
     private NovaBotPrefixes() {
@@ -40,7 +40,11 @@ public final class NovaBotPrefixes {
     public static final Map<String, String> RELOCATED = Map.of(
             "starbot.core.alert.qq-platform", ADAPTER_ALERT + ".platform",
             "starbot.core.alert.qq-type", ADAPTER_ALERT + ".type",
-            "starbot.core.alert.qq-num", ADAPTER_ALERT + ".num");
+            "starbot.core.alert.qq-num", ADAPTER_ALERT + ".num",
+            "starbot.core.config-ui.napcat.token", ADAPTER_NAPCAT + ".token",
+            "starbot.core.config-ui.napcat.token-hash", ADAPTER_NAPCAT + ".token-hash",
+            "starbot.core.config-ui.napcat.totp-secret", ADAPTER_NAPCAT + ".totp-secret",
+            "starbot.core.config-ui.napcat.address", ADAPTER_NAPCAT + ".address");
 
     /**
      * 现行前缀 → 上一档前缀，最长者在前，用来给启动日志归到「每前缀一行」

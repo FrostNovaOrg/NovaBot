@@ -19,10 +19,6 @@ public class OneBotConfigurationKeyAliases implements ConfigurationKeyAliasContr
         for (Map.Entry<String, String> relocated : NovaBotPrefixes.RELOCATED.entrySet()) {
             renamed.put(relocated.getValue(), relocated.getKey());
         }
-        renamed.put(NovaBotPrefixes.ADAPTER_NAPCAT + ".token", "starbot.core.config-ui.napcat.token");
-        renamed.put(NovaBotPrefixes.ADAPTER_NAPCAT + ".token-hash", "starbot.core.config-ui.napcat.token-hash");
-        renamed.put(NovaBotPrefixes.ADAPTER_NAPCAT + ".totp-secret", "starbot.core.config-ui.napcat.totp-secret");
-        renamed.put(NovaBotPrefixes.ADAPTER_NAPCAT + ".address", "starbot.core.config-ui.napcat.address");
         return renamed;
     }
 }
