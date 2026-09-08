@@ -278,6 +278,180 @@ class ConfigUiAgreementGateTest {
         return response;
     }
 
+    /**
+     * 接住「点撤回」那一端
+     * <p>
+     * 与 {@link #acceptEndpoint} 同一副形状：撤回同样是一个签字动作（撤的是自己那一笔签字），
+     * 身份由过滤器认出来交给控制器，绕过过滤器直接调控制器就测不到这件事本身。
+     */
+    private Servlet revokeEndpoint(ConfigUiAuthController target) {
+        return new HttpServlet() {
+            @Override
+            protected void service(HttpServletRequest request, HttpServletResponse response) throws IOException {
+                ResponseEntity<JSONObject> outcome = target.revokeAgreement(request);
+
+                response.setStatus(outcome.getStatusCode().value());
+                response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+                response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+                response.getWriter().write(String.valueOf(outcome.getBody()));
+            }
+        };
+    }
+
+    /**
+     * 走完整一趟「点撤回」：过滤器认人，控制器落笔
+     */
+    private MockHttpServletResponse revoke(ConfigUiSecurityFilter filter, ConfigUiAuthController target,
+                                           String sessionId, String csrf, String token) throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest(
+                "POST", ConfigUiController.BASE_PATH + "/api/auth/agreement/revoke");
+        request.setRemoteAddr("127.0.0.1");
+
+        if (sessionId != null) {
+            request.setCookies(new Cookie(ConfigUiSecurityFilter.SESSION_COOKIE, sessionId));
+        }
+        if (csrf != null) {
+            request.addHeader(ConfigUiSecurityFilter.CSRF_HEADER, csrf);
+        }
+        if (token != null) {
+            request.setParameter("token", token);
+        }
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        filter.doFilter(request, response, new MockFilterChain(revokeEndpoint(target)));
+
+        return response;
+    }
+
+    /**
+     * 已经过了过滤器那一层的一趟撤回请求
+     * <p>
+     * 用在过滤器会先把请求挡掉、因而走不到控制器的那几种情形上（未签态下的撤回、写盘失败）：
+     * 通道属性正是过滤器放行时写下的那一位，这里照写一次，问的就只剩控制器自己那几道门。
+     */
+    private MockHttpServletRequest revokeRequest(ConfigUiSession.Channel channel) {
+        MockHttpServletRequest request = new MockHttpServletRequest(
+                "POST", ConfigUiController.BASE_PATH + "/api/auth/agreement/revoke");
+        request.setRemoteAddr("127.0.0.1");
+        if (channel != null) {
+            request.setAttribute(ConfigUiSecurityFilter.CHANNEL_ATTRIBUTE, channel.wire());
+        }
+
+        return request;
+    }
+
+    @Test
+    @DisplayName("🔴 撤回同意：这台机器回到未签态，盘上那三行一并抹掉，重读配置文件仍是未签")
+    void revokeReturnsTheMachineToTheUnsignedState() throws Exception {
+        // 先按正常那条路同意一次：撤回撤的正是这一笔。直接摆状态的话，
+        // 测到的是「能不能把三个字段清空」，而不是「撤得回一次真的同意」
+        assertEquals(200, accept(tokenFormFilter(), controller, null, null, TOKEN).getStatus(),
+                "前提：先得同意过一次");
+        assertFalse(ConfigUiAgreement.required(agreement()),
+                "前提：此刻是已签态，否则下面那条「撤回后变成未签」说明不了任何事");
+
+        MockHttpServletResponse response = revoke(tokenFormFilter(), controller, null, null, TOKEN);
+        assertEquals(200, response.getStatus(), "同意过的人撤得回来");
+        assertTrue(ConfigUiAgreement.required(agreement()),
+                "撤回之后这台机器就该回到未签态，否则「撤回」只是屏幕上的一句话");
+
+        Map<String, String> saved = fileService.read();
+        assertEquals("0", saved.get(ACCEPTED_VERSION_KEY),
+                "版本要落回 0：留着旧版本号的话，重启之后这台机器又算同意过了");
+        assertNull(saved.get(ACCEPTED_AT_KEY), "时间一并抹掉，撤回之后没有「什么时候同意的」这回事");
+        assertNull(saved.get(ACCEPTED_BY_KEY), "身份同样抹掉");
+
+        // 🔴 重读的是配置文件，不是内存里那份：只清内存的话，这台机器重启之后同意又回来了，
+        // 而屏幕上撤回那一刻什么异常也看不出来。加载与绑定用启动时真正在跑的那一套
+        StarBotCoreProperties reloaded = new StarBotCoreProperties();
+        new Binder(ConfigurationPropertySources.from(
+                new YamlPropertySourceLoader().load("撤回之后再读一遍", new FileSystemResource(config.toFile()))))
+                .bind("starbot.core", Bindable.ofInstance(reloaded));
+
+        assertTrue(ConfigUiAgreement.required(reloaded.getConfigUi().getAgreement()),
+                "重启之后仍要是未签态——这才是「进入未签协议的状态」的全部意思");
+    }
+
+    @Test
+    @DisplayName("🔴 撤回之后控制台对所有人关上：非白名单接口 403、首页给回协议屏；撤回前同一请求是通的")
+    void revokeShutsTheConsoleForEveryone() throws Exception {
+        String mine = sessionIdOf(login().getHeaders().getFirst(HttpHeaders.SET_COOKIE));
+        String other = sessionIdOf(login().getHeaders().getFirst(HttpHeaders.SET_COOKIE));
+        assertNotNull(mine, "前提：口令登录要能拿到会话");
+        assertNotNull(other, "前提：另一台设备上那把会话也要拿得到");
+        assertEquals(200, accept(filter(), controller, mine, csrfOf(mine), null).getStatus(), "前提：先同意一次");
+
+        // 阳性对照：撤回之前这两把会话都读得到控制台。少了这一步，下面那两条 403
+        // 可能只是因为这条请求本来就走不通
+        assertEquals(200, visitWithSession(ConfigUiController.BASE_PATH + "/api/status", mine).getStatus(),
+                "撤回之前，自己这把会话进得去");
+        assertEquals(200, visitWithSession(ConfigUiController.BASE_PATH + "/api/status", other).getStatus(),
+                "撤回之前，别处那把会话也进得去");
+
+        assertEquals(200, revoke(filter(), controller, mine, csrfOf(mine), null).getStatus(), "撤回本身要办成");
+
+        assertEquals(401, visitWithSession(ConfigUiController.BASE_PATH + "/api/status", mine).getStatus(),
+                "点撤回的那一把会话当场结束：人刚说了「我不同意了」，不该还留着一把开着的钥匙");
+
+        MockHttpServletResponse api = visitWithSession(ConfigUiController.BASE_PATH + "/api/status", other);
+        assertEquals(403, api.getStatus(), "别处那把会话还在，但控制台已经关上了");
+        assertTrue(api.getContentAsString().contains("请先阅读并同意使用协议"),
+                "话要说清是卡在哪一步，否则那边只会以为面板坏了");
+
+        MockHttpServletResponse home = visitWithSession(ConfigUiController.BASE_PATH, other);
+        assertEquals(200, home.getStatus(), "面板首页给页面");
+        assertTrue(home.getContentAsString().contains("id=\"agreement\""),
+                "给的该是带协议面板的那一页——撤回之后所有人都要重新同意一次");
+
+        // 🔴 撤回口自己<b>不在</b>协议白名单里：进了白名单的话，未签态下它照样调得动，
+        // 而那时它撤的是一个已经不存在的同意
+        MockHttpServletResponse again = revoke(filter(), controller, other, csrfOf(other), null);
+        assertEquals(403, again.getStatus(),
+                "未签态下撤回口该和控制台里其余接口一样被挡在协议闸外");
+    }
+
+    @Test
+    @DisplayName("🔴 撤回同样要有身份，而且撤不了一个不存在的同意")
+    void revokeNeedsAnIdentityAndAnExistingAcceptance() throws Exception {
+        markAccepted();
+
+        MockHttpServletResponse anonymous = revoke(filter(), controller, null, null, null);
+        assertEquals(401, anonymous.getStatus(),
+                "撤回是签字动作的反面，同样得先认出人：门外的人撤不了别人的签字");
+
+        assertEquals(401, controller.revokeAgreement(revokeRequest(null)).getStatusCode().value(),
+                "控制器自己也要拦一道：过滤器那张白名单是会被人改的，这一层是最后一道");
+
+        // 从来没同意过的机器：过滤器此刻会先把这一趟挡在协议闸外（上一组用例量的正是那一条），
+        // 因此这里直接问控制器——它不该替一个不存在的同意写下一行「已撤回」
+        agreement().setAcceptedVersion(0);
+        agreement().setAcceptedAt("");
+        agreement().setAcceptedBy("");
+
+        ResponseEntity<JSONObject> outcome = controller.revokeAgreement(revokeRequest(ConfigUiSession.Channel.PASSWORD));
+        assertEquals(400, outcome.getStatusCode().value(), "本来就没同意过，撤回无从谈起");
+        assertNull(fileService.read().get(ACCEPTED_VERSION_KEY), "被拒的一次调用不该在盘上落下任何一行");
+    }
+
+    @Test
+    @DisplayName("🔴 写盘失败时撤回要回错：说撤回了却没落盘，重启之后同意又回来了")
+    void revokeFailsLoudlyWhenNothingCanBeWritten() throws Exception {
+        markAccepted();
+
+        // 父目录是一个已经存在的普通文件，建目录必然失败——这是一次真的写盘失败，
+        // 不是「压根没有 fileService」那种缺席
+        ConfigurationFileService broken = new ConfigurationFileService(config.resolve("sub").resolve("application.yml"));
+        ConfigUiAuthController failing = new ConfigUiAuthController(authService, broken, properties);
+
+        ResponseEntity<JSONObject> outcome = failing.revokeAgreement(revokeRequest(ConfigUiSession.Channel.PASSWORD));
+
+        assertEquals(500, outcome.getStatusCode().value(),
+                "写不进去就不能说撤回了：同意那一侧写盘失败照常放行是对的（人确实看过），"
+                        + "而撤回反过来——盘上还写着同意，重启之后它就作数");
+        assertFalse(ConfigUiAgreement.required(agreement()),
+                "内存里那份一个字都不该动：既然回的是「没撤成」，那就真的没撤");
+    }
+
     private String sha256(String text) throws NoSuchAlgorithmException {
         return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(text.getBytes(StandardCharsets.UTF_8)));
     }
