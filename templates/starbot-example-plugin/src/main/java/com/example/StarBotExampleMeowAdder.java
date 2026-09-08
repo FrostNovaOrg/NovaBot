@@ -31,7 +31,7 @@ public class StarBotExampleMeowAdder {
     /**
      * 拦截 StarBot 全局消息发送方法
      */
-    @Pointcut("execution(* com.starlwr.bot.core.sender.StarBotPushMessageSender.send(..))")
+    @Pointcut("execution(* com.starlwr.bot.core.sender.StarBotMessageSender.send(..))")
     public void sendMethod() {}
 
     @Around("sendMethod()")
