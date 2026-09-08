@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.config.ui;
 
-import com.starlwr.bot.core.config.DatasourceProperties;
-import com.starlwr.bot.core.config.EventStreamProperties;
+import com.starlwr.bot.core.properties.DatasourceProperties;
+import com.starlwr.bot.core.properties.EventStreamProperties;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.timeline.TimelineEvent;
 import com.starlwr.bot.core.timeline.TimelineEventType;

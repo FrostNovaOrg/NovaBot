@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.datasource;
 
-import com.starlwr.bot.core.config.DatasourceProperties;
+import com.starlwr.bot.core.properties.DatasourceProperties;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.exception.DataSourceException;
 import com.starlwr.bot.core.handler.StarBotEventHandlerPushMessageInitializer;

@@ -2,7 +2,7 @@ package com.starlwr.bot.bilibili.protocol;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.BilibiliPlatform;
-import com.starlwr.bot.core.config.EventStreamProperties;
+import com.starlwr.bot.core.properties.EventStreamProperties;
 import com.starlwr.bot.core.event.datasource.change.StarBotDataSourceRemoveEvent;
 import com.starlwr.bot.core.event.live.StarBotBaseLiveEvent;
 import com.starlwr.bot.core.event.live.common.ConnectedEvent;

@@ -11,7 +11,7 @@ import com.starlwr.bot.adapter.onebot.extension.napcat.http.NapcatHttpAdapter;
 import com.starlwr.bot.adapter.onebot.extension.napcat.http.NapcatHttpAdapterProxy;
 import com.starlwr.bot.adapter.onebot.extension.napcat.util.NapcatServiceHolder;
 import com.starlwr.bot.adapter.onebot.model.OneBotSender;
-import com.starlwr.bot.core.config.ConfigEffect;
+import com.starlwr.bot.core.properties.ConfigEffect;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.util.HttpUtil;
 import org.aspectj.lang.annotation.Aspect;

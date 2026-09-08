@@ -3,7 +3,7 @@ package com.starlwr.bot.bilibili.protocol;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
 import com.starlwr.bot.bilibili.config.StarBotBilibiliThreadPoolConfig;
-import com.starlwr.bot.core.config.EventStreamProperties;
+import com.starlwr.bot.core.properties.EventStreamProperties;
 import com.starlwr.bot.core.event.live.common.WatchedUpdateEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.protocol.NovaEventStream;

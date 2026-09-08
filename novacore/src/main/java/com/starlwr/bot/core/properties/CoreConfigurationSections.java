@@ -1,4 +1,4 @@
-package com.starlwr.bot.core.config;
+package com.starlwr.bot.core.properties;
 
 import lombok.Getter;
 import org.springframework.boot.context.properties.ConfigurationProperties;

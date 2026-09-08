@@ -1,5 +1,6 @@
 package com.starlwr.bot.core.config;
 
+import com.starlwr.bot.core.properties.NetworkProperties;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

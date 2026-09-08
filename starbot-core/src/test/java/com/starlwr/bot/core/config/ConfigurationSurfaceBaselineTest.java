@@ -1,6 +1,7 @@
 package com.starlwr.bot.core.config;
 
 import com.starlwr.bot.core.config.ui.ConfigurationMetadataService;
+import com.starlwr.bot.core.properties.EventStreamProperties;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.bind.Bindable;
