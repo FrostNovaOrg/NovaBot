@@ -2,7 +2,6 @@ package com.starlwr.bot.core.protocol;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.config.LiveProperties;
-import com.starlwr.bot.core.service.EventStreamTokenService;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;

@@ -164,7 +164,7 @@ class BotConnectionSaveTest {
                 RuntimeConfigurationApplier.bench(properties).build(),
                 testers,
                 mock(ObjectProvider.class),
-                mock(com.starlwr.bot.core.service.EventStreamTokenService.class),
+                mock(com.starlwr.bot.core.protocol.EventStreamTokenService.class),
                 mock(ObjectProvider.class),
                 mock(com.starlwr.bot.core.sender.PushGate.class),
                 mock(com.starlwr.bot.core.service.LiveDataService.class),

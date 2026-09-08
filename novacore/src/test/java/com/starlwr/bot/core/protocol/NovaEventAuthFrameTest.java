@@ -3,7 +3,6 @@ package com.starlwr.bot.core.protocol;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.config.LiveProperties;
 import com.starlwr.bot.core.model.EventStreamToken;
-import com.starlwr.bot.core.service.EventStreamTokenService;
 import com.starlwr.bot.core.util.SecureToken;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

@@ -13,7 +13,7 @@ import com.starlwr.bot.core.alert.AlertChannel;
 import com.starlwr.bot.core.alert.AlertService;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.model.EventStreamToken;
-import com.starlwr.bot.core.service.EventStreamTokenService;
+import com.starlwr.bot.core.protocol.EventStreamTokenService;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.datasource.DataSourceServiceRegistry;
 import com.starlwr.bot.core.datasource.MonitorLimit;

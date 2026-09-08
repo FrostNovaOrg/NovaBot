@@ -1,4 +1,4 @@
-package com.starlwr.bot.core.service;
+package com.starlwr.bot.core.protocol;
 
 import com.starlwr.bot.core.config.LiveProperties;
 import com.starlwr.bot.core.model.EventStreamToken;

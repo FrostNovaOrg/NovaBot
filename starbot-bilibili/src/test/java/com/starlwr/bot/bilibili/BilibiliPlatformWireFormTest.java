@@ -8,7 +8,7 @@ import com.starlwr.bot.bilibili.service.BilibiliDataSourceService;
 import com.starlwr.bot.core.config.ui.page.ConsolePageSlot;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.PushUser;
-import com.starlwr.bot.core.service.DataSourceServiceConfig;
+import com.starlwr.bot.core.datasource.DataSourceServiceConfig;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

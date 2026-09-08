@@ -6,7 +6,7 @@ import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSessionStore;
 import com.starlwr.bot.core.config.ui.auth.LoginThrottle;
 import com.starlwr.bot.core.config.ui.auth.TotpGenerator;
-import com.starlwr.bot.core.service.EventStreamTokenService;
+import com.starlwr.bot.core.protocol.EventStreamTokenService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
