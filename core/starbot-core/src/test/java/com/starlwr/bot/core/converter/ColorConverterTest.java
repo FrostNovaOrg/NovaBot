@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 配置文件里的颜色值转换
  *
  * <h2>为什么会有这组判据</h2>
- * 这个转换器接的是使用者手写的 yml（{@code starbot.core.paint.*} 那一族颜色）。
+ * 这个转换器接的是使用者手写的 yml（{@code novabot.core.paint.*} 那一族颜色）。
  * 它认得几种互不相同的写法——英文名、逗号分隔的 RGB、带井号与不带井号的十六进制——
  * 每一种都是有人已经写在自己配置里的，认不出来的后果是<b>启动直接失败</b>。
  * <p>

@@ -8,7 +8,7 @@ import lombok.Setter;
  * 日志相关配置
  * <p>
  * <b>本类只承载字段与说明，不由 Spring 直接绑定</b>：它是
- * {@code StarBotCoreProperties} 的一节，配置键仍是 {@code starbot.core.log.*}，
+ * {@code StarBotCoreProperties} 的一节，配置键仍是 {@code novabot.core.log.*}，
  * 绑定与装配都在那一侧。与 {@link EventStreamProperties} 同形。
  * <p>
  * 之所以从那个类里拆出来单独成件：网络请求要按 {@code network-log} 决定写不写日志，

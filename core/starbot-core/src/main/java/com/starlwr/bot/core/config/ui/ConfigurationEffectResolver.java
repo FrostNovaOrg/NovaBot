@@ -81,7 +81,7 @@ public class ConfigurationEffectResolver {
             ConfigEffect effect = entry.getValue().getAnnotation(ConfigEffect.class);
             if (effect != null) {
                 result.put(entry.getKey(), effect.value());
-            } else if (entry.getKey().startsWith("starbot.")) {
+            } else if (entry.getKey().startsWith("novabot.")) {
                 unmarked.add(entry.getKey());
             }
         }

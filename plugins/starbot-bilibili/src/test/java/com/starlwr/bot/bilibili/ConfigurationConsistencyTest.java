@@ -193,7 +193,7 @@ class ConfigurationConsistencyTest {
      * 只有一份实现：读取方式的推导与生效时机的字段定位问的是同一件事——
      * 「这个键对应哪个字段」。两处各写一遍短横线转驼峰，迟早会在某个边角上分家，
      * 而分家之后其中一把尺量的是不存在的字段，报出来的却是「这一项没标」。
-     * @param name 配置项名，例如 starbot.bilibili.dynamic.draw-logo
+     * @param name 配置项名，例如 novabot.bilibili.dynamic.draw-logo
      * @return 字段名，例如 drawLogo
      */
     private String fieldNameOf(String name) {
@@ -215,7 +215,7 @@ class ConfigurationConsistencyTest {
 
     /**
      * 由配置项名推导其可能的读取方式
-     * @param name 配置项名，例如 starbot.bilibili.dynamic.draw-logo
+     * @param name 配置项名，例如 novabot.bilibili.dynamic.draw-logo
      * @return 判定该配置项已被使用的候选片段
      */
     private List<String> usageMarkers(String name) {
@@ -412,7 +412,7 @@ class ConfigurationConsistencyTest {
         Set<String> names = new LinkedHashSet<>();
         for (JSONObject property : properties) {
             String name = property.getString("name");
-            if (name == null || !name.startsWith("starbot.")) {
+            if (name == null || !name.startsWith("novabot.")) {
                 continue;
             }
             if (property.containsKey("deprecated") || property.containsKey("deprecation")) {
@@ -518,9 +518,9 @@ class ConfigurationConsistencyTest {
     void longestPrefixWinsForPluginKeys() {
         ConfigurationGroups groups = groups();
         assertEquals(ConfigurationGroups.COLLECT,
-                groups.groupOf("starbot.bilibili.live.backup-live-push"));
+                groups.groupOf("novabot.bilibili.live.backup-live-push"));
         assertEquals(ConfigurationGroups.REPORT,
-                groups.groupOf("starbot.bilibili.live.report-logo-path"));
+                groups.groupOf("novabot.bilibili.live.report-logo-path"));
     }
 
     @Test
@@ -533,7 +533,7 @@ class ConfigurationConsistencyTest {
         Set<String> declared = new LinkedHashSet<>();
         for (JSONObject property : properties()) {
             String name = property.getString("name");
-            if (name == null || !name.startsWith("starbot.")) {
+            if (name == null || !name.startsWith("novabot.")) {
                 continue;
             }
 
@@ -553,9 +553,9 @@ class ConfigurationConsistencyTest {
         // 四个围栏是定稿定下的。少一个就是某一处的确认框悄悄没了，而界面照常好用
         assertEquals(Set.of(
                         "server.address",
-                        "starbot.core.exec.enabled",
-                        "starbot.core.config-ui.auth.operator-token",
-                        "starbot.bilibili.account.anonymous"),
+                        "novabot.core.exec.enabled",
+                        "novabot.core.config-ui.auth.operator-token",
+                        "novabot.bilibili.account.anonymous"),
                 declared,
                 "危险项与定稿定下的那四个对不上。加围栏是好事，但要连同这一行一起改，"
                         + "撤围栏则须先说清为什么");
@@ -668,7 +668,7 @@ class ConfigurationConsistencyTest {
             }
 
             String path = String.join(".", stack);
-            if (path.startsWith("starbot.") && !known.contains(path)) {
+            if (path.startsWith("novabot.") && !known.contains(path)) {
                 unknown.add(path);
             }
         }
@@ -684,7 +684,7 @@ class ConfigurationConsistencyTest {
 
         // 用启动时真正在跑的那个加载器来解析，而不是自己写一遍。
         // 上面那条按行扫键路径的检查看不见「同一个键写了两遍」这类结构性错误:
-        // 模板里 starbot.core.log 出现过两次，逐行扫过去两次都是合法的键路径，
+        // 模板里 novabot.core.log 出现过两次，逐行扫过去两次都是合法的键路径，
         // 而 SnakeYAML 直接抛 DuplicateKeyException，程序连启动都启动不了，
         // 只会掉进安全模式，报的还是一句 YAML 报错。新装的人第一步就撞上
         try {
@@ -699,7 +699,7 @@ class ConfigurationConsistencyTest {
      *
      * <h2>为什么放在插件侧的模块里量</h2>
      * 核心侧 {@code ConfigurationTemplateTest} 的键集判据只跑在核心模块的类路径上，
-     * 而插件键（{@code starbot.bilibili.*}、{@code starbot.adapter.onebot.*}）不在那条
+     * 而插件键（{@code novabot.bilibili.*}、{@code novabot.adapter.onebot.*}）不在那条
      * 类路径上——<b>那几格量不到它们，生成件真缺了插件键也照样绿</b>。本类站在反应堆里
      * 最后构建的模块，读得到全部模块的编译期元数据，正好把分母补全。生产码本身不缺：
      * {@link ConfigurationMetadataService} 在运行时既扫类路径、也读 plugins/ 目录下的插件 jar。
@@ -716,9 +716,9 @@ class ConfigurationConsistencyTest {
     @DisplayName("⚠️ 生成件键集 —— 插件键与核心键同进首次保存写出的文件, 期望的每一键都有它的一行")
     void generatedFileCarriesEveryModulesKeys() throws Exception {
         Set<String> expected = displayedProperties();
-        assertTrue(expected.stream().anyMatch(name -> name.startsWith("starbot.bilibili.")),
+        assertTrue(expected.stream().anyMatch(name -> name.startsWith("novabot.bilibili.")),
                 "分母自证：哔哩哔哩插件键一个都不在期望集里，这一格会量在空集上");
-        assertTrue(expected.stream().anyMatch(name -> name.startsWith("starbot.adapter.onebot.")),
+        assertTrue(expected.stream().anyMatch(name -> name.startsWith("novabot.adapter.onebot.")),
                 "分母自证：适配器插件键一个都不在期望集里，这一格量不到插件来路");
 
         // plugins/ 是运行时元数据的第二条来路（适配器与扩展的键只能从这条路来）。

@@ -482,8 +482,8 @@ fi
 #
 # 两处源头，都在核心一侧：
 #   ① 核心主码里作为配置前缀出现的字面量：@ConfigurationProperties(prefix = "…")，
-#      以及被它引用的 …PREFIX… 常量（值以 starbot. 开头的那些）
-#   ② 发行模板 dist/templates/application.example.yml 里核心那一节的键（starbot.core.* 全部路径）
+#      以及被它引用的 …PREFIX… 常量（值以 novabot. 或上一档 starbot. 开头的那些）
+#   ② 发行模板 dist/templates/application.example.yml 里核心那一节的键（novabot.core.* 全部路径）
 # 平台名清单与格1 共用，从 LivePlatform 现算。
 #
 # —— 例外表：每条写明理由与到期条件，没有到期条件的例外一律不许加 ——
@@ -538,7 +538,7 @@ else
             g5_hits="${g5_hits}${file}:${lineno}(${key}) "
             g5_n=$((g5_n + 1))
         fi
-    done <<< "$(grep -rnE '@ConfigurationProperties\(.*prefix[[:space:]]*=[[:space:]]*"|(static[[:space:]]+final[[:space:]]+String[[:space:]]+[A-Z_]*PREFIX[A-Z_]*[[:space:]]*=[[:space:]]*"starbot\.)' \
+    done <<< "$(grep -rnE '@ConfigurationProperties\(.*prefix[[:space:]]*=[[:space:]]*"|(static[[:space:]]+final[[:space:]]+String[[:space:]]+[A-Z_]*PREFIX[A-Z_]*[[:space:]]*=[[:space:]]*"(starbot|novabot)\.)' \
         --include='*.java' $CORE_MAINS 2>/dev/null | sort -u)"
 fi
 
@@ -588,7 +588,7 @@ if [ -n "$TEMPLATE_YML" ]; then
             full = path[0]
             for (i = 1; i <= depth; i++) full = full "." path[i]
 
-            if (full ~ /^starbot\.core(\.|$)/) print NR ":" full
+            if (full ~ /^novabot\.core(\.|$)/) print NR ":" full
         }
     ' "$TEMPLATE_YML")"
 fi

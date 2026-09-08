@@ -316,19 +316,23 @@ public class SafeModeServer {
         return value >= 1 && value <= 65535 ? value : FALLBACK_PORT;
     }
 
-    /** 尽力读出 yml 里配的备份保留份数（starbot.core.config-ui.backup-keep），口径同 {@link #resolvePort()} */
+    /** 尽力读出 yml 里配的备份保留份数（novabot.core.config-ui.backup-keep），口径同 {@link #resolvePort()} */
     int resolveBackupKeep() { // 与 resolvePort() 同：只为同包的尺放开，不对外
         try {
-            if (new Yaml().load(Files.readString(configPath, StandardCharsets.UTF_8)) instanceof Map<?, ?> root
-                    && root.get("starbot") instanceof Map<?, ?> starbot
-                    && starbot.get("core") instanceof Map<?, ?> core) {
-                // 主应用的 Spring 宽松绑定认驼峰（configUi 下的 backupKeep），安全模式读的是同一份文件，键的读法须与之一致
-                Integer keep = readBackupKeep(core.get("config-ui"));
-                if (keep == null) {
-                    keep = readBackupKeep(core.get("configUi"));
+            if (new Yaml().load(Files.readString(configPath, StandardCharsets.UTF_8)) instanceof Map<?, ?> root) {
+                Object product = root.get("novabot");
+                if (!(product instanceof Map<?, ?>)) {
+                    product = root.get("starbot");
                 }
-                if (keep != null) {
-                    return TimestampedFileBackup.clamp(keep);
+                if (product instanceof Map<?, ?> tree && tree.get("core") instanceof Map<?, ?> core) {
+                    // 主应用的 Spring 宽松绑定认驼峰（configUi 下的 backupKeep），安全模式读的是同一份文件，键的读法须与之一致
+                    Integer keep = readBackupKeep(core.get("config-ui"));
+                    if (keep == null) {
+                        keep = readBackupKeep(core.get("configUi"));
+                    }
+                    if (keep != null) {
+                        return TimestampedFileBackup.clamp(keep);
+                    }
                 }
             }
         } catch (Exception e) {

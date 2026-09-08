@@ -2,6 +2,7 @@ package com.starlwr.bot.adapter.onebot.config;
 
 import com.starlwr.bot.core.config.ui.ConfigurationKeyAliasContributor;
 import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.properties.NovaBotPrefixes;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -14,13 +15,14 @@ public class OneBotConfigurationKeyAliases implements ConfigurationKeyAliasContr
     @Override
     public Map<String, String> renamed() {
         Map<String, String> renamed = new LinkedHashMap<>();
-        renamed.put("starbot.adapter.onebot.alert.platform", "starbot.core.alert.qq-platform");
-        renamed.put("starbot.adapter.onebot.alert.type", "starbot.core.alert.qq-type");
-        renamed.put("starbot.adapter.onebot.alert.num", "starbot.core.alert.qq-num");
-        renamed.put("starbot.adapter.onebot.napcat.token", "starbot.core.config-ui.napcat.token");
-        renamed.put("starbot.adapter.onebot.napcat.token-hash", "starbot.core.config-ui.napcat.token-hash");
-        renamed.put("starbot.adapter.onebot.napcat.totp-secret", "starbot.core.config-ui.napcat.totp-secret");
-        renamed.put("starbot.adapter.onebot.napcat.address", "starbot.core.config-ui.napcat.address");
+        renamed.put(NovaBotPrefixes.ADAPTER, NovaBotPrefixes.ADAPTER_LEGACY);
+        renamed.put(NovaBotPrefixes.ADAPTER_ALERT + ".platform", "starbot.core.alert.qq-platform");
+        renamed.put(NovaBotPrefixes.ADAPTER_ALERT + ".type", "starbot.core.alert.qq-type");
+        renamed.put(NovaBotPrefixes.ADAPTER_ALERT + ".num", "starbot.core.alert.qq-num");
+        renamed.put(NovaBotPrefixes.ADAPTER_NAPCAT + ".token", "starbot.core.config-ui.napcat.token");
+        renamed.put(NovaBotPrefixes.ADAPTER_NAPCAT + ".token-hash", "starbot.core.config-ui.napcat.token-hash");
+        renamed.put(NovaBotPrefixes.ADAPTER_NAPCAT + ".totp-secret", "starbot.core.config-ui.napcat.totp-secret");
+        renamed.put(NovaBotPrefixes.ADAPTER_NAPCAT + ".address", "starbot.core.config-ui.napcat.address");
         return renamed;
     }
 }

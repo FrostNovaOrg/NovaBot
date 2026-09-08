@@ -48,7 +48,7 @@ class GenericConfigSaveMustNotChangeAuthWithoutReauthTest {
     private static final String SECRET = "JBSWY3DPEHPK3PXP";
 
     private static final String TEMPLATE = """
-            starbot:
+            novabot:
               core:
                 config-ui:
                   enabled: true
@@ -95,8 +95,8 @@ class GenericConfigSaveMustNotChangeAuthWithoutReauthTest {
         ConfigurationMetadataService metadata = mock(ConfigurationMetadataService.class);
         when(metadata.getKnownTypes()).thenReturn(Map.of(
                 ConfigUiAuthService.PASSWORD_PROPERTY, "java.lang.String",
-                "starbot.core.config-ui.auth.totp", "java.lang.Boolean",
-                "starbot.core.config-ui.auth.operator-token", "java.lang.Boolean"));
+                "novabot.core.config-ui.auth.totp", "java.lang.Boolean",
+                "novabot.core.config-ui.auth.operator-token", "java.lang.Boolean"));
 
         RuntimeConfigurationApplier applier = RuntimeConfigurationApplier.bench(properties).build();
 
@@ -184,7 +184,7 @@ class GenericConfigSaveMustNotChangeAuthWithoutReauthTest {
         ConfigUiSession session = login();
 
         Map<String, String> body = new LinkedHashMap<>();
-        body.put("starbot.core.config-ui.auth.totp", "false");
+        body.put("novabot.core.config-ui.auth.totp", "false");
         JSONObject result = controller.save(body);
 
         assertTrue(authService.totpRequired(),

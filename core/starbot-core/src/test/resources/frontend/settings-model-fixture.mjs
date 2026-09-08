@@ -27,7 +27,7 @@ function eq(actual, expected, what) {
 /** 造一项字段表条目 */
 function field(over) {
   return Object.assign({
-    name: 'starbot.core.push.enabled', label: 'enabled', widget: 'boolean',
+    name: 'novabot.core.push.enabled', label: 'enabled', widget: 'boolean',
     description: '全局推送开关', defaultValue: true, effect: 'IMMEDIATE', sensitive: false,
     group: 'push', order: 0,
   }, over);
@@ -63,7 +63,7 @@ eq(isChanged(field({sensitive: true, widget: 'string', defaultValue: null}), '')
 
 // ---------- 三、搜索 ----------
 const quiet = field({
-  name: 'starbot.core.push.quiet-start', label: 'quiet-start', widget: 'string',
+  name: 'novabot.core.push.quiet-start', label: 'quiet-start', widget: 'string',
   description: '静音时段开始，期间的推送直接丢弃', defaultValue: null,
 });
 eq(haystack(quiet).includes('静音'), true, '说明进了搜索范围');

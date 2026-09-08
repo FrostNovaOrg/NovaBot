@@ -61,10 +61,10 @@ class ConfigurationEffectResolverTest {
         try (AnnotationConfigApplicationContext context = context()) {
             ConfigurationEffectResolver resolver = new ConfigurationEffectResolver(context);
 
-            assertEquals(List.of("starbot.core.alert.convergence-interval"),
+            assertEquals(List.of("novabot.core.alert.convergence-interval"),
                     resolver.restartRequired(List.of(
-                            "starbot.core.push.enabled",
-                            "starbot.core.alert.convergence-interval")));
+                            "novabot.core.push.enabled",
+                            "novabot.core.alert.convergence-interval")));
         }
     }
 
@@ -100,14 +100,14 @@ class ConfigurationEffectResolverTest {
         try (AnnotationConfigApplicationContext context = context()) {
             Map<String, ConfigEffect.Effect> effects = new ConfigurationEffectResolver(context).getEffects();
 
-            assertEquals(ConfigEffect.Effect.IMMEDIATE, effects.get("starbot.core.config-ui.auth.totp"),
+            assertEquals(ConfigEffect.Effect.IMMEDIATE, effects.get("novabot.core.config-ui.auth.totp"),
                     "开关当场生效，标成需重启会让界面与行为各说各话");
             assertEquals(List.of(),
                     new ConfigurationEffectResolver(context)
-                            .restartRequired(List.of("starbot.core.config-ui.auth.totp")),
+                            .restartRequired(List.of("novabot.core.config-ui.auth.totp")),
                     "这一项不该进待重启名单");
             // 阴性：密钥仍需重启。少了这一条，「整张登录组一律 IMMEDIATE」也会让上面那格绿
-            assertEquals(ConfigEffect.Effect.RESTART, effects.get("starbot.core.config-ui.auth.totp-secret"));
+            assertEquals(ConfigEffect.Effect.RESTART, effects.get("novabot.core.config-ui.auth.totp-secret"));
         }
     }
 
@@ -118,8 +118,8 @@ class ConfigurationEffectResolverTest {
             ConfigurationEffectResolver resolver = new ConfigurationEffectResolver(context);
 
             // 插件是运行期装进来的，构建期那道判据管不到它们；这里走的正是那条路
-            assertEquals(List.of("starbot.plugin.never.declared"),
-                    resolver.restartRequired(List.of("starbot.plugin.never.declared")));
+            assertEquals(List.of("novabot.plugin.never.declared"),
+                    resolver.restartRequired(List.of("novabot.plugin.never.declared")));
         }
     }
 }

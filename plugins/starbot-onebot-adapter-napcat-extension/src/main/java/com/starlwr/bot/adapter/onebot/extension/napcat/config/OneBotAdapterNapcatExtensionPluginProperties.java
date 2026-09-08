@@ -18,7 +18,7 @@ import org.springframework.context.annotation.Configuration;
 @Setter
 @Configuration
 @StarBotComponent
-@ConfigurationProperties(prefix = "starbot.adapter.onebot.extension.napcat")
+@ConfigurationProperties(prefix = "novabot.adapter.onebot.extension.napcat")
 public class OneBotAdapterNapcatExtensionPluginProperties {
     /**
      * 是否启用发送 @全体成员 次数不足时替换为群待办

@@ -270,7 +270,7 @@ class SetupBootstrapTest {
 
         assertFalse(properties.getConfigUi().getAuth().isOperatorToken(),
                 "上了锁却还留着一扇不问口令的门，而这件事没有任何现象");
-        assertEquals("false", fileService.read().get("starbot.core.config-ui.auth.operator-token"),
+        assertEquals("false", fileService.read().get("novabot.core.config-ui.auth.operator-token"),
                 "只关内存那一位的话，重启之后这扇门自己回来了");
     }
 

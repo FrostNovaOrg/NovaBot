@@ -16,7 +16,7 @@ import org.springframework.context.annotation.Configuration;
 @Setter
 @Configuration
 @StarBotComponent
-@ConfigurationProperties(prefix = "starbot.bilibili")
+@ConfigurationProperties(prefix = "novabot.bilibili")
 public class StarBotBilibiliProperties {
     private final BilibiliThread bilibiliThread = new BilibiliThread();
 
@@ -359,7 +359,7 @@ public class StarBotBilibiliProperties {
          * 下播报告底部标识的图片路径，留空则不绘制
          * <p>
          * 与动态图片的标识分开配置，因为两者未必想打同一个标；要一致的话，
-         * 填成与 {@code starbot.bilibili.dynamic.logo-path} 相同的路径即可。
+         * 填成与 {@code novabot.bilibili.dynamic.logo-path} 相同的路径即可。
          * 图片按固定高度等比缩放。
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)

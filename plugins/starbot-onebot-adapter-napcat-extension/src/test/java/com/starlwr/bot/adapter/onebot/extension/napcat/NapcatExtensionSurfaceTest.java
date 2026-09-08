@@ -165,7 +165,7 @@ class NapcatExtensionSurfaceTest {
             ConfigurationProperties properties =
                     OneBotAdapterNapcatExtensionPluginProperties.class.getAnnotation(ConfigurationProperties.class);
 
-            assertEquals("starbot.adapter.onebot.extension.napcat", properties.prefix());
+            assertEquals("novabot.adapter.onebot.extension.napcat", properties.prefix());
             assertTrue(OneBotAdapterNapcatExtensionPluginProperties.class.isAnnotationPresent(Configuration.class));
             assertTrue(OneBotAdapterNapcatExtensionPluginProperties.class.isAnnotationPresent(StarBotComponent.class));
         }

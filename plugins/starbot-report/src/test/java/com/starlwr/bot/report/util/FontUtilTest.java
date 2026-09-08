@@ -193,7 +193,7 @@ class FontUtilTest {
             });
 
             assertEquals(1, messages.size(), "启动时正好说一句: " + messages);
-            assertTrue(messages.get(0).contains("starbot.core.paint.fonts"),
+            assertTrue(messages.get(0).contains("novabot.core.paint.fonts"),
                     "要指出改哪个配置项: " + messages.get(0));
             assertTrue(messages.get(0).contains("内置"), "要报出实际用的那张表: " + messages.get(0));
         }

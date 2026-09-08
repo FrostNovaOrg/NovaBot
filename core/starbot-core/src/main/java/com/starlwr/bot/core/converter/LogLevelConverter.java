@@ -15,7 +15,7 @@ import java.util.Locale;
  * <p>
  * {@code ch.qos.logback.classic.Level} 不是枚举而是一个带静态常量的普通类，
  * Spring 的默认绑定认不出它。<b>缺了这个转换器时，
- * {@code starbot.core.log.console} 只要填了值就会绑定失败并让程序进入安全模式</b>——
+ * {@code novabot.core.log.console} 只要填了值就会绑定失败并让程序进入安全模式</b>——
  * 一个写在配置模板里、却一填就把程序弄挂的开关。
  * <p>
  * {@link Level#toLevel(String)} 本身对无法识别的字符串<b>会悄悄退回 DEBUG</b>，

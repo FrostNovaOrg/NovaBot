@@ -49,7 +49,7 @@ class TotpSwitchTest {
     private static final String SECRET = "JBSWY3DPEHPK3PXP";
 
     private static final String TEMPLATE = """
-            starbot:
+            novabot:
               core:
                 config-ui:
                   enabled: true
@@ -139,9 +139,9 @@ class TotpSwitchTest {
         assertTrue(authService.login(PASSWORD.toCharArray(), null, "1.2.3.7").success(),
                 "关掉之后只凭口令就该进得来");
 
-        String stored = fileService.read().get("starbot.core.config-ui.auth.totp-secret");
+        String stored = fileService.read().get("novabot.core.config-ui.auth.totp-secret");
         assertTrue(stored == null || stored.isBlank(), "密钥该清干净，实为: " + stored);
-        assertEquals("false", fileService.read().get("starbot.core.config-ui.auth.totp"));
+        assertEquals("false", fileService.read().get("novabot.core.config-ui.auth.totp"));
         assertFalse(Files.readString(config, StandardCharsets.UTF_8).contains(SECRET),
                 "文件里不该再留着那把密钥");
     }

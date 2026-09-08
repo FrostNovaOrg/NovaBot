@@ -39,7 +39,7 @@ import java.util.concurrent.TimeUnit;
  */
 @Slf4j
 @Service
-@ConditionalOnProperty(name = "starbot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(name = "novabot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
 public class UpdateCheckService {
     /**
      * 「先不提醒」记在运行状态的哪个命名空间与键下

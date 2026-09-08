@@ -58,11 +58,11 @@ public class NapCatCredentialService {
      */
     private static final String HASH_SUFFIX = ".napcat";
 
-    public static final String TOKEN_PROPERTY = "starbot.adapter.onebot.napcat.token";
+    public static final String TOKEN_PROPERTY = "novabot.adapter.onebot.napcat.token";
 
-    public static final String TOKEN_HASH_PROPERTY = "starbot.adapter.onebot.napcat.token-hash";
+    public static final String TOKEN_HASH_PROPERTY = "novabot.adapter.onebot.napcat.token-hash";
 
-    public static final String TOTP_SECRET_PROPERTY = "starbot.adapter.onebot.napcat.totp-secret";
+    public static final String TOTP_SECRET_PROPERTY = "novabot.adapter.onebot.napcat.totp-secret";
 
     /**
      * 凭据的实际寿命（秒），取自 NapCat 的 {@code MAX_CREDENTIAL_VALID_SECONDS}
@@ -426,7 +426,7 @@ public class NapCatCredentialService {
             }
             fileService.write(changes);
             if (!extra.isEmpty()) {
-                log.warn("旧位置明文已清、请把 napcat 段迁到 starbot.adapter.onebot");
+                log.warn("旧位置明文已清、请把 napcat 段迁到 novabot.adapter.onebot");
             }
             log.info("NapCat 的 token 已换算为登录哈希保存, 配置文件中不再有明文");
         } catch (Exception e) {

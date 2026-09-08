@@ -32,7 +32,7 @@ import static org.mockito.Mockito.mock;
 @DisplayName("配置界面备份份数回显")
 class BackupKeepEchoTest {
 
-    private static final String BACKUP_KEEP = "starbot.core.config-ui.backup-keep";
+    private static final String BACKUP_KEEP = "novabot.core.config-ui.backup-keep";
 
     @TempDir
     Path dir;
@@ -98,7 +98,7 @@ class BackupKeepEchoTest {
         start("""
                 server:
                   port: 7827
-                starbot:
+                novabot:
                   core:
                     config-ui:
                       backup-keep: 500

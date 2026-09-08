@@ -6,7 +6,7 @@ import java.util.Map;
  * 配置键改名别名的申报点
  * <p>
  * 各平台插件实现本接口并注册为 Bean，即可把「这项配置以前写在哪个旧位置」
- * 告诉控制台。核心只保管核心自有的改名表（{@code starbot.core.event-stream}
+ * 告诉控制台。核心只保管核心自有的改名表（{@code novabot.core.event-stream}
  * 从 {@code starbot.bilibili.event-stream} 迁来那一条），
  * <b>不认识任何一个具体平台的键</b>：哪条现行键对应哪条旧键，全在插件自己那一侧。
  * <p>

@@ -46,7 +46,7 @@ class PasswordChangeTest {
     private static final String NEW = "another horse another staple";
 
     private static final String TEMPLATE = """
-            starbot:
+            novabot:
               core:
                 config-ui:
                   enabled: true

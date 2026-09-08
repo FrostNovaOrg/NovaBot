@@ -307,7 +307,7 @@ class BackupAtAllAspectTest {
             ConditionalOnProperty condition = BackupAtAllAspect.class.getAnnotation(ConditionalOnProperty.class);
 
             assertEquals(1, condition.name().length);
-            assertEquals("starbot.adapter.onebot.extension.napcat.enable-backup-at-all", condition.name()[0]);
+            assertEquals("novabot.adapter.onebot.extension.napcat.enable-backup-at-all", condition.name()[0]);
             assertEquals("true", condition.havingValue());
             assertTrue(condition.matchIfMissing());
         }

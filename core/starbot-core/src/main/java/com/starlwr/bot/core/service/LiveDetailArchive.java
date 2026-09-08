@@ -64,7 +64,7 @@ import java.util.stream.Stream;
  * 会继续追加进已归档的那一场——那些弹幕在统计里本就该被丢弃（开播清零时一并丢），
  * 而留档这一侧不丢，结果是<b>原文条数比场次里的弹幕数多出一截，且看不出多在哪</b>。
  * <p>
- * ⚠️ <b>保留期默认永久</b>（{@code starbot.core.live.detail-retention-days} 为 0）：
+ * ⚠️ <b>保留期默认永久</b>（{@code novabot.core.live.detail-retention-days} 为 0）：
  * 明细是唯一一份原始数据，删掉之后<b>连报告图都重画不出来</b>。
  * 要设上限得先想清楚「过期的那一场在界面上怎么表示」——
  * 一行点开是 404 与「这一场从来没有过报告」在使用者眼里长得一样。

@@ -74,12 +74,12 @@ public class AtAllQuotaService {
 
         if (botLimit > 0 && used(botKey, today) >= botLimit) {
             log.warn("推送平台 {} 今日的 @全体成员 已用满 {} 次（该额度由全部会话共享），本条将退化为普通消息。" +
-                    "如需调整请改 starbot.core.push.at-all-daily-limit", platform, botLimit);
+                    "如需调整请改 novabot.core.push.at-all-daily-limit", platform, botLimit);
             return false;
         }
         if (sessionLimit > 0 && used(sessionKey, today) >= sessionLimit) {
             log.warn("会话 {} 今日的 @全体成员 已用满 {} 次，本条将退化为普通消息。" +
-                    "如需调整请改 starbot.core.push.at-all-session-daily-limit", num, sessionLimit);
+                    "如需调整请改 novabot.core.push.at-all-session-daily-limit", num, sessionLimit);
             return false;
         }
 

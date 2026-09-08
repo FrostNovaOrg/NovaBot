@@ -566,7 +566,7 @@ public class BilibiliAccountService {
             // 扫码之前直播采集是不会启动的，而这一等可以是无限久。只想要直播数据的人
             // 不该被卡在这里却猜不到有别的路——把那条路当场说出来
             log.info("尚无登录凭据。若只需要直播弹幕、礼物等数据而不需要动态推送, "
-                    + "可以把 starbot.bilibili.account.anonymous 设为 true 免登录启动, "
+                    + "可以把 novabot.bilibili.account.anonymous 设为 true 免登录启动, "
                     + "代价见该配置项的说明");
         }
 
@@ -585,7 +585,7 @@ public class BilibiliAccountService {
         if (isAnonymous()) {
             // 界面上的「退出登录」会顺手发起新一轮扫码，匿名模式下必须在这里挡住，
             // 否则点一下就凭空冒出个二维码，扫完还跟配置说的不是一回事
-            log.info("当前为匿名模式, 已忽略扫码登录请求; 要登录请先关闭 starbot.bilibili.account.anonymous");
+            log.info("当前为匿名模式, 已忽略扫码登录请求; 要登录请先关闭 novabot.bilibili.account.anonymous");
             return false;
         }
 
@@ -617,7 +617,7 @@ public class BilibiliAccountService {
         boolean tvMode = isTvLoginMode();
         if (!tvMode) {
             log.warn("扫码登录方式为 web, 服务端不会下发可用的刷新口令, 凭据到期后需重新扫码; "
-                    + "如需自动续期请将 starbot.bilibili.account.qr-code-login-mode 改回 tv");
+                    + "如需自动续期请将 novabot.bilibili.account.qr-code-login-mode 改回 tv");
         }
 
         while (!loggedIn && !isStopping()) {

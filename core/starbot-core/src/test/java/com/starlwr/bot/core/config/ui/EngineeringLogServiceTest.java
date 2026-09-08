@@ -86,7 +86,7 @@ class EngineeringLogServiceTest {
     void masksCredentials() {
         // 阳性对照。每一条都是真会落进这一份日志的形状：
         // 配置项原样打印、请求头整条打印、异常 message 裹着完整地址
-        assertMasked("starbot.core.config-ui.auth.password: hunter2", "hunter2");
+        assertMasked("novabot.core.config-ui.auth.password: hunter2", "hunter2");
         assertMasked("napcat token=abcdef123456", "abcdef123456");
         assertMasked("Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.payload.sig", "eyJhbGciOiJIUzI1NiJ9");
         assertMasked("Cookie: SESSDATA=xxxyyy; bili_jct=zzz", "xxxyyy");
@@ -98,7 +98,7 @@ class EngineeringLogServiceTest {
         assertMasked("totp-secret: JBSWY3DPEHPK3PXP", "JBSWY3DPEHPK3PXP");
         // 带引号的那一形态照样要盖住：异常 message 里裹着一段 JSON 是常见形状，
         // 而「键紧跟着一个引号」在按 键: 值 找的判法眼里与「没有这个键」长得一样
-        assertMasked("解析失败 {\"starbot.core.config-ui.auth.password\":\"hunter2\",\"port\":8080}",
+        assertMasked("解析失败 {\"novabot.core.config-ui.auth.password\":\"hunter2\",\"port\":8080}",
                 "hunter2");
         assertMasked("请求体 {\"token\": \"abcdef\"}", "abcdef");
     }

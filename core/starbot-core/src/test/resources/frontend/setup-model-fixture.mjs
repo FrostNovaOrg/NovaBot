@@ -186,11 +186,11 @@ eq(setupProgress(full, {accounts: [{platform: 'x', displayName: '某平台', log
 
 // ---------- 六、已替你定好的初始值 ----------
 const rows = initialRows({
-  'starbot.core.push.enabled': 'true',
-  'starbot.core.push.quiet-start': '',
-  'starbot.core.push.quiet-end': '',
-  'starbot.core.alert.webhook-url': '',
-  'starbot.core.timeline.retention-days': '14',
+  'novabot.core.push.enabled': 'true',
+  'novabot.core.push.quiet-start': '',
+  'novabot.core.push.quiet-end': '',
+  'novabot.core.alert.webhook-url': '',
+  'novabot.core.timeline.retention-days': '14',
 }, 14);
 
 eq(rows.length >= 6, true, '初始值至少摊开六行');
@@ -204,11 +204,11 @@ eq(rows.find(r => r.label === '命令').text.includes('14'), true, '命令条数
 // 🔴 现值真的会跟着变：写死一张表的话，一台已经关掉推送的机器上，
 // 这一行照样写着「开」，而使用者刚刚才关掉它
 const changed = initialRows({
-  'starbot.core.push.enabled': 'false',
-  'starbot.core.push.quiet-start': '23:00',
-  'starbot.core.push.quiet-end': '08:00',
-  'starbot.core.alert.webhook-url': 'https://example.invalid/hook',
-  'starbot.core.timeline.retention-days': '0',
+  'novabot.core.push.enabled': 'false',
+  'novabot.core.push.quiet-start': '23:00',
+  'novabot.core.push.quiet-end': '08:00',
+  'novabot.core.alert.webhook-url': 'https://example.invalid/hook',
+  'novabot.core.timeline.retention-days': '0',
 }, null);
 eq(changed[0].text, '关', '推送关掉之后这一行跟着变');
 eq(changed.find(r => r.label === '静音时段').text, '23:00 – 08:00', '设了静音时段就写出来');
@@ -221,27 +221,27 @@ eq(mailAlertConfigured('ops@example.invalid', ''), false, '只填收件不算已
 eq(mailAlertConfigured('', 'smtp.example.invalid'), false, '只填主机不算已配');
 
 const mailed = initialRows({
-  'starbot.core.push.enabled': 'true',
-  'starbot.core.alert.webhook-url': '',
-  'starbot.core.mail.default-to': 'ops@example.invalid',
+  'novabot.core.push.enabled': 'true',
+  'novabot.core.alert.webhook-url': '',
+  'novabot.core.mail.default-to': 'ops@example.invalid',
   'spring.mail.host': 'smtp.example.invalid',
-  'starbot.core.timeline.retention-days': '14',
+  'novabot.core.timeline.retention-days': '14',
 }, null);
 eq(mailed.find(r => r.label === '告警').text.includes('已配'), true, '配了邮件就说已配');
 
 const mailOnlyTo = initialRows({
-  'starbot.core.push.enabled': 'true',
-  'starbot.core.alert.webhook-url': '',
-  'starbot.core.mail.default-to': 'ops@example.invalid',
+  'novabot.core.push.enabled': 'true',
+  'novabot.core.alert.webhook-url': '',
+  'novabot.core.mail.default-to': 'ops@example.invalid',
   'spring.mail.host': '',
-  'starbot.core.timeline.retention-days': '14',
+  'novabot.core.timeline.retention-days': '14',
 }, null);
 eq(mailOnlyTo.find(r => r.label === '告警').text.includes('未配'), true, '只填收件时初始值仍说未配');
 
 const qqAlerted = initialRows({
-  'starbot.core.push.enabled': 'true',
-  'starbot.core.alert.webhook-url': '',
-  'starbot.core.timeline.retention-days': '14',
+  'novabot.core.push.enabled': 'true',
+  'novabot.core.alert.webhook-url': '',
+  'novabot.core.timeline.retention-days': '14',
 }, null, undefined, {alerts: {qq: true}});
 eq(qqAlerted.find(r => r.label === '告警').text.includes('已配'), true, '通道可用性为真时初始值说已配');
 

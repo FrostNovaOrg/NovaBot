@@ -106,13 +106,13 @@ class FourCategoriesEndToEndTest {
     @DisplayName("设置：改动落到运行中的程序上, 日志页上出现「设置」这一类")
     void settingsLandOnTheLogPage() {
         Map<String, String> changes = new LinkedHashMap<>();
-        changes.put("starbot.core.push.enabled", "false");
-        changes.put("starbot.core.push.quiet-start", "23:00");
+        changes.put("novabot.core.push.enabled", "false");
+        changes.put("novabot.core.push.quiet-start", "23:00");
 
         applier().applyAndTrack(changes);
 
         TimelineEvent event = assertLanded(TimelineCategory.SETTINGS, TimelineEventType.SETTINGS_APPLIED);
-        assertEquals("starbot.core.push", event.detail().get("groups"),
+        assertEquals("novabot.core.push", event.detail().get("groups"),
                 "两项同属一组, 记成一条一组; 组名答得了「昨天谁动了推送那一摊」");
         assertEquals("2", event.detail().get("count"));
     }
@@ -135,8 +135,8 @@ class FourCategoriesEndToEndTest {
         // 只喂落得下的那一支，另外两支往哪里记就没人看着了
         String marker = "NOVA-SECRET-9f3a1c7e";
         Map<String, String> changes = new LinkedHashMap<>();
-        changes.put("starbot.core.push.quiet-end", marker);
-        changes.put("starbot.core.config-ui.auth.password", marker);
+        changes.put("novabot.core.push.quiet-end", marker);
+        changes.put("novabot.core.config-ui.auth.password", marker);
         changes.put("spring.data.redis.password", marker);
 
         applier().applyAndTrack(changes);

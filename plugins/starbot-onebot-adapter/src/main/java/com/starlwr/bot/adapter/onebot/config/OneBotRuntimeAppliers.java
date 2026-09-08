@@ -27,11 +27,11 @@ public class OneBotRuntimeAppliers implements RuntimeConfigurationApplierContrib
     @Override
     public Map<String, Consumer<String>> appliers() {
         Map<String, Consumer<String>> appliers = new LinkedHashMap<>();
-        appliers.put("starbot.adapter.onebot.alert.platform",
+        appliers.put("novabot.adapter.onebot.alert.platform",
                 value -> properties.getAlert().setPlatform(value));
-        appliers.put("starbot.adapter.onebot.alert.type",
+        appliers.put("novabot.adapter.onebot.alert.type",
                 value -> properties.getAlert().setType(Integer.parseInt(value.trim())));
-        appliers.put("starbot.adapter.onebot.alert.num",
+        appliers.put("novabot.adapter.onebot.alert.num",
                 value -> properties.getAlert().setNum(
                         value == null || value.isBlank() ? null : Long.parseLong(value.trim())));
         return appliers;

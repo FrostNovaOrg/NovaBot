@@ -1,3 +1,69 @@
+novabot.core.alert.convergence-interval|java.lang.Integer|3600|同一问题的最短告警间隔，单位：秒 故障往往持续存在，不做收敛就会反复推送同一条消息，最终使人对告警彻底脱敏。
+novabot.core.alert.enabled|java.lang.Boolean|true|是否启用告警 关闭后登录失效、连接中断、队列积压等问题只会写进日志，不会主动通知。
+novabot.core.alert.retry-interval|java.lang.Integer|60|发送失败的告警的重投间隔，单位：秒，设为 0 关闭重投 需要告警的时候往往正是发不出去的时候：出网劣化、机器人掉登录、Webhook 服务抖动， 三者都会让告警本身失败，而失败之后此前没有下文——「没收到告警」于是被读成「没出事」。
+novabot.core.alert.retry-max-attempts|java.lang.Integer|10|单条告警的最大重投次数，超过后放弃并写日志
+novabot.core.alert.retry-queue-size|java.lang.Integer|50|待重投队列的容量上限 满了之后丢最旧的，并在日志里说明丢了哪一条。不静默截断： 悄悄丢掉的告警比没有重投更糟，它会让人以为队列在正常工作。
+novabot.core.alert.webhook-content-field|java.lang.String|content|Webhook JSON 中承载内容的字段名
+novabot.core.alert.webhook-headers|java.util.Map<java.lang.String,java.lang.String>|<null>|Webhook 附加请求头，用于需要鉴权的服务，如 Authorization: Bearer xxx
+novabot.core.alert.webhook-method|java.lang.String|POST|Webhook 请求方式：POST 或 GET POST 提交 JSON（字段名见 webhook-title-field 与 webhook-content-field）； GET 把标题与内容拼进查询串，适配 Bark 这类以路径或查询参数接收的服务。
+novabot.core.alert.webhook-title-field|java.lang.String|title|Webhook JSON 中承载标题的字段名 各服务字段名不统一：Server 酱用 title/desp，钉钉与飞书用嵌套结构， 自建接口则各有各的约定，因此做成可配置而非写死。
+novabot.core.alert.webhook-url|java.lang.String||Webhook 告警地址，留空则不启用 机器人推送与邮件之外唯一不依赖机器人自身链路的通道。机器人告警走的是机器人的推送链路， 一旦机器人程序掉线或掉登录，需要告警的正是这种时候，而告警本身也一并失效了。 Webhook 只需一个地址，适配 Bark、Server 酱、钉钉、飞书、Telegram 等常见服务。 改完立即生效，不必重启。
+novabot.core.command.admins|java.util.List<java.lang.Long>|<null>|超级管理员账号，跨会话生效 「禁用命令」这类操作会改变全群的可用功能，只对管理员开放。 群主与群管理员自动拥有权限，此处填的是不依赖群角色的额外名单—— 机器人的主人未必是每个群的管理员。
+novabot.core.config-ui.agreement.accepted-at|java.lang.String||同意的时间 ISO 格式，留空表示尚未同意过。它不参与任何判断，只是留个凭据： 日后要回答「这台机器上是什么时候同意的」时，答案得在盘上，而不是靠人回忆。
+novabot.core.config-ui.agreement.accepted-by|java.lang.String||同意是从哪条通道点下的 password＝输过登录口令之后同意，operator-token＝凭启动令牌进来之后同意。 留空表示这行记录说不出是谁点的，此时会在下次登录之后再请使用者确认一次。 4.4.0 及更早的版本在登录之前就让人点同意，写下的正是这种记录—— 那时任何能连上控制台端口的程序都写得下它，因此它证明不了使用者本人确实看过。
+novabot.core.config-ui.agreement.accepted-version|java.lang.Integer|0|已同意的协议版本号 0 表示尚未同意过。协议文案改版时版本号会加一，届时此处记着的旧版本即刻失效， 使用者会被要求重新确认一次——否则改了文案等于没改，没有人会再看到它。
+novabot.core.config-ui.allow-ips|java.util.List<java.lang.String>|<null>|允许访问配置界面的来源 IP 白名单，支持精确 IP 与 CIDR 网段 配置界面可修改推送目标并读取运行状态，权限高于推送接口，默认仅放行本机回环地址。
+novabot.core.config-ui.auth.idle-hours|java.lang.Integer|12|登录会话的闲置超时，单位：小时 多久没有操作即自动退出。管的是在别人的设备上登录后忘记退出这类情形。
+novabot.core.config-ui.auth.lockout-minutes|java.lang.Integer|15|首次锁定的时长，单位：分钟。反复触发时逐次翻倍
+novabot.core.config-ui.auth.max-failures|java.lang.Integer|5|连续登录失败多少次后锁定该来源 IP
+novabot.core.config-ui.auth.operator-token|java.lang.Boolean|false|是否保留「忘记口令」的启动令牌通道 打开之后，启用口令登录的实例在启动日志里仍会打印一个带令牌的地址， 用它可以绕过口令与二次验证直接进入。 ⚠️ 默认关闭，理由有三： 它绕过二次验证——开着它，TOTP 的保护上限就是这个令牌的保密程度 令牌走地址栏，会进反向代理的访问日志。2026-08-13 在生产的 nginx 归档里实测到 82 行含 token= 若日后把别的服务挂在这套会话之后（如经 auth_request 代理 机器人程序的 WebUI），这个后门会同时成为那些服务的后门 反过来的默认值曾经也有它的道理——忘记口令时这是唯一不必改配置重启就能进去的路， 默认关掉像是把人锁在门外。但那道门本来就开得着：把这一项改成 true 重启即可，启动日志随即打印那个地址，进去改完口令再改回来。 权衡因此是「忘记口令的那一次多重启一遍」对「每一台设了口令的实例长年带着一个 等同于口令的后门」，而后者是常态、且开着这件事没有任何现象。 关闭时启动日志不打印那个地址——打印一个不管用的地址比不打印更让人困惑， 但会打印一行说明，写清怎么把它临时打开。
+novabot.core.config-ui.auth.password|java.lang.String||登录口令 留空表示不启用口令登录。可以直接填明文，启动时会哈希后使用， 同时在日志里输出可替换过去的哈希串——填了明文就意味着看得到配置文件的人也就有了口令。 改完立即生效，不必重启：这台机器的第一把口令一定是在运行期设下的， 而「设了口令但要等重启才认」的那段时间里，界面说已上锁而门还开着。
+novabot.core.config-ui.auth.session-hours|java.lang.Integer|168|登录会话的有效期，单位：小时 从登录起算的绝对上限，到点必须重新登录。它约束的是「会话 Cookie 一旦泄漏还能被用多久」， 因此不随使用而顺延。
+novabot.core.config-ui.auth.totp-secret|java.lang.String||二次验证密钥（TOTP，Base32） 留空表示尚未绑定验证器，登录时只校验口令。通过界面上的绑定引导扫码后， 密钥会自动写回本配置项。 密钥必须以明文保存，因此配置文件的权限要收紧到仅属主可读。
+novabot.core.config-ui.auth.totp|java.lang.Boolean|true|是否要求二次验证 默认要求。设了口令却没绑定验证器时，界面会持续提示绑定——只有口令的面板 一旦开到公网，其安全性就完全押在这一个口令上，而口令是会被撞库、被键盘记录、 被肩窥的。真的不想要二次验证时把这一项改成 false，那是一个需要写下来的决定。 改完立即生效，不必重启：界面上那个开关本来就是当场生效的， 这一行此前标着「需重启」，于是同一件事在界面上有两种说法。
+novabot.core.config-ui.backup-keep|java.lang.Integer|10|配置文件备份保留份数 每次保存 application.yml 或主播推送配置时都会另留一份带时间的备份。 超出这个数目的旧备份会被删掉。默认 10 份，可在 1 到 100 之间改。改完立即生效，不必重启。
+novabot.core.config-ui.enabled|java.lang.Boolean|true|是否启用配置界面
+novabot.core.config-ui.token|java.lang.String||配置界面访问令牌 留空时每次启动自动生成一个随机令牌并输出到日志。配合默认仅监听回环地址的设置， 单机部署无需任何配置即可安全使用；需要从其他机器访问时在此显式设置一个随机串。
+novabot.core.config-ui.update.enabled|java.lang.Boolean|true|是否检查新版 关掉之后侧栏药丸与首页那条软待办都不会再出现。程序不会自己更新， 这一检查是使用者得知「该去换 jar 了」的唯一入口，默认开着。
+novabot.core.config-ui.update.source|java.lang.String|https://api.github.com/repos/FrostNovaOrg/NovaBot/releases/latest|新版信息的来源地址 默认指向发布仓的 latest release 接口，取回的 JSON 里要有 tag_name（版本）、body（更新说明）与 html_url（链接）。 自建镜像或换发布渠道时改这里。取不到或取回的东西认不出来时静默跳过—— 「查不到新版」不该变成控制台上的一条故障。
+novabot.core.datasource.json-auto-reload|java.lang.Boolean|true|JSON 文件发生变化时是否自动重载，仅使用 JSON 数据源时生效
+novabot.core.datasource.json-path|java.lang.String|datasource.json|JSON 文件路径，仅使用 JSON 数据源时生效
+novabot.core.event-stream.buffer-size|java.lang.Integer|2000|断线回补的缓冲条数 缓冲是全部房间共用的一条流。三个房间每分钟各 100 条时，2000 条约覆盖 6 分钟， 足够客户端断线重连；房间更多或更热闹就要相应调大，否则重连时会被告知补不上而重置。 每条约数 KB（含原始报文），2000 条量级在十 MB 上下，调大前先掂量内存。
+novabot.core.event-stream.enabled|java.lang.Boolean|false|是否启用事件输出 默认关闭。 用不到的人不该凭空多一个监听端点，这是它默认关就该关的唯一理由。 启用后只接受来自本机回环地址的连接，且这一点与 server.address 无关—— 即使为了对外提供推送接口把监听地址改成了 0.0.0.0，事件流也只认本机。 需要从其他机器读取时请自行建立 SSH 隧道，直接暴露到公网风险自负： 事件流里有观众的昵称、uid 与消费金额。
+novabot.core.event-stream.path|java.lang.String|/nova/events|事件输出的路径，与配置界面共用 server.port 端口
+novabot.core.event-stream.require-token|java.lang.Boolean|false|是否要求出示只读口令 默认关闭，保持「本机进程直连」这条既有用法不变（本机 runbook 与本地开发都靠它）。 🔴 装了反向代理就必须打开，这不是可选项。 反代与本程序在同一台机器上，且反代未把 X-Forwarded-* 送下来时， 它转发过来的连接源地址就是回环—— ⚠️ 反过来那一半同样要记住：若反代送了 X-Forwarded-*， 而本程序开着 server.forward-headers-strategy， 回环判据看到的会是真实客户端 IP，于是把反代自己挡在门外—— 2026-08-13 生产实测到这个形态，症状是握手回一个空的 200。 也就是说反代一上线，「只接受本机连接」这道判据就不再等于「人在这台机器上」， 任何能连上反代的人在端点看来都是本机。此时不开这个开关，等于没有鉴权。 口令由控制台签发，只能读事件流：既不给服务器 shell，也不给配置控制台。
+novabot.core.exec.enabled|java.lang.Boolean|false|是否启用事件触发外部命令
+novabot.core.exec.max-concurrent|java.lang.Integer|4|同时执行的命令数上限，超出的直接丢弃 弹幕这类事件一秒能来几十条。没有上限的话，一次刷屏就等于一次 fork 炸弹。
+novabot.core.exec.rules|java.util.List<com.starlwr.bot.core.config.StarBotCoreProperties$ExecRule>|<null>|规则列表
+novabot.core.exec.timeout|java.lang.Integer|30|单条命令的最长执行时间，单位：秒，超时后强制结束
+novabot.core.live.auto-save-live-data-interval|java.lang.Integer|300|自动保存直播数据间隔，单位：秒，仅使用默认直播数据服务时生效
+novabot.core.live.detail-retention-days|java.lang.Integer|0|每场直播明细数据（曲线、排行、词频、弹幕原文）的保留天数，0 表示永久保留
+novabot.core.live.live-data-path|java.lang.String|data.json|直播数据文件路径，仅使用默认直播数据服务时生效
+novabot.core.live.reconnect-interval|java.lang.Integer|300|判定主播断线重连（下播后短时间内重新开播）的时间间隔，断线重连不会重置直播数据，单位：秒
+novabot.core.live.save-live-data|java.lang.Boolean|true|是否持久化直播数据至文件，仅使用默认直播数据服务时生效
+novabot.core.log.console|ch.qos.logback.classic.Level|<null>|控制台日志级别
+novabot.core.log.event-log|java.lang.Boolean|false|是否记录事件日志
+novabot.core.log.file|ch.qos.logback.classic.Level|<null>|文件日志级别
+novabot.core.log.network-log-suppress-window|java.lang.Integer|60|网络日志的同类去重抑制窗口，单位：秒，设为 0 关闭抑制 打开 network-log 之后每个请求写一行，而本程序的请求绝大多数是轮询： 三个房间十秒一轮，一小时上千行几乎一样的记录，**要查的那一条异常正好淹在里面**。 排障日志的用处取决于它读不读得下去。 同类按「请求方法 + 去掉查询串的地址」判定；被抑制的条数攒着， 随下一条同类日志一起报出来。失败一律放行，不参与抑制—— 抑制的目的就是让异常显出来。
+novabot.core.log.network-log|java.lang.Boolean|false|是否记录网络请求日志
+novabot.core.mail.default-to|java.lang.String|<null>|默认收件邮箱，改完立即生效，不必重启
+novabot.core.network-thread.core-pool-size|java.lang.Integer|4|线程池核心线程数
+novabot.core.network-thread.keep-alive-seconds|java.lang.Integer|60|非核心线程存活时间，单位：秒
+novabot.core.network-thread.max-pool-size|java.lang.Integer|24|线程池最大线程数
+novabot.core.network-thread.queue-capacity|java.lang.Integer|64|线程池任务队列容量
+novabot.core.network.connect-timeout|java.lang.Integer|10|网络请求连接超时时间，单位：秒
+novabot.core.network.read-timeout|java.lang.Integer|60|网络请求读取超时时间，单位：秒
+novabot.core.paint.auto-expand-height|java.lang.Integer|5000|绘图器自动扩展高度时扩展像素数，设置过大会导致占用较大内存，设置过小会频繁自动扩展导致效率降低
+novabot.core.paint.extra-copyrights|java.util.List<com.starlwr.bot.core.model.TextWithStyle>|<null>|自定义绘图器底部额外版权信息
+novabot.core.paint.fonts|java.util.List<java.lang.String>|<null>|绘图器字体列表，支持配置为字体名称或字体文件路径
+novabot.core.push.at-all-daily-limit|java.lang.Integer|10|机器人账号每日最多 @全体成员 的次数，0 或负数表示不限制 平台本身有每日上限，用超之后**平台会静默忽略**——消息照发但 @ 不生效， 配置的人往往过很久才发现「怎么没人被 @ 到」。因此在自己这一侧先记账， 超额时主动退化为普通消息并记日志，而不是把额度花在注定无效的调用上。 这份额度由该账号推送的全部会话共享（实测：往一个群发一次， 其他群看到的账号剩余次数同步减一）。默认 10 与平台实测值一致， 它才是真正会先卡住的那一道。
+novabot.core.push.at-all-session-daily-limit|java.lang.Integer|20|单个会话每日最多 @全体成员 的次数，0 或负数表示不限制 与账号额度是两个维度：群的额度由群里所有有权限的人共用，机器人只是其中之一。 默认 20 与平台实测值一致。通常先撞到的是账号额度，本项是第二道保险。
+novabot.core.push.enabled|java.lang.Boolean|true|全局推送开关 关闭后所有推送都会被丢弃，用于调试或临时静音，无需逐条改推送配置。改完立即生效，不必重启。
+novabot.core.push.first-push-tip|java.lang.Boolean|true|机器人第一次推送到一个群或好友后，附一句怎么用它的提示（只发一次） 关掉之后不再附这句，也不把这次算作已经提示过——下次打开时的第一条还会带上。改完立即生效，不必重启。
+novabot.core.push.quiet-end|java.lang.String||静音时段结束时间，格式 HH:mm 允许跨零点：开始 23:00、结束 08:00 表示当晚 23 点至次日 8 点。改完立即生效，不必重启。
+novabot.core.push.quiet-start|java.lang.String||静音时段开始时间，格式 HH:mm，与结束时间任一为空即视为不启用 半夜被机器人吵醒是这类通知产品被投诉最多的点，因此内置该能力而不是让使用者自行想办法。 改完立即生效，不必重启。
+novabot.core.sender|java.util.List<com.starlwr.bot.core.model.Sender>|<null>|非插件实现的推送平台配置
+novabot.core.timeline.retention-days|java.lang.Integer|14|事件时间线的保留天数，含当天；设为 0 或负数表示不自动清理 时间线是排障线索而不是业务数据：两周之前「某条推送失败过」这件事， 已经没有人会再去查，留着只是让日志页越翻越长、磁盘越占越多。 要长期保存的场次数据在 sessions.jsonl 里，那一份不会被删。
 server.address|java.lang.String|127.0.0.1|只监听哪个地址。默认 127.0.0.1 表示只有本机连得上；改成 0.0.0.0 会把控制台与推送接口暴露到网络，此时务必配好反向代理、来源 IP 白名单与登录口令
 server.port|java.lang.Integer|7827|控制台与事件流共用的服务端口，默认 7827
 spring.data.redis.database|java.lang.Integer|0|Redis 库号，默认 0。与其他程序共用同一实例时可换一个库避免键冲突。改完即时生效，不用重启
@@ -8,69 +74,3 @@ spring.mail.host|java.lang.String|<null>|邮件告警的 SMTP 服务器地址，
 spring.mail.password|java.lang.String|<null>|SMTP 密码或授权码。多数邮箱服务要求的是「授权码」而非登录密码
 spring.mail.port|java.lang.Integer|<null>|SMTP 端口，如 465（SSL）或 587（STARTTLS）
 spring.mail.username|java.lang.String|<null>|SMTP 登录账号，通常就是发件邮箱地址
-starbot.core.alert.convergence-interval|java.lang.Integer|3600|同一问题的最短告警间隔，单位：秒 故障往往持续存在，不做收敛就会反复推送同一条消息，最终使人对告警彻底脱敏。
-starbot.core.alert.enabled|java.lang.Boolean|true|是否启用告警 关闭后登录失效、连接中断、队列积压等问题只会写进日志，不会主动通知。
-starbot.core.alert.retry-interval|java.lang.Integer|60|发送失败的告警的重投间隔，单位：秒，设为 0 关闭重投 需要告警的时候往往正是发不出去的时候：出网劣化、机器人掉登录、Webhook 服务抖动， 三者都会让告警本身失败，而失败之后此前没有下文——「没收到告警」于是被读成「没出事」。
-starbot.core.alert.retry-max-attempts|java.lang.Integer|10|单条告警的最大重投次数，超过后放弃并写日志
-starbot.core.alert.retry-queue-size|java.lang.Integer|50|待重投队列的容量上限 满了之后丢最旧的，并在日志里说明丢了哪一条。不静默截断： 悄悄丢掉的告警比没有重投更糟，它会让人以为队列在正常工作。
-starbot.core.alert.webhook-content-field|java.lang.String|content|Webhook JSON 中承载内容的字段名
-starbot.core.alert.webhook-headers|java.util.Map<java.lang.String,java.lang.String>|<null>|Webhook 附加请求头，用于需要鉴权的服务，如 Authorization: Bearer xxx
-starbot.core.alert.webhook-method|java.lang.String|POST|Webhook 请求方式：POST 或 GET POST 提交 JSON（字段名见 webhook-title-field 与 webhook-content-field）； GET 把标题与内容拼进查询串，适配 Bark 这类以路径或查询参数接收的服务。
-starbot.core.alert.webhook-title-field|java.lang.String|title|Webhook JSON 中承载标题的字段名 各服务字段名不统一：Server 酱用 title/desp，钉钉与飞书用嵌套结构， 自建接口则各有各的约定，因此做成可配置而非写死。
-starbot.core.alert.webhook-url|java.lang.String||Webhook 告警地址，留空则不启用 机器人推送与邮件之外唯一不依赖机器人自身链路的通道。机器人告警走的是机器人的推送链路， 一旦机器人程序掉线或掉登录，需要告警的正是这种时候，而告警本身也一并失效了。 Webhook 只需一个地址，适配 Bark、Server 酱、钉钉、飞书、Telegram 等常见服务。 改完立即生效，不必重启。
-starbot.core.command.admins|java.util.List<java.lang.Long>|<null>|超级管理员账号，跨会话生效 「禁用命令」这类操作会改变全群的可用功能，只对管理员开放。 群主与群管理员自动拥有权限，此处填的是不依赖群角色的额外名单—— 机器人的主人未必是每个群的管理员。
-starbot.core.config-ui.agreement.accepted-at|java.lang.String||同意的时间 ISO 格式，留空表示尚未同意过。它不参与任何判断，只是留个凭据： 日后要回答「这台机器上是什么时候同意的」时，答案得在盘上，而不是靠人回忆。
-starbot.core.config-ui.agreement.accepted-by|java.lang.String||同意是从哪条通道点下的 password＝输过登录口令之后同意，operator-token＝凭启动令牌进来之后同意。 留空表示这行记录说不出是谁点的，此时会在下次登录之后再请使用者确认一次。 4.4.0 及更早的版本在登录之前就让人点同意，写下的正是这种记录—— 那时任何能连上控制台端口的程序都写得下它，因此它证明不了使用者本人确实看过。
-starbot.core.config-ui.agreement.accepted-version|java.lang.Integer|0|已同意的协议版本号 0 表示尚未同意过。协议文案改版时版本号会加一，届时此处记着的旧版本即刻失效， 使用者会被要求重新确认一次——否则改了文案等于没改，没有人会再看到它。
-starbot.core.config-ui.allow-ips|java.util.List<java.lang.String>|<null>|允许访问配置界面的来源 IP 白名单，支持精确 IP 与 CIDR 网段 配置界面可修改推送目标并读取运行状态，权限高于推送接口，默认仅放行本机回环地址。
-starbot.core.config-ui.auth.idle-hours|java.lang.Integer|12|登录会话的闲置超时，单位：小时 多久没有操作即自动退出。管的是在别人的设备上登录后忘记退出这类情形。
-starbot.core.config-ui.auth.lockout-minutes|java.lang.Integer|15|首次锁定的时长，单位：分钟。反复触发时逐次翻倍
-starbot.core.config-ui.auth.max-failures|java.lang.Integer|5|连续登录失败多少次后锁定该来源 IP
-starbot.core.config-ui.auth.operator-token|java.lang.Boolean|false|是否保留「忘记口令」的启动令牌通道 打开之后，启用口令登录的实例在启动日志里仍会打印一个带令牌的地址， 用它可以绕过口令与二次验证直接进入。 ⚠️ 默认关闭，理由有三： 它绕过二次验证——开着它，TOTP 的保护上限就是这个令牌的保密程度 令牌走地址栏，会进反向代理的访问日志。2026-08-13 在生产的 nginx 归档里实测到 82 行含 token= 若日后把别的服务挂在这套会话之后（如经 auth_request 代理 机器人程序的 WebUI），这个后门会同时成为那些服务的后门 反过来的默认值曾经也有它的道理——忘记口令时这是唯一不必改配置重启就能进去的路， 默认关掉像是把人锁在门外。但那道门本来就开得着：把这一项改成 true 重启即可，启动日志随即打印那个地址，进去改完口令再改回来。 权衡因此是「忘记口令的那一次多重启一遍」对「每一台设了口令的实例长年带着一个 等同于口令的后门」，而后者是常态、且开着这件事没有任何现象。 关闭时启动日志不打印那个地址——打印一个不管用的地址比不打印更让人困惑， 但会打印一行说明，写清怎么把它临时打开。
-starbot.core.config-ui.auth.password|java.lang.String||登录口令 留空表示不启用口令登录。可以直接填明文，启动时会哈希后使用， 同时在日志里输出可替换过去的哈希串——填了明文就意味着看得到配置文件的人也就有了口令。 改完立即生效，不必重启：这台机器的第一把口令一定是在运行期设下的， 而「设了口令但要等重启才认」的那段时间里，界面说已上锁而门还开着。
-starbot.core.config-ui.auth.session-hours|java.lang.Integer|168|登录会话的有效期，单位：小时 从登录起算的绝对上限，到点必须重新登录。它约束的是「会话 Cookie 一旦泄漏还能被用多久」， 因此不随使用而顺延。
-starbot.core.config-ui.auth.totp-secret|java.lang.String||二次验证密钥（TOTP，Base32） 留空表示尚未绑定验证器，登录时只校验口令。通过界面上的绑定引导扫码后， 密钥会自动写回本配置项。 密钥必须以明文保存，因此配置文件的权限要收紧到仅属主可读。
-starbot.core.config-ui.auth.totp|java.lang.Boolean|true|是否要求二次验证 默认要求。设了口令却没绑定验证器时，界面会持续提示绑定——只有口令的面板 一旦开到公网，其安全性就完全押在这一个口令上，而口令是会被撞库、被键盘记录、 被肩窥的。真的不想要二次验证时把这一项改成 false，那是一个需要写下来的决定。 改完立即生效，不必重启：界面上那个开关本来就是当场生效的， 这一行此前标着「需重启」，于是同一件事在界面上有两种说法。
-starbot.core.config-ui.backup-keep|java.lang.Integer|10|配置文件备份保留份数 每次保存 application.yml 或主播推送配置时都会另留一份带时间的备份。 超出这个数目的旧备份会被删掉。默认 10 份，可在 1 到 100 之间改。改完立即生效，不必重启。
-starbot.core.config-ui.enabled|java.lang.Boolean|true|是否启用配置界面
-starbot.core.config-ui.token|java.lang.String||配置界面访问令牌 留空时每次启动自动生成一个随机令牌并输出到日志。配合默认仅监听回环地址的设置， 单机部署无需任何配置即可安全使用；需要从其他机器访问时在此显式设置一个随机串。
-starbot.core.config-ui.update.enabled|java.lang.Boolean|true|是否检查新版 关掉之后侧栏药丸与首页那条软待办都不会再出现。程序不会自己更新， 这一检查是使用者得知「该去换 jar 了」的唯一入口，默认开着。
-starbot.core.config-ui.update.source|java.lang.String|https://api.github.com/repos/FrostNovaOrg/NovaBot/releases/latest|新版信息的来源地址 默认指向发布仓的 latest release 接口，取回的 JSON 里要有 tag_name（版本）、body（更新说明）与 html_url（链接）。 自建镜像或换发布渠道时改这里。取不到或取回的东西认不出来时静默跳过—— 「查不到新版」不该变成控制台上的一条故障。
-starbot.core.datasource.json-auto-reload|java.lang.Boolean|true|JSON 文件发生变化时是否自动重载，仅使用 JSON 数据源时生效
-starbot.core.datasource.json-path|java.lang.String|datasource.json|JSON 文件路径，仅使用 JSON 数据源时生效
-starbot.core.event-stream.buffer-size|java.lang.Integer|2000|断线回补的缓冲条数 缓冲是全部房间共用的一条流。三个房间每分钟各 100 条时，2000 条约覆盖 6 分钟， 足够客户端断线重连；房间更多或更热闹就要相应调大，否则重连时会被告知补不上而重置。 每条约数 KB（含原始报文），2000 条量级在十 MB 上下，调大前先掂量内存。
-starbot.core.event-stream.enabled|java.lang.Boolean|false|是否启用事件输出 默认关闭。 用不到的人不该凭空多一个监听端点，这是它默认关就该关的唯一理由。 启用后只接受来自本机回环地址的连接，且这一点与 server.address 无关—— 即使为了对外提供推送接口把监听地址改成了 0.0.0.0，事件流也只认本机。 需要从其他机器读取时请自行建立 SSH 隧道，直接暴露到公网风险自负： 事件流里有观众的昵称、uid 与消费金额。
-starbot.core.event-stream.path|java.lang.String|/nova/events|事件输出的路径，与配置界面共用 server.port 端口
-starbot.core.event-stream.require-token|java.lang.Boolean|false|是否要求出示只读口令 默认关闭，保持「本机进程直连」这条既有用法不变（本机 runbook 与本地开发都靠它）。 🔴 装了反向代理就必须打开，这不是可选项。 反代与本程序在同一台机器上，且反代未把 X-Forwarded-* 送下来时， 它转发过来的连接源地址就是回环—— ⚠️ 反过来那一半同样要记住：若反代送了 X-Forwarded-*， 而本程序开着 server.forward-headers-strategy， 回环判据看到的会是真实客户端 IP，于是把反代自己挡在门外—— 2026-08-13 生产实测到这个形态，症状是握手回一个空的 200。 也就是说反代一上线，「只接受本机连接」这道判据就不再等于「人在这台机器上」， 任何能连上反代的人在端点看来都是本机。此时不开这个开关，等于没有鉴权。 口令由控制台签发，只能读事件流：既不给服务器 shell，也不给配置控制台。
-starbot.core.exec.enabled|java.lang.Boolean|false|是否启用事件触发外部命令
-starbot.core.exec.max-concurrent|java.lang.Integer|4|同时执行的命令数上限，超出的直接丢弃 弹幕这类事件一秒能来几十条。没有上限的话，一次刷屏就等于一次 fork 炸弹。
-starbot.core.exec.rules|java.util.List<com.starlwr.bot.core.config.StarBotCoreProperties$ExecRule>|<null>|规则列表
-starbot.core.exec.timeout|java.lang.Integer|30|单条命令的最长执行时间，单位：秒，超时后强制结束
-starbot.core.live.auto-save-live-data-interval|java.lang.Integer|300|自动保存直播数据间隔，单位：秒，仅使用默认直播数据服务时生效
-starbot.core.live.detail-retention-days|java.lang.Integer|0|每场直播明细数据（曲线、排行、词频、弹幕原文）的保留天数，0 表示永久保留
-starbot.core.live.live-data-path|java.lang.String|data.json|直播数据文件路径，仅使用默认直播数据服务时生效
-starbot.core.live.reconnect-interval|java.lang.Integer|300|判定主播断线重连（下播后短时间内重新开播）的时间间隔，断线重连不会重置直播数据，单位：秒
-starbot.core.live.save-live-data|java.lang.Boolean|true|是否持久化直播数据至文件，仅使用默认直播数据服务时生效
-starbot.core.log.console|ch.qos.logback.classic.Level|<null>|控制台日志级别
-starbot.core.log.event-log|java.lang.Boolean|false|是否记录事件日志
-starbot.core.log.file|ch.qos.logback.classic.Level|<null>|文件日志级别
-starbot.core.log.network-log-suppress-window|java.lang.Integer|60|网络日志的同类去重抑制窗口，单位：秒，设为 0 关闭抑制 打开 network-log 之后每个请求写一行，而本程序的请求绝大多数是轮询： 三个房间十秒一轮，一小时上千行几乎一样的记录，**要查的那一条异常正好淹在里面**。 排障日志的用处取决于它读不读得下去。 同类按「请求方法 + 去掉查询串的地址」判定；被抑制的条数攒着， 随下一条同类日志一起报出来。失败一律放行，不参与抑制—— 抑制的目的就是让异常显出来。
-starbot.core.log.network-log|java.lang.Boolean|false|是否记录网络请求日志
-starbot.core.mail.default-to|java.lang.String|<null>|默认收件邮箱，改完立即生效，不必重启
-starbot.core.network-thread.core-pool-size|java.lang.Integer|4|线程池核心线程数
-starbot.core.network-thread.keep-alive-seconds|java.lang.Integer|60|非核心线程存活时间，单位：秒
-starbot.core.network-thread.max-pool-size|java.lang.Integer|24|线程池最大线程数
-starbot.core.network-thread.queue-capacity|java.lang.Integer|64|线程池任务队列容量
-starbot.core.network.connect-timeout|java.lang.Integer|10|网络请求连接超时时间，单位：秒
-starbot.core.network.read-timeout|java.lang.Integer|60|网络请求读取超时时间，单位：秒
-starbot.core.paint.auto-expand-height|java.lang.Integer|5000|绘图器自动扩展高度时扩展像素数，设置过大会导致占用较大内存，设置过小会频繁自动扩展导致效率降低
-starbot.core.paint.extra-copyrights|java.util.List<com.starlwr.bot.core.model.TextWithStyle>|<null>|自定义绘图器底部额外版权信息
-starbot.core.paint.fonts|java.util.List<java.lang.String>|<null>|绘图器字体列表，支持配置为字体名称或字体文件路径
-starbot.core.push.at-all-daily-limit|java.lang.Integer|10|机器人账号每日最多 @全体成员 的次数，0 或负数表示不限制 平台本身有每日上限，用超之后**平台会静默忽略**——消息照发但 @ 不生效， 配置的人往往过很久才发现「怎么没人被 @ 到」。因此在自己这一侧先记账， 超额时主动退化为普通消息并记日志，而不是把额度花在注定无效的调用上。 这份额度由该账号推送的全部会话共享（实测：往一个群发一次， 其他群看到的账号剩余次数同步减一）。默认 10 与平台实测值一致， 它才是真正会先卡住的那一道。
-starbot.core.push.at-all-session-daily-limit|java.lang.Integer|20|单个会话每日最多 @全体成员 的次数，0 或负数表示不限制 与账号额度是两个维度：群的额度由群里所有有权限的人共用，机器人只是其中之一。 默认 20 与平台实测值一致。通常先撞到的是账号额度，本项是第二道保险。
-starbot.core.push.enabled|java.lang.Boolean|true|全局推送开关 关闭后所有推送都会被丢弃，用于调试或临时静音，无需逐条改推送配置。改完立即生效，不必重启。
-starbot.core.push.first-push-tip|java.lang.Boolean|true|机器人第一次推送到一个群或好友后，附一句怎么用它的提示（只发一次） 关掉之后不再附这句，也不把这次算作已经提示过——下次打开时的第一条还会带上。改完立即生效，不必重启。
-starbot.core.push.quiet-end|java.lang.String||静音时段结束时间，格式 HH:mm 允许跨零点：开始 23:00、结束 08:00 表示当晚 23 点至次日 8 点。改完立即生效，不必重启。
-starbot.core.push.quiet-start|java.lang.String||静音时段开始时间，格式 HH:mm，与结束时间任一为空即视为不启用 半夜被机器人吵醒是这类通知产品被投诉最多的点，因此内置该能力而不是让使用者自行想办法。 改完立即生效，不必重启。
-starbot.core.sender|java.util.List<com.starlwr.bot.core.model.Sender>|<null>|非插件实现的推送平台配置
-starbot.core.timeline.retention-days|java.lang.Integer|14|事件时间线的保留天数，含当天；设为 0 或负数表示不自动清理 时间线是排障线索而不是业务数据：两周之前「某条推送失败过」这件事， 已经没有人会再去查，留着只是让日志页越翻越长、磁盘越占越多。 要长期保存的场次数据在 sessions.jsonl 里，那一份不会被删。

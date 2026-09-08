@@ -8,6 +8,7 @@ import com.starlwr.bot.adapter.onebot.alert.QqAlertChannel;
 import com.starlwr.bot.core.config.ui.ConfigurationGroups;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.model.Message;
+import com.starlwr.bot.core.properties.NovaBotPrefixes;
 import com.starlwr.bot.core.sender.StarBotMessageSender;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -32,11 +33,11 @@ import static org.mockito.Mockito.verify;
  */
 @DisplayName("告警三键迁适配器")
 class OneBotAlertKeyMigrationTest {
-    private static final String CURRENT_PLATFORM = "starbot.adapter.onebot.alert.platform";
+    private static final String CURRENT_PLATFORM = "novabot.adapter.onebot.alert.platform";
 
-    private static final String CURRENT_TYPE = "starbot.adapter.onebot.alert.type";
+    private static final String CURRENT_TYPE = "novabot.adapter.onebot.alert.type";
 
-    private static final String CURRENT_NUM = "starbot.adapter.onebot.alert.num";
+    private static final String CURRENT_NUM = "novabot.adapter.onebot.alert.num";
 
     private static final String LEGACY_PLATFORM = "starbot.core.alert.qq-platform";
 
@@ -209,7 +210,9 @@ class OneBotAlertKeyMigrationTest {
             assertEquals(LEGACY_PLATFORM, renamed.get(CURRENT_PLATFORM), "告警 platform 别名");
             assertEquals(LEGACY_TYPE, renamed.get(CURRENT_TYPE), "告警 type 别名");
             assertEquals(LEGACY_NUM, renamed.get(CURRENT_NUM), "告警 num 别名");
-            assertEquals(7, renamed.size(), "须申报告警三条加代登录四条");
+            assertEquals(NovaBotPrefixes.ADAPTER_LEGACY, renamed.get(NovaBotPrefixes.ADAPTER),
+                    "产品前缀上一档");
+            assertEquals(8, renamed.size(), "须申报告警三条加代登录四条再加产品前缀一条");
         } catch (AssertionError e) {
             red.add("① " + e.getMessage());
         }
@@ -234,7 +237,7 @@ class OneBotAlertKeyMigrationTest {
         try {
             Map<String, ConfigurationGroups.Group> prefixes = new OneBotConfigurationGroups().prefixes();
             assertEquals(9, prefixes.size(), "申报须恰 9 条");
-            assertEquals(ConfigurationGroups.ALERT, prefixes.get("starbot.adapter.onebot.alert"),
+            assertEquals(ConfigurationGroups.ALERT, prefixes.get("novabot.adapter.onebot.alert"),
                     "alert 前缀须落告警组");
         } catch (AssertionError e) {
             red.add("③ " + e.getMessage());

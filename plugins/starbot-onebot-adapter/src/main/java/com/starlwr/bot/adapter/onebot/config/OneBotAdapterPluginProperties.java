@@ -19,7 +19,7 @@ import java.util.List;
 @Setter
 @Configuration
 @StarBotComponent
-@ConfigurationProperties(prefix = "starbot.adapter.onebot")
+@ConfigurationProperties(prefix = "novabot.adapter.onebot")
 public class OneBotAdapterPluginProperties {
     /**
      * OneBot 推送接口统一前缀
@@ -194,7 +194,7 @@ public class OneBotAdapterPluginProperties {
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         private int slowThresholdMillis = 2000;
 
-        // 告警收敛间隔原本在此按通道各配一份，现已统一由 starbot.core.alert.convergence-interval
+        // 告警收敛间隔原本在此按通道各配一份，现已统一由 novabot.core.alert.convergence-interval
         // 管理：同一个故障不该因为出口不同而各有一套抑制规则
 
         /**

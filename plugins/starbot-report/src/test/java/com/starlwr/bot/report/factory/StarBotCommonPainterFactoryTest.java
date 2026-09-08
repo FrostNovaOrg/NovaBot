@@ -136,6 +136,6 @@ class StarBotCommonPainterFactoryTest {
 
         painter.expandHeightIfNeeded(HEIGHT + 1);
 
-        assertEquals(HEIGHT + 64, painter.getHeight(), "加高的步长应当来自配置项 starbot.core.paint.auto-expand-height");
+        assertEquals(HEIGHT + 64, painter.getHeight(), "加高的步长应当来自配置项 novabot.core.paint.auto-expand-height");
     }
 }

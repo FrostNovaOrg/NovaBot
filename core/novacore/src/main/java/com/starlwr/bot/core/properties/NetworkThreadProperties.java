@@ -7,7 +7,7 @@ import lombok.Setter;
  * 网络线程池相关配置
  * <p>
  * <b>本类只承载字段与说明，不由 Spring 直接绑定</b>：它是
- * {@code StarBotCoreProperties} 的一节，配置键仍是 {@code starbot.core.network-thread.*}，
+ * {@code StarBotCoreProperties} 的一节，配置键仍是 {@code novabot.core.network-thread.*}，
  * 绑定与装配都在那一侧。与 {@link EventStreamProperties} 同形。
  */
 @Getter

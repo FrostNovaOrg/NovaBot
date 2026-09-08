@@ -39,7 +39,7 @@ import java.util.Optional;
 @Slf4j
 @RestController
 @RequestMapping(ConfigUiController.BASE_PATH + "/api/auth")
-@ConditionalOnProperty(name = "starbot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(name = "novabot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
 public class ConfigUiAuthController {
     /**
      * 登录口令所在的配置项，界面上填的明文会被哈希后写回此处
@@ -71,11 +71,11 @@ public class ConfigUiAuthController {
     /**
      * 使用协议的同意记录所在的配置项，点了「同意并继续」后写回此处
      */
-    private static final String AGREEMENT_VERSION_PROPERTY = "starbot.core.config-ui.agreement.accepted-version";
+    private static final String AGREEMENT_VERSION_PROPERTY = "novabot.core.config-ui.agreement.accepted-version";
 
-    private static final String AGREEMENT_TIME_PROPERTY = "starbot.core.config-ui.agreement.accepted-at";
+    private static final String AGREEMENT_TIME_PROPERTY = "novabot.core.config-ui.agreement.accepted-at";
 
-    private static final String AGREEMENT_BY_PROPERTY = "starbot.core.config-ui.agreement.accepted-by";
+    private static final String AGREEMENT_BY_PROPERTY = "novabot.core.config-ui.agreement.accepted-by";
 
     private final ConfigUiAuthService authService;
 

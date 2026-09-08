@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * StarBotCore 配置类
  * <p>
- * <b>本类是配置的绑定根，不是一份按层划好的配置</b>：{@code starbot.core.*} 下的每一节
+ * <b>本类是配置的绑定根，不是一份按层划好的配置</b>：{@code novabot.core.*} 下的每一节
  * 都挂在这里，从连接超时到控制台口令、从绘图字体到告警通道。<b>各节自身的层次并不相同</b>——
  * 网络、线程池、日志、直播、数据源这五节是事件源自己要用的，其余各节服务的是推送、控制台、绘图这些外围功能。
  * <p>
@@ -38,7 +38,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Getter
 @Setter
 @Configuration
-@ConfigurationProperties(prefix = "starbot.core")
+@ConfigurationProperties(prefix = "novabot.core")
 public class StarBotCoreProperties {
     /**
      * 单独成件的那几节

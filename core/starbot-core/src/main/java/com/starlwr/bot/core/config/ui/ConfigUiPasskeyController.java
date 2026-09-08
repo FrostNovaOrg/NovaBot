@@ -36,7 +36,7 @@ import java.time.Duration;
 @Slf4j
 @RestController
 @RequestMapping(ConfigUiController.BASE_PATH + "/api/auth")
-@ConditionalOnProperty(name = "starbot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(name = "novabot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
 public class ConfigUiPasskeyController {
     private final PasskeyService passkeyService;
 

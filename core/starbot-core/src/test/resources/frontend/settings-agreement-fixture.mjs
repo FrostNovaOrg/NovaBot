@@ -248,9 +248,9 @@ await section('协议三键归卡片', async () => {
   eq(fieldsSrc.length > 0, true, '找得到 AUTH_CARD_FIELDS');
   const cardFields = new Function('return ' + fieldsSrc + ';')();
   const wanted = [
-    'starbot.core.config-ui.agreement.accepted-version',
-    'starbot.core.config-ui.agreement.accepted-at',
-    'starbot.core.config-ui.agreement.accepted-by',
+    'novabot.core.config-ui.agreement.accepted-version',
+    'novabot.core.config-ui.agreement.accepted-at',
+    'novabot.core.config-ui.agreement.accepted-by',
   ];
   for (const key of wanted) {
     eq(cardFields.includes(key), true, key + ' 已被这张卡吃掉');
@@ -266,7 +266,7 @@ await section('协议三键归卡片', async () => {
     join(repo, 'core/starbot-core/src/test/resources/configuration-baseline/config-keys.txt'), 'utf8')
     .split('\n')
     .map(line => line.split('|')[0])
-    .filter(name => name.startsWith('starbot.core.config-ui.'));
+    .filter(name => name.startsWith('novabot.core.config-ui.'));
   eq(keys.length > 0, true, '「登录与安全」组的配置键取得到，分母不为零');
   for (const key of wanted) {
     eq(keys.includes(key), true, key + ' 本来就是配置面上的一项');
@@ -274,9 +274,9 @@ await section('协议三键归卡片', async () => {
 
   // 差值拿两张真名单相减，不写死组里有几项：写死的话，这一组日后新加一个键就会红，
   // 而红的理由与协议卡毫无关系
-  const before = ['starbot.core.config-ui.auth.password',
-    'starbot.core.config-ui.auth.totp',
-    'starbot.core.config-ui.auth.totp-secret'];
+  const before = ['novabot.core.config-ui.auth.password',
+    'novabot.core.config-ui.auth.totp',
+    'novabot.core.config-ui.auth.totp-secret'];
   const ordinaryBefore = keys.filter(key => !before.includes(key)).length;
   const ordinaryAfter = keys.filter(key => !cardFields.includes(key)).length;
   eq(ordinaryAfter > 0, true, '分母非零：这一组仍有普通行');

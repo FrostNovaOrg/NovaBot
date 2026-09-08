@@ -55,7 +55,7 @@ public class ConfigurationMetadataService {
     /**
      * 界面中展示的配置项前缀，其余框架自身的配置不予展示
      */
-    private static final List<String> VISIBLE_PREFIXES = List.of("starbot.");
+    private static final List<String> VISIBLE_PREFIXES = List.of("novabot.");
 
     /**
      * 已合并的配置项，按配置项名排序
@@ -65,8 +65,8 @@ public class ConfigurationMetadataService {
     /**
      * 全部配置项的名称与类型，<b>不受展示前缀限制</b>，含 Spring 等框架自身的配置项
      * <p>
-     * 供保存前的类型校验使用：界面只展示 starbot 的配置项，但使用者在「配置文件」页签里能改到
-     * server.port 之类的框架配置，这些同样写错就起不来，因此校验不能只覆盖 starbot 前缀。
+     * 供保存前的类型校验使用：界面只展示 novabot 的配置项，但使用者在「配置文件」页签里能改到
+     * server.port 之类的框架配置，这些同样写错就起不来，因此校验不能只覆盖 novabot 前缀。
      * 此处只保留名称与类型，不保留说明与默认值——框架的配置项数以千计，全量驻留并不划算。
      */
     private volatile Map<String, String> knownTypes;
@@ -271,7 +271,7 @@ public class ConfigurationMetadataService {
     /**
      * 一个可配置项
      *
-     * @param name 配置项名，例如 starbot.bilibili.dynamic.draw-logo
+     * @param name 配置项名，例如 novabot.bilibili.dynamic.draw-logo
      * @param type 配置项的 Java 类型全限定名
      * @param description 配置项说明，取自 Javadoc
      * @param defaultValue 默认值

@@ -1,6 +1,7 @@
 package com.starlwr.bot.adapter.onebot.config;
 
 import com.starlwr.bot.core.plugin.StarBotComponent;
+import com.starlwr.bot.core.properties.NovaBotPrefixes;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.bind.BindResult;
 import org.springframework.boot.context.properties.bind.Bindable;
@@ -13,7 +14,7 @@ import org.springframework.core.env.Environment;
  * 告警目标新旧两套键都认
  * <p>
  * 先按旧键 {@code starbot.core.alert.qq-*} 绑一趟，再按现行键
- * {@code starbot.adapter.onebot.alert} 绑第二趟：第二趟只会写入真的出现在配置里的项，
+ * {@code novabot.adapter.onebot.alert} 绑第二趟：第二趟只会写入真的出现在配置里的项，
  * 没写的项原样留着第一趟的值。于是「新键在场时压过旧键、缺的项由旧键补上」落在每一项上。
  * 旧键在场时启动打一条提醒，不在每次发送重读时刷。
  */
@@ -24,7 +25,7 @@ public class OneBotAlertPropertiesBinder {
     /**
      * 现行配置键前缀
      */
-    public static final String PREFIX = "starbot.adapter.onebot.alert";
+    public static final String PREFIX = NovaBotPrefixes.ADAPTER_ALERT;
 
     private static final String LEGACY_PLATFORM = "starbot.core.alert.qq-platform";
 
@@ -58,11 +59,12 @@ public class OneBotAlertPropertiesBinder {
             legacy = true;
         }
 
+        boolean previous = binder.bind(NovaBotPrefixes.ADAPTER_ALERT_LEGACY, Bindable.ofInstance(alert)).isBound();
         boolean current = binder.bind(PREFIX, Bindable.ofInstance(alert)).isBound();
         if (legacy) {
             log.warn("配置项 starbot.core.alert.qq-* 已改名为 {}.*, 旧键仍然有效, 但请尽快改过来{}",
                     PREFIX,
-                    current ? "。两套键同时存在时以新键为准, 新键未写到的项才取旧键的值" : "");
+                    (previous || current) ? "。两套键同时存在时以新键为准, 新键未写到的项才取旧键的值" : "");
         }
         return legacy;
     }

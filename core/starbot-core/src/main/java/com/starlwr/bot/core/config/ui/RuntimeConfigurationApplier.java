@@ -55,28 +55,28 @@ public class RuntimeConfigurationApplier {
     static {
         // ---- 推送总开关 ----
         // PushGate 每次判断都重新读这一项，因此写回即生效
-        APPLIERS.put("starbot.core.push.enabled", (properties, value) ->
+        APPLIERS.put("novabot.core.push.enabled", (properties, value) ->
                 properties.getPush().setEnabled(Boolean.parseBoolean(value)));
         // 每次跟提示前都现读，写回即生效。关掉时不认领，留给以后打开时的第一条
-        APPLIERS.put("starbot.core.push.first-push-tip", (properties, value) ->
+        APPLIERS.put("novabot.core.push.first-push-tip", (properties, value) ->
                 properties.getPush().setFirstPushTip(Boolean.parseBoolean(value)));
 
         // ---- 静音时段 ----
         // 同上，PushGate 每条推送都现读一次起止时刻
-        APPLIERS.put("starbot.core.push.quiet-start", (properties, value) ->
+        APPLIERS.put("novabot.core.push.quiet-start", (properties, value) ->
                 properties.getPush().setQuietStart(value));
-        APPLIERS.put("starbot.core.push.quiet-end", (properties, value) ->
+        APPLIERS.put("novabot.core.push.quiet-end", (properties, value) ->
                 properties.getPush().setQuietEnd(value));
 
         // ---- 告警接收人 ----
-        APPLIERS.put("starbot.core.alert.webhook-url", (properties, value) ->
+        APPLIERS.put("novabot.core.alert.webhook-url", (properties, value) ->
                 properties.getAlert().setWebhookUrl(value));
-        APPLIERS.put("starbot.core.mail.default-to", (properties, value) ->
+        APPLIERS.put("novabot.core.mail.default-to", (properties, value) ->
                 properties.getMail().setDefaultTo(value));
 
         // ---- 配置备份保留份数 ----
         // 下次保存时现读，写回即生效
-        APPLIERS.put("starbot.core.config-ui.backup-keep", (properties, value) ->
+        APPLIERS.put("novabot.core.config-ui.backup-keep", (properties, value) ->
                 properties.getConfigUi().setBackupKeep(
                         TimestampedFileBackup.clamp(Integer.parseInt(value.trim()))));
     }
@@ -114,7 +114,7 @@ public class RuntimeConfigurationApplier {
     private static final Map<String, String> APPLIED_ELSEWHERE = Map.of(
             // 机器人连接：/api/setup/bot 保存时经 BotConnectionTester#apply 当场重建连接，
             // 判据在适配器一侧（连接建起来没有、换了地址旧连接断没断）
-            "starbot.adapter.onebot.senders",
+            "novabot.adapter.onebot.senders",
             "/api/setup/bot 保存时经 BotConnectionTester#apply 当场重建连接");
 
     /**

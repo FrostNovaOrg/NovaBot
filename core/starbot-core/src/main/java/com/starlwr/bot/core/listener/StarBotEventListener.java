@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
  * StarBot 事件监听器
  */
 @Component
-@ConditionalOnProperty(name = "starbot.core.log.event-log", havingValue = "true")
+@ConditionalOnProperty(name = "novabot.core.log.event-log", havingValue = "true")
 public class StarBotEventListener {
     private static final Logger eventLogger = LoggerFactory.getLogger("EventLogger");
 

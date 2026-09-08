@@ -2,7 +2,7 @@
 #
 # 用不同的值是有意的：写成默认值的键，绑没绑上看起来一模一样。
 # 这里的值只在测试里用，与发行模板 dist/templates/application.example.yml 无关。
-starbot:
+novabot:
   core:
     network-thread:
       core-pool-size: 3

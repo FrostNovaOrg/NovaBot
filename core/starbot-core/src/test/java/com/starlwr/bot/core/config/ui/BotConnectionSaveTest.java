@@ -50,7 +50,7 @@ class BotConnectionSaveTest {
      * 一台全新的机器：配置面渲染出来的那一份里，机器人那一节是空表
      */
     private static final String FRESH = """
-            starbot:
+            novabot:
               core:
                 config-ui:
                   enabled: true         # 是否启用配置界面
@@ -66,7 +66,7 @@ class BotConnectionSaveTest {
      * 一台配过的机器：机器人那一节已经有一条
      */
     private static final String CONFIGURED = """
-            starbot:
+            novabot:
               adapter:
                 onebot:
                   senders:
@@ -210,16 +210,16 @@ class BotConnectionSaveTest {
         // 用启动时真正在跑的那个加载器解析：逐行看键路径看不见缩进错位这类结构性毛病，
         // 而它的表现是下次启动直接掉进安全模式
         assertEquals(1, load().stream()
-                        .filter(key -> key.startsWith("starbot.adapter.onebot.senders[0]"))
+                        .filter(key -> key.startsWith("novabot.adapter.onebot.senders[0]"))
                         .filter(key -> key.endsWith(".name")).count(),
                 "解析回来应当恰好有一条机器人，且它有名字。解析结果: " + load());
-        assertEquals("127.0.0.1", value("starbot.adapter.onebot.senders[0].one-bot-address"));
-        assertEquals("3100", value("starbot.adapter.onebot.senders[0].one-bot-http-port"));
-        assertEquals("new-ws", value("starbot.adapter.onebot.senders[0].one-bot-websocket-token"));
+        assertEquals("127.0.0.1", value("novabot.adapter.onebot.senders[0].one-bot-address"));
+        assertEquals("3100", value("novabot.adapter.onebot.senders[0].one-bot-http-port"));
+        assertEquals("new-ws", value("novabot.adapter.onebot.senders[0].one-bot-websocket-token"));
 
         // 别的键一个也不许被这一趟碰掉
-        assertEquals("true", value("starbot.adapter.onebot.detect.enable-http-detect"));
-        assertEquals("true", value("starbot.core.config-ui.enabled"));
+        assertEquals("true", value("novabot.adapter.onebot.detect.enable-http-detect"));
+        assertEquals("true", value("novabot.core.config-ui.enabled"));
     }
 
     @Test
@@ -293,8 +293,8 @@ class BotConnectionSaveTest {
         assertFalse(text.contains("one-bot-websocket-token"), text);
         assertTrue(text.contains("one-bot-address: 127.0.0.1"), "地址仍该写下去:\n" + text);
         assertTrue(text.contains("delay: 1000"), "没被清空的字段还在:\n" + text);
-        assertEquals("127.0.0.1", value("starbot.adapter.onebot.senders[0].one-bot-address"));
-        assertNull(value("starbot.adapter.onebot.senders[0].one-bot-http-token"));
+        assertEquals("127.0.0.1", value("novabot.adapter.onebot.senders[0].one-bot-address"));
+        assertNull(value("novabot.adapter.onebot.senders[0].one-bot-http-token"));
     }
 
     @Test
@@ -304,8 +304,8 @@ class BotConnectionSaveTest {
 
         JSONObject result = controller(fileService, tester(true)).saveBot(body());
         assertTrue(result.getBooleanValue("success"), result.getString("message"));
-        assertEquals("new-http", value("starbot.adapter.onebot.senders[0].one-bot-http-token"));
-        assertEquals("new-ws", value("starbot.adapter.onebot.senders[0].one-bot-websocket-token"));
+        assertEquals("new-http", value("novabot.adapter.onebot.senders[0].one-bot-http-token"));
+        assertEquals("new-ws", value("novabot.adapter.onebot.senders[0].one-bot-websocket-token"));
     }
 
     @Test

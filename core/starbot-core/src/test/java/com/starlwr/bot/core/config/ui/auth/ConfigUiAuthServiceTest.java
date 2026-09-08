@@ -326,7 +326,7 @@ class ConfigUiAuthServiceTest {
         assertEquals(new TreeSet<>(expected), actual,
                 "专用口键变多或变少都要改这一格，不能靠名字规则自动扩");
         assertFalse(ConfigUiAuthService.isDedicatedAuthKey(
-                        "starbot.core.config-ui.auth.recovery-secret"),
+                        "novabot.core.config-ui.auth.recovery-secret"),
                 "尚未列入闭集的新机密键不得自动算专用口");
     }
 
@@ -343,7 +343,7 @@ class ConfigUiAuthServiceTest {
                 continue;
             }
             String name = line.split("\\|")[0];
-            if (name.startsWith("starbot.core.config-ui.auth.")) {
+            if (name.startsWith("novabot.core.config-ui.auth.")) {
                 keys.add(name);
             }
         }

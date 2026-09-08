@@ -43,7 +43,7 @@ import java.util.Set;
 @StarBotComponent
 @RestController
 @RequestMapping(ConfigUiController.BASE_PATH + "/api/at-all/quota")
-@ConditionalOnProperty(name = "starbot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(name = "novabot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
 public class AtAllQuotaController {
     private final AtAllQuotaService quota;
 

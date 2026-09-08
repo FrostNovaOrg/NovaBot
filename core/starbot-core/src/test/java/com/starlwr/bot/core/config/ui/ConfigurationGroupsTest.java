@@ -89,9 +89,9 @@ class ConfigurationGroupsTest {
         assertEquals(ConfigurationGroups.COLLECT, groups.groupOf("starbot.test.foo.backup"));
         assertEquals(ConfigurationGroups.REPORT, groups.groupOf("starbot.test.foo.logo"));
         assertEquals(ConfigurationGroups.AUTH,
-                groups.groupOf("starbot.core.config-ui.auth.password"));
+                groups.groupOf("novabot.core.config-ui.auth.password"));
         assertEquals(ConfigurationGroups.SERVICE,
-                groups.groupOf("starbot.core.event-stream.enabled"));
+                groups.groupOf("novabot.core.event-stream.enabled"));
     }
 
     @Test
@@ -111,12 +111,12 @@ class ConfigurationGroupsTest {
     @DisplayName("前缀只在整段边界上命中，不吃掉名字更长的兄弟键")
     void prefixMatchesOnSegmentBoundary() {
         ConfigurationGroups groups = ConfigurationGroups.core();
-        assertEquals(ConfigurationGroups.SERVICE, groups.groupOf("starbot.core.network.read-timeout"));
-        assertEquals(ConfigurationGroups.SERVICE, groups.groupOf("starbot.core.network-thread.max-pool-size"));
-        // 前缀本身也是一个键时照样命中：starbot.core.sender 是叶子，不是一段
-        assertEquals(ConfigurationGroups.PUSH, groups.groupOf("starbot.core.sender"));
+        assertEquals(ConfigurationGroups.SERVICE, groups.groupOf("novabot.core.network.read-timeout"));
+        assertEquals(ConfigurationGroups.SERVICE, groups.groupOf("novabot.core.network-thread.max-pool-size"));
+        // 前缀本身也是一个键时照样命中：novabot.core.sender 是叶子，不是一段
+        assertEquals(ConfigurationGroups.PUSH, groups.groupOf("novabot.core.sender"));
         // 而它不该把名字以它开头的另一个键一起吃掉
-        assertNull(groups.groupOf("starbot.core.senders-extra"),
+        assertNull(groups.groupOf("novabot.core.senders-extra"),
                 "前缀吃掉了名字更长的兄弟键，那一项会被摆进一个跟它无关的组里");
     }
 
@@ -150,13 +150,13 @@ class ConfigurationGroupsTest {
         List<String> prefixes = ConfigurationGroups.core().prefixes();
         List<String> adapter = new ArrayList<>();
         for (String prefix : prefixes) {
-            if (prefix.startsWith("starbot.adapter.")) {
+            if (prefix.startsWith("novabot.adapter.")) {
                 adapter.add(prefix);
             }
         }
 
-        assertTrue(prefixes.contains("starbot.core.push"),
-                "阳性锚：核心表须含 starbot.core.push");
+        assertTrue(prefixes.contains("novabot.core.push"),
+                "阳性锚：核心表须含 novabot.core.push");
         assertTrue(adapter.isEmpty(),
                 "核心表不得含适配器前缀，命中 " + adapter.size() + " 条：\n  "
                         + String.join("\n  ", adapter));

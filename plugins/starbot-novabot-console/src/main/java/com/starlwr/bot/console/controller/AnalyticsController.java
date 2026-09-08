@@ -38,7 +38,7 @@ import java.util.Set;
 @StarBotComponent
 @RestController
 @RequestMapping(ConfigUiController.BASE_PATH + "/api/analytics")
-@ConditionalOnProperty(name = "starbot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(name = "novabot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
 public class AnalyticsController {
     /**
      * 默认返回多少个周期

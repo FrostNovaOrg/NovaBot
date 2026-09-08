@@ -374,11 +374,11 @@ class TimelineHookTest {
     @DisplayName("⑩ 落不下去的配置项应记成「设置待重启」, 只写组名与条数")
     void recordsSettingsPendingRestart() {
         Capture capture = new Capture();
-        applier(capture).applyAndTrack(Map.of("starbot.core.live.live-data-path", "/tmp/x.json"));
+        applier(capture).applyAndTrack(Map.of("novabot.core.live.live-data-path", "/tmp/x.json"));
 
         TimelineEvent event = capture.only();
         assertEquals(TimelineEventType.SETTINGS_RESTART_PENDING, event.type());
-        assertEquals("starbot.core.live", event.detail().get("groups"));
+        assertEquals("novabot.core.live", event.detail().get("groups"));
         assertEquals("1", event.detail().get("count"));
         assertFalse(String.join(" ", event.detail().values()).contains("/tmp/x.json"),
                 "取值一个字都不许进来: 时间线是逐行落在磁盘上的, 而经这条路的键里就有口令");

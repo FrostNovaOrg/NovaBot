@@ -121,7 +121,7 @@ public class JsonDataSource extends AbstractDataSource {
             // 一行话把两种读法都说出来，判断留给看日志的人——他知道这个路径是不是自己配的。
             log.warn("没有找到推送配置文件 {}, 先按空的推送配置启动。"
                     + "刚装好的实例本来就没有它, 在控制台里加第一位主播时会自动生成; "
-                    + "若这个路径是你自己配的, 请核对 starbot.core.datasource.json-path", path);
+                    + "若这个路径是你自己配的, 请核对 novabot.core.datasource.json-path", path);
         } catch (Exception e) {
             throw new DataSourceException("读取数据源 JSON 文件异常", e);
         }

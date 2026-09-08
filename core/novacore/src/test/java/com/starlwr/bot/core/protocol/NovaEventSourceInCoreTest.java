@@ -81,7 +81,7 @@ class NovaEventSourceInCoreTest {
                 "starbot.bilibili.event-stream.enabled", "true",
                 "starbot.bilibili.event-stream.path", "/legacy/events",
                 "starbot.bilibili.event-stream.buffer-size", "77",
-                "starbot.core.event-stream.path", "/nova/events"));
+                "novabot.core.event-stream.path", "/nova/events"));
 
         assertEquals("/nova/events", resolved.getPath(), "新键写到的项由新键说了算");
         assertTrue(resolved.isEnabled(), "新键没写到的项要落回旧键, 而不是退回默认值");

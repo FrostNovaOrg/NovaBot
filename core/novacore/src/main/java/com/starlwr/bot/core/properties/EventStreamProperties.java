@@ -11,7 +11,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * 它只输出，不接受任何指令。
  * <p>
  * <b>本类只承载字段与说明，实例不由 Spring 直接绑定</b>：配置键从
- * {@code starbot.bilibili.event-stream} 改到了 {@code starbot.core.event-stream}，
+ * {@code starbot.bilibili.event-stream} 改到了 {@code novabot.core.event-stream}，
  * 两套键要同时认得，且新键在场时逐项压过旧键——这件事需要分辨「这一项写没写」，
  * 而自动绑定给出的只有「绑完之后的值」，分辨不出默认值与显式写成同一个值的区别。
  * 因此实例由 {@link com.starlwr.bot.core.protocol.NovaEventStreamConfiguration} 分两趟绑出来。
@@ -24,7 +24,7 @@ public class EventStreamProperties {
     /**
      * 现行配置键前缀
      */
-    public static final String PREFIX = "starbot.core.event-stream";
+    public static final String PREFIX = "novabot.core.event-stream";
 
     /**
      * 旧配置键前缀

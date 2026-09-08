@@ -96,13 +96,13 @@ class ConfigurationSurfaceBaselineTest {
         Binder binder = new Binder(new MapConfigurationPropertySource(loadCoverage()));
 
         StarBotCoreProperties core = new StarBotCoreProperties();
-        binder.bind("starbot.core", Bindable.ofInstance(core));
+        binder.bind("novabot.core", Bindable.ofInstance(core));
 
         EventStreamProperties stream = new EventStreamProperties();
         binder.bind(EventStreamProperties.PREFIX, Bindable.ofInstance(stream));
 
         List<String> actual = new ArrayList<>();
-        collect("starbot.core", core, actual);
+        collect("novabot.core", core, actual);
         collect(EventStreamProperties.PREFIX, stream, actual);
         Collections.sort(actual);
         writeActual(BINDING_FILE, actual);

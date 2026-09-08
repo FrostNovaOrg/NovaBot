@@ -213,7 +213,7 @@ class ConfigurationTemplateTest {
                         + String.join("\n  ", wrong));
 
         // 分母自证：上面那一圈要是一项都没比到，它照样是绿的
-        assertTrue(written.containsKey("starbot.core.config-ui.allow-ips"),
+        assertTrue(written.containsKey("novabot.core.config-ui.allow-ips"),
                 "allow-ips 没进这一格的分母 —— 那么这一格并没有量到它");
     }
 
@@ -224,11 +224,11 @@ class ConfigurationTemplateTest {
         ConfigurationFileService service = new ConfigurationFileService(config);
         assertFalse(Files.exists(config), "夹具起点：文件不存在");
 
-        List<String> changed = service.write(Map.of("starbot.core.push.quiet-start", "23:00"));
+        List<String> changed = service.write(Map.of("novabot.core.push.quiet-start", "23:00"));
 
         assertTrue(Files.exists(config), "第一次保存没有把文件写出来 —— 免配置起步的实例保存一次就报错");
-        assertEquals(List.of("starbot.core.push.quiet-start"), changed);
-        assertEquals("23:00", service.read().get("starbot.core.push.quiet-start"));
+        assertEquals(List.of("novabot.core.push.quiet-start"), changed);
+        assertEquals("23:00", service.read().get("novabot.core.push.quiet-start"));
         assertEquals("7827", service.read().get("server.port"), "同一趟写出来的其余项应当还是默认值");
     }
 
@@ -345,7 +345,7 @@ class ConfigurationTemplateTest {
         assertTrue(ConfigurationFileService.isBlankMeansAbsentField("one-bot-websocket-token"));
         assertTrue(ConfigurationFileService.isBlankMeansAbsentField("api-token"));
         assertTrue(ConfigurationFileService.isBlankMeansAbsentField(
-                "starbot.adapter.onebot.senders.one-bot-http-token"));
+                "novabot.adapter.onebot.senders.one-bot-http-token"));
         assertFalse(ConfigurationFileService.isBlankMeansAbsentField("name"),
                 "name 不在键集里，恒返 true 会把普通字段也抹掉");
         assertFalse(ConfigurationFileService.isBlankMeansAbsentField("api"));
@@ -368,9 +368,9 @@ class ConfigurationTemplateTest {
                 "键集内的项写成了空值而不是注释掉。加进键集却照写空值，等于只松不紧:\n  "
                         + String.join("\n  ", leaked));
 
-        assertTrue(live.contains("starbot.core.push.quiet-start"),
+        assertTrue(live.contains("novabot.core.push.quiet-start"),
                 "静音时段留空是有效取值，键集外的空值必须照写");
-        assertFalse(ConfigurationFileService.BLANK_MEANS_ABSENT.contains("starbot.core.push.quiet-start"));
+        assertFalse(ConfigurationFileService.BLANK_MEANS_ABSENT.contains("novabot.core.push.quiet-start"));
 
         Map<String, Object> item = new LinkedHashMap<>();
         item.put("name", "qq-onebot");
@@ -399,7 +399,7 @@ class ConfigurationTemplateTest {
         Files.writeString(config, """
                 server:
                   port: 9000
-                starbot:
+                novabot:
                   core:
                     push:
                       quiet-start:
@@ -408,12 +408,12 @@ class ConfigurationTemplateTest {
         ConfigurationFileService service = new ConfigurationFileService(config);
         assertFalse(service.createIfAbsent(), "文件已经在了，不该再建一次");
 
-        service.write(Map.of("starbot.core.push.quiet-start", "23:00"));
+        service.write(Map.of("novabot.core.push.quiet-start", "23:00"));
 
         assertEquals("9000", service.read().get("server.port"),
                 "使用者改过的那一项被默认值盖回去了 —— 这是这段代码最坏的失败形态，"
                         + "而它发生之后没有任何现象");
-        assertEquals("23:00", service.read().get("starbot.core.push.quiet-start"));
+        assertEquals("23:00", service.read().get("novabot.core.push.quiet-start"));
     }
 
     /**

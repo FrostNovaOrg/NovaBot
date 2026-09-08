@@ -26,7 +26,7 @@ import org.springframework.boot.context.properties.NestedConfigurationProperty;
  * 开出第二个绑定入口。本类把注解收在一处，绑定入口仍然只有一个。
  */
 @Getter
-@ConfigurationProperties(prefix = "starbot.core")
+@ConfigurationProperties(prefix = "novabot.core")
 class CoreConfigurationSections {
     @NestedConfigurationProperty
     private final NetworkThreadProperties networkThread = new NetworkThreadProperties();

@@ -31,7 +31,7 @@ function eq(actual, expected, what) {
 
 function field(over) {
   return Object.assign({
-    name: 'starbot.core.push.enabled', label: 'enabled', widget: 'boolean',
+    name: 'novabot.core.push.enabled', label: 'enabled', widget: 'boolean',
     description: '全局推送开关', defaultValue: true, effect: 'IMMEDIATE', sensitive: false,
   }, over);
 }
@@ -46,7 +46,7 @@ eq(isChanged(field({sensitive: true, widget: 'string', defaultValue: null}), MAS
 
 // —— 档二：搜索与只看改过 ——
 const quiet = field({
-  name: 'starbot.core.push.quiet-start', label: 'quiet-start', widget: 'string',
+  name: 'novabot.core.push.quiet-start', label: 'quiet-start', widget: 'string',
   description: '静音时段开始，期间的推送直接丢弃', defaultValue: null,
 });
 eq(isVisible(quiet, '', '静音', false), true, '按说明里的词搜得到');

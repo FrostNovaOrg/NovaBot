@@ -20,15 +20,15 @@ import static org.junit.jupiter.api.Assertions.fail;
 @DisplayName("OneBot 配置分组前缀")
 class OneBotConfigurationGroupsTest {
     private static final List<String> EXPECTED = List.of(
-            "starbot.adapter.onebot.extension.napcat.enable-backup-at-all",
-            "starbot.adapter.onebot.alert",
-            "starbot.adapter.onebot.napcat",
-            "starbot.adapter.onebot.base-url",
-            "starbot.adapter.onebot.senders",
-            "starbot.adapter.onebot.security",
-            "starbot.adapter.onebot.websocket-thread",
-            "starbot.adapter.onebot.detect",
-            "starbot.adapter.onebot.extension");
+            "novabot.adapter.onebot.extension.napcat.enable-backup-at-all",
+            "novabot.adapter.onebot.alert",
+            "novabot.adapter.onebot.napcat",
+            "novabot.adapter.onebot.base-url",
+            "novabot.adapter.onebot.senders",
+            "novabot.adapter.onebot.security",
+            "novabot.adapter.onebot.websocket-thread",
+            "novabot.adapter.onebot.detect",
+            "novabot.adapter.onebot.extension");
 
     @Test
     @DisplayName("申报九条、合并表最长前缀胜、与核心表撞前缀须抛")
@@ -41,10 +41,10 @@ class OneBotConfigurationGroupsTest {
             assertEquals(EXPECTED, List.copyOf(declared.keySet()),
                     "申报须恰 9 条且顺序为 enable-backup-at-all、alert、napcat 再其余六");
             assertEquals(ConfigurationGroups.PUSH,
-                    declared.get("starbot.adapter.onebot.extension.napcat.enable-backup-at-all"),
+                    declared.get("novabot.adapter.onebot.extension.napcat.enable-backup-at-all"),
                     "enable-backup-at-all 须落推送");
             assertEquals(ConfigurationGroups.ALERT,
-                    declared.get("starbot.adapter.onebot.alert"),
+                    declared.get("novabot.adapter.onebot.alert"),
                     "alert 须落告警");
             for (int i = 2; i < EXPECTED.size(); i++) {
                 String prefix = EXPECTED.get(i);
@@ -58,13 +58,13 @@ class OneBotConfigurationGroupsTest {
         try {
             ConfigurationGroups groups = ConfigurationGroups.of(List.of(contributor));
             assertEquals(ConfigurationGroups.SERVICE,
-                    groups.groupOf("starbot.adapter.onebot.senders.api-token"),
+                    groups.groupOf("novabot.adapter.onebot.senders.api-token"),
                     "senders.api-token 须落服务");
             assertEquals(ConfigurationGroups.PUSH,
-                    groups.groupOf("starbot.adapter.onebot.extension.napcat.enable-backup-at-all"),
+                    groups.groupOf("novabot.adapter.onebot.extension.napcat.enable-backup-at-all"),
                     "enable-backup-at-all 须落推送（最长前缀胜）");
             assertEquals(ConfigurationGroups.ALERT,
-                    groups.groupOf("starbot.adapter.onebot.alert.platform"),
+                    groups.groupOf("novabot.adapter.onebot.alert.platform"),
                     "alert.platform 须落告警");
         } catch (AssertionError e) {
             red.add("②" + e.getMessage());
@@ -72,12 +72,12 @@ class OneBotConfigurationGroupsTest {
 
         try {
             Map<String, ConfigurationGroups.Group> clash = new LinkedHashMap<>();
-            clash.put("starbot.core.push", ConfigurationGroups.COLLECT);
+            clash.put("novabot.core.push", ConfigurationGroups.COLLECT);
             ConfigurationGroupContributor duplicate = () -> clash;
             IllegalStateException ex = assertThrows(IllegalStateException.class,
                     () -> ConfigurationGroups.of(List.of(contributor, duplicate)),
-                    "与核心表重复申报 starbot.core.push 须抛 IllegalStateException");
-            assertEquals("配置分组前缀 starbot.core.push 被写了两次: push 与 collect",
+                    "与核心表重复申报 novabot.core.push 须抛 IllegalStateException");
+            assertEquals("配置分组前缀 novabot.core.push 被写了两次: push 与 collect",
                     ex.getMessage());
         } catch (AssertionError e) {
             red.add("③" + e.getMessage());

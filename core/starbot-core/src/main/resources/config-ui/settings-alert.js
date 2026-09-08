@@ -21,10 +21,10 @@ import {mailAlertConfigured} from './alert-model.js';
  * 卡片这边据它把这几项摆进卡里。两处各写一份的话，摘走了却没人摆的那一项会凭空消失。
  */
 export const CARD_FIELDS = new Set([
-  'starbot.adapter.onebot.alert.platform', 'starbot.adapter.onebot.alert.type', 'starbot.adapter.onebot.alert.num',
-  'starbot.core.alert.webhook-url', 'starbot.core.alert.webhook-method',
-  'starbot.core.alert.webhook-title-field', 'starbot.core.alert.webhook-content-field',
-  'starbot.core.mail.default-to',
+  'novabot.adapter.onebot.alert.platform', 'novabot.adapter.onebot.alert.type', 'novabot.adapter.onebot.alert.num',
+  'novabot.core.alert.webhook-url', 'novabot.core.alert.webhook-method',
+  'novabot.core.alert.webhook-title-field', 'novabot.core.alert.webhook-content-field',
+  'novabot.core.mail.default-to',
   'spring.mail.host', 'spring.mail.port', 'spring.mail.username', 'spring.mail.password',
 ]);
 
@@ -303,13 +303,13 @@ async function qqTarget(box, pill) {
   const hint = el('div', 'al-note');
   wrap.appendChild(hint);
   const key = el('div', 'keyname');
-  key.textContent = 'starbot.adapter.onebot.alert.num';
+  key.textContent = 'novabot.adapter.onebot.alert.num';
   wrap.appendChild(key);
   box.appendChild(wrap);
 
-  const platform = valueOf('starbot.adapter.onebot.alert.platform');
-  const type = valueOf('starbot.adapter.onebot.alert.type');
-  const num = valueOf('starbot.adapter.onebot.alert.num');
+  const platform = valueOf('novabot.adapter.onebot.alert.platform');
+  const type = valueOf('novabot.adapter.onebot.alert.type');
+  const num = valueOf('novabot.adapter.onebot.alert.num');
   const currentKey = num ? platform + '|' + type + '|' + num : '';
 
   const options = [];
@@ -351,9 +351,9 @@ async function qqTarget(box, pill) {
 
   select.addEventListener('change', () => {
     const parts = select.value ? select.value.split('|') : ['', '0', ''];
-    setValue('starbot.adapter.onebot.alert.platform', parts[0]);
-    setValue('starbot.adapter.onebot.alert.type', parts[1]);
-    setValue('starbot.adapter.onebot.alert.num', parts[2]);
+    setValue('novabot.adapter.onebot.alert.platform', parts[0]);
+    setValue('novabot.adapter.onebot.alert.type', parts[1]);
+    setValue('novabot.adapter.onebot.alert.num', parts[2]);
     pillState(pill, !!parts[2]);
   });
 
@@ -379,13 +379,13 @@ export function alertCards() {
   const hook = shell('webhook', 'Webhook', '推到手机上的通知类应用。机器人掉线时只有这一路还活着。');
   const hookCustom = el('div', 'al-cus');
   const preset = presetField(hook.body, Object.keys(WEBHOOK_PRESETS).concat(CUSTOM));
-  const url = field(hook.body, '地址', 'starbot.core.alert.webhook-url',
+  const url = field(hook.body, '地址', 'novabot.core.alert.webhook-url',
     {ph: 'https://……', onchange: v => pillState(hook.pill, !!String(v).trim())});
   hook.body.appendChild(hookCustom);
-  const method = field(hookCustom, '提交方式', 'starbot.core.alert.webhook-method',
+  const method = field(hookCustom, '提交方式', 'novabot.core.alert.webhook-method',
     {type: 'select', opts: ['POST', 'GET']});
-  const titleField = field(hookCustom, '标题字段名', 'starbot.core.alert.webhook-title-field', {ph: 'title'});
-  const contentField = field(hookCustom, '内容字段名', 'starbot.core.alert.webhook-content-field',
+  const titleField = field(hookCustom, '标题字段名', 'novabot.core.alert.webhook-title-field', {ph: 'title'});
+  const contentField = field(hookCustom, '内容字段名', 'novabot.core.alert.webhook-content-field',
     {ph: 'content', note: '各家不一样：Bark 用 body，Server 酱用 desp。'});
 
   // 预设本身不是配置项，不进 store.dirty；它改的是下面那三栏，改完照常记账
@@ -396,17 +396,17 @@ export function alertCards() {
     method.value = shape.method;
     titleField.value = shape.title;
     contentField.value = shape.content;
-    setValue('starbot.core.alert.webhook-method', shape.method);
-    setValue('starbot.core.alert.webhook-title-field', shape.title);
-    setValue('starbot.core.alert.webhook-content-field', shape.content);
+    setValue('novabot.core.alert.webhook-method', shape.method);
+    setValue('novabot.core.alert.webhook-title-field', shape.title);
+    setValue('novabot.core.alert.webhook-content-field', shape.content);
   };
   preset.addEventListener('change', applyWebhook);
   // 现有配置匹配哪个预设，就显示哪个；对不上就是「自定义」，那几栏摊开
   preset.value = Object.keys(WEBHOOK_PRESETS).find(k => {
     const s = WEBHOOK_PRESETS[k];
-    return s.method === valueOf('starbot.core.alert.webhook-method')
-      && s.title === valueOf('starbot.core.alert.webhook-title-field')
-      && s.content === valueOf('starbot.core.alert.webhook-content-field');
+    return s.method === valueOf('novabot.core.alert.webhook-method')
+      && s.title === valueOf('novabot.core.alert.webhook-title-field')
+      && s.content === valueOf('novabot.core.alert.webhook-content-field');
   }) || CUSTOM;
   hookCustom.classList.toggle('hide', !!WEBHOOK_PRESETS[preset.value]);
   pillState(hook.pill, !!url.value.trim());
@@ -423,7 +423,7 @@ export function alertCards() {
   mail.head.appendChild(runtimeNote);
   const mailCustom = el('div', 'al-cus');
   const mailPreset = presetField(mail.body, Object.keys(MAIL_PRESETS).concat(CUSTOM));
-  const to = field(mail.body, '收件邮箱', 'starbot.core.mail.default-to', {ph: '收告警的邮箱'});
+  const to = field(mail.body, '收件邮箱', 'novabot.core.mail.default-to', {ph: '收告警的邮箱'});
   field(mail.body, '发件账号', 'spring.mail.username', {ph: '发信的那个邮箱'});
   field(mail.body, '发件授权码', 'spring.mail.password',
     {type: 'password', ph: '留空＝保持原值', note: '多数邮箱要的是「授权码」，在邮箱设置里单独生成。'});

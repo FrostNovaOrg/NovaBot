@@ -4,7 +4,7 @@
     <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
 
     <!--
-        🔴 defaultValue 不是可选的。配置项 starbot.core.log.console / .file 的模板默认是**留空**，
+        🔴 defaultValue 不是可选的。配置项 novabot.core.log.console / .file 的模板默认是**留空**，
         留空时这两个变量根本没有定义，${fileLogLevel} 会被替换成字面量
         「fileLogLevel_IS_UNDEFINED」，而 ThresholdFilter 解析不了它时会退回 DEBUG。
         结果是**开箱即用的部署把 DEBUG 全写进日志文件**——实测模板默认跑 25 秒，
@@ -15,8 +15,8 @@
         改成跟随 fileLogLevel 之后，「控制台开 DEBUG 排障、文件仍留 INFO」这件事就做不到了，
         而那正是配置注释里让人去做的事。
     -->
-    <springProperty name="consoleLogLevel" source="starbot.core.log.console" defaultValue="INFO"/>
-    <springProperty name="fileLogLevel" source="starbot.core.log.file" defaultValue="INFO"/>
+    <springProperty name="consoleLogLevel" source="novabot.core.log.console" defaultValue="INFO"/>
+    <springProperty name="fileLogLevel" source="novabot.core.log.file" defaultValue="INFO"/>
 
     <!--
         🔴 LOG_HOME 不是「让人换目录」的便利项，是一道守卫。

@@ -10,7 +10,7 @@ import java.util.Map;
 /**
  * 界面额外展示的框架配置项
  * <p>
- * 配置界面原则上只展示 {@code starbot.} 命名空间下的配置项，框架自身成千上万的配置
+ * 配置界面原则上只展示 {@code novabot.} 命名空间下的配置项，框架自身成千上万的配置
  * 不该淹没使用者。<b>但有几项例外：NovaBot 的功能实实在在依赖它们。</b>
  * <p>
  * 不展示的后果很具体：健康自检提示「累计查询需配置 spring.data.redis.host」，
@@ -46,7 +46,7 @@ public final class ExternalConfigurationFields {
                 0, "Redis 库号，默认 0。与其他程序共用同一实例时可换一个库避免键冲突。改完即时生效，不用重启");
 
         // ---- 邮件告警的发件服务 ----
-        // 收件人是 starbot.core.mail.default-to，在界面上找得到；
+        // 收件人是 novabot.core.mail.default-to，在界面上找得到；
         // 但没有下面这几项，那一项配了也发不出去
         put("spring.mail.host", "java.lang.String", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.RESTART,
                 "邮件告警的 SMTP 服务器地址，如 smtp.qq.com。不用邮件告警时留空");

@@ -30,7 +30,7 @@ import java.time.format.DateTimeParseException;
 @Slf4j
 @RestController
 @RequestMapping(ConfigUiController.BASE_PATH + "/api/timeline")
-@ConditionalOnProperty(name = "starbot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(name = "novabot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
 public class TimelineController {
     private final TimelineStore store;
 

@@ -28,7 +28,7 @@ import java.time.Duration;
  */
 @Slf4j
 @Configuration
-@ConditionalOnProperty(name = "starbot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(name = "novabot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
 public class ConfigUiRegistrar {
     /**
      * 配置界面安全过滤器的顺序
@@ -125,7 +125,7 @@ public class ConfigUiRegistrar {
     public FilterRegistrationBean<ConfigUiSecurityFilter> configUiSecurityFilterRegistration(ConfigUiAuthService authService) {
         IpMatcher ipMatcher = new IpMatcher(properties.getConfigUi().getAllowIps());
         if (ipMatcher.isEmpty()) {
-            log.error("配置界面的 IP 白名单为空, 所有访问都将被拒绝, 请检查 starbot.core.config-ui.allow-ips 配置");
+            log.error("配置界面的 IP 白名单为空, 所有访问都将被拒绝, 请检查 novabot.core.config-ui.allow-ips 配置");
         }
 
         FilterRegistrationBean<ConfigUiSecurityFilter> registration = new FilterRegistrationBean<>();
@@ -162,13 +162,13 @@ public class ConfigUiRegistrar {
                 log.info("忘记口令时可用以下地址直接进入（该地址等同于口令，请勿分享）:");
                 log.info("  http://{}:{}{}?token={}", address, port, ConfigUiController.BASE_PATH, token);
                 log.info("  ⚠️ 该地址绕过二次验证, 且会进反向代理的访问日志。"
-                        + "用完之后把 starbot.core.config-ui.auth.operator-token 改回 false");
+                        + "用完之后把 novabot.core.config-ui.auth.operator-token 改回 false");
             } else {
                 // 关掉时**不能**照旧打印那个地址：打印一个不管用的地址比不打印更让人困惑，
                 // 而且它仍然是个真令牌，照样会被抄进日志与截图。
                 // 但得说清怎么把它临时打开——只说「已关闭」的话，忘记口令的人就真被锁在门外了
                 log.info("「忘记口令」的启动令牌通道已关闭（默认）。忘记口令时把 "
-                        + "starbot.core.config-ui.auth.operator-token 改成 true 重启, "
+                        + "novabot.core.config-ui.auth.operator-token 改成 true 重启, "
                         + "启动日志会打印一个可直接进入的地址, 改完口令再改回 false");
             }
             return;
@@ -182,7 +182,7 @@ public class ConfigUiRegistrar {
                 .anyMatch(ip -> ip.startsWith("0.0.0.0") || ip.startsWith("::/") || "*".equals(ip.strip()));
         if (open) {
             log.error("配置界面的 IP 白名单已放开到任意地址, 但未设置登录口令");
-            log.error("请设置 starbot.core.config-ui.auth.password, 否则任何人都能改推送目标与查看运行数据");
+            log.error("请设置 novabot.core.config-ui.auth.password, 否则任何人都能改推送目标与查看运行数据");
         }
     }
 }

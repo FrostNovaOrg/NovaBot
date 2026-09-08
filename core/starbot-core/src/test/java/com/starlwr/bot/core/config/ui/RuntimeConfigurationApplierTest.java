@@ -54,7 +54,7 @@ class RuntimeConfigurationApplierTest {
         PushGate gate = new PushGate(properties);
         assertTrue(gate.allowed(), "默认应放行");
 
-        List<String> restart = applier.applyAndTrack(Map.of("starbot.core.push.enabled", "false"));
+        List<String> restart = applier.applyAndTrack(Map.of("novabot.core.push.enabled", "false"));
 
         assertFalse(gate.allowed(), "关掉总开关后应当场拦下");
         assertEquals(List.of(), restart);
@@ -69,15 +69,15 @@ class RuntimeConfigurationApplierTest {
         LocalTime now = LocalTime.now();
 
         applier.applyAndTrack(Map.of(
-                "starbot.core.push.quiet-start", HOUR_MINUTE.format(now.minusMinutes(5)),
-                "starbot.core.push.quiet-end", HOUR_MINUTE.format(now.plusMinutes(5))));
+                "novabot.core.push.quiet-start", HOUR_MINUTE.format(now.minusMinutes(5)),
+                "novabot.core.push.quiet-end", HOUR_MINUTE.format(now.plusMinutes(5))));
 
         assertFalse(gate.allowed(), "此刻落在静音时段内，应当场被拦");
         assertEquals("处于静音时段", gate.blockReason());
 
         applier.applyAndTrack(Map.of(
-                "starbot.core.push.quiet-start", HOUR_MINUTE.format(now.plusMinutes(10)),
-                "starbot.core.push.quiet-end", HOUR_MINUTE.format(now.plusMinutes(20))));
+                "novabot.core.push.quiet-start", HOUR_MINUTE.format(now.plusMinutes(10)),
+                "novabot.core.push.quiet-end", HOUR_MINUTE.format(now.plusMinutes(20))));
 
         assertTrue(gate.allowed(), "静音时段挪走之后应当场放行");
     }
@@ -86,8 +86,8 @@ class RuntimeConfigurationApplierTest {
     @DisplayName("告警接收人：Webhook 地址与收件邮箱同样当场生效")
     void appliesWebhookAndMailRecipient() {
         applier.applyAndTrack(Map.of(
-                "starbot.core.alert.webhook-url", "https://example.invalid/hook",
-                "starbot.core.mail.default-to", "ops@example.invalid"));
+                "novabot.core.alert.webhook-url", "https://example.invalid/hook",
+                "novabot.core.mail.default-to", "ops@example.invalid"));
 
         assertEquals("https://example.invalid/hook", properties.getAlert().getWebhookUrl());
         assertEquals("ops@example.invalid", properties.getMail().getDefaultTo());
@@ -98,7 +98,7 @@ class RuntimeConfigurationApplierTest {
     void appliesFirstPushTipSwitch() {
         assertTrue(properties.getPush().isFirstPushTip(), "默认应开着");
 
-        List<String> restart = applier.applyAndTrack(Map.of("starbot.core.push.first-push-tip", "false"));
+        List<String> restart = applier.applyAndTrack(Map.of("novabot.core.push.first-push-tip", "false"));
 
         assertFalse(properties.getPush().isFirstPushTip(), "关掉应当场生效");
         assertEquals(List.of(), restart);
@@ -107,7 +107,7 @@ class RuntimeConfigurationApplierTest {
     @Test
     @DisplayName("备份保留份数：改完当场写回运行中的配置")
     void appliesBackupKeep() {
-        List<String> restart = applier.applyAndTrack(Map.of("starbot.core.config-ui.backup-keep", "3"));
+        List<String> restart = applier.applyAndTrack(Map.of("novabot.core.config-ui.backup-keep", "3"));
 
         assertEquals(3, properties.getConfigUi().getBackupKeep());
         assertEquals(List.of(), restart);
@@ -118,11 +118,11 @@ class RuntimeConfigurationApplierTest {
     void doesNotTouchRestartOnlyProperties() {
         int before = properties.getAlert().getConvergenceInterval();
 
-        List<String> restart = applier.applyAndTrack(Map.of("starbot.core.alert.convergence-interval", "7200"));
+        List<String> restart = applier.applyAndTrack(Map.of("novabot.core.alert.convergence-interval", "7200"));
 
         assertEquals(before, properties.getAlert().getConvergenceInterval(),
                 "这一项要等重启，此刻不该被改到运行中的配置上");
-        assertEquals(List.of("starbot.core.alert.convergence-interval"), restart);
+        assertEquals(List.of("novabot.core.alert.convergence-interval"), restart);
     }
 
     @Test
@@ -130,20 +130,20 @@ class RuntimeConfigurationApplierTest {
     void unparsableValueCountsAsRestartRequired() {
         int before = properties.getConfigUi().getBackupKeep();
 
-        List<String> restart = applier.applyAndTrack(Map.of("starbot.core.config-ui.backup-keep", "很多"));
+        List<String> restart = applier.applyAndTrack(Map.of("novabot.core.config-ui.backup-keep", "很多"));
 
         assertEquals(before, properties.getConfigUi().getBackupKeep());
-        assertEquals(List.of("starbot.core.config-ui.backup-keep"), restart);
+        assertEquals(List.of("novabot.core.config-ui.backup-keep"), restart);
     }
 
     @Test
     @DisplayName("欠着的那次重启会一直记着，直到进程换一个")
     void tracksPendingRestartAcrossSaves() {
-        applier.applyAndTrack(Map.of("starbot.core.alert.convergence-interval", "7200"));
-        applier.applyAndTrack(Map.of("starbot.core.push.enabled", "false"));
-        applier.applyAndTrack(Map.of("starbot.core.paint.auto-expand-height", "6000"));
+        applier.applyAndTrack(Map.of("novabot.core.alert.convergence-interval", "7200"));
+        applier.applyAndTrack(Map.of("novabot.core.push.enabled", "false"));
+        applier.applyAndTrack(Map.of("novabot.core.paint.auto-expand-height", "6000"));
 
-        assertEquals(List.of("starbot.core.alert.convergence-interval", "starbot.core.paint.auto-expand-height"),
+        assertEquals(List.of("novabot.core.alert.convergence-interval", "novabot.core.paint.auto-expand-height"),
                 applier.getPendingRestart(), "即时生效的那一项不该混进待重启名单");
 
         // 记录挂在实例上，实例的寿命就是进程的寿命——换一个实例等于程序重启了一次
@@ -153,19 +153,19 @@ class RuntimeConfigurationApplierTest {
     @Test
     @DisplayName("值的形式改对之后当场生效，待重启名单里那条当场划掉；够不着的键仍留着")
     void correctedValueDropsOutOfPendingRestart() {
-        applier.applyAndTrack(Map.of("starbot.core.config-ui.backup-keep", "很多"));
-        assertTrue(applier.getPendingRestart().contains("starbot.core.config-ui.backup-keep"),
+        applier.applyAndTrack(Map.of("novabot.core.config-ui.backup-keep", "很多"));
+        assertTrue(applier.getPendingRestart().contains("novabot.core.config-ui.backup-keep"),
                 "值的形式不对时应记入待重启");
 
-        applier.applyAndTrack(Map.of("starbot.core.config-ui.backup-keep", "3"));
+        applier.applyAndTrack(Map.of("novabot.core.config-ui.backup-keep", "3"));
 
         assertEquals(3, properties.getConfigUi().getBackupKeep(), "改对之后应当场生效");
         assertEquals(List.of(), applier.getPendingRestart(),
                 "已生效的那一项不该继续挂在待重启名单上");
 
         // 阳性对照：够不着运行值的键仍按原样留在名单里，划掉不得误伤它们
-        applier.applyAndTrack(Map.of("starbot.core.alert.convergence-interval", "7200"));
-        assertEquals(List.of("starbot.core.alert.convergence-interval"), applier.getPendingRestart(),
+        applier.applyAndTrack(Map.of("novabot.core.alert.convergence-interval", "7200"));
+        assertEquals(List.of("novabot.core.alert.convergence-interval"), applier.getPendingRestart(),
                 "无即时生效口的键仍要留在待重启名单里");
     }
 
@@ -253,7 +253,7 @@ class RuntimeConfigurationApplierTest {
         try {
             assertTrue(with.supportedKeys().contains(key),
                     "贡献者登记的键应计入 supportedKeys");
-            assertTrue(with.supportedKeys().contains("starbot.core.push.enabled"),
+            assertTrue(with.supportedKeys().contains("novabot.core.push.enabled"),
                     "核心自有键仍须在名单里");
         } catch (AssertionError e) {
             reds.add("① " + e.getMessage());
@@ -269,7 +269,7 @@ class RuntimeConfigurationApplierTest {
 
         try {
             RuntimeConfigurationApplierContributor clash = () -> Map.of(
-                    "starbot.core.push.enabled", value -> { });
+                    "novabot.core.push.enabled", value -> { });
             assertThrows(IllegalStateException.class,
                     () -> RuntimeConfigurationApplier.bench(properties)
                             .contributors(List.of(clash))

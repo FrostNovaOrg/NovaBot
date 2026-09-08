@@ -39,7 +39,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @DisplayName("启动令牌默认关")
 class OperatorTokenDefaultTest {
-    private static final String KEY = "starbot.core.config-ui.auth.operator-token";
+    private static final String KEY = "novabot.core.config-ui.auth.operator-token";
 
     private static final String METADATA = "META-INF/spring-configuration-metadata.json";
 
