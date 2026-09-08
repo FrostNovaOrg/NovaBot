@@ -87,37 +87,33 @@ class TimelineCategoryTest {
     }
 
     /**
-     * 除直播外，每个大类都得有类型往里记
+     * 每个大类都得有类型往里记
      * <p>
      * 大类表是一次写全的，类型是一项一项接进来的，于是「声明了一个大类」与
      * 「真有事情记进那个大类」之间会长期空着一截。空着的那一截在屏幕上<b>什么都不显示</b>——
      * {@link TimelineCategory#inUse()} 把空大类摘掉，药丸那一排看起来整整齐齐，
      * 没有任何东西说「命令那一类其实一条都没接」。
-     * <p>
-     * 直播暂不在射程内：那几类记事由报告与数据那一侧记，接进来之前它本就是空的。
-     * 丙线把直播接进来之后，把这里的例外去掉即可。
      */
     @Test
-    @DisplayName("除直播外每个大类都至少有一个类型往里记")
-    void everyCategoryExceptLiveHasTypes() {
-        // 阳性：这台机器认得的全部类型喂进去，除直播外不该剩下任何空大类
+    @DisplayName("每个大类都至少有一个类型往里记")
+    void everyCategoryHasTypes() {
+        // 阳性：这台机器认得的全部类型喂进去，不该剩下任何空大类
         assertEquals(List.of(), categoriesWithoutTypes(Arrays.asList(TimelineEventType.values())),
                 "这几个大类一条记事都没有, 药丸上根本不出现, 而那与「没发生过这类事」长得一样");
 
         // 阴性：只喂推送那一类，判法就该把其余几类如数报出来——
         // 恒返回空表的判法在上面那一问下同样是绿的
-        assertEquals(List.of(TimelineCategory.LINK, TimelineCategory.COMMAND, TimelineCategory.ALERT,
-                        TimelineCategory.SETTINGS, TimelineCategory.SYSTEM),
+        assertEquals(List.of(TimelineCategory.LIVE, TimelineCategory.LINK, TimelineCategory.COMMAND,
+                        TimelineCategory.ALERT, TimelineCategory.SETTINGS, TimelineCategory.SYSTEM),
                 categoriesWithoutTypes(List.of(TimelineEventType.PUSH_SENT)),
                 "少了谁得报得出来, 报不出来的判法在阳性那一问下也是绿的");
     }
 
     /**
-     * 除直播外，哪几个大类一个类型都没有，按声明顺序
+     * 哪几个大类一个类型都没有，按声明顺序
      */
     private static List<TimelineCategory> categoriesWithoutTypes(Collection<TimelineEventType> types) {
         List<TimelineCategory> missing = new ArrayList<>(Arrays.asList(TimelineCategory.values()));
-        missing.remove(TimelineCategory.LIVE);
         missing.removeAll(TimelineCategory.inUse(types));
         return missing;
     }
