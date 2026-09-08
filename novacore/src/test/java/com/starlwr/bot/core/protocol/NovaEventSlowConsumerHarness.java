@@ -1088,14 +1088,45 @@ final class NovaEventSlowConsumerHarness implements AutoCloseable {
     // ══════════════════════════ 先验尺 ══════════════════════════
 
     /**
+     * 连续采样次数与间隔。6 × 50 ms ≈ 300 ms：短写几毫秒即完，
+     * 管道灌满后卡住的写会撑满整段窗口；任一次不在 write 栈即判未卡住。
+     */
+    static final int STUCK_WRITE_SAMPLE_COUNT = 6;
+    static final long STUCK_WRITE_SAMPLE_INTERVAL_MS = 50L;
+
+    /**
      * 先验尺：慢客户端的发送线程<b>确实</b>卡在 socket 写里，且<b>正持着那个客户端的写锁</b>。
      * <p>
      * 🔴 拿不到这个读数就直接判失败，不进三条判据——
      * <b>没复现出阻塞时，三条判据的绿和修好了的绿长得一样。</b>
+     * <p>
+     * 单次 {@code getAllStackTraces()} 采的是「此刻正在写」，会把合法短写当成卡住。
+     * 这里改为窗口内连续采样：每次都在 write 栈才返回栈；任一次不在即返回 null。
      *
      * @return 那条线程的栈摘录（不含任何值）
      */
     static List<String> priorGaugeSenderThreadStuckInWrite() {
+        List<String> excerpt = sampleSenderThreadWriteStackOnce();
+        if (excerpt == null) {
+            return null;
+        }
+        for (int i = 1; i < STUCK_WRITE_SAMPLE_COUNT; i++) {
+            try {
+                Thread.sleep(STUCK_WRITE_SAMPLE_INTERVAL_MS);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                return null;
+            }
+            excerpt = sampleSenderThreadWriteStackOnce();
+            if (excerpt == null) {
+                return null;
+            }
+        }
+        return excerpt;
+    }
+
+    /** 一次栈快照。连续采样的单步，本身不构成「卡住」。 */
+    static List<String> sampleSenderThreadWriteStackOnce() {
         for (Map.Entry<Thread, StackTraceElement[]> e : Thread.getAllStackTraces().entrySet()) {
             if (!e.getKey().getName().startsWith("nova-event-sender-")) {
                 continue;
