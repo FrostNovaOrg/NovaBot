@@ -123,6 +123,17 @@ public class BilibiliRiskMetrics {
         FIELD_MISSING("关键字段缺失"),
 
         /**
+         * protobuf 报文里出现了字段表以外的字段号。
+         * <p>
+         * 结构性信号：平台在 pb 里新增字段是唯一<b>一点痕迹都不留</b>的变化形态——
+         * 读取器照旧跳过、取值全部照常、事件照常发出，没有任何计数会动。
+         * 出现新字段<b>不等于坏了</b>，但要看得见：它往往是「某个值以后从新字段里给」的前一步。
+         * <p>
+         * 按「报文类型＋字段号」去重，detail 只写名、计数、种数与首见时刻，不写取值。
+         */
+        UNKNOWN_FIELD("未知字段"),
+
+        /**
          * HTTP 接口应答 code=0 却没有 data 字段。
          * <p>
          * 字段整片消失的主要静默通道：调用方拿到空对象继续走，
@@ -131,12 +142,12 @@ public class BilibiliRiskMetrics {
         API_DATA_MISSING("接口应答缺 data"),
 
         /**
-         * 长连接数据包在协议层就没读下来：解压失败、解压产出超预算、长度字段异常。
+         * 长连接数据包在协议层就没读下来：解压失败、解压产出超预算、长度字段异常、嵌套层数超限。
          * <p>
-         * 这三种失败都会让整批数据包被丢掉，而它们此前只有一条 warn 日志——
+         * 这四种失败都会让整批数据包被丢掉，而它们此前只有一条 warn 日志——
          * 一批里可能有几十条弹幕与礼物，丢掉之后计数上完全说得通。
          * 具体是哪一种写在 detail 的第一段（{@code decompress-failed}／
-         * {@code budget-blown}／{@code bad-length}）。
+         * {@code budget-blown}／{@code bad-length}／{@code nesting-too-deep}）。
          */
         PACKET_CORRUPT("数据包异常");
 

@@ -310,7 +310,7 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
     /**
      * 数据包异常记账：每条都计数。
      * <p>
-     * 判定同样不在这里——解压失败、预算爆掉、长度字段异常都由解码器认定，
+     * 判定同样不在这里——解压失败、预算爆掉、长度字段异常、嵌套超深都由解码器认定，
      * 这里只对 sink 转来的类型记账。detail 的第一段是异常类型的 ASCII token，
      * 健康页取它当「最近一次是什么」。
      * @return 这一次是否落在量级上（值得换文本样本、打一条日志）

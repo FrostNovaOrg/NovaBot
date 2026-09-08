@@ -30,6 +30,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiFunction;
@@ -104,6 +105,27 @@ public class BilibiliEventParser {
     private static final int MAX_UNKNOWN_CMD_NAMES = 512;
 
     /**
+     * pb 报文里字段表外的字段号计数，键为 {@code <报文类型>:<字段号>}，按名去重。
+     * 超过 {@link #MAX_UNKNOWN_FIELD_NAMES} 的新名只累加总数。
+     */
+    private final ConcurrentHashMap<String, AtomicLong> unknownFields = new ConcurrentHashMap<>();
+
+    /**
+     * 各未知字段号的首次出现时刻，写入指标 detail 用。
+     */
+    private final ConcurrentHashMap<String, Instant> unknownFieldFirstSeen = new ConcurrentHashMap<>();
+
+    /**
+     * 名表已满后仍碰到的新字段号条数
+     */
+    private final AtomicLong unknownFieldOverflow = new AtomicLong();
+
+    /**
+     * 未知字段名表上限，与未知 cmd 名表同一个数
+     */
+    private static final int MAX_UNKNOWN_FIELD_NAMES = 512;
+
+    /**
      * 红包记录的条目上限，防止长期运行后无限增长
      */
     private static final int MAX_SEEN_RED_POCKETS = 256;
@@ -154,7 +176,10 @@ public class BilibiliEventParser {
      * 逐条一致。但只见过舰长这一种取值，无法证明总督与提督也走同一个字段，
      * 因此大航海仍从 {@code uinfo} 里取，见 {@link #parseGuardV2}。
      * <p>
-     * 字段 4、12、15、19、23、24 语义未坐实，均未取用，详见实现汇报。
+     * 字段 4、11、12、15、19、23、24 语义未坐实，均未取用，详见实现汇报。
+     * 其中 11 只在推广位进房那一份语料里出现（length-delimited），此前漏记在本表里，
+     * 落 {@link #INTERACT_V2_KNOWN_FIELDS} 时按语料补回——<b>见过</b>与<b>取用</b>是两回事，
+     * 已知集要的是前者。
      */
     private static final int V2_UID = 1;
 
@@ -199,6 +224,24 @@ public class BilibiliEventParser {
     private static final int V2_FULL_MEDAL_GUARD_ICON = 13;
 
     private static final int V2_LEVEL = 1;
+
+    /**
+     * {@code INTERACT_WORD_V2} 顶层<b>已知</b>的字段号
+     * <p>
+     * 「已知」＝上面那张字段表里出现过的号，<b>不是</b>「取值时读到的号」：
+     * 6（房间号）、8（毫秒时间戳）、16（疑似大航海等级）与 4、11、12、15、19、23、24
+     * 都反推过、都决定不取，但它们是<b>见过</b>的字段，不该被当成平台新增。
+     * <p>
+     * 这个集合只用来做差集，不参与任何取值——取值仍走上面各个 {@code V2_*} 常量。
+     * 差集里冒出来的号才是「这条报文比我们反推那天多出来的东西」。
+     * <p>
+     * ⚠️ <b>只管顶层</b>。子消息（勋章 9、uinfo 22 等）另有各自的布局，一张表套不住，
+     * 且子消息的未知字段与「平台改了接口」不是同一件事的可能性更大。
+     */
+    private static final Set<Integer> INTERACT_V2_KNOWN_FIELDS = Set.of(
+            V2_UID, V2_UNAME, V2_MSG_TYPE, V2_TIMESTAMP, V2_FANS_MEDAL,
+            V2_IS_SPREAD, V2_SPREAD_DESC, V2_UINFO,
+            4, 6, 8, 11, 12, 15, 16, 19, 23, 24);
 
     /**
      * {@code SEND_GIFT_V2} 的 protobuf 字段号
@@ -324,6 +367,19 @@ public class BilibiliEventParser {
     private static final int GIFT_V2_MEDAL_LIGHTED = 9;
 
     private static final int GIFT_V2_MEDAL_TARGET_UID = 10;
+
+    /**
+     * {@code SEND_GIFT_V2} 顶层<b>已知</b>的字段号
+     * <p>
+     * 口径同 {@link #INTERACT_V2_KNOWN_FIELDS}：3（观众头像，取值走 uinfo）、8（旧式勋章）、
+     * 11（是否首次）都在字段表里且都决定不取，它们是见过的字段。
+     * <p>
+     * ⚠️ 两张表<b>不通用</b>，与勋章子布局不通用是同一个理由（见上面的字段表）：
+     * 拿这一张去量进房报文，13 与 15 会被判成未知、22 会被判成新增——两边都错。
+     */
+    private static final Set<Integer> GIFT_V2_KNOWN_FIELDS = Set.of(
+            GIFT_V2_UID, GIFT_V2_UNAME, GIFT_V2_BLIND, GIFT_V2_INFO, GIFT_V2_WEALTH, GIFT_V2_UINFO,
+            3, 8, 11);
 
     private final StarBotBilibiliProperties properties;
 
@@ -579,6 +635,58 @@ public class BilibiliEventParser {
     }
 
     /**
+     * 登记这条 pb 报文里字段表外的字段号
+     * <p>
+     * <b>热路径</b>：{@code INTERACT_WORD_V2} 每秒数十条。差集在读取器里做（那里能不分配就
+     * 不分配），字符串拼接排在「已判定为未知」<b>之后</b>——绝大多数报文一个未知号都没有，
+     * 这一行走到 {@code isEmpty()} 就回去了，一次拼接都不做。
+     * <p>
+     * 按「报文类型＋字段号」去重、逐条计数，detail 只写名、计数、种数与首见时刻。
+     * <b>不写取值</b>：新字段里装的很可能正是观众信息，而 detail 是要显示在健康页上的。
+     * @param cmd 报文类型
+     * @param message 已读出的报文
+     * @param known 该报文类型顶层的已知字段号
+     */
+    private void noteUnknownFields(String cmd, BilibiliProtobufReader message, Set<Integer> known) {
+        if (riskMetrics == null) {
+            return;
+        }
+        List<Integer> unknown = message.unknownFields(known);
+        if (unknown.isEmpty()) {
+            return;
+        }
+
+        for (int field : unknown) {
+            noteUnknownField(cmd + ":" + field);
+        }
+    }
+
+    /**
+     * 登记一个未知字段号：<b>每次都计数</b>，按名去重的只是 detail 里那份文本样本，
+     * 首见与 10/100/1000… 量级各换一次。名表满后新名只累加溢出数，与未知 cmd 同一套办法。
+     */
+    private void noteUnknownField(String name) {
+        AtomicLong existing = unknownFields.get(name);
+        if (existing == null && unknownFields.size() >= MAX_UNKNOWN_FIELD_NAMES) {
+            long overflow = unknownFieldOverflow.incrementAndGet();
+            riskMetrics.record(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, isMagnitude(overflow)
+                    ? "overflow count=" + overflow + " unique=" + unknownFields.size()
+                    : null);
+            return;
+        }
+        long count = unknownFields.computeIfAbsent(name, key -> new AtomicLong()).incrementAndGet();
+        Instant first = unknownFieldFirstSeen.computeIfAbsent(name, key -> Instant.now());
+        boolean sample = isMagnitude(count);
+        riskMetrics.record(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, sample
+                ? name + " count=" + count + " unique=" + unknownFields.size() + " at=" + first
+                : null);
+        if (sample) {
+            log.warn("直播间消息 {} 出现字段表外的字段号, 已出现 {} 次（已登记 {} 种）。"
+                    + "这多半是平台加了新字段, 取值不受影响, 但字段表该复核了", name, count, unknownFields.size());
+        }
+    }
+
+    /**
      * 1、10、100、1000… 这样的量级。与 {@link #noteNamed} 同一套判据。
      * <p>
      * 它决定的是<b>换不换一份文本样本、打不打一条日志</b>，不决定计不计数：
@@ -800,6 +908,10 @@ public class BilibiliEventParser {
             log.debug("直播间 {} 的 INTERACT_WORD_V2 报文未能读完, 已按读到的 {} 个字段继续: {}",
                     source.getRoomId(), message.size(), meta.getString("pb"));
         }
+
+        // 排在取值之前：字段表外的号出现与否，与这条报文最后出不出事件是两件事——
+        // 取不到 msg_type 就返回的那条路上，恰恰最需要知道「报文里多了什么」
+        noteUnknownFields("INTERACT_WORD_V2", message, INTERACT_V2_KNOWN_FIELDS);
 
         Long msgType = message.number(V2_MSG_TYPE);
         if (msgType == null) {
@@ -1041,6 +1153,9 @@ public class BilibiliEventParser {
             log.debug("直播间 {} 的 SEND_GIFT_V2 报文未能读完, 已按读到的 {} 个字段继续: {}",
                     source.getRoomId(), message.size(), meta.getString("pb"));
         }
+
+        // 同 INTERACT_WORD_V2：排在取值之前，礼物块都取不到的那条路上更需要这一笔
+        noteUnknownFields("SEND_GIFT_V2", message, GIFT_V2_KNOWN_FIELDS);
 
         BilibiliProtobufReader gift = message.message(GIFT_V2_INFO);
         if (gift == null) {
