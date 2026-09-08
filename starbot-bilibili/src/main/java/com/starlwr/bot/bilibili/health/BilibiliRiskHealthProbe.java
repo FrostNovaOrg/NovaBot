@@ -20,6 +20,9 @@ import java.util.List;
  *       所以它必须能被自动发现，不能靠人翻日志</li>
  *   <li>业务码 -352 ≥ 5 次 / 1 小时 —— 短时间密集出现才说明被限流，
  *       偶发一次通常是自己的重连风暴打出来的</li>
+ *   <li>业务码 -509 ≥ 5 次 / 1 小时 —— 与 -352 同族，都是「请求太密」的应答，取同一个阈</li>
+ *   <li>业务码 -401 ≥ 3 次 / 24 小时 —— 单次多半是登录态过期这种自己的事，
+ *       成串才说明请求被要求验证</li>
  *   <li>风控质询 / 验证码 —— 出现任何一次即告警</li>
  *   <li>开播快照项缺失 —— 出现任何一次即告警</li>
  *   <li>长连接 1006 ≥ 10 次 / 1 小时 —— 单次属正常抖动，成串出现才是风暴</li>
@@ -36,6 +39,10 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
     private static final int THRESHOLD_412 = 3;
 
     private static final int THRESHOLD_352 = 5;
+
+    private static final int THRESHOLD_401 = 3;
+
+    private static final int THRESHOLD_509 = 5;
 
     private static final int THRESHOLD_1006 = 10;
 
@@ -77,6 +84,20 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
             problems.add("1 小时内业务码 -352 " + code352 + " 次");
             advices.add("请求被风控限流。先查是不是自己的重连风暴打出来的——"
                     + "看同期长连接 1006 次数，若同时飙升则是自伤而非平台主动风控");
+        }
+
+        long code509 = metrics.count(BilibiliRiskMetrics.Kind.CODE_509, HOUR);
+        if (code509 >= THRESHOLD_509) {
+            problems.add("1 小时内业务码 -509 " + code509 + " 次");
+            advices.add("请求过于频繁。先看轮询间隔与同期 1006 次数，"
+                    + "确认不是自己的重连风暴把请求量顶上去的");
+        }
+
+        long code401 = metrics.count(BilibiliRiskMetrics.Kind.CODE_401, DAY);
+        if (code401 >= THRESHOLD_401) {
+            problems.add("24 小时内业务码 -401 " + code401 + " 次");
+            advices.add("请求被要求验证。先核对登录态是否已过期，"
+                    + "过期只需重新扫码；登录态正常仍成串出现的才要报产品侧");
         }
 
         long gaia = metrics.count(BilibiliRiskMetrics.Kind.GAIA, DAY);
@@ -127,7 +148,8 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
         String unknownCmdLine = unknownCmdSummaryLine();
         String silentLines = silentLossLine(BilibiliRiskMetrics.Kind.PARSE_FAILURE, "解析失败", "类")
                 + silentLossLine(BilibiliRiskMetrics.Kind.FIELD_MISSING, "缺字段", "类")
-                + silentLossLine(BilibiliRiskMetrics.Kind.API_DATA_MISSING, "接口缺 data", "个端点");
+                + silentLossLine(BilibiliRiskMetrics.Kind.API_DATA_MISSING, "接口缺 data", "个端点")
+                + silentLossLine(BilibiliRiskMetrics.Kind.PACKET_CORRUPT, "数据包异常", "类");
 
         if (problems.isEmpty()) {
             return HealthStatus.ok(summary(http412, code352, gaia, missing, disconnects) + unknownCmdLine + silentLines);
@@ -151,8 +173,11 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
     }
 
     /**
-     * 三类静默损失（解析失败、缺字段、接口缺 data）只进摘要、不改档位：
+     * 四类静默损失（解析失败、缺字段、接口缺 data、数据包异常）只进摘要、不改档位：
      * 它们说明「有些消息或应答被丢了」，不是连接坏了，但首页得看得见丢的是什么。
+     * <p>
+     * 数据包异常是其中最贵的一类——协议层没读下来时丢的是<b>整批</b>，
+     * 一批里可能有几十条弹幕与礼物。
      */
     private String silentLossLine(BilibiliRiskMetrics.Kind kind, String label, String unit) {
         long n = metrics.count(kind, DAY);

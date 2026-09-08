@@ -28,7 +28,7 @@ import static org.mockito.Mockito.when;
 class BilibiliApiUtilDataMissingTest {
 
     @Test
-    @DisplayName("data 为 null 记 API_DATA_MISSING：返回仍为空对象、detail 只含端点不含 query、按端点去重量级记账")
+    @DisplayName("data 为 null 记 API_DATA_MISSING：返回仍为空对象、detail 只含端点不含 query、逐次计数按端点去重换样本")
     void dataMissingRecordedWithoutQuery() {
         List<String> reds = new ArrayList<>();
         BilibiliRiskMetrics riskMetrics = new BilibiliRiskMetrics();
@@ -66,9 +66,11 @@ class BilibiliApiUtilDataMissingTest {
             }
             // 同端点不同 query 必须只算一名：否则 query 里的房间号与凭据就等于变相进了健康页
             BilibiliApiUtil.noteDataMissing("https://api.example.com/a?roomid=2", riskMetrics, ledger);
-            assertEquals(3, riskMetrics.count(BilibiliRiskMetrics.Kind.API_DATA_MISSING, Duration.ofMinutes(1)),
-                    "同端点十次应只在 1 与 10 记（另加端到端首见一次），实际 "
+            assertEquals(12, riskMetrics.count(BilibiliRiskMetrics.Kind.API_DATA_MISSING, Duration.ofMinutes(1)),
+                    "计数是发生次数不是写入次数（11 次另加端到端首见一次），实际 "
                             + riskMetrics.count(BilibiliRiskMetrics.Kind.API_DATA_MISSING, Duration.ofMinutes(1)));
+            String sample = riskMetrics.lastDetail(BilibiliRiskMetrics.Kind.API_DATA_MISSING).orElse("");
+            assertTrue(sample.contains("count=10"), "样本应只在量级处换，实际: " + sample);
         } catch (AssertionError e) {
             reds.add("③ " + e.getMessage());
         }

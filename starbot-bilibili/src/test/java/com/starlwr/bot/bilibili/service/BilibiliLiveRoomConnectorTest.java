@@ -664,9 +664,13 @@ class BilibiliLiveRoomConnectorTest {
                 for (int i = 0; i < 9; i++) {
                     BilibiliLiveRoomConnector.noteUnknownOperation(9, ledger, metrics);
                 }
-                assertEquals(2, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_OP, java.time.Duration.ofMinutes(1)),
-                        "同 op 到 10 次只再记一档，实际 "
+                assertEquals(10, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_OP, java.time.Duration.ofMinutes(1)),
+                        "计数是发生次数不是写入次数，实际 "
                                 + metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_OP, java.time.Duration.ofMinutes(1)));
+                // 量级只管返回值（换样本、打日志），第 11 条不落量级但照样计数
+                assertFalse(BilibiliLiveRoomConnector.noteUnknownOperation(9, ledger, metrics),
+                        "第 11 条不在量级上，不该再要求换样本");
+                assertEquals(11, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_OP, java.time.Duration.ofMinutes(1)));
             } catch (AssertionError e) {
                 reds.add("③ " + e.getMessage());
             }
@@ -679,7 +683,7 @@ class BilibiliLiveRoomConnectorTest {
     @DisplayName("未知协议版本")
     class UnknownVersion {
         @Test
-        @DisplayName("sink 转来的 ver 记 UNKNOWN_VER、首见即记、十次只再记量级")
+        @DisplayName("sink 转来的 ver 记 UNKNOWN_VER、逐条计数、样本只在量级处换")
         void recordsUnknownVersionWithMagnitudes() {
             java.util.List<String> reds = new java.util.ArrayList<>();
             BilibiliRiskMetrics metrics = new BilibiliRiskMetrics();
@@ -707,9 +711,13 @@ class BilibiliLiveRoomConnectorTest {
                 for (int i = 0; i < 9; i++) {
                     BilibiliLiveRoomConnector.noteUnknownVersion(5, ledger, metrics);
                 }
-                assertEquals(2, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_VER, java.time.Duration.ofMinutes(1)),
-                        "同 ver 到 10 次只再记一档，实际 "
+                assertEquals(10, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_VER, java.time.Duration.ofMinutes(1)),
+                        "计数是发生次数不是写入次数，实际 "
                                 + metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_VER, java.time.Duration.ofMinutes(1)));
+                // 量级只管返回值（换样本、打日志），第 11 条不落量级但照样计数
+                assertFalse(BilibiliLiveRoomConnector.noteUnknownVersion(5, ledger, metrics),
+                        "第 11 条不在量级上，不该再要求换样本");
+                assertEquals(11, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_VER, java.time.Duration.ofMinutes(1)));
             } catch (AssertionError e) {
                 reds.add("③ " + e.getMessage());
             }

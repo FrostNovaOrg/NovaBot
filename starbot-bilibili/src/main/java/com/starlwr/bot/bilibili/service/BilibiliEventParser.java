@@ -437,7 +437,7 @@ public class BilibiliEventParser {
             return new ParsedMessage(Optional.ofNullable(event), false);
         } catch (Exception e) {
             log.error("解析直播间 {} 的 {} 类型消息异常, 内容: {}", source.getRoomId(), type, data.toJSONString(), e);
-            // 异常被吞掉等于这条消息没来过。按 cmd 记一笔，同 cmd 只在量级处再记
+            // 异常被吞掉等于这条消息没来过。逐条记一笔，同 cmd 只在量级处换一份文本样本
             noteNamed(BilibiliRiskMetrics.Kind.PARSE_FAILURE, type);
             return new ParsedMessage(Optional.empty(), true);
         }
@@ -552,8 +552,8 @@ public class BilibiliEventParser {
     }
 
     /**
-     * 登记一条分派表外的 cmd：按名去重，首见与 10/100/1000… 量级各记一次指标。
-     * detail 只含 cmd 名、计数、种数与首见时刻，不写入报文。
+     * 登记一条分派表外的 cmd：<b>每条都计数</b>，按名去重的只是 detail 里那份文本样本，
+     * 首见与 10/100/1000… 量级各换一次。detail 只含 cmd 名、计数、种数与首见时刻，不写入报文。
      */
     private void noteUnknownCmd(String cmd) {
         if (cmd == null || cmd.isBlank() || riskMetrics == null) {
@@ -562,31 +562,37 @@ public class BilibiliEventParser {
         AtomicLong existing = unknownCmds.get(cmd);
         if (existing == null && unknownCmds.size() >= MAX_UNKNOWN_CMD_NAMES) {
             long overflow = unknownCmdOverflow.incrementAndGet();
-            if (isMagnitude(overflow)) {
-                riskMetrics.record(BilibiliRiskMetrics.Kind.UNKNOWN_CMD,
-                        "overflow count=" + overflow + " unique=" + unknownCmds.size());
-            }
+            riskMetrics.record(BilibiliRiskMetrics.Kind.UNKNOWN_CMD, isMagnitude(overflow)
+                    ? "overflow count=" + overflow + " unique=" + unknownCmds.size()
+                    : null);
             return;
         }
         long count = unknownCmds.computeIfAbsent(cmd, key -> new AtomicLong()).incrementAndGet();
         Instant first = unknownCmdFirstSeen.computeIfAbsent(cmd, key -> Instant.now());
-        if (isMagnitude(count)) {
-            riskMetrics.record(BilibiliRiskMetrics.Kind.UNKNOWN_CMD,
-                    cmd + " count=" + count + " unique=" + unknownCmds.size() + " at=" + first);
+        boolean sample = isMagnitude(count);
+        riskMetrics.record(BilibiliRiskMetrics.Kind.UNKNOWN_CMD, sample
+                ? cmd + " count=" + count + " unique=" + unknownCmds.size() + " at=" + first
+                : null);
+        if (sample) {
             log.warn("未知直播间消息类型 {} 已出现 {} 次（已登记 {} 种）", cmd, count, unknownCmds.size());
         }
     }
 
     /**
      * 1、10、100、1000… 这样的量级。与 {@link #noteNamed} 同一套判据。
+     * <p>
+     * 它决定的是<b>换不换一份文本样本、打不打一条日志</b>，不决定计不计数：
+     * 格式真变了的时候丢弃是成千上万条的，逐条打日志会把日志本身冲垮；
+     * 但计数漏一条就等于让那一条静默消失，而阈值全都建在计数上。
      */
     private static boolean isMagnitude(long count) {
         return Long.toString(count).matches("10*");
     }
 
     /**
-     * 按名量级记账一条静默损失（解析失败的 cmd、截断的 pb、过短的弹幕 info）。
-     * 同名只在 1/10/100… 量级处写入指标，detail 只含名、计数与种数，不写入报文。
+     * 按名记账一条静默损失（解析失败的 cmd、截断的 pb、过短的弹幕 info）。
+     * <b>每条都计数</b>，同名只在 1/10/100… 量级处换一份 detail；
+     * detail 只含名、计数与种数，不写入报文。
      * @return 该名累计到的次数（含这一次），没记成时为 0
      */
     private long noteNamed(BilibiliRiskMetrics.Kind kind, String name) {
@@ -594,10 +600,21 @@ public class BilibiliEventParser {
             return 0;
         }
         long count = namedEventCounts.computeIfAbsent(name, key -> new AtomicLong()).incrementAndGet();
-        if (isMagnitude(count)) {
-            riskMetrics.record(kind, name + " count=" + count + " unique=" + namedEventCounts.size());
-        }
+        riskMetrics.record(kind, isMagnitude(count)
+                ? name + " count=" + count + " unique=" + namedEventCounts.size()
+                : null);
         return count;
+    }
+
+    /**
+     * 登记一条「负载根本不是合法 JSON」的解析失败
+     * <p>
+     * 与分派表内解析抛异常走同一本账（同一张去重表、同一个 {@code unique=} 口径）：
+     * 各记各的会让健康页上的种数取决于最后写的是哪一本。
+     * @param cmd 消息类型，读不出来时传 null，记作 {@code ?}
+     */
+    public void noteParseFailure(String cmd) {
+        noteNamed(BilibiliRiskMetrics.Kind.PARSE_FAILURE, cmd == null || cmd.isBlank() ? "?" : cmd);
     }
 
     /**

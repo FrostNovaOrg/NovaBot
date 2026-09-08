@@ -123,7 +123,7 @@ class BilibiliEventParserTest {
     }
 
     @Test
-    @DisplayName("未知 cmd 首见记一次、重复千次只再记量级、名表去重、detail 不含报文正文")
+    @DisplayName("未知 cmd 逐条计数、文本样本只在量级处换、名表去重、detail 不含报文正文")
     void unknownCmdFirstSeenAndMagnitudes() {
         List<String> reds = new ArrayList<>();
         String payload = "SECRET_PAYLOAD_BODY_XYZ";
@@ -144,16 +144,24 @@ class BilibiliEventParserTest {
             for (int i = 0; i < 999; i++) {
                 parse("{\"cmd\":\"BRAND_NEW_CMD\",\"data\":\"" + payload + "\"}");
             }
-            assertEquals(4, riskMetrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_CMD, Duration.ofMinutes(1)),
-                    "千次应只在 1/10/100/1000 四处记，实际 "
+            assertEquals(1000, riskMetrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_CMD, Duration.ofMinutes(1)),
+                    "计数是发生次数不是写入次数，实际 "
                             + riskMetrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_CMD, Duration.ofMinutes(1)));
+
+            // 量级只管文本样本：再喂 5 条，计数照涨，样本仍停在第 1000 条那一份
+            for (int i = 0; i < 5; i++) {
+                parse("{\"cmd\":\"BRAND_NEW_CMD\",\"data\":\"" + payload + "\"}");
+            }
+            assertEquals(1005, riskMetrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_CMD, Duration.ofMinutes(1)));
+            String detail = riskMetrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_CMD).orElse("");
+            assertTrue(detail.contains("count=1000"), "样本应只在量级处换，实际: " + detail);
         } catch (AssertionError e) {
             reds.add("② " + e.getMessage());
         }
 
         try {
             parse("{\"cmd\":\"ANOTHER_NEW_CMD:1:2:3\",\"body\":\"" + payload + "\"}");
-            assertEquals(5, riskMetrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_CMD, Duration.ofMinutes(1)),
+            assertEquals(1006, riskMetrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_CMD, Duration.ofMinutes(1)),
                     "另一 cmd 名应另记首见，截断后去重");
             String detail = riskMetrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_CMD).orElse("");
             assertTrue(detail.contains("ANOTHER_NEW_CMD"), "最近一条应是截断后的名，实际: " + detail);
@@ -174,7 +182,7 @@ class BilibiliEventParserTest {
     }
 
     @Test
-    @DisplayName("解析异常按 cmd 记 PARSE_FAILURE：首见即记、十次只记量级、detail 不含报文")
+    @DisplayName("解析异常按 cmd 记 PARSE_FAILURE：逐条计数、样本只在量级处换、detail 不含报文")
     void parseFailureRecordedPerCmdWithMagnitudes() {
         List<String> reds = new ArrayList<>();
 
@@ -192,16 +200,24 @@ class BilibiliEventParserTest {
             for (int i = 0; i < 9; i++) {
                 parse("{\"cmd\":\"LIVE\",\"live_time\":{}}");
             }
-            assertEquals(2, riskMetrics.count(BilibiliRiskMetrics.Kind.PARSE_FAILURE, Duration.ofMinutes(1)),
-                    "十次应只在 1 与 10 两处记，实际 "
+            assertEquals(10, riskMetrics.count(BilibiliRiskMetrics.Kind.PARSE_FAILURE, Duration.ofMinutes(1)),
+                    "计数是发生次数不是写入次数，实际 "
                             + riskMetrics.count(BilibiliRiskMetrics.Kind.PARSE_FAILURE, Duration.ofMinutes(1)));
+
+            // 量级只管文本样本：再喂 3 条，计数照涨，样本仍停在第 10 条那一份
+            for (int i = 0; i < 3; i++) {
+                parse("{\"cmd\":\"LIVE\",\"live_time\":{}}");
+            }
+            assertEquals(13, riskMetrics.count(BilibiliRiskMetrics.Kind.PARSE_FAILURE, Duration.ofMinutes(1)));
+            String sample = riskMetrics.lastDetail(BilibiliRiskMetrics.Kind.PARSE_FAILURE).orElse("");
+            assertTrue(sample.contains("count=10"), "样本应只在量级处换，实际: " + sample);
         } catch (AssertionError e) {
             reds.add("② " + e.getMessage());
         }
 
         try {
             assertTrue(parse("{\"cmd\":\"WATCHED_CHANGE\",\"data\":{\"num\":{}}}").isEmpty());
-            assertEquals(3, riskMetrics.count(BilibiliRiskMetrics.Kind.PARSE_FAILURE, Duration.ofMinutes(1)),
+            assertEquals(14, riskMetrics.count(BilibiliRiskMetrics.Kind.PARSE_FAILURE, Duration.ofMinutes(1)),
                     "另一 cmd 应另记首见");
             String detail = riskMetrics.lastDetail(BilibiliRiskMetrics.Kind.PARSE_FAILURE).orElse("");
             assertTrue(detail.contains("WATCHED_CHANGE"), "最近一条应是新 cmd，实际: " + detail);
@@ -322,9 +338,11 @@ class BilibiliEventParserTest {
             for (int i = 0; i < 9; i++) {
                 parse("{\"cmd\":\"INTERACT_WORD_V2\",\"data\":{\"dmscore\":3,\"pb\":\"" + interactPb + "\"}}");
             }
-            assertEquals(2, riskMetrics.count(BilibiliRiskMetrics.Kind.FIELD_MISSING, Duration.ofMinutes(1)),
-                    "十次应只在 1 与 10 两处记，实际 "
+            assertEquals(10, riskMetrics.count(BilibiliRiskMetrics.Kind.FIELD_MISSING, Duration.ofMinutes(1)),
+                    "计数是发生次数不是写入次数，实际 "
                             + riskMetrics.count(BilibiliRiskMetrics.Kind.FIELD_MISSING, Duration.ofMinutes(1)));
+            String sample = riskMetrics.lastDetail(BilibiliRiskMetrics.Kind.FIELD_MISSING).orElse("");
+            assertTrue(sample.contains("count=10"), "样本应只在量级处换，实际: " + sample);
         } catch (AssertionError e) {
             reds.add("② " + e.getMessage());
         }
@@ -333,7 +351,7 @@ class BilibiliEventParserTest {
             Optional<StarBotBaseLiveEvent> event = parse(
                     "{\"cmd\":\"SEND_GIFT_V2\",\"data\":{\"dmscore\":3,\"pb\":\"" + giftPb + "\"}}");
             assertTrue(event.isPresent(), "礼物块完好的截断报文仍应产出事件");
-            assertEquals(3, riskMetrics.count(BilibiliRiskMetrics.Kind.FIELD_MISSING, Duration.ofMinutes(1)),
+            assertEquals(11, riskMetrics.count(BilibiliRiskMetrics.Kind.FIELD_MISSING, Duration.ofMinutes(1)),
                     "另一截断名应另记首见");
             String detail = riskMetrics.lastDetail(BilibiliRiskMetrics.Kind.FIELD_MISSING).orElse("");
             assertTrue(detail.contains("SEND_GIFT_V2:pb-truncated"), "detail 应含礼物截断名，实际: " + detail);
@@ -343,7 +361,7 @@ class BilibiliEventParserTest {
 
         try {
             assertTrue(parse("{\"cmd\":\"DANMU_MSG\",\"info\":[[0,1]]}").isEmpty(), "info[0] 过短仍应丢弃");
-            assertEquals(4, riskMetrics.count(BilibiliRiskMetrics.Kind.FIELD_MISSING, Duration.ofMinutes(1)),
+            assertEquals(12, riskMetrics.count(BilibiliRiskMetrics.Kind.FIELD_MISSING, Duration.ofMinutes(1)),
                     "过短弹幕应记 FIELD_MISSING");
             String detail = riskMetrics.lastDetail(BilibiliRiskMetrics.Kind.FIELD_MISSING).orElse("");
             assertTrue(detail.contains("DANMU_MSG:info<16"), "detail 应含过短弹幕名，实际: " + detail);
