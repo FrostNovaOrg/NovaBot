@@ -6,7 +6,7 @@ import com.starlwr.bot.core.datasource.PushMessageInitializer;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.service.PushTemplateDefaults;
 import com.starlwr.bot.core.service.StarBotEventHandlerService;
-import com.starlwr.bot.core.util.StringUtil;
+import com.starlwr.bot.core.lang.StringUtil;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;

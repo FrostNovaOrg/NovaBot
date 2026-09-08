@@ -35,7 +35,7 @@ import com.starlwr.bot.core.timeline.TimelineEventType;
 import com.starlwr.bot.core.timeline.TimelineStore;
 import com.starlwr.bot.core.timeline.TimelineWriter;
 import com.starlwr.bot.core.util.QrCodeUtil;
-import com.starlwr.bot.core.util.StringUtil;
+import com.starlwr.bot.core.lang.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.beans.factory.ObjectProvider;

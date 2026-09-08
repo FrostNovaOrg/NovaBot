@@ -8,7 +8,7 @@ import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.MessagePlaceholders;
 import com.starlwr.bot.core.plugin.StarBotComponent;
-import com.starlwr.bot.core.util.StringUtil;
+import com.starlwr.bot.core.lang.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;

@@ -6,7 +6,7 @@ import com.starlwr.bot.bilibili.service.BilibiliAccountService;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.account.AccountLoginProvider;
 import com.starlwr.bot.core.plugin.StarBotComponent;
-import com.starlwr.bot.core.util.StringUtil;
+import com.starlwr.bot.core.lang.StringUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.TaskScheduler;

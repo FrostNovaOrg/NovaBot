@@ -1,7 +1,7 @@
 package com.starlwr.bot.bilibili.util;
 
 import com.huaban.analysis.jieba.JiebaSegmenter;
-import com.starlwr.bot.core.util.StringUtil;
+import com.starlwr.bot.core.lang.StringUtil;
 
 import java.util.ArrayList;
 import java.util.List;

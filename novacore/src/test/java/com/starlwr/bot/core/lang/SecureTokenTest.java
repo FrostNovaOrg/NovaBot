@@ -1,4 +1,4 @@
-package com.starlwr.bot.core.util;
+package com.starlwr.bot.core.lang;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

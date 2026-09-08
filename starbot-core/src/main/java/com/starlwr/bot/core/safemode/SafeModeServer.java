@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.safemode;
 
 import com.starlwr.bot.core.config.ui.TimestampedFileBackup;
-import com.starlwr.bot.core.util.SecureToken;
+import com.starlwr.bot.core.lang.SecureToken;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import lombok.extern.slf4j.Slf4j;

@@ -9,7 +9,7 @@ import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.adapter.onebot.health.OneBotConnectionState;
 import com.starlwr.bot.adapter.onebot.health.OneBotLivenessTracker;
 import com.starlwr.bot.core.event.remote.StarBotRemoteMessageEvent;
-import com.starlwr.bot.core.util.StringUtil;
+import com.starlwr.bot.core.lang.StringUtil;
 import jakarta.websocket.ContainerProvider;
 import jakarta.websocket.WebSocketContainer;
 import lombok.NonNull;

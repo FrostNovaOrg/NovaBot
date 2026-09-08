@@ -12,7 +12,7 @@ import com.starlwr.bot.bilibili.health.BilibiliRiskMetrics;
 import com.starlwr.bot.bilibili.model.*;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import com.starlwr.bot.core.util.HttpUtil;
-import com.starlwr.bot.core.util.StringUtil;
+import com.starlwr.bot.core.lang.StringUtil;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;

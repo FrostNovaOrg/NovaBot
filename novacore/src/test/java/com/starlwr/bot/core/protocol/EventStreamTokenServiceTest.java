@@ -76,7 +76,7 @@ class EventStreamTokenServiceTest {
         // 「口令表里没有就再比一次控制台令牌」，铁律当场破，而功能测试会全绿——
         // 面板照样连得上，没人看得出来。
         // 控制台令牌就是一个「没在这里签发过」的串，所以这条断言同时守住了铁律。
-        String consoleTokenLike = com.starlwr.bot.core.util.SecureToken.generate();
+        String consoleTokenLike = com.starlwr.bot.core.lang.SecureToken.generate();
 
         assertFalse(service.verify(consoleTokenLike),
                 "没在这里签发过的串一律拒，控制台令牌也不例外");

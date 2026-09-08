@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.converter;
 
-import com.starlwr.bot.core.util.StringUtil;
+import com.starlwr.bot.core.lang.StringUtil;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.ConfigurationPropertiesBinding;

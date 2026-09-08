@@ -7,7 +7,7 @@ import com.starlwr.bot.adapter.onebot.exception.OneBotApiException;
 import com.starlwr.bot.adapter.onebot.health.OneBotConnectionState;
 import com.starlwr.bot.adapter.onebot.model.OneBotSender;
 import com.starlwr.bot.core.util.HttpUtil;
-import com.starlwr.bot.core.util.StringUtil;
+import com.starlwr.bot.core.lang.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 
 import java.lang.reflect.InvocationHandler;

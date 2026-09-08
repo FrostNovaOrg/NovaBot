@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.model;
 
 import com.starlwr.bot.core.enums.PushTargetType;
-import com.starlwr.bot.core.util.StringUtil;
+import com.starlwr.bot.core.lang.StringUtil;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;

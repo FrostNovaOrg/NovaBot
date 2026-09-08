@@ -1,4 +1,4 @@
-package com.starlwr.bot.core.util;
+package com.starlwr.bot.core.lang;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;

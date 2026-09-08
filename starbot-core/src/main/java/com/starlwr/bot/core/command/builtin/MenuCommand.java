@@ -5,7 +5,7 @@ import com.starlwr.bot.core.command.CommandDispatcher;
 import com.starlwr.bot.core.command.CommandReply;
 import com.starlwr.bot.core.command.CommandSettingsService;
 import com.starlwr.bot.core.command.StarBotCommand;
-import com.starlwr.bot.core.util.StringUtil;
+import com.starlwr.bot.core.lang.StringUtil;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
