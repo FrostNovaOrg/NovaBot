@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.command;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.event.remote.NovaRemoteMessageEvent;
@@ -56,12 +56,12 @@ class CommandDispatcherTest {
         when(dataSource.getAllUsers()).thenReturn(List.of(configuredUser()));
 
         sender = mock(NovaMessageSender.class);
-        settings = new CommandSettingsService(new StarBotStateStore(new StarBotCoreProperties()));
+        settings = new CommandSettingsService(new StarBotStateStore(new NovaCoreProperties()));
         command = new RecordingCommand();
 
         // 这一件问的是「谁应了、谁没应」，不问日志页；命令记事那一头由 TimelineHookTest 量
         dispatcher = new CommandDispatcher(providerOf(command), noFollowUps(), settings, dataSource, sender,
-                new StarBotCoreProperties(), TimelineWriter.NONE);
+                new NovaCoreProperties(), TimelineWriter.NONE);
     }
 
     @Test
@@ -201,7 +201,7 @@ class CommandDispatcherTest {
     @Test
     @DisplayName("超级管理员名单里的账号不依赖群角色即可执行")
     void allowsConfiguredSuperAdmin() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getCommand().getAdmins().add(1L);
 
         AbstractDataSource dataSource = mock(AbstractDataSource.class);

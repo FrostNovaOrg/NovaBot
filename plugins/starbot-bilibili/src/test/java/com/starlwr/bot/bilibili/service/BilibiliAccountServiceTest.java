@@ -1,6 +1,6 @@
 package com.starlwr.bot.bilibili.service;
 
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.exception.NetworkException;
 import com.starlwr.bot.bilibili.exception.ResponseCodeException;
 import com.starlwr.bot.bilibili.model.Cookies;
@@ -328,7 +328,7 @@ class BilibiliAccountServiceTest {
         BilibiliApiUtil api = mock(BilibiliApiUtil.class);
         BilibiliCredentialStore store = mock(BilibiliCredentialStore.class);
 
-        StarBotBilibiliProperties properties = new StarBotBilibiliProperties();
+        NovaBilibiliProperties properties = new NovaBilibiliProperties();
         properties.getAccount().setAutoRefreshCookie(false);
 
         BilibiliAccountService service = new BilibiliAccountService(api, store, properties);
@@ -426,7 +426,7 @@ class BilibiliAccountServiceTest {
      * @return 账号服务
      */
     private BilibiliAccountService newService(BilibiliApiUtil api, BilibiliCredentialStore store) {
-        return new BilibiliAccountService(api, store, new StarBotBilibiliProperties());
+        return new BilibiliAccountService(api, store, new NovaBilibiliProperties());
     }
 
     /**
@@ -436,7 +436,7 @@ class BilibiliAccountServiceTest {
      * @return 账号服务
      */
     private BilibiliAccountService anonymousService(BilibiliApiUtil api, BilibiliCredentialStore store) {
-        StarBotBilibiliProperties properties = new StarBotBilibiliProperties();
+        NovaBilibiliProperties properties = new NovaBilibiliProperties();
         properties.getAccount().setAnonymous(true);
         return new BilibiliAccountService(api, store, properties);
     }
@@ -536,7 +536,7 @@ class BilibiliAccountServiceTest {
             api = mock(BilibiliApiUtil.class);
             BilibiliCredentialStore store = mock(BilibiliCredentialStore.class);
             when(store.load()).thenReturn(Optional.empty());
-            service = new BilibiliAccountService(api, store, new StarBotBilibiliProperties());
+            service = new BilibiliAccountService(api, store, new NovaBilibiliProperties());
         }
 
         /**
@@ -656,7 +656,7 @@ class BilibiliAccountServiceTest {
         @Test
         @DisplayName("关掉自动续期时不算失败也不算成功，复检节奏不受影响")
         void disabledRefreshIsSkipped() throws Exception {
-            StarBotBilibiliProperties properties = new StarBotBilibiliProperties();
+            NovaBilibiliProperties properties = new NovaBilibiliProperties();
             properties.getAccount().setAutoRefreshCookie(false);
             BilibiliCredentialStore store = mock(BilibiliCredentialStore.class);
             when(store.load()).thenReturn(Optional.empty());

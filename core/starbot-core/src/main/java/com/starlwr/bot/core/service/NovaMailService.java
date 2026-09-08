@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.service;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.lang.StringUtil;
 import jakarta.mail.internet.MimeMessage;
 import lombok.extern.slf4j.Slf4j;
@@ -29,10 +29,10 @@ public class NovaMailService {
 
     private final ObjectProvider<JavaMailSender> mailSenderProvider;
 
-    private final StarBotCoreProperties properties;
+    private final NovaCoreProperties properties;
 
     @Autowired
-    public NovaMailService(ObjectProvider<JavaMailSender> mailSenderProvider, StarBotCoreProperties properties) {
+    public NovaMailService(ObjectProvider<JavaMailSender> mailSenderProvider, NovaCoreProperties properties) {
         this.mailSenderProvider = mailSenderProvider;
         this.properties = properties;
     }

@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.config.ui;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import org.springframework.core.io.ClassPathResource;
 
 import java.io.IOException;
@@ -43,7 +43,7 @@ public final class ConfigUiAgreement {
      * @param agreement 配置里的同意记录
      * @return 需要请使用者确认协议时返回 true
      */
-    public static boolean required(StarBotCoreProperties.ConfigUi.Agreement agreement) {
+    public static boolean required(NovaCoreProperties.ConfigUi.Agreement agreement) {
         return agreement.getAcceptedVersion() < VERSION
                 || agreement.getAcceptedBy() == null
                 || agreement.getAcceptedBy().isBlank();

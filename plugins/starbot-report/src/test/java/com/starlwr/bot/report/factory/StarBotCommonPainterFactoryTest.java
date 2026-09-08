@@ -1,6 +1,6 @@
 package com.starlwr.bot.report.factory;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.report.painter.CommonPainter;
 import com.starlwr.bot.report.util.FontUtil;
 import org.junit.jupiter.api.BeforeAll;
@@ -36,7 +36,7 @@ class StarBotCommonPainterFactoryTest {
 
     private StarBotCommonPainterFactory factory;
 
-    private StarBotCoreProperties properties;
+    private NovaCoreProperties properties;
 
     @BeforeAll
     static void headless() {
@@ -45,7 +45,7 @@ class StarBotCommonPainterFactoryTest {
 
     @BeforeEach
     void setUp() {
-        properties = new StarBotCoreProperties();
+        properties = new NovaCoreProperties();
         // 用内置字体，免得结论取决于跑测试这台机器装了什么字体
         properties.getPaint().getFonts().add("内置");
 

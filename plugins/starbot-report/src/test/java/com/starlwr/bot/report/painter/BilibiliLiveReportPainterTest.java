@@ -1,12 +1,12 @@
 package com.starlwr.bot.report.painter;
 
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
 import com.starlwr.bot.bilibili.model.BilibiliLiveReportOptions;
 import com.starlwr.bot.bilibili.model.GuardMember;
 import com.starlwr.bot.bilibili.model.Room;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.model.LiveGap;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.service.DefaultLiveDataService;
@@ -72,7 +72,7 @@ class BilibiliLiveReportPainterTest {
 
     @BeforeEach
     void setUp() {
-        StarBotCoreProperties coreProperties = new StarBotCoreProperties();
+        NovaCoreProperties coreProperties = new NovaCoreProperties();
         // 使用核心内置的字体，避免测试结果依赖运行环境已安装的字体
         coreProperties.getPaint().getFonts().add("内置");
 
@@ -105,10 +105,10 @@ class BilibiliLiveReportPainterTest {
         when(api.getLiveInfoByRoomId(anyLong())).thenReturn(room);
         when(api.getGuardList(anyLong(), anyLong())).thenReturn(Optional.of(List.of()));
 
-        liveDataService = new DefaultLiveDataService(new StarBotCoreProperties());
-        roomInfoHistory = new LiveRoomInfoHistory(new StarBotStateStore(new StarBotCoreProperties()));
+        liveDataService = new DefaultLiveDataService(new NovaCoreProperties());
+        roomInfoHistory = new LiveRoomInfoHistory(new StarBotStateStore(new NovaCoreProperties()));
         painter = new BilibiliLiveReportPainter(factory, api, liveDataService, fontUtil,
-                new com.starlwr.bot.bilibili.config.StarBotBilibiliProperties(), roomInfoHistory);
+                new com.starlwr.bot.bilibili.config.NovaBilibiliProperties(), roomInfoHistory);
     }
 
     @Test
@@ -230,11 +230,11 @@ class BilibiliLiveReportPainterTest {
      * 只喂盲盒数量与盈亏，从建卡结果里取出盲盒卡文案。
      */
     private String boxLabel(double boxProfit) {
-        DefaultLiveDataService data = new DefaultLiveDataService(new StarBotCoreProperties());
+        DefaultLiveDataService data = new DefaultLiveDataService(new NovaCoreProperties());
         data.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.BOX_COUNT, 3);
         data.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.BOX_PROFIT, boxProfit);
         BilibiliLiveReportPainter reportPainter = new BilibiliLiveReportPainter(
-                factory, api, data, fontUtil, new StarBotBilibiliProperties(), roomInfoHistory);
+                factory, api, data, fontUtil, new NovaBilibiliProperties(), roomInfoHistory);
         return reportPainter.buildCards(PLATFORM, STREAMER.getUid(), BilibiliLiveReportOptions.of(null, true))
                 .stream()
                 .map(BilibiliLiveReportPainter.Card::label)
@@ -247,10 +247,10 @@ class BilibiliLiveReportPainterTest {
      * 开播快照与当前粉丝数相等时，粉丝变化卡副标题。
      */
     private String fansChangeLabel(long fans) {
-        DefaultLiveDataService data = new DefaultLiveDataService(new StarBotCoreProperties());
+        DefaultLiveDataService data = new DefaultLiveDataService(new NovaCoreProperties());
         data.setLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.FANS_AT_START, fans);
         BilibiliLiveReportPainter reportPainter = new BilibiliLiveReportPainter(
-                factory, api, data, fontUtil, new StarBotBilibiliProperties(), roomInfoHistory);
+                factory, api, data, fontUtil, new NovaBilibiliProperties(), roomInfoHistory);
         return reportPainter.changeCard(PLATFORM, STREAMER.getUid(), fans,
                 BilibiliLiveMetric.FANS_AT_START, "粉丝").label();
     }
@@ -428,7 +428,7 @@ class BilibiliLiveReportPainterTest {
         Path file = Files.createTempDirectory("novabot-logo").resolve("logo.png");
         javax.imageio.ImageIO.write(mark, "png", file.toFile());
 
-        StarBotBilibiliProperties withLogo = new StarBotBilibiliProperties();
+        NovaBilibiliProperties withLogo = new NovaBilibiliProperties();
         withLogo.getLive().setReportLogoPath(file.toString());
 
         Optional<String> base64 = new BilibiliLiveReportPainter(factory, api, liveDataService, fontUtil, withLogo, roomInfoHistory)
@@ -441,7 +441,7 @@ class BilibiliLiveReportPainterTest {
     @Test
     @DisplayName("标识路径写错时应跳过绘制而非让整张报告失败")
     void survivesMissingLogo() {
-        StarBotBilibiliProperties badPath = new StarBotBilibiliProperties();
+        NovaBilibiliProperties badPath = new NovaBilibiliProperties();
         badPath.getLive().setReportLogoPath("/nowhere/does-not-exist.png");
 
         assertTrue(new BilibiliLiveReportPainter(factory, api, liveDataService, fontUtil, badPath, roomInfoHistory)
@@ -716,7 +716,7 @@ class BilibiliLiveReportPainterTest {
 
     private BilibiliLiveReportPainter painterWithGuards(Optional<List<GuardMember>> members) {
         return new BilibiliLiveReportPainter(factory, api, liveDataService, fontUtil,
-                new StarBotBilibiliProperties(), roomInfoHistory) {
+                new NovaBilibiliProperties(), roomInfoHistory) {
             @Override
             protected Optional<List<GuardMember>> guardList(Long roomId, Long uid) {
                 return members;

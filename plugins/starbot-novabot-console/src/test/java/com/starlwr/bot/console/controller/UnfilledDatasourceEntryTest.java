@@ -4,7 +4,7 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.command.CommandDispatcher;
 import com.starlwr.bot.core.command.CommandSettingsService;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.datasource.DataSourceServiceRegistry;
 import com.starlwr.bot.core.datasource.JsonDataSource;
 import com.starlwr.bot.core.handler.StarBotEventHandlerPushMessageInitializer;
@@ -161,7 +161,7 @@ class UnfilledDatasourceEntryTest {
         Path file = directory.resolve("datasource.json");
         Files.writeString(file, datasource, StandardCharsets.UTF_8);
 
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getDatasource().setJsonPath(file.toString());
         // 监听线程与本组用例无关，开着只会在临时目录被删掉之后继续刷日志
         properties.getDatasource().setJsonAutoReload(false);
@@ -172,7 +172,7 @@ class UnfilledDatasourceEntryTest {
                 mock(ApplicationEventPublisher.class),
                 new DataSourceServiceRegistry(List.of(new NoopDataSourceService())),
                 new StarBotEventHandlerPushMessageInitializer(mock(StarBotEventHandlerService.class),
-                        new PushTemplateDefaults(new StarBotCoreProperties())),
+                        new PushTemplateDefaults(new NovaCoreProperties())),
                 properties.getDatasource());
         dataSource.load();
 

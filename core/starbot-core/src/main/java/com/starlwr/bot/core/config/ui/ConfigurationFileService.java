@@ -3,7 +3,7 @@ package com.starlwr.bot.core.config.ui;
 import com.starlwr.bot.core.properties.DatasourceProperties;
 import com.starlwr.bot.core.properties.EventStreamProperties;
 import com.starlwr.bot.core.properties.NovaBotPrefixes;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.timeline.TimelineEvent;
 import com.starlwr.bot.core.timeline.TimelineEventType;
 import com.starlwr.bot.core.timeline.TimelineWriter;
@@ -85,7 +85,7 @@ public class ConfigurationFileService {
 
     @Autowired
     public ConfigurationFileService(ConfigurationMetadataService metadata, ApplicationContext context,
-                                    StarBotCoreProperties properties, TimelineWriter timeline) {
+                                    NovaCoreProperties properties, TimelineWriter timeline) {
         this(Path.of("application.yml"), () -> ConfigurationTemplate.render(metadata.getFields(),
                 ConfigurationPropertyFields.values(
                         context.getBeansWithAnnotation(ConfigurationProperties.class).values())),
@@ -102,7 +102,7 @@ public class ConfigurationFileService {
     ConfigurationFileService(Path configPath) {
         this(configPath, () -> ConfigurationTemplate.render(new ConfigurationMetadataService().getFields(),
                 ConfigurationPropertyFields.values(List.of(
-                        new StarBotCoreProperties(), new EventStreamProperties(), new DatasourceProperties()))));
+                        new NovaCoreProperties(), new EventStreamProperties(), new DatasourceProperties()))));
     }
 
     ConfigurationFileService(Path configPath, Supplier<String> initialContent) {

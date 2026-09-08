@@ -2,7 +2,7 @@ package com.starlwr.bot.bilibili.command;
 
 import com.starlwr.bot.core.command.CommandContext;
 import com.starlwr.bot.core.command.CommandReply;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.model.PushTarget;
@@ -226,7 +226,7 @@ class BilibiliStreamerChoiceCorpusTest {
     @Test
     @DisplayName("选过之后盘上不留痕 —— 运行状态里没有这个命名空间")
     void leavesNothingOnDisk(@TempDir Path stateDir) {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(stateDir.resolve("data.json").toString());
         StarBotStateStore store = new StarBotStateStore(properties);
 
@@ -318,7 +318,7 @@ class BilibiliStreamerChoiceCorpusTest {
                             ? Optional.of(todayStartMillis() + 3_600_000L)
                             : Optional.empty());
 
-            StarBotCoreProperties properties = new StarBotCoreProperties();
+            NovaCoreProperties properties = new NovaCoreProperties();
             properties.getLive().setLiveDataPath(dataDir.resolve("data.json").toString());
 
             command = new ProbeCommand(dataSource,

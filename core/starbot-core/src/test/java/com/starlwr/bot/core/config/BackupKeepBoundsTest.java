@@ -21,7 +21,7 @@ class BackupKeepBoundsTest {
     })
     @DisplayName("越界值按 1 到 100 的边界生效")
     void outOfRangeBackupKeepTakesTheBoundary(int written, int effective) {
-        StarBotCoreProperties.ConfigUi ui = new StarBotCoreProperties.ConfigUi();
+        NovaCoreProperties.ConfigUi ui = new NovaCoreProperties.ConfigUi();
         ui.setBackupKeep(written);
         assertEquals(effective, ui.getBackupKeep(),
                 "backup-keep 写 " + written + " 应按 " + effective + " 生效");

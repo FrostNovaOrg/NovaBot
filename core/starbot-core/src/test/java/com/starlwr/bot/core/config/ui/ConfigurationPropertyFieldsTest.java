@@ -2,7 +2,7 @@ package com.starlwr.bot.core.config.ui;
 
 import com.starlwr.bot.core.properties.ConfigEffect;
 import com.starlwr.bot.core.config.ConfigLevel;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -35,7 +35,7 @@ class ConfigurationPropertyFieldsTest {
      */
     private Map<String, Field> scan() {
         try (AnnotationConfigApplicationContext context =
-                     new AnnotationConfigApplicationContext(StarBotCoreProperties.class)) {
+                     new AnnotationConfigApplicationContext(NovaCoreProperties.class)) {
             return ConfigurationPropertyFields.scan(context);
         }
     }

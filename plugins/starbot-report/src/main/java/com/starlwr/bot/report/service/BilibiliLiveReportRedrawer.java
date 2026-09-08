@@ -1,7 +1,7 @@
 package com.starlwr.bot.report.service;
 
 import com.starlwr.bot.bilibili.BilibiliPlatform;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.model.BilibiliLiveReportOptions;
 import com.starlwr.bot.report.painter.BilibiliLiveReportReplayPainter;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
@@ -39,13 +39,13 @@ public class BilibiliLiveReportRedrawer implements LiveReportRedrawer {
 
     private final FontUtil fontUtil;
 
-    private final StarBotBilibiliProperties properties;
+    private final NovaBilibiliProperties properties;
 
     private final LiveRoomInfoHistory roomInfoHistory;
 
     @Autowired
     public BilibiliLiveReportRedrawer(StarBotCommonPainterFactory factory, BilibiliApiUtil api, FontUtil fontUtil,
-                                      StarBotBilibiliProperties properties, LiveRoomInfoHistory roomInfoHistory) {
+                                      NovaBilibiliProperties properties, LiveRoomInfoHistory roomInfoHistory) {
         this.factory = factory;
         this.api = api;
         this.fontUtil = fontUtil;

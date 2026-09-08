@@ -4,7 +4,7 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.model.BilibiliLiveReportOptions;
 import com.starlwr.bot.report.painter.BilibiliLiveReportPreviewPainter;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.model.HandlerOption;
 import com.starlwr.bot.core.service.RevenueVisibilityService;
 import com.starlwr.bot.core.service.StarBotStateStore;
@@ -56,7 +56,7 @@ class BilibiliReportLayoutControllerTest {
     @BeforeEach
     void setUp() {
         preview = mock(BilibiliLiveReportPreviewPainter.class);
-        revenueVisibility = new RevenueVisibilityService(new StarBotStateStore(new StarBotCoreProperties()));
+        revenueVisibility = new RevenueVisibilityService(new StarBotStateStore(new NovaCoreProperties()));
         controller = new BilibiliReportLayoutController(preview, revenueVisibility);
 
         when(preview.render(any())).thenReturn(Optional.of(FAKE_PNG));

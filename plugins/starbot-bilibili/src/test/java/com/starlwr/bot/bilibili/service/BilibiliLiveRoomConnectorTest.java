@@ -2,7 +2,7 @@ package com.starlwr.bot.bilibili.service;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.BilibiliPlatform;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.enums.ConnectStatus;
 import com.starlwr.bot.bilibili.health.BilibiliDisconnectCause;
 import com.starlwr.bot.bilibili.health.BilibiliRiskMetrics;
@@ -230,7 +230,7 @@ class BilibiliLiveRoomConnectorTest {
          * 判定所需的连续窗口数。从默认配置里取而不是写死：
          * 改了默认值时这些测试应当跟着走，而不是变成对着一个旧数字的断言
          */
-        private final int WINDOWS = new StarBotBilibiliProperties().getLive().getAutoDetectLiveRoomRiskWindows();
+        private final int WINDOWS = new NovaBilibiliProperties().getLive().getAutoDetectLiveRoomRiskWindows();
 
         /**
          * 攒满一段断流：每个窗口喂够逐用户事件（进房类），业务消息为零
@@ -434,7 +434,7 @@ class BilibiliLiveRoomConnectorTest {
     class ReconnectScheduling {
         /** 退避基准，从默认配置取：改了默认值时测试应当跟着走 */
         private final long BASE_SECONDS =
-                new StarBotBilibiliProperties().getLive().getLiveRoomReconnectInterval() / 1000;
+                new NovaBilibiliProperties().getLive().getLiveRoomReconnectInterval() / 1000;
 
         /**
          * 走一次「本端主动重连」：发包失败 → reconnect() → 关会话 + 排队，

@@ -1,7 +1,7 @@
 package com.starlwr.bot.bilibili.service;
 
 import com.starlwr.bot.bilibili.BilibiliPlatform;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.event.dynamic.BilibiliDynamicUpdateEvent;
 import com.starlwr.bot.bilibili.exception.ResponseCodeException;
 import com.starlwr.bot.bilibili.model.Dynamic;
@@ -47,7 +47,7 @@ public class BilibiliDynamicService {
 
     private final BilibiliAccountService accountService;
 
-    private final StarBotBilibiliProperties properties;
+    private final NovaBilibiliProperties properties;
 
     private final ApplicationEventPublisher publisher;
 
@@ -70,7 +70,7 @@ public class BilibiliDynamicService {
     @Autowired
     public BilibiliDynamicService(BilibiliApiUtil api,
                                   BilibiliAccountService accountService,
-                                  StarBotBilibiliProperties properties,
+                                  NovaBilibiliProperties properties,
                                   ApplicationEventPublisher publisher,
                                   @Qualifier("bilibiliTaskScheduler") TaskScheduler scheduler) {
         this.api = api;

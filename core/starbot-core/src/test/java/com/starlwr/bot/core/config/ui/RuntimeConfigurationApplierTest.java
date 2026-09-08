@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.config.ui;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.sender.PushGate;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,13 +38,13 @@ class RuntimeConfigurationApplierTest {
      */
     private static final DateTimeFormatter HOUR_MINUTE = DateTimeFormatter.ofPattern("HH:mm");
 
-    private StarBotCoreProperties properties;
+    private NovaCoreProperties properties;
 
     private RuntimeConfigurationApplier applier;
 
     @BeforeEach
     void setUp() {
-        properties = new StarBotCoreProperties();
+        properties = new NovaCoreProperties();
         applier = RuntimeConfigurationApplier.bench(properties).build();
     }
 
@@ -178,7 +178,7 @@ class RuntimeConfigurationApplierTest {
                 ConfigUiAuthService.TOTP_SECRET_PROPERTY,
                 ConfigUiAuthService.OPERATOR_TOKEN_PROPERTY);
 
-        StarBotCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
+        NovaCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
         String passwordBefore = auth.getPassword();
         boolean totpBefore = auth.isTotp();
         String secretBefore = auth.getTotpSecret();
@@ -211,16 +211,16 @@ class RuntimeConfigurationApplierTest {
     @DisplayName("认证键即使被登记进即时通道，resolve 开头仍拒写且记入待重启")
     void dedicatedAuthKeyIsRejectedEvenWhenRegisteredAsApplier() throws Exception {
         String key = ConfigUiAuthService.PASSWORD_PROPERTY;
-        StarBotCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
+        NovaCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
         auth.setPassword("keep-me");
 
         Field field = RuntimeConfigurationApplier.class.getDeclaredField("APPLIERS");
         field.setAccessible(true);
         @SuppressWarnings("unchecked")
-        Map<String, BiConsumer<StarBotCoreProperties, String>> appliers =
-                (Map<String, BiConsumer<StarBotCoreProperties, String>>) field.get(null);
+        Map<String, BiConsumer<NovaCoreProperties, String>> appliers =
+                (Map<String, BiConsumer<NovaCoreProperties, String>>) field.get(null);
 
-        BiConsumer<StarBotCoreProperties, String> previous = appliers.put(key,
+        BiConsumer<NovaCoreProperties, String> previous = appliers.put(key,
                 (props, value) -> props.getConfigUi().getAuth().setPassword(value));
         assertNull(previous, "口令键本就不该出现在即时落地表里");
         try {

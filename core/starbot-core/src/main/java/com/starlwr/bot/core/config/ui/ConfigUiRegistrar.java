@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.config.ui;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSessionStore;
 import com.starlwr.bot.core.config.ui.auth.LoginThrottle;
@@ -39,7 +39,7 @@ public class ConfigUiRegistrar {
      */
     public static final int FILTER_ORDER = Ordered.HIGHEST_PRECEDENCE + 1;
 
-    private final StarBotCoreProperties properties;
+    private final NovaCoreProperties properties;
 
     private final WebServerApplicationContext webContext;
 
@@ -48,7 +48,7 @@ public class ConfigUiRegistrar {
      */
     private final String token;
 
-    public ConfigUiRegistrar(StarBotCoreProperties properties, WebServerApplicationContext webContext) {
+    public ConfigUiRegistrar(NovaCoreProperties properties, WebServerApplicationContext webContext) {
         this.properties = properties;
         this.webContext = webContext;
         this.token = resolveToken(properties.getConfigUi());
@@ -59,7 +59,7 @@ public class ConfigUiRegistrar {
      * @param configUi 配置界面配置
      * @return 访问令牌
      */
-    private String resolveToken(StarBotCoreProperties.ConfigUi configUi) {
+    private String resolveToken(NovaCoreProperties.ConfigUi configUi) {
         if (StringUtil.isBlank(configUi.getToken())) {
             return SecureToken.generate();
         }
@@ -77,7 +77,7 @@ public class ConfigUiRegistrar {
      */
     @Bean
     public ConfigUiSessionStore configUiSessionStore() {
-        StarBotCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
+        NovaCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
         return new ConfigUiSessionStore(
                 Duration.ofHours(Math.max(1, auth.getSessionHours())),
                 Duration.ofHours(Math.max(1, auth.getIdleHours())));
@@ -88,7 +88,7 @@ public class ConfigUiRegistrar {
      */
     @Bean
     public LoginThrottle configUiLoginThrottle() {
-        StarBotCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
+        NovaCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
         return new LoginThrottle(auth.getMaxFailures(), Duration.ofMinutes(Math.max(1, auth.getLockoutMinutes())));
     }
 
@@ -151,7 +151,7 @@ public class ConfigUiRegistrar {
                 ? "127.0.0.1"
                 : "本机地址";
 
-        StarBotCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
+        NovaCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
         if (!StringUtil.isBlank(auth.getPassword())) {
             log.info("配置界面已启动: http://{}:{}{}", address, port, ConfigUiController.BASE_PATH);
             log.info("已启用口令登录{}", StringUtil.isBlank(auth.getTotpSecret()) ? "" : "与二次验证");

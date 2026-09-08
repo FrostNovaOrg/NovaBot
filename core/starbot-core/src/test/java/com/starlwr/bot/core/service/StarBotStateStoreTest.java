@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.service;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -32,7 +32,7 @@ class StarBotStateStoreTest {
 
     @BeforeEach
     void setUp() {
-        store = new StarBotStateStore(new StarBotCoreProperties());
+        store = new StarBotStateStore(new NovaCoreProperties());
     }
 
     @Test
@@ -140,7 +140,7 @@ class StarBotStateStoreTest {
     private static final String MARKER = "CorpusMarker";
 
     private StarBotStateStore storeAt(@TempDir Path dir) {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
         return new StarBotStateStore(properties);
     }

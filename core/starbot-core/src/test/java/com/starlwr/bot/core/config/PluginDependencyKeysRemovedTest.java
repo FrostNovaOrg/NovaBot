@@ -30,7 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>
  * 撤走一节配置涉及三处，删掉任意两处都不会有人报错，因此三处各设一问：
  * <ul>
- *   <li>① <b>绑定根</b>：{@code StarBotCoreProperties} 里没有 {@code Plugin} 这一节。
+ *   <li>① <b>绑定根</b>：{@code NovaCoreProperties} 里没有 {@code Plugin} 这一节。
  *       字段留着的话，编译期生成的元数据会把那两个键原样长回来。</li>
  *   <li>② <b>分组表</b>：{@code ConfigurationGroups} 的前缀表不含那条前缀。留着它是条死前缀，
  *       会让下一个人以为那一段已经归好了组。</li>
@@ -39,7 +39,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 三问各自捕获、末尾汇总，先红时一次看清还差哪几处；每问各带一个阳性锚，
  * 免得反射／元数据整个取空时三问一起「绿」。
  *
- * @see StarBotCoreProperties
+ * @see NovaCoreProperties
  */
 @DisplayName("插件依赖下载配置节已撤走")
 class PluginDependencyKeysRemovedTest {
@@ -66,7 +66,7 @@ class PluginDependencyKeysRemovedTest {
         try {
             List<String> nested = new ArrayList<>();
             List<String> live = new ArrayList<>();
-            for (Class<?> type : StarBotCoreProperties.class.getDeclaredClasses()) {
+            for (Class<?> type : NovaCoreProperties.class.getDeclaredClasses()) {
                 if ("Plugin".equals(type.getSimpleName())) {
                     nested.add(type.getSimpleName());
                 }
@@ -75,7 +75,7 @@ class PluginDependencyKeysRemovedTest {
                 }
             }
             assertTrue(!live.isEmpty(), "阳性锚：绑定根里该看得见 " + LIVE_NESTED_SECTION + " 这一节，看不见说明本问什么也没量到");
-            assertTrue(nested.isEmpty(), "StarBotCoreProperties 里仍留着内部类 Plugin，那两个键会从元数据里长回来");
+            assertTrue(nested.isEmpty(), "NovaCoreProperties 里仍留着内部类 Plugin，那两个键会从元数据里长回来");
         } catch (AssertionError e) {
             unresolved.add("问① " + e.getMessage());
         }
@@ -128,7 +128,7 @@ class PluginDependencyKeysRemovedTest {
         legacy.put(REMOVED_PREFIX + ".auto-download-dependency", "false");
         legacy.put(REMOVED_PREFIX + ".maven-base-urls[0]", "https://a.example");
 
-        ConfigurationProperties annotation = StarBotCoreProperties.class.getAnnotation(ConfigurationProperties.class);
+        ConfigurationProperties annotation = NovaCoreProperties.class.getAnnotation(ConfigurationProperties.class);
         assertNotNull(annotation, "阳性锚：绑定根须带 @ConfigurationProperties，否则本格量的不是真绑定");
 
         BindHandler handler = annotation.ignoreUnknownFields()
@@ -136,7 +136,7 @@ class PluginDependencyKeysRemovedTest {
                 : new NoUnboundElementsBindHandler(BindHandler.DEFAULT, new UnboundElementsSourceFilter());
 
         Binder binder = new Binder(new MapConfigurationPropertySource(legacy));
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
 
         assertDoesNotThrow(() -> binder.bind(annotation.prefix(), Bindable.ofInstance(properties), handler),
                 "旧配置里留着已删的两个键就起不来了——使用者升级时看到的是一次启动失败，而不是一条提醒");

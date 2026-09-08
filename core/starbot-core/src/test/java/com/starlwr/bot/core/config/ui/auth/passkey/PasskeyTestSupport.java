@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.config.ui.auth.passkey;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.config.ui.ConfigUiPasskeyController;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSessionStore;
@@ -38,7 +38,7 @@ abstract class PasskeyTestSupport {
     @TempDir
     Path directory;
 
-    StarBotCoreProperties properties;
+    NovaCoreProperties properties;
 
     PasskeyStore store;
 
@@ -48,10 +48,10 @@ abstract class PasskeyTestSupport {
 
     @BeforeEach
     void setUpPasskey() {
-        properties = new StarBotCoreProperties();
+        properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(directory.resolve("data.json").toString());
 
-        StarBotCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
+        NovaCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
         auth.setPassword(PASSWORD);
         // 二次验证与本组无关，且通行密钥这条路本来就不经它——开着只会让台面多一个变量
         auth.setTotp(false);

@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.config.ui;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSession;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSessionStore;
@@ -77,8 +77,8 @@ class GenericConfigSaveMustNotChangeAuthWithoutReauthTest {
         Files.writeString(config, TEMPLATE, StandardCharsets.UTF_8);
         fileService = new ConfigurationFileService(config);
 
-        StarBotCoreProperties properties = new StarBotCoreProperties();
-        StarBotCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
+        NovaCoreProperties properties = new NovaCoreProperties();
+        NovaCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
         auth.setPassword(OLD_PASSWORD);
         auth.setTotp(true);
         auth.setTotpSecret(SECRET);
@@ -91,7 +91,7 @@ class GenericConfigSaveMustNotChangeAuthWithoutReauthTest {
     }
 
     @SuppressWarnings("unchecked")
-    private ConfigUiController controller(StarBotCoreProperties properties) {
+    private ConfigUiController controller(NovaCoreProperties properties) {
         ConfigurationMetadataService metadata = mock(ConfigurationMetadataService.class);
         when(metadata.getKnownTypes()).thenReturn(Map.of(
                 ConfigUiAuthService.PASSWORD_PROPERTY, "java.lang.String",

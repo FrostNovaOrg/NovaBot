@@ -2,7 +2,7 @@ package com.starlwr.bot.bilibili.service;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.BilibiliPlatform;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.event.dynamic.BilibiliDynamicUpdateEvent;
 import com.starlwr.bot.bilibili.model.Dynamic;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
@@ -37,7 +37,7 @@ import static org.mockito.Mockito.when;
 class BilibiliDynamicServiceTest {
     private static final long UID = 10001L;
 
-    private StarBotBilibiliProperties properties;
+    private NovaBilibiliProperties properties;
 
     private BilibiliApiUtil api;
 
@@ -50,7 +50,7 @@ class BilibiliDynamicServiceTest {
 
     @BeforeEach
     void setUp() {
-        properties = new StarBotBilibiliProperties();
+        properties = new NovaBilibiliProperties();
         // 关掉自动关注，让调度器上只挂着轮询这一个任务，便于捕获
         properties.getDynamic().setAutoFollow(false);
 

@@ -34,7 +34,7 @@ novabot.core.event-stream.path|java.lang.String|/nova/events|事件输出的路�
 novabot.core.event-stream.require-token|java.lang.Boolean|false|是否要求出示只读口令 默认关闭，保持「本机进程直连」这条既有用法不变（本机 runbook 与本地开发都靠它）。 🔴 装了反向代理就必须打开，这不是可选项。 反代与本程序在同一台机器上，且反代未把 X-Forwarded-* 送下来时， 它转发过来的连接源地址就是回环—— ⚠️ 反过来那一半同样要记住：若反代送了 X-Forwarded-*， 而本程序开着 server.forward-headers-strategy， 回环判据看到的会是真实客户端 IP，于是把反代自己挡在门外—— 2026-08-13 生产实测到这个形态，症状是握手回一个空的 200。 也就是说反代一上线，「只接受本机连接」这道判据就不再等于「人在这台机器上」， 任何能连上反代的人在端点看来都是本机。此时不开这个开关，等于没有鉴权。 口令由控制台签发，只能读事件流：既不给服务器 shell，也不给配置控制台。
 novabot.core.exec.enabled|java.lang.Boolean|false|是否启用事件触发外部命令
 novabot.core.exec.max-concurrent|java.lang.Integer|4|同时执行的命令数上限，超出的直接丢弃 弹幕这类事件一秒能来几十条。没有上限的话，一次刷屏就等于一次 fork 炸弹。
-novabot.core.exec.rules|java.util.List<com.starlwr.bot.core.config.StarBotCoreProperties$ExecRule>|<null>|规则列表
+novabot.core.exec.rules|java.util.List<com.starlwr.bot.core.config.NovaCoreProperties$ExecRule>|<null>|规则列表
 novabot.core.exec.timeout|java.lang.Integer|30|单条命令的最长执行时间，单位：秒，超时后强制结束
 novabot.core.live.auto-save-live-data-interval|java.lang.Integer|300|自动保存直播数据间隔，单位：秒，仅使用默认直播数据服务时生效
 novabot.core.live.detail-retention-days|java.lang.Integer|0|每场直播明细数据（曲线、排行、词频、弹幕原文）的保留天数，0 表示永久保留

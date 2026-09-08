@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.config.ui;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSession;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSessionStore;
@@ -41,7 +41,7 @@ class PasskeyEndpointAccessTest {
 
     @BeforeEach
     void setUp() {
-        StarBotCoreProperties.ConfigUi.Auth auth = new StarBotCoreProperties.ConfigUi.Auth();
+        NovaCoreProperties.ConfigUi.Auth auth = new NovaCoreProperties.ConfigUi.Auth();
         auth.setPassword(PASSWORD);
         auth.setTotp(false);
 
@@ -50,7 +50,7 @@ class PasskeyEndpointAccessTest {
                 new LoginThrottle(auth.getMaxFailures(), Duration.ofMinutes(15)), null);
 
         // 使用协议置为已同意：否则那道闸会先一步把请求挡下，量到的就不是放行名单了
-        StarBotCoreProperties.ConfigUi.Agreement agreement = new StarBotCoreProperties.ConfigUi.Agreement();
+        NovaCoreProperties.ConfigUi.Agreement agreement = new NovaCoreProperties.ConfigUi.Agreement();
         agreement.setAcceptedVersion(ConfigUiAgreement.VERSION);
         agreement.setAcceptedBy(ConfigUiSession.Channel.PASSWORD.wire());
 

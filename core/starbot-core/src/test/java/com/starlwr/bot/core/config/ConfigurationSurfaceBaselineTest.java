@@ -95,7 +95,7 @@ class ConfigurationSurfaceBaselineTest {
     void bindingMatchesBaseline() throws IOException {
         Binder binder = new Binder(new MapConfigurationPropertySource(loadCoverage()));
 
-        StarBotCoreProperties core = new StarBotCoreProperties();
+        NovaCoreProperties core = new NovaCoreProperties();
         binder.bind("novabot.core", Bindable.ofInstance(core));
 
         EventStreamProperties stream = new EventStreamProperties();

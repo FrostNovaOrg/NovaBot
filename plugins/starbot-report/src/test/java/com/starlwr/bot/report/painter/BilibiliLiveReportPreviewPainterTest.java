@@ -1,10 +1,10 @@
 package com.starlwr.bot.report.painter;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.model.BilibiliLiveReportOptions;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.service.DefaultLiveDataService;
 import com.starlwr.bot.core.service.LiveRoomInfoHistory;
 import com.starlwr.bot.report.factory.StarBotCommonPainterFactory;
@@ -60,7 +60,7 @@ class BilibiliLiveReportPreviewPainterTest {
 
     @BeforeEach
     void setUp() {
-        StarBotCoreProperties coreProperties = new StarBotCoreProperties();
+        NovaCoreProperties coreProperties = new NovaCoreProperties();
         // 用核心内置字体，免得结论取决于跑测试这台机器装了什么字体
         coreProperties.getPaint().getFonts().add("内置");
 
@@ -81,7 +81,7 @@ class BilibiliLiveReportPreviewPainterTest {
         roomInfoHistory = mock(LiveRoomInfoHistory.class);
 
         painter = new BilibiliLiveReportPreviewPainter(
-                factory, api, fontUtil, new StarBotBilibiliProperties(), roomInfoHistory);
+                factory, api, fontUtil, new NovaBilibiliProperties(), roomInfoHistory);
     }
 
     @Test
@@ -119,11 +119,11 @@ class BilibiliLiveReportPreviewPainterTest {
         assertTrue(data instanceof DefaultLiveDataService,
                 "预览的数据服务换了实现，这一格量的东西得跟着重判：" + data.getClass());
 
-        StarBotCoreProperties properties =
-                (StarBotCoreProperties) field(DefaultLiveDataService.class, data, "properties");
+        NovaCoreProperties properties =
+                (NovaCoreProperties) field(DefaultLiveDataService.class, data, "properties");
 
         // 先证这一格量得到东西：默认值是 true，读到 true 才说明这一格真的在看这个开关
-        assertTrue(new StarBotCoreProperties().getLive().isSaveLiveData(),
+        assertTrue(new NovaCoreProperties().getLive().isSaveLiveData(),
                 "默认值不再是 true 了，这一格的意义得重判");
 
         assertFalse(properties.getLive().isSaveLiveData(),

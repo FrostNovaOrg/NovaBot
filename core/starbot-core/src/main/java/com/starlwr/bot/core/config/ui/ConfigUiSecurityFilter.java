@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.config.ui;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSession;
 import com.starlwr.bot.core.util.IpMatcher;
@@ -123,7 +123,7 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
      * 而这道门读的还是启动那一刻抄下来的值——<b>门开着，账上写着关。</b>
      * 与 {@link #agreement} 同理，那一处的理由也是同一条。
      */
-    private final StarBotCoreProperties.ConfigUi.Auth auth;
+    private final NovaCoreProperties.ConfigUi.Auth auth;
 
     /**
      * 使用协议的同意记录
@@ -131,11 +131,11 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
      * 与登录接口拿的是同一个对象，不是它的副本：使用者点下「同意并继续」之后要<b>当场</b>能进，
      * 各留一份的话，这一侧要等到下次重启才知道人已经同意过了。
      */
-    private final StarBotCoreProperties.ConfigUi.Agreement agreement;
+    private final NovaCoreProperties.ConfigUi.Agreement agreement;
 
     public ConfigUiSecurityFilter(String token, IpMatcher ipMatcher, ConfigUiAuthService authService,
-                                  StarBotCoreProperties.ConfigUi.Auth auth,
-                                  StarBotCoreProperties.ConfigUi.Agreement agreement) {
+                                  NovaCoreProperties.ConfigUi.Auth auth,
+                                  NovaCoreProperties.ConfigUi.Agreement agreement) {
         this.token = token;
         this.ipMatcher = ipMatcher;
         this.authService = authService;

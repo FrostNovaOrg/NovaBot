@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.datasource;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.event.NovaExternalBaseEvent;
 import com.starlwr.bot.core.event.datasource.change.NovaDataSourceAddEvent;
@@ -68,7 +68,7 @@ class AbstractDataSourceTest {
 
         DataSourceServiceRegistry registry = new DataSourceServiceRegistry(List.of(new BilibiliDataSourceService()));
         dataSource = new TestDataSource(publisher, registry, new StarBotEventHandlerPushMessageInitializer(
-                handlerService, new PushTemplateDefaults(new StarBotCoreProperties())));
+                handlerService, new PushTemplateDefaults(new NovaCoreProperties())));
     }
 
     @Test

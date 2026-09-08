@@ -3,7 +3,7 @@ package com.starlwr.bot.bilibili.service;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.health.BilibiliRiskMetrics;
 import com.starlwr.bot.bilibili.enums.GuardOperateType;
 import com.starlwr.bot.bilibili.event.live.*;
@@ -381,7 +381,7 @@ public class BilibiliEventParser {
             GIFT_V2_UID, GIFT_V2_UNAME, GIFT_V2_BLIND, GIFT_V2_INFO, GIFT_V2_WEALTH, GIFT_V2_UINFO,
             3, 8, 11);
 
-    private final StarBotBilibiliProperties properties;
+    private final NovaBilibiliProperties properties;
 
     private final BilibiliGiftService giftService;
 
@@ -396,13 +396,13 @@ public class BilibiliEventParser {
      */
     private final Map<String, BiFunction<JSONObject, LiveStreamerInfo, NovaBaseLiveEvent>> parsers = new HashMap<>();
 
-    public BilibiliEventParser(StarBotBilibiliProperties properties, BilibiliGiftService giftService,
+    public BilibiliEventParser(NovaBilibiliProperties properties, BilibiliGiftService giftService,
                                BilibiliApiSupport apiSupport, BilibiliGuardReconciler guardReconciler) {
         this(properties, giftService, apiSupport, guardReconciler, new BilibiliRiskMetrics());
     }
 
     @Autowired
-    public BilibiliEventParser(StarBotBilibiliProperties properties, BilibiliGiftService giftService,
+    public BilibiliEventParser(NovaBilibiliProperties properties, BilibiliGiftService giftService,
                                BilibiliApiSupport apiSupport, BilibiliGuardReconciler guardReconciler,
                                BilibiliRiskMetrics riskMetrics) {
         this.properties = properties;

@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.sender;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -19,13 +19,13 @@ class PushGateTest {
     @Test
     @DisplayName("默认允许推送")
     void allowsByDefault() {
-        assertTrue(gate(new StarBotCoreProperties()).allowed());
+        assertTrue(gate(new NovaCoreProperties()).allowed());
     }
 
     @Test
     @DisplayName("全局开关关闭时一律拦截")
     void blocksWhenGloballyDisabled() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getPush().setEnabled(false);
 
         PushGate gate = gate(properties);
@@ -71,14 +71,14 @@ class PushGateTest {
         assertTrue(gate(quiet("09:00", "09:00")).allowedAt(LocalTime.of(9, 0)));
     }
 
-    private StarBotCoreProperties quiet(String start, String end) {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+    private NovaCoreProperties quiet(String start, String end) {
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getPush().setQuietStart(start);
         properties.getPush().setQuietEnd(end);
         return properties;
     }
 
-    private PushGate gate(StarBotCoreProperties properties) {
+    private PushGate gate(NovaCoreProperties properties) {
         return new PushGate(properties);
     }
 }

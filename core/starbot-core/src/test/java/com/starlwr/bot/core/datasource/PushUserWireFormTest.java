@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.datasource;
 
 import com.alibaba.fastjson2.JSON;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
@@ -229,8 +229,8 @@ class PushUserWireFormTest {
                 mock(ApplicationEventPublisher.class),
                 new DataSourceServiceRegistry(List.of()),
                 new StarBotEventHandlerPushMessageInitializer(mock(StarBotEventHandlerService.class),
-                        new PushTemplateDefaults(new StarBotCoreProperties())),
-                new StarBotCoreProperties().getDatasource()
+                        new PushTemplateDefaults(new NovaCoreProperties())),
+                new NovaCoreProperties().getDatasource()
         );
     }
 

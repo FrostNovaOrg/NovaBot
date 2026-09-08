@@ -1,7 +1,7 @@
 package com.starlwr.bot.bilibili.service;
 
 import com.starlwr.bot.bilibili.BilibiliPlatform;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.model.BilibiliStreamerMetric;
 import com.starlwr.bot.bilibili.model.Up;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
@@ -42,7 +42,7 @@ public class BilibiliStreamerSnapshotService {
 
     private final BilibiliApiUtil api;
 
-    private final StarBotBilibiliProperties properties;
+    private final NovaBilibiliProperties properties;
 
     private final StreamerSnapshotArchive archive;
 
@@ -51,7 +51,7 @@ public class BilibiliStreamerSnapshotService {
     private volatile AbstractDataSource dataSource;
 
     @Autowired
-    public BilibiliStreamerSnapshotService(BilibiliApiUtil api, StarBotBilibiliProperties properties,
+    public BilibiliStreamerSnapshotService(BilibiliApiUtil api, NovaBilibiliProperties properties,
                                            StreamerSnapshotArchive archive,
                                            @Qualifier("bilibiliTaskScheduler") TaskScheduler scheduler) {
         this.api = api;

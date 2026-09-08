@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.listener;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.event.live.common.LiveOnEvent;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.LiveSessionRecovery;
@@ -19,14 +19,14 @@ import java.util.Optional;
 @Slf4j
 @Component
 public class NovaDefaultLiveOnEventListener {
-    private final StarBotCoreProperties properties;
+    private final NovaCoreProperties properties;
 
     private final LiveDataService liveDataService;
 
     private final LiveSessionRecovery sessionRecovery;
 
     @Autowired
-    public NovaDefaultLiveOnEventListener(StarBotCoreProperties properties, LiveDataService liveDataService,
+    public NovaDefaultLiveOnEventListener(NovaCoreProperties properties, LiveDataService liveDataService,
                                              LiveSessionRecovery sessionRecovery) {
         this.properties = properties;
         this.liveDataService = liveDataService;

@@ -3,7 +3,7 @@ package com.starlwr.bot.core.service;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.enums.LiveEndReason;
 import com.starlwr.bot.core.model.LiveSession;
 import com.starlwr.bot.core.model.RoomInfoSnapshot;
@@ -48,7 +48,7 @@ public class LiveSessionArchive {
      */
     private static final String FILE_NAME = "sessions.jsonl";
 
-    private final StarBotCoreProperties properties;
+    private final NovaCoreProperties properties;
 
     /**
      * 写锁。多个直播间可能同时下播，追加写虽是原子的，但仍要避免两行交错
@@ -56,7 +56,7 @@ public class LiveSessionArchive {
     private final Object writeLock = new Object();
 
     @Autowired
-    public LiveSessionArchive(StarBotCoreProperties properties) {
+    public LiveSessionArchive(NovaCoreProperties properties) {
         this.properties = properties;
     }
 

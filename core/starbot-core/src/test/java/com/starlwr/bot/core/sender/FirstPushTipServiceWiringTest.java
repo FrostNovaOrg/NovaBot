@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.sender;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.service.StarBotStateStore;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -50,14 +50,14 @@ class FirstPushTipServiceWiringTest {
         static Path stateDir;
 
         @Bean
-        StarBotCoreProperties starBotCoreProperties() {
-            StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties novaCoreProperties() {
+            NovaCoreProperties properties = new NovaCoreProperties();
             properties.getLive().setLiveDataPath(stateDir.resolve("data.json").toString());
             return properties;
         }
 
         @Bean
-        StarBotStateStore starBotStateStore(StarBotCoreProperties properties) {
+        StarBotStateStore starBotStateStore(NovaCoreProperties properties) {
             return new StarBotStateStore(properties);
         }
     }

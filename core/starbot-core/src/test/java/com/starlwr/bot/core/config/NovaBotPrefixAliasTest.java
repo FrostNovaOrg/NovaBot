@@ -29,7 +29,7 @@ class NovaBotPrefixAliasTest {
     @Test
     @DisplayName("只写 novabot.core 能绑到绑定根")
     void newCorePrefixBindsToRoot() {
-        StarBotCoreProperties properties = bindCore(Map.of(
+        NovaCoreProperties properties = bindCore(Map.of(
                 NovaBotPrefixes.CORE + ".log.event-log", "true"));
         assertTrue(properties.getLog().isEventLog(),
                 "只写现行前缀时绑定根应吃到值");
@@ -38,7 +38,7 @@ class NovaBotPrefixAliasTest {
     @Test
     @DisplayName("只写旧 novabot.core 仍能绑到绑定根")
     void legacyCorePrefixStillBinds() {
-        StarBotCoreProperties properties = bindCore(Map.of(
+        NovaCoreProperties properties = bindCore(Map.of(
                 NovaBotPrefixes.CORE_LEGACY + ".log.event-log", "true"));
         assertTrue(properties.getLog().isEventLog(),
                 "只写上一档前缀时绑定根仍应吃到值");
@@ -47,7 +47,7 @@ class NovaBotPrefixAliasTest {
     @Test
     @DisplayName("core 两套同在时现行键胜")
     void newCorePrefixWinsWhenBothPresent() {
-        StarBotCoreProperties properties = bindCore(Map.of(
+        NovaCoreProperties properties = bindCore(Map.of(
                 NovaBotPrefixes.CORE_LEGACY + ".log.event-log", "false",
                 NovaBotPrefixes.CORE + ".log.event-log", "true"));
         assertTrue(properties.getLog().isEventLog(),
@@ -109,8 +109,8 @@ class NovaBotPrefixAliasTest {
             assertTrue(rename.contains(expected), "缺少：" + expected + " 实有：" + rename);
         }
 
-        StarBotCoreProperties core = new StarBotCoreProperties();
-        Binder.get(environment).bind(annotationPrefix(StarBotCoreProperties.class),
+        NovaCoreProperties core = new NovaCoreProperties();
+        Binder.get(environment).bind(annotationPrefix(NovaCoreProperties.class),
                 Bindable.ofInstance(core));
         assertTrue(core.getLog().isEventLog());
         assertTrue(new NovaEventStreamConfiguration().eventStreamProperties(environment).isEnabled());
@@ -143,11 +143,11 @@ class NovaBotPrefixAliasTest {
                 "前缀别名须排在数据落点守卫之前，否则落点守卫读不到补进去的现行键");
     }
 
-    private StarBotCoreProperties bindCore(Map<String, Object> values) {
+    private NovaCoreProperties bindCore(Map<String, Object> values) {
         MockEnvironment environment = environment(values);
         alias(new ArrayList<>()).postProcessEnvironment(environment, null);
-        StarBotCoreProperties properties = new StarBotCoreProperties();
-        Binder.get(environment).bind(annotationPrefix(StarBotCoreProperties.class),
+        NovaCoreProperties properties = new NovaCoreProperties();
+        Binder.get(environment).bind(annotationPrefix(NovaCoreProperties.class),
                 Bindable.ofInstance(properties));
         return properties;
     }

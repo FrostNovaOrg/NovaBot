@@ -1,6 +1,6 @@
 package com.starlwr.bot.bilibili.health;
 
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.health.BilibiliDisconnectCause.Closer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -22,13 +22,13 @@ import static org.mockito.Mockito.mock;
  */
 @DisplayName("断线归因与摘要")
 class BilibiliDisconnectDigestTest {
-    private StarBotBilibiliProperties properties;
+    private NovaBilibiliProperties properties;
 
     private BilibiliDisconnectDigest digest;
 
     @BeforeEach
     void setUp() {
-        properties = new StarBotBilibiliProperties();
+        properties = new NovaBilibiliProperties();
         digest = new BilibiliDisconnectDigest(properties, mock(TaskScheduler.class));
     }
 

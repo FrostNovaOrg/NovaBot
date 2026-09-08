@@ -2,11 +2,11 @@ package com.starlwr.bot.report.painter;
 
 import com.starlwr.bot.report.command.BilibiliLiveReportCommand;
 import com.starlwr.bot.bilibili.command.BilibiliStreamerChoice;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.report.controller.BilibiliReportLayoutController;
 import com.starlwr.bot.report.handler.BilibiliLiveReportPushHandler;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.sender.NovaMessageSender;
 import com.starlwr.bot.core.service.LiveDataService;
@@ -71,7 +71,7 @@ class ReportPainterBeanResolutionTest {
         context = new AnnotationConfigApplicationContext();
         beans = context.getDefaultListableBeanFactory();
 
-        StarBotCoreProperties coreProperties = new StarBotCoreProperties();
+        NovaCoreProperties coreProperties = new NovaCoreProperties();
         // 用核心内置字体，免得结论取决于跑测试这台机器装了什么字体
         coreProperties.getPaint().getFonts().add("内置");
         FontUtil fontUtil = new FontUtil(new DefaultResourceLoader(), coreProperties);
@@ -88,7 +88,7 @@ class ReportPainterBeanResolutionTest {
         beans.registerSingleton("starBotCommonPainterFactory",
                 new StarBotCommonPainterFactory(new BuildProperties(buildInfo), coreProperties, fontUtil));
         beans.registerSingleton("fontUtil", fontUtil);
-        beans.registerSingleton("starBotBilibiliProperties", new StarBotBilibiliProperties());
+        beans.registerSingleton("novaBilibiliProperties", new NovaBilibiliProperties());
         beans.registerSingleton("bilibiliApiUtil", mock(BilibiliApiUtil.class));
         beans.registerSingleton("liveRoomInfoHistory", mock(LiveRoomInfoHistory.class));
         beans.registerSingleton("liveDataService", mock(LiveDataService.class));

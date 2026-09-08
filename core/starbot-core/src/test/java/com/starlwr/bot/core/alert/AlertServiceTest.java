@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.alert;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.timeline.TimelineWriter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -26,7 +26,7 @@ import static org.mockito.Mockito.when;
  */
 @DisplayName("告警服务")
 class AlertServiceTest {
-    private StarBotCoreProperties properties;
+    private NovaCoreProperties properties;
 
     private List<AlertChannel> channels;
 
@@ -34,7 +34,7 @@ class AlertServiceTest {
 
     @BeforeEach
     void setUp() {
-        properties = new StarBotCoreProperties();
+        properties = new NovaCoreProperties();
         channels = new ArrayList<>();
 
         @SuppressWarnings("unchecked")

@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.config.ui;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSession;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSessionStore;
@@ -63,7 +63,7 @@ class SetupBootstrapTest {
     Path dir;
 
     private Path config;
-    private StarBotCoreProperties properties;
+    private NovaCoreProperties properties;
     private ConfigurationFileService fileService;
     private ConfigUiAuthService authService;
     private ConfigUiAuthController controller;
@@ -73,12 +73,12 @@ class SetupBootstrapTest {
         config = dir.resolve("application.yml");
         fileService = new ConfigurationFileService(config);
 
-        properties = new StarBotCoreProperties();
+        properties = new NovaCoreProperties();
         // 使用协议置为已同意：那道闸排在身份校验之后，不放行的话下面几趟量到的是协议闸，不是门
         properties.getConfigUi().getAgreement().setAcceptedVersion(ConfigUiAgreement.VERSION);
         properties.getConfigUi().getAgreement().setAcceptedBy("operator-token");
 
-        StarBotCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
+        NovaCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
         auth.setTotp(false);
 
         authService = new ConfigUiAuthService(auth,

@@ -10,7 +10,7 @@ import com.starlwr.bot.core.command.CommandFollowUp;
 import com.starlwr.bot.core.command.CommandReply;
 import com.starlwr.bot.core.command.CommandSettingsService;
 import com.starlwr.bot.core.command.NovaCommand;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.config.ui.RuntimeConfigurationApplier;
 import com.starlwr.bot.core.config.ui.RuntimeConfigurationApplierContributor;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
@@ -105,7 +105,7 @@ class TimelineHookTest {
         // 而那种测试的失败只在半夜跑 CI 时出现一次，谁也复现不了。
         // 前后各一小时的窗口在跨零点那一支上同样成立（PushGate 认得起止倒挂）
         LocalTime now = LocalTime.now();
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getPush().setQuietStart(now.minusHours(1).format(DateTimeFormatter.ofPattern("HH:mm")));
         properties.getPush().setQuietEnd(now.plusHours(1).format(DateTimeFormatter.ofPattern("HH:mm")));
 
@@ -123,7 +123,7 @@ class TimelineHookTest {
     @Test
     @DisplayName("② 全局开关关闭时丢弃的消息应记成「暂停丢弃」")
     void recordsPausedDrop() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getPush().setEnabled(false);
 
         Capture capture = new Capture();
@@ -170,7 +170,7 @@ class TimelineHookTest {
     @DisplayName("⑥ 静音时段拦下的推送, 在分发那一层只记一条, 含成因、主播与目标数")
     void recordsOneAggregatedDropPerEvent() {
         LocalTime now = LocalTime.now();
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getPush().setQuietStart(now.minusHours(1).format(DateTimeFormatter.ofPattern("HH:mm")));
         properties.getPush().setQuietEnd(now.plusHours(1).format(DateTimeFormatter.ofPattern("HH:mm")));
 
@@ -189,7 +189,7 @@ class TimelineHookTest {
     @Test
     @DisplayName("⑥ 全局开关关闭时同形, 但记的是「暂停丢弃」")
     void aggregatedDropTellsPausedFromMuted() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getPush().setEnabled(false);
 
         Capture capture = new Capture();
@@ -204,7 +204,7 @@ class TimelineHookTest {
     @Test
     @DisplayName("⑥ 没有一个推送目标认领这个事件时, 什么也不记")
     void nothingIsRecordedWhenNobodySubscribed() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getPush().setEnabled(false);
 
         Capture capture = new Capture();
@@ -220,7 +220,7 @@ class TimelineHookTest {
     void dispatchesNormallyWhenAllowed() {
         Capture capture = new Capture();
         CountingHandler handler = new CountingHandler();
-        NovaHandlerListener listener = listener(new StarBotCoreProperties(), capture, 3, handler);
+        NovaHandlerListener listener = listener(new NovaCoreProperties(), capture, 3, handler);
 
         listener.onNovaExternalBaseEvent(liveEvent());
 
@@ -432,7 +432,7 @@ class TimelineHookTest {
         ObjectProvider<CommandFollowUp> followUps = mock(ObjectProvider.class);
         when(followUps.iterator()).thenAnswer(invocation -> List.<CommandFollowUp>of().iterator());
 
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         return new CommandDispatcher(commands, followUps,
                 new CommandSettingsService(new StarBotStateStore(properties)),
                 dataSource, mock(NovaMessageSender.class), properties, timeline, clock);
@@ -442,7 +442,7 @@ class TimelineHookTest {
         @SuppressWarnings("unchecked")
         ObjectProvider<AlertChannel> provider = mock(ObjectProvider.class);
         when(provider.orderedStream()).thenAnswer(invocation -> java.util.stream.Stream.of(channels));
-        return new AlertService(new StarBotCoreProperties(), provider, timeline);
+        return new AlertService(new NovaCoreProperties(), provider, timeline);
     }
 
     private RuntimeConfigurationApplier applier(TimelineWriter timeline) {
@@ -450,7 +450,7 @@ class TimelineHookTest {
         ObjectProvider<RuntimeConfigurationApplierContributor> contributors = mock(ObjectProvider.class);
         when(contributors.orderedStream())
                 .thenAnswer(invocation -> java.util.stream.Stream.<RuntimeConfigurationApplierContributor>of());
-        return new RuntimeConfigurationApplier(new StarBotCoreProperties(), null, contributors, timeline);
+        return new RuntimeConfigurationApplier(new NovaCoreProperties(), null, contributors, timeline);
     }
 
     /**
@@ -564,14 +564,14 @@ class TimelineHookTest {
         return new NovaExternalBaseEvent(LIVE_PLATFORM, new LiveStreamerInfo(10001L, "主播甲", 20002L));
     }
 
-    private NovaHandlerListener listener(StarBotCoreProperties properties, TimelineWriter timeline, int targets) {
+    private NovaHandlerListener listener(NovaCoreProperties properties, TimelineWriter timeline, int targets) {
         return listener(properties, timeline, targets, new CountingHandler());
     }
 
     /**
      * 造一个订阅了本事件的主播，名下挂 {@code targets} 个推送目标
      */
-    private NovaHandlerListener listener(StarBotCoreProperties properties, TimelineWriter timeline,
+    private NovaHandlerListener listener(NovaCoreProperties properties, TimelineWriter timeline,
                                             int targets, NovaEventHandler handler) {
         PushUser user = new PushUser();
         user.setPlatform(LIVE_PLATFORM);
@@ -606,7 +606,7 @@ class TimelineHookTest {
         return new HealthAlertMonitor(probes, mock(AlertService.class), timeline);
     }
 
-    private NovaMessageSender sender(StarBotCoreProperties properties, TimelineWriter timeline) {
+    private NovaMessageSender sender(NovaCoreProperties properties, TimelineWriter timeline) {
         Sender target = new Sender();
         target.setName(PLATFORM);
         target.setUrl("http://127.0.0.1:7827/onebot/send");

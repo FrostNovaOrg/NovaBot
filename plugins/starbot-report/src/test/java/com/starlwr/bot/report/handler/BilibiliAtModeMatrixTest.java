@@ -7,7 +7,7 @@ import com.starlwr.bot.bilibili.handler.BilibiliLiveOnPushHandler;
 import com.starlwr.bot.bilibili.model.Dynamic;
 import com.starlwr.bot.report.painter.BilibiliDynamicPainter;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.health.PushActivityRecorder;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
@@ -364,7 +364,7 @@ class BilibiliAtModeMatrixTest {
             NovaSenderService senderService = mock(NovaSenderService.class);
             when(senderService.getSender(PLATFORM)).thenReturn(Optional.of(platform));
 
-            StarBotCoreProperties properties = new StarBotCoreProperties();
+            NovaCoreProperties properties = new NovaCoreProperties();
             properties.getPush().setAtAllDailyLimit(1);
             AtAllQuotaService quota = new AtAllQuotaService(properties);
             if (situation.exhausted) {

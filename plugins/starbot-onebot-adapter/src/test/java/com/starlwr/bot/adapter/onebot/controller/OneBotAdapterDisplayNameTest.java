@@ -4,7 +4,7 @@ import com.starlwr.bot.adapter.onebot.config.OneBotAdapterPluginProperties;
 import com.starlwr.bot.adapter.onebot.model.OneBotSender;
 import com.starlwr.bot.adapter.onebot.security.PushApiTokenStore;
 import com.starlwr.bot.adapter.onebot.service.OneBotHttpService;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.service.NovaSenderService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -53,7 +53,7 @@ class OneBotAdapterDisplayNameTest {
     @Test
     @DisplayName("配了 HTTP Token 时 register 走到自报，核心 displayName 是 QQ")
     void registerWithTokenReportsDisplayNameQQ() {
-        NovaSenderService senders = new NovaSenderService(new StarBotCoreProperties());
+        NovaSenderService senders = new NovaSenderService(new NovaCoreProperties());
 
         assertTrue(controller(senders).register(sender("http-token")), "有 Token 就该挂上");
         assertEquals("QQ", senders.displayName(PLATFORM),
@@ -63,7 +63,7 @@ class OneBotAdapterDisplayNameTest {
     @Test
     @DisplayName("缺 HTTP Token 时 register 早返回，不把显示名写进核心")
     void blankHttpTokenDoesNotInstallADisplayName() {
-        NovaSenderService senders = new NovaSenderService(new StarBotCoreProperties());
+        NovaSenderService senders = new NovaSenderService(new NovaCoreProperties());
 
         assertFalse(controller(senders).register(sender("")), "缺 Token 挂不上");
         assertEquals(PLATFORM, senders.displayName(PLATFORM),

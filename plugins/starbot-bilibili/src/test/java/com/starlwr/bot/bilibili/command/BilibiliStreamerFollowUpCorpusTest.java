@@ -7,7 +7,7 @@ import com.starlwr.bot.core.command.CommandReply;
 import com.starlwr.bot.core.command.CommandSettingsService;
 import com.starlwr.bot.core.command.NovaCommand;
 import com.starlwr.bot.core.command.builtin.MenuCommand;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.event.remote.NovaRemoteMessageEvent;
@@ -189,7 +189,7 @@ class BilibiliStreamerFollowUpCorpusTest {
         // 上面那张表走的都是不带参数的命令，量不到这一条：选择既然不再存在任何地方，
         // 它只能跟着这一次重跑走，而带参数的命令（「数据排行榜 礼物 2」）里，
         // 放错位置就会把榜单名挤走——现象是回一句「请指明要看哪张榜」，与追问丢了长得一样
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dataDir.resolve("data.json").toString());
 
         LiveDataService liveDataService = mock(LiveDataService.class);
@@ -245,7 +245,7 @@ class BilibiliStreamerFollowUpCorpusTest {
             doAnswer(invocation -> replies.add(((Message) invocation.getArgument(0)).getContent()))
                     .when(sender).send(any());
 
-            StarBotCoreProperties properties = new StarBotCoreProperties();
+            NovaCoreProperties properties = new NovaCoreProperties();
             properties.getLive().setLiveDataPath(dataDir.resolve("data.json").toString());
 
             CommandSettingsService settings = new CommandSettingsService(new StarBotStateStore(properties));

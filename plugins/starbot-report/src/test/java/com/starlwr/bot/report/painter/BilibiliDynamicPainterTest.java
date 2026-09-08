@@ -1,10 +1,10 @@
 package com.starlwr.bot.report.painter;
 
 import com.alibaba.fastjson2.JSON;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.model.Dynamic;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.report.factory.StarBotCommonPainterFactory;
 import com.starlwr.bot.report.util.FontUtil;
 import org.junit.jupiter.api.BeforeAll;
@@ -49,7 +49,7 @@ class BilibiliDynamicPainterTest {
 
     @BeforeEach
     void setUp() {
-        StarBotCoreProperties coreProperties = new StarBotCoreProperties();
+        NovaCoreProperties coreProperties = new NovaCoreProperties();
         // 使用核心内置的字体，避免测试结果依赖运行环境已安装的字体
         coreProperties.getPaint().getFonts().add("内置");
 
@@ -80,7 +80,7 @@ class BilibiliDynamicPainterTest {
                     return CompletableFuture.completedFuture(urls.stream().map(url -> Optional.of(placeholder)).toList());
                 });
 
-        painter = new BilibiliDynamicPainter(factory, api, new StarBotBilibiliProperties());
+        painter = new BilibiliDynamicPainter(factory, api, new NovaBilibiliProperties());
     }
 
     /**

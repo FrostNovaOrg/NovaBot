@@ -17,7 +17,7 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 @NovaComponent
 @ConfigurationProperties(prefix = "novabot.bilibili")
-public class StarBotBilibiliProperties {
+public class NovaBilibiliProperties {
     private final BilibiliThread bilibiliThread = new BilibiliThread();
 
     private final Debug debug = new Debug();

@@ -2,7 +2,7 @@ package com.starlwr.bot.core.config.ui;
 
 import com.starlwr.bot.core.properties.ConfigEffect;
 import com.starlwr.bot.core.properties.EventStreamProperties;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
@@ -32,7 +32,7 @@ class ConfigurationEffectResolverTest {
      */
     private AnnotationConfigApplicationContext context() {
         AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
-        context.register(StarBotCoreProperties.class, EventStreamProperties.class);
+        context.register(NovaCoreProperties.class, EventStreamProperties.class);
         context.refresh();
         return context;
     }

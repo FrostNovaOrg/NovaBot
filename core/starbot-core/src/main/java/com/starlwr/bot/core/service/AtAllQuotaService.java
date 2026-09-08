@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.service;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,7 +39,7 @@ public class AtAllQuotaService {
      */
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
-    private final StarBotCoreProperties properties;
+    private final NovaCoreProperties properties;
 
     /**
      * 计数表：账号维度（target 为 null）与会话维度（target 为群号）各记各的
@@ -51,7 +51,7 @@ public class AtAllQuotaService {
     private final Map<QuotaKey, DailyCount> counts = new ConcurrentHashMap<>();
 
     @Autowired
-    public AtAllQuotaService(StarBotCoreProperties properties) {
+    public AtAllQuotaService(NovaCoreProperties properties) {
         this.properties = properties;
     }
 

@@ -2,7 +2,7 @@ package com.starlwr.bot.core.service;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.model.StreamerSnapshot;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -40,7 +40,7 @@ public class StreamerSnapshotArchive {
      */
     private static final String FILE_NAME = "snapshots.jsonl";
 
-    private final StarBotCoreProperties properties;
+    private final NovaCoreProperties properties;
 
     /**
      * 写锁。多个主播的采样可能同时完成，追加写虽是原子的，但仍要避免两行交错
@@ -48,7 +48,7 @@ public class StreamerSnapshotArchive {
     private final Object writeLock = new Object();
 
     @Autowired
-    public StreamerSnapshotArchive(StarBotCoreProperties properties) {
+    public StreamerSnapshotArchive(NovaCoreProperties properties) {
         this.properties = properties;
     }
 

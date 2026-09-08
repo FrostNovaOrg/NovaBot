@@ -1,6 +1,6 @@
 package com.starlwr.bot.bilibili.service;
 
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.core.plugin.NovaComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,7 +27,7 @@ import java.time.Instant;
 @Slf4j
 @NovaComponent
 public class BilibiliConnectGate {
-    private final StarBotBilibiliProperties properties;
+    private final NovaBilibiliProperties properties;
 
     private final TaskScheduler scheduler;
 
@@ -37,7 +37,7 @@ public class BilibiliConnectGate {
     private Instant nextAllowedAt = Instant.EPOCH;
 
     @Autowired
-    public BilibiliConnectGate(StarBotBilibiliProperties properties,
+    public BilibiliConnectGate(NovaBilibiliProperties properties,
                                @Qualifier("bilibiliTaskScheduler") TaskScheduler scheduler) {
         this.properties = properties;
         this.scheduler = scheduler;

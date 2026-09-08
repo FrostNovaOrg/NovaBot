@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.command;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.event.remote.NovaRemoteMessageEvent;
@@ -88,7 +88,7 @@ public class CommandDispatcher {
 
     private final NovaMessageSender sender;
 
-    private final StarBotCoreProperties properties;
+    private final NovaCoreProperties properties;
 
     /**
      * 各会话最近一次执行命令的时间
@@ -116,7 +116,7 @@ public class CommandDispatcher {
     @Autowired
     public CommandDispatcher(ObjectProvider<NovaCommand> commands, ObjectProvider<CommandFollowUp> followUps,
                              CommandSettingsService settings, AbstractDataSource dataSource,
-                             NovaMessageSender sender, StarBotCoreProperties properties,
+                             NovaMessageSender sender, NovaCoreProperties properties,
                              TimelineWriter timeline) {
         this(commands, followUps, settings, dataSource, sender, properties, timeline, Clock.systemDefaultZone());
     }
@@ -128,7 +128,7 @@ public class CommandDispatcher {
      */
     public CommandDispatcher(ObjectProvider<NovaCommand> commands, ObjectProvider<CommandFollowUp> followUps,
                              CommandSettingsService settings, AbstractDataSource dataSource,
-                             NovaMessageSender sender, StarBotCoreProperties properties,
+                             NovaMessageSender sender, NovaCoreProperties properties,
                              TimelineWriter timeline, Clock clock) {
         this.commands = commands;
         this.followUps = followUps;

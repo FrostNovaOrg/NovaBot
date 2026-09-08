@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.service;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.enums.PushTargetType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -23,7 +23,7 @@ class RevenueVisibilityServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new RevenueVisibilityService(new StarBotStateStore(new StarBotCoreProperties()));
+        service = new RevenueVisibilityService(new StarBotStateStore(new NovaCoreProperties()));
     }
 
     @Test

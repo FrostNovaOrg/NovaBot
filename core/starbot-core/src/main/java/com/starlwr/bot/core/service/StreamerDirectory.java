@@ -2,7 +2,7 @@ package com.starlwr.bot.core.service;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,10 +34,10 @@ import java.util.List;
 @Slf4j
 @Service
 public class StreamerDirectory {
-    private final StarBotCoreProperties properties;
+    private final NovaCoreProperties properties;
 
     @Autowired
-    public StreamerDirectory(StarBotCoreProperties properties) {
+    public StreamerDirectory(NovaCoreProperties properties) {
         this.properties = properties;
     }
 

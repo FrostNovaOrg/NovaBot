@@ -9,7 +9,7 @@ import com.starlwr.bot.core.sender.NovaMessageSender;
 import com.starlwr.bot.report.painter.BilibiliLiveReportPainter;
 import com.starlwr.bot.core.command.CommandContext;
 import com.starlwr.bot.core.command.CommandReply;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
@@ -219,7 +219,7 @@ class BilibiliLiveReportCommandTest {
             RevenueVisibilityService revenueVisibility = mock(RevenueVisibilityService.class);
             when(revenueVisibility.isVisible(anyString(), any(), anyLong())).thenReturn(true);
 
-            StarBotCoreProperties properties = new StarBotCoreProperties();
+            NovaCoreProperties properties = new NovaCoreProperties();
             properties.getLive().setLiveDataPath(dataDir.resolve("data.json").toString());
             command = new BilibiliLiveReportCommand(dataSource,
                     new BilibiliStreamerChoice(liveDataService, new LiveSessionArchive(properties)),

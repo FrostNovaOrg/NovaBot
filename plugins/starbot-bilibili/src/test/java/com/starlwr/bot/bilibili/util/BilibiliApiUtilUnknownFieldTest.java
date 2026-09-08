@@ -2,7 +2,7 @@ package com.starlwr.bot.bilibili.util;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.health.BilibiliRiskMetrics;
 import com.starlwr.bot.bilibili.model.Cookies;
 import com.starlwr.bot.core.util.HttpUtil;
@@ -80,7 +80,7 @@ class BilibiliApiUtilUnknownFieldTest {
         try {
             BilibiliRiskMetrics zeroMetrics = new BilibiliRiskMetrics();
             BilibiliApiUtil zeroApi = new BilibiliApiUtil(mock(HttpUtil.class),
-                    new StarBotBilibiliProperties(), zeroMetrics);
+                    new NovaBilibiliProperties(), zeroMetrics);
             for (Map.Entry<String, BilibiliApiUtil.KnownDataKeys> entry
                     : BilibiliApiUtil.KNOWN_DATA_KEYS_BY_PATH.entrySet()) {
                 JSONObject data = keys(entry.getValue().keys().toArray(String[]::new));
@@ -95,7 +95,7 @@ class BilibiliApiUtilUnknownFieldTest {
                     : BilibiliApiUtil.KNOWN_DATA_KEYS_BY_PATH.entrySet()) {
                 BilibiliRiskMetrics metrics = new BilibiliRiskMetrics();
                 BilibiliApiUtil api = new BilibiliApiUtil(mock(HttpUtil.class),
-                        new StarBotBilibiliProperties(), metrics);
+                        new NovaBilibiliProperties(), metrics);
                 JSONObject data = keys(entry.getValue().keys().toArray(String[]::new));
                 data.put("x_extra", 0);
                 feedKnownKeys(api, entry, data);
@@ -159,7 +159,7 @@ class BilibiliApiUtilUnknownFieldTest {
             BilibiliRiskMetrics metrics = new BilibiliRiskMetrics();
             HttpUtil http = mock(HttpUtil.class);
             when(http.postJsonAsForm(any(), any(), any())).thenReturn(wrap(keys("x_extra")));
-            BilibiliApiUtil api = new BilibiliApiUtil(http, new StarBotBilibiliProperties(), metrics);
+            BilibiliApiUtil api = new BilibiliApiUtil(http, new NovaBilibiliProperties(), metrics);
             Cookies cookies = new Cookies();
             cookies.setBiliJct("csrf");
             api.setCookies(cookies);
@@ -205,7 +205,7 @@ class BilibiliApiUtilUnknownFieldTest {
             nav.put("wbi_img", wbi);
             nav.put("x_extra", 0);
             when(http.getJson(any(), any())).thenReturn(wrap(nav));
-            BilibiliApiUtil api = new BilibiliApiUtil(http, new StarBotBilibiliProperties(), metrics);
+            BilibiliApiUtil api = new BilibiliApiUtil(http, new NovaBilibiliProperties(), metrics);
             api.generateWebSign();
             assertEquals(1, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW),
                     "NAV 多一个顶层键应 0→1，实际 "
@@ -224,7 +224,7 @@ class BilibiliApiUtilUnknownFieldTest {
             poll.put("code", 86101);
             poll.put("x_extra", 0);
             when(http.getForEntity(any(), any())).thenReturn(ResponseEntity.ok(wrap(poll).toJSONString()));
-            BilibiliApiUtil api = new BilibiliApiUtil(http, new StarBotBilibiliProperties(), metrics);
+            BilibiliApiUtil api = new BilibiliApiUtil(http, new NovaBilibiliProperties(), metrics);
             api.getQrCodeLoginStatus("poll-key");
             assertEquals(1, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW),
                     "扫码轮询多一个顶层键应 0→1，实际 "
@@ -242,7 +242,7 @@ class BilibiliApiUtilUnknownFieldTest {
             JSONObject tvData = keys("url", "auth_code");
             tvData.put("x_extra", 0);
             when(http.postAsForm(any(), any(), any())).thenReturn(wrap(tvData).toJSONString());
-            BilibiliApiUtil api = new BilibiliApiUtil(http, new StarBotBilibiliProperties(), metrics);
+            BilibiliApiUtil api = new BilibiliApiUtil(http, new NovaBilibiliProperties(), metrics);
             api.getTvQrCodeLoginInfo();
             assertEquals(1, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW),
                     "TV 生成多一个顶层键应 0→1，实际 "
@@ -259,7 +259,7 @@ class BilibiliApiUtilUnknownFieldTest {
             pollBody.put("code", 86039);
             pollBody.put("data", pollData);
             when(pollHttp.postAsForm(any(), any(), any())).thenReturn(pollBody.toJSONString());
-            BilibiliApiUtil pollApi = new BilibiliApiUtil(pollHttp, new StarBotBilibiliProperties(), pollMetrics);
+            BilibiliApiUtil pollApi = new BilibiliApiUtil(pollHttp, new NovaBilibiliProperties(), pollMetrics);
             pollApi.getTvQrCodeLoginStatus("auth");
             assertEquals(1, pollMetrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW),
                     "TV 轮询多一个顶层键应 0→1，实际 "
@@ -278,7 +278,7 @@ class BilibiliApiUtilUnknownFieldTest {
             hb.put("next_interval", 60);
             hb.put("x_extra", 0);
             when(http.getJson(any(), any())).thenReturn(wrap(hb));
-            BilibiliApiUtil api = new BilibiliApiUtil(http, new StarBotBilibiliProperties(), metrics);
+            BilibiliApiUtil api = new BilibiliApiUtil(http, new NovaBilibiliProperties(), metrics);
             api.liveRoomHeartbeat(1L, 60);
             assertEquals(0, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW),
                     "心跳取用为空整路不记，实际 "
@@ -313,7 +313,7 @@ class BilibiliApiUtilUnknownFieldTest {
         data.put("expires_in", 1);
         data.put("x_extra", 0);
         when(http.postAsForm(any(), any(), any())).thenReturn(wrap(data).toJSONString());
-        BilibiliApiUtil api = new BilibiliApiUtil(http, new StarBotBilibiliProperties(), metrics);
+        BilibiliApiUtil api = new BilibiliApiUtil(http, new NovaBilibiliProperties(), metrics);
         Cookies cookies = new Cookies();
         cookies.setAccessToken("old-a");
         cookies.setRefreshToken("old-r");
@@ -346,7 +346,7 @@ class BilibiliApiUtilUnknownFieldTest {
         try {
             BilibiliRiskMetrics metrics = new BilibiliRiskMetrics();
             BilibiliApiUtil api = new BilibiliApiUtil(mock(HttpUtil.class),
-                    new StarBotBilibiliProperties(), metrics);
+                    new NovaBilibiliProperties(), metrics);
             JSONObject data = keys("host_list", "token", "business_id");
             api.extractData(wrap(data),
                     "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo");
@@ -403,6 +403,6 @@ class BilibiliApiUtilUnknownFieldTest {
     private static BilibiliApiUtil apiReturning(String url, JSONObject body, BilibiliRiskMetrics metrics) {
         HttpUtil http = mock(HttpUtil.class);
         when(http.getJson(any(), any())).thenReturn(body);
-        return new BilibiliApiUtil(http, new StarBotBilibiliProperties(), metrics);
+        return new BilibiliApiUtil(http, new NovaBilibiliProperties(), metrics);
     }
 }

@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.sender;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.health.PushActivityRecorder;
 import com.starlwr.bot.core.model.Message;
@@ -81,7 +81,7 @@ class NovaMessageSenderTest {
         HttpUtil http = mock(HttpUtil.class);
         when(http.postJson(anyString(), anyMap(), anyMap())).thenReturn(new JSONObject().fluentPut("code", 0));
 
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getPush().setEnabled(false);
 
         NovaMessageSender messageSender = sender(http, properties);
@@ -102,7 +102,7 @@ class NovaMessageSenderTest {
     }
 
     private NovaMessageSender sender(HttpUtil http) {
-        return sender(http, new StarBotCoreProperties());
+        return sender(http, new NovaCoreProperties());
     }
 
     @Test
@@ -110,7 +110,7 @@ class NovaMessageSenderTest {
     void skipsStandaloneAtAllWhenQuotaExhausted() {
         // Message.create 在 {next} 处就把消息拆开了，at_all 拼出的
         // 「{at=all}{next}正文」会变成两条，第一条只有占位符
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getPush().setAtAllDailyLimit(1);
 
         HttpUtil http = okHttp();
@@ -128,7 +128,7 @@ class NovaMessageSenderTest {
     @Test
     @DisplayName("@全体成员 与正文同条时，超配额应只摘掉占位符、保留正文")
     void stripsAtAllButKeepsContent() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getPush().setAtAllDailyLimit(1);
 
         HttpUtil http = okHttp();
@@ -148,7 +148,7 @@ class NovaMessageSenderTest {
     @Test
     @DisplayName("私聊不占 @全体成员 的配额")
     void privateChatDoesNotConsumeQuota() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getPush().setAtAllDailyLimit(1);
 
         HttpUtil http = okHttp();
@@ -169,7 +169,7 @@ class NovaMessageSenderTest {
         // 实测过：无权限的账号经 OneBot 接口发 at:all 竟能真的 @ 到全体，
         // 那是 QQ 的漏洞。钻这个空子有风控风险，因此自己先拦下
         HttpUtil http = okHttp();
-        NovaMessageSender sender = sender(http, new StarBotCoreProperties(), false);
+        NovaMessageSender sender = sender(http, new NovaCoreProperties(), false);
 
         sender.sendNow(inlineAtAll());
 
@@ -182,7 +182,7 @@ class NovaMessageSenderTest {
     @Test
     @DisplayName("没有权限时不应消耗配额——那份额度是全账号共享的")
     void noPermissionDoesNotConsumeQuota() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getPush().setAtAllDailyLimit(1);
 
         HttpUtil http = okHttp();
@@ -205,7 +205,7 @@ class NovaMessageSenderTest {
     @DisplayName("有权限时应照常发出 @全体成员")
     void keepsAtAllWithPermission() {
         HttpUtil http = okHttp();
-        NovaMessageSender sender = sender(http, new StarBotCoreProperties(), true);
+        NovaMessageSender sender = sender(http, new NovaCoreProperties(), true);
 
         sender.sendNow(inlineAtAll());
 
@@ -218,7 +218,7 @@ class NovaMessageSenderTest {
     @DisplayName("没有任何适配器认领该平台时应放行，保持原有行为")
     void allowsWhenNoResolver() {
         HttpUtil http = okHttp();
-        NovaMessageSender sender = sender(http, new StarBotCoreProperties(), null);
+        NovaMessageSender sender = sender(http, new NovaCoreProperties(), null);
 
         sender.sendNow(inlineAtAll());
 
@@ -247,7 +247,7 @@ class NovaMessageSenderTest {
         return ArgumentCaptor.forClass(Map.class);
     }
 
-    private NovaMessageSender sender(HttpUtil http, StarBotCoreProperties properties) {
+    private NovaMessageSender sender(HttpUtil http, NovaCoreProperties properties) {
         Sender target = new Sender();
         target.setName(PLATFORM);
         target.setUrl("http://127.0.0.1:7827/onebot/send");
@@ -262,7 +262,7 @@ class NovaMessageSenderTest {
     /**
      * 造一个带指定权限判定的发送器；resolver 为 null 表示没有任何适配器认领该平台
      */
-    private NovaMessageSender sender(HttpUtil http, StarBotCoreProperties properties, Boolean canAtAll) {
+    private NovaMessageSender sender(HttpUtil http, NovaCoreProperties properties, Boolean canAtAll) {
         Sender target = new Sender();
         target.setName(PLATFORM);
         target.setUrl("http://127.0.0.1:7827/onebot/send");
@@ -429,7 +429,7 @@ class NovaMessageSenderTest {
         ObjectProvider<AtAllPermissionResolver> resolvers = mock(ObjectProvider.class);
         when(resolvers.iterator()).thenAnswer(invocation -> List.<AtAllPermissionResolver>of().iterator());
 
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         return new NovaMessageSender(http, senderService, new PushActivityRecorder(TimelineWriter.NONE), new PushGate(properties),
                 TimelineWriter.NONE, new com.starlwr.bot.core.service.AtAllQuotaService(properties), resolvers,
                 new FirstPushTipService(new com.starlwr.bot.core.service.StarBotStateStore(properties)));

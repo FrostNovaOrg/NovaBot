@@ -3,7 +3,7 @@ package com.starlwr.bot.bilibili.service;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.BilibiliPlatform;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.enums.ConnectStatus;
 import com.starlwr.bot.bilibili.enums.DataHeaderType;
 import com.starlwr.bot.bilibili.enums.DataPackType;
@@ -100,7 +100,7 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
 
     private final BilibiliEventParser parser;
 
-    private final StarBotBilibiliProperties properties;
+    private final NovaBilibiliProperties properties;
 
     private final ApplicationEventPublisher publisher;
 
@@ -332,7 +332,7 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
     public BilibiliLiveRoomConnector(@NonNull LiveStreamerInfo source,
                                      @NonNull BilibiliApiUtil api,
                                      @NonNull BilibiliEventParser parser,
-                                     @NonNull StarBotBilibiliProperties properties,
+                                     @NonNull NovaBilibiliProperties properties,
                                      @NonNull ApplicationEventPublisher publisher,
                                      @NonNull TaskScheduler scheduler,
                                      @NonNull WebSocketClient client,

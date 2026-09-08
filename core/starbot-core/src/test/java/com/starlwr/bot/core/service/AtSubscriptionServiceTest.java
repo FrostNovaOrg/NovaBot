@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.service;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -26,7 +26,7 @@ class AtSubscriptionServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new AtSubscriptionService(new StarBotStateStore(new StarBotCoreProperties()));
+        service = new AtSubscriptionService(new StarBotStateStore(new NovaCoreProperties()));
     }
 
     @Test

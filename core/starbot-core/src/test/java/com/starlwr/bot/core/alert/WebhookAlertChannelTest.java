@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.alert;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.util.HttpUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -33,7 +33,7 @@ import static org.mockito.Mockito.when;
  */
 @DisplayName("Webhook 告警通道")
 class WebhookAlertChannelTest {
-    private StarBotCoreProperties properties;
+    private NovaCoreProperties properties;
 
     private HttpUtil http;
 
@@ -41,7 +41,7 @@ class WebhookAlertChannelTest {
 
     @BeforeEach
     void setUp() {
-        properties = new StarBotCoreProperties();
+        properties = new NovaCoreProperties();
         http = mock(HttpUtil.class);
         channel = new WebhookAlertChannel(properties, http);
         // 成败只看状态码，默认桩成 200；不桩的话 mock 返回 0，会被判成非 2xx

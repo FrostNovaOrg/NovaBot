@@ -1,6 +1,6 @@
 package com.starlwr.bot.report.painter;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.model.TextWithStyle;
 import com.starlwr.bot.report.util.FontUtil;
 import org.junit.jupiter.api.BeforeAll;
@@ -75,7 +75,7 @@ class CommonPainterLinkColorPixelTest {
      */
     private static final String ADDRESS_AS_LINK = "github.com/FrostNovaOrg/NovaBot";
 
-    private StarBotCoreProperties properties;
+    private NovaCoreProperties properties;
     private FontUtil fontUtil;
     private BuildProperties buildProperties;
 
@@ -86,7 +86,7 @@ class CommonPainterLinkColorPixelTest {
 
     @BeforeEach
     void setUp() {
-        properties = new StarBotCoreProperties();
+        properties = new NovaCoreProperties();
         // 用内置字体，免得结论取决于跑测试这台机器装了什么字体
         properties.getPaint().getFonts().add("内置");
 
@@ -294,7 +294,7 @@ class CommonPainterLinkColorPixelTest {
      */
     private static final class AddressPainter extends CommonPainter {
 
-        AddressPainter(BuildProperties buildProperties, StarBotCoreProperties properties, FontUtil fontUtil) {
+        AddressPainter(BuildProperties buildProperties, NovaCoreProperties properties, FontUtil fontUtil) {
             super(buildProperties, properties, fontUtil, 900, 400, false);
         }
 

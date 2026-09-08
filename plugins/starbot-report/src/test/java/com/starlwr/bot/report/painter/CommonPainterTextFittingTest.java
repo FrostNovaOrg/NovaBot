@@ -1,6 +1,6 @@
 package com.starlwr.bot.report.painter;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.model.TextWithStyle;
 import com.starlwr.bot.report.factory.StarBotCommonPainterFactory;
 import com.starlwr.bot.report.util.FontUtil;
@@ -42,7 +42,7 @@ class CommonPainterTextFittingTest {
 
     @BeforeEach
     void setUp() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         // 用内置字体，免得结论取决于跑测试这台机器装了什么字体
         properties.getPaint().getFonts().add("内置");
 

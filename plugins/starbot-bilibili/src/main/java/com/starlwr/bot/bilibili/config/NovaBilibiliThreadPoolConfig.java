@@ -8,7 +8,7 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
  * StarBotBilibili 线程池配置
  */
 @NovaComponent
-public class StarBotBilibiliThreadPoolConfig {
+public class NovaBilibiliThreadPoolConfig {
     /**
      * 哔哩哔哩相关的定时任务调度器
      * <p>
@@ -18,7 +18,7 @@ public class StarBotBilibiliThreadPoolConfig {
      * @return 调度器
      */
     @Bean("bilibiliTaskScheduler")
-    public ThreadPoolTaskScheduler bilibiliTaskScheduler(StarBotBilibiliProperties properties) {
+    public ThreadPoolTaskScheduler bilibiliTaskScheduler(NovaBilibiliProperties properties) {
         ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
 
         scheduler.setPoolSize(Math.max(2, properties.getBilibiliThread().getCorePoolSize()));

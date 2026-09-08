@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.web;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSessionStore;
 import com.starlwr.bot.core.config.ui.auth.LoginThrottle;
@@ -52,7 +52,7 @@ class ReadOnlyTokenControllerTest {
 
     @BeforeEach
     void setUp() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
         tokens = new EventStreamTokenService(properties.getLive());
     }
@@ -62,7 +62,7 @@ class ReadOnlyTokenControllerTest {
      * @param totpSecret 已绑定的验证器密钥，空串表示没绑
      */
     private ReadOnlyTokenController controller(String password, String totpSecret) {
-        StarBotCoreProperties.ConfigUi.Auth auth = new StarBotCoreProperties.ConfigUi.Auth();
+        NovaCoreProperties.ConfigUi.Auth auth = new NovaCoreProperties.ConfigUi.Auth();
         auth.setPassword(password);
         auth.setTotpSecret(totpSecret);
         auth.setTotp(!totpSecret.isEmpty());
@@ -179,7 +179,7 @@ class ReadOnlyTokenControllerTest {
     @DisplayName("🔴 锁定必须与「密码不对」分得开")
     void reportsLockoutSeparately() {
         ReadOnlyTokenController controller = controller(PASSWORD, "");
-        StarBotCoreProperties.ConfigUi.Auth defaults = new StarBotCoreProperties.ConfigUi.Auth();
+        NovaCoreProperties.ConfigUi.Auth defaults = new NovaCoreProperties.ConfigUi.Auth();
 
         for (int i = 0; i < defaults.getMaxFailures(); i++) {
             post(controller, body("wrong", "VRDash 面板"));
@@ -237,11 +237,11 @@ class ReadOnlyTokenControllerTest {
         Path blocker = dir.resolve("not-a-directory");
         Files.writeString(blocker, "occupied");
 
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(blocker.resolve("data.json").toString());
         EventStreamTokenService brokenTokens = new EventStreamTokenService(properties.getLive());
 
-        StarBotCoreProperties.ConfigUi.Auth auth = new StarBotCoreProperties.ConfigUi.Auth();
+        NovaCoreProperties.ConfigUi.Auth auth = new NovaCoreProperties.ConfigUi.Auth();
         auth.setPassword(PASSWORD);
         ConfigUiAuthService service = new ConfigUiAuthService(auth,
                 new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(2)),
@@ -278,7 +278,7 @@ class ReadOnlyTokenControllerTest {
         refuseAndCheck(controller("", ""), body("whatever", "面板"), 400, "auth_disabled", bad);
 
         ReadOnlyTokenController locked = controller(PASSWORD, "");
-        StarBotCoreProperties.ConfigUi.Auth defaults = new StarBotCoreProperties.ConfigUi.Auth();
+        NovaCoreProperties.ConfigUi.Auth defaults = new NovaCoreProperties.ConfigUi.Auth();
         for (int i = 0; i < defaults.getMaxFailures(); i++) {
             post(locked, body("wrong", "面板"));
         }
@@ -292,7 +292,7 @@ class ReadOnlyTokenControllerTest {
         // 写盘失败这一支原先只有 message 没有 reason——就是本笔要补的那一半
         Path blocker = dir.resolve("not-a-directory");
         Files.writeString(blocker, "occupied");
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(blocker.resolve("data.json").toString());
         ReadOnlyTokenController broken = new ReadOnlyTokenController(
                 provider(passwordOnlyService()), new EventStreamTokenService(properties.getLive()));
@@ -320,7 +320,7 @@ class ReadOnlyTokenControllerTest {
     }
 
     private ConfigUiAuthService passwordOnlyService() {
-        StarBotCoreProperties.ConfigUi.Auth auth = new StarBotCoreProperties.ConfigUi.Auth();
+        NovaCoreProperties.ConfigUi.Auth auth = new NovaCoreProperties.ConfigUi.Auth();
         auth.setPassword(PASSWORD);
         return new ConfigUiAuthService(auth,
                 new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(2)),

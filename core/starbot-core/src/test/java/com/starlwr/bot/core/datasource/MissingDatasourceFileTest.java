@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.datasource;
 
 import com.starlwr.bot.core.properties.DatasourceProperties;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.exception.DataSourceException;
 import com.starlwr.bot.core.handler.StarBotEventHandlerPushMessageInitializer;
 import com.starlwr.bot.core.service.PushTemplateDefaults;
@@ -49,7 +49,7 @@ class MissingDatasourceFileTest {
                 mock(ApplicationEventPublisher.class),
                 new DataSourceServiceRegistry(List.of()),
                 new StarBotEventHandlerPushMessageInitializer(mock(StarBotEventHandlerService.class),
-                        new PushTemplateDefaults(new StarBotCoreProperties())),
+                        new PushTemplateDefaults(new NovaCoreProperties())),
                 properties);
     }
 

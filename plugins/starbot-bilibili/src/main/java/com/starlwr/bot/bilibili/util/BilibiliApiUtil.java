@@ -3,7 +3,7 @@ package com.starlwr.bot.bilibili.util;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.enums.DanmuType;
 import com.starlwr.bot.bilibili.exception.NetworkException;
 import com.starlwr.bot.bilibili.exception.RequestFailedException;
@@ -299,7 +299,7 @@ public class BilibiliApiUtil {
 
     private final HttpUtil http;
 
-    private final StarBotBilibiliProperties properties;
+    private final NovaBilibiliProperties properties;
 
     /**
      * 风控指标记录。这些信号不报错也不进日志，不主动记就等于没有发现机制
@@ -346,7 +346,7 @@ public class BilibiliApiUtil {
     private final AtomicBoolean signRefreshing = new AtomicBoolean();
 
     @Autowired
-    public BilibiliApiUtil(HttpUtil http, StarBotBilibiliProperties properties, BilibiliRiskMetrics riskMetrics) {
+    public BilibiliApiUtil(HttpUtil http, NovaBilibiliProperties properties, BilibiliRiskMetrics riskMetrics) {
         this.http = http;
         this.properties = properties;
         this.riskMetrics = riskMetrics;

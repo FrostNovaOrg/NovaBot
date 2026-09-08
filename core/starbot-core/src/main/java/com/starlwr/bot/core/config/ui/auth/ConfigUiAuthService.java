@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.config.ui.auth;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.config.ui.ConfigurationFileService;
 import com.starlwr.bot.core.config.ui.ConfigurationKeyAliases;
 import lombok.extern.slf4j.Slf4j;
@@ -183,12 +183,12 @@ public class ConfigUiAuthService {
      */
     private final Supplier<Instant> clock;
 
-    public ConfigUiAuthService(StarBotCoreProperties.ConfigUi.Auth properties, ConfigUiSessionStore sessions,
+    public ConfigUiAuthService(NovaCoreProperties.ConfigUi.Auth properties, ConfigUiSessionStore sessions,
                                LoginThrottle throttle, ConfigurationFileService fileService) {
         this(properties, sessions, throttle, fileService, Instant::now);
     }
 
-    ConfigUiAuthService(StarBotCoreProperties.ConfigUi.Auth properties, ConfigUiSessionStore sessions,
+    ConfigUiAuthService(NovaCoreProperties.ConfigUi.Auth properties, ConfigUiSessionStore sessions,
                         LoginThrottle throttle, ConfigurationFileService fileService,
                         Supplier<Instant> clock) {
         this.sessions = sessions;

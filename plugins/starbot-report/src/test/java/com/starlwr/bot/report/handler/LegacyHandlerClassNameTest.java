@@ -9,7 +9,7 @@ import com.starlwr.bot.bilibili.command.BilibiliStreamerChoice;
 import com.starlwr.bot.bilibili.handler.BilibiliLiveOnPushHandler;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.command.CommandContext;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.handler.NovaEventHandler;
@@ -301,7 +301,7 @@ class LegacyHandlerClassNameTest {
     // ---------- 零件 ----------
 
     private PushTemplateDefaults templateDefaults() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getDatasource().setJsonPath(dir.resolve("datasource.json").toString());
         return new PushTemplateDefaults(properties);
     }

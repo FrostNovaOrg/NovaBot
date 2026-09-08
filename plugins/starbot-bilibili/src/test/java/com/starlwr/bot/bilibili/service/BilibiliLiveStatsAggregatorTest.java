@@ -15,7 +15,7 @@ import com.starlwr.bot.bilibili.event.live.BilibiliRandomGiftEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliWatchedUpdateEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliSuperChatEvent;
 import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.model.GiftInfo;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.UserScore;
@@ -68,7 +68,7 @@ class BilibiliLiveStatsAggregatorTest {
 
     @BeforeEach
     void setUp() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
 
         liveDataService = new DefaultLiveDataService(properties);
@@ -531,7 +531,7 @@ class BilibiliLiveStatsAggregatorTest {
         }
         try {
             Path isolatedDir = dir.resolve("nostart");
-            StarBotCoreProperties isolatedProps = new StarBotCoreProperties();
+            NovaCoreProperties isolatedProps = new NovaCoreProperties();
             isolatedProps.getLive().setLiveDataPath(isolatedDir.resolve("data.json").toString());
             DefaultLiveDataService isolatedLive = new DefaultLiveDataService(isolatedProps);
             LiveDetailArchive isolatedDetails = new LiveDetailArchive(isolatedProps);

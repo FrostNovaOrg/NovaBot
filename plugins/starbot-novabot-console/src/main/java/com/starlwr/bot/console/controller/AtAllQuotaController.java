@@ -2,7 +2,7 @@ package com.starlwr.bot.console.controller;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.config.ui.ConfigUiController;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.PushTargetType;
@@ -49,13 +49,13 @@ public class AtAllQuotaController {
 
     private final AbstractDataSource dataSource;
 
-    private final StarBotCoreProperties properties;
+    private final NovaCoreProperties properties;
 
     private final NovaSenderService senders;
 
     @Autowired
     public AtAllQuotaController(AtAllQuotaService quota, AbstractDataSource dataSource,
-                                StarBotCoreProperties properties, NovaSenderService senders) {
+                                NovaCoreProperties properties, NovaSenderService senders) {
         this.quota = quota;
         this.dataSource = dataSource;
         this.properties = properties;

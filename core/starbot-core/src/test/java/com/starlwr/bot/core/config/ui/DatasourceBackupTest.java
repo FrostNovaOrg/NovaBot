@@ -2,7 +2,7 @@ package com.starlwr.bot.core.config.ui;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.health.HealthProbe;
 import com.starlwr.bot.core.service.PushTemplateDefaults;
@@ -53,7 +53,7 @@ class DatasourceBackupTest {
 
     private Path datasource;
 
-    private StarBotCoreProperties properties;
+    private NovaCoreProperties properties;
 
     private ConfigUiController controller;
 
@@ -66,7 +66,7 @@ class DatasourceBackupTest {
         datasource = dir.resolve("datasource.json");
         Files.writeString(datasource, "[]", StandardCharsets.UTF_8);
 
-        properties = new StarBotCoreProperties();
+        properties = new NovaCoreProperties();
         properties.getDatasource().setJsonPath(datasource.toString());
 
         ConfigurationValidator validator = mock(ConfigurationValidator.class);
@@ -109,7 +109,7 @@ class DatasourceBackupTest {
                 mock(com.starlwr.bot.core.service.LiveDataService.class),
                 timeline,
                 mock(com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService.class),
-                new PushTemplateDefaults(new StarBotCoreProperties()),
+                new PushTemplateDefaults(new NovaCoreProperties()),
                 mock(UpdateCheckService.class));
         controller.backupClock = Clock.fixed(START, ZoneOffset.UTC);
     }

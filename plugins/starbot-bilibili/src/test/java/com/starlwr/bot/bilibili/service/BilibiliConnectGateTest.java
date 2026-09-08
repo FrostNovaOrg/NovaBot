@@ -1,6 +1,6 @@
 package com.starlwr.bot.bilibili.service;
 
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -27,7 +27,7 @@ import static org.mockito.Mockito.verify;
 class BilibiliConnectGateTest {
     private static final int INTERVAL = 2000;
 
-    private StarBotBilibiliProperties properties;
+    private NovaBilibiliProperties properties;
 
     private TaskScheduler scheduler;
 
@@ -35,7 +35,7 @@ class BilibiliConnectGateTest {
 
     @BeforeEach
     void setUp() {
-        properties = new StarBotBilibiliProperties();
+        properties = new NovaBilibiliProperties();
         properties.getLive().setLiveRoomConnectInterval(INTERVAL);
         scheduler = mock(TaskScheduler.class);
         gate = new BilibiliConnectGate(properties, scheduler);

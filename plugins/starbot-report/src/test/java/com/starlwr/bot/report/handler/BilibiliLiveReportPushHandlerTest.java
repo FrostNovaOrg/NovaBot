@@ -13,7 +13,7 @@ import com.starlwr.bot.core.sender.NovaMessageSender;
 import com.starlwr.bot.bilibili.model.BilibiliLiveReportOptions;
 import com.starlwr.bot.core.service.RevenueVisibilityService;
 import com.starlwr.bot.core.service.StarBotStateStore;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -54,7 +54,7 @@ class BilibiliLiveReportPushHandlerTest {
     @BeforeEach
     void setUp() {
         // 落点全指到临时目录：状态存储会写盘，跑一趟测试不该在仓里留下文件
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
 
         revenueVisibility = new RevenueVisibilityService(new StarBotStateStore(properties));

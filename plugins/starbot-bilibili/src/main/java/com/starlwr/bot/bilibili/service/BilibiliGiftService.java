@@ -2,7 +2,7 @@ package com.starlwr.bot.bilibili.service;
 
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.LoadingCache;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.model.Gift;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.plugin.NovaComponent;
@@ -35,7 +35,7 @@ public class BilibiliGiftService {
     private final LoadingCache<String, GiftConfig> cache;
 
     @Autowired
-    public BilibiliGiftService(BilibiliApiUtil api, StarBotBilibiliProperties properties) {
+    public BilibiliGiftService(BilibiliApiUtil api, NovaBilibiliProperties properties) {
         this.api = api;
         this.cache = Caffeine.newBuilder()
                 .expireAfterWrite(Duration.ofSeconds(Math.max(60, properties.getLive().getGiftCacheExpire())))

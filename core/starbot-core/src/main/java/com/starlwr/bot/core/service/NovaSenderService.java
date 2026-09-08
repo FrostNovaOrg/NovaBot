@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.service;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.model.Sender;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -22,7 +22,7 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 public class NovaSenderService {
-    private final StarBotCoreProperties properties;
+    private final NovaCoreProperties properties;
 
     private final Map<String, Sender> senders = new HashMap<>();
 
@@ -33,7 +33,7 @@ public class NovaSenderService {
     private final Map<String, String> displayNames = new HashMap<>();
 
     @Autowired
-    public NovaSenderService(StarBotCoreProperties properties) {
+    public NovaSenderService(NovaCoreProperties properties) {
         this.properties = properties;
     }
 

@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.alert;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.util.HttpUtil;
 import com.starlwr.bot.core.lang.StringUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -26,12 +26,12 @@ import java.util.Map;
 @Slf4j
 @Component
 public class WebhookAlertChannel implements AlertChannel {
-    private final StarBotCoreProperties properties;
+    private final NovaCoreProperties properties;
 
     private final HttpUtil http;
 
     @Autowired
-    public WebhookAlertChannel(StarBotCoreProperties properties, HttpUtil http) {
+    public WebhookAlertChannel(NovaCoreProperties properties, HttpUtil http) {
         this.properties = properties;
         this.http = http;
     }
@@ -53,7 +53,7 @@ public class WebhookAlertChannel implements AlertChannel {
 
     @Override
     public void send(String subject, String content) {
-        StarBotCoreProperties.Alert alert = properties.getAlert();
+        NovaCoreProperties.Alert alert = properties.getAlert();
         String url = alert.getWebhookUrl();
 
         Map<String, String> headers = new LinkedHashMap<>(alert.getWebhookHeaders());

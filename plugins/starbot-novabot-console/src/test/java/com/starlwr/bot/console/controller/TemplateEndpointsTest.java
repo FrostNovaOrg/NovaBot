@@ -1,7 +1,7 @@
 package com.starlwr.bot.console.controller;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.event.NovaExternalBaseEvent;
 import com.starlwr.bot.core.handler.NovaEventHandler;
 import com.starlwr.bot.core.model.HandlerOption;
@@ -49,7 +49,7 @@ class TemplateEndpointsTest {
 
     @BeforeEach
     void setUp() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getDatasource().setJsonPath(dir.resolve("datasource.json").toString());
         defaults = new PushTemplateDefaults(properties);
         handler = new FakeHandler();
@@ -124,7 +124,7 @@ class TemplateEndpointsTest {
     }
 
     @SuppressWarnings("unchecked")
-    private PushController controller(StarBotCoreProperties properties,
+    private PushController controller(NovaCoreProperties properties,
                                      PushTemplateDefaults templateDefaults,
                                      StarBotEventHandlerService handlers) {
         return new PushController(

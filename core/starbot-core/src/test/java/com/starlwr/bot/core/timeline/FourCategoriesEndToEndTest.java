@@ -10,7 +10,7 @@ import com.starlwr.bot.core.command.CommandFollowUp;
 import com.starlwr.bot.core.command.CommandReply;
 import com.starlwr.bot.core.command.CommandSettingsService;
 import com.starlwr.bot.core.command.NovaCommand;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.config.ui.RuntimeConfigurationApplier;
 import com.starlwr.bot.core.config.ui.RuntimeConfigurationApplierContributor;
 import com.starlwr.bot.core.config.ui.TimelineController;
@@ -76,7 +76,7 @@ class FourCategoriesEndToEndTest {
 
     @BeforeEach
     void setUp() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
         store = new TimelineStore(properties);
         store.load();
@@ -223,8 +223,8 @@ class FourCategoriesEndToEndTest {
         when(followUps.iterator()).thenAnswer(invocation -> List.<CommandFollowUp>of().iterator());
 
         return new CommandDispatcher(commands, followUps,
-                new CommandSettingsService(new StarBotStateStore(new StarBotCoreProperties())),
-                dataSource, mock(NovaMessageSender.class), new StarBotCoreProperties(), store);
+                new CommandSettingsService(new StarBotStateStore(new NovaCoreProperties())),
+                dataSource, mock(NovaMessageSender.class), new NovaCoreProperties(), store);
     }
 
     /**
@@ -236,14 +236,14 @@ class FourCategoriesEndToEndTest {
         ObjectProvider<RuntimeConfigurationApplierContributor> contributors = mock(ObjectProvider.class);
         when(contributors.orderedStream())
                 .thenAnswer(invocation -> Stream.<RuntimeConfigurationApplierContributor>of());
-        return new RuntimeConfigurationApplier(new StarBotCoreProperties(), null, contributors, store);
+        return new RuntimeConfigurationApplier(new NovaCoreProperties(), null, contributors, store);
     }
 
     private AlertService alertService(AlertChannel channel) {
         @SuppressWarnings("unchecked")
         ObjectProvider<AlertChannel> provider = mock(ObjectProvider.class);
         when(provider.orderedStream()).thenAnswer(invocation -> Stream.of(channel));
-        return new AlertService(new StarBotCoreProperties(), provider, store);
+        return new AlertService(new NovaCoreProperties(), provider, store);
     }
 
     private PushUser configuredUser() {

@@ -1,6 +1,6 @@
 package com.starlwr.bot.bilibili.health;
 
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.enums.ConnectStatus;
 import com.starlwr.bot.bilibili.service.BilibiliLiveRoomService;
 import com.starlwr.bot.core.health.HealthProbe;
@@ -17,10 +17,10 @@ import java.util.Map;
 public class BilibiliLiveRoomHealthProbe implements HealthProbe {
     private final BilibiliLiveRoomService liveRoomService;
 
-    private final StarBotBilibiliProperties properties;
+    private final NovaBilibiliProperties properties;
 
     @Autowired
-    public BilibiliLiveRoomHealthProbe(BilibiliLiveRoomService liveRoomService, StarBotBilibiliProperties properties) {
+    public BilibiliLiveRoomHealthProbe(BilibiliLiveRoomService liveRoomService, NovaBilibiliProperties properties) {
         this.liveRoomService = liveRoomService;
         this.properties = properties;
     }

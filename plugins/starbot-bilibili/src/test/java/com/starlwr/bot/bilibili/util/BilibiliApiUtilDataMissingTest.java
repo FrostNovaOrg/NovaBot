@@ -1,7 +1,7 @@
 package com.starlwr.bot.bilibili.util;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.health.BilibiliRiskMetrics;
 import com.starlwr.bot.core.util.HttpUtil;
 import org.junit.jupiter.api.DisplayName;
@@ -37,7 +37,7 @@ class BilibiliApiUtilDataMissingTest {
         okWithoutData.put("code", 0);
         String url = "https://api.example.com/room/v1/Info?roomid=47731877194803";
         when(http.getJson(eq(url), any())).thenReturn(okWithoutData);
-        BilibiliApiUtil api = new BilibiliApiUtil(http, new StarBotBilibiliProperties(), riskMetrics);
+        BilibiliApiUtil api = new BilibiliApiUtil(http, new NovaBilibiliProperties(), riskMetrics);
 
         try {
             JSONObject data = api.requestBilibiliApi(url);

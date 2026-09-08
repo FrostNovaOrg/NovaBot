@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.service;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.model.UserScore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -28,7 +28,7 @@ class DefaultLiveDataServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new DefaultLiveDataService(new StarBotCoreProperties());
+        service = new DefaultLiveDataService(new NovaCoreProperties());
     }
 
     @Test

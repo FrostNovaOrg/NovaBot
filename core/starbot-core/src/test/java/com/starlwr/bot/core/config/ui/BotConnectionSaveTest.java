@@ -2,7 +2,7 @@ package com.starlwr.bot.core.config.ui;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.account.BotConnectionTester;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -139,7 +139,7 @@ class BotConnectionSaveTest {
 
     @SuppressWarnings("unchecked")
     private ConfigUiController controller(ConfigurationFileService files, BotConnectionTester tester) {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
 
         ObjectProvider<BotConnectionTester> testers = mock(ObjectProvider.class);
         when(testers.orderedStream()).thenAnswer(invocation -> Stream.of(tester));

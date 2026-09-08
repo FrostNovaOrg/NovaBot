@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.config.ui;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.config.ui.auth.passkey.PasskeyRelyingParty;
 import com.starlwr.bot.core.config.ui.auth.passkey.PasskeyService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -40,9 +40,9 @@ import java.time.Duration;
 public class ConfigUiPasskeyController {
     private final PasskeyService passkeyService;
 
-    private final StarBotCoreProperties.ConfigUi.Auth properties;
+    private final NovaCoreProperties.ConfigUi.Auth properties;
 
-    public ConfigUiPasskeyController(PasskeyService passkeyService, StarBotCoreProperties properties) {
+    public ConfigUiPasskeyController(PasskeyService passkeyService, NovaCoreProperties properties) {
         this.passkeyService = passkeyService;
         this.properties = properties.getConfigUi().getAuth();
     }

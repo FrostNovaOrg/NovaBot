@@ -39,7 +39,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Setter
 @Configuration
 @ConfigurationProperties(prefix = "novabot.core")
-public class StarBotCoreProperties {
+public class NovaCoreProperties {
     /**
      * 单独成件的那几节
      * <p>

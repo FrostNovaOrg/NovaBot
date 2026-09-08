@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.exec;
 
 import com.alibaba.fastjson2.JSON;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.event.NovaExternalBaseEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import jakarta.annotation.PreDestroy;
@@ -61,7 +61,7 @@ public class EventCommandRunner {
      */
     private static final int MAX_JSON_CHARS = 8000;
 
-    private final StarBotCoreProperties properties;
+    private final NovaCoreProperties properties;
 
     private final ExecutorService executor;
 
@@ -72,7 +72,7 @@ public class EventCommandRunner {
     private final Semaphore permits;
 
     @Autowired
-    public EventCommandRunner(StarBotCoreProperties properties) {
+    public EventCommandRunner(NovaCoreProperties properties) {
         this.properties = properties;
         this.permits = new Semaphore(Math.max(1, properties.getExec().getMaxConcurrent()));
         this.executor = Executors.newCachedThreadPool(runnable -> {
@@ -87,12 +87,12 @@ public class EventCommandRunner {
      */
     @EventListener
     public void onEvent(NovaExternalBaseEvent event) {
-        StarBotCoreProperties.Exec exec = properties.getExec();
+        NovaCoreProperties.Exec exec = properties.getExec();
         if (!exec.isEnabled() || exec.getRules().isEmpty()) {
             return;
         }
 
-        for (StarBotCoreProperties.ExecRule rule : exec.getRules()) {
+        for (NovaCoreProperties.ExecRule rule : exec.getRules()) {
             if (rule.isEnabled() && matches(rule, event)) {
                 submit(rule, event);
             }
@@ -106,7 +106,7 @@ public class EventCommandRunner {
      * {@code BilibiliLiveOnEvent}——按平台细分是少数需求，按事件种类配才是常态。
      * 类名写简名或全限定名都可以。
      */
-    boolean matches(StarBotCoreProperties.ExecRule rule, NovaExternalBaseEvent event) {
+    boolean matches(NovaCoreProperties.ExecRule rule, NovaExternalBaseEvent event) {
         String configured = rule.getEvent();
         if (configured == null || configured.isBlank()) {
             return false;
@@ -123,7 +123,7 @@ public class EventCommandRunner {
     /**
      * 提交一次执行
      */
-    private void submit(StarBotCoreProperties.ExecRule rule, NovaExternalBaseEvent event) {
+    private void submit(NovaCoreProperties.ExecRule rule, NovaExternalBaseEvent event) {
         List<String> command = resolve(rule.getCommand(), event);
         if (command.isEmpty()) {
             log.warn("事件命令规则 {} 没有配置可执行的命令, 已跳过", rule.getEvent());
@@ -176,7 +176,7 @@ public class EventCommandRunner {
     /**
      * 执行一次命令
      */
-    private void run(List<String> command, StarBotCoreProperties.ExecRule rule) {
+    private void run(List<String> command, NovaCoreProperties.ExecRule rule) {
         int timeout = Math.max(1, properties.getExec().getTimeout());
         Process process = null;
 

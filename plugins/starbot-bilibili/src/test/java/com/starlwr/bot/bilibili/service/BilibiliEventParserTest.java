@@ -2,7 +2,7 @@ package com.starlwr.bot.bilibili.service;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.health.BilibiliRiskMetrics;
 import com.starlwr.bot.bilibili.enums.GuardOperateType;
 import com.starlwr.bot.bilibili.enums.GuardType;
@@ -44,7 +44,7 @@ import static org.mockito.Mockito.when;
 class BilibiliEventParserTest {
     private static final LiveStreamerInfo SOURCE = new LiveStreamerInfo(19805387116684L, "主播", 47731877194803L);
 
-    private StarBotBilibiliProperties properties;
+    private NovaBilibiliProperties properties;
     private BilibiliRiskMetrics riskMetrics;
     private BilibiliEventParser parser;
 
@@ -60,7 +60,7 @@ class BilibiliEventParserTest {
 
     @BeforeEach
     void setUp() {
-        properties = new StarBotBilibiliProperties();
+        properties = new NovaBilibiliProperties();
         riskMetrics = new BilibiliRiskMetrics();
         published = new ArrayList<>();
 

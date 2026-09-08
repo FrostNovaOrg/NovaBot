@@ -2,7 +2,7 @@ package com.starlwr.bot.bilibili.service;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.model.Cookies;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -52,13 +52,13 @@ public class BilibiliCredentialStore {
 
     private static final SecureRandom RANDOM = new SecureRandom();
 
-    private final StarBotBilibiliProperties.Account properties;
+    private final NovaBilibiliProperties.Account properties;
 
     private final Path cookiePath;
 
     private final Path keyPath;
 
-    public BilibiliCredentialStore(@NonNull StarBotBilibiliProperties.Account properties) {
+    public BilibiliCredentialStore(@NonNull NovaBilibiliProperties.Account properties) {
         this.properties = properties;
         this.cookiePath = Path.of(properties.getCookiePath());
         this.keyPath = Path.of(properties.getKeyPath());

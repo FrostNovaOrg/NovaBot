@@ -2,7 +2,7 @@ package com.starlwr.bot.bilibili.service;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.enums.DataPackType;
 import com.starlwr.bot.bilibili.health.BilibiliDisconnectCause;
 import com.starlwr.bot.bilibili.health.BilibiliDisconnectDigest;
@@ -117,7 +117,7 @@ class BilibiliConnectorHarness {
 
     private final WebSocketSession session = mock(WebSocketSession.class);
 
-    private final StarBotBilibiliProperties properties = new StarBotBilibiliProperties();
+    private final NovaBilibiliProperties properties = new NovaBilibiliProperties();
 
     /** 连接器发出去的原始字节，按顺序 */
     private final List<byte[]> sent = new ArrayList<>();

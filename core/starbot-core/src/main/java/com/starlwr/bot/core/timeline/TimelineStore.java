@@ -2,7 +2,7 @@ package com.starlwr.bot.core.timeline;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import jakarta.annotation.PostConstruct;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -81,7 +81,7 @@ public class TimelineStore implements TimelineWriter {
 
     private static final int MAX_LIMIT = 2000;
 
-    private final StarBotCoreProperties properties;
+    private final NovaCoreProperties properties;
 
     /**
      * 写锁。多处现场可能同时记事件，追加写虽是原子的，但仍要避免两行交错
@@ -99,7 +99,7 @@ public class TimelineStore implements TimelineWriter {
     private final Deque<TimelineEvent> recent = new ArrayDeque<>();
 
     @Autowired
-    public TimelineStore(StarBotCoreProperties properties) {
+    public TimelineStore(NovaCoreProperties properties) {
         this.properties = properties;
     }
 
