@@ -1,6 +1,6 @@
 package com.starlwr.bot.report.painter;
 
-import com.starlwr.bot.core.util.FontUtil;
+import com.starlwr.bot.report.util.FontUtil;
 
 import java.awt.Color;
 import java.awt.Dimension;

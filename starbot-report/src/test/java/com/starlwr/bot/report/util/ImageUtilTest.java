@@ -1,4 +1,4 @@
-package com.starlwr.bot.core.util;
+package com.starlwr.bot.report.util;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;

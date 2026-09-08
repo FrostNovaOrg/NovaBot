@@ -1,8 +1,8 @@
-package com.starlwr.bot.core.factory;
+package com.starlwr.bot.report.factory;
 
 import com.starlwr.bot.core.config.StarBotCoreProperties;
-import com.starlwr.bot.core.painter.CommonPainter;
-import com.starlwr.bot.core.util.FontUtil;
+import com.starlwr.bot.report.painter.CommonPainter;
+import com.starlwr.bot.report.util.FontUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.info.BuildProperties;
 import org.springframework.stereotype.Component;

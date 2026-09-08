@@ -1,9 +1,9 @@
-package com.starlwr.bot.core.painter;
+package com.starlwr.bot.report.painter;
 
 import com.starlwr.bot.core.config.StarBotCoreProperties;
-import com.starlwr.bot.core.factory.StarBotCommonPainterFactory;
 import com.starlwr.bot.core.model.TextWithStyle;
-import com.starlwr.bot.core.util.FontUtil;
+import com.starlwr.bot.report.factory.StarBotCommonPainterFactory;
+import com.starlwr.bot.report.util.FontUtil;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

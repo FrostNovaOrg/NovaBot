@@ -1,8 +1,8 @@
-package com.starlwr.bot.core.painter;
+package com.starlwr.bot.report.painter;
 
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.model.TextWithStyle;
-import com.starlwr.bot.core.util.FontUtil;
+import com.starlwr.bot.report.util.FontUtil;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -55,9 +55,14 @@ class CommonPainterLinkColorPixelTest {
     /** 容差：距离不超过它就算一枚。取值见本轮读数，两个方向都量过。 */
     private static final int TOLERANCE = 40;
 
-    /** 尺自己的源码，用来印出这一跑量的是哪一版。 */
-    private static final Path GAUGE_SOURCE =
-            Path.of("src/test/java/com/starlwr/bot/core/painter/LinkColorPixels.java");
+    /**
+     * 尺自己的源码，用来印出这一跑量的是哪一版。
+     * <p>
+     * 路径由那个类自己推出来，不写死包名：写死的那一版在这批类换包时当场失锚，
+     * 而失锚的样子是「读数说不出是哪一版量的」，不是「量错了」。
+     */
+    private static final Path GAUGE_SOURCE = Path.of("src/test/java")
+            .resolve(LinkColorPixels.class.getName().replace('.', '/') + ".java");
 
     /**
      * 阳性对照：把版权行那一串<b>用链接色</b>再画一遍

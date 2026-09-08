@@ -1,4 +1,4 @@
-package com.starlwr.bot.core.painter;
+package com.starlwr.bot.report.painter;
 
 import java.awt.Color;
 import java.awt.image.BufferedImage;

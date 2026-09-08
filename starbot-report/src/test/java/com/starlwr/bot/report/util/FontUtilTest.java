@@ -1,4 +1,4 @@
-package com.starlwr.bot.core.util;
+package com.starlwr.bot.report.util;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
