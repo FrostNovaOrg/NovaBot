@@ -1,6 +1,6 @@
 package com.starlwr.bot.adapter.onebot.security;
 
-import com.starlwr.bot.core.util.SecureToken;
+import com.starlwr.bot.core.lang.SecureToken;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.server.PathContainer;
 import org.springframework.http.server.RequestPath;

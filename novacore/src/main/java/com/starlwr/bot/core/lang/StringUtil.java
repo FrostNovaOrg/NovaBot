@@ -1,4 +1,4 @@
-package com.starlwr.bot.core.util;
+package com.starlwr.bot.core.lang;
 
 /**
  * 字符串工具类

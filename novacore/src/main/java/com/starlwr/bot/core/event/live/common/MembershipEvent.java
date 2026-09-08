@@ -4,7 +4,7 @@ import com.starlwr.bot.core.enums.LivePlatform;
 import com.starlwr.bot.core.event.live.base.StarBotLivePurchaseEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.UserInfo;
-import com.starlwr.bot.core.util.MathUtil;
+import com.starlwr.bot.core.lang.MathUtil;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;

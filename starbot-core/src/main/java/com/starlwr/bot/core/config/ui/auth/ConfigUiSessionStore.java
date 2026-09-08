@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.config.ui.auth;
 
-import com.starlwr.bot.core.util.SecureToken;
+import com.starlwr.bot.core.lang.SecureToken;
 import lombok.extern.slf4j.Slf4j;
 
 import java.time.Duration;

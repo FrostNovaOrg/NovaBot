@@ -9,7 +9,7 @@ import com.starlwr.bot.core.exception.DataSourceException;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
-import com.starlwr.bot.core.util.CollectionUtil;
+import com.starlwr.bot.core.lang.CollectionUtil;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 

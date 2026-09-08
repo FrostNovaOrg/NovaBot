@@ -6,7 +6,7 @@ import com.starlwr.bot.core.command.CommandReply;
 import com.starlwr.bot.core.command.StarBotCommand;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.model.PushUser;
-import com.starlwr.bot.core.util.StringUtil;
+import com.starlwr.bot.core.lang.StringUtil;
 
 import java.util.ArrayList;
 import java.util.List;

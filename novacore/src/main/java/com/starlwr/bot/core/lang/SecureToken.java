@@ -1,4 +1,4 @@
-package com.starlwr.bot.core.util;
+package com.starlwr.bot.core.lang;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;

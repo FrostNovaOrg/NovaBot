@@ -47,6 +47,7 @@
 - 示例插件模板跟上了插件的自动装载：模板自带自报文件与自报类，README 与构建配置改按新的装载办法讲述，第三方依赖的说明也改成了实情。
 - 画图整个挪进了报告插件：`com.starlwr.bot.core.painter.CommonPainter` 改叫 `com.starlwr.bot.report.painter.CommonPainter`，`com.starlwr.bot.core.factory.StarBotCommonPainterFactory` 改叫 `com.starlwr.bot.report.factory.StarBotCommonPainterFactory`（字体与图片两个工具件一并挪进 `com.starlwr.bot.report.util`）。只有自己写插件、并且在代码里直接引用了核心这几个绘图类的人才受影响：改一下 import，方法名、参数和画出来的图都没变。配置项没有变动，`starbot.core.paint` 那一节照旧。
 - 核心里三个类换了包：数据源服务接口 `com.starlwr.bot.core.service.DataSourceService` 与它的实现类注解 `com.starlwr.bot.core.service.DataSourceServiceConfig` 改到 `com.starlwr.bot.core.datasource`，事件流只读口令 `com.starlwr.bot.core.service.EventStreamTokenService` 改到 `com.starlwr.bot.core.protocol`。只有自己写平台插件、代码里直接引用了这三个类的人才受影响：改一下 import，类名、方法名和参数都没变。配置项、日志用词和行为一律未变。
+- 核心里四个工具类换了包：`com.starlwr.bot.core.util.CollectionUtil`／`MathUtil`／`SecureToken`／`StringUtil` 改到 `com.starlwr.bot.core.lang`。只有自己写插件、代码里直接引用了这四个类的人才受影响：改一下 import，类名、方法名和参数都没变。`com.starlwr.bot.core.util` 这个包还在，里面别的工具类（二维码、网络、掩码等）没有挪动。配置项、日志用词和行为一律未变。
 
 ### 修复
 

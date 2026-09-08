@@ -58,14 +58,36 @@ count_lines() {
     printf '%s' "${cl_n:-0}"
 }
 
+# —— 件清单按工作树现算（格8／格9／格12 的闭集共用）——
+#
+# 这三格原先都走 `git ls-files`，读的是**索引**，不是盘上的树。差别只在搬件的那一笔上现形：
+# 刚挪到新位置的件没 `git add` 就不在索引里，挪走的旧件已经不在盘上却还留在索引里——
+# 于是尺量到的是**改前的现状**。而执行层不许 git add（改动留树、候并入），
+# 于是「把撞包解开」的那一笔在自己的树上永远看不到转绿：尺量不到刚做完的那件事，
+# 转绿只能等并入之后由别人代跑一趟。一把在最需要它的那一刻是哑的尺，等于没有。
+#
+# 改法：`--cached` 与 `--others --exclude-standard` 取并集，再逐条剔掉盘上已不存在的路径。
+#   取并集 —— 新件（还没 add）与在册件都算数；`--exclude-standard` 保证 target/、scratch/
+#             这类被忽略的目录不会混进来，也就不必再逐层排除构建产物。
+#   剔不存在 —— `--cached` 会把 `mv` 走、`rm` 掉而没 `git rm` 的件继续列出来，
+#             不剔的话搬走的旧位置会被再数一遍，撞包永远解不开。
+# 其余读法（挑哪些路径、怎么截包名、拿什么正则搜）一概不变。
+# core.quotepath=false 免得非 ASCII 路径被转义成八进制而对不上。
+tree_files() {
+    git -c core.quotepath=false ls-files --cached --others --exclude-standard "$@" 2>/dev/null \
+        | sort -u \
+        | while IFS= read -r tf_path; do
+              [ -e "$tf_path" ] && printf '%s\n' "$tf_path"
+          done
+}
+
 # —— 在册模块目录现算（格1／格4／格8／格10／格11 共用）——
 # 按 pom.xml 找、任意深度：原来那句 `for mod in */` 枚举的是**仓根一级目录名**，
 # 模块往 plugins/ 底下一挪，它枚举得 0，而依赖这份枚举的几格全部静默转绿。
-# 用 git ls-files 不用 find：只认在册件——构建产物里的 pom 副本、未入册的试验目录都不是模块，
-# 也就不必再逐层排除 target/。core.quotepath=false 免得非 ASCII 路径被转义成八进制而对不上。
+# 不用 find 而走上面的 tree_files：构建产物里的 pom 副本不是模块，
+# 新建还没入册的模块却是——后者正是 git ls-files 那一版看不见的。
 MODULES="$WORK/modules"
-git -c core.quotepath=false ls-files '*/pom.xml' 2>/dev/null \
-    | sed 's|/pom\.xml$||' | sort -u > "$MODULES"
+tree_files '*/pom.xml' | sed 's|/pom\.xml$||' | sort -u > "$MODULES"
 module_n=$(count_lines "$MODULES")
 
 # 模块目录是不是「允许承载核心」的那几个
@@ -590,9 +612,8 @@ fi
 # 是该写的话，让它把判据判红，结局必然是把注释删掉而不是把边界守住。
 #
 # 两侧集合都写在下面、可当场比对，不从别处读表：
-#   核心件 ＝ 事件源纯库。整目录收的四个包 ＋ 逐件点名的若干件（配置纯 POJO、
-#            事件流令牌、数据源服务接口与注解、平台标识与事件枚举、异常型、
-#            以及它们用到的四个纯函数工具类）。
+#   核心件 ＝ 事件源纯库。整目录收的五个包 ＋ 逐件点名的若干件（配置纯 POJO、
+#            平台标识与事件枚举、异常型）。
 #   壳侧件 ＝ 核心模块主码里除此之外的**全部**件。用「补集」而不是再列一张壳的清单，
 #            是因为这两种写法只有一处不同、而那一处正是要害：漏列一件壳，
 #            列清单的写法静默放过，补集的写法当场判红。新件默认落在壳这一侧，
@@ -613,13 +634,17 @@ fi
 #                          PushTargetType 是 PushTarget 的字段类型，随推送模型一起走，
 #                          它留在壳侧的话 PushTarget 根本编不过
 #   exception/DataSourceException —— 采集范围加载失败的异常型
-#   util/SecureToken / MathUtil / StringUtil / CollectionUtil —— 四个纯函数工具，
-#                          不碰框架、不碰界面，且各自都有核心侧的调用方（金额换算、
-#                          推送参数判空、配置重载时的集合比对）
+#   （SecureToken / MathUtil / StringUtil / CollectionUtil 原先逐件点名在 util/ 下，
+#     现已整体改到 lang 包——四个纯函数工具，不碰框架、不碰界面，各自都有核心侧的
+#     调用方（金额换算、推送参数判空、配置重载时的集合比对）。lang 进了下面的
+#     「整目录收」，表上不再点名：留着旧路径的四行是空条目，路径一改谁也匹配不到，
+#     而表照旧看着是满的——同 EventStreamTokenService 那几行的处理）
 # ============================================================
 
 # —— 核心件：整目录收 ——
-G6_CORE_DIRS="protocol event datasource model"
+# 这五个包只长在核心模块里（壳侧没有同名包），因此整目录收；
+# config 与 util 两个包两侧都有，只能逐件点名，理由见上面那段。
+G6_CORE_DIRS="protocol event datasource model lang"
 
 # —— 核心件：逐件点名（路径相对 com/starlwr/bot/core/）——
 G6_CORE_FILES="config/ConfigEffect.java
@@ -633,11 +658,7 @@ config/EventStreamProperties.java
 enums/LivePlatform.java
 enums/LiveEndReason.java
 enums/PushTargetType.java
-exception/DataSourceException.java
-util/SecureToken.java
-util/MathUtil.java
-util/StringUtil.java
-util/CollectionUtil.java"
+exception/DataSourceException.java"
 
 # —— 例外表：每条写「核心件基名 被引件基名 到期条件」，三段以空格分隔 ——
 #    **到期条件是必填的**：没有到期条件的例外只会长住，一年后没人记得它当初豁免的是什么。
@@ -910,14 +931,17 @@ fi
 # ============================================================
 
 # —— 现状声明：这几个包同时落在两个以上模块里。解开一个，从这里划掉一个 ——
-#    今天的两个都是 novacore 与 starbot-core 之间的分割包（协议真源迁出去时留下的）。
-#    service 已解开：novacore 侧那三件并进了 datasource／protocol 两个既有包，
-#    core.service 现在只剩 starbot-core 一个模块在写。
-KNOWN_SPLIT_PACKAGES="config util"
+#    只剩 config 一个，是 novacore 与 starbot-core 之间的分割包（协议真源迁出去时留下的）。
+#    service 已解开：novacore 侧那三件并进了 datasource／protocol 两个既有包。
+#    util 已解开：novacore 侧那四个纯函数工具整体改到了新包 core.lang，
+#    core.util 与 core.service 现在都只剩 starbot-core 一个模块在写。
+KNOWN_SPLIT_PACKAGES="config"
 
 G9_PAIRS="$WORK/g9pairs"
 # 模块×包 的全对：按 /src/main/java/com/starlwr/bot/core/ 截，模块目录在哪一层都算得对
-git -c core.quotepath=false ls-files '*/src/main/java/com/starlwr/bot/core/*' 2>/dev/null \
+# 件清单走 tree_files（按工作树现算，理由见其注释）：解撞包那一笔正是「把件挪到新包、还没入册」，
+# 只读索引的话它量到的是搬之前的包集——这一格恰好是最不该拿旧现状说话的那一格。
+tree_files '*/src/main/java/com/starlwr/bot/core/*' \
     | sed -nE 's|^(.*)/src/main/java/com/starlwr/bot/core/([^/]+)/.*$|\1 \2|p' \
     | sort -u > "$G9_PAIRS"
 g9_pkg_total=$(awk '{print $2}' "$G9_PAIRS" | sort -u | grep -cv '^[[:space:]]*$')
@@ -1093,7 +1117,14 @@ HARDCODED_MODULE_PATH_CAP=87
 
 G12_RE='starbot-core/|novacore|starbot-bilibili/|starbot-novabot-console/|starbot-onebot-adapter|starbot-report/'
 G12_LIST="$WORK/g12"
-git -c core.quotepath=false grep -l -E "$G12_RE" -- ':!*.md' > "$G12_LIST" 2>/dev/null
+: > "$G12_LIST"
+# 件清单走 tree_files 再自己 grep，不走 git grep：git grep 只搜在册件，
+# 于是这一格看不见「新写的一件」——而新写一件正是它要拦的那件事（上限只减不增）。
+tree_files -- ':!*.md' > "$WORK/g12files"
+if [ -s "$WORK/g12files" ]; then
+    tr '\n' '\0' < "$WORK/g12files" \
+        | xargs -0 grep -l -E "$G12_RE" 2>/dev/null | sort -u > "$G12_LIST"
+fi
 g12_n=$(count_lines "$G12_LIST")
 
 if [ "$g12_n" -eq 0 ]; then
