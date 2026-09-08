@@ -152,6 +152,28 @@ class BilibiliPacketCodecTest {
     }
 
     @Test
+    @DisplayName("嵌套超过限额的那一层整个丢掉，放宽一层同一份数据就解得开")
+    void dropsPacketsBeyondNestingLimit() throws Exception {
+        // 上面那一条锁的是「限额之内放行」，这一条锁的是「超了要拦」。
+        // 只有前者的话，把层数判据整个删掉或放宽也照样全绿——递归深度就此没了上限，
+        // 而一份精心构造的层层套压数据能靠它把内存吃光
+        byte[] layer1 = packet(DataPackType.NOTICE.getCode(), 2, zlib(jsonPacket("{\"cmd\":\"DEEP\"}")));
+        byte[] layer2 = packet(DataPackType.NOTICE.getCode(), 2, zlib(layer1));
+
+        List<BilibiliPacket> refused = BilibiliPacketCodec.decode(
+                layer2, new BilibiliPacketCodec.Limits(1024 * 1024, 1));
+        assertTrue(refused.isEmpty(),
+                "展开到第 2 层已超过限额 1，那一层应当整个丢掉，实际放行 " + refused.size() + " 个包");
+
+        // 阳性对照：同一份数据把层数限额放到 2 就解得出来——
+        // 证明上面为空是层数限额起了作用，不是这份数据本身坏了、也不是解压额度不够
+        List<BilibiliPacket> allowed = BilibiliPacketCodec.decode(
+                layer2, new BilibiliPacketCodec.Limits(1024 * 1024, 2));
+        assertEquals(1, allowed.size(), "限额放到 2 时最里那个包本应解得出来");
+        assertEquals("{\"cmd\":\"DEEP\"}", allowed.get(0).getBodyAsText());
+    }
+
+    @Test
     @DisplayName("限额配成非正数时回退到默认值，而不是让整条流静默消失")
     void nonPositiveLimitsFallBackToDefaults() {
         BilibiliPacketCodec.Limits zero = new BilibiliPacketCodec.Limits(0, 0);
