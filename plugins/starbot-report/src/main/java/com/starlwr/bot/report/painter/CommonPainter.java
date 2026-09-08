@@ -1,6 +1,6 @@
 package com.starlwr.bot.report.painter;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.model.TextWithStyle;
 import com.starlwr.bot.core.lang.StringUtil;
 import com.starlwr.bot.report.util.FontUtil;
@@ -31,7 +31,7 @@ import java.util.function.Consumer;
 public class CommonPainter {
     private final BuildProperties buildProperties;
 
-    private final StarBotCoreProperties properties;
+    private final NovaCoreProperties properties;
 
     private final FontUtil fontUtil;
 
@@ -87,7 +87,7 @@ public class CommonPainter {
      * @param height 画布高度
      * @param autoExpand 是否自动扩展画布高度
      */
-    public CommonPainter(BuildProperties buildProperties, StarBotCoreProperties properties, FontUtil fontUtil, int width, int height, boolean autoExpand) {
+    public CommonPainter(BuildProperties buildProperties, NovaCoreProperties properties, FontUtil fontUtil, int width, int height, boolean autoExpand) {
         this.buildProperties = buildProperties;
         this.properties = properties;
         this.fontUtil = fontUtil;

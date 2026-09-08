@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.config.ui.auth;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.config.ui.ConfigurationFileService;
 import com.starlwr.bot.core.protocol.EventStreamTokenService;
 import com.starlwr.bot.core.web.ReadOnlyTokenController;
@@ -49,7 +49,7 @@ class TotpCodeMustNotBeReusableInTheSameWindowTest {
 
     @BeforeEach
     void setUp() {
-        StarBotCoreProperties.ConfigUi.Auth properties = new StarBotCoreProperties.ConfigUi.Auth();
+        NovaCoreProperties.ConfigUi.Auth properties = new NovaCoreProperties.ConfigUi.Auth();
         properties.setPassword(PASSWORD);
         properties.setTotp(true);
         properties.setTotpSecret(SECRET);
@@ -60,7 +60,7 @@ class TotpCodeMustNotBeReusableInTheSameWindowTest {
                 (ConfigurationFileService) null,
                 clock::get);
 
-        StarBotCoreProperties core = new StarBotCoreProperties();
+        NovaCoreProperties core = new NovaCoreProperties();
         core.getLive().setLiveDataPath(dir.resolve("data.json").toString());
         EventStreamTokenService tokens = new EventStreamTokenService(core.getLive());
 

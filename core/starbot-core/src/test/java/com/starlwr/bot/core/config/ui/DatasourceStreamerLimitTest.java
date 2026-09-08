@@ -2,7 +2,7 @@ package com.starlwr.bot.core.config.ui;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.health.HealthProbe;
 import com.starlwr.bot.core.service.PushTemplateDefaults;
@@ -39,13 +39,13 @@ class DatasourceStreamerLimitTest {
     @TempDir
     Path dir;
 
-    private StarBotCoreProperties properties;
+    private NovaCoreProperties properties;
 
     private ConfigUiController controller;
 
     @BeforeEach
     void setUp() {
-        properties = new StarBotCoreProperties();
+        properties = new NovaCoreProperties();
         properties.getDatasource().setJsonPath(dir.resolve("datasource.json").toString());
 
         // 结构校验是另一条关卡，本组用例一律放行，只看语义这一关
@@ -89,7 +89,7 @@ class DatasourceStreamerLimitTest {
                 mock(com.starlwr.bot.core.service.LiveDataService.class),
                 mock(com.starlwr.bot.core.timeline.TimelineStore.class),
                 mock(com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService.class),
-                new PushTemplateDefaults(new StarBotCoreProperties()),
+                new PushTemplateDefaults(new NovaCoreProperties()),
                 mock(UpdateCheckService.class));
     }
 

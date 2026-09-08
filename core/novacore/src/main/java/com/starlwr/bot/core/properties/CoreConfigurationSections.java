@@ -13,7 +13,7 @@ import org.springframework.boot.context.properties.NestedConfigurationProperty;
  * <p>
  * 为什么非得在本模块跑：元数据里的「默认值」取自字段初始值，「说明」取自 Javadoc，
  * <b>两者都只存在于源码里</b>。这几节单独成件后待在本模块，而绑定根
- * {@code StarBotCoreProperties} 在运行壳那一侧——壳编译时看到的是本模块的
+ * {@code NovaCoreProperties} 在运行壳那一侧——壳编译时看到的是本模块的
  * <b>class 文件</b>，读不到初始值也读不到 Javadoc。于是键名与类型照常生成，
  * 默认值与说明<b>整列变成 null</b>：程序照常读得到值，控制台的字段表却只剩下一排键名，
  * 而它不报任何错。判据见 {@code ConfigurationSurfaceBaselineTest} 第①格。

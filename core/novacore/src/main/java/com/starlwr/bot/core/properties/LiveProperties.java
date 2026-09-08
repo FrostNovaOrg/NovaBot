@@ -7,7 +7,7 @@ import lombok.Setter;
  * 直播相关配置
  * <p>
  * <b>本类只承载字段与说明，不由 Spring 直接绑定</b>：它是
- * {@code StarBotCoreProperties} 的一节，配置键仍是 {@code novabot.core.live.*}，
+ * {@code NovaCoreProperties} 的一节，配置键仍是 {@code novabot.core.live.*}，
  * 绑定与装配都在那一侧。与 {@link EventStreamProperties} 同形。
  * <p>
  * ⚠️ <b>这一节的四项并不同源</b>：断线重连的判定间隔是事件本身的语义，

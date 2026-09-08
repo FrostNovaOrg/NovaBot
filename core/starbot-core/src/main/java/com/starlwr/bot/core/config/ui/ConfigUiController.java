@@ -11,7 +11,7 @@ import com.starlwr.bot.core.config.ui.vocab.ConsoleVocabularies;
 import com.starlwr.bot.core.config.ui.vocab.ConsoleVocabulary;
 import com.starlwr.bot.core.alert.AlertChannel;
 import com.starlwr.bot.core.alert.AlertService;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.model.EventStreamToken;
 import com.starlwr.bot.core.protocol.EventStreamTokenService;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
@@ -127,7 +127,7 @@ public class ConfigUiController {
 
     private final ConfigurationFileService fileService;
 
-    private final StarBotCoreProperties properties;
+    private final NovaCoreProperties properties;
 
     private final AbstractDataSource dataSource;
 
@@ -255,7 +255,7 @@ public class ConfigUiController {
 
     public ConfigUiController(ConfigurationMetadataService metadataService,
                               ConfigurationFileService fileService,
-                              StarBotCoreProperties properties,
+                              NovaCoreProperties properties,
                               AbstractDataSource dataSource,
                               ObjectProvider<HealthProbe> healthProbes,
                               ConfigurationValidator validator,
@@ -290,7 +290,7 @@ public class ConfigUiController {
 
     ConfigUiController(ConfigurationMetadataService metadataService,
                        ConfigurationFileService fileService,
-                       StarBotCoreProperties properties,
+                       NovaCoreProperties properties,
                        AbstractDataSource dataSource,
                        ObjectProvider<HealthProbe> healthProbes,
                        ConfigurationValidator validator,
@@ -326,7 +326,7 @@ public class ConfigUiController {
     @Autowired
     public ConfigUiController(ConfigurationMetadataService metadataService,
                               ConfigurationFileService fileService,
-                              StarBotCoreProperties properties,
+                              NovaCoreProperties properties,
                               AbstractDataSource dataSource,
                               ObjectProvider<HealthProbe> healthProbes,
                               ConfigurationValidator validator,
@@ -505,7 +505,7 @@ public class ConfigUiController {
      * @param properties 核心配置
      * @return 空通道的告警服务
      */
-    private static AlertService defaultAlertService(StarBotCoreProperties properties) {
+    private static AlertService defaultAlertService(NovaCoreProperties properties) {
         // 一路通道都没有的告警服务本来就报不出任何东西，时间线上也就没有可记的
         return new AlertService(properties, noAlertChannels(), TimelineWriter.NONE);
     }
@@ -1629,7 +1629,7 @@ public class ConfigUiController {
      */
     private JSONObject alerts() {
         JSONObject json = new JSONObject();
-        StarBotCoreProperties.Alert alert = properties.getAlert();
+        NovaCoreProperties.Alert alert = properties.getAlert();
         json.put("qq", alertService.isChannelAvailable("qq"));
         json.put("webhook", StringUtil.isNotBlank(alert.getWebhookUrl()));
         json.put("mail", alertService.isChannelAvailable("mail"));
@@ -1683,7 +1683,7 @@ public class ConfigUiController {
      * @return 静音时段状态
      */
     private JSONObject quiet() {
-        StarBotCoreProperties.Push push = properties.getPush();
+        NovaCoreProperties.Push push = properties.getPush();
         JSONObject json = new JSONObject();
         json.put("active", pushGate.inQuietHours());
         json.put("start", push.getQuietStart());

@@ -2,7 +2,7 @@ package com.starlwr.bot.bilibili.util;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.health.BilibiliRiskMetrics;
 import com.starlwr.bot.bilibili.model.GuardMember;
 import com.starlwr.bot.core.util.HttpUtil;
@@ -32,7 +32,7 @@ class BilibiliApiUtilGuardListTest {
     @DisplayName("两页 20+5 去重后正好 25 条")
     void paginatesTwoPagesAndDedupes() {
         BilibiliApiUtil api = new BilibiliApiUtil(
-                mock(HttpUtil.class), new StarBotBilibiliProperties(), mock(BilibiliRiskMetrics.class)) {
+                mock(HttpUtil.class), new NovaBilibiliProperties(), mock(BilibiliRiskMetrics.class)) {
             @Override
             public JSONObject requestBilibiliApi(String url) {
                 int page = pageOf(url);

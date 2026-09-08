@@ -1,8 +1,8 @@
 package com.starlwr.bot.bilibili.protocol;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliThreadPoolConfig;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliThreadPoolConfig;
 import com.starlwr.bot.core.properties.EventStreamProperties;
 import com.starlwr.bot.core.event.live.common.WatchedUpdateEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
@@ -45,7 +45,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <h2>怎么量的</h2>
  * 按<b>线程名前缀</b>断言：容器里同时摆上两台候选（哔哩哔哩那台由产品代码
- * {@link StarBotBilibiliThreadPoolConfig} 自己造，前缀不写死在本件里），
+ * {@link NovaBilibiliThreadPoolConfig} 自己造，前缀不写死在本件里），
  * 让容器按注入点上的名字挑，再看那个定时任务真正跑在谁的线程上。
  * 事件输出默认关闭时它一个任务都不排，因此这里显式开启——否则这一格量的是空气。
  */
@@ -68,8 +68,8 @@ class NovaEventBroadcasterSchedulerTargetTest {
         context = new AnnotationConfigApplicationContext();
         beans = context.getDefaultListableBeanFactory();
 
-        bilibiliScheduler = new StarBotBilibiliThreadPoolConfig()
-                .bilibiliTaskScheduler(new StarBotBilibiliProperties());
+        bilibiliScheduler = new NovaBilibiliThreadPoolConfig()
+                .bilibiliTaskScheduler(new NovaBilibiliProperties());
 
         // 另一台只要「不是哔哩哔哩那台」即可，前缀取一个与产品代码不重的名字
         defaultScheduler = new ThreadPoolTaskScheduler();

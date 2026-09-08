@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.service;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -24,7 +24,7 @@ class AtAllQuotaServiceTest {
     private static final Long OTHER_GROUP = 10000001L;
 
     private AtAllQuotaService service(int botLimit, int sessionLimit) {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getPush().setAtAllDailyLimit(botLimit);
         properties.getPush().setAtAllSessionDailyLimit(sessionLimit);
         return new AtAllQuotaService(properties);

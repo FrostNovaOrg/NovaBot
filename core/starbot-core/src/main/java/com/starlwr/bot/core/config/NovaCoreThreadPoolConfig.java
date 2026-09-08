@@ -15,11 +15,11 @@ import java.util.concurrent.ThreadPoolExecutor;
  */
 @Slf4j
 @Configuration
-public class StarBotCoreThreadPoolConfig {
+public class NovaCoreThreadPoolConfig {
     private final NetworkThreadProperties networkThread;
 
     @Autowired
-    public StarBotCoreThreadPoolConfig(NetworkThreadProperties networkThread) {
+    public NovaCoreThreadPoolConfig(NetworkThreadProperties networkThread) {
         this.networkThread = networkThread;
     }
 

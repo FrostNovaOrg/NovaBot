@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.command;
 
 import com.starlwr.bot.core.command.builtin.MenuCommand;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.event.remote.NovaRemoteMessageEvent;
@@ -207,7 +207,7 @@ class CommandDispatcherCorpusTest {
         private final List<String> replies = new ArrayList<>();
 
         private final CommandSettingsService settings =
-                new CommandSettingsService(new StarBotStateStore(new StarBotCoreProperties()));
+                new CommandSettingsService(new StarBotStateStore(new NovaCoreProperties()));
 
         private final RecordingCommand groupCommand = new RecordingCommand("测试命令", List.of("别名"), true, false);
 
@@ -233,7 +233,7 @@ class CommandDispatcherCorpusTest {
 
             // 语料回放问的是「回了什么话」，不问日志页
             dispatcher = new CommandDispatcher(provider, noFollowUps(), settings, dataSource, sender,
-                    new StarBotCoreProperties(), TimelineWriter.NONE);
+                    new NovaCoreProperties(), TimelineWriter.NONE);
 
             @SuppressWarnings("unchecked")
             ObjectProvider<CommandDispatcher> self = mock(ObjectProvider.class);

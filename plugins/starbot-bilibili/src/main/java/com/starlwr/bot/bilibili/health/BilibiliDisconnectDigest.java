@@ -1,6 +1,6 @@
 package com.starlwr.bot.bilibili.health;
 
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.core.plugin.NovaComponent;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -34,7 +34,7 @@ import java.util.stream.Collectors;
 @Slf4j
 @NovaComponent
 public class BilibiliDisconnectDigest {
-    private final StarBotBilibiliProperties properties;
+    private final NovaBilibiliProperties properties;
 
     private final TaskScheduler scheduler;
 
@@ -45,7 +45,7 @@ public class BilibiliDisconnectDigest {
     private final List<Entry> window = new ArrayList<>();
 
     @Autowired
-    public BilibiliDisconnectDigest(StarBotBilibiliProperties properties,
+    public BilibiliDisconnectDigest(NovaBilibiliProperties properties,
                                     @Qualifier("bilibiliTaskScheduler") TaskScheduler scheduler) {
         this.properties = properties;
         this.scheduler = scheduler;

@@ -1,6 +1,6 @@
 package com.starlwr.bot.bilibili.health;
 
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.service.BilibiliAccountService;
 import com.starlwr.bot.core.health.HealthStatus;
 import org.junit.jupiter.api.DisplayName;
@@ -24,7 +24,7 @@ class BilibiliLoginHealthProbeTest {
         when(account.isLoggedIn()).thenReturn(false);
         when(account.getPendingQrCodeContent()).thenReturn("https://example.invalid/qr");
 
-        HealthStatus status = probe(account, new StarBotBilibiliProperties()).check();
+        HealthStatus status = probe(account, new NovaBilibiliProperties()).check();
 
         assertEquals(HealthStatus.Level.DOWN, status.level());
         assertEquals("等待扫码登录", status.summary());
@@ -39,7 +39,7 @@ class BilibiliLoginHealthProbeTest {
         when(account.isLoggedIn()).thenReturn(false);
         when(account.getPendingQrCodeContent()).thenReturn(null);
 
-        HealthStatus status = probe(account, new StarBotBilibiliProperties()).check();
+        HealthStatus status = probe(account, new NovaBilibiliProperties()).check();
 
         assertEquals(HealthStatus.Level.DOWN, status.level());
         assertEquals("未登录", status.summary());
@@ -53,7 +53,7 @@ class BilibiliLoginHealthProbeTest {
         BilibiliAccountService account = loggedIn();
         when(account.isRefreshable()).thenReturn(true);
 
-        HealthStatus status = probe(account, new StarBotBilibiliProperties()).check();
+        HealthStatus status = probe(account, new NovaBilibiliProperties()).check();
 
         assertEquals(HealthStatus.Level.OK, status.level());
         assertEquals("正常（uid 19805387116684）", status.summary());
@@ -67,7 +67,7 @@ class BilibiliLoginHealthProbeTest {
         // 实测服务端会把扫码登录的 refresh_token 返回为空串，此时续期会一直静默跳过
         when(account.isRefreshable()).thenReturn(false);
 
-        HealthStatus status = probe(account, new StarBotBilibiliProperties()).check();
+        HealthStatus status = probe(account, new NovaBilibiliProperties()).check();
 
         assertEquals(HealthStatus.Level.OK, status.level(), "不影响当前推送, 不应报成异常而稀释告警");
         assertTrue(status.summary().contains("无法自动续期"), "实际为: " + status.summary());
@@ -80,7 +80,7 @@ class BilibiliLoginHealthProbeTest {
         BilibiliAccountService account = loggedIn();
         when(account.isRefreshable()).thenReturn(false);
 
-        StarBotBilibiliProperties properties = new StarBotBilibiliProperties();
+        NovaBilibiliProperties properties = new NovaBilibiliProperties();
         properties.getAccount().setAutoRefreshCookie(false);
 
         HealthStatus status = probe(account, properties).check();
@@ -95,7 +95,7 @@ class BilibiliLoginHealthProbeTest {
         when(account.isAnonymous()).thenReturn(true);
         when(account.isLoggedIn()).thenReturn(false);
 
-        HealthStatus status = probe(account, new StarBotBilibiliProperties()).check();
+        HealthStatus status = probe(account, new NovaBilibiliProperties()).check();
 
         // 不是故障，是配置选出来的，所以不该是 DOWN；但它确实拿不全数据，
         // 记 OK 就等于在界面上说「一切正常」，而那不是真的
@@ -122,7 +122,7 @@ class BilibiliLoginHealthProbeTest {
         // 这一项默认是 false，也就是说漏了这行覆写不会有任何报错——
         // 表现只是「登录掉了的那一次在日志页上混进了普通状态变化」，
         // 而那种事一年不出一次，没人会因为它没单独出现而起疑
-        assertTrue(probe(loggedIn(), new StarBotBilibiliProperties()).loginState());
+        assertTrue(probe(loggedIn(), new NovaBilibiliProperties()).loginState());
     }
 
     /**
@@ -142,7 +142,7 @@ class BilibiliLoginHealthProbeTest {
      * @param properties 配置
      * @return 探针
      */
-    private BilibiliLoginHealthProbe probe(BilibiliAccountService account, StarBotBilibiliProperties properties) {
+    private BilibiliLoginHealthProbe probe(BilibiliAccountService account, NovaBilibiliProperties properties) {
         return new BilibiliLoginHealthProbe(account, properties);
     }
 }

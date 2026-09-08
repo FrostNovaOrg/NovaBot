@@ -2,7 +2,7 @@ package com.starlwr.bot.core.config.ui;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.timeline.TimelineCategory;
 import com.starlwr.bot.core.timeline.TimelineEvent;
 import com.starlwr.bot.core.timeline.TimelineEventType;
@@ -42,7 +42,7 @@ class TimelineControllerTest {
 
     @BeforeEach
     void setUp() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
         store = new TimelineStore(properties);
         store.load();

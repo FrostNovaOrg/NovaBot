@@ -2,7 +2,7 @@ package com.starlwr.bot.core.service;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,7 +35,7 @@ import java.util.function.Function;
 @Slf4j
 @Service
 public class StarBotStateStore {
-    private final StarBotCoreProperties properties;
+    private final NovaCoreProperties properties;
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
 
@@ -57,7 +57,7 @@ public class StarBotStateStore {
     private static final String RETIRED_CHOICE_NAMESPACE = "StreamerChoice";
 
     @Autowired
-    public StarBotStateStore(StarBotCoreProperties properties) {
+    public StarBotStateStore(NovaCoreProperties properties) {
         this.properties = properties;
     }
 

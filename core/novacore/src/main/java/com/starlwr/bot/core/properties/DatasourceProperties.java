@@ -7,7 +7,7 @@ import lombok.Setter;
  * 数据源相关配置
  * <p>
  * <b>本类只承载字段与说明，不由 Spring 直接绑定</b>：它是
- * {@code StarBotCoreProperties} 的一节，配置键仍是 {@code novabot.core.datasource.*}，
+ * {@code NovaCoreProperties} 的一节，配置键仍是 {@code novabot.core.datasource.*}，
  * 绑定与装配都在那一侧。与 {@link LiveProperties} 同形。
  * <p>
  * 单独成件是为了让本地 JSON 数据源只依赖这两项，而不必依赖整份配置——

@@ -1,6 +1,6 @@
 package com.starlwr.bot.report.util;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.model.TextWithStyle;
 import com.starlwr.bot.core.lang.StringUtil;
 import jakarta.annotation.PostConstruct;
@@ -48,14 +48,14 @@ public class FontUtil {
 
     private final ResourceLoader resourceLoader;
 
-    private final StarBotCoreProperties properties;
+    private final NovaCoreProperties properties;
 
     private Set<String> systemFonts = new HashSet<>();
 
     private final List<Font> fonts = new ArrayList<>();
 
     @Autowired
-    public FontUtil(ResourceLoader resourceLoader, StarBotCoreProperties properties) {
+    public FontUtil(ResourceLoader resourceLoader, NovaCoreProperties properties) {
         this.resourceLoader = resourceLoader;
         this.properties = properties;
     }

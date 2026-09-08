@@ -1,6 +1,6 @@
 package com.starlwr.bot.report.factory;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.report.painter.CommonPainter;
 import com.starlwr.bot.report.util.FontUtil;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,12 +20,12 @@ import org.springframework.stereotype.Component;
 public class StarBotCommonPainterFactory {
     private final BuildProperties buildProperties;
 
-    private final StarBotCoreProperties properties;
+    private final NovaCoreProperties properties;
 
     private final FontUtil fontUtil;
 
     @Autowired
-    public StarBotCommonPainterFactory(BuildProperties buildProperties, StarBotCoreProperties properties, FontUtil fontUtil) {
+    public StarBotCommonPainterFactory(BuildProperties buildProperties, NovaCoreProperties properties, FontUtil fontUtil) {
         this.buildProperties = buildProperties;
         this.properties = properties;
         this.fontUtil = fontUtil;

@@ -1,7 +1,7 @@
 package com.starlwr.bot.report.painter;
 
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.model.UserScore;
 import com.starlwr.bot.report.factory.StarBotCommonPainterFactory;
 import com.starlwr.bot.report.util.FontUtil;
@@ -46,7 +46,7 @@ class BilibiliDataQueryPainterTest {
 
     @BeforeEach
     void setUp() {
-        StarBotCoreProperties coreProperties = new StarBotCoreProperties();
+        NovaCoreProperties coreProperties = new NovaCoreProperties();
         coreProperties.getPaint().getFonts().add("内置");
 
         FontUtil fontUtil = new FontUtil(new DefaultResourceLoader(), coreProperties);

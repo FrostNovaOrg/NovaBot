@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.config.ui.auth.passkey;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.config.ui.ConfigUiPasskeyController;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSessionStore;
@@ -39,9 +39,9 @@ class PasskeyConcurrentLoginTest {
     @Test
     @DisplayName("同一把钥匙、同一个计数，两路同时登录只能成一个")
     void onlyOneConcurrentLoginWithTheSameCountSucceeds() throws Exception {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(directory.resolve("data.json").toString());
-        StarBotCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
+        NovaCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
         auth.setPassword(PasskeyTestSupport.PASSWORD);
         auth.setTotp(false);
 

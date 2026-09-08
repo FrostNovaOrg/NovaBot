@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.sender;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.timeline.TimelineEventType;
 import com.starlwr.bot.core.lang.StringUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -20,10 +20,10 @@ import java.time.format.DateTimeParseException;
 @Slf4j
 @Component
 public class PushGate {
-    private final StarBotCoreProperties properties;
+    private final NovaCoreProperties properties;
 
     @Autowired
-    public PushGate(StarBotCoreProperties properties) {
+    public PushGate(NovaCoreProperties properties) {
         this.properties = properties;
     }
 
@@ -41,7 +41,7 @@ public class PushGate {
      * @return 允许推送时返回 true
      */
     boolean allowedAt(LocalTime now) {
-        StarBotCoreProperties.Push push = properties.getPush();
+        NovaCoreProperties.Push push = properties.getPush();
 
         if (!push.isEnabled()) {
             return false;
@@ -80,7 +80,7 @@ public class PushGate {
      * @return 处于静音时段时返回 true
      */
     public boolean inQuietHours() {
-        StarBotCoreProperties.Push push = properties.getPush();
+        NovaCoreProperties.Push push = properties.getPush();
         return inQuietHours(LocalTime.now(), push.getQuietStart(), push.getQuietEnd());
     }
 

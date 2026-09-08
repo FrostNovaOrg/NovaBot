@@ -1,11 +1,11 @@
 package com.starlwr.bot.report.painter;
 
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.model.BilibiliLiveReportOptions;
 import com.starlwr.bot.bilibili.model.GuardMember;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.analytics.LiveDetail;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.model.LiveGap;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.RoomInfoSnapshot;
@@ -64,7 +64,7 @@ public class BilibiliLiveReportReplayPainter extends BilibiliLiveReportPainter {
     private final BufferedImage rankingFace;
 
     public BilibiliLiveReportReplayPainter(StarBotCommonPainterFactory factory, BilibiliApiUtil api,
-                                           FontUtil fontUtil, StarBotBilibiliProperties properties,
+                                           FontUtil fontUtil, NovaBilibiliProperties properties,
                                            LiveRoomInfoHistory roomInfoHistory, LiveDetail detail) {
         super(factory, api, replayData(detail), fontUtil, properties, roomInfoHistory);
         this.detail = detail;
@@ -152,7 +152,7 @@ public class BilibiliLiveReportReplayPainter extends BilibiliLiveReportPainter {
      * 这里连那层巧合都不该指望。
      */
     private static LiveDataService replayData(LiveDetail detail) {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setSaveLiveData(false);
 
         DefaultLiveDataService data = new DefaultLiveDataService(properties);

@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.config.ui.auth.passkey;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.config.ui.ConfigUiPasskeyController;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSessionStore;
@@ -52,10 +52,10 @@ class PasskeyMustNotSkipUserVerificationWhenTotpEnabledTest {
 
     @BeforeEach
     void setUp() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(directory.resolve("data.json").toString());
 
-        StarBotCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
+        NovaCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
         auth.setPassword(PASSWORD);
         auth.setTotp(true);
         auth.setTotpSecret(SECRET);

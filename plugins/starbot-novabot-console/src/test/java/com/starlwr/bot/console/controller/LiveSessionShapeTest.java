@@ -2,7 +2,7 @@ package com.starlwr.bot.console.controller;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.analytics.LiveMetricCatalog;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.LiveEndReason;
 import com.starlwr.bot.core.model.LiveSession;
@@ -70,7 +70,7 @@ class LiveSessionShapeTest {
     @TempDir
     Path dir;
 
-    private StarBotCoreProperties properties;
+    private NovaCoreProperties properties;
 
     private LiveSessionArchive archive;
 
@@ -82,7 +82,7 @@ class LiveSessionShapeTest {
 
     @BeforeEach
     void setUp() throws IOException {
-        properties = new StarBotCoreProperties();
+        properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
         properties.getDatasource().setJsonPath(dir.resolve("datasource.json").toString());
 

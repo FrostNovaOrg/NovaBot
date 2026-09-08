@@ -1,6 +1,6 @@
 package com.starlwr.bot.bilibili.health;
 
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.service.BilibiliAccountService;
 import com.starlwr.bot.core.health.HealthProbe;
 import com.starlwr.bot.core.health.HealthStatus;
@@ -40,10 +40,10 @@ public class BilibiliLoginHealthProbe implements HealthProbe {
 
     private final BilibiliAccountService accountService;
 
-    private final StarBotBilibiliProperties properties;
+    private final NovaBilibiliProperties properties;
 
     @Autowired
-    public BilibiliLoginHealthProbe(BilibiliAccountService accountService, StarBotBilibiliProperties properties) {
+    public BilibiliLoginHealthProbe(BilibiliAccountService accountService, NovaBilibiliProperties properties) {
         this.accountService = accountService;
         this.properties = properties;
     }

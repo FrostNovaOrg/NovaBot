@@ -2,7 +2,7 @@ package com.starlwr.bot.core.service;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.model.LiveGap;
 import com.starlwr.bot.core.model.UserScore;
 import com.starlwr.bot.core.util.FaceUrlCodec;
@@ -37,14 +37,14 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 @Service
 public class DefaultLiveDataService implements LiveDataService {
-    private final StarBotCoreProperties properties;
+    private final NovaCoreProperties properties;
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
 
     private JSONObject cache = new JSONObject();
 
     @Autowired
-    public DefaultLiveDataService(StarBotCoreProperties properties) {
+    public DefaultLiveDataService(NovaCoreProperties properties) {
         this.properties = properties;
     }
 

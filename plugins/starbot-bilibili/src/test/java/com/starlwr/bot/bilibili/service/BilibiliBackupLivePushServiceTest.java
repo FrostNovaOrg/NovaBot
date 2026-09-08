@@ -1,7 +1,7 @@
 package com.starlwr.bot.bilibili.service;
 
 import com.starlwr.bot.bilibili.BilibiliPlatform;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.event.live.BilibiliLiveOffEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliLiveOnEvent;
 import com.starlwr.bot.bilibili.model.Room;
@@ -85,7 +85,7 @@ class BilibiliBackupLivePushServiceTest {
         }).when(liveDataService).setLiveStartTime(anyString(), anyLong(), anyLong());
 
         BilibiliBackupLivePushService service = new BilibiliBackupLivePushService(
-                api, new StarBotBilibiliProperties(), publisher, scheduler,
+                api, new NovaBilibiliProperties(), publisher, scheduler,
                 new BilibiliLiveStateGate(liveDataService), liveDataService);
         service.start(dataSource);
 

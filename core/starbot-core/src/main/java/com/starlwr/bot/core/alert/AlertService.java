@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.alert;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.timeline.TimelineEvent;
 import com.starlwr.bot.core.timeline.TimelineEventType;
 import com.starlwr.bot.core.timeline.TimelineWriter;
@@ -68,7 +68,7 @@ public class AlertService {
     private static final String TEST_CONTENT = "这是一条测试消息，由控制台上的「发一条测试」按出来，不代表出了任何问题。"
             + "能收到它，说明这一路告警通道是通的。";
 
-    private final StarBotCoreProperties properties;
+    private final NovaCoreProperties properties;
 
     private final ObjectProvider<AlertChannel> channels;
 
@@ -98,7 +98,7 @@ public class AlertService {
     });
 
     @Autowired
-    public AlertService(StarBotCoreProperties properties, ObjectProvider<AlertChannel> channels,
+    public AlertService(NovaCoreProperties properties, ObjectProvider<AlertChannel> channels,
                         TimelineWriter timeline) {
         this.properties = properties;
         this.channels = channels;

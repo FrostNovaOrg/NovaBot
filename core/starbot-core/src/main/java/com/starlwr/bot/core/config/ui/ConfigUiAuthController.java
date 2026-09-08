@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.config.ui;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSession;
 import com.starlwr.bot.core.config.ui.auth.PasswordHash;
@@ -81,7 +81,7 @@ public class ConfigUiAuthController {
 
     private final ConfigurationFileService fileService;
 
-    private final StarBotCoreProperties.ConfigUi.Auth properties;
+    private final NovaCoreProperties.ConfigUi.Auth properties;
 
     /**
      * 使用协议的同意记录
@@ -89,9 +89,9 @@ public class ConfigUiAuthController {
      * 拿的是配置里那一份本体而不是它的副本：点了同意之后要<b>当场</b>放行，
      * 安全过滤器读的也是同一个对象，不必等下次重启。
      */
-    private final StarBotCoreProperties.ConfigUi.Agreement agreement;
+    private final NovaCoreProperties.ConfigUi.Agreement agreement;
 
-    public ConfigUiAuthController(ConfigUiAuthService authService, ConfigurationFileService fileService, StarBotCoreProperties properties) {
+    public ConfigUiAuthController(ConfigUiAuthService authService, ConfigurationFileService fileService, NovaCoreProperties properties) {
         this.authService = authService;
         this.fileService = fileService;
         this.properties = properties.getConfigUi().getAuth();

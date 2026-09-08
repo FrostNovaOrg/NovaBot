@@ -1,10 +1,10 @@
 package com.starlwr.bot.report.painter;
 
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
 import com.starlwr.bot.bilibili.model.Room;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.service.DefaultLiveDataService;
 import com.starlwr.bot.core.service.LiveRoomInfoHistory;
@@ -178,7 +178,7 @@ class BilibiliWordCloudTest {
 
     @BeforeEach
     void setUp() {
-        StarBotCoreProperties coreProperties = new StarBotCoreProperties();
+        NovaCoreProperties coreProperties = new NovaCoreProperties();
         // 用核心内置字体，免得版式结论取决于跑测试这台机器装了什么字体
         coreProperties.getPaint().getFonts().add("内置");
 
@@ -207,10 +207,10 @@ class BilibiliWordCloudTest {
         when(api.getLiveInfoByRoomId(anyLong())).thenReturn(room);
         when(api.getGuardList(anyLong(), anyLong())).thenReturn(Optional.of(List.of()));
 
-        liveDataService = new DefaultLiveDataService(new StarBotCoreProperties());
-        LiveRoomInfoHistory roomInfoHistory = new LiveRoomInfoHistory(new StarBotStateStore(new StarBotCoreProperties()));
+        liveDataService = new DefaultLiveDataService(new NovaCoreProperties());
+        LiveRoomInfoHistory roomInfoHistory = new LiveRoomInfoHistory(new StarBotStateStore(new NovaCoreProperties()));
         painter = new BilibiliLiveReportPainter(factory, api, liveDataService, fontUtil,
-                new StarBotBilibiliProperties(), roomInfoHistory);
+                new NovaBilibiliProperties(), roomInfoHistory);
     }
 
     private LiveStreamerInfo aSession() {

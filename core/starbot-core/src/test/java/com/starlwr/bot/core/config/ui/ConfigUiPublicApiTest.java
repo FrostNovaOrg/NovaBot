@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.config.ui;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSession;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSessionStore;
@@ -49,7 +49,7 @@ class ConfigUiPublicApiTest {
             ConfigUiController.BASE_PATH + "/api/auth/passkey/login/verify");
 
     private ConfigUiSecurityFilter passwordFormFilter() {
-        StarBotCoreProperties.ConfigUi.Auth auth = new StarBotCoreProperties.ConfigUi.Auth();
+        NovaCoreProperties.ConfigUi.Auth auth = new NovaCoreProperties.ConfigUi.Auth();
         auth.setPassword(PASSWORD);
         auth.setTotp(false);
 
@@ -59,7 +59,7 @@ class ConfigUiPublicApiTest {
 
         assertTrue(authService.isEnabled(), "这一组问的正是口令形态，前提先自证");
 
-        StarBotCoreProperties.ConfigUi.Agreement agreement = new StarBotCoreProperties.ConfigUi.Agreement();
+        NovaCoreProperties.ConfigUi.Agreement agreement = new NovaCoreProperties.ConfigUi.Agreement();
         agreement.setAcceptedVersion(ConfigUiAgreement.VERSION);
         agreement.setAcceptedBy(ConfigUiSession.Channel.PASSWORD.wire());
 
@@ -68,7 +68,7 @@ class ConfigUiPublicApiTest {
     }
 
     private ConfigUiSecurityFilter tokenFormFilter() {
-        StarBotCoreProperties.ConfigUi.Auth auth = new StarBotCoreProperties.ConfigUi.Auth();
+        NovaCoreProperties.ConfigUi.Auth auth = new NovaCoreProperties.ConfigUi.Auth();
 
         ConfigUiAuthService authService = new ConfigUiAuthService(auth,
                 new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(2)),
@@ -76,7 +76,7 @@ class ConfigUiPublicApiTest {
 
         assertFalse(authService.isEnabled(), "这一组问的正是未配口令那一形态，前提先自证");
 
-        StarBotCoreProperties.ConfigUi.Agreement agreement = new StarBotCoreProperties.ConfigUi.Agreement();
+        NovaCoreProperties.ConfigUi.Agreement agreement = new NovaCoreProperties.ConfigUi.Agreement();
         agreement.setAcceptedVersion(ConfigUiAgreement.VERSION);
         agreement.setAcceptedBy(ConfigUiSession.Channel.OPERATOR_TOKEN.wire());
 

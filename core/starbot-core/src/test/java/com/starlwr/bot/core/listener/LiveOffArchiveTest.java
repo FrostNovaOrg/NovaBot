@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.listener;
 
 import com.starlwr.bot.core.analytics.LiveDetail;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.event.live.common.LiveOffEvent;
 import com.starlwr.bot.core.model.DanmuRecord;
 import com.starlwr.bot.core.model.LiveGap;
@@ -54,7 +54,7 @@ class LiveOffArchiveTest {
     @TempDir
     Path dir;
 
-    private StarBotCoreProperties properties;
+    private NovaCoreProperties properties;
 
     private DefaultLiveDataService liveData;
 
@@ -66,7 +66,7 @@ class LiveOffArchiveTest {
 
     @BeforeEach
     void setUp() {
-        properties = new StarBotCoreProperties();
+        properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
         properties.getLive().setSaveLiveData(false);
 

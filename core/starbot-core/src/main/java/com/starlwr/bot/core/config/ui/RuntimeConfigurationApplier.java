@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.config.ui;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.service.TotalDataStorage;
 import com.starlwr.bot.core.timeline.TimelineEvent;
@@ -50,7 +50,7 @@ public class RuntimeConfigurationApplier {
     /**
      * 配置项名 → 把新值写回运行中的配置对象
      */
-    private static final Map<String, BiConsumer<StarBotCoreProperties, String>> APPLIERS = new LinkedHashMap<>();
+    private static final Map<String, BiConsumer<NovaCoreProperties, String>> APPLIERS = new LinkedHashMap<>();
 
     static {
         // ---- 推送总开关 ----
@@ -85,7 +85,7 @@ public class RuntimeConfigurationApplier {
      * 得经累计数据存储那一侧才落得下的配置项
      * <p>
      * 这几项同样不在配置对象上：{@code spring.data.redis.*} 是框架的键，
-     * 写回 {@link StarBotCoreProperties} 无处可写。真正认这几个值的是
+     * 写回 {@link NovaCoreProperties} 无处可写。真正认这几个值的是
      * {@link TotalDataStorage}——它按新参数就地换一个后端，因此地址填好即可用，
      * 不必为此重启一次（重启会把正在采集的场次打断）。
      * <p>
@@ -126,7 +126,7 @@ public class RuntimeConfigurationApplier {
      */
     private final Set<String> pendingRestart = Collections.synchronizedSet(new LinkedHashSet<>());
 
-    private final StarBotCoreProperties properties;
+    private final NovaCoreProperties properties;
 
     /**
      * 累计数据存储，判据台架里可能没有
@@ -149,13 +149,13 @@ public class RuntimeConfigurationApplier {
     private final TimelineWriter timeline;
 
     @Autowired
-    public RuntimeConfigurationApplier(StarBotCoreProperties properties, TotalDataStorage totalDataStorage,
+    public RuntimeConfigurationApplier(NovaCoreProperties properties, TotalDataStorage totalDataStorage,
                                        ObjectProvider<RuntimeConfigurationApplierContributor> contributors,
                                        TimelineWriter timeline) {
         this(properties, totalDataStorage, contributors.orderedStream().toList(), timeline);
     }
 
-    RuntimeConfigurationApplier(StarBotCoreProperties properties, TotalDataStorage totalDataStorage,
+    RuntimeConfigurationApplier(NovaCoreProperties properties, TotalDataStorage totalDataStorage,
                                 Collection<RuntimeConfigurationApplierContributor> contributors,
                                 TimelineWriter timeline) {
         this.properties = properties;
@@ -205,7 +205,7 @@ public class RuntimeConfigurationApplier {
      * @param properties 配置对象
      * @return 构造器
      */
-    static Bench bench(StarBotCoreProperties properties) {
+    static Bench bench(NovaCoreProperties properties) {
         return new Bench(properties);
     }
 
@@ -213,12 +213,12 @@ public class RuntimeConfigurationApplier {
      * {@link #bench} 的构造器
      */
     static final class Bench {
-        private final StarBotCoreProperties properties;
+        private final NovaCoreProperties properties;
         private TotalDataStorage totalDataStorage;
         private Collection<RuntimeConfigurationApplierContributor> contributors = List.of();
         private TimelineWriter timeline = TimelineWriter.NONE;
 
-        private Bench(StarBotCoreProperties properties) {
+        private Bench(NovaCoreProperties properties) {
             this.properties = properties;
         }
 
@@ -272,7 +272,7 @@ public class RuntimeConfigurationApplier {
      */
     public static Set<String> supportedKeys(Collection<RuntimeConfigurationApplierContributor> contributors) {
         // 这一支只把几张表的键名并起来，一个字也不往运行中的程序上落，因此没有可记的
-        return new RuntimeConfigurationApplier(new StarBotCoreProperties(), null, contributors,
+        return new RuntimeConfigurationApplier(new NovaCoreProperties(), null, contributors,
                 TimelineWriter.NONE).supportedKeys();
     }
 
@@ -381,7 +381,7 @@ public class RuntimeConfigurationApplier {
             return null;
         }
 
-        BiConsumer<StarBotCoreProperties, String> applier = APPLIERS.get(name);
+        BiConsumer<NovaCoreProperties, String> applier = APPLIERS.get(name);
         if (applier != null) {
             return () -> applier.accept(properties, value);
         }

@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.config.ui;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSession;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSessionStore;
@@ -37,7 +37,7 @@ class OperatorTokenSwitchTest {
     private static final String PASSWORD = "correct horse battery staple";
 
     private ConfigUiAuthService authService() {
-        StarBotCoreProperties.ConfigUi.Auth properties = new StarBotCoreProperties.ConfigUi.Auth();
+        NovaCoreProperties.ConfigUi.Auth properties = new NovaCoreProperties.ConfigUi.Auth();
         properties.setPassword(PASSWORD);
         properties.setTotp(false);
         return new ConfigUiAuthService(properties,
@@ -49,13 +49,13 @@ class OperatorTokenSwitchTest {
         // 这一组用例问的是「令牌通道开关」，因此把使用协议置于已同意——
         // 否则协议那道闸会先一步把请求挡下，上面那条阳性对照测到的就不是令牌开关了。
         // 版本与通道两项都要给：少了通道那一项，这份记录按判法仍然算「说不出是谁点的」
-        StarBotCoreProperties.ConfigUi.Agreement agreement = new StarBotCoreProperties.ConfigUi.Agreement();
+        NovaCoreProperties.ConfigUi.Agreement agreement = new NovaCoreProperties.ConfigUi.Agreement();
         agreement.setAcceptedVersion(ConfigUiAgreement.VERSION);
         agreement.setAcceptedBy(ConfigUiSession.Channel.PASSWORD.wire());
 
         // 过滤器现在读的是配置对象本体那一位，不是构造时抄下来的布尔——
         // 「上锁之后自动关掉这条通道」要当场生效，抄一份的写法在那件事上会静静失效
-        StarBotCoreProperties.ConfigUi.Auth authProperties = new StarBotCoreProperties.ConfigUi.Auth();
+        NovaCoreProperties.ConfigUi.Auth authProperties = new NovaCoreProperties.ConfigUi.Auth();
         authProperties.setOperatorToken(operatorToken);
 
         return new ConfigUiSecurityFilter(TOKEN, new IpMatcher(List.of("0.0.0.0/0", "::/0")), auth, authProperties, agreement);

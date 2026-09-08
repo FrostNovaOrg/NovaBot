@@ -2,7 +2,7 @@ package com.starlwr.bot.bilibili.service;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.model.Cookies;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -29,7 +29,7 @@ class BilibiliCredentialStoreTest {
     @TempDir
     Path dir;
 
-    private StarBotBilibiliProperties.Account properties;
+    private NovaBilibiliProperties.Account properties;
     private Path cookiePath;
     private Path keyPath;
 
@@ -38,7 +38,7 @@ class BilibiliCredentialStoreTest {
         cookiePath = dir.resolve("cookies.json");
         keyPath = dir.resolve("cookies.key");
 
-        properties = new StarBotBilibiliProperties.Account();
+        properties = new NovaBilibiliProperties.Account();
         properties.setCookiePath(cookiePath.toString());
         properties.setKeyPath(keyPath.toString());
     }

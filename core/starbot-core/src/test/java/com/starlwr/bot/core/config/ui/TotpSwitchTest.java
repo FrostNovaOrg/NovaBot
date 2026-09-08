@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.config.ui;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSession;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSessionStore;
@@ -73,8 +73,8 @@ class TotpSwitchTest {
         Files.writeString(config, TEMPLATE, StandardCharsets.UTF_8);
         fileService = new ConfigurationFileService(config);
 
-        StarBotCoreProperties properties = new StarBotCoreProperties();
-        StarBotCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
+        NovaCoreProperties properties = new NovaCoreProperties();
+        NovaCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
         auth.setPassword(PASSWORD);
         auth.setTotp(true);
         auth.setTotpSecret(SECRET);
@@ -202,7 +202,7 @@ class TotpSwitchTest {
     void wrongDisableCodesShareTheLoginLockout() {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setRemoteAddr("203.0.113.9");
-        int max = new StarBotCoreProperties.ConfigUi.Auth().getMaxFailures();
+        int max = new NovaCoreProperties.ConfigUi.Auth().getMaxFailures();
 
         for (int i = 0; i < max; i++) {
             assertEquals(401, controller.totpDisable(code("000000"), request).getStatusCode().value(),
@@ -228,7 +228,7 @@ class TotpSwitchTest {
 
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setRemoteAddr("198.51.100.7");
-        int max = new StarBotCoreProperties.ConfigUi.Auth().getMaxFailures();
+        int max = new NovaCoreProperties.ConfigUi.Auth().getMaxFailures();
 
         for (int i = 0; i < max; i++) {
             JSONObject denied = controller.totpEnroll(code("000000"), request);
@@ -253,8 +253,8 @@ class TotpSwitchTest {
     @Test
     @DisplayName("开／关二次验证写盘用的键就是公开常量那两份")
     void totpSwitchWritesThePublicKeys() throws Exception {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
-        StarBotCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
+        NovaCoreProperties properties = new NovaCoreProperties();
+        NovaCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
         auth.setPassword(PASSWORD);
         auth.setTotp(true);
         auth.setTotpSecret(SECRET);

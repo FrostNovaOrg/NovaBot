@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.service;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.handler.NovaEventHandler;
 import com.starlwr.bot.core.model.HandlerOption;
 import com.starlwr.bot.core.sender.AtMode;
@@ -66,7 +66,7 @@ public class PushTemplateDefaults {
      */
     private static final Pattern PLACEHOLDER = Pattern.compile("\\{.*?}");
 
-    private final StarBotCoreProperties properties;
+    private final NovaCoreProperties properties;
 
     /**
      * 处理器全类名 → 覆盖掉的那几个参数
@@ -80,7 +80,7 @@ public class PushTemplateDefaults {
     private final Object lock = new Object();
 
     @Autowired
-    public PushTemplateDefaults(StarBotCoreProperties properties) {
+    public PushTemplateDefaults(NovaCoreProperties properties) {
         this.properties = properties;
     }
 

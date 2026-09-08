@@ -6,7 +6,7 @@ import com.starlwr.bot.core.command.CommandDispatcher;
 import com.starlwr.bot.core.command.CommandFollowUp;
 import com.starlwr.bot.core.command.CommandSettingsService;
 import com.starlwr.bot.core.command.NovaCommand;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.event.remote.NovaRemoteMessageEvent;
@@ -238,7 +238,7 @@ class CommandSurfaceTest {
         // 这一份 Registry 背后是真的判定链：菜单 ← 命令的 available() ← supportsTotalData()
         // ← 累计存储的探活。上面那几条用替身量的是链条的前半截，这一条把后半截接上
         Registry runtime = new Registry(new CompositeLiveDataService(
-                new DefaultLiveDataService(new StarBotCoreProperties()), storage));
+                new DefaultLiveDataService(new NovaCoreProperties()), storage));
 
         assertEquals(GROUP_ONLY.size() - TOTAL_ONLY.size(), entryCount(runtime.feed(true, "菜单")),
                 "还没配累计存储，那两条不该列");
@@ -521,7 +521,7 @@ class CommandSurfaceTest {
         private final Map<Class<?>, Object> dependencies = new LinkedHashMap<>();
 
         private final CommandSettingsService settings =
-                new CommandSettingsService(new StarBotStateStore(new StarBotCoreProperties()));
+                new CommandSettingsService(new StarBotStateStore(new NovaCoreProperties()));
 
         private final AtomicReference<CommandDispatcher> current = new AtomicReference<>();
 
@@ -578,7 +578,7 @@ class CommandSurfaceTest {
             dependencies.put(ObjectProvider.class, self);
             // 订阅服务用真件：「切换模式之后名单还在不在」这一问，替身答不了
             dependencies.put(AtSubscriptionService.class,
-                    new AtSubscriptionService(new StarBotStateStore(new StarBotCoreProperties())));
+                    new AtSubscriptionService(new StarBotStateStore(new NovaCoreProperties())));
 
             for (Class<?> type : scan()) {
                 commands.add(instantiate(type));
@@ -631,7 +631,7 @@ class CommandSurfaceTest {
             replies.clear();
             // 这一件量的是命令回了什么话，不问日志页
             CommandDispatcher dispatcher = new CommandDispatcher(provider, noFollowUps(), settings, dataSource, sender,
-                    new StarBotCoreProperties(), TimelineWriter.NONE);
+                    new NovaCoreProperties(), TimelineWriter.NONE);
             current.set(dispatcher);
 
             dispatcher.onRemoteMessage(new NovaRemoteMessageEvent(PLATFORM, group ? "group" : "private",

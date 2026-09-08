@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.config.ui;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.service.CompositeLiveDataService;
 import com.starlwr.bot.core.service.DefaultLiveDataService;
 import com.starlwr.bot.core.service.TotalDataStorage;
@@ -62,7 +62,7 @@ class TotalDataRuntimeSwitchTest {
 
     @BeforeEach
     void setUp() {
-        live = new DefaultLiveDataService(new StarBotCoreProperties());
+        live = new DefaultLiveDataService(new NovaCoreProperties());
         storage = new TotalDataStorage(TotalDataStorage.Settings.UNSET, settings -> factory(), now::get);
         service = new CompositeLiveDataService(live, storage);
     }
@@ -103,7 +103,7 @@ class TotalDataRuntimeSwitchTest {
     @DisplayName("⚠️ 运行中填上 Redis 地址，保存那一步就该把它落到跑着的程序上")
     void appliesRedisHostAtRuntime() {
         RuntimeConfigurationApplier applier =
-                RuntimeConfigurationApplier.bench(new StarBotCoreProperties()).totalDataStorage(storage).build();
+                RuntimeConfigurationApplier.bench(new NovaCoreProperties()).totalDataStorage(storage).build();
 
         List<String> restart = applier.applyAndTrack(Map.of("spring.data.redis.host", "127.0.0.1"));
 
@@ -192,7 +192,7 @@ class TotalDataRuntimeSwitchTest {
     void appliesRedisDatabaseAtRuntime() {
         storage.applyHost("127.0.0.1");
         RuntimeConfigurationApplier applier =
-                RuntimeConfigurationApplier.bench(new StarBotCoreProperties()).totalDataStorage(storage).build();
+                RuntimeConfigurationApplier.bench(new NovaCoreProperties()).totalDataStorage(storage).build();
 
         List<String> restart = applier.applyAndTrack(Map.of("spring.data.redis.database", "3"));
 
@@ -206,7 +206,7 @@ class TotalDataRuntimeSwitchTest {
     @DisplayName("阴性：端口写成一句话时按需重启处理，不当作已生效")
     void unparsablePortCountsAsRestartRequired() {
         RuntimeConfigurationApplier applier =
-                RuntimeConfigurationApplier.bench(new StarBotCoreProperties()).totalDataStorage(storage).build();
+                RuntimeConfigurationApplier.bench(new NovaCoreProperties()).totalDataStorage(storage).build();
 
         List<String> restart = applier.applyAndTrack(Map.of("spring.data.redis.port", "六三七九"));
 

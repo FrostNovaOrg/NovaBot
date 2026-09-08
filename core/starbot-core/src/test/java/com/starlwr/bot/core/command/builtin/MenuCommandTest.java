@@ -5,7 +5,7 @@ import com.starlwr.bot.core.command.CommandDispatcher;
 import com.starlwr.bot.core.command.CommandReply;
 import com.starlwr.bot.core.command.CommandSettingsService;
 import com.starlwr.bot.core.command.NovaCommand;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.service.StarBotStateStore;
 import org.junit.jupiter.api.BeforeEach;
@@ -69,7 +69,7 @@ public class MenuCommandTest {
         ObjectProvider<CommandDispatcher> provider = mock(ObjectProvider.class);
         when(provider.getIfAvailable()).thenReturn(dispatcher);
 
-        settings = new CommandSettingsService(new StarBotStateStore(new StarBotCoreProperties()));
+        settings = new CommandSettingsService(new StarBotStateStore(new NovaCoreProperties()));
         menu = new MenuCommand(provider, settings);
     }
 

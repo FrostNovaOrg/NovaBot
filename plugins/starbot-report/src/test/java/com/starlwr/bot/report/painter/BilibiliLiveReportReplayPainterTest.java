@@ -1,14 +1,14 @@
 package com.starlwr.bot.report.painter;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
 import com.starlwr.bot.bilibili.model.BilibiliLiveReportOptions;
 import com.starlwr.bot.bilibili.model.Room;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.analytics.LiveDetail;
 import com.starlwr.bot.core.analytics.LiveHighlightFinder;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.model.LiveGap;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.RoomInfoSnapshot;
@@ -95,7 +95,7 @@ class BilibiliLiveReportReplayPainterTest {
 
     @BeforeEach
     void setUp() {
-        StarBotCoreProperties coreProperties = new StarBotCoreProperties();
+        NovaCoreProperties coreProperties = new NovaCoreProperties();
         coreProperties.getPaint().getFonts().add("内置");
 
         fontUtil = new FontUtil(new DefaultResourceLoader(), coreProperties);
@@ -177,11 +177,11 @@ class BilibiliLiveReportReplayPainterTest {
         Object data = field(BilibiliLiveReportPainter.class, painter, "liveDataService");
         assertTrue(data instanceof DefaultLiveDataService,
                 "重画的数据服务换了实现, 这一格量的东西得跟着重判：" + data.getClass());
-        StarBotCoreProperties properties =
-                (StarBotCoreProperties) field(DefaultLiveDataService.class, data, "properties");
+        NovaCoreProperties properties =
+                (NovaCoreProperties) field(DefaultLiveDataService.class, data, "properties");
 
         // 先证这一格量得到东西：默认值是 true，读到 true 才说明这一格真的在看这个开关
-        assertTrue(new StarBotCoreProperties().getLive().isSaveLiveData(),
+        assertTrue(new NovaCoreProperties().getLive().isSaveLiveData(),
                 "默认值不再是 true 了, 这一格的意义得重判");
         assertFalse(properties.getLive().isSaveLiveData(),
                 "重画的数据服务开着落盘：它的默认落点是 "
@@ -254,7 +254,7 @@ class BilibiliLiveReportReplayPainterTest {
                 .thenReturn(titles());
 
         BilibiliLiveReportPainter painter = new BilibiliLiveReportPainter(
-                factory, liveApi, liveData(), fontUtil, new StarBotBilibiliProperties(), history);
+                factory, liveApi, liveData(), fontUtil, new NovaBilibiliProperties(), history);
 
         Optional<String> base64 = painter.paint(PLATFORM, STREAMER, options);
         assertTrue(base64.isPresent(), "下播出图那一趟没画出来");
@@ -273,7 +273,7 @@ class BilibiliLiveReportReplayPainterTest {
 
     private BilibiliLiveReportReplayPainter painter(LiveDetail detail) {
         return new BilibiliLiveReportReplayPainter(
-                factory, api, fontUtil, new StarBotBilibiliProperties(), roomInfoHistory, detail);
+                factory, api, fontUtil, new NovaBilibiliProperties(), roomInfoHistory, detail);
     }
 
     // ---------------------------------------------------------------- 同一份夹具数据的两种形态
@@ -282,7 +282,7 @@ class BilibiliLiveReportReplayPainterTest {
      * 本场数据：下播出图那一趟读的就是它
      */
     private LiveDataService liveData() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setSaveLiveData(false);
         DefaultLiveDataService data = new DefaultLiveDataService(properties);
 

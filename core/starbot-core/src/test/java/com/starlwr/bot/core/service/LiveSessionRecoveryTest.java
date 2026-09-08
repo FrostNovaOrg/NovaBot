@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.service;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.enums.LiveEndReason;
 import com.starlwr.bot.core.event.live.common.LiveOnEvent;
 import com.starlwr.bot.core.listener.NovaDefaultLiveOnEventListener;
@@ -40,13 +40,13 @@ class LiveSessionRecoveryTest {
     @TempDir
     Path dir;
 
-    private StarBotCoreProperties properties;
+    private NovaCoreProperties properties;
 
     private LiveSessionArchive archive;
 
     @BeforeEach
     void setUp() {
-        properties = new StarBotCoreProperties();
+        properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
         properties.getLive().setSaveLiveData(true);
         // 自动保存挪到一小时后：测试要精确控制「最后一次落盘」发生在哪一刻

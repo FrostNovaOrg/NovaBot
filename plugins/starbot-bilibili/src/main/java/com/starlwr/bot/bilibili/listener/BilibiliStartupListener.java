@@ -1,6 +1,6 @@
 package com.starlwr.bot.bilibili.listener;
 
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.service.BilibiliAccountService;
 import com.starlwr.bot.bilibili.service.BilibiliBackupLivePushService;
 import com.starlwr.bot.bilibili.service.BilibiliDynamicService;
@@ -44,7 +44,7 @@ public class BilibiliStartupListener {
 
     private final TaskScheduler scheduler;
 
-    private final StarBotBilibiliProperties properties;
+    private final NovaBilibiliProperties properties;
 
     /**
      * 各项服务是否已完成启动。启动完成前收到的数据源变更事件来自初始化加载本身，无需响应
@@ -70,7 +70,7 @@ public class BilibiliStartupListener {
                                    BilibiliStreamerSnapshotService snapshotService,
                                    AbstractDataSource dataSource,
                                    @Qualifier("bilibiliTaskScheduler") TaskScheduler scheduler,
-                                   StarBotBilibiliProperties properties) {
+                                   NovaBilibiliProperties properties) {
         this.accountService = accountService;
         this.liveRoomService = liveRoomService;
         this.backupLivePushService = backupLivePushService;

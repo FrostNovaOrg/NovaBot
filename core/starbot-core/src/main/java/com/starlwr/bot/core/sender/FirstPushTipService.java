@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.sender;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.model.PushTarget;
@@ -45,7 +45,7 @@ public class FirstPushTipService {
 
     private final StarBotStateStore store;
 
-    private final StarBotCoreProperties properties;
+    private final NovaCoreProperties properties;
 
     private final AbstractDataSource dataSource;
 
@@ -53,15 +53,15 @@ public class FirstPushTipService {
      * 判据台架：不注入配置时按默认（提示开着）
      */
     public FirstPushTipService(StarBotStateStore store) {
-        this(store, new StarBotCoreProperties(), null);
+        this(store, new NovaCoreProperties(), null);
     }
 
-    FirstPushTipService(StarBotStateStore store, StarBotCoreProperties properties) {
+    FirstPushTipService(StarBotStateStore store, NovaCoreProperties properties) {
         this(store, properties, null);
     }
 
     @Autowired
-    public FirstPushTipService(StarBotStateStore store, StarBotCoreProperties properties,
+    public FirstPushTipService(StarBotStateStore store, NovaCoreProperties properties,
                                @Autowired(required = false) AbstractDataSource dataSource) {
         this.store = store;
         this.properties = properties;

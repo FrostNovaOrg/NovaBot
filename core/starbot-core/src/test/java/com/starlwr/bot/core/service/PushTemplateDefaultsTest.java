@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.service;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.event.NovaExternalBaseEvent;
 import com.starlwr.bot.core.handler.NovaEventHandler;
 import com.starlwr.bot.core.model.HandlerOption;
@@ -38,7 +38,7 @@ class PushTemplateDefaultsTest {
     @TempDir
     Path dir;
 
-    private StarBotCoreProperties properties;
+    private NovaCoreProperties properties;
 
     private PushTemplateDefaults defaults;
 
@@ -46,7 +46,7 @@ class PushTemplateDefaultsTest {
 
     @BeforeEach
     void setUp() {
-        properties = new StarBotCoreProperties();
+        properties = new NovaCoreProperties();
         properties.getDatasource().setJsonPath(dir.resolve("datasource.json").toString());
         defaults = new PushTemplateDefaults(properties);
         handler = new FakeHandler();

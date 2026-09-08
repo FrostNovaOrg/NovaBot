@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.config.ui;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSessionStore;
 import com.starlwr.bot.core.config.ui.auth.LoginThrottle;
@@ -55,7 +55,7 @@ class PasswordAutoHashTest {
     }
 
     private ConfigUiAuthService service(String password) {
-        StarBotCoreProperties.ConfigUi.Auth properties = new StarBotCoreProperties.ConfigUi.Auth();
+        NovaCoreProperties.ConfigUi.Auth properties = new NovaCoreProperties.ConfigUi.Auth();
         properties.setPassword(password);
         properties.setTotp(false);
 
@@ -92,7 +92,7 @@ class PasswordAutoHashTest {
     void survivesUnwritableConfig() throws IOException {
         Files.delete(config);
 
-        StarBotCoreProperties.ConfigUi.Auth properties = new StarBotCoreProperties.ConfigUi.Auth();
+        NovaCoreProperties.ConfigUi.Auth properties = new NovaCoreProperties.ConfigUi.Auth();
         properties.setPassword("我的口令");
         properties.setTotp(false);
 

@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.config.ui.auth.passkey;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.service.StarBotStateStore;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -27,7 +27,7 @@ class PasskeyStoreMustNotResurrectRevokedCredentialTest {
     @Test
     @DisplayName("更新前把这把钥匙撤掉，返回失败且库里不再出现它")
     void updateAfterRemoveDoesNotResurrect() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(directory.resolve("data.json").toString());
         PasskeyStore store = new PasskeyStore(new StarBotStateStore(properties));
 

@@ -1,6 +1,6 @@
 package com.starlwr.bot.bilibili.listener;
 
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.service.BilibiliAccountService;
 import com.starlwr.bot.bilibili.service.BilibiliBackupLivePushService;
 import com.starlwr.bot.bilibili.service.BilibiliDynamicService;
@@ -33,7 +33,7 @@ class BilibiliStartupListenerTest {
     @Test
     @DisplayName("登录成功后应按配置的间隔注册登录态复检")
     void shouldScheduleLoginVerification() {
-        StarBotBilibiliProperties properties = new StarBotBilibiliProperties();
+        NovaBilibiliProperties properties = new NovaBilibiliProperties();
         properties.getAccount().setVerifyInterval(120);
 
         BilibiliAccountService accountService = mock(BilibiliAccountService.class);
@@ -48,7 +48,7 @@ class BilibiliStartupListenerTest {
     @Test
     @DisplayName("复检间隔为 0 时不应注册复检任务")
     void shouldNotScheduleWhenDisabled() {
-        StarBotBilibiliProperties properties = new StarBotBilibiliProperties();
+        NovaBilibiliProperties properties = new NovaBilibiliProperties();
         properties.getAccount().setVerifyInterval(0);
 
         BilibiliAccountService accountService = mock(BilibiliAccountService.class);
@@ -63,7 +63,7 @@ class BilibiliStartupListenerTest {
     @Test
     @DisplayName("登录未完成时不应注册复检任务")
     void shouldNotScheduleWhenLoginFails() {
-        StarBotBilibiliProperties properties = new StarBotBilibiliProperties();
+        NovaBilibiliProperties properties = new NovaBilibiliProperties();
 
         BilibiliAccountService accountService = mock(BilibiliAccountService.class);
         when(accountService.login()).thenReturn(false);
@@ -77,7 +77,7 @@ class BilibiliStartupListenerTest {
     @Test
     @DisplayName("注册的定时任务应真正调用账号服务的例行维护方法")
     void scheduledTaskShouldInvokeMaintain() {
-        StarBotBilibiliProperties properties = new StarBotBilibiliProperties();
+        NovaBilibiliProperties properties = new NovaBilibiliProperties();
 
         BilibiliAccountService accountService = mock(BilibiliAccountService.class);
         when(accountService.login()).thenReturn(true);
@@ -101,7 +101,7 @@ class BilibiliStartupListenerTest {
         BilibiliLiveRoomService liveRoomService = mock(BilibiliLiveRoomService.class);
         AbstractDataSource dataSource = mock(AbstractDataSource.class);
 
-        BilibiliStartupListener listener = listener(accountService, inlineScheduler(), new StarBotBilibiliProperties(), liveRoomService, dataSource);
+        BilibiliStartupListener listener = listener(accountService, inlineScheduler(), new NovaBilibiliProperties(), liveRoomService, dataSource);
         listener.onApplicationReadyEvent();
         listener.onDataSourceChangeEvent();
 
@@ -131,7 +131,7 @@ class BilibiliStartupListenerTest {
             return null;
         });
 
-        BilibiliStartupListener listener = listener(accountService, scheduler, new StarBotBilibiliProperties(), liveRoomService, dataSource);
+        BilibiliStartupListener listener = listener(accountService, scheduler, new NovaBilibiliProperties(), liveRoomService, dataSource);
         listener.onApplicationReadyEvent();
         inline.set(false);
 
@@ -156,7 +156,7 @@ class BilibiliStartupListenerTest {
         BilibiliLiveRoomService liveRoomService = mock(BilibiliLiveRoomService.class);
         AbstractDataSource dataSource = mock(AbstractDataSource.class);
 
-        BilibiliStartupListener listener = listener(accountService, inlineScheduler(), new StarBotBilibiliProperties(), liveRoomService, dataSource);
+        BilibiliStartupListener listener = listener(accountService, inlineScheduler(), new NovaBilibiliProperties(), liveRoomService, dataSource);
         listener.onDataSourceChangeEvent();
 
         verify(liveRoomService, never()).sync(any());
@@ -174,7 +174,7 @@ class BilibiliStartupListenerTest {
         AbstractDataSource dataSource = mock(AbstractDataSource.class);
 
         new BilibiliStartupListener(accountService, liveRoomService, backupService, dynamicService,
-                snapshotService, dataSource, inlineScheduler(), new StarBotBilibiliProperties())
+                snapshotService, dataSource, inlineScheduler(), new NovaBilibiliProperties())
                 .onApplicationReadyEvent();
 
         verify(liveRoomService).sync(dataSource);
@@ -194,7 +194,7 @@ class BilibiliStartupListenerTest {
         BilibiliLiveRoomService liveRoomService = mock(BilibiliLiveRoomService.class);
         AbstractDataSource dataSource = mock(AbstractDataSource.class);
 
-        BilibiliStartupListener listener = listener(accountService, inlineScheduler(), new StarBotBilibiliProperties(), liveRoomService, dataSource);
+        BilibiliStartupListener listener = listener(accountService, inlineScheduler(), new NovaBilibiliProperties(), liveRoomService, dataSource);
         listener.onApplicationReadyEvent();
         listener.onDataSourceChangeEvent();
 
@@ -204,7 +204,7 @@ class BilibiliStartupListenerTest {
     @Test
     @DisplayName("匿名模式下应照常采集直播，但不启动动态推送与登录态复检")
     void anonymousModeShouldCollectLiveOnly() {
-        StarBotBilibiliProperties properties = new StarBotBilibiliProperties();
+        NovaBilibiliProperties properties = new NovaBilibiliProperties();
         properties.getAccount().setAnonymous(true);
 
         BilibiliAccountService accountService = mock(BilibiliAccountService.class);
@@ -230,14 +230,14 @@ class BilibiliStartupListenerTest {
     /**
      * 构造被测监听器
      */
-    private BilibiliStartupListener listener(BilibiliAccountService accountService, TaskScheduler scheduler, StarBotBilibiliProperties properties) {
+    private BilibiliStartupListener listener(BilibiliAccountService accountService, TaskScheduler scheduler, NovaBilibiliProperties properties) {
         return listener(accountService, scheduler, properties, mock(BilibiliLiveRoomService.class), mock(AbstractDataSource.class));
     }
 
     /**
      * 构造被测监听器（可注入直播间服务与数据源桩，用于验证重同步接线）
      */
-    private BilibiliStartupListener listener(BilibiliAccountService accountService, TaskScheduler scheduler, StarBotBilibiliProperties properties,
+    private BilibiliStartupListener listener(BilibiliAccountService accountService, TaskScheduler scheduler, NovaBilibiliProperties properties,
                                              BilibiliLiveRoomService liveRoomService, AbstractDataSource dataSource) {
         return new BilibiliStartupListener(
                 accountService,

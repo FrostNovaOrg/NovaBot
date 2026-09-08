@@ -5,7 +5,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.health.PushActivityRecorder;
 import com.starlwr.bot.core.model.Message;
@@ -209,7 +209,7 @@ class FirstPushTipCorpusTest {
     @Test
     @DisplayName("已提示过落在运行状态里 —— 重启之后不会再教一遍")
     void survivesRestart() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dataDir.resolve("data.json").toString());
 
         StarBotStateStore before = new StarBotStateStore(properties);
@@ -234,7 +234,7 @@ class FirstPushTipCorpusTest {
     @Test
     @DisplayName("升级后把已配置的会话记成已提示；有标记后新加的会话仍会提示一次")
     void seedsConfiguredSessionsOnce() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dataDir.resolve("seed.json").toString());
 
         StarBotStateStore store = new StarBotStateStore(properties);
@@ -276,7 +276,7 @@ class FirstPushTipCorpusTest {
     @Test
     @DisplayName("补记跳过停用目标 —— 日后启用第一条仍会提示")
     void seedExistingSkipsDisabledTargets() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dataDir.resolve("seed-disabled.json").toString());
 
         StarBotStateStore store = new StarBotStateStore(properties);
@@ -298,7 +298,7 @@ class FirstPushTipCorpusTest {
     @Test
     @DisplayName("空名单不钉已补过 —— 配好之后再补一次")
     void seedExistingEmptyListDoesNotPinSeeded() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dataDir.resolve("seed-empty.json").toString());
 
         StarBotStateStore store = new StarBotStateStore(properties);
@@ -325,7 +325,7 @@ class FirstPushTipCorpusTest {
         appender.start();
         logger.addAppender(appender);
         try {
-            StarBotCoreProperties properties = new StarBotCoreProperties();
+            NovaCoreProperties properties = new NovaCoreProperties();
             properties.getLive().setLiveDataPath(dataDir.resolve("seed-all-disabled.json").toString());
             StarBotStateStore store = new StarBotStateStore(properties);
             FirstPushTipService service = new FirstPushTipService(store);
@@ -350,7 +350,7 @@ class FirstPushTipCorpusTest {
             }
 
             appender.list.clear();
-            StarBotCoreProperties emptyProps = new StarBotCoreProperties();
+            NovaCoreProperties emptyProps = new NovaCoreProperties();
             emptyProps.getLive().setLiveDataPath(dataDir.resolve("seed-empty-log.json").toString());
             StarBotStateStore emptyStore = new StarBotStateStore(emptyProps);
             new FirstPushTipService(emptyStore).seedExisting(List.of());
@@ -380,7 +380,7 @@ class FirstPushTipCorpusTest {
         appender.start();
         logger.addAppender(appender);
         try {
-            StarBotCoreProperties properties = new StarBotCoreProperties();
+            NovaCoreProperties properties = new NovaCoreProperties();
             properties.getLive().setLiveDataPath(dataDir.resolve("seed-empty-targets.json").toString());
             StarBotStateStore store = new StarBotStateStore(properties);
             FirstPushTipService service = new FirstPushTipService(store);
@@ -405,7 +405,7 @@ class FirstPushTipCorpusTest {
             }
 
             appender.list.clear();
-            StarBotCoreProperties emptyProps = new StarBotCoreProperties();
+            NovaCoreProperties emptyProps = new NovaCoreProperties();
             emptyProps.getLive().setLiveDataPath(dataDir.resolve("seed-empty-targets-vac.json").toString());
             StarBotStateStore emptyStore = new StarBotStateStore(emptyProps);
             new FirstPushTipService(emptyStore).seedExisting(List.of());
@@ -473,7 +473,7 @@ class FirstPushTipCorpusTest {
      * 每行语料新建一份：「已提示过」按会话记着，共用一份的话，前一行的痕迹会落到下一行头上。
      */
     private static class Fixture {
-        final StarBotCoreProperties properties = new StarBotCoreProperties();
+        final NovaCoreProperties properties = new NovaCoreProperties();
 
         private final List<String> delivered = Collections.synchronizedList(new ArrayList<>());
 

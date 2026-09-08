@@ -1,7 +1,7 @@
 package com.starlwr.bot.bilibili.service;
 
 import com.starlwr.bot.bilibili.BilibiliPlatform;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.health.BilibiliDisconnectDigest;
 import com.starlwr.bot.bilibili.health.BilibiliRiskMetrics;
 import com.starlwr.bot.bilibili.enums.ConnectStatus;
@@ -51,7 +51,7 @@ public class BilibiliLiveRoomService {
 
     private final BilibiliEventParser parser;
 
-    private final StarBotBilibiliProperties properties;
+    private final NovaBilibiliProperties properties;
 
     private final ApplicationEventPublisher publisher;
 
@@ -95,7 +95,7 @@ public class BilibiliLiveRoomService {
     @Autowired
     public BilibiliLiveRoomService(BilibiliApiUtil api,
                                    BilibiliEventParser parser,
-                                   StarBotBilibiliProperties properties,
+                                   NovaBilibiliProperties properties,
                                    ApplicationEventPublisher publisher,
                                    @Qualifier("bilibiliTaskScheduler") TaskScheduler scheduler,
                                    BilibiliLiveStateGate stateGate,

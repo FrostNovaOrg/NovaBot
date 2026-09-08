@@ -2,7 +2,7 @@ package com.starlwr.bot.console.controller;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.config.ui.ConfigurationFileService;
 import com.starlwr.bot.core.config.ui.RuntimeConfigurationApplier;
 import com.starlwr.bot.core.event.NovaExternalBaseEvent;
@@ -65,7 +65,7 @@ class PushHandlerAliasSurfaceTest {
     }
 
     private JSONObject handlers(StarBotEventHandlerService service) {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getDatasource().setJsonPath(dir.resolve("datasource.json").toString());
         PushController controller = new PushController(
                 mock(RuntimeConfigurationApplier.class),

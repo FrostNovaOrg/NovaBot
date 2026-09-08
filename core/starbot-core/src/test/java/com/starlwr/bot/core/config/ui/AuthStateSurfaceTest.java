@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.config.ui;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSession;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSessionStore;
@@ -48,8 +48,8 @@ class AuthStateSurfaceTest {
 
     @BeforeEach
     void setUp() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
-        StarBotCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
+        NovaCoreProperties properties = new NovaCoreProperties();
+        NovaCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
         auth.setPassword(HASHED);
         auth.setTotp(false);
         // 锁定阈值压到 2 次：判据要的是「锁上之后接口怎么答」，

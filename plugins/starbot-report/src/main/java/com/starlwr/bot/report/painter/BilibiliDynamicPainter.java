@@ -2,7 +2,7 @@ package com.starlwr.bot.report.painter;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.model.Dynamic;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.plugin.NovaComponent;
@@ -85,7 +85,7 @@ public class BilibiliDynamicPainter {
 
     private final BilibiliApiUtil api;
 
-    private final StarBotBilibiliProperties properties;
+    private final NovaBilibiliProperties properties;
 
     /**
      * 缓存的 logo 图片
@@ -98,7 +98,7 @@ public class BilibiliDynamicPainter {
     private volatile boolean logoLoaded;
 
     @Autowired
-    public BilibiliDynamicPainter(StarBotCommonPainterFactory factory, BilibiliApiUtil api, StarBotBilibiliProperties properties) {
+    public BilibiliDynamicPainter(StarBotCommonPainterFactory factory, BilibiliApiUtil api, NovaBilibiliProperties properties) {
         this.factory = factory;
         this.api = api;
         this.properties = properties;

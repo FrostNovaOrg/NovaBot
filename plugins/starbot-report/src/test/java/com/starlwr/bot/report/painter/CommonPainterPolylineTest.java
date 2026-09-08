@@ -1,6 +1,6 @@
 package com.starlwr.bot.report.painter;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.report.factory.StarBotCommonPainterFactory;
 import com.starlwr.bot.report.util.FontUtil;
 import org.junit.jupiter.api.BeforeAll;
@@ -34,7 +34,7 @@ class CommonPainterPolylineTest {
 
     @BeforeEach
     void setUp() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getPaint().getFonts().add("内置");
 
         FontUtil fontUtil = new FontUtil(new DefaultResourceLoader(), properties);

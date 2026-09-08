@@ -8,7 +8,7 @@ import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
 import com.starlwr.bot.bilibili.model.Room;
 import com.starlwr.bot.report.painter.BilibiliDynamicPainter;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.handler.NovaEventHandler;
 import com.starlwr.bot.core.handler.StarBotEventHandlerPushMessageInitializer;
@@ -123,7 +123,7 @@ class MergedNoticeTemplateTest {
         message.setParams(saved.toJSONString());
 
         StarBotEventHandlerPushMessageInitializer initializer = new StarBotEventHandlerPushMessageInitializer(
-                service, new PushTemplateDefaults(new StarBotCoreProperties()));
+                service, new PushTemplateDefaults(new NovaCoreProperties()));
         assertTrue(initializer.initialize(message), "初始化器没认出这个处理器，本格什么也没量到");
         return message.getParamsJsonObject().getString("message");
     }
@@ -307,7 +307,7 @@ class MergedNoticeTemplateTest {
         ObjectProvider<AtAllPermissionResolver> resolvers = mock(ObjectProvider.class);
         when(resolvers.iterator()).thenAnswer(invocation -> List.<AtAllPermissionResolver>of().iterator());
 
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         return new NovaMessageSender(http, senderService, new PushActivityRecorder(TimelineWriter.NONE),
                 new PushGate(properties), TimelineWriter.NONE, new AtAllQuotaService(properties), resolvers,
                 new FirstPushTipService(new StarBotStateStore(properties)));

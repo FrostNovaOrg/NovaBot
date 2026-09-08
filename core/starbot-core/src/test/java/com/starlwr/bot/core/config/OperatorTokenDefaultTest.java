@@ -112,14 +112,14 @@ class OperatorTokenDefaultTest {
     @Test
     @DisplayName("属性默认值必须是关")
     void propertyDefaultIsOff() {
-        assertFalse(new StarBotCoreProperties().getConfigUi().getAuth().isOperatorToken(),
+        assertFalse(new NovaCoreProperties().getConfigUi().getAuth().isOperatorToken(),
                 "启动令牌通道绕过口令与二次验证，默认开着等于每台设了口令的实例自带一个后门");
     }
 
     @Test
     @DisplayName("属性默认值、模板、界面元数据三处一致")
     void allThreePlacesAgree() throws IOException {
-        boolean field = new StarBotCoreProperties().getConfigUi().getAuth().isOperatorToken();
+        boolean field = new NovaCoreProperties().getConfigUi().getAuth().isOperatorToken();
 
         String yaml = Files.readString(root().resolve("dist/templates/application.example.yml"), StandardCharsets.UTF_8);
         String template = valueOf(yaml, "operator-token");

@@ -25,7 +25,7 @@ class BilibiliPrefixAliasTest {
     @Test
     @DisplayName("只写 novabot.bilibili 能绑上")
     void newPrefixBinds() {
-        StarBotBilibiliProperties properties = bind(Map.of(
+        NovaBilibiliProperties properties = bind(Map.of(
                 NovaBotPrefixes.BILIBILI + ".account.anonymous", "true"));
         assertTrue(properties.getAccount().isAnonymous());
     }
@@ -33,7 +33,7 @@ class BilibiliPrefixAliasTest {
     @Test
     @DisplayName("只写旧 novabot.bilibili 仍能绑上")
     void legacyPrefixStillBinds() {
-        StarBotBilibiliProperties properties = bind(Map.of(
+        NovaBilibiliProperties properties = bind(Map.of(
                 NovaBotPrefixes.BILIBILI_LEGACY + ".account.anonymous", "true"));
         assertTrue(properties.getAccount().isAnonymous());
     }
@@ -41,20 +41,20 @@ class BilibiliPrefixAliasTest {
     @Test
     @DisplayName("两套同在时现行键胜")
     void newPrefixWinsWhenBothPresent() {
-        StarBotBilibiliProperties properties = bind(Map.of(
+        NovaBilibiliProperties properties = bind(Map.of(
                 NovaBotPrefixes.BILIBILI_LEGACY + ".account.anonymous", "true",
                 NovaBotPrefixes.BILIBILI + ".account.anonymous", "false"));
         assertFalse(properties.getAccount().isAnonymous());
     }
 
-    private StarBotBilibiliProperties bind(Map<String, Object> values) {
+    private NovaBilibiliProperties bind(Map<String, Object> values) {
         MockEnvironment environment = new MockEnvironment();
         environment.getPropertySources().addFirst(new MapPropertySource("fixture", new LinkedHashMap<>(values)));
         DeferredLogFactory factory = type -> org.apache.commons.logging.LogFactory.getLog("noop");
         new NovaBotPrefixAlias(factory).postProcessEnvironment(environment, null);
-        StarBotBilibiliProperties properties = new StarBotBilibiliProperties();
+        NovaBilibiliProperties properties = new NovaBilibiliProperties();
         Binder.get(environment).bind(
-                StarBotBilibiliProperties.class.getAnnotation(ConfigurationProperties.class).prefix(),
+                NovaBilibiliProperties.class.getAnnotation(ConfigurationProperties.class).prefix(),
                 Bindable.ofInstance(properties));
         return properties;
     }

@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.config.ui;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.protocol.EventStreamTokenService;
 import com.starlwr.bot.core.service.PushTemplateDefaults;
 import org.junit.jupiter.api.BeforeEach;
@@ -53,7 +53,7 @@ class BackupKeepEchoTest {
     private void start(String yaml, int boundBackupKeep) throws IOException {
         Files.writeString(config, yaml, StandardCharsets.UTF_8);
 
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getConfigUi().setBackupKeep(boundBackupKeep);
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
 
@@ -82,7 +82,7 @@ class BackupKeepEchoTest {
                 mock(com.starlwr.bot.core.service.LiveDataService.class),
                 mock(com.starlwr.bot.core.timeline.TimelineStore.class),
                 mock(com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService.class),
-                new PushTemplateDefaults(new StarBotCoreProperties()),
+                new PushTemplateDefaults(new NovaCoreProperties()),
                 mock(UpdateCheckService.class));
     }
 

@@ -1,7 +1,7 @@
 package com.starlwr.bot.bilibili.service;
 
 import com.starlwr.bot.bilibili.BilibiliPlatform;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.health.BilibiliRiskMetrics;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
 import com.starlwr.bot.core.model.PushUser;
@@ -55,7 +55,7 @@ class BilibiliLiveRoomServiceTest {
     @DisplayName("关闭长连接时同步应直接返回且不注册风控检测")
     void syncShouldNoOpWhenDisabled() {
         TaskScheduler scheduler = mock(TaskScheduler.class);
-        StarBotBilibiliProperties properties = new StarBotBilibiliProperties();
+        NovaBilibiliProperties properties = new NovaBilibiliProperties();
         properties.getLive().setEnableConnectLiveRoom(false);
         BilibiliLiveRoomService service = service(scheduler, properties);
 
@@ -196,13 +196,13 @@ class BilibiliLiveRoomServiceTest {
      * 构造被测服务（默认配置）
      */
     private BilibiliLiveRoomService service(TaskScheduler scheduler) {
-        return service(scheduler, new StarBotBilibiliProperties());
+        return service(scheduler, new NovaBilibiliProperties());
     }
 
     /**
      * 构造被测服务
      */
-    private BilibiliLiveRoomService service(TaskScheduler scheduler, StarBotBilibiliProperties properties) {
+    private BilibiliLiveRoomService service(TaskScheduler scheduler, NovaBilibiliProperties properties) {
         return new BilibiliLiveRoomService(
                 mock(BilibiliApiUtil.class),
                 mock(BilibiliEventParser.class),

@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.config.ui;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSession;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSessionStore;
@@ -98,7 +98,7 @@ class ConfigUiAgreementGateTest {
 
     private Path config;
 
-    private StarBotCoreProperties properties;
+    private NovaCoreProperties properties;
 
     private ConfigurationFileService fileService;
 
@@ -112,7 +112,7 @@ class ConfigUiAgreementGateTest {
         Files.writeString(config, TEMPLATE, StandardCharsets.UTF_8);
         fileService = new ConfigurationFileService(config);
 
-        properties = new StarBotCoreProperties();
+        properties = new NovaCoreProperties();
         properties.getConfigUi().getAuth().setPassword(PASSWORD);
         // 二次验证与本组用例无关，开着只会让每条登录都要多准备一个验证码
         properties.getConfigUi().getAuth().setTotp(false);
@@ -123,7 +123,7 @@ class ConfigUiAgreementGateTest {
         controller = new ConfigUiAuthController(authService, fileService, properties);
     }
 
-    private StarBotCoreProperties.ConfigUi.Agreement agreement() {
+    private NovaCoreProperties.ConfigUi.Agreement agreement() {
         return properties.getConfigUi().getAgreement();
     }
 
@@ -142,8 +142,8 @@ class ConfigUiAgreementGateTest {
      * 这几组用例问的是协议那道闸，令牌通道得开着才走得到「凭令牌换会话」那一支。
      * 过滤器读的是配置对象本体那一位，因此这里给的是对象不是布尔。
      */
-    private StarBotCoreProperties.ConfigUi.Auth operatorTokenOn() {
-        StarBotCoreProperties.ConfigUi.Auth auth = new StarBotCoreProperties.ConfigUi.Auth();
+    private NovaCoreProperties.ConfigUi.Auth operatorTokenOn() {
+        NovaCoreProperties.ConfigUi.Auth auth = new NovaCoreProperties.ConfigUi.Auth();
         auth.setOperatorToken(true);
         return auth;
     }
@@ -363,7 +363,7 @@ class ConfigUiAgreementGateTest {
 
         // 🔴 重读的是配置文件，不是内存里那份：只清内存的话，这台机器重启之后同意又回来了，
         // 而屏幕上撤回那一刻什么异常也看不出来。加载与绑定用启动时真正在跑的那一套
-        StarBotCoreProperties reloaded = new StarBotCoreProperties();
+        NovaCoreProperties reloaded = new NovaCoreProperties();
         new Binder(ConfigurationPropertySources.from(
                 new YamlPropertySourceLoader().load("撤回之后再读一遍", new FileSystemResource(config.toFile()))))
                 .bind("novabot.core", Bindable.ofInstance(reloaded));
@@ -463,7 +463,7 @@ class ConfigUiAgreementGateTest {
      * 协议若只拦口令那一形态，绝大多数使用者一次协议也看不到。
      */
     private ConfigUiSecurityFilter tokenFormFilter() {
-        ConfigUiAuthService noPassword = new ConfigUiAuthService(new StarBotCoreProperties.ConfigUi.Auth(),
+        ConfigUiAuthService noPassword = new ConfigUiAuthService(new NovaCoreProperties.ConfigUi.Auth(),
                 new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(2)),
                 new LoginThrottle(5, Duration.ofMinutes(15)), fileService);
 
@@ -815,7 +815,7 @@ class ConfigUiAgreementGateTest {
         // 再转回字符串时就成了另一副写法。Spring Boot 的属性加载器特意关掉了时间戳这条隐式规则
         // （OriginTrackedYamlLoader.NoTimestampResolver），所以现在是逐字相等的——
         // 哪天换了加载器或自己拿通用解析器去读这份文件，这条会当场红
-        StarBotCoreProperties reloaded = new StarBotCoreProperties();
+        NovaCoreProperties reloaded = new NovaCoreProperties();
         new Binder(ConfigurationPropertySources.from(
                 new YamlPropertySourceLoader().load("重启后再读一遍", new FileSystemResource(config.toFile()))))
                 .bind("novabot.core", Bindable.ofInstance(reloaded));

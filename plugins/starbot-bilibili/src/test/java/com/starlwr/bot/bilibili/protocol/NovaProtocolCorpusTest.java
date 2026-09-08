@@ -4,7 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.service.BilibiliApiSupport;
 import com.starlwr.bot.bilibili.service.BilibiliEventParser;
 import com.starlwr.bot.bilibili.service.BilibiliGiftService;
@@ -67,7 +67,7 @@ class NovaProtocolCorpusTest {
 
         // 事件补全默认关闭，解析过程不会碰任何接口——语料回放必须是纯离线的
         BilibiliEventParser parser = new BilibiliEventParser(
-                new StarBotBilibiliProperties(), mock(BilibiliGiftService.class),
+                new NovaBilibiliProperties(), mock(BilibiliGiftService.class),
                 mock(BilibiliApiSupport.class), reconciler);
 
         Map<String, Integer> byKind = new TreeMap<>();

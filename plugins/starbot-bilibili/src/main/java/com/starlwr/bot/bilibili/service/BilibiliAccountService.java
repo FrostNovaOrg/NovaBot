@@ -1,6 +1,6 @@
 package com.starlwr.bot.bilibili.service;
 
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.exception.ResponseCodeException;
 import com.starlwr.bot.bilibili.model.Cookies;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
@@ -89,7 +89,7 @@ public class BilibiliAccountService {
 
     private final BilibiliCredentialStore store;
 
-    private final StarBotBilibiliProperties.Account properties;
+    private final NovaBilibiliProperties.Account properties;
 
     /**
      * 当前待扫描的二维码内容，供登录页面展示
@@ -125,7 +125,7 @@ public class BilibiliAccountService {
 
     @Autowired
     public BilibiliAccountService(BilibiliApiUtil api, BilibiliCredentialStore store,
-                                  StarBotBilibiliProperties properties) {
+                                  NovaBilibiliProperties properties) {
         this.api = api;
         this.store = store;
         this.properties = properties.getAccount();
@@ -745,7 +745,7 @@ public class BilibiliAccountService {
          * @return 登录凭据存储
          */
         @Bean
-        public BilibiliCredentialStore bilibiliCredentialStore(StarBotBilibiliProperties properties) {
+        public BilibiliCredentialStore bilibiliCredentialStore(NovaBilibiliProperties properties) {
             return new BilibiliCredentialStore(properties.getAccount());
         }
     }

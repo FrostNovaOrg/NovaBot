@@ -3,7 +3,7 @@ package com.starlwr.bot.report.painter;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import javax.imageio.ImageIO;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.enums.GuardType;
 import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
 import com.starlwr.bot.bilibili.model.BilibiliLiveReportOptions;
@@ -272,7 +272,7 @@ public class BilibiliLiveReportPainter {
 
     private final FontUtil fontUtil;
 
-    private final StarBotBilibiliProperties properties;
+    private final NovaBilibiliProperties properties;
 
     private final LiveRoomInfoHistory roomInfoHistory;
 
@@ -310,7 +310,7 @@ public class BilibiliLiveReportPainter {
     @Autowired
     public BilibiliLiveReportPainter(StarBotCommonPainterFactory factory, BilibiliApiUtil api,
                                      LiveDataService liveDataService, FontUtil fontUtil,
-                                     StarBotBilibiliProperties properties, LiveRoomInfoHistory roomInfoHistory) {
+                                     NovaBilibiliProperties properties, LiveRoomInfoHistory roomInfoHistory) {
         this.factory = factory;
         this.api = api;
         this.liveDataService = liveDataService;

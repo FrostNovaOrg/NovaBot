@@ -4,7 +4,7 @@ import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
 import com.starlwr.bot.bilibili.health.BilibiliRiskMetrics;
 import com.starlwr.bot.bilibili.model.Room;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.event.live.common.LiveOnEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.RoomInfoSnapshot;
@@ -61,8 +61,8 @@ class BilibiliRoomStatsSnapshotterTest {
 
         when(api.getLiveInfoByRoomId(anyLong())).thenReturn(new Room(1, null, "早八人的自习室", null));
 
-        liveDataService = new DefaultLiveDataService(new StarBotCoreProperties());
-        roomInfoHistory = new LiveRoomInfoHistory(new StarBotStateStore(new StarBotCoreProperties()));
+        liveDataService = new DefaultLiveDataService(new NovaCoreProperties());
+        roomInfoHistory = new LiveRoomInfoHistory(new StarBotStateStore(new NovaCoreProperties()));
         riskMetrics = new BilibiliRiskMetrics();
         snapshotter = new BilibiliRoomStatsSnapshotter(liveDataService, api, roomInfoHistory, riskMetrics);
     }

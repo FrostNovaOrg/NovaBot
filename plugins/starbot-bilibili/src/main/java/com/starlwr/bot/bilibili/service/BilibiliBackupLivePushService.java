@@ -1,7 +1,7 @@
 package com.starlwr.bot.bilibili.service;
 
 import com.starlwr.bot.bilibili.BilibiliPlatform;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.event.live.BilibiliLiveOffEvent;
 import com.starlwr.bot.bilibili.event.live.BilibiliLiveOnEvent;
 import com.starlwr.bot.bilibili.model.Room;
@@ -40,7 +40,7 @@ public class BilibiliBackupLivePushService {
 
     private final BilibiliApiUtil api;
 
-    private final StarBotBilibiliProperties properties;
+    private final NovaBilibiliProperties properties;
 
     private final ApplicationEventPublisher publisher;
 
@@ -69,7 +69,7 @@ public class BilibiliBackupLivePushService {
 
     @Autowired
     public BilibiliBackupLivePushService(BilibiliApiUtil api,
-                                         StarBotBilibiliProperties properties,
+                                         NovaBilibiliProperties properties,
                                          ApplicationEventPublisher publisher,
                                          @Qualifier("bilibiliTaskScheduler") TaskScheduler scheduler,
                                          BilibiliLiveStateGate stateGate,

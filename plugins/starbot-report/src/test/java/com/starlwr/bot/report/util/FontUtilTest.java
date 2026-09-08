@@ -4,7 +4,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.model.TextWithStyle;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -60,11 +60,11 @@ class FontUtilTest {
     /**
      * 按给定的字体表造一个已初始化的字体工具
      * <p>
-     * 不走 {@code StarBotCoreProperties} 自己那份按操作系统挑的默认表：那份表的内容
+     * 不走 {@code NovaCoreProperties} 自己那份按操作系统挑的默认表：那份表的内容
      * 取决于这台机器是什么系统，拿它当参照物量出来的结论换台机器就不成立。
      */
     private static FontUtil fontUtil(String... fontDefinitions) {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getPaint().getFonts().addAll(List.of(fontDefinitions));
 
         FontUtil util = new FontUtil(new DefaultResourceLoader(), properties);

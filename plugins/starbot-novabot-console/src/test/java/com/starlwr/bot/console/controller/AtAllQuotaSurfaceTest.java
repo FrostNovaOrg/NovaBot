@@ -2,7 +2,7 @@ package com.starlwr.bot.console.controller;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.model.PushTarget;
@@ -50,7 +50,7 @@ class AtAllQuotaSurfaceTest {
     @Test
     @DisplayName("账号维度：全部群共享的那份额度，用了几次就报几次")
     void reportsBotDimension() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         AtAllQuotaService quota = new AtAllQuotaService(properties);
         quota.tryConsume(PLATFORM, GROUP);
         quota.tryConsume(PLATFORM, ANOTHER_GROUP);
@@ -66,7 +66,7 @@ class AtAllQuotaSurfaceTest {
     @Test
     @DisplayName("会话维度：各群各算各的，没用过的群报 0 而不是不出现")
     void reportsSessionDimension() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         AtAllQuotaService quota = new AtAllQuotaService(properties);
         quota.tryConsume(PLATFORM, GROUP);
         quota.tryConsume(PLATFORM, GROUP);
@@ -85,7 +85,7 @@ class AtAllQuotaSurfaceTest {
     @Test
     @DisplayName("上限配成不限：limited 为假，界面据此不画分母")
     void tellsUnlimitedApart() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getPush().setAtAllDailyLimit(0);
         AtAllQuotaService quota = new AtAllQuotaService(properties);
 
@@ -98,7 +98,7 @@ class AtAllQuotaSurfaceTest {
     @Test
     @DisplayName("各群那一列圈的是已配推送的群：账号已用比各群之和大，正说明有群被撤了配置")
     void sessionColumnIsScopedToConfiguredGroups() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         AtAllQuotaService quota = new AtAllQuotaService(properties);
         quota.tryConsume(PLATFORM, UNCONFIGURED_GROUP);
 
@@ -115,7 +115,7 @@ class AtAllQuotaSurfaceTest {
     @Test
     @DisplayName("bots 与 sessions 都带非空 platformName；未配显示名时等于 platform，且 platform 原值不变")
     void reportsPlatformNameFallingBackToPlatformId() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         AtAllQuotaService quota = new AtAllQuotaService(properties);
 
         JSONObject state = controller(quota, properties).quota();
@@ -136,7 +136,7 @@ class AtAllQuotaSurfaceTest {
     @Test
     @DisplayName("适配器自报过显示名时，bots 与 sessions 用人话名，platform 仍是标识串")
     void reportsAdapterDisplayNameWithoutChangingPlatformId() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         AtAllQuotaService quota = new AtAllQuotaService(properties);
         NovaSenderService senders = new NovaSenderService(properties);
         senders.addSender(new Sender(PLATFORM, "http://127.0.0.1/onebot/send"), "QQ");
@@ -154,11 +154,11 @@ class AtAllQuotaSurfaceTest {
     /**
      * 配好推送的两个群与一个好友会话，共用一个真的配额服务
      */
-    private AtAllQuotaController controller(AtAllQuotaService quota, StarBotCoreProperties properties) {
+    private AtAllQuotaController controller(AtAllQuotaService quota, NovaCoreProperties properties) {
         return controller(quota, properties, new NovaSenderService(properties));
     }
 
-    private AtAllQuotaController controller(AtAllQuotaService quota, StarBotCoreProperties properties,
+    private AtAllQuotaController controller(AtAllQuotaService quota, NovaCoreProperties properties,
                                             NovaSenderService senders) {
         PushUser user = new PushUser();
         user.setUid(10001L);

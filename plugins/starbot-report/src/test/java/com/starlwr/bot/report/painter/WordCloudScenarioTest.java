@@ -1,6 +1,6 @@
 package com.starlwr.bot.report.painter;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.report.util.FontUtil;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -83,7 +83,7 @@ class WordCloudScenarioTest {
     @BeforeAll
     static void setUpFont() {
         System.setProperty("java.awt.headless", "true");
-        StarBotCoreProperties coreProperties = new StarBotCoreProperties();
+        NovaCoreProperties coreProperties = new NovaCoreProperties();
         // 用核心内置字体，免得版式结论取决于跑测试这台机器装了什么字体
         coreProperties.getPaint().getFonts().add("内置");
         fontUtil = new FontUtil(new DefaultResourceLoader(), coreProperties);

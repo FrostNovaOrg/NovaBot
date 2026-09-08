@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.datasource;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.exception.DataSourceException;
 import com.starlwr.bot.core.model.PushMessage;
@@ -36,7 +36,7 @@ class JsonDataSourceTest {
 
     @BeforeEach
     void setUp() {
-        dataSource = newDataSource(new StarBotCoreProperties());
+        dataSource = newDataSource(new NovaCoreProperties());
     }
 
     @Test
@@ -180,7 +180,7 @@ class JsonDataSourceTest {
     @Test
     @DisplayName("文件不存在时应给出包含路径的提示")
     void shouldReportMissingFileWithPath(@TempDir Path directory) {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getDatasource().setJsonPath(directory.resolve("not-exists.json").toString());
         properties.getDatasource().setJsonAutoReload(false);
 
@@ -213,7 +213,7 @@ class JsonDataSourceTest {
         Path file = directory.resolve("datasource.json");
         Files.writeString(file, "{ 这不是 JSON");
 
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getDatasource().setJsonPath(file.toString());
         properties.getDatasource().setJsonAutoReload(false);
 
@@ -225,12 +225,12 @@ class JsonDataSourceTest {
      * @param properties 配置
      * @return JSON 数据源
      */
-    private JsonDataSource newDataSource(StarBotCoreProperties properties) {
+    private JsonDataSource newDataSource(NovaCoreProperties properties) {
         return new JsonDataSource(
                 mock(ApplicationEventPublisher.class),
                 new DataSourceServiceRegistry(List.of()),
                 new StarBotEventHandlerPushMessageInitializer(mock(StarBotEventHandlerService.class),
-                        new PushTemplateDefaults(new StarBotCoreProperties())),
+                        new PushTemplateDefaults(new NovaCoreProperties())),
                 properties.getDatasource()
         );
     }

@@ -4,7 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.analytics.LiveDetail;
 import com.starlwr.bot.core.analytics.LiveHighlightFinder;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.model.DanmuRecord;
 import com.starlwr.bot.core.model.LiveGap;
 import com.starlwr.bot.core.model.RoomInfoSnapshot;
@@ -60,13 +60,13 @@ class LiveDetailArchiveTest {
     @TempDir
     Path dir;
 
-    private StarBotCoreProperties properties;
+    private NovaCoreProperties properties;
 
     private LiveDetailArchive archive;
 
     @BeforeEach
     void setUp() {
-        properties = new StarBotCoreProperties();
+        properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
         archive = new LiveDetailArchive(properties);
     }

@@ -4,7 +4,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import jakarta.mail.BodyPart;
 import jakarta.mail.Multipart;
 import jakarta.mail.internet.MimeMessage;
@@ -93,7 +93,7 @@ class NovaMailServiceTest {
     }
 
     private static NovaMailService service(String defaultTo, JavaMailSender... senders) {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getMail().setDefaultTo(defaultTo);
 
         NovaMailService service = new NovaMailService(providerOf(senders), properties);

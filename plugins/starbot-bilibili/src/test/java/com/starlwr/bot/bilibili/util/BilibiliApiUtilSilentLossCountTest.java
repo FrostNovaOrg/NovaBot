@@ -2,7 +2,7 @@ package com.starlwr.bot.bilibili.util;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.exception.ResponseCodeException;
 import com.starlwr.bot.bilibili.health.BilibiliRiskMetrics;
 import com.starlwr.bot.bilibili.model.GuardMember;
@@ -52,7 +52,7 @@ class BilibiliApiUtilSilentLossCountTest {
         BilibiliRiskMetrics riskMetrics = new BilibiliRiskMetrics();
         HttpUtil http = mock(HttpUtil.class);
         when(http.postAsForm(eq(TV_POLL), any(), any())).thenReturn(bodyWithData(new JSONObject()).toJSONString());
-        BilibiliApiUtil api = new BilibiliApiUtil(http, new StarBotBilibiliProperties(), riskMetrics);
+        BilibiliApiUtil api = new BilibiliApiUtil(http, new NovaBilibiliProperties(), riskMetrics);
 
         try {
             assertFalse(api.getTvQrCodeLoginStatus("auth-code"), "缺 cookie_info 时返回仍应是 false（行为不变）");
@@ -101,7 +101,7 @@ class BilibiliApiUtilSilentLossCountTest {
         data.put("url", "https://example.com/sync?bili_jct=jctonly&foo=bar");
         when(http.getForEntity(eq(QR_POLL_KEY), any()))
                 .thenReturn(response(bodyWithData(data)));
-        BilibiliApiUtil api = new BilibiliApiUtil(http, new StarBotBilibiliProperties(), riskMetrics);
+        BilibiliApiUtil api = new BilibiliApiUtil(http, new NovaBilibiliProperties(), riskMetrics);
 
         try {
             assertFalse(api.getQrCodeLoginStatus("testkey123"), "缺 SESSDATA 时返回仍应是 false（行为不变）");
@@ -128,7 +128,7 @@ class BilibiliApiUtilSilentLossCountTest {
         JSONObject blankData = new JSONObject();
         blankData.put("code", 0);
         when(blankHttp.getForEntity(eq(QR_POLL_KEY), any())).thenReturn(response(bodyWithData(blankData)));
-        BilibiliApiUtil blankApi = new BilibiliApiUtil(blankHttp, new StarBotBilibiliProperties(), blankMetrics);
+        BilibiliApiUtil blankApi = new BilibiliApiUtil(blankHttp, new NovaBilibiliProperties(), blankMetrics);
         try {
             assertFalse(blankApi.getQrCodeLoginStatus("testkey123"), "空 url 时返回仍应是 false（行为不变）");
             assertEquals(1, blankMetrics.count(BilibiliRiskMetrics.Kind.API_DATA_MISSING, MIN),
@@ -149,7 +149,7 @@ class BilibiliApiUtilSilentLossCountTest {
         when(malformedHttp.getForEntity(eq(QR_POLL_KEY), any()))
                 .thenReturn(response(bodyWithData(malformedData)));
         BilibiliApiUtil malformedApi =
-                new BilibiliApiUtil(malformedHttp, new StarBotBilibiliProperties(), malformedMetrics);
+                new BilibiliApiUtil(malformedHttp, new NovaBilibiliProperties(), malformedMetrics);
         try {
             assertFalse(malformedApi.getQrCodeLoginStatus("testkey123"), "畸形 url 时返回仍应是 false（行为不变）");
             assertEquals(0, malformedMetrics.count(BilibiliRiskMetrics.Kind.API_DATA_MISSING, MIN),
@@ -166,7 +166,7 @@ class BilibiliApiUtilSilentLossCountTest {
     void guardMemberWithoutUidNoted() {
         List<String> reds = new ArrayList<>();
         BilibiliRiskMetrics riskMetrics = new BilibiliRiskMetrics();
-        BilibiliApiUtil api = new BilibiliApiUtil(mock(HttpUtil.class), new StarBotBilibiliProperties(), riskMetrics) {
+        BilibiliApiUtil api = new BilibiliApiUtil(mock(HttpUtil.class), new NovaBilibiliProperties(), riskMetrics) {
             @Override
             public JSONObject requestBilibiliApi(String url) {
                 // 旧形态成员：顶层没有 uid，parseGuardMember 应记 端点:uid 后跳过
@@ -213,7 +213,7 @@ class BilibiliApiUtilSilentLossCountTest {
         List<String> reds = new ArrayList<>();
         BilibiliRiskMetrics riskMetrics = new BilibiliRiskMetrics();
 
-        BilibiliApiUtil runtime = new BilibiliApiUtil(mock(HttpUtil.class), new StarBotBilibiliProperties(), riskMetrics) {
+        BilibiliApiUtil runtime = new BilibiliApiUtil(mock(HttpUtil.class), new NovaBilibiliProperties(), riskMetrics) {
             @Override
             public Long fetchLoginUid() {
                 throw new IllegalStateException("boom");
@@ -235,7 +235,7 @@ class BilibiliApiUtilSilentLossCountTest {
         }
 
         BilibiliApiUtil notLoggedIn =
-                new BilibiliApiUtil(mock(HttpUtil.class), new StarBotBilibiliProperties(), riskMetrics) {
+                new BilibiliApiUtil(mock(HttpUtil.class), new NovaBilibiliProperties(), riskMetrics) {
                     @Override
                     public Long fetchLoginUid() {
                         throw new ResponseCodeException(-101, "账号未登录");

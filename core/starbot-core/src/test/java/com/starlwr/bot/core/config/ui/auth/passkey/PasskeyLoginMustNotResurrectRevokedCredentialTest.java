@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.config.ui.auth.passkey;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.config.ui.ConfigUiPasskeyController;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiSessionStore;
@@ -36,9 +36,9 @@ class PasskeyLoginMustNotResurrectRevokedCredentialTest {
     @Test
     @DisplayName("登记后开始登录，验签途中撤掉这把钥匙，完成登录失败且库里不再出现它")
     void loginDoesNotResurrectCredentialRemovedAfterLookup() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(directory.resolve("data.json").toString());
-        StarBotCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
+        NovaCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
         auth.setPassword(PasskeyTestSupport.PASSWORD);
         auth.setTotp(false);
 

@@ -2,7 +2,7 @@ package com.starlwr.bot.core.config.ui;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.protocol.EventStreamTokenService;
 import com.starlwr.bot.core.service.PushTemplateDefaults;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,7 +40,7 @@ class EventTokenEndpointsTest {
 
     @BeforeEach
     void setUp() {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
         tokens = new EventStreamTokenService(properties.getLive());
 
@@ -72,7 +72,7 @@ class EventTokenEndpointsTest {
                 mock(com.starlwr.bot.core.service.LiveDataService.class),
                 mock(com.starlwr.bot.core.timeline.TimelineStore.class),
                 mock(com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService.class),
-                new PushTemplateDefaults(new StarBotCoreProperties()),
+                new PushTemplateDefaults(new NovaCoreProperties()),
                 mock(UpdateCheckService.class));
     }
 
@@ -280,7 +280,7 @@ class EventTokenEndpointsTest {
     }
 
     private ConfigUiController controllerFor(Path dataFile) {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dataFile.toString());
         EventStreamTokenService localTokens = new EventStreamTokenService(properties.getLive());
         return new ConfigUiController(
@@ -308,7 +308,7 @@ class EventTokenEndpointsTest {
                 mock(com.starlwr.bot.core.service.LiveDataService.class),
                 mock(com.starlwr.bot.core.timeline.TimelineStore.class),
                 mock(com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService.class),
-                new PushTemplateDefaults(new StarBotCoreProperties()),
+                new PushTemplateDefaults(new NovaCoreProperties()),
                 mock(UpdateCheckService.class));
     }
 }

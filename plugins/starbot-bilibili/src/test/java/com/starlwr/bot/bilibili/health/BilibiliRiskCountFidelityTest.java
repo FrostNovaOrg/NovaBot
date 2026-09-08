@@ -1,7 +1,7 @@
 package com.starlwr.bot.bilibili.health;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.enums.DataPackType;
 import com.starlwr.bot.bilibili.protocol.BilibiliPacketCodec;
 import com.starlwr.bot.bilibili.service.BilibiliApiSupport;
@@ -57,12 +57,12 @@ class BilibiliRiskCountFidelityTest {
 
     private BilibiliRiskMetrics metrics;
 
-    private StarBotBilibiliProperties properties;
+    private NovaBilibiliProperties properties;
 
     @BeforeEach
     void setUp() {
         metrics = new BilibiliRiskMetrics();
-        properties = new StarBotBilibiliProperties();
+        properties = new NovaBilibiliProperties();
     }
 
     @Test

@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.alert;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.service.NovaMailService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -45,7 +45,7 @@ class MailAlertChannelTest {
     }
 
     private MailAlertChannel channel(String to, String host) {
-        StarBotCoreProperties properties = new StarBotCoreProperties();
+        NovaCoreProperties properties = new NovaCoreProperties();
         properties.getMail().setDefaultTo(to);
         return new MailAlertChannel(mock(NovaMailService.class), properties, host);
     }

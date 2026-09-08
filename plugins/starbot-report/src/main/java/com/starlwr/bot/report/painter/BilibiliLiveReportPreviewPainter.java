@@ -1,12 +1,12 @@
 package com.starlwr.bot.report.painter;
 
 import com.starlwr.bot.bilibili.BilibiliPlatform;
-import com.starlwr.bot.bilibili.config.StarBotBilibiliProperties;
+import com.starlwr.bot.bilibili.config.NovaBilibiliProperties;
 import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
 import com.starlwr.bot.bilibili.model.BilibiliLiveReportOptions;
 import com.starlwr.bot.bilibili.model.GuardMember;
 import com.starlwr.bot.bilibili.util.BilibiliApiUtil;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.RoomInfoSnapshot;
 import com.starlwr.bot.core.plugin.NovaComponent;
@@ -87,7 +87,7 @@ public class BilibiliLiveReportPreviewPainter extends BilibiliLiveReportPainter 
 
     @Autowired
     public BilibiliLiveReportPreviewPainter(StarBotCommonPainterFactory factory, BilibiliApiUtil api,
-                                            FontUtil fontUtil, StarBotBilibiliProperties properties,
+                                            FontUtil fontUtil, NovaBilibiliProperties properties,
                                             LiveRoomInfoHistory roomInfoHistory) {
         super(factory, api, fixtureData(), fontUtil, properties, roomInfoHistory);
 
@@ -169,7 +169,7 @@ public class BilibiliLiveReportPreviewPainter extends BilibiliLiveReportPainter 
         //    与 ContextClosed 两个事件，两个写口都不会被触发），但那是**别人的实现细节**：
         //    🔴 哪天有人把它注册成 bean，这里就成了一颗定时炸弹。**把开关关死，
         //    比指望「它碰巧收不到那两个事件」牢靠。**
-        StarBotCoreProperties fixtureProperties = new StarBotCoreProperties();
+        NovaCoreProperties fixtureProperties = new NovaCoreProperties();
         fixtureProperties.getLive().setSaveLiveData(false);
 
         DefaultLiveDataService data = new DefaultLiveDataService(fixtureProperties);

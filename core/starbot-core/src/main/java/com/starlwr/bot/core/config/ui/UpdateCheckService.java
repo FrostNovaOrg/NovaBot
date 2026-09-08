@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.config.ui;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.service.StarBotStateStore;
 import com.starlwr.bot.core.util.HttpUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -64,7 +64,7 @@ public class UpdateCheckService {
      */
     private static final int NOTES_LINES = 3;
 
-    private final StarBotCoreProperties properties;
+    private final NovaCoreProperties properties;
 
     private final StarBotStateStore state;
 
@@ -94,12 +94,12 @@ public class UpdateCheckService {
     private volatile String latestUrl;
 
     @Autowired
-    public UpdateCheckService(StarBotCoreProperties properties, HttpUtil http, StarBotStateStore state,
+    public UpdateCheckService(NovaCoreProperties properties, HttpUtil http, StarBotStateStore state,
                               ObjectProvider<BuildProperties> buildProperties) {
         this(properties, state, buildProperties, http::getJson);
     }
 
-    UpdateCheckService(StarBotCoreProperties properties, StarBotStateStore state,
+    UpdateCheckService(NovaCoreProperties properties, StarBotStateStore state,
                        ObjectProvider<BuildProperties> buildProperties, SourceClient source) {
         this.properties = properties;
         this.state = state;
@@ -132,7 +132,7 @@ public class UpdateCheckService {
      * 是把这一次调度变成日志里的一行栈。
      */
     public void checkNow() {
-        StarBotCoreProperties.ConfigUi.Update update = properties.getConfigUi().getUpdate();
+        NovaCoreProperties.ConfigUi.Update update = properties.getConfigUi().getUpdate();
         if (!update.isEnabled()) {
             return;
         }

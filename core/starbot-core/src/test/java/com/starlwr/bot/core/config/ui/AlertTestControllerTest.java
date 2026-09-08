@@ -3,7 +3,7 @@ package com.starlwr.bot.core.config.ui;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.alert.AlertChannel;
 import com.starlwr.bot.core.alert.AlertService;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.timeline.TimelineWriter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -45,7 +45,7 @@ class AlertTestControllerTest {
 
         // 「发一条试试」走的是 AlertService#test，那一支不经投递路径，本就不记时间线
         controller = new AlertTestController(
-                new AlertService(new StarBotCoreProperties(), provider, TimelineWriter.NONE));
+                new AlertService(new NovaCoreProperties(), provider, TimelineWriter.NONE));
     }
 
     /**

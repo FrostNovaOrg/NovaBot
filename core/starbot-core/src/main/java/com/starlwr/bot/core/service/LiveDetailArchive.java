@@ -5,7 +5,7 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.core.analytics.LiveDetail;
 import com.starlwr.bot.core.analytics.LiveHighlightFinder;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.model.DanmuRecord;
 import com.starlwr.bot.core.model.LiveGap;
 import com.starlwr.bot.core.model.RoomInfoSnapshot;
@@ -108,7 +108,7 @@ public class LiveDetailArchive {
      */
     private static final int LINE_LIMIT = 500_000;
 
-    private final StarBotCoreProperties properties;
+    private final NovaCoreProperties properties;
 
     /**
      * 写锁。多个直播间可能同时下播，各写各的目录，但建目录与过期清理这两步会撞
@@ -126,7 +126,7 @@ public class LiveDetailArchive {
             new java.util.concurrent.ConcurrentHashMap<>();
 
     @Autowired
-    public LiveDetailArchive(StarBotCoreProperties properties) {
+    public LiveDetailArchive(NovaCoreProperties properties) {
         this.properties = properties;
     }
 

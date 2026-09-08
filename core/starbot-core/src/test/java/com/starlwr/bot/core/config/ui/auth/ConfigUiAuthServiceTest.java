@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.config.ui.auth;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
@@ -32,7 +32,7 @@ class ConfigUiAuthServiceTest {
     }
 
     private ConfigUiAuthService service(String password, String totpSecret, boolean totp) {
-        StarBotCoreProperties.ConfigUi.Auth properties = new StarBotCoreProperties.ConfigUi.Auth();
+        NovaCoreProperties.ConfigUi.Auth properties = new NovaCoreProperties.ConfigUi.Auth();
         properties.setPassword(password);
         properties.setTotpSecret(totpSecret);
         properties.setTotp(totp);
@@ -228,7 +228,7 @@ class ConfigUiAuthServiceTest {
      * 造一个共用同一个限流器的服务，好让判据能从外面观察那个全局桶
      */
     private ConfigUiAuthService serviceSharingThrottle() {
-        StarBotCoreProperties.ConfigUi.Auth properties = new StarBotCoreProperties.ConfigUi.Auth();
+        NovaCoreProperties.ConfigUi.Auth properties = new NovaCoreProperties.ConfigUi.Auth();
         properties.setPassword(PASSWORD);
         properties.setTotp(false);
 

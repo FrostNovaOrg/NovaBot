@@ -12,7 +12,7 @@ import com.starlwr.bot.adapter.onebot.model.OneBotSender;
 import com.starlwr.bot.adapter.onebot.security.PushApiTokenStore;
 import com.starlwr.bot.core.account.BotConnectionTester;
 import com.starlwr.bot.core.properties.LogProperties;
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.service.NovaSenderService;
 import com.starlwr.bot.core.util.HttpUtil;
 import org.junit.jupiter.api.AfterEach;
@@ -123,7 +123,7 @@ class OneBotRuntimeConnectionTest {
                 new OneBotMessageConverter(), state);
         directory = new OneBotTargetDirectory(adapter, httpService, properties);
 
-        senderService = new NovaSenderService(new StarBotCoreProperties());
+        senderService = new NovaSenderService(new NovaCoreProperties());
 
         WebServer server = mock(WebServer.class);
         when(server.getPort()).thenReturn(8080);

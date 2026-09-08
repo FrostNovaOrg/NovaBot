@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.exec;
 
-import com.starlwr.bot.core.config.StarBotCoreProperties;
+import com.starlwr.bot.core.config.NovaCoreProperties;
 import com.starlwr.bot.core.event.live.common.LiveOnEvent;
 import com.starlwr.bot.core.event.live.common.SuperChatEvent;
 import com.starlwr.bot.core.model.LiveStreamerInfo;
@@ -40,13 +40,13 @@ class EventCommandRunnerTest {
     @TempDir
     Path dir;
 
-    private StarBotCoreProperties properties;
+    private NovaCoreProperties properties;
 
     private EventCommandRunner runner;
 
     @BeforeEach
     void setUp() {
-        properties = new StarBotCoreProperties();
+        properties = new NovaCoreProperties();
         runner = new EventCommandRunner(properties);
     }
 
@@ -54,8 +54,8 @@ class EventCommandRunnerTest {
         return new LiveOnEvent(PLATFORM, new LiveStreamerInfo(19142561034510L, uname, 47121903112096L));
     }
 
-    private StarBotCoreProperties.ExecRule rule(String eventName, String... command) {
-        StarBotCoreProperties.ExecRule rule = new StarBotCoreProperties.ExecRule();
+    private NovaCoreProperties.ExecRule rule(String eventName, String... command) {
+        NovaCoreProperties.ExecRule rule = new NovaCoreProperties.ExecRule();
         rule.setEvent(eventName);
         rule.setCommand(List.of(command));
         return rule;
@@ -107,7 +107,7 @@ class EventCommandRunnerTest {
     @DisplayName("单条规则被停用时不该执行")
     void disabledRuleIsSkipped() throws Exception {
         Path marker = dir.resolve("should-not-exist");
-        StarBotCoreProperties.ExecRule rule = rule("LiveOnEvent", touchScript().toString(), marker.toString());
+        NovaCoreProperties.ExecRule rule = rule("LiveOnEvent", touchScript().toString(), marker.toString());
         rule.setEnabled(false);
         properties.getExec().setEnabled(true);
         properties.getExec().getRules().add(rule);
