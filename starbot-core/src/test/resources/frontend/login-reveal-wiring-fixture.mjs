@@ -99,6 +99,7 @@ eq(push.includes('请先输入 uid、直播间号或链接'), false, '旧空输�
 
 const hintMatch = push.match(/export const STREAMER_INPUT_HINT\s*=\s*'([^']+)'/);
 const streamerHint = hintMatch ? hintMatch[1] : '';
+const sentinelHint = '哨兵HINT_405';
 
 function el(tag, cls) {
   return {
@@ -132,10 +133,10 @@ try {
   let captured;
   const wrap = (title, sub, fill) => { captured = openDrawer(title, sub, fill); };
   const addStreamer = new Function('store', 'el', 'openDrawer', 'esc', 'STREAMER_INPUT_HINT',
-    addBody + '\nreturn addStreamer;')({platforms: ['bilibili']}, el, wrap, String, streamerHint);
+    addBody + '\nreturn addStreamer;')({platforms: ['bilibili']}, el, wrap, String, sentinelHint);
   addStreamer();
   const input = findById(captured, 'add-uid');
-  qPlaceholder = input && input.placeholder === '输入 ' + streamerHint;
+  qPlaceholder = input && input.placeholder === '输入 ' + sentinelHint;
 } catch (e) {
   qPlaceholder = 'error:' + e.message;
 }
@@ -146,10 +147,10 @@ try {
   const lookupBody = bracedFrom(push, 'async function lookupStreamer');
   if (!lookupBody) throw new Error('no lookupStreamer');
   const lookupStreamer = new Function('STREAMER_INPUT_HINT', 'api', '$',
-    lookupBody + '\nreturn lookupStreamer;')(streamerHint, null, null);
+    lookupBody + '\nreturn lookupStreamer;')(sentinelHint, null, null);
   const out = {textContent: ''};
   await lookupStreamer(['bilibili'], {value: '  '}, {disabled: false}, out);
-  qEmpty = out.textContent === '请先输入 ' + streamerHint + '。';
+  qEmpty = out.textContent === '请先输入 ' + sentinelHint + '。';
 } catch (e) {
   qEmpty = 'error:' + e.message;
 }
