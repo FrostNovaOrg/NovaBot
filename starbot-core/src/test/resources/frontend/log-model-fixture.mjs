@@ -14,7 +14,7 @@
 
 import {
   DEFAULT_LIMIT, emptyState, parseLogHash, logHash, timelineQuery, hasFilter, emptyText,
-  olderDay, newerDay, engLevelOf, groupEngLines, engVisible,
+  olderDay, newerDay, engLevelOf, groupEngLines, engVisible, engSegments,
   engQuery, engAtBottom, engFollowing, engCopyText, engEmptyText,
 } from '../../../main/resources/config-ui/log-model.js';
 
@@ -243,6 +243,31 @@ eq(engEmptyText(state({view: 'eng', date: '2026-09-01'}), TODAY, 0), '这一天�
 eq(engEmptyText(state({view: 'eng'}), TODAY, 12), '没有符合条件的行。', '有行而筛没了');
 eq(engEmptyText(state({view: 'eng', date: '2026-09-01'}), TODAY, 12), '没有符合条件的行。',
   '旧日子里筛没了也是筛没了');
+
+// ---------- 十二、工程日志：画与复制共用的那一份「屏幕上是哪几段」 ----------
+// 画一遍、复制时再自己筛一遍的话，两份规则会各自漂：改了其中一份（譬如复制时顺手不筛级别），
+// 屏幕与剪贴板就此不是同一份日志，而两边都不报错——贴给别人排障的，
+// 是一份他自己从没看见过的行。因此这一份判定只留一处，两个调用点都问它
+const SEG_LINES = [HEAD_ERR, '\tat a.b.C.d(C.java:1)', HEAD_INFO];
+const SEG_ALL = engSegments(SEG_LINES, -1, ON, '');
+eq(SEG_ALL.all.length, 2, '分段与 groupEngLines 是同一份：堆栈不另算一段');
+eq(SEG_ALL.shown.length, 2, '什么都不筛时屏幕上就是全部');
+// all 是页脚那句「共读到 N 段」的分母，它不跟着筛缩水：跟着缩水的话，
+// 那句话会永远说「显示 N 段，共读到 N 段」，而筛掉了多少就此看不见
+const SEG_OFF = engSegments(SEG_LINES, -1, OFF_INFO, '');
+eq(SEG_OFF.all.length, 2, '关掉一档不改变读到了几段');
+eq(SEG_OFF.shown.length, 1, '关掉的那一档不上屏');
+eq(SEG_OFF.shown[0].level, 'error', '留下的是没被关掉的那一档');
+const SEG_Q = engSegments(SEG_LINES, -1, ON, 'C.java');
+eq(SEG_Q.all.length, 2, '搜索同样不改变分母');
+eq(SEG_Q.shown.length, 1, '搜索也只动 shown');
+eq(SEG_Q.shown[0].text.split('\n').length, 2, '搜堆栈里的字样，留下的是整段');
+// shown 里的段必须就是 all 里那几段本身，而不是另算一份：另算一份的话，
+// 复制走的与画在屏幕上的可以慢慢变成两件事，而屏幕上看不出来
+eq(SEG_OFF.shown.every(entry => SEG_OFF.all.includes(entry)), true,
+  '屏幕上那几段取自同一份分段结果，不另走一条路');
+eq(engSegments([], -1, ON, ''), {all: [], shown: []}, '没有行时两头都是空的');
+eq(engSegments(SEG_LINES, 1, ON, '').shown[0].hl, true, '高亮照样落在它所属的那一段上');
 
 // ---------- 报数 ----------
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

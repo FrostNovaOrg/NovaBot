@@ -271,6 +271,27 @@ export function engVisible(entry, levelsOn, q) {
 }
 
 /**
+ * 屏幕上此刻是哪几段，以及一共读到了几段
+ *
+ * 分段与筛合成这一个口子，是因为「复制这一段」复制的必须与画在屏幕上的是同一份。
+ * 两个调用点各自写一遍「分段再筛」的话，两份判定会各自漂，而漂开之后的表现是
+ * <b>剪贴板里那一份从来没在屏幕上出现过</b>——使用者把它贴给别人排障，
+ * 两边看的不是同一份日志，且没有任何一侧会报错。
+ *
+ * {@code all} 不跟着筛缩水：页脚那句「显示 M 段，共读到 N 段」靠它分辨
+ * 「这一份就这么点」与「筛掉了一大半」，跟着缩水的话两个数永远相等。
+ * @param lines 原文行，最旧的在前
+ * @param highlight 要高亮的原文行号，不高亮时留空
+ * @param levelsOn 四档各自开着没有
+ * @param q 搜索词
+ * @return {{all: Array, shown: Array}} all 是读到的全部段，shown 是其中该上屏的那几段
+ */
+export function engSegments(lines, highlight, levelsOn, q) {
+  const all = groupEngLines(lines, highlight);
+  return {all, shown: all.filter(entry => engVisible(entry, levelsOn, q))};
+}
+
+/**
  * 筛选状态 → /api/engineering-log 的查询串
  *
  * 与 timelineQuery 同理：地址栏那一套名字（d / at）与接口那一套只在这一个函数里对一次。
