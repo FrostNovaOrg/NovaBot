@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 import java.util.zip.InflaterInputStream;
 
@@ -124,17 +125,67 @@ public final class BilibiliPacketCodec {
      * @return 数据包列表，数据非法时返回空列表
      */
     public static List<BilibiliPacket> decode(byte[] data, Limits limits, IntConsumer unknownVersionSink) {
+        return decode(data, limits, unknownVersionSink, null);
+    }
+
+    /**
+     * 按给定限额解码一段字节流，未知协议版本与数据包异常分别上报给两个 sink
+     * <p>
+     * 数据包异常单开一个上报口而不是复用日志：解压失败、预算爆掉、长度字段异常
+     * 都会让<b>整批</b>数据包被丢掉，而这三种此前只有一条 warn 日志——
+     * 一批里可能有几十条弹幕与礼物，丢掉之后计数上完全说得通，没有任何计数会变。
+     * @param data 字节流
+     * @param limits 解码限额
+     * @param unknownVersionSink 未知协议版本上报口，可为 null（等于不上报）
+     * @param packetAnomalySink 数据包异常上报口，可为 null（等于不上报）
+     * @return 数据包列表，数据非法时返回空列表
+     */
+    public static List<BilibiliPacket> decode(byte[] data, Limits limits, IntConsumer unknownVersionSink,
+                                              Consumer<PacketAnomaly> packetAnomalySink) {
         Limits effective = limits == null ? DEFAULT_LIMITS : limits;
         // 预算属于整次解码，不属于任何一层解压：按子包各算一份的话，
         // 一批「各自不超限」的兄弟子包就能把放大倍数藏在份数里
-        return decode(data, effective, new DecompressBudget(effective.maxDecompressedBytes()), unknownVersionSink);
+        return decode(data, effective, new DecompressBudget(effective.maxDecompressedBytes()),
+                unknownVersionSink, packetAnomalySink);
+    }
+
+    /**
+     * 数据包在协议层就没读下来的三种形态
+     * <p>
+     * 名字里的 token 会原样进健康页的文本样本，因此一律 ASCII。
+     */
+    public enum PacketAnomaly {
+        /**
+         * 负载解压抛异常（数据损坏，或压缩格式换了）
+         */
+        DECOMPRESS_FAILED("decompress-failed"),
+
+        /**
+         * 这次解码的解压产出合计超过预算，整批拒收
+         */
+        BUDGET_BLOWN("budget-blown"),
+
+        /**
+         * 头部的长度字段自相矛盾或越界，从这里往后不再解析
+         */
+        BAD_LENGTH("bad-length");
+
+        private final String token;
+
+        PacketAnomaly(String token) {
+            this.token = token;
+        }
+
+        public String getToken() {
+            return token;
+        }
     }
 
     /**
      * {@link #decode(byte[], Limits, DecompressBudget, IntConsumer)} 的不带 sink 版本
      */
     static List<BilibiliPacket> decode(byte[] data, Limits limits, DecompressBudget budget) {
-        return decode(data, limits, budget, null);
+        return decode(data, limits, budget, null, null);
     }
 
     /**
@@ -147,11 +198,13 @@ public final class BilibiliPacketCodec {
      * @param limits 解码限额
      * @param budget 这次解码全程共用的解压预算
      * @param unknownVersionSink 未知协议版本上报口，可为 null（等于不上报）
+     * @param packetAnomalySink 数据包异常上报口，可为 null（等于不上报）
      * @return 数据包列表，数据非法时返回空列表
      */
-    static List<BilibiliPacket> decode(byte[] data, Limits limits, DecompressBudget budget, IntConsumer unknownVersionSink) {
+    static List<BilibiliPacket> decode(byte[] data, Limits limits, DecompressBudget budget,
+                                       IntConsumer unknownVersionSink, Consumer<PacketAnomaly> packetAnomalySink) {
         List<BilibiliPacket> packets = new ArrayList<>();
-        decodeInto(data, packets, 0, limits, budget, unknownVersionSink);
+        decodeInto(data, packets, 0, limits, budget, unknownVersionSink, packetAnomalySink);
         if (budget.isBlown()) {
             return new ArrayList<>();
         }
@@ -184,9 +237,11 @@ public final class BilibiliPacketCodec {
      * @param depth 当前递归层数
      * @param budget 这次解码全程共用的解压预算
      * @param unknownVersionSink 未知协议版本上报口，可为 null（等于不上报）
+     * @param packetAnomalySink 数据包异常上报口，可为 null（等于不上报）
      */
     private static void decodeInto(byte[] data, List<BilibiliPacket> packets, int depth, Limits limits,
-                                   DecompressBudget budget, IntConsumer unknownVersionSink) {
+                                   DecompressBudget budget, IntConsumer unknownVersionSink,
+                                   Consumer<PacketAnomaly> packetAnomalySink) {
         if (depth > limits.maxNestingDepth()) {
             log.warn("直播间数据包嵌套层数超过 {} 层, 已停止解析", limits.maxNestingDepth());
             return;
@@ -207,6 +262,7 @@ public final class BilibiliPacketCodec {
             if (packetLength < HEADER_LENGTH || headerLength < HEADER_LENGTH || headerLength > packetLength
                     || packetLength > data.length - offset) {
                 log.warn("直播间数据包长度字段异常 (整包 {}, 头部 {}, 剩余 {}), 已停止解析", packetLength, headerLength, data.length - offset);
+                report(packetAnomalySink, PacketAnomaly.BAD_LENGTH);
                 return;
             }
 
@@ -214,9 +270,11 @@ public final class BilibiliPacketCodec {
             System.arraycopy(data, offset + headerLength, body, 0, body.length);
 
             if (protocolVersion == DataHeaderType.BROTLI_JSON.getCode()) {
-                decompress(body, true, budget).ifPresent(decompressed -> decodeInto(decompressed, packets, depth + 1, limits, budget, unknownVersionSink));
+                decompress(body, true, budget, packetAnomalySink).ifPresent(decompressed ->
+                        decodeInto(decompressed, packets, depth + 1, limits, budget, unknownVersionSink, packetAnomalySink));
             } else if (protocolVersion == PROTOCOL_ZLIB) {
-                decompress(body, false, budget).ifPresent(decompressed -> decodeInto(decompressed, packets, depth + 1, limits, budget, unknownVersionSink));
+                decompress(body, false, budget, packetAnomalySink).ifPresent(decompressed ->
+                        decodeInto(decompressed, packets, depth + 1, limits, budget, unknownVersionSink, packetAnomalySink));
             } else {
                 // 裸负载分支里混着两种已知版本（裸 JSON 与心跳），排掉它们剩下的才是「未知」——
                 // 判定只在这里做，调用方拿到的一定是未知版本
@@ -242,9 +300,11 @@ public final class BilibiliPacketCodec {
      * @param body 压缩后的负载
      * @param brotli 是否为 brotli 压缩，否则按 zlib 处理
      * @param budget 这次解码全程共用的解压预算
+     * @param packetAnomalySink 数据包异常上报口，可为 null（等于不上报）
      * @return 解压结果，失败或预算超限时返回空
      */
-    private static Optional<byte[]> decompress(byte[] body, boolean brotli, DecompressBudget budget) {
+    private static Optional<byte[]> decompress(byte[] body, boolean brotli, DecompressBudget budget,
+                                               Consumer<PacketAnomaly> packetAnomalySink) {
         budget.recordAttempt();
         try (ByteArrayInputStream source = new ByteArrayInputStream(body);
              InputStream input = brotli ? new BrotliInputStream(source) : new InflaterInputStream(source);
@@ -255,6 +315,7 @@ public final class BilibiliPacketCodec {
             while ((read = input.read(buffer)) != -1) {
                 if (!budget.charge(read)) {
                     log.warn("直播间数据包解压产出合计超过 {} 字节, 已放弃解析", budget.limit);
+                    report(packetAnomalySink, PacketAnomaly.BUDGET_BLOWN);
                     return Optional.empty();
                 }
                 output.write(buffer, 0, read);
@@ -263,7 +324,20 @@ public final class BilibiliPacketCodec {
             return Optional.of(output.toByteArray());
         } catch (IOException e) {
             log.warn("解压直播间数据包失败 ({})", brotli ? "brotli" : "zlib", e);
+            report(packetAnomalySink, PacketAnomaly.DECOMPRESS_FAILED);
             return Optional.empty();
+        }
+    }
+
+    /**
+     * 往上报口写一条，口子为空时什么也不做
+     * <p>
+     * 上报不参与判定：这个类是无状态工具，去重与计数都在调用方——
+     * 一个带计数的静态字段会让「这次记的是哪一批」要靠时序去推。
+     */
+    private static void report(Consumer<PacketAnomaly> sink, PacketAnomaly anomaly) {
+        if (sink != null) {
+            sink.accept(anomaly);
         }
     }
 

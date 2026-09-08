@@ -237,14 +237,29 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
     private boolean reconnectedForStall;
 
     /**
-     * 未知操作码计数。按码去重，只在 1/10/100… 量级写入指标。
+     * 未知操作码计数。逐次写入指标，按码去重的只是文本样本，1/10/100… 量级各换一次。
      */
     private final ConcurrentHashMap<Integer, AtomicLong> unknownOps = new ConcurrentHashMap<>();
 
     /**
-     * 未知协议版本计数。按版本去重，只在 1/10/100… 量级写入指标。
+     * 未知协议版本计数。逐次写入指标，按版本去重的只是文本样本，1/10/100… 量级各换一次。
      */
     private final ConcurrentHashMap<Integer, AtomicLong> unknownVers = new ConcurrentHashMap<>();
+
+    /**
+     * 数据包异常计数。逐次写入指标，按异常类型去重的只是文本样本，1/10/100… 量级各换一次。
+     */
+    private final ConcurrentHashMap<String, AtomicLong> packetAnomalies = new ConcurrentHashMap<>();
+
+    /**
+     * 1、10、100、1000… 这样的量级
+     * <p>
+     * 它决定的是<b>换不换一份文本样本、打不打一条日志</b>，不决定计不计数：
+     * 计数漏一条就等于让那一条静默消失，而健康页的阈值全都建在计数上。
+     */
+    private static boolean isMagnitude(long count) {
+        return Long.toString(count).matches("10*");
+    }
 
     /**
      * 是否为 {@link DataPackType} 枚举未收录的操作码。
@@ -260,8 +275,8 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
     }
 
     /**
-     * 未知操作码首见与量级记账。已知码直接忽略。
-     * @return 是否写入了一次指标
+     * 未知操作码记账：每条都计数，已知码直接忽略。
+     * @return 这一次是否落在量级上（值得换文本样本、打一条日志）
      */
     static boolean noteUnknownOperation(int operation, ConcurrentHashMap<Integer, AtomicLong> ledger,
                                         BilibiliRiskMetrics metrics) {
@@ -269,19 +284,17 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
             return false;
         }
         long count = ledger.computeIfAbsent(operation, key -> new AtomicLong()).incrementAndGet();
-        if (Long.toString(count).matches("10*")) {
-            metrics.record(BilibiliRiskMetrics.Kind.UNKNOWN_OP, "op=" + operation);
-            return true;
-        }
-        return false;
+        boolean sample = isMagnitude(count);
+        metrics.record(BilibiliRiskMetrics.Kind.UNKNOWN_OP, sample ? "op=" + operation : null);
+        return sample;
     }
 
     /**
-     * 未知协议版本首见与量级记账。
+     * 未知协议版本记账：每条都计数。
      * <p>
      * 判定不在这里：是不是未知版本由 {@link com.starlwr.bot.bilibili.protocol.BilibiliPacketCodec}
      * 的解码入口说了算（它才有完整的已知版本表），这里只对 sink 转来的版本记账。
-     * @return 是否写入了一次指标
+     * @return 这一次是否落在量级上（值得换文本样本、打一条日志）
      */
     static boolean noteUnknownVersion(int version, ConcurrentHashMap<Integer, AtomicLong> ledger,
                                       BilibiliRiskMetrics metrics) {
@@ -289,11 +302,31 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
             return false;
         }
         long count = ledger.computeIfAbsent(version, key -> new AtomicLong()).incrementAndGet();
-        if (Long.toString(count).matches("10*")) {
-            metrics.record(BilibiliRiskMetrics.Kind.UNKNOWN_VER, "ver=" + version);
-            return true;
+        boolean sample = isMagnitude(count);
+        metrics.record(BilibiliRiskMetrics.Kind.UNKNOWN_VER, sample ? "ver=" + version : null);
+        return sample;
+    }
+
+    /**
+     * 数据包异常记账：每条都计数。
+     * <p>
+     * 判定同样不在这里——解压失败、预算爆掉、长度字段异常都由解码器认定，
+     * 这里只对 sink 转来的类型记账。detail 的第一段是异常类型的 ASCII token，
+     * 健康页取它当「最近一次是什么」。
+     * @return 这一次是否落在量级上（值得换文本样本、打一条日志）
+     */
+    static boolean notePacketAnomaly(BilibiliPacketCodec.PacketAnomaly anomaly,
+                                     ConcurrentHashMap<String, AtomicLong> ledger,
+                                     BilibiliRiskMetrics metrics) {
+        if (anomaly == null || ledger == null || metrics == null) {
+            return false;
         }
-        return false;
+        long count = ledger.computeIfAbsent(anomaly.getToken(), key -> new AtomicLong()).incrementAndGet();
+        boolean sample = isMagnitude(count);
+        metrics.record(BilibiliRiskMetrics.Kind.PACKET_CORRUPT, sample
+                ? anomaly.getToken() + " count=" + count + " unique=" + ledger.size()
+                : null);
+        return sample;
     }
 
     public BilibiliLiveRoomConnector(@NonNull LiveStreamerInfo source,
@@ -485,6 +518,11 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
             if (noteUnknownVersion(version, unknownVers, riskMetrics)) {
                 log.warn("直播间 {} 收到未知协议版本 {}", source.getRoomId(), version);
             }
+        }, anomaly -> {
+            if (notePacketAnomaly(anomaly, packetAnomalies, riskMetrics)) {
+                log.warn("直播间 {} 的数据包在协议层没读下来 ({}), 这一批消息整批丢失",
+                        source.getRoomId(), anomaly.getToken());
+            }
         })) {
             handlePacket(packet);
         }
@@ -548,7 +586,11 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
         try {
             data = JSON.parseObject(packet.getBodyAsText());
         } catch (Exception e) {
+            // 这条消息就此消失，而它此前只有一条 debug 日志：负载编码若真变了，
+            // 整个直播间的弹幕与礼物会一起静默归零，计数上完全说得通。
+            // cmd 在负载里，负载解不开就读不出来，只能记作未知
             log.debug("直播间 {} 的消息不是合法 JSON, 已忽略", source.getRoomId());
+            parser.noteParseFailure(null);
             return;
         }
 

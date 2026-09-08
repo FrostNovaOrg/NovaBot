@@ -1439,12 +1439,12 @@ public class BilibiliApiUtil {
     }
 
     /**
-     * 缺 data 端点计数。按端点（去 query）去重，只在 1/10/100… 量级写入指标。
+     * 缺 data 端点计数。按端点（去 query）去重的是文本样本，只在 1/10/100… 量级换一份。
      */
     private final ConcurrentHashMap<String, AtomicLong> dataMissingEndpoints = new ConcurrentHashMap<>();
 
     /**
-     * 接口应答缺 data 的记账：按去掉查询参数的端点去重，量级各记一次。
+     * 接口应答缺 data 的记账：<b>每次都计数</b>，按去掉查询参数的端点去重的只是文本样本。
      * <p>
      * detail 只含端点路径、计数与端点数——query 里是签名与凭据，一个字符都不能进健康页。
      */
@@ -1454,10 +1454,9 @@ public class BilibiliApiUtil {
         }
         String endpoint = shortUrl(url);
         long count = ledger.computeIfAbsent(endpoint, key -> new AtomicLong()).incrementAndGet();
-        if (Long.toString(count).matches("10*")) {
-            metrics.record(BilibiliRiskMetrics.Kind.API_DATA_MISSING,
-                    endpoint + " count=" + count + " unique=" + ledger.size());
-        }
+        metrics.record(BilibiliRiskMetrics.Kind.API_DATA_MISSING, Long.toString(count).matches("10*")
+                ? endpoint + " count=" + count + " unique=" + ledger.size()
+                : null);
     }
 
     /**
