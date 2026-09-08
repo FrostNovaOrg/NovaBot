@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.health;
 
-import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.sender.NovaMessageSender;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -28,10 +28,10 @@ public class PushActivityHealthProbe implements HealthProbe {
     /**
      * 以 ObjectProvider 注入，避免与发送器之间形成构造期的循环依赖
      */
-    private final ObjectProvider<StarBotMessageSender> messageSender;
+    private final ObjectProvider<NovaMessageSender> messageSender;
 
     @Autowired
-    public PushActivityHealthProbe(PushActivityRecorder recorder, ObjectProvider<StarBotMessageSender> messageSender) {
+    public PushActivityHealthProbe(PushActivityRecorder recorder, ObjectProvider<NovaMessageSender> messageSender) {
         this.recorder = recorder;
         this.messageSender = messageSender;
     }

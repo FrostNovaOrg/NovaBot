@@ -5,7 +5,7 @@ import com.starlwr.bot.adapter.onebot.model.OneBotSender;
 import com.starlwr.bot.adapter.onebot.security.PushApiTokenStore;
 import com.starlwr.bot.adapter.onebot.service.OneBotHttpService;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
-import com.starlwr.bot.core.service.StarBotSenderService;
+import com.starlwr.bot.core.service.NovaSenderService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.web.server.WebServer;
@@ -21,14 +21,14 @@ import static org.mockito.Mockito.when;
 /**
  * 适配器登记时自报的显示名必须真的从 {@link OneBotController#register} 走进核心
  * <p>
- * 额度面、首页今日格读的都是 {@link StarBotSenderService#displayName(String)}。
+ * 额度面、首页今日格读的都是 {@link NovaSenderService#displayName(String)}。
  * 若这里把自报字改成别的，那些表面格自己造一份「QQ」送进去，一格都不会红。
  */
 @DisplayName("OneBot 适配器自报显示名")
 class OneBotAdapterDisplayNameTest {
     private static final String PLATFORM = "qq-onebot";
 
-    private OneBotController controller(StarBotSenderService senders) {
+    private OneBotController controller(NovaSenderService senders) {
         WebServer server = mock(WebServer.class);
         when(server.getPort()).thenReturn(8080);
         WebServerApplicationContext webContext = mock(WebServerApplicationContext.class);
@@ -53,7 +53,7 @@ class OneBotAdapterDisplayNameTest {
     @Test
     @DisplayName("配了 HTTP Token 时 register 走到自报，核心 displayName 是 QQ")
     void registerWithTokenReportsDisplayNameQQ() {
-        StarBotSenderService senders = new StarBotSenderService(new StarBotCoreProperties());
+        NovaSenderService senders = new NovaSenderService(new StarBotCoreProperties());
 
         assertTrue(controller(senders).register(sender("http-token")), "有 Token 就该挂上");
         assertEquals("QQ", senders.displayName(PLATFORM),
@@ -63,7 +63,7 @@ class OneBotAdapterDisplayNameTest {
     @Test
     @DisplayName("缺 HTTP Token 时 register 早返回，不把显示名写进核心")
     void blankHttpTokenDoesNotInstallADisplayName() {
-        StarBotSenderService senders = new StarBotSenderService(new StarBotCoreProperties());
+        NovaSenderService senders = new NovaSenderService(new StarBotCoreProperties());
 
         assertFalse(controller(senders).register(sender("")), "缺 Token 挂不上");
         assertEquals(PLATFORM, senders.displayName(PLATFORM),

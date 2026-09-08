@@ -2,7 +2,7 @@ package com.starlwr.bot.core.alert;
 
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.config.ui.AlertReadiness;
-import com.starlwr.bot.core.service.StarBotMailService;
+import com.starlwr.bot.core.service.NovaMailService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -12,14 +12,14 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class MailAlertChannel implements AlertChannel {
-    private final StarBotMailService mailService;
+    private final NovaMailService mailService;
 
     private final StarBotCoreProperties properties;
 
     private final String smtpHost;
 
     @Autowired
-    public MailAlertChannel(StarBotMailService mailService, StarBotCoreProperties properties,
+    public MailAlertChannel(NovaMailService mailService, StarBotCoreProperties properties,
                             @Value("${spring.mail.host:}") String smtpHost) {
         this.mailService = mailService;
         this.properties = properties;

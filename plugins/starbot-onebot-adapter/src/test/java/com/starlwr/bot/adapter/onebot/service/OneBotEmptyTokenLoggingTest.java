@@ -5,7 +5,7 @@ import com.starlwr.bot.adapter.onebot.controller.OneBotController;
 import com.starlwr.bot.adapter.onebot.health.OneBotConnectionState;
 import com.starlwr.bot.adapter.onebot.model.OneBotSender;
 import com.starlwr.bot.adapter.onebot.security.PushApiTokenStore;
-import com.starlwr.bot.core.service.StarBotSenderService;
+import com.starlwr.bot.core.service.NovaSenderService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.web.server.context.WebServerApplicationContext;
@@ -86,7 +86,7 @@ class OneBotEmptyTokenLoggingTest {
                     mock(WebServerApplicationContext.class),
                     mock(RequestMappingHandlerMapping.class),
                     new OneBotAdapterPluginProperties(),
-                    mock(StarBotSenderService.class),
+                    mock(NovaSenderService.class),
                     mock(OneBotHttpService.class),
                     new PushApiTokenStore());
 

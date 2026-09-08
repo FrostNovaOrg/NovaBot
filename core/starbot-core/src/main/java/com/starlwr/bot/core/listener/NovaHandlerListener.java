@@ -31,7 +31,7 @@ import java.util.Optional;
  * </ul>
  * ⚠️ <b>发送器那一道闸没有撤，两道闸问的也不是同一件事。</b>这一道只管走事件分发这条路的推送；
  * 命令回复、告警、首推提示都不经过这里，它们仍然由
- * {@link com.starlwr.bot.core.sender.StarBotMessageSender#send} 那一道拦下并各记一条。
+ * {@link com.starlwr.bot.core.sender.NovaMessageSender#send} 那一道拦下并各记一条。
  * 拆掉本类这一道的表现是<b>时间线从聚合的一条变回逐条、平台接口白跑一趟</b>，不是「静音失灵」，
  * 所以两道各有各的判据、可分别掰红。
  */

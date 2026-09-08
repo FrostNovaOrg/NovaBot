@@ -14,7 +14,7 @@ import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.sender.AtMode;
-import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.sender.NovaMessageSender;
 import com.starlwr.bot.core.service.AtSubscriptionService;
 import com.starlwr.bot.core.service.LiveDataService;
 import lombok.extern.slf4j.Slf4j;
@@ -34,14 +34,14 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
 
     private final BilibiliDynamicPainter painter;
 
-    private final StarBotMessageSender sender;
+    private final NovaMessageSender sender;
 
     private final AtSubscriptionService subscriptions;
 
     private final LiveDataService liveDataService;
 
     @Autowired
-    public BilibiliDynamicPushHandler(BilibiliApiUtil api, BilibiliDynamicPainter painter, StarBotMessageSender sender,
+    public BilibiliDynamicPushHandler(BilibiliApiUtil api, BilibiliDynamicPainter painter, NovaMessageSender sender,
                                       AtSubscriptionService subscriptions, LiveDataService liveDataService) {
         this.api = api;
         this.painter = painter;
@@ -144,7 +144,7 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
      * ℹ️ <b>默认模板不再有 {@code {next}}，文字与动态图合成一条。</b>那个分条曾经是
      * 文字的可达性保护：<b>2026-08-02 真丢过一次动态图</b>，图片重试三次后整条放弃，
      * 文字因为分了条才幸存。可达性现在由发送侧兜底保证（含图消息发送失败时剥掉图片段
-     * 重发纯文字，并在日志里明写降级），见 {@link com.starlwr.bot.core.sender.StarBotMessageSender}——
+     * 重发纯文字，并在日志里明写降级），见 {@link com.starlwr.bot.core.sender.NovaMessageSender}——
      * <b>推送文字的可达性不得依赖图片的可取性，任何模板写法下都必须成立。</b>
      * <p>
      * ⚠️ <b>别把动态的「组装失败」也算在兜底头上</b>——那一种本来就安全：

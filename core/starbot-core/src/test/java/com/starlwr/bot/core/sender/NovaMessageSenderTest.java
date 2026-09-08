@@ -6,7 +6,7 @@ import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.health.PushActivityRecorder;
 import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.Sender;
-import com.starlwr.bot.core.service.StarBotSenderService;
+import com.starlwr.bot.core.service.NovaSenderService;
 import com.starlwr.bot.core.timeline.TimelineWriter;
 import com.starlwr.bot.core.util.HttpUtil;
 import org.junit.jupiter.api.DisplayName;
@@ -30,7 +30,7 @@ import static org.mockito.Mockito.*;
  * 覆盖投递环节的三处加固：网络抖动重试、响应缺字段不再空指针、静音时不投递。
  */
 @DisplayName("消息发送器")
-class StarBotMessageSenderTest {
+class NovaMessageSenderTest {
     private static final String PLATFORM = "qq-onebot";
 
     @Test
@@ -84,7 +84,7 @@ class StarBotMessageSenderTest {
         StarBotCoreProperties properties = new StarBotCoreProperties();
         properties.getPush().setEnabled(false);
 
-        StarBotMessageSender messageSender = sender(http, properties);
+        NovaMessageSender messageSender = sender(http, properties);
 
         messageSender.send(message());
         assertEquals(0, messageSender.getPendingCount(), "全局开关关闭时不应入队");
@@ -101,7 +101,7 @@ class StarBotMessageSenderTest {
         return message;
     }
 
-    private StarBotMessageSender sender(HttpUtil http) {
+    private NovaMessageSender sender(HttpUtil http) {
         return sender(http, new StarBotCoreProperties());
     }
 
@@ -114,7 +114,7 @@ class StarBotMessageSenderTest {
         properties.getPush().setAtAllDailyLimit(1);
 
         HttpUtil http = okHttp();
-        StarBotMessageSender sender = sender(http, properties);
+        NovaMessageSender sender = sender(http, properties);
 
         sender.sendNow(standaloneAtAll());
         sender.sendNow(standaloneAtAll());
@@ -132,7 +132,7 @@ class StarBotMessageSenderTest {
         properties.getPush().setAtAllDailyLimit(1);
 
         HttpUtil http = okHttp();
-        StarBotMessageSender sender = sender(http, properties);
+        NovaMessageSender sender = sender(http, properties);
 
         sender.sendNow(inlineAtAll());
         sender.sendNow(inlineAtAll());
@@ -152,7 +152,7 @@ class StarBotMessageSenderTest {
         properties.getPush().setAtAllDailyLimit(1);
 
         HttpUtil http = okHttp();
-        StarBotMessageSender sender = sender(http, properties);
+        NovaMessageSender sender = sender(http, properties);
 
         sender.sendNow(Message.create(PLATFORM, PushTargetType.FRIEND, 10000L, "{at=all}开播啦").get(0));
         // 私聊没消耗额度，群聊这一条仍应保留占位符
@@ -169,7 +169,7 @@ class StarBotMessageSenderTest {
         // 实测过：无权限的账号经 OneBot 接口发 at:all 竟能真的 @ 到全体，
         // 那是 QQ 的漏洞。钻这个空子有风控风险，因此自己先拦下
         HttpUtil http = okHttp();
-        StarBotMessageSender sender = sender(http, new StarBotCoreProperties(), false);
+        NovaMessageSender sender = sender(http, new StarBotCoreProperties(), false);
 
         sender.sendNow(inlineAtAll());
 
@@ -187,12 +187,12 @@ class StarBotMessageSenderTest {
 
         HttpUtil http = okHttp();
         // 无权限的会话连发两次，都应只是被摘掉，而不该把那 1 次额度吃掉
-        StarBotMessageSender denied = sender(http, properties, false);
+        NovaMessageSender denied = sender(http, properties, false);
         denied.sendNow(inlineAtAll());
         denied.sendNow(inlineAtAll());
 
         // 换一个有权限的发送器共用同一份配置，若额度已被吃掉这里就会被摘
-        StarBotMessageSender allowed = sender(http, properties, true);
+        NovaMessageSender allowed = sender(http, properties, true);
         allowed.sendNow(inlineAtAll());
 
         ArgumentCaptor<Map<String, Object>> captor = paramsCaptor();
@@ -205,7 +205,7 @@ class StarBotMessageSenderTest {
     @DisplayName("有权限时应照常发出 @全体成员")
     void keepsAtAllWithPermission() {
         HttpUtil http = okHttp();
-        StarBotMessageSender sender = sender(http, new StarBotCoreProperties(), true);
+        NovaMessageSender sender = sender(http, new StarBotCoreProperties(), true);
 
         sender.sendNow(inlineAtAll());
 
@@ -218,7 +218,7 @@ class StarBotMessageSenderTest {
     @DisplayName("没有任何适配器认领该平台时应放行，保持原有行为")
     void allowsWhenNoResolver() {
         HttpUtil http = okHttp();
-        StarBotMessageSender sender = sender(http, new StarBotCoreProperties(), null);
+        NovaMessageSender sender = sender(http, new StarBotCoreProperties(), null);
 
         sender.sendNow(inlineAtAll());
 
@@ -247,13 +247,13 @@ class StarBotMessageSenderTest {
         return ArgumentCaptor.forClass(Map.class);
     }
 
-    private StarBotMessageSender sender(HttpUtil http, StarBotCoreProperties properties) {
+    private NovaMessageSender sender(HttpUtil http, StarBotCoreProperties properties) {
         Sender target = new Sender();
         target.setName(PLATFORM);
         target.setUrl("http://127.0.0.1:7827/onebot/send");
         target.setDelay(0);
 
-        StarBotSenderService senderService = mock(StarBotSenderService.class);
+        NovaSenderService senderService = mock(NovaSenderService.class);
         when(senderService.getSender(PLATFORM)).thenReturn(Optional.of(target));
 
         return sender(http, properties, null);
@@ -262,13 +262,13 @@ class StarBotMessageSenderTest {
     /**
      * 造一个带指定权限判定的发送器；resolver 为 null 表示没有任何适配器认领该平台
      */
-    private StarBotMessageSender sender(HttpUtil http, StarBotCoreProperties properties, Boolean canAtAll) {
+    private NovaMessageSender sender(HttpUtil http, StarBotCoreProperties properties, Boolean canAtAll) {
         Sender target = new Sender();
         target.setName(PLATFORM);
         target.setUrl("http://127.0.0.1:7827/onebot/send");
         target.setDelay(0);
 
-        StarBotSenderService senderService = mock(StarBotSenderService.class);
+        NovaSenderService senderService = mock(NovaSenderService.class);
         when(senderService.getSender(PLATFORM)).thenReturn(Optional.of(target));
 
         @SuppressWarnings("unchecked")
@@ -286,7 +286,7 @@ class StarBotMessageSenderTest {
         });
         when(resolvers.iterator()).thenAnswer(invocation -> list.iterator());
 
-        return new StarBotMessageSender(http, senderService, new PushActivityRecorder(TimelineWriter.NONE), new PushGate(properties),
+        return new NovaMessageSender(http, senderService, new PushActivityRecorder(TimelineWriter.NONE), new PushGate(properties),
                 TimelineWriter.NONE, new com.starlwr.bot.core.service.AtAllQuotaService(properties), resolvers,
                 new FirstPushTipService(new com.starlwr.bot.core.service.StarBotStateStore(properties)));
     }
@@ -328,7 +328,7 @@ class StarBotMessageSenderTest {
                 return new JSONObject().fluentPut("code", 0).fluentPut("id", "m" + delivered.get());
             };
 
-            StarBotMessageSender sender = localSender(http, slow);
+            NovaMessageSender sender = localSender(http, slow);
 
             Message text = message();
             text.setContent("开播啦");
@@ -346,7 +346,7 @@ class StarBotMessageSenderTest {
         @DisplayName("配了进程内投递就不该再发本机 HTTP —— 没有 socket 就没有读不完请求体的问题")
         void neverTouchesHttpWhenLocalDeliveryPresent() {
             HttpUtil http = mock(HttpUtil.class);
-            StarBotMessageSender sender = localSender(http,
+            NovaMessageSender sender = localSender(http,
                     (headers, params) -> new JSONObject().fluentPut("code", 0));
 
             sender.sendNow(message());
@@ -373,7 +373,7 @@ class StarBotMessageSenderTest {
             HttpUtil http = mock(HttpUtil.class);
             AtomicInteger attempts = new AtomicInteger();
 
-            StarBotMessageSender sender = localSender(http, (headers, params) -> {
+            NovaMessageSender sender = localSender(http, (headers, params) -> {
                 if (attempts.incrementAndGet() < 3) {
                     throw new IllegalStateException("下游暂时不可用");
                 }
@@ -415,14 +415,14 @@ class StarBotMessageSenderTest {
     /**
      * 造一个走进程内直调的发送器
      */
-    private StarBotMessageSender localSender(HttpUtil http, Sender.LocalDelivery delivery) {
+    private NovaMessageSender localSender(HttpUtil http, Sender.LocalDelivery delivery) {
         Sender target = new Sender();
         target.setName(PLATFORM);
         target.setUrl("http://127.0.0.1:7827/onebot/send");
         target.setDelay(0);
         target.setLocalDelivery(delivery);
 
-        StarBotSenderService senderService = mock(StarBotSenderService.class);
+        NovaSenderService senderService = mock(NovaSenderService.class);
         when(senderService.getSender(PLATFORM)).thenReturn(Optional.of(target));
 
         @SuppressWarnings("unchecked")
@@ -430,7 +430,7 @@ class StarBotMessageSenderTest {
         when(resolvers.iterator()).thenAnswer(invocation -> List.<AtAllPermissionResolver>of().iterator());
 
         StarBotCoreProperties properties = new StarBotCoreProperties();
-        return new StarBotMessageSender(http, senderService, new PushActivityRecorder(TimelineWriter.NONE), new PushGate(properties),
+        return new NovaMessageSender(http, senderService, new PushActivityRecorder(TimelineWriter.NONE), new PushGate(properties),
                 TimelineWriter.NONE, new com.starlwr.bot.core.service.AtAllQuotaService(properties), resolvers,
                 new FirstPushTipService(new com.starlwr.bot.core.service.StarBotStateStore(properties)));
     }
@@ -489,7 +489,7 @@ class StarBotMessageSenderTest {
             HttpUtil http = mock(HttpUtil.class);
             when(http.postJson(anyString(), any(), any())).thenReturn(imageFailure());
 
-            StarBotMessageSender sender = sender(http);
+            NovaMessageSender sender = sender(http);
             sender.sendNow(withImage());
 
             // 含图 + 失败 + 剥完还剩文字 → 必然是两次投递（原内容一次、纯文字一次）
@@ -575,7 +575,7 @@ class StarBotMessageSenderTest {
         void degradeLogCarriesRootCauseAndImageLoss() {
             // 降级不能掩盖根因：只说「图没了」而不说为什么，等于把故障藏进一行 WARN 里
             ch.qos.logback.classic.Logger logger =
-                    (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(StarBotMessageSender.class);
+                    (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(NovaMessageSender.class);
             ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
                     new ch.qos.logback.core.read.ListAppender<>();
             appender.start();

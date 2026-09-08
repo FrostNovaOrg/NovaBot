@@ -10,7 +10,7 @@ import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.service.AtAllQuotaService;
-import com.starlwr.bot.core.service.StarBotSenderService;
+import com.starlwr.bot.core.service.NovaSenderService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -51,11 +51,11 @@ public class AtAllQuotaController {
 
     private final StarBotCoreProperties properties;
 
-    private final StarBotSenderService senders;
+    private final NovaSenderService senders;
 
     @Autowired
     public AtAllQuotaController(AtAllQuotaService quota, AbstractDataSource dataSource,
-                                StarBotCoreProperties properties, StarBotSenderService senders) {
+                                StarBotCoreProperties properties, NovaSenderService senders) {
         this.quota = quota;
         this.dataSource = dataSource;
         this.properties = properties;

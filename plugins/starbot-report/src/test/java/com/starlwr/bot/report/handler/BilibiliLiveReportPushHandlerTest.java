@@ -9,7 +9,7 @@ import com.starlwr.bot.core.model.HandlerOption;
 import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
-import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.sender.NovaMessageSender;
 import com.starlwr.bot.bilibili.model.BilibiliLiveReportOptions;
 import com.starlwr.bot.core.service.RevenueVisibilityService;
 import com.starlwr.bot.core.service.StarBotStateStore;
@@ -42,7 +42,7 @@ import static org.mockito.Mockito.when;
 class BilibiliLiveReportPushHandlerTest {
     private BilibiliLiveReportPainter painter;
 
-    private StarBotMessageSender sender;
+    private NovaMessageSender sender;
 
     private BilibiliLiveReportPushHandler handler;
 
@@ -61,7 +61,7 @@ class BilibiliLiveReportPushHandlerTest {
         BilibiliApiUtil api = mock(BilibiliApiUtil.class);
         when(api.getUpInfoByUid(anyLong())).thenThrow(new RuntimeException("接口不可用"));
         painter = mock(BilibiliLiveReportPainter.class);
-        sender = mock(StarBotMessageSender.class);
+        sender = mock(NovaMessageSender.class);
 
         handler = new BilibiliLiveReportPushHandler(api, sender, painter, revenueVisibility);
     }

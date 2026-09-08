@@ -19,7 +19,7 @@ import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.event.remote.NovaRemoteMessageEvent;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
-import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.sender.NovaMessageSender;
 import com.starlwr.bot.core.service.StarBotStateStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -224,7 +224,7 @@ class FourCategoriesEndToEndTest {
 
         return new CommandDispatcher(commands, followUps,
                 new CommandSettingsService(new StarBotStateStore(new StarBotCoreProperties())),
-                dataSource, mock(StarBotMessageSender.class), new StarBotCoreProperties(), store);
+                dataSource, mock(NovaMessageSender.class), new StarBotCoreProperties(), store);
     }
 
     /**

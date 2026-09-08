@@ -14,7 +14,7 @@ import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.sender.AtMode;
-import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.sender.NovaMessageSender;
 import com.starlwr.bot.core.service.AtSubscriptionService;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.lang.StringUtil;
@@ -32,14 +32,14 @@ import java.util.Map;
 public class BilibiliLiveOnPushHandler implements NovaEventHandler {
     private final BilibiliApiUtil api;
 
-    private final StarBotMessageSender sender;
+    private final NovaMessageSender sender;
 
     private final AtSubscriptionService subscriptions;
 
     private final LiveDataService liveDataService;
 
     @Autowired
-    public BilibiliLiveOnPushHandler(BilibiliApiUtil api, StarBotMessageSender sender,
+    public BilibiliLiveOnPushHandler(BilibiliApiUtil api, NovaMessageSender sender,
                                      AtSubscriptionService subscriptions, LiveDataService liveDataService) {
         this.api = api;
         this.sender = sender;
@@ -116,7 +116,7 @@ public class BilibiliLiveOnPushHandler implements NovaEventHandler {
      * 两次失败响应的消息 id 均为空、文字一起没发出去；分成两条时文字才幸存。
      * <p>
      * <b>那个理由现在不成立了</b>：含图消息发送失败时发送侧会剥掉图片段重发一次纯文字
-     * （{@link com.starlwr.bot.core.sender.StarBotMessageSender} 的兜底），并在日志里明写降级。
+     * （{@link com.starlwr.bot.core.sender.NovaMessageSender} 的兜底），并在日志里明写降级。
      * 保护落到了程序层面，也就<b>不必再靠一个使用者随手就能改掉的默认值来维持</b>。
      * 剩下的差别只是观感：合并后封面坏掉时收到的是一条没有图的通知——
      * 而两条通知在群里是两次提示音，这一头的代价每次开播都在付。

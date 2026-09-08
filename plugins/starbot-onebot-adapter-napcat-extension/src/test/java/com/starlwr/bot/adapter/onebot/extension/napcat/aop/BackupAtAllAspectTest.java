@@ -294,7 +294,7 @@ class BackupAtAllAspectTest {
             Pointcut pointcut = BackupAtAllAspect.class
                     .getDeclaredMethod("sendMethod").getAnnotation(Pointcut.class);
 
-            assertEquals("execution(* com.starlwr.bot.core.sender.StarBotMessageSender.send(..))", pointcut.value());
+            assertEquals("execution(* com.starlwr.bot.core.sender.NovaMessageSender.send(..))", pointcut.value());
         }
 
         /**

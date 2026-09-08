@@ -9,7 +9,7 @@ import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.model.Sender;
 import com.starlwr.bot.core.service.AtAllQuotaService;
-import com.starlwr.bot.core.service.StarBotSenderService;
+import com.starlwr.bot.core.service.NovaSenderService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -138,7 +138,7 @@ class AtAllQuotaSurfaceTest {
     void reportsAdapterDisplayNameWithoutChangingPlatformId() {
         StarBotCoreProperties properties = new StarBotCoreProperties();
         AtAllQuotaService quota = new AtAllQuotaService(properties);
-        StarBotSenderService senders = new StarBotSenderService(properties);
+        NovaSenderService senders = new NovaSenderService(properties);
         senders.addSender(new Sender(PLATFORM, "http://127.0.0.1/onebot/send"), "QQ");
 
         JSONObject state = controller(quota, properties, senders).quota();
@@ -155,11 +155,11 @@ class AtAllQuotaSurfaceTest {
      * 配好推送的两个群与一个好友会话，共用一个真的配额服务
      */
     private AtAllQuotaController controller(AtAllQuotaService quota, StarBotCoreProperties properties) {
-        return controller(quota, properties, new StarBotSenderService(properties));
+        return controller(quota, properties, new NovaSenderService(properties));
     }
 
     private AtAllQuotaController controller(AtAllQuotaService quota, StarBotCoreProperties properties,
-                                            StarBotSenderService senders) {
+                                            NovaSenderService senders) {
         PushUser user = new PushUser();
         user.setUid(10001L);
         user.setPlatform("bilibili");

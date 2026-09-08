@@ -54,6 +54,10 @@
   `StarBotLiveInterventionListener` → `NovaLiveInterventionListener`；
   `StarBotExampleStartEventListener` → `NovaExampleStartEventListener`；
   `StarBotExampleDanmuEventListener` → `NovaExampleDanmuEventListener`。
+- 消息发送一族的三个类改用 `Nova` 前缀。**这三个类不留旧名**；注入旧类型的第三方插件须改用新名。包名未变。对照：
+  `StarBotMessageSender` → `NovaMessageSender`；
+  `StarBotSenderService` → `NovaSenderService`；
+  `StarBotMailService` → `NovaMailService`。
 - 插件扩展点的三个名字换了新名：组件注解 `StarBotComponent` 改叫 `NovaComponent`，推送处理器接口 `StarBotEventHandler` 改叫 `NovaEventHandler`，聊天命令接口 `StarBotCommand` 改叫 `NovaCommand`。**旧名字仍然认得**：旧插件一个字都不用改照样装载，同一个类上同时标新旧两个注解也只登记一次；新代码请用新名，旧名将在下一发行版删除。包名、方法与参数一律未变，示例插件模板已改用新名。
 - 配置项前缀从 `starbot.*` 改成 `novabot.*`（`novabot.core`、`novabot.bilibili`、`novabot.adapter.onebot` 等）。**旧键仍然认得**：只写 `starbot.*` 的 `application.yml` 照常生效，启动时每个用到的前缀会打一行提醒；两处都写时以新位置为准。设置页保存只写新前缀；若旧 `starbot:` 树每个叶键在新树都有对应，保存时会删掉旧树。文档、登录页里的键名已改成新前缀。
 - 更早一档写在 `starbot.core.alert.qq-platform`／`qq-type`／`qq-num` 的告警三项，保存时按现行 `novabot.adapter.onebot.alert.*` 认作已对应，旧树可以一并删掉。

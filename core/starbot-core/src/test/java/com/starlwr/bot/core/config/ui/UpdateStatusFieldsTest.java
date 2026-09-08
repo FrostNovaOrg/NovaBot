@@ -9,10 +9,10 @@ import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.protocol.EventStreamTokenService;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.StarBotEventHandlerService;
-import com.starlwr.bot.core.service.StarBotSenderService;
+import com.starlwr.bot.core.service.NovaSenderService;
 import com.starlwr.bot.core.service.StarBotStateStore;
 import com.starlwr.bot.core.sender.PushGate;
-import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.sender.NovaMessageSender;
 import com.starlwr.bot.core.timeline.TimelineStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -134,7 +134,7 @@ class UpdateStatusFieldsTest {
         ObjectProvider healthProbes = mock(ObjectProvider.class);
         when(healthProbes.orderedStream()).thenAnswer(invocation -> List.of().stream());
 
-        StarBotSenderService senders = mock(StarBotSenderService.class);
+        NovaSenderService senders = mock(NovaSenderService.class);
         when(senders.getSenderNames()).thenReturn(Set.of("默认"));
 
         LiveDataService liveDataService = mock(LiveDataService.class);
@@ -152,7 +152,7 @@ class UpdateStatusFieldsTest {
                 healthProbes,
                 mock(ConfigurationValidator.class),
                 senders,
-                mock(StarBotMessageSender.class),
+                mock(NovaMessageSender.class),
                 mock(ObjectProvider.class),
                 mock(PushActivityRecorder.class),
                 mock(StarBotEventHandlerService.class),

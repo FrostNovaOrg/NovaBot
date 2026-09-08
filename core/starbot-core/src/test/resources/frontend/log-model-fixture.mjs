@@ -147,7 +147,7 @@ eq(olderDay([], '2026-09-04'), '', '一天记录都没有时两头都空');
 eq(newerDay([], '2026-09-04'), '', '一天记录都没有时两头都空');
 
 // ---------- 七、工程日志：级别与分行 ----------
-const HEAD_ERR = '2026-09-04 20:07:03.221 ERROR 1234 --- [main] c.s.b.c.sender.StarBotMessageSender'
+const HEAD_ERR = '2026-09-04 20:07:03.221 ERROR 1234 --- [main] c.s.b.c.sender.NovaMessageSender'
   + '      : 消息发送失败';
 const HEAD_INFO = '2026-09-04 20:05:01.100  INFO 1234 --- [main] c.s.b.core.StarBot'
   + '                       : 已启动';

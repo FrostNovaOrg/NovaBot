@@ -11,7 +11,7 @@ import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.plugin.NovaComponent;
 import com.starlwr.bot.core.sender.AtMode;
-import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.sender.NovaMessageSender;
 import com.starlwr.bot.core.service.LiveDataService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,12 +28,12 @@ import java.util.Optional;
 public class BilibiliLiveOffPushHandler implements NovaEventHandler {
     private final BilibiliApiUtil api;
 
-    private final StarBotMessageSender sender;
+    private final NovaMessageSender sender;
 
     private final LiveDataService liveDataService;
 
     @Autowired
-    public BilibiliLiveOffPushHandler(BilibiliApiUtil api, StarBotMessageSender sender, LiveDataService liveDataService) {
+    public BilibiliLiveOffPushHandler(BilibiliApiUtil api, NovaMessageSender sender, LiveDataService liveDataService) {
         this.api = api;
         this.sender = sender;
         this.liveDataService = liveDataService;

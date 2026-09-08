@@ -21,7 +21,7 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Service
-public class StarBotSenderService {
+public class NovaSenderService {
     private final StarBotCoreProperties properties;
 
     private final Map<String, Sender> senders = new HashMap<>();
@@ -33,7 +33,7 @@ public class StarBotSenderService {
     private final Map<String, String> displayNames = new HashMap<>();
 
     @Autowired
-    public StarBotSenderService(StarBotCoreProperties properties) {
+    public NovaSenderService(StarBotCoreProperties properties) {
         this.properties = properties;
     }
 

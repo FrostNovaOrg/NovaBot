@@ -6,7 +6,7 @@ import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.datasource.AbstractDataSource;
 import com.starlwr.bot.core.health.HealthProbe;
 import com.starlwr.bot.core.service.PushTemplateDefaults;
-import com.starlwr.bot.core.service.StarBotSenderService;
+import com.starlwr.bot.core.service.NovaSenderService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -52,7 +52,7 @@ class DatasourceStreamerLimitTest {
         ConfigurationValidator validator = mock(ConfigurationValidator.class);
         when(validator.validateDatasource(anyString(), any())).thenReturn(List.of());
 
-        StarBotSenderService senderService = mock(StarBotSenderService.class);
+        NovaSenderService senderService = mock(NovaSenderService.class);
         when(senderService.getSenderNames()).thenReturn(Set.of());
 
         AbstractDataSource dataSource = mock(AbstractDataSource.class);
@@ -70,7 +70,7 @@ class DatasourceStreamerLimitTest {
                 healthProbes,
                 validator,
                 senderService,
-                mock(com.starlwr.bot.core.sender.StarBotMessageSender.class),
+                mock(com.starlwr.bot.core.sender.NovaMessageSender.class),
                 mock(ObjectProvider.class),
                 mock(com.starlwr.bot.core.health.PushActivityRecorder.class),
                 mock(com.starlwr.bot.core.service.StarBotEventHandlerService.class),

@@ -7,7 +7,7 @@ import com.starlwr.bot.core.event.remote.NovaRemoteMessageEvent;
 import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
-import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.sender.NovaMessageSender;
 import com.starlwr.bot.core.service.StarBotStateStore;
 import com.starlwr.bot.core.timeline.TimelineWriter;
 import org.junit.jupiter.api.BeforeEach;
@@ -42,7 +42,7 @@ class CommandDispatcherTest {
 
     private static final Long GROUP = 30003L;
 
-    private StarBotMessageSender sender;
+    private NovaMessageSender sender;
 
     private CommandSettingsService settings;
 
@@ -55,7 +55,7 @@ class CommandDispatcherTest {
         AbstractDataSource dataSource = mock(AbstractDataSource.class);
         when(dataSource.getAllUsers()).thenReturn(List.of(configuredUser()));
 
-        sender = mock(StarBotMessageSender.class);
+        sender = mock(NovaMessageSender.class);
         settings = new CommandSettingsService(new StarBotStateStore(new StarBotCoreProperties()));
         command = new RecordingCommand();
 

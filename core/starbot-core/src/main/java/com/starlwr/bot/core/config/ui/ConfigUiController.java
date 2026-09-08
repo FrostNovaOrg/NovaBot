@@ -25,11 +25,11 @@ import com.starlwr.bot.core.health.HealthStatus;
 import com.starlwr.bot.core.health.PushActivityRecorder;
 import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.sender.PushGate;
-import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.sender.NovaMessageSender;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.PushTemplateDefaults;
 import com.starlwr.bot.core.service.StarBotEventHandlerService;
-import com.starlwr.bot.core.service.StarBotSenderService;
+import com.starlwr.bot.core.service.NovaSenderService;
 import com.starlwr.bot.core.timeline.TimelineEvent;
 import com.starlwr.bot.core.timeline.TimelineEventType;
 import com.starlwr.bot.core.timeline.TimelineStore;
@@ -141,9 +141,9 @@ public class ConfigUiController {
 
     private final ConfigurationValidator validator;
 
-    private final StarBotSenderService senderService;
+    private final NovaSenderService senderService;
 
-    private final StarBotMessageSender messageSender;
+    private final NovaMessageSender messageSender;
 
     private final ObjectProvider<AccountLoginProvider> loginProviders;
 
@@ -259,8 +259,8 @@ public class ConfigUiController {
                               AbstractDataSource dataSource,
                               ObjectProvider<HealthProbe> healthProbes,
                               ConfigurationValidator validator,
-                              StarBotSenderService senderService,
-                              StarBotMessageSender messageSender,
+                              NovaSenderService senderService,
+                              NovaMessageSender messageSender,
                               ObjectProvider<AccountLoginProvider> loginProviders,
                               PushActivityRecorder activityRecorder,
                               StarBotEventHandlerService handlerService,
@@ -294,8 +294,8 @@ public class ConfigUiController {
                        AbstractDataSource dataSource,
                        ObjectProvider<HealthProbe> healthProbes,
                        ConfigurationValidator validator,
-                       StarBotSenderService senderService,
-                       StarBotMessageSender messageSender,
+                       NovaSenderService senderService,
+                       NovaMessageSender messageSender,
                        ObjectProvider<AccountLoginProvider> loginProviders,
                        PushActivityRecorder activityRecorder,
                        StarBotEventHandlerService handlerService,
@@ -330,8 +330,8 @@ public class ConfigUiController {
                               AbstractDataSource dataSource,
                               ObjectProvider<HealthProbe> healthProbes,
                               ConfigurationValidator validator,
-                              StarBotSenderService senderService,
-                              StarBotMessageSender messageSender,
+                              NovaSenderService senderService,
+                              NovaMessageSender messageSender,
                               ObjectProvider<AccountLoginProvider> loginProviders,
                               PushActivityRecorder activityRecorder,
                               StarBotEventHandlerService handlerService,

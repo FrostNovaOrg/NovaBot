@@ -9,7 +9,7 @@ import com.starlwr.bot.adapter.onebot.service.OneBotHttpService;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.model.Sender;
 import com.starlwr.bot.core.plugin.NovaComponent;
-import com.starlwr.bot.core.service.StarBotSenderService;
+import com.starlwr.bot.core.service.NovaSenderService;
 import com.starlwr.bot.core.lang.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -41,7 +41,7 @@ public class OneBotController {
 
     private final OneBotAdapterPluginProperties properties;
 
-    private final StarBotSenderService senderService;
+    private final NovaSenderService senderService;
 
     private final OneBotHttpService httpService;
 
@@ -53,7 +53,7 @@ public class OneBotController {
     private final Set<String> registered = ConcurrentHashMap.newKeySet();
 
     @Autowired
-    public OneBotController(WebServerApplicationContext webContext, RequestMappingHandlerMapping mapping, OneBotAdapterPluginProperties properties, StarBotSenderService senderService, OneBotHttpService httpService, PushApiTokenStore tokenStore) {
+    public OneBotController(WebServerApplicationContext webContext, RequestMappingHandlerMapping mapping, OneBotAdapterPluginProperties properties, NovaSenderService senderService, OneBotHttpService httpService, PushApiTokenStore tokenStore) {
         this.webContext = webContext;
         this.mapping = mapping;
         this.properties = properties;

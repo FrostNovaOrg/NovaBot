@@ -13,7 +13,7 @@ import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.model.Sender;
 import com.starlwr.bot.core.service.AtAllQuotaService;
-import com.starlwr.bot.core.service.StarBotSenderService;
+import com.starlwr.bot.core.service.NovaSenderService;
 import com.starlwr.bot.core.service.StarBotStateStore;
 import com.starlwr.bot.core.timeline.TimelineWriter;
 import com.starlwr.bot.core.util.HttpUtil;
@@ -477,7 +477,7 @@ class FirstPushTipCorpusTest {
 
         private final List<String> delivered = Collections.synchronizedList(new ArrayList<>());
 
-        private final StarBotMessageSender sender;
+        private final NovaMessageSender sender;
 
         private volatile boolean succeeds = true;
 
@@ -496,14 +496,14 @@ class FirstPushTipCorpusTest {
             target.setUrl("http://127.0.0.1:7827/onebot/send");
             target.setDelay(0);
 
-            StarBotSenderService senderService = mock(StarBotSenderService.class);
+            NovaSenderService senderService = mock(NovaSenderService.class);
             when(senderService.getSender(PLATFORM)).thenReturn(Optional.of(target));
 
             @SuppressWarnings("unchecked")
             ObjectProvider<AtAllPermissionResolver> resolvers = mock(ObjectProvider.class);
             when(resolvers.iterator()).thenAnswer(invocation -> List.<AtAllPermissionResolver>of().iterator());
 
-            sender = new StarBotMessageSender(http, senderService,
+            sender = new NovaMessageSender(http, senderService,
                     new PushActivityRecorder(TimelineWriter.NONE), new PushGate(properties),
                     TimelineWriter.NONE, new AtAllQuotaService(properties), resolvers,
                     new FirstPushTipService(new StarBotStateStore(properties), properties));
@@ -512,7 +512,7 @@ class FirstPushTipCorpusTest {
         /**
          * 推一条，返回这一次实际发出去的每一条（按顺序）
          * <p>
-         * 走 {@link StarBotMessageSender#send} 而不是 sendNow：提示只跟在真正的推送后面，
+         * 走 {@link NovaMessageSender#send} 而不是 sendNow：提示只跟在真正的推送后面，
          * 而 sendNow 是「发送测试消息」按钮那条路。代价是投递在后台线程上，只能等——
          * 因此先等够该有的条数，再多看一会儿有没有多出来的
          */

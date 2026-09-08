@@ -16,7 +16,7 @@ import com.starlwr.bot.core.handler.NovaEventHandler;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
-import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.sender.NovaMessageSender;
 import com.starlwr.bot.core.service.AtSubscriptionService;
 import com.starlwr.bot.core.service.LiveDataService;
 import com.starlwr.bot.core.service.PushTemplateDefaults;
@@ -83,8 +83,8 @@ class LegacyHandlerClassNameTest {
     @BeforeEach
     void setUp() {
         dynamic = new BilibiliDynamicPushHandler(mock(BilibiliApiUtil.class), mock(BilibiliDynamicPainter.class),
-                mock(StarBotMessageSender.class), mock(AtSubscriptionService.class), mock(LiveDataService.class));
-        report = new BilibiliLiveReportPushHandler(mock(BilibiliApiUtil.class), mock(StarBotMessageSender.class),
+                mock(NovaMessageSender.class), mock(AtSubscriptionService.class), mock(LiveDataService.class));
+        report = new BilibiliLiveReportPushHandler(mock(BilibiliApiUtil.class), mock(NovaMessageSender.class),
                 mock(BilibiliLiveReportPainter.class), mock(RevenueVisibilityService.class));
     }
 
@@ -218,7 +218,7 @@ class LegacyHandlerClassNameTest {
                         + " 既不是动态推送处理器的真类名, 也不在它声明的旧名里: " + namesOf(dynamic));
 
         BilibiliLiveOnPushHandler liveOn = new BilibiliLiveOnPushHandler(mock(BilibiliApiUtil.class),
-                mock(StarBotMessageSender.class), mock(AtSubscriptionService.class), mock(LiveDataService.class));
+                mock(NovaMessageSender.class), mock(AtSubscriptionService.class), mock(LiveDataService.class));
         assertTrue(namesOf(liveOn).contains(BilibiliAtNoticeKind.LIVE.handlerName()),
                 "开播通知认领的 " + BilibiliAtNoticeKind.LIVE.handlerName() + " 认不到开播推送处理器");
     }

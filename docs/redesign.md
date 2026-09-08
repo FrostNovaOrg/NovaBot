@@ -335,7 +335,7 @@ starbot:
 | 位置 | 线程池 |
 |---|---|
 | `JsonDataSource` | `executor` + `scheduler`（文件监听） |
-| `StarBotMessageSender` | `executor` |
+| `NovaMessageSender` | `executor` |
 | `DefaultLiveDataService` | `scheduler` |
 
 **改动**：全部收归 Spring 托管，或补 `@PreDestroy` 显式关闭；停机时按序

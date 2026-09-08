@@ -10,7 +10,7 @@ import com.starlwr.bot.core.model.LiveStreamerInfo;
 import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
-import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.sender.NovaMessageSender;
 import com.starlwr.bot.core.service.AtSubscriptionService;
 import com.starlwr.bot.core.service.LiveDataService;
 import org.junit.jupiter.api.BeforeEach;
@@ -60,7 +60,7 @@ class BilibiliDynamicPushHandlerTest {
 
     private BilibiliDynamicPainter painter;
 
-    private StarBotMessageSender sender;
+    private NovaMessageSender sender;
 
     private AtSubscriptionService subscriptions;
 
@@ -72,7 +72,7 @@ class BilibiliDynamicPushHandlerTest {
     void setUp() {
         api = mock(BilibiliApiUtil.class);
         painter = mock(BilibiliDynamicPainter.class);
-        sender = mock(StarBotMessageSender.class);
+        sender = mock(NovaMessageSender.class);
         subscriptions = mock(AtSubscriptionService.class);
         liveDataService = mock(LiveDataService.class);
         handler = new BilibiliDynamicPushHandler(api, painter, sender, subscriptions, liveDataService);

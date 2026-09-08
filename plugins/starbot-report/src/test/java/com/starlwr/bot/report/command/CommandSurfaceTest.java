@@ -15,7 +15,7 @@ import com.starlwr.bot.core.model.PushMessage;
 import com.starlwr.bot.core.model.PushTarget;
 import com.starlwr.bot.core.model.PushUser;
 import com.starlwr.bot.core.sender.AtMode;
-import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.sender.NovaMessageSender;
 import com.starlwr.bot.core.service.AtSubscriptionService;
 import com.starlwr.bot.core.service.CompositeLiveDataService;
 import com.starlwr.bot.core.service.DefaultLiveDataService;
@@ -539,7 +539,7 @@ class CommandSurfaceTest {
          */
         private final boolean stubbed;
 
-        private final StarBotMessageSender sender = mock(StarBotMessageSender.class);
+        private final NovaMessageSender sender = mock(NovaMessageSender.class);
 
         private final ObjectProvider<NovaCommand> provider = provider();
 

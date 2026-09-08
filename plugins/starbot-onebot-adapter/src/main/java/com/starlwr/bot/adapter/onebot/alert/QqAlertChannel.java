@@ -5,7 +5,7 @@ import com.starlwr.bot.core.alert.AlertChannel;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.plugin.NovaComponent;
-import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.sender.NovaMessageSender;
 import com.starlwr.bot.core.lang.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,10 +25,10 @@ import java.util.List;
 public class QqAlertChannel implements AlertChannel {
     private final OneBotAdapterPluginProperties properties;
 
-    private final StarBotMessageSender messageSender;
+    private final NovaMessageSender messageSender;
 
     @Autowired
-    public QqAlertChannel(OneBotAdapterPluginProperties properties, StarBotMessageSender messageSender) {
+    public QqAlertChannel(OneBotAdapterPluginProperties properties, NovaMessageSender messageSender) {
         this.properties = properties;
         this.messageSender = messageSender;
     }

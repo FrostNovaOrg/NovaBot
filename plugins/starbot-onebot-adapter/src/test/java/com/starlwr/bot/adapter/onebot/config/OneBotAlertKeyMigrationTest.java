@@ -9,7 +9,7 @@ import com.starlwr.bot.core.config.ui.ConfigurationGroups;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.model.Message;
 import com.starlwr.bot.core.properties.NovaBotPrefixes;
-import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.sender.NovaMessageSender;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -56,7 +56,7 @@ class OneBotAlertKeyMigrationTest {
         environment.setProperty(LEGACY_NUM, "12345");
 
         OneBotAlertPropertiesBinder.apply(environment, properties.getAlert());
-        QqAlertChannel channel = new QqAlertChannel(properties, mock(StarBotMessageSender.class));
+        QqAlertChannel channel = new QqAlertChannel(properties, mock(NovaMessageSender.class));
 
         try {
             assertEquals("qq-onebot", properties.getAlert().getPlatform(), "旧平台键应写进现行字段");
@@ -73,7 +73,7 @@ class OneBotAlertKeyMigrationTest {
         }
 
         try {
-            StarBotMessageSender sender = mock(StarBotMessageSender.class);
+            NovaMessageSender sender = mock(NovaMessageSender.class);
             new QqAlertChannel(properties, sender).send("标题", "正文");
             ArgumentCaptor<Message> captured = ArgumentCaptor.forClass(Message.class);
             verify(sender, atLeastOnce()).send(captured.capture());
@@ -169,7 +169,7 @@ class OneBotAlertKeyMigrationTest {
                 properties.getAlert().setPlatform("qq-onebot");
                 properties.getAlert().setType(0);
                 properties.getAlert().setNum(10001L);
-                QqAlertChannel channel = new QqAlertChannel(properties, mock(StarBotMessageSender.class));
+                QqAlertChannel channel = new QqAlertChannel(properties, mock(NovaMessageSender.class));
                 channel.isAvailable();
                 channel.isAvailable();
                 channel.send("标题", "正文");

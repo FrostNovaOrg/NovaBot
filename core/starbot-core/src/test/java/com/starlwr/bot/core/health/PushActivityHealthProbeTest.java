@@ -3,7 +3,7 @@ package com.starlwr.bot.core.health;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import com.starlwr.bot.core.sender.StarBotMessageSender;
+import com.starlwr.bot.core.sender.NovaMessageSender;
 import com.starlwr.bot.core.timeline.TimelineWriter;
 import org.springframework.beans.factory.ObjectProvider;
 
@@ -98,11 +98,11 @@ class PushActivityHealthProbeTest {
      * 构造探针；发送器以桩替身提供，队列相关指标在此保持为零
      */
     private PushActivityHealthProbe probe(PushActivityRecorder recorder) {
-        StarBotMessageSender sender = mock(StarBotMessageSender.class);
+        NovaMessageSender sender = mock(NovaMessageSender.class);
         when(sender.getDroppedCount()).thenReturn(0L);
         when(sender.getPendingCount()).thenReturn(0);
 
-        ObjectProvider<StarBotMessageSender> provider = mock(ObjectProvider.class);
+        ObjectProvider<NovaMessageSender> provider = mock(ObjectProvider.class);
         when(provider.getObject()).thenReturn(sender);
 
         return new PushActivityHealthProbe(recorder, provider);
