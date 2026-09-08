@@ -2,7 +2,7 @@ package com.starlwr.bot.core.datasource;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.DatasourceProperties;
+import com.starlwr.bot.core.properties.DatasourceProperties;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.event.datasource.other.StarBotDataSourceLoadCompleteEvent;
 import com.starlwr.bot.core.exception.DataSourceException;

@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.config.ui;
 
-import com.starlwr.bot.core.config.EventStreamProperties;
+import com.starlwr.bot.core.properties.EventStreamProperties;
 
 import java.util.ArrayList;
 import java.util.Collection;

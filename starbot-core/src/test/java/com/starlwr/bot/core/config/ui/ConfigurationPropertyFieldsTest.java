@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.config.ui;
 
-import com.starlwr.bot.core.config.ConfigEffect;
+import com.starlwr.bot.core.properties.ConfigEffect;
 import com.starlwr.bot.core.config.ConfigLevel;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import org.junit.jupiter.api.DisplayName;

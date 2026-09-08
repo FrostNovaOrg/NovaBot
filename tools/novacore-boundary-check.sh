@@ -27,7 +27,8 @@
 # 应当整片判红——那趟是这些守卫自己的阳性对照，绿了就说明守卫没接上。
 #
 # 模块枚举一律走 `git ls-files '*/pom.xml'`（任意深度、只认在册件），不再按仓根一级目录名。
-# 新增四格补的是另外四条缝：⑨同一个 java 包跨模块（撞包，今天就有三个，用闭集钉住不许长）、
+# 新增四格补的是另外四条缝：⑨同一个 java 包跨模块（撞包，立格时有三个，三刀解完已清零，
+# 闭集照旧钉住不许再长）、
 # ⑩插件 import 了兄弟插件却没在 pom 里申报那个模块、⑪核心界面目录在且非空（格1 射程的正面读数）、
 # ⑫写死了模块目录名的在册件数只减不增（给目录重排立账，改一件销一件）。
 
@@ -612,21 +613,22 @@ fi
 # 是该写的话，让它把判据判红，结局必然是把注释删掉而不是把边界守住。
 #
 # 两侧集合都写在下面、可当场比对，不从别处读表：
-#   核心件 ＝ 事件源纯库。整目录收的五个包 ＋ 逐件点名的若干件（配置纯 POJO、
-#            平台标识与事件枚举、异常型）。
+#   核心件 ＝ 事件源纯库。整目录收的六个包 ＋ 逐件点名的若干件
+#            （平台标识与事件枚举、异常型）。
 #   壳侧件 ＝ 核心模块主码里除此之外的**全部**件。用「补集」而不是再列一张壳的清单，
 #            是因为这两种写法只有一处不同、而那一处正是要害：漏列一件壳，
 #            列清单的写法静默放过，补集的写法当场判红。新件默认落在壳这一侧，
 #            要进核心得往上面那张表里加一行并写明理由——这正是该有的方向。
 #
 # 逐件点名的那几件为什么算核心，一句话各记一条：
-#   config/*Properties       —— 配置纯 POJO，零框架注解，事件源自己要读的那几节
-#   config/ConfigEffect      —— 配置项生效时机的标注，只用 java.lang.annotation，零框架依赖。
-#                          它必须与上面那几节同侧：那几个 POJO 的字段要标它，
-#                          放在壳侧就等于核心反过来引用运行壳，本格与格7 会当场红
-#   config/CoreConfigurationSections —— 上面那几节的元数据出处。默认值取自字段初始值、
-#                          说明取自 Javadoc，两者只存在于源码里，因此这一份声明必须与
-#                          那几个类同模块；放到壳侧生成出来的就是一列空值。它不参与绑定
+#   （*Properties 五件、ConfigEffect、CoreConfigurationSections 原先逐件点名在 config/ 下，
+#     现已整体改到新包 properties——那五件是配置纯 POJO、零框架注解，事件源自己要读的那几节；
+#     ConfigEffect 是生效时机的标注，只用 java.lang.annotation，必须与那几节同侧，
+#     放在壳侧就等于核心反过来引用运行壳，本格与格7 会当场红；CoreConfigurationSections 是
+#     那几节的元数据出处，默认值取自字段初始值、说明取自 Javadoc，两者只存在于源码里，
+#     因此这份声明必须与那几个类同模块，放到壳侧生成出来的就是一列空值，它不参与绑定。
+#     properties 进了下面的「整目录收」，表上不再点名：留着旧路径的八行是空条目，
+#     路径一改谁也匹配不到，而表照旧看着是满的——同下面 EventStreamTokenService 那几行的处理）
 #   （EventStreamTokenService 与 DataSourceService / DataSourceServiceConfig 原先在这张表上，
 #     现已并入 protocol／datasource 两个包——那两个包在上面的「整目录收」里，
 #     再在表上点一次是空条目：路径下次一改它谁也匹配不到，而表照旧看着是满的）
@@ -642,20 +644,13 @@ fi
 # ============================================================
 
 # —— 核心件：整目录收 ——
-# 这五个包只长在核心模块里（壳侧没有同名包），因此整目录收；
-# config 与 util 两个包两侧都有，只能逐件点名，理由见上面那段。
-G6_CORE_DIRS="protocol event datasource model lang"
+# 这六个包只长在核心模块里（壳侧没有同名包），因此整目录收。
+# 两侧同名的包眼下一个也不剩了：config 是最后一个，核心侧那八件已改到 properties——
+# 逐件点名那张表原本就是为「两侧同名包」准备的，同名包没了，表也就只剩枚举与异常型那几件。
+G6_CORE_DIRS="protocol event datasource model lang properties"
 
 # —— 核心件：逐件点名（路径相对 com/starlwr/bot/core/）——
-G6_CORE_FILES="config/ConfigEffect.java
-config/CoreConfigurationSections.java
-config/NetworkProperties.java
-config/NetworkThreadProperties.java
-config/LogProperties.java
-config/LiveProperties.java
-config/DatasourceProperties.java
-config/EventStreamProperties.java
-enums/LivePlatform.java
+G6_CORE_FILES="enums/LivePlatform.java
 enums/LiveEndReason.java
 enums/PushTargetType.java
 exception/DataSourceException.java"
@@ -931,11 +926,15 @@ fi
 # ============================================================
 
 # —— 现状声明：这几个包同时落在两个以上模块里。解开一个，从这里划掉一个 ——
-#    只剩 config 一个，是 novacore 与 starbot-core 之间的分割包（协议真源迁出去时留下的）。
+#    **眼下是空集**：三个分割包都解开了，一个撞包也不剩。
 #    service 已解开：novacore 侧那三件并进了 datasource／protocol 两个既有包。
-#    util 已解开：novacore 侧那四个纯函数工具整体改到了新包 core.lang，
-#    core.util 与 core.service 现在都只剩 starbot-core 一个模块在写。
-KNOWN_SPLIT_PACKAGES="config"
+#    util 已解开：novacore 侧那四个纯函数工具整体改到了新包 core.lang。
+#    config 已解开：novacore 侧那八件（五节配置 POJO ＋ ConfigEffect ＋ CoreConfigurationSections）
+#    整体改到了新包 core.properties；core.config／core.util／core.service 三个包
+#    现在都只剩 starbot-core 一个模块在写。
+#    空集上这一格照样拦得住新增：再长出一个撞包，实况就多一个而声明仍是空的，当场判红。
+#    它与「射程为空」是两回事——后者由上面的受查包数单独守，那是「没量到」，不是「没撞包」。
+KNOWN_SPLIT_PACKAGES=""
 
 G9_PAIRS="$WORK/g9pairs"
 # 模块×包 的全对：按 /src/main/java/com/starlwr/bot/core/ 截，模块目录在哪一层都算得对
@@ -979,8 +978,12 @@ fi
 # 拿本格去判它会把一个设计判成违规。
 # ============================================================
 
-G10_INDEX="$WORK/g10index"
-git -c core.quotepath=false ls-files '*/src/main/java/*.java' 2>/dev/null | sort > "$G10_INDEX"
+# 件清单走 tree_files（按工作树现算，理由见其注释）：本格的归属全靠这份清单查落点，
+# 只读索引的话，刚挪到新包、还没 add 的件查不着——查不着不判违规，记进「本仓外」。
+# 于是搬件的那一笔会把自己搬出去的件记成「不归本仓管」，而那个数正是本格失灵最先现形的地方。
+# 变量不再叫 index：它列的是工作树，不是 git 索引。
+G10_TREE="$WORK/g10tree"
+tree_files '*/src/main/java/*.java' > "$G10_TREE"
 
 # 一个 java 全限定名（或通配包名）落在哪个模块目录里；找不到印空串
 owner_module_of() {
@@ -990,15 +993,15 @@ owner_module_of() {
         *'.*')
             # 通配 import：折成目录，取该目录下任意一件的模块
             omo_try="/src/main/java/$(printf '%s' "${omo_fqn%.*}" | tr '.' '/')/"
-            grep -F "$omo_try" "$G10_INDEX" | head -1 | sed -E 's|/src/main/java/.*$||'
+            grep -F "$omo_try" "$G10_TREE" | head -1 | sed -E 's|/src/main/java/.*$||'
             return 0
             ;;
     esac
     # 整名、去掉一段、再去掉一段：够覆盖 Outer.Inner 与 Outer.Inner.Deeper
     for omo_drop in 0 1 2; do
         omo_path="/src/main/java/$(printf '%s' "$omo_fqn" | tr '.' '/').java"
-        grep -F "$omo_path" "$G10_INDEX" | head -1 | sed -E 's|/src/main/java/.*$||'
-        grep -qF "$omo_path" "$G10_INDEX" && return 0
+        grep -F "$omo_path" "$G10_TREE" | head -1 | sed -E 's|/src/main/java/.*$||'
+        grep -qF "$omo_path" "$G10_TREE" && return 0
         omo_fqn="${omo_fqn%.*}"
         case "$omo_fqn" in *.*) ;; *) break ;; esac
     done

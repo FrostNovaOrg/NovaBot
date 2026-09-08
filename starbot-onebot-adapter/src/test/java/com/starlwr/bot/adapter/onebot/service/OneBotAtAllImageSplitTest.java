@@ -14,7 +14,7 @@ import com.starlwr.bot.adapter.onebot.health.OneBotConnectionState;
 import com.starlwr.bot.adapter.onebot.http.OneBotHttpAdapter;
 import com.starlwr.bot.adapter.onebot.http.OneBotHttpAdapterProxy;
 import com.starlwr.bot.adapter.onebot.model.OneBotSender;
-import com.starlwr.bot.core.config.LogProperties;
+import com.starlwr.bot.core.properties.LogProperties;
 import com.starlwr.bot.core.enums.PushTargetType;
 import com.starlwr.bot.core.util.HttpUtil;
 import org.junit.jupiter.api.AfterEach;

@@ -1,7 +1,7 @@
 package com.starlwr.bot.bilibili.config;
 
 import com.starlwr.bot.core.config.ConfigDanger;
-import com.starlwr.bot.core.config.ConfigEffect;
+import com.starlwr.bot.core.properties.ConfigEffect;
 import com.starlwr.bot.core.config.ConfigLevel;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import lombok.Getter;

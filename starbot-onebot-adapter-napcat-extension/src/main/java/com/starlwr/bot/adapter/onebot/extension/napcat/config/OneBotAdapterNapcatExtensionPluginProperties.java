@@ -1,6 +1,6 @@
 package com.starlwr.bot.adapter.onebot.extension.napcat.config;
 
-import com.starlwr.bot.core.config.ConfigEffect;
+import com.starlwr.bot.core.properties.ConfigEffect;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 import lombok.Getter;
 import lombok.Setter;

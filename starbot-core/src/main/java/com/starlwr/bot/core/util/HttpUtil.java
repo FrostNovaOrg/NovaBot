@@ -2,7 +2,7 @@ package com.starlwr.bot.core.util;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.LogProperties;
+import com.starlwr.bot.core.properties.LogProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

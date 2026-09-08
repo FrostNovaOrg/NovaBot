@@ -1,5 +1,6 @@
 package com.starlwr.bot.core.config;
 
+import com.starlwr.bot.core.properties.NetworkThreadProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;

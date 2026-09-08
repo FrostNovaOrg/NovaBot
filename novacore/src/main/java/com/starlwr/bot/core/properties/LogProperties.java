@@ -1,4 +1,4 @@
-package com.starlwr.bot.core.config;
+package com.starlwr.bot.core.properties;
 
 import ch.qos.logback.classic.Level;
 import lombok.Getter;

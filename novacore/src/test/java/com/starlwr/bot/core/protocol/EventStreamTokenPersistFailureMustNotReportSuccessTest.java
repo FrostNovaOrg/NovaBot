@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.protocol;
 
-import com.starlwr.bot.core.config.LiveProperties;
+import com.starlwr.bot.core.properties.LiveProperties;
 import com.starlwr.bot.core.model.EventStreamToken;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

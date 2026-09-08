@@ -6,7 +6,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.starlwr.bot.bilibili.config.BilibiliConfigurationGroups;
 import com.starlwr.bot.bilibili.protocol.NovaEventMapper;
 import com.starlwr.bot.core.config.ConfigDanger;
-import com.starlwr.bot.core.config.ConfigEffect;
+import com.starlwr.bot.core.properties.ConfigEffect;
 import com.starlwr.bot.core.config.ui.ConfigurationGroupContributor;
 import com.starlwr.bot.core.config.ui.ConfigurationGroups;
 import com.starlwr.bot.core.config.ui.ConfigurationKeyAliasContributor;

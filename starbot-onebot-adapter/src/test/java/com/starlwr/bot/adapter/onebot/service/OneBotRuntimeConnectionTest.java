@@ -11,7 +11,7 @@ import com.starlwr.bot.adapter.onebot.http.OneBotHttpAdapterProxy;
 import com.starlwr.bot.adapter.onebot.model.OneBotSender;
 import com.starlwr.bot.adapter.onebot.security.PushApiTokenStore;
 import com.starlwr.bot.core.account.BotConnectionTester;
-import com.starlwr.bot.core.config.LogProperties;
+import com.starlwr.bot.core.properties.LogProperties;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.service.StarBotSenderService;
 import com.starlwr.bot.core.util.HttpUtil;

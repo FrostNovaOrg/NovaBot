@@ -1,6 +1,6 @@
 package com.starlwr.bot.core.protocol;
 
-import com.starlwr.bot.core.config.EventStreamProperties;
+import com.starlwr.bot.core.properties.EventStreamProperties;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.env.MapPropertySource;

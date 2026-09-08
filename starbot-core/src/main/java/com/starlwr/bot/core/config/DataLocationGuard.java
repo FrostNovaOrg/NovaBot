@@ -1,5 +1,8 @@
 package com.starlwr.bot.core.config;
 
+// LiveProperties 只在下面的 Javadoc @link 里出现：它随核心那几节配置一起搬到了
+// com.starlwr.bot.core.properties，不再与本类同包，不显式引进来那条链接就指不到东西。
+import com.starlwr.bot.core.properties.LiveProperties;
 import org.apache.commons.logging.Log;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.EnvironmentPostProcessor;

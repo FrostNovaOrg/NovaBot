@@ -2,7 +2,7 @@ package com.starlwr.bot.core.config.ui;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.ConfigEffect;
+import com.starlwr.bot.core.properties.ConfigEffect;
 import com.starlwr.bot.core.config.ConfigLevel;
 import com.starlwr.bot.core.config.ui.auth.ConfigUiAuthService;
 import com.starlwr.bot.core.config.ui.page.ConsolePageProvider;

@@ -190,8 +190,8 @@ class ConfigurationTemplateTest {
         Map<String, Object> written = load(config);
         Map<String, Object> defaults = ConfigurationPropertyFields.values(List.of(
                 new com.starlwr.bot.core.config.StarBotCoreProperties(),
-                new com.starlwr.bot.core.config.EventStreamProperties(),
-                new com.starlwr.bot.core.config.DatasourceProperties()));
+                new com.starlwr.bot.core.properties.EventStreamProperties(),
+                new com.starlwr.bot.core.properties.DatasourceProperties()));
 
         List<String> wrong = new ArrayList<>();
         for (Map.Entry<String, Object> entry : defaults.entrySet()) {

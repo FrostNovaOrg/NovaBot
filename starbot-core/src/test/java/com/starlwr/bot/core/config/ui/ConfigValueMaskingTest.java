@@ -1,7 +1,7 @@
 package com.starlwr.bot.core.config.ui;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.starlwr.bot.core.config.EventStreamProperties;
+import com.starlwr.bot.core.properties.EventStreamProperties;
 import com.starlwr.bot.core.config.StarBotCoreProperties;
 import com.starlwr.bot.core.protocol.EventStreamTokenService;
 import com.starlwr.bot.core.service.PushTemplateDefaults;

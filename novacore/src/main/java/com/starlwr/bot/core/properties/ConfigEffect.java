@@ -1,4 +1,4 @@
-package com.starlwr.bot.core.config;
+package com.starlwr.bot.core.properties;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -14,7 +14,7 @@ import java.lang.annotation.Target;
  * <p>
  * 标注在 {@code @ConfigurationProperties} 类的字段上，由配置界面在运行期读取。
  * <p>
- * <b>没有默认值，这是有意的。</b>{@link ConfigLevel} 未标注时按「高级」处理，因为猜错的代价
+ * <b>没有默认值，这是有意的。</b>{@code ConfigLevel} 未标注时按「高级」处理，因为猜错的代价
  * 只是一项配置藏得深了些；生效时机猜错的代价则是使用者据此作出的判断本身是错的——
  * 说成即时生效而实际没生效，人会以为功能坏了；说成要重启而实际不必，人会白白重启一次。
  * 因此新增配置项必须显式回答这个问题，答不上来就让构建红着
