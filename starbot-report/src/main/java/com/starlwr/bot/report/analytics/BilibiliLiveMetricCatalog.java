@@ -1,6 +1,7 @@
 package com.starlwr.bot.report.analytics;
 
 import com.starlwr.bot.bilibili.model.BilibiliLiveMetric;
+import com.starlwr.bot.bilibili.model.BilibiliStreamerMetric;
 import com.starlwr.bot.core.analytics.LiveMetricCatalog;
 import com.starlwr.bot.core.plugin.StarBotComponent;
 
@@ -8,6 +9,9 @@ import java.util.List;
 
 /**
  * 哔哩哔哩指标说明
+ * <p>
+ * 两张表：{@link #metrics()} 是周月统计用的可累加指标，{@link #snapshotMetrics()} 是
+ * 基础数据快照那几项存量的人话名。下面这一整段说的是前一张表。
  * <p>
  * 只列**可累加**的指标：周月统计做的就是相加，列进来就等于声明「这个数相加有意义」。
  * <p>
@@ -46,6 +50,19 @@ public class BilibiliLiveMetricCatalog implements LiveMetricCatalog {
             Metric.count(BilibiliLiveMetric.FREE_GIFT_COUNT, "免费礼物", "个")
     );
 
+    /**
+     * 基础数据快照那三项，与 {@code BilibiliStreamerSnapshotService} 采的键一一对应
+     * <p>
+     * 正是上面被排除在可累加集之外的那三个存量。<b>排除的是「相加」，不是「说不出名字」</b>——
+     * 主播页那张基础数据卡照样要显示它们，只不过显示的是最近一次采到的值，不做任何聚合。
+     * 采样服务多采一项时这里要跟着加，否则界面上那一行显示的是 {@code fans_medal} 这样的裸键。
+     */
+    private static final List<Metric> SNAPSHOT_METRICS = List.of(
+            Metric.count(BilibiliStreamerMetric.FANS, "粉丝", "人"),
+            Metric.count(BilibiliStreamerMetric.FANS_MEDAL, "粉丝团", "人"),
+            Metric.count(BilibiliStreamerMetric.GUARD, "大航海", "人")
+    );
+
     @Override
     public String platform() {
         return "bilibili";
@@ -54,5 +71,10 @@ public class BilibiliLiveMetricCatalog implements LiveMetricCatalog {
     @Override
     public List<Metric> metrics() {
         return METRICS;
+    }
+
+    @Override
+    public List<Metric> snapshotMetrics() {
+        return SNAPSHOT_METRICS;
     }
 }

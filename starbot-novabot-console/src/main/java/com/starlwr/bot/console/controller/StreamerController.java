@@ -419,6 +419,10 @@ public class StreamerController {
      * <b>基础数据原样给出、不挑字段。</b>粉丝数在哔哩哔哩叫 {@code fans}，
      * 而核心并不知道各平台会采什么——把某个平台的键名写进核心，装第二个平台时
      * 那一栏要么空着要么显示错东西。这与指标说明那套（{@link LiveMetricCatalog}）同一条道理。
+     * <p>
+     * 那些裸键叫什么，另起一栏 {@code snapshotMetrics} 由平台插件自报（同一个扩展点）。
+     * 值与说明分两栏给：<b>目录里没有的键界面要原样显示出来</b>，两栏并成一栏的话，
+     * 插件新采了一项指标而目录还没跟上的那一天，那一项会在屏幕上直接消失。
      */
     private JSONObject overview(String platform, Long uid, List<LiveSession> sessions) {
         long duration = 0;
@@ -451,6 +455,9 @@ public class StreamerController {
         }
         // 从来没采到过时给 null，不给一个空对象：空对象在界面上会渲成「粉丝 0」
         json.put("snapshot", snapshot);
+        // 说明照目录给全，不按本次采到了哪几项过滤：这一栏答的是「这个平台的指标都叫什么」，
+        // 而不是「这次采到了什么」。按采样过滤的话，采漏一项与目录漏一项在界面上长得一样
+        json.put("snapshotMetrics", describe(snapshotMetricsOf(platform)));
 
         return json;
     }
@@ -633,6 +640,25 @@ public class StreamerController {
                             () -> log.debug("未找到平台 {} 的指标说明, 该平台的场次只统计场次数与时长", platform));
         }
         return result;
+    }
+
+    /**
+     * 这个平台的快照指标说明
+     * <p>
+     * 与 {@link #metricsOf(List)} 那一条的取法有意不同：那边一个平台只取第一份目录，
+     * 这边把该平台<b>所有</b>实现的都收下。快照说明是纯说明、不参与任何计算，
+     * 平台插件与报告插件各说自己那几项是常态；只取第一份的话，后装的那一份说的名字
+     * 永远不会出现在屏幕上，而两处的代码看起来都对。
+     * <p>
+     * 键重不重复由目录那一侧的判据守着（见各实现的用例），这里不去重——去重要挑一份留下，
+     * 而挑哪一份是个界面替插件做的决定。
+     */
+    private List<LiveMetricCatalog.Metric> snapshotMetricsOf(String platform) {
+        return catalogs.orderedStream()
+                .filter(catalog -> catalog.platform().equals(platform))
+                .map(LiveMetricCatalog::snapshotMetrics)
+                .flatMap(List::stream)
+                .toList();
     }
 
     private JSONArray describe(List<LiveMetricCatalog.Metric> metrics) {

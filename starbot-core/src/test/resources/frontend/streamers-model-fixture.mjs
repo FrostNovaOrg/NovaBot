@@ -3,7 +3,7 @@
  *
  * 量的是控制台插件里 streamers-model.js 的这几件事：地址栏解析与回拼、状态四档的措辞与
  * 闭集覆盖、七天折线的取值与几何、人气峰三态、两种缺口分开列、累计数据那条小横条的条件、
- * 快照裸键换人话、分页与报告图三态。它们全不碰 DOM，因此可以在 node 上直接喂值跑。
+ * 快照裸键按回包给的目录换人话、分页与报告图三态。它们全不碰 DOM，因此可以在 node 上直接喂值跑。
  *
  * 其中三组是本页判据的重头：
  *   · 人气峰「不知道」与「知道它是 0」——只分两态的话，几个月前的场次会整批显示成「人气峰 0」，
@@ -199,17 +199,35 @@ eq(totalDataBanner({totalDataAvailable: false}) !== '', totalDataOff({totalDataA
 eq(totalDataBanner({}) !== '', totalDataOff({}), '不知道那一档两处也一致');
 
 // ---------- 九、快照裸键换人话 ----------
-eq(snapshotRows({fans: 12345, fans_medal: 678, guard: 9}), [
+// 人话名由回包里的 snapshotMetrics 给（插件自报），界面这边不留任何一张指标表。
+// 🔴 两向都要量：只量阳性的话，把回包丢开、退回写死一张表，这一格照样全绿
+const SNAPSHOT_CATALOG = [
+  {key: 'fans', name: '粉丝', unit: '人', money: false},
+  {key: 'fans_medal', name: '粉丝团', unit: '人', money: false},
+  {key: 'guard', name: '大航海', unit: '人', money: false},
+];
+eq(snapshotRows({fans: 12345, fans_medal: 678, guard: 9}, SNAPSHOT_CATALOG), [
   {key: 'fans', name: '粉丝', unit: '人', value: 12345, known: true},
   {key: 'fans_medal', name: '粉丝团', unit: '人', value: 678, known: true},
   {key: 'guard', name: '大航海', unit: '人', value: 9, known: true},
-], '认得的键换成人话');
+], '目录里说得出名字的键换成人话');
+// 阳性：目录换一份，人话跟着换。写死一张表的实现在这一格上必红
+eq(snapshotRows({zzz_new_metric: 7}, [{key: 'zzz_new_metric', name: '新指标', unit: '个'}]), [
+  {key: 'zzz_new_metric', name: '新指标', unit: '个', value: 7, known: true},
+], '插件自报的名字算数，界面不必认识这个键');
+// 阴性：没有目录（没装那个平台的插件、或它没实现这一档）时全是裸键
+eq(snapshotRows({fans: 12345}, []), [
+  {key: 'fans', name: 'fans', unit: '', value: 12345, known: false},
+], '目录是空的时候连 fans 也是裸键——界面这边不许自己认得它');
+eq(snapshotRows({fans: 12345}), [
+  {key: 'fans', name: 'fans', unit: '', value: 12345, known: false},
+], '旧版服务端没给这一栏时同上，不炸也不猜');
 // 🔴 认不出的键原样显示，不藏起来：藏起来之后，插件新采了一项的那一天屏幕上不会有任何变化
-eq(snapshotRows({zzz_new_metric: 7}), [
+eq(snapshotRows({zzz_new_metric: 7}, SNAPSHOT_CATALOG), [
   {key: 'zzz_new_metric', name: 'zzz_new_metric', unit: '', value: 7, known: false},
-], '认不出的键原样显示，并标出它是认不出的那一类');
-eq(snapshotRows({}), [], '一项都没采到时是空的');
-eq(snapshotRows(null), [], '整段快照都没有时是空的');
+], '目录里没有的键原样显示，并标出它是认不出的那一类');
+eq(snapshotRows({}, SNAPSHOT_CATALOG), [], '一项都没采到时是空的');
+eq(snapshotRows(null, SNAPSHOT_CATALOG), [], '整段快照都没有时是空的');
 
 // ---------- 十、场次表的列与分页 ----------
 const METRICS = [{key: 'danmu', name: '弹幕'}, {key: 'gift', name: '礼物', money: true},

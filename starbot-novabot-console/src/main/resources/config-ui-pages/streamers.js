@@ -486,16 +486,17 @@ function renderOverview(host) {
   stats.appendChild(box);
   host.appendChild(stats);
 
-  host.appendChild(snapshotCard(overview.snapshot));
+  host.appendChild(snapshotCard(overview.snapshot, overview.snapshotMetrics));
   host.appendChild(recentCard());
 }
 
 /**
  * 最近一次采到的基础数据
  * @param snapshot 接口给的 overview.snapshot
+ * @param catalog 接口给的 overview.snapshotMetrics，指标叫什么由平台插件自报
  * @return {HTMLElement} 一张卡
  */
-function snapshotCard(snapshot) {
+function snapshotCard(snapshot, catalog) {
   const card = el('div', 'nv-card hcard');
   const head = el('h3');
   head.textContent = '基础数据 ';
@@ -504,7 +505,7 @@ function snapshotCard(snapshot) {
   head.appendChild(note);
   card.appendChild(head);
 
-  const rows = snapshotRows(snapshot ? snapshot.metrics : null);
+  const rows = snapshotRows(snapshot ? snapshot.metrics : null, catalog);
   if (!rows.length) {
     const empty = el('p', 'hint');
     empty.style.margin = '0';
@@ -519,9 +520,9 @@ function snapshotCard(snapshot) {
   const list = el('dl', 'kv');
   for (const row of rows) {
     const key = el('dt');
-    // 认不出的键原样显示，并标一句：藏起来的话，插件新采了一项的那一天屏幕上不会有任何变化
+    // 目录里没有的键原样显示，并标一句：藏起来的话，插件新采了一项的那一天屏幕上不会有任何变化
     key.textContent = row.known ? row.name : row.key;
-    if (!row.known) key.title = '这台机器采到了界面还不认识的一项指标，原样显示';
+    if (!row.known) key.title = '这台机器采到了一项插件还没说出名字的指标，原样显示';
     list.appendChild(key);
     const value = el('dd');
     value.textContent = Math.round(row.value).toLocaleString('en-US') + (row.unit ? ' ' + row.unit : '');
