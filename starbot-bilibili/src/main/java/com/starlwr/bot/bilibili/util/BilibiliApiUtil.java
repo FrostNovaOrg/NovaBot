@@ -157,14 +157,33 @@ public class BilibiliApiUtil {
     /**
      * 各 HTTP 端点应答 {@code data} 顶层已知键。
      * <p>
-     * 表的查找键是去掉 query 的路径。已知键是该端点解析方法实际取用的顶层键，
-     * 同一路径被两个方法用时取并集，登录态／匿名态字段并集。
+     * 表的查找键是去掉 query 的路径。已知＝取用 ∪ 常驻：取用键是该端点解析方法实际
+     * 取用的顶层键（同一路径被两个方法用时取并集，登录态／匿名态字段并集）；常驻键是
+     * japan 取表 2026-09-08 真应答里一直都有、解析码并不读取的字段。
      * {@code nested} 的条目（房间状态按 uid 分桶）不在 {@link #extractData} 比对，
      * 而在解析处对桶内对象调用 {@link #noteUnknownTopKeys}。
      */
     static final Map<String, KnownDataKeys> KNOWN_DATA_KEYS_BY_PATH = knownDataKeysTable();
 
-    record KnownDataKeys(String constantName, Set<String> keys, boolean nested) {
+    /**
+     * @param usedKeys 解析码真取的顶层键
+     * @param residentKeys japan 取表 2026-09-08 真应答常驻、解析码不取的顶层键
+     * @param keys 已知＝取用 ∪ 常驻，比对用
+     */
+    record KnownDataKeys(String constantName, Set<String> usedKeys, Set<String> residentKeys,
+            boolean nested, Set<String> keys) {
+    }
+
+    private static KnownDataKeys knownEntry(String constantName, Collection<String> usedKeys,
+            Collection<String> residentKeys, boolean nested) {
+        Set<String> used = Set.copyOf(usedKeys);
+        Set<String> resident = Set.copyOf(residentKeys);
+        if (resident.isEmpty()) {
+            return new KnownDataKeys(constantName, used, resident, nested, used);
+        }
+        Set<String> merged = new LinkedHashSet<>(used);
+        merged.addAll(resident);
+        return new KnownDataKeys(constantName, used, resident, nested, Set.copyOf(merged));
     }
 
     private static Map<String, KnownDataKeys> knownDataKeysTable() {
@@ -201,6 +220,24 @@ public class BilibiliApiUtil {
                 "cookie_info", "token_info", "access_token", "refresh_token", "expires_in");
         // 观看心跳解析处不取 data 字段；空集且整路不记，避免按拍把常驻键记成未知
         registerKnownKeys(table, LIVE_HEARTBEAT_API, "LIVE_HEARTBEAT_API");
+        // japan 取表 2026-09-08：真应答常驻、解析码不取。未取到样本的端点不登记。
+        registerResidentKeys(table, DANMU_INFO_API,
+                "business_id", "group", "max_delay", "refresh_rate", "refresh_row_factor");
+        registerResidentKeys(table, DYNAMIC_FEED_API,
+                "has_more", "offset", "update_baseline", "update_num");
+        registerResidentKeys(table, FANS_MEDAL_RANK_API, "item", "medal_status");
+        registerResidentKeys(table, GUARD_TAB_API,
+                "ab", "btn_type", "exist_benefit", "extop", "guard_leader", "guard_warn",
+                "main_text", "my_follow_info", "prompt_text", "remind_benefit", "remind_msg",
+                "sub_text", "typ");
+        registerResidentKeys(table, MASTER_INFO_API,
+                "exp", "glory_count", "link_group_num", "medal_name", "pendant", "room_news");
+        registerResidentKeys(table, MY_INFO_API, "coins", "following", "level_exp");
+        registerResidentKeys(table, ROOM_STATUS_API,
+                "area", "area_name", "area_v2_id", "area_v2_name", "area_v2_parent_id",
+                "area_v2_parent_name", "broadcast_type", "face", "hidden_till", "keyframe",
+                "lock_till", "online", "room_id", "short_id", "tag_name", "tags", "uid", "uname");
+        registerResidentKeys(table, BilibiliTicketUtil.TICKET_API, "context");
         return Map.copyOf(table);
     }
 
@@ -219,13 +256,26 @@ public class BilibiliApiUtil {
         String path = shortUrl(endpointUrl);
         KnownDataKeys existing = table.get(path);
         if (existing == null) {
-            table.put(path, new KnownDataKeys(constantName, Set.copyOf(List.of(keys)), nested));
+            table.put(path, knownEntry(constantName, List.of(keys), List.of(), nested));
             return;
         }
-        Set<String> merged = new LinkedHashSet<>(existing.keys());
-        merged.addAll(List.of(keys));
-        table.put(path, new KnownDataKeys(existing.constantName(), Set.copyOf(merged),
+        Set<String> mergedUsed = new LinkedHashSet<>(existing.usedKeys());
+        mergedUsed.addAll(List.of(keys));
+        table.put(path, knownEntry(existing.constantName(), mergedUsed, existing.residentKeys(),
                 existing.nested() || nested));
+    }
+
+    /** japan 取表 2026-09-08：真应答里一直都有、解析码并不读取的顶层键。 */
+    private static void registerResidentKeys(Map<String, KnownDataKeys> table, String endpointUrl,
+            String... keys) {
+        String path = shortUrl(endpointUrl);
+        KnownDataKeys existing = table.get(path);
+        if (existing == null) {
+            throw new IllegalStateException("resident keys need a used-keys row first: " + path);
+        }
+        Set<String> resident = new LinkedHashSet<>(existing.residentKeys());
+        resident.addAll(List.of(keys));
+        table.put(path, knownEntry(existing.constantName(), existing.usedKeys(), resident, existing.nested()));
     }
 
     /**

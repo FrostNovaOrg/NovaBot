@@ -327,6 +327,41 @@ class BilibiliApiUtilUnknownFieldTest {
                 "键形应为 OAUTH2_REFRESH_TOKEN_API:x_extra，实际: " + detail);
     }
 
+    @Test
+    @DisplayName("常驻键不在取用键里；弹幕信息接口常驻键经 extractData 应记 0")
+    void residentKeysOutsideUsedAndKnownViaExtractData() {
+        List<String> reds = new ArrayList<>();
+
+        try {
+            for (BilibiliApiUtil.KnownDataKeys row : BilibiliApiUtil.KNOWN_DATA_KEYS_BY_PATH.values()) {
+                for (String key : row.residentKeys()) {
+                    assertFalse(row.usedKeys().contains(key),
+                            row.constantName() + " 常驻键 " + key + " 不得出现在取用键里");
+                }
+            }
+        } catch (AssertionError | RuntimeException e) {
+            reds.add("disjoint " + e.getMessage());
+        }
+
+        try {
+            BilibiliRiskMetrics metrics = new BilibiliRiskMetrics();
+            BilibiliApiUtil api = new BilibiliApiUtil(mock(HttpUtil.class),
+                    new StarBotBilibiliProperties(), metrics);
+            JSONObject data = keys("host_list", "token", "business_id");
+            api.extractData(wrap(data),
+                    "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo");
+            assertEquals(0, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW),
+                    "DANMU_INFO 常驻键 business_id 经 extractData 应 0，实际 "
+                            + metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW)
+                            + " detail="
+                            + metrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD).orElse(""));
+        } catch (AssertionError | RuntimeException e) {
+            reds.add("extractData " + e.getMessage());
+        }
+
+        assertTrue(reds.isEmpty(), () -> "红 " + reds.size() + " 问: " + String.join("; ", reds));
+    }
+
     private static JSONObject keys(String... names) {
         JSONObject data = new JSONObject();
         for (String name : names) {
