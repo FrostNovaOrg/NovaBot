@@ -165,6 +165,14 @@ class StreamerApiTest {
         controller = controller();
     }
 
+    /**
+     * 夹具目录：一项场次指标，加三项快照指标
+     * <p>
+     * 快照那三项的键写成字面量而不是引 {@code BilibiliStreamerMetric}——控制台模块只依赖核心，
+     * 引不到哔哩哔哩插件。<b>它们与常量同不同值不由这一格保证</b>，那一格在
+     * {@code BilibiliLiveMetricCatalogTest} 里，那边两侧都看得见。
+     * 这里量的是另一件事：控制台把目录里的快照说明原样交给界面，一项不漏也不改名。
+     */
     private LiveMetricCatalog catalog() {
         return new LiveMetricCatalog() {
             @Override
@@ -175,6 +183,13 @@ class StreamerApiTest {
             @Override
             public List<Metric> metrics() {
                 return List.of(Metric.count("danmu_count", "弹幕", "条"));
+            }
+
+            @Override
+            public List<Metric> snapshotMetrics() {
+                return List.of(Metric.count("fans", "粉丝", "人"),
+                        Metric.count("fans_medal", "粉丝团", "人"),
+                        Metric.count("guard", "大航海", "人"));
             }
         };
     }
@@ -370,6 +385,27 @@ class StreamerApiTest {
         assertEquals(0, overview.getIntValue("sessions"));
         assertNull(overview.get("averageDurationSeconds"));
         assertNull(overview.get("snapshot"), "从来没采到过时给 null, 空对象在界面上会渲成「粉丝 0」");
+    }
+
+    @Test
+    @DisplayName("快照指标的人话名随概况一起下发，界面不必自己抄一张会漏项的表")
+    void overviewCarriesSnapshotMetricNames() {
+        snapshots.append(new StreamerSnapshot("bilibili", 1001L, "主播甲", todayStart - 3600_000L,
+                Map.of("fans", 12345.0)));
+
+        JSONArray metrics = detail(1001L).getJSONObject("overview").getJSONArray("snapshotMetrics");
+
+        assertEquals(3, metrics.size(), "目录里几项就给几项");
+        assertEquals(List.of("fans", "fans_medal", "guard"),
+                metrics.stream().map(one -> ((JSONObject) one).getString("key")).toList(),
+                "顺序即界面展示顺序, 不许在路上被重排");
+        assertEquals(List.of("粉丝", "粉丝团", "大航海"),
+                metrics.stream().map(one -> ((JSONObject) one).getString("name")).toList());
+        assertEquals("人", metrics.getJSONObject(0).getString("unit"));
+        // 快照采到的键与目录里说得出名字的那几项是两码事：采到了目录没说的一项时，
+        // 界面要原样把裸键显示出来。因此这一栏照目录给全, 不按本次采样过滤
+        assertEquals(1, detail(1001L).getJSONObject("overview")
+                .getJSONObject("snapshot").getJSONObject("metrics").size());
     }
 
     @Test

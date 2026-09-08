@@ -53,22 +53,6 @@ const SPARK_WIDTH = 88;
 
 const SPARK_HEIGHT = 26;
 
-/**
- * 快照指标的裸键换人话
- *
- * 服务端把最近一次采样<b>原样</b>交出来、一个字段都不挑（见 StreamerController.overview）：
- * 核心并不知道各平台会采什么，把某个平台的键名写进核心，装第二个平台时那一栏
- * 要么空着要么显示错东西。换人话这件事因此只能落在界面上。
- *
- * 🔴 认不出的键<b>原样显示</b>，不许藏起来：藏起来之后，插件新采了一项指标的那一天，
- * 屏幕上不会有任何变化——而「这台机器采到了一项我不认识的东西」正是该看见的事。
- */
-const SNAPSHOT_LABELS = {
-  fans: {name: '粉丝', unit: '人'},
-  fans_medal: {name: '粉丝团', unit: '人'},
-  guard: {name: '大航海', unit: '人'},
-};
-
 const DIGITS = /^\d+$/;
 
 /**
@@ -348,17 +332,25 @@ export function totalDataBanner(status) {
 /**
  * 快照指标摆成一行行
  *
- * 认不出的键原样显示，且标出来它是认不出的那一类——见 SNAPSHOT_LABELS 上那段。
+ * 人话名<b>由回包里的 snapshotMetrics 给</b>（overview.snapshotMetrics），界面这边不留
+ * 指标表。抄一张表在这里的代价是：核心并不知道各平台会采什么，装第二个平台时那几行
+ * 要么显示裸键要么显示错东西，而这一份表离产生指标的那个插件有整整一个仓库那么远。
+ *
+ * 🔴 目录里没有的键<b>原样显示</b>，不许藏起来：藏起来之后，插件新采了一项指标的那一天，
+ * 屏幕上不会有任何变化——而「这台机器采到了一项目录还没说的东西」正是该看见的事。
+ * 目录整份为空（没装那个平台的插件、或它没实现这一档）时，逐项都是这一种。
  * @param metrics 接口给的 snapshot.metrics
+ * @param catalog 接口给的 overview.snapshotMetrics，缺席按空目录算
  * @return {{key: string, name: string, unit: string, value: number, known: boolean}[]} 逐项
  */
-export function snapshotRows(metrics) {
+export function snapshotRows(metrics, catalog) {
+  const labels = new Map((catalog || []).map(one => [one.key, one]));
   return Object.keys(metrics || {}).map(key => {
-    const label = SNAPSHOT_LABELS[key];
+    const label = labels.get(key);
     return {
       key,
       name: label ? label.name : key,
-      unit: label ? label.unit : '',
+      unit: label && label.unit ? label.unit : '',
       value: Number(metrics[key]) || 0,
       known: !!label,
     };
