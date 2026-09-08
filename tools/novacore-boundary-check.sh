@@ -31,6 +31,8 @@
 # 闭集照旧钉住不许再长）、
 # ⑩插件 import 了兄弟插件却没在 pom 里申报那个模块、以及主码直引里层包却没申报 novacore、⑪核心界面目录在且非空（格1 射程的正面读数）、
 # ⑫写死了模块目录名的在册件数只减不增（给目录重排立账，改一件销一件）。
+# 格13 补模板缝：模板不进 reactor，引用了已改名或不存在的类，编译与测试都看不见；
+# 使用者照抄，切面静默不生效。
 
 set -uo pipefail
 
@@ -59,7 +61,7 @@ count_lines() {
     printf '%s' "${cl_n:-0}"
 }
 
-# —— 件清单按工作树现算（格8／格9／格12 的闭集共用）——
+# —— 件清单按工作树现算（格8／格9／格12／格13 的闭集共用）——
 #
 # 这三格原先都走 `git ls-files`，读的是**索引**，不是盘上的树。差别只在搬件的那一笔上现形：
 # 刚挪到新位置的件没 `git add` 就不在索引里，挪走的旧件已经不在盘上却还留在索引里——
@@ -1193,6 +1195,82 @@ elif [ "$g12_n" -le "$HARDCODED_MODULE_PATH_CAP" ]; then
     echo "格12 绿 写死模块目录名的在册件${g12_n} ≤ 上限${HARDCODED_MODULE_PATH_CAP}"
 else
     echo "格12 红 写死模块目录名的在册件${g12_n} > 上限${HARDCODED_MODULE_PATH_CAP}（新写了 $((g12_n - HARDCODED_MODULE_PATH_CAP)) 件）"
+    RED=1
+fi
+
+# ============================================================
+# 格13：模板引用闭集——templates 里写的仓内类名须在仓内有源文件
+#
+# 模板不进 reactor，写错一个类名编译与测试都看不见。使用者照抄起插件，
+# 切面静默不挂上（pointcut 对不上任何方法）。本格问的就是「模板引用的
+# com.starlwr 类，仓内是不是真有这一件」。
+#
+# 取两类名字：
+#   ① import com.starlwr.…（非通配；static 末段若不是类型则退一层再找）
+#   ② @Pointcut / execution( 串里的全限定类名
+# 每个名字折成 */src/main/java/<点换斜杠>.java，在工作树件清单里找；
+# 找不到即红并印类名。
+#
+# 件清单走 tree_files（工作树现算，理由见其注释）——刚改名还没 add 的新类
+# 要认得出，刚删还留在索引里的旧类不能继续当「在」。
+# 射程为空：templates 下没有 *.java，或抽不出任何类名（正则哑了）⇒ 红。
+# ============================================================
+
+G13_JAVA="$WORK/g13java"
+tree_files 'templates/' | grep '\.java$' > "$G13_JAVA" || true
+g13_java_n=$(count_lines "$G13_JAVA")
+
+G13_TREE="$WORK/g13tree"
+tree_files '*/src/main/java/*.java' > "$G13_TREE"
+
+G13_NAMES="$WORK/g13names"
+: > "$G13_NAMES"
+
+# 包段小写开头、类名大写开头：挡住 execution(* Fqcn.method(..)) 把方法名吞进类名
+g13_class_re='com\.starlwr(\.[a-z][A-Za-z0-9_]*)+\.[A-Z][A-Za-z0-9_]*'
+
+if [ -s "$G13_JAVA" ]; then
+    while IFS= read -r g13f; do
+        [ -z "$g13f" ] && continue
+        [ -f "$g13f" ] || continue
+        grep -E '^import[[:space:]]+(static[[:space:]]+)?com\.starlwr\.' "$g13f" 2>/dev/null \
+            | grep -oE "$g13_class_re" >> "$G13_NAMES" || true
+        grep -E '@Pointcut|execution\(' "$g13f" 2>/dev/null \
+            | grep -oE "$g13_class_re" >> "$G13_NAMES" || true
+    done < "$G13_JAVA"
+fi
+sort -u "$G13_NAMES" -o "$G13_NAMES"
+g13_name_n=$(count_lines "$G13_NAMES")
+
+g13_hits=""
+g13_n=0
+while IFS= read -r g13fqn; do
+    [ -z "$g13fqn" ] && continue
+    g13path="$(printf '%s' "$g13fqn" | tr '.' '/').java"
+    if grep -qF "/src/main/java/${g13path}" "$G13_TREE"; then
+        continue
+    fi
+    g13parent="${g13fqn%.*}"
+    g13ppath="$(printf '%s' "$g13parent" | tr '.' '/').java"
+    if grep -qF "/src/main/java/${g13ppath}" "$G13_TREE"; then
+        continue
+    fi
+    g13_hits="${g13_hits}${g13fqn} "
+    g13_n=$((g13_n + 1))
+done < "$G13_NAMES"
+
+g13_read="模板 java ${g13_java_n}件 引用类名${g13_name_n}个"
+
+if [ "$g13_java_n" -eq 0 ]; then
+    echo "格13 红 射程为空 templates 下没有 java 件 $g13_read"
+    RED=1
+elif [ "$g13_name_n" -eq 0 ]; then
+    echo "格13 红 射程为空 抽不出任何 com.starlwr 类名 $g13_read"
+    RED=1
+elif [ "$g13_n" -eq 0 ]; then
+    echo "格13 绿 命中0 模板引用的仓内类名都在 $g13_read"
+else
+    echo "格13 红 命中${g13_n} ${g13_hits% } $g13_read"
     RED=1
 fi
 
