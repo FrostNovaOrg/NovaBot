@@ -30,7 +30,7 @@
 # 新增四格补的是另外四条缝：⑨同一个 java 包跨模块（撞包，立格时有三个，三刀解完已清零，
 # 闭集照旧钉住不许再长）、
 # ⑩插件 import 了兄弟插件却没在 pom 里申报那个模块、以及主码直引里层包却没申报 novacore、⑪核心界面目录在且非空（格1 射程的正面读数）、
-# ⑫写死了模块目录名的在册件数只减不增（给目录重排立账，改一件销一件）。
+# ⑫写死了模块目录名的在册件数只减不增（给目录重排立账，改一件销一件；裸旧路径须 0）。
 # 格13 补模板缝：模板不进 reactor，引用了已改名或不存在的类，编译与测试都看不见；
 # 使用者照抄，切面静默不生效。
 
@@ -1189,14 +1189,45 @@ if [ -s "$WORK/g12files" ]; then
 fi
 g12_n=$(count_lines "$G12_LIST")
 
+# 反向：仓根一级的旧路径（没有 core/ 或 plugins/ 前缀）须 0。
+# 正向正则带了前缀之后，core/starbot-core 仍命中；回写成仓根一级旧目录反而数不到，
+# 那一格会假绿。排除 *.log、CHANGELOG.md（历史条）、.gitignore 注释行；
+# target/ 与 .git/ 不在 tree_files 件清单里。
+G12_BARE_RE='(^|[^/A-Za-z0-9_])(novacore|starbot-core|starbot-bilibili|starbot-onebot-adapter(-napcat-extension)?|starbot-report|starbot-novabot-console)/'
+G12_BARE_LIST="$WORK/g12bare"
+: > "$G12_BARE_LIST"
+tree_files -- ':!*.log' ':!CHANGELOG.md' > "$WORK/g12barefiles"
+if [ -s "$WORK/g12barefiles" ]; then
+    tr '\n' '\0' < "$WORK/g12barefiles" \
+        | xargs -0 grep -nH -I -E "$G12_BARE_RE" 2>/dev/null \
+        | awk -F: '
+            $1 == ".gitignore" {
+                rest = $0
+                sub(/^[^:]+:[0-9]+:/, "", rest)
+                if (rest ~ /^[[:space:]]*#/) next
+            }
+            { print }
+          ' > "$G12_BARE_LIST" || true
+fi
+g12_bare_n=$(count_lines "$G12_BARE_LIST")
+
+g12_fail=0
 if [ "$g12_n" -eq 0 ]; then
     # 一件都数不出来，多半是模块名整套换过了（或不在 git 树里跑），不是「改完了」
     echo "格12 红 射程为空 数不出任何写死模块目录名的在册件(在册模块${module_n}个) 上限${HARDCODED_MODULE_PATH_CAP}"
-    RED=1
-elif [ "$g12_n" -le "$HARDCODED_MODULE_PATH_CAP" ]; then
-    echo "格12 绿 写死模块目录名的在册件${g12_n} ≤ 上限${HARDCODED_MODULE_PATH_CAP}"
-else
+    g12_fail=1
+elif [ "$g12_n" -gt "$HARDCODED_MODULE_PATH_CAP" ]; then
     echo "格12 红 写死模块目录名的在册件${g12_n} > 上限${HARDCODED_MODULE_PATH_CAP}（新写了 $((g12_n - HARDCODED_MODULE_PATH_CAP)) 件）"
+    g12_fail=1
+fi
+if [ "$g12_bare_n" -gt 0 ]; then
+    echo "格12 红 裸旧路径 ${g12_bare_n}处:"
+    cat "$G12_BARE_LIST"
+    g12_fail=1
+fi
+if [ "$g12_fail" -eq 0 ]; then
+    echo "格12 绿 写死模块目录名的在册件${g12_n} ≤ 上限${HARDCODED_MODULE_PATH_CAP} 裸旧路径 0"
+else
     RED=1
 fi
 
