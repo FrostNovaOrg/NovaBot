@@ -503,6 +503,44 @@ class BilibiliEventParserTest {
     }
 
     @Test
+    @DisplayName("V2 红包缺 data、V2 礼物未知币种、GUARD_BUY 未知档的 detail 用真 cmd")
+    void familyCmdKeptInRiskDetail() {
+        List<String> reds = new ArrayList<>();
+        try {
+            assertTrue(parse("{\"cmd\":\"POPULARITY_RED_POCKET_V2_START\"}").isEmpty(),
+                    "V2 红包缺 data 仍应丢弃");
+            String detail = riskMetrics.lastDetail(BilibiliRiskMetrics.Kind.FIELD_MISSING).orElse("");
+            assertTrue(detail.contains("POPULARITY_RED_POCKET_V2_START:data"),
+                    "缺 data 的 detail 前缀应为 V2 cmd，实际: " + detail);
+        } catch (AssertionError e) {
+            reds.add("① " + e.getMessage());
+        }
+        try {
+            String pb = new PbWriter()
+                    .message(10, new PbWriter().str(8, "bronze"))
+                    .base64();
+            assertTrue(parse("{\"cmd\":\"SEND_GIFT_V2\",\"data\":{\"pb\":\"" + pb + "\"}}").isEmpty(),
+                    "未知币种仍应丢弃");
+            String detail = riskMetrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD).orElse("");
+            assertTrue(detail.contains("SEND_GIFT_V2:coin_type=bronze"),
+                    "未知币种的 detail 前缀应为 SEND_GIFT_V2，实际: " + detail);
+        } catch (AssertionError e) {
+            reds.add("② " + e.getMessage());
+        }
+        try {
+            assertTrue(parse("{\"cmd\":\"GUARD_BUY\",\"data\":{\"uid\":1,\"username\":\"x\","
+                    + "\"guard_level\":9,\"num\":1,\"price\":1000}}").isEmpty(),
+                    "未知档仍应丢弃");
+            String detail = riskMetrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD).orElse("");
+            assertTrue(detail.contains("GUARD_BUY:guard_level=9"),
+                    "未知档的 detail 前缀应为 GUARD_BUY，实际: " + detail);
+        } catch (AssertionError e) {
+            reds.add("③ " + e.getMessage());
+        }
+        assertTrue(reds.isEmpty(), () -> "三问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+    }
+
+    @Test
     @DisplayName("解析普通弹幕")
     void parseDanmu() {
         Optional<StarBotBaseLiveEvent> event = parse(danmuMessage("{\"content\":\"你好\",\"reply_mid\":0}", "\"\""));

@@ -426,8 +426,10 @@ public class BilibiliEventParser {
         parsers.put("USER_TOAST_MSG", this::parseGuard);
         parsers.put("USER_TOAST_MSG_V2", this::parseGuardV2);
         parsers.put("GUARD_BUY", this::parseGuardBuy);
-        parsers.put("POPULARITY_RED_POCKET_START", this::parseRedPocket);
-        parsers.put("POPULARITY_RED_POCKET_V2_START", this::parseRedPocket);
+        parsers.put("POPULARITY_RED_POCKET_START",
+                (data, source) -> parseRedPocket("POPULARITY_RED_POCKET_START", data, source));
+        parsers.put("POPULARITY_RED_POCKET_V2_START",
+                (data, source) -> parseRedPocket("POPULARITY_RED_POCKET_V2_START", data, source));
         parsers.put("LIKE_INFO_V3_CLICK", this::parseLike);
         parsers.put("LIKE_INFO_V3_UPDATE", this::parseLikeUpdate);
         parsers.put("WATCHED_CHANGE", this::parseWatchedUpdate);
@@ -1142,7 +1144,7 @@ public class BilibiliEventParser {
 
         // total_coin 惰性读取（lambda 不在此处求值）：银瓜子礼物不算实扣，
         // 早退前不该碰它——getInteger 对非数值串会抛，会把免费礼物整条吞掉
-        return buildGiftEvent(source, sender, gift, timestamp,
+        return buildGiftEvent("SEND_GIFT", source, sender, gift, timestamp,
                 meta.getString("coin_type"), () -> meta.getInteger("total_coin"),
                 fromBag(meta), fromBlindGift(meta.getJSONObject("blind_gift")));
     }
@@ -1231,7 +1233,7 @@ public class BilibiliEventParser {
                 Optional.ofNullable(gift.message(GIFT_V2_GIFT_INFO)).map(info -> info.string(GIFT_V2_IMG_BASIC)).orElse(null)
         );
 
-        return buildGiftEvent(source, sender, giftInfo, timestamp,
+        return buildGiftEvent("SEND_GIFT_V2", source, sender, giftInfo, timestamp,
                 gift.string(GIFT_V2_COIN_TYPE), () -> intValue(gift.number(GIFT_V2_TOTAL_COIN)),
                 false, parseBlindV2(message));
     }
@@ -1241,6 +1243,7 @@ public class BilibiliEventParser {
      * <p>
      * V1（JSON）与 V2（protobuf）只是取值位置不同，取完之后的口径完全一致，收在这一处——
      * 两边各写一份的话，将来改口径（如实扣算法）很容易只改一边。
+     * @param cmd 这条礼物消息的 cmd（{@code SEND_GIFT} 或 {@code SEND_GIFT_V2}），记账用，不归并
      * @param gift 礼物信息，数量从中取
      * @param coinType 货币类型
      * @param totalCoin 取实扣（千分之一元）的函数，平台没给时算出 null；惰性求值，见 {@link #chargedOf}
@@ -1248,7 +1251,7 @@ public class BilibiliEventParser {
      * @param blind 投入的盒子；V1 从 {@code blind_gift} 读出，V2 从顶层 9 号读出，没有则为 null
      * @return 礼物事件，币种不认识时为 null
      */
-    private StarBotBaseLiveEvent buildGiftEvent(LiveStreamerInfo source, BilibiliUserInfo sender, GiftInfo gift,
+    private StarBotBaseLiveEvent buildGiftEvent(String cmd, LiveStreamerInfo source, BilibiliUserInfo sender, GiftInfo gift,
                                                 Instant timestamp, String coinType, Supplier<Integer> totalCoin,
                                                 boolean fromBag, BlindBox blind) {
         Integer count = gift.getCount();
@@ -1259,7 +1262,7 @@ public class BilibiliEventParser {
 
         if (!"gold".equals(coinType)) {
             log.debug("未处理的直播间礼物货币类型: {}", coinType);
-            noteNamed(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, "SEND_GIFT:coin_type=" + clipped(coinType));
+            noteNamed(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, cmd + ":coin_type=" + clipped(coinType));
             return null;
         }
 
@@ -1436,12 +1439,13 @@ public class BilibiliEventParser {
      * 只认「开启」这一条。中奖名单（{@code ..._WINNER_LIST}）暂不处理：
      * 它同样有 v1/V2 两种形式，而目前只抓到过两个不同 {@code lot_id} 的样本，
      * <b>无法证明同一个红包会不会同时下发两版</b>，贸然处理有重复计数的风险。
+     * @param cmd 分发表里的真 cmd（{@code POPULARITY_RED_POCKET_START} 或其 V2），记账用，不归并
      * @param data 消息内容
      * @param source 主播信息
      * @return 红包事件，无法识别或属于重播时为空
      */
-    private StarBotBaseLiveEvent parseRedPocket(JSONObject data, LiveStreamerInfo source) {
-        JSONObject meta = requireData(data, "POPULARITY_RED_POCKET_START");
+    private StarBotBaseLiveEvent parseRedPocket(String cmd, JSONObject data, LiveStreamerInfo source) {
+        JSONObject meta = requireData(data, cmd);
         if (meta == null) {
             return null;
         }
@@ -1449,7 +1453,7 @@ public class BilibiliEventParser {
         Object lotId = meta.get("lot_id");
         if (lotId == null) {
             // 认不出是哪个红包就没法挡重播。按本项目一贯的取舍，宁可漏播一次也不要反复感谢
-            noteNamed(BilibiliRiskMetrics.Kind.FIELD_MISSING, "POPULARITY_RED_POCKET_START:lot_id");
+            noteNamed(BilibiliRiskMetrics.Kind.FIELD_MISSING, cmd + ":lot_id");
             log.debug("红包消息缺少 lot_id, 已忽略");
             return null;
         }
@@ -1470,7 +1474,7 @@ public class BilibiliEventParser {
         String face = Optional.ofNullable(base).map(info -> info.getString("face")).orElseGet(() -> meta.getString("sender_face"));
         if (uid == null && uname == null) {
             // 连是谁发的都取不到，这条就没有播报价值了。留一行日志，格式变了才有迹可循
-            noteNamed(BilibiliRiskMetrics.Kind.FIELD_MISSING, "POPULARITY_RED_POCKET_START:sender");
+            noteNamed(BilibiliRiskMetrics.Kind.FIELD_MISSING, cmd + ":sender");
             log.debug("红包消息认不出发送者, 已忽略: lot={}", lotId);
             return null;
         }
@@ -1529,7 +1533,7 @@ public class BilibiliEventParser {
             return null;
         }
 
-        return buildGuardEvent(source, senderUid, meta.getString("username"), meta.getString("role_name"),
+        return buildGuardEvent("USER_TOAST_MSG", source, senderUid, meta.getString("username"), meta.getString("role_name"),
                 guardLevel, toYuan(meta.getInteger("price")), meta.getInteger("num"), meta.getString("unit"),
                 GuardOperateType.of(Optional.ofNullable(meta.getInteger("op_type")).orElse(-1)),
                 companionDaysOf(meta.getString("toast_msg")), timestamp);
@@ -1576,7 +1580,7 @@ public class BilibiliEventParser {
             return null;
         }
 
-        return buildGuardEvent(source, senderUid, base == null ? null : base.getString("name"),
+        return buildGuardEvent("USER_TOAST_MSG_V2", source, senderUid, base == null ? null : base.getString("name"),
                 guardInfo.getString("role_name"), guardLevel, toYuan(payInfo.getInteger("price")),
                 payInfo.getInteger("num"), payInfo.getString("unit"),
                 GuardOperateType.of(Optional.ofNullable(guardInfo.getInteger("op_type")).orElse(-1)),
@@ -1619,7 +1623,7 @@ public class BilibiliEventParser {
         }
 
         guardReconciler.holdGuardBuy(senderUid, guardLevel, timestamp,
-                buildGuardEvent(source, senderUid, meta.getString("username"), meta.getString("gift_name"),
+                buildGuardEvent("GUARD_BUY", source, senderUid, meta.getString("username"), meta.getString("gift_name"),
                         guardLevel, price, count, unitOf(meta), GuardOperateType.UNKNOWN, null, timestamp));
         return null;
     }
@@ -1659,11 +1663,12 @@ public class BilibiliEventParser {
      * <p>
      * 三条播报消息（{@code GUARD_BUY}、{@code USER_TOAST_MSG}、{@code USER_TOAST_MSG_V2}）
      * 字段位置各不相同，取值的差异留在各自的解析方法里，这里只负责组装。
+     * @param cmd 这条大航海消息的 cmd（{@code USER_TOAST_MSG}／{@code USER_TOAST_MSG_V2}／{@code GUARD_BUY}），记账用，不归并
      * @param iconName 用于查图标的名称，各消息取自不同字段
      * @param companionDays 陪伴天数，{@code GUARD_BUY} 没有文案可解析，传空
      * @return 等级不认识时返回 null
      */
-    private StarBotBaseLiveEvent buildGuardEvent(LiveStreamerInfo source, Long senderUid, String username,
+    private StarBotBaseLiveEvent buildGuardEvent(String cmd, LiveStreamerInfo source, Long senderUid, String username,
                                                  String iconName, Integer guardLevel, Double price, Integer count,
                                                  String unit, GuardOperateType operateType, Integer companionDays,
                                                  Instant timestamp) {
@@ -1696,7 +1701,7 @@ public class BilibiliEventParser {
             }
             default -> {
                 log.debug("未处理的直播间大航海类型: {}", guardLevel);
-                noteNamed(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, "USER_TOAST_MSG:guard_level=" + clipped(guardLevel));
+                noteNamed(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, cmd + ":guard_level=" + clipped(guardLevel));
                 yield null;
             }
         };

@@ -150,7 +150,8 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
                 + silentLossLine(BilibiliRiskMetrics.Kind.FIELD_MISSING, "缺字段", "类")
                 + silentLossLine(BilibiliRiskMetrics.Kind.API_DATA_MISSING, "接口缺 data", "个端点")
                 + silentLossLine(BilibiliRiskMetrics.Kind.PACKET_CORRUPT, "数据包异常", "类")
-                + silentLossLine(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, "弹幕协议未知字段", "个")
+                + silentLossLine(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD,
+                "未知字段：协议 pb 字段号／接口顶层键／枚举取值（detail 形：报文类型:字段号｜端点:键｜CMD:键=值）", "个")
                 + overflowLine();
 
         if (problems.isEmpty()) {
@@ -200,7 +201,7 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
     }
 
     /**
-     * 五类静默信号（解析失败、缺字段、接口缺 data、数据包异常、弹幕协议未知字段）
+     * 五类静默信号（解析失败、缺字段、接口缺 data、数据包异常、未知字段）
      * 只进摘要、不改档位：它们说明「有些消息或应答被丢了」或「报文里多了点什么」，
      * 不是连接坏了，但首页得看得见。
      * <p>
