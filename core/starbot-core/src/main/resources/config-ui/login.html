@@ -191,7 +191,7 @@
   <div class="brand"><span class="brand-mark">N</span><h1>忘记口令</h1></div>
   <p class="sub">口令没有找回，只能重设</p>
   <ol>
-    <li>上服务器，把配置项 <code>starbot.core.config-ui.auth.operator-token</code> 改成
+    <li>上服务器，把配置项 <code>novabot.core.config-ui.auth.operator-token</code> 改成
       <code>true</code> 并重启。这条通道默认关着，就是为了不留后门。</li>
     <li>启动日志里会印一行带令牌的地址，令牌是那一串。</li>
     <li>把它贴到下面，换一次进入，然后<b>先改口令；改完这条通道会自动关掉并写回配置</b>。</li>

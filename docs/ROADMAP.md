@@ -193,7 +193,7 @@ Python 版用 Redis 存两套数据：
 
 - [x] 报告各区块可独立开关（11 项，对齐上游 `LiveReport` 的布尔配置）
 - [x] 配置界面中可视化勾选
-- [x] 自定义 logo（`starbot.bilibili.live.report-logo-path`）
+- [x] 自定义 logo（`novabot.bilibili.live.report-logo-path`）
 
 **已实现（2026-08-05）**。做成了**通用机制**而非给报告写死一个面板：
 处理器在 `StarBotEventHandler.options()` 里声明自己有哪些参数

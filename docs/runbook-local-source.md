@@ -37,7 +37,7 @@ export JAVA_HOME=/opt/homebrew/opt/openjdk@17   # macOS，Linux 按自己的路�
 server:
   port: 7830                  # 随便挑个没被占的
 
-starbot:
+novabot:
   bilibili:
     account:
       anonymous: true         # ← 免登录。不读凭据、不弹二维码
