@@ -1,0 +1,2075 @@
+package org.frostnova.nova.bilibili.util;
+
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
+import org.frostnova.nova.bilibili.enums.DanmuType;
+import org.frostnova.nova.bilibili.exception.NetworkException;
+import org.frostnova.nova.bilibili.exception.RequestFailedException;
+import org.frostnova.nova.bilibili.exception.ResponseCodeException;
+import org.frostnova.nova.bilibili.health.BilibiliRiskMetrics;
+import org.frostnova.nova.bilibili.model.*;
+import org.frostnova.nova.core.plugin.NovaComponent;
+import org.frostnova.nova.core.util.HttpUtil;
+import org.frostnova.nova.core.lang.StringUtil;
+import lombok.Getter;
+import lombok.NonNull;
+import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.client.HttpStatusCodeException;
+
+import java.awt.image.BufferedImage;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
+
+/**
+ * 哔哩哔哩接口工具
+ * <p>
+ * 统一封装接口调用所需的请求头构造、签名附加、失败重试与错误代码处理。
+ * 所有方法均只访问哔哩哔哩的公开接口。
+ */
+@Slf4j
+@NovaComponent
+public class BilibiliApiUtil {
+    private static final String MAIN_SITE = "https://www.bilibili.com";
+
+    private static final String BUVID_API = "https://api.bilibili.com/x/web-frontend/getbuvid";
+
+    /**
+     * 网页端使用的设备指纹接口，一次返回 buvid3 与 buvid4
+     */
+    private static final String FINGER_SPI_API = "https://api.bilibili.com/x/frontend/finger/spi";
+
+    private static final String NAV_API = "https://api.bilibili.com/x/web-interface/nav";
+
+    private static final String MY_INFO_API = "https://api.bilibili.com/x/space/v2/myinfo";
+
+    private static final String QR_CODE_GENERATE_API = "https://passport.bilibili.com/x/passport-login/web/qrcode/generate";
+
+    // 曾试过按官方登录页补上 source=main-fe-header，以为服务端据此判断该不该下发持久化刷新口令，
+    // 实测无效（refresh_token 仍为空串），故未保留——不留只有猜想支撑的参数
+    private static final String QR_CODE_POLL_API = "https://passport.bilibili.com/x/passport-login/web/qrcode/poll?qrcode_key=";
+
+    /**
+     * TV 端扫码登录接口
+     * <p>
+     * Web 端扫码返回的持久化刷新口令实测恒为空串，导致 Cookie 无法自动续期；
+     * TV 端登录则会连同 Cookie 一并返回 access_token 与 refresh_token（有效期 180 天），
+     * 可经 oauth2 接口续期，是目前唯一能让凭据长期存活的扫码路径。
+     */
+    private static final String TV_QR_CODE_GENERATE_API = "https://passport.bilibili.com/x/passport-tv-login/qrcode/auth_code";
+
+    private static final String TV_QR_CODE_POLL_API = "https://passport.bilibili.com/x/passport-tv-login/qrcode/poll";
+
+    private static final String OAUTH2_REFRESH_TOKEN_API = "https://passport.bilibili.com/api/v2/oauth2/refresh_token";
+
+    private static final String MASTER_INFO_API = "https://api.live.bilibili.com/live_user/v1/Master/info?uid=";
+
+    private static final String ROOM_INFO_API = "https://api.live.bilibili.com/room/v1/Room/get_info?room_id=";
+
+    /**
+     * 粉丝团（粉丝勋章）成员排行。只取第一页一条，要的是响应里的总人数 {@code data.num}
+     */
+    private static final String FANS_MEDAL_RANK_API = "https://api.live.bilibili.com/xlive/general-interface/v1/rank/getFansMembersRank?page=1&page_size=1&ruid=";
+
+    /**
+     * 大航海列表。同样只取一条，要的是 {@code data.info.num}
+     * <p>
+     * 2026-08-07 由 {@code topList} 切到 {@code topListNew}：同一时刻同一房间比对了 5 个直播间
+     * （大航海人数 0 / 3 / 16 / 117 / 405），两个端点的 {@code data.info} <b>逐字段一致</b>，
+     * 名单顺序与昵称也逐条相同。旧端点当时仍可用，切换是为了不等它被下线。
+     * <p>
+     * <b>但列表项的结构变了</b>，将来要用名单时注意：旧端点是扁平的
+     * {@code uid} / {@code username} / {@code guard_level}，新端点挪进了嵌套的
+     * {@code uinfo.uid} / {@code uinfo.base.name} / {@code uinfo.guard.level}，
+     * 另外新增 {@code score}、<b>去掉了 {@code is_alive}</b>。
+     * 我们只取 {@code info.num}，所以这次切换不受影响。
+     */
+    private static final String GUARD_LIST_API = "https://api.live.bilibili.com/xlive/app-room/v2/guardTab/topListNew?page=1&page_size=1";
+
+    /**
+     * 大航海名单翻页用的同一端点，不带写死的 page / page_size
+     */
+    private static final String GUARD_TAB_API = "https://api.live.bilibili.com/xlive/app-room/v2/guardTab/topListNew";
+
+    /**
+     * 名单单页条数。人数接口仍走 page_size=1，这里要的是名单本身
+     */
+    private static final int GUARD_LIST_PAGE_SIZE = 20;
+
+    /**
+     * 翻页硬上限，防止 info.page 给错时一直要
+     */
+    private static final int GUARD_LIST_MAX_PAGES = 50;
+
+    private static final String ROOM_STATUS_API = "https://api.live.bilibili.com/room/v1/Room/get_status_info_by_uids";
+
+    private static final String DANMU_INFO_API = "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo";
+
+    private static final String DANMU_HISTORY_API = "https://api.live.bilibili.com/xlive/web-room/v1/dM/gethistory?roomid=";
+
+    private static final String GIFT_CONFIG_API = "https://api.live.bilibili.com/xlive/web-room/v1/giftPanel/roomGiftConfig?platform=pc";
+
+    /**
+     * 观看心跳。{@code hb} 是 base64 编码的 {@code "间隔|房间号|1|0"}，不是裸房间号
+     * <p>
+     * 2026-08-07 实测：这个接口对 {@code hb} 传什么都回 {@code code:0}——正确的 base64、
+     * 裸房间号、纯垃圾串、空值、不存在的房间号，五种输入的响应完全一样，
+     * 都是 {@code {"code":0,"data":{"next_interval":60}}}。
+     * <b>所以「返回码正常」不能用来验证心跳是否真的生效</b>，别拿它当判据。
+     * 这里仍按规范格式拼，是因为格式正确不花任何代价。
+     */
+    private static final String LIVE_HEARTBEAT_API = "https://live-trace.bilibili.com/xlive/rdata-interface/v1/heartbeat/webHeartBeat?pf=web&hb=";
+
+    private static final String DYNAMIC_FEED_API = "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all?features=itemOpusStyle,listOnlyfans,opusBigCover,onlyfansVote,decorationCard,onlyfansAssetsV2,forwardListHidden,ugcDelete,onlyfansQaCard,commentsNewVersion";
+
+    private static final String FOLLOWINGS_API = "https://api.bilibili.com/x/relation/followings?vmid=";
+
+    private static final String RELATION_MODIFY_API = "https://api.bilibili.com/x/relation/modify";
+
+    private static final String COOKIE_INFO_API = "https://passport.bilibili.com/x/passport-login/web/cookie/info";
+
+    private static final String CORRESPOND_PAGE = "https://www.bilibili.com/correspond/1/";
+
+    private static final String COOKIE_REFRESH_API = "https://passport.bilibili.com/x/passport-login/web/cookie/refresh";
+
+    private static final String CONFIRM_REFRESH_API = "https://passport.bilibili.com/x/passport-login/web/confirm/refresh";
+
+    /**
+     * 单页关注列表的最大条目数
+     */
+    private static final int FOLLOWING_PAGE_SIZE = 50;
+
+    /**
+     * 各 HTTP 端点应答 {@code data} 顶层已知键。
+     * <p>
+     * 表的查找键是去掉 query 的路径。已知＝取用 ∪ 常驻：取用键是该端点解析方法实际
+     * 取用的顶层键（同一路径被两个方法用时取并集，登录态／匿名态字段并集）；常驻键是
+     * japan 取表 2026-09-08 真应答里一直都有、解析码并不读取的字段。
+     * {@code nested} 的条目（房间状态按 uid 分桶）不在 {@link #extractData} 比对，
+     * 而在解析处对桶内对象调用 {@link #noteUnknownTopKeys}。
+     */
+    static final Map<String, KnownDataKeys> KNOWN_DATA_KEYS_BY_PATH = knownDataKeysTable();
+
+    /**
+     * @param usedKeys 解析码真取的顶层键
+     * @param residentKeys japan 取表 2026-09-08 真应答常驻、解析码不取的顶层键
+     * @param keys 已知＝取用 ∪ 常驻，比对用
+     */
+    record KnownDataKeys(String constantName, Set<String> usedKeys, Set<String> residentKeys,
+            boolean nested, Set<String> keys) {
+    }
+
+    private static KnownDataKeys knownEntry(String constantName, Collection<String> usedKeys,
+            Collection<String> residentKeys, boolean nested) {
+        Set<String> used = Set.copyOf(usedKeys);
+        Set<String> resident = Set.copyOf(residentKeys);
+        if (resident.isEmpty()) {
+            return new KnownDataKeys(constantName, used, resident, nested, used);
+        }
+        Set<String> merged = new LinkedHashSet<>(used);
+        merged.addAll(resident);
+        return new KnownDataKeys(constantName, used, resident, nested, Set.copyOf(merged));
+    }
+
+    private static Map<String, KnownDataKeys> knownDataKeysTable() {
+        Map<String, KnownDataKeys> table = new LinkedHashMap<>();
+        registerKnownKeys(table, FINGER_SPI_API, "FINGER_SPI_API", "b_3", "b_4");
+        registerKnownKeys(table, BUVID_API, "BUVID_API", "buvid");
+        registerKnownKeys(table, QR_CODE_GENERATE_API, "QR_CODE_GENERATE_API", "url", "qrcode_key");
+        registerKnownKeys(table, QR_CODE_POLL_API, "QR_CODE_POLL_API", "code", "url", "refresh_token");
+        registerKnownKeys(table, MY_INFO_API, "MY_INFO_API", "profile");
+        registerKnownKeys(table, COOKIE_INFO_API, "COOKIE_INFO_API", "refresh", "timestamp");
+        registerKnownKeys(table, COOKIE_REFRESH_API, "COOKIE_REFRESH_API", "refresh_token");
+        registerKnownKeys(table, CONFIRM_REFRESH_API, "CONFIRM_REFRESH_API");
+        registerKnownKeys(table, MASTER_INFO_API, "MASTER_INFO_API", "info", "room_id", "follower_num");
+        registerKnownKeys(table, FANS_MEDAL_RANK_API, "FANS_MEDAL_RANK_API", "num");
+        registerKnownKeys(table, GUARD_TAB_API, "GUARD_TAB_API", "info", "top3", "list");
+        registerKnownKeys(table, GUARD_LIST_API, "GUARD_TAB_API", "info");
+        registerKnownKeys(table, ROOM_INFO_API, "ROOM_INFO_API",
+                "uid", "live_status", "live_time", "title", "user_cover");
+        registerNestedKnownKeys(table, ROOM_STATUS_API, "ROOM_STATUS_API",
+                "live_status", "live_time", "title", "cover_from_user");
+        registerKnownKeys(table, DANMU_INFO_API, "DANMU_INFO_API", "host_list", "token");
+        registerKnownKeys(table, DANMU_HISTORY_API, "DANMU_HISTORY_API", "room");
+        registerKnownKeys(table, GIFT_CONFIG_API, "GIFT_CONFIG_API",
+                "global_config", "list", "guard_resources");
+        registerKnownKeys(table, DYNAMIC_FEED_API, "DYNAMIC_FEED_API", "items");
+        registerKnownKeys(table, FOLLOWINGS_API, "FOLLOWINGS_API", "list");
+        registerKnownKeys(table, BilibiliTicketUtil.TICKET_API, "TICKET_API",
+                "ticket", "created_at", "ttl", "nav");
+        registerKnownKeys(table, NAV_API, "NAV_API", "wbi_img");
+        registerKnownKeys(table, TV_QR_CODE_GENERATE_API, "TV_QR_CODE_GENERATE_API", "url", "auth_code");
+        registerKnownKeys(table, TV_QR_CODE_POLL_API, "TV_QR_CODE_POLL_API",
+                "cookie_info", "token_info", "access_token", "refresh_token", "expires_in");
+        registerKnownKeys(table, OAUTH2_REFRESH_TOKEN_API, "OAUTH2_REFRESH_TOKEN_API",
+                "cookie_info", "token_info", "access_token", "refresh_token", "expires_in");
+        // 观看心跳解析处不取 data 字段；空集且整路不记，避免按拍把常驻键记成未知
+        registerKnownKeys(table, LIVE_HEARTBEAT_API, "LIVE_HEARTBEAT_API");
+        // japan 取表 2026-09-08：真应答常驻、解析码不取。未取到样本的端点不登记。
+        registerResidentKeys(table, DANMU_INFO_API,
+                "business_id", "group", "max_delay", "refresh_rate", "refresh_row_factor");
+        registerResidentKeys(table, DYNAMIC_FEED_API,
+                "has_more", "offset", "update_baseline", "update_num");
+        registerResidentKeys(table, FANS_MEDAL_RANK_API, "item", "medal_status");
+        registerResidentKeys(table, GUARD_TAB_API,
+                "ab", "btn_type", "exist_benefit", "extop", "guard_leader", "guard_warn",
+                "main_text", "my_follow_info", "prompt_text", "remind_benefit", "remind_msg",
+                "sub_text", "typ");
+        registerResidentKeys(table, MASTER_INFO_API,
+                "exp", "glory_count", "link_group_num", "medal_name", "pendant", "room_news");
+        registerResidentKeys(table, MY_INFO_API, "coins", "following", "level_exp");
+        registerResidentKeys(table, ROOM_STATUS_API,
+                "area", "area_name", "area_v2_id", "area_v2_name", "area_v2_parent_id",
+                "area_v2_parent_name", "broadcast_type", "face", "hidden_till", "keyframe",
+                "lock_till", "online", "room_id", "short_id", "tag_name", "tags", "uid", "uname");
+        registerResidentKeys(table, BilibiliTicketUtil.TICKET_API, "context");
+        return Map.copyOf(table);
+    }
+
+    private static void registerKnownKeys(Map<String, KnownDataKeys> table, String endpointUrl,
+            String constantName, String... keys) {
+        putKnownKeys(table, endpointUrl, constantName, false, keys);
+    }
+
+    private static void registerNestedKnownKeys(Map<String, KnownDataKeys> table, String endpointUrl,
+            String constantName, String... keys) {
+        putKnownKeys(table, endpointUrl, constantName, true, keys);
+    }
+
+    private static void putKnownKeys(Map<String, KnownDataKeys> table, String endpointUrl,
+            String constantName, boolean nested, String... keys) {
+        String path = shortUrl(endpointUrl);
+        KnownDataKeys existing = table.get(path);
+        if (existing == null) {
+            table.put(path, knownEntry(constantName, List.of(keys), List.of(), nested));
+            return;
+        }
+        Set<String> mergedUsed = new LinkedHashSet<>(existing.usedKeys());
+        mergedUsed.addAll(List.of(keys));
+        table.put(path, knownEntry(existing.constantName(), mergedUsed, existing.residentKeys(),
+                existing.nested() || nested));
+    }
+
+    /** japan 取表 2026-09-08：真应答里一直都有、解析码并不读取的顶层键。 */
+    private static void registerResidentKeys(Map<String, KnownDataKeys> table, String endpointUrl,
+            String... keys) {
+        String path = shortUrl(endpointUrl);
+        KnownDataKeys existing = table.get(path);
+        if (existing == null) {
+            throw new IllegalStateException("resident keys need a used-keys row first: " + path);
+        }
+        Set<String> resident = new LinkedHashSet<>(existing.residentKeys());
+        resident.addAll(List.of(keys));
+        table.put(path, knownEntry(existing.constantName(), existing.usedKeys(), resident, existing.nested()));
+    }
+
+    /**
+     * 「账号未登录」的业务错误代码
+     * <p>
+     * 需要登录态的接口在凭据失效时统一返回该代码，据此可把「确实掉登录」与网络故障区分开。
+     */
+    public static final int CODE_NOT_LOGGED_IN = -101;
+
+    /**
+     * 「请求被风控拦截」的业务错误代码
+     */
+    private static final int CODE_RISK_CONTROL = -352;
+
+    /**
+     * 收到 -352 后允许重算签名的最小密钥年龄，单位：秒
+     * <p>
+     * 比这更新的密钥重算出来多半还是同一份，重试没有意义，只是白白多打一次请求。
+     */
+    private static final long MIN_SIGN_AGE_BEFORE_RETRY = 900;
+
+    private final HttpUtil http;
+
+    private final NovaBilibiliProperties properties;
+
+    /**
+     * 风控指标记录。这些信号不报错也不进日志，不主动记就等于没有发现机制
+     */
+    private final BilibiliRiskMetrics riskMetrics;
+
+    /**
+     * 当前使用的登录凭据
+     */
+    @Getter
+    @Setter
+    private Cookies cookies = new Cookies();
+
+    /**
+     * 设备标识
+     */
+    @Getter
+    private String buvid3;
+
+    /**
+     * 设备标识（新版），与 buvid3 由同一个指纹接口一并下发
+     */
+    @Getter
+    private String buvid4;
+
+    /**
+     * 会话级设备标识，网页端由前端本地生成
+     */
+    private String uuid;
+
+    /**
+     * 首次访问时间戳（秒），网页端随设备标识一同写入 Cookie
+     */
+    private String bNut;
+
+    /**
+     * 接口签名凭据，按需刷新
+     */
+    private volatile WebSign webSign;
+
+    /**
+     * 是否已有线程正在因风控重算签名。同一时刻只放一个，避免 -352 一来就人人都去重算
+     */
+    private final AtomicBoolean signRefreshing = new AtomicBoolean();
+
+    @Autowired
+    public BilibiliApiUtil(HttpUtil http, NovaBilibiliProperties properties, BilibiliRiskMetrics riskMetrics) {
+        this.http = http;
+        this.properties = properties;
+        this.riskMetrics = riskMetrics;
+    }
+
+    /**
+     * 初始化设备标识与签名凭据
+     */
+    public void init() {
+        try {
+            generateDeviceIds();
+            this.buvid3 = fetchBuvid3();
+            this.webSign = generateWebSign();
+            log.info("哔哩哔哩接口凭据初始化完成");
+        } catch (Exception e) {
+            log.error("哔哩哔哩接口凭据初始化失败, 部分接口可能无法正常调用", e);
+        }
+    }
+
+    /**
+     * 构造调用哔哩哔哩接口所需的请求头
+     * @return 请求头
+     */
+    public Map<String, String> getBilibiliHeaders() {
+        Map<String, String> headers = new HashMap<>();
+        headers.put("User-Agent", properties.getNetwork().getUserAgent());
+        headers.put("Referer", MAIN_SITE);
+        headers.put("Origin", MAIN_SITE);
+
+        String cookie = buildCookieHeader();
+        if (StringUtil.isNotBlank(cookie)) {
+            headers.put("Cookie", cookie);
+        }
+
+        return headers;
+    }
+
+    /**
+     * 拼接 Cookie 请求头
+     * @return Cookie 请求头，无可用凭据时返回空字符串
+     */
+    private String buildCookieHeader() {
+        StringJoiner joiner = new StringJoiner("; ");
+
+        if (StringUtil.isNotBlank(cookies.getSessData())) {
+            joiner.add("SESSDATA=" + cookies.getSessData());
+        }
+        if (StringUtil.isNotBlank(cookies.getBiliJct())) {
+            joiner.add("bili_jct=" + cookies.getBiliJct());
+        }
+
+        String effectiveBuvid = StringUtil.isNotBlank(cookies.getBuvid3()) ? cookies.getBuvid3() : buvid3;
+        if (StringUtil.isNotBlank(effectiveBuvid)) {
+            joiner.add("buvid3=" + effectiveBuvid);
+        }
+
+        // 网页端还会带上这几项设备标识，补齐它们是为了让请求更接近真实浏览器。
+        // 注意：这并不能让扫码登录拿到持久化刷新口令，那件事已实测排除
+        if (StringUtil.isNotBlank(buvid4)) {
+            joiner.add("buvid4=" + buvid4);
+        }
+        if (StringUtil.isNotBlank(uuid)) {
+            joiner.add("_uuid=" + uuid);
+        }
+        if (StringUtil.isNotBlank(bNut)) {
+            joiner.add("b_nut=" + bNut);
+        }
+
+        WebSign sign = webSign;
+        if (sign != null && StringUtil.isNotBlank(sign.getTicket())) {
+            joiner.add("bili_ticket=" + sign.getTicket());
+            joiner.add("bili_ticket_expires=" + sign.getTicketExpires());
+        }
+
+        return joiner.toString();
+    }
+
+    /**
+     * 请求哔哩哔哩接口
+     * @param url 接口地址
+     * @return 响应中的 data 字段
+     */
+    public JSONObject requestBilibiliApi(String url) {
+        return requestBilibiliApi(url, null);
+    }
+
+    /**
+     * 请求哔哩哔哩接口，附带 WBI 签名参数
+     * @param url 接口地址
+     * @param params 查询参数，非空时会附加 WBI 签名
+     * @return 响应中的 data 字段
+     */
+    public JSONObject requestBilibiliApi(String url, Map<String, Object> params) {
+        return requestBilibiliApi(url, "GET", getBilibiliHeaders(), params);
+    }
+
+    /**
+     * 请求哔哩哔哩接口
+     * @param url 接口地址
+     * @param method 请求方法，支持 GET 与 POST
+     * @param headers 请求头
+     * @param params 参数，GET 时作为附加 WBI 签名的查询参数，POST 时作为表单参数
+     * @return 响应中的 data 字段，响应无 data 时返回空 JSON 对象
+     */
+    public JSONObject requestBilibiliApi(String url, String method, Map<String, String> headers, Map<String, Object> params) {
+        try {
+            return requestWithRetry(url, method, headers, params);
+        } catch (ResponseCodeException e) {
+            // 只给一次自救机会：重算签名后再打一遍，还失败就抛出去。
+            // 刻意不写成循环——目的是「给一次机会」，不是「重试到成功」，
+            // 后者会在平台限流时把请求密度推得更高，正好是限流想拦的行为
+            if (e.getCode() == CODE_RISK_CONTROL && refreshSignForRiskControl()) {
+                log.info("接口 {} 返回 -352, 已重算签名并重试一次", shortUrl(url));
+                return requestWithRetry(url, method, headers, params);
+            }
+            throw e;
+        }
+    }
+
+    /**
+     * 因风控重算签名
+     * <p>
+     * 两道闸：密钥太新不重算（重算也是同一份），已有线程在重算则不重复发起。
+     * @return 是否真的重算了
+     */
+    private boolean refreshSignForRiskControl() {
+        if (!signOldEnoughToRetry(webSign, Instant.now())) {
+            return false;
+        }
+
+        if (!signRefreshing.compareAndSet(false, true)) {
+            return false;
+        }
+
+        try {
+            WebSign fresh = generateWebSign();
+            synchronized (this) {
+                this.webSign = fresh;
+            }
+            return true;
+        } catch (Exception e) {
+            log.warn("因 -352 重算签名失败: {}", e.getMessage());
+            return false;
+        } finally {
+            signRefreshing.set(false);
+        }
+    }
+
+    /**
+     * 判断当前签名是否旧到值得为风控重算一次
+     * <p>
+     * 抽成静态方法是为了能直接测这条规则本身——它决定了「-352 时到底要不要多打一次请求」。
+     * @param sign 当前签名，可为空
+     * @param now 当前时刻
+     * @return 是否值得重算
+     */
+    static boolean signOldEnoughToRetry(WebSign sign, Instant now) {
+        if (sign == null || sign.getGeneratedAt() == null) {
+            return false;
+        }
+        return Duration.between(sign.getGeneratedAt(), now).getSeconds() >= MIN_SIGN_AGE_BEFORE_RETRY;
+    }
+
+    /**
+     * 按配置的次数重试执行请求
+     */
+    private JSONObject requestWithRetry(String url, String method, Map<String, String> headers, Map<String, Object> params) {
+        int maxTimes = Math.max(1, properties.getNetwork().getApiRetryMaxTimes());
+        RuntimeException last = null;
+
+        for (int attempt = 1; attempt <= maxTimes; attempt++) {
+            try {
+                JSONObject response = doRequest(url, method, headers, params);
+                return extractData(response, url);
+            } catch (ResponseCodeException e) {
+                // 业务错误代码通常重试也不会变化，直接抛出交由调用方判断
+                throw e;
+            } catch (RuntimeException e) {
+                last = e;
+                log.debug("请求 {} 第 {} 次失败: {}", url, attempt, e.getMessage());
+
+                if (attempt < maxTimes) {
+                    sleep(properties.getNetwork().getApiRetryInterval());
+                }
+            }
+        }
+
+        throw new RequestFailedException("请求 " + url + " 失败, 已重试 " + maxTimes + " 次", last);
+    }
+
+    /**
+     * 执行一次请求
+     * @param url 接口地址
+     * @param method 请求方法
+     * @param headers 请求头
+     * @param params 参数
+     * @return 完整响应
+     */
+    private JSONObject doRequest(String url, String method, Map<String, String> headers, Map<String, Object> params) {
+        try {
+            if ("POST".equalsIgnoreCase(method)) {
+                return http.postJsonAsForm(url, headers, params == null ? Map.of() : params);
+            }
+
+            String target = url;
+            if (params != null && !params.isEmpty()) {
+                WebSign sign = requireWebSign();
+                target = url + BilibiliWbiUtil.sign(params, sign.getImgKey(), sign.getSubKey());
+            }
+
+            return http.getJson(target, headers);
+        } catch (Exception e) {
+            recordHttpStatus(url, e);
+            throw new NetworkException("请求 " + url + " 时发生网络异常", e);
+        }
+    }
+
+    /**
+     * 校验响应错误代码并取出 data 字段
+     * @param response 完整响应
+     * @param url 请求地址，只在应答缺 data 时按端点记账用
+     * @return data 字段，应答缺 data 时为空对象（与旧行为一致）
+     */
+    JSONObject extractData(JSONObject response, String url) {
+        if (response == null) {
+            throw new NetworkException("接口未返回任何内容");
+        }
+
+        recordChallenge(response);
+
+        Integer code = response.getInteger("code");
+        if (code != null && code != 0) {
+            recordBusinessCode(code, response.getString("message"));
+            throw new ResponseCodeException(code, Optional.ofNullable(response.getString("message")).orElse("未知错误"));
+        }
+
+        JSONObject data = response.getJSONObject("data");
+        if (data == null) {
+            // code=0 却没有 data：原先一声不响地返回空对象，不记就等于没有发现机制。
+            // 返回值保持不变，只补一笔账
+            noteDataMissing(url, "data", riskMetrics, dataMissingEndpoints);
+            return new JSONObject();
+        }
+        noteUnknownDataKeys(url, data);
+        return data;
+    }
+
+    /**
+     * 获取图片
+     * @param url 图片地址
+     * @return 图片，获取失败时返回空
+     */
+    public Optional<BufferedImage> getBilibiliImage(String url) {
+        return getBilibiliImage(url, getBilibiliHeaders());
+    }
+
+    /**
+     * 获取图片
+     * @param url 图片地址
+     * @param headers 请求头
+     * @return 图片，获取失败时返回空
+     */
+    public Optional<BufferedImage> getBilibiliImage(String url, Map<String, String> headers) {
+        if (StringUtil.isBlank(url)) {
+            return Optional.empty();
+        }
+
+        try {
+            return http.getBufferedImage(url, headers);
+        } catch (Exception e) {
+            log.debug("获取图片 {} 失败: {}", url, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * 异步获取图片
+     * @param url 图片地址
+     * @return 图片
+     */
+    public CompletableFuture<Optional<BufferedImage>> asyncGetBilibiliImage(String url) {
+        return asyncGetBilibiliImage(url, getBilibiliHeaders());
+    }
+
+    /**
+     * 异步获取图片
+     * @param url 图片地址
+     * @param headers 请求头
+     * @return 图片
+     */
+    public CompletableFuture<Optional<BufferedImage>> asyncGetBilibiliImage(String url, Map<String, String> headers) {
+        if (StringUtil.isBlank(url)) {
+            return CompletableFuture.completedFuture(Optional.empty());
+        }
+
+        return http.asyncGetBufferedImage(url, headers)
+                .exceptionally(e -> {
+                    log.debug("异步获取图片 {} 失败: {}", url, e.getMessage());
+                    return Optional.empty();
+                });
+    }
+
+    /**
+     * 批量异步获取图片，返回顺序与传入顺序一致
+     * @param urls 图片地址列表
+     * @return 图片列表
+     */
+    public CompletableFuture<List<Optional<BufferedImage>>> asyncGetBilibiliImages(List<String> urls) {
+        return asyncGetBilibiliImages(urls, getBilibiliHeaders());
+    }
+
+    /**
+     * 批量异步获取图片，返回顺序与传入顺序一致
+     * @param urls 图片地址列表
+     * @param headers 请求头
+     * @return 图片列表
+     */
+    public CompletableFuture<List<Optional<BufferedImage>>> asyncGetBilibiliImages(List<String> urls, Map<String, String> headers) {
+        if (urls == null || urls.isEmpty()) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+
+        List<CompletableFuture<Optional<BufferedImage>>> futures = urls.stream()
+                .map(url -> asyncGetBilibiliImage(url, headers))
+                .toList();
+
+        return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                .thenApply(ignored -> futures.stream().map(CompletableFuture::join).toList());
+    }
+
+    /**
+     * 获取当前可用的签名凭据，已失效时重新获取
+     * @return 签名凭据
+     */
+    private WebSign requireWebSign() {
+        WebSign current = webSign;
+        if (current != null && current.isValid()) {
+            return current;
+        }
+
+        synchronized (this) {
+            if (webSign == null || !webSign.isValid()) {
+                webSign = generateWebSign();
+            }
+            return webSign;
+        }
+    }
+
+    /**
+     * 获取接口签名所需的 bili_ticket 与 WBI 密钥
+     * @return 签名凭据
+     */
+    public WebSign generateWebSign() {
+        WebSign sign = new WebSign();
+        sign.setGeneratedAt(Instant.now());
+
+        Map<String, String> headers = new HashMap<>();
+        headers.put("User-Agent", properties.getNetwork().getUserAgent());
+        headers.put("Referer", MAIN_SITE);
+
+        try {
+            String ticketUrl = BilibiliTicketUtil.buildTicketUrl(cookies.getBiliJct());
+            JSONObject ticket = extractData(http.postJsonWithHeaders(ticketUrl, headers), ticketUrl);
+            sign.setTicket(ticket.getString("ticket"));
+            sign.setTicketExpires(ticket.getInteger("created_at") == null || ticket.getInteger("ttl") == null
+                    ? (int) (Instant.now().getEpochSecond() + 259200)
+                    : ticket.getInteger("created_at") + ticket.getInteger("ttl"));
+
+            // WBI 密钥随 bili_ticket 接口一并返回，缺失时再单独请求导航接口
+            JSONObject nav = ticket.getJSONObject("nav");
+            if (nav != null) {
+                sign.setImgKey(BilibiliWbiUtil.extractKey(nav.getString("img")));
+                sign.setSubKey(BilibiliWbiUtil.extractKey(nav.getString("sub")));
+            }
+        } catch (Exception e) {
+            log.warn("获取 bili_ticket 失败, 将仅使用 WBI 密钥: {}", e.getMessage());
+        }
+
+        if (StringUtil.isBlank(sign.getImgKey()) || StringUtil.isBlank(sign.getSubKey())) {
+            try {
+                JSONObject navData = http.getJson(NAV_API, headers).getJSONObject("data");
+                noteUnknownTopKeys(NAV_API, navData);
+                JSONObject wbi = navData.getJSONObject("wbi_img");
+                sign.setImgKey(BilibiliWbiUtil.extractKey(wbi.getString("img_url")));
+                sign.setSubKey(BilibiliWbiUtil.extractKey(wbi.getString("sub_url")));
+            } catch (Exception e) {
+                log.error("获取 WBI 密钥失败, 依赖 WBI 签名的接口将无法调用", e);
+            }
+        }
+
+        return sign;
+    }
+
+    /**
+     * 获取设备标识
+     * <p>
+     * 优先用网页端同款的指纹接口，它一次返回 buvid3 与 buvid4 两个标识；失败时退回旧接口，
+     * 旧接口只有 buvid3。改用前者是为了让请求更接近真实网页端，减少被风控判定的机会。
+     * <p>
+     * 注：曾以为补齐设备标识能让扫码登录拿到持久化刷新口令，<b>实测无效</b>，
+     * 详见 {@link #getQrCodeLoginStatus} 的说明。保留本改动只是因为它本身更贴近网页端行为。
+     * @return 设备标识
+     */
+    private String fetchBuvid3() {
+        Map<String, String> headers = new HashMap<>();
+        headers.put("User-Agent", properties.getNetwork().getUserAgent());
+        headers.put("Referer", MAIN_SITE);
+
+        try {
+            JSONObject finger = extractData(http.getJson(FINGER_SPI_API, headers), FINGER_SPI_API);
+            String b3 = finger.getString("b_3");
+            String b4 = finger.getString("b_4");
+            if (StringUtil.isNotBlank(b3)) {
+                this.buvid4 = b4;
+                return b3;
+            }
+        } catch (Exception e) {
+            log.debug("指纹接口获取设备标识失败, 退回旧接口: {}", e.getMessage());
+        }
+
+        return extractData(http.getJson(BUVID_API, headers), BUVID_API).getString("buvid");
+    }
+
+    /**
+     * 生成会话级的设备补充标识
+     * <p>
+     * 网页端由前端在本地生成后写入 Cookie，服务端不校验其内容，只看有没有。
+     * 与 buvid 不同，这些值每个会话重新生成即可，不需要持久化。
+     */
+    private void generateDeviceIds() {
+        this.uuid = UUID.randomUUID().toString().toUpperCase(Locale.ROOT)
+                + String.format("%05d", System.currentTimeMillis() % 100000) + "infoc";
+        this.bNut = String.valueOf(System.currentTimeMillis() / 1000);
+    }
+
+    /**
+     * 获取扫码登录所需的二维码内容与轮询令牌
+     * @return 扫码登录信息
+     */
+    public QrCodeLogin getQrCodeLoginInfo() {
+        JSONObject data = requestBilibiliApi(QR_CODE_GENERATE_API);
+        return new QrCodeLogin(data.getString("url"), data.getString("qrcode_key"));
+    }
+
+    /**
+     * 获取 TV 端扫码登录所需的二维码内容与轮询令牌
+     * @return 扫码登录信息
+     */
+    public QrCodeLogin getTvQrCodeLoginInfo() {
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("local_id", 0);
+        params.put("ts", System.currentTimeMillis() / 1000);
+
+        JSONObject body = JSON.parseObject(http.postAsForm(TV_QR_CODE_GENERATE_API,
+                getBilibiliHeaders(), BilibiliAppSignUtil.signWithTvKey(params)));
+
+        Integer code = body == null ? null : body.getInteger("code");
+        if (code == null || code != 0) {
+            throw new ResponseCodeException(code == null ? -1 : code,
+                    body == null ? "响应为空" : body.getString("message"));
+        }
+
+        JSONObject data = body.getJSONObject("data");
+        noteUnknownTopKeys(TV_QR_CODE_GENERATE_API, data);
+        return new QrCodeLogin(data.getString("url"), data.getString("auth_code"));
+    }
+
+    /**
+     * 轮询 TV 端扫码登录状态
+     * <p>
+     * 登录成功时会直接将取得的凭据写入当前实例。与 Web 端的区别在于：凭据放在响应体的
+     * cookie_info 中（无需解析 Set-Cookie），且会一并返回可续期的 access_token 与 refresh_token。
+     * @param authCode 轮询令牌
+     * @return 是否已登录成功
+     */
+    public boolean getTvQrCodeLoginStatus(String authCode) {
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("auth_code", authCode);
+        params.put("local_id", 0);
+        params.put("ts", System.currentTimeMillis() / 1000);
+
+        JSONObject body;
+        try {
+            body = JSON.parseObject(http.postAsForm(TV_QR_CODE_POLL_API,
+                    getBilibiliHeaders(), BilibiliAppSignUtil.signWithTvKey(params)));
+        } catch (Exception e) {
+            log.debug("轮询 TV 端扫码登录状态失败: {}", e.getMessage());
+            return false;
+        }
+
+        Integer code = body == null ? null : body.getInteger("code");
+        JSONObject data = body == null ? null : body.getJSONObject("data");
+        noteUnknownTopKeys(TV_QR_CODE_POLL_API, data);
+        if (code == null || code != 0) {
+            // 86038 二维码失效、86039 尚未确认、86090 已扫码待确认
+            return false;
+        }
+
+        if (data == null) {
+            return false;
+        }
+
+        Cookies logged = extractTvLoginCookies(data, TV_QR_CODE_POLL_API);
+        if (logged == null) {
+            // 只列字段名，绝不输出取值：这里面就有等同于账号密码的 SESSDATA
+            log.error("TV 端扫码登录成功但未能解析出登录凭据; 响应字段: {}", data.keySet());
+            return false;
+        }
+
+        if (StringUtil.isBlank(logged.getBuvid3())) {
+            logged.setBuvid3(buvid3);
+        }
+
+        this.cookies = logged;
+        return true;
+    }
+
+    /**
+     * 从 TV 端登录响应中取出登录凭据与续期令牌
+     * @param data 响应中的 data 对象
+     * @param endpoint 端点常量：轮询与续期共用此法，缺键记数要记到真实来路
+     * @return 登录凭据，缺少必要字段时为 null
+     */
+    private Cookies extractTvLoginCookies(JSONObject data, String endpoint) {
+        JSONObject cookieInfo = data.getJSONObject("cookie_info");
+        JSONArray items = cookieInfo == null ? null : cookieInfo.getJSONArray("cookies");
+        if (items == null) {
+            noteDataMissing(endpoint, cookieInfo == null ? "cookie_info" : "cookie_info.cookies",
+                    riskMetrics, dataMissingEndpoints);
+            return null;
+        }
+
+        Cookies logged = new Cookies();
+        for (int i = 0; i < items.size(); i++) {
+            JSONObject item = items.getJSONObject(i);
+            if (item == null) {
+                continue;
+            }
+
+            String name = item.getString("name");
+            String value = item.getString("value");
+            if (name == null || value == null) {
+                continue;
+            }
+
+            switch (name) {
+                case "SESSDATA" -> logged.setSessData(value);
+                case "bili_jct" -> logged.setBiliJct(value);
+                case "buvid3" -> logged.setBuvid3(value);
+                default -> { }
+            }
+        }
+
+        if (StringUtil.isBlank(logged.getSessData()) || StringUtil.isBlank(logged.getBiliJct())) {
+            noteDataMissing(endpoint, StringUtil.isBlank(logged.getSessData()) ? "SESSDATA" : "bili_jct",
+                    riskMetrics, dataMissingEndpoints);
+            return null;
+        }
+
+        // 登录响应把令牌放在 data 顶层，续期响应放在 token_info 内，两处都要认
+        JSONObject tokenInfo = data.getJSONObject("token_info");
+        logged.setAccessToken(firstNotBlank(data.getString("access_token"),
+                tokenInfo == null ? null : tokenInfo.getString("access_token")));
+        logged.setRefreshToken(firstNotBlank(data.getString("refresh_token"),
+                tokenInfo == null ? null : tokenInfo.getString("refresh_token")));
+
+        Long expiresIn = data.getLong("expires_in");
+        if (expiresIn == null && tokenInfo != null) {
+            expiresIn = tokenInfo.getLong("expires_in");
+        }
+        if (expiresIn != null) {
+            logged.setAccessTokenExpiresAt(System.currentTimeMillis() + expiresIn * 1000);
+        }
+
+        return logged;
+    }
+
+    /**
+     * 取第一个非空白的字符串
+     */
+    private String firstNotBlank(String first, String second) {
+        return StringUtil.isNotBlank(first) ? first : second;
+    }
+
+    /**
+     * 经 oauth2 接口续期 TV 端登录取得的凭据
+     * <p>
+     * 一次性换回全新的 Cookie、access_token 与 refresh_token，旧令牌随即失效，
+     * 因此调用方必须在成功后立刻持久化新凭据。
+     * @return 续期后的凭据
+     */
+    public Cookies refreshAppToken() {
+        Cookies current = this.cookies;
+        if (current == null || !current.isAppRefreshable()) {
+            throw new IllegalStateException("当前凭据不具备 oauth2 续期条件");
+        }
+
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("access_key", current.getAccessToken());
+        params.put("refresh_token", current.getRefreshToken());
+        params.put("ts", System.currentTimeMillis() / 1000);
+
+        JSONObject body = JSON.parseObject(http.postAsForm(OAUTH2_REFRESH_TOKEN_API,
+                getBilibiliHeaders(), BilibiliAppSignUtil.signWithTvKey(params)));
+
+        Integer code = body == null ? null : body.getInteger("code");
+        if (code == null || code != 0) {
+            throw new ResponseCodeException(code == null ? -1 : code,
+                    body == null ? "响应为空" : body.getString("message"));
+        }
+
+        JSONObject data = body.getJSONObject("data");
+        noteUnknownTopKeys(OAUTH2_REFRESH_TOKEN_API, data);
+        Cookies refreshed = data == null ? null : extractTvLoginCookies(data, OAUTH2_REFRESH_TOKEN_API);
+        if (refreshed == null) {
+            throw new IllegalStateException("续期响应中未能解析出登录凭据, 响应字段: "
+                    + (data == null ? "无 data" : data.keySet().toString()));
+        }
+
+        if (StringUtil.isBlank(refreshed.getBuvid3())) {
+            refreshed.setBuvid3(current.getBuvid3());
+        }
+
+        return refreshed;
+    }
+
+    /**
+     * 轮询扫码登录状态
+     * <p>
+     * 登录成功时会直接将取得的凭据写入当前实例。
+     * @param key 轮询令牌
+     * @return 是否已登录成功
+     */
+    public boolean getQrCodeLoginStatus(String key) {
+        Map<String, String> headers = getBilibiliHeaders();
+
+        ResponseEntity<String> response;
+        try {
+            response = http.getForEntity(QR_CODE_POLL_API + URLEncoder.encode(key, StandardCharsets.UTF_8), headers);
+        } catch (Exception e) {
+            log.debug("轮询扫码登录状态失败: {}", e.getMessage());
+            return false;
+        }
+
+        JSONObject body = response.getBody() == null ? null : JSON.parseObject(response.getBody());
+        JSONObject data = body == null ? null : body.getJSONObject("data");
+        noteUnknownTopKeys(QR_CODE_POLL_API, data);
+        if (data == null) {
+            return false;
+        }
+
+        Integer code = data.getInteger("code");
+        if (code == null || code != 0) {
+            // 86101 未扫码、86090 已扫码待确认、86038 二维码失效
+            return false;
+        }
+
+        Cookies logged = extractLoginCookies(response, data);
+        if (logged == null) {
+            // 只列字段名与参数名，绝不输出取值：这里面就有等同于账号密码的 SESSDATA。
+            // 早先这里只说「未能解析出登录凭据」，等于把排查成本全推给了使用者
+            log.error("扫码登录成功但未能解析出登录凭据; 响应字段: {}; 响应头 Set-Cookie 项: {}; 跳转地址参数: {}",
+                    data.keySet(), cookieNames(response), describeQuery(data.getString("url")));
+            return false;
+        }
+
+        if (StringUtil.isBlank(logged.getBuvid3())) {
+            logged.setBuvid3(buvid3);
+        }
+
+        // 持久化刷新口令只在登录成功这一刻返回一次，错过就只能重新扫码，因此必须就地取走。
+        //
+        // 已知限制：实测扫码登录时服务端会把该字段返回为空串（字段存在、值为空），
+        // 而同一账号在浏览器里登录则拿得到（localStorage.ac_time_value 有值），
+        // 说明机制本身是活的，只是走扫码这条路拿不到。已实测排除的猜想：
+        //   1. 轮询未带 source=main-fe-header —— 补上后仍为空串
+        //   2. 设备标识不全（缺 buvid4/_uuid/b_nut）、User-Agent 过旧 —— 补齐后仍为空串
+        // 后果是 Cookie 自动续期会一直静默跳过，凭据到期后只能重新扫码；
+        // 该状态已由登录健康探针展示出来，不会悄无声息。
+        logged.setRefreshToken(data.getString("refresh_token"));
+        if (StringUtil.isBlank(logged.getRefreshToken())) {
+            // 附上响应结构：只说字段类型与长度，不输出任何取值。
+            // 「字段不存在」与「字段存在但为空」的排查方向完全不同，笼统一句话等于没说
+            log.warn("登录响应中没有持久化刷新口令, Cookie 自动续期将不可用; 响应结构: {}", describeJson(data));
+        }
+
+        this.cookies = logged;
+
+        return true;
+    }
+
+    /**
+     * 从扫码登录的轮询响应中取出登录凭据
+     * <p>
+     * 服务端<b>现行</b>的做法是把凭据放在轮询响应的 Set-Cookie 响应头里，响应体中的 url 只是
+     * 一个用于跨域同步的 crossDomain 地址（参数为 ticket / gourl / first_domain），其中并没有凭据。
+     * <p>
+     * 早先的做法则是把 SESSDATA、bili_jct 直接拼在那个 url 的查询串里。本方法两条路都走：
+     * 先读响应头，读不到再退回解析 url——真实环境中已经观察到接口从后者切换到了前者，
+     * 保留兼容分支是为了不假定服务端只会朝一个方向变。
+     * @param response 轮询响应
+     * @param data 响应体中的 data 字段
+     * @return 登录凭据，两条路都取不到时返回 null
+     */
+    private Cookies extractLoginCookies(ResponseEntity<String> response, JSONObject data) {
+        Cookies fromHeaders = BilibiliCookieRefreshUtil.applySetCookies(new Cookies(),
+                response.getHeaders().get(HttpHeaders.SET_COOKIE));
+
+        if (StringUtil.isNotBlank(fromHeaders.getSessData()) && StringUtil.isNotBlank(fromHeaders.getBiliJct())) {
+            return fromHeaders;
+        }
+
+        return parseLoginUrl(data.getString("url"));
+    }
+
+    /**
+     * 描述 JSON 的结构，供排查用
+     * <p>
+     * <b>只描述字段名、类型与长度，绝不输出取值。</b>登录相关的响应里就有等同于账号密码的内容，
+     * 而排查时真正需要知道的往往只是「这个字段到底是不存在、为 null、还是空串」。
+     * @param json JSON
+     * @return 结构描述
+     */
+    private String describeJson(JSONObject json) {
+        if (json == null) {
+            return "null";
+        }
+
+        StringJoiner joiner = new StringJoiner(", ", "{", "}");
+        json.forEach((name, value) -> {
+            String described;
+            if (value == null) {
+                described = "null";
+            } else if (value instanceof String text) {
+                described = text.isEmpty() ? "空串" : "字符串(长度 " + text.length() + ")";
+            } else if (value instanceof Number) {
+                described = "数字";
+            } else {
+                described = value.getClass().getSimpleName();
+            }
+            joiner.add(name + "=" + described);
+        });
+        return joiner.toString();
+    }
+
+    /**
+     * 列出响应头中下发的 Cookie 名，供解析失败时排查
+     * <p>
+     * <b>只返回名字，绝不返回取值。</b>
+     * @param response 响应
+     * @return Cookie 名列表
+     */
+    private List<String> cookieNames(ResponseEntity<String> response) {
+        List<String> headers = response.getHeaders().get(HttpHeaders.SET_COOKIE);
+        if (headers == null) {
+            return List.of();
+        }
+
+        return headers.stream()
+                .map(header -> header.split("[=;]", 2)[0].trim())
+                .toList();
+    }
+
+    /**
+     * 描述跳转地址的结构，供解析失败时排查
+     * <p>
+     * <b>只返回参数名，绝不返回取值</b>——这些参数里就有等同于账号密码的 SESSDATA。
+     * @param url 跳转地址
+     * @return 结构描述
+     */
+    private String describeQuery(String url) {
+        if (StringUtil.isBlank(url)) {
+            return "地址为空";
+        }
+        if (!url.contains("?")) {
+            return "地址不含查询串, 长度 " + url.length();
+        }
+
+        List<String> names = new ArrayList<>();
+        for (String pair : url.substring(url.indexOf('?') + 1).split("&")) {
+            int equals = pair.indexOf('=');
+            if (equals > 0) {
+                names.add(pair.substring(0, equals));
+            }
+        }
+        return names.toString();
+    }
+
+    /**
+     * 从登录成功后返回的跳转地址中解析登录凭据
+     * @param url 跳转地址
+     * @return 登录凭据，解析失败时返回 null
+     */
+    private Cookies parseLoginUrl(String url) {
+        if (StringUtil.isBlank(url) || !url.contains("?")) {
+            // 两支分开：空 url 是应答没给该给的键；畸形 url（不含 ?）只是取不出查询串，不算缺键、不记
+            if (StringUtil.isBlank(url)) {
+                noteDataMissing(QR_CODE_POLL_API, "url", riskMetrics, dataMissingEndpoints);
+            }
+            return null;
+        }
+
+        Map<String, String> query = new HashMap<>();
+        for (String pair : url.substring(url.indexOf('?') + 1).split("&")) {
+            int equals = pair.indexOf('=');
+            if (equals > 0) {
+                query.put(pair.substring(0, equals), pair.substring(equals + 1));
+            }
+        }
+
+        String sessData = query.get("SESSDATA");
+        String biliJct = query.get("bili_jct");
+        if (StringUtil.isBlank(sessData) || StringUtil.isBlank(biliJct)) {
+            noteDataMissing(QR_CODE_POLL_API, StringUtil.isBlank(sessData) ? "SESSDATA" : "bili_jct",
+                    riskMetrics, dataMissingEndpoints);
+            return null;
+        }
+
+        return new Cookies(sessData, biliJct, buvid3);
+    }
+
+    /**
+     * 获取当前登录账号的 uid
+     * <p>
+     * 任何失败都返回 null，无法区分「确实未登录」与「网络故障」。登录态复检等需要区分二者的场景
+     * 请改用 {@link #fetchLoginUid()}：把网络抖动误判为掉登录会造成无谓的告警。
+     * @return uid，未登录或请求失败时返回 null
+     */
+    public Long getLoginUid() {
+        try {
+            return fetchLoginUid();
+        } catch (Exception e) {
+            log.debug("获取登录账号 uid 失败: {}", e.getMessage());
+            // 未登录走业务码（ResponseCodeException），不算解析失败、不记；其余异常记一笔，
+            // 否则网络故障与健康态在这句日志里永远分不开
+            if (riskMetrics != null && !(e instanceof ResponseCodeException)) {
+                riskMetrics.record(BilibiliRiskMetrics.Kind.PARSE_FAILURE,
+                        "MY_INFO_API:exception:" + e.getClass().getSimpleName());
+            }
+            return null;
+        }
+    }
+
+    /**
+     * 查询当前登录账号的 uid，不吞异常
+     * <p>
+     * 未登录时服务端返回业务错误代码 {@link #CODE_NOT_LOGGED_IN}，据此抛出
+     * {@link org.frostnova.nova.bilibili.exception.ResponseCodeException}；网络故障则抛出其他异常。
+     * 调用方可借异常类型区分这两种情况。
+     * @return uid
+     */
+    public Long fetchLoginUid() {
+        JSONObject profile = requestBilibiliApi(MY_INFO_API).getJSONObject("profile");
+        if (profile == null) {
+            throw new NetworkException("账号信息接口未返回 profile 字段");
+        }
+        return profile.getLong("mid");
+    }
+
+    /**
+     * 查询是否需要续期 Cookie
+     * <p>
+     * 服务端自 2023 年起会随敏感接口的调用逐步作废 Web 端 Cookie，官方页面靠本接口判断是否该续期。
+     * 只有该接口说需要时才应该续期：续期是一次性且不可回退的操作，主动多做没有好处。
+     * @return 续期判断结果
+     */
+    public CookieRefreshHint checkCookieRefresh() {
+        Map<String, Object> params = new LinkedHashMap<>();
+        if (StringUtil.isNotBlank(cookies.getBiliJct())) {
+            params.put("csrf", cookies.getBiliJct());
+        }
+
+        // 该接口不接受 WBI 签名参数，因此手工拼查询串而非走 requestBilibiliApi 的签名分支
+        String url = COOKIE_INFO_API + (params.isEmpty() ? ""
+                : "?csrf=" + URLEncoder.encode(cookies.getBiliJct(), StandardCharsets.UTF_8));
+
+        JSONObject data = extractData(http.getJson(url, getBilibiliHeaders()), url);
+        return new CookieRefreshHint(Boolean.TRUE.equals(data.getBoolean("refresh")),
+                data.getLongValue("timestamp"));
+    }
+
+    /**
+     * 获取实时刷新口令
+     * @param correspondPath 由服务端时间戳生成的签名
+     * @return 实时刷新口令
+     */
+    public String getRefreshCsrf(@NonNull String correspondPath) {
+        String html = http.get(CORRESPOND_PAGE + correspondPath, getBilibiliHeaders());
+        return BilibiliCookieRefreshUtil.parseRefreshCsrf(html)
+                .orElseThrow(() -> new NetworkException("correspond 页面中未找到实时刷新口令"));
+    }
+
+    /**
+     * 续期 Cookie
+     * <p>
+     * 成功后<b>新旧凭据会同时有效</b>，直到调用 {@link #confirmCookieRefresh(String)} 为止。
+     * 这个中间态是有意保留的安全余量：调用方应当先用新凭据验证确实可用，再去作废旧凭据。
+     * @param refreshCsrf 实时刷新口令
+     * @param refreshToken 当前的持久化刷新口令
+     * @return 新的凭据，其中已包含新的持久化刷新口令
+     */
+    public Cookies refreshCookies(@NonNull String refreshCsrf, @NonNull String refreshToken) {
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("csrf", cookies.getBiliJct());
+        params.put("refresh_csrf", refreshCsrf);
+        params.put("source", "main_web");
+        params.put("refresh_token", refreshToken);
+
+        ResponseEntity<String> response = http.postAsFormForEntity(COOKIE_REFRESH_API, getBilibiliHeaders(), params);
+        JSONObject data = extractData(JSON.parseObject(response.getBody()), COOKIE_REFRESH_API);
+
+        String newRefreshToken = data.getString("refresh_token");
+        if (StringUtil.isBlank(newRefreshToken)) {
+            throw new NetworkException("续期接口未返回新的持久化刷新口令");
+        }
+
+        Cookies refreshed = BilibiliCookieRefreshUtil.applySetCookies(cookies,
+                response.getHeaders().get(HttpHeaders.SET_COOKIE));
+        refreshed.setRefreshToken(newRefreshToken);
+
+        if (Objects.equals(refreshed.getSessData(), cookies.getSessData())) {
+            throw new NetworkException("续期接口未在响应头中下发新的 SESSDATA");
+        }
+
+        return refreshed;
+    }
+
+    /**
+     * 确认续期，作废旧凭据
+     * <p>
+     * 必须在切换到新凭据之后调用，且传入的是<b>旧</b>的持久化刷新口令。不调用则旧凭据会一直有效，
+     * 等于每续期一次就多留下一份可用凭据。
+     * @param oldRefreshToken 续期前的持久化刷新口令
+     */
+    public void confirmCookieRefresh(@NonNull String oldRefreshToken) {
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("csrf", cookies.getBiliJct());
+        params.put("refresh_token", oldRefreshToken);
+
+        extractData(http.postJsonAsForm(CONFIRM_REFRESH_API, getBilibiliHeaders(), params), CONFIRM_REFRESH_API);
+    }
+
+    /**
+     * 根据 uid 获取 UP 主信息
+     * @param uid uid
+     * @return UP 主信息
+     */
+    public Up getUpInfoByUid(@NonNull Long uid) {
+        JSONObject data = requestBilibiliApi(MASTER_INFO_API + uid);
+
+        JSONObject info = Optional.ofNullable(data.getJSONObject("info")).orElseGet(JSONObject::new);
+        Long roomId = Optional.ofNullable(data.getLong("room_id")).filter(id -> id != 0L).orElse(null);
+        // follower_num 与 info、room_id 同在这份响应里，顺路取走就不必为粉丝数再打一趟
+        return new Up(uid, info.getString("uname"), roomId, info.getString("face"), data.getLong("follower_num"));
+    }
+
+    /**
+     * 获取粉丝数
+     * <p>
+     * 复用主播信息接口的 {@code follower_num}，与 {@code x/relation/stat} 的
+     * {@code follower} 实测一致，不必为此多打一个接口。
+     * @param uid uid
+     * @return 粉丝数，取不到时为空
+     */
+    public Optional<Long> getFansCount(@NonNull Long uid) {
+        try {
+            return Optional.ofNullable(requestBilibiliApi(MASTER_INFO_API + uid).getLong("follower_num"));
+        } catch (Exception e) {
+            log.debug("获取 uid {} 的粉丝数失败: {}", uid, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * 获取粉丝团（粉丝勋章）人数
+     * @param uid 主播 uid
+     * @return 粉丝团人数，取不到时为空
+     */
+    public Optional<Integer> getFansMedalCount(@NonNull Long uid) {
+        try {
+            return Optional.ofNullable(requestBilibiliApi(FANS_MEDAL_RANK_API + uid).getInteger("num"));
+        } catch (Exception e) {
+            log.debug("获取 uid {} 的粉丝团人数失败: {}", uid, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * 获取大航海人数
+     * @param roomId 直播间号
+     * @param uid 主播 uid
+     * @return 大航海人数，取不到时为空
+     */
+    public Optional<Integer> getGuardCount(@NonNull Long roomId, @NonNull Long uid) {
+        try {
+            JSONObject data = requestBilibiliApi(GUARD_LIST_API + "&roomid=" + roomId + "&ruid=" + uid);
+            return Optional.ofNullable(data.getJSONObject("info")).map(info -> info.getInteger("num"));
+        } catch (Exception e) {
+            log.debug("获取直播间 {} 的大航海人数失败: {}", roomId, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * 获取大航海名单
+     * <p>
+     * 按页去翻 {@code topListNew}，把 {@code top3} 与 {@code list} 去重后一并收下。
+     * 请求失败时为空，不抛。
+     * @param roomId 直播间号
+     * @param ruid 主播 uid
+     * @return 名单；拉不到时为空
+     */
+    public Optional<List<GuardMember>> getGuardList(@NonNull Long roomId, @NonNull Long ruid) {
+        Map<Long, GuardMember> unique = new LinkedHashMap<>();
+        Integer total = null;
+        Integer totalPages = null;
+        try {
+            for (int page = 1; page <= GUARD_LIST_MAX_PAGES; page++) {
+                if (totalPages != null && page > totalPages) {
+                    break;
+                }
+                if (total != null && unique.size() >= total) {
+                    break;
+                }
+
+                JSONObject data;
+                try {
+                    data = requestBilibiliApi(GUARD_TAB_API
+                            + "?page=" + page
+                            + "&page_size=" + GUARD_LIST_PAGE_SIZE
+                            + "&roomid=" + roomId
+                            + "&ruid=" + ruid);
+                } catch (Exception e) {
+                    log.debug("获取直播间 {} 的大航海名单第 {} 页失败: {}", roomId, page, e.getMessage());
+                    if (page == 1) {
+                        return Optional.empty();
+                    }
+                    break;
+                }
+                if (data == null) {
+                    if (page == 1) {
+                        return Optional.empty();
+                    }
+                    break;
+                }
+
+                JSONObject info = data.getJSONObject("info");
+                if (info != null) {
+                    if (total == null) {
+                        total = info.getInteger("num");
+                    }
+                    if (totalPages == null) {
+                        totalPages = info.getInteger("page");
+                    }
+                }
+
+                int before = unique.size();
+                addGuardMembers(unique, data.getJSONArray("top3"), riskMetrics, dataMissingEndpoints);
+                addGuardMembers(unique, data.getJSONArray("list"), riskMetrics, dataMissingEndpoints);
+                if (unique.size() == before) {
+                    break;
+                }
+
+                JSONArray list = data.getJSONArray("list");
+                if (list == null || list.size() < GUARD_LIST_PAGE_SIZE) {
+                    break;
+                }
+            }
+        } catch (Exception e) {
+            log.debug("获取直播间 {} 的大航海名单失败: {}", roomId, e.getMessage());
+            return Optional.empty();
+        }
+
+        List<GuardMember> members = new ArrayList<>(unique.values());
+        members.sort(Comparator
+                .comparingInt((GuardMember member) -> member.level() <= 0 ? 99 : member.level())
+                .thenComparing(Comparator.comparingLong(GuardMember::score).reversed()));
+        return Optional.of(members);
+    }
+
+    private static void addGuardMembers(Map<Long, GuardMember> unique, JSONArray items,
+            BilibiliRiskMetrics metrics, ConcurrentHashMap<String, AtomicLong> ledger) {
+        if (items == null) {
+            return;
+        }
+        for (int i = 0; i < items.size(); i++) {
+            GuardMember member = parseGuardMember(items.getJSONObject(i), metrics, ledger);
+            if (member != null) {
+                unique.putIfAbsent(member.uid(), member);
+            }
+        }
+    }
+
+    private static GuardMember parseGuardMember(JSONObject item,
+            BilibiliRiskMetrics metrics, ConcurrentHashMap<String, AtomicLong> ledger) {
+        if (item == null) {
+            return null;
+        }
+
+        Long uid = null;
+        String name = null;
+        int level = 0;
+        JSONObject uinfo = item.getJSONObject("uinfo");
+        if (uinfo != null) {
+            uid = uinfo.getLong("uid");
+            JSONObject base = uinfo.getJSONObject("base");
+            if (base != null) {
+                name = base.getString("name");
+            }
+            JSONObject guard = uinfo.getJSONObject("guard");
+            if (guard != null && guard.getInteger("level") != null) {
+                level = guard.getInteger("level");
+            }
+        } else {
+            uid = item.getLong("uid");
+            name = item.getString("username");
+            if (item.getInteger("guard_level") != null) {
+                level = item.getInteger("guard_level");
+            }
+        }
+        if (uid == null) {
+            // extractData 段只记整段 data 缺失，成员级 uid 缺失此前一点痕迹不留
+            noteDataMissing(GUARD_TAB_API, "uid", metrics, ledger);
+            return null;
+        }
+        long score = item.getLong("score") == null ? 0L : item.getLong("score");
+        return new GuardMember(uid, name == null ? "" : name, level, score);
+    }
+
+    /**
+     * 根据直播间号获取 UP 主信息
+     * @param roomId 直播间号
+     * @return UP 主信息
+     */
+    public Up getUpInfoByRoomId(@NonNull Long roomId) {
+        JSONObject data = requestBilibiliApi(ROOM_INFO_API + roomId);
+
+        Long uid = data.getLong("uid");
+        if (uid == null) {
+            throw new RequestFailedException("直播间 " + roomId + " 未返回对应的 uid");
+        }
+
+        return getUpInfoByUid(uid);
+    }
+
+    /**
+     * 根据 uid 获取昵称
+     * @param uid uid
+     * @return 昵称
+     */
+    public Optional<String> getUnameByUid(@NonNull Long uid) {
+        try {
+            return Optional.ofNullable(getUpInfoByUid(uid).getUname());
+        } catch (Exception e) {
+            log.debug("获取 uid {} 的昵称失败: {}", uid, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * 根据 uid 获取直播间号
+     * @param uid uid
+     * @return 直播间号
+     */
+    public Optional<Long> getRoomIdByUid(@NonNull Long uid) {
+        try {
+            return Optional.ofNullable(getUpInfoByUid(uid).getRoomId());
+        } catch (Exception e) {
+            log.debug("获取 uid {} 的直播间号失败: {}", uid, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * 根据 uid 获取头像地址
+     * @param uid uid
+     * @return 头像地址
+     */
+    public Optional<String> getFaceByUid(@NonNull Long uid) {
+        try {
+            return Optional.ofNullable(getUpInfoByUid(uid).getFace());
+        } catch (Exception e) {
+            log.debug("获取 uid {} 的头像失败: {}", uid, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * 记录 HTTP 层的风控状态码
+     * <p>
+     * <b>按响应状态码判定，不要按日志文本 grep</b>——日志时间戳里的 {@code .412} 会大量误匹配。
+     */
+    private void recordHttpStatus(String url, Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof HttpStatusCodeException status) {
+                int code = status.getStatusCode().value();
+                if (code == 412) {
+                    riskMetrics.record(BilibiliRiskMetrics.Kind.HTTP_412, shortUrl(url));
+                }
+                return;
+            }
+        }
+    }
+
+    /**
+     * 记录风控相关的业务错误代码
+     */
+    private void recordBusinessCode(int code, String message) {
+        BilibiliRiskMetrics.Kind kind = switch (code) {
+            case -352 -> BilibiliRiskMetrics.Kind.CODE_352;
+            case -401 -> BilibiliRiskMetrics.Kind.CODE_401;
+            case -509 -> BilibiliRiskMetrics.Kind.CODE_509;
+            default -> null;
+        };
+        if (kind != null) {
+            riskMetrics.record(kind, message);
+        }
+    }
+
+    /**
+     * 记录风控质询与验证码拦截
+     * <p>
+     * 判据放在响应体而不是错误码上：质询可能伴随 -352 下发，也可能单独出现。
+     */
+    private void recordChallenge(JSONObject response) {
+        JSONObject data = response.getJSONObject("data");
+        boolean challenged = (data != null && (data.containsKey("v_voucher") || data.containsKey("geetest")))
+                || response.containsKey("v_voucher");
+        if (challenged) {
+            riskMetrics.record(BilibiliRiskMetrics.Kind.GAIA,
+                    Optional.ofNullable(response.getString("message")).filter(m -> !m.isBlank()).orElse("响应中带质询凭据"));
+        }
+    }
+
+    /**
+     * 截取 URL 的路径部分，避免把查询参数（含签名与凭据）写进健康页。
+     * 静态方法：实例态与静态记账（{@link #noteDataMissing}）共用同一把截法
+     */
+    private static String shortUrl(String url) {
+        int q = url.indexOf('?');
+        return q < 0 ? url : url.substring(0, q);
+    }
+
+    /**
+     * 缺 data 端点计数。按端点（去 query）去重的是文本样本，只在 1/10/100… 量级换一份。
+     */
+    private final ConcurrentHashMap<String, AtomicLong> dataMissingEndpoints = new ConcurrentHashMap<>();
+
+    /**
+     * 接口应答缺 data 的记账：<b>每次都计数</b>，按去掉查询参数的端点去重的只是文本样本。
+     * <p>
+     * detail 只含端点路径、计数与端点数——query 里是签名与凭据，一个字符都不能进健康页。
+     */
+    static void noteDataMissing(String url, BilibiliRiskMetrics metrics, ConcurrentHashMap<String, AtomicLong> ledger) {
+        noteDataMissing(url, "data", metrics, ledger);
+    }
+
+    /**
+     * 接口应答缺字段的记账。detail 形为「端点:键」，计数仍是发生次数。
+     * @param key 缺的顶层键；整段 data 缺失时为 {@code data}
+     */
+    static void noteDataMissing(String url, String key, BilibiliRiskMetrics metrics,
+            ConcurrentHashMap<String, AtomicLong> ledger) {
+        if (url == null || url.isBlank() || metrics == null || ledger == null) {
+            return;
+        }
+        String endpoint = shortUrl(url);
+        String name = (key == null || key.isBlank()) ? endpoint : endpoint + ":" + key;
+        long count = ledger.computeIfAbsent(name, ignored -> new AtomicLong()).incrementAndGet();
+        metrics.record(BilibiliRiskMetrics.Kind.API_DATA_MISSING, Long.toString(count).matches("10*")
+                ? name + " count=" + count + " unique=" + ledger.size()
+                : null);
+    }
+
+    /**
+     * HTTP 应答 {@code data} 顶层未知键。按「端点常量名:键名」去重，复用未知字段那一类。
+     * <p>
+     * <b>热路径</b>：字符串拼接排在「已判定有未知键」之后。已知键表命中且无未知键时
+     * 一次拼接都不做。detail 只写名，不写取值。
+     * {@code nested} 条目不在此处比对，改由解析处调用 {@link #noteUnknownTopKeys}。
+     */
+    private void noteUnknownDataKeys(String url, JSONObject data) {
+        KnownDataKeys known = lookupKnownKeys(url);
+        if (known == null || known.nested()) {
+            return;
+        }
+        noteUnknownKeys(known, data);
+    }
+
+    /**
+     * 与 {@link #noteUnknownDataKeys} 同一底：按端点常量对应的已知键集比对 {@code jsonObject}。
+     * 供不走 {@link #extractData} 的解析处、以及房间状态这种 uid 分桶的内层对象调用。
+     */
+    void noteUnknownTopKeys(String endpointConst, JSONObject jsonObject) {
+        KnownDataKeys known = lookupKnownKeys(endpointConst);
+        if (known == null) {
+            return;
+        }
+        noteUnknownKeys(known, jsonObject);
+    }
+
+    private KnownDataKeys lookupKnownKeys(String endpointConst) {
+        if (endpointConst == null || endpointConst.isBlank()) {
+            return null;
+        }
+        return KNOWN_DATA_KEYS_BY_PATH.get(shortUrl(endpointConst));
+    }
+
+    private void noteUnknownKeys(KnownDataKeys known, JSONObject data) {
+        if (data == null || riskMetrics == null) {
+            return;
+        }
+        boolean hasUnknown = false;
+        for (String key : data.keySet()) {
+            if (!known.keys().contains(key)) {
+                hasUnknown = true;
+                break;
+            }
+        }
+        if (!hasUnknown) {
+            return;
+        }
+        for (String key : data.keySet()) {
+            if (!known.keys().contains(key)) {
+                noteUnknownHttpField(known.constantName() + ":" + key);
+            }
+        }
+    }
+
+    /**
+     * HTTP 应答 data 顶层未知键名表，按「端点常量名:键名」去重。
+     */
+    private final ConcurrentHashMap<String, AtomicLong> unknownHttpFields = new ConcurrentHashMap<>();
+
+    /**
+     * 各未知 HTTP 顶层键的首次出现时刻，写入指标 detail 用。
+     */
+    private final ConcurrentHashMap<String, Instant> unknownHttpFieldFirstSeen = new ConcurrentHashMap<>();
+
+    /**
+     * 名表已满后仍碰到的新 HTTP 顶层键条数
+     */
+    private final AtomicLong unknownHttpFieldNameTableOverflow = new AtomicLong();
+
+    private static final int MAX_UNKNOWN_HTTP_FIELD_NAMES = 512;
+
+    /**
+     * 登记一个 HTTP 未知顶层键：<b>每次都计数</b>，按名去重的只是 detail 里那份文本样本。
+     * 名表满后新名只累加溢出数。
+     */
+    private void noteUnknownHttpField(String name) {
+        AtomicLong existing = unknownHttpFields.get(name);
+        if (existing == null && unknownHttpFields.size() >= MAX_UNKNOWN_HTTP_FIELD_NAMES) {
+            long overflow = unknownHttpFieldNameTableOverflow.incrementAndGet();
+            riskMetrics.record(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, isMagnitude(overflow)
+                    ? "名表溢出 count=" + overflow + " unique=" + unknownHttpFields.size()
+                    : null);
+            return;
+        }
+        long count = unknownHttpFields.computeIfAbsent(name, key -> new AtomicLong()).incrementAndGet();
+        Instant first = unknownHttpFieldFirstSeen.computeIfAbsent(name, key -> Instant.now());
+        boolean sample = isMagnitude(count);
+        riskMetrics.record(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, sample
+                ? name + " count=" + count + " unique=" + unknownHttpFields.size() + " at=" + first
+                : null);
+        if (sample) {
+            log.warn("接口应答 {} 出现未知顶层键, 已出现 {} 次（已登记 {} 种）。"
+                            + "这多半是平台加了新字段, 取值不受影响, 但已知键表该复核了",
+                    name, count, unknownHttpFields.size());
+        }
+    }
+
+    private static boolean isMagnitude(long count) {
+        return Long.toString(count).matches("10*");
+    }
+
+    /**
+     * 获取直播间长连接信息
+     * @param roomId 直播间号
+     * @return 长连接信息
+     */
+    public ConnectInfo getLiveRoomConnectInfo(@NonNull Long roomId) {
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("id", roomId);
+        params.put("type", 0);
+
+        // 紧贴着请求读身份：token 与这个 uid 必须来自同一瞬间，理由见 ConnectInfo.uid
+        Long identity = getLoginUid();
+        JSONObject data = requestBilibiliApi(DANMU_INFO_API, params);
+
+        List<ConnectAddress> addresses = new ArrayList<>();
+        JSONArray hosts = data.getJSONArray("host_list");
+        if (hosts != null) {
+            for (int i = 0; i < hosts.size(); i++) {
+                JSONObject host = hosts.getJSONObject(i);
+                addresses.add(new ConnectAddress(
+                        host.getString("host"),
+                        host.getIntValue("port"),
+                        host.getIntValue("wss_port"),
+                        host.getIntValue("ws_port")
+                ));
+            }
+        }
+
+        return new ConnectInfo(data.getString("token"), addresses,
+                identity == null ? 0L : identity);
+    }
+
+    /**
+     * 上报直播间观看心跳，用于维持观看状态
+     * <p>
+     * 只做标准存活心跳：不提交播放状态、不提交切屏与点击、不请求播放地址。
+     * @param roomId 直播间号
+     * @param intervalSeconds 心跳间隔秒数，与实际发送周期保持一致
+     */
+    public void liveRoomHeartbeat(@NonNull Long roomId, int intervalSeconds) {
+        try {
+            String payload = intervalSeconds + "|" + roomId + "|1|0";
+            String hb = Base64.getEncoder().encodeToString(payload.getBytes(StandardCharsets.UTF_8));
+            http.getJson(LIVE_HEARTBEAT_API + URLEncoder.encode(hb, StandardCharsets.UTF_8),
+                    getBilibiliHeaders());
+            // 取用为空：整路不记未知顶层键，避免观看心跳按拍累加
+        } catch (Exception e) {
+            log.debug("上报直播间 {} 观看心跳失败: {}", roomId, e.getMessage());
+        }
+    }
+
+    /**
+     * 获取直播间最近的历史弹幕
+     * @param roomId 直播间号
+     * @return 弹幕列表
+     */
+    public List<Danmu> getLiveRoomLatestDanmus(@NonNull Long roomId) {
+        JSONObject data = requestBilibiliApi(DANMU_HISTORY_API + roomId);
+
+        JSONArray room = data.getJSONArray("room");
+        if (room == null) {
+            return List.of();
+        }
+
+        List<Danmu> danmus = new ArrayList<>(room.size());
+        for (int i = 0; i < room.size(); i++) {
+            JSONObject item = room.getJSONObject(i);
+
+            Danmu danmu = new Danmu();
+            danmu.setType(DanmuType.NORMAL);
+            danmu.setContent(item.getString("text"));
+            danmu.setContentText(item.getString("text"));
+            danmu.setSender(new BilibiliUserInfo(item.getLong("uid"), item.getString("nickname")));
+            danmu.setTimestamp(parseShanghaiTime(item.getString("timeline")).orElseGet(Instant::now));
+
+            danmus.add(danmu);
+        }
+
+        return danmus;
+    }
+
+    /**
+     * 获取全站礼物配置
+     * @return 礼物列表
+     */
+    public List<Gift> getGiftInfos() {
+        JSONObject data = requestBilibiliApi(GIFT_CONFIG_API);
+
+        JSONArray list = Optional.ofNullable(data.getJSONObject("global_config"))
+                .map(config -> config.getJSONArray("list"))
+                .orElseGet(() -> data.getJSONArray("list"));
+        if (list == null) {
+            return List.of();
+        }
+
+        List<Gift> gifts = new ArrayList<>(list.size());
+        for (int i = 0; i < list.size(); i++) {
+            JSONObject item = list.getJSONObject(i);
+            gifts.add(new Gift(
+                    item.getLong("id"),
+                    item.getString("name"),
+                    // 接口返回的价格单位为电池的百分之一，1000 对应 1 元
+                    item.getIntValue("price") / 1000.0,
+                    item.getString("img_basic")
+            ));
+        }
+
+        return gifts;
+    }
+
+    /**
+     * 获取大航海名称与图标的对应关系
+     * @return 大航海名称到图标地址的映射
+     */
+    public Map<String, String> getGuardInfos() {
+        JSONObject data = requestBilibiliApi(GIFT_CONFIG_API);
+
+        JSONArray list = Optional.ofNullable(data.getJSONObject("guard_resources"))
+                .map(config -> config.getJSONArray("list"))
+                .orElse(null);
+        if (list == null) {
+            return Map.of();
+        }
+
+        Map<String, String> guards = new LinkedHashMap<>();
+        for (int i = 0; i < list.size(); i++) {
+            JSONObject item = list.getJSONObject(i);
+            guards.put(item.getString("name"), item.getString("img"));
+        }
+
+        return guards;
+    }
+
+    /**
+     * 批量获取指定 uid 的直播间状态
+     * @param uids uid 集合
+     * @return uid 到直播间信息的映射
+     */
+    public Map<Long, Room> getLiveInfoByUids(Set<Long> uids) {
+        if (uids == null || uids.isEmpty()) {
+            return Map.of();
+        }
+
+        String query = uids.stream().map(uid -> "uids[]=" + uid).collect(Collectors.joining("&"));
+        JSONObject data = requestBilibiliApi(ROOM_STATUS_API + "?" + query);
+
+        Map<Long, Room> rooms = new HashMap<>();
+        for (Long uid : uids) {
+            JSONObject item = data.getJSONObject(String.valueOf(uid));
+            if (item == null) {
+                continue;
+            }
+            noteUnknownTopKeys(ROOM_STATUS_API, item);
+
+            rooms.put(uid, new Room(
+                    item.getInteger("live_status"),
+                    item.getLong("live_time"),
+                    item.getString("title"),
+                    item.getString("cover_from_user")
+            ));
+        }
+
+        return rooms;
+    }
+
+    /**
+     * 获取指定直播间的状态
+     * @param roomId 直播间号
+     * @return 直播间信息
+     */
+    public Room getLiveInfoByRoomId(@NonNull Long roomId) {
+        JSONObject data = requestBilibiliApi(ROOM_INFO_API + roomId);
+
+        return new Room(
+                data.getInteger("live_status"),
+                parseShanghaiTime(data.getString("live_time")).map(Instant::getEpochSecond).orElse(null),
+                data.getString("title"),
+                data.getString("user_cover")
+        );
+    }
+
+    /**
+     * 解析接口返回的东八区时间文本
+     * <p>
+     * 接口以 yyyy-MM-dd HH:mm:ss 的形式返回时间且不带时区，未开播时会返回全零占位值。
+     * @param text 时间文本
+     * @return 对应时刻，无法解析时返回空
+     */
+    private Optional<Instant> parseShanghaiTime(String text) {
+        if (StringUtil.isBlank(text) || text.startsWith("0000-00-00")) {
+            return Optional.empty();
+        }
+
+        try {
+            return Optional.of(LocalDateTime.parse(text.replace(' ', 'T'))
+                    .atZone(ZoneId.of("Asia/Shanghai"))
+                    .toInstant());
+        } catch (Exception e) {
+            log.debug("解析时间文本 {} 失败", text);
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * 获取当前账号关注的 UP 主动态更新列表
+     * @return 动态列表，按接口返回顺序排列
+     */
+    public List<Dynamic> getDynamicUpdateList() {
+        JSONObject data = requestBilibiliApi(DYNAMIC_FEED_API);
+
+        JSONArray items = data.getJSONArray("items");
+        if (items == null) {
+            return List.of();
+        }
+
+        if (properties.getDebug().isDynamicRawMessageLog()) {
+            log.info("动态接口原始响应: {}", data.toJSONString());
+        }
+
+        List<Dynamic> dynamics = new ArrayList<>(items.size());
+        for (int i = 0; i < items.size(); i++) {
+            dynamics.add(parseDynamic(items.getJSONObject(i)));
+        }
+
+        return dynamics;
+    }
+
+    /**
+     * 解析单条动态
+     * @param item 动态 JSON
+     * @return 动态
+     */
+    private Dynamic parseDynamic(JSONObject item) {
+        Dynamic dynamic = new Dynamic();
+        dynamic.setId(item.getString("id_str"));
+        dynamic.setType(item.getString("type"));
+        dynamic.setVisible(item.getBoolean("visible"));
+        dynamic.setBasic(item.getJSONObject("basic"));
+        dynamic.setModules(item.getJSONObject("modules"));
+
+        JSONObject origin = item.getJSONObject("orig");
+        if (origin != null) {
+            dynamic.setOrigin(parseDynamic(origin));
+        }
+
+        return dynamic;
+    }
+
+    /**
+     * 获取指定账号的关注列表
+     * @param selfUid 账号 uid
+     * @return 关注的 UP 主列表
+     */
+    public List<Up> getFollowingUps(Long selfUid) {
+        if (selfUid == null) {
+            return List.of();
+        }
+
+        List<Up> ups = new ArrayList<>();
+        for (int page = 1; ; page++) {
+            JSONObject data;
+            try {
+                data = requestBilibiliApi(FOLLOWINGS_API + selfUid + "&ps=" + FOLLOWING_PAGE_SIZE + "&pn=" + page);
+            } catch (Exception e) {
+                log.error("获取关注列表第 {} 页失败: {}", page, e.getMessage());
+                break;
+            }
+
+            JSONArray list = data.getJSONArray("list");
+            if (list == null || list.isEmpty()) {
+                break;
+            }
+
+            for (int i = 0; i < list.size(); i++) {
+                JSONObject item = list.getJSONObject(i);
+                ups.add(new Up(item.getLong("mid"), item.getString("uname"), null, item.getString("face")));
+            }
+
+            if (list.size() < FOLLOWING_PAGE_SIZE) {
+                break;
+            }
+        }
+
+        return ups;
+    }
+
+    /**
+     * 关注指定 UP 主
+     * @param uid UP 主 uid
+     */
+    public void followUp(Long uid) {
+        if (uid == null) {
+            return;
+        }
+
+        if (StringUtil.isBlank(cookies.getBiliJct())) {
+            log.error("未登录, 无法关注 uid {}", uid);
+            return;
+        }
+
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("fid", uid);
+        // act=1 表示关注
+        params.put("act", 1);
+        params.put("re_src", 11);
+        params.put("csrf", cookies.getBiliJct());
+
+        try {
+            requestBilibiliApi(RELATION_MODIFY_API, "POST", getBilibiliHeaders(), params);
+            log.info("已关注 uid {}", uid);
+        } catch (Exception e) {
+            log.error("关注 uid {} 失败: {}", uid, e.getMessage());
+        }
+    }
+
+    /**
+     * 休眠指定毫秒数
+     * @param millis 毫秒数
+     */
+    private void sleep(int millis) {
+        if (millis <= 0) {
+            return;
+        }
+
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /**
+     * 扫码登录信息
+     *
+     * @param url 二维码内容
+     * @param key 轮询令牌
+     */
+    public record QrCodeLogin(String url, String key) {
+    }
+
+    /**
+     * Cookie 续期判断结果
+     *
+     * @param needed 是否需要续期
+     * @param timestamp 服务端返回的毫秒时间戳，用于生成 CorrespondPath；
+     *                  须原样使用服务端的值，本机时钟有偏差时用本地时间会算出无效签名
+     */
+    public record CookieRefreshHint(boolean needed, long timestamp) {
+    }
+}

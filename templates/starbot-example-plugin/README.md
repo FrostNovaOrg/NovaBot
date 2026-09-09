@@ -93,7 +93,7 @@ starbot-example-plugin/
 
 除了监听事件，插件还可以实现下列接口来接入核心的能力。实现类同样用 `@NovaComponent` 注册，
 核心用 `ObjectProvider` 取——**没有实现时是空流而不是启动失败**，所以插件装不装都不影响核心启动。
-旧名 `@StarBotComponent`、`StarBotEventHandler`、`StarBotCommand` 仍然认得，旧插件无需改动。
+本版起旧名 `@StarBotComponent`、`StarBotEventHandler`、`StarBotCommand` 已删除，须改用上表新名并改 import 重新编译。
 
 | 接口 | 用途 |
 |---|---|

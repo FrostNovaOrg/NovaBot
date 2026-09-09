@@ -1,3 +1,3 @@
 org.springframework.boot.EnvironmentPostProcessor=\
-  com.starlwr.bot.core.config.NovaBotPrefixAlias,\
-  com.starlwr.bot.core.config.DataLocationGuard
+  org.frostnova.nova.core.config.NovaBotPrefixAlias,\
+  org.frostnova.nova.core.config.DataLocationGuard

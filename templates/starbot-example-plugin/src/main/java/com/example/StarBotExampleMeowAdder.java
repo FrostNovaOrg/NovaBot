@@ -1,7 +1,7 @@
 package com.example;
 
-import com.starlwr.bot.core.model.Message;
-import com.starlwr.bot.core.plugin.NovaComponent;
+import org.frostnova.nova.core.model.Message;
+import org.frostnova.nova.core.plugin.NovaComponent;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
@@ -31,7 +31,7 @@ public class StarBotExampleMeowAdder {
     /**
      * 拦截 NovaBot 全局消息发送方法
      */
-    @Pointcut("execution(* com.starlwr.bot.core.sender.NovaMessageSender.send(..))")
+    @Pointcut("execution(* org.frostnova.nova.core.sender.NovaMessageSender.send(..))")
     public void sendMethod() {}
 
     @Around("sendMethod()")

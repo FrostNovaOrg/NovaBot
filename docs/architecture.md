@@ -249,15 +249,14 @@ META-INF/spring-configuration-metadata.json
 
 插件的组件用 **`@NovaComponent`**。它的元注解就是 Spring 的 `@Component`，
 因此由组件扫描当成普通组件收走；按约定一律用它而不用 `@Component`，
-是为了在源码里一眼看出哪些类属于插件。旧名 `@StarBotComponent` 仍认得，
-两名同标在一个类上只登记一次。
+是为了在源码里一眼看出哪些类属于插件。
 
 每个插件模块自带一份
 `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`，
 里面写着本模块那个 `@AutoConfiguration @ComponentScan` 类的全类名。启动时 Spring Boot
 用 `ClassLoader.getResources` 收齐类路径上所有同名文件，把里面写的配置类逐个装进容器，
 配置类上的 `@ComponentScan` 再把本模块的组件扫进来。应用自身的扫描基包只有
-`com.starlwr.bot.core`，插件的包都在那之外，这份自报就是它们被看见的唯一通道。
+`org.frostnova.nova.core`，插件的包都在那之外，这份自报就是它们被看见的唯一通道。
 
 这条通道要插件 jar 在应用类路径上才开：启动参数是
 `-Dloader.path=lib,plugins,plugins-lib`，少了 `plugins` 一段，插件 jar 谁也看不见，
@@ -284,7 +283,7 @@ META-INF/spring-configuration-metadata.json
 内置推送处理器只覆盖开播、下播、动态三类。**弹幕、礼物等事件不带默认处理器**，
 需要自己写插件用 `@EventListener` 监听。
 
-直播事件在 `com.starlwr.bot.bilibili.event.live` 包下：
+直播事件在 `org.frostnova.nova.bilibili.event.live` 包下：
 
 | 事件 | 触发时机 |
 |---|---|
@@ -297,12 +296,12 @@ META-INF/spring-configuration-metadata.json
 | `BilibiliGovernorEvent` / `BilibiliCommanderEvent` / `BilibiliCaptainEvent` | 总督 / 提督 / 舰长 |
 | `BilibiliConnectedEvent` / `BilibiliDisconnectedEvent` | 直播间长连接建立 / 断开 |
 
-动态事件只有一个：`com.starlwr.bot.bilibili.event.dynamic.BilibiliDynamicUpdateEvent`。
+动态事件只有一个：`org.frostnova.nova.bilibili.event.dynamic.BilibiliDynamicUpdateEvent`。
 
 ### 扩展点清单
 
 前面几小节讲的是插件怎么被装进来、能监听哪些事件。这一节反过来列**插件能往核心贡献什么**。
-接口路径相对 `com.starlwr.bot.core` 包根书写；「现有实现」取自仓库自带的平台插件
+接口路径相对 `org.frostnova.nova.core` 包根书写；「现有实现」取自仓库自带的平台插件
 （starbot-bilibili、onebot-adapter、starbot-report，见第 1 节），写新插件时可以逐行当参照。
 
 | 扩展点 | 核心接口（相对路径） | 现有实现（模块） | 一句话 |

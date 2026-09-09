@@ -140,7 +140,7 @@
                             <!--
                                 重打包产物输出至独立目录，避免覆盖 target/NovaBot.jar。
                                 后者是各插件模块编译期依赖的普通库 jar，一旦被替换成 BOOT-INF 布局，
-                                增量构建时下游模块就会找不到 com.starlwr.bot.core 下的类。
+                                增量构建时下游模块就会找不到 org.frostnova.nova.core 下的类。
                             -->
                             <outputDirectory>${project.build.directory}/dist</outputDirectory>
                             <attach>false</attach>

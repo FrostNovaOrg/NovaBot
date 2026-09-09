@@ -14,11 +14,11 @@ WebSocket，UTF-8 JSON，一帧一条消息。
 
 | 东西 | 在哪 |
 |---|---|
-| 版本号、`hello`、心跳、认证、回补窗口 | `core/novacore/src/main/java/com/starlwr/bot/core/protocol/NovaEventEndpoint.java` |
+| 版本号、`hello`、心跳、认证、回补窗口 | `core/novacore/src/main/java/org/frostnova/nova/core/protocol/NovaEventEndpoint.java` |
 | 序号、环形缓冲、分发 | 同目录 `NovaEventStream.java` |
 | 握手守卫（回环、拒收凭据） | 同目录 `NovaEventStreamConfiguration.java`、`NoCredentialsInHandshake.java` |
-| 每种消息的字段 | `plugins/starbot-bilibili/src/main/java/com/starlwr/bot/bilibili/protocol/NovaEventMapper.java` |
-| 可执行的校验器 | `core/novacore/src/test/java/com/starlwr/bot/core/protocol/NovaProtocolSchema.java` |
+| 每种消息的字段 | `plugins/starbot-bilibili/src/main/java/org/frostnova/nova/bilibili/protocol/NovaEventMapper.java` |
+| 可执行的校验器 | `core/novacore/src/test/java/org/frostnova/nova/core/protocol/NovaProtocolSchema.java` |
 
 校验器随协议留在核心，并以 `test-jar` 供各平台插件的测试引用——
 各平台的映射器产出的信封要按同一把尺量，一个平台抄一份就等于多一个会和协议漂开的副本。

@@ -9,13 +9,13 @@
         "num": "",
         "messages": [
           {
-            "handler": "com.starlwr.bot.bilibili.handler.BilibiliLiveOnPushHandler"
+            "handler": "org.frostnova.nova.bilibili.handler.BilibiliLiveOnPushHandler"
           },
           {
-            "handler": "com.starlwr.bot.bilibili.handler.BilibiliLiveOffPushHandler"
+            "handler": "org.frostnova.nova.bilibili.handler.BilibiliLiveOffPushHandler"
           },
           {
-            "handler": "com.starlwr.bot.report.handler.BilibiliDynamicPushHandler"
+            "handler": "org.frostnova.nova.report.handler.BilibiliDynamicPushHandler"
           }
         ]
       }

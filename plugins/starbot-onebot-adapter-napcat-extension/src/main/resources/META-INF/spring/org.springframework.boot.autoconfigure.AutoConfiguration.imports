@@ -1,1 +1,1 @@
-com.starlwr.bot.adapter.onebot.extension.napcat.NapcatExtensionPluginAutoConfiguration
+org.frostnova.nova.adapter.onebot.extension.napcat.NapcatExtensionPluginAutoConfiguration

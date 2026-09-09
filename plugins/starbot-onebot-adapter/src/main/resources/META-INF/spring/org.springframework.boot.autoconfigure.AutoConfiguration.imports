@@ -1,1 +1,1 @@
-com.starlwr.bot.adapter.onebot.OneBotAdapterPluginAutoConfiguration
+org.frostnova.nova.adapter.onebot.OneBotAdapterPluginAutoConfiguration

@@ -1,0 +1,24 @@
+[
+  {
+    "uid": "",
+    "platform": "bilibili",
+    "targets": [
+      {
+        "platform": "qq-onebot",
+        "type": 1,
+        "num": "",
+        "messages": [
+          {
+            "handler": "com.\u0073tarlwr.bot.bilibili.handler.BilibiliLiveOnPushHandler"
+          },
+          {
+            "handler": "com.\u0073tarlwr.bot.bilibili.handler.BilibiliLiveOffPushHandler"
+          },
+          {
+            "handler": "com.\u0073tarlwr.bot.report.handler.BilibiliLiveReportPushHandler"
+          }
+        ]
+      }
+    ]
+  }
+]

@@ -9,13 +9,13 @@
         "num": "",
         "messages": [
           {
-            "handler": "com.starlwr.bot.bilibili.handler.BilibiliLiveOnPushHandler"
+            "handler": "com.\u0073tarlwr.bot.bilibili.handler.BilibiliLiveOnPushHandler"
           },
           {
-            "handler": "com.starlwr.bot.bilibili.handler.BilibiliLiveOffPushHandler"
+            "handler": "com.\u0073tarlwr.bot.bilibili.handler.BilibiliLiveOffPushHandler"
           },
           {
-            "handler": "com.starlwr.bot.bilibili.handler.BilibiliDynamicPushHandler"
+            "handler": "com.\u0073tarlwr.bot.bilibili.handler.BilibiliDynamicPushHandler"
           }
         ]
       }
