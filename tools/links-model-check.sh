@@ -28,7 +28,19 @@ if ! command -v node > /dev/null 2>&1; then
 fi
 
 UI="core/nova-core/src/main/resources/config-ui"
-PAGES="plugins/nova-bilibili/src/main/resources/config-ui-pages"
+
+# —— 连接页插件卡的目录：按登记清单解，不写死模块名 ——
+# bilibili.js 是连接页要过语法的插件件；它归哪个模块，登记清单说了算：
+# 谁登记了 bilibili.js，页目录就在谁的 src/main/resources/config-ui-pages 下。
+# 解不出来直接红：PAGES 落空会让下面语法那格 node 报「文件不在」，
+# 那句报文与真因（没人登记）无关，红也红得莫名其妙。
+REG_BILI_MOD="$(bash tools/console-page-registry.sh | awk -F'\t' '$2=="bilibili.js"{print $1}' | head -n 1)"
+if [ -z "$REG_BILI_MOD" ]; then
+    echo "登记 红 bilibili.js 未登记（tools/console-page-registry.sh 清单里没有它）——连接页插件卡目录解不出来" >&2
+    exit 1
+fi
+PAGES="$REG_BILI_MOD/src/main/resources/config-ui-pages"
+echo "登记 绿 bilibili.js←$REG_BILI_MOD"
 RED=0
 SYNTAX_RED=0
 
