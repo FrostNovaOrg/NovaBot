@@ -16,8 +16,7 @@ import java.io.IOException;
  */
 @DisplayName("重进向导时机器人草稿与盘上同步")
 class SetupBotSyncTest {
-    private static final String FIXTURE =
-            "core/nova-core/src/test/resources/frontend/setup-bot-sync-fixture.mjs";
+    private static final String FIXTURE = FrontendFixture.fixture("setup-bot-sync-fixture.mjs");
 
     @Test
     @DisplayName("已配过则回填地址端口并清空 Token；未配过五格不变；openSetup 只调 syncBotDraft")

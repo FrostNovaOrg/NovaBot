@@ -17,8 +17,7 @@ import java.io.IOException;
  */
 @DisplayName("邮件告警预设药丸与端口认法")
 class SettingsAlertViewTest {
-    private static final String FIXTURE =
-            "core/nova-core/src/test/resources/frontend/settings-alert-fixture.mjs";
+    private static final String FIXTURE = FrontendFixture.fixture("settings-alert-fixture.mjs");
 
     @Test
     @DisplayName("applyMail 真执行刷药丸；切回自定义不刷；认预设要比端口")

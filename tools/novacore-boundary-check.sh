@@ -1174,8 +1174,8 @@ fi
 # 数的是**件数**不是处数：一件里写十处，改的时候是一件事。
 # ============================================================
 
-# 现值上限（2026-09-08 实测 77；正则带 core/／plugins/ 前缀后现算，只认目录名）。改掉一件就把它调低一，绝不许调高。
-HARDCODED_MODULE_PATH_CAP=77
+# 现值上限（2026-09-10 实测 58；正则带 core/／plugins/ 前缀后现算，只认目录名）。改掉一件就把它调低一，绝不许调高。
+HARDCODED_MODULE_PATH_CAP=58
 
 G12_RE='core/nova-core/|core/novacore/|plugins/nova-bilibili/|plugins/nova-console/|plugins/nova-onebot-adapter|plugins/nova-report/'
 G12_LIST="$WORK/g12"

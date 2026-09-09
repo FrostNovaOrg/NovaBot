@@ -16,8 +16,7 @@ import java.io.IOException;
  */
 @DisplayName("二次验证开关回灌签发表单验证码栏")
 class SettingsAuthViewTest {
-    private static final String FIXTURE =
-            "core/nova-core/src/test/resources/frontend/settings-auth-fixture.mjs";
+    private static final String FIXTURE = FrontendFixture.fixture("settings-auth-fixture.mjs");
 
     @Test
     @DisplayName("settle 回灌 store.totpRequired；签发表单读这一位")

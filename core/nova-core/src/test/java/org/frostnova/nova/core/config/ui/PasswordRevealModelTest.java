@@ -28,8 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @DisplayName("口令框显示隐藏")
 class PasswordRevealModelTest {
-    private static final String FIXTURE =
-            "core/nova-core/src/test/resources/frontend/password-reveal-fixture.mjs";
+    private static final String FIXTURE = FrontendFixture.fixture("password-reveal-fixture.mjs");
 
     private Path repoRoot() {
         Path current = Path.of("").toAbsolutePath();

@@ -31,6 +31,10 @@
 # git 路径出错不再吞：git 退非 0 时脚本退 2 并把原因印到 stderr（取不出须红）。
 # 核心模块也照扫——它今天一件也登记不出（见上，SCRIPT_ROOT 空名不算），
 # 不为它单带一份名单，名单一重复就开始漂。
+#
+# 同一页名被两个及以上模块登记须红，退 1，stderr 写
+# 「重复登记：<页> ← <模块A>,<模块B>」。消费方若 head -n 1 取先到者，
+# 双登记会把页目录解到错误模块且不响；本尺在清单出口拦住。
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -95,4 +99,36 @@ while IFS= read -r mod; do
         | awk -v m="$mod" '{print m "\t" $0}' >> "$REG"
 done < "$WORK/modules"
 
-sort -u "$REG"
+sort -u "$REG" > "$WORK/reg.uniq"
+
+# 同一页名 ↔ 多个模块：红。sort -u 只去「模块+页」整行重复，跨模块同页仍是两行。
+: > "$WORK/reg.dup"
+awk -F'\t' '
+NF >= 2 && $2 != "" {
+    p = $2
+    m = $1
+    if (!(p in first)) {
+        first[p] = m
+        mods[p] = m
+        n[p] = 1
+        next
+    }
+    if (index("," mods[p] ",", "," m ",") == 0) {
+        mods[p] = mods[p] "," m
+        n[p]++
+    }
+}
+END {
+    for (p in n) {
+        if (n[p] > 1) print p "\t" mods[p]
+    }
+}' "$WORK/reg.uniq" > "$WORK/reg.dup"
+
+if [ -s "$WORK/reg.dup" ]; then
+    while IFS=$'\t' read -r page mods; do
+        echo "重复登记：${page} ← ${mods}" >&2
+    done < "$WORK/reg.dup"
+    exit 1
+fi
+
+cat "$WORK/reg.uniq"

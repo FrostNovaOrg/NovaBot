@@ -16,7 +16,7 @@ import java.io.IOException;
  */
 @DisplayName("只读口令页判定")
 class TokensModelTest {
-    private static final String FIXTURE = "core/nova-core/src/test/resources/frontend/tokens-model-fixture.mjs";
+    private static final String FIXTURE = FrontendFixture.fixture("tokens-model-fixture.mjs");
 
     @Test
     @DisplayName("失败体翻译与吊销后动作逐格与预期相同")

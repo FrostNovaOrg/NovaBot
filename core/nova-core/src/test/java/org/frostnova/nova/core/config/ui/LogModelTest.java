@@ -18,7 +18,7 @@ import java.io.IOException;
  */
 @DisplayName("日志页判定")
 class LogModelTest {
-    private static final String FIXTURE = "core/nova-core/src/test/resources/frontend/log-model-fixture.mjs";
+    private static final String FIXTURE = FrontendFixture.fixture("log-model-fixture.mjs");
 
     @Test
     @DisplayName("地址栏往返、查询串、日期导航、工程日志分行与筛逐格与预期相同")

@@ -24,7 +24,7 @@ import java.io.IOException;
  */
 @DisplayName("主播页判定")
 class StreamersModelTest {
-    private static final String FIXTURE = "core/nova-core/src/test/resources/frontend/streamers-model-fixture.mjs";
+    private static final String FIXTURE = FrontendFixture.fixture("streamers-model-fixture.mjs");
 
     @Test
     @DisplayName("地址栏往返、状态四档、折线几何、人气峰三态、缺口分列逐格与预期相同")

@@ -19,7 +19,7 @@ class SettingsModelTest {
     /**
      * 夹具在仓库里的位置。引用的是源码树里的 settings-model.js，不是构建产物里的副本
      */
-    private static final String FIXTURE = "core/nova-core/src/test/resources/frontend/settings-model-fixture.mjs";
+    private static final String FIXTURE = FrontendFixture.fixture("settings-model-fixture.mjs");
 
     @Test
     @DisplayName("搜索、只看改过、默认值、危险项围栏四组判定逐格与预期相同")

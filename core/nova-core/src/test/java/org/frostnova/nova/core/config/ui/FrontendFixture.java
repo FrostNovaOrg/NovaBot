@@ -41,6 +41,14 @@ final class FrontendFixture {
     }
 
     /**
+     * 前端夹具在仓库里的相对路径，交给 {@link #run(String, String)}。
+     * 模块根只在这一处出现；解析方式与 {@link #run(String, String)} 一致（相对仓根）。
+     */
+    static String fixture(String relUnderFrontend) {
+        return "core/nova-core/src/test/resources/frontend/" + relUnderFrontend;
+    }
+
+    /**
      * 跑一份夹具，退码非 0 即判红
      * @param fixture 夹具在仓库里的相对路径
      * @param what 这一组判定叫什么，进红时那句话与构建日志

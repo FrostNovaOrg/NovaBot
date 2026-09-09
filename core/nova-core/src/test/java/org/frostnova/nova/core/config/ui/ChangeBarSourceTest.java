@@ -21,8 +21,7 @@ import java.io.IOException;
  */
 @DisplayName("改动条的供数方")
 class ChangeBarSourceTest {
-    private static final String FIXTURE =
-            "core/nova-core/src/test/resources/frontend/change-bar-source-fixture.mjs";
+    private static final String FIXTURE = FrontendFixture.fixture("change-bar-source-fixture.mjs");
 
     @Test
     @DisplayName("核心界面里没有推送状态；无供数方时什么都不数，登记一位后照它报的数写字")

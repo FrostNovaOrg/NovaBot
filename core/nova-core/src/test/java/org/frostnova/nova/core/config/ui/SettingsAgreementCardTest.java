@@ -18,8 +18,7 @@ import java.io.IOException;
  */
 @DisplayName("设置页使用协议卡")
 class SettingsAgreementCardTest {
-    private static final String FIXTURE =
-            "core/nova-core/src/test/resources/frontend/settings-agreement-fixture.mjs";
+    private static final String FIXTURE = FrontendFixture.fixture("settings-agreement-fixture.mjs");
 
     @Test
     @DisplayName("撤回同意先弹确认才发请求；正文只此一份；三个协议键不再是普通输入框")

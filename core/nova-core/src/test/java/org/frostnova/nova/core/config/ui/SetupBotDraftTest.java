@@ -15,8 +15,7 @@ import java.io.IOException;
  */
 @DisplayName("初始设置改机器人参数即作废旧测通")
 class SetupBotDraftTest {
-    private static final String FIXTURE =
-            "core/nova-core/src/test/resources/frontend/setup-bot-draft-fixture.mjs";
+    private static final String FIXTURE = FrontendFixture.fixture("setup-bot-draft-fixture.mjs");
 
     @Test
     @DisplayName("invalidateBot 清 botOk；五格输入都接到它；botOk 为假时第 2 步拦住")

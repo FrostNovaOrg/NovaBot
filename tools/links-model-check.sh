@@ -34,11 +34,22 @@ UI="core/nova-core/src/main/resources/config-ui"
 # 谁登记了 bilibili.js，页目录就在谁的 src/main/resources/config-ui-pages 下。
 # 解不出来直接红：PAGES 落空会让下面语法那格 node 报「文件不在」，
 # 那句报文与真因（没人登记）无关，红也红得莫名其妙。
-REG_BILI_MOD="$(bash tools/console-page-registry.sh | awk -F'\t' '$2=="bilibili.js"{print $1}' | head -n 1)"
-if [ -z "$REG_BILI_MOD" ]; then
+REG_OUT="$(bash tools/console-page-registry.sh)"
+reg_rc=$?
+if [ "$reg_rc" -ne 0 ]; then
+    echo "登记 红 清单取不出（tools/console-page-registry.sh 退 ${reg_rc}）" >&2
+    exit 1
+fi
+bili_n=$(printf '%s\n' "$REG_OUT" | awk -F'\t' '$2=="bilibili.js"{c++} END{print c+0}')
+if [ "$bili_n" -eq 0 ]; then
     echo "登记 红 bilibili.js 未登记（tools/console-page-registry.sh 清单里没有它）——连接页插件卡目录解不出来" >&2
     exit 1
 fi
+if [ "$bili_n" -gt 1 ]; then
+    echo "重复登记：bilibili.js ← $(printf '%s\n' "$REG_OUT" | awk -F'\t' '$2=="bilibili.js"{printf "%s%s", (i?",":""), $1; i=1}')" >&2
+    exit 1
+fi
+REG_BILI_MOD=$(printf '%s\n' "$REG_OUT" | awk -F'\t' '$2=="bilibili.js"{print $1; exit}')
 PAGES="$REG_BILI_MOD/src/main/resources/config-ui-pages"
 echo "登记 绿 bilibili.js←$REG_BILI_MOD"
 RED=0

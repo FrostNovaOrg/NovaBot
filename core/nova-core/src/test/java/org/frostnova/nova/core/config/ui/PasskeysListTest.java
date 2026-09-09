@@ -4,8 +4,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.net.URISyntaxException;
-import java.nio.file.Path;
 
 /**
  * 通行密钥列表：画进传入的那只容器
@@ -23,21 +21,6 @@ class PasskeysListTest {
     @Test
     @DisplayName("列表画进传入 box；空列表提示在；删除后重画进接线当次的容器")
     void listPaintsIntoPassedBoxAndDeleteRepaintsIt() throws IOException, InterruptedException {
-        FrontendFixture.run(fixturePath(), "通行密钥列表画进传入容器");
-    }
-
-    /**
-     * 夹具与这份类同住一个模块：模块目录从类自己的落点推（target/test-classes 上两级），
-     * 不把模块名写死在源码里——目录重排那天，这一件不在会安静失灵的名单上
-     */
-    private static String fixturePath() {
-        try {
-            Path classes = Path.of(
-                    PasskeysListTest.class.getProtectionDomain().getCodeSource().getLocation().toURI());
-            Path module = FrontendFixture.repoRoot().relativize(classes.getParent().getParent());
-            return module.resolve("src/test/resources/frontend/passkeys-list-fixture.mjs").toString();
-        } catch (URISyntaxException e) {
-            throw new IllegalStateException("定不出夹具所在的模块目录", e);
-        }
+        FrontendFixture.run(FrontendFixture.fixture("passkeys-list-fixture.mjs"), "通行密钥列表画进传入容器");
     }
 }
