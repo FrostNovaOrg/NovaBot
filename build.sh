@@ -259,8 +259,6 @@ rm -rf "$OUT"
 mkdir -p "$OUT/plugins" "$OUT/lib" "$OUT/plugins-lib"
 
 cp core/nova-core/target/dist/NovaBot.jar "$OUT/"
-# 双名期：下一发行版删
-cp "$OUT/NovaBot.jar" "$OUT/StarBotCore.jar"
 cp core/nova-core/target/lib/*.jar "$OUT/lib/"
 
 for module in "${PLUGIN_MODULES[@]}"; do

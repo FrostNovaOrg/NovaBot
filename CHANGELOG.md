@@ -8,6 +8,14 @@
 
 ### 新增
 
+### 变更
+
+### 修复
+
+## [5.3.0] - 2026-09-09
+
+### 新增
+
 - 首页健康栏能看出 B 站长连协议出现未知消息类型／操作码。
 - 风控判定的观测里说得出口「这几分钟是消息收到了但解析失败」；这类时段在下播报告的采集缺口里单列成「解析降级」，与「断流」分开。
 - 下播报告、动态图和数据查询图改由独立的报告插件绘制；装上哔哩哔哩插件时才会一并装上。
@@ -98,7 +106,8 @@
 - 配置项前缀从 `starbot.*` 改成 `novabot.*`（`novabot.core`、`novabot.bilibili`、`novabot.adapter.onebot` 等）。**旧键仍然认得**：只写 `starbot.*` 的 `application.yml` 照常生效，启动时每个用到的前缀会打一行提醒；两处都写时以新位置为准。设置页保存只写新前缀；若旧 `starbot:` 树每个叶键在新树都有对应，保存时会删掉旧树。文档、登录页里的键名已改成新前缀。
 - 更早一档写在 `starbot.core.alert.qq-platform`／`qq-type`／`qq-num` 的告警三项，保存时按现行 `novabot.adapter.onebot.alert.*` 认作已对应，旧树可以一并删掉。
 - 更早一档写在 `starbot.core.config-ui.napcat` 下的代登录四项（token／token-hash／totp-secret／address），保存时按现行 `novabot.adapter.onebot.napcat.*` 认作已对应，旧树可以一并删掉。
-- 主程序产物改名为 `NovaBot.jar`。本发行版同时附带一份内容相同的 `StarBotCore.jar`，下一发行版去掉这份副本。新安装使用 `novabot` 服务名；机器上已经有 `starbot` 服务的，安装脚本沿用旧名、不改单元文件。
+- 主程序产物改名为 `NovaBot.jar`。新安装使用 `novabot` 服务名；机器上已经有 `starbot` 服务的，安装脚本沿用旧名、不改单元文件。
+- 不再附带 StarBotCore.jar 副本（5.2.0 段所承诺）；升级到本版时，安装脚本会把旧副本随旧 lib 一并删除。
 - 配置项前缀从 `starbot.*` 改成 `novabot.*`（`novabot.core`、`novabot.bilibili`、`novabot.adapter.onebot` 等）。**旧键仍然认得**：只写 `starbot.*` 的 `application.yml` 照常生效，启动时每个用到的前缀会打一行提醒；两处都写时以新位置为准。设置页保存只写新前缀。示例配置已改用新前缀。
 - 仓库目录按核心／插件分层（`core/` 与 `plugins/`），Maven 坐标不变。
 - 首页健康栏的未知字段同时覆盖 protobuf 字段号、接口顶层键、以及直播间消息里不认识的互动类型／货币／大航海档；明细会写明是哪一种报文、哪个接口、还是哪条命令的哪个取值。

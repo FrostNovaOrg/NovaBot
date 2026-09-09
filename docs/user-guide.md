@@ -738,7 +738,7 @@ novabot:
 
 1. 停止服务
 2. **备份 `application.yml`、`datasource.json`、`cookies.json`、`cookies.key`**
-3. 用新版本的产物替换 `StarBotCore.jar` 与 `lib/`
+3. 用新版本的产物替换 `NovaBot.jar` 与 `lib/`
 4. `plugins/` **不要整个替换**——里面可能有你自己放的第三方插件，覆盖等于把它们卸载。
    只替换内置的那三个插件，并删掉它们的旧版本文件（同一插件留下两个版本会被同时加载）
 5. 保留原有的 `application.yml` 与 `datasource.json`
