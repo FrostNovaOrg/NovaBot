@@ -350,24 +350,24 @@ class HomeStatusFieldsTest {
     }
 
     @Test
-    @DisplayName("告警三路各有一位，缺键与「没配」分得开")
+    @DisplayName("告警对象始终在；Webhook 由核心自算，通道键随 bean")
     void alertsObjectIsAlwaysPresent() {
         JSONObject alerts = controller().status().getJSONObject("alerts");
 
         assertNotNull(alerts, "首页待办要按这一块决定出不出，缺了就无从判");
-        assertTrue(alerts.containsKey("qq"));
         assertTrue(alerts.containsKey("webhook"));
-        assertTrue(alerts.containsKey("mail"));
+        assertFalse(alerts.containsKey("qq"), "没有通道 bean 时 qq 键应消失");
+        assertFalse(alerts.containsKey("mail"), "没有通道 bean 时 mail 键应消失");
     }
 
     @Test
-    @DisplayName("出厂未配告警：三路都是假")
+    @DisplayName("出厂未配告警：Webhook 为假，通道键不占位")
     void alertsDefaultToAllFalse() {
         JSONObject alerts = controller().status().getJSONObject("alerts");
 
-        assertFalse(alerts.getBooleanValue("qq"));
         assertFalse(alerts.getBooleanValue("webhook"));
-        assertFalse(alerts.getBooleanValue("mail"));
+        assertFalse(alerts.containsKey("qq"));
+        assertFalse(alerts.containsKey("mail"));
     }
 
     @Test
@@ -385,6 +385,23 @@ class HomeStatusFieldsTest {
 
         assertFalse(controller().status().getJSONObject("alerts").getBooleanValue("webhook"),
                 "只含空白与没填在设置页药丸上长得一样，都是未配置");
+    }
+
+    @Test
+    @DisplayName("有 qq 通道时键集含 qq／webhook／mail；摘掉 qq 后该键消失")
+    void alertsQqKeyPresentOnlyWhenChannelDeclared() {
+        alertChannels = List.of(availableQqChannel(), mailChannel(""));
+        JSONObject with = controller().status().getJSONObject("alerts");
+        assertTrue(with.containsKey("qq"));
+        assertTrue(with.containsKey("webhook"));
+        assertTrue(with.containsKey("mail"));
+        assertEquals(Boolean.TRUE, with.get("qq"));
+
+        alertChannels = List.of(mailChannel(""));
+        JSONObject without = controller().status().getJSONObject("alerts");
+        assertFalse(without.containsKey("qq"), "摘掉 qq 通道 bean 后键应消失，而不是 false");
+        assertTrue(without.containsKey("webhook"));
+        assertTrue(without.containsKey("mail"));
     }
 
     @Test

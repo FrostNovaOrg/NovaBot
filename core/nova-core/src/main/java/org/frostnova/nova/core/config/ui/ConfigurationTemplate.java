@@ -7,6 +7,7 @@ import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 把配置面渲染成一份完整的 application.yml
@@ -24,10 +25,11 @@ import java.util.Map;
  * 而空白名单的语义是<b>全部拒绝</b>。取值这条路见 {@link ConfigurationPropertyFields#values}。
  *
  * <h2>没有值的那几项为什么写成注释</h2>
- * 多数配置项留空是有意义的（口令留空＝不启用）。但 {@link ConfigurationFileService#BLANK_MEANS_ABSENT}
- * 里那几项写成空值会让程序<b>根本起不来</b>，那张表原本管的是「界面上清空它＝删掉这一行」——
+ * 多数配置项留空是有意义的（口令留空＝不启用）。但「留空即未配」那几项写成空值会让程序
+ * <b>根本起不来</b>，那张表原本管的是「界面上清空它＝删掉这一行」——
  * 这里管的是同一件事的另一头：「它本来就没值＝这一行别写成空的」。<b>两处共用一张表</b>，
  * 各写一份的下场是有人往表里加了一项，而生成出来的文件照旧写它一个空值。
+ * 核心自有表见 {@link ConfigurationFileService#CORE_BLANK_MEANS_ABSENT}，平台键由插件申报。
  */
 final class ConfigurationTemplate {
     /**
@@ -73,13 +75,25 @@ final class ConfigurationTemplate {
      * @return 文件全文，以换行结尾
      */
     static String render(List<ConfigurationMetadataService.ConfigurationField> fields, Map<String, Object> values) {
+        return render(fields, values, ConfigurationFileService.CORE_BLANK_MEANS_ABSENT);
+    }
+
+    /**
+     * 渲染一份完整的配置文件，按给出的「留空即未配」键省略空值
+     * @param fields 配置面上的全部配置项
+     * @param values 配置项名到当前取值
+     * @param blankMeansAbsent 留空即未配的完整路径
+     * @return 文件全文，以换行结尾
+     */
+    static String render(List<ConfigurationMetadataService.ConfigurationField> fields, Map<String, Object> values,
+                         Set<String> blankMeansAbsent) {
         StringBuilder out = new StringBuilder();
         for (String line : HEADER) {
             out.append(line.isEmpty() ? "#" : "# " + line).append('\n');
         }
         out.append('\n');
 
-        render(tree(fields), values, 0, out);
+        render(tree(fields), values, 0, out, blankMeansAbsent);
         return out.toString();
     }
 
@@ -105,7 +119,8 @@ final class ConfigurationTemplate {
         return root;
     }
 
-    private static void render(Node node, Map<String, Object> values, int depth, StringBuilder out) {
+    private static void render(Node node, Map<String, Object> values, int depth, StringBuilder out,
+                               Set<String> blankMeansAbsent) {
         String pad = INDENT.repeat(depth);
 
         for (Map.Entry<String, Node> entry : node.children.entrySet()) {
@@ -115,20 +130,21 @@ final class ConfigurationTemplate {
             if (child.field == null) {
                 // 中间节点：只是一层缩进，没有值也没有说明
                 out.append(pad).append(name).append(":\n");
-                render(child, values, depth + 1, out);
+                render(child, values, depth + 1, out, blankMeansAbsent);
                 continue;
             }
 
-            renderLeaf(name, child.field, values, pad, out);
+            renderLeaf(name, child.field, values, pad, out, blankMeansAbsent);
 
             // 既是配置项又还有下级的形态目前不存在，但真出现时也得写出来，
             // 否则那一支会连同它的键一起从文件里消失，而文件看起来是完整的
-            render(child, values, depth + 1, out);
+            render(child, values, depth + 1, out, blankMeansAbsent);
         }
     }
 
     private static void renderLeaf(String name, ConfigurationMetadataService.ConfigurationField field,
-                                   Map<String, Object> values, String pad, StringBuilder out) {
+                                   Map<String, Object> values, String pad, StringBuilder out,
+                                   Set<String> blankMeansAbsent) {
         for (String line : comment(field.description())) {
             out.append(pad).append("# ").append(line).append('\n');
         }
@@ -136,14 +152,14 @@ final class ConfigurationTemplate {
         Object value = values.containsKey(field.name()) ? values.get(field.name()) : field.defaultValue();
 
         // 没值、且写成空值会让程序起不来的那几项：整行注释掉，并说清为什么
-        if (isBlank(value) && ConfigurationFileService.BLANK_MEANS_ABSENT.contains(field.name())) {
+        if (isBlank(value) && blankMeansAbsent.contains(field.name())) {
             out.append(pad).append("# 这一项写成空值会让程序起不来，因此默认整行注释掉；要用就去掉行首的 #\n");
             out.append(pad).append("# ").append(name).append(":\n");
             return;
         }
 
         if (value instanceof Collection<?> items) {
-            renderList(name, items, pad, out);
+            renderList(name, items, pad, out, blankMeansAbsent);
             return;
         }
 
@@ -169,7 +185,8 @@ final class ConfigurationTemplate {
      * 元素是对象时按字段写出（键名短横线），读得回来仍是一组字段。
      * 按 {@code toString} 写出去的那一版，读回来是一串谁也解析不回对象的文字。
      */
-    private static void renderList(String name, Collection<?> items, String pad, StringBuilder out) {
+    private static void renderList(String name, Collection<?> items, String pad, StringBuilder out,
+                                   Set<String> blankMeansAbsent) {
         if (items.isEmpty()) {
             out.append(pad).append(name).append(": []\n");
             return;
@@ -182,7 +199,7 @@ final class ConfigurationTemplate {
                 body.append(pad).append(INDENT).append("- ").append(scalar(item)).append('\n');
                 continue;
             }
-            renderObjectItem(fields, pad, body);
+            renderObjectItem(fields, pad, body, blankMeansAbsent);
         }
 
         if (body.isEmpty()) {
@@ -197,12 +214,14 @@ final class ConfigurationTemplate {
     /**
      * 把一个对象列表项按字段写成 YAML
      */
-    private static void renderObjectItem(Map<String, Object> fields, String pad, StringBuilder out) {
+    private static void renderObjectItem(Map<String, Object> fields, String pad, StringBuilder out,
+                                         Set<String> blankMeansAbsent) {
         boolean first = true;
         String itemPad = pad + INDENT;
         String fieldPad = itemPad + INDENT;
         for (Map.Entry<String, Object> entry : fields.entrySet()) {
-            if (isBlank(entry.getValue()) && ConfigurationFileService.isBlankMeansAbsentField(entry.getKey())) {
+            if (isBlank(entry.getValue())
+                    && ConfigurationFileService.isBlankMeansAbsentField(entry.getKey(), blankMeansAbsent)) {
                 continue;
             }
             String rendered = scalar(entry.getValue());

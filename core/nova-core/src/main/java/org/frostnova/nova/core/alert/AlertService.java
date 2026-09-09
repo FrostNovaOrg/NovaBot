@@ -190,6 +190,17 @@ public class AlertService {
      * @return 结果
      */
     /**
+     * 已登记的告警通道，顺序即申报顺序。
+     * <p>
+     * 首页药丸遍历这一份：没有登记的通道不会出现在输出键集里，
+     * 而不是以 false 占一个键。
+     * @return 通道清单
+     */
+    public List<AlertChannel> declaredChannels() {
+        return channels.orderedStream().toList();
+    }
+
+    /**
      * 某一路通道当前是否可用
      * <p>
      * 首页「这一路配好了没有」与测试发送共用同一条判定：按 id 取通道，再问 {@link AlertChannel#isAvailable()}。

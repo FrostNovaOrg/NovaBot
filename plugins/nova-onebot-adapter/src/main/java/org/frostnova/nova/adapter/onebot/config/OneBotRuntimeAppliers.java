@@ -2,6 +2,7 @@ package org.frostnova.nova.adapter.onebot.config;
 
 import org.frostnova.nova.core.config.ui.RuntimeConfigurationApplierContributor;
 import org.frostnova.nova.core.plugin.NovaComponent;
+import org.frostnova.nova.core.properties.NovaBotPrefixes;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.LinkedHashMap;
@@ -35,5 +36,13 @@ public class OneBotRuntimeAppliers implements RuntimeConfigurationApplierContrib
                 value -> properties.getAlert().setNum(
                         value == null || value.isBlank() ? null : Long.parseLong(value.trim())));
         return appliers;
+    }
+
+    @Override
+    public Map<String, String> appliedElsewhere() {
+        Map<String, String> elsewhere = new LinkedHashMap<>();
+        elsewhere.put(NovaBotPrefixes.ADAPTER + ".senders",
+                "/api/setup/bot 保存时经 BotConnectionTester#apply 当场重建连接");
+        return elsewhere;
     }
 }

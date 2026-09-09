@@ -11,7 +11,7 @@ import java.util.Optional;
  */
 public interface BotConnectionTester {
     /**
-     * 适配器名称，例如 onebot
+     * 适配器名称，由适配器自报
      * @return 适配器名称
      */
     String adapter();

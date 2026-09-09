@@ -139,12 +139,17 @@ class BotConnectionSaveTest {
 
     @SuppressWarnings("unchecked")
     private ConfigUiController controller(ConfigurationFileService files, BotConnectionTester tester) {
+        return controller(files, tester, true);
+    }
+
+    @SuppressWarnings("unchecked")
+    private ConfigUiController controller(ConfigurationFileService files, BotConnectionTester tester,
+                                          boolean withList) {
         NovaCoreProperties properties = new NovaCoreProperties();
 
         ObjectProvider<BotConnectionTester> testers = mock(ObjectProvider.class);
         when(testers.orderedStream()).thenAnswer(invocation -> Stream.of(tester));
 
-        // 构造器只做赋值，其余依赖对本组用例毫无参与，全部给桩
         return new ConfigUiController(
                 mock(ConfigurationMetadataService.class),
                 files,
@@ -171,7 +176,19 @@ class BotConnectionSaveTest {
                 mock(org.frostnova.nova.core.timeline.TimelineStore.class),
                 mock(org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService.class),
                 new org.frostnova.nova.core.service.PushTemplateDefaults(properties),
-                mock(UpdateCheckService.class));
+                mock(UpdateCheckService.class),
+                connections(withList));
+    }
+
+    private ObjectProvider<BotConnectionContributor> connections(boolean withList) {
+        ObjectProvider<BotConnectionContributor> provider = mock(ObjectProvider.class);
+        when(provider.orderedStream()).thenAnswer(invocation ->
+                withList ? Stream.of(listContributor()) : Stream.empty());
+        return provider;
+    }
+
+    private static BotConnectionContributor listContributor() {
+        return () -> "novabot.adapter.onebot.senders";
     }
 
     private JSONObject body() {
@@ -220,6 +237,20 @@ class BotConnectionSaveTest {
         // 别的键一个也不许被这一趟碰掉
         assertEquals("true", value("novabot.adapter.onebot.detect.enable-http-detect"));
         assertEquals("true", value("novabot.core.config-ui.enabled"));
+    }
+
+    @Test
+    @DisplayName("没有适配器申报连接列表时不写文件")
+    void noConnectionListKeyDoesNotWrite() throws IOException {
+        write(FRESH);
+        String before = Files.readString(config, StandardCharsets.UTF_8);
+
+        JSONObject result = controller(fileService, tester(true), false).saveBot(body());
+
+        assertFalse(result.getBooleanValue("success"), result.getString("message"));
+        assertTrue(result.getBooleanValue("live"), "适配器已经接上了，接口就该照实说接上了");
+        assertEquals(before, Files.readString(config, StandardCharsets.UTF_8),
+                "没有连接列表路径时不该动文件");
     }
 
     @Test

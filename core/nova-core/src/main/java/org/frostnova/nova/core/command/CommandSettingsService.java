@@ -95,7 +95,7 @@ public class CommandSettingsService {
         List<Disabled> result = new ArrayList<>();
 
         for (String key : data.keySet()) {
-            // 键为「平台:会话号」。平台名可能含连字符（qq-onebot）但不含冒号，
+            // 键为「平台:会话号」。平台名可能含连字符但不含冒号，
             // 会话号必为数字，因此从右侧切一刀即可还原
             int split = key.lastIndexOf(':');
             if (split <= 0) {

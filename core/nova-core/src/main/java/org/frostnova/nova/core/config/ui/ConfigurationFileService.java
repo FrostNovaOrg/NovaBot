@@ -8,6 +8,7 @@ import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.core.timeline.TimelineEventType;
 import org.frostnova.nova.core.timeline.TimelineWriter;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.ApplicationContext;
@@ -18,6 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -83,13 +85,35 @@ public class ConfigurationFileService {
      */
     private final TimelineWriter timeline;
 
+    /**
+     * 清空即视为「不配置」的配置项：核心自有 Redis 地址，加上各适配器申报的令牌键
+     */
+    private final Set<String> blankMeansAbsent;
+
     @Autowired
     public ConfigurationFileService(ConfigurationMetadataService metadata, ApplicationContext context,
-                                    NovaCoreProperties properties, TimelineWriter timeline) {
-        this(Path.of("application.yml"), () -> ConfigurationTemplate.render(metadata.getFields(),
+                                    NovaCoreProperties properties, TimelineWriter timeline,
+                                    ObjectProvider<BotConnectionContributor> connections) {
+        this(metadata, context, properties, timeline, connections.orderedStream().toList());
+    }
+
+    private ConfigurationFileService(ConfigurationMetadataService metadata, ApplicationContext context,
+                                     NovaCoreProperties properties, TimelineWriter timeline,
+                                     Collection<BotConnectionContributor> contributors) {
+        this(Path.of("application.yml"),
+                initialContent(metadata, context, contributors),
+                () -> properties.getConfigUi().getBackupKeep(), Clock.systemDefaultZone(), timeline,
+                contributors);
+    }
+
+    private static Supplier<String> initialContent(ConfigurationMetadataService metadata,
+                                                   ApplicationContext context,
+                                                   Collection<BotConnectionContributor> contributors) {
+        Set<String> blank = mergeBlankMeansAbsent(contributors);
+        return () -> ConfigurationTemplate.render(metadata.getFields(),
                 ConfigurationPropertyFields.values(
-                        context.getBeansWithAnnotation(ConfigurationProperties.class).values())),
-                () -> properties.getConfigUi().getBackupKeep(), Clock.systemDefaultZone(), timeline);
+                        context.getBeansWithAnnotation(ConfigurationProperties.class).values()),
+                blank);
     }
 
     /**
@@ -100,13 +124,35 @@ public class ConfigurationFileService {
      * @param configPath 配置文件路径
      */
     ConfigurationFileService(Path configPath) {
-        this(configPath, () -> ConfigurationTemplate.render(new ConfigurationMetadataService().getFields(),
+        this(configPath, List.of());
+    }
+
+    /**
+     * 指定配置文件路径与连接列表申报，便于测试「留空即未配」走插件申报
+     * @param configPath 配置文件路径
+     * @param contributors 连接列表申报，空则核心只认 Redis 地址
+     */
+    ConfigurationFileService(Path configPath, Collection<BotConnectionContributor> contributors) {
+        this(configPath, coreTemplate(mergeBlankMeansAbsent(contributors)),
+                () -> TimestampedFileBackup.DEFAULT_KEEP, Clock.systemDefaultZone(), TimelineWriter.NONE,
+                contributors);
+    }
+
+    private static Supplier<String> coreTemplate(Set<String> blankMeansAbsent) {
+        return () -> ConfigurationTemplate.render(new ConfigurationMetadataService().getFields(),
                 ConfigurationPropertyFields.values(List.of(
-                        new NovaCoreProperties(), new EventStreamProperties(), new DatasourceProperties()))));
+                        new NovaCoreProperties(), new EventStreamProperties(), new DatasourceProperties())),
+                blankMeansAbsent);
     }
 
     ConfigurationFileService(Path configPath, Supplier<String> initialContent) {
         this(configPath, initialContent, () -> TimestampedFileBackup.DEFAULT_KEEP);
+    }
+
+    ConfigurationFileService(Path configPath, Supplier<String> initialContent,
+                             Collection<BotConnectionContributor> contributors) {
+        this(configPath, initialContent, () -> TimestampedFileBackup.DEFAULT_KEEP,
+                Clock.systemDefaultZone(), TimelineWriter.NONE, contributors);
     }
 
     ConfigurationFileService(Path configPath, Supplier<String> initialContent, IntSupplier backupKeep) {
@@ -130,11 +176,22 @@ public class ConfigurationFileService {
      */
     ConfigurationFileService(Path configPath, Supplier<String> initialContent, IntSupplier backupKeep,
                              Clock clock, TimelineWriter timeline) {
+        this(configPath, initialContent, backupKeep, clock, timeline, List.of());
+    }
+
+    /**
+     * @param timeline 时间线写入口，生产装配走这一支
+     * @param contributors 连接列表申报
+     */
+    ConfigurationFileService(Path configPath, Supplier<String> initialContent, IntSupplier backupKeep,
+                             Clock clock, TimelineWriter timeline,
+                             Collection<BotConnectionContributor> contributors) {
         this.configPath = configPath;
         this.initialContent = initialContent;
         this.backups = new TimestampedFileBackup(configPath, clock);
         this.backupKeep = backupKeep;
         this.timeline = timeline;
+        this.blankMeansAbsent = mergeBlankMeansAbsent(contributors);
     }
 
     /**
@@ -177,29 +234,55 @@ public class ConfigurationFileService {
      * <p>
      * 多数配置项留空是有意义的——静音时段留空表示不启用。但下面这几项写成空值
      * 要么让程序<b>根本起不来</b>（Redis 地址），要么表示「这一项没配」
-     * （机器人连接的令牌：HTTP / Websocket / 推送接口）。
+     * （机器人连接的令牌：由适配器申报）。
      * <p>
+     * 核心只留 Redis 地址。平台令牌键由 {@link BotConnectionContributor#blankMeansAbsentKeys()} 申报。
      * 键集只此一份：标量写口按完整路径认，对象列表渲染与列表元素字段按最后一段认。
-     * 两处各写一份的下场是有人往表里加了一项，而生成出来的文件照旧写它一个空值。
      */
-    static final Set<String> BLANK_MEANS_ABSENT = Set.of(
-            "spring.data.redis.host",
-            "novabot.adapter.onebot.senders.one-bot-http-token",
-            "novabot.adapter.onebot.senders.one-bot-websocket-token",
-            "novabot.adapter.onebot.senders.api-token");
+    static final Set<String> CORE_BLANK_MEANS_ABSENT = Set.of("spring.data.redis.host");
+
+    static Set<String> mergeBlankMeansAbsent(Collection<BotConnectionContributor> contributors) {
+        Set<String> keys = new LinkedHashSet<>(CORE_BLANK_MEANS_ABSENT);
+        if (contributors == null) {
+            return Set.copyOf(keys);
+        }
+        for (BotConnectionContributor contributor : contributors) {
+            if (contributor == null) {
+                continue;
+            }
+            Set<String> declared = contributor.blankMeansAbsentKeys();
+            if (declared == null) {
+                continue;
+            }
+            keys.addAll(declared);
+        }
+        return Set.copyOf(keys);
+    }
+
+    /**
+     * 本实例合并后的「留空即未配」键，含核心自有与插件申报
+     * @return 完整路径
+     */
+    Set<String> blankMeansAbsent() {
+        return blankMeansAbsent;
+    }
 
     /**
      * 某个列表元素内部的字段是不是「留空＝未配置」
      * <p>
-     * 认的是 {@link #BLANK_MEANS_ABSENT} 里那些键的最后一段，所以
-     * {@code one-bot-http-token} 与完整路径是同一张表上的同一项。
+     * 认的是 {@link #blankMeansAbsent()} 里那些键的最后一段，所以
+     * 令牌字段短名与完整路径是同一张表上的同一项。
      */
-    static boolean isBlankMeansAbsentField(String field) {
-        if (BLANK_MEANS_ABSENT.contains(field)) {
+    boolean isBlankMeansAbsentField(String field) {
+        return isBlankMeansAbsentField(field, blankMeansAbsent);
+    }
+
+    static boolean isBlankMeansAbsentField(String field, Set<String> keys) {
+        if (keys.contains(field)) {
             return true;
         }
         String suffix = "." + field;
-        for (String key : BLANK_MEANS_ABSENT) {
+        for (String key : keys) {
             if (key.endsWith(suffix)) {
                 return true;
             }
@@ -325,7 +408,7 @@ public class ConfigurationFileService {
 
             // 这类配置项清空等于「不配置」，要把整行删掉而不是留一个空值——
             // 留空会让程序下次启动直接失败。自下而上处理，删行不会让后续行号失效
-            if (BLANK_MEANS_ABSENT.contains(change.getKey())
+            if (blankMeansAbsent.contains(change.getKey())
                     && (change.getValue() == null || change.getValue().isBlank())) {
                 if (line != null) {
                     lines.remove(line.index);
@@ -401,7 +484,7 @@ public class ConfigurationFileService {
      * 「找不到第 1 个元素」于是成了全新机器上的<b>必然</b>结果，而它的表现是引导流程第二步
      * 报一句「保存失败」——那台机器因此一步也走不下去。所以下标 0 且列表为空时建一个出来，
      * 字段与顺序由调用方给：写进去的必须是<b>整条</b>元素，缺了平台名的那一条会让下次启动直接失败。
-     * @param listPath 列表的完整路径，例如 novabot.adapter.onebot.senders
+     * @param listPath 列表的完整路径，由适配器申报
      * @param index 元素下标，从 0 开始
      * @param fields 待修改的字段名到取值，字段名为元素内部的键；建新元素时即为元素全文
      * @return 实际改动的字段数。建新元素时空值字段不写进文件、也不计入这个数，

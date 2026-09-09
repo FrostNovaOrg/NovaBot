@@ -15,7 +15,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class CommandContext {
     /**
-     * 推送平台名，如 qq-onebot
+     * 推送平台名，由适配器自报
      */
     private final String platform;
 
