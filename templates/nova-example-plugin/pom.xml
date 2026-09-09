@@ -3,7 +3,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <!-- 依赖的 Spring Boot 版本，建议与 StarBotCore 项目使用的版本保持一致 -->
+    <!-- 依赖的 Spring Boot 版本，建议与 NovaBot 项目使用的版本保持一致 -->
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
@@ -15,12 +15,12 @@
     <groupId>com.example</groupId>
     <!-- 插件 ID，必填，与 groupId 共同构成插件唯一标识 -->
     <artifactId>nova-example-plugin</artifactId>
-    <!-- 插件版本，必填，会在插件加载时输出至 StarBot 日志中 -->
+    <!-- 插件版本，必填，会写入插件描述文件 plugin.json -->
     <version>1.0.0</version>
-    <!-- 插件名称，必填，会在插件加载时输出至 StarBot 日志中 -->
-    <name>StarBotExamplePlugin</name>
-    <!-- 插件描述，必填，会在插件加载时输出至 StarBot 日志中 -->
-    <description>Example Plugin For StarBot</description>
+    <!-- 插件名称，必填，会写入插件描述文件 plugin.json -->
+    <name>NovaExamplePlugin</name>
+    <!-- 插件描述，必填，会写入插件描述文件 plugin.json -->
+    <description>Example Plugin For NovaBot</description>
     <!-- 插件主页 URL -->
     <url>https://www.example.com</url>
 
@@ -29,14 +29,14 @@
         <developer>
             <!-- 插件作者 ID，必填，可与名称保持一致 -->
             <id>Author</id>
-            <!-- 插件作者名称，必填，会在插件加载时输出至 StarBot 日志中 -->
+            <!-- 插件作者名称，必填，会写入插件描述文件 plugin.json -->
             <name>Author</name>
             <!-- 插件作者邮箱 -->
             <email>example@example.com</email>
         </developer>
     </developers>
 
-    <!-- 插件开源许可证，StarBot 及其衍生项目默认使用 AGPLv3 开源许可证 -->
+    <!-- 插件开源许可证，NovaBot 及其衍生项目默认使用 AGPLv3 开源许可证 -->
     <licenses>
         <license>
             <name>GNU Affero General Public License v3.0</name>
@@ -68,7 +68,7 @@
 
     <!-- 插件依赖 -->
     <dependencies>
-        <!-- StarBot 核心依赖，必需，建议开发时使用最新版本 -->
+        <!-- NovaBot 核心依赖，必需，建议开发时使用最新版本 -->
         <dependency>
             <groupId>org.frostnova.nova</groupId>
             <artifactId>nova-core</artifactId>

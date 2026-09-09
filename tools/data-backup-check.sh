@@ -111,12 +111,12 @@ else
     RED=$((RED + 1))
 fi
 
-# ⑤ 三件在 dist/templates 下，且 service ExecStart 以 /opt/starbot/ 开头、User 与 starbot.service 同
+# ⑤ 三件在 dist/templates 下，且 service ExecStart 以 /opt/starbot/ 开头、User 与 novabot.service 同
 TPL="$REPO_ROOT/dist/templates"
 SH="$TPL/tools/data-backup.sh"
 SVC="$TPL/novabot-backup.service"
 TMR="$TPL/novabot-backup.timer"
-REF="$TPL/starbot.service"
+REF="$TPL/novabot.service"
 ok5=1
 reason5=""
 if [ ! -f "$SH" ] || [ ! -f "$SVC" ] || [ ! -f "$TMR" ]; then
@@ -153,7 +153,7 @@ if [ "$ok5" -eq 1 ]; then
     done < "$REF"
     if [ -z "$user_svc" ] || [ "$user_svc" != "$user_ref" ]; then
         ok5=0
-        reason5="User 与 starbot.service 不同（service=${user_svc} ref=${user_ref}）"
+        reason5="User 与 novabot.service 不同（service=${user_svc} ref=${user_ref}）"
     fi
 fi
 if [ "$ok5" -eq 1 ]; then
@@ -165,7 +165,7 @@ if [ "$ok5" -eq 1 ]; then
     fi
 fi
 if [ "$ok5" -eq 1 ]; then
-    echo "⑤ 绿：三件在 dist/templates 下，ExecStart 以 /opt/starbot/ 开头，User 与 starbot.service 同，timer 注释现行安装目录"
+    echo "⑤ 绿：三件在 dist/templates 下，ExecStart 以 /opt/starbot/ 开头，User 与 novabot.service 同，timer 注释现行安装目录"
 else
     echo "⑤ 红：${reason5}"
     RED=$((RED + 1))

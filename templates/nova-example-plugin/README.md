@@ -17,7 +17,7 @@
 
 1. 克隆本示例项目作为模板创建新项目
 2. 修改 `pom.xml` 中的项目信息, 该部分信息会作为插件元数据, 构建时生成到插件描述文件 `plugin.json` 中, 随插件 JAR 一同打包 (groupId, artifactId, version, name, description, url, developers 等)
-3. 开发你的插件功能, 开发时可正常使用绝大多数 Spring 注解 (可参考 `NovaExampleStartEventListener.java`、`NovaExampleDanmuEventListener.java` 和 `StarBotExampleMeowAdder.java` 示例)
+3. 开发你的插件功能, 开发时可正常使用绝大多数 Spring 注解 (可参考 `NovaExampleStartEventListener.java`、`NovaExampleDanmuEventListener.java` 和 `NovaExampleMeowAdder.java` 示例)
 4. 使用 Maven 构建项目: `mvn clean package`
 5. 将 `target` 中生成的 JAR 文件放入 NovaBot 的 `plugins` 目录
 
@@ -34,7 +34,7 @@ nova-example-plugin/
 │   │   │   └── com/example/                               # 插件代码包
 │   │   │       ├── NovaExampleStartEventListener.java  # 示例功能: 启动事件监听器
 │   │   │       ├── NovaExampleDanmuEventListener.java  # 示例功能: 弹幕监听器
-│   │   │       ├── StarBotExampleMeowAdder.java           # 示例功能: 推送消息修改器
+│   │   │       ├── NovaExampleMeowAdder.java              # 示例功能: 推送消息修改器
 │   │   │       └── NovaExamplePluginAutoConfiguration.java  # 自报类: 让 Spring Boot 装载本插件
 │   │   ├── resources/
 │   │   │   └── META-INF/spring/                           # 自报文件所在目录
@@ -59,9 +59,9 @@ nova-example-plugin/
 <!-- 插件版本，必填，会写入插件描述文件 plugin.json -->
 <version>1.0.0</version>
 <!-- 插件名称，必填，会写入插件描述文件 plugin.json -->
-<name>StarBotExamplePlugin</name>
+<name>NovaExamplePlugin</name>
 <!-- 插件描述，必填，会写入插件描述文件 plugin.json -->
-<description>Example Plugin For StarBot</description>
+<description>Example Plugin For NovaBot</description>
 <!-- 插件主页 URL -->
 <url>https://www.example.com</url>
 

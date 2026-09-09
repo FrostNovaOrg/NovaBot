@@ -22,7 +22,7 @@ import org.frostnova.nova.core.service.HandlerPackageNames;
 import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.PushTemplateDefaults;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
-import org.frostnova.nova.core.service.StarBotEventHandlerService;
+import org.frostnova.nova.core.service.NovaEventHandlerService;
 import org.frostnova.nova.report.painter.BilibiliDynamicPainter;
 import org.frostnova.nova.report.painter.BilibiliLiveReportPainter;
 import org.junit.jupiter.api.BeforeEach;
@@ -92,7 +92,7 @@ class LegacyHandlerClassNameTest {
     /**
      * 按容器里真有这两个处理器的样子建一份处理器表
      */
-    private StarBotEventHandlerService service() {
+    private NovaEventHandlerService service() {
         Map<String, NovaEventHandler> beans = new LinkedHashMap<>();
         beans.put("bilibiliDynamicPushHandler", dynamic);
         beans.put("bilibiliLiveReportPushHandler", report);
@@ -100,7 +100,7 @@ class LegacyHandlerClassNameTest {
         ApplicationContext context = mock(ApplicationContext.class);
         when(context.getBeansOfType(NovaEventHandler.class)).thenReturn(beans);
 
-        StarBotEventHandlerService service = new StarBotEventHandlerService(context);
+        NovaEventHandlerService service = new NovaEventHandlerService(context);
         service.onContextRefreshedEvent();
         return service;
     }
@@ -110,7 +110,7 @@ class LegacyHandlerClassNameTest {
     @Test
     @DisplayName("旧全类名仍取得到处理器")
     void legacyClassNameStillResolves() {
-        StarBotEventHandlerService service = service();
+        NovaEventHandlerService service = service();
 
         Optional<NovaEventHandler> byOldDynamic = service.getHandler(OLD_DYNAMIC);
         assertTrue(byOldDynamic.isPresent(), "老 datasource.json 里写的 " + OLD_DYNAMIC + " 查不到处理器, "
@@ -125,7 +125,7 @@ class LegacyHandlerClassNameTest {
     @Test
     @DisplayName("新全类名照常取得到")
     void currentClassNameStillResolves() {
-        StarBotEventHandlerService service = service();
+        NovaEventHandlerService service = service();
 
         assertSame(dynamic, service.getHandler(BilibiliDynamicPushHandler.class.getName()).orElse(null));
         assertSame(report, service.getHandler(BilibiliLiveReportPushHandler.class.getName()).orElse(null));
@@ -135,13 +135,13 @@ class LegacyHandlerClassNameTest {
     @DisplayName("同一个旧名连问两次, 只提醒一条")
     void warnsOncePerLegacyName() {
         ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger)
-                org.slf4j.LoggerFactory.getLogger(StarBotEventHandlerService.class);
+                org.slf4j.LoggerFactory.getLogger(NovaEventHandlerService.class);
         ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
                 new ch.qos.logback.core.read.ListAppender<>();
         appender.start();
         logger.addAppender(appender);
         try {
-            StarBotEventHandlerService service = service();
+            NovaEventHandlerService service = service();
             service.getHandler(OLD_DYNAMIC);
             service.getHandler(OLD_DYNAMIC);
 
@@ -273,7 +273,7 @@ class LegacyHandlerClassNameTest {
     @Test
     @DisplayName("现行类名把包根换成旧根, 仍取得到处理器")
     void oldPackageRootOfCurrentClassStillResolves() {
-        StarBotEventHandlerService service = service();
+        NovaEventHandlerService service = service();
         BilibiliLiveOnPushHandler liveOn = new BilibiliLiveOnPushHandler(mock(BilibiliApiUtil.class),
                 mock(NovaMessageSender.class), mock(AtSubscriptionService.class), mock(LiveDataService.class));
         Map<String, NovaEventHandler> beans = new LinkedHashMap<>();
@@ -282,7 +282,7 @@ class LegacyHandlerClassNameTest {
         beans.put("bilibiliLiveReportPushHandler", report);
         ApplicationContext context = mock(ApplicationContext.class);
         when(context.getBeansOfType(NovaEventHandler.class)).thenReturn(beans);
-        StarBotEventHandlerService withThree = new StarBotEventHandlerService(context);
+        NovaEventHandlerService withThree = new NovaEventHandlerService(context);
         withThree.onContextRefreshedEvent();
 
         assertSame(liveOn, withThree.getHandler(HandlerPackageNames.toOldPackage(liveOn.getClass().getName())).orElse(null));
@@ -293,7 +293,7 @@ class LegacyHandlerClassNameTest {
     @Test
     @DisplayName("没人认领的名字仍然查不到")
     void unknownNameStaysUnknown() {
-        StarBotEventHandlerService service = service();
+        NovaEventHandlerService service = service();
 
         assertTrue(service.getHandler("org.frostnova.nova.bilibili.handler.NeverExistedPushHandler").isEmpty(),
                 "旧名回落若做成「查不到就随便给一个」, 写错的类名就再也拦不下来了");
@@ -305,7 +305,7 @@ class LegacyHandlerClassNameTest {
     @Test
     @DisplayName("主表里只放真类名")
     void registryHoldsRealClassNamesOnly() {
-        StarBotEventHandlerService service = service();
+        NovaEventHandlerService service = service();
 
         assertTrue(service.getRegisteredHandlerClasses().contains(BilibiliDynamicPushHandler.class.getName()));
         assertFalse(service.getRegisteredHandlerClasses().contains(OLD_DYNAMIC),

@@ -77,6 +77,16 @@
   `StarBotCoreApplication` → `NovaCoreApplication`；
   `StarBotStateStore` → `NovaStateStore`；
   `StarBotCommonPainterFactory` → `NovaCommonPainterFactory`。
+- 事件处理器服务与推送模板初始化两个类改用 `Nova` 前缀。**这两个类不留旧名**；注入旧类型的第三方插件须改用新名。包名未变。对照：
+  `StarBotEventHandlerService` → `NovaEventHandlerService`；
+  `StarBotEventHandlerPushMessageInitializer` → `NovaEventHandlerPushMessageInitializer`。
+- 五个插件构件与示例模板的 `<name>` 改用 `Nova` 前缀，各构件 `<description>` 与 pom 注释里的旧项目名一并改为 NovaBot。Maven 坐标未变。对照：
+  `StarBotReport` → `NovaReport`；
+  `StarBotBilibili` → `NovaBilibili`；
+  `StarBotOneBotAdapterPlugin` → `NovaOneBotAdapterPlugin`；
+  `StarBotOneBotAdapterNapcatExtensionPlugin` → `NovaOneBotAdapterNapcatExtensionPlugin`；
+  `StarBotExamplePlugin` → `NovaExamplePlugin`。
+- 发行模板目录里的 systemd 单元文件定名 `novabot.service`，旧名模板文件移除（机器上已在用的 `starbot.service` 不受影响）；示例插件模板的示例类 `StarBotExampleMeowAdder` 改名 `NovaExampleMeowAdder`；安全说明、用户指南与反代模板注释里的配置示例改用现行 `novabot:` 前缀。
 - 插件扩展点的三个名字换了新名：组件注解 `StarBotComponent` 改叫 `NovaComponent`，推送处理器接口 `StarBotEventHandler` 改叫 `NovaEventHandler`，聊天命令接口 `StarBotCommand` 改叫 `NovaCommand`。包名变更后旧插件本版须改 import 重新编译，`StarBotComponent`／`StarBotEventHandler`／`StarBotCommand` 三个旧名一并删除。
 - Java 包名由 `com.starlwr.bot.*` 改为 `org.frostnova.nova.*`（构建工具 `com.starlwr.maven.plugin.*` → `org.frostnova.nova.maven.plugin.*`）；第三方插件须改 import 重新编译；`datasource.json` 里写旧包名的 handler 本版仍认，日志提示一次。对照：
   `com.starlwr.bot.core` → `org.frostnova.nova.core`；

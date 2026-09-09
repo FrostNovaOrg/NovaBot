@@ -12,7 +12,7 @@
 
     <artifactId>nova-core</artifactId>
     <name>NovaBot</name>
-    <description>StarBot Core</description>
+    <description>NovaBot Core</description>
 
     <dependencies>
         <!--

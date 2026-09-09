@@ -4,7 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.enums.PushTargetType;
-import org.frostnova.nova.core.service.StarBotEventHandlerService;
+import org.frostnova.nova.core.service.NovaEventHandlerService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -30,10 +30,10 @@ public class ConfigurationValidator {
      */
     private static final int MAX_ISSUES = 10;
 
-    private final StarBotEventHandlerService handlerService;
+    private final NovaEventHandlerService handlerService;
 
     @Autowired
-    public ConfigurationValidator(StarBotEventHandlerService handlerService) {
+    public ConfigurationValidator(NovaEventHandlerService handlerService) {
         this.handlerService = handlerService;
     }
 

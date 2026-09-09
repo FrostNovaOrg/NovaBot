@@ -25,7 +25,7 @@ import static org.mockito.Mockito.when;
  * 旧全类名那张表反着读得出来，而且读到的与运行期认处理器的是同一张
  * <p>
  * 配置界面要认出「使用者这一条配的就是这一类通知」，靠的就是这张表。它若与
- * {@link StarBotEventHandlerService#getHandler(String)} 回落时用的那一张分了叉，
+ * {@link NovaEventHandlerService#getHandler(String)} 回落时用的那一张分了叉，
  * 表现是界面上写着「关」而机器人照推——两处的代码看起来都对，点一遍界面也看不出异常。
  * <p>
  * 因此本类量的不是「有没有这个方法」，而是<b>两处读的是不是同一张表</b>：
@@ -42,7 +42,7 @@ class HandlerAliasTableTest {
     /**
      * 按容器里真有这几个处理器的样子建一份处理器表
      */
-    private static StarBotEventHandlerService service(NovaEventHandler... handlers) {
+    private static NovaEventHandlerService service(NovaEventHandler... handlers) {
         Map<String, NovaEventHandler> beans = new LinkedHashMap<>();
         for (NovaEventHandler handler : handlers) {
             beans.put(handler.getClass().getName(), handler);
@@ -51,7 +51,7 @@ class HandlerAliasTableTest {
         ApplicationContext context = mock(ApplicationContext.class);
         when(context.getBeansOfType(NovaEventHandler.class)).thenReturn(beans);
 
-        StarBotEventHandlerService service = new StarBotEventHandlerService(context);
+        NovaEventHandlerService service = new NovaEventHandlerService(context);
         service.onContextRefreshedEvent();
         return service;
     }
@@ -61,7 +61,7 @@ class HandlerAliasTableTest {
     void everyLegacyNameResolvesBackToItsHandler() {
         Alpha alpha = new Alpha();
         Beta beta = new Beta();
-        StarBotEventHandlerService service = service(alpha, beta);
+        NovaEventHandlerService service = service(alpha, beta);
 
         Map<String, List<String>> table = service.getLegacyClassNames();
         assertFalse(table.isEmpty(), "一条旧名也没反读出来, 这条判据此刻什么都没量");
@@ -79,7 +79,7 @@ class HandlerAliasTableTest {
     @Test
     @DisplayName("一个处理器的多个旧名都在, 按字典序")
     void allLegacyNamesOfOneHandlerAreListed() {
-        StarBotEventHandlerService service = service(new Alpha(), new Beta());
+        NovaEventHandlerService service = service(new Alpha(), new Beta());
 
         List<String> expectedAlpha = new ArrayList<>(List.of(LEGACY_A1, LEGACY_A2,
                 HandlerPackageNames.toOldPackage(Alpha.class.getName())));
@@ -95,7 +95,7 @@ class HandlerAliasTableTest {
     @Test
     @DisplayName("没声明过旧名的处理器只带包根迁移那一条")
     void handlerWithoutLegacyNamesIsAbsent() {
-        StarBotEventHandlerService service = service(new Alpha(), new Plain());
+        NovaEventHandlerService service = service(new Alpha(), new Plain());
 
         assertEquals(List.of(HandlerPackageNames.toOldPackage(Plain.class.getName())),
                 service.getLegacyClassNames().get(Plain.class.getName()),
@@ -107,7 +107,7 @@ class HandlerAliasTableTest {
     @DisplayName("现行类名把包根换成旧根, 取得到同一个处理器")
     void oldPackageRootFallsBackToCurrentClass() {
         Alpha alpha = new Alpha();
-        StarBotEventHandlerService service = service(alpha);
+        NovaEventHandlerService service = service(alpha);
         String oldName = HandlerPackageNames.toOldPackage(Alpha.class.getName());
         assertSame(alpha, service.getHandler(oldName).orElse(null),
                 "使用者 datasource.json 里仍写旧包根时查不到, 这一类推送不发也不报错");
@@ -118,7 +118,7 @@ class HandlerAliasTableTest {
     @Test
     @DisplayName("旧名不许混进主表, 主表仍只有真类名")
     void legacyNamesStayOutOfTheMainTable() {
-        StarBotEventHandlerService service = service(new Alpha(), new Beta());
+        NovaEventHandlerService service = service(new Alpha(), new Beta());
 
         assertEquals(Set.of(Alpha.class.getName(), Beta.class.getName()),
                 service.getRegisteredHandlerClasses(),
@@ -132,7 +132,7 @@ class HandlerAliasTableTest {
     void aNameTakenByARealHandlerIsNotReportedAsLegacy() {
         Claimer claimer = new Claimer();
         Plain plain = new Plain();
-        StarBotEventHandlerService service = service(claimer, plain);
+        NovaEventHandlerService service = service(claimer, plain);
 
         List<String> claimerLegacy = service.getLegacyClassNames().getOrDefault(Claimer.class.getName(), List.of());
         assertFalse(claimerLegacy.contains(Plain.class.getName()),

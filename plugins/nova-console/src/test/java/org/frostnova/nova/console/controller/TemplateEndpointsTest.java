@@ -7,7 +7,7 @@ import org.frostnova.nova.core.handler.NovaEventHandler;
 import org.frostnova.nova.core.model.HandlerOption;
 import org.frostnova.nova.core.model.PushMessage;
 import org.frostnova.nova.core.service.PushTemplateDefaults;
-import org.frostnova.nova.core.service.StarBotEventHandlerService;
+import org.frostnova.nova.core.service.NovaEventHandlerService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -54,7 +54,7 @@ class TemplateEndpointsTest {
         defaults = new PushTemplateDefaults(properties);
         handler = new FakeHandler();
 
-        StarBotEventHandlerService handlers = mock(StarBotEventHandlerService.class);
+        NovaEventHandlerService handlers = mock(NovaEventHandlerService.class);
         when(handlers.getHandler(anyString())).thenAnswer(invocation -> {
             String name = invocation.getArgument(0);
             if (FakeHandler.class.getName().equals(name)) {
@@ -126,7 +126,7 @@ class TemplateEndpointsTest {
     @SuppressWarnings("unchecked")
     private PushController controller(NovaCoreProperties properties,
                                      PushTemplateDefaults templateDefaults,
-                                     StarBotEventHandlerService handlers) {
+                                     NovaEventHandlerService handlers) {
         return new PushController(
                 mock(org.frostnova.nova.core.config.ui.RuntimeConfigurationApplier.class),
                 mock(org.frostnova.nova.core.config.ui.ConfigurationFileService.class),

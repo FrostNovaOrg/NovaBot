@@ -128,7 +128,7 @@ class HomeStatusFieldsTest {
                 messageSender,
                 mock(ObjectProvider.class),
                 mock(org.frostnova.nova.core.health.PushActivityRecorder.class),
-                mock(org.frostnova.nova.core.service.StarBotEventHandlerService.class),
+                mock(org.frostnova.nova.core.service.NovaEventHandlerService.class),
                 mock(org.frostnova.nova.core.datasource.DataSourceServiceRegistry.class),
                 mock(ConfigurationLevelResolver.class),
                 // 不 mock 这个具体类：内联 mock 要改写它的字节码，clean 构建下实测会抛「could not instrument」

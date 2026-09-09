@@ -5,7 +5,7 @@ import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.datasource.PushMessageInitializer;
 import org.frostnova.nova.core.model.PushMessage;
 import org.frostnova.nova.core.service.PushTemplateDefaults;
-import org.frostnova.nova.core.service.StarBotEventHandlerService;
+import org.frostnova.nova.core.service.NovaEventHandlerService;
 import org.frostnova.nova.core.lang.StringUtil;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -27,13 +27,13 @@ import java.util.Optional;
  */
 @Slf4j
 @Component
-public class StarBotEventHandlerPushMessageInitializer implements PushMessageInitializer {
-    private final StarBotEventHandlerService handlerService;
+public class NovaEventHandlerPushMessageInitializer implements PushMessageInitializer {
+    private final NovaEventHandlerService handlerService;
 
     private final PushTemplateDefaults templateDefaults;
 
     @Autowired
-    public StarBotEventHandlerPushMessageInitializer(StarBotEventHandlerService handlerService,
+    public NovaEventHandlerPushMessageInitializer(NovaEventHandlerService handlerService,
                                                      PushTemplateDefaults templateDefaults) {
         this.handlerService = handlerService;
         this.templateDefaults = templateDefaults;

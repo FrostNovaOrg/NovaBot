@@ -12,9 +12,9 @@ import org.frostnova.nova.core.handler.NovaEventHandler;
 import org.frostnova.nova.core.model.PushMessage;
 import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.model.PushUser;
-import org.frostnova.nova.core.handler.StarBotEventHandlerPushMessageInitializer;
+import org.frostnova.nova.core.handler.NovaEventHandlerPushMessageInitializer;
 import org.frostnova.nova.core.service.PushTemplateDefaults;
-import org.frostnova.nova.core.service.StarBotEventHandlerService;
+import org.frostnova.nova.core.service.NovaEventHandlerService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -44,14 +44,14 @@ class AbstractDataSourceTest {
 
     private ApplicationEventPublisher publisher;
 
-    private StarBotEventHandlerService handlerService;
+    private NovaEventHandlerService handlerService;
 
     private TestDataSource dataSource;
 
     @BeforeEach
     void setUp() {
         publisher = mock(ApplicationEventPublisher.class);
-        handlerService = mock(StarBotEventHandlerService.class);
+        handlerService = mock(NovaEventHandlerService.class);
 
         NovaEventHandler handler = mock(NovaEventHandler.class);
         doReturn(NovaExternalBaseEvent.class).when(handler).getEventType();
@@ -67,7 +67,7 @@ class AbstractDataSourceTest {
         when(handlerService.getHandler(argThat(name -> !HANDLER.equals(name)))).thenReturn(Optional.empty());
 
         DataSourceServiceRegistry registry = new DataSourceServiceRegistry(List.of(new BilibiliDataSourceService()));
-        dataSource = new TestDataSource(publisher, registry, new StarBotEventHandlerPushMessageInitializer(
+        dataSource = new TestDataSource(publisher, registry, new NovaEventHandlerPushMessageInitializer(
                 handlerService, new PushTemplateDefaults(new NovaCoreProperties())));
     }
 

@@ -49,7 +49,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
-        <!-- StarBot 自身构件版本 -->
+        <!-- NovaBot 自身构件版本 -->
         <novacore.version>5.2.0</novacore.version>
         <nova-core.version>5.2.0</nova-core.version>
         <nova-plugin-processor.version>1.0.0</nova-plugin-processor.version>

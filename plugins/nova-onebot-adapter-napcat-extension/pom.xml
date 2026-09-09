@@ -12,8 +12,8 @@
 
     <artifactId>nova-onebot-adapter-napcat-extension</artifactId>
     <version>1.0.0</version>
-    <name>StarBotOneBotAdapterNapcatExtensionPlugin</name>
-    <description>OneBot Adapter Napcat Extension Plugin For StarBot</description>
+    <name>NovaOneBotAdapterNapcatExtensionPlugin</name>
+    <description>OneBot Adapter Napcat Extension Plugin For NovaBot</description>
 
     <!--
         上游此模块还声明了对 nova-bilibili 的依赖，但其源码中对该模块零引用，

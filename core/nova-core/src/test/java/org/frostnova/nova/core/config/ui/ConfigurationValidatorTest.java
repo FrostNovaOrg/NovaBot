@@ -1,6 +1,6 @@
 package org.frostnova.nova.core.config.ui;
 
-import org.frostnova.nova.core.service.StarBotEventHandlerService;
+import org.frostnova.nova.core.service.NovaEventHandlerService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -26,7 +26,7 @@ class ConfigurationValidatorTest {
 
     @BeforeEach
     void setUp() {
-        StarBotEventHandlerService handlers = mock(StarBotEventHandlerService.class);
+        NovaEventHandlerService handlers = mock(NovaEventHandlerService.class);
         when(handlers.getAcceptedHandlerClasses()).thenReturn(Set.of(HANDLER));
 
         validator = new ConfigurationValidator(handlers);
@@ -134,7 +134,7 @@ class ConfigurationValidatorTest {
     @DisplayName("运行期认得的旧类名, 保存时不许拦")
     void acceptsLegacyHandlerClassNameThatStillResolves() {
         String legacy = "org.frostnova.nova.bilibili.handler.BilibiliDynamicPushHandler";
-        StarBotEventHandlerService handlers = mock(StarBotEventHandlerService.class);
+        NovaEventHandlerService handlers = mock(NovaEventHandlerService.class);
         // 主表里只有真类名，旧名只在「认得的」那一份里——校验读错哪一份，这一格就红
         when(handlers.getRegisteredHandlerClasses()).thenReturn(Set.of(HANDLER));
         when(handlers.getAcceptedHandlerClasses()).thenReturn(Set.of(HANDLER, legacy));
@@ -151,7 +151,7 @@ class ConfigurationValidatorTest {
     @Test
     @DisplayName("处理器尚未注册完毕时不应误报")
     void skipsHandlerCheckBeforeRegistration() {
-        StarBotEventHandlerService empty = mock(StarBotEventHandlerService.class);
+        NovaEventHandlerService empty = mock(NovaEventHandlerService.class);
         when(empty.getAcceptedHandlerClasses()).thenReturn(Set.of());
 
         String json = """

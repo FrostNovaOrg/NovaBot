@@ -83,7 +83,7 @@
   配错 uid 的表现是「什么都不发生」，因为这里根本匹配不上——这也是配置界面要在添加主播时
   先拉昵称让人确认的原因。
 - **处理器抛异常只记日志，不会中断其他处理器**。一个目标配置有误不应连累其他目标。
-- **`datasource.json` 里写的是处理器全限定类名**，由 `StarBotEventHandlerService` 在
+- **`datasource.json` 里写的是处理器全限定类名**，由 `NovaEventHandlerService` 在
   `ContextRefreshedEvent` 时建立 `类名 → 实例` 的映射。类名写错在运行期表现为
   「不存在的事件处理器」日志，因此保存配置时就会校验（见第 6 节）。
 

@@ -13,10 +13,10 @@
 # 要用它：复制成 application.yml 放在程序目录下，再按需要改。
 
 server:
-  port: 7827                # StarBot 服务端口
+  port: 7827                # NovaBot 服务端口
   tomcat:
     threads:
-      max: 8                # 工作线程上限。StarBot 只服务推送接口与配置界面，
+      max: 8                # 工作线程上限。NovaBot 只服务推送接口与配置界面，
       min-spare: 2          # 默认的 200 线程纯属浪费，8 个足以应付
     max-connections: 64
     accept-count: 32

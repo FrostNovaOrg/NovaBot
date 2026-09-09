@@ -12,8 +12,8 @@
 
     <artifactId>nova-bilibili</artifactId>
     <version>1.0.0</version>
-    <name>StarBotBilibili</name>
-    <description>StarBot For Bilibili</description>
+    <name>NovaBilibili</name>
+    <description>NovaBot For Bilibili</description>
 
     <!--
         本模块为依据哔哩哔哩公开接口独立编写的实现，不含任何来自上游二进制的反编译代码。

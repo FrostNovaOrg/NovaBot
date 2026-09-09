@@ -48,7 +48,7 @@ import java.util.regex.Pattern;
  * <h2>与 {@code supersededDefaults} 的关系</h2>
  * 两者管的是不同的事：那张表回答「使用者存着的这一串是不是某一版出厂默认」，
  * 本类回答「这台机器的默认现在是什么」。判定顺序是先认旧默认（于是那一条跟着走），
- * 再由本类给出跟着走的目标——见 {@code StarBotEventHandlerPushMessageInitializer}。
+ * 再由本类给出跟着走的目标——见 {@code NovaEventHandlerPushMessageInitializer}。
  */
 @Slf4j
 @Service

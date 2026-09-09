@@ -43,7 +43,7 @@ server:
 `allow-ips` 白名单、在防火墙上限制来源。
 
 ```yaml
-starbot:
+novabot:
   adapter:
     onebot:
       security:
@@ -96,7 +96,7 @@ ssh -L 6099:127.0.0.1:6099 用户名@服务器地址
 启动日志会为这种组合打出 ERROR，但配置本身不会被拒绝。
 
 ```yaml
-starbot:
+novabot:
   core:
     config-ui:
       allow-ips:
@@ -159,7 +159,7 @@ starbot:
 若在 Nginx 之后部署，需显式开启 `trust-proxy`，否则来源 IP 始终是代理的地址：
 
 ```yaml
-starbot:
+novabot:
   adapter:
     onebot:
       security:

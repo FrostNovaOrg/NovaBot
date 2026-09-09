@@ -77,7 +77,7 @@ NovaBot 自己不登录 QQ，只是把消息交给 OneBot 实现去发。所以�
 启动并看日志：
 
 ```bash
-sudo systemctl start starbot && sudo journalctl -u starbot -f
+sudo systemctl start novabot && sudo journalctl -u novabot -f
 ```
 
 ### 手动安装

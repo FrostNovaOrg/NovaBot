@@ -8,7 +8,7 @@ import org.frostnova.nova.core.health.PushActivityRecorder;
 import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.protocol.EventStreamTokenService;
 import org.frostnova.nova.core.service.LiveDataService;
-import org.frostnova.nova.core.service.StarBotEventHandlerService;
+import org.frostnova.nova.core.service.NovaEventHandlerService;
 import org.frostnova.nova.core.service.NovaSenderService;
 import org.frostnova.nova.core.service.NovaStateStore;
 import org.frostnova.nova.core.sender.PushGate;
@@ -155,7 +155,7 @@ class UpdateStatusFieldsTest {
                 mock(NovaMessageSender.class),
                 mock(ObjectProvider.class),
                 mock(PushActivityRecorder.class),
-                mock(StarBotEventHandlerService.class),
+                mock(NovaEventHandlerService.class),
                 mock(DataSourceServiceRegistry.class),
                 mock(ConfigurationLevelResolver.class),
                 // 不 mock 这个具体类：内联 mock 要改写它的字节码，clean 构建下实测会抛「could not instrument」
