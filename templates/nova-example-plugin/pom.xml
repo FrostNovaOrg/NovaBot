@@ -96,6 +96,24 @@
                     </execution>
                 </executions>
             </plugin>
+            <!--
+                JDK 23+ javac 默认不再跑注解处理。显式给出 lombok 的 annotationProcessorPaths
+                （版本跟 spring-boot parent 的 lombok.version，不写死数字），JDK 17 与 23+
+                都不必再加 -Dmaven.compiler.proc=full。
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
             <plugin>
                 <artifactId>maven-resources-plugin</artifactId>
                 <executions>
