@@ -1,5 +1,7 @@
 package org.frostnova.nova.core.alert;
 
+import java.util.List;
+
 /**
  * 告警通道
  * <p>
@@ -18,7 +20,7 @@ public interface AlertChannel {
     String id();
 
     /**
-     * 通道名称，用于日志
+     * 通道名称，用于日志与界面标题
      * @return 通道名称
      */
     String name();
@@ -37,4 +39,15 @@ public interface AlertChannel {
      * @param content 内容
      */
     void send(String subject, String content);
+
+    /**
+     * 这一路在设置页要画的收件人栏
+     * <p>
+     * 默认空表：这一路没有要核心代填的收件人键（邮件、Webhook 走核心自有键，不经这里）。
+     * 适配器覆写后，核心按申报顺序渲染，不写死任何一家的配置键。
+     * @return 收件人栏；没有时不要返回 null
+     */
+    default List<AlertRecipientField> recipientFields() {
+        return List.of();
+    }
 }

@@ -1,14 +1,20 @@
 package org.frostnova.nova.core.config.ui;
 
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.core.alert.AlertChannel;
+import org.frostnova.nova.core.alert.AlertRecipientField;
 import org.frostnova.nova.core.alert.AlertService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 /**
  * 「发一条测试」
@@ -31,11 +37,54 @@ import org.springframework.web.bind.annotation.RestController;
 public class AlertTestController {
     static final String TEST_PATH = ConfigUiController.BASE_PATH + "/api/alert/test";
 
+    static final String CHANNELS_PATH = ConfigUiController.BASE_PATH + "/api/alert/channels";
+
     private final AlertService alertService;
 
     @Autowired
     public AlertTestController(AlertService alertService) {
         this.alertService = alertService;
+    }
+
+    /**
+     * 已登记的告警通道及其收件人栏
+     * <p>
+     * 设置页按这一份画机器人那一路的收件人栏。核心不认识任何一家的配置键：
+     * 没有申报时 {@code recipient} 是空数组，那一路就没有收件人栏。
+     * 零通道时 {@code channels} 也是空数组，不是省略这一键。
+     * @return {@code {channels:[{id,name,recipient:[{key,label,type,placeholder,pattern,fill}]}]}}
+     */
+    @GetMapping(value = CHANNELS_PATH, produces = MediaType.APPLICATION_JSON_VALUE)
+    public JSONObject channels() {
+        JSONArray list = new JSONArray();
+        for (AlertChannel channel : alertService.declaredChannels()) {
+            JSONObject item = new JSONObject();
+            item.put("id", channel.id());
+            item.put("name", channel.name());
+            JSONArray recipient = new JSONArray();
+            List<AlertRecipientField> fields = channel.recipientFields();
+            if (fields != null) {
+                for (AlertRecipientField field : fields) {
+                    recipient.add(recipientJson(field));
+                }
+            }
+            item.put("recipient", recipient);
+            list.add(item);
+        }
+        JSONObject body = new JSONObject();
+        body.put("channels", list);
+        return body;
+    }
+
+    private static JSONObject recipientJson(AlertRecipientField field) {
+        JSONObject json = new JSONObject();
+        json.put("key", field.key());
+        json.put("label", field.label());
+        json.put("type", field.type());
+        json.put("placeholder", field.placeholder());
+        json.put("pattern", field.pattern());
+        json.put("fill", field.fill());
+        return json;
     }
 
     /**

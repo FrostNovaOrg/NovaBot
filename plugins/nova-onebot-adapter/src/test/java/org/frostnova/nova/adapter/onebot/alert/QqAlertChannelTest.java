@@ -1,12 +1,15 @@
 package org.frostnova.nova.adapter.onebot.alert;
 
 import org.frostnova.nova.adapter.onebot.config.OneBotAdapterPluginProperties;
+import org.frostnova.nova.core.alert.AlertRecipientField;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.model.Message;
 import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -61,6 +64,22 @@ class QqAlertChannelTest {
         OneBotAdapterPluginProperties noPlatform = properties(PushTargetType.FRIEND.getCode(), 10000L);
         noPlatform.getAlert().setPlatform("");
         assertFalse(new QqAlertChannel(noPlatform, sender).isAvailable(), "未填平台名时不可用");
+    }
+
+    @Test
+    @DisplayName("收件人栏申报三键全名与 fill 顺序恰为 sender／kind／num")
+    void declaresRecipientFieldsInFillOrder() {
+        List<AlertRecipientField> fields = new QqAlertChannel(
+                properties(PushTargetType.FRIEND.getCode(), 10000L),
+                mock(NovaMessageSender.class)).recipientFields();
+
+        assertEquals(3, fields.size());
+        assertEquals("novabot.adapter.onebot.alert.platform", fields.get(0).key());
+        assertEquals("sender", fields.get(0).fill());
+        assertEquals("novabot.adapter.onebot.alert.type", fields.get(1).key());
+        assertEquals("kind", fields.get(1).fill());
+        assertEquals("novabot.adapter.onebot.alert.num", fields.get(2).key());
+        assertEquals("num", fields.get(2).fill());
     }
 
     @Test

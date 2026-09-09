@@ -17,16 +17,25 @@ import {mailAlertConfigured} from './alert-model.js';
 /**
  * 三张卡各自吃掉哪几个配置键
  *
- * 告警组里剩下的项照常渲染成普通行。这张表是唯一的依据——设置页那边据它把这几项从行里摘走，
- * 卡片这边据它把这几项摆进卡里。两处各写一份的话，摘走了却没人摆的那一项会凭空消失。
+ * 核心九键是 Webhook 与邮件那两路自己的字段。机器人那一路的键由通道申报，
+ * 经 store.alertChannels 并进来——核心不写死任何一家的配置键。
+ * 设置页那边据它把这几项从行里摘走，卡片这边据它把这几项摆进卡里。
+ * 两处各写一份的话，摘走了却没人摆的那一项会凭空消失。
  */
-export const CARD_FIELDS = new Set([
-  'novabot.adapter.onebot.alert.platform', 'novabot.adapter.onebot.alert.type', 'novabot.adapter.onebot.alert.num',
-  'novabot.core.alert.webhook-url', 'novabot.core.alert.webhook-method',
-  'novabot.core.alert.webhook-title-field', 'novabot.core.alert.webhook-content-field',
-  'novabot.core.mail.default-to',
-  'spring.mail.host', 'spring.mail.port', 'spring.mail.username', 'spring.mail.password',
-]);
+export function cardFields() {
+  const keys = [
+    'novabot.core.alert.webhook-url', 'novabot.core.alert.webhook-method',
+    'novabot.core.alert.webhook-title-field', 'novabot.core.alert.webhook-content-field',
+    'novabot.core.mail.default-to',
+    'spring.mail.host', 'spring.mail.port', 'spring.mail.username', 'spring.mail.password',
+  ];
+  for (const ch of store.alertChannels || []) {
+    for (const field of ch.recipient || []) {
+      if (field && field.key) keys.push(field.key);
+    }
+  }
+  return new Set(keys);
+}
 
 /**
  * Webhook 预设：选一个就把提交方式与两个字段名一起填好
@@ -280,7 +289,7 @@ async function mailPillFromStatus(pill, draftTookOver) {
 }
 
 /**
- * QQ 那一路的「发给谁」
+ * 机器人那一路的收件人栏：按通道申报的表来画
  *
  * 从机器人自己知道的群与好友里挑，<b>没有手填号码的格子</b>：填错一位数不会有任何报错，
  * 只是告警发去了别处，或者哪儿也没去——而这件事只有真出事那天才会被发现。
@@ -289,11 +298,31 @@ async function mailPillFromStatus(pill, draftTookOver) {
  * 原样显示出来并说明为什么挑不了：退回手填等于把上面那个失败形态又请回来。
  * @param box 卡片内容区
  * @param pill 药丸
+ * @param fields 通道申报的收件人栏
  */
-async function qqTarget(box, pill) {
+async function recipientPicker(box, pill, fields) {
+  const listed = fields || [];
+  const byFill = fill => listed.find(f => f.fill === fill) || {key: '', pattern: '', label: ''};
+  const senderField = byFill('sender');
+  const kindField = byFill('kind');
+  const numField = byFill('num');
+  const pattern = numField.pattern || '';
+  const numOk = v => {
+    if (!v) return false;
+    if (!pattern) return true;
+    try { return new RegExp(pattern).test(v); } catch (e) { return false; }
+  };
+
+  for (const item of listed) {
+    if (item.type === 'hidden' || item.type === 'select') continue;
+    if (item.type === 'text') {
+      field(box, item.label || '', item.key, {ph: item.placeholder || ''});
+    }
+  }
+
   const wrap = el('div', 'al-fld');
   const label = el('label');
-  label.textContent = '发给谁';
+  label.textContent = numField.label || '发给谁';
   wrap.appendChild(label);
 
   const select = el('select');
@@ -303,17 +332,17 @@ async function qqTarget(box, pill) {
   const hint = el('div', 'al-note');
   wrap.appendChild(hint);
   const key = el('div', 'keyname');
-  key.textContent = 'novabot.adapter.onebot.alert.num';
+  key.textContent = numField.key;
   wrap.appendChild(key);
   box.appendChild(wrap);
 
-  const platform = valueOf('novabot.adapter.onebot.alert.platform');
-  const type = valueOf('novabot.adapter.onebot.alert.type');
-  const num = valueOf('novabot.adapter.onebot.alert.num');
+  const platform = valueOf(senderField.key);
+  const type = valueOf(kindField.key);
+  const num = valueOf(numField.key);
   const currentKey = num ? platform + '|' + type + '|' + num : '';
 
   const options = [];
-  // 空档要能选回来：配过之后想撤掉这一路，除了选「不发到 QQ」没有别的路
+  // 空档要能选回来：配过之后想撤掉这一路，除了选「不发到 机器人」没有别的路
   options.push({key: '', text: '不发到 ' + term('bot.platform', '机器人')});
   if (currentKey) options.push({key: currentKey, text: '当前：' + (platform || '未知平台') + ' '
     + (String(type) === '1' ? '群' : '好友') + ' ' + num});
@@ -351,13 +380,13 @@ async function qqTarget(box, pill) {
 
   select.addEventListener('change', () => {
     const parts = select.value ? select.value.split('|') : ['', '0', ''];
-    setValue('novabot.adapter.onebot.alert.platform', parts[0]);
-    setValue('novabot.adapter.onebot.alert.type', parts[1]);
-    setValue('novabot.adapter.onebot.alert.num', parts[2]);
-    pillState(pill, !!parts[2]);
+    setValue(senderField.key, parts[0]);
+    setValue(kindField.key, parts[1]);
+    setValue(numField.key, parts[2]);
+    pillState(pill, numOk(parts[2]));
   });
 
-  pillState(pill, !!num);
+  pillState(pill, numOk(num));
 }
 
 /**
@@ -368,12 +397,15 @@ export function alertCards() {
   const wrap = el('div', 'alcards');
   wrap.id = 'alert-cards';
 
-  // ---- QQ ----
-  const qq = shell('qq', term('bot.platform', '机器人'), '走机器人自己的推送链路。'
-    + term('bot.platform', '机器人') + ' 掉线的时候，这一路也一起掉——'
-    + '而那正是最需要收到告警的时刻，所以别只配这一路。');
-  qqTarget(qq.body, qq.pill);
-  wrap.appendChild(qq.card);
+  // ---- 申报了收件人栏的通道（机器人那一路）----
+  for (const ch of store.alertChannels || []) {
+    if (!ch.recipient || ch.recipient.length === 0) continue;
+    const x = shell(ch.id, ch.name || term('bot.platform', '机器人'), '走机器人自己的推送链路。'
+      + term('bot.platform', '机器人') + ' 掉线的时候，这一路也一起掉——'
+      + '而那正是最需要收到告警的时刻，所以别只配这一路。');
+    recipientPicker(x.body, x.pill, ch.recipient);
+    wrap.appendChild(x.card);
+  }
 
   // ---- Webhook ----
   const hook = shell('webhook', 'Webhook', '推到手机上的通知类应用。机器人掉线时只有这一路还活着。');

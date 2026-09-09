@@ -11,7 +11,7 @@ import {ask} from './confirm.js';
 import {$, api, el, esc, markDirty, saveTarget, say, switchControl} from './core.js';
 import {load} from './main.js';
 import {bindPasswordReveal} from './password-reveal.js';
-import {alertCards, CARD_FIELDS, filterCards} from './settings-alert.js';
+import {alertCards, cardFields, filterCards} from './settings-alert.js';
 import {authCards, AUTH_CARD_FIELDS, filterAuthCards} from './settings-auth.js';
 import {defaultText, defaultValue, effectOf, isChanged, isDangerous, dangerOf, isVisible}
   from './settings-model.js';
@@ -271,7 +271,7 @@ function buildGroup(group) {
 
   for (const field of group.fields) {
     // 告警那几项由三张卡自己摆，不再在这里出一遍
-    if (group.group === ALERT_GROUP && CARD_FIELDS.has(field.name)) continue;
+    if (group.group === ALERT_GROUP && cardFields().has(field.name)) continue;
     // 口令、二次验证开关与它的密钥同理：这三项改的时候各有一道门要过
     // （旧口令、现在的验证码、先绑定），摊成普通行的话那三道门就只剩「填格子按保存」
     if (group.group === AUTH_GROUP && AUTH_CARD_FIELDS.has(field.name)) continue;
