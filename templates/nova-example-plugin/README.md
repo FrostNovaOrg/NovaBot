@@ -108,7 +108,7 @@ nova-example-plugin/
 | `LiveMetricCatalog` | 声明直播指标的中文名与**能否累加**，供运营统计使用 |
 
 完整的事件类型清单、类加载规则与并发约定见本仓库的
-[架构说明](../../docs/architecture.md)——它比上游文档更贴近这里的实现。
+[架构说明](https://github.com/FrostNovaOrg/NovaBot/blob/main/docs/architecture.md)——它比上游文档更贴近这里的实现。
 
 ## 依赖管理
 

@@ -25,6 +25,31 @@
 
 **依赖方向只有一个：插件依赖核心，核心永不依赖插件。**
 
+按各模块 pom 里的依赖画出来，箭头指向被依赖方：
+
+```mermaid
+flowchart TB
+  novacore["core/novacore"]
+  nova_core["core/nova-core"]
+  onebot_adapter["plugins/nova-onebot-adapter"]
+  napcat_extension["plugins/nova-onebot-adapter-napcat-extension"]
+  nova_bilibili["plugins/nova-bilibili"]
+  nova_console["plugins/nova-console"]
+  nova_report["plugins/nova-report"]
+  nova_core --> novacore
+  onebot_adapter --> nova_core
+  onebot_adapter --> novacore
+  napcat_extension --> nova_core
+  napcat_extension --> novacore
+  napcat_extension --> onebot_adapter
+  nova_bilibili --> nova_core
+  nova_console --> nova_core
+  nova_console --> novacore
+  nova_report --> nova_core
+  nova_report --> novacore
+  nova_report --> nova_bilibili
+```
+
 这条约束不是洁癖。核心要能在只装了部分插件时正常启动——只装 OneBot 适配器不装哔哩哔哩、
 或者反过来，都得跑得起来。核心一旦 `import` 了插件的类，缺少该插件时就是 `NoClassDefFoundError`。
 
@@ -71,6 +96,37 @@
                            EventMulticaster)         按 uid 查数据源     生成文本    队列 → OneBot
                                                      按事件类型匹配      与图片      HTTP 接口
                                                      已配置的处理器
+```
+
+同一条链画成图：
+
+```mermaid
+flowchart LR
+  subgraph collect["采集"]
+    ws["直播间 WebSocket 长连接"]
+    dyn["动态轮询"]
+    backup["备用直播状态轮询"]
+  end
+  subgraph bus["事件总线"]
+    pub["ApplicationEventPublisher(InterruptibleEventMulticaster)"]
+  end
+  subgraph match["匹配"]
+    listener["NovaHandlerListener(按 uid 查数据源、按事件类型匹配已配置的处理器)"]
+  end
+  subgraph render["渲染"]
+    handler["各 PushHandler(生成文本与图片)"]
+  end
+  subgraph deliver["投递"]
+    sender["NovaMessageSender(队列)"]
+    onebot["OneBot HTTP 接口"]
+  end
+  ws --> pub
+  dyn --> pub
+  backup --> pub
+  pub --> listener
+  listener --> handler
+  handler --> sender
+  sender --> onebot
 ```
 
 要点：
