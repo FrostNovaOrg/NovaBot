@@ -12,10 +12,13 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentMatchers;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -295,5 +298,50 @@ class OneBotTargetControllerTest {
         verify(dataSource, never()).add(ArgumentMatchers.<PushUser>any());
         verify(dataSource, never()).update(ArgumentMatchers.<PushUser>any());
         verify(dataSource, never()).remove(ArgumentMatchers.any());
+    }
+
+    @Test
+    @DisplayName("通用路 /api/bot/targets 与刷新路按常量挂上")
+    void genericTargetsPathIsMapped() throws Exception {
+        assertEquals("/config/api/bot/targets", OneBotTargetController.TARGETS_PATH);
+        assertEquals("/config/api/bot/targets/refresh", OneBotTargetController.REFRESH_PATH);
+
+        GetMapping get = OneBotTargetController.class
+                .getMethod("targets", String.class, String.class)
+                .getAnnotation(GetMapping.class);
+        PostMapping post = OneBotTargetController.class
+                .getMethod("refresh")
+                .getAnnotation(PostMapping.class);
+
+        assertTrue(Set.of(get.value()).contains(OneBotTargetController.TARGETS_PATH));
+        assertTrue(Set.of(post.value()).contains(OneBotTargetController.REFRESH_PATH));
+
+        JSONObject body = body("group", null);
+        assertEquals(Boolean.TRUE, body.getBoolean("success"));
+        assertEquals(2, body.getJSONArray("items").size());
+    }
+
+    @Test
+    @DisplayName("旧路 /api/onebot/targets 仍是同一处理器的第二映射，回包同形")
+    void legacyTargetsPathStillMapped() throws Exception {
+        assertEquals("/config/api/onebot/targets", OneBotTargetController.LEGACY_TARGETS_PATH);
+        assertEquals("/config/api/onebot/targets/refresh", OneBotTargetController.LEGACY_REFRESH_PATH);
+
+        GetMapping get = OneBotTargetController.class
+                .getMethod("targets", String.class, String.class)
+                .getAnnotation(GetMapping.class);
+        PostMapping post = OneBotTargetController.class
+                .getMethod("refresh")
+                .getAnnotation(PostMapping.class);
+
+        assertTrue(Set.of(get.value()).contains(OneBotTargetController.LEGACY_TARGETS_PATH),
+                "旧 GET 须仍挂在同一方法上");
+        assertTrue(Set.of(post.value()).contains(OneBotTargetController.LEGACY_REFRESH_PATH),
+                "旧 POST 刷新须仍挂在同一方法上");
+
+        JSONObject body = body("group", null);
+        assertEquals(Boolean.TRUE, body.getBoolean("success"));
+        assertEquals(2, body.getJSONArray("items").size());
+        assertEquals(FETCHED_AT.toString(), body.getString("fetchedAt"));
     }
 }

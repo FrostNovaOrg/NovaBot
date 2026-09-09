@@ -883,21 +883,21 @@ class ConfigUiFrontendTest {
     /**
      * 连接页上由 index.html 摆着、由脚本接线的那几处落点，闭集
      * <p>
-     * 机器人那张卡里的连接表单与「打开 NapCat 界面」、发一条试试那一块的目标下拉、
+     * 机器人那张卡里的连接表单与「打开机器人界面」、发一条试试那一块的目标下拉、
      * 刷新名单、发送、结果与提示、以及外部面板卡里的签发表单与清单。
      */
     private static final List<String> LINK_CONTROLS = List.of(
-            "link-cards", "bot-form", "napcat-entry", "napcat-open",
+            "link-cards", "bot-form", "bot-entry", "bot-open",
             "test-target", "test-refresh", "test-send", "test-result", "test-hint",
             "token-issue", "token-list");
 
     /**
      * 视图模型给卡片的标识，闭集
      * <p>
-     * 它们同时是页面上那两张卡的 id（{@code id="card-napcat"}）。平台卡的标识由插件的页签标识拼出，
+     * 它们同时是页面上那两张卡的 id（{@code id="card-bot"}）。平台卡的标识由插件的页签标识拼出，
      * 运行期才知道，因此不在这张表里。
      */
-    private static final List<String> LINK_CARD_KEYS = List.of("napcat", "panel");
+    private static final List<String> LINK_CARD_KEYS = List.of("bot", "panel");
 
     private static final String LINKS_MODEL = "links-model.js";
 
@@ -995,7 +995,7 @@ class ConfigUiFrontendTest {
             "log-daybar", "log-only", "log-cats", "log-streamer", "log-channel", "log-q",
             "log-clear", "log-list", "log-more", "log-retention", "log-eng-open", "log-back",
             "eng-levels", "eng-q", "eng-date", "eng-limit", "eng-follow", "eng-copy",
-            "eng-reload", "eng-body", "eng-foot", "eng-jump", "eng-napcat");
+            "eng-reload", "eng-body", "eng-foot", "eng-jump", "eng-bot");
 
     /**
      * 日志页那几件事各有落点
@@ -1073,7 +1073,7 @@ class ConfigUiFrontendTest {
     private static final List<String> SETUP_ENDPOINTS = List.of(
             "/status", "/login", "/setup/state", "/setup/rerun/consumed", "/setup/test-sent",
             "/auth/password/set", "/setup/test-bot", "/setup/bot",
-            "/onebot/targets?type=group", "/onebot/targets?type=friend", "/test-message");
+            "/bot/targets?type=group", "/bot/targets?type=friend", "/test-message");
 
     /**
      * 初始设置各步各有落点，且放行的判法只有 setup-model 一份
@@ -1320,7 +1320,7 @@ class ConfigUiFrontendTest {
      */
     private static final List<String> PUSH_ENDPOINTS = List.of(
             "/state", "/push-history", "/at-all/quota",
-            "/onebot/targets?type=group", "/onebot/targets?type=friend", "/onebot/targets/refresh",
+            "/bot/targets?type=group", "/bot/targets?type=friend", "/bot/targets/refresh",
             "/streamer/lookup", "/templates", "/handlers");
 
     /**

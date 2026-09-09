@@ -5,6 +5,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -169,6 +170,36 @@ class NapCatBootstrapControllerTest {
         if (!red.isEmpty()) {
             fail("红格 " + red.size() + "：" + String.join("；", red));
         }
+    }
+
+    @Test
+    @DisplayName("通用路 /api/bot/console 回包带 href，指向引导页")
+    void consolePathReturnsHref() throws Exception {
+        NapCatCredentialService credentials = mock(NapCatCredentialService.class);
+        when(credentials.isConfigured()).thenReturn(true);
+        JSONObject body = new NapCatBootstrapController(credentials).console();
+
+        assertEquals(Boolean.TRUE, body.getBoolean("success"));
+        assertEquals(Boolean.TRUE, body.getBoolean("configured"));
+        assertEquals(NapCatBootstrapController.PAGE_PATH, body.getString("href"));
+
+        GetMapping mapping = NapCatBootstrapController.class.getMethod("console").getAnnotation(GetMapping.class);
+        assertTrue(List.of(mapping.value()).contains(NapCatBootstrapController.CONSOLE_PATH));
+    }
+
+    @Test
+    @DisplayName("旧路 /api/napcat/state 仍通，回包同形（无 href）")
+    void legacyStatePathUnchanged() throws Exception {
+        NapCatCredentialService credentials = mock(NapCatCredentialService.class);
+        when(credentials.isConfigured()).thenReturn(true);
+        JSONObject body = new NapCatBootstrapController(credentials).state();
+
+        assertEquals(Boolean.TRUE, body.getBoolean("success"));
+        assertEquals(Boolean.TRUE, body.getBoolean("configured"));
+        assertFalse(body.containsKey("href"));
+
+        GetMapping mapping = NapCatBootstrapController.class.getMethod("state").getAnnotation(GetMapping.class);
+        assertTrue(List.of(mapping.value()).contains(NapCatBootstrapController.LEGACY_STATE_PATH));
     }
 
     private static Path repositoryRoot() {

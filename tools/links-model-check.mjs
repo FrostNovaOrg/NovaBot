@@ -21,8 +21,12 @@
 
 import {accountCaption, cardAnchor, linksModel, resolveTarget, targetOptions}
   from '../core/nova-core/src/main/resources/config-ui/links-model.js';
+import {withPluginSteps} from '../core/nova-core/src/main/resources/config-ui/home-model.js';
 import {phrase, term} from '../core/nova-core/src/main/resources/config-ui/core.js';
 import {store} from '../core/nova-core/src/main/resources/config-ui/store.js';
+import {readFileSync} from 'node:fs';
+import {dirname, join} from 'node:path';
+import {fileURLToPath} from 'node:url';
 
 /** 探针的原样形态，与 /api/status 里 health 那一项逐字段同形 */
 function probe(name, scope, level, summary, advice, loginState) {
@@ -85,7 +89,7 @@ const TOKENS_REVOKED = [{fingerprint: 'ab12cd34', label: '客厅那台', issuedA
 // 每档写明：登录态、机器人态、装没装平台插件、签过几把口令，以及三张卡该长成什么样。
 // 期望里的 say 是「这一档必须说出口的那句话」，按子串比——灯色对了而话没说，
 // 使用者仍然不知道该做什么，而那正是这一页存在的理由。
-const THREE = ['platform', 'napcat', 'panel'];
+const THREE = ['platform', 'bot', 'panel'];
 
 const CASES = [
   {name: '已登录 × 机器人正常', login: 'in', bot: 'ok',
@@ -111,7 +115,7 @@ const CASES = [
 
   // 平台卡该整张不出现。上面九档里它一直在，少了这一档「显隐」那一列就是恒真的
   {name: '没装平台插件', login: 'in', bot: 'ok', cards: [],
-    expect: {cards: ['napcat', 'panel'], level: ['ok', 'ok'], say: ['HTTP 正常', '1 把有效'], noAnchor: true}},
+    expect: {cards: ['bot', 'panel'], level: ['ok', 'ok'], say: ['HTTP 正常', '1 把有效'], noAnchor: true}},
 
   {name: '还没签过口令', login: 'in', bot: 'ok', tokens: [],
     expect: {cards: THREE, level: ['ok', 'ok', 'off'], say: ['已登录', 'HTTP 正常', '还没签发过']}},
@@ -148,7 +152,7 @@ for (const item of CASES) {
   const platformAnchor = cardAnchor(model, 'platform');
   if (want.noAnchor && platformAnchor !== '') fail.push(`平台站不该有落点，实得「${platformAnchor}」`);
   if (!want.noAnchor && !platformAnchor) fail.push('平台站少了落点');
-  if (cardAnchor(model, 'bot') !== 'napcat') fail.push('机器人站的落点不是 napcat 卡');
+  if (cardAnchor(model, 'bot') !== 'bot') fail.push('机器人站的落点不是 bot 卡');
   if (cardAnchor(model, 'self') !== '') fail.push('本机站不该在连接页有落点，实得「' + cardAnchor(model, 'self') + '」');
 
   rows.push([item.name, kinds.join('/'), level.join('/'), fail.length ? '红' : '绿'].join('\t'));
@@ -248,4 +252,73 @@ if (phraseReds.length) {
   phraseReds.forEach(line => console.error('  ' + line));
   process.exit(1);
 }
-console.log('\n十二档全对，目标名单四例手填全拒，昵称两向对照过，phrase 三档过');
+
+// ── 阴性：无申报不崩 ────────────────────────────────────────────────────
+const negReds = [];
+function askNeg(name, fn) {
+  try {
+    fn();
+  } catch (err) {
+    negReds.push(name + '：' + (err && err.message ? err.message : String(err)));
+  }
+}
+
+askNeg('卡集恰为 bot/panel', () => {
+  const model = linksModel(status('in', 'ok'), login('in'), [], [], undefined);
+  const kinds = model.cards.filter(c => c.show).map(c => c.kind);
+  if (kinds.join(',') !== 'bot,panel') {
+    throw new Error('实得 [' + kinds + ']');
+  }
+});
+
+askNeg("cardAnchor(model,'bot')==='bot'", () => {
+  const model = linksModel(status('in', 'ok'), login('in'), [], [], undefined);
+  if (cardAnchor(model, 'bot') !== 'bot') {
+    throw new Error('实得「' + cardAnchor(model, 'bot') + '」');
+  }
+});
+
+askNeg("cardAnchor(model,'platform')===''", () => {
+  const model = linksModel(status('in', 'ok'), login('in'), [], [], undefined);
+  if (cardAnchor(model, 'platform') !== '') {
+    throw new Error('实得「' + cardAnchor(model, 'platform') + '」');
+  }
+});
+
+askNeg('withPluginSteps 恰四步 lock/bot/account/test', () => {
+  const keys = withPluginSteps(undefined, {}).map(s => s.key);
+  if (keys.join('/') !== 'lock/bot/account/test') {
+    throw new Error('实得 ' + keys.join('/'));
+  }
+});
+
+askNeg('适配器不在场时入口保持隐藏、工程日志只剩那句话', () => {
+  const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+  const html = readFileSync(join(root, 'core/nova-core/src/main/resources/config-ui/index.html'), 'utf8');
+  const main = readFileSync(join(root, 'core/nova-core/src/main/resources/config-ui/main.js'), 'utf8');
+  const log = readFileSync(join(root, 'core/nova-core/src/main/resources/config-ui/log.js'), 'utf8');
+  if (!html.includes('id="bot-entry"') || !html.includes('style="display:none"')) {
+    throw new Error('#bot-entry 须默认 display:none');
+  }
+  const entryTag = html.slice(html.indexOf('id="bot-entry"') - 40, html.indexOf('id="bot-entry"') + 80);
+  if (!entryTag.includes('display:none')) {
+    throw new Error('#bot-entry 标签须带 display:none，实得「' + entryTag + '」');
+  }
+  if (!/api\('\/bot\/console'\)[\s\S]{0,400}\.catch\(\(\) => \{\}\)/.test(main)) {
+    throw new Error('main.js 问 /bot/console 失败须 catch 空操作');
+  }
+  if (!/api\('\/bot\/console'\)[\s\S]{0,250}catch \(e\) \{\s*return;/.test(log)) {
+    throw new Error('log.js 问 /bot/console 失败须 return，只留那句话');
+  }
+  if (html.includes('id="eng-bot"') === false) {
+    throw new Error('缺 #eng-bot');
+  }
+});
+
+console.log('阴性\t跑了 5 格\t红 ' + negReds.length + ' 格\t' + (negReds.length ? '红' : '绿'));
+if (negReds.length) {
+  console.error('\n阴性对不上 ' + negReds.length + ' 处：');
+  negReds.forEach(line => console.error('  ' + line));
+  process.exit(1);
+}
+console.log('\n十二档全对，目标名单四例手填全拒，昵称两向对照过，phrase 三档过，阴性过');
