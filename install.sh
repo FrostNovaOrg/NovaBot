@@ -253,8 +253,8 @@ if [ -f "$INSTALL_DIR/NovaBot.jar" ] || [ -f "$INSTALL_DIR/StarBotCore.jar" ]; t
     # plugins 不能整个删：里面可能有使用者自己放的第三方插件，删掉等于静默卸载。
     # 但内置插件带版本号，旧版留着会与新版同时被加载，故按构件名精确清理；
     # 版本号剥不出来时宁可留下也不误删。
-    # 匹配式里版本位限定为数字开头，否则 starbot-onebot-adapter-* 会连带匹配
-    # starbot-onebot-adapter-napcat-extension-*，第三方插件若以内置插件名为前缀也会被误删
+    # 匹配式里版本位限定为数字开头，否则 nova-onebot-adapter-* 会连带匹配
+    # nova-onebot-adapter-napcat-extension-*，第三方插件若以内置插件名为前缀也会被误删
     for jar in "$SOURCE_DIR"/plugins/*.jar; do
         [ -f "$jar" ] || continue
         artifact="$(basename "$jar" | sed -E 's/-[0-9][^-]*\.jar$//')"
@@ -262,6 +262,11 @@ if [ -f "$INSTALL_DIR/NovaBot.jar" ] || [ -f "$INSTALL_DIR/StarBotCore.jar" ]; t
             *.jar) continue ;;
         esac
         $SUDO find "$INSTALL_DIR/plugins" -maxdepth 1 -type f -name "$artifact-[0-9]*.jar" -delete
+    done
+    # 下一发行版删此表。构件改名后，按新包 artifact 名清旧版不会命中上一版内置插件 jar，
+    # 会与新 jar 一并被加载。第三方插件不在表内不碰。
+    for old in bilibili onebot-adapter onebot-adapter-napcat-extension report novabot-console; do
+        $SUDO find "$INSTALL_DIR/plugins" -maxdepth 1 -type f -name "starbot-$old-[0-9]*.jar" -delete
     done
 elif [ -e "$INSTALL_DIR/lib" ] || [ -e "$INSTALL_DIR/plugins" ]; then
     die "$INSTALL_DIR 下已有 lib/ 或 plugins/，但没有 NovaBot.jar（亦无 StarBotCore.jar），不像 NovaBot 的安装目录。

@@ -3,7 +3,7 @@
 # NovaBot 构建脚本
 #
 # Maven 不支持在同一 reactor 内构建并使用同一个插件，因此需要分两步：
-#   1. 先安装 build-tools/starbot-plugin-processor（各插件模块在 build 阶段会调用它）
+#   1. 先安装 build-tools/nova-plugin-processor（各插件模块在 build 阶段会调用它）
 #   2. 再构建主工程
 #
 # 用法:
@@ -40,8 +40,8 @@ MAVEN_ARGS=(-B)
 #    代价是每次构建都从零编译。这条链本来就是出包用的（要跑整测、要打 tar），
 #    不是改一行看一眼的内循环；用它换「包里的东西都出自源码」这句话能当真，值。
 #
-# 🔴 清不到的地方要写明：`mvn clean` 走的是 reactor，而 build-tools/starbot-plugin-processor
-#    与 templates/starbot-example-plugin 都不在模块列表里（理由见 pom.xml:30-35）。
+# 🔴 清不到的地方要写明：`mvn clean` 走的是 reactor，而 build-tools/nova-plugin-processor
+#    与 templates/nova-example-plugin 都不在模块列表里（理由见 pom.xml:30-35）。
 #    前者由下面 [1/8] 用 -f 单独构建，那一步同样带上 clean；后者本脚本根本不构建，
 #    它的 target/ 里有什么都进不了 dist/build。
 #
@@ -236,10 +236,10 @@ if [ -n "$BUILD_REF" ] && [ -z "${NOVABOT_ARCHIVE_BUILD:-}" ]; then
     exit 0
 fi
 
-echo "==> [1/8] 安装构建插件 starbot-plugin-processor"
-mvn "${MAVEN_ARGS[@]}" -f build-tools/starbot-plugin-processor/pom.xml ${CLEAN} install
+echo "==> [1/8] 安装构建插件 nova-plugin-processor"
+mvn "${MAVEN_ARGS[@]}" -f build-tools/nova-plugin-processor/pom.xml ${CLEAN} install
 
-# starbot-core 有两种产物形态：
+# nova-core 有两种产物形态：
 #   install profile —— 普通库 jar，供各插件模块编译期依赖
 #   package profile —— Spring Boot 重打包后的可运行 jar，类位于 BOOT-INF/classes
 # 后者无法作为依赖被下游模块解析，因此必须先以 install 形态构建整个工程，最后再单独打发行包。
@@ -247,21 +247,21 @@ echo "==> [2/8] 构建全部模块（库形态）"
 mvn "${MAVEN_ARGS[@]}" -Pinstall ${CLEAN} install
 
 echo "==> [3/8] 打包可运行的 NovaBot"
-# 这一步不带 clean：[2/8] 刚把 core/starbot-core/target 清空并重建过，此刻目录里只有那一次的产物。
+# 这一步不带 clean：[2/8] 刚把 core/nova-core/target 清空并重建过，此刻目录里只有那一次的产物。
 # 在这里再清一次，等于把上一步刚编好的东西删掉重编一遍，清掉的却是同一批文件。
-mvn "${MAVEN_ARGS[@]}" -f core/starbot-core/pom.xml -Ppackage package
+mvn "${MAVEN_ARGS[@]}" -f core/nova-core/pom.xml -Ppackage package
 
 echo "==> [4/8] 汇总产物至 dist/build"
 OUT="$ROOT/dist/build"
-PLUGIN_MODULES=(plugins/starbot-onebot-adapter plugins/starbot-onebot-adapter-napcat-extension plugins/starbot-bilibili plugins/starbot-novabot-console plugins/starbot-report)
+PLUGIN_MODULES=(plugins/nova-onebot-adapter plugins/nova-onebot-adapter-napcat-extension plugins/nova-bilibili plugins/nova-console plugins/nova-report)
 
 rm -rf "$OUT"
 mkdir -p "$OUT/plugins" "$OUT/lib" "$OUT/plugins-lib"
 
-cp core/starbot-core/target/dist/NovaBot.jar "$OUT/"
+cp core/nova-core/target/dist/NovaBot.jar "$OUT/"
 # 双名期：下一发行版删
 cp "$OUT/NovaBot.jar" "$OUT/StarBotCore.jar"
-cp core/starbot-core/target/lib/*.jar "$OUT/lib/"
+cp core/nova-core/target/lib/*.jar "$OUT/lib/"
 
 for module in "${PLUGIN_MODULES[@]}"; do
     artifact="${module##*/}"
@@ -287,7 +287,7 @@ for module in "${PLUGIN_MODULES[@]}"; do
     artifact="${module##*/}"
     rm -f "$OUT"/plugins-lib/"$artifact"-*.jar
 done
-rm -f "$OUT"/plugins-lib/starbot-core-*.jar
+rm -f "$OUT"/plugins-lib/nova-core-*.jar
 
 # 不吞错误：模板拷贝失败时产物里会缺掉启动脚本与示例配置，
 # 而那要到运行时才暴露成一句莫名其妙的启动失败

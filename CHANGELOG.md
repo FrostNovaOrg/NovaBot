@@ -25,6 +25,16 @@
 
 ### 变更
 
+- Maven 坐标改为 `org.frostnova.nova:nova-*`，模块目录同名；插件 jar 改名，安装脚本本版自动清理旧名内置插件 jar。对照：
+  `starbot-parent` → `nova-parent`；
+  `core/starbot-core` → `core/nova-core`；
+  `plugins/starbot-bilibili` → `plugins/nova-bilibili`；
+  `plugins/starbot-onebot-adapter` → `plugins/nova-onebot-adapter`；
+  `plugins/starbot-onebot-adapter-napcat-extension` → `plugins/nova-onebot-adapter-napcat-extension`；
+  `plugins/starbot-report` → `plugins/nova-report`；
+  `plugins/starbot-novabot-console` → `plugins/nova-console`；
+  `build-tools/starbot-plugin-processor` → `build-tools/nova-plugin-processor`；
+  `templates/starbot-example-plugin` → `templates/nova-example-plugin`。
 - 事件类型与监听器去掉 `StarBot` 前缀，改用 `Nova` 前缀（例如 `StarBotBaseEvent` 改叫 `NovaBaseEvent`，`StarBotHandlerListener` 改叫 `NovaHandlerListener`）。**事件类不留别名**；按旧类型监听的第三方处理器须改用新名。包名、方法与参数未变。对照：
   `StarBotBaseEvent` → `NovaBaseEvent`；
   `StarBotExternalBaseEvent` → `NovaExternalBaseEvent`；

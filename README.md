@@ -82,7 +82,7 @@ ssh -L 7827:127.0.0.1:7827 用户名@服务器地址
 构建收尾会把产物拷到临时目录、删掉全部配置文件后真起一次——起不来即构建失败
 （`--no-smoke` 跳过，详见[架构说明](docs/architecture.md#10-构建)）。
 
-> 构建分两步：`starbot-plugin-processor` 是各插件模块在 build 阶段调用的 Maven 插件，
+> 构建分两步：`nova-plugin-processor` 是各插件模块在 build 阶段调用的 Maven 插件，
 > 而 Maven 不支持在同一 reactor 内构建并使用同一个插件，因此需先单独安装。`build.sh` 已处理。
 
 > 每次构建都先清理再重来（`--clean` 因此成了空动作，敲了也不报错）：Maven 不会替你删掉
@@ -91,7 +91,7 @@ ssh -L 7827:127.0.0.1:7827 用户名@服务器地址
 
 ## 插件开发
 
-复制 [templates/starbot-example-plugin](templates/starbot-example-plugin) 作为起点。
+复制 [templates/nova-example-plugin](templates/nova-example-plugin) 作为起点。
 插件用 `@NovaComponent` 注册组件（它的元注解就是 Spring 的 `@Component`，
 按约定一律用它，源码里一眼看得出哪些类属于插件），
 用 `@EventListener` 监听事件；实现 `NovaEventHandler` 即可作为推送处理器。
@@ -131,4 +131,4 @@ Redis 已启用）实测约 476 MB——**按后者规划机器内存**，512 MB
 
 ## 许可证
 
-AGPL-3.0，见 [LICENSE](LICENSE)。本程序是一个修改版本，与来源项目的关系、改动说明见 [NOTICE](NOTICE) 与 [CHANGELOG.md](CHANGELOG.md)。
+AGPL-3.0，见 [LICENSE](LICENSE)。本项目是 StarBot 的修改版本，自 2026-08-03 起独立维护；上游关系见 [NOTICE](NOTICE)，改动记录见 [CHANGELOG.md](CHANGELOG.md)。

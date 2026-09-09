@@ -1,121 +1,88 @@
 NovaBot
-Copyright (C) LWR <lwr1104@qq.com>
+Copyright (C) 2026 frostnova.org
 
-NovaBot 源自 LWR 的开源项目 StarBot（AGPL-3.0），已独立演进，不再与上游同步；原始版权声明依协议保留。
-NovaBot originated from LWR's StarBot (AGPL-3.0) and has since evolved independently; it is not a modified or repackaged distribution of StarBot. Original copyright notices are retained as the license requires.
-完整许可证文本见同目录下的 LICENSE 文件。
+本项目基于 LWR 的 StarBot 开发，自 2026-08-03 起独立维护。
+按 AGPL-3.0 第 5(a) 条，本项目是 StarBot 的修改版本；上游版权声明保留如下：
 
-================================================================================
-上游来源
-================================================================================
+    StarBot
+    Copyright (C) LWR <lwr1104@qq.com>
+    https://bot.starlwr.com
 
-本仓库的绝大部分代码来自 StarBot 原作者 LWR 的以下上游仓库，版权归原作者所有：
+本项目整体以 AGPL-3.0 授权，许可证全文见 LICENSE。修改记录见 CHANGELOG.md。
+按第 13 条，通过网络与本程序交互的用户可从 https://github.com/FrostNovaOrg/NovaBot
+获取完整对应源码。
 
-  starbot-core
-    上游: https://github.com/Starlwr/StarBotCore
-    许可: AGPL-3.0
+--------------------------------------------------------------------------
+上游组件
+--------------------------------------------------------------------------
 
-  starbot-onebot-adapter
-    上游: https://github.com/Starlwr/StarBotOneBotAdapterPlugin
-    许可: AGPL-3.0
+下列模块源自上游仓库，均为 AGPL-3.0（左为本仓库模块，右为上游仓库）：
 
-  starbot-onebot-adapter-napcat-extension
-    上游: https://github.com/Starlwr/StarBotOneBotAdapterNapcatExtensionPlugin
-    许可: AGPL-3.0
+  core/nova-core                                Starlwr/StarBotCore
+  plugins/nova-onebot-adapter                   Starlwr/StarBotOneBotAdapterPlugin
+  plugins/nova-onebot-adapter-napcat-extension  Starlwr/StarBotOneBotAdapterNapcatExtensionPlugin
+  build-tools/nova-plugin-processor             Starlwr/StarBotPluginProcessor
+  templates/nova-example-plugin                 Starlwr/StarBotExamplePlugin
 
-  build-tools/starbot-plugin-processor
-    上游: https://github.com/Starlwr/StarBotPluginProcessor
-    许可: AGPL-3.0
+nova-bilibili 模块上游仅以二进制形式分发。本仓库中的实现依据哔哩哔哩公开接口
+独立编写，不含任何来自上游二进制的反编译代码。
 
-  templates/starbot-example-plugin
-    上游: https://github.com/Starlwr/StarBotExamplePlugin
-    许可: AGPL-3.0
+--------------------------------------------------------------------------
+修改摘要
+--------------------------------------------------------------------------
 
-StarBot 官方站点: https://bot.starlwr.com
-StarBot Python 版（1.x / 2.x，自 2025-06-09 起仅修复缺陷）: https://github.com/Starlwr/StarBot
+- 重写 nova-bilibili 模块
+- 移除上游内置的标识图片；配置项 draw-logo（开关）改为 logo-path（路径），
+  留空则不绘制
+- 包名改为 org.frostnova.nova.*，类名前缀与配置键前缀改为 Nova／novabot
+  （旧配置键仍可读取）
+- 其余改动见 CHANGELOG.md
 
-================================================================================
-本仓库所做的修改
-================================================================================
-
-依据 AGPL-3.0 第 5 条，相对上游的改动详情见 CHANGELOG.md。
-
-1. starbot-bilibili 模块
-   上游未公开该模块源码，仅以二进制形式分发。本仓库中的该模块为依据哔哩哔哩公开接口
-   独立编写的全新实现，不包含任何来自上游二进制的反编译代码。其对外暴露的事件模型与
-   配置项命名与上游保持兼容，以便既有配置文件和第三方插件可以直接沿用。
-
-2. 移除上游品牌标识
-   上游在 starbot-core 的类路径中内置了一张带 "StarBot" 字样的标识图片（logo.png），
-   并默认绘制在每一张推送出去的动态图片底部。
-
-   AGPL-3.0 覆盖的是代码。图形资产是独立的著作权客体，字标还额外涉及商标属性，
-   以 AGPL 开源代码并不等同于授权他人将其品牌标识用于衍生产品，何况该标识会随每次推送
-   持续对外分发。本仓库已删除该图片，并将相关配置由开关 draw-logo 改为路径 logo-path：
-   留空则不绘制，使用者可填入自有图片。
-
-================================================================================
+--------------------------------------------------------------------------
 非代码资产
-================================================================================
+--------------------------------------------------------------------------
 
-本仓库分发的非代码资产及其来源与授权如下。图形与字体资产不受 AGPL-3.0 覆盖，
-其权利状态单独说明。
+图形与字体资产不受 AGPL-3.0 覆盖，权利状态如下。
 
-  core/starbot-core/src/main/resources/fonts/font.ttf
-    名称: Alibaba PuHuiTi (阿里巴巴普惠体) Regular v1.00
-    来源: 阿里巴巴设计 / 汉仪字库
-    授权: 阿里巴巴宣布该字体面向全社会免费提供，可免费商用
-    要求: 保留字体文件内嵌的版权声明，不得单独售卖或再授权该字体本身
-    版权: Copyright (c) 2019 Alibaba (China) Co., Ltd. All rights reserved.
-          Alibaba is a trademark of Alibaba Group Holding Limited.
+  core/nova-core/src/main/resources/fonts/font.ttf
+    Alibaba PuHuiTi (阿里巴巴普惠体) Regular v1.00
+    Copyright (c) 2019 Alibaba (China) Co., Ltd. All rights reserved.
+    免费商用；保留内嵌版权声明，不得单独售卖或再授权字体本身。
 
-  core/starbot-core/src/main/resources/config-ui/index.html
-    自有实现，随本项目遵循 AGPL-3.0。
+  docs/assets/{logo,icon}.{svg,png}
+    NovaBot 标识，本项目原创。可在介绍、引用或链接本项目时原样使用；
+    不得修改，不得用于标识其他产品或暗示关联与背书。
+    仅随源码仓库分发，不进入构建产物。
 
-  docs/assets/logo.svg, docs/assets/logo.png
-  docs/assets/icon.svg, docs/assets/icon.png
-    名称: NovaBot 标识
-    来源: 本项目原创，纯几何构造，与上游 StarBot 的标识不存在衍生关系
-    授权: 允许在介绍、引用或链接本项目时原样使用；不得修改后使用，
-          也不得用于标识其他产品或暗示与本项目存在关联或背书
-    说明: logo.svg 的字标以系统字体栈渲染，不嵌入字体轮廓，因而不涉及字体授权
+  core/nova-core/src/main/resources/config-ui/index.html
+    本项目自有实现，随本项目遵循 AGPL-3.0。
 
-本仓库不在运行时内置任何标识图片：上述文件仅随源码仓库分发，不进入构建产物，
-推送图片默认也不绘制标识（logo-path 留空），原因见上文第 2 条。
-
-关于名称与标识的权利保留
-  AGPL-3.0 授予的是代码上的权利。「NovaBot」这一名称与上述标识不在该授权范围内。
-  这正是上文第 2 条指出的问题，本项目对自身标识同样守这条界线：代码可自由使用、修改、
-  再分发，但衍生产品请使用你自己的名称与标识。
-
-================================================================================
+--------------------------------------------------------------------------
 协议资料的参考来源
-================================================================================
+--------------------------------------------------------------------------
 
-哔哩哔哩直播间长连接的消息格式没有官方文档，字段结构只能从社区项目的记录中获得。
-以下项目在开发中被查阅过，**本仓库未复制其中任何代码**：所取的是「服务端会下发哪些
-指令、每条指令带哪些字段」这一事实本身，各项目对该事实的具体表达（类型定义、解析实现）
-均未进入本仓库。相关解析代码为独立编写，见
-plugins/starbot-bilibili/src/main/java/org/frostnova/nova/bilibili/service/BilibiliEventParser.java。
+哔哩哔哩直播间长连接的消息格式没有官方文档。以下项目在开发中被查阅过，
+本仓库未复制其中任何代码，所取仅为「服务端下发哪些指令、各带哪些字段」这一事实：
 
-按事实与表达二分，协议字段名不构成受著作权保护的表达；此处列出来源是出于致谢与可追溯，
-而非许可要求。
+  bilive/bilive_client (MIT)、starknt/tiny-bilibili-ws (MIT)
+    CUT_OFF / ROOM_LOCK / WARNING / ROOM_CHANGE / PREPARING 五类指令的字段结构
 
-  CUT_OFF / ROOM_LOCK / WARNING / ROOM_CHANGE / PREPARING 五类指令的字段结构
-    https://github.com/bilive/bilive_client        bilive/@types/danmaku.d.ts   (MIT)
-    https://github.com/starknt/tiny-bilibili-ws    src/base/cmd.ts              (MIT)
-    两处分别记录于 2019 年与近期版本，字段一致，交叉核对后采用。
+功能设计上参考过、同样未取用任何代码的项目：
 
-功能设计上参考过的同类项目。**同样只借鉴了「可以做这件事」这一想法，未取用任何代码**，
-各功能均为独立实现——其中 BilibiliLiveRecordDownLoader 为 GPL-3.0，这一点尤需说明清楚：
+  Janet-Baker/webhookGo (MIT)                        每事件独立配置外部命令
+  timerring/bilive (Apache-2.0)                      按弹幕密度定位高能片段
+  HMBSbige/BilibiliLiveRecordDownLoader (GPL-3.0)    场次内记录标题变更（仅借鉴想法）
+  Akokk0/bilibili-notify (MIT)                       非直播期间的基础数据留档
 
-  https://github.com/Janet-Baker/webhookGo                  (MIT)         每事件独立配置外部命令的模型
-  https://github.com/timerring/bilive                       (Apache-2.0)  按弹幕密度定位高能片段的思路
-  https://github.com/HMBSbige/BilibiliLiveRecordDownLoader  (GPL-3.0)     场次内记录标题变更
-  https://github.com/Akokk0/bilibili-notify                 (MIT)         非直播期间的基础数据留档
+--------------------------------------------------------------------------
+名称与标识
+--------------------------------------------------------------------------
 
-================================================================================
+AGPL-3.0 授予的是代码上的权利。「NovaBot」名称与本项目标识不在授权范围内。
+代码可自由使用、修改、再分发；衍生产品请使用自己的名称与标识。
+
+--------------------------------------------------------------------------
 第三方依赖
-================================================================================
+--------------------------------------------------------------------------
 
-本项目依赖的第三方组件各自遵循其自身许可证，详见各依赖的 pom 声明。
+各依赖遵循其自身许可证，详见各依赖的 pom 声明。

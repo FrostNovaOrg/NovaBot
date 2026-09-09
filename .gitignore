@@ -66,7 +66,7 @@ data.json
 sessions.jsonl
 snapshots.jsonl
 # 🔴 这一条必须带前导斜杠。不带的话 timeline/ 会匹配**任意深度**上任何一个叫
-# timeline 的目录——包括源码包 starbot-core/src/main/java/.../core/timeline/，
+# timeline 的目录——包括源码包 nova-core/src/main/java/.../core/timeline/，
 # 于是整个包在 git 眼里凭空消失，而 git status 一声不响、构建照常通过。
 # 上面那几项是文件名不是目录名，没有这个问题，故写法不同。
 /timeline/

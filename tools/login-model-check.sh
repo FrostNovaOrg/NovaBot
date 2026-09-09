@@ -22,7 +22,7 @@ if ! command -v node > /dev/null 2>&1; then
     exit 2
 fi
 
-UI="core/starbot-core/src/main/resources/config-ui"
+UI="core/nova-core/src/main/resources/config-ui"
 RED=0
 SYNTAX_RED=0
 
@@ -35,7 +35,7 @@ else
 fi
 
 # —— 语法 ——
-PAGES="plugins/starbot-onebot-adapter/src/main/resources/config-ui-pages"
+PAGES="plugins/nova-onebot-adapter/src/main/resources/config-ui-pages"
 # napcat-resume.js 随引导页放在适配器 config-ui-pages，没有自己的尺；
 # 引导页与登录页同是 index.html 之外的独立页，就近归这把过语法
 for f in "$UI"/login-model.js "$PAGES"/napcat-resume.js; do

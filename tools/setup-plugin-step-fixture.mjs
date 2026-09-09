@@ -11,11 +11,11 @@ import {readFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
-import {allDone, stepFacts} from '../core/starbot-core/src/main/resources/config-ui/setup-model.js';
-import {withPluginSteps} from '../core/starbot-core/src/main/resources/config-ui/setup-model.js';
+import {allDone, stepFacts} from '../core/nova-core/src/main/resources/config-ui/setup-model.js';
+import {withPluginSteps} from '../core/nova-core/src/main/resources/config-ui/setup-model.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const ui = join(root, 'core/starbot-core/src/main/resources/config-ui');
+const ui = join(root, 'core/nova-core/src/main/resources/config-ui');
 
 const failures = [];
 let checks = 0;

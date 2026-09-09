@@ -10,8 +10,8 @@
         <relativePath/>
     </parent>
 
-    <groupId>com.starlwr</groupId>
-    <artifactId>starbot-parent</artifactId>
+    <groupId>org.frostnova.nova</groupId>
+    <artifactId>nova-parent</artifactId>
     <version>5.2.0</version>
     <packaging>pom</packaging>
 
@@ -28,20 +28,20 @@
     </licenses>
 
     <!--
-        build-tools/starbot-plugin-processor 是本工程各插件模块在 build 阶段调用的 Maven 插件。
+        build-tools/nova-plugin-processor 是本工程各插件模块在 build 阶段调用的 Maven 插件。
         Maven 无法在同一 reactor 内构建并使用同一个插件，因此它不在此处的模块列表中，
         需先单独安装（执行 ./build.sh 会自动完成）。
-        templates/starbot-example-plugin 是提供给第三方插件开发者的模板，同样不参与本工程构建。
+        templates/nova-example-plugin 是提供给第三方插件开发者的模板，同样不参与本工程构建。
     -->
     <modules>
-        <!-- novacore 排在最前：starbot-core 编译期依赖它，reactor 按声明顺序解析 -->
+        <!-- novacore 排在最前：nova-core 编译期依赖它，reactor 按声明顺序解析 -->
         <module>core/novacore</module>
-        <module>core/starbot-core</module>
-        <module>plugins/starbot-onebot-adapter</module>
-        <module>plugins/starbot-onebot-adapter-napcat-extension</module>
-        <module>plugins/starbot-bilibili</module>
-        <module>plugins/starbot-novabot-console</module>
-        <module>plugins/starbot-report</module>
+        <module>core/nova-core</module>
+        <module>plugins/nova-onebot-adapter</module>
+        <module>plugins/nova-onebot-adapter-napcat-extension</module>
+        <module>plugins/nova-bilibili</module>
+        <module>plugins/nova-console</module>
+        <module>plugins/nova-report</module>
     </modules>
 
     <properties>
@@ -51,8 +51,8 @@
 
         <!-- StarBot 自身构件版本 -->
         <novacore.version>5.2.0</novacore.version>
-        <starbot-core.version>5.2.0</starbot-core.version>
-        <starbot-plugin-processor.version>1.0.0</starbot-plugin-processor.version>
+        <nova-core.version>5.2.0</nova-core.version>
+        <nova-plugin-processor.version>1.0.0</nova-plugin-processor.version>
 
         <!-- 构建期判据用的插件，版本钉死：判据本身跟着插件发布方漂就不成其为判据 -->
         <maven-enforcer-plugin.version>3.5.0</maven-enforcer-plugin.version>
@@ -79,21 +79,21 @@
                 报错发生在插件模块，指着的却是这一行。属性由下面的 enforcer 判据守着别漏改。
             -->
             <dependency>
-                <groupId>com.starlwr</groupId>
+                <groupId>org.frostnova.nova</groupId>
                 <artifactId>novacore</artifactId>
                 <version>${novacore.version}</version>
             </dependency>
             <dependency>
-                <groupId>com.starlwr</groupId>
+                <groupId>org.frostnova.nova</groupId>
                 <artifactId>novacore</artifactId>
                 <version>${novacore.version}</version>
                 <type>test-jar</type>
             </dependency>
 
             <dependency>
-                <groupId>com.starlwr</groupId>
-                <artifactId>starbot-core</artifactId>
-                <version>${starbot-core.version}</version>
+                <groupId>org.frostnova.nova</groupId>
+                <artifactId>nova-core</artifactId>
+                <version>${nova-core.version}</version>
             </dependency>
 
             <dependency>
@@ -163,16 +163,16 @@
         <pluginManagement>
             <plugins>
                 <plugin>
-                    <groupId>com.starlwr</groupId>
-                    <artifactId>starbot-plugin-processor</artifactId>
-                    <version>${starbot-plugin-processor.version}</version>
+                    <groupId>org.frostnova.nova</groupId>
+                    <artifactId>nova-plugin-processor</artifactId>
+                    <version>${nova-plugin-processor.version}</version>
                 </plugin>
             </plugins>
         </pluginManagement>
 
         <plugins>
             <!--
-                发版要改的字面版本号有两处：本工程的 version，以及上面那个 starbot-core.version。
+                发版要改的字面版本号有两处：本工程的 version，以及上面那个 nova-core.version。
                 后者是各插件模块编译期依赖的 core 版本，改漏了构建照常绿——插件模块会去本机仓库里
                 翻出上一版的 core 来编译，产物看不出异样，问题要到运行期才炸——上一版就是这么漏的。
                 这条判据把「漏改」从一件靠人记的事变成一件构建当场拒绝的事。
@@ -187,7 +187,7 @@
                 <inherited>false</inherited>
                 <executions>
                     <execution>
-                        <id>check-starbot-core-version</id>
+                        <id>check-nova-core-version</id>
                         <!-- 绑在 validate：编译一个字节之前就该拦下，而不是等构建跑完再说 -->
                         <phase>validate</phase>
                         <goals>
@@ -198,7 +198,7 @@
                                 <!--
                                     novacore 与工程同进同出，版本永远一致；写成属性只是因为
                                     ${project.version} 在插件模块里会解成插件自己的版本。
-                                    既然是个能漏改的字面量，就照 starbot-core 那条一样守住。
+                                    既然是个能漏改的字面量，就照 nova-core 那条一样守住。
                                 -->
                                 <requireProperty>
                                     <property>novacore.version</property>
@@ -207,11 +207,11 @@
                                     <regexMessage>novacore.version 与工程版本 ${project.version} 对不上：改漏了这一处，各模块会去仓库里翻上一版的 novacore，翻不到就报「找不到构件」，而报错指向的是插件模块</regexMessage>
                                 </requireProperty>
                                 <requireProperty>
-                                    <property>starbot-core.version</property>
+                                    <property>nova-core.version</property>
                                     <!-- \Q..\E 把工程版本整段当字面量比，版本号里的点不会被当成通配 -->
                                     <regex>\Q${project.version}\E</regex>
-                                    <message>插件模块编译依赖的 core 版本须与工程版本一致：请把 starbot-core.version 改成 ${project.version}</message>
-                                    <regexMessage>插件模块编译依赖的 core 版本须与工程版本一致：starbot-core.version 与工程版本 ${project.version} 对不上，改漏了这一处，插件模块会拿本机仓库里的旧 core 编译</regexMessage>
+                                    <message>插件模块编译依赖的 core 版本须与工程版本一致：请把 nova-core.version 改成 ${project.version}</message>
+                                    <regexMessage>插件模块编译依赖的 core 版本须与工程版本一致：nova-core.version 与工程版本 ${project.version} 对不上，改漏了这一处，插件模块会拿本机仓库里的旧 core 编译</regexMessage>
                                 </requireProperty>
                             </rules>
                         </configuration>

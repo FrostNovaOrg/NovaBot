@@ -27,8 +27,8 @@ if ! command -v node > /dev/null 2>&1; then
     exit 2
 fi
 
-UI="core/starbot-core/src/main/resources/config-ui"
-PAGES="plugins/starbot-bilibili/src/main/resources/config-ui-pages"
+UI="core/nova-core/src/main/resources/config-ui"
+PAGES="plugins/nova-bilibili/src/main/resources/config-ui-pages"
 RED=0
 SYNTAX_RED=0
 
