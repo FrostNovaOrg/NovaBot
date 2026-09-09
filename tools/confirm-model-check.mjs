@@ -10,7 +10,7 @@
  * 退码 0 即各档全对；任一档对不上打印差异并以 1 退出。
  */
 
-import {idle, open, settle, keydown} from '../core/starbot-core/src/main/resources/config-ui/confirm-model.js';
+import {idle, open, settle, keydown} from '../core/nova-core/src/main/resources/config-ui/confirm-model.js';
 
 const failures = [];
 let checks = 0;

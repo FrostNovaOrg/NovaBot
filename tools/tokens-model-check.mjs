@@ -10,8 +10,8 @@
  * 退码 0 即各档全对；任一档对不上打印差异并以 1 退出。
  */
 
-import {store} from '../core/starbot-core/src/main/resources/config-ui/store.js';
-import {explain, revokeOutcome} from '../core/starbot-core/src/main/resources/config-ui/tokens-model.js';
+import {store} from '../core/nova-core/src/main/resources/config-ui/store.js';
+import {explain, revokeOutcome} from '../core/nova-core/src/main/resources/config-ui/tokens-model.js';
 
 const failures = [];
 let checks = 0;

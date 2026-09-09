@@ -24,8 +24,8 @@ cp -R "$SRC/lib" "$DST/lib"
 
 # plugins 里可能有使用者自己放进卷的第三方插件，不能整个替换。
 # 只清掉内置插件的旧版本，规则与 install.sh 保持一致：
-# 版本位限定数字开头，避免 starbot-onebot-adapter-* 连带匹配
-# starbot-onebot-adapter-napcat-extension-*，也避免误删以内置插件名为前缀的第三方插件
+# 版本位限定数字开头，避免 nova-onebot-adapter-* 连带匹配
+# nova-onebot-adapter-napcat-extension-*，也避免误删以内置插件名为前缀的第三方插件
 for jar in "$SRC"/plugins/*.jar; do
     [ -f "$jar" ] || continue
     artifact="$(basename "$jar" | sed -E 's/-[0-9][^-]*\.jar$//')"
@@ -33,6 +33,11 @@ for jar in "$SRC"/plugins/*.jar; do
         *.jar) continue ;;
     esac
     find "$DST/plugins" -maxdepth 1 -type f -name "$artifact-[0-9]*.jar" -delete
+done
+# 下一发行版删此表。构件改名后，按新包 artifact 名清旧版不会命中上一版内置插件 jar，
+# 会与新 jar 一并被加载。第三方插件不在表内不碰。
+for old in bilibili onebot-adapter onebot-adapter-napcat-extension report novabot-console; do
+    find "$DST/plugins" -maxdepth 1 -type f -name "starbot-$old-[0-9]*.jar" -delete
 done
 cp -f "$SRC"/plugins/*.jar "$DST/plugins/"
 

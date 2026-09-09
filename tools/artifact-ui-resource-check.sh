@@ -32,7 +32,7 @@ cd "$REPO_ROOT" || exit 1
 PLUGIN_UI_DIR="config-ui-pages"
 # 核心界面资源在 Spring Boot 重打包后的位置
 CORE_UI_IN_JAR="BOOT-INF/classes/config-ui"
-CORE_UI_SRC="core/starbot-core/src/main/resources/config-ui"
+CORE_UI_SRC="core/nova-core/src/main/resources/config-ui"
 
 RED=0
 EXTRA_TOTAL=0

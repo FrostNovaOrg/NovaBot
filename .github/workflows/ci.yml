@@ -80,7 +80,7 @@ jobs:
           cache: maven
 
       - name: 安装构建插件
-        run: mvn -B -f build-tools/starbot-plugin-processor/pom.xml install -DskipTests
+        run: mvn -B -f build-tools/nova-plugin-processor/pom.xml install -DskipTests
 
       - name: 扫描已知漏洞
         # 本步骤**只出报告，永不阻断构建**：上游依赖的修复节奏不受本仓库控制。

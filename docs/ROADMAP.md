@@ -146,7 +146,7 @@ Python 版用 Redis 存两套数据：
 
 **已实现（2026-08-05）**：以上全部，外加 `解绑` 与 `总数据排行榜`，共 9 条命令。
 查询结果统一走 `BilibiliDataQueryPainter` 出图。命令数上到 20 条后，
-`菜单` 改为按分类分组展示（`StarBotCommand.category()`）。
+`菜单` 改为按分类分组展示（`NovaCommand.category()`）。
 
 两处与上游的取舍差异，都是有意为之：
 
@@ -196,7 +196,7 @@ Python 版用 Redis 存两套数据：
 - [x] 自定义 logo（`novabot.bilibili.live.report-logo-path`）
 
 **已实现（2026-08-05）**。做成了**通用机制**而非给报告写死一个面板：
-处理器在 `StarBotEventHandler.options()` 里声明自己有哪些参数
+处理器在 `NovaEventHandler.options()` 里声明自己有哪些参数
 （`HandlerOption`：键、名称、说明、类型、默认值、取值区间），
 界面按类型渲染开关与数字框，本身不认识任何具体参数名——
 因此第三方插件声明了 `options()` 就同样能在界面上配。

@@ -17,7 +17,7 @@ WebSocket，UTF-8 JSON，一帧一条消息。
 | 版本号、`hello`、心跳、认证、回补窗口 | `core/novacore/src/main/java/org/frostnova/nova/core/protocol/NovaEventEndpoint.java` |
 | 序号、环形缓冲、分发 | 同目录 `NovaEventStream.java` |
 | 握手守卫（回环、拒收凭据） | 同目录 `NovaEventStreamConfiguration.java`、`NoCredentialsInHandshake.java` |
-| 每种消息的字段 | `plugins/starbot-bilibili/src/main/java/org/frostnova/nova/bilibili/protocol/NovaEventMapper.java` |
+| 每种消息的字段 | `plugins/nova-bilibili/src/main/java/org/frostnova/nova/bilibili/protocol/NovaEventMapper.java` |
 | 可执行的校验器 | `core/novacore/src/test/java/org/frostnova/nova/core/protocol/NovaProtocolSchema.java` |
 
 校验器随协议留在核心，并以 `test-jar` 供各平台插件的测试引用——

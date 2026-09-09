@@ -20,9 +20,9 @@
  */
 
 import {accountCaption, cardAnchor, linksModel, resolveTarget, targetOptions}
-  from '../core/starbot-core/src/main/resources/config-ui/links-model.js';
-import {phrase, term} from '../core/starbot-core/src/main/resources/config-ui/core.js';
-import {store} from '../core/starbot-core/src/main/resources/config-ui/store.js';
+  from '../core/nova-core/src/main/resources/config-ui/links-model.js';
+import {phrase, term} from '../core/nova-core/src/main/resources/config-ui/core.js';
+import {store} from '../core/nova-core/src/main/resources/config-ui/store.js';
 
 /** 探针的原样形态，与 /api/status 里 health 那一项逐字段同形 */
 function probe(name, scope, level, summary, advice, loginState) {

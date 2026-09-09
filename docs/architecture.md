@@ -12,16 +12,16 @@
 ```
 仓根
 ├── core/novacore/                                      核心：事件模型、事件输出协议、数据源接口
-├── core/starbot-core/                                  壳：应用宿主、控制台、配置、推送与命令框架
-├── plugins/starbot-bilibili/                           采集侧
-├── plugins/starbot-onebot-adapter/                     投递侧
-├── plugins/starbot-onebot-adapter-napcat-extension/    依赖 onebot-adapter
-├── plugins/starbot-report/                             下播报告 / 动态图 / 数据查询图（依赖 starbot-bilibili）
-├── plugins/starbot-novabot-console/                    控制台产品页（主播 / 推送 / 向导）
+├── core/nova-core/                                  壳：应用宿主、控制台、配置、推送与命令框架
+├── plugins/nova-bilibili/                           采集侧
+├── plugins/nova-onebot-adapter/                     投递侧
+├── plugins/nova-onebot-adapter-napcat-extension/    依赖 onebot-adapter
+├── plugins/nova-report/                             下播报告 / 动态图 / 数据查询图（依赖 nova-bilibili）
+├── plugins/nova-console/                    控制台产品页（主播 / 推送 / 向导）
 └── templates/                                          第三方插件模板
 ```
 
-核心（`novacore`）保管事件与协议；壳（`starbot-core`）是能跑起来的宿主；插件放在 `plugins/`，第三方从 `templates/` 照抄。
+核心（`novacore`）保管事件与协议；壳（`nova-core`）是能跑起来的宿主；插件放在 `plugins/`，第三方从 `templates/` 照抄。
 
 **依赖方向只有一个：插件依赖核心，核心永不依赖插件。**
 
@@ -39,7 +39,7 @@
 | `AlertChannel` | `core.alert` | 核心（邮件、Webhook）、OneBot 适配器（QQ） | 告警投递 |
 | `NovaCommand` | `core.command` | 各模块 | 群内聊天命令 |
 | `AtAllPermissionResolver` | `core.sender` | OneBot 适配器 | 机器人在某会话能否 @全体成员 |
-| `LiveMetricCatalog` | `core.analytics` | 报告插件（starbot-report） | 直播指标的中文名与**能否累加**；快照指标（粉丝数等）的名称另由 `snapshotMetrics()` 自报，一律不进可累加集 |
+| `LiveMetricCatalog` | `core.analytics` | 报告插件（nova-report） | 直播指标的中文名与**能否累加**；快照指标（粉丝数等）的名称另由 `snapshotMetrics()` 自报，一律不进可累加集 |
 | `ConsoleVocabulary` | `core.config.ui.vocab` | OneBot 适配器 | 控制台人话平台词（`bot.platform`／`bot.impl`／`bot.family`／`bot.impl.hint`／`bot.target.group`／`bot.target.user`／`bot.targets`）；核心界面只写中性兜底 |
 
 新增一个跨模块能力时，先问「核心需不需要 import 插件的类」。需要，就说明该抽成 SPI。
@@ -215,7 +215,7 @@ META-INF/spring-configuration-metadata.json
 
 ### 三条不变量
 
-`ConfigurationConsistencyTest`（在 `starbot-bilibili` 模块，因为它在反应堆中最后构建，
+`ConfigurationConsistencyTest`（在 `nova-bilibili` 模块，因为它在反应堆中最后构建，
 能读到全部模块的元数据）在构建时强制以下三条，破坏任一条都会让构建失败：
 
 1. **不存在声明了却从未生效的配置项**——即改了没反应的虚空配置
@@ -302,22 +302,22 @@ META-INF/spring-configuration-metadata.json
 
 前面几小节讲的是插件怎么被装进来、能监听哪些事件。这一节反过来列**插件能往核心贡献什么**。
 接口路径相对 `org.frostnova.nova.core` 包根书写；「现有实现」取自仓库自带的平台插件
-（starbot-bilibili、onebot-adapter、starbot-report，见第 1 节），写新插件时可以逐行当参照。
+（nova-bilibili、onebot-adapter、nova-report，见第 1 节），写新插件时可以逐行当参照。
 
 | 扩展点 | 核心接口（相对路径） | 现有实现（模块） | 一句话 |
 |---|---|---|---|
-| 控制台页 | `config/ui/page/ConsolePageProvider` | `BilibiliConsolePageProvider` 与页面脚本 `config-ui-pages/bilibili.js`（starbot-bilibili）；主播页 `StreamersConsolePageProvider`、推送页 `PushConsolePageProvider`、向导主播步 `SetupStreamerStepProvider`、首页今日卡 `TodayHomeCardProvider`（starbot-novabot-console） | 往控制台添自己的页；挂在连接页、设置页、顶级页、首页卡还是向导步骤由 `ConsolePageSlot` 申报；除 `script()` 外可再报 `assets()`（同目录其它 `.js`，按登记名取）。顶级页的 `refresh` 会收到 `{sub, tail}`（地址栏第二、三段） |
+| 控制台页 | `config/ui/page/ConsolePageProvider` | `BilibiliConsolePageProvider` 与页面脚本 `config-ui-pages/bilibili.js`（nova-bilibili）；主播页 `StreamersConsolePageProvider`、推送页 `PushConsolePageProvider`、向导主播步 `SetupStreamerStepProvider`、首页今日卡 `TodayHomeCardProvider`（nova-console） | 往控制台添自己的页；挂在连接页、设置页、顶级页、首页卡还是向导步骤由 `ConsolePageSlot` 申报；除 `script()` 外可再报 `assets()`（同目录其它 `.js`，按登记名取）。顶级页的 `refresh` 会收到 `{sub, tail}`（地址栏第二、三段） |
 | 配置节 | `@ConfigurationProperties`（编译期元数据由 `config/ui/ConfigurationMetadataService` 读取） | 各模块的配置类 | 配置类加了项，设置页表单自动出现；核心前缀在 `config/ui/ConfigurationGroups` 登记，平台前缀由各插件的 `ConfigurationGroupContributor` 申报，新前缀不登记就没有组 |
-| 聊天命令 | `command/NovaCommand` | `command/` 下的一族命令（starbot-bilibili 与 starbot-report） | 实现接口并注册为 Bean，群里即多一条命令 |
-| 健康探针 | `health/HealthProbe` | 直播间、登录、风控三件（starbot-bilibili）与 `OneBotHealthProbe`（onebot-adapter） | 探测结果汇总进总览页，与告警共用 |
-| 账号登录 | `account/AccountLoginProvider` | `BilibiliAccountLoginProvider`（starbot-bilibili） | 界面内扫码登录、退出登录 |
+| 聊天命令 | `command/NovaCommand` | `command/` 下的一族命令（nova-bilibili 与 nova-report） | 实现接口并注册为 Bean，群里即多一条命令 |
+| 健康探针 | `health/HealthProbe` | 直播间、登录、风控三件（nova-bilibili）与 `OneBotHealthProbe`（onebot-adapter） | 探测结果汇总进总览页，与告警共用 |
+| 账号登录 | `account/AccountLoginProvider` | `BilibiliAccountLoginProvider`（nova-bilibili） | 界面内扫码登录、退出登录 |
 | 机器人连接测试 | `account/BotConnectionTester` | `OneBotConnectionTester`（onebot-adapter） | 连接页上的连通性测试与连接参数回填 |
 | @全体权限 | `sender/AtAllPermissionResolver` | `OneBotAtAllPermissionService`（onebot-adapter） | 「能不能 @全体成员」由平台侧回答，核心只拿答案决定摘不摘 |
 | 告警通道 | `alert/AlertChannel` | `MailAlertChannel`、`WebhookAlertChannel`（核心自带）与 `QqAlertChannel`（onebot-adapter） | 告警往哪儿投；`isAvailable()` 由通道自己答，没配好的通道核心不去试 |
-| 直播指标目录 | `analytics/LiveMetricCatalog` | `BilibiliLiveMetricCatalog`（starbot-report） | 把归档里的裸键换成人话，并声明哪几项能相加；快照指标另走 `snapshotMetrics()`，一律不进可累加集 |
+| 直播指标目录 | `analytics/LiveMetricCatalog` | `BilibiliLiveMetricCatalog`（nova-report） | 把归档里的裸键换成人话，并声明哪几项能相加；快照指标另走 `snapshotMetrics()`，一律不进可累加集 |
 | 控制台词表 | `config/ui/vocab/ConsoleVocabulary` | `OneBotConsoleVocabulary`（onebot-adapter） | 控制台上的平台词（`bot.platform` 一族）由平台插件供，核心界面只写中性兜底 |
 | 消息出口 | `service/NovaSenderService` 登记的 `model/Sender` | `OneBotController`（onebot-adapter） | 推送平台向核心登记出口，核心按名字投递 |
-| REST 接口 | 无专用接口：`@RestController` 照常写，仍需 `@NovaComponent` | `BilibiliReportLayoutController`（starbot-report）、`OneBotTargetController`（onebot-adapter） | 插件 jar 里的控制器与核心的合在同一个 Web 服务里 |
+| REST 接口 | 无专用接口：`@RestController` 照常写，仍需 `@NovaComponent` | `BilibiliReportLayoutController`（nova-report）、`OneBotTargetController`（onebot-adapter） | 插件 jar 里的控制器与核心的合在同一个 Web 服务里 |
 
 `config-ui-pages/<script>` 对 `setup_step` 槽须 `export function render(host, ctx)`（把这一步画进 host）与 `export async function done(ctx)` → boolean（这一步成立了没有）；`ctx`＝`{status, login, api, pickTargets}`（`api` 即初始设置页现用的请求函数，`pickTargets(keys)` 把这一步选中的推送目标交回向导，供小结那几行用）。四个可选导出：
 
@@ -367,7 +367,7 @@ Class<?> type = ClassUtils.getUserClass(bean);
 ./build.sh [--skip-tests]
 ```
 
-**分两步构建**：`build-tools/starbot-plugin-processor` 是各插件模块在 build 阶段要调用的
+**分两步构建**：`build-tools/nova-plugin-processor` 是各插件模块在 build 阶段要调用的
 Maven 插件，而 Maven 不支持在同一 reactor 内构建并使用同一个插件，因此必须先单独安装它。
 `build.sh` 已处理这一点——直接 `mvn package` 会失败。
 
@@ -394,9 +394,9 @@ Maven 只往 `target/` 里写，从不为「源码里已经没有的东西」做
 直接敲 `tools/boot-smoke.sh` 会 `Permission denied`（不写下来就得每个人自己踩一次）。
 端口与超时用 `BOOT_SMOKE_PORT`／`BOOT_SMOKE_TIMEOUT` 调，默认 7827／90 秒。
 
-**只想跑某一条测试时也不能用 `mvn test`。** 那个插件要求 `starbot-core` 是一个 jar，
+**只想跑某一条测试时也不能用 `mvn test`。** 那个插件要求 `nova-core` 是一个 jar，
 而停在 `test` 阶段时 core 只有 `target/classes`，于是报
-`core/starbot-core/target/classes (Is a directory)`——`mvn -pl <模块>` 失败是同一个原因。
+`core/nova-core/target/classes (Is a directory)`——`mvn -pl <模块>` 失败是同一个原因。
 正确写法是走到 `install`，用 `-Dtest=` 挑测试：
 
 ```bash

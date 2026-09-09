@@ -4,8 +4,8 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>com.starlwr</groupId>
-        <artifactId>starbot-parent</artifactId>
+        <groupId>org.frostnova.nova</groupId>
+        <artifactId>nova-parent</artifactId>
         <version>5.2.0</version>
         <relativePath>../../pom.xml</relativePath>
     </parent>

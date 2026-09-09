@@ -62,8 +62,8 @@ mvn -B -Pinstall install -Dtest=NovaProtocolCorpusTest -DfailIfNoTests=false \
 ```
 
 ⚠️ **必须是 `install`，不能用 `mvn test`。** 插件模块在 build 阶段要调用
-`starbot-plugin-processor`，而它需要 `starbot-core` 是一个 jar；停在 `test` 阶段时
-core 只有 `target/classes`，于是报 `core/starbot-core/target/classes (Is a directory)`。
+`nova-plugin-processor`，而它需要 `nova-core` 是一个 jar；停在 `test` 阶段时
+core 只有 `target/classes`，于是报 `core/nova-core/target/classes (Is a directory)`。
 这跟 `mvn -pl <模块>` 失败是同一个原因，见[架构说明](architecture.md#10-构建)。
 
 输出形如：

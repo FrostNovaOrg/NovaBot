@@ -37,14 +37,14 @@
 set -uo pipefail
 
 # —— 允许承载「核心」的模块目录名（拆模块后把新名加进来即可，不必改判据逻辑）——
-ALLOWED_CORE_MODULES="core/starbot-core core/novacore"
+ALLOWED_CORE_MODULES="core/nova-core core/novacore"
 
 # 缺省量本仓。NOVACORE_CHECK_ROOT 只为把上面那些「射程为空」的分支跑出来用：
 # 指向一棵空树跑一趟，本尺该整片判红；若还有格子报绿，那一格就是绿在空集上。
 REPO_ROOT="${NOVACORE_CHECK_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "$REPO_ROOT" || exit 2
 
-CORE_UI="core/starbot-core/src/main/resources/config-ui"
+CORE_UI="core/nova-core/src/main/resources/config-ui"
 RED=0
 
 WORK="$(mktemp -d)"
@@ -131,7 +131,7 @@ TOKENS="$WORK/tokens"
 : > "$TOKENS"
 
 # —— 平台标识件的位置现算，不写死模块名 ——
-# 写死 core/starbot-core/... 的那一版有一个安静的失败形态：核心件搬进新模块的那一刻文件就不在了，
+# 写死 core/nova-core/... 的那一版有一个安静的失败形态：核心件搬进新模块的那一刻文件就不在了，
 # 而格3 的两个「件内」计数在文件缺席时双双为 0，于是它报绿——报的绿是「这个文件里没有平台申报」，
 # 而实情是「这个文件不在这里」。判据落在空集上恒真，看起来和守住了一模一样。
 LP=""
@@ -325,7 +325,7 @@ fi
 
 # ============================================================
 # 格2：§5 事件输出协议（真源）须在核心模块
-# 现状（拆前）＝红：端点与装配都在 starbot-bilibili。
+# 现状（拆前）＝红：端点与装配都在 nova-bilibili。
 # 拆法：NovaEventEndpoint / NovaEventStreamConfiguration 迁核心，协议与路径不变。
 # ============================================================
 g2_files=$(find . -path ./target -prune -o -name 'NovaEventEndpoint.java' -print \
@@ -364,7 +364,7 @@ else
 fi
 
 # —— 核心模块的主码目录，供格3／格4／格5 使用 ——
-# 从 ALLOWED_CORE_MODULES 现算而不写死 starbot-core：模块一改名，写死的那几格就静默地什么都不查了
+# 从 ALLOWED_CORE_MODULES 现算而不写死 nova-core：模块一改名，写死的那几格就静默地什么都不查了
 CORE_MAINS=""
 for allowed in $ALLOWED_CORE_MODULES; do
     [ -d "$allowed/src/main" ] && CORE_MAINS="${CORE_MAINS}${allowed}/src/main "
@@ -418,7 +418,7 @@ fi
 # 也就不可能单独发布给莓果或 VRDash 用。文件放在哪个目录跟这件事无关。
 #
 # 插件包名当场从模块目录算出来，不写死：本仓实际的插件根包是 org.frostnova.nova.bilibili 与
-# org.frostnova.nova.adapter（OneBot 适配器的模块目录叫 starbot-onebot-adapter，包却在 adapter 下）——
+# org.frostnova.nova.adapter（OneBot 适配器的模块目录叫 nova-onebot-adapter，包却在 adapter 下）——
 # 写死一份名单，只要有一处对不上，这一格就是个永远绿的摆设。
 #
 # 射程只到核心的 src/main，不含 src/test：
@@ -755,7 +755,7 @@ fi
 # 模块名不写死，两侧都从格6 已经算好的两份清单现算：
 #   核心模块 ＝ 核心件所在的模块目录（格6 的 G6_CORE）
 #   壳模块   ＝ 壳侧件所在的模块目录（格6 的 G6_SHELL）
-# 写死 "novacore 的 pom 里不许有 starbot-core" 只守得住这一次改名之前的形态：
+# 写死 "novacore 的 pom 里不许有 nova-core" 只守得住这一次改名之前的形态：
 # 模块一改名，那一格就什么都不查了，而它照样报绿——同一个坑格3 刚踩过一次。
 #
 # 两侧落在同一个模块时判红并写明「尚未拆分」：那时核心与壳同在一个 jar 里，
@@ -792,7 +792,7 @@ strip_xml_comments() {
 # 取一个模块自身的 artifactId
 #
 # 先把 <parent> 那一段整块去掉再取第一处：模块 pom 里最先出现的 artifactId 是父工程的，
-# 直接 head -1 取到的是 starbot-parent，于是本格拿父工程的坐标去核心 pom 里找——
+# 直接 head -1 取到的是 nova-parent，于是本格拿父工程的坐标去核心 pom 里找——
 # 找得到（每个模块都声明父工程），判红，而红的理由与要守的那件事毫无关系。
 module_artifact() {
     strip_xml_comments "$1/pom.xml" 2>/dev/null \
@@ -862,7 +862,7 @@ fi
 #
 # 两问都要成立才绿：
 #   ① 源码里有 org.frostnova.nova.report 这个包（从各模块 src/main 现算）
-#   ② starbot-bilibili 的 src/main 零处出现 org.frostnova.nova.report
+#   ② nova-bilibili 的 src/main 零处出现 org.frostnova.nova.report
 #
 # 只问 ② 的尺在包还不存在时恒真（零引用），会把「还没拆」报成绿。
 # 所以 ① 是门槛：现码 report 包不在场，先红于这一问。
@@ -878,7 +878,7 @@ while IFS= read -r mod; do
 done < "$MODULES"
 
 # ② 那一侧的射程：bilibili 插件的主码在哪个模块，按**包名**现找，不写死目录名。
-# 原来这里写死 plugins/starbot-bilibili/src/main，模块一改名 `if [ -d ]` 不成立，
+# 原来这里写死 plugins/nova-bilibili/src/main，模块一改名 `if [ -d ]` 不成立，
 # ② 整问跳过、g8_refs 恒为 0，而这一格只要 ① 成立就报绿——报的是「没引用」，
 # 实情是「没查」。找不到就红，与 ① 同格待遇。
 G8_BILI_MAIN=""
@@ -935,7 +935,7 @@ fi
 #    util 已解开：novacore 侧那四个纯函数工具整体改到了新包 core.lang。
 #    config 已解开：novacore 侧那八件（五节配置 POJO ＋ ConfigEffect ＋ CoreConfigurationSections）
 #    整体改到了新包 core.properties；core.config／core.util／core.service 三个包
-#    现在都只剩 starbot-core 一个模块在写。
+#    现在都只剩 nova-core 一个模块在写。
 #    空集上这一格照样拦得住新增：再长出一个撞包，实况就多一个而声明仍是空的，当场判红。
 #    它与「射程为空」是两回事——后者由上面的受查包数单独守，那是「没量到」，不是「没撞包」。
 KNOWN_SPLIT_PACKAGES=""
@@ -980,10 +980,10 @@ fi
 #
 # 射程两块：①兄弟插件 import 须在 pom 申报那个模块（原判据）；②插件主码直接 import
 # 里层包（包名按 core/novacore/src/main/java/org/frostnova/nova/core/ 第一级目录现算，不写死）
-# 须在 pom 申报 novacore——今天靠 starbot-core 传递带进来，拆仓那天里层单独出包就断。
-# ② 的受查面＝根 pom <module> 列的、starbot-core 与 novacore 之外，外加 templates/*/pom.xml
+# 须在 pom 申报 novacore——今天靠 nova-core 传递带进来，拆仓那天里层单独出包就断。
+# ② 的受查面＝根 pom <module> 列的、nova-core 与 novacore 之外，外加 templates/*/pom.xml
 # （模板插件同口径，不豁免；processor 仍不在 reactor 里）。
-# 壳侧包（starbot-core 下那些）仍不在本格之内（格7 守核心不反向依赖壳）。
+# 壳侧包（nova-core 下那些）仍不在本格之内（格7 守核心不反向依赖壳）。
 # ============================================================
 
 # 件清单走 tree_files（按工作树现算，理由见其注释）：本格的归属全靠这份清单查落点，
@@ -1165,7 +1165,7 @@ fi
 # ============================================================
 # 格12：写死了模块目录名的在册件数只减不增
 #
-# 目录重排真正的工作量在这里：这些件里写着 core/starbot-core/ 这样的**路径**，
+# 目录重排真正的工作量在这里：这些件里写着 core/nova-core/ 这样的**路径**，
 # 目录一改它们全部失灵——而其中大半（脚本、判据、配置）失灵的方式是安静的。
 # 一次改不完，那就立个账：现值封在下面这个上限里，新写一处就红。
 # 只减不增——改一件、把上限调低一，账才会往下走；上限只许由「改完一件」的那一笔调。
@@ -1177,7 +1177,7 @@ fi
 # 现值上限（2026-09-08 实测 77；正则带 core/／plugins/ 前缀后现算，只认目录名）。改掉一件就把它调低一，绝不许调高。
 HARDCODED_MODULE_PATH_CAP=77
 
-G12_RE='core/starbot-core/|core/novacore/|plugins/starbot-bilibili/|plugins/starbot-novabot-console/|plugins/starbot-onebot-adapter|plugins/starbot-report/'
+G12_RE='core/nova-core/|core/novacore/|plugins/nova-bilibili/|plugins/nova-console/|plugins/nova-onebot-adapter|plugins/nova-report/'
 G12_LIST="$WORK/g12"
 : > "$G12_LIST"
 # 件清单走 tree_files 再自己 grep，不走 git grep：git grep 只搜在册件，
@@ -1190,10 +1190,10 @@ fi
 g12_n=$(count_lines "$G12_LIST")
 
 # 反向：仓根一级的旧路径（没有 core/ 或 plugins/ 前缀）须 0。
-# 正向正则带了前缀之后，core/starbot-core 仍命中；回写成仓根一级旧目录反而数不到，
+# 正向正则带了前缀之后，core/nova-core 仍命中；回写成仓根一级旧目录反而数不到，
 # 那一格会假绿。排除 *.log、CHANGELOG.md（历史条）、.gitignore 注释行；
 # target/ 与 .git/ 不在 tree_files 件清单里。
-G12_BARE_RE='(^|[^/A-Za-z0-9_])(novacore|starbot-core|starbot-bilibili|starbot-onebot-adapter(-napcat-extension)?|starbot-report|starbot-novabot-console)/'
+G12_BARE_RE='(^|[^/A-Za-z0-9_])(novacore|nova-core|nova-bilibili|nova-onebot-adapter(-napcat-extension)?|nova-report|nova-console)/'
 G12_BARE_LIST="$WORK/g12bare"
 : > "$G12_BARE_LIST"
 tree_files -- ':!*.log' ':!CHANGELOG.md' > "$WORK/g12barefiles"

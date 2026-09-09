@@ -503,7 +503,7 @@ public interface HealthProbe {
 AGPL-3.0 覆盖的是**代码**。图形资产是独立的著作权客体，字标还额外涉及商标属性——
 原作者以 AGPL 开源代码，**不等于**授权他人把其品牌标识用于自己的衍生产品。
 
-`core/starbot-core/src/main/resources/logo.png`（600×195）是带 "StarBot" 字样的原创字标设计。
+`core/nova-core/src/main/resources/logo.png`（600×195）是带 "StarBot" 字样的原创字标设计。
 关键在于它不是躺在仓库里的静态文件：`draw-logo` 默认 `true`，该 logo 会绘制在
 **每一张推送出去的动态图片底部**，随推送持续对外分发。
 

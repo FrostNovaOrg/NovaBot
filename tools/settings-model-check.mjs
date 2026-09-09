@@ -17,7 +17,7 @@ import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {
   MASK, dangerOf, isDangerous, defaultText, isChanged, isVisible, effectOf,
-} from '../core/starbot-core/src/main/resources/config-ui/settings-model.js';
+} from '../core/nova-core/src/main/resources/config-ui/settings-model.js';
 
 const failures = [];
 let checks = 0;
@@ -67,7 +67,7 @@ eq(effectOf(null), {immediate: false, text: '重启生效'}, '没标过的按需
 
 // —— 档四：路径未确定时不把占位文字送进剪贴板 ——
 const settingsSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)),
-  '../core/starbot-core/src/main/resources/config-ui/settings.js'), 'utf8');
+  '../core/nova-core/src/main/resources/config-ui/settings.js'), 'utf8');
 
 /**
  * 从 marker 起，按花括号配平截到该块的闭合括号（含声明本身）
