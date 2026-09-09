@@ -25,8 +25,10 @@
 # 清单为空」判红，连接页尺把「bilibili.js 未登记」判红。一把哑了的清单在它下游
 # 当场变红，而不是两边一起绿在空集上。
 #
-# 模块枚举照边界尺（tools/novacore-boundary-check.sh）的在册 pom.xml 法：
-# git 索引 ∪ 未跟踪未忽略件、任意深度、剔盘上已不存在的路径，不按仓根一级目录名。
+# 模块枚举两路（输出同形：相对仓根的模块目录；任意深度、剔盘上已不存在的路径）：
+#   git 工作树（git rev-parse --is-inside-work-tree 为 true）——git 索引 ∪ 未跟踪未忽略件；
+#   否则（导出的干净源码树／任何无 .git 的树）——find pom.xml，剔 target／node_modules／dist／scratch／.git。
+# git 路径出错不再吞：git 退非 0 时脚本退 2 并把原因印到 stderr（取不出须红）。
 # 核心模块也照扫——它今天一件也登记不出（见上，SCRIPT_ROOT 空名不算），
 # 不为它单带一份名单，名单一重复就开始漂。
 set -uo pipefail
@@ -38,11 +40,36 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
 # 在册模块目录（每行一个，如 plugins/nova-console）
-git -c core.quotepath=false ls-files --cached --others --exclude-standard '*/pom.xml' 2>/dev/null \
-    | sort -u \
-    | while IFS= read -r pom; do
-          [ -e "$pom" ] && printf '%s\n' "${pom%/pom.xml}"
-      done > "$WORK/modules"
+list_module_dirs() {
+    local inside git_rc
+    inside="$(git rev-parse --is-inside-work-tree 2>/dev/null || true)"
+    if [ "$inside" = "true" ]; then
+        git -c core.quotepath=false ls-files --cached --others --exclude-standard '*/pom.xml' \
+            > "$WORK/poms.raw" 2>"$WORK/poms.err"
+        git_rc=$?
+        if [ "$git_rc" -ne 0 ]; then
+            echo "列模块 红 git ls-files 取不出（退 ${git_rc}）：$(cat "$WORK/poms.err")" >&2
+            exit 2
+        fi
+        sort -u "$WORK/poms.raw" | while IFS= read -r pom; do
+            [ -e "$pom" ] && printf '%s\n' "${pom%/pom.xml}"
+        done
+    else
+        find "$REPO_ROOT" -name pom.xml \
+            -not -path '*/target/*' \
+            -not -path '*/node_modules/*' \
+            -not -path '*/dist/*' \
+            -not -path '*/scratch/*' \
+            -not -path '*/.git/*' \
+            | sort -u \
+            | while IFS= read -r abs; do
+                  pom="${abs#"$REPO_ROOT"/}"
+                  [ -e "$pom" ] && printf '%s\n' "${pom%/pom.xml}"
+              done
+    fi
+}
+
+list_module_dirs > "$WORK/modules"
 
 REG="$WORK/reg"
 : > "$REG"
