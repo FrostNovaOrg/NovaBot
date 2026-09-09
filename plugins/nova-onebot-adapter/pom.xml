@@ -12,8 +12,8 @@
 
     <artifactId>nova-onebot-adapter</artifactId>
     <version>1.0.0</version>
-    <name>StarBotOneBotAdapterPlugin</name>
-    <description>OneBot Adapter Plugin For StarBot</description>
+    <name>NovaOneBotAdapterPlugin</name>
+    <description>OneBot Adapter Plugin For NovaBot</description>
 
     <dependencies>
         <dependency>

@@ -17,7 +17,7 @@ import java.util.List;
  */
 @Aspect
 @NovaComponent // 使用该注解将此类注册为 NovaBot 组件，会被 NovaBot 扫描并注册至 Spring 容器中
-public class StarBotExampleMeowAdder {
+public class NovaExampleMeowAdder {
     /**
      * 要添加的后缀
      */

@@ -11,7 +11,7 @@ import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.handler.NovaEventHandler;
-import org.frostnova.nova.core.handler.StarBotEventHandlerPushMessageInitializer;
+import org.frostnova.nova.core.handler.NovaEventHandlerPushMessageInitializer;
 import org.frostnova.nova.core.health.PushActivityRecorder;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
 import org.frostnova.nova.core.model.Message;
@@ -26,7 +26,7 @@ import org.frostnova.nova.core.service.AtAllQuotaService;
 import org.frostnova.nova.core.service.AtSubscriptionService;
 import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.PushTemplateDefaults;
-import org.frostnova.nova.core.service.StarBotEventHandlerService;
+import org.frostnova.nova.core.service.NovaEventHandlerService;
 import org.frostnova.nova.core.service.NovaSenderService;
 import org.frostnova.nova.core.service.NovaStateStore;
 import org.frostnova.nova.core.timeline.TimelineWriter;
@@ -112,7 +112,7 @@ class MergedNoticeTemplateTest {
      * 写在处理器里的判断只对新建的推送生效，而那正是本格要防的那种绿。
      */
     private String effectiveMessage(NovaEventHandler handler, String stored) {
-        StarBotEventHandlerService service = mock(StarBotEventHandlerService.class);
+        NovaEventHandlerService service = mock(NovaEventHandlerService.class);
         when(service.getHandler(handler.getClass().getName())).thenReturn(Optional.of(handler));
 
         JSONObject saved = new JSONObject();
@@ -122,7 +122,7 @@ class MergedNoticeTemplateTest {
         message.setHandler(handler.getClass().getName());
         message.setParams(saved.toJSONString());
 
-        StarBotEventHandlerPushMessageInitializer initializer = new StarBotEventHandlerPushMessageInitializer(
+        NovaEventHandlerPushMessageInitializer initializer = new NovaEventHandlerPushMessageInitializer(
                 service, new PushTemplateDefaults(new NovaCoreProperties()));
         assertTrue(initializer.initialize(message), "初始化器没认出这个处理器，本格什么也没量到");
         return message.getParamsJsonObject().getString("message");

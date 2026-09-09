@@ -297,7 +297,7 @@ JAVA_OPTS="-Xmx256m" ./start.sh
 
 **日志在哪？**
 
-systemd 部署：`sudo journalctl -u starbot -f`。手动运行：直接输出到终端。
+systemd 部署：`sudo journalctl -u novabot -f`（旧安装的机器服务名仍是 `starbot`）。手动运行：直接输出到终端。
 
 **怎么知道推送到底有没有成功？**
 

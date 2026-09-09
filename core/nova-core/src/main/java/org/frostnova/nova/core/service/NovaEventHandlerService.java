@@ -21,11 +21,11 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * StarBot 事件处理器服务
+ * NovaBot 事件处理器服务
  */
 @Slf4j
 @Service
-public class StarBotEventHandlerService {
+public class NovaEventHandlerService {
     private final ApplicationContext applicationContext;
 
     private final Map<String, NovaEventHandler> cache = new HashMap<>();
@@ -46,7 +46,7 @@ public class StarBotEventHandlerService {
     private final Set<String> warnedLegacyNames = ConcurrentHashMap.newKeySet();
 
     @Autowired
-    public StarBotEventHandlerService(ApplicationContext applicationContext) {
+    public NovaEventHandlerService(ApplicationContext applicationContext) {
         this.applicationContext = applicationContext;
     }
 

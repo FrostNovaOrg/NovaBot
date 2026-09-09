@@ -8,7 +8,7 @@ import org.frostnova.nova.core.config.ui.RuntimeConfigurationApplier;
 import org.frostnova.nova.core.health.PushActivityRecorder;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.service.PushTemplateDefaults;
-import org.frostnova.nova.core.service.StarBotEventHandlerService;
+import org.frostnova.nova.core.service.NovaEventHandlerService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
@@ -48,7 +48,7 @@ public class PushController {
 
     private final ConfigurationFileService fileService;
 
-    private final StarBotEventHandlerService handlerService;
+    private final NovaEventHandlerService handlerService;
 
     private final PushTemplateDefaults templateDefaults;
 
@@ -56,7 +56,7 @@ public class PushController {
 
     public PushController(RuntimeConfigurationApplier runtimeApplier,
                           ConfigurationFileService fileService,
-                          StarBotEventHandlerService handlerService,
+                          NovaEventHandlerService handlerService,
                           PushTemplateDefaults templateDefaults,
                           PushActivityRecorder activityRecorder) {
         this.runtimeApplier = runtimeApplier;
@@ -109,7 +109,7 @@ public class PushController {
      * 每一项还带上它的<b>旧全类名</b>：处理器搬过包之后，老使用者的 {@code datasource.json}
      * 里写的仍是旧名，界面按真类名严格比就对不上——开关显示成「关」而机器人照推，
      * 旧名下的自定义模板读不到而页面报「默认模板」，三样都不报错。旧名逐字取自
-     * {@link StarBotEventHandlerService#getLegacyClassNames()}，也就是运行期认处理器用的那张表：
+     * {@link NovaEventHandlerService#getLegacyClassNames()}，也就是运行期认处理器用的那张表：
      * 在这里另手写一份的话，两份清单迟早对不上，而那正是这个毛病本来的成因。
      * @return 处理器列表
      */

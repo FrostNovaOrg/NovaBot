@@ -3,9 +3,9 @@ package org.frostnova.nova.core.datasource;
 import org.frostnova.nova.core.properties.DatasourceProperties;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.exception.DataSourceException;
-import org.frostnova.nova.core.handler.StarBotEventHandlerPushMessageInitializer;
+import org.frostnova.nova.core.handler.NovaEventHandlerPushMessageInitializer;
 import org.frostnova.nova.core.service.PushTemplateDefaults;
-import org.frostnova.nova.core.service.StarBotEventHandlerService;
+import org.frostnova.nova.core.service.NovaEventHandlerService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -48,7 +48,7 @@ class MissingDatasourceFileTest {
         return new JsonDataSource(
                 mock(ApplicationEventPublisher.class),
                 new DataSourceServiceRegistry(List.of()),
-                new StarBotEventHandlerPushMessageInitializer(mock(StarBotEventHandlerService.class),
+                new NovaEventHandlerPushMessageInitializer(mock(NovaEventHandlerService.class),
                         new PushTemplateDefaults(new NovaCoreProperties())),
                 properties);
     }

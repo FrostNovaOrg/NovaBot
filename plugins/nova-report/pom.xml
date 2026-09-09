@@ -12,8 +12,8 @@
 
     <artifactId>nova-report</artifactId>
     <version>1.0.0</version>
-    <name>StarBotReport</name>
-    <description>Live report painting and analytics for StarBot</description>
+    <name>NovaReport</name>
+    <description>Live report painting and analytics for NovaBot</description>
 
     <dependencies>
         <dependency>

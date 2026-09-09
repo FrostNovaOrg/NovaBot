@@ -38,7 +38,7 @@ class ExamplePluginTemplateShapeTest {
             "plugins/nova-report/pom.xml",
             "templates/nova-example-plugin/pom.xml");
 
-    private static final Pattern STARBOT_CORE_VERSION = Pattern.compile(
+    private static final Pattern NOVA_CORE_VERSION = Pattern.compile(
             "nova-core</artifactId>\\s*<version>([^<]+)</version>");
 
     @Test
@@ -85,8 +85,8 @@ class ExamplePluginTemplateShapeTest {
     @Test
     @DisplayName("③ README 示例的 nova-core 版本与模板 pom 一致")
     void readmeCoreVersionMatchesPom() {
-        String inReadme = starbotCoreVersion(read(templateDir().resolve("README.md")));
-        String inPom = starbotCoreVersion(read(templateDir().resolve("pom.xml")));
+        String inReadme = novaCoreVersion(read(templateDir().resolve("README.md")));
+        String inPom = novaCoreVersion(read(templateDir().resolve("pom.xml")));
         assertTrue(inReadme != null, "README 里没找到 nova-core 依赖示例的版本号");
         assertTrue(inPom != null, "模板 pom 里没找到 nova-core 依赖的版本号");
         assertEquals(inPom, inReadme,
@@ -157,8 +157,8 @@ class ExamplePluginTemplateShapeTest {
         return count;
     }
 
-    private static String starbotCoreVersion(String text) {
-        Matcher matcher = STARBOT_CORE_VERSION.matcher(text);
+    private static String novaCoreVersion(String text) {
+        Matcher matcher = NOVA_CORE_VERSION.matcher(text);
         return matcher.find() ? matcher.group(1).trim() : null;
     }
 

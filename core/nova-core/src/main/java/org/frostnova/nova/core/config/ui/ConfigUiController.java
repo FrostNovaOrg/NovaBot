@@ -28,7 +28,7 @@ import org.frostnova.nova.core.sender.PushGate;
 import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.PushTemplateDefaults;
-import org.frostnova.nova.core.service.StarBotEventHandlerService;
+import org.frostnova.nova.core.service.NovaEventHandlerService;
 import org.frostnova.nova.core.service.NovaSenderService;
 import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.core.timeline.TimelineEventType;
@@ -149,7 +149,7 @@ public class ConfigUiController {
 
     private final PushActivityRecorder activityRecorder;
 
-    private final StarBotEventHandlerService handlerService;
+    private final NovaEventHandlerService handlerService;
 
     private final DataSourceServiceRegistry dataSourceServiceRegistry;
 
@@ -263,7 +263,7 @@ public class ConfigUiController {
                               NovaMessageSender messageSender,
                               ObjectProvider<AccountLoginProvider> loginProviders,
                               PushActivityRecorder activityRecorder,
-                              StarBotEventHandlerService handlerService,
+                              NovaEventHandlerService handlerService,
                               DataSourceServiceRegistry dataSourceServiceRegistry,
                               ConfigurationLevelResolver levelResolver,
                               ConfigurationEffectResolver effectResolver,
@@ -298,7 +298,7 @@ public class ConfigUiController {
                        NovaMessageSender messageSender,
                        ObjectProvider<AccountLoginProvider> loginProviders,
                        PushActivityRecorder activityRecorder,
-                       StarBotEventHandlerService handlerService,
+                       NovaEventHandlerService handlerService,
                        DataSourceServiceRegistry dataSourceServiceRegistry,
                        ConfigurationLevelResolver levelResolver,
                        ConfigurationEffectResolver effectResolver,
@@ -334,7 +334,7 @@ public class ConfigUiController {
                               NovaMessageSender messageSender,
                               ObjectProvider<AccountLoginProvider> loginProviders,
                               PushActivityRecorder activityRecorder,
-                              StarBotEventHandlerService handlerService,
+                              NovaEventHandlerService handlerService,
                               DataSourceServiceRegistry dataSourceServiceRegistry,
                               ConfigurationLevelResolver levelResolver,
                               ConfigurationEffectResolver effectResolver,

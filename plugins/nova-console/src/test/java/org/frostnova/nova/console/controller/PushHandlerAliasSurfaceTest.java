@@ -11,7 +11,7 @@ import org.frostnova.nova.core.health.PushActivityRecorder;
 import org.frostnova.nova.core.model.PushMessage;
 import org.frostnova.nova.core.service.HandlerPackageNames;
 import org.frostnova.nova.core.service.PushTemplateDefaults;
-import org.frostnova.nova.core.service.StarBotEventHandlerService;
+import org.frostnova.nova.core.service.NovaEventHandlerService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -38,7 +38,7 @@ import static org.mockito.Mockito.when;
  * <p>
  * 🔴 判的是<b>同源</b>不是「有这一栏」：在控制器里另手写一份旧名清单，这一栏照样有值，
  * 而两份清单迟早对不上——那正是这个毛病本来的成因。因此逐项与
- * {@link StarBotEventHandlerService#getLegacyClassNames()} 比。
+ * {@link NovaEventHandlerService#getLegacyClassNames()} 比。
  */
 @DisplayName("处理器清单带旧全类名")
 class PushHandlerAliasSurfaceTest {
@@ -53,7 +53,7 @@ class PushHandlerAliasSurfaceTest {
      * 按容器里真有这两个处理器的样子建一份处理器表，不 mock 别名那一段——
      * mock 掉的话，量的就只是「控制器有没有调这个方法」，而不是两处读的是不是同一张表
      */
-    private static StarBotEventHandlerService service() {
+    private static NovaEventHandlerService service() {
         Map<String, NovaEventHandler> beans = new LinkedHashMap<>();
         beans.put("moved", new Moved());
         beans.put("stayed", new Stayed());
@@ -61,12 +61,12 @@ class PushHandlerAliasSurfaceTest {
         ApplicationContext context = mock(ApplicationContext.class);
         when(context.getBeansOfType(NovaEventHandler.class)).thenReturn(beans);
 
-        StarBotEventHandlerService service = new StarBotEventHandlerService(context);
+        NovaEventHandlerService service = new NovaEventHandlerService(context);
         service.onContextRefreshedEvent();
         return service;
     }
 
-    private JSONObject handlers(StarBotEventHandlerService service) {
+    private JSONObject handlers(NovaEventHandlerService service) {
         NovaCoreProperties properties = new NovaCoreProperties();
         properties.getDatasource().setJsonPath(dir.resolve("datasource.json").toString());
         PushController controller = new PushController(
@@ -95,7 +95,7 @@ class PushHandlerAliasSurfaceTest {
     @Test
     @DisplayName("搬过家的那一项带着它的旧名, 且与运行期那张表逐字相同")
     void movedHandlerCarriesItsLegacyNames() {
-        StarBotEventHandlerService service = service();
+        NovaEventHandlerService service = service();
         JSONObject item = itemOf(handlers(service), Moved.class.getName());
         assertNotNull(item, "清单里找不到这个处理器, 下面每一格都无从量起");
 
