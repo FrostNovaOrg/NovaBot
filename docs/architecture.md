@@ -379,8 +379,9 @@ Maven 只往 `target/` 里写，从不为「源码里已经没有的东西」做
 理由与「清不到哪里」写在 `build.sh` 顶部。
 
 **产物守卫**：收尾一步跑 `tools/artifact-ui-resource-check.sh`，判据是
-「jar 内界面资源条目 ⊆ 源码目录条目」（核心 `BOOT-INF/classes/config-ui/`
-与各插件 jar 的 `config-ui-pages/`），多出即退非 0 并逐条点名。它与上面那道 `clean`
+「核心格 ⊆ 源码目录；插件格 ⊆ 登记清单（provider 申报＋控制器直取）」
+（核心 `BOOT-INF/classes/config-ui/` 与各插件 jar 的 `config-ui-pages/`），
+多出即退非 0 并逐条点名。它与上面那道 `clean`
 答的是两个问题——前者问「构建有没有从空目录开始」，后者问「打出来的包里有没有脏东西」，
 产物是从多处拷进 `dist/build` 的，清理管不着拷进来的那些。这把尺也可单独跑：
 `tools/artifact-ui-resource-check.sh [产物目录]`。
