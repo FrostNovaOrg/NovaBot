@@ -1,7 +1,9 @@
 package org.frostnova.nova.core.config.ui;
 
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.alert.AlertChannel;
+import org.frostnova.nova.core.alert.AlertRecipientField;
 import org.frostnova.nova.core.alert.AlertService;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.timeline.TimelineWriter;
@@ -17,6 +19,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -56,6 +59,7 @@ class AlertTestControllerTest {
         private final String name;
         boolean available = true;
         boolean failing;
+        List<AlertRecipientField> recipientFields = List.of();
         final List<String> received = new ArrayList<>();
 
         FakeChannel(String id, String name) {
@@ -84,6 +88,11 @@ class AlertTestControllerTest {
                 throw new IllegalStateException("模拟出网中断");
             }
             received.add(subject + "\n" + content);
+        }
+
+        @Override
+        public List<AlertRecipientField> recipientFields() {
+            return recipientFields;
         }
     }
 
@@ -167,5 +176,49 @@ class AlertTestControllerTest {
 
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         assertEquals("UNKNOWN", response.getBody().getString("status"));
+    }
+
+    @Test
+    @DisplayName("桩通道申报三键：顺序同申报、六字段俱在；默认通道 recipient 为空数组")
+    void reportsDeclaredRecipientFields() {
+        FakeChannel stub = add("stub", "桩");
+        stub.recipientFields = List.of(
+                new AlertRecipientField("plug.alert.platform", "", "hidden", "", "", "sender"),
+                new AlertRecipientField("plug.alert.type", "", "hidden", "", "", "kind"),
+                new AlertRecipientField("plug.alert.num", "发给谁", "select", "", "^\\d+$", "num"));
+        add("mail", "邮件");
+
+        JSONObject body = controller.channels();
+        JSONArray channels = body.getJSONArray("channels");
+        assertEquals(2, channels.size());
+
+        JSONArray recipient = channels.getJSONObject(0).getJSONArray("recipient");
+        assertEquals(3, recipient.size(), "申报三键应原样出现");
+        assertEquals("plug.alert.platform", recipient.getJSONObject(0).getString("key"));
+        assertEquals("sender", recipient.getJSONObject(0).getString("fill"));
+        assertEquals("plug.alert.type", recipient.getJSONObject(1).getString("key"));
+        assertEquals("kind", recipient.getJSONObject(1).getString("fill"));
+        assertEquals("plug.alert.num", recipient.getJSONObject(2).getString("key"));
+        assertEquals("num", recipient.getJSONObject(2).getString("fill"));
+        for (int i = 0; i < 3; i++) {
+            JSONObject field = recipient.getJSONObject(i);
+            for (String name : List.of("key", "label", "type", "placeholder", "pattern", "fill")) {
+                assertTrue(field.containsKey(name), "第 " + i + " 栏缺 " + name);
+                assertNotNull(field.getString(name), "第 " + i + " 栏 " + name + " 为 null");
+            }
+        }
+
+        JSONArray empty = channels.getJSONObject(1).getJSONArray("recipient");
+        assertNotNull(empty, "默认通道 recipient 不得为 null");
+        assertEquals(0, empty.size());
+    }
+
+    @Test
+    @DisplayName("零通道时 channels 为空数组")
+    void reportsEmptyChannelList() {
+        JSONObject body = controller.channels();
+        JSONArray channels = body.getJSONArray("channels");
+        assertNotNull(channels, "零通道时 channels 不得省略");
+        assertEquals(0, channels.size());
     }
 }

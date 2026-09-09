@@ -2,7 +2,9 @@ package org.frostnova.nova.adapter.onebot.alert;
 
 import org.frostnova.nova.adapter.onebot.config.OneBotAdapterPluginProperties;
 import org.frostnova.nova.core.alert.AlertChannel;
+import org.frostnova.nova.core.alert.AlertRecipientField;
 import org.frostnova.nova.core.enums.PushTargetType;
+import org.frostnova.nova.core.properties.NovaBotPrefixes;
 import org.frostnova.nova.core.model.Message;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.sender.NovaMessageSender;
@@ -41,6 +43,17 @@ public class QqAlertChannel implements AlertChannel {
     @Override
     public String name() {
         return "QQ";
+    }
+
+    @Override
+    public List<AlertRecipientField> recipientFields() {
+        return List.of(
+                new AlertRecipientField(NovaBotPrefixes.ADAPTER + ".alert.platform",
+                        "", "hidden", "", "", "sender"),
+                new AlertRecipientField(NovaBotPrefixes.ADAPTER + ".alert.type",
+                        "", "hidden", "", "", "kind"),
+                new AlertRecipientField(NovaBotPrefixes.ADAPTER + ".alert.num",
+                        "发给谁", "select", "", "^\\d+$", "num"));
     }
 
     @Override

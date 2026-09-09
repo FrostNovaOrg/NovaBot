@@ -336,8 +336,10 @@ export async function load() {
     const quiet = await sources;
     try {
       store.vocab = (await api('/vocab')).terms || {};
+      store.alertChannels = (await api('/alert/channels')).channels || [];
     } catch (e) {
       store.vocab = {};
+      store.alertChannels = [];
     }
     applyConnectionVocab();
     refreshPages();

@@ -3090,6 +3090,8 @@ class ConfigUiFrontendTest {
         try {
             assertTrue(nonCommentContains(dir.resolve("main.js"), "api('/vocab')"),
                     "main.js 代码行应含 api('/vocab')");
+            assertTrue(nonCommentContains(dir.resolve("main.js"), "api('/alert/channels')"),
+                    "main.js 代码行应含 api('/alert/channels')");
         } catch (AssertionError e) {
             reds.add("① " + e.getMessage());
         }
