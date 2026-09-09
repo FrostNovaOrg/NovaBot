@@ -38,7 +38,7 @@ public class UserBindingService {
 
     /**
      * 绑定
-     * @param pushPlatform 推送平台，如 qq-onebot
+     * @param pushPlatform 推送平台，如适配器自报的平台名
      * @param livePlatform 直播平台，如 bilibili
      * @param senderUid 推送平台的账号
      * @param liveUid 直播平台的 UID

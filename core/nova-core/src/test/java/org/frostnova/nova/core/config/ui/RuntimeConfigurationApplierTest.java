@@ -281,4 +281,65 @@ class RuntimeConfigurationApplierTest {
 
         assertTrue(reds.isEmpty(), () -> "三问中 " + reds.size() + " 问红: " + String.join("; ", reds));
     }
+
+    @Test
+    @DisplayName("贡献者 appliedElsewhere 的键计入 supportedKeys")
+    void contributorAppliedElsewhereKeysAreSupported() {
+        List<String> reds = new ArrayList<>();
+        String key = "demo.connection.list";
+        RuntimeConfigurationApplierContributor contributor = new RuntimeConfigurationApplierContributor() {
+            @Override
+            public Map<String, Consumer<String>> appliers() {
+                return Map.of();
+            }
+
+            @Override
+            public Map<String, String> appliedElsewhere() {
+                return Map.of(key, "专门入口落地");
+            }
+        };
+        RuntimeConfigurationApplier with = RuntimeConfigurationApplier.bench(properties)
+                .contributors(List.of(contributor))
+                .build();
+
+        try {
+            assertTrue(with.supportedKeys().contains(key),
+                    "appliedElsewhere 申报的键应计入 supportedKeys");
+            assertTrue(with.supportedKeys().contains("novabot.core.push.enabled"),
+                    "核心自有键仍须在名单里");
+        } catch (AssertionError e) {
+            reds.add("① " + e.getMessage());
+        }
+
+        try {
+            RuntimeConfigurationApplier none = RuntimeConfigurationApplier.bench(properties).build();
+            assertFalse(none.supportedKeys().contains(key),
+                    "没有申报时该键不得出现在核心表里");
+        } catch (AssertionError e) {
+            reds.add("② " + e.getMessage());
+        }
+
+        try {
+            RuntimeConfigurationApplierContributor clash = new RuntimeConfigurationApplierContributor() {
+                @Override
+                public Map<String, Consumer<String>> appliers() {
+                    return Map.of(key, value -> { });
+                }
+
+                @Override
+                public Map<String, String> appliedElsewhere() {
+                    return Map.of(key, "重复");
+                }
+            };
+            assertThrows(IllegalStateException.class,
+                    () -> RuntimeConfigurationApplier.bench(properties)
+                            .contributors(List.of(clash))
+                            .build(),
+                    "同一贡献者 appliers 与 appliedElsewhere 撞键须抛");
+        } catch (AssertionError e) {
+            reds.add("③ " + e.getMessage());
+        }
+
+        assertTrue(reds.isEmpty(), () -> "三问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+    }
 }

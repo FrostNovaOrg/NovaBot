@@ -97,6 +97,44 @@ class ConfigurationFileServiceTest {
         service = new ConfigurationFileService(config);
     }
 
+    @Test
+    @DisplayName("桩贡献者报键 X 时清空 X 不写进文件")
+    void stubContributorBlankKeyIsOmittedOnWrite() throws IOException {
+        BotConnectionContributor stub = new BotConnectionContributor() {
+            @Override
+            public String connectionListKey() {
+                return "demo.list";
+            }
+
+            @Override
+            public java.util.Set<String> blankMeansAbsentKeys() {
+                return java.util.Set.of("demo.secret");
+            }
+        };
+        Files.writeString(config, """
+                demo:
+                  secret: old
+                server:
+                  port: 1
+                """, StandardCharsets.UTF_8);
+        service = new ConfigurationFileService(config, () -> "x: 1\n", java.util.List.of(stub));
+
+        service.write(java.util.Map.of("demo.secret", ""));
+
+        String text = content();
+        assertFalse(text.contains("secret:"), "申报后空值不得写进文件:\n" + text);
+
+        Files.writeString(config, """
+                demo:
+                  secret: old
+                server:
+                  port: 1
+                """, StandardCharsets.UTF_8);
+        ConfigurationFileService coreOnly = new ConfigurationFileService(config, () -> "x: 1\n");
+        coreOnly.write(java.util.Map.of("demo.secret", ""));
+        assertTrue(content().contains("secret:"), "去掉申报后空值应留在文件里:\n" + content());
+    }
+
     private String content() throws IOException {
         return Files.readString(config, StandardCharsets.UTF_8);
     }

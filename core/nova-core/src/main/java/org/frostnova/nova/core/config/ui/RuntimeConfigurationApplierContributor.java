@@ -21,4 +21,17 @@ public interface RuntimeConfigurationApplierContributor {
      * @return 键到落地动作，登记顺序
      */
     Map<String, Consumer<String>> appliers();
+
+    /**
+     * 即时生效、但落地动作不在通用保存通道上的配置项
+     * <p>
+     * 列表之类无法用「一个键、一个字符串」写回的项走这一支：它们另有专门入口落地，
+     * 但仍须出现在「保存之后不需要重启」的名单里，否则界面会白让人重启一次。
+     * 默认空表。同一条键被两方申报、或与 {@link #appliers()}／核心自有表重复时，
+     * 核心在合并时抛 {@link IllegalStateException}。
+     * @return 键到「谁去落地」的说明，登记顺序
+     */
+    default Map<String, String> appliedElsewhere() {
+        return Map.of();
+    }
 }

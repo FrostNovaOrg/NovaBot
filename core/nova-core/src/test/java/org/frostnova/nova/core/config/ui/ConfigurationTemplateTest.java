@@ -176,7 +176,7 @@ class ConfigurationTemplateTest {
                 "一项也没注释掉 —— 那么下面这条「注释掉的都在免检表里」量的是空集，恒真");
 
         List<String> unexplained = new ArrayList<>(commented);
-        unexplained.removeAll(ConfigurationFileService.BLANK_MEANS_ABSENT);
+        unexplained.removeAll(ConfigurationFileService.CORE_BLANK_MEANS_ABSENT);
         assertTrue(unexplained.isEmpty(),
                 "以下配置项被注释掉了，而它们不在「写成空值会让程序起不来」那张表里。"
                         + "注释掉一项就是从文件上把它抹掉，得有理由:\n  " + String.join("\n  ", unexplained));
@@ -305,14 +305,22 @@ class ConfigurationTemplateTest {
         private String oneBotAddress;
     }
 
+    /**
+     * 桩贡献者申报的令牌键。核心自有表不含这些，渲染时须显式传入。
+     */
+    private static final Set<String> TOKEN_KEYS = Set.of(
+            "adapter.senders.one-bot-http-token",
+            "adapter.senders.one-bot-websocket-token",
+            "adapter.senders.api-token");
+
     @Test
     @DisplayName("HTTP 令牌留空 → 文件无该键行")
     void blankHttpTokenIsOmittedFromRenderedList() {
         Map<String, Object> item = new LinkedHashMap<>();
-        item.put("name", "qq-onebot");
+        item.put("name", "demo");
         item.put("one-bot-http-token", "");
-        String yaml = renderSender(item);
-        assertTrue(yaml.contains("name: qq-onebot"), yaml);
+        String yaml = renderSender(item, TOKEN_KEYS);
+        assertTrue(yaml.contains("name: demo"), yaml);
         assertFalse(yaml.contains("one-bot-http-token"), "留空仍写出了键行:\n" + yaml);
     }
 
@@ -320,10 +328,10 @@ class ConfigurationTemplateTest {
     @DisplayName("Websocket 令牌留空 → 文件无该键行")
     void blankWebsocketTokenIsOmittedFromRenderedList() {
         Map<String, Object> item = new LinkedHashMap<>();
-        item.put("name", "qq-onebot");
+        item.put("name", "demo");
         item.put("one-bot-websocket-token", "  ");
-        String yaml = renderSender(item);
-        assertTrue(yaml.contains("name: qq-onebot"), yaml);
+        String yaml = renderSender(item, TOKEN_KEYS);
+        assertTrue(yaml.contains("name: demo"), yaml);
         assertFalse(yaml.contains("one-bot-websocket-token"), "留空仍写出了键行:\n" + yaml);
     }
 
@@ -331,24 +339,52 @@ class ConfigurationTemplateTest {
     @DisplayName("推送接口令牌留空 → 文件无该键行")
     void blankApiTokenIsOmittedFromRenderedList() {
         Map<String, Object> item = new LinkedHashMap<>();
-        item.put("name", "qq-onebot");
+        item.put("name", "demo");
         item.put("api-token", "");
-        String yaml = renderSender(item);
-        assertTrue(yaml.contains("name: qq-onebot"), yaml);
+        String yaml = renderSender(item, TOKEN_KEYS);
+        assertTrue(yaml.contains("name: demo"), yaml);
         assertFalse(yaml.contains("api-token"), "留空仍写出了键行:\n" + yaml);
+    }
+
+    @Test
+    @DisplayName("去掉申报后空令牌被写进文件")
+    void blankTokenWithoutContributorIsWritten() {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("name", "demo");
+        item.put("one-bot-http-token", "");
+        String yaml = renderSender(item, ConfigurationFileService.CORE_BLANK_MEANS_ABSENT);
+        assertTrue(yaml.contains("one-bot-http-token"), "去掉适配器申报后空令牌应出现在文件里:\n" + yaml);
+    }
+
+    @Test
+    @DisplayName("桩贡献者报键 X 时生成文件里空值 X 不写")
+    void stubContributorOmitsBlankKeyFromRenderedFile() {
+        ConfigurationMetadataService.ConfigurationField field =
+                new ConfigurationMetadataService.ConfigurationField(
+                        "demo.secret", "java.lang.String", "密文", "");
+        String with = ConfigurationTemplate.render(List.of(field), Map.of(), Set.of("demo.secret"));
+        assertTrue(with.contains("# secret:"), "申报后空值应整行注释掉:\n" + with);
+        assertFalse(with.contains("\nsecret:\n") || with.contains("secret: \n"), with);
+
+        String without = ConfigurationTemplate.render(List.of(field), Map.of(),
+                ConfigurationFileService.CORE_BLANK_MEANS_ABSENT);
+        assertTrue(without.contains("secret:"), "去掉申报后空值应写进文件:\n" + without);
     }
 
     @Test
     @DisplayName("令牌字段后缀认得出，恒返 false 会红")
     void blankMeansAbsentFieldRecognizesTokenSuffixes() {
-        assertTrue(ConfigurationFileService.isBlankMeansAbsentField("one-bot-http-token"));
-        assertTrue(ConfigurationFileService.isBlankMeansAbsentField("one-bot-websocket-token"));
-        assertTrue(ConfigurationFileService.isBlankMeansAbsentField("api-token"));
+        assertTrue(ConfigurationFileService.isBlankMeansAbsentField("one-bot-http-token", TOKEN_KEYS));
+        assertTrue(ConfigurationFileService.isBlankMeansAbsentField("one-bot-websocket-token", TOKEN_KEYS));
+        assertTrue(ConfigurationFileService.isBlankMeansAbsentField("api-token", TOKEN_KEYS));
         assertTrue(ConfigurationFileService.isBlankMeansAbsentField(
-                "novabot.adapter.onebot.senders.one-bot-http-token"));
-        assertFalse(ConfigurationFileService.isBlankMeansAbsentField("name"),
+                "adapter.senders.one-bot-http-token", TOKEN_KEYS));
+        assertFalse(ConfigurationFileService.isBlankMeansAbsentField("name", TOKEN_KEYS),
                 "name 不在键集里，恒返 true 会把普通字段也抹掉");
-        assertFalse(ConfigurationFileService.isBlankMeansAbsentField("api"));
+        assertFalse(ConfigurationFileService.isBlankMeansAbsentField("api", TOKEN_KEYS));
+        assertFalse(ConfigurationFileService.isBlankMeansAbsentField(
+                "one-bot-http-token", ConfigurationFileService.CORE_BLANK_MEANS_ABSENT),
+                "核心自有表不含令牌键");
     }
 
     @Test
@@ -359,7 +395,7 @@ class ConfigurationTemplateTest {
         Set<String> live = load(config).keySet();
 
         List<String> leaked = new ArrayList<>();
-        for (String key : ConfigurationFileService.BLANK_MEANS_ABSENT) {
+        for (String key : ConfigurationFileService.CORE_BLANK_MEANS_ABSENT) {
             if (expected.contains(key) && live.contains(key)) {
                 leaked.add(key);
             }
@@ -370,14 +406,14 @@ class ConfigurationTemplateTest {
 
         assertTrue(live.contains("novabot.core.push.quiet-start"),
                 "静音时段留空是有效取值，键集外的空值必须照写");
-        assertFalse(ConfigurationFileService.BLANK_MEANS_ABSENT.contains("novabot.core.push.quiet-start"));
+        assertFalse(ConfigurationFileService.CORE_BLANK_MEANS_ABSENT.contains("novabot.core.push.quiet-start"));
 
         Map<String, Object> item = new LinkedHashMap<>();
-        item.put("name", "qq-onebot");
+        item.put("name", "demo");
         item.put("api", "");
         item.put("one-bot-http-token", "");
-        String yaml = renderSender(item);
-        assertTrue(yaml.contains("name: qq-onebot"), yaml);
+        String yaml = renderSender(item, TOKEN_KEYS);
+        assertTrue(yaml.contains("name: demo"), yaml);
         assertTrue(yaml.contains("api:"), "键集外的空字段必须照写:\n" + yaml);
         assertFalse(yaml.contains("one-bot-http-token"), "键集内的空令牌不得出现:\n" + yaml);
     }
@@ -385,11 +421,11 @@ class ConfigurationTemplateTest {
     /**
      * 渲染一个 senders 列表项
      */
-    private static String renderSender(Map<String, Object> item) {
+    private static String renderSender(Map<String, Object> item, Set<String> blankMeansAbsent) {
         ConfigurationMetadataService.ConfigurationField field =
                 new ConfigurationMetadataService.ConfigurationField(
                         "senders", "java.util.List", "推送平台", List.of());
-        return ConfigurationTemplate.render(List.of(field), Map.of("senders", List.of(item)));
+        return ConfigurationTemplate.render(List.of(field), Map.of("senders", List.of(item)), blankMeansAbsent);
     }
 
     @Test

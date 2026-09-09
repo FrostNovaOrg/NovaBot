@@ -110,12 +110,10 @@ public class RuntimeConfigurationApplier {
      * 要么标成即时生效而无处对账（判据只能睁一只眼，从此谁标都行）。
      * <p>
      * 值是<b>谁去落地</b>，写清楚才对得上账：光有一份键名清单，等于给这几项签了免检。
+     * <p>
+     * 核心自有表为空。平台相关的项由 {@link RuntimeConfigurationApplierContributor#appliedElsewhere()} 申报。
      */
-    private static final Map<String, String> APPLIED_ELSEWHERE = Map.of(
-            // 机器人连接：/api/setup/bot 保存时经 BotConnectionTester#apply 当场重建连接，
-            // 判据在适配器一侧（连接建起来没有、换了地址旧连接断没断）
-            "novabot.adapter.onebot.senders",
-            "/api/setup/bot 保存时经 BotConnectionTester#apply 当场重建连接");
+    private static final Map<String, String> APPLIED_ELSEWHERE = Map.of();
 
     /**
      * 保存过、但要等重启才生效的配置项
@@ -139,6 +137,11 @@ public class RuntimeConfigurationApplier {
     private final Map<String, Consumer<String>> contributedAppliers;
 
     /**
+     * 插件申报的「另有专门入口落地」项。核心自有表不在这里。
+     */
+    private final Map<String, String> contributedAppliedElsewhere;
+
+    /**
      * 事件时间线
      * <p>
      * 🔴 <b>只记改了哪一组，不记改成了什么。</b>时间线是逐行落在磁盘上的
@@ -160,41 +163,77 @@ public class RuntimeConfigurationApplier {
                                 TimelineWriter timeline) {
         this.properties = properties;
         this.totalDataStorage = totalDataStorage;
-        this.contributedAppliers = mergeAppliers(contributors);
+        Contributed contributed = mergeContributions(contributors);
+        this.contributedAppliers = contributed.appliers();
+        this.contributedAppliedElsewhere = contributed.elsewhere();
         this.timeline = timeline;
     }
 
-    private static Map<String, Consumer<String>> mergeAppliers(
+    private record Contributed(Map<String, Consumer<String>> appliers, Map<String, String> elsewhere) {
+    }
+
+    private static Contributed mergeContributions(
             Collection<RuntimeConfigurationApplierContributor> contributors) {
         if (contributors == null || contributors.isEmpty()) {
-            return Map.of();
+            return new Contributed(Map.of(), Map.of());
         }
 
-        Map<String, Consumer<String>> merged = new LinkedHashMap<>();
+        Map<String, Consumer<String>> appliers = new LinkedHashMap<>();
+        Map<String, String> elsewhere = new LinkedHashMap<>();
         for (RuntimeConfigurationApplierContributor contributor : contributors) {
             if (contributor == null) {
                 continue;
             }
-            Map<String, Consumer<String>> declared = contributor.appliers();
-            if (declared == null) {
+            mergeAppliers(contributor.appliers(), appliers, elsewhere);
+            mergeElsewhere(contributor.appliedElsewhere(), appliers, elsewhere);
+        }
+        return new Contributed(Collections.unmodifiableMap(appliers), Collections.unmodifiableMap(elsewhere));
+    }
+
+    private static void mergeAppliers(Map<String, Consumer<String>> declared,
+                                      Map<String, Consumer<String>> appliers,
+                                      Map<String, String> elsewhere) {
+        if (declared == null) {
+            return;
+        }
+        for (Map.Entry<String, Consumer<String>> entry : declared.entrySet()) {
+            String key = entry.getKey();
+            Consumer<String> applier = entry.getValue();
+            if (key == null || applier == null) {
                 continue;
             }
-            for (Map.Entry<String, Consumer<String>> entry : declared.entrySet()) {
-                String key = entry.getKey();
-                Consumer<String> applier = entry.getValue();
-                if (key == null || applier == null) {
-                    continue;
-                }
-                if (APPLIERS.containsKey(key)
-                        || APPLIED_ELSEWHERE.containsKey(key)
-                        || REDIS_APPLIERS.containsKey(key)
-                        || merged.containsKey(key)) {
-                    throw new IllegalStateException("即时生效配置项 " + key + " 被写了两次");
-                }
-                merged.put(key, applier);
-            }
+            rejectDuplicate(key, appliers, elsewhere);
+            appliers.put(key, applier);
         }
-        return Collections.unmodifiableMap(merged);
+    }
+
+    private static void mergeElsewhere(Map<String, String> declared,
+                                       Map<String, Consumer<String>> appliers,
+                                       Map<String, String> elsewhere) {
+        if (declared == null) {
+            return;
+        }
+        for (Map.Entry<String, String> entry : declared.entrySet()) {
+            String key = entry.getKey();
+            String who = entry.getValue();
+            if (key == null || who == null) {
+                continue;
+            }
+            rejectDuplicate(key, appliers, elsewhere);
+            elsewhere.put(key, who);
+        }
+    }
+
+    private static void rejectDuplicate(String key,
+                                        Map<String, Consumer<String>> appliers,
+                                        Map<String, String> elsewhere) {
+        if (APPLIERS.containsKey(key)
+                || APPLIED_ELSEWHERE.containsKey(key)
+                || REDIS_APPLIERS.containsKey(key)
+                || appliers.containsKey(key)
+                || elsewhere.containsKey(key)) {
+            throw new IllegalStateException("即时生效配置项 " + key + " 被写了两次");
+        }
     }
 
     /**
@@ -285,6 +324,7 @@ public class RuntimeConfigurationApplier {
         keys.addAll(APPLIED_ELSEWHERE.keySet());
         keys.addAll(REDIS_APPLIERS.keySet());
         keys.addAll(contributedAppliers.keySet());
+        keys.addAll(contributedAppliedElsewhere.keySet());
         return Collections.unmodifiableSet(keys);
     }
 

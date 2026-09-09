@@ -91,12 +91,12 @@ public class ConfigUiController {
     public static final String BASE_PATH = "/config";
 
     /**
-     * 机器人连接信息在配置文件里所处的列表
+     * 机器人连接信息在配置文件里所处的列表，由适配器申报。
      * <p>
      * 元素内部有哪几个键不写在这里——那由适配器答（见 {@link BotConnectionTester.Applied}）。
-     * 这里只记得住「它是一份列表、在配置树的哪个位置」，落盘那一侧要的正是这一句。
+     * 没有适配器申报时为空，保存连接那一步按「无连接列表」走。
      */
-    static final String BOT_CONNECTION_LIST = "novabot.adapter.onebot.senders";
+    private final ObjectProvider<BotConnectionContributor> botConnections;
 
     /**
      * 允许的静态资源文件名
@@ -205,7 +205,7 @@ public class ConfigUiController {
     private final ObjectProvider<ConfigurationKeyAliasContributor> aliasContributors;
 
     /**
-     * 告警通道。首页 alerts.qq 问通道可用性，不认核心里已经迁走的键名
+     * 告警通道。首页药丸遍历已登记的通道，没有登记的键不会出现。
      */
     private final AlertService alertService;
 
@@ -284,8 +284,43 @@ public class ConfigUiController {
                 dataSourceServiceRegistry, levelResolver, effectResolver, dangerResolver, runtimeApplier,
                 connectionTesters, pageProviders, eventStreamTokens, buildProperties, pushGate,
                 liveDataService, timeline, authService, templateDefaults, updateCheck,
+                noBotConnectionContributors());
+    }
+
+    ConfigUiController(ConfigurationMetadataService metadataService,
+                       ConfigurationFileService fileService,
+                       NovaCoreProperties properties,
+                       AbstractDataSource dataSource,
+                       ObjectProvider<HealthProbe> healthProbes,
+                       ConfigurationValidator validator,
+                       NovaSenderService senderService,
+                       NovaMessageSender messageSender,
+                       ObjectProvider<AccountLoginProvider> loginProviders,
+                       PushActivityRecorder activityRecorder,
+                       NovaEventHandlerService handlerService,
+                       DataSourceServiceRegistry dataSourceServiceRegistry,
+                       ConfigurationLevelResolver levelResolver,
+                       ConfigurationEffectResolver effectResolver,
+                       ConfigurationDangerResolver dangerResolver,
+                       RuntimeConfigurationApplier runtimeApplier,
+                       ObjectProvider<BotConnectionTester> connectionTesters,
+                       ObjectProvider<ConsolePageProvider> pageProviders,
+                       EventStreamTokenService eventStreamTokens,
+                       ObjectProvider<BuildProperties> buildProperties,
+                       PushGate pushGate,
+                       LiveDataService liveDataService,
+                       TimelineStore timeline,
+                       ConfigUiAuthService authService,
+                       PushTemplateDefaults templateDefaults,
+                       UpdateCheckService updateCheck,
+                       ObjectProvider<BotConnectionContributor> botConnections) {
+        this(metadataService, fileService, properties, dataSource, healthProbes, validator,
+                senderService, messageSender, loginProviders, activityRecorder, handlerService,
+                dataSourceServiceRegistry, levelResolver, effectResolver, dangerResolver, runtimeApplier,
+                connectionTesters, pageProviders, eventStreamTokens, buildProperties, pushGate,
+                liveDataService, timeline, authService, templateDefaults, updateCheck,
                 noGroupContributors(), noVocabularies(), noAliasContributors(),
-                defaultAlertService(properties));
+                defaultAlertService(properties), botConnections);
     }
 
     ConfigUiController(ConfigurationMetadataService metadataService,
@@ -320,7 +355,8 @@ public class ConfigUiController {
                 dataSourceServiceRegistry, levelResolver, effectResolver, dangerResolver, runtimeApplier,
                 connectionTesters, pageProviders, eventStreamTokens, buildProperties, pushGate,
                 liveDataService, timeline, authService, templateDefaults, updateCheck,
-                noGroupContributors(), noVocabularies(), noAliasContributors(), alertService);
+                noGroupContributors(), noVocabularies(), noAliasContributors(), alertService,
+                noBotConnectionContributors());
     }
 
     @Autowired
@@ -353,7 +389,8 @@ public class ConfigUiController {
                               ObjectProvider<ConfigurationGroupContributor> groupContributors,
                               ObjectProvider<ConsoleVocabulary> vocabProviders,
                               ObjectProvider<ConfigurationKeyAliasContributor> aliasContributors,
-                              AlertService alertService) {
+                              AlertService alertService,
+                              ObjectProvider<BotConnectionContributor> botConnections) {
         this.templateDefaults = templateDefaults;
         this.pushGate = pushGate;
         this.liveDataService = liveDataService;
@@ -384,6 +421,7 @@ public class ConfigUiController {
         this.senderService = senderService;
         this.messageSender = messageSender;
         this.loginProviders = loginProviders;
+        this.botConnections = botConnections;
     }
 
     /**
@@ -457,6 +495,44 @@ public class ConfigUiController {
 
             @Override
             public Stream<ConsoleVocabulary> orderedStream() {
+                return Stream.empty();
+            }
+        };
+    }
+
+    /**
+     * 无连接列表申报：旧构造与测试直接 new 时按「无连接列表」走。
+     * @return 空的 ObjectProvider
+     */
+    private static ObjectProvider<BotConnectionContributor> noBotConnectionContributors() {
+        return new ObjectProvider<>() {
+            @Override
+            public BotConnectionContributor getObject() {
+                throw new NoSuchBeanDefinitionException(BotConnectionContributor.class);
+            }
+
+            @Override
+            public BotConnectionContributor getObject(Object... args) {
+                throw new NoSuchBeanDefinitionException(BotConnectionContributor.class);
+            }
+
+            @Override
+            public BotConnectionContributor getIfAvailable() {
+                return null;
+            }
+
+            @Override
+            public BotConnectionContributor getIfUnique() {
+                return null;
+            }
+
+            @Override
+            public Stream<BotConnectionContributor> stream() {
+                return Stream.empty();
+            }
+
+            @Override
+            public Stream<BotConnectionContributor> orderedStream() {
                 return Stream.empty();
             }
         };
@@ -1196,8 +1272,17 @@ public class ConfigUiController {
                 tester.get().apply(address, httpPort, websocketPort, httpToken, websocketToken);
         result.put("live", applied.live());
 
+        String listKey = connectionListKey();
+        if (listKey.isEmpty()) {
+            result.put("success", false);
+            result.put("message", applied.live()
+                    ? "连接已经接上，但没有适配器申报连接列表位置，无法写入配置文件"
+                    : "没有适配器申报连接列表位置");
+            return result;
+        }
+
         try {
-            fileService.writeListItemFields(BOT_CONNECTION_LIST, 0, applied.configuration());
+            fileService.writeListItemFields(listKey, 0, applied.configuration());
             result.put("success", true);
             result.put("message", applied.live()
                     ? "已保存，这条连接已经接上了：" + applied.detail()
@@ -1619,9 +1704,11 @@ public class ConfigUiController {
     /**
      * 三张告警卡各自配好了没有
      * <p>
-     * 首页那条「QQ 告警有死角」要按 Webhook 与邮件这两位决定出不出——QQ 配没配都出，
+     * 首页那条「告警有死角」要按 Webhook 与邮件这两位决定出不出——插件通道配没配都出，
      * 它催的是掉线时还有一路能叫到人。判定与设置页药丸同源，见 {@link AlertReadiness}：
-     * QQ 问告警通道是否可用、Webhook 看地址空不空、邮件也问通道是否可用。
+     * 插件通道问告警通道是否可用、Webhook 看地址空不空、邮件也问通道是否可用。
+     * 通道键来自已登记的 {@link AlertChannel}；没有那只 bean 时对应键消失，而不是报 false。
+     * Webhook 由核心自算，不依赖通道 bean 在不在。
      * <p>
      * 邮件不能看配置文件：真的发信认的 SMTP 主机是 Spring 启动时从环境里取的
      * （{@code spring.mail.host} 可被环境变量越过文件改掉），文件里填着不等于此刻发得出去。
@@ -1629,11 +1716,23 @@ public class ConfigUiController {
      */
     private JSONObject alerts() {
         JSONObject json = new JSONObject();
+        for (AlertChannel channel : alertService.declaredChannels()) {
+            json.put(channel.id(), channel.isAvailable());
+        }
         NovaCoreProperties.Alert alert = properties.getAlert();
-        json.put("qq", alertService.isChannelAvailable("qq"));
         json.put("webhook", StringUtil.isNotBlank(alert.getWebhookUrl()));
-        json.put("mail", alertService.isChannelAvailable("mail"));
         return json;
+    }
+
+    /**
+     * 适配器申报的连接列表路径。没有申报时为空。
+     */
+    private String connectionListKey() {
+        return botConnections.orderedStream()
+                .map(BotConnectionContributor::connectionListKey)
+                .filter(key -> key != null && !key.isBlank())
+                .findFirst()
+                .orElse("");
     }
 
     /**
