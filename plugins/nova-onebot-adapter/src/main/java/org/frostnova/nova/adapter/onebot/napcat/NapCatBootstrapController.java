@@ -41,6 +41,10 @@ import java.nio.charset.StandardCharsets;
 public class NapCatBootstrapController {
     public static final String PAGE_PATH = ConfigUiController.BASE_PATH + "/napcat-bootstrap";
 
+    public static final String CONSOLE_PATH = ConfigUiController.BASE_PATH + "/api/bot/console";
+
+    public static final String LEGACY_STATE_PATH = ConfigUiController.BASE_PATH + "/api/napcat/state";
+
     public static final String CREDENTIAL_PATH = ConfigUiController.BASE_PATH + "/api/napcat/credential";
 
     private final NapCatCredentialService credentials;
@@ -54,11 +58,25 @@ public class NapCatBootstrapController {
      * <p>
      * 界面据此决定要不要显示入口。<b>没配好时不显示，而不是显示了点进去报错</b>——
      * 一个点了才知道不能用的按钮，比没有那个按钮更费解。
+     * 通用路多给 {@code href}，指向 {@link #PAGE_PATH}；旧路回包保持原样。
+     */
+    @GetMapping(value = CONSOLE_PATH, produces = MediaType.APPLICATION_JSON_VALUE)
+    public JSONObject console() {
+        JSONObject result = stateBody();
+        result.put("href", PAGE_PATH);
+        return result;
+    }
+
+    /**
+     * 配没配好（旧路，回包不含 {@code href}）
      * @return {@code {configured}}
      */
-    @GetMapping(value = ConfigUiController.BASE_PATH + "/api/napcat/state",
-            produces = MediaType.APPLICATION_JSON_VALUE)
+    @GetMapping(value = LEGACY_STATE_PATH, produces = MediaType.APPLICATION_JSON_VALUE)
     public JSONObject state() {
+        return stateBody();
+    }
+
+    private JSONObject stateBody() {
         JSONObject result = new JSONObject();
         result.put("success", true);
         result.put("configured", credentials.isConfigured());

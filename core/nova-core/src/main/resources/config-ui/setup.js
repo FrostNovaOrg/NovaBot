@@ -835,7 +835,7 @@ function schedulePoll(accounts) {
 async function loadOptions() {
   try {
     const [groups, friends] = await Promise.all([
-      api('/onebot/targets?type=group'), api('/onebot/targets?type=friend')]);
+      api('/bot/targets?type=group'), api('/bot/targets?type=friend')]);
     options = targetOptions(groups, friends);
   } catch (e) {
     // 取不到就空着。这一页不退回手填：那等于把「填错一位数不报错」那个失败形态请回来

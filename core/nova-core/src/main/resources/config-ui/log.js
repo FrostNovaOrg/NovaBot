@@ -536,21 +536,22 @@ async function copyEng() {
  * 也会在每次载入控制台时多打一个请求，而这一整块他一眼都看不到。
  */
 async function renderBotLogEntry() {
-  const box = $('#eng-napcat');
+  const box = $('#eng-bot');
   if (box.childElementCount || box.textContent) return;
 
   box.textContent = phrase('bot.impl',
     v => term('bot.platform', '聊天平台') + ' 那头（' + v + '）的日志不在这里，到它自己的控制台看。',
     '机器人那头的日志不在这里，到它自己的控制台看。');
+  let state;
   try {
-    const napcat = await api('/napcat/state');
-    if (!napcat.configured) return;
+    state = await api('/bot/console');
+    if (!state.configured || !state.href) return;
   } catch (e) {
     return;
   }
   box.insertAdjacentHTML('beforeend',
-    '<div style="margin-top:8px"><a class="daystep" id="eng-napcat-open" '
-    + 'href="/config/napcat-bootstrap" target="_blank" rel="noopener">'
+    '<div style="margin-top:8px"><a class="daystep" id="eng-bot-open" '
+    + 'href="' + esc(state.href) + '" target="_blank" rel="noopener">'
     + phrase('bot.impl', v => '打开 ' + v + ' 界面 ↗', '打开机器人界面 ↗')
     + '</a>'
     + '<span class="dim"> NovaBot 自己知道它在哪，不用另填。</span></div>');

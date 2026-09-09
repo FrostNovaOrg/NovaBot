@@ -297,7 +297,7 @@ async function qqTarget(box, pill) {
   wrap.appendChild(label);
 
   const select = el('select');
-  select.id = 'alert-qq-target';
+  select.id = 'alert-bot-target';
   select.setAttribute('aria-label', '告警发给谁');
   wrap.appendChild(select);
   const hint = el('div', 'al-note');
@@ -321,7 +321,7 @@ async function qqTarget(box, pill) {
   let reachable = true;
   try {
     const [groups, friends] = await Promise.all([
-      api('/onebot/targets?type=group'), api('/onebot/targets?type=friend')]);
+      api('/bot/targets?type=group'), api('/bot/targets?type=friend')]);
     for (const row of (groups.items || [])) {
       options.push({key: row.sender + '|1|' + row.num, text: '群 · ' + (row.name || row.num) + '（' + row.num + '）'});
     }

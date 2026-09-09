@@ -18,10 +18,10 @@ import {probesIn, worstLamp} from './home-model.js';
 /**
  * 机器人那张卡的固定标识
  *
- * 它同时是页面上那张卡的 id（{@code id="card-napcat"}），两头由 ConfigUiFrontendTest 钉着。
+ * 它同时是页面上那张卡的 id（{@code id="card-bot"}），两头由 ConfigUiFrontendTest 钉着。
  * 首页链路图上「QQ」那一站的落点<b>不</b>读这个常量，而是从卡片清单里查——理由见 {@link cardAnchor}。
  */
-const NAPCAT_KEY = 'napcat';
+const BOT_KEY = 'bot';
 
 /**
  * 外部面板那张卡的固定标识
@@ -149,8 +149,8 @@ function day(at) {
  * @param title 卡片标题，由调用点传入（插件申报的人话词）
  * @return 卡片视图模型
  */
-function napcatCard(status, title) {
-  const base = {key: NAPCAT_KEY, kind: 'napcat', title: title || '机器人',
+function botCard(status, title) {
+  const base = {key: BOT_KEY, kind: 'bot', title: title || '机器人',
     show: true, level: 'off', caption: '', note: '', advice: ''};
 
   if (!(status.senders || []).length) {
@@ -244,7 +244,7 @@ export function linksModel(status, login, cards, tokens, botTitle) {
 
   // 平台卡在前：定稿的顺序是「先连上直播平台，再连上机器人，最后才谈把事件送到外面去」，
   // 这也正是使用者第一次配置时的先后
-  return {cards: list.concat([napcatCard(state, botTitle), panelCard(tokens || [])])};
+  return {cards: list.concat([botCard(state, botTitle), panelCard(tokens || [])])};
 }
 
 /**
@@ -278,14 +278,14 @@ export function cardAnchor(model, station) {
  *
  * 「本机」不在表里：它讲的是这台机器自己的状况，本页上没有对应的卡。
  */
-const STATION_CARD = {platform: 'platform', bot: 'napcat'};
+const STATION_CARD = {platform: 'platform', bot: 'bot'};
 
 /**
  * 把机器人自己知道的群与好友名单转成可选项
  *
  * 取值须与 PushTargetType 的 code 一致：GROUP(1)、FRIEND(0)。
- * @param groups /api/onebot/targets?type=group 回包
- * @param friends /api/onebot/targets?type=friend 回包
+ * @param groups /api/bot/targets?type=group 回包
+ * @param friends /api/bot/targets?type=friend 回包
  * @return 可选项
  */
 export function targetOptions(groups, friends) {

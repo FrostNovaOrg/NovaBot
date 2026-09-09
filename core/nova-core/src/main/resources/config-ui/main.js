@@ -275,24 +275,24 @@ export function pageStatus(data) {
  * 装了适配器才出现实现名。取不到词表不弹条，保留 HTML 里那一版。
  */
 function applyConnectionVocab() {
-  const title = $('#card-napcat .lc-hd b');
+  const title = $('#card-bot .lc-hd b');
   if (title) {
     title.textContent = phrase('bot.impl', v => '机器人（' + v + ' 等）', '机器人');
   }
-  const hint = $('#card-napcat .lc-body > p.hint');
+  const hint = $('#card-bot .lc-body > p.hint');
   if (hint) {
     hint.innerHTML = '机器人指 ' + esc(term('bot.impl.hint', '机器人程序'))
       + '，NovaBot 通过它把消息发到 ' + esc(term('bot.platform', '聊天平台'))
       + '。两个 Token 留空表示<b>保持原值</b>，不会被抹掉。';
   }
-  const entryHint = $('#napcat-entry p.hint');
+  const entryHint = $('#bot-entry p.hint');
   if (entryHint) {
     entryHint.innerHTML = '扫码登录 ' + esc(term('bot.platform', '聊天平台'))
       + '、查看它自己的运行日志，'
       + phrase('bot.impl', v => '这些事在 ' + esc(v) + ' 的界面里做', '这些事在机器人的界面里做')
       + '。你已经登录了这个控制台，<b>不必再登录它一次</b>——点开时会替你办好。';
   }
-  const open = $('#napcat-open');
+  const open = $('#bot-open');
   if (open) {
     open.textContent = phrase('bot.impl', v => '打开 ' + v + ' 界面 ↗', '打开机器人界面 ↗');
   }
@@ -683,14 +683,18 @@ $('#logout-all').addEventListener('click', async () => {
 $('#bot-form').innerHTML = botFormHtml('bot');
 bindBotForm('bot');
 
-// NapCat 控制台入口。凭据没配好就不显示这一块——
-// 显示了点进去才报错，比不显示更难懂
-api('/napcat/state')
-  .then(state => { if (state.configured) $('#napcat-entry').style.display = ''; })
+// 机器人自己的界面入口。凭据没配好、或适配器不在场就不显示这一块——
+// 显示了点进去才报错，比不显示更难懂。地址由适配器在 /api/bot/console 回包里给。
+let botHref = '';
+api('/bot/console')
+  .then(state => {
+    if (state.configured && state.href) {
+      botHref = state.href;
+      $('#bot-entry').style.display = '';
+    }
+  })
   .catch(() => {});
-// 走引导页而不是直接跳 WebUI：凭据要由同源脚本写进 localStorage，
-// 服务端下发再多头也写不进浏览器的存储
-$('#napcat-open').addEventListener('click', () => { location.href = '/config/napcat-bootstrap'; });
+$('#bot-open').addEventListener('click', () => { if (botHref) location.href = botHref; });
 
 // 登录态必须先于正式载入取到：CSRF 令牌从这里来，缺了它所有写请求都会被拒。
 // 取不到也照常载入——未启用口令登录时本就没有令牌，读接口不受影响

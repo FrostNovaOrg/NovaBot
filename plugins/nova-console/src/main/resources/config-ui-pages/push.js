@@ -496,7 +496,7 @@ export async function loadPushPage() {
 
   try {
     const [groups, friends] = await Promise.all([
-      api('/onebot/targets?type=group'), api('/onebot/targets?type=friend')]);
+      api('/bot/targets?type=group'), api('/bot/targets?type=friend')]);
     options = targetOptions(groups, friends);
     directory = buildDirectory(options);
   } catch (e) {
@@ -1411,7 +1411,7 @@ function pickTarget(opts) {
     refresh.addEventListener('click', async () => {
       refresh.disabled = true;
       try {
-        await api('/onebot/targets/refresh', {method: 'POST'});
+        await api('/bot/targets/refresh', {method: 'POST'});
         await loadPushPage();
         pickTarget(opts);
       } catch (e) {

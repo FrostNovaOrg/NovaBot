@@ -10,6 +10,7 @@
 
 ### 变更
 
+- 控制台里机器人相关的接口路径改为与实现无关的写法：`/config/api/bot/targets`、`/config/api/bot/console`（回包多一项 `href`，指向机器人自己的界面）；旧路径 `/config/api/onebot/targets`、`/config/api/napcat/state` 保留到 5.4。
 - 示例插件模板改由本地仓取依赖，README 写明建法。
 - 配置控制台四处平台写死改由插件申报（连接列表键／告警药丸／留空即未配键／热改名单），核心不再引用任何平台名。
 - 从 5.2.x 及更早升级须把 `plugins` 加进 `-Dloader.path`（发版脚本自 5.3.1 起自动补）。

@@ -151,9 +151,9 @@ export async function loadTargets(force) {
   $('#test-send').disabled = true;
 
   try {
-    if (force) await api('/onebot/targets/refresh', {method: 'POST'});
+    if (force) await api('/bot/targets/refresh', {method: 'POST'});
     const [groups, friends] = await Promise.all([
-      api('/onebot/targets?type=group'), api('/onebot/targets?type=friend')]);
+      api('/bot/targets?type=group'), api('/bot/targets?type=friend')]);
     options = targetOptions(groups, friends);
   } catch (e) {
     // 取不到名单时<b>不退回手填</b>：退回手填等于把「填错一位数不报错」那个失败形态请回来。
