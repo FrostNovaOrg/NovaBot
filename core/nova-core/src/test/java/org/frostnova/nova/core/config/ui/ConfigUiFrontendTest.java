@@ -567,7 +567,7 @@ class ConfigUiFrontendTest {
     private static final String SOURCE_URL = "https://github.com/FrostNovaOrg/NovaBot";
 
     /**
-     * 写死的版本号长什么样：{@code 5.2.0} 这种三段数字
+     * 写死的版本号长什么样：{@code 5.3.0} 这种三段数字
      * <p>
      * {@code AGPL-3.0} 只有两段，不落进来。
      */

@@ -87,7 +87,7 @@ curl -s 'https://api.live.bilibili.com/room/v1/Room/get_info?room_id=<房间号>
 ## 3. 起
 
 ```bash
-java -Dloader.path=lib,plugins,plugins-lib -jar StarBotCore.jar
+java -Dloader.path=lib,plugins,plugins-lib -jar NovaBot.jar
 ```
 
 `-Dloader.path` **不能省**，少了它启动会报 `NoClassDefFoundError: SpringApplication`。

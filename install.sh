@@ -249,6 +249,8 @@ done
 if [ -f "$INSTALL_DIR/NovaBot.jar" ] || [ -f "$INSTALL_DIR/StarBotCore.jar" ]; then
     # 这两个目录完全由新版本重新生成
     $SUDO rm -rf "$INSTALL_DIR/lib" "$INSTALL_DIR/plugins-lib"
+    # 上一发行版副本：本版不再附带 StarBotCore.jar；升级时旧副本随旧 lib 一并删除
+    $SUDO rm -f "$INSTALL_DIR/StarBotCore.jar"
 
     # plugins 不能整个删：里面可能有使用者自己放的第三方插件，删掉等于静默卸载。
     # 但内置插件带版本号，旧版留着会与新版同时被加载，故按构件名精确清理；
