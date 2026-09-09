@@ -10,6 +10,12 @@
 
 ### 变更
 
+### 修复
+
+## [5.3.1] - 2026-09-10
+
+### 变更
+
 - 告警设置里机器人那一路的收件人栏改由通道自己申报，控制台新增 `/config/api/alert/channels` 列出各通道及其收件人栏；核心不再写死任何一家的配置键。
 - 控制台里机器人相关的接口路径改为与实现无关的写法：`/config/api/bot/targets`、`/config/api/bot/console`（回包多一项 `href`，指向机器人自己的界面）；旧路径 `/config/api/onebot/targets`、`/config/api/napcat/state` 保留到 5.4。
 - 示例插件模板改由本地仓取依赖，README 写明建法。
