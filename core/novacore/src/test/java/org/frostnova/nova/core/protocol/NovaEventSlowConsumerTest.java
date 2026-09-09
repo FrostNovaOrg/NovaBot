@@ -1,0 +1,406 @@
+package org.frostnova.nova.core.protocol;
+
+import org.frostnova.nova.core.protocol.NovaEventSlowConsumerHarness.Reading;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.springframework.http.HttpHeaders;
+import org.springframework.web.socket.CloseStatus;
+import org.springframework.web.socket.TextMessage;
+import org.springframework.web.socket.WebSocketExtension;
+import org.springframework.web.socket.WebSocketMessage;
+import org.springframework.web.socket.WebSocketSession;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.security.Principal;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
+
+import static org.frostnova.nova.core.protocol.NovaEventSlowConsumerHarness.AUTH;
+import static org.frostnova.nova.core.protocol.NovaEventSlowConsumerHarness.GRACE;
+import static org.frostnova.nova.core.protocol.NovaEventSlowConsumerHarness.PING;
+import static org.frostnova.nova.core.protocol.NovaEventSlowConsumerHarness.CRITERION_WAIT;
+import static org.frostnova.nova.core.protocol.NovaEventSlowConsumerHarness.STANDARD_TIMINGS;
+import static org.frostnova.nova.core.protocol.NovaEventSlowConsumerHarness.heartbeatThreadStuckOnAnotherMonitor;
+import static org.frostnova.nova.core.protocol.NovaEventSlowConsumerHarness.priorGaugeSenderThreadStuckInWrite;
+import static org.frostnova.nova.core.protocol.NovaEventSlowConsumerHarness.reading;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * 一个慢消费者不许钉住全局共享的心跳线程
+ * <p>
+ * 三条判据量的是「别人还好着没有」，不是「慢的那个还好没好」——慢客户端自己发不出去是它自己的事。
+ * <p>
+ * 🔴 台架与探针在 {@link NovaEventSlowConsumerHarness}，本类<b>只</b>负责判。
+ * 探针同时被 {@link NovaEventProbeIndependenceTest} 用着，共一份。
+ */
+@DisplayName("慢消费者不许钉住共享心跳线程")
+class NovaEventSlowConsumerTest {
+
+    @TempDir
+    Path dir;
+
+    private NovaEventSlowConsumerHarness harness;
+
+    private NovaEventSlowConsumerHarness bringUpHarness(boolean slowClientReads) throws IOException {
+        harness = new NovaEventSlowConsumerHarness(dir, slowClientReads, STANDARD_TIMINGS);
+        return harness;
+    }
+
+    @AfterEach
+    void tearDown() {
+        if (harness != null) {
+            harness.close();
+            harness = null;
+        }
+    }
+
+    // ══════════════════════════ 夹具 ══════════════════════════
+
+    /**
+     * 真 socket 会话：{@code sendMessage} 直接写进一对真 socket。
+     * <p>
+     * 对端默认<b>永不 read</b>；灌满之后，端点这一侧的每一次 write 都真的卡在内核里。
+     */
+    static final class SocketSession implements WebSocketSession {
+        private final String id;
+        private final ServerSocket listener;
+        private final Socket outbound;
+        private final Socket peer;
+        private final OutputStream out;
+
+        /** 正卡在 write 里的那一刻（nanoTime）。0 表示此刻不在写 */
+        volatile long writeStartedAt;
+
+        /** 最近一次 write 花了多少毫秒 */
+        volatile long lastWriteBlockedMs;
+
+        private final AtomicLong bytesWritten = new AtomicLong();
+
+        private volatile long fillerThreadStuckIn;
+
+        volatile CloseStatus closedWith;
+
+        /**
+         * 关闭时是否**真往 socket 写字节**（充当关闭帧）
+         * <p>
+         * 🔴 默认 {@code false}，也就是「关就是关 fd，一个字节不写」——本类原本的行为。
+         * 不设这个开关而直接改 {@link #close(CloseStatus)} 的话，
+         * 已经绿着的那几组用例的行为会被<b>顺带改掉</b>，
+         * 而<b>被改过的绿和一直没动的绿长得一样</b>。
+         */
+        private final boolean reallyWriteOnClose;
+
+        /**
+         * 关闭时真写多少字节
+         * <p>
+         * 默认 {@link NovaEventSlowConsumerHarness#CLOSE_FRAME_BYTES}——协议里关闭帧载荷的上限，
+         * <b>量的东西要和要防的东西同尺寸</b>。
+         * <p>
+         * 🔴 阳性对照那把钉子要它<b>大得多</b>：125 字节会被内核随时间放大的接收缓冲吃掉，
+         * 于是钉子在两三秒后自己松开——而<b>松开的钉子和「格子不咬人」长得一模一样</b>。
+         * 写一个对端永远吞不下的数，这把钉子就只由我们自己拔（关掉对端 socket）。
+         */
+        private final int closeWriteBytes;
+
+        SocketSession(String id, int sndBuf, int rcvBuf, boolean peerReads) throws IOException {
+            this(id, sndBuf, rcvBuf, peerReads, false);
+        }
+
+        SocketSession(String id, int sndBuf, int rcvBuf, boolean peerReads, boolean reallyWriteOnClose)
+                throws IOException {
+            this(id, sndBuf, rcvBuf, peerReads, reallyWriteOnClose, NovaEventSlowConsumerHarness.CLOSE_FRAME_BYTES);
+        }
+
+        SocketSession(String id, int sndBuf, int rcvBuf, boolean peerReads, boolean reallyWriteOnClose,
+                      int closeWriteBytes) throws IOException {
+            this.reallyWriteOnClose = reallyWriteOnClose;
+            this.closeWriteBytes = closeWriteBytes;
+            this.id = id;
+            listener = new ServerSocket();
+            // 🔴 接收缓冲要在 bind **之前**设在 ServerSocket 上，accept 出来的那条才继承得到
+            listener.setReceiveBufferSize(rcvBuf);
+            listener.bind(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 1);
+            outbound = new Socket();
+            outbound.setSendBufferSize(sndBuf);
+            outbound.connect(listener.getLocalSocketAddress(), 2_000);
+            peer = listener.accept();
+            out = outbound.getOutputStream();
+            if (peerReads) {
+                Thread reader = new Thread(() -> {
+                    byte[] buf = new byte[8192];
+                    try (InputStream in = peer.getInputStream()) {
+                        while (in.read(buf) >= 0) {
+                            // 正常读——阴性对照走这条
+                        }
+                    } catch (IOException ignored) {
+                        // 关连接就是这里退出
+                    }
+                }, "nova-test-drainer-" + id);
+                reader.setDaemon(true);
+                reader.start();
+            }
+        }
+
+        /**
+         * 把管道灌到「下一次写必阻塞」。
+         * <p>
+         * 🔴 灌满这一步不是在模拟阻塞，它是在<b>造成</b>阻塞：一个真实的慢客户端落后之后，
+         * 内核缓冲与对端窗口就是这个状态。灌不满就没有背压，此时任何「绿」都不算数。
+         *
+         * @return 灌进去的字节数
+         */
+        long filled() throws Exception {
+            byte[] chunk = new byte[4096];
+            Thread filler = new Thread(() -> {
+                try {
+                    while (true) {
+                        fillerThreadStuckIn = System.nanoTime();
+                        out.write(chunk);
+                        fillerThreadStuckIn = 0;
+                        bytesWritten.addAndGet(chunk.length);
+                        if (bytesWritten.get() > 32L * 1024 * 1024) {
+                            return;
+                        }
+                    }
+                } catch (IOException ignored) {
+                    fillerThreadStuckIn = 0;
+                }
+            }, "nova-test-filler-" + id);
+            filler.setDaemon(true);
+            filler.start();
+
+            long deadline = System.currentTimeMillis() + 10_000;
+            while (System.currentTimeMillis() < deadline) {
+                long stuck = fillerThreadStuckIn;
+                if (stuck != 0 && (System.nanoTime() - stuck) / 1_000_000 > 300) {
+                    return bytesWritten.get();
+                }
+                Thread.sleep(5);
+            }
+            throw new IllegalStateException(
+                    "10 秒内灌不满这条 socket（已写 " + bytesWritten.get() + " 字节）——"
+                            + "没有真背压就没有阳性对照，**此时的绿和修好了的绿长得一样**");
+        }
+
+        @Override
+        public void sendMessage(WebSocketMessage<?> message) throws IOException {
+            byte[] bytes = ((TextMessage) message).getPayload().getBytes(StandardCharsets.UTF_8);
+            writeStartedAt = System.nanoTime();
+            try {
+                out.write(bytes);
+                out.flush();
+                bytesWritten.addAndGet(bytes.length);
+            } finally {
+                lastWriteBlockedMs = (System.nanoTime() - writeStartedAt) / 1_000_000;
+                writeStartedAt = 0;
+            }
+        }
+
+        /** 此刻卡在写里多少毫秒；不在写时为 -1 */
+        long stuckForHowLong() {
+            long t = writeStartedAt;
+            return t == 0 ? -1 : (System.nanoTime() - t) / 1_000_000;
+        }
+
+        void closeIt() {
+            closeQuietly(peer);
+            closeQuietly(outbound);
+            closeQuietly(listener);
+        }
+
+        private static void closeQuietly(java.io.Closeable c) {
+            try {
+                c.close();
+            } catch (IOException ignored) {
+                // 收摊阶段，关不上也没什么可做的
+            }
+        }
+
+        @Override
+        public String getId() {
+            return id;
+        }
+
+        @Override
+        public void close() {
+            close(CloseStatus.NORMAL);
+        }
+
+        @Override
+        public void close(CloseStatus status) {
+            closedWith = status;
+            if (reallyWriteOnClose) {
+                // 真 WebSocket 的 close 要发一帧关闭帧。管道灌满时这一写就返回不了——
+                // 这正是要复现的那件事。字节数取协议里关闭帧载荷的上限，
+                // **量的东西要和要防的东西同尺寸**：写 1 个字节也卡得住，
+                // 但「1 字节卡住」证不了「真实关闭帧会卡住」。
+                try {
+                    out.write(new byte[closeWriteBytes]);
+                    out.flush();
+                    bytesWritten.addAndGet(closeWriteBytes);
+                } catch (IOException ignored) {
+                    // 对端已经没了就算了，本来就在关
+                }
+            }
+            closeIt();
+        }
+
+        @Override
+        public boolean isOpen() {
+            return closedWith == null;
+        }
+
+        @Override
+        public URI getUri() {
+            return URI.create("ws://127.0.0.1/nova/events");
+        }
+
+        @Override
+        public HttpHeaders getHandshakeHeaders() {
+            return new HttpHeaders();
+        }
+
+        @Override
+        public Map<String, Object> getAttributes() {
+            return new HashMap<>();
+        }
+
+        @Override
+        public Principal getPrincipal() {
+            return null;
+        }
+
+        @Override
+        public InetSocketAddress getLocalAddress() {
+            return (InetSocketAddress) outbound.getLocalSocketAddress();
+        }
+
+        @Override
+        public InetSocketAddress getRemoteAddress() {
+            return (InetSocketAddress) outbound.getRemoteSocketAddress();
+        }
+
+        @Override
+        public String getAcceptedProtocol() {
+            return null;
+        }
+
+        @Override
+        public void setTextMessageSizeLimit(int messageSizeLimit) {
+        }
+
+        @Override
+        public int getTextMessageSizeLimit() {
+            return 0;
+        }
+
+        @Override
+        public void setBinaryMessageSizeLimit(int messageSizeLimit) {
+        }
+
+        @Override
+        public int getBinaryMessageSizeLimit() {
+            return 0;
+        }
+
+        @Override
+        public List<WebSocketExtension> getExtensions() {
+            return List.of();
+        }
+    }
+    // ══════════════════════════ 三条判据 ══════════════════════════
+
+    @Test
+    @DisplayName("判据 1：慢客户端在场时，健康客户端仍在心跳周期内收到 ping")
+    void criterion1HealthyClientStillGetsPing() throws Exception {
+        bringUpHarness(false).bringUpSlowClient();
+
+        Reading r = harness.probe1HealthyClientGetsPing(harness.connectAndAuthenticate("healthy"));
+        reading("判据1-ping", Map.of("此刻连接数", harness.connectionCount(), "心跳间隔毫秒", PING, "实际收到 ping 耗时毫秒", r.elapsedMs(),
+                "心跳线程卡住的栈摘录", String.valueOf(heartbeatThreadStuckOnAnotherMonitor()),
+                "慢客户端此刻卡了毫秒", harness.slowClient.stuckForHowLong()));
+
+        assertTrue(r.green(), "慢客户端在场时，健康客户端在 " + CRITERION_WAIT + " 毫秒内一个 ping 都没收到——"
+                + "心跳线程被别人的监视器钉住了（心跳周期 " + PING + " 毫秒）");
+    }
+
+    @Test
+    @DisplayName("判据 2：慢客户端在场时，未认证连接仍在时限内被关")
+    void criterion2AuthGateStillCloses() throws Exception {
+        bringUpHarness(false).bringUpSlowClient();
+
+        Reading r = harness.probe2AuthGateCloses(harness.connection("silent"));
+        reading("判据2-认证闸", Map.of("此刻连接数", harness.connectionCount(), "认证闸时限毫秒", AUTH, "实际关闭耗时毫秒", r.elapsedMs(),
+                "心跳线程卡住的栈摘录", String.valueOf(heartbeatThreadStuckOnAnotherMonitor())));
+
+        assertTrue(r.green(), "慢客户端在场时，未认证连接在 " + CRITERION_WAIT + " 毫秒内没有被关——"
+                + "认证闸（" + AUTH + " 毫秒）派在心跳线程上，而它被钉住了");
+    }
+
+    @Test
+    @DisplayName("判据 3：慢客户端在场时，其它连接仍能转进实时流")
+    void criterion3OtherConnectionStillEntersLiveStream() throws Exception {
+        bringUpHarness(false).bringUpSlowClient();
+
+        Reading r = harness.probe3OtherConnectionEntersLiveStream(harness.connectAndAuthenticate("other"));
+        reading("判据3-转实时流", Map.of("此刻连接数", harness.connectionCount(), "回补窗口毫秒", GRACE, "实际转实时流耗时毫秒", r.elapsedMs(),
+                "心跳线程卡住的栈摘录", String.valueOf(heartbeatThreadStuckOnAnotherMonitor())));
+
+        assertTrue(r.green(), "慢客户端在场时，其它连接在 " + CRITERION_WAIT + " 毫秒内没能转进实时流——"
+                + "goLive 派在心跳线程上，而它被钉住了");
+    }
+
+    // ══════════════════════════ 阴性对照 ══════════════════════════
+
+    @Test
+    @DisplayName("阴性对照：同一夹具、慢客户端正常读 —— 三条判据必须全绿")
+    void negativeControlAllThreeGreenWhenReadingNormally() throws Exception {
+        bringUpHarness(true);
+        harness.endpoint.afterConnectionEstablished(harness.slowClient);
+        harness.authenticated(harness.slowClient, harness.tokens.issue("正常读的客户端"));
+
+        NovaEventEndpointTest.FakeSession healthy = harness.connectAndAuthenticate("healthy");
+        NovaEventEndpointTest.FakeSession silent = harness.connection("silent");
+        NovaEventEndpointTest.FakeSession otherConnection = harness.connectAndAuthenticate("other");
+
+        Reading one = harness.probe1HealthyClientGetsPing(healthy);
+        Reading three = harness.probe3OtherConnectionEntersLiveStream(otherConnection);
+        Reading two = harness.probe2AuthGateCloses(silent);
+
+        reading("阴性对照", Map.of("此刻连接数", harness.connectionCount(), "慢客户端是否正常读", true, "判据1", one.green(),
+                "判据2", two.green(), "判据3", three.green()));
+
+        assertTrue(one.green(), "阴性对照：客户端正常读时判据 1 也不绿，说明红的是夹具本身把服务端跑垮了");
+        assertTrue(two.green(), "阴性对照：客户端正常读时判据 2 也不绿");
+        assertTrue(three.green(), "阴性对照：客户端正常读时判据 3 也不绿");
+    }
+
+    @Test
+    @DisplayName("先验尺自证：管道没灌满时不许当成「已复现」")
+    void priorGaugeNotFilledIsNotRepro() throws Exception {
+        bringUpHarness(false);
+        harness.endpoint.afterConnectionEstablished(harness.slowClient);
+        harness.authenticated(harness.slowClient, harness.tokens.issue("没灌满"));
+
+        // 🔴 没灌满就不该抓到「卡在写里」那个读数。抓到了说明先验尺认错了东西，
+        //    那它在真复现时说的「亮」也不算数。
+        Thread.sleep(200);
+        assertNull(priorGaugeSenderThreadStuckInWrite(),
+                "管道没灌满时先验尺就说「卡住了」——这把尺认错了东西，它说的亮不算数");
+    }
+}

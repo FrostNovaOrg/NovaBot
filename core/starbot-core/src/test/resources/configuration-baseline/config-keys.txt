@@ -34,7 +34,7 @@ novabot.core.event-stream.path|java.lang.String|/nova/events|事件输出的路�
 novabot.core.event-stream.require-token|java.lang.Boolean|false|是否要求出示只读口令 默认关闭，保持「本机进程直连」这条既有用法不变（本机 runbook 与本地开发都靠它）。 🔴 装了反向代理就必须打开，这不是可选项。 反代与本程序在同一台机器上，且反代未把 X-Forwarded-* 送下来时， 它转发过来的连接源地址就是回环—— ⚠️ 反过来那一半同样要记住：若反代送了 X-Forwarded-*， 而本程序开着 server.forward-headers-strategy， 回环判据看到的会是真实客户端 IP，于是把反代自己挡在门外—— 2026-08-13 生产实测到这个形态，症状是握手回一个空的 200。 也就是说反代一上线，「只接受本机连接」这道判据就不再等于「人在这台机器上」， 任何能连上反代的人在端点看来都是本机。此时不开这个开关，等于没有鉴权。 口令由控制台签发，只能读事件流：既不给服务器 shell，也不给配置控制台。
 novabot.core.exec.enabled|java.lang.Boolean|false|是否启用事件触发外部命令
 novabot.core.exec.max-concurrent|java.lang.Integer|4|同时执行的命令数上限，超出的直接丢弃 弹幕这类事件一秒能来几十条。没有上限的话，一次刷屏就等于一次 fork 炸弹。
-novabot.core.exec.rules|java.util.List<com.starlwr.bot.core.config.NovaCoreProperties$ExecRule>|<null>|规则列表
+novabot.core.exec.rules|java.util.List<org.frostnova.nova.core.config.NovaCoreProperties$ExecRule>|<null>|规则列表
 novabot.core.exec.timeout|java.lang.Integer|30|单条命令的最长执行时间，单位：秒，超时后强制结束
 novabot.core.live.auto-save-live-data-interval|java.lang.Integer|300|自动保存直播数据间隔，单位：秒，仅使用默认直播数据服务时生效
 novabot.core.live.detail-retention-days|java.lang.Integer|0|每场直播明细数据（曲线、排行、词频、弹幕原文）的保留天数，0 表示永久保留
@@ -54,7 +54,7 @@ novabot.core.network-thread.queue-capacity|java.lang.Integer|64|线程池任务�
 novabot.core.network.connect-timeout|java.lang.Integer|10|网络请求连接超时时间，单位：秒
 novabot.core.network.read-timeout|java.lang.Integer|60|网络请求读取超时时间，单位：秒
 novabot.core.paint.auto-expand-height|java.lang.Integer|5000|绘图器自动扩展高度时扩展像素数，设置过大会导致占用较大内存，设置过小会频繁自动扩展导致效率降低
-novabot.core.paint.extra-copyrights|java.util.List<com.starlwr.bot.core.model.TextWithStyle>|<null>|自定义绘图器底部额外版权信息
+novabot.core.paint.extra-copyrights|java.util.List<org.frostnova.nova.core.model.TextWithStyle>|<null>|自定义绘图器底部额外版权信息
 novabot.core.paint.fonts|java.util.List<java.lang.String>|<null>|绘图器字体列表，支持配置为字体名称或字体文件路径
 novabot.core.push.at-all-daily-limit|java.lang.Integer|10|机器人账号每日最多 @全体成员 的次数，0 或负数表示不限制 平台本身有每日上限，用超之后**平台会静默忽略**——消息照发但 @ 不生效， 配置的人往往过很久才发现「怎么没人被 @ 到」。因此在自己这一侧先记账， 超额时主动退化为普通消息并记日志，而不是把额度花在注定无效的调用上。 这份额度由该账号推送的全部会话共享（实测：往一个群发一次， 其他群看到的账号剩余次数同步减一）。默认 10 与平台实测值一致， 它才是真正会先卡住的那一道。
 novabot.core.push.at-all-session-daily-limit|java.lang.Integer|20|单个会话每日最多 @全体成员 的次数，0 或负数表示不限制 与账号额度是两个维度：群的额度由群里所有有权限的人共用，机器人只是其中之一。 默认 20 与平台实测值一致。通常先撞到的是账号额度，本项是第二道保险。
@@ -62,7 +62,7 @@ novabot.core.push.enabled|java.lang.Boolean|true|全局推送开关 关闭后所
 novabot.core.push.first-push-tip|java.lang.Boolean|true|机器人第一次推送到一个群或好友后，附一句怎么用它的提示（只发一次） 关掉之后不再附这句，也不把这次算作已经提示过——下次打开时的第一条还会带上。改完立即生效，不必重启。
 novabot.core.push.quiet-end|java.lang.String||静音时段结束时间，格式 HH:mm 允许跨零点：开始 23:00、结束 08:00 表示当晚 23 点至次日 8 点。改完立即生效，不必重启。
 novabot.core.push.quiet-start|java.lang.String||静音时段开始时间，格式 HH:mm，与结束时间任一为空即视为不启用 半夜被机器人吵醒是这类通知产品被投诉最多的点，因此内置该能力而不是让使用者自行想办法。 改完立即生效，不必重启。
-novabot.core.sender|java.util.List<com.starlwr.bot.core.model.Sender>|<null>|非插件实现的推送平台配置
+novabot.core.sender|java.util.List<org.frostnova.nova.core.model.Sender>|<null>|非插件实现的推送平台配置
 novabot.core.timeline.retention-days|java.lang.Integer|14|事件时间线的保留天数，含当天；设为 0 或负数表示不自动清理 时间线是排障线索而不是业务数据：两周之前「某条推送失败过」这件事， 已经没有人会再去查，留着只是让日志页越翻越长、磁盘越占越多。 要长期保存的场次数据在 sessions.jsonl 里，那一份不会被删。
 server.address|java.lang.String|127.0.0.1|只监听哪个地址。默认 127.0.0.1 表示只有本机连得上；改成 0.0.0.0 会把控制台与推送接口暴露到网络，此时务必配好反向代理、来源 IP 白名单与登录口令
 server.port|java.lang.Integer|7827|控制台与事件流共用的服务端口，默认 7827

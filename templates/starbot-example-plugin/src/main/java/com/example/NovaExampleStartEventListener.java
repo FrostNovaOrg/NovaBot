@@ -1,6 +1,6 @@
 package com.example;
 
-import com.starlwr.bot.core.plugin.NovaComponent;
+import org.frostnova.nova.core.plugin.NovaComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;

@@ -31,7 +31,7 @@
 
         生产形状（目录上溯不到 .git）它返回 "."，落点与本改动之前**逐字节相同**。
     -->
-    <define name="LOG_HOME" class="com.starlwr.bot.core.config.LogHomeDefiner"/>
+    <define name="LOG_HOME" class="org.frostnova.nova.core.config.LogHomeDefiner"/>
 
     <logger name="org.reflections.Reflections" level="OFF"/>
     <logger name="org.apache.catalina.loader.WebappLoader" level="OFF"/>
@@ -151,7 +151,7 @@
         <includeCallerData>true</includeCallerData>
     </appender>
 
-    <logger name="com.starlwr.bot.core.util.QrCodeUtil" level="INFO" additivity="false">
+    <logger name="org.frostnova.nova.core.util.QrCodeUtil" level="INFO" additivity="false">
         <appender-ref ref="ConsoleQrCode"/>
         <appender-ref ref="AsyncRollingFile"/>
     </logger>
@@ -164,7 +164,7 @@
         <appender-ref ref="NetworkAsyncRollingFile"/>
     </logger>
 
-    <logger name="com.starlwr.bot" level="DEBUG" additivity="false">
+    <logger name="org.frostnova.nova" level="DEBUG" additivity="false">
         <appender-ref ref="Console"/>
         <appender-ref ref="AsyncRollingFile"/>
     </logger>

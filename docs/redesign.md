@@ -65,7 +65,7 @@ one-bot-websocket-token  # NapCat WS Token
 
 | 用户看到的 | 实际含义 | 应该叫 |
 |---|---|---|
-| `com.starlwr.bot.bilibili.handler.BilibiliLiveOnPushHandler` | 开播时用哪个类渲染消息 | **开播通知** |
+| `org.frostnova.nova.bilibili.handler.BilibiliLiveOnPushHandler` | 开播时用哪个类渲染消息 | **开播通知** |
 | `platform` / `sender` | 一个 OneBot 连接的名字 | **机器人账号** |
 | `datasource.json` | 推送规则数据 | **推送规则** |
 | `type: 1` / `type: 2` | 群聊 / 私聊 | **群聊 / 私聊**（直接给中文） |
@@ -533,10 +533,10 @@ AGPL-3.0 覆盖的是**代码**。图形资产是独立的著作权客体，字�
 
 | 层面 | 决定 | 理由 |
 |---|---|---|
-| Java 包名 `com.starlwr.*` | **保留** | 改名会破坏与上游生态第三方插件的兼容性，而兼容性是本仓库明确宣传的卖点 |
-| 构件坐标 | **保留** | 同上 |
-| 配置键 `starbot.*` | **保留** | 改名会让所有既有配置文件失效 |
-| 界面展示名、文档标题、logo | **改为 NovaBot** | 品牌区分只需做在用户可见层 |
+| Java 包名 | **09-09 定为 `org.frostnova.nova.*`** | 持有域名 nova.frostnova.org 反写；改名会断第三方插件 import，须随本版重编译 |
+| 构件坐标 | **本拍仍不动** | groupId／artifactId／模块目录名归拍2 |
+| 配置键 `novabot.*` | **已改；旧 `starbot.*` 仍认得** | 既有安装读旧写新 |
+| 界面展示名、文档标题、logo | **NovaBot** | 品牌区分做在用户可见层 |
 
 即「内核沿用上游标识以保兼容，外观完全自有」。
 
@@ -546,10 +546,10 @@ AGPL-3.0 覆盖的是**代码**。图形资产是独立的著作权客体，字�
 
 重构过程中保持：
 
-- **构件坐标不变**（`com.starlwr:starbot-core` 等），上游生态的第三方插件继续可用
-- **配置键不变**，仅新增。界面文案改名不影响 `application.yml` 中的键
-- **`datasource.json` 格式不变**，表单化只是换了编辑方式，文件仍可手工编辑
-- **插件 API 不变**，`@StarBotComponent` / `StarBotEventHandler` 保持现状
+- **构件坐标本拍仍不动**（groupId／artifactId／模块目录名归拍2）
+- **配置键**已改为 `novabot.*`，旧 `starbot.*` 本版仍认得
+- **`datasource.json` 格式不变**；handler 全类名随包名变更，旧包根本版仍认
+- **插件 API 随包名变更**：须改 import 重新编译；`@NovaComponent`／`NovaEventHandler`／`NovaCommand` 为现行名，三个旧名已删除
 
 新增配置项一律给默认值，保证老配置文件直接可用。
 

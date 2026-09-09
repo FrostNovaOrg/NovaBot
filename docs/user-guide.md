@@ -318,16 +318,16 @@ novabot:
 
 | 处理器全限定名 | 触发时机 | 可用占位符 |
 |---|---|---|
-| `com.starlwr.bot.bilibili.handler.BilibiliLiveOnPushHandler` | 开播 | `{uname}` `{title}` `{cover}` `{url}` |
-| `com.starlwr.bot.bilibili.handler.BilibiliLiveOffPushHandler` | 下播 | `{uname}` `{time}` `{url}` |
-| `com.starlwr.bot.report.handler.BilibiliDynamicPushHandler` | 动态更新 | `{uname}` `{action}` `{url}` `{picture}` |
-| `com.starlwr.bot.report.handler.BilibiliLiveReportPushHandler` | 下播报告 | `{uname}` `{report}` `{url}` |
+| `org.frostnova.nova.bilibili.handler.BilibiliLiveOnPushHandler` | 开播 | `{uname}` `{title}` `{cover}` `{url}` |
+| `org.frostnova.nova.bilibili.handler.BilibiliLiveOffPushHandler` | 下播 | `{uname}` `{time}` `{url}` |
+| `org.frostnova.nova.report.handler.BilibiliDynamicPushHandler` | 动态更新 | `{uname}` `{action}` `{url}` `{picture}` |
+| `org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler` | 下播报告 | `{uname}` `{report}` `{url}` |
 
 在 `datasource.json` 里它们要写全限定名，照上表抄。**前缀不止一种**：动态通知与下播报告
-住在报告插件里，前缀是 `com.starlwr.bot.report.handler.`，其余在哔哩哔哩插件里。
+住在报告插件里，前缀是 `org.frostnova.nova.report.handler.`，其余在哔哩哔哩插件里。
 用界面配置时不需要接触这些类名。
 
-> 从旧版升上来的话，这两个处理器<u>原先</u>都在 `com.starlwr.bot.bilibili.handler.` 下。
+> 从更早版本升上来的话，这两个处理器原先都在哔哩哔哩插件的 handler 包下。
 > 老名字这一版仍然认，启动日志里会各提醒一条；照上表改过来即可，改之前推送照常。
 
 ### 下播报告的版式
@@ -752,10 +752,10 @@ novabot:
 
 ```jsonc
 // beta8 二进制版：按事件类名
-{ "event": "com.starlwr.bot.bilibili.event.live.BilibiliLiveOnEvent" }
+{ "event": "org.frostnova.nova.bilibili.event.live.BilibiliLiveOnEvent" }
 
 // 本项目（跟随上游公开源码）：按处理器类名
-{ "handler": "com.starlwr.bot.bilibili.handler.BilibiliLiveOnPushHandler" }
+{ "handler": "org.frostnova.nova.bilibili.handler.BilibiliLiveOnPushHandler" }
 ```
 
 其余配置键名保持兼容，`cookies.json` 也可直接沿用（首次启动会自动迁移为加密存储）。

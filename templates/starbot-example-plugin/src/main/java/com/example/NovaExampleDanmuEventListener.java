@@ -1,7 +1,7 @@
 package com.example;
 
-import com.starlwr.bot.core.event.live.common.DanmuEvent;
-import com.starlwr.bot.core.plugin.NovaComponent;
+import org.frostnova.nova.core.event.live.common.DanmuEvent;
+import org.frostnova.nova.core.plugin.NovaComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 

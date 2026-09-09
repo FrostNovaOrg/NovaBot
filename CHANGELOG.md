@@ -67,7 +67,14 @@
   `StarBotCoreApplication` → `NovaCoreApplication`；
   `StarBotStateStore` → `NovaStateStore`；
   `StarBotCommonPainterFactory` → `NovaCommonPainterFactory`。
-- 插件扩展点的三个名字换了新名：组件注解 `StarBotComponent` 改叫 `NovaComponent`，推送处理器接口 `StarBotEventHandler` 改叫 `NovaEventHandler`，聊天命令接口 `StarBotCommand` 改叫 `NovaCommand`。**旧名字仍然认得**：旧插件一个字都不用改照样装载，同一个类上同时标新旧两个注解也只登记一次；新代码请用新名，旧名将在下一发行版删除。包名、方法与参数一律未变，示例插件模板已改用新名。
+- 插件扩展点的三个名字换了新名：组件注解 `StarBotComponent` 改叫 `NovaComponent`，推送处理器接口 `StarBotEventHandler` 改叫 `NovaEventHandler`，聊天命令接口 `StarBotCommand` 改叫 `NovaCommand`。包名变更后旧插件本版须改 import 重新编译，`StarBotComponent`／`StarBotEventHandler`／`StarBotCommand` 三个旧名一并删除。
+- Java 包名由 `com.starlwr.bot.*` 改为 `org.frostnova.nova.*`（构建工具 `com.starlwr.maven.plugin.*` → `org.frostnova.nova.maven.plugin.*`）；第三方插件须改 import 重新编译；`datasource.json` 里写旧包名的 handler 本版仍认，日志提示一次。对照：
+  `com.starlwr.bot.core` → `org.frostnova.nova.core`；
+  `com.starlwr.bot.bilibili` → `org.frostnova.nova.bilibili`；
+  `com.starlwr.bot.adapter` → `org.frostnova.nova.adapter`；
+  `com.starlwr.bot.console` → `org.frostnova.nova.console`；
+  `com.starlwr.bot.report` → `org.frostnova.nova.report`；
+  `com.starlwr.maven.plugin` → `org.frostnova.nova.maven.plugin`。
 - 配置项前缀从 `starbot.*` 改成 `novabot.*`（`novabot.core`、`novabot.bilibili`、`novabot.adapter.onebot` 等）。**旧键仍然认得**：只写 `starbot.*` 的 `application.yml` 照常生效，启动时每个用到的前缀会打一行提醒；两处都写时以新位置为准。设置页保存只写新前缀；若旧 `starbot:` 树每个叶键在新树都有对应，保存时会删掉旧树。文档、登录页里的键名已改成新前缀。
 - 更早一档写在 `starbot.core.alert.qq-platform`／`qq-type`／`qq-num` 的告警三项，保存时按现行 `novabot.adapter.onebot.alert.*` 认作已对应，旧树可以一并删掉。
 - 更早一档写在 `starbot.core.config-ui.napcat` 下的代登录四项（token／token-hash／totp-secret／address），保存时按现行 `novabot.adapter.onebot.napcat.*` 认作已对应，旧树可以一并删掉。

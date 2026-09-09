@@ -19,7 +19,7 @@ novabot.adapter.onebot.security.rate-limit.burst|java.lang.Integer|100|可容忍
 novabot.adapter.onebot.security.rate-limit.enabled|java.lang.Boolean|true|是否启用频率限制
 novabot.adapter.onebot.security.rate-limit.permits-per-minute|java.lang.Integer|600|单个来源每分钟允许的请求数
 novabot.adapter.onebot.security.trust-proxy|java.lang.Boolean|false|是否信任反向代理设置的 X-Forwarded-For / X-Real-IP 请求头 仅当 NovaBot 确实部署在 Nginx 等反向代理之后时才可开启，否则来源 IP 可被任意伪造。
-novabot.adapter.onebot.senders|java.util.List<com.starlwr.bot.adapter.onebot.model.OneBotSender>|<null>|OneBot 推送平台列表 标成即时生效，是因为它确实即时生效：控制台「机器人」页与初始设置第 2 步 存下连接信息之后，适配器当场按新值断旧连新（见 OneBotConnectionManager）， 不必重启。落地动作不在设置页那条通用保存通道上——列表元素按设计不在设置页上展示， 因此这一项另在 RuntimeConfigurationApplier 的「另有专门入口落地」表里挂了号。
+novabot.adapter.onebot.senders|java.util.List<org.frostnova.nova.adapter.onebot.model.OneBotSender>|<null>|OneBot 推送平台列表 标成即时生效，是因为它确实即时生效：控制台「机器人」页与初始设置第 2 步 存下连接信息之后，适配器当场按新值断旧连新（见 OneBotConnectionManager）， 不必重启。落地动作不在设置页那条通用保存通道上——列表元素按设计不在设置页上展示， 因此这一项另在 RuntimeConfigurationApplier 的「另有专门入口落地」表里挂了号。
 novabot.adapter.onebot.websocket-thread.core-pool-size|java.lang.Integer|2|线程池核心线程数
 novabot.adapter.onebot.websocket-thread.keep-alive-seconds|java.lang.Integer|300|非核心线程存活时间，单位：秒
 novabot.adapter.onebot.websocket-thread.max-pool-size|java.lang.Integer|16|线程池最大线程数

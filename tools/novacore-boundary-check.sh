@@ -136,7 +136,7 @@ TOKENS="$WORK/tokens"
 # 而实情是「这个文件不在这里」。判据落在空集上恒真，看起来和守住了一模一样。
 LP=""
 for allowed in $ALLOWED_CORE_MODULES; do
-    candidate="$allowed/src/main/java/com/starlwr/bot/core/enums/LivePlatform.java"
+    candidate="$allowed/src/main/java/org/frostnova/nova/core/enums/LivePlatform.java"
     [ -f "$candidate" ] && LP="$candidate" && break
 done
 
@@ -417,8 +417,8 @@ fi
 # 后者才是拆仓时真正拦路的那件事：核心一旦 import 了插件的类，它就编译不了，
 # 也就不可能单独发布给莓果或 VRDash 用。文件放在哪个目录跟这件事无关。
 #
-# 插件包名当场从模块目录算出来，不写死：本仓实际的插件根包是 com.starlwr.bot.bilibili 与
-# com.starlwr.bot.adapter（OneBot 适配器的模块目录叫 starbot-onebot-adapter，包却在 adapter 下）——
+# 插件包名当场从模块目录算出来，不写死：本仓实际的插件根包是 org.frostnova.nova.bilibili 与
+# org.frostnova.nova.adapter（OneBot 适配器的模块目录叫 starbot-onebot-adapter，包却在 adapter 下）——
 # 写死一份名单，只要有一处对不上，这一格就是个永远绿的摆设。
 #
 # 射程只到核心的 src/main，不含 src/test：
@@ -435,10 +435,10 @@ G4_PKGS="$WORK/g4pkgs"
 
 while IFS= read -r mod; do
     [ -z "$mod" ] && continue
-    [ -d "$mod/src/main/java/com/starlwr/bot" ] || continue
+    [ -d "$mod/src/main/java/org/frostnova/nova" ] || continue
     is_core_module "$mod" && continue
 
-    find "$mod/src/main/java/com/starlwr/bot" -mindepth 1 -maxdepth 1 -type d 2>/dev/null \
+    find "$mod/src/main/java/org/frostnova/nova" -mindepth 1 -maxdepth 1 -type d 2>/dev/null \
         | sed 's|.*/||' >> "$G4_PKGS"
 done < "$MODULES"
 
@@ -455,7 +455,7 @@ g4_scope=""
 [ "$g4_pkg_n" -eq 0 ] && g4_scope="${g4_scope}插件包清单为空(在册模块${module_n}个) "
 
 if [ -z "$g4_scope" ]; then
-    sed -E 's|^|com\\.starlwr\\.bot\\.|; s|$|([^A-Za-z0-9_]\|$)|' "$G4_PKGS" > "$WORK/g4re"
+    sed -E 's|^|org\\.frostnova\\.nova\\.|; s|$|([^A-Za-z0-9_]\|$)|' "$G4_PKGS" > "$WORK/g4re"
     while IFS= read -r hit; do
         [ -z "$hit" ] && continue
         g4_hits="${g4_hits}${hit%%:*}:$(printf '%s' "$hit" | cut -d: -f2) "
@@ -653,7 +653,7 @@ fi
 # 逐件点名那张表原本就是为「两侧同名包」准备的，同名包没了，表也就只剩枚举与异常型那几件。
 G6_CORE_DIRS="protocol event datasource model lang properties"
 
-# —— 核心件：逐件点名（路径相对 com/starlwr/bot/core/）——
+# —— 核心件：逐件点名（路径相对 org/frostnova/nova/core/）——
 G6_CORE_FILES="enums/LivePlatform.java
 enums/LiveEndReason.java
 enums/PushTargetType.java
@@ -676,11 +676,11 @@ G6_CORE="$WORK/g6core"
 : > "$G6_CORE"
 if [ "$g6_total" -gt 0 ]; then
     for d in $G6_CORE_DIRS; do
-        grep -F "/com/starlwr/bot/core/$d/" "$G6_ALL" >> "$G6_CORE" 2>/dev/null
+        grep -F "/org/frostnova/nova/core/$d/" "$G6_ALL" >> "$G6_CORE" 2>/dev/null
     done
     while IFS= read -r rel; do
         [ -z "$rel" ] && continue
-        grep -F "/com/starlwr/bot/core/$rel" "$G6_ALL" >> "$G6_CORE" 2>/dev/null
+        grep -F "/org/frostnova/nova/core/$rel" "$G6_ALL" >> "$G6_CORE" 2>/dev/null
     done <<< "$G6_CORE_FILES"
 fi
 sort -u "$G6_CORE" -o "$G6_CORE"
@@ -716,7 +716,7 @@ if [ "$g6_shell_n" -gt 0 ] && [ "$g6_core_n" -gt 0 ]; then
             done
             [ "$exempt" -eq 1 ] && continue
 
-            g6_hits="${g6_hits}${f#*/src/main/java/com/starlwr/bot/core/}:${g6_line}(->${n}) "
+            g6_hits="${g6_hits}${f#*/src/main/java/org/frostnova/nova/core/}:${g6_line}(->${n}) "
             g6_n=$((g6_n + 1))
         done < "$WORK/g6names"
     done < "$G6_CORE"
@@ -861,8 +861,8 @@ fi
 # 格8：report 包在场，且 bilibili 主码零引用它
 #
 # 两问都要成立才绿：
-#   ① 源码里有 com.starlwr.bot.report 这个包（从各模块 src/main 现算）
-#   ② starbot-bilibili 的 src/main 零处出现 com.starlwr.bot.report
+#   ① 源码里有 org.frostnova.nova.report 这个包（从各模块 src/main 现算）
+#   ② starbot-bilibili 的 src/main 零处出现 org.frostnova.nova.report
 #
 # 只问 ② 的尺在包还不存在时恒真（零引用），会把「还没拆」报成绿。
 # 所以 ① 是门槛：现码 report 包不在场，先红于这一问。
@@ -872,8 +872,8 @@ g8_report_dirs=""
 g8_pkg_n=0
 while IFS= read -r mod; do
     [ -z "$mod" ] && continue
-    [ -d "$mod/src/main/java/com/starlwr/bot/report" ] || continue
-    g8_report_dirs="${g8_report_dirs}${mod}/src/main/java/com/starlwr/bot/report "
+    [ -d "$mod/src/main/java/org/frostnova/nova/report" ] || continue
+    g8_report_dirs="${g8_report_dirs}${mod}/src/main/java/org/frostnova/nova/report "
     g8_pkg_n=$((g8_pkg_n + 1))
 done < "$MODULES"
 
@@ -884,7 +884,7 @@ done < "$MODULES"
 G8_BILI_MAIN=""
 while IFS= read -r mod; do
     [ -z "$mod" ] && continue
-    [ -d "$mod/src/main/java/com/starlwr/bot/bilibili" ] || continue
+    [ -d "$mod/src/main/java/org/frostnova/nova/bilibili" ] || continue
     G8_BILI_MAIN="${G8_BILI_MAIN}${mod}/src/main "
 done < "$MODULES"
 
@@ -895,11 +895,11 @@ if [ -n "$G8_BILI_MAIN" ]; then
         [ -z "$hit" ] && continue
         g8_refs=$((g8_refs + 1))
         g8_hits="${g8_hits}${hit%%:*}:$(printf '%s' "$hit" | cut -d: -f2) "
-    done <<< "$(grep -rn 'com\.starlwr\.bot\.report' --include='*.java' $G8_BILI_MAIN 2>/dev/null | sort -u)"
+    done <<< "$(grep -rn 'org\.frostnova\.nova\.report' --include='*.java' $G8_BILI_MAIN 2>/dev/null | sort -u)"
 fi
 
 if [ -z "$G8_BILI_MAIN" ]; then
-    echo "格8 红 射程为空 找不到 com.starlwr.bot.bilibili 的主码模块(在册模块${module_n}个)，②整问没量到 report包在场${g8_pkg_n}（①）"
+    echo "格8 红 射程为空 找不到 org.frostnova.nova.bilibili 的主码模块(在册模块${module_n}个)，②整问没量到 report包在场${g8_pkg_n}（①）"
     RED=1
 elif [ "$g8_pkg_n" -eq 0 ]; then
     echo "格8 红 report 包不在场（①） bilibili引用${g8_refs}处（②）"
@@ -916,7 +916,7 @@ fi
 #
 # 两个模块往同一个包根里写件，Java 允许，Maven 也不拦，而它有三处代价：
 # 一是拆仓那天这个包得整个跟着走，走不了就得先改包名；二是模块边界在源码上看不见——
-# 打开 com.starlwr.bot.core.config 那个目录，看不出里面一半的件属于另一个模块；
+# 打开 org.frostnova.nova.core.config 那个目录，看不出里面一半的件属于另一个模块；
 # 三是分割包在模块化（JPMS）下直接不合法。
 #
 # 判据是**闭集**：撞包的现状写在下面这行声明里，多一个少一个都判红。
@@ -941,11 +941,11 @@ fi
 KNOWN_SPLIT_PACKAGES=""
 
 G9_PAIRS="$WORK/g9pairs"
-# 模块×包 的全对：按 /src/main/java/com/starlwr/bot/core/ 截，模块目录在哪一层都算得对
+# 模块×包 的全对：按 /src/main/java/org/frostnova/nova/core/ 截，模块目录在哪一层都算得对
 # 件清单走 tree_files（按工作树现算，理由见其注释）：解撞包那一笔正是「把件挪到新包、还没入册」，
 # 只读索引的话它量到的是搬之前的包集——这一格恰好是最不该拿旧现状说话的那一格。
-tree_files '*/src/main/java/com/starlwr/bot/core/*' \
-    | sed -nE 's|^(.*)/src/main/java/com/starlwr/bot/core/([^/]+)/.*$|\1 \2|p' \
+tree_files '*/src/main/java/org/frostnova/nova/core/*' \
+    | sed -nE 's|^(.*)/src/main/java/org/frostnova/nova/core/([^/]+)/.*$|\1 \2|p' \
     | sort -u > "$G9_PAIRS"
 g9_pkg_total=$(awk '{print $2}' "$G9_PAIRS" | sort -u | grep -cv '^[[:space:]]*$')
 g9_actual="$(awk '{print $2}' "$G9_PAIRS" | sort | uniq -d | tr '\n' ' ')"
@@ -956,7 +956,7 @@ g9_pairs_n=$(count_lines "$G9_PAIRS")
 g9_read="撞包实况[${g9_actual}] 声明[${g9_declared}] 受查包${g9_pkg_total}个 模块×包${g9_pairs_n}对"
 
 if [ "$g9_pkg_total" -eq 0 ]; then
-    echo "格9 红 射程为空 数不出任何 com.starlwr.bot.core 包(在册模块${module_n}个) $g9_read"
+    echo "格9 红 射程为空 数不出任何 org.frostnova.nova.core 包(在册模块${module_n}个) $g9_read"
     RED=1
 elif [ "$g9_actual" = "$g9_declared" ]; then
     echo "格9 绿 撞包与声明一致 $g9_read"
@@ -973,13 +973,13 @@ fi
 # 违规的是**引用了却不申报**：靠别人的传递依赖编得过，那个中间人一改依赖，这个模块当场编不了；
 # 拆仓时更看不出该带谁走。这一格问的就是「pom 上写没写」，不是「能不能引用」。
 #
-# 归属按**件的落点**现算，不按包名前缀：napcat 扩展自己的包就是 com.starlwr.bot.adapter.onebot.extension.napcat，
+# 归属按**件的落点**现算，不按包名前缀：napcat 扩展自己的包就是 org.frostnova.nova.adapter.onebot.extension.napcat，
 # 与 onebot 适配器同一个包根——按前缀分，它 import 自己的兄弟和 import 自己长得一模一样。
 # 把 import 的全限定名折成源码路径、去在册件里找它落在哪个模块，才分得开。
 # 通配 import（…​.*）折成目录来找；内部类（…Outer.Inner）折不出件时逐级退一段再找。
 #
 # 射程两块：①兄弟插件 import 须在 pom 申报那个模块（原判据）；②插件主码直接 import
-# 里层包（包名按 core/novacore/src/main/java/com/starlwr/bot/core/ 第一级目录现算，不写死）
+# 里层包（包名按 core/novacore/src/main/java/org/frostnova/nova/core/ 第一级目录现算，不写死）
 # 须在 pom 申报 novacore——今天靠 starbot-core 传递带进来，拆仓那天里层单独出包就断。
 # ② 的受查面＝根 pom <module> 列的、starbot-core 与 novacore 之外，外加 templates/*/pom.xml
 # （模板插件同口径，不豁免；processor 仍不在 reactor 里）。
@@ -1050,7 +1050,7 @@ while IFS= read -r mod; do
         [ -z "$fqn" ] && continue
         owner="$(owner_module_of "$fqn")"
         # 归属认不出来的不默认成「自己的」也不默认成「违规」，但要**报出个数**：
-        # com.starlwr 这个组名不只本仓在用（上游 StarBot 的产物也是它），落在本仓外的 import 不归本格管；
+        # Maven 组名不只本仓在用（上游产物也是它），落在本仓外的 import 不归本格管；
         # 而一个悄悄增长的「认不出」数，正是本格失灵最先看得见的样子。
         if [ -z "$owner" ]; then
             g10_unknown=$((g10_unknown + 1))
@@ -1075,15 +1075,15 @@ while IFS= read -r mod; do
             g10_hits="${g10_hits}${mod}/pom.xml(未申报 ${owner_artifact}，为 ${fqn}) "
             g10_n=$((g10_n + 1))
         fi
-    done <<< "$(grep -rhoE '^import[[:space:]]+(static[[:space:]]+)?com\.starlwr\.[A-Za-z0-9_.]*(\*)?' \
+    done <<< "$(grep -rhoE '^import[[:space:]]+(static[[:space:]]+)?org\.frostnova\.nova\.[A-Za-z0-9_.]*(\*)?' \
         --include='*.java' "$mod/src/main" 2>/dev/null \
         | sed -E 's/^import[[:space:]]+(static[[:space:]]+)?//' | sort -u)"
 done < "$MODULES"
 
 # 里层包名按工作树现算，不写死。受查模块按根 pom <module> 现算。
 G10_INNER="$WORK/g10inner"
-tree_files 'core/novacore/src/main/java/com/starlwr/bot/core/*' \
-    | sed -nE 's|^core/novacore/src/main/java/com/starlwr/bot/core/([^/]+)/.*$|\1|p' \
+tree_files 'core/novacore/src/main/java/org/frostnova/nova/core/*' \
+    | sed -nE 's|^core/novacore/src/main/java/org/frostnova/nova/core/([^/]+)/.*$|\1|p' \
     | sort -u > "$G10_INNER"
 g10_inner_pkg_n=$(count_lines "$G10_INNER")
 
@@ -1110,7 +1110,7 @@ if [ "$g10_inner_pkg_n" -gt 0 ]; then
         [ -z "$mod" ] && continue
         [ -d "$mod/src/main/java" ] || continue
         g10_ikey="$(printf '%s' "$mod" | tr '/' '_')"
-        grep -rlE "^import[[:space:]]+(static[[:space:]]+)?com\\.starlwr\\.bot\\.core\\.(${g10_inner_re})\\." \
+        grep -rlE "^import[[:space:]]+(static[[:space:]]+)?org\\.frostnova\\.nova\\.core\\.(${g10_inner_re})\\." \
             --include='*.java' "$mod/src/main/java" > "$WORK/g10if_${g10_ikey}" 2>/dev/null || true
         g10_inner_files=$(count_lines "$WORK/g10if_${g10_ikey}")
         [ "$g10_inner_files" -eq 0 ] && continue
@@ -1130,7 +1130,7 @@ if [ "$g10_mods" -eq 0 ]; then
     echo "格10 红 射程为空 一个插件模块也枚举不到(在册模块${module_n}个)"
     RED=1
 elif [ "$g10_inner_pkg_n" -eq 0 ]; then
-    echo "格10 红 射程为空 里层包名枚举不到(core/novacore/src/main/java/com/starlwr/bot/core 第一级目录 0 个) $g10_read"
+    echo "格10 红 射程为空 里层包名枚举不到(core/novacore/src/main/java/org/frostnova/nova/core 第一级目录 0 个) $g10_read"
     RED=1
 elif [ "$g10_n" -eq 0 ]; then
     echo "格10 绿 命中0 兄弟插件引用都在 pom 里申报过 $g10_read"
@@ -1236,10 +1236,10 @@ fi
 #
 # 模板不进 reactor，写错一个类名编译与测试都看不见。使用者照抄起插件，
 # 切面静默不挂上（pointcut 对不上任何方法）。本格问的就是「模板引用的
-# com.starlwr 类，仓内是不是真有这一件」。
+# org.frostnova.nova 类，仓内是不是真有这一件」。
 #
 # 取两类名字：
-#   ① import com.starlwr.…（非通配；static 末段若不是类型则退一层再找）
+#   ① import org.frostnova.nova.…（非通配；static 末段若不是类型则退一层再找）
 #   ② @Pointcut / execution( 串里的全限定类名
 # 每个名字折成 */src/main/java/<点换斜杠>.java，在工作树件清单里找；
 # 找不到即红并印类名。
@@ -1260,13 +1260,13 @@ G13_NAMES="$WORK/g13names"
 : > "$G13_NAMES"
 
 # 包段小写开头、类名大写开头：挡住 execution(* Fqcn.method(..)) 把方法名吞进类名
-g13_class_re='com\.starlwr(\.[a-z][A-Za-z0-9_]*)+\.[A-Z][A-Za-z0-9_]*'
+g13_class_re='org\.frostnova\.nova(\.[a-z][A-Za-z0-9_]*)+\.[A-Z][A-Za-z0-9_]*'
 
 if [ -s "$G13_JAVA" ]; then
     while IFS= read -r g13f; do
         [ -z "$g13f" ] && continue
         [ -f "$g13f" ] || continue
-        grep -E '^import[[:space:]]+(static[[:space:]]+)?com\.starlwr\.' "$g13f" 2>/dev/null \
+        grep -E '^import[[:space:]]+(static[[:space:]]+)?org\.frostnova\.nova\.' "$g13f" 2>/dev/null \
             | grep -oE "$g13_class_re" >> "$G13_NAMES" || true
         grep -E '@Pointcut|execution\(' "$g13f" 2>/dev/null \
             | grep -oE "$g13_class_re" >> "$G13_NAMES" || true
@@ -1298,7 +1298,7 @@ if [ "$g13_java_n" -eq 0 ]; then
     echo "格13 红 射程为空 templates 下没有 java 件 $g13_read"
     RED=1
 elif [ "$g13_name_n" -eq 0 ]; then
-    echo "格13 红 射程为空 抽不出任何 com.starlwr 类名 $g13_read"
+    echo "格13 红 射程为空 抽不出任何 org.frostnova.nova 类名 $g13_read"
     RED=1
 elif [ "$g13_n" -eq 0 ]; then
     echo "格13 绿 命中0 模板引用的仓内类名都在 $g13_read"
