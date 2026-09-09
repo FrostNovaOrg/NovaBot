@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="../../docs/assets/logo.svg" alt="NovaBot" height="56">
+<img src="https://raw.githubusercontent.com/FrostNovaOrg/NovaBot/main/docs/assets/logo.svg" alt="NovaBot" height="56">
 
 **<h2>NovaBot 示例插件</h2>**
 </div>
@@ -88,7 +88,7 @@ nova-example-plugin/
 >- 开发插件时, 可以使用绝大多数的 Spring 注解, 例如使用 `@Controller` 创建 API 接口, 使用 `@EventListener` 监听事件等
 >- 需要注册至 Spring 容器或使用 Spring 机制 (例如事件机制) 的类, 需要在类上使用 `@NovaComponent` 注解, 该注解会将类注册为 NovaBot 组件, 并被 NovaBot 扫描并注册至 Spring 容器中  
 >- 使用了 `@NovaComponent` 注解的类, 类名不可以与 NovaBot 本体或其他插件中的类名重复, 请命名时尽量避免过于简单或过于通用的命名
->- NovaBot 内部大量使用了 Spring 的事件机制, 插件可以通过创建事件监听器来处理这些事件, 常用事件类型请参考 [StarBotCore](https://github.com/Starlwr/StarBotCore) 项目相关文档
+>- NovaBot 内部大量使用了 Spring 的事件机制, 插件可以通过创建事件监听器来处理这些事件, 常用事件类型请参考本仓库 [架构说明](https://github.com/FrostNovaOrg/NovaBot/blob/main/docs/architecture.md)
 
 ### 本仓库提供的扩展点
 
@@ -141,7 +141,7 @@ NovaBot 插件使用 Maven 进行依赖管理, 插件可以依赖其他第三方
 
 ## 依赖来源
 
-本仓库未把插件依赖发到任何远程 Maven 仓库。独立构建本模板前，先在仓库根目录跑 `build.sh`（其中含 `mvn -Pinstall install`，会把 `nova-core`、`novacore` 与 `nova-plugin-processor` 装进本机本地仓），再到本目录执行 `mvn clean package`。仓库公开之后如另有远程仓方案，届时再改本段。
+本仓未发布到远程仓。独立构建本模板前，先在根仓跑根构建脚本把 `nova-core`、`novacore` 与 `nova-plugin-processor` 装进本机本地仓，再到本目录执行 `mvn package`。
 
 ## 构建与部署
 
