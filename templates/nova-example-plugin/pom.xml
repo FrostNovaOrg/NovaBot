@@ -50,22 +50,6 @@
         <java.version>17</java.version>
     </properties>
 
-    <!-- StarBot Maven 仓库 -->
-    <repositories>
-        <repository>
-            <id>starbot-maven-repository</id>
-            <url>https://maven.starlwr.com/</url>
-        </repository>
-    </repositories>
-
-    <!-- StarBot Maven 插件仓库 -->
-    <pluginRepositories>
-        <pluginRepository>
-            <id>starbot-maven-plugin-repository</id>
-            <url>https://maven.starlwr.com/</url>
-        </pluginRepository>
-    </pluginRepositories>
-
     <!-- 插件依赖 -->
     <dependencies>
         <!-- NovaBot 核心依赖，必需，建议开发时使用最新版本 -->

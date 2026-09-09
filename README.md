@@ -92,6 +92,7 @@ ssh -L 7827:127.0.0.1:7827 用户名@服务器地址
 ## 插件开发
 
 复制 [templates/nova-example-plugin](templates/nova-example-plugin) 作为起点。
+构建前须先把本仓构件装进本地 Maven 仓，见[模板 README「依赖来源」](templates/nova-example-plugin/README.md#依赖来源)。
 插件用 `@NovaComponent` 注册组件（它的元注解就是 Spring 的 `@Component`，
 按约定一律用它，源码里一眼看得出哪些类属于插件），
 用 `@EventListener` 监听事件；实现 `NovaEventHandler` 即可作为推送处理器。

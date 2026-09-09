@@ -1,6 +1,6 @@
 <div align="center">
 
-![logo](https://bot.starlwr.com/images/static/logo.jpg)
+<img src="../../docs/assets/logo.svg" alt="NovaBot" height="56">
 
 **<h2>NovaBot 示例插件</h2>**
 </div>
@@ -11,6 +11,7 @@
 - [项目结构](#项目结构)
 - [开发说明](#开发说明)
 - [依赖管理](#依赖管理)
+- [依赖来源](#依赖来源)
 - [构建与部署](#构建与部署)
 
 ## 快速开始
@@ -18,7 +19,7 @@
 1. 克隆本示例项目作为模板创建新项目
 2. 修改 `pom.xml` 中的项目信息, 该部分信息会作为插件元数据, 构建时生成到插件描述文件 `plugin.json` 中, 随插件 JAR 一同打包 (groupId, artifactId, version, name, description, url, developers 等)
 3. 开发你的插件功能, 开发时可正常使用绝大多数 Spring 注解 (可参考 `NovaExampleStartEventListener.java`、`NovaExampleDanmuEventListener.java` 和 `NovaExampleMeowAdder.java` 示例)
-4. 使用 Maven 构建项目: `mvn clean package`
+4. 先按[依赖来源](#依赖来源)把本仓构件装进本地仓，再构建: `mvn clean package`
 5. 将 `target` 中生成的 JAR 文件放入 NovaBot 的 `plugins` 目录
 
 ## 项目结构
@@ -137,6 +138,10 @@ NovaBot 插件使用 Maven 进行依赖管理, 插件可以依赖其他第三方
     <optional>true</optional>
 </dependency>
 ```
+
+## 依赖来源
+
+本仓库未把插件依赖发到任何远程 Maven 仓库。独立构建本模板前，先在仓库根目录跑 `build.sh`（其中含 `mvn -Pinstall install`，会把 `nova-core`、`novacore` 与 `nova-plugin-processor` 装进本机本地仓），再到本目录执行 `mvn clean package`。仓库公开之后如另有远程仓方案，届时再改本段。
 
 ## 构建与部署
 
