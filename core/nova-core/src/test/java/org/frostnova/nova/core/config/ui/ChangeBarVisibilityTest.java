@@ -20,8 +20,7 @@ import java.io.IOException;
  */
 @DisplayName("底部改动条的显隐")
 class ChangeBarVisibilityTest {
-    private static final String FIXTURE =
-            "core/nova-core/src/test/resources/frontend/change-bar-visibility-fixture.mjs";
+    private static final String FIXTURE = FrontendFixture.fixture("change-bar-visibility-fixture.mjs");
 
     @Test
     @DisplayName("有未保存的改动、有待重启项、状态栏说着话，三者之一才出条，否则整条不占位")

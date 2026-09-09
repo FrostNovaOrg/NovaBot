@@ -17,8 +17,7 @@ import java.io.IOException;
  */
 @DisplayName("告警测试结果保留未保存提醒")
 class SettingsAlertTestOutcomeTest {
-    private static final String FIXTURE =
-            "core/nova-core/src/test/resources/frontend/settings-alert-test-outcome-fixture.mjs";
+    private static final String FIXTURE = FrontendFixture.fixture("settings-alert-test-outcome-fixture.mjs");
 
     @Test
     @DisplayName("testOutcomeText 拼接提醒；sendTest 成功与异常都经它；空 note 恰原文")

@@ -16,8 +16,7 @@ import java.io.IOException;
  */
 @DisplayName("连接页改机器人参数即锁保存")
 class BotFormRetestTest {
-    private static final String FIXTURE =
-            "core/nova-core/src/test/resources/frontend/bot-form-retest-fixture.mjs";
+    private static final String FIXTURE = FrontendFixture.fixture("bot-form-retest-fixture.mjs");
 
     @Test
     @DisplayName("invalidateBotForm 锁保存；五格 input 接到它；测试出错也回锁")

@@ -16,8 +16,7 @@ import java.io.IOException;
  */
 @DisplayName("二次验证开关请求失败即拨回原档")
 class SettingsAuthRecoverToggleTest {
-    private static final String FIXTURE =
-            "core/nova-core/src/test/resources/frontend/settings-auth-recover-toggle-fixture.mjs";
+    private static final String FIXTURE = FrontendFixture.fixture("settings-auth-recover-toggle-fixture.mjs");
 
     @Test
     @DisplayName("recoverToggle 拨回原档；enrollFlow setup 抛错回关闭档")

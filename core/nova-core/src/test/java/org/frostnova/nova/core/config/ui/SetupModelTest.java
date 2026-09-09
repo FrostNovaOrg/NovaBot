@@ -24,7 +24,7 @@ class SetupModelTest {
     /**
      * 夹具在仓库里的位置。引用的是源码树里的 setup-model.js，不是构建产物里的副本
      */
-    private static final String FIXTURE = "core/nova-core/src/test/resources/frontend/setup-model-fixture.mjs";
+    private static final String FIXTURE = FrontendFixture.fixture("setup-model-fixture.mjs");
 
     @Test
     @DisplayName("放行条件、进度条、落点、完成度与初始值逐格与预期相同")

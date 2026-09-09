@@ -24,7 +24,7 @@ class NavIconTest {
     /**
      * 夹具在仓库里的位置。切的是源码树里的 main.js，不是构建产物里的副本
      */
-    private static final String FIXTURE = "core/nova-core/src/test/resources/frontend/nav-icon-fixture.mjs";
+    private static final String FIXTURE = FrontendFixture.fixture("nav-icon-fixture.mjs");
 
     @Test
     @DisplayName("插件页入口有图标、外壳与内置四条相同、没给形状时画中性缺省图标")

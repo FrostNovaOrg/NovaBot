@@ -15,7 +15,7 @@ import java.io.IOException;
  */
 @DisplayName("危险确认弹层判定")
 class ConfirmModelTest {
-    private static final String FIXTURE = "core/nova-core/src/test/resources/frontend/confirm-model-fixture.mjs";
+    private static final String FIXTURE = FrontendFixture.fixture("confirm-model-fixture.mjs");
 
     @Test
     @DisplayName("打开／取消／确认三态与回调只调一次逐格与预期相同")

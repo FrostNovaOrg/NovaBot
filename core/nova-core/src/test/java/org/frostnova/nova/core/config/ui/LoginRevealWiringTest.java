@@ -16,8 +16,7 @@ import java.io.IOException;
  */
 @DisplayName("登录页眼睛接线与加主播空输入句")
 class LoginRevealWiringTest {
-    private static final String FIXTURE =
-            "core/nova-core/src/test/resources/frontend/login-reveal-wiring-fixture.mjs";
+    private static final String FIXTURE = FrontendFixture.fixture("login-reveal-wiring-fixture.mjs");
 
     @Test
     @DisplayName("paint 遍历挂 disabled、两份 .secret 数字相同、空输入句与 placeholder 同一常量")
