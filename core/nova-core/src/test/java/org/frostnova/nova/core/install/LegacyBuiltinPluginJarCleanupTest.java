@@ -54,7 +54,7 @@ class LegacyBuiltinPluginJarCleanupTest {
         Files.createFile(dstPlugins.resolve("third-party-1.0.jar"));
         for (String old : OLD_SUFFIXES) {
             Files.createFile(dstPlugins.resolve("starbot-" + old + "-5.1.0.jar"));
-            Files.createFile(srcPlugins.resolve(newArtifact(old) + "-5.3.0.jar"));
+            Files.createFile(srcPlugins.resolve(newArtifact(old) + "-5.3.1.jar"));
         }
 
         Path script = tmp.resolve("run-cleanup.sh");
@@ -88,11 +88,11 @@ class LegacyBuiltinPluginJarCleanupTest {
             left = stream.map(p -> p.getFileName().toString()).collect(Collectors.toCollection(TreeSet::new));
         }
         Set<String> expected = new TreeSet<>(List.of(
-                "nova-bilibili-5.3.0.jar",
-                "nova-onebot-adapter-5.3.0.jar",
-                "nova-onebot-adapter-napcat-extension-5.3.0.jar",
-                "nova-report-5.3.0.jar",
-                "nova-console-5.3.0.jar",
+                "nova-bilibili-5.3.1.jar",
+                "nova-onebot-adapter-5.3.1.jar",
+                "nova-onebot-adapter-napcat-extension-5.3.1.jar",
+                "nova-report-5.3.1.jar",
+                "nova-console-5.3.1.jar",
                 "third-party-1.0.jar"));
         assertEquals(expected, left, "安装那段跑完后目录里应只剩新名内置插件与第三方");
     }
