@@ -1038,48 +1038,6 @@ public class ConfigurationFileService {
     }
 
     /**
-     * 删掉顶层某键及其整块（含缩进在其下的行）
-     * @param lines 文件行
-     * @param key 顶层键名
-     * @return 是否删到了
-     */
-    private boolean removeTopLevelKey(List<String> lines, String key) {
-        int start = -1;
-        for (int i = 0; i < lines.size(); i++) {
-            String raw = lines.get(i);
-            if (raw.isBlank() || raw.strip().startsWith("#") || indentOf(raw) != 0) {
-                continue;
-            }
-            String stripped = raw.strip();
-            int colon = stripped.indexOf(':');
-            if (colon < 0) {
-                continue;
-            }
-            if (stripped.substring(0, colon).strip().equals(key)) {
-                start = i;
-                break;
-            }
-        }
-        if (start < 0) {
-            return false;
-        }
-
-        int end = lines.size();
-        for (int i = start + 1; i < lines.size(); i++) {
-            String raw = lines.get(i);
-            if (raw.isBlank()) {
-                continue;
-            }
-            if (indentOf(raw) == 0) {
-                end = i;
-                break;
-            }
-        }
-        lines.subList(start, end).clear();
-        return true;
-    }
-
-    /**
      * 解析配置文件
      * @return 行信息列表
      * @throws IOException 读取失败时抛出

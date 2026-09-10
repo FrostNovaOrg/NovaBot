@@ -1,7 +1,6 @@
 package org.frostnova.nova.core.config.ui;
 
 import org.frostnova.nova.core.properties.EventStreamProperties;
-import org.frostnova.nova.core.properties.NovaBotPrefixes;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -49,8 +48,7 @@ public final class ConfigurationKeyAliases {
      * 插件侧的改名由 {@link ConfigurationKeyAliasContributor} 申报，不写在这里。
      */
     private static final Map<String, String> CORE_RENAMED = Map.of(
-            EventStreamProperties.PREFIX, EventStreamProperties.LEGACY_PREFIX,
-            NovaBotPrefixes.CORE, NovaBotPrefixes.CORE_LEGACY);
+            EventStreamProperties.PREFIX, EventStreamProperties.LEGACY_PREFIX);
 
     private static final ConfigurationKeyAliases CORE = new ConfigurationKeyAliases(CORE_RENAMED);
 
