@@ -1,7 +1,6 @@
 package org.frostnova.nova.core.protocol;
 
 import org.frostnova.nova.core.properties.EventStreamProperties;
-import org.frostnova.nova.core.properties.NovaBotPrefixes;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.boot.context.properties.bind.Bindable;
@@ -64,13 +63,12 @@ public class NovaEventStreamConfiguration implements DisposableBean {
         Binder binder = Binder.get(environment);
 
         boolean oldest = binder.bind(EventStreamProperties.LEGACY_PREFIX, Bindable.ofInstance(properties)).isBound();
-        boolean previous = binder.bind(NovaBotPrefixes.EVENT_STREAM_LEGACY, Bindable.ofInstance(properties)).isBound();
         boolean current = binder.bind(EventStreamProperties.PREFIX, Bindable.ofInstance(properties)).isBound();
 
         if (oldest) {
             log.warn("配置项 {}.* 已改名为 {}.*, 旧键仍然有效, 但请尽快改过来{}",
                     EventStreamProperties.LEGACY_PREFIX, EventStreamProperties.PREFIX,
-                    (previous || current) ? "。两套键同时存在时以新键为准, 新键未写到的项才取旧键的值" : "");
+                    current ? "。两套键同时存在时以新键为准, 新键未写到的项才取旧键的值" : "");
         }
 
         return properties;

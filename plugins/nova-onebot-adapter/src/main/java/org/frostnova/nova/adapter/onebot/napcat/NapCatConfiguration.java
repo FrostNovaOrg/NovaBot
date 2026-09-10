@@ -1,15 +1,11 @@
 package org.frostnova.nova.adapter.onebot.napcat;
 
 import org.frostnova.nova.adapter.onebot.config.OneBotAdapterPluginProperties;
-import org.frostnova.nova.adapter.onebot.config.OneBotNapCatPropertiesBinder;
 import org.frostnova.nova.core.config.ui.ConfigurationFileService;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.client.RestTemplate;
-
-import java.time.Instant;
-import java.util.List;
 
 /**
  * NapCat WebUI 代登录组件
@@ -19,12 +15,8 @@ import java.util.List;
 public class NapCatConfiguration {
     private final OneBotAdapterPluginProperties properties;
 
-    private final OneBotNapCatPropertiesBinder.OneBotNapCatKeyBinding binding;
-
-    public NapCatConfiguration(OneBotAdapterPluginProperties properties,
-                               OneBotNapCatPropertiesBinder.OneBotNapCatKeyBinding binding) {
+    public NapCatConfiguration(OneBotAdapterPluginProperties properties) {
         this.properties = properties;
-        this.binding = binding;
     }
 
     /**
@@ -37,10 +29,6 @@ public class NapCatConfiguration {
     @Bean
     public NapCatCredentialService napCatCredentialService(ConfigurationFileService fileService,
                                                            RestTemplate restTemplate) {
-        return new NapCatCredentialService(properties.getNapcat(), fileService, restTemplate,
-                Instant::now, null,
-                binding.legacyTokenPresent()
-                        ? List.of(OneBotNapCatPropertiesBinder.LEGACY_TOKEN)
-                        : List.of());
+        return new NapCatCredentialService(properties.getNapcat(), fileService, restTemplate);
     }
 }
