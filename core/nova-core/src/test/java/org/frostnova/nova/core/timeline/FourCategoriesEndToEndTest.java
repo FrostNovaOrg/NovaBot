@@ -48,7 +48,7 @@ import static org.mockito.Mockito.when;
  * <p>
  * 这四类的大类此前都在 {@link TimelineCategory} 里声明着，却<b>一条记事都没有</b>，
  * 于是 {@link TimelineCategory#inUse()} 把它们摘掉，屏幕上只剩「全部＋推送＋连接」三枚药丸。
- * 空着的那几类不报错、不留痕，看起来与「这台机器没发生过这类事」一模一样。
+ * 空着的那几类不报错、不记录，看起来与「这台机器没发生过这类事」一模一样。
  * <p>
  * 一类一格，每格走完整条路：<b>真现场触发 → 真的 {@link TimelineStore} 落盘 →
  * {@link TimelineController} 下发 → 药丸清单里出现这一类</b>。

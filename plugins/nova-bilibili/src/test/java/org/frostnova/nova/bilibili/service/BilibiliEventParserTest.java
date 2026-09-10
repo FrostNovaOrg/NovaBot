@@ -1239,7 +1239,7 @@ class BilibiliEventParserTest {
         /**
          * 在采集解析日志的开关下解析一条 V2 报文
          * <p>
-         * 34 号字段的新读法只在 TRACE 留痕，因此采集前把解析器 logger 抬到 TRACE，
+         * 34 号字段的新读法只在 TRACE 记录，因此采集前把解析器 logger 抬到 TRACE，
          * 结束后恢复原级别并摘除采集器——日志断言只该约束自己这一条报文的解析
          * @param pb data.pb（base64）
          * @param logsOut 采集到的日志文本，按产出顺序追加
@@ -1295,7 +1295,7 @@ class BilibiliEventParserTest {
             assertTrue(logs.stream().noneMatch(message -> message.contains("\uFFFD")),
                     "日志不得出现乱码——34 号是子消息，字节不是文本");
             assertTrue(logs.stream().anyMatch(message -> message.contains("id=5632012") && message.contains("type=1")),
-                    "新读法按子消息取到 id 与 type（TRACE 留痕）");
+                    "新读法按子消息取到 id 与 type（TRACE 记录）");
         }
 
         @Test
@@ -1319,7 +1319,7 @@ class BilibiliEventParserTest {
 
             assertEquals(3.0, event.getCharged(), 0.0001);
             assertTrue(logs.stream().noneMatch(message -> message.contains("\uFFFD")));
-            assertFalse(logs.stream().anyMatch(message -> message.contains("表情特效")), "空特效不留痕");
+            assertFalse(logs.stream().anyMatch(message -> message.contains("表情特效")), "空特效不记录");
         }
 
         /**

@@ -391,16 +391,16 @@ class NovaEventSlowConsumerTest {
     }
 
     @Test
-    @DisplayName("先验尺自证：管道没灌满时不许当成「已复现」")
+    @DisplayName("前置检查自证：管道没灌满时不许当成「已复现」")
     void priorGaugeNotFilledIsNotRepro() throws Exception {
         bringUpHarness(false);
         harness.endpoint.afterConnectionEstablished(harness.slowClient);
         harness.authenticated(harness.slowClient, harness.tokens.issue("没灌满"));
 
-        // 🔴 没灌满就不该抓到「卡在写里」那个读数。抓到了说明先验尺认错了东西，
+        // 🔴 没灌满就不该抓到「卡在写里」那个读数。抓到了说明前置检查认错了东西，
         //    那它在真复现时说的「亮」也不算数。
         Thread.sleep(200);
         assertNull(priorGaugeSenderThreadStuckInWrite(),
-                "管道没灌满时先验尺就说「卡住了」——这把尺认错了东西，它说的亮不算数");
+                "管道没灌满时前置检查就说「卡住了」——这把尺认错了东西，它说的亮不算数");
     }
 }

@@ -116,7 +116,7 @@ class BilibiliWordCloudTest {
     private static final double TOP_FONT_SIZE_RATIO = 1.3;
 
     /**
-     * 改前同一批语料的落词总数：**2026-09-04 实测于 lane-c 3c03438**
+     * 改前同一批语料的落词总数：**2026-09-04 实测**
      * （字号按 √词频、词与词隔 16px）的 20 组合计。
      * <p>
      * 🔴 这是一次<b>历史读数</b>，写死。改成「现算」的话它会跟着被测一起动，

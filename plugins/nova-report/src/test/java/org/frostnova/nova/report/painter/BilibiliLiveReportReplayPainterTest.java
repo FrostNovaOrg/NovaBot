@@ -142,7 +142,7 @@ class BilibiliLiveReportReplayPainterTest {
     }
 
     @Test
-    @DisplayName("③ 掰断：明细里少一条曲线，两张图的高度当场不同")
+    @DisplayName("③ 故意破坏（反向验证）：明细里少一条曲线，两张图的高度当场不同")
     void missingSeriesChangesTheHeight() throws IOException {
         LiveDetail complete = detail();
         Map<String, Map<Long, Double>> fewer = new LinkedHashMap<>(complete.series());

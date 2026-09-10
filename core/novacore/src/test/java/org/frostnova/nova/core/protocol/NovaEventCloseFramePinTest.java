@@ -161,7 +161,7 @@ class NovaEventCloseFramePinTest {
         //    拍固定时长的话，阻塞若在窗口开了之后才成立，排在慢客户端**前面**那几条
         //    会在窗口内收到那一轮 ping——判据 1 的修前红就成了掷骰子。
         //
-        //    能这么等，正是因为先验尺是**相无关**的：它问「有没有人卡在关闭帧的写里」，
+        //    能这么等，正是因为前置检查是**相无关**的：它问「有没有人卡在关闭帧的写里」，
         //    修前是心跳线程、修后是发送线程，两相都成立。
         //    换成等「心跳线程被钉住」就不行了——那是修好之后永远等不到的东西。
         long awaitStart = System.currentTimeMillis();
@@ -193,7 +193,7 @@ class NovaEventCloseFramePinTest {
         return harness.new PinGate(picked.slowId());
     }
 
-    // ══════════════════════════ 先验尺 ══════════════════════════
+    // ══════════════════════════ 前置检查 ══════════════════════════
 
     /**
      * 每一格判据的<b>前提戳</b>：这一跑复现成立吗
@@ -202,12 +202,12 @@ class NovaEventCloseFramePinTest {
      * 而「没复现出来」和「修好了」在判据的绿上长得一模一样。
      * 所以每一格开头都要盖一次戳，不是只在判据 0 那一格盖。
      * <p>
-     * 这把先验尺是<b>修前修后都要的</b>戳（它问的是「有没有人卡在关闭帧的写里」，
+     * 这把前置检查是<b>修前修后都要的</b>戳（它问的是「有没有人卡在关闭帧的写里」，
      * 修前是心跳线程、修后是发送线程，两相都成立）。
      * <b>只在红时才检查的前提，会让绿变成不带前提的绿。</b>
      *
      * @param 格名 落读数用
-     * @return 先验尺的全量读数
+     * @return 前置检查的全量读数
      */
     private List<Map<String, Object>> premiseStamp(String tickName) {
         List<Map<String, Object>> gaugeReading = priorGaugeSomeoneStuckWritingCloseFrame();
@@ -219,7 +219,7 @@ class NovaEventCloseFramePinTest {
                 "这一跑没有任何人卡在关闭帧的写里 —— **复现根本没成立**，这一格不算数。"
                         + "没复现出阻塞时，判据的绿和修好了的绿长得一样。");
         assertTrue(!NovaEventSlowConsumerHarness.gaugeUnseenState(gaugeReading),
-                "先验尺见到了它没见过的线程状态：**这把尺没见过这个形态**，"
+                "前置检查见到了它没见过的线程状态：**这把尺没见过这个形态**，"
                         + "它量出来的东西不作数。先查这个状态是怎么来的。实录：" + gaugeReading);
         return gaugeReading;
     }
@@ -256,11 +256,11 @@ class NovaEventCloseFramePinTest {
     }
 
     @Test
-    @DisplayName("先验尺：这一跑里有人卡在关闭帧的写里（复现成立）")
+    @DisplayName("前置检查：这一跑里有人卡在关闭帧的写里（复现成立）")
     void priorGaugeSomeoneStuckInCloseFrameWrite() throws Exception {
         bringUp(false);
         List<Map<String, Object>> gaugeReading = priorGaugeSomeoneStuckWritingCloseFrame();
-        reading("先验尺-关闭帧", Map.of(
+        reading("前置检查-关闭帧", Map.of(
                 "有人卡在关闭帧的写里", NovaEventSlowConsumerHarness.reproHolds(gaugeReading),
                 "卡住的线程条数", gaugeReading.size(),
                 "实录", String.valueOf(gaugeReading),
@@ -374,7 +374,7 @@ class NovaEventCloseFramePinTest {
         Reading.put("窗口覆盖了几个心跳周期", milliTickToString(r.segment().wallClockMs() * 1000 / PING));
         Reading.put("对照钟相邻两格最短间隔毫秒", harness.clock.minTickGapMs());
         if (r.advancedCount() == 0) {
-            // 🔴 心跳线程只是排不上号时，它一条也不会出现在先验尺的实录里——
+            // 🔴 心跳线程只是排不上号时，它一条也不会出现在前置检查的实录里——
             //    「没被钉住」在读数上是沉默的，而沉默和「尺没量」长得一样
             Reading.put("零推进时的心跳线程", NovaEventSlowConsumerHarness.threadSnapshot(harness.heartbeatThread));
         }

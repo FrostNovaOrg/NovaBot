@@ -31,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class NovaEventHarnessSelfCheckTest {
 
     /**
-     * 🔴 阈值的自验尺要装在<b>生效值</b>上
+     * 🔴 阈值的自身检查要装在<b>生效值</b>上
      * <p>
      * 判据 4 改判相对之后，唯一还留着的那个数是
      * {@link NovaEventSlowConsumerHarness#LAG_TOLERANCE_MILLI_TICK}——「后簇落后多久算陪葬」。
@@ -108,14 +108,14 @@ class NovaEventHarnessSelfCheckTest {
      * 🔴 值里再出现一个叫「读数」的键，会把<b>名字</b>顶掉
      * <p>
      * 顶掉之后那条读数看起来跟正常的一模一样——外面按名字找就永远找不到它。
-     * 这一格钉的就是那个形态：它真咬中过一次（定余量那 20 轮停在「没报先验尺读数」，
+     * 这一格钉的就是那个形态：它真咬中过一次（定余量那 20 轮停在「没报前置检查读数」，
      * 查了才发现是名字被值顶掉了）。
      */
     @Test
     @DisplayName("读数：值里再带一个「读数」键就当场抛（它会把名字顶掉）")
     void readingThrowsOnNameClash() {
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
-                () -> reading("先验尺-关闭帧", Map.of("读数", "顶掉名字的那个值")));
+                () -> reading("前置检查-关闭帧", Map.of("读数", "顶掉名字的那个值")));
         assertTrue(e.getMessage().contains("顶掉"),
                 "失败语要说清后果（名字会被顶掉），不能只说「键重复」——"
                         + "只说重复的话，下一个人会以为换个写法就行了。实录：" + e.getMessage());
