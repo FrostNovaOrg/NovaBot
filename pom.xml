@@ -12,7 +12,7 @@
 
     <groupId>org.frostnova.nova</groupId>
     <artifactId>nova-parent</artifactId>
-    <version>5.3.1</version>
+    <version>5.4.0</version>
     <packaging>pom</packaging>
 
     <name>NovaBot</name>
@@ -50,8 +50,8 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
         <!-- NovaBot 自身构件版本 -->
-        <novacore.version>5.3.1</novacore.version>
-        <nova-core.version>5.3.1</nova-core.version>
+        <novacore.version>5.4.0</novacore.version>
+        <nova-core.version>5.4.0</nova-core.version>
         <nova-plugin-processor.version>1.0.0</nova-plugin-processor.version>
 
         <!-- 构建期判据用的插件，版本钉死：判据本身跟着插件发布方漂就不成其为判据 -->

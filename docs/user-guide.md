@@ -98,9 +98,9 @@ sudo systemctl start novabot && sudo journalctl -u novabot -f
 
 ```bash
 ./build.sh
-docker build -f dist/templates/Dockerfile -t starbot:4.1.0 dist/build
+docker build -f dist/templates/Dockerfile -t novabot:5.4.0 dist/build
 docker run -d --name starbot --restart unless-stopped \
-  -v novabot-data:/app -p 127.0.0.1:7827:7827 starbot:4.1.0
+  -v novabot-data:/app -p 127.0.0.1:7827:7827 novabot:5.4.0
 ```
 
 **卷必须挂在 `/app`。** 配置、登录凭据、推送规则、插件依赖全都写在工作目录下，

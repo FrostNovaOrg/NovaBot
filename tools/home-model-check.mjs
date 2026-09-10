@@ -175,7 +175,7 @@ const CASES = [
     name: '有新版',
     // 服务器判「该提示」时 /api/status 才有 update 这一块：版本、说明与站外链接同形
     status: status({update: {
-      latestVersion: 'v5.3.1',
+      latestVersion: 'v5.4.0',
       notes: ['修了开播误报', '第二行说明', '第三行说明'],
       url: 'https://example.invalid/release',
     }}),
