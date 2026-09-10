@@ -34,11 +34,6 @@ for jar in "$SRC"/plugins/*.jar; do
     esac
     find "$DST/plugins" -maxdepth 1 -type f -name "$artifact-[0-9]*.jar" -delete
 done
-# 下一发行版删此表。构件改名后，按新包 artifact 名清旧版不会命中上一版内置插件 jar，
-# 会与新 jar 一并被加载。第三方插件不在表内不碰。
-for old in bilibili onebot-adapter onebot-adapter-napcat-extension report novabot-console; do
-    find "$DST/plugins" -maxdepth 1 -type f -name "starbot-$old-[0-9]*.jar" -delete
-done
 cp -f "$SRC"/plugins/*.jar "$DST/plugins/"
 
 # 🔴 5.1 起，镜像里不再带 application.yml 与 datasource.json：程序自己会在第一次保存设置、
