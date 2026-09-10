@@ -34,7 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <h2>这一格补的是什么洞</h2>
  * 哔哩哔哩这一侧有九处按名字要 {@code bilibiliTaskScheduler}，其中八处把它存成字段，
  * 真起一次照字段逐个读就能核对。<b>{@link NovaEventBroadcaster} 是第九处，
- * 它在构造器里就地用掉、不留字段</b>——扫字段的量具在它这里读不到任何东西，
+ * 它在构造器里就地用掉、不留字段</b>——扫字段的测量器在它这里读不到任何东西，
  * 而「读不到」与「读到的是对的」在报表上长得一模一样。所以这一处一直是没被量过，
  * 不是查过了。
  *

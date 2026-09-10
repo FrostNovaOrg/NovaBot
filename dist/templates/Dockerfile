@@ -7,7 +7,7 @@
 # 运行：
 #   docker run -d --name starbot \
 #     --restart unless-stopped \
-#     -v starbot-data:/app \
+#     -v novabot-data:/app \
 #     -p 127.0.0.1:7827:7827 \
 #     novabot:4.1.0
 #

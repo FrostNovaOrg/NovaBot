@@ -274,7 +274,7 @@ class AbstractDataSourceTest {
                     .orElse(null);
 
             // 悄悄少监控一位主播是最难查的一种故障：界面上看不出，推送只是「没有」而已
-            assertNotNull(warn, "被拒收的主播必须在日志里留痕，实际日志: " + appender.list);
+            assertNotNull(warn, "被拒收的主播必须在日志里记录，实际日志: " + appender.list);
             assertTrue(warn.contains("10"), "日志要说清上限是多少: " + warn);
             assertTrue(warn.contains("11"), "日志要点名是谁被拒收: " + warn);
         } finally {

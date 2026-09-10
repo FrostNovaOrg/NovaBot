@@ -224,7 +224,7 @@ class BilibiliStreamerChoiceCorpusTest {
     }
 
     @Test
-    @DisplayName("选过之后盘上不留痕 —— 运行状态里没有这个命名空间")
+    @DisplayName("选过之后盘上不记录 —— 运行状态里没有这个命名空间")
     void leavesNothingOnDisk(@TempDir Path stateDir) {
         NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(stateDir.resolve("data.json").toString());

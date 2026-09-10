@@ -1193,7 +1193,7 @@ public class BilibiliEventParser {
             return null;
         }
 
-        // 34 号是表情特效子消息 {1:id, 2:type}（见字段表），与入账无关。留痕只到 TRACE
+        // 34 号是表情特效子消息 {1:id, 2:type}（见字段表），与入账无关。记录只到 TRACE
         // 且只打取到的两个数：字段语义尚未被平台文档证实，打整块字节只会得到乱码
         BilibiliProtobufReader faceEffect = gift.message(GIFT_V2_FACE_EFFECT);
         Long faceEffectId = faceEffect == null ? null : faceEffect.number(GIFT_V2_FACE_EFFECT_ID);

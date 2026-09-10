@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.fail;
  * <b>两把尺量同一件事必生漂移</b>，而这里漂移的后果是：独立性那组量的其实是另一支探针，
  * 于是它证明的独立性对真正在用的那三条<b>一句都不算</b>。
  * <p>
- * 台架自己也要能被拆开：{@link #bringUpSlowClient()} 不亮先验尺就直接判失败，
+ * 台架自己也要能被拆开：{@link #bringUpSlowClient()} 不亮前置检查就直接判失败，
  * 因为<b>没复现出阻塞时，三条判据的绿和修好了的绿长得一样</b>。
  */
 final class NovaEventSlowConsumerHarness implements AutoCloseable {
@@ -624,7 +624,7 @@ final class NovaEventSlowConsumerHarness implements AutoCloseable {
 
         List<String> stack = await(CRITERION_WAIT, NovaEventSlowConsumerHarness::priorGaugeSenderThreadStuckInWrite);
         if (stack == null) {
-            fail("先验尺不亮：没抓到「发送线程卡在 socket 写里且持着该客户端的监视器」这个读数。"
+            fail("前置检查不亮：没抓到「发送线程卡在 socket 写里且持着该客户端的监视器」这个读数。"
                     + "拿不到它就不许采信三条判据——没复现出阻塞时，三条判据的绿和修好了的绿长得一样。"
                     + "（已灌 " + fill + " 字节）");
         }
@@ -636,7 +636,7 @@ final class NovaEventSlowConsumerHarness implements AutoCloseable {
         Thread.sleep(GRACE + 200);
 
         List<String> heartbeatStack = heartbeatThreadStuckOnAnotherMonitor();
-        reading("先验尺", Map.of(
+        reading("前置检查", Map.of(
                 "灌入字节", fill,
                 // 发送速率与连接数：换台机器复现时，这两个数决定了背压是不是同一回事。
                 // 🔴 速率是**量出来的**（灌满字节 ÷ 灌满耗时），不是配的——
@@ -956,7 +956,7 @@ final class NovaEventSlowConsumerHarness implements AutoCloseable {
     // ══════════════════════════ 后排尺（判据 4） ══════════════════════════
 
     /**
-     * 判据 4 的量具：按连接分别记 ping 的到达时刻
+     * 判据 4 的计数器：按连接分别记 ping 的到达时刻
      * <p>
      * 🔴 只记总数看不出「谁漏了」。判据 1～3 问「有没有人收到」，判据 4 问「<b>有没有人漏收</b>」，
      * 后者非按连接分开记不可。
@@ -1084,7 +1084,7 @@ final class NovaEventSlowConsumerHarness implements AutoCloseable {
 
     }
 
-    // ══════════════════════════ 先验尺 ══════════════════════════
+    // ══════════════════════════ 前置检查 ══════════════════════════
 
     /**
      * 连续采样次数与间隔。5 × 20 ms ≈ 100 ms：合法短写几毫秒即完，
@@ -1095,7 +1095,7 @@ final class NovaEventSlowConsumerHarness implements AutoCloseable {
     static final long STUCK_WRITE_SAMPLE_INTERVAL_MS = 20L;
 
     /**
-     * 先验尺：慢客户端的发送线程<b>确实</b>卡在 socket 写里，且<b>正持着那个客户端的写锁</b>。
+     * 前置检查：慢客户端的发送线程<b>确实</b>卡在 socket 写里，且<b>正持着那个客户端的写锁</b>。
      * <p>
      * 🔴 拿不到这个读数就直接判失败，不进三条判据——
      * <b>没复现出阻塞时，三条判据的绿和修好了的绿长得一样。</b>
@@ -1229,7 +1229,7 @@ final class NovaEventSlowConsumerHarness implements AutoCloseable {
     }
 
     /**
-     * 先验尺：这一跑里<b>有人</b>卡在关闭帧的写里 —— 复现成立
+     * 前置检查：这一跑里<b>有人</b>卡在关闭帧的写里 —— 复现成立
      * <p>
      * 🔴 <b>复现尺量现象，判据量归属。</b>这把尺只问「关闭帧的写有没有真的卡住」，
      * 不问卡住的是<b>哪条</b>线程——那是判据 0 的事。
@@ -1356,7 +1356,7 @@ final class NovaEventSlowConsumerHarness implements AutoCloseable {
     }
 
     /**
-     * 先验尺的一句话结论：这一跑复现成立吗
+     * 前置检查的一句话结论：这一跑复现成立吗
      *
      * @param 尺读 {@link #priorGaugeSomeoneStuckWritingCloseFrame()} 的返回
      * @return 有人卡在关闭帧的写里就为真
@@ -1522,7 +1522,7 @@ final class NovaEventSlowConsumerHarness implements AutoCloseable {
             return sent;
         }
 
-        /** 等到先验尺里出现的那条卡住的线程<b>就是</b>共享心跳线程 */
+        /** 等到前置检查里出现的那条卡住的线程<b>就是</b>共享心跳线程 */
         private List<Map<String, Object>> awaitHeartbeatThreadPinned() throws Exception {
             return clock.await(REPRO_WAIT_TICKS, () -> {
                 List<Map<String, Object>> gaugeReading = priorGaugeSomeoneStuckWritingCloseFrame();
@@ -1620,7 +1620,7 @@ final class NovaEventSlowConsumerHarness implements AutoCloseable {
     static void reading(String readingName, Map<String, Object> value) {
         // 🔴 值里再出现一个叫「读数」的键，就会把**名字**顶掉，
         //    而顶掉之后那条读数看起来跟正常的一模一样——外面按名字找就永远找不到它。
-        //    （已经踩过一次：先验尺那条把栈实录塞在「读数」键里，定余量那 20 轮第一轮就停。）
+        //    （已经踩过一次：前置检查那条把栈实录塞在「读数」键里，定余量那 20 轮第一轮就停。）
         if (value.containsKey("读数")) {
             throw new IllegalArgumentException("读数「" + readingName + "」的值里有一个叫「读数」的键，"
                     + "它会把名字顶掉。换个键名（比如「实录」）——顶掉之后没人看得出来。");

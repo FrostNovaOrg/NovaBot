@@ -24,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  *     <li>占位符取的是「从 <code>{</code> 到<b>最近一个</b> <code>}</code>」，
  *         所以 <code>{at=1}}</code> 会剩一个右花括号当正文——与
  *         {@code MessagePlaceholders} 的非贪婪口径一致</li>
- *     <li>值为空或纯空白的占位符<b>整段消失</b>，既不变文本也不留痕；
+ *     <li>值为空或纯空白的占位符<b>整段消失</b>，既不变文本也不记录；
  *         而值解析不了的表情（{@code {face=abc}}）反而<b>原样留成文本</b>——
  *         两种「填错了」走的是两条相反的路</li>
  *     <li>认不出的占位符原样留成文本，不报错</li>

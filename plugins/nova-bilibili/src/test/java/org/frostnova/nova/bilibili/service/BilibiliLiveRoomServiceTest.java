@@ -92,7 +92,7 @@ class BilibiliLiveRoomServiceTest {
             assertEquals(10, service.getManagedRoomCount(), "纳入连接管理的直播间数不得超过上限");
             assertTrue(service.getStatus(1011L).isEmpty(), "排在第 11 位的直播间不应被接管");
 
-            // 「配了却没连上」若不在日志里留痕，只会表现为某个直播间从此没有任何事件，
+            // 「配了却没连上」若不在日志里记录，只会表现为某个直播间从此没有任何事件，
             // 而界面上一切正常——这种缺口是查不出来的
             String warn = warnContaining(appender, "上限");
             assertNotNull(warn, "被截掉的直播间必须点名，实际日志: " + appender.list);
