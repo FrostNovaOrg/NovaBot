@@ -10,11 +10,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * 把直播间事件按事件输出协议 v2 实时推给本机的其他程序，用于自建面板一类的场景。
  * 它只输出，不接受任何指令。
  * <p>
- * <b>本类只承载字段与说明，实例不由 Spring 直接绑定</b>：配置键从
- * {@code starbot.bilibili.event-stream} 改到了 {@code novabot.core.event-stream}，
- * 两套键要同时认得，且新键在场时逐项压过旧键——这件事需要分辨「这一项写没写」，
- * 而自动绑定给出的只有「绑完之后的值」，分辨不出默认值与显式写成同一个值的区别。
- * 因此实例由 {@link org.frostnova.nova.core.protocol.NovaEventStreamConfiguration} 分两趟绑出来。
+ * <b>本类只承载字段与说明，实例不由 Spring 直接绑定</b>：实例由
+ * {@link org.frostnova.nova.core.protocol.NovaEventStreamConfiguration} 绑出。
  * 类上的注解留着是为了让配置元数据照常生成，配置界面才认得这几项。
  */
 @Getter
@@ -25,15 +22,6 @@ public class EventStreamProperties {
      * 现行配置键前缀
      */
     public static final String PREFIX = "novabot.core.event-stream";
-
-    /**
-     * 旧配置键前缀
-     * <p>
-     * 事件输出曾长在哔哩哔哩插件里，配置也就跟着长在那一侧。真源迁入核心后键名随之改动，
-     * 但既有部署的 {@code application.yml} 里写的还是旧键——<b>旧键必须继续认得</b>，
-     * 否则升级一次就等于把别人已经跑着的事件流悄悄关掉。
-     */
-    public static final String LEGACY_PREFIX = "starbot.bilibili.event-stream";
 
     /**
      * 是否启用事件输出

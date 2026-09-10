@@ -1,7 +1,5 @@
 package org.frostnova.nova.core.config.ui;
 
-import org.frostnova.nova.core.properties.EventStreamProperties;
-
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -12,7 +10,7 @@ import java.util.Map;
  * 配置键改过名之后，控制台读侧对旧位置的兼容
  *
  * <h2>它治的是哪一种病</h2>
- * 配置键改名时，程序自己两套键都认得（见 {@code NovaEventStreamConfiguration#eventStreamProperties}），
+ * 配置键改名时，程序自己可由绑定侧同时认得新旧两套键，
  * 因此<b>功能上升级即无感</b>。控制台却不是这么读的：它把 {@code application.yml} 读成一张扁平的键值表，
  * 再拿现行键去表里取值——只写旧位置的既有部署，现行键在表里一个也取不到，
  * 界面于是显示元数据里的<b>默认值</b>，而程序正按旧位置的值在跑。
@@ -47,8 +45,7 @@ public final class ConfigurationKeyAliases {
      * 而漂开之后界面与程序又会各说各话——正是这个类要治的那种病。
      * 插件侧的改名由 {@link ConfigurationKeyAliasContributor} 申报，不写在这里。
      */
-    private static final Map<String, String> CORE_RENAMED = Map.of(
-            EventStreamProperties.PREFIX, EventStreamProperties.LEGACY_PREFIX);
+    private static final Map<String, String> CORE_RENAMED = Map.of();
 
     private static final ConfigurationKeyAliases CORE = new ConfigurationKeyAliases(CORE_RENAMED);
 

@@ -83,20 +83,6 @@ class ConfigValueMaskingTest {
             """;
 
     /**
-     * 只写旧位置的既有部署：改名前的配置文件长这样，而程序照旧认得
-     */
-    private static final String LEGACY_POSITION = """
-            starbot:
-              core:
-                config-ui:
-                  enabled: true
-              bilibili:
-                event-stream:
-                  enabled: true
-                  require-token: true
-            """;
-
-    /**
      * 在册的真机密，逐条列出——每一条都必须继续遮住
      */
     private static final List<String> REAL_SECRETS = List.of(
@@ -110,8 +96,6 @@ class ConfigValueMaskingTest {
             "spring.data.redis.password");
 
     private static final String REQUIRE_TOKEN = EventStreamProperties.PREFIX + ".require-token";
-
-    private static final String LEGACY_REQUIRE_TOKEN = EventStreamProperties.LEGACY_PREFIX + ".require-token";
 
     private static final String OPERATOR_TOKEN = "novabot.core.config-ui.auth.operator-token";
 
@@ -194,19 +178,6 @@ class ConfigValueMaskingTest {
     }
 
     @Test
-    @DisplayName("只写旧位置时，落回来的布尔开关同样不遮")
-    void booleanSwitchAtLegacyPositionIsNotMasked() throws IOException {
-        start(LEGACY_POSITION);
-
-        JSONObject values = values();
-
-        assertEquals("true", values.getString(REQUIRE_TOKEN),
-                "落回旧位置的读数是给界面上那个开关用的, 遮了它界面照样骗人");
-        assertEquals("true", values.getString(LEGACY_REQUIRE_TOKEN),
-                "旧位置那一行本身也在读数里, 元数据只有现行键, 但它俩是同一项配置");
-    }
-
-    @Test
     @DisplayName("在册的真机密逐条仍遮，一条都不许放宽")
     void everyRealSecretStaysMasked() throws IOException {
         start(CURRENT_POSITION);
@@ -277,14 +248,8 @@ class ConfigValueMaskingTest {
     }
 
     @Test
-    @DisplayName("普通字段与旧位置来源标记的行为都不受影响")
-    void ordinaryFieldsAndLegacyMarkerUnchanged() throws IOException {
-        start(LEGACY_POSITION);
-
-        JSONObject result = controller.values();
-        assertEquals(LEGACY_REQUIRE_TOKEN, result.getJSONObject("legacy").getString(REQUIRE_TOKEN),
-                "得说清这一项是从旧位置读来的, 这条是既有行为");
-
+    @DisplayName("普通字段的行为不受影响")
+    void ordinaryFieldsUnchanged() throws IOException {
         start(CURRENT_POSITION);
         JSONObject values = values();
         assertEquals("7827", values.getString("server.port"), "普通字段照原样回");

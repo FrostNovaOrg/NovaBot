@@ -45,15 +45,7 @@ public class NovaEventStreamConfiguration implements DisposableBean {
     private NovaEventEndpoint endpoint;
 
     /**
-     * 解析事件输出配置，新旧两套键都认
-     * <p>
-     * <b>逐项覆盖，不是整段二选一。</b> 先按旧键 {@code starbot.bilibili.event-stream} 绑一趟，
-     * 再按现行键 {@code novabot.core.event-stream} 绑第二趟：第二趟只会写入真的出现在配置里的项，
-     * 没写的项原样留着第一趟的值。于是「新键在场时压过旧键、缺的项由旧键补上」这句话
-     * 落在每一项上而不只是整段上，两套键都没写的项拿到的则是字段自带的默认值。
-     * <p>
-     * 分两趟绑而不是让 Spring 自动绑，是因为要分辨「这一项写没写」：
-     * 自动绑定给出的只有绑完之后的值，分辨不出默认值与显式写成同一个值。
+     * 解析事件输出配置，按现行键 {@code novabot.core.event-stream} 绑出。
      * @param environment 运行环境
      * @return 解析后的配置
      */
@@ -61,16 +53,7 @@ public class NovaEventStreamConfiguration implements DisposableBean {
     public EventStreamProperties eventStreamProperties(Environment environment) {
         EventStreamProperties properties = new EventStreamProperties();
         Binder binder = Binder.get(environment);
-
-        boolean oldest = binder.bind(EventStreamProperties.LEGACY_PREFIX, Bindable.ofInstance(properties)).isBound();
-        boolean current = binder.bind(EventStreamProperties.PREFIX, Bindable.ofInstance(properties)).isBound();
-
-        if (oldest) {
-            log.warn("配置项 {}.* 已改名为 {}.*, 旧键仍然有效, 但请尽快改过来{}",
-                    EventStreamProperties.LEGACY_PREFIX, EventStreamProperties.PREFIX,
-                    current ? "。两套键同时存在时以新键为准, 新键未写到的项才取旧键的值" : "");
-        }
-
+        binder.bind(EventStreamProperties.PREFIX, Bindable.ofInstance(properties));
         return properties;
     }
 

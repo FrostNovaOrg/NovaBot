@@ -9,8 +9,6 @@ import org.frostnova.nova.core.config.ConfigDanger;
 import org.frostnova.nova.core.properties.ConfigEffect;
 import org.frostnova.nova.core.config.ui.ConfigurationGroupContributor;
 import org.frostnova.nova.core.config.ui.ConfigurationGroups;
-import org.frostnova.nova.core.config.ui.ConfigurationKeyAliasContributor;
-import org.frostnova.nova.core.config.ui.ConfigurationKeyAliases;
 import org.frostnova.nova.core.config.ui.ConfigurationMetadataService;
 import org.frostnova.nova.core.config.ui.ExternalConfigurationFields;
 import org.frostnova.nova.core.config.ui.RuntimeConfigurationApplier;
@@ -380,7 +378,6 @@ class ConfigurationConsistencyTest {
 
         // 声明与名单是同一条规则的两个读者。只对其中一边加项，界面会照着声明说「已生效」，
         // 而保存那一步压根没碰运行中的配置——改了不生效，且没有任何提示说它没生效
-        ConfigurationKeyAliases.of(aliasContributors());
         Set<String> applied = RuntimeConfigurationApplier.supportedKeys(applierContributors());
 
         List<String> promisedOnly = new ArrayList<>(declared);
@@ -446,15 +443,6 @@ class ConfigurationConsistencyTest {
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException("装不上适配器的配置分组申报", e);
         }
-    }
-
-    /**
-     * 适配器申报的配置键别名。没有实现时为空集，尺仍须过。
-     * @return 贡献者，没有实现时为空
-     */
-    private List<ConfigurationKeyAliasContributor> aliasContributors() {
-        return loadOptionalContributor(ConfigurationKeyAliasContributor.class,
-                "org.frostnova.nova.adapter.onebot.config.OneBotConfigurationKeyAliases");
     }
 
     /**

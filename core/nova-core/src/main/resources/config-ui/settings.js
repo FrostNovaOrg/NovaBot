@@ -155,7 +155,7 @@ function buildRow(field, groupAllRestart) {
   if (store.legacy[field.name]) {
     const note = el('div', 'legacy');
     note.textContent = '该项按旧位置 ' + store.legacy[field.name]
-      + ' 生效，建议迁到新位置：在此保存一次即可，旧位置的内容不会被改动。旧 starbot.* 键仍可读';
+      + ' 生效，建议迁到新位置：在此保存一次即可，旧位置的内容不会被改动。';
     meta.appendChild(note);
   }
 
