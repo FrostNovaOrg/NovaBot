@@ -10,6 +10,12 @@
 
 ### 变更
 
+### 修复
+
+## [5.4.0] - 2026-09-10
+
+### 变更
+
 - 日志文件改名为 `novabot-*.log`，原 `starbot-*.log` 旧文件不再自动清理，可手动删除；安装脚本不再沿用旧的 `starbot.service`，检测到即停用并换装为 `novabot.service`。
 - 控制台旧接口路径 `/config/api/onebot/targets`、`/config/api/onebot/targets/refresh`、`/config/api/napcat/state` 移除，请改用 `/config/api/bot/targets`、`/config/api/bot/console`。
 - 安装脚本与容器入口不再清理 5.2 及更早版本的旧名内置插件 jar；从 5.2 或更早直接升级到本版，请先手动删除 `plugins/` 下的 `starbot-*.jar`。
@@ -17,8 +23,6 @@
 - 旧配置键 `starbot.*` 的兼容读取全部移除，事件输出的更早旧键 `starbot.bilibili.event-stream.*` 同此，请改用 `novabot.core.event-stream.*`；启动时不再自动映射到 `novabot.*`，旧位置残留的明文口令也不再被自动清除；从 5.2 及更早版本升级前，请先按 5.3 控制台的迁移提示把配置改到新键，并手动删除旧位置的口令。
 - 许可证移除附加条款，仅保留 AGPL-3.0 原文。
 - 容器数据卷默认名由 `starbot-data` 改为 `novabot-data`；沿用旧卷的部署请在启动命令里显式挂载旧卷名，或先迁移数据再换名。
-
-### 修复
 
 ## [5.3.1] - 2026-09-10
 
