@@ -99,7 +99,7 @@ sudo systemctl start novabot && sudo journalctl -u novabot -f
 ```bash
 ./build.sh
 docker build -f dist/templates/Dockerfile -t novabot:5.4.0 dist/build
-docker run -d --name starbot --restart unless-stopped \
+docker run -d --name novabot --restart unless-stopped \
   -v novabot-data:/app -p 127.0.0.1:7827:7827 novabot:5.4.0
 ```
 
