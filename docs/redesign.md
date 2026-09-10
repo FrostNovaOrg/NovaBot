@@ -216,7 +216,7 @@ one-bot-websocket-token  # NapCat WS Token
 这是通知类产品的刚需，也是被投诉最多的点。
 
 ```yaml
-starbot:
+novabot:
   core:
     push:
       enabled: true              # 全局推送开关
@@ -535,7 +535,7 @@ AGPL-3.0 覆盖的是**代码**。图形资产是独立的著作权客体，字�
 |---|---|---|
 | Java 包名 | **09-09 定为 `org.frostnova.nova.*`** | 持有域名 nova.frostnova.org 反写；改名会断第三方插件 import，须随本版重编译 |
 | 构件坐标 | **本拍仍不动** | groupId／artifactId／模块目录名归拍2 |
-| 配置键 `novabot.*` | **已改；旧 `starbot.*` 仍认得** | 既有安装读旧写新 |
+| 配置键 `novabot.*` | **已改；5.4 起旧 `starbot.*` 不再识别** | 从 5.3 及更早升级请按控制台迁移提示 |
 | 界面展示名、文档标题、logo | **NovaBot** | 品牌区分做在用户可见层 |
 
 即「内核沿用上游标识以保兼容，外观完全自有」。
@@ -547,7 +547,7 @@ AGPL-3.0 覆盖的是**代码**。图形资产是独立的著作权客体，字�
 重构过程中保持：
 
 - **构件坐标本拍仍不动**（groupId／artifactId／模块目录名归拍2）
-- **配置键**已改为 `novabot.*`，旧 `starbot.*` 本版仍认得
+- **配置键**已改为 `novabot.*`，5.4 起旧 `starbot.*` 不再识别
 - **`datasource.json` 格式不变**；handler 全类名随包名变更，旧包根本版仍认
 - **插件 API 随包名变更**：须改 import 重新编译；`@NovaComponent`／`NovaEventHandler`／`NovaCommand` 为现行名，三个旧名已删除
 
