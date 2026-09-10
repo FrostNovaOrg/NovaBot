@@ -188,18 +188,30 @@ class NapCatBootstrapControllerTest {
     }
 
     @Test
-    @DisplayName("旧路 /api/napcat/state 仍通，回包同形（无 href）")
-    void legacyStatePathUnchanged() throws Exception {
+    @DisplayName("旧 state 路已撤（无映射即 404），通用路仍 200")
+    void legacyStatePathGone() throws Exception {
         NapCatCredentialService credentials = mock(NapCatCredentialService.class);
         when(credentials.isConfigured()).thenReturn(true);
-        JSONObject body = new NapCatBootstrapController(credentials).state();
+        JSONObject body = new NapCatBootstrapController(credentials).console();
 
         assertEquals(Boolean.TRUE, body.getBoolean("success"));
         assertEquals(Boolean.TRUE, body.getBoolean("configured"));
-        assertFalse(body.containsKey("href"));
+        assertEquals(NapCatBootstrapController.PAGE_PATH, body.getString("href"));
 
-        GetMapping mapping = NapCatBootstrapController.class.getMethod("state").getAnnotation(GetMapping.class);
-        assertTrue(List.of(mapping.value()).contains(NapCatBootstrapController.LEGACY_STATE_PATH));
+        GetMapping mapping = NapCatBootstrapController.class.getMethod("console").getAnnotation(GetMapping.class);
+        assertEquals(List.of(NapCatBootstrapController.CONSOLE_PATH), List.of(mapping.value()),
+                "console 只挂通用路");
+
+        for (var method : NapCatBootstrapController.class.getDeclaredMethods()) {
+            GetMapping gm = method.getAnnotation(GetMapping.class);
+            if (gm == null) {
+                continue;
+            }
+            for (String v : gm.value()) {
+                assertFalse(v.endsWith("/napcat/state"),
+                        method.getName() + " 仍挂旧 state 路: " + v);
+            }
+        }
     }
 
     private static Path repositoryRoot() {

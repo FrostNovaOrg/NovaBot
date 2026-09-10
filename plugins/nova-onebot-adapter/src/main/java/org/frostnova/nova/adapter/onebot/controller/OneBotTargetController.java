@@ -41,11 +41,7 @@ import java.util.Set;
 public class OneBotTargetController {
     static final String TARGETS_PATH = ConfigUiController.BASE_PATH + "/api/bot/targets";
 
-    static final String LEGACY_TARGETS_PATH = ConfigUiController.BASE_PATH + "/api/onebot/targets";
-
     static final String REFRESH_PATH = TARGETS_PATH + "/refresh";
-
-    static final String LEGACY_REFRESH_PATH = LEGACY_TARGETS_PATH + "/refresh";
 
     private static final String TYPE_GROUP = "group";
 
@@ -71,7 +67,7 @@ public class OneBotTargetController {
      * @param q 按名与号筛选的关键字，留空表示不筛
      * @return 名单
      */
-    @GetMapping(value = {TARGETS_PATH, LEGACY_TARGETS_PATH}, produces = MediaType.APPLICATION_JSON_VALUE)
+    @GetMapping(value = TARGETS_PATH, produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<JSONObject> targets(@RequestParam(required = false) String type,
                                               @RequestParam(required = false) String q) {
         boolean group = TYPE_GROUP.equals(type);
@@ -134,7 +130,7 @@ public class OneBotTargetController {
      * 而 GET 会被浏览器、缓存与预取随手重放。
      * @return 各推送平台的取回情况
      */
-    @PostMapping(value = {REFRESH_PATH, LEGACY_REFRESH_PATH}, produces = MediaType.APPLICATION_JSON_VALUE)
+    @PostMapping(value = REFRESH_PATH, produces = MediaType.APPLICATION_JSON_VALUE)
     public JSONObject refresh() {
         JSONObject result = summary(directory.snapshots(true));
         result.put("success", true);
