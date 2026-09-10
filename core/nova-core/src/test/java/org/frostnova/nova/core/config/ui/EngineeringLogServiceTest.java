@@ -145,12 +145,12 @@ class EngineeringLogServiceTest {
     @Test
     @DisplayName("按模板算得出某一天那份文件")
     void resolvesTheFileForAGivenDay() {
-        String pattern = "/tmp/nova/logs/%d{yyyy-MM,aux}/starbot-%d{yyyy-MM-dd}.log";
+        String pattern = "/tmp/nova/logs/%d{yyyy-MM,aux}/novabot-%d{yyyy-MM-dd}.log";
 
-        assertEquals(Path.of("/tmp/nova/logs/2026-09/starbot-2026-09-01.log"),
+        assertEquals(Path.of("/tmp/nova/logs/2026-09/novabot-2026-09-01.log"),
                 EngineeringLogService.fileOn(pattern, LocalDate.of(2026, 9, 1)).orElse(null),
                 "月份那一段与日期那一段都得跟着换：只换文件名的话，跨月那几天读到的是不存在的路径");
-        assertEquals(Path.of("/tmp/nova/logs/2026-08/starbot-2026-08-31.log"),
+        assertEquals(Path.of("/tmp/nova/logs/2026-08/novabot-2026-08-31.log"),
                 EngineeringLogService.fileOn(pattern, LocalDate.of(2026, 8, 31)).orElse(null));
 
         // 模板里没有日期占位符时算出来的是个常量。这一路在现行 logback.xml 下走不到
@@ -260,14 +260,14 @@ class EngineeringLogServiceTest {
      * @return 中间那一天的文件
      */
     private Path threeDays() throws IOException {
-        Files.writeString(dir.resolve("starbot-2026-09-01.log"),
+        Files.writeString(dir.resolve("novabot-2026-09-01.log"),
                 "2026-09-01 20:07:01.100  INFO 1 --- [main] x : 前一天也有 20:07"
                         + System.lineSeparator(), StandardCharsets.UTF_8);
-        Files.writeString(dir.resolve("starbot-2026-09-03.log"),
+        Files.writeString(dir.resolve("novabot-2026-09-03.log"),
                 "2026-09-03 20:07:01.100  INFO 1 --- [main] x : 后一天也有 20:07"
                         + System.lineSeparator(), StandardCharsets.UTF_8);
 
-        Path second = dir.resolve("starbot-2026-09-02.log");
+        Path second = dir.resolve("novabot-2026-09-02.log");
         Files.writeString(second, String.join(System.lineSeparator(),
                 "2026-09-02 20:05:01.100  INFO 1 --- [main] x : 第 1 行",
                 "2026-09-02 20:06:01.100  INFO 1 --- [main] x : 第 2 行",

@@ -315,24 +315,23 @@ $SUDO chmod 600 "$INSTALL_DIR"/cookies.* 2>/dev/null || true
 
 # ---------------------------------------------------------------- 服务
 
-# 既有机器上的 starbot.service 沿用；新装用 novabot
+# 恒装 novabot；检测到旧服务则停用并删除其 unit 文件
 SERVICE_UNIT="novabot"
-if [ -f /etc/systemd/system/starbot.service ]; then
-    SERVICE_UNIT="starbot"
-fi
+OLD_SERVICE_UNIT_FILE="/etc/systemd/system/starbot"
 
 if [ "$CREATE_SERVICE" = "yes" ] && command -v systemctl > /dev/null 2>&1; then
-    if [ "$SERVICE_UNIT" = "starbot" ]; then
-        info "沿用 starbot 服务名"
-    else
-        info "创建 systemd 服务"
-        [ -f "$INSTALL_DIR/novabot.service" ] || die "缺少 $INSTALL_DIR/novabot.service"
-        $SUDO sed -e "s#/opt/starbot#$INSTALL_DIR#g" -e "s/^User=.*/User=$SERVICE_USER/" -e "s/^Group=.*/Group=$SERVICE_USER/" \
-            "$INSTALL_DIR/novabot.service" | $SUDO tee /etc/systemd/system/novabot.service > /dev/null
-        $SUDO systemctl daemon-reload
-        $SUDO systemctl enable novabot > /dev/null 2>&1
-        info "服务已创建并设为开机自启"
+    if [ -f "$OLD_SERVICE_UNIT_FILE.service" ]; then
+        info "检测到旧服务 starbot，停用并删除其 unit 文件"
+        $SUDO systemctl disable --now starbot
+        $SUDO rm -f "$OLD_SERVICE_UNIT_FILE.service"
     fi
+    info "创建 systemd 服务"
+    [ -f "$INSTALL_DIR/novabot.service" ] || die "缺少 $INSTALL_DIR/novabot.service"
+    $SUDO sed -e "s#/opt/starbot#$INSTALL_DIR#g" -e "s/^User=.*/User=$SERVICE_USER/" -e "s/^Group=.*/Group=$SERVICE_USER/" \
+        "$INSTALL_DIR/novabot.service" | $SUDO tee /etc/systemd/system/novabot.service > /dev/null
+    $SUDO systemctl daemon-reload
+    $SUDO systemctl enable novabot > /dev/null 2>&1
+    info "服务已创建并设为开机自启"
 fi
 
 # ---------------------------------------------------------------- 完成
