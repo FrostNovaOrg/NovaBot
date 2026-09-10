@@ -11,6 +11,8 @@
 ### 变更
 
 - 控制台旧接口路径 `/config/api/onebot/targets`、`/config/api/onebot/targets/refresh`、`/config/api/napcat/state` 移除，请改用 `/config/api/bot/targets`、`/config/api/bot/console`。
+- 配置文件保存时不再自动折叠旧根 `starbot.*`，安全模式也不再回读旧根；请把配置迁到 `novabot.*`。
+- 许可证移除附加条款，仅保留 AGPL-3.0 原文。
 
 ### 修复
 

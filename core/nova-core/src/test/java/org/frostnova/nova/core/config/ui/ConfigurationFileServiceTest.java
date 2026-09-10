@@ -3,7 +3,6 @@ package org.frostnova.nova.core.config.ui;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import org.frostnova.nova.core.config.NovaBotPrefixAlias;
 import org.frostnova.nova.core.service.TotalDataStorage;
 import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.core.timeline.TimelineEventType;
@@ -13,10 +12,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.env.YamlPropertySourceLoader;
-import org.springframework.boot.logging.DeferredLogFactory;
 import org.springframework.core.env.PropertySource;
 import org.springframework.core.io.FileSystemResource;
-import org.springframework.mock.env.MockEnvironment;
 import org.yaml.snakeyaml.Yaml;
 
 import java.io.IOException;
@@ -708,302 +705,68 @@ class ConfigurationFileServiceTest {
         assertTrue(quoted.contains("a # b"), "引号内的 # 不是注释起点: " + quoted);
     }
 
-    // ============ 上一档产品前缀树：保存时整树迁完才删 ============
-
-    /**
-     * japan 形既有文件：新旧两棵树并列，叶键一一对应。
-     * 值故意写成新树与旧树不同，用来钉「留下的是新树那份」。
-     */
-    private static final String JAPAN_BOTH_TREES_MIRRORED = """
-            server:
-              port: 7827
-
-            starbot:
-              core:
-                log:
-                  event-log: true
-                event-stream:
-                  enabled: true
-              bilibili:
-                account:
-                  anonymous: true
-              adapter:
-                onebot:
-                  security:
-                    enabled: false
-
-            novabot:
-              core:
-                log:
-                  event-log: false
-                event-stream:
-                  enabled: false
-              bilibili:
-                account:
-                  anonymous: false
-              adapter:
-                onebot:
-                  security:
-                    enabled: true
-            """;
+    // ============ 旧根不再折叠 ============
 
     @Test
-    @DisplayName("旧树叶键在新树全有对应：保存后去掉 starbot 根，再绑不再提示读到旧键")
-    void saveDropsLegacyRootWhenEveryLeafHasACurrentCounterpart() throws Exception {
-        Files.writeString(config, JAPAN_BOTH_TREES_MIRRORED, StandardCharsets.UTF_8);
-        List<String> unresolved = new ArrayList<>();
-
-        try {
-            service.write(Map.of("novabot.core.log.event-log", "false"));
-            String text = content();
-            assertTrue(text.lines().noneMatch(line -> line.startsWith("starbot:")),
-                    "旧树每个叶键都有新树对应时，保存后不应再留 starbot 根:\n" + text);
-            assertTrue(text.contains("novabot:"), "新树应仍在:\n" + text);
-        } catch (AssertionError | IOException e) {
-            unresolved.add("① 保存后无 starbot 根: " + e.getMessage());
-        }
-
-        try {
-            Map<String, String> values = service.read();
-            assertEquals("false", values.get("novabot.core.log.event-log"), "值以新树为准");
-            assertEquals("false", values.get("novabot.core.event-stream.enabled"));
-            assertEquals("false", values.get("novabot.bilibili.account.anonymous"));
-            assertFalse(values.containsKey("starbot.core.log.event-log"),
-                    "旧树删掉后读口不应再看到旧键: " + values.keySet());
-        } catch (AssertionError | IOException e) {
-            unresolved.add("② 新树取值: " + e.getMessage());
-        }
-
-        try {
-            List<String> logs = new ArrayList<>();
-            MockEnvironment environment = environmentFromSavedFile();
-            alias(logs).postProcessEnvironment(environment, null);
-            List<String> rename = logs.stream().filter(line -> line.contains("读到旧键")).toList();
-            assertEquals(List.of(), rename, "迁完再起不应再提示读到旧键, 实有: " + rename);
-        } catch (AssertionError | IOException e) {
-            unresolved.add("③ 再绑零条读到旧键: " + e.getMessage());
-        }
-
-        assertTrue(unresolved.isEmpty(),
-                () -> "旧树全对应三问中 " + unresolved.size() + " 问未销: " + String.join("; ", unresolved));
-    }
-
-    @Test
-    @DisplayName("旧树有一叶键无对应：保存后旧树仍在，日志列出缺的键")
-    void saveKeepsLegacyRootWhenOneLeafHasNoCurrentCounterpart() throws Exception {
+    @DisplayName("新旧根全镜像保存后旧根仍在，日志无折叠字样")
+    void saveKeepsLegacyRootEvenWhenFullyMirrored() throws Exception {
         Files.writeString(config, """
+                server:
+                  port: 7827
+
                 starbot:
                   core:
                     log:
-                      console: INFO
                       event-log: true
+                    event-stream:
+                      enabled: true
+
                 novabot:
                   core:
                     log:
-                      console: DEBUG
+                      event-log: false
+                    event-stream:
+                      enabled: false
                 """, StandardCharsets.UTF_8);
 
         Logger logger = (Logger) LoggerFactory.getLogger(ConfigurationFileService.class);
         ListAppender<ILoggingEvent> appender = new ListAppender<>();
         appender.start();
         logger.addAppender(appender);
+        List<String> unresolved = new ArrayList<>();
         try {
-            service.write(Map.of("novabot.core.log.console", "WARN"));
+            service.write(Map.of("novabot.core.log.event-log", "true"));
             String text = content();
-            List<String> unresolved = new ArrayList<>();
 
             try {
                 assertTrue(text.lines().anyMatch(line -> line.startsWith("starbot:")),
-                        "缺对应时旧树应仍在:\n" + text);
-                assertTrue(text.contains("event-log: true"), "缺对应的叶键应原样留着:\n" + text);
-                assertTrue(text.contains("console: WARN"), "本次保存的新树键应已写下:\n" + text);
+                        "保存后 starbot 根应原样在:\n" + text);
+                assertTrue(text.contains("novabot:"), "新树应仍在:\n" + text);
             } catch (AssertionError e) {
-                unresolved.add("① 旧树仍在: " + e.getMessage());
+                unresolved.add("① 旧根仍在: " + e.getMessage());
             }
 
             try {
                 List<String> messages = appender.list.stream()
                         .map(ILoggingEvent::getFormattedMessage)
                         .toList();
-                assertTrue(messages.stream().anyMatch(line ->
-                                line.contains("starbot.core.log.event-log")),
-                        "日志应列出缺对应的键, 实有: " + messages);
-                assertFalse(messages.stream().anyMatch(line -> line.startsWith("已迁移旧键")),
-                        "不该在缺对应时写已迁移: " + messages);
+                assertTrue(messages.stream().noneMatch(line -> line.contains("已迁移旧键")),
+                        "日志不应有折叠字样, 实有: " + messages);
             } catch (AssertionError e) {
-                unresolved.add("② 日志列缺的键: " + e.getMessage());
+                unresolved.add("② 日志无折叠: " + e.getMessage());
             }
 
-            assertTrue(unresolved.isEmpty(),
-                    () -> "缺对应两问中 " + unresolved.size() + " 问未销: " + String.join("; ", unresolved));
+            try {
+                assertEquals("true", service.read().get("novabot.core.log.event-log"),
+                        "本次写入的新树键应已落下");
+            } catch (AssertionError | IOException e) {
+                unresolved.add("③ 新树取值: " + e.getMessage());
+            }
         } finally {
             logger.detachAppender(appender);
         }
-    }
-
-    /**
-     * 更早一档告警三项在 core.alert.qq-*，现行在 adapter.onebot.alert。
-     * 值故意写成新树与旧树不同，用来钉「留下的是新树那份」。
-     */
-    private static final String ALERT_QQ_KEYS_MIRRORED = """
-            starbot:
-              core:
-                alert:
-                  qq-platform: qq-onebot
-                  qq-type: 1
-                  qq-num: 12345
-            novabot:
-              adapter:
-                onebot:
-                  alert:
-                    platform: other
-                    type: 0
-                    num: 99999
-            """;
-
-    @Test
-    @DisplayName("旧树只含告警 qq 三键且新树有对应：保存后去掉 starbot 根")
-    void saveDropsLegacyRootWhenOnlyAlertQqKeysAreMirrored() throws Exception {
-        Files.writeString(config, ALERT_QQ_KEYS_MIRRORED, StandardCharsets.UTF_8);
-        List<String> unresolved = new ArrayList<>();
-
-        try {
-            service.write(Map.of("novabot.adapter.onebot.alert.num", "88888"));
-            String text = content();
-            assertTrue(text.lines().noneMatch(line -> line.startsWith("starbot:")),
-                    "告警三键在新树有对应时，保存后不应再留 starbot 根:\n" + text);
-            assertTrue(text.contains("novabot:"), "新树应仍在:\n" + text);
-        } catch (AssertionError | IOException e) {
-            unresolved.add("① 保存后无 starbot 根: " + e.getMessage());
-        }
-
-        try {
-            Map<String, String> values = service.read();
-            assertEquals("88888", values.get("novabot.adapter.onebot.alert.num"), "值以新树为准");
-            assertEquals("other", values.get("novabot.adapter.onebot.alert.platform"));
-            assertEquals("0", values.get("novabot.adapter.onebot.alert.type"));
-            assertFalse(values.containsKey("starbot.core.alert.qq-num"),
-                    "旧树删掉后读口不应再看到旧键: " + values.keySet());
-            assertFalse(values.containsKey("starbot.core.alert.qq-platform"),
-                    "旧树删掉后读口不应再看到旧键: " + values.keySet());
-        } catch (AssertionError | IOException e) {
-            unresolved.add("② 新树取值: " + e.getMessage());
-        }
-
-        try {
-            List<String> logs = new ArrayList<>();
-            MockEnvironment environment = environmentFromSavedFile();
-            alias(logs).postProcessEnvironment(environment, null);
-            List<String> rename = logs.stream().filter(line -> line.contains("读到旧键")).toList();
-            assertEquals(List.of(), rename, "迁完再起不应再提示读到旧键, 实有: " + rename);
-        } catch (AssertionError | IOException e) {
-            unresolved.add("③ 再绑零条读到旧键: " + e.getMessage());
-        }
 
         assertTrue(unresolved.isEmpty(),
-                () -> "告警三键全对应三问中 " + unresolved.size() + " 问未销: " + String.join("; ", unresolved));
-    }
-
-    /**
-     * 更早一档代登录四项在 core.config-ui.napcat.*，现行在 adapter.onebot.napcat。
-     * 值故意写成新树与旧树不同，用来钉「留下的是新树那份」。
-     */
-    private static final String NAPCAT_KEYS_MIRRORED = """
-            starbot:
-              core:
-                config-ui:
-                  napcat:
-                    token: old-token
-                    token-hash: old-hash
-                    totp-secret: old-secret
-                    address: http://127.0.0.1:6099
-            novabot:
-              adapter:
-                onebot:
-                  napcat:
-                    token: ""
-                    token-hash: new-hash
-                    totp-secret: new-secret
-                    address: http://127.0.0.1:1
-            """;
-
-    @Test
-    @DisplayName("旧树只含 napcat 四键且新树有对应：保存后去掉 starbot 根")
-    void saveDropsLegacyRootWhenOnlyNapCatKeysAreMirrored() throws Exception {
-        Files.writeString(config, NAPCAT_KEYS_MIRRORED, StandardCharsets.UTF_8);
-        List<String> unresolved = new ArrayList<>();
-
-        try {
-            service.write(Map.of("novabot.adapter.onebot.napcat.address", "http://127.0.0.1:2"));
-            String text = content();
-            assertTrue(text.lines().noneMatch(line -> line.startsWith("starbot:")),
-                    "代登录四键在新树有对应时，保存后不应再留 starbot 根:\n" + text);
-            assertTrue(text.contains("novabot:"), "新树应仍在:\n" + text);
-        } catch (AssertionError | IOException e) {
-            unresolved.add("① 保存后无 starbot 根: " + e.getMessage());
-        }
-
-        try {
-            Map<String, String> values = service.read();
-            assertEquals("http://127.0.0.1:2", values.get("novabot.adapter.onebot.napcat.address"),
-                    "值以新树为准");
-            assertEquals("new-hash", values.get("novabot.adapter.onebot.napcat.token-hash"));
-            assertEquals("new-secret", values.get("novabot.adapter.onebot.napcat.totp-secret"));
-            assertFalse(values.containsKey("starbot.core.config-ui.napcat.token"),
-                    "旧树删掉后读口不应再看到旧键: " + values.keySet());
-            assertFalse(values.containsKey("starbot.core.config-ui.napcat.address"),
-                    "旧树删掉后读口不应再看到旧键: " + values.keySet());
-        } catch (AssertionError | IOException e) {
-            unresolved.add("② 新树取值: " + e.getMessage());
-        }
-
-        try {
-            List<String> logs = new ArrayList<>();
-            MockEnvironment environment = environmentFromSavedFile();
-            alias(logs).postProcessEnvironment(environment, null);
-            List<String> rename = logs.stream().filter(line -> line.contains("读到旧键")).toList();
-            assertEquals(List.of(), rename, "迁完再起不应再提示读到旧键, 实有: " + rename);
-        } catch (AssertionError | IOException e) {
-            unresolved.add("③ 再绑零条读到旧键: " + e.getMessage());
-        }
-
-        assertTrue(unresolved.isEmpty(),
-                () -> "代登录四键全对应三问中 " + unresolved.size() + " 问未销: " + String.join("; ", unresolved));
-    }
-
-    private MockEnvironment environmentFromSavedFile() throws IOException {
-        MockEnvironment environment = new MockEnvironment();
-        List<PropertySource<?>> sources =
-                new YamlPropertySourceLoader().load("saved", new FileSystemResource(config));
-        for (int i = sources.size() - 1; i >= 0; i--) {
-            environment.getPropertySources().addFirst(sources.get(i));
-        }
-        return environment;
-    }
-
-    private static NovaBotPrefixAlias alias(List<String> logs) {
-        DeferredLogFactory factory = type -> new PrefixAliasLog(logs);
-        return new NovaBotPrefixAlias(factory);
-    }
-
-    private record PrefixAliasLog(List<String> sink) implements org.apache.commons.logging.Log {
-        @Override public boolean isFatalEnabled() { return true; }
-        @Override public boolean isErrorEnabled() { return true; }
-        @Override public boolean isWarnEnabled() { return true; }
-        @Override public boolean isInfoEnabled() { return true; }
-        @Override public boolean isDebugEnabled() { return true; }
-        @Override public boolean isTraceEnabled() { return true; }
-        @Override public void fatal(Object message) { sink.add(String.valueOf(message)); }
-        @Override public void fatal(Object message, Throwable t) { sink.add(String.valueOf(message)); }
-        @Override public void error(Object message) { sink.add(String.valueOf(message)); }
-        @Override public void error(Object message, Throwable t) { sink.add(String.valueOf(message)); }
-        @Override public void warn(Object message) { sink.add(String.valueOf(message)); }
-        @Override public void warn(Object message, Throwable t) { sink.add(String.valueOf(message)); }
-        @Override public void info(Object message) { sink.add(String.valueOf(message)); }
-        @Override public void info(Object message, Throwable t) { sink.add(String.valueOf(message)); }
-        @Override public void debug(Object message) { sink.add(String.valueOf(message)); }
-        @Override public void debug(Object message, Throwable t) { sink.add(String.valueOf(message)); }
-        @Override public void trace(Object message) { sink.add(String.valueOf(message)); }
-        @Override public void trace(Object message, Throwable t) { sink.add(String.valueOf(message)); }
+                () -> "旧根不折叠三问中 " + unresolved.size() + " 问未销: " + String.join("; ", unresolved));
     }
 }

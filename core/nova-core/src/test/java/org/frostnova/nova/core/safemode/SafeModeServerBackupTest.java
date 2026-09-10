@@ -186,6 +186,21 @@ class SafeModeServerBackupTest {
                 () -> "读法五问中 " + unresolved.size() + " 问未销: " + String.join("; ", unresolved));
     }
 
+    @Test
+    @DisplayName("只有 starbot 根时 backup-keep 视为空，回默认份数")
+    void onlyLegacyRootIsTreatedAsEmptyForBackupKeep() throws IOException {
+        List<String> unresolved = new ArrayList<>();
+        askKeep(unresolved, """
+                starbot:
+                  core:
+                    config-ui:
+                      backup-keep: 3
+                """, TimestampedFileBackup.DEFAULT_KEEP,
+                "只有 starbot 根应视为空、回默认份数");
+        assertTrue(unresolved.isEmpty(),
+                () -> "只有旧根视为空未过: " + String.join("; ", unresolved));
+    }
+
     /**
      * 写一份配置、问一次 {@code resolveBackupKeep()} 的返回值；逐问各自捕获、末尾汇总，一问红不许短路其余问
      */

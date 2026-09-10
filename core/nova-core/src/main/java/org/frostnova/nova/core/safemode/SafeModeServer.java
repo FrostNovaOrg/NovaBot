@@ -321,9 +321,6 @@ public class SafeModeServer {
         try {
             if (new Yaml().load(Files.readString(configPath, StandardCharsets.UTF_8)) instanceof Map<?, ?> root) {
                 Object product = root.get("novabot");
-                if (!(product instanceof Map<?, ?>)) {
-                    product = root.get("starbot");
-                }
                 if (product instanceof Map<?, ?> tree && tree.get("core") instanceof Map<?, ?> core) {
                     // 主应用的 Spring 宽松绑定认驼峰（configUi 下的 backupKeep），安全模式读的是同一份文件，键的读法须与之一致
                     Integer keep = readBackupKeep(core.get("config-ui"));
