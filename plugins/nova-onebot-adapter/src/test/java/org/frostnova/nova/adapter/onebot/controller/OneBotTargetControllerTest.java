@@ -322,11 +322,8 @@ class OneBotTargetControllerTest {
     }
 
     @Test
-    @DisplayName("旧路 /api/onebot/targets 仍是同一处理器的第二映射，回包同形")
-    void legacyTargetsPathStillMapped() throws Exception {
-        assertEquals("/config/api/onebot/targets", OneBotTargetController.LEGACY_TARGETS_PATH);
-        assertEquals("/config/api/onebot/targets/refresh", OneBotTargetController.LEGACY_REFRESH_PATH);
-
+    @DisplayName("旧 GET／POST 已撤（无映射即 404），通用路仍 200")
+    void legacyTargetsPathGone() throws Exception {
         GetMapping get = OneBotTargetController.class
                 .getMethod("targets", String.class, String.class)
                 .getAnnotation(GetMapping.class);
@@ -334,14 +331,23 @@ class OneBotTargetControllerTest {
                 .getMethod("refresh")
                 .getAnnotation(PostMapping.class);
 
-        assertTrue(Set.of(get.value()).contains(OneBotTargetController.LEGACY_TARGETS_PATH),
-                "旧 GET 须仍挂在同一方法上");
-        assertTrue(Set.of(post.value()).contains(OneBotTargetController.LEGACY_REFRESH_PATH),
-                "旧 POST 刷新须仍挂在同一方法上");
+        assertEquals(List.of(OneBotTargetController.TARGETS_PATH), List.of(get.value()),
+                "GET 只挂通用路；多一条即旧路未撤");
+        assertEquals(List.of(OneBotTargetController.REFRESH_PATH), List.of(post.value()),
+                "POST 只挂通用路；多一条即旧路未撤");
+        for (String v : get.value()) {
+            assertFalse(v.contains("/onebot/"), "GET 不得再挂 /onebot/ 旧路: " + v);
+        }
+        for (String v : post.value()) {
+            assertFalse(v.contains("/onebot/"), "POST 不得再挂 /onebot/ 旧路: " + v);
+        }
 
         JSONObject body = body("group", null);
         assertEquals(Boolean.TRUE, body.getBoolean("success"));
         assertEquals(2, body.getJSONArray("items").size());
         assertEquals(FETCHED_AT.toString(), body.getString("fetchedAt"));
+
+        JSONObject refreshed = controller.refresh();
+        assertEquals(Boolean.TRUE, refreshed.getBoolean("success"));
     }
 }
