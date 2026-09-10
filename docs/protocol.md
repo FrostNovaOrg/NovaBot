@@ -38,8 +38,7 @@ WebSocket，UTF-8 JSON，一帧一条消息。
 | 回补缓冲条数 | `novabot.core.event-stream.buffer-size`，默认 `2000` |
 | 是否要求口令 | `novabot.core.event-stream.require-token`，默认 `false` |
 
-旧配置键前缀 `starbot.bilibili.event-stream` 仍然认得，**逐项**被新键压过：
-新键没写到的项才取旧键的值，两处都没写的取默认值。
+现行配置键为 `novabot.core.event-stream.*`；5.4 起旧前缀 `starbot.bilibili.event-stream` 不再识别。
 
 端点与配置界面共用 `server.port`，不另占端口。
 
@@ -676,7 +675,7 @@ v1 那个折叠有两处静默的错：给出的对象里**没有占位符**，�
 | 握手拒收凭据 | `Authorization` 头与 `nova.token.` 子协议一律回 HTTP 400 |
 | 只接受回环连接 | 与 `server.address` 无关；不通过时回一个空的 200 |
 | 服务端侧存活判据 45 秒 | v1 只写了客户端侧的 40 秒 |
-| 端点与配置键 | `/nova/events`；`novabot.core.event-stream.*`，旧键 `starbot.bilibili.event-stream.*` 仍认 |
+| 端点与配置键 | `/nova/events`；`novabot.core.event-stream.*` |
 | 关闭码取值 | `1000` / `1001` / `1008` / `1011` / `1013`，见 §8.2 |
 | 回补的「越界」情形 | `fromSeq > lastSeq` 同样拒绝并重发 `hello` |
 | 待发队列与断开判据 | 容量为缓冲条数 + 256，满即以 `1013` 断开 |

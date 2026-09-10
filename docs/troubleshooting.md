@@ -306,7 +306,7 @@ systemd 部署：`sudo journalctl -u novabot -f`（旧安装的机器服务名�
 **出了问题能主动通知我吗？**
 
 能，配置 `novabot.adapter.onebot.alert` 把告警发到机器人。
-注意 `type` 是 **1 群聊 / 0 私聊**。旧键 `starbot.core.alert.qq-*` 仍然认得。
+注意 `type` 是 **1 群聊 / 0 私聊**。5.4 起旧键 `starbot.*` 不再识别。
 
 **半夜收到「Websocket 未收到任何消息」的告警，可连接明明是好的？**
 
