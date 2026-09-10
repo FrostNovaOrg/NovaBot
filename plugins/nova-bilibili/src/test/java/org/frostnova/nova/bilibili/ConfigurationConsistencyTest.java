@@ -400,7 +400,7 @@ class ConfigurationConsistencyTest {
     /**
      * 设置页上摆着的全部配置项名
      * <p>
-     * 分母是两批之和：{@code starbot} 命名空间下未废弃的那些，加上界面额外展示的框架配置项。
+     * 分母是两批之和：{@code novabot} 命名空间下未废弃的那些，加上界面额外展示的框架配置项。
      * 只数前一批的话，后一批（累计存储、发件服务、服务端口与监听地址）就自动免检——
      * 而那几项恰恰是没有配置类可反射、最容易被漏掉的。
      * @return 配置项名
@@ -619,7 +619,7 @@ class ConfigurationConsistencyTest {
             known.add(property.getString("name"));
         }
 
-        // 逐行解析模板中的键路径，仅检查 starbot 前缀下的叶子节点
+        // 逐行解析模板中的键路径，仅检查 novabot 前缀下的叶子节点
         List<String> unknown = new ArrayList<>();
         List<String> stack = new ArrayList<>();
 
