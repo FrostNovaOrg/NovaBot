@@ -16,10 +16,8 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Collection;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Supplier;
@@ -171,19 +169,9 @@ public class NapCatCredentialService {
     NapCatCredentialService(OneBotAdapterPluginProperties.NapCat properties,
                             ConfigurationFileService fileService, RestTemplate restTemplate,
                             Supplier<Instant> clock, NapCatRouteWitness witness) {
-        this(properties, fileService, restTemplate, clock, witness, List.of());
-    }
-
-    /**
-     * @param extraKeysToClear 写回哈希时一并清空的键，通常是旧位置的 token 明文
-     */
-    NapCatCredentialService(OneBotAdapterPluginProperties.NapCat properties,
-                            ConfigurationFileService fileService, RestTemplate restTemplate,
-                            Supplier<Instant> clock, NapCatRouteWitness witness,
-                            Collection<String> extraKeysToClear) {
         this.restTemplate = restTemplate;
         this.baseUrl = trimTrailingSlash(properties.getAddress());
-        this.tokenHash = resolveHash(properties, fileService, extraKeysToClear);
+        this.tokenHash = resolveHash(properties, fileService);
         this.totpSecret = blankToNull(properties.getTotpSecret());
         this.clock = clock;
         this.routeWitness = witness != null ? witness : new NapCatRouteWitness(this.baseUrl, restTemplate);
@@ -398,8 +386,7 @@ public class NapCatCredentialService {
      * 拿到登录哈希：配置里填了明文 token 就当场换算并写回，明文不留在盘上
      */
     private static String resolveHash(OneBotAdapterPluginProperties.NapCat properties,
-                                      ConfigurationFileService fileService,
-                                      Collection<String> extraKeysToClear) {
+                                      ConfigurationFileService fileService) {
         String plain = blankToNull(properties.getToken());
         String existing = blankToNull(properties.getTokenHash());
 
@@ -418,16 +405,7 @@ public class NapCatCredentialService {
             Map<String, String> changes = new LinkedHashMap<>();
             changes.put(TOKEN_HASH_PROPERTY, hashed);
             changes.put(TOKEN_PROPERTY, "");
-            Collection<String> extra = extraKeysToClear == null ? List.of() : extraKeysToClear;
-            for (String key : extra) {
-                if (key != null && !key.isBlank()) {
-                    changes.put(key, "");
-                }
-            }
             fileService.write(changes);
-            if (!extra.isEmpty()) {
-                log.warn("旧位置明文已清、请把 napcat 段迁到 novabot.adapter.onebot");
-            }
             log.info("NapCat 的 token 已换算为登录哈希保存, 配置文件中不再有明文");
         } catch (Exception e) {
             log.warn("NapCat 的 token 未能换算保存, 文件中仍是明文: {}", e.getMessage());
