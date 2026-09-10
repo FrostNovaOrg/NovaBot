@@ -265,11 +265,6 @@ if [ -f "$INSTALL_DIR/NovaBot.jar" ] || [ -f "$INSTALL_DIR/StarBotCore.jar" ]; t
         esac
         $SUDO find "$INSTALL_DIR/plugins" -maxdepth 1 -type f -name "$artifact-[0-9]*.jar" -delete
     done
-    # 下一发行版删此表。构件改名后，按新包 artifact 名清旧版不会命中上一版内置插件 jar，
-    # 会与新 jar 一并被加载。第三方插件不在表内不碰。
-    for old in bilibili onebot-adapter onebot-adapter-napcat-extension report novabot-console; do
-        $SUDO find "$INSTALL_DIR/plugins" -maxdepth 1 -type f -name "starbot-$old-[0-9]*.jar" -delete
-    done
 elif [ -e "$INSTALL_DIR/lib" ] || [ -e "$INSTALL_DIR/plugins" ]; then
     die "$INSTALL_DIR 下已有 lib/ 或 plugins/，但没有 NovaBot.jar（亦无 StarBotCore.jar），不像 NovaBot 的安装目录。
      为免误删，请换一个目录，或先自行确认该目录内容"

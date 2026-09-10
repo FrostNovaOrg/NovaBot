@@ -11,6 +11,7 @@
 ### 变更
 
 - 控制台旧接口路径 `/config/api/onebot/targets`、`/config/api/onebot/targets/refresh`、`/config/api/napcat/state` 移除，请改用 `/config/api/bot/targets`、`/config/api/bot/console`。
+- 安装脚本与容器入口不再清理 5.2 及更早版本的旧名内置插件 jar；从 5.2 或更早直接升级到本版，请先手动删除 `plugins/` 下的 `starbot-*.jar`。
 
 ### 修复
 
