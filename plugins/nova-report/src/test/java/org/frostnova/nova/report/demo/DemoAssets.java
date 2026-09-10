@@ -68,7 +68,11 @@ public final class DemoAssets {
 
     static final int REPORT_WIDTH = 1200;
 
+    static final int REPORT_TOP_HEIGHT = 1340;
+
     static final long REPORT_MAX_BYTES = 600 * 1024L;
+
+    static final long REPORT_TOP_MAX_BYTES = 200 * 1024L;
 
     static final long STREAMER_UID = 100_000_001L;
 
@@ -142,6 +146,8 @@ public final class DemoAssets {
             System.out.println("rendered-by " + rendered.via());
             System.out.println("png " + rendered.width() + "x" + rendered.height()
                     + " bytes=" + rendered.bytes() + " " + rendered.path());
+            System.out.println("top " + rendered.topWidth() + "x" + rendered.topHeight()
+                    + " bytes=" + rendered.topBytes() + " " + rendered.topPath());
         }
     }
 
@@ -215,8 +221,19 @@ public final class DemoAssets {
         if (bytes > REPORT_MAX_BYTES) {
             throw new IOException("report PNG " + bytes + " bytes exceeds " + REPORT_MAX_BYTES);
         }
+        if (compact.getWidth() != REPORT_WIDTH || compact.getHeight() < REPORT_TOP_HEIGHT) {
+            throw new IOException("cannot crop top from " + compact.getWidth() + "x" + compact.getHeight());
+        }
+        BufferedImage topSlice = compact.getSubimage(0, 0, compact.getWidth(), REPORT_TOP_HEIGHT);
+        Path topPng = reportPng.resolveSibling("report-demo-top.png");
+        writePng(topSlice, topPng);
+        long topBytes = Files.size(topPng);
+        if (topBytes > REPORT_TOP_MAX_BYTES) {
+            throw new IOException("report top PNG " + topBytes + " bytes exceeds " + REPORT_TOP_MAX_BYTES);
+        }
         System.out.println("rendered-by " + RENDER_VIA);
-        return new Rendered(reportPng, compact.getWidth(), compact.getHeight(), bytes, RENDER_VIA);
+        return new Rendered(reportPng, topPng, compact.getWidth(), compact.getHeight(), bytes, RENDER_VIA,
+                painter, topSlice.getWidth(), topSlice.getHeight(), topBytes);
     }
 
     static String rosterText() {
@@ -470,7 +487,8 @@ public final class DemoAssets {
         return data;
     }
 
-    record Rendered(Path path, int width, int height, long bytes, String via) {
+    record Rendered(Path path, Path topPath, int width, int height, long bytes, String via,
+                    BilibiliLiveReportPainter painter, int topWidth, int topHeight, long topBytes) {
     }
 
     /**

@@ -1,5 +1,8 @@
 package org.frostnova.nova.report.demo;
 
+import org.frostnova.nova.bilibili.model.BilibiliLiveReportOptions;
+import org.frostnova.nova.core.model.LiveStreamerInfo;
+import org.frostnova.nova.report.painter.BilibiliLiveReportPainter;
 import org.frostnova.nova.report.util.FontUtil;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -8,6 +11,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -74,7 +78,9 @@ class DemoAssetsTest {
         DemoAssets.Rendered second = DemoAssets.render(demo, secondPng, fonts);
         List<String> red = new ArrayList<>();
         try {
-            assertEquals(DemoAssets.RENDER_VIA, first.via());
+            assertTrue(first.painter() instanceof BilibiliLiveReportPainter,
+                    "painter " + first.painter().getClass().getName());
+            assertNoDeclaredPaint(DemoAssets.DemoReportPainter.class);
         } catch (Throwable t) {
             red.add("① " + t.getMessage());
         }
@@ -96,18 +102,67 @@ class DemoAssetsTest {
     }
 
     @Test
-    @DisplayName("把示意图写进 docs/assets，名册只含虚构名与假号")
+    @DisplayName("报告图节选为整图顶部 1200×1340，像素与整图前 1340 行相同")
+    void renderTopCropMatchesFull(@TempDir Path dir) throws Exception {
+        Path demo = dir.resolve("demo");
+        DemoAssets.generate(demo, fonts);
+        Path report = dir.resolve("report-demo.png");
+        DemoAssets.Rendered rendered = DemoAssets.render(demo, report, fonts);
+        Path top = rendered.topPath();
+        List<String> red = new ArrayList<>();
+        try {
+            assertTrue(Files.isRegularFile(top), "missing " + top);
+        } catch (Throwable t) {
+            red.add("① " + t.getMessage());
+        }
+        try {
+            BufferedImage topImage = ImageIO.read(top.toFile());
+            assertEquals(1200, topImage.getWidth(), "IHDR width");
+            assertEquals(1340, topImage.getHeight(), "IHDR height");
+            assertTrue(Files.size(top) > 0 && Files.size(top) <= DemoAssets.REPORT_TOP_MAX_BYTES,
+                    "bytes " + Files.size(top));
+        } catch (Throwable t) {
+            red.add("② " + t.getMessage());
+        }
+        try {
+            BufferedImage full = ImageIO.read(report.toFile());
+            BufferedImage topImage = ImageIO.read(top.toFile());
+            int mismatch = 0;
+            for (int y = 0; y < 1340; y++) {
+                for (int x = 0; x < 1200; x++) {
+                    if (full.getRGB(x, y) != topImage.getRGB(x, y)) {
+                        mismatch++;
+                    }
+                }
+            }
+            assertEquals(0, mismatch, "pixel mismatches in first 1340 rows");
+        } catch (Throwable t) {
+            red.add("③ " + t.getMessage());
+        }
+        if (!red.isEmpty()) {
+            fail(red.size() + " 问红：" + String.join("；", red));
+        }
+    }
+
+    @Test
+    @DisplayName("把示意图写进 target/demo-assets，仅 -Ddemo.publish=true 时落 docs/assets；名册只含虚构名与假号")
     void writesPublishedAssets() throws Exception {
+        boolean publish = Boolean.parseBoolean(System.getProperty("demo.publish", "false"));
         Path root = DemoAssets.repoRoot();
-        Path demo = root.resolve("docs").resolve("assets").resolve("demo");
-        Path report = root.resolve("docs").resolve("assets").resolve("report-demo.png");
+        Path assets = publish
+                ? root.resolve("docs").resolve("assets")
+                : root.resolve("target").resolve("demo-assets");
+        Path demo = assets.resolve("demo");
+        Path report = assets.resolve("report-demo.png");
         DemoAssets.generate(demo, fonts);
         DemoAssets.Rendered rendered = DemoAssets.render(demo, report, fonts);
         List<String> red = new ArrayList<>();
         try {
             assertTrue(Files.isRegularFile(demo.resolve(DemoAssets.COVER_FILE)));
             assertTrue(Files.isRegularFile(report));
-            assertEquals(DemoAssets.RENDER_VIA, rendered.via());
+            assertTrue(Files.isRegularFile(rendered.topPath()));
+            assertTrue(rendered.painter() instanceof BilibiliLiveReportPainter,
+                    "painter " + rendered.painter().getClass().getName());
             assertTrue(rendered.width() >= 1100 && rendered.width() <= 1300, "width " + rendered.width());
             assertTrue(rendered.bytes() <= DemoAssets.REPORT_MAX_BYTES, "bytes " + rendered.bytes());
         } catch (Throwable t) {
@@ -136,6 +191,20 @@ class DemoAssetsTest {
         }
         if (!red.isEmpty()) {
             fail(red.size() + " 问红：" + String.join("；", red));
+        }
+    }
+
+    private static void assertNoDeclaredPaint(Class<?> type) {
+        for (Method method : type.getDeclaredMethods()) {
+            if ("paint".equals(method.getName())) {
+                fail(type.getName() + " declares paint " + method);
+            }
+        }
+        try {
+            type.getDeclaredMethod("paint", String.class, LiveStreamerInfo.class, BilibiliLiveReportOptions.class);
+            fail(type.getName() + " declares 3-arg paint");
+        } catch (NoSuchMethodException expected) {
+            // DemoReportPainter must go through BilibiliLiveReportPainter.paint
         }
     }
 }

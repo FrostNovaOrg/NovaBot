@@ -9,7 +9,8 @@
 （一个账号）        （本程序）        （NapCat 等）
 ```
 
-<!-- 示意图：控制台总览与下播报告图，素材并入后补 -->
+<p align="center"><img src="docs/assets/screenshot-console.png" alt="控制台首页（本机匿名演示实例）" width="92%"></p>
+<p align="center"><a href="docs/assets/report-demo.png"><img src="docs/assets/report-demo-top.png" alt="下播报告图节选（示意数据，点开看整张）" width="60%"></a></p>
 
 ## 功能一览
 
@@ -86,7 +87,7 @@ docker run -d --name novabot --restart unless-stopped -v novabot-data:/app -p 12
 
 ## 资源占用
 
-空载常驻内存约 110 MB；监听两位主播、功能全开时实测约 0.5 GB，长时间运行峰值约 0.9 GB。**按后者规划机器内存**，主播更多时相应上调。方法与数字见[性能实测](docs/performance.md)。
+2 位主播、功能全开、连续运行 63 小时的实测稳态峰值 896 MB，**不是上界**；主播更多、瞬时高峰更猛时还会往上走，那种场景没有测过。默认 systemd 上限 1.2G／1.5G 是「实测峰值＋说得出理由的余量」。方法与数字见[性能实测](docs/performance.md)。
 
 ## 构建
 
