@@ -451,13 +451,10 @@ public class ConfigurationFileService {
                     + " 在文件里没有它的任何上级块, 本批全部未保存, 请先在配置文件里补上该块");
         }
 
-        boolean stripped = stripLegacyRootIfFullyMirrored(lines);
-        if (!changed.isEmpty() || stripped) {
+        if (!changed.isEmpty()) {
             backup();
             Files.write(configPath, lines, StandardCharsets.UTF_8);
-            if (!changed.isEmpty()) {
-                log.info("配置界面已更新 {} 个配置项: {}", changed.size(), String.join(", ", changed));
-            }
+            log.info("配置界面已更新 {} 个配置项: {}", changed.size(), String.join(", ", changed));
         }
 
         return List.copyOf(changed);
@@ -510,7 +507,6 @@ public class ConfigurationFileService {
             }
 
             int created = createFirstItem(lines, location, fields);
-            stripLegacyRootIfFullyMirrored(lines);
             backup();
             Files.write(configPath, lines, StandardCharsets.UTF_8);
             log.info("配置界面已在 {} 下建出第 1 个元素, 共 {} 个字段", listPath, created);
@@ -601,13 +597,10 @@ public class ConfigurationFileService {
             lines.remove((int) remove.get(i));
         }
 
-        boolean stripped = stripLegacyRootIfFullyMirrored(lines);
-        if (changed > 0 || stripped) {
+        if (changed > 0) {
             backup();
             Files.write(configPath, lines, StandardCharsets.UTF_8);
-            if (changed > 0) {
-                log.info("配置界面已更新 {} 第 {} 个元素的 {} 个字段, 重启后生效", listPath, index + 1, changed);
-            }
+            log.info("配置界面已更新 {} 第 {} 个元素的 {} 个字段, 重启后生效", listPath, index + 1, changed);
         }
 
         return changed;
@@ -1042,62 +1035,6 @@ public class ConfigurationFileService {
         }
 
         return items;
-    }
-
-    /**
-     * 旧产品前缀树的每个叶键在现行树都有对应时，从待写行里删掉旧根
-     * <p>
-     * 只在保存路径调用：启动不改文件。值以现行树为准，这里不把旧值抄过去。
-     * 有任一叶键对不上则整棵旧树不动，并在日志里列出缺的键。
-     * @param lines 即将落盘的文件行
-     * @return 是否删掉了旧根
-     */
-    private boolean stripLegacyRootIfFullyMirrored(List<String> lines) {
-        List<Line> parsed = parse(lines);
-        Set<String> paths = new LinkedHashSet<>();
-        for (Line line : parsed) {
-            if (line.path != null) {
-                paths.add(line.path);
-            }
-        }
-
-        List<String> oldLeaves = new ArrayList<>();
-        for (String path : paths) {
-            if (!path.startsWith("starbot.")) {
-                continue;
-            }
-            String childPrefix = path + ".";
-            boolean hasChild = false;
-            for (String other : paths) {
-                if (other.startsWith(childPrefix)) {
-                    hasChild = true;
-                    break;
-                }
-            }
-            if (!hasChild) {
-                oldLeaves.add(path);
-            }
-        }
-        if (oldLeaves.isEmpty()) {
-            return false;
-        }
-
-        List<String> missing = new ArrayList<>();
-        for (String oldLeaf : oldLeaves) {
-            String current = NovaBotPrefixes.toCurrent(oldLeaf);
-            if (current.equals(oldLeaf) || !paths.contains(current)) {
-                missing.add(oldLeaf);
-            }
-        }
-        if (!missing.isEmpty()) {
-            log.warn("旧键 starbot.* 未全迁，缺对应：" + String.join(", ", missing));
-            return false;
-        }
-        if (!removeTopLevelKey(lines, "starbot")) {
-            return false;
-        }
-        log.info("已迁移旧键 starbot.* " + oldLeaves.size() + " 项");
-        return true;
     }
 
     /**
