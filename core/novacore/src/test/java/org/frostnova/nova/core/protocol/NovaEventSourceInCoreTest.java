@@ -12,7 +12,6 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 事件输出协议的真源必须由核心提供
@@ -60,32 +59,14 @@ class NovaEventSourceInCoreTest {
     }
 
     @Test
-    @DisplayName("🔴 只写旧键的既有部署照常生效——搬家不许把别人跑着的事件流悄悄关掉")
-    void legacyKeysStillRecognized() {
+    @DisplayName("只写更早一档旧键时不再生效：仍关闭、路径仍是 /nova/events")
+    void oldestLegacyKeysAreIgnored() {
         EventStreamProperties resolved = resolve(Map.of(
                 "starbot.bilibili.event-stream.enabled", "true",
-                "starbot.bilibili.event-stream.path", "/legacy/events",
-                "starbot.bilibili.event-stream.require-token", "true",
-                "starbot.bilibili.event-stream.buffer-size", "77"));
+                "starbot.bilibili.event-stream.path", "/legacy/events"));
 
-        assertTrue(resolved.isEnabled());
-        assertEquals("/legacy/events", resolved.getPath());
-        assertTrue(resolved.isRequireToken());
-        assertEquals(77, resolved.getBufferSize());
-    }
-
-    @Test
-    @DisplayName("两套键同时在场时逐项取舍：新键写到的项归新键，没写到的项才落回旧键")
-    void currentKeysOverrideLegacyKeys() {
-        EventStreamProperties resolved = resolve(Map.of(
-                "starbot.bilibili.event-stream.enabled", "true",
-                "starbot.bilibili.event-stream.path", "/legacy/events",
-                "starbot.bilibili.event-stream.buffer-size", "77",
-                "novabot.core.event-stream.path", "/nova/events"));
-
-        assertEquals("/nova/events", resolved.getPath(), "新键写到的项由新键说了算");
-        assertTrue(resolved.isEnabled(), "新键没写到的项要落回旧键, 而不是退回默认值");
-        assertEquals(77, resolved.getBufferSize(), "新键没写到的项要落回旧键, 而不是退回默认值");
+        assertFalse(resolved.isEnabled(), "旧键不得再打开事件输出");
+        assertEquals("/nova/events", resolved.getPath(), "旧键不得再改路径");
     }
 
     /**

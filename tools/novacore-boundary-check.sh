@@ -488,15 +488,8 @@ fi
 #
 # —— 例外表：每条写明理由与到期条件，没有到期条件的例外一律不许加 ——
 #    命中行的文件名与内容同时匹配才豁免。
-G5_EXEMPT=(
-    # 旧键兼容：事件输出的配置键曾在平台插件一侧，真源迁入核心后键名改了，但既有部署的
-    # application.yml 里写的还是旧键。这个字面量是**读侧**认旧键用的（绑定时先按它绑一趟，
-    # 再让现行键逐项压过去），不是核心在用平台前缀对外提供配置——核心自己声明的前缀是
-    # @ConfigurationProperties 上那个，不带平台名。
-    # 引用它的是 NovaEventStreamConfiguration，字面量本身落在 EventStreamProperties 上。
-    # 到期条件：旧键弃用移除的那一版——那一版删掉 LEGACY_PREFIX 常量，本条同时删除。
-    "EventStreamProperties.java LEGACY_PREFIX"
-)
+#    EventStreamProperties.LEGACY_PREFIX 已删，到期条清空。
+G5_EXEMPT=()
 # ============================================================
 
 g5_hits=""

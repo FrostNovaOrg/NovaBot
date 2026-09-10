@@ -1,7 +1,7 @@
 package org.frostnova.nova.core.config.ui;
 
 import com.alibaba.fastjson2.JSONObject;
-import org.frostnova.nova.core.properties.EventStreamProperties;
+import org.frostnova.nova.core.alert.AlertService;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.protocol.EventStreamTokenService;
 import org.frostnova.nova.core.service.PushTemplateDefaults;
@@ -9,6 +9,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.beans.factory.NoSuchBeanDefinitionException;
+import org.springframework.beans.factory.ObjectProvider;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -18,6 +20,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -28,28 +31,34 @@ import static org.mockito.Mockito.mock;
 /**
  * 控制台读配置时对旧位置的兼容
  * <p>
- * <b>病在「界面读数骗人」，不在功能。</b>事件输出的配置键从旧位置改到了现行位置，端点两套键都认；
+ * <b>病在「界面读数骗人」，不在功能。</b>配置键改名后，绑定侧可由插件申报同时认得新旧位置；
  * 但控制台是拿配置文件里的扁平键值表去与元数据配对的，只写旧位置的既有部署，
- * 元数据里那几项一个也配不上——界面于是显示<b>默认值（关闭）</b>，而端点正按旧位置的值在跑。
- * 使用者看到「关闭」，事件流却在输出，这比功能坏掉更难查。
+ * 元数据里那几项一个也配不上——界面于是显示<b>默认值</b>，而程序正按旧位置的值在跑。
+ * 使用者看到默认值，实际却按旧键在跑，这比功能坏掉更难查。
  * <p>
- * 因此这里的判据不是「端点跑得对」（那是端点自己的测试管的），而是
- * <b>控制台端点回给界面的那份读数，与端点实际生效的值是同一个</b>，且要说清这一项是从哪里来的。
+ * 因此这里的判据不是「绑定侧跑得对」，而是
+ * <b>控制台端点回给界面的那份读数，与实际生效的值是同一个</b>，且要说清这一项是从哪里来的。
  * <p>
- * 优先级必须与 {@link EventStreamProperties} 的绑定顺序<b>逐项一致</b>：
+ * 优先级必须与绑定顺序<b>逐项一致</b>：
  * 现行键写了就用现行键、没写才落回旧位置、两处都没写才是默认值。
+ * 核心表已空，本类用虚构贡献者申报的键把这三条语义钉住。
  */
 @DisplayName("控制台认旧配置键")
 class ConfigurationKeyAliasesTest {
+    private static final String CURRENT_PREFIX = "novabot.demo.event-stream";
+
+    private static final String DEMO_LEGACY = "legacy.demo.event-stream";
+
     /**
-     * 只写旧位置的既有部署，与生产上的形态一致
+     * 只写旧位置的既有部署
      */
     private static final String LEGACY_ONLY = """
-            starbot:
-              bilibili:
+            legacy:
+              demo:
                 event-stream:
                   enabled: true
                   buffer-size: 4000
+            novabot:
               core:
                 config-ui:
                   enabled: true
@@ -59,20 +68,23 @@ class ConfigurationKeyAliasesTest {
      * 两处都写，且现行位置只写了其中一项
      */
     private static final String BOTH_PRESENT = """
-            starbot:
-              bilibili:
+            legacy:
+              demo:
                 event-stream:
                   enabled: true
                   buffer-size: 4000
             novabot:
-              core:
+              demo:
                 event-stream:
                   enabled: false
             """;
 
-    private static final String CURRENT_KEY = EventStreamProperties.PREFIX + ".enabled";
+    private static final String CURRENT_KEY = CURRENT_PREFIX + ".enabled";
 
-    private static final String LEGACY_KEY = EventStreamProperties.LEGACY_PREFIX + ".enabled";
+    private static final String LEGACY_KEY = DEMO_LEGACY + ".enabled";
+
+    private static final ConfigurationKeyAliasContributor DEMO_ALIASES =
+            () -> Map.of(CURRENT_PREFIX, DEMO_LEGACY);
 
     @TempDir
     Path dir;
@@ -90,7 +102,7 @@ class ConfigurationKeyAliasesTest {
      * 按给定内容起一份配置，并接上控制台
      * <p>
      * 构造器只做赋值，读配置这条路只用得到配置文件服务，其余依赖全部给桩——
-     * 与本目录下其他控制台用例的做法一致。
+     * 与本目录下其他控制台用例的做法一致。别名贡献者注入虚构键，核心表为空时仍能量读侧三条语义。
      */
     @SuppressWarnings("unchecked")
     private void start(String yaml) throws IOException {
@@ -127,7 +139,80 @@ class ConfigurationKeyAliasesTest {
                 mock(org.frostnova.nova.core.timeline.TimelineStore.class),
                 mock(org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService.class),
                 new PushTemplateDefaults(new NovaCoreProperties()),
-                mock(UpdateCheckService.class));
+                mock(UpdateCheckService.class),
+                emptyProvider(),
+                emptyProvider(),
+                providerOf(DEMO_ALIASES),
+                mock(AlertService.class),
+                emptyProvider());
+    }
+
+    private static <T> ObjectProvider<T> emptyProvider() {
+        return new ObjectProvider<>() {
+            @Override
+            public T getObject() {
+                throw new NoSuchBeanDefinitionException(Object.class);
+            }
+
+            @Override
+            public T getObject(Object... args) {
+                throw new NoSuchBeanDefinitionException(Object.class);
+            }
+
+            @Override
+            public T getIfAvailable() {
+                return null;
+            }
+
+            @Override
+            public T getIfUnique() {
+                return null;
+            }
+
+            @Override
+            public Stream<T> stream() {
+                return Stream.empty();
+            }
+
+            @Override
+            public Stream<T> orderedStream() {
+                return Stream.empty();
+            }
+        };
+    }
+
+    private static <T> ObjectProvider<T> providerOf(T bean) {
+        return new ObjectProvider<>() {
+            @Override
+            public T getObject() {
+                return bean;
+            }
+
+            @Override
+            public T getObject(Object... args) {
+                return bean;
+            }
+
+            @Override
+            public T getIfAvailable() {
+                return bean;
+            }
+
+            @Override
+            public T getIfUnique() {
+                return bean;
+            }
+
+            @Override
+            public Stream<T> stream() {
+                return Stream.of(bean);
+            }
+
+            @Override
+            public Stream<T> orderedStream() {
+                return Stream.of(bean);
+            }
+        };
     }
 
     private JSONObject read() {
@@ -147,7 +232,7 @@ class ConfigurationKeyAliasesTest {
                 "端点按旧位置的 true 在跑, 界面就不该显示默认值");
         assertEquals(LEGACY_KEY, result.getJSONObject("legacy").getString(CURRENT_KEY),
                 "得说清这一项是从旧位置读来的, 否则使用者不知道该去哪里改");
-        assertEquals("4000", result.getJSONObject("values").getString(EventStreamProperties.PREFIX + ".buffer-size"),
+        assertEquals("4000", result.getJSONObject("values").getString(CURRENT_PREFIX + ".buffer-size"),
                 "落回旧位置是逐项的, 不是整段的");
     }
 
@@ -162,10 +247,10 @@ class ConfigurationKeyAliasesTest {
                 "两处都写时以现行位置为准, 与端点的绑定顺序一致");
         assertNull(result.getJSONObject("legacy").getString(CURRENT_KEY),
                 "这一项本来就写在现行位置, 不该提示迁移");
-        assertEquals("4000", result.getJSONObject("values").getString(EventStreamProperties.PREFIX + ".buffer-size"),
+        assertEquals("4000", result.getJSONObject("values").getString(CURRENT_PREFIX + ".buffer-size"),
                 "现行位置没写到的项仍落回旧位置");
-        assertEquals(EventStreamProperties.LEGACY_PREFIX + ".buffer-size",
-                result.getJSONObject("legacy").getString(EventStreamProperties.PREFIX + ".buffer-size"),
+        assertEquals(DEMO_LEGACY + ".buffer-size",
+                result.getJSONObject("legacy").getString(CURRENT_PREFIX + ".buffer-size"),
                 "落回旧位置的那一项照样要标出来源");
     }
 
@@ -212,8 +297,8 @@ class ConfigurationKeyAliasesTest {
     @DisplayName("贡献者申报的旧键同样解析")
     void contributorLegacyKeysResolve() {
         List<String> reds = new ArrayList<>();
-        String current = "starbot.demo.alert.platform";
-        String legacy = "starbot.demo.alert.qq-platform";
+        String current = "novabot.demo.alert.platform";
+        String legacy = "legacy.demo.alert.qq-platform";
         ConfigurationKeyAliasContributor contributor = () -> {
             Map<String, String> renamed = new LinkedHashMap<>();
             renamed.put(current, legacy);
@@ -239,9 +324,9 @@ class ConfigurationKeyAliasesTest {
         }
 
         try {
-            assertEquals(EventStreamProperties.PREFIX + ".enabled",
-                    aliases.currentName(EventStreamProperties.LEGACY_PREFIX + ".enabled"),
-                    "核心表原有前缀映射不得因合并而丢");
+            assertEquals("starbot.bilibili.event-stream.enabled",
+                    aliases.currentName("starbot.bilibili.event-stream.enabled"),
+                    "核心表为空时合并结果只含贡献者申报");
         } catch (AssertionError e) {
             reds.add("③ " + e.getMessage());
         }
@@ -253,10 +338,10 @@ class ConfigurationKeyAliasesTest {
     @DisplayName("逐键映射不吞邻键（同前缀下未申报的键不受影响）")
     void perKeyMappingDoesNotSwallowNeighbors() {
         List<String> reds = new ArrayList<>();
-        String current = "starbot.demo.alert.platform";
-        String legacy = "starbot.demo.alert.qq-platform";
-        String neighbor = "starbot.demo.alert.qq-type";
-        String other = "starbot.demo.alert.qq-num";
+        String current = "novabot.demo.alert.platform";
+        String legacy = "legacy.demo.alert.qq-platform";
+        String neighbor = "legacy.demo.alert.qq-type";
+        String other = "legacy.demo.alert.qq-num";
         ConfigurationKeyAliasContributor contributor = () -> Map.of(current, legacy);
         ConfigurationKeyAliases aliases = ConfigurationKeyAliases.of(List.of(contributor));
 
@@ -280,7 +365,7 @@ class ConfigurationKeyAliasesTest {
             aliases.resolve(values);
             assertEquals("onebot", values.get(current), "申报的那一键应补到现行位置");
             assertEquals("1", values.get(neighbor), "邻键应留在原位");
-            assertNull(values.get("starbot.demo.alert.type"), "不得凭空给邻键编一个现行键");
+            assertNull(values.get("novabot.demo.alert.type"), "不得凭空给邻键编一个现行键");
         } catch (AssertionError e) {
             reds.add("③ " + e.getMessage());
         }
@@ -294,32 +379,31 @@ class ConfigurationKeyAliasesTest {
         List<String> reds = new ArrayList<>();
 
         try {
-            ConfigurationKeyAliasContributor clash = () -> Map.of(
-                    EventStreamProperties.PREFIX, "starbot.elsewhere.event-stream");
+            ConfigurationKeyAliasContributor first = () -> Map.of("novabot.demo.a", "legacy.demo.a");
+            ConfigurationKeyAliasContributor second = () -> Map.of("novabot.demo.a", "legacy.demo.b");
             IllegalStateException ex = assertThrows(IllegalStateException.class,
-                    () -> ConfigurationKeyAliases.of(List.of(clash)),
-                    "与核心表重复申报现行前缀须抛 IllegalStateException");
-            assertTrue(ex.getMessage().contains(EventStreamProperties.PREFIX),
+                    () -> ConfigurationKeyAliases.of(List.of(first, second)),
+                    "两贡献者申报同一条现行键须抛");
+            assertTrue(ex.getMessage().contains("novabot.demo.a"),
                     "文案应点名撞上的现行键, 实际=" + ex.getMessage());
         } catch (AssertionError e) {
             reds.add("① " + e.getMessage());
         }
 
         try {
-            ConfigurationKeyAliasContributor first = () -> Map.of("starbot.demo.a", "starbot.old.a");
-            ConfigurationKeyAliasContributor second = () -> Map.of("starbot.demo.a", "starbot.old.b");
-            assertThrows(IllegalStateException.class,
-                    () -> ConfigurationKeyAliases.of(List.of(first, second)),
-                    "两贡献者申报同一条现行键须抛");
+            ConfigurationKeyAliasContributor ok = () -> Map.of("novabot.demo.x", "legacy.demo.x");
+            ConfigurationKeyAliases merged = ConfigurationKeyAliases.of(List.of(ok));
+            assertEquals("novabot.demo.x", merged.currentName("legacy.demo.x"),
+                    "未撞的申报应合并进去");
         } catch (AssertionError e) {
             reds.add("② " + e.getMessage());
         }
 
         try {
-            ConfigurationKeyAliasContributor ok = () -> Map.of("starbot.demo.x", "starbot.old.x");
-            ConfigurationKeyAliases merged = ConfigurationKeyAliases.of(List.of(ok));
-            assertEquals("starbot.demo.x", merged.currentName("starbot.old.x"),
-                    "未撞的申报应合并进去");
+            ConfigurationKeyAliasContributor only = () -> Map.of("novabot.demo.a", "legacy.demo.a");
+            assertEquals("novabot.demo.a",
+                    ConfigurationKeyAliases.of(List.of(only)).currentName("legacy.demo.a"),
+                    "单贡献者未撞时应合并进去");
         } catch (AssertionError e) {
             reds.add("③ " + e.getMessage());
         }
