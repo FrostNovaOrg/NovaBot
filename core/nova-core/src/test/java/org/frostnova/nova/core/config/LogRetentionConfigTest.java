@@ -89,7 +89,7 @@ class LogRetentionConfigTest {
     void theRulerRecognisesAMissingSetting() {
         String missingBoth = """
                 <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-                    <fileNamePattern>${LOG_HOME}/logs/starbot-%d{yyyy-MM-dd}.log</fileNamePattern>
+                    <fileNamePattern>${LOG_HOME}/logs/novabot-%d{yyyy-MM-dd}.log</fileNamePattern>
                 </rollingPolicy>
                 """;
         Tree bare = treesOf(missingBoth).get("logs");
@@ -99,7 +99,7 @@ class LogRetentionConfigTest {
 
         String capWithoutHistory = """
                 <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-                    <fileNamePattern>${LOG_HOME}/logs/starbot-%d{yyyy-MM-dd}.log</fileNamePattern>
+                    <fileNamePattern>${LOG_HOME}/logs/novabot-%d{yyyy-MM-dd}.log</fileNamePattern>
                     <totalSizeCap>1GB</totalSizeCap>
                 </rollingPolicy>
                 """;

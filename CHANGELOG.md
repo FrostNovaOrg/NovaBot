@@ -10,6 +10,7 @@
 
 ### 变更
 
+- 日志文件改名为 `novabot-*.log`，原 `starbot-*.log` 旧文件不再自动清理，可手动删除；安装脚本不再沿用旧的 `starbot.service`，检测到即停用并换装为 `novabot.service`。
 - 控制台旧接口路径 `/config/api/onebot/targets`、`/config/api/onebot/targets/refresh`、`/config/api/napcat/state` 移除，请改用 `/config/api/bot/targets`、`/config/api/bot/console`。
 - 安装脚本与容器入口不再清理 5.2 及更早版本的旧名内置插件 jar；从 5.2 或更早直接升级到本版，请先手动删除 `plugins/` 下的 `starbot-*.jar`。
 - 配置文件保存时不再自动折叠旧根 `starbot.*`，安全模式也不再回读旧根；请把配置迁到 `novabot.*`。
