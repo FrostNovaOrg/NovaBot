@@ -249,6 +249,37 @@
                             </execution>
                         </executions>
                     </plugin>
+                    <!--
+                        excludes 只是不再拷贝：早先构建留在 target/classes/ 的旧副本不会被清掉，
+                        classpath 读这几件的测试会读到陈旧版。在拷贝之后把残留一并删掉。
+                    -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-clean-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>drop-runtime-config</id>
+                                <phase>process-resources</phase>
+                                <goals>
+                                    <goal>clean</goal>
+                                </goals>
+                                <configuration>
+                                    <excludeDefaultDirectories>true</excludeDefaultDirectories>
+                                    <filesets>
+                                        <fileset>
+                                            <directory>${project.build.outputDirectory}</directory>
+                                            <includes>
+                                                <include>application.yml</include>
+                                                <include>application-dev.yml</include>
+                                                <include>banner.txt</include>
+                                                <include>logback.xml</include>
+                                            </includes>
+                                        </fileset>
+                                    </filesets>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-source-plugin</artifactId>
