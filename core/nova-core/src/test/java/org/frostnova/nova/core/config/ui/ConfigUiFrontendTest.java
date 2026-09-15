@@ -3265,6 +3265,53 @@ class ConfigUiFrontendTest {
     }
 
     /**
+     * 进设置页要按当下 {@code store.values} 重画一遍
+     * <p>
+     * 首页那个推送总开关改完不刷新就切过来时，设置页 DOM 若还是启动那一刻建的，
+     * 开关会停在旧值，而屏幕上看不出它是旧的。三问各自记下，末尾一起红。
+     */
+    @Test
+    @DisplayName("进设置页 applyRoute 取数段重画 renderGeneral")
+    void settingsRouteRedrawsGeneral() throws IOException {
+        List<String> red = new ArrayList<>();
+        String main = Files.readString(frontendDir().resolve("main.js"), StandardCharsets.UTF_8);
+        String body = functionBodyAny(main, "applyRoute");
+        int data = body.indexOf("if (!withData) return");
+        String load = data >= 0 ? body.substring(data) : body;
+
+        try {
+            assertTrue(load.contains("name === 'settings'"),
+                    "applyRoute 取数段应对设置页走分支");
+        } catch (Throwable t) {
+            red.add("① " + t.getMessage());
+        }
+
+        try {
+            int idx = load.indexOf("name === 'settings'");
+            assertTrue(idx >= 0, "applyRoute 取数段应含 name === 'settings'");
+            String branch = load.substring(idx, Math.min(load.length(), idx + 96));
+            assertTrue(branch.contains("renderGeneral"),
+                    "设置页分支应调 renderGeneral: " + branch.strip());
+        } catch (Throwable t) {
+            red.add("② " + t.getMessage());
+        }
+
+        try {
+            int idx = load.indexOf("name === 'settings'");
+            assertTrue(idx >= 0, "applyRoute 取数段应含 name === 'settings'");
+            String branch = load.substring(idx, Math.min(load.length(), idx + 96));
+            assertTrue(branch.contains("focusCard"),
+                    "设置页分支应补 focusCard: " + branch.strip());
+        } catch (Throwable t) {
+            red.add("③ " + t.getMessage());
+        }
+
+        if (!red.isEmpty()) {
+            fail(red.size() + " 问红：" + String.join("；", red));
+        }
+    }
+
+    /**
      * 「登录与安全」四项必须和其他设置项同一套横行，不能再走告警那套卡片。
      * <p>
      * 卡片最窄 260px，通行密钥四列表会撑出组边。改成 {@code .setitem} 之后，
