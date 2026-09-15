@@ -79,6 +79,32 @@ export function defaultValue(field) {
 }
 
 /**
+ * {@code InetAddress.toString()} 的 IPv4 形态：可选主机名、一条斜杠、四个点分十进制。
+ * CIDR（127.0.0.1/32）对不上这支，不会被收成别的东西。
+ */
+const INET4 = /^[^/]*\/(\d{1,3}(?:\.\d{1,3}){3})$/;
+
+/**
+ * 这一项拿到界面上、拿去跟已保存的值比时用的串
+ *
+ * 监听地址在第一次写出配置文件时，可能被写成 {@code /127.0.0.1}
+ * （Java {@code InetAddress.toString()}）。那一串与出厂默认 {@code 127.0.0.1} 字面不同，
+ * 但指的是同一个回环地址：拿去显示会让人以为机器改过监听地址，拿去记账会让底部改动条
+ * 在一个字没改时亮起来。其它项原样。
+ * @param field 字段表里的一项
+ * @param value 当前值
+ * @return {string} 比较与显示用的串
+ */
+export function canonicalValue(field, value) {
+  const text = value === undefined || value === null ? '' : String(value);
+  if (field && field.name === 'server.address') {
+    const matched = text.match(INET4);
+    if (matched) return matched[1];
+  }
+  return text;
+}
+
+/**
  * 这一项的值与默认值不一样吗
  *
  * <b>这与「改过还没保存」不是一回事</b>，两者在界面上也是两套记号：
@@ -93,7 +119,7 @@ export function defaultValue(field) {
  */
 export function isChanged(field, value) {
   if (field.sensitive) return String(value ?? '') !== '';
-  return String(value ?? '') !== defaultValue(field);
+  return canonicalValue(field, value) !== canonicalValue(field, defaultValue(field));
 }
 
 /**

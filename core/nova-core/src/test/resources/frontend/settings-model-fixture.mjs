@@ -11,7 +11,7 @@
 
 import {
   MASK, dangerOf, isDangerous, defaultText, defaultValue, isChanged, haystack,
-  isVisible, effectOf,
+  isVisible, effectOf, canonicalValue,
 } from '../../../main/resources/config-ui/settings-model.js';
 
 const failures = [];
@@ -55,6 +55,18 @@ eq(isChanged(field({widget: 'integer', defaultValue: 3600}), '600'), true, '数�
 eq(isChanged(field({widget: 'string', defaultValue: null}), ''), false, '没默认值且空着不算改过');
 eq(isChanged(field({widget: 'string', defaultValue: null}), 'x'), true, '没默认值而填了算改过');
 eq(isChanged(field({widget: 'list', defaultValue: ['a', 'b']}), 'a\nb'), false, '列表同值不算改过');
+eq(isChanged(field({
+  name: 'server.address', widget: 'string', defaultValue: '127.0.0.1',
+}), '/127.0.0.1'), false, '监听地址 /127.0.0.1 与出厂 127.0.0.1 算同一值');
+eq(canonicalValue(field({name: 'server.address'}), '/127.0.0.1'), '127.0.0.1',
+  'canonicalValue 收掉 InetAddress.toString 的斜杠');
+eq(canonicalValue(field({name: 'server.address'}), 'localhost/127.0.0.1'), '127.0.0.1',
+  'canonicalValue 收掉 hostname/ip');
+eq(canonicalValue(field({name: 'novabot.core.config-ui.allow-ips'}), '127.0.0.1/32'),
+  '127.0.0.1/32', 'CIDR 不是监听地址，不收');
+eq(isChanged(field({
+  name: 'server.address', widget: 'string', defaultValue: '127.0.0.1',
+}), '0.0.0.0'), true, '监听地址真改了仍算改过');
 // 机密项的真值不出后端，拿遮罩串跟默认值比是比不出东西来的，因此按「配过就算改过」
 eq(isChanged(field({sensitive: true, widget: 'string', defaultValue: null}), MASK), true,
   '机密项配过就算改过');

@@ -285,6 +285,7 @@ final class ConfigurationTemplate {
      * 或以 {@code -} 开头的字符串不加引号就变成了另一个类型，<b>而文件看起来毫无异常</b>。
      */
     private static String scalar(Object value) {
+        value = InetAddressText.forYaml(value);
         if (isBlank(value)) {
             return "";
         }
