@@ -8,6 +8,7 @@ import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.core.timeline.TimelineEventType;
 import org.frostnova.nova.core.timeline.TimelineWriter;
 import lombok.extern.slf4j.Slf4j;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -89,6 +90,16 @@ public class ConfigurationFileService {
      * 清空即视为「不配置」的配置项：核心自有 Redis 地址，加上各适配器申报的令牌键
      */
     private final Set<String> blankMeansAbsent;
+
+    /**
+     * 监听地址在配置树上的键。与设置页 {@code canonicalValue} 同一把尺子：只有这一项走斜杠归一。
+     */
+    static final String ADDRESS_KEY = "server.address";
+
+    /**
+     * 本进程是否已经把文件里的斜杠形态监听地址改回过。同一份文件在一次运行里只动一次。
+     */
+    private boolean slashAddressHealed;
 
     @Autowired
     public ConfigurationFileService(ConfigurationMetadataService metadata, ApplicationContext context,
@@ -214,11 +225,58 @@ public class ConfigurationFileService {
                 // 字符串列表以换行连接，与界面中的多行输入框一一对应
                 values.put(line.path, String.join("\n", line.items));
             } else if (line.value != null && !line.value.isEmpty()) {
-                values.put(line.path, InetAddressText.fromFile(line.value));
+                if (isAddressKey(line.path)) {
+                    String canonical = InetAddressText.fromFile(line.value);
+                    values.put(line.path, canonical);
+                    if (!canonical.equals(line.value)) {
+                        healSlashAddress(line.value, canonical);
+                    }
+                } else {
+                    values.put(line.path, line.value);
+                }
             }
         }
 
         return values;
+    }
+
+    static boolean isAddressKey(String path) {
+        return ADDRESS_KEY.equals(path);
+    }
+
+    /**
+     * 文件里的监听地址若是 {@code InetAddress.toString()} 那种斜杠形态，按既有写口改回裸地址。
+     * 同一进程只改一次：启动期后处理器已经让绑定成功，这里只负责把落盘那一行扶正。
+     */
+    private void healSlashAddress(String raw, String canonical) {
+        if (slashAddressHealed) {
+            return;
+        }
+        slashAddressHealed = true;
+        try {
+            List<String> changed = write(Map.of(ADDRESS_KEY, canonical));
+            if (!changed.isEmpty()) {
+                log.info("配置文件里的监听地址是斜杠形态 {}, 已改回 {}", raw, canonical);
+            }
+        } catch (IOException e) {
+            slashAddressHealed = false;
+            log.warn("配置文件里的监听地址是斜杠形态 {}, 未能改回 {}: {}", raw, canonical, e.toString());
+        }
+    }
+
+    /**
+     * 启动时若文件已经在，读一次以触发斜杠形态自愈。读失败不挡启动——绑定已经由后处理器救过。
+     */
+    @PostConstruct
+    void healSlashAddressOnStart() {
+        if (!exists()) {
+            return;
+        }
+        try {
+            read();
+        } catch (IOException e) {
+            log.warn("启动时读取配置文件失败, 监听地址斜杠形态可能尚未改回: {}", e.toString());
+        }
     }
 
     /**
