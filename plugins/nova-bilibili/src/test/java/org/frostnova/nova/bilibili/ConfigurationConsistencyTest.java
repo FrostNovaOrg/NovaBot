@@ -499,7 +499,7 @@ class ConfigurationConsistencyTest {
     }
 
     @Test
-    @DisplayName("⚠️ novabot.core.* 与 External 每项都有中文名：没有名字的那一项，界面只能显示键名末段")
+    @DisplayName("每个配置项都有中文名：没有名字的那一项，界面只能显示键名末段")
     void everyCoreAndExternalPropertyHasAChineseName() throws ReflectiveOperationException {
         Set<String> names = displayedProperties();
         ClassLoader loader = modulesClassLoader();
@@ -517,9 +517,6 @@ class ConfigurationConsistencyTest {
         int scoped = 0;
         for (String name : names) {
             boolean extra = ExternalConfigurationFields.names().contains(name);
-            if (!name.startsWith("novabot.core.") && !extra) {
-                continue;
-            }
             scoped++;
             String label = extra ? externalLabels.get(name) : null;
             if (label == null || label.isBlank()) {

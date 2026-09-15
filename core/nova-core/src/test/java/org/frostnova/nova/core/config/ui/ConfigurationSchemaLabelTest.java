@@ -15,7 +15,9 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -48,7 +50,7 @@ class ConfigurationSchemaLabelTest {
     }
 
     @Test
-    @DisplayName("未标注的插件项，label 仍为键名末段")
+    @DisplayName("插件项 anonymous 用定稿中文名，api-retry-interval 单位为毫秒")
     void unlabeledPluginFieldFallsBackToLeaf() throws IOException {
         ConfigurationMetadataService metadata = mock(ConfigurationMetadataService.class);
         when(metadata.getFields()).thenReturn(List.of(
@@ -56,11 +58,26 @@ class ConfigurationSchemaLabelTest {
                         "novabot.bilibili.account.anonymous",
                         "java.lang.Boolean",
                         "完全不使用登录凭据运行",
-                        false)));
+                        false),
+                new ConfigurationMetadataService.ConfigurationField(
+                        "novabot.bilibili.network.api-retry-interval",
+                        "java.lang.Integer",
+                        "接口请求失败后的重试间隔，单位：毫秒",
+                        3000)));
         try (AnnotationConfigApplicationContext context = context()) {
-            JSONObject item = field(controller(context, metadata).schema(),
-                    "novabot.bilibili.account.anonymous");
-            assertEquals("anonymous", item.getString("label"));
+            ConfigurationLabelResolver labels = new ConfigurationLabelResolver(context) {
+                @Override
+                public Map<String, String> getLabels() {
+                    Map<String, String> result = new HashMap<>(super.getLabels());
+                    result.put("novabot.bilibili.account.anonymous", "匿名模式");
+                    return Map.copyOf(result);
+                }
+            };
+            JSONObject schema = controller(context, metadata, labels).schema();
+            assertEquals("匿名模式",
+                    field(schema, "novabot.bilibili.account.anonymous").getString("label"));
+            assertEquals("毫秒",
+                    field(schema, "novabot.bilibili.network.api-retry-interval").getString("unit"));
         }
     }
 
@@ -74,6 +91,13 @@ class ConfigurationSchemaLabelTest {
     @SuppressWarnings("unchecked")
     private ConfigUiController controller(AnnotationConfigApplicationContext context,
                                           ConfigurationMetadataService metadata) throws IOException {
+        return controller(context, metadata, new ConfigurationLabelResolver(context));
+    }
+
+    @SuppressWarnings("unchecked")
+    private ConfigUiController controller(AnnotationConfigApplicationContext context,
+                                          ConfigurationMetadataService metadata,
+                                          ConfigurationLabelResolver labelResolver) throws IOException {
         Path config = dir.resolve("application.yml");
         Files.writeString(config, "novabot:\n  core:\n    config-ui:\n      enabled: true\n",
                 StandardCharsets.UTF_8);
@@ -93,7 +117,7 @@ class ConfigurationSchemaLabelTest {
                 mock(org.frostnova.nova.core.service.NovaEventHandlerService.class),
                 mock(org.frostnova.nova.core.datasource.DataSourceServiceRegistry.class),
                 new ConfigurationLevelResolver(context),
-                new ConfigurationLabelResolver(context),
+                labelResolver,
                 new ConfigurationEffectResolver(context),
                 new ConfigurationDangerResolver(context),
                 RuntimeConfigurationApplier.bench(properties).build(),

@@ -2,6 +2,7 @@ package org.frostnova.nova.bilibili.config;
 
 import org.frostnova.nova.core.config.ConfigDanger;
 import org.frostnova.nova.core.properties.ConfigEffect;
+import org.frostnova.nova.core.properties.ConfigLabel;
 import org.frostnova.nova.core.config.ConfigLevel;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import lombok.Getter;
@@ -40,24 +41,28 @@ public class NovaBilibiliProperties {
          * 线程池核心线程数
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("B站线程池 · 核心线程数")
         private int corePoolSize = 4;
 
         /**
          * 线程池最大线程数
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("B站线程池 · 最大线程数")
         private int maxPoolSize = 32;
 
         /**
          * 线程池任务队列容量
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("B站线程池 · 队列容量")
         private int queueCapacity = 256;
 
         /**
          * 非核心线程存活时间，单位：秒
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("B站线程池 · 空闲存活")
         private int keepAliveSeconds = 300;
     }
 
@@ -71,12 +76,14 @@ public class NovaBilibiliProperties {
          * 是否启用直播间原始消息调试日志
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("直播间原始消息调试日志")
         private boolean liveRoomRawMessageLog = false;
 
         /**
          * 是否启用动态接口原始响应调试日志
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("动态接口原始响应调试日志")
         private boolean dynamicRawMessageLog = false;
 
         /**
@@ -89,6 +96,7 @@ public class NovaBilibiliProperties {
          * 取证用，默认关闭；取证结束即关闭并清理日志，探针行里的 id/rid 按关联信息处置。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("动态去重探针")
         private boolean dynamicDedupProbe = false;
     }
 
@@ -108,18 +116,21 @@ public class NovaBilibiliProperties {
          * 生产按模板部署，实际发出去的一直是落后三年的那个。两处不同步等于这个默认值形同虚设。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("B站接口 · User-Agent")
         private String userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36";
 
         /**
          * 接口请求失败后的最大重试次数
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("B站接口 · 最多重试次数")
         private int apiRetryMaxTimes = 3;
 
         /**
          * 接口请求失败后的重试间隔，单位：毫秒
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("B站接口 · 重试间隔")
         private int apiRetryInterval = 3000;
     }
 
@@ -149,12 +160,14 @@ public class NovaBilibiliProperties {
         @ConfigDanger(value = "true", title = "开启匿名模式？",
                 consequence = "个人主播的直播间只能拿到约一成弹幕，发送者会被抹成匿名，报告会明显缩水；"
                         + "动态推送与自动关注不可用。")
+        @ConfigLabel("匿名模式")
         private boolean anonymous = false;
 
         /**
          * 登录凭据存储文件路径
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("登录凭据 · 存储文件")
         private String cookiePath = "cookies.json";
 
         /**
@@ -165,6 +178,7 @@ public class NovaBilibiliProperties {
          * 两者均以仅属主可读写的权限创建。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("登录凭据 · 加密存储")
         private boolean encrypt = true;
 
         /**
@@ -173,6 +187,7 @@ public class NovaBilibiliProperties {
          * 密钥与密文分离存放，便于将密钥置于权限更严格的位置，或替换为由外部密钥管理服务注入。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("登录凭据 · 密钥文件")
         private String keyPath = "cookies.key";
 
         /**
@@ -184,6 +199,7 @@ public class NovaBilibiliProperties {
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("登录凭据 · 复检间隔")
         private int verifyInterval = 600;
 
         /**
@@ -197,6 +213,7 @@ public class NovaBilibiliProperties {
          * 设为 0 或小于复检间隔时等于关闭退避，每次都按复检间隔重试。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("登录凭据 · 退避上限")
         private int maintenanceBackoffCap = 3600;
 
         /**
@@ -210,6 +227,7 @@ public class NovaBilibiliProperties {
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("登录凭据 · 自动续期")
         private boolean autoRefreshCookie = true;
 
         /**
@@ -223,6 +241,7 @@ public class NovaBilibiliProperties {
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("扫码登录方式")
         private String qrCodeLoginMode = "tv";
     }
 
@@ -237,6 +256,7 @@ public class NovaBilibiliProperties {
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("连直播间长连接")
         private boolean enableConnectLiveRoom = true;
 
         /**
@@ -251,18 +271,21 @@ public class NovaBilibiliProperties {
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("只连有推送的直播间")
         private boolean onlyConnectNecessaryRooms = false;
 
         /**
          * 直播间连接间隔，连接过快可能触发风控，单位：毫秒
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("直播间连接间隔")
         private int liveRoomConnectInterval = 1000;
 
         /**
          * 直播间重连间隔，单位：毫秒
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("直播间重连间隔")
         private int liveRoomReconnectInterval = 1000;
 
         /**
@@ -273,12 +296,14 @@ public class NovaBilibiliProperties {
          * 32 MB 连续字节数组，在小内存机器上防御上限自己就可能是那根稻草。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("数据包解压 · 字节上限")
         private int maxDecompressedBytes = 32 * 1024 * 1024;
 
         /**
          * 递归展开压缩包的最大层数，非正数回退到默认 3；正常数据不超过一层
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("数据包解压 · 最大层数")
         private int maxDecodeNestingDepth = 3;
 
         /**
@@ -289,30 +314,35 @@ public class NovaBilibiliProperties {
          * 逐次那行走 DEBUG，按本窗口汇总成一条带归因的摘要。没有断线的窗口不打日志。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("断线摘要汇总窗口")
         private int disconnectDigestInterval = 600;
 
         /**
          * 礼物配置缓存过期时间，单位：秒
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("礼物表缓存时长")
         private int giftCacheExpire = 3600;
 
         /**
          * 是否自动补全事件信息，启用后会为缺少昵称、头像等信息的事件额外请求接口补全
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("自动补全事件信息")
         private boolean completeEvent = false;
 
         /**
          * 是否启用直播间数据风控检测
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("直播间风控检测")
         private boolean autoDetectLiveRoomRisk = true;
 
         /**
          * 直播间数据风控检测周期，单位：秒
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("直播间风控检测 · 周期")
         private int autoDetectLiveRoomRiskInterval = 60;
 
         /**
@@ -327,6 +357,7 @@ public class NovaBilibiliProperties {
          * 对独立基准的到达率 93.3%。**「进房占比高」与「收不到业务消息」是两回事。**
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("直播间风控检测 · 判定窗口数")
         private int autoDetectLiveRoomRiskWindows = 3;
 
         /**
@@ -334,6 +365,7 @@ public class NovaBilibiliProperties {
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("备用直播推送")
         private boolean backupLivePush = true;
 
         /**
@@ -341,6 +373,7 @@ public class NovaBilibiliProperties {
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("备用推送检测间隔")
         private int backupLivePushInterval = 10;
 
         /**
@@ -353,6 +386,7 @@ public class NovaBilibiliProperties {
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("主播基础数据留档间隔")
         private int snapshotInterval = 6;
 
         /**
@@ -364,6 +398,7 @@ public class NovaBilibiliProperties {
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("报告自定义标识图片")
         private String reportLogoPath = "";
     }
 
@@ -384,12 +419,14 @@ public class NovaBilibiliProperties {
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("自动关注被监听的主播")
         private boolean autoFollow = true;
 
         /**
          * 自动关注的执行间隔，单位：秒
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("自动关注间隔")
         private int autoFollowInterval = 30;
 
         /**
@@ -397,6 +434,7 @@ public class NovaBilibiliProperties {
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("动态轮询间隔")
         private int apiRequestInterval = 10;
 
         /**
@@ -408,12 +446,14 @@ public class NovaBilibiliProperties {
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("动态自定义标识图片")
         private String logoPath = "";
 
         /**
          * 是否自动保存绘制出的动态图片
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("动态图片自动存盘")
         private boolean autoSaveImage = false;
 
         /**
@@ -421,6 +461,7 @@ public class NovaBilibiliProperties {
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("动态补推时限")
         private int pushMinutes = 1440;
 
         /**
@@ -435,6 +476,7 @@ public class NovaBilibiliProperties {
          * 关掉本开关就再也收不到他的开播消息了。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("推送开播动态")
         private boolean pushLiveDynamic = false;
     }
 }
