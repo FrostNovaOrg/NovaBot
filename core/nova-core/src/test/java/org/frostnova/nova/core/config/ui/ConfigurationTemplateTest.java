@@ -429,6 +429,44 @@ class ConfigurationTemplateTest {
     }
 
     @Test
+    @DisplayName("InetAddress 写成点分地址，不要 toString 那种 /127.0.0.1")
+    void inetAddressRendersAsHostAddress() throws Exception {
+        ConfigurationMetadataService.ConfigurationField field =
+                new ConfigurationMetadataService.ConfigurationField(
+                        "server.address", "java.lang.String", "监听地址", "127.0.0.1");
+        String yaml = ConfigurationTemplate.render(List.of(field),
+                Map.of("server.address", java.net.InetAddress.getByName("127.0.0.1")));
+        List<String> bad = new ArrayList<>();
+        try {
+            if (yaml.contains("/127.0.0.1")) {
+                bad.add("写出了 InetAddress.toString 形态: " + yaml.strip());
+            }
+        } catch (RuntimeException e) {
+            bad.add("① " + e.getMessage());
+        }
+        try {
+            if (!yaml.contains("address: 127.0.0.1")) {
+                bad.add("没有写成 address: 127.0.0.1:\n" + yaml);
+            }
+        } catch (RuntimeException e) {
+            bad.add("② " + e.getMessage());
+        }
+        try {
+            String cidr = ConfigurationTemplate.render(
+                    List.of(new ConfigurationMetadataService.ConfigurationField(
+                            "novabot.core.config-ui.allow-ips", "java.util.List", "白名单",
+                            List.of("127.0.0.1/32"))),
+                    Map.of("novabot.core.config-ui.allow-ips", List.of("127.0.0.1/32")));
+            if (!cidr.contains("127.0.0.1/32")) {
+                bad.add("CIDR 被收成了别的东西:\n" + cidr);
+            }
+        } catch (RuntimeException e) {
+            bad.add("③ " + e.getMessage());
+        }
+        assertTrue(bad.isEmpty(), String.join("\n  ", bad));
+    }
+
+    @Test
     @DisplayName("④ 写口·阴性 —— 已有的文件不会被这份模板盖掉")
     void existingFileIsNeverOverwritten() throws IOException {
         Path config = dir.resolve("application.yml");

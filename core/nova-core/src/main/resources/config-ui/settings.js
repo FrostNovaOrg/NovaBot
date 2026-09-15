@@ -13,7 +13,7 @@ import {load} from './main.js';
 import {bindPasswordReveal} from './password-reveal.js';
 import {alertCards, cardFields, filterCards} from './settings-alert.js';
 import {authCards, AUTH_CARD_FIELDS, filterAuthCards} from './settings-auth.js';
-import {defaultText, defaultValue, effectOf, isChanged, isDangerous, dangerOf, isVisible}
+import {canonicalValue, defaultText, defaultValue, effectOf, isChanged, isDangerous, dangerOf, isVisible}
   from './settings-model.js';
 import {store} from './store.js';
 
@@ -78,9 +78,10 @@ export function focusGroup(id) {
  */
 function valuesOf(field) {
   const stored = store.values[field.name];
-  const saved = stored !== undefined && stored !== null ? String(stored)
-    : (field.defaultValue !== null && field.defaultValue !== undefined ? defaultValue(field) : '');
-  const current = store.dirty[field.name] !== undefined ? store.dirty[field.name] : saved;
+  const saved = canonicalValue(field, stored !== undefined && stored !== null ? String(stored)
+    : (field.defaultValue !== null && field.defaultValue !== undefined ? defaultValue(field) : ''));
+  const current = store.dirty[field.name] !== undefined
+    ? canonicalValue(field, store.dirty[field.name]) : saved;
   return {saved, current};
 }
 
@@ -251,7 +252,7 @@ function buildRow(field, groupAllRestart) {
   // 危险项自己记账：改到危险那一档要先问一句，取消就退回原样、不计入改动
   let previous = read();
   const record = () => {
-    const now = read();
+    const now = canonicalValue(field, read());
     if (now === saved) delete store.dirty[field.name];
     else store.dirty[field.name] = now;
     previous = now;

@@ -2504,6 +2504,50 @@ class ConfigUiFrontendTest {
     }
 
     /**
+     * 初始化不得把监听地址的 InetAddress 斜杠形态记进 dirty
+     * <p>
+     * 设置页刚打开时底部那条「N 处改动」答的是 store.dirty。监听地址若按
+     * {@code InetAddress.toString()} 落成 {@code /127.0.0.1}，字面与已保存／出厂值不同，
+     * 一进页就会被记成改过。显示与记账都得走 {@code canonicalValue}，缺一半则另一半
+     * 看着绿、这一半仍会亮条。
+     */
+    @Test
+    @DisplayName("设置页初始化把监听地址斜杠形态收成同一值，不进 dirty")
+    void settingsInitDoesNotDirtyInetAddressSlash() throws IOException {
+        String settings = coreSources().getOrDefault("settings.js", "");
+        String model = coreSources().getOrDefault("settings-model.js", "");
+        List<String> bad = new ArrayList<>();
+        try {
+            if (!model.contains("export function canonicalValue(")) {
+                bad.add("settings-model.js 没有导出 canonicalValue，斜杠形态没有单独的收法");
+            }
+        } catch (RuntimeException e) {
+            bad.add("① " + e.getMessage());
+        }
+        try {
+            if (!settings.contains("canonicalValue") || !settings.contains("from './settings-model.js'")) {
+                bad.add("settings.js 没有从 settings-model.js 接 canonicalValue");
+            }
+            String values = functionBodyAny(settings, "valuesOf");
+            if (values.isBlank()) {
+                bad.add("settings.js 里找不到 valuesOf");
+            } else if (!values.contains("canonicalValue(")) {
+                bad.add("valuesOf 没有走 canonicalValue，输入框仍会显示 /127.0.0.1");
+            }
+        } catch (RuntimeException e) {
+            bad.add("② " + e.getMessage());
+        }
+        try {
+            if (!settings.contains("canonicalValue(field, read())")) {
+                bad.add("record 没有按 canonicalValue(field, read()) 记账，斜杠形态会进 dirty");
+            }
+        } catch (RuntimeException e) {
+            bad.add("③ " + e.getMessage());
+        }
+        assertTrue(bad.isEmpty(), "初始化不进 dirty 的接线有问题:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
      * 一段文本里某个片段出现了几次
      */
     private int countOccurrences(String text, String piece) {

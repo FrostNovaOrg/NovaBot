@@ -214,7 +214,7 @@ public class ConfigurationFileService {
                 // 字符串列表以换行连接，与界面中的多行输入框一一对应
                 values.put(line.path, String.join("\n", line.items));
             } else if (line.value != null && !line.value.isEmpty()) {
-                values.put(line.path, line.value);
+                values.put(line.path, InetAddressText.fromFile(line.value));
             }
         }
 

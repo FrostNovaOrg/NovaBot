@@ -769,4 +769,41 @@ class ConfigurationFileServiceTest {
         assertTrue(unresolved.isEmpty(),
                 () -> "旧根不折叠三问中 " + unresolved.size() + " 问未销: " + String.join("; ", unresolved));
     }
+
+    @Test
+    @DisplayName("读到 InetAddress.toString 形态的监听地址时收成点分地址")
+    void readsSlashLoopbackAsHostAddress() throws IOException {
+        List<String> bad = new ArrayList<>();
+        try {
+            Files.writeString(config, """
+                    server:
+                      address: /127.0.0.1
+                      port: 7827
+                    """, StandardCharsets.UTF_8);
+            assertEquals("127.0.0.1", service.read().get("server.address"));
+        } catch (AssertionError | IOException e) {
+            bad.add("① 斜杠形态: " + e.getMessage());
+        }
+        try {
+            Files.writeString(config, """
+                    server:
+                      address: localhost/127.0.0.1
+                      port: 7827
+                    """, StandardCharsets.UTF_8);
+            assertEquals("127.0.0.1", service.read().get("server.address"));
+        } catch (AssertionError | IOException e) {
+            bad.add("② 主机名/地址形态: " + e.getMessage());
+        }
+        try {
+            Files.writeString(config, TEMPLATE, StandardCharsets.UTF_8);
+            assertEquals("127.0.0.1", service.read().get("server.address"),
+                    "阴性：本来就是点分的不得改写");
+            String allow = service.read().get("novabot.core.config-ui.allow-ips");
+            assertTrue(allow != null && allow.startsWith("127.0.0.1/32"),
+                    "CIDR 不得被收成点分地址: " + allow);
+        } catch (AssertionError | IOException e) {
+            bad.add("③ 阴性: " + e.getMessage());
+        }
+        assertTrue(bad.isEmpty(), "监听地址读数三问中未销: " + String.join("; ", bad));
+    }
 }
