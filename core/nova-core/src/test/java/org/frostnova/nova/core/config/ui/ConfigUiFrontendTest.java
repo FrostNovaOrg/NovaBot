@@ -562,6 +562,32 @@ class ConfigUiFrontendTest {
     }
 
     /**
+     * 设置页组目录是左侧竖栏，不是顶上一排药丸
+     * <p>
+     * 假二级＝不加路由、不拆页：外壳两栏、条目带着组标识、滚动时用观察器标当前组。
+     * 三样缺一，看起来仍是一排药丸，点了也不知道自己在哪。
+     */
+    @Test
+    @DisplayName("设置页目录竖栏")
+    void settingsNavIsASideIndex() throws IOException {
+        String html = Files.readString(frontendDir().resolve("index.html"), StandardCharsets.UTF_8);
+        String settings = coreSources().getOrDefault("settings.js", "");
+
+        List<String> bad = new ArrayList<>();
+        if (!html.contains("class=\"setwrap\"")) {
+            bad.add("index.html 没有 class=\"setwrap\"，组目录与内容没有两栏外壳");
+        }
+        if (!settings.contains("IntersectionObserver")) {
+            bad.add("settings.js 没有 IntersectionObserver，滚动时当前组不会跟着高亮");
+        }
+        if (!settings.contains("data-grp-link")) {
+            bad.add("settings.js 没有 data-grp-link，目录条目对不上组");
+        }
+
+        assertTrue(bad.isEmpty(), "设置页目录竖栏还没就位:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
      * 源码地址。与界面里那一份是同一个串，两份分叉时这一格会红
      */
     private static final String SOURCE_URL = "https://github.com/FrostNovaOrg/NovaBot";

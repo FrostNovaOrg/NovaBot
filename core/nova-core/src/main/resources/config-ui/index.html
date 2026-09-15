@@ -337,9 +337,14 @@
         <label class="switch"><input type="checkbox" id="only-changed"><span>只看改过的</span></label>
         <span class="dim" id="set-count"></span>
       </div>
-      <!-- 组目录药丸，点一下滚到那一组。内容由脚本按服务端给的组表建出 -->
-      <div class="grpnav" id="grp-nav"></div>
-      <div id="groups"></div>
+      <!--
+        组目录：宽屏左侧竖栏，窄屏收回顶上横排。点一下滚到那一组。
+        内容由脚本按服务端给的组表建出。
+      -->
+      <div class="setwrap">
+        <div class="grpnav" id="grp-nav"></div>
+        <div id="groups"></div>
+      </div>
 
       <!--
         改口令、二次验证、通行密钥、重新跑一遍初始设置四块由 settings-auth.js 建出，
