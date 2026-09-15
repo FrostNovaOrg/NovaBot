@@ -73,7 +73,7 @@ cleanup() {
         kill -TERM "$PID" 2>/dev/null || true
         for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
             kill -0 "$PID" 2>/dev/null || break
-            sleep 0.5
+            sleep 1
         done
         if kill -0 "$PID" 2>/dev/null; then
             kill -KILL "$PID" 2>/dev/null || true
@@ -197,7 +197,7 @@ if [ -n "$PID" ]; then
     kill -TERM "$PID" 2>/dev/null || true
     for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
         kill -0 "$PID" 2>/dev/null || break
-        sleep 0.5
+        sleep 1
     done
     if kill -0 "$PID" 2>/dev/null; then
         kill -KILL "$PID" 2>/dev/null || true
