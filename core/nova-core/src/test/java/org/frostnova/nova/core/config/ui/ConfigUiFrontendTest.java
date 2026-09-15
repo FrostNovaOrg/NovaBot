@@ -2504,16 +2504,15 @@ class ConfigUiFrontendTest {
     }
 
     /**
-     * 初始化不得把监听地址的 InetAddress 斜杠形态记进 dirty
+     * 设置页把监听地址斜杠形态接到 {@code canonicalValue}
      * <p>
-     * 设置页刚打开时底部那条「N 处改动」答的是 store.dirty。监听地址若按
-     * {@code InetAddress.toString()} 落成 {@code /127.0.0.1}，字面与已保存／出厂值不同，
-     * 一进页就会被记成改过。显示与记账都得走 {@code canonicalValue}，缺一半则另一半
-     * 看着绿、这一半仍会亮条。
+     * 本格是接线：导出、{@code valuesOf}、{@code record} 三处源码都要出现
+     * {@code canonicalValue}。行为由 {@code settings-model-fixture.mjs} 的例表量，
+     * 不在这里用字符串 grep 冒充「不进 dirty」。
      */
     @Test
-    @DisplayName("设置页初始化把监听地址斜杠形态收成同一值，不进 dirty")
-    void settingsInitDoesNotDirtyInetAddressSlash() throws IOException {
+    @DisplayName("设置页把监听地址斜杠形态接到 canonicalValue（接线）")
+    void settingsWiresCanonicalValueForInetAddressSlash() throws IOException {
         String settings = coreSources().getOrDefault("settings.js", "");
         String model = coreSources().getOrDefault("settings-model.js", "");
         List<String> bad = new ArrayList<>();
@@ -2544,7 +2543,7 @@ class ConfigUiFrontendTest {
         } catch (RuntimeException e) {
             bad.add("③ " + e.getMessage());
         }
-        assertTrue(bad.isEmpty(), "初始化不进 dirty 的接线有问题:\n  " + String.join("\n  ", bad));
+        assertTrue(bad.isEmpty(), "canonicalValue 接线有问题:\n  " + String.join("\n  ", bad));
     }
 
     /**

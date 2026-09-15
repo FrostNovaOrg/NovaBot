@@ -82,6 +82,19 @@ class ServerAddressEnvironmentPostProcessorTest {
             }
         }
 
+        if (processor != null) {
+            try {
+                MockEnvironment env = new MockEnvironment();
+                env.getPropertySources().addLast(new MapPropertySource("file",
+                        Map.of("management.server.address", "/127.0.0.1")));
+                processor.postProcessEnvironment(env, null);
+                assertEquals("127.0.0.1", env.getProperty("management.server.address"),
+                        "management.server.address 斜杠形态应收成裸地址");
+            } catch (AssertionError | RuntimeException e) {
+                bad.add("⑤ management.server.address: " + e.getMessage());
+            }
+        }
+
         try {
             List<String> declared = new ArrayList<>();
             var urls = getClass().getClassLoader().getResources("META-INF/spring.factories");

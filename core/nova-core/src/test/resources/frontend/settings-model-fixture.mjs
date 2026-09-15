@@ -9,6 +9,9 @@
  * 引用路径是相对的，量的是源码树里的那一份，不是构建产物里的副本。
  */
 
+import {readFileSync} from 'node:fs';
+import {dirname, join} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {
   MASK, dangerOf, isDangerous, defaultText, defaultValue, isChanged, haystack,
   isVisible, effectOf, canonicalValue,
@@ -64,6 +67,18 @@ eq(canonicalValue(field({name: 'server.address'}), 'localhost/127.0.0.1'), '127.
   'canonicalValue 收掉 hostname/ip');
 eq(canonicalValue(field({name: 'novabot.core.config-ui.allow-ips'}), '127.0.0.1/32'),
   '127.0.0.1/32', 'CIDR 不是监听地址，不收');
+eq(canonicalValue(field({name: 'server.address'}), '/0:0:0:0:0:0:0:1'), '0:0:0:0:0:0:0:1',
+  'canonicalValue 收掉 IPv6 斜杠形态');
+eq(canonicalValue(field({name: 'server.address'}), '::1/128'), '::1/128',
+  'IPv6 CIDR 不收');
+eq(canonicalValue(field({name: 'server.address'}), 'localhost/::1'), '::1',
+  'canonicalValue 收掉 hostname/IPv6');
+const addressField = field({name: 'server.address'});
+const table = JSON.parse(readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '..', 'inet-address-text.json'), 'utf8'));
+for (const row of table) {
+  eq(canonicalValue(addressField, row.in), row.out, '例表 ' + row.in);
+}
 eq(isChanged(field({
   name: 'server.address', widget: 'string', defaultValue: '127.0.0.1',
 }), '0.0.0.0'), true, '监听地址真改了仍算改过');

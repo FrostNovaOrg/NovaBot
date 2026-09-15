@@ -92,7 +92,7 @@ public class ConfigurationFileService {
     private final Set<String> blankMeansAbsent;
 
     /**
-     * 监听地址在配置树上的键。与设置页 {@code canonicalValue} 同一把尺子：只有这一项走斜杠归一。
+     * 主监听地址键。完整集合见 {@link InetAddressText#ADDRESS_KEYS}。
      */
     static final String ADDRESS_KEY = "server.address";
 
@@ -215,6 +215,8 @@ public class ConfigurationFileService {
      */
     public synchronized Map<String, String> read() throws IOException {
         Map<String, String> values = new LinkedHashMap<>();
+        Map<String, String> fixes = new LinkedHashMap<>();
+        Map<String, String> rawByPath = new LinkedHashMap<>();
 
         for (Line line : parse()) {
             if (line.path == null) {
@@ -229,7 +231,8 @@ public class ConfigurationFileService {
                     String canonical = InetAddressText.fromFile(line.value);
                     values.put(line.path, canonical);
                     if (!canonical.equals(line.value)) {
-                        healSlashAddress(line.value, canonical);
+                        fixes.put(line.path, canonical);
+                        rawByPath.put(line.path, line.value);
                     }
                 } else {
                     values.put(line.path, line.value);
@@ -237,30 +240,35 @@ public class ConfigurationFileService {
             }
         }
 
+        healSlashAddress(fixes, rawByPath);
         return values;
     }
 
     static boolean isAddressKey(String path) {
-        return ADDRESS_KEY.equals(path);
+        return InetAddressText.isAddressKey(path);
     }
 
     /**
      * 文件里的监听地址若是 {@code InetAddress.toString()} 那种斜杠形态，按既有写口改回裸地址。
      * 同一进程只改一次：启动期后处理器已经让绑定成功，这里只负责把落盘那一行扶正。
+     * 一次写盘带上全部待改的地址键，免得两处斜杠只改到第一处。
      */
-    private void healSlashAddress(String raw, String canonical) {
-        if (slashAddressHealed) {
+    private void healSlashAddress(Map<String, String> fixes, Map<String, String> rawByPath) {
+        if (slashAddressHealed || fixes.isEmpty()) {
             return;
         }
         slashAddressHealed = true;
         try {
-            List<String> changed = write(Map.of(ADDRESS_KEY, canonical));
+            List<String> changed = write(fixes);
             if (!changed.isEmpty()) {
-                log.info("配置文件里的监听地址是斜杠形态 {}, 已改回 {}", raw, canonical);
+                for (String path : changed) {
+                    log.info("配置文件里的监听地址是斜杠形态 {}, 已改回 {}",
+                            rawByPath.getOrDefault(path, path), fixes.get(path));
+                }
             }
         } catch (IOException e) {
             slashAddressHealed = false;
-            log.warn("配置文件里的监听地址是斜杠形态 {}, 未能改回 {}: {}", raw, canonical, e.toString());
+            log.warn("配置文件里的监听地址是斜杠形态, 未能改回 {}: {}", fixes, e.toString());
         }
     }
 

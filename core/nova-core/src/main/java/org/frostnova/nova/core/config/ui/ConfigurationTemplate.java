@@ -8,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * 把配置面渲染成一份完整的 application.yml
@@ -48,6 +49,11 @@ final class ConfigurationTemplate {
      * 值首位出现即必须加引号的 YAML 指示符，与 {@link ConfigurationFileService} 同源
      */
     private static final String INDICATOR_START = "-?:,[]{}#&*!|>'\"%@`";
+
+    /**
+     * 时:分，以及展开式 IPv6 这种「数字:数字」串。SnakeYAML 按 YAML 1.1 六十进制会读成整数。
+     */
+    private static final Pattern CLOCK_TIME = Pattern.compile("^[+-]?\\d+(:[0-5]?\\d)+$");
 
     /**
      * 写在文件最前面的话
@@ -307,6 +313,9 @@ final class ConfigurationTemplate {
             return true;
         }
         if (!text.strip().equals(text) || text.contains(": ") || text.contains(" #")) {
+            return true;
+        }
+        if (text.indexOf(':') != text.lastIndexOf(':') || CLOCK_TIME.matcher(text).matches()) {
             return true;
         }
 

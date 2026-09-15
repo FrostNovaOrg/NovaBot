@@ -467,6 +467,32 @@ class ConfigurationTemplateTest {
     }
 
     @Test
+    @DisplayName("展开式 IPv6 写出后读回仍是字符串")
+    void ipv6AddressRendersAsQuotedString() throws Exception {
+        java.net.InetAddress v6 = java.net.InetAddress.getByName("1:2:3:4:5:6:7:8");
+        ConfigurationMetadataService.ConfigurationField field =
+                new ConfigurationMetadataService.ConfigurationField(
+                        "server.address", "java.lang.String", "监听地址", "::1");
+        String yaml = ConfigurationTemplate.render(List.of(field), Map.of("server.address", v6));
+        LoaderOptions options = new LoaderOptions();
+        options.setAllowDuplicateKeys(false);
+        Object root = new Yaml(new SafeConstructor(options)).load(yaml);
+        List<String> bad = new ArrayList<>();
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> server = (Map<String, Object>) ((Map<?, ?>) root).get("server");
+            Object value = server.get("address");
+            assertTrue(value instanceof String, "读回应是字符串, 实为 "
+                    + (value == null ? "null" : value.getClass().getName() + " = " + value)
+                    + "; yaml=\n" + yaml);
+            assertEquals(v6.getHostAddress(), value, "yaml=\n" + yaml);
+        } catch (AssertionError | RuntimeException e) {
+            bad.add("① 读回: " + e.getMessage() + "; yaml=\n" + yaml);
+        }
+        assertTrue(bad.isEmpty(), String.join("\n  ", bad));
+    }
+
+    @Test
     @DisplayName("④ 写口·阴性 —— 已有的文件不会被这份模板盖掉")
     void existingFileIsNeverOverwritten() throws IOException {
         Path config = dir.resolve("application.yml");
