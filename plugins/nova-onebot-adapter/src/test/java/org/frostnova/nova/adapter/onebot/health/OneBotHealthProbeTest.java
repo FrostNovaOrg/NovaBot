@@ -38,6 +38,9 @@ class OneBotHealthProbeTest {
 
         assertEquals(HealthStatus.Level.DOWN, status.level());
         assertFalse(status.advice().isBlank(), "应给出修复建议");
+        assertEquals("unconfigured", status.reason());
+        assertTrue(status.advice().contains("连接"), status.advice());
+        assertFalse(status.advice().contains("novabot.adapter.onebot.senders"), status.advice());
     }
 
     @Test
@@ -63,6 +66,7 @@ class OneBotHealthProbeTest {
         HealthStatus status = probe(state).check();
 
         assertEquals(HealthStatus.Level.DOWN, status.level());
+        assertEquals("unreachable", status.reason());
         assertTrue(status.advice().contains("one-bot-address"), "应指明要核对的配置项: " + status.advice());
     }
 
@@ -113,6 +117,7 @@ class OneBotHealthProbeTest {
 
         // 这一条最容易被漏掉：连接、端口、Token 全对，接口也返回 200，消息却谁都收不到
         assertEquals(HealthStatus.Level.DOWN, status.level());
+        assertEquals("account", status.reason());
         assertTrue(status.advice().contains("扫码"), "应指明要重新登录: " + status.advice());
     }
 

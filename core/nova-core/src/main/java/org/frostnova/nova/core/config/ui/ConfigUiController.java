@@ -1892,11 +1892,14 @@ public class ConfigUiController {
                         item.put("level", status.level().name());
                         item.put("summary", status.summary());
                         item.put("advice", status.advice());
+                        // 首页待办标题按原因码分，不按中文文案匹配
+                        item.put("reason", status.reason());
                     } catch (Exception e) {
                         log.warn("健康探针 {} 执行异常", probe.name(), e);
                         item.put("level", HealthStatus.Level.DOWN.name());
                         item.put("summary", "探针执行异常: " + e.getMessage());
                         item.put("advice", "请查看日志确认原因");
+                        item.put("reason", "");
                     }
 
                     items.add(item);

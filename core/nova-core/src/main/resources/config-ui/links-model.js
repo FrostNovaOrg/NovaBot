@@ -87,7 +87,7 @@ function platformCard(card, status, accounts) {
   }
 
   return Object.assign(base, {
-    level: 'warn',
+    level: 'err',
     caption: account.qrCode ? '未登录 · 请扫下面的二维码' : '未登录 · 二维码还没生成，稍候',
     note: probe.advice || probe.summary || '登录掉了，重新扫码即可',
   });

@@ -11,6 +11,7 @@
 
 import {api, esc, say} from './core.js';
 import {refreshHome} from './overview.js';
+import {store} from './store.js';
 import {todayAtAllMarkup, todayModel} from './today-model.js';
 
 /** 宿主给的那块容器，卡的正文 */
@@ -118,6 +119,9 @@ export async function togglePush() {
       body: JSON.stringify({enabled: next}),
     });
     say(res.message, res.success ? 'ok' : 'err');
+    if (res.success) {
+      store.values['novabot.core.push.enabled'] = String(next);
+    }
     await refreshHome();
   } catch (e) {
     say('切换失败：' + e.message, 'err');

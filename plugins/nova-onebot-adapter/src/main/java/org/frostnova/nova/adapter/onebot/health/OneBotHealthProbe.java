@@ -53,12 +53,14 @@ public class OneBotHealthProbe implements HealthProbe {
         Map<String, OneBotConnectionState.Entry> all = state.all();
         if (all.isEmpty()) {
             return HealthStatus.down("未配置任何机器人",
-                    "请在配置文件中填写 novabot.adapter.onebot.senders，至少配置一个 OneBot 连接");
+                    "到初始设置第 2 步或「连接」页填机器人地址与端口",
+                    "unconfigured");
         }
 
         List<String> summaries = new ArrayList<>();
         List<String> advices = new ArrayList<>();
         HealthStatus.Level worst = HealthStatus.Level.OK;
+        String reason = "";
 
         for (Map.Entry<String, OneBotConnectionState.Entry> item : all.entrySet()) {
             String sender = item.getKey();
@@ -76,10 +78,14 @@ public class OneBotHealthProbe implements HealthProbe {
             // HTTP 不通即无法推送消息，属于致命；Websocket 只用于接收事件，断开仅影响插件功能
             if (http.kind() != OneBotConnectionState.Kind.OK) {
                 worst = HealthStatus.Level.DOWN;
+                reason = "unreachable";
                 advices.add(sender + " " + advise(sender, http));
             } else if (account.kind() == OneBotConnectionState.Kind.SERVICE_ABNORMAL) {
                 // 接口调得通不代表消息发得出去：账号掉线时一切看起来都正常，消息却无人收到
                 worst = HealthStatus.Level.DOWN;
+                if (!"unreachable".equals(reason)) {
+                    reason = "account";
+                }
                 advices.add(sender + " 的 QQ 账号已掉线，接口仍可调用但消息不会送达，请到 OneBot 实现的界面重新扫码登录");
             } else if (websocket.kind() != OneBotConnectionState.Kind.OK
                     && websocket.kind() != OneBotConnectionState.Kind.DISABLED
@@ -103,7 +109,7 @@ public class OneBotHealthProbe implements HealthProbe {
             }
         }
 
-        return new HealthStatus(worst, String.join("；", summaries), String.join("；", advices));
+        return new HealthStatus(worst, String.join("；", summaries), String.join("；", advices), reason);
     }
 
     /**
