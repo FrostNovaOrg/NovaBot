@@ -6,8 +6,8 @@
  * 钉开关那一格在 store.values 改完再画时 checked 与「已启用／已关闭」跟着走，
  * 以及未保存草稿优先于已保存值。
  *
- * 用 node 直接跑：
- *   node tools/settings-values-check.mjs
+ * 跑法：
+ *   bash tools/settings-model-check.sh
  * 退码 0 即各格全对；任一格对不上打印差异并以 1 退出。
  */
 

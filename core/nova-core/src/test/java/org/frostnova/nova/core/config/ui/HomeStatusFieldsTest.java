@@ -192,6 +192,10 @@ class HomeStatusFieldsTest {
 
     /** 一个只声明范围与登录态位的探针，够本组用例用 */
     private HealthProbe probe(String name, HealthProbe.Scope scope, boolean loginState) {
+        return probe(name, scope, loginState, HealthStatus.ok("正常"));
+    }
+
+    private HealthProbe probe(String name, HealthProbe.Scope scope, boolean loginState, HealthStatus status) {
         return new HealthProbe() {
             @Override
             public String name() {
@@ -200,7 +204,7 @@ class HomeStatusFieldsTest {
 
             @Override
             public HealthStatus check() {
-                return HealthStatus.ok("正常");
+                return status;
             }
 
             @Override
@@ -481,6 +485,44 @@ class HomeStatusFieldsTest {
         assertTrue(health.getJSONObject(0).getBooleanValue("loginState"),
                 "登录掉了要人去扫码，断流多半会自己恢复——首页按这一位把两者分开说");
         assertFalse(health.getJSONObject(1).getBooleanValue("loginState"));
+    }
+
+    @Test
+    @DisplayName("探针带着原因码，正常为空串")
+    void healthCarriesReasonCode() {
+        probes = List.of(
+                probe("机器人连接", HealthProbe.Scope.BOT, false,
+                        HealthStatus.down("QQ 账号已掉线", "重新扫码", "account")),
+                probe("直播间连接", HealthProbe.Scope.PLATFORM, false),
+                new HealthProbe() {
+                    @Override
+                    public String name() {
+                        return "异常探针";
+                    }
+
+                    @Override
+                    public HealthStatus check() {
+                        throw new IllegalStateException("boom");
+                    }
+
+                    @Override
+                    public HealthProbe.Scope scope() {
+                        return HealthProbe.Scope.SYSTEM;
+                    }
+
+                    @Override
+                    public boolean loginState() {
+                        return false;
+                    }
+                });
+
+        JSONArray health = controller().status().getJSONArray("health");
+
+        assertEquals(3, health.size());
+        assertEquals("account", health.getJSONObject(0).getString("reason"));
+        assertTrue(health.getJSONObject(1).containsKey("reason"), "正常探针应有 reason 键");
+        assertEquals("", health.getJSONObject(1).getString("reason"));
+        assertEquals("", health.getJSONObject(2).getString("reason"));
     }
 
     /**

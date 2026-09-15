@@ -1,16 +1,17 @@
 /**
- * 首页视图模型的十档对照
+ * 首页视图模型的十一档对照
  *
  * 首页要在八种情形下都对得上，而这八种在真机上凑齐一次的代价极高：QQ 掉线、直播间断流、
  * 接口变慢这几档要么等故障发生，要么去改线上配置。视图模型因此被切成一个纯函数
  * （home-model.js，不碰 DOM），本文件喂它回包，逐档核对链路三段的灯色、顶部横条、
  * 待办与「今天发生了什么」的条数。第九档（有新版）是后来加的：它给待办表添了一条，
  * 恰好也压着「待办只放要人动手的事」这条规矩的边界。第十档钉的是暂停期间机器人掉线：
- * 链路段仍熄灯，待办却不能跟着藏掉。
+ * 链路段仍熄灯，待办却不能跟着藏掉。第十一档钉的是静音期间机器人掉线：横条走静音，
+ * 待办仍要出，标题走 botTodoTitle 的重新登录支。
  *
  * 用 node 直接跑：
  *   node tools/home-model-check.mjs
- * 退码 0 即十档全对；任一档对不上打印差异并以 1 退出。
+ * 退码 0 即十一档全对；任一档对不上打印差异并以 1 退出。
  */
 
 import {homeModel, PROBE_ANCHOR, setupDone, setupSteps, shouldOpenSetup, stationHref, withPluginSteps} from '../core/nova-core/src/main/resources/config-ui/home-model.js';
@@ -75,7 +76,7 @@ function timeline(events) {
   ]};
 }
 
-// ── 十档 ───────────────────────────────────────────────────────────────
+// ── 十一档 ─────────────────────────────────────────────────────────────
 // 每档写明：改了哪几处回包字段（驱动字段），以及首页该长成什么样（应）
 const CASES = [
   {
@@ -187,6 +188,19 @@ const CASES = [
     expect: {chain: ['ok', 'ok', 'off'], banner: 'paused', todos: ['bot'], events: 8},
   },
   {
+    name: '静音时段中且机器人掉线',
+    status: status({
+      quiet: {active: true, start: '23:00', end: '08:00'},
+      health: OK_PROBES().map(p => p.name === '机器人连接'
+        ? probe(p.name, p.scope, 'DOWN', '默认 的 QQ 账号已掉线，接口仍可调用但消息不会送达',
+          '请到 OneBot 实现的界面重新扫码登录', false, 'account')
+        : p),
+    }),
+    login: login(),
+    timeline: timeline(),
+    expect: {chain: ['ok', 'ok', 'off'], banner: 'quiet', todos: ['bot'], events: 8},
+  },
+  {
     name: '有新版',
     // 服务器判「该提示」时 /api/status 才有 update 这一块：版本、说明与站外链接同形
     status: status({update: {
@@ -255,7 +269,7 @@ if (bad.length || hrefBad.length) {
   process.exit(1);
 }
 console.log('本机站\t' + stationHref('self') + '\t锚 #' + PROBE_ANCHOR + '\t绿');
-console.log('\n十档全对，本机站落到首页探针区');
+console.log('\n十一档全对，本机站落到首页探针区');
 
 // ── Webhook 待办与步骤表 ──────────────────────────────────────────────
 // 判法只留 home-model 一份。下面逐格喂回包对答案，不碰 DOM。
@@ -424,6 +438,9 @@ askPhrase('①有词', () => {
   mustEq(m.chain.bot.sub, '群与好友', '站副');
   mustEq((homeOf(botDownPatch(), ADAPTER_TERMS).todos.find(x => x.key === 'bot') || {}).title,
     '重新登录 NapCat', '重登');
+  mustEq((homeOf(Object.assign({quiet: {active: true, start: '23:00', end: '08:00'}}, botDownPatch()),
+    ADAPTER_TERMS).todos.find(x => x.key === 'bot') || {}).title,
+    '重新登录 NapCat', '静音且掉线重登');
   mustEq((homeOf(botUnreachablePatch(), ADAPTER_TERMS).todos.find(x => x.key === 'bot') || {}).title,
     '把 NapCat 连上', '连上');
   mustEq((homeOf(botUnconfiguredPatch(), ADAPTER_TERMS).todos.find(x => x.key === 'bot') || {}).title,
