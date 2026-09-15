@@ -11,7 +11,7 @@ import {focusStation, loadTargets, mountLinkCard, refreshLinks, sendTestMessage}
 import {loadLog, stopFollow, syncLogView} from './log.js';
 import {refreshHome, renderStatus, runSelfTest} from './overview.js';
 import {setAuthState} from './settings-auth.js';
-import {copyConfigPath, discard, filterSettings, focusGroup, renderConfigPath, renderGeneral, save, toggleKeyNames}
+import {copyConfigPath, discard, filterSettings, focusGroup, renderConfigPath, renderGeneral, save, stopWatchingGroups, toggleKeyNames}
   from './settings.js';
 import {openSetup, stopSetupPolling} from './setup.js';
 import {store} from './store.js';
@@ -520,6 +520,8 @@ function applyRoute(withData = true) {
   // 离开初始设置页就停掉那一页等扫码的轮询：不停的话，使用者点去连接页看一眼，
   // 那一页还在每 3 秒问一次登录状态，而它已经不在屏幕上了
   if (route === 'setup' && name !== 'setup') stopSetupPolling();
+  // 离开设置页就拆掉组目录的滚动观察器：页已经 display:none，再不拆会空算当前组
+  if (route === 'settings' && name !== 'settings') stopWatchingGroups();
   // 离开顶级插件页时通知它自己收尾巴（报告图临时地址这类）。核心不认识任何一页的内部状态
   if (route && route !== name) {
     const leavingTop = pages.find(item => item.meta.slot === SLOT_TOP && item.meta.id === route);

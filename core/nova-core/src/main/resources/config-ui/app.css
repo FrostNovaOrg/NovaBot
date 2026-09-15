@@ -303,6 +303,11 @@ html.showkeys .keyname{display:block}
 .badge.now{color:var(--ok);border-color:var(--ok)}
 .badge.restart{color:var(--warn);border-color:var(--warn)}
 .unit{margin-left:8px;font-size:12px;color:var(--dim);white-space:nowrap}
+/* 有单位的输入行：单位跟在框右边。无单位的行不走这套 */
+.cell.has-unit{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px}
+.cell.has-unit input{flex:1 1 auto;width:auto;min-width:0}
+.cell.has-unit .unit{margin-left:0}
+.cell.has-unit .badge{flex:1 1 100%}
 /* 布尔行：开关与生效标记同一行垂直居中。非布尔行的标记仍在输入框下方，走上面的 margin-top */
 .boolcell{display:inline-flex;align-items:center;gap:10px}
 .boolcell .badge{margin-top:0}

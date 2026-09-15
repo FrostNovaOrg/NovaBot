@@ -25,8 +25,19 @@ const AUTH_GROUP = 'auth';
 
 /**
  * 滚动观察器：标出目录里当前这一组。重绘时拆掉再建，免得旧节点还挂着。
+ * 离开设置页也要拆：那一页已经 display:none，观察器留着会空转。
  */
 let groupWatcher = null;
+
+/**
+ * 拆掉组目录的滚动观察器
+ */
+export function stopWatchingGroups() {
+  if (groupWatcher) {
+    groupWatcher.disconnect();
+    groupWatcher = null;
+  }
+}
 
 /**
  * 滚到设置页上的某一组
@@ -180,6 +191,10 @@ function buildRow(field, groupAllRestart) {
     const unit = el('span', 'unit');
     unit.textContent = field.unit;
     cell.appendChild(unit);
+    // 数字／文本框把单位摆在右边；textarea 仍单独占一行，不改成横排
+    if (input && input.tagName === 'INPUT') {
+      cell.classList.add('cell', 'has-unit');
+    }
   }
   row.appendChild(cell);
 
@@ -358,10 +373,7 @@ function buildNav(groups, advanced) {
  * 画整个设置页
  */
 export function renderGeneral() {
-  if (groupWatcher) {
-    groupWatcher.disconnect();
-    groupWatcher = null;
-  }
+  stopWatchingGroups();
   const box = $('#groups');
   box.innerHTML = '';
 
@@ -397,10 +409,7 @@ export function renderGeneral() {
  * 搜索／筛选会改哪些组可见，所以每次先 disconnect 再挂新的。
  */
 function watchCurrentGroup() {
-  if (groupWatcher) {
-    groupWatcher.disconnect();
-    groupWatcher = null;
-  }
+  stopWatchingGroups();
   const sections = [];
   for (const node of document.querySelectorAll('.setgrp[data-grp]')) {
     if (!node.classList.contains('hide')) sections.push(node);
@@ -416,6 +425,18 @@ function watchCurrentGroup() {
         break;
       }
     }
+    // 页顶／页尾时中间 20% 带里可能一组都没有。此时取顶边在视口中线之上的最后一组；
+    // 全都在中线之下（刚打开、还没滚）则取第一组还能画出的。
+    if (!current) {
+      const bandCenter = window.innerHeight / 2;
+      let lastAbove = null;
+      for (const section of sections) {
+        if (!section.getClientRects().length) continue;
+        if (section.getBoundingClientRect().top <= bandCenter) lastAbove = section;
+      }
+      const pick = lastAbove || sections.find(section => section.getClientRects().length) || sections[0];
+      if (pick) current = pick.dataset.grp;
+    }
     for (const link of document.querySelectorAll('#grp-nav [data-grp-link]')) {
       link.classList.toggle('cur', link.getAttribute('data-grp-link') === current);
     }
@@ -430,6 +451,7 @@ function watchCurrentGroup() {
   }, {rootMargin: '-40% 0px -40% 0px', threshold: 0});
 
   for (const section of sections) groupWatcher.observe(section);
+  mark();
 }
 
 /**
