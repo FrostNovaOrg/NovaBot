@@ -806,4 +806,86 @@ class ConfigurationFileServiceTest {
         }
         assertTrue(bad.isEmpty(), "监听地址读数三问中未销: " + String.join("; ", bad));
     }
+
+    @Test
+    @DisplayName("读到斜杠形态时把文件改回裸地址，同一实例只改一次，并记一行说明")
+    void healsSlashAddressInFileOnce() throws IOException {
+        List<String> bad = new ArrayList<>();
+        Logger logger = (Logger) LoggerFactory.getLogger(ConfigurationFileService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            Files.writeString(config, """
+                    server:
+                      address: /127.0.0.1
+                      port: 7827
+                    """, StandardCharsets.UTF_8);
+            assertEquals("127.0.0.1", service.read().get("server.address"));
+            String text = content();
+            try {
+                assertTrue(text.contains("address: 127.0.0.1"),
+                        "文件应改回裸地址, 实有:\n" + text);
+                assertFalse(text.contains("address: /127.0.0.1"),
+                        "斜杠形态应已从文件消失, 实有:\n" + text);
+            } catch (AssertionError e) {
+                bad.add("① 文件自愈: " + e.getMessage());
+            }
+            try {
+                List<String> messages = appender.list.stream()
+                        .map(ILoggingEvent::getFormattedMessage)
+                        .toList();
+                assertTrue(messages.stream().anyMatch(line ->
+                                line.contains("/127.0.0.1") && line.contains("127.0.0.1")),
+                        "日志应说明从哪改到哪, 实有: " + messages);
+            } catch (AssertionError e) {
+                bad.add("② INFO: " + e.getMessage());
+            }
+            try {
+                long backupsAfterFirst = backupCount();
+                String afterFirst = content();
+                assertEquals("127.0.0.1", service.read().get("server.address"));
+                assertEquals(afterFirst, content(), "第二次读取不得再改文件");
+                assertEquals(backupsAfterFirst, backupCount(), "第二次读取不得再留备份");
+            } catch (AssertionError | IOException e) {
+                bad.add("③ 只改一次: " + e.getMessage());
+            }
+        } finally {
+            logger.detachAppender(appender);
+        }
+        assertTrue(bad.isEmpty(), "自愈格未销 " + bad.size() + " 问: " + String.join("; ", bad));
+    }
+
+    @Test
+    @DisplayName("非监听地址键的掩码写法原样保留")
+    void doesNotRewriteMaskOnOtherKeys() throws IOException {
+        List<String> bad = new ArrayList<>();
+        Files.writeString(config, """
+                server:
+                  address: 127.0.0.1
+                  port: 7827
+                novabot:
+                  core:
+                    demo-mask: 10.0.0.0/255.255.255.0
+                """, StandardCharsets.UTF_8);
+        Map<String, String> values = service.read();
+        try {
+            assertEquals("10.0.0.0/255.255.255.0", values.get("novabot.core.demo-mask"),
+                    "掩码不得被收成斜杠后半段");
+        } catch (AssertionError e) {
+            bad.add("① 读口: " + e.getMessage());
+        }
+        try {
+            assertTrue(content().contains("demo-mask: 10.0.0.0/255.255.255.0"),
+                    "文件里的掩码也不得被改写:\n" + content());
+        } catch (AssertionError | IOException e) {
+            bad.add("② 文件: " + e.getMessage());
+        }
+        try {
+            assertEquals("127.0.0.1", values.get("server.address"));
+        } catch (AssertionError e) {
+            bad.add("③ 监听地址阴性: " + e.getMessage());
+        }
+        assertTrue(bad.isEmpty(), "阴性格未销 " + bad.size() + " 问: " + String.join("; ", bad));
+    }
 }

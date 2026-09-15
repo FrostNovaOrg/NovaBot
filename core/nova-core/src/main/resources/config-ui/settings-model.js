@@ -79,10 +79,11 @@ export function defaultValue(field) {
 }
 
 /**
- * {@code InetAddress.toString()} 的 IPv4 形态：可选主机名、一条斜杠、四个点分十进制。
- * CIDR（127.0.0.1/32）对不上这支，不会被收成别的东西。
+ * {@code InetAddress.toString()} 的斜杠形态：可选主机名、一条斜杠，后面是 IPv4 点分
+ * 或至少含一个冒号的 IPv6。CIDR（127.0.0.1/32、::1/128）对不上这支。
+ * 后端读口已按键设门并会把文件改回裸地址；这里仍收一次，免得界面拿到斜杠串时进 dirty。
  */
-const INET4 = /^[^/]*\/(\d{1,3}(?:\.\d{1,3}){3})$/;
+const INET_SLASH = /^[^/]*\/((?:\d{1,3}(?:\.\d{1,3}){3})|(?:[0-9a-fA-F]*:[0-9a-fA-F:]+))$/;
 
 /**
  * 这一项拿到界面上、拿去跟已保存的值比时用的串
@@ -98,7 +99,7 @@ const INET4 = /^[^/]*\/(\d{1,3}(?:\.\d{1,3}){3})$/;
 export function canonicalValue(field, value) {
   const text = value === undefined || value === null ? '' : String(value);
   if (field && field.name === 'server.address') {
-    const matched = text.match(INET4);
+    const matched = text.match(INET_SLASH);
     if (matched) return matched[1];
   }
   return text;

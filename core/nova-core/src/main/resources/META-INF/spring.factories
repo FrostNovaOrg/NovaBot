@@ -1,2 +1,3 @@
 org.springframework.boot.EnvironmentPostProcessor=\
-  org.frostnova.nova.core.config.DataLocationGuard
+  org.frostnova.nova.core.config.DataLocationGuard,\
+  org.frostnova.nova.core.config.ui.ServerAddressEnvironmentPostProcessor
