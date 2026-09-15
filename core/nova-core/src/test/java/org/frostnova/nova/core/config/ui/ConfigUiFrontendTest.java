@@ -3268,7 +3268,9 @@ class ConfigUiFrontendTest {
      * 进设置页要按当下 {@code store.values} 重画一遍
      * <p>
      * 首页那个推送总开关改完不刷新就切过来时，设置页 DOM 若还是启动那一刻建的，
-     * 开关会停在旧值，而屏幕上看不出它是旧的。三问各自记下，末尾一起红。
+     * 开关会停在旧值，而屏幕上看不出它是旧的。五问各自记下，末尾一起红。
+     * 取数段按支切窗：从 {@code name === 'settings'} 起到下一个 {@code else if} 或段末。
+     * 该支须在 {@code else if (plugin)} 之后，否则带插件子路径的设置页地址会被本支吃掉。
      */
     @Test
     @DisplayName("进设置页 applyRoute 取数段重画 renderGeneral")
@@ -3289,7 +3291,8 @@ class ConfigUiFrontendTest {
         try {
             int idx = load.indexOf("name === 'settings'");
             assertTrue(idx >= 0, "applyRoute 取数段应含 name === 'settings'");
-            String branch = load.substring(idx, Math.min(load.length(), idx + 96));
+            int next = load.indexOf("else if", idx + "name === 'settings'".length());
+            String branch = next >= 0 ? load.substring(idx, next) : load.substring(idx);
             assertTrue(branch.contains("renderGeneral"),
                     "设置页分支应调 renderGeneral: " + branch.strip());
         } catch (Throwable t) {
@@ -3299,11 +3302,34 @@ class ConfigUiFrontendTest {
         try {
             int idx = load.indexOf("name === 'settings'");
             assertTrue(idx >= 0, "applyRoute 取数段应含 name === 'settings'");
-            String branch = load.substring(idx, Math.min(load.length(), idx + 96));
+            int next = load.indexOf("else if", idx + "name === 'settings'".length());
+            String branch = next >= 0 ? load.substring(idx, next) : load.substring(idx);
             assertTrue(branch.contains("focusCard"),
                     "设置页分支应补 focusCard: " + branch.strip());
         } catch (Throwable t) {
             red.add("③ " + t.getMessage());
+        }
+
+        try {
+            int settingsIdx = load.indexOf("name === 'settings'");
+            int pluginIdx = load.indexOf("else if (plugin)");
+            assertTrue(settingsIdx >= 0, "取数段应含 name === 'settings'");
+            assertTrue(pluginIdx >= 0, "取数段应含 else if (plugin)");
+            assertTrue(settingsIdx > pluginIdx,
+                    "settings 支须在 plugin 支之后: settings=" + settingsIdx + " plugin=" + pluginIdx);
+        } catch (Throwable t) {
+            red.add("④ " + t.getMessage());
+        }
+
+        try {
+            int idx = load.indexOf("name === 'settings'");
+            assertTrue(idx >= 0, "applyRoute 取数段应含 name === 'settings'");
+            int next = load.indexOf("else if", idx + "name === 'settings'".length());
+            String branch = next >= 0 ? load.substring(idx, next) : load.substring(idx);
+            assertTrue(branch.contains("renderGeneral") && branch.contains("focusCard"),
+                    "按支切窗须含 renderGeneral 与 focusCard: " + branch.strip());
+        } catch (Throwable t) {
+            red.add("⑤ " + t.getMessage());
         }
 
         if (!red.isEmpty()) {
