@@ -26,8 +26,10 @@ const AUTH_GROUP = 'auth';
 /**
  * 滚动观察器：标出目录里当前这一组。重绘时拆掉再建，免得旧节点还挂着。
  * 离开设置页也要拆：那一页已经 display:none，观察器留着会空转。
+ * 高亮刷新并进下一帧：观察器一响就量布局的话，平滑滚动会被拖住。
  */
 let groupWatcher = null;
+let groupMarkFrame = 0;
 
 /**
  * 拆掉组目录的滚动观察器
@@ -37,6 +39,10 @@ export function stopWatchingGroups() {
     groupWatcher.disconnect();
     groupWatcher = null;
   }
+  if (groupMarkFrame) {
+    cancelAnimationFrame(groupMarkFrame);
+    groupMarkFrame = 0;
+  }
 }
 
 /**
@@ -45,6 +51,7 @@ export function stopWatchingGroups() {
  * 组目录与首页那条「告警有死角」待办走的是同一条路。
  * 点了条目却因为筛选而看不见那一组，比什么都不发生更费解，因此先把 hide 揭掉。
  * 目标若在高级折页里，先打开折页再滚——折着的时候滚到位也看不见。
+ * 落点让出顶栏：scrollIntoView 的 start 会把标题送到视口顶，正好被顶栏盖住。
  * @param id 组标识，与 schema 里的 group 一致；高级折页本身传 adv
  */
 export function focusGroup(id) {
@@ -55,7 +62,9 @@ export function focusGroup(id) {
   if (target) {
     if (adv && adv.contains(target)) adv.open = true;
     target.classList.remove('hide');
-    if (target.scrollIntoView) target.scrollIntoView({behavior: 'smooth', block: 'start'});
+    const head = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--head-h')) || 0;
+    const top = window.scrollY + target.getBoundingClientRect().top - head;
+    window.scrollTo(0, Math.max(0, top));
   }
 }
 
@@ -407,6 +416,7 @@ export function renderGeneral() {
  *
  * 顶偏约四成：滚过一组的上沿之后才换高亮，避免刚露出标题就把下一条点亮。
  * 搜索／筛选会改哪些组可见，所以每次先 disconnect 再挂新的。
+ * 高亮只看观察器交来的条目：回调里再去量每一组的盒子，平滑滚动会被拖住。
  */
 function watchCurrentGroup() {
   stopWatchingGroups();
@@ -417,7 +427,9 @@ function watchCurrentGroup() {
   if (!sections.length) return;
 
   const visible = new Set();
+  let lastCurrent = '';
   const mark = () => {
+    groupMarkFrame = 0;
     let current = '';
     for (const section of sections) {
       if (visible.has(section)) {
@@ -425,21 +437,18 @@ function watchCurrentGroup() {
         break;
       }
     }
-    // 页顶／页尾时中间 20% 带里可能一组都没有。此时取顶边在视口中线之上的最后一组；
-    // 全都在中线之下（刚打开、还没滚）则取第一组还能画出的。
+    // 页顶／页尾中间 20% 带里可能一组都没有。顶上取第一组，其余沿用上次，不再逐组量盒子。
     if (!current) {
-      const bandCenter = window.innerHeight / 2;
-      let lastAbove = null;
-      for (const section of sections) {
-        if (!section.getClientRects().length) continue;
-        if (section.getBoundingClientRect().top <= bandCenter) lastAbove = section;
-      }
-      const pick = lastAbove || sections.find(section => section.getClientRects().length) || sections[0];
-      if (pick) current = pick.dataset.grp;
+      if (window.scrollY <= 1) current = sections[0] ? sections[0].dataset.grp : '';
+      else current = lastCurrent || (sections[sections.length - 1] ? sections[sections.length - 1].dataset.grp : '');
     }
+    lastCurrent = current;
     for (const link of document.querySelectorAll('#grp-nav [data-grp-link]')) {
       link.classList.toggle('cur', link.getAttribute('data-grp-link') === current);
     }
+  };
+  const schedule = () => {
+    if (!groupMarkFrame) groupMarkFrame = requestAnimationFrame(mark);
   };
 
   groupWatcher = new IntersectionObserver((entries) => {
@@ -447,7 +456,7 @@ function watchCurrentGroup() {
       if (entry.isIntersecting) visible.add(entry.target);
       else visible.delete(entry.target);
     }
-    mark();
+    schedule();
   }, {rootMargin: '-40% 0px -40% 0px', threshold: 0});
 
   for (const section of sections) groupWatcher.observe(section);
