@@ -2,6 +2,7 @@ package org.frostnova.nova.adapter.onebot.config;
 
 import org.frostnova.nova.adapter.onebot.model.OneBotSender;
 import org.frostnova.nova.core.properties.ConfigEffect;
+import org.frostnova.nova.core.properties.ConfigLabel;
 import org.frostnova.nova.core.config.ConfigLevel;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import lombok.Getter;
@@ -26,6 +27,7 @@ public class OneBotAdapterPluginProperties {
      */
     @Getter
     @ConfigEffect(ConfigEffect.Effect.RESTART)
+    @ConfigLabel("OneBot 接口路径前缀")
     private String baseUrl = "/onebot";
 
     /**
@@ -38,6 +40,7 @@ public class OneBotAdapterPluginProperties {
      */
     @Getter
     @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
+    @ConfigLabel("OneBot 推送平台")
     private List<OneBotSender> senders = new ArrayList<>();
 
     @Getter
@@ -65,6 +68,7 @@ public class OneBotAdapterPluginProperties {
          * 是否启用推送接口安全校验，仅在完全可信的隔离网络中才建议关闭
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("推送接口 · 安全校验")
         private boolean enabled = true;
 
         /**
@@ -74,6 +78,7 @@ public class OneBotAdapterPluginProperties {
          * 需要由外部程序调用推送接口时，在此追加对应地址。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("推送接口 · 允许的来源 IP")
         private List<String> allowIps = new ArrayList<>(List.of("127.0.0.1/32", "::1/128"));
 
         /**
@@ -82,12 +87,14 @@ public class OneBotAdapterPluginProperties {
          * 仅当 NovaBot 确实部署在 Nginx 等反向代理之后时才可开启，否则来源 IP 可被任意伪造。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("推送接口 · 信任反向代理")
         private boolean trustProxy = false;
 
         /**
          * 是否输出鉴权失败的审计日志
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("推送接口 · 鉴权失败审计日志")
         private boolean auditLog = true;
 
         /**
@@ -96,6 +103,7 @@ public class OneBotAdapterPluginProperties {
          * 默认仅告警不阻断，以免既有部署升级后无法启动；对外网可达的部署建议设为 true。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("推送接口 · 弱防护拒绝启动")
         private boolean failOnWeakConfig = false;
 
         @Getter
@@ -111,18 +119,21 @@ public class OneBotAdapterPluginProperties {
              * 是否启用频率限制
              */
             @ConfigEffect(ConfigEffect.Effect.RESTART)
+            @ConfigLabel("推送接口 · 频率限制")
             private boolean enabled = true;
 
             /**
              * 单个来源每分钟允许的请求数
              */
             @ConfigEffect(ConfigEffect.Effect.RESTART)
+            @ConfigLabel("推送接口 · 每分钟请求数")
             private int permitsPerMinute = 600;
 
             /**
              * 可容忍的瞬时突发请求数
              */
             @ConfigEffect(ConfigEffect.Effect.RESTART)
+            @ConfigLabel("推送接口 · 突发请求数")
             private int burst = 100;
         }
     }
@@ -137,24 +148,28 @@ public class OneBotAdapterPluginProperties {
          * 线程池核心线程数
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("OneBot 线程池 · 核心线程数")
         private int corePoolSize = 2;
 
         /**
          * 线程池最大线程数
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("OneBot 线程池 · 最大线程数")
         private int maxPoolSize = 16;
 
         /**
          * 线程池任务队列容量
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("OneBot 线程池 · 队列容量")
         private int queueCapacity = 128;
 
         /**
          * 非核心线程存活时间，单位：秒
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("OneBot 线程池 · 空闲存活")
         private int keepAliveSeconds = 300;
     }
 
@@ -171,12 +186,14 @@ public class OneBotAdapterPluginProperties {
          * 表现为「消息就是发不出去且无人告知」。检测本身只是一次轻量接口调用，默认开启。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("OneBot 探测 · HTTP 可用性")
         private boolean enableHttpDetect = true;
 
         /**
          * HTTP 服务可用性检测周期，单位: 秒
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("OneBot 探测 · HTTP 周期")
         private int httpDetectInterval = 300;
 
         /**
@@ -192,6 +209,7 @@ public class OneBotAdapterPluginProperties {
          * 置 0 或负数即关闭这项判定。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("OneBot 探测 · 慢调用阈值")
         private int slowThresholdMillis = 2000;
 
         // 告警收敛间隔原本在此按通道各配一份，现已统一由 novabot.core.alert.convergence-interval
@@ -204,6 +222,7 @@ public class OneBotAdapterPluginProperties {
          * 需借助「多久没收到心跳」来发现。默认开启。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("OneBot 探测 · 长连接存活")
         private boolean enableWebsocketDetect = true;
 
         /**
@@ -214,6 +233,7 @@ public class OneBotAdapterPluginProperties {
          * OneBot 实现关闭心跳时本项不生效，静默将不再作为判据。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("OneBot 探测 · 长连接静默")
         private int websocketSilenceTimeout = 120;
 
     }
@@ -233,6 +253,7 @@ public class OneBotAdapterPluginProperties {
         // 需要告警的时候往往正是配错了的时候，要等重启才生效的话，改对了也得先没有告警地跑到下次启动
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
+        @ConfigLabel("机器人告警 · 推送平台")
         private String platform = "";
 
         /**
@@ -247,6 +268,7 @@ public class OneBotAdapterPluginProperties {
         // 群改私聊之后那条告警会发到上一个地址去
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
+        @ConfigLabel("机器人告警 · 目标类型")
         private int type = 0;
 
         /**
@@ -254,6 +276,7 @@ public class OneBotAdapterPluginProperties {
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
+        @ConfigLabel("机器人告警 · 目标号码")
         private Long num;
     }
 
@@ -283,6 +306,7 @@ public class OneBotAdapterPluginProperties {
          * NovaBot 不需要第二份。别把它当成加密后就可以放松保管的东西。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("NapCat · WebUI 令牌")
         private String token = "";
 
         /**
@@ -292,6 +316,7 @@ public class OneBotAdapterPluginProperties {
          * 是 NapCat 的登录接口就收这个。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("NapCat · 令牌哈希")
         private String tokenHash = "";
 
         /**
@@ -301,6 +326,7 @@ public class OneBotAdapterPluginProperties {
          * 而算码需要密钥本身——这一点没有折中办法，因此配置文件的权限必须收紧到仅属主可读。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("NapCat · 二次验证密钥")
         private String totpSecret = "";
 
         /**
@@ -310,6 +336,7 @@ public class OneBotAdapterPluginProperties {
          * 这条请求一旦离开本机，凭据就上了网线。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("NapCat · WebUI 地址")
         private String address = "http://127.0.0.1:6099";
     }
 }

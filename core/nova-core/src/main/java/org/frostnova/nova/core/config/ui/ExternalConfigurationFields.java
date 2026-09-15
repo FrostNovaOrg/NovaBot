@@ -146,7 +146,11 @@ public final class ExternalConfigurationFields {
      */
     public static Map<String, String> labels() {
         Map<String, String> result = new LinkedHashMap<>();
-        FIELDS.forEach((field, marks) -> result.put(field.name(), marks.label()));
+        FIELDS.forEach((field, marks) -> {
+            if (marks.label() != null) {
+                result.put(field.name(), marks.label());
+            }
+        });
         return result;
     }
 

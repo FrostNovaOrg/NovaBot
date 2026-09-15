@@ -1,6 +1,7 @@
 package org.frostnova.nova.adapter.onebot.extension.napcat.config;
 
 import org.frostnova.nova.core.properties.ConfigEffect;
+import org.frostnova.nova.core.properties.ConfigLabel;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import lombok.Getter;
 import lombok.Setter;
@@ -31,5 +32,6 @@ public class OneBotAdapterNapcatExtensionPluginProperties {
      * <b>改这里的键名要连它一起改</b>：只改一处的话开关看着还在，拨过去却没有任何反应。
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
+    @ConfigLabel("@全体成员 · 用完改发待办")
     private boolean enableBackupAtAll = true;
 }
