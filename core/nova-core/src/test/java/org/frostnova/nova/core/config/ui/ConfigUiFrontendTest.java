@@ -3269,7 +3269,8 @@ class ConfigUiFrontendTest {
      * <p>
      * 首页那个推送总开关改完不刷新就切过来时，设置页 DOM 若还是启动那一刻建的，
      * 开关会停在旧值，而屏幕上看不出它是旧的。五问各自记下，末尾一起红。
-     * 取数段按支切窗：从 {@code name === 'settings'} 起到下一个 {@code else if} 或段末。
+     * 取数段从 {@code if (!withData) return} 起按花括号配平截到 applyRoute 闭合括号，
+     * 再按支切窗：从 {@code name === 'settings'} 起到下一个 {@code else if} 或段末。
      * 该支须在 {@code else if (plugin)} 之后，否则带插件子路径的设置页地址会被本支吃掉。
      */
     @Test
@@ -3279,7 +3280,7 @@ class ConfigUiFrontendTest {
         String main = Files.readString(frontendDir().resolve("main.js"), StandardCharsets.UTF_8);
         String body = functionBodyAny(main, "applyRoute");
         int data = body.indexOf("if (!withData) return");
-        String load = data >= 0 ? body.substring(data) : body;
+        String load = truncateAtBraceDepthMinusOne(data >= 0 ? body.substring(data) : body);
 
         try {
             assertTrue(load.contains("name === 'settings'"),
@@ -3291,8 +3292,7 @@ class ConfigUiFrontendTest {
         try {
             int idx = load.indexOf("name === 'settings'");
             assertTrue(idx >= 0, "applyRoute 取数段应含 name === 'settings'");
-            int next = load.indexOf("else if", idx + "name === 'settings'".length());
-            String branch = next >= 0 ? load.substring(idx, next) : load.substring(idx);
+            String branch = settingsBranchWindow(load);
             assertTrue(branch.contains("renderGeneral"),
                     "设置页分支应调 renderGeneral: " + branch.strip());
         } catch (Throwable t) {
@@ -3302,8 +3302,7 @@ class ConfigUiFrontendTest {
         try {
             int idx = load.indexOf("name === 'settings'");
             assertTrue(idx >= 0, "applyRoute 取数段应含 name === 'settings'");
-            int next = load.indexOf("else if", idx + "name === 'settings'".length());
-            String branch = next >= 0 ? load.substring(idx, next) : load.substring(idx);
+            String branch = settingsBranchWindow(load);
             assertTrue(branch.contains("focusCard"),
                     "设置页分支应补 focusCard: " + branch.strip());
         } catch (Throwable t) {
@@ -3324,8 +3323,7 @@ class ConfigUiFrontendTest {
         try {
             int idx = load.indexOf("name === 'settings'");
             assertTrue(idx >= 0, "applyRoute 取数段应含 name === 'settings'");
-            int next = load.indexOf("else if", idx + "name === 'settings'".length());
-            String branch = next >= 0 ? load.substring(idx, next) : load.substring(idx);
+            String branch = settingsBranchWindow(load);
             assertTrue(branch.contains("renderGeneral") && branch.contains("focusCard"),
                     "按支切窗须含 renderGeneral 与 focusCard: " + branch.strip());
         } catch (Throwable t) {
@@ -3719,6 +3717,37 @@ class ConfigUiFrontendTest {
      */
     private boolean syntaxLoopCoversExemptModel(String model, Set<String> looped) {
         return looped.contains("config-ui/" + model);
+    }
+
+    /**
+     * 从取数段起点按花括号配平，首次深度到 −1 处即 applyRoute 闭合括号
+     */
+    private String truncateAtBraceDepthMinusOne(String load) {
+        int depth = 0;
+        for (int i = 0; i < load.length(); i++) {
+            char c = load.charAt(i);
+            if (c == '{') {
+                depth++;
+            } else if (c == '}') {
+                depth--;
+                if (depth < 0) {
+                    return load.substring(0, i + 1);
+                }
+            }
+        }
+        return load;
+    }
+
+    /**
+     * 设置页按支切窗：从 {@code name === 'settings'} 起到下一个 {@code else if} 或段末
+     */
+    private String settingsBranchWindow(String load) {
+        int idx = load.indexOf("name === 'settings'");
+        if (idx < 0) {
+            return "";
+        }
+        int next = load.indexOf("else if", idx + "name === 'settings'".length());
+        return next >= 0 ? load.substring(idx, next) : load.substring(idx);
     }
 
     /**
