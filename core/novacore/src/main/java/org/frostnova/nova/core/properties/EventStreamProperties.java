@@ -34,12 +34,14 @@ public class EventStreamProperties {
      * 事件流里有观众的昵称、uid 与消费金额。
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
+    @ConfigLabel("事件输出")
     private boolean enabled = false;
 
     /**
      * 事件输出的路径，与配置界面共用 {@code server.port} 端口
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
+    @ConfigLabel("事件输出 · 路径")
     private String path = "/nova/events";
 
     /**
@@ -61,6 +63,7 @@ public class EventStreamProperties {
      * 口令由控制台签发，<b>只能读事件流</b>：既不给服务器 shell，也不给配置控制台。
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
+    @ConfigLabel("事件输出要求只读口令")
     private boolean requireToken = false;
 
     /**
@@ -72,5 +75,6 @@ public class EventStreamProperties {
      * 每条约数 KB（含原始报文），2000 条量级在十 MB 上下，调大前先掂量内存。
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
+    @ConfigLabel("事件输出 · 回补缓冲条数")
     private int bufferSize = 2000;
 }

@@ -114,6 +114,7 @@ class GenericConfigSaveMustNotChangeAuthWithoutReauthTest {
                 mock(org.frostnova.nova.core.service.NovaEventHandlerService.class),
                 mock(org.frostnova.nova.core.datasource.DataSourceServiceRegistry.class),
                 mock(ConfigurationLevelResolver.class),
+                new ConfigurationLabelResolver(mock(org.springframework.context.ApplicationContext.class)),
                 new ConfigurationEffectResolver(mock(ApplicationContext.class)),
                 new ConfigurationDangerResolver(mock(ApplicationContext.class)),
                 applier,
