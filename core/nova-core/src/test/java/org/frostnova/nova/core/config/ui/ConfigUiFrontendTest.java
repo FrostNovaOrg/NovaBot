@@ -517,7 +517,7 @@ class ConfigUiFrontendTest {
     /**
      * 设置页那几件事各自要有落点
      * <p>
-     * 搜索、显示键名、只看改过的、组目录药丸、配置文件路径——每一件都由
+     * 搜索、显示键名、只看改过的、组目录（左栏）、配置文件路径——每一件都由
      * {@code index.html} 里的一个元素与 {@code settings.js} 里的一段代码合起来完成，
      * <b>缺哪一半都不会报错</b>：元素没了，脚本按 id 取到 null（那一条由
      * {@link #everyReferencedElementIdExists} 管）；脚本没接上，元素就静静地立在那里，
@@ -778,7 +778,7 @@ class ConfigUiFrontendTest {
     /**
      * 设置页上这几件事各自的落点，闭集
      * <p>
-     * 搜索框、显示键名、只看改过的、计数、组目录药丸、组容器、配置文件路径。
+     * 搜索框、显示键名、只看改过的、计数、组目录（左栏）、组容器、配置文件路径。
      * 路径本身点一下复制，不再另立复制按钮。
      */
     private static final List<String> SETTINGS_CONTROLS = List.of(
