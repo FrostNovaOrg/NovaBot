@@ -270,11 +270,20 @@ html.nobar #main{padding-bottom:20px}
   border-radius:var(--r-ctl);background:var(--surface);color:var(--text);font-family:inherit;font-size:13px}
 .setbar input[type=search]:focus{outline:none;border-color:var(--accent)}
 .setbar .dim{margin-left:auto;color:var(--dim);font-variant-numeric:tabular-nums}
-/* 药丸粘在顶上：翻到第五组时还要回得去第一组，而那时它已经滚出视野 */
-.grpnav{position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;gap:7px;padding:8px 0 10px;
-  background:var(--ground)}
-.grpnav .pill{cursor:pointer;font-family:inherit}
+/* 两栏：左目录、右各组。目录自己矮、sticky 贴顶，翻到第五组时第一组还在 */
+.setwrap{display:grid;grid-template-columns:180px minmax(0,1fr);gap:16px;align-items:start}
+.grpnav{position:sticky;top:0;z-index:5;display:flex;flex-direction:column;flex-wrap:nowrap;gap:4px;
+  padding:8px 0 10px;background:var(--ground);align-self:start}
+.grpnav .pill{cursor:pointer;font-family:inherit;justify-content:flex-start;text-align:left}
 .grpnav .pill:hover{border-color:var(--accent);color:var(--accent)}
+.grpnav .cur{color:var(--accent);border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}
+.grpnav .sep{font-size:11px;color:var(--dim);padding:8px 9px 2px}
+@media (max-width:959px){
+  .setwrap{display:block}
+  .grpnav{flex-direction:row;flex-wrap:wrap;gap:7px}
+  .grpnav .pill{justify-content:center}
+  .grpnav .sep{flex-basis:100%;padding:4px 0 0}
+}
 .setgrp>h2{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .card-desc{padding:10px 16px 0;font-size:12.5px;color:var(--dim);line-height:1.6}
 .si-hd{display:flex;align-items:center;gap:7px;flex-wrap:wrap}

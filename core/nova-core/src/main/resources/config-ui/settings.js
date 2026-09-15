@@ -24,21 +24,28 @@ const ALERT_GROUP = 'alert';
 const AUTH_GROUP = 'auth';
 
 /**
+ * 滚动观察器：标出目录里当前这一组。重绘时拆掉再建，免得旧节点还挂着。
+ */
+let groupWatcher = null;
+
+/**
  * 滚到设置页上的某一组
  *
- * 组目录药丸与首页那条「QQ 告警有死角」待办走的是同一条路。
- * 点了药丸却因为筛选而看不见那一组，比什么都不发生更费解，因此先把 hide 揭掉。
- * @param id 组标识，与 schema 里的 group 一致；高级折页传 adv
+ * 组目录与首页那条「告警有死角」待办走的是同一条路。
+ * 点了条目却因为筛选而看不见那一组，比什么都不发生更费解，因此先把 hide 揭掉。
+ * 目标若在高级折页里，先打开折页再滚——折着的时候滚到位也看不见。
+ * @param id 组标识，与 schema 里的 group 一致；高级折页本身传 adv
  */
 export function focusGroup(id) {
   if (!id) return;
-  if (id === 'adv') {
-    const adv = $('#adv-groups');
-    if (adv) adv.open = true;
-  }
+  const adv = $('#adv-groups');
+  if (id === 'adv' && adv) adv.open = true;
   const target = document.querySelector('[data-grp="' + id + '"]');
-  if (target) target.classList.remove('hide');
-  if (target && target.scrollIntoView) target.scrollIntoView({behavior: 'smooth', block: 'start'});
+  if (target) {
+    if (adv && adv.contains(target)) adv.open = true;
+    target.classList.remove('hide');
+    if (target.scrollIntoView) target.scrollIntoView({behavior: 'smooth', block: 'start'});
+  }
 }
 
 /**
@@ -315,28 +322,35 @@ function buildUngrouped() {
 }
 
 /**
- * 组目录药丸：点一下滚到那一组
- * @param groups 常用组
- * @param hasAdvanced 页底有没有高级区
+ * 组目录一条：常用或高级组都走这里，点一下滚到那一组
+ * @param group 一组，来自 /schema
+ * @return {HTMLButtonElement}
  */
-function buildNav(groups, hasAdvanced) {
+function buildNavLink(group) {
+  const pill = el('button', 'pill');
+  pill.type = 'button';
+  pill.setAttribute('data-grp-link', group.group);
+  pill.textContent = group.title;
+  pill.addEventListener('click', () => focusGroup(group.group));
+  return pill;
+}
+
+/**
+ * 组目录：常用一段，有高级则加「高级」分隔再列高级各组
+ * @param groups 常用组
+ * @param advanced 高级组
+ */
+function buildNav(groups, advanced) {
   const nav = $('#grp-nav');
   nav.innerHTML = '';
 
-  for (const group of groups) {
-    const pill = el('button', 'pill');
-    pill.type = 'button';
-    pill.textContent = group.title;
-    pill.addEventListener('click', () => focusGroup(group.group));
-    nav.appendChild(pill);
-  }
+  for (const group of groups) nav.appendChild(buildNavLink(group));
 
-  if (hasAdvanced) {
-    const pill = el('button', 'pill');
-    pill.type = 'button';
-    pill.textContent = '高级';
-    pill.addEventListener('click', () => focusGroup('adv'));
-    nav.appendChild(pill);
+  if (advanced.length) {
+    const sep = el('div', 'sep');
+    sep.textContent = '高级';
+    nav.appendChild(sep);
+    for (const group of advanced) nav.appendChild(buildNavLink(group));
   }
 }
 
@@ -344,6 +358,10 @@ function buildNav(groups, hasAdvanced) {
  * 画整个设置页
  */
 export function renderGeneral() {
+  if (groupWatcher) {
+    groupWatcher.disconnect();
+    groupWatcher = null;
+  }
   const box = $('#groups');
   box.innerHTML = '';
 
@@ -368,8 +386,50 @@ export function renderGeneral() {
     box.appendChild(details);
   }
 
-  buildNav(common, advanced.length > 0);
+  buildNav(common, advanced);
   filterSettings();
+}
+
+/**
+ * 观察各组在视口里的位置，把目录里对应那条标成当前
+ *
+ * 顶偏约四成：滚过一组的上沿之后才换高亮，避免刚露出标题就把下一条点亮。
+ * 搜索／筛选会改哪些组可见，所以每次先 disconnect 再挂新的。
+ */
+function watchCurrentGroup() {
+  if (groupWatcher) {
+    groupWatcher.disconnect();
+    groupWatcher = null;
+  }
+  const sections = [];
+  for (const node of document.querySelectorAll('.setgrp[data-grp]')) {
+    if (!node.classList.contains('hide')) sections.push(node);
+  }
+  if (!sections.length) return;
+
+  const visible = new Set();
+  const mark = () => {
+    let current = '';
+    for (const section of sections) {
+      if (visible.has(section)) {
+        current = section.dataset.grp;
+        break;
+      }
+    }
+    for (const link of document.querySelectorAll('#grp-nav [data-grp-link]')) {
+      link.classList.toggle('cur', link.getAttribute('data-grp-link') === current);
+    }
+  };
+
+  groupWatcher = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (entry.isIntersecting) visible.add(entry.target);
+      else visible.delete(entry.target);
+    }
+    mark();
+  }, {rootMargin: '-40% 0px -40% 0px', threshold: 0});
+
+  for (const section of sections) groupWatcher.observe(section);
 }
 
 /**
@@ -414,6 +474,19 @@ export function filterSettings() {
     details.classList.toggle('hide', any === 0);
     if (filtering && any) details.open = true;
   }
+
+  // 目录跟着组走：一组被筛没了，左边还留着那条会点进去什么也不发生
+  for (const link of document.querySelectorAll('#grp-nav [data-grp-link]')) {
+    const id = link.getAttribute('data-grp-link');
+    const group = document.querySelector('.setgrp[data-grp="' + id + '"]');
+    link.classList.toggle('hide', !group || group.classList.contains('hide'));
+  }
+  const sep = document.querySelector('#grp-nav .sep');
+  if (sep) {
+    const advBox = $('#adv-groups');
+    sep.classList.toggle('hide', !advBox || advBox.classList.contains('hide'));
+  }
+  watchCurrentGroup();
 
   const commonCount = store.schema.filter(g => !g.advanced).reduce((n, g) => n + g.fields.length, 0);
   const advancedCount = store.schema.filter(g => g.advanced).reduce((n, g) => n + g.fields.length, 0);
