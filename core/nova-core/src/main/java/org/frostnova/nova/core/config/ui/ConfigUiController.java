@@ -71,6 +71,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
@@ -106,6 +107,11 @@ public class ConfigUiController {
      * 校验必须写成白名单，写成黑名单迟早会漏。
      */
     private static final Pattern ASSET_NAME = Pattern.compile("[A-Za-z0-9_-]+\\.[A-Za-z0-9]+");
+
+    /**
+     * 从说明里抽出单位。单位不进名字，界面在输入框旁单独显示。
+     */
+    private static final Pattern UNIT_IN_DESCRIPTION = Pattern.compile("单位：([^；，。\\s）]+)");
 
     /**
      * 静态资源的扩展名到内容类型的映射，未列出的扩展名一律不提供
@@ -154,6 +160,8 @@ public class ConfigUiController {
     private final DataSourceServiceRegistry dataSourceServiceRegistry;
 
     private final ConfigurationLevelResolver levelResolver;
+
+    private final ConfigurationLabelResolver labelResolver;
 
     private final ConfigurationEffectResolver effectResolver;
 
@@ -266,6 +274,7 @@ public class ConfigUiController {
                               NovaEventHandlerService handlerService,
                               DataSourceServiceRegistry dataSourceServiceRegistry,
                               ConfigurationLevelResolver levelResolver,
+                              ConfigurationLabelResolver labelResolver,
                               ConfigurationEffectResolver effectResolver,
                               ConfigurationDangerResolver dangerResolver,
                               RuntimeConfigurationApplier runtimeApplier,
@@ -281,7 +290,7 @@ public class ConfigUiController {
                               UpdateCheckService updateCheck) {
         this(metadataService, fileService, properties, dataSource, healthProbes, validator,
                 senderService, messageSender, loginProviders, activityRecorder, handlerService,
-                dataSourceServiceRegistry, levelResolver, effectResolver, dangerResolver, runtimeApplier,
+                dataSourceServiceRegistry, levelResolver, labelResolver, effectResolver, dangerResolver, runtimeApplier,
                 connectionTesters, pageProviders, eventStreamTokens, buildProperties, pushGate,
                 liveDataService, timeline, authService, templateDefaults, updateCheck,
                 noBotConnectionContributors());
@@ -300,6 +309,7 @@ public class ConfigUiController {
                        NovaEventHandlerService handlerService,
                        DataSourceServiceRegistry dataSourceServiceRegistry,
                        ConfigurationLevelResolver levelResolver,
+                       ConfigurationLabelResolver labelResolver,
                        ConfigurationEffectResolver effectResolver,
                        ConfigurationDangerResolver dangerResolver,
                        RuntimeConfigurationApplier runtimeApplier,
@@ -316,7 +326,7 @@ public class ConfigUiController {
                        ObjectProvider<BotConnectionContributor> botConnections) {
         this(metadataService, fileService, properties, dataSource, healthProbes, validator,
                 senderService, messageSender, loginProviders, activityRecorder, handlerService,
-                dataSourceServiceRegistry, levelResolver, effectResolver, dangerResolver, runtimeApplier,
+                dataSourceServiceRegistry, levelResolver, labelResolver, effectResolver, dangerResolver, runtimeApplier,
                 connectionTesters, pageProviders, eventStreamTokens, buildProperties, pushGate,
                 liveDataService, timeline, authService, templateDefaults, updateCheck,
                 noGroupContributors(), noVocabularies(), noAliasContributors(),
@@ -336,6 +346,7 @@ public class ConfigUiController {
                        NovaEventHandlerService handlerService,
                        DataSourceServiceRegistry dataSourceServiceRegistry,
                        ConfigurationLevelResolver levelResolver,
+                       ConfigurationLabelResolver labelResolver,
                        ConfigurationEffectResolver effectResolver,
                        ConfigurationDangerResolver dangerResolver,
                        RuntimeConfigurationApplier runtimeApplier,
@@ -352,7 +363,7 @@ public class ConfigUiController {
                        AlertService alertService) {
         this(metadataService, fileService, properties, dataSource, healthProbes, validator,
                 senderService, messageSender, loginProviders, activityRecorder, handlerService,
-                dataSourceServiceRegistry, levelResolver, effectResolver, dangerResolver, runtimeApplier,
+                dataSourceServiceRegistry, levelResolver, labelResolver, effectResolver, dangerResolver, runtimeApplier,
                 connectionTesters, pageProviders, eventStreamTokens, buildProperties, pushGate,
                 liveDataService, timeline, authService, templateDefaults, updateCheck,
                 noGroupContributors(), noVocabularies(), noAliasContributors(), alertService,
@@ -373,6 +384,7 @@ public class ConfigUiController {
                               NovaEventHandlerService handlerService,
                               DataSourceServiceRegistry dataSourceServiceRegistry,
                               ConfigurationLevelResolver levelResolver,
+                              ConfigurationLabelResolver labelResolver,
                               ConfigurationEffectResolver effectResolver,
                               ConfigurationDangerResolver dangerResolver,
                               RuntimeConfigurationApplier runtimeApplier,
@@ -408,6 +420,7 @@ public class ConfigUiController {
         this.aliasContributors = aliasContributors;
         this.alertService = alertService;
         this.levelResolver = levelResolver;
+        this.labelResolver = labelResolver;
         this.connectionTesters = connectionTesters;
         this.activityRecorder = activityRecorder;
         this.handlerService = handlerService;
@@ -802,6 +815,7 @@ public class ConfigUiController {
     @GetMapping("/api/schema")
     public JSONObject schema() {
         Map<String, ConfigLevel.Level> levels = levelResolver.getLevels();
+        Map<String, String> labels = labelResolver.getLabels();
         Map<String, ConfigEffect.Effect> effects = effectResolver.getEffects();
         Map<String, ConfigurationDangerResolver.Danger> dangers = dangerResolver.getDangers();
 
@@ -817,9 +831,11 @@ public class ConfigUiController {
 
             JSONObject item = new JSONObject();
             item.put("name", field.name());
-            item.put("label", field.name().substring(field.name().lastIndexOf('.') + 1));
+            item.put("label", labels.getOrDefault(field.name(),
+                    field.name().substring(field.name().lastIndexOf('.') + 1)));
             item.put("widget", field.widget());
             item.put("description", field.description());
+            item.put("unit", unitOf(field.description()));
             item.put("defaultValue", field.defaultValue());
             // 未标注的一律按高级处理：新增配置项默认收进高级区，避免常用区随时间不断膨胀
             item.put("level", levels.getOrDefault(field.name(), ConfigLevel.Level.ADVANCED).name());
@@ -875,6 +891,19 @@ public class ConfigUiController {
         // 于是「这一项还没人给它安排位置」这件事在跑起来的程序上再也看不见
         result.put("ungrouped", orphans);
         return result;
+    }
+
+    /**
+     * 从说明原文抽出单位。抽不到则没有单位，不改说明本身。
+     * @param description 配置项说明
+     * @return 单位，没有则为 null
+     */
+    static String unitOf(String description) {
+        if (description == null) {
+            return null;
+        }
+        Matcher matcher = UNIT_IN_DESCRIPTION.matcher(description);
+        return matcher.find() ? matcher.group(1) : null;
     }
 
     /**

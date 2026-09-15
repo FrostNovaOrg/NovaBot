@@ -169,6 +169,11 @@ function buildRow(field, groupAllRestart) {
   const cell = el('div', field.widget === 'boolean' ? 'boolcell' : '');
   const {saved, current} = valuesOf(field);
   const input = buildControl(field, current, cell);
+  if (field.unit) {
+    const unit = el('span', 'unit');
+    unit.textContent = field.unit;
+    cell.appendChild(unit);
+  }
   row.appendChild(cell);
 
   if (!groupAllRestart) {

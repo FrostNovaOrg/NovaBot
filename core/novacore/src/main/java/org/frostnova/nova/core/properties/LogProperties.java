@@ -23,24 +23,28 @@ public class LogProperties {
      * 控制台日志级别
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
+    @ConfigLabel("控制台日志级别")
     private Level console;
 
     /**
      * 文件日志级别
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
+    @ConfigLabel("日志文件级别")
     private Level file;
 
     /**
      * 是否记录事件日志
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
+    @ConfigLabel("事件日志")
     private boolean eventLog = false;
 
     /**
      * 是否记录网络请求日志
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
+    @ConfigLabel("网络日志")
     private boolean networkLog = false;
 
     /**
@@ -55,5 +59,6 @@ public class LogProperties {
      * 抑制的目的就是让异常显出来。
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
+    @ConfigLabel("网络日志 · 去重窗口")
     private int networkLogSuppressWindow = 60;
 }

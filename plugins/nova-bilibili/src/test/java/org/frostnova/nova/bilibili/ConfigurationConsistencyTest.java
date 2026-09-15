@@ -7,6 +7,7 @@ import org.frostnova.nova.bilibili.config.BilibiliConfigurationGroups;
 import org.frostnova.nova.bilibili.protocol.NovaEventMapper;
 import org.frostnova.nova.core.config.ConfigDanger;
 import org.frostnova.nova.core.properties.ConfigEffect;
+import org.frostnova.nova.core.properties.ConfigLabel;
 import org.frostnova.nova.core.config.ui.ConfigurationGroupContributor;
 import org.frostnova.nova.core.config.ui.ConfigurationGroups;
 import org.frostnova.nova.core.config.ui.ConfigurationMetadataService;
@@ -481,6 +482,60 @@ class ConfigurationConsistencyTest {
         assertTrue(orphans.isEmpty(), "以下配置项在设置页的分组表里一条前缀也匹配不上（共 " + names.size()
                 + " 项，未归组 " + orphans.size() + " 项），请在 ConfigurationGroups 里补前缀:\n  "
                 + String.join("\n  ", orphans));
+    }
+
+    /**
+     * 读出一个配置项标注的中文名
+     * @param property 配置项元数据
+     * @param loader 能看到全部模块的类加载器
+     * @return 中文名，未标注时为 null
+     * @throws ReflectiveOperationException 配置类或字段找不到时抛出
+     */
+    private String labelOf(JSONObject property, ClassLoader loader) throws ReflectiveOperationException {
+        Class<?> type = Class.forName(property.getString("sourceType"), false, loader);
+        ConfigLabel label = type.getDeclaredField(fieldNameOf(property.getString("name")))
+                .getAnnotation(ConfigLabel.class);
+        return label == null ? null : label.value();
+    }
+
+    @Test
+    @DisplayName("⚠️ novabot.core.* 与 External 每项都有中文名：没有名字的那一项，界面只能显示键名末段")
+    void everyCoreAndExternalPropertyHasAChineseName() throws ReflectiveOperationException {
+        Set<String> names = displayedProperties();
+        ClassLoader loader = modulesClassLoader();
+        Map<String, String> externalLabels = ExternalConfigurationFields.labels();
+
+        Map<String, JSONObject> byName = new LinkedHashMap<>();
+        for (JSONObject property : properties()) {
+            String name = property.getString("name");
+            if (name != null) {
+                byName.put(name, property);
+            }
+        }
+
+        List<String> unnamed = new ArrayList<>();
+        int scoped = 0;
+        for (String name : names) {
+            boolean extra = ExternalConfigurationFields.names().contains(name);
+            if (!name.startsWith("novabot.core.") && !extra) {
+                continue;
+            }
+            scoped++;
+            String label = extra ? externalLabels.get(name) : null;
+            if (label == null || label.isBlank()) {
+                JSONObject property = byName.get(name);
+                if (property != null && property.getString("sourceType") != null) {
+                    label = labelOf(property, loader);
+                }
+            }
+            if (label == null || label.isBlank()) {
+                unnamed.add(name);
+            }
+        }
+
+        assertTrue(unnamed.isEmpty(), "以下配置项没有中文名（范围内 " + scoped
+                + " 项，无名 " + unnamed.size() + " 项），请在字段上补 @ConfigLabel 或在 ExternalConfigurationFields 里写名字:\n  "
+                + String.join("\n  ", unnamed));
     }
 
     @Test

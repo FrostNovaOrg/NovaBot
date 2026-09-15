@@ -293,6 +293,7 @@ html.showkeys .keyname{display:block}
   padding:1px 8px;border:1px solid var(--line);color:var(--dim)}
 .badge.now{color:var(--ok);border-color:var(--ok)}
 .badge.restart{color:var(--warn);border-color:var(--warn)}
+.unit{margin-left:8px;font-size:12px;color:var(--dim);white-space:nowrap}
 /* 布尔行：开关与生效标记同一行垂直居中。非布尔行的标记仍在输入框下方，走上面的 margin-top */
 .boolcell{display:inline-flex;align-items:center;gap:10px}
 .boolcell .badge{margin-top:0}
