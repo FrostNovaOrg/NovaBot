@@ -1,6 +1,7 @@
 package org.frostnova.nova.core.config.ui;
 
 import java.net.InetAddress;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -14,10 +15,18 @@ import java.util.regex.Pattern;
  * {@code server.address} 时也认不出这串，进程起不来。
  * <p>
  * CIDR（{@code 127.0.0.1/32}、{@code ::1/128}）对不上下面两支正则。掩码写法
- * {@code 10.0.0.0/255.255.255.0} 对得上 IPv4 那支，所以读口必须按键设门，
- * 只有监听地址这类键才走 {@link #fromFile(String)}。
+ * {@code 10.0.0.0/255.255.255.0} 斜杠前是纯点分数字，{@link InetAddress#toString()}
+ * 的前缀是主机名或空，不会是点分数字，故 {@link #fromFile(String)} 自身拒收。
+ * 读口仍按 {@link #ADDRESS_KEYS} 设门，非监听地址键不走这条路。
  */
 final class InetAddressText {
+    /**
+     * 斜杠形态要归一的配置键。后处理器与读口共用这一份。
+     */
+    static final Set<String> ADDRESS_KEYS = Set.of(
+            "server.address",
+            "management.server.address");
+
     /**
      * {@code InetAddress.toString()} 的 IPv4 形态：可选主机名、一条斜杠、四个点分十进制
      */
@@ -29,7 +38,21 @@ final class InetAddressText {
      */
     private static final Pattern INET6 = Pattern.compile("^[^/]*/([0-9a-fA-F]*:[0-9a-fA-F:]+)$");
 
+    /**
+     * 纯点分十进制，用来认出掩码写法的斜杠前半段
+     */
+    private static final Pattern DOTTED = Pattern.compile("\\d{1,3}(?:\\.\\d{1,3}){3}");
+
     private InetAddressText() {
+    }
+
+    /**
+     * 这一项是不是监听地址
+     * @param path 配置树上的完整路径
+     * @return 在 {@link #ADDRESS_KEYS} 里时为 true
+     */
+    static boolean isAddressKey(String path) {
+        return path != null && ADDRESS_KEYS.contains(path);
     }
 
     /**
@@ -51,6 +74,10 @@ final class InetAddressText {
      */
     static String fromFile(String text) {
         if (text == null || text.isEmpty()) {
+            return text;
+        }
+        int slash = text.indexOf('/');
+        if (slash > 0 && DOTTED.matcher(text.substring(0, slash)).matches()) {
             return text;
         }
         Matcher v4 = INET4.matcher(text);

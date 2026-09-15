@@ -798,9 +798,10 @@ class ConfigurationFileServiceTest {
             Files.writeString(config, TEMPLATE, StandardCharsets.UTF_8);
             assertEquals("127.0.0.1", service.read().get("server.address"),
                     "阴性：本来就是点分的不得改写");
-            String allow = service.read().get("novabot.core.config-ui.allow-ips");
-            assertTrue(allow != null && allow.startsWith("127.0.0.1/32"),
-                    "CIDR 不得被收成点分地址: " + allow);
+            assertEquals("127.0.0.1/32", InetAddressText.fromFile("127.0.0.1/32"),
+                    "CIDR 直呼 fromFile 不得改写");
+            assertEquals("::1/128", InetAddressText.fromFile("::1/128"),
+                    "IPv6 CIDR 直呼 fromFile 不得改写");
         } catch (AssertionError | IOException e) {
             bad.add("③ 阴性: " + e.getMessage());
         }
@@ -832,28 +833,97 @@ class ConfigurationFileServiceTest {
                 bad.add("① 文件自愈: " + e.getMessage());
             }
             try {
-                List<String> messages = appender.list.stream()
-                        .map(ILoggingEvent::getFormattedMessage)
-                        .toList();
-                assertTrue(messages.stream().anyMatch(line ->
-                                line.contains("/127.0.0.1") && line.contains("127.0.0.1")),
-                        "日志应说明从哪改到哪, 实有: " + messages);
+                assertTrue(appender.list.stream().anyMatch(event ->
+                                event.getLevel() == ch.qos.logback.classic.Level.INFO
+                                        && event.getFormattedMessage().contains("已改回")),
+                        "日志应为 INFO 且含「已改回」, 实有: "
+                                + appender.list.stream().map(ILoggingEvent::getFormattedMessage).toList());
             } catch (AssertionError e) {
                 bad.add("② INFO: " + e.getMessage());
             }
             try {
-                long backupsAfterFirst = backupCount();
-                String afterFirst = content();
+                Files.writeString(config, """
+                        server:
+                          address: /127.0.0.1
+                          port: 7827
+                        """, StandardCharsets.UTF_8);
+                long backupsBefore = backupCount();
+                String slashAgain = content();
                 assertEquals("127.0.0.1", service.read().get("server.address"));
-                assertEquals(afterFirst, content(), "第二次读取不得再改文件");
-                assertEquals(backupsAfterFirst, backupCount(), "第二次读取不得再留备份");
+                assertEquals(slashAgain, content(), "自愈后再写成斜杠, 同一实例不得再改文件");
+                assertEquals(backupsBefore, backupCount(), "同一实例不得再留备份");
             } catch (AssertionError | IOException e) {
                 bad.add("③ 只改一次: " + e.getMessage());
+            }
+            try {
+                Files.writeString(config, """
+                        server:
+                          address: 127.0.0.1
+                          port: 7827
+                        """, StandardCharsets.UTF_8);
+                long backupsBefore = backupCount();
+                String naked = content();
+                ConfigurationFileService restarted = new ConfigurationFileService(config);
+                assertEquals("127.0.0.1", restarted.read().get("server.address"));
+                assertEquals(naked, content(), "再起已是裸地址时不得写盘");
+                assertEquals(backupsBefore, backupCount(), "再起不得再留备份");
+            } catch (AssertionError | IOException e) {
+                bad.add("④ 再起不再改: " + e.getMessage());
             }
         } finally {
             logger.detachAppender(appender);
         }
         assertTrue(bad.isEmpty(), "自愈格未销 " + bad.size() + " 问: " + String.join("; ", bad));
+    }
+
+    @Test
+    @DisplayName("启动时不打开设置页也会把斜杠形态改回")
+    void healsSlashAddressOnStartWithoutOpeningSettings() throws IOException {
+        Files.writeString(config, """
+                server:
+                  address: /127.0.0.1
+                  port: 7827
+                """, StandardCharsets.UTF_8);
+        ConfigurationFileService started = new ConfigurationFileService(config);
+        started.healSlashAddressOnStart();
+        String text = content();
+        assertTrue(text.contains("address: 127.0.0.1"), "启动自愈后文件应是裸地址, 实有:\n" + text);
+        assertFalse(text.contains("address: /127.0.0.1"), "斜杠形态应已消失, 实有:\n" + text);
+        assertEquals("127.0.0.1", started.read().get("server.address"));
+    }
+
+    @Test
+    @DisplayName("管理端口监听地址斜杠形态也归一")
+    void healsManagementServerAddressSlash() throws IOException {
+        List<String> bad = new ArrayList<>();
+        Files.writeString(config, """
+                server:
+                  address: 127.0.0.1
+                  port: 7827
+                management:
+                  server:
+                    address: /127.0.0.1
+                    port: 7828
+                """, StandardCharsets.UTF_8);
+        try {
+            assertTrue(ConfigurationFileService.isAddressKey("management.server.address"));
+            assertTrue(ConfigurationFileService.isAddressKey("server.address"));
+            assertFalse(ConfigurationFileService.isAddressKey("novabot.core.demo-mask"));
+        } catch (AssertionError e) {
+            bad.add("① 地址键: " + e.getMessage());
+        }
+        try {
+            assertEquals("127.0.0.1", service.read().get("management.server.address"));
+        } catch (AssertionError | IOException e) {
+            bad.add("② 读口: " + e.getMessage());
+        }
+        try {
+            String text = content();
+            assertFalse(text.contains("address: /127.0.0.1"), "斜杠形态应已从文件消失, 实有:\n" + text);
+        } catch (AssertionError | IOException e) {
+            bad.add("③ 文件自愈: " + e.getMessage());
+        }
+        assertTrue(bad.isEmpty(), "管理端口监听地址格未销: " + String.join("; ", bad));
     }
 
     @Test

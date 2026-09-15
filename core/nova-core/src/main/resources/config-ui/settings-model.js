@@ -83,7 +83,9 @@ export function defaultValue(field) {
  * 或至少含一个冒号的 IPv6。CIDR（127.0.0.1/32、::1/128）对不上这支。
  * 后端读口已按键设门并会把文件改回裸地址；这里仍收一次，免得界面拿到斜杠串时进 dirty。
  */
+const ADDRESS_KEYS = new Set(['server.address', 'management.server.address']);
 const INET_SLASH = /^[^/]*\/((?:\d{1,3}(?:\.\d{1,3}){3})|(?:[0-9a-fA-F]*:[0-9a-fA-F:]+))$/;
+const DOTTED = /^\d{1,3}(?:\.\d{1,3}){3}$/;
 
 /**
  * 这一项拿到界面上、拿去跟已保存的值比时用的串
@@ -98,9 +100,13 @@ const INET_SLASH = /^[^/]*\/((?:\d{1,3}(?:\.\d{1,3}){3})|(?:[0-9a-fA-F]*:[0-9a-f
  */
 export function canonicalValue(field, value) {
   const text = value === undefined || value === null ? '' : String(value);
-  if (field && field.name === 'server.address') {
+  if (field && ADDRESS_KEYS.has(field.name)) {
     const matched = text.match(INET_SLASH);
-    if (matched) return matched[1];
+    if (matched) {
+      const slash = text.indexOf('/');
+      const prefix = slash > 0 ? text.slice(0, slash) : '';
+      if (!DOTTED.test(prefix)) return matched[1];
+    }
   }
   return text;
 }
