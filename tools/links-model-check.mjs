@@ -107,11 +107,11 @@ const CASES = [
     expect: {cards: THREE, level: ['off', 'off', 'ok'], say: ['匿名', '还没连上机器人', '']}},
 
   {name: '未登录 × 机器人正常', login: 'out', bot: 'ok',
-    expect: {cards: THREE, level: ['warn', 'ok', 'ok'], say: ['动态通知已停', 'HTTP 正常', '']}},
+    expect: {cards: THREE, level: ['err', 'ok', 'ok'], say: ['动态通知已停', 'HTTP 正常', '']}},
   {name: '未登录 × 机器人掉线', login: 'out', bot: 'down',
-    expect: {cards: THREE, level: ['warn', 'err', 'ok'], say: ['动态通知已停', '队列积压 7 条', '']}},
+    expect: {cards: THREE, level: ['err', 'err', 'ok'], say: ['动态通知已停', '队列积压 7 条', '']}},
   {name: '未登录 × 机器人未配置', login: 'out', bot: 'none',
-    expect: {cards: THREE, level: ['warn', 'off', 'ok'], say: ['动态通知已停', '还没连上机器人', '']}},
+    expect: {cards: THREE, level: ['err', 'off', 'ok'], say: ['动态通知已停', '还没连上机器人', '']}},
 
   // 平台卡该整张不出现。上面九档里它一直在，少了这一档「显隐」那一列就是恒真的
   {name: '没装平台插件', login: 'in', bot: 'ok', cards: [],
