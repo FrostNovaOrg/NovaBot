@@ -50,8 +50,8 @@ class ConfigurationSchemaLabelTest {
     }
 
     @Test
-    @DisplayName("插件项 anonymous 用定稿中文名，api-retry-interval 单位为毫秒")
-    void unlabeledPluginFieldFallsBackToLeaf() throws IOException {
+    @DisplayName("插件项的中文名与单位原样进 schema（名字来路由插件模块自证）")
+    void pluginLabelAndUnitPassThroughSchema() throws IOException {
         ConfigurationMetadataService metadata = mock(ConfigurationMetadataService.class);
         when(metadata.getFields()).thenReturn(List.of(
                 new ConfigurationMetadataService.ConfigurationField(

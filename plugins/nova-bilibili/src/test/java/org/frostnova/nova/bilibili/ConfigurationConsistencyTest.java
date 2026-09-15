@@ -4,12 +4,14 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.config.BilibiliConfigurationGroups;
+import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.protocol.NovaEventMapper;
 import org.frostnova.nova.core.config.ConfigDanger;
 import org.frostnova.nova.core.properties.ConfigEffect;
 import org.frostnova.nova.core.properties.ConfigLabel;
 import org.frostnova.nova.core.config.ui.ConfigurationGroupContributor;
 import org.frostnova.nova.core.config.ui.ConfigurationGroups;
+import org.frostnova.nova.core.config.ui.ConfigurationLabelResolver;
 import org.frostnova.nova.core.config.ui.ConfigurationMetadataService;
 import org.frostnova.nova.core.config.ui.ExternalConfigurationFields;
 import org.frostnova.nova.core.config.ui.RuntimeConfigurationApplier;
@@ -19,6 +21,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.core.io.FileSystemResource;
 import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
@@ -533,6 +536,18 @@ class ConfigurationConsistencyTest {
         assertTrue(unnamed.isEmpty(), "以下配置项没有中文名（范围内 " + scoped
                 + " 项，无名 " + unnamed.size() + " 项），请在字段上补 @ConfigLabel 或在 ExternalConfigurationFields 里写名字:\n  "
                 + String.join("\n  ", unnamed));
+    }
+
+    @Test
+    @DisplayName("匿名模式的中文名来自插件类上的真注解")
+    void anonymousLabelComesFromTheRealAnnotation() {
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+            context.register(NovaBilibiliProperties.class);
+            context.refresh();
+            String label = new ConfigurationLabelResolver(context).getLabels()
+                    .get("novabot.bilibili.account.anonymous");
+            assertEquals("匿名模式", label);
+        }
     }
 
     @Test
