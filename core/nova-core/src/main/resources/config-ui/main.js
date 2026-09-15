@@ -569,11 +569,11 @@ function applyRoute(withData = true) {
   // 每次进入都重问一遍这台机器现在什么样：上一趟离开之后使用者可能去别处上了锁、加了主播，
   // 缓存的画面会把已经做完的那一步画成没做，而那正是这一页唯一要回答的问题
   else if (name === 'setup') openSetup();
+  else if (topPage) { api('/status').then(renderStatus); callPage(topPage, 'refresh', {sub, tail}); }
+  else if (plugin) { api('/status').then(renderStatus); callPage(plugin, 'refresh'); }
   // 每次进入都按当下的 store.values 重画一遍：首页那个推送总开关改完不刷新就切过来时，
   // 这一页画的还是启动那一刻的值，而屏幕上看不出它是旧的
   else if (name === 'settings') { renderGeneral(); focusCard(name, card); }
-  else if (topPage) { api('/status').then(renderStatus); callPage(topPage, 'refresh', {sub, tail}); }
-  else if (plugin) { api('/status').then(renderStatus); callPage(plugin, 'refresh'); }
 
   // 点名要看某一块时不回顶：滚到顶再滚下去，屏幕会先跳一下
   if (!card) window.scrollTo(0, 0);
