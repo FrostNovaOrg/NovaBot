@@ -588,6 +588,41 @@ class ConfigUiFrontendTest {
     }
 
     /**
+     * 组目录贴在顶栏下沿，点目录滚到一组时标题不被顶栏盖住
+     * <p>
+     * 顶栏是 {@code position:sticky;top:0} 且高度是 {@code --head-h}。目录若自己
+     * {@code top:0}，滚到页中会被顶栏盖住前两条；各组若没有 {@code scroll-margin-top}，
+     * 点目录滚到位时标题同样钻进顶栏底下。侧栏已经用 {@code --head-h} 让位，这里跟同一份。
+     */
+    @Test
+    @DisplayName("设置页目录贴在顶栏下沿，组标题滚入时不被盖住")
+    void settingsNavClearsTheHeader() throws IOException {
+        String css = Files.readString(frontendDir().resolve("app.css"), StandardCharsets.UTF_8);
+
+        List<String> bad = new ArrayList<>();
+        String nav = cssBlock(css, ".grpnav");
+        if (nav.isBlank()) {
+            bad.add("app.css 没有 .grpnav");
+        } else {
+            if (nav.contains("top:0") || nav.contains("top: 0")) {
+                bad.add(".grpnav 的 top 仍是 0，滚到页中会被顶栏盖住: " + nav.strip());
+            }
+            if (!nav.contains("top:var(--head-h)") && !nav.contains("top: var(--head-h)")) {
+                bad.add(".grpnav 没有用 --head-h 让出顶栏: " + nav.strip());
+            }
+        }
+        String grp = cssBlock(css, ".setgrp");
+        if (grp.isBlank()
+                || (!grp.contains("scroll-margin-top:var(--head-h)")
+                && !grp.contains("scroll-margin-top: var(--head-h)"))) {
+            bad.add(".setgrp 没有 scroll-margin-top:var(--head-h)，点目录滚到位仍会被顶栏盖住: "
+                    + grp.strip());
+        }
+
+        assertTrue(bad.isEmpty(), "设置页目录没有让出顶栏:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
      * 源码地址。与界面里那一份是同一个串，两份分叉时这一格会红
      */
     private static final String SOURCE_URL = "https://github.com/FrostNovaOrg/NovaBot";
