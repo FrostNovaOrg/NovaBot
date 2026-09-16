@@ -208,7 +208,7 @@ public class BilibiliRiskMetrics {
     /**
      * 统计滚动窗口内的发生次数
      * <p>
-     * 逐次真值，读数封顶在 {@link #MAX_PER_KIND}；顶到之后被挤掉的条数见 {@link #overflow}。
+     * 逐次真值，读数封顶在 {@link #MAX_PER_KIND}；读数到顶时真值可能更大；被挤掉的条数是启动以来累计，见 {@link #overflow}，不能与本读数相加。
      * @param kind 事件类型
      * @param window 窗口长度
      * @return 次数
@@ -226,7 +226,6 @@ public class BilibiliRiskMetrics {
      * 因超出每类保留上限而被挤掉的条数
      * <p>
      * 启动以来累计、不分窗口，不能与任何窗口读数相加。
-     * {@link #count} 封顶在 {@link #MAX_PER_KIND}，这个数是它读不到的那一截。
      * @param kind 事件类型
      * @return 被挤掉的条数
      */

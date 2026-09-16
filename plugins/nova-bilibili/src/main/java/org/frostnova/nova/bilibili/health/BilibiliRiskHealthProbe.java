@@ -75,34 +75,34 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
 
         long http412 = metrics.count(BilibiliRiskMetrics.Kind.HTTP_412, WEEK);
         if (http412 >= THRESHOLD_412) {
-            problems.add("7 天内真实 HTTP 412 " + http412 + " 次");
+            problems.add("7 天内真实 HTTP 412 " + cappedCountText(http412) + " 次");
             advices.add("已达到重新评估真实浏览器方案的触发条件（≥3 次/7 天），请报产品侧决策");
         }
 
         long code352 = metrics.count(BilibiliRiskMetrics.Kind.CODE_352, HOUR);
         if (code352 >= THRESHOLD_352) {
-            problems.add("1 小时内业务码 -352 " + code352 + " 次");
+            problems.add("1 小时内业务码 -352 " + cappedCountText(code352) + " 次");
             advices.add("请求被风控限流。先查是不是自己的重连风暴打出来的——"
                     + "看同期长连接 1006 次数，若同时飙升则是自伤而非平台主动风控");
         }
 
         long code509 = metrics.count(BilibiliRiskMetrics.Kind.CODE_509, HOUR);
         if (code509 >= THRESHOLD_509) {
-            problems.add("1 小时内业务码 -509 " + code509 + " 次");
+            problems.add("1 小时内业务码 -509 " + cappedCountText(code509) + " 次");
             advices.add("请求过于频繁。先看轮询间隔与同期 1006 次数，"
                     + "确认不是自己的重连风暴把请求量顶上去的");
         }
 
         long code401 = metrics.count(BilibiliRiskMetrics.Kind.CODE_401, DAY);
         if (code401 >= THRESHOLD_401) {
-            problems.add("24 小时内业务码 -401 " + code401 + " 次");
+            problems.add("24 小时内业务码 -401 " + cappedCountText(code401) + " 次");
             advices.add("请求被要求验证。先核对登录态是否已过期，"
                     + "过期只需重新扫码；登录态正常仍成串出现的才要报产品侧");
         }
 
         long gaia = metrics.count(BilibiliRiskMetrics.Kind.GAIA, DAY);
         if (gaia > 0) {
-            problems.add("24 小时内风控质询/验证码 " + gaia + " 次");
+            problems.add("24 小时内风控质询/验证码 " + cappedCountText(gaia) + " 次");
             advices.add("出现质询说明请求已被判定为异常客户端，"
                     + metrics.lastDetail(BilibiliRiskMetrics.Kind.GAIA).map(d -> "最近一次：" + d + "。").orElse("")
                     + "请报产品侧，不要自行尝试绕过");
@@ -110,7 +110,7 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
 
         long missing = metrics.count(BilibiliRiskMetrics.Kind.SNAPSHOT_MISSING, DAY);
         if (missing > 0) {
-            problems.add("24 小时内开播快照项缺失 " + missing + " 次");
+            problems.add("24 小时内开播快照项缺失 " + cappedCountText(missing) + " 次");
             advices.add("粉丝数、粉丝团、大航海三项快照有接口取不到，"
                     + metrics.lastDetail(BilibiliRiskMetrics.Kind.SNAPSHOT_MISSING).map(d -> "最近一次：" + d + "。").orElse("")
                     + "表现是下播报告里对应的卡片直接消失，数值不会变成 0。"
@@ -119,7 +119,7 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
 
         long disconnects = metrics.count(BilibiliRiskMetrics.Kind.DISCONNECT_1006, HOUR);
         if (disconnects >= THRESHOLD_1006) {
-            problems.add("1 小时内长连接 1006 断线 " + disconnects + " 次");
+            problems.add("1 小时内长连接 1006 断线 " + cappedCountText(disconnects) + " 次");
             advices.add("成串的秒级断线通常是握手被拒后反复重连。"
                     + "检查登录态是否正常，以及建连是否绕过了全局连接闸门");
         }
@@ -155,7 +155,7 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
                 + overflowLine();
 
         if (problems.isEmpty()) {
-            return HealthStatus.ok(summary(http412, code352, gaia, missing, disconnects) + unknownCmdLine + silentLines);
+            return HealthStatus.ok(summary(http412, code352, code509, code401, gaia, missing, disconnects) + unknownCmdLine + silentLines);
         }
 
         return HealthStatus.degraded(String.join("；", problems) + unknownCmdLine + silentLines,
@@ -196,7 +196,7 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
         }
         String detail = metrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_CMD).orElse("");
         String name = detail.isBlank() ? "?" : detail.split("\\s+")[0];
-        return "，近 24h 未知消息类型 " + dayCountText(n) + " 次（样本 " + name + "）";
+        return "，近 24h 未知消息类型 " + cappedCountText(n) + " 次（样本 " + name + "）";
     }
 
     /**
@@ -215,13 +215,13 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
         }
         String detail = metrics.lastDetail(kind).orElse("");
         String name = detail.isBlank() ? "?" : detail.split("\\s+")[0];
-        return "，近 24h " + label + " " + dayCountText(n) + " 次（样本 " + name + "）";
+        return "，近 24h " + label + " " + cappedCountText(n) + " 次（样本 " + name + "）";
     }
 
     /**
-     * 近 24h 读数文案：顶到每类保留上限时真值可能更大，写「至少 n」。
+     * 读数文案：顶到每类保留上限时真值可能更大，写「至少 n」。
      */
-    private static String dayCountText(long n) {
+    private static String cappedCountText(long n) {
         return n >= BilibiliRiskMetrics.MAX_PER_KIND ? "至少 " + n : Long.toString(n);
     }
 
@@ -229,9 +229,11 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
      * 正常时也把各项计数显示出来：这些指标本身就是要给人看的，
      * 只在越线时才显示等于平时无从判断趋势
      */
-    private String summary(long http412, long code352, long gaia, long missing, long disconnects) {
+    private String summary(long http412, long code352, long code509, long code401, long gaia, long missing, long disconnects) {
         long all1006 = metrics.count(BilibiliRiskMetrics.Kind.DISCONNECT_1006, DAY);
-        return String.format("412 %d 次/7 天，-352 %d 次/时，质询 %d 次/日，快照缺失 %d 次/日，1006 %d 次/时（%d 次/日）",
-                http412, code352, gaia, missing, disconnects, all1006);
+        return "412 " + cappedCountText(http412) + " 次/7 天，-352 " + cappedCountText(code352)
+                + " 次/时，-509 " + cappedCountText(code509) + " 次/时，-401 " + cappedCountText(code401)
+                + " 次/日，质询 " + cappedCountText(gaia) + " 次/日，快照缺失 " + cappedCountText(missing)
+                + " 次/日，1006 " + cappedCountText(disconnects) + " 次/时（" + cappedCountText(all1006) + " 次/日）";
     }
 }
