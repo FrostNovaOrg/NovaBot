@@ -390,8 +390,10 @@ public class RuntimeStateController {
         // 金额可见性没有「未设置」这一档好展示：界面上的开关要么开要么关，
         // 因此这里把默认值也算出来给它，另用 revenueExplicit 标出这份值究竟是人配的还是默认的
         sessions.forEach((key, item) -> {
-            Boolean explicit = revenueVisibility.explicit(item.getString("platform"), item.getLong("num"));
-            item.put("revenueVisible", explicit != null ? explicit : defaultRevenue(item.getString("type")));
+            String platform = item.getString("platform");
+            Long num = item.getLong("num");
+            Boolean explicit = revenueVisibility.explicit(platform, num);
+            item.put("revenueVisible", revenueVisibility.isVisible(platform, typeOf(item.getString("type")), num));
             item.put("revenueExplicit", explicit != null);
         });
 
@@ -405,13 +407,19 @@ public class RuntimeStateController {
     }
 
     /**
-     * 未显式设置时的金额可见性
-     * <p>
-     * 会话清单里的 type 存的是给人看的中文（「群」「好友」），只有来自推送配置的会话才有；
+     * 会话清单里的 type 存的是给人看的中文（「群」「好友」），还原成枚举再交给可见性服务。
      * 状态文件里残留的会话取不到类型，此时按群聊处理——不确定就按更保守的那一边。
      */
-    private boolean defaultRevenue(String type) {
-        return PushTargetType.FRIEND.getStr().equals(type);
+    private static PushTargetType typeOf(String label) {
+        if (label == null) {
+            return null;
+        }
+        for (PushTargetType candidate : PushTargetType.values()) {
+            if (candidate.getStr().equals(label)) {
+                return candidate;
+            }
+        }
+        return null;
     }
 
     private JSONObject session(String platform, Long num, PushTargetType type, boolean configured) {

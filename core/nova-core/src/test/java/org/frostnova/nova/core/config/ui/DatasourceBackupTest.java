@@ -2,6 +2,7 @@ package org.frostnova.nova.core.config.ui;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.core.alert.AlertService;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.health.HealthProbe;
@@ -84,6 +85,10 @@ class DatasourceBackupTest {
 
         timeline = mock(TimelineStore.class);
 
+        Clock clock = mock(Clock.class);
+        when(clock.getZone()).thenReturn(ZoneOffset.UTC);
+        when(clock.instant()).thenAnswer(invocation -> START.plusSeconds(ticks.get()));
+
         controller = new ConfigUiController(
                 mock(ConfigurationMetadataService.class),
                 mock(ConfigurationFileService.class),
@@ -111,8 +116,9 @@ class DatasourceBackupTest {
                 timeline,
                 mock(org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService.class),
                 new PushTemplateDefaults(new NovaCoreProperties()),
-                mock(UpdateCheckService.class));
-        controller.backupClock = Clock.fixed(START, ZoneOffset.UTC);
+                mock(UpdateCheckService.class),
+                mock(AlertService.class),
+                clock);
     }
 
     @Test
@@ -190,7 +196,7 @@ class DatasourceBackupTest {
     }
 
     private void tick() {
-        controller.backupClock = Clock.fixed(START.plusSeconds(ticks.incrementAndGet()), ZoneOffset.UTC);
+        ticks.incrementAndGet();
     }
 
     private ResponseEntity<JSONObject> save(String content) {
