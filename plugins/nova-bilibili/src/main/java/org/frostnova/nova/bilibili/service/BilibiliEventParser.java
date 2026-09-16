@@ -394,7 +394,28 @@ public class BilibiliEventParser {
     private final BilibiliRiskMetrics riskMetrics;
 
     /**
-     * 消息类型到解析方法的映射
+     * 见过、不处理的直播间消息类型。
+     * <p>
+     * 已知＝取用 ∪ 见过：取用是 {@link #parsers} 里会解析成事件的 cmd；见过是 japan
+     * 取表 2026-09-16 真连接里一直都有、本产品不取用的展示／对战／榜单明细类 cmd。
+     * 命中本表的消息不进 {@link BilibiliRiskMetrics.Kind#UNKNOWN_CMD}、不标解析降级，返回空事件。
+     * <p>
+     * 名字里含 {@code GIFT}／{@code GUARD}／{@code SUPER_CHAT}／{@code COMBO} 的 cmd
+     * 一律不得进这张表——它们是收入口径，静默即事故。特别是 {@code COMBO_SEND}：
+     * 它已在业务消息集合里，却不在分派表中（恒降级）；不得登记为见过，另行处理。
+     */
+    static final Set<String> SEEN_CMDS = Set.of(
+            "STOP_LIVE_ROOM_LIST",
+            "ONLINE_RANK_V3",
+            "PK_WIDGET",
+            "PK_INFO",
+            "ENTRY_EFFECT",
+            "NOTICE_MSG",
+            "COMMON_NOTICE_DANMAKU",
+            "WIDGET_BANNER");
+
+    /**
+     * 消息类型到解析方法的映射（取用集）
      */
     private final Map<String, BiFunction<JSONObject, LiveStreamerInfo, NovaBaseLiveEvent>> parsers = new HashMap<>();
 
@@ -443,6 +464,13 @@ public class BilibiliEventParser {
     }
 
     /**
+     * 分派表里的 cmd 名（取用集），供断言与 {@link #SEEN_CMDS} 互斥
+     */
+    Set<String> dispatchedCmds() {
+        return Set.copyOf(parsers.keySet());
+    }
+
+    /**
      * 一条消息的解析产出
      *
      * @param event 解析出的事件，消息类型不受支持或解析失败时为空
@@ -482,6 +510,9 @@ public class BilibiliEventParser {
 
         BiFunction<JSONObject, LiveStreamerInfo, NovaBaseLiveEvent> parser = parsers.get(type);
         if (parser == null) {
+            if (SEEN_CMDS.contains(type)) {
+                return new ParsedMessage(Optional.empty(), false);
+            }
             noteUnknownCmd(type);
             return new ParsedMessage(Optional.empty(), true);
         }

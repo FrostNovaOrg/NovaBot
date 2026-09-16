@@ -25,8 +25,10 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -179,6 +181,130 @@ class BilibiliEventParserTest {
         }
 
         assertTrue(reds.isEmpty(), () -> "四问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+    }
+
+    @Nested
+    @DisplayName("见过不处理的 cmd")
+    class SeenCmds {
+        @Test
+        @DisplayName("见过不处理的 cmd 不进 UNKNOWN_CMD、不标降级；真未知仍计数仍降级")
+        void seenCmdsNotCountedAndNotDegraded() {
+            List<String> reds = new ArrayList<>();
+            List<String> ran = new ArrayList<>();
+            List<String> seen = List.of(
+                    "STOP_LIVE_ROOM_LIST",
+                    "ONLINE_RANK_V3",
+                    "PK_WIDGET",
+                    "PK_INFO",
+                    "ENTRY_EFFECT",
+                    "NOTICE_MSG",
+                    "COMMON_NOTICE_DANMAKU",
+                    "WIDGET_BANNER");
+
+            try {
+                for (String cmd : seen) {
+                    parse("{\"cmd\":\"" + cmd + "\",\"data\":{}}");
+                }
+                long unknown = riskMetrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_CMD, Duration.ofMinutes(1));
+                assertEquals(0, unknown,
+                        "见过不处理的 cmd 不得进 UNKNOWN_CMD，实际 " + unknown + " 名: " + seen);
+            } catch (AssertionError e) {
+                reds.add("① " + e.getMessage());
+            }
+            ran.add("①计数0");
+
+            try {
+                parse("{\"cmd\":\"BRAND_NEW_CMD\",\"data\":{}}");
+                assertEquals(1, riskMetrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_CMD, Duration.ofMinutes(1)),
+                        "真未知仍应记一次");
+            } catch (AssertionError e) {
+                reds.add("② " + e.getMessage());
+            }
+            ran.add("②BRAND_NEW_CMD计数1");
+
+            for (String cmd : seen) {
+                try {
+                    BilibiliEventParser.ParsedMessage parsed = parser.parseMessage(
+                            JSON.parseObject("{\"cmd\":\"" + cmd + "\",\"data\":{}}"), SOURCE);
+                    assertTrue(parsed.event().isEmpty(), cmd + " 应返回空事件");
+                    assertFalse(parsed.degraded(), cmd + " 不得标降级");
+                } catch (AssertionError e) {
+                    reds.add("③ " + cmd + " " + e.getMessage());
+                }
+                ran.add("③" + cmd);
+            }
+
+            try {
+                BilibiliEventParser.ParsedMessage unknown = parser.parseMessage(
+                        JSON.parseObject("{\"cmd\":\"BRAND_NEW_CMD\",\"data\":{}}"), SOURCE);
+                assertTrue(unknown.event().isEmpty(), "真未知不应解析成事件");
+            } catch (AssertionError e) {
+                reds.add("④空事件 " + e.getMessage());
+            }
+            ran.add("④空事件");
+
+            try {
+                BilibiliEventParser.ParsedMessage unknown = parser.parseMessage(
+                        JSON.parseObject("{\"cmd\":\"BRAND_NEW_CMD\",\"data\":{}}"), SOURCE);
+                assertTrue(unknown.degraded(), "真未知仍应标降级");
+            } catch (AssertionError e) {
+                reds.add("④降级 " + e.getMessage());
+            }
+            ran.add("④降级");
+
+            assertTrue(reds.isEmpty(),
+                    () -> reds.size() + " 问红: " + String.join("; ", reds)
+                            + "；已跑: " + String.join(",", ran));
+        }
+
+        @Test
+        @DisplayName("见过表与分派表互斥，且不得含收入口径名")
+        void seenCmdsDisjointFromParsersAndRevenue() {
+            List<String> reds = new ArrayList<>();
+            List<String> ran = new ArrayList<>();
+
+            try {
+                Set<String> dispatched = parser.dispatchedCmds();
+                assertFalse(dispatched.isEmpty(), "分派表不得为空");
+                assertTrue(dispatched.contains("DANMU_MSG"), "分派表须含 DANMU_MSG");
+                Set<String> overlap = new HashSet<>(BilibiliEventParser.SEEN_CMDS);
+                overlap.retainAll(dispatched);
+                assertTrue(overlap.isEmpty(), "见过表与分派表须互斥，交集: " + overlap);
+            } catch (AssertionError e) {
+                reds.add("③ " + e.getMessage());
+            }
+            ran.add("③互斥parsers");
+
+            try {
+                List<String> banned = List.of("GIFT", "GUARD", "SUPER_CHAT", "COMBO");
+                List<String> hits = new ArrayList<>();
+                for (String cmd : BilibiliEventParser.SEEN_CMDS) {
+                    for (String token : banned) {
+                        if (cmd.contains(token)) {
+                            hits.add(cmd);
+                        }
+                    }
+                }
+                assertTrue(hits.isEmpty(), "见过表不得含收入口径名，命中: " + hits);
+            } catch (AssertionError e) {
+                reds.add("④禁词 " + e.getMessage());
+            }
+            ran.add("④禁词");
+
+            try {
+                Set<String> businessOverlap = new HashSet<>(BilibiliEventParser.SEEN_CMDS);
+                businessOverlap.retainAll(BilibiliLiveRoomConnector.BUSINESS_COMMANDS);
+                assertTrue(businessOverlap.isEmpty(),
+                        "见过表与业务消息集合须互斥，交集: " + businessOverlap);
+            } catch (AssertionError e) {
+                reds.add("④业务 " + e.getMessage());
+            }
+            ran.add("④业务");
+
+            assertTrue(reds.isEmpty(),
+                    () -> reds.size() + " 问红: " + String.join("; ", reds)
+                            + "；已跑: " + String.join(",", ran));
+        }
     }
 
     @Test
@@ -2191,9 +2317,13 @@ class BilibiliEventParserTest {
     @Test
     @DisplayName("未知消息类型安全忽略")
     void ignoresUnknownCommand() {
-        // 这里原本拿 WATCHED_CHANGE 举例，它后来被支持了，用例也就名不副实了。
-        // 换成一个确实不会去支持的：ENTRY_EFFECT 是进场特效，纯展示，与统计无关
-        assertTrue(parse("{\"cmd\":\"ENTRY_EFFECT\",\"data\":{}}").isEmpty());
+        // 原样本 ENTRY_EFFECT 已登记为见过不处理，走的不再是未知那条路。
+        // 换成仍属未知的 HOT_RANK_CHANGED（不在 SEEN_CMDS、也不在分派表；名不含收入禁词）
+        assertFalse(BilibiliEventParser.SEEN_CMDS.contains("HOT_RANK_CHANGED"),
+                "样本 HOT_RANK_CHANGED 不得在 SEEN_CMDS");
+        assertFalse(parser.dispatchedCmds().contains("HOT_RANK_CHANGED"),
+                "样本 HOT_RANK_CHANGED 不得在分派表");
+        assertTrue(parse("{\"cmd\":\"HOT_RANK_CHANGED\",\"data\":{}}").isEmpty());
         assertTrue(parse("{}").isEmpty());
         assertTrue(parser.parse(null, SOURCE).isEmpty());
     }
