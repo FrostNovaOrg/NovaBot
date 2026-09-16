@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
 import java.nio.file.FileVisitResult;
 import java.nio.file.FileVisitor;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
@@ -27,6 +28,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -38,9 +40,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 小写 b 的 {@code Starbot} 与 {@code starlwr} 域名曾经躲过按 {@code StarBot} 的清点，
  * 故匹配不分大小写。
  * <p>
- * 四问各自捕获、末尾汇总，一次看清还差哪一处；问③钉住列件与读件当真扫到了仓根与处理器模块，
- * 免得路径解析错时问①对着空集「绿」。问④钉住列件进目录前就跳过构建产物目录与隐藏目录，
- * 且这些目录不可读时也不抛。
+ * 九问各自捕获、末尾汇总，一次看清还差哪一处；问③钉住列件与读件当真扫到了仓根与处理器模块，
+ * 免得路径解析错时问①对着空集「绿」。问④钉住列件不列构建产物目录与隐藏目录里的件，
+ * 且这些目录不可读时也不抛。问⑤钉住下探前就剪（列件不另滤，剪枝失效就多列）。
+ * 问⑥⑦钉件消失放行，问⑧⑨钉其余读目录异常照抛。
  */
 @DisplayName("各 pom 项目元数据不含上游名")
 class PomMetadataHasNoUpstreamNameTest {
@@ -106,7 +109,7 @@ class PomMetadataHasNoUpstreamNameTest {
             unresolved.add("问③ " + formatCaught(t));
         }
 
-        // 问④ 列件跳过构建产物目录与隐藏目录；目录不可读时不抛
+        // 问④ 列件不列构建产物目录与隐藏目录里的件；目录不可读时不抛
         try {
             Path visible = isolatedRoot.resolve("a").resolve(POM_FILENAME);
             Path targets = isolatedRoot.resolve("targets").resolve(POM_FILENAME);
@@ -147,59 +150,147 @@ class PomMetadataHasNoUpstreamNameTest {
             unresolved.add("问④ " + formatCaught(t));
         }
 
+        // 问⑤ 剪枝：下探前就剪，列件不再另滤。子根须在问④ 跑完之后才建。
+        try {
+            Path q5 = isolatedRoot.resolve("q5");
+            Path visible = q5.resolve("a").resolve(POM_FILENAME);
+            Path targetPom = q5.resolve("target").resolve(POM_FILENAME);
+            Path hiddenPom = q5.resolve(".hidden").resolve(POM_FILENAME);
+            Files.createDirectories(visible.getParent());
+            Files.createDirectories(targetPom.getParent());
+            Files.createDirectories(hiddenPom.getParent());
+            String stub = "<project></project>\n";
+            Files.writeString(visible, stub, StandardCharsets.UTF_8);
+            Files.writeString(targetPom, stub, StandardCharsets.UTF_8);
+            Files.writeString(hiddenPom, stub, StandardCharsets.UTF_8);
+            List<Path> found = listPoms(q5);
+            List<String> rels = new ArrayList<>();
+            for (Path pom : found) {
+                rels.add(relative(q5, pom));
+            }
+            assertEquals(List.of("a/pom.xml"), rels, "列到的 pom 应为可见一件，实际: " + rels);
+        } catch (Throwable t) {
+            unresolved.add("问⑤ " + formatCaught(t));
+        }
+
+        Path q6 = isolatedRoot.resolve("q6");
+
+        // 问⑥ 件消失放行（件）
+        try {
+            PomListVisitor visitor = new PomListVisitor(q6, new ArrayList<>());
+            FileVisitResult result = visitor.visitFileFailed(
+                    q6.resolve("a").resolve("gone.xml"),
+                    new NoSuchFileException(q6.resolve("a").resolve("gone.xml").toString()));
+            assertEquals(FileVisitResult.CONTINUE, result);
+        } catch (Throwable t) {
+            unresolved.add("问⑥ " + formatCaught(t));
+        }
+
+        // 问⑦ 件消失放行（目录收尾）
+        try {
+            PomListVisitor visitor = new PomListVisitor(q6, new ArrayList<>());
+            FileVisitResult result = visitor.postVisitDirectory(
+                    q6.resolve("a"),
+                    new NoSuchFileException(q6.resolve("a").toString()));
+            assertEquals(FileVisitResult.CONTINUE, result);
+        } catch (Throwable t) {
+            unresolved.add("问⑦ " + formatCaught(t));
+        }
+
+        // 问⑧ 其余异常照抛（件）
+        try {
+            PomListVisitor visitor = new PomListVisitor(q6, new ArrayList<>());
+            Path locked = q6.resolve("b").resolve("locked");
+            IOException expected = new AccessDeniedException(locked.toString());
+            IOException thrown = null;
+            try {
+                visitor.visitFileFailed(locked, expected);
+            } catch (IOException actual) {
+                thrown = actual;
+            }
+            assertSame(expected, thrown);
+        } catch (Throwable t) {
+            unresolved.add("问⑧ " + formatCaught(t));
+        }
+
+        // 问⑨ 其余异常照抛（目录收尾）
+        try {
+            PomListVisitor visitor = new PomListVisitor(q6, new ArrayList<>());
+            Path dir = q6.resolve("b");
+            IOException expected = new IOException("post-visit other");
+            IOException thrown = null;
+            try {
+                visitor.postVisitDirectory(dir, expected);
+            } catch (IOException actual) {
+                thrown = actual;
+            }
+            assertSame(expected, thrown);
+        } catch (Throwable t) {
+            unresolved.add("问⑨ " + formatCaught(t));
+        }
+
         assertTrue(unresolved.isEmpty(),
-                () -> "四问中 " + unresolved.size() + " 问未销: " + String.join("; ", unresolved));
+                () -> "九问中 " + unresolved.size() + " 问未销: " + String.join("; ", unresolved));
     }
 
     static List<Path> listPoms(Path root) {
         try {
             List<Path> out = new ArrayList<>();
-            Files.walkFileTree(root, new FileVisitor<>() {
-                @Override
-                public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
-                    if (dir.equals(root)) {
-                        return FileVisitResult.CONTINUE;
-                    }
-                    if (shouldSkip(root, dir)) {
-                        return FileVisitResult.SKIP_SUBTREE;
-                    }
-                    return FileVisitResult.CONTINUE;
-                }
-
-                @Override
-                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
-                    if (attrs.isRegularFile()
-                            && POM_FILENAME.equals(file.getFileName().toString())
-                            && !shouldSkip(root, file)) {
-                        out.add(file);
-                    }
-                    return FileVisitResult.CONTINUE;
-                }
-
-                @Override
-                public FileVisitResult visitFileFailed(Path file, IOException exc) throws IOException {
-                    // walkFileTree 先打开目录再调 preVisitDirectory；不可读的跳过目录到这里
-                    if (exc instanceof NoSuchFileException || shouldSkip(root, file)) {
-                        return FileVisitResult.CONTINUE;
-                    }
-                    throw exc;
-                }
-
-                @Override
-                public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
-                    if (exc instanceof NoSuchFileException) {
-                        return FileVisitResult.CONTINUE;
-                    }
-                    if (exc != null) {
-                        throw exc;
-                    }
-                    return FileVisitResult.CONTINUE;
-                }
-            });
+            Files.walkFileTree(root, new PomListVisitor(root, out));
             out.sort(Comparator.comparing(path -> relative(root, path)));
             return out;
         } catch (IOException e) {
             throw new UncheckedIOException("列 pom 失败: " + root, e);
+        }
+    }
+
+    static class PomListVisitor implements FileVisitor<Path> {
+        private final Path root;
+        private final List<Path> out;
+
+        PomListVisitor(Path root, List<Path> out) {
+            this.root = root;
+            this.out = out;
+        }
+
+        @Override
+        public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
+            if (dir.equals(root)) {
+                return FileVisitResult.CONTINUE;
+            }
+            if (shouldSkip(root, dir)) {
+                return FileVisitResult.SKIP_SUBTREE;
+            }
+            return FileVisitResult.CONTINUE;
+        }
+
+        @Override
+        public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+            if (attrs.isRegularFile()
+                    && POM_FILENAME.equals(file.getFileName().toString())) {
+                out.add(file);
+            }
+            return FileVisitResult.CONTINUE;
+        }
+
+        @Override
+        public FileVisitResult visitFileFailed(Path file, IOException exc) throws IOException {
+            // walkFileTree 先打开目录再调 preVisitDirectory；不可读的跳过目录到这里
+            if (exc instanceof NoSuchFileException || shouldSkip(root, file)) {
+                return FileVisitResult.CONTINUE;
+            }
+            throw exc;
+        }
+
+        @Override
+        public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
+            if (exc instanceof NoSuchFileException) {
+                return FileVisitResult.CONTINUE;
+            }
+            if (exc != null) {
+                throw exc;
+            }
+            return FileVisitResult.CONTINUE;
         }
     }
 
