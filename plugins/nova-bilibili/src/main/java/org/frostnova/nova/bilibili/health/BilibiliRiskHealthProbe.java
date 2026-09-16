@@ -229,7 +229,7 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
      * 正常时也把各项计数显示出来：这些指标本身就是要给人看的，
      * 只在越线时才显示等于平时无从判断趋势
      */
-    private String summary(long http412, long code352, long code509, long code401, long gaia, long missing, long disconnects) {
+    String summary(long http412, long code352, long code509, long code401, long gaia, long missing, long disconnects) {
         long all1006 = metrics.count(BilibiliRiskMetrics.Kind.DISCONNECT_1006, DAY);
         return "412 " + cappedCountText(http412) + " 次/7 天，-352 " + cappedCountText(code352)
                 + " 次/时，-509 " + cappedCountText(code509) + " 次/时，-401 " + cappedCountText(code401)
