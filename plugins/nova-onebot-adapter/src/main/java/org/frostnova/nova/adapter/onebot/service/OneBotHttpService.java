@@ -200,13 +200,11 @@ public class OneBotHttpService {
             }
         }
 
-        JSONObject firstParams = new JSONObject();
-        firstParams.put("group_id", params.get("group_id"));
+        JSONObject firstParams = new JSONObject(params);
         firstParams.put("message", text);
         JSONObject first = http.sendGroupMsg(sender, firstParams);
 
-        JSONObject secondParams = new JSONObject();
-        secondParams.put("group_id", params.get("group_id"));
+        JSONObject secondParams = new JSONObject(params);
         secondParams.put("message", images);
         try {
             http.sendGroupMsg(sender, secondParams);

@@ -92,14 +92,15 @@ class BilibiliLiveReportCommandTest {
     }
 
     @Test
-    @DisplayName("两位主播只一位在播：画在播的那位，图回复不带「本次用的是」")
+    @DisplayName("多位只一位在播、不带名：content 以「本次用的是：」起、以图收")
     void picksTheOnlyLivingStreamerWithoutPrefixingTheImage() {
         Fixture fixture = new Fixture(List.of(streamer(1, null), streamer(2, null)), Set.of(2));
 
         CommandReply reply = fixture.command.execute(context());
 
-        assertEquals("{image_base64=QUJD}", reply.content());
-        assertFalse(reply.content().contains("本次用的是"));
+        assertTrue(reply.content().startsWith("本次用的是："), reply.content());
+        assertTrue(reply.content().endsWith("{image_base64=QUJD}"), reply.content());
+        assertTrue(reply.content().contains("\n"), reply.content());
         assertEquals(10002L, fixture.capturedSource().getUid());
     }
 

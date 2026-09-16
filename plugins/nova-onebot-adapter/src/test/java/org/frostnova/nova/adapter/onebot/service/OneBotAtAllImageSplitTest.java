@@ -30,8 +30,10 @@ import java.io.IOException;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
@@ -150,6 +152,31 @@ class OneBotAtAllImageSplitTest {
         } finally {
             logger.detachAppender(appender);
         }
+    }
+
+    @Test
+    @DisplayName("第一次（文字）失败则整条失败, 第二条不打")
+    void firstSendFailureDoesNotSendImageFollowUp() {
+        http.failGroupMessageAt(1);
+
+        JSONObject result = service.send(group("{at=all}主播开播了{image_url=" + COVER + "}"));
+
+        assertEquals(2, result.getIntValue("code"), result.toJSONString());
+        assertNull(result.get("id"), result.toJSONString());
+        assertEquals(1, http.groupMessages().size(), "第一次失败后第二条不该打: " + http.groupMessages());
+    }
+
+    @Test
+    @DisplayName("拆发两条的请求键与不拆那条相同")
+    void splitRequestsCarryTheSameParamKeysAsUnsplit() {
+        service.send(group("主播开播了{image_url=" + COVER + "}"));
+        Set<String> unsplitKeys = Set.copyOf(http.groupMessages().get(0).keySet());
+
+        service.send(group("{at=all}主播开播了{image_url=" + COVER + "}"));
+        List<JSONObject> sent = http.groupMessages();
+        assertEquals(3, sent.size(), "不拆一条再拆两条, 实际: " + sent);
+        assertEquals(unsplitKeys, sent.get(1).keySet(), "拆发第一条缺键: " + sent.get(1).keySet());
+        assertEquals(unsplitKeys, sent.get(2).keySet(), "拆发第二条缺键: " + sent.get(2).keySet());
     }
 
     private MessageDTO group(String content) {
