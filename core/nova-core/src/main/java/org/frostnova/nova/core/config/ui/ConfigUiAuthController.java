@@ -522,7 +522,7 @@ public class ConfigUiAuthController {
         // 令牌形态没有会话 Cookie。上锁之后过滤器切到口令形态，不在这一趟下发会话，
         // 下一步接口一律 401，整页刷新落到登录页，初始设置就断在第一步。
         ConfigUiSession session = authService.issueForPassword(request.getRemoteAddr());
-        authService.logoutOthers(session.getId());
+        replaced.put("revoked", authService.logoutOthers(session.getId()));
         replaced.put("csrfToken", session.getCsrfToken());
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, sessionCookie(session.getId(), request).toString())
