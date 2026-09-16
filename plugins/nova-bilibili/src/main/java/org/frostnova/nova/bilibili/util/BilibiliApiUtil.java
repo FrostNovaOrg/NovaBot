@@ -159,7 +159,7 @@ public class BilibiliApiUtil {
      * <p>
      * 表的查找键是去掉 query 的路径。已知＝取用 ∪ 常驻：取用键是该端点解析方法实际
      * 取用的顶层键（同一路径被两个方法用时取并集，登录态／匿名态字段并集）；常驻键是
-     * japan 取表 2026-09-08 真应答里一直都有、解析码并不读取的字段。
+     * 真连接取表 2026-09-08 真应答里一直都有、解析码并不读取的字段。
      * {@code nested} 的条目（房间状态按 uid 分桶）不在 {@link #extractData} 比对，
      * 而在解析处对桶内对象调用 {@link #noteUnknownTopKeys}。
      */
@@ -167,7 +167,7 @@ public class BilibiliApiUtil {
 
     /**
      * @param usedKeys 解析码真取的顶层键
-     * @param residentKeys japan 取表 2026-09-08 真应答常驻、解析码不取的顶层键
+     * @param residentKeys 真连接取表 2026-09-08 真应答常驻、解析码不取的顶层键
      * @param keys 已知＝取用 ∪ 常驻，比对用
      */
     record KnownDataKeys(String constantName, Set<String> usedKeys, Set<String> residentKeys,
@@ -220,8 +220,8 @@ public class BilibiliApiUtil {
                 "cookie_info", "token_info", "access_token", "refresh_token", "expires_in");
         // 观看心跳解析处不取 data 字段；空集且整路不记，避免按拍把常驻键记成未知
         registerKnownKeys(table, LIVE_HEARTBEAT_API, "LIVE_HEARTBEAT_API");
-        // japan 取表 2026-09-08：真应答常驻、解析码不取。未取到样本的端点不登记。
-        // japan 取表 2026-09-16 补 ROOM_INFO_API 与 follower。
+        // 真连接取表 2026-09-08：真应答常驻、解析码不取。未取到样本的端点不登记。
+        // 真连接取表 2026-09-16 补 ROOM_INFO_API 与 follower。
         registerResidentKeys(table, DANMU_INFO_API,
                 "business_id", "group", "max_delay", "refresh_rate", "refresh_row_factor");
         registerResidentKeys(table, DYNAMIC_FEED_API,
@@ -274,7 +274,7 @@ public class BilibiliApiUtil {
                 existing.nested() || nested));
     }
 
-    /** japan 取表 2026-09-08：真应答里一直都有、解析码并不读取的顶层键。 */
+    /** 真连接取表 2026-09-08：真应答里一直都有、解析码并不读取的顶层键。 */
     private static void registerResidentKeys(Map<String, KnownDataKeys> table, String endpointUrl,
             String... keys) {
         String path = shortUrl(endpointUrl);
