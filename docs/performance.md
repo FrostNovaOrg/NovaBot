@@ -92,7 +92,7 @@ GC 元数据与直接内存。按默认参数即 `512 + 192 + 150 ≈ 854M`，
 > 唯一看得见它的地方是 cgroup 自己的计数器：
 >
 > ```bash
-> cat /sys/fs/cgroup/system.slice/starbot.service/memory.events   # 看 high 那一行
+> cat /sys/fs/cgroup/system.slice/novabot.service/memory.events   # 看 high 那一行
 > ```
 >
 > 当时该计数以约 44 次/秒持续增长。**把 `MemoryHigh` 设在稳态峰值之下，等于让服务在预算之内

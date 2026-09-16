@@ -5,9 +5,9 @@
   <groupId>org.frostnova.nova</groupId>
   <artifactId>nova-plugin-processor</artifactId>
   <version>1.0.0</version>
-  <name>StarbotPluginProcessor</name>
-  <description>Starbot Plugin Processor</description>
-  <url>https://bot.starlwr.com</url>
+  <name>NovaPluginProcessor</name>
+  <description>Plugin Processor For NovaBot</description>
+  <url>https://github.com/FrostNovaOrg/NovaBot</url>
   <packaging>maven-plugin</packaging>
 
   <licenses>

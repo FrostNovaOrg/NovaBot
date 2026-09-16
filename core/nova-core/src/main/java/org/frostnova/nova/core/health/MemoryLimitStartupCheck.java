@@ -132,7 +132,7 @@ public class MemoryLimitStartupCheck {
             Path self = Path.of("/proc/self/cgroup");
             if (Files.isReadable(self)) {
                 for (String line : Files.readAllLines(self)) {
-                    // cgroup v2 只有一行，形如 0::/system.slice/starbot.service
+                    // cgroup v2 只有一行，形如 0::/system.slice/novabot.service
                     if (line.startsWith("0::")) {
                         String relative = line.substring(3);
                         Path dir = relative.isBlank() || "/".equals(relative)
