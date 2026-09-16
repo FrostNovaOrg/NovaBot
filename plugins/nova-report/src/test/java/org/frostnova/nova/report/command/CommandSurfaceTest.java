@@ -2,6 +2,7 @@ package org.frostnova.nova.report.command;
 
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.command.BilibiliAtNoticeKind;
+import org.frostnova.nova.core.command.CommandContext;
 import org.frostnova.nova.core.command.CommandDispatcher;
 import org.frostnova.nova.core.command.CommandFollowUp;
 import org.frostnova.nova.core.command.CommandSettingsService;
@@ -52,8 +53,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -375,6 +380,63 @@ class CommandSurfaceTest {
     }
 
     @Test
+    @DisplayName("本群开播通知配成 @全体成员：开关两头整句拒绝，且不往开关表里留记录")
+    void toggleRefusesLiveAtCommandsWhenAtAllAndLeavesSettingsUntouched() {
+        registry.atMode(BilibiliAtNoticeKind.LIVE, AtMode.ALL);
+
+        for (String toggle : List.of("启用命令", "禁用命令")) {
+            for (String name : LIVE_AT_COMMANDS) {
+                String said = registry.feed(true, toggle + " " + name, "owner");
+
+                assertEquals("「" + name + "」在本群用不上，菜单里也没有它，不用开关它", said,
+                        toggle + " " + name);
+                assertFalse(registry.settings.isDisabled(PLATFORM, GROUP, name),
+                        name + " 进了命令开关表：菜单里本就没有它，这条记录谁也看不见、也关不回来");
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("私聊开关仅限群聊的命令：整句说在这里用不上")
+    void toggleNamesThePrivatePlaceWhenTargetIsGroupOnly() {
+        // 禁用命令本身仅限群聊，私聊经分发器按认不出回菜单，到不了嵌「这里」的那句。
+        // 直接把私聊上下文交给开关命令，量的才是那一整句。
+        registry.prepareDispatch();
+        NovaCommand disable = registry.commands.stream()
+                .filter(command -> "禁用命令".equals(command.name()))
+                .findFirst()
+                .orElseThrow();
+        String name = "开播@我";
+        CommandContext privateChat = new CommandContext(
+                PLATFORM, PushTargetType.FRIEND, FRIEND, SENDER,
+                "禁用命令", List.of(name), "禁用命令 " + name, true);
+        assertEquals("「" + name + "」在这里用不上，菜单里也没有它，不用开关它",
+                disable.execute(privateChat).content());
+    }
+
+    @Test
+    @DisplayName("按名查找时扫命令表的次数：命中一次、本机没开两次、名字不存在三次")
+    void toggleFirstScansAllOncePerLookup() {
+        registry.prepareDispatch();
+        clearInvocations(registry.spiedDispatcher());
+        assertEquals("已禁用「直播间数据」", registry.dispatch(true, "禁用命令 直播间数据", "owner"));
+        verify(registry.spiedDispatcher(), times(1)).all();
+
+        registry.supportsTotalData(false);
+        registry.prepareDispatch();
+        clearInvocations(registry.spiedDispatcher());
+        String unavailable = registry.dispatch(true, "禁用命令 直播间总数据", "owner");
+        assertTrue(unavailable.contains("没开"), unavailable);
+        verify(registry.spiedDispatcher(), times(2)).all();
+
+        registry.prepareDispatch();
+        clearInvocations(registry.spiedDispatcher());
+        String missing = registry.dispatch(true, "禁用命令 主播壬", "owner");
+        assertTrue(missing.contains("没有名为"), missing);
+        verify(registry.spiedDispatcher(), times(3)).all();
+    }
+
+    @Test
     @DisplayName("「在哪儿」两句同一处取词：群里都说「本群」，私聊都说「这里」")
     void bothSentencesNameTheSamePlace() {
         // 「说不出主播」与「这条命令被关掉了」出自两个模块，措辞却回答同一个问题。
@@ -525,6 +587,12 @@ class CommandSurfaceTest {
 
         private final AtomicReference<CommandDispatcher> current = new AtomicReference<>();
 
+        /**
+         * 开关命令从 ObjectProvider 取到的分发器 spy；{@link #current} 仍放真件，
+         * 避免把分发器自己的 {@code all()} 算进次数。
+         */
+        private CommandDispatcher spiedDispatcher;
+
         private final List<NovaCommand> commands = new ArrayList<>();
 
         private final AbstractDataSource dataSource = mock(AbstractDataSource.class);
@@ -570,7 +638,8 @@ class CommandSurfaceTest {
 
             @SuppressWarnings("unchecked")
             ObjectProvider<CommandDispatcher> self = mock(ObjectProvider.class);
-            when(self.getIfAvailable()).thenAnswer(invocation -> current.get());
+            when(self.getIfAvailable()).thenAnswer(invocation ->
+                    spiedDispatcher != null ? spiedDispatcher : current.get());
 
             dependencies.put(AbstractDataSource.class, dataSource);
             dependencies.put(LiveDataService.class, liveDataService);
@@ -628,16 +697,32 @@ class CommandSurfaceTest {
          * 拿普通成员去发只会量到那一句「仅群主…可用」
          */
         String feed(boolean group, String text, String role) {
+            prepareDispatch();
+            return dispatch(group, text, role);
+        }
+
+        /**
+         * 现造分发器并把 spy 交给开关命令的 ObjectProvider；真件仍放 {@link #current}
+         */
+        void prepareDispatch() {
             replies.clear();
-            // 这一件量的是命令回了什么话，不问日志页
             CommandDispatcher dispatcher = new CommandDispatcher(provider, noFollowUps(), settings, dataSource, sender,
                     new NovaCoreProperties(), TimelineWriter.NONE);
             current.set(dispatcher);
+            spiedDispatcher = spy(dispatcher);
+        }
 
-            dispatcher.onRemoteMessage(new NovaRemoteMessageEvent(PLATFORM, group ? "group" : "private",
+        /**
+         * 用已经准备好的那一份分发器喂一条消息
+         */
+        String dispatch(boolean group, String text, String role) {
+            current.get().onRemoteMessage(new NovaRemoteMessageEvent(PLATFORM, group ? "group" : "private",
                     group ? GROUP : FRIEND, SENDER, text, role, group));
-
             return String.join("\n", replies);
+        }
+
+        CommandDispatcher spiedDispatcher() {
+            return spiedDispatcher;
         }
 
         /**
