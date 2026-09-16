@@ -26,7 +26,9 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -407,13 +409,14 @@ public class BilibiliEventParser {
     /**
      * 见过、不处理的直播间消息类型。
      * <p>
-     * 已知＝取用 ∪ 见过：取用是 {@link #parsers} 里会解析成事件的 cmd；见过是 2026-09-16
-     * 真连接取表里出现过、本产品不取用的 cmd，含对战、榜单、连麦、抽奖、互动聚合、购物引导、界面提示等类。
+     * 已知＝取用 ∪ 见过 ∪ 派生不计收入：取用是 {@link #parsers} 里会解析成事件的 cmd；见过是 2026-09-16
+     * 真连接取表里出现过、本产品不取用的 cmd，含对战、榜单、连麦、抽奖、互动聚合、购物引导、界面提示等类；
+     * 派生不计收入见 {@link #DERIVED_NOT_REVENUE_CMDS}。
      * 命中本表的消息不进 {@link BilibiliRiskMetrics.Kind#UNKNOWN_CMD}、不标解析降级，返回空事件。
      * <p>
      * 名字里含 {@code GIFT}／{@code GUARD}／{@code SUPER_CHAT}／{@code COMBO} 的 cmd
      * 一律不得进这张表——它们是收入口径，静默即事故。特别是 {@code COMBO_SEND}：
-     * 它已在业务消息集合里，却不在分派表中（恒降级）；不得登记为见过，另行处理。
+     * 不得登记为见过，归 {@link #DERIVED_NOT_REVENUE_CMDS}。
      */
     static final Set<String> SEEN_CMDS = Set.of(
             "STOP_LIVE_ROOM_LIST",
@@ -490,6 +493,28 @@ public class BilibiliEventParser {
             "WIDGET_WISH_INFO_V2");
 
     /**
+     * 与已计事件重复的收入类消息，登记为已知、不计收入、不记未知；新增须带一句可对账的证据。
+     */
+    static final Map<String, String> DERIVED_NOT_REVENUE_CMDS = derivedNotRevenueCmds();
+
+    private static Map<String, String> derivedNotRevenueCmds() {
+        Map<String, String> table = new LinkedHashMap<>();
+        table.put("COMBO_SEND",
+                "同一串连击礼物结束后下发的汇总：按 batch_combo_id 都能对上此前已逐笔到达的 SEND_GIFT／SEND_GIFT_V2（2026-09 真连接两日 461 条全部对上），且总在最后一笔之后约 3–31 秒才到，再计即重复。");
+        table.put("GIFT_COMBO",
+                "连击进行中的提示：同 batch_combo_id、同送礼人、同礼物的 SEND_GIFT／SEND_GIFT_V2 已先到，num 与 total_coin 等于最近那笔（2026-09 真连接 15/15）。");
+        table.put("UNIVERSAL_EVENT_GIFT",
+                "多人连线积分板（business_label 为 universal_multi_conn）：只含各连线主播的会话累计分（金瓜子），不含礼物名、数量与送礼人；本房主播分的上涨与同房礼物金额相符（2026-09-16 真连接 58 次上涨中 47 次逐数相等），且混有连线对方主播的分。");
+        table.put("UNIVERSAL_EVENT_GIFT_V2",
+                "UNIVERSAL_EVENT_GIFT 的 V2 形式，分值在 members[].biz_extra_data.multi_conn.price，与 V1 基本成对下发（2026-09-16 真连接 691 对 681），同为连线积分板。");
+        table.put("REVENUE_DISPLAY_EFFECT",
+                "上舰的展示特效：同房同人 0.2 秒内有同价的 GUARD_BUY，send_id 与 USER_TOAST_MSG 的 payflow_id 相同（2026-09 真连接 10/10）。");
+        table.put("POPULARITY_RED_POCKET_V2_NEW",
+                "送出红包的预告：与同 lot_id 的 POPULARITY_RED_POCKET_START 同一送出人，price 为 total_price/100（2026-09 真连接 3/3）；这笔钱已由 START 记为送出者支出，不是主播收入。");
+        return Collections.unmodifiableMap(table);
+    }
+
+    /**
      * 消息类型到解析方法的映射（取用集）
      */
     private final Map<String, BiFunction<JSONObject, LiveStreamerInfo, NovaBaseLiveEvent>> parsers = new HashMap<>();
@@ -539,7 +564,7 @@ public class BilibiliEventParser {
     }
 
     /**
-     * 分派表里的 cmd 名（取用集），供断言与 {@link #SEEN_CMDS} 互斥
+     * 分派表里的 cmd 名（取用集），供断言与见过表、派生表互斥
      */
     Set<String> dispatchedCmds() {
         return Set.copyOf(parsers.keySet());
@@ -585,7 +610,7 @@ public class BilibiliEventParser {
 
         BiFunction<JSONObject, LiveStreamerInfo, NovaBaseLiveEvent> parser = parsers.get(type);
         if (parser == null) {
-            if (SEEN_CMDS.contains(type)) {
+            if (SEEN_CMDS.contains(type) || DERIVED_NOT_REVENUE_CMDS.containsKey(type)) {
                 return new ParsedMessage(Optional.empty(), false);
             }
             noteUnknownCmd(type);

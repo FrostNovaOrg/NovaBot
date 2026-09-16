@@ -89,9 +89,10 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
      * <p>
      * 「业务消息」指主播真正关心、也是我们真正要采的那些：弹幕、礼物、上舰、醒目留言。
      * 进房、排行、点赞、看过人数这些属于环境消息，被限制下发时它们照样会来。
+     * 只收分派表里会解析成事件的 cmd；与已计事件重复的汇总类消息不收。
      */
     static final Set<String> BUSINESS_COMMANDS = Set.of(
-            "DANMU_MSG", "SEND_GIFT", "SEND_GIFT_V2", "COMBO_SEND", "GUARD_BUY",
+            "DANMU_MSG", "SEND_GIFT", "SEND_GIFT_V2", "GUARD_BUY",
             "USER_TOAST_MSG", "USER_TOAST_MSG_V2", "SUPER_CHAT_MESSAGE");
 
     private final LiveStreamerInfo source;
