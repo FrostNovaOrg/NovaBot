@@ -11,15 +11,53 @@
  * 退码 0 即各格全对；任一格对不上打印差异并以 1 退出。
  */
 
-import {readFileSync} from 'node:fs';
+import {existsSync, readFileSync, readdirSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const ui = join(here, '..', 'core', 'nova-core', 'src', 'main', 'resources', 'config-ui');
-const settingsSrc = readFileSync(join(ui, 'settings.js'), 'utf8');
-const coreSrc = readFileSync(join(ui, 'core.js'), 'utf8');
-const {canonicalValue, defaultValue} = await import(pathToFileURL(join(ui, 'settings-model.js')).href);
+const repo = join(here, '..');
+if (!existsSync(join(repo, 'pom.xml'))) {
+  console.log('仓根没有 pom.xml：' + repo);
+  process.exit(1);
+}
+
+const SKIP = new Set(['.git', 'node_modules', 'target', 'scratch', 'dist']);
+
+function findUnique(suffix) {
+  const found = [];
+  const sweep = dir => {
+    let entries;
+    try {
+      entries = readdirSync(dir, {withFileTypes: true});
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (SKIP.has(entry.name)) continue;
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (existsSync(join(path, '.git'))) continue;
+        sweep(path);
+      } else if (entry.isFile()) {
+        const rel = path.slice(repo.length + 1).split('\\').join('/');
+        if (rel === suffix || rel.endsWith('/' + suffix)) found.push(rel);
+      }
+    }
+  };
+  sweep(repo);
+  if (found.length !== 1) {
+    console.log('以 ' + suffix + ' 结尾的件应恰 1 份，实得 ' + found.length + ' 份'
+      + (found.length ? '：' + found.join('、') : ''));
+    process.exit(1);
+  }
+  return join(repo, found[0]);
+}
+
+const settingsSrc = readFileSync(findUnique('src/main/resources/config-ui/settings.js'), 'utf8');
+const coreSrc = readFileSync(findUnique('src/main/resources/config-ui/core.js'), 'utf8');
+const {canonicalValue, defaultValue} = await import(
+  pathToFileURL(findUnique('src/main/resources/config-ui/settings-model.js')).href);
 
 const failures = [];
 let checks = 0;

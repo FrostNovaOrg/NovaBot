@@ -30,7 +30,7 @@
 # 新增四格补的是另外四条缝：⑨同一个 java 包跨模块（撞包，立格时有三个，三刀解完已清零，
 # 闭集照旧钉住不许再长）、
 # ⑩插件 import 了兄弟插件却没在 pom 里申报那个模块、以及主码直引里层包却没申报 novacore、⑪核心界面目录在且非空（格1 射程的正面读数）、
-# ⑫写死了模块目录名的在册件数只减不增（给目录重排立账，改一件销一件；裸旧路径须 0）。
+# ⑫写死了模块目录名的在册件数只减不增（给目录重排立账，改一件销一件；裸旧路径须 0；拆段写法一并数，父段是变量或跨件拼接这两种数不到）。
 # 格13 补模板缝：模板不进 reactor，引用了已改名或不存在的类，编译与测试都看不见；
 # 使用者照抄，切面静默不生效。
 
@@ -1165,6 +1165,10 @@ fi
 #
 # 排除 *.md：文档里写模块路径是在教人怎么跑命令，跟着改是文档的事，不是这一格要拦的东西。
 # 数的是**件数**不是处数：一件里写十处，改的时候是一件事。
+#
+# 整串之外另数拆段写法：父段紧挨、斜杠串在前、子段紧挨、斜杠串在后。
+# 父段是变量（如 pluginsDir.resolve(…)）、跨件拼接，这两种数不到。
+# 拆段形的实扫与自证共用 g12_split_scan（换行换空格只在这一处）；自证样例写成件再喂给它。
 # ============================================================
 
 # 现值上限（2026-09-10 实测 58；正则带 core/／plugins/ 前缀后现算，只认目录名）。改掉一件就把它调低一，绝不许调高。
@@ -1180,7 +1184,98 @@ if [ -s "$WORK/g12files" ]; then
     tr '\n' '\0' < "$WORK/g12files" \
         | xargs -0 grep -l -E "$G12_RE" 2>/dev/null | sort -u > "$G12_LIST"
 fi
-g12_n=$(count_lines "$G12_LIST")
+
+# 拆段形：引号、模块名、拼接符；四臂＝父段紧挨、斜杠串在前、子段紧挨、斜杠串在后。
+G12_Q="['\"\`]"
+G12_MOD='(nova-core|novacore|nova-bilibili|nova-console|nova-onebot-adapter(-napcat-extension)?|nova-report)'
+G12_SEP='[[:space:]]*(,|\+|\)[[:space:]]*\.resolve\(|\+[[:space:]]*'"$G12_Q"'[/\\]+'"$G12_Q"'[[:space:]]*\+|\+[[:space:]]*File\.separator[[:space:]]*\+)[[:space:]]*'
+G12_SPLIT_PARENT="${G12_Q}(core|plugins|\.\.)${G12_Q}${G12_SEP}${G12_Q}${G12_MOD}${G12_Q}"
+G12_SPLIT_SLASHPRE="${G12_Q}[^'\"\`]*/${G12_Q}[[:space:]]*\+[[:space:]]*${G12_Q}${G12_MOD}${G12_Q}"
+G12_SPLIT_CHILD="${G12_Q}${G12_MOD}${G12_Q}${G12_SEP}${G12_Q}(src|target|pom\.xml)${G12_Q}"
+G12_SPLIT_SLASHPOST="${G12_Q}${G12_MOD}${G12_Q}[[:space:]]*\+[[:space:]]*${G12_Q}/"
+G12_SPLIT_RE="${G12_SPLIT_PARENT}|${G12_SPLIT_SLASHPRE}|${G12_SPLIT_CHILD}|${G12_SPLIT_SLASHPOST}"
+
+# 标准输入逐行读件路径；换行换空格只在这里有一份。命中的件路径印到标准输出。
+g12_split_scan() {
+    while IFS= read -r g12f; do
+        [ -n "$g12f" ] && [ -f "$g12f" ] || continue
+        if LC_ALL=C tr '\n' ' ' < "$g12f" | LC_ALL=C grep -q -E "$G12_SPLIT_RE"; then
+            printf '%s\n' "$g12f"
+        fi
+    done
+    return 0
+}
+
+G12_SPLIT_LIST="$WORK/g12split"
+g12_split_scan < "$WORK/g12files" > "$G12_SPLIT_LIST"
+sort -u "$G12_LIST" "$G12_SPLIT_LIST" > "$WORK/g12union"
+g12_n=$(count_lines "$WORK/g12union")
+sort -u "$G12_LIST" -o "$WORK/g12orig.s"
+sort -u "$G12_SPLIT_LIST" -o "$WORK/g12split.s"
+comm -23 "$WORK/g12split.s" "$WORK/g12orig.s" > "$WORK/g12split_only"
+g12_split_only_n=$(count_lines "$WORK/g12split_only")
+g12_split_msg="只按拆段形数到 ${g12_split_only_n} 件"
+
+# 尺内自证：样例写成件，走实扫同一个函数 g12_split_scan
+g12_must_hit=(
+    "join(here, '..', 'core', 'nova-core', 'src')"
+    "String.join(\"/\", \"plugins\", \"nova-console\", \"src\")"
+    "Path.of(\"plugins\", \"nova-console\")"
+    "join(repo, 'nova-core', 'src')"
+    $'String.join("/",\n"plugins",\n"nova-console")'
+)
+g12_must_miss=(
+    "buildInfo.setProperty(\"artifact\", \"nova-core\");"
+    "text.contains(\"nova-report\")"
+    "grep -qxF \"novacore\""
+)
+g12_must_n=${#g12_must_hit[@]}
+g12_miss_n=${#g12_must_miss[@]}
+g12_must_ok=0
+g12_miss_bad=0
+g12_prove_fail=0
+if [ "$g12_must_n" -lt 5 ] || [ "$g12_miss_n" -lt 3 ]; then
+    echo "格12 红 样例不足 必抓${g12_must_n}（至少5） 必不抓${g12_miss_n}（至少3） ${g12_split_msg}"
+    g12_prove_fail=1
+else
+    mkdir -p "$WORK/g12prove"
+    : > "$WORK/g12prove/list"
+    g12i=1
+    while [ "$g12i" -le "$g12_must_n" ]; do
+        printf '%s' "${g12_must_hit[$((g12i - 1))]}" > "$WORK/g12prove/hit-${g12i}"
+        printf '%s\n' "$WORK/g12prove/hit-${g12i}" >> "$WORK/g12prove/list"
+        g12i=$((g12i + 1))
+    done
+    g12i=1
+    while [ "$g12i" -le "$g12_miss_n" ]; do
+        printf '%s' "${g12_must_miss[$((g12i - 1))]}" > "$WORK/g12prove/miss-${g12i}"
+        printf '%s\n' "$WORK/g12prove/miss-${g12i}" >> "$WORK/g12prove/list"
+        g12i=$((g12i + 1))
+    done
+    g12_split_scan < "$WORK/g12prove/list" > "$WORK/g12prove/out"
+    g12i=1
+    while [ "$g12i" -le "$g12_must_n" ]; do
+        g12s="${g12_must_hit[$((g12i - 1))]}"
+        if grep -F -x -q -- "$WORK/g12prove/hit-${g12i}" "$WORK/g12prove/out"; then
+            g12_must_ok=$((g12_must_ok + 1))
+        else
+            echo "格12 红 自证 必抓没抓到: ${g12s} ${g12_split_msg}"
+            g12_prove_fail=1
+        fi
+        g12i=$((g12i + 1))
+    done
+    g12i=1
+    while [ "$g12i" -le "$g12_miss_n" ]; do
+        g12s="${g12_must_miss[$((g12i - 1))]}"
+        if grep -F -x -q -- "$WORK/g12prove/miss-${g12i}" "$WORK/g12prove/out"; then
+            echo "格12 红 自证 必不抓抓到了: ${g12s} ${g12_split_msg}"
+            g12_miss_bad=$((g12_miss_bad + 1))
+            g12_prove_fail=1
+        fi
+        g12i=$((g12i + 1))
+    done
+fi
+g12_prove_msg="自证 必抓 ${g12_must_ok}/${g12_must_n} 必不抓 ${g12_miss_bad}/${g12_miss_n}"
 
 # 反向：仓根一级的旧路径（没有 core/ 或 plugins/ 前缀）须 0。
 # 正向正则带了前缀之后，core/nova-core 仍命中；回写成仓根一级旧目录反而数不到，
@@ -1207,19 +1302,25 @@ g12_bare_n=$(count_lines "$G12_BARE_LIST")
 g12_fail=0
 if [ "$g12_n" -eq 0 ]; then
     # 一件都数不出来，多半是模块名整套换过了（或不在 git 树里跑），不是「改完了」
-    echo "格12 红 射程为空 数不出任何写死模块目录名的在册件(在册模块${module_n}个) 上限${HARDCODED_MODULE_PATH_CAP}"
+    echo "格12 红 射程为空 数不出任何写死模块目录名的在册件(在册模块${module_n}个) 上限${HARDCODED_MODULE_PATH_CAP} ${g12_split_msg}"
     g12_fail=1
 elif [ "$g12_n" -gt "$HARDCODED_MODULE_PATH_CAP" ]; then
-    echo "格12 红 写死模块目录名的在册件${g12_n} > 上限${HARDCODED_MODULE_PATH_CAP}（新写了 $((g12_n - HARDCODED_MODULE_PATH_CAP)) 件）"
+    echo "格12 红 写死模块目录名的在册件${g12_n} > 上限${HARDCODED_MODULE_PATH_CAP}（新写了 $((g12_n - HARDCODED_MODULE_PATH_CAP)) 件） ${g12_split_msg}"
     g12_fail=1
 fi
+if [ "$g12_split_only_n" -gt 0 ]; then
+    cat "$WORK/g12split_only"
+fi
 if [ "$g12_bare_n" -gt 0 ]; then
-    echo "格12 红 裸旧路径 ${g12_bare_n}处:"
+    echo "格12 红 裸旧路径 ${g12_bare_n}处: ${g12_split_msg}"
     cat "$G12_BARE_LIST"
     g12_fail=1
 fi
+if [ "$g12_prove_fail" -ne 0 ]; then
+    g12_fail=1
+fi
 if [ "$g12_fail" -eq 0 ]; then
-    echo "格12 绿 写死模块目录名的在册件${g12_n} ≤ 上限${HARDCODED_MODULE_PATH_CAP} 裸旧路径 0"
+    echo "格12 绿 写死模块目录名的在册件${g12_n} ≤ 上限${HARDCODED_MODULE_PATH_CAP} 裸旧路径 0 ${g12_split_msg} ${g12_prove_msg}"
 else
     RED=1
 fi
