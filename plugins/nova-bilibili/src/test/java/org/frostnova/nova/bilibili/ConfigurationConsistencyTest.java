@@ -805,13 +805,105 @@ class ConfigurationConsistencyTest {
     }
 
     /**
+     * 生成件里不许出现期望之外的 {@code novabot.} 键。
+     * <p>
+     * 默认值为空、被整行注释掉的多余键，这把闸抓不到——{@link #commentedKeys}
+     * 只遍历期望集，加进来的必是期望的子集。
+     */
+    @Test
+    @DisplayName("⚠️ 生成件键集反向 —— 生成件里不许出现期望之外的键")
+    void generatedFileHasNoUnexpectedNovabotKeys() throws Exception {
+        Set<String> expected = displayedProperties();
+        assertTrue(expected.stream().anyMatch(name -> name.startsWith("novabot.bilibili.")),
+                "分母自证：哔哩哔哩插件键一个都不在期望集里，这一格会量在空集上");
+        assertTrue(expected.stream().anyMatch(name -> name.startsWith("novabot.adapter.onebot.")),
+                "分母自证：适配器插件键一个都不在期望集里，这一格量不到插件来路");
+
+        List<String> extra = withPluginJars(() -> {
+            missingKeys(expected, new ConfigurationMetadataService().getFields());
+            Path file = dir.resolve("application.yml");
+            Set<String> actual = new TreeSet<>(load(file).keySet());
+            assertFalse(actual.isEmpty(),
+                    "分母自证：实际侧为空，extra 必空、这一格会量在空集上");
+            List<String> unexpected = new ArrayList<>();
+            for (String key : actual) {
+                if (key.startsWith("novabot.") && !expected.contains(key)) {
+                    unexpected.add(key);
+                }
+            }
+            return unexpected;
+        });
+        assertTrue(extra.isEmpty(),
+                "首次保存写出的文件多了以下配置项（期望之外 " + extra.size()
+                        + " 项）。生成件里有、设置页上没有:\n  "
+                        + String.join("\n  ", extra));
+    }
+
+    @Test
+    @DisplayName("⚠️ 插件 jar 摆法 —— 含 onebot 与 napcat、不含本模块")
+    void installedPluginJarsSkipThisModule() throws Exception {
+        String selfName = Path.of(thisPluginModule()).getFileName().toString();
+        String onebotName = pluginModules().stream()
+                .map(module -> Path.of(module).getFileName().toString())
+                .filter(name -> name.contains("onebot") && !name.contains("napcat"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("pluginModules 里没有 onebot 模块"));
+        String napcatName = pluginModules().stream()
+                .map(module -> Path.of(module).getFileName().toString())
+                .filter(name -> name.contains("napcat"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("pluginModules 里没有 napcat 模块"));
+
+        withPluginJars(() -> {
+            List<String> names;
+            try (Stream<Path> files = Files.list(Path.of("plugins"))) {
+                names = files
+                        .map(path -> path.getFileName().toString())
+                        .filter(name -> name.endsWith(".jar"))
+                        .toList();
+            }
+            assertFalse(names.isEmpty(), "已摆清单为空");
+            assertTrue(names.stream().anyMatch(name -> name.startsWith(onebotName + "-") && !name.contains("napcat")),
+                    "已摆清单缺 " + onebotName + " 的 jar，现有 " + names);
+            assertTrue(names.stream().anyMatch(name -> name.startsWith(napcatName + "-")),
+                    "已摆清单缺 " + napcatName + " 的 jar，现有 " + names);
+            List<String> selfJars = names.stream()
+                    .filter(name -> name.startsWith(selfName + "-"))
+                    .toList();
+            assertTrue(selfJars.isEmpty(), "本模块 jar 不该摆进去: " + selfJars);
+            return names;
+        });
+    }
+
+    /**
+     * 本测试所在的插件模块目录名（相对仓库根，与 {@link #modules()} 同一套写法）。
+     * <p>
+     * 现取，不写死——搬家后跳过的是新位置，不会静默跳过一个不存在的名字。
+     */
+    private String thisPluginModule() {
+        Path root = repositoryRoot();
+        Path here;
+        try {
+            here = javaFileNamed(root, "ConfigurationConsistencyTest.java");
+        } catch (IOException e) {
+            throw new IllegalStateException("定位本测试源文件失败", e);
+        }
+        for (String module : modules()) {
+            if (here.startsWith(root.resolve(module))) {
+                return module;
+            }
+        }
+        throw new AssertionError("本测试源文件不在任何模块目录下: " + here);
+    }
+
+    /**
      * 会作为插件装进 plugins/ 目录的模块
      * <p>
      * 按 {@code target/plugin.json} 认定：插件处理器只给插件模块生成它，与部署形态同源，
      * 不手写名单。手写名单的失败形态是「新插件不在名单里，它的键悄悄免检」；
      * 现算的失败形态是「新插件的键在期望侧、不在实际侧，这一格当场红」——红的才是对的。
-     * 整盘跑到本模块的测试时，本模块自己的 jar 还没打出来（温树上带着的旧件摆进去也无妨：
-     * 比对只量「期望的每一键都有一行」）；它的键走类路径那条来路取到。
+     * 整盘跑到本模块的测试时，本模块自己的 jar 还没打出来；
+     * {@link #withPluginJars} 跳过本模块，它的键走类路径那条来路取到。
      * @return 模块目录名
      */
     private List<String> pluginModules() {
@@ -965,6 +1057,9 @@ class ConfigurationConsistencyTest {
 
     /**
      * 把插件 jar 摆进 plugins/ 再跑，跑完只删本格自己拷进去的那些。
+     * <p>
+     * 摆除本模块以外的插件模块 jar。本模块键走类路径，摆不摆自己的 jar 都不影响期望侧。
+     * console／report 没有 novabot 元数据条目，照旧摆进去。
      */
     private <T> T withPluginJars(PluginWork<T> work) throws Exception {
         Path plugins = Path.of("plugins");
@@ -974,9 +1069,13 @@ class ConfigurationConsistencyTest {
         }
 
         List<Path> installed = new ArrayList<>();
+        String self = thisPluginModule();
         try {
             Path root = repositoryRoot();
             for (String module : pluginModules()) {
+                if (module.equals(self)) {
+                    continue;
+                }
                 Path target = root.resolve(module).resolve("target");
                 if (!Files.isDirectory(target)) {
                     continue;
