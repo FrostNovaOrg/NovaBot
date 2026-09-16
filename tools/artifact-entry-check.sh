@@ -9,7 +9,9 @@
 #         对照与自证的红句此时不作数，诊断仍印全。
 #       2＝主扫描是绿的，但对照或自证证明不了这把尺能红
 #         （阳性锚取不到，子进程没退 1 或没点名幽灵，
-#          白名单臂／资源样例清单空或放行了不该放行的，也走 2）
+#          白名单臂／样例清单空或放行了不该放行的，也走 2）
+#         三份常量（PLUGIN_WL_ARMS／LIB_WL_ARMS／NEVER_ALLOW_RES）任一为空时
+#         不量产物，直接退 2，压过产物红。
 #
 # ── 与 tools/artifact-ui-resource-check.sh 的分工 ────────────────────────
 # 那把只量三样：核心 jar 的 BOOT-INF/classes/config-ui（界面核心格）、
@@ -43,9 +45,9 @@
 # 该桶整片当多出；不设则内置对照会临时拿掉 org/springframework/boot/loader/ 验一次。
 # 插件与 lib 两把白名单逐臂探：每臂造一个落在该臂路径下的 .class 探针，调真函数，
 # 断它不被放行。臂清单与函数共用，不许另抄。
-# 另有一份「必不放行」非 class 资源样例。这份是规格，不从臂清单现算。
-# 覆盖：任一臂放到「同目录、同后缀、任意名」，或放到「上一级目录直到根、同后缀」，
-# 都至少放行一只样例。插件、lib、核心各逐只探。
+# 另有一份「必不放行」样例。这份是规格，不从臂清单现算。含类样例，量核心 loader
+# 规则往上放宽。覆盖：任一臂放到「同目录、同后缀、任意名」，或放到「上一级目录
+# 直到根、同后缀」，都至少放行一只样例。插件、lib、核心各逐只探。
 # 阴性对照：起一个子进程，对同一个产物目录端到端跑本尺；只在子进程里把幽灵
 # 条目种进真条目表（环境变量 ARTIFACT_ENTRY_CHILD，防递归）。断子进程退 1，
 # 且每条幽灵都被点名（点名须是「多出条目: <幽灵>」这一形）。核心一种 class；
@@ -98,15 +100,21 @@ flush_control_notes() {
 }
 
 # 不经管道找行。第三参非空＝整行相等（阳性锚）；空＝行内含 needle。
+# 第四参格名非空时：行首须是两个空格加格名，同一行其后含 needle，再紧跟两空格加「（」。
+# 第四参为空时与旧行为一样。
 # 点名须喂「多出条目: <幽灵>」，幽灵名之后须紧跟两个空格加「（」，不许接别的字。
 haystack_has() {
-    local haystack="$1" needle="$2" exact="${3:-}"
+    local haystack="$1" needle="$2" exact="${3:-}" cell="${4:-}"
     local line="" sep="  （"
     while IFS= read -r line || [ -n "$line" ]; do
         if [ -n "$exact" ]; then
             if [ "$line" = "$needle" ]; then
                 return 0
             fi
+        elif [ -n "$cell" ]; then
+            case "$line" in
+                "  ${cell}"*"${needle}${sep}"*) return 0 ;;
+            esac
         else
             case "$line" in
                 *"$needle$sep"*) return 0 ;;
@@ -307,7 +315,7 @@ GHOST_PLUGIN_RES="ghost-never-existed-plugin.txt"
 GHOST_LIB_CLASS="org/frostnova/nova/artifact/GhostNeverExistedLib.class"
 GHOST_LIB_RES="ghost-never-existed-lib.txt"
 
-# 必不放行的非 class 资源样例。写的是永远不该放行什么，不是臂清单的抄件。
+# 必不放行的样例。写的是永远不该放行什么，不是臂清单的抄件。
 # 同目录同后缀任意名、以及上一级直到根同后缀，各至少一只能被放行。
 NEVER_ALLOW_RES=(
     "ghost-never-existed.txt"
@@ -326,7 +334,29 @@ NEVER_ALLOW_RES=(
     "BOOT-INF/ghost-never-existed.txt"
     "BOOT-INF/ghost-never-existed.idx"
     "ghost-never-existed.idx"
+    "org/springframework/boot/ghost-never-existed.class"
+    "org/springframework/ghost-never-existed.class"
+    "org/ghost-never-existed.class"
+    "ghost-never-existed.class"
 )
+
+# 尺自身常量先判：任一份空则不量产物，压过产物红。
+self_empty=0
+if [ "${#PLUGIN_WL_ARMS[@]}" -eq 0 ]; then
+    echo "尺自身红：PLUGIN_WL_ARMS是空的，本趟不量产物" >&2
+    self_empty=1
+fi
+if [ "${#LIB_WL_ARMS[@]}" -eq 0 ]; then
+    echo "尺自身红：LIB_WL_ARMS是空的，本趟不量产物" >&2
+    self_empty=1
+fi
+if [ "${#NEVER_ALLOW_RES[@]}" -eq 0 ]; then
+    echo "尺自身红：NEVER_ALLOW_RES是空的，本趟不量产物" >&2
+    self_empty=1
+fi
+if [ "$self_empty" -ne 0 ]; then
+    exit 2
+fi
 
 arm_matches() {
     local e="$1" arm="$2"
@@ -437,41 +467,41 @@ prove_never_allow_resources() {
     local kind="$1"
     local sample="" n=0 failed=0
     if [ "${#NEVER_ALLOW_RES[@]}" -eq 0 ]; then
-        note_control_red "白名单自证 红：资源样例清单是空的，这一格量不动"
+        note_control_red "白名单自证 红：样例清单是空的，这一格量不动"
         return
     fi
     for sample in "${NEVER_ALLOW_RES[@]}"; do
         n=$((n + 1))
         if [ "$kind" = plugin ]; then
             if plugin_whitelisted "$sample"; then
-                note_control_red "白名单自证 红：插件白名单放行了资源样例 ${sample}，这一格量不动"
+                note_control_red "白名单自证 红：插件白名单放行了样例 ${sample}，这一格量不动"
                 failed=1
             fi
         elif [ "$kind" = lib ]; then
             if lib_whitelisted "$sample"; then
-                note_control_red "白名单自证 红：lib白名单放行了资源样例 ${sample}，这一格量不动"
+                note_control_red "白名单自证 红：lib白名单放行了样例 ${sample}，这一格量不动"
                 failed=1
             fi
         else
             if core_whitelisted "$sample"; then
-                note_control_red "白名单自证 红：核心白名单放行了资源样例 ${sample}，这一格量不动"
+                note_control_red "白名单自证 红：核心白名单放行了样例 ${sample}，这一格量不动"
                 failed=1
             fi
         fi
     done
     if [ "$n" -eq 0 ]; then
-        note_control_red "白名单自证 红：资源样例清单是空的，这一格量不动"
+        note_control_red "白名单自证 红：样例清单是空的，这一格量不动"
         return
     fi
     if [ "$failed" -ne 0 ]; then
         return
     fi
     if [ "$kind" = plugin ]; then
-        echo "插件白名单自证 绿（资源样例 ${n} 只皆不放行）"
+        echo "插件白名单自证 绿（样例 ${n} 只皆不放行）"
     elif [ "$kind" = lib ]; then
-        echo "lib白名单自证 绿（资源样例 ${n} 只皆不放行）"
+        echo "lib白名单自证 绿（样例 ${n} 只皆不放行）"
     else
-        echo "核心白名单自证 绿（资源样例 ${n} 只皆不放行）"
+        echo "核心白名单自证 绿（样例 ${n} 只皆不放行）"
     fi
 }
 
@@ -928,7 +958,13 @@ EOF
         note_control_red "阴性对照 红：子进程有多出条目却退 ${child_rc}（须退 1），这一格量不动"
     fi
     for g in "$core_entry" "$GHOST_PLUGIN_CLASS" "$GHOST_PLUGIN_RES" "$GHOST_LIB_CLASS" "$GHOST_LIB_RES"; do
-        if ! haystack_has "$child_out" "多出条目: ${g}"; then
+        cell=""
+        case "$g" in
+            "$core_entry") cell="核心条目 " ;;
+            "$GHOST_PLUGIN_CLASS"|"$GHOST_PLUGIN_RES") cell="插件条目[" ;;
+            "$GHOST_LIB_CLASS"|"$GHOST_LIB_RES") cell="lib自家产物[" ;;
+        esac
+        if ! haystack_has "$child_out" "多出条目: ${g}" "" "$cell"; then
             missing="${missing} ${g}"
         fi
     done
@@ -967,6 +1003,7 @@ if [ "$RED" -ne 0 ]; then
         echo "产物里出现了 ${EXTRA_TOTAL} 个源码里没有的 jar 条目（核心＝运行模块 src/main，插件＝该模块 src/main；白名单是启动器／依赖／清单；lib 自家产物按 artifactId 对模块 src/main）。" >&2
         echo "多半是上一次构建留在 target/ 里的旧文件——源文件删掉或改名后 Maven 不会删它，" >&2
         echo "它照旧进包。先 mvn clean 再重建；若清理后仍在，那它就不是残留，去查是谁把它拷进产物的。" >&2
+        echo "若产物不是用当前源码树的提交打的（看产物目录里 BUILD-INFO 的 commit 一行），多出的也可能是产物比源码旧。" >&2
     else
         echo "这把尺没能把产物量完（上面每一格红都写明了卡在哪里），因此不给绿。" >&2
     fi
