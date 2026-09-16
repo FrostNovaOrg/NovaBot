@@ -355,6 +355,7 @@ rm -f "$OUT/template-defaults.json"
 echo
 echo "==> [5/8] 校验产物界面资源"
 "$ROOT/tools/artifact-ui-resource-check.sh" "$OUT"
+bash "$ROOT/tools/artifact-entry-check.sh" "$OUT"
 
 # ── [6/8] 界面视图模型 ──────────────────────────────────────────────────
 # 名单写死一处：少写一把，那一页的模型从此只靠人手跑，
