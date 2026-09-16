@@ -185,12 +185,12 @@ class BilibiliRiskHealthProbeTest {
         try {
             BilibiliRiskMetrics verOnly = new BilibiliRiskMetrics();
             BilibiliRiskHealthProbe verProbe = new BilibiliRiskHealthProbe(verOnly);
-            verOnly.record(BilibiliRiskMetrics.Kind.UNKNOWN_VER, "ver=5 count=1 unique=1");
+            verOnly.record(BilibiliRiskMetrics.Kind.UNKNOWN_VER, "ver=5");
             HealthStatus status = verProbe.check();
             assertEquals(HealthStatus.Level.DEGRADED, status.level(), "未知协议版本一条即应降档");
             assertTrue(status.summary().contains("未知协议版本"), "summary 应写未知协议版本，实际: " + status.summary());
             assertTrue(status.summary().contains("ver=5"), "summary 应带 ver=N，实际: " + status.summary());
-            assertTrue(status.summary().contains("（最近 "), "摘要应含 ver=…（最近 ，实际: " + status.summary());
+            assertTrue(status.summary().contains("ver=5（最近 "), "摘要应含 ver=5（最近 ，实际: " + status.summary());
             assertFalse(status.summary().contains("首见"), "不得写首见，实际: " + status.summary());
         } catch (AssertionError e) {
             reds.add("① " + e.getMessage());
