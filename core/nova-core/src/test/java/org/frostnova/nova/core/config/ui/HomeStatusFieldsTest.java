@@ -32,6 +32,8 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
@@ -265,15 +267,30 @@ class HomeStatusFieldsTest {
     @Test
     @DisplayName("静音时段：在不在与区间一并下发")
     void quietHoursCarryBothStateAndRange() {
-        properties.getPush().setQuietStart("00:00");
-        properties.getPush().setQuietEnd("23:59");
+        LocalTime now = LocalTime.now();
+        DateTimeFormatter hhmm = DateTimeFormatter.ofPattern("HH:mm");
+        String start = now.minusHours(1).format(hhmm);
+        String end = now.plusHours(2).format(hhmm);
+
+        properties.getPush().setQuietStart(start);
+        properties.getPush().setQuietEnd(end);
 
         JSONObject quiet = controller().status().getJSONObject("quiet");
 
         assertNotNull(quiet, "首页顶部横条要写「静音中 hh:mm – hh:mm」，缺了这一项就无从写起");
-        assertTrue(quiet.getBooleanValue("active"), "区间几乎覆盖整天，此刻应当判为静音中");
-        assertEquals("00:00", quiet.getString("start"));
-        assertEquals("23:59", quiet.getString("end"));
+        assertTrue(quiet.getBooleanValue("active"),
+                "区间 " + start + "–" + end + " 按此刻现算（−1h～+2h），此刻应当判为静音中");
+        assertEquals(start, quiet.getString("start"));
+        assertEquals(end, quiet.getString("end"));
+
+        String laterStart = now.plusHours(2).format(hhmm);
+        String laterEnd = now.plusHours(3).format(hhmm);
+        properties.getPush().setQuietStart(laterStart);
+        properties.getPush().setQuietEnd(laterEnd);
+
+        JSONObject later = controller().status().getJSONObject("quiet");
+        assertFalse(later.getBooleanValue("active"),
+                "区间 " + laterStart + "–" + laterEnd + " 按此刻现算（+2h～+3h），此刻不该判为静音中");
     }
 
     @Test
