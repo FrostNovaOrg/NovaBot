@@ -180,6 +180,7 @@ public class BilibiliEventParser {
      * 其中 11 只在推广位进房那一份语料里出现（length-delimited），此前漏记在本表里，
      * 落 {@link #INTERACT_V2_KNOWN_FIELDS} 时按语料补回——<b>见过</b>与<b>取用</b>是两回事，
      * 已知集要的是前者。
+     * 2026-09-16 japan 语料见过、取值不用：3、14、17、25。
      */
     private static final int V2_UID = 1;
 
@@ -241,7 +242,7 @@ public class BilibiliEventParser {
     private static final Set<Integer> INTERACT_V2_KNOWN_FIELDS = Set.of(
             V2_UID, V2_UNAME, V2_MSG_TYPE, V2_TIMESTAMP, V2_FANS_MEDAL,
             V2_IS_SPREAD, V2_SPREAD_DESC, V2_UINFO,
-            4, 6, 8, 11, 12, 15, 16, 19, 23, 24);
+            3, 4, 6, 8, 11, 12, 14, 15, 16, 17, 19, 23, 24, 25);
 
     /**
      * {@code SEND_GIFT_V2} 的 protobuf 字段号
@@ -373,13 +374,14 @@ public class BilibiliEventParser {
      * <p>
      * 口径同 {@link #INTERACT_V2_KNOWN_FIELDS}：3（观众头像，取值走 uinfo）、8（旧式勋章）、
      * 11（是否首次）都在字段表里且都决定不取，它们是见过的字段。
+     * 2026-09-16 japan 语料见过、取值不用：4、5。
      * <p>
      * ⚠️ 两张表<b>不通用</b>，与勋章子布局不通用是同一个理由（见上面的字段表）：
      * 拿这一张去量进房报文，13 与 15 会被判成未知、22 会被判成新增——两边都错。
      */
     private static final Set<Integer> GIFT_V2_KNOWN_FIELDS = Set.of(
             GIFT_V2_UID, GIFT_V2_UNAME, GIFT_V2_BLIND, GIFT_V2_INFO, GIFT_V2_WEALTH, GIFT_V2_UINFO,
-            3, 8, 11);
+            3, 4, 5, 8, 11);
 
     private final NovaBilibiliProperties properties;
 

@@ -221,6 +221,7 @@ public class BilibiliApiUtil {
         // 观看心跳解析处不取 data 字段；空集且整路不记，避免按拍把常驻键记成未知
         registerKnownKeys(table, LIVE_HEARTBEAT_API, "LIVE_HEARTBEAT_API");
         // japan 取表 2026-09-08：真应答常驻、解析码不取。未取到样本的端点不登记。
+        // japan 取表 2026-09-16 补 ROOM_INFO_API 与 follower。
         registerResidentKeys(table, DANMU_INFO_API,
                 "business_id", "group", "max_delay", "refresh_rate", "refresh_row_factor");
         registerResidentKeys(table, DYNAMIC_FEED_API,
@@ -232,7 +233,15 @@ public class BilibiliApiUtil {
                 "sub_text", "typ");
         registerResidentKeys(table, MASTER_INFO_API,
                 "exp", "glory_count", "link_group_num", "medal_name", "pendant", "room_news");
-        registerResidentKeys(table, MY_INFO_API, "coins", "following", "level_exp");
+        registerResidentKeys(table, MY_INFO_API, "coins", "following", "level_exp", "follower");
+        registerResidentKeys(table, ROOM_INFO_API,
+                "allow_change_area_time", "allow_upload_cover_time", "area_id", "area_name",
+                "area_pendants", "attention", "background", "battle_id", "description",
+                "hot_words", "hot_words_status", "is_anchor", "is_portrait", "is_strict_room",
+                "keyframe", "new_pendants", "old_area_id", "online", "parent_area_id",
+                "parent_area_name", "pendants", "pk_id", "pk_status", "room_id",
+                "room_silent_level", "room_silent_second", "room_silent_type", "short_id",
+                "studio_info", "tags", "up_session", "verify");
         registerResidentKeys(table, ROOM_STATUS_API,
                 "area", "area_name", "area_v2_id", "area_v2_name", "area_v2_parent_id",
                 "area_v2_parent_name", "broadcast_type", "face", "hidden_till", "keyframe",
