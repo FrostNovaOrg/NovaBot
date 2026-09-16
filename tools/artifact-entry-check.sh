@@ -2,9 +2,14 @@
 # 产物整包条目尺：打出来的包里，jar 条目有没有源码里已经不存在的东西
 #
 # 用法：bash tools/artifact-entry-check.sh [产物目录]   （默认 dist/build）
-# 退码：0＝产物干净
-#       1＝有源码对不上的条目，或某一格没能量完（读不出 jar、模块找不到）
-#       2＝阴性对照／白名单自证这一格本身量不动（对照要用的核心 jar 不在也走 2）
+# 退码：0＝产物干净，且对照／自证量得动
+#       1＝产物本身红：有源码对不上的条目，或某一格没能量完
+#         （核心 jar 不在、读不出核心 jar、读不出 jar、模块找不到、
+#          产物里没有 lib/、plugins/ 里一个 jar 都没有）
+#         对照与自证的红句此时不作数，诊断仍印全。
+#       2＝主扫描是绿的，但对照或自证证明不了这把尺能红
+#         （阳性锚取不到，子进程没退 1 或没点名幽灵，
+#          白名单臂／资源样例清单空或放行了不该放行的，也走 2）
 #
 # ── 与 tools/artifact-ui-resource-check.sh 的分工 ────────────────────────
 # 那把只量三样：核心 jar 的 BOOT-INF/classes/config-ui（界面核心格）、
@@ -38,7 +43,21 @@
 # 该桶整片当多出；不设则内置对照会临时拿掉 org/springframework/boot/loader/ 验一次。
 # 插件与 lib 两把白名单逐臂探：每臂造一个落在该臂路径下的 .class 探针，调真函数，
 # 断它不被放行。臂清单与函数共用，不许另抄。
+# 另有一份「必不放行」非 class 资源样例。这份是规格，不从臂清单现算。
+# 覆盖：任一臂放到「同目录、同后缀、任意名」，或放到「上一级目录直到根、同后缀」，
+# 都至少放行一只样例。插件、lib、核心各逐只探。
+# 阴性对照：起一个子进程，对同一个产物目录端到端跑本尺；只在子进程里把幽灵
+# 条目种进真条目表（环境变量 ARTIFACT_ENTRY_CHILD，防递归）。断子进程退 1，
+# 且每条幽灵都被点名（点名须是「多出条目: <幽灵>」这一形）。核心一种 class；
+# 插件与 lib 各一种 class 和一种资源。子进程用正在跑本尺的解释器（$BASH）。
+# ARTIFACT_ENTRY_CHILD 在场时往 stderr 说一句本趟不作数，对照整段跳过。
 set -uo pipefail
+
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+case "$SCRIPT_PATH" in
+    /*) ;;
+    *) SCRIPT_PATH="$(pwd)/$SCRIPT_PATH" ;;
+esac
 
 OUT="${1:-dist/build}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -53,6 +72,49 @@ CELL_COUNT=0
 CELL_EXTRA=0
 PLUGIN_WL_PROVED=0
 LIB_WL_PROVED=0
+CORE_WL_PROVED=0
+CONTROL_RED=0
+CONTROL_MSGS=""
+
+# 对照／自证量不动：记下、印出来、接着量。末尾再定退码（产物红→1，否则 2）。
+note_control_red() {
+    local msg="$1"
+    CONTROL_RED=1
+    CONTROL_MSGS="${CONTROL_MSGS}${msg}"$'\n'
+}
+
+flush_control_notes() {
+    local suffix="$1"
+    local line=""
+    [ -n "$CONTROL_MSGS" ] || return 0
+    while IFS= read -r line || [ -n "$line" ]; do
+        [ -n "$line" ] || continue
+        if [ -n "$suffix" ]; then
+            echo "${line}（${suffix}）" >&2
+        else
+            echo "$line" >&2
+        fi
+    done <<< "$CONTROL_MSGS"
+}
+
+# 不经管道找行。第三参非空＝整行相等（阳性锚）；空＝行内含 needle。
+# 点名须喂「多出条目: <幽灵>」，幽灵名之后须紧跟两个空格加「（」，不许接别的字。
+haystack_has() {
+    local haystack="$1" needle="$2" exact="${3:-}"
+    local line="" sep="  （"
+    while IFS= read -r line || [ -n "$line" ]; do
+        if [ -n "$exact" ]; then
+            if [ "$line" = "$needle" ]; then
+                return 0
+            fi
+        else
+            case "$line" in
+                *"$needle$sep"*) return 0 ;;
+            esac
+        fi
+    done <<< "$haystack"
+    return 1
+}
 
 # jar 内条目：unzip 与 JDK 的 jar 谁能读出来就用谁。
 #
@@ -62,7 +124,7 @@ LIB_WL_PROVED=0
 #    还不去试下一个。所以这里逐个真跑，第一个既退 0 又有输出的才算数。
 # 两个都读不出来时判红而不是跳过：一把量不动却报绿的尺，比没有这把尺更糟。
 list_jar_entries() {
-    local jar="$1" out
+    local jar="$1" out=""
     for reader in "unzip -Z1" "jar tf"; do
         if out="$($reader "$jar" 2> /dev/null)" && [ -n "$out" ]; then
             printf '%s\n' "$out"
@@ -77,7 +139,7 @@ list_jar_entries() {
 # 源码侧是空集，子集尺会静默绿。
 find_module_dir() {
     local name="$1"
-    local d
+    local d=""
     for d in plugins/"$name" core/"$name"; do
         if [ -d "$d" ]; then
             printf '%s\n' "$d"
@@ -91,7 +153,7 @@ find_module_dir() {
 # 不写死目录名——目录一改，写死的路径安静失灵。
 # 命中不止一只时红并点名，不许静默取字典序第一只。
 find_core_module() {
-    local d hits="" n=0
+    local d="" hits="" n=0
     for d in core/*; do
         if [ -f "$d/src/main/resources/application.yml" ]; then
             hits="${hits} ${d}"
@@ -136,7 +198,7 @@ project_artifact_id() {
 # 按 pom 的 <artifactId> 现找 core/*、plugins/*。命中 0 只或不止一只都失败。
 find_module_by_artifact_id() {
     local aid="$1"
-    local d got hits="" n=0
+    local d="" got="" hits="" n=0
     for d in core/* plugins/*; do
         [ -f "$d/pom.xml" ] || continue
         got="$(project_artifact_id "$d/pom.xml")"
@@ -160,7 +222,7 @@ find_module_by_artifact_id() {
 # 从条目表取 META-INF/maven/org.frostnova.nova/<artifactId>/…；空＝第三方。
 own_artifact_id_from_entries() {
     local entries="$1"
-    local ids line n=0 aid=""
+    local ids="" line="" n=0 aid=""
     ids="$(printf '%s\n' "$entries" | sed -n 's|^META-INF/maven/org.frostnova.nova/\([^/][^/]*\)/.*|\1|p' | sort -u)"
     while IFS= read -r line; do
         [ -n "$line" ] || continue
@@ -238,6 +300,34 @@ LIB_WL_ARMS=(
     "META-INF/services/*"
 )
 
+# 子进程种进真条目表的幽灵。只在 ARTIFACT_ENTRY_CHILD 下认。
+GHOST_CORE_CLASS="org/frostnova/nova/core/config/ArtifactEntryCheckSentinel.class"
+GHOST_PLUGIN_CLASS="org/frostnova/nova/artifact/GhostNeverExistedPlugin.class"
+GHOST_PLUGIN_RES="ghost-never-existed-plugin.txt"
+GHOST_LIB_CLASS="org/frostnova/nova/artifact/GhostNeverExistedLib.class"
+GHOST_LIB_RES="ghost-never-existed-lib.txt"
+
+# 必不放行的非 class 资源样例。写的是永远不该放行什么，不是臂清单的抄件。
+# 同目录同后缀任意名、以及上一级直到根同后缀，各至少一只能被放行。
+NEVER_ALLOW_RES=(
+    "ghost-never-existed.txt"
+    "ghost-never-existed.json"
+    "ghost-never-existed.MF"
+    "ghost-never-existed.properties"
+    "ghost-never-existed.factories"
+    "ghost-never-existed.imports"
+    "META-INF/ghost-never-existed.txt"
+    "META-INF/ghost-never-existed.json"
+    "META-INF/ghost-never-existed.MF"
+    "META-INF/ghost-never-existed.properties"
+    "META-INF/ghost-never-existed.factories"
+    "META-INF/ghost-never-existed.imports"
+    "META-INF/spring/ghost-never-existed.txt"
+    "BOOT-INF/ghost-never-existed.txt"
+    "BOOT-INF/ghost-never-existed.idx"
+    "ghost-never-existed.idx"
+)
+
 arm_matches() {
     local e="$1" arm="$2"
     case "$e" in
@@ -268,7 +358,7 @@ arm_drop_key() {
 # 探针落在该臂路径下：glob 臂把第一个 * 起换成 GhostNeverExisted.class；
 # 带目录的精确臂换成同目录下的 GhostNeverExisted.class；否则根上那一件。
 class_probe_for_arm() {
-    local arm="$1" prefix probe
+    local arm="$1" prefix="" probe=""
     case "$arm" in
         *\**)
             set -f
@@ -291,7 +381,7 @@ class_probe_for_arm() {
 whitelist_by_arms() {
     local e="$1" drop="$2"
     shift 2
-    local arm key
+    local arm="" key=""
     case "$e" in
         *.class) return 1 ;;
     esac
@@ -308,11 +398,81 @@ whitelist_by_arms() {
 }
 
 plugin_whitelisted() {
+    if [ "${#PLUGIN_WL_ARMS[@]}" -eq 0 ]; then
+        return 1
+    fi
     whitelist_by_arms "$1" "${2:-}" "${PLUGIN_WL_ARMS[@]}"
 }
 
 lib_whitelisted() {
+    if [ "${#LIB_WL_ARMS[@]}" -eq 0 ]; then
+        return 1
+    fi
     whitelist_by_arms "$1" "${2:-}" "${LIB_WL_ARMS[@]}"
+}
+
+# 只在子进程里把幽灵种进调用方的 entries。bash 动态作用域，不另声明 local。
+plant_child_ghosts() {
+    local kind="$1"
+    [ -n "${ARTIFACT_ENTRY_CHILD:-}" ] || return 0
+    case "$kind" in
+        core)
+            entries="${entries}
+BOOT-INF/classes/${GHOST_CORE_CLASS}"
+            ;;
+        plugin)
+            entries="${entries}
+${GHOST_PLUGIN_CLASS}
+${GHOST_PLUGIN_RES}"
+            ;;
+        lib)
+            entries="${entries}
+${GHOST_LIB_CLASS}
+${GHOST_LIB_RES}"
+            ;;
+    esac
+}
+
+prove_never_allow_resources() {
+    local kind="$1"
+    local sample="" n=0 failed=0
+    if [ "${#NEVER_ALLOW_RES[@]}" -eq 0 ]; then
+        note_control_red "白名单自证 红：资源样例清单是空的，这一格量不动"
+        return
+    fi
+    for sample in "${NEVER_ALLOW_RES[@]}"; do
+        n=$((n + 1))
+        if [ "$kind" = plugin ]; then
+            if plugin_whitelisted "$sample"; then
+                note_control_red "白名单自证 红：插件白名单放行了资源样例 ${sample}，这一格量不动"
+                failed=1
+            fi
+        elif [ "$kind" = lib ]; then
+            if lib_whitelisted "$sample"; then
+                note_control_red "白名单自证 红：lib白名单放行了资源样例 ${sample}，这一格量不动"
+                failed=1
+            fi
+        else
+            if core_whitelisted "$sample"; then
+                note_control_red "白名单自证 红：核心白名单放行了资源样例 ${sample}，这一格量不动"
+                failed=1
+            fi
+        fi
+    done
+    if [ "$n" -eq 0 ]; then
+        note_control_red "白名单自证 红：资源样例清单是空的，这一格量不动"
+        return
+    fi
+    if [ "$failed" -ne 0 ]; then
+        return
+    fi
+    if [ "$kind" = plugin ]; then
+        echo "插件白名单自证 绿（资源样例 ${n} 只皆不放行）"
+    elif [ "$kind" = lib ]; then
+        echo "lib白名单自证 绿（资源样例 ${n} 只皆不放行）"
+    else
+        echo "核心白名单自证 绿（资源样例 ${n} 只皆不放行）"
+    fi
 }
 
 # class 条目 → 源码 java（去掉 $内部类 后缀）。只在 src/main/java 下找。
@@ -367,7 +527,7 @@ fi
 CORE_JAVA="$REPO_ROOT/$CORE_MOD/src/main/java"
 CORE_RES="$REPO_ROOT/$CORE_MOD/src/main/resources"
 
-# 多出 → 红。真跑的格子与阴性对照共用这一句，对照断的是本函数的结论。
+# 多出 → 红。print_cell 用这一句。对照改走子进程端到端，不再只断本函数。
 extra_is_red() {
     [ "$1" -gt 0 ]
 }
@@ -401,7 +561,7 @@ scan_core_entries() {
     local res_root="$3"
     local drop="${4:-}"
     local quiet="${5:-}"
-    local entry rel
+    local entry="" rel=""
     CELL_COUNT=0
     CELL_EXTRA=0
     while IFS= read -r entry; do
@@ -454,7 +614,7 @@ scan_plain_entries() {
     local quiet="${6:-}"
     local label="$7"
     local skip_ui=""
-    local entry
+    local entry=""
     CELL_COUNT=0
     CELL_EXTRA=0
     if [ "$kind" = plugin ]; then
@@ -498,26 +658,40 @@ scan_plain_entries() {
 
 prove_arms_reject_class() {
     local kind="$1"
-    shift
-    local arm probe n=0
-    for arm in "$@"; do
-        n=$((n + 1))
-        probe="$(class_probe_for_arm "$arm")"
-        if [ "$kind" = plugin ]; then
-            if plugin_whitelisted "$probe"; then
-                echo "白名单自证 红：插件臂 ${arm} 放行了 .class 探针 ${probe}，这一格量不动" >&2
-                exit 2
-            fi
-        else
-            if lib_whitelisted "$probe"; then
-                echo "白名单自证 红：lib臂 ${arm} 放行了 .class 探针 ${probe}，这一格量不动" >&2
-                exit 2
-            fi
+    local arm="" probe="" n=0 failed=0
+    if [ "$kind" = plugin ]; then
+        if [ "${#PLUGIN_WL_ARMS[@]}" -eq 0 ]; then
+            note_control_red "白名单自证 红：plugin 白名单臂清单是空的，这一格量不动"
+            return
         fi
-    done
+        for arm in "${PLUGIN_WL_ARMS[@]}"; do
+            n=$((n + 1))
+            probe="$(class_probe_for_arm "$arm")"
+            if plugin_whitelisted "$probe"; then
+                note_control_red "白名单自证 红：插件臂 ${arm} 放行了 .class 探针 ${probe}，这一格量不动"
+                failed=1
+            fi
+        done
+    else
+        if [ "${#LIB_WL_ARMS[@]}" -eq 0 ]; then
+            note_control_red "白名单自证 红：lib 白名单臂清单是空的，这一格量不动"
+            return
+        fi
+        for arm in "${LIB_WL_ARMS[@]}"; do
+            n=$((n + 1))
+            probe="$(class_probe_for_arm "$arm")"
+            if lib_whitelisted "$probe"; then
+                note_control_red "白名单自证 红：lib臂 ${arm} 放行了 .class 探针 ${probe}，这一格量不动"
+                failed=1
+            fi
+        done
+    fi
     if [ "$n" -eq 0 ]; then
-        echo "白名单自证 红：${kind} 白名单臂清单是空的，这一格量不动" >&2
-        exit 2
+        note_control_red "白名单自证 红：${kind} 白名单臂清单是空的，这一格量不动"
+        return
+    fi
+    if [ "$failed" -ne 0 ]; then
+        return
     fi
     if [ "$kind" = plugin ]; then
         echo "插件白名单自证 绿（${n} 臂逐臂探 .class 皆不放行）"
@@ -529,7 +703,7 @@ prove_arms_reject_class() {
 check_core() {
     local jar="$1"
     local label="核心条目"
-    local entries src_count=0
+    local entries="" src_count=0
     local java_root="$CORE_JAVA"
     local res_root="$CORE_RES"
 
@@ -543,13 +717,14 @@ check_core() {
         RED=1
         return
     fi
+    plant_child_ghosts core
 
     src_count="$(count_source "$java_root" "$res_root" "config-ui" "application-dev.yml")"
 
     # 白名单自证（内置）：临时拿掉 loader 前缀，该桶必须整片红；加回则这些不算多出。
     if [ -z "$DROP_PREFIX" ]; then
         local drop_n=0 still_allowed=0
-        local entry
+        local entry=""
         while IFS= read -r entry; do
             case "$entry" in
                 */) continue ;;
@@ -562,14 +737,17 @@ check_core() {
             esac
         done <<< "$entries"
         if [ "$drop_n" -eq 0 ]; then
-            echo "白名单自证 红：核心 jar 没有 org/springframework/boot/loader/ 条目，这一格量不动" >&2
-            exit 2
+            note_control_red "白名单自证 红：核心 jar 没有 org/springframework/boot/loader/ 条目，这一格量不动"
+        elif [ "$still_allowed" -ne 0 ]; then
+            note_control_red "白名单自证 红：去掉 org/springframework/boot/loader/ 后该桶未整片红（${drop_n} 项里仍放行 ${still_allowed}），这一格量不动"
+        else
+            echo "白名单自证 绿（去掉 org/springframework/boot/loader/ 后该桶 ${drop_n} 项皆多出；加回不记这些多出）"
         fi
-        if [ "$still_allowed" -ne 0 ]; then
-            echo "白名单自证 红：去掉 org/springframework/boot/loader/ 后该桶未整片红（${drop_n} 项里仍放行 ${still_allowed}），这一格量不动" >&2
-            exit 2
-        fi
-        echo "白名单自证 绿（去掉 org/springframework/boot/loader/ 后该桶 ${drop_n} 项皆多出；加回不记这些多出）"
+    fi
+
+    if [ -z "$DROP_PREFIX" ] && [ "$CORE_WL_PROVED" -eq 0 ]; then
+        prove_never_allow_resources core
+        CORE_WL_PROVED=1
     fi
 
     scan_core_entries "$entries" "$java_root" "$res_root" "$DROP_PREFIX" ""
@@ -579,7 +757,7 @@ check_core() {
 check_plugin() {
     local jar="$1" module="$2"
     local label="插件条目[$module]"
-    local entries src_count=0 src_mod java_root res_root
+    local entries="" src_count=0 src_mod="" java_root="" res_root=""
 
     if [ ! -f "$jar" ]; then
         echo "  $label 红 产物里没有这个 jar: $jar"
@@ -599,11 +777,13 @@ check_plugin() {
         RED=1
         return
     fi
+    plant_child_ghosts plugin
 
     src_count="$(count_source "$java_root" "$res_root" "config-ui-pages" "")"
 
     if [ -z "$DROP_PREFIX" ] && [ "$PLUGIN_WL_PROVED" -eq 0 ]; then
-        prove_arms_reject_class plugin "${PLUGIN_WL_ARMS[@]}"
+        prove_arms_reject_class plugin
+        prove_never_allow_resources plugin
         PLUGIN_WL_PROVED=1
     fi
 
@@ -612,11 +792,12 @@ check_plugin() {
 }
 
 check_lib_own() {
-    local jar entries aid src_mod java_root res_root src_count found_own=0
-    local lib_jars rc
+    local jar="" entries="" aid="" src_mod="" java_root="" res_root="" src_count="" found_own=0
+    local lib_jars=() rc=""
 
     if [ -z "$DROP_PREFIX" ] && [ "$LIB_WL_PROVED" -eq 0 ]; then
-        prove_arms_reject_class lib "${LIB_WL_ARMS[@]}"
+        prove_arms_reject_class lib
+        prove_never_allow_resources lib
         LIB_WL_PROVED=1
     fi
 
@@ -661,6 +842,7 @@ check_lib_own() {
         java_root="$REPO_ROOT/$src_mod/src/main/java"
         res_root="$REPO_ROOT/$src_mod/src/main/resources"
         src_count="$(count_source "$java_root" "$res_root" "" "")"
+        plant_child_ghosts lib
         scan_plain_entries "lib" "$entries" "$java_root" "$res_root" "$DROP_PREFIX" "" "lib自家产物[$aid]"
         print_cell "lib自家产物[$aid]" "$jar" "$CELL_COUNT" "$src_count" "$CELL_EXTRA"
     done
@@ -671,25 +853,36 @@ check_lib_own() {
     fi
 }
 
-# 阴性对照种进真条目表；阳性锚从源码树现取，不钉生产类名。
+# 阴性对照起子进程端到端跑本尺；阳性锚从源码树现取，不钉生产类名。
+# 量不动只记下，不当场退；末尾再按产物红优先定退码。
 run_entry_controls() {
     local jar="$1"
-    local entries neg_entries e_with e_without
+    local entries="" child_out="" child_rc="" g="" missing=""
     local pos_rel="" pos_java=""
-    local NEG_REL="org/frostnova/nova/core/config/ArtifactEntryCheckSentinel.class"
+    local core_entry="BOOT-INF/classes/${GHOST_CORE_CLASS}"
+    local can_child=1
 
+    if [ -n "${ARTIFACT_ENTRY_CHILD:-}" ]; then
+        echo "子进程模式：不跑对照，幽灵种进主扫描，本趟结论不作数" >&2
+        return 0
+    fi
+
+    if [ ! -f "$SCRIPT_PATH" ]; then
+        note_control_red "阴性对照 红：找不到本尺脚本 ${SCRIPT_PATH}，对照没法起子进程"
+        can_child=0
+    fi
     if [ ! -f "$jar" ]; then
-        echo "阴性对照 红：产物里没有核心 jar，对照没法种进真条目" >&2
-        exit 2
+        note_control_red "阴性对照 红：产物里没有核心 jar，对照没法种进真条目"
+        can_child=0
     fi
-    if ! entries="$(list_jar_entries "$jar")"; then
-        echo "阴性对照 红：读不出核心 jar 条目，对照没法种进真条目" >&2
-        exit 2
+    if [ "$can_child" -eq 1 ] && ! entries="$(list_jar_entries "$jar")"; then
+        note_control_red "阴性对照 红：读不出核心 jar 条目，对照没法种进真条目"
+        can_child=0
     fi
 
-    if java_for_class "$CORE_JAVA" "$NEG_REL" >/dev/null; then
-        echo "阴性对照 红：合成条目在源码里有对应 java，对照失效" >&2
-        exit 2
+    if java_for_class "$CORE_JAVA" "$GHOST_CORE_CLASS" >/dev/null; then
+        note_control_red "阴性对照 红：合成条目在源码里有对应 java，对照失效"
+        can_child=0
     fi
 
     while IFS= read -r pos_java; do
@@ -701,35 +894,49 @@ run_entry_controls() {
 $(find "$CORE_JAVA" -type f -name '*.java' | sort)
 EOF
     if [ -z "$pos_rel" ]; then
-        echo "阳性锚 红：核心模块 src/main/java 下一件 .java 都没有" >&2
-        exit 2
-    fi
-    if ! java_for_class "$CORE_JAVA" "$pos_rel" >/dev/null; then
-        echo "阳性锚 红：从源码现取的 ${pos_rel} 映射回 class 对不上" >&2
-        exit 2
-    fi
-    if ! printf '%s\n' "$entries" | grep -qxF "BOOT-INF/classes/${pos_rel}"; then
-        echo "阳性锚 红：源码现取的 ${pos_rel} 不在核心 jar 条目里" >&2
-        exit 2
+        note_control_red "阳性锚 红：核心模块 src/main/java 下一件 .java 都没有"
+    elif ! java_for_class "$CORE_JAVA" "$pos_rel" >/dev/null; then
+        note_control_red "阳性锚 红：从源码现取的 ${pos_rel} 映射回 class 对不上"
+    elif [ -n "$entries" ] && ! haystack_has "$entries" "BOOT-INF/classes/${pos_rel}" exact; then
+        note_control_red "阳性锚 红：源码现取的 ${pos_rel} 不在核心 jar 条目里"
     fi
 
-    neg_entries="${entries}
-BOOT-INF/classes/${NEG_REL}"
-    scan_core_entries "$neg_entries" "$CORE_JAVA" "$CORE_RES" "$DROP_PREFIX" "quiet"
-    e_with=$CELL_EXTRA
-    if extra_is_red "$e_with"; then
-        :
-    else
-        echo "阴性对照 红：合成条目未走到判红退码（多出 ${e_with} 未过判定），这一格量不动" >&2
-        exit 2
+    if [ -z "$DROP_PREFIX" ]; then
+        if [ "$CORE_WL_PROVED" -eq 0 ]; then
+            prove_never_allow_resources core
+            CORE_WL_PROVED=1
+        fi
+        if [ "$PLUGIN_WL_PROVED" -eq 0 ]; then
+            prove_arms_reject_class plugin
+            prove_never_allow_resources plugin
+            PLUGIN_WL_PROVED=1
+        fi
+        if [ "$LIB_WL_PROVED" -eq 0 ]; then
+            prove_arms_reject_class lib
+            prove_never_allow_resources lib
+            LIB_WL_PROVED=1
+        fi
     fi
-    scan_core_entries "$entries" "$CORE_JAVA" "$CORE_RES" "$DROP_PREFIX" "quiet"
-    e_without=$CELL_EXTRA
-    if [ "$e_with" -le "$e_without" ]; then
-        echo "阴性对照 红：合成条目种进真条目表后多出未增加（种前 ${e_without} 种后 ${e_with}），这一格量不动" >&2
-        exit 2
+
+    if [ "$can_child" -ne 1 ]; then
+        return 0
     fi
-    echo "阴性对照 绿（合成条目种进真条目表后多出由 ${e_without} 增至 ${e_with}；拿掉后回到 ${e_without}）"
+
+    child_out="$(ARTIFACT_ENTRY_CHILD=1 "$BASH" "$SCRIPT_PATH" "$OUT" 2>&1)"
+    child_rc=$?
+    if [ "$child_rc" -ne 1 ]; then
+        note_control_red "阴性对照 红：子进程有多出条目却退 ${child_rc}（须退 1），这一格量不动"
+    fi
+    for g in "$core_entry" "$GHOST_PLUGIN_CLASS" "$GHOST_PLUGIN_RES" "$GHOST_LIB_CLASS" "$GHOST_LIB_RES"; do
+        if ! haystack_has "$child_out" "多出条目: ${g}"; then
+            missing="${missing} ${g}"
+        fi
+    done
+    if [ -n "$missing" ]; then
+        note_control_red "阴性对照 红：子进程未点名幽灵${missing}，这一格量不动"
+    elif [ "$child_rc" -eq 1 ]; then
+        echo "阴性对照 绿（子进程退 ${child_rc}；点名 ${core_entry} ${GHOST_PLUGIN_CLASS} ${GHOST_PLUGIN_RES} ${GHOST_LIB_CLASS} ${GHOST_LIB_RES}）"
+    fi
 }
 
 echo "产物整包条目尺：$OUT"
@@ -763,7 +970,13 @@ if [ "$RED" -ne 0 ]; then
     else
         echo "这把尺没能把产物量完（上面每一格红都写明了卡在哪里），因此不给绿。" >&2
     fi
+    flush_control_notes "产物本身已红，此句不作数"
     exit 1
+fi
+
+if [ "$CONTROL_RED" -ne 0 ]; then
+    flush_control_notes ""
+    exit 2
 fi
 
 exit 0
