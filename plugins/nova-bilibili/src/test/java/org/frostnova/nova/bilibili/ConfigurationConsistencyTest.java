@@ -854,25 +854,42 @@ class ConfigurationConsistencyTest {
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("pluginModules 里没有 napcat 模块"));
 
-        withPluginJars(() -> {
-            List<String> names;
+        List<String> names = withPluginJars(() -> {
             try (Stream<Path> files = Files.list(Path.of("plugins"))) {
-                names = files
+                return files
                         .map(path -> path.getFileName().toString())
                         .filter(name -> name.endsWith(".jar"))
                         .toList();
             }
-            assertFalse(names.isEmpty(), "已摆清单为空");
+        });
+
+        List<String> red = new ArrayList<>();
+        try {
             assertTrue(names.stream().anyMatch(name -> name.startsWith(onebotName + "-") && !name.contains("napcat")),
                     "已摆清单缺 " + onebotName + " 的 jar，现有 " + names);
+        } catch (Throwable t) {
+            red.add("① " + t.getMessage());
+        }
+        try {
             assertTrue(names.stream().anyMatch(name -> name.startsWith(napcatName + "-")),
                     "已摆清单缺 " + napcatName + " 的 jar，现有 " + names);
+        } catch (Throwable t) {
+            red.add("② " + t.getMessage());
+        }
+        try {
             List<String> selfJars = names.stream()
                     .filter(name -> name.startsWith(selfName + "-"))
                     .toList();
             assertTrue(selfJars.isEmpty(), "本模块 jar 不该摆进去: " + selfJars);
-            return names;
-        });
+        } catch (Throwable t) {
+            red.add("③ " + t.getMessage());
+        }
+        if (!red.isEmpty()) {
+            for (String line : red) {
+                System.out.println("红: " + line);
+            }
+            fail(red.size() + " 问红：\n" + String.join("\n", red));
+        }
     }
 
     /**

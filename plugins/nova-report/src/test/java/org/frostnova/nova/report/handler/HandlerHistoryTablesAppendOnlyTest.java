@@ -62,7 +62,12 @@ class HandlerHistoryTablesAppendOnlyTest {
      * 问②用的那一版：去掉 {at}、仍带 {next} 的动态旧默认
      */
     private static final String SNAPSHOT_DYNAMIC_DEFAULT =
-            "{uname} {action}\n{url}{next}{picture}";
+            SNAPSHOT_DYNAMIC_DEFAULTS.get(1);
+
+    private static final String LEGACY_DYNAMIC_CLASS =
+            HandlerPackageNames.oldBot("bilibili.handler.BilibiliDynamicPushHandler");
+    private static final String LEGACY_LIVE_REPORT_CLASS =
+            HandlerPackageNames.oldBot("bilibili.handler.BilibiliLiveReportPushHandler");
 
     @TempDir
     Path dir;
@@ -92,10 +97,10 @@ class HandlerHistoryTablesAppendOnlyTest {
                     SNAPSHOT_DYNAMIC_DEFAULTS,
                     dynamic.supersededDefaults().getOrDefault("message", List.of())));
             missing.addAll(namedMissing(dynamic, "legacyClassNames",
-                    List.of(HandlerPackageNames.oldBot("bilibili.handler.BilibiliDynamicPushHandler")),
+                    List.of(LEGACY_DYNAMIC_CLASS),
                     dynamic.legacyClassNames()));
             missing.addAll(namedMissing(report, "legacyClassNames",
-                    List.of(HandlerPackageNames.oldBot("bilibili.handler.BilibiliLiveReportPushHandler")),
+                    List.of(LEGACY_LIVE_REPORT_CLASS),
                     report.legacyClassNames()));
             assertEquals(List.of(), missing, "在册快照有而现表没有: " + missing);
         } catch (Throwable t) {
@@ -103,7 +108,7 @@ class HandlerHistoryTablesAppendOnlyTest {
         }
 
         try {
-            String oldName = HandlerPackageNames.oldBot("bilibili.handler.BilibiliDynamicPushHandler");
+            String oldName = LEGACY_DYNAMIC_CLASS;
             JSONObject saved = new JSONObject();
             saved.put("message", SNAPSHOT_DYNAMIC_DEFAULT);
 
@@ -126,11 +131,13 @@ class HandlerHistoryTablesAppendOnlyTest {
         try {
             List<String> current = List.copyOf(SNAPSHOT_LIVE_ON_DEFAULTS);
             List<String> minusOne = current.subList(1, current.size());
-            assertEquals(List.of(current.get(0)), missingFrom(current, minusOne),
-                    "现表去掉一条应恰报那一条");
+            assertEquals(List.of("BilibiliLiveOnPushHandler·supersededDefaults.message·" + current.get(0)),
+                    namedMissing(liveOn, "supersededDefaults.message", current, minusOne),
+                    "现表去掉一条应恰报那一条并点名");
             List<String> plusOne = new ArrayList<>(current);
             plusOne.add("{not-a-shipped-default}");
-            assertEquals(List.of(), missingFrom(current, plusOne),
+            assertEquals(List.of(),
+                    namedMissing(liveOn, "supersededDefaults.message", current, plusOne),
                     "现表多一条应报 0（⊆ 仍成立）");
         } catch (Throwable t) {
             red.add("③ " + t.getMessage());
