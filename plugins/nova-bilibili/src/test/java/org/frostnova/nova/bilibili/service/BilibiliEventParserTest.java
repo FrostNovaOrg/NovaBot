@@ -199,7 +199,71 @@ class BilibiliEventParserTest {
                     "ENTRY_EFFECT",
                     "NOTICE_MSG",
                     "COMMON_NOTICE_DANMAKU",
-                    "WIDGET_BANNER");
+                    "WIDGET_BANNER",
+                    "ANCHOR_LOT_AWARD",
+                    "ANCHOR_LOT_CHECKSTATUS",
+                    "ANCHOR_LOT_END",
+                    "ANCHOR_LOT_NOTICE",
+                    "ANCHOR_LOT_START",
+                    "CHG_RANK_REFRESH",
+                    "COLLECTION_PRAISE_STATUS",
+                    "COLLECTION_PRAISE_UPDATE_PROCESS",
+                    "COMMON_ANIMATION",
+                    "CUSTOM_NOTICE_CARD",
+                    "DANMU_AGGREGATION",
+                    "DM_INTERACTION",
+                    "FLOW_REWARD_CARD",
+                    "GOTO_BUY_FLOW",
+                    "HOT_BUY_NUM",
+                    "LIKE_GUIDE_USER",
+                    "LIKE_INFO_V3_NOTICE",
+                    "LIVE_ANI_RES_UPDATE",
+                    "LIVE_INTERACT_GAME_STATE_CHANGE",
+                    "LIVE_OPEN_PLATFORM_GAME",
+                    "LIVE_PANEL_CHANGE_CONTENT",
+                    "LIVE_ROOM_TOAST_MESSAGE",
+                    "LOG_IN_NOTICE",
+                    "MESSAGEBOX_USER_MEDAL_CHANGE",
+                    "ONLINE_RANK_V2",
+                    "OPENPLATFORM_GAME_BUTTON_STATUS_CHANGE",
+                    "PK_AUDIENCE",
+                    "PK_BATTLE_ABNORMAL",
+                    "PK_BATTLE_END",
+                    "PK_BATTLE_PRE",
+                    "PK_BATTLE_PRE_NEW",
+                    "PK_BATTLE_PROCESS",
+                    "PK_BATTLE_PROCESS_NEW",
+                    "PK_BATTLE_PUNISH_END",
+                    "PK_BATTLE_SETTLE_NEW",
+                    "PK_BATTLE_START",
+                    "PK_BATTLE_START_NEW",
+                    "PK_BATTLE_VIDEO_PUNISH_BEGIN",
+                    "PLAYURL_RELOAD",
+                    "PLAYURL_RELOAD_MASTER",
+                    "POPULAR_RANK_CHANGED",
+                    "POPULARITY_RANK_TAB_CHG",
+                    "POPULARITY_RED_POCKET_V2_WINNER_LIST",
+                    "POPULARITY_RED_POCKET_WINNER_LIST",
+                    "RANK_CHANGED",
+                    "RANK_CHANGED_V2",
+                    "RANK_REM",
+                    "RECALL_DANMU_MSG",
+                    "RING_STATUS_CHANGE",
+                    "RING_STATUS_CHANGE_V2",
+                    "ROOM_REAL_TIME_MESSAGE_UPDATE",
+                    "ROOM_SKIN_MSG",
+                    "SHOPPING_CART_SHOW",
+                    "SYS_MSG",
+                    "TEAM_LIVE_START",
+                    "TEAM_MEMBER_CHANGE",
+                    "TRADING_SCORE",
+                    "VOICE_JOIN_LIST",
+                    "VOICE_JOIN_ROOM_COUNT_INFO",
+                    "VOICE_JOIN_STATUS",
+                    "VOICE_JOIN_SWITCH",
+                    "VOICE_JOIN_SWITCH_V2",
+                    "WIDGET_WISH_INFO",
+                    "WIDGET_WISH_INFO_V2");
 
             try {
                 for (String cmd : seen) {
@@ -251,6 +315,22 @@ class BilibiliEventParserTest {
                 reds.add("④降级 " + e.getMessage());
             }
             ran.add("④降级");
+
+            try {
+                Set<String> unique = new HashSet<>(seen);
+                assertEquals(seen.size(), unique.size(),
+                        "seen 无重名，实际 size=" + seen.size() + " unique=" + unique.size());
+                Set<String> table = BilibiliEventParser.SEEN_CMDS;
+                Set<String> extra = new HashSet<>(table);
+                extra.removeAll(unique);
+                Set<String> missing = new HashSet<>(unique);
+                missing.removeAll(table);
+                assertEquals(table, Set.copyOf(seen),
+                        "seen 须等于 SEEN_CMDS，多的: " + extra + " 缺的: " + missing);
+            } catch (AssertionError e) {
+                reds.add("⑤ " + e.getMessage());
+            }
+            ran.add("⑤名单＝表");
 
             assertTrue(reds.isEmpty(),
                     () -> reds.size() + " 问红: " + String.join("; ", reds)

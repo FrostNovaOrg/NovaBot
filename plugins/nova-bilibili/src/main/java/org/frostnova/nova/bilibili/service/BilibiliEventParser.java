@@ -191,7 +191,7 @@ public class BilibiliEventParser {
      * 其中 11 只在推广位进房那一份语料里出现（length-delimited），此前漏记在本表里，
      * 落 {@link #INTERACT_V2_KNOWN_FIELDS} 时按语料补回——<b>见过</b>与<b>取用</b>是两回事，
      * 已知集要的是前者。
-     * 2026-09-16 japan 语料见过、取值不用：3、14、17、25。
+     * 2026-09-16 真连接语料见过、取值不用：3、14、17、25。
      */
     private static final int V2_UID = 1;
 
@@ -385,7 +385,7 @@ public class BilibiliEventParser {
      * <p>
      * 口径同 {@link #INTERACT_V2_KNOWN_FIELDS}：3（观众头像，取值走 uinfo）、8（旧式勋章）、
      * 11（是否首次）都在字段表里且都决定不取，它们是见过的字段。
-     * 2026-09-16 japan 语料见过、取值不用：4、5。
+     * 2026-09-16 真连接语料见过、取值不用：4、5。
      * <p>
      * ⚠️ 两张表<b>不通用</b>，与勋章子布局不通用是同一个理由（见上面的字段表）：
      * 拿这一张去量进房报文，13 与 15 会被判成未知、22 会被判成新增——两边都错。
@@ -407,8 +407,8 @@ public class BilibiliEventParser {
     /**
      * 见过、不处理的直播间消息类型。
      * <p>
-     * 已知＝取用 ∪ 见过：取用是 {@link #parsers} 里会解析成事件的 cmd；见过是 japan
-     * 取表 2026-09-16 真连接里一直都有、本产品不取用的展示／对战／榜单明细类 cmd。
+     * 已知＝取用 ∪ 见过：取用是 {@link #parsers} 里会解析成事件的 cmd；见过是 2026-09-16
+     * 真连接取表里出现过、本产品不取用的 cmd，含对战、榜单、连麦、抽奖、互动聚合、购物引导、界面提示等类。
      * 命中本表的消息不进 {@link BilibiliRiskMetrics.Kind#UNKNOWN_CMD}、不标解析降级，返回空事件。
      * <p>
      * 名字里含 {@code GIFT}／{@code GUARD}／{@code SUPER_CHAT}／{@code COMBO} 的 cmd
@@ -423,7 +423,71 @@ public class BilibiliEventParser {
             "ENTRY_EFFECT",
             "NOTICE_MSG",
             "COMMON_NOTICE_DANMAKU",
-            "WIDGET_BANNER");
+            "WIDGET_BANNER",
+            "ANCHOR_LOT_AWARD",
+            "ANCHOR_LOT_CHECKSTATUS",
+            "ANCHOR_LOT_END",
+            "ANCHOR_LOT_NOTICE",
+            "ANCHOR_LOT_START",
+            "CHG_RANK_REFRESH",
+            "COLLECTION_PRAISE_STATUS",
+            "COLLECTION_PRAISE_UPDATE_PROCESS",
+            "COMMON_ANIMATION",
+            "CUSTOM_NOTICE_CARD",
+            "DANMU_AGGREGATION",
+            "DM_INTERACTION",
+            "FLOW_REWARD_CARD",
+            "GOTO_BUY_FLOW",
+            "HOT_BUY_NUM",
+            "LIKE_GUIDE_USER",
+            "LIKE_INFO_V3_NOTICE",
+            "LIVE_ANI_RES_UPDATE",
+            "LIVE_INTERACT_GAME_STATE_CHANGE",
+            "LIVE_OPEN_PLATFORM_GAME",
+            "LIVE_PANEL_CHANGE_CONTENT",
+            "LIVE_ROOM_TOAST_MESSAGE",
+            "LOG_IN_NOTICE",
+            "MESSAGEBOX_USER_MEDAL_CHANGE",
+            "ONLINE_RANK_V2",
+            "OPENPLATFORM_GAME_BUTTON_STATUS_CHANGE",
+            "PK_AUDIENCE",
+            "PK_BATTLE_ABNORMAL",
+            "PK_BATTLE_END",
+            "PK_BATTLE_PRE",
+            "PK_BATTLE_PRE_NEW",
+            "PK_BATTLE_PROCESS",
+            "PK_BATTLE_PROCESS_NEW",
+            "PK_BATTLE_PUNISH_END",
+            "PK_BATTLE_SETTLE_NEW",
+            "PK_BATTLE_START",
+            "PK_BATTLE_START_NEW",
+            "PK_BATTLE_VIDEO_PUNISH_BEGIN",
+            "PLAYURL_RELOAD",
+            "PLAYURL_RELOAD_MASTER",
+            "POPULAR_RANK_CHANGED",
+            "POPULARITY_RANK_TAB_CHG",
+            "POPULARITY_RED_POCKET_V2_WINNER_LIST",
+            "POPULARITY_RED_POCKET_WINNER_LIST",
+            "RANK_CHANGED",
+            "RANK_CHANGED_V2",
+            "RANK_REM",
+            "RECALL_DANMU_MSG",
+            "RING_STATUS_CHANGE",
+            "RING_STATUS_CHANGE_V2",
+            "ROOM_REAL_TIME_MESSAGE_UPDATE",
+            "ROOM_SKIN_MSG",
+            "SHOPPING_CART_SHOW",
+            "SYS_MSG",
+            "TEAM_LIVE_START",
+            "TEAM_MEMBER_CHANGE",
+            "TRADING_SCORE",
+            "VOICE_JOIN_LIST",
+            "VOICE_JOIN_ROOM_COUNT_INFO",
+            "VOICE_JOIN_STATUS",
+            "VOICE_JOIN_SWITCH",
+            "VOICE_JOIN_SWITCH_V2",
+            "WIDGET_WISH_INFO",
+            "WIDGET_WISH_INFO_V2");
 
     /**
      * 消息类型到解析方法的映射（取用集）
@@ -963,8 +1027,8 @@ public class BilibiliEventParser {
      * 被一个人气仅 1327、却只发聚合卡片的直播间推翻。
      * <p>
      * 排查时记住：日志里「这个房没人分享」与「这个房根本不单播分享」
-     * <b>长得一模一样</b>，都是计数为 0。要看它出不出 {@code DM_INTERACTION}，
-     * 不能看分享计数。
+     * <b>长得一模一样</b>，都是计数为 0。它已登记为见过，不会出现在未知消息摘要里；
+     * 要看它出不出，开直播间原始报文调试日志（码里 {@code isLiveRoomRawMessageLog} 那个开关）看，不能看分享计数。
      * 对下播报告的影响见 {@link org.frostnova.nova.bilibili.model.BilibiliLiveMetric#FOLLOW_COUNT}。
      */
     private NovaBaseLiveEvent parseInteractV2(JSONObject data, LiveStreamerInfo source) {
