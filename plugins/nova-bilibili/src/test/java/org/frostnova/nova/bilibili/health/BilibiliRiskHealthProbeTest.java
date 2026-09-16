@@ -587,13 +587,13 @@ class BilibiliRiskHealthProbeTest {
         for (int i = 0; i < 2000; i++) {
             mA.record(BilibiliRiskMetrics.Kind.DISCONNECT_1006, null);
         }
-        String sA = new BilibiliRiskHealthProbe(mA).summary(2000, 2000, 2000, 2000, 2000, 2000, 2000);
+        String sA = new BilibiliRiskHealthProbe(mA).summary(2000, 2001, 2002, 2003, 2004, 2005, 2006);
 
         BilibiliRiskMetrics mB = new BilibiliRiskMetrics();
         for (int i = 0; i < 1999; i++) {
             mB.record(BilibiliRiskMetrics.Kind.DISCONNECT_1006, null);
         }
-        String sB = new BilibiliRiskHealthProbe(mB).summary(1999, 1999, 1999, 1999, 1999, 1999, 1999);
+        String sB = new BilibiliRiskHealthProbe(mB).summary(1992, 1993, 1994, 1995, 1996, 1997, 1998);
 
         try {
             assertTrue(sA.contains("412 至少 2000 次/7 天"),
@@ -605,7 +605,7 @@ class BilibiliRiskHealthProbeTest {
         }
 
         try {
-            assertTrue(sA.contains("-352 至少 2000 次/时"),
+            assertTrue(sA.contains("-352 至少 2001 次/时"),
                     "-352 到顶应写至少，实际: " + sA);
             seen.add("②绿");
         } catch (AssertionError e) {
@@ -614,7 +614,7 @@ class BilibiliRiskHealthProbeTest {
         }
 
         try {
-            assertTrue(sA.contains("-509 至少 2000 次/时"),
+            assertTrue(sA.contains("-509 至少 2002 次/时"),
                     "-509 到顶应写至少，实际: " + sA);
             seen.add("③绿");
         } catch (AssertionError e) {
@@ -623,7 +623,7 @@ class BilibiliRiskHealthProbeTest {
         }
 
         try {
-            assertTrue(sA.contains("-401 至少 2000 次/日"),
+            assertTrue(sA.contains("-401 至少 2003 次/日"),
                     "-401 到顶应写至少，实际: " + sA);
             seen.add("④绿");
         } catch (AssertionError e) {
@@ -632,7 +632,7 @@ class BilibiliRiskHealthProbeTest {
         }
 
         try {
-            assertTrue(sA.contains("质询 至少 2000 次/日"),
+            assertTrue(sA.contains("质询 至少 2004 次/日"),
                     "质询到顶应写至少，实际: " + sA);
             seen.add("⑤绿");
         } catch (AssertionError e) {
@@ -641,7 +641,7 @@ class BilibiliRiskHealthProbeTest {
         }
 
         try {
-            assertTrue(sA.contains("快照缺失 至少 2000 次/日"),
+            assertTrue(sA.contains("快照缺失 至少 2005 次/日"),
                     "快照缺失到顶应写至少，实际: " + sA);
             seen.add("⑥绿");
         } catch (AssertionError e) {
@@ -650,7 +650,7 @@ class BilibiliRiskHealthProbeTest {
         }
 
         try {
-            assertTrue(sA.contains("1006 至少 2000 次/时（"),
+            assertTrue(sA.contains("1006 至少 2006 次/时（"),
                     "1006 到顶应写至少，实际: " + sA);
             seen.add("⑦绿");
         } catch (AssertionError e) {
@@ -669,7 +669,7 @@ class BilibiliRiskHealthProbeTest {
 
         try {
             assertEquals(
-                    "412 1999 次/7 天，-352 1999 次/时，-509 1999 次/时，-401 1999 次/日，质询 1999 次/日，快照缺失 1999 次/日，1006 1999 次/时（1999 次/日）",
+                    "412 1992 次/7 天，-352 1993 次/时，-509 1994 次/时，-401 1995 次/日，质询 1996 次/日，快照缺失 1997 次/日，1006 1998 次/时（1999 次/日）",
                     sB,
                     "未顶格应逐字裸数，实际: " + sB);
             seen.add("⑨绿");
@@ -680,5 +680,42 @@ class BilibiliRiskHealthProbeTest {
 
         System.out.println("九问: " + String.join("、", seen) + "；红格数=" + reds.size());
         assertTrue(reds.isEmpty(), () -> "九问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+    }
+
+    @Test
+    @DisplayName("check 钉读数进段，各段数字对上")
+    void checkWiresQuietSummarySegmentCounts() {
+        java.util.List<String> reds = new java.util.ArrayList<>();
+        java.util.List<String> seen = new java.util.ArrayList<>();
+
+        record(BilibiliRiskMetrics.Kind.HTTP_412, 2);
+        record(BilibiliRiskMetrics.Kind.CODE_352, 4);
+        record(BilibiliRiskMetrics.Kind.CODE_509, 3);
+        record(BilibiliRiskMetrics.Kind.CODE_401, 1);
+        record(BilibiliRiskMetrics.Kind.DISCONNECT_1006, 9);
+
+        HealthStatus status = probe.check();
+
+        try {
+            assertEquals(HealthStatus.Level.OK, status.level(), "未越线应为 OK");
+            seen.add("①绿");
+        } catch (AssertionError e) {
+            reds.add("① " + e.getMessage());
+            seen.add("①红");
+        }
+
+        try {
+            assertEquals(
+                    "412 2 次/7 天，-352 4 次/时，-509 3 次/时，-401 1 次/日，质询 0 次/日，快照缺失 0 次/日，1006 9 次/时（9 次/日）",
+                    status.summary(),
+                    "check 读数进段应对上，实际: " + status.summary());
+            seen.add("②绿");
+        } catch (AssertionError e) {
+            reds.add("② " + e.getMessage());
+            seen.add("②红");
+        }
+
+        System.out.println("两问: " + String.join("、", seen) + "；红格数=" + reds.size());
+        assertTrue(reds.isEmpty(), () -> "两问中 " + reds.size() + " 问红: " + String.join("; ", reds));
     }
 }
