@@ -576,4 +576,109 @@ class BilibiliRiskHealthProbeTest {
         System.out.println("六问: " + String.join("、", seen) + "；红格数=" + reds.size());
         assertTrue(reds.isEmpty(), () -> "六问中 " + reds.size() + " 问红: " + String.join("; ", reds));
     }
+
+    @Test
+    @DisplayName("平时读数八段到顶写至少，未顶格逐字裸数")
+    void quietSummaryEightSegmentsCapAtLeastEachSegment() {
+        java.util.List<String> reds = new java.util.ArrayList<>();
+        java.util.List<String> seen = new java.util.ArrayList<>();
+
+        BilibiliRiskMetrics mA = new BilibiliRiskMetrics();
+        for (int i = 0; i < 2000; i++) {
+            mA.record(BilibiliRiskMetrics.Kind.DISCONNECT_1006, null);
+        }
+        String sA = new BilibiliRiskHealthProbe(mA).summary(2000, 2000, 2000, 2000, 2000, 2000, 2000);
+
+        BilibiliRiskMetrics mB = new BilibiliRiskMetrics();
+        for (int i = 0; i < 1999; i++) {
+            mB.record(BilibiliRiskMetrics.Kind.DISCONNECT_1006, null);
+        }
+        String sB = new BilibiliRiskHealthProbe(mB).summary(1999, 1999, 1999, 1999, 1999, 1999, 1999);
+
+        try {
+            assertTrue(sA.contains("412 至少 2000 次/7 天"),
+                    "412 到顶应写至少，实际: " + sA);
+            seen.add("①绿");
+        } catch (AssertionError e) {
+            reds.add("① " + e.getMessage());
+            seen.add("①红");
+        }
+
+        try {
+            assertTrue(sA.contains("-352 至少 2000 次/时"),
+                    "-352 到顶应写至少，实际: " + sA);
+            seen.add("②绿");
+        } catch (AssertionError e) {
+            reds.add("② " + e.getMessage());
+            seen.add("②红");
+        }
+
+        try {
+            assertTrue(sA.contains("-509 至少 2000 次/时"),
+                    "-509 到顶应写至少，实际: " + sA);
+            seen.add("③绿");
+        } catch (AssertionError e) {
+            reds.add("③ " + e.getMessage());
+            seen.add("③红");
+        }
+
+        try {
+            assertTrue(sA.contains("-401 至少 2000 次/日"),
+                    "-401 到顶应写至少，实际: " + sA);
+            seen.add("④绿");
+        } catch (AssertionError e) {
+            reds.add("④ " + e.getMessage());
+            seen.add("④红");
+        }
+
+        try {
+            assertTrue(sA.contains("质询 至少 2000 次/日"),
+                    "质询到顶应写至少，实际: " + sA);
+            seen.add("⑤绿");
+        } catch (AssertionError e) {
+            reds.add("⑤ " + e.getMessage());
+            seen.add("⑤红");
+        }
+
+        try {
+            assertTrue(sA.contains("快照缺失 至少 2000 次/日"),
+                    "快照缺失到顶应写至少，实际: " + sA);
+            seen.add("⑥绿");
+        } catch (AssertionError e) {
+            reds.add("⑥ " + e.getMessage());
+            seen.add("⑥红");
+        }
+
+        try {
+            assertTrue(sA.contains("1006 至少 2000 次/时（"),
+                    "1006 到顶应写至少，实际: " + sA);
+            seen.add("⑦绿");
+        } catch (AssertionError e) {
+            reds.add("⑦ " + e.getMessage());
+            seen.add("⑦红");
+        }
+
+        try {
+            assertTrue(sA.contains("（至少 2000 次/日）"),
+                    "近 24h 的 1006 到顶应写至少，实际: " + sA);
+            seen.add("⑧绿");
+        } catch (AssertionError e) {
+            reds.add("⑧ " + e.getMessage());
+            seen.add("⑧红");
+        }
+
+        try {
+            assertEquals(
+                    "412 1999 次/7 天，-352 1999 次/时，-509 1999 次/时，-401 1999 次/日，质询 1999 次/日，快照缺失 1999 次/日，1006 1999 次/时（1999 次/日）",
+                    sB,
+                    "未顶格应逐字裸数，实际: " + sB);
+            seen.add("⑨绿");
+        } catch (AssertionError e) {
+            reds.add("⑨ " + e.getMessage());
+            seen.add("⑨红");
+        }
+
+        System.out.println("九问: " + String.join("、", seen) + "；红格数=" + reds.size());
+        assertTrue(reds.isEmpty(), () -> "九问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+    }
 }
