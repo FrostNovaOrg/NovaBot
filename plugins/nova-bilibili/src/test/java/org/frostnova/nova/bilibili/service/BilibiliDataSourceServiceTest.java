@@ -60,4 +60,29 @@ class BilibiliDataSourceServiceTest {
         assertEquals(243L, found.fans(), "粉丝数随同一趟响应带回");
         assertEquals(1, masterInfoTrips.get(), "昵称、房间号与粉丝数在主播信息接口的同一份响应里，一趟就该全拿到");
     }
+
+    @Test
+    @DisplayName("按直播间号查主播不另打粉丝数那一趟")
+    void lookupByRoomIdDoesNotCallGetFansCount() {
+        long room = 20002L;
+        Up up = new Up(UID, "主播甲", room, "https://example.invalid/face.jpg", 243L);
+        AtomicInteger roomInfoTrips = new AtomicInteger();
+        AtomicInteger fansCountTrips = new AtomicInteger();
+        when(api.getUpInfoByRoomId(room)).thenAnswer(invocation -> {
+            roomInfoTrips.incrementAndGet();
+            return up;
+        });
+        when(api.getFansCount(UID)).thenAnswer(invocation -> {
+            fansCountTrips.incrementAndGet();
+            return Optional.of(243L);
+        });
+
+        StreamerWithFans found = new BilibiliDataSourceService(api).lookupByRoomIdWithFans(room);
+
+        assertEquals("主播甲", found.user().getUname(), "补全真的发生了，不是一趟都没打");
+        assertEquals(room, found.user().getRoomId(), "房间号随同一趟带回");
+        assertEquals(243L, found.fans(), "粉丝数随同一趟响应带回");
+        assertEquals(1, roomInfoTrips.get(), "按直播间号查只该打房间信息这一趟");
+        assertEquals(0, fansCountTrips.get(), "粉丝数已在主播信息那份响应里，不得再打 getFansCount");
+    }
 }

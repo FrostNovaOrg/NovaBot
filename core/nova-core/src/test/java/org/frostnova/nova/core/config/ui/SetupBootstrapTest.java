@@ -236,6 +236,29 @@ class SetupBootstrapTest {
     }
 
     @Test
+    @DisplayName("上锁响应的 revoked 是第二趟注销数，不是 replacePassword 那趟的 0")
+    void firstLockRevokedCountsTheSecondLogout() {
+        ConfigUiSession old = authService.issueForPassword("10.0.0.9");
+        assertTrue(authService.validate(old.getId()).isPresent(), "夹具起点：旧会话还在");
+
+        ResponseEntity<JSONObject> response =
+                controller.setPassword(next(FIRST_PASSWORD), post("/api/auth/password/set"));
+        assertNotNull(response.getBody());
+        assertTrue(response.getBody().getBooleanValue("success"), response.getBody().toJSONString());
+        assertEquals(1, response.getBody().getIntValue("revoked"),
+                "上锁响应的 revoked 应是第二趟 logoutOthers 的数；令牌形态没有 Cookie，"
+                        + "replacePassword 那趟 keepId 为空，记下来永远是 0");
+
+        assertTrue(authService.validate(old.getId()).isEmpty(), "旧会话应已被第二趟注销");
+
+        String setCookie = response.getHeaders().getFirst(HttpHeaders.SET_COOKIE);
+        assertNotNull(setCookie, "上锁响应必须下发会话 Cookie");
+        String sessionId = sessionIdOf(setCookie);
+        assertNotNull(sessionId, "Set-Cookie 里应有会话标识: " + setCookie);
+        assertTrue(authService.validate(sessionId).isPresent(), "刚下发的会话必须立刻可用");
+    }
+
+    @Test
     @DisplayName("口令太短时不上锁，也不下发会话")
     void aTooShortPasswordIssuesNoSession() {
         ResponseEntity<JSONObject> response =

@@ -18,6 +18,8 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.function.Supplier;
 
 /**
  * 主播基础数据定时采样
@@ -116,30 +118,28 @@ public class BilibiliStreamerSnapshotService {
     private StreamerSnapshot snapshot(Up up, long at) {
         Map<String, Double> metrics = new HashMap<>();
 
-        try {
-            api.getFansCount(up.getUid()).ifPresent(fans ->
-                    metrics.put(BilibiliStreamerMetric.FANS, (double) fans));
-        } catch (Exception e) {
-            log.debug("采样 {} 的粉丝数失败: {}", up.getUid(), e.getMessage());
-        }
-
-        try {
-            api.getFansMedalCount(up.getUid()).ifPresent(medal ->
-                    metrics.put(BilibiliStreamerMetric.FANS_MEDAL, (double) medal));
-        } catch (Exception e) {
-            log.debug("采样 {} 的粉丝团人数失败: {}", up.getUid(), e.getMessage());
-        }
-
+        collect(metrics, BilibiliStreamerMetric.FANS,
+                () -> api.getFansCount(up.getUid()), "粉丝数", up.getUid());
+        collect(metrics, BilibiliStreamerMetric.FANS_MEDAL,
+                () -> api.getFansMedalCount(up.getUid()), "粉丝团人数", up.getUid());
         if (up.getRoomId() != null) {
-            try {
-                api.getGuardCount(up.getRoomId(), up.getUid()).ifPresent(guard ->
-                        metrics.put(BilibiliStreamerMetric.GUARD, (double) guard));
-            } catch (Exception e) {
-                log.debug("采样 {} 的大航海人数失败: {}", up.getUid(), e.getMessage());
-            }
+            collect(metrics, BilibiliStreamerMetric.GUARD,
+                    () -> api.getGuardCount(up.getRoomId(), up.getUid()), "大航海人数", up.getUid());
         }
 
         return new StreamerSnapshot(BilibiliPlatform.BILIBILI.id(), up.getUid(), up.getUname(), at, metrics);
+    }
+
+    /**
+     * 采一项：取得到就写入，取不到或抛了都不写——写成 0 会在趋势图上留下假断崖
+     */
+    private <T extends Number> void collect(Map<String, Double> metrics, String key,
+                                            Supplier<Optional<T>> fetch, String what, Long uid) {
+        try {
+            fetch.get().ifPresent(value -> metrics.put(key, value.doubleValue()));
+        } catch (Exception e) {
+            log.debug("采样 {} 的{}失败: {}", uid, what, e.getMessage());
+        }
     }
 
     private void sleep() {

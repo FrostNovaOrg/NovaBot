@@ -87,10 +87,52 @@ eq(linkWith({streamer: WHO}, [{uid: 3493}]),
   {text: '去主播页看看', href: '#/streamers/somewhere/3493'},
   '④ 查到人且已落盘：出链接，地址经 detailHash 拼');
 
-// ⑤ 画「找到了」那张卡的时候不许出这个链接：那一刻还没落盘
+// ⑤⑥ 画「找到了」那张卡的时候不许出这个链接：那一刻还没落盘。
+// 切出 paintFound 真跑一遍，问整棵子树——只看源码里有没有 detailHash 字样，
+// 手拼 '#/streamers/' 或写死 id 时那一问照绿。
 const paint = bracedFrom(src, 'function paintFound');
-eq(paint.length > 0 && !paint.includes('detailHash'), true,
-  '⑤ paintFound 切得出来且不问 detailHash');
+eq(paint.length > 0, true, '⑤ paintFound 切得出来');
+
+function treeNode(tag, cls) {
+  const children = [];
+  return {
+    id: '',
+    href: '',
+    tag: tag || '',
+    className: cls || '',
+    textContent: '',
+    children,
+    appendChild(c) {
+      children.push(c);
+      return c;
+    },
+  };
+}
+
+function walk(nodes, acc) {
+  for (const n of nodes || []) {
+    acc.push(n);
+    walk(n.children, acc);
+  }
+  return acc;
+}
+
+const hostKids = [];
+const host = {
+  innerHTML: '',
+  appendChild(c) {
+    hostKids.push(c);
+    return c;
+  },
+};
+const makePaint = new Function('draft', 'el', 'targetPicker',
+  paint + '\nreturn paintFound;');
+const paintFn = makePaint({streamer: WHO}, treeNode, () => treeNode('div', 'su-pick'));
+paintFn(host);
+const painted = walk(hostKids, []);
+eq(!painted.some(n => n.id === 'setup-go-streamer')
+    && !painted.some(n => String(n.href || '').includes('#/streamers/')), true,
+  '⑥ 找到了那张卡既没有 setup-go-streamer 也没有主播页地址');
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);
