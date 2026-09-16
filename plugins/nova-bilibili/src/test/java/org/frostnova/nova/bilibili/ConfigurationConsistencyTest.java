@@ -35,6 +35,7 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -730,6 +731,367 @@ class ConfigurationConsistencyTest {
 
         assertTrue(unknown.isEmpty(),
                 "配置模板中存在代码里已不存在的配置项，请更新模板:\n  " + String.join("\n  ", unknown));
+    }
+
+    /**
+     * 文档与发行模板里点到的 {@code novabot.*} 键必须能在配置元数据里对上。
+     * <p>
+     * 绑不上的键 Spring 默认不报，照着错层级或错路径填会静默不生效。
+     */
+    @Test
+    @DisplayName("文档与发行模板里写到的配置键都是现行键")
+    void documentedKeysAreCurrent() throws IOException {
+        Path root = repositoryRoot();
+        List<Path> files = documentedKeyFiles(root);
+        Set<String> names = new LinkedHashSet<>();
+        Set<String> mapKeys = new LinkedHashSet<>();
+        for (JSONObject property : properties()) {
+            String name = property.getString("name");
+            if (name == null) {
+                continue;
+            }
+            names.add(name);
+            String type = property.getString("type");
+            if (type != null && type.startsWith("java.util.Map")) {
+                mapKeys.add(name);
+            }
+        }
+
+        List<String> red = new ArrayList<>();
+        try {
+            List<String> unknown = new ArrayList<>();
+            for (Path file : files) {
+                String relative = root.relativize(file).toString().replace('\\', '/');
+                String text = Files.readString(file, StandardCharsets.UTF_8);
+                for (FoundKey found : findDocumentedKeys(text)) {
+                    if (found.unreadable()) {
+                        unknown.add(relative + ":" + found.line() + " 解析不了");
+                        continue;
+                    }
+                    if (!isKnownDocumentedKey(found.key(), names, mapKeys)) {
+                        unknown.add(relative + ":" + found.line() + " " + found.key());
+                    }
+                }
+            }
+            assertTrue(unknown.isEmpty(), "点名 " + String.join("、", unknown));
+        } catch (Throwable t) {
+            red.add("① " + t.getMessage());
+        }
+        try {
+            assertFalse(isKnownDocumentedKey("novabot.core.alert.mail.default-to", names, mapKeys),
+                    "novabot.core.alert.mail.default-to 应判未知");
+            assertTrue(isKnownDocumentedKey("novabot.core.mail.default-to", names, mapKeys),
+                    "novabot.core.mail.default-to 应判已知");
+            assertTrue(isKnownDocumentedKey("novabot.core.event-stream.*", names, mapKeys),
+                    "novabot.core.event-stream.* 应判已知");
+            assertFalse(mapKeys.isEmpty(), "Map 型键集为空");
+            String mapKey = mapKeys.iterator().next();
+            String probe = mapKey + ".x-probe";
+            assertTrue(isKnownDocumentedKey(probe, names, mapKeys),
+                    "Map 型键子路径应判已知: " + probe);
+            boolean listedAsName = false;
+            for (String name : names) {
+                if (name.equals(probe) || name.startsWith(probe + ".")) {
+                    listedAsName = true;
+                    break;
+                }
+            }
+            assertFalse(listedAsName, "已知名集不应含 " + probe);
+        } catch (Throwable t) {
+            red.add("② " + t.getMessage());
+        }
+        try {
+            List<String> fromArchive = extractDocumentedKeys(
+                    "java -XX:ArchiveClassesAtExit=novabot.jsa -Dloader.path=lib,plugins,plugins-lib -jar NovaBot.jar");
+            assertEquals(List.of(), fromArchive, "归档句抽出 " + fromArchive);
+            List<String> fromRunbook = extractDocumentedKeys("""
+                    ```yaml
+                    novabot:
+                      bilibili:
+                        account:
+                          anonymous: true               # 不用凭据
+                        live:
+                          live-room-raw-message-log: true
+                    ```
+                    """);
+            assertEquals(List.of(
+                            "novabot.bilibili.account.anonymous",
+                            "novabot.bilibili.live.live-room-raw-message-log"),
+                    fromRunbook,
+                    "原围栏抽出 " + fromRunbook);
+        } catch (Throwable t) {
+            red.add("③ " + t.getMessage());
+        }
+        try {
+            Set<String> listed = new LinkedHashSet<>();
+            for (Path file : files) {
+                listed.add(root.relativize(file).toString().replace('\\', '/'));
+            }
+            assertTrue(listed.contains("docs/runbook-protocol-corpus.md"),
+                    "列件缺 docs/runbook-protocol-corpus.md，现有 " + listed);
+            assertTrue(listed.contains("docs/user-guide.md"),
+                    "列件缺 docs/user-guide.md，现有 " + listed);
+            assertTrue(listed.contains("dist/templates/application.example.yml"),
+                    "列件缺 dist/templates/application.example.yml，现有 " + listed);
+            assertTrue(names.contains("novabot.core.mail.default-to"),
+                    "已知键集缺 novabot.core.mail.default-to");
+            Path exempt = root.resolve("docs/redesign.md");
+            assertTrue(Files.exists(exempt), "找不到豁免件 docs/redesign.md");
+            assertTrue(Files.readString(exempt, StandardCharsets.UTF_8).contains("不随实现回填"),
+                    "豁免件不含「不随实现回填」");
+        } catch (Throwable t) {
+            red.add("④ " + t.getMessage());
+        }
+        try {
+            Path probeRoot = dir.resolve("target").resolve("repo");
+            Files.createDirectories(probeRoot.resolve("docs").resolve("target"));
+            Files.createDirectories(probeRoot.resolve("dist").resolve("templates"));
+            Files.writeString(probeRoot.resolve(".gitignore"), "# 注释\ndocs/ignored.md\nlocal.json\n",
+                    StandardCharsets.UTF_8);
+            Files.writeString(probeRoot.resolve("docs").resolve("a.md"), "a\n", StandardCharsets.UTF_8);
+            Files.writeString(probeRoot.resolve("docs").resolve("ignored.md"), "ignored\n", StandardCharsets.UTF_8);
+            Files.writeString(probeRoot.resolve("docs").resolve("target").resolve("b.md"), "b\n",
+                    StandardCharsets.UTF_8);
+            Files.writeString(probeRoot.resolve("dist").resolve("templates").resolve("app.yml"), "app:\n",
+                    StandardCharsets.UTF_8);
+            Files.writeString(probeRoot.resolve("dist").resolve("templates").resolve("local.json"), "{}\n",
+                    StandardCharsets.UTF_8);
+            Files.writeString(dir.resolve("outside.md"), "outside\n", StandardCharsets.UTF_8);
+            try {
+                Files.createSymbolicLink(probeRoot.resolve("docs").resolve("link.md"), dir.resolve("outside.md"));
+            } catch (Exception ex) {
+                System.out.println("本机造不了软链");
+            }
+            List<String> listed = new ArrayList<>();
+            for (Path file : documentedKeyFiles(probeRoot)) {
+                listed.add(probeRoot.relativize(file).toString().replace('\\', '/'));
+            }
+            assertEquals(List.of("dist/templates/app.yml", "docs/a.md"), listed, "列件 " + listed);
+        } catch (Throwable t) {
+            red.add("⑤ " + t.getMessage());
+        }
+        if (!red.isEmpty()) {
+            for (String line : red) {
+                System.out.println("红: " + line);
+            }
+            fail(red.size() + " 问红：\n" + String.join("\n", red));
+        }
+    }
+
+    private record FoundKey(int line, String key, boolean unreadable) {
+    }
+
+    private String docsDirectoryName() {
+        return "docs";
+    }
+
+    private boolean isExemptDocument(String relative) {
+        return "docs/redesign.md".equals(relative);
+    }
+
+    private Pattern dottedDocumentedKeyPattern() {
+        return Pattern.compile("novabot(\\.[a-z0-9][a-z0-9-]*){2,}(\\.\\*)?");
+    }
+
+    private boolean isKnownDocumentedKey(String key, Set<String> names, Set<String> mapKeys) {
+        if (names.contains(key)) {
+            return true;
+        }
+        String stem = key.endsWith(".*") ? key.substring(0, key.length() - 2) : key;
+        for (String name : names) {
+            if (name.equals(stem) || name.startsWith(stem + ".")) {
+                return true;
+            }
+        }
+        for (String mapKey : mapKeys) {
+            if (key.equals(mapKey) || key.startsWith(mapKey + ".")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private List<Path> documentedKeyFiles(Path root) throws IOException {
+        List<Path> files = new ArrayList<>();
+        try (Stream<Path> top = Files.list(root)) {
+            top.filter(path -> Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS))
+                    .filter(path -> {
+                        String name = path.getFileName().toString();
+                        return name.endsWith(".md") && !name.equals("CHANGELOG.md");
+                    })
+                    .forEach(files::add);
+        }
+        addDocumentedFiles(files, root, root.resolve(docsDirectoryName()), true);
+        addDocumentedFiles(files, root, root.resolve("templates"), true);
+        addDocumentedFiles(files, root, root.resolve("dist").resolve("templates"), false);
+        List<GitIgnoreLine> ignoreLines = readRootGitIgnore(root);
+        files.removeIf(path -> {
+            String relative = root.relativize(path).toString().replace('\\', '/');
+            if (isExemptDocument(relative)) {
+                return true;
+            }
+            for (GitIgnoreLine line : ignoreLines) {
+                if (line.matches(relative)) {
+                    return true;
+                }
+            }
+            return false;
+        });
+        files.sort(Path::compareTo);
+        return files;
+    }
+
+    private static void addDocumentedFiles(List<Path> files, Path root, Path dir, boolean markdownOnly)
+            throws IOException {
+        if (!Files.isDirectory(dir)) {
+            return;
+        }
+        try (Stream<Path> walk = Files.walk(dir)) {
+            walk.filter(path -> Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS))
+                    .filter(path -> !pathHasSkippedDirectory(root, path))
+                    .filter(path -> !markdownOnly || path.getFileName().toString().endsWith(".md"))
+                    .forEach(files::add);
+        }
+    }
+
+    private static boolean pathHasSkippedDirectory(Path root, Path path) {
+        Path relative = root.relativize(path);
+        for (Path part : relative) {
+            String name = part.toString();
+            if ("target".equals(name) || "scratch".equals(name)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private List<GitIgnoreLine> readRootGitIgnore(Path root) throws IOException {
+        Path file = root.resolve(".gitignore");
+        if (!Files.isRegularFile(file)) {
+            return List.of();
+        }
+        List<GitIgnoreLine> lines = new ArrayList<>();
+        for (String raw : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+            String text = raw.trim();
+            if (text.isEmpty() || text.startsWith("#") || text.startsWith("!")) {
+                continue;
+            }
+            if (text.indexOf('*') >= 0 || text.indexOf('?') >= 0
+                    || text.indexOf('[') >= 0 || text.indexOf('\\') >= 0) {
+                continue;
+            }
+            boolean directoryOnly = text.endsWith("/");
+            if (directoryOnly) {
+                text = text.substring(0, text.length() - 1);
+            }
+            boolean anchored = text.contains("/");
+            if (anchored && text.startsWith("/")) {
+                text = text.substring(1);
+            }
+            if (text.isEmpty()) {
+                continue;
+            }
+            lines.add(new GitIgnoreLine(text, anchored, directoryOnly));
+        }
+        return lines;
+    }
+
+    private record GitIgnoreLine(String pattern, boolean anchored, boolean directoryOnly) {
+        private boolean matches(String relative) {
+            if (anchored) {
+                return relative.equals(pattern) || relative.startsWith(pattern + "/");
+            }
+            String[] parts = relative.split("/");
+            int last = parts.length - 1;
+            for (int i = 0; i < parts.length; i++) {
+                if (directoryOnly && i == last) {
+                    continue;
+                }
+                if (pattern.equals(parts[i])) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    private List<String> extractDocumentedKeys(String text) {
+        List<String> keys = new ArrayList<>();
+        for (FoundKey found : findDocumentedKeys(text)) {
+            if (!found.unreadable() && found.key() != null) {
+                keys.add(found.key());
+            }
+        }
+        return keys;
+    }
+
+    private List<FoundKey> findDocumentedKeys(String text) {
+        List<FoundKey> found = new ArrayList<>();
+        Matcher dotted = dottedDocumentedKeyPattern().matcher(text);
+        while (dotted.find()) {
+            found.add(new FoundKey(lineOfOffset(text, dotted.start()), dotted.group(), false));
+        }
+        Matcher fences = Pattern.compile(
+                "^```(?:yaml|yml)[ \\t]*\\R(.*?)\\R```",
+                Pattern.DOTALL | Pattern.CASE_INSENSITIVE | Pattern.MULTILINE).matcher(text);
+        while (fences.find()) {
+            String body = fences.group(1);
+            if (!hasTopLevelNovabot(body)) {
+                continue;
+            }
+            int bodyStartLine = lineOfOffset(text, fences.start(1));
+            try {
+                Map<String, Object> flat = flattenYamlText(body);
+                for (String key : flat.keySet()) {
+                    if (key.startsWith("novabot.")) {
+                        found.add(new FoundKey(leafLine(body, bodyStartLine, key), key, false));
+                    }
+                }
+            } catch (RuntimeException e) {
+                found.add(new FoundKey(lineOfOffset(text, fences.start()), null, true));
+            }
+        }
+        return found;
+    }
+
+    private static boolean hasTopLevelNovabot(String body) {
+        for (String line : body.split("\n", -1)) {
+            if (line.startsWith("novabot:")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static int leafLine(String body, int bodyStartLine, String key) {
+        String leaf = key.substring(key.lastIndexOf('.') + 1);
+        String[] lines = body.split("\n", -1);
+        for (int i = 0; i < lines.length; i++) {
+            if (lines[i].strip().startsWith(leaf + ":")) {
+                return bodyStartLine + i;
+            }
+        }
+        return bodyStartLine;
+    }
+
+    private static int lineOfOffset(String text, int offset) {
+        int line = 1;
+        int bound = Math.min(offset, text.length());
+        for (int i = 0; i < bound; i++) {
+            if (text.charAt(i) == '\n') {
+                line++;
+            }
+        }
+        return line;
+    }
+
+    private static Map<String, Object> flattenYamlText(String text) {
+        LoaderOptions options = new LoaderOptions();
+        options.setAllowDuplicateKeys(false);
+        Object root = new Yaml(new SafeConstructor(options)).load(text);
+        Map<String, Object> values = new LinkedHashMap<>();
+        flattenNode("", root, values);
+        return values;
     }
 
     @Test
