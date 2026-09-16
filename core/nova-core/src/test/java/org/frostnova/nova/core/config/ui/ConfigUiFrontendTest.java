@@ -3268,9 +3268,9 @@ class ConfigUiFrontendTest {
      * 进设置页要按当下 {@code store.values} 重画一遍
      * <p>
      * 首页那个推送总开关改完不刷新就切过来时，设置页 DOM 若还是启动那一刻建的，
-     * 开关会停在旧值，而屏幕上看不出它是旧的。五问各自记下，末尾一起红。
+     * 开关会停在旧值，而屏幕上看不出它是旧的。四问各自记下，末尾一起红。
      * 取数段从 {@code if (!withData) return} 起按花括号配平截到 applyRoute 闭合括号，
-     * 再按支切窗：从 {@code name === 'settings'} 起到下一个 {@code else if} 或段末。
+     * 再按支切窗：从 {@code name === 'settings'} 起到本支闭合花括号。
      * 该支须在 {@code else if (plugin)} 之后，否则带插件子路径的设置页地址会被本支吃掉。
      */
     @Test
@@ -3320,19 +3320,23 @@ class ConfigUiFrontendTest {
             red.add("④ " + t.getMessage());
         }
 
-        try {
-            int idx = load.indexOf("name === 'settings'");
-            assertTrue(idx >= 0, "applyRoute 取数段应含 name === 'settings'");
-            String branch = settingsBranchWindow(load);
-            assertTrue(branch.contains("renderGeneral") && branch.contains("focusCard"),
-                    "按支切窗须含 renderGeneral 与 focusCard: " + branch.strip());
-        } catch (Throwable t) {
-            red.add("⑤ " + t.getMessage());
-        }
-
         if (!red.isEmpty()) {
             fail(red.size() + " 问红：" + String.join("；", red));
         }
+    }
+
+    /**
+     * 设置页切窗必须收到本支花括号
+     * <p>
+     * settings 是末支时，切到段末会把支后的 {@code renderGeneral()} 算进窗里。
+     */
+    @Test
+    @DisplayName("设置页按支切窗收到本支花括号")
+    void settingsBranchWindowStopsAtOwnBrace() {
+        String load = "else if (name === 'settings') { focusCard(name, card); }\n renderGeneral();\n }";
+        String branch = settingsBranchWindow(load);
+        assertFalse(branch.contains("renderGeneral"),
+                "窗不应含支后 renderGeneral，实际: " + branch);
     }
 
     /**
@@ -3739,15 +3743,14 @@ class ConfigUiFrontendTest {
     }
 
     /**
-     * 设置页按支切窗：从 {@code name === 'settings'} 起到下一个 {@code else if} 或段末
+     * 设置页按支切窗：从 {@code name === 'settings'} 起到本支闭合花括号
      */
     private String settingsBranchWindow(String load) {
         int idx = load.indexOf("name === 'settings'");
         if (idx < 0) {
             return "";
         }
-        int next = load.indexOf("else if", idx + "name === 'settings'".length());
-        return next >= 0 ? load.substring(idx, next) : load.substring(idx);
+        return bracedBlockAfter(load, idx);
     }
 
     /**

@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: 配置 JDK 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           java-version: '17'
           distribution: temurin
@@ -28,7 +28,7 @@ jobs:
       # （不是跳过——跳过与通过在构建日志上长得一样）。ubuntu-latest 自带 node，
       # 但那是运行器镜像的巧合而不是承诺：显式装一次，版本也就写下来了
       - name: 配置 Node 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
 
@@ -73,7 +73,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: 配置 JDK 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           java-version: '17'
           distribution: temurin
