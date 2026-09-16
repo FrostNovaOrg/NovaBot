@@ -264,7 +264,7 @@ class BilibiliRiskHealthProbeTest {
      * 只断言「不含溢出字样」的话，把摘要改成别的样子也照样绿。
      */
     private static final String QUIET_SUMMARY =
-            "412 0 次/7 天，-352 0 次/时，质询 0 次/日，快照缺失 0 次/日，1006 0 次/时（0 次/日）";
+            "412 0 次/7 天，-352 0 次/时，-509 0 次/时，-401 0 次/日，质询 0 次/日，快照缺失 0 次/日，1006 0 次/时（0 次/日）";
 
     @Test
     @DisplayName("计数上限溢出：全 0 时摘要逐字不变，任一类溢出才多一段且不改档")
@@ -463,5 +463,117 @@ class BilibiliRiskHealthProbeTest {
 
         System.out.println("五问: " + String.join("、", seen) + "；红格数=" + reds.size());
         assertTrue(reds.isEmpty(), () -> "五问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+    }
+
+    @Test
+    @DisplayName("阈值行与平时读数到顶写至少 N 次，平时读数含 -509 与 -401")
+    void thresholdAndQuietSummaryCapAtLeastAndIncludeCode509Code401() {
+        java.util.List<String> reds = new java.util.ArrayList<>();
+        java.util.List<String> seen = new java.util.ArrayList<>();
+
+        BilibiliRiskMetrics.Kind[] seven = {
+                BilibiliRiskMetrics.Kind.HTTP_412,
+                BilibiliRiskMetrics.Kind.CODE_352,
+                BilibiliRiskMetrics.Kind.CODE_509,
+                BilibiliRiskMetrics.Kind.CODE_401,
+                BilibiliRiskMetrics.Kind.GAIA,
+                BilibiliRiskMetrics.Kind.SNAPSHOT_MISSING,
+                BilibiliRiskMetrics.Kind.DISCONNECT_1006
+        };
+
+        BilibiliRiskMetrics mA = new BilibiliRiskMetrics();
+        for (BilibiliRiskMetrics.Kind kind : seven) {
+            for (int i = 0; i < 2000; i++) {
+                mA.record(kind, null);
+            }
+        }
+        String sA = new BilibiliRiskHealthProbe(mA).check().summary();
+
+        BilibiliRiskMetrics mB = new BilibiliRiskMetrics();
+        for (BilibiliRiskMetrics.Kind kind : seven) {
+            for (int i = 0; i < 1999; i++) {
+                mB.record(kind, null);
+            }
+        }
+        String sB = new BilibiliRiskHealthProbe(mB).check().summary();
+
+        BilibiliRiskMetrics mC = new BilibiliRiskMetrics();
+        for (int i = 0; i < 4; i++) {
+            mC.record(BilibiliRiskMetrics.Kind.CODE_509, null);
+        }
+        for (int i = 0; i < 2; i++) {
+            mC.record(BilibiliRiskMetrics.Kind.CODE_401, null);
+        }
+        HealthStatus statusC = new BilibiliRiskHealthProbe(mC).check();
+        String sC = statusC.summary();
+
+        try {
+            assertTrue(sA.contains("7 天内真实 HTTP 412 至少 2000 次"),
+                    "412 顶格应写至少，实际: " + sA);
+            seen.add("①绿");
+        } catch (AssertionError e) {
+            reds.add("① " + e.getMessage());
+            seen.add("①红");
+        }
+
+        try {
+            assertTrue(sA.contains("1 小时内业务码 -352 至少 2000 次"),
+                    "-352 顶格应写至少，实际: " + sA);
+            assertTrue(sA.contains("1 小时内业务码 -509 至少 2000 次"),
+                    "-509 顶格应写至少，实际: " + sA);
+            seen.add("②绿");
+        } catch (AssertionError e) {
+            reds.add("② " + e.getMessage());
+            seen.add("②红");
+        }
+
+        try {
+            assertTrue(sA.contains("24 小时内业务码 -401 至少 2000 次"),
+                    "-401 顶格应写至少，实际: " + sA);
+            assertTrue(sA.contains("24 小时内风控质询/验证码 至少 2000 次"),
+                    "质询顶格应写至少，实际: " + sA);
+            assertTrue(sA.contains("24 小时内开播快照项缺失 至少 2000 次"),
+                    "快照缺失顶格应写至少，实际: " + sA);
+            seen.add("③绿");
+        } catch (AssertionError e) {
+            reds.add("③ " + e.getMessage());
+            seen.add("③红");
+        }
+
+        try {
+            assertTrue(sA.contains("1 小时内长连接 1006 断线 至少 2000 次"),
+                    "1006 顶格应写至少，实际: " + sA);
+            seen.add("④绿");
+        } catch (AssertionError e) {
+            reds.add("④ " + e.getMessage());
+            seen.add("④红");
+        }
+
+        try {
+            assertTrue(sB.contains("7 天内真实 HTTP 412 1999 次"),
+                    "未顶格应写真次数，实际: " + sB);
+            assertTrue(sB.contains("1 小时内长连接 1006 断线 1999 次"),
+                    "1006 未顶格应写真次数，实际: " + sB);
+            assertFalse(sB.contains("至少"), "未顶格不得写至少，实际: " + sB);
+            seen.add("⑤绿");
+        } catch (AssertionError e) {
+            reds.add("⑤ " + e.getMessage());
+            seen.add("⑤红");
+        }
+
+        try {
+            assertEquals(HealthStatus.Level.OK, statusC.level(), "未越线应仍为 OK");
+            assertTrue(sC.contains("-509 4 次/时"),
+                    "平时读数应含 -509，实际: " + sC);
+            assertTrue(sC.contains("-401 2 次/日"),
+                    "平时读数应含 -401，实际: " + sC);
+            seen.add("⑥绿");
+        } catch (AssertionError e) {
+            reds.add("⑥ " + e.getMessage());
+            seen.add("⑥红");
+        }
+
+        System.out.println("六问: " + String.join("、", seen) + "；红格数=" + reds.size());
+        assertTrue(reds.isEmpty(), () -> "六问中 " + reds.size() + " 问红: " + String.join("; ", reds));
     }
 }
