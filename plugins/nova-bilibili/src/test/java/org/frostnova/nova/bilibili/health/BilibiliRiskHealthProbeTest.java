@@ -142,6 +142,8 @@ class BilibiliRiskHealthProbeTest {
             assertEquals(HealthStatus.Level.DEGRADED, status.level(), "未知操作码一条即应降档");
             assertTrue(status.summary().contains("未知操作码"), "summary 应写未知操作码，实际: " + status.summary());
             assertTrue(status.summary().contains("op=9"), "summary 应带 op=N，实际: " + status.summary());
+            assertTrue(status.summary().contains("op=9（最近 "), "摘要应含 op=…（最近 ，实际: " + status.summary());
+            assertFalse(status.summary().contains("首见"), "不得写首见，实际: " + status.summary());
             assertTrue(status.advice().contains("长连协议") || status.advice().contains("语料"),
                     "advice 应提示协议改了并抓语料，实际: " + status.advice());
         } catch (AssertionError e) {
@@ -188,6 +190,8 @@ class BilibiliRiskHealthProbeTest {
             assertEquals(HealthStatus.Level.DEGRADED, status.level(), "未知协议版本一条即应降档");
             assertTrue(status.summary().contains("未知协议版本"), "summary 应写未知协议版本，实际: " + status.summary());
             assertTrue(status.summary().contains("ver=5"), "summary 应带 ver=N，实际: " + status.summary());
+            assertTrue(status.summary().contains("（最近 "), "摘要应含 ver=…（最近 ，实际: " + status.summary());
+            assertFalse(status.summary().contains("首见"), "不得写首见，实际: " + status.summary());
         } catch (AssertionError e) {
             reds.add("① " + e.getMessage());
         }
@@ -201,10 +205,10 @@ class BilibiliRiskHealthProbeTest {
                     "https://api.example.com/x count=1 unique=4");
             HealthStatus status = silentProbe.check();
             assertEquals(HealthStatus.Level.OK, status.level(), "三类静默损失只进 summary，不得降档");
-            assertTrue(status.summary().contains("解析失败 2 类"), "应写解析失败类数，实际: " + status.summary());
-            assertTrue(status.summary().contains("缺字段 3 类"), "应写缺字段类数，实际: " + status.summary());
-            assertTrue(status.summary().contains("接口缺 data 4 个端点"), "应写缺 data 端点数，实际: " + status.summary());
-            assertTrue(status.summary().contains("最近 LIVE"), "应带最近解析失败的 cmd，实际: " + status.summary());
+            assertTrue(status.summary().contains("解析失败 1 次"), "应写解析失败次数，实际: " + status.summary());
+            assertTrue(status.summary().contains("缺字段 1 次"), "应写缺字段次数，实际: " + status.summary());
+            assertTrue(status.summary().contains("接口缺 data 1 次"), "应写缺 data 次数，实际: " + status.summary());
+            assertTrue(status.summary().contains("样本 LIVE"), "应带解析失败样本的 cmd，实际: " + status.summary());
         } catch (AssertionError e) {
             reds.add("② " + e.getMessage());
         }
@@ -222,7 +226,7 @@ class BilibiliRiskHealthProbeTest {
     }
 
     @Test
-    @DisplayName("UNKNOWN_FIELD 只进摘要不降档：写种数与最近一项，平静时这一行不出现")
+    @DisplayName("UNKNOWN_FIELD 只进摘要不降档：写次数与样本名，平静时这一行不出现")
     void unknownFieldStaysInSummary() {
         java.util.List<String> reds = new java.util.ArrayList<>();
 
@@ -235,10 +239,10 @@ class BilibiliRiskHealthProbeTest {
 
             assertEquals(HealthStatus.Level.OK, status.level(), "未知字段不得降档");
             assertTrue(status.summary().contains(
-                            "未知字段：协议 pb 字段号／接口顶层键／枚举取值（detail 形：报文类型:字段号｜端点:键｜CMD:键=值） 2 个"),
-                    "summary 应写未知字段种数，实际: " + status.summary());
-            assertTrue(status.summary().contains("最近 INTERACT_WORD_V2:99"),
-                    "summary 应带最近一个字段号，实际: " + status.summary());
+                            "未知字段：协议 pb 字段号／接口顶层键／枚举取值（detail 形：报文类型:字段号｜端点:键｜CMD:键=值） 1 次"),
+                    "summary 应写未知字段次数，实际: " + status.summary());
+            assertTrue(status.summary().contains("样本 INTERACT_WORD_V2:99"),
+                    "summary 应带样本字段号，实际: " + status.summary());
         } catch (AssertionError e) {
             reds.add("① " + e.getMessage());
         }
@@ -290,5 +294,103 @@ class BilibiliRiskHealthProbeTest {
         }
 
         assertTrue(reds.isEmpty(), () -> "两问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+    }
+
+    @Test
+    @DisplayName("六类静默行报近 24h 真次数与样本名，不报 unique 种数")
+    void sixSilentLinesReportDayCountAndSample() {
+        java.util.List<String> reds = new java.util.ArrayList<>();
+
+        try {
+            BilibiliRiskMetrics m = new BilibiliRiskMetrics();
+            BilibiliRiskHealthProbe p = new BilibiliRiskHealthProbe(m);
+            m.record(BilibiliRiskMetrics.Kind.UNKNOWN_CMD, "SAMPLE count=1 unique=7");
+            for (int i = 0; i < 24; i++) {
+                m.record(BilibiliRiskMetrics.Kind.UNKNOWN_CMD, null);
+            }
+            String summary = p.check().summary();
+            assertTrue(summary.contains("近 24h 未知消息类型 25 次（样本 SAMPLE）"),
+                    "未知消息类型应报 25 次与样本名，实际: " + summary);
+            assertFalse(summary.contains(" 7 种"), "不得报 unique 种数，实际: " + summary);
+        } catch (AssertionError e) {
+            reds.add("UNKNOWN_CMD " + e.getMessage());
+        }
+
+        try {
+            BilibiliRiskMetrics m = new BilibiliRiskMetrics();
+            BilibiliRiskHealthProbe p = new BilibiliRiskHealthProbe(m);
+            m.record(BilibiliRiskMetrics.Kind.PARSE_FAILURE, "SAMPLE count=1 unique=7");
+            for (int i = 0; i < 24; i++) {
+                m.record(BilibiliRiskMetrics.Kind.PARSE_FAILURE, null);
+            }
+            String summary = p.check().summary();
+            assertTrue(summary.contains("近 24h 解析失败 25 次（样本 SAMPLE）"),
+                    "解析失败应报 25 次与样本名，实际: " + summary);
+            assertFalse(summary.contains(" 7 类"), "不得报 unique 类数，实际: " + summary);
+        } catch (AssertionError e) {
+            reds.add("PARSE_FAILURE " + e.getMessage());
+        }
+
+        try {
+            BilibiliRiskMetrics m = new BilibiliRiskMetrics();
+            BilibiliRiskHealthProbe p = new BilibiliRiskHealthProbe(m);
+            m.record(BilibiliRiskMetrics.Kind.FIELD_MISSING, "SAMPLE count=1 unique=7");
+            for (int i = 0; i < 24; i++) {
+                m.record(BilibiliRiskMetrics.Kind.FIELD_MISSING, null);
+            }
+            String summary = p.check().summary();
+            assertTrue(summary.contains("近 24h 缺字段 25 次（样本 SAMPLE）"),
+                    "缺字段应报 25 次与样本名，实际: " + summary);
+            assertFalse(summary.contains(" 7 类"), "不得报 unique 类数，实际: " + summary);
+        } catch (AssertionError e) {
+            reds.add("FIELD_MISSING " + e.getMessage());
+        }
+
+        try {
+            BilibiliRiskMetrics m = new BilibiliRiskMetrics();
+            BilibiliRiskHealthProbe p = new BilibiliRiskHealthProbe(m);
+            m.record(BilibiliRiskMetrics.Kind.API_DATA_MISSING, "SAMPLE count=1 unique=7");
+            for (int i = 0; i < 24; i++) {
+                m.record(BilibiliRiskMetrics.Kind.API_DATA_MISSING, null);
+            }
+            String summary = p.check().summary();
+            assertTrue(summary.contains("近 24h 接口缺 data 25 次（样本 SAMPLE）"),
+                    "接口缺 data 应报 25 次与样本名，实际: " + summary);
+            assertFalse(summary.contains(" 7 个端点"), "不得报 unique 端点数，实际: " + summary);
+        } catch (AssertionError e) {
+            reds.add("API_DATA_MISSING " + e.getMessage());
+        }
+
+        try {
+            BilibiliRiskMetrics m = new BilibiliRiskMetrics();
+            BilibiliRiskHealthProbe p = new BilibiliRiskHealthProbe(m);
+            m.record(BilibiliRiskMetrics.Kind.PACKET_CORRUPT, "SAMPLE count=1 unique=7");
+            for (int i = 0; i < 24; i++) {
+                m.record(BilibiliRiskMetrics.Kind.PACKET_CORRUPT, null);
+            }
+            String summary = p.check().summary();
+            assertTrue(summary.contains("近 24h 数据包异常 25 次（样本 SAMPLE）"),
+                    "数据包异常应报 25 次与样本名，实际: " + summary);
+            assertFalse(summary.contains(" 7 类"), "不得报 unique 类数，实际: " + summary);
+        } catch (AssertionError e) {
+            reds.add("PACKET_CORRUPT " + e.getMessage());
+        }
+
+        try {
+            BilibiliRiskMetrics m = new BilibiliRiskMetrics();
+            BilibiliRiskHealthProbe p = new BilibiliRiskHealthProbe(m);
+            m.record(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, "SAMPLE count=1 unique=7");
+            for (int i = 0; i < 24; i++) {
+                m.record(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, null);
+            }
+            String summary = p.check().summary();
+            assertTrue(summary.contains("近 24h 未知字段：协议 pb 字段号／接口顶层键／枚举取值（detail 形：报文类型:字段号｜端点:键｜CMD:键=值） 25 次（样本 SAMPLE）"),
+                    "未知字段应报 25 次与样本名，实际: " + summary);
+            assertFalse(summary.contains(" 7 个"), "不得报 unique 个数，实际: " + summary);
+        } catch (AssertionError e) {
+            reds.add("UNKNOWN_FIELD " + e.getMessage());
+        }
+
+        assertTrue(reds.isEmpty(), () -> reds.size() + " 问红: " + String.join("; ", reds));
     }
 }

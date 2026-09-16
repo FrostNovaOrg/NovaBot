@@ -127,10 +127,10 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
         long unknownOp = metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_OP, DAY);
         if (unknownOp >= 1) {
             String opDetail = metrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_OP).orElse("op=?");
-            String firstSeen = metrics.last(BilibiliRiskMetrics.Kind.UNKNOWN_OP)
+            String lastSeen = metrics.last(BilibiliRiskMetrics.Kind.UNKNOWN_OP)
                     .map(Instant::toString)
                     .orElse("?");
-            problems.add("协议层出现未知操作码 " + opDetail + "（首见 " + firstSeen + "）");
+            problems.add("协议层出现未知操作码 " + opDetail + "（最近 " + lastSeen + "）");
             advices.add("多半是 B 站长连协议改了，看日志并抓语料");
         }
 
@@ -138,20 +138,20 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
         long unknownVer = metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_VER, DAY);
         if (unknownVer >= 1) {
             String verDetail = metrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_VER).orElse("ver=?");
-            String firstSeen = metrics.last(BilibiliRiskMetrics.Kind.UNKNOWN_VER)
+            String lastSeen = metrics.last(BilibiliRiskMetrics.Kind.UNKNOWN_VER)
                     .map(Instant::toString)
                     .orElse("?");
-            problems.add("协议层出现未知协议版本 " + verDetail + "（首见 " + firstSeen + "）");
+            problems.add("协议层出现未知协议版本 " + verDetail + "（最近 " + lastSeen + "）");
             advices.add("不认识的版本号会当裸负载处理，压缩格式改了会整批丢消息；看日志并抓语料");
         }
 
         String unknownCmdLine = unknownCmdSummaryLine();
-        String silentLines = silentLossLine(BilibiliRiskMetrics.Kind.PARSE_FAILURE, "解析失败", "类")
-                + silentLossLine(BilibiliRiskMetrics.Kind.FIELD_MISSING, "缺字段", "类")
-                + silentLossLine(BilibiliRiskMetrics.Kind.API_DATA_MISSING, "接口缺 data", "个端点")
-                + silentLossLine(BilibiliRiskMetrics.Kind.PACKET_CORRUPT, "数据包异常", "类")
+        String silentLines = silentLossLine(BilibiliRiskMetrics.Kind.PARSE_FAILURE, "解析失败")
+                + silentLossLine(BilibiliRiskMetrics.Kind.FIELD_MISSING, "缺字段")
+                + silentLossLine(BilibiliRiskMetrics.Kind.API_DATA_MISSING, "接口缺 data")
+                + silentLossLine(BilibiliRiskMetrics.Kind.PACKET_CORRUPT, "数据包异常")
                 + silentLossLine(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD,
-                "未知字段：协议 pb 字段号／接口顶层键／枚举取值（detail 形：报文类型:字段号｜端点:键｜CMD:键=值）", "个")
+                "未知字段：协议 pb 字段号／接口顶层键／枚举取值（detail 形：报文类型:字段号｜端点:键｜CMD:键=值）")
                 + overflowLine();
 
         if (problems.isEmpty()) {
@@ -197,7 +197,7 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
         }
         String detail = metrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_CMD).orElse("");
         String name = detail.isBlank() ? "?" : detail.split("\\s+")[0];
-        return "，近 24h 未知消息类型 " + uniqueOf(detail) + " 种（最近 " + name + "）";
+        return "，近 24h 未知消息类型 " + n + " 次（样本 " + name + "）";
     }
 
     /**
@@ -209,30 +209,14 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
      * 一批里可能有几十条弹幕与礼物。未知字段则是另一头：<b>今天什么都没丢</b>，
      * 但平台已经在报文里放了我们不认识的东西，这往往是数据搬家的前一步。
      */
-    private String silentLossLine(BilibiliRiskMetrics.Kind kind, String label, String unit) {
+    private String silentLossLine(BilibiliRiskMetrics.Kind kind, String label) {
         long n = metrics.count(kind, DAY);
         if (n <= 0) {
             return "";
         }
         String detail = metrics.lastDetail(kind).orElse("");
         String name = detail.isBlank() ? "?" : detail.split("\\s+")[0];
-        return "，近 24h " + label + " " + uniqueOf(detail) + " " + unit + "（最近 " + name + "）";
-    }
-
-    /**
-     * 从记账 detail 里取出 {@code unique=N} 的种数；读不到时退回 1——能走到这里至少发生过一种
-     */
-    private static String uniqueOf(String detail) {
-        int idx = detail.indexOf("unique=");
-        if (idx < 0) {
-            return "1";
-        }
-        int start = idx + "unique=".length();
-        int end = start;
-        while (end < detail.length() && Character.isDigit(detail.charAt(end))) {
-            end++;
-        }
-        return end > start ? detail.substring(start, end) : "1";
+        return "，近 24h " + label + " " + n + " 次（样本 " + name + "）";
     }
 
     /**
