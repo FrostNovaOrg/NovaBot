@@ -265,7 +265,6 @@ class BilibiliEventParserTest {
 
             try {
                 Set<String> dispatched = parser.dispatchedCmds();
-                assertFalse(dispatched.isEmpty(), "分派表不得为空");
                 assertTrue(dispatched.contains("DANMU_MSG"), "分派表须含 DANMU_MSG");
                 Set<String> overlap = new HashSet<>(BilibiliEventParser.SEEN_CMDS);
                 overlap.retainAll(dispatched);
