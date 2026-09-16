@@ -34,7 +34,7 @@ public class BilibiliRiskMetrics {
      * 单独记在 {@link #overflow} 里。不记的话「恰好 2000 次」与「20 万次」读出来一样，
      * 而这两种情况要做的事完全不同。
      */
-    private static final int MAX_PER_KIND = 2000;
+    static final int MAX_PER_KIND = 2000;
 
     /**
      * 超过此时长的记录直接丢弃。取最长窗口（7 天）再留一点余量
@@ -225,8 +225,8 @@ public class BilibiliRiskMetrics {
     /**
      * 因超出每类保留上限而被挤掉的条数
      * <p>
+     * 启动以来累计、不分窗口，不能与任何窗口读数相加。
      * {@link #count} 封顶在 {@link #MAX_PER_KIND}，这个数是它读不到的那一截。
-     * 非零就说明该类事件的真实次数至少是「读数 ＋ 这个数」。
      * @param kind 事件类型
      * @return 被挤掉的条数
      */

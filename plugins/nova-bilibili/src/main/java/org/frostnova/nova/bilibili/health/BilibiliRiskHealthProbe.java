@@ -163,13 +163,12 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
     }
 
     /**
-     * 计数顶到每类保留上限、被挤出去的那一截
+     * 启动以来因超出每类保留上限被挤掉的条数
      * <p>
-     * {@code count()} 封顶在保留上限，顶到之后「恰好顶格」与「二十万次」读出来一模一样，
-     * 而这两种要做的事完全不同。有溢出才出这一段——一类都没顶到时，这一行必须与
-     * 加这一段之前<b>逐字相同</b>，否则首页文案会莫名其妙地长出一截。
+     * 溢出数从启动起累计、不分窗口，不能加到任何窗口读数上。有溢出才出这一段——
+     * 一类都没被挤过时，这一行必须与加这一段之前<b>逐字相同</b>，否则首页文案会莫名其妙地长出一截。
      * <p>
-     * 只进摘要、不改档也不动任何阈值：读数封顶说明的是「量太大」，不是「坏了」，
+     * 只进摘要、不改档也不动任何阈值：被挤掉说明的是「量太大」，不是「坏了」，
      * 该由哪一类的阈值降档，那一类自己已经在上面判过了。
      */
     private String overflowLine() {
@@ -184,7 +183,7 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
         if (spilled.isEmpty()) {
             return "";
         }
-        return "，计数已顶到保留上限，另有 " + String.join("、", spilled) + " 被挤掉（真实次数还要加上这些）";
+        return "，启动以来因超出每类保留上限被挤掉 " + String.join("、", spilled);
     }
 
     /**
@@ -197,7 +196,7 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
         }
         String detail = metrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_CMD).orElse("");
         String name = detail.isBlank() ? "?" : detail.split("\\s+")[0];
-        return "，近 24h 未知消息类型 " + n + " 次（样本 " + name + "）";
+        return "，近 24h 未知消息类型 " + dayCountText(n) + " 次（样本 " + name + "）";
     }
 
     /**
@@ -216,7 +215,14 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
         }
         String detail = metrics.lastDetail(kind).orElse("");
         String name = detail.isBlank() ? "?" : detail.split("\\s+")[0];
-        return "，近 24h " + label + " " + n + " 次（样本 " + name + "）";
+        return "，近 24h " + label + " " + dayCountText(n) + " 次（样本 " + name + "）";
+    }
+
+    /**
+     * 近 24h 读数文案：顶到每类保留上限时真值可能更大，写「至少 n」。
+     */
+    private static String dayCountText(long n) {
+        return n >= BilibiliRiskMetrics.MAX_PER_KIND ? "至少 " + n : Long.toString(n);
     }
 
     /**
