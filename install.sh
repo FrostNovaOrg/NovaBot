@@ -210,12 +210,7 @@ else
     SOURCE_DIR="$ROOT"
 fi
 
-# 双名期：NovaBot.jar 优先，旧名 StarBotCore.jar 仍认
-if [ -f "$SOURCE_DIR/NovaBot.jar" ]; then
-    :
-elif [ -f "$SOURCE_DIR/StarBotCore.jar" ]; then
-    :
-else
+if [ ! -f "$SOURCE_DIR/NovaBot.jar" ]; then
     die "未找到构建产物 NovaBot.jar"
 fi
 

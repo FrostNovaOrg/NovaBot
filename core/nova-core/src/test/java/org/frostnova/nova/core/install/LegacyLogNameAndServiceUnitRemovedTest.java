@@ -10,8 +10,10 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * 5.4 起日志文件名改用 novabot- 前缀、安装脚本恒装 novabot.service：
@@ -45,6 +47,98 @@ class LegacyLogNameAndServiceUnitRemovedTest {
 
         assertTrue(failures.isEmpty(),
                 "日志名与服务名应已去旧名，红格数 " + failures.size() + ":\n" + String.join("\n", failures));
+    }
+
+    /**
+     * 发行模板里不得再出现旧配置键字面：照着写的人会得到静默不生效的配置。
+     */
+    @Test
+    @DisplayName("发行模板不再出现旧键字面")
+    void releaseTemplatesDoNotContainLegacyKeyLiterals() {
+        List<String> red = new ArrayList<>();
+
+        try {
+            List<String> hits = new ArrayList<>();
+            Path root = repoRoot();
+            for (Path file : listTemplateFiles()) {
+                List<String> lines = readLines(file);
+                for (int i = 0; i < lines.size(); i++) {
+                    if (isLegacyKeyLiteralLine(lines.get(i))) {
+                        hits.add(root.relativize(file) + ":" + (i + 1));
+                    }
+                }
+            }
+            if (!hits.isEmpty()) {
+                fail("发行模板含旧键字面 " + hits.size() + " 处: " + String.join("、", hits));
+            }
+        } catch (Throwable e) {
+            red.add("① " + (e.getMessage() != null ? e.getMessage() : e.toString()));
+        }
+
+        try {
+            if (!isLegacyKeyLiteralLine("（旧键 starbot.core.event-stream.path 仍认得）")) {
+                fail("判行未命中旧键字面样句");
+            }
+            if (isLegacyKeyLiteralLine("novabot.core.event-stream.path ←→ 本文件里的 /nova/events")) {
+                fail("判行误中现行键样句");
+            }
+        } catch (Throwable e) {
+            red.add("② " + (e.getMessage() != null ? e.getMessage() : e.toString()));
+        }
+
+        try {
+            List<Path> files = listTemplateFiles();
+            if (files.size() < 3) {
+                fail("列到的件 " + files.size() + "，应 ≥ 3");
+            }
+            for (String required : List.of("application.example.yml", "Caddyfile", "novabot.service")) {
+                boolean found = false;
+                for (Path file : files) {
+                    if (file.getFileName().toString().equals(required)) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    fail("列件未含 " + required);
+                }
+            }
+            Path caddy = null;
+            for (Path file : files) {
+                if (file.getFileName().toString().equals("Caddyfile")) {
+                    caddy = file;
+                    break;
+                }
+            }
+            String body = String.join("\n", readLines(caddy));
+            if (!body.contains("novabot.core.event-stream.path")) {
+                fail("Caddyfile 正文不含 novabot.core.event-stream.path");
+            }
+        } catch (Throwable e) {
+            red.add("③ " + (e.getMessage() != null ? e.getMessage() : e.toString()));
+        }
+
+        if (!red.isEmpty()) {
+            fail(red.size() + " 问红：" + String.join("；", red));
+        }
+    }
+
+    private static boolean isLegacyKeyLiteralLine(String line) {
+        return line.contains("starbot.");
+    }
+
+    private static List<Path> listTemplateFiles() throws IOException {
+        Path root = repoRoot().resolve("dist/templates");
+        if (!Files.isDirectory(root)) {
+            return List.of();
+        }
+        try (Stream<Path> walk = Files.walk(root)) {
+            return walk.filter(Files::isRegularFile).sorted().toList();
+        }
+    }
+
+    private static List<String> readLines(Path file) throws IOException {
+        return Files.readAllLines(file, StandardCharsets.UTF_8);
     }
 
     private static void checkParses(List<String> failures, Path script) throws IOException, InterruptedException {
