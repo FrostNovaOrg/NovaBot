@@ -850,7 +850,7 @@ class ConfigurationConsistencyTest {
             Files.createDirectories(probeRoot.resolve("dist").resolve("templates"));
             Files.createDirectories(probeRoot.resolve("templates"));
             Files.writeString(probeRoot.resolve(".gitignore"),
-                    "# 注释\ndocs/ignored.md\nlocal.json\ndocs/private\ndrafts/\n/local-only.md\ndocs/notes.md/\n",
+                    "# 注释\ndocs/ignored.md\nlocal.json\ndocs/private\ndrafts/\n/local-only.md\ndocs/notes.md/\ndocs/archive/\n",
                     StandardCharsets.UTF_8);
             Files.writeString(probeRoot.resolve("docs").resolve("a.md"), "a\n", StandardCharsets.UTF_8);
             Files.writeString(probeRoot.resolve("docs").resolve("ignored.md"), "ignored\n", StandardCharsets.UTF_8);
@@ -871,6 +871,9 @@ class ConfigurationConsistencyTest {
             Files.writeString(probeRoot.resolve("docs").resolve("drafts").resolve("d.md"), "d\n",
                     StandardCharsets.UTF_8);
             Files.writeString(probeRoot.resolve("docs").resolve("notes.md"), "notes\n", StandardCharsets.UTF_8);
+            Files.createDirectories(probeRoot.resolve("docs").resolve("archive"));
+            Files.writeString(probeRoot.resolve("docs").resolve("archive").resolve("e.md"), "e\n",
+                    StandardCharsets.UTF_8);
             Files.writeString(probeRoot.resolve("docs").resolve("x.txt"), "x\n", StandardCharsets.UTF_8);
             Files.writeString(probeRoot.resolve("templates").resolve("t.md"), "t\n", StandardCharsets.UTF_8);
             Files.writeString(probeRoot.resolve("templates").resolve("t.yml"), "t:\n", StandardCharsets.UTF_8);
