@@ -393,4 +393,75 @@ class BilibiliRiskHealthProbeTest {
 
         assertTrue(reds.isEmpty(), () -> reds.size() + " 问红: " + String.join("; ", reds));
     }
+
+    @Test
+    @DisplayName("近 24h 读数到顶写至少 N 次，溢出段标启动以来")
+    void dayCountAtCapWritesAtLeastAndOverflowMarksSinceStart() {
+        java.util.List<String> reds = new java.util.ArrayList<>();
+        java.util.List<String> seen = new java.util.ArrayList<>();
+
+        BilibiliRiskMetrics m1 = new BilibiliRiskMetrics();
+        for (int i = 0; i < 2010; i++) {
+            m1.record(BilibiliRiskMetrics.Kind.UNKNOWN_CMD, null);
+        }
+        for (int i = 0; i < 2000; i++) {
+            m1.record(BilibiliRiskMetrics.Kind.PARSE_FAILURE, null);
+        }
+        String s1 = new BilibiliRiskHealthProbe(m1).check().summary();
+
+        BilibiliRiskMetrics m2 = new BilibiliRiskMetrics();
+        for (int i = 0; i < 1999; i++) {
+            m2.record(BilibiliRiskMetrics.Kind.UNKNOWN_CMD, null);
+        }
+        String s2 = new BilibiliRiskHealthProbe(m2).check().summary();
+
+        try {
+            assertTrue(s1.contains("启动以来因超出每类保留上限被挤掉 未知消息类型 10 条"),
+                    "溢出段应标启动以来并写出被挤掉的类与条数，实际: " + s1);
+            seen.add("①绿");
+        } catch (AssertionError e) {
+            reds.add("① " + e.getMessage());
+            seen.add("①红");
+        }
+
+        try {
+            assertFalse(s1.contains("真实次数还要加上"), "不得把启动以来溢出数加到窗口读数上，实际: " + s1);
+            assertFalse(s1.contains("计数已顶到保留上限"), "溢出段不得写已顶到保留上限，实际: " + s1);
+            seen.add("②绿");
+        } catch (AssertionError e) {
+            reds.add("② " + e.getMessage());
+            seen.add("②红");
+        }
+
+        try {
+            assertTrue(s1.contains("近 24h 未知消息类型 至少 2000 次"),
+                    "未知消息类型顶格应写至少，实际: " + s1);
+            seen.add("③绿");
+        } catch (AssertionError e) {
+            reds.add("③ " + e.getMessage());
+            seen.add("③红");
+        }
+
+        try {
+            assertTrue(s1.contains("近 24h 解析失败 至少 2000 次"),
+                    "解析失败顶格应写至少，实际: " + s1);
+            seen.add("④绿");
+        } catch (AssertionError e) {
+            reds.add("④ " + e.getMessage());
+            seen.add("④红");
+        }
+
+        try {
+            assertTrue(s2.contains("近 24h 未知消息类型 1999 次"),
+                    "未顶格应写真次数，实际: " + s2);
+            assertFalse(s2.contains("至少"), "未顶格不得写至少，实际: " + s2);
+            seen.add("⑤绿");
+        } catch (AssertionError e) {
+            reds.add("⑤ " + e.getMessage());
+            seen.add("⑤红");
+        }
+
+        System.out.println("五问: " + String.join("、", seen) + "；红格数=" + reds.size());
+        assertTrue(reds.isEmpty(), () -> "五问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+    }
 }
