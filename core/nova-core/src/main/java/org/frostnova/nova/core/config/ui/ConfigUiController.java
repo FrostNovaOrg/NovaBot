@@ -1055,7 +1055,7 @@ public class ConfigUiController {
      * 界面上的字段名取自元数据，元数据里只有现行键，因此<b>写侧只会写现行键</b>：
      * 一个原本写在旧位置的配置项，被保存一次就等于迁到了新位置。
      * <b>旧位置那几行不删也不改</b>——删是替使用者改他自己的配置文件，理由见
-     * {@link ConfigurationKeyAliases}。程序两套键都认，多留几行只多一条启动提醒。
+     * {@link ConfigurationKeyAliases}。未在改名表里申报的旧位置不会被读取，多留几行也不会悄悄生效。
      * <p>
      * 写完之后还要多做一件事：把能即时生效的那几项落到运行中的程序上
      * （见 {@link RuntimeConfigurationApplier}），并如实告诉界面剩下哪几项还欠一次重启。

@@ -1,6 +1,6 @@
 # NovaBot systemd 单元文件
 #
-# 新安装用本单元。既有安装若已有 starbot.service，install.sh 沿用旧名、不改那份文件。
+# 新安装与升级均装本单元。检测到旧单元则停用并换装为本单元。
 #
 # 安装：
 #   sudo useradd --system --home-dir /opt/starbot --shell /usr/sbin/nologin starbot
