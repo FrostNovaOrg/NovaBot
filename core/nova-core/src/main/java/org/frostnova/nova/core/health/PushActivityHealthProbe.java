@@ -56,7 +56,7 @@ public class PushActivityHealthProbe implements HealthProbe {
             return HealthStatus.ok("启动后尚无推送");
         }
 
-        String summary = "成功 " + recorder.getSuccessCount() + " 次，失败 " + recorder.getFailureCount() + " 次";
+        String summary = "启动以来成功 " + recorder.getSuccessCount() + " 次，失败 " + recorder.getFailureCount() + " 次";
         if (success != null) {
             summary += "；最近成功于 " + TIME.format(success);
         }

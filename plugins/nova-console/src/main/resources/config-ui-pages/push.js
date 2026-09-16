@@ -21,7 +21,7 @@ import {resolveTarget, targetOptions} from './links-model.js';
 import {
   atAllStatus, buildDirectory, channelIndex, channelName, commandGroups, commandSummary,
   handlerNames, handlerOf, layoutState, messageOf, noticeSwitches, previewRequestBody,
-  previewRevenueCaption, pushTree, recentPushes, revenueSummary, sessionOf,
+  previewRevenueCaption, pushChannelOf, pushTree, recentPushes, revenueSummary, sessionOf,
   streamerName, strandedSessions, subscriptionSummary, templateState, typeName,
 } from './push-model.js';
 import {renderIncomplete, sessionSettings} from './sessions.js';
@@ -1087,7 +1087,7 @@ function sectionNotices(host, user, target, session) {
   const rows = recentPushes(pushHistory, session, 5);
   if (!rows.length) {
     box.appendChild(el('p', 'hint')).textContent = session && session.type
-      ? '还没有往这个通道推过东西。'
+      ? '本次启动以来的最近推送里，没有发往这个通道的。'
       : '这个通道还没被加载出来，取不到它的推送记录。';
   } else {
     const table = el('table', 'ptable');
@@ -1100,10 +1100,13 @@ function sectionNotices(host, user, target, session) {
     box.appendChild(table);
   }
 
-  const more = el('a', 'lnkbtn');
-  more.href = '#/log?chan=' + encodeURIComponent(target.num);
-  more.textContent = '在日志页看全部 →';
-  box.appendChild(more);
+  const channel = pushChannelOf(session);
+  if (channel) {
+    const more = el('a', 'lnkbtn');
+    more.href = '#/log?chan=' + encodeURIComponent(channel);
+    more.textContent = '在日志页看全部 →';
+    box.appendChild(more);
+  }
 }
 
 /**

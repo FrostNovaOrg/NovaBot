@@ -371,6 +371,17 @@ export function strandedSessions(users, sessions) {
 }
 
 /**
+ * 这个会话在推送记录与时间线里用的通道串
+ *
+ * 与写入推送记录的目标描述同形（「群 12345」）。日志页按整串全等筛，只传裸号会落到空表。
+ * @param session 会话，取它的类型说法与号
+ * @return {string} 通道串；没有类型时为空
+ */
+export function pushChannelOf(session) {
+  return session && session.type ? session.type + ' ' + session.num : '';
+}
+
+/**
  * 「这个通道最近推送」
  *
  * 🔴 <b>按目标描述整串相等来筛，不是按号码找子串。</b>推送记录里只有一句给人看的目标描述
@@ -384,8 +395,8 @@ export function strandedSessions(users, sessions) {
  * @return 这个通道的推送记录
  */
 export function recentPushes(records, session, limit) {
-  if (!session || !session.type) return [];
-  const target = session.type + ' ' + session.num;
+  const target = pushChannelOf(session);
+  if (!target) return [];
   return (records || [])
     .filter(item => item.platform === session.platform && item.target === target)
     .slice(0, limit);
