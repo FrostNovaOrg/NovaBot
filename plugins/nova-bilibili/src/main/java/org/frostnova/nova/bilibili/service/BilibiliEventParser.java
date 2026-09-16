@@ -81,8 +81,19 @@ public class BilibiliEventParser {
      * {@code info[0]} 过短原先只有计数、解析失败与 pb 截断原先<b>一声不响</b>：
      * 格式一旦变了，消息会静默消失而任何地方都看不到。计数按 1、10、100… 报，
      * 既不会淹掉日志与指标，也不会让「丢了多少」无从得知。
+     * 超过 {@link #MAX_NAMED_EVENT_NAMES} 的新名只累加溢出数。
      */
     private final ConcurrentHashMap<String, AtomicLong> namedEventCounts = new ConcurrentHashMap<>();
+
+    /**
+     * 名表已满后仍碰到的新名条数
+     */
+    private final AtomicLong namedEventNameTableOverflow = new AtomicLong();
+
+    /**
+     * 按名记账表上限，与未知 cmd 名表同一个数
+     */
+    private static final int MAX_NAMED_EVENT_NAMES = 512;
 
     /**
      * 分派表外的 cmd 名计数，按名去重。超过 {@link #MAX_UNKNOWN_CMD_NAMES} 的新名只累加总数。
@@ -736,11 +747,21 @@ public class BilibiliEventParser {
     /**
      * 按名记账一条静默损失（解析失败的 cmd、截断的 pb、过短的弹幕 info）。
      * <b>每条都计数</b>，同名只在 1/10/100… 量级处换一份 detail；
-     * detail 只含名、计数与种数，不写入报文。
+     * detail 只含名、计数与种数，不写入报文。超过上限的新名只累加溢出数。
+     * 名表满且该名尚未登记时返回 0：{@link #reportShortInfo} 那条 warn 不再打，
+     * 计数与溢出样本照记。
      * @return 该名累计到的次数（含这一次），没记成时为 0
      */
     private long noteNamed(BilibiliRiskMetrics.Kind kind, String name) {
         if (name == null || name.isBlank() || riskMetrics == null) {
+            return 0;
+        }
+        AtomicLong existing = namedEventCounts.get(name);
+        if (existing == null && namedEventCounts.size() >= MAX_NAMED_EVENT_NAMES) {
+            long overflow = namedEventNameTableOverflow.incrementAndGet();
+            riskMetrics.record(kind, isMagnitude(overflow)
+                    ? "名表溢出 count=" + overflow + " unique=" + namedEventCounts.size()
+                    : null);
             return 0;
         }
         long count = namedEventCounts.computeIfAbsent(name, key -> new AtomicLong()).incrementAndGet();

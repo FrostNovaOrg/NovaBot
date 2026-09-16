@@ -29,6 +29,7 @@ import java.time.Duration;
 import java.util.zip.DeflaterOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 /**
@@ -180,6 +181,61 @@ class BilibiliRiskCountFidelityTest {
                 "每类要有条数上限，否则长期运行会无限增长");
         assertEquals(10, metrics.overflow(BilibiliRiskMetrics.Kind.CODE_352),
                 "被上限挤掉的条数必须单独可读，否则「恰好顶格」与「二十万次」读出来一样");
+    }
+
+    @Test
+    @DisplayName("按名记账表 522 个不同取值：种数封顶 512、溢出 10、已登记名仍累加")
+    void namedEventCountsAreCapped() {
+        java.util.List<String> reds = new java.util.ArrayList<>();
+        BilibiliEventParser parser = newParser(metrics);
+        LiveStreamerInfo source = new LiveStreamerInfo(STREAMER_UID, "测试主播", ROOM_ID);
+        for (int i = 0; i < 522; i++) {
+            parser.parseMessage(JSONObject.parseObject(
+                    "{\"cmd\":\"INTERACT_WORD\",\"data\":{\"msg_type\":" + (1000 + i)
+                            + ",\"uid\":777,\"uname\":\"观众\"}}"),
+                    source);
+        }
+
+        try {
+            assertTrue(metrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD).orElse("")
+                            .contains("unique=512"),
+                    "种数应封顶在 512，实际: "
+                            + metrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD).orElse(""));
+        } catch (AssertionError e) {
+            reds.add("① " + e.getMessage());
+        }
+
+        try {
+            assertEquals(522, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, HOUR),
+                    "名表满了之后计数不得停，实际 "
+                            + metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, HOUR));
+        } catch (AssertionError e) {
+            reds.add("② " + e.getMessage());
+        }
+
+        try {
+            assertTrue(metrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD).orElse("")
+                            .contains("名表溢出 count=10"),
+                    "名表满后的 10 个新名应记进溢出，实际: "
+                            + metrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD).orElse(""));
+        } catch (AssertionError e) {
+            reds.add("③ " + e.getMessage());
+        }
+
+        try {
+            for (int i = 0; i < 9; i++) {
+                parser.parseMessage(JSONObject.parseObject(
+                        "{\"cmd\":\"INTERACT_WORD\",\"data\":{\"msg_type\":1000,\"uid\":777,\"uname\":\"观众\"}}"),
+                        source);
+            }
+            String detail = metrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD).orElse("");
+            assertTrue(detail.startsWith("INTERACT_WORD:msg_type=1000 count=10 "),
+                    "已登记名应继续累加并换样本，实际: " + detail);
+        } catch (AssertionError e) {
+            reds.add("④ " + e.getMessage());
+        }
+
+        assertTrue(reds.isEmpty(), () -> "四问中 " + reds.size() + " 问红: " + String.join("; ", reds));
     }
 
     // ================ 夹具 ================
