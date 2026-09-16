@@ -35,6 +35,7 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -783,6 +784,19 @@ class ConfigurationConsistencyTest {
                     "novabot.core.mail.default-to 应判已知");
             assertTrue(isKnownDocumentedKey("novabot.core.event-stream.*", names, mapKeys),
                     "novabot.core.event-stream.* 应判已知");
+            assertFalse(mapKeys.isEmpty(), "Map 型键集为空");
+            String mapKey = mapKeys.iterator().next();
+            String probe = mapKey + ".x-probe";
+            assertTrue(isKnownDocumentedKey(probe, names, mapKeys),
+                    "Map 型键子路径应判已知: " + probe);
+            boolean listedAsName = false;
+            for (String name : names) {
+                if (name.equals(probe) || name.startsWith(probe + ".")) {
+                    listedAsName = true;
+                    break;
+                }
+            }
+            assertFalse(listedAsName, "已知名集不应含 " + probe);
         } catch (Throwable t) {
             red.add("② " + t.getMessage());
         }
@@ -828,6 +842,34 @@ class ConfigurationConsistencyTest {
         } catch (Throwable t) {
             red.add("④ " + t.getMessage());
         }
+        try {
+            Path probeRoot = dir.resolve("target").resolve("repo");
+            Files.createDirectories(probeRoot.resolve("docs").resolve("target"));
+            Files.createDirectories(probeRoot.resolve("dist").resolve("templates"));
+            Files.writeString(probeRoot.resolve(".gitignore"), "# 注释\ndocs/ignored.md\nlocal.json\n",
+                    StandardCharsets.UTF_8);
+            Files.writeString(probeRoot.resolve("docs").resolve("a.md"), "a\n", StandardCharsets.UTF_8);
+            Files.writeString(probeRoot.resolve("docs").resolve("ignored.md"), "ignored\n", StandardCharsets.UTF_8);
+            Files.writeString(probeRoot.resolve("docs").resolve("target").resolve("b.md"), "b\n",
+                    StandardCharsets.UTF_8);
+            Files.writeString(probeRoot.resolve("dist").resolve("templates").resolve("app.yml"), "app:\n",
+                    StandardCharsets.UTF_8);
+            Files.writeString(probeRoot.resolve("dist").resolve("templates").resolve("local.json"), "{}\n",
+                    StandardCharsets.UTF_8);
+            Files.writeString(dir.resolve("outside.md"), "outside\n", StandardCharsets.UTF_8);
+            try {
+                Files.createSymbolicLink(probeRoot.resolve("docs").resolve("link.md"), dir.resolve("outside.md"));
+            } catch (Exception ex) {
+                System.out.println("本机造不了软链");
+            }
+            List<String> listed = new ArrayList<>();
+            for (Path file : documentedKeyFiles(probeRoot)) {
+                listed.add(probeRoot.relativize(file).toString().replace('\\', '/'));
+            }
+            assertEquals(List.of("dist/templates/app.yml", "docs/a.md"), listed, "列件 " + listed);
+        } catch (Throwable t) {
+            red.add("⑤ " + t.getMessage());
+        }
         if (!red.isEmpty()) {
             for (String line : red) {
                 System.out.println("红: " + line);
@@ -872,41 +914,105 @@ class ConfigurationConsistencyTest {
     private List<Path> documentedKeyFiles(Path root) throws IOException {
         List<Path> files = new ArrayList<>();
         try (Stream<Path> top = Files.list(root)) {
-            top.filter(Files::isRegularFile)
+            top.filter(path -> Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS))
                     .filter(path -> {
                         String name = path.getFileName().toString();
                         return name.endsWith(".md") && !name.equals("CHANGELOG.md");
                     })
                     .forEach(files::add);
         }
-        addDocumentedFiles(files, root.resolve(docsDirectoryName()), true);
-        addDocumentedFiles(files, root.resolve("templates"), true);
-        addDocumentedFiles(files, root.resolve("dist").resolve("templates"), false);
-        files.removeIf(path -> isExemptDocument(root.relativize(path).toString().replace('\\', '/')));
+        addDocumentedFiles(files, root, root.resolve(docsDirectoryName()), true);
+        addDocumentedFiles(files, root, root.resolve("templates"), true);
+        addDocumentedFiles(files, root, root.resolve("dist").resolve("templates"), false);
+        List<GitIgnoreLine> ignoreLines = readRootGitIgnore(root);
+        files.removeIf(path -> {
+            String relative = root.relativize(path).toString().replace('\\', '/');
+            if (isExemptDocument(relative)) {
+                return true;
+            }
+            for (GitIgnoreLine line : ignoreLines) {
+                if (line.matches(relative)) {
+                    return true;
+                }
+            }
+            return false;
+        });
         files.sort(Path::compareTo);
         return files;
     }
 
-    private static void addDocumentedFiles(List<Path> files, Path dir, boolean markdownOnly) throws IOException {
+    private static void addDocumentedFiles(List<Path> files, Path root, Path dir, boolean markdownOnly)
+            throws IOException {
         if (!Files.isDirectory(dir)) {
             return;
         }
         try (Stream<Path> walk = Files.walk(dir)) {
-            walk.filter(Files::isRegularFile)
-                    .filter(path -> !pathHasSkippedDirectory(path))
+            walk.filter(path -> Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS))
+                    .filter(path -> !pathHasSkippedDirectory(root, path))
                     .filter(path -> !markdownOnly || path.getFileName().toString().endsWith(".md"))
                     .forEach(files::add);
         }
     }
 
-    private static boolean pathHasSkippedDirectory(Path path) {
-        for (Path part : path) {
+    private static boolean pathHasSkippedDirectory(Path root, Path path) {
+        Path relative = root.relativize(path);
+        for (Path part : relative) {
             String name = part.toString();
             if ("target".equals(name) || "scratch".equals(name)) {
                 return true;
             }
         }
         return false;
+    }
+
+    private List<GitIgnoreLine> readRootGitIgnore(Path root) throws IOException {
+        Path file = root.resolve(".gitignore");
+        if (!Files.isRegularFile(file)) {
+            return List.of();
+        }
+        List<GitIgnoreLine> lines = new ArrayList<>();
+        for (String raw : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+            String text = raw.trim();
+            if (text.isEmpty() || text.startsWith("#") || text.startsWith("!")) {
+                continue;
+            }
+            if (text.indexOf('*') >= 0 || text.indexOf('?') >= 0
+                    || text.indexOf('[') >= 0 || text.indexOf('\\') >= 0) {
+                continue;
+            }
+            boolean directoryOnly = text.endsWith("/");
+            if (directoryOnly) {
+                text = text.substring(0, text.length() - 1);
+            }
+            boolean anchored = text.contains("/");
+            if (anchored && text.startsWith("/")) {
+                text = text.substring(1);
+            }
+            if (text.isEmpty()) {
+                continue;
+            }
+            lines.add(new GitIgnoreLine(text, anchored, directoryOnly));
+        }
+        return lines;
+    }
+
+    private record GitIgnoreLine(String pattern, boolean anchored, boolean directoryOnly) {
+        private boolean matches(String relative) {
+            if (anchored) {
+                return relative.equals(pattern) || relative.startsWith(pattern + "/");
+            }
+            String[] parts = relative.split("/");
+            int last = parts.length - 1;
+            for (int i = 0; i < parts.length; i++) {
+                if (directoryOnly && i == last) {
+                    continue;
+                }
+                if (pattern.equals(parts[i])) {
+                    return true;
+                }
+            }
+            return false;
+        }
     }
 
     private List<String> extractDocumentedKeys(String text) {
