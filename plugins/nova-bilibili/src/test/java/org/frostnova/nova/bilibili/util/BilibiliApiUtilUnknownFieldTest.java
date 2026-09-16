@@ -362,6 +362,53 @@ class BilibiliApiUtilUnknownFieldTest {
         assertTrue(reds.isEmpty(), () -> "红 " + reds.size() + " 问: " + String.join("; ", reds));
     }
 
+    @Test
+    @DisplayName("ROOM_INFO_API 常驻键经 extractData 记 0 且常驻与取用不相交")
+    void roomInfoResidentKeysViaExtractDataCountZeroAndDisjoint() {
+        List<String> reds = new ArrayList<>();
+
+        try {
+            BilibiliApiUtil.KnownDataKeys row = null;
+            for (BilibiliApiUtil.KnownDataKeys candidate : BilibiliApiUtil.KNOWN_DATA_KEYS_BY_PATH.values()) {
+                if ("ROOM_INFO_API".equals(candidate.constantName())) {
+                    row = candidate;
+                    break;
+                }
+            }
+            assertTrue(row != null, "表里应有 ROOM_INFO_API");
+            for (String key : row.residentKeys()) {
+                assertFalse(row.usedKeys().contains(key),
+                        "ROOM_INFO_API 常驻键 " + key + " 不得出现在取用键里");
+            }
+        } catch (AssertionError | RuntimeException e) {
+            reds.add("disjoint " + e.getMessage());
+        }
+
+        try {
+            BilibiliRiskMetrics metrics = new BilibiliRiskMetrics();
+            BilibiliApiUtil api = new BilibiliApiUtil(mock(HttpUtil.class),
+                    new NovaBilibiliProperties(), metrics);
+            JSONObject data = keys("uid", "live_status", "live_time", "title", "user_cover",
+                    "allow_change_area_time", "allow_upload_cover_time", "area_id", "area_name",
+                    "area_pendants", "attention", "background", "battle_id", "description",
+                    "hot_words", "hot_words_status", "is_anchor", "is_portrait", "is_strict_room",
+                    "keyframe", "new_pendants", "old_area_id", "online", "parent_area_id",
+                    "parent_area_name", "pendants", "pk_id", "pk_status", "room_id",
+                    "room_silent_level", "room_silent_second", "room_silent_type", "short_id",
+                    "studio_info", "tags", "up_session", "verify");
+            api.extractData(wrap(data), ROOM_INFO);
+            assertEquals(0, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW),
+                    "ROOM_INFO_API 常驻键经 extractData 应 0，实际 "
+                            + metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW)
+                            + " detail="
+                            + metrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD).orElse(""));
+        } catch (AssertionError | RuntimeException e) {
+            reds.add("extractData " + e.getMessage());
+        }
+
+        assertTrue(reds.isEmpty(), () -> "红 " + reds.size() + " 问: " + String.join("; ", reds));
+    }
+
     private static JSONObject keys(String... names) {
         JSONObject data = new JSONObject();
         for (String name : names) {

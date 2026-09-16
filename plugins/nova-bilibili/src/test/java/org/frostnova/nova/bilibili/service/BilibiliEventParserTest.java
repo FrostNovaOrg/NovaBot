@@ -1538,6 +1538,40 @@ class BilibiliEventParserTest {
         }
 
         @Test
+        @DisplayName("进房报文含 3/14/17/25、礼物报文含 4/5 时未知计数 0")
+        void seenFieldNumbersFromCorpusRaiseNothing() {
+            List<String> reds = new ArrayList<>();
+            String interact = withExtraField(
+                    withExtraField(
+                            withExtraField(withExtraField(InteractV2.ENTER_PLAIN, 3, 1), 14, 1),
+                            17, 1),
+                    25, 1);
+            String gift = withExtraField(withExtraField(GIFT, 4, 1), 5, 1);
+
+            try {
+                assertTrue(parseInteract(interact).isPresent(), "多几个见过的字段不该影响取值");
+                assertEquals(0, unknownFieldCount(),
+                        "INTERACT_WORD_V2 含 3/14/17/25 时未知计数应 0，实际 "
+                                + unknownFieldCount()
+                                + " detail=" + unknownFieldDetail());
+            } catch (AssertionError e) {
+                reds.add("INTERACT " + e.getMessage());
+            }
+
+            try {
+                assertTrue(parseGift(gift).isPresent(), "多几个见过的字段不该影响取值");
+                assertEquals(0, unknownFieldCount(),
+                        "SEND_GIFT_V2 含 4/5 时未知计数应 0，实际 "
+                                + unknownFieldCount()
+                                + " detail=" + unknownFieldDetail());
+            } catch (AssertionError e) {
+                reds.add("GIFT " + e.getMessage());
+            }
+
+            assertTrue(reds.isEmpty(), () -> "红 " + reds.size() + " 问: " + String.join("; ", reds));
+        }
+
+        @Test
         @DisplayName("名表上限对照：522 个不同字段号，逐条照记、种数封顶 512、溢出 10")
         void unknownFieldNameTableIsCapped() {
             List<String> reds = new ArrayList<>();
