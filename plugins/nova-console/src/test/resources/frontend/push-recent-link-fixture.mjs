@@ -5,7 +5,8 @@
  * 由 PushRecentLinkTest 拉起。量的是源码树里那一份，不是构建产物里的副本。
  */
 
-import {existsSync, readFileSync, readdirSync, statSync} from 'node:fs';
+import {existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
 import {dirname, join, relative} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 
@@ -23,27 +24,30 @@ function repoRoot() {
 const SKIP_DIRS = new Set(['.git', 'node_modules', 'target', 'scratch', 'dist']);
 const LOG_MODEL_SUFFIX = '/src/main/resources/config-ui/log-model.js';
 
-function collectBySuffix(dir, root, suffix, acc) {
-  let names;
+function nestedHasGit(dir) {
   try {
-    names = readdirSync(dir);
+    return readdirSync(dir).includes('.git');
+  } catch {
+    return false;
+  }
+}
+
+function collectBySuffix(dir, root, suffix, acc) {
+  let entries;
+  try {
+    entries = readdirSync(dir, {withFileTypes: true});
   } catch {
     return;
   }
-  for (const name of names) {
-    if (SKIP_DIRS.has(name)) continue;
-    const path = join(dir, name);
-    let info;
-    try {
-      info = statSync(path);
-    } catch {
-      continue;
-    }
-    if (info.isDirectory()) {
+  for (const entry of entries) {
+    if (SKIP_DIRS.has(entry.name)) continue;
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (nestedHasGit(path)) continue;
       collectBySuffix(path, root, suffix, acc);
       continue;
     }
-    if (!info.isFile()) continue;
+    if (!entry.isFile()) continue;
     const rel = relative(root, path).split('\\').join('/');
     if (('/' + rel).endsWith(suffix)) acc.push(rel);
   }
@@ -242,6 +246,50 @@ ask('⑤ 有记录时出表格、不出新句', () => {
   }]);
   if (!tablesOf(host).length) throw new Error('没有表格');
   if (hintsOf(host).includes(NEW_EMPTY)) throw new Error('出现了空表新句');
+});
+
+ask('⑥ 找件不跟软链、不进带 .git 的子目录、跳过 target', () => {
+  let tree;
+  let outside;
+  try {
+    tree = mkdtempSync(join(tmpdir(), 'novabot-push-link-tree-'));
+    outside = mkdtempSync(join(tmpdir(), 'novabot-push-link-outside-'));
+    const suffixPath = 'src/main/resources/config-ui/log-model.js';
+    mkdirSync(join(outside, 'src/main/resources/config-ui'), {recursive: true});
+    writeFileSync(join(outside, suffixPath), '// outside\n');
+    mkdirSync(join(tree, 'a/src/main/resources/config-ui'), {recursive: true});
+    writeFileSync(join(tree, 'a', suffixPath), '// a\n');
+    mkdirSync(join(tree, 'b/src/main/resources/config-ui'), {recursive: true});
+    mkdirSync(join(tree, 'nested-file/src/main/resources/config-ui'), {recursive: true});
+    writeFileSync(join(tree, 'nested-file/.git'), '');
+    writeFileSync(join(tree, 'nested-file', suffixPath), '// nested-file\n');
+    mkdirSync(join(tree, 'nested-dir/.git'), {recursive: true});
+    mkdirSync(join(tree, 'nested-dir/src/main/resources/config-ui'), {recursive: true});
+    writeFileSync(join(tree, 'nested-dir', suffixPath), '// nested-dir\n');
+    mkdirSync(join(tree, 'target/src/main/resources/config-ui'), {recursive: true});
+    writeFileSync(join(tree, 'target', suffixPath), '// target\n');
+    let symlinkFailure = null;
+    try {
+      symlinkSync(join(outside, suffixPath), join(tree, 'b', suffixPath));
+      symlinkSync(outside, join(tree, 'link'));
+    } catch (error) {
+      symlinkFailure = '本机造不了软链（' + error.constructor.name + ' ' + error.message + '）';
+    }
+    const got = [];
+    collectBySuffix(tree, tree, LOG_MODEL_SUFFIX, got);
+    got.sort();
+    eq(got, ['a/src/main/resources/config-ui/log-model.js'], '实得');
+    if (symlinkFailure) {
+      throw new Error(symlinkFailure + '，不跟软链这一半没量');
+    }
+  } finally {
+    if (tree) rmSync(tree, {recursive: true, force: true});
+    if (outside) rmSync(outside, {recursive: true, force: true});
+  }
+  const left = [];
+  if (tree && existsSync(tree)) left.push(tree);
+  if (outside && existsSync(outside)) left.push(outside);
+  if (left.length) throw new Error('临时目录没删净：' + left.join('、'));
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
