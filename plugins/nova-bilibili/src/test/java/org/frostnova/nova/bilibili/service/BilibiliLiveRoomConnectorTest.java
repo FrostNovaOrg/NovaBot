@@ -333,6 +333,24 @@ class BilibiliLiveRoomConnectorTest {
         }
 
         @Test
+        @DisplayName("COMBO_SEND 不算业务消息：只靠连击汇总的窗不算恢复")
+        void comboSendDoesNotCountAsBusinessMessage() {
+            BilibiliConnectorHarness harness = new BilibiliConnectorHarness().living();
+            harness.connect();
+
+            assertFalse(stall(harness, WINDOWS), "第一段只重连");
+            harness.fireConnectionClosed(1000);
+            harness.runQueuedReconnects();
+
+            harness.receive("COMBO_SEND");
+            harness.connector().detectRisk();
+
+            stall(harness, WINDOWS);
+            assertEquals(ConnectStatus.RISK, harness.connector().getStatus(),
+                    "只靠连击汇总的窗不算恢复");
+        }
+
+        @Test
         @DisplayName("安静但在播：定时推送再多也不重连、不判定")
         void quietRoomNeitherReconnectsNorJudges() {
             // 2026-08-10 深夜那次误报的形状：总量被排行与看过撑起来，逐用户事件只有 1 条

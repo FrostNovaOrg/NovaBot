@@ -338,7 +338,7 @@ class BilibiliEventParserTest {
         }
 
         @Test
-        @DisplayName("见过表与分派表互斥，且不得含收入口径名")
+        @DisplayName("见过表与分派表互斥，且不得含收入口径名；派生表证据非空、与分派／见过／业务互斥；业务集合须⊆分派表")
         void seenCmdsDisjointFromParsersAndRevenue() {
             List<String> reds = new ArrayList<>();
             List<String> ran = new ArrayList<>();
@@ -379,6 +379,123 @@ class BilibiliEventParserTest {
                 reds.add("④业务 " + e.getMessage());
             }
             ran.add("④业务");
+
+            try {
+                List<String> blank = new ArrayList<>();
+                for (String name : BilibiliEventParser.DERIVED_NOT_REVENUE_CMDS.keySet()) {
+                    String evidence = BilibiliEventParser.DERIVED_NOT_REVENUE_CMDS.get(name);
+                    if (evidence == null || evidence.isBlank()) {
+                        blank.add(name);
+                    }
+                }
+                assertTrue(blank.isEmpty(), "派生表每名证据须非 null、非空白，点名: " + blank);
+            } catch (AssertionError e) {
+                reds.add("⑤ " + e.getMessage());
+            }
+            ran.add("⑤证据");
+
+            try {
+                Set<String> overlap = new HashSet<>(BilibiliEventParser.DERIVED_NOT_REVENUE_CMDS.keySet());
+                overlap.retainAll(parser.dispatchedCmds());
+                assertTrue(overlap.isEmpty(), "派生∩分派须为空，交集: " + overlap);
+            } catch (AssertionError e) {
+                reds.add("⑥ " + e.getMessage());
+            }
+            ran.add("⑥派生∩分派");
+
+            try {
+                Set<String> overlap = new HashSet<>(BilibiliEventParser.DERIVED_NOT_REVENUE_CMDS.keySet());
+                overlap.retainAll(BilibiliEventParser.SEEN_CMDS);
+                assertTrue(overlap.isEmpty(), "派生∩见过须为空，交集: " + overlap);
+            } catch (AssertionError e) {
+                reds.add("⑦ " + e.getMessage());
+            }
+            ran.add("⑦派生∩见过");
+
+            try {
+                Set<String> overlap = new HashSet<>(BilibiliEventParser.DERIVED_NOT_REVENUE_CMDS.keySet());
+                overlap.retainAll(BilibiliLiveRoomConnector.BUSINESS_COMMANDS);
+                assertTrue(overlap.isEmpty(), "派生∩业务须为空，交集: " + overlap);
+            } catch (AssertionError e) {
+                reds.add("⑧ " + e.getMessage());
+            }
+            ran.add("⑧派生∩业务");
+
+            try {
+                Set<String> extra = new HashSet<>(BilibiliLiveRoomConnector.BUSINESS_COMMANDS);
+                extra.removeAll(parser.dispatchedCmds());
+                assertTrue(extra.isEmpty(),
+                        "业务集合减去分派表须为空，多出的: " + extra);
+            } catch (AssertionError e) {
+                reds.add("⑨ " + e.getMessage());
+            }
+            ran.add("⑨业务⊆分派");
+
+            assertTrue(reds.isEmpty(),
+                    () -> reds.size() + " 问红: " + String.join("; ", reds)
+                            + "；已跑: " + String.join(",", ran));
+        }
+
+        @Test
+        @DisplayName("派生不计收入：六名不计 UNKNOWN_CMD、空事件不降级；名单与表同、恰六名")
+        void derivedNotRevenueCmdsSilentAndExact() {
+            List<String> reds = new ArrayList<>();
+            List<String> ran = new ArrayList<>();
+            List<String> derived = List.of(
+                    "COMBO_SEND",
+                    "GIFT_COMBO",
+                    "UNIVERSAL_EVENT_GIFT",
+                    "UNIVERSAL_EVENT_GIFT_V2",
+                    "REVENUE_DISPLAY_EFFECT",
+                    "POPULARITY_RED_POCKET_V2_NEW");
+
+            try {
+                for (String cmd : derived) {
+                    parse("{\"cmd\":\"" + cmd + "\",\"data\":{}}");
+                }
+                long unknown = riskMetrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_CMD, Duration.ofMinutes(1));
+                assertEquals(0, unknown,
+                        "派生不计收入的 cmd 不得进 UNKNOWN_CMD，实际 " + unknown);
+            } catch (AssertionError e) {
+                reds.add("① " + e.getMessage());
+            }
+            ran.add("①计数0");
+
+            for (String cmd : derived) {
+                try {
+                    BilibiliEventParser.ParsedMessage parsed = parser.parseMessage(
+                            JSON.parseObject("{\"cmd\":\"" + cmd + "\",\"data\":{}}"), SOURCE);
+                    assertTrue(parsed.event().isEmpty(), cmd + " 应返回空事件");
+                    assertFalse(parsed.degraded(), cmd + " 不得标降级");
+                } catch (AssertionError e) {
+                    reds.add("② " + cmd + " " + e.getMessage());
+                }
+                ran.add("②" + cmd);
+            }
+
+            try {
+                Set<String> unique = new HashSet<>(derived);
+                assertEquals(derived.size(), unique.size(),
+                        "名单无重名，实际 size=" + derived.size() + " unique=" + unique.size());
+                Set<String> table = BilibiliEventParser.DERIVED_NOT_REVENUE_CMDS.keySet();
+                Set<String> extra = new HashSet<>(table);
+                extra.removeAll(unique);
+                Set<String> missing = new HashSet<>(unique);
+                missing.removeAll(table);
+                assertEquals(table, unique,
+                        "名单须等于派生表，多的: " + extra + " 缺的: " + missing);
+            } catch (AssertionError e) {
+                reds.add("③ " + e.getMessage());
+            }
+            ran.add("③名单＝表");
+
+            try {
+                int n = BilibiliEventParser.DERIVED_NOT_REVENUE_CMDS.size();
+                assertEquals(6, n, "派生表须恰 6 名，实际 " + n);
+            } catch (AssertionError e) {
+                reds.add("④ " + e.getMessage());
+            }
+            ran.add("④条数");
 
             assertTrue(reds.isEmpty(),
                     () -> reds.size() + " 问红: " + String.join("; ", reds)
