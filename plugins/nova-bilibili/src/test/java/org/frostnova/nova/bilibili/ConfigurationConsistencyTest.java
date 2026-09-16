@@ -845,8 +845,12 @@ class ConfigurationConsistencyTest {
         try {
             Path probeRoot = dir.resolve("target").resolve("repo");
             Files.createDirectories(probeRoot.resolve("docs").resolve("target"));
+            Files.createDirectories(probeRoot.resolve("docs").resolve("private"));
+            Files.createDirectories(probeRoot.resolve("docs").resolve("drafts"));
             Files.createDirectories(probeRoot.resolve("dist").resolve("templates"));
-            Files.writeString(probeRoot.resolve(".gitignore"), "# 注释\ndocs/ignored.md\nlocal.json\n",
+            Files.createDirectories(probeRoot.resolve("templates"));
+            Files.writeString(probeRoot.resolve(".gitignore"),
+                    "# 注释\ndocs/ignored.md\nlocal.json\ndocs/private\ndrafts/\n/local-only.md\ndocs/notes.md/\n",
                     StandardCharsets.UTF_8);
             Files.writeString(probeRoot.resolve("docs").resolve("a.md"), "a\n", StandardCharsets.UTF_8);
             Files.writeString(probeRoot.resolve("docs").resolve("ignored.md"), "ignored\n", StandardCharsets.UTF_8);
@@ -857,18 +861,51 @@ class ConfigurationConsistencyTest {
             Files.writeString(probeRoot.resolve("dist").resolve("templates").resolve("local.json"), "{}\n",
                     StandardCharsets.UTF_8);
             Files.writeString(dir.resolve("outside.md"), "outside\n", StandardCharsets.UTF_8);
+            Files.writeString(probeRoot.resolve("README.md"), "readme\n", StandardCharsets.UTF_8);
+            Files.writeString(probeRoot.resolve("CHANGELOG.md"), "changelog\n", StandardCharsets.UTF_8);
+            Files.writeString(probeRoot.resolve("local-only.md"), "local-only\n", StandardCharsets.UTF_8);
+            Files.writeString(probeRoot.resolve("docs").resolve("private").resolve("c.md"), "c\n",
+                    StandardCharsets.UTF_8);
+            Files.writeString(probeRoot.resolve("docs").resolve("private-notes.md"), "private-notes\n",
+                    StandardCharsets.UTF_8);
+            Files.writeString(probeRoot.resolve("docs").resolve("drafts").resolve("d.md"), "d\n",
+                    StandardCharsets.UTF_8);
+            Files.writeString(probeRoot.resolve("docs").resolve("notes.md"), "notes\n", StandardCharsets.UTF_8);
+            Files.writeString(probeRoot.resolve("docs").resolve("x.txt"), "x\n", StandardCharsets.UTF_8);
+            Files.writeString(probeRoot.resolve("templates").resolve("t.md"), "t\n", StandardCharsets.UTF_8);
+            Files.writeString(probeRoot.resolve("templates").resolve("t.yml"), "t:\n", StandardCharsets.UTF_8);
+            Files.writeString(probeRoot.resolve("dist").resolve("templates").resolve("drafts"), "drafts\n",
+                    StandardCharsets.UTF_8);
+            String symlinkFailure = null;
             try {
                 Files.createSymbolicLink(probeRoot.resolve("docs").resolve("link.md"), dir.resolve("outside.md"));
+                Files.createSymbolicLink(probeRoot.resolve("top-link.md"), dir.resolve("outside.md"));
             } catch (Exception ex) {
-                System.out.println("本机造不了软链");
+                symlinkFailure = "本机造不了软链（" + ex.getClass().getName() + " " + ex.getMessage() + ")";
             }
             List<String> listed = new ArrayList<>();
             for (Path file : documentedKeyFiles(probeRoot)) {
                 listed.add(probeRoot.relativize(file).toString().replace('\\', '/'));
             }
-            assertEquals(List.of("dist/templates/app.yml", "docs/a.md"), listed, "列件 " + listed);
+            assertEquals(List.of("README.md", "dist/templates/app.yml", "dist/templates/drafts", "docs/a.md",
+                            "docs/notes.md", "docs/private-notes.md", "templates/t.md"),
+                    listed, "列件 " + listed);
+            if (symlinkFailure != null) {
+                fail(symlinkFailure + "，不跟软链这一半没量");
+            }
         } catch (Throwable t) {
             red.add("⑤ " + t.getMessage());
+        }
+        try {
+            Path parseRoot = dir.resolve("target").resolve("parse");
+            Files.createDirectories(parseRoot);
+            Files.writeString(parseRoot.resolve(".gitignore"),
+                    "# 注释\n!keep.md\n*.log\nq?.md\n[x].md\nback\\slash.md\nkept.md\n",
+                    StandardCharsets.UTF_8);
+            List<GitIgnoreLine> parsed = readRootGitIgnore(parseRoot);
+            assertEquals(List.of(new GitIgnoreLine("kept.md", false, false)), parsed, "解析 " + parsed);
+        } catch (Throwable t) {
+            red.add("⑥ " + t.getMessage());
         }
         if (!red.isEmpty()) {
             for (String line : red) {
@@ -999,6 +1036,9 @@ class ConfigurationConsistencyTest {
     private record GitIgnoreLine(String pattern, boolean anchored, boolean directoryOnly) {
         private boolean matches(String relative) {
             if (anchored) {
+                if (directoryOnly) {
+                    return relative.startsWith(pattern + "/");
+                }
                 return relative.equals(pattern) || relative.startsWith(pattern + "/");
             }
             String[] parts = relative.split("/");
