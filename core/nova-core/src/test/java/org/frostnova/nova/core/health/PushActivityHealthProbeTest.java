@@ -41,6 +41,19 @@ class PushActivityHealthProbeTest {
     }
 
     @Test
+    @DisplayName("摘要以启动以来成功失败次数开头")
+    void summaryStartsWithSinceStartupCounts() {
+        PushActivityRecorder recorder = new PushActivityRecorder(TimelineWriter.NONE);
+        recorder.recordSuccess("qq-onebot", "群 12345", "测试消息", 12);
+        recorder.recordSuccess("qq-onebot", "群 12345", "测试消息", 12);
+        recorder.recordFailure("qq-onebot", "群 12345", "测试消息", "群号不存在", 12);
+
+        HealthStatus status = probe(recorder).check();
+
+        assertTrue(status.summary().startsWith("启动以来成功 2 次，失败 1 次"), status.summary());
+    }
+
+    @Test
     @DisplayName("最近一次为失败且此后未再成功时判定为降级")
     void reportsDegradedWhenLatestIsFailure() {
         PushActivityRecorder recorder = new PushActivityRecorder(TimelineWriter.NONE);

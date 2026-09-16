@@ -1407,7 +1407,7 @@ class ConfigUiFrontendTest {
      */
     private static final List<String> PUSH_MODEL_CALLS = List.of(
             "pushTree(", "channelIndex(", "templateState(", "layoutState(", "noticeSwitches(",
-            "commandGroups(", "commandSummary(", "recentPushes(", "atAllStatus(",
+            "commandGroups(", "commandSummary(", "recentPushes(", "pushChannelOf(", "atAllStatus(",
             "subscriptionSummary(", "revenueSummary(", "strandedSessions(", "channelName(",
             "templateAdoption(", "restoreDefaults(", "isDefault(",
             "previewRequestBody(", "previewRevenueCaption(");
@@ -1418,7 +1418,7 @@ class ConfigUiFrontendTest {
     private static final List<String> PUSH_MODEL_FUNCTIONS = List.of(
             "function pushTree", "function channelIndex", "function templateState",
             "function layoutState", "function commandGroups", "function commandSummary",
-            "function recentPushes", "function atAllStatus",
+            "function recentPushes", "function pushChannelOf", "function atAllStatus",
             "function previewRequestBody", "function previewRevenueCaption");
 
     /**
