@@ -185,9 +185,10 @@ class MergedNoticeTemplateTest {
     @Test
     @DisplayName("旧默认串不是凭印象写的：本件列的两版必须都能在处理器的旧默认表里找到")
     void legacyDefaultsAreTheOnesWeReallyShipped() {
-        assertEquals(LEGACY_LIVE, liveOn().supersededDefaults().getOrDefault("message", List.of()),
-                "本件列的旧默认串与处理器自报的对不上，两边总有一边是凭印象写的");
-        assertEquals(LEGACY_DYNAMIC, dynamic().supersededDefaults().getOrDefault("message", List.of()));
+        assertTrue(liveOn().supersededDefaults().getOrDefault("message", List.of()).containsAll(LEGACY_LIVE),
+                "本件列的开播旧默认串必须都能在处理器表里找到（允许表里再进一版）");
+        assertTrue(dynamic().supersededDefaults().getOrDefault("message", List.of()).containsAll(LEGACY_DYNAMIC),
+                "本件列的动态旧默认串必须都能在处理器表里找到（允许表里再进一版）");
     }
 
     @Test
