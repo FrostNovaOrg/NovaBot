@@ -27,7 +27,7 @@ novabot:
   bilibili:
     account:
       anonymous: true               # 不用凭据
-    live:
+    debug:
       live-room-raw-message-log: true
 ```
 
