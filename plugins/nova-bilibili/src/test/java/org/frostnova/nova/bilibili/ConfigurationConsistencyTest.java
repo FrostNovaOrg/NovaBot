@@ -776,62 +776,32 @@ class ConfigurationConsistencyTest {
         assertTrue(expected.stream().anyMatch(name -> name.startsWith("novabot.adapter.onebot.")),
                 "分母自证：适配器插件键一个都不在期望集里，这一格量不到插件来路");
 
-        // plugins/ 是运行时元数据的第二条来路（适配器与扩展的键只能从这条路来）。
-        // 目录建在进程工作目录下，与 ConfigurationMetadataService 的 PLUGIN_DIRECTORY 同址；
-        // 只有这一格自己建的目录才在收尾时删，别的进程放进去的件不动
-        Path plugins = Path.of("plugins");
-        boolean owned = Files.notExists(plugins);
-        if (owned) {
-            Files.createDirectory(plugins);
-        }
+        List<String> missing = withPluginJars(() ->
+                missingKeys(expected, new ConfigurationMetadataService().getFields()));
+        assertTrue(missing.isEmpty(),
+                "首次保存写出的文件缺了以下配置项（期望 " + expected.size() + " 项，缺 "
+                        + missing.size() + " 项）。设置页上有、文件里没有，使用者照着文件改不到那一项，"
+                        + "程序照常启动、什么也不报:\n  " + String.join("\n  ", missing));
+    }
 
-        List<Path> installed = new ArrayList<>();
-        try {
-            Path root = repositoryRoot();
-            for (String module : pluginModules()) {
-                Path target = root.resolve(module).resolve("target");
-                if (!Files.isDirectory(target)) {
-                    continue;
-                }
-                try (Stream<Path> jars = Files.list(target)) {
-                    for (Path jar : jars.filter(path -> path.getFileName().toString().endsWith(".jar")).toList()) {
-                        Path copy = plugins.resolve(jar.getFileName());
-                        Files.copy(jar, copy);
-                        installed.add(copy);
-                    }
-                }
-            }
-            assertFalse(installed.isEmpty(),
-                    "一个插件 jar 都没摆进 plugins/ —— 单模块跑这一格前先整盘构建一次");
-
-            // 实际一侧全程走生产件：加载器的两条来路，加渲染器本身
+    @Test
+    @DisplayName("⚠️ 生成件键集阴性 —— 抽掉一枚插件键后缺的恰是那一键")
+    void omittingOnePluginKeyIsReportedMissing() throws Exception {
+        Set<String> expected = displayedProperties();
+        withPluginJars(() -> {
             List<ConfigurationMetadataService.ConfigurationField> fields =
-                    new ConfigurationMetadataService().getFields();
-            Method render = Class.forName("org.frostnova.nova.core.config.ui.ConfigurationTemplate")
-                    .getDeclaredMethod("render", List.class, Map.class);
-            render.setAccessible(true);
-            String yaml = (String) render.invoke(null, fields, Map.of());
-
-            Path file = dir.resolve("application.yml");
-            Files.writeString(file, yaml, StandardCharsets.UTF_8);
-
-            Set<String> actual = new TreeSet<>(load(file).keySet());
-            actual.addAll(commentedKeys(file, expected));
-
-            List<String> missing = new ArrayList<>(expected);
-            missing.removeAll(actual);
-            assertTrue(missing.isEmpty(),
-                    "首次保存写出的文件缺了以下配置项（期望 " + expected.size() + " 项，缺 "
-                            + missing.size() + " 项）。设置页上有、文件里没有，使用者照着文件改不到那一项，"
-                            + "程序照常启动、什么也不报:\n  " + String.join("\n  ", missing));
-        } finally {
-            for (Path copy : installed) {
-                Files.deleteIfExists(copy);
-            }
-            if (owned) {
-                Files.deleteIfExists(plugins);
-            }
-        }
+                    new ArrayList<>(new ConfigurationMetadataService().getFields());
+            ConfigurationMetadataService.ConfigurationField dropped = fields.stream()
+                    .filter(field -> field.name().startsWith("novabot.bilibili."))
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError(
+                            "fields 里没有 novabot.bilibili. 前缀字段，阴性对照量在空集上"));
+            fields.removeIf(field -> field.name().equals(dropped.name()));
+            List<String> missing = missingKeys(expected, fields);
+            assertEquals(1, missing.size(), "抽掉一枚后缺的应恰是那一键, 实际 " + missing);
+            assertEquals(dropped.name(), missing.get(0));
+            return missing;
+        });
     }
 
     /**
@@ -859,8 +829,8 @@ class ConfigurationConsistencyTest {
     /**
      * 拿启动时真正在解析这份件的那个解析器读它，取其中的键与值
      * <p>
-     * 判法与核心侧 {@code ConfigurationTemplateTest} 同源（那边量核心单模块的定盘星，
-     * 这边量全部模块的键集），改摊平规则时两处一起改。自己写的摊平有一条硬规则：
+     * 判法与核心侧 {@code ConfigurationTemplateTest} 同源，有格比对（那边量核心单模块的定盘星，
+     * 这边量全部模块的键集）。自己写的摊平有一条硬规则：
      * <b>空表也是叶子</b>——现成的 {@code YamlPropertySourceLoader} 遇到空 map 会递归进去，
      * 写成空表的那一项于是无声消失，而「写了空表」与「压根没有这一项」必须分得开。
      * @param file 配置文件
@@ -923,6 +893,131 @@ class ConfigurationConsistencyTest {
         }
 
         return commented;
+    }
+
+    @Test
+    @DisplayName("三助手与核心模板同源")
+    void threeHelpersMatchCoreTemplate() throws IOException {
+        Path root = repositoryRoot();
+        String core = Files.readString(javaFileNamed(root, "ConfigurationTemplateTest.java"), StandardCharsets.UTF_8);
+        String here = Files.readString(javaFileNamed(root, "ConfigurationConsistencyTest.java"), StandardCharsets.UTF_8);
+        for (String signature : List.of(
+                "private static Map<String, Object> load(Path file) throws IOException {",
+                "private static void flattenNode(String prefix, Object node, Map<String, Object> out) {",
+                "private static Set<String> commentedKeys(Path file, Set<String> expected) throws IOException {")) {
+            assertEquals(methodBody(core, signature), methodBody(here, signature), signature);
+        }
+    }
+
+    /** 仓内按文件名找测试源文件，不写死模块目录 */
+    private static Path javaFileNamed(Path root, String fileName) throws IOException {
+        try (Stream<Path> top = Files.walk(root, 6)) {
+            List<Path> testRoots = top.filter(Files::isDirectory)
+                    .filter(dir -> dir.getFileName().toString().equals("java")
+                            && dir.getParent() != null
+                            && dir.getParent().getFileName().toString().equals("test")
+                            && dir.getParent().getParent() != null
+                            && dir.getParent().getParent().getFileName().toString().equals("src"))
+                    .toList();
+            for (Path testRoot : testRoots) {
+                try (Stream<Path> files = Files.walk(testRoot)) {
+                    java.util.Optional<Path> hit = files.filter(Files::isRegularFile)
+                            .filter(path -> path.getFileName().toString().equals(fileName))
+                            .findFirst();
+                    if (hit.isPresent()) {
+                        return hit.get();
+                    }
+                }
+            }
+        }
+        throw new AssertionError("找不到 " + fileName);
+    }
+
+    /**
+     * 从签名行起到方法收口，不含 javadoc。
+     * <p>
+     * 只认「换行后恰好四空格再接签名」那一处，避免本格自己的字面量把签名先匹配走。
+     */
+    private static String methodBody(String java, String signature) {
+        String needle = "\n    " + signature;
+        int at = java.indexOf(needle);
+        assertTrue(at >= 0, "找不到方法: " + signature);
+        int start = at + 1;
+        int depth = 0;
+        for (int i = start; i < java.length(); i++) {
+            char c = java.charAt(i);
+            if (c == '{') {
+                depth++;
+            } else if (c == '}') {
+                depth--;
+                if (depth == 0) {
+                    return java.substring(start, i + 1);
+                }
+            }
+        }
+        throw new AssertionError("方法未收口: " + signature);
+    }
+
+    @FunctionalInterface
+    private interface PluginWork<T> {
+        T run() throws Exception;
+    }
+
+    /**
+     * 把插件 jar 摆进 plugins/ 再跑，跑完只删本格自己拷进去的那些。
+     */
+    private <T> T withPluginJars(PluginWork<T> work) throws Exception {
+        Path plugins = Path.of("plugins");
+        boolean owned = Files.notExists(plugins);
+        if (owned) {
+            Files.createDirectory(plugins);
+        }
+
+        List<Path> installed = new ArrayList<>();
+        try {
+            Path root = repositoryRoot();
+            for (String module : pluginModules()) {
+                Path target = root.resolve(module).resolve("target");
+                if (!Files.isDirectory(target)) {
+                    continue;
+                }
+                try (Stream<Path> jars = Files.list(target)) {
+                    for (Path jar : jars.filter(path -> path.getFileName().toString().endsWith(".jar")).toList()) {
+                        Path copy = plugins.resolve(jar.getFileName());
+                        Files.copy(jar, copy);
+                        installed.add(copy);
+                    }
+                }
+            }
+            assertFalse(installed.isEmpty(),
+                    "一个插件 jar 都没摆进 plugins/ —— 单模块跑这一格前先整盘构建一次");
+            return work.run();
+        } finally {
+            for (Path copy : installed) {
+                Files.deleteIfExists(copy);
+            }
+            if (owned) {
+                Files.deleteIfExists(plugins);
+            }
+        }
+    }
+
+    private List<String> missingKeys(Set<String> expected,
+                                     List<ConfigurationMetadataService.ConfigurationField> fields) throws Exception {
+        Method render = Class.forName("org.frostnova.nova.core.config.ui.ConfigurationTemplate")
+                .getDeclaredMethod("render", List.class, Map.class);
+        render.setAccessible(true);
+        String yaml = (String) render.invoke(null, fields, Map.of());
+
+        Path file = dir.resolve("application.yml");
+        Files.writeString(file, yaml, StandardCharsets.UTF_8);
+
+        Set<String> actual = new TreeSet<>(load(file).keySet());
+        actual.addAll(commentedKeys(file, expected));
+
+        List<String> missing = new ArrayList<>(expected);
+        missing.removeAll(actual);
+        return missing;
     }
 
     @Test

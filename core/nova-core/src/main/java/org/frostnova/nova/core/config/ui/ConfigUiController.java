@@ -259,7 +259,7 @@ public class ConfigUiController {
     /**
      * 推送配置备份用的钟。测试换成固定钟，免得同一秒内连存两份撞名覆盖。
      */
-    Clock backupClock = Clock.systemDefaultZone();
+    private final Clock backupClock;
 
     public ConfigUiController(ConfigurationMetadataService metadataService,
                               ConfigurationFileService fileService,
@@ -293,7 +293,7 @@ public class ConfigUiController {
                 dataSourceServiceRegistry, levelResolver, labelResolver, effectResolver, dangerResolver, runtimeApplier,
                 connectionTesters, pageProviders, eventStreamTokens, buildProperties, pushGate,
                 liveDataService, timeline, authService, templateDefaults, updateCheck,
-                noBotConnectionContributors());
+                defaultAlertService(properties), Clock.systemDefaultZone());
     }
 
     ConfigUiController(ConfigurationMetadataService metadataService,
@@ -330,7 +330,7 @@ public class ConfigUiController {
                 connectionTesters, pageProviders, eventStreamTokens, buildProperties, pushGate,
                 liveDataService, timeline, authService, templateDefaults, updateCheck,
                 noGroupContributors(), noVocabularies(), noAliasContributors(),
-                defaultAlertService(properties), botConnections);
+                defaultAlertService(properties), botConnections, Clock.systemDefaultZone());
     }
 
     ConfigUiController(ConfigurationMetadataService metadataService,
@@ -366,8 +366,45 @@ public class ConfigUiController {
                 dataSourceServiceRegistry, levelResolver, labelResolver, effectResolver, dangerResolver, runtimeApplier,
                 connectionTesters, pageProviders, eventStreamTokens, buildProperties, pushGate,
                 liveDataService, timeline, authService, templateDefaults, updateCheck,
+                alertService, Clock.systemDefaultZone());
+    }
+
+    ConfigUiController(ConfigurationMetadataService metadataService,
+                       ConfigurationFileService fileService,
+                       NovaCoreProperties properties,
+                       AbstractDataSource dataSource,
+                       ObjectProvider<HealthProbe> healthProbes,
+                       ConfigurationValidator validator,
+                       NovaSenderService senderService,
+                       NovaMessageSender messageSender,
+                       ObjectProvider<AccountLoginProvider> loginProviders,
+                       PushActivityRecorder activityRecorder,
+                       NovaEventHandlerService handlerService,
+                       DataSourceServiceRegistry dataSourceServiceRegistry,
+                       ConfigurationLevelResolver levelResolver,
+                       ConfigurationLabelResolver labelResolver,
+                       ConfigurationEffectResolver effectResolver,
+                       ConfigurationDangerResolver dangerResolver,
+                       RuntimeConfigurationApplier runtimeApplier,
+                       ObjectProvider<BotConnectionTester> connectionTesters,
+                       ObjectProvider<ConsolePageProvider> pageProviders,
+                       EventStreamTokenService eventStreamTokens,
+                       ObjectProvider<BuildProperties> buildProperties,
+                       PushGate pushGate,
+                       LiveDataService liveDataService,
+                       TimelineStore timeline,
+                       ConfigUiAuthService authService,
+                       PushTemplateDefaults templateDefaults,
+                       UpdateCheckService updateCheck,
+                       AlertService alertService,
+                       Clock backupClock) {
+        this(metadataService, fileService, properties, dataSource, healthProbes, validator,
+                senderService, messageSender, loginProviders, activityRecorder, handlerService,
+                dataSourceServiceRegistry, levelResolver, labelResolver, effectResolver, dangerResolver, runtimeApplier,
+                connectionTesters, pageProviders, eventStreamTokens, buildProperties, pushGate,
+                liveDataService, timeline, authService, templateDefaults, updateCheck,
                 noGroupContributors(), noVocabularies(), noAliasContributors(), alertService,
-                noBotConnectionContributors());
+                noBotConnectionContributors(), backupClock);
     }
 
     @Autowired
@@ -403,6 +440,48 @@ public class ConfigUiController {
                               ObjectProvider<ConfigurationKeyAliasContributor> aliasContributors,
                               AlertService alertService,
                               ObjectProvider<BotConnectionContributor> botConnections) {
+        this(metadataService, fileService, properties, dataSource, healthProbes, validator,
+                senderService, messageSender, loginProviders, activityRecorder, handlerService,
+                dataSourceServiceRegistry, levelResolver, labelResolver, effectResolver, dangerResolver, runtimeApplier,
+                connectionTesters, pageProviders, eventStreamTokens, buildProperties, pushGate,
+                liveDataService, timeline, authService, templateDefaults, updateCheck,
+                groupContributors, vocabProviders, aliasContributors, alertService, botConnections,
+                Clock.systemDefaultZone());
+    }
+
+    ConfigUiController(ConfigurationMetadataService metadataService,
+                       ConfigurationFileService fileService,
+                       NovaCoreProperties properties,
+                       AbstractDataSource dataSource,
+                       ObjectProvider<HealthProbe> healthProbes,
+                       ConfigurationValidator validator,
+                       NovaSenderService senderService,
+                       NovaMessageSender messageSender,
+                       ObjectProvider<AccountLoginProvider> loginProviders,
+                       PushActivityRecorder activityRecorder,
+                       NovaEventHandlerService handlerService,
+                       DataSourceServiceRegistry dataSourceServiceRegistry,
+                       ConfigurationLevelResolver levelResolver,
+                       ConfigurationLabelResolver labelResolver,
+                       ConfigurationEffectResolver effectResolver,
+                       ConfigurationDangerResolver dangerResolver,
+                       RuntimeConfigurationApplier runtimeApplier,
+                       ObjectProvider<BotConnectionTester> connectionTesters,
+                       ObjectProvider<ConsolePageProvider> pageProviders,
+                       EventStreamTokenService eventStreamTokens,
+                       ObjectProvider<BuildProperties> buildProperties,
+                       PushGate pushGate,
+                       LiveDataService liveDataService,
+                       TimelineStore timeline,
+                       ConfigUiAuthService authService,
+                       PushTemplateDefaults templateDefaults,
+                       UpdateCheckService updateCheck,
+                       ObjectProvider<ConfigurationGroupContributor> groupContributors,
+                       ObjectProvider<ConsoleVocabulary> vocabProviders,
+                       ObjectProvider<ConfigurationKeyAliasContributor> aliasContributors,
+                       AlertService alertService,
+                       ObjectProvider<BotConnectionContributor> botConnections,
+                       Clock backupClock) {
         this.templateDefaults = templateDefaults;
         this.pushGate = pushGate;
         this.liveDataService = liveDataService;
@@ -435,6 +514,7 @@ public class ConfigUiController {
         this.messageSender = messageSender;
         this.loginProviders = loginProviders;
         this.botConnections = botConnections;
+        this.backupClock = backupClock;
     }
 
     /**

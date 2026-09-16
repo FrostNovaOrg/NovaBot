@@ -1,7 +1,12 @@
 package org.frostnova.nova.console.controller;
 
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.core.datasource.AbstractDataSource;
+import org.frostnova.nova.core.enums.PushTargetType;
+import org.frostnova.nova.core.model.PushTarget;
+import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.service.LiveDataService;
+import org.frostnova.nova.core.service.RevenueVisibilityService;
 import org.frostnova.nova.core.service.UserBindingService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -17,6 +22,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -85,6 +92,24 @@ class RuntimeStateSurfaceTest {
         // 404 会让旧界面、旧脚本以为地址写错了，去找一条并不存在的新地址；
         // 200 更糟——调用方会当成办成了
         assertEquals(410, controller.removeBinding().getStatusCode().value());
+    }
+
+    @Test
+    @DisplayName("群会话金额可见性走 isVisible：替身回 true 时接口也是 true")
+    void groupSessionRevenueVisibleFollowsService() {
+        PushUser user = new PushUser();
+        user.setUid(1L);
+        PushTarget target = new PushTarget();
+        target.setPlatform("qq-onebot");
+        target.setType(PushTargetType.GROUP);
+        target.setNum(10001L);
+        user.setTargets(List.of(target));
+        when(dependency(AbstractDataSource.class).getAllUsers()).thenReturn(List.of(user));
+        when(dependency(RevenueVisibilityService.class)
+                .isVisible(any(), eq(PushTargetType.GROUP), any())).thenReturn(true);
+
+        JSONObject session = controller.state().getJSONArray("sessions").getJSONObject(0);
+        assertTrue(session.getBooleanValue("revenueVisible"));
     }
 
     private <T> T dependency(Class<T> type) {
