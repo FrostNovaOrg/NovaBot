@@ -42,7 +42,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>
  * 九问各自捕获、末尾汇总，一次看清还差哪一处；问③钉住列件与读件当真扫到了仓根与处理器模块，
  * 免得路径解析错时问①对着空集「绿」。问④钉住列件不列构建产物目录与隐藏目录里的件，
- * 且这些目录不可读时也不抛。问⑤钉住下探前就剪（列件不另滤，剪枝失效就多列）。
+ * 且这些目录不可读时也不抛。目录 000 后仍可读时，权限这一半跳过，整只记为跳过。
+ * 问⑤钉住下探前就剪（列件不另滤，剪枝失效就多列）。
  * 问⑥⑦钉件消失放行，问⑧⑨钉其余读目录异常照抛。
  */
 @DisplayName("各 pom 项目元数据不含上游名")
@@ -63,6 +64,7 @@ class PomMetadataHasNoUpstreamNameTest {
     @DisplayName("剥块后 name、description、url 不含 starbot／starlwr；判定、列件与不可读目录自证")
     void projectMetadataOmitsUpstreamNames() throws Exception {
         List<String> unresolved = new ArrayList<>();
+        List<String> skipped = new ArrayList<>();
         Path root = repoRoot();
 
         // 问① 真扫：仓内全部 pom，剥块后再看三栏
@@ -145,7 +147,7 @@ class PomMetadataHasNoUpstreamNameTest {
                 Files.setPosixFilePermissions(hiddenDir, oldHidden);
             }
         } catch (TestAbortedException e) {
-            // 权限半边跳过；列件断言已跑完
+            skipped.add("问④ 权限半边：" + e.getMessage());
         } catch (Throwable t) {
             unresolved.add("问④ " + formatCaught(t));
         }
@@ -231,6 +233,7 @@ class PomMetadataHasNoUpstreamNameTest {
 
         assertTrue(unresolved.isEmpty(),
                 () -> "九问中 " + unresolved.size() + " 问未销: " + String.join("; ", unresolved));
+        Assumptions.assumeTrue(skipped.isEmpty(), () -> "九问全销，但有跳过: " + String.join("; ", skipped));
     }
 
     static List<Path> listPoms(Path root) {
