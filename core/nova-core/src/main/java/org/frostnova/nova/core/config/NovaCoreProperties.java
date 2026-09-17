@@ -778,18 +778,38 @@ public class NovaCoreProperties {
         return datasource;
     }
 
+    /**
+     * 追加在使用者字体表之后的默认字体，按操作系统挑
+     * <p>
+     * 「内置」「内置表情」「内置符号」是随程序发布的三份字体（中文、单色表情、西文与符号），
+     * 由报告图插件按这几个词从类路径读；其余是系统字体名，没装的那一项启动时跳过。
+     * <p>
+     * Linux 上表情只用随程序发布的单色字体，并且排在所有系统字体之前：
+     * Java 画不出 Noto Color Emoji 这类彩色表情字体，而它们照样报告自己「显示得出」，
+     * 谁排在前面，表情就被画成一片空白。西文字母与符号由「内置符号」先补，
+     * 末位的 SansSerif 是 Java 的逻辑字体，只作最后一层兜底。
+     *
+     * @param osName 操作系统名，取自 {@code os.name}
+     * @return 默认字体表，顺序即优先级
+     */
+    public static List<String> defaultFonts(String osName) {
+        String os = osName.toLowerCase();
+        List<String> fonts = new ArrayList<>();
+        fonts.add("内置");
+        if (os.contains("win")) {
+            fonts.addAll(Arrays.asList("微软雅黑", "宋体", "Segoe UI Emoji", "Segoe UI Symbol", "Arial", "SansSerif"));
+        } else if (os.contains("mac")) {
+            fonts.addAll(Arrays.asList("PingFang SC", "Apple Color Emoji", "SansSerif"));
+        } else {
+            // 系统中文字体补随程序发布的那份没有的字（如韩文）：sudo apt install -y fonts-noto-cjk
+            fonts.addAll(Arrays.asList("内置表情", "Noto Sans CJK SC", "内置符号", "SansSerif"));
+        }
+        return fonts;
+    }
+
     @PostConstruct
     public void init() {
-        String os = System.getProperty("os.name").toLowerCase();
-        paint.getFonts().add("内置");
-        if (os.contains("win")) {
-            paint.getFonts().addAll(Arrays.asList("微软雅黑", "宋体", "Segoe UI Emoji", "Segoe UI Symbol", "Arial", "SansSerif"));
-        } else if (os.contains("mac")) {
-            paint.getFonts().addAll(Arrays.asList("PingFang SC", "Apple Color Emoji", "SansSerif"));
-        } else {
-            // sudo apt install -y  fonts-noto-cjk  fonts-wqy-zenhei  fonts-noto-color-emoji fonts-freefont-ttf
-            paint.getFonts().addAll(Arrays.asList("Noto Sans CJK SC", "WenQuanYi Zen Hei", "Noto Color Emoji", "DejaVu Sans", "FreeSans", "SansSerif"));
-        }
+        paint.getFonts().addAll(defaultFonts(System.getProperty("os.name")));
 
         for (TextWithStyle extra : paint.getExtraCopyrights()) {
             if (extra.getFont() != null) {

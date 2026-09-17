@@ -313,14 +313,14 @@ class WordCloudScenarioTest {
                 new WordCloudLayout.Word("谢谢", 3)), 128, 2, 0));
 
         // 容量边界：72 个 8 码点的标签装不进 830×380，放不下的要如实计入 dropped
-        // 🔴 37／35 是<b>用本仓内置字体</b>量出来的。这一类的显示词数取决于字形有多宽，
+        // 🔴 38／34 是<b>用本仓内置字体</b>量出来的。这一类的显示词数取决于字形有多宽，
         // 换一套字体就换一个数——排版器算得对不对与它无关，故这两个数只钉住
         // 「本仓这套字体下的容量」，改动它的是字体或排版规则，不是别的
         List<WordCloudLayout.Word> longLabels = new ArrayList<>();
         for (int i = 0; i < CLOUD_MAX_WORDS; i++) {
             longLabels.add(new WordCloudLayout.Word(String.format("弹幕场景词条%02d", i), 100 - i));
         }
-        scenes.add(new Scene("77-大量较长标签", longLabels, CLOUD_MAX_HEIGHT, 37, 35));
+        scenes.add(new Scene("77-大量较长标签", longLabels, CLOUD_MAX_HEIGHT, 38, 34));
 
         return scenes;
     }

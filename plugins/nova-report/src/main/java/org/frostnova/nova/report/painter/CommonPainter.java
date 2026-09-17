@@ -735,7 +735,10 @@ public class CommonPainter {
                     expandHeightIfNeeded(currentPoint.y + maxHeight + this.rowSpace);
 
                     if (!"\n".equals(charStr)) {
-                        this.draw.drawString(charStr, currentPoint.x, currentPoint.y + metrics.getAscent());
+                        // 基线按表里第一个字体定：各字体 ascent 不同，逐字用自己的 ascent 会让补字的字体上下错位
+                        int ascent = text.getFont() != null ? metrics.getAscent()
+                                : this.draw.getFontMetrics(fontUtil.primaryFont().deriveFont(text.getStyle(), text.getSize())).getAscent();
+                        this.draw.drawString(charStr, currentPoint.x, currentPoint.y + ascent);
                         currentPoint.x += charWidth;
                     }
                 }
@@ -1218,7 +1221,9 @@ public class CommonPainter {
 
         expandHeightIfNeeded(this.xy.y + charHeight, 1);
 
-        this.draw.drawString(charStr, this.xy.x, this.xy.y + metrics.getAscent());
+        int ascent = font != null ? metrics.getAscent()
+                : this.draw.getFontMetrics(fontUtil.primaryFont().deriveFont(Font.PLAIN, Objects.requireNonNullElse(size, TEXT_FONT_SIZE))).getAscent();
+        this.draw.drawString(charStr, this.xy.x, this.xy.y + ascent);
         this.xy.x += charWidth;
 
         this.draw.setFont(originalFont);
