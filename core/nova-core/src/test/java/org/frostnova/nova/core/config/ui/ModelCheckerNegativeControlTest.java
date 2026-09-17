@@ -14,7 +14,8 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.fail;
 
 /**
- * 视图模型尺的阴性对照必须活着：整块注释、只注释红句都要被判不活，注释里的假对照不算数。
+ * 视图模型尺的阴性对照必须活着：整块注释、只注释红句、红句多写一行都要被判不活，注释里的假对照不算数。
+ * 每一问都逐把做完。
  */
 @DisplayName("视图模型尺阴性对照")
 class ModelCheckerNegativeControlTest {
@@ -25,7 +26,6 @@ class ModelCheckerNegativeControlTest {
 
     /**
      * 非注释行里含红／绿阴性对照 echo 的行数。非注释行＝去掉行首空白后第一个字符不是 {@code #}。
-     * 两数都恰为 1 才算这把尺的对照活着。
      */
     static int[] countNegativeControlEchoes(String source) {
         int red = 0;
@@ -45,9 +45,17 @@ class ModelCheckerNegativeControlTest {
         return new int[] { red, green };
     }
 
+    /**
+     * 这把尺的对照活着：非注释行里红、绿对照 echo 两数都恰为 1。
+     */
+    static boolean negativeControlAlive(String source) {
+        int[] counts = countNegativeControlEchoes(source);
+        return counts[0] == 1 && counts[1] == 1;
+    }
+
     @Test
-    @DisplayName("十三把尺阴性对照活着：整块注释、假对照、只注释红句")
-    void negativeControlsStayAliveUnderThreeMutations() {
+    @DisplayName("十三把尺阴性对照活着：整块注释、假对照、只注释红句、红句多写一行")
+    void negativeControlsStayAliveUnderFourMutations() {
         List<String> red = new ArrayList<>();
         List<Path> checkers;
         try {
@@ -62,12 +70,15 @@ class ModelCheckerNegativeControlTest {
                 fail("列到的尺 " + checkers.size() + " 把，应 ≥ 13");
             }
             List<String> dead = new ArrayList<>();
+            int done = 0;
             for (Path checker : checkers) {
-                int[] counts = countNegativeControlEchoes(read(checker));
-                if (counts[0] != 1 || counts[1] != 1) {
-                    dead.add(named(checker, counts));
+                String source = read(checker);
+                if (!negativeControlAlive(source)) {
+                    dead.add(named(checker, countNegativeControlEchoes(source)));
                 }
+                done++;
             }
+            requireEveryChecker(done, checkers);
             if (!dead.isEmpty()) {
                 fail("对照不活: " + String.join("、", dead));
             }
@@ -78,17 +89,17 @@ class ModelCheckerNegativeControlTest {
         try {
             List<String> missingHeader = new ArrayList<>();
             List<String> stillAlive = new ArrayList<>();
+            int done = 0;
             for (Path checker : checkers) {
                 String mutated = commentOutNegativeControlBlock(read(checker));
                 if (mutated == null) {
                     missingHeader.add(checker.getFileName().toString());
-                    continue;
-                }
-                int[] counts = countNegativeControlEchoes(mutated);
-                if (counts[0] == 1 && counts[1] == 1) {
+                } else if (negativeControlAlive(mutated)) {
                     stillAlive.add(checker.getFileName().toString());
                 }
+                done++;
             }
+            requireEveryChecker(done, checkers);
             if (!missingHeader.isEmpty()) {
                 fail("未见块头: " + String.join("、", missingHeader));
             }
@@ -101,6 +112,7 @@ class ModelCheckerNegativeControlTest {
 
         try {
             List<String> changed = new ArrayList<>();
+            int done = 0;
             for (Path checker : checkers) {
                 String source = read(checker);
                 int[] original = countNegativeControlEchoes(source);
@@ -113,7 +125,9 @@ class ModelCheckerNegativeControlTest {
                             + " 原文红=" + original[0] + " 绿=" + original[1]
                             + " 突变后红=" + after[0] + " 绿=" + after[1]);
                 }
+                done++;
             }
+            requireEveryChecker(done, checkers);
             if (!changed.isEmpty()) {
                 fail("注释假对照改变读数: " + String.join("、", changed));
             }
@@ -123,17 +137,36 @@ class ModelCheckerNegativeControlTest {
 
         try {
             List<String> stillAlive = new ArrayList<>();
+            int done = 0;
             for (Path checker : checkers) {
-                int[] counts = countNegativeControlEchoes(commentOutRedEchoLine(read(checker)));
-                if (counts[0] == 1 && counts[1] == 1) {
+                if (negativeControlAlive(commentOutRedEchoLine(read(checker)))) {
                     stillAlive.add(checker.getFileName().toString());
                 }
+                done++;
             }
+            requireEveryChecker(done, checkers);
             if (!stillAlive.isEmpty()) {
                 fail("只注释红句后仍判活: " + String.join("、", stillAlive));
             }
         } catch (Throwable e) {
             red.add("④ " + message(e));
+        }
+
+        try {
+            List<String> stillAlive = new ArrayList<>();
+            int done = 0;
+            for (Path checker : checkers) {
+                if (negativeControlAlive(duplicateRedEchoLine(read(checker)))) {
+                    stillAlive.add(checker.getFileName().toString());
+                }
+                done++;
+            }
+            requireEveryChecker(done, checkers);
+            if (!stillAlive.isEmpty()) {
+                fail("红句多写一行后仍判活: " + String.join("、", stillAlive));
+            }
+        } catch (Throwable e) {
+            red.add("⑤ " + message(e));
         }
 
         if (!red.isEmpty()) {
@@ -152,6 +185,12 @@ class ModelCheckerNegativeControlTest {
                     .filter(path -> path.getFileName().toString().endsWith("-model-check.sh"))
                     .sorted()
                     .toList();
+        }
+    }
+
+    private static void requireEveryChecker(int done, List<Path> checkers) {
+        if (done != checkers.size()) {
+            fail("只做了 " + done + "／" + checkers.size() + " 把");
         }
     }
 
@@ -198,6 +237,21 @@ class ModelCheckerNegativeControlTest {
                 out.append("# ");
             }
             out.append(lines[i]);
+        }
+        return out.toString();
+    }
+
+    private static String duplicateRedEchoLine(String source) {
+        String[] lines = source.split("\n", -1);
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < lines.length; i++) {
+            if (i > 0) {
+                out.append('\n');
+            }
+            out.append(lines[i]);
+            if (lines[i].contains(RED_ECHO)) {
+                out.append('\n').append(lines[i]);
+            }
         }
         return out.toString();
     }
