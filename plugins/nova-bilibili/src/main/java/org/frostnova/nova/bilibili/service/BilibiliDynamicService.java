@@ -43,6 +43,15 @@ public class BilibiliDynamicService {
      */
     private static final String LIVE_DYNAMIC_TYPE = "DYNAMIC_TYPE_LIVE_RCMD";
 
+    /**
+     * 关注列表的复核周期
+     * <p>
+     * 推送名单没有新主播时，关注列表隔这么久才拉一次，用来发现在哔哩哔哩上被取消的关注。
+     * 自动关注间隔只决定多久看一次推送名单：以前每个间隔都把关注列表整份拉一遍，
+     * 默认 30 秒一次，一天近三千次请求，拉回来的几乎总是同一份。
+     */
+    private static final Duration FOLLOWING_RECHECK_INTERVAL = Duration.ofHours(1);
+
     private final BilibiliApiUtil api;
 
     private final BilibiliAccountService accountService;
@@ -66,6 +75,21 @@ public class BilibiliDynamicService {
     private volatile boolean initialized;
 
     private volatile AbstractDataSource dataSource;
+
+    /**
+     * 上一次完整核对关注列表时推送名单里的 uid，名单里出现不在此列的 uid 就立即再核对
+     */
+    private volatile Set<Long> checkedUids = Set.of();
+
+    /**
+     * 上一次完整核对关注列表所用的登录账号 uid，换了账号就立即再核对
+     */
+    private volatile Long checkedLoginUid;
+
+    /**
+     * 下一次复核关注列表的时刻，为空表示还没完整核对过
+     */
+    private volatile Instant nextFollowingCheckAt;
 
     @Autowired
     public BilibiliDynamicService(BilibiliApiUtil api,
@@ -191,12 +215,23 @@ public class BilibiliDynamicService {
         };
     }
 
+    private void followConfiguredUps() {
+        followConfiguredUps(Instant.now());
+    }
+
     /**
      * 关注配置中尚未关注的 UP 主
      * <p>
      * 动态流仅包含已关注 UP 主的动态，未关注则无法收到其动态更新。
+     * <p>
+     * 关注列表只在这几种时候拉：还没完整核对过、换了登录账号、推送名单里加了主播、
+     * 距上次核对满复核周期。关注列表没取全时本轮一个都不补关注，下一轮再试——
+     * 拿残表去比，没取到那几页里的已关注主播都会被当成没关注，再关注一遍。
+     * <p>
+     * 补关注失败的主播不单独重试，等下一次复核：按检查间隔反复重试只会把关注请求推得更密。
+     * @param now 当前时刻
      */
-    private void followConfiguredUps() {
+    void followConfiguredUps(Instant now) {
         AbstractDataSource source = this.dataSource;
         if (source == null || !accountService.isLoggedIn()) {
             return;
@@ -212,15 +247,29 @@ public class BilibiliDynamicService {
             return;
         }
 
+        Long loginUid = accountService.getLoginUid();
+        Instant nextCheckAt = this.nextFollowingCheckAt;
+        boolean due = nextCheckAt == null
+                || !now.isBefore(nextCheckAt)
+                || !java.util.Objects.equals(loginUid, checkedLoginUid)
+                || !checkedUids.containsAll(configured);
+        if (!due) {
+            return;
+        }
+
         Set<Long> following;
         try {
-            following = api.getFollowingUps(accountService.getLoginUid()).stream()
+            following = api.getFollowingUps(loginUid).stream()
                     .map(Up::getUid)
                     .collect(Collectors.toCollection(HashSet::new));
         } catch (Exception e) {
-            log.debug("获取关注列表失败: {}", e.getMessage());
+            log.warn("未能取得完整的关注列表, 本轮不补关注, 下一轮再试: {}", e.getMessage());
             return;
         }
+
+        checkedUids = Set.copyOf(configured);
+        checkedLoginUid = loginUid;
+        nextFollowingCheckAt = now.plus(FOLLOWING_RECHECK_INTERVAL);
 
         configured.stream()
                 .filter(uid -> !following.contains(uid))
