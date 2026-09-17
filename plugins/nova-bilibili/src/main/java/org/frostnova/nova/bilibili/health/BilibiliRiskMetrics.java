@@ -115,6 +115,14 @@ public class BilibiliRiskMetrics {
         PARSE_FAILURE("消息解析失败"),
 
         /**
+         * 取登录账号 uid 失败：请求重试耗尽、应答形状不对（如缺 profile）或其他运行时异常。
+         * <p>
+         * 未登录走业务码，不记这一类。它说的是「这一次没拿到账号身份」，不是消息解析出了问题，
+         * 所以不记进 {@link #PARSE_FAILURE}。detail 形：{@code MY_INFO_API:exception:异常类简名}。
+         */
+        LOGIN_UID_FAILURE("获取登录账号失败"),
+
+        /**
          * 报文里本应取到的关键字段取不到（弹幕 info 过短、pb 截断、礼物块缺失）。
          * <p>
          * 这类静默降级的表现是「数据悄悄变少」：弹幕少一条、礼物少入账一笔，

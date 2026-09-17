@@ -1189,10 +1189,10 @@ public class BilibiliApiUtil {
             return fetchLoginUid();
         } catch (Exception e) {
             log.debug("获取登录账号 uid 失败: {}", e.getMessage());
-            // 未登录走业务码（ResponseCodeException），不算解析失败、不记；其余异常记一笔，
-            // 否则网络故障与健康态在这句日志里永远分不开
+            // 未登录走业务码（ResponseCodeException），不记；其余异常记进 LOGIN_UID_FAILURE，
+            // 否则网络故障与健康态在这句日志里永远分不开。取不到账号身份不是消息解析出了问题，不记 PARSE_FAILURE
             if (riskMetrics != null && !(e instanceof ResponseCodeException)) {
-                riskMetrics.record(BilibiliRiskMetrics.Kind.PARSE_FAILURE,
+                riskMetrics.record(BilibiliRiskMetrics.Kind.LOGIN_UID_FAILURE,
                         "MY_INFO_API:exception:" + e.getClass().getSimpleName());
             }
             return null;

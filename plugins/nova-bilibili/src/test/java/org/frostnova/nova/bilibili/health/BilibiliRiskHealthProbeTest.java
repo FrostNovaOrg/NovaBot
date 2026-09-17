@@ -257,6 +257,70 @@ class BilibiliRiskHealthProbeTest {
         assertTrue(reds.isEmpty(), () -> "两问中 " + reds.size() + " 问红: " + String.join("; ", reds));
     }
 
+    @Test
+    @DisplayName("获取登录账号失败有次数时单起一行：写近 24h 次数与样本名，不改档、不出解析失败行，溢出段写这一类的名")
+    void loginUidFailureLineShowsDayCountAndSample() {
+        java.util.List<String> reds = new java.util.ArrayList<>();
+
+        metrics.record(BilibiliRiskMetrics.Kind.LOGIN_UID_FAILURE, "MY_INFO_API:exception:RequestFailedException");
+        metrics.record(BilibiliRiskMetrics.Kind.LOGIN_UID_FAILURE, null);
+        metrics.record(BilibiliRiskMetrics.Kind.LOGIN_UID_FAILURE, null);
+        HealthStatus status = probe.check();
+
+        try {
+            assertTrue(status.summary().contains("，近 24h 获取登录账号失败 3 次（样本 MY_INFO_API:exception:RequestFailedException）"),
+                    "应写获取登录账号失败的近 24h 次数与样本名，实际: " + status.summary());
+        } catch (AssertionError e) {
+            reds.add("① " + e.getMessage());
+        }
+
+        try {
+            // 与其余静默行同档：只进摘要，不降档
+            assertEquals(HealthStatus.Level.OK, status.level(), "获取登录账号失败不得降档");
+            assertFalse(status.summary().contains("解析失败"), "不得出解析失败那一行，实际: " + status.summary());
+        } catch (AssertionError e) {
+            reds.add("② " + e.getMessage());
+        }
+
+        try {
+            BilibiliRiskMetrics spilled = new BilibiliRiskMetrics();
+            for (int i = 0; i < BilibiliRiskMetrics.MAX_PER_KIND + 1; i++) {
+                spilled.record(BilibiliRiskMetrics.Kind.LOGIN_UID_FAILURE, null);
+            }
+            String summary = new BilibiliRiskHealthProbe(spilled).check().summary();
+            assertTrue(summary.contains("被挤掉 获取登录账号失败 1 条"),
+                    "溢出段要写明是获取登录账号失败被挤掉，实际: " + summary);
+        } catch (AssertionError e) {
+            reds.add("③ " + e.getMessage());
+        }
+
+        assertTrue(reds.isEmpty(), () -> "三问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+    }
+
+    @Test
+    @DisplayName("获取登录账号失败为 0 时这一行不出：平静时不出，只有解析失败时也不出")
+    void loginUidFailureLineAbsentWhenZero() {
+        java.util.List<String> reds = new java.util.ArrayList<>();
+
+        try {
+            String quiet = probe.check().summary();
+            assertFalse(quiet.contains("获取登录账号失败"), "平静时不该出这一行，实际: " + quiet);
+        } catch (AssertionError e) {
+            reds.add("① " + e.getMessage());
+        }
+
+        try {
+            metrics.record(BilibiliRiskMetrics.Kind.PARSE_FAILURE, "LIVE count=1 unique=1");
+            String summary = probe.check().summary();
+            assertTrue(summary.contains("解析失败 1 次"), "解析失败照旧出行，实际: " + summary);
+            assertFalse(summary.contains("获取登录账号失败"), "只有解析失败时不该出这一行，实际: " + summary);
+        } catch (AssertionError e) {
+            reds.add("② " + e.getMessage());
+        }
+
+        assertTrue(reds.isEmpty(), () -> "两问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+    }
+
     /**
      * 平静时的摘要原文
      * <p>
