@@ -330,6 +330,25 @@ class ConfigUiAuthServiceTest {
                 "尚未列入闭集的新机密键不得自动算专用口");
     }
 
+    @Test
+    @DisplayName("🔴 改口令核对旧口令先记次再比对：次数已被并发打满的会话，再来一趟对的口令也不比对、直接注销")
+    void currentPasswordChecksAreCountedBeforeVerifying() {
+        ConfigUiAuthService service = service(PASSWORD, "", false);
+        ConfigUiSession session = service.issueForPassword(IP);
+
+        // 模拟同一时刻并发打进来的几趟：都已记上次数，还没比完
+        for (int i = 0; i < ConfigUiAuthService.CURRENT_PASSWORD_MISSES_BEFORE_SIGN_OUT; i++) {
+            session.countPasswordCheck();
+        }
+
+        ConfigUiAuthService.CurrentPasswordCheck check =
+                service.checkCurrentPassword(PASSWORD.toCharArray(), session.getId(), IP);
+
+        assertEquals(ConfigUiAuthService.CurrentPasswordVerdict.SIGNED_OUT, check.verdict(),
+                "次数已满还去比对的话，并发打进来的每一趟都各猜一次，次数上限只拦得住一趟一趟来的人");
+        assertTrue(service.validate(session.getId()).isEmpty(), "这把会话应当注销");
+    }
+
     private static Set<String> authKeysOnTheSurface() throws IOException {
         String content;
         try (InputStream in = new ClassPathResource("configuration-baseline/config-keys.txt")

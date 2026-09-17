@@ -62,6 +62,16 @@ public class ConfigUiSession {
     @lombok.Setter
     private volatile boolean totpSetupDismissed;
 
+    /**
+     * 改口令时这把会话连着核对了几趟旧口令，算上还没比完的那几趟
+     * <p>
+     * 记在会话上而不是按来源 IP 记：猜的人握着的就是这一把，注销它就收回了接着猜的资格，
+     * 主人的登录与别处的会话一概不受牵连。按来源记的话换个地址就能接着猜，
+     * 还会把同一出口后面主人的登录一起锁住。
+     */
+    @Getter(lombok.AccessLevel.NONE)
+    private int passwordChecks;
+
     ConfigUiSession(String id, String csrfToken, Instant issuedAt, Instant expiresAt, String clientIp, Channel channel) {
         this.id = id;
         this.csrfToken = csrfToken;
@@ -74,6 +84,24 @@ public class ConfigUiSession {
 
     void touch(Instant now) {
         this.lastSeenAt = now;
+    }
+
+    /**
+     * 记下一趟旧口令核对，<b>比对之前</b>就记
+     * <p>
+     * 比完再记的话，同一时刻并发打进来的几十趟都会先过「还没到次数」那一问，
+     * 每一趟都真比一次，次数上限就只拦得住一趟一趟来的人。
+     * @return 算上这一趟一共几趟
+     */
+    synchronized int countPasswordCheck() {
+        return ++passwordChecks;
+    }
+
+    /**
+     * 旧口令输对了，此前连错的次数作废
+     */
+    synchronized void clearPasswordChecks() {
+        passwordChecks = 0;
     }
 
     /**
