@@ -19,6 +19,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.core.io.DefaultResourceLoader;
 
 import java.awt.Color;
@@ -419,13 +420,13 @@ class BilibiliLiveReportPainterTest {
 
     @Test
     @DisplayName("配了自定义标识时应画在署名之上")
-    void paintsCustomLogo() throws Exception {
+    void paintsCustomLogo(@TempDir Path directory) throws Exception {
         BufferedImage mark = new BufferedImage(300, 90, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = mark.createGraphics();
         g.setColor(new Color(251, 114, 153));
         g.fillRoundRect(0, 0, 300, 90, 20, 20);
         g.dispose();
-        Path file = Files.createTempDirectory("novabot-logo").resolve("logo.png");
+        Path file = directory.resolve("logo.png");
         javax.imageio.ImageIO.write(mark, "png", file.toFile());
 
         NovaBilibiliProperties withLogo = new NovaBilibiliProperties();
