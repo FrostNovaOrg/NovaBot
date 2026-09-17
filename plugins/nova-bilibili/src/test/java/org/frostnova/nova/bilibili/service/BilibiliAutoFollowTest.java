@@ -191,6 +191,20 @@ class BilibiliAutoFollowTest {
     }
 
     @Test
+    @DisplayName("推送名单里新加了主播：补拉过一遍之后名单没再变，再下一轮不再拉关注列表")
+    void addedStreamerIsNotRefetchedAgain() {
+        configure(ON_PAGE_ONE);
+        followTask.run();
+
+        configure(ON_PAGE_ONE, NOT_FOLLOWED);
+        followTask.run();
+        followTask.run();
+
+        assertEquals(List.of(1, 2, 1, 2), api.pageRequests,
+                "新加主播后只该补翻一遍关注列表，之后名单没变就不该再翻，实际翻页: " + api.pageRequests);
+    }
+
+    @Test
     @DisplayName("关注列表取失败后：下一轮照样再拉，取全了才补关注，已关注的不重复关注")
     void failedFetchRetriesNextRound() {
         configure(ON_PAGE_ONE, NOT_FOLLOWED);
@@ -218,6 +232,19 @@ class BilibiliAutoFollowTest {
     }
 
     @Test
+    @DisplayName("换了登录账号：新账号的关注列表拉过一遍之后，再下一轮不再拉")
+    void switchedAccountIsNotRefetchedAgain() {
+        followTask.run();
+
+        when(account.getLoginUid()).thenReturn(OTHER_LOGIN_UID);
+        followTask.run();
+        followTask.run();
+
+        assertEquals(List.of(1, 2, 1, 2), api.pageRequests,
+                "换号后只该把新账号的关注列表翻一遍，之后不该再翻，实际翻页: " + api.pageRequests);
+    }
+
+    @Test
     @DisplayName("名单不变时关注列表每小时复核一次：不满一小时不拉，满一小时拉，在平台上被取消的关注会补上")
     void rechecksHourly() {
         Instant start = Instant.parse("2026-01-01T00:00:00Z");
@@ -233,6 +260,23 @@ class BilibiliAutoFollowTest {
         service.followConfiguredUps(start.plus(Duration.ofHours(1)));
         assertEquals(List.of(1, 2, 1, 2), api.pageRequests, "满一小时应复核一遍，实际: " + api.pageRequests);
         assertEquals(List.of(ON_PAGE_ONE), api.followRequests, "复核发现被取消的关注应补上，实际: " + api.followRequests);
+    }
+
+    @Test
+    @DisplayName("每小时复核时关注列表取失败：不等下一个小时，下一轮照样再拉")
+    void failedRecheckRetriesNextRound() {
+        Instant start = Instant.parse("2026-01-01T00:00:00Z");
+        service.followConfiguredUps(start);
+
+        api.failingPages.add(1);
+        Instant recheck = start.plus(Duration.ofHours(1));
+        service.followConfiguredUps(recheck);
+
+        api.failingPages.clear();
+        service.followConfiguredUps(recheck.plusSeconds(30));
+
+        assertEquals(List.of(1, 2, 1, 1, 2), api.pageRequests,
+                "复核取失败后下一轮应重新翻关注列表，不该等满下一个小时，实际翻页: " + api.pageRequests);
     }
 
     @Test
