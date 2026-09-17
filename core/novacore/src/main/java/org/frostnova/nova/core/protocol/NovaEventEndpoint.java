@@ -352,24 +352,40 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
             close(CloseStatus.NORMAL.withReason("认证失败"));
         }
 
+        /**
+         * 事件流回调：在事件流的锁里、在发布线程（采集线程）上调用
+         * <p>
+         * 🔴 队列满时断开走 {@link #closeAsync}：关闭帧是一次阻塞写，落在写不动的连接上就停在那儿，
+         * 就地写的话停住的是攥着事件流锁的发布线程——采集跟着停，别的连接一帧也收不到。
+         */
         @Override
         public void onFrame(NovaEventStream.Frame frame) {
-            send(frame.json());
+            if (!enqueue(frame.json())) {
+                closeAsync(CloseStatus.SERVICE_OVERLOAD.withReason("客户端消费过慢"));
+            }
         }
 
         /**
-         * 入队一条消息
+         * 入队一条消息，队列满就地断开
          * <p>
-         * <b>只入队，不发送。</b> 调用方可能是采集线程，也可能正持着事件流的锁。
+         * <b>只入队，不发送。</b> 调用方是心跳线程或入站线程，不持事件流的锁；
+         * 事件流锁里的那一路走 {@link #onFrame}。
          */
         private void send(String json) {
-            if (closed) {
-                return;
-            }
-            if (!outbox.offer(json)) {
-                log.warn("事件流客户端 {} 消费不过来, 队列已满 {} 条, 断开连接", session.getId(), outboxCapacity);
+            if (!enqueue(json)) {
                 close(CloseStatus.SERVICE_OVERLOAD.withReason("客户端消费过慢"));
             }
+        }
+
+        /**
+         * @return 入队成功或连接已关时为 {@code true}；队列满时为 {@code false}，由调用方断开
+         */
+        private boolean enqueue(String json) {
+            if (closed || outbox.offer(json)) {
+                return true;
+            }
+            log.warn("事件流客户端 {} 消费不过来, 队列已满 {} 条, 断开连接", session.getId(), outboxCapacity);
+            return false;
         }
 
         /**
