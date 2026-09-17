@@ -251,6 +251,7 @@ ask('⑤ 有记录时出表格、不出新句', () => {
 ask('⑥ 找件不跟软链、不进带 .git 的子目录、跳过 target', () => {
   let tree;
   let outside;
+  const problems = [];
   try {
     tree = mkdtempSync(join(tmpdir(), 'novabot-push-link-tree-'));
     outside = mkdtempSync(join(tmpdir(), 'novabot-push-link-outside-'));
@@ -282,6 +283,8 @@ ask('⑥ 找件不跟软链、不进带 .git 的子目录、跳过 target', () =
     if (symlinkFailure) {
       throw new Error(symlinkFailure + '，不跟软链这一半没量');
     }
+  } catch (error) {
+    problems.push(error && error.message ? error.message : String(error));
   } finally {
     if (tree) rmSync(tree, {recursive: true, force: true});
     if (outside) rmSync(outside, {recursive: true, force: true});
@@ -289,7 +292,8 @@ ask('⑥ 找件不跟软链、不进带 .git 的子目录、跳过 target', () =
   const left = [];
   if (tree && existsSync(tree)) left.push(tree);
   if (outside && existsSync(outside)) left.push(outside);
-  if (left.length) throw new Error('临时目录没删净：' + left.join('、'));
+  if (left.length) problems.push('临时目录没删净：' + left.join('、'));
+  if (problems.length) throw new Error(problems.join('；'));
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
