@@ -190,7 +190,11 @@ function fakeApi() {
   return api;
 }
 
-const esc = value => String(value);
+// 转义取 core.js 里那一份真执行：恒等桩量不出「原因句进页前转义了没有」，产品码删掉 esc() 也照样绿
+const escSource = readFileSync(join(ui, 'core.js'), 'utf8').match(/^export const esc = (.+);$/m);
+const esc = escSource ? new Function('return ' + escSource[1])() : () => {
+  throw new Error('切段失败：core.js 里找不到 esc');
+};
 const ask = async () => true;
 const say = () => {
 };
@@ -279,10 +283,11 @@ try {
 eq(q4, true, '④ 删除后重画进接线当次的容器，不漂到后画的卡');
 
 // ⑤ 回包说这个地址用不了（浏览器给了接口，地址却是 IP）：进页就置灰登记钮，
-//    服务端给的原因句印在列表之前，已登记的照常列出；回包说可用时按钮不置灰
+//    服务端给的原因句印在列表之前，已登记的照常列出；回包说可用时按钮不置灰。
+//    原因句进页前要转义：句里带标签时印出来的是字面，不是标签
 let q5 = 'missing';
 try {
-  const reason = '通行密钥只能绑定域名，而现在是用 IP 地址（192.168.1.10）访问的。';
+  const reason = '通行密钥只能绑定域名，而现在是用 IP 地址（<b>192.168.1.10</b>）访问的。';
   const blockedApi = async () => ({
     usable: false,
     unusableReason: reason,
@@ -292,7 +297,8 @@ try {
   const box = dom.newElement();
   const add = dom.newElement();
   await makeSubject(dom, blockedApi).loadPasskeys(box, add);
-  const at = box.innerHTML.indexOf(reason);
+  const html = box.innerHTML;
+  const at = html.indexOf('192.168.1.10');
 
   const openDom = fakeDom();
   const openAdd = openDom.newElement();
@@ -300,15 +306,52 @@ try {
 
   q5 = {
     disabled: add.disabled,
-    reasonBeforeList: at >= 0 && at < box.innerHTML.indexOf('<table'),
+    escaped: html.includes('&lt;b&gt;') && !html.includes('<b>'),
+    reasonBeforeList: at >= 0 && at < html.indexOf('<table'),
     rows: box.querySelectorAll('button[data-id]').length,
     usableStaysEnabled: !openAdd.disabled,
   };
 } catch (e) {
   q5 = 'error:' + e.message;
 }
-eq(q5, {disabled: true, reasonBeforeList: true, rows: 1, usableStaysEnabled: true},
-  '⑤ 回包说用不了时进页置灰登记钮、原因句印在列表前；可用时不置灰');
+eq(q5, {disabled: true, escaped: true, reasonBeforeList: true, rows: 1, usableStaysEnabled: true},
+  '⑤ 回包说用不了时进页置灰登记钮、原因句转义后印在列表前；可用时不置灰');
+
+// ⑥ 还没登记过、回包又说这个地址用不了：原因句顶替「还没有登记过」那句，登记钮置灰
+let q6 = 'missing';
+try {
+  const dom = fakeDom();
+  const box = dom.newElement();
+  const add = dom.newElement();
+  const blockedEmpty = async () => ({usable: false, unusableReason: '现在是用 IP 地址（192.168.1.10）访问的。', passkeys: []});
+  await makeSubject(dom, blockedEmpty).loadPasskeys(box, add);
+  q6 = {
+    disabled: add.disabled,
+    reasonShown: box.innerHTML.includes('192.168.1.10'),
+    tables: box.querySelectorAll('table').length,
+  };
+} catch (e) {
+  q6 = 'error:' + e.message;
+}
+eq(q6, {disabled: true, reasonShown: true, tables: 0}, '⑥ 空表且回包说用不了：原因句在场、登记钮置灰');
+
+// ⑦ 回包里没有 usable 这个键：不当成用不了，登记钮不置灰、不印原因句，已登记的照常列出
+let q7 = 'missing';
+try {
+  const dom = fakeDom();
+  const box = dom.newElement();
+  const add = dom.newElement();
+  const noKey = async () => ({passkeys: [{id: 'k1', name: '我的手机', createdAt: '2026-09-07T10:00:00', lastUsedAt: null}]});
+  await makeSubject(dom, noKey).loadPasskeys(box, add);
+  q7 = {
+    disabled: add.disabled,
+    notice: box.innerHTML.includes('用不了'),
+    rows: box.querySelectorAll('button[data-id]').length,
+  };
+} catch (e) {
+  q7 = 'error:' + e.message;
+}
+eq(q7, {disabled: false, notice: false, rows: 1}, '⑦ 回包不带 usable 键：登记钮不置灰、不印原因句');
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);
