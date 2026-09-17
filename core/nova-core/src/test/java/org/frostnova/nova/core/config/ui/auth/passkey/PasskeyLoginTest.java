@@ -44,7 +44,7 @@ class PasskeyLoginTest extends PasskeyTestSupport {
         assertTrue(cookie.contains("SameSite=Strict"), "会话 Cookie 必须让跨站请求带不上它");
 
         // 用过一次之后「上次使用」要有值：界面上靠它判断哪一条是能删的
-        assertNotNull(controller.list().getJSONArray("passkeys").getJSONObject(0).getString("lastUsedAt"));
+        assertNotNull(controller.list(request()).getJSONArray("passkeys").getJSONObject(0).getString("lastUsedAt"));
     }
 
     @Test

@@ -36,7 +36,7 @@ const supported = () => typeof window.PublicKeyCredential === 'function';
  *
  * 缺参时才退回按 id 取一次，只为兼容。
  * @param box 列表容器
- * @param addButton 登记按钮；浏览器不支持通行密钥时置灰它
+ * @param addButton 登记按钮；浏览器不支持通行密钥、或这个地址用不了时置灰它
  */
 export async function loadPasskeys(box, addButton) {
   if (!box) box = $('#passkey-list');
@@ -53,13 +53,19 @@ export async function loadPasskeys(box, addButton) {
   const data = await api('/auth/passkeys');
   const list = data.passkeys || [];
 
+  // 浏览器给了接口、地址却是 IP 时，点「登记」必然失败：进页就置灰，并把原因印在列表之前。
+  // 原因句用服务端那一句，判 IP 的只在服务端一处；已登记的照常列出，删除不受地址影响
+  const blocked = data.usable === false;
+  if (blocked && addButton) addButton.disabled = true;
+  const notice = blocked ? '<p class="hint">' + esc(data.unusableReason || '这个地址用不了通行密钥。') + '</p>' : '';
+
   if (!list.length) {
-    box.innerHTML = '<p class="hint">还没有登记过通行密钥。登记之后，登录时按一下指纹或面容即可，'
+    box.innerHTML = notice || '<p class="hint">还没有登记过通行密钥。登记之后，登录时按一下指纹或面容即可，'
       + '<b>不用再输动态验证码</b>。</p>';
     return;
   }
 
-  box.innerHTML = '<table><thead><tr><th>名字</th><th>登记时间</th><th>上次使用</th><th></th></tr></thead><tbody>'
+  box.innerHTML = notice + '<table><thead><tr><th>名字</th><th>登记时间</th><th>上次使用</th><th></th></tr></thead><tbody>'
     + list.map(item => '<tr><td>' + esc(item.name) + '</td><td>' + time(item.createdAt) + '</td><td>'
       + (item.lastUsedAt ? time(item.lastUsedAt) : '还没用过')
       + '</td><td><button type="button" class="ghost" data-id="' + esc(item.id) + '">删除</button></td></tr>').join('')
