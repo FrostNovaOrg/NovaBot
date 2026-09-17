@@ -5,7 +5,7 @@
  * 由 PushRecentLinkTest 拉起。量的是源码树里那一份，不是构建产物里的副本。
  */
 
-import {existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
+import {chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {dirname, join, relative} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
@@ -32,11 +32,19 @@ function nestedHasGit(dir) {
   }
 }
 
-function collectBySuffix(dir, root, suffix, acc) {
+/**
+ * dir 下以 suffix 结尾的普通文件记进 acc，读不了的目录记进 unreadable
+ *
+ * 读不了的目录记成「相对路径（errno 码）」，不静默跳过：漏读一个目录，
+ * 里面那份重复件就数不到，「恰 1 份」也就作不得准。
+ */
+function collectBySuffix(dir, root, suffix, acc, unreadable) {
   let entries;
   try {
     entries = readdirSync(dir, {withFileTypes: true});
-  } catch {
+  } catch (error) {
+    const rel = relative(root, dir).split('\\').join('/') || '.';
+    unreadable.push(rel + '（' + (error.code || String(error)) + '）');
     return;
   }
   for (const entry of entries) {
@@ -44,7 +52,7 @@ function collectBySuffix(dir, root, suffix, acc) {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) {
       if (nestedHasGit(path)) continue;
-      collectBySuffix(path, root, suffix, acc);
+      collectBySuffix(path, root, suffix, acc, unreadable);
       continue;
     }
     if (!entry.isFile()) continue;
@@ -53,16 +61,33 @@ function collectBySuffix(dir, root, suffix, acc) {
   }
 }
 
+/**
+ * 以 suffix 结尾的件恰 1 份、且没有读不了的目录时交回 {rel}，否则交回 {error}
+ */
+function uniqueBySuffix(root, suffix) {
+  const found = [];
+  const unreadable = [];
+  collectBySuffix(root, root, suffix, found, unreadable);
+  if (unreadable.length) {
+    return {error: '找以 ' + suffix + ' 结尾的件时有 ' + unreadable.length + ' 个目录读不了，份数作不得准：'
+      + unreadable.join('、')};
+  }
+  if (found.length !== 1) {
+    return {error: '以 ' + suffix + ' 结尾的件应恰 1 份，实得 ' + found.length + ' 份'
+      + (found.length ? '：' + found.join('、') : '')};
+  }
+  return {rel: found[0]};
+}
+
 const root = repoRoot();
 const here = dirname(fileURLToPath(import.meta.url));
 const pages = join(here, '../../../main/resources/config-ui-pages');
 const src = readFileSync(join(pages, 'push.js'), 'utf8');
 const model = await import(pathToFileURL(join(pages, 'push-model.js')).href);
-const logModelFiles = [];
-collectBySuffix(root, root, LOG_MODEL_SUFFIX, logModelFiles);
+const logModelPick = uniqueBySuffix(root, LOG_MODEL_SUFFIX);
 let logModel = null;
-if (logModelFiles.length === 1) {
-  logModel = await import(pathToFileURL(join(root, logModelFiles[0])).href);
+if (logModelPick.rel) {
+  logModel = await import(pathToFileURL(join(root, logModelPick.rel)).href);
 }
 
 const failures = [];
@@ -88,6 +113,34 @@ function ask(what, fn) {
   } catch (error) {
     failures.push(what + '：' + (error && error.message ? error.message : error));
   }
+}
+
+/**
+ * 按名字各建一个 novabot-push-link-<名>- 临时目录交给 body，主体的错与没删净合成一句抛出
+ *
+ * 主体抛错也照删，删完再核目录还在不在。只报没删净会盖住主体的错，只报主体的错会漏掉残留，
+ * 所以两样都先记下，末了有一样就抛。
+ */
+function inTempDirs(names, body) {
+  const dirs = [];
+  const problems = [];
+  try {
+    for (const name of names) dirs.push(mkdtempSync(join(tmpdir(), 'novabot-push-link-' + name + '-')));
+    body(...dirs);
+  } catch (error) {
+    problems.push(error && error.message ? error.message : String(error));
+  } finally {
+    for (const dir of dirs) {
+      try {
+        rmSync(dir, {recursive: true, force: true});
+      } catch {
+        // 删不掉，由下面没删净那句报
+      }
+    }
+  }
+  const left = dirs.filter(dir => existsSync(dir));
+  if (left.length) problems.push('临时目录没删净：' + left.join('、'));
+  if (problems.length) throw new Error(problems.join('；'));
 }
 
 /**
@@ -222,9 +275,7 @@ ask('③ session 为 null 时不出链接且提示句为取不到记录', () => 
 });
 
 ask('④ 链接喂 parseLogHash 后 channel 与 pushChannelOf 相等且 timelineQuery 含全串', () => {
-  if (logModelFiles.length !== 1) {
-    throw new Error('log-model.js 找到 ' + logModelFiles.length + ' 份：' + logModelFiles.join(', '));
-  }
+  if (logModelPick.error) throw new Error(logModelPick.error);
   if (typeof model.pushChannelOf !== 'function') throw new Error('没有 pushChannelOf');
   if (typeof logModel.parseLogHash !== 'function') throw new Error('没有 parseLogHash');
   if (typeof logModel.timelineQuery !== 'function') throw new Error('没有 timelineQuery');
@@ -249,12 +300,7 @@ ask('⑤ 有记录时出表格、不出新句', () => {
 });
 
 ask('⑥ 找件不跟软链、不进带 .git 的子目录、跳过 target', () => {
-  let tree;
-  let outside;
-  const problems = [];
-  try {
-    tree = mkdtempSync(join(tmpdir(), 'novabot-push-link-tree-'));
-    outside = mkdtempSync(join(tmpdir(), 'novabot-push-link-outside-'));
+  inTempDirs(['tree', 'outside'], (tree, outside) => {
     const suffixPath = 'src/main/resources/config-ui/log-model.js';
     mkdirSync(join(outside, 'src/main/resources/config-ui'), {recursive: true});
     writeFileSync(join(outside, suffixPath), '// outside\n');
@@ -277,23 +323,56 @@ ask('⑥ 找件不跟软链、不进带 .git 的子目录、跳过 target', () =
       symlinkFailure = '本机造不了软链（' + error.constructor.name + ' ' + error.message + '）';
     }
     const got = [];
-    collectBySuffix(tree, tree, LOG_MODEL_SUFFIX, got);
+    collectBySuffix(tree, tree, LOG_MODEL_SUFFIX, got, []);
     got.sort();
     eq(got, ['a/src/main/resources/config-ui/log-model.js'], '实得');
     if (symlinkFailure) {
       throw new Error(symlinkFailure + '，不跟软链这一半没量');
     }
+  });
+});
+
+ask('⑦ 找件遇到读不了的目录记名交回，此时不认那唯一一份', () => {
+  inTempDirs(['locked'], tree => {
+    const suffixPath = 'src/main/resources/config-ui/log-model.js';
+    mkdirSync(join(tree, 'a/src/main/resources/config-ui'), {recursive: true});
+    writeFileSync(join(tree, 'a', suffixPath), '// a\n');
+    const locked = join(tree, 'locked');
+    mkdirSync(join(locked, 'src/main/resources/config-ui'), {recursive: true});
+    writeFileSync(join(locked, suffixPath), '// locked\n');
+    const before = [];
+    const beforeUnreadable = [];
+    collectBySuffix(tree, tree, LOG_MODEL_SUFFIX, before, beforeUnreadable);
+    before.sort();
+    eq({got: before, unreadable: beforeUnreadable},
+      {got: ['a/' + suffixPath, 'locked/' + suffixPath], unreadable: []}, '没锁时（阳性对照）');
+    chmodSync(locked, 0o000);
+    try {
+      const got = [];
+      const unreadable = [];
+      collectBySuffix(tree, tree, LOG_MODEL_SUFFIX, got, unreadable);
+      eq({got, unreadable}, {got: ['a/' + suffixPath], unreadable: ['locked（EACCES）']}, '锁成 000 后');
+      const picked = uniqueBySuffix(tree, LOG_MODEL_SUFFIX);
+      eq({rel: picked.rel || '', named: String(picked.error || '').includes('locked（EACCES）')},
+        {rel: '', named: true}, '锁成 000 后挑唯一一份');
+    } finally {
+      chmodSync(locked, 0o700);
+    }
+  });
+});
+
+ask('⑧ 临时目录收尾：主体抛错、删净正常时照报主体的错', () => {
+  const made = [];
+  let thrown = '';
+  try {
+    inTempDirs(['probe'], dir => {
+      made.push(dir);
+      throw new Error('模拟主体出错');
+    });
   } catch (error) {
-    problems.push(error && error.message ? error.message : String(error));
-  } finally {
-    if (tree) rmSync(tree, {recursive: true, force: true});
-    if (outside) rmSync(outside, {recursive: true, force: true});
+    thrown = error && error.message ? error.message : String(error);
   }
-  const left = [];
-  if (tree && existsSync(tree)) left.push(tree);
-  if (outside && existsSync(outside)) left.push(outside);
-  if (left.length) problems.push('临时目录没删净：' + left.join('、'));
-  if (problems.length) throw new Error(problems.join('；'));
+  eq({thrown, left: made.filter(dir => existsSync(dir))}, {thrown: '模拟主体出错', left: []}, '抛出的错与残留');
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
