@@ -13,9 +13,11 @@ import org.springframework.core.env.SimpleCommandLinePropertySource;
 import org.springframework.core.env.SystemEnvironmentPropertySource;
 import org.springframework.mock.env.MockEnvironment;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -126,6 +128,44 @@ class RetiredConfigurationKeyCheckTest {
         assertTrue(warnings.get(0).contains("旧位置还留着口令类设置，改完请删掉"), warnings.get(0));
         assertFalse(warnings.get(0).contains("legacy-secret-value"), "不得贴出口令值: " + warnings.get(0));
         assertFalse(warnings.get(1).contains("口令"), "只有开关时不提口令: " + warnings.get(1));
+    }
+
+    @Test
+    @DisplayName("口令键在前、开关键在后时仍补一句改完请删掉：后面的开关不能把前面认出的口令盖掉")
+    void leftoverSecretSurvivesSwitchAfterIt() {
+        // 两键须定序：MockEnvironment 底下是无序的 Properties，Map.of 的遍历序每次启动都可能不同，
+        // 序一乱这一格就时红时绿。用 LinkedHashMap 钉成口令键在前、开关键在后
+        Map<String, Object> ordered = new LinkedHashMap<>();
+        ordered.put("starbot.adapter.onebot.senders[0].token", "legacy-secret-value");
+        ordered.put("starbot.core.event-stream.require-token", "true");
+        MockEnvironment environment = new MockEnvironment();
+        environment.getPropertySources().addLast(new MapPropertySource("application.yml", ordered));
+
+        new RetiredConfigurationKeyCheck(environment).check();
+
+        List<String> warnings = warnings();
+        assertEquals(1, warnings.size(), "应当只报一行, 实际: " + warnings);
+        String line = warnings.get(0);
+        assertTrue(line.contains("2 项"), "应数到 2 项: " + line);
+        assertTrue(line.contains("旧位置还留着口令类设置，改完请删掉"),
+                "口令键后面跟着开关键时漏了改完请删掉那一句, 前面认出的口令被后面的开关盖掉了: " + line);
+        assertFalse(line.contains("legacy-secret-value"), "不得贴出口令值: " + line);
+    }
+
+    @Test
+    @DisplayName("旧树里的值写成占位符（形如 ${…}）时照样数上：不抛异常，也不贴出占位符名")
+    void placeholderValueNeitherThrowsNorLeaks() {
+        // 值只用来认开关，读的该是配置里的原文；去解析占位符的话，没设过的占位符会让启动检查当场抛异常
+        MockEnvironment environment = new MockEnvironment()
+                .withProperty("starbot.adapter.onebot.senders[0].token", "${LEGACY_UNSET_PLACEHOLDER}");
+
+        assertDoesNotThrow(() -> new RetiredConfigurationKeyCheck(environment).check(),
+                "旧树里的值是没设过的占位符时不该抛异常: 认开关只看原文, 不该去解析占位符");
+
+        List<String> warnings = warnings();
+        assertEquals(1, warnings.size(), "应当只报一行, 实际: " + warnings);
+        assertTrue(warnings.get(0).contains("1 项"), "写成占位符的那一项照样要数上: " + warnings.get(0));
+        assertFalse(warnings.get(0).contains("LEGACY_UNSET_PLACEHOLDER"), "不得贴出占位符名: " + warnings.get(0));
     }
 
     @Test

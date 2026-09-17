@@ -59,6 +59,22 @@ class OneBotHealthProbeTest {
     }
 
     @Test
+    @DisplayName("已配置机器人时，旧根键 starbot: 即使还在，建议也只说这台机器人自己的事，不换成旧根键那句")
+    void configuredAdviceLeavesOutLegacyRoot() {
+        // 旧根键那句只接在「未配置任何机器人」那一支：机器人已经配上了，再劝人去挪旧配置只会把人从真正的故障上带开
+        MockEnvironment environment = new MockEnvironment()
+                .withProperty("starbot.adapter.onebot.senders[0].name", "legacy-sender-value");
+        OneBotConnectionState state = new OneBotConnectionState();
+        state.httpFailed("qq", OneBotConnectionState.Kind.UNREACHABLE, "连接被拒绝");
+
+        HealthStatus status = new OneBotHealthProbe(state, properties, environment).check();
+
+        assertFalse(status.advice().contains("starbot:"), "已配置机器人时建议里不该出现旧根键那句: " + status.advice());
+        assertTrue(status.advice().contains("one-bot-address"), "阳性对照: 连不上的机器人仍要说查地址与端口: " + status.advice());
+        assertEquals("unreachable", status.reason());
+    }
+
+    @Test
     @DisplayName("HTTP 与 Websocket 均正常时判定为正常")
     void reportsOkWhenAllConnected() {
         OneBotConnectionState state = new OneBotConnectionState();
