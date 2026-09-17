@@ -65,7 +65,18 @@ public class BackupAtAllAspect {
         }
 
         OneBotSender sender = holder.getNapcat(message.getPlatform());
-        if (canAtAll(sender, message.getNum())) {
+        boolean allowed;
+        try {
+            allowed = canAtAll(sender, message.getNum());
+        } catch (RuntimeException e) {
+            // 问不通时群待办多半也挂不上，摘掉使用者配置的 @全体成员 两头落空，所以照原样交给发送器，
+            // 发不出去由发送器记失败。这一问跑在推送方的线程里、排在入队之前，
+            // 异常顺着 send 抛回去的话，这一条连同同一次推送里排在后面的分条都进不了发送队列
+            log.warn("查询 NapCat 推送平台 {} 在群 {} 能否 @全体成员 失败, 本条照原样发送: {}",
+                    message.getPlatform(), message.getNum(), e.getMessage());
+            return joinPoint.proceed();
+        }
+        if (allowed) {
             return joinPoint.proceed();
         }
 
@@ -87,14 +98,17 @@ public class BackupAtAllAspect {
     /**
      * 问 NapCat 这个群现在还能不能 @全体成员
      * <p>
-     * 答不上来（应答里没有 {@code can_at_all}）时按<b>不能</b>算：方向是刻意的。
+     * 答不上来（应答里没有 data，或没有 {@code can_at_all}）时按<b>不能</b>算：方向是刻意的。
      * 猜「能」的那次会照发 {@code {at=all}}，真发不出去就什么补救都没有了；
      * 猜「不能」的代价只是多挂一条群待办
+     * <p>
+     * 问不通（连不上、回错误码）不算答不上来，异常照抛，由调用处照原样发送
      */
     private boolean canAtAll(OneBotSender sender, Long groupNum) {
         JSONObject params = new JSONObject();
         params.put("group_id", groupNum);
-        return Boolean.TRUE.equals(http.getGroupAtAllRemain(sender, params).getBoolean("can_at_all"));
+        JSONObject remain = http.getGroupAtAllRemain(sender, params);
+        return remain != null && Boolean.TRUE.equals(remain.getBoolean("can_at_all"));
     }
 
     /**

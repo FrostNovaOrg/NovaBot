@@ -1,11 +1,16 @@
 package org.frostnova.nova.adapter.onebot.extension.napcat.aop;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.adapter.onebot.exception.OneBotApiException;
 import org.frostnova.nova.adapter.onebot.extension.napcat.http.NapcatHttpAdapter;
 import org.frostnova.nova.adapter.onebot.extension.napcat.util.NapcatServiceHolder;
 import org.frostnova.nova.adapter.onebot.model.OneBotSender;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.model.Message;
+import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Pointcut;
 import org.junit.jupiter.api.BeforeEach;
@@ -13,17 +18,24 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.slf4j.LoggerFactory;
+import org.springframework.aop.aspectj.annotation.AspectJProxyFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.web.client.ResourceAccessException;
 
+import java.net.ConnectException;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -203,6 +215,18 @@ class BackupAtAllAspectTest {
         }
 
         @Test
+        @DisplayName("⚠️ 对面回了报文却没给 data 时同样按「不能 @」办, 不在这里抛空指针")
+        void missingDataCountsAsExhausted() throws Throwable {
+            when(http.getGroupAtAllRemain(any(), any())).thenReturn(null);
+            Message message = message(PLATFORM, PushTargetType.GROUP, "开播啦{at=all}");
+
+            assertSame(PROCEEDED, aspect.aroundSendMethod(sending(message)));
+
+            assertEquals("开播啦", message.getContent());
+            assertEquals(1, message.getOnSuccessCallbacks().size());
+        }
+
+        @Test
         @DisplayName("正文里有多处 @全体成员 时一并摘掉")
         void stripsEveryOccurrence() throws Throwable {
             canAtAll(false);
@@ -283,6 +307,119 @@ class BackupAtAllAspectTest {
 
             verify(joinPoint, never()).proceed();
         }
+    }
+
+    /**
+     * 问次数这一趟本身失败：连不上，或对面回了错误码
+     * <p>
+     * 切面织在发送器的 send 上，跑在推送处理器的线程里、排在入队之前。这一问的异常若顺着 send
+     * 抛回推送处理器，这一条就没入队，同一次推送里排在它后面的分条也不再交出去；
+     * 发送器的重试、失败计数与去图重发一样都轮不到，日志里只剩事件监听器记的一行错误，
+     * 健康栏的推送活动里也不记这一条。
+     * <p>
+     * 问不出来时照原样交给发送器：发得出去就是配置里写的那条推送，发不出去由发送器记失败。
+     * 只接这一问——发送器自己抛的错不归这里管，照样往外抛。
+     */
+    @Nested
+    @DisplayName("问不通")
+    class QueryFails {
+        @Test
+        @DisplayName("连不上 NapCat 时照原样交给发送器, 不摘 @全体成员也不挂待办, 记一条带原因的 WARN")
+        void unreachableSendsAsIs() throws Throwable {
+            when(http.getGroupAtAllRemain(any(), any())).thenThrow(unreachable());
+            Message message = message(PLATFORM, PushTargetType.GROUP, "开播啦{at=all}");
+            ProceedingJoinPoint joinPoint = sending(message);
+
+            Logger logger = (Logger) LoggerFactory.getLogger(BackupAtAllAspect.class);
+            ListAppender<ILoggingEvent> appender = new ListAppender<>();
+            appender.start();
+            logger.addAppender(appender);
+            try {
+                assertSame(PROCEEDED, aspect.aroundSendMethod(joinPoint));
+            } finally {
+                logger.detachAppender(appender);
+            }
+
+            verify(joinPoint, times(1)).proceed();
+            assertEquals("开播啦{at=all}", message.getContent());
+            assertEquals(0, message.getOnSuccessCallbacks().size());
+            verify(http, never()).setGroupTodo(any(), any());
+
+            List<String> logged = appender.list.stream()
+                    .map(event -> event.getLevel() + " " + event.getFormattedMessage())
+                    .toList();
+            assertEquals(1, logged.size(), "问不通只该记一条: " + logged);
+            assertTrue(logged.get(0).startsWith("WARN ") && logged.get(0).contains("照原样发送")
+                    && logged.get(0).contains("I/O error on POST request"), "该是一条带着原因的 WARN: " + logged);
+        }
+
+        @Test
+        @DisplayName("对面回错误码时同样照原样交给发送器")
+        void errorCodeSendsAsIs() throws Throwable {
+            when(http.getGroupAtAllRemain(any(), any())).thenThrow(
+                    new OneBotApiException("/get_group_at_all_remain", new JSONObject(), 1404, "API 不存在"));
+            Message message = message(PLATFORM, PushTargetType.GROUP, "开播啦{at=all}");
+
+            assertSame(PROCEEDED, aspect.aroundSendMethod(sending(message)));
+
+            assertEquals("开播啦{at=all}", message.getContent());
+        }
+
+        @Test
+        @DisplayName("⚠️ 问不通之后发送器自己抛的错照样往外抛, 只交一次")
+        void senderFailureStillSurfacesAfterQueryFailure() throws Throwable {
+            when(http.getGroupAtAllRemain(any(), any())).thenThrow(unreachable());
+            ProceedingJoinPoint joinPoint = sending(message(PLATFORM, PushTargetType.GROUP, "开播啦{at=all}"));
+            IllegalStateException broken = new IllegalStateException("发送器坏了");
+            when(joinPoint.proceed()).thenThrow(broken);
+
+            assertSame(broken, assertThrows(IllegalStateException.class, () -> aspect.aroundSendMethod(joinPoint)));
+            verify(joinPoint, times(1)).proceed();
+        }
+
+        @Test
+        @DisplayName("⚠️ 问得通时发送器抛的错不当成问不通再交一次")
+        void senderFailureIsNotTakenForQueryFailure() throws Throwable {
+            canAtAll(true);
+            ProceedingJoinPoint joinPoint = sending(message(PLATFORM, PushTargetType.GROUP, "开播啦{at=all}"));
+            IllegalStateException broken = new IllegalStateException("发送器坏了");
+            when(joinPoint.proceed()).thenThrow(broken);
+
+            assertSame(broken, assertThrows(IllegalStateException.class, () -> aspect.aroundSendMethod(joinPoint)));
+            verify(joinPoint, times(1)).proceed();
+        }
+
+        /**
+         * 上面几格量的是切面自己；这一格把它真织到发送器上，照推送处理器的写法逐条交，
+         * 量的是现场那条路：异常会不会从 send 漏出去、后一条还交不交得到发送器
+         */
+        @Test
+        @DisplayName("织进发送器后: 问不通时 send 不往外抛, 同一次推送的后一条照常交到发送器")
+        void wovenSendKeepsTheRestOfThePush() {
+            when(http.getGroupAtAllRemain(any(), any())).thenThrow(unreachable());
+            NovaMessageSender target = mock(NovaMessageSender.class);
+            AspectJProxyFactory factory = new AspectJProxyFactory(target);
+            factory.setProxyTargetClass(true);
+            factory.addAspect(aspect);
+            NovaMessageSender woven = factory.getProxy();
+
+            List<Message> messages = Message.create(PLATFORM, PushTargetType.GROUP, GROUP, "{at=all}开播啦{next}第二条");
+            assertDoesNotThrow(() -> messages.forEach(woven::send));
+
+            ArgumentCaptor<Message> sent = ArgumentCaptor.forClass(Message.class);
+            verify(target, times(2)).send(sent.capture());
+            assertEquals(List.of("{at=all}开播啦", "第二条"),
+                    sent.getAllValues().stream().map(Message::getContent).toList());
+        }
+    }
+
+    /**
+     * 与现场同形的「连不上」：HTTP 客户端把连接失败包成这一种
+     */
+    private static ResourceAccessException unreachable() {
+        return new ResourceAccessException(
+                "I/O error on POST request for \"http://127.0.0.1:3000/get_group_at_all_remain\": null",
+                new ConnectException());
     }
 
     @Nested
