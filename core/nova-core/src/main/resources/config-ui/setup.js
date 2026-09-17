@@ -21,7 +21,7 @@
 import {ask} from './confirm.js';
 import {$, api, el, esc, markDirty, phrase, say, term} from './core.js';
 import {resolveTarget, targetOptions} from './links-model.js';
-import {registerPasskey} from './passkeys.js';
+import {registerBlockedReason, registerPasskey} from './passkeys.js';
 import {setAuthState} from './settings-auth.js';
 import {renderGeneral} from './settings.js';
 import {allDone, canAdvance, initialRows, railMarks, startAt, stepFacts, summaryLines, withPluginSteps}
@@ -627,10 +627,21 @@ function passkeyBlock(host) {
   button.addEventListener('click', () => registerPasskey(button));
   box.appendChild(button);
 
-  box.appendChild(note('', draft.locked
+  const hint = note('', draft.locked
     ? '登记过之后，登录时按一下指纹或面容就行，不用口令也不用验证码。可以跳过，之后在设置里补。'
-    : '先上锁，再登记：通行密钥跟着口令登录走，没有口令时它签出来的会话打不开任何门。'));
+    : '先上锁，再登记：通行密钥跟着口令登录走，没有口令时它签出来的会话打不开任何门。');
+  box.appendChild(hint);
   host.appendChild(box);
+
+  // 上了锁才问：浏览器没给接口、或服务端说这个地址用不了，就进页置灰并把说明换成原因句，
+  // 不等点了才说（没给接口时点下去什么也不发生）。问不到时照旧可点，点了由登记那一路报错
+  if (draft.locked) {
+    registerBlockedReason().then(reason => {
+      if (!reason) return;
+      button.disabled = true;
+      hint.textContent = reason;
+    }, () => {});
+  }
 }
 
 // ============ 第 2 步：连上 QQ 机器人 ============

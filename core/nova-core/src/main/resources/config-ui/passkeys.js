@@ -88,6 +88,19 @@ function time(value) {
 }
 
 /**
+ * 这个地址眼下登记得了通行密钥吗：登记不了回一句原因，登记得了回 null
+ *
+ * 给初始设置页那只登记钮进页就判：浏览器没给接口时点下去什么也不发生，
+ * 地址是 IP 时要点了才从登记参数那一条的失败回包里得知。两样都该进页就说。
+ * 判 IP 的只在服务端一处：这里取列表那一条的 usable 与原因句，不另开接口
+ */
+export async function registerBlockedReason() {
+  if (!supported()) return '这个浏览器（或这个地址）用不了通行密钥。通行密钥只在 https 或 localhost 下可用。';
+  const data = await api('/auth/passkeys');
+  return data.usable === false ? (data.unusableReason || '这个地址用不了通行密钥。') : null;
+}
+
+/**
  * 登记一把通行密钥
  *
  * 🔴 <b>按钮由调用方传进来</b>，不在这里按 id 取：初始设置页第 1 步也要登记一把，
