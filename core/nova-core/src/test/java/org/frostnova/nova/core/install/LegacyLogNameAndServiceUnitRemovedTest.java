@@ -103,6 +103,18 @@ class LegacyLogNameAndServiceUnitRemovedTest {
                     fail("列件未含 " + required);
                 }
             }
+            Path templateRoot = repoRoot().resolve("dist/templates");
+            Path backup = Path.of("tools", "data-backup.sh");
+            boolean hasBackup = false;
+            for (Path file : files) {
+                if (templateRoot.relativize(file).equals(backup)) {
+                    hasBackup = true;
+                    break;
+                }
+            }
+            if (!hasBackup) {
+                fail("列件未含 tools/data-backup.sh");
+            }
             Path caddy = null;
             for (Path file : files) {
                 if (file.getFileName().toString().equals("Caddyfile")) {
