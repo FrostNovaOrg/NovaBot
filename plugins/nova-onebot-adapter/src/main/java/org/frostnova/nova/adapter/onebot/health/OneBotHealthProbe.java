@@ -1,10 +1,12 @@
 package org.frostnova.nova.adapter.onebot.health;
 
 import org.frostnova.nova.adapter.onebot.config.OneBotAdapterPluginProperties;
+import org.frostnova.nova.core.config.RetiredConfigurationKeyCheck;
 import org.frostnova.nova.core.health.HealthProbe;
 import org.frostnova.nova.core.health.HealthStatus;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.env.Environment;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -27,10 +29,14 @@ public class OneBotHealthProbe implements HealthProbe {
 
     private final OneBotAdapterPluginProperties properties;
 
+    private final Environment environment;
+
     @Autowired
-    public OneBotHealthProbe(OneBotConnectionState state, OneBotAdapterPluginProperties properties) {
+    public OneBotHealthProbe(OneBotConnectionState state, OneBotAdapterPluginProperties properties,
+                             Environment environment) {
         this.state = state;
         this.properties = properties;
+        this.environment = environment;
     }
 
     @Override
@@ -52,8 +58,10 @@ public class OneBotHealthProbe implements HealthProbe {
     public HealthStatus check() {
         Map<String, OneBotConnectionState.Entry> all = state.all();
         if (all.isEmpty()) {
+            // 旧配置升上来时一个都没有，多半是旧根键整棵没被读：只说「去填」，使用者会对着早就填过的配置找不出错
             return HealthStatus.down("未配置任何机器人",
-                    "到初始设置第 2 步或「连接」页填机器人地址与端口",
+                    RetiredConfigurationKeyCheck.legacyRootHint(environment)
+                            .orElse("到初始设置第 2 步或「连接」页填机器人地址与端口"),
                     "unconfigured");
         }
 
