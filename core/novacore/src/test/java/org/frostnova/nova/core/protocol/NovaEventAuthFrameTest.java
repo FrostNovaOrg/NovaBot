@@ -14,12 +14,19 @@ import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.TimeUnit;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * 事件流首帧认证
@@ -382,12 +389,149 @@ class NovaEventAuthFrameTest {
                 stream.publish(slowEnvelope());
             }
 
+            // 🔴 断开是在发布线程上记账、关闭帧交给发送线程写的：publish 返回时关闭帧未必已经写了。
+            //    上面的循环可能把余下的帧发完才出来，所以这里有界地等一下，不空等、也不无限等
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (session.closedWith == null && System.nanoTime() < deadline) {
+                Thread.sleep(10);
+            }
+
             assertNotNull(session.closedWith, "排满了就该断开，而不是无限堆积");
             assertEquals(CloseStatus.SERVICE_OVERLOAD.getCode(), session.closedWith.getCode(),
                     "要与「认证超时」「口令错」那两种断法分得开");
             assertEquals("客户端消费过慢", session.closedWith.getReason());
         } finally {
             session.release();
+        }
+    }
+
+    /** 带这个记号的那一帧，是 A 断开之后才发的 */
+    private static final String MARK = "probe-after-overload";
+
+    /**
+     * 消费过慢断开时，关闭帧不许在发布线程上写
+     * <p>
+     * 分发是在事件流的锁里挨个回调订阅者的，而发布线程就是采集线程。
+     * 队列满的那一刻要断开这条连接，断开要发一帧关闭帧——那是一次<b>阻塞写</b>，
+     * 落在写不动的连接上就停在那儿。在回调里就地写的话，停住的是攥着锁的发布线程：
+     * 采集跟着停，别的连接一帧也收不到。
+     * <p>
+     * 夹具：A 写不动，关闭帧也写不动（关闭卡在闩上，有界）；B 正常读。
+     * 后台线程一直发，直到 A 进了关闭。然后问四件事，一问一个 try，末尾一起报。
+     * 第四问是阳性锚：放开之后 A 确实按「消费过慢」断开——它不绿，前三问的绿证不了夹具真走到了队列满。
+     */
+    @Test
+    @Timeout(60)
+    @DisplayName("🔴 消费过慢断开时，关闭帧不在发布线程上写：再发一帧照常返回、别的连接照收")
+    void slowConsumerCloseFrameIsNotWrittenOnThePublishingThread() throws Exception {
+        CloseStalledSession slow = new CloseStalledSession("s-slow-close");
+        endpoint.afterConnectionEstablished(slow);
+        send(slow, authFrame(tokens.issue("面板-慢关")));
+        send(slow, "{\"kind\":\"resume\",\"data\":{\"fromSeq\":" + stream.snapshot().lastSeq() + "}}");
+        slow.stall();
+
+        MarkedSession healthy = new MarkedSession("s-healthy");
+        Thread publisher = null;
+        Thread probe = null;
+        List<String> reds = new ArrayList<>();
+        try {
+            // 🔴 先把 A 的待发队列灌到差两格满，但不许灌到溢出：溢出那一发会在本线程上断开 A，
+            //    下面几问就问错了线程。灌好了再接 B，B 只收后面几帧、不陪 A 收这几百帧——
+            //    防的是 B 自己的待发队列被夹具灌满、先被断开，那样红的是夹具，不是被测。
+            BlockingQueue<?> slowOutbox = (BlockingQueue<?>) readField(clientOf(slow), "outbox");
+            for (int i = 0; i < 4 * (stream.getCapacity() + 256) && slowOutbox.remainingCapacity() > 2; i++) {
+                stream.publish(slowEnvelope());
+            }
+            assertTrue(slowOutbox.remainingCapacity() <= 2,
+                    "A 的待发队列灌不满（还余 " + slowOutbox.remainingCapacity() + " 格）——夹具没搭起来");
+
+            endpoint.afterConnectionEstablished(healthy);
+            send(healthy, authFrame(tokens.issue("面板-正常")));
+            send(healthy, "{\"kind\":\"resume\",\"data\":{\"fromSeq\":" + stream.snapshot().lastSeq() + "}}");
+
+            publisher = new Thread(() -> {
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+                while (slow.closeEntered.getCount() > 0 && System.nanoTime() < deadline) {
+                    stream.publish(slowEnvelope());
+                    try {
+                        // 放慢一拍：A 差两格就满，几发就够，不必跟 B 的发送线程抢跑
+                        Thread.sleep(1);
+                    } catch (InterruptedException e) {
+                        return;
+                    }
+                }
+            }, "nova-test-publisher");
+            publisher.setDaemon(true);
+            publisher.start();
+            assertTrue(slow.closeEntered.await(10, TimeUnit.SECONDS),
+                    "A 一直没进关闭——夹具没走到「队列满断开」，下面四问都不算数");
+
+            // ① 再发一帧。另起一条线程去发、本线程限时等：发布被卡住时，本线程不能陪着卡
+            JSONObject marked = slowEnvelope();
+            marked.put("mark", MARK);
+            FutureTask<NovaEventStream.Frame> probePublish = new FutureTask<>(() -> stream.publish(marked));
+            probe = new Thread(probePublish, "nova-test-probe-publish");
+            probe.setDaemon(true);
+            probe.start();
+            try {
+                assertDoesNotThrow(() -> probePublish.get(2, TimeUnit.SECONDS),
+                        "① A 断开之后再发一帧，2 秒内没返回——关闭帧是攥着事件流的锁写的，发布线程停住了");
+            } catch (AssertionError e) {
+                reds.add(e.getMessage());
+            }
+
+            // ② 正常读的 B 收不收得到这一帧
+            try {
+                assertTrue(healthy.marked.await(2, TimeUnit.SECONDS),
+                        "② 正常读的连接 2 秒内没收到这一帧——一条写不动的连接把别人也拖住了");
+            } catch (AssertionError e) {
+                reds.add(e.getMessage());
+            }
+
+            // ③ A 的关闭帧在哪条线程上写
+            try {
+                String closer = slow.closeThread;
+                assertTrue(closer != null && closer.startsWith("nova-event-sender-"),
+                        "③ A 的关闭帧是在「" + closer + "」上写的，不是发送线程");
+            } catch (AssertionError e) {
+                reds.add(e.getMessage());
+            }
+
+            // ④ 阳性锚：放开之后，A 确实是按「消费过慢」断开的
+            slow.releaseClose();
+            try {
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+                while (slow.closedWith == null && System.nanoTime() < deadline) {
+                    Thread.sleep(10);
+                }
+                assertNotNull(slow.closedWith, "④ 放开之后 5 秒 A 仍没关上——夹具没走到队列满断开，前三问的绿不作数");
+                assertEquals(CloseStatus.SERVICE_OVERLOAD.getCode(), slow.closedWith.getCode(), "④ 关闭码不对");
+                assertEquals("客户端消费过慢", slow.closedWith.getReason(), "④ 关闭原因不对");
+            } catch (AssertionError e) {
+                reds.add(e.getMessage());
+            }
+
+            // ⑤ 断开要退订：A 不该还挂在订阅者名单上，只剩 B
+            try {
+                assertEquals(1, stream.getSubscriberCount(), "⑤ A 断开之后还挂在订阅者名单上——断开没有退订");
+            } catch (AssertionError e) {
+                reds.add(e.getMessage());
+            }
+        } finally {
+            // 🔴 放闩必须在这里、赶在 @AfterEach 的 shutdown 之前：闩不放，
+            //    攥着锁的发布线程不走，shutdown 退订时就等在那把锁上，一直等到闩的时限
+            slow.releaseClose();
+            slow.release();
+            if (publisher != null) {
+                publisher.join(5_000);
+            }
+            if (probe != null) {
+                probe.join(5_000);
+            }
+        }
+
+        if (!reds.isEmpty()) {
+            fail("红 " + reds.size() + " 问：\n" + String.join("\n", reds));
         }
     }
 
@@ -403,7 +547,7 @@ class NovaEventAuthFrameTest {
     /**
      * 一个写下行时卡住不返回的会话：用来把出队那一侧堵死
      */
-    private static final class StalledSession extends NovaEventEndpointTest.FakeSession {
+    private static class StalledSession extends NovaEventEndpointTest.FakeSession {
         private final java.util.concurrent.CountDownLatch block = new java.util.concurrent.CountDownLatch(1);
 
         private volatile boolean stalled;
@@ -437,6 +581,59 @@ class NovaEventAuthFrameTest {
 
         void release() {
             block.countDown();
+        }
+    }
+
+    /**
+     * 写不动、连关闭帧也写不动的会话：关闭卡在闩上（有界），并记下是哪条线程来关的
+     */
+    private static final class CloseStalledSession extends StalledSession {
+        final java.util.concurrent.CountDownLatch closeEntered = new java.util.concurrent.CountDownLatch(1);
+
+        private final java.util.concurrent.CountDownLatch closeGate = new java.util.concurrent.CountDownLatch(1);
+
+        volatile String closeThread;
+
+        CloseStalledSession(String id) {
+            super(id);
+        }
+
+        @Override
+        public void close(CloseStatus status) {
+            if (closeThread == null) {
+                closeThread = Thread.currentThread().getName();
+            }
+            closeEntered.countDown();
+            try {
+                // 有界，理由同上：等错了地方，失败的该是用例，不是整个构建
+                closeGate.await(30, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            super.close(status);
+        }
+
+        void releaseClose() {
+            closeGate.countDown();
+        }
+    }
+
+    /**
+     * 正常读的会话，另外记下带记号的那一帧到了没有
+     */
+    private static final class MarkedSession extends NovaEventEndpointTest.FakeSession {
+        final java.util.concurrent.CountDownLatch marked = new java.util.concurrent.CountDownLatch(1);
+
+        MarkedSession(String id) {
+            super(id);
+        }
+
+        @Override
+        public void sendMessage(org.springframework.web.socket.WebSocketMessage<?> message) {
+            super.sendMessage(message);
+            if (String.valueOf(message.getPayload()).contains(MARK)) {
+                marked.countDown();
+            }
         }
     }
 }
