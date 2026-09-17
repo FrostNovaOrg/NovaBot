@@ -1,13 +1,20 @@
 package org.frostnova.nova.core.config;
 
 import lombok.extern.slf4j.Slf4j;
+import org.frostnova.nova.core.config.ui.SensitiveFields;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.env.ConfigurableEnvironment;
+import org.springframework.core.env.EnumerablePropertySource;
 import org.springframework.core.env.Environment;
+import org.springframework.core.env.PropertySource;
 import org.springframework.stereotype.Component;
 
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 
 /**
  * 启动时把「配置文件里还留着、但程序已经不再读」的配置项说出来
@@ -52,5 +59,49 @@ public class RetiredConfigurationKeyCheck {
                 log.warn("配置项 {} 已撤销: {}", entry.getKey(), entry.getValue());
             }
         }
+        legacyRootHint(environment).ifPresent(log::warn);
+    }
+
+    /**
+     * 配置里还有写在旧根键 {@code starbot.} 下的项时，给使用者的那一句话
+     * <p>
+     * 5.4 撤掉了旧根键的兼容读取：整棵旧树一项都不生效，启动却不报错——推送平台是零个、
+     * 告警与口令锁跟着没了，首页只说「未配置任何机器人」。这里只提醒，不替使用者改配置文件。
+     * <p>
+     * 认的是点分键名：yml、properties、命令行 {@code --starbot.…} 与 {@code -Dstarbot.…} 进环境后都是这个形状。
+     * 环境变量形（{@code STARBOT_…}）不认：文档和发行模板从没教过用环境变量写配置，
+     * 使用者自己脚本里同名开头的变量却可能有，认了就是误报。
+     * 撤项表里单独说过的键不重复算。只数键不贴值；值只用来认出开关，开关不算口令。
+     *
+     * @param environment 运行环境
+     * @return 有旧根键时是那句话，没有时为空
+     */
+    public static Optional<String> legacyRootHint(Environment environment) {
+        if (!(environment instanceof ConfigurableEnvironment configurable)) {
+            return Optional.empty();
+        }
+        Set<String> names = new HashSet<>();
+        boolean secret = false;
+        for (PropertySource<?> source : configurable.getPropertySources()) {
+            if (!(source instanceof EnumerablePropertySource<?> enumerable)) {
+                continue;
+            }
+            for (String name : enumerable.getPropertyNames()) {
+                if (!name.startsWith("starbot.") || RETIRED.containsKey(name)) {
+                    continue;
+                }
+                names.add(name);
+                String value = String.valueOf(source.getProperty(name));
+                boolean flag = "true".equalsIgnoreCase(value) || "false".equalsIgnoreCase(value);
+                secret |= SensitiveFields.isSensitive(name, flag ? "java.lang.Boolean" : null);
+            }
+        }
+        if (names.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of("配置里有 " + names.size() + " 项写在 starbot: 下。starbot: 是 5.4 以前的旧根键，"
+                + "5.4 起改名为 novabot:，这一整棵没有被读取，里面的设置都没有生效。"
+                + "程序不会替你改配置文件，请手工把它们挪到新根键下（还没有新根键的，把 starbot: 改名即可），改完重启"
+                + (secret ? "；旧位置还留着口令类设置，改完请删掉" : ""));
     }
 }

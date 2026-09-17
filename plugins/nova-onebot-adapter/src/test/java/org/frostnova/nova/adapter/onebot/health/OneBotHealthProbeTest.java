@@ -5,6 +5,7 @@ import org.frostnova.nova.core.health.HealthStatus;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.env.MockEnvironment;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -19,7 +20,7 @@ class OneBotHealthProbeTest {
     private final OneBotAdapterPluginProperties properties = new OneBotAdapterPluginProperties();
 
     private OneBotHealthProbe probe(OneBotConnectionState state) {
-        return new OneBotHealthProbe(state, properties);
+        return new OneBotHealthProbe(state, properties, new MockEnvironment());
     }
 
     /**
@@ -41,6 +42,20 @@ class OneBotHealthProbeTest {
         assertEquals("unconfigured", status.reason());
         assertTrue(status.advice().contains("连接"), status.advice());
         assertFalse(status.advice().contains("novabot.adapter.onebot.senders"), status.advice());
+    }
+
+    @Test
+    @DisplayName("配置还写在旧根键 starbot: 下时，未配置那条的建议改说旧根键没被读、要手工改")
+    void unconfiguredAdviceNamesLegacyRoot() {
+        MockEnvironment environment = new MockEnvironment()
+                .withProperty("starbot.adapter.onebot.senders[0].name", "legacy-sender-value");
+
+        HealthStatus status = new OneBotHealthProbe(new OneBotConnectionState(), properties, environment).check();
+
+        assertEquals("未配置任何机器人", status.summary());
+        assertEquals("unconfigured", status.reason());
+        assertTrue(status.advice().contains("starbot:") && status.advice().contains("novabot:"), status.advice());
+        assertFalse(status.advice().contains("legacy-sender-value"), status.advice());
     }
 
     @Test
