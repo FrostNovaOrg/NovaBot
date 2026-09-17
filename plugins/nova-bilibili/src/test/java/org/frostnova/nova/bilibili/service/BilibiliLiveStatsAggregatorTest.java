@@ -391,6 +391,79 @@ class BilibiliLiveStatsAggregatorTest {
         assertEquals(0, users(BilibiliLiveMetric.DANMU_USERS));
     }
 
+    @Test
+    @DisplayName("⚠️ 未登录连接上发送者 uid 被抹成 0：弹幕条数照记，但不算人数、不上榜、不记昵称头像")
+    void maskedZeroUidIsNotCountedAsAViewer() {
+        List<String> red = new ArrayList<>();
+        long start = 1_700_000_000_000L;
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+        // 平台只留昵称首字，头像却是真的；这是两位不同的观众，uid 却都是 0
+        UserInfo maskedA = new UserInfo(0L, "甲***", "https://face.example.invalid/a.jpg");
+        UserInfo maskedB = new UserInfo(0L, "乙***", "https://face.example.invalid/b.jpg");
+
+        aggregator.onDanmu(new BilibiliDanmuEvent(STREAMER, maskedA, "你好", "你好"));
+        aggregator.onDanmu(new BilibiliDanmuEvent(STREAMER, maskedB, "晚上好", "晚上好"));
+        aggregator.onEmoji(new BilibiliEmojiEvent(STREAMER, maskedA,
+                new org.frostnova.nova.core.model.EmojiInfo("1", "笑哭", "https://pic.example.invalid/e.png")));
+
+        try {
+            assertEquals(3.0, metric(BilibiliLiveMetric.DANMU_COUNT), "① 弹幕条数照记");
+        } catch (Throwable t) {
+            red.add("① " + t.getMessage());
+        }
+        try {
+            assertEquals(0, users(BilibiliLiveMetric.DANMU_USERS), "② 两位匿名观众不能并成一个人：认不出是谁就不计人数");
+        } catch (Throwable t) {
+            red.add("② " + t.getMessage());
+        }
+        try {
+            assertEquals(List.of(), liveDataService.getLiveUserRanking(PLATFORM, STREAMER.getUid(),
+                    BilibiliLiveMetric.DANMU_USERS, 10), "③ 弹幕榜不出现 uid 0");
+        } catch (Throwable t) {
+            red.add("③ " + t.getMessage());
+        }
+        try {
+            assertEquals(Map.of(), liveDataService.liveUserNames(PLATFORM, STREAMER.getUid()), "④ 昵称表");
+            assertEquals(Map.of(), liveDataService.liveUserFaces(PLATFORM, STREAMER.getUid()), "④ 头像表");
+        } catch (Throwable t) {
+            red.add("④ " + t.getMessage());
+        }
+        try {
+            aggregator.onDanmu(new BilibiliDanmuEvent(STREAMER, new UserInfo(-1L, "丙", null), "负数", "负数"));
+            assertEquals(0, users(BilibiliLiveMetric.DANMU_USERS), "⑤ 负数也认不出是谁");
+        } catch (Throwable t) {
+            red.add("⑤ " + t.getMessage());
+        }
+        try {
+            aggregator.onPaidGift(new BilibiliPaidGiftEvent(STREAMER, maskedA, gift(5.2, 1), 5.2));
+            aggregator.onEnterRoom(new BilibiliEnterRoomEvent(STREAMER, maskedB));
+            assertEquals(5.2, metric(BilibiliLiveMetric.GIFT_VALUE), 0.0001, "⑥ 礼物金额照记");
+            assertEquals(0, users(BilibiliLiveMetric.GIFT_USERS), "⑥ 送礼人数");
+            assertEquals(0, users(BilibiliLiveMetric.ENTER_USERS), "⑥ 进房人数");
+        } catch (Throwable t) {
+            red.add("⑥ " + t.getMessage());
+        }
+        try {
+            aggregator.onDanmu(new BilibiliDanmuEvent(STREAMER, user(1L), "认得出", "认得出"));
+            assertEquals(1, users(BilibiliLiveMetric.DANMU_USERS), "⑦ 认得出的观众照常计");
+            assertEquals(Map.of(1L, 1.0), liveDataService.liveUserMetrics(PLATFORM, STREAMER.getUid())
+                    .get(BilibiliLiveMetric.DANMU_USERS), "⑦ 计分表里只有认得出的那一位");
+        } catch (Throwable t) {
+            red.add("⑦ " + t.getMessage());
+        }
+        try {
+            List<DanmuRecord> records = details.readDanmu(PLATFORM, STREAMER.getUid(), start);
+            assertEquals(List.of("你好", "晚上好", "笑哭", "负数", "认得出"),
+                    records.stream().map(DanmuRecord::text).toList(), "⑧ 原文照留，一条不少");
+            assertEquals("甲***", records.get(0).uname(), "⑧ 打码昵称原样留");
+        } catch (Throwable t) {
+            red.add("⑧ " + t.getMessage());
+        }
+        if (!red.isEmpty()) {
+            fail(red.size() + " 问红：" + String.join("；", red));
+        }
+    }
+
     // ---------------------------------------------------------------- 弹幕原文留档
 
     @Test
