@@ -437,7 +437,7 @@ class BilibiliEventParserTest {
         }
 
         @Test
-        @DisplayName("派生不计收入：六名不计 UNKNOWN_CMD、空事件不降级；名单与表同、恰六名")
+        @DisplayName("派生不计收入：六名不计 UNKNOWN_CMD、空事件不降级；名单与表同、恰六名、键序与名单逐位同")
         void derivedNotRevenueCmdsSilentAndExact() {
             List<String> reds = new ArrayList<>();
             List<String> ran = new ArrayList<>();
@@ -496,6 +496,14 @@ class BilibiliEventParserTest {
                 reds.add("④ " + e.getMessage());
             }
             ran.add("④条数");
+
+            try {
+                List<String> keys = new ArrayList<>(BilibiliEventParser.DERIVED_NOT_REVENUE_CMDS.keySet());
+                assertEquals(derived, keys, "派生表键序须与名单逐位相等");
+            } catch (AssertionError e) {
+                reds.add("⑤ " + e.getMessage());
+            }
+            ran.add("⑤次序");
 
             assertTrue(reds.isEmpty(),
                     () -> reds.size() + " 问红: " + String.join("; ", reds)
