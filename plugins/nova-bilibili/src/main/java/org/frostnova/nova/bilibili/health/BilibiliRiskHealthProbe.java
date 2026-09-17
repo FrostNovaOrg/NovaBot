@@ -147,6 +147,7 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
 
         String unknownCmdLine = unknownCmdSummaryLine();
         String silentLines = silentLossLine(BilibiliRiskMetrics.Kind.PARSE_FAILURE, "解析失败")
+                + silentLossLine(BilibiliRiskMetrics.Kind.LOGIN_UID_FAILURE, "获取登录账号失败")
                 + silentLossLine(BilibiliRiskMetrics.Kind.FIELD_MISSING, "缺字段")
                 + silentLossLine(BilibiliRiskMetrics.Kind.API_DATA_MISSING, "接口缺 data")
                 + silentLossLine(BilibiliRiskMetrics.Kind.PACKET_CORRUPT, "数据包异常")
@@ -202,7 +203,7 @@ public class BilibiliRiskHealthProbe implements HealthProbe {
     /**
      * 五类静默信号（解析失败、缺字段、接口缺 data、数据包异常、未知字段）
      * 只进摘要、不改档位：它们说明「有些消息或应答被丢了」或「报文里多了点什么」，
-     * 不是连接坏了，但首页得看得见。
+     * 不是连接坏了，但首页得看得见。获取登录账号失败借用同一行形，同样只进摘要、不改档位。
      * <p>
      * 数据包异常是其中最贵的一类——协议层没读下来时丢的是<b>整批</b>，
      * 一批里可能有几十条弹幕与礼物。未知字段则是另一头：<b>今天什么都没丢</b>，

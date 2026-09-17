@@ -3,6 +3,8 @@ package org.frostnova.nova.bilibili.util;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
+import org.frostnova.nova.bilibili.exception.NetworkException;
+import org.frostnova.nova.bilibili.exception.RequestFailedException;
 import org.frostnova.nova.bilibili.exception.ResponseCodeException;
 import org.frostnova.nova.bilibili.health.BilibiliRiskMetrics;
 import org.frostnova.nova.bilibili.model.GuardMember;
@@ -33,7 +35,7 @@ import static org.mockito.Mockito.when;
  * 这几条路失败时都只留一条日志就返回 null／false：扫码明明成功、凭据却因缺一个键取不出来，
  * 大航海名单里缺 uid 的成员被悄悄跳过，取登录 uid 时把网络故障与未登录混在同一句日志里。
  * 计数上完全说得通，健康页上一格都不会动——本组用例把这些缺口逐条接到
- * {@link BilibiliRiskMetrics.Kind#API_DATA_MISSING}／{@link BilibiliRiskMetrics.Kind#PARSE_FAILURE} 上，
+ * {@link BilibiliRiskMetrics.Kind#API_DATA_MISSING}／{@link BilibiliRiskMetrics.Kind#LOGIN_UID_FAILURE} 上，
  * 并钉住「只补记数、返回值一个字不变」。
  */
 @DisplayName("HTTP 侧静默损失记账")
@@ -208,7 +210,7 @@ class BilibiliApiUtilSilentLossCountTest {
     }
 
     @Test
-    @DisplayName("getLoginUid 吞异常记账拆两支：RuntimeException 记 PARSE_FAILURE、ResponseCodeException 不记，返回都是 null")
+    @DisplayName("getLoginUid 吞异常记账拆两支：非业务码异常记 LOGIN_UID_FAILURE、不记 PARSE_FAILURE，ResponseCodeException 不记，返回都是 null")
     void getLoginUidNotesOnlyNonResponseCodeExceptions() {
         List<String> reds = new ArrayList<>();
         BilibiliRiskMetrics riskMetrics = new BilibiliRiskMetrics();
@@ -225,9 +227,9 @@ class BilibiliApiUtilSilentLossCountTest {
             reds.add("① " + e.getMessage());
         }
         try {
-            assertEquals(1, riskMetrics.count(BilibiliRiskMetrics.Kind.PARSE_FAILURE, MIN),
-                    "非 ResponseCodeException 应记一次 PARSE_FAILURE");
-            String detail = riskMetrics.lastDetail(BilibiliRiskMetrics.Kind.PARSE_FAILURE).orElse("");
+            assertEquals(1, riskMetrics.count(BilibiliRiskMetrics.Kind.LOGIN_UID_FAILURE, MIN),
+                    "非 ResponseCodeException 应记一次 LOGIN_UID_FAILURE");
+            String detail = riskMetrics.lastDetail(BilibiliRiskMetrics.Kind.LOGIN_UID_FAILURE).orElse("");
             assertTrue(detail.contains("MY_INFO_API:exception:IllegalStateException"),
                     "detail 应为 MY_INFO_API:exception:类简名，实际: " + detail);
         } catch (AssertionError e) {
@@ -243,13 +245,43 @@ class BilibiliApiUtilSilentLossCountTest {
                 };
         try {
             assertNull(notLoggedIn.getLoginUid(), "未登录时返回仍应是 null（行为不变）");
-            assertEquals(1, riskMetrics.count(BilibiliRiskMetrics.Kind.PARSE_FAILURE, MIN),
+            assertEquals(1, riskMetrics.count(BilibiliRiskMetrics.Kind.LOGIN_UID_FAILURE, MIN),
                     "未登录（业务码 ResponseCodeException）不该再记");
         } catch (AssertionError e) {
             reds.add("③ " + e.getMessage());
         }
 
-        assertTrue(reds.isEmpty(), () -> "三问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+        try {
+            // 取不到登录 uid 不是消息解析出了问题：两支走完，解析失败一格都不该动
+            assertEquals(0, riskMetrics.count(BilibiliRiskMetrics.Kind.PARSE_FAILURE, MIN),
+                    "取登录 uid 失败不得记进 PARSE_FAILURE");
+        } catch (AssertionError e) {
+            reds.add("④ " + e.getMessage());
+        }
+
+        try {
+            // 请求重试耗尽、应答缺 profile 是实际最常见的两种，同样整支记进 LOGIN_UID_FAILURE
+            BilibiliRiskMetrics others = new BilibiliRiskMetrics();
+            for (RuntimeException thrown : List.of(
+                    new RequestFailedException("请求重试耗尽"),
+                    new NetworkException("账号信息接口未返回 profile 字段"))) {
+                BilibiliApiUtil failing = new BilibiliApiUtil(mock(HttpUtil.class), new NovaBilibiliProperties(), others) {
+                    @Override
+                    public Long fetchLoginUid() {
+                        throw thrown;
+                    }
+                };
+                assertNull(failing.getLoginUid(), thrown.getClass().getSimpleName() + " 时返回仍应是 null（行为不变）");
+            }
+            assertEquals(2, others.count(BilibiliRiskMetrics.Kind.LOGIN_UID_FAILURE, MIN),
+                    "重试耗尽与缺 profile 应各记一次 LOGIN_UID_FAILURE");
+            assertEquals(0, others.count(BilibiliRiskMetrics.Kind.PARSE_FAILURE, MIN),
+                    "重试耗尽与缺 profile 都不得记进 PARSE_FAILURE");
+        } catch (AssertionError e) {
+            reds.add("⑤ " + e.getMessage());
+        }
+
+        assertTrue(reds.isEmpty(), () -> "五问中 " + reds.size() + " 问红: " + String.join("; ", reds));
     }
 
     // ================ 夹具 ================
