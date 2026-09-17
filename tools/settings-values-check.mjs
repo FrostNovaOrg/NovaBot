@@ -6,12 +6,16 @@
  * 钉开关那一格在 store.values 改完再画时 checked 与「已启用／已关闭」跟着走，
  * 以及未保存草稿优先于已保存值。
  *
+ * 取件按唯一后缀找，不写模块目录名：不跟软链、子目录有 .git 不下去、读不了的目录判红；
+ * 这几条由末尾「找件自证」几格在临时目录里现造现量。
+ *
  * 跑法：
  *   bash tools/settings-model-check.sh
  * 退码 0 即各格全对；任一格对不上打印差异并以 1 退出。
  */
 
-import {existsSync, readFileSync, readdirSync} from 'node:fs';
+import {chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 
@@ -24,13 +28,23 @@ if (!existsSync(join(repo, 'pom.xml'))) {
 
 const SKIP = new Set(['.git', 'node_modules', 'target', 'scratch', 'dist']);
 
-function findUnique(suffix) {
+/**
+ * root 下以 suffix 结尾的普通文件，连同读不了的目录一并交回
+ *
+ * Dirent 不跟软链：指向目录或文件的软链既不算目录也不算文件，不进也不收。
+ * 子目录里有 .git（件或目录）就不下去，入口不判。读不了的目录记名交回、不静默跳过：
+ * 漏读一个目录，里面那份重复件就数不到，「恰 1 份」也就作不得准。
+ */
+function sweepBySuffix(root, suffix) {
   const found = [];
+  const unreadable = [];
+  const relOf = path => path.slice(root.length + 1).split('\\').join('/');
   const sweep = dir => {
     let entries;
     try {
       entries = readdirSync(dir, {withFileTypes: true});
-    } catch {
+    } catch (error) {
+      unreadable.push({rel: relOf(dir) || '.', code: error.code || String(error)});
       return;
     }
     for (const entry of entries) {
@@ -40,18 +54,38 @@ function findUnique(suffix) {
         if (existsSync(join(path, '.git'))) continue;
         sweep(path);
       } else if (entry.isFile()) {
-        const rel = path.slice(repo.length + 1).split('\\').join('/');
+        const rel = relOf(path);
         if (rel === suffix || rel.endsWith('/' + suffix)) found.push(rel);
       }
     }
   };
-  sweep(repo);
+  sweep(root);
+  return {found, unreadable};
+}
+
+/**
+ * 以 suffix 结尾的件恰 1 份、且没有读不了的目录时交回 {rel}，否则交回 {error}
+ */
+function uniqueBySuffix(root, suffix) {
+  const {found, unreadable} = sweepBySuffix(root, suffix);
+  if (unreadable.length) {
+    return {error: '找以 ' + suffix + ' 结尾的件时有 ' + unreadable.length + ' 个目录读不了，份数作不得准：'
+      + unreadable.map(item => item.rel + '（' + item.code + '）').join('、')};
+  }
   if (found.length !== 1) {
-    console.log('以 ' + suffix + ' 结尾的件应恰 1 份，实得 ' + found.length + ' 份'
-      + (found.length ? '：' + found.join('、') : ''));
+    return {error: '以 ' + suffix + ' 结尾的件应恰 1 份，实得 ' + found.length + ' 份'
+      + (found.length ? '：' + found.join('、') : '')};
+  }
+  return {rel: found[0]};
+}
+
+function findUnique(suffix) {
+  const {rel, error} = uniqueBySuffix(repo, suffix);
+  if (error) {
+    console.log(error);
     process.exit(1);
   }
-  return join(repo, found[0]);
+  return join(repo, rel);
 }
 
 const settingsSrc = readFileSync(findUnique('src/main/resources/config-ui/settings.js'), 'utf8');
@@ -194,6 +228,65 @@ const draft = snapshot(
 eq({checked: draft.checked, caption: draft.caption},
   {checked: false, caption: '已关闭'},
   '草稿优先于已保存值');
+
+/**
+ * 找件自证：临时目录里现造一棵树，过同一个 sweepBySuffix／uniqueBySuffix
+ *
+ * 目录软链、文件软链、带 .git 件或 .git 目录的子目录、target 里的同名件都不该收；
+ * 权限 000 的目录必须记名交回，且此时不认那唯一一份。临时目录无论上面是否抛错都要删，删净单独算一格。
+ */
+function sweepSelfProof() {
+  const probe = 'src/main/resources/config-ui/settings.js';
+  let tree = '';
+  let outside = '';
+  let locked = '';
+  try {
+    tree = mkdtempSync(join(tmpdir(), 'novabot-settings-values-tree-'));
+    outside = mkdtempSync(join(tmpdir(), 'novabot-settings-values-outside-'));
+    const put = (base, rel) => {
+      mkdirSync(dirname(join(base, rel)), {recursive: true});
+      writeFileSync(join(base, rel), '// ' + rel + '\n');
+    };
+    put(outside, probe);
+    put(tree, 'a/' + probe);
+    put(tree, 'nested-file/' + probe);
+    writeFileSync(join(tree, 'nested-file/.git'), '');
+    put(tree, 'nested-dir/' + probe);
+    mkdirSync(join(tree, 'nested-dir/.git'));
+    put(tree, 'target/' + probe);
+    mkdirSync(dirname(join(tree, 'b', probe)), {recursive: true});
+    symlinkSync(join(outside, probe), join(tree, 'b', probe));
+    symlinkSync(outside, join(tree, 'link'));
+    put(tree, 'locked/' + probe);
+    locked = join(tree, 'locked');
+    chmodSync(locked, 0o000);
+    const {found, unreadable} = sweepBySuffix(tree, probe);
+    eq(found.sort(), ['a/' + probe], '找件自证：不跟软链、不进带 .git 的子目录、跳过 target');
+    eq(unreadable.map(item => item.rel), ['locked'], '找件自证：读不了的目录记名交回');
+    const picked = uniqueBySuffix(tree, probe);
+    eq({rel: picked.rel || '', named: String(picked.error || '').includes('locked')},
+      {rel: '', named: true}, '找件自证：有目录读不了时不认那唯一一份');
+  } catch (error) {
+    checks++;
+    failures.push('找件自证没造完或没跑完：' + (error && error.message ? error.message : error));
+  } finally {
+    try {
+      if (locked) chmodSync(locked, 0o700);
+    } catch {
+      // 权限改不回，下面删不净，由删净那一格报
+    }
+    for (const dir of [tree, outside]) {
+      try {
+        if (dir) rmSync(dir, {recursive: true, force: true});
+      } catch {
+        // 删不掉，由删净那一格报
+      }
+    }
+  }
+  eq([tree, outside].filter(dir => dir && existsSync(dir)), [], '找件自证：临时目录删净');
+}
+
+sweepSelfProof();
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);
