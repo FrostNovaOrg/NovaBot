@@ -31,8 +31,10 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -50,6 +52,22 @@ class BilibiliLiveStatsAggregatorTest {
     private static final String PLATFORM = "bilibili";
 
     private static final LiveStreamerInfo STREAMER = new LiveStreamerInfo(10001L, "主播甲", 20002L);
+
+    /**
+     * 按人计分的八张表，对着聚合器里每一处计分逐一列出
+     * <p>
+     * 弹幕表（弹幕、表情）、礼物表（付费礼物、盲盒）、盲盒表与盲盒盈亏表（盲盒）、醒目留言表、
+     * 大航海表（舰长、提督、总督）、进房表、点赞表
+     */
+    private static final List<String> USER_TABLES = List.of(
+            BilibiliLiveMetric.DANMU_USERS,
+            BilibiliLiveMetric.GIFT_USERS,
+            BilibiliLiveMetric.BOX_USERS,
+            BilibiliLiveMetric.BOX_PROFIT_USERS,
+            BilibiliLiveMetric.SUPER_CHAT_USERS,
+            BilibiliLiveMetric.GUARD_USERS,
+            BilibiliLiveMetric.ENTER_USERS,
+            BilibiliLiveMetric.LIKE_USERS);
 
     /**
      * 弹幕原文要落盘，给它一个临时目录
@@ -464,6 +482,91 @@ class BilibiliLiveStatsAggregatorTest {
         }
     }
 
+    @Test
+    @DisplayName("⚠️ uid 为 0 的发送者走遍十路计分事件：条数金额照记，但八张表都不算人数、不上榜，昵称头像哪一路都不记")
+    void maskedZeroUidIsNotScoredOnAnyUserTable() {
+        List<String> red = new ArrayList<>();
+        // 有开播时刻，原文与事件留档那几段也一并走到
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), 1_700_000_000_000L);
+
+        try {
+            // 每一路的发送者昵称头像各不相同：哪一路漏过了守卫，昵称表、头像表里留下的就是哪一路的名字
+            List<String> thrown = feedEveryScoredEvent(
+                    key -> new UserInfo(0L, key + "***", "https://face.example.invalid/" + key + ".jpg"));
+            assertEquals(List.of(), thrown, "① 十路事件都照常处理，不抛异常");
+        } catch (Throwable t) {
+            red.add("① " + t.getMessage());
+        }
+        try {
+            assertEquals(Map.of(), tablesWithViewers(), "② 八张表都不算人数");
+        } catch (Throwable t) {
+            red.add("② " + t.getMessage());
+        }
+        try {
+            assertEquals(Map.of(), tablesWithRanking(), "③ 八张榜上都没有 uid 0");
+        } catch (Throwable t) {
+            red.add("③ " + t.getMessage());
+        }
+        try {
+            // 十路都喂完再查：哪一路在守卫之前记下了昵称头像，都逃不过这一问
+            assertEquals(Map.of(), liveDataService.liveUserNames(PLATFORM, STREAMER.getUid()), "④ 昵称表");
+            assertEquals(Map.of(), liveDataService.liveUserFaces(PLATFORM, STREAMER.getUid()), "④ 头像表");
+        } catch (Throwable t) {
+            red.add("④ " + t.getMessage());
+        }
+        try {
+            assertEquals(2.0, metric(BilibiliLiveMetric.DANMU_COUNT), 0.0001, "⑤ 弹幕条数照记（弹幕、表情各一条）");
+            assertEquals(11.8, metric(BilibiliLiveMetric.GIFT_VALUE), 0.0001, "⑤ 礼物金额照记（付费礼物 5.2，盲盒开出 6.6）");
+            assertEquals(1.0, metric(BilibiliLiveMetric.BOX_COUNT), 0.0001, "⑤ 盲盒个数照记");
+            assertEquals(-3.3, metric(BilibiliLiveMetric.BOX_PROFIT), 0.0001, "⑤ 盲盒盈亏照记");
+            assertEquals(1.0, metric(BilibiliLiveMetric.SUPER_CHAT_COUNT), 0.0001, "⑤ 醒目留言条数照记");
+            assertEquals(30.0, metric(BilibiliLiveMetric.SUPER_CHAT_VALUE), 0.0001, "⑤ 醒目留言金额照记");
+            assertEquals(3.0, metric(BilibiliLiveMetric.CAPTAIN_COUNT) + metric(BilibiliLiveMetric.COMMANDER_COUNT)
+                    + metric(BilibiliLiveMetric.GOVERNOR_COUNT), 0.0001, "⑤ 舰长、提督、总督人次照记");
+            assertEquals(22134.0, metric(BilibiliLiveMetric.GUARD_VALUE), 0.0001, "⑤ 大航海金额照记");
+        } catch (Throwable t) {
+            red.add("⑤ " + t.getMessage());
+        }
+        try {
+            // 同样十路换成认得出的观众，八张表都要计上——否则上面几问的绿，可能只是某一路根本没走到表
+            assertEquals(List.of(), feedEveryScoredEvent(key -> user(1L)), "⑥ 认得出的观众十路都不抛异常");
+            Map<String, Integer> counted = tablesWithViewers();
+            assertEquals(List.of(), USER_TABLES.stream().filter(table -> !counted.containsKey(table)).toList(),
+                    "⑥ 认得出的观众八张表都照常计，这里列的是没计上的表");
+        } catch (Throwable t) {
+            red.add("⑥ " + t.getMessage());
+        }
+        if (!red.isEmpty()) {
+            fail(red.size() + " 问红：" + String.join("；", red));
+        }
+    }
+
+    @Test
+    @DisplayName("⚠️ 发送者在、uid 却是空的（protobuf 格式的消息不带零值）：十路计分事件都不抛异常，八张表都不算人数、不上榜")
+    void senderWithNullUidIsSkippedWithoutThrowing() {
+        List<String> red = new ArrayList<>();
+        // 有开播时刻，原文与事件留档那几段也一并走到
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), 1_700_000_000_000L);
+
+        try {
+            // uid 是包装类型，拿空值比大小会在拆箱时抛空指针，而事件是在直播间消息线程上同步分发的
+            List<String> thrown = feedEveryScoredEvent(
+                    key -> new UserInfo(null, key + "***", "https://face.example.invalid/" + key + ".jpg"));
+            assertEquals(List.of(), thrown, "① 十路事件都照常处理，不抛异常");
+        } catch (Throwable t) {
+            red.add("① " + t.getMessage());
+        }
+        try {
+            assertEquals(Map.of(), tablesWithViewers(), "② 八张表都不算人数");
+            assertEquals(Map.of(), tablesWithRanking(), "② 八张榜上都没有人");
+        } catch (Throwable t) {
+            red.add("② " + t.getMessage());
+        }
+        if (!red.isEmpty()) {
+            fail(red.size() + " 问红：" + String.join("；", red));
+        }
+    }
+
     // ---------------------------------------------------------------- 弹幕原文留档
 
     @Test
@@ -645,5 +748,67 @@ class BilibiliLiveStatsAggregatorTest {
 
     private GiftInfo gift(double price, int count) {
         return new GiftInfo(1L, "礼物", price, count, null);
+    }
+
+    /**
+     * 把要计分的十路事件各喂一遍，八张按人计分的表都走到
+     * <p>
+     * 发送者由 {@code sender} 按这一路的英文名造。某一路抛了异常不拦着后面几路，
+     * 记下「哪一路：异常类名」交回，由调用方断言
+     */
+    private List<String> feedEveryScoredEvent(Function<String, UserInfo> sender) {
+        Map<String, Runnable> feeds = new LinkedHashMap<>();
+        feeds.put("弹幕", () -> aggregator.onDanmu(new BilibiliDanmuEvent(STREAMER, sender.apply("danmu"), "你好", "你好")));
+        feeds.put("表情", () -> aggregator.onEmoji(new BilibiliEmojiEvent(STREAMER, sender.apply("emoji"),
+                new org.frostnova.nova.core.model.EmojiInfo("1", "笑哭", "https://pic.example.invalid/e.png"))));
+        feeds.put("付费礼物", () -> aggregator.onPaidGift(new BilibiliPaidGiftEvent(STREAMER, sender.apply("gift"), gift(5.2, 1), 5.2)));
+        feeds.put("盲盒", () -> aggregator.onRandomGift(new BilibiliRandomGiftEvent(STREAMER, sender.apply("box"),
+                gift(9.9, 1), gift(6.6, 1), 9.9, 6.6)));
+        feeds.put("醒目留言", () -> aggregator.onSuperChat(new BilibiliSuperChatEvent(STREAMER, sender.apply("superchat"), "加油", 30.0)));
+        feeds.put("舰长", () -> aggregator.onCaptain(new BilibiliCaptainEvent(STREAMER, sender.apply("captain"), 138.0, 1, "月")));
+        feeds.put("提督", () -> aggregator.onCommander(new BilibiliCommanderEvent(STREAMER, sender.apply("commander"), 1998.0, 1, "月")));
+        feeds.put("总督", () -> aggregator.onGovernor(new BilibiliGovernorEvent(STREAMER, sender.apply("governor"), 19998.0, 1, "月")));
+        feeds.put("进房", () -> aggregator.onEnterRoom(new BilibiliEnterRoomEvent(STREAMER, sender.apply("enter"))));
+        feeds.put("点赞", () -> aggregator.onLike(new BilibiliLikeEvent(STREAMER, sender.apply("like"))));
+
+        List<String> thrown = new ArrayList<>();
+        feeds.forEach((name, feed) -> {
+            try {
+                feed.run();
+            } catch (RuntimeException e) {
+                thrown.add(name + "：" + e.getClass().getSimpleName());
+            }
+        });
+        return thrown;
+    }
+
+    /**
+     * 有人被算进去的表：表名 → 人数
+     */
+    private Map<String, Integer> tablesWithViewers() {
+        Map<String, Integer> counted = new LinkedHashMap<>();
+        for (String table : USER_TABLES) {
+            int viewers = users(table);
+            if (viewers > 0) {
+                counted.put(table, viewers);
+            }
+        }
+        return counted;
+    }
+
+    /**
+     * 榜上有人的表：表名 → 榜上各位的 uid
+     */
+    private Map<String, List<Long>> tablesWithRanking() {
+        Map<String, List<Long>> ranked = new LinkedHashMap<>();
+        for (String table : USER_TABLES) {
+            List<Long> uids = liveDataService.getLiveUserRanking(PLATFORM, STREAMER.getUid(), table, 10).stream()
+                    .map(UserScore::userUid)
+                    .toList();
+            if (!uids.isEmpty()) {
+                ranked.put(table, uids);
+            }
+        }
+        return ranked;
     }
 }
