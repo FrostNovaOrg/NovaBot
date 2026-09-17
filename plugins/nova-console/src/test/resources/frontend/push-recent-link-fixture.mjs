@@ -274,7 +274,10 @@ ask('③ session 为 null 时不出链接且提示句为取不到记录', () => 
   }
 });
 
-ask('④ 链接喂 parseLogHash 后 channel 与 pushChannelOf 相等且 timelineQuery 含全串', () => {
+/**
+ * ④ 的主体，找件结果由调用方交进来：带错就照原句抛出（读不了的目录在错句里点了名），不往下量
+ */
+function linkAgainstLogModel(logModelPick) {
   if (logModelPick.error) throw new Error(logModelPick.error);
   if (typeof model.pushChannelOf !== 'function') throw new Error('没有 pushChannelOf');
   if (typeof logModel.parseLogHash !== 'function') throw new Error('没有 parseLogHash');
@@ -289,7 +292,9 @@ ask('④ 链接喂 parseLogHash 后 channel 与 pushChannelOf 相等且 timeline
   if (!String(query).includes(needle)) {
     throw new Error('timelineQuery 不含 ' + needle + '：得到 ' + JSON.stringify(query));
   }
-});
+}
+
+ask('④ 链接喂 parseLogHash 后 channel 与 pushChannelOf 相等且 timelineQuery 含全串', () => linkAgainstLogModel(logModelPick));
 
 ask('⑤ 有记录时出表格、不出新句', () => {
   const host = renderNotices(SESSION, [{
@@ -373,6 +378,50 @@ ask('⑧ 临时目录收尾：主体抛错、删净正常时照报主体的错',
     thrown = error && error.message ? error.message : String(error);
   }
   eq({thrown, left: made.filter(dir => existsSync(dir))}, {thrown: '模拟主体出错', left: []}, '抛出的错与残留');
+});
+
+ask('⑨ 找件记名照实带 errno：读时目录已不在记 ENOENT，不写死 EACCES、也不只记 EACCES', () => {
+  inTempDirs(['gone'], tree => {
+    const got = [];
+    const unreadable = [];
+    collectBySuffix(join(tree, 'gone'), tree, LOG_MODEL_SUFFIX, got, unreadable);
+    eq({got, unreadable}, {got: [], unreadable: ['gone（ENOENT）']}, '目录不在时');
+  });
+});
+
+ask('⑩ 临时目录收尾：主体抛错又删不掉时两样都报，没删净的点名', () => {
+  const made = [];
+  let thrown = '';
+  let stayed = false;
+  try {
+    inTempDirs(['stuck'], dir => {
+      made.push(dir);
+      mkdirSync(join(dir, 'sealed/keep'), {recursive: true});
+      chmodSync(join(dir, 'sealed'), 0o000);
+      throw new Error('模拟主体出错');
+    });
+  } catch (error) {
+    thrown = error && error.message ? error.message : String(error);
+  } finally {
+    stayed = made.some(dir => existsSync(dir));
+    for (const leftover of made) {
+      if (existsSync(join(leftover, 'sealed'))) chmodSync(join(leftover, 'sealed'), 0o700);
+      rmSync(leftover, {recursive: true, force: true});
+    }
+  }
+  eq({stayed, thrown: made.length ? thrown.split(made[0]).join('<目录>') : thrown, left: made.filter(dir => existsSync(dir))},
+    {stayed: true, thrown: '模拟主体出错；临时目录没删净：<目录>', left: []}, '删不掉时（stayed 为目录确实没删掉）');
+});
+
+ask('⑪ ④ 找件交回错句时照原句红，不往下量', () => {
+  const said = '有 1 个目录读不了，份数作不得准：locked（EACCES）';
+  let thrown = '';
+  try {
+    linkAgainstLogModel({error: said});
+  } catch (error) {
+    thrown = error && error.message ? error.message : String(error);
+  }
+  eq(thrown, said, '④ 抛出的错');
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
