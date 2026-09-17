@@ -534,6 +534,11 @@ public class ConfigUiAuthController {
      * <p>
      * 要旧口令：一枚被偷走的会话 Cookie 若能直接换掉口令，真正的主人就被锁在了门外，
      * 而他手上那把口令看起来只是「突然不对了」。
+     * <p>
+     * 旧口令连错到次数，这把会话当场注销，见 {@link ConfigUiAuthService#checkCurrentPassword}。
+     * 没到次数时回 400 而不是 401：界面上凡 401 一律整页重载，提示句来不及显示，
+     * 人只看到页面闪了一下，不知道是旧口令输错了，更不知道再错几次会被退出。注销了才回 401，
+     * 整页重载正好落到登录页。
      * @param body 请求体，current 为现在的口令，next 为新口令
      * @return 结果
      */
@@ -548,18 +553,27 @@ public class ConfigUiAuthController {
         }
 
         char[] current = Optional.ofNullable(body.getString("current")).orElse("").toCharArray();
+        ConfigUiAuthService.CurrentPasswordCheck check;
         try {
-            if (!authService.matchesPassword(current)) {
-                log.warn("配置界面改口令时旧口令不符, 来源: {}", request.getRemoteAddr());
-                result.put("success", false);
-                result.put("message", "现在的口令不对");
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(result);
-            }
+            check = authService.checkCurrentPassword(current, sessionId(request), request.getRemoteAddr());
         } finally {
             Arrays.fill(current, '\0');
         }
 
-        return ResponseEntity.ok(replacePassword(body.getString("next"), request));
+        if (check.verdict() == ConfigUiAuthService.CurrentPasswordVerdict.MATCH) {
+            return ResponseEntity.ok(replacePassword(body.getString("next"), request));
+        }
+
+        result.put("success", false);
+        if (check.verdict() == ConfigUiAuthService.CurrentPasswordVerdict.MISMATCH) {
+            result.put("message", "现在的口令不对，再输错 " + check.remaining() + " 次会退出这次登录");
+            return ResponseEntity.badRequest().body(result);
+        }
+
+        result.put("message", check.verdict() == ConfigUiAuthService.CurrentPasswordVerdict.SIGNED_OUT
+                ? "现在的口令连续输错 " + ConfigUiAuthService.CURRENT_PASSWORD_MISSES_BEFORE_SIGN_OUT + " 次，这次登录已退出，请重新登录"
+                : "认不出这次登录，请重新登录后再改口令");
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(result);
     }
 
     /**

@@ -8,6 +8,7 @@ import org.frostnova.nova.core.config.ui.auth.ConfigUiSessionStore;
 import org.frostnova.nova.core.config.ui.auth.LoginThrottle;
 import org.frostnova.nova.core.config.ui.auth.TotpGenerator;
 import org.frostnova.nova.core.service.PushTemplateDefaults;
+import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -143,9 +144,11 @@ class GenericConfigSaveMustNotChangeAuthWithoutReauthTest {
     @Test
     @DisplayName("对照：专用改口令口没有旧口令必须拒")
     void dedicatedPasswordChangeStillRequiresTheCurrentPassword() {
-        login();
+        ConfigUiSession session = login();
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/config/api/auth/password/change");
         request.setRemoteAddr("127.0.0.1");
+        // 带上会话：不带的话在「认不出这次登录」那一步就拒了，量不到「没给旧口令」这一格
+        request.setCookies(new Cookie(ConfigUiSecurityFilter.SESSION_COOKIE, session.getId()));
         JSONObject body = new JSONObject();
         body.put("next", NEW_PASSWORD);
 

@@ -119,6 +119,14 @@ public class ConfigUiAuthService {
      */
     private static final Duration BUSY_RETRY_AFTER = Duration.ofSeconds(5);
 
+    /**
+     * 改口令时同一把会话连错几次旧口令，就注销这一把
+     * <p>
+     * 取 5，与登录锁定的默认次数相同：手滑输错一两次不受影响，一时想不起口令的人也有几次机会。
+     * 不做成配置项：多一个键只是多一处能把它调成「不设限」的地方。
+     */
+    public static final int CURRENT_PASSWORD_MISSES_BEFORE_SIGN_OUT = 5;
+
     private final ConfigUiSessionStore sessions;
 
     private final LoginThrottle throttle;
@@ -344,17 +352,66 @@ public class ConfigUiAuthService {
     /**
      * 这一串是不是当前的登录口令
      * <p>
-     * 不走 {@link #checkCredentials}：那一支会连二次验证码一起要，而改口令时手边未必有验证器；
-     * 它还会消耗猜口令的全局预算，让一次正常的改口令挤掉别人的登录额度。
-     * <p>
-     * 不另计失败次数是有意的：走到这里的人已经持有一把有效会话，
-     * 挡在他前面的那道门是会话本身，不是这一次比对。
+     * <b>只比对、不计次。</b>改口令接口核对旧口令不走这里，走 {@link #checkCurrentPassword}：
+     * 持有一把有效会话不等于就是主人，偷到 Cookie 的人拿不计次的比对能一直猜到中。
      * @param password 明文口令
      * @return 相符时为 true
      */
     public boolean matchesPassword(char[] password) {
         String hash = passwordHash;
         return hash != null && PasswordHash.verify(password, hash);
+    }
+
+    /**
+     * 改口令时核对旧口令，按会话计连错次数
+     * <p>
+     * 不走 {@link #checkCredentials}：那一支会连二次验证码一起要，而改口令时手边未必有验证器；
+     * 它还会消耗猜口令的全局预算，让一次正常的改口令挤掉别人的登录额度。
+     * <p>
+     * 🔴 <b>但不能不计次。</b>走到这里的人持有一把有效会话，却未必是主人：偷到 Cookie 的人
+     * 若能在这里无限次地猜，猜中就把口令换掉，主人从此登不进来。连错到次数就<b>注销这一把会话</b>，
+     * 收回的正是猜的人手里那把钥匙。不记进登录的失败计数：那份计数按来源锁登录，
+     * 记进去等于把「锁住主人登录」的按钮递给猜的人。
+     * <p>
+     * 认不出会话（没带 Cookie，或那一把已失效）时<b>不比对</b>：没处记次数的比对就是不计次的比对。
+     * @param password 明文口令
+     * @param sessionId 当前会话标识，可为 null
+     * @param clientIp 来源 IP，只用于日志
+     * @return 判定，以及再错几次会注销这把会话
+     */
+    public CurrentPasswordCheck checkCurrentPassword(char[] password, String sessionId, String clientIp) {
+        Optional<ConfigUiSession> found = sessions.validate(sessionId, clock.get());
+        if (found.isEmpty()) {
+            log.warn("配置界面改口令时认不出当前会话, 已拒绝, 来源: {}", clientIp);
+            return new CurrentPasswordCheck(CurrentPasswordVerdict.NO_SESSION, 0);
+        }
+
+        ConfigUiSession session = found.get();
+        int attempt = session.countPasswordCheck();
+        // 超过次数还走得到这里，只可能是并发打进来、在注销之前就过了会话校验的那几趟：不比对，直接注销
+        if (attempt > CURRENT_PASSWORD_MISSES_BEFORE_SIGN_OUT) {
+            return signOutAfterMisses(session, clientIp);
+        }
+
+        String hash = passwordHash;
+        if (hash != null && PasswordHash.verify(password, hash)) {
+            session.clearPasswordChecks();
+            return new CurrentPasswordCheck(CurrentPasswordVerdict.MATCH, CURRENT_PASSWORD_MISSES_BEFORE_SIGN_OUT);
+        }
+
+        if (attempt >= CURRENT_PASSWORD_MISSES_BEFORE_SIGN_OUT) {
+            return signOutAfterMisses(session, clientIp);
+        }
+
+        log.warn("配置界面改口令时旧口令不符, 这把会话已连错 {} 次, 来源: {}", attempt, clientIp);
+        return new CurrentPasswordCheck(CurrentPasswordVerdict.MISMATCH, CURRENT_PASSWORD_MISSES_BEFORE_SIGN_OUT - attempt);
+    }
+
+    private CurrentPasswordCheck signOutAfterMisses(ConfigUiSession session, String clientIp) {
+        sessions.revoke(session.getId());
+        log.warn("配置界面改口令时旧口令连错 {} 次, 已注销这把会话, 来源: {}",
+                CURRENT_PASSWORD_MISSES_BEFORE_SIGN_OUT, clientIp);
+        return new CurrentPasswordCheck(CurrentPasswordVerdict.SIGNED_OUT, 0);
     }
 
     /**
@@ -643,6 +700,39 @@ public class ConfigUiAuthService {
         public boolean ok() {
             return verdict == Verdict.OK;
         }
+    }
+
+    /**
+     * 改口令时核对旧口令的判定
+     */
+    public enum CurrentPasswordVerdict {
+        /**
+         * 旧口令对
+         */
+        MATCH,
+
+        /**
+         * 旧口令不对，这把会话还没连错到次数
+         */
+        MISMATCH,
+
+        /**
+         * 这一趟连错到了次数，这把会话已注销
+         */
+        SIGNED_OUT,
+
+        /**
+         * 认不出当前会话，没有比对
+         */
+        NO_SESSION
+    }
+
+    /**
+     * 改口令时核对旧口令的结果
+     * @param verdict 判定
+     * @param remaining 再错几次会注销这把会话，只在 {@link CurrentPasswordVerdict#MISMATCH} 时有意义
+     */
+    public record CurrentPasswordCheck(CurrentPasswordVerdict verdict, int remaining) {
     }
 
     /**

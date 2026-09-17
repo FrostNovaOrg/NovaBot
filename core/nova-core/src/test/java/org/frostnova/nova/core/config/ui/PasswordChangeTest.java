@@ -37,6 +37,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *       界面说「已改」而门上认的还是旧那把，且这件事要到下次重启才暴露</li>
  *   <li><b>免旧口令那条路只给令牌会话</b>——放开给每一把会话，
  *       等于把「偷一枚 Cookie」升级成「拿走这台面板」</li>
+ *   <li><b>旧口令连错有代价</b>——同一把会话连错 5 次就注销这一把。不设代价的话，
+ *       偷到 Cookie 的人能借这个口一直猜下去，猜中就换掉口令；主人的登录与别处的会话不受牵连</li>
  * </ul>
  */
 @DisplayName("改口令")
@@ -120,15 +122,19 @@ class PasswordChangeTest {
     }
 
     @Test
-    @DisplayName("🔴 旧口令不对就拒，配置文件一个字不动")
+    @DisplayName("🔴 旧口令不对就拒并说清还剩几次，配置文件一个字不动")
     void wrongCurrentPasswordIsRejected() throws IOException {
         String before = Files.readString(config, StandardCharsets.UTF_8);
 
         ResponseEntity<JSONObject> response =
                 controller.changePassword(body("这不是我的口令", NEW), request(ConfigUiSession.Channel.PASSWORD));
 
-        assertEquals(401, response.getStatusCode().value());
+        // 回 400 而不是 401：界面上凡 401 一律整页重载，提示句来不及显示，
+        // 人只看到页面闪了一下，不知道是旧口令输错了，也不知道再错几次会被退出
+        assertEquals(400, response.getStatusCode().value(), response.getBody().toJSONString());
         assertFalse(response.getBody().getBooleanValue("success"));
+        String message = response.getBody().getString("message");
+        assertTrue(message != null && message.contains("再输错 4 次"), "错一次要说清还剩几次: " + message);
         assertEquals(before, Files.readString(config, StandardCharsets.UTF_8), "拒了就不该动配置文件");
         assertTrue(authService.login(OLD.toCharArray(), null, "1.2.3.4").success(), "旧口令仍然管用");
     }
@@ -169,22 +175,89 @@ class PasswordChangeTest {
     }
 
     @Test
-    @DisplayName("不带会话 Cookie 改口令：注销数为 0，既有两把会话仍有效")
-    void changeWithoutCookieLeavesEverySession() {
+    @DisplayName("🔴 不带会话 Cookie 改口令：整个拒掉，口令与既有两把会话都不动")
+    void changeWithoutCookieIsRefused() throws IOException {
         ConfigUiSession first = authService.login(OLD.toCharArray(), null, "10.0.0.1").session();
         ConfigUiSession second = authService.login(OLD.toCharArray(), null, "10.0.0.2").session();
+        String before = Files.readString(config, StandardCharsets.UTF_8);
 
         ResponseEntity<JSONObject> response =
                 controller.changePassword(body(OLD, NEW), request(null));
 
-        assertEquals(200, response.getStatusCode().value());
-        assertTrue(response.getBody().getBooleanValue("success"), response.getBody().toJSONString());
-        assertEquals(0, response.getBody().getIntValue("revoked"),
-                "认不出当前这一把时把别处一并踢掉，刚办完的人会以为没办成");
+        // 认不出是哪一把会话，就没处记错了几次：放它过去，连错的代价在这一形里整个不存在；
+        // 改成了也收不回别处的会话，因为认不出该留下哪一把
+        assertEquals(401, response.getStatusCode().value(), response.getBody().toJSONString());
+        assertFalse(response.getBody().getBooleanValue("success"));
+        assertEquals(before, Files.readString(config, StandardCharsets.UTF_8), "拒了就不该动配置文件");
         assertTrue(authService.validate(first.getId()).isPresent(),
                 "不带 Cookie 不得注销第一把既有会话");
         assertTrue(authService.validate(second.getId()).isPresent(),
                 "不带 Cookie 不得注销第二把既有会话");
+        assertTrue(authService.login(OLD.toCharArray(), null, "1.2.3.4").success(), "拒了就不该改动口令");
+    }
+
+    @Test
+    @DisplayName("🔴 同一把会话连错 5 次旧口令：这一把当场注销，之后猜中了也改不了")
+    void fifthMissSignsTheSessionOut() throws IOException {
+        String before = Files.readString(config, StandardCharsets.UTF_8);
+        MockHttpServletRequest stolen = request(ConfigUiSession.Channel.PASSWORD);
+        String id = stolen.getCookies()[0].getValue();
+
+        for (int i = 1; i <= 4; i++) {
+            controller.changePassword(body("猜的第 " + i + " 个", NEW), stolen);
+            assertTrue(authService.validate(id).isPresent(), "输错 " + i + " 次就被退出登录，手滑的人吃不消");
+        }
+
+        ResponseEntity<JSONObject> fifth = controller.changePassword(body("猜的第 5 个", NEW), stolen);
+        assertTrue(authService.validate(id).isEmpty(),
+                "连错 5 次后这把会话仍然有效：拿着它的人可以一直猜下去，猜中就把主人锁在门外");
+        assertEquals(401, fifth.getStatusCode().value(), fifth.getBody().toJSONString());
+
+        ResponseEntity<JSONObject> guessed = controller.changePassword(body(OLD, NEW), stolen);
+        assertFalse(guessed.getBody().getBooleanValue("success"), "会话已注销，猜中了也不许改");
+        assertEquals(before, Files.readString(config, StandardCharsets.UTF_8), "配置文件一个字不动");
+        assertTrue(authService.login(OLD.toCharArray(), null, "1.2.3.4").success(), "口令仍是原来那一把");
+    }
+
+    @Test
+    @DisplayName("连错 4 次后输对一次，计数从头算：再错 4 次这把会话仍在")
+    void correctCurrentPasswordStartsTheCountOver() {
+        MockHttpServletRequest mine = request(ConfigUiSession.Channel.PASSWORD);
+        String id = mine.getCookies()[0].getValue();
+
+        for (int i = 1; i <= 4; i++) {
+            controller.changePassword(body("手滑第 " + i + " 次", NEW), mine);
+        }
+
+        // 旧口令对、新口令太短：旧口令这一关过了，口令本身没换
+        ResponseEntity<JSONObject> tooShort = controller.changePassword(body(OLD, "1234"), mine);
+        assertFalse(tooShort.getBody().getBooleanValue("success"), tooShort.getBody().toJSONString());
+        assertTrue(String.valueOf(tooShort.getBody().getString("message")).contains("至少"),
+                "阳性对照：这一趟得是过了旧口令、卡在新口令长度上: " + tooShort.getBody().toJSONString());
+
+        for (int i = 1; i <= 4; i++) {
+            controller.changePassword(body("又手滑第 " + i + " 次", NEW), mine);
+        }
+
+        assertTrue(authService.validate(id).isPresent(), "输对过一次，前面那几次就不该还算数");
+    }
+
+    @Test
+    @DisplayName("🔴 注销的只是猜的那一把：主人别处的会话照旧有效，同一来源照样登得上")
+    void signOutStaysWithTheGuessingSession() {
+        ConfigUiSession owner = authService.login(OLD.toCharArray(), null, "10.0.0.9").session();
+        MockHttpServletRequest stolen = request(ConfigUiSession.Channel.PASSWORD);
+
+        for (int i = 1; i <= 5; i++) {
+            controller.changePassword(body("猜的第 " + i + " 个", NEW), stolen);
+        }
+
+        assertTrue(authService.validate(stolen.getCookies()[0].getValue()).isEmpty(),
+                "阳性对照：猜的那一把得先真被注销，下面几问才说明得了事");
+        assertTrue(authService.validate(owner.getId()).isPresent(), "主人别处的会话不该被连累");
+        assertEquals(Duration.ZERO, authService.remainingLockout("127.0.0.1"),
+                "改口令时猜错不该把这个来源的登录锁住：那等于把锁主人的按钮递给了猜的人");
+        assertTrue(authService.login(OLD.toCharArray(), null, "127.0.0.1").success(), "主人照样登得上");
     }
 
     @Test
