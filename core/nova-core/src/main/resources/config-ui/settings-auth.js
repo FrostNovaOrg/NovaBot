@@ -119,7 +119,7 @@ function passwordCard() {
   const operator = authState.operatorSession;
   const box = authRow('auth-password', '密码',
     operator
-      ? '你是用启动令牌进来的，直接设一个新口令即可。设完口令后通道会自动关掉。'
+      ? '你是用启动令牌进来的，直接设一个新密码即可。设完密码后通道会自动关掉。'
       : '改完当场生效，别处已经登录的会话会一并注销，当前这一个留着。');
   keyLine(box.meta, 'novabot.core.config-ui.auth.password');
 
@@ -191,7 +191,7 @@ function passwordCard() {
 function totpCard() {
   const on = authState.totpEnabled;
   const box = authRow('auth-totp', '二次验证',
-    '只管口令登录这条路。用通行密钥登录不经过这一步——私钥一直在你自己的设备上，'
+    '只管密码登录这条路。用通行密钥登录不经过这一步——私钥一直在你自己的设备上，'
     + '而设备在签名之前已经问过一次指纹或面容了。');
   box.cell.className = 'boolcell';
   const {label, input, text} = switchControl('totp-switch', on, '二次验证');
@@ -375,7 +375,7 @@ function rerunCard() {
 
 /** 同意记录里那个通道名的人话版。认不出来的原样显示，不猜 */
 function channelText(wire) {
-  if (wire === 'password') return '输口令登录之后';
+  if (wire === 'password') return '输密码登录之后';
   if (wire === 'operator-token') return '凭启动令牌进来之后';
   if (wire === 'passkey') return '用通行密钥登录之后';
   return wire;

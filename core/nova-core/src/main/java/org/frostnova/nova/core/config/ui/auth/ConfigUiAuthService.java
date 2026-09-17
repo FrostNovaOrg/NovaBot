@@ -29,7 +29,7 @@ public class ConfigUiAuthService {
      * 不区分「口令错」与「验证码错」：分开说等于告诉攻击者口令已经猜对了，
      * 二次验证就只剩六位数字要试。
      */
-    private static final String INVALID = "口令或验证码不正确";
+    private static final String INVALID = "密码或验证码不正确";
 
     /**
      * 登录口令所在的配置项，明文会在启动时哈希后写回此处
@@ -350,19 +350,6 @@ public class ConfigUiAuthService {
     }
 
     /**
-     * 这一串是不是当前的登录口令
-     * <p>
-     * <b>只比对、不计次。</b>改口令接口核对旧口令不走这里，走 {@link #checkCurrentPassword}：
-     * 持有一把有效会话不等于就是主人，偷到 Cookie 的人拿不计次的比对能一直猜到中。
-     * @param password 明文口令
-     * @return 相符时为 true
-     */
-    public boolean matchesPassword(char[] password) {
-        String hash = passwordHash;
-        return hash != null && PasswordHash.verify(password, hash);
-    }
-
-    /**
      * 改口令时核对旧口令，按会话计连错次数
      * <p>
      * 不走 {@link #checkCredentials}：那一支会连二次验证码一起要，而改口令时手边未必有验证器；
@@ -374,6 +361,9 @@ public class ConfigUiAuthService {
      * 记进去等于把「锁住主人登录」的按钮递给猜的人。
      * <p>
      * 认不出会话（没带 Cookie，或那一把已失效）时<b>不比对</b>：没处记次数的比对就是不计次的比对。
+     * <p>
+     * 收明文口令的公开方法只有这一支与 {@link #login}、{@link #checkCredentials}，三支都计次；
+     * 不另留只比对不计次的口——偷到 Cookie 的人拿那样一个口能一直猜到中。
      * @param password 明文口令
      * @param sessionId 当前会话标识，可为 null
      * @param clientIp 来源 IP，只用于日志
@@ -387,6 +377,12 @@ public class ConfigUiAuthService {
         }
 
         ConfigUiSession session = found.get();
+        // 没填不算猜：口令留空等于没启用登录，空串不会是现在的口令，这一趟透露不了任何事；
+        // 算成一次输错，只会把手滑点了提交的主人往注销那头推。放在认会话之后：认不出会话的照旧先按 NO_SESSION 拒
+        if (password == null || password.length == 0) {
+            return new CurrentPasswordCheck(CurrentPasswordVerdict.MISSING, 0);
+        }
+
         int attempt = session.countPasswordCheck();
         // 超过次数还走得到这里，只可能是并发打进来、在注销之前就过了会话校验的那几趟：不比对，直接注销
         if (attempt > CURRENT_PASSWORD_MISSES_BEFORE_SIGN_OUT) {
@@ -724,7 +720,12 @@ public class ConfigUiAuthService {
         /**
          * 认不出当前会话，没有比对
          */
-        NO_SESSION
+        NO_SESSION,
+
+        /**
+         * 认出了会话，但没填旧口令（没有这个字段或是空串）：没有比对，也不记次数
+         */
+        MISSING
     }
 
     /**

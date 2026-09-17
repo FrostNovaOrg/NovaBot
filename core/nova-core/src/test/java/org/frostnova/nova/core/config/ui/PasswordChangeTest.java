@@ -39,6 +39,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *       等于把「偷一枚 Cookie」升级成「拿走这台面板」</li>
  *   <li><b>旧口令连错有代价</b>——同一把会话连错 5 次就注销这一把。不设代价的话，
  *       偷到 Cookie 的人能借这个口一直猜下去，猜中就换掉口令；主人的登录与别处的会话不受牵连</li>
+ *   <li><b>没填不算猜</b>——一个字都没交上来就没有可比对的东西，回 400 请他先填，不记次数；
+ *       认不出会话时照旧先按「认不出这次登录」拒</li>
  * </ul>
  */
 @DisplayName("改口令")
@@ -194,6 +196,41 @@ class PasswordChangeTest {
         assertTrue(authService.validate(second.getId()).isPresent(),
                 "不带 Cookie 不得注销第二把既有会话");
         assertTrue(authService.login(OLD.toCharArray(), null, "1.2.3.4").success(), "拒了就不该改动口令");
+    }
+
+    @Test
+    @DisplayName("🔴 没填现在的密码：回 400 请他先填，不算一次输错")
+    void missingCurrentPasswordIsNotCounted() throws IOException {
+        String before = Files.readString(config, StandardCharsets.UTF_8);
+        MockHttpServletRequest mine = request(ConfigUiSession.Channel.PASSWORD);
+        String id = mine.getCookies()[0].getValue();
+
+        // 不带 current 字段与带一个空串各来 5 趟：框里没填时页面送的是空串，脚本漏写时是整个没有这个字段
+        for (String missing : new String[]{null, ""}) {
+            for (int i = 1; i <= ConfigUiAuthService.CURRENT_PASSWORD_MISSES_BEFORE_SIGN_OUT; i++) {
+                ResponseEntity<JSONObject> response = controller.changePassword(body(missing, NEW), mine);
+
+                assertEquals(400, response.getStatusCode().value(), response.getBody().toJSONString());
+                assertEquals("请填现在的密码", response.getBody().getString("message"),
+                        "没填要说请填，不能说成输错了: " + response.getBody().toJSONString());
+            }
+        }
+
+        assertTrue(authService.validate(id).isPresent(), "没填不是猜错：连点几次提交就被退出登录，手滑的人吃不消");
+        ResponseEntity<JSONObject> wrong = controller.changePassword(body("这不是我的口令", NEW), mine);
+        assertTrue(String.valueOf(wrong.getBody().getString("message")).contains("再输错 4 次"),
+                "没填的那几趟不该算进次数: " + wrong.getBody().toJSONString());
+        assertEquals(before, Files.readString(config, StandardCharsets.UTF_8), "拒了就不该动配置文件");
+    }
+
+    @Test
+    @DisplayName("🔴 不带会话 Cookie、也没填现在的密码：照旧按认不出这次登录回 401")
+    void missingCurrentPasswordWithoutCookieIsStillUnrecognised() {
+        ResponseEntity<JSONObject> response = controller.changePassword(body(null, NEW), request(null));
+
+        // 先认会话再看填没填：反过来的话，登录已经失效的人先被请去填密码，填了再提交才整页落回登录页，白填一次
+        assertEquals(401, response.getStatusCode().value(), response.getBody().toJSONString());
+        assertFalse(response.getBody().getBooleanValue("success"));
     }
 
     @Test

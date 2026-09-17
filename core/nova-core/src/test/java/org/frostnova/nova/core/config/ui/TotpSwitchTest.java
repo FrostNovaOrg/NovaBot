@@ -112,8 +112,12 @@ class TotpSwitchTest {
 
         ResponseEntity<JSONObject> response = controller.totpDisable(code("000000"), new MockHttpServletRequest());
 
-        assertEquals(401, response.getStatusCode().value());
+        // 回 400 而不是 401：界面上凡 401 一律整页重载，「验证码不正确」来不及显示，
+        // 人只看到页面闪了一下、开关弹回开着，不知道是码输错了，也不知道再错下去会被锁
+        assertEquals(400, response.getStatusCode().value(), response.getBody().toJSONString());
         assertFalse(response.getBody().getBooleanValue("success"));
+        assertTrue(String.valueOf(response.getBody().getString("message")).contains("验证码不正确"),
+                "得说清是验证码不对: " + response.getBody().toJSONString());
         assertTrue(authService.totpRequired(), "拒了就得照旧要码");
         assertEquals(before, Files.readString(config, StandardCharsets.UTF_8), "拒了就不该动配置文件");
     }
@@ -121,9 +125,9 @@ class TotpSwitchTest {
     @Test
     @DisplayName("码不填、填成别的形状，同样拒")
     void malformedCodeCannotDisable() {
-        assertEquals(401, controller.totpDisable(code(null), new MockHttpServletRequest()).getStatusCode().value());
-        assertEquals(401, controller.totpDisable(code(""), new MockHttpServletRequest()).getStatusCode().value());
-        assertEquals(401, controller.totpDisable(code("abcdef"), new MockHttpServletRequest()).getStatusCode().value());
+        assertEquals(400, controller.totpDisable(code(null), new MockHttpServletRequest()).getStatusCode().value());
+        assertEquals(400, controller.totpDisable(code(""), new MockHttpServletRequest()).getStatusCode().value());
+        assertEquals(400, controller.totpDisable(code("abcdef"), new MockHttpServletRequest()).getStatusCode().value());
         assertTrue(authService.totpRequired(), "三次都拒之后仍然要码");
     }
 
@@ -205,12 +209,16 @@ class TotpSwitchTest {
         int max = new NovaCoreProperties.ConfigUi.Auth().getMaxFailures();
 
         for (int i = 0; i < max; i++) {
-            assertEquals(401, controller.totpDisable(code("000000"), request).getStatusCode().value(),
+            assertEquals(400, controller.totpDisable(code("000000"), request).getStatusCode().value(),
                     "第 " + (i + 1) + " 次错码应仍按验证码不对拒");
         }
 
         ResponseEntity<JSONObject> locked = controller.totpDisable(code(totpNow()), request);
 
+        // 锁住了也回 400：回 401 的话整页重载，「尝试次数过多」与还要等多久都来不及显示
+        assertEquals(400, locked.getStatusCode().value(), locked.getBody().toJSONString());
+        assertTrue(String.valueOf(locked.getBody().getString("message")).contains("尝试次数过多"),
+                "得说清是试太多次被锁了: " + locked.getBody().toJSONString());
         assertFalse(locked.getBody().getBooleanValue("success"), locked.getBody().toJSONString());
         assertTrue(locked.getBody().getLongValue("lockedSeconds") > 0,
                 "锁定期内应带剩余秒数, 实际 " + locked.getBody().toJSONString());

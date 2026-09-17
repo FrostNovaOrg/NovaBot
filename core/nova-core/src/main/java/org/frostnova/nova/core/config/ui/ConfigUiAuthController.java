@@ -438,6 +438,10 @@ public class ConfigUiAuthController {
      * 一枚被偷走的会话 Cookie 若能直接把它卸掉，那道防线保护的其实只是「口令没泄漏」这一种情形。
      * 要求现码等于要求「此刻验证器就在你手上」。
      * <p>
+     * 码不对、试太多次被锁时回 400 而不是 401：界面上凡 401 一律整页重载，提示句来不及显示，
+     * 人只看到页面闪了一下、开关弹回开着，不知道是码输错了，更不知道再错下去会被锁。
+     * 401 只留给认不出这次登录的时候。
+     * <p>
      * 密钥一并清掉，见 {@code ConfigUiAuthService#disableTotp}。
      * @param body 请求体，code 字段为验证器给出的六位数字
      * @return 关闭结果
@@ -454,7 +458,7 @@ public class ConfigUiAuthController {
 
         ConfigUiAuthService.CredentialCheck gate = authService.beginSensitiveTotp(request.getRemoteAddr());
         if (!gate.ok()) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(refuseSensitiveTotp(gate, request));
+            return ResponseEntity.badRequest().body(refuseSensitiveTotp(gate, request));
         }
 
         if (!authService.verifyCurrentCode(body.getString("code"))) {
@@ -462,7 +466,7 @@ public class ConfigUiAuthController {
             result.put("success", false);
             result.put("message", "验证码不正确，请确认手机时间是否准确后重试");
             result.put("lockedSeconds", remainingLockSeconds(request));
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(result);
+            return ResponseEntity.badRequest().body(result);
         }
 
         // 先落盘再关：写文件失败时二次验证维持原样，界面照实说没关成——
@@ -483,7 +487,7 @@ public class ConfigUiAuthController {
         authService.succeedSensitiveTotp(request.getRemoteAddr());
         authService.logoutOthers(sessionId(request));
         result.put("success", true);
-        result.put("message", "已关闭。下次登录只要口令，验证器里那一条可以删掉了");
+        result.put("message", "已关闭。下次登录只要密码，验证器里那一条可以删掉了");
 
         return ResponseEntity.ok(result);
     }
@@ -507,7 +511,7 @@ public class ConfigUiAuthController {
 
         if (authService.isEnabled()) {
             result.put("success", false);
-            result.put("message", "这台机器已经上过锁了，改口令请填现在的口令");
+            result.put("message", "这台机器已经上过锁了，改密码请填现在的密码");
             return ResponseEntity.badRequest().body(result);
         }
 
@@ -517,7 +521,7 @@ public class ConfigUiAuthController {
         }
 
         log.warn("配置界面: 已设下第一把口令, 访问令牌自此不再是凭据, 来源: {}", request.getRemoteAddr());
-        replaced.put("message", "已上锁。这台机器从现在起要口令才进得来，地址栏里的令牌不再管用");
+        replaced.put("message", "已上锁。这台机器从现在起要密码才进得来，地址栏里的令牌不再管用");
 
         // 令牌形态没有会话 Cookie。上锁之后过滤器切到口令形态，不在这一趟下发会话，
         // 下一步接口一律 401，整页刷新落到登录页，初始设置就断在第一步。
@@ -539,6 +543,8 @@ public class ConfigUiAuthController {
      * 没到次数时回 400 而不是 401：界面上凡 401 一律整页重载，提示句来不及显示，
      * 人只看到页面闪了一下，不知道是旧口令输错了，更不知道再错几次会被退出。注销了才回 401，
      * 整页重载正好落到登录页。
+     * <p>
+     * 没填现在的密码回 400 请他先填，不算一次输错，见 {@link ConfigUiAuthService.CurrentPasswordVerdict#MISSING}。
      * @param body 请求体，current 为现在的口令，next 为新口令
      * @return 结果
      */
@@ -565,14 +571,19 @@ public class ConfigUiAuthController {
         }
 
         result.put("success", false);
+        if (check.verdict() == ConfigUiAuthService.CurrentPasswordVerdict.MISSING) {
+            result.put("message", "请填现在的密码");
+            return ResponseEntity.badRequest().body(result);
+        }
+
         if (check.verdict() == ConfigUiAuthService.CurrentPasswordVerdict.MISMATCH) {
-            result.put("message", "现在的口令不对，再输错 " + check.remaining() + " 次会退出这次登录");
+            result.put("message", "现在的密码不对，再输错 " + check.remaining() + " 次会退出这次登录");
             return ResponseEntity.badRequest().body(result);
         }
 
         result.put("message", check.verdict() == ConfigUiAuthService.CurrentPasswordVerdict.SIGNED_OUT
-                ? "现在的口令连续输错 " + ConfigUiAuthService.CURRENT_PASSWORD_MISSES_BEFORE_SIGN_OUT + " 次，这次登录已退出，请重新登录"
-                : "认不出这次登录，请重新登录后再改口令");
+                ? "现在的密码连续输错 " + ConfigUiAuthService.CURRENT_PASSWORD_MISSES_BEFORE_SIGN_OUT + " 次，这次登录已退出，请重新登录"
+                : "认不出这次登录，请重新登录后再改密码");
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(result);
     }
 
@@ -600,7 +611,7 @@ public class ConfigUiAuthController {
                 .orElse(false);
         if (!operator) {
             result.put("success", false);
-            result.put("message", "这条路只给用启动令牌进来的那一次用，改口令请填现在的口令");
+            result.put("message", "这条路只给用启动令牌进来的那一次用，改密码请填现在的密码");
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(result);
         }
 
@@ -622,7 +633,7 @@ public class ConfigUiAuthController {
         String plain = next == null ? "" : next.strip();
         if (plain.length() < MIN_PASSWORD_LENGTH) {
             result.put("success", false);
-            result.put("message", "新口令至少 " + MIN_PASSWORD_LENGTH + " 个字符");
+            result.put("message", "新密码至少 " + MIN_PASSWORD_LENGTH + " 个字符");
             return result;
         }
 
@@ -642,7 +653,7 @@ public class ConfigUiAuthController {
         } catch (Exception e) {
             log.error("写入新的登录口令失败", e);
             result.put("success", false);
-            result.put("message", "保存失败，口令没有改动: " + e.getMessage());
+            result.put("message", "保存失败，密码没有改动: " + e.getMessage());
             return result;
         }
 
@@ -656,8 +667,8 @@ public class ConfigUiAuthController {
         result.put("success", true);
         result.put("revoked", revoked);
         result.put("message", revoked > 0
-                ? "口令已改。别处那 " + revoked + " 个登录已经一并注销"
-                : "口令已改。下次登录用新口令");
+                ? "密码已改。别处那 " + revoked + " 个登录已经一并注销"
+                : "密码已改。下次登录用新密码");
 
         return result;
     }
@@ -715,7 +726,7 @@ public class ConfigUiAuthController {
 
         if (!authService.isEnabled()) {
             result.put("success", false);
-            result.put("message", "未启用口令登录");
+            result.put("message", "未启用密码登录");
             return ResponseEntity.badRequest().body(result);
         }
 

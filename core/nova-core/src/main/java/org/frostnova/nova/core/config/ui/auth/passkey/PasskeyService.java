@@ -99,7 +99,7 @@ public class PasskeyService {
      * 不分「没有这把钥匙」「签名不对」「计数器倒退」：分开说等于告诉对方哪一步已经过了。
      * 真正的原因写进日志——排查的人看得到，试探的人看不到。
      */
-    private static final String LOGIN_FAILED = "这把通行密钥没能通过验证，请换一把或改用口令登录";
+    private static final String LOGIN_FAILED = "这把通行密钥没能通过验证，请换一把或改用密码登录";
 
     /**
      * 二次验证开着、认证器却只确认了「人在场」时回这一句
@@ -108,7 +108,7 @@ public class PasskeyService {
      * 这一句要让人知道该换一把会认指纹／面容／PIN 的设备，或改用口令加动态码。
      */
     private static final String LOGIN_NEEDS_USER_VERIFICATION =
-            "这把通行密钥没有确认使用者身份。请用需要指纹、面容或 PIN 的设备，或改用口令加动态码登录";
+            "这把通行密钥没有确认使用者身份。请用需要指纹、面容或 PIN 的设备，或改用密码加动态码登录";
 
     private final PasskeyStore store;
 
@@ -307,7 +307,7 @@ public class PasskeyService {
      */
     public PasskeyLogin loginVerify(JSONObject body, PasskeyRelyingParty relyingParty, String clientIp) {
         if (!available()) {
-            return PasskeyLogin.failure("这台机器没有启用口令登录，通行密钥暂时用不上");
+            return PasskeyLogin.failure("这台机器没有启用密码登录，通行密钥暂时用不上");
         }
 
         // 锁定是按来源计的，与口令那条路共用一份：不问这一句的话，

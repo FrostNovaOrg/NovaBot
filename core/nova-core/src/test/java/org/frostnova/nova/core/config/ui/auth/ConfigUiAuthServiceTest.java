@@ -7,9 +7,11 @@ import org.springframework.core.io.ClassPathResource;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.TreeSet;
@@ -347,6 +349,21 @@ class ConfigUiAuthServiceTest {
         assertEquals(ConfigUiAuthService.CurrentPasswordVerdict.SIGNED_OUT, check.verdict(),
                 "次数已满还去比对的话，并发打进来的每一趟都各猜一次，次数上限只拦得住一趟一趟来的人");
         assertTrue(service.validate(session.getId()).isEmpty(), "这把会话应当注销");
+    }
+
+    @Test
+    @DisplayName("🔴 收明文密码的公开方法是闭集：每一个都计次，不留只比对不计次的口")
+    void publicMethodsTakingAPlainPasswordAreAClosedSet() {
+        Set<String> actual = new TreeSet<>();
+        for (Method method : ConfigUiAuthService.class.getMethods()) {
+            if (Arrays.asList(method.getParameterTypes()).contains(char[].class)) {
+                actual.add(method.getName());
+            }
+        }
+
+        // login 与 checkCredentials 记进按来源的失败计数，checkCurrentPassword 按会话计连错次数
+        assertEquals(new TreeSet<>(Set.of("checkCredentials", "checkCurrentPassword", "login")), actual,
+                "多出来的口若只比对不计次，偷到会话的人拿它能一直猜到中；新加一个先说清它怎么计次，再改这一格");
     }
 
     private static Set<String> authKeysOnTheSurface() throws IOException {

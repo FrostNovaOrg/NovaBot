@@ -40,7 +40,7 @@ export function explain(status, data, terms) {
           '不是机器人程序界面的口令，两者互不相干');
     case 'locked_out':
       return '连续失败太多次，你这个来源已被暂时锁定，' + waitText(data.retryAfterSeconds) + '后再试。'
-        + '⚠️ 锁定期内即使输对也会被拒，这不代表口令错了，别急着去改密码';
+        + '⚠️ 锁定期内即使输对也会被拒，这不代表密码错了，别急着去改密码';
     case 'busy':
       return '同时在校验的请求太多，等几秒再点一次';
     case 'auth_disabled':

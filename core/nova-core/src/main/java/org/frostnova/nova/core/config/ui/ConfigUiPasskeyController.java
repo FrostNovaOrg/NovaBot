@@ -141,7 +141,7 @@ public class ConfigUiPasskeyController {
         }
 
         result.put("success", true);
-        result.put("message", "已删除。这台设备之后只能用口令登录");
+        result.put("message", "已删除。这台设备之后只能用密码登录");
         return ResponseEntity.ok(result);
     }
 

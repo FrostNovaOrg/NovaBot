@@ -640,7 +640,7 @@ async function renderTotpSetup() {
   box.style.display = '';
   box.innerHTML =
     '<h3>建议绑定验证器</h3>'
-    + '<p>面板开到公网后，只有口令这一道防线。用任意验证器应用扫码，再输一次它给出的数字即可。</p>'
+    + '<p>面板开到公网后，只有密码这一道防线。用任意验证器应用扫码，再输一次它给出的数字即可。</p>'
     + '<div class="totp-body">'
     + (setup.qrCode ? '<img src="data:image/png;base64,' + esc(setup.qrCode) + '" alt="二维码">' : '')
     + '<div class="totp-side">'
