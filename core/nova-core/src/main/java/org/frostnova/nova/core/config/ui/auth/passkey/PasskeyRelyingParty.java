@@ -78,9 +78,16 @@ public record PasskeyRelyingParty(String rpId, String origin) {
      * @return 一句给使用者看的话，可用时为 null
      */
     public String unusableReason() {
-        return usable() ? null
-                : "通行密钥只能绑定域名，而现在是用 IP 地址（" + rpId + "）访问的。"
-                + "请改用 localhost 或一个域名访问控制台后再试。";
+        if (usable()) {
+            return null;
+        }
+
+        // localhost 只对从本机进来的人是一条路。局域网 IP 是从别的机器进来的，
+        // 那台机器上的 localhost 指访问者自己，提它只会把人带错路
+        String reason = "通行密钥只能绑定域名，而现在是用 IP 地址（" + rpId + "）访问的。";
+        return isLoopback(rpId)
+                ? reason + "请改用 localhost 或一个域名访问控制台后再试。"
+                : reason + "请改用一个域名访问控制台后再试。";
     }
 
     private static boolean isIpLiteral(String host) {
@@ -91,6 +98,16 @@ public record PasskeyRelyingParty(String rpId, String origin) {
 
         // IPv4 字面量：四段纯数字。域名不会长成这样——顶级域不允许全是数字
         return host.matches("\\d{1,3}(\\.\\d{1,3}){3}");
+    }
+
+    /**
+     * 是不是本机回环地址：IPv4 里 127 开头的一整段，IPv6 的 {@code [::1]}
+     * <p>
+     * 只按字面比，不交给 InetAddress 解析：Host 是请求方写的头，判一句话不该为它发出任何查询。
+     * 只在已判为 IP 字面量之后调用，端口已去掉、IPv6 仍带方括号
+     */
+    private static boolean isLoopback(String host) {
+        return host.matches("127(\\.\\d{1,3}){3}") || "[::1]".equals(host);
     }
 
     /**

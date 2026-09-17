@@ -107,4 +107,20 @@ class PasskeyRelyingPartyTest extends PasskeyTestSupport {
         assertTrue(open.getBooleanValue("usable"), "阳性对照: 域名进来该报可用");
         assertNull(open.getString("unusableReason"), "可用时不该带原因句");
     }
+
+    @Test
+    @DisplayName("只有本机回环地址才提 localhost；局域网 IP 进来时只提域名")
+    void onlyLoopbackIsToldToUseLocalhost() {
+        // 回环地址是从这台机器自己进来的，换成 localhost 仍是这台机器，提它是一条走得通的路。
+        // 这两条同时是阳性对照：一律不提 localhost 的实现过不了
+        assertTrue(from("127.0.0.1:7827", null, null).unusableReason().contains("localhost"),
+                "127.0.0.1 进来时该提 localhost, 那是本机上走得通的路");
+        assertTrue(from("[::1]:7827", null, null).unusableReason().contains("localhost"),
+                "[::1] 进来时该提 localhost, 那是本机上走得通的路");
+
+        // 局域网 IP 是从别的机器进来的：那台机器上的 localhost 指访问者自己，提它只会把人带错路
+        String lan = from("192.168.1.10:7827", null, null).unusableReason();
+        assertFalse(lan.contains("localhost"), "局域网 IP 进来时不该提 localhost, 那指的是访问者自己的机器");
+        assertTrue(lan.contains("域名"), "局域网 IP 进来时仍要说改用域名");
+    }
 }
