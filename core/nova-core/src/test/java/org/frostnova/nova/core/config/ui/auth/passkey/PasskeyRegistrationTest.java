@@ -26,7 +26,7 @@ class PasskeyRegistrationTest extends PasskeyTestSupport {
         TestAuthenticator authenticator = new TestAuthenticator(TestAuthenticator.ES256);
         register(authenticator, "我的手机", 5);
 
-        JSONArray list = controller.list().getJSONArray("passkeys");
+        JSONArray list = controller.list(request()).getJSONArray("passkeys");
         assertEquals(1, list.size());
 
         JSONObject entry = list.getJSONObject(0);
@@ -57,7 +57,7 @@ class PasskeyRegistrationTest extends PasskeyTestSupport {
 
         assertFalse(rejected.getBooleanValue("success"), "41 个字该拒收");
         assertTrue(rejected.getString("message").contains("40"), "拒收时要说清上限是多少");
-        assertEquals(1, controller.list().getJSONArray("passkeys").size(), "被拒的那一把不该落进列表");
+        assertEquals(1, controller.list(request()).getJSONArray("passkeys").size(), "被拒的那一把不该落进列表");
     }
 
     @Test
@@ -78,7 +78,7 @@ class PasskeyRegistrationTest extends PasskeyTestSupport {
                 replay.register(challenge, ORIGIN, RP_ID, "第二把", 0), request());
 
         assertFalse(second.getBooleanValue("success"), "用过的挑战不该再认");
-        assertEquals(1, controller.list().getJSONArray("passkeys").size());
+        assertEquals(1, controller.list(request()).getJSONArray("passkeys").size());
     }
 
     @Test
@@ -92,8 +92,8 @@ class PasskeyRegistrationTest extends PasskeyTestSupport {
                 authenticator.register(options.getString("challenge"), ORIGIN, RP_ID, "又一次", 0), request());
 
         assertFalse(again.getBooleanValue("success"));
-        assertEquals(1, controller.list().getJSONArray("passkeys").size());
-        assertEquals("我的手机", controller.list().getJSONArray("passkeys").getJSONObject(0).getString("name"),
+        assertEquals(1, controller.list(request()).getJSONArray("passkeys").size());
+        assertEquals("我的手机", controller.list(request()).getJSONArray("passkeys").getJSONObject(0).getString("name"),
                 "重复登记不该把原来那把的名字改掉");
     }
 
@@ -107,7 +107,7 @@ class PasskeyRegistrationTest extends PasskeyTestSupport {
                 authenticator.register(options.getString("challenge"), ORIGIN, RP_ID, "带证书的", 0, "packed"), request());
 
         assertFalse(rejected.getBooleanValue("success"), "别的证明形式要去验一条证书链, 这一侧没有验它的能力");
-        assertEquals(0, controller.list().getJSONArray("passkeys").size());
+        assertEquals(0, controller.list(request()).getJSONArray("passkeys").size());
 
         // 阳性对照：同一副台面上 none 该收得下
         JSONObject next = controller.registerOptions(request());
@@ -126,7 +126,7 @@ class PasskeyRegistrationTest extends PasskeyTestSupport {
                 authenticator.register(options.getString("challenge"), ORIGIN, "phishing.example", "别处的", 0), request());
 
         assertFalse(rejected.getBooleanValue("success"));
-        assertEquals(0, controller.list().getJSONArray("passkeys").size());
+        assertEquals(0, controller.list(request()).getJSONArray("passkeys").size());
     }
 
     @Test
@@ -150,7 +150,7 @@ class PasskeyRegistrationTest extends PasskeyTestSupport {
 
         ResponseEntity<JSONObject> removed = controller.delete(authenticator.credentialId());
         assertEquals(200, removed.getStatusCode().value());
-        assertEquals(0, controller.list().getJSONArray("passkeys").size());
+        assertEquals(0, controller.list(request()).getJSONArray("passkeys").size());
 
         // 删第二次要如实说「已经不在了」：回一句「成功」的话，
         // 使用者会以为自己刚刚撤销了一台设备，而实际上什么都没发生

@@ -86,4 +86,25 @@ class PasskeyRelyingPartyTest extends PasskeyTestSupport {
         assertFalse(login.getBooleanValue("success"));
         assertTrue(login.getString("message").contains("域名"));
     }
+
+    @Test
+    @DisplayName("IP 地址进来时，列表接口进页就说用不了并带原因；域名进来时说可用")
+    void listTellsWhetherThisAddressCanRegister() {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/config/api/auth/passkeys");
+        request.addHeader(HttpHeaders.HOST, "192.168.1.10:7827");
+        request.setRemoteAddr(CLIENT_IP);
+
+        // 设置页进页只取这一条：登记按钮该不该置灰、置灰时说什么，都得从这里拿到，
+        // 不能等使用者点了「登记」才从登记参数那一条的失败回包里得知
+        JSONObject blocked = controller.list(request);
+        assertTrue(blocked.containsKey("usable"), "回包里没有 usable, 界面进页无从判断这个地址能不能登记");
+        assertFalse(blocked.getBooleanValue("usable"), "IP 地址进来时不该报可用, 否则登记按钮进页照样能点");
+        assertTrue(String.valueOf(blocked.getString("unusableReason")).contains("192.168.1.10"),
+                "原因句要说清是哪个地址不行");
+
+        // 阳性对照：域名进来时说可用、不带原因。少了它，恒报用不了的实现同样能让上面几条绿
+        JSONObject open = controller.list(request());
+        assertTrue(open.getBooleanValue("usable"), "阳性对照: 域名进来该报可用");
+        assertNull(open.getString("unusableReason"), "可用时不该带原因句");
+    }
 }

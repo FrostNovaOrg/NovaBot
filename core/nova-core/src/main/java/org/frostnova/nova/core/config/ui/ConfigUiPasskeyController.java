@@ -105,14 +105,20 @@ public class ConfigUiPasskeyController {
 
     /**
      * 已登记的通行密钥
-     * @return 名字、登记时间与上次使用时间
+     * <p>
+     * 顺带回这个访问地址能不能登记：设置页进页就要知道登记按钮该不该置灰。
+     * 判法与登记参数那一条是同一份，进页说用不了，点下去也必然用不了。
+     * @return 名字、登记时间与上次使用时间；用不了时另带一句给使用者看的原因
      */
     @GetMapping("/passkeys")
-    public JSONObject list() {
+    public JSONObject list(HttpServletRequest request) {
+        PasskeyRelyingParty relyingParty = PasskeyRelyingParty.of(request);
         JSONObject result = new JSONObject();
         result.put("success", true);
         result.put("passkeys", passkeyService.list());
         result.put("nameLimit", PasskeyService.MAX_NAME_LENGTH);
+        result.put("usable", relyingParty.usable());
+        result.put("unusableReason", relyingParty.unusableReason());
         return result;
     }
 

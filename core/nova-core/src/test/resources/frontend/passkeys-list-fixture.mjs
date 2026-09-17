@@ -278,6 +278,38 @@ try {
 }
 eq(q4, true, '④ 删除后重画进接线当次的容器，不漂到后画的卡');
 
+// ⑤ 回包说这个地址用不了（浏览器给了接口，地址却是 IP）：进页就置灰登记钮，
+//    服务端给的原因句印在列表之前，已登记的照常列出；回包说可用时按钮不置灰
+let q5 = 'missing';
+try {
+  const reason = '通行密钥只能绑定域名，而现在是用 IP 地址（192.168.1.10）访问的。';
+  const blockedApi = async () => ({
+    usable: false,
+    unusableReason: reason,
+    passkeys: [{id: 'k1', name: '我的手机', createdAt: '2026-09-07T10:00:00', lastUsedAt: null}],
+  });
+  const dom = fakeDom();
+  const box = dom.newElement();
+  const add = dom.newElement();
+  await makeSubject(dom, blockedApi).loadPasskeys(box, add);
+  const at = box.innerHTML.indexOf(reason);
+
+  const openDom = fakeDom();
+  const openAdd = openDom.newElement();
+  await makeSubject(openDom, async () => ({usable: true, passkeys: []})).loadPasskeys(openDom.newElement(), openAdd);
+
+  q5 = {
+    disabled: add.disabled,
+    reasonBeforeList: at >= 0 && at < box.innerHTML.indexOf('<table'),
+    rows: box.querySelectorAll('button[data-id]').length,
+    usableStaysEnabled: !openAdd.disabled,
+  };
+} catch (e) {
+  q5 = 'error:' + e.message;
+}
+eq(q5, {disabled: true, reasonBeforeList: true, rows: 1, usableStaysEnabled: true},
+  '⑤ 回包说用不了时进页置灰登记钮、原因句印在列表前；可用时不置灰');
+
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);
 process.exit(failures.length ? 1 : 0);
