@@ -300,6 +300,11 @@ public class BilibiliApiUtil {
     private static final int CODE_RISK_CONTROL = -352;
 
     /**
+     * 关注操作「已经关注该用户」的业务错误代码
+     */
+    private static final int CODE_ALREADY_FOLLOWING = 22014;
+
+    /**
      * 收到 -352 后允许重算签名的最小密钥年龄，单位：秒
      * <p>
      * 比这更新的密钥重算出来多半还是同一份，重试没有意义，只是白白多打一次请求。
@@ -1981,13 +1986,17 @@ public class BilibiliApiUtil {
     }
 
     /**
-     * 获取指定账号的关注列表
+     * 获取指定账号的完整关注列表
+     * <p>
+     * 有一页没取到就整体抛出，不返回已取到的那几页：调用方拿残表去比，
+     * 会把排在没取到那几页里的已关注账号当成没关注。
      * @param selfUid 账号 uid
      * @return 关注的 UP 主列表
+     * @throws RequestFailedException 账号 uid 为空，或某一页请求失败
      */
     public List<Up> getFollowingUps(Long selfUid) {
         if (selfUid == null) {
-            return List.of();
+            throw new RequestFailedException("未取得登录账号 uid, 无法获取关注列表");
         }
 
         List<Up> ups = new ArrayList<>();
@@ -1996,8 +2005,7 @@ public class BilibiliApiUtil {
             try {
                 data = requestBilibiliApi(FOLLOWINGS_API + selfUid + "&ps=" + FOLLOWING_PAGE_SIZE + "&pn=" + page);
             } catch (Exception e) {
-                log.error("获取关注列表第 {} 页失败: {}", page, e.getMessage());
-                break;
+                throw new RequestFailedException("关注列表第 " + page + " 页获取失败: " + e.getMessage(), e);
             }
 
             JSONArray list = data.getJSONArray("list");
@@ -2020,6 +2028,8 @@ public class BilibiliApiUtil {
 
     /**
      * 关注指定 UP 主
+     * <p>
+     * 平台回「已经关注」时按已关注处理，不记错误：要的结果本来就已经在了。
      * @param uid UP 主 uid
      */
     public void followUp(Long uid) {
@@ -2043,6 +2053,10 @@ public class BilibiliApiUtil {
             requestBilibiliApi(RELATION_MODIFY_API, "POST", getBilibiliHeaders(), params);
             log.info("已关注 uid {}", uid);
         } catch (Exception e) {
+            if (e instanceof ResponseCodeException codeException && codeException.getCode() == CODE_ALREADY_FOLLOWING) {
+                log.info("uid {} 已在关注中, 无需重复关注", uid);
+                return;
+            }
             log.error("关注 uid {} 失败: {}", uid, e.getMessage());
         }
     }
