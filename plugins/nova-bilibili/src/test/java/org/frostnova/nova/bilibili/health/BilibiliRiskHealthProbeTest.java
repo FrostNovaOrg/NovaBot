@@ -258,7 +258,7 @@ class BilibiliRiskHealthProbeTest {
     }
 
     @Test
-    @DisplayName("获取登录账号失败有次数时单起一行：写近 24h 次数与样本名，不改档、不出解析失败行，溢出段写这一类的名")
+    @DisplayName("获取登录账号失败有次数时单起一行：写近 24h 次数与样本名，不改档、不出解析失败行，溢出段写这一类的名，行序在解析失败之后、缺字段之前")
     void loginUidFailureLineShowsDayCountAndSample() {
         java.util.List<String> reds = new java.util.ArrayList<>();
 
@@ -294,7 +294,23 @@ class BilibiliRiskHealthProbeTest {
             reds.add("③ " + e.getMessage());
         }
 
-        assertTrue(reds.isEmpty(), () -> "三问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+        try {
+            // 行序由摘要的拼接次序定，与记录先后无关，所以这里故意倒着记：
+            // 三类同时有数时三段须相连，获取登录账号失败夹在解析失败与缺字段之间
+            BilibiliRiskMetrics ordered = new BilibiliRiskMetrics();
+            ordered.record(BilibiliRiskMetrics.Kind.FIELD_MISSING, "DANMU_MSG:info<16 count=1 unique=1");
+            ordered.record(BilibiliRiskMetrics.Kind.LOGIN_UID_FAILURE, "MY_INFO_API:exception:RequestFailedException");
+            ordered.record(BilibiliRiskMetrics.Kind.PARSE_FAILURE, "LIVE count=1 unique=1");
+            String summary = new BilibiliRiskHealthProbe(ordered).check().summary();
+            assertTrue(summary.contains("，近 24h 解析失败 1 次（样本 LIVE）"
+                            + "，近 24h 获取登录账号失败 1 次（样本 MY_INFO_API:exception:RequestFailedException）"
+                            + "，近 24h 缺字段 1 次（样本 DANMU_MSG:info<16）"),
+                    "获取登录账号失败这一行应紧跟解析失败、排在缺字段之前，实际: " + summary);
+        } catch (AssertionError e) {
+            reds.add("④ " + e.getMessage());
+        }
+
+        assertTrue(reds.isEmpty(), () -> "四问中 " + reds.size() + " 问红: " + String.join("; ", reds));
     }
 
     @Test

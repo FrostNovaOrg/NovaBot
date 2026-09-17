@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockHttpServletRequest;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -122,5 +124,24 @@ class PasskeyRelyingPartyTest extends PasskeyTestSupport {
         String lan = from("192.168.1.10:7827", null, null).unusableReason();
         assertFalse(lan.contains("localhost"), "局域网 IP 进来时不该提 localhost, 那指的是访问者自己的机器");
         assertTrue(lan.contains("域名"), "局域网 IP 进来时仍要说改用域名");
+
+        // 回环只认 127 开头的一整段：与 127 只差一位的 128、126，少一位的 12，都不是本机。
+        // 回环判一旦写宽（比如 12 后面随便跟一位数），这些地址进来的人就会被劝去用他自己机器上的 localhost
+        for (String near : List.of("128.0.0.1", "126.0.0.1", "12.0.0.1")) {
+            assertFalse(from(near + ":7827", null, null).unusableReason().contains("localhost"),
+                    near + " 不是本机回环地址, 不该提 localhost: 回环只认 127 开头的一整段");
+        }
+    }
+
+    @Test
+    @DisplayName("用不了的原因句逐字钉住：回环地址一句，其余 IP 一句")
+    void unusableReasonIsExactForLoopbackAndOtherIp() {
+        // 两句只差「localhost 或」几个字；只查含不含 localhost 的话，句子别处改坏了照样绿
+        assertEquals("通行密钥只能绑定域名，而现在是用 IP 地址（127.0.0.1）访问的。请改用 localhost 或一个域名访问控制台后再试。",
+                from("127.0.0.1:7827", null, null).unusableReason(),
+                "回环地址进来时的原因句与原文对不上: 这句原样显示给使用者");
+        assertEquals("通行密钥只能绑定域名，而现在是用 IP 地址（192.168.1.10）访问的。请改用一个域名访问控制台后再试。",
+                from("192.168.1.10:7827", null, null).unusableReason(),
+                "局域网 IP 进来时的原因句与原文对不上: 这句原样显示给使用者");
     }
 }

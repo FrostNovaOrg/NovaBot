@@ -14,7 +14,7 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.fail;
 
 /**
- * 视图模型尺的阴性对照必须活着：整块注释、只注释红句、红句多写一行都要被判不活，注释里的假对照不算数。
+ * 视图模型尺的阴性对照必须活着：整块注释、只注释红句、红句多写一行、绿句多写一行、只注释绿句都要被判不活，注释里的假对照不算数。
  * 每一问都逐把做完。
  */
 @DisplayName("视图模型尺阴性对照")
@@ -54,8 +54,8 @@ class ModelCheckerNegativeControlTest {
     }
 
     @Test
-    @DisplayName("十三把尺阴性对照活着：整块注释、假对照、只注释红句、红句多写一行")
-    void negativeControlsStayAliveUnderFourMutations() {
+    @DisplayName("十三把尺阴性对照活着：整块注释、假对照、只注释红句、红句多写一行、绿句多写一行、只注释绿句")
+    void negativeControlsStayAliveUnderSixMutations() {
         List<String> red = new ArrayList<>();
         List<Path> checkers;
         try {
@@ -169,6 +169,42 @@ class ModelCheckerNegativeControlTest {
             red.add("⑤ " + message(e));
         }
 
+        try {
+            // 与⑤对称：两数恰为 1 是红绿两侧都要守的，只守红侧的话，绿数放宽成「至少 1」也照样判活
+            List<String> stillAlive = new ArrayList<>();
+            int done = 0;
+            for (Path checker : checkers) {
+                if (negativeControlAlive(duplicateGreenEchoLine(read(checker)))) {
+                    stillAlive.add(checker.getFileName().toString());
+                }
+                done++;
+            }
+            requireEveryChecker(done, checkers);
+            if (!stillAlive.isEmpty()) {
+                fail("绿句多写一行后仍判活: " + String.join("、", stillAlive));
+            }
+        } catch (Throwable e) {
+            red.add("⑥ " + message(e));
+        }
+
+        try {
+            // 与④对称：绿句被注释掉、绿数为 0 时也得判不活；只有⑥的话，绿数放宽成「不多于 1」照样判活
+            List<String> stillAlive = new ArrayList<>();
+            int done = 0;
+            for (Path checker : checkers) {
+                if (negativeControlAlive(commentOutGreenEchoLine(read(checker)))) {
+                    stillAlive.add(checker.getFileName().toString());
+                }
+                done++;
+            }
+            requireEveryChecker(done, checkers);
+            if (!stillAlive.isEmpty()) {
+                fail("只注释绿句后仍判活: " + String.join("、", stillAlive));
+            }
+        } catch (Throwable e) {
+            red.add("⑦ " + message(e));
+        }
+
         if (!red.isEmpty()) {
             fail(red.size() + " 问红：" + String.join("；", red));
         }
@@ -241,6 +277,21 @@ class ModelCheckerNegativeControlTest {
         return out.toString();
     }
 
+    private static String commentOutGreenEchoLine(String source) {
+        String[] lines = source.split("\n", -1);
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < lines.length; i++) {
+            if (i > 0) {
+                out.append('\n');
+            }
+            if (lines[i].contains(GREEN_ECHO)) {
+                out.append("# ");
+            }
+            out.append(lines[i]);
+        }
+        return out.toString();
+    }
+
     private static String duplicateRedEchoLine(String source) {
         String[] lines = source.split("\n", -1);
         StringBuilder out = new StringBuilder();
@@ -250,6 +301,21 @@ class ModelCheckerNegativeControlTest {
             }
             out.append(lines[i]);
             if (lines[i].contains(RED_ECHO)) {
+                out.append('\n').append(lines[i]);
+            }
+        }
+        return out.toString();
+    }
+
+    private static String duplicateGreenEchoLine(String source) {
+        String[] lines = source.split("\n", -1);
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < lines.length; i++) {
+            if (i > 0) {
+                out.append('\n');
+            }
+            out.append(lines[i]);
+            if (lines[i].contains(GREEN_ECHO)) {
                 out.append('\n').append(lines[i]);
             }
         }
