@@ -184,7 +184,7 @@ export async function registerPasskey(trigger) {
  */
 async function remove(id, box, addButton) {
   if (!await ask({title: '确定删除？',
-    body: '删了以后这台设备就只能用口令进。'})) return;
+    body: '删了以后这台设备就只能用密码进。'})) return;
 
   const result = await api('/auth/passkeys/' + encodeURIComponent(id), {method: 'DELETE'});
   say(result.message, result.success ? 'ok' : 'err');

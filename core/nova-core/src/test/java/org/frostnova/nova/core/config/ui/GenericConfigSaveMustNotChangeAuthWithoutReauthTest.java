@@ -141,6 +141,18 @@ class GenericConfigSaveMustNotChangeAuthWithoutReauthTest {
         return result.session();
     }
 
+    /**
+     * 这一串此刻过不过得了「现在的密码」那一关
+     * <p>
+     * 另签一把只用这一次的会话去问：服务里不留只比对不计次的口，测试也不为自己开一个；
+     * 问一次记在这把新会话头上，不碰被测的那一把。
+     */
+    private boolean doorAccepts(String password) {
+        ConfigUiSession probe = authService.issueForPassword("127.0.0.1");
+        return authService.checkCurrentPassword(password.toCharArray(), probe.getId(), "127.0.0.1").verdict()
+                == ConfigUiAuthService.CurrentPasswordVerdict.MATCH;
+    }
+
     @Test
     @DisplayName("对照：专用改口令口没有旧口令必须拒")
     void dedicatedPasswordChangeStillRequiresTheCurrentPassword() {
@@ -156,7 +168,10 @@ class GenericConfigSaveMustNotChangeAuthWithoutReauthTest {
 
         assertFalse(Boolean.TRUE.equals(response.getBody().getBoolean("success")),
                 "专用口不该在没给旧口令时改掉");
-        assertTrue(authService.matchesPassword(OLD_PASSWORD.toCharArray()), "旧口令仍应有效");
+        // 拒的理由得是「没填」：回 401「认不出这次登录」说明卡在了会话那一关，这一格就没量到没给旧口令这件事
+        assertEquals(400, response.getStatusCode().value(), response.getBody().toJSONString());
+        assertEquals("请填现在的密码", response.getBody().getString("message"), response.getBody().toJSONString());
+        assertTrue(doorAccepts(OLD_PASSWORD), "旧口令仍应有效");
     }
 
     @Test
@@ -168,7 +183,7 @@ class GenericConfigSaveMustNotChangeAuthWithoutReauthTest {
         body.put(ConfigUiAuthService.PASSWORD_PROPERTY, NEW_PASSWORD);
         JSONObject result = controller.save(body);
 
-        boolean newPasswordTook = authService.matchesPassword(NEW_PASSWORD.toCharArray());
+        boolean newPasswordTook = doorAccepts(NEW_PASSWORD);
         boolean oldSessionAlive = authService.validate(session.getId()).isPresent();
 
         assertFalse(result.getBooleanValue("success") && newPasswordTook,

@@ -394,7 +394,7 @@ function todos(status, login, chain, fresh, pages, pluginDone, terms, botDown, b
     list.push({
       key: 'lock',
       title: '控制台还没上锁',
-      body: '没设口令、也没登记通行密钥，能打到这个端口的人都进得来。',
+      body: '没设密码、也没登记通行密钥，能打到这个端口的人都进得来。',
       action: '去上锁', href: '#/settings', soft: false,
     });
   }

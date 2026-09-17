@@ -145,13 +145,13 @@
   -->
   <div id="passkey-field" class="hidden">
     <button type="button" id="passkey">用通行密钥登录</button>
-    <p class="lead">用这台电脑的指纹、面容，或手机上确认一下。不用输口令，也不用验证器。</p>
+    <p class="lead">用这台电脑的指纹、面容，或手机上确认一下。不用输密码，也不用验证器。</p>
     <p class="note">通行密钥认的是当前访问地址，换了地址（如从局域网换成域名）要重新登记。</p>
     <p class="or">或</p>
   </div>
 
   <details id="pwd-fold" class="bare" open>
-    <summary>用口令登录</summary>
+    <summary>用密码登录</summary>
     <form id="form" autocomplete="on">
       <!--
         单用户面板本来没有「账号」这一说，但密码管理器需要一个用户名字段才肯保存条目。
@@ -179,7 +179,7 @@
   <div class="msg" id="msg"></div>
 
   <div class="links">
-    <button type="button" class="lnk" id="forgot">忘记口令？</button>
+    <button type="button" class="lnk" id="forgot">忘记密码？</button>
   </div>
 </div>
 
@@ -188,13 +188,13 @@
   能做的是重设，而重设的前提是先证明你对这台机器有完全控制权：启动日志只有那样的人读得到。
 -->
 <div class="card hidden" id="forgot-panel">
-  <div class="brand"><span class="brand-mark">N</span><h1>忘记口令</h1></div>
-  <p class="sub">口令没有找回，只能重设</p>
+  <div class="brand"><span class="brand-mark">N</span><h1>忘记密码</h1></div>
+  <p class="sub">密码没有找回，只能重设</p>
   <ol>
     <li>上服务器，把配置项 <code>novabot.core.config-ui.auth.operator-token</code> 改成
       <code>true</code> 并重启。这条通道默认关着，就是为了不留后门。</li>
     <li>启动日志里会印一行带令牌的地址，令牌是那一串。</li>
-    <li>把它贴到下面，换一次进入，然后<b>先改口令；改完这条通道会自动关掉并写回配置</b>。</li>
+    <li>把它贴到下面，换一次进入，然后<b>先改密码；改完这条通道会自动关掉并写回配置</b>。</li>
   </ol>
   <label for="token">一次性令牌</label>
   <input type="text" id="token" placeholder="启动日志里印的那一串" autocomplete="off">

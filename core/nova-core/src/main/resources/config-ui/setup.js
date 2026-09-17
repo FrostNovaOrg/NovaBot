@@ -551,10 +551,10 @@ function syncFoot() {
  */
 function stepLock(host) {
   heading(host, titleOf('lock'),
-    '设了口令，访问这个控制台才要登录。这一步不能跳过。');
+    '设了密码，访问这个控制台才要登录。这一步不能跳过。');
 
   if (draft.locked) {
-    host.appendChild(note('ok', '这台机器已经上锁了。要改口令去「设置 → 登录与安全」，那条路要填现在的口令。'));
+    host.appendChild(note('ok', '这台机器已经上锁了。要改密码去「设置 → 登录与安全」，那条路要填现在的密码。'));
     passkeyBlock(host);
     foot(host, null, '', null);
     return;
@@ -575,7 +575,7 @@ function stepLock(host) {
   save.textContent = '上锁';
   save.addEventListener('click', async () => {
     if (first.value !== again.value) {
-      report(result, {success: false, message: '两遍口令不一样'});
+      report(result, {success: false, message: '两遍密码不一样'});
       return;
     }
 
@@ -628,8 +628,8 @@ function passkeyBlock(host) {
   box.appendChild(button);
 
   const hint = note('', draft.locked
-    ? '登记过之后，登录时按一下指纹或面容就行，不用口令也不用验证码。可以跳过，之后在设置里补。'
-    : '先上锁，再登记：通行密钥跟着口令登录走，没有口令时它签出来的会话打不开任何门。');
+    ? '登记过之后，登录时按一下指纹或面容就行，不用密码也不用验证码。可以跳过，之后在设置里补。'
+    : '先上锁，再登记：通行密钥跟着密码登录走，没有密码时它签出来的会话打不开任何门。');
   box.appendChild(hint);
   host.appendChild(box);
 
