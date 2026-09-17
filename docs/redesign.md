@@ -515,7 +515,7 @@ AGPL-3.0 覆盖的是**代码**。图形资产是独立的著作权客体，字�
 | 资产 | 处置 |
 |---|---|
 | `logo.png` | 移除。重新设计 NovaBot 自有标识，或做纯文字标以规避设计版权 |
-| `fonts/font.ttf` | **保留**。阿里巴巴普惠体可免费商用，但需在 NOTICE 保留字体厂商版权声明 |
+| `fonts/font.ttf` | 原拟保留；**后改为**许可允许随软件再分发的 Noto Sans SC、Noto Emoji 与 DejaVu Sans，许可原文随字体进 jar，NOTICE 逐份写明出处 |
 | 其余资产与文案 | 全仓库排查是否夹带原项目品牌 |
 
 `BilibiliDynamicPainter` 中 `logo()` 返回 `null` 时已有跳过绘制的降级路径，

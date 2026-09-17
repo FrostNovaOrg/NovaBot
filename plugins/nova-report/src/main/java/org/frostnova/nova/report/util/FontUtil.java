@@ -29,14 +29,18 @@ import java.util.stream.Collectors;
 @Component
 public class FontUtil {
     /**
-     * 配置里代表随程序发布的那份字体的写法
+     * 配置里代表随程序发布的那几份字体的写法，及各自在类路径上的位置
      * <p>
-     * 有它兜底，一台什么字体都没装的服务器也画得出中文；
-     * 这个词是使用者写在 yml 里的值，改它等于改配置格式
+     * 「内置」是中文正文字体：有它兜底，一台什么字体都没装的服务器也画得出中文。
+     * 「内置表情」是单色表情字体，「内置符号」补西文字母与各类符号。
+     * 这几个词是使用者写在 yml 里的值，改它们等于改配置格式。
+     * <p>
+     * 三份都是许可允许随软件再分发的字体，许可原文就放在同目录，与字体一起进 jar
      */
-    private static final String BUNDLED_FONT = "内置";
-
-    private static final String BUNDLED_FONT_LOCATION = "classpath:fonts/font.ttf";
+    private static final Map<String, String> BUNDLED_FONTS = Map.of(
+            "内置", "classpath:fonts/NotoSansSC-Regular.ttf",
+            "内置表情", "classpath:fonts/NotoEmoji-Regular.ttf",
+            "内置符号", "classpath:fonts/DejaVuSans.ttf");
 
     /**
      * 装进表里时统一用的字号
@@ -91,8 +95,9 @@ public class FontUtil {
                 return Optional.of(loadFontFile(font));
             }
 
-            if (BUNDLED_FONT.equals(font)) {
-                return Optional.of(loadBundledFont());
+            String bundledLocation = BUNDLED_FONTS.get(font);
+            if (bundledLocation != null) {
+                return Optional.of(loadBundledFont(bundledLocation));
             }
 
             log.warn("{} 不在系统字体库中, 且不是一个有效的字体文件", font);
@@ -114,6 +119,13 @@ public class FontUtil {
         return fonts.stream()
                 .map(Font::getName)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * 表里第一个字体：一行字的基线按它定
+     */
+    public Font primaryFont() {
+        return fonts.get(0);
     }
 
     /**
@@ -193,8 +205,8 @@ public class FontUtil {
         return atDefaultSize(Font.createFont(Font.TRUETYPE_FONT, Paths.get(path).toFile()));
     }
 
-    private Font loadBundledFont() throws IOException, FontFormatException {
-        try (InputStream fontStream = resourceLoader.getResource(BUNDLED_FONT_LOCATION).getInputStream()) {
+    private Font loadBundledFont(String location) throws IOException, FontFormatException {
+        try (InputStream fontStream = resourceLoader.getResource(location).getInputStream()) {
             return atDefaultSize(Font.createFont(Font.TRUETYPE_FONT, fontStream));
         }
     }

@@ -45,7 +45,7 @@ import static org.junit.jupiter.api.Assertions.fail;
  * 量错了不会报错，只会让某一行字<b>溢出版面</b>或者<b>被截在半路</b>；
  * 挑错了则是那个字变成一个空豆腐块。两种都只在图发出去之后才看得见。
  * <p>
- * 判据一律只用<b>内置字体</b>作参照物（{@code classpath:fonts/font.ttf}），
+ * 这组测试一律只用<b>内置字体</b>作参照物（{@code classpath:fonts/NotoSansSC-Regular.ttf}），
  * 不去指望跑测试这台机器装了什么字体——那样量出来的结论换台机器就不成立。
  */
 @DisplayName("字体加载与文字量宽")
@@ -152,7 +152,7 @@ class FontUtilTest {
         }
 
         private Path copyBuiltInFontTo(Path target) throws IOException {
-            try (InputStream stream = FontUtilTest.class.getResourceAsStream("/fonts/font.ttf")) {
+            try (InputStream stream = FontUtilTest.class.getResourceAsStream("/fonts/NotoSansSC-Regular.ttf")) {
                 assertTrue(stream != null, "内置字体不在类路径上");
                 Files.copy(stream, target, StandardCopyOption.REPLACE_EXISTING);
             }

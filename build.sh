@@ -291,6 +291,10 @@ rm -f "$OUT"/plugins-lib/nova-core-*.jar
 # 而那要到运行时才暴露成一句莫名其妙的启动失败
 cp -R dist/templates/. "$OUT/"
 
+# 许可证与版权声明放在包的顶层：包里随程序发布的字体，其许可要求每一份拷贝都附上版权声明与许可；
+# 本项目自身的许可证也跟着程序走，不只留在源码仓库里
+cp LICENSE NOTICE "$OUT/"
+
 # ── 包里不带 application.yml，只带 application.example.yml ────────────────────
 # 程序在第一次保存设置时自己写出一份完整的 application.yml，键与说明取自它自己的配置面。
 # 包里再塞一份手写的，就有了两份互不钉住的「完整配置」——2026-09-04 现算，手写那份

@@ -28,7 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *       目录搬空而某处还写着旧全类名的话，编译会红，但那时先炸的是别的模块。</li>
  *   <li>③ <b>是搬走不是删掉</b>：四个类当真落在报告图插件的源码树里。缺了这一问，
  *       把它们整个删掉也一样绿——问①②量的都是「核心侧没有」，答不了「那它在哪」。</li>
- *   <li>④ <b>字体跟着走了</b>：内置字体是 {@code FontUtil} 用 {@code classpath:fonts/font.ttf}
+ *   <li>④ <b>字体跟着走了</b>：内置字体是 {@code FontUtil} 用 {@code classpath:fonts/NotoSansSC-Regular.ttf}
  *       读的，类搬了而资源留在核心 jar 里，编译与单测全绿，要到一台没装中文字体的机器上
  *       画第一张图时才炸。</li>
  * </ul>
@@ -83,7 +83,7 @@ class PaintingMovedToReportTest {
             "util/ImageUtil");
 
     /** 内置字体资源，相对各模块的 {@code src/main/resources} */
-    private static final String BUNDLED_FONT = "fonts/font.ttf";
+    private static final String BUNDLED_FONT = "fonts/NotoSansSC-Regular.ttf";
 
     @Test
     @DisplayName("核心主码里没了这两个包、不再引它们, 四个类落在报告图插件里, 内置字体跟着走")

@@ -44,10 +44,23 @@ nova-bilibili 模块上游仅以二进制形式分发。本仓库中的实现依
 
 图形与字体资产不受 AGPL-3.0 覆盖，权利状态如下。
 
-  core/nova-core/src/main/resources/fonts/font.ttf
-    Alibaba PuHuiTi (阿里巴巴普惠体) Regular v1.00
-    Copyright (c) 2019 Alibaba (China) Co., Ltd. All rights reserved.
-    免费商用；保留内嵌版权声明，不得单独售卖或再授权字体本身。
+  报告图插件 jar 内 fonts/NotoSansSC-Regular.ttf
+    Noto Sans SC Regular 2.004
+    Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'
+    以 SIL Open Font License 1.1 授权，许可全文随字体放在同目录 LICENSE-NotoSansSC.txt。
+
+  报告图插件 jar 内 fonts/NotoEmoji-Regular.ttf
+    Noto Emoji Regular 3.006
+    Copyright 2013 Google LLC
+    以 SIL Open Font License 1.1 授权，许可全文随字体放在同目录 LICENSE-NotoEmoji.txt。
+
+  报告图插件 jar 内 fonts/DejaVuSans.ttf
+    DejaVu Sans 2.37
+    Copyright (c) 2003 by Bitstream, Inc. All Rights Reserved. Bitstream Vera is
+    a trademark of Bitstream, Inc.
+    Copyright (c) 2006 by Tavmjong Bah. All Rights Reserved.
+    DejaVu changes are in public domain.
+    以 Bitstream Vera 与 Arev 字体许可授权，许可全文随字体放在同目录 LICENSE-DejaVuSans.txt。
 
   docs/assets/{logo,icon}.{svg,png}
     NovaBot 标识，本项目原创。可在介绍、引用或链接本项目时原样使用；
