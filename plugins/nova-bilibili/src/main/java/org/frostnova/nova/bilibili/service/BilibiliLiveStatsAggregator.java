@@ -361,7 +361,7 @@ public class BilibiliLiveStatsAggregator {
      */
     private void scoreUser(NovaBaseLiveEvent event, String metric, UserInfo sender, double delta) {
         if (event.getSource() == null || event.getSource().getUid() == null
-                || sender == null || sender.getUid() == null) {
+                || sender == null || !isIdentified(sender.getUid())) {
             return;
         }
         liveDataService.incrementLiveUserMetric(event.getPlatform(), event.getSource().getUid(), metric, sender.getUid(), delta);
@@ -369,6 +369,19 @@ public class BilibiliLiveStatsAggregator {
         // 一张榜十几个人就是十几次请求，那正是排行榜迟迟没能带上头像的原因
         liveDataService.recordLiveUserName(event.getPlatform(), event.getSource().getUid(), sender.getUid(), sender.getUname());
         liveDataService.recordLiveUserFace(event.getPlatform(), event.getSource().getUid(), sender.getUid(), sender.getFace());
+    }
+
+    /**
+     * 这个 uid 认不认得出是哪一位观众
+     * <p>
+     * <b>0 不是某一位观众，而是「平台没说是谁」。</b>未登录连接上，平台把弹幕发送者的 uid 抹成 0。
+     * 照常计分会把一场里所有匿名发送者并成同一个人：弹幕人数读 1，弹幕榜第一名顶着
+     * 最后一位发送者的打码昵称和真头像、分数是全场弹幕总数，下播后还逐场并入累计榜。
+     * protobuf 格式的消息不序列化零值，uid 读出来是 null，本来就不计；这里让 0 与它同样对待，负数同理。
+     * 条数、金额这类不分人的指标不走这里，照记；弹幕原文也照留。
+     */
+    private static boolean isIdentified(Long uid) {
+        return uid != null && uid > 0;
     }
 
     /**
