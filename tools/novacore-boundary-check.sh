@@ -1196,25 +1196,20 @@ G12_SPLIT_SLASHPOST="${G12_Q}${G12_MOD}${G12_Q}[[:space:]]*\+[[:space:]]*${G12_Q
 G12_SPLIT_RE="${G12_SPLIT_PARENT}|${G12_SPLIT_SLASHPRE}|${G12_SPLIT_CHILD}|${G12_SPLIT_SLASHPOST}"
 
 # 标准输入逐行读件路径；换行换空格只在这里有一份。命中的件路径印到标准输出。
+# 读到的非空行数记进 g12_scan_read，调用处拿它对清单行数。
+g12_scan_read=0
 g12_split_scan() {
+    g12_scan_read=0
     while IFS= read -r g12f; do
-        [ -n "$g12f" ] && [ -f "$g12f" ] || continue
+        [ -n "$g12f" ] || continue
+        g12_scan_read=$((g12_scan_read + 1))
+        [ -f "$g12f" ] || continue
         if LC_ALL=C tr '\n' ' ' < "$g12f" | LC_ALL=C grep -q -E "$G12_SPLIT_RE"; then
             printf '%s\n' "$g12f"
         fi
     done
     return 0
 }
-
-G12_SPLIT_LIST="$WORK/g12split"
-g12_split_scan < "$WORK/g12files" > "$G12_SPLIT_LIST"
-sort -u "$G12_LIST" "$G12_SPLIT_LIST" > "$WORK/g12union"
-g12_n=$(count_lines "$WORK/g12union")
-sort -u "$G12_LIST" -o "$WORK/g12orig.s"
-sort -u "$G12_SPLIT_LIST" -o "$WORK/g12split.s"
-comm -23 "$WORK/g12split.s" "$WORK/g12orig.s" > "$WORK/g12split_only"
-g12_split_only_n=$(count_lines "$WORK/g12split_only")
-g12_split_msg="只按拆段形数到 ${g12_split_only_n} 件"
 
 # 尺内自证：样例写成件，走实扫同一个函数 g12_split_scan
 g12_must_hit=(
@@ -1231,6 +1226,35 @@ g12_must_miss=(
 )
 g12_must_n=${#g12_must_hit[@]}
 g12_miss_n=${#g12_must_miss[@]}
+
+# 实扫：清单尾挂一件哨兵（必抓第一条、逗号后断行），须读满清单、并集里须有哨兵；出数时剔除。
+g12_sentinel="$WORK/g12sentinel"
+[ "$g12_must_n" -gt 0 ] && printf '%s' "${g12_must_hit[0]//, /,$'\n'}" > "$g12_sentinel"
+cp "$WORK/g12files" "$WORK/g12scanlist"
+printf '%s\n' "$g12_sentinel" >> "$WORK/g12scanlist"
+g12_scan_n=$(count_lines "$WORK/g12scanlist")
+G12_SPLIT_LIST="$WORK/g12split"
+g12_split_scan < "$WORK/g12scanlist" > "$G12_SPLIT_LIST"
+sort -u "$G12_LIST" "$G12_SPLIT_LIST" > "$WORK/g12union"
+g12_sentinel_ok=0
+grep -F -x -q -- "$g12_sentinel" "$WORK/g12union" && g12_sentinel_ok=1
+g12_n=$(( $(count_lines "$WORK/g12union") - g12_sentinel_ok ))
+sort -u "$G12_LIST" -o "$WORK/g12orig.s"
+grep -v -F -x -- "$g12_sentinel" "$G12_SPLIT_LIST" | sort -u > "$WORK/g12split.s"
+comm -23 "$WORK/g12split.s" "$WORK/g12orig.s" > "$WORK/g12split_only"
+g12_split_only_n=$(count_lines "$WORK/g12split_only")
+g12_split_msg="只按拆段形数到 ${g12_split_only_n} 件"
+g12_scan_fail=0
+if [ "$g12_scan_read" -ne "$g12_scan_n" ]; then
+    echo "格12 红 实扫没读满清单: 读入 ${g12_scan_read}/${g12_scan_n} ${g12_split_msg}"
+    g12_scan_fail=1
+fi
+if [ "$g12_sentinel_ok" -ne 1 ]; then
+    echo "格12 红 实扫没抓到清单尾的哨兵件 ${g12_split_msg}"
+    g12_scan_fail=1
+fi
+g12_scan_msg="实扫读入 ${g12_scan_read}/${g12_scan_n} 哨兵 ${g12_sentinel_ok}/1"
+
 g12_must_ok=0
 g12_miss_bad=0
 g12_prove_fail=0
@@ -1256,6 +1280,10 @@ else
     g12i=1
     while [ "$g12i" -le "$g12_must_n" ]; do
         g12s="${g12_must_hit[$((g12i - 1))]}"
+        if ! printf '%s' "$g12s" | cmp -s - "$WORK/g12prove/hit-${g12i}"; then
+            echo "格12 红 自证 样例件与原文不等: 必抓第${g12i}条 ${g12_split_msg}"
+            g12_prove_fail=1
+        fi
         if grep -F -x -q -- "$WORK/g12prove/hit-${g12i}" "$WORK/g12prove/out"; then
             g12_must_ok=$((g12_must_ok + 1))
         else
@@ -1267,6 +1295,10 @@ else
     g12i=1
     while [ "$g12i" -le "$g12_miss_n" ]; do
         g12s="${g12_must_miss[$((g12i - 1))]}"
+        if ! printf '%s' "$g12s" | cmp -s - "$WORK/g12prove/miss-${g12i}"; then
+            echo "格12 红 自证 样例件与原文不等: 必不抓第${g12i}条 ${g12_split_msg}"
+            g12_prove_fail=1
+        fi
         if grep -F -x -q -- "$WORK/g12prove/miss-${g12i}" "$WORK/g12prove/out"; then
             echo "格12 红 自证 必不抓抓到了: ${g12s} ${g12_split_msg}"
             g12_miss_bad=$((g12_miss_bad + 1))
@@ -1316,11 +1348,11 @@ if [ "$g12_bare_n" -gt 0 ]; then
     cat "$G12_BARE_LIST"
     g12_fail=1
 fi
-if [ "$g12_prove_fail" -ne 0 ]; then
+if [ "$g12_prove_fail" -ne 0 ] || [ "$g12_scan_fail" -ne 0 ]; then
     g12_fail=1
 fi
 if [ "$g12_fail" -eq 0 ]; then
-    echo "格12 绿 写死模块目录名的在册件${g12_n} ≤ 上限${HARDCODED_MODULE_PATH_CAP} 裸旧路径 0 ${g12_split_msg} ${g12_prove_msg}"
+    echo "格12 绿 写死模块目录名的在册件${g12_n} ≤ 上限${HARDCODED_MODULE_PATH_CAP} 裸旧路径 0 ${g12_split_msg} ${g12_prove_msg} ${g12_scan_msg}"
 else
     RED=1
 fi
