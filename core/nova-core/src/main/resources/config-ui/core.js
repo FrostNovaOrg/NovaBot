@@ -24,8 +24,21 @@ export const api = (p, o) => {
       return new Promise(() => {});
     }
     return r.json();
-  });
+  }).then(adoptCsrfToken);
 };
+
+/**
+ * 回包里带着 CSRF 令牌就换上它
+ *
+ * 改密码、开关二次验证办成之后，服务端把当前这一把会话换成新的：新 Cookie 由那一趟的 Set-Cookie 落下，
+ * 新令牌在回包里，旧令牌从那一刻起不再管用。在这里统一接住，理由同上面的 401：
+ * 各调用点各接一次的话，漏接一处，那一页之后的写请求就一律被挡。
+ * 空串与非字符串不收——拿它冲掉手上那一份，同样是之后写不动。
+ */
+function adoptCsrfToken(body) {
+  if (body && typeof body.csrfToken === 'string' && body.csrfToken) store.csrfToken = body.csrfToken;
+  return body;
+}
 export const $ = s => document.querySelector(s);
 export const el = (t, c) => { const e = document.createElement(t); if (c) e.className = c; return e; };
 // 主播昵称等内容来自各平台的接口，属于外部数据，拼进 innerHTML 前必须转义

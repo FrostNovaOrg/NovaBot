@@ -428,6 +428,27 @@ public class ConfigUiAuthService {
     }
 
     /**
+     * 换掉当前这一把会话，并注销别处的全部会话
+     * <p>
+     * 改口令、开关二次验证成功之后走这一趟，而不是只 {@link #logoutOthers}：偷到 Cookie 的人与主人
+     * 握着的可能是<b>同一把</b>，留下当前这一把恰恰就留下了他。换出来的新会话只随这一趟响应交回，
+     * 旧标识当场作废——办这件事的人留在里面，拿着旧 Cookie 的人出去。
+     * <p>
+     * 认不出当前这一把（没带 Cookie、已过期，或并发的另一趟刚把它换走）时<b>什么也不注销</b>，
+     * 理由同 {@link ConfigUiSessionStore#revokeAllExcept}：此时按「其余」动刀，刚换出来的那一把也会被踢掉。
+     * @param currentId 当前会话标识，可为 null
+     * @return 换出来的新会话与注销的别处会话数
+     */
+    public SessionRotation rotateSession(String currentId) {
+        Optional<ConfigUiSession> renewed = sessions.rotate(currentId, clock.get());
+        if (renewed.isEmpty()) {
+            return new SessionRotation(null, 0);
+        }
+
+        return new SessionRotation(renewed.get(), logoutOthers(renewed.get().getId()));
+    }
+
+    /**
      * 校验一个会话是否有效
      * @param sessionId 会话标识
      * @return 有效会话，无效时为空
@@ -734,6 +755,14 @@ public class ConfigUiAuthService {
      * @param remaining 再错几次会注销这把会话，只在 {@link CurrentPasswordVerdict#MISMATCH} 时有意义
      */
     public record CurrentPasswordCheck(CurrentPasswordVerdict verdict, int remaining) {
+    }
+
+    /**
+     * 换会话的结果
+     * @param session 换出来的新会话，认不出当前这一把时为 null
+     * @param revoked 注销的别处会话数，不算换下来的那一把
+     */
+    public record SessionRotation(ConfigUiSession session, int revoked) {
     }
 
     /**

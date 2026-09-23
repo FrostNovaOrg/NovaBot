@@ -6,8 +6,10 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -135,6 +137,40 @@ class ConfigUiSessionStoreTest {
                 "认不出当前这一把时把全部会话注销，刚办完的人会以为没办成");
         assertTrue(store.validate(a.getId(), NOW).isPresent());
         assertTrue(store.validate(b.getId(), NOW).isPresent());
+    }
+
+    @Test
+    @DisplayName("换成新标识之后旧标识当场作废，同一个旧标识换不出第二把")
+    void rotateVoidsTheOldIdOnce() {
+        ConfigUiSession old = store.issue("127.0.0.1", NOW, ConfigUiSession.Channel.PASSWORD);
+        Instant later = NOW.plusSeconds(60);
+
+        Optional<ConfigUiSession> renewed = store.rotate(old.getId(), later);
+
+        assertTrue(renewed.isPresent(), "认得出、没过期的会话换不出新的一把");
+        // 标识与令牌只比对、不进断言消息：assertNotEquals 失败时会把值印进构建日志
+        assertFalse(old.getId().equals(renewed.get().getId()), "换出来的还是旧标识");
+        assertFalse(old.getCsrfToken().equals(renewed.get().getCsrfToken()), "换了标识却没换 CSRF 令牌");
+        assertEquals(old.getExpiresAt(), renewed.get().getExpiresAt(),
+                "换一次标识就把绝对期限往后拖，被偷走的会话每换一次就多活一轮");
+        assertTrue(store.validate(old.getId(), later).isEmpty(),
+                "换完之后旧标识仍然有效：拿着同一枚 Cookie 的人照样进得来");
+        assertTrue(store.validate(renewed.get().getId(), later).isPresent());
+        assertTrue(store.rotate(old.getId(), later).isEmpty(),
+                "同一个旧标识换出了第二把：两趟同时来换，各拿走一把新会话");
+        assertEquals(1, store.revokeAll(), "换完之后表里应当只剩新的那一把");
+    }
+
+    @Test
+    @DisplayName("标识为空、认不出或已过期时换不出新会话")
+    void rotateRefusesMissingUnknownOrExpiredIds() {
+        assertTrue(store.rotate(null, NOW).isEmpty());
+        assertTrue(store.rotate("  ", NOW).isEmpty());
+        assertTrue(store.rotate("不存在", NOW).isEmpty());
+
+        ConfigUiSession idle = store.issue("127.0.0.1", NOW, ConfigUiSession.Channel.PASSWORD);
+        assertTrue(store.rotate(idle.getId(), NOW.plus(IDLE)).isEmpty(),
+                "闲置到期的会话换出了新的一把：到点该失效的 Cookie 借此又活了过来");
     }
 
     @Test

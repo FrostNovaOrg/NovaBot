@@ -11,13 +11,28 @@ import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -349,6 +364,188 @@ class ConfigUiAuthServiceTest {
         assertEquals(ConfigUiAuthService.CurrentPasswordVerdict.SIGNED_OUT, check.verdict(),
                 "次数已满还去比对的话，并发打进来的每一趟都各猜一次，次数上限只拦得住一趟一趟来的人");
         assertTrue(service.validate(session.getId()).isEmpty(), "这把会话应当注销");
+    }
+
+    /**
+     * 🔴 同一把会话并发猜旧口令：真正进到密码比对的趟数不超过上限
+     * <p>
+     * 计次与比对之间若没有互斥，并发打进来的每一趟都会以为自己是「第 1～5 趟」，
+     * 于是一齐去比对——次数上限只拦得住一趟一趟来的人。
+     * <p>
+     * 「真比对次数」的插桩点：包可见的 {@code countPasswordCheck} 覆写，
+     * 当它返回的 n ≤ {@link ConfigUiAuthService#CURRENT_PASSWORD_MISSES_BEFORE_SIGN_OUT} 时记一笔。
+     * 那正是 {@code PasswordHash.verify} 之前的那一道闸（先记次、超次不比对），过了闸就一定进比对；
+     * 回包判定里分不出「第 5 趟比完才登出」与「超次根本没比」，所以只能在这里数。
+     * <p>
+     * 计次的互斥另用<b>锁排除</b>钉死：持有会话监视器时，并发的一趟必须进不去。
+     * 只靠风暴里撞 {@code ++} 的丢更新是撞不出来的——一句 {@code ++} 的窗口太短，
+     * 缓存一致性常常把它串行成看不出竞态的假绿，去掉互斥后本格照样绿、等于什么都没量。
+     * <p>
+     * 风暴期间 {@link ProbeStore} 不摘 probe，否则前几趟一注销，后面的全成 NO_SESSION，
+     * 根本走不到计次那一步。
+     * <p>
+     * 口令哈希编成 1 迭代的 {@code pbkdf2$1$…}：格式合法（盐 16 字节、密钥 32 字节）
+     * 但比对瞬间完成且任何口令都对不上，免得 32 趟 PBKDF2 把判据拖成秒级——
+     * 那会把「这台机器有多快」量进来。
+     */
+    @Test
+    @DisplayName("🔴 同一把会话并发猜旧口令：真正进到比对的趟数不超过上限，其余回登出类结果")
+    void concurrentWrongGuessesDoNotExceedTheCompareBudget() throws Exception {
+        final int n = 32;
+        final int guessesEach = 100;
+        final int rounds = 4;
+        final int total = n * guessesEach;
+        ProbeStore store = new ProbeStore();
+        ConfigUiAuthService service = serviceWithCheapHashAndStore(store);
+
+        // 锁排除：会话监视器握在手上时，另一趟计次必须进不去。
+        // 进得来就说明计次那一句没有互斥——下面的风暴里人海会把次数上限冲开。
+        {
+            CountingSession locked = new CountingSession("probe-lock");
+            store.putProbe(locked);
+            AtomicReference<ConfigUiAuthService.CurrentPasswordCheck> done = new AtomicReference<>();
+            Thread intruder = new Thread(() ->
+                    done.set(service.checkCurrentPassword("猜的".toCharArray(), locked.getId(), IP)));
+            synchronized (locked) {
+                intruder.start();
+                intruder.join(300);
+                assertNull(done.get(),
+                        "持有会话监视器时，并发的一趟还进得来：计次与比对之间没有互斥，人海能把次数上限冲开");
+            }
+            intruder.join(5000);
+            assertNotNull(done.get(), "放掉会话监视器之后那一趟应当完成");
+        }
+
+        for (int round = 0; round < rounds; round++) {
+            CountingSession session = new CountingSession("probe-" + round);
+            store.putProbe(session);
+
+            CyclicBarrier gate = new CyclicBarrier(n);
+            ExecutorService pool = Executors.newFixedThreadPool(n);
+            try {
+                List<Future<int[]>> futures = new ArrayList<>(n);
+                for (int i = 0; i < n; i++) {
+                    futures.add(pool.submit(() -> {
+                        gate.await();
+                        int mismatch = 0;
+                        int signOutClass = 0;
+                        for (int g = 0; g < guessesEach; g++) {
+                            ConfigUiAuthService.CurrentPasswordVerdict verdict =
+                                    service.checkCurrentPassword("猜的".toCharArray(), session.getId(), IP)
+                                            .verdict();
+                            if (verdict == ConfigUiAuthService.CurrentPasswordVerdict.SIGNED_OUT
+                                    || verdict == ConfigUiAuthService.CurrentPasswordVerdict.NO_SESSION) {
+                                signOutClass++;
+                            } else {
+                                // 阴性对照：错口令绝不该 MATCH；MISSING 也不该——这一趟是带着口令打进来的
+                                assertEquals(ConfigUiAuthService.CurrentPasswordVerdict.MISMATCH, verdict,
+                                        "错口令不该回 " + verdict);
+                                mismatch++;
+                            }
+                        }
+                        return new int[] {mismatch, signOutClass};
+                    }));
+                }
+
+                int mismatch = 0;
+                int signOutClass = 0;
+                for (Future<int[]> future : futures) {
+                    int[] local = future.get(60, TimeUnit.SECONDS);
+                    mismatch += local[0];
+                    signOutClass += local[1];
+                }
+                assertEquals(total, mismatch + signOutClass,
+                        "第 " + (round + 1) + " 轮每趟都要有回值");
+
+                int compared = session.compared.get();
+                // 阳性对照：一趟都没进比对的话，插桩点空转，这条判据什么也没量
+                assertTrue(compared >= 1,
+                        "第 " + (round + 1) + " 轮一趟都没进比对");
+                assertTrue(compared <= ConfigUiAuthService.CURRENT_PASSWORD_MISSES_BEFORE_SIGN_OUT,
+                        "第 " + (round + 1) + " 轮真正进到比对的有 " + compared + " 趟，超过上限 "
+                                + ConfigUiAuthService.CURRENT_PASSWORD_MISSES_BEFORE_SIGN_OUT
+                                + "（共 " + total + " 趟错口令）：计次与比对之间没有互斥，并发猜口令能各猜一次");
+                assertTrue(signOutClass >= total - compared,
+                        "第 " + (round + 1) + " 轮没进比对的那几趟必须回登出类结果，实为登出类 "
+                                + signOutClass + "／共 " + total + " 趟、进比对 " + compared + " 趟");
+            } finally {
+                pool.shutdownNow();
+            }
+        }
+    }
+
+    /**
+     * 1 迭代的 pbkdf2 编码串：格式合法，比对瞬间完成且任何口令都对不上
+     */
+    private static String cheapWrongHash() {
+        Base64.Encoder encoder = Base64.getEncoder().withoutPadding();
+        return "pbkdf2$1$" + encoder.encodeToString(new byte[16]) + "$" + encoder.encodeToString(new byte[32]);
+    }
+
+    private ConfigUiAuthService serviceWithCheapHashAndStore(ProbeStore store) {
+        NovaCoreProperties.ConfigUi.Auth properties = new NovaCoreProperties.ConfigUi.Auth();
+        properties.setPassword(cheapWrongHash());
+        properties.setTotp(false);
+        return new ConfigUiAuthService(properties, store,
+                new LoginThrottle(properties.getMaxFailures(), Duration.ofMinutes(15)), null);
+    }
+
+    /**
+     * 插桩点：包可见的 {@code countPasswordCheck}，返回值 n ≤ 5 就是「即将进比对」的那一趟
+     * <p>
+     * 刻意不加 {@code synchronized}：所验的失效正是产品码那一份 {@code synchronized} 被拿掉，
+     * 若这里再加一把锁，拿掉之后计数仍然串行，本格会假绿。
+     */
+    private static final class CountingSession extends ConfigUiSession {
+        final AtomicInteger compared = new AtomicInteger();
+
+        CountingSession(String id) {
+            super(id, "csrf-" + id,
+                    Instant.parse("2026-08-20T00:00:00Z"),
+                    Instant.parse("2099-01-01T00:00:00Z"),
+                    "1.2.3.4", Channel.PASSWORD);
+        }
+
+        @Override
+        int countPasswordCheck() {
+            int n = super.countPasswordCheck();
+            if (n <= ConfigUiAuthService.CURRENT_PASSWORD_MISSES_BEFORE_SIGN_OUT) {
+                compared.incrementAndGet();
+            }
+            return n;
+        }
+    }
+
+    /**
+     * 让 {@link CountingSession} 坐进会话表：不往产品码那张私有表里塞，只在查找处接一手
+     */
+    private static final class ProbeStore extends ConfigUiSessionStore {
+        private final Map<String, ConfigUiSession> probes = new ConcurrentHashMap<>();
+
+        ProbeStore() {
+            super(Duration.ofHours(24), Duration.ofHours(2));
+        }
+
+        void putProbe(ConfigUiSession session) {
+            probes.put(session.getId(), session);
+        }
+
+        @Override
+        public Optional<ConfigUiSession> validate(String id, Instant now) {
+            ConfigUiSession probe = probes.get(id);
+            if (probe != null) {
+                probe.touch(now);
+                return Optional.of(probe);
+            }
+            return super.validate(id, now);
+        }
+
+        @Override
+        public void revoke(String id) {
+            // 刻意不摘 probe：风暴里前几趟就会触发注销，摘掉之后其余全成 NO_SESSION、
+            // 再也走不到计次，本格就只剩前几趟可量。计次的互斥是本格要量的事，注销是它的后果。
+            super.revoke(id);
+        }
     }
 
     @Test

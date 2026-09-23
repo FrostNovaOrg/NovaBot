@@ -105,6 +105,25 @@ public class ConfigUiSession {
     }
 
     /**
+     * 同一次登录换一把新标识与新 CSRF 令牌
+     * <p>
+     * 换的只有这两个值：登录时刻、绝对期限、来源、通道、「已按掉绑定提示」与旧口令的连错次数一概照旧。
+     * 绝对期限若借此重算，被偷的会话每办成一件换会话的事就多活一轮；连错次数若借此清零，
+     * 猜的人办成一件不要旧口令的事（比如绑验证器）就又白得几次再猜的机会。
+     * @param id 新标识
+     * @param csrfToken 新 CSRF 令牌
+     * @param now 当前时刻，记作最近一次使用
+     * @return 新的那一把
+     */
+    synchronized ConfigUiSession renew(String id, String csrfToken, Instant now) {
+        ConfigUiSession renewed = new ConfigUiSession(id, csrfToken, issuedAt, expiresAt, clientIp, channel);
+        renewed.lastSeenAt = now;
+        renewed.totpSetupDismissed = totpSetupDismissed;
+        renewed.passwordChecks = passwordChecks;
+        return renewed;
+    }
+
+    /**
      * 进入控制台的通道
      * <p>
      * 这几个名字会被<b>原样写进配置文件</b>（使用协议的同意记录里那一项），

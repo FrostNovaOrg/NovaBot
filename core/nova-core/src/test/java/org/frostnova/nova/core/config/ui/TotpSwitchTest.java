@@ -12,6 +12,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
 
@@ -41,6 +42,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>
  * 关掉时密钥一并清掉：留着一个谁也不再用的密钥躺在配置里，下次重新开启时它会被直接沿用，
  * 而使用者以为自己新绑了一把——那把「新」的其实是几个月前那把，中间它一直明文躺在盘上。
+ * <p>
+ * 开与关办成之后都换掉当前这一把会话：偷到 Cookie 的人与主人握着的可能是同一把，只注销别处收不回它。
  */
 @DisplayName("二次验证开关")
 class TotpSwitchTest {
@@ -174,31 +177,91 @@ class TotpSwitchTest {
 
         String pending = setup.getString("secret");
         JSONObject enrolled = controller.totpEnroll(
-                code(TotpGenerator.currentCode(pending, Instant.now())), new MockHttpServletRequest());
+                code(TotpGenerator.currentCode(pending, Instant.now())), new MockHttpServletRequest()).getBody();
         assertTrue(enrolled.getBooleanValue("success"), enrolled.toJSONString());
         assertTrue(authService.totpRequired(), "绑好之后应当当场要码");
         assertTrue(authService.totpEnabled(), "绑定本身就是「我要用二次验证」的意思");
     }
 
     @Test
-    @DisplayName("🔴 关掉二次验证之后，别处的会话一并注销，当前这一把留着")
+    @DisplayName("🔴 关掉二次验证之后，别处的会话一并注销；当前这一把换成新的，旧标识当场作废")
     void disableRevokesOtherSessions() {
         ConfigUiSession mine = login("127.0.0.1");
         // 同一窗口的动态码登录只能用一次，第二把用启动令牌通道签发——
         // 注销看的是会话表，不看通道
         ConfigUiSession elsewhere = authService.issueForOperator("10.0.0.9");
 
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        request.setRemoteAddr("127.0.0.1");
-        request.setCookies(new Cookie(ConfigUiSecurityFilter.SESSION_COOKIE, mine.getId()));
-
-        ResponseEntity<JSONObject> response = controller.totpDisable(code(totpNow()), request);
+        ResponseEntity<JSONObject> response = controller.totpDisable(code(totpNow()), withCookie(mine));
 
         assertEquals(200, response.getStatusCode().value(), response.getBody().toJSONString());
         assertTrue(authService.validate(elsewhere.getId()).isEmpty(),
                 "旧二次验证下建立的会话仍然畅通的话，关掉就没能把可能泄漏的访问权收回来");
-        assertTrue(authService.validate(mine.getId()).isPresent(),
-                "把刚关掉二次验证的人当场踢出去，他只会以为没关成");
+        assertTrue(authService.validate(mine.getId()).isEmpty(),
+                "当前这一把的旧标识仍然有效：与主人共用同一枚 Cookie 的人，关完二次验证照样进得来");
+        assertRenewed(response, mine, "把刚关掉二次验证的人当场踢出去，他只会以为没关成");
+    }
+
+    @Test
+    @DisplayName("🔴 绑上验证器之后，别处的会话一并注销；当前这一把换成新的，旧标识当场作废")
+    void enrollRevokesOtherSessionsAndRenewsTheCurrentOne() {
+        controller.totpDisable(code(totpNow()), new MockHttpServletRequest());
+        ConfigUiSession mine = authService.login(PASSWORD.toCharArray(), null, "127.0.0.1").session();
+        ConfigUiSession elsewhere = authService.issueForOperator("10.0.0.9");
+        String pending = controller.totpSetup().getString("secret");
+
+        ResponseEntity<JSONObject> response = controller.totpEnroll(
+                code(TotpGenerator.currentCode(pending, Instant.now())), withCookie(mine));
+
+        assertTrue(response.getBody().getBooleanValue("success"), response.getBody().toJSONString());
+        assertTrue(authService.validate(elsewhere.getId()).isEmpty(),
+                "绑定之前建立的会话仍然畅通的话，开二次验证就没能把可能泄漏的访问权收回来");
+        assertTrue(authService.validate(mine.getId()).isEmpty(),
+                "当前这一把的旧标识仍然有效：与主人共用同一枚 Cookie 的人，开完二次验证照样进得来");
+        assertRenewed(response, mine, "把刚绑好验证器的人当场踢出去，他只会以为没绑成");
+    }
+
+    @Test
+    @DisplayName("没带会话 Cookie 时关成了也不换、不注销别处：认不出当前这一把，就不按「其余」动刀")
+    void withoutCookieNothingIsRenewedOrRevoked() {
+        ConfigUiSession elsewhere = authService.issueForOperator("10.0.0.9");
+
+        ResponseEntity<JSONObject> response = controller.totpDisable(code(totpNow()), new MockHttpServletRequest());
+
+        assertEquals(200, response.getStatusCode().value(), response.getBody().toJSONString());
+        assertTrue(authService.validate(elsewhere.getId()).isPresent(),
+                "认不出当前这一把却注销了其余全部：并发里刚换出来的新会话、主人别处的登录都会被一并踢掉");
+        assertTrue(response.getHeaders().getFirst(HttpHeaders.SET_COOKIE) == null, "没换成就不该下发 Cookie");
+        assertFalse(response.getBody().containsKey("csrfToken"), "没换成就不该交回 CSRF 令牌，界面照旧拿着手上那一份");
+    }
+
+    private MockHttpServletRequest withCookie(ConfigUiSession session) {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr("127.0.0.1");
+        request.setCookies(new Cookie(ConfigUiSecurityFilter.SESSION_COOKIE, session.getId()));
+        return request;
+    }
+
+    /**
+     * 回包交回了换出来的那一把：Set-Cookie 里是新标识且当场可用，回包里是它的 CSRF 令牌
+     */
+    private void assertRenewed(ResponseEntity<JSONObject> response, ConfigUiSession before, String why) {
+        String setCookie = response.getHeaders().getFirst(HttpHeaders.SET_COOKIE);
+        assertNotNull(setCookie, why + "：回包里没有新 Cookie");
+        String prefix = ConfigUiSecurityFilter.SESSION_COOKIE + "=";
+        String renewed = null;
+        for (String part : setCookie.split(";")) {
+            if (part.strip().startsWith(prefix)) {
+                renewed = part.strip().substring(prefix.length());
+            }
+        }
+
+        assertNotNull(renewed, why + "：Set-Cookie 里没有会话标识");
+        assertTrue(authService.validate(renewed).isPresent(), why + "：新标识不可用");
+        // Cookie 与令牌只比对、不进断言消息：assertEquals 对不上时会把两边的值印进构建日志
+        String handed = response.getBody().getString("csrfToken");
+        assertTrue(authService.validate(renewed).orElseThrow().getCsrfToken().equals(handed),
+                "新会话的 CSRF 令牌要在同一回包里交回：界面拿着旧令牌，之后的写请求一律被挡");
+        assertFalse(before.getCsrfToken().equals(handed), "换了会话就得换 CSRF 令牌");
     }
 
     @Test
@@ -239,12 +302,12 @@ class TotpSwitchTest {
         int max = new NovaCoreProperties.ConfigUi.Auth().getMaxFailures();
 
         for (int i = 0; i < max; i++) {
-            JSONObject denied = controller.totpEnroll(code("000000"), request);
+            JSONObject denied = controller.totpEnroll(code("000000"), request).getBody();
             assertFalse(denied.getBooleanValue("success"), "第 " + (i + 1) + " 次错码应拒: " + denied);
         }
 
         JSONObject locked = controller.totpEnroll(
-                code(TotpGenerator.currentCode(pending, Instant.now())), request);
+                code(TotpGenerator.currentCode(pending, Instant.now())), request).getBody();
 
         assertFalse(locked.getBooleanValue("success"), locked.toJSONString());
         assertTrue(locked.getLongValue("lockedSeconds") > 0,
@@ -284,7 +347,7 @@ class TotpSwitchTest {
         assertTrue(setup.getBooleanValue("success"), setup.toJSONString());
         String pending = setup.getString("secret");
         JSONObject enrolled = capturingController.totpEnroll(
-                code(TotpGenerator.currentCode(pending, Instant.now())), new MockHttpServletRequest());
+                code(TotpGenerator.currentCode(pending, Instant.now())), new MockHttpServletRequest()).getBody();
         assertTrue(enrolled.getBooleanValue("success"), enrolled.toJSONString());
 
         Set<String> publicKeys = Set.of(

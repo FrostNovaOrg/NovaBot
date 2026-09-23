@@ -380,22 +380,24 @@ public class ConfigUiAuthController {
      * <p>
      * 必须先输一次验证码才算绑定成功。少了这一步，用户以为扫上了、实际没扫上，
      * 下次登录就被自己的二次验证挡在门外。
+     * <p>
+     * 绑成之后换掉当前这一把会话、注销别处的会话，见 {@link ConfigUiAuthService#rotateSession}。
      * @param body 请求体，code 字段为验证器给出的六位数字
      * @return 绑定结果
      */
     @PostMapping("/totp/enroll")
-    public JSONObject totpEnroll(@RequestBody JSONObject body, HttpServletRequest request) {
+    public ResponseEntity<JSONObject> totpEnroll(@RequestBody JSONObject body, HttpServletRequest request) {
         JSONObject result = new JSONObject();
 
         if (!authService.canEnrollTotp()) {
             result.put("success", false);
             result.put("message", "无需绑定验证器");
-            return result;
+            return ResponseEntity.ok(result);
         }
 
         ConfigUiAuthService.CredentialCheck gate = authService.beginSensitiveTotp(request.getRemoteAddr());
         if (!gate.ok()) {
-            return refuseSensitiveTotp(gate, request);
+            return ResponseEntity.ok(refuseSensitiveTotp(gate, request));
         }
 
         String secret = authService.verifyPending(body.getString("code")).orElse(null);
@@ -404,7 +406,7 @@ public class ConfigUiAuthController {
             result.put("success", false);
             result.put("message", "验证码不正确，请确认手机时间是否准确后重试");
             result.put("lockedSeconds", remainingLockSeconds(request));
-            return result;
+            return ResponseEntity.ok(result);
         }
 
         // 先落盘再启用：反过来的话，写文件失败会让界面说「绑好了」而重启后又要重新绑，
@@ -419,16 +421,15 @@ public class ConfigUiAuthController {
             authService.succeedSensitiveTotp(request.getRemoteAddr());
             result.put("success", false);
             result.put("message", "保存失败: " + e.getMessage());
-            return result;
+            return ResponseEntity.ok(result);
         }
 
         authService.activateTotp(secret);
         authService.succeedSensitiveTotp(request.getRemoteAddr());
-        authService.logoutOthers(sessionId(request));
         result.put("success", true);
         result.put("message", "已绑定，下次登录需要输入动态验证码");
 
-        return result;
+        return withRenewedSession(result, authService.rotateSession(sessionId(request)), request);
     }
 
     /**
@@ -442,7 +443,8 @@ public class ConfigUiAuthController {
      * 人只看到页面闪了一下、开关弹回开着，不知道是码输错了，更不知道再错下去会被锁。
      * 401 只留给认不出这次登录的时候。
      * <p>
-     * 密钥一并清掉，见 {@code ConfigUiAuthService#disableTotp}。
+     * 密钥一并清掉，见 {@code ConfigUiAuthService#disableTotp}。关成之后换掉当前这一把会话、注销别处的会话，
+     * 见 {@link ConfigUiAuthService#rotateSession}。
      * @param body 请求体，code 字段为验证器给出的六位数字
      * @return 关闭结果
      */
@@ -485,11 +487,10 @@ public class ConfigUiAuthController {
 
         authService.disableTotp();
         authService.succeedSensitiveTotp(request.getRemoteAddr());
-        authService.logoutOthers(sessionId(request));
         result.put("success", true);
         result.put("message", "已关闭。下次登录只要密码，验证器里那一条可以删掉了");
 
-        return ResponseEntity.ok(result);
+        return withRenewedSession(result, authService.rotateSession(sessionId(request)), request);
     }
 
     /**
@@ -515,9 +516,10 @@ public class ConfigUiAuthController {
             return ResponseEntity.badRequest().body(result);
         }
 
-        JSONObject replaced = replacePassword(body.getString("next"), request);
-        if (!Boolean.TRUE.equals(replaced.getBoolean("success"))) {
-            return ResponseEntity.ok(replaced);
+        ResponseEntity<JSONObject> outcome = replacePassword(body.getString("next"), request);
+        JSONObject replaced = outcome.getBody();
+        if (replaced == null || !Boolean.TRUE.equals(replaced.getBoolean("success"))) {
+            return outcome;
         }
 
         log.warn("配置界面: 已设下第一把口令, 访问令牌自此不再是凭据, 来源: {}", request.getRemoteAddr());
@@ -567,7 +569,7 @@ public class ConfigUiAuthController {
         }
 
         if (check.verdict() == ConfigUiAuthService.CurrentPasswordVerdict.MATCH) {
-            return ResponseEntity.ok(replacePassword(body.getString("next"), request));
+            return replacePassword(body.getString("next"), request);
         }
 
         result.put("success", false);
@@ -615,26 +617,26 @@ public class ConfigUiAuthController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(result);
         }
 
-        return ResponseEntity.ok(replacePassword(body.getString("next"), request));
+        return replacePassword(body.getString("next"), request);
     }
 
     /**
-     * 换上新口令：校验、落盘、当场生效、收回别处的会话
+     * 换上新口令：校验、落盘、当场生效、换掉当前这一把会话并收回别处的会话
      * <p>
      * 三条路（上第一把锁、改口令、令牌重设）走到这里就没有区别了，因此只此一份——
      * 各写一份的话，「改口令要不要注销别处的会话」这件事迟早会有两个答案。
      * @param next 新口令明文
-     * @param request 请求，用于留下当前这一把会话
-     * @return 结果
+     * @param request 请求，用于认出当前这一把会话
+     * @return 结果；换到新会话时带着新 Cookie 与新 CSRF 令牌
      */
-    private JSONObject replacePassword(String next, HttpServletRequest request) {
+    private ResponseEntity<JSONObject> replacePassword(String next, HttpServletRequest request) {
         JSONObject result = new JSONObject();
 
         String plain = next == null ? "" : next.strip();
         if (plain.length() < MIN_PASSWORD_LENGTH) {
             result.put("success", false);
             result.put("message", "新密码至少 " + MIN_PASSWORD_LENGTH + " 个字符");
-            return result;
+            return ResponseEntity.ok(result);
         }
 
         char[] chars = plain.toCharArray();
@@ -654,7 +656,7 @@ public class ConfigUiAuthController {
             log.error("写入新的登录口令失败", e);
             result.put("success", false);
             result.put("message", "保存失败，密码没有改动: " + e.getMessage());
-            return result;
+            return ResponseEntity.ok(result);
         }
 
         authService.applyPasswordHash(hashed);
@@ -662,7 +664,8 @@ public class ConfigUiAuthController {
         // 两处对不上的表现是「上了锁的实例照旧在启动日志里印一个等同于口令的地址」
         properties.setPassword(hashed);
         closeOperatorTokenChannel();
-        int revoked = authService.logoutOthers(sessionId(request));
+        ConfigUiAuthService.SessionRotation rotation = authService.rotateSession(sessionId(request));
+        int revoked = rotation.revoked();
 
         result.put("success", true);
         result.put("revoked", revoked);
@@ -670,7 +673,7 @@ public class ConfigUiAuthController {
                 ? "密码已改。别处那 " + revoked + " 个登录已经一并注销"
                 : "密码已改。下次登录用新密码");
 
-        return result;
+        return withRenewedSession(result, rotation, request);
     }
 
     /**
@@ -777,6 +780,26 @@ public class ConfigUiAuthController {
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, expiredCookie(request).toString())
+                .body(result);
+    }
+
+    /**
+     * 回包带上换出来的那一把会话：Cookie 走 Set-Cookie，CSRF 令牌放进回包
+     * <p>
+     * 两样必须同一趟交回：只换 Cookie 不给新令牌，界面之后的写请求一律被挡；
+     * 旧标识又已经作废，拖到下一趟再给就只剩 401。
+     * 没换成（认不出当前这一把）时两样都不给，界面照旧拿着手上那一份。
+     */
+    private ResponseEntity<JSONObject> withRenewedSession(JSONObject result, ConfigUiAuthService.SessionRotation rotation,
+                                                         HttpServletRequest request) {
+        ConfigUiSession session = rotation.session();
+        if (session == null) {
+            return ResponseEntity.ok(result);
+        }
+
+        result.put("csrfToken", session.getCsrfToken());
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, sessionCookie(session.getId(), request).toString())
                 .body(result);
     }
 

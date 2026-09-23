@@ -7,23 +7,31 @@ import org.frostnova.nova.core.config.ui.auth.ConfigUiSession;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSessionStore;
 import org.frostnova.nova.core.config.ui.auth.LoginThrottle;
 import org.frostnova.nova.core.config.ui.auth.PasswordHash;
+import org.frostnova.nova.core.config.ui.auth.TotpGenerator;
+import org.frostnova.nova.core.util.IpMatcher;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
+import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -41,6 +49,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *       偷到 Cookie 的人能借这个口一直猜下去，猜中就换掉口令；主人的登录与别处的会话不受牵连</li>
  *   <li><b>没填不算猜</b>——一个字都没交上来就没有可比对的东西，回 400 请他先填，不记次数；
  *       认不出会话时照旧先按「认不出这次登录」拒</li>
+ *   <li><b>改完换掉当前这一把会话</b>——偷到 Cookie 的人与主人握着的可能是同一把，只注销别处收不回它。
+ *       旧标识当场作废，新标识与新 CSRF 令牌随这一趟回包交回；登录时刻、绝对期限、通道与连错次数照旧</li>
  * </ul>
  */
 @DisplayName("改口令")
@@ -48,6 +58,8 @@ class PasswordChangeTest {
     private static final String OLD = "correct horse battery staple";
 
     private static final String NEW = "another horse another staple";
+
+    private static final String TOKEN = "operator-token-for-password-change-test";
 
     private static final String TEMPLATE = """
             novabot:
@@ -115,6 +127,65 @@ class PasswordChangeTest {
         return body;
     }
 
+    private JSONObject code(String value) {
+        JSONObject body = new JSONObject();
+        body.put("code", value);
+        return body;
+    }
+
+    /**
+     * 造一个带着指定会话标识的请求
+     */
+    private MockHttpServletRequest withCookie(String sessionId) {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST",
+                ConfigUiController.BASE_PATH + "/api/auth/password/change");
+        request.setRemoteAddr("127.0.0.1");
+        request.setCookies(new Cookie(ConfigUiSecurityFilter.SESSION_COOKIE, sessionId));
+        return request;
+    }
+
+    /**
+     * 回包 Set-Cookie 里下发的会话标识，没下发时为 null
+     */
+    private String sessionIdOf(ResponseEntity<JSONObject> response) {
+        String setCookie = response.getHeaders().getFirst(HttpHeaders.SET_COOKIE);
+        if (setCookie == null) {
+            return null;
+        }
+
+        String prefix = ConfigUiSecurityFilter.SESSION_COOKIE + "=";
+        for (String part : setCookie.split(";")) {
+            String piece = part.strip();
+            if (piece.startsWith(prefix)) {
+                return piece.substring(prefix.length());
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 带着一枚会话 Cookie（与可选的 CSRF 令牌）过一遍安全过滤器
+     * @return 过滤器给出的状态码；放行时是 200
+     */
+    private int through(String method, String sessionId, String csrf) throws Exception {
+        NovaCoreProperties.ConfigUi.Agreement agreement = new NovaCoreProperties.ConfigUi.Agreement();
+        agreement.setAcceptedVersion(ConfigUiAgreement.VERSION);
+        agreement.setAcceptedBy(ConfigUiSession.Channel.PASSWORD.wire());
+        ConfigUiSecurityFilter filter = new ConfigUiSecurityFilter(TOKEN,
+                new IpMatcher(List.of("0.0.0.0/0", "::/0")), authService, new NovaCoreProperties.ConfigUi.Auth(), agreement);
+
+        MockHttpServletRequest request = new MockHttpServletRequest(method, ConfigUiController.BASE_PATH + "/api/values");
+        request.setRemoteAddr("198.51.100.66");
+        request.setCookies(new Cookie(ConfigUiSecurityFilter.SESSION_COOKIE, sessionId));
+        if (csrf != null) {
+            request.addHeader(ConfigUiSecurityFilter.CSRF_HEADER, csrf);
+        }
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        filter.doFilter(request, response, new MockFilterChain());
+        return response.getStatus();
+    }
+
     @Test
     @DisplayName("先过阳性对照：改之前，旧口令登得上、新口令登不上")
     void baselineBeforeChange() {
@@ -162,18 +233,106 @@ class PasswordChangeTest {
     }
 
     @Test
-    @DisplayName("🔴 别处的会话一并注销，当前这一把留着")
+    @DisplayName("🔴 别处的会话一并注销；当前这一把换成新的：旧标识当场作废，新标识随 Set-Cookie 交回")
     void otherSessionsAreRevoked() {
         ConfigUiSession elsewhere = authService.login(OLD.toCharArray(), null, "10.0.0.9").session();
         MockHttpServletRequest request = request(ConfigUiSession.Channel.PASSWORD);
         String mine = request.getCookies()[0].getValue();
+        String oldCsrf = authService.validate(mine).orElseThrow().getCsrfToken();
 
-        controller.changePassword(body(OLD, NEW), request);
+        ResponseEntity<JSONObject> response = controller.changePassword(body(OLD, NEW), request);
 
+        assertEquals(200, response.getStatusCode().value(), response.getBody().toJSONString());
         assertTrue(authService.validate(elsewhere.getId()).isEmpty(),
                 "旧口令下建立的会话仍然畅通的话，改口令就没能把可能泄漏的访问权收回来");
-        assertTrue(authService.validate(mine).isPresent(),
-                "把刚改完口令的人当场踢出去，他只会以为改失败了");
+        assertEquals(1, response.getBody().getIntValue("revoked"), "注销数只算别处那一把，当前换下的这一把不算");
+        assertTrue(authService.validate(mine).isEmpty(),
+                "当前这一把的旧标识仍然有效：与主人共用同一枚 Cookie 的人，改完密码照样进得来");
+
+        String renewed = sessionIdOf(response);
+        assertNotNull(renewed, "旧标识作废了却没随回包交回新 Cookie：刚改完密码的人被当场踢出去，只会以为改失败了");
+        assertTrue(authService.validate(renewed).isPresent(), "新标识必须当场可用");
+        // 令牌只比对、不进断言消息：assertEquals 对不上时会把两边的值印进构建日志
+        String handed = response.getBody().getString("csrfToken");
+        assertTrue(authService.validate(renewed).orElseThrow().getCsrfToken().equals(handed),
+                "新会话的 CSRF 令牌要在同一回包里交回：界面拿着旧令牌，之后的写请求一律被挡");
+        assertFalse(oldCsrf.equals(handed), "换了会话就得换 CSRF 令牌");
+    }
+
+    @Test
+    @DisplayName("🔴 与主人共用同一枚 Cookie 的人：改完密码拿旧 Cookie 进不来；主人拿新 Cookie 与新令牌照常写")
+    void sharedCookieIsShutOutOwnerStaysIn() throws Exception {
+        MockHttpServletRequest request = request(ConfigUiSession.Channel.PASSWORD);
+        String shared = request.getCookies()[0].getValue();
+        String oldCsrf = authService.validate(shared).orElseThrow().getCsrfToken();
+        assertEquals(200, through("GET", shared, null), "改之前这枚 Cookie 得进得来，否则改完之后的 401 说明不了什么");
+
+        ResponseEntity<JSONObject> response = controller.changePassword(body(OLD, NEW), request);
+        assertTrue(response.getBody().getBooleanValue("success"), response.getBody().toJSONString());
+
+        assertEquals(401, through("GET", shared, null),
+                "偷的人手里那枚旧 Cookie 在主人改完密码之后还进得来");
+        String renewed = sessionIdOf(response);
+        assertNotNull(renewed, "主人得随回包拿到新 Cookie 才留得在里面");
+        String newCsrf = response.getBody().getString("csrfToken");
+        assertEquals(200, through("POST", renewed, newCsrf), "主人拿新 Cookie 与新令牌的写请求应当放行");
+        assertEquals(403, through("POST", renewed, oldCsrf),
+                "新 Cookie 配旧令牌必须被挡——界面不接住新令牌，之后就写不动");
+    }
+
+    @Test
+    @DisplayName("🔴 用启动令牌进来重设密码之后，同样换掉当前这一把")
+    void operatorResetRenewsTheSession() {
+        MockHttpServletRequest request = request(ConfigUiSession.Channel.OPERATOR_TOKEN);
+        String mine = request.getCookies()[0].getValue();
+
+        ResponseEntity<JSONObject> response = controller.resetPassword(body(null, NEW), request);
+
+        assertEquals(200, response.getStatusCode().value(), response.getBody().toJSONString());
+        assertTrue(authService.validate(mine).isEmpty(),
+                "重设密码之后旧标识仍然有效：拿着同一枚 Cookie 的人照样进得来");
+        String renewed = sessionIdOf(response);
+        assertNotNull(renewed, "重设之后没交回新 Cookie：用启动令牌进来的人设完密码就被踢出去了");
+        assertTrue(authService.validate(renewed).isPresent(), "新标识必须当场可用");
+    }
+
+    @Test
+    @DisplayName("🔴 换出来的那一把沿用原来的登录时刻、绝对期限与通道：换标识不是重新登录")
+    void renewedSessionKeepsItsDeadlineAndChannel() {
+        MockHttpServletRequest request = request(ConfigUiSession.Channel.PASSWORD);
+        ConfigUiSession before = authService.validate(request.getCookies()[0].getValue()).orElseThrow();
+
+        ResponseEntity<JSONObject> response = controller.changePassword(body(OLD, NEW), request);
+
+        String renewed = sessionIdOf(response);
+        assertNotNull(renewed, "改完密码没交回新 Cookie，无从比对: " + response.getBody().getString("message"));
+        ConfigUiSession after = authService.validate(renewed).orElseThrow();
+        assertEquals(before.getExpiresAt(), after.getExpiresAt(),
+                "绝对期限跟着换会话往后挪了：被偷的会话每办成一件换会话的事就多活一轮");
+        assertEquals(before.getIssuedAt(), after.getIssuedAt(), "登录时刻照旧：会话满额时按它淘汰最早的那一把");
+        assertEquals(before.getChannel(), after.getChannel(), "通道照旧：使用协议的同意记录要说得出当时是怎么进来的");
+    }
+
+    @Test
+    @DisplayName("🔴 换一把会话不把旧密码的连错次数清零：连错 4 次后绑上验证器，换出来的那一把再错 1 次照样注销")
+    void renewedSessionKeepsTheMissCount() {
+        MockHttpServletRequest stolen = request(ConfigUiSession.Channel.PASSWORD);
+        for (int i = 1; i <= 4; i++) {
+            controller.changePassword(body("猜的第 " + i + " 个", NEW), stolen);
+        }
+
+        // 绑验证器不要旧密码，拿着这把会话的人谁都办得成：它若顺手把次数清零，猜的人就又白得五次
+        String pending = controller.totpSetup().getString("secret");
+        ResponseEntity<JSONObject> enrolled = controller.totpEnroll(
+                code(TotpGenerator.currentCode(pending, Instant.now())), stolen);
+        String renewed = sessionIdOf(enrolled);
+        assertNotNull(renewed, "绑定之后没交回新 Cookie，无从接着量: " + enrolled.getBody().getString("message"));
+
+        ResponseEntity<JSONObject> fifth = controller.changePassword(body("猜的第 5 个", NEW), withCookie(renewed));
+
+        assertTrue(authService.validate(renewed).isEmpty(),
+                "换出来的那一把把连错次数清零了：猜的人办成一件换会话的事，就又白得五次再猜的机会");
+        assertEquals(401, fifth.getStatusCode().value(), fifth.getBody().toJSONString());
     }
 
     @Test
