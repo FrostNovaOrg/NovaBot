@@ -178,12 +178,13 @@ class TotpSwitchTest {
         // 关掉之后开关是 false，若绑定这条路以它为前提，人得先重启一次才绑得了，
         // 而重启会断开全部直播间长连接
         assertTrue(authService.canEnrollTotp(), "关掉之后应当能重新走一遍绑定");
-        JSONObject setup = controller.totpSetup();
+        // 待绑密钥挂在签发它的那把会话上，先登录再带本会话去 setup
+        ConfigUiSession mine = authService.login(PASSWORD.toCharArray(), null, "127.0.0.1").session();
+        JSONObject setup = controller.totpSetup(withCookie(mine));
         assertTrue(setup.getBooleanValue("success"), setup.toJSONString());
         assertNull(setup.getString("message"));
 
         String pending = setup.getString("secret");
-        ConfigUiSession mine = authService.login(PASSWORD.toCharArray(), null, "127.0.0.1").session();
         JSONObject enrolled = controller.totpEnroll(
                 enrollBody(TotpGenerator.currentCode(pending, Instant.now())), withCookie(mine)).getBody();
         assertTrue(enrolled.getBooleanValue("success"), enrolled.toJSONString());
@@ -215,7 +216,7 @@ class TotpSwitchTest {
         controller.totpDisable(code(totpNow()), new MockHttpServletRequest());
         ConfigUiSession mine = authService.login(PASSWORD.toCharArray(), null, "127.0.0.1").session();
         ConfigUiSession elsewhere = authService.issueForOperator("10.0.0.9");
-        String pending = controller.totpSetup().getString("secret");
+        String pending = controller.totpSetup(withCookie(mine)).getString("secret");
 
         ResponseEntity<JSONObject> response = controller.totpEnroll(
                 enrollBody(TotpGenerator.currentCode(pending, Instant.now())), withCookie(mine));
@@ -302,10 +303,10 @@ class TotpSwitchTest {
     @DisplayName("🔴 绑定确认猜码达到登录阈值后锁定，对码也绑不上")
     void wrongEnrollCodesShareTheLoginLockout() {
         controller.totpDisable(code(totpNow()), new MockHttpServletRequest());
-        JSONObject setup = controller.totpSetup();
+        ConfigUiSession mine = authService.login(PASSWORD.toCharArray(), null, "127.0.0.1").session();
+        JSONObject setup = controller.totpSetup(withCookie(mine));
         String pending = setup.getString("secret");
 
-        ConfigUiSession mine = authService.login(PASSWORD.toCharArray(), null, "127.0.0.1").session();
         MockHttpServletRequest request = withCookie(mine);
         request.setRemoteAddr("198.51.100.7");
         int max = new NovaCoreProperties.ConfigUi.Auth().getMaxFailures();
@@ -352,11 +353,11 @@ class TotpSwitchTest {
                 capturingController.totpDisable(code(totpNow()), new MockHttpServletRequest());
         assertEquals(200, disabled.getStatusCode().value(), disabled.getBody().toJSONString());
 
-        JSONObject setup = capturingController.totpSetup();
-        assertTrue(setup.getBooleanValue("success"), setup.toJSONString());
-        String pending = setup.getString("secret");
         ConfigUiSession capturingSession =
                 capturingAuth.login(PASSWORD.toCharArray(), null, "127.0.0.1").session();
+        JSONObject setup = capturingController.totpSetup(withCookie(capturingSession));
+        assertTrue(setup.getBooleanValue("success"), setup.toJSONString());
+        String pending = setup.getString("secret");
         JSONObject enrolled = capturingController.totpEnroll(
                 enrollBody(TotpGenerator.currentCode(pending, Instant.now())), withCookie(capturingSession)).getBody();
         assertTrue(enrolled.getBooleanValue("success"), enrolled.toJSONString());

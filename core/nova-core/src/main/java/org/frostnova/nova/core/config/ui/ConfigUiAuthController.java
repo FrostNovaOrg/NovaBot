@@ -349,10 +349,13 @@ public class ConfigUiAuthController {
 
     /**
      * 取绑定验证器所需的二维码与密钥
+     * <p>
+     * <b>每次打开都换新一把，挂在本会话上</b>：别人偷到 Cookie 先打开读走的那把，
+     * 主人之后打开拿到的是新的一把。本会话至多留最近三把，先扫的那张码照旧绑得上。
      * @return 密钥、otpauth 链接与二维码图片
      */
     @GetMapping("/totp/setup")
-    public JSONObject totpSetup() {
+    public JSONObject totpSetup(HttpServletRequest request) {
         JSONObject result = new JSONObject();
 
         // 看的是「绑得了吗」而不是「要不要提示他去绑」：设置页里把二次验证从关拨到开，
@@ -363,7 +366,14 @@ public class ConfigUiAuthController {
             return result;
         }
 
-        String secret = authService.pendingSecret();
+        ConfigUiSession session = authService.validate(sessionId(request)).orElse(null);
+        if (session == null) {
+            result.put("success", false);
+            result.put("message", "请先登录");
+            return result;
+        }
+
+        String secret = authService.issuePendingSecret(session);
         String uri = TotpGenerator.provisioningUri(secret, TOTP_ACCOUNT, TOTP_ISSUER);
 
         result.put("success", true);
@@ -408,7 +418,9 @@ public class ConfigUiAuthController {
             return ResponseEntity.ok(refuseSensitiveTotp(gate, request));
         }
 
-        String secret = authService.verifyPending(body.getString("code")).orElse(null);
+        ConfigUiSession session = authService.validate(sessionId(request)).orElse(null);
+        String secret = session == null ? null
+                : authService.verifyPending(session, body.getString("code")).orElse(null);
         if (secret == null) {
             authService.failSensitiveTotp(request.getRemoteAddr());
             result.put("success", false);
@@ -432,7 +444,7 @@ public class ConfigUiAuthController {
             return ResponseEntity.ok(result);
         }
 
-        authService.activateTotp(secret);
+        authService.activateTotp(session, secret);
         authService.succeedSensitiveTotp(request.getRemoteAddr());
         result.put("success", true);
         result.put("message", "已绑定，下次登录需要输入动态验证码");
@@ -493,7 +505,7 @@ public class ConfigUiAuthController {
             return ResponseEntity.internalServerError().body(result);
         }
 
-        authService.disableTotp();
+        authService.disableTotp(authService.validate(sessionId(request)).orElse(null));
         authService.succeedSensitiveTotp(request.getRemoteAddr());
         result.put("success", true);
         result.put("message", "已关闭。下次登录只要密码，验证器里那一条可以删掉了");

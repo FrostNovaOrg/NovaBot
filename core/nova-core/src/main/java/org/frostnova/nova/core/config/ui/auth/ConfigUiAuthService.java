@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Supplier;
@@ -160,14 +161,6 @@ public class ConfigUiAuthService {
     private volatile String totpSecret;
 
     /**
-     * 绑定引导中待确认的密钥
-     * <p>
-     * 只在内存里存到确认为止。<b>不能一生成就写进配置</b>：那样刷新一次页面就换一个密钥，
-     * 用户扫了旧的却对不上，而配置里躺着一个谁也没绑定的密钥。
-     */
-    private volatile String pendingSecret;
-
-    /**
      * 已用过的动态码时间步。单用户面板只有一个账号，登录与代签发共用这一格。
      * <p>
      * {@code null} 表示还没用过。消费时按单调递增拦：同一格或更早的格一律拒。
@@ -266,30 +259,41 @@ public class ConfigUiAuthService {
     }
 
     /**
-     * 取出绑定引导用的密钥
+     * 签发一把新的绑定引导密钥，挂在本会话上
      * <p>
-     * 同一个进程内始终返回同一个，刷新页面不会换：换了的话先扫的那个二维码就作废了。
+     * <b>每次打开绑定都换新</b>：别人偷到 Cookie 先打开绑定读走的那把，主人之后打开
+     * 拿到的是新的一把，绑不上别人的。本会话至多留最近三把（见 {@link ConfigUiSession}），
+     * 刷新过页面或两处入口各开过一次，照旧能用先扫的那张码绑定。
+     * @param session 当前会话
      * @return Base32 密钥
      */
-    public synchronized String pendingSecret() {
-        if (pendingSecret == null) {
-            pendingSecret = TotpGenerator.generateSecret();
-        }
-        return pendingSecret;
+    public String issuePendingSecret(ConfigUiSession session) {
+        String secret = TotpGenerator.generateSecret();
+        session.addPendingSecret(secret);
+        return secret;
     }
 
     /**
-     * 校验绑定引导中输入的验证码
+     * 校验绑定引导中输入的验证码，在本会话那几把待绑密钥里找认中的那把
      * <p>
      * 只校验、不落盘：密钥要先写进配置文件成功，才能真正启用。顺序反过来的话，
      * 写文件失败就会出现「界面说绑好了，重启后却又要重新绑」，而中间这段时间登录要输的
      * 是一个没人记得的密钥。
+     * <p>
+     * 认中哪一把就回哪一把：用户可能扫的是先前那张码，绑上的必须是他扫的那把，
+     * 否则界面说绑好了，验证器里那条却对不上号。
+     * @param session 当前会话
      * @param code 用户输入的验证码
-     * @return 校验通过时返回待启用的密钥
+     * @return 校验通过时返回认中的那把待启用密钥
      */
-    public Optional<String> verifyPending(String code) {
-        String secret = pendingSecret();
-        return TotpGenerator.verify(secret, code, clock.get()) ? Optional.of(secret) : Optional.empty();
+    public Optional<String> verifyPending(ConfigUiSession session, String code) {
+        Instant now = clock.get();
+        for (String secret : session.pendingSecrets()) {
+            if (TotpGenerator.verify(secret, code, now)) {
+                return Optional.of(secret);
+            }
+        }
+        return Optional.empty();
     }
 
     /**
@@ -298,11 +302,16 @@ public class ConfigUiAuthService {
      * 顺带把二次验证这一位拨到开：绑定这个动作本身就是「我要用二次验证」的意思，
      * 而两者分开落的话，会出现「绑好了却还是不问码」——那是最难被发现的一种失效，
      * 因为它看起来一切正常。
+     * <p>
+     * 本会话的待绑密钥一并清掉：绑完了它们就都成了没人要的旧码。
+     * @param session 当前会话，可为 null（不经绑定那条路直接落密钥时）
      * @param secret Base32 密钥
      */
-    public void activateTotp(String secret) {
+    public void activateTotp(ConfigUiSession session, String secret) {
         this.totpSecret = secret;
-        this.pendingSecret = null;
+        if (session != null) {
+            session.clearPendingSecrets();
+        }
         this.totpEnabled = true;
         resetTotpConsume();
         log.info("配置界面已绑定验证器, 之后登录需要额外输入动态验证码");
@@ -327,10 +336,15 @@ public class ConfigUiAuthService {
      * <b>连密钥一起清掉</b>，不只是把那一位拨到关：留着一个谁也不再用的密钥躺在配置里，
      * 下次重新开启时它会被直接沿用，而使用者以为自己是新绑了一把——
      * 那把「新」的其实是几个月前那把，中间它一直明文躺在盘上。
+     * <p>
+     * 本会话的待绑密钥一并清掉：关都关了，那几把旧码不该再被认中。
+     * @param session 当前会话，可为 null（不经关断那条路直接落状态时）
      */
-    public void disableTotp() {
+    public void disableTotp(ConfigUiSession session) {
         this.totpSecret = null;
-        this.pendingSecret = null;
+        if (session != null) {
+            session.clearPendingSecrets();
+        }
         this.totpEnabled = false;
         resetTotpConsume();
         log.warn("配置界面已关闭二次验证, 之后登录只校验口令");
