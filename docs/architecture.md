@@ -203,8 +203,10 @@ lifecycleProcessor.onClose()     ← 停 SmartLifecycle，默认最多等 30 秒
 
 三者的写入时机与取舍：
 
-- **`state.json` 改动立即落盘**。它由群成员的聊天命令产生，随时可能变；
-  攒着批量写的话，一次意外重启就会让人发现「我明明订阅过」
+- **`state.json` 不是每次改动都写盘。** `NovaStateStore.write()` 只改内存；
+  整份状态默认每 300 秒写回一次（`novabot.core.live.auto-save-live-data-interval`），
+  退出前再写一次。控制台上的开关改动会当场 `save()` 落盘；
+  聊天里产生的禁用与订阅只进内存，最多晚一个保存周期才落盘
 - **`sessions.jsonl` 只追加，不改写**。选每行一条 JSON 而非放进 Redis，是因为
   追加写没有读改写周期，程序崩在中途也毁不掉既有记录；而且体量很小、人能直接看
 - **归档必须发生在下播那一刻**。本场数据会在**下次开播时清零**，
