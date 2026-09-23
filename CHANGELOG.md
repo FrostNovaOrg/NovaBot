@@ -10,6 +10,8 @@
 
 ### 变更
 
+- 手册与安装提示改准：手册去掉已下线的账号绑定；排障问答照现码写清 state.json 存什么、控制台哪里能看能清；健康提示写明隐去的命令名；安装脚本与 Dockerfile 去掉「缺中文字体会显示方块」的旧说法，候选包去掉 wqy-zenhei
+
 ### 修复
 
 - 写在旧位置的三节设置（`novabot.core.alert.qq-*`、`novabot.core.config-ui.napcat.*`、`novabot.bilibili.event-stream.*`）与 `novabot.core.command.prefix`，启动时会提示没被读取、该挪到哪

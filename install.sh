@@ -151,9 +151,9 @@ has_cjk_font() {
 font_packages() {
     case "$1" in
         apt-get)     echo "fonts-noto-cjk" ;;
-        dnf|yum)     echo "google-noto-sans-cjk-ttc-fonts google-noto-sans-cjk-fonts wqy-zenhei-fonts" ;;
-        zypper)      echo "google-noto-sans-sc-fonts noto-sans-cjk-fonts wqy-zenhei-fonts" ;;
-        pacman)      echo "noto-fonts-cjk wqy-zenhei" ;;
+        dnf|yum)     echo "google-noto-sans-cjk-ttc-fonts google-noto-sans-cjk-fonts" ;;
+        zypper)      echo "google-noto-sans-sc-fonts noto-sans-cjk-fonts" ;;
+        pacman)      echo "noto-fonts-cjk" ;;
         apk)         echo "font-noto-cjk" ;;
     esac
 }
@@ -188,11 +188,11 @@ install_font() {
         fi
     done
 
-    warn "中文字体安装失败，动态图片中的中文会显示为方块。
+    warn "系统中文字体安装失败。程序自带中文字体，中文照常显示；系统字体补内置没有的字（如韩文）。
      可手动安装后重启服务，本发行版的候选包名：$(font_packages "$pm")"
 }
 
-# 绘制动态图片需要中文字体，缺失时图片中的中文会变成方块
+# 程序自带中文字体；系统中文字体补内置没有的字（如韩文），没装也不影响中文显示
 if ! has_cjk_font; then
     warn "未检测到中文字体"
     install_font

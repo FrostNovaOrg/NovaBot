@@ -26,7 +26,7 @@
 
 FROM eclipse-temurin:17-jre-noble
 
-# 绘制动态图片需要中文字体，缺失时图片中的中文会显示为方块
+# 程序自带中文字体（内置 NotoSansSC），系统中文字体补内置没有的字（如韩文）
 RUN apt-get update \
     && apt-get install -y --no-install-recommends fonts-noto-cjk fontconfig \
     && fc-cache -f \
