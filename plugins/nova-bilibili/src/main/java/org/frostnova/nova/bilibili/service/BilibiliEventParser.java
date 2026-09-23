@@ -249,13 +249,15 @@ public class BilibiliEventParser {
      * 这个集合只用来做差集，不参与任何取值——取值仍走上面各个 {@code V2_*} 常量。
      * 差集里冒出来的号才是「这条报文比我们反推那天多出来的东西」。
      * <p>
+     * 20、21 两实例 09-10～09-16 见过，含义未核，解析不取。
+     * <p>
      * ⚠️ <b>只管顶层</b>。子消息（勋章 9、uinfo 22 等）另有各自的布局，一张表套不住，
      * 且子消息的未知字段与「平台改了接口」不是同一件事的可能性更大。
      */
     private static final Set<Integer> INTERACT_V2_KNOWN_FIELDS = Set.of(
             V2_UID, V2_UNAME, V2_MSG_TYPE, V2_TIMESTAMP, V2_FANS_MEDAL,
             V2_IS_SPREAD, V2_SPREAD_DESC, V2_UINFO,
-            3, 4, 6, 8, 11, 12, 14, 15, 16, 17, 19, 23, 24, 25);
+            3, 4, 6, 8, 11, 12, 14, 15, 16, 17, 19, 20, 21, 23, 24, 25);
 
     /**
      * {@code SEND_GIFT_V2} 的 protobuf 字段号

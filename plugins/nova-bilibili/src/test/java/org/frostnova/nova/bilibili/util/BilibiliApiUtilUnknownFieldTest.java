@@ -363,6 +363,90 @@ class BilibiliApiUtilUnknownFieldTest {
     }
 
     @Test
+    @DisplayName("常规字段被记成未知会淹没真新字段还挤掉样本：关注列表 re_version/total 记 0，加 x_extra 恰 1")
+    void followingsRegularKeysAreNotUnknown() {
+        List<String> reds = new ArrayList<>();
+        try {
+            BilibiliRiskMetrics metrics = new BilibiliRiskMetrics();
+            BilibiliApiUtil api = new BilibiliApiUtil(mock(HttpUtil.class),
+                    new NovaBilibiliProperties(), metrics);
+            JSONObject data = keys("list", "re_version", "total");
+            api.extractData(wrap(data),
+                    "https://api.bilibili.com/x/relation/followings?vmid=1&ps=50&pn=1");
+            assertEquals(0, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW),
+                    "FOLLOWINGS_API 常规字段应记 0，实际 "
+                            + metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW)
+                            + " detail="
+                            + metrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD).orElse(""));
+        } catch (AssertionError | RuntimeException e) {
+            reds.add("阴性 " + e.getMessage());
+        }
+
+        try {
+            BilibiliRiskMetrics metrics = new BilibiliRiskMetrics();
+            BilibiliApiUtil api = new BilibiliApiUtil(mock(HttpUtil.class),
+                    new NovaBilibiliProperties(), metrics);
+            JSONObject data = keys("list", "re_version", "total");
+            data.put("x_extra", 0);
+            api.extractData(wrap(data),
+                    "https://api.bilibili.com/x/relation/followings?vmid=1&ps=50&pn=1");
+            assertEquals(1, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW),
+                    "FOLLOWINGS_API 已知键＋x_extra 应恰 1，实际 "
+                            + metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW));
+            String detail = metrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD).orElse("");
+            assertTrue(detail.contains("FOLLOWINGS_API:x_extra"),
+                    "detail 应为 FOLLOWINGS_API:x_extra，实际: " + detail);
+        } catch (AssertionError | RuntimeException e) {
+            reds.add("阳性 " + e.getMessage());
+        }
+
+        assertTrue(reds.isEmpty(), () -> "红 " + reds.size() + " 问: " + String.join("; ", reds));
+    }
+
+    @Test
+    @DisplayName("常规字段被记成未知会淹没真新字段还挤掉样本：电视扫码轮询 hint/is_new/mid/sso 记 0，加 x_extra 恰 1")
+    void tvQrPollRegularKeysAreNotUnknown() {
+        List<String> reds = new ArrayList<>();
+        try {
+            BilibiliRiskMetrics metrics = new BilibiliRiskMetrics();
+            BilibiliApiUtil api = new BilibiliApiUtil(mock(HttpUtil.class),
+                    new NovaBilibiliProperties(), metrics);
+            JSONObject data = keys("cookie_info", "token_info", "access_token",
+                    "refresh_token", "expires_in", "hint", "is_new", "mid", "sso");
+            api.noteUnknownTopKeys(
+                    "https://passport.bilibili.com/x/passport-tv-login/qrcode/poll", data);
+            assertEquals(0, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW),
+                    "TV_QR_CODE_POLL_API 常规字段应记 0，实际 "
+                            + metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW)
+                            + " detail="
+                            + metrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD).orElse(""));
+        } catch (AssertionError | RuntimeException e) {
+            reds.add("阴性 " + e.getMessage());
+        }
+
+        try {
+            BilibiliRiskMetrics metrics = new BilibiliRiskMetrics();
+            BilibiliApiUtil api = new BilibiliApiUtil(mock(HttpUtil.class),
+                    new NovaBilibiliProperties(), metrics);
+            JSONObject data = keys("cookie_info", "token_info", "access_token",
+                    "refresh_token", "expires_in", "hint", "is_new", "mid", "sso");
+            data.put("x_extra", 0);
+            api.noteUnknownTopKeys(
+                    "https://passport.bilibili.com/x/passport-tv-login/qrcode/poll", data);
+            assertEquals(1, metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW),
+                    "TV_QR_CODE_POLL_API 已知键＋x_extra 应恰 1，实际 "
+                            + metrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD, WINDOW));
+            String detail = metrics.lastDetail(BilibiliRiskMetrics.Kind.UNKNOWN_FIELD).orElse("");
+            assertTrue(detail.contains("TV_QR_CODE_POLL_API:x_extra"),
+                    "detail 应为 TV_QR_CODE_POLL_API:x_extra，实际: " + detail);
+        } catch (AssertionError | RuntimeException e) {
+            reds.add("阳性 " + e.getMessage());
+        }
+
+        assertTrue(reds.isEmpty(), () -> "红 " + reds.size() + " 问: " + String.join("; ", reds));
+    }
+
+    @Test
     @DisplayName("ROOM_INFO_API 常驻键经 extractData 记 0 且常驻与取用不相交")
     void roomInfoResidentKeysViaExtractDataCountZeroAndDisjoint() {
         List<String> reds = new ArrayList<>();
