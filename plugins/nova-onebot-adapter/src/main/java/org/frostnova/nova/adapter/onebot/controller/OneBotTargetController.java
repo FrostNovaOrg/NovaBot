@@ -10,6 +10,7 @@ import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,14 +31,19 @@ import java.util.Set;
  * 或者哪儿也没去。这两支接口把机器人自己知道的名单交给界面，由使用者从里面挑。
  *
  * <h2>路径为什么挂在控制台底下</h2>
- * 挂在 {@link ConfigUiController#BASE_PATH} 之下，这份名单<b>天生就在控制台那道门后面</b>：
+ * 挂在 {@link ConfigUiController#BASE_PATH} 之下，控制台开着时落在那道门后面：
  * 来源 IP 白名单、令牌或口令、使用协议三道闸一道不少。它列的是群号与好友账号，
  * 属于他人的个人信息，不该另建一套自己的鉴权——另建一套的下场是两套规则迟早对不上，
  * 而对不上的那一侧通常是新写的这一套。
+ *
+ * <h2>为什么还要挂开关条件</h2>
+ * 那道门只在控制台开着时在。开关一关，过滤器跟注册器一起不装配，控制器本身若不认开关，
+ * 群号与好友名单就裸着。关时不登记，跟控制台一并不在。
  */
 @Slf4j
 @RestController
 @NovaComponent
+@ConditionalOnProperty(name = "novabot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
 public class OneBotTargetController {
     static final String TARGETS_PATH = ConfigUiController.BASE_PATH + "/api/bot/targets";
 
