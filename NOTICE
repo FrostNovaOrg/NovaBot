@@ -35,7 +35,7 @@ nova-bilibili 模块上游仅以二进制形式分发。本仓库中的实现依
 - 移除上游内置的标识图片；配置项 draw-logo（开关）改为 logo-path（路径），
   留空则不绘制
 - 包名改为 org.frostnova.nova.*，类名前缀与配置键前缀改为 Nova／novabot
-  （旧配置键仍可读取）
+  （5.4 起不再读取旧配置键）
 - 其余改动见 CHANGELOG.md
 
 --------------------------------------------------------------------------
@@ -64,6 +64,21 @@ nova-bilibili 模块上游仅以二进制形式分发。本仓库中的实现依
 
   docs/assets/{logo,icon}.{svg,png}
     NovaBot 标识，本项目原创。可在介绍、引用或链接本项目时原样使用；
+    不得修改，不得用于标识其他产品或暗示关联与背书。
+    仅随源码仓库分发，不进入构建产物。
+
+  docs/assets/social-preview.{svg,png}
+  docs/assets/screenshot-console.png
+  docs/assets/report-demo.png
+  docs/assets/report-demo-top.png
+  docs/assets/demo/avatar-a.png
+  docs/assets/demo/avatar-b.png
+  docs/assets/demo/avatar-c.png
+  docs/assets/demo/cover.png
+  docs/assets/demo/roster.txt
+    演示与说明用图。social-preview 为本项目原创；报告图、demo/ 下头像、封面与名册
+    为固定种子合成的虚构素材；screenshot-console 为本机匿名演示实例的控制台首页截图。
+    可在介绍、引用或链接本项目时原样使用；
     不得修改，不得用于标识其他产品或暗示关联与背书。
     仅随源码仓库分发，不进入构建产物。
 

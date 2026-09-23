@@ -46,7 +46,7 @@
 | 准备 | 说明 |
 |---|---|
 | 一台长期开机的机器 | Linux / macOS / Windows；**内存 1 GB 以上**，512 MB 不够用 |
-| Java 17 或更高 | 一键安装脚本会自动装 |
+| JDK 17 | 本工程只在 17 上验过，更高版本构建脚本会停下。没有 Java 或低于 17 时，一键安装会装 17 |
 | 一个 OneBot 实现 | 推荐 [NapCat](https://github.com/NapNeko/NapCatQQ)，由它登录 QQ 并收发消息 |
 | 一个哔哩哔哩账号 | **建议用小号**，用于读取动态与完整的直播间事件；原因见[安全说明](SECURITY.md) |
 
@@ -54,9 +54,11 @@ NovaBot 自己不登录 QQ，只把消息交给 OneBot 实现去发。先把 Nap
 
 ## 快速开始
 
-Linux 上一条命令完成安装（自动装 JDK 17 与中文字体、构建、创建 systemd 服务）：
+Linux 上从源码安装（自动装 JDK 17 与中文字体、构建、创建 systemd 服务）。源码须用 `git clone` 取得；下载的源码压缩包不是 git 仓库，构建脚本会停下，并提示「这里不是 git 仓库，无法记录构建来源。」
 
 ```bash
+git clone https://github.com/FrostNovaOrg/NovaBot.git
+cd NovaBot
 ./install.sh
 sudo systemctl start novabot && sudo journalctl -u novabot -af
 ```
@@ -91,7 +93,9 @@ docker run -d --name novabot --restart unless-stopped -v novabot-data:/app -p 12
 
 ## 构建
 
-需要 JDK 17+ 与 Maven 3.9+：
+需要 JDK 17 与 Maven 3.9 或更高。JDK 高于 17 时构建脚本会停下：本工程只在 Java 17 上验过，高版本上 Lombok 会静默失效，报错会伪装成一串「cannot find symbol: variable log」，指向的位置与真实原因无关。请把 JDK 17 的 `bin` 放在 PATH 最前（只设 `JAVA_HOME`、不改 PATH 不算数）。确要在未验版本上试，设置 `NOVABOT_ALLOW_UNTESTED_JDK=1`。
+
+跑测试需要 Node 22。只出包、不跑测试：`./build.sh --skip-tests`。
 
 ```bash
 ./build.sh
