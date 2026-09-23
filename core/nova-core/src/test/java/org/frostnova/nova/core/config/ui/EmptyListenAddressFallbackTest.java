@@ -33,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>
  * 本格走真 {@link SpringApplicationBuilder} 加真 YAML 件，读 {@link ServerProperties#getAddress()}。
  * 不用 {@code MapPropertySource} 模拟外部件：模拟不出来「空串盖掉内置默认」这一层，
- * 上一版就是栽在这个缺口上。
+ * 用 {@code MapPropertySource} 模拟的格抓不到这一层。
  * <p>
  * 阳性对照两条钉住回落只补「没人写」的那一档：环境变量 {@code SERVER_ADDRESS}
  * 非空时（容器靠它开到 0.0.0.0）必须照旧压过空的配置文件；外部件自己写了
