@@ -540,7 +540,7 @@ public class BilibiliApiUtil {
                 throw e;
             } catch (RuntimeException e) {
                 last = e;
-                log.debug("请求 {} 第 {} 次失败: {}", url, attempt, e.getMessage());
+                log.debug("请求 {} 第 {} 次失败: {}", shortUrl(url), attempt, e.getMessage());
 
                 if (attempt < maxTimes) {
                     sleep(properties.getNetwork().getApiRetryInterval());
@@ -548,7 +548,7 @@ public class BilibiliApiUtil {
             }
         }
 
-        throw new RequestFailedException("请求 " + url + " 失败, 已重试 " + maxTimes + " 次", last);
+        throw new RequestFailedException("请求 " + shortUrl(url) + " 失败, 已重试 " + maxTimes + " 次", last);
     }
 
     /**
@@ -574,7 +574,7 @@ public class BilibiliApiUtil {
             return http.getJson(target, headers);
         } catch (Exception e) {
             recordHttpStatus(url, e);
-            throw new NetworkException("请求 " + url + " 时发生网络异常", e);
+            throw new NetworkException("请求 " + shortUrl(url) + " 时发生网络异常", e);
         }
     }
 
