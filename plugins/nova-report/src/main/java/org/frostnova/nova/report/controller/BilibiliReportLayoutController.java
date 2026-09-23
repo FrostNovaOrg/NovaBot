@@ -10,6 +10,7 @@ import org.frostnova.nova.core.model.HandlerOption;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -35,6 +36,10 @@ import java.util.Optional;
  * 来源 IP 白名单、令牌或口令、使用协议三道闸一道不少。
  * 另建一套鉴权的下场是两套规则迟早对不上，而对不上的那一侧通常是新写的这一套。
  *
+ * <h2>为什么还要挂开关条件</h2>
+ * 那道门只在控制台开着时在。开关一关，过滤器跟注册器一起不装配，控制器本身若不认开关，
+ * 版式项与服务端渲图就裸着。关时不登记，跟控制台一并不在。
+ *
  * <h2>路径里不写平台名</h2>
  * 写成 {@code /api/report/…} 而不是 {@code /api/bilibili/report/…}：
  * 「下播报告」是核心界面上的一件东西，核心界面不出现平台名。
@@ -44,6 +49,7 @@ import java.util.Optional;
 @Slf4j
 @RestController
 @NovaComponent
+@ConditionalOnProperty(name = "novabot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
 public class BilibiliReportLayoutController {
     static final String LAYOUT_OPTIONS_PATH = ConfigUiController.BASE_PATH + "/api/report/layout-options";
 

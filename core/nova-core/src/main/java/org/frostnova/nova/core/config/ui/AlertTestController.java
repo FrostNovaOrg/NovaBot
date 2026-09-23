@@ -7,6 +7,7 @@ import org.frostnova.nova.core.alert.AlertRecipientField;
 import org.frostnova.nova.core.alert.AlertService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -31,9 +32,14 @@ import java.util.List;
  * 与 {@link ConfigUiController#BASE_PATH} 同源，因此来源 IP 白名单、令牌或口令、
  * 使用协议三道闸一道不少。另起一套鉴权的下场是两套规则迟早对不上，
  * 而对不上的那一侧通常是新写的这一套。
+ *
+ * <h2>为什么还要挂开关条件</h2>
+ * 那道门只在控制台开着时在。开关一关，过滤器跟注册器一起不装配，控制器本身若不认开关，
+ * 这条会真发告警的接口就裸着。关时不登记，跟控制台一并不在。
  */
 @Slf4j
 @RestController
+@ConditionalOnProperty(name = "novabot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
 public class AlertTestController {
     static final String TEST_PATH = ConfigUiController.BASE_PATH + "/api/alert/test";
 

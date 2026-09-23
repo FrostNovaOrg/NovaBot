@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.ui.ConfigUiController;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
@@ -32,12 +33,18 @@ import java.nio.charset.StandardCharsets;
  * <h2>路径为什么不带尾斜杠</h2>
  * 反代上那条 {@code location /config/napcat/} 是带尾斜杠的前缀匹配，
  * 因此 {@code /config/napcat-bootstrap} 落不进它、会回到本进程；
- * 又因为它以 {@code /config} 开头，<b>自动落在控制台安全过滤器的保护范围内</b>——
- * 换句话说，这个会发凭据的页面天生就在那道门后面，不必也不该另建一套鉴权。
+ * 又因为它以 {@code /config} 开头，控制台开着时落在安全过滤器的保护范围内——
+ * 不必也不该另建一套鉴权。
+ *
+ * <h2>为什么还要挂开关条件</h2>
+ * 那道门只在控制台开着时在。开关一关，过滤器跟注册器一起不装配，而这个会发凭据的
+ * 控制器本身原先不认开关——关掉控制台后凭据接口仍裸着。关时不登记，跟控制台一并不在；
+ * 依赖它的 {@code NapCatCredentialService} 照常装配，只是不对外。
  */
 @Slf4j
 @RestController
 @NovaComponent
+@ConditionalOnProperty(name = "novabot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
 public class NapCatBootstrapController {
     public static final String PAGE_PATH = ConfigUiController.BASE_PATH + "/napcat-bootstrap";
 
