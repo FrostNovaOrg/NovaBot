@@ -314,19 +314,21 @@ class PasswordChangeTest {
     }
 
     @Test
-    @DisplayName("🔴 换一把会话不把旧密码的连错次数清零：连错 4 次后绑上验证器，换出来的那一把再错 1 次照样注销")
+    @DisplayName("🔴 换一把会话不把旧密码的连错次数清零：连错 4 次后关二次验证换会话，换出来的那一把再错 1 次照样注销")
     void renewedSessionKeepsTheMissCount() {
         MockHttpServletRequest stolen = request(ConfigUiSession.Channel.PASSWORD);
+        // 关二次验证是唯一不核密码就会换会话的那条路：绑验证器现在也要核密码，
+        // 一核就 MATCH 清零次数，量不到「换会话保留次数」这件事
+        String secret = TotpGenerator.generateSecret();
+        authService.activateTotp(secret);
         for (int i = 1; i <= 4; i++) {
             controller.changePassword(body("猜的第 " + i + " 个", NEW), stolen);
         }
 
-        // 绑验证器不要旧密码，拿着这把会话的人谁都办得成：它若顺手把次数清零，猜的人就又白得五次
-        String pending = controller.totpSetup().getString("secret");
-        ResponseEntity<JSONObject> enrolled = controller.totpEnroll(
-                code(TotpGenerator.currentCode(pending, Instant.now())), stolen);
-        String renewed = sessionIdOf(enrolled);
-        assertNotNull(renewed, "绑定之后没交回新 Cookie，无从接着量: " + enrolled.getBody().getString("message"));
+        ResponseEntity<JSONObject> disabled = controller.totpDisable(
+                code(TotpGenerator.currentCode(secret, Instant.now())), stolen);
+        String renewed = sessionIdOf(disabled);
+        assertNotNull(renewed, "关掉之后没交回新 Cookie，无从接着量: " + disabled.getBody().toJSONString());
 
         ResponseEntity<JSONObject> fifth = controller.changePassword(body("猜的第 5 个", NEW), withCookie(renewed));
 

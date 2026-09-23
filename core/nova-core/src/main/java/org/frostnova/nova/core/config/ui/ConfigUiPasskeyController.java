@@ -2,6 +2,7 @@ package org.frostnova.nova.core.config.ui;
 
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.auth.passkey.PasskeyRelyingParty;
 import org.frostnova.nova.core.config.ui.auth.passkey.PasskeyService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Duration;
+import java.util.Optional;
 
 /**
  * 通行密钥接口
@@ -42,18 +44,34 @@ public class ConfigUiPasskeyController {
 
     private final NovaCoreProperties.ConfigUi.Auth properties;
 
-    public ConfigUiPasskeyController(PasskeyService passkeyService, NovaCoreProperties properties) {
+    private final ConfigUiAuthService authService;
+
+    public ConfigUiPasskeyController(PasskeyService passkeyService, NovaCoreProperties properties,
+                                     ConfigUiAuthService authService) {
         this.passkeyService = passkeyService;
         this.properties = properties.getConfigUi().getAuth();
+        this.authService = authService;
     }
 
     /**
      * 取登记一把新钥匙所需的参数
-     * @return 交给浏览器的那份参数
+     * <p>
+     * <b>先核一次现在的密码。</b>登记一把钥匙等于给这台机器多配一把能开门的钥匙，
+     * 签这个字的人必须拿出现在的密码。只核这一步、不核提交那一步：参数取到之后
+     * 浏览器会去问认证器，输错的人在认证器里留下一把没人认领的钥匙，比多问一次更糟。
+     * @param body 请求体，current 为现在的密码
+     * @param request 用来认会话与来源地址
+     * @return 过闸之后交给浏览器的那份参数；没过闸时是拒
      */
     @PostMapping("/passkey/register/options")
-    public JSONObject registerOptions(HttpServletRequest request) {
-        return passkeyService.registerOptions(PasskeyRelyingParty.of(request));
+    public ResponseEntity<JSONObject> registerOptions(@RequestBody(required = false) JSONObject body,
+                                                      HttpServletRequest request) {
+        Optional<ResponseEntity<JSONObject>> denied =
+                CurrentPasswordGate.require(authService, body, request, "再登记");
+        if (denied.isPresent()) {
+            return denied.get();
+        }
+        return ResponseEntity.ok(passkeyService.registerOptions(PasskeyRelyingParty.of(request)));
     }
 
     /**

@@ -1,8 +1,10 @@
 package org.frostnova.nova.core.config.ui.auth.passkey;
 
 import com.alibaba.fastjson2.JSONObject;
+import jakarta.servlet.http.Cookie;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.ConfigUiPasskeyController;
+import org.frostnova.nova.core.config.ui.ConfigUiSecurityFilter;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSessionStore;
 import org.frostnova.nova.core.config.ui.auth.LoginThrottle;
@@ -47,11 +49,16 @@ class PasskeyLoginMustNotResurrectRevokedCredentialTest {
                 new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(2)),
                 new LoginThrottle(auth.getMaxFailures(), Duration.ofMinutes(15)), null);
         ConfigUiPasskeyController controller = new ConfigUiPasskeyController(
-                new PasskeyService(store, authService), properties);
+                new PasskeyService(store, authService), properties, authService);
 
         TestAuthenticator authenticator = new TestAuthenticator(TestAuthenticator.ES256);
+        String sessionId = authService.login(PasskeyTestSupport.PASSWORD.toCharArray(), null,
+                PasskeyTestSupport.CLIENT_IP).session().getId();
         MockHttpServletRequest request = request();
-        JSONObject registerOptions = controller.registerOptions(request);
+        request.setCookies(new Cookie(ConfigUiSecurityFilter.SESSION_COOKIE, sessionId));
+        JSONObject body = new JSONObject();
+        body.put("current", PasskeyTestSupport.PASSWORD);
+        JSONObject registerOptions = controller.registerOptions(body, request).getBody();
         JSONObject registered = controller.registerVerify(
                 authenticator.register(registerOptions.getString("challenge"),
                         PasskeyTestSupport.ORIGIN, PasskeyTestSupport.RP_ID, "我的手机", 7),

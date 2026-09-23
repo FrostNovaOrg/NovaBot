@@ -1,8 +1,10 @@
 package org.frostnova.nova.core.config.ui.auth.passkey;
 
 import com.alibaba.fastjson2.JSONObject;
+import jakarta.servlet.http.Cookie;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.ConfigUiPasskeyController;
+import org.frostnova.nova.core.config.ui.ConfigUiSecurityFilter;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSessionStore;
 import org.frostnova.nova.core.config.ui.auth.LoginThrottle;
@@ -50,6 +52,9 @@ class PasskeyMustNotSkipUserVerificationWhenTotpEnabledTest {
 
     private ConfigUiPasskeyController controller;
 
+    /** 登记这条路要先核密码，台面登入一次存下会话，请求一律带上它——动态码一窗一用 */
+    private String sessionId;
+
     @BeforeEach
     void setUp() {
         NovaCoreProperties properties = new NovaCoreProperties();
@@ -64,19 +69,27 @@ class PasskeyMustNotSkipUserVerificationWhenTotpEnabledTest {
         authService = new ConfigUiAuthService(auth,
                 new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(2)),
                 new LoginThrottle(auth.getMaxFailures(), Duration.ofMinutes(15)), null);
-        controller = new ConfigUiPasskeyController(new PasskeyService(store, authService), properties);
+        controller = new ConfigUiPasskeyController(new PasskeyService(store, authService), properties, authService);
     }
 
     private MockHttpServletRequest request() {
+        // 懒登入：setUp 里登会吃掉那一窗的动态码，台面里那条「口令加动态码应仍能登入」再登就撞上
+        if (sessionId == null) {
+            sessionId = authService.login(PASSWORD.toCharArray(),
+                    TotpGenerator.currentCode(SECRET, Instant.now()), CLIENT_IP).session().getId();
+        }
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/config/api/auth/passkey");
         request.addHeader("Host", HOST);
         request.setRemoteAddr(CLIENT_IP);
+        request.setCookies(new Cookie(ConfigUiSecurityFilter.SESSION_COOKIE, sessionId));
         return request;
     }
 
     private TestAuthenticator registered() {
         TestAuthenticator authenticator = new TestAuthenticator(TestAuthenticator.ES256);
-        JSONObject options = controller.registerOptions(request());
+        JSONObject body = new JSONObject();
+        body.put("current", PASSWORD);
+        JSONObject options = controller.registerOptions(body, request()).getBody();
         JSONObject result = controller.registerVerify(
                 authenticator.register(options.getString("challenge"), ORIGIN, RP_ID, "安全钥匙", 7), request());
         assertTrue(result.getBooleanValue("success"), "台面：登记应成功, " + result.getString("message"));

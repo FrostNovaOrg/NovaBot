@@ -8,6 +8,7 @@
 
 import {ask} from './confirm.js';
 import {$, api, el, esc, say} from './core.js';
+import {bindPasswordReveal} from './password-reveal.js';
 
 /**
  * 浏览器把凭据里的二进制都表示成 ArrayBuffer，而接口两侧一律用 base64url。
@@ -101,6 +102,24 @@ export async function registerBlockedReason() {
 }
 
 /**
+ * 给弹层里的密码框接上显隐按钮
+ *
+ * settings-auth.js 那份 attachEye 不能反过来用：它已经 import 本件，
+ * 再 import 回去就成环。共用的只有 password-reveal.js 里的判定与接线。
+ * @param input 密码框
+ */
+function attachEyeForAsk(input) {
+  const wrap = el('div', 'secret');
+  const eye = el('button');
+  eye.type = 'button';
+  eye.id = 'pwd-passkey-current-reveal';
+  input.parentNode.insertBefore(wrap, input);
+  wrap.append(input, eye);
+  bindPasswordReveal(input, eye);
+  return eye;
+}
+
+/**
  * 登记一把通行密钥
  *
  * 🔴 <b>按钮由调用方传进来</b>，不在这里按 id 取：初始设置页第 1 步也要登记一把，
@@ -116,7 +135,25 @@ export async function registerPasskey(trigger) {
   if (button) button.disabled = true;
 
   try {
-    const options = await api('/auth/passkey/register/options', {method: 'POST'});
+    // 先要现在的密码，再取登记参数：顺序反了的话，输错的人在认证器里
+    // 留下一把没人认领的钥匙，比多问一次更糟
+    const pending = ask({
+      title: '登记通行密钥',
+      body: '登记前要再输一次现在的密码，证明是你本人。',
+      fields: [{label: '现在的密码', id: 'pwd-passkey-current', type: 'password'}],
+      danger: false,
+    });
+    const host = document.querySelector('.ask-fields');
+    const currentInput = host && host.querySelector('#pwd-passkey-current');
+    if (currentInput) attachEyeForAsk(currentInput);
+    const filled = await pending;
+    // 取消了就是取消：还没向认证器要参数，不会留下一把没人认领的钥匙
+    if (!filled) return;
+    const options = await api('/auth/passkey/register/options', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({current: filled['pwd-passkey-current']}),
+    });
     if (!options.success) {
       say(options.message, 'err');
       return;

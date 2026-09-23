@@ -98,6 +98,13 @@ class TotpSwitchTest {
         return body;
     }
 
+    /** 绑定这条路要先核现在的密码，码栏之外多带一个 current */
+    private JSONObject enrollBody(String value) {
+        JSONObject body = code(value);
+        body.put("current", PASSWORD);
+        return body;
+    }
+
     @Test
     @DisplayName("先过阳性对照：一开始二次验证确实开着，且登录真的要码")
     void baselineRequiresCode() {
@@ -176,8 +183,9 @@ class TotpSwitchTest {
         assertNull(setup.getString("message"));
 
         String pending = setup.getString("secret");
+        ConfigUiSession mine = authService.login(PASSWORD.toCharArray(), null, "127.0.0.1").session();
         JSONObject enrolled = controller.totpEnroll(
-                code(TotpGenerator.currentCode(pending, Instant.now())), new MockHttpServletRequest()).getBody();
+                enrollBody(TotpGenerator.currentCode(pending, Instant.now())), withCookie(mine)).getBody();
         assertTrue(enrolled.getBooleanValue("success"), enrolled.toJSONString());
         assertTrue(authService.totpRequired(), "绑好之后应当当场要码");
         assertTrue(authService.totpEnabled(), "绑定本身就是「我要用二次验证」的意思");
@@ -210,7 +218,7 @@ class TotpSwitchTest {
         String pending = controller.totpSetup().getString("secret");
 
         ResponseEntity<JSONObject> response = controller.totpEnroll(
-                code(TotpGenerator.currentCode(pending, Instant.now())), withCookie(mine));
+                enrollBody(TotpGenerator.currentCode(pending, Instant.now())), withCookie(mine));
 
         assertTrue(response.getBody().getBooleanValue("success"), response.getBody().toJSONString());
         assertTrue(authService.validate(elsewhere.getId()).isEmpty(),
@@ -297,17 +305,18 @@ class TotpSwitchTest {
         JSONObject setup = controller.totpSetup();
         String pending = setup.getString("secret");
 
-        MockHttpServletRequest request = new MockHttpServletRequest();
+        ConfigUiSession mine = authService.login(PASSWORD.toCharArray(), null, "127.0.0.1").session();
+        MockHttpServletRequest request = withCookie(mine);
         request.setRemoteAddr("198.51.100.7");
         int max = new NovaCoreProperties.ConfigUi.Auth().getMaxFailures();
 
         for (int i = 0; i < max; i++) {
-            JSONObject denied = controller.totpEnroll(code("000000"), request).getBody();
+            JSONObject denied = controller.totpEnroll(enrollBody("000000"), request).getBody();
             assertFalse(denied.getBooleanValue("success"), "第 " + (i + 1) + " 次错码应拒: " + denied);
         }
 
         JSONObject locked = controller.totpEnroll(
-                code(TotpGenerator.currentCode(pending, Instant.now())), request).getBody();
+                enrollBody(TotpGenerator.currentCode(pending, Instant.now())), request).getBody();
 
         assertFalse(locked.getBooleanValue("success"), locked.toJSONString());
         assertTrue(locked.getLongValue("lockedSeconds") > 0,
@@ -346,8 +355,10 @@ class TotpSwitchTest {
         JSONObject setup = capturingController.totpSetup();
         assertTrue(setup.getBooleanValue("success"), setup.toJSONString());
         String pending = setup.getString("secret");
+        ConfigUiSession capturingSession =
+                capturingAuth.login(PASSWORD.toCharArray(), null, "127.0.0.1").session();
         JSONObject enrolled = capturingController.totpEnroll(
-                code(TotpGenerator.currentCode(pending, Instant.now())), new MockHttpServletRequest()).getBody();
+                enrollBody(TotpGenerator.currentCode(pending, Instant.now())), withCookie(capturingSession)).getBody();
         assertTrue(enrolled.getBooleanValue("success"), enrolled.toJSONString());
 
         Set<String> publicKeys = Set.of(

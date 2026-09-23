@@ -395,6 +395,14 @@ public class ConfigUiAuthController {
             return ResponseEntity.ok(result);
         }
 
+        // 先核密码、再走来源限速与验证码：绑定等于替主人开一道他自己都未必认得的防线，
+        // 一枚被偷走的会话 Cookie 不该办得成这件事
+        Optional<ResponseEntity<JSONObject>> denied =
+                CurrentPasswordGate.require(authService, body, request, "再绑定验证器");
+        if (denied.isPresent()) {
+            return denied.get();
+        }
+
         ConfigUiAuthService.CredentialCheck gate = authService.beginSensitiveTotp(request.getRemoteAddr());
         if (!gate.ok()) {
             return ResponseEntity.ok(refuseSensitiveTotp(gate, request));
@@ -560,33 +568,12 @@ public class ConfigUiAuthController {
             return ResponseEntity.badRequest().body(result);
         }
 
-        char[] current = Optional.ofNullable(body.getString("current")).orElse("").toCharArray();
-        ConfigUiAuthService.CurrentPasswordCheck check;
-        try {
-            check = authService.checkCurrentPassword(current, sessionId(request), request.getRemoteAddr());
-        } finally {
-            Arrays.fill(current, '\0');
+        Optional<ResponseEntity<JSONObject>> denied =
+                CurrentPasswordGate.require(authService, body, request, "再改密码");
+        if (denied.isPresent()) {
+            return denied.get();
         }
-
-        if (check.verdict() == ConfigUiAuthService.CurrentPasswordVerdict.MATCH) {
-            return replacePassword(body.getString("next"), request);
-        }
-
-        result.put("success", false);
-        if (check.verdict() == ConfigUiAuthService.CurrentPasswordVerdict.MISSING) {
-            result.put("message", "请填现在的密码");
-            return ResponseEntity.badRequest().body(result);
-        }
-
-        if (check.verdict() == ConfigUiAuthService.CurrentPasswordVerdict.MISMATCH) {
-            result.put("message", "现在的密码不对，再输错 " + check.remaining() + " 次会退出这次登录");
-            return ResponseEntity.badRequest().body(result);
-        }
-
-        result.put("message", check.verdict() == ConfigUiAuthService.CurrentPasswordVerdict.SIGNED_OUT
-                ? "现在的密码连续输错 " + ConfigUiAuthService.CURRENT_PASSWORD_MISSES_BEFORE_SIGN_OUT + " 次，这次登录已退出，请重新登录"
-                : "认不出这次登录，请重新登录后再改密码");
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(result);
+        return replacePassword(body.getString("next"), request);
     }
 
     /**
