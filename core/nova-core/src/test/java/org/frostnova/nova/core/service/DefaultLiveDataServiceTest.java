@@ -1,16 +1,27 @@
 package org.frostnova.nova.core.service;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.model.UserScore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.slf4j.LoggerFactory;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Stream;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -408,6 +419,147 @@ class DefaultLiveDataServiceTest {
             assertEquals(original, Files.readString(data), "重启后又把原来的直播数据盖掉了");
         } finally {
             restarted.onContextClosedEvent();
+        }
+    }
+
+    /**
+     * 注入：直播数据停在多字节字「名」的中间。
+     * 字节读到了，解不成文本。这不是权限问题，应按解析不了改名留底，随后的保存照常写盘。
+     */
+    @Test
+    @DisplayName("直播数据停在多字节字的中间时，按解析不了改名留底，之后的保存照常写盘")
+    void truncatedMultibyteLiveDataIsParkedAndWritten(@TempDir Path dir) throws Exception {
+        Path data = dir.resolve("data.json");
+        byte[] broken = cutInsideCharacter("{\"主播名\":{\"10001\":{\"danmu_count\":455}}}");
+        Files.write(data, broken);
+
+        NovaCoreProperties properties = new NovaCoreProperties();
+        properties.getLive().setLiveDataPath(data.toString());
+        DefaultLiveDataService opened = new DefaultLiveDataService(properties);
+        opened.onApplicationReadyEvent();
+        try {
+            assertEquals(0.0, opened.getLiveMetric(PLATFORM, UID, "danmu_count"),
+                    "半截多字节直播数据不该读出半份指标");
+
+            Path parked = parkedCopy(dir, "data.json.bad-");
+            assertArrayEquals(broken, Files.readAllBytes(parked), "留底的半截多字节坏件字节变了");
+
+            opened.incrementLiveMetric(PLATFORM, UID, "danmu_count", 1);
+            opened.saveNow(false);
+
+            assertArrayEquals(broken, Files.readAllBytes(parked), "之后的保存把留底的坏件盖掉了");
+            assertFalse(Arrays.equals(broken, Files.readAllBytes(data)), "坏内容还占着直播数据的位置");
+        } finally {
+            opened.onContextClosedEvent();
+        }
+
+        DefaultLiveDataService restarted = new DefaultLiveDataService(properties);
+        restarted.onApplicationReadyEvent();
+        try {
+            assertEquals(1.0, restarted.getLiveMetric(PLATFORM, UID, "danmu_count"),
+                    "半截多字节被当成读不了，这一轮没有写盘");
+        } finally {
+            restarted.onContextClosedEvent();
+        }
+    }
+
+    /**
+     * 注入：把直播数据文件的读权限拿掉，跑完再放回。
+     * 权限不足时文件本身是好的；改名挪走之后，权限修好了也读不回原来的本场数据。
+     */
+    @Test
+    @DisplayName("直播数据一时读不了时，文件留在原名、字节不动，这一轮自动保存和收尾保存都不写盘，修好后重启本场数据还在")
+    void unreadableLiveDataIsLeftUntouched(@TempDir Path dir) throws Exception {
+        Path data = dir.resolve("data.json");
+        byte[] original = "{\"LiveMetric:bilibili\":{\"10001\":{\"danmu_count\":455}}}"
+                .getBytes(StandardCharsets.UTF_8);
+        Files.write(data, original);
+        denyRead(data);
+
+        Logger logger = (Logger) LoggerFactory.getLogger(DefaultLiveDataService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            NovaCoreProperties properties = new NovaCoreProperties();
+            properties.getLive().setLiveDataPath(data.toString());
+            DefaultLiveDataService opened = new DefaultLiveDataService(properties);
+            try {
+                opened.onApplicationReadyEvent();
+                try {
+                    assertEquals(0.0, opened.getLiveMetric(PLATFORM, UID, "danmu_count"),
+                            "读不了时仍应以内空数据跑");
+                    opened.incrementLiveMetric(PLATFORM, UID, "danmu_count", 1);
+                    opened.saveNow(false);
+                    opened.saveNow(false);
+                } finally {
+                    opened.onContextClosedEvent();
+                }
+            } finally {
+                if (Files.exists(data)) {
+                    allowOwnerReadWrite(data);
+                }
+            }
+
+            assertFalse(anyNameStartsWith(dir, "data.json.bad-"), "读不了时把直播数据改名挪走了");
+            assertArrayEquals(original, Files.readAllBytes(data), "读不了时自动保存或收尾保存把直播数据盖掉了");
+
+            DefaultLiveDataService restarted = new DefaultLiveDataService(properties);
+            restarted.onApplicationReadyEvent();
+            try {
+                assertEquals(455.0, restarted.getLiveMetric(PLATFORM, UID, "danmu_count"),
+                        "修好后重启，原来的本场弹幕数没了");
+            } finally {
+                restarted.onContextClosedEvent();
+            }
+
+            assertTrue(appender.list.stream().anyMatch(event ->
+                            event.getLevel() == Level.ERROR
+                                    && event.getFormattedMessage().contains("常见原因是文件权限")),
+                    "启动时没说明常见原因是文件权限");
+            long skipNotes = appender.list.stream()
+                    .filter(event -> event.getLevel() == Level.WARN)
+                    .map(ILoggingEvent::getFormattedMessage)
+                    .filter(message -> message.contains("这次运行里的改动都不会存盘，修好后重启才恢复"))
+                    .count();
+            assertEquals(1L, skipNotes, "挂起后第一次跳过保存应记一条，第二次不再记");
+        } finally {
+            logger.detachAppender(appender);
+        }
+    }
+
+    /** 在「名」这个多字节字的中间截断，留下解不成字的半截。 */
+    private static byte[] cutInsideCharacter(String text) {
+        int at = text.indexOf('名');
+        if (at < 0) {
+            throw new IllegalStateException("样例里没有用来截断的字");
+        }
+        byte[] head = text.substring(0, at).getBytes(StandardCharsets.UTF_8);
+        byte[] character = "名".getBytes(StandardCharsets.UTF_8);
+        byte[] broken = Arrays.copyOf(head, head.length + character.length - 1);
+        System.arraycopy(character, 0, broken, head.length, character.length - 1);
+        return broken;
+    }
+
+    private static Path parkedCopy(Path dir, String prefix) throws Exception {
+        try (Stream<Path> children = Files.list(dir)) {
+            return children.filter(path -> path.getFileName().toString().startsWith(prefix))
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError("坏件没有改名留底"));
+        }
+    }
+
+    private static void denyRead(Path path) throws Exception {
+        Files.setPosixFilePermissions(path, Set.of());
+    }
+
+    private static void allowOwnerReadWrite(Path path) throws Exception {
+        Files.setPosixFilePermissions(path, Set.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE));
+    }
+
+    private static boolean anyNameStartsWith(Path dir, String prefix) throws Exception {
+        try (Stream<Path> children = Files.list(dir)) {
+            return children.anyMatch(path -> path.getFileName().toString().startsWith(prefix));
         }
     }
 }

@@ -1,18 +1,25 @@
 package org.frostnova.nova.core.service;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -295,6 +302,194 @@ class NovaStateStoreTest {
             assertNotNull(JSONObject.parseObject(Files.readString(state)), "补上的保存不是一份能读的状态");
         } finally {
             opened.onContextClosedEvent();
+        }
+    }
+
+    /**
+     * 注入：状态文件停在多字节字「名」的中间。
+     * 字节读到了，解不成文本。这不是权限问题，应按解析不了改名留底，随后的保存照常写盘。
+     */
+    @Test
+    @DisplayName("状态文件停在多字节字的中间时，按解析不了改名留底，之后的保存照常写盘")
+    void truncatedMultibyteStateIsParkedAndWritten(@TempDir Path dir) throws Exception {
+        Path state = dir.resolve("state.json");
+        byte[] broken = cutInsideCharacter("{\"AtSubscriptions\":{\"主播名\":{\"30001\":1}}}");
+        Files.write(state, broken);
+
+        NovaStateStore opened = storeAt(dir);
+        opened.onApplicationReadyEvent();
+        try {
+            assertTrue(opened.namespace("AtSubscriptions").isEmpty(),
+                    "半截多字节状态文件不该读出半份名单");
+
+            Path parked = parkedCopy(dir, "state.json.bad-");
+            assertArrayEquals(broken, Files.readAllBytes(parked), "留底的半截多字节坏件字节变了");
+
+            opened.write("AtSubscriptions", data -> data.put("qq:9:8:live",
+                    new JSONObject().fluentPut("30001", 1)));
+            opened.save();
+
+            assertArrayEquals(broken, Files.readAllBytes(parked), "之后的保存把留底的坏件盖掉了");
+            assertFalse(Arrays.equals(broken, Files.readAllBytes(state)), "坏内容还占着状态文件的位置");
+            JSONObject saved = JSONObject.parseObject(Files.readString(state));
+            assertNotNull(saved, "半截多字节被当成读不了，这一轮没有写盘");
+            assertNotNull(saved.getJSONObject("AtSubscriptions").getJSONObject("qq:9:8:live"),
+                    "半截多字节被当成读不了，这一轮没有写盘");
+        } finally {
+            opened.onContextClosedEvent();
+        }
+    }
+
+    /**
+     * 注入：把状态文件的读权限拿掉，跑完再放回。
+     * 权限不足时文件本身是好的；改名挪走之后，权限修好了也读不回原来的订阅名单。
+     */
+    @Test
+    @DisplayName("状态文件一时读不了时，文件留在原名、字节不动，这一轮自动保存和收尾保存都不写盘，修好后重启订阅名单还在")
+    void unreadableStateFileIsLeftUntouched(@TempDir Path dir) throws Exception {
+        Path state = dir.resolve("state.json");
+        byte[] original = "{\"AtSubscriptions\":{\"qq:10001:20001:live\":{\"30001\":1}}}"
+                .getBytes(StandardCharsets.UTF_8);
+        Files.write(state, original);
+        denyRead(state);
+
+        Logger logger = (Logger) LoggerFactory.getLogger(NovaStateStore.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            NovaStateStore opened = storeAt(dir);
+            try {
+                opened.onApplicationReadyEvent();
+                try {
+                    assertTrue(opened.namespace("AtSubscriptions").isEmpty(),
+                            "读不了时仍应以内空状态跑");
+                    opened.write("AtSubscriptions", data -> data.put("qq:9:8:live",
+                            new JSONObject().fluentPut("30009", 1)));
+                    opened.save();
+                } finally {
+                    opened.onContextClosedEvent();
+                }
+            } finally {
+                if (Files.exists(state)) {
+                    allowOwnerReadWrite(state);
+                }
+            }
+
+            assertFalse(anyNameStartsWith(dir, "state.json.bad-"), "读不了时把状态文件改名挪走了");
+            assertArrayEquals(original, Files.readAllBytes(state), "读不了时自动保存或收尾保存把状态文件盖掉了");
+
+            NovaStateStore restarted = storeAt(dir);
+            restarted.onApplicationReadyEvent();
+            try {
+                JSONObject kept = restarted.namespace("AtSubscriptions").getJSONObject("qq:10001:20001:live");
+                assertNotNull(kept, "修好后重启，原来的订阅名单没了");
+                assertEquals(1, kept.getIntValue("30001"));
+                assertFalse(restarted.namespace("AtSubscriptions").containsKey("qq:9:8:live"),
+                        "这一轮没落盘的新订阅出现在了重启后的名单里");
+            } finally {
+                restarted.onContextClosedEvent();
+            }
+
+            assertTrue(appender.list.stream().anyMatch(event ->
+                            event.getLevel() == Level.ERROR
+                                    && event.getFormattedMessage().contains("常见原因是文件权限")),
+                    "启动时没说明常见原因是文件权限");
+            long skipNotes = appender.list.stream()
+                    .filter(event -> event.getLevel() == Level.WARN)
+                    .map(ILoggingEvent::getFormattedMessage)
+                    .filter(message -> message.contains("这次运行里的改动都不会存盘，修好后重启才恢复"))
+                    .count();
+            assertEquals(1L, skipNotes, "挂起后第一次跳过保存应记一条，第二次不再记");
+        } finally {
+            logger.detachAppender(appender);
+        }
+    }
+
+    /**
+     * 注入：进入停机前把当前线程的中断标记置上。
+     * 等待自动保存停下时一发现标记就离开等待；若先把标记恢复再去写盘，
+     * 写盘通道会当场关掉，收尾保存失败，盘上仍是旧快照。
+     * 状态文件与直播数据两条停机路径都走一遍。
+     */
+    @Test
+    @DisplayName("停机等待时线程被中断，收尾保存照样写成，文件里是最新快照")
+    void interruptedShutdownStillSavesLatestSnapshot(@TempDir Path dir) throws Exception {
+        try {
+            Path state = dir.resolve("state.json");
+            Files.writeString(state, "{\"AtSubscriptions\":{\"qq:10001:20001:live\":{\"30001\":1}}}");
+            NovaStateStore opened = storeAt(dir);
+            opened.onApplicationReadyEvent();
+            opened.write("AtSubscriptions", data -> data.put("qq:10001:20002:live",
+                    new JSONObject().fluentPut("30002", 1)));
+            Thread.currentThread().interrupt();
+            opened.onContextClosedEvent();
+            assertTrue(Thread.interrupted(), "状态收尾之后中断标记应还在");
+
+            NovaStateStore restarted = storeAt(dir);
+            restarted.onApplicationReadyEvent();
+            try {
+                JSONObject subs = restarted.namespace("AtSubscriptions");
+                JSONObject kept = subs.getJSONObject("qq:10001:20001:live");
+                assertNotNull(kept, "收尾之后原来的订阅名单没了");
+                assertEquals(1, kept.getIntValue("30001"));
+                JSONObject added = subs.getJSONObject("qq:10001:20002:live");
+                assertNotNull(added, "停机等待被中断时状态文件的收尾保存没写成");
+                assertEquals(1, added.getIntValue("30002"));
+            } finally {
+                restarted.onContextClosedEvent();
+            }
+
+            Path data = dir.resolve("live-data.json");
+            Files.writeString(data, "{\"LiveMetric:bilibili\":{\"10001\":{\"danmu_count\":455}}}");
+            NovaCoreProperties properties = new NovaCoreProperties();
+            properties.getLive().setLiveDataPath(data.toString());
+            DefaultLiveDataService live = new DefaultLiveDataService(properties);
+            live.onApplicationReadyEvent();
+            live.incrementLiveMetric("bilibili", 10001L, "danmu_count", 1);
+            Thread.currentThread().interrupt();
+            live.onContextClosedEvent();
+            assertTrue(Thread.interrupted(), "直播数据收尾之后中断标记应还在");
+
+            DefaultLiveDataService reread = new DefaultLiveDataService(properties);
+            reread.onApplicationReadyEvent();
+            try {
+                assertEquals(456.0, reread.getLiveMetric("bilibili", 10001L, "danmu_count"),
+                        "停机等待被中断时直播数据的收尾保存没写成");
+                assertEquals(Boolean.TRUE, reread.wasCleanShutdown().orElse(null),
+                        "盘上不是停机收尾的那一份快照");
+            } finally {
+                reread.onContextClosedEvent();
+            }
+        } finally {
+            Thread.interrupted();
+        }
+    }
+
+    /** 在「名」这个多字节字的中间截断，留下解不成字的半截。 */
+    private static byte[] cutInsideCharacter(String text) {
+        int at = text.indexOf('名');
+        if (at < 0) {
+            throw new IllegalStateException("样例里没有用来截断的字");
+        }
+        byte[] head = text.substring(0, at).getBytes(StandardCharsets.UTF_8);
+        byte[] character = "名".getBytes(StandardCharsets.UTF_8);
+        byte[] broken = Arrays.copyOf(head, head.length + character.length - 1);
+        System.arraycopy(character, 0, broken, head.length, character.length - 1);
+        return broken;
+    }
+
+    private static void denyRead(Path path) throws Exception {
+        Files.setPosixFilePermissions(path, Set.of());
+    }
+
+    private static void allowOwnerReadWrite(Path path) throws Exception {
+        Files.setPosixFilePermissions(path, Set.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE));
+    }
+
+    private static boolean anyNameStartsWith(Path dir, String prefix) throws Exception {
+        try (Stream<Path> children = Files.list(dir)) {
+            return children.anyMatch(path -> path.getFileName().toString().startsWith(prefix));
         }
     }
 
