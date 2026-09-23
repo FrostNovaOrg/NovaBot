@@ -136,6 +136,21 @@ class LiveSessionArchiveTest {
     }
 
     @Test
+    @DisplayName("归档最后一行是半截时，下一场仍能读出，只丢坏的那一场")
+    void truncatedTailDoesNotSwallowTheNextSession() throws Exception {
+        Files.writeString(dir.resolve("sessions.jsonl"),
+                "{\"platform\":\"bilibili\",\"uid\":1,\"uname\":\"坏掉的那场\"", StandardCharsets.UTF_8);
+
+        archive.append(session(2_000_000L, 200));
+
+        List<LiveSession> found = archive.find(0, Long.MAX_VALUE);
+        assertEquals(1, found.size(), "半截的上一行把下一场一起弄丢了");
+        assertEquals("测试主播", found.get(0).uname());
+        assertEquals(2_000_000L, found.get(0).startTime());
+        assertEquals(1, archive.summary().count(), "坏的那一场不该还算在运营统计里");
+    }
+
+    @Test
     @DisplayName("概况应给出条数与最早最晚的开播时刻")
     void summaryReportsRange() {
         archive.append(session(3_000_000L, 300));
