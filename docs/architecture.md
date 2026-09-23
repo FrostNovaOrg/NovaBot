@@ -58,7 +58,7 @@ flowchart TB
 
 | SPI | 位置 | 谁实现 | 用途 |
 |---|---|---|---|
-| `HealthProbe` | `core.health` | 各模块 | 汇总健康状况，供总览页、告警共用 |
+| `HealthProbe` | `core.health` | 各模块 | 汇总健康状况，供首页、告警共用 |
 | `AccountLoginProvider` | `core.account` | 哔哩哔哩 | 界面内扫码登录、退出登录 |
 | `BotConnectionTester` | `core.account` | OneBot 适配器 | 连通性测试与连接参数回填 |
 | `AlertChannel` | `core.alert` | 核心（邮件、Webhook）、OneBot 适配器（QQ） | 告警投递 |
@@ -367,7 +367,7 @@ META-INF/spring-configuration-metadata.json
 | 控制台页 | `config/ui/page/ConsolePageProvider` | `BilibiliConsolePageProvider` 与页面脚本 `config-ui-pages/bilibili.js`（nova-bilibili）；主播页 `StreamersConsolePageProvider`、推送页 `PushConsolePageProvider`、向导主播步 `SetupStreamerStepProvider`、首页今日卡 `TodayHomeCardProvider`（nova-console） | 往控制台添自己的页；挂在连接页、设置页、顶级页、首页卡还是向导步骤由 `ConsolePageSlot` 申报；除 `script()` 外可再报 `assets()`（同目录其它 `.js`，按登记名取）。顶级页的 `refresh` 会收到 `{sub, tail}`（地址栏第二、三段） |
 | 配置节 | `@ConfigurationProperties`（编译期元数据由 `config/ui/ConfigurationMetadataService` 读取） | 各模块的配置类 | 配置类加了项，设置页表单自动出现；核心前缀在 `config/ui/ConfigurationGroups` 登记，平台前缀由各插件的 `ConfigurationGroupContributor` 申报，新前缀不登记就没有组 |
 | 聊天命令 | `command/NovaCommand` | `command/` 下的一族命令（nova-bilibili 与 nova-report） | 实现接口并注册为 Bean，群里即多一条命令 |
-| 健康探针 | `health/HealthProbe` | 直播间、登录、风控三件（nova-bilibili）与 `OneBotHealthProbe`（onebot-adapter） | 探测结果汇总进总览页，与告警共用 |
+| 健康探针 | `health/HealthProbe` | 直播间、登录、风控三件（nova-bilibili）与 `OneBotHealthProbe`（onebot-adapter） | 探测结果汇总进首页，与告警共用 |
 | 账号登录 | `account/AccountLoginProvider` | `BilibiliAccountLoginProvider`（nova-bilibili） | 界面内扫码登录、退出登录 |
 | 机器人连接测试 | `account/BotConnectionTester` | `OneBotConnectionTester`（onebot-adapter） | 连接页上的连通性测试与连接参数回填 |
 | @全体权限 | `sender/AtAllPermissionResolver` | `OneBotAtAllPermissionService`（onebot-adapter） | 「能不能 @全体成员」由平台侧回答，核心只拿答案决定摘不摘 |
