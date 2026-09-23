@@ -22,8 +22,17 @@ import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.web.client.HttpClientErrorException;
 
+import java.net.ConnectException;
+import java.net.NoRouteToHostException;
+import java.net.PortUnreachableException;
+import java.net.SocketTimeoutException;
+import java.net.UnknownHostException;
+import java.net.http.HttpConnectTimeoutException;
+import java.net.http.HttpTimeoutException;
+import java.nio.channels.UnresolvedAddressException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
@@ -178,6 +187,23 @@ public class OneBotHttpService {
             log.warn("{} 的 OneBot HTTP Token 配置不正确, 请检查 Token 配置", message.getPlatform());
             return new JSONObject().fluentPut("code", ResultCode.UNAUTHORIZED.getCode()).fluentPut("message", "Token 配置不正确").fluentPut("id", null);
         } catch (Exception e) {
+            // 没送到（连接被拒、连接超时、找不到主机）不能包成普通结果。
+            // 核心只在抛异常或结果为空时才按原有次数重试；包成非空结果，
+            // NapCat 重启那几秒发出的开播通知就丢了。
+            if (requestNeverReached(e)) {
+                log.warn("OneBot HTTP 请求未送到, 交回核心重试: {}", e.getMessage());
+                if (e instanceof RuntimeException runtime) {
+                    throw runtime;
+                }
+                throw new IllegalStateException(e);
+            }
+            // 请求已经写出去、等回包超时：NapCat 可能已经发进群，再发一次就是两条。
+            if (responseNotReceived(e)) {
+                log.error("OneBot HTTP 送达不明: 请求已送出, 等回包超时, 不重发", e);
+                return new JSONObject().fluentPut("code", ResultCode.UNKNOWN.getCode())
+                        .fluentPut("message", "送达不明: 请求已送出, 等回包超时")
+                        .fluentPut("id", null);
+            }
             log.error("OneBot HTTP 发送消息异常", e);
             return new JSONObject().fluentPut("code", ResultCode.UNKNOWN.getCode()).fluentPut("message", "OneBot HTTP 发送消息异常, 请检查插件日志错误信息").fluentPut("id", null);
         }
@@ -241,6 +267,58 @@ public class OneBotHttpService {
 
     private static boolean isImage(JSONObject element) {
         return element != null && "image".equals(element.getString("type"));
+    }
+
+    /**
+     * 请求有没有离开本机。连接被拒、连接超时、找不到主机都算没离开：
+     * 对端不可能已经把消息发出去，交回核心重试不会在群里变成两条。
+     */
+    private static boolean requestNeverReached(Throwable error) {
+        Throwable current = error;
+        for (int depth = 0; current != null && depth < 8; depth++) {
+            if (current instanceof ConnectException
+                    || current instanceof UnknownHostException
+                    || current instanceof NoRouteToHostException
+                    || current instanceof PortUnreachableException
+                    || current instanceof HttpConnectTimeoutException
+                    || current instanceof UnresolvedAddressException) {
+                return true;
+            }
+            if (current instanceof SocketTimeoutException && mentionsConnect(current.getMessage())) {
+                return true;
+            }
+            Throwable next = current.getCause();
+            if (next == current) {
+                break;
+            }
+            current = next;
+        }
+        return false;
+    }
+
+    /**
+     * 请求已经送出，回包没等到。连接超时不算在这里：那一种请求还没送出。
+     */
+    private static boolean responseNotReceived(Throwable error) {
+        if (requestNeverReached(error)) {
+            return false;
+        }
+        Throwable current = error;
+        for (int depth = 0; current != null && depth < 8; depth++) {
+            if (current instanceof HttpTimeoutException || current instanceof SocketTimeoutException) {
+                return true;
+            }
+            Throwable next = current.getCause();
+            if (next == current) {
+                break;
+            }
+            current = next;
+        }
+        return false;
+    }
+
+    private static boolean mentionsConnect(String message) {
+        return message != null && message.toLowerCase(Locale.ROOT).contains("connect");
     }
 
     /**
