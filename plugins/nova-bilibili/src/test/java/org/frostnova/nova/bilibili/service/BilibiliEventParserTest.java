@@ -1902,6 +1902,36 @@ class BilibiliEventParserTest {
         }
 
         @Test
+        @DisplayName("常规字段被记成未知会淹没真新字段还挤掉样本：INTERACT_WORD_V2 带 20/21 不记，带 99 仍记")
+        void interactV2RegularFieldNumbersRaiseNothing() {
+            List<String> reds = new ArrayList<>();
+            String with2021 = withExtraField(withExtraField(InteractV2.ENTER_PLAIN, 20, 1), 21, 1);
+
+            try {
+                assertTrue(parseInteract(with2021).isPresent(), "多两个常规字段不该影响取值，事件照出");
+                assertEquals(0, unknownFieldCount(),
+                        "INTERACT_WORD_V2 带 20/21 不记未知字段，实际 "
+                                + unknownFieldCount()
+                                + " detail=" + unknownFieldDetail());
+            } catch (AssertionError e) {
+                reds.add("阴性 " + e.getMessage());
+            }
+
+            try {
+                assertTrue(parseInteract(withExtraField(InteractV2.ENTER_PLAIN, 99, 1)).isPresent());
+                assertEquals(1, unknownFieldCount(),
+                        "INTERACT_WORD_V2 带 99 仍记未知，实际 " + unknownFieldCount()
+                                + " detail=" + unknownFieldDetail());
+                assertTrue(unknownFieldDetail().contains("INTERACT_WORD_V2:99"),
+                        "detail 应含 INTERACT_WORD_V2:99，实际: " + unknownFieldDetail());
+            } catch (AssertionError e) {
+                reds.add("阳性 " + e.getMessage());
+            }
+
+            assertTrue(reds.isEmpty(), () -> "红 " + reds.size() + " 问: " + String.join("; ", reds));
+        }
+
+        @Test
         @DisplayName("名表上限对照：522 个不同字段号，逐条照记、种数封顶 512、溢出 10")
         void unknownFieldNameTableIsCapped() {
             List<String> reds = new ArrayList<>();

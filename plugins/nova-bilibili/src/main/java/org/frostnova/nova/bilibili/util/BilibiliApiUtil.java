@@ -222,6 +222,9 @@ public class BilibiliApiUtil {
         registerKnownKeys(table, LIVE_HEARTBEAT_API, "LIVE_HEARTBEAT_API");
         // 真连接取表 2026-09-08：真应答常驻、解析码不取。未取到样本的端点不登记。
         // 真连接取表 2026-09-16 补 ROOM_INFO_API 与 follower。
+        // 两实例日志 2026-09-09～09-17 见过、解析码不取：关注列表 re_version/total，电视扫码轮询 hint/is_new/mid/sso。
+        registerResidentKeys(table, FOLLOWINGS_API, "re_version", "total");
+        registerResidentKeys(table, TV_QR_CODE_POLL_API, "hint", "is_new", "mid", "sso");
         registerResidentKeys(table, DANMU_INFO_API,
                 "business_id", "group", "max_delay", "refresh_rate", "refresh_row_factor");
         registerResidentKeys(table, DYNAMIC_FEED_API,
