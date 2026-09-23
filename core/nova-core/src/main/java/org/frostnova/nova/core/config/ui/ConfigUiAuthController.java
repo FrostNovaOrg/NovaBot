@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSession;
+import org.frostnova.nova.core.config.ui.auth.LockoutMinutes;
 import org.frostnova.nova.core.config.ui.auth.PasswordHash;
 import org.frostnova.nova.core.config.ui.auth.TotpGenerator;
 import org.frostnova.nova.core.util.QrCodeUtil;
@@ -181,7 +182,7 @@ public class ConfigUiAuthController {
         result.put("success", false);
         result.put("lockedSeconds", remainingLockSeconds(request));
         if (check.verdict() == ConfigUiAuthService.Verdict.LOCKED_OUT) {
-            long minutes = Math.max(1, check.retryAfter().toMinutes());
+            long minutes = LockoutMinutes.toShow(check.retryAfter());
             result.put("message", "尝试次数过多，请在 " + minutes + " 分钟后重试");
         } else {
             result.put("message", "服务器正忙，请稍后重试");

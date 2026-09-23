@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSession;
+import org.frostnova.nova.core.config.ui.auth.LockoutMinutes;
 import lombok.extern.slf4j.Slf4j;
 
 import java.nio.charset.StandardCharsets;
@@ -314,7 +315,7 @@ public class PasskeyService {
         // 被锁住的地址转头就能在这里继续试
         Duration lockout = authService.remainingLockout(clientIp);
         if (!lockout.isZero()) {
-            return PasskeyLogin.failure("登录失败次数过多，请在 " + Math.max(1, lockout.toMinutes()) + " 分钟后重试");
+            return PasskeyLogin.failure("登录失败次数过多，请在 " + LockoutMinutes.toShow(lockout) + " 分钟后重试");
         }
 
         try {
