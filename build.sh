@@ -8,7 +8,7 @@
 #
 # 用法:
 #   ./build.sh              构建并运行测试，产物输出至 dist/build
-#   ./build.sh --skip-tests 跳过测试
+#   ./build.sh --skip-tests 跳过测试与 NovaCore 边界检查
 #   ./build.sh --no-smoke   跳过收尾的起动冒烟。何时用：机器上没有可运行的 JDK（只出包不试起），
 #                           或 CI 里把冒烟拆成单独一步、build.sh 只管出产物时
 #   ./build.sh --clean      已是默认行为，保留只为兼容旧命令行（见下方「陈旧产物」一段）
@@ -42,20 +42,21 @@ MAVEN_ARGS=(-B)
 #
 # 🔴 清不到的地方要写明：`mvn clean` 走的是 reactor，而 build-tools/nova-plugin-processor
 #    与 templates/nova-example-plugin 都不在模块列表里（理由见 pom.xml:30-35）。
-#    前者由下面 [1/8] 用 -f 单独构建，那一步同样带上 clean；后者本脚本根本不构建，
+#    前者由下面 [1/9] 用 -f 单独构建，那一步同样带上 clean；后者本脚本根本不构建，
 #    它的 target/ 里有什么都进不了 dist/build。
 #
 # --clean 保留为空动作：README 与 docs/architecture.md 里写过它，敲了不该报「未知参数」。
 CLEAN="clean"
 PACKAGE=""
 SMOKE="1"
+TESTS="1"
 BUILD_REF="${NOVABOT_BUILD_REF:-}"
 # 转发给内层（干净树里那一次）构建的参数：--from-ref 自己不转发，否则会无限套娃
 INNER_ARGS=()
 
 for arg in "$@"; do
     case "$arg" in
-        --skip-tests) MAVEN_ARGS+=(-DskipTests); INNER_ARGS+=("$arg") ;;
+        --skip-tests) TESTS="0"; MAVEN_ARGS+=(-DskipTests); INNER_ARGS+=("$arg") ;;
         --clean)      : "已是默认";                INNER_ARGS+=("$arg") ;;
         --package)    PACKAGE="1";               INNER_ARGS+=("$arg") ;;
         --no-smoke)   SMOKE="0";                 INNER_ARGS+=("$arg") ;;
@@ -196,8 +197,15 @@ if [ -n "$BUILD_REF" ] && [ -z "${NOVABOT_ARCHIVE_BUILD:-}" ]; then
 
     STAGE="$(mktemp -d "${TMPDIR:-/tmp}/novabot-archive-XXXXXX")"
     trap 'rm -rf "$STAGE"' EXIT
+    # 边界尺的件清单：按被构建的那个 ref 现算，交给内层。
+    # 内层是 git archive 导出的树，没有 .git，git ls-files 必空；外层工作树的索引
+    # 未必等于 ref（--from-ref 可以指到 HEAD 之外），所以取 ls-tree，不取外层 ls-files。
+    # 一行一个仓库相对路径。清单件放在导出树外面——放进树里会被当成树里的件数进去。
+    FILE_LIST="$(mktemp "${TMPDIR:-/tmp}/novabot-filelist-XXXXXX")"
+    trap 'rm -rf "$STAGE"; rm -f "$FILE_LIST"' EXIT
+    git -C "$ROOT" -c core.quotepath=false ls-tree -r --name-only "$REF_SHA" > "$FILE_LIST"
 
-    echo "==> [0/8] 从 $BUILD_REF 导出干净树"
+    echo "==> [0/9] 从 $BUILD_REF 导出干净树"
     echo "    commit=$REF_SHA"
     echo "    tree=$REF_TREE"
     echo "    导出至 $STAGE"
@@ -215,6 +223,7 @@ if [ -n "$BUILD_REF" ] && [ -z "${NOVABOT_ARCHIVE_BUILD:-}" ]; then
     # HEAD、main、v4.3.0 这些名字会挪，明天再解一次可能落到另一次提交上。
     # 拿到包的人要能凭这一行找回**当时那一棵树**，所以这里传的是已经解开的 commit。
     # 人当初敲的是哪个名字另记一行，两件事都留着，谁也不冒充谁。
+    NOVACORE_FILE_LIST="$FILE_LIST" \
     NOVABOT_ARCHIVE_BUILD="$REF_SHA" \
     NOVABOT_ARCHIVE_TREE="$REF_TREE" \
     NOVABOT_ARCHIVE_REF="$REF_SHA" \
@@ -236,22 +245,53 @@ if [ -n "$BUILD_REF" ] && [ -z "${NOVABOT_ARCHIVE_BUILD:-}" ]; then
     exit 0
 fi
 
-echo "==> [1/8] 安装构建插件 nova-plugin-processor"
+echo "==> [1/9] 安装构建插件 nova-plugin-processor"
 mvn "${MAVEN_ARGS[@]}" -f build-tools/nova-plugin-processor/pom.xml ${CLEAN} install
 
 # nova-core 有两种产物形态：
 #   install profile —— 普通库 jar，供各插件模块编译期依赖
 #   package profile —— Spring Boot 重打包后的可运行 jar，类位于 BOOT-INF/classes
 # 后者无法作为依赖被下游模块解析，因此必须先以 install 形态构建整个工程，最后再单独打发行包。
-echo "==> [2/8] 构建全部模块（库形态）"
+echo "==> [2/9] 构建全部模块（库形态）"
 mvn "${MAVEN_ARGS[@]}" -Pinstall ${CLEAN} install
 
-echo "==> [3/8] 打包可运行的 NovaBot"
-# 这一步不带 clean：[2/8] 刚把 core/nova-core/target 清空并重建过，此刻目录里只有那一次的产物。
+# ── [3/9] NovaCore 边界检查 ─────────────────────────────────────────────
+# 尺在 tools/novacore-boundary-check.sh：十三格，只 grep/find，不 build、不联网，
+# 任一格红退码非 0。它答的是「拆仓／拆模块那条边界还在不在」：核心没引用插件、
+# 事件协议在核心、配置键不带平台名等。此前只靠人手跑，已有漏跑的前例。
+# 放在跑测试这一段：它与测试同属「源码还没被证明对」的前置闸，--skip-tests 的
+# 一键安装不必付这份钱；不被 --no-smoke 跳过——它不起程序，与冒烟是两件事。
+# 红时停在此处，点名哪一格、判据在尺里哪一行。
+# 发布构建的内层没有 .git，件清单由外层按被构建的 ref 现算后用 NOVACORE_FILE_LIST 递进来；
+# 没这个变量时（工作树直跑）尺自己走 git ls-files。
+echo
+if [ "$TESTS" = "1" ]; then
+    echo "==> [3/9] NovaCore 边界检查"
+    BOUNDARY_RC=0
+    BOUNDARY_OUT="$(bash "$ROOT/tools/novacore-boundary-check.sh" 2>&1)" || BOUNDARY_RC=$?
+    printf '%s\n' "$BOUNDARY_OUT"
+    if [ "$BOUNDARY_RC" -ne 0 ]; then
+        echo "" >&2
+        echo "边界检查未过。红的格与判据所在行：" >&2
+        printf '%s\n' "$BOUNDARY_OUT" | while IFS= read -r bline; do
+            bgrid="$(printf '%s' "$bline" | sed -n 's/^格\([0-9][0-9]*\) 红 .*/\1/p')"
+            [ -z "$bgrid" ] && continue
+            bcrit="$(sed -n "/^# 格${bgrid}：/=" "$ROOT/tools/novacore-boundary-check.sh" | head -1)"
+            echo "  $bline" >&2
+            echo "    判据: tools/novacore-boundary-check.sh:${bcrit:-?}（格${bgrid}）" >&2
+        done
+        exit 1
+    fi
+else
+    echo "==> [3/9] NovaCore 边界检查：已按 --skip-tests 跳过"
+fi
+
+echo "==> [4/9] 打包可运行的 NovaBot"
+# 这一步不带 clean：[2/9] 刚把 core/nova-core/target 清空并重建过，此刻目录里只有那一次的产物。
 # 在这里再清一次，等于把上一步刚编好的东西删掉重编一遍，清掉的却是同一批文件。
 mvn "${MAVEN_ARGS[@]}" -f core/nova-core/pom.xml -Ppackage package
 
-echo "==> [4/8] 汇总产物至 dist/build"
+echo "==> [5/9] 汇总产物至 dist/build"
 OUT="$ROOT/dist/build"
 PLUGIN_MODULES=(plugins/nova-onebot-adapter plugins/nova-onebot-adapter-napcat-extension plugins/nova-bilibili plugins/nova-console plugins/nova-report)
 
@@ -349,7 +389,7 @@ rm -f "$OUT/template-defaults.json"
     echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 } > "$OUT/BUILD-INFO"
 
-# ── [5/8] 产物守卫 ──────────────────────────────────────────────────────
+# ── [6/9] 产物守卫 ──────────────────────────────────────────────────────
 # 上面那道恒 clean 答的是「构建有没有从空目录开始」；这一格答的是另一个问题：
 # 「打出来的包里有没有源码里不存在的界面资源」。前者管编译输出，管不着从别处拷进 dist/build 的东西，
 # 也管不住将来有谁把 clean 改回去。**只装一道就是把另一个问题悄悄结掉**，而它下次出事时
@@ -357,17 +397,17 @@ rm -f "$OUT/template-defaults.json"
 #
 # 放在打包之前：脏产物不许被压进 tar.gz——包一旦成形就会被拿去发，那时再发现已经晚一步。
 echo
-echo "==> [5/8] 校验产物界面资源"
+echo "==> [6/9] 校验产物界面资源"
 "$ROOT/tools/artifact-ui-resource-check.sh" "$OUT"
 bash "$ROOT/tools/artifact-entry-check.sh" "$OUT"
 
-# ── [6/8] 界面视图模型 ──────────────────────────────────────────────────
+# ── [7/9] 界面视图模型 ──────────────────────────────────────────────────
 # 名单写死一处：少写一把，那一页的模型从此只靠人手跑，
 # 而「人手跑过」和「没跑」在构建日志上长得一样。任一红即本构建红。
 # 本树已有主播页那一把，名单十三把（首页／推送／连接／主播／日志／初始设置／模板／今日卡／
 # 设置／登录／告警／确认／只读口令）。
 echo
-echo "==> [6/8] 校验界面视图模型"
+echo "==> [7/9] 校验界面视图模型"
 MODEL_CHECKERS=(
     home-model-check.sh
     push-model-check.sh
@@ -387,17 +427,17 @@ for checker in "${MODEL_CHECKERS[@]}"; do
     bash "$ROOT/tools/$checker"
 done
 
-# ── [7/8] 测试夹具隐私 ──────────────────────────────────────────────────
+# ── [8/9] 测试夹具隐私 ──────────────────────────────────────────────────
 # 尺已经在 tools/ 里，但只靠人手跑时，「跑过」和「没跑」在构建日志上长得一样。
 # 接进构建：退码非 0 即本构建红。它扫的是源码树 src/test（头像哈希须在允许名单、
 # 邮箱须用保留域），不依赖产物，放在打包前后皆可——按现有顺序放在冒烟之前。
 # 这一步不被 --no-smoke 跳过：冒烟量的是「包起不起得来」，夹具隐私是另一件事。
 echo
-echo "==> [7/8] 校验测试夹具隐私"
+echo "==> [8/9] 校验测试夹具隐私"
 bash "$ROOT/tools/fixture-privacy-check.sh"
 
-# ── [8/8] 起动冒烟 ──────────────────────────────────────────────────────
-# 上面七步答的是「编译过、测过、包里的文件都出自源码、视图模型对得上、测试夹具隐私过了」；这一步答的是另一句：
+# ── [9/9] 起动冒烟 ──────────────────────────────────────────────────────
+# 上面八步答的是「编译过、测过、边界在、包里的文件都出自源码、视图模型对得上、测试夹具隐私过了」；这一步答的是另一句：
 # 这堆 jar 摆在一起，在一台没有任何配置文件的机器上，起不起得来。
 # 单元测试里每个类都是自己 new 出来的，谁也不经过容器；容器到启动那一刻才第一次
 # 按类型去凑构造参数，凑不齐当场退出——所以「整测全绿而包起不来」在结构上可能，
@@ -411,13 +451,13 @@ bash "$ROOT/tools/fixture-privacy-check.sh"
 # 例如 7827 已被别的进程占着时：BOOT_SMOKE_PORT=17827 ./build.sh
 echo
 if [ "$SMOKE" = "1" ]; then
-    echo "==> [8/8] 起动冒烟"
+    echo "==> [9/9] 起动冒烟"
     # bash 调用而不是直接执行：这把尺在仓库里不带执行位，且 CI 的 runner 按 git 记录的
     # 权限 checkout——直接执行在「谁chmod过谁的环境」上绿、在干净 checkout 上炸，
     # 而那种炸与「装配坏了」的红同形。不依赖盘上权限位的调法在哪都一样。
     bash "$ROOT/tools/boot-smoke.sh" "$OUT"
 else
-    echo "==> [8/8] 起动冒烟：已按 --no-smoke 跳过"
+    echo "==> [9/9] 起动冒烟：已按 --no-smoke 跳过"
 fi
 
 if [ -n "$PACKAGE" ]; then

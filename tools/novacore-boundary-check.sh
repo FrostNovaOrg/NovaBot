@@ -65,8 +65,8 @@ count_lines() {
 #
 # 这三格原先都走 `git ls-files`，读的是**索引**，不是盘上的树。差别只在搬件的那一笔上现形：
 # 刚挪到新位置的件没 `git add` 就不在索引里，挪走的旧件已经不在盘上却还留在索引里——
-# 于是尺量到的是**改前的现状**。而执行层不许 git add（改动留树、候并入），
-# 于是「把撞包解开」的那一笔在自己的树上永远看不到转绿：尺量不到刚做完的那件事，
+# 于是尺量到的是**改前的现状**。而改动常常要等并入时才加进索引，
+# 「把撞包解开」的那一笔在自己的树上永远看不到转绿：尺量不到刚做完的那件事，
 # 转绿只能等并入之后由别人代跑一趟。一把在最需要它的那一刻是哑的尺，等于没有。
 #
 # 改法：`--cached` 与 `--others --exclude-standard` 取并集，再逐条剔掉盘上已不存在的路径。
@@ -76,12 +76,63 @@ count_lines() {
 #             不剔的话搬走的旧位置会被再数一遍，撞包永远解不开。
 # 其余读法（挑哪些路径、怎么截包名、拿什么正则搜）一概不变。
 # core.quotepath=false 免得非 ASCII 路径被转义成八进制而对不上。
+#
+# 另有一条清单件出口：NOVACORE_FILE_LIST 指向一份「一行一个仓库相对路径」的件时，
+# 人口取它、不走 git。用在发布构建的内层——那是一棵 git archive 导出的树，没有 .git，
+# ls-files 必空。清单由外层按**被构建的那个 ref** 现算（ls-tree，不是外层工作树的索引：
+# --from-ref 可以指到 HEAD 之外的 ref）再递进来，且清单件放在导出树外面，
+# 免得被当成树里的件数进去。没设这个变量（或指的文件不在）时照旧走 git ls-files。
+# 清单件模式下 pathspec 在本函数自己过，认三形（本脚本各格用到的全集）：
+#   glob —— `*/pom.xml` 这类，* 与 ? 跨 /（与 git 默认 pathspec 一致）
+#   目录前缀 —— `templates/` 这类，带结尾斜杠
+#   排除 —— `:!*.md` 这类
+# 开头的 `--` 跳过（只为调用处好看）。
 tree_files() {
-    git -c core.quotepath=false ls-files --cached --others --exclude-standard "$@" 2>/dev/null \
-        | sort -u \
-        | while IFS= read -r tf_path; do
-              [ -e "$tf_path" ] && printf '%s\n' "$tf_path"
-          done
+    local tf_path tf_spec tf_ok tf_drop tf_seen_inc tf_src
+    if [ -n "${NOVACORE_FILE_LIST:-}" ] && [ -f "$NOVACORE_FILE_LIST" ]; then
+        tf_src="$WORK/tree_files.src"
+        cat -- "$NOVACORE_FILE_LIST" > "$tf_src"
+        sort -u "$tf_src" > "$tf_src.s"
+        while IFS= read -r tf_path; do
+            [ -e "$tf_path" ] || continue
+            tf_ok=0
+            tf_seen_inc=0
+            tf_drop=0
+            for tf_spec in "$@"; do
+                [ "$tf_spec" = "--" ] && continue
+                case "$tf_spec" in
+                    :!*)
+                        case "$tf_path" in
+                            ${tf_spec#:!}) tf_drop=1 ;;
+                        esac
+                        ;;
+                    *)
+                        tf_seen_inc=1
+                        case "$tf_spec" in
+                            */) case "$tf_path" in
+                                    "$tf_spec"*) tf_ok=1 ;;
+                                esac
+                                ;;
+                            *)  case "$tf_path" in
+                                    $tf_spec) tf_ok=1 ;;
+                                esac
+                                ;;
+                        esac
+                        ;;
+                esac
+            done
+            [ "$tf_seen_inc" -eq 1 ] || tf_ok=1
+            [ "$tf_ok" -eq 1 ] || continue
+            if [ "$tf_drop" -eq 1 ]; then continue; fi
+            printf '%s\n' "$tf_path"
+        done < "$tf_src.s"
+    else
+        git -c core.quotepath=false ls-files --cached --others --exclude-standard "$@" 2>/dev/null \
+            | sort -u \
+            | while IFS= read -r tf_path; do
+                  [ -e "$tf_path" ] && printf '%s\n' "$tf_path"
+              done
+    fi
 }
 
 # —— 在册模块目录现算（格1／格4／格8／格10／格11 共用）——
@@ -327,10 +378,10 @@ fi
 # 格2：§5 事件输出协议（真源）须在核心模块
 # 现状（拆前）＝红：端点与装配都在 nova-bilibili。
 # 拆法：NovaEventEndpoint / NovaEventStreamConfiguration 迁核心，协议与路径不变。
+# 候选件走 tree_files，与其余各格同一份清单：find 不看 .gitignore，
+# scratch/ 里放一份整树副本就假红「离核」。
 # ============================================================
-g2_files=$(find . -path ./target -prune -o -name 'NovaEventEndpoint.java' -print \
-    -o -name 'NovaEventStreamConfiguration.java' -print 2>/dev/null \
-    | grep -v '/src/test/' | sed 's|^\./||' | sort)
+g2_files=$(tree_files | grep -E '(^|/)(NovaEventEndpoint|NovaEventStreamConfiguration)\.java$' | grep -v '/src/test/' | sort)
 
 g2_bad=""
 g2_n=0
