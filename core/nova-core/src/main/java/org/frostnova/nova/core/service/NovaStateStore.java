@@ -13,6 +13,8 @@ import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
+import java.nio.charset.CharacterCodingException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
@@ -55,6 +57,17 @@ public class NovaStateStore {
     private final Object writeLock = new Object();
 
     /**
+     * 这一轮读文件时遇到 IO 错。文件可能仍是好的，只是现在读不了。
+     * 内存里以空状态继续，但本轮不再写盘，免得盖掉那份好文件。
+     */
+    private volatile boolean diskSuspended;
+
+    /**
+     * 挂起期间「跳过保存」的提醒只记一次。
+     */
+    private boolean skipSaveNoted;
+
+    /**
      * 停机时最多等自动保存这么久。磁盘卡住时不能无限等下去。
      */
     private static final int SHUTDOWN_WAIT_SECONDS = 5;
@@ -89,10 +102,20 @@ public class NovaStateStore {
             log.info("运行状态已从 {} 加载", path);
         } catch (NoSuchFileException e) {
             log.info("运行状态文件 {} 不存在, 建立新文件", path);
-        } catch (Exception e) {
-            // 状态文件损坏不该让程序起不来：丢掉订阅名单是可接受的降级，
-            // 而拒绝启动会让推送整个停摆。坏件改名留底，下一次保存写的是新文件，盖不到它。
+        } catch (CharacterCodingException e) {
+            // 停在一个字的中间：字节读到了，解不成文本，按坏件改名留底。
             parkBroken(path, e);
+        } catch (IOException e) {
+            // 读不了不等于文件坏了。权限不足或盘暂时不可读时改名挪走，修好了也读不回来。
+            suspendDisk(e);
+        } catch (Exception e) {
+            // 读到了但解析不了：丢掉订阅名单是可接受的降级，拒绝启动会让推送整个停摆。
+            // 坏件改名留底，下一次保存写的是新文件，盖不到它。
+            parkBroken(path, e);
+        }
+
+        if (diskSuspended) {
+            return;
         }
 
         if (cache.containsKey(RETIRED_CHOICE_NAMESPACE)) {
@@ -114,22 +137,42 @@ public class NovaStateStore {
     @EventListener(ContextClosedEvent.class)
     public void onContextClosedEvent() {
         scheduler.shutdownNow();
-        awaitScheduler();
-        save();
+        boolean interrupted = awaitScheduler();
+        try {
+            save();
+        } finally {
+            // 写盘通道见中断标记会当场关掉。收尾保存做完再把标记恢复回去。
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        }
     }
 
     /**
      * 等在途的自动保存停下。已经在写的那一趟被打断后，收尾保存再写一份完整的。
+     * @return 当前线程是否带中断标记。标记在这里取走，交给调用方在收尾保存之后恢复
      */
-    private void awaitScheduler() {
+    private boolean awaitScheduler() {
         try {
             if (!scheduler.awaitTermination(SHUTDOWN_WAIT_SECONDS, TimeUnit.SECONDS)) {
                 log.warn("运行状态的自动保存在 {} 秒内没有停下来", SHUTDOWN_WAIT_SECONDS);
             }
+            // 调度池若在调用之前已经停了，等待会直接返回，不看也不清中断标记。
+            // 标记留着会让随后的写盘通道当场关掉。这里先取走。
+            return Thread.interrupted();
         } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
             log.warn("等待运行状态自动保存停下时被打断");
+            return true;
         }
+    }
+
+    /**
+     * 读的时候出了 IO 错。不改名，这一轮也不写盘。
+     */
+    private void suspendDisk(IOException cause) {
+        cache = new JSONObject();
+        diskSuspended = true;
+        log.error("状态文件读不了（{}），本次运行不写盘，修好后重启即恢复。常见原因是文件权限", cause.toString(), cause);
     }
 
     /**
@@ -264,11 +307,28 @@ public class NovaStateStore {
     }
 
     /**
+     * 这一轮不写盘。第一次跳过时记一条，免得之后的保存一声不响。
+     */
+    private void noteSkippedSave() {
+        synchronized (writeLock) {
+            if (skipSaveNoted) {
+                return;
+            }
+            skipSaveNoted = true;
+        }
+        log.warn("这次运行里的改动都不会存盘，修好后重启才恢复");
+    }
+
+    /**
      * 把序列化好的内容写进状态文件
      * <p>
      * 序列化在调用方的锁内、写盘在锁外：磁盘慢时不应阻塞消息线程上的订阅写入
      */
     private void write(String content) {
+        if (diskSuspended) {
+            noteSkippedSave();
+            return;
+        }
         try {
             DurableFiles.replace(path(), content);
         } catch (Exception e) {

@@ -16,6 +16,8 @@ import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
+import java.nio.charset.CharacterCodingException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
@@ -47,6 +49,17 @@ public class DefaultLiveDataService implements LiveDataService {
      * 指标写入只拿 {@link #metricLock}，不拿这把锁，磁盘慢时不挡住消息线程。
      */
     private final Object writeLock = new Object();
+
+    /**
+     * 这一轮读文件时遇到 IO 错。文件可能仍是好的，只是现在读不了。
+     * 内存里以空数据继续，但本轮不再写盘，免得盖掉那份好文件。
+     */
+    private volatile boolean diskSuspended;
+
+    /**
+     * 挂起期间「跳过保存」的提醒只记一次。
+     */
+    private boolean skipSaveNoted;
 
     /**
      * 停机时最多等自动保存这么久。磁盘卡住时不能无限等下去。
@@ -93,14 +106,32 @@ public class DefaultLiveDataService implements LiveDataService {
                 cache = parsed;
             } catch (NoSuchFileException e) {
                 log.warn("直播数据文件 {} 不存在, 建立新文件", liveDataPath);
-            } catch (Exception e) {
-                // 坏件改名留底后再以空数据起。留在原处的话，下一次自动保存会把它盖掉。
+            } catch (CharacterCodingException e) {
+                // 停在一个字的中间：字节读到了，解不成文本，按坏件改名留底。
                 parkBroken(Path.of(liveDataPath), e);
+            } catch (IOException e) {
+                // 读不了不等于文件坏了。权限不足或盘暂时不可读时改名挪走，修好了也读不回来。
+                suspendDisk(e);
+            } catch (Exception e) {
+                // 读到了但解析不了：坏件改名留底后再以空数据起。留在原处的话，下一次自动保存会把它盖掉。
+                parkBroken(Path.of(liveDataPath), e);
+            }
+            if (diskSuspended) {
+                return;
             }
             log.info("直播数据加载完成");
             readWatermark();
             autoSave();
         }
+    }
+
+    /**
+     * 读的时候出了 IO 错。不改名，这一轮也不写盘。
+     */
+    private void suspendDisk(IOException cause) {
+        cache = new JSONObject();
+        diskSuspended = true;
+        log.error("直播数据读不了（{}），本次运行不写盘，修好后重启即恢复。常见原因是文件权限", cause.toString(), cause);
     }
 
     /**
@@ -133,6 +164,19 @@ public class DefaultLiveDataService implements LiveDataService {
     }
 
     /**
+     * 这一轮不写盘。第一次跳过时记一条，免得之后的保存一声不响。
+     */
+    private void noteSkippedSave() {
+        synchronized (writeLock) {
+            if (skipSaveNoted) {
+                return;
+            }
+            skipSaveNoted = true;
+        }
+        log.warn("这次运行里的改动都不会存盘，修好后重启才恢复");
+    }
+
+    /**
      * 立刻把本场数据落盘
      * <p>
      * 三个调用点共用：启动改写、自动保存、退出收尾。抽出来是为了让测试能精确地
@@ -140,6 +184,10 @@ public class DefaultLiveDataService implements LiveDataService {
      * @param cleanShutdown 是否为正常退出时的收尾保存
      */
     void saveNow(boolean cleanShutdown) {
+        if (diskSuspended) {
+            noteSkippedSave();
+            return;
+        }
         String liveDataPath = properties.getLive().getLiveDataPath();
         synchronized (writeLock) {
             try {
@@ -158,31 +206,45 @@ public class DefaultLiveDataService implements LiveDataService {
     public void onContextClosedEvent() {
         // 先停掉自动保存，避免与此处的收尾保存同时写同一个文件
         scheduler.shutdownNow();
-        awaitScheduler();
+        boolean interrupted = awaitScheduler();
+        try {
+            if (diskSuspended) {
+                noteSkippedSave();
+                return;
+            }
+            if (cache.isEmpty()) {
+                return;
+            }
 
-        if (cache.isEmpty()) {
-            return;
-        }
-
-        if (properties.getLive().isSaveLiveData()) {
-            String liveDataPath = properties.getLive().getLiveDataPath();
-            log.info("开始保存直播数据至 {}", liveDataPath);
-            saveNow(true);
-            log.info("直播数据已保存至 {}", liveDataPath);
+            if (properties.getLive().isSaveLiveData()) {
+                String liveDataPath = properties.getLive().getLiveDataPath();
+                log.info("开始保存直播数据至 {}", liveDataPath);
+                saveNow(true);
+                log.info("直播数据已保存至 {}", liveDataPath);
+            }
+        } finally {
+            // 写盘通道见中断标记会当场关掉。收尾保存做完再把标记恢复回去。
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
         }
     }
 
     /**
      * 等在途的自动保存停下。已经在写的那一趟被打断后，收尾保存再写一份完整的。
+     * @return 当前线程是否带中断标记。标记在这里取走，交给调用方在收尾保存之后恢复
      */
-    private void awaitScheduler() {
+    private boolean awaitScheduler() {
         try {
             if (!scheduler.awaitTermination(SHUTDOWN_WAIT_SECONDS, TimeUnit.SECONDS)) {
                 log.warn("直播数据的自动保存在 {} 秒内没有停下来", SHUTDOWN_WAIT_SECONDS);
             }
+            // 调度池若在调用之前已经停了，等待会直接返回，不看也不清中断标记。
+            // 标记留着会让随后的写盘通道当场关掉。这里先取走。
+            return Thread.interrupted();
         } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
             log.warn("等待直播数据自动保存停下时被打断");
+            return true;
         }
     }
 
