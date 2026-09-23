@@ -46,6 +46,11 @@ USER starbot
 # 镜像里抄一份，两边迟早会漂移——曾出现过镜像仍在用已被实测淘汰的 -Xms128m
 ENV TZ=Asia/Shanghai
 
+# 容器里监听地址固定 0.0.0.0：内置默认只听本机，容器里那样等于谁也连不上。
+# 对外开不开由 docker run 的 -p 决定，不是靠改这个；设置页里改监听地址对容器不起作用
+# （环境变量比配置文件优先）。真要改监听地址，docker run -e SERVER_ADDRESS=… 覆盖。
+ENV SERVER_ADDRESS=0.0.0.0
+
 EXPOSE 7827
 
 # 入口脚本 exec 到 start.sh，由它接住 docker stop 的 SIGTERM 并转发给 java，
