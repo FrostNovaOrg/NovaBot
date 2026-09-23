@@ -91,6 +91,33 @@ public class ConfigUiSessionStore {
     }
 
     /**
+     * 把一把会话换成新标识：旧标识当场作废，登录时刻与绝对期限照旧
+     * <p>
+     * 改口令、开关二次验证之后用。偷到 Cookie 的人与主人握着的可能是<b>同一把</b>，
+     * {@link #revokeAllExcept} 留下的恰恰是它；换成新标识、只随这一趟响应交回，旧的那一枚就进不来了。
+     * <p>
+     * <b>先摘后发</b>：同一个旧标识并发来换，只有摘到它的那一趟拿得到新会话，其余几趟拿到空——
+     * 不会一把换出两把，拿到空的那几趟也不会再去注销「其余」。
+     * @param id 当前会话标识，可为 null
+     * @param now 当前时刻
+     * @return 新会话；标识为空、认不出或已过期时为空
+     */
+    public Optional<ConfigUiSession> rotate(String id, Instant now) {
+        if (id == null || id.isBlank()) {
+            return Optional.empty();
+        }
+
+        ConfigUiSession current = sessions.remove(id);
+        if (current == null || expired(current, now)) {
+            return Optional.empty();
+        }
+
+        ConfigUiSession renewed = current.renew(SecureToken.generate(), SecureToken.generate(), now);
+        sessions.put(renewed.getId(), renewed);
+        return Optional.of(renewed);
+    }
+
+    /**
      * 注销一个会话
      * @param id 会话标识
      */
