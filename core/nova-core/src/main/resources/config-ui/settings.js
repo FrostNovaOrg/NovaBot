@@ -127,7 +127,7 @@ function buildControl(field, value, cell) {
     const eye = el('button');
     eye.type = 'button';
     wrap.append(input, eye);
-    bindPasswordReveal(input, eye);
+    bindPasswordReveal(input, eye, field.label);
     cell.appendChild(wrap);
     return input;
   }

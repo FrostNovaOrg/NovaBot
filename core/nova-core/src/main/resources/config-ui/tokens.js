@@ -143,7 +143,7 @@ function showIssued(token, label) {
   const field = $('#tk-value');
   field.value = token;
 
-  const reveal = bindPasswordReveal(field, $('#tk-reveal'));
+  const reveal = bindPasswordReveal(field, $('#tk-reveal'), '口令');
 
   $('#tk-copy').addEventListener('click', async () => {
     try {

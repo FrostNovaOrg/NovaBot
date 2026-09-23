@@ -1076,7 +1076,7 @@ public class ConfigUiController {
 
         if (ConfigUiAuthService.containsDedicatedAuthKey(changes.keySet(), aliases())) {
             result.put("success", false);
-            result.put("message", "登录口令和二次验证请到「登录与安全」里改；「忘记口令」的启动令牌通道这里也改不了——那个页面关得了、开不了，要开须改配置文件再重启");
+            result.put("message", "登录密码和二次验证请到「登录与安全」里改；「忘记密码」的启动令牌通道这里也改不了——那个页面关得了、开不了，要开须改配置文件再重启");
             return result;
         }
 

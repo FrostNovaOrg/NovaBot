@@ -10,17 +10,17 @@ novabot.core.alert.webhook-title-field|java.lang.String|title|Webhook JSON 中�
 novabot.core.alert.webhook-url|java.lang.String||Webhook 告警地址，留空则不启用 机器人推送与邮件之外唯一不依赖机器人自身链路的通道。机器人告警走的是机器人的推送链路， 一旦机器人程序掉线或掉登录，需要告警的正是这种时候，而告警本身也一并失效了。 Webhook 只需一个地址，适配 Bark、Server 酱、钉钉、飞书、Telegram 等常见服务。 改完立即生效，不必重启。
 novabot.core.command.admins|java.util.List<java.lang.Long>|<null>|超级管理员账号，跨会话生效 「禁用命令」这类操作会改变全群的可用功能，只对管理员开放。 群主与群管理员自动拥有权限，此处填的是不依赖群角色的额外名单—— 机器人的主人未必是每个群的管理员。
 novabot.core.config-ui.agreement.accepted-at|java.lang.String||同意的时间 ISO 格式，留空表示尚未同意过。它不参与任何判断，只是留个凭据： 日后要回答「这台机器上是什么时候同意的」时，答案得在盘上，而不是靠人回忆。
-novabot.core.config-ui.agreement.accepted-by|java.lang.String||同意是从哪条通道点下的 password＝输过登录口令之后同意，operator-token＝凭启动令牌进来之后同意。 留空表示这行记录说不出是谁点的，此时会在下次登录之后再请使用者确认一次。 4.4.0 及更早的版本在登录之前就让人点同意，写下的正是这种记录—— 那时任何能连上控制台端口的程序都写得下它，因此它证明不了使用者本人确实看过。
+novabot.core.config-ui.agreement.accepted-by|java.lang.String||同意是从哪条通道点下的 password＝输过登录密码之后同意，operator-token＝凭启动令牌进来之后同意。 留空表示这行记录说不出是谁点的，此时会在下次登录之后再请使用者确认一次。 4.4.0 及更早的版本在登录之前就让人点同意，写下的正是这种记录—— 那时任何能连上控制台端口的程序都写得下它，因此它证明不了使用者本人确实看过。
 novabot.core.config-ui.agreement.accepted-version|java.lang.Integer|0|已同意的协议版本号 0 表示尚未同意过。协议文案改版时版本号会加一，届时此处记着的旧版本即刻失效， 使用者会被要求重新确认一次——否则改了文案等于没改，没有人会再看到它。
 novabot.core.config-ui.allow-ips|java.util.List<java.lang.String>|<null>|允许访问配置界面的来源 IP 白名单，支持精确 IP 与 CIDR 网段 配置界面可修改推送目标并读取运行状态，权限高于推送接口，默认仅放行本机回环地址。
 novabot.core.config-ui.auth.idle-hours|java.lang.Integer|12|登录会话的闲置超时，单位：小时 多久没有操作即自动退出。管的是在别人的设备上登录后忘记退出这类情形。
 novabot.core.config-ui.auth.lockout-minutes|java.lang.Integer|15|首次锁定的时长，单位：分钟。反复触发时逐次翻倍
 novabot.core.config-ui.auth.max-failures|java.lang.Integer|5|连续登录失败多少次后锁定该来源 IP
-novabot.core.config-ui.auth.operator-token|java.lang.Boolean|false|是否保留「忘记口令」的启动令牌通道 打开之后，启用口令登录的实例在启动日志里仍会打印一个带令牌的地址， 用它可以绕过口令与二次验证直接进入。 ⚠️ 默认关闭，理由有三： 它绕过二次验证——开着它，TOTP 的保护上限就是这个令牌的保密程度 令牌走地址栏，会进反向代理的访问日志。2026-08-13 在生产的 nginx 归档里实测到 82 行含 token= 若日后把别的服务挂在这套会话之后（如经 auth_request 代理 机器人程序的 WebUI），这个后门会同时成为那些服务的后门 反过来的默认值曾经也有它的道理——忘记口令时这是唯一不必改配置重启就能进去的路， 默认关掉像是把人锁在门外。但那道门本来就开得着：把这一项改成 true 重启即可，启动日志随即打印那个地址，进去改完口令再改回来。 权衡因此是「忘记口令的那一次多重启一遍」对「每一台设了口令的实例长年带着一个 等同于口令的后门」，而后者是常态、且开着这件事没有任何现象。 关闭时启动日志不打印那个地址——打印一个不管用的地址比不打印更让人困惑， 但会打印一行说明，写清怎么把它临时打开。
-novabot.core.config-ui.auth.password|java.lang.String||登录口令 留空表示不启用口令登录。可以直接填明文，启动时会哈希后使用， 同时在日志里输出可替换过去的哈希串——填了明文就意味着看得到配置文件的人也就有了口令。 改完立即生效，不必重启：这台机器的第一把口令一定是在运行期设下的， 而「设了口令但要等重启才认」的那段时间里，界面说已上锁而门还开着。
+novabot.core.config-ui.auth.operator-token|java.lang.Boolean|false|是否保留「忘记密码」的启动令牌通道 打开之后，启用密码登录的实例在启动日志里仍会打印一个带令牌的地址， 用它可以绕过密码与二次验证直接进入。 ⚠️ 默认关闭，理由有三： 它绕过二次验证——开着它，TOTP 的保护上限就是这个令牌的保密程度 令牌走地址栏，会进反向代理的访问日志。2026-08-13 在生产的 nginx 归档里实测到 82 行含 token= 若日后把别的服务挂在这套会话之后（如经 auth_request 代理 机器人程序的 WebUI），这个后门会同时成为那些服务的后门 反过来的默认值曾经也有它的道理——忘记密码时这是唯一不必改配置重启就能进去的路， 默认关掉像是把人锁在门外。但那道门本来就开得着：把这一项改成 true 重启即可，启动日志随即打印那个地址，进去改完密码再改回来。 权衡因此是「忘记密码的那一次多重启一遍」对「每一台设了密码的实例长年带着一个 等同于密码的后门」，而后者是常态、且开着这件事没有任何现象。 关闭时启动日志不打印那个地址——打印一个不管用的地址比不打印更让人困惑， 但会打印一行说明，写清怎么把它临时打开。
+novabot.core.config-ui.auth.password|java.lang.String||登录密码 留空表示不启用密码登录。可以直接填明文，启动时会哈希后使用， 同时在日志里输出可替换过去的哈希串——填了明文就意味着看得到配置文件的人也就有了密码。 改完立即生效，不必重启：这台机器的第一把密码一定是在运行期设下的， 而「设了密码但要等重启才认」的那段时间里，界面说已上锁而门还开着。
 novabot.core.config-ui.auth.session-hours|java.lang.Integer|168|登录会话的有效期，单位：小时 从登录起算的绝对上限，到点必须重新登录。它约束的是「会话 Cookie 一旦泄漏还能被用多久」， 因此不随使用而顺延。
-novabot.core.config-ui.auth.totp-secret|java.lang.String||二次验证密钥（TOTP，Base32） 留空表示尚未绑定验证器，登录时只校验口令。通过界面上的绑定引导扫码后， 密钥会自动写回本配置项。 密钥必须以明文保存，因此配置文件的权限要收紧到仅属主可读。
-novabot.core.config-ui.auth.totp|java.lang.Boolean|true|是否要求二次验证 默认要求。设了口令却没绑定验证器时，界面会持续提示绑定——只有口令的面板 一旦开到公网，其安全性就完全押在这一个口令上，而口令是会被撞库、被键盘记录、 被肩窥的。真的不想要二次验证时把这一项改成 false，那是一个需要写下来的决定。 改完立即生效，不必重启：界面上那个开关本来就是当场生效的， 这一行此前标着「需重启」，于是同一件事在界面上有两种说法。
+novabot.core.config-ui.auth.totp-secret|java.lang.String||二次验证密钥（TOTP，Base32） 留空表示尚未绑定验证器，登录时只校验密码。通过界面上的绑定引导扫码后， 密钥会自动写回本配置项。 密钥必须以明文保存，因此配置文件的权限要收紧到仅属主可读。
+novabot.core.config-ui.auth.totp|java.lang.Boolean|true|是否要求二次验证 默认要求。设了密码却没绑定验证器时，界面会持续提示绑定——只有密码的面板 一旦开到公网，其安全性就完全押在这一个密码上，而密码是会被撞库、被键盘记录、 被肩窥的。真的不想要二次验证时把这一项改成 false，那是一个需要写下来的决定。 改完立即生效，不必重启：界面上那个开关本来就是当场生效的， 这一行此前标着「需重启」，于是同一件事在界面上有两种说法。
 novabot.core.config-ui.backup-keep|java.lang.Integer|10|配置文件备份保留份数 每次保存 application.yml 或主播推送配置时都会另留一份带时间的备份。 超出这个数目的旧备份会被删掉。默认 10 份，可在 1 到 100 之间改。改完立即生效，不必重启。
 novabot.core.config-ui.enabled|java.lang.Boolean|true|是否启用配置界面
 novabot.core.config-ui.token|java.lang.String||配置界面访问令牌 留空时每次启动自动生成一个随机令牌并输出到日志。配合默认仅监听回环地址的设置， 单机部署无需任何配置即可安全使用；需要从其他机器访问时在此显式设置一个随机串。
@@ -64,7 +64,7 @@ novabot.core.push.quiet-end|java.lang.String||静音时段结束时间，格式 
 novabot.core.push.quiet-start|java.lang.String||静音时段开始时间，格式 HH:mm，与结束时间任一为空即视为不启用 半夜被机器人吵醒是这类通知产品被投诉最多的点，因此内置该能力而不是让使用者自行想办法。 改完立即生效，不必重启。
 novabot.core.sender|java.util.List<org.frostnova.nova.core.model.Sender>|<null>|非插件实现的推送平台配置
 novabot.core.timeline.retention-days|java.lang.Integer|14|事件时间线的保留天数，含当天；设为 0 或负数表示不自动清理 时间线是排障线索而不是业务数据：两周之前「某条推送失败过」这件事， 已经没有人会再去查，留着只是让日志页越翻越长、磁盘越占越多。 要长期保存的场次数据在 sessions.jsonl 里，那一份不会被删。
-server.address|java.lang.String|127.0.0.1|只监听哪个地址。默认 127.0.0.1 表示只有本机连得上；改成 0.0.0.0 会把控制台与推送接口暴露到网络，此时务必配好反向代理、来源 IP 白名单与登录口令
+server.address|java.lang.String|127.0.0.1|只监听哪个地址。默认 127.0.0.1 表示只有本机连得上；改成 0.0.0.0 会把控制台与推送接口暴露到网络，此时务必配好反向代理、来源 IP 白名单与登录密码
 server.port|java.lang.Integer|7827|控制台与事件流共用的服务端口，默认 7827
 spring.data.redis.database|java.lang.Integer|0|Redis 库号，默认 0。与其他程序共用同一实例时可换一个库避免键冲突。改完即时生效，不用重启
 spring.data.redis.host|java.lang.String|<null>|累计数据存储的 Redis 地址，填了才有跨场次的累计数据。留空时本场数据完整可用，但「直播间总数据」「总数据排行榜」会明确提示不可用——那类数据随时间无限增长，放在文件里迟早撑不住。只需本机可达，切勿暴露到公网。填完即时生效，不用重启；Redis 中途挂了会自动降级为只有本场数据，连回来自己恢复

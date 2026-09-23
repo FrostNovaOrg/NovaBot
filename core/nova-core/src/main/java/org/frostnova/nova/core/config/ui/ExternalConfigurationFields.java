@@ -71,7 +71,7 @@ public final class ExternalConfigurationFields {
         put("server.address", "java.lang.String", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.RESTART,
                 "127.0.0.1", "监听地址", "只监听哪个地址。默认 127.0.0.1 表示只有本机连得上；"
                         + "改成 0.0.0.0 会把控制台与推送接口暴露到网络，"
-                        + "此时务必配好反向代理、来源 IP 白名单与登录口令");
+                        + "此时务必配好反向代理、来源 IP 白名单与登录密码");
     }
 
     /**
@@ -85,7 +85,7 @@ public final class ExternalConfigurationFields {
             "server.address", new ConfigurationDangerResolver.Danger("0.0.0.0",
                     "监听地址改成 0.0.0.0？",
                     "会把控制台与推送接口暴露到网络上，任何能连到这台机器的人都够得着。"
-                            + "没有配好反向代理、来源 IP 白名单与登录口令就别开。"));
+                            + "没有配好反向代理、来源 IP 白名单与登录密码就别开。"));
 
     /**
      * 这几项的重要程度与生效时机
