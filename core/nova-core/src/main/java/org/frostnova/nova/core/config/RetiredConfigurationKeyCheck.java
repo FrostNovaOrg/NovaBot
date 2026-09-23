@@ -43,6 +43,27 @@ public class RetiredConfigurationKeyCheck {
     static {
         RETIRED.put("starbot.core.command.prefix",
                 "命令不再靠前缀触发：群里 @ 机器人后接命令名，私聊直接发命令名。这一行已不起作用，可以删掉");
+        RETIRED.put("novabot.core.command.prefix",
+                "命令不再靠前缀触发：群里 @ 机器人后接命令名，私聊直接发命令名。这一行已不起作用，可以删掉");
+    }
+
+    /**
+     * 5.3 挪过位的三节：根键改成 {@code novabot:} 后仍写在旧位置的节
+     * <p>
+     * 旧前缀 → [挪到哪，叶名怎么改（叶名不变时是空串）]。
+     * 现码没有任何兼容读法，写在旧位置就静默不读——告警收件人、NapCat 代登录、
+     * 事件流设置会悄悄落回默认值，启动却不响。这里只提醒，不替使用者改配置文件。
+     */
+    private static final Map<String, String[]> MOVED_SECTIONS = new LinkedHashMap<>();
+
+    static {
+        MOVED_SECTIONS.put("novabot.core.alert.qq-", new String[]{
+                "novabot.adapter.onebot.alert.",
+                "叶名 qq-platform 改 platform、qq-type 改 type、qq-num 改 num"});
+        MOVED_SECTIONS.put("novabot.core.config-ui.napcat.", new String[]{
+                "novabot.adapter.onebot.napcat.", ""});
+        MOVED_SECTIONS.put("novabot.bilibili.event-stream.", new String[]{
+                "novabot.core.event-stream.", ""});
     }
 
     private final Environment environment;
@@ -60,6 +81,49 @@ public class RetiredConfigurationKeyCheck {
             }
         }
         legacyRootHint(environment).ifPresent(log::warn);
+        warnMovedSections();
+    }
+
+    /**
+     * 5.3 挪过位的三节还写在旧位置时，每节给使用者的那一句话
+     * <p>
+     * 扫法照 {@link #legacyRootHint}：遍历可枚举属性源、去重计数、只数不贴键与值；
+     * 值只用来认出开关，开关不算口令。每节至多一行。
+     */
+    private void warnMovedSections() {
+        if (!(environment instanceof ConfigurableEnvironment configurable)) {
+            return;
+        }
+        for (Map.Entry<String, String[]> section : MOVED_SECTIONS.entrySet()) {
+            String oldPrefix = section.getKey();
+            String newPrefix = section.getValue()[0];
+            String renameNote = section.getValue()[1];
+            Set<String> names = new HashSet<>();
+            boolean secret = false;
+            for (PropertySource<?> source : configurable.getPropertySources()) {
+                if (!(source instanceof EnumerablePropertySource<?> enumerable)) {
+                    continue;
+                }
+                for (String name : enumerable.getPropertyNames()) {
+                    if (!name.startsWith(oldPrefix)) {
+                        continue;
+                    }
+                    names.add(name);
+                    String value = String.valueOf(source.getProperty(name));
+                    boolean flag = "true".equalsIgnoreCase(value) || "false".equalsIgnoreCase(value);
+                    secret |= SensitiveFields.isSensitive(name, flag ? "java.lang.Boolean" : null);
+                }
+            }
+            if (names.isEmpty()) {
+                continue;
+            }
+            log.warn("配置里有 {} 项写在 {} 下（旧位置）。这一节已经挪到 {}，"
+                            + "写在旧位置的键没有被读取，里面的设置都没有生效。"
+                            + "请手工挪到新位置{}，改完重启{}",
+                    names.size(), oldPrefix, newPrefix,
+                    renameNote.isEmpty() ? "" : "（" + renameNote + "）",
+                    secret ? "；旧位置还留着口令类设置，改完请删掉" : "");
+        }
     }
 
     /**
