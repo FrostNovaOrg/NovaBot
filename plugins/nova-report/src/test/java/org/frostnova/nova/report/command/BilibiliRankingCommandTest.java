@@ -181,6 +181,26 @@ class BilibiliRankingCommandTest {
     }
 
     @Test
+    @DisplayName("用户查总数据排行榜（弹幕），有弹幕却认不出发送者时，得到的是缘由，而不是误导人的「还没有数据」")
+    void totalRankingExplainsWhenDanmuCountedButSenderUnknown() {
+        when(liveDataService.supportsTotalData()).thenReturn(true);
+        when(liveDataService.getTotalMetricUserCount(anyString(), anyLong(), anyString())).thenReturn(0);
+        when(liveDataService.getTotalMetric(anyString(), anyLong(), eq(BilibiliLiveMetric.DANMU_COUNT)))
+                .thenReturn(7.0);
+
+        AbstractDataSource dataSource = mock(AbstractDataSource.class);
+        when(dataSource.getUsers("bilibili")).thenReturn(List.of(streamer(STREAMER, "测试主播")));
+        BilibiliTotalRankingCommand total = new BilibiliTotalRankingCommand(
+                dataSource, mock(BilibiliStreamerChoice.class),
+                liveDataService, painter, revenueVisibility);
+
+        CommandReply reply = total.execute(context("弹幕"));
+
+        assertEquals("测试主播的直播间累计弹幕认不出发送者，没有排行", reply.content());
+        verify(painter, never()).paintRanking(any(), any(), anyInt(), any(), any());
+    }
+
+    @Test
     @DisplayName("第二页应从第 11 名起，且只含本页的人")
     void secondPageStartsAtEleven() {
         withRanking(23);

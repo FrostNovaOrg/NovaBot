@@ -103,6 +103,12 @@ class BilibiliRoomDataCommandTest {
         assertEquals("弹幕", danmuCardLabel(10, 0));
     }
 
+    @Test
+    @DisplayName("用户看直播间数据卡，人数大于 0 时，看得到「弹幕 · N 人参与」")
+    void danmuCardWritesParticipantCountWhenUsersGreaterThanZero() {
+        assertEquals("弹幕 · 4 人参与", danmuCardLabel(15, 4));
+    }
+
     private static String boxLabel(double boxProfit) {
         Fixture fixture = new Fixture(false, 1_700_000_000_000L, 1_700_000_090_000L, boxProfit);
         fixture.command.execute(context());
