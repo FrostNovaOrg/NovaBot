@@ -102,7 +102,9 @@ public abstract class BilibiliRoomDataCommand extends BilibiliScopedDataCommand 
 
         List<BilibiliDataQueryPainter.DataCard> cards = new ArrayList<>();
         if (danmu > 0) {
-            cards.add(card(String.valueOf(danmu), "弹幕 · " + danmuUsers + " 人参与"));
+            // 同报告卡片：匿名模式认不出发送者时不写「0 人参与」
+            cards.add(card(String.valueOf(danmu),
+                    danmuUsers > 0 ? "弹幕 · " + danmuUsers + " 人参与" : "弹幕"));
         }
         if (giftValue > 0) {
             cards.add(revenue

@@ -367,7 +367,7 @@ public class BilibiliLiveReportPainter {
 
         long danmu = count(platform, uid, BilibiliLiveMetric.DANMU_COUNT);
         int danmuUsers = liveDataService.getLiveMetricUserCount(platform, uid, BilibiliLiveMetric.DANMU_USERS);
-        text.append("\n弹幕 ").append(danmu).append(" 条 · ").append(danmuUsers).append(" 人参与");
+        text.append("\n弹幕 ").append(danmu).append(" 条").append(danmuUsersSuffix(danmu, danmuUsers));
 
         long boxes = count(platform, uid, BilibiliLiveMetric.BOX_COUNT);
         long superChats = count(platform, uid, BilibiliLiveMetric.SUPER_CHAT_COUNT);
@@ -658,7 +658,7 @@ public class BilibiliLiveReportPainter {
         boolean revenue = options.isShowRevenue();
 
         List<Card> cards = new ArrayList<>();
-        cards.add(new Card(String.valueOf(danmu), "弹幕 · " + danmuUsers + " 人参与"));
+        cards.add(new Card(String.valueOf(danmu), "弹幕" + danmuUsersSuffix(danmu, danmuUsers)));
         if (giftValue > 0 || giftUsers > 0) {
             cards.add(revenue
                     ? new Card("¥" + yuan(giftValue), "礼物 · " + giftUsers + " 人送出")
@@ -1715,6 +1715,19 @@ public class BilibiliLiveReportPainter {
      */
     private long count(String platform, Long uid, String metric) {
         return Math.round(liveDataService.getLiveMetric(platform, uid, metric));
+    }
+
+    /**
+     * 弹幕条数后面的「· N 人参与」后缀。
+     * <p>
+     * 匿名模式下发送者 uid 全是 0、不计人数：条数在而人数为 0 时不写「0 人参与」，
+     * 免得有弹幕却读起来像没人说话。图片卡与文字版共用这一处，免得两处说法分叉。
+     */
+    private String danmuUsersSuffix(long danmu, int danmuUsers) {
+        if (danmu > 0 && danmuUsers == 0) {
+            return "";
+        }
+        return " · " + danmuUsers + " 人参与";
     }
 
     /**

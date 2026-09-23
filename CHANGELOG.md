@@ -10,6 +10,8 @@
 
 ### 变更
 
+- 匿名模式下有弹幕却认不出发送者时，下播报告卡片、文字版与「直播间数据」不再写「0 人参与」，只写弹幕条数；「数据排行榜 弹幕」改为回「认不出发送者，没有排行」，不再说「还没有数据」
+
 ### 修复
 
 - 写在旧位置的三节设置（`novabot.core.alert.qq-*`、`novabot.core.config-ui.napcat.*`、`novabot.bilibili.event-stream.*`）与 `novabot.core.command.prefix`，启动时会提示没被读取、该挪到哪

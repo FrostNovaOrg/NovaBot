@@ -93,6 +93,14 @@ public abstract class BilibiliRankingCommand extends BilibiliScopedDataCommand {
 
         int total = scope.userCount(liveDataService, platform, streamer.getUid(), board.metric);
         if (total == 0) {
+            // 匿名模式下弹幕发送者 uid 全是 0、不计人数：有条数却认不出人时说清缘由，
+            // 别让人以为本场没有弹幕。别的榜不走这一句
+            if (board == Board.DANMU
+                    && Math.round(scope.metric(liveDataService, platform, streamer.getUid(),
+                            BilibiliLiveMetric.DANMU_COUNT)) > 0) {
+                return CommandReply.of(nameOf(streamer) + "的直播间" + scope.getLabel()
+                        + board.title + "认不出发送者，没有排行");
+            }
             return CommandReply.of(nameOf(streamer) + "的直播间还没有" + scope.getLabel() + board.title + "数据");
         }
 

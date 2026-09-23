@@ -1,6 +1,7 @@
 package org.frostnova.nova.report.command;
 
 import org.frostnova.nova.bilibili.command.BilibiliStreamerChoice;
+import org.frostnova.nova.bilibili.model.BilibiliLiveMetric;
 import org.frostnova.nova.report.painter.BilibiliDataQueryPainter;
 import org.frostnova.nova.core.command.CommandContext;
 import org.frostnova.nova.core.command.CommandReply;
@@ -151,6 +152,31 @@ class BilibiliRankingCommandTest {
         CommandReply reply = command.execute(context("礼物"));
 
         assertTrue(reply.content().contains("还没有"));
+        verify(painter, never()).paintRanking(any(), any(), anyInt(), any(), any());
+    }
+
+    @Test
+    @DisplayName("有弹幕却认不出发送者时，回缘由而非「还没有数据」")
+    void repliesUnidentifiedWhenDanmuHasCountButNoUsers() {
+        when(liveDataService.getLiveMetricUserCount(anyString(), anyLong(), anyString())).thenReturn(0);
+        when(liveDataService.getLiveMetric(anyString(), anyLong(), eq(BilibiliLiveMetric.DANMU_COUNT)))
+                .thenReturn(7.0);
+
+        CommandReply reply = command.execute(context("弹幕"));
+
+        assertTrue(reply.content().contains("认不出发送者"), reply.content());
+        assertFalse(reply.content().contains("还没有"), reply.content());
+        verify(painter, never()).paintRanking(any(), any(), anyInt(), any(), any());
+    }
+
+    @Test
+    @DisplayName("弹幕条数也为 0 时仍回「还没有…数据」")
+    void repliesNoDataWhenDanmuHasNeitherCountNorUsers() {
+        when(liveDataService.getLiveMetricUserCount(anyString(), anyLong(), anyString())).thenReturn(0);
+
+        CommandReply reply = command.execute(context("弹幕"));
+
+        assertTrue(reply.content().contains("还没有"), reply.content());
         verify(painter, never()).paintRanking(any(), any(), anyInt(), any(), any());
     }
 
