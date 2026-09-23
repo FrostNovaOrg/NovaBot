@@ -9,6 +9,7 @@
     python -c "import cairosvg; cairosvg.svg2png(url='social-preview.svg', \
       write_to='social-preview.png', output_width=1280, output_height=640)"
 -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">
   <defs>
     <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#7C5CFF"/>

@@ -32,7 +32,7 @@ NovaBot 面向**中小型公会、个人势主播及其运营人员**，用于**
 | 你需要准备 | 说明 |
 |---|---|
 | 一台能长期开机的机器 | Linux / macOS / Windows 均可。**内存备到 1 GB 以上**，512 MB 不够用，实测见[性能实测](performance.md) |
-| Java 17 或更高版本 | 一键安装脚本会自动装 |
+| JDK 17 | 本工程只在 17 上验过，更高版本构建脚本会停下。没有 Java 或低于 17 时，一键安装会装 17 |
 | 一个 OneBot 实现 | 推荐 [NapCat](https://github.com/NapNeko/NapCatQQ)，它负责真正登录 QQ 并收发消息 |
 | 一个哔哩哔哩账号 | **建议用小号**。用于读取动态流，原因见 [SECURITY.md](../SECURITY.md) |
 
@@ -58,13 +58,19 @@ NovaBot 自己不登录 QQ，只是把消息交给 OneBot 实现去发。所以�
 
 ## 2. 安装
 
+源码须用 `git clone` 取得（`https://github.com/FrostNovaOrg/NovaBot.git`）。下载的源码压缩包不是 git 仓库，构建脚本会停下，并提示「这里不是 git 仓库，无法记录构建来源。」
+
 ### Linux 一键安装
 
 ```bash
+git clone https://github.com/FrostNovaOrg/NovaBot.git
+cd NovaBot
 ./install.sh
 ```
 
 脚本会依次完成：检查并安装 Java 17、构建、安装到 `/opt/starbot`、生成配置、创建 systemd 服务。
+
+机器上已经有更高版本的 JDK 时，一键安装会在构建那一步停下。先装 JDK 17，并让它排在 PATH 最前，再重新运行。只改 `JAVA_HOME`、不改 PATH 不算数：构建脚本查的是 PATH 上的 `java`。
 
 可选参数：
 
@@ -85,6 +91,8 @@ sudo systemctl start novabot && sudo journalctl -u novabot -f
 ```bash
 ./build.sh
 ```
+
+不带参数会跑测试，需要 Node 22。只出包、不跑测试：`./build.sh --skip-tests`。
 
 产物在 `dist/build/`，把整个目录拷到目标机器，然后：
 
@@ -733,14 +741,36 @@ novabot:
 用 `install.sh` 或容器部署时下面这些都由脚本处理，手工升级才需要照做：
 
 1. 停止服务
-2. **备份 `application.yml`、`datasource.json`、`cookies.json`、`cookies.key`**
-3. 用新版本的产物替换 `NovaBot.jar` 与 `lib/`
-4. `plugins/` **不要整个替换**——里面可能有你自己放的第三方插件，覆盖等于把它们卸载。
-   只替换内置的那三个插件，并删掉它们的旧版本文件（同一插件留下两个版本会被同时加载）
+2. **备份 `application.yml`、`datasource.json`、`cookies.json`、`cookies.key`**。登录凭据默认加密后仍写在 `cookies.json`，密钥在 `cookies.key`，没有另存一份密文文件。若旁边还有明文迁成加密时留下的 `cookies.json.plain.bak`，一并备份。
+3. 用新版本的产物整个换掉 `NovaBot.jar`、`lib/` 与 `plugins-lib/`
+4. `plugins/` **不要整个替换**——里面可能有你自己放的第三方插件。只按名字换下面五个内置插件，并删掉同名插件的旧版本文件（启动时 `plugins/` 里每个 jar 都会加载，留下两个版本会一起装上）。第三方插件不动。
+   - `nova-onebot-adapter-<版本>.jar`
+   - `nova-onebot-adapter-napcat-extension-<版本>.jar`
+   - `nova-bilibili-<版本>.jar`
+   - `nova-console-<版本>.jar`
+   - `nova-report-<版本>.jar`
 5. 保留原有的 `application.yml` 与 `datasource.json`
-6. 启动，看日志有没有「未知配置项」之类的告警
+6. 启动，看日志有没有告警
 
-配置项若有删改，构建时的一致性测试会拦住，因此升级后配置一般可以直接沿用。
+从 **5.4 及以后**升级，配置一般可以直接沿用。
+
+从 **5.3 及更早**升级，旧根键 `starbot:` 下的设置不再读取。启动日志的 WARN 会说明：程序不会替你改配置文件，请手工把它们挪到新根键下（还没有新根键的，把 `starbot:` 改名即可），改完重启。最短对照：
+
+```yaml
+# 改前（不会被读取）
+starbot:
+  bilibili:
+    account:
+      cookie-path: cookies.json
+
+# 改后
+novabot:
+  bilibili:
+    account:
+      cookie-path: cookies.json
+```
+
+个别整节挪过位置的，同一份启动日志会点名挪到哪。
 
 ### 从上游 StarBot 3.0-beta8 迁移
 
@@ -754,7 +784,7 @@ novabot:
 { "handler": "org.frostnova.nova.bilibili.handler.BilibiliLiveOnPushHandler" }
 ```
 
-其余配置键名保持兼容，`cookies.json` 也可直接沿用（首次启动会自动迁移为加密存储）。
+配置根键改成了 `novabot:`，旧的 `starbot:` 不读，要手工改名（对照见上一节）。个别整节挪了位置的，启动日志会点名挪到哪。`cookies.json` 可直接沿用：加密存储默认开着，文件若仍是明文，首次启动会迁成加密，并把原文件备份为 `cookies.json.plain.bak`。
 
 ### 凭据会不会掉
 

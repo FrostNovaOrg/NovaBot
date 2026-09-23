@@ -6,7 +6,7 @@
 
 ## 开发环境
 
-需要 JDK 17 或更高版本与 Maven 3.9 或更高版本。
+需要 JDK 17 与 Maven 3.9 或更高版本。JDK 高于 17 时 `./build.sh` 会停下：本工程只在 Java 17 上验过，高版本上 Lombok 会静默失效，报错会伪装成一串「cannot find symbol: variable log」，指向的位置与真实原因无关。请把 JDK 17 的 `bin` 放在 PATH 最前（只设 `JAVA_HOME` 不算数）。确要在未验版本上试，设置 `NOVABOT_ALLOW_UNTESTED_JDK=1`。
 
 ```bash
 ./build.sh
