@@ -870,7 +870,7 @@ public class ConfigUiAuthService {
         }
 
         static LoginResult lockedOut(Duration remaining) {
-            long minutes = Math.max(1, remaining.toMinutes());
+            long minutes = LockoutMinutes.toShow(remaining);
             return new LoginResult(null, "登录失败次数过多，请在 " + minutes + " 分钟后重试", remaining);
         }
 
