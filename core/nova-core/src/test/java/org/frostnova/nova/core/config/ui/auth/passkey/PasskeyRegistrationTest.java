@@ -148,12 +148,12 @@ class PasskeyRegistrationTest extends PasskeyTestSupport {
         TestAuthenticator authenticator = new TestAuthenticator(TestAuthenticator.ES256);
         register(authenticator, "丢了的那台", 3);
 
-        ResponseEntity<JSONObject> removed = controller.delete(authenticator.credentialId());
+        ResponseEntity<JSONObject> removed = controller.delete(authenticator.credentialId(), request());
         assertEquals(200, removed.getStatusCode().value());
         assertEquals(0, controller.list(request()).getJSONArray("passkeys").size());
 
         // 删第二次要如实说「已经不在了」：回一句「成功」的话，
         // 使用者会以为自己刚刚撤销了一台设备，而实际上什么都没发生
-        assertEquals(404, controller.delete(authenticator.credentialId()).getStatusCode().value());
+        assertEquals(404, controller.delete(authenticator.credentialId(), request()).getStatusCode().value());
     }
 }

@@ -562,7 +562,7 @@ class ConfigUiAuthServiceTest {
             super(id, "csrf-" + id,
                     Instant.parse("2026-08-20T00:00:00Z"),
                     Instant.parse("2099-01-01T00:00:00Z"),
-                    "1.2.3.4", Channel.PASSWORD);
+                    "1.2.3.4", Channel.PASSWORD, null);
         }
 
         @Override
