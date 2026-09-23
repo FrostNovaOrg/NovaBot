@@ -5,6 +5,7 @@ import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.auth.passkey.PasskeyRelyingParty;
 import org.frostnova.nova.core.config.ui.auth.passkey.PasskeyService;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.Optional;
 
 /**
@@ -141,25 +143,33 @@ public class ConfigUiPasskeyController {
     }
 
     /**
-     * 删掉一把
+     * 删掉一把，并注销用它登录的其他会话
      * <p>
      * 删不存在的那一把回 404 而不是「成功」：使用者点的是列表里看得见的一条，
      * 删完却什么都没变的话，他会以为自己撤销了一台已经丢掉的设备。
+     * <p>
+     * 连带注销只算<b>别的</b>会话：发起删除的那一把照常用，删的人在场、刚过了登录，
+     * 不把自己踢下线。回包文案照实说注销了几个，前端照回包显示。
      * @param id 凭据 ID
+     * @param request 用来认发起删除的会话
      * @return 删除结果
      */
     @DeleteMapping("/passkeys/{id}")
-    public ResponseEntity<JSONObject> delete(@PathVariable String id) {
+    public ResponseEntity<JSONObject> delete(@PathVariable String id, HttpServletRequest request) {
         JSONObject result = new JSONObject();
 
-        if (!passkeyService.delete(id)) {
+        PasskeyService.PasskeyDeletion deletion = passkeyService.delete(id, sessionId(request));
+        if (!deletion.removed()) {
             result.put("success", false);
             result.put("message", "这把通行密钥已经不在了，可能刚在别处删过");
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(result);
         }
 
         result.put("success", true);
-        result.put("message", "已删除。这台设备之后只能用密码登录");
+        result.put("message", deletion.revokedSessions() > 0
+                ? "已删除。用这把钥匙登录的其他 " + deletion.revokedSessions()
+                        + " 个会话已退出，这台设备之后只能用密码登录"
+                : "已删除。这台设备之后只能用密码登录");
         return ResponseEntity.ok(result);
     }
 
@@ -177,5 +187,19 @@ public class ConfigUiPasskeyController {
                 .path(ConfigUiController.BASE_PATH)
                 .maxAge(Duration.ofHours(Math.max(1, properties.getSessionHours())))
                 .build();
+    }
+
+    /**
+     * 回包里那枚会话 Cookie 的值，没带时为 null
+     */
+    private static String sessionId(HttpServletRequest request) {
+        if (request.getCookies() == null) {
+            return null;
+        }
+        return Arrays.stream(request.getCookies())
+                .filter(c -> ConfigUiSecurityFilter.SESSION_COOKIE.equals(c.getName()))
+                .findFirst()
+                .map(Cookie::getValue)
+                .orElse(null);
     }
 }

@@ -560,9 +560,22 @@ public class ConfigUiAuthService {
      * @param clientIp 来源 IP
      * @return 新会话
      */
-    public ConfigUiSession issueForPasskey(String clientIp) {
+    public ConfigUiSession issueForPasskey(String clientIp, String credentialId) {
         throttle.recordSuccess(clientIp);
-        return sessions.issue(clientIp, clock.get(), ConfigUiSession.Channel.PASSKEY);
+        return sessions.issue(clientIp, clock.get(), ConfigUiSession.Channel.PASSKEY, credentialId);
+    }
+
+    /**
+     * 注销由某一把通行密钥签发的会话
+     * <p>
+     * 删钥匙时连带这一手：不然手机丢了删了也白删。{@code keepSessionId} 为发起删除的那把会话，
+     * 它照常用——删的人在场、刚过了登录，不把自己踢下线。
+     * @param credentialId 凭据 ID
+     * @param keepSessionId 留下的会话标识；认不出时传 null
+     * @return 被注销的会话数
+     */
+    public int logoutPasskeySessions(String credentialId, String keepSessionId) {
+        return sessions.revokeByPasskey(credentialId, keepSessionId);
     }
 
     /**

@@ -356,8 +356,17 @@ public class PasskeyService {
                 throw new IllegalArgumentException("凭据已更新或已撤销");
             }
 
+            ConfigUiSession session = authService.issueForPasskey(clientIp, credential.id());
+            // 签发后再核一次钥匙还在不在：删钥匙与登录是两趟并发的请求，那条缝就开在
+            // 「计数器刚更新完、会话还没签出来」之间。不核的话，签出来的会话带着已删钥匙，
+            // 而删钥那一刻的连带注销早已过去，它就成了一把漏网的会话。
+            if (store.find(credential.id()).isEmpty()) {
+                authService.logout(session.getId());
+                throw new IllegalArgumentException("凭据已更新或已撤销");
+            }
+
             log.info("配置界面: 已用通行密钥「{}」登录, 来源: {}", credential.name(), clientIp);
-            return PasskeyLogin.success(authService.issueForPasskey(clientIp));
+            return PasskeyLogin.success(session);
         } catch (Exception e) {
             authService.recordFailedAttempt(clientIp);
             log.warn("配置界面通行密钥登录失败, 来源: {}, 原因: {}", clientIp, e.getMessage());
@@ -376,16 +385,23 @@ public class PasskeyService {
     }
 
     /**
-     * 删掉一把
+     * 删掉一把，并注销用它签发的会话
+     * <p>
+     * 删完钥匙再把会话一并作废：手机丢了，主人删掉手机那把钥匙，手机上已经登着的控制台
+     * 必须当即进不来——不然删了也白删。
      * @param id 凭据 ID
-     * @return 原本是否存在
+     * @param keepSessionId 发起删除的会话标识，留下；认不出时传 null
+     * @return 删除结果
      */
-    public boolean delete(String id) {
+    public PasskeyDeletion delete(String id, String keepSessionId) {
         boolean removed = store.remove(id);
-        if (removed) {
-            log.info("配置界面已删除一把通行密钥: {}", id);
+        if (!removed) {
+            return new PasskeyDeletion(false, 0);
         }
-        return removed;
+
+        int revokedSessions = authService.logoutPasskeySessions(id, keepSessionId);
+        log.info("配置界面已删除一把通行密钥: {}, 连带注销会话 {} 把", id, revokedSessions);
+        return new PasskeyDeletion(true, revokedSessions);
     }
 
     /**
@@ -535,5 +551,13 @@ public class PasskeyService {
         static PasskeyLogin failure(String message) {
             return new PasskeyLogin(null, message);
         }
+    }
+
+    /**
+     * 删一把钥匙的结果
+     * @param removed 原本是否存在
+     * @param revokedSessions 连带注销的会话数
+     */
+    public record PasskeyDeletion(boolean removed, int revokedSessions) {
     }
 }

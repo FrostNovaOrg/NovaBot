@@ -56,6 +56,19 @@ public class ConfigUiSession {
     private final Channel channel;
 
     /**
+     * 签发这把会话的通行密钥凭据标识
+     * <p>
+     * 记在会话上而不是现推：删钥匙与用会话是两次请求，删的那一刻手上只有一枚凭据 ID，
+     * 要答得出「哪些会话是这把钥匙换来的」只能靠当初签发时记下的这一位。
+     * 手机丢了、主人把手机那把钥匙删掉时，正是靠它把手机上已经登着的会话一并作废——
+     * 不记的话删了也白删。
+     * <p>
+     * 只有 {@link Channel#PASSKEY} 那条路有值，其余通道为 null。换会话时随行（见 {@link #renew}）：
+     * 换标识不改变「这把会话当初是谁换来的」。
+     */
+    private final String passkeyCredentialId;
+
+    /**
      * 最近一次使用时刻，用于闲置超时
      */
     private volatile Instant lastSeenAt;
@@ -92,13 +105,15 @@ public class ConfigUiSession {
     @Getter(lombok.AccessLevel.NONE)
     private final List<String> pendingSecrets = new ArrayList<>();
 
-    ConfigUiSession(String id, String csrfToken, Instant issuedAt, Instant expiresAt, String clientIp, Channel channel) {
+    ConfigUiSession(String id, String csrfToken, Instant issuedAt, Instant expiresAt, String clientIp, Channel channel,
+                    String passkeyCredentialId) {
         this.id = id;
         this.csrfToken = csrfToken;
         this.issuedAt = issuedAt;
         this.expiresAt = expiresAt;
         this.clientIp = clientIp;
         this.channel = channel;
+        this.passkeyCredentialId = passkeyCredentialId;
         this.lastSeenAt = issuedAt;
     }
 
@@ -152,17 +167,20 @@ public class ConfigUiSession {
     /**
      * 同一次登录换一把新标识与新 CSRF 令牌
      * <p>
-     * 换的只有这两个值：登录时刻、绝对期限、来源、通道、「已按掉绑定提示」与旧口令的连错次数一概照旧。
-     * <b>待绑密钥不随行</b>：换会话多半正要绑上或刚绑上，带着旧的那几把只会让别人先读走的继续算数。
+     * 换的只有这两个值：登录时刻、绝对期限、来源、通道、「已按掉绑定提示」、旧口令的连错次数
+     * 与通行密钥标识一概照旧。<b>待绑密钥不随行</b>：换会话多半正要绑上或刚绑上，
+     * 带着旧的那几把只会让别人先读走的继续算数。
      * 绝对期限若借此重算，被偷的会话每办成一件换会话的事就多活一轮；连错次数若借此清零，
      * 猜的人办成一件不要旧口令的事（比如绑验证器）就又白得几次再猜的机会。
+     * 通行密钥标识若不随行，换一把标识就躲开了删钥时的连带注销。
      * @param id 新标识
      * @param csrfToken 新 CSRF 令牌
      * @param now 当前时刻，记作最近一次使用
      * @return 新的那一把
      */
     synchronized ConfigUiSession renew(String id, String csrfToken, Instant now) {
-        ConfigUiSession renewed = new ConfigUiSession(id, csrfToken, issuedAt, expiresAt, clientIp, channel);
+        ConfigUiSession renewed = new ConfigUiSession(id, csrfToken, issuedAt, expiresAt, clientIp, channel,
+                passkeyCredentialId);
         renewed.lastSeenAt = now;
         renewed.totpSetupDismissed = totpSetupDismissed;
         renewed.passwordChecks = passwordChecks;

@@ -17,7 +17,6 @@ import org.springframework.mock.web.MockHttpServletRequest;
 
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.Optional;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -31,7 +30,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * 同一把钥匙、同一个计数，两路同时登录只能成一个
  * <p>
  * find 与写入之间若没有条件更新，两路都会看见旧计数、都会当成「往前走了」写回去。
- * 闸在 find 之后：两边都拿到同一份旧记录，再一起去登录，才能量到这条缝。
+ * 闸卡在写入前：两边都拿到同一份旧记录、都走到 updateIfSignCount 门口再一起进，
+ * 才能量到这条缝。
  */
 @DisplayName("通行密钥并发登录")
 class PasskeyConcurrentLoginTest {
@@ -47,8 +47,8 @@ class PasskeyConcurrentLoginTest {
         auth.setPassword(PasskeyTestSupport.PASSWORD);
         auth.setTotp(false);
 
-        CyclicBarrier afterFind = new CyclicBarrier(2);
-        BarrierAfterFindStore store = new BarrierAfterFindStore(new NovaStateStore(properties), afterFind);
+        CyclicBarrier beforeUpdate = new CyclicBarrier(2);
+        BarrierBeforeUpdateStore store = new BarrierBeforeUpdateStore(new NovaStateStore(properties), beforeUpdate);
         ConfigUiAuthService authService = new ConfigUiAuthService(auth,
                 new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(2)),
                 new LoginThrottle(auth.getMaxFailures(), Duration.ofMinutes(15)), null);
@@ -114,14 +114,20 @@ class PasskeyConcurrentLoginTest {
     }
 
     /**
-     * find 之后两边对齐，再让登录继续往下走，把「读完再写」那条缝敞开放出来
+     * 写入计数器之前两边对齐，再让写入继续往下走，把「读完再写」那条缝敞开放出来
+     * <p>
+     * 闸原先卡在 find 之后。登录路上签发完会话还会再 find 一次核钥匙还在不在
+     * （见 {@code PasskeyService#loginVerify}），那一趟也会撞进栅栏，而对家早已分出胜负走了，
+     * 于是胜者在栅栏上等到超时、两路都回了失败。改成卡在写入前：两路都必然走到
+     * {@link #updateIfSignCount}，同样量到「两边读到同一份旧计数再一起写」那条缝，
+     * 而多出来的那趟 find 不受影响。
      */
-    private static final class BarrierAfterFindStore extends PasskeyStore {
+    private static final class BarrierBeforeUpdateStore extends PasskeyStore {
         private final CyclicBarrier barrier;
 
         private volatile boolean armed;
 
-        private BarrierAfterFindStore(NovaStateStore state, CyclicBarrier barrier) {
+        private BarrierBeforeUpdateStore(NovaStateStore state, CyclicBarrier barrier) {
             super(state);
             this.barrier = barrier;
         }
@@ -135,17 +141,15 @@ class PasskeyConcurrentLoginTest {
         }
 
         @Override
-        public Optional<PasskeyCredential> find(String id) {
-            Optional<PasskeyCredential> found = super.find(id);
-            if (!armed) {
-                return found;
+        public boolean updateIfSignCount(String id, long expectedSignCount, PasskeyCredential credential) {
+            if (armed) {
+                try {
+                    barrier.await(5, TimeUnit.SECONDS);
+                } catch (Exception e) {
+                    throw new IllegalStateException(e);
+                }
             }
-            try {
-                barrier.await(5, TimeUnit.SECONDS);
-            } catch (Exception e) {
-                throw new IllegalStateException(e);
-            }
-            return found;
+            return super.updateIfSignCount(id, expectedSignCount, credential);
         }
     }
 }

@@ -55,11 +55,25 @@ public class ConfigUiSessionStore {
      * @return 新会话
      */
     public ConfigUiSession issue(String clientIp, Instant now, ConfigUiSession.Channel channel) {
+        return issue(clientIp, now, channel, null);
+    }
+
+    /**
+     * 签发一个新会话，并记下它是哪把通行密钥换来的
+     * @param clientIp 登录来源 IP
+     * @param now 当前时刻
+     * @param channel 这一把是从哪条通道换来的
+     * @param passkeyCredentialId 签发这把会话的通行密钥凭据标识；非通行密钥通道传 null
+     * @return 新会话
+     */
+    public ConfigUiSession issue(String clientIp, Instant now, ConfigUiSession.Channel channel,
+                                 String passkeyCredentialId) {
         sweep(now);
         evictOldestIfFull();
 
         ConfigUiSession session = new ConfigUiSession(
-                SecureToken.generate(), SecureToken.generate(), now, now.plus(ttl), clientIp, channel);
+                SecureToken.generate(), SecureToken.generate(), now, now.plus(ttl), clientIp, channel,
+                passkeyCredentialId);
         sessions.put(session.getId(), session);
 
         return session;
@@ -159,6 +173,33 @@ public class ConfigUiSessionStore {
 
         int before = sessions.size();
         sessions.keySet().removeIf(id -> !id.equals(keepId));
+        return before - sessions.size();
+    }
+
+    /**
+     * 注销由某一把通行密钥签发的会话
+     * <p>
+     * 删钥匙时用：手机丢了，主人把手机那把钥匙删掉，手机上已经登着的会话必须当即作废——
+     * 不然删了也白删。按会话上记着的凭据标识认人，连换过会话（rotate）的那一把也认得出：
+     * 换会话时标识随行（见 {@link ConfigUiSession#renew}）。
+     * <p>
+     * {@code keepId} 指认出的会话留下：删的人在场、刚过了登录，不把自己踢下线。
+     * {@code keepId} 为 null 或空白时<b>不留</b>——调用方认不出当前这一把时，宁可全收回来，
+     * 也不能把带着这把钥匙的会话漏在场上。与 {@link #revokeAllExcept} 的「认不出就不动刀」相反：
+     * 那里多注销会把刚办完的人踢掉，这里少注销会让丢掉的设备继续进得来。
+     * @param credentialId 通行密钥凭据标识；为空时什么也不注销
+     * @param keepId 留下的会话标识，认不出时传 null
+     * @return 被注销的会话数
+     */
+    public int revokeByPasskey(String credentialId, String keepId) {
+        if (credentialId == null || credentialId.isBlank()) {
+            return 0;
+        }
+
+        int before = sessions.size();
+        sessions.entrySet().removeIf(entry ->
+                credentialId.equals(entry.getValue().getPasskeyCredentialId())
+                        && (keepId == null || keepId.isBlank() || !entry.getKey().equals(keepId)));
         return before - sessions.size();
     }
 
