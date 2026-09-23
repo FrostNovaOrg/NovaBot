@@ -168,10 +168,10 @@ public class ReadOnlyTokenController {
      */
     private static String humanText(ConfigUiAuthService.Verdict verdict) {
         return switch (verdict) {
-            case BAD_CREDENTIALS -> "控制台口令或动态验证码不正确";
+            case BAD_CREDENTIALS -> "控制台密码或动态验证码不正确";
             case LOCKED_OUT -> "连续失败太多次，这个来源已被暂时锁定；锁定期内即使输对也会被拒";
             case BUSY -> "同时在校验的请求太多，请稍几秒再试";
-            case AUTH_DISABLED -> "这台机器没有设置控制台登录口令，没有可校验的凭据";
+            case AUTH_DISABLED -> "这台机器没有设置控制台登录密码，没有可校验的凭据";
             default -> throw new IllegalArgumentException("不该有第五种拒绝: " + verdict);
         };
     }

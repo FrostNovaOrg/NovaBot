@@ -41,12 +41,17 @@ export function togglePasswordReveal(state) {
  * 把算出来的显隐挂到一对输入框与按钮上。接上之后 button.dataset.revealBound 为 '1'。
  * @param input 口令框
  * @param button 显示／隐藏按钮
+ * @param noun 读屏念的名词，默认「密码」；签发口令页传「口令」、设置页机密行传该行标签名
  * @return {{setRevealed: function(boolean): void}} 需要从别处揭开时用（签发口令页剪贴板失败那一路）
  */
-export function bindPasswordReveal(input, button) {
+export function bindPasswordReveal(input, button, noun) {
   if (!input || !button) {
     return {setRevealed() {}};
   }
+
+  // 读屏要念出这一格管它叫什么。不传或传空就退回「密码」，
+  // 标签缺了不许念出 undefined
+  const word = noun || '密码';
 
   if (button.dataset) {
     button.dataset.revealBound = '1';
@@ -57,7 +62,7 @@ export function bindPasswordReveal(input, button) {
     input.type = state.inputType;
     button.textContent = state.buttonLabel;
     button.setAttribute('aria-pressed', state.revealed ? 'true' : 'false');
-    button.setAttribute('aria-label', state.buttonLabel + '口令');
+    button.setAttribute('aria-label', state.buttonLabel + word);
   };
 
   paint();
