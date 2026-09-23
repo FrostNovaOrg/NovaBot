@@ -1061,11 +1061,15 @@ public class ConfigUiController {
      * （见 {@link RuntimeConfigurationApplier}），并如实告诉界面剩下哪几项还欠一次重启。
      * <b>此前这里一律回「重启后生效」</b>，于是「暂停推送」这种当场就管用的项也被说成要重启，
      * 有人为此重启了整个程序——而重启会把正在采集的场次打断。
+     * <p>
+     * <b>只收设置页认得的键。</b>元数据里没登记过的名字整批拒绝（400，回包写明是哪个键）——
+     * 放过去就会在配置文件里凭空多一项，键名里再夹点结构字符还能改写文件本身。
+     * 认证四项另有一道规范名拦截：宽松写法、大小写、别名一律认出来，不许从这里改口令或开启动令牌通道。
      * @param body 待保存的键值
-     * @return 保存结果，含改动项数、其中需重启的项数与它们的键名
+     * @return 保存结果，含改动项数、其中需重启的项数与它们的键名；键名不认得时回 400
      */
     @PostMapping("/api/values")
-    public JSONObject save(@RequestBody Map<String, String> body) {
+    public ResponseEntity<JSONObject> save(@RequestBody Map<String, String> body) {
         JSONObject result = new JSONObject();
 
         // 界面拿到的机密项是占位值，原样送回来的就是没改过的。不剔除的话，
@@ -1074,18 +1078,28 @@ public class ConfigUiController {
         Map<String, String> types = metadataService.getKnownTypes();
         SensitiveFields.dropUnchanged(changes, name -> typeOf(types, name));
 
+        // 认证项这一道要看见送上来原样：先改写成登记名再比，宽松写法就当场变回精确名，
+        // 「按规范名拦」和「精确比较」会分不出来
         if (ConfigUiAuthService.containsDedicatedAuthKey(changes.keySet(), aliases())) {
             result.put("success", false);
             result.put("message", "登录密码和二次验证请到「登录与安全」里改；「忘记密码」的启动令牌通道这里也改不了——那个页面关得了、开不了，要开须改配置文件再重启");
-            return result;
+            return ResponseEntity.ok(result);
+        }
+
+        Map<String, String> normalized = normalizeToRegisteredKeys(changes, types);
+        if (normalized == null) {
+            String unknown = findUnknownKey(changes.keySet(), types);
+            result.put("success", false);
+            result.put("message", "设置页没有这一项：" + unknown + "，本批未保存");
+            return ResponseEntity.badRequest().body(result);
         }
 
         try {
-            List<String> changedKeys = fileService.write(changes);
+            List<String> changedKeys = fileService.write(normalized);
 
             // 只对真正落盘的那几个键动运行中的配置：送上来但值没变的项不该触发任何副作用
             Map<String, String> applied = new LinkedHashMap<>();
-            changedKeys.forEach(key -> applied.put(key, changes.get(key)));
+            changedKeys.forEach(key -> applied.put(key, normalized.get(key)));
             List<String> restartRequired = runtimeApplier.applyAndTrack(applied);
 
             int changed = changedKeys.size();
@@ -1102,7 +1116,51 @@ public class ConfigUiController {
             result.put("message", "保存失败: " + e.getMessage());
         }
 
-        return result;
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 把送上来的名字换成元数据里登记的那一个
+     * <p>
+     * 比较按 Spring 规范名（同段内忽略大小写与 {@code -}、{@code _}），所以界面或脚本写成
+     * {@code configUI} 也能对上 {@code config-ui}；落盘一律用登记名，与「写侧只会写现行键」同一条。
+     * @param changes 送上来原样
+     * @param types 元数据里的登记名到类型
+     * @return 登记名到取值；有一个不认得时为 {@code null}
+     */
+    private static Map<String, String> normalizeToRegisteredKeys(Map<String, String> changes, Map<String, String> types) {
+        Map<String, String> byCanonical = new LinkedHashMap<>();
+        for (String known : types.keySet()) {
+            byCanonical.putIfAbsent(ConfigUiAuthService.canonicalName(known), known);
+        }
+        Map<String, String> normalized = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : changes.entrySet()) {
+            String registered = byCanonical.get(ConfigUiAuthService.canonicalName(entry.getKey()));
+            if (registered == null) {
+                return null;
+            }
+            normalized.put(registered, entry.getValue());
+        }
+        return normalized;
+    }
+
+    /**
+     * 找出元数据里没登记过的那个键
+     * @param keys 送上来原样
+     * @param types 元数据里的登记名到类型
+     * @return 头一个不认得的键名；全认得时为 {@code null}
+     */
+    private static String findUnknownKey(Iterable<String> keys, Map<String, String> types) {
+        Map<String, String> byCanonical = new LinkedHashMap<>();
+        for (String known : types.keySet()) {
+            byCanonical.putIfAbsent(ConfigUiAuthService.canonicalName(known), known);
+        }
+        for (String key : keys) {
+            if (!byCanonical.containsKey(ConfigUiAuthService.canonicalName(key))) {
+                return key;
+            }
+        }
+        return null;
     }
 
     /**

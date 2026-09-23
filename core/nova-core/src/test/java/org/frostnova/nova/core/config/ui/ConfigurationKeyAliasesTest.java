@@ -27,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * 控制台读配置时对旧位置的兼容
@@ -111,8 +112,12 @@ class ConfigurationKeyAliasesTest {
         NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
 
+        // 通用保存只收元数据登记过的键，这里把保存要用的那把现行键登记进去
+        ConfigurationMetadataService metadata = mock(ConfigurationMetadataService.class);
+        when(metadata.getKnownTypes()).thenReturn(Map.of(CURRENT_KEY, "java.lang.Boolean"));
+
         controller = new ConfigUiController(
-                mock(ConfigurationMetadataService.class),
+                metadata,
                 new ConfigurationFileService(config),
                 properties,
                 mock(org.frostnova.nova.core.datasource.AbstractDataSource.class),
@@ -277,7 +282,7 @@ class ConfigurationKeyAliasesTest {
     void saveWritesCurrentKeyOnlyAndLeavesLegacyUntouched() throws IOException {
         start(LEGACY_ONLY);
 
-        JSONObject saved = controller.save(Map.of(CURRENT_KEY, "false"));
+        JSONObject saved = controller.save(Map.of(CURRENT_KEY, "false")).getBody();
         assertTrue(saved.getBooleanValue("success"), saved.getString("message"));
 
         String yaml = Files.readString(config, StandardCharsets.UTF_8);

@@ -181,7 +181,7 @@ class GenericConfigSaveMustNotChangeAuthWithoutReauthTest {
 
         Map<String, String> body = new LinkedHashMap<>();
         body.put(ConfigUiAuthService.PASSWORD_PROPERTY, NEW_PASSWORD);
-        JSONObject result = controller.save(body);
+        JSONObject result = controller.save(body).getBody();
 
         boolean newPasswordTook = doorAccepts(NEW_PASSWORD);
         boolean oldSessionAlive = authService.validate(session.getId()).isPresent();
@@ -204,7 +204,7 @@ class GenericConfigSaveMustNotChangeAuthWithoutReauthTest {
 
         Map<String, String> body = new LinkedHashMap<>();
         body.put("novabot.core.config-ui.auth.totp", "false");
-        JSONObject result = controller.save(body);
+        JSONObject result = controller.save(body).getBody();
 
         assertTrue(authService.totpRequired(),
                 "通用写口不该在没有动态码复核时关掉二次验证, 实际 success="
@@ -221,7 +221,7 @@ class GenericConfigSaveMustNotChangeAuthWithoutReauthTest {
 
         Map<String, String> body = new LinkedHashMap<>();
         body.put(ConfigUiAuthService.PASSWORD_PROPERTY, NEW_PASSWORD);
-        JSONObject result = controller.save(body);
+        JSONObject result = controller.save(body).getBody();
 
         assertAll(
                 () -> assertFalse(result.getBooleanValue("success"),
@@ -242,7 +242,7 @@ class GenericConfigSaveMustNotChangeAuthWithoutReauthTest {
 
         Map<String, String> body = new LinkedHashMap<>();
         body.put(ConfigUiAuthService.OPERATOR_TOKEN_PROPERTY, "true");
-        JSONObject result = controller.save(body);
+        JSONObject result = controller.save(body).getBody();
 
         assertAll(
                 () -> assertFalse(result.getBooleanValue("success"),
