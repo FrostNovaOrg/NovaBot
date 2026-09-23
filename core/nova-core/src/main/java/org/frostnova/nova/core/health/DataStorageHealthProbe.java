@@ -15,7 +15,8 @@ import org.springframework.stereotype.Component;
  *     去哪儿配、配完不用重启——把一个正常的部署形态标红只会让人麻木</li>
  *     <li><b>配了、连得上</b>：报 OK，并写出连的是哪儿</li>
  *     <li><b>配了、连不上</b>：报降级。配了却连不上是<b>真出了事</b>，
- *     此时累计类查询会一律回「不可用」，而使用者只会看到菜单里少了两条</li>
+ *     此时累计类查询会一律回「不可用」，而使用者只会看到菜单里少了
+ *     「直播间总数据」与「总数据排行榜」</li>
  * </ul>
  */
 @Component
@@ -51,7 +52,7 @@ public class DataStorageHealthProbe implements HealthProbe {
 
         return HealthStatus.degraded("只有本场数据（累计存储连不上）",
                 "Redis " + target + " 此刻连不上，累计查询已自动降级，"
-                        + "群里的菜单也不再列那两条。确认它起着、地址与密码没写错即可，"
+                        + "群里的菜单也不再列「直播间总数据」与「总数据排行榜」。确认它起着、地址与密码没写错即可，"
                         + "连回来会自己恢复，不用重启");
     }
 }
