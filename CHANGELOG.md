@@ -10,7 +10,7 @@
 
 ### 变更
 
-- 文档更正：克隆地址不再带末尾的 `.git`。排障写明构建只要 JDK 17，更高版本会停下；上游插件不能按旧包名、旧坐标和旧配置键直接使用。从 5.2 及更早升级时，要删掉程序目录里的 `StarBotCore.jar`，以及 `plugins/` 里 `starbot-onebot-adapter-1.0.0.jar`、`starbot-onebot-adapter-napcat-extension-1.0.0.jar`、`starbot-bilibili-1.0.0.jar`、`starbot-novabot-console-1.0.0.jar`、`starbot-report-1.0.0.jar`。整节挪位的提示要等根键改成 `novabot:` 并再启动一次才会出现。
+- 文档更正：克隆地址不再带末尾的 `.git`。排障写明构建只要 JDK 17，更高版本会停下；上游插件不能按旧包名、旧坐标和旧配置键直接使用。从 5.2 及更早升级时，要删掉程序目录里的 `StarBotCore.jar`，以及 `plugins/` 里 `starbot-onebot-adapter-1.0.0.jar`、`starbot-onebot-adapter-napcat-extension-1.0.0.jar`、`starbot-bilibili-1.0.0.jar`、`starbot-novabot-console-1.0.0.jar`、`starbot-report-1.0.0.jar`。个别整节挪过位置的，根键还是 `starbot:` 时，挪位那条不会出。先按那条 WARN 把根键改成 `novabot:`，改完重启。下一次启动时，还写在旧位置的整节才会被点名。`novabot:` 下已经有写在旧位置的整节、同时又留着 `starbot:` 键时，两条会在同一次启动里一起出现。
 - 文档更正：从 5.3 及更早升级时，旧根键 `starbot:` 不再读取，要手工改到 `novabot:`；手工升级要整个换掉 `lib/`、`plugins-lib/`，并按名字换五个内置插件。构建须用 JDK 17（更高版本会停下），跑测试要 Node 22，源码须用 git clone 取得。演示图补了使用条件；旧配置键从 5.4 起不再读取。
 - 文档更正：容器升级不会换掉数据卷里的 `plugins-lib/`，入口只建这个目录，镜像里那份不会铺到卷上。要用新的插件依赖，得自己换掉卷里的这一目录。`install.sh` 升级仍会删掉旧的 `lib/` 和 `plugins-lib/` 再拷入新的。
 - 控制台登录密码的叫法统一为「密码」：设置页说明、危险确认、接口提示、配置模板与公开文档里原先写「口令」的地方照改；显示／隐藏按钮的读屏标签按字段说名词，签发口令页念「口令」、设置页机密行念该行名字；事件流只读口令与各类令牌的说法不变
