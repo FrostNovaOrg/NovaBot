@@ -62,6 +62,15 @@ public class ConfigurationFileService {
     private static final Pattern CLOCK_TIME = Pattern.compile("^[+-]?\\d+(:[0-5]?\\d)+$");
 
     /**
+     * 键名段允许的字符
+     * <p>
+     * 段首不许是连字符或数字：纯连字符段会拼出 YAML 文档分隔符 {@code ---}，
+     * 段里再不能出现换行、空格、{@code :}、{@code #}、引号这些会改写文件结构的字符。
+     * 允许 {@code X-Api-Key} 这类 map 键：字母数字加下划线连字符，段首是字母或下划线。
+     */
+    private static final Pattern SAFE_KEY_SEGMENT = Pattern.compile("[A-Za-z0-9_][A-Za-z0-9_-]*");
+
+    /**
      * 主配置文件路径
      */
     private final Path configPath;
@@ -963,8 +972,10 @@ public class ConfigurationFileService {
      * @param path 配置项完整路径
      * @param value 值
      * @return 是否插入成功
+     * @throws IOException 键名段含控制字符或 YAML 结构字符时抛出，整批不落盘
      */
-    private boolean insert(List<String> lines, String path, String value) {
+    private boolean insert(List<String> lines, String path, String value) throws IOException {
+        rejectUnsafeKeySegments(path);
         String[] segments = path.split("\\.");
 
         // 自最深的祖先开始向上寻找已经存在的父节点
@@ -1047,6 +1058,25 @@ public class ConfigurationFileService {
         }
 
         return false;
+    }
+
+    /**
+     * 键名段不许夹控制字符与 YAML 结构字符
+     * <p>
+     * 插入时各段按原样拼成「段名:」行写出去。键名里带换行的话，换行之后那半截会变成文件里
+     * 另一把键；带 {@code :}、{@code #}、引号同理。这不是值侧的事——值那边
+     * {@link #rejectMultilineScalars} 已经挡了——是键名自己会改写文件结构。
+     * @param path 配置项完整路径
+     * @throws IOException 有一段不合规时抛出
+     */
+    private static void rejectUnsafeKeySegments(String path) throws IOException {
+        // limit -1：末段为空也要看见，否则「foo.」这种会被当成合法的 foo
+        String[] segments = path.split("\\.", -1);
+        for (String segment : segments) {
+            if (!SAFE_KEY_SEGMENT.matcher(segment).matches()) {
+                throw new IOException("配置项 " + path + " 的键名段含不允许的字符, 本批全部未保存");
+            }
+        }
     }
 
     /**

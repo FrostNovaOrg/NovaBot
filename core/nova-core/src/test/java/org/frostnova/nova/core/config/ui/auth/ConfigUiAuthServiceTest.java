@@ -171,8 +171,8 @@ class ConfigUiAuthServiceTest {
         assertFalse(service.login(PASSWORD.toCharArray(), null, "9.9.9.9").success(), "从此登录必须带验证码");
     }
 
-    // —— 旧格 pendingSecretIsStable 删去：它断言「同进程不变」，与新语义（每次换新、按会话存）
-    //    正面相反；抓的那件事由下面「先读走的那把主人绑不上」一格接着量。 ——
+    // pendingSecretIsStable 这一格已删去：它断言「同进程不变」，与现在的语义（每次换新、按会话存）相反；
+    // 它原来想抓的那件事，由下面「先读走的那把主人绑不上」一格覆盖。
 
     @Test
     @DisplayName("偷得会话的人先打开绑定读走的密钥，主人之后打开绑定拿到的不是同一把")

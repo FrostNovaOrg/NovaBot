@@ -7,9 +7,9 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Supplier;
 
 /**
@@ -53,6 +53,53 @@ public class ConfigUiAuthService {
     public static final String OPERATOR_TOKEN_PROPERTY = "novabot.core.config-ui.auth.operator-token";
 
     /**
+     * 四个认证项的规范名
+     * <p>
+     * 拦截按规范名比，不按字面比：{@code config-ui}、{@code configUI}、{@code config_ui} 同形，
+     * 只认字面相等会把宽松写法放进来，重启后 Spring 宽松绑定仍会把它认成同一项。
+     */
+    private static final Set<String> DEDICATED_AUTH_CANONICAL = Set.of(
+            canonicalName(PASSWORD_PROPERTY),
+            canonicalName(TOTP_PROPERTY),
+            canonicalName(TOTP_SECRET_PROPERTY),
+            canonicalName(OPERATOR_TOKEN_PROPERTY));
+
+    /**
+     * Spring 宽松绑定下的规范形
+     * <p>
+     * 同一段里忽略大小写与 {@code -}、{@code _}，段与段之间仍用 {@code .} 分开：
+     * {@code totp-secret}、{@code totpSecret}、{@code TOTP_SECRET} 同形，
+     * 而 {@code totp.secret} 是两段，与它们都不同。
+     * 自己算而不是调 {@code ConfigurationPropertyName.of}：后者遇到控制字符直接抛，
+     * 而这里的输入可能是攻击者给的任意串——要能比完再拒，不是比到一半就炸。
+     * @param name 配置项名
+     * @return 规范形
+     */
+    public static String canonicalName(String name) {
+        if (name == null || name.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(name.length());
+        int start = 0;
+        for (int i = 0; i <= name.length(); i++) {
+            if (i == name.length() || name.charAt(i) == '.') {
+                for (int j = start; j < i; j++) {
+                    char c = name.charAt(j);
+                    if (c == '-' || c == '_') {
+                        continue;
+                    }
+                    sb.append(Character.toLowerCase(c));
+                }
+                if (i < name.length()) {
+                    sb.append('.');
+                }
+                start = i + 1;
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
      * 这一项是不是只能走专用口的认证键
      * <p>
      * 闭集只有四项：口令、二次验证开关、二次验证密钥、「忘记口令」的启动令牌通道。
@@ -78,11 +125,10 @@ public class ConfigUiAuthService {
             return false;
         }
 
+        // 原名与解析到的现行名都按规范形比：宽松写法、大小写、别名一律认出来
         String current = aliases.currentName(name);
-        return PASSWORD_PROPERTY.equals(current)
-                || TOTP_PROPERTY.equals(current)
-                || TOTP_SECRET_PROPERTY.equals(current)
-                || OPERATOR_TOKEN_PROPERTY.equals(current);
+        return DEDICATED_AUTH_CANONICAL.contains(canonicalName(name))
+                || DEDICATED_AUTH_CANONICAL.contains(canonicalName(current));
     }
 
     /**
