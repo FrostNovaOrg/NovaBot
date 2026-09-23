@@ -5,7 +5,10 @@ import org.frostnova.nova.core.model.UserScore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -15,8 +18,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 默认直播数据服务测试
  * <p>
- * 覆盖本场直播统计指标的累计、取最大、独立人数与重置语义。
- * 持久化路径依赖文件系统与调度器，不在本测试内。
+ * 覆盖本场直播统计指标的累计、取最大、独立人数与重置语义，
+ * 以及保存写到一半失败时原来的本场数据还在。
  */
 @DisplayName("直播数据服务")
 class DefaultLiveDataServiceTest {
@@ -373,5 +376,38 @@ class DefaultLiveDataServiceTest {
         assertTrue(service.liveMetrics(PLATFORM, UID).isEmpty());
         assertTrue(service.liveUserMetrics(PLATFORM, UID).isEmpty());
         assertTrue(service.liveUserNames(PLATFORM, UID).isEmpty());
+    }
+
+    /**
+     * 失败的注入：临时文件的位置先被占成一个目录。
+     * 启动时会立刻再存一次；直写会改掉原文件，先写临时文件再换上则写不进去。
+     */
+    @Test
+    @DisplayName("保存直播数据写到一半失败时，原来的本场数据还在")
+    void failedSaveLeavesPreviousLiveData(@TempDir Path dir) throws Exception {
+        Path data = dir.resolve("data.json");
+        String original = "{\"LiveMetric:bilibili\":{\"10001\":{\"danmu_count\":455}}}";
+        Files.writeString(data, original);
+        Files.createDirectory(dir.resolve("data.json.tmp"));
+
+        NovaCoreProperties properties = new NovaCoreProperties();
+        properties.getLive().setLiveDataPath(data.toString());
+        DefaultLiveDataService opened = new DefaultLiveDataService(properties);
+        opened.onApplicationReadyEvent();
+        try {
+            assertEquals(original, Files.readString(data), "写到一半失败时盘上的直播数据被改掉了");
+        } finally {
+            opened.onContextClosedEvent();
+        }
+
+        DefaultLiveDataService restarted = new DefaultLiveDataService(properties);
+        restarted.onApplicationReadyEvent();
+        try {
+            assertEquals(455.0, restarted.getLiveMetric(PLATFORM, UID, "danmu_count"),
+                    "重启后原来的本场弹幕数没了");
+            assertEquals(original, Files.readString(data), "重启后又把原来的直播数据盖掉了");
+        } finally {
+            restarted.onContextClosedEvent();
+        }
     }
 }

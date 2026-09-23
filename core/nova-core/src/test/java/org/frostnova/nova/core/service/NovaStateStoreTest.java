@@ -7,10 +7,13 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Stream;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -227,5 +230,79 @@ class NovaStateStoreTest {
         assertTrue(Files.readString(dir.resolve("state.json")).contains(MARKER), "空操作弄丢了内容");
 
         opened.onContextClosedEvent();
+    }
+
+    /**
+     * 失败的注入：临时文件的位置先被占成一个目录。
+     * 直写目标文件的实现碰不到这个目录，保存仍会改掉原文件；
+     * 先写临时文件再换上的实现写不进去，原文件应原样留下。
+     */
+    @Test
+    @DisplayName("保存运行状态写到一半失败时，原来的订阅名单还在")
+    void failedSaveLeavesPreviousSubscriptions(@TempDir Path dir) throws Exception {
+        Path state = dir.resolve("state.json");
+        String original = "{\"AtSubscriptions\":{\"qq:10001:20001:live\":{\"30001\":1}}}";
+        Files.writeString(state, original);
+        Files.createDirectory(dir.resolve("state.json.tmp"));
+
+        NovaStateStore opened = storeAt(dir);
+        opened.onApplicationReadyEvent();
+        try {
+            opened.write("AtSubscriptions", data -> data.put("qq:10001:20002:live",
+                    new JSONObject().fluentPut("30002", 1)));
+            opened.save();
+
+            assertEquals(original, Files.readString(state), "写到一半失败时盘上的状态文件被改掉了");
+
+            NovaStateStore restarted = storeAt(dir);
+            restarted.onApplicationReadyEvent();
+            try {
+                JSONObject kept = restarted.namespace("AtSubscriptions").getJSONObject("qq:10001:20001:live");
+                assertNotNull(kept, "重启后原来的订阅名单没了");
+                assertEquals(1, kept.getIntValue("30001"));
+                assertFalse(restarted.namespace("AtSubscriptions").containsKey("qq:10001:20002:live"),
+                        "没写成功的新订阅出现在了重启后的名单里");
+            } finally {
+                restarted.onContextClosedEvent();
+            }
+        } finally {
+            opened.onContextClosedEvent();
+        }
+    }
+
+    @Test
+    @DisplayName("状态文件已是半截时仍能启动，坏件改名留底且不被之后的保存盖掉")
+    void corruptStateIsParkedAndNotOverwritten(@TempDir Path dir) throws Exception {
+        Path state = dir.resolve("state.json");
+        byte[] broken = "{\"AtSubscriptions\":{\"qq:1:2:live\":".getBytes(StandardCharsets.UTF_8);
+        Files.write(state, broken);
+
+        NovaStateStore opened = storeAt(dir);
+        opened.onApplicationReadyEvent();
+        try {
+            assertTrue(opened.namespace("AtSubscriptions").isEmpty(),
+                    "半截状态文件不该让程序起不来，也不该读出半份名单");
+
+            Path parked = parkedCopy(dir, "state.json.bad-");
+            assertArrayEquals(broken, Files.readAllBytes(parked), "留底的坏件字节变了");
+
+            opened.write("AtSubscriptions", data -> data.put("qq:9:8:live",
+                    new JSONObject().fluentPut("30001", 1)));
+            opened.save();
+
+            assertArrayEquals(broken, Files.readAllBytes(parked), "之后的保存把留底的坏件盖掉了");
+            assertFalse(Arrays.equals(broken, Files.readAllBytes(state)), "坏内容还占着状态文件的位置");
+            assertNotNull(JSONObject.parseObject(Files.readString(state)), "补上的保存不是一份能读的状态");
+        } finally {
+            opened.onContextClosedEvent();
+        }
+    }
+
+    private static Path parkedCopy(Path dir, String prefix) throws Exception {
+        try (Stream<Path> children = Files.list(dir)) {
+            return children.filter(path -> path.getFileName().toString().startsWith(prefix))
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError("坏件没有改名留底"));
+        }
     }
 }

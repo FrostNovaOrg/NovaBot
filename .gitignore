@@ -65,6 +65,11 @@ state.json
 data.json
 sessions.jsonl
 snapshots.jsonl
+# 保存时的临时文件，以及读坏后改名留下的原件。内容与上面那几份相同，不能进仓库。
+state.json.tmp
+data.json.tmp
+state.json.bad-*
+data.json.bad-*
 # 🔴 这一条必须带前导斜杠。不带的话 timeline/ 会匹配**任意深度**上任何一个叫
 # timeline 的目录——包括源码包 nova-core/src/main/java/.../core/timeline/，
 # 于是整个包在 git 眼里凭空消失，而 git status 一声不响、构建照常通过。

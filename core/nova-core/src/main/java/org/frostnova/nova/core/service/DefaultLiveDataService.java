@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.model.LiveGap;
+import org.frostnova.nova.core.util.DurableFiles;
 import org.frostnova.nova.core.model.UserScore;
 import org.frostnova.nova.core.util.FaceUrlCodec;
 import lombok.NonNull;
@@ -41,6 +42,17 @@ public class DefaultLiveDataService implements LiveDataService {
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
 
+    /**
+     * 写盘锁。包住取快照和写盘，避免两趟保存交错。
+     * 指标写入只拿 {@link #metricLock}，不拿这把锁，磁盘慢时不挡住消息线程。
+     */
+    private final Object writeLock = new Object();
+
+    /**
+     * 停机时最多等自动保存这么久。磁盘卡住时不能无限等下去。
+     */
+    private static final int SHUTDOWN_WAIT_SECONDS = 5;
+
     private JSONObject cache = new JSONObject();
 
     @Autowired
@@ -74,11 +86,16 @@ public class DefaultLiveDataService implements LiveDataService {
             String liveDataPath = properties.getLive().getLiveDataPath();
             log.info("开始从 {} 中加载直播数据", liveDataPath);
             try {
-                cache = JSONObject.parseObject(Files.readString(Path.of(liveDataPath)));
+                JSONObject parsed = JSONObject.parseObject(Files.readString(Path.of(liveDataPath)));
+                if (parsed == null) {
+                    throw new IllegalStateException("直播数据不是对象");
+                }
+                cache = parsed;
             } catch (NoSuchFileException e) {
                 log.warn("直播数据文件 {} 不存在, 建立新文件", liveDataPath);
             } catch (Exception e) {
-                log.error("读取直播数据 {} 异常", liveDataPath, e);
+                // 坏件改名留底后再以空数据起。留在原处的话，下一次自动保存会把它盖掉。
+                parkBroken(Path.of(liveDataPath), e);
             }
             log.info("直播数据加载完成");
             readWatermark();
@@ -124,10 +141,12 @@ public class DefaultLiveDataService implements LiveDataService {
      */
     void saveNow(boolean cleanShutdown) {
         String liveDataPath = properties.getLive().getLiveDataPath();
-        try {
-            Files.writeString(Path.of(liveDataPath), snapshot(cleanShutdown));
-        } catch (Exception e) {
-            log.error("保存直播数据至 {} 异常", liveDataPath, e);
+        synchronized (writeLock) {
+            try {
+                DurableFiles.replace(Path.of(liveDataPath), snapshot(cleanShutdown));
+            } catch (Exception e) {
+                log.error("保存直播数据至 {} 异常", liveDataPath, e);
+            }
         }
     }
 
@@ -139,6 +158,7 @@ public class DefaultLiveDataService implements LiveDataService {
     public void onContextClosedEvent() {
         // 先停掉自动保存，避免与此处的收尾保存同时写同一个文件
         scheduler.shutdownNow();
+        awaitScheduler();
 
         if (cache.isEmpty()) {
             return;
@@ -149,6 +169,34 @@ public class DefaultLiveDataService implements LiveDataService {
             log.info("开始保存直播数据至 {}", liveDataPath);
             saveNow(true);
             log.info("直播数据已保存至 {}", liveDataPath);
+        }
+    }
+
+    /**
+     * 等在途的自动保存停下。已经在写的那一趟被打断后，收尾保存再写一份完整的。
+     */
+    private void awaitScheduler() {
+        try {
+            if (!scheduler.awaitTermination(SHUTDOWN_WAIT_SECONDS, TimeUnit.SECONDS)) {
+                log.warn("直播数据的自动保存在 {} 秒内没有停下来", SHUTDOWN_WAIT_SECONDS);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("等待直播数据自动保存停下时被打断");
+        }
+    }
+
+    /**
+     * 坏文件改名留底后以空数据继续。留底失败也要起来，只是原文件还在原处。
+     */
+    private void parkBroken(Path path, Exception cause) {
+        cache = new JSONObject();
+        try {
+            Path kept = DurableFiles.quarantine(path);
+            log.error("读取直播数据 {} 异常, 坏件留在 {}, 将以空数据启动", path, kept, cause);
+        } catch (Exception parkError) {
+            log.error("读取直播数据 {} 异常, 坏件改名留底失败, 将以空数据启动", path, cause);
+            log.error("坏件 {} 留底失败", path, parkError);
         }
     }
 

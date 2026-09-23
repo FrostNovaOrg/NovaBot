@@ -14,6 +14,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.SeekableByteChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
@@ -72,12 +74,38 @@ public class LiveSessionArchive {
 
         synchronized (writeLock) {
             try {
+                // 上一行没写完时先补一个换行，把坏的半行隔开。
+                // 否则下一场接在半行后面，两场一起解析失败，从运营统计里一起消失。
+                separateTruncatedTail(path());
                 Files.writeString(path(), line, StandardCharsets.UTF_8,
                         StandardOpenOption.CREATE, StandardOpenOption.APPEND);
                 log.info("已归档 {} 的一场直播: {} 秒", session.uname(), session.durationSeconds());
             } catch (IOException e) {
                 log.error("归档直播场次失败, 该场将不会出现在运营统计中", e);
             }
+        }
+    }
+
+    /**
+     * 文件非空且最后一个字节不是换行时，先补一个换行。
+     */
+    private static void separateTruncatedTail(Path path) throws IOException {
+        if (!Files.isRegularFile(path)) {
+            return;
+        }
+        long size = Files.size(path);
+        if (size <= 0) {
+            return;
+        }
+        byte[] one = new byte[1];
+        try (SeekableByteChannel channel = Files.newByteChannel(path, StandardOpenOption.READ)) {
+            channel.position(size - 1);
+            if (channel.read(ByteBuffer.wrap(one)) != 1) {
+                return;
+            }
+        }
+        if (one[0] != '\n') {
+            Files.writeString(path, System.lineSeparator(), StandardCharsets.UTF_8, StandardOpenOption.APPEND);
         }
     }
 

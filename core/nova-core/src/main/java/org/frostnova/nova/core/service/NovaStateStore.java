@@ -3,6 +3,7 @@ package org.frostnova.nova.core.service;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.util.DurableFiles;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -48,6 +49,17 @@ public class NovaStateStore {
     private final Object lock = new Object();
 
     /**
+     * 写盘锁。包住取快照和写盘，避免立即保存与自动保存两个写者交错。
+     * 订阅写入只拿 {@link #lock}，不拿这把锁，磁盘慢时不挡住消息线程。
+     */
+    private final Object writeLock = new Object();
+
+    /**
+     * 停机时最多等自动保存这么久。磁盘卡住时不能无限等下去。
+     */
+    private static final int SHUTDOWN_WAIT_SECONDS = 5;
+
+    /**
      * 已撤功能「记住的选择」用过的命名空间
      * <p>
      * 那一版把每个会话上次选过的主播记在这个命名空间里；功能撤掉后，代码里再没有谁
@@ -69,14 +81,18 @@ public class NovaStateStore {
     public void onApplicationReadyEvent() {
         Path path = path();
         try {
-            cache = JSONObject.parseObject(Files.readString(path));
+            JSONObject parsed = JSONObject.parseObject(Files.readString(path));
+            if (parsed == null) {
+                throw new IllegalStateException("运行状态不是对象");
+            }
+            cache = parsed;
             log.info("运行状态已从 {} 加载", path);
         } catch (NoSuchFileException e) {
             log.info("运行状态文件 {} 不存在, 建立新文件", path);
         } catch (Exception e) {
             // 状态文件损坏不该让程序起不来：丢掉订阅名单是可接受的降级，
-            // 而拒绝启动会让推送整个停摆
-            log.error("读取运行状态 {} 异常, 将以空状态启动", path, e);
+            // 而拒绝启动会让推送整个停摆。坏件改名留底，下一次保存写的是新文件，盖不到它。
+            parkBroken(path, e);
         }
 
         if (cache.containsKey(RETIRED_CHOICE_NAMESPACE)) {
@@ -98,7 +114,36 @@ public class NovaStateStore {
     @EventListener(ContextClosedEvent.class)
     public void onContextClosedEvent() {
         scheduler.shutdownNow();
+        awaitScheduler();
         save();
+    }
+
+    /**
+     * 等在途的自动保存停下。已经在写的那一趟被打断后，收尾保存再写一份完整的。
+     */
+    private void awaitScheduler() {
+        try {
+            if (!scheduler.awaitTermination(SHUTDOWN_WAIT_SECONDS, TimeUnit.SECONDS)) {
+                log.warn("运行状态的自动保存在 {} 秒内没有停下来", SHUTDOWN_WAIT_SECONDS);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("等待运行状态自动保存停下时被打断");
+        }
+    }
+
+    /**
+     * 坏文件改名留底后以空状态继续。留底失败也要起来，只是原文件还在原处。
+     */
+    private void parkBroken(Path path, Exception cause) {
+        cache = new JSONObject();
+        try {
+            Path kept = DurableFiles.quarantine(path);
+            log.error("读取运行状态 {} 异常, 坏件留在 {}, 将以空状态启动", path, kept, cause);
+        } catch (Exception parkError) {
+            log.error("读取运行状态 {} 异常, 坏件改名留底失败, 将以空状态启动", path, cause);
+            log.error("坏件 {} 留底失败", path, parkError);
+        }
     }
 
     /**
@@ -189,31 +234,33 @@ public class NovaStateStore {
      * @param namespace 命名空间
      */
     public void remove(@NonNull String namespace) {
-        String content;
-        synchronized (lock) {
-            if (cache.remove(namespace) == null) {
-                return;
+        synchronized (writeLock) {
+            String content;
+            synchronized (lock) {
+                if (cache.remove(namespace) == null) {
+                    return;
+                }
+                content = cache.toJSONString();
             }
-            content = cache.toJSONString();
+            write(content);
         }
-
-        write(content);
     }
 
     /**
      * 立即落盘
      */
     public void save() {
-        String content;
-        synchronized (lock) {
-            if (cache.isEmpty()) {
-                // 从没写过东西的机器上不该凭空多出一个只有 {} 的文件
-                return;
+        synchronized (writeLock) {
+            String content;
+            synchronized (lock) {
+                if (cache.isEmpty()) {
+                    // 从没写过东西的机器上不该凭空多出一个只有 {} 的文件
+                    return;
+                }
+                content = cache.toJSONString();
             }
-            content = cache.toJSONString();
+            write(content);
         }
-
-        write(content);
     }
 
     /**
@@ -223,7 +270,7 @@ public class NovaStateStore {
      */
     private void write(String content) {
         try {
-            Files.writeString(path(), content);
+            DurableFiles.replace(path(), content);
         } catch (Exception e) {
             log.error("保存运行状态至 {} 异常", path(), e);
         }
