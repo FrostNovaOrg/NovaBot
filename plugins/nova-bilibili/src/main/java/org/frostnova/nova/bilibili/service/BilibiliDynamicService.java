@@ -243,6 +243,9 @@ public class BilibiliDynamicService {
                 .filter(java.util.Objects::nonNull)
                 .collect(Collectors.toSet());
 
+        // 删掉或停用后再加回的主播若仍留在已核对名单里，要等满一小时复核才补关注，这期间他的动态推不出来
+        checkedUids = Set.copyOf(checkedUids.stream().filter(configured::contains).toList());
+
         if (configured.isEmpty()) {
             return;
         }
