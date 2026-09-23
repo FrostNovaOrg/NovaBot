@@ -16,6 +16,7 @@
 
 ### 修复
 
+- B 站接口请求失败时的报错消息改为只留接口路径，不再把查询参数（如账号 uid）写进去；此前用户把日志贴出去求助，账号标识会跟着出去
 - 写在旧位置的三节设置（`novabot.core.alert.qq-*`、`novabot.core.config-ui.napcat.*`、`novabot.bilibili.event-stream.*`）与 `novabot.core.command.prefix`，启动时会提示没被读取、该挪到哪
 
 ## [5.5.1] - 2026-09-18
