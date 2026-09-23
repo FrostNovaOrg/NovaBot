@@ -681,6 +681,62 @@ class BilibiliLiveReportPainterTest {
     }
 
     @Test
+    @DisplayName("有弹幕却认不出发送者时，卡片不写「0 人参与」")
+    void danmuCardOmitsZeroUsersWhenSendersUnidentified() {
+        assertEquals("弹幕", danmuCardLabel(5, 0));
+    }
+
+    @Test
+    @DisplayName("有弹幕却认不出发送者时，文字版不写「0 人参与」")
+    void textReportOmitsZeroUsersWhenSendersUnidentified() {
+        String text = textReportWithDanmu(7, 0);
+
+        String danmuLine = text.lines().filter(line -> line.startsWith("弹幕"))
+                .findFirst().orElseThrow(() -> new AssertionError("没有弹幕行: " + text));
+        assertEquals("弹幕 7 条", danmuLine);
+        assertFalse(text.contains("人参与"), "认不出发送者就不该写 0 人参与: " + text);
+    }
+
+    @Test
+    @DisplayName("人数大于 0 时卡片仍是「弹幕 · N 人参与」")
+    void danmuCardKeepsUsersWhenIdentified() {
+        assertEquals("弹幕 · 2 人参与", danmuCardLabel(5, 2));
+    }
+
+    /**
+     * 只喂弹幕条数与人数，从建卡结果里取出弹幕卡文案。
+     */
+    private String danmuCardLabel(long danmu, int danmuUsers) {
+        DefaultLiveDataService data = new DefaultLiveDataService(new NovaCoreProperties());
+        data.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.DANMU_COUNT, danmu);
+        for (long i = 1; i <= danmuUsers; i++) {
+            data.recordLiveMetricUser(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.DANMU_USERS, i);
+        }
+        BilibiliLiveReportPainter reportPainter = new BilibiliLiveReportPainter(
+                factory, api, data, fontUtil, new NovaBilibiliProperties(), roomInfoHistory);
+        return reportPainter.buildCards(PLATFORM, STREAMER.getUid(), BilibiliLiveReportOptions.of(null, true))
+                .stream()
+                .map(BilibiliLiveReportPainter.Card::label)
+                .filter(label -> label.startsWith("弹幕"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("没有弹幕卡"));
+    }
+
+    /**
+     * 只喂弹幕条数与人数，取文字版报告。
+     */
+    private String textReportWithDanmu(long danmu, int danmuUsers) {
+        DefaultLiveDataService data = new DefaultLiveDataService(new NovaCoreProperties());
+        data.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.DANMU_COUNT, danmu);
+        for (long i = 1; i <= danmuUsers; i++) {
+            data.recordLiveMetricUser(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.DANMU_USERS, i);
+        }
+        BilibiliLiveReportPainter reportPainter = new BilibiliLiveReportPainter(
+                factory, api, data, fontUtil, new NovaBilibiliProperties(), roomInfoHistory);
+        return reportPainter.textReport(PLATFORM, STREAMER, BilibiliLiveReportOptions.of(null, true));
+    }
+
+    @Test
     @DisplayName("全名单段画出覆写钩子给的三位")
     void paintsFullGuardRosterFromHook() throws Exception {
         BilibiliLiveReportPainter hooked = painterWithGuards(Optional.of(List.of(

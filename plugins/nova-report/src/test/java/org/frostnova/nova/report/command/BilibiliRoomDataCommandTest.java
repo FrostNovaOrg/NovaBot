@@ -97,10 +97,56 @@ class BilibiliRoomDataCommandTest {
         );
     }
 
+    @Test
+    @DisplayName("有弹幕却认不出发送者时，直播间数据卡片不写「0 人参与」")
+    void danmuCardOmitsZeroUsersWhenSendersUnidentified() {
+        assertEquals("弹幕", danmuCardLabel(10, 0));
+    }
+
     private static String boxLabel(double boxProfit) {
         Fixture fixture = new Fixture(false, 1_700_000_000_000L, 1_700_000_090_000L, boxProfit);
         fixture.command.execute(context());
         return fixture.capturedBoxLabel();
+    }
+
+    /**
+     * 只喂弹幕条数与人数，从卡片列表里取出弹幕卡文案。
+     */
+    private static String danmuCardLabel(long danmu, int danmuUsers) {
+        AbstractDataSource dataSource = mock(AbstractDataSource.class);
+        when(dataSource.getUsers("bilibili")).thenReturn(List.of(streamer()));
+
+        LiveDataService liveDataService = mock(LiveDataService.class);
+        when(liveDataService.getLiveStatus(anyString(), anyLong())).thenReturn(Optional.of(false));
+        when(liveDataService.getLiveStartTime(anyString(), anyLong())).thenReturn(Optional.of(1_700_000_000_000L));
+        when(liveDataService.getLiveEndTime(anyString(), anyLong())).thenReturn(Optional.of(1_700_000_090_000L));
+        when(liveDataService.getLiveMetric(anyString(), anyLong(), anyString())).thenReturn(0.0);
+        when(liveDataService.getLiveMetric(anyString(), anyLong(), eq(BilibiliLiveMetric.DANMU_COUNT)))
+                .thenReturn((double) danmu);
+        when(liveDataService.getLiveMetricUserCount(anyString(), anyLong(), anyString())).thenReturn(0);
+        when(liveDataService.getLiveMetricUserCount(anyString(), anyLong(), eq(BilibiliLiveMetric.DANMU_USERS)))
+                .thenReturn(danmuUsers);
+
+        BilibiliDataQueryPainter painter = mock(BilibiliDataQueryPainter.class);
+        when(painter.paintCards(any(), any(), nullable(String.class))).thenReturn(Optional.of("QUJD"));
+
+        RevenueVisibilityService revenueVisibility = mock(RevenueVisibilityService.class);
+        when(revenueVisibility.isVisible(anyString(), any(), anyLong())).thenReturn(true);
+
+        BilibiliRoomLiveDataCommand command = new BilibiliRoomLiveDataCommand(dataSource,
+                mock(BilibiliStreamerChoice.class), liveDataService, painter, revenueVisibility);
+        command.execute(context());
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<BilibiliDataQueryPainter.DataCard>> cards =
+                ArgumentCaptor.forClass(List.class);
+        verify(painter).paintCards(any(), cards.capture(), nullable(String.class));
+        for (BilibiliDataQueryPainter.DataCard card : cards.getValue()) {
+            if (card.label().startsWith("弹幕")) {
+                return card.label();
+            }
+        }
+        throw new AssertionError("no danmu card");
     }
 
     private static CommandContext context() {
