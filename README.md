@@ -57,7 +57,7 @@ NovaBot 自己不登录 QQ，只把消息交给 OneBot 实现去发。先把 Nap
 Linux 上从源码安装（自动装 JDK 17 与中文字体、构建、创建 systemd 服务）。源码须用 `git clone` 取得；下载的源码压缩包不是 git 仓库，构建脚本会停下，并提示「这里不是 git 仓库，无法记录构建来源。」
 
 ```bash
-git clone https://github.com/FrostNovaOrg/NovaBot.git
+git clone https://github.com/FrostNovaOrg/NovaBot
 cd NovaBot
 ./install.sh
 sudo systemctl start novabot && sudo journalctl -u novabot -af

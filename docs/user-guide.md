@@ -58,12 +58,12 @@ NovaBot 自己不登录 QQ，只是把消息交给 OneBot 实现去发。所以�
 
 ## 2. 安装
 
-源码须用 `git clone` 取得（`https://github.com/FrostNovaOrg/NovaBot.git`）。下载的源码压缩包不是 git 仓库，构建脚本会停下，并提示「这里不是 git 仓库，无法记录构建来源。」
+源码须用 `git clone` 取得（`https://github.com/FrostNovaOrg/NovaBot`）。下载的源码压缩包不是 git 仓库，构建脚本会停下，并提示「这里不是 git 仓库，无法记录构建来源。」
 
 ### Linux 一键安装
 
 ```bash
-git clone https://github.com/FrostNovaOrg/NovaBot.git
+git clone https://github.com/FrostNovaOrg/NovaBot
 cd NovaBot
 ./install.sh
 ```
@@ -738,7 +738,7 @@ novabot:
 
 ### 从本项目的旧版本升级
 
-用 `install.sh` 或容器部署时下面这些都由脚本处理，手工升级才需要照做：
+用 `install.sh` 或容器部署时，下面这些里除旧文件名外都由脚本处理。五个旧名插件，安装脚本和容器都不会删，要自己删；`StarBotCore.jar` 只有 `install.sh` 会删。手工升级则整段照做：
 
 1. 停止服务
 2. **备份 `application.yml`、`datasource.json`、`cookies.json`、`cookies.key`**。登录凭据默认加密后仍写在 `cookies.json`，密钥在 `cookies.key`，没有另存一份密文文件。若旁边还有明文迁成加密时留下的 `cookies.json.plain.bak`，一并备份。
@@ -749,6 +749,17 @@ novabot:
    - `nova-bilibili-<版本>.jar`
    - `nova-console-<版本>.jar`
    - `nova-report-<版本>.jar`
+
+   从 **5.2 及更早**升级时，主程序和内置插件是旧文件名，换成上面的新名字不会盖掉它们。`plugins/` 里旧的 jar 会和新的一起加载。第三方插件不要动，只删这些：
+
+   - 程序目录里的 `StarBotCore.jar`（与 `NovaBot.jar` 同级）。`install.sh` 会删这一个；容器入口不删，手工升级也不删。
+   - `plugins/starbot-onebot-adapter-1.0.0.jar`
+   - `plugins/starbot-onebot-adapter-napcat-extension-1.0.0.jar`
+   - `plugins/starbot-bilibili-1.0.0.jar`
+   - `plugins/starbot-novabot-console-1.0.0.jar`
+   - `plugins/starbot-report-1.0.0.jar`
+
+   `install.sh` 和容器入口都只按新文件名清掉同名插件的旧版本，不会删这五个旧名，要自己删。已发布的 5.2.0 及更早只有前三个插件 jar；后两个只在 5.3.0 发布前、目录还没改名的构建里有。
 5. 保留原有的 `application.yml` 与 `datasource.json`
 6. 启动，看日志有没有告警
 
@@ -770,7 +781,7 @@ novabot:
       cookie-path: cookies.json
 ```
 
-个别整节挪过位置的，同一份启动日志会点名挪到哪。
+个别整节挪过位置的，不和 `starbot:` 那条告警出现在同一次启动里。先按那条 WARN 把根键改成 `novabot:`，改完重启。下一次启动时，还写在旧位置的整节才会被点名。
 
 ### 从上游 StarBot 3.0-beta8 迁移
 
