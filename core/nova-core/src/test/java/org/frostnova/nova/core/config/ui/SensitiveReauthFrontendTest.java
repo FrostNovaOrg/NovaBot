@@ -168,6 +168,20 @@ class SensitiveReauthFrontendTest {
     }
 
     @Test
+    @DisplayName("🔴 设置页关闭二次验证确认框带密码格，请求体带 current")
+    void disableFlowAsksPassword() throws IOException {
+        String disable = functionBody(read("settings-auth.js"), "disableFlow");
+        assertFalse(disable.isBlank(), "找不到 disableFlow");
+
+        assertTrue(disable.contains("type=\"password\"") || disable.contains("type='password'"),
+                "关闭确认框没有密码格");
+        int disableCall = disable.indexOf("/auth/totp/disable");
+        assertTrue(disableCall >= 0, "disableFlow 没有提交关闭");
+        String after = disable.substring(disableCall);
+        assertTrue(after.contains("current"), "关闭请求体里没有 current，后端无从核密码");
+    }
+
+    @Test
     @DisplayName("🔴 初始设置引导卡片绑定确认框带密码格，请求体带 current")
     void totpSetupCardAsksPassword() throws IOException {
         String setup = functionBody(read("main.js"), "renderTotpSetup");

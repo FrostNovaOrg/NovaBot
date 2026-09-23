@@ -456,9 +456,10 @@ public class ConfigUiAuthController {
     /**
      * 关掉二次验证
      * <p>
-     * <b>必须先输一次现在的验证码。</b>关掉的是一整道防线，而这个动作只需要一次点击——
+     * <b>必须先核一次现在的密码、再输一次现在的验证码。</b>关掉的是一整道防线，而这个动作只需要一次点击——
      * 一枚被偷走的会话 Cookie 若能直接把它卸掉，那道防线保护的其实只是「口令没泄漏」这一种情形。
-     * 要求现码等于要求「此刻验证器就在你手上」。
+     * 要求现码等于要求「此刻验证器就在你手上」；先核密码拦的是「偷到会话、不用密码就关」。
+     * 密码核对在验证码之前：密码错的那一趟不能把码烧掉，否则主人再试会被说成验证码不正确。
      * <p>
      * 码不对、试太多次被锁时回 400 而不是 401：界面上凡 401 一律整页重载，提示句来不及显示，
      * 人只看到页面闪了一下、开关弹回开着，不知道是码输错了，更不知道再错下去会被锁。
@@ -466,7 +467,7 @@ public class ConfigUiAuthController {
      * <p>
      * 密钥一并清掉，见 {@code ConfigUiAuthService#disableTotp}。关成之后换掉当前这一把会话、注销别处的会话，
      * 见 {@link ConfigUiAuthService#rotateSession}。
-     * @param body 请求体，code 字段为验证器给出的六位数字
+     * @param body 请求体，current 字段为现在的密码，code 字段为验证器给出的六位数字
      * @return 关闭结果
      */
     @PostMapping("/totp/disable")
@@ -477,6 +478,14 @@ public class ConfigUiAuthController {
             result.put("success", false);
             result.put("message", "二次验证本来就没开着");
             return ResponseEntity.badRequest().body(result);
+        }
+
+        // 先核密码、再走来源限速与验证码，和绑定那路同一套次序：
+        // 一枚被偷走的会话 Cookie 不该卸得掉一整道防线
+        Optional<ResponseEntity<JSONObject>> denied =
+                CurrentPasswordGate.require(authService, body, request, "再关二次验证");
+        if (denied.isPresent()) {
+            return denied.get();
         }
 
         ConfigUiAuthService.CredentialCheck gate = authService.beginSensitiveTotp(request.getRemoteAddr());

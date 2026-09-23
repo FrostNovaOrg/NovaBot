@@ -272,13 +272,14 @@ async function enrollFlow(flow, result, settle) {
 }
 
 /**
- * 从开拨到关：先要一次现在的码
+ * 从开拨到关：先核密码，再要一次现在的码
  */
 function disableFlow(flow, result, settle) {
   flow.innerHTML =
-    '<p class="al-note">关掉的是一整道防线。填一次验证器现在给的 6 位数字，'
+    '<p class="al-note">关掉的是一整道防线。填一次现在的密码和验证器现在给的 6 位数字，'
     + '证明它此刻就在你手上。关掉之后那把密钥会一并清掉，验证器里那一条可以删了。</p>'
     + '<div class="totp-confirm">'
+    + '<input id="totp-off-pwd" type="password" placeholder="现在的密码" autocomplete="current-password">'
     + '<input id="totp-off-code" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="6 位数字">'
     + '<button type="button" id="totp-off-ok">确认关闭</button>'
     + '<button type="button" id="totp-off-no">取消</button>'
@@ -289,7 +290,7 @@ function disableFlow(flow, result, settle) {
     try {
       const res = await api('/auth/totp/disable', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({code: $('#totp-off-code').value}),
+        body: JSON.stringify({current: $('#totp-off-pwd').value, code: $('#totp-off-code').value}),
       });
       report(result, res);
       settle(!res.success);
