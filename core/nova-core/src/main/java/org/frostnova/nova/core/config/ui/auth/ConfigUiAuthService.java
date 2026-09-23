@@ -364,16 +364,23 @@ public class ConfigUiAuthService {
     }
 
     /**
-     * 校验一个当前有效的验证码
+     * 校验并消费一个当前有效的验证码
      * <p>
      * 给「关掉二次验证」那条路用：关掉这道防线的人得先证明他此刻手里就有那个验证器。
      * 少了这一步，一枚被偷走的会话 Cookie 就能把二次验证卸掉。
+     * <p>
+     * <b>匹配到时间步后就消费那一格</b>，与登录那条路共用 lastUsedTotpStep：登录刚用过的码
+     * 不能再拿来关，同一格或更早的格一律拒。密码核对由调用方先做完，密码错的那一趟走不到这里。
      * @param code 使用者输入的验证码
-     * @return 密钥还没绑定或验证码不对时为 false
+     * @return 密钥还没绑定、验证码不对、或这一格已经用过时为 false
      */
     public boolean verifyCurrentCode(String code) {
         String secret = totpSecret;
-        return secret != null && TotpGenerator.verify(secret, code, clock.get());
+        if (secret == null) {
+            return false;
+        }
+        Long step = TotpGenerator.matchingStep(secret, code, clock.get());
+        return step != null && consumeTotpStep(step);
     }
 
     /**

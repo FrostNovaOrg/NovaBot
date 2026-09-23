@@ -1,8 +1,10 @@
 package org.frostnova.nova.core.config.ui.auth;
 
 import com.alibaba.fastjson2.JSONObject;
+import jakarta.servlet.http.Cookie;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.ConfigUiAuthController;
+import org.frostnova.nova.core.config.ui.ConfigUiSecurityFilter;
 import org.frostnova.nova.core.config.ui.auth.passkey.PasskeyRelyingParty;
 import org.frostnova.nova.core.config.ui.auth.passkey.PasskeyService;
 import org.frostnova.nova.core.config.ui.auth.passkey.PasskeyStore;
@@ -97,9 +99,13 @@ class LockoutMinutesNoticeTest {
         int lockMinutes = properties.getConfigUi().getAuth().getLockoutMinutes();
         ConfigUiAuthService service = justLocked(properties);
         ConfigUiAuthController controller = new ConfigUiAuthController(service, null, properties);
+        // 关二次验证先核密码，得带一把会话；从没锁的那个来源签发，不惊动 IP 上那把锁
+        ConfigUiSession session = service.issueForOperator("127.0.0.1");
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setRemoteAddr(IP);
+        request.setCookies(new Cookie(ConfigUiSecurityFilter.SESSION_COOKIE, session.getId()));
         JSONObject body = new JSONObject();
+        body.put("current", PASSWORD);
         body.put("code", "000000");
 
         assertJustShortOfFullLock(service, lockMinutes);

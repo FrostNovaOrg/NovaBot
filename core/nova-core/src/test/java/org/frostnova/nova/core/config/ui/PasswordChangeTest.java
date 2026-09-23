@@ -7,7 +7,6 @@ import org.frostnova.nova.core.config.ui.auth.ConfigUiSession;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSessionStore;
 import org.frostnova.nova.core.config.ui.auth.LoginThrottle;
 import org.frostnova.nova.core.config.ui.auth.PasswordHash;
-import org.frostnova.nova.core.config.ui.auth.TotpGenerator;
 import org.frostnova.nova.core.util.IpMatcher;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,7 +24,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -124,12 +122,6 @@ class PasswordChangeTest {
         if (next != null) {
             body.put("next", next);
         }
-        return body;
-    }
-
-    private JSONObject code(String value) {
-        JSONObject body = new JSONObject();
-        body.put("code", value);
         return body;
     }
 
@@ -314,21 +306,17 @@ class PasswordChangeTest {
     }
 
     @Test
-    @DisplayName("🔴 换一把会话不把旧密码的连错次数清零：连错 4 次后关二次验证换会话，换出来的那一把再错 1 次照样注销")
+    @DisplayName("🔴 换一把会话不把旧密码的连错次数清零：连错 4 次后换会话，换出来的那一把再错 1 次照样注销")
     void renewedSessionKeepsTheMissCount() {
         MockHttpServletRequest stolen = request(ConfigUiSession.Channel.PASSWORD);
-        // 关二次验证是唯一不核密码就会换会话的那条路：绑验证器现在也要核密码，
-        // 一核就 MATCH 清零次数，量不到「换会话保留次数」这件事
-        String secret = TotpGenerator.generateSecret();
-        authService.activateTotp(null, secret);
         for (int i = 1; i <= 4; i++) {
             controller.changePassword(body("猜的第 " + i + " 个", NEW), stolen);
         }
 
-        ResponseEntity<JSONObject> disabled = controller.totpDisable(
-                code(TotpGenerator.currentCode(secret, Instant.now())), stolen);
-        String renewed = sessionIdOf(disabled);
-        assertNotNull(renewed, "关掉之后没交回新 Cookie，无从接着量: " + disabled.getBody().toJSONString());
+        // 直接调 rotateSession 量「换会话保留次数」——走任何核密码的路都会在 MATCH 时清零次数
+        ConfigUiAuthService.SessionRotation rotation =
+                authService.rotateSession(stolen.getCookies()[0].getValue());
+        String renewed = rotation.session().getId();
 
         ResponseEntity<JSONObject> fifth = controller.changePassword(body("猜的第 5 个", NEW), withCookie(renewed));
 
