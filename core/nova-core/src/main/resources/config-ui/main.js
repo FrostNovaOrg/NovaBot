@@ -647,6 +647,7 @@ async function renderTotpSetup() {
     + '<label>不方便扫码时手动输入这串密钥</label>'
     + '<code>' + esc(setup.secret) + '</code>'
     + '<div class="totp-confirm">'
+    + '<input id="totp-pwd" type="password" placeholder="现在的密码" autocomplete="current-password">'
     + '<input id="totp-code" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="6 位数字">'
     + '<button type="button" id="totp-enroll">确认绑定</button>'
     + '<button type="button" id="totp-skip">暂不绑定</button>'
@@ -656,7 +657,7 @@ async function renderTotpSetup() {
   $('#totp-enroll').addEventListener('click', async () => {
     const r = await api('/auth/totp/enroll', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({code: $('#totp-code').value})
+      body: JSON.stringify({current: $('#totp-pwd').value, code: $('#totp-code').value})
     });
     if (r.success) {
       box.style.display = 'none';

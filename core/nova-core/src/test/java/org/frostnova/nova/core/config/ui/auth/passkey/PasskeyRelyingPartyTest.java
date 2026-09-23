@@ -1,6 +1,7 @@
 package org.frostnova.nova.core.config.ui.auth.passkey;
 
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.core.config.ui.ConfigUiSecurityFilter;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
@@ -79,8 +80,9 @@ class PasskeyRelyingPartyTest extends PasskeyTestSupport {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/config/api/auth/passkey");
         request.addHeader(HttpHeaders.HOST, "192.168.1.10:7827");
         request.setRemoteAddr(CLIENT_IP);
+        request.setCookies(new jakarta.servlet.http.Cookie(ConfigUiSecurityFilter.SESSION_COOKIE, sessionId));
 
-        JSONObject register = controller.registerOptions(request);
+        JSONObject register = registerOptions(request);
         assertFalse(register.getBooleanValue("success"));
         assertTrue(register.getString("message").contains("域名"));
 

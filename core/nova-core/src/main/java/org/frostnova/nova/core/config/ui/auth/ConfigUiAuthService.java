@@ -372,7 +372,7 @@ public class ConfigUiAuthService {
     public CurrentPasswordCheck checkCurrentPassword(char[] password, String sessionId, String clientIp) {
         Optional<ConfigUiSession> found = sessions.validate(sessionId, clock.get());
         if (found.isEmpty()) {
-            log.warn("配置界面改口令时认不出当前会话, 已拒绝, 来源: {}", clientIp);
+            log.warn("配置界面再核现在的密码时认不出当前会话, 已拒绝, 来源: {}", clientIp);
             return new CurrentPasswordCheck(CurrentPasswordVerdict.NO_SESSION, 0);
         }
 
@@ -399,13 +399,13 @@ public class ConfigUiAuthService {
             return signOutAfterMisses(session, clientIp);
         }
 
-        log.warn("配置界面改口令时旧口令不符, 这把会话已连错 {} 次, 来源: {}", attempt, clientIp);
+        log.warn("配置界面再核现在的密码时旧口令不符, 这把会话已连错 {} 次, 来源: {}", attempt, clientIp);
         return new CurrentPasswordCheck(CurrentPasswordVerdict.MISMATCH, CURRENT_PASSWORD_MISSES_BEFORE_SIGN_OUT - attempt);
     }
 
     private CurrentPasswordCheck signOutAfterMisses(ConfigUiSession session, String clientIp) {
         sessions.revoke(session.getId());
-        log.warn("配置界面改口令时旧口令连错 {} 次, 已注销这把会话, 来源: {}",
+        log.warn("配置界面再核现在的密码时旧口令连错 {} 次, 已注销这把会话, 来源: {}",
                 CURRENT_PASSWORD_MISSES_BEFORE_SIGN_OUT, clientIp);
         return new CurrentPasswordCheck(CurrentPasswordVerdict.SIGNED_OUT, 0);
     }

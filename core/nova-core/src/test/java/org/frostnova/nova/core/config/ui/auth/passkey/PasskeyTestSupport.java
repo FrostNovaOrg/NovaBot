@@ -1,8 +1,10 @@
 package org.frostnova.nova.core.config.ui.auth.passkey;
 
 import com.alibaba.fastjson2.JSONObject;
+import jakarta.servlet.http.Cookie;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.ConfigUiPasskeyController;
+import org.frostnova.nova.core.config.ui.ConfigUiSecurityFilter;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiSessionStore;
 import org.frostnova.nova.core.config.ui.auth.LoginThrottle;
@@ -46,6 +48,9 @@ abstract class PasskeyTestSupport {
 
     ConfigUiPasskeyController controller;
 
+    /** 登记这条路要先核现在的密码，台面预先登入一把会话，请求一律带上它 */
+    String sessionId;
+
     @BeforeEach
     void setUpPasskey() {
         properties = new NovaCoreProperties();
@@ -61,21 +66,36 @@ abstract class PasskeyTestSupport {
         authService = new ConfigUiAuthService(auth,
                 new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(2)),
                 new LoginThrottle(auth.getMaxFailures(), Duration.ofMinutes(15)), null);
-        controller = new ConfigUiPasskeyController(new PasskeyService(store, authService), properties);
+        controller = new ConfigUiPasskeyController(new PasskeyService(store, authService), properties, authService);
+        sessionId = authService.login(PASSWORD.toCharArray(), null, CLIENT_IP).session().getId();
     }
 
     MockHttpServletRequest request() {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/config/api/auth/passkey");
         request.addHeader("Host", HOST);
         request.setRemoteAddr(CLIENT_IP);
+        request.setCookies(new Cookie(ConfigUiSecurityFilter.SESSION_COOKIE, sessionId));
         return request;
+    }
+
+    /**
+     * 取登记参数：带上现在的密码过再核闸，回包里那份参数
+     */
+    JSONObject registerOptions() {
+        return registerOptions(request());
+    }
+
+    JSONObject registerOptions(MockHttpServletRequest request) {
+        JSONObject body = new JSONObject();
+        body.put("current", PASSWORD);
+        return controller.registerOptions(body, request).getBody();
     }
 
     /**
      * 登记一把钥匙，返回它的初始计数器
      */
     long register(TestAuthenticator authenticator, String name, long signCount) {
-        JSONObject options = controller.registerOptions(request());
+        JSONObject options = registerOptions();
         JSONObject result = controller.registerVerify(
                 authenticator.register(options.getString("challenge"), ORIGIN, RP_ID, name, signCount), request());
 

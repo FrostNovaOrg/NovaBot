@@ -45,13 +45,13 @@ class PasskeyRegistrationTest extends PasskeyTestSupport {
 
         // 阳性对照先走一遍：正好 40 个字要收得下。少了这一条，
         // 一个把上限错写成 0 的实现也能让下面那条阴性判据全绿
-        JSONObject options = controller.registerOptions(request());
+        JSONObject options = registerOptions();
         JSONObject accepted = controller.registerVerify(
                 authenticator.register(options.getString("challenge"), ORIGIN, RP_ID, "字".repeat(40), 0), request());
         assertTrue(accepted.getBooleanValue("success"), "正好 40 个字该收下: " + accepted.getString("message"));
 
         TestAuthenticator second = new TestAuthenticator(TestAuthenticator.RS256);
-        JSONObject next = controller.registerOptions(request());
+        JSONObject next = registerOptions();
         JSONObject rejected = controller.registerVerify(
                 second.register(next.getString("challenge"), ORIGIN, RP_ID, "字".repeat(41), 0), request());
 
@@ -64,7 +64,7 @@ class PasskeyRegistrationTest extends PasskeyTestSupport {
     @DisplayName("一个挑战只能用一次")
     void rejectsReusedChallenge() {
         TestAuthenticator authenticator = new TestAuthenticator(TestAuthenticator.ES256);
-        JSONObject options = controller.registerOptions(request());
+        JSONObject options = registerOptions();
         String challenge = options.getString("challenge");
 
         JSONObject first = controller.registerVerify(
@@ -87,7 +87,7 @@ class PasskeyRegistrationTest extends PasskeyTestSupport {
         TestAuthenticator authenticator = new TestAuthenticator(TestAuthenticator.ES256);
         register(authenticator, "我的手机", 0);
 
-        JSONObject options = controller.registerOptions(request());
+        JSONObject options = registerOptions();
         JSONObject again = controller.registerVerify(
                 authenticator.register(options.getString("challenge"), ORIGIN, RP_ID, "又一次", 0), request());
 
@@ -102,7 +102,7 @@ class PasskeyRegistrationTest extends PasskeyTestSupport {
     void rejectsAttestationWithCertificateChain() {
         TestAuthenticator authenticator = new TestAuthenticator(TestAuthenticator.ES256);
 
-        JSONObject options = controller.registerOptions(request());
+        JSONObject options = registerOptions();
         JSONObject rejected = controller.registerVerify(
                 authenticator.register(options.getString("challenge"), ORIGIN, RP_ID, "带证书的", 0, "packed"), request());
 
@@ -110,7 +110,7 @@ class PasskeyRegistrationTest extends PasskeyTestSupport {
         assertEquals(0, controller.list(request()).getJSONArray("passkeys").size());
 
         // 阳性对照：同一副台面上 none 该收得下
-        JSONObject next = controller.registerOptions(request());
+        JSONObject next = registerOptions();
         assertTrue(controller.registerVerify(
                         authenticator.register(next.getString("challenge"), ORIGIN, RP_ID, "我的手机", 0, "none"), request())
                 .getBooleanValue("success"));
@@ -121,7 +121,7 @@ class PasskeyRegistrationTest extends PasskeyTestSupport {
     void rejectsRegistrationForAnotherRpId() {
         TestAuthenticator authenticator = new TestAuthenticator(TestAuthenticator.ES256);
 
-        JSONObject options = controller.registerOptions(request());
+        JSONObject options = registerOptions();
         JSONObject rejected = controller.registerVerify(
                 authenticator.register(options.getString("challenge"), ORIGIN, "phishing.example", "别处的", 0), request());
 
@@ -134,10 +134,10 @@ class PasskeyRegistrationTest extends PasskeyTestSupport {
     void excludesRegistered() {
         TestAuthenticator authenticator = new TestAuthenticator(TestAuthenticator.ES256);
 
-        assertEquals(0, controller.registerOptions(request()).getJSONArray("excludeCredentials").size());
+        assertEquals(0, registerOptions().getJSONArray("excludeCredentials").size());
         register(authenticator, "我的手机", 0);
 
-        JSONArray exclude = controller.registerOptions(request()).getJSONArray("excludeCredentials");
+        JSONArray exclude = registerOptions().getJSONArray("excludeCredentials");
         assertEquals(1, exclude.size());
         assertEquals(authenticator.credentialId(), exclude.getJSONObject(0).getString("id"));
     }

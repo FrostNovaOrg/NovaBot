@@ -250,6 +250,7 @@ async function enrollFlow(flow, result, settle) {
       + '<label for="totp-enroll-code">不方便扫码时手动输入这串密钥</label>'
       + '<code>' + esc(setup.secret) + '</code>'
       + '<div class="totp-confirm">'
+      + '<input id="totp-enroll-pwd" type="password" placeholder="现在的密码" autocomplete="current-password">'
       + '<input id="totp-enroll-code" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="6 位数字">'
       + '<button type="button" id="totp-enroll-ok">确认开启</button>'
       + '<button type="button" id="totp-enroll-no">取消</button>'
@@ -260,7 +261,7 @@ async function enrollFlow(flow, result, settle) {
       try {
         const res = await api('/auth/totp/enroll', {
           method: 'POST', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({code: $('#totp-enroll-code').value}),
+          body: JSON.stringify({current: $('#totp-enroll-pwd').value, code: $('#totp-enroll-code').value}),
         });
         report(result, res);
         // 没绑上就把开关拨回去：留在「已启用」上会让人以为绑好了，而下次登录他进不来
