@@ -743,7 +743,7 @@ novabot:
 
 ### 从本项目的旧版本升级
 
-用 `install.sh` 或容器部署时，下面这些里除旧文件名外都由脚本处理。五个旧名插件，安装脚本和容器都不会删，要自己删；`StarBotCore.jar` 只有 `install.sh` 会删。手工升级则整段照做：
+用 `install.sh` 升级时，脚本会删掉安装目录里的 `lib/` 与 `plugins-lib/`，再把新产物整份拷进去，所以 `NovaBot.jar`、`lib/`、`plugins-lib/` 都换成新的。容器入口每次启动会用镜像里的 `NovaBot.jar` 与 `lib/` 盖掉卷 `/app` 上的同名文件，并按新文件名换内置插件；`plugins-lib/` 只建目录，不从镜像里的 `/opt/starbot/plugins-lib` 铺到卷上，换镜像后卷里的那份不是新的，这一目录要自己按第 3 步换。五个旧名插件，安装脚本和容器都不会删，要自己删；`StarBotCore.jar` 只有 `install.sh` 会删。手工升级则整段照做：
 
 1. 停止服务
 2. **备份 `application.yml`、`datasource.json`、`cookies.json`、`cookies.key`**。登录凭据默认加密后仍写在 `cookies.json`，密钥在 `cookies.key`，没有另存一份密文文件。若旁边还有明文迁成加密时留下的 `cookies.json.plain.bak`，一并备份。
@@ -757,7 +757,7 @@ novabot:
 
    从 **5.2 及更早**升级时，主程序和内置插件是旧文件名，换成上面的新名字不会盖掉它们。`plugins/` 里旧的 jar 会和新的一起加载。第三方插件不要动，只删这些：
 
-   - 程序目录里的 `StarBotCore.jar`（与 `NovaBot.jar` 同级）。`install.sh` 会删这一个；容器入口不删，手工升级也不删。
+   - 程序目录里的 `StarBotCore.jar`（与 `NovaBot.jar` 同级）。`install.sh` 会删这一个。容器入口不会删它；只按第 3、4 步换文件，也不会把它一起删掉。
    - `plugins/starbot-onebot-adapter-1.0.0.jar`
    - `plugins/starbot-onebot-adapter-napcat-extension-1.0.0.jar`
    - `plugins/starbot-bilibili-1.0.0.jar`
@@ -786,7 +786,7 @@ novabot:
       cookie-path: cookies.json
 ```
 
-个别整节挪过位置的，不和 `starbot:` 那条告警出现在同一次启动里。先按那条 WARN 把根键改成 `novabot:`，改完重启。下一次启动时，还写在旧位置的整节才会被点名。
+个别整节挪过位置的，根键还是 `starbot:` 时，挪位那条不会出。先按那条 WARN 把根键改成 `novabot:`，改完重启。下一次启动时，还写在旧位置的整节才会被点名。`novabot:` 下已经有写在旧位置的整节、同时又留着 `starbot:` 键时，两条会在同一次启动里一起出现。
 
 ### 从上游 StarBot 3.0-beta8 迁移
 
