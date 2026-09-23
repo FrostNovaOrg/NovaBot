@@ -3,6 +3,8 @@ package org.frostnova.nova.core.config.ui.auth;
 import lombok.Getter;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 一次配置界面的登录会话
@@ -12,6 +14,11 @@ import java.time.Instant;
  */
 @Getter
 public class ConfigUiSession {
+    /**
+     * 每把会话最多留几把待绑密钥
+     */
+    static final int MAX_PENDING_SECRETS = 3;
+
     /**
      * 会话标识，写入 Cookie
      */
@@ -72,6 +79,19 @@ public class ConfigUiSession {
     @Getter(lombok.AccessLevel.NONE)
     private int passwordChecks;
 
+    /**
+     * 本会话签发过的待绑验证器密钥，最多留最近 {@value #MAX_PENDING_SECRETS} 把
+     * <p>
+     * 按会话存而不是全进程共用：偷到 Cookie 的人先打开绑定读走的那把，主人之后打开
+     * 拿到的是新的一把，绑不上别人的。留至多三把是给「刷新过页面」「首页引导卡与设置页
+     * 各开过一次」留的余量——用户照着先扫的那张码仍能绑上。
+     * <p>
+     * <b>换会话不随行</b>（见 {@link #renew}）：换会话多半正要绑上或刚绑上，
+     * 带着旧的那几把只会让别人先读走的继续算数。
+     */
+    @Getter(lombok.AccessLevel.NONE)
+    private final List<String> pendingSecrets = new ArrayList<>();
+
     ConfigUiSession(String id, String csrfToken, Instant issuedAt, Instant expiresAt, String clientIp, Channel channel) {
         this.id = id;
         this.csrfToken = csrfToken;
@@ -105,9 +125,35 @@ public class ConfigUiSession {
     }
 
     /**
+     * 挂一把本会话刚签发的待绑密钥，第 {@value #MAX_PENDING_SECRETS} 把之后挤掉最早那把
+     * @param secret Base32 密钥
+     */
+    synchronized void addPendingSecret(String secret) {
+        pendingSecrets.add(secret);
+        while (pendingSecrets.size() > MAX_PENDING_SECRETS) {
+            pendingSecrets.remove(0);
+        }
+    }
+
+    /**
+     * @return 本会话现有的待绑密钥，最早签发的在前
+     */
+    synchronized List<String> pendingSecrets() {
+        return List.copyOf(pendingSecrets);
+    }
+
+    /**
+     * 清掉本会话全部待绑密钥
+     */
+    synchronized void clearPendingSecrets() {
+        pendingSecrets.clear();
+    }
+
+    /**
      * 同一次登录换一把新标识与新 CSRF 令牌
      * <p>
      * 换的只有这两个值：登录时刻、绝对期限、来源、通道、「已按掉绑定提示」与旧口令的连错次数一概照旧。
+     * <b>待绑密钥不随行</b>：换会话多半正要绑上或刚绑上，带着旧的那几把只会让别人先读走的继续算数。
      * 绝对期限若借此重算，被偷的会话每办成一件换会话的事就多活一轮；连错次数若借此清零，
      * 猜的人办成一件不要旧口令的事（比如绑验证器）就又白得几次再猜的机会。
      * @param id 新标识

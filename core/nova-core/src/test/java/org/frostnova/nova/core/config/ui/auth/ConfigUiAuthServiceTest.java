@@ -154,29 +154,88 @@ class ConfigUiAuthServiceTest {
     }
 
     @Test
-    @DisplayName("绑定引导中的密钥在同一进程内不能变")
-    void pendingSecretIsStable() {
-        ConfigUiAuthService service = service(PASSWORD, "");
-
-        // 每次刷新页面换一个密钥的话，先扫进验证器的那个就作废了，而用户毫不知情
-        assertEquals(service.pendingSecret(), service.pendingSecret());
-    }
-
-    @Test
     @DisplayName("绑定确认要校验验证码，通过后登录才开始要验证码")
     void enrollmentActivatesTotp() {
         ConfigUiAuthService service = service(PASSWORD, "");
-        String secret = service.pendingSecret();
+        ConfigUiSession session = service.issueForPassword(IP);
+        String secret = service.issuePendingSecret(session);
 
-        assertTrue(service.verifyPending("000000").isEmpty(), "验证码不对不能算绑定成功");
+        assertTrue(service.verifyPending(session, "000000").isEmpty(), "验证码不对不能算绑定成功");
 
         String code = TotpGenerator.generate(TotpGenerator.base32Decode(secret), Instant.now().getEpochSecond() / 30);
-        assertEquals(secret, service.verifyPending(code).orElse(null));
+        assertEquals(secret, service.verifyPending(session, code).orElse(null));
 
-        service.activateTotp(secret);
+        service.activateTotp(session, secret);
         assertTrue(service.totpRequired());
         assertFalse(service.totpPending(), "绑好了就不该再提示");
         assertFalse(service.login(PASSWORD.toCharArray(), null, "9.9.9.9").success(), "从此登录必须带验证码");
+    }
+
+    // —— 旧格 pendingSecretIsStable 删去：它断言「同进程不变」，与新语义（每次换新、按会话存）
+    //    正面相反；抓的那件事由下面「先读走的那把主人绑不上」一格接着量。 ——
+
+    @Test
+    @DisplayName("偷得会话的人先打开绑定读走的密钥，主人之后打开绑定拿到的不是同一把")
+    void stolenSessionFirstReadSecretIsNotTheMasters() {
+        ConfigUiAuthService service = service(PASSWORD, "");
+        ConfigUiSession shared = service.issueForPassword(IP);
+
+        // 同一把会话（偷到 Cookie 就是同一把）先后各开一次绑定：先开的那次回包里的密钥
+        // 不该在第二次回包里再出现，主人扫的是自己屏幕上那张码，绑不走别人先读走的那把
+        String attackerRead = service.issuePendingSecret(shared);
+        String masterSees = service.issuePendingSecret(shared);
+
+        assertFalse(attackerRead.equals(masterSees),
+                "两次打开绑定回了同一把密钥：别人先读走的那把，主人绑上之后对方也握着验证器种子");
+    }
+
+    @Test
+    @DisplayName("主人刷新过页面，照先扫的那张码仍能绑定，绑上的就是那一把")
+    void firstScannedCodeStillBindsAfterRefresh() {
+        ConfigUiAuthService service = service(PASSWORD, "");
+        ConfigUiSession session = service.issueForPassword(IP);
+        String first = service.issuePendingSecret(session);
+        service.issuePendingSecret(session); // 刷新页面又签了一把
+
+        String firstCode = TotpGenerator.currentCode(first, Instant.now());
+        assertEquals(first, service.verifyPending(session, firstCode).orElse(null),
+                "只认最新一把的话，先前那张码当场作废，而用户并不知道要重新扫");
+
+        service.activateTotp(session, first);
+        assertTrue(service.totpRequired(), "绑上的就该是先前那把");
+        assertTrue(service.login(PASSWORD.toCharArray(), TotpGenerator.currentCode(first, Instant.now()), "9.9.9.8").success(),
+                "绑上的那把之后要能登录，否则等于没绑");
+    }
+
+    @Test
+    @DisplayName("同一会话连开 4 次绑定，最早那把不再认")
+    void oldestPendingSecretIsEvictedAfterThree() {
+        ConfigUiAuthService service = service(PASSWORD, "");
+        ConfigUiSession session = service.issueForPassword(IP);
+        String oldest = service.issuePendingSecret(session);
+        service.issuePendingSecret(session);
+        service.issuePendingSecret(session);
+        String newest = service.issuePendingSecret(session);
+
+        assertTrue(service.verifyPending(session, TotpGenerator.currentCode(oldest, Instant.now())).isEmpty(),
+                "不限把数的话，别人先读走的那把一直算数，留得越久越危险");
+        assertTrue(service.verifyPending(session, TotpGenerator.currentCode(newest, Instant.now())).isPresent(),
+                "刚签的那把反倒要能用，不然第 4 次打开绑定就白开了");
+    }
+
+    @Test
+    @DisplayName("别的会话签发的待绑密钥不认")
+    void otherSessionsPendingSecretIsNotAccepted() {
+        ConfigUiAuthService service = service(PASSWORD, "");
+        ConfigUiSession mine = service.issueForPassword("10.0.0.1");
+        ConfigUiSession theirs = service.issueForPassword("10.0.0.2");
+        String mineSecret = service.issuePendingSecret(mine);
+        String theirsSecret = service.issuePendingSecret(theirs);
+
+        assertTrue(service.verifyPending(theirs, TotpGenerator.currentCode(mineSecret, Instant.now())).isEmpty(),
+                "待绑密钥全进程共用的话，别人那把在自己会话里照样认中，等于互相绑得上对方的验证器");
+        assertTrue(service.verifyPending(theirs, TotpGenerator.currentCode(theirsSecret, Instant.now())).isPresent(),
+                "自己那把反倒要能用");
     }
 
     @Test

@@ -320,7 +320,7 @@ class PasswordChangeTest {
         // 关二次验证是唯一不核密码就会换会话的那条路：绑验证器现在也要核密码，
         // 一核就 MATCH 清零次数，量不到「换会话保留次数」这件事
         String secret = TotpGenerator.generateSecret();
-        authService.activateTotp(secret);
+        authService.activateTotp(null, secret);
         for (int i = 1; i <= 4; i++) {
             controller.changePassword(body("猜的第 " + i + " 个", NEW), stolen);
         }

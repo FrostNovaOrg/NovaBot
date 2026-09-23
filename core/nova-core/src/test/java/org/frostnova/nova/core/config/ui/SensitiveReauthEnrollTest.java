@@ -91,8 +91,8 @@ class SensitiveReauthEnrollTest {
         return body;
     }
 
-    private String pendingSecret() {
-        JSONObject setup = controller.totpSetup();
+    private String pendingSecret(MockHttpServletRequest request) {
+        JSONObject setup = controller.totpSetup(request);
         assertTrue(setup.getBooleanValue("success"), "台面没搭起来: " + setup.toJSONString());
         return setup.getString("secret");
     }
@@ -100,10 +100,11 @@ class SensitiveReauthEnrollTest {
     @Test
     @DisplayName("先过阳性对照：密码对时绑得上，绑完才要码")
     void baselineEnrollWithPassword() {
-        String pending = pendingSecret();
+        MockHttpServletRequest mine = loggedIn();
+        String pending = pendingSecret(mine);
 
         ResponseEntity<JSONObject> enrolled = controller.totpEnroll(
-                body(OLD, TotpGenerator.currentCode(pending, Instant.now())), loggedIn());
+                body(OLD, TotpGenerator.currentCode(pending, Instant.now())), mine);
 
         assertEquals(200, enrolled.getStatusCode().value(), enrolled.getBody().toJSONString());
         assertTrue(enrolled.getBody().getBooleanValue("success"), enrolled.getBody().toJSONString());
@@ -113,10 +114,11 @@ class SensitiveReauthEnrollTest {
     @Test
     @DisplayName("🔴 绑定验证器不带现在的密码：应 400、不绑定")
     void enrollWithoutPasswordIsRefused() {
-        String pending = pendingSecret();
+        MockHttpServletRequest mine = loggedIn();
+        String pending = pendingSecret(mine);
 
         ResponseEntity<JSONObject> denied = controller.totpEnroll(
-                body(null, TotpGenerator.currentCode(pending, Instant.now())), loggedIn());
+                body(null, TotpGenerator.currentCode(pending, Instant.now())), mine);
 
         // 偷到 Cookie 的人拿不出密码。少了这一步，他能替主人开二次验证，
         // 主人下次登录被挡在自己的验证器外头
@@ -131,10 +133,11 @@ class SensitiveReauthEnrollTest {
     @Test
     @DisplayName("🔴 绑定验证器密码错：应 400、不绑定，并说清还剩几次")
     void enrollWithWrongPasswordIsRefused() {
-        String pending = pendingSecret();
+        MockHttpServletRequest mine = loggedIn();
+        String pending = pendingSecret(mine);
 
         ResponseEntity<JSONObject> denied = controller.totpEnroll(
-                body("这不是我的密码", TotpGenerator.currentCode(pending, Instant.now())), loggedIn());
+                body("这不是我的密码", TotpGenerator.currentCode(pending, Instant.now())), mine);
 
         assertEquals(400, denied.getStatusCode().value(), denied.getBody().toJSONString());
         assertFalse(denied.getBody().getBooleanValue("success"), denied.getBody().toJSONString());
@@ -147,7 +150,8 @@ class SensitiveReauthEnrollTest {
     @Test
     @DisplayName("🔴 认不出会话时绑定验证器：应 401，文案点名绑定")
     void enrollWithoutSessionIsUnauthorised() {
-        String pending = pendingSecret();
+        // 待绑密钥挂在会话上，无会话的请求根本到不了验码那步；这里借一把会话只为凑个像样的码
+        String pending = pendingSecret(loggedIn());
         MockHttpServletRequest bare = new MockHttpServletRequest();
         bare.setRemoteAddr("127.0.0.1");
 
@@ -164,7 +168,7 @@ class SensitiveReauthEnrollTest {
     @DisplayName("🔴 没填密码不算猜：连点几次提交不把人推出登录")
     void missingPasswordIsNotCounted() {
         MockHttpServletRequest mine = loggedIn();
-        String pending = pendingSecret();
+        String pending = pendingSecret(mine);
 
         for (int i = 1; i <= ConfigUiAuthService.CURRENT_PASSWORD_MISSES_BEFORE_SIGN_OUT; i++) {
             ResponseEntity<JSONObject> denied = controller.totpEnroll(
