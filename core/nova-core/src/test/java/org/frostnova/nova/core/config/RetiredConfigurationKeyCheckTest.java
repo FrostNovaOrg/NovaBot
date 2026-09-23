@@ -179,6 +179,68 @@ class RetiredConfigurationKeyCheckTest {
     }
 
     @Test
+    @DisplayName("三节写在 5.3 挪位前的旧位置时各报一行，说清这一节没被读、该挪到哪，不贴值")
+    void warnsOnceForEachMovedSection() {
+        MockEnvironment environment = new MockEnvironment()
+                .withProperty("novabot.core.alert.qq-platform", "moved-alert-value")
+                .withProperty("novabot.core.config-ui.napcat.address", "moved-napcat-value")
+                .withProperty("novabot.bilibili.event-stream.enabled", "true");
+
+        new RetiredConfigurationKeyCheck(environment).check();
+
+        List<String> warnings = warnings();
+        assertEquals(3, warnings.size(), "三节应各报一行, 实际: " + warnings);
+        assertTrue(warnings.stream().anyMatch(line -> line.contains("novabot.adapter.onebot.alert")),
+                "告警那行要写清挪到 novabot.adapter.onebot.alert: " + warnings);
+        assertTrue(warnings.stream().anyMatch(line -> line.contains("novabot.adapter.onebot.napcat")),
+                "NapCat 那行要写清挪到 novabot.adapter.onebot.napcat: " + warnings);
+        assertTrue(warnings.stream().anyMatch(line -> line.contains("novabot.core.event-stream")),
+                "事件流那行要写清挪到 novabot.core.event-stream: " + warnings);
+        for (String line : warnings) {
+            assertTrue(line.contains("没有被读取"), "要说清这一节没被读取: " + line);
+            assertFalse(line.contains("moved-alert-value") || line.contains("moved-napcat-value"),
+                    "不得贴出配置值: " + line);
+        }
+    }
+
+    @Test
+    @DisplayName("挪位节里留着口令类设置时补一句改完请删掉，不贴值")
+    void movedSectionWithSecretMentionsLeftoverSecret() {
+        new RetiredConfigurationKeyCheck(new MockEnvironment()
+                .withProperty("novabot.core.config-ui.napcat.token", "moved-secret-value")).check();
+
+        List<String> warnings = warnings();
+        assertEquals(1, warnings.size(), "应当只报一行, 实际: " + warnings);
+        assertTrue(warnings.get(0).contains("novabot.adapter.onebot.napcat"), warnings.get(0));
+        assertTrue(warnings.get(0).contains("旧位置还留着口令类设置，改完请删掉"), warnings.get(0));
+        assertFalse(warnings.get(0).contains("moved-secret-value"), "不得贴出口令值: " + warnings.get(0));
+    }
+
+    @Test
+    @DisplayName("改名后残留的 novabot.core.command.prefix 同样报一行已撤销")
+    void warnsForNovabotCommandPrefix() {
+        new RetiredConfigurationKeyCheck(new MockEnvironment()
+                .withProperty("novabot.core.command.prefix", "/")).check();
+
+        List<String> warnings = warnings();
+        assertEquals(1, warnings.size(), "应当只报一行, 实际: " + warnings);
+        assertTrue(warnings.get(0).contains("novabot.core.command.prefix"), warnings.get(0));
+        assertTrue(warnings.get(0).contains("已撤销"), warnings.get(0));
+        assertTrue(warnings.get(0).contains("@"), "得写清现在靠什么触发命令: " + warnings.get(0));
+    }
+
+    @Test
+    @DisplayName("阴性：同样三节的键写在挪位后的新位置时不出声")
+    void staysQuietWhenMovedSectionsAreAtNewPosition() {
+        new RetiredConfigurationKeyCheck(new MockEnvironment()
+                .withProperty("novabot.adapter.onebot.alert.platform", "new-alert-value")
+                .withProperty("novabot.adapter.onebot.napcat.address", "new-napcat-value")
+                .withProperty("novabot.core.event-stream.enabled", "true")).check();
+
+        assertEquals(List.of(), warnings());
+    }
+
+    @Test
     @DisplayName("阴性：键名带 starbot 但不以 starbot. 开头时不出声，环境变量形 STARBOT_ 也不认")
     void staysQuietWhenStarbotIsNotTheRoot() {
         MockEnvironment environment = new MockEnvironment()

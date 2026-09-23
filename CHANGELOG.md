@@ -12,6 +12,8 @@
 
 ### 修复
 
+- 写在旧位置的三节设置（`novabot.core.alert.qq-*`、`novabot.core.config-ui.napcat.*`、`novabot.bilibili.event-stream.*`）与 `novabot.core.command.prefix`，启动时会提示没被读取、该挪到哪
+
 ## [5.5.1] - 2026-09-18
 
 ### 变更

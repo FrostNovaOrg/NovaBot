@@ -35,7 +35,7 @@ public final class ExternalConfigurationFields {
         put("spring.data.redis.host", "java.lang.String", ConfigLevel.Level.COMMON, ConfigEffect.Effect.IMMEDIATE,
                 "累计数据 Redis · 地址",
                 "累计数据存储的 Redis 地址，填了才有跨场次的累计数据。"
-                        + "留空时本场数据完整可用，但「我的总数据」「直播间总数据」「总数据排行榜」"
+                        + "留空时本场数据完整可用，但「直播间总数据」「总数据排行榜」"
                         + "会明确提示不可用——那类数据随时间无限增长，放在文件里迟早撑不住。"
                         + "只需本机可达，切勿暴露到公网。填完即时生效，不用重启；"
                         + "Redis 中途挂了会自动降级为只有本场数据，连回来自己恢复");
