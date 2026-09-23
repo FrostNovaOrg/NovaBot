@@ -34,6 +34,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.LongStream;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -277,6 +278,50 @@ class BilibiliAutoFollowTest {
 
         assertEquals(List.of(1, 2, 1, 1, 2), api.pageRequests,
                 "复核取失败后下一轮应重新翻关注列表，不该等满下一个小时，实际翻页: " + api.pageRequests);
+    }
+
+    @Test
+    @DisplayName("删掉再加回的主播，账号已不关注他：不满一小时这一轮就补关注，不等复核")
+    void removedThenReaddedIsFollowedWithinTheHour() {
+        Instant start = Instant.parse("2026-01-01T00:00:00Z");
+        configure(ON_PAGE_ONE, ON_PAGE_TWO);
+        service.followConfiguredUps(start);
+
+        configure(ON_PAGE_ONE);
+        service.followConfiguredUps(start.plusSeconds(30));
+
+        api.following.remove(Long.valueOf(ON_PAGE_TWO));
+
+        configure(ON_PAGE_ONE, ON_PAGE_TWO);
+        service.followConfiguredUps(start.plusSeconds(60));
+
+        assertAll(
+                () -> assertEquals(List.of(1, 2, 1, 2), api.pageRequests,
+                        "删掉再加回后这一轮应重新翻关注列表，实际翻页: " + api.pageRequests),
+                () -> assertEquals(List.of(ON_PAGE_TWO), api.followRequests,
+                        "加回的这位账号已不关注，这一轮应补关注，实际: " + api.followRequests));
+    }
+
+    @Test
+    @DisplayName("推送名单全部删光再加回，账号已不关注他：不满一小时这一轮就补关注")
+    void emptiedThenReaddedIsFollowedWithinTheHour() {
+        Instant start = Instant.parse("2026-01-01T00:00:00Z");
+        configure(ON_PAGE_ONE, ON_PAGE_TWO);
+        service.followConfiguredUps(start);
+
+        configure();
+        service.followConfiguredUps(start.plusSeconds(30));
+
+        api.following.remove(Long.valueOf(ON_PAGE_TWO));
+
+        configure(ON_PAGE_ONE, ON_PAGE_TWO);
+        service.followConfiguredUps(start.plusSeconds(60));
+
+        assertAll(
+                () -> assertEquals(List.of(1, 2, 1, 2), api.pageRequests,
+                        "全部删光再加回后这一轮应重新翻关注列表，实际翻页: " + api.pageRequests),
+                () -> assertEquals(List.of(ON_PAGE_TWO), api.followRequests,
+                        "加回的这位账号已不关注，这一轮应补关注，实际: " + api.followRequests));
     }
 
     @Test
