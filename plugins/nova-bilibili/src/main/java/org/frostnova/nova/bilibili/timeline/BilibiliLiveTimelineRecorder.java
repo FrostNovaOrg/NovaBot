@@ -7,8 +7,10 @@ import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.core.timeline.TimelineEventType;
 import org.frostnova.nova.core.timeline.TimelineWriter;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.annotation.Order;
 
 /**
  * 把哔哩哔哩主播的开播、下播记进时间线
@@ -25,8 +27,15 @@ import org.springframework.context.event.EventListener;
  * 只记事，不打接口：标题与封面不在事件里，要拿得再调一次直播间的接口，
  * 为一条流水去打外网不值当（要标题的那一路自己去拿，见开播推送处理器）。
  */
+@Slf4j
 @NovaComponent
 public class BilibiliLiveTimelineRecorder {
+    /**
+     * 早于重置本场数据（-10000）和推送（0）。
+     * 同一场开播里那些步骤若出错，这一条已经落下，不会被一起丢掉。
+     */
+    private static final int BEFORE_THE_REST = -10001;
+
     private final TimelineWriter timeline;
 
     @Autowired
@@ -38,6 +47,7 @@ public class BilibiliLiveTimelineRecorder {
      * 开播
      * @param event 开播事件
      */
+    @Order(BEFORE_THE_REST)
     @EventListener
     public void onLiveOn(BilibiliLiveOnEvent event) {
         record(TimelineEventType.LIVE_ON, "开播了", event.getSource());
@@ -47,6 +57,7 @@ public class BilibiliLiveTimelineRecorder {
      * 下播
      * @param event 下播事件
      */
+    @Order(BEFORE_THE_REST)
     @EventListener
     public void onLiveOff(BilibiliLiveOffEvent event) {
         record(TimelineEventType.LIVE_OFF, "下播了", event.getSource());
@@ -55,23 +66,28 @@ public class BilibiliLiveTimelineRecorder {
     /**
      * 记一条开播或下播
      * <p>
-     * 通道一栏写主播名——日志页上「谁开播了」是按名字翻的；名字不在事件里时写房间号，
+     * 主播一栏写主播名——日志页上「谁开播了」是按主播筛的；名字不在事件里时写房间号，
      * 不为一条流水去打接口补（见类注释）。uid 另记进 detail：主播会改名，
      * 「昨晚那个号今天叫什么」得靠不变的 uid 才答得出来。
+     * 自己出错只写日志，不往外抛，免得把后面的推送也拦住。
      * @param type 开播或下播
      * @param verb 一句人话的后半截
      * @param source 事件里的主播信息
      */
     private void record(TimelineEventType type, String verb, LiveStreamerInfo source) {
-        String name = source.getUname() == null || source.getUname().isBlank()
-                ? "房间 " + source.getRoomIdString()
-                : source.getUname();
+        try {
+            String name = source.getUname() == null || source.getUname().isBlank()
+                    ? "房间 " + source.getRoomIdString()
+                    : source.getUname();
 
-        timeline.record(TimelineEvent.of(type, TimelineEvent.Level.INFO)
-                .channel(name)
-                .text(name + verb)
-                .detail("uid", String.valueOf(source.getUid()))
-                .detail("room", source.getRoomIdString())
-                .build());
+            timeline.record(TimelineEvent.of(type, TimelineEvent.Level.INFO)
+                    .streamer(name)
+                    .text(name + verb)
+                    .detail("uid", String.valueOf(source.getUid()))
+                    .detail("room", source.getRoomIdString())
+                    .build());
+        } catch (RuntimeException e) {
+            log.error("记下开播或下播失败", e);
+        }
     }
 }
