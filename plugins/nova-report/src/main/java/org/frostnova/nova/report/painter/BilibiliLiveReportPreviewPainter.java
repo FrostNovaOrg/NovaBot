@@ -8,7 +8,6 @@ import org.frostnova.nova.bilibili.model.GuardMember;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
-import org.frostnova.nova.core.model.RoomInfoSnapshot;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.service.DefaultLiveDataService;
 import org.frostnova.nova.core.service.LiveDataService;
@@ -146,14 +145,6 @@ public class BilibiliLiveReportPreviewPainter extends BilibiliLiveReportPainter 
                 new GuardMember(PREVIEW_VIEWERS[0], PREVIEW_VIEWER_NAMES[0], 1, 3000),
                 new GuardMember(PREVIEW_VIEWERS[1], PREVIEW_VIEWER_NAMES[1], 2, 2000),
                 new GuardMember(PREVIEW_VIEWERS[2], PREVIEW_VIEWER_NAMES[2], 3, 1000)));
-    }
-
-    @Override
-    protected List<RoomInfoSnapshot> titleHistory(String platform, Long uid) {
-        // 至少两条才画得出这一块：首条是开播时的初始标题，不算一次改动
-        return List.of(
-                new RoomInfoSnapshot(PREVIEW_START, "示例直播间标题", "虚拟主播"),
-                new RoomInfoSnapshot(PREVIEW_START + 42 * 60_000L, "改过一次的标题", "虚拟主播"));
     }
 
     /**

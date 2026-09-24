@@ -151,7 +151,6 @@ class BilibiliLiveReportPreviewPainterTest {
         minimal.put("guard_list_all", false);
         minimal.put("danmu_cloud", false);
         minimal.put("highlights", false);
-        minimal.put("title_changes", false);
         minimal.put("danmu_ranking", 0);
         minimal.put("gift_ranking", 0);
         minimal.put("super_chat_ranking", 0);

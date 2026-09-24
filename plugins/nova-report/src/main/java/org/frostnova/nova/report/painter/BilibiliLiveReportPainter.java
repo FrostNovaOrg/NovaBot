@@ -14,7 +14,6 @@ import org.frostnova.nova.bilibili.util.DurationFormatUtil;
 import org.frostnova.nova.core.analytics.LiveHighlightFinder;
 import org.frostnova.nova.core.model.LiveGap;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
-import org.frostnova.nova.core.model.RoomInfoSnapshot;
 import org.frostnova.nova.core.model.TextWithStyle;
 import org.frostnova.nova.core.model.UserScore;
 import org.frostnova.nova.core.plugin.NovaComponent;
@@ -257,13 +256,6 @@ public class BilibiliLiveReportPainter {
     private static final DateTimeFormatter CLOCK_FORMAT =
             DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.of("Asia/Shanghai"));
 
-    /**
-     * 高能时刻标题的可用宽度，单位像素
-     * <p>
-     * 比昵称宽松：标题从 {@code MARGIN + 180} 起，占的是到版心右边界的一整段
-     */
-    private static final int TITLE_MAX_WIDTH = CONTENT_WIDTH - 180;
-
     private final NovaCommonPainterFactory factory;
 
     private final BilibiliApiUtil api;
@@ -437,9 +429,6 @@ public class BilibiliLiveReportPainter {
             }
             if (options.isHighlights()) {
                 drawHighlights(painter, platform, source.getUid());
-            }
-            if (options.isTitleChanges()) {
-                drawTitleChanges(painter, platform, source.getUid());
             }
             drawRankings(painter, platform, source.getUid(), options);
             if (options.isGuardListAll()) {
@@ -837,7 +826,7 @@ public class BilibiliLiveReportPainter {
         curves.add(new Curve("看过人数", BilibiliLiveMetric.WATCHED_COUNT, COLOR_CURVE_WATCHED,
                 peak -> Math.round(peak) + " 人看过"));
         curves.add(new Curve("在线人数", BilibiliLiveMetric.ONLINE_COUNT, COLOR_CURVE_ONLINE,
-                peak -> Math.round(peak) + " 人", true, "登录观众数，哔哩哔哩高能榜口径"));
+                peak -> Math.round(peak) + " 人", true, "登录观众数，哔哩哔哩高能榜口径", true));
 
         // 缺口表整段算一次：各条曲线共用同一条时间轴，缺口落在哪几列对它们是同一个答案
         List<LiveGap> gaps = collectionGaps(platform, uid, start.get(), end.get());
@@ -919,48 +908,6 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
-     * 绘制本场的标题变化
-     * <p>
-     * 只在真的改过时出现。首条记录是开播时的初始标题，不算一次改动，
-     * 所以一条记录等于「全程没改过」，直接跳过整块。
-     */
-    private void drawTitleChanges(CommonPainter painter, String platform, Long uid) {
-        List<RoomInfoSnapshot> titles = titleHistory(platform, uid);
-        if (titles.size() < 2) {
-            return;
-        }
-
-        Optional<Long> start = liveDataService.getLiveStartTime(platform, uid);
-
-        painter.movePos(0, 10);
-        painter.drawTextWithStyle(List.of(new TextWithStyle(
-                "标题变化 · 本场改过 " + (titles.size() - 1) + " 次", CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN)));
-        painter.movePos(0, 6);
-
-        String previousArea = "";
-        for (RoomInfoSnapshot title : titles) {
-            int y = painter.getY();
-
-            painter.drawTextWithStyle(List.of(new TextWithStyle(offsetText(title.at(), start), 22, COLOR_TIP, Font.PLAIN)),
-                    new Point(MARGIN + 4, y + 6));
-
-            List<TextWithStyle> line = new ArrayList<>();
-            line.add(new TextWithStyle(truncateTitle(painter, title.title()), 24, COLOR_TEXT, Font.PLAIN));
-            // 分区只在这一条真的换了分区时才标出来：多数场次全程一个分区，
-            // 每行都跟一遍只会把真正的改动淹掉
-            String area = title.area() == null ? "" : title.area();
-            if (!area.isBlank() && !area.equals(previousArea)) {
-                line.add(new TextWithStyle("  " + area, 22, COLOR_TIP, Font.PLAIN));
-            }
-            previousArea = area.isBlank() ? previousArea : area;
-            painter.drawTextWithStyle(line, new Point(MARGIN + 180, y + 6));
-
-            painter.setPos(MARGIN, y + RANKING_ROW_HEIGHT);
-        }
-        painter.movePos(0, 8);
-    }
-
-    /**
      * 把时刻表述为距开播多久
      * <p>
      * 开播那一刻的偏移量是 0，而时长格式化对 0 返回空字符串——直接拼就会渲染出
@@ -993,11 +940,14 @@ public class BilibiliLiveReportPainter {
         int buckets = bucketCount(start, end);
         double[] values = resample(series, start, end, columns);
         boolean[] missing = gapColumns(gaps, start, buckets, columns);
+        boolean[] sampled = sampledColumns(series, start, end, columns);
+        fillMissingSamples(values, sampled, missing, curve.instantaneous());
 
         double peak = 0;
         for (int i = 0; i < columns; i++) {
-            // 缺口里那几列的取值不参与峰值：那是没采到的一段，拿它去定纵轴等于让缺口决定别处的高度
-            if (!missing[i]) {
+            // 峰值只认真样本：缺口里的列是没采到的一段，补出来的列是估的——
+            // 拿它们去定纵轴，等于让没观测到的时间决定别处的高度
+            if (sampled[i] && !missing[i]) {
                 peak = Math.max(peak, Math.abs(values[i]));
             }
         }
@@ -1284,6 +1234,117 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
+     * 逐列判断这一列覆盖的时间格里有没有真的采到样本
+     * <p>
+     * 「有没有样本」看的是键在不在，不是取值是不是 0：瞬时量真采到 0 也是样本，
+     * 补值时那一列要当锚点用，不能跟「没推过来」混为一谈。
+     */
+    static boolean[] sampledColumns(Map<Long, Double> series, long start, long end, int columns) {
+        long origin = gridStart(start);
+        int buckets = bucketCount(start, end);
+        boolean[] dense = new boolean[buckets];
+        for (Long key : series.keySet()) {
+            long offset = key - origin;
+            if (offset < 0) {
+                continue;
+            }
+            int index = (int) (offset / LiveDataService.SERIES_BUCKET_MILLIS);
+            if (index < buckets) {
+                dense[index] = true;
+            }
+        }
+
+        boolean[] sampled = new boolean[columns];
+        for (int i = 0; i < columns; i++) {
+            int[] range = bucketRange(i, buckets, columns);
+            for (int j = range[0]; j < range[1]; j++) {
+                if (dense[j]) {
+                    sampled[i] = true;
+                    break;
+                }
+            }
+        }
+        return sampled;
+    }
+
+    /**
+     * 把没采到样本的列补上，只给瞬时量曲线用
+     * <p>
+     * 累加量（弹幕、礼物等）没消息就是真 0，补值会把冷场画热闹，因此
+     * {@code instantaneous} 为 false 时原样不动。瞬时量（在线人数）反过来：
+     * 没推送的那一分钟不是 0 人，画成 0 会让折线跌到地板上。
+     * <p>
+     * 补值只在同一段连续采集里做，<b>缺口里的列不碰</b>——那一段是真没采到，
+     * 左右两边可能隔了一次下播，拿它们插值等于编一个不存在的人数。
+     * 同一段里第一个样本之前、最后一个样本之后的列取最近那个样本的值：
+     * 边上没有另一侧的锚点，外推比守恒更容易编出离谱的数。
+     *
+     * @param values 各列取值，就地改写
+     * @param sampled 各列有没有真样本
+     * @param missing 各列是不是落在采集缺口里
+     * @param instantaneous true 时补值，false 时原样不动
+     */
+    static void fillMissingSamples(double[] values, boolean[] sampled, boolean[] missing, boolean instantaneous) {
+        if (!instantaneous) {
+            return;
+        }
+        int columns = values.length;
+        int from = 0;
+        while (from < columns) {
+            if (missing[from]) {
+                from++;
+                continue;
+            }
+            int to = from;
+            while (to + 1 < columns && !missing[to + 1]) {
+                to++;
+            }
+            fillRun(values, sampled, from, to);
+            from = to + 1;
+        }
+    }
+
+    /**
+     * 补一段连续非缺口的列
+     * <p>
+     * 段里一个样本都没有时整段留 0：缺口两边可能隔了一次下播，
+     * 隔着已知缺口编数比画成 0 更糟。
+     */
+    private static void fillRun(double[] values, boolean[] sampled, int from, int to) {
+        int first = -1;
+        int last = -1;
+        for (int i = from; i <= to; i++) {
+            if (sampled[i]) {
+                if (first < 0) {
+                    first = i;
+                }
+                last = i;
+            }
+        }
+        if (first < 0) {
+            return;
+        }
+        for (int i = from; i < first; i++) {
+            values[i] = values[first];
+        }
+        int left = first;
+        while (left < last) {
+            int right = left + 1;
+            while (right <= last && !sampled[right]) {
+                right++;
+            }
+            for (int i = left + 1; i < right; i++) {
+                double t = (double) (i - left) / (right - left);
+                values[i] = values[left] + t * (values[right] - values[left]);
+            }
+            left = right;
+        }
+        for (int i = last + 1; i <= to; i++) {
+            values[i] = values[last];
+        }
+    }
+
+    /**
      * 绘制各类排行榜与大航海名单，无数据的榜自动跳过
      */
     private void drawRankings(CommonPainter painter, String platform, Long uid, BilibiliLiveReportOptions options) {
@@ -1495,19 +1556,6 @@ public class BilibiliLiveReportPainter {
      */
     private String truncate(CommonPainter painter, String name) {
         return painter.truncateToWidth(new TextWithStyle(name, 24, COLOR_TEXT, Font.PLAIN), NAME_MAX_WIDTH);
-    }
-
-    /**
-     * 截断过长的标题
-     * <p>
-     * 同上，按像素收
-     */
-    private String truncateTitle(CommonPainter painter, String title) {
-        if (title == null) {
-            return "";
-        }
-
-        return painter.truncateToWidth(new TextWithStyle(title, 24, COLOR_TEXT, Font.PLAIN), TITLE_MAX_WIDTH);
     }
 
     /**
@@ -1959,13 +2007,6 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
-     * 本场的标题与分区变更记录，按时间先后排列
-     */
-    protected List<RoomInfoSnapshot> titleHistory(String platform, Long uid) {
-        return roomInfoHistory.history(platform, uid);
-    }
-
-    /**
      * 为图片地址附加缩放参数，避免下载原图
      */
     private String atSize(String url) {
@@ -1999,11 +2040,17 @@ public class BilibiliLiveReportPainter {
      * @param peakText 峰值文案，为 null 时不标峰值（金额曲线在不展示金额的会话里即为此情形）
      * @param polyline true 时画折线（不填充），false 时画面积
      * @param caption 标题下一行小字，null 则不画
+     * @param instantaneous true 时按瞬时量补没采到的列（在线人数），false 的累加量缺列仍画 0
      */
     private record Curve(String title, String metric, Color color, DoubleFunction<String> peakText,
-                         boolean polyline, String caption) {
+                         boolean polyline, String caption, boolean instantaneous) {
         private Curve(String title, String metric, Color color, DoubleFunction<String> peakText) {
-            this(title, metric, color, peakText, false, null);
+            this(title, metric, color, peakText, false, null, false);
+        }
+
+        private Curve(String title, String metric, Color color, DoubleFunction<String> peakText,
+                      boolean polyline, String caption) {
+            this(title, metric, color, peakText, polyline, caption, false);
         }
     }
 }

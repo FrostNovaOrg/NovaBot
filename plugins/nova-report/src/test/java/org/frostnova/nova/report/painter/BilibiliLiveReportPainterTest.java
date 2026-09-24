@@ -462,7 +462,6 @@ class BilibiliLiveReportPainterTest {
         params.put("guard_list_all", false);
         params.put("danmu_cloud", false);
         params.put("highlights", false);
-        params.put("title_changes", false);
 
         Optional<String> base64 = painter.paint(PLATFORM, STREAMER, BilibiliLiveReportOptions.of(params, true));
 
@@ -526,40 +525,6 @@ class BilibiliLiveReportPainterTest {
 
         assertTrue(heightOf(peaked) > quiet, "出现高峰后报告应多出一块高能时刻");
         dump("highlights", peaked);
-    }
-
-    @Test
-    @DisplayName("标题没改过时不应占版面，改过之后才出现")
-    void drawsTitleChangesOnlyAfterAnActualChange() throws Exception {
-        long start = 1_700_000_000_000L;
-        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
-        liveDataService.setLiveEndTime(PLATFORM, STREAMER.getUid(), start + 60 * 60_000L);
-
-        // 只有开播时的初始标题：一条记录不等于改过一次
-        roomInfoHistory.record(PLATFORM, STREAMER.getUid(), start, "早八人的自习室", "");
-        int unchanged = heightOf(painter.paint(PLATFORM, STREAMER).orElseThrow());
-
-        roomInfoHistory.record(PLATFORM, STREAMER.getUid(), start + 20 * 60_000L, "睡前杂谈", "娱乐 · 视频聊天");
-        String changed = painter.paint(PLATFORM, STREAMER).orElseThrow();
-
-        assertTrue(heightOf(changed) > unchanged, "改过标题后报告应多出一块标题变化");
-        dump("title-changes", changed);
-    }
-
-    @Test
-    @DisplayName("原样保存不算改动，重复内容不应被记成一次变化")
-    void repeatedIdenticalTitleIsNotAChange() throws Exception {
-        long start = 1_700_000_000_000L;
-        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
-        liveDataService.setLiveEndTime(PLATFORM, STREAMER.getUid(), start + 60 * 60_000L);
-
-        roomInfoHistory.record(PLATFORM, STREAMER.getUid(), start, "早八人的自习室", "");
-        int before = heightOf(painter.paint(PLATFORM, STREAMER).orElseThrow());
-
-        roomInfoHistory.record(PLATFORM, STREAMER.getUid(), start + 10 * 60_000L, "早八人的自习室", "");
-
-        assertEquals(before, heightOf(painter.paint(PLATFORM, STREAMER).orElseThrow()),
-                "内容相同的下发不应让报告多出一块");
     }
 
     /**
@@ -899,7 +864,6 @@ class BilibiliLiveReportPainterTest {
         params.put("guard_list_all", false);
         params.put("danmu_cloud", false);
         params.put("highlights", false);
-        params.put("title_changes", false);
         return BilibiliLiveReportOptions.of(params, true);
     }
 

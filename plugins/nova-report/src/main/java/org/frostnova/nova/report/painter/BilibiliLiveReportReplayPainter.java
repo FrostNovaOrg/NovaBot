@@ -8,7 +8,6 @@ import org.frostnova.nova.core.analytics.LiveDetail;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.model.LiveGap;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
-import org.frostnova.nova.core.model.RoomInfoSnapshot;
 import org.frostnova.nova.core.model.UserScore;
 import org.frostnova.nova.core.service.DefaultLiveDataService;
 import org.frostnova.nova.core.service.LiveDataService;
@@ -129,17 +128,6 @@ public class BilibiliLiveReportReplayPainter extends BilibiliLiveReportPainter {
     @Override
     protected Optional<List<GuardMember>> guardList(Long roomId, Long uid) {
         return Optional.of(List.of());
-    }
-
-    /**
-     * 标题轨迹取自明细，而不是问状态存储要
-     * <p>
-     * 状态存储里只有<b>正在进行的那一场</b>的轨迹，问它要历史场次的，
-     * 拿到的是当前这一场的标题——而那看起来完全像一份正常的结果。
-     */
-    @Override
-    protected List<RoomInfoSnapshot> titleHistory(String platform, Long uid) {
-        return detail.titles() == null ? List.of() : detail.titles();
     }
 
     /**
