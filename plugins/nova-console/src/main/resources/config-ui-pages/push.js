@@ -25,6 +25,9 @@ import {
   streamerName, strandedSessions, subscriptionSummary, templateState, typeName,
 } from './push-model.js';
 import {renderIncomplete, sessionSettings} from './sessions.js';
+import {
+  clearSessionDrafts, sessionDraftCount, sessionWrites,
+} from './session-draft.js';
 import {store} from './store.js';
 import {buildLayoutEditor, buildTemplateEditor} from './template.js';
 import {isDefault, restoreDefaults, templateAdoption} from './template-model.js';
@@ -1658,17 +1661,14 @@ export function serializePush() {
 }
 
 /**
- * 本页此刻有几处改过还没保存：按主播逐条比，不是「一整份变了没有」
+ * 推送配置那一份此刻有几处改过还没保存：按主播逐条比，不是「一整份变了没有」
  *
  * 整份比只能得出 0 或 1，而屏幕上写的是「N 处改动」——那个 1 会被读成「只改了一处」。
  * 两边都是现算，没有「改动次数」的累加器：累加器的毛病是改回原样它也照加，
  * 屏幕上会显示「1 处改动」而实际什么都没变。
- *
- * 这是宿主改动条问本页的三件事之一（另两件是 save 与 reload），见 core.js 的
- * registerChangeSource。宿主不知道这个数是怎么算出来的，也不该知道。
  * @return {number} 改过未保存的主播数
  */
-export function changeCount() {
+function pushChangeCount() {
   const byKey = list => {
     const map = new Map();
     for (const user of list || []) {
@@ -1693,6 +1693,17 @@ export function changeCount() {
 }
 
 /**
+ * 本页此刻有几处改过还没保存：推送配置那一份按主播算，本群设置那一份按改动项算
+ *
+ * 这是宿主改动条问本页的三件事之一（另两件是 save 与 reload），见 core.js 的
+ * registerChangeSource。宿主不知道这个数是怎么算出来的，也不该知道。
+ * @return {number} 改过未保存的处数
+ */
+export function changeCount() {
+  return pushChangeCount() + sessionDraftCount();
+}
+
+/**
  * 重取本页那一份，宿主整体载入与「放弃改动」时各走一趟
  *
  * 自己取而不是等宿主喂：这份配置是本页的产品形状，宿主卸掉本插件之后
@@ -1703,6 +1714,8 @@ export function changeCount() {
  * @return {Promise<boolean|undefined>} 回 false 表示已在状态栏上写了话，宿主别替它清掉
  */
 export async function reload() {
+  // 「放弃」是整页一起还原：本群设置那份草稿与推送配置那份一并丢
+  clearSessionDrafts();
   const res = await api('/datasource');
   try {
     pushData = JSON.parse(res.content || '[]');
@@ -1719,23 +1732,95 @@ export async function reload() {
 }
 
 /**
- * 把当前推送配置写回 datasource.json。设置页不再夹带这一份。
+ * 把两段草稿写回去：推送配置 → datasource.json，本群设置 → 状态接口
+ *
+ * 两段分开写，哪段没改动就整段不发：本群设置干净时不该碰状态文件，
+ * 推送配置干净时也不该重写 datasource.json。
+ * 任一段失败都不撤另一段已经写成的；没写成的那一段草稿留着，下次保存再发。
+ * 清空订阅名单那一笔自带二次确认，确认没过的那一笔跳过、其余照写。
  */
 export async function save() {
   $('#save').disabled = true;
   say('保存中…');
-  try {
-    const res = await api('/datasource', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({content: serializePush()}),
-    });
-    if (res.success) markPushSaved();
-    say(res.message || (res.success ? '已保存' : '保存失败'), res.success ? 'ok' : 'err');
-  } catch (e) {
-    say('保存失败：' + e.message, 'err');
+  const notes = [];
+  let pushOk = true;
+  let stateOk = true;
+  let skipped = 0;
+
+  if (pushChangeCount() > 0) {
+    try {
+      const res = await api('/datasource', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({content: serializePush()}),
+      });
+      if (res.success) markPushSaved();
+      else {
+        pushOk = false;
+        notes.push(res.message || '推送配置保存失败');
+      }
+    } catch (e) {
+      pushOk = false;
+      notes.push('推送配置保存失败：' + e.message);
+    }
+  }
+
+  const wanted = [];
+  for (const write of sessionWrites()) {
+    if (write.ask) {
+      let ok = false;
+      try {
+        ok = await ask(write.ask);
+      } catch (e) {
+        ok = false;
+      }
+      if (!ok) {
+        skipped++;
+        continue;
+      }
+    }
+    wanted.push(write);
+  }
+
+  if (wanted.length) {
+    for (const write of wanted) {
+      try {
+        const res = await api(write.path, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(write.body),
+        });
+        if (res.success) write.done();
+        else {
+          stateOk = false;
+          notes.push(res.message || '本群设置保存失败');
+        }
+      } catch (e) {
+        stateOk = false;
+        notes.push('本群设置保存失败：' + e.message);
+      }
+    }
+  }
+
+  if (pushOk && stateOk) {
+    let text = '已保存';
+    if (skipped) text += ' · 有 ' + skipped + ' 项删除没确认，那一项没写';
+    say(text, 'ok');
+  } else if (pushOk && !stateOk) {
+    say('本群设置没存上（推送配置已存）'
+      + (notes.length ? '：' + notes.join('；') : ''), 'err');
+  } else if (!pushOk && stateOk) {
+    say('推送配置没存上（本群设置已存）'
+      + (notes.length ? '：' + notes.join('；') : ''), 'err');
+  } else {
+    say('两段都没存上：' + notes.join('；'), 'err');
   }
   markDirty();
+  try {
+    await loadPushPage();
+  } catch (e) {
+    // 保存结果已经说过了；刷新摘要失败不改那一趟的成败
+  }
 }
 
 /**

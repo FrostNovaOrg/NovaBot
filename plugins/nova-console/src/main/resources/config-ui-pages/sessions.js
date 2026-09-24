@@ -5,16 +5,25 @@
  * 因此摆在同一页上——分成两页时，「配好了却不响应」这种情况要在两个入口之间来回对照
  * 才看得出来。它对推给这个群的<b>所有</b>主播共用，在哪一位主播下打开都是同一份。
  *
- * 改动<b>立即生效并当场落盘</b>，因此不受底部「保存」按钮管辖：这几项来自人的一次明确操作，
- * 攒到保存时再写的话，进程此刻被杀掉，使用者会认为「我明明关了」。
+ * 改动与上方三段同一条保存纪律：先记进草稿、计入底部改动条，按「保存」才落盘，
+ * 按「放弃」全部还原。从前是「拨一下就发请求」，于是同一页上并存两套相反的规矩，
+ * 而「放弃」撤不回这几项。
  *
  * 摘要那四行写什么由 push-model.js 算（见 tools/push-model-check.sh 的各档），
- * 本文件只管把算好的摆上去，以及把改动发出去。
+ * 本文件只管把算好的摆上去，以及把改动记进草稿。写盘走 push.js 的 save，
+ * 与推送配置那份草稿在同一趟里发出。
  */
 
-import {$, api, el, esc, say} from './core.js';
-import {loadPushPage, openDrawer, closeDrawer} from './push.js';
+import {$, el, esc, markDirty} from './core.js';
+import {openDrawer} from './push.js';
 import {ask} from './confirm.js';
+import {
+  commandDraft, isClearPending, isUserPendingRemove, revenueDraft, setCommandDraft,
+  setCommandsDraft, setRevenueDraft, setSubscriptionClearDraft, setSubscriptionRemoveDraft,
+} from './session-draft.js';
+
+/** 本页刚画完的那一次重画：草稿变了要连摘要与开关一起对齐，否则屏幕上留着拨过的空壳 */
+let repaintSession = () => {};
 
 /**
  * 推送配置里没填完的条目
@@ -45,10 +54,17 @@ export function renderIncomplete(entries) {
  * @param ctx 这个会话的全部事实与算好的摘要，见 push.js 的 sectionSession
  */
 export function sessionSettings(host, ctx) {
+  repaintSession = () => sessionSettings(host, ctx);
   revenueRow(host, ctx);
   commandRow(host, ctx);
   subscriptionRow(host, ctx);
   atAllRow(host, ctx);
+}
+
+/** 草稿变了：先把这一段按「服务端 + 草稿」重画，再让宿主改动条那个 N 自己重算 */
+function refresh() {
+  repaintSession();
+  markDirty();
 }
 
 /**
@@ -72,12 +88,18 @@ function row(host, title, summary) {
 function revenueRow(host, ctx) {
   const body = row(host, '金额可见', ctx.summary.revenue.text);
 
+  const wanted = revenueDraft(ctx.target);
+  const visible = wanted === undefined ? ctx.summary.revenue.visible : wanted;
   const line = el('div', 'swrow');
   const label = el('label', 'switch');
-  label.innerHTML = '<input type="checkbox"' + (ctx.summary.revenue.visible ? ' checked' : '') + '>';
+  label.innerHTML = '<input type="checkbox"' + (visible ? ' checked' : '') + '>';
   const input = label.querySelector('input');
   input.setAttribute('aria-label', '直播收益等金额');
-  input.addEventListener('change', () => setRevenue(ctx, input));
+  input.addEventListener('change', () => {
+    // 期望态与服务端那一份比：拨过去又拨回来的那几下自己会消失
+    setRevenueDraft(ctx.target, input.checked, ctx.summary.revenue.visible);
+    refresh();
+  });
   line.appendChild(label);
 
   const text = el('div', 'swtxt');
@@ -90,26 +112,6 @@ function revenueRow(host, ctx) {
   body.appendChild(el('div', 'note')).textContent =
     '金额榜整榜不出而不是抹掉数字：那几张榜的每一行本质都是「某人花了多少钱」，'
     + '只去掉右侧的数字，仍然是在公开排消费。';
-}
-
-async function setRevenue(ctx, input) {
-  input.disabled = true;
-  try {
-    const res = await api('/state/revenue', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        platform: ctx.target.platform, num: ctx.target.num, visible: input.checked,
-      }),
-    });
-    say(res.message || (res.success ? '已保存 · 立即生效' : '操作失败'), res.success ? 'ok' : 'err');
-    // 失败时把开关拨回去：留在新位置会让人以为改成功了
-    if (!res.success) input.checked = !input.checked;
-    else await loadPushPage();
-  } catch (e) {
-    input.checked = !input.checked;
-    say('操作失败：' + e.message, 'err');
-  }
-  input.disabled = false;
 }
 
 // ---- 2 命令 ----
@@ -166,12 +168,24 @@ function commandRow(host, ctx) {
   }
 }
 
+/** 这条命令此刻「想关掉吗」：草稿优先，没改过才认服务端那一份 */
+function effectiveOff(ctx, command) {
+  const wanted = commandDraft(ctx.target, command.name);
+  return wanted === undefined ? command.off : wanted;
+}
+
 function commandGroup(ctx, group) {
   const box = el('div', 'cgroup');
 
+  const switchable = group.switchable;
+  const allOn = switchable.length > 0 && switchable.every(name => {
+    const item = group.commands.find(c => c.name === name);
+    return item && !effectiveOff(ctx, item);
+  });
+
   const head = el('div', 'swrow');
   const label = el('label', 'switch');
-  label.innerHTML = '<input type="checkbox"' + (group.on ? ' checked' : '') + '>';
+  label.innerHTML = '<input type="checkbox"' + (allOn ? ' checked' : '') + '>';
   const input = label.querySelector('input');
   input.setAttribute('aria-label', group.category);
   input.disabled = !group.switchable.length;
@@ -204,17 +218,21 @@ function commandGroup(ctx, group) {
 }
 
 function commandLine(ctx, command) {
+  const off = effectiveOff(ctx, command);
   const line = el('div', 'swrow' + (command.listed ? '' : ' dimmed'));
 
   if (command.disableable) {
     const label = el('label', 'switch');
-    label.innerHTML = '<input type="checkbox"' + (command.off ? '' : ' checked') + '>';
+    label.innerHTML = '<input type="checkbox"' + (off ? '' : ' checked') + '>';
     const input = label.querySelector('input');
     input.setAttribute('aria-label', command.name);
     // 群里本来就不列的那几条，开关一并锁住：拨动它不会让它出现在菜单里，
     // 而一个拨得动却不起作用的开关比锁着的更费解
     input.disabled = !command.listed;
-    input.addEventListener('change', () => setCommand(ctx, command.name, !input.checked, input));
+    input.addEventListener('change', () => {
+      setCommandDraft(ctx.target, command.name, !input.checked, command.off);
+      refresh();
+    });
     line.appendChild(label);
   } else {
     const lock = el('span', 'cmdlock');
@@ -225,7 +243,7 @@ function commandLine(ctx, command) {
   const text = el('div', 'swtxt');
   const marks = [];
   if (command.requiresAdmin) marks.push('仅管理员');
-  if (command.off) marks.push('已被群管理员禁用');
+  if (off) marks.push('已被群管理员禁用');
   if (command.hiddenReason) marks.push(command.hiddenReason);
   if (command.note) marks.push(command.note);
   text.innerHTML = '<b>' + esc(command.name) + '</b>'
@@ -235,46 +253,15 @@ function commandLine(ctx, command) {
   return line;
 }
 
-async function setCommand(ctx, name, disabled, input) {
-  input.disabled = true;
-  try {
-    const res = await api('/state/command', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        platform: ctx.target.platform, num: ctx.target.num, command: name, disabled,
-      }),
-    });
-    say(res.message || (res.success ? '已保存 · 立即生效' : '操作失败'), res.success ? 'ok' : 'err');
-    if (!res.success) input.checked = !input.checked;
-    else await loadPushPage();
-  } catch (e) {
-    input.checked = !input.checked;
-    say('操作失败：' + e.message, 'err');
-  }
-  input.disabled = false;
-}
-
 /**
- * 成批开关
+ * 成批开关：整批一起进草稿
  *
- * 走一支批量接口而不是在这里循环调单条：中途失败会留下一半开一半关的局面，
- * 而屏幕上只有最后那一条的报错——使用者不知道刚才究竟改成了什么样。
+ * 从服务端那一份起算每一条的「原样」：期望态与原样相同的那几条不占改动条。
  */
-async function batchCommands(ctx, names, disabled) {
-  try {
-    const res = await api('/state/commands', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        platform: ctx.target.platform, num: ctx.target.num, commands: names, disabled,
-      }),
-    });
-    say(res.message || (res.success ? '已保存 · 立即生效' : '操作失败'), res.success ? 'ok' : 'err');
-    // 成功与否都重取：失败时整批没改，屏幕上那个已经拨过去的开关得拨回来
-    await loadPushPage();
-  } catch (e) {
-    say('操作失败：' + e.message, 'err');
-    await loadPushPage();
-  }
+function batchCommands(ctx, names, disabled) {
+  setCommandsDraft(ctx.target, names, disabled,
+    name => (((ctx.session || {}).disabled) || []).includes(name));
+  refresh();
 }
 
 // ---- 3 提醒订阅 ----
@@ -303,6 +290,7 @@ function subscriptionRow(host, ctx) {
 function subscriptionDrawer(ctx) {
   openDrawer('「@我」订阅名单', '群成员自己订阅的。人退群后订阅仍会留着，可在这里清理。', body => {
     for (const sub of ctx.summary.subscription.rows) {
+      const clearPending = isClearPending(ctx.target, sub.streamerUid, sub.type);
       const box = el('div', 'dwsub');
       const head = el('div', 'dwsub-h');
       head.innerHTML = '<b>' + esc(sub.streamerName) + ' · ' + esc(sub.typeName) + '提醒</b>'
@@ -310,48 +298,42 @@ function subscriptionDrawer(ctx) {
 
       const clear = el('button', 'ghost danger');
       clear.type = 'button';
-      clear.textContent = '清空';
-      clear.addEventListener('click', async () => {
-        if (!await ask({title: '清空订阅名单？',
+      clear.textContent = clearPending ? '撤回清空' : '清空';
+      clear.addEventListener('click', () => {
+        // 确认挪到保存那一步：这里只记「想要清空」，保存前再点一次即撤回
+        setSubscriptionClearDraft(ctx.target, {
+          streamerUid: sub.streamerUid, type: sub.type,
+        }, {
+          title: '清空订阅名单？',
           body: '确定清空「' + sub.streamerName + '」在 ' + ctx.target.num + ' 的'
-            + sub.typeName + '订阅名单吗？共 ' + sub.users.length + ' 人。'})) return;
-        removeSub(ctx, sub, null);
+            + sub.typeName + '订阅名单吗？共 ' + sub.users.length + ' 人。',
+        });
+        markDirty();
+        subscriptionDrawer(ctx);
       });
       head.appendChild(clear);
       box.appendChild(head);
 
       const pills = el('div', 'dwpills');
       for (const uid of sub.users) {
+        const pending = isUserPendingRemove(ctx.target, sub.streamerUid, sub.type, uid);
         const one = el('button', 'nv-pill');
         one.type = 'button';
-        one.title = '移除';
+        one.title = pending && !clearPending ? '撤回' : '移除';
         one.textContent = uid + ' ×';
-        one.addEventListener('click', () => removeSub(ctx, sub, uid));
+        // 清空已进草稿时整份都要走，单人「移除」这会儿点了也跟着走
+        one.disabled = clearPending;
+        one.addEventListener('click', () => {
+          setSubscriptionRemoveDraft(ctx.target, sub, uid);
+          markDirty();
+          subscriptionDrawer(ctx);
+        });
         pills.appendChild(one);
       }
       box.appendChild(pills);
       body.appendChild(box);
     }
   });
-}
-
-async function removeSub(ctx, sub, userUid) {
-  try {
-    const res = await api('/state/subscription', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        platform: ctx.target.platform, num: ctx.target.num,
-        streamerUid: sub.streamerUid, type: sub.type, userUid,
-      }),
-    });
-    say(res.message || (res.success ? '已移除' : '操作失败'), res.success ? 'ok' : 'err');
-    if (res.success) {
-      closeDrawer();
-      await loadPushPage();
-    }
-  } catch (e) {
-    say('操作失败：' + e.message, 'err');
-  }
 }
 
 // ---- 4 @全体成员：状态行，不是设置 ----
