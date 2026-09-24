@@ -366,6 +366,7 @@ novabot:
 | `guard_list_limit` | 30 | 全名单展示前多少人，**0 为不限**，填过大会被夹到 1000 |
 | `danmu_cloud` | true | 弹幕词云 |
 | `highlights` | true | 高能时刻：弹幕最密集的几个时段 |
+| `gift_list` | true | 本场收到的礼物，按种类列出个数 |
 | `danmu_ranking` | 5 | 弹幕排行榜取前几名，**0 为不展示** |
 | `gift_ranking` | 5 | 礼物排行榜 |
 | `super_chat_ranking` | 5 | 醒目留言排行榜 |

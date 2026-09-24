@@ -237,6 +237,50 @@ class ReceivedGiftReportTest {
     }
 
     @Test
+    @DisplayName("同名同价合成一格，同名不同价仍分开，末行按合成后的种数算")
+    void mergesSameNameAndPriceIntoOneCell() {
+        List<ReceivedGiftLayout.Line> same = ReceivedGiftLayout.layout(List.of(
+                new LiveGiftTotal(33988L, "人气票", 1.0, 3, "https://img.example/ticket.png"),
+                new LiveGiftTotal(34003L, "人气票", 1.0, 5, null)));
+        List<LiveGiftTotal> ticket = named(same, "人气票");
+        assertEquals(1, ticket.size(), "同名同价应合成一格");
+        assertEquals(8, ticket.get(0).count(), "个数相加");
+        assertEquals(1.0, ticket.get(0).price(), 0.0001);
+        assertEquals("https://img.example/ticket.png", ticket.get(0).url(), "图标取先有的那张");
+
+        List<ReceivedGiftLayout.Line> laterIcon = ReceivedGiftLayout.layout(List.of(
+                new LiveGiftTotal(31164L, "粉丝团灯牌", 2.0, 2, ""),
+                new LiveGiftTotal(34358L, "粉丝团灯牌", 2.0, 4, "https://img.example/lamp.png")));
+        List<LiveGiftTotal> lamp = named(laterIcon, "粉丝团灯牌");
+        assertEquals(1, lamp.size(), "同名同价应合成一格");
+        assertEquals(6, lamp.get(0).count(), "个数相加");
+        assertEquals("https://img.example/lamp.png", lamp.get(0).url(), "先没有图标时用后来的那张");
+
+        List<ReceivedGiftLayout.Line> split = ReceivedGiftLayout.layout(List.of(
+                new LiveGiftTotal(1L, "小电视", 124.5, 1, "https://img.example/tv.png"),
+                new LiveGiftTotal(2L, "小电视", 200.0, 2, "https://img.example/tv-dear.png")));
+        List<LiveGiftTotal> television = named(split, "小电视");
+        assertEquals(2, television.size(), "同名不同价仍分开");
+        assertEquals(200.0, television.get(0).price(), 0.0001);
+        assertEquals(2, television.get(0).count());
+        assertEquals(124.5, television.get(1).price(), 0.0001);
+        assertEquals(1, television.get(1).count());
+
+        List<LiveGiftTotal> many = new ArrayList<>();
+        for (int i = 0; i < 30; i++) {
+            many.add(new LiveGiftTotal(1000L + i, "礼物" + i, 500, 10, "u"));
+        }
+        many.add(new LiveGiftTotal(33988L, "人气票", 0.1, 2, "https://img.example/ticket.png"));
+        many.add(new LiveGiftTotal(34003L, "人气票", 0.1, 3, null));
+        List<ReceivedGiftLayout.Line> overflow = ReceivedGiftLayout.layout(many);
+        assertTrue(overflow.get(overflow.size() - 1) instanceof ReceivedGiftLayout.OverflowLine);
+        ReceivedGiftLayout.OverflowLine tail = (ReceivedGiftLayout.OverflowLine) overflow.get(overflow.size() - 1);
+        assertEquals("另有 1 种礼物，共 5 个", tail.text());
+        assertEquals(1, tail.kinds(), "末行种数按合成后算");
+        assertEquals(5, tail.count(), "末行个数按合成后算");
+    }
+
+    @Test
     @DisplayName("隐藏金额时礼物列表整段不画，没收到礼物时也不画")
     void hidesGiftListWhenRevenueHidden() throws Exception {
         NovaCoreProperties coreProperties = new NovaCoreProperties();
@@ -331,6 +375,20 @@ class ReceivedGiftReportTest {
 
     private static LiveGiftTotal byName(List<LiveGiftTotal> gifts, String name) {
         return gifts.stream().filter(gift -> name.equals(gift.name())).findFirst().orElseThrow();
+    }
+
+    private static List<LiveGiftTotal> named(List<ReceivedGiftLayout.Line> lines, String name) {
+        List<LiveGiftTotal> found = new ArrayList<>();
+        for (ReceivedGiftLayout.Line line : lines) {
+            if (line instanceof ReceivedGiftLayout.GiftRow) {
+                for (LiveGiftTotal gift : ((ReceivedGiftLayout.GiftRow) line).gifts()) {
+                    if (name.equals(gift.name())) {
+                        found.add(gift);
+                    }
+                }
+            }
+        }
+        return found;
     }
 
     private static GiftInfo gift(Long id, String name, double price, int count, String url) {
