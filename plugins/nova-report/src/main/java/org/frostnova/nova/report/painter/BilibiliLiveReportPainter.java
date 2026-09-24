@@ -14,6 +14,7 @@ import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.bilibili.util.DurationFormatUtil;
 import org.frostnova.nova.core.analytics.LiveHighlightFinder;
 import org.frostnova.nova.core.model.LiveGap;
+import org.frostnova.nova.core.analytics.LiveGiftTotal;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
 import org.frostnova.nova.core.model.TextWithStyle;
 import org.frostnova.nova.core.model.UserScore;
@@ -350,6 +351,14 @@ public class BilibiliLiveReportPainter {
             .build();
 
     /**
+     * 礼物图标缓存，按图片地址计。容量与时长与头像缓存相同，取不到就记住这次失败
+     */
+    private final Cache<String, BufferedImage> giftIconCache = Caffeine.newBuilder()
+            .maximumSize(500)
+            .expireAfterWrite(Duration.ofHours(6))
+            .build();
+
+    /**
      * 底部标识只读一次盘，读过就不再重试——无论成败
      */
     private volatile boolean logoLoaded;
@@ -486,6 +495,9 @@ public class BilibiliLiveReportPainter {
             }
             if (options.isHighlights()) {
                 drawHighlights(painter, platform, source.getUid());
+            }
+            if (options.isGiftList() && options.isShowRevenue()) {
+                drawReceivedGifts(painter, platform, source.getUid());
             }
             drawRankings(painter, platform, source.getUid(), options);
             if (options.isGuardListAll()) {
@@ -1399,6 +1411,147 @@ public class BilibiliLiveReportPainter {
         for (int i = last + 1; i <= to; i++) {
             values[i] = values[last];
         }
+    }
+
+    /**
+     * 礼物名与「×个数」的字号
+     */
+    private static final int GIFT_NAME_SIZE = 22;
+
+    private static final int GIFT_COUNT_SIZE = 20;
+
+    /**
+     * 同一排里相邻两种礼物的间距
+     */
+    private static final int GIFT_CELL_GAP = 12;
+
+    /**
+     * 下载礼物图标时按最大一档的边长取，画的时候再缩到该档的尺寸
+     */
+    private static final int GIFT_ICON_FETCH = 96;
+
+    /**
+     * 绘制「收到的礼物」。没有礼物时整段不画。
+     */
+    private void drawReceivedGifts(CommonPainter painter, String platform, Long uid) {
+        List<ReceivedGiftLayout.Line> lines = ReceivedGiftLayout.layout(liveDataService.getLiveGifts(platform, uid));
+        if (lines.isEmpty()) {
+            return;
+        }
+
+        painter.movePos(0, 10);
+        painter.drawTextWithStyle(List.of(
+                new TextWithStyle("收到的礼物", CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN)));
+        painter.movePos(0, 8);
+
+        int y = painter.getY();
+        for (ReceivedGiftLayout.Line line : lines) {
+            if (line instanceof ReceivedGiftLayout.OverflowLine overflow) {
+                painter.setPos(MARGIN, y);
+                painter.drawTextWithStyle(List.of(
+                        new TextWithStyle(overflow.text(), CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN)));
+                y = painter.getY();
+                continue;
+            }
+            y = drawGiftRow(painter, (ReceivedGiftLayout.GiftRow) line, y);
+        }
+        painter.setPos(MARGIN, y + 8);
+    }
+
+    /**
+     * 画一排礼物，返回下一排的起始 y
+     */
+    private int drawGiftRow(CommonPainter painter, ReceivedGiftLayout.GiftRow row, int y) {
+        int iconSize = row.iconSize();
+        int cellWidth = (CONTENT_WIDTH - GIFT_CELL_GAP * (row.columns() - 1)) / row.columns();
+        int nameHeight = painter.getStringWidthAndHeight(
+                new TextWithStyle("礼物", GIFT_NAME_SIZE, COLOR_TEXT, Font.PLAIN)).getSecond();
+        int countHeight = painter.getStringWidthAndHeight(
+                new TextWithStyle("×1", GIFT_COUNT_SIZE, COLOR_TIP, Font.PLAIN)).getSecond();
+        int x = MARGIN;
+        for (LiveGiftTotal gift : row.gifts()) {
+            BufferedImage icon = giftPicture(gift, iconSize);
+            painter.drawImage(icon, new Point(x + Math.max(0, (cellWidth - iconSize) / 2), y));
+
+            String rawName = gift.name() == null ? "" : gift.name();
+            String name = painter.truncateToWidth(
+                    new TextWithStyle(rawName, GIFT_NAME_SIZE, COLOR_TEXT, Font.PLAIN), Math.max(1, cellWidth - 4));
+            int nameWidth = painter.getStringWidthAndHeight(
+                    new TextWithStyle(name, GIFT_NAME_SIZE, COLOR_TEXT, Font.PLAIN)).getFirst();
+            int nameY = y + iconSize + 6;
+            painter.drawTextWithStyle(List.of(new TextWithStyle(name, GIFT_NAME_SIZE, COLOR_TEXT, Font.PLAIN)),
+                    new Point(x + Math.max(0, (cellWidth - nameWidth) / 2), nameY));
+
+            String countText = "×" + gift.count();
+            int countWidth = painter.getStringWidthAndHeight(
+                    new TextWithStyle(countText, GIFT_COUNT_SIZE, COLOR_TIP, Font.PLAIN)).getFirst();
+            painter.drawTextWithStyle(List.of(new TextWithStyle(countText, GIFT_COUNT_SIZE, COLOR_TIP, Font.PLAIN)),
+                    new Point(x + Math.max(0, (cellWidth - countWidth) / 2), nameY + nameHeight + 2));
+            x += cellWidth + GIFT_CELL_GAP;
+        }
+        return y + iconSize + 6 + nameHeight + 2 + countHeight + 16;
+    }
+
+    /**
+     * 礼物图标。取不到时画圆角方块，里面是礼物名的第一个字。
+     */
+    private BufferedImage giftPicture(LiveGiftTotal gift, int size) {
+        BufferedImage fetched = giftIcon(gift.url());
+        if (fetched == null) {
+            return giftPlaceholder(gift.name(), size);
+        }
+        BufferedImage scaled = ImageUtil.resize(fetched, size, size);
+        return ImageUtil.maskToRoundedRectangle(scaled, Math.max(8, size / 5));
+    }
+
+    /**
+     * 取礼物图标，带缓存。地址空、或这一次没取到，返回 null。
+     * <p>
+     * 与 {@link #avatar} 同一路：按地址缓存，取不到就记住这次失败，坏地址不再反复去取。
+     * 预览与历史重画覆写这一口，不向外取图。
+     */
+    protected BufferedImage giftIcon(String url) {
+        if (StringUtil.isBlank(url)) {
+            return null;
+        }
+        BufferedImage cached = giftIconCache.get(url, key -> api.getBilibiliImage(atSize(key, GIFT_ICON_FETCH))
+                .map(image -> ImageUtil.resize(image, GIFT_ICON_FETCH, GIFT_ICON_FETCH))
+                .orElse(FAILED_AVATAR));
+        return cached == FAILED_AVATAR ? null : cached;
+    }
+
+    /**
+     * 圆角方块占位，正中写礼物名的第一个字
+     */
+    private BufferedImage giftPlaceholder(String name, int size) {
+        BufferedImage image = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D graphics = image.createGraphics();
+        graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        graphics.setColor(new Color(255, 236, 242));
+        graphics.fillRoundRect(0, 0, size, size, Math.max(8, size / 5), Math.max(8, size / 5));
+        String letter = firstCharacter(name);
+        if (!letter.isEmpty()) {
+            graphics.setColor(COLOR_NAME);
+            graphics.setFont(fontUtil.findFontForCharacter(letter.codePointAt(0))
+                    .deriveFont(Font.BOLD, size * 0.42f));
+            FontMetrics metrics = graphics.getFontMetrics();
+            int textX = (size - metrics.stringWidth(letter)) / 2;
+            int textY = (size - metrics.getHeight()) / 2 + metrics.getAscent();
+            graphics.drawString(letter, textX, textY);
+        }
+        graphics.dispose();
+        return image;
+    }
+
+    private static String firstCharacter(String name) {
+        if (name == null || name.isBlank()) {
+            return "";
+        }
+        String trimmed = name.strip();
+        if (trimmed.isEmpty()) {
+            return "";
+        }
+        return new String(Character.toChars(trimmed.codePointAt(0)));
     }
 
     /**

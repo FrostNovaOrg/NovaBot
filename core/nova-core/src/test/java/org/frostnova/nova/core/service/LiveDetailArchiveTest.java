@@ -383,7 +383,7 @@ class LiveDetailArchiveTest {
         try {
             assertEquals(Set.of("version", "platform", "uid", "uname", "roomId", "startTime", "endTime",
                     "durationSeconds", "metrics", "userCounts", "series", "rankings", "words",
-                    "highlights", "titles", "gaps", "peaks"), json.keySet(), "① 顶层键集");
+                    "highlights", "titles", "gaps", "peaks", "gifts"), json.keySet(), "① 顶层键集");
         } catch (Throwable t) {
             red.add("① " + t.getMessage());
         }
@@ -449,7 +449,7 @@ class LiveDetailArchiveTest {
                 Map.of("danmu_count", 20000.0), userCounts, series, rankings, words,
                 List.of(new LiveHighlightFinder.Highlight(START + 42 * MINUTE, 211, 4.25)),
                 List.of(new RoomInfoSnapshot(START, "开播时的标题", "虚拟主播")),
-                List.of(), peaks);
+                List.of(), peaks, List.of());
     }
 
     private boolean isEmptyDirectory(Path path) throws IOException {
@@ -512,6 +512,7 @@ class LiveDetailArchiveTest {
                 List.of(new RoomInfoSnapshot(start, "开播时的标题", "虚拟主播"),
                         new RoomInfoSnapshot(start + 42 * MINUTE, "改过一次的标题", "虚拟主播")),
                 List.of(new LiveGap(start + 10 * MINUTE, start + 12 * MINUTE, LiveGap.Reason.RESTART)),
-                Map.of("danmu_count", new SeriesPeak(start + 42 * MINUTE, 34)));
+                Map.of("danmu_count", new SeriesPeak(start + 42 * MINUTE, 34)),
+                List.of());
     }
 }

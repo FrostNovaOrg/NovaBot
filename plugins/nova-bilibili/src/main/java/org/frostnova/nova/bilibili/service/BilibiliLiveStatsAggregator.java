@@ -21,6 +21,7 @@ import org.frostnova.nova.bilibili.util.DanmuWordUtil;
 import org.frostnova.nova.core.event.live.NovaBaseLiveEvent;
 import org.frostnova.nova.core.event.live.common.MembershipEvent;
 import org.frostnova.nova.core.model.DanmuRecord;
+import org.frostnova.nova.core.model.GiftInfo;
 import org.frostnova.nova.core.model.UserInfo;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.service.LiveDataService;
@@ -113,6 +114,7 @@ public class BilibiliLiveStatsAggregator {
                 "gn", gift == null ? null : gift.getName(),
                 "n", gift == null ? null : gift.getCount(),
                 "val", value, "pay", charged, "bag", event.isFromBag()));
+        recordReceivedGift(event, gift);
     }
 
     /**
@@ -124,6 +126,7 @@ public class BilibiliLiveStatsAggregator {
                 .map(gift -> Optional.ofNullable(gift.getCount()).orElse(1))
                 .orElse(1);
         increment(event, BilibiliLiveMetric.FREE_GIFT_COUNT, count);
+        recordReceivedGift(event, event.getGiftInfo());
     }
 
     /**
@@ -173,6 +176,7 @@ public class BilibiliLiveStatsAggregator {
                 "gn", gift == null ? null : gift.getName(),
                 "n", gift == null ? null : gift.getCount(),
                 "val", value, "pft", value - price));
+        recordReceivedGift(event, gift);
     }
 
     /**
@@ -440,6 +444,19 @@ public class BilibiliLiveStatsAggregator {
             fields.put((String) kv[i], kv[i + 1]);
         }
         return fields;
+    }
+
+    /**
+     * 按礼物种类累计本场收到的个数。盲盒记开出的礼物，不记盲盒本身。
+     */
+    private void recordReceivedGift(NovaBaseLiveEvent event, GiftInfo gift) {
+        if (event.getSource() == null || event.getSource().getUid() == null || gift == null) {
+            return;
+        }
+        int count = gift.getCount() == null || gift.getCount() < 1 ? 1 : gift.getCount();
+        double price = gift.getPrice() == null ? 0 : gift.getPrice();
+        liveDataService.recordLiveGift(event.getPlatform(), event.getSource().getUid(),
+                gift.getId(), gift.getName(), price, count, gift.getUrl());
     }
 
     /**

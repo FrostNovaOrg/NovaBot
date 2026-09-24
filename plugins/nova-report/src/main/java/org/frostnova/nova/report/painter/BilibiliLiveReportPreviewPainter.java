@@ -133,6 +133,11 @@ public class BilibiliLiveReportPreviewPainter extends BilibiliLiveReportPainter 
     }
 
     @Override
+    protected BufferedImage giftIcon(String url) {
+        return null;
+    }
+
+    @Override
     protected Optional<Long> fansCount(Long uid) {
         return Optional.of(12_480L);
     }
@@ -204,6 +209,7 @@ public class BilibiliLiveReportPreviewPainter extends BilibiliLiveReportPainter 
         fixtureUsers(data, platform);
         fixtureSeries(data, platform, end);
         fixtureWords(data, platform);
+        fixtureGifts(data, platform);
         return data;
     }
 
@@ -294,6 +300,30 @@ public class BilibiliLiveReportPreviewPainter extends BilibiliLiveReportPainter 
             for (int n = 0; n < times; n++) {
                 data.incrementLiveWordFrequency(platform, PREVIEW_UID, words[i]);
             }
+        }
+    }
+
+    /**
+     * 四档礼物都有，贵重的少、便宜的多，好让预览看得出每档的图标大小
+     */
+    private static void fixtureGifts(DefaultLiveDataService data, String platform) {
+        Object[][] gifts = {
+                {1L, "小电视飞船", 1245.0, 1},
+                {2L, "摩天大楼", 450.0, 2},
+                {3L, "火箭", 199.0, 1},
+                {4L, "这个名字长到一行里放不下的礼物", 100.0, 1},
+                {5L, "告白气球", 52.0, 3},
+                {6L, "猫耳", 20.0, 6},
+                {7L, "情书", 10.0, 4},
+                {8L, "冰阔落", 6.6, 8},
+                {9L, "打call", 2.0, 15},
+                {10L, "小花花", 1.0, 20},
+                {11L, "辣条", 0.1, 36},
+                {12L, "小心心", 0.0, 128}
+        };
+        for (Object[] gift : gifts) {
+            data.recordLiveGift(platform, PREVIEW_UID, (Long) gift[0], (String) gift[1],
+                    (Double) gift[2], (Integer) gift[3], "preview-gift-" + gift[0]);
         }
     }
 

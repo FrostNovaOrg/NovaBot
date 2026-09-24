@@ -204,7 +204,8 @@ public class NovaDefaultLiveOffEventListener {
                 highlights,
                 roomInfoHistory.history(platform, uid),
                 gaps,
-                peaks));
+                peaks,
+                liveDataService.getLiveGifts(platform, uid)));
     }
 
     /**

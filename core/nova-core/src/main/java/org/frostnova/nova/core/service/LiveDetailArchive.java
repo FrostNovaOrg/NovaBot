@@ -8,6 +8,7 @@ import org.frostnova.nova.core.analytics.LiveHighlightFinder;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.model.DanmuRecord;
 import org.frostnova.nova.core.model.LiveGap;
+import org.frostnova.nova.core.analytics.LiveGiftTotal;
 import org.frostnova.nova.core.model.RoomInfoSnapshot;
 import org.frostnova.nova.core.model.SeriesPeak;
 import org.frostnova.nova.core.model.UserScore;
@@ -488,6 +489,24 @@ public class LiveDetailArchive {
 
         json.put("words", detail.words() == null ? new JSONObject() : new JSONObject(detail.words()));
 
+        JSONArray gifts = new JSONArray();
+        if (detail.gifts() != null) {
+            for (LiveGiftTotal gift : detail.gifts()) {
+                JSONObject entry = new JSONObject();
+                if (gift.id() != null) {
+                    entry.put("id", gift.id());
+                }
+                entry.put("name", gift.name());
+                entry.put("price", gift.price());
+                entry.put("count", gift.count());
+                if (gift.url() != null && !gift.url().isBlank()) {
+                    entry.put("url", gift.url());
+                }
+                gifts.add(entry);
+            }
+        }
+        json.put("gifts", gifts);
+
         JSONArray highlights = new JSONArray();
         if (detail.highlights() != null) {
             for (LiveHighlightFinder.Highlight highlight : detail.highlights()) {
@@ -660,6 +679,24 @@ public class LiveDetailArchive {
             }
         }
 
+        List<LiveGiftTotal> gifts = new ArrayList<>();
+        JSONArray rawGifts = json.getJSONArray("gifts");
+        if (rawGifts != null) {
+            for (int i = 0; i < rawGifts.size(); i++) {
+                JSONObject entry = rawGifts.getJSONObject(i);
+                if (entry == null) {
+                    continue;
+                }
+                String icon = entry.getString("url");
+                gifts.add(new LiveGiftTotal(
+                        entry.containsKey("id") ? entry.getLong("id") : null,
+                        entry.getString("name"),
+                        entry.getDoubleValue("price"),
+                        entry.getIntValue("count"),
+                        icon == null || icon.isBlank() ? null : icon));
+            }
+        }
+
         return new LiveDetail(
                 json.getIntValue("version"),
                 json.getString("platform"),
@@ -669,7 +706,7 @@ public class LiveDetailArchive {
                 json.getLongValue("startTime"),
                 json.getLongValue("endTime"),
                 json.getLongValue("durationSeconds"),
-                metrics, userCounts, series, rankings, words, highlights, titles, gaps, peaks);
+                metrics, userCounts, series, rankings, words, highlights, titles, gaps, peaks, gifts);
     }
 
     /**

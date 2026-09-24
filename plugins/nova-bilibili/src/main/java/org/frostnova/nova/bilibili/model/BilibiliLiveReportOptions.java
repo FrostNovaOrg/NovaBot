@@ -121,6 +121,13 @@ public class BilibiliLiveReportOptions {
     private boolean highlights = true;
 
     /**
+     * 是否展示本场收到的礼物
+     * <p>
+     * 隐藏金额时这一段整段不画，与礼物榜同一个判断。
+     */
+    private boolean giftList = true;
+
+    /**
      * 是否展示金额
      * <p>
      * <b>这一项不来自推送参数</b>，而是取自会话级的金额可见性设置：它回答的是「这份东西给谁看」，
@@ -128,7 +135,7 @@ public class BilibiliLiveReportOptions {
      * 该显示的区块完全相同，该不该带金额则完全相反。
      * <p>
      * 关闭后并非简单地少画几块：概览行的收益整段省略，卡片改用人数、条数等非金额表述，
-     * 曲线保留形状但不标峰值，而礼物、醒目留言、盲盒盈亏三张榜整榜不画——
+     * 曲线保留形状但不标峰值，礼物列表整段不画，而礼物、醒目留言、盲盒盈亏三张榜整榜不画——
      * 那三张榜的每一行都是「某人花了多少钱」，去掉数字也仍然在排消费。
      */
     private boolean showRevenue = true;
@@ -164,6 +171,7 @@ public class BilibiliLiveReportOptions {
                     DEFAULTS.guardListLimit, 0, MAX_GUARD_LIST_ALL),
             HandlerOption.bool("danmu_cloud", "弹幕词云", "本场弹幕的词云图", DEFAULTS.danmuCloud),
             HandlerOption.bool("highlights", "高能时刻", "弹幕最密集的几个时段，对应可剪切片的时间点", DEFAULTS.highlights),
+            HandlerOption.bool("gift_list", "礼物列表", "本场收到的礼物，按种类列出个数", DEFAULTS.giftList),
             HandlerOption.integer("danmu_ranking", "弹幕排行", "展示前几名，0 为不展示",
                     DEFAULTS.danmuRanking, 0, MAX_RANKING_COUNT),
             HandlerOption.integer("gift_ranking", "礼物排行", "展示前几名，0 为不展示",
@@ -215,6 +223,7 @@ public class BilibiliLiveReportOptions {
         options.interactionCurve = bool(params, "interaction_curve", options.interactionCurve);
         options.danmuCloud = bool(params, "danmu_cloud", options.danmuCloud);
         options.highlights = bool(params, "highlights", options.highlights);
+        options.giftList = bool(params, "gift_list", options.giftList);
         return options;
     }
 

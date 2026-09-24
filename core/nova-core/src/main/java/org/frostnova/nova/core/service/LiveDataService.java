@@ -1,6 +1,7 @@
 package org.frostnova.nova.core.service;
 
 import org.frostnova.nova.core.model.LiveGap;
+import org.frostnova.nova.core.analytics.LiveGiftTotal;
 import org.frostnova.nova.core.model.UserScore;
 import lombok.NonNull;
 
@@ -592,5 +593,31 @@ public interface LiveDataService {
      */
     default Map<String, Integer> getLiveWordFrequencies(@NonNull String platform, @NonNull Long uid) {
         return Map.of();
+    }
+
+    /**
+     * 累计本场收到的一种礼物
+     * <p>
+     * 以礼物 id 归并；id 缺失时以名字归并。个数相加。图标地址取先到的非空值。
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @param id 礼物 id，没有时为空
+     * @param name 礼物名
+     * @param price 单价，单位元
+     * @param count 这一次的个数
+     * @param url 图标地址，没有时为空
+     */
+    default void recordLiveGift(@NonNull String platform, @NonNull Long uid,
+                                Long id, String name, double price, int count, String url) {
+    }
+
+    /**
+     * 本场收到的礼物，按种类
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @return 每种一行，未记录时为空表
+     */
+    default List<LiveGiftTotal> getLiveGifts(@NonNull String platform, @NonNull Long uid) {
+        return List.of();
     }
 }

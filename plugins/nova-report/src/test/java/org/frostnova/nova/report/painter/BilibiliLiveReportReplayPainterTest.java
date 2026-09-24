@@ -151,7 +151,7 @@ class BilibiliLiveReportReplayPainterTest {
                 complete.uname(), complete.roomId(), complete.startTime(), complete.endTime(),
                 complete.durationSeconds(), complete.metrics(), complete.userCounts(), fewer,
                 complete.rankings(), complete.words(), complete.highlights(), complete.titles(),
-                complete.gaps(), complete.peaks());
+                complete.gaps(), complete.peaks(), complete.gifts());
 
         int full = image(redraw(new BilibiliLiveReportOptions())).getHeight();
         int missing = image(render(crippled, new BilibiliLiveReportOptions())).getHeight();
@@ -196,7 +196,7 @@ class BilibiliLiveReportReplayPainterTest {
                 null, complete.roomId(), complete.startTime(), complete.endTime(),
                 complete.durationSeconds(), complete.metrics(), complete.userCounts(), complete.series(),
                 complete.rankings(), complete.words(), complete.highlights(), complete.titles(),
-                complete.gaps(), complete.peaks());
+                complete.gaps(), complete.peaks(), complete.gifts());
 
         assertTrue(render(nameless, new BilibiliLiveReportOptions()).length > 0);
     }
@@ -314,7 +314,7 @@ class BilibiliLiveReportReplayPainterTest {
                 START, START + DURATION, DURATION / 1000,
                 metrics(), userCounts, series, rankings(), words(),
                 List.of(new LiveHighlightFinder.Highlight(START + 42 * MINUTE, 34, 4.25)),
-                titles(), gaps(), peaks);
+                titles(), gaps(), peaks, List.of());
     }
 
     private Map<String, Double> metrics() {
