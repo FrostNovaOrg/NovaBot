@@ -883,7 +883,7 @@ public class BilibiliLiveReportPainter {
         curves.add(new Curve("看过人数", BilibiliLiveMetric.WATCHED_COUNT, COLOR_CURVE_WATCHED,
                 peak -> Math.round(peak) + " 人看过"));
         curves.add(new Curve("在线人数", BilibiliLiveMetric.ONLINE_COUNT, COLOR_CURVE_ONLINE,
-                peak -> Math.round(peak) + " 人", true, "登录观众数，哔哩哔哩高能榜口径", true));
+                peak -> Math.round(peak) + " 人", true, "登录观众数，哔哩哔哩高能榜口径"));
 
         // 缺口表整段算一次：各条曲线共用同一条时间轴，缺口落在哪几列对它们是同一个答案
         List<LiveGap> gaps = collectionGaps(platform, uid, start.get(), end.get());
@@ -995,10 +995,9 @@ public class BilibiliLiveReportPainter {
 
         int columns = Math.max(1, CONTENT_WIDTH / CURVE_COLUMN_WIDTH);
         int buckets = bucketCount(start, end);
-        double[] values = resample(series, start, end, columns);
+        double[] values = curveColumnValues(curve.metric(), series, start, end, columns, gaps);
         boolean[] missing = gapColumns(gaps, start, buckets, columns);
         boolean[] sampled = sampledColumns(series, start, end, columns);
-        fillMissingSamples(values, sampled, missing, curve.instantaneous());
 
         double peak = 0;
         for (int i = 0; i < columns; i++) {
@@ -1325,10 +1324,37 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
+     * 按曲线指标出各列取值，含缺样本补值
+     * <p>
+     * 「哪条曲线开补值」由 {@link #fillsMissingSamples} 决定，调用方只给指标名。
+     */
+    static double[] curveColumnValues(String metric, Map<Long, Double> series,
+                                      long start, long end, int columns, List<LiveGap> gaps) {
+        int buckets = bucketCount(start, end);
+        double[] values = resample(series, start, end, columns);
+        boolean[] missing = gapColumns(gaps, start, buckets, columns);
+        boolean[] sampled = sampledColumns(series, start, end, columns);
+        fillMissingSamples(values, sampled, missing, fillsMissingSamples(metric));
+        return values;
+    }
+
+    /**
+     * 这条曲线要不要给没采到的列补值
+     * <p>
+     * 瞬时量（在线人数）与「推一条记一条」的累计量（看过人数）没推的那一分钟
+     * 不是 0，画成 0 会让曲线跌到地板上。按分钟累加的量（弹幕、礼物等）
+     * 没消息就是真 0，不补。
+     */
+    static boolean fillsMissingSamples(String metric) {
+        return BilibiliLiveMetric.WATCHED_COUNT.equals(metric)
+                || BilibiliLiveMetric.ONLINE_COUNT.equals(metric);
+    }
+
+    /**
      * 把没采到样本的列补上，只给瞬时量曲线用
      * <p>
      * 累加量（弹幕、礼物等）没消息就是真 0，补值会把冷场画热闹，因此
-     * {@code instantaneous} 为 false 时原样不动。瞬时量（在线人数）反过来：
+     * {@code instantaneous} 为 false 时原样不动。瞬时量（在线人数、看过人数）反过来：
      * 没推送的那一分钟不是 0 人，画成 0 会让折线跌到地板上。
      * <p>
      * 补值只在同一段连续采集里做，<b>缺口里的列不碰</b>——那一段是真没采到，
@@ -2317,17 +2343,11 @@ public class BilibiliLiveReportPainter {
      * @param peakText 峰值文案，为 null 时不标峰值（金额曲线在不展示金额的会话里即为此情形）
      * @param polyline true 时画折线（不填充），false 时画面积
      * @param caption 标题下一行小字，null 则不画
-     * @param instantaneous true 时按瞬时量补没采到的列（在线人数），false 的累加量缺列仍画 0
      */
     private record Curve(String title, String metric, Color color, DoubleFunction<String> peakText,
-                         boolean polyline, String caption, boolean instantaneous) {
+                         boolean polyline, String caption) {
         private Curve(String title, String metric, Color color, DoubleFunction<String> peakText) {
-            this(title, metric, color, peakText, false, null, false);
-        }
-
-        private Curve(String title, String metric, Color color, DoubleFunction<String> peakText,
-                      boolean polyline, String caption) {
-            this(title, metric, color, peakText, polyline, caption, false);
+            this(title, metric, color, peakText, false, null);
         }
     }
 }
