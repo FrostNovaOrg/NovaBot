@@ -20,6 +20,8 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
@@ -90,6 +92,11 @@ public class LiveDetailArchive {
     private static final String EVENT_FILE = "events.jsonl";
 
     /**
+     * 旁路文件名。只许一层文件名，避免写成目录或跑到这场外面
+     */
+    private static final Pattern SIDECAR_NAME = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]{0,63}");
+
+    /**
      * 允许的平台名形状
      * <p>
      * 平台名会成为目录名的一部分，
@@ -115,6 +122,12 @@ public class LiveDetailArchive {
      * 写锁。多个直播间可能同时下播，各写各的目录，但建目录与过期清理这两步会撞
      */
     private final Object writeLock = new Object();
+
+    /**
+     * 旁路文件的写锁。不跟某个留档对象走：同一场可能两处各拿各的对象同时写，
+     * 后写的不能把先写完的那一份顶掉。
+     */
+    private static final Object SIDECAR_LOCK = new Object();
 
     /**
      * 各 jsonl 文件已留档的行数，按文件路径计（弹幕原文与事件流水各记各的）
@@ -248,6 +261,101 @@ public class LiveDetailArchive {
             } catch (IOException e) {
                 log.error("留档直播明细失败, 该场的报告将无法重新绘制", e);
             }
+        }
+    }
+
+    /**
+     * 在这场目录里另留一份文件。已有同名的就不覆盖，空内容不写。
+     * <p>
+     * 跟 {@code detail.json} 是否已经落下无关：那份落盘之后这场不再收弹幕，
+     * 这份是下播当时才拿得到的东西，要能在那之后写进来。
+     * 先写临时文件再改名落下，读的人不会看到写了一半的内容。
+     * 这张盘不能原子改名时，改用普通改名，仍然不会盖住已经写下的那一份。
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @param startTime 本场开播时刻（毫秒）
+     * @param fileName 文件名，不含目录
+     * @param body 整份内容
+     * @return 这次是否写出了新文件
+     */
+    public boolean writeOnce(@NonNull String platform, @NonNull Long uid, long startTime,
+                             @NonNull String fileName, @NonNull String body) {
+        if (body.isBlank() || !SIDECAR_NAME.matcher(fileName).matches()) {
+            return false;
+        }
+        Optional<Path> dir = directory(platform, uid, startTime);
+        if (dir.isEmpty()) {
+            return false;
+        }
+
+        synchronized (SIDECAR_LOCK) {
+            Path temp = null;
+            try {
+                Files.createDirectories(dir.get());
+                Path target = dir.get().resolve(fileName);
+                if (Files.exists(target)) {
+                    return false;
+                }
+                temp = Files.createTempFile(dir.get(), "side-", ".part");
+                Files.writeString(temp, body, StandardCharsets.UTF_8);
+                try {
+                    Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE);
+                    temp = null;
+                } catch (FileAlreadyExistsException already) {
+                    return false;
+                } catch (AtomicMoveNotSupportedException | UnsupportedOperationException unsupported) {
+                    if (Files.exists(target)) {
+                        return false;
+                    }
+                    try {
+                        Files.move(temp, target);
+                        temp = null;
+                    } catch (FileAlreadyExistsException already) {
+                        return false;
+                    }
+                }
+                return true;
+            } catch (IOException e) {
+                log.warn("留下 {} 失败: {}", fileName, e.getMessage());
+                return false;
+            } finally {
+                if (temp != null) {
+                    try {
+                        Files.deleteIfExists(temp);
+                    } catch (IOException ignored) {
+                        // 临时文件留在当场目录里，名字不是正式文件，读的时候不会当成名单
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 读这场目录里的一份旁路文件
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @param startTime 本场开播时刻（毫秒）
+     * @param fileName 文件名，不含目录
+     * @return 文件内容，没有或读不出来时为空
+     */
+    public Optional<String> readText(@NonNull String platform, @NonNull Long uid, long startTime,
+                                     @NonNull String fileName) {
+        if (!SIDECAR_NAME.matcher(fileName).matches()) {
+            return Optional.empty();
+        }
+        Optional<Path> dir = directory(platform, uid, startTime);
+        if (dir.isEmpty()) {
+            return Optional.empty();
+        }
+        Path path = dir.get().resolve(fileName);
+        if (!Files.isRegularFile(path)) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(Files.readString(path, StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            log.debug("读取 {} 失败: {}", fileName, e.getMessage());
+            return Optional.empty();
         }
     }
 

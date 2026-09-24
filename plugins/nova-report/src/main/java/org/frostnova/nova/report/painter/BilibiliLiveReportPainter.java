@@ -3,13 +3,16 @@ package org.frostnova.nova.report.painter;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import javax.imageio.ImageIO;
+import org.frostnova.nova.bilibili.BilibiliPlatform;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.enums.GuardType;
 import org.frostnova.nova.bilibili.model.BilibiliLiveMetric;
 import org.frostnova.nova.bilibili.model.BilibiliLiveReportOptions;
+import org.frostnova.nova.bilibili.model.GuardListFetch;
 import org.frostnova.nova.bilibili.model.GuardMedal;
 import org.frostnova.nova.bilibili.model.GuardMember;
 import org.frostnova.nova.bilibili.model.Room;
+import org.frostnova.nova.bilibili.service.GuardRosterFile;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.bilibili.util.DurationFormatUtil;
 import org.frostnova.nova.core.analytics.LiveHighlightFinder;
@@ -21,7 +24,9 @@ import org.frostnova.nova.core.model.UserScore;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.LiveRoomInfoHistory;
+import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.lang.StringUtil;
+import org.frostnova.nova.core.service.LiveDetailArchive;
 import org.frostnova.nova.report.factory.NovaCommonPainterFactory;
 import org.frostnova.nova.report.util.FontUtil;
 import org.frostnova.nova.report.util.ImageUtil;
@@ -50,6 +55,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.DoubleFunction;
 
 /**
@@ -365,6 +371,12 @@ public class BilibiliLiveReportPainter {
      * 礼物图标与大航海标志的本机缓存。头像不进这里
      */
     private final ReportImageDiskCache imageDisk;
+
+    /**
+     * 人数卡片已经问到的总数，按直播间号记。
+     * 写名单时直接用这个数，不再为人数另打一次接口。
+     */
+    private final Map<Long, Integer> guardCountOnCard = new ConcurrentHashMap<>();
 
     /**
      * 底部标识只读一次盘，读过就不再重试——无论成败
@@ -2501,26 +2513,128 @@ public class BilibiliLiveReportPainter {
      * 当前大航海人数，取不到时为空
      */
     protected Optional<Integer> guardCount(Long roomId, Long uid) {
-        return api.getGuardCount(roomId, uid);
+        Optional<Integer> count = api.getGuardCount(roomId, uid);
+        if (roomId != null) {
+            if (count.isPresent() && count.get() > 0) {
+                guardCountOnCard.put(roomId, count.get());
+            } else {
+                guardCountOnCard.remove(roomId);
+            }
+        }
+        return count;
+    }
+
+    /**
+     * 留下的人数：卡片已经问过就用那个，否则用名单首页报的总数，再没有才用名单长度
+     */
+    private int totalForRoster(Long roomId, List<GuardMember> members) {
+        Integer onCard = roomId == null ? null : guardCountOnCard.get(roomId);
+        if (onCard != null && onCard > 0) {
+            return onCard;
+        }
+        return GuardListFetch.reportedTotal(members).orElse(members.size());
     }
 
     /**
      * 这位主播当前的大航海名单，取不到时为空
      * <p>
      * 这份名单是现拉的「此刻在舰的人」，不是本场新开通的那张计分表。
-     * 预览与历史重画必须覆写这一口，否则会拿夹具或去年的场次去打今天的接口。
+     * 直播中的实时报告每次向平台要，不读、也不写留下的那一份，
+     * 免得直播中先看一次就把名单定格，下播时反倒不是当时的人。
+     * 下播之后才读这场已经留下的，没有才向平台要，要到了就留下。
+     * 几个推送目标画同一场时，后面的目标读这一份，不再各要一遍。
+     * 人数用卡片已经问到的总数；没有卡片时用名单首页自带的总数；
+     * 都没有才用实际取到的人数。不为人数再打一次接口。
+     * 名单只存实际取到的那些人。
+     * 预览与历史重画必须覆写这一口，否则会拿夹具或去年的场次去打今天的接口，
+     * 预览那一支还不能把夹具写进真场次的目录。
      */
     protected Optional<List<GuardMember>> guardList(Long roomId, Long uid) {
         if (roomId == null || uid == null) {
             return Optional.empty();
         }
+        String platform = BilibiliPlatform.BILIBILI.id();
+        Optional<Long> start = liveStart(platform, uid);
+        boolean retain = start.isPresent() && !liveNow(platform, uid);
+        if (retain) {
+            Optional<GuardRosterFile.Parsed> saved = savedGuardRoster(platform, uid, start.get());
+            if (saved.isPresent() && !saved.get().members().isEmpty()) {
+                return Optional.of(saved.get().members());
+            }
+        }
         try {
             Optional<List<GuardMember>> fetched = api.getGuardList(roomId, uid);
-            return fetched == null ? Optional.empty() : fetched;
+            if (fetched == null || fetched.isEmpty()) {
+                return Optional.empty();
+            }
+            if (retain && !fetched.get().isEmpty()) {
+                keepGuardRoster(platform, uid, start.get(), totalForRoster(roomId, fetched.get()), fetched.get());
+            }
+            return fetched;
         } catch (RuntimeException e) {
             log.debug("获取直播间 {} 的大航海名单失败: {}", roomId, e.getMessage());
             return Optional.empty();
         }
+    }
+
+    /**
+     * 此刻是否还在播。状态拿不到时按已下播，下播报告仍会留下名单
+     */
+    private boolean liveNow(String platform, Long uid) {
+        try {
+            Optional<Boolean> status = liveDataService.getLiveStatus(platform, uid);
+            return status != null && status.orElse(false);
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    /**
+     * 这场已经留下的大航海名单。没有这份缓存目录时为空，避免写到真数据旁边
+     */
+    protected Optional<GuardRosterFile.Parsed> savedGuardRoster(String platform, long uid, long startTime) {
+        if (platform == null) {
+            return Optional.empty();
+        }
+        return rosterArchive()
+                .flatMap(archive -> archive.readText(platform, uid, startTime, GuardRosterFile.NAME))
+                .flatMap(GuardRosterFile::parse);
+    }
+
+    /**
+     * 留下这场的名单。已经有了就不覆盖；空名单不写，免得以后重画成没人上舰
+     */
+    protected void keepGuardRoster(String platform, long uid, long startTime, int total, List<GuardMember> members) {
+        if (platform == null || members == null || members.isEmpty() || total <= 0) {
+            return;
+        }
+        rosterArchive().ifPresent(archive -> archive.writeOnce(platform, uid, startTime, GuardRosterFile.NAME,
+                GuardRosterFile.toJson(System.currentTimeMillis(), total, members)));
+    }
+
+    private Optional<Long> liveStart(String platform, Long uid) {
+        try {
+            Optional<Long> start = liveDataService.getLiveStartTime(platform, uid);
+            return start == null ? Optional.empty() : start;
+        } catch (RuntimeException e) {
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * 图标缓存和明细在同一个目录下。缓存不落盘时，名单也不落盘
+     */
+    private Optional<LiveDetailArchive> rosterArchive() {
+        Path cacheDir = imageDisk.directory();
+        if (cacheDir == null) {
+            return Optional.empty();
+        }
+        Path parent = cacheDir.getParent();
+        Path liveData = parent == null ? Path.of("data.json") : parent.resolve("data.json");
+        NovaCoreProperties core = new NovaCoreProperties();
+        core.getLive().setSaveLiveData(false);
+        core.getLive().setLiveDataPath(liveData.toString());
+        return Optional.of(new LiveDetailArchive(core));
     }
 
     /**
