@@ -20,27 +20,38 @@ import org.springframework.boot.info.BuildProperties;
 import org.springframework.core.io.DefaultResourceLoader;
 
 import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
+import javax.imageio.ImageReadParam;
+import javax.imageio.metadata.IIOMetadata;
+import javax.imageio.spi.IIORegistry;
+import javax.imageio.spi.ImageReaderSpi;
+import javax.imageio.stream.ImageInputStream;
 import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -49,7 +60,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
- * 礼物图标与大航海标志落在本机之后，重启、换图、取失败、重画、放久了，各会怎样
+ * 礼物图标与大航海标志落在本机之后，重启、换图、取失败、重画、放久了、坏图、清理出错、目录只读、缓存目录是链接，各会怎样
  */
 @DisplayName("礼物图标与大航海标志的本机缓存")
 class ReportImageDiskCacheTest {
@@ -261,6 +272,151 @@ class ReportImageDiskCacheTest {
     }
 
     @Test
+    @DisplayName("清缓存只删过期的缓存文件，直播数据和指向别处的缓存目录都不动")
+    void sweepKeepsLiveDataAndDoesNotFollowLink() throws IOException {
+        String oldUrl = "https://img.example/stale-shaped.png";
+        cache.store(oldUrl, solid(GIFT_COLOR));
+        Path stalePng = cache.file(oldUrl);
+        Path staleTemp = stalePng.resolveSibling(stalePng.getFileName() + ".tmp-old");
+        Files.write(staleTemp, new byte[] {1, 2, 3});
+
+        Path cacheDir = cache.directory();
+        Path wrongName = cacheDir.resolve("foo.png");
+        Path cacheData = cacheDir.resolve("data.json");
+        Path upperName = cacheDir.resolve("A".repeat(64) + ".png");
+        Path shortName = cacheDir.resolve("a".repeat(63) + ".png");
+        Path otherSuffix = cacheDir.resolve("b".repeat(64) + ".jpg");
+        Path backupName = cacheDir.resolve("c".repeat(64) + ".png.bak");
+        Files.write(wrongName, new byte[] {9});
+        Files.write(cacheData, new byte[] {8});
+        Files.write(upperName, new byte[] {7});
+        Files.write(shortName, new byte[] {6});
+        Files.write(otherSuffix, new byte[] {5});
+        Files.write(backupName, new byte[] {4});
+
+        Path nested = cacheDir.resolve("nested");
+        Path nestedFile = nested.resolve("keep.txt");
+        Path dirNamedAsCache = cacheDir.resolve("d".repeat(64) + ".png");
+        Path dirChild = dirNamedAsCache.resolve("child.json");
+        Files.createDirectories(nested);
+        Files.write(nestedFile, "子目录里的文件".getBytes(StandardCharsets.UTF_8));
+        Files.createDirectories(dirNamedAsCache);
+        Files.write(dirChild, new byte[] {3});
+
+        Path liveData = temp.resolve("data.json");
+        Path detailFile = temp.resolve("details").resolve("bilibili-1-1700000000000").resolve("events.jsonl");
+        Path detailShaped = temp.resolve("details").resolve("e".repeat(64) + ".png");
+        Files.createDirectories(detailFile.getParent());
+        Files.write(liveData, "{\"live\":true}".getBytes(StandardCharsets.UTF_8));
+        Files.write(detailFile, "{\"t\":\"gift\"}".getBytes(StandardCharsets.UTF_8));
+        Files.write(detailShaped, new byte[] {2});
+        Path sibling = temp.resolve("notes.txt");
+        Files.write(sibling, "旁的文件".getBytes(StandardCharsets.UTF_8));
+
+        for (Path path : List.of(stalePng, staleTemp, wrongName, cacheData, upperName, shortName, otherSuffix,
+                backupName, nested, nestedFile, dirNamedAsCache, dirChild, liveData, detailFile, detailShaped,
+                sibling, detailFile.getParent(), temp.resolve("details"))) {
+            age(path);
+        }
+
+        cache.sweep();
+
+        assertTrue(Files.isRegularFile(wrongName), "名字不是缓存形状的文件不应被清掉");
+        assertTrue(Files.isRegularFile(cacheData), "缓存目录里的数据文件不应被清掉");
+        assertTrue(Files.isRegularFile(upperName), "大写的文件名不应被当成缓存文件清掉");
+        assertTrue(Files.isRegularFile(shortName), "长度不对的文件名不应被清掉");
+        assertTrue(Files.isRegularFile(otherSuffix), "后缀不是 png 的文件不应被清掉");
+        assertTrue(Files.isRegularFile(backupName), "多出来的后缀不应被清掉");
+        assertTrue(Files.isDirectory(nested), "子目录不应被清掉");
+        assertTrue(Files.isRegularFile(nestedFile), "子目录里的文件不应被清掉");
+        assertTrue(Files.isDirectory(dirNamedAsCache), "名叫缓存文件的子目录不应被清掉");
+        assertTrue(Files.isRegularFile(dirChild), "子目录里的文件不应被清掉");
+        assertTrue(Files.isRegularFile(liveData), "直播数据文件不应被清掉");
+        assertTrue(Files.isRegularFile(detailFile), "明细目录里的文件不应被清掉");
+        assertTrue(Files.isRegularFile(detailShaped), "明细目录里的文件不应被清掉");
+        assertTrue(Files.isRegularFile(sibling), "数据目录旁的文件不应被清掉");
+        assertFalse(Files.exists(stalePng), "超过 30 天的缓存文件应被清掉");
+        assertFalse(Files.exists(staleTemp), "超过 30 天的半成品应被清掉");
+
+        Path elsewhere = temp.resolve("elsewhere").toAbsolutePath();
+        Files.createDirectories(elsewhere);
+        String linkedUrl = "https://img.example/linked-old.png";
+        Path linkedOld = elsewhere.resolve(cache.file(linkedUrl).getFileName());
+        Path linkedKeep = elsewhere.resolve("keep.txt");
+        Files.write(linkedOld, new byte[] {1, 2, 3, 4});
+        Files.write(linkedKeep, "别处的文件".getBytes(StandardCharsets.UTF_8));
+        age(linkedOld);
+        age(linkedKeep);
+        Path live = temp.resolve("live-link");
+        Files.createDirectories(live);
+        Path link = live.resolve("image-cache");
+        Files.createSymbolicLink(link, elsewhere);
+
+        new ReportImageDiskCache(link).sweep();
+
+        assertTrue(Files.isSymbolicLink(link), "缓存目录这个链接本身应留着");
+        assertTrue(Files.isRegularFile(linkedOld), "缓存目录是指向别处的链接时，不应删掉别处的旧文件");
+        assertTrue(Files.isRegularFile(linkedKeep), "缓存目录是指向别处的链接时，别处的其他文件也不应动");
+    }
+
+    @Test
+    @DisplayName("缓存里一张坏图不会让整份报告出不来")
+    void brokenImageCountsAsMiss() throws IOException {
+        IIORegistry registry = IIORegistry.getDefaultInstance();
+        BadImageReaderSpi spi = new BadImageReaderSpi();
+        registry.registerServiceProvider(spi);
+        try {
+            BilibiliLiveReportPainter live = painter(mock(BilibiliApiUtil.class));
+            String key = live.giftFetchUrl(GIFT_URL);
+            Files.createDirectories(cache.directory());
+            Files.write(cache.file(key), BadImageReaderSpi.MAGIC);
+
+            BilibiliApiUtil quiet = mock(BilibiliApiUtil.class);
+            when(quiet.getBilibiliImage(anyString())).thenReturn(Optional.of(solid(OTHER)));
+            BilibiliLiveReportRedrawer redrawer = new BilibiliLiveReportRedrawer(
+                    factory, quiet, fontUtil, new NovaBilibiliProperties(), roomInfoHistory, cache);
+            try {
+                Optional<byte[]> png = redrawer.redraw(detailWithGift(GIFT_URL));
+                assertTrue(png.isPresent(), "坏图这一格当没有，报告仍应画得出来");
+            } catch (Exception e) {
+                fail("坏图不应让整份报告出不来，抛出了 " + e.getClass().getName());
+            }
+            assertTrue(cache.read(key).isEmpty(), "坏图应当成没有");
+            verifyNoInteractions(quiet);
+        } finally {
+            registry.deregisterServiceProvider(spi);
+        }
+    }
+
+    @Test
+    @DisplayName("清理时出错也不会让程序起不来")
+    void sweepFailureDoesNotEscape() {
+        Path dir = mock(Path.class);
+        when(dir.getFileSystem()).thenThrow(new IllegalStateException("清理时读目录失败"));
+        ReportImageDiskCache broken = new ReportImageDiskCache(dir);
+        assertDoesNotThrow(broken::sweep, "清理出错不应抛出去");
+        assertDoesNotThrow(broken::sweepOnStartup, "启动时清理出错不应让程序起不来");
+        assertDoesNotThrow(broken::sweepDaily, "每天那次清理出错不应抛出去");
+    }
+
+    @Test
+    @DisplayName("记下读取时间失败时，读到的图照用，不再向外取")
+    void readOnlyTouchStillUsesCachedImage() {
+        BilibiliLiveReportPainter live = painter(mock(BilibiliApiUtil.class));
+        String key = live.giftFetchUrl(GIFT_URL);
+        cache.store(key, solid(GIFT_COLOR));
+        cache = new CannotTouchCache(cache.directory());
+
+        BilibiliApiUtil api = mock(BilibiliApiUtil.class);
+        when(api.getBilibiliImage(anyString())).thenReturn(Optional.of(solid(OTHER)));
+        BilibiliLiveReportPainter restarted = painter(api);
+        BufferedImage got = restarted.giftIcon(GIFT_URL);
+        assertEquals(GIFT_COLOR.getRGB(), center(got), "只读时读到的图标应照用，不应改去重取");
+        verifyNoInteractions(api);
+        assertEquals(GIFT_COLOR.getRGB(), center(cache.read(key).orElseThrow()), "刷新读取时间失败时，读到的图仍应返回");
+    }
+
+    @Test
     @DisplayName("写到一半的文件不会被当成已经缓存的图")
     void halfWrittenFileIsNotRead() throws IOException {
         Files.createDirectories(cache.directory());
@@ -318,5 +474,111 @@ class ReportImageDiskCacheTest {
             }
         }
         return false;
+    }
+
+    private static void age(Path path) throws IOException {
+        Files.setLastModifiedTime(path, FileTime.from(Instant.now().minus(Duration.ofDays(40))));
+    }
+
+    /**
+     * 刷新修改时间时抛出读写错误
+     */
+    private static final class CannotTouchCache extends ReportImageDiskCache {
+        CannotTouchCache(Path directory) {
+            super(directory);
+        }
+
+        @Override
+        void touchLastRead(Path path) throws IOException {
+            throw new IOException("刷新修改时间失败");
+        }
+    }
+
+    /**
+     * 只认一段固定开头的文件，读的时候抛出非读写类异常
+     */
+    private static final class BadImageReaderSpi extends ImageReaderSpi {
+        static final byte[] MAGIC = new byte[] {'B', 'A', 'D', 'I', 'C', 'O', 'N', '!'};
+
+        BadImageReaderSpi() {
+            super("nova-test", "1",
+                    new String[] {"badicon"},
+                    new String[] {"badicon"},
+                    new String[] {"application/x-badicon"},
+                    BadImageReader.class.getName(),
+                    new Class<?>[] {ImageInputStream.class},
+                    null,
+                    false, null, null, null, null,
+                    false, null, null, null, null);
+        }
+
+        @Override
+        public boolean canDecodeInput(Object source) throws IOException {
+            if (!(source instanceof ImageInputStream)) {
+                return false;
+            }
+            ImageInputStream in = (ImageInputStream) source;
+            in.mark();
+            byte[] buf = new byte[MAGIC.length];
+            int n = in.read(buf);
+            in.reset();
+            return n == MAGIC.length && Arrays.equals(buf, MAGIC);
+        }
+
+        @Override
+        public ImageReader createReaderInstance(Object extension) {
+            return new BadImageReader(this);
+        }
+
+        @Override
+        public String getDescription(Locale locale) {
+            return "bad icon";
+        }
+    }
+
+    private static final class BadImageReader extends ImageReader {
+        BadImageReader(ImageReaderSpi originator) {
+            super(originator);
+        }
+
+        @Override
+        public void setInput(Object input, boolean seekForwardOnly, boolean ignoreMetadata) {
+            throw new IllegalStateException("坏图");
+        }
+
+        @Override
+        public int getNumImages(boolean allowSearch) {
+            return 1;
+        }
+
+        @Override
+        public int getWidth(int imageIndex) {
+            return 1;
+        }
+
+        @Override
+        public int getHeight(int imageIndex) {
+            return 1;
+        }
+
+        @Override
+        public java.util.Iterator<javax.imageio.ImageTypeSpecifier> getImageTypes(int imageIndex) {
+            return java.util.Collections.emptyIterator();
+        }
+
+        @Override
+        public IIOMetadata getStreamMetadata() {
+            return null;
+        }
+
+        @Override
+        public IIOMetadata getImageMetadata(int imageIndex) {
+            return null;
+        }
+
+        @Override
+        public BufferedImage read(int imageIndex, ImageReadParam param) {
+            throw new IllegalStateException("坏图");
+        }
     }
 }
