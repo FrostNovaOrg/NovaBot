@@ -10,6 +10,9 @@ import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * NovaBilibili 配置类
  */
@@ -400,6 +403,18 @@ public class NovaBilibiliProperties {
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("报告自定义标识图片")
         private String reportLogoPath = "";
+
+        /**
+         * 词云不计这些用户的弹幕。每行一个用户编号。
+         * <p>
+         * 欢迎、感谢一类机器人会把固定的词刷进词云。把它们的用户编号填在这里，
+         * 画词云时就不算这些人的发言。弹幕原文和词频仍照常保存。
+         * 保存后立刻生效，不必重启；已经结束的场次重新画报告也会按这份名单来。
+         */
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
+        @ConfigLabel("词云不计这些用户")
+        private List<String> wordCloudExcludeUids = new ArrayList<>();
     }
 
     /**
