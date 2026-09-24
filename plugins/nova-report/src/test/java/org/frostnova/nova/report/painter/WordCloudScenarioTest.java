@@ -71,7 +71,7 @@ class WordCloudScenarioTest {
      */
     private static final int FONT_SIZE_MIN = 18;
 
-    private static final int FONT_SIZE_MAX = 56;
+    private static final int FONT_SIZE_MAX = 80;
 
     /**
      * 场景跑用的种子。逐场固定的种子在生产里由开播时刻算出，这里取一个定值
@@ -313,14 +313,14 @@ class WordCloudScenarioTest {
                 new WordCloudLayout.Word("谢谢", 3)), 128, 2, 0));
 
         // 容量边界：72 个 8 码点的标签装不进 830×380，放不下的要如实计入 dropped
-        // 🔴 38／34 是<b>用本仓内置字体</b>量出来的。这一类的显示词数取决于字形有多宽，
+        // 🔴 37／35 是<b>用本仓内置字体</b>量出来的。这一类的显示词数取决于字形有多宽，
         // 换一套字体就换一个数——排版器算得对不对与它无关，故这两个数只钉住
         // 「本仓这套字体下的容量」，改动它的是字体或排版规则，不是别的
         List<WordCloudLayout.Word> longLabels = new ArrayList<>();
         for (int i = 0; i < CLOUD_MAX_WORDS; i++) {
             longLabels.add(new WordCloudLayout.Word(String.format("弹幕场景词条%02d", i), 100 - i));
         }
-        scenes.add(new Scene("77-大量较长标签", longLabels, CLOUD_MAX_HEIGHT, 38, 34));
+        scenes.add(new Scene("77-大量较长标签", longLabels, CLOUD_MAX_HEIGHT, 37, 35));
 
         return scenes;
     }
