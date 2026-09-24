@@ -623,6 +623,110 @@ class ConfigUiFrontendTest {
     }
 
     /**
+     * 深色下按钮若不吃浏览器默认底就会发白。
+     * <p>
+     * {@code .grpnav .pill} 与 {@code .nv-pill} 都是 {@code <button>}，浏览器给按钮的
+     * 默认底是浅色的；深色模式下整列会白成一片，字还是浅色的 {@code var(--dim)}，对比更差。
+     * 底色必须引 token（跟随主题），写死颜色在另一态下又会出同样的病。
+     */
+    @Test
+    @DisplayName("深色下设置左侧菜单与订阅药丸不吃浏览器默认白底")
+    void pillsHaveExplicitThemeBackground() throws IOException {
+        String css = Files.readString(frontendDir().resolve("app.css"), StandardCharsets.UTF_8);
+        List<String> bad = new ArrayList<>();
+
+        String grpnavPill = cssBlock(css, ".grpnav .pill");
+        if (!hasTokenBackground(grpnavPill)) {
+            bad.add(".grpnav .pill 没有引 token 的 background，深色下按钮吃浏览器默认白底: "
+                    + grpnavPill.strip());
+        }
+        String grpnavCur = cssBlock(css, ".grpnav .cur");
+        if (!hasTokenBackground(grpnavCur)) {
+            bad.add(".grpnav .cur 没有引 token 的 background，当前项在深色下也是白底: "
+                    + grpnavCur.strip());
+        }
+        String nvPill = cssBlock(css, ".nv-pill");
+        if (!hasTokenBackground(nvPill)) {
+            bad.add(".nv-pill 没有引 token 的 background，订阅抽屉的药丸在深色下吃浏览器默认白底: "
+                    + nvPill.strip());
+        }
+
+        assertTrue(bad.isEmpty(), "深色下药丸仍是浏览器默认白底:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
+     * 全站声明 color-scheme，滚动条、日期框、下拉列表、原生复选框才会跟着主题走。
+     * <p>
+     * 不声明的话，这些原生控件在深色下仍按浅色画——滚动条一条白、日期框的日历图标是黑的。
+     * 跟随系统时写 {@code light dark} 两种都认；页面带 {@code data-theme} 时跟它走，
+     * 为手动切换备好。
+     */
+    @Test
+    @DisplayName("全站声明 color-scheme，原生控件跟随主题")
+    void nativeControlsFollowTheme() throws IOException {
+        String css = Files.readString(frontendDir().resolve("app.css"), StandardCharsets.UTF_8);
+        List<String> bad = new ArrayList<>();
+
+        String root = cssBlock(css, ":root");
+        if (!hasColorScheme(root, "light dark") && !hasColorScheme(root, "lightdark")) {
+            bad.add(":root 没有 color-scheme:light dark，深色下原生控件仍按浅色画: " + root.strip());
+        }
+        String dark = cssBlock(css, ":root[data-theme=\"dark\"]");
+        if (!hasColorScheme(dark, "dark")) {
+            bad.add(":root[data-theme=\"dark\"] 没有 color-scheme:dark，手动切暗时原生控件仍白: "
+                    + dark.strip());
+        }
+        String light = cssBlock(css, ":root[data-theme=\"light\"]");
+        if (light.isBlank() || !hasColorScheme(light, "light")) {
+            bad.add(":root[data-theme=\"light\"] 没有 color-scheme:light，手动切亮时原生控件仍按系统暗色画: "
+                    + light.strip());
+        }
+
+        assertTrue(bad.isEmpty(), "原生控件没有跟随主题:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
+     * 标签页与左上角品牌位用 NovaBot 图标，不是字母「N」。
+     * <p>
+     * 没有 favicon 时浏览器用默认空白图标；品牌位写死字母「N」在深色渐变底上，
+     * 与项目图标是两回事。图标是 {@code docs/assets/icon.svg}（原创、纯几何）拷进
+     * config-ui 的那份，由 {@code /config/assets/} 提供。
+     */
+    @Test
+    @DisplayName("标签页与左上角用 NovaBot 图标")
+    void consoleShowsNovabotIcon() throws IOException {
+        String html = Files.readString(frontendDir().resolve("index.html"), StandardCharsets.UTF_8);
+        List<String> bad = new ArrayList<>();
+
+        if (!html.contains("rel=\"icon\"") || !html.contains("icon.svg")) {
+            bad.add("index.html 没有标签页图标（rel=\"icon\" + icon.svg）");
+        }
+        if (!Files.exists(frontendDir().resolve("icon.svg"))) {
+            bad.add("config-ui/ 下没有 icon.svg");
+        }
+        // 品牌位仍写字母「N」而没换成图标
+        if (html.contains("brand-mark\">N<")) {
+            bad.add("左上角品牌位仍是字母「N」，没有换成 NovaBot 图标");
+        }
+
+        assertTrue(bad.isEmpty(), "标签页或左上角不是 NovaBot 图标:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
+     * CSS 声明块里有没有引 token 的 background（background:var(--…) 或 background:none/transparent 不算）
+     */
+    private static boolean hasTokenBackground(String block) {
+        return block.contains("background:var(") || block.contains("background: var(");
+    }
+
+    /**
+     * CSS 声明块里有没有 color-scheme:<期望值>
+     */
+    private static boolean hasColorScheme(String block, String value) {
+        return block.contains("color-scheme:" + value) || block.contains("color-scheme: " + value);
+    }
+
+    /**
      * 源码地址。与界面里那一份是同一个串，两份分叉时这一格会红
      */
     private static final String SOURCE_URL = "https://github.com/FrostNovaOrg/NovaBot";
