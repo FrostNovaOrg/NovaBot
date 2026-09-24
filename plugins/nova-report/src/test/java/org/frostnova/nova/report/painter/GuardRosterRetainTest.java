@@ -211,6 +211,38 @@ class GuardRosterRetainTest {
     }
 
     @Test
+    @DisplayName("上一场下播图问过人数，这一场没开人数卡片，留下的人数不能还是上一场的")
+    void laterSessionWithoutTheCountCardDoesNotKeepThePreviousTotal() throws Exception {
+        LiveDataService data = savedLiveData();
+        data.setLiveStartTime(PLATFORM, UID, START);
+        data.setLiveStatus(PLATFORM, UID, false);
+        BilibiliApiUtil api = mock(BilibiliApiUtil.class);
+        when(api.getGuardCount(ROOM, UID)).thenReturn(Optional.of(88));
+        when(api.getGuardList(ROOM, UID)).thenReturn(Optional.of(List.of(
+                new GuardMember(AUDIENCE, "星港", 3, 40))));
+
+        BilibiliLiveReportPainter painter = new BilibiliLiveReportPainter(
+                mock(NovaCommonPainterFactory.class), api, data, mock(FontUtil.class),
+                new NovaBilibiliProperties(), mock(LiveRoomInfoHistory.class),
+                new ReportImageDiskCache(temp.resolve("image-cache")));
+
+        painter.guardCount(ROOM, UID);
+        painter.guardList(ROOM, UID);
+
+        long start2 = START + 86_400_000L;
+        data.setLiveStartTime(PLATFORM, UID, start2);
+        painter.guardList(ROOM, UID);
+
+        Path file = temp.resolve("details").resolve(PLATFORM + "-" + UID + "-" + start2).resolve("guards.json");
+        String saved = Files.isRegularFile(file) ? Files.readString(file) : "";
+        assertAll(
+                () -> assertFalse(saved.contains("\"total\":88"),
+                        "这一场没开人数卡片，留下的人数仍是上一场的 88: " + saved),
+                () -> assertTrue(saved.contains("\"total\":1"),
+                        "这一场应按实际取到的名单人数留下，实际: " + saved));
+    }
+
+    @Test
     @DisplayName("名单没取全时，重画的人数仍是下播报告上的人数")
     void shortRosterRedrawsTheCountShownOnTheReport() throws Exception {
         LiveDataService data = savedLiveData();

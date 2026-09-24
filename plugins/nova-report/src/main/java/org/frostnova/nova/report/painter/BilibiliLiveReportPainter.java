@@ -14,8 +14,10 @@ import org.frostnova.nova.bilibili.model.GuardMember;
 import org.frostnova.nova.bilibili.model.Room;
 import org.frostnova.nova.bilibili.service.GuardRosterFile;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
+import org.frostnova.nova.bilibili.util.DanmuWordCloudFrequencies;
 import org.frostnova.nova.bilibili.util.DurationFormatUtil;
 import org.frostnova.nova.core.analytics.LiveHighlightFinder;
+import org.frostnova.nova.core.model.DanmuRecord;
 import org.frostnova.nova.core.model.LiveGap;
 import org.frostnova.nova.core.analytics.LiveGiftTotal;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
@@ -52,10 +54,11 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Set;
 import java.util.function.DoubleFunction;
 
 /**
@@ -372,11 +375,50 @@ public class BilibiliLiveReportPainter {
      */
     private final ReportImageDiskCache imageDisk;
 
+    /** 进程里按场留下的读数上限。场次再多也只留最近这些。 */
+    private static final int KEPT_SESSION_READINGS = 32;
+
     /**
-     * 人数卡片已经问到的总数，按直播间号记。
+     * 人数卡片已经问到的总数，按这一场记。
      * 写名单时直接用这个数，不再为人数另打一次接口。
+     * 下一场没有再问到人数时，不沿用这里的旧数。
+     * 只留最近若干场。
      */
-    private final Map<Long, Integer> guardCountOnCard = new ConcurrentHashMap<>();
+    private final Map<String, Integer> guardCountOnCard = new KeptSessions<>();
+
+    /**
+     * 一场词云按原文重算成功的结果。同一场、同一份名单、原文没变，只算一次。
+     * 没有原文时不放进来，免得停在当时的词频。只留最近若干场。
+     */
+    private final Map<String, WordCloudRecount> wordCloudRecounts = new KeptSessions<>();
+
+    /**
+     * 没有原文、已经提示过的场次。同一场只提示一次，只留最近若干场。
+     */
+    private final Map<String, Boolean> wordCloudFallbackNoted = new KeptSessions<>();
+
+    /**
+     * 没有原文可重算时记的那一行。不带观众编号和昵称。
+     */
+    private static final String WORD_CLOUD_FALLBACK =
+            "词云没能按屏蔽名单重算, 仍按已保存的词频绘制";
+
+    private record WordCloudRecount(long stamp, Map<String, Integer> words) {
+    }
+
+    /**
+     * 按最近使用留下若干场。超出的丢掉最久没用的。
+     */
+    private static final class KeptSessions<V> extends LinkedHashMap<String, V> {
+        private KeptSessions() {
+            super(64, 0.75f, true);
+        }
+
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, V> eldest) {
+            return size() > KEPT_SESSION_READINGS;
+        }
+    }
 
     /**
      * 底部标识只读一次盘，读过就不再重试——无论成败
@@ -2088,6 +2130,67 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
+     * 这一张词云用的词频。名单为空时直接用已保存的表，不读弹幕原文。
+     * 名单非空时按原文剔掉这些人后重算；没有原文或读失败则退回已保存的表，并记一行。
+     * 退回去的那一份不留下，下一次仍读当前已保存的表。
+     * 同一场、同一份名单、原文大小没变，几个推送目标共用这一次重算成功的结果。
+     * 留下的场次有上限。
+     */
+    Map<String, Integer> frequenciesForWordCloud(String platform, Long uid) {
+        Map<String, Integer> stored = liveDataService.getLiveWordFrequencies(platform, uid);
+        Set<Long> exclude = excludedWordCloudUids();
+        if (exclude.isEmpty() || platform == null || uid == null) {
+            return stored;
+        }
+        Optional<Long> start = liveStart(platform, uid);
+        long startValue = start.orElse(-1L);
+        String key = platform + "\0" + uid + "\0" + startValue + "\0" + exclude;
+        synchronized (wordCloudRecounts) {
+            long stamp = -1L;
+            if (start.isPresent()) {
+                stamp = wordCloudDanmuSize(platform, uid, start.get()).orElse(-1L);
+            }
+            WordCloudRecount cached = wordCloudRecounts.get(key);
+            if (cached != null && cached.stamp() == stamp) {
+                return cached.words();
+            }
+            Map<String, Integer> words = stored;
+            boolean recounted = false;
+            if (start.isPresent() && stamp >= 0) {
+                Optional<List<DanmuRecord>> danmu = wordCloudDanmu(platform, uid, start.get());
+                if (danmu.isPresent()) {
+                    words = DanmuWordCloudFrequencies.recount(platform, uid, danmu.get(), exclude);
+                    recounted = true;
+                }
+            }
+            if (recounted) {
+                wordCloudRecounts.put(key, new WordCloudRecount(stamp, words));
+            } else {
+                String noted = platform + "\0" + uid + "\0" + startValue;
+                if (wordCloudFallbackNoted.put(noted, Boolean.TRUE) == null) {
+                    log.warn(WORD_CLOUD_FALLBACK);
+                }
+            }
+            return words;
+        }
+    }
+
+    private Set<Long> excludedWordCloudUids() {
+        if (properties == null || properties.getLive() == null) {
+            return Set.of();
+        }
+        return DanmuWordCloudFrequencies.parseUids(properties.getLive().getWordCloudExcludeUids());
+    }
+
+    private Optional<Long> wordCloudDanmuSize(String platform, long uid, long start) {
+        return rosterArchive().flatMap(archive -> archive.danmuFileSize(platform, uid, start));
+    }
+
+    private Optional<List<DanmuRecord>> wordCloudDanmu(String platform, long uid, long start) {
+        return rosterArchive().flatMap(archive -> archive.readDanmuPresent(platform, uid, start));
+    }
+
+    /**
      * 绘制弹幕词云，渲染失败时整体跳过
      * <p>
      * 🔴 <b>不再按词数决定画不画。</b>此前少于 5 个词整块跳过：冷清场次的报告里
@@ -2095,7 +2198,7 @@ public class BilibiliLiveReportPainter {
      * 现在词少排成一小团、一个词都没有画成空态，块高随词量走
      */
     private void drawWordCloud(CommonPainter painter, String platform, Long uid) {
-        Map<String, Integer> frequencies = liveDataService.getLiveWordFrequencies(platform, uid);
+        Map<String, Integer> frequencies = frequenciesForWordCloud(platform, uid);
 
         try {
             BufferedImage cloud = paintWordCloud(platform, uid, frequencies);
@@ -2514,21 +2617,44 @@ public class BilibiliLiveReportPainter {
      */
     protected Optional<Integer> guardCount(Long roomId, Long uid) {
         Optional<Integer> count = api.getGuardCount(roomId, uid);
-        if (roomId != null) {
-            if (count.isPresent() && count.get() > 0) {
-                guardCountOnCard.put(roomId, count.get());
-            } else {
-                guardCountOnCard.remove(roomId);
+        String key = guardCountSessionKey(roomId, uid);
+        if (key != null) {
+            synchronized (guardCountOnCard) {
+                if (count.isPresent() && count.get() > 0) {
+                    guardCountOnCard.put(key, count.get());
+                } else {
+                    guardCountOnCard.remove(key);
+                }
             }
         }
         return count;
     }
 
     /**
-     * 留下的人数：卡片已经问过就用那个，否则用名单首页报的总数，再没有才用名单长度
+     * 这一场人数卡片的键。还没有开播时刻时为空，免得用上一场的数。
      */
-    private int totalForRoster(Long roomId, List<GuardMember> members) {
-        Integer onCard = roomId == null ? null : guardCountOnCard.get(roomId);
+    private String guardCountSessionKey(Long roomId, Long uid) {
+        if (roomId == null || uid == null) {
+            return null;
+        }
+        Optional<Long> start = liveStart(BilibiliPlatform.BILIBILI.id(), uid);
+        if (start.isEmpty()) {
+            return null;
+        }
+        return roomId + ":" + uid + ":" + start.get();
+    }
+
+    /**
+     * 留下的人数：这一场的卡片已经问过就用那个，否则用名单首页报的总数，再没有才用名单长度
+     */
+    private int totalForRoster(Long roomId, Long uid, List<GuardMember> members) {
+        String key = guardCountSessionKey(roomId, uid);
+        Integer onCard = null;
+        if (key != null) {
+            synchronized (guardCountOnCard) {
+                onCard = guardCountOnCard.get(key);
+            }
+        }
         if (onCard != null && onCard > 0) {
             return onCard;
         }
@@ -2568,7 +2694,7 @@ public class BilibiliLiveReportPainter {
                 return Optional.empty();
             }
             if (retain && !fetched.get().isEmpty()) {
-                keepGuardRoster(platform, uid, start.get(), totalForRoster(roomId, fetched.get()), fetched.get());
+                keepGuardRoster(platform, uid, start.get(), totalForRoster(roomId, uid, fetched.get()), fetched.get());
             }
             return fetched;
         } catch (RuntimeException e) {

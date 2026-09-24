@@ -23,6 +23,7 @@ public class BilibiliConfigurationGroups implements ConfigurationGroupContributo
         prefixes.put(NovaBotPrefixes.BILIBILI + ".live", ConfigurationGroups.COLLECT);
         prefixes.put(NovaBotPrefixes.BILIBILI + ".dynamic", ConfigurationGroups.COLLECT);
         prefixes.put(NovaBotPrefixes.BILIBILI + ".live.report-logo-path", ConfigurationGroups.REPORT);
+        prefixes.put(NovaBotPrefixes.BILIBILI + ".live.word-cloud-exclude-uids", ConfigurationGroups.REPORT);
         prefixes.put(NovaBotPrefixes.BILIBILI + ".dynamic.logo-path", ConfigurationGroups.REPORT);
         prefixes.put(NovaBotPrefixes.BILIBILI + ".debug", ConfigurationGroups.LOG_DEBUG);
         prefixes.put(NovaBotPrefixes.BILIBILI + ".bilibili-thread", ConfigurationGroups.SERVICE);

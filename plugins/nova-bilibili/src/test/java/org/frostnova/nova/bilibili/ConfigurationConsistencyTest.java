@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.config.BilibiliConfigurationGroups;
+import org.frostnova.nova.bilibili.config.BilibiliWordCloudExcludeApplier;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.protocol.NovaEventMapper;
 import org.frostnova.nova.core.config.ConfigDanger;
@@ -455,8 +456,11 @@ class ConfigurationConsistencyTest {
      * @return 贡献者，没有实现时为空
      */
     private List<RuntimeConfigurationApplierContributor> applierContributors() {
-        return loadOptionalContributor(RuntimeConfigurationApplierContributor.class,
-                "org.frostnova.nova.adapter.onebot.config.OneBotRuntimeAppliers");
+        List<RuntimeConfigurationApplierContributor> contributors = new ArrayList<>();
+        contributors.add(new BilibiliWordCloudExcludeApplier());
+        contributors.addAll(loadOptionalContributor(RuntimeConfigurationApplierContributor.class,
+                "org.frostnova.nova.adapter.onebot.config.OneBotRuntimeAppliers"));
+        return contributors;
     }
 
     private <T> List<T> loadOptionalContributor(Class<T> type, String className) {

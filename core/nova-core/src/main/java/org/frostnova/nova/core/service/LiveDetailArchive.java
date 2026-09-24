@@ -420,6 +420,65 @@ public class LiveDetailArchive {
         return result;
     }
 
+    /**
+     * 这一场弹幕原文的字节数。文件不在时为空。
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @param startTime 本场开播时刻（毫秒）
+     * @return 文件大小，没有这份文件时为空
+     */
+    public Optional<Long> danmuFileSize(@NonNull String platform, @NonNull Long uid, long startTime) {
+        Optional<Path> file = danmuFile(platform, uid, startTime);
+        if (file.isEmpty()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(Files.size(file.get()));
+        } catch (IOException e) {
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * 读一场弹幕原文。文件不在或读失败时为空；文件在、哪怕一条都没有，也是一份空表。
+     * <p>
+     * 与 {@link #readDanmu} 的差别只在「没有这份文件」能不能看出来。
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @param startTime 本场开播时刻（毫秒）
+     * @return 按落盘顺序的原文，没有文件或读失败时为空
+     */
+    public Optional<List<DanmuRecord>> readDanmuPresent(@NonNull String platform, @NonNull Long uid, long startTime) {
+        Optional<Path> file = danmuFile(platform, uid, startTime);
+        if (file.isEmpty()) {
+            return Optional.empty();
+        }
+        List<DanmuRecord> result = new ArrayList<>();
+        try (Stream<String> lines = Files.lines(file.get(), StandardCharsets.UTF_8)) {
+            lines.forEach(line -> {
+                DanmuRecord record = parseDanmu(line);
+                if (record != null) {
+                    result.add(record);
+                }
+            });
+        } catch (IOException e) {
+            return Optional.empty();
+        }
+        return Optional.of(result);
+    }
+
+    private Optional<Path> danmuFile(String platform, Long uid, long startTime) {
+        Optional<Path> dir = directory(platform, uid, startTime);
+        if (dir.isEmpty()) {
+            return Optional.empty();
+        }
+        Path file = dir.get().resolve(DANMU_FILE);
+        if (!Files.isRegularFile(file)) {
+            return Optional.empty();
+        }
+        return Optional.of(file);
+    }
+
     /** 读一场的事件流水。文件不存在回空列表；坏行跳过。 */
     public List<Map<String, Object>> readEvents(@NonNull String platform, @NonNull Long uid, long startTime) {
         Optional<Path> dir = directory(platform, uid, startTime);
