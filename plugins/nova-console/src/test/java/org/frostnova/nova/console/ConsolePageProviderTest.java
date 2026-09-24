@@ -57,7 +57,7 @@ class ConsolePageProviderTest {
     }
 
     @Test
-    @DisplayName("TOP 槽登记 push、script＋四 assets 在 classpath 可读")
+    @DisplayName("TOP 槽登记 push、script＋五 assets 在 classpath 可读")
     void topSlotRegistersPushAndAssetsAreOnClasspath() {
         List<String> red = new ArrayList<>();
         PushConsolePageProvider page = new PushConsolePageProvider();
@@ -75,9 +75,9 @@ class ConsolePageProviderTest {
 
         try {
             assertEquals("push.js", page.script(), "主脚本必须是 push.js");
-            assertEquals(List.of("push-model.js", "sessions.js", "template.js", "template-model.js"),
+            assertEquals(List.of("push-model.js", "session-draft.js", "sessions.js", "template.js", "template-model.js"),
                     page.assets(),
-                    "附属脚本必须登记 push-model／sessions／template／template-model，否则 import 解析到 404");
+                    "附属脚本必须登记 push-model／session-draft／sessions／template／template-model，否则 import 解析到 404");
         } catch (Throwable t) {
             red.add("② " + t.getMessage());
         }
@@ -85,6 +85,7 @@ class ConsolePageProviderTest {
         try {
             assertReadable("config-ui-pages/push.js");
             assertReadable("config-ui-pages/push-model.js");
+            assertReadable("config-ui-pages/session-draft.js");
             assertReadable("config-ui-pages/sessions.js");
             assertReadable("config-ui-pages/template.js");
             assertReadable("config-ui-pages/template-model.js");

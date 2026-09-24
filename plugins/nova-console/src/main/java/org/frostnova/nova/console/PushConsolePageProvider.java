@@ -32,7 +32,7 @@ public class PushConsolePageProvider implements ConsolePageProvider {
 
     @Override
     public List<String> assets() {
-        return List.of("push-model.js", "sessions.js", "template.js", "template-model.js");
+        return List.of("push-model.js", "session-draft.js", "sessions.js", "template.js", "template-model.js");
     }
 
     @Override
