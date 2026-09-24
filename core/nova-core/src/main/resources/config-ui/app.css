@@ -7,6 +7,7 @@
    组件规则一律只引 var(--x)，不在媒体查询里直接写色；
    这三块之外，本文件不写十六进制色值。 */
 :root{
+  color-scheme:light dark;
   --ground:#F5F4FA; --surface:#FFFFFF; --line:#E4E2EE; --text:#1C1A2E; --dim:#6E6A86;
   --accent:#7A4DFF; --accent2:#E0479E;
   --ok:#22B573; --warn:#F2A93B; --err:#EF4A5C; --live:#E0479E;
@@ -53,6 +54,7 @@
   }
 }
 :root[data-theme="dark"]{
+  color-scheme:dark;
   --ground:#14121F; --surface:#1D1A2B; --line:#2E2A42; --text:#ECEAF6; --dim:#9B96B5;
   --accent:#A38BFF; --accent2:#F06AB8;
   --ok:#3DD68C; --warn:#F7BC5B; --err:#FF6B7A; --live:#F06AB8;
@@ -67,6 +69,7 @@
   --paper:#FFFFFF; --on-accent:#14121F;
   --overlay:rgba(10,8,18,.58);
 }
+:root[data-theme="light"]{color-scheme:light}
 
 /* 组件基类。本轮只把样式备好，页面结构一处未动，由后续各页改造时挂上去。 */
 .nv-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);
@@ -78,7 +81,8 @@
   border-radius:var(--r-ctl);padding:8px 16px;cursor:pointer;font-size:14px;font-family:inherit}
 .nv-btn2:hover{border-color:var(--accent);color:var(--accent)}
 .nv-pill{display:inline-flex;align-items:center;border:1px solid var(--line);
-  border-radius:var(--r-pill);padding:1px 9px;font-size:11.5px;color:var(--dim)}
+  border-radius:var(--r-pill);padding:1px 9px;font-size:11.5px;color:var(--dim);
+  background:var(--surface)}
 .nv-pill.ok{border-color:var(--ok);color:var(--ok);background:var(--oksoft)}
 .nv-pill.warn{border-color:var(--warn);color:var(--warn);background:var(--warnsoft)}
 .nv-pill.err{border-color:var(--err);color:var(--err);background:var(--errsoft)}
@@ -104,8 +108,8 @@ header #auth-actions button:hover{color:var(--accent);border-color:var(--accent)
   padding:20px 14px 20px 20px;min-height:calc(100vh - var(--head-h))}
 #main{flex:1 1 auto;min-width:0;max-width:1104px;padding:20px 24px 90px}
 .brand{display:flex;align-items:center;gap:9px;padding:2px 8px 16px}
-.brand-mark{width:26px;height:26px;border-radius:var(--r-ctl);background:var(--brand-fill);
-  display:grid;place-items:center;color:var(--paper);font-size:13px;font-weight:700;flex:none}
+.brand-mark{width:26px;height:26px;border-radius:var(--r-ctl);overflow:hidden;flex:none}
+.brand-mark img{width:100%;height:100%;display:block}
 .brand-name{font-size:15px;font-weight:700}
 .nav{display:grid;gap:2px}
 .nav a{position:relative;display:flex;align-items:center;gap:9px;padding:8px 10px;
@@ -274,9 +278,11 @@ html.nobar #main{padding-bottom:20px}
 .setwrap{display:grid;grid-template-columns:180px minmax(0,1fr);gap:16px;align-items:start}
 .grpnav{position:sticky;top:var(--head-h);z-index:5;display:flex;flex-direction:column;flex-wrap:nowrap;gap:4px;
   padding:8px 0 10px;background:var(--ground);align-self:start}
-.grpnav .pill{cursor:pointer;font-family:inherit;justify-content:flex-start;text-align:left}
+.grpnav .pill{cursor:pointer;font-family:inherit;justify-content:flex-start;text-align:left;
+  background:var(--surface)}
 .grpnav .pill:hover{border-color:var(--accent);color:var(--accent)}
-.grpnav .cur{color:var(--accent);border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}
+.grpnav .cur{color:var(--accent);border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent);
+  background:var(--soft)}
 .grpnav .sep{font-size:11px;color:var(--dim);padding:8px 9px 2px}
 @media (max-width:959px){
   .setwrap{display:block}
