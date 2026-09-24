@@ -776,3 +776,9 @@ td.act button:hover{color:var(--err)}
 .ask-act{display:flex;justify-content:flex-end;gap:8px}
 .ask-ok{background:var(--err);color:var(--paper)}
 .ask-ok:hover{filter:brightness(1.05)}
+/* 只读长文：同一只弹层换一副样子——正文给滚动区，只留一颗关闭 */
+.ask-doc{max-height:56vh;overflow-y:auto;white-space:pre-wrap;margin:0 0 18px;
+  padding:12px 14px;font-size:12.5px;line-height:1.8;color:var(--dim);
+  background:var(--ground);border:1px solid var(--line);border-radius:var(--r-ctl)}
+.ask-doc[hidden]{display:none}
+.ask-card-doc{width:min(640px,100%)}
