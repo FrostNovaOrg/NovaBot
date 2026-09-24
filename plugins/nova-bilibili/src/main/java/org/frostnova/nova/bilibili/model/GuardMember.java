@@ -7,6 +7,10 @@ package org.frostnova.nova.bilibili.model;
  * @param name 昵称
  * @param level 舰种：1 总督、2 提督、3 舰长
  * @param score 亲密度一类的排序分，接口没给时为 0
+ * @param medal 粉丝牌；这位没有牌子，或接口没带这块时为空
  */
-public record GuardMember(long uid, String name, int level, long score) {
+public record GuardMember(long uid, String name, int level, long score, GuardMedal medal) {
+    public GuardMember(long uid, String name, int level, long score) {
+        this(uid, name, level, score, null);
+    }
 }

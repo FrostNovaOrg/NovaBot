@@ -62,6 +62,8 @@ public class BilibiliLiveReportReplayPainter extends BilibiliLiveReportPainter {
 
     private final BufferedImage rankingFace;
 
+    private final BufferedImage guardMark;
+
     public BilibiliLiveReportReplayPainter(NovaCommonPainterFactory factory, BilibiliApiUtil api,
                                            FontUtil fontUtil, NovaBilibiliProperties properties,
                                            LiveRoomInfoHistory roomInfoHistory, LiveDetail detail) {
@@ -70,6 +72,7 @@ public class BilibiliLiveReportReplayPainter extends BilibiliLiveReportPainter {
         this.banner = PainterPlaceholder.banner();
         this.face = PainterPlaceholder.face();
         this.rankingFace = PainterPlaceholder.rankingFace();
+        this.guardMark = PainterPlaceholder.guardIcon();
     }
 
     /**
@@ -102,6 +105,11 @@ public class BilibiliLiveReportReplayPainter extends BilibiliLiveReportPainter {
     @Override
     protected BufferedImage avatar(String url) {
         return rankingFace;
+    }
+
+    @Override
+    protected BufferedImage guardIcon(String url) {
+        return guardMark;
     }
 
     /**

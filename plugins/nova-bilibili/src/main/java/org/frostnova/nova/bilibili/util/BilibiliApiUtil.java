@@ -22,6 +22,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.HttpStatusCodeException;
 
+import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -105,6 +106,13 @@ public class BilibiliApiUtil {
      * 大航海名单翻页用的同一端点，不带写死的 page / page_size
      */
     private static final String GUARD_TAB_API = "https://api.live.bilibili.com/xlive/app-room/v2/guardTab/topListNew";
+
+    /**
+     * 粉丝牌没给颜色时的底色与描边，避免画出一块没有颜色的牌子
+     */
+    private static final Color MEDAL_FALLBACK = new Color(0x9E, 0x9E, 0x9E);
+
+    private static final Color MEDAL_FALLBACK_BORDER = new Color(0x75, 0x75, 0x75);
 
     /**
      * 名单单页条数。人数接口仍走 page_size=1，这里要的是名单本身
@@ -1490,7 +1498,70 @@ public class BilibiliApiUtil {
             return null;
         }
         long score = item.getLong("score") == null ? 0L : item.getLong("score");
-        return new GuardMember(uid, name == null ? "" : name, level, score);
+        GuardMedal medal = uinfo == null ? null : parseMedal(uinfo.getJSONObject("medal"));
+        return new GuardMember(uid, name == null ? "" : name, level, score, medal);
+    }
+
+    /**
+     * 从名单条目的 {@code uinfo.medal} 取出粉丝牌。没有这块时为空，不报错。
+     * <p>
+     * 颜色先认带透明度的 {@code #RRGGBBAA}（六位则不透明），没有再退回旧版十进制色值，字色退回白色。
+     */
+    private static GuardMedal parseMedal(JSONObject medal) {
+        if (medal == null) {
+            return null;
+        }
+        String name = medal.getString("name");
+        Integer level = medal.getInteger("level");
+        Integer light = medal.getInteger("is_light");
+        String icon = medal.getString("guard_icon");
+        return new GuardMedal(
+                name == null ? "" : name,
+                level == null ? 0 : level,
+                light == null || light != 0,
+                medalColor(medal, "v2_medal_color_start", "color_start", MEDAL_FALLBACK),
+                medalColor(medal, "v2_medal_color_end", "color_end", MEDAL_FALLBACK),
+                medalColor(medal, "v2_medal_color_border", "color_border", MEDAL_FALLBACK_BORDER),
+                medalColor(medal, "v2_medal_color_text", null, Color.WHITE),
+                StringUtil.isBlank(icon) ? null : icon);
+    }
+
+    private static Color medalColor(JSONObject medal, String hexKey, String decimalKey, Color fallback) {
+        Color hex = parseHexColor(medal.getString(hexKey));
+        if (hex != null) {
+            return hex;
+        }
+        if (decimalKey != null) {
+            Integer decimal = medal.getInteger(decimalKey);
+            if (decimal != null) {
+                int rgb = decimal;
+                return new Color((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+            }
+        }
+        return fallback;
+    }
+
+    /**
+     * {@code #RRGGBB} 或 {@code #RRGGBBAA}。认不出时为空。
+     */
+    private static Color parseHexColor(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String value = raw.trim();
+        if (value.startsWith("#")) {
+            value = value.substring(1);
+        }
+        if (value.length() != 6 && value.length() != 8) {
+            return null;
+        }
+        try {
+            int rgb = Integer.parseUnsignedInt(value.substring(0, 6), 16);
+            int alpha = value.length() == 8 ? Integer.parseUnsignedInt(value.substring(6), 16) : 255;
+            return new Color((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF, alpha);
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     /**

@@ -7,6 +7,7 @@ import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.enums.GuardType;
 import org.frostnova.nova.bilibili.model.BilibiliLiveMetric;
 import org.frostnova.nova.bilibili.model.BilibiliLiveReportOptions;
+import org.frostnova.nova.bilibili.model.GuardMedal;
 import org.frostnova.nova.bilibili.model.GuardMember;
 import org.frostnova.nova.bilibili.model.Room;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
@@ -27,10 +28,15 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Primary;
 
+import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Font;
+import java.awt.FontMetrics;
 import java.awt.Graphics2D;
+import java.awt.LinearGradientPaint;
 import java.awt.Point;
+import java.awt.RenderingHints;
+import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -147,6 +153,49 @@ public class BilibiliLiveReportPainter {
      * 大航海名单最多展示的人数
      */
     private static final int GUARD_LIST_LIMIT = 10;
+
+    /**
+     * 名单昵称的字号。粉丝牌的高度与这一行相称
+     */
+    private static final int ROSTER_NAME_SIZE = 24;
+
+    /**
+     * 两列之间的空隙，以及牌子和昵称之间的空隙
+     */
+    private static final int ROSTER_COLUMN_GAP = 16;
+
+    private static final int ROSTER_NAME_GAP = 8;
+
+    /**
+     * 名单一行的高度。标志比牌子略高，行高按标志留
+     */
+    private static final int ROSTER_ROW_HEIGHT = 44;
+
+    /**
+     * 大航海标志的直径。比粉丝牌略高，压在牌子左端
+     */
+    static final int GUARD_ICON_SIZE = 32;
+
+    private static final int MEDAL_BAR_HEIGHT = 24;
+
+    private static final int MEDAL_FONT_SIZE = 16;
+
+    private static final String GUARD_ICON_GOVERNOR =
+            "https://i0.hdslb.com/bfs/live/0d2b29717af2e7b1bbdc21a4fba8619636f82517.png";
+
+    private static final String GUARD_ICON_COMMANDER =
+            "https://i0.hdslb.com/bfs/live/405bffdfd78bb562e0394dd828f8bf69ea01f400.png";
+
+    private static final String GUARD_ICON_CAPTAIN =
+            "https://i0.hdslb.com/bfs/live/00749d246e2b49b2328cb981de02142fb6aeceba.png";
+
+    private static final Color GUARD_COLOR_GOVERNOR = new Color(0xE6, 0xB4, 0x22);
+
+    private static final Color GUARD_COLOR_COMMANDER = new Color(0xA7, 0x73, 0xF1);
+
+    private static final Color GUARD_COLOR_CAPTAIN = new Color(0x3F, 0xB4, 0xF6);
+
+    private static final Color GUARD_COLOR_UNKNOWN = new Color(0x9E, 0x9E, 0x9E);
 
     /**
      * 排行榜昵称的可用宽度，单位像素
@@ -288,6 +337,14 @@ public class BilibiliLiveReportPainter {
      * 头像是小图，但常驻内存的图片对象在小内存机器上仍值得设个上界。
      */
     private final Cache<String, BufferedImage> avatarCache = Caffeine.newBuilder()
+            .maximumSize(500)
+            .expireAfterWrite(Duration.ofHours(6))
+            .build();
+
+    /**
+     * 大航海标志缓存，按图片地址计。容量与时长与头像缓存相同
+     */
+    private final Cache<String, BufferedImage> guardIconCache = Caffeine.newBuilder()
             .maximumSize(500)
             .expireAfterWrite(Duration.ofHours(6))
             .build();
@@ -1395,13 +1452,217 @@ public class BilibiliLiveReportPainter {
         }
 
         painter.movePos(0, 6);
-        for (GuardMember member : sortAndLimit(fetched.get(), options.getGuardListLimit())) {
-            String line = guardRankName(member.level()) + "  " + member.name();
-            TextWithStyle row = new TextWithStyle(line, 24, COLOR_TEXT, Font.PLAIN);
-            row.setText(painter.truncateToWidth(row, CONTENT_WIDTH));
-            painter.drawTextWithStyle(List.of(row));
+        List<GuardMember> members = sortAndLimit(fetched.get(), options.getGuardListLimit());
+        int columnWidth = (CONTENT_WIDTH - ROSTER_COLUMN_GAP) / 2;
+        int y = painter.getY();
+        int column = 0;
+        for (GuardMember member : members) {
+            int natural = rosterEntryWidth(painter, member);
+            // 半栏放得下「牌子 + 完整昵称」才并进这一列；放不下就独占整行
+            boolean ownRow = natural > columnWidth;
+            if (ownRow && column == 1) {
+                y += ROSTER_ROW_HEIGHT;
+                column = 0;
+            }
+            int slot = ownRow ? CONTENT_WIDTH : columnWidth;
+            int x = MARGIN + (ownRow ? 0 : column * (columnWidth + ROSTER_COLUMN_GAP));
+            drawRosterEntry(painter, member, x, y, slot);
+            if (ownRow || column == 1) {
+                y += ROSTER_ROW_HEIGHT;
+                column = 0;
+            } else {
+                column = 1;
+            }
         }
-        painter.movePos(0, 8);
+        if (column == 1) {
+            y += ROSTER_ROW_HEIGHT;
+        }
+        painter.setPos(MARGIN, y + 8);
+    }
+
+    /**
+     * 「牌子（或只有标志）+ 完整昵称」占多宽。用来决定这位要不要独占一行
+     */
+    private int rosterEntryWidth(CommonPainter painter, GuardMember member) {
+        return badgeWidth(painter, member) + ROSTER_NAME_GAP + nicknameWidth(painter, member.name());
+    }
+
+    private int nicknameWidth(CommonPainter painter, String name) {
+        return painter.getStringWidthAndHeight(
+                new TextWithStyle(name == null ? "" : name, ROSTER_NAME_SIZE, COLOR_TEXT, Font.PLAIN)).getFirst();
+    }
+
+    private int badgeWidth(CommonPainter painter, GuardMember member) {
+        GuardMedal medal = member.medal();
+        if (medal == null) {
+            return GUARD_ICON_SIZE;
+        }
+        int nameWidth = medalTextWidth(painter, medal.name(), Font.PLAIN);
+        int levelWidth = medalTextWidth(painter, Integer.toString(medal.level()), Font.BOLD);
+        return GUARD_ICON_SIZE + 2 + nameWidth + 4 + levelWidth + 8;
+    }
+
+    private int medalTextWidth(CommonPainter painter, String text, int style) {
+        if (text == null || text.isEmpty()) {
+            return 0;
+        }
+        return painter.getStringWidthAndHeight(
+                new TextWithStyle(text, MEDAL_FONT_SIZE, COLOR_TEXT, style)).getFirst();
+    }
+
+    /**
+     * 画一位：左侧粉丝牌（没有牌子就只画标志），右侧昵称。整行放不下才截断昵称
+     */
+    private void drawRosterEntry(CommonPainter painter, GuardMember member, int x, int y, int slotWidth) {
+        BufferedImage badge = rosterBadge(painter, member);
+        int badgeY = y + Math.max(0, (ROSTER_ROW_HEIGHT - badge.getHeight()) / 2);
+        painter.drawImage(badge, new Point(x, badgeY));
+
+        int nameMax = slotWidth - badge.getWidth() - ROSTER_NAME_GAP;
+        TextWithStyle name = new TextWithStyle(
+                member.name() == null ? "" : member.name(), ROSTER_NAME_SIZE, COLOR_TEXT, Font.PLAIN);
+        name.setText(painter.truncateToWidth(name, Math.max(0, nameMax)));
+        painter.drawTextWithStyle(List.of(name), new Point(x + badge.getWidth() + ROSTER_NAME_GAP, y + 6));
+    }
+
+    private BufferedImage rosterBadge(CommonPainter painter, GuardMember member) {
+        BufferedImage icon = guardIconImage(member);
+        if (icon == null) {
+            icon = solidCircle(guardColor(member.level()), GUARD_ICON_SIZE);
+        }
+        GuardMedal medal = member.medal();
+        if (medal == null) {
+            return icon;
+        }
+        BufferedImage badge = composeMedal(painter, medal, icon);
+        return medal.lit() ? badge : grayscale(badge);
+    }
+
+    private BufferedImage guardIconImage(GuardMember member) {
+        String url = null;
+        if (member.medal() != null && StringUtil.isNotBlank(member.medal().guardIcon())) {
+            url = member.medal().guardIcon();
+        } else {
+            url = defaultGuardIconUrl(member.level());
+        }
+        return url == null ? null : guardIcon(url);
+    }
+
+    private static String defaultGuardIconUrl(int level) {
+        if (level == 1) {
+            return GUARD_ICON_GOVERNOR;
+        }
+        if (level == 2) {
+            return GUARD_ICON_COMMANDER;
+        }
+        if (level == 3) {
+            return GUARD_ICON_CAPTAIN;
+        }
+        return null;
+    }
+
+    private static Color guardColor(int level) {
+        if (level == 1) {
+            return GUARD_COLOR_GOVERNOR;
+        }
+        if (level == 2) {
+            return GUARD_COLOR_COMMANDER;
+        }
+        if (level == 3) {
+            return GUARD_COLOR_CAPTAIN;
+        }
+        return GUARD_COLOR_UNKNOWN;
+    }
+
+    /**
+     * 一条圆角长条：45° 渐变底、一圈细边，从左到右是标志、牌名、等级。等级没有单独的格子
+     */
+    private BufferedImage composeMedal(CommonPainter painter, GuardMedal medal, BufferedImage icon) {
+        int width = badgeWidth(painter, new GuardMember(0L, "", 0, 0L, medal));
+        int height = Math.max(GUARD_ICON_SIZE, MEDAL_BAR_HEIGHT);
+        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D graphics = image.createGraphics();
+        graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        graphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+
+        int barX = GUARD_ICON_SIZE / 2;
+        int barY = (height - MEDAL_BAR_HEIGHT) / 2;
+        int barWidth = width - barX;
+        RoundRectangle2D bar = new RoundRectangle2D.Float(barX, barY, barWidth, MEDAL_BAR_HEIGHT,
+                MEDAL_BAR_HEIGHT, MEDAL_BAR_HEIGHT);
+        graphics.setPaint(gradient45(barX, barY, barWidth, MEDAL_BAR_HEIGHT, medal.start(), medal.end()));
+        graphics.fill(bar);
+        graphics.setStroke(new BasicStroke(1f));
+        graphics.setColor(medal.border());
+        graphics.draw(bar);
+
+        int textX = GUARD_ICON_SIZE + 2;
+        textX = drawMedalText(graphics, medal.name(), textX, barY, Font.PLAIN, medal.text());
+        drawMedalText(graphics, Integer.toString(medal.level()), textX + 4, barY, Font.BOLD, medal.text());
+
+        int iconY = (height - GUARD_ICON_SIZE) / 2;
+        graphics.drawImage(icon, 0, iconY, GUARD_ICON_SIZE, GUARD_ICON_SIZE, null);
+        graphics.dispose();
+        return image;
+    }
+
+    private int drawMedalText(Graphics2D graphics, String text, int x, int barY, int style, Color color) {
+        if (text == null || text.isEmpty()) {
+            return x;
+        }
+        graphics.setColor(color);
+        Font baselineFont = fontUtil.primaryFont().deriveFont(style, (float) MEDAL_FONT_SIZE);
+        graphics.setFont(baselineFont);
+        FontMetrics baseline = graphics.getFontMetrics();
+        int baselineY = barY + (MEDAL_BAR_HEIGHT + baseline.getAscent() - baseline.getDescent()) / 2;
+        for (int codePoint : text.codePoints().toArray()) {
+            String character = new String(Character.toChars(codePoint));
+            Font font = fontUtil.findFontForCharacter(codePoint).deriveFont(style, (float) MEDAL_FONT_SIZE);
+            graphics.setFont(font);
+            graphics.drawString(character, x, baselineY);
+            x += graphics.getFontMetrics().stringWidth(character);
+        }
+        return x;
+    }
+
+    /**
+     * 45° 渐变：从左下到右上，与网页牌子的底色同一方向
+     */
+    private static LinearGradientPaint gradient45(float x, float y, float width, float height, Color from, Color to) {
+        float startX = x;
+        float startY = y + height;
+        float endX = x + width;
+        float endY = y;
+        if (startX == endX && startY == endY) {
+            endX = startX + 1f;
+        }
+        return new LinearGradientPaint(startX, startY, endX, endY, new float[] {0f, 1f}, new Color[] {from, to});
+    }
+
+    private static BufferedImage solidCircle(Color color, int size) {
+        BufferedImage image = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D graphics = image.createGraphics();
+        graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        graphics.setColor(color);
+        graphics.fillOval(0, 0, size - 1, size - 1);
+        graphics.dispose();
+        return image;
+    }
+
+    private static BufferedImage grayscale(BufferedImage source) {
+        BufferedImage gray = new BufferedImage(source.getWidth(), source.getHeight(), BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < source.getHeight(); y++) {
+            for (int x = 0; x < source.getWidth(); x++) {
+                int argb = source.getRGB(x, y);
+                int alpha = (argb >>> 24) & 0xFF;
+                int red = (argb >>> 16) & 0xFF;
+                int green = (argb >>> 8) & 0xFF;
+                int blue = argb & 0xFF;
+                int lum = (int) Math.round(0.299 * red + 0.587 * green + 0.114 * blue);
+                gray.setRGB(x, y, (alpha << 24) | (lum << 16) | (lum << 8) | lum);
+            }
+        }
+        return gray;
     }
 
     private void appendGuardRoster(StringBuilder text, LiveStreamerInfo source, BilibiliLiveReportOptions options) {
@@ -1531,6 +1792,22 @@ public class BilibiliLiveReportPainter {
                 .map(image -> ImageUtil.maskToCircle(ImageUtil.resize(image, RANKING_AVATAR_SIZE, RANKING_AVATAR_SIZE)))
                 .orElse(FAILED_AVATAR));
         // 用哨兵值区分「没缓存过」与「缓存了一次失败」，后者不再重试
+        return cached == FAILED_AVATAR ? null : cached;
+    }
+
+    /**
+     * 取大航海标志，带缓存。地址空、或这一次没取到，返回 null，调用方改画色块。
+     * <p>
+     * 与 {@link #avatar} 同一路：按地址缓存，取不到就记住这次失败，坏地址不再反复去取。
+     * 预览与历史重画覆写这一口，不向外取图。
+     */
+    protected BufferedImage guardIcon(String url) {
+        if (StringUtil.isBlank(url)) {
+            return null;
+        }
+        BufferedImage cached = guardIconCache.get(url, key -> api.getBilibiliImage(atSize(key, GUARD_ICON_SIZE))
+                .map(image -> ImageUtil.maskToCircle(ImageUtil.resize(image, GUARD_ICON_SIZE, GUARD_ICON_SIZE)))
+                .orElse(FAILED_AVATAR));
         return cached == FAILED_AVATAR ? null : cached;
     }
 
