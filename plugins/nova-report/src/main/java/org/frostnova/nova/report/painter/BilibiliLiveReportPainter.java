@@ -336,6 +336,7 @@ public class BilibiliLiveReportPainter {
      * <p>
      * 同一个人出现在多张榜、多份报告里都只下载一次。容量与时长都取得比较克制：
      * 头像是小图，但常驻内存的图片对象在小内存机器上仍值得设个上界。
+     * 头像不写入本机缓存，仍只留在这里。
      */
     private final Cache<String, BufferedImage> avatarCache = Caffeine.newBuilder()
             .maximumSize(500)
@@ -343,7 +344,8 @@ public class BilibiliLiveReportPainter {
             .build();
 
     /**
-     * 大航海标志缓存，按图片地址计。容量与时长与头像缓存相同
+     * 大航海标志缓存，按图片地址计。容量与时长与头像缓存相同。
+     * 取到的图另按请求地址留一份在本机，见 {@link #imageDisk}
      */
     private final Cache<String, BufferedImage> guardIconCache = Caffeine.newBuilder()
             .maximumSize(500)
@@ -351,12 +353,18 @@ public class BilibiliLiveReportPainter {
             .build();
 
     /**
-     * 礼物图标缓存，按图片地址计。容量与时长与头像缓存相同，取不到就记住这次失败
+     * 礼物图标缓存，按图片地址计。容量与时长与头像缓存相同，取不到就记住这次失败。
+     * 取到的图另按请求地址留一份在本机，见 {@link #imageDisk}
      */
     private final Cache<String, BufferedImage> giftIconCache = Caffeine.newBuilder()
             .maximumSize(500)
             .expireAfterWrite(Duration.ofHours(6))
             .build();
+
+    /**
+     * 礼物图标与大航海标志的本机缓存。头像不进这里
+     */
+    private final ReportImageDiskCache imageDisk;
 
     /**
      * 底部标识只读一次盘，读过就不再重试——无论成败
@@ -365,16 +373,30 @@ public class BilibiliLiveReportPainter {
 
     private BufferedImage logo;
 
-    @Autowired
+    /**
+     * 不落盘的构造，给测试和版式预览。预览覆写了取图口，本来也不写这份缓存
+     */
     public BilibiliLiveReportPainter(NovaCommonPainterFactory factory, BilibiliApiUtil api,
                                      LiveDataService liveDataService, FontUtil fontUtil,
                                      NovaBilibiliProperties properties, LiveRoomInfoHistory roomInfoHistory) {
+        this(factory, api, liveDataService, fontUtil, properties, roomInfoHistory, ReportImageDiskCache.none());
+    }
+
+    /**
+     * @param imageDisk 礼物图标与大航海标志的本机缓存
+     */
+    @Autowired
+    public BilibiliLiveReportPainter(NovaCommonPainterFactory factory, BilibiliApiUtil api,
+                                     LiveDataService liveDataService, FontUtil fontUtil,
+                                     NovaBilibiliProperties properties, LiveRoomInfoHistory roomInfoHistory,
+                                     ReportImageDiskCache imageDisk) {
         this.factory = factory;
         this.api = api;
         this.liveDataService = liveDataService;
         this.fontUtil = fontUtil;
         this.properties = properties;
         this.roomInfoHistory = roomInfoHistory;
+        this.imageDisk = imageDisk == null ? ReportImageDiskCache.none() : imageDisk;
     }
 
     /**
@@ -1531,19 +1553,59 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
-     * 取礼物图标，带缓存。地址空、或这一次没取到，返回 null。
+     * 取礼物图标。先查内存，再查本机，都没有才按实际请求的地址去取。
+     * 取到后写入本机；取失败只记在内存里，不写本机。地址空、或这一次没取到，返回 null。
      * <p>
-     * 与 {@link #avatar} 同一路：按地址缓存，取不到就记住这次失败，坏地址不再反复去取。
-     * 预览与历史重画覆写这一口，不向外取图。
+     * 预览与历史重画覆写这一口。预览始终画占位；重画只读本机，不向外取。
      */
     protected BufferedImage giftIcon(String url) {
         if (StringUtil.isBlank(url)) {
             return null;
         }
-        BufferedImage cached = giftIconCache.get(url, key -> api.getBilibiliImage(atSize(key, GIFT_ICON_FETCH))
-                .map(image -> ImageUtil.resize(image, GIFT_ICON_FETCH, GIFT_ICON_FETCH))
-                .orElse(FAILED_AVATAR));
+        BufferedImage cached = giftIconCache.get(url, key -> loadIcon(giftFetchUrl(key), GIFT_ICON_FETCH, false));
         return cached == FAILED_AVATAR ? null : cached;
+    }
+
+    /**
+     * 礼物图标实际请求的地址，含缩放后缀。本机缓存按这个地址当键
+     */
+    protected String giftFetchUrl(String url) {
+        return atSize(url, GIFT_ICON_FETCH);
+    }
+
+    /**
+     * 大航海标志实际请求的地址，含缩放后缀
+     */
+    protected String guardFetchUrl(String url) {
+        return atSize(url, GUARD_ICON_SIZE);
+    }
+
+    /**
+     * 本机上有这张图就返回它，没有返回 null
+     */
+    protected BufferedImage readDiskImage(String requestUrl) {
+        return imageDisk.read(requestUrl).orElse(null);
+    }
+
+    /**
+     * 先查本机，没有再去取。取到的按绘制尺寸缩好再写入本机；要圆形的再切一刀。
+     * 取失败返回哨兵，调用方据此不再重试，且不会把这次失败写进本机
+     */
+    private BufferedImage loadIcon(String requestUrl, int size, boolean circle) {
+        BufferedImage stored = readDiskImage(requestUrl);
+        if (stored != null) {
+            return stored;
+        }
+        Optional<BufferedImage> fetched = api.getBilibiliImage(requestUrl)
+                .map(image -> ImageUtil.resize(image, size, size));
+        if (circle) {
+            fetched = fetched.map(ImageUtil::maskToCircle);
+        }
+        if (fetched.isEmpty()) {
+            return FAILED_AVATAR;
+        }
+        imageDisk.store(requestUrl, fetched.get());
+        return fetched.get();
     }
 
     /**
@@ -1975,18 +2037,17 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
-     * 取大航海标志，带缓存。地址空、或这一次没取到，返回 null，调用方改画色块。
+     * 取大航海标志。先查内存，再查本机，都没有才按实际请求的地址去取。
+     * 地址空、或这一次没取到，返回 null，调用方改画色块。
      * <p>
-     * 与 {@link #avatar} 同一路：按地址缓存，取不到就记住这次失败，坏地址不再反复去取。
+     * 与 {@link #giftIcon} 同一路：取不到就记住这次失败，失败不写本机。
      * 预览与历史重画覆写这一口，不向外取图。
      */
     protected BufferedImage guardIcon(String url) {
         if (StringUtil.isBlank(url)) {
             return null;
         }
-        BufferedImage cached = guardIconCache.get(url, key -> api.getBilibiliImage(atSize(key, GUARD_ICON_SIZE))
-                .map(image -> ImageUtil.maskToCircle(ImageUtil.resize(image, GUARD_ICON_SIZE, GUARD_ICON_SIZE)))
-                .orElse(FAILED_AVATAR));
+        BufferedImage cached = guardIconCache.get(url, key -> loadIcon(guardFetchUrl(key), GUARD_ICON_SIZE, true));
         return cached == FAILED_AVATAR ? null : cached;
     }
 

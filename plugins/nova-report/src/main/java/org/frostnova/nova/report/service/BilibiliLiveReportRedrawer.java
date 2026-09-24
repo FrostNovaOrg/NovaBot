@@ -4,6 +4,7 @@ import org.frostnova.nova.bilibili.BilibiliPlatform;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.model.BilibiliLiveReportOptions;
 import org.frostnova.nova.report.painter.BilibiliLiveReportReplayPainter;
+import org.frostnova.nova.report.painter.ReportImageDiskCache;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.analytics.LiveDetail;
 import org.frostnova.nova.core.plugin.NovaComponent;
@@ -43,14 +44,18 @@ public class BilibiliLiveReportRedrawer implements LiveReportRedrawer {
 
     private final LiveRoomInfoHistory roomInfoHistory;
 
+    private final ReportImageDiskCache images;
+
     @Autowired
     public BilibiliLiveReportRedrawer(NovaCommonPainterFactory factory, BilibiliApiUtil api, FontUtil fontUtil,
-                                      NovaBilibiliProperties properties, LiveRoomInfoHistory roomInfoHistory) {
+                                      NovaBilibiliProperties properties, LiveRoomInfoHistory roomInfoHistory,
+                                      ReportImageDiskCache images) {
         this.factory = factory;
         this.api = api;
         this.fontUtil = fontUtil;
         this.properties = properties;
         this.roomInfoHistory = roomInfoHistory;
+        this.images = images;
     }
 
     @Override
@@ -73,7 +78,7 @@ public class BilibiliLiveReportRedrawer implements LiveReportRedrawer {
 
         try {
             BilibiliLiveReportReplayPainter painter = new BilibiliLiveReportReplayPainter(
-                    factory, api, fontUtil, properties, roomInfoHistory, detail);
+                    factory, api, fontUtil, properties, roomInfoHistory, detail, images);
             return painter.render(new BilibiliLiveReportOptions());
         } catch (Exception e) {
             log.error("重新绘制 {} 的历史报告失败", detail.uname(), e);
