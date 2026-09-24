@@ -1449,7 +1449,7 @@ public class BilibiliApiUtil {
         members.sort(Comparator
                 .comparingInt((GuardMember member) -> member.level() <= 0 ? 99 : member.level())
                 .thenComparing(Comparator.comparingLong(GuardMember::score).reversed()));
-        return Optional.of(members);
+        return Optional.of(new GuardListFetch(members, total));
     }
 
     private static void addGuardMembers(Map<Long, GuardMember> unique, JSONArray items,

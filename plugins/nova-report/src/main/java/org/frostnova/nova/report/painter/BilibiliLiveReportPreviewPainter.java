@@ -152,6 +152,9 @@ public class BilibiliLiveReportPreviewPainter extends BilibiliLiveReportPainter 
         return Optional.of(38);
     }
 
+    /**
+     * 夹具名单。不读、不写任何一场的明细
+     */
     @Override
     protected Optional<List<GuardMember>> guardList(Long roomId, Long uid) {
         return Optional.of(List.of(

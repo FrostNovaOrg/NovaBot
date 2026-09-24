@@ -3,6 +3,7 @@ package org.frostnova.nova.report.painter;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.model.BilibiliLiveReportOptions;
 import org.frostnova.nova.bilibili.model.GuardMember;
+import org.frostnova.nova.bilibili.service.GuardRosterFile;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.analytics.LiveDetail;
 import org.frostnova.nova.core.config.NovaCoreProperties;
@@ -44,9 +45,10 @@ import java.util.Optional;
  *
  * <h2>与当时那张图的差别</h2>
  * 封面、头像、榜单头像用占位图。礼物图标与大航海标志：这台机器上留着的就用那一份，
- * 没有则画占位，两种都不向外取。「本场变化」那一块<b>整块不画</b>——
- * 粉丝数的现值当时是现取的，明细里只有开播那一刻的快照，
- * 拿快照减快照会得出「本场 +0」，那是一句假话。<b>数据面其余每一块都与当时一致</b>。
+ * 没有则画占位，两种都不向外取。粉丝数、粉丝团的现值当时是现取的，明细里只有开播那一刻的快照，
+ * 拿快照减快照会得出「本场 +0」，那是一句假话，所以这两项不画。
+ * 大航海人数用下播当时留下的名单；没有这份名单的旧场也不画。
+ * <b>数据面其余每一块都与当时一致</b>。
  *
  * <h2>不是 Bean</h2>
  * 每重画一场就要一份只装着那一场的数据服务，因此每场 new 一个，由
@@ -158,17 +160,32 @@ public class BilibiliLiveReportReplayPainter extends BilibiliLiveReportPainter {
         return Optional.empty();
     }
 
+    /**
+     * 人数用下播当时留下的总人数。没有这份名单时不画，避免把旧场画成今天的人数
+     */
     @Override
     protected Optional<Integer> guardCount(Long roomId, Long uid) {
-        return Optional.empty();
+        return savedRoster()
+                .filter(parsed -> parsed.total() > 0 && !parsed.members().isEmpty())
+                .map(GuardRosterFile.Parsed::total);
     }
 
     /**
-     * 当时的全名单明细里没有，现拉会变成今天的人画在去年的报告上
+     * 只读下播当时留下的名单。没有就不画，也不向平台要：要到的是今天的人
      */
     @Override
     protected Optional<List<GuardMember>> guardList(Long roomId, Long uid) {
-        return Optional.of(List.of());
+        return savedRoster()
+                .filter(parsed -> !parsed.members().isEmpty())
+                .map(GuardRosterFile.Parsed::members)
+                .or(() -> Optional.of(List.of()));
+    }
+
+    private Optional<GuardRosterFile.Parsed> savedRoster() {
+        if (detail.platform() == null || detail.uid() == null) {
+            return Optional.empty();
+        }
+        return savedGuardRoster(detail.platform(), detail.uid(), detail.startTime());
     }
 
     /**

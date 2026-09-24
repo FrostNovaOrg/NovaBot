@@ -17,14 +17,21 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.CopyOption;
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -32,6 +39,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.CALLS_REAL_METHODS;
+import static org.mockito.Mockito.mockStatic;
+
+import org.mockito.MockedStatic;
 
 /**
  * 每场明细留档
@@ -396,6 +408,84 @@ class LiveDetailArchiveTest {
         }
         if (!red.isEmpty()) {
             fail(red.size() + " 问红：" + String.join("；", red));
+        }
+    }
+
+    @Test
+    @DisplayName("两处同时写同一场：先写下的不被后写顶掉")
+    void laterWriteDoesNotReplaceTheFirst() throws Exception {
+        int trials = 8;
+        AtomicInteger clobbered = new AtomicInteger();
+        StringBuilder which = new StringBuilder();
+        for (int trial = 0; trial < trials; trial++) {
+            long start = START + trial;
+            LiveDetailArchive left = new LiveDetailArchive(properties);
+            LiveDetailArchive right = new LiveDetailArchive(properties);
+            String firstBody = "first-" + trial + "\n" + "A".repeat(256 * 1024);
+            String secondBody = "second-" + trial + "\n" + "B".repeat(256 * 1024);
+            boolean[] wrote = new boolean[2];
+            AtomicReference<Throwable> error = new AtomicReference<>();
+            CyclicBarrier barrier = new CyclicBarrier(2);
+            Thread one = new Thread(() -> writeSide(left, start, firstBody, wrote, 0, barrier, error));
+            Thread two = new Thread(() -> writeSide(right, start, secondBody, wrote, 1, barrier, error));
+            one.start();
+            two.start();
+            one.join(20_000);
+            two.join(20_000);
+            if (error.get() != null) {
+                throw new AssertionError(error.get());
+            }
+            assertFalse(one.isAlive() || two.isAlive(), "两处同时写没有写完");
+            Path file = dir.resolve("details").resolve(PLATFORM + "-" + UID + "-" + start).resolve("guards.json");
+            String saved = Files.isRegularFile(file) ? Files.readString(file) : "";
+            boolean bothClaimed = wrote[0] && wrote[1];
+            boolean winnerKept = (wrote[0] && saved.equals(firstBody)) || (wrote[1] && saved.equals(secondBody));
+            if (bothClaimed || !winnerKept) {
+                clobbered.incrementAndGet();
+                which.append(trial).append(bothClaimed ? "两处都写成 " : "留下的对不上 ");
+            }
+        }
+        assertEquals(0, clobbered.get(),
+                "两处同时写同一场，先写下的被顶掉（" + clobbered.get() + " 次：" + which + "）");
+    }
+
+    @Test
+    @DisplayName("改名不被这张盘支持时，这场名单仍然留下")
+    void rosterStaysWhenRenameIsUnsupported() throws Exception {
+        String body = "{\"at\":1,\"total\":3}";
+        try (MockedStatic<Files> files = mockStatic(Files.class, CALLS_REAL_METHODS)) {
+            files.when(() -> Files.createLink(any(Path.class), any(Path.class)))
+                    .thenThrow(new FileSystemException("guards.json"));
+            files.when(() -> Files.move(any(Path.class), any(Path.class), any(CopyOption[].class)))
+                    .thenAnswer(invocation -> {
+                        for (Object arg : invocation.getArguments()) {
+                            boolean atomic = arg == StandardCopyOption.ATOMIC_MOVE;
+                            if (arg instanceof CopyOption[] copyOptions) {
+                                for (CopyOption option : copyOptions) {
+                                    atomic = atomic || option == StandardCopyOption.ATOMIC_MOVE;
+                                }
+                            }
+                            if (atomic) {
+                                throw new AtomicMoveNotSupportedException(
+                                        "side", "guards.json", "unsupported");
+                            }
+                        }
+                        return invocation.callRealMethod();
+                    });
+            archive.writeOnce(PLATFORM, UID, START, "guards.json", body);
+        }
+        Path file = dir.resolve("details").resolve(PLATFORM + "-" + UID + "-" + START).resolve("guards.json");
+        String saved = Files.isRegularFile(file) ? Files.readString(file) : "";
+        assertEquals(body, saved, "落盘时改名这一步失败，这场名单没留下");
+    }
+
+    private static void writeSide(LiveDetailArchive archive, long start, String body, boolean[] wrote, int slot,
+                                  CyclicBarrier barrier, AtomicReference<Throwable> error) {
+        try {
+            barrier.await();
+            wrote[slot] = archive.writeOnce("bilibili", UID, start, "guards.json", body);
+        } catch (Throwable thrown) {
+            error.compareAndSet(null, thrown);
         }
     }
 
