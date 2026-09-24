@@ -1348,6 +1348,14 @@ class ConfigUiFrontendTest {
     private static final String PUSH_SETTINGS = "sessions.js";
 
     /**
+     * 本群设置那份写盘计划
+     * <p>
+     * 期望态与服务端那一份的差记在这里，按「保存」才由 {@code push.js} 的 save 发出。
+     * 端点字符串跟着写盘计划走，不钉在渲染那一份上——渲染只负责把开关画出来与记草稿。
+     */
+    private static final String PUSH_SESSION_DRAFT = "session-draft.js";
+
+    /**
      * 推送页的外壳，写在 {@code index.html} 里，闭集
      * <p>
      * 左树的两个入口与树本身、窄屏那个下拉、右区、挑选面板那一摊，以及「哪几条推送配置没填完」。
@@ -1394,13 +1402,15 @@ class ConfigUiFrontendTest {
     private static final String REPORT_PREVIEW_PATH = "/config/api/report/preview";
 
     /**
-     * 「本群设置」那一段要调的端点，闭集
+     * 「本群设置」那一段要写的端点，闭集
      * <p>
-     * 单条开关、成批开关、金额可见与移除订阅。成批那一支是「组开关」与「一键恢复」按下去的那一下：
-     * 少了它，界面只能自己循环调单条，而中途失败会留下一半开一半关的局面。
+     * 成批开关（单条拨动在保存时并进这一支）、金额可见与移除订阅。
+     * 单条 {@code /state/command} 界面侧不再点：草稿把期望态收成差之后，
+     * 一次保存里的同类改动合成一批发 {@code /state/commands}，中途失败不会留下一半开一半关——
+     * 与「组开关」「一键恢复」同一条理由。
      */
     private static final List<String> PUSH_SETTINGS_ENDPOINTS = List.of(
-            "/state/command", "/state/commands", "/state/revenue", "/state/subscription");
+            "/state/commands", "/state/revenue", "/state/subscription");
 
     /**
      * 渲染那一层必须问过判法的那几件事，闭集
@@ -1605,10 +1615,19 @@ class ConfigUiFrontendTest {
             bad.add(PUSH_VIEW + " 没有调用 " + REPORT_PREVIEW_PATH
                     + "，「报告长什么样」那一段就只剩一排开关，而所见即所得的意义正是那张图");
         }
+        String draft = pages.getOrDefault(PUSH_SESSION_DRAFT, "");
+        if (draft.isBlank()) {
+            bad.add("找不到 " + PUSH_SESSION_DRAFT + "，本群设置的写盘计划没有落脚的地方");
+        }
         for (String endpoint : PUSH_SETTINGS_ENDPOINTS) {
-            if (!settings.contains("'" + endpoint + "'")) {
-                bad.add(PUSH_SETTINGS + " 没有调用 " + endpoint + "，那一项此刻改了不生效");
+            if (!draft.contains("'" + endpoint + "'")) {
+                bad.add(PUSH_SESSION_DRAFT + " 没有计划写 " + endpoint + "，那一项此刻改了不生效");
             }
+        }
+        // 计划躺在草稿里而保存那趟没发出去，与没有计划长得一样
+        String save = functionBodyAny(view, "save");
+        if (!save.contains("sessionWrites()") || !save.contains("write.path")) {
+            bad.add(PUSH_VIEW + " 的 save 没有经 sessionWrites 按 write.path 发本群设置，改了也存不出去");
         }
 
         for (String call : PUSH_MODEL_CALLS) {
