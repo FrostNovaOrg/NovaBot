@@ -57,7 +57,7 @@ class LiveCategoryEndToEndTest {
                 .onLiveOn(new BilibiliLiveOnEvent(new LiveStreamerInfo(10001L, "主播甲", 20002L)));
 
         TimelineEvent event = assertLanded(TimelineCategory.LIVE, TimelineEventType.LIVE_ON);
-        assertEquals("主播甲", event.channel(), "哪个主播开的播, 是这一条最要紧的一栏");
+        assertEquals("主播甲", event.streamer(), "哪个主播开的播, 是这一条最要紧的一栏");
     }
 
     @Test
@@ -67,7 +67,7 @@ class LiveCategoryEndToEndTest {
                 .onLiveOff(new BilibiliLiveOffEvent(new LiveStreamerInfo(10001L, "主播甲", 20002L)));
 
         TimelineEvent event = assertLanded(TimelineCategory.LIVE, TimelineEventType.LIVE_OFF);
-        assertEquals("主播甲", event.channel(), "哪个主播下的播, 是这一条最要紧的一栏");
+        assertEquals("主播甲", event.streamer(), "哪个主播下的播, 是这一条最要紧的一栏");
     }
 
     /**
