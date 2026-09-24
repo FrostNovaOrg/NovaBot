@@ -189,20 +189,6 @@ class BilibiliLiveReportReplayPainterTest {
     }
 
     @Test
-    @DisplayName("标题轨迹取自明细，而不是问状态存储要当前那一场的")
-    void titlesComeFromDetail() throws IOException {
-        // 状态存储是个一句话都没打桩的 mock，它若被问到就会答空表；
-        // 明细里有两条标题，图上「标题变化」那一块因此画得出来——高度上看得见
-        JSONObject params = new JSONObject();
-        params.put("title_changes", false);
-        BilibiliLiveReportOptions off = BilibiliLiveReportOptions.of(params, true);
-
-        assertTrue(image(redraw(new BilibiliLiveReportOptions())).getHeight()
-                        > image(redraw(off)).getHeight(),
-                "开着「标题变化」却没比关掉时高, 说明标题轨迹没从明细里读出来");
-    }
-
-    @Test
     @DisplayName("昵称空着时退回 UID，不在图上画一个 null")
     void blankUnameFallsBackToUid() {
         LiveDetail complete = detail();

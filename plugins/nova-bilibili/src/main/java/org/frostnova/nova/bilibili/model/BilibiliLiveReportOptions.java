@@ -121,13 +121,6 @@ public class BilibiliLiveReportOptions {
     private boolean highlights = true;
 
     /**
-     * 是否展示本场的标题变化
-     * <p>
-     * 只在本场真的改过标题时才会占版面，没改过时这一项开着也不会画出空区块。
-     */
-    private boolean titleChanges = true;
-
-    /**
      * 是否展示金额
      * <p>
      * <b>这一项不来自推送参数</b>，而是取自会话级的金额可见性设置：它回答的是「这份东西给谁看」，
@@ -171,7 +164,6 @@ public class BilibiliLiveReportOptions {
                     DEFAULTS.guardListLimit, 0, MAX_GUARD_LIST_ALL),
             HandlerOption.bool("danmu_cloud", "弹幕词云", "本场弹幕的词云图", DEFAULTS.danmuCloud),
             HandlerOption.bool("highlights", "高能时刻", "弹幕最密集的几个时段，对应可剪切片的时间点", DEFAULTS.highlights),
-            HandlerOption.bool("title_changes", "标题变化", "本场改过的直播间标题，没改过时不占版面", DEFAULTS.titleChanges),
             HandlerOption.integer("danmu_ranking", "弹幕排行", "展示前几名，0 为不展示",
                     DEFAULTS.danmuRanking, 0, MAX_RANKING_COUNT),
             HandlerOption.integer("gift_ranking", "礼物排行", "展示前几名，0 为不展示",
@@ -223,7 +215,6 @@ public class BilibiliLiveReportOptions {
         options.interactionCurve = bool(params, "interaction_curve", options.interactionCurve);
         options.danmuCloud = bool(params, "danmu_cloud", options.danmuCloud);
         options.highlights = bool(params, "highlights", options.highlights);
-        options.titleChanges = bool(params, "title_changes", options.titleChanges);
         return options;
     }
 

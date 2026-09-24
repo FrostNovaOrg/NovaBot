@@ -9,7 +9,6 @@ import org.frostnova.nova.bilibili.model.GuardMember;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
-import org.frostnova.nova.core.model.RoomInfoSnapshot;
 import org.frostnova.nova.core.model.TextWithStyle;
 import org.frostnova.nova.core.service.DefaultLiveDataService;
 import org.frostnova.nova.core.service.LiveDataService;
@@ -564,13 +563,6 @@ public final class DemoAssets {
                     new GuardMember(VIEWER_UIDS[2], VIEWER_NAMES[2], 3, 1100),
                     new GuardMember(VIEWER_UIDS[3], VIEWER_NAMES[3], 3, 800),
                     new GuardMember(VIEWER_UIDS[4], VIEWER_NAMES[4], 3, 500)));
-        }
-
-        @Override
-        protected List<RoomInfoSnapshot> titleHistory(String platform, Long uid) {
-            return List.of(
-                    new RoomInfoSnapshot(START_MILLIS, ROOM_TITLE, "娱乐 · 视频聊天"),
-                    new RoomInfoSnapshot(START_MILLIS + 38 * 60_000L, ROOM_TITLE_LATER, "娱乐 · 视频聊天"));
         }
     }
 }
