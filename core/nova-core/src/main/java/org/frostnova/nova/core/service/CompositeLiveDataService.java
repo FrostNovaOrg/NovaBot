@@ -1,6 +1,7 @@
 package org.frostnova.nova.core.service;
 
 import org.frostnova.nova.core.model.LiveGap;
+import org.frostnova.nova.core.analytics.LiveGiftTotal;
 import org.frostnova.nova.core.model.UserScore;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -283,5 +284,16 @@ public class CompositeLiveDataService implements LiveDataService {
     @Override
     public Map<String, Integer> getLiveWordFrequencies(@NonNull String platform, @NonNull Long uid) {
         return delegate.getLiveWordFrequencies(platform, uid);
+    }
+
+    @Override
+    public void recordLiveGift(@NonNull String platform, @NonNull Long uid,
+                               Long id, String name, double price, int count, String url) {
+        delegate.recordLiveGift(platform, uid, id, name, price, count, url);
+    }
+
+    @Override
+    public List<LiveGiftTotal> getLiveGifts(@NonNull String platform, @NonNull Long uid) {
+        return delegate.getLiveGifts(platform, uid);
     }
 }

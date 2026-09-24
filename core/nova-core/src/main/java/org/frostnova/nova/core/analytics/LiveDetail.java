@@ -44,6 +44,7 @@ import java.util.Map;
  * @param titles 本场的标题与分区轨迹，首条为开播时的初始值
  * @param gaps 本场的采集缺口区间，<b>已合并至互不重叠</b>（程序停机与单房断线必然重叠，不可相加）
  * @param peaks 各条序列的峰值，与场次归档里的那一份同源——那边是给列表用的摘要，这边是明细自带的副本
+ * @param gifts 本场收到的礼物，按种类累计。旧档没有这一项时为空表
  */
 public record LiveDetail(
         int version,
@@ -62,7 +63,8 @@ public record LiveDetail(
         List<LiveHighlightFinder.Highlight> highlights,
         List<RoomInfoSnapshot> titles,
         List<LiveGap> gaps,
-        Map<String, SeriesPeak> peaks
+        Map<String, SeriesPeak> peaks,
+        List<LiveGiftTotal> gifts
 ) {
     /**
      * 当前明细格式版本

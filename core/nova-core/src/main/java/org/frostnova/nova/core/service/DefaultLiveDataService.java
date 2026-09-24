@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.model.LiveGap;
+import org.frostnova.nova.core.analytics.LiveGiftTotal;
 import org.frostnova.nova.core.util.DurableFiles;
 import org.frostnova.nova.core.model.UserScore;
 import org.frostnova.nova.core.util.FaceUrlCodec;
@@ -1188,6 +1189,81 @@ public class DefaultLiveDataService implements LiveDataService {
         }
     }
 
+    /**
+     * 累计本场收到的一种礼物
+     */
+    @Override
+    public void recordLiveGift(@NonNull String platform, @NonNull Long uid,
+                               Long id, String name, double price, int count, String url) {
+        if (id == null && (name == null || name.isBlank())) {
+            return;
+        }
+        if (count < 1) {
+            return;
+        }
+        synchronized (metricLock) {
+            String key = "LiveGiftTotal:" + platform;
+            cache.putIfAbsent(key, new JSONObject());
+            JSONObject byUid = cache.getJSONObject(key);
+            byUid.putIfAbsent(String.valueOf(uid), new JSONObject());
+            JSONObject gifts = byUid.getJSONObject(String.valueOf(uid));
+
+            String mergeKey = id != null ? "id:" + id : "name:" + name;
+            JSONObject entry = gifts.getJSONObject(mergeKey);
+            if (entry == null) {
+                entry = new JSONObject();
+                if (id != null) {
+                    entry.put("id", id);
+                }
+                entry.put("name", name == null ? "" : name);
+                entry.put("price", price);
+                entry.put("count", 0);
+                entry.put("url", url == null || url.isBlank() ? "" : url);
+                gifts.put(mergeKey, entry);
+            } else {
+                String storedUrl = entry.getString("url");
+                if ((storedUrl == null || storedUrl.isBlank()) && url != null && !url.isBlank()) {
+                    entry.put("url", url);
+                }
+                String storedName = entry.getString("name");
+                if ((storedName == null || storedName.isBlank()) && name != null && !name.isBlank()) {
+                    entry.put("name", name);
+                }
+            }
+            entry.put("count", entry.getIntValue("count") + count);
+        }
+    }
+
+    /**
+     * 本场收到的礼物
+     */
+    @Override
+    public List<LiveGiftTotal> getLiveGifts(@NonNull String platform, @NonNull Long uid) {
+        synchronized (metricLock) {
+            JSONObject gifts = Optional.ofNullable(cache.getJSONObject("LiveGiftTotal:" + platform))
+                    .map(data -> data.getJSONObject(String.valueOf(uid)))
+                    .orElse(null);
+            if (gifts == null || gifts.isEmpty()) {
+                return List.of();
+            }
+            List<LiveGiftTotal> result = new ArrayList<>(gifts.size());
+            for (String mergeKey : gifts.keySet()) {
+                JSONObject entry = gifts.getJSONObject(mergeKey);
+                if (entry == null) {
+                    continue;
+                }
+                String icon = entry.getString("url");
+                result.add(new LiveGiftTotal(
+                        entry.containsKey("id") ? entry.getLong("id") : null,
+                        entry.getString("name"),
+                        entry.getDoubleValue("price"),
+                        entry.getIntValue("count"),
+                        icon == null || icon.isBlank() ? null : icon));
+            }
+            return result;
+        }
+    }
+
     // ================ 时间序列（互动曲线） ================
 
     /**
@@ -1331,6 +1407,8 @@ public class DefaultLiveDataService implements LiveDataService {
             Optional.ofNullable(cache.getJSONObject("LiveMetricUser:" + platform))
                     .ifPresent(data -> data.remove(String.valueOf(uid)));
             Optional.ofNullable(cache.getJSONObject("LiveWordFrequency:" + platform))
+                    .ifPresent(data -> data.remove(String.valueOf(uid)));
+            Optional.ofNullable(cache.getJSONObject("LiveGiftTotal:" + platform))
                     .ifPresent(data -> data.remove(String.valueOf(uid)));
             Optional.ofNullable(cache.getJSONObject("LiveUserName:" + platform))
                     .ifPresent(data -> data.remove(String.valueOf(uid)));

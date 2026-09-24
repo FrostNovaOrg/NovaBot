@@ -7,6 +7,7 @@ import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.analytics.LiveDetail;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.model.LiveGap;
+import org.frostnova.nova.core.analytics.LiveGiftTotal;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
 import org.frostnova.nova.core.model.UserScore;
 import org.frostnova.nova.core.service.DefaultLiveDataService;
@@ -112,6 +113,11 @@ public class BilibiliLiveReportReplayPainter extends BilibiliLiveReportPainter {
         return guardMark;
     }
 
+    @Override
+    protected BufferedImage giftIcon(String url) {
+        return null;
+    }
+
     /**
      * 粉丝数取不到——<b>刻意的</b>，见类注释「与当时那张图的差别」
      */
@@ -194,6 +200,12 @@ public class BilibiliLiveReportReplayPainter extends BilibiliLiveReportPainter {
                     data.incrementLiveWordFrequency(platform, uid, word);
                 }
             });
+        }
+
+        if (detail.gifts() != null) {
+            for (LiveGiftTotal gift : detail.gifts()) {
+                data.recordLiveGift(platform, uid, gift.id(), gift.name(), gift.price(), gift.count(), gift.url());
+            }
         }
 
         // 缺口按成因分两处灌回：断流是这个房间自己的事，其余是进程层面的。

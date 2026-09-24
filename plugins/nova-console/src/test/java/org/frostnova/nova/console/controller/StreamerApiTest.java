@@ -628,6 +628,6 @@ class StreamerApiTest {
                 startTime, startTime + 3600_000, 3600,
                 Map.of("danmu_count", 106.0), Map.of(),
                 Map.of("danmu_count", Map.of(startTime, 6.0)),
-                Map.of(), Map.of("好听", 3), List.of(), List.of(), List.of(), Map.of());
+                Map.of(), Map.of("好听", 3), List.of(), List.of(), List.of(), Map.of(), List.of());
     }
 }
