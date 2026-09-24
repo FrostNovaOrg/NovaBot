@@ -1738,6 +1738,9 @@ export async function reload() {
  * 推送配置干净时也不该重写 datasource.json。
  * 任一段失败都不撤另一段已经写成的；没写成的那一段草稿留着，下次保存再发。
  * 清空订阅名单那一笔自带二次确认，确认没过的那一笔跳过、其余照写。
+ *
+ * 状态栏写的是这一趟真正落地了什么：成的那一段显示服务端回的那句（两段都成就两句并列），
+ * 本群设置一处没改时不论推送那段成败都不提它——那一段根本没发过请求。
  */
 export async function save() {
   $('#save').disabled = true;
@@ -1746,16 +1749,23 @@ export async function save() {
   let pushOk = true;
   let stateOk = true;
   let skipped = 0;
+  let pushTried = false;
+  let pushMsg = '';
+  const stateMsgs = [];
+  let stateWrote = 0;
 
   if (pushChangeCount() > 0) {
+    pushTried = true;
     try {
       const res = await api('/datasource', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({content: serializePush()}),
       });
-      if (res.success) markPushSaved();
-      else {
+      if (res.success) {
+        markPushSaved();
+        pushMsg = res.message || '已保存';
+      } else {
         pushOk = false;
         notes.push(res.message || '推送配置保存失败');
       }
@@ -1790,8 +1800,11 @@ export async function save() {
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify(write.body),
         });
-        if (res.success) write.done();
-        else {
+        if (res.success) {
+          write.done();
+          stateWrote++;
+          stateMsgs.push(res.message || '已保存');
+        } else {
           stateOk = false;
           notes.push(res.message || '本群设置保存失败');
         }
@@ -1802,16 +1815,28 @@ export async function save() {
     }
   }
 
+  const statePhrase = stateWrote > 0 ? stateMsgs.join('；') : '';
+
   if (pushOk && stateOk) {
-    let text = '已保存';
+    const parts = [];
+    if (pushTried && pushMsg) parts.push(pushMsg);
+    if (statePhrase) parts.push(statePhrase);
+    if (!parts.length) parts.push('已保存');
+    let text = parts.join(' · ');
     if (skipped) text += ' · 有 ' + skipped + ' 项删除没确认，那一项没写';
     say(text, 'ok');
   } else if (pushOk && !stateOk) {
-    say('本群设置没存上（推送配置已存）'
-      + (notes.length ? '：' + notes.join('；') : ''), 'err');
+    const parts = [];
+    if (pushTried && pushMsg) parts.push(pushMsg);
+    parts.push('本群设置没存上' + (notes.length ? '：' + notes.join('；') : ''));
+    say(parts.join(' · '), 'err');
   } else if (!pushOk && stateOk) {
-    say('推送配置没存上（本群设置已存）'
-      + (notes.length ? '：' + notes.join('；') : ''), 'err');
+    if (statePhrase) {
+      say('推送配置没存上（' + statePhrase + '）'
+        + (notes.length ? '：' + notes.join('；') : ''), 'err');
+    } else {
+      say(notes.length ? notes.join('；') : '推送配置没存上', 'err');
+    }
   } else {
     say('两段都没存上：' + notes.join('；'), 'err');
   }

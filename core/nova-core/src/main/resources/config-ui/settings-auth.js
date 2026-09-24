@@ -9,7 +9,7 @@
  * 于是这四项仍走自己的流程与端点，只是版式和其他设置项同一套横行；改完<b>当场生效</b>，不进改动条。
  */
 
-import {ask} from './confirm.js';
+import {ask, showDoc} from './confirm.js';
 import {$, api, el, esc, phrase, say, switchControl} from './core.js';
 import {bindPasswordReveal} from './password-reveal.js';
 import {loadPasskeys, registerPasskey} from './passkeys.js';
@@ -401,9 +401,10 @@ function acceptedLine() {
 /**
  * 使用协议那张卡
  *
- * 正文<b>只有服务端那一份</b>：向 /auth/agreement 要，页面里不留副本。抄一份进来的话，
- * 改了 agreement.txt 而没改这里，卡片上显示的就不是使用者当初签的那一份，
- * 而这件事从界面上完全看不出来。
+ * 正文<b>只有服务端那一份</b>，点「查看全文」才去向 /auth/agreement 要，页面里不留副本。
+ * 抄一份进来的话，改了 agreement.txt 而没改这里，卡片上显示的就不是使用者当初签的那一份，
+ * 而这件事从界面上完全看不出来。整篇平铺在设置页上也不行：要翻过它才看得见下面的设置，
+ * 而真正想读协议的人本来就是专程来的——给一颗按钮，点开在弹层里读。
  *
  * 撤回那颗按钮是红的，且要过一次确认：撤回把整台机器打回未签态，所有人都要重新同意
  * 才进得了控制台。一次误点之后<b>什么也没坏</b>，只是全体被关在门外——那看起来像面板故障，
@@ -417,6 +418,17 @@ function agreementCard() {
   keyLine(box.meta, AGREEMENT_TIME_KEY);
   keyLine(box.meta, AGREEMENT_BY_KEY);
 
+  const view = el('button', 'ghost');
+  view.type = 'button';
+  view.id = 'agreement-view';
+  view.textContent = '查看全文';
+  view.addEventListener('click', () => showDoc({
+    title: '使用协议',
+    trigger: view,
+    load: () => api('/auth/agreement'),
+  }));
+  box.cell.appendChild(view);
+
   const button = el('button', 'danger');
   button.type = 'button';
   button.id = 'agreement-revoke';
@@ -428,21 +440,8 @@ function agreementCard() {
   record.textContent = acceptedLine();
   box.row.appendChild(record);
 
-  const full = el('div', 'agreement-full');
-  full.id = 'agreement-full';
-  full.textContent = '正在取协议正文…';
-  box.row.appendChild(full);
-
   const result = el('div', 'al-r');
   box.row.appendChild(result);
-
-  api('/auth/agreement')
-    .then(res => {
-      // textContent 而非 innerHTML：正文是文字，不该被当成标记解释
-      full.textContent = res.text || '';
-      if (!res.success) report(result, res);
-    })
-    .catch(e => report(result, {success: false, message: '读不到协议正文：' + e.message}));
 
   button.addEventListener('click', () => revokeAgreement(button, result));
   return box.row;
