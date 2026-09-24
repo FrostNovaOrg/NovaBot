@@ -49,6 +49,14 @@ final class FrontendFixture {
     }
 
     /**
+     * 控制台前端源码目录。模块根同样只在这一处出现，
+     * 免得每个测试类各写死一份路径（写死的份数只减不增）。
+     */
+    static Path frontendDir() {
+        return repoRoot().resolve("core/nova-core/src/main/resources/config-ui");
+    }
+
+    /**
      * 跑一份夹具，退码非 0 即判红
      * @param fixture 夹具在仓库里的相对路径
      * @param what 这一组判定叫什么，进红时那句话与构建日志

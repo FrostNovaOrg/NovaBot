@@ -16,6 +16,7 @@ import {authCards, AUTH_CARD_FIELDS, filterAuthCards} from './settings-auth.js';
 import {canonicalValue, defaultText, defaultValue, effectOf, isChanged, isDangerous, dangerOf, isVisible}
   from './settings-model.js';
 import {store} from './store.js';
+import {applyTheme, readTheme, THEME_AUTO, THEME_DARK, THEME_LIGHT} from './theme.js';
 
 /** 告警那一组的标识，它要额外接三张卡 */
 const ALERT_GROUP = 'alert';
@@ -280,6 +281,52 @@ function buildRow(field, groupAllRestart) {
 }
 
 /**
+ * 界面主题那一组：深色／浅色／跟随系统
+ *
+ * 纯前端的偏好，只影响这一个浏览器，不进服务端配置、不进改动条。
+ * 摆在组目录最上方：外观是进来第一眼的事，不该埋在工程用的组里。
+ * @return {HTMLElement} 那一组
+ */
+function buildThemeGroup() {
+  const box = el('div', 'group setgrp');
+  box.dataset.grp = 'ui';
+  // 这一组不是配置项：底下没有 .setitem，搜索／只看改过那两道筛也量不到它。
+  // 不标 data-ui 的话，「一组里一项不剩就收起」会把它连标题一起藏掉。
+  box.dataset.ui = '1';
+
+  const title = el('h2');
+  const name = el('span');
+  name.textContent = '界面';
+  title.appendChild(name);
+  box.appendChild(title);
+
+  const desc = el('div', 'card-desc');
+  desc.textContent = '深色、浅色，或跟随系统。选择记在当前浏览器里，不进这台机器的配置。';
+  box.appendChild(desc);
+
+  const row = el('div', 'themechoice');
+  const current = readTheme();
+  for (const [value, label] of [
+    [THEME_AUTO, '跟随系统'],
+    [THEME_LIGHT, '浅色'],
+    [THEME_DARK, '深色'],
+  ]) {
+    const btn = el('button', 'pill' + (value === current ? ' cur' : ''));
+    btn.type = 'button';
+    btn.setAttribute('data-theme-choice', value);
+    btn.textContent = label;
+    btn.addEventListener('click', () => {
+      applyTheme(value);
+      for (const other of row.querySelectorAll('.pill')) other.classList.remove('cur');
+      btn.classList.add('cur');
+    });
+    row.appendChild(btn);
+  }
+  box.appendChild(row);
+  return box;
+}
+
+/**
  * 建出一组
  * @param group 一组，来自 /schema
  * @return {HTMLElement} 那一组
@@ -369,6 +416,8 @@ function buildNav(groups, advanced) {
   const nav = $('#grp-nav');
   nav.innerHTML = '';
 
+  // 界面组排最上：纯前端偏好，不是这台机器的配置
+  nav.appendChild(buildNavLink({group: 'ui', title: '界面'}));
   for (const group of groups) nav.appendChild(buildNavLink(group));
 
   if (advanced.length) {
@@ -389,6 +438,9 @@ export function renderGeneral() {
 
   const common = store.schema.filter(g => !g.advanced);
   const advanced = store.schema.filter(g => g.advanced);
+
+  // 界面组排最上：纯前端偏好，不是这台机器的配置
+  box.appendChild(buildThemeGroup());
 
   const orphans = buildUngrouped();
   if (orphans) box.appendChild(orphans);
@@ -494,8 +546,9 @@ export function filterSettings() {
   shown += filterCards(query, onlyChanged);
   shown += filterAuthCards(query, onlyChanged);
 
-  // 一组里一项都不剩就把整组收起来，否则屏幕上留着一串空标题
-  for (const group of document.querySelectorAll('.setgrp')) {
+  // 一组里一项都不剩就把整组收起来，否则屏幕上留着一串空标题。
+  // 界面组（data-ui）底下没有配置行，不参与这道收起——它永远该露着。
+  for (const group of document.querySelectorAll('.setgrp:not([data-ui])')) {
     const any = group.querySelectorAll('.setitem:not(.hide), .alcard:not(.hide)').length;
     group.classList.toggle('hide', any === 0);
   }

@@ -60,10 +60,22 @@ class ConfigUiFrontendTest {
      * 会照样显示——<b>这种错在功能上完全看不出来，口令照样能用</b>。
      * <p>
      * 范围是整个 config-ui 而不只是签发那个模块：这些文件跑在同一张页面上，
-     * 口令就在同一棵 DOM 里，谁都够得着。
+     * 口令就在同一棵 DOM 里，谁都够得着。index.html 的 head 里那段主题脚本也够得着，
+     * 因此一并扫进 {@link #issuedTokenNeverLeavesMemory}。
      */
     private static final List<String> FORBIDDEN_SINKS = List.of(
             "localStorage", "sessionStorage", "console.");
+
+    /**
+     * 界面主题偏好那一把键：唯一允许写进浏览器存储的开口
+     * <p>
+     * 主题偏好不是秘密，要的就是刷新后还在。键名刻意避开任何像口令的词，
+     * 这一道缝只许走 THEME_KEY 一把键、只许出现在 theme.js 与 index.html 的 head 脚本里，
+     * 且那一行只许碰 localStorage——sessionStorage 与 console. 仍然一律不许。
+     */
+    private static final String THEME_KEY = "novabot-theme";
+
+    private static final Pattern HTML_COMMENT = Pattern.compile("<!--.*?-->", Pattern.DOTALL);
 
     /**
      * 已知的合法同名局部变量：函数内部自己声明的，与 store 无关
@@ -264,9 +276,24 @@ class ConfigUiFrontendTest {
     }
 
     /**
+     * 把一段文本挖成等长空白，换行原样留下
+     * <p>
+     * 多行注释若整块换成空格，里面的换行会一并没掉，后面的行号就与原文件对不上——
+     * 拿原行去认「这一行带着哪把键」时会认到隔壁那行去。
+     */
+    private static String blankKeepingNewlines(String text) {
+        StringBuilder b = new StringBuilder(text.length());
+        for (int i = 0; i < text.length(); i++) {
+            b.append(text.charAt(i) == '\n' ? '\n' : ' ');
+        }
+        return b.toString();
+    }
+
+    /**
      * 把注释与字符串挖成空白，模板字符串只保留其中的 {@code ${}} 表达式
      * <p>
      * 挖成等长空白而不是删掉，行号才不会错位——报错要能指到具体哪一行。
+     * 换行同样保留，理由见 {@link #blankKeepingNewlines}。
      */
     private String codeOnly(String text) {
         StringBuilder afterTemplate = new StringBuilder();
@@ -279,15 +306,16 @@ class ConfigUiFrontendTest {
             Matcher expr = Pattern.compile("\\$\\{[^}]*}").matcher(literal);
             int inner = 0;
             while (expr.find()) {
-                afterTemplate.append(" ".repeat(expr.start() - inner)).append(expr.group());
+                afterTemplate.append(blankKeepingNewlines(literal.substring(inner, expr.start())))
+                        .append(expr.group());
                 inner = expr.end();
             }
-            afterTemplate.append(" ".repeat(literal.length() - inner));
+            afterTemplate.append(blankKeepingNewlines(literal.substring(inner)));
             last = t.end();
         }
         afterTemplate.append(text.substring(last));
 
-        return LITERAL.matcher(afterTemplate).replaceAll(m -> " ".repeat(m.group().length()));
+        return LITERAL.matcher(afterTemplate).replaceAll(m -> blankKeepingNewlines(m.group()));
     }
 
     @Test
@@ -362,19 +390,31 @@ class ConfigUiFrontendTest {
      * <p>
      * 这条判据是奔着一类具体的错去的：有人为了「刷新后还能看到」把口令写进 localStorage，
      * 或调试时留下一行打印。两种改动都不会让任何功能变坏，因此靠人复查是拦不住的。
+     * <p>
+     * 界面主题偏好是唯一开了口的那一份（见 {@link #THEME_KEY}）：它不是秘密，
+     * 而且只许在 theme.js 与 index.html 的 head 脚本里、带着那一把键碰 localStorage。
      */
     @Test
     @DisplayName("口令明文不进浏览器存储、地址栏与日志")
     void issuedTokenNeverLeavesMemory() {
         List<String> bad = new ArrayList<>();
 
-        sources().forEach((name, text) -> {
-            String[] lines = codeOnly(text).split("\n", -1);
+        Map<String, String> scan = new LinkedHashMap<>(sources());
+        try {
+            scan.put("index.html",
+                    Files.readString(frontendDir().resolve("index.html"), StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+
+        scan.forEach((name, text) -> {
+            String[] raw = text.split("\n", -1);
+            String[] lines = codeOnly(htmlCommentsBlanked(name, text)).split("\n", -1);
             for (int i = 0; i < lines.length; i++) {
                 for (String sink : FORBIDDEN_SINKS) {
-                    if (lines[i].contains(sink)) {
-                        bad.add(name + ":" + (i + 1) + "  " + lines[i].strip());
-                    }
+                    if (!lines[i].contains(sink)) continue;
+                    if (sink.equals("localStorage") && themeStorageLine(name, raw[i])) continue;
+                    bad.add(name + ":" + (i + 1) + "  " + lines[i].strip());
                 }
 
                 // 地址栏那一条只查持有明文的那个模块：别处的 location.reload() 是正当用法，
@@ -388,6 +428,25 @@ class ConfigUiFrontendTest {
 
         assertTrue(bad.isEmpty(), "只读口令的明文只许留在内存里，以下位置会把它带出去（或为此开了口子）:\n  "
                 + String.join("\n  ", bad));
+    }
+
+    /**
+     * HTML 注释挖成空白，好让「注释与字符串不算」在 index.html 上同样成立
+     */
+    private static String htmlCommentsBlanked(String name, String text) {
+        if (!name.endsWith(".html")) return text;
+        return HTML_COMMENT.matcher(text).replaceAll(m -> blankKeepingNewlines(m.group()));
+    }
+
+    /**
+     * 主题偏好那把键所在的 localStorage 行：唯一放行的写入口子
+     * <p>
+     * 认的是<b>原行</b>而不是挖空后的代码——键名本身是字符串字面量，
+     * 挖空之后那一行就只剩 {@code localStorage.getItem()}，与随手写的存储读取分不开。
+     */
+    private static boolean themeStorageLine(String name, String rawLine) {
+        if (!name.equals("theme.js") && !name.equals("index.html")) return false;
+        return rawLine.contains(THEME_KEY) || rawLine.contains("THEME_KEY");
     }
 
     @Test
