@@ -12,7 +12,9 @@ import java.util.Map;
 
 /** 示例版：主词错落锚点 + 全画布候选评分 + 横纵分离间距。
  * 不依赖词语内容；相同输入、字体、种子得到相同布局。
- * fillRatio 保留接口兼容，仅作包围盒统计，不再作为字号放大目标。
+ * 版面一律用满宽度；排完若词团外接框宽度不到版面宽的八成五，
+ * 整体放大字号重排（字号上限 80），再放就放不下时照缩放档依次往下缩。
+ * fillRatio 仅作包围盒面积统计。
  */
 final class WordCloudLayout {
     static final int WORD_GAP = 7;
@@ -25,11 +27,18 @@ final class WordCloudLayout {
         new Color(0xE0479E), new Color(0x7A4DFF), new Color(0xA38BFF),
         new Color(0x00A6D6), new Color(0x6E6A86), new Color(0xF2A93B)
     };
-    // 相对锚点只随名次生效，不硬编码任何词。
+    // 相对锚点只随名次生效，不硬编码任何词。横坐标放宽到约 .05～.95 这条带里，让词往两侧铺。
     private static final double[][] ANCHORS = {
-        {.50,.49}, {.70,.29}, {.30,.66}, {.32,.27}, {.76,.63},
-        {.51,.79}, {.18,.42}, {.80,.43}, {.51,.17}, {.17,.72}
+        {.50,.49}, {.76,.29}, {.24,.66}, {.27,.27}, {.84,.63},
+        {.51,.79}, {.16,.42}, {.80,.43}, {.51,.17}, {.16,.72}
     };
+
+    /**
+     * 字号上限；排版放大到这一档为止
+     */
+    private static final int FONT_SIZE_MAX = 80;
+
+    private static final int FONT_SIZE_MIN = 18;
     private WordCloudLayout() {}
     /** 报告调用层须同时把此高度交给 layout 与 render，并按实际图高安排后续模块。 */
     static int recommendedHeight(int validWordCount,int maxHeight) {
@@ -50,17 +59,22 @@ final class WordCloudLayout {
         if (sorted.isEmpty() || width <= 2*FRAME_MARGIN || height <= 2*FRAME_MARGIN)
             return new Result(List.of(), new Rectangle(), 0, sorted.size());
         if(sorted.size()<=12) return sparse(sorted,width,height,seed,measurer);
-        // 中等词量使用较小排版区域，避免只有十几个词却撑开整张画布。
-        if(sorted.size()<40) {
-            double factor=.70+.30*(sorted.size()-13)/27.0;
-            int innerW=(int)(width*factor),innerH=(int)(height*(.80+.20*(sorted.size()-13)/27.0));
-            return offset(dense(sorted,innerW,innerH,seed,measurer),(width-innerW)/2,(height-innerH)/2,width,height);
-        }
         return dense(sorted,width,height,seed,measurer);
     }
+    /** 排完量外接框宽：不到版面八成五就整体放大字号重排，放不下再照缩放档往下缩保词。 */
     private static Result dense(List<Word> sorted,int width,int height,long seed,Measurer measurer) {
-        // 尝试较小整体字号时优先保词；不靠放大外包围盒追求“填满”。
+        double target=width*.85;
         Result best = null;
+        int prevWidth = -1;
+        for (double scale : new double[]{1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.8}) {
+            Result r = place(sorted,width,height,seed,measurer,scale);
+            best = wider(best, r);
+            if (r.dropped()>0) break;
+            if (r.bounds().width>=target) return r;
+            if (r.bounds().width<=prevWidth) break;
+            prevWidth = r.bounds().width;
+        }
+        if (best!=null && best.dropped()==0) return best;
         for (double scale : new double[]{1.0, .94, .88, .78, .68, .58, .48}) {
             Result r = place(sorted,width,height,seed,measurer,scale);
             if (best == null || r.placements().size() > best.placements().size()) best=r;
@@ -73,60 +87,76 @@ final class WordCloudLayout {
         int[] cp=text.codePoints().toArray();
         return cp.length<=12?text:new String(cp,0,11)+"…";
     }
-    private static Result offset(Result r,int dx,int dy,int width,int height) {
-        List<Placement> list=new ArrayList<>();
-        for(Placement p:r.placements()) {Rectangle box=new Rectangle(p.box());box.translate(dx,dy);
-            list.add(new Placement(p.text(),p.rank(),p.fontSize(),box,p.color()));}
-        Rectangle b=new Rectangle(r.bounds());if(!b.isEmpty()) b.translate(dx,dy);
-        return new Result(List.copyOf(list),b,(double)b.width*b.height/(width*(double)height),r.dropped());
+    /** 同样不丢词时取外接框更宽的那份；丢词更少的优先于更宽。 */
+    private static Result wider(Result best,Result r) {
+        if (best==null) return r;
+        if (r.dropped()!=best.dropped()) return r.dropped()<best.dropped()?r:best;
+        return r.bounds().width>=best.bounds().width?r:best;
     }
-    /** 少词时用紧凑、居中的短行词团；不为填满面积强行放大或散开。 */
+    /** 少词时用短行词团，每行限宽放开到版面满宽；排完同样量外接框宽度决定要不要放大字号。 */
     private static Result sparse(List<Word> words,int width,int height,long seed,Measurer measurer) {
+        double target=width*.85;
         Result best=null;
-        for(double scale:new double[]{1,.88,.76,.64}) {
-            List<Placement> list=new ArrayList<>();
-            List<List<Placement>> rows=new ArrayList<>();List<Placement> row=new ArrayList<>();
-            int max=words.get(0).count(),min=words.get(words.size()-1).count();
-            int rowLimit=Math.min(width-2*FRAME_MARGIN,words.size()<=3?560:words.size()<=8?360:480);
-            int used=0,previousSize=44;
-            for(int i=0;i<words.size();i++) {
-                double q=max==min?.25:(double)(words.get(i).count()-min)/(max-min);
-                int size=Math.max(18,(int)Math.round((words.size()==1?40:28+16*Math.sqrt(q))*scale));
-                if(i==0 && words.size()>1) {
-                    double q2=max==min?.25:(double)(words.get(1).count()-min)/(max-min);
-                    size=Math.min(size,(int)(Math.max(18,Math.round((28+16*Math.sqrt(q2))*scale))*1.3));
-                }
-                size=Math.min(size,previousSize);previousSize=size;
-                String label=displayLabel(words.get(i).text());Dimension d=measurer.measure(label,size);
-                while(d.width>rowLimit && size>18) d=measurer.measure(label,--size);
-                if(d.width<=0 || d.height<=0 || d.width>rowLimit) continue;
-                if(!row.isEmpty() && used+22+d.width>rowLimit) {rows.add(row);row=new ArrayList<>();used=0;}
-                row.add(new Placement(label,i+1,size,new Rectangle(0,0,d.width,d.height),color(i,seed)));
-                used+=d.width+(row.size()>1?22:0);
-            }
-            if(!row.isEmpty())rows.add(row);
-            int totalHeight=0;
-            for(List<Placement> rr:rows)totalHeight+=rr.stream().mapToInt(p->p.box().height).max().orElse(0)+18;
-            totalHeight=Math.max(0,totalHeight-18);
-            int y=(height-totalHeight)/2;
-            if(y<FRAME_MARGIN) continue;
-            Rectangle bounds=new Rectangle();
-            for(List<Placement> rr:rows) {
-                int rw=rr.stream().mapToInt(p->p.box().width).sum()+22*(rr.size()-1);
-                int rh=rr.stream().mapToInt(p->p.box().height).max().orElse(0);
-                int x=(width-rw)/2;
-                for(Placement p:rr) {
-                    Rectangle b=new Rectangle(x,y+(rh-p.box().height)/2,p.box().width,p.box().height);
-                    list.add(new Placement(p.text(),p.rank(),p.fontSize(),b,p.color()));
-                    bounds=bounds.isEmpty()?new Rectangle(b):bounds.union(b);x+=b.width+22;
-                }
-                y+=rh+18;
-            }
-            Result r=new Result(List.copyOf(list),bounds,(double)bounds.width*bounds.height/(width*(double)height),words.size()-list.size());
-            if(best==null || r.dropped()<best.dropped())best=r;
+        int prevWidth=-1;
+        for(double scale:new double[]{1.0,1.1,1.2,1.3,1.4,1.5,1.6,1.8}) {
+            Result r=rows(words,width,height,seed,measurer,scale);
+            if(r==null) break;
+            best=wider(best,r);
+            if(r.dropped()>0) break;
+            if(r.bounds().width>=target) return r;
+            if(r.bounds().width<=prevWidth) break;
+            prevWidth=r.bounds().width;
+        }
+        if(best!=null && best.dropped()==0) return best;
+        for(double scale:new double[]{1.0,.88,.76,.64}) {
+            Result r=rows(words,width,height,seed,measurer,scale);
+            if(r==null) continue;
+            if(best==null || r.dropped()<best.dropped()) best=r;
             if(r.dropped()==0) break;
         }
         return best==null?new Result(List.of(),new Rectangle(),0,words.size()):best;
+    }
+    /** 一趟行排；整团竖着放不下时回 null。 */
+    private static Result rows(List<Word> words,int width,int height,long seed,Measurer measurer,double scale) {
+        List<Placement> list=new ArrayList<>();
+        List<List<Placement>> rows=new ArrayList<>();List<Placement> row=new ArrayList<>();
+        int max=words.get(0).count(),min=words.get(words.size()-1).count();
+        int rowLimit=width-2*FRAME_MARGIN;
+        int used=0,previousSize=Math.min(FONT_SIZE_MAX,(int)Math.round(44*scale));
+        for(int i=0;i<words.size();i++) {
+            double q=max==min?.25:(double)(words.get(i).count()-min)/(max-min);
+            int size=Math.min(FONT_SIZE_MAX,Math.max(FONT_SIZE_MIN,(int)Math.round((words.size()==1?40:28+16*Math.sqrt(q))*scale)));
+            if(i==0 && words.size()>1) {
+                double q2=max==min?.25:(double)(words.get(1).count()-min)/(max-min);
+                size=Math.min(size,(int)(Math.max(FONT_SIZE_MIN,Math.round((28+16*Math.sqrt(q2))*scale))*1.3));
+            }
+            size=Math.min(size,previousSize);previousSize=size;
+            String label=displayLabel(words.get(i).text());Dimension d=measurer.measure(label,size);
+            while(d.width>rowLimit && size>FONT_SIZE_MIN) d=measurer.measure(label,--size);
+            if(d.width<=0 || d.height<=0 || d.width>rowLimit) continue;
+            if(!row.isEmpty() && used+22+d.width>rowLimit) {rows.add(row);row=new ArrayList<>();used=0;}
+            row.add(new Placement(label,i+1,size,new Rectangle(0,0,d.width,d.height),color(i,seed)));
+            used+=d.width+(row.size()>1?22:0);
+        }
+        if(!row.isEmpty())rows.add(row);
+        int totalHeight=0;
+        for(List<Placement> rr:rows)totalHeight+=rr.stream().mapToInt(p->p.box().height).max().orElse(0)+18;
+        totalHeight=Math.max(0,totalHeight-18);
+        int y=(height-totalHeight)/2;
+        if(y<FRAME_MARGIN) return null;
+        Rectangle bounds=new Rectangle();
+        for(List<Placement> rr:rows) {
+            int rw=rr.stream().mapToInt(p->p.box().width).sum()+22*(rr.size()-1);
+            int rh=rr.stream().mapToInt(p->p.box().height).max().orElse(0);
+            int x=(width-rw)/2;
+            for(Placement p:rr) {
+                Rectangle b=new Rectangle(x,y+(rh-p.box().height)/2,p.box().width,p.box().height);
+                list.add(new Placement(p.text(),p.rank(),p.fontSize(),b,p.color()));
+                bounds=bounds.isEmpty()?new Rectangle(b):bounds.union(b);x+=b.width+22;
+            }
+            y+=rh+18;
+        }
+        return new Result(List.copyOf(list),bounds,(double)bounds.width*bounds.height/(width*(double)height),words.size()-list.size());
     }
     private static Result place(List<Word> words,int width,int height,long seed,Measurer measurer,double scale) {
         List<Placement> placed = new ArrayList<>();
@@ -135,18 +165,18 @@ final class WordCloudLayout {
         int[] sizes=new int[words.size()];
         for(int i=0;i<sizes.length;i++) {
             double q=max==min?0:(double)(words.get(i).count()-min)/(max-min);
-            sizes[i]=Math.max(18,(int)Math.round((q==0 && max!=min ? 18 : 21+35*Math.pow(q,.60))*scale));
+            sizes[i]=Math.min(FONT_SIZE_MAX,Math.max(FONT_SIZE_MIN,(int)Math.round((q==0 && max!=min ? 18 : 21+35*Math.pow(q,.60))*scale)));
         }
         if(sizes.length>1) sizes[0]=Math.min(sizes[0],(int)(sizes[1]*1.3));
         for(int i=0;i<words.size();i++) {
             int size=sizes[i];
             String label=displayLabel(words.get(i).text());
             Dimension d=measurer.measure(label,size);
-            while(d.width>width-2*FRAME_MARGIN && size>18) d=measurer.measure(label,--size);
+            while(d.width>width-2*FRAME_MARGIN && size>FONT_SIZE_MIN) d=measurer.measure(label,--size);
             if(d.width<=0 || d.height<=0) continue;
             double tx,ty;
             if(i<ANCHORS.length) {tx=width*ANCHORS[i][0];ty=height*ANCHORS[i][1];}
-            else {tx=width*(.10+.80*random.nextDouble());ty=height*(.11+.78*random.nextDouble());}
+            else {tx=width*(.05+.90*random.nextDouble());ty=height*(.11+.78*random.nextDouble());}
             Rectangle best=null;double bestScore=Double.POSITIVE_INFINITY;
             // 遍历二维候选，避免全部词都沿同一条中心螺旋向外挤。
             int ox=random.nextInt(4),oy=random.nextInt(4);
@@ -156,13 +186,13 @@ final class WordCloudLayout {
                     Rectangle box=new Rectangle(x,y,d.width,d.height);
                     if(!fits(box,size,placed)) continue;
                     double cx=box.getCenterX(),cy=box.getCenterY();
-                    // 超椭圆的软边界：利用四角，轮廓仍有收边。
-                    double edge=Math.pow(Math.abs((cx-width*.5)/(width*.46)),4)
+                    // 超椭圆的软边界：横半径放宽，让词往两侧铺；轮廓仍有收边。
+                    double edge=Math.pow(Math.abs((cx-width*.5)/(width*.48)),4)
                         +Math.pow(Math.abs((cy-height*.5)/(height*.45)),4);
                     double target=Math.pow((cx-tx)/width,2)+Math.pow((cy-ty)/height,2);
                     double score=target*(i<10?12:.24)+Math.max(0,edge-.72)*.7;
                     if(i>=10) {
-                        score+=.62*(Math.pow((cx-width*.5)/width,2)+Math.pow((cy-height*.5)/height,2));
+                        score+=.62*Math.pow((cy-height*.5)/height,2)+.38*Math.pow((cx-width*.5)/width,2);
                         // 惩罚孤立词，但不把小词全部拉回中心形成环带。
                         double nearest=Double.POSITIVE_INFINITY;
                         for(Placement p:placed) nearest=Math.min(nearest,boxDistance(box,p.box()));
