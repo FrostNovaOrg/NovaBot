@@ -250,11 +250,24 @@ function renderNotices(session, history) {
   return host;
 }
 
-ask('① 推送记录为空时日志链接 href 恰为全通道串', () => {
+ask('① 推送记录为空时日志链接落在推送栏、带全通道串', () => {
   const host = renderNotices(SESSION, []);
   const link = linkOf(host);
   if (!link) throw new Error('没有「在日志页看全部」链接');
-  eq(link.href, '#/log?chan=' + encodeURIComponent(CHAN), 'href');
+  eq(link.href, '#/log?cat=PUSH&chan=' + encodeURIComponent(CHAN), 'href');
+});
+
+ask('①b 群抽屉的链接落在推送栏而不是全部栏', () => {
+  const host = renderNotices(SESSION, []);
+  const link = linkOf(host);
+  const href = link ? String(link.href) : '';
+  eq({
+    '带上推送大类': href.includes('cat=PUSH'),
+    '带着这个群': href.includes('chan=' + encodeURIComponent(CHAN)),
+  }, {
+    '带上推送大类': true,
+    '带着这个群': true,
+  }, '从群抽屉点过去应落在推送栏——开播下播不属任何群，落进全部栏会被群筛掉');
 });
 
 ask('② 空表提示句恰为本次启动以来那句', () => {

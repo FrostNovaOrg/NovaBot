@@ -1106,7 +1106,8 @@ function sectionNotices(host, user, target, session) {
   const channel = pushChannelOf(session);
   if (channel) {
     const more = el('a', 'lnkbtn');
-    more.href = '#/log?chan=' + encodeURIComponent(channel);
+    // 落在推送栏而不是全部栏：开播、下播记录不属任何群，落进全部栏会被「只看这个群」筛掉
+    more.href = '#/log?cat=PUSH&chan=' + encodeURIComponent(channel);
     more.textContent = '在日志页看全部 →';
     box.appendChild(more);
   }
@@ -1831,12 +1832,11 @@ export async function save() {
     parts.push('本群设置没存上' + (notes.length ? '：' + notes.join('；') : ''));
     say(parts.join(' · '), 'err');
   } else if (!pushOk && stateOk) {
-    if (statePhrase) {
-      say('推送配置没存上（' + statePhrase + '）'
-        + (notes.length ? '：' + notes.join('；') : ''), 'err');
-    } else {
-      say(notes.length ? notes.join('；') : '推送配置没存上', 'err');
-    }
+    // 成的那段与败的那句并列：塞进括号里跟着失败那句走的话，存上的东西会被读成没存上。
+    // 本群设置一处没动时（stateWrote 为 0）不提它——那一段根本没发过请求
+    const parts = ['推送配置没存上' + (notes.length ? '：' + notes.join('；') : '')];
+    if (stateWrote > 0) parts.push('本群设置已存' + (statePhrase ? '（' + statePhrase + '）' : ''));
+    say(parts.join(' · '), 'err');
   } else {
     say('两段都没存上：' + notes.join('；'), 'err');
   }

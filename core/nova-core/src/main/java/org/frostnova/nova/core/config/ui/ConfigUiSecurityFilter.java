@@ -456,12 +456,27 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
         }
 
         response.setContentType(MediaType.TEXT_HTML_VALUE);
+        // 图标只能内联或走 data: URI：这一刻 /config/assets 还关着门，取不到 icon.svg。
+        // 深浅色只看系统（媒体查询），不读浏览器存储——这一页出在登录之前，存的偏好未必是此刻这个人的
         response.getWriter().write("""
                 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>NovaBot 控制台</title>
+                <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%237C5CFF'/%3E%3Cstop offset='1' stop-color='%23FF5F9E'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath fill='url(%23g)' d='M16 4h32a12 12 0 0 1 12 12v18a12 12 0 0 1-12 12H32L20.4 55.4a1.5 1.5 0 0 1-2.4-1.5L20.6 46H16A12 12 0 0 1 4 34V16A12 12 0 0 1 16 4Z'/%3E%3Cpath fill='%23fff' d='M28 11C28 20.8 31.6 25 40 25 31.6 25 28 29.2 28 39 28 29.2 24.4 25 16 25 24.4 25 28 20.8 28 11Z'/%3E%3Cpath fill='%23fff' fill-opacity='.85' d='M45 29.5C45 34.05 46.5 36 50 36 46.5 36 45 37.95 45 42.5 45 37.95 43.5 36 40 36 43.5 36 45 34.05 45 29.5Z'/%3E%3C/svg%3E">
                 <style>body{font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
-                display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f6f7f9;color:#333}
-                div{text-align:center}h1{font-size:20px;margin:0 0 12px}p{color:#888;font-size:14px;margin:0}</style>
-                </head><body><div><h1>无法访问配置界面</h1><p>%s</p></div></body></html>
-                """.formatted(message));
+                display:flex;align-items:center;justify-content:center;height:100vh;margin:0;
+                background:#f6f7f9;color:#333;color-scheme:light dark}
+                div{text-align:center}h1{font-size:20px;margin:12px 0 0}p{color:#888;font-size:14px;margin:12px 0 0}
+                svg.mark{width:56px;height:56px;display:block;margin:0 auto}
+                @media (prefers-color-scheme:dark){body{background:#14121F;color:#ECEAF6}p{color:#9B96B5}}</style>
+                </head><body><div>
+                <svg class="mark" viewBox="0 0 64 64" role="img" aria-label="NovaBot"><defs>
+                <linearGradient id="novaGrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#7C5CFF"/><stop offset="1" stop-color="#FF5F9E"/>
+                </linearGradient></defs>
+                <path fill="url(#novaGrad)" d="M16 4h32a12 12 0 0 1 12 12v18a12 12 0 0 1-12 12H32L20.4 55.4a1.5 1.5 0 0 1-2.4-1.5L20.6 46H16A12 12 0 0 1 4 34V16A12 12 0 0 1 16 4Z"/>
+                <path fill="#fff" d="M28 11C28 20.8 31.6 25 40 25 31.6 25 28 29.2 28 39 28 29.2 24.4 25 16 25 24.4 25 28 20.8 28 11Z"/>
+                <path fill="#fff" fill-opacity=".85" d="M45 29.5C45 34.05 46.5 36 50 36 46.5 36 45 37.95 45 42.5 45 37.95 43.5 36 40 36 43.5 36 45 34.05 45 29.5Z"/>
+                </svg>
+                <h1>无法访问配置界面</h1><p>__MESSAGE__</p></div></body></html>
+                """.replace("__MESSAGE__", message));
     }
 }

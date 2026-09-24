@@ -181,6 +181,55 @@ export function emptyText(state, dayCount) {
 }
 
 /**
+ * 此刻还筛着、能就地清掉的那几项
+ *
+ * 大类与日期不算：药丸就在同一屏上，翻页也不是筛选。只看问题、类型、主播、通道、搜索
+ * 这五项没有随手够得着的关法——从群抽屉带进来「只看这个群」、再切到「直播」时，
+ * 只说一句「清掉筛选试试」的话，看的人读成「直播没记」，也不知道该清哪一项。
+ * @param state 筛选状态
+ * @return [{key, label}]，key 就是筛选状态上那一项的名字，按它清得掉的正是那一项
+ */
+export function blockingFilters(state) {
+  const items = [];
+  if (state.only) items.push({key: 'only', label: '只看问题'});
+  if (state.type) items.push({key: 'type', label: '类型：' + state.type});
+  if (state.streamer) items.push({key: 'streamer', label: '主播：' + state.streamer});
+  if (state.channel) items.push({key: 'channel', label: '通道：' + state.channel});
+  if (state.q) items.push({key: 'q', label: '搜索：' + state.q});
+  return items;
+}
+
+/**
+ * 「直播」栏筛着群时，空因那一句
+ *
+ * 开播、下播记录不属任何群，这一栏筛着群时永远是空的。别的栏筛群不加这句——
+ * 那边筛群是筛得出东西来的，加了会把人指去错的方向。
+ * @param state 筛选状态
+ * @return 那句话；不适用时空串
+ */
+export function liveChannelHint(state) {
+  return state.cat === 'LIVE' && state.channel
+    ? '开播、下播记录不属于任何群，筛着群时这一栏总是空的。'
+    : '';
+}
+
+/**
+ * 空态该怎么说：一句打底、点名挡住的那几项、有时再附一句空因
+ * @param state 筛选状态
+ * @param dayCount 这一天一共有几条（不看筛选）
+ * @return {lead, chips, hint}，chips 同 blockingFilters，hint 同 liveChannelHint
+ */
+export function emptyStateView(state, dayCount) {
+  // 这一天一条都没有时，筛着的那几项不是「挡住的」——清掉它们也长不出记录来
+  const blocking = dayCount ? blockingFilters(state) : [];
+  return {
+    lead: emptyText(state, dayCount),
+    chips: blocking,
+    hint: dayCount ? liveChannelHint(state) : '',
+  };
+}
+
+/**
  * 有记录的那些天里，比这一天更早的头一天
  *
  * 取的是「有记录的前一天」而不是日历上的前一天：留 14 天的机器上，

@@ -14,6 +14,7 @@
 
 import {
   DEFAULT_LIMIT, emptyState, parseLogHash, logHash, timelineQuery, hasFilter, emptyText,
+  blockingFilters, liveChannelHint, emptyStateView,
   olderDay, newerDay, engLevelOf, groupEngLines, engVisible, engSegments,
   engQuery, engAtBottom, engFollowing, engCopyText, engEmptyText,
 } from '../../../main/resources/config-ui/log-model.js';
@@ -134,6 +135,36 @@ eq(emptyText(state({}), 0), '这一天没有记录。', '这一天一条都没�
 eq(emptyText(state({only: true}), 0), '这一天没有记录。', '这一天一条都没有时，先说没记录');
 eq(emptyText(state({only: true}), 12), '没有符合条件的，清掉筛选试试。', '有记录而筛没了');
 eq(emptyText(state({}), 12), '这一天没有记录。', '没筛却没命中只可能是这一天空着');
+
+// ---------- 五b、空态点名挡住的筛选 ----------
+// 从群抽屉带进来「只看这个群」、再切到「直播」：开播下播不属任何群，这一栏必空。
+// 只说「清掉筛选试试」的话，看的人读成「直播没记」，也不知道该清哪一项。
+eq(blockingFilters(state({channel: '群 111'})), [{key: 'channel', label: '通道：群 111'}],
+  '通道筛着：点名它，键就是可就地清掉的那一项');
+eq(blockingFilters(state({cat: 'LIVE', date: '2026-09-01'})), [],
+  '大类与日期不算挡住的那一项——药丸就在同一屏，翻页也不是筛选');
+eq(blockingFilters(state({only: true, type: 'PUSH_SENT', streamer: '甲主播', channel: '群 111', q: '开播'}))
+    .map(item => item.key),
+  ['only', 'type', 'streamer', 'channel', 'q'],
+  '五项同时在时逐项点名，顺序稳定');
+eq(blockingFilters(state({})), [], '什么都没筛时没有要点名的项');
+
+eq(liveChannelHint(state({cat: 'LIVE', channel: '群 111'})),
+  '开播、下播记录不属于任何群，筛着群时这一栏总是空的。',
+  '直播栏筛着群：空因那一句');
+eq(liveChannelHint(state({cat: 'LIVE'})), '', '直播栏没筛群：不加这句');
+eq(liveChannelHint(state({channel: '群 111'})), '', '别的栏筛群：不加这句');
+eq(liveChannelHint(state({})), '', '什么都没筛：不加这句');
+
+const VIEW = emptyStateView(state({cat: 'LIVE', channel: '群 111'}), 12);
+eq(VIEW.chips.map(item => item.key), ['channel'], '空态点名的正是「只看这个群」那一项');
+eq(VIEW.hint, '开播、下播记录不属于任何群，筛着群时这一栏总是空的。',
+  '空态带着直播栏筛群的那句解释');
+const AFTER_ONE = emptyStateView(state({cat: 'LIVE', channel: ''}), 12);
+eq(AFTER_ONE.chips, [], '只清通道这一项之后不再点名它');
+eq(AFTER_ONE.hint, '', '群清掉之后那句解释也跟着收回去');
+eq(VIEW.chips.every(item => Object.hasOwn(state({}), item.key)), true,
+  '每枚芯片的键都在筛选状态上，按它清得掉的正是那一项');
 
 // ---------- 六、日期导航 ----------
 const DAYS = ['2026-09-04', '2026-09-02', '2026-08-30'];
