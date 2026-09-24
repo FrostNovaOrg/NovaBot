@@ -599,6 +599,11 @@ td.act button:hover{color:var(--err)}
 .pill.live{color:var(--live);border-color:var(--live)}
 .pill.warn{color:var(--warn);border-color:var(--warn);background:var(--warnsoft)}
 .pill.ok{color:var(--ok);border-color:var(--ok);background:var(--oksoft)}
+/* 界面主题三态：一排药丸点一下就换，不进改动条 */
+.themechoice{display:flex;gap:8px;padding:4px 0 12px}
+.themechoice .pill{padding:6px 14px;font-size:12.5px;cursor:pointer;font-family:inherit;
+  background:var(--surface)}
+.themechoice .pill.cur{color:var(--accent);border-color:var(--accent);background:var(--soft)}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:5px 14px;font-size:12.5px;margin:8px 0 0}
 .kv dt{color:var(--dim)}
 .kv dd{margin:0;font-variant-numeric:tabular-nums}

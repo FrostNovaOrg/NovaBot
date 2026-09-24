@@ -4,6 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>NovaBot 控制台</title>
+<script>
+  // 界面主题偏好记在本浏览器里。首帧前设好 data-theme，免得先按系统色闪一下再切。
+  // 与 theme.js 同一把键、同一套取值；读不到或读出错一律跟系统。
+  try {
+    var theme = localStorage.getItem('novabot-theme');
+    if (theme === 'dark' || theme === 'light') {
+      document.documentElement.setAttribute('data-theme', theme);
+    }
+  } catch (e) {}
+</script>
 <link rel="icon" href="/config/assets/icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/config/assets/app.css">
 </head>
