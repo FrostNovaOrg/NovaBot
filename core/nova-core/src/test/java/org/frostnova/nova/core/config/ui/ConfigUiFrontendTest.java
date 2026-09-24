@@ -69,11 +69,39 @@ class ConfigUiFrontendTest {
     /**
      * 界面主题偏好那一把键：唯一允许写进浏览器存储的开口
      * <p>
-     * 主题偏好不是秘密，要的就是刷新后还在。键名刻意避开任何像口令的词，
-     * 这一道缝只许走 THEME_KEY 一把键、只许出现在 theme.js 与 index.html 的 head 脚本里，
-     * 且那一行只许碰 localStorage——sessionStorage 与 console. 仍然一律不许。
+     * 主题偏好不是秘密，要的就是刷新后还在。键名刻意避开任何像口令的词。
+     * 这一道缝只许走 THEME_KEY 一把键，且每一次 localStorage 出现都得是下面三种合法调用之一——
+     * 注释里写成调用的样子不算（判在挖掉注释、留下字符串的码上），一行里另有一次写入也不跟着放行。
+     * <p>
+     * {@code getItem(主题键)} 只许在核心 theme.js、index.html、login.html；
+     * {@code removeItem(主题键)} 与 {@code setItem(主题键, 值)} 只许在核心 theme.js，
+     * 值只许 THEME_LIGHT、THEME_DARK、'light'、'dark' 四个字面。
+     * sessionStorage 与 console. 仍然一律不许。
      */
     private static final String THEME_KEY = "novabot-theme";
+
+    /** 主题键：常量名，或它的字符串原文 */
+    private static final String THEME_KEY_TOKEN =
+            "(?:THEME_KEY|'" + THEME_KEY + "'|\"" + THEME_KEY + "\")";
+
+    private static final Pattern THEME_GET_CALL = Pattern.compile(
+            "localStorage\\.getItem\\s*\\(\\s*" + THEME_KEY_TOKEN + "\\s*\\)");
+
+    private static final Pattern THEME_REMOVE_CALL = Pattern.compile(
+            "localStorage\\.removeItem\\s*\\(\\s*" + THEME_KEY_TOKEN + "\\s*\\)");
+
+    private static final Pattern THEME_SET_CALL = Pattern.compile(
+            "localStorage\\.setItem\\s*\\(\\s*" + THEME_KEY_TOKEN
+                    + "\\s*,\\s*(?:THEME_LIGHT|THEME_DARK|'light'|\"light\"|'dark'|\"dark\")\\s*\\)");
+
+    private static final Pattern LOCAL_STORAGE = Pattern.compile("localStorage");
+
+    /**
+     * 字符串（含模板串）或注释。交替里字符串在前：引号里的 {@code //} 不是注释
+     */
+    private static final Pattern STRING_OR_COMMENT = Pattern.compile(
+            "'(?:[^'\\\\\\n]|\\\\.)*'|\"(?:[^\"\\\\\\n]|\\\\.)*\"|`[^`\\\\]*(?:\\\\.[^`\\\\]*)*`|//[^\\n]*|/\\*.*?\\*/",
+            Pattern.DOTALL);
 
     private static final Pattern HTML_COMMENT = Pattern.compile("<!--.*?-->", Pattern.DOTALL);
 
@@ -392,42 +420,75 @@ class ConfigUiFrontendTest {
      * 或调试时留下一行打印。两种改动都不会让任何功能变坏，因此靠人复查是拦不住的。
      * <p>
      * 界面主题偏好是唯一开了口的那一份（见 {@link #THEME_KEY}）：它不是秘密，
-     * 而且只许在 theme.js 与 index.html 的 head 脚本里、带着那一把键碰 localStorage。
+     * 而且每一次 localStorage 出现都得是那三种合法调用之一。
+     * 扫描名单按目录取：核心 config-ui/ 下全部 .js 与全部 .html，加上插件页目录下的 .js。
      */
     @Test
     @DisplayName("口令明文不进浏览器存储、地址栏与日志")
     void issuedTokenNeverLeavesMemory() {
         List<String> bad = new ArrayList<>();
 
-        Map<String, String> scan = new LinkedHashMap<>(sources());
-        try {
-            scan.put("index.html",
-                    Files.readString(frontendDir().resolve("index.html"), StandardCharsets.UTF_8));
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
+        // 插件同名文件不许顶替核心那份去沾 theme.js 的放行：键上带前缀，与核心那份分开
+        Map<String, String> scan = new LinkedHashMap<>(credentialScanSources());
 
         scan.forEach((name, text) -> {
             String[] raw = text.split("\n", -1);
-            String[] lines = codeOnly(htmlCommentsBlanked(name, text)).split("\n", -1);
-            for (int i = 0; i < lines.length; i++) {
+            // 放行认挖掉注释、留下字符串的码：注释里写成调用的样子不算
+            String[] kept = commentsBlanked(name, text).split("\n", -1);
+            String[] code = codeOnly(htmlCommentsBlanked(name, text)).split("\n", -1);
+            for (int i = 0; i < kept.length; i++) {
                 for (String sink : FORBIDDEN_SINKS) {
-                    if (!lines[i].contains(sink)) continue;
-                    if (sink.equals("localStorage") && themeStorageLine(name, raw[i])) continue;
-                    bad.add(name + ":" + (i + 1) + "  " + lines[i].strip());
+                    if (sink.equals("localStorage")) {
+                        if (kept[i].contains(sink) && !everyLocalStorageIsLegal(name, kept[i])) {
+                            bad.add(name + ":" + (i + 1) + "  " + raw[i].strip());
+                        }
+                        continue;
+                    }
+                    if (code[i].contains(sink)) {
+                        bad.add(name + ":" + (i + 1) + "  " + raw[i].strip());
+                    }
                 }
 
                 // 地址栏那一条只查持有明文的那个模块：别处的 location.reload() 是正当用法，
                 // 一刀切会逼出一串豁免，而豁免多了这条判据就形同虚设
                 if (name.equals("tokens.js")
-                        && Pattern.compile("(?<![\\w$.])(location|history)(?![\\w$])").matcher(lines[i]).find()) {
-                    bad.add(name + ":" + (i + 1) + "  " + lines[i].strip());
+                        && Pattern.compile("(?<![\\w$.])(location|history)(?![\\w$])").matcher(code[i]).find()) {
+                    bad.add(name + ":" + (i + 1) + "  " + raw[i].strip());
                 }
             }
         });
 
         assertTrue(bad.isEmpty(), "只读口令的明文只许留在内存里，以下位置会把它带出去（或为此开了口子）:\n  "
                 + String.join("\n  ", bad));
+    }
+
+    /**
+     * 凭据这道守护的扫描名单
+     * <p>
+     * 核心 config-ui/ 下全部 .js 与全部 .html 按目录取、不手列：今天即 index.html 与 login.html，
+     * 以后新加的自动在内。登录页是安全过滤器开门前就吐出来的那一张，最可能写出口令，必须在册。
+     * <p>
+     * 插件页目录只收 .js（照旧）。那里头的 {@code napcat-bootstrap.html} 按设计把 NapCat 自己的
+     * 凭据写进 localStorage 给 NapCat 界面用，不归这道守护管——不要为了「名单完整」把它加进来。
+     */
+    private Map<String, String> credentialScanSources() {
+        Map<String, String> scan = new LinkedHashMap<>(coreSources());
+        try (Stream<Path> files = Files.list(frontendDir())) {
+            files.filter(p -> p.getFileName().toString().endsWith(".html"))
+                    .sorted()
+                    .forEach(p -> {
+                        try {
+                            scan.put(p.getFileName().toString(),
+                                    Files.readString(p, StandardCharsets.UTF_8));
+                        } catch (IOException e) {
+                            throw new UncheckedIOException(e);
+                        }
+                    });
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        pageSources().forEach((name, text) -> scan.put("plugin:" + name, text));
+        return scan;
     }
 
     /**
@@ -439,14 +500,56 @@ class ConfigUiFrontendTest {
     }
 
     /**
-     * 主题偏好那把键所在的 localStorage 行：唯一放行的写入口子
+     * 注释挖成空白、字符串原样留下
      * <p>
-     * 认的是<b>原行</b>而不是挖空后的代码——键名本身是字符串字面量，
-     * 挖空之后那一行就只剩 {@code localStorage.getItem()}，与随手写的存储读取分不开。
+     * 放行认的是这一步之后的码：注释里写成调用的样子不算数，
+     * 而键名本身是字符串字面量，得留着才认得出 {@code getItem('novabot-theme')}。
+     * 挖成等长空白、换行原样留下，行号才与原文件对齐（见 {@link #blankKeepingNewlines}）。
      */
-    private static boolean themeStorageLine(String name, String rawLine) {
-        if (!name.equals("theme.js") && !name.equals("index.html")) return false;
-        return rawLine.contains(THEME_KEY) || rawLine.contains("THEME_KEY");
+    private static String commentsBlanked(String name, String text) {
+        String out = htmlCommentsBlanked(name, text);
+        Matcher m = STRING_OR_COMMENT.matcher(out);
+        int last = 0;
+        StringBuilder b = new StringBuilder(out.length());
+        while (m.find()) {
+            b.append(out, last, m.start());
+            String g = m.group();
+            if (g.startsWith("//") || g.startsWith("/*")) {
+                b.append(blankKeepingNewlines(g));
+            } else {
+                b.append(g);
+            }
+            last = m.end();
+        }
+        b.append(out.substring(last));
+        return b.toString();
+    }
+
+    /**
+     * 一行里 localStorage 的每一次出现都得是合法调用；有一处不是就整行不过
+     */
+    private static boolean everyLocalStorageIsLegal(String name, String line) {
+        Matcher occ = LOCAL_STORAGE.matcher(line);
+        while (occ.find()) {
+            if (!legalThemeCallAt(name, line.substring(occ.start()))) return false;
+        }
+        return true;
+    }
+
+    /**
+     * 主题偏好那把键所在的 localStorage 调用：唯一放行的口子
+     * <p>
+     * 认调用形状（键作第一参数、写入值只许四个字面），从 {@code localStorage} 那一处往右看，
+     * 一次只认一回——同一行里还有别的写入不跟着放行。
+     * 写与清只许核心 theme.js（插件页目录里同名文件不沾光）；读另许 index.html 与 login.html 的 head 脚本。
+     */
+    private static boolean legalThemeCallAt(String name, String rest) {
+        boolean coreThemeJs = name.equals("theme.js");
+        boolean mayRead = coreThemeJs || name.equals("index.html") || name.equals("login.html");
+        if (THEME_GET_CALL.matcher(rest).lookingAt()) return mayRead;
+        if (!coreThemeJs) return false;
+        return THEME_REMOVE_CALL.matcher(rest).lookingAt()
+                || THEME_SET_CALL.matcher(rest).lookingAt();
     }
 
     @Test
