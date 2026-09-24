@@ -56,6 +56,14 @@ final class PainterPlaceholder {
     }
 
     /**
+     * 大航海标志位的占位图
+     */
+    static BufferedImage guardIcon() {
+        return ImageUtil.maskToCircle(gradient(
+                BilibiliLiveReportPainter.GUARD_ICON_SIZE, BilibiliLiveReportPainter.GUARD_ICON_SIZE));
+    }
+
+    /**
      * 画一张斜向渐变
      */
     private static BufferedImage gradient(int width, int height) {
