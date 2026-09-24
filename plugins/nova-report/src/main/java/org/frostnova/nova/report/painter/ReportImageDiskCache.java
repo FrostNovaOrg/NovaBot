@@ -39,7 +39,8 @@ import java.util.stream.Stream;
  * 先把整份内容写入临时文件并刷盘，再改成正式名字；读的人只打开正式名字，写到一半的文件读不到。
  * <p>
  * 取失败的不放进来。超过 {@link #RETENTION} 没再被读到的删掉：读到时刷新修改时间，
- * 程序起来时清一次，之后每天清一次。头像不走这里。
+ * 刷新失败也不影响这次命中。程序起来时清一次，之后每天清一次。
+ * 目录本身若是指向别处的链接，不清理，免得删到别的地方。头像不走这里。
  */
 @Slf4j
 @NovaComponent
@@ -104,29 +105,48 @@ public class ReportImageDiskCache {
     }
 
     /**
-     * 读一张已经落盘的图，并把它的修改时间改成现在
+     * 读一张已经落盘的图。读到就用；刷新修改时间失败也不影响这次命中。
+     * 内容不是一张完整的图、或读的过程出错，都当没有
      * @param requestUrl 实际请求的地址
-     * @return 读到的图；没有、或内容不是一张完整的图时为空
+     * @return 读到的图；没有、或读不出来时为空
      */
     Optional<BufferedImage> read(String requestUrl) {
         if (directory == null || requestUrl == null || requestUrl.isBlank()) {
             return Optional.empty();
         }
-        Path path = file(requestUrl);
-        if (!Files.isRegularFile(path)) {
-            return Optional.empty();
-        }
         try {
+            Path path = file(requestUrl);
+            if (!Files.isRegularFile(path)) {
+                return Optional.empty();
+            }
             BufferedImage image = ImageIO.read(path.toFile());
             if (image == null) {
                 return Optional.empty();
             }
-            Files.setLastModifiedTime(path, FileTime.from(Instant.now()));
+            rememberRead(path);
             return Optional.of(image);
-        } catch (IOException e) {
+        } catch (Exception e) {
             log.debug("读不到已留下的图标: {}", e.getMessage());
             return Optional.empty();
         }
+    }
+
+    /**
+     * 记下这张图刚被读过。改不了修改时间也不影响这次命中
+     */
+    private void rememberRead(Path path) {
+        try {
+            touchLastRead(path);
+        } catch (Exception e) {
+            log.debug("没能记下这张图标刚被读过，这次仍用读到的图: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 把这张图的修改时间改成现在
+     */
+    void touchLastRead(Path path) throws IOException {
+        Files.setLastModifiedTime(path, FileTime.from(Instant.now()));
     }
 
     /**
@@ -182,28 +202,37 @@ public class ReportImageDiskCache {
     }
 
     /**
-     * 按修改时间清理
+     * 按修改时间清理。目录本身若是指向别处的链接，这一次不清理，免得删到别的地方的文件
      */
     public void sweep() {
-        if (directory == null || !Files.isDirectory(directory)) {
+        if (directory == null) {
             return;
         }
-        Instant cutoff = Instant.now().minus(RETENTION);
-        try (Stream<Path> listed = Files.list(directory)) {
-            for (Path path : listed.toList()) {
-                String name = path.getFileName().toString();
-                if (!Files.isRegularFile(path) || !isCacheFile(name)) {
-                    continue;
-                }
-                try {
-                    if (Files.getLastModifiedTime(path).toInstant().isBefore(cutoff)) {
-                        Files.deleteIfExists(path);
+        try {
+            if (Files.isSymbolicLink(directory)) {
+                log.warn("图标缓存目录是指向别处的链接，这次不清理");
+                return;
+            }
+            if (!Files.isDirectory(directory)) {
+                return;
+            }
+            Instant cutoff = Instant.now().minus(RETENTION);
+            try (Stream<Path> listed = Files.list(directory)) {
+                for (Path path : listed.toList()) {
+                    String name = path.getFileName().toString();
+                    if (!Files.isRegularFile(path) || !isCacheFile(name)) {
+                        continue;
                     }
-                } catch (IOException e) {
-                    log.warn("清理本机图标时没能处理 {}: {}", name, e.getMessage());
+                    try {
+                        if (Files.getLastModifiedTime(path).toInstant().isBefore(cutoff)) {
+                            Files.deleteIfExists(path);
+                        }
+                    } catch (Exception e) {
+                        log.warn("清理本机图标时没能处理 {}: {}", name, e.getMessage());
+                    }
                 }
             }
-        } catch (IOException e) {
+        } catch (Exception e) {
             log.warn("清理本机图标缓存失败: {}", e.getMessage());
         }
     }
