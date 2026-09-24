@@ -8,6 +8,7 @@ import org.frostnova.nova.core.analytics.LiveDetail;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.model.LiveGap;
 import org.frostnova.nova.core.analytics.LiveGiftTotal;
+import org.frostnova.nova.core.lang.StringUtil;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
 import org.frostnova.nova.core.model.UserScore;
 import org.frostnova.nova.core.service.DefaultLiveDataService;
@@ -42,9 +43,10 @@ import java.util.Optional;
  * {@code BilibiliLiveReportReplayPainterTest} 断言整趟重画与接口<b>零交互</b>。
  *
  * <h2>与当时那张图的差别</h2>
- * 封面、头像、榜单头像用占位图；「本场变化」那一块<b>整块不画</b>——
+ * 封面、头像、榜单头像用占位图。礼物图标与大航海标志：这台机器上留着的就用那一份，
+ * 没有则画占位，两种都不向外取。「本场变化」那一块<b>整块不画</b>——
  * 粉丝数的现值当时是现取的，明细里只有开播那一刻的快照，
- * 拿快照减快照会得出「本场 +0」，那是一句假话。<b>其余每一块都与当时一致</b>。
+ * 拿快照减快照会得出「本场 +0」，那是一句假话。<b>数据面其余每一块都与当时一致</b>。
  *
  * <h2>不是 Bean</h2>
  * 每重画一场就要一份只装着那一场的数据服务，因此每场 new 一个，由
@@ -68,7 +70,17 @@ public class BilibiliLiveReportReplayPainter extends BilibiliLiveReportPainter {
     public BilibiliLiveReportReplayPainter(NovaCommonPainterFactory factory, BilibiliApiUtil api,
                                            FontUtil fontUtil, NovaBilibiliProperties properties,
                                            LiveRoomInfoHistory roomInfoHistory, LiveDetail detail) {
-        super(factory, api, replayData(detail), fontUtil, properties, roomInfoHistory);
+        this(factory, api, fontUtil, properties, roomInfoHistory, detail, ReportImageDiskCache.none());
+    }
+
+    /**
+     * @param images 礼物图标与大航海标志的本机缓存，重画只读不写
+     */
+    public BilibiliLiveReportReplayPainter(NovaCommonPainterFactory factory, BilibiliApiUtil api,
+                                           FontUtil fontUtil, NovaBilibiliProperties properties,
+                                           LiveRoomInfoHistory roomInfoHistory, LiveDetail detail,
+                                           ReportImageDiskCache images) {
+        super(factory, api, replayData(detail), fontUtil, properties, roomInfoHistory, images);
         this.detail = detail;
         this.banner = PainterPlaceholder.banner();
         this.face = PainterPlaceholder.face();
@@ -108,14 +120,29 @@ public class BilibiliLiveReportReplayPainter extends BilibiliLiveReportPainter {
         return rankingFace;
     }
 
+    /**
+     * 只读本机。命中就用留着的那张，没有则画占位，不向外取
+     */
     @Override
     protected BufferedImage guardIcon(String url) {
+        if (StringUtil.isNotBlank(url)) {
+            BufferedImage cached = readDiskImage(guardFetchUrl(url));
+            if (cached != null) {
+                return cached;
+            }
+        }
         return guardMark;
     }
 
+    /**
+     * 只读本机。命中就用留着的那张，没有返回 null，调用方画占位。不向外取
+     */
     @Override
     protected BufferedImage giftIcon(String url) {
-        return null;
+        if (StringUtil.isBlank(url)) {
+            return null;
+        }
+        return readDiskImage(giftFetchUrl(url));
     }
 
     /**

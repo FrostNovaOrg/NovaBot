@@ -92,6 +92,7 @@ class ReportPainterBeanResolutionTest {
         beans.registerSingleton("bilibiliApiUtil", mock(BilibiliApiUtil.class));
         beans.registerSingleton("liveRoomInfoHistory", mock(LiveRoomInfoHistory.class));
         beans.registerSingleton("liveDataService", mock(LiveDataService.class));
+        beans.registerSingleton("reportImageDiskCache", new ReportImageDiskCache(coreProperties));
         beans.registerSingleton("novaMessageSender", mock(NovaMessageSender.class));
         beans.registerSingleton("revenueVisibilityService", mock(RevenueVisibilityService.class));
         beans.registerSingleton("abstractDataSource", mock(AbstractDataSource.class));
