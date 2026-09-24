@@ -5,23 +5,35 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
   <title>NovaBot 控制台</title>
+  <script>
+    // 界面主题偏好记在本浏览器里。首帧前设好 data-theme，免得先按系统色闪一下再切。
+    // 与 theme.js 同一把键、同一套取值；读不到或读出错一律跟系统。
+    try {
+      var theme = localStorage.getItem('novabot-theme');
+      if (theme === 'dark' || theme === 'light') {
+        document.documentElement.setAttribute('data-theme', theme);
+      }
+    } catch (e) {}
+  </script>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%237C5CFF'/%3E%3Cstop offset='1' stop-color='%23FF5F9E'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath fill='url(%23g)' d='M16 4h32a12 12 0 0 1 12 12v18a12 12 0 0 1-12 12H32L20.4 55.4a1.5 1.5 0 0 1-2.4-1.5L20.6 46H16A12 12 0 0 1 4 34V16A12 12 0 0 1 16 4Z'/%3E%3Cpath fill='%23fff' d='M28 11C28 20.8 31.6 25 40 25 31.6 25 28 29.2 28 39 28 29.2 24.4 25 16 25 24.4 25 28 20.8 28 11Z'/%3E%3Cpath fill='%23fff' fill-opacity='.85' d='M45 29.5C45 34.05 46.5 36 50 36 46.5 36 45 37.95 45 42.5 45 37.95 43.5 36 40 36 43.5 36 45 34.05 45 29.5Z'/%3E%3C/svg%3E" type="image/svg+xml">
   <style>
     /* 这张页面不取任何外部资源：未登录时它由安全过滤器直接吐出来，此刻 /config/assets 下的
        样式与脚本都还关着门。因此设计 token 在这里再定义一次，取值与 app.css 里那一份相同。
-       两处对不上时改的是 app.css 那一份，这里跟着改——那边是全站的真源。 */
+       两处对不上时改的是 app.css 那一份，这里跟着改——那边是全站的真源。
+       三态结构同样照 app.css：亮色 :root、跟系统的暗色（排除手动浅色）、手动暗色、手动浅色。 */
     :root{
+      color-scheme:light dark;
       --ground:#F5F4FA; --surface:#FFFFFF; --line:#E4E2EE; --text:#1C1A2E; --dim:#6E6A86;
       --accent:#7A4DFF; --accent2:#E0479E; --warn:#F2A93B; --err:#EF4A5C;
       --soft:rgba(122,77,255,.08); --warnsoft:rgba(242,169,59,.14);
       --shadow:0 1px 2px rgba(28,26,46,.04), 0 8px 24px rgba(28,26,46,.06);
-      --brand-fill:linear-gradient(120deg,var(--accent),var(--accent2));
       --on-accent:#FFFFFF;
       --font:-apple-system,"PingFang SC","HarmonyOS Sans SC","MiSans",system-ui,sans-serif;
       --mono:"SF Mono",Menlo,"JetBrains Mono",ui-monospace,monospace;
       --r-card:14px; --r-ctl:8px;
     }
     @media (prefers-color-scheme:dark){
-      :root{
+      :root:not([data-theme="light"]){
         --ground:#14121F; --surface:#1D1A2B; --line:#2E2A42; --text:#ECEAF6; --dim:#9B96B5;
         --accent:#A38BFF; --accent2:#F06AB8; --warn:#F7BC5B; --err:#FF6B7A;
         --soft:rgba(163,139,255,.14); --warnsoft:rgba(247,188,91,.16);
@@ -29,6 +41,15 @@
         --on-accent:#14121F;
       }
     }
+    :root[data-theme="dark"]{
+      color-scheme:dark;
+      --ground:#14121F; --surface:#1D1A2B; --line:#2E2A42; --text:#ECEAF6; --dim:#9B96B5;
+      --accent:#A38BFF; --accent2:#F06AB8; --warn:#F7BC5B; --err:#FF6B7A;
+      --soft:rgba(163,139,255,.14); --warnsoft:rgba(247,188,91,.16);
+      --shadow:0 0 0 1px rgba(255,255,255,.05);
+      --on-accent:#14121F;
+    }
+    :root[data-theme="light"]{color-scheme:light}
 
     * { box-sizing: border-box }
     body {
@@ -45,10 +66,9 @@
     section#agreement { width: 560px }
     .brand { display: flex; align-items: center; gap: 9px; margin-bottom: 4px }
     .brand-mark {
-      width: 26px; height: 26px; border-radius: var(--r-ctl); background: var(--brand-fill);
-      color: #fff; display: flex; align-items: center; justify-content: center;
-      font-weight: 700; font-size: 14px;
+      width: 26px; height: 26px; border-radius: var(--r-ctl); overflow: hidden; flex: none;
     }
+    .brand-mark svg { width: 100%; height: 100%; display: block }
     h1 { margin: 0; font-size: 16px; font-weight: 700 }
     p.sub { margin: 0 0 20px; font-size: 12.5px; color: var(--dim) }
     label { display: block; margin-bottom: 6px; font-size: 12.5px; color: var(--dim) }
@@ -120,8 +140,23 @@
   </style>
 </head>
 <body>
+<!-- 产品图标只画一次，三屏各用一份引用。图形与 config-ui/icon.svg 同一套轮廓 -->
+<svg width="0" height="0" aria-hidden="true" style="position:absolute"><defs>
+  <linearGradient id="novaGrad" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#7C5CFF"/>
+    <stop offset="1" stop-color="#FF5F9E"/>
+  </linearGradient>
+  <symbol id="novabot-mark" viewBox="0 0 64 64">
+    <path fill="url(#novaGrad)"
+          d="M16 4h32a12 12 0 0 1 12 12v18a12 12 0 0 1-12 12H32L20.4 55.4a1.5 1.5 0 0 1-2.4-1.5L20.6 46H16A12 12 0 0 1 4 34V16A12 12 0 0 1 16 4Z"/>
+    <path fill="#fff"
+          d="M28 11C28 20.8 31.6 25 40 25 31.6 25 28 29.2 28 39 28 29.2 24.4 25 16 25 24.4 25 28 20.8 28 11Z"/>
+    <path fill="#fff" fill-opacity=".85"
+          d="M45 29.5C45 34.05 46.5 36 50 36 46.5 36 45 37.95 45 42.5 45 37.95 43.5 36 40 36 43.5 36 45 34.05 45 29.5Z"/>
+  </symbol>
+</defs></svg>
 <section id="agreement" class="hidden">
-  <div class="brand"><span class="brand-mark">N</span><h1>NovaBot 使用协议</h1></div>
+  <div class="brand"><span class="brand-mark"><svg viewBox="0 0 64 64" role="img" aria-label="NovaBot"><use href="#novabot-mark"/></svg></span><h1>NovaBot 使用协议</h1></div>
   <p class="sub">进入控制台之前，请先读一遍下面的约定</p>
 
   <!-- 正文由 /api/auth/agreement 下发后填入，页面里不留第二份副本 -->
@@ -132,7 +167,7 @@
 </section>
 
 <div class="card hidden" id="login">
-  <div class="brand"><span class="brand-mark">N</span><h1>NovaBot 控制台</h1></div>
+  <div class="brand"><span class="brand-mark"><svg viewBox="0 0 64 64" role="img" aria-label="NovaBot"><use href="#novabot-mark"/></svg></span><h1>NovaBot 控制台</h1></div>
   <p class="sub">先证明你是这台机器的主人</p>
 
   <!-- 锁定横条。文案含实值剩余时间，由 lockText 现算，见 login-model.js -->
@@ -188,7 +223,7 @@
   能做的是重设，而重设的前提是先证明你对这台机器有完全控制权：启动日志只有那样的人读得到。
 -->
 <div class="card hidden" id="forgot-panel">
-  <div class="brand"><span class="brand-mark">N</span><h1>忘记密码</h1></div>
+  <div class="brand"><span class="brand-mark"><svg viewBox="0 0 64 64" role="img" aria-label="NovaBot"><use href="#novabot-mark"/></svg></span><h1>忘记密码</h1></div>
   <p class="sub">密码没有找回，只能重设</p>
   <ol>
     <li>上服务器，把配置项 <code>novabot.core.config-ui.auth.operator-token</code> 改成

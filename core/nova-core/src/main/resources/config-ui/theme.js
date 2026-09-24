@@ -51,7 +51,8 @@ export function applyTheme(value) {
   const v = value === THEME_LIGHT || value === THEME_DARK ? value : THEME_AUTO;
   try {
     if (v === THEME_AUTO) localStorage.removeItem(THEME_KEY);
-    else localStorage.setItem(THEME_KEY, v);
+    else if (v === THEME_DARK) localStorage.setItem(THEME_KEY, THEME_DARK);
+    else localStorage.setItem(THEME_KEY, THEME_LIGHT);
   } catch (e) {
     // 存不下不挡换肤
   }
