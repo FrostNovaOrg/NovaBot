@@ -111,7 +111,7 @@ class OneBotEmptyTokenLoggingTest {
         try {
             OneBotWebsocketService service = new OneBotWebsocketService(
                     mock(TaskScheduler.class), mock(ThreadPoolTaskExecutor.class),
-                    new OneBotAdapterPluginProperties(), new OneBotConnectionState(),
+                    new OneBotAdapterPluginProperties(), mock(OneBotHttpService.class), new OneBotConnectionState(),
                     mock(ApplicationEventPublisher.class));
 
             service.start(senderWithBlankTokens());

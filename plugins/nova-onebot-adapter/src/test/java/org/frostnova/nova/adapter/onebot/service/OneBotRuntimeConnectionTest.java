@@ -117,10 +117,10 @@ class OneBotRuntimeConnectionTest {
                 new Class[]{OneBotHttpAdapter.class},
                 new OneBotHttpAdapterProxy(new HttpUtil(executor, new RestTemplate(), new LogProperties()), state));
 
-        websocketService = new OneBotWebsocketService(scheduler, executor, properties, state,
-                mock(ApplicationEventPublisher.class));
         httpService = new OneBotHttpService(scheduler, executor, properties, adapter,
                 new OneBotMessageConverter(), state);
+        websocketService = new OneBotWebsocketService(scheduler, executor, properties, httpService, state,
+                mock(ApplicationEventPublisher.class));
         directory = new OneBotTargetDirectory(adapter, httpService, properties);
 
         senderService = new NovaSenderService(new NovaCoreProperties());

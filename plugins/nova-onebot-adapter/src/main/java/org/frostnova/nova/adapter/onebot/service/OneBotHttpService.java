@@ -121,16 +121,21 @@ public class OneBotHttpService {
 
             state.httpOk(senderName, "v" + versionInfo.getString("app_version")
                     + "，登录账号 " + loginInfo.getString("nickname") + "(" + loginInfo.getLong("user_id") + ")");
-
-            if (properties.getDetect().isEnableHttpDetect()) {
-                startDetect(sender);
-            }
+            // 账号在不在线看 get_status 的 online，与定时体检同一个口径：
+            // 只看取不取得到登录信息的话，被踢下线后一重连就会被误判回在线
+            recordAccountFromStatus(senderName, http.getStatus(sender, new JSONObject()));
         } catch (HttpClientErrorException.Forbidden e) {
             log.error("{} 的 OneBot HTTP Token 配置不正确, 将无法推送消息, 请检查 Token 配置", senderName, e);
             state.httpFailed(senderName, OneBotConnectionState.Kind.TOKEN_INVALID, "Token 不正确");
         } catch (Exception e) {
             log.error("{} 的 OneBot HTTP 服务不可用, 请检查配置和服务状态", senderName, e);
             state.httpFailed(senderName, OneBotConnectionState.Kind.UNREACHABLE, e.getMessage());
+        }
+
+        // 体检失败也要挂定时体检。实现没起来、没登录（NapCat 停在扫码页时不开端口）都会让
+        // 这一次失败，而它们恰恰最需要盯着：之后起来、登录、掉线都得跟着看。
+        if (properties.getDetect().isEnableHttpDetect()) {
+            startDetect(sender);
         }
     }
 
@@ -322,12 +327,21 @@ public class OneBotHttpService {
     }
 
     /**
-     * HTTP 服务可用性检测
+     * HTTP 服务可用性检测，同一平台任何时候至多一份
+     * <p>
+     * 「停旧挂新」必须一步做完：两处同时触发体检时，若是先停再挂，
+     * 两边都会停掉对方那份、又各挂一份，先挂的那份从此没人能停。
+     * 已有任务就不重挂：重连比体检周期还勤时，重挂会让定时体检一次都跑不到。
      * @param sender OneBot 推送平台信息
      */
-    private void startDetect(OneBotSender sender) {
+    private synchronized void startDetect(OneBotSender sender) {
+        String senderName = sender.getName();
+        ScheduledFuture<?> existing = detectTasks.get(senderName);
+        if (existing != null && !existing.isCancelled()) {
+            return;
+        }
+        stopDetect(senderName);
         int detectInterval = properties.getDetect().getHttpDetectInterval();
-        stopDetect(sender.getName());
 
         ScheduledFuture<?> task = taskScheduler.scheduleAtFixedRate(() -> executor.submit(() -> {
             try {
@@ -340,16 +354,12 @@ public class OneBotHttpService {
                 } else {
                     state.httpFailed(sender.getName(), OneBotConnectionState.Kind.SERVICE_ABNORMAL, "实现自身状态异常");
                 }
-
-                Boolean online = status.getBoolean("online");
-                if (online == null) {
-                    // 并非所有实现都上报该字段，取不到时不要臆断成掉线
-                    state.accountUnknown(sender.getName(), "该 OneBot 实现未上报登录状态");
-                } else if (online) {
-                    state.accountOnline(sender.getName(), "在线");
-                } else {
-                    state.accountOffline(sender.getName(), "QQ 账号已掉线");
-                }
+                recordAccountFromStatus(sender.getName(), status);
+            } catch (HttpClientErrorException.Forbidden e) {
+                // Token 不对不是连不上：分不清的话，连上之后会被这里盖成「连不上」
+                log.warn("{} 的 OneBot HTTP Token 配置不正确: {}", sender.getName(), e.getMessage());
+                state.httpFailed(sender.getName(), OneBotConnectionState.Kind.TOKEN_INVALID, "Token 不正确");
+                state.accountUnknown(sender.getName(), "Token 不正确，无法判断");
             } catch (Exception e) {
                 log.warn("{} 的 OneBot HTTP 服务不可用: {}", sender.getName(), e.getMessage());
                 state.httpFailed(sender.getName(), OneBotConnectionState.Kind.UNREACHABLE, e.getMessage());
@@ -371,6 +381,25 @@ public class OneBotHttpService {
         ScheduledFuture<?> previous = detectTasks.remove(platformName);
         if (previous != null) {
             previous.cancel(false);
+        }
+    }
+
+    /**
+     * 账号在不在线照 {@code get_status} 的 online 判，体检与定时检测同一个口径
+     * <p>
+     * 只看取不取得到登录信息的话，被踢下线后一重连就会被误判回在线
+     * @param senderName 推送平台名
+     * @param status {@code get_status} 的返回
+     */
+    private void recordAccountFromStatus(String senderName, JSONObject status) {
+        Boolean online = status.getBoolean("online");
+        if (online == null) {
+            // 并非所有实现都上报该字段，取不到时不要臆断成掉线
+            state.accountUnknown(senderName, "该 OneBot 实现未上报登录状态");
+        } else if (online) {
+            state.accountOnline(senderName, "在线");
+        } else {
+            state.accountOffline(senderName, "QQ 账号已掉线");
         }
     }
 }

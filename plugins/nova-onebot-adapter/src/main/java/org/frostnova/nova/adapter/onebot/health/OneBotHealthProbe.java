@@ -20,7 +20,7 @@ import java.util.Optional;
  * 定时检测完成。
  * <p>
  * 判据有四项：HTTP 通不通、账号在不在线、Websocket 在不在、以及<b>调用有多快</b>。
- * 最后一项是 2026-08-10 那次故障补上的——当时接口每次要 2~11 秒，前三项全绿了十个小时，
+ * 最后一项是后来补上的——接口每次要 2~11 秒时，前三项全绿了十个小时，
  * 而带图的推送一直在丢。「通不通」答不了「够不够用」。
  */
 @NovaComponent
@@ -178,7 +178,7 @@ public class OneBotHealthProbe implements HealthProbe {
     private String advise(String sender, OneBotConnectionState.Status status) {
         return switch (status.kind()) {
             case TOKEN_INVALID -> "的 HTTP Token 与 OneBot 实现中配置的不一致，请核对 one-bot-http-token";
-            case UNREACHABLE -> "的 OneBot HTTP 服务连不上，请确认 NapCat 等实现已启动，且 one-bot-address 与 one-bot-http-port 填写正确";
+            case UNREACHABLE -> "的 OneBot HTTP 服务连不上，请确认 NapCat 等实现已启动，且 one-bot-address 与 one-bot-http-port 填写正确；用 NapCat 时，它没登录（停在扫码页）也不开端口，先看它是否在等扫码";
             case SERVICE_ABNORMAL -> "的 OneBot 实现自身状态异常，通常是 QQ 账号已掉线，请检查该实现的登录状态";
             case UNKNOWN -> "尚未完成连接检查，请稍候刷新";
             default -> "连接异常：" + status.detail();
