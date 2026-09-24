@@ -102,6 +102,21 @@ class OneBotHealthProbeTest {
     }
 
     @Test
+    @DisplayName("连不上的建议要点明 NapCat 没登录时也不开端口，先看它是否在等扫码")
+    void unreachableAdviceMentionsNapCatQrPage() {
+        OneBotConnectionState state = new OneBotConnectionState();
+        state.httpFailed("qq", OneBotConnectionState.Kind.UNREACHABLE, "连接被拒绝");
+
+        HealthStatus status = probe(state).check();
+
+        assertEquals("unreachable", status.reason());
+        // 停在扫码页那几天，实现进程与端口配置都查不出毛病，漏的是「没登录根本不听端口」这一层
+        assertTrue(status.advice().contains("没登录"), "没点出「没登录」，照建议查配置查不出扫码页: " + status.advice());
+        assertTrue(status.advice().contains("扫码"), "没点出「扫码」，看不出第一步是去看是不是在等扫码: " + status.advice());
+        assertTrue(status.advice().contains("one-bot-address"), "阳性对照: 原来那句查地址端口的仍在: " + status.advice());
+    }
+
+    @Test
     @DisplayName("Token 不正确应给出针对性的建议, 而非笼统的连不上")
     void distinguishesTokenError() {
         OneBotConnectionState state = new OneBotConnectionState();

@@ -49,6 +49,13 @@ public class OneBotWebsocketService {
 
     private final OneBotAdapterPluginProperties properties;
 
+    /**
+     * HTTP 体检
+     * <p>
+     * 连上那一刻要立刻补做一次：刚扫码登录完的人看着没变的旧读数，会以为扫码没成。
+     */
+    private final OneBotHttpService httpService;
+
     private final OneBotConnectionState state;
 
     /**
@@ -72,10 +79,11 @@ public class OneBotWebsocketService {
     private final Set<String> noHeartbeatWarned = ConcurrentHashMap.newKeySet();
 
     @Autowired
-    public OneBotWebsocketService(TaskScheduler taskScheduler, @Qualifier("oneBotThreadPool") ThreadPoolTaskExecutor executor, OneBotAdapterPluginProperties properties, OneBotConnectionState state, ApplicationEventPublisher publisher) {
+    public OneBotWebsocketService(TaskScheduler taskScheduler, @Qualifier("oneBotThreadPool") ThreadPoolTaskExecutor executor, OneBotAdapterPluginProperties properties, OneBotHttpService httpService, OneBotConnectionState state, ApplicationEventPublisher publisher) {
         this.taskScheduler = taskScheduler;
         this.executor = executor;
         this.properties = properties;
+        this.httpService = httpService;
         this.state = state;
         this.publisher = publisher;
     }
@@ -401,7 +409,12 @@ public class OneBotWebsocketService {
             }
 
             service.state.websocketConnected(sender.getName());
-            executor.submit(() -> log.info("已连接到 {} 的 OneBot Websocket 服务", sender.getName()));
+            // 连上那一刻就补做一次体检，不等下一个周期：刚扫码登录完的人
+            // 看着没变的旧读数，会以为扫码没成
+            executor.submit(() -> {
+                service.httpService.check(sender);
+                log.info("已连接到 {} 的 OneBot Websocket 服务", sender.getName());
+            });
         }
 
         /**
@@ -444,6 +457,12 @@ public class OneBotWebsocketService {
                                 if ("meta_event".equals(rawMessage.getString("post_type"))
                                         && "heartbeat".equals(rawMessage.getString("meta_event_type"))) {
                                     handleHeartbeat(rawMessage);
+                                }
+
+                                // 被踢下线时实现会发一条通知。接口与进程都还在，靠轮询最长要等一个检测周期才发现
+                                if ("notice".equals(rawMessage.getString("post_type"))
+                                        && "bot_offline".equals(rawMessage.getString("notice_type"))) {
+                                    handleBotOffline(rawMessage);
                                 }
 
                                 if ("message".equals(rawMessage.getString("post_type"))
@@ -519,6 +538,20 @@ public class OneBotWebsocketService {
             } else {
                 service.state.accountOffline(sender.getName(), "QQ 账号已掉线");
             }
+        }
+
+        /**
+         * 处理被踢下线的通知
+         * <p>
+         * 走的是与定时体检查到 {@code online=false} 同一个状态入口，健康页、时间线与告警照现有路子反应。
+         * 原因写进状态说明：光说「掉线」，看的人不知道该重新扫码还是去查网络。
+         * @param rawMessage 通知消息
+         */
+        private void handleBotOffline(JSONObject rawMessage) {
+            String reason = rawMessage.getString("reason");
+            String detail = StringUtil.isBlank(reason) ? "QQ 账号已掉线" : "QQ 账号已掉线（" + reason + "）";
+            log.warn("{} 的 QQ 账号被踢下线: {}", sender.getName(), detail);
+            service.state.accountOffline(sender.getName(), detail);
         }
 
         /**
