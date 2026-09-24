@@ -66,7 +66,7 @@ class ReportImageDiskCacheTest {
             "https://i0.hdslb.com/bfs/live/99887766554433221100ffeeddccbbaa99887766.png";
 
     private static final String AVATAR_URL =
-            "https://i0.hdslb.com/bfs/face/11223344556677889900aabbccddeeff11223344.jpg";
+            "https://i0.hdslb.com/bfs/face/00112233445566778899aabbccddeeff00112233.jpg";
 
     private static final Color GIFT_COLOR = new Color(255, 0, 17);
 
