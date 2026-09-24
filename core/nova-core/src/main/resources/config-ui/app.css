@@ -382,11 +382,6 @@ button.danger{background:var(--err);color:var(--paper);border:none;padding:8px 1
   border-radius:var(--r-ctl);cursor:pointer;font-size:14px;font-family:inherit}
 button.danger:hover{filter:brightness(1.05)}
 button.danger:disabled{opacity:.45;cursor:not-allowed}
-/* 协议正文照原样显示：换行与空行是文案的一部分，挤成一坨就没人读了。
-   与登录页那份同一副形状，长文案给一个滚动区 */
-.agreement-full{margin-top:10px;padding:12px 14px;max-height:38vh;overflow-y:auto;
-  white-space:pre-wrap;font-size:12.5px;line-height:1.8;color:var(--dim);
-  background:var(--ground);border:1px solid var(--line);border-radius:var(--r-ctl)}
 table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--line);
   border-radius:var(--r-card)}
 th,td{padding:12px 14px;height:44px;text-align:left;border-bottom:1px solid var(--line);font-size:13px}
@@ -399,6 +394,8 @@ tr:last-child td{border-bottom:none}
 .card .l{color:var(--dim);font-size:12px;margin-top:2px}
 .hint{color:var(--dim);font-size:12.5px;margin:0 0 14px}
 .empty{color:var(--dim);text-align:center;padding:40px 0}
+.empty-chips{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-top:12px}
+.empty-hint{margin:12px 0 0;font-size:13px}
 .health{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);
   box-shadow:var(--shadow);margin-bottom:18px}
 /* 必须 wrap：建议文字用 flex-basis:100% 独占一行，不换行的话它会挤在同一行里，

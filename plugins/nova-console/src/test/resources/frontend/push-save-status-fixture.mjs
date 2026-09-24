@@ -294,6 +294,28 @@ await ask('⑦ 推送成、本群败：说出推送那句，也说本群没存�
   }, '本群失败要提');
 });
 
+await ask('⑧ 推送败、本群成：与推送失败那句并列写明本群设置已存', async () => {
+  if (!push || !draft) throw new Error('产品码没载入，无从量起');
+  await fresh();
+  push.pushEntries()[0].targets[0].enabled = false;
+  draft.setRevenueDraft(TARGET, true, false);
+  datasourceReply = {success: false, message: '推送配置有误，已拒绝保存'};
+  stateReply = {success: true, message: '「甲」的金额已设为可见'};
+  await push.save();
+  const said = statusText();
+  same({
+    '说了推送没存上': said.includes('推送'),
+    '写明本群设置已存': said.includes('本群设置已存'),
+    '两句并列': said.includes(' · '),
+    '也带着服务端那句': said.includes('金额已设为可见'),
+  }, {
+    '说了推送没存上': true,
+    '写明本群设置已存': true,
+    '两句并列': true,
+    '也带着服务端那句': true,
+  }, '一段成一段败时，成的那段不能被括号埋掉');
+});
+
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);
 process.exit(failures.length ? 1 : 0);

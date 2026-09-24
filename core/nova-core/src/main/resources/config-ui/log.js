@@ -12,7 +12,7 @@
 
 import {$, api, clock, el, esc, phrase, say, today, term} from './core.js';
 import {
-  ENG_LEVELS, emptyText, engAtBottom, engCopyText, engEmptyText, engFollowing, engQuery,
+  ENG_LEVELS, emptyStateView, engAtBottom, engCopyText, engEmptyText, engFollowing, engQuery,
   engSegments, hasFilter, logHash, newerDay, olderDay, parseLogHash, timelineQuery,
 } from './log-model.js';
 
@@ -276,7 +276,39 @@ function renderEvents(events, append) {
   if (!append) box.innerHTML = '';
 
   if (!events.length && !append) {
-    box.innerHTML = '<div class="empty">' + esc(emptyText(filters, dayCount())) + '</div>';
+    const view = emptyStateView(filters, dayCount());
+    const wrap = el('div', 'empty');
+    const lead = el('div');
+    lead.textContent = view.lead;
+    wrap.appendChild(lead);
+
+    // 筛没了才点名：这一天一条都没有时，清掉筛选也长不出记录来。
+    // 每枚芯片只清它自己那一项，「全部清掉」与上面那颗按钮同一条路
+    if (dayCount() && hasFilter(filters)) {
+      const row = el('div', 'empty-chips');
+      for (const item of view.chips) {
+        const chip = el('button', 'pill lgpill');
+        chip.type = 'button';
+        chip.textContent = item.label + ' ✕';
+        chip.addEventListener('click', () => changed({[item.key]: item.key === 'only' ? false : ''}));
+        row.appendChild(chip);
+      }
+      const all = el('button', 'pill lgpill');
+      all.type = 'button';
+      all.textContent = '全部清掉';
+      all.addEventListener('click', () => changed({
+        only: false, cat: '', type: '', streamer: '', channel: '', q: '',
+      }));
+      row.appendChild(all);
+      wrap.appendChild(row);
+    }
+
+    if (view.hint) {
+      const hint = el('p', 'empty-hint');
+      hint.textContent = view.hint;
+      wrap.appendChild(hint);
+    }
+    box.appendChild(wrap);
     return;
   }
 
