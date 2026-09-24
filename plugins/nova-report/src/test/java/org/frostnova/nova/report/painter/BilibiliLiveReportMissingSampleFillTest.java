@@ -2,6 +2,7 @@ package org.frostnova.nova.report.painter;
 
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
+import org.frostnova.nova.bilibili.model.BilibiliLiveMetric;
 import org.frostnova.nova.bilibili.model.BilibiliLiveReportOptions;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.config.NovaCoreProperties;
@@ -39,7 +40,8 @@ import static org.mockito.Mockito.when;
  * <p>
  * 在线人数是瞬时量：B 站推一条记一条、按分钟取最大，没推的那一分钟没有键。
  * 把没键的列画成 0，折线会在「平台没推送」的那几分钟跌到地板上——
- * 读图的人会以为那会儿直播间没人。累加量（弹幕、礼物等）相反：
+ * 读图的人会以为那会儿直播间没人。看过人数同样「推一条记一条」，
+ * 只升不降的线跌到 0 只可能是没采到。累加量（弹幕、礼物等）相反：
  * 没消息就是真 0，补值反而会把冷场画热闹。
  * <p>
  * 另一格钉住：升级后旧配置里留着的已下线开关，只是没人读的多余键，
@@ -133,17 +135,10 @@ class BilibiliLiveReportMissingSampleFillTest {
         danmu.put(START + 8 * MINUTE, 11.0);
 
         long end = START + 11 * MINUTE;
-        boolean[] missing = BilibiliLiveReportPainter.gapColumns(List.of(), START,
-                BilibiliLiveReportPainter.bucketCount(START, end), COLUMNS);
-
-        double[] onlineValues = BilibiliLiveReportPainter.resample(online, START, end, COLUMNS);
-        boolean[] onlineSampled = BilibiliLiveReportPainter.sampledColumns(online, START, end, COLUMNS);
-        BilibiliLiveReportPainter.fillMissingSamples(onlineValues, onlineSampled, missing, true);
-
-        double[] danmuValues = BilibiliLiveReportPainter.resample(danmu, START, end, COLUMNS);
-        boolean[] danmuSampled = BilibiliLiveReportPainter.sampledColumns(danmu, START, end, COLUMNS);
-        // 累加量走 false：没消息就是真 0，不补
-        BilibiliLiveReportPainter.fillMissingSamples(danmuValues, danmuSampled, missing, false);
+        double[] onlineValues = BilibiliLiveReportPainter.curveColumnValues(
+                BilibiliLiveMetric.ONLINE_COUNT, online, START, end, COLUMNS, List.of());
+        double[] danmuValues = BilibiliLiveReportPainter.curveColumnValues(
+                BilibiliLiveMetric.DANMU_COUNT, danmu, START, end, COLUMNS, List.of());
 
         // 夹在样本之间：线性插值，落在左右样本之间、不为 0
         assertBetween(onlineValues[3], 100.0, 130.0, 3);
@@ -166,6 +161,69 @@ class BilibiliLiveReportMissingSampleFillTest {
         assertEquals(160.0, onlineValues[11], 1e-9, "末样本之后的列应取最近样本的值");
 
         // 阴性对照：累加量缺的列仍是 0
+        assertEquals(0.0, danmuValues[0], 1e-9, "弹幕数缺的分钟仍为 0");
+        assertEquals(0.0, danmuValues[1], 1e-9, "弹幕数缺的分钟仍为 0");
+        assertEquals(0.0, danmuValues[3], 1e-9, "弹幕数缺的分钟仍为 0");
+        assertEquals(0.0, danmuValues[4], 1e-9, "弹幕数缺的分钟仍为 0");
+        assertEquals(0.0, danmuValues[6], 1e-9, "弹幕数缺的分钟仍为 0");
+        assertEquals(0.0, danmuValues[7], 1e-9, "弹幕数缺的分钟仍为 0");
+        assertEquals(0.0, danmuValues[9], 1e-9, "弹幕数缺的分钟仍为 0");
+        assertEquals(5.0, danmuValues[2], 1e-9, "样本列取值应原样保留");
+    }
+
+    /**
+     * 看过人数缺的列落在左右样本之间，同一场里弹幕缺的分钟仍是 0
+     * <p>
+     * 看过人数是「推一条记一条」的累计量，只升不降——线跌到 0 只可能是那几分钟
+     * 没采到样本。补法与在线人数同一套。样本同样打在第 2、5、8 列：
+     * <ul>
+     *   <li>第 0、1 列在第一个样本之前 → 取最近那个样本（第 2 列）的值</li>
+     *   <li>第 3、4 列夹在样本之间 → 线性插值</li>
+     *   <li>第 6、7 列夹在样本之间 → 线性插值</li>
+     *   <li>第 9～11 列在最后一个样本之后 → 取最近那个样本（第 8 列）的值</li>
+     * </ul>
+     * 同一场的弹幕序列走同一出口：缺的列仍是 0（阴性对照）。
+     */
+    @Test
+    @DisplayName("看过人数缺的分钟落在左右样本之间、不为 0；同场弹幕缺的分钟仍为 0")
+    void watchedFillsWhileDanmuStaysZero() {
+        Map<Long, Double> watched = new LinkedHashMap<>();
+        watched.put(START + 2 * MINUTE, 100.0);
+        watched.put(START + 5 * MINUTE, 130.0);
+        watched.put(START + 8 * MINUTE, 160.0);
+
+        Map<Long, Double> danmu = new LinkedHashMap<>();
+        danmu.put(START + 2 * MINUTE, 5.0);
+        danmu.put(START + 5 * MINUTE, 8.0);
+        danmu.put(START + 8 * MINUTE, 11.0);
+
+        long end = START + 11 * MINUTE;
+        double[] watchedValues = BilibiliLiveReportPainter.curveColumnValues(
+                BilibiliLiveMetric.WATCHED_COUNT, watched, START, end, COLUMNS, List.of());
+        double[] danmuValues = BilibiliLiveReportPainter.curveColumnValues(
+                BilibiliLiveMetric.DANMU_COUNT, danmu, START, end, COLUMNS, List.of());
+
+        // 夹在样本之间：线性插值，落在左右样本之间、不为 0
+        assertBetween(watchedValues[3], 100.0, 130.0, 3);
+        assertBetween(watchedValues[4], 100.0, 130.0, 4);
+        assertBetween(watchedValues[6], 130.0, 160.0, 6);
+        assertBetween(watchedValues[7], 130.0, 160.0, 7);
+
+        // 样本列本身不许被动过
+        assertEquals(100.0, watchedValues[2], 1e-9, "样本列取值应原样保留");
+        assertEquals(130.0, watchedValues[5], 1e-9, "样本列取值应原样保留");
+        assertEquals(160.0, watchedValues[8], 1e-9, "样本列取值应原样保留");
+
+        // 第一个样本之前：取最近样本的值
+        assertEquals(100.0, watchedValues[0], 1e-9, "首样本之前的列应取最近样本的值");
+        assertEquals(100.0, watchedValues[1], 1e-9, "首样本之前的列应取最近样本的值");
+
+        // 最后一个样本之后：取最近样本的值
+        assertEquals(160.0, watchedValues[9], 1e-9, "末样本之后的列应取最近样本的值");
+        assertEquals(160.0, watchedValues[10], 1e-9, "末样本之后的列应取最近样本的值");
+        assertEquals(160.0, watchedValues[11], 1e-9, "末样本之后的列应取最近样本的值");
+
+        // 阴性对照：同场弹幕缺的列仍是 0
         assertEquals(0.0, danmuValues[0], 1e-9, "弹幕数缺的分钟仍为 0");
         assertEquals(0.0, danmuValues[1], 1e-9, "弹幕数缺的分钟仍为 0");
         assertEquals(0.0, danmuValues[3], 1e-9, "弹幕数缺的分钟仍为 0");
