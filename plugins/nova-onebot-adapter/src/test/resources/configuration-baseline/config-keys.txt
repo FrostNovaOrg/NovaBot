@@ -1,6 +1,6 @@
 novabot.adapter.onebot.alert.num|java.lang.Long|<null>|接收告警的群号或用户号，改完立即生效，不必重启
 novabot.adapter.onebot.alert.platform|java.lang.String||接收告警的推送平台名，留空则不通过机器人告警 改完立即生效，不必重启。
-novabot.adapter.onebot.alert.type|java.lang.Integer|0|接收告警的目标类型：填 1 发到群，填 0 发给好友。 不要填 2。填了告警会被直接丢掉，而且不留痕迹。 这和推送页里推送目标的「群／好友」是同一套数字：1 是群，0 是好友。 改完立即生效，不必重启。
+novabot.adapter.onebot.alert.type|java.lang.Integer|0|接收告警的目标类型：填 1 发到群，填 0 发给好友。 不要填 2。填了告警发不出去，只会在日志里报一条错。 这和推送页里推送目标的「群／好友」是同一套数字：1 是群，0 是好友。 改完立即生效，不必重启。
 novabot.adapter.onebot.base-url|java.lang.String|/onebot|OneBot 推送接口统一前缀
 novabot.adapter.onebot.detect.enable-http-detect|java.lang.Boolean|true|是否启用 HTTP 服务可用性检测 关闭后运行状态页只能显示启动时那一次检查的结果，OneBot 实现中途挂掉不会被察觉， 表现为「消息就是发不出去且无人告知」。检测本身只是一次轻量接口调用，默认开启。
 novabot.adapter.onebot.detect.enable-websocket-detect|java.lang.Boolean|true|是否启用 Websocket 存活检测 长连接可能在 TCP 层看似存活却已收不到任何数据，仅靠连接状态判断不出来， 需借助「多久没收到心跳」来发现。默认开启。
