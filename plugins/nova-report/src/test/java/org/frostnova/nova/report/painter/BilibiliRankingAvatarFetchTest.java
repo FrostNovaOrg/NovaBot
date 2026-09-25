@@ -67,7 +67,9 @@ class BilibiliRankingAvatarFetchTest {
     private static final Color AVATAR_GREEN = new Color(40, 200, 40);
 
     /**
-     * 那一张永远不回的头像卡着不放时为 true；放手后它算「取到了」
+     * 那一张永远不回的头像卡着不放时为 true
+     * <p>
+     * 进门时还挂着的那一次才算「卡住的那一回」，放手后才进门的那次直接算取到了
      */
     private final AtomicBoolean hanging = new AtomicBoolean(true);
 
@@ -257,12 +259,16 @@ class BilibiliRankingAvatarFetchTest {
     }
 
     /**
-     * 造一页连号用户，第二十五名那张头像永远不回
+     * 造一页连号用户，排头那张头像永远不回
+     * <p>
+     * 「永远不回」的那张放进第一批：线程一批一批地取，它排在后面批次时开取的时刻正压在
+     * 整图那条三秒预算的线上——进门早于放手是「永远不回」，晚于放手就成了「回得慢、落进缓存」，
+     * 同一格会摆出两个故事。放进第一批则一进门就取，卡住的那一次确定落在第一回里。
      */
     private static List<UserScore> rankingWithFaces(int count) {
         List<UserScore> rows = new ArrayList<>();
         for (int i = 1; i <= count; i++) {
-            String suffix = i == 25 ? "-hang" : "";
+            String suffix = i == 1 ? "-hang" : "";
             rows.add(new UserScore((long) i, "观众" + String.format("%02d", i),
                     "https://pic.example/avatar" + i + suffix + ".jpg", count - i + 1));
         }
