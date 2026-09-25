@@ -169,3 +169,44 @@ export function effectOf(effect) {
   const immediate = effect === 'IMMEDIATE';
   return {immediate, text: immediate ? '立即生效' : '重启生效'};
 }
+
+/**
+ * 目录里该亮哪一组。
+ *
+ * 看得见的起点从顶栏下沿算，顶栏盖住的那一截不算。顶栏高度由调用方从页面量好传进来。
+ * 点左侧菜单时，点中的组会被送到顶栏下沿，这时亮它，而不是还藏在顶栏底下的上一组。
+ * 页面还能往下滚、并且已经滚到最底时，最后一组往往比视口矮，它的顶到不了顶栏下沿，这时亮最后一组。
+ * 一屏就放得下，或者还没滚到底，仍亮看得见的最上面那一组。
+ * @param {Array<{id: string, top: number, bottom: number}>} groups 文档坐标
+ * @param {number} viewportTop 视口上沿的文档坐标，含被顶栏盖住的那一截
+ * @param {number} viewportHeight 视口高度
+ * @param {number} [headerHeight] 顶栏高度；不传或不是正数时按没有顶栏算
+ * @param {number} [pageHeight] 文档高度；不传时按最后一组的底边算
+ * @return {string} 组 id；一组都看不见时为空串
+ */
+export function currentGroupId(groups, viewportTop, viewportHeight, headerHeight, pageHeight) {
+  if (!Array.isArray(groups) || !(viewportHeight > 0)) return '';
+  const header = typeof headerHeight === 'number' && headerHeight > 0 ? headerHeight : 0;
+  const visibleTop = viewportTop + header;
+  const viewBottom = viewportTop + viewportHeight;
+  let chosen = '';
+  let chosenTop = Infinity;
+  let last = null;
+  for (const group of groups) {
+    if (!group || typeof group.top !== 'number' || typeof group.bottom !== 'number') continue;
+    if (!(group.bottom > group.top)) continue;
+    if (!last || group.bottom >= last.bottom) last = group;
+    if (group.bottom <= visibleTop || group.top >= viewBottom) continue;
+    if (group.top < chosenTop) {
+      chosenTop = group.top;
+      chosen = group.id || '';
+    }
+  }
+  const page = typeof pageHeight === 'number' && pageHeight > 0 ? pageHeight : (last ? last.bottom : 0);
+  const canScroll = page > viewportHeight;
+  const atBottom = viewportTop + viewportHeight >= page - 1;
+  if (canScroll && atBottom && last && last.bottom > visibleTop && last.top < viewBottom) {
+    return last.id || '';
+  }
+  return chosen;
+}
