@@ -1,4 +1,4 @@
-package org.frostnova.nova.report;
+package org.frostnova.nova.console;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -39,8 +39,10 @@ import static org.junit.jupiter.api.Assertions.fail;
  * 真正决定运行期行为的是 {@code target/classes} 下的那一份，所以量的是它。
  *
  * <h2>为什么住在这个模块</h2>
- * 它要同时看见五个插件模块的 {@code target/classes}，因此只能跑在 reactor 的最后一个模块上。
- * 换句话说，单独跑本类（而不是整盘跑）时若别的模块还没构建过，这一格会红在「产物不见了」，
+ * 它要同时看见五个插件模块的 {@code target/classes}，因此只能跑在构建次序排在所有插件之后的那个模块里。
+ * 现在是 nova-console：它以 test 档依赖着其余四个插件模块，reactor 因而把它排在最后。
+ * 本类要换住处，得换到同样排在所有插件之后的模块，不然一到干净构建就红在「产物不见了」。
+ * 单独跑本类（而不是整盘跑）时若别的模块还没构建过，同样红在「产物不见了」，
  * 那是它该有的样子——没有产物就等于没有读数。
  *
  * <h2>分母不手写</h2>
