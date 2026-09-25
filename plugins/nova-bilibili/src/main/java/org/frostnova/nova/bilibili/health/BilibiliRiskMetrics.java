@@ -207,10 +207,12 @@ public class BilibiliRiskMetrics {
                 overflows.get(kind).incrementAndGet();
             }
         }
+        // 只计数、没带样本的那次不占调试日志的行：平时调用方传 null 是常例，
+        // 照打就是几千行「…: null」，把真带上下文的那几行淹了。计数照记，见上文。
         if (detail != null && !detail.isBlank()) {
             lastDetails.put(kind, detail);
+            log.debug("记录风控指标 {}: {}", kind.getLabel(), detail);
         }
-        log.debug("记录风控指标 {}: {}", kind.getLabel(), detail);
     }
 
     /**

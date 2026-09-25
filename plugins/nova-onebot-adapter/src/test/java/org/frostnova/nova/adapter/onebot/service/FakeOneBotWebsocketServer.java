@@ -53,7 +53,15 @@ final class FakeOneBotWebsocketServer implements AutoCloseable {
     private volatile boolean closed;
 
     FakeOneBotWebsocketServer() throws IOException {
-        server = new ServerSocket(0, 16, InetAddress.getLoopbackAddress());
+        this(0);
+    }
+
+    /**
+     * 指定端口起——重连那条路要「先连不上、随后这个端口上才有服务」，
+     * 端口必须两次一样
+     */
+    FakeOneBotWebsocketServer(int port) throws IOException {
+        server = new ServerSocket(port, 16, InetAddress.getLoopbackAddress());
         Thread acceptor = new Thread(this::acceptLoop, "fake-onebot-ws");
         acceptor.setDaemon(true);
         acceptor.start();

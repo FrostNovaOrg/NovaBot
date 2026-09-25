@@ -161,6 +161,11 @@ public class OneBotWebsocketService {
 
     /**
      * 连接到 OneBot Websocket 服务
+     * <p>
+     * 连不上的时候日志要按量级合并：退避封顶 60 秒之后重连是每分钟一轮，每轮照打
+     * 「准备连接」「连接地址」加一行失败，一小时就是一百八十多行同样的话，
+     * 而排障真正要的只有「现在连不上」和「什么时候恢复的」。
+     * 合并口径见 {@link #shouldLogRetryFailure}。
      * @param connection 这一代连接
      */
     private void connect(Connection connection) {
@@ -168,9 +173,18 @@ public class OneBotWebsocketService {
         executor.submit(() -> {
             int retryCount = 0;
             int retryInterval = 1;
+            // 这一段重连从什么时候起断着。连上了要说得出断了多久
+            Instant downSince = Instant.now();
+            // 连接地址每轮都是同一个，只在第一次占一行
+            boolean addressLogged = false;
+            // 不可用那条的堆栈只在第一次带；后面每轮都带整段栈，是刷屏的另一半
+            boolean failureStackLogged = false;
             while (!connection.retired) {
-                log.info("准备连接 {} 的 OneBot Websocket 服务", sender.getName());
-                log.info("{} 的 OneBot Websocket 连接地址: ws://{}:{}/", sender.getName(), sender.getOneBotAddress(), sender.getOneBotWebsocketPort());
+                log.debug("准备连接 {} 的 OneBot Websocket 服务", sender.getName());
+                if (!addressLogged) {
+                    log.info("{} 的 OneBot Websocket 连接地址: ws://{}:{}/", sender.getName(), sender.getOneBotAddress(), sender.getOneBotWebsocketPort());
+                    addressLogged = true;
+                }
 
                 CompletableFuture<WebSocketSession> sessionFuture = null;
                 try {
@@ -187,6 +201,11 @@ public class OneBotWebsocketService {
 
                     if (handler.awaitConnection()) {
                         sessionFuture.get();
+                        // 第一次就连上说明没断过，谈不上「恢复」
+                        if (retryCount > 0) {
+                            log.info("{} 的 OneBot Websocket 连接已恢复: 中断了 {}, 重试 {} 次后连上",
+                                    sender.getName(), formatSilence(Duration.between(downSince, Instant.now())), retryCount);
+                        }
                         break;
                     } else {
                         throw new TimeoutException();
@@ -199,15 +218,27 @@ public class OneBotWebsocketService {
 
                     retryCount++;
                     retryInterval = Math.min(retryInterval * 2, 60);
+                    String elapsed = formatSilence(Duration.between(downSince, Instant.now()));
 
                     if (e instanceof TimeoutException) {
-                        log.warn("连接 {} 的 OneBot Websocket 服务超时, 将在 {} 秒后进行第 {} 次重试", sender.getName(), retryInterval, retryCount);
+                        if (shouldLogRetryFailure(retryCount)) {
+                            log.warn("连接 {} 的 OneBot Websocket 服务超时, 已连续失败 {} 次、持续 {}, 将在 {} 秒后进行第 {} 次重试",
+                                    sender.getName(), retryCount, elapsed, retryInterval, retryCount);
+                        }
                         state.websocketDisconnected(sender.getName(), "连接超时，正在重试（第 " + retryCount + " 次）");
                         // 该 Future 的任务就运行在当前线程上，以 true 取消会把自己的中断标志置位，
                         // 使随后的退避等待立刻抛出 InterruptedException，退化为满核空转的重试循环
                         sessionFuture.cancel(false);
                     } else {
-                        log.error("{} 的 OneBot Websocket 服务不可用, 请检查配置和服务状态, 将在 {} 秒后进行第 {} 次重试", sender.getName(), retryInterval, retryCount, e);
+                        String message = "{} 的 OneBot Websocket 服务不可用, 请检查配置和服务状态, 已连续失败 {} 次、持续 {}, 将在 {} 秒后进行第 {} 次重试";
+                        if (shouldLogRetryFailure(retryCount)) {
+                            if (failureStackLogged) {
+                                log.error(message, sender.getName(), retryCount, elapsed, retryInterval, retryCount);
+                            } else {
+                                log.error(message, sender.getName(), retryCount, elapsed, retryInterval, retryCount, e);
+                                failureStackLogged = true;
+                            }
+                        }
                         state.websocketDisconnected(sender.getName(), "连接失败，正在重试（第 " + retryCount + " 次）: " + e.getMessage());
                     }
 
@@ -223,6 +254,32 @@ public class OneBotWebsocketService {
                 }
             }
         });
+    }
+
+    /**
+     * 这一轮的失败要不要占工程日志的一行
+     * <p>
+     * 前三轮照打：排障要先看得见「连不上」，以及它长什么样（超时还是不可用）。
+     * 还没失败过（0）不报。
+     * 之后只在连续失败满 10、100、1000… 次时再报一声，并且每次都写清
+     * 已连续失败几次、持续多久。退避封顶之后重连是每分钟一轮，按轮数报就是
+     * 每分钟一行同样的话，把要看的那几行淹了。
+     * @param consecutiveFailures 连续失败了几轮，从 1 数起
+     * @return 这一轮要不要报
+     */
+    static boolean shouldLogRetryFailure(int consecutiveFailures) {
+        return consecutiveFailures > 0
+                && (consecutiveFailures <= 3 || isPowerOfTen(consecutiveFailures));
+    }
+
+    private static boolean isPowerOfTen(int value) {
+        if (value <= 0) {
+            return false;
+        }
+        while (value % 10 == 0) {
+            value /= 10;
+        }
+        return value == 1;
     }
 
     /**
