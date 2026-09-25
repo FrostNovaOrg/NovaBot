@@ -123,6 +123,9 @@ function field(box, label, name, opt) {
   }
   input.value = valueOf(name);
   input.setAttribute('aria-label', label);
+  // 口令框不认 autocomplete=off，浏览器仍会填入已存的登录口令
+  if (o.autocomplete) input.autocomplete = o.autocomplete;
+  if (o.inputName) input.name = o.inputName;
   wrap.appendChild(input);
 
   if (o.note) {
@@ -456,9 +459,11 @@ export function alertCards() {
   const mailCustom = el('div', 'al-cus');
   const mailPreset = presetField(mail.body, Object.keys(MAIL_PRESETS).concat(CUSTOM));
   const to = field(mail.body, '收件邮箱', 'novabot.core.mail.default-to', {ph: '收告警的邮箱'});
-  field(mail.body, '发件账号', 'spring.mail.username', {ph: '发信的那个邮箱'});
+  field(mail.body, '发件账号', 'spring.mail.username',
+    {ph: '发信的那个邮箱', autocomplete: 'off', inputName: 'sender-account'});
   field(mail.body, '发件授权码', 'spring.mail.password',
-    {type: 'password', ph: '留空＝保持原值', note: '多数邮箱要的是「授权码」，在邮箱设置里单独生成。'});
+    {type: 'password', ph: '留空＝保持原值', note: '多数邮箱要的是「授权码」，在邮箱设置里单独生成。',
+      autocomplete: 'new-password', inputName: 'sender-code'});
   mail.body.appendChild(mailCustom);
   const host = field(mailCustom, '服务器', 'spring.mail.host', {ph: '如 smtp.qq.com'});
   const port = field(mailCustom, '端口', 'spring.mail.port', {type: 'number', ph: '465'});
