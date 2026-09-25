@@ -30,6 +30,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>
  * 计数只在内存里：重启后重新计数会让当天的额度略微算多，但这是**保守方向**的误差——
  * 把它持久化则要为一个次日即失效的计数引入落盘与清理逻辑，不划算。
+ * 没发出去的那一次退回同一笔记账；过了零点，或重启后这笔账已经不在，就不退进新的一天。
  */
 @Slf4j
 @Service
@@ -65,6 +66,19 @@ public class AtAllQuotaService {
      * @return 是否还有额度
      */
     public synchronized boolean tryConsume(@NonNull String platform, @NonNull Long num) {
+        return consume(platform, num) != null;
+    }
+
+    /**
+     * 扣一次，并带回记到的那一天
+     * <p>
+     * 两个维度都有余额才扣。<b>先查后记</b>：任一维度已满就不再增加另一维度的计数。
+     * 调用方要记住返回的这一天——没发出去时按这一天退，不能按退的时刻再算一遍。
+     * @param platform 推送平台
+     * @param num 会话号
+     * @return 记到的那一天；额度不够时返回 null，账本不动
+     */
+    public synchronized LocalDate consume(@NonNull String platform, @NonNull Long num) {
         int botLimit = properties.getPush().getAtAllDailyLimit();
         int sessionLimit = properties.getPush().getAtAllSessionDailyLimit();
         LocalDate today = LocalDate.now(ZONE);
@@ -75,17 +89,34 @@ public class AtAllQuotaService {
         if (botLimit > 0 && used(botKey, today) >= botLimit) {
             log.warn("推送平台 {} 今日的 @全体成员 已用满 {} 次（该额度由全部会话共享），本条将退化为普通消息。" +
                     "如需调整请改 novabot.core.push.at-all-daily-limit", platform, botLimit);
-            return false;
+            return null;
         }
         if (sessionLimit > 0 && used(sessionKey, today) >= sessionLimit) {
             log.warn("会话 {} 今日的 @全体成员 已用满 {} 次，本条将退化为普通消息。" +
                     "如需调整请改 novabot.core.push.at-all-session-daily-limit", num, sessionLimit);
-            return false;
+            return null;
         }
 
         increment(botKey, today);
         increment(sessionKey, today);
-        return true;
+        return today;
+    }
+
+    /**
+     * 把没发出去的那一次退回扣减当天的账
+     * <p>
+     * 只动 {@code chargedOn} 那一天、且这笔账还在的计数。过了零点后账已换成新的一天，
+     * 或者重启后内存里的计数没了，这里什么都不做——不能把旧的一次退进新的一天。
+     * @param platform 推送平台
+     * @param num 会话号
+     * @param chargedOn 扣减发生的那一天
+     */
+    public synchronized void release(@NonNull String platform, @NonNull Long num, @NonNull LocalDate chargedOn) {
+        if (!chargedOn.equals(LocalDate.now(ZONE))) {
+            return;
+        }
+        releaseOne(new QuotaKey(platform, null), chargedOn);
+        releaseOne(new QuotaKey(platform, num), chargedOn);
     }
 
     /**
@@ -124,6 +155,16 @@ public class AtAllQuotaService {
                 current == null || !current.date().equals(today)
                         ? new DailyCount(today, 1)
                         : new DailyCount(today, current.used() + 1));
+    }
+
+    private void releaseOne(QuotaKey key, LocalDate chargedOn) {
+        counts.computeIfPresent(key, (ignored, current) -> {
+            if (!current.date().equals(chargedOn) || current.used() <= 0) {
+                return current;
+            }
+            int left = current.used() - 1;
+            return left == 0 ? null : new DailyCount(chargedOn, left);
+        });
     }
 
     /**

@@ -32,7 +32,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
  * <h2>摘完什么都不剩的那一条</h2>
  * 模板写成「{@code {at=all}}{@code {next}}正文」时，占位符独占一条消息，摘完是空的。
  * 空消息不能发，于是这一条整条不发（<b>不调用 proceed</b>），
- * 待办改挂到相邻的那一条上——后一条还没发，只能登记回调；前一条已经发过，可以当场挂。
+ * 待办改挂到相邻的那一条上——后一条还没发，登记回调等它发出；
+ * 前一条已经有编号的当场挂，还没有的等它发出再挂，最终没发出去的不挂。
  */
 @Slf4j
 @Aspect
@@ -112,20 +113,17 @@ public class BackupAtAllAspect {
     }
 
     /**
-     * 等这条消息发出去、拿到 ID 之后，把它设成群待办
+     * 等这条消息发出去、拿到编号之后，把它设成群待办
      */
     private void setTodoAfterSent(Message message, OneBotSender sender, JSONObject todoParams) {
-        message.addOnSuccessCallback(() -> {
-            todoParams.put("message_id", message.getId());
-            http.setGroupTodo(sender, todoParams);
-        });
+        message.addOnSuccessCallback(() -> attachTodo(sender, todoParams, message.getId()));
     }
 
     /**
      * 本条摘完是空的、发不出去，把待办挂到相邻的那一条上
      * <p>
-     * 先看后一条：它与本条同属一次推送、内容更相关。没有后一条才退而求其次用前一条，
-     * 那一条已经发过，当场就能挂
+     * 先看后一条：它与本条同属一次推送、内容更相关。没有后一条才用前一条：
+     * 已经发出、有编号的当场挂；还在队列里的等它发出再挂；最终没发出去的不挂。
      */
     private void hangTodoOnNeighbour(Message message, OneBotSender sender, JSONObject todoParams) {
         Message next = message.getNext();
@@ -136,11 +134,45 @@ public class BackupAtAllAspect {
 
         Message previous = message.getPrevious();
         if (previous != null) {
-            todoParams.put("message_id", previous.getId());
-            http.setGroupTodo(sender, todoParams);
+            hangWhenPreviousIsOut(previous, sender, todoParams);
             return;
         }
 
         log.error("NapCat 推送平台 {} 顺序号为 {} 的消息为空且前后无消息可用, 无法设置群待办", sender.getName(), message.getSequence());
+    }
+
+    /**
+     * 把待办挂到前一条上：有编号就现在挂，没有就等它的发送结果
+     */
+    private void hangWhenPreviousIsOut(Message previous, OneBotSender sender, JSONObject todoParams) {
+        if (StringUtil.isNotBlank(previous.getId())) {
+            attachTodo(sender, todoParams, previous.getId());
+            return;
+        }
+        if (previous.getCompleteTime() != null) {
+            log.warn("群 {} 的上一条消息没有发出去，这次不挂群待办", previous.getNum());
+            return;
+        }
+        previous.addOnSuccessCallback(() -> {
+            if (StringUtil.isBlank(previous.getId())) {
+                log.warn("群 {} 的上一条消息没有发出去，这次不挂群待办", previous.getNum());
+                return;
+            }
+            attachTodo(sender, todoParams, previous.getId());
+        });
+        previous.addOnFailureCallback(() ->
+                log.warn("群 {} 的上一条消息没有发出去，这次不挂群待办", previous.getNum()));
+    }
+
+    /**
+     * 挂群待办。失败只记一行警告，不带着堆栈往外抛，免得这次推送被它打断
+     */
+    private void attachTodo(OneBotSender sender, JSONObject todoParams, String messageId) {
+        todoParams.put("message_id", messageId);
+        try {
+            http.setGroupTodo(sender, todoParams);
+        } catch (RuntimeException e) {
+            log.warn("群 {} 的群待办没挂上: {}", todoParams.get("group_id"), e.getMessage());
+        }
     }
 }

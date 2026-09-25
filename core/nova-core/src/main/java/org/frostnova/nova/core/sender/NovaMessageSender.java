@@ -23,12 +23,14 @@ import jakarta.annotation.PreDestroy;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
 
 /**
@@ -221,15 +223,15 @@ public class NovaMessageSender {
      * 摘掉之后那一条就空了。这种情况必须整条不发，否则群里会收到一条空消息。
      * （推送处理器按 @ 模式补的那一块已经并进正文首行，不再造出这种分条；
      * 走到这一步的都是使用者自己在模板里写的。）
-     * @return 是否还应发送这条消息
+     * @return 是否还应发送，以及这次有没有扣到额度、扣在哪一天
      */
-    private boolean applyAtAllQuota(Message message) {
+    private AtAllDecision applyAtAllQuota(Message message) {
         if (message.getContent() == null || !message.getContent().contains(AT_ALL)) {
-            return true;
+            return AtAllDecision.pass();
         }
         // 私聊不存在 @全体成员，不占配额
         if (PushTargetType.GROUP != message.getType()) {
-            return true;
+            return AtAllDecision.pass();
         }
 
         // 权限判定必须排在配额之前：没权限的那次本就发不出 @，
@@ -239,10 +241,11 @@ public class NovaMessageSender {
         if (!canAtAll(message)) {
             return stripAtAll(message, "机器人不是群主或管理员");
         }
-        if (!atAllQuota.tryConsume(message.getPlatform(), message.getNum())) {
+        LocalDate chargedOn = atAllQuota.consume(message.getPlatform(), message.getNum());
+        if (chargedOn == null) {
             return stripAtAll(message, "今日的 @全体成员 额度已用完");
         }
-        return true;
+        return AtAllDecision.charged(chargedOn);
     }
 
     /**
@@ -266,9 +269,9 @@ public class NovaMessageSender {
      * 日志里那行只有运维看得见，而这件事是配置的人要知道的：不是管理员要去改群权限，
      * 额度用尽则说明这个群今天已经 @ 过太多次。
      * @param reason 没发出去的原因，进时间线正文与补充键值
-     * @return 是否还应发送这条消息
+     * @return 是否还应发送这条消息。这条没扣过额度
      */
-    private boolean stripAtAll(Message message, String reason) {
+    private AtAllDecision stripAtAll(Message message, String reason) {
         String fallback = StringUtil.isBlank(message.getAtAllFallback()) ? "" : message.getAtAllFallback();
         String stripped = message.getContent().replace(AT_ALL, fallback).trim();
 
@@ -282,11 +285,44 @@ public class NovaMessageSender {
 
         if (StringUtil.isBlank(stripped)) {
             log.info("会话 {} 的 @全体成员 未发出（{}）, 摘掉后这一条没有内容了, 整条跳过", message.getNum(), reason);
-            return false;
+            return AtAllDecision.drop();
         }
 
         message.setContent(stripped);
-        return true;
+        return AtAllDecision.pass();
+    }
+
+    /**
+     * 这次 @全体成员 走没走成
+     * @param send 正文摘完还有东西、这条还要投递
+     * @param chargedOn 扣到的那一天；没扣过则为 null，不能退
+     */
+    private record AtAllDecision(boolean send, LocalDate chargedOn) {
+        static AtAllDecision pass() {
+            return new AtAllDecision(true, null);
+        }
+
+        static AtAllDecision drop() {
+            return new AtAllDecision(false, null);
+        }
+
+        static AtAllDecision charged(LocalDate day) {
+            return new AtAllDecision(true, day);
+        }
+    }
+
+    private void releaseAtAll(Message message, LocalDate chargedOn) {
+        if (chargedOn == null) {
+            return;
+        }
+        atAllQuota.release(message.getPlatform(), message.getNum(), chargedOn);
+    }
+
+    /**
+     * 退一次并清掉标记，避免同一笔又在异常出口退第二次
+     */
+    private void releaseOnce(Message message, AtomicReference<LocalDate> chargedOn) {
+        releaseAtAll(message, chargedOn.getAndSet(null));
     }
 
     /**
@@ -404,10 +440,23 @@ public class NovaMessageSender {
         // 配额检查放在这里而非各推送处理器里：处理器只经手 at_all 参数，
         // 而模板里手写的 {at=all} 同样会 @ 全体。所有消息最终都汇到这一处，
         // 只有在这里拦才拦得全
-        if (!applyAtAllQuota(message)) {
+        AtAllDecision quota = applyAtAllQuota(message);
+        if (!quota.send()) {
             return null;
         }
+        AtomicReference<LocalDate> chargedOn = new AtomicReference<>(quota.chargedOn());
+        try {
+            return deliver(sender, message, push, chargedOn);
+        } catch (RuntimeException ex) {
+            releaseOnce(message, chargedOn);
+            throw ex;
+        }
+    }
 
+    /**
+     * 投递一条已经决定要发的消息。没送达时把扣过的额度退回
+     */
+    private JSONObject deliver(Sender sender, Message message, boolean push, AtomicReference<LocalDate> chargedOn) {
         Map<String, String> headers = new HashMap<>();
         if (StringUtil.isNotBlank(sender.getToken())) {
             headers.put("Authorization", "Bearer " + sender.getToken());
@@ -424,6 +473,7 @@ public class NovaMessageSender {
         for (Predicate<Message> interceptor : message.getOnBeforeSendInterceptors()) {
             if (!interceptor.test(message)) {
                 log.info("已取消发送消息: NovaBot -> {} ([{}] {}) [{}]: {}", sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(), message.getDisplay());
+                releaseOnce(message, chargedOn);
                 return null;
             }
         }
@@ -447,6 +497,8 @@ public class NovaMessageSender {
         // 表现为消息静默丢失而日志指向别处
         boolean delivered = Integer.valueOf(0).equals(result.getInteger("code"));
         if (delivered) {
+            // 已经送达，后面的记账或提示再出错也不能把这次额度退掉
+            chargedOn.set(null);
             message.setId(result.getString("id"));
             activityRecorder.recordSuccess(sender.getName(), describeTarget(message), message.getDisplay(), elapsedMillis);
             log.info("NovaBot -> {} ([{}] {}) [{}]: {}", sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(), message.getDisplay());
@@ -471,6 +523,13 @@ public class NovaMessageSender {
             }
 
             delivered = fallbackWithoutImages(sender, headers, params, message, result);
+        }
+
+        // 文字到了才算数，图片降级那一路同样算；没送到的把这次扣的退回扣减当天
+        if (delivered) {
+            chargedOn.set(null);
+        } else {
+            releaseOnce(message, chargedOn);
         }
 
         // 文字到了才算「这个会话听见过机器人说话」，图片降级那一路同样算
