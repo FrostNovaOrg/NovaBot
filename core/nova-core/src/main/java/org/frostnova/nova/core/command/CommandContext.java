@@ -105,4 +105,21 @@ public class CommandContext {
     public static String here(PushTargetType type) {
         return PushTargetType.GROUP == type ? "本群" : "这里";
     }
+
+    /**
+     * 把几格名字写成给人看的引号串，<b>每一格一对括号</b>
+     * <p>
+     * 两格并排若共用一对（中间拿「】【」拼），后一格看上去就成了括号里的话：
+     * 「开播@名单】【动态@名单」读起来像一句叫「开播@名单」的话被塞进括号。
+     * 一格时与原来逐字相同。
+     * @param names 名字
+     * @return 每个名字各带一对「」
+     */
+    public static String quoted(List<String> names) {
+        StringBuilder text = new StringBuilder();
+        for (String name : names) {
+            text.append('「').append(name).append('」');
+        }
+        return text.toString();
+    }
 }

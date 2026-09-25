@@ -24,6 +24,18 @@
             <groupId>org.frostnova.nova</groupId>
             <artifactId>novacore</artifactId>
         </dependency>
+
+        <!--
+            只在测试里用：要量的是「控制台把开关关掉之后，群里那几条命令还应不应答」，
+            得把真命令摆在真分发器前面跑一遍，替身答不了这一问。
+            只作测试依赖，不进插件产物（依赖描述只收 compile / runtime 两档）
+        -->
+        <dependency>
+            <groupId>org.frostnova.nova</groupId>
+            <artifactId>nova-report</artifactId>
+            <version>1.0.0</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

@@ -10,8 +10,10 @@ import org.frostnova.nova.core.command.CommandContext;
 import org.frostnova.nova.core.command.CommandReply;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.model.PushUser;
+import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.Instant;
 import java.time.ZoneId;
@@ -21,25 +23,54 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * 「直播间数据」类命令
+ * 「直播间数据」命令
  * <p>
- * 查询直播间的整体数据。与「直播报告」的分工：报告是一张完整的大图（封面、排行榜、词云），
+ * 查询直播间的整体数据。不带「总」出本场，带「总」出历次累计；
+ * 旧名「直播间总数据」等同于「直播间数据 总」。
+ * 与「直播报告」的分工：报告是一张完整的大图（封面、排行榜、词云），
  * 这里只出一屏卡片，用于随手一问；且累计范围下报告本就无从谈起——
  * 封面与词云都属于某一场直播。
  */
-public abstract class BilibiliRoomDataCommand extends BilibiliScopedDataCommand {
+@NovaComponent
+public class BilibiliRoomDataCommand extends BilibiliScopedDataCommand {
     private static final DateTimeFormatter TIME_FORMATTER =
             DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(ZoneId.of("Asia/Shanghai"));
 
-    protected BilibiliRoomDataCommand(AbstractDataSource dataSource, BilibiliStreamerChoice choice,
-                                      LiveDataService liveDataService,
-                                      BilibiliDataQueryPainter painter, RevenueVisibilityService revenueVisibility) {
+    @Autowired
+    public BilibiliRoomDataCommand(AbstractDataSource dataSource, BilibiliStreamerChoice choice,
+                                   LiveDataService liveDataService,
+                                   BilibiliDataQueryPainter painter, RevenueVisibilityService revenueVisibility) {
         super(dataSource, choice, liveDataService, painter, revenueVisibility);
     }
 
     @Override
+    public String name() {
+        return "直播间数据";
+    }
+
+    @Override
+    public List<String> aliases() {
+        return List.of("直播间总数据");
+    }
+
+    @Override
+    public String description() {
+        return "查询直播间的整体数据，带「总」出历次累计";
+    }
+
+    @Override
     public String usage() {
-        return "[主播 uid 或昵称]";
+        return "[总] [主播 uid 或昵称]";
+    }
+
+    @Override
+    protected String liveName() {
+        return "直播间数据";
+    }
+
+    @Override
+    protected String totalName() {
+        return "直播间总数据";
     }
 
     @Override
@@ -49,7 +80,12 @@ public abstract class BilibiliRoomDataCommand extends BilibiliScopedDataCommand 
             return unavailable;
         }
 
-        Resolved resolved = resolve(context, context.arg(0));
+        // 「总」是范围开关，不是主播名：先摘掉它，剩下的第一个才是点名的那位。
+        // 摘晚一步的话「直播间数据 总」会被当成「找一位叫总的主播」
+        List<String> args = new ArrayList<>(context.getArgs());
+        args.remove(TOTAL_FLAG);
+
+        Resolved resolved = resolve(context, args.isEmpty() ? null : args.get(0));
         if (resolved.failed()) {
             return resolved.error();
         }
@@ -57,7 +93,7 @@ public abstract class BilibiliRoomDataCommand extends BilibiliScopedDataCommand 
         PushUser streamer = resolved.streamer();
         String platform = BilibiliPlatform.BILIBILI.id();
         Long uid = streamer.getUid();
-        BilibiliDataScope scope = scope();
+        BilibiliDataScope scope = scope(context);
 
         List<BilibiliDataQueryPainter.DataCard> cards = buildCards(scope, platform, uid, revenueVisible(context));
         if (cards.isEmpty()) {

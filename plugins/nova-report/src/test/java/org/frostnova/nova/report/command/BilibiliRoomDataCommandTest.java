@@ -139,7 +139,7 @@ class BilibiliRoomDataCommandTest {
         RevenueVisibilityService revenueVisibility = mock(RevenueVisibilityService.class);
         when(revenueVisibility.isVisible(anyString(), any(), anyLong())).thenReturn(true);
 
-        BilibiliRoomLiveDataCommand command = new BilibiliRoomLiveDataCommand(dataSource,
+        BilibiliRoomDataCommand command = new BilibiliRoomDataCommand(dataSource,
                 mock(BilibiliStreamerChoice.class), liveDataService, painter, revenueVisibility);
         command.execute(context());
 
@@ -183,7 +183,7 @@ class BilibiliRoomDataCommandTest {
     private static class Fixture {
         private final BilibiliDataQueryPainter painter;
 
-        private final BilibiliRoomLiveDataCommand command;
+        private final BilibiliRoomDataCommand command;
 
         Fixture(boolean living, long start, Long end) {
             this(living, start, end, 10.0);
@@ -209,7 +209,7 @@ class BilibiliRoomDataCommandTest {
             RevenueVisibilityService revenueVisibility = mock(RevenueVisibilityService.class);
             when(revenueVisibility.isVisible(anyString(), any(), anyLong())).thenReturn(true);
 
-            command = new BilibiliRoomLiveDataCommand(dataSource, mock(BilibiliStreamerChoice.class),
+            command = new BilibiliRoomDataCommand(dataSource, mock(BilibiliStreamerChoice.class),
                     liveDataService, painter, revenueVisibility);
         }
 

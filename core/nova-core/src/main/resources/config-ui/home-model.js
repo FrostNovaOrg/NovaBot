@@ -403,7 +403,7 @@ function todos(status, login, chain, fresh, pages, pluginDone, terms, botDown, b
     list.push({
       key: 'total',
       title: '累计数据没开',
-      body: '群里只能查本场，「直播间总数据」「总数据排行榜」这两条不会出现在菜单里。'
+      body: '群里只能查本场：菜单照列这两条，带「总」的查法要先开累计数据。'
         + '要开得给 NovaBot 配一个累计存储，找运维。',
       action: '去配', href: '#/settings', soft: true,
     });

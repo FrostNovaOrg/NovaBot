@@ -10,18 +10,23 @@ import org.frostnova.nova.core.command.CommandReply;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.model.UserScore;
+import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
+import org.springframework.beans.factory.annotation.Autowired;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.DoubleFunction;
 
 /**
- * 「数据排行榜」类命令
+ * 「数据排行榜」命令
  * <p>
  * 下播报告里的排行榜只出前几名且随报告一次性发出，这里可以随时查、能翻页、能挑榜单。
+ * 不带「总」出本场，带「总」出历次累计；旧名「总数据排行榜」等同于带「总」。
  */
-public abstract class BilibiliRankingCommand extends BilibiliScopedDataCommand {
+@NovaComponent
+public class BilibiliRankingCommand extends BilibiliScopedDataCommand {
     /**
      * 每页人数。一屏能看完，也不至于翻页翻到手酸
      */
@@ -32,15 +37,41 @@ public abstract class BilibiliRankingCommand extends BilibiliScopedDataCommand {
      */
     private static final int MAX_PAGE = 50;
 
-    protected BilibiliRankingCommand(AbstractDataSource dataSource, BilibiliStreamerChoice choice,
-                                     LiveDataService liveDataService,
-                                     BilibiliDataQueryPainter painter, RevenueVisibilityService revenueVisibility) {
+    @Autowired
+    public BilibiliRankingCommand(AbstractDataSource dataSource, BilibiliStreamerChoice choice,
+                                  LiveDataService liveDataService,
+                                  BilibiliDataQueryPainter painter, RevenueVisibilityService revenueVisibility) {
         super(dataSource, choice, liveDataService, painter, revenueVisibility);
     }
 
     @Override
+    public String name() {
+        return "数据排行榜";
+    }
+
+    @Override
+    public List<String> aliases() {
+        return List.of("总数据排行榜");
+    }
+
+    @Override
+    public String description() {
+        return "查各榜单排行，带「总」出历次累计";
+    }
+
+    @Override
     public String usage() {
-        return "<榜单> [页码] [主播 uid 或昵称]";
+        return "<榜单> [总] [页码] [主播 uid 或昵称]";
+    }
+
+    @Override
+    protected String liveName() {
+        return "数据排行榜";
+    }
+
+    @Override
+    protected String totalName() {
+        return "总数据排行榜";
     }
 
     @Override
@@ -53,11 +84,19 @@ public abstract class BilibiliRankingCommand extends BilibiliScopedDataCommand {
         boolean revenue = revenueVisible(context);
         String example = revenue ? "礼物" : "弹幕";
 
-        Board board = Board.match(context.arg(0));
+        // 「总」是范围开关，位置随人写：先整字摘掉，剩下的按「榜单、页码、主播」老规矩认。
+        // 不摘的话它会被当成主播名，或把榜单名挤到第二位认不出来
+        List<String> args = new ArrayList<>(context.getArgs());
+        args.remove(TOTAL_FLAG);
+
+        Board board = Board.match(args.isEmpty() ? null : args.get(0));
         if (board == null) {
+            // 示例是给人照着发的，照着发要真查得到问的那一半：问累计时若写成
+            // 「数据排行榜 …」，照着发查到的是本场，答非所问
+            String asked = wantsTotal(context) ? totalName() : name();
             return CommandReply.of("请指明要看哪张榜：" + Board.names(revenue)
-                    + "\n例如：" + name() + " " + example
-                    + "\n翻页：" + name() + " " + example + " 2");
+                    + "\n例如：" + asked + " " + example
+                    + "\n翻页：" + asked + " " + example + " 2");
         }
 
         if (board.money && !revenue) {
@@ -67,8 +106,8 @@ public abstract class BilibiliRankingCommand extends BilibiliScopedDataCommand {
 
         int page = 1;
         String streamerKeyword = null;
-        for (int i = 1; i < context.getArgs().size(); i++) {
-            String arg = context.getArgs().get(i);
+        for (int i = 1; i < args.size(); i++) {
+            String arg = args.get(i);
             // 三位以内的纯数字当页码，更长的当 uid：uid 都是八位以上，
             // 而没人会把榜单翻到第 1000 页
             if (arg.length() <= 3 && arg.chars().allMatch(Character::isDigit)) {
@@ -89,7 +128,7 @@ public abstract class BilibiliRankingCommand extends BilibiliScopedDataCommand {
 
         PushUser streamer = resolved.streamer();
         String platform = BilibiliPlatform.BILIBILI.id();
-        BilibiliDataScope scope = scope();
+        BilibiliDataScope scope = scope(context);
 
         int total = scope.userCount(liveDataService, platform, streamer.getUid(), board.metric);
         if (total == 0) {

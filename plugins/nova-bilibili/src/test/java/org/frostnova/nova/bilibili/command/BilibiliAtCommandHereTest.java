@@ -2,6 +2,7 @@ package org.frostnova.nova.bilibili.command;
 
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.command.CommandContext;
+import org.frostnova.nova.core.command.CommandSettingsService;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.model.PushMessage;
@@ -48,11 +49,11 @@ class BilibiliAtCommandHereTest {
 
     private static final String PRIVATE_REPLY = "这里开播通知会 @全体成员，不用单独订阅";
 
-    private static final String EMPTY_ACT = "好的，测试主播开播时会 @ 你";
+    private static final String EMPTY_ACT = "好的，测试主播开播时会 @ 你。再发「开播@我」可取消";
 
     @Test
-    @DisplayName("群仍说本群；私聊不含本群；空模式与改前一致；两处已接 everyoneNotice")
-    void groupKeepsPlaceWordPrivateOmitsItEmptyUnchangedAndWired() throws Exception {
+    @DisplayName("群仍说本群；私聊不含本群；空模式下菜单不加注、订阅回话带反悔那一句；两处已接 everyoneNotice")
+    void groupKeepsPlaceWordPrivateOmitsItEmptyModeAnswersAndWired() throws Exception {
         Fixture fixture = new Fixture();
         List<String> red = new ArrayList<>();
 
@@ -128,7 +129,7 @@ class BilibiliAtCommandHereTest {
             when(subscriptions.subscribe(anyString(), any(), any(), anyString(), any()))
                     .thenReturn(AtSubscriptionService.Result.OK);
             command = new BilibiliLiveAtMeCommand(dataSource, mock(BilibiliStreamerChoice.class),
-                    subscriptions);
+                    subscriptions, mock(CommandSettingsService.class));
         }
 
         CommandContext group() {

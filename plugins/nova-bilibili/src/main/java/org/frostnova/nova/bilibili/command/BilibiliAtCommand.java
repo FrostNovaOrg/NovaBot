@@ -17,15 +17,22 @@ import java.util.List;
 /**
  * 「@我」类命令的共同实现
  * <p>
- * 六个命令（开播 / 动态 × 订阅 / 取消 / 名单）除通知类别与动作外完全一致，
+ * 合并之后开播 / 动态各只剩一条命令（外加取消方向的旧别名），名单收成一条
+ * 「{@code @名单} 开播｜动态」。除「问的是哪几类通知」与拿到名单之后的动作外一致，
  * 共同逻辑收在这里；「说的是哪位主播」这一步与数据查询命令共用
  * {@link BilibiliStreamerCommand}。
  *
+ * <h2>问的是哪几类通知</h2>
+ * 同一句话可能只问开播、只问动态，也可能两类都问：名单不点名时两类都算，
+ * 点了名（旧名「{@code 开播@名单}」或首参「{@code 开播}」）就只算点的那一类。
+ * <b>旧名仍然认</b>——拼写换了，说的还是那件事。
+ *
  * <h2>与 @ 模式的联动</h2>
  * 本群这类通知配成了「@全体成员」时，单独订阅<b>做什么都不会有效果</b>——每次通知本来就
- * @ 到所有人。此时三条命令一并从菜单里撤下，仍然发过来的回一句为什么，而<b>订阅名单一个不删</b>：
- * 模式随时可能改回来，而删掉是不可逆的。配成「@全体成员，不行就 @订阅的人」的那一档
- * 订阅照样有用（只是平时用不上），命令与菜单都照常，只在菜单那一行后面补一句说明。
+ * @ 到所有人。此时命令从菜单里撤下（名单只撤掉配成 @全体成员的那一类），仍然发过来的回一句
+ * 为什么，而<b>订阅名单一个不删</b>：模式随时可能改回来，而删掉是不可逆的。
+ * 配成「@全体成员，不行就 @订阅的人」的那一档订阅照样有用（只是平时用不上），
+ * 命令与菜单都照常，只在菜单那一行后面补一句说明。
  */
 public abstract class BilibiliAtCommand extends BilibiliStreamerCommand {
     protected final AtSubscriptionService subscriptions;
@@ -37,34 +44,63 @@ public abstract class BilibiliAtCommand extends BilibiliStreamerCommand {
     }
 
     /**
-     * 本命令管的是哪一类通知
+     * 这一句问的是哪几类通知
+     * <p>
+     * @我 那两条永远只问一类（正名与取消别名说的是同一件事）；
+     * 名单不点名时两类都问，点了名就只问点的那一类。
+     * @param context 命令上下文（拿得到打的是哪个拼写）
+     * @return 种类，至少一类
      */
-    protected abstract BilibiliAtNoticeKind kind();
+    protected abstract List<BilibiliAtNoticeKind> kinds(CommandContext context);
+
+    /**
+     * 单类命令取它管的那一类
+     * @param context 命令上下文
+     * @return 种类
+     */
+    protected BilibiliAtNoticeKind kind(CommandContext context) {
+        List<BilibiliAtNoticeKind> kinds = kinds(context);
+        return kinds.isEmpty() ? null : kinds.get(0);
+    }
 
     /**
      * 「@全体成员」那两句给人看的话：群里说「本群」，私聊说「这里」。
      * <p>
      * 取词走 {@link CommandContext#here()}，与数据查询命令同一处口径。
      * {@code fallback} 为真是菜单那句（先 @ 全体，不成再按名单），为假是发过来时那句。
+     * 问了多类时把都算在内的那几类写全，读的人才知道是哪一类在 @ 全体。
      */
-    private String everyoneNotice(CommandContext context, boolean fallback) {
-        return context.here() + kind().noticeName()
+    protected String everyoneNotice(CommandContext context, boolean fallback) {
+        List<BilibiliAtNoticeKind> kinds = fallback
+                ? fallbackKinds(context)
+                : kinds(context);
+        return context.here() + noticeNames(kinds)
                 + (fallback
                         ? "通知会先 @全体成员，@ 不成时才按这份名单 @ 人"
                         : "通知会 @全体成员，不用单独订阅");
     }
 
     /**
-     * 订阅类型：live 或 dynamic
+     * 多类写成「开播／动态」
      */
-    protected final String type() {
-        return kind().type();
+    protected String noticeNames(List<BilibiliAtNoticeKind> kinds) {
+        StringBuilder names = new StringBuilder();
+        for (BilibiliAtNoticeKind kind : kinds) {
+            if (!names.isEmpty()) {
+                names.append("／");
+            }
+            names.append(kind.noticeName());
+        }
+        return names.isEmpty() ? "" : names.toString();
     }
 
     /**
-     * 类型的中文说法，用于回复措辞
+     * 订阅类型：live 或 dynamic
      */
-    protected abstract String typeName();
+    protected final String type(CommandContext context) {
+        BilibiliAtNoticeKind kind = kind(context);
+        return kind == null ? "" : kind.type();
+    }
 
     @Override
     public String usage() {
@@ -91,8 +127,18 @@ public abstract class BilibiliAtCommand extends BilibiliStreamerCommand {
             return CommandReply.of(everyoneNotice(context, false));
         }
 
-        Resolved resolved = resolve(context, context.arg(0));
+        Resolved resolved = resolve(context, streamerKeyword(context));
         return resolved.failed() ? resolved.error() : act(context, resolved.streamer());
+    }
+
+    /**
+     * 从参数里认出「说的是哪位主播」
+     * <p>
+     * 名单那一句的首参可能是类别开关（{@code 开播} / {@code 动态}），先摘掉它，
+     * 剩下的才是点名的那位。摘晚一步的话「{@code @名单 开播}」会被当成「找一位叫开播的主播」。
+     */
+    protected String streamerKeyword(CommandContext context) {
+        return context.arg(0);
     }
 
     /**
@@ -101,26 +147,48 @@ public abstract class BilibiliAtCommand extends BilibiliStreamerCommand {
     protected abstract CommandReply act(CommandContext context, PushUser streamer);
 
     /**
-     * 本会话这一类通知是不是<b>每一位</b>主播都 @全体成员
+     * 本会话问到的这几类通知是不是<b>每一位</b>主播都 @全体成员
      * <p>
      * 要求「每一位」而不是「有一位」：一个群里可以配好几位主播，只要还有一位是按订阅名单 @ 的，
-     * 订阅这件事就仍然有用，藏掉命令等于把那一位的提醒一起藏了。
+     * 订阅这件事就仍然有用，藏掉命令等于把那一位的提醒一起藏了。多类时还要求<b>每一类</b>
+     * 都是 @全体成员——名单盖着两类，只有一类在 @ 全体时另一类仍要靠名单。
      * <p>
      * <b>一条都没配时不算</b>。空表上「全都是 @全体成员」恒为真，而那时藏掉订阅命令毫无道理——
      * 恒真的判据与「真的查过了」在菜单上长得一模一样。
      * @param context 执行上下文
-     * @return 是否整个会话都 @全体成员
+     * @return 是否问到的每一类都是 @全体成员
      */
     protected boolean atsEveryone(CommandContext context) {
-        List<AtMode> modes = modesOf(context);
+        List<BilibiliAtNoticeKind> kinds = kinds(context);
+        return !kinds.isEmpty() && kinds.stream().allMatch(kind -> atsEveryone(context, kind));
+    }
+
+    /**
+     * 这一类通知是不是<b>每一位</b>主播都 @全体成员
+     */
+    protected boolean atsEveryone(CommandContext context, BilibiliAtNoticeKind kind) {
+        List<AtMode> modes = modesOf(context, kind);
         return !modes.isEmpty() && modes.stream().allMatch(mode -> AtMode.ALL == mode);
     }
 
     /**
-     * 本会话这一类通知里有没有「@ 不成就退回订阅名单」的那一档
+     * 本会话问到的通知里有没有「@ 不成就退回订阅名单」的那一档
      */
     protected boolean hasFallbackToSubscribers(CommandContext context) {
-        return modesOf(context).contains(AtMode.ALL_OR_SUBSCRIBERS);
+        return kinds(context).stream().anyMatch(kind -> modesOf(context, kind).contains(AtMode.ALL_OR_SUBSCRIBERS));
+    }
+
+    /**
+     * 有备胎配置的那几类
+     */
+    protected List<BilibiliAtNoticeKind> fallbackKinds(CommandContext context) {
+        List<BilibiliAtNoticeKind> result = new ArrayList<>();
+        for (BilibiliAtNoticeKind kind : kinds(context)) {
+            if (modesOf(context, kind).contains(AtMode.ALL_OR_SUBSCRIBERS)) {
+                result.add(kind);
+            }
+        }
+        return result;
     }
 
     /**
@@ -130,7 +198,7 @@ public abstract class BilibiliAtCommand extends BilibiliStreamerCommand {
      * @param context 执行上下文
      * @return 模式列表，本群没配过这类通知时为空
      */
-    private List<AtMode> modesOf(CommandContext context) {
+    protected List<AtMode> modesOf(CommandContext context, BilibiliAtNoticeKind kind) {
         List<AtMode> modes = new ArrayList<>();
         for (PushUser user : streamersOf(context)) {
             for (PushTarget target : user.getTargets()) {
@@ -139,7 +207,7 @@ public abstract class BilibiliAtCommand extends BilibiliStreamerCommand {
                 }
                 for (PushMessage message : target.getMessages()) {
                     // 关掉的那条通知不推，它配成什么都影响不到群里的人
-                    if (Boolean.FALSE.equals(message.getEnabled()) || !isKind(message)) {
+                    if (Boolean.FALSE.equals(message.getEnabled()) || !isKind(message, kind)) {
                         continue;
                     }
                     modes.add(AtMode.of(message.getParamsJsonObject()));
@@ -150,7 +218,7 @@ public abstract class BilibiliAtCommand extends BilibiliStreamerCommand {
     }
 
     /**
-     * 这条推送是不是本命令管的那一类通知
+     * 这条推送是不是这一类通知
      * <p>
      * 三种写法都得认，缺一种就有一批配置读成「本群没配过这类通知」——那时菜单照列、
      * 命令照办，谁都看不出订阅其实早已不起作用：
@@ -162,8 +230,8 @@ public abstract class BilibiliAtCommand extends BilibiliStreamerCommand {
      *       两头对不上，只能由处理器自己把两个名字挂起来。</li>
      * </ul>
      */
-    private boolean isKind(PushMessage message) {
-        String wanted = kind().handlerName();
+    protected boolean isKind(PushMessage message, BilibiliAtNoticeKind kind) {
+        String wanted = kind.handlerName();
         if (HandlerPackageNames.sameHandler(wanted, message.handlerClassName())
                 || HandlerPackageNames.sameHandler(wanted, message.getHandler())) {
             return true;
