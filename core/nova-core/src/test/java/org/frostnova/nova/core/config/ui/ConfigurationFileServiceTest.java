@@ -544,6 +544,130 @@ class ConfigurationFileServiceTest {
         assertEquals("true", service.read().get("novabot.core.config-ui.enabled"), "既有配置项不该被顶掉");
     }
 
+    // ============ 行内序列（key: []、key: [a, b]） ============
+
+    /**
+     * 首次安装写出的配置把空列表写成 {@code key: []}，这样的名单得按列表读写：
+     * 读回空名单而不是字面「[]」，名单框里才空着、不标「已改」；
+     * 一次填多行的保存就是这里的多行值，被当普通文字读时会被整批拒绝。
+     */
+    @Test
+    @DisplayName("空名单写成 key: [] 也按名单读写：读是空的，能一次存多行")
+    void flowEmptyListBehavesAsList() throws IOException {
+        Files.writeString(config, """
+                novabot:
+                  core:
+                    command:
+                      admins: []          # 超级管理员
+                """, StandardCharsets.UTF_8);
+        String key = "novabot.core.command.admins";
+        List<String> bad = new ArrayList<>();
+
+        try {
+            assertEquals("", service.read().get(key), "空名单应读成空串, 而不是字面 []");
+        } catch (AssertionError e) {
+            bad.add("① 读值: " + e.getMessage());
+        }
+
+        try {
+            List<String> changed = service.write(Map.of(key, "111\n222"));
+            assertEquals(List.of(key), changed);
+            String text = content();
+            assertTrue(text.contains("- 111"), "应落成每行一项的块序列:\n" + text);
+            assertTrue(text.contains("- 222"), text);
+            assertFalse(text.contains("[]"), "行内的空表记号必须让位给块序列, 两者并存整份文件解析不了:\n" + text);
+            assertTrue(text.contains("# 超级管理员"), "行尾注释应保留:\n" + text);
+            assertEquals("111\n222", service.read().get(key), "读回的形态与界面上的多行框一一对应");
+        } catch (AssertionError | IOException e) {
+            bad.add("② 存两行: " + e.getMessage());
+        }
+
+        try {
+            Files.writeString(config, """
+                    novabot:
+                      core:
+                        command:
+                          admins: []
+                    """, StandardCharsets.UTF_8);
+            service.write(Map.of(key, "111"));
+            assertEquals("111", service.read().get(key), "只填一行也应写成列表");
+            service.write(Map.of(key, "111\n222"));
+            assertEquals("111\n222", service.read().get(key), "单行之后再改成多行, 不该被当成标量拦下");
+        } catch (AssertionError | IOException e) {
+            bad.add("③ 一行再改多行: " + e.getMessage());
+        }
+
+        try {
+            service.write(Map.of(key, ""));
+            String text = content();
+            assertTrue(text.contains("admins: []"), "清空应写成空表记号, 键这一行保住列表身份:\n" + text);
+            assertEquals("", service.read().get(key));
+            service.write(Map.of(key, "111\n222"));
+            assertEquals("111\n222", service.read().get(key), "清空之后再想填回多行, 也不该被拦下");
+        } catch (AssertionError | IOException e) {
+            bad.add("④ 清空再填: " + e.getMessage());
+        }
+
+        assertTrue(bad.isEmpty(), () -> "空名单行内写法 " + bad.size() + " 问未销: " + String.join("; ", bad));
+    }
+
+    /**
+     * 行内写法 {@code key: [a, b]} 与空表 {@code key: []} 同族：读按名单拆项，
+     * 存过一次落成每行一项。引号包着的 {@code "[]"} 是逐字的文字值，不在其列。
+     */
+    @Test
+    @DisplayName("行内写法 key: [a, b] 同按名单读写；带引号的 \"[]\" 仍是普通文字")
+    void inlineListItemsBehaveAsList() throws IOException {
+        Files.writeString(config, """
+                novabot:
+                  core:
+                    command:
+                      admins: [111, 222]
+                    push:
+                      quiet-start: "[]"
+                """, StandardCharsets.UTF_8);
+        String key = "novabot.core.command.admins";
+        List<String> bad = new ArrayList<>();
+
+        try {
+            assertEquals("111\n222", service.read().get(key), "行内各项应按名单读回");
+        } catch (AssertionError e) {
+            bad.add("① 行内读值: " + e.getMessage());
+        }
+
+        try {
+            service.write(Map.of(key, "333"));
+            String text = content();
+            assertTrue(text.contains("- 333"), "存过一次应落成每行一项:\n" + text);
+            String adminsLine = text.lines().filter(l -> l.contains("admins")).findFirst().orElseThrow();
+            assertFalse(adminsLine.contains("["), "行内方括号应让位给块序列:\n" + adminsLine);
+            assertEquals("333", service.read().get(key));
+        } catch (AssertionError | IOException e) {
+            bad.add("② 行内改块: " + e.getMessage());
+        }
+
+        try {
+            assertEquals("[]", service.read().get("novabot.core.push.quiet-start"),
+                    "引号包着的字面 [] 是普通文字值, 不得被当成空名单");
+        } catch (AssertionError e) {
+            bad.add("③ 引号阴性: " + e.getMessage());
+        }
+
+        try {
+            Files.writeString(config, """
+                    novabot:
+                      core:
+                        command:
+                          admins: ["111,222", 333]
+                    """, StandardCharsets.UTF_8);
+            assertEquals("111,222\n333", service.read().get(key), "引号里的逗号是字面字符, 不是分隔符");
+        } catch (AssertionError | IOException e) {
+            bad.add("④ 引号内逗号: " + e.getMessage());
+        }
+
+        assertTrue(bad.isEmpty(), () -> "行内名单 " + bad.size() + " 问未销: " + String.join("; ", bad));
+    }
+
     // ============ 清空即移除（否则程序起不来） ============
 
     /**
