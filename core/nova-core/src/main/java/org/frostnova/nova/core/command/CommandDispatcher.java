@@ -178,9 +178,13 @@ public class CommandDispatcher {
             reply(event, type, claimed.reply().content());
             return;
         }
+        String typedName = name;
         if (claimed != null) {
             command = find(claimed.command());
             parts = new ArrayList<>(claimed.args());
+            // 追问认领回来的那一句按打出来的名字进上下文：别名与正名指向同一个用法，
+            // 「总」用不用带、开关式还是只取消，认的就是这一格
+            typedName = claimed.command();
         }
 
         // 以下四条出声的路径共用这一份冷却；被认领的应答已在上面走掉
@@ -199,16 +203,24 @@ public class CommandDispatcher {
 
             NovaCommand menu = find(MENU_COMMAND_NAME);
             if (menu != null) {
-                run(menu, event, type, List.of(), false);
+                run(menu, event, type, MENU_COMMAND_NAME, List.of(), false);
             }
             return;
         }
 
-        if (command.disableable() && settings.isDisabled(event.getPlatform(), event.getNum(), command.name())) {
-            // 关掉的命令也要回一句：沉默与「机器人坏了」在使用者眼里长得一样。
-            // 「在哪儿」与命令自己说不出主播时那一句同一处取词，见 CommandContext#here
-            reply(event, type, CommandContext.here(type) + "已关闭「" + command.name() + "」命令");
-            return;
+        if (command.disableable()) {
+            // 落到哪几个用法名上按「这一句怎么打的」算：同一句里带不带「总」是两个用法，
+            // 旧名与新名指向同一个用法，于是合并前关掉的那个用法合并后照样挡得住。
+            // 用法名取空时不当关掉看——空集上「全都关了」恒真，而恒真与真关了长得一样
+            List<String> keys = command.usageKeys(new CommandContext(event.getPlatform(), type,
+                    event.getNum(), event.getSenderUid(), typedName, List.copyOf(parts), event.getText()));
+            if (!keys.isEmpty() && keys.stream()
+                    .allMatch(key -> settings.isDisabled(event.getPlatform(), event.getNum(), key))) {
+                // 关掉的命令也要回一句：沉默与「机器人坏了」在使用者眼里长得一样。
+                // 「在哪儿」与命令自己说不出主播时那一句同一处取词，见 CommandContext#here
+                reply(event, type, CommandContext.here(type) + "已关闭" + CommandContext.quoted(keys) + "命令");
+                return;
+            }
         }
 
         boolean admin = isAdmin(event);
@@ -222,7 +234,7 @@ public class CommandDispatcher {
 
         // 记在成功那一支上：抛了异常的那一次群里什么都没有，
         // 把它也记成「执行」会让「这条命令到底管不管用」再也查不出来
-        if (run(command, event, type, List.copyOf(parts), admin)) {
+        if (run(command, event, type, typedName, List.copyOf(parts), admin)) {
             timeline.record(TimelineEvent.of(TimelineEventType.COMMAND_EXECUTED, TimelineEvent.Level.INFO)
                     .channel(describe(type, event.getNum()))
                     .text("执行了「" + command.name() + "」")
@@ -318,9 +330,11 @@ public class CommandDispatcher {
      * @return 执行过程中没有抛异常
      */
     private boolean run(NovaCommand command, NovaRemoteMessageEvent event, PushTargetType type,
-                        List<String> args, boolean admin) {
+                        String typedName, List<String> args, boolean admin) {
+        // 命令名一栏放打出来的那个名字（可能是别名）：一条命令按名字分「开关式」与「只取消」、
+        // 或按名字认「带不带总」时，认的就是这一格
         CommandContext context = new CommandContext(event.getPlatform(), type, event.getNum(),
-                event.getSenderUid(), command.name(), args, event.getText(), admin);
+                event.getSenderUid(), typedName, args, event.getText(), admin);
 
         try {
             CommandReply commandReply = command.execute(context);

@@ -78,6 +78,22 @@ public interface NovaCommand {
     }
 
     /**
+     * 这条命令在本机开没开，按<b>这一句怎么打的</b>来算
+     * <p>
+     * 合并后的命令一半用法靠本机不一定开着的能力（累计数据要外部存储），另一半随时能用。
+     * 整条命令按「机器能不能用」问会答得太粗：它在菜单里该露面（本场查得了），
+     * 而「禁用命令 直播间总数据」仍该回一句「本机没开」——那是能力问题，
+     * 与「本群把通知配成了 @全体成员、这条命令在这里没意义」不是一回事。
+     * <p>
+     * 默认就是 {@link #available()}：不拆用法的命令两问同源。
+     * @param context 执行上下文，命令名一栏是打出来的那个名字（可能是别名）
+     * @return 这个用法在本机是否可用
+     */
+    default boolean availableFor(CommandContext context) {
+        return available();
+    }
+
+    /**
      * 本命令在这个会话里还有没有意义
      * <p>
      * 「菜单」问的是这一条，不是 {@link #available()}：有些命令整台机器都装得好好的，
@@ -91,7 +107,7 @@ public interface NovaCommand {
      * @return 是否在这个会话里列进菜单
      */
     default boolean availableIn(CommandContext context) {
-        return available() && (context.isGroup() || !groupOnly());
+        return availableFor(context) && (context.isGroup() || !groupOnly());
     }
 
     /**
@@ -105,6 +121,19 @@ public interface NovaCommand {
      */
     default String menuNote(CommandContext context) {
         return "";
+    }
+
+    /**
+     * 这一句话落到哪几个用法名上，「禁用命令」与开关状态都按这些名记账。
+     * <p>
+     * 合并后的命令一条多用法：「直播间数据 总」与旧名「直播间总数据」是同一个用法，
+     * 记账名仍取旧名，于是合并前关掉的那个用法，合并后照样关得掉、也开得回来。
+     * 默认就是命令名本身——不拆用法的命令不用管这一格。
+     * @param context 执行上下文，命令名一栏是<b>打出来的那个名字</b>（可能是别名）
+     * @return 用法名列表，非空
+     */
+    default List<String> usageKeys(CommandContext context) {
+        return List.of(name());
     }
 
     /**

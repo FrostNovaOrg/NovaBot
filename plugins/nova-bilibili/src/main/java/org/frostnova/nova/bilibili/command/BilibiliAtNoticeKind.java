@@ -29,22 +29,25 @@ public enum BilibiliAtNoticeKind {
     /**
      * 开播通知
      */
-    LIVE("live", "开播", BilibiliLiveOnPushHandler.class.getName()),
+    LIVE("live", "开播", "开播", BilibiliLiveOnPushHandler.class.getName()),
 
     /**
      * 动态通知。本模块不许引用报告插件的类，这里仍写搬走之前那一串。
      */
-    DYNAMIC("dynamic", "动态", HandlerPackageNames.oldBot("bilibili.handler.BilibiliDynamicPushHandler"));
+    DYNAMIC("dynamic", "动态", "发动态", HandlerPackageNames.oldBot("bilibili.handler.BilibiliDynamicPushHandler"));
 
     private final String type;
 
     private final String noticeName;
 
+    private final String typeName;
+
     private final String handler;
 
-    BilibiliAtNoticeKind(String type, String noticeName, String handler) {
+    BilibiliAtNoticeKind(String type, String noticeName, String typeName, String handler) {
         this.type = type;
         this.noticeName = noticeName;
+        this.typeName = typeName;
         this.handler = handler;
     }
 
@@ -62,6 +65,17 @@ public enum BilibiliAtNoticeKind {
      */
     public String noticeName() {
         return noticeName;
+    }
+
+    /**
+     * 这类通知写进回复句子里的说法，如「发动态」
+     * <p>
+     * 与 {@link #noticeName()} 不同：通知配置那一层叫「动态」，
+     * 而「动态时会 @ 你」读起来像在说一条状态，「发动态时会 @ 你」才是一句话。
+     * @return 句中说法
+     */
+    public String typeName() {
+        return typeName;
     }
 
     /**

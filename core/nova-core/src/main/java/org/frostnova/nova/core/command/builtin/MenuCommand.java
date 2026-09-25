@@ -86,8 +86,14 @@ public class MenuCommand implements NovaCommand {
             if (!command.availableIn(context)) {
                 continue;
             }
-            if (command.disableable() && settings.isDisabled(context.getPlatform(), context.getNum(), command.name())) {
-                continue;
+            // 按用法名记的账要按用法名读：合并后的命令一条多用法，全都关了才该从菜单里消失。
+            // 用法名取空时不当关掉看——空集上「全都关了」恒真，而恒真与真关了长得一样
+            if (command.disableable()) {
+                List<String> keys = command.usageKeys(context);
+                if (!keys.isEmpty() && keys.stream().allMatch(key ->
+                        settings.isDisabled(context.getPlatform(), context.getNum(), key))) {
+                    continue;
+                }
             }
             grouped.computeIfAbsent(command.category(), key -> new ArrayList<>()).add(command);
         }

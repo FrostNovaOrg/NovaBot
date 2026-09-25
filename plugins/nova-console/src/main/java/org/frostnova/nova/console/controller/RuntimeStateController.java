@@ -137,9 +137,7 @@ public class RuntimeStateController {
         // 只有「禁用」才校验命令存在与否。启用等同于删掉一条记录，对已改名或已删除的
         // 命令同样应当放行——否则状态文件里的残留就成了界面清不掉的死结
         if (disabled) {
-            Optional<NovaCommand> command = dispatcher.all().stream()
-                    .filter(item -> item.name().equals(name))
-                    .findFirst();
+            Optional<NovaCommand> command = find(name);
             if (command.isEmpty()) {
                 return fail(result, "未找到命令「" + name + "」");
             }
@@ -151,18 +149,23 @@ public class RuntimeStateController {
             }
         }
 
-        boolean changed = disabled
-                ? settings.disable(platform, num, name)
-                : settings.enable(platform, num, name);
+        List<String> keys = ledgerKeys(name, disabled);
+        boolean changed = false;
+        for (String key : keys) {
+            boolean done = disabled
+                    ? settings.disable(platform, num, key)
+                    : settings.enable(platform, num, key);
+            changed = changed || done;
+        }
         if (changed) {
             // 立即落盘。状态存储平时靠定时保存，而这里的改动来自人的一次明确操作，
             // 若此刻进程被杀掉，使用者会认为「我明明关了」
             store.save();
-            log.info("配置界面{}了会话 {} 中的命令 {}", disabled ? "禁用" : "启用", num, name);
+            log.info("配置界面{}了会话 {} 中的用法 {}", disabled ? "禁用" : "启用", num, keys);
         }
 
         result.put("success", true);
-        result.put("message", "「" + name + "」已在 " + num + " " + (disabled ? "禁用" : "启用"));
+        result.put("message", brackets(keys) + "已在 " + num + " " + (disabled ? "禁用" : "启用"));
         return result;
     }
 
@@ -206,9 +209,7 @@ public class RuntimeStateController {
 
         if (Boolean.TRUE.equals(disabled)) {
             for (String name : wanted) {
-                Optional<NovaCommand> command = dispatcher.all().stream()
-                        .filter(item -> item.name().equals(name))
-                        .findFirst();
+                Optional<NovaCommand> command = find(name);
                 if (command.isEmpty()) {
                     return fail(result, "未找到命令「" + name + "」，整批未改");
                 }
@@ -220,10 +221,15 @@ public class RuntimeStateController {
 
         int changed = 0;
         for (String name : wanted) {
-            boolean done = Boolean.TRUE.equals(disabled)
-                    ? settings.disable(platform, num, name)
-                    : settings.enable(platform, num, name);
-            if (done) {
+            // 一次点名可能落到好几格上（「@名单」盖着开播与动态两格），报的条数按点名的条数算
+            boolean any = false;
+            for (String key : ledgerKeys(name, Boolean.TRUE.equals(disabled))) {
+                boolean done = Boolean.TRUE.equals(disabled)
+                        ? settings.disable(platform, num, key)
+                        : settings.enable(platform, num, key);
+                any = any || done;
+            }
+            if (any) {
                 changed++;
             }
         }
@@ -343,10 +349,39 @@ public class RuntimeStateController {
             item.put("requiresAdmin", command.requiresAdmin());
             item.put("groupOnly", command.groupOnly());
             item.put("available", command.available());
+            item.put("usages", usagesOf(command));
             items.add(item);
         }
 
         return items;
+    }
+
+    /**
+     * 一条命令底下分几种用法，各自的记账名与在这台机器上开没开
+     * <p>
+     * 记账名从拼写里认：命令正名与别名各问一遍，把认到的格并起来。
+     * 「@名单」问着两格、「开播@名单」只问一格，并起来正好是开播与动态两格；
+     * 「直播间数据」与「直播间总数据」各一格，并起来是本场与累计。
+     * <p>
+     * {@code available} 问的是「这一格在这台机器上开没开」而不是「这条命令有没有」：
+     * 没配累计数据时累计那一半要置灰、本场那一半照常。按拼写问而不是写死哪一格靠后置能力——
+     * 写死的话下一条带范围开关的命令进来又要改一遍这里的表。
+     */
+    private JSONArray usagesOf(NovaCommand command) {
+        Set<String> keys = new LinkedHashSet<>();
+        keys.addAll(command.usageKeys(probeOf(command.name())));
+        for (String alias : command.aliases()) {
+            keys.addAll(command.usageKeys(probeOf(alias)));
+        }
+
+        JSONArray usages = new JSONArray();
+        for (String key : keys) {
+            JSONObject usage = new JSONObject();
+            usage.put("key", key);
+            usage.put("available", command.availableFor(probeOf(key)));
+            usages.add(usage);
+        }
+        return usages;
     }
 
     /**
@@ -498,6 +533,81 @@ public class RuntimeStateController {
      */
     private CommandContext context(String platform, Long num, PushTargetType type, NovaCommand command) {
         return new CommandContext(platform, type, num, null, command.name(), List.of(), "");
+    }
+
+    /**
+     * 按拼写造一个「就这一句」的上下文
+     * <p>
+     * 首词是命令名或别名，剩下的当参数：「直播间数据 总」里那个「总」是范围开关、不是命令名的一部分，
+     * 拆开才认得出问的是哪一格。与群里那一面认「用的是哪一格」用的是同一套拆法。
+     * <p>
+     * 会话与发送者留空：问的是「这一句认到哪一格、那一格在这台机器上开没开」，
+     * 与谁在哪个群发的无关。
+     */
+    private static CommandContext probeOf(String typed) {
+        String trimmed = typed.trim();
+        String[] parts = trimmed.split("\\s+");
+        List<String> args = new ArrayList<>();
+        for (int i = 1; i < parts.length; i++) {
+            args.add(parts[i]);
+        }
+        return new CommandContext(null, PushTargetType.GROUP, null, null, parts[0], args, trimmed);
+    }
+
+    /**
+     * 按名字或别名找命令
+     * <p>
+     * 认首词：点名里那个范围开关（「直播间数据 总」的「总」）不是名字的一部分，
+     * 整串拿去找会一无所获。旧表只认正名，别名一进来就报「未找到命令」——
+     * 而别名正是点名时最常见的写法。
+     */
+    private Optional<NovaCommand> find(String typed) {
+        String head = typed.trim().split("\\s+")[0];
+        return dispatcher.all().stream()
+                .filter(item -> item.name().equals(head) || item.aliases().contains(head))
+                .findFirst();
+    }
+
+    /**
+     * 这一栏改完，账上要动哪几个名
+     * <p>
+     * 「禁用」落到<b>用法名</b>上：关掉的是用法，拼写只是问法。「@名单」一句问着两格就关两格——
+     * 只记正名的话群里那两种问法照通，控制台这扇门就成了摆设。
+     * <p>
+     * 「启用」是删掉一条记录，删的是打出来的这一名：残留记录按名记，也只认这一名。
+     * 这一名若只对一格（「直播间数据 总」与「直播间总数据」是同一格的两种拼写），
+     * 把那一格的记账名一并删掉，两种拼写都开得回来；若一句名下对多格（「@名单」），
+     * 这一名不是记账名，只可能是旧版留下的残留，就只删这一名——
+     * 顺手动它名下那几格，会把人另外关着的那格一并开回来。
+     */
+    private List<String> ledgerKeys(String name, boolean disabled) {
+        List<String> keys = new ArrayList<>(find(name)
+                .map(command -> command.usageKeys(probeOf(name)))
+                .orElse(List.of()));
+        if (disabled) {
+            return keys;
+        }
+        if (keys.size() == 1) {
+            if (!keys.contains(name)) {
+                keys.add(name);
+            }
+            return keys;
+        }
+        return List.of(name);
+    }
+
+    /**
+     * 每一格各自一对书名号
+     * <p>
+     * 两格并排时若共用一对（中间拿「】【」拼），后一格看上去就成了【】里的话，
+     * 读起来像一个长名字。
+     */
+    private static String brackets(List<String> keys) {
+        StringBuilder text = new StringBuilder();
+        for (String key : keys) {
+            text.append('「').append(key).append('」');
+        }
+        return text.toString();
     }
 
     /**

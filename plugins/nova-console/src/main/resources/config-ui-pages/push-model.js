@@ -426,27 +426,71 @@ export function commandGroups(commands, session, totalDataAvailable) {
       groups.push(index.get(category));
     }
 
+    const usages = usageRows(command, off, totalDataAvailable);
     index.get(category).commands.push({
       name: command.name,
       description: command.description || '',
       requiresAdmin: !!command.requiresAdmin,
       disableable: command.disableable !== false,
-      off: off.has(command.name),
+      // 整条「被关了」说的是答不出话的那一种：一格关着、另一格还答的半开不算
+      off: usages.some(item => item.available && item.off),
+      usages,
       listed: !hidden.has(command.name),
       hiddenReason: hiddenReason(command, hidden, totalDataAvailable),
       note: notes[command.name] || '',
     });
   }
 
-  // 组开关：这一组全都开着才算开。半开的组显示成关着更糟——点一下「全开」，
-  // 使用者以为自己什么都没改，而那一下真的把没关的几条又写了一遍
+  // 组开关：这一组的每一格都开着才算开。半开的组显示成关着更糟——点一下「全开」，
+  // 使用者以为自己什么都没改，而那一下真的把没关的几格又写了一遍
   for (const group of groups) {
-    const switchable = group.commands.filter(item => item.disableable);
+    const cells = group.commands
+      .filter(item => item.disableable)
+      .flatMap(item => item.usages)
+      .filter(item => item.available);
     group.total = group.commands.length;
-    group.on = switchable.length > 0 && switchable.every(item => !item.off);
-    group.switchable = switchable.map(item => item.name);
+    group.on = cells.length > 0 && cells.every(item => !item.off);
+    // 批量开关按格落草稿：这里给的就是格名，与群里「禁用命令」写进去的同一套
+    group.switchable = cells.map(item => item.key);
+    group.cells = cells;
   }
   return groups;
+}
+
+/**
+ * 这条命令底下分哪几格，每一格开没开、锁没锁
+ *
+ * 群里「禁用命令」与控制台开关读写的都是<b>格名</b>（用法名），不是命令正名：
+ * 「@名单」一行盖着「开播@名单」「动态@名单」两格，各自关得掉。
+ * 命令没自报格（单用法的那些）就只有一格，格名与命令正名同名。
+ * @param command 命令
+ * @param off 本会话禁用清单
+ * @param totalDataAvailable 这台机器开没开累计数据
+ * @return 每格一项
+ */
+function usageRows(command, off, totalDataAvailable) {
+  const declared = (Array.isArray(command.usages) && command.usages.length)
+    ? command.usages
+    : [{key: command.name, available: command.available !== false}];
+  return declared.map(item => ({
+    key: item.key,
+    available: item.available !== false,
+    off: off.has(item.key),
+    // 锁住的那一格总得说清为什么。整条命令不列进菜单的理由另有 hiddenReason
+    reason: item.available !== false ? '' : machineReason(totalDataAvailable),
+  }));
+}
+
+/**
+ * 这台机器用不上这一格的理由
+ *
+ * 与 {@link hiddenReason} 的机器那一半同一句话：两边各写一份的话，改了一处忘了另一处，
+ * 屏幕上就会同时出现两种说法。
+ * @param totalDataAvailable 这台机器开没开累计数据
+ * @return 理由
+ */
+function machineReason(totalDataAvailable) {
+  return totalDataAvailable === false ? '累计数据没开' : '这台机器暂时用不上';
 }
 
 /**
@@ -485,7 +529,7 @@ function menuHiddenOf(session) {
 function hiddenReason(command, hidden, totalDataAvailable) {
   if (!hidden.has(command.name)) return '';
   if (command.available === false) {
-    return totalDataAvailable === false ? '累计数据没开，菜单里不显示' : '这台机器暂时用不上';
+    return machineReason(totalDataAvailable) + '，菜单里不显示';
   }
   return '在这个会话里不起作用，菜单里不显示';
 }
@@ -497,6 +541,9 @@ function hiddenReason(command, hidden, totalDataAvailable) {
  * 带「总」字的两条在群里本来就不出现，摘要仍写 14 的话，屏幕上的数与群里数出来的对不上。
  * 「列不列」这件事本身由后端答（menuHidden），界面不按命令名去认——
  * 认名字的话，下一条「总」字命令进来就会被漏掉。
+ * <p>
+ * 点名的那几条是<b>格名</b>（{@link commandGroups} 里 {@code usages} 的 {@code key}），
+ * 与「N 条可用」的「条」不是一个量纲：前者是关掉的开关，后者是菜单里还答得出话的行。
  * @param commands /api/state 的 commands
  * @param session 会话
  * @param totalDataAvailable 这台机器开没开累计数据
@@ -504,21 +551,37 @@ function hiddenReason(command, hidden, totalDataAvailable) {
  */
 export function commandSummary(commands, session, totalDataAvailable) {
   const list = commands || [];
-  const known = new Set(list.map(item => item.name));
   const hidden = new Set(menuHiddenOf(session));
-  const disabled = ((session || {}).disabled) || [];
+  const records = ((session || {}).disabled) || [];
+  const off = new Set(records);
+
+  // 对账认的是<b>格名</b>：群里「禁用命令」写进状态文件的就是这一格。
+  // 命令正名（「@名单」）不是账上的键，账上留着它只能是改过名、已删除的残迹
+  const known = new Set();
+  for (const command of list) {
+    for (const usage of usageRows(command, off, totalDataAvailable)) {
+      known.add(usage.key);
+    }
+  }
 
   const listed = list.filter(item => !hidden.has(item.name));
-  // 被群管理员关掉的：只算真有这条命令的。状态文件里那些改过名、已删除的记录另算一摊，
+  // 被群管理员关掉的：只算真有这一格的。状态文件里那些改过名、已删除的记录另算一摊，
   // 混进来的话「一键恢复」会顺手把它们也清掉，而按钮上写的不是这件事
-  const offNames = disabled.filter(name => known.has(name));
-  const strayNames = disabled.filter(name => !known.has(name));
+  const offNames = records.filter(name => known.has(name));
+  const strayNames = records.filter(name => !known.has(name));
+  // 「N 条可用」数的是<b>命令</b>：一条命令关掉一格、另一格还答的话，它仍然算可用。
+  // 拿格数去减命令数的话，两个不同的量纲做减法，屏幕上就会多出或少掉几条
+  let fullyOff = 0;
+  for (const command of listed) {
+    const live = usageRows(command, off, totalDataAvailable).filter(item => item.available);
+    if (live.length > 0 && live.every(item => item.off)) fullyOff++;
+  }
   const hiddenByMachine = list.filter(item => item.available === false && hidden.has(item.name));
   const hiddenBySession = list.filter(item => item.available !== false && hidden.has(item.name));
 
   const parts = [];
   parts.push(offNames.length
-    ? (listed.length - offNames.length) + ' 条可用 · ' + offNames.length + ' 条被群管理员关了（'
+    ? (listed.length - fullyOff) + ' 条可用 · ' + offNames.length + ' 条被群管理员关了（'
       + offNames.join('、') + '）'
     : listed.length + ' 条全部可用');
   if (hiddenByMachine.length) {

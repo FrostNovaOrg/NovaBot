@@ -11,15 +11,22 @@ import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.List;
+
 /**
  * 分范围的数据查询命令
  * <p>
  * 每个查询都有「本场」与「累计」两副面孔，除了取数范围之外逻辑完全一致。
- * 范围由 {@link #scope()} 声明，取数交给 {@link BilibiliDataScope}，
- * 子类只关心排哪些数据、怎么排。
+ * 范围由<b>这一句怎么打的</b>决定：带「总」（或用旧的累计命令名）出历次累计，不带出本场。
+ * 取数交给 {@link BilibiliDataScope}，子类只关心排哪些数据、怎么排。
  */
 @Slf4j
 public abstract class BilibiliScopedDataCommand extends BilibiliStreamerCommand {
+    /**
+     * 「总」这个字：带它就是累计
+     */
+    protected static final String TOTAL_FLAG = "总";
+
     protected final LiveDataService liveDataService;
 
     protected final BilibiliDataQueryPainter painter;
@@ -50,9 +57,50 @@ public abstract class BilibiliScopedDataCommand extends BilibiliStreamerCommand 
     }
 
     /**
-     * 本命令查询的数据范围
+     * 本场那个用法的记账名（新名）
      */
-    protected abstract BilibiliDataScope scope();
+    protected abstract String liveName();
+
+    /**
+     * 累计那个用法的记账名（旧名）
+     * <p>
+     * 记账名仍取旧名：合并前关掉的那个用法，合并后照样关得掉、也开得回来。
+     */
+    protected abstract String totalName();
+
+    /**
+     * 这一句要的是不是累计
+     * <p>
+     * 认两处：命令名用的是旧的累计名，或参数里带着「总」。
+     * 追问应答把选中的主播号接在原参数后面，「总」留在原位，两种认法在追问之后都还在。
+     * @param context 执行上下文，命令名一栏是打出来的那个名字
+     */
+    protected boolean wantsTotal(CommandContext context) {
+        return totalName().equals(context.getCommand()) || context.getArgs().contains(TOTAL_FLAG);
+    }
+
+    /**
+     * 这一句查的数据范围
+     */
+    protected BilibiliDataScope scope(CommandContext context) {
+        return wantsTotal(context) ? BilibiliDataScope.TOTAL : BilibiliDataScope.LIVE;
+    }
+
+    /**
+     * 这一句落到哪个用法名上：带「总」（或用旧的累计名）记在累计那一格，否则记在本场
+     * <p>
+     * 菜单那一路问的是「这条命令整体关没关」，不是某一次怎么打的——菜单自己
+     * 不是本命令的拼写，此时两格都算，全关了才该整条从菜单里消失。
+     * 只按这一次算的话，关掉本场那一格会把还能用的累计用法一起藏了。
+     */
+    @Override
+    public List<String> usageKeys(CommandContext context) {
+        String typed = context.getCommand();
+        if (name().equals(typed) || aliases().contains(typed)) {
+            return List.of(wantsTotal(context) ? totalName() : liveName());
+        }
+        return List.of(liveName(), totalName());
+    }
 
     @Override
     public boolean groupOnly() {
@@ -63,8 +111,22 @@ public abstract class BilibiliScopedDataCommand extends BilibiliStreamerCommand 
 
     @Override
     public boolean available() {
-        // 累计要靠外部存储。没配的机器上这条命令不进菜单，但仍认得出来，好回一句为什么
-        return !scope().isTotal() || liveDataService.supportsTotalData();
+        // 整条命令随时能用——本场这一半不靠外部存储。累计那一半另按用法判
+        return true;
+    }
+
+    @Override
+    public boolean availableFor(CommandContext context) {
+        // 累计要靠外部存储。没配的机器上「带总」的用法不可用，本场照样查得了
+        return !wantsTotal(context) || liveDataService.supportsTotalData();
+    }
+
+    @Override
+    public String menuNote(CommandContext context) {
+        if (!liveDataService.supportsTotalData()) {
+            return "带「总」查累计要先开累计数据";
+        }
+        return "";
     }
 
     /**
@@ -73,15 +135,15 @@ public abstract class BilibiliScopedDataCommand extends BilibiliStreamerCommand 
      * 未配置外部存储时累计数据一律为 0。直接把 0 画出来会让人以为数据丢了，
      * 因此这里明确回一句「没开这个能力」，并顺手指一条现在就能用的路。
      * <p>
-     * 还要在日志里记一行：菜单已经不列这两条了，仍然发过来说明有人照着旧习惯或旧文档在用，
+     * 还要在日志里记一行：菜单已经标了这一档，仍然发过来说明有人照着旧习惯或旧文档在用，
      * 而这件事在机器的主人那边<b>没有任何别的痕迹</b>——群里的对话他看不到。
-     * @param context 执行上下文，用于日志
+     * @param context 执行上下文，用于日志与判范围
      * @return 不可用时的说明，可用时为 null
      */
     protected CommandReply checkScopeAvailable(CommandContext context) {
-        if (scope().isTotal() && !liveDataService.supportsTotalData()) {
-            log.info("会话 {} 请求了累计数据命令 {}, 但本机未配置累计存储, 已回绝", context.getNum(), name());
-            return CommandReply.of("本机没开累计数据，只能查本场。发「直播间数据」看本场。");
+        if (scope(context).isTotal() && !liveDataService.supportsTotalData()) {
+            log.info("会话 {} 请求了累计数据命令 {}, 但本机未配置累计存储, 已回绝", context.getNum(), context.getCommand());
+            return CommandReply.of("本机没开累计数据，只能查本场。发「" + liveName() + "」看本场。");
         }
         return null;
     }

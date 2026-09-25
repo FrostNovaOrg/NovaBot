@@ -52,7 +52,7 @@ public class DataStorageHealthProbe implements HealthProbe {
 
         return HealthStatus.degraded("只有本场数据（累计存储连不上）",
                 "Redis " + target + " 此刻连不上，累计查询已自动降级，"
-                        + "群里的菜单也不再列「直播间总数据」与「总数据排行榜」。确认它起着、地址与密码没写错即可，"
+                        + "带「总」的查法一并不可用。确认它起着、地址与密码没写错即可，"
                         + "连回来会自己恢复，不用重启");
     }
 }

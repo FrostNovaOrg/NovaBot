@@ -57,7 +57,7 @@ class BilibiliRankingCommandTest {
 
     private BilibiliDataQueryPainter painter;
 
-    private BilibiliLiveRankingCommand command;
+    private BilibiliRankingCommand command;
 
     private RevenueVisibilityService revenueVisibility;
 
@@ -75,7 +75,7 @@ class BilibiliRankingCommandTest {
         when(painter.paintRanking(any(), any(), anyInt(), any(), any())).thenReturn(Optional.of("QUJD"));
 
         // 本类只配了一位主播，「说的是哪一位」这一步不会走到追问，替身足够
-        command = new BilibiliLiveRankingCommand(dataSource, mock(BilibiliStreamerChoice.class),
+        command = new BilibiliRankingCommand(dataSource, mock(BilibiliStreamerChoice.class),
                 liveDataService, painter, revenueVisibility);
     }
 
@@ -95,6 +95,21 @@ class BilibiliRankingCommandTest {
         CommandReply reply = command.execute(context("人气"));
 
         assertTrue(reply.content().contains("礼物"));
+    }
+
+    @Test
+    @DisplayName("问累计榜却没说哪张时，回的示例照着发要真查得到累计那一半")
+    void exampleWhenBoardMissingShowsTheHalfBeingAsked() {
+        // 示例是给人照着发的。写成本场那一半的拼法，照着发查到的就是本场，
+        // 而问的人明明说的是累计——这一句答非所问
+        when(liveDataService.supportsTotalData()).thenReturn(true);
+
+        String oldSpelling = command.execute(contextAs("总数据排行榜")).content();
+        assertTrue(oldSpelling.contains("例如：总数据排行榜 "), oldSpelling);
+        assertTrue(oldSpelling.contains("翻页：总数据排行榜 "), oldSpelling);
+
+        String newSpelling = command.execute(contextAs("数据排行榜", "总")).content();
+        assertTrue(exampleOf(newSpelling).contains("总"), newSpelling);
     }
 
     @Test
@@ -181,20 +196,14 @@ class BilibiliRankingCommandTest {
     }
 
     @Test
-    @DisplayName("用户查总数据排行榜（弹幕），有弹幕却认不出发送者时，得到的是缘由，而不是误导人的「还没有数据」")
+    @DisplayName("用户查累计榜（数据排行榜 弹幕 总），有弹幕却认不出发送者时，得到的是缘由，而不是误导人的「还没有数据」")
     void totalRankingExplainsWhenDanmuCountedButSenderUnknown() {
         when(liveDataService.supportsTotalData()).thenReturn(true);
         when(liveDataService.getTotalMetricUserCount(anyString(), anyLong(), anyString())).thenReturn(0);
         when(liveDataService.getTotalMetric(anyString(), anyLong(), eq(BilibiliLiveMetric.DANMU_COUNT)))
                 .thenReturn(7.0);
 
-        AbstractDataSource dataSource = mock(AbstractDataSource.class);
-        when(dataSource.getUsers("bilibili")).thenReturn(List.of(streamer(STREAMER, "测试主播")));
-        BilibiliTotalRankingCommand total = new BilibiliTotalRankingCommand(
-                dataSource, mock(BilibiliStreamerChoice.class),
-                liveDataService, painter, revenueVisibility);
-
-        CommandReply reply = total.execute(context("弹幕"));
+        CommandReply reply = command.execute(context("弹幕", "总"));
 
         assertEquals("测试主播的直播间累计弹幕认不出发送者，没有排行", reply.content());
         verify(painter, never()).paintRanking(any(), any(), anyInt(), any(), any());
@@ -303,8 +312,28 @@ class BilibiliRankingCommandTest {
     }
 
     private CommandContext context(String... args) {
+        return contextAs("数据排行榜", args);
+    }
+
+    /**
+     * 按打出来的那一整句造上下文：拼写本身就是问题的一部分（旧名「总数据排行榜」
+     * 与新写法「数据排行榜 总」问的是同一件事，回话要认得两种问法）
+     */
+    private CommandContext contextAs(String typed, String... args) {
         return new CommandContext(PLATFORM, PushTargetType.GROUP, GROUP, 2000000002L,
-                "数据排行榜", Arrays.asList(args), "数据排行榜");
+                typed, Arrays.asList(args), typed);
+    }
+
+    /**
+     * 回话里「例如：」那一行——示例是给人照着发的，它自己就得是个能跑通的问法
+     */
+    private static String exampleOf(String reply) {
+        for (String line : reply.split("\n")) {
+            if (line.startsWith("例如：")) {
+                return line;
+            }
+        }
+        return "";
     }
 
     private PushUser streamer(Long uid, String uname) {

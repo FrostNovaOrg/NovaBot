@@ -8,6 +8,8 @@ import org.frostnova.nova.core.command.NovaCommand;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Predicate;
 
 /**
@@ -61,18 +63,33 @@ public abstract class ToggleCommand implements NovaCommand {
             return CommandReply.of("请指明命令名，例如：" + name() + " 直播报告");
         }
 
-        NovaCommand command = resolve(context, target);
+        // 「这一句怎么打的」决定了它落到哪个用法上：「数据排行榜 总」与旧名「总数据排行榜」
+        // 是同一个用法，认的是带不带「总」，不是命令正名。开关、可用与否都问这一份上下文
+        List<String> rest = context.getArgs().size() > 1
+                ? List.copyOf(context.getArgs().subList(1, context.getArgs().size()))
+                : List.of();
+        CommandContext probe = new CommandContext(context.getPlatform(), context.getType(), context.getNum(),
+                context.getSenderUid(), target, rest, context.getRawText());
+
+        NovaCommand command = resolve(probe, target);
         if (command == null) {
             // 三种情形要分得开：能力没配好、这个会话里用不上、名字打错了。
-            // 说成同一句的话，前两种的人会一直在改自己的措辞，而他要动的根本不是措辞
-            NovaCommand unavailable = first(target, item -> !item.available());
+            // 说成同一句的话，前两种的人会一直在改自己的措辞，而他要动的根本不是措辞。
+            // 报错里写打出来的那个名字，不写命令正名——「禁用命令 取消开播@我」若回「开播@我」，
+            // 他会以为自己打错了名字
+            // 报的是**这一句落到的那一格**，不是打出来的头一个词：「禁用命令 直播间数据 总」
+            // 问的是累计那一半，回「直播间数据在本机没开」会把人指向还开着的那一半，
+            // 他会以为整条命令都没配好，而要配的是累计数据这一件事
+            NovaCommand unavailable = first(target, item -> !item.availableFor(probe));
             if (unavailable != null) {
-                return CommandReply.of("「" + unavailable.name() + "」在本机没开，不用开关它，"
+                return CommandReply.of(CommandContext.quoted(asked(unavailable, probe, target))
+                        + "在本机没开，不用开关它，"
                         + "把它要的能力配好之后会自动回来");
             }
-            NovaCommand hidden = first(target, item -> !item.availableIn(context));
+            NovaCommand hidden = first(target, item -> !item.availableIn(probe));
             if (hidden != null) {
-                return CommandReply.of("「" + hidden.name() + "」在" + context.here() + "用不上，"
+                return CommandReply.of(CommandContext.quoted(asked(hidden, probe, target))
+                        + "在" + probe.here() + "用不上，"
                         + "菜单里也没有它，不用开关它");
             }
             return CommandReply.of("没有名为「" + target + "」的命令，发送「菜单」可查看全部命令");
@@ -81,18 +98,43 @@ public abstract class ToggleCommand implements NovaCommand {
             return CommandReply.of("「" + command.name() + "」不可开关");
         }
 
-        boolean changed = enabling()
-                ? settings.enable(context.getPlatform(), context.getNum(), command.name())
-                : settings.disable(context.getPlatform(), context.getNum(), command.name());
+        List<String> keys = command.usageKeys(probe);
+        if (keys.isEmpty()) {
+            return CommandReply.of("「" + target + "」没有可开关的用法");
+        }
 
+        boolean changed = false;
+        for (String key : keys) {
+            boolean one = enabling()
+                    ? settings.enable(context.getPlatform(), context.getNum(), key)
+                    : settings.disable(context.getPlatform(), context.getNum(), key);
+            changed |= one;
+        }
+
+        String joined = CommandContext.quoted(keys);
         if (!changed) {
-            return CommandReply.of("「" + command.name() + "」本来就是" + (enabling() ? "启用" : "禁用") + "状态");
+            return CommandReply.of(joined + "本来就是" + (enabling() ? "启用" : "禁用") + "状态");
         }
 
         // 改的是全群状态，留一条审计日志：事后才问得出「这功能什么时候被谁关掉的」
-        log.info("{} 在会话 {} 中{}了命令 {}", context.getSenderUid(), context.getNum(),
-                enabling() ? "启用" : "禁用", command.name());
-        return CommandReply.of("已" + (enabling() ? "启用" : "禁用") + "「" + command.name() + "」");
+        log.info("{} 在会话 {} 中{}了用法 {}", context.getSenderUid(), context.getNum(),
+                enabling() ? "启用" : "禁用", keys);
+        return CommandReply.of("已" + (enabling() ? "启用" : "禁用") + joined);
+    }
+
+    /**
+     * 这一句落到哪几格，说不出时退回打出来的那个名字
+     * <p>
+     * 认的是「怎么打的」那一份上下文：「禁用命令 直播间数据 总」落到累计那一格，
+     * 报「直播间数据」会把人指向还开着的那一半。
+     * @param command 目标命令
+     * @param probe 按打出来的名字建的上下文
+     * @param typed 打出来的那个名字
+     * @return 这一句落到的用法名
+     */
+    private List<String> asked(NovaCommand command, CommandContext probe, String typed) {
+        List<String> keys = command.usageKeys(probe);
+        return keys.isEmpty() ? List.of(typed) : keys;
     }
 
     /**
@@ -102,14 +144,15 @@ public abstract class ToggleCommand implements NovaCommand {
      * {@link NovaCommand#available}：两处口径分开的那一版里，本群的开播通知
      * 配成「@全体成员」时「开播@我」菜单里没有、却仍开关得动，
      * 于是状态文件里留下一条界面上看得见、群里怎么也验证不了的记录。
+     * 传进来的上下文按<b>打出来的那个名字</b>建：同一句里带不带「总」是两个用法。
      * <p>
      * 两种够不着的理由都不是使用者能靠改措辞解决的：能力配好、或本会话的配置改回来之后，
      * 那条命令自己就回菜单了，那才是他要做的那一件事。
-     * @param context 执行上下文
+     * @param probe 按打出来的名字建的上下文
      * @param name 命令名或别名
      */
-    private NovaCommand resolve(CommandContext context, String name) {
-        return first(name, command -> command.availableIn(context));
+    private NovaCommand resolve(CommandContext probe, String name) {
+        return first(name, command -> command.availableIn(probe));
     }
 
     /**

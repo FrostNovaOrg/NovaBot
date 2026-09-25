@@ -9,6 +9,7 @@ import org.frostnova.nova.bilibili.command.BilibiliStreamerChoice;
 import org.frostnova.nova.bilibili.handler.BilibiliLiveOnPushHandler;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.command.CommandContext;
+import org.frostnova.nova.core.command.CommandSettingsService;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.enums.PushTargetType;
@@ -264,7 +265,8 @@ class LegacyHandlerClassNameTest {
         when(dataSource.getUsers("bilibili")).thenReturn(List.of(streamer));
 
         BilibiliDynamicAtMeCommand command = new BilibiliDynamicAtMeCommand(dataSource,
-                mock(BilibiliStreamerChoice.class), mock(AtSubscriptionService.class));
+                mock(BilibiliStreamerChoice.class), mock(AtSubscriptionService.class),
+                mock(CommandSettingsService.class));
 
         assertEquals("", command.menuNote(atMeContext()),
                 "认成本类的话, 开播那条推送的 @ 模式会被当成动态通知的, 说出来的话是错的");
@@ -366,7 +368,7 @@ class LegacyHandlerClassNameTest {
                 .thenReturn(AtSubscriptionService.Result.OK);
 
         BilibiliDynamicAtMeCommand command = new BilibiliDynamicAtMeCommand(dataSource,
-                mock(BilibiliStreamerChoice.class), subscriptions);
+                mock(BilibiliStreamerChoice.class), subscriptions, mock(CommandSettingsService.class));
         return command.execute(atMeContext()).content();
     }
 

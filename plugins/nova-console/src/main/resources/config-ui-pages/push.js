@@ -145,6 +145,10 @@ button.danger:hover{border-color:var(--err);color:var(--err)}
 .cgroup>.swrow{border-top:none}
 .cgroup>.swrow>.ghost{flex:none;padding:4px 12px;font-size:12px}
 .cfine{padding-left:24px}
+.cmdline{border-top:1px solid var(--line)}
+.cmdline:first-child{border-top:none}
+.cmdline>.swrow{border-top:none}
+.cmdline>.swrow.cmdsub{border-top:1px solid var(--line);padding-left:24px}
 .strand{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0;
   border-top:1px solid var(--line);font-size:12.5px}
 .strand:first-of-type{border-top:none}

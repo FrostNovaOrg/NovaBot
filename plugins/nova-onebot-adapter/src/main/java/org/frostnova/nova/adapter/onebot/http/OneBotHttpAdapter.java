@@ -27,6 +27,9 @@ public interface OneBotHttpAdapter {
     @OneBotApi(name = "获取群成员信息", url = "/get_group_member_info", latency = false)
     JSONObject getGroupMemberInfo(OneBotSender sender, JSONObject params);
 
+    @OneBotApi(name = "获取群成员列表", url = "/get_group_member_list", latency = false)
+    JSONArray getGroupMemberList(OneBotSender sender, JSONObject params);
+
     @OneBotApi(name = "获取群列表", url = "/get_group_list", latency = false)
     JSONArray getGroupList(OneBotSender sender, JSONObject params);
 

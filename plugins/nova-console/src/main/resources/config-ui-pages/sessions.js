@@ -168,20 +168,18 @@ function commandRow(host, ctx) {
   }
 }
 
-/** 这条命令此刻「想关掉吗」：草稿优先，没改过才认服务端那一份 */
-function effectiveOff(ctx, command) {
-  const wanted = commandDraft(ctx.target, command.name);
-  return wanted === undefined ? command.off : wanted;
+/** 这一格此刻「想关掉吗」：草稿优先，没改过才认服务端那一份 */
+function effectiveUsageOff(ctx, usage) {
+  const wanted = commandDraft(ctx.target, usage.key);
+  return wanted === undefined ? usage.off : wanted;
 }
 
 function commandGroup(ctx, group) {
   const box = el('div', 'cgroup');
 
-  const switchable = group.switchable;
-  const allOn = switchable.length > 0 && switchable.every(name => {
-    const item = group.commands.find(c => c.name === name);
-    return item && !effectiveOff(ctx, item);
-  });
+  // 组开关按格起算：一格关着、另一格还开的半开组不算全开
+  const cells = group.cells || [];
+  const allOn = cells.length > 0 && cells.every(usage => !effectiveUsageOff(ctx, usage));
 
   const head = el('div', 'swrow');
   const label = el('label', 'switch');
@@ -217,21 +215,29 @@ function commandGroup(ctx, group) {
   return box;
 }
 
+/**
+ * 一条命令一行，底下按用法分格
+ *
+ * 只有一格的命令不另画分格：那一格就是这条命令，多画一个开关只是让人分不清该拨哪个。
+ * 整条的开关说的是「这条命令要不要」，拨一下把本机用得上的每一格一起进草稿。
+ */
 function commandLine(ctx, command) {
-  const off = effectiveOff(ctx, command);
+  const usages = command.usages || [];
+  const live = usages.filter(usage => usage.available);
+  const allOn = live.length > 0 && live.every(usage => !effectiveUsageOff(ctx, usage));
+  const box = el('div', 'cmdline');
   const line = el('div', 'swrow' + (command.listed ? '' : ' dimmed'));
 
   if (command.disableable) {
     const label = el('label', 'switch');
-    label.innerHTML = '<input type="checkbox"' + (off ? '' : ' checked') + '>';
+    label.innerHTML = '<input type="checkbox"' + (allOn ? ' checked' : '') + '>';
     const input = label.querySelector('input');
     input.setAttribute('aria-label', command.name);
     // 群里本来就不列的那几条，开关一并锁住：拨动它不会让它出现在菜单里，
     // 而一个拨得动却不起作用的开关比锁着的更费解
-    input.disabled = !command.listed;
+    input.disabled = !command.listed || !live.length;
     input.addEventListener('change', () => {
-      setCommandDraft(ctx.target, command.name, !input.checked, command.off);
-      refresh();
+      batchCommands(ctx, live.map(usage => usage.key), !input.checked);
     });
     line.appendChild(label);
   } else {
@@ -243,14 +249,50 @@ function commandLine(ctx, command) {
   const text = el('div', 'swtxt');
   const marks = [];
   if (command.requiresAdmin) marks.push('仅管理员');
-  if (off) marks.push('已被群管理员禁用');
+  // 整条写「已被群管理员禁用」的条件是每一格都关着：一格关着、另一格还答的话，
+  // 这条命令仍然答得出话，写上去就成了谎报
+  if (live.length > 0 && live.every(usage => effectiveUsageOff(ctx, usage))) {
+    marks.push('已被群管理员禁用');
+  }
   if (command.hiddenReason) marks.push(command.hiddenReason);
   if (command.note) marks.push(command.note);
   text.innerHTML = '<b>' + esc(command.name) + '</b>'
     + (marks.length ? '<span class="cmdmark">' + esc(marks.join(' · ')) + '</span>' : '')
     + '<p>' + esc(command.description) + '</p>';
   line.appendChild(text);
-  return line;
+  box.appendChild(line);
+
+  if (command.disableable && usages.length > 1) {
+    for (const usage of usages) box.appendChild(usageRow(ctx, command, usage));
+  }
+  return box;
+}
+
+/** 一格一行：各自关得掉，锁住的说清为什么 */
+function usageRow(ctx, command, usage) {
+  const off = effectiveUsageOff(ctx, usage);
+  const row = el('div', 'swrow cmdsub' + (command.listed ? '' : ' dimmed'));
+
+  const label = el('label', 'switch');
+  label.innerHTML = '<input type="checkbox"' + (!off && usage.available ? ' checked' : '') + '>';
+  const input = label.querySelector('input');
+  input.setAttribute('aria-label', usage.key);
+  // 本机用不上那一格时锁着：拨了也不起作用
+  input.disabled = !command.listed || !usage.available;
+  input.addEventListener('change', () => {
+    setCommandDraft(ctx.target, usage.key, !input.checked, usage.off);
+    refresh();
+  });
+  row.appendChild(label);
+
+  const text = el('div', 'swtxt');
+  const marks = [];
+  if (usage.reason) marks.push(usage.reason);
+  if (off) marks.push('已被群管理员禁用');
+  text.innerHTML = '<b>' + esc(usage.key) + '</b>'
+    + (marks.length ? '<span class="cmdmark">' + esc(marks.join(' · ')) + '</span>' : '');
+  row.appendChild(text);
+  return row;
 }
 
 /**

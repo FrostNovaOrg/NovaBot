@@ -36,6 +36,9 @@ import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.util.ClassUtils;
 
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Parameter;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -100,17 +103,12 @@ class CommandSurfaceTest {
             Map.entry("禁用命令", true),
             // 提醒订阅：@ 谁只在群里才有意义
             Map.entry("开播@我", true),
-            Map.entry("取消开播@我", true),
-            Map.entry("开播@名单", true),
             Map.entry("动态@我", true),
-            Map.entry("取消动态@我", true),
-            Map.entry("动态@名单", true),
+            Map.entry("@名单", true),
             // 数据查询：已配推送的好友会话里照样能查
             Map.entry("直播报告", false),
             Map.entry("直播间数据", false),
-            Map.entry("直播间总数据", false),
-            Map.entry("数据排行榜", false),
-            Map.entry("总数据排行榜", false));
+            Map.entry("数据排行榜", false));
 
     /**
      * 已停用的账号绑定族
@@ -120,18 +118,38 @@ class CommandSurfaceTest {
     private static final List<String> RETIRED = List.of("绑定", "确认绑定", "解绑", "我的数据", "我的总数据");
 
     /**
-     * 依赖累计存储的两条
+     * 累计那两个用法的记账名（旧名）→ 累计没开时的回话
+     * <p>
+     * 合并后它们不再单列进菜单，但仍有两重身份：一是别名拼写
+     * （「直播间总数据」＝「直播间数据 总」），二是「禁用命令」记账的那一格。
+     * 合并前关掉的那个用法，合并后照样关得掉、也开得回来。
+     * 回话里指的路各指各的正名——让发过「总数据排行榜」的人改发「数据排行榜」，
+     * 而不是也说「直播间数据」
      */
-    private static final List<String> TOTAL_ONLY = List.of("直播间总数据", "总数据排行榜");
-
-    private static final String TOTAL_OFF_REPLY = "本机没开累计数据，只能查本场。发「直播间数据」看本场。";
+    private static final Map<String, String> TOTAL_OFF_REPLIES = Map.of(
+            "直播间总数据", "本机没开累计数据，只能查本场。发「直播间数据」看本场。",
+            "总数据排行榜", "本机没开累计数据，只能查本场。发「数据排行榜」看本场。");
 
     /**
-     * 开播那一类的三条订阅命令，与动态那一类的三条
+     * 累计没开时菜单里跟在数据查询那两行后面的说明
      */
-    private static final List<String> LIVE_AT_COMMANDS = List.of("开播@我", "取消开播@我", "开播@名单");
+    private static final String TOTAL_NOTE = "带「总」查累计要先开累计数据";
 
-    private static final List<String> DYNAMIC_AT_COMMANDS = List.of("动态@我", "取消动态@我", "动态@名单");
+    /**
+     * 开播那一类：菜单上印的名字 vs 全部拼写
+     * <p>
+     * 菜单只印正名；「取消开播@我」「开播@名单」是旧拼写，回复与开关都按拼写量，
+     * 但菜单里没有它们——拿拼写去菜单里找是空着绿
+     */
+    private static final List<String> LIVE_MENU_NAMES = List.of("开播@我");
+
+    private static final List<String> LIVE_AT_SPELLINGS = List.of("开播@我", "取消开播@我", "开播@名单");
+
+    private static final List<String> DYNAMIC_AT_SPELLINGS = List.of("动态@我", "取消动态@我", "动态@名单");
+
+    private static final String DYNAMIC_AT_MENU_NAME = "动态@我";
+
+    private static final String AT_LIST_MENU_NAME = "@名单";
 
     private static final String AT_ALL_REPLY = "本群开播通知会 @全体成员，不用单独订阅";
 
@@ -183,8 +201,8 @@ class CommandSurfaceTest {
     }
 
     @Test
-    @DisplayName("菜单条数：群聊十四条，私聊只列能在私聊用的六条")
-    void menuListsFourteenInGroupAndSixInPrivate() {
+    @DisplayName("菜单条数：群聊九条，私聊只列能在私聊用的四条")
+    void menuListsNineInGroupAndFourInPrivate() {
         String groupMenu = registry.feed(true, "菜单");
         String friendMenu = registry.feed(false, "菜单");
         List<String> privateOk = GROUP_ONLY.entrySet().stream()
@@ -194,7 +212,7 @@ class CommandSurfaceTest {
                 .toList();
 
         assertEquals(GROUP_ONLY.size(), entryCount(groupMenu));
-        assertEquals(6, privateOk.size());
+        assertEquals(4, privateOk.size());
         assertEquals(privateOk.size(), entryCount(friendMenu), friendMenu);
         for (String name : privateOk) {
             assertTrue(friendMenu.contains("\n" + name + " "), name + " 该出现在私聊菜单：" + friendMenu);
@@ -208,29 +226,32 @@ class CommandSurfaceTest {
     }
 
     @Test
-    @DisplayName("累计没开：菜单藏掉两条「总」字命令")
-    void menuHidesTotalCommandsWhenUnsupported() {
+    @DisplayName("累计没开：数据查询照列，各带一句「带总查累计要先开」")
+    void menuNotesTotalWhenUnsupported() {
         registry.supportsTotalData(false);
 
         String menu = registry.feed(true, "菜单");
 
-        for (String name : TOTAL_ONLY) {
-            assertFalse(menu.contains("\n" + name + " "), name + " 不该出现：" + menu);
+        // 整条命令还在：本场那半随时查得了。旧的累计名是拼写，菜单只印正名
+        for (String name : TOTAL_OFF_REPLIES.keySet()) {
+            assertFalse(menu.contains("\n" + name + " "), name + " 是旧拼写，不该单列：" + menu);
         }
-        assertEquals(GROUP_ONLY.size() - TOTAL_ONLY.size(), entryCount(menu));
+        assertTrue(menu.contains("\n直播间数据 "), "该出现：" + menu);
+        assertTrue(menu.contains("\n数据排行榜 "), "该出现：" + menu);
+        assertEquals(GROUP_ONLY.size(), entryCount(menu));
+        // 两条数据查询各带一句——藏掉整条会把还能用的本场一起藏了
+        assertEquals(2, noteCount(menu, TOTAL_NOTE), "两条各带一句说明：" + menu);
     }
 
     @Test
-    @DisplayName("累计开着：两条照列，菜单回到十四条")
-    void menuKeepsTotalCommandsWhenSupported() {
+    @DisplayName("累计开着：那句说明不该出现，条数不变")
+    void menuSilentOnTotalWhenSupported() {
         registry.supportsTotalData(true);
 
         String menu = registry.feed(true, "菜单");
 
-        for (String name : TOTAL_ONLY) {
-            assertTrue(menu.contains("\n" + name + " "), name + " 该出现：" + menu);
-        }
         assertEquals(GROUP_ONLY.size(), entryCount(menu));
+        assertEquals(0, noteCount(menu, TOTAL_NOTE), "配好了就不必再提醒：" + menu);
     }
 
     @Test
@@ -240,27 +261,31 @@ class CommandSurfaceTest {
         AtomicLong clock = new AtomicLong(1_000_000L);
         TotalDataStorage storage = new TotalDataStorage(
                 TotalDataStorage.Settings.UNSET, settings -> redisFactory(up), clock::get);
-        // 这一份 Registry 背后是真的判定链：菜单 ← 命令的 available() ← supportsTotalData()
+        // 这一份 Registry 背后是真的判定链：菜单说明 ← 命令的 menuNote() ← supportsTotalData()
         // ← 累计存储的探活。上面那几条用替身量的是链条的前半截，这一条把后半截接上
         Registry runtime = new Registry(new CompositeLiveDataService(
                 new DefaultLiveDataService(new NovaCoreProperties()), storage));
 
-        assertEquals(GROUP_ONLY.size() - TOTAL_ONLY.size(), entryCount(runtime.feed(true, "菜单")),
-                "还没配累计存储，那两条不该列");
+        String downMenu = runtime.feed(true, "菜单");
+        assertEquals(GROUP_ONLY.size(), entryCount(downMenu), "还没配累计存储，两条照列");
+        assertEquals(2, noteCount(downMenu, TOTAL_NOTE), "还没配累计存储，各带一句说明：" + downMenu);
 
         storage.applyHost("127.0.0.1");
-        assertEquals(GROUP_ONLY.size(), entryCount(runtime.feed(true, "菜单")),
-                "运行中配好了，那两条当场就该出现——此前这里要等一次重启");
+        String upMenu = runtime.feed(true, "菜单");
+        assertEquals(GROUP_ONLY.size(), entryCount(upMenu), "运行中配好了，条数不变");
+        assertEquals(0, noteCount(upMenu, TOTAL_NOTE),
+                "运行中配好了，那句说明当场就该消失——此前这里要等一次重启：" + upMenu);
 
         up.set(false);
         clock.addAndGet(TotalDataStorage.PROBE_CACHE_MILLIS + 1);
-        assertEquals(GROUP_ONLY.size() - TOTAL_ONLY.size(), entryCount(runtime.feed(true, "菜单")),
-                "连不上还照列，点进去查到的会是一片 0");
+        String lossMenu = runtime.feed(true, "菜单");
+        assertEquals(2, noteCount(lossMenu, TOTAL_NOTE),
+                "连上过又掉了：说明该回来，否则点进去查到的会是一片 0：" + lossMenu);
 
         up.set(true);
         clock.addAndGet(TotalDataStorage.PROBE_CACHE_MILLIS + 1);
-        assertEquals(GROUP_ONLY.size(), entryCount(runtime.feed(true, "菜单")),
-                "连回来之后该自己恢复");
+        String backMenu = runtime.feed(true, "菜单");
+        assertEquals(0, noteCount(backMenu, TOTAL_NOTE), "连回来之后该自己恢复：" + backMenu);
     }
 
     /**
@@ -293,8 +318,8 @@ class CommandSurfaceTest {
         logger.addAppender(appender);
 
         try {
-            for (String name : TOTAL_ONLY) {
-                assertEquals(TOTAL_OFF_REPLY, registry.feed(true, name), name);
+            for (Map.Entry<String, String> entry : TOTAL_OFF_REPLIES.entrySet()) {
+                assertEquals(entry.getValue(), registry.feed(true, entry.getKey()), entry.getKey());
             }
         } finally {
             logger.detachAppender(appender);
@@ -305,7 +330,7 @@ class CommandSurfaceTest {
                 .map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage)
                 .filter(line -> line.contains("累计"))
                 .toList();
-        assertEquals(TOTAL_ONLY.size(), lines.size(), "每被请求一次记一行: " + appender.list);
+        assertEquals(TOTAL_OFF_REPLIES.size(), lines.size(), "每被请求一次记一行: " + appender.list);
     }
 
     @Test
@@ -315,14 +340,14 @@ class CommandSurfaceTest {
 
         // 两个方向都要量：它们是同一个基类的两头，只量一头的话，另一头漏改了没有任何现象
         for (String toggle : List.of("启用命令", "禁用命令")) {
-            for (String name : TOTAL_ONLY) {
+            for (String name : TOTAL_OFF_REPLIES.keySet()) {
                 String said = registry.feed(true, toggle + " " + name, "owner");
 
                 assertTrue(said.contains("没开"), toggle + " " + name + " 该回一句「本机没开」，实际说了：" + said);
                 assertFalse(said.contains("已启用") || said.contains("已禁用"),
                         toggle + " " + name + " 竟然真办了：" + said);
                 assertFalse(registry.settings.isDisabled(PLATFORM, GROUP, name),
-                        name + " 进了命令开关表：菜单里本就没有它，这条记录谁也看不见、也关不回来");
+                        name + " 进了命令开关表：菜单列的是正名，这一格记账名谁也看不见、也关不回来");
             }
         }
     }
@@ -332,7 +357,7 @@ class CommandSurfaceTest {
     void toggleAcceptsAvailableCommands() {
         registry.supportsTotalData(true);
 
-        for (String name : TOTAL_ONLY) {
+        for (String name : TOTAL_OFF_REPLIES.keySet()) {
             assertEquals("已禁用「" + name + "」", registry.feed(true, "禁用命令 " + name, "owner"), name);
             assertTrue(registry.settings.isDisabled(PLATFORM, GROUP, name), name);
 
@@ -355,7 +380,7 @@ class CommandSurfaceTest {
     void doesNotRefuseWhenTotalSupported() {
         registry.supportsTotalData(true);
 
-        for (String name : TOTAL_ONLY) {
+        for (String name : TOTAL_OFF_REPLIES.keySet()) {
             assertFalse(registry.feed(true, name).contains("没开累计数据"), name);
         }
     }
@@ -366,16 +391,17 @@ class CommandSurfaceTest {
         // 两处口径不同源时，现象是「菜单里没有这条命令，它却开关得动」——
         // 开关表里于是躺着一条谁也验证不了的记录。三种盘面各量一遍，
         // 因为两处答案的分歧只在<b>某一条被藏起来</b>的那些盘面上才显形
-        assertEquals(GROUP_ONLY.size(), menuNames().size(), "默认盘面该是十四条都列得出");
+        assertEquals(GROUP_ONLY.size(), menuNames().size(), "默认盘面该是九条都列得出");
         assertEquals(menuNames(), toggleFinds(), "默认盘面");
 
+        // 累计没开不再藏命令：本场那半随时能用，藏了会把能用的一半也带下去
         registry.supportsTotalData(false);
-        assertEquals(GROUP_ONLY.size() - TOTAL_ONLY.size(), menuNames().size(), "本机没开累计数据");
+        assertEquals(GROUP_ONLY.size(), menuNames().size(), "本机没开累计数据");
         assertEquals(menuNames(), toggleFinds(), "本机没开累计数据");
 
         registry.supportsTotalData(true);
         registry.atMode(BilibiliAtNoticeKind.LIVE, AtMode.ALL);
-        assertEquals(GROUP_ONLY.size() - LIVE_AT_COMMANDS.size(), menuNames().size(), "本群配成 @全体成员");
+        assertEquals(GROUP_ONLY.size() - LIVE_MENU_NAMES.size(), menuNames().size(), "本群配成 @全体成员");
         assertEquals(menuNames(), toggleFinds(), "本群配成 @全体成员");
     }
 
@@ -385,7 +411,7 @@ class CommandSurfaceTest {
         registry.atMode(BilibiliAtNoticeKind.LIVE, AtMode.ALL);
 
         for (String toggle : List.of("启用命令", "禁用命令")) {
-            for (String name : LIVE_AT_COMMANDS) {
+            for (String name : LIVE_AT_SPELLINGS) {
                 String said = registry.feed(true, toggle + " " + name, "owner");
 
                 assertEquals("「" + name + "」在本群用不上，菜单里也没有它，不用开关它", said,
@@ -456,6 +482,92 @@ class CommandSurfaceTest {
         }
     }
 
+    // —— 合并用法：量的是「使用者发一句话，拿到的却不是那一句要的东西」——
+
+    @Test
+    @DisplayName("发「直播间数据 总」拿到的是本场，不是累计")
+    void roomDataTotalArgMustReturnCumulative() {
+        registry.supportsTotalData(true);
+
+        String reply = registry.feed(true, "直播间数据 总");
+
+        assertTrue(reply.contains("还没有累计数据"), "该按累计口径答，实际：" + reply);
+        assertFalse(reply.contains("还没有本场数据"), "答成了本场：" + reply);
+    }
+
+    @Test
+    @DisplayName("发「数据排行榜 弹幕 总」拿到的是本场榜")
+    void rankingTotalArgMustReturnCumulativeBoard() {
+        registry.supportsTotalData(true);
+
+        String reply = registry.feed(true, "数据排行榜 弹幕 总");
+
+        assertTrue(reply.contains("还没有累计"), "该按累计口径答，实际：" + reply);
+        assertFalse(reply.contains("本场"), "答成了本场：" + reply);
+    }
+
+    @Test
+    @DisplayName("已订阅开播提醒的人再发「开播@我」，要当取消")
+    void liveAtMeToggleMustCancelWhenAlreadySubscribed() {
+        assertTrue(registry.feed(true, "开播@我").contains("会 @ 你"), "先订上");
+
+        String second = registry.feed(true, "开播@我");
+
+        assertTrue(second.contains("不再 @ 你"), "再发一次该当取消，实际：" + second);
+    }
+
+    @Test
+    @DisplayName("@名单在群里列出了订阅人的 QQ 号")
+    void atListMustNotPrintAccountNumbers() {
+        registry.feed(true, "开播@我");
+
+        // 走旧名这一路：合并前它就是名单本身，回话里带着账号才是那个故障。
+        // 只发「@名单」的话，它从前压根不是命令、回的是菜单，名单里恰好没号，那样量不出这件事。
+        String list = registry.feed(true, "开播@名单");
+
+        assertFalse(list.contains(String.valueOf(SENDER)),
+                "名单只该显示群昵称（取不到就退回 QQ 昵称），不该把账号写进群里：" + list);
+    }
+
+    @Test
+    @DisplayName("禁用「总数据排行榜」后，「数据排行榜 弹幕 总」还能查到累计榜")
+    void disabledTotalRankingMustBlockTotalArgSpelling() {
+        registry.supportsTotalData(true);
+        registry.settings.disable(PLATFORM, GROUP, "总数据排行榜");
+
+        String reply = registry.feed(true, "数据排行榜 弹幕 总");
+
+        assertEquals("本群已关闭「总数据排行榜」命令", reply);
+    }
+
+    @Test
+    @DisplayName("旧名「直播间总数据」「取消开播@我」照旧认得、行为不变")
+    void oldNamesStillBehaveUnchanged() {
+        registry.supportsTotalData(true);
+
+        String total = registry.feed(true, "直播间总数据");
+        assertTrue(total.contains("还没有累计数据"), "旧名仍是累计口径：" + total);
+
+        assertTrue(registry.feed(true, "开播@我").contains("会 @ 你"), "先订上");
+        String cancel = registry.feed(true, "取消开播@我");
+        assertTrue(cancel.contains("不再 @ 你"), "旧取消名照旧只取消：" + cancel);
+    }
+
+    @Test
+    @DisplayName("群里只关掉「开播@我」，菜单就不该再列它，发了也不该照办")
+    void menuStopsListingARowTheGroupTurnedOff() {
+        registry.settings.disable(PLATFORM, GROUP, "开播@我");
+
+        String menu = registry.feed(true, "菜单");
+        String reply = registry.feed(true, "开播@我");
+
+        // 菜单还列着、发了却回「本群已关闭」：照着菜单发的人一头雾水
+        assertFalse(menu.contains("\n开播@我 "), "只关掉「开播@我」它就不该再列：" + menu);
+        assertTrue(reply.contains("已关闭"), "菜单不列，发了也不该照办：" + reply);
+        // 只关了一行，别的行不能跟着消失
+        assertTrue(menu.contains("\n动态@我 "), "动态那一行没被关掉，该照列：" + menu);
+    }
+
     /**
      * 菜单列得出的命令名。每条命令占一行，行首就是命令名
      */
@@ -484,40 +596,49 @@ class CommandSurfaceTest {
     }
 
     @Test
-    @DisplayName("本群开播通知配成 @全体成员：菜单撤下开播那三条，动态三条照列")
+    @DisplayName("本群开播通知配成 @全体成员：菜单撤下「开播@我」，动态与名单照列")
     void menuHidesLiveSubscriptionCommandsWhenAtAll() {
         registry.atMode(BilibiliAtNoticeKind.LIVE, AtMode.ALL);
 
         String menu = registry.feed(true, "菜单");
 
-        for (String name : LIVE_AT_COMMANDS) {
+        for (String name : LIVE_MENU_NAMES) {
             assertFalse(menu.contains("\n" + name + " "), name + " 不该出现：" + menu);
         }
-        // 动态那一类没配成 @全体成员，它的订阅照样有用——只藏该藏的那一类
-        for (String name : DYNAMIC_AT_COMMANDS) {
-            assertTrue(menu.contains("\n" + name + " "), name + " 该出现：" + menu);
+        // 旧拼写本来就不进菜单——这里量的是「撤干净」，不是「藏起来了」
+        for (String name : List.of("取消开播@我", "开播@名单")) {
+            assertFalse(menu.contains("\n" + name + " "), name + " 是旧拼写，不该单列：" + menu);
         }
-        assertEquals(GROUP_ONLY.size() - LIVE_AT_COMMANDS.size(), entryCount(menu));
+        // 动态那一类没配成 @全体成员，它的订阅照样有用；名单是两类共用的，也不能跟着撤
+        assertTrue(menu.contains("\n" + DYNAMIC_AT_MENU_NAME + " "), DYNAMIC_AT_MENU_NAME + " 该出现：" + menu);
+        assertTrue(menu.contains("\n" + AT_LIST_MENU_NAME + " "), AT_LIST_MENU_NAME + " 该出现：" + menu);
+        assertEquals(GROUP_ONLY.size() - LIVE_MENU_NAMES.size(), entryCount(menu));
     }
 
     @Test
-    @DisplayName("配成 @全体成员 时三条还是发过来了：各回一句为什么")
+    @DisplayName("配成 @全体成员：开播那几个拼写各回一句为什么，动态那几个照旧办得了")
     void repliesInsteadOfSubscribingWhenAtAll() {
         registry.atMode(BilibiliAtNoticeKind.LIVE, AtMode.ALL);
 
-        for (String name : LIVE_AT_COMMANDS) {
+        for (String name : LIVE_AT_SPELLINGS) {
             assertEquals(AT_ALL_REPLY, registry.feed(true, name), name);
+        }
+        // 只拒该拒的那一类：动态没配成 @全体成员，它的几个拼写（含旧名）照旧办得了
+        for (String name : DYNAMIC_AT_SPELLINGS) {
+            String said = registry.feed(true, name);
+            assertTrue(said.contains("测试主播") || said.contains("还没有人订阅"),
+                    name + " 该照旧办得了，实际：" + said);
         }
     }
 
     @Test
-    @DisplayName("另外两档：三条都照列，十四条一条不少")
+    @DisplayName("另外两档：订阅那几行照列，九条一条不少")
     void menuKeepsSubscriptionCommandsInOtherModes() {
         for (AtMode mode : List.of(AtMode.SUBSCRIBERS, AtMode.ALL_OR_SUBSCRIBERS)) {
             registry.atMode(BilibiliAtNoticeKind.LIVE, mode);
 
             String menu = registry.feed(true, "菜单");
-            for (String name : LIVE_AT_COMMANDS) {
+            for (String name : LIVE_MENU_NAMES) {
                 assertTrue(menu.contains("\n" + name + " "), mode.key() + " 下 " + name + " 该出现：" + menu);
             }
             assertEquals(GROUP_ONLY.size(), entryCount(menu), mode.key());
@@ -525,17 +646,18 @@ class CommandSurfaceTest {
     }
 
     @Test
-    @DisplayName("「@ 不成就 @ 订阅的人」那一档：三行各加一句说明，只 @ 订阅的人时没有")
+    @DisplayName("「@ 不成就 @ 订阅的人」那一档：两行各加一句说明，只 @ 订阅的人时没有")
     void menuNoteOnlyInFallbackMode() {
         registry.atMode(BilibiliAtNoticeKind.LIVE, AtMode.ALL_OR_SUBSCRIBERS);
-        assertEquals(LIVE_AT_COMMANDS.size(), noteCount(registry.feed(true, "菜单")));
+        // 「开播@我」与名单各带一句；动态那一类没配回落，不带
+        assertEquals(2, noteCount(registry.feed(true, "菜单"), AT_ALL_NOTE));
 
         registry.atMode(BilibiliAtNoticeKind.LIVE, AtMode.SUBSCRIBERS);
-        assertEquals(0, noteCount(registry.feed(true, "菜单")));
+        assertEquals(0, noteCount(registry.feed(true, "菜单"), AT_ALL_NOTE));
     }
 
     @Test
-    @DisplayName("一条这类推送都没配：不算「全都 @ 全体」，菜单照列十四条")
+    @DisplayName("一条这类推送都没配：不算「全都 @ 全体」，菜单照列九条")
     void emptyChannelHidesNothing() {
         // 空表上「全都是 @全体成员」恒为真，而恒真的判据与真查过了在菜单上长得一样
         assertEquals(GROUP_ONLY.size(), entryCount(registry.feed(true, "菜单")));
@@ -553,15 +675,18 @@ class CommandSurfaceTest {
         assertEquals(AT_ALL_REPLY, registry.feed(true, "取消开播@我"));
 
         registry.atMode(BilibiliAtNoticeKind.LIVE, AtMode.SUBSCRIBERS);
-        assertTrue(registry.feed(true, "开播@名单").contains(String.valueOf(SENDER)),
-                "切回来之后名单该还在");
+        String list = registry.feed(true, "开播@名单");
+        assertTrue(list.contains("1 人订阅"), "切回来之后名单该还在：" + list);
+        // 名单是发回群里的，写的是名字不是账号
+        assertFalse(list.contains(String.valueOf(SENDER)), "不该把账号写进群里：" + list);
+        assertTrue(list.contains("（昵称未知）"), "取不到名字时写占位，而不是账号：" + list);
     }
 
     /**
-     * 菜单里带着「@ 不成才按名单 @ 人」那句说明的行数
+     * 菜单里带着指定那句说明的行数
      */
-    private int noteCount(String menu) {
-        return (int) Arrays.stream(menu.split("\n")).filter(line -> line.contains(AT_ALL_NOTE)).count();
+    private int noteCount(String menu, String needle) {
+        return (int) Arrays.stream(menu.split("\n")).filter(line -> line.contains(needle)).count();
     }
 
     /**
@@ -756,15 +881,57 @@ class CommandSurfaceTest {
                 }
             }
 
-            Object[] args = Arrays.stream(chosen.getParameterTypes())
-                    .map(parameter -> dependencies.computeIfAbsent(parameter, Registry::stub))
-                    .toArray();
+            Parameter[] parameters = chosen.getParameters();
+            Type[] generics = chosen.getGenericParameterTypes();
+            Object[] args = new Object[parameters.length];
+            for (int i = 0; i < parameters.length; i++) {
+                args[i] = argument(parameters[i], generics[i]);
+            }
             try {
                 chosen.setAccessible(true);
                 return (NovaCommand) chosen.newInstance(args);
             } catch (ReflectiveOperationException e) {
                 throw new IllegalStateException("造不出命令 " + type.getName(), e);
             }
+        }
+
+        /**
+         * 按构造参数配替身
+         * <p>
+         * ObjectProvider 要按元素类型分发：同是 ObjectProvider，接的却是几样互不相干的东西，
+         * 只看原始类型会把它们混成一份。分发器那一份仍走开关命令要的自举 spy。
+         */
+        private Object argument(Parameter parameter, Type generic) {
+            Class<?> raw = parameter.getType();
+            if (ObjectProvider.class.isAssignableFrom(raw)) {
+                Class<?> element = elementOf(generic);
+                if (CommandDispatcher.class.equals(element)) {
+                    return dependencies.computeIfAbsent(ObjectProvider.class, Registry::stub);
+                }
+                return providerOf(element);
+            }
+            return dependencies.computeIfAbsent(raw, Registry::stub);
+        }
+
+        private Object providerOf(Class<?> element) {
+            List<Object> holders = List.of(dependencies.computeIfAbsent(element, Registry::stub));
+            @SuppressWarnings("unchecked")
+            ObjectProvider<Object> mocked = mock(ObjectProvider.class);
+            when(mocked.iterator()).thenAnswer(invocation -> holders.iterator());
+            when(mocked.stream()).thenAnswer(invocation -> holders.stream());
+            when(mocked.orderedStream()).thenAnswer(invocation -> holders.stream());
+            when(mocked.getIfAvailable()).thenAnswer(invocation -> holders.get(0));
+            return mocked;
+        }
+
+        private static Class<?> elementOf(Type generic) {
+            if (generic instanceof ParameterizedType parameterized) {
+                Type[] arguments = parameterized.getActualTypeArguments();
+                if (arguments.length == 1 && arguments[0] instanceof Class<?> element) {
+                    return element;
+                }
+            }
+            return Object.class;
         }
 
         private static Object stub(Class<?> type) {
