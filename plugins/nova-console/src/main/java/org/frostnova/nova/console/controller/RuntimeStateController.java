@@ -574,11 +574,11 @@ public class RuntimeStateController {
      * 「禁用」落到<b>用法名</b>上：关掉的是用法，拼写只是问法。「@名单」一句问着两格就关两格——
      * 只记正名的话群里那两种问法照通，控制台这扇门就成了摆设。
      * <p>
-     * 「启用」是删掉一条记录，删的是打出来的这一名：残留记录按名记，也只认这一名。
-     * 这一名若只对一格（「直播间数据 总」与「直播间总数据」是同一格的两种拼写），
-     * 把那一格的记账名一并删掉，两种拼写都开得回来；若一句名下对多格（「@名单」），
-     * 这一名不是记账名，只可能是旧版留下的残留，就只删这一名——
-     * 顺手动它名下那几格，会把人另外关着的那格一并开回来。
+     * 「启用」与群里「启用命令」同一口径：名下各格一起开回来。一句对多格时
+     * （「@名单」），回话里写的就是那几格。只删打出来的这一名的话，两格仍关着，
+     * 回话却说已经启用。一句只对一格时（「直播间数据 总」与「直播间总数据」
+     * 是同一格的两种拼写），把打出来的这一名一并删掉，两种拼写都开得回来。
+     * 找不到命令时仍按打出来的这一名删：启用就是清掉一条记录，改过名留下的残留也要清得掉。
      */
     private List<String> ledgerKeys(String name, boolean disabled) {
         List<String> keys = new ArrayList<>(find(name)
@@ -587,13 +587,13 @@ public class RuntimeStateController {
         if (disabled) {
             return keys;
         }
-        if (keys.size() == 1) {
-            if (!keys.contains(name)) {
-                keys.add(name);
-            }
-            return keys;
+        if (keys.isEmpty()) {
+            return List.of(name);
         }
-        return List.of(name);
+        if (keys.size() == 1 && !keys.contains(name)) {
+            keys.add(name);
+        }
+        return keys;
     }
 
     /**

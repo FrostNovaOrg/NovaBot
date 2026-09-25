@@ -240,23 +240,24 @@ public class BilibiliAtListCommand extends BilibiliAtCommand {
      * <p>
      * 装了哪个平台的适配器就问哪个的。取不到名字的账号不在表里，由这边写占位——
      * <b>取不到名字不是把账号写出去的理由</b>，名单是发回群里的，账号是隐私。
-     * 那一支整条不顶用（没装适配器、问到一半抛了）时也一样：名单照出，名字全写占位。
+     * 那一支整条不顶用（没装适配器、认领平台时抛了、问到一半抛了）时也一样：
+     * 名单照出，名字全写占位。认领放在取名字的同一处兜底里，否则这一步一抛，整张名单就没了。
      */
     private Map<Long, String> displayNames(CommandContext context, Collection<Long> uids) {
         if (uids.isEmpty()) {
             return Map.of();
         }
-        SessionMemberNames service = null;
-        for (SessionMemberNames candidate : memberNames) {
-            if (candidate.supports(context.getPlatform())) {
-                service = candidate;
-                break;
-            }
-        }
-        if (service == null) {
-            return Map.of();
-        }
         try {
+            SessionMemberNames service = null;
+            for (SessionMemberNames candidate : memberNames) {
+                if (candidate.supports(context.getPlatform())) {
+                    service = candidate;
+                    break;
+                }
+            }
+            if (service == null) {
+                return Map.of();
+            }
             Map<Long, String> asked = service.displayNames(
                     context.getPlatform(), context.getType(), context.getNum(), uids);
             if (asked == null || asked.isEmpty()) {

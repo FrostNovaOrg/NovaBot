@@ -185,6 +185,29 @@ class ConsoleCommandSwitchTest {
         assertFalse(availableOf(usages, "直播间总数据"), "累计那一半该置灰：" + usages.toJSONString());
     }
 
+    @Test
+    @DisplayName("接口先关「@名单」再开，两格都开回来，群里「@名单」照样应答")
+    void apiReopensEveryCellWhenOneNameCoversSeveral() {
+        JSONObject off = controller.toggleCommand(toggle("@名单", true));
+        assertTrue(off.getBooleanValue("success"), off.toJSONString());
+        assertTrue(settings.isDisabled(PLATFORM, GROUP, "开播@名单"), "先把开播那一格关上");
+        assertTrue(settings.isDisabled(PLATFORM, GROUP, "动态@名单"), "先把动态那一格关上");
+
+        JSONObject on = controller.toggleCommand(toggle("@名单", false));
+        assertTrue(on.getBooleanValue("success"), on.toJSONString());
+        String message = on.getString("message");
+        assertFalse(settings.isDisabled(PLATFORM, GROUP, "开播@名单"),
+                "开播那一格该开回来，回话却是：" + message);
+        assertFalse(settings.isDisabled(PLATFORM, GROUP, "动态@名单"),
+                "动态那一格该开回来，回话却是：" + message);
+        assertTrue(message.contains("开播@名单") && message.contains("动态@名单"),
+                "回话该写明开了哪几格：" + message);
+
+        String reply = feed("@名单");
+        assertFalse(reply.contains("已关闭"), "群里「@名单」该应答，实际：" + reply);
+        assertTrue(reply.contains(UNKNOWN_NAME), "群里「@名单」该把名单答出来：" + reply);
+    }
+
     // ── 夹具 ────────────────────────────────────────────────────────────
 
     private JSONObject toggle(String command, boolean disabled) {
