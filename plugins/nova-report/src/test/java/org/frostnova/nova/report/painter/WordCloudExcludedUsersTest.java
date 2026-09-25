@@ -42,11 +42,15 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
@@ -54,6 +58,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -175,7 +180,8 @@ class WordCloudExcludedUsersTest {
         LiveDataService data = sessionData();
         data.setLiveStartTime(PLATFORM, other, START);
         data.setLiveEndTime(PLATFORM, other, START + 3_600_000L);
-        SlowDanmu painter = new SlowDanmu(data, 500L, false);
+        CyclicBarrier meet = new CyclicBarrier(2);
+        SlowDanmu painter = new SlowDanmu(data, meet);
         ExecutorService pool = Executors.newFixedThreadPool(2);
         try {
             CountDownLatch ready = new CountDownLatch(2);
@@ -192,14 +198,10 @@ class WordCloudExcludedUsersTest {
             });
             assertTrue(ready.await(5, TimeUnit.SECONDS), "两个词云没有都开始");
             warmSegmenter();
-            long began = System.nanoTime();
             go.countDown();
-            Map<String, Integer> left = first.get(5, TimeUnit.SECONDS);
-            Map<String, Integer> right = second.get(5, TimeUnit.SECONDS);
-            long elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - began);
+            Map<String, Integer> left = cloudFrom(first);
+            Map<String, Integer> right = cloudFrom(second);
             assertEquals(2, painter.reads.get(), "两场没有各读一次弹幕原文");
-            assertTrue(elapsed < 800,
-                    "两位主播同时下播，词云重算排成一队，用了 " + elapsed + " 毫秒");
             assertEquals(Integer.valueOf(1), left.get("唱歌"), "第一场没有按原文重算: " + left);
             assertEquals(Integer.valueOf(1), right.get("唱歌"), "第二场没有按原文重算: " + right);
         } finally {
@@ -519,6 +521,24 @@ class WordCloudExcludedUsersTest {
         }
     }
 
+    private static Map<String, Integer> cloudFrom(Future<Map<String, Integer>> future) throws Exception {
+        try {
+            return future.get(12, TimeUnit.SECONDS);
+        } catch (TimeoutException timedOut) {
+            fail("两场词云没有在时限内算完");
+            throw timedOut;
+        } catch (ExecutionException ex) {
+            Throwable cause = ex.getCause();
+            if (cause instanceof AssertionError error) {
+                throw error;
+            }
+            if (cause instanceof Exception exception) {
+                throw exception;
+            }
+            throw ex;
+        }
+    }
+
     private final class SlowDanmu extends BilibiliLiveReportPainter {
         private final AtomicInteger reads = new AtomicInteger();
 
@@ -528,12 +548,24 @@ class WordCloudExcludedUsersTest {
 
         private final boolean pauseWhileRecounting;
 
+        private final CyclicBarrier meet;
+
         private SlowDanmu(LiveDataService data, long pauseMillis, boolean pauseWhileRecounting) {
+            this(data, pauseMillis, pauseWhileRecounting, null);
+        }
+
+        private SlowDanmu(LiveDataService data, CyclicBarrier meet) {
+            this(data, 0L, false, meet);
+        }
+
+        private SlowDanmu(LiveDataService data, long pauseMillis, boolean pauseWhileRecounting,
+                          CyclicBarrier meet) {
             super(factory, quietApi(), data, fontUtil, properties(List.of(Long.toString(BOT))),
                     new LiveRoomInfoHistory(new NovaStateStore(new NovaCoreProperties())),
                     new ReportImageDiskCache(temp.resolve("slow-danmu")));
             this.pauseMillis = pauseMillis;
             this.pauseWhileRecounting = pauseWhileRecounting;
+            this.meet = meet;
         }
 
         @Override
@@ -541,10 +573,27 @@ class WordCloudExcludedUsersTest {
             return Optional.of(64L);
         }
 
+        /**
+         * 两场读原文时都停在这里等对方。同时在读，两边都到了就继续；
+         * 排成一队时，先进的那场等到上限也等不到另一场。
+         */
+        private void waitForTheOtherLive() {
+            try {
+                meet.await(3, TimeUnit.SECONDS);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                fail("两场排成一队");
+            } catch (BrokenBarrierException | TimeoutException queued) {
+                fail("两场排成一队");
+            }
+        }
+
         @Override
         Optional<List<DanmuRecord>> wordCloudDanmu(String platform, long uid, long start) {
             reads.incrementAndGet();
-            if (!pauseWhileRecounting) {
+            if (meet != null) {
+                waitForTheOtherLive();
+            } else if (!pauseWhileRecounting) {
                 pauseQuiet(pauseMillis);
             }
             return Optional.of(List.of(
