@@ -13,6 +13,7 @@ import org.frostnova.nova.bilibili.model.FansMedal;
 import org.frostnova.nova.bilibili.model.Guard;
 import org.frostnova.nova.bilibili.protocol.BilibiliProtobufReader;
 import org.frostnova.nova.core.event.live.NovaBaseLiveEvent;
+import org.frostnova.nova.core.event.live.common.PkBattleEvent;
 import org.frostnova.nova.core.model.GiftInfo;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
 import org.frostnova.nova.core.model.UserInfo;
@@ -424,7 +425,6 @@ public class BilibiliEventParser {
             "STOP_LIVE_ROOM_LIST",
             "ONLINE_RANK_V3",
             "PK_WIDGET",
-            "PK_INFO",
             "ENTRY_EFFECT",
             "NOTICE_MSG",
             "COMMON_NOTICE_DANMAKU",
@@ -558,6 +558,7 @@ public class BilibiliEventParser {
         parsers.put("LIKE_INFO_V3_CLICK", this::parseLike);
         parsers.put("LIKE_INFO_V3_UPDATE", this::parseLikeUpdate);
         parsers.put("WATCHED_CHANGE", this::parseWatchedUpdate);
+        parsers.put("PK_INFO", this::parsePkInfo);
         parsers.put("ONLINE_RANK_COUNT", this::parseOnlineRankCount);
         parsers.put("ROOM_CHANGE", this::parseRoomInfoChange);
         parsers.put("WARNING", this::parseWarning);
@@ -1926,6 +1927,104 @@ public class BilibiliEventParser {
         }
 
         return new BilibiliWatchedUpdateEvent(source, meta.getInteger("num"), meta.getString("text_large"));
+    }
+
+    /**
+     * 解析 PK 场次消息
+     * <p>
+     * 三种 PK 的结算各走各的消息：老式一对一只有对账消息，限时一对一才有新式结算消息，
+     * 多方那一种连一条结算消息都没有。只有这一条三种都有，开打与结算都写在里面，
+     * 所以整条 PK 记录以它为唯一来源。
+     * <p>
+     * 开打是这一场的头一条状态为「进行中」的报文；结算是状态为「正常结算」或「提前结算」那条，
+     * 后者带双方票数与平台判出的胜负。其余状态（预备、中止、惩罚、收尾）不产出行。
+     * <p>
+     * 匹配失败时场次号是 0，那不是一场真打起来的 PK，不记。
+     * <p>
+     * 本房是 {@code members} 里房间号等于这条消息所在房间的那一家，<b>不能假定报文里哪一侧是本房</b>：
+     * 本房既可能是发起方，也可能是被匹配上的那家，位置取值会把对手的票当成自己的。
+     */
+    private NovaBaseLiveEvent parsePkInfo(JSONObject data, LiveStreamerInfo source) {
+        JSONObject meta = requireData(data, "PK_INFO");
+        if (meta == null) {
+            return null;
+        }
+        JSONObject basic = meta.getJSONObject("pk_basic");
+        if (basic == null) {
+            noteNamed(BilibiliRiskMetrics.Kind.FIELD_MISSING, "PK_INFO:pk_basic");
+            return null;
+        }
+        Long pkId = basic.getLong("pk_id");
+        if (pkId == null) {
+            noteNamed(BilibiliRiskMetrics.Kind.FIELD_MISSING, "PK_INFO:pk_id");
+            return null;
+        }
+        // 匹配失败只发这一条、场次号 0，不是一场真打起来的 PK
+        if (pkId == 0L) {
+            return null;
+        }
+
+        Integer status = basic.getInteger("status");
+        PkBattleEvent.Stage stage;
+        boolean early = false;
+        if (Integer.valueOf(201).equals(status)) {
+            stage = PkBattleEvent.Stage.OPEN;
+        } else if (Integer.valueOf(401).equals(status)) {
+            stage = PkBattleEvent.Stage.SETTLE;
+        } else if (Integer.valueOf(404).equals(status)) {
+            stage = PkBattleEvent.Stage.SETTLE;
+            early = true;
+        } else {
+            // 预备、中止、惩罚、收尾：不是开打也不是结算
+            return null;
+        }
+
+        Long roomId = source == null ? null : source.getRoomId();
+        if (roomId == null) {
+            return null;
+        }
+        JSONArray members = meta.getJSONArray("members");
+        if (members == null || members.isEmpty()) {
+            noteNamed(BilibiliRiskMetrics.Kind.FIELD_MISSING, "PK_INFO:members");
+            return null;
+        }
+
+        boolean settling = stage == PkBattleEvent.Stage.SETTLE;
+        JSONObject mine = null;
+        List<PkBattleEvent.Opponent> opponents = new ArrayList<>();
+        for (int i = 0; i < members.size(); i++) {
+            JSONObject member = members.getJSONObject(i);
+            if (member == null) {
+                continue;
+            }
+            if (roomId.equals(member.getLong("room_id"))) {
+                if (mine == null) {
+                    mine = member;
+                }
+                continue;
+            }
+            opponents.add(new PkBattleEvent.Opponent(
+                    member.getLong("room_id"),
+                    member.getLong("uid"),
+                    settling ? member.getLong("votes") : null,
+                    settling ? member.getInteger("rank") : null));
+        }
+        if (mine == null) {
+            // 报文里没有本房这一家，本房的票数、名次与结果都无从谈起，这一条不记
+            noteNamed(BilibiliRiskMetrics.Kind.FIELD_MISSING, "PK_INFO:members[self]");
+            return null;
+        }
+
+        return new BilibiliPkBattleEvent(source, pkId, basic.getInteger("type"), stage,
+                members.size(),
+                settling ? null : basic.getLong("start_time"),
+                settling ? null : basic.getLong("end_time"),
+                settling ? early : null,
+                settling ? meta.getLong("timestamp") : null,
+                settling ? mine.getLong("votes") : null,
+                settling ? mine.getInteger("rank") : null,
+                settling ? mine.getInteger("is_winner") : null,
+                opponents);
     }
 
     /**

@@ -352,6 +352,7 @@ META-INF/spring-configuration-metadata.json
 | `BilibiliFreeGiftEvent` / `BilibiliPaidGiftEvent` / `BilibiliRandomGiftEvent` | 免费礼物 / 付费礼物 / 盲盒 |
 | `BilibiliSuperChatEvent` | 醒目留言 |
 | `BilibiliGovernorEvent` / `BilibiliCommanderEvent` / `BilibiliCaptainEvent` | 总督 / 提督 / 舰长 |
+| `BilibiliPkBattleEvent` | PK 开打与结算（票数不是钱，不进任何收入口径） |
 | `BilibiliConnectedEvent` / `BilibiliDisconnectedEvent` | 直播间长连接建立 / 断开 |
 
 动态事件只有一个：`org.frostnova.nova.bilibili.event.dynamic.BilibiliDynamicUpdateEvent`。

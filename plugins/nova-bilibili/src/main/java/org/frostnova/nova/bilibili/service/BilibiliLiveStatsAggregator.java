@@ -12,7 +12,9 @@ import org.frostnova.nova.bilibili.event.live.BilibiliFreeGiftEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliGovernorEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliLikeEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliLikeUpdateEvent;
+import org.frostnova.nova.bilibili.event.live.BilibiliLiveOffEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliPaidGiftEvent;
+import org.frostnova.nova.bilibili.event.live.BilibiliPkBattleEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliRandomGiftEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliShareEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliSuperChatEvent;
@@ -20,6 +22,7 @@ import org.frostnova.nova.bilibili.model.BilibiliLiveMetric;
 import org.frostnova.nova.bilibili.util.DanmuWordUtil;
 import org.frostnova.nova.core.event.live.NovaBaseLiveEvent;
 import org.frostnova.nova.core.event.live.common.MembershipEvent;
+import org.frostnova.nova.core.event.live.common.PkBattleEvent;
 import org.frostnova.nova.core.model.DanmuRecord;
 import org.frostnova.nova.core.model.GiftInfo;
 import org.frostnova.nova.core.model.UserInfo;
@@ -31,7 +34,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -55,6 +61,16 @@ public class BilibiliLiveStatsAggregator {
      * 弹幕原文留档。逐条追加，与指标累计并列——那边记「有多少」，这边记「说了什么」
      */
     private final LiveDetailArchive details;
+
+    /**
+     * 记过的 PK 阶段，用来只记一行
+     * <p>
+     * 按「平台｜主播｜本场开播时刻｜房间｜场次号｜阶段」记。带开播时刻，换一场自动就不撞车；
+     * 下播时整条清掉，另设封顶淘汰最老的条目，不随运行时长增长
+     */
+    private static final int PK_SEEN_LIMIT = 512;
+
+    private final Set<String> pkSeen = new LinkedHashSet<>();
 
     @Autowired
     public BilibiliLiveStatsAggregator(LiveDataService liveDataService, LiveDetailArchive details) {
@@ -303,6 +319,114 @@ public class BilibiliLiveStatsAggregator {
     @EventListener(BilibiliShareEvent.class)
     public void onShare(BilibiliShareEvent event) {
         increment(event, BilibiliLiveMetric.SHARE_COUNT, 1);
+    }
+
+    /**
+     * 一场 PK 的开打与结算
+     * <p>
+     * <b>只落明细，不进本场任何指标。</b>票数不是收入：观众没有为它付款，主播也不会因为票多而多拿一分，
+     * 累进礼物或收入的任何一格都是凭空多出一笔账。
+     * <p>
+     * 两类行，键名照现有事件行的短写法：
+     * <ul>
+     *   <li>{@code pk_open}（开打）：{@code pk} 场次号、{@code tp} 类型、{@code nc} 家数、
+     *       {@code ps} 与 {@code pe} 计划开始与结束（秒）、{@code op} 对手数组，每项 {@code r} 房间号、
+     *       {@code u} 主播 uid；</li>
+     *   <li>{@code pk_settle}（结算）：{@code pk}、{@code tp}、{@code nc}、{@code er} 是否提前结算、
+     *       {@code en} 实际结束（秒）、{@code mv} 本房票数、{@code mr} 本房名次、{@code rs} 本房结果
+     *       （1 胜 0 负 2 平）、{@code op} 对手数组，每项另有 {@code v} 票数与 {@code k} 名次。</li>
+     * </ul>
+     * 票数一律叫 {@code mv} 与 {@code v}，<b>不叫 val、pay、gold 一类</b>：那些名字在礼物与上舰的行里
+     * 指的是钱，同名会让人把票数读成收入。{@code golds} 与助攻的观众身份一概不落。
+     */
+    @EventListener(BilibiliPkBattleEvent.class)
+    public void onPkBattle(BilibiliPkBattleEvent event) {
+        if (event.getSource() == null || event.getSource().getUid() == null
+                || event.getPkId() == null || event.getStage() == null) {
+            return;
+        }
+        // 匹配失败的场次号 0 不是一场真打起来的 PK
+        if (event.getPkId() == 0L) {
+            return;
+        }
+        Long uid = event.getSource().getUid();
+        Optional<Long> start = liveDataService.getLiveStartTime(event.getPlatform(), uid);
+        if (start.isEmpty()) {
+            return;
+        }
+        String kind = event.getStage() == PkBattleEvent.Stage.OPEN ? "pk_open" : "pk_settle";
+        if (!firstPkStage(event.getPlatform(), uid, start.get(), event.getSource().getRoomId(),
+                event.getPkId(), kind)) {
+            return;
+        }
+        recordEvent(event, kind, pkFields(event));
+    }
+
+    /**
+     * 下播即清掉本场记过的 PK 阶段
+     */
+    @EventListener(BilibiliLiveOffEvent.class)
+    public void onLiveOff(BilibiliLiveOffEvent event) {
+        if (event.getSource() == null || event.getSource().getUid() == null) {
+            return;
+        }
+        String prefix = event.getPlatform() + "|" + event.getSource().getUid() + "|";
+        synchronized (pkSeen) {
+            pkSeen.removeIf(key -> key.startsWith(prefix));
+        }
+    }
+
+    /**
+     * 同一房间、同一场 PK、同一阶段只记一行
+     * <p>
+     * 场次消息会逐字重发，开打那条尤其爱反复来，不去重一场会记成好几场，
+     * 看明细的人会以为连着打了好几把。
+     */
+    private boolean firstPkStage(String platform, Long uid, long start, Long roomId, long pkId, String kind) {
+        String key = platform + "|" + uid + "|" + start + "|" + roomId + "|" + pkId + "|" + kind;
+        synchronized (pkSeen) {
+            if (!pkSeen.add(key)) {
+                return false;
+            }
+            // 封顶：最老的先淘汰，这张表不随运行时长增长
+            while (pkSeen.size() > PK_SEEN_LIMIT) {
+                pkSeen.remove(pkSeen.iterator().next());
+            }
+            return true;
+        }
+    }
+
+    private static Map<String, Object> pkFields(PkBattleEvent event) {
+        boolean settling = event.getStage() == PkBattleEvent.Stage.SETTLE;
+        Map<String, Object> fields = new LinkedHashMap<>();
+        fields.put("pk", event.getPkId());
+        fields.put("tp", event.getPkType());
+        fields.put("nc", event.getMemberCount());
+        if (settling) {
+            fields.put("er", Boolean.TRUE.equals(event.getEarly()) ? 1 : 0);
+            fields.put("en", event.getEndedAt());
+            fields.put("mv", event.getMyVotes());
+            fields.put("mr", event.getMyRank());
+            fields.put("rs", event.getMyResult());
+        } else {
+            fields.put("ps", event.getPlanStart());
+            fields.put("pe", event.getPlanEnd());
+        }
+        List<Map<String, Object>> opponents = new ArrayList<>();
+        if (event.getOpponents() != null) {
+            for (PkBattleEvent.Opponent opponent : event.getOpponents()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("r", opponent.roomId());
+                row.put("u", opponent.uid());
+                if (settling) {
+                    row.put("v", opponent.votes());
+                    row.put("k", opponent.rank());
+                }
+                opponents.add(row);
+            }
+        }
+        fields.put("op", opponents);
+        return fields;
     }
 
     /**
