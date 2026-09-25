@@ -195,7 +195,6 @@ class BilibiliEventParserTest {
                     "STOP_LIVE_ROOM_LIST",
                     "ONLINE_RANK_V3",
                     "PK_WIDGET",
-                    "PK_INFO",
                     "ENTRY_EFFECT",
                     "NOTICE_MSG",
                     "COMMON_NOTICE_DANMAKU",
