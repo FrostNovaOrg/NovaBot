@@ -255,6 +255,32 @@ class EngineeringLogServiceTest {
         assertFalse(String.join("\n", appended.lines()).contains("hunter2"));
     }
 
+    @Test
+    @DisplayName("一行几万字的无分隔长串不该拖住读尾部")
+    void masksVeryLongUnseparatedStringQuickly() throws IOException {
+        // 调试日志开着时，带图推送那一行会把整段图片编码写进日志，正是这种形状：
+        // 一长串字母数字，中间既没有冒号也没有等号，键名正则会从每个字母起头各试一遍
+        String run = "Ab12".repeat(10000);
+        // 令牌那一行写成键名自带下划线、前头空开一格的形状：键名头一个字符不是字母时，
+        // 要遮的仍是它后半截那个键，改判法的人最容易在这里把它顺手挡掉
+        write("2026-09-04 20:07:03.221 DEBUG 1 --- [main] x : 图片编码 " + run,
+                "2026-09-04 20:07:04.221 ERROR 1 --- [main] x : 登录返回 _token=abcdef123456",
+                "2026-09-04 20:07:05.221 ERROR 1 --- [main] x : Cookie: SESSDATA=xxxyyy; bili_jct=zzz");
+
+        long start = System.nanoTime();
+        List<String> lines = service.tail(file, 50).lines();
+        long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+
+        System.out.println("一行 " + run.length() + " 字的无分隔长串，读尾部实测 " + elapsedMs + " 毫秒");
+        assertEquals(3, lines.size());
+        assertFalse(lines.get(1).contains("abcdef123456"),
+                "键名头一个字符不是字母的，照样要遮住：" + lines.get(1));
+        assertTrue(lines.get(1).contains("_token="), "键名还在，看得出它本来是个令牌");
+        assertMasked(lines.get(2), "xxxyyy");
+        assertMasked(lines.get(2), "zzz");
+        assertTrue(elapsedMs < 2000, "读尾部本该一眨眼的事，实测 " + elapsedMs + " 毫秒");
+    }
+
     /**
      * 三天各一份，中间那一天六行（含一行堆栈）
      * @return 中间那一天的文件

@@ -16,6 +16,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.EnumMap;
+import java.util.Map;
 
 /**
  * 事件时间线接口
@@ -125,12 +127,15 @@ public class TimelineController {
         result.put("limit", found.limit());
         result.put("nextCursor", found.nextCursor() == null ? null : found.nextCursor().toString());
         result.put("types", types());
-        result.put("categories", categories());
+        result.put("categories", categories(day));
         // 主播与通道两栏的可选项由这里给，界面不从这一页事件里凑：凑出来的那张表
         // 在结果被截断时缺项，而缺了谁只有想筛它的人才看得见
         result.put("streamers", found.streamers());
         result.put("channels", found.channels());
         result.put("retentionDays", store.retentionDays());
+        // 告警开着没有：告警栏空着时，「筛没了」与「告警已关」是两回事，
+        // 而只有这一条能分开它们——关着时是不往时间线里记的
+        result.put("alertEnabled", store.alertEnabled());
 
         return result;
     }
@@ -155,7 +160,7 @@ public class TimelineController {
         result.put("days", days);
         result.put("retentionDays", store.retentionDays());
         result.put("types", types());
-        result.put("categories", categories());
+        result.put("categories", categories(null));
 
         return result;
     }
@@ -167,13 +172,25 @@ public class TimelineController {
      * 使用者会把空结果读成「这台机器没发生过这类事」，而实际上是这一类还没有任何东西往里记。
      * 哪几个大类有东西由 {@link TimelineCategory#inUse()} 从类型表现算，界面不另抄一张。
      */
-    private JSONArray categories() {
+    private JSONArray categories(LocalDate day) {
         JSONArray items = new JSONArray();
+
+        // 条数是这一天该类的总数，不跟着别的筛选缩水：跟着缩水的话，
+        // 药丸上那个数每点一次筛选变一次，看着像「这一类只剩这么点了」
+        Map<TimelineCategory, Integer> perCategory = new EnumMap<>(TimelineCategory.class);
+        if (day != null) {
+            for (Map.Entry<TimelineEventType, Integer> entry : store.countsOn(day).entrySet()) {
+                perCategory.merge(entry.getKey().getCategory(), entry.getValue(), Integer::sum);
+            }
+        }
 
         for (TimelineCategory category : TimelineCategory.inUse()) {
             JSONObject item = new JSONObject();
             item.put("name", category.name());
             item.put("text", category.getDescription());
+            if (day != null) {
+                item.put("count", perCategory.getOrDefault(category, 0));
+            }
             items.add(item);
         }
 

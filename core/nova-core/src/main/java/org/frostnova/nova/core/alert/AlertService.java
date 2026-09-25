@@ -384,8 +384,10 @@ public class AlertService {
         }
 
         if (!attempted) {
+            // 标题不截断：这一条是「压根没发出去」，看的人要照着它去查那条告警说的是哪件事；
+            // 截成前二十几个字的话，几条不同的告警在时间线里长得一模一样
             timeline.record(TimelineEvent.of(TimelineEventType.ALERT_FAILED, TimelineEvent.Level.WARN)
-                    .text("没有配好的告警通道：" + shorten(subject))
+                    .text("没有配置告警通道，没发出去：" + subject)
                     .detail("subject", subject)
                     .build());
         }

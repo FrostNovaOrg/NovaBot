@@ -12,8 +12,9 @@
 
 import {$, api, clock, el, esc, phrase, say, today, term} from './core.js';
 import {
-  ENG_LEVELS, emptyStateView, engAtBottom, engCopyText, engEmptyText, engFollowing, engQuery,
-  engSegments, hasFilter, logHash, newerDay, olderDay, parseLogHash, timelineQuery,
+  ENG_LEVELS, catBarItems, emptyStateView, engAtBottom, engCopyText, engEmptyText, engFootText,
+  engFollowing, engQuery, engSegments, hasFilter, logHash, newerDay, olderDay, parseLogHash,
+  timelineQuery,
 } from './log-model.js';
 
 /** 当前筛选状态，真源是地址栏，见 syncFromHash */
@@ -43,6 +44,14 @@ let categories = [];
 
 /** 保留天数，来自同一趟 /api/timeline/days */
 let retention = 0;
+
+/**
+ * 告警开着没有，来自 /api/timeline 的每一趟查询
+ *
+ * 只为答空态那一句「告警已关，这里不会有记录」。留空表示接口没说——
+ * 猜着说是关了，比不说话更坏。
+ */
+let alertOn;
 
 /** 接着往更旧翻的位置，空表示没有更早的了。它是「翻到哪儿了」，不是筛选，因此不进地址栏 */
 let cursor = '';
@@ -172,6 +181,10 @@ async function loadEvents(append) {
   }
 
   cursor = found.nextCursor || '';
+  // 大类那一排的条数按「这一天」算，由查询这一趟带回来：日期清单那一趟没有它，
+  // 而它不跟着别的筛选缩水，因此随手拿本次命中的事件去凑会凑出错的数
+  if (found.categories) categories = found.categories;
+  if (found.alertEnabled !== undefined) alertOn = found.alertEnabled;
   renderFilterBar(found);
   renderEvents(found.events || [], append);
   renderFoot(found);
@@ -228,6 +241,9 @@ function renderFilterBar(found) {
 /**
  * 大类药丸：全部，加上有事件归属的那几类
  *
+ * 每枚带上这一天的条数，一条没有的那几枚置灰但仍点得动：看的人一眼看得出
+ * 「今天哪几类有事」，而点开一枚空的药丸仍是正当动作——看看这一天别的类里有什么。
+ *
  * 旧地址里带着 type= 时在末尾补一枚可摘掉的药丸。不补的话，那一项<b>筛着而屏幕上没有
  * 任何控件显示它</b>——使用者看到的是一张莫名其妙少了很多条的页，
  * 而它与「今天就发生了这么多」长得一模一样。
@@ -236,12 +252,15 @@ function renderCatBar() {
   const bar = $('#log-cats');
   bar.innerHTML = '';
 
-  for (const [value, label] of [['', '全部']].concat(categories.map(item => [item.name, item.text]))) {
-    const pill = el('button', 'pill lgpill');
+  // 「全部」不带条数：它不是某一类，写上那个总数会与旁边几枚的数对不上口径
+  const items = [{name: '', text: '全部', label: '全部', dim: false}].concat(catBarItems(categories));
+
+  for (const item of items) {
+    const pill = el('button', item.dim ? 'pill lgpill dim' : 'pill lgpill');
     pill.type = 'button';
-    pill.textContent = label;
-    pill.setAttribute('aria-pressed', filters.cat === value ? 'true' : 'false');
-    pill.addEventListener('click', () => changed({cat: value}));
+    pill.textContent = item.label;
+    pill.setAttribute('aria-pressed', filters.cat === item.name ? 'true' : 'false');
+    pill.addEventListener('click', () => changed({cat: item.name}));
     bar.appendChild(pill);
   }
 
@@ -276,7 +295,7 @@ function renderEvents(events, append) {
   if (!append) box.innerHTML = '';
 
   if (!events.length && !append) {
-    const view = emptyStateView(filters, dayCount());
+    const view = emptyStateView(filters, dayCount(), alertOn);
     const wrap = el('div', 'empty');
     const lead = el('div');
     lead.textContent = view.lead;
@@ -388,7 +407,9 @@ function renderEngTools() {
     pill.addEventListener('click', () => {
       engLevels[level] = !engLevels[level];
       pill.setAttribute('aria-pressed', engLevels[level] ? 'true' : 'false');
-      renderEngList();
+      // 重读一遍，不是就地筛一遍：只剩问题档时改由服务端从这一天整份里找，
+      // 而手上这一份只是尾巴那几行——就地筛的话，散在一天里的那几条永远不在屏幕上
+      loadEng();
     });
     pills.appendChild(pill);
   }
@@ -397,7 +418,7 @@ function renderEngTools() {
 async function loadEng() {
   let found;
   try {
-    found = await api('/engineering-log' + engQuery(filters, limitOf(), -1));
+    found = await api('/engineering-log' + engQuery(filters, limitOf(), -1, engLevels));
   } catch (e) {
     say('载入工程日志失败：' + e.message, 'err');
     return;
@@ -418,6 +439,8 @@ async function loadEng() {
   engOffset = typeof found.offset === 'number' ? found.offset : -1;
   $('#eng-foot').dataset.more = found.more ? '1' : '';
   $('#eng-foot').dataset.path = found.path || '';
+  // 整天找撞到回扫上限时服务端会说扫到几点几分，页脚据此写明「更早的没有扫」
+  $('#eng-foot').dataset.scannedTo = found.scannedTo || '';
   renderEngJump(found);
   renderEngList();
   startFollow();
@@ -479,9 +502,8 @@ function renderEngList() {
   else box.scrollTop = box.scrollHeight;
 
   const foot = $('#eng-foot');
-  foot.textContent = '显示 ' + shown.length + ' 段，共读到 ' + all.length + ' 段'
-    + (filters.at ? '（这一刻前后那一段）'
-      : (foot.dataset.more ? '（更早的没有读进来，只有 NovaBot 自己这一份）' : '（这一份的全部）'))
+  foot.textContent = engFootText(filters, shown.length, all.length, foot.dataset.more === '1',
+    foot.dataset.scannedTo || '')
     + (foot.dataset.path ? ' · ' + foot.dataset.path : '');
 }
 
@@ -506,7 +528,7 @@ async function followTick() {
 
   let found;
   try {
-    found = await api('/engineering-log' + engQuery(filters, limitOf(), engOffset));
+    found = await api('/engineering-log' + engQuery(filters, limitOf(), engOffset, engLevels));
   } catch (e) {
     // 停下来并说一声：不说的话，这一页会安静地不再更新，而开关看起来还开着
     engFollow = false;

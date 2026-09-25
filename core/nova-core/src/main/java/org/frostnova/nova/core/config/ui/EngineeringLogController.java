@@ -16,7 +16,10 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.HashSet;
+import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * 工程日志接口
@@ -40,6 +43,14 @@ public class EngineeringLogController {
      */
     private static final DateTimeFormatter MINUTE = DateTimeFormatter.ofPattern("HH:mm");
 
+    /**
+     * 档名闭集，与界面上那四枚药丸同一套
+     * <p>
+     * 写在这里而不是由调用方随便给：档名认不出时当成「不筛」，翻出来的是整天里
+     * 一大堆用户不要的行，而页面看着像「筛了，就这些」。
+     */
+    private static final Set<String> LEVEL_NAMES = Set.of("error", "warn", "info", "debug");
+
     private final EngineeringLogService service;
 
     @Autowired
@@ -58,13 +69,15 @@ public class EngineeringLogController {
      * @param d 看哪一天，格式 {@code YYYY-MM-DD}；留空即今天
      * @param at 定位到哪一分钟，格式 {@code HH:mm}；留空即不定位
      * @param since 上一次读到哪个字节，供「跟随最新」接着读；小于 0 即不接着读
+     * @param levels 只看哪几档，逗号分隔；留空即照旧读尾巴。给了它就改从这一天整份里找
      * @return 已打码的若干行，以及读的是哪一份、上面还有没有
      */
     @GetMapping
     public JSONObject log(@RequestParam(defaultValue = "0") int limit,
                           @RequestParam(required = false) String d,
                           @RequestParam(required = false) String at,
-                          @RequestParam(defaultValue = "-1") long since) {
+                          @RequestParam(defaultValue = "-1") long since,
+                          @RequestParam(required = false) String levels) {
         JSONObject result = new JSONObject();
         result.put("success", true);
         // 报的是真正生效的那个数，不是请求里写的那个：要了十万行只给两千时，
@@ -83,6 +96,20 @@ public class EngineeringLogController {
             result.put("success", false);
             result.put("message", "日期应为 YYYY-MM-DD、时刻应为 HH:mm: " + e.getParsedString());
             return result;
+        }
+
+        // 认不出的档名同样不当成「不筛」，理由与时刻那一条相同
+        Set<String> levelsOn = new HashSet<>();
+        if (levels != null && !levels.isBlank()) {
+            for (String one : levels.split(",")) {
+                String name = one.trim().toLowerCase(Locale.ROOT);
+                if (!LEVEL_NAMES.contains(name)) {
+                    result.put("success", false);
+                    result.put("message", "认不出的日志级别档名: " + one.trim());
+                    return result;
+                }
+                levelsOn.add(name);
+            }
         }
 
         result.put("date", day == null ? LocalDate.now().toString() : day.toString());
@@ -107,6 +134,8 @@ public class EngineeringLogController {
                 window(result, file.get(), minute);
             } else if (since >= 0) {
                 follow(result, file.get(), since);
+            } else if (!levelsOn.isEmpty()) {
+                scan(result, file.get(), limit, levelsOn);
             } else {
                 tail(result, file.get(), limit);
             }
@@ -125,6 +154,21 @@ public class EngineeringLogController {
         result.put("more", tail.more());
         result.put("size", tail.size());
         result.put("offset", tail.offset());
+    }
+
+    /**
+     * 只看问题档时整天里找那几段
+     */
+    private void scan(JSONObject result, Path file, int limit, Set<String> levels) throws IOException {
+        EngineeringLogService.Scan scan = service.scan(file, limit, levels);
+        result.put("lines", scan.lines());
+        result.put("more", scan.more());
+        result.put("size", scan.size());
+        result.put("offset", scan.offset());
+        // 只在撞了回扫上限还没凑够时给：给了而这一天其实找全了，看的人会以为更早的没扫
+        if (scan.scannedTo() != null) {
+            result.put("scannedTo", scan.scannedTo());
+        }
     }
 
     /**

@@ -18,6 +18,8 @@ import {
   olderDay, newerDay, engLevelOf, groupEngLines, engVisible, engSegments,
   engQuery, engAtBottom, engFollowing, engCopyText, engEmptyText,
 } from '../../../main/resources/config-ui/log-model.js';
+// 新加的纯函数走命名空间取：往上面那份具名 import 里添名字，整份夹具起不来
+import * as model from '../../../main/resources/config-ui/log-model.js';
 
 const failures = [];
 let checks = 0;
@@ -166,6 +168,18 @@ eq(AFTER_ONE.hint, '', '群清掉之后那句解释也跟着收回去');
 eq(VIEW.chips.every(item => Object.hasOwn(state({}), item.key)), true,
   '每枚芯片的键都在筛选状态上，按它清得掉的正是那一项');
 
+// 告警那一栏空着时，「筛没了」与「告警关着」是两件事：只说清掉筛选的话，
+// 看的人清了一遍又一遍，还是空的——那一页永远答不出「这天到底有没有告警」
+eq(emptyStateView(state({cat: 'ALERT'}), 5, false).hint,
+  '告警已关，这里不会有记录。', '告警关着、告警栏空着：说明是关了');
+eq(emptyStateView(state({cat: 'ALERT'}), 5, false).lead, '没有符合条件的，清掉筛选试试。',
+  '空因那一句之外照旧点名筛选项，清筛选仍然是正当动作');
+eq(emptyStateView(state({cat: 'ALERT'}), 5, true).hint, '', '告警开着：不加这句');
+eq(emptyStateView(state({cat: 'ALERT'}), 5).hint, '', '接口没说开关时也不加这句——猜着说是关了，比不说话更坏');
+eq(emptyStateView(state({cat: 'PUSH'}), 5, false).hint, '', '别的栏空着时不加这句');
+eq(emptyStateView(state({cat: 'ALERT'}), 0, false).hint, '告警已关，这里不会有记录。',
+  '这一天一条记录都没有也照样说得出原因');
+
 // ---------- 六、日期导航 ----------
 const DAYS = ['2026-09-04', '2026-09-02', '2026-08-30'];
 eq(olderDay(DAYS, '2026-09-04'), '2026-09-02', '前一天取有记录的那一天，不是日历上的前一天');
@@ -243,6 +257,29 @@ eq(engQuery(state({view: 'eng'}), 300, 4096), '?limit=300&d=2026-09-04&since=409
 eq(engQuery(state({view: 'eng', at: '20:07'}), 300, 4096), '?limit=300&d=2026-09-04&at=20%3A07',
   '定住的时候不跟随');
 
+// 只剩问题档时，服务端从这一天整份日志里找（这一支才看得见散在一天里的错误）。
+// 四档全勾、或开着信息、调试时照旧只读尾巴——那两种情形下用户要的就是最新那一段，
+// 去把整天翻一遍是白翻。查询串末尾带着 levels= 才是「请从整天找」的那句话
+const PROBLEM_ONLY = {error: true, warn: false, info: false, debug: false};
+eq(engQuery(state({view: 'eng'}), 300, -1, PROBLEM_ONLY), '?limit=300&d=2026-09-04&levels=error',
+  '只勾错误时请服务端从整天找');
+eq(engQuery(state({view: 'eng'}), 300, -1, {error: true, warn: true, info: false, debug: false}),
+  '?limit=300&d=2026-09-04&levels=error,warn', '只勾警告、错误时也从整天找，档名按级别顺序排');
+eq(engQuery(state({view: 'eng'}), 300, -1, {error: false, warn: true, info: false, debug: false}),
+  '?limit=300&d=2026-09-04&levels=warn', '只勾警告也一样');
+eq(engQuery(state({view: 'eng'}), 300, -1, ON), '?limit=300&d=2026-09-04',
+  '四档全勾不带 levels，照旧只读尾巴');
+eq(engQuery(state({view: 'eng'}), 300, -1, OFF_INFO), '?limit=300&d=2026-09-04',
+  '开着调试时也不从整天找');
+eq(engQuery(state({view: 'eng'}), 300, -1, {error: false, warn: false, info: false, debug: false}),
+  '?limit=300&d=2026-09-04', '四档全关时不带 levels：整天找也是一条都没有，白白翻一遍');
+eq(engQuery(state({view: 'eng'}), 300, 4096, PROBLEM_ONLY), '?limit=300&d=2026-09-04&since=4096',
+  '跟随最新时不带 levels，新来那几行由前端现筛');
+eq(engQuery(state({view: 'eng', at: '20:07'}), 300, -1, PROBLEM_ONLY), '?limit=300&d=2026-09-04&at=20%3A07',
+  '定住某一分钟时不带 levels，那一次要的是这一刻前后那一段');
+eq(engQuery(state({view: 'eng'}), 300, -1), '?limit=300&d=2026-09-04',
+  '没给档位时不带 levels（旧调用点照旧）');
+
 // ---------- 十、工程日志：跟随最新 ----------
 // 阴性那几格是这一组的重头：跟随做错的方向不是「没跟上」，而是「正翻着旧行时被推走」——
 // 那时人以为自己点错了，而屏幕上没有任何东西说明刚才发生了什么
@@ -299,6 +336,35 @@ eq(SEG_OFF.shown.every(entry => SEG_OFF.all.includes(entry)), true,
   '屏幕上那几段取自同一份分段结果，不另走一条路');
 eq(engSegments([], -1, ON, ''), {all: [], shown: []}, '没有行时两头都是空的');
 eq(engSegments(SEG_LINES, 1, ON, '').shown[0].hl, true, '高亮照样落在它所属的那一段上');
+
+// ---------- 十三、工程日志页脚那一句、大类药丸那一排 ----------
+// 页脚要说清「屏幕上有几段、一共读到几段」，以及只扫到几点几分。只写「显示 N 条」的话，
+// 那句话在只看错误时会静默变成谎言：它说的 N 只是扫到上限为止那几段，而页面看着像这一天的全部
+eq(model.engFootText ? model.engFootText(state({view: 'eng'}), 3, 12, false, '') : '(缺)',
+  '显示 3 段，共读到 12 段（这一份的全部）', '都读进来时说这一份的全部');
+eq(model.engFootText ? model.engFootText(state({view: 'eng'}), 3, 12, true, '') : '(缺)',
+  '显示 3 段，共读到 12 段（更早的没有读进来，只有 NovaBot 自己这一份）',
+  '只读到尾巴时说清更早的没读进来');
+eq(model.engFootText ? model.engFootText(state({view: 'eng'}), 3, 12, true, '08:15') : '(缺)',
+  '显示 3 段，共读到 12 段（只扫到 08:15，更早的没有扫）',
+  '整天找撞到上限时说清扫到几点几分');
+eq(model.engFootText ? model.engFootText(state({view: 'eng'}), 3, 12, false, '08:15') : '(缺)',
+  '显示 3 段，共读到 12 段（只扫到 08:15，更早的没有扫）',
+  '扫到哪儿那句优先：它是「为什么没找全」的那句回答');
+eq(model.engFootText ? model.engFootText(state({view: 'eng', at: '20:07'}), 1, 1, true, '08:15') : '(缺)',
+  '显示 1 段，共读到 1 段（这一刻前后那一段）', '定住某一分钟时说清只取了这一刻那一段');
+
+// 大类药丸带上这一天的条数：一条没有的那几类置灰但仍点得动。
+// 0 与「没给」要分得开——count 缺失时不硬凑一个 0，那会把「接口没说」画成「今天没有」
+eq(model.catBarItems ? model.catBarItems([{name: 'PUSH', text: '推送', count: 3},
+  {name: 'LIVE', text: '直播', count: 0}]) : '(缺)',
+  [{name: 'PUSH', text: '推送', label: '推送 3', count: 3, dim: false},
+    {name: 'LIVE', text: '直播', label: '直播 0', count: 0, dim: true}],
+  '有条数时写进药丸，0 条的置灰但仍在表里');
+eq(model.catBarItems ? model.catBarItems([{name: 'PUSH', text: '推送'}]) : '(缺)',
+  [{name: 'PUSH', text: '推送', label: '推送', count: null, dim: false}],
+  '接口没给条数时不硬凑 0');
+eq(model.catBarItems ? model.catBarItems([]) : '(缺)', [], '一类都没有时一排是空的');
 
 // ---------- 报数 ----------
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

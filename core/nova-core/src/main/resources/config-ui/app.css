@@ -739,6 +739,8 @@ td.act button:hover{color:var(--err)}
 .lgpills{display:flex;gap:6px;flex-wrap:wrap}
 .lgpill{cursor:pointer;font-family:inherit;background:var(--surface);color:var(--dim)}
 .lgpill[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);background:var(--soft)}
+/* 0 条的那一枚：看得出今天没这类事，但仍点得动——点开空的药丸也是正当动作 */
+.lgpill.dim{opacity:.45}
 /* 工程日志正文：等宽，并保留原样的空白与换行——堆栈的缩进就是它的结构 */
 .eng{margin-top:12px;max-height:60vh;overflow:auto;background:var(--ground);
   border:1px solid var(--line);border-radius:var(--r-ctl);padding:10px 12px;

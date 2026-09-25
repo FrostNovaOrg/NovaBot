@@ -170,6 +170,21 @@ public class TimelineStore implements TimelineWriter {
     }
 
     /**
+     * 告警此刻开着没有
+     * <p>
+     * 与 {@link #retentionDays()} 同一种取法——现读不缓存：写进字段的话，控制台上刚关掉的开关
+     * 要到下一次启动才被这里看见，而那一段时间里空态会一直说「筛没了」。
+     * <p>
+     * 界面问这个只为答一句「告警已关，这里不会有记录」：<b>关着时逐条记进时间线是不该的</b>，
+     * 因此「有没有记」与「关没关」是两件事，只有这一条能分开它们。
+     *
+     * @return 开着返回 true
+     */
+    public boolean alertEnabled() {
+        return properties.getAlert().isEnabled();
+    }
+
+    /**
      * 按条件查询，最近的在前
      * <p>
      * 逐条读磁盘而不是读索引：索引只有条数与最近若干条，答不了「上周二那天警告都有哪些」。
