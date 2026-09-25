@@ -2,6 +2,7 @@ package org.frostnova.nova.report.command;
 
 import org.frostnova.nova.bilibili.BilibiliPlatform;
 import org.frostnova.nova.bilibili.command.BilibiliStreamerChoice;
+import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.model.BilibiliDataScope;
 import org.frostnova.nova.bilibili.model.BilibiliLiveMetric;
 import org.frostnova.nova.report.painter.BilibiliDataQueryPainter;
@@ -13,6 +14,7 @@ import org.frostnova.nova.core.model.UserScore;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.ArrayList;
@@ -22,26 +24,22 @@ import java.util.function.DoubleFunction;
 /**
  * 「数据排行榜」命令
  * <p>
- * 下播报告里的排行榜只出前几名且随报告一次性发出，这里可以随时查、能翻页、能挑榜单。
+ * 下播报告里的排行榜只出前几名且随报告一次性发出，这里可以随时查、能挑榜单。
+ * 一次回一张长图：默认列前 50 名，装不下时截到高度上限，末尾写明「其余 N 名未列出」。
  * 不带「总」出本场，带「总」出历次累计；旧名「总数据排行榜」等同于带「总」。
  */
+@Slf4j
 @NovaComponent
 public class BilibiliRankingCommand extends BilibiliScopedDataCommand {
-    /**
-     * 每页人数。一屏能看完，也不至于翻页翻到手酸
-     */
-    private static final int PAGE_SIZE = 10;
-
-    /**
-     * 页码上限。榜单再长也没人会翻到第一百页，设个上限防止有人拿超大页码刷图
-     */
-    private static final int MAX_PAGE = 50;
+    private final NovaBilibiliProperties properties;
 
     @Autowired
     public BilibiliRankingCommand(AbstractDataSource dataSource, BilibiliStreamerChoice choice,
                                   LiveDataService liveDataService,
-                                  BilibiliDataQueryPainter painter, RevenueVisibilityService revenueVisibility) {
+                                  BilibiliDataQueryPainter painter, RevenueVisibilityService revenueVisibility,
+                                  NovaBilibiliProperties properties) {
         super(dataSource, choice, liveDataService, painter, revenueVisibility);
+        this.properties = properties;
     }
 
     @Override
@@ -61,7 +59,7 @@ public class BilibiliRankingCommand extends BilibiliScopedDataCommand {
 
     @Override
     public String usage() {
-        return "<榜单> [总] [页码] [主播 uid 或昵称]";
+        return "<榜单> [总] [主播 uid 或昵称]";
     }
 
     @Override
@@ -84,7 +82,7 @@ public class BilibiliRankingCommand extends BilibiliScopedDataCommand {
         boolean revenue = revenueVisible(context);
         String example = revenue ? "礼物" : "弹幕";
 
-        // 「总」是范围开关，位置随人写：先整字摘掉，剩下的按「榜单、页码、主播」老规矩认。
+        // 「总」是范围开关，位置随人写：先整字摘掉，剩下的按「榜单、主播」老规矩认。
         // 不摘的话它会被当成主播名，或把榜单名挤到第二位认不出来
         List<String> args = new ArrayList<>(context.getArgs());
         args.remove(TOTAL_FLAG);
@@ -93,10 +91,11 @@ public class BilibiliRankingCommand extends BilibiliScopedDataCommand {
         if (board == null) {
             // 示例是给人照着发的，照着发要真查得到问的那一半：问累计时若写成
             // 「数据排行榜 …」，照着发查到的是本场，答非所问
-            String asked = wantsTotal(context) ? totalName() : name();
+            String asked = wantsTotal(context)
+                    ? name() + " " + example + " " + TOTAL_FLAG
+                    : name() + " " + example;
             return CommandReply.of("请指明要看哪张榜：" + Board.names(revenue)
-                    + "\n例如：" + asked + " " + example
-                    + "\n翻页：" + asked + " " + example + " 2");
+                    + "\n例如：" + asked);
         }
 
         if (board.money && !revenue) {
@@ -104,21 +103,15 @@ public class BilibiliRankingCommand extends BilibiliScopedDataCommand {
             return CommandReply.of("本会话不展示金额相关的榜单，可查：" + Board.names(false));
         }
 
-        int page = 1;
         String streamerKeyword = null;
         for (int i = 1; i < args.size(); i++) {
             String arg = args.get(i);
-            // 三位以内的纯数字当页码，更长的当 uid：uid 都是八位以上，
-            // 而没人会把榜单翻到第 1000 页
+            // 三位以内的纯数字照旧收下但不用它：它原来是页码，一次一张长图后没有页了。
+            // 认出来就丢掉，既不当页码也不拿去当主播名查；更长的当 uid（uid 都是八位以上）
             if (arg.length() <= 3 && arg.chars().allMatch(Character::isDigit)) {
-                page = Integer.parseInt(arg);
-            } else {
-                streamerKeyword = arg;
+                continue;
             }
-        }
-
-        if (page < 1 || page > MAX_PAGE) {
-            return CommandReply.of("页码需在 1 ~ " + MAX_PAGE + " 之间");
+            streamerKeyword = arg;
         }
 
         Resolved resolved = resolve(context, streamerKeyword);
@@ -143,41 +136,57 @@ public class BilibiliRankingCommand extends BilibiliScopedDataCommand {
             return CommandReply.of(nameOf(streamer) + "的直播间还没有" + scope.getLabel() + board.title + "数据");
         }
 
-        int offset = (page - 1) * PAGE_SIZE;
-        if (offset >= total) {
-            int pages = (total + PAGE_SIZE - 1) / PAGE_SIZE;
-            return CommandReply.of(board.title + "榜" + scope.getLabel() + "共 " + total + " 人、"
-                    + pages + " 页，没有第 " + page + " 页");
-        }
-
-        // 取到本页末尾后截取：JSON 实现本就要全量排序，Redis 的 zset 取前 N 名也很廉价，
-        // 不值得为翻页在接口上再开一个带偏移量的方法
+        // 一次出一张长图：先按可配的「最多列出名次」取，再按整图高度上限截到装得下的那几名。
+        // 取到要列的名次就停——JSON 实现本就要全量排序，Redis 的 zset 取前 N 名也很廉价
+        int topN = Math.max(1, properties.getRanking().getTopN());
         List<UserScore> ranking = scope.ranking(liveDataService, platform, streamer.getUid(),
-                board.metric, offset + PAGE_SIZE);
-        if (ranking.size() <= offset) {
-            return CommandReply.of("没有第 " + page + " 页");
-        }
-        List<UserScore> rows = ranking.subList(offset, ranking.size());
+                board.metric, Math.min(total, topN));
 
-        int pages = (total + PAGE_SIZE - 1) / PAGE_SIZE;
         BilibiliDataQueryPainter.Header header = new BilibiliDataQueryPainter.Header(
                 board.title + "排行榜",
                 scope.getLabel() + "数据 · " + nameOf(streamer) + "的直播间",
                 streamer.getFace());
-        String footnote = "第 " + page + " / " + pages + " 页 · 共 " + total + " 人";
-        if (board.note != null) {
-            // 口径说明单独一行，别和页码挤在一起：挤在一起的那行会长到折行，读起来像页码的一部分
-            footnote = footnote + "\n" + board.note;
-            // 累计榜还要多说一句：这个数里含口径变更前后两段
-            if (scope.isTotal()) {
-                footnote = footnote + "\n" + BilibiliLiveMetric.GIFT_RANKING_SCOPE_CHANGE_NOTE;
-            }
+
+        int heightLimit = properties.getRanking().getHeightLimit();
+        // 生效的上限是「配置值」与「一张最小的图（表头 + 一行名次 + 脚注 + 署名）」里高的那个：
+        // 比最小可出图高度还矮的上限等于要求出一张空图，宁可抬高它、并写明抬高了多少
+        int minimum = painter.measureRankingHeight(header, 1, footnote(1, total, board, scope));
+        int effectiveLimit = Math.max(heightLimit, minimum);
+        if (heightLimit < minimum) {
+            log.warn("整图高度上限填的是 {}，比一张最小的图（{} 像素）还矮，按最小高度 {} 出图",
+                    heightLimit, minimum, minimum);
         }
+        int shown = ranking.size();
+        while (shown > 1
+                && painter.measureRankingHeight(header, shown, footnote(shown, total, board, scope)) > effectiveLimit) {
+            shown--;
+        }
+        List<UserScore> rows = ranking.subList(0, shown);
 
         // 理由同「直播间数据」：没点名而由机器人猜出来的那一次，图前面要有一行写清用的是谁
-        return withNotice(resolved, painter.paintRanking(header, rows, offset + 1, board.scoreText, footnote)
+        return withNotice(resolved, painter.paintRanking(header, rows, 1, board.scoreText,
+                        footnote(shown, total, board, scope))
                 .map(CommandReply::image)
                 .orElseGet(this::paintFailed));
+    }
+
+    /**
+     * 脚注：第一行写「前 N 名 · 共 n 人」，没列全的再补一行「其余 N 名未列出」，口径说明单独成行
+     */
+    private String footnote(int shown, int total, Board board, BilibiliDataScope scope) {
+        StringBuilder text = new StringBuilder("前 " + shown + " 名 · 共 " + total + " 人");
+        if (shown < total) {
+            text.append("\n其余 ").append(total - shown).append(" 名未列出");
+        }
+        if (board.note != null) {
+            // 口径说明单独一行，别和名次数挤在一起：挤在一起的那行会长到折行，读起来像名次数的一部分
+            text.append("\n").append(board.note);
+            // 累计榜还要多说一句：这个数里含口径变更前后两段
+            if (scope.isTotal()) {
+                text.append("\n").append(BilibiliLiveMetric.GIFT_RANKING_SCOPE_CHANGE_NOTE);
+            }
+        }
+        return text.toString();
     }
 
     private static String profitLabel(double score) {

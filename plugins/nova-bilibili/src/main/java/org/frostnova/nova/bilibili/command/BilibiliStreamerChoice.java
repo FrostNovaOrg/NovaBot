@@ -269,7 +269,7 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
      * 他后面每一次省掉参数的命令，而他无从知道机器人正替他记着什么。
      * <p>
      * 接在末尾而不是放到第一位：这几条命令的主播都是<b>最后那个可选位置参数</b>
-     * （「数据排行榜 礼物 2 〈主播〉」），放到前面会把榜单名挤走。
+     * （「数据排行榜 礼物 〈主播〉」），放到前面会把榜单名挤走。
      */
     private static List<String> chosenArgs(Pending pending, Long chosen) {
         List<String> args = new ArrayList<>(pending.args());

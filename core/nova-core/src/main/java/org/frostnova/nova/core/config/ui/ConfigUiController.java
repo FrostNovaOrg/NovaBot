@@ -1094,6 +1094,16 @@ public class ConfigUiController {
             return ResponseEntity.badRequest().body(result);
         }
 
+        // 取值范围在写之前问插件：出界的值写进配置文件就等于门已经开了，
+        // 再由出图那侧兜底，翻配置的人看不见这里出过界
+        List<String> outOfRange = runtimeApplier.validateValues(normalized);
+        if (!outOfRange.isEmpty()) {
+            result.put("success", false);
+            result.put("issues", outOfRange);
+            result.put("message", String.join("；", outOfRange));
+            return ResponseEntity.badRequest().body(result);
+        }
+
         try {
             List<String> changedKeys = fileService.write(normalized);
 

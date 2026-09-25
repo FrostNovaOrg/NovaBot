@@ -1,6 +1,7 @@
 package org.frostnova.nova.report.command;
 
 import org.frostnova.nova.bilibili.command.BilibiliStreamerChoice;
+import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.model.BilibiliLiveMetric;
 import org.frostnova.nova.report.painter.BilibiliDataQueryPainter;
 import org.frostnova.nova.core.command.CommandContext;
@@ -42,8 +43,8 @@ import static org.mockito.Mockito.when;
 /**
  * 数据排行榜命令测试
  * <p>
- * 重点在参数解析与翻页边界：命令的参数顺序灵活（榜单、页码、主播可混排），
- * 而翻页算错一格就会漏人或重复展示。
+ * 重点在参数解析与长图的取舍：命令的参数顺序灵活（榜单、主播可混排），
+ * 而「一次列全还是只列前 N 名」算错一格就会漏人。
  */
 @DisplayName("数据排行榜命令")
 class BilibiliRankingCommandTest {
@@ -53,9 +54,15 @@ class BilibiliRankingCommandTest {
 
     private static final Long STREAMER = 10001L;
 
+    private static final Long OTHER = 10002L;
+
     private LiveDataService liveDataService;
 
     private BilibiliDataQueryPainter painter;
+
+    private AbstractDataSource dataSource;
+
+    private BilibiliStreamerChoice choice;
 
     private BilibiliRankingCommand command;
 
@@ -64,19 +71,22 @@ class BilibiliRankingCommandTest {
     @BeforeEach
     void setUp() {
         revenueVisibility = new RevenueVisibilityService(new NovaStateStore(new NovaCoreProperties()));
-        // 本类测的是翻页与匹配，与金额可见性无关。群聊默认不展示金额，
-        // 若不显式放开，礼物榜会被直接拒掉，测到的就不是翻页了
+        // 本类测的是参数匹配与列哪些名次，与金额可见性无关。群聊默认不展示金额，
+        // 若不显式放开，礼物榜会被直接拒掉，测到的就不是这些了
         revenueVisibility.set(PLATFORM, GROUP, true);
-        AbstractDataSource dataSource = mock(AbstractDataSource.class);
+        dataSource = mock(AbstractDataSource.class);
         when(dataSource.getUsers("bilibili")).thenReturn(List.of(streamer(STREAMER, "测试主播")));
 
         liveDataService = mock(LiveDataService.class);
         painter = mock(BilibiliDataQueryPainter.class);
         when(painter.paintRanking(any(), any(), anyInt(), any(), any())).thenReturn(Optional.of("QUJD"));
+        // 画手是替身时量高度回 0，也就是「量得下」：本类不测高度截行，那归 BilibiliRankingHeightLimitTest
+        when(painter.measureRankingHeight(any(), anyInt(), any())).thenReturn(0);
 
-        // 本类只配了一位主播，「说的是哪一位」这一步不会走到追问，替身足够
-        command = new BilibiliRankingCommand(dataSource, mock(BilibiliStreamerChoice.class),
-                liveDataService, painter, revenueVisibility);
+        // 只配一位主播时「说的是哪一位」这一步不会走到追问；两位主播那一格再补追问的替身
+        choice = mock(BilibiliStreamerChoice.class);
+        command = new BilibiliRankingCommand(dataSource, choice,
+                liveDataService, painter, revenueVisibility, new NovaBilibiliProperties());
     }
 
     @Test
@@ -104,12 +114,13 @@ class BilibiliRankingCommandTest {
         // 而问的人明明说的是累计——这一句答非所问
         when(liveDataService.supportsTotalData()).thenReturn(true);
 
+        // 旧名仍认得，但示例给的是现在的写法：一次一张长图，也没有「翻页」那行了
         String oldSpelling = command.execute(contextAs("总数据排行榜")).content();
-        assertTrue(oldSpelling.contains("例如：总数据排行榜 "), oldSpelling);
-        assertTrue(oldSpelling.contains("翻页：总数据排行榜 "), oldSpelling);
+        assertEquals("例如：数据排行榜 礼物 总", exampleOf(oldSpelling), oldSpelling);
+        assertFalse(oldSpelling.contains("翻页"), oldSpelling);
 
         String newSpelling = command.execute(contextAs("数据排行榜", "总")).content();
-        assertTrue(exampleOf(newSpelling).contains("总"), newSpelling);
+        assertEquals("例如：数据排行榜 礼物 总", exampleOf(newSpelling), newSpelling);
     }
 
     @Test
@@ -210,59 +221,90 @@ class BilibiliRankingCommandTest {
     }
 
     @Test
-    @DisplayName("第二页应从第 11 名起，且只含本页的人")
-    void secondPageStartsAtEleven() {
-        withRanking(23);
-
-        command.execute(context("礼物", "2"));
-
-        ArgumentCaptor<List<UserScore>> rows = captor();
-        verify(painter).paintRanking(any(), rows.capture(), eq(11), any(), any());
-        assertEquals(10, rows.getValue().size());
-        assertEquals(11L, rows.getValue().get(0).userUid());
-    }
-
-    @Test
-    @DisplayName("末页不足十人时应只展示实际人数")
-    void lastPageMayBePartial() {
-        withRanking(23);
-
-        command.execute(context("礼物", "3"));
-
-        ArgumentCaptor<List<UserScore>> rows = captor();
-        verify(painter).paintRanking(any(), rows.capture(), eq(21), any(), any());
-        assertEquals(3, rows.getValue().size());
-    }
-
-    @Test
-    @DisplayName("页码超出范围时应说明共几页")
-    void repliesWhenPageOutOfRange() {
-        withRanking(23);
-
-        CommandReply reply = command.execute(context("礼物", "4"));
-
-        assertTrue(reply.content().contains("3 页"), reply.content());
-        verify(painter, never()).paintRanking(any(), any(), anyInt(), any(), any());
-    }
-
-    @Test
-    @DisplayName("页码上限之外应直接拒绝，不去查数据")
-    void rejectsAbsurdPage() {
-        CommandReply reply = command.execute(context("礼物", "999"));
-
-        assertTrue(reply.content().contains("页码"));
-        verify(liveDataService, never()).getLiveUserRanking(anyString(), anyLong(), anyString(), anyInt());
-    }
-
-    @Test
-    @DisplayName("长数字应当作主播 uid 而非页码")
-    void longNumberIsStreamerNotPage() {
+    @DisplayName("八位以上的数字仍当主播 uid，点名哪位就查哪位")
+    void longNumberIsStreamerUid() {
+        // 两位主播都推到本会话：此时「说的是谁」只能由他给的那个号定下来。
+        // 若那个号被当成旧页码丢掉，这一步会落到追问「要说哪一位」那条路上
+        PushUser other = streamer(OTHER, "另一位主播");
+        when(dataSource.getUsers("bilibili")).thenReturn(List.of(streamer(STREAMER, "测试主播"), other));
+        when(choice.rank(any())).thenReturn(new BilibiliStreamerChoice.Ranked(
+                List.of(streamer(STREAMER, "测试主播"), other), List.of("测试主播", "另一位主播"), 2, 0));
+        when(choice.ask(any(), any())).thenReturn("要说哪一位主播？");
         withRanking(3);
 
-        // 10001 是主播 uid：若被误当成页码，这里会回「页码需在 1 ~ 50 之间」
-        command.execute(context("礼物", String.valueOf(STREAMER)));
+        command.execute(context("弹幕", String.valueOf(OTHER)));
 
-        verify(painter).paintRanking(any(), any(), eq(1), any(), any());
+        assertAll(
+                () -> verify(liveDataService).getLiveUserRanking(anyString(), eq(OTHER), anyString(), anyInt()),
+                () -> verify(painter).paintRanking(any(), any(), eq(1), any(), any())
+        );
+    }
+
+    @Test
+    @DisplayName("榜上 37 人应一次列全，页脚写「前 37 名 · 共 37 人」")
+    void listsEveryoneInOneImage() {
+        withRanking(37);
+
+        command.execute(context("弹幕"));
+
+        ArgumentCaptor<List<UserScore>> rows = captor();
+        ArgumentCaptor<String> footnote = ArgumentCaptor.forClass(String.class);
+        verify(painter).paintRanking(any(), rows.capture(), eq(1), any(), footnote.capture());
+        assertAll(
+                () -> assertEquals(37, rows.getValue().size(), "一张图要列全 37 人"),
+                () -> assertTrue(footnote.getValue().contains("前 37 名 · 共 37 人"), footnote.getValue()),
+                () -> assertFalse(footnote.getValue().contains("页"), "不该再写页码：" + footnote.getValue())
+        );
+    }
+
+    @Test
+    @DisplayName("榜上 80 人只列前 50 名，末尾写「其余 30 名未列出」")
+    void notesRemainderBeyondListedTopN() {
+        withRanking(80);
+
+        command.execute(context("弹幕"));
+
+        ArgumentCaptor<List<UserScore>> rows = captor();
+        ArgumentCaptor<String> footnote = ArgumentCaptor.forClass(String.class);
+        verify(painter).paintRanking(any(), rows.capture(), eq(1), any(), footnote.capture());
+        assertAll(
+                () -> assertEquals(50, rows.getValue().size(), "默认列前 50 名"),
+                () -> assertTrue(footnote.getValue().contains("前 50 名 · 共 80 人"), footnote.getValue()),
+                () -> assertTrue(footnote.getValue().contains("其余 30 名未列出"), footnote.getValue())
+        );
+    }
+
+    @Test
+    @DisplayName("恰 50 人时全部列出，不写「其余」")
+    void noRemainderWhenEveryoneListed() {
+        withRanking(50);
+
+        command.execute(context("弹幕"));
+
+        ArgumentCaptor<String> footnote = ArgumentCaptor.forClass(String.class);
+        verify(painter).paintRanking(any(), any(), eq(1), any(), footnote.capture());
+        assertAll(
+                () -> assertFalse(footnote.getValue().contains("其余"), footnote.getValue()),
+                () -> assertTrue(footnote.getValue().contains("前 50 名 · 共 50 人"), footnote.getValue())
+        );
+    }
+
+    @Test
+    @DisplayName("三位以内的数字不当主播也不当页码，回同一张全量长图")
+    void shortNumberIsNeitherStreamerNorPage() {
+        withRanking(37);
+
+        // 「2」留着是老写法（原来指第 2 页）：现在要照认，回的还是那张全量长图，
+        // 既不是第 2 页的 10 人，也不该拿去当主播名查
+        CommandReply reply = command.execute(context("弹幕", "2"));
+
+        ArgumentCaptor<List<UserScore>> rows = captor();
+        verify(painter).paintRanking(any(), rows.capture(), eq(1), any(), any());
+        assertAll(
+                () -> assertEquals(37, rows.getValue().size(), "「2」不是页码，出的是同一张全量长图"),
+                () -> assertFalse(reply.content().contains("没有配置"), "「2」不该当主播：" + reply.content()),
+                () -> assertFalse(reply.content().contains("页码"), reply.content())
+        );
     }
 
     @Test

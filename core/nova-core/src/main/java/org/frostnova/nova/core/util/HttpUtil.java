@@ -18,6 +18,8 @@ import org.springframework.web.client.RestTemplate;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.URI;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -357,6 +359,30 @@ public class HttpUtil {
         }
 
         return Optional.empty();
+    }
+
+    /**
+     * 自定义请求头读取图片的同步 HTTP GET 请求，出错原样交回调用方
+     * <p>
+     * 与 {@link #getBufferedImage(String, Map)} 的分别在出错那一半：那个把一切出错都接住、
+     * 回空，调用方分不出「源站明说没这张图」与「这次没取成」；这里把出错原样抛回，
+     * 分得清的调用方才不会把「这一次没成」记住成「这地址没有图」。
+     * 空响应与不是能解码的图片的字节也算出错抛回，不当「没图」
+     * @param url URL
+     * @param headers HTTP 请求头
+     * @return 图片
+     */
+    public BufferedImage fetchBufferedImage(String url, Map<String, String> headers) {
+        byte[] bytes = getBytes(url, headers);
+        try {
+            BufferedImage image = bytes == null ? null : ImageIO.read(new ByteArrayInputStream(bytes));
+            if (image == null) {
+                throw new IllegalStateException("响应里的字节不是能解码的图片");
+            }
+            return image;
+        } catch (IOException e) {
+            throw new UncheckedIOException("解码图片字节出错", e);
+        }
     }
 
     /**

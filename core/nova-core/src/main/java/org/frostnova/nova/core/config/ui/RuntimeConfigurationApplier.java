@@ -21,6 +21,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * 把保存下来的配置改动落到运行中的程序上
@@ -142,6 +143,11 @@ public class RuntimeConfigurationApplier {
     private final Map<String, String> contributedAppliedElsewhere;
 
     /**
+     * 插件申报的取值校验。核心自有表不在这里。
+     */
+    private final Map<String, Function<String, String>> contributedValidators;
+
+    /**
      * 事件时间线
      * <p>
      * 🔴 <b>只记改了哪一组，不记改成了什么。</b>时间线是逐行落在磁盘上的
@@ -166,28 +172,57 @@ public class RuntimeConfigurationApplier {
         Contributed contributed = mergeContributions(contributors);
         this.contributedAppliers = contributed.appliers();
         this.contributedAppliedElsewhere = contributed.elsewhere();
+        this.contributedValidators = contributed.validators();
         this.timeline = timeline;
     }
 
-    private record Contributed(Map<String, Consumer<String>> appliers, Map<String, String> elsewhere) {
+    private record Contributed(Map<String, Consumer<String>> appliers, Map<String, String> elsewhere,
+                               Map<String, Function<String, String>> validators) {
     }
 
     private static Contributed mergeContributions(
             Collection<RuntimeConfigurationApplierContributor> contributors) {
         if (contributors == null || contributors.isEmpty()) {
-            return new Contributed(Map.of(), Map.of());
+            return new Contributed(Map.of(), Map.of(), Map.of());
         }
 
         Map<String, Consumer<String>> appliers = new LinkedHashMap<>();
         Map<String, String> elsewhere = new LinkedHashMap<>();
+        Map<String, Function<String, String>> validators = new LinkedHashMap<>();
         for (RuntimeConfigurationApplierContributor contributor : contributors) {
             if (contributor == null) {
                 continue;
             }
             mergeAppliers(contributor.appliers(), appliers, elsewhere);
             mergeElsewhere(contributor.appliedElsewhere(), appliers, elsewhere);
+            mergeValidators(contributor.valueValidators(), validators);
         }
-        return new Contributed(Collections.unmodifiableMap(appliers), Collections.unmodifiableMap(elsewhere));
+        return new Contributed(Collections.unmodifiableMap(appliers), Collections.unmodifiableMap(elsewhere),
+                Collections.unmodifiableMap(validators));
+    }
+
+    /**
+     * 合并各插件的取值校验
+     * <p>
+     * 同一条键被两方校验时抛 {@link IllegalStateException}：范围这种东西两方各说各的，
+     * 存下来的值就等于谁也没校验过
+     */
+    private static void mergeValidators(Map<String, Function<String, String>> declared,
+                                        Map<String, Function<String, String>> validators) {
+        if (declared == null) {
+            return;
+        }
+        for (Map.Entry<String, Function<String, String>> entry : declared.entrySet()) {
+            String key = entry.getKey();
+            Function<String, String> validator = entry.getValue();
+            if (key == null || validator == null) {
+                continue;
+            }
+            if (validators.containsKey(key)) {
+                throw new IllegalStateException("即时生效配置项 " + key + " 的取值校验被写了两次");
+            }
+            validators.put(key, validator);
+        }
     }
 
     private static void mergeAppliers(Map<String, Consumer<String>> declared,
@@ -326,6 +361,32 @@ public class RuntimeConfigurationApplier {
         keys.addAll(contributedAppliers.keySet());
         keys.addAll(contributedAppliedElsewhere.keySet());
         return Collections.unmodifiableSet(keys);
+    }
+
+    /**
+     * 问一遍插件：这批取值合不合各自那几项的规矩
+     * <p>
+     * 在写配置文件之前问。写进去再由出图那侧兜底的话，配置文件里躺着一个
+     * 谁都不该照着办的值，而下一个人翻配置时没有任何提示说它出过界。
+     * @param changes 待写入的配置项名到取值
+     * @return 不能收的那些，一段人话一条；空表表示都能收。没申报校验的键一律放行
+     */
+    public List<String> validateValues(Map<String, String> changes) {
+        List<String> problems = new ArrayList<>();
+        if (changes == null || changes.isEmpty() || contributedValidators.isEmpty()) {
+            return problems;
+        }
+        for (Map.Entry<String, String> change : changes.entrySet()) {
+            Function<String, String> validator = contributedValidators.get(change.getKey());
+            if (validator == null) {
+                continue;
+            }
+            String problem = validator.apply(change.getValue());
+            if (problem != null) {
+                problems.add(problem);
+            }
+        }
+        return problems;
     }
 
     /**

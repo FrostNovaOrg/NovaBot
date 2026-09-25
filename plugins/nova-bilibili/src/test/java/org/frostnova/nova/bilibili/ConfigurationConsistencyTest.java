@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.config.BilibiliConfigurationGroups;
+import org.frostnova.nova.bilibili.config.BilibiliRankingApplier;
 import org.frostnova.nova.bilibili.config.BilibiliWordCloudExcludeApplier;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.protocol.NovaEventMapper;
@@ -452,12 +453,16 @@ class ConfigurationConsistencyTest {
     }
 
     /**
-     * 适配器申报的即时生效应用器。没有实现时为空集，尺仍须过。
+     * 各插件申报的即时生效应用器。没有实现时为空集，尺仍须过。
+     * <p>
+     * 名单是手写的：新添一个应用器就要在这里点名，没点到的那一项会被「标成即时生效
+     * 却没写回」这一格抓住，不会悄悄免检。
      * @return 贡献者，没有实现时为空
      */
     private List<RuntimeConfigurationApplierContributor> applierContributors() {
         List<RuntimeConfigurationApplierContributor> contributors = new ArrayList<>();
         contributors.add(new BilibiliWordCloudExcludeApplier());
+        contributors.add(new BilibiliRankingApplier());
         contributors.addAll(loadOptionalContributor(RuntimeConfigurationApplierContributor.class,
                 "org.frostnova.nova.adapter.onebot.config.OneBotRuntimeAppliers"));
         return contributors;

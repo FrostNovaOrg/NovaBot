@@ -2,6 +2,7 @@ package org.frostnova.nova.core.config.ui;
 
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * 即时生效应用器的申报点
@@ -32,6 +33,19 @@ public interface RuntimeConfigurationApplierContributor {
      * @return 键到「谁去落地」的说明，登记顺序
      */
     default Map<String, String> appliedElsewhere() {
+        return Map.of();
+    }
+
+    /**
+     * 本插件申报的取值范围：配置项名 → 校验这个值合不合规矩
+     * <p>
+     * 回 null 表示这个值能收；回一段人话表示不能收，这段话会原样回到保存的人眼前，
+     * 好让他知道该填什么。存下来再由出图那侧悄悄兜底，不如在保存这一步就说清楚。
+     * <p>
+     * 只对「一个键、一个字符串」那一类生效。默认空表，表示本插件的项都随便收。
+     * @return 键到取值校验，登记顺序
+     */
+    default Map<String, Function<String, String>> valueValidators() {
         return Map.of();
     }
 }
