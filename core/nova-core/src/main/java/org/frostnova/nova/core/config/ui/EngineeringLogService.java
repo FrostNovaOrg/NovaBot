@@ -1090,10 +1090,6 @@ public class EngineeringLogService {
                 // 同一处——外层那一道掩码已经盖住了它。不必再量（层层各量一遍，一层套
                 // 一层的长行就一层比一层慢），也不必再补一道（掩码的道数会把嵌套层数
                 // 透出去）
-                // 值的起点落在已遮过的段里：里层值与外层值同用一张收尾表，必定同收在
-                // 同一处——外层那一道掩码已经盖住了它。不必再量（层层各量一遍，一层套
-                // 一层的长行就一层比一层慢），也不必再补一道（掩码的道数会把嵌套层数
-                // 透出去）
                 if (valueFrom >= kept && secret(pair.group(1))) {
                     int valueTo = valueFrom;
                     while (valueTo < line.length() && !endsValue(line.charAt(valueTo))) {
