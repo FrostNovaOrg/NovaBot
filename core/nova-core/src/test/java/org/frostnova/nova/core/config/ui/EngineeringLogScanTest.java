@@ -194,6 +194,79 @@ class EngineeringLogScanTest {
         assertTrue(elapsedMs < 2500, "整天翻一遍不该等上好几秒，实测 " + elapsedMs + " 毫秒");
     }
 
+    @Test
+    @DisplayName("堆栈长过上限时留住开头与结尾两截, 并写明中间省略了几行")
+    void capsContinuationLinesPerEntry() throws Exception {
+        // 异常真正抛出的地方在紧跟着头一行的那几帧；中间深不见底的重复帧对排障几乎无用。
+        // 不设上限的话，一份认不出几处行首的日志会把它们全攒在内存里
+        StringBuilder text = new StringBuilder(at(6, 10, "ERROR", "深堆栈 err-deep") + "\n");
+        for (int i = 1; i <= 6000; i++) {
+            text.append("\tat deep.Frame").append(i).append("(Frame.java:").append(i).append(")\n");
+        }
+        Files.writeString(log, text.toString(), StandardCharsets.UTF_8);
+
+        List<String> lines = lines(call("?limit=50&d=2026-09-25&levels=error"));
+
+        assertEquals(EngineeringLogService.MAX_CONT_LINES + 2, lines.size(),
+                "头一行加两截续行加一行说明；得到 " + lines.size());
+        assertTrue(lines.get(0).contains("err-deep"), "头一行在最前");
+        String note = lines.stream().filter(l -> l.contains("省略")).findFirst().orElse("");
+        assertTrue(note.contains("5500"), "省略了几行要写明；得到说明行：" + note);
+        String kept = String.join("\n", lines);
+        assertTrue(kept.contains("at deep.Frame1("), "紧跟着头一行的那几帧要留住");
+        assertTrue(kept.contains("at deep.Frame200("), "开头那一截收到第 200 帧");
+        assertFalse(kept.contains("at deep.Frame201("), "中间的帧该省");
+        assertTrue(kept.contains("at deep.Frame5701("), "结尾那一截从第 5701 帧起");
+        assertTrue(kept.contains("at deep.Frame6000("), "最后一帧要在");
+    }
+
+    @Test
+    @DisplayName("堆栈长过上限时, 最底下的 Caused by 根因要留住")
+    void keepsTheBottomCausedByOfAnOverlongStack() throws Exception {
+        // Java 的根因链「Caused by: …」印在堆栈最底下；只留开头那一截会把根因丢掉
+        StringBuilder text = new StringBuilder(at(6, 10, "ERROR", "深堆栈 err-root-stack") + "\n");
+        for (int i = 1; i <= 799; i++) {
+            text.append("\tat deep.Frame").append(i).append("(Frame.java:").append(i).append(")\n");
+        }
+        text.append("Caused by: java.net.ConnectException: 连不上\n");
+        Files.writeString(log, text.toString(), StandardCharsets.UTF_8);
+
+        List<String> lines = lines(call("?limit=50&d=2026-09-25&levels=error"));
+
+        assertEquals(EngineeringLogService.MAX_CONT_LINES + 2, lines.size(),
+                "头一行加两截续行加一行说明；得到 " + lines.size());
+        assertTrue(lines.get(0).contains("err-root-stack"), "头一行在最前");
+        String last = lines.get(lines.size() - 1);
+        assertTrue(last.contains("Caused by"), "最底下的根因要留住；得到末行：" + last);
+        String kept = String.join("\n", lines);
+        assertTrue(kept.contains("省略") && kept.contains("300"), "中间省略了几行要写明");
+        assertTrue(kept.contains("at deep.Frame1("), "紧跟着头一行的那几帧要留住");
+        assertTrue(kept.contains("at deep.Frame200("), "开头那一截收到第 200 帧");
+        assertFalse(kept.contains("at deep.Frame201("), "中间的帧该省");
+    }
+
+    @Test
+    @DisplayName("回扫翻到一行超长的, 只带回开头一段")
+    void truncatesAHugeLineWhileScanning() throws Exception {
+        try (OutputStream out = Files.newOutputStream(log)) {
+            out.write(fixed(LINE, 6, 5, "INFO", "fill").getBytes(StandardCharsets.UTF_8));
+            out.write((at(6, 10, "ERROR", "err-huge ") + "#".repeat(2_000_000) + "\n")
+                    .getBytes(StandardCharsets.UTF_8));
+        }
+
+        long start = System.nanoTime();
+        List<String> lines = lines(call("?limit=50&d=2026-09-25&levels=error"));
+        long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+
+        assertEquals(1, levelHeads(String.join("\n", lines)), "就那一条错误");
+        String clipped = lines.get(0);
+        assertTrue(clipped.contains("err-huge"), "开头那一段要留住");
+        assertTrue(clipped.length() <= EngineeringLogService.MAX_LINE_BYTES + 40,
+                "只留开头一段；得到 " + clipped.length() + " 字");
+        assertTrue(clipped.contains("已截去"), "截掉了多少要写明");
+        assertTrue(elapsedMs < 10_000, "两 MB 的一行不该等很久，实测 " + elapsedMs + " 毫秒");
+    }
+
     // ---- 造日志 ----
 
     /**
