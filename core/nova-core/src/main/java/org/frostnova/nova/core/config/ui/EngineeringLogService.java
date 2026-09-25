@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.Reader;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CodingErrorAction;
@@ -29,6 +30,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
@@ -88,6 +90,38 @@ public class EngineeringLogService {
      * 前后各最多给多少行
      */
     public static final int MAX_SPAN = 500;
+
+    /**
+     * 一条日志连同它下面的堆栈，最多带回多少行续行
+     * <p>
+     * 深递归的堆栈可以写上千行，而不设上限的话，一份认不出几处行首的日志（堆栈连着
+     * 堆栈、被拼进来的整段文本）会把那些行全部攒在内存里，一两百 MB 的日子直接把内存
+     * 吃光。超出时保住两头：异常真正抛出的地方在紧跟着头一行的那几帧，Java 的根因
+     * 「Caused by」又印在整串的最底下，中间深不见底的重复帧省掉，并写明省略了几行。
+     */
+    public static final int MAX_CONT_LINES = 500;
+
+    /**
+     * 续行超上限时，开头那一截留多少行
+     */
+    static final int KEPT_LEAD_LINES = 200;
+
+    /**
+     * 续行超上限时，结尾那一截至少留多少行；结尾段里认出「Caused by」时扩到把它包住，
+     * 最大不超过 {@link #MAX_CONT_LINES}
+     */
+    static final int KEPT_TRAIL_LINES = 300;
+
+    /**
+     * 一行日志最多带回多长
+     * <p>
+     * 行的长度没有上限：整段图片编码、整个响应体都会写进一行。带得再长，屏幕上也只
+     * 显示得下一截，而攒着它的那台机器不一定有富余的内存——按字节翻一整行时，
+     * 半截行每读一块还要整行重拷一遍，一行几十 MB 时时间与内存一起吃光。
+     * 超出时只留开头一段，并写明截掉了多少。回扫按字节卡这道闸，其余各路按同样
+     * 数值的字符数卡——UTF-8 里一个字至少一个字节，两道不会一起放行更长的行。
+     */
+    public static final int MAX_LINE_BYTES = 256 * 1024;
 
     /**
      * 打码后留下的痕迹
@@ -159,14 +193,12 @@ public class EngineeringLogService {
             "^\\d{4}-\\d{2}-\\d{2} (\\d{2}):(\\d{2}):(\\d{2})\\.\\d{3}\\b");
 
     /**
-     * {@code 键=值}、{@code 键: 值}，以及它们带引号的那一形态（{@code "键": "值"}）
+     * {@code 键=值}、{@code 键: 值}，以及它们带引号的那一形态（{@code "键": "值"}）——
+     * 只认键与分隔符；值不在这里量，由 {@link #maskPairs} 顺着值自己的收尾字符走
      * <p>
      * 引号进分隔符那一段而不是被当成键或值的一部分：异常的 message 里裹着一段 JSON 是常见形状，
      * 而<b>「键紧跟着一个引号」在只认冒号的判法眼里与「没有这个键」长得一样</b>——
      * 那一路会安静地把整段 JSON 原样端出去。
-     * <p>
-     * 值不吃 {@code ? & /}：吃了的话，一整条地址会被当成 {@code https} 这一个键的值整段吞掉，
-     * 而藏在它查询串里的 {@code csrf=…} 就再也轮不到自己被查一遍。
      * <p>
      * 键名那段写成「最多这么多字符」，再配一句「前一个字符不是字母」，两条合起来才不回溯。
      * 一长串字母数字中间没有分隔符时（调试日志里的图片编码就是这种形状），每个起头都想当一回
@@ -178,8 +210,29 @@ public class EngineeringLogService {
      * 键名比 255 个字符还长的形状不在这份日志里出现。真出现的话它那一对连分隔符都够不着，
      * 于是整对当它不是键值对、不遮——这一档宁可放着，也不为它把整行重新做成平方级。
      */
-    private static final Pattern PAIR = Pattern.compile(
-            "(?<![A-Za-z])([A-Za-z][A-Za-z0-9_.\\-]{0,255}+)(\"?\\s*[:=]\\s*\"?)([^\\s,;\"'&?]+)");
+    private static final Pattern KEY_SEP = Pattern.compile(
+            "(?<![A-Za-z])([A-Za-z][A-Za-z0-9_.\\-]{0,255}+)(\"?\\s*[:=]\\s*\"?)");
+
+    /**
+     * 值到这里为止：与「值那段一个非收尾字符起头、一路吃到收尾字符为止」的同一张收尾表
+     * <p>
+     * 值不吃 {@code ? & /}：吃了的话，一整条地址会被当成 {@code https} 这一个键的值整段吞掉，
+     * 而藏在它查询串里的 {@code csrf=…} 就再也轮不到自己被查一遍。{@code =} 与 {@code :}
+     * 反倒是值里的字符——正因为它们在值里，一层套一层的串才需要从值的开头接着找里层。
+     */
+    private static boolean endsValue(char c) {
+        return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\u000B'
+                || c == ',' || c == ';' || c == '"' || c == '\'' || c == '&' || c == '?';
+    }
+
+    /**
+     * 行尾的截断说明：先截再打的各条读路接在行尾的那句「（已截去 N 字）」
+     * <p>
+     * 摘下来再打、打完接回去：凭据的值顺着收尾字符一路吃到行尾时，这句说明会被当成
+     * 值的一部分嚼掉，页面上只剩「N 字）」，读的人看不出这一行截过、截掉了多少。
+     * 说明本身只有固定的字与数字，摘出去不遮不漏任何东西。
+     */
+    private static final Pattern TRUNCATION_NOTE = Pattern.compile("（已截去 \\d+ 字节?）\\z");
 
     /**
      * 名字判不出、但值确实是凭据的那几个
@@ -372,7 +425,7 @@ public class EngineeringLogService {
             more = true;
         }
 
-        return new Tail(lines.stream().map(EngineeringLogService::mask).toList(), more, size,
+        return new Tail(lines.stream().map(line -> maskSafely(capLine(line))).toList(), more, size,
                 lastLineEnd(bytes, length, from));
     }
 
@@ -425,6 +478,7 @@ public class EngineeringLogService {
         // 一天的错误凑不满一页时每趟都要扫满整个窗，行数越多越等不起
         Segmenter segments = new Segmenter(levels, want);
         byte[] frag = new byte[0];
+        int fragDropped = 0;
         boolean firstBlock = true;
         long pos = size;
         byte[] tailBytes = new byte[0];
@@ -458,11 +512,20 @@ public class EngineeringLogService {
                 byte[] text = join(raw, frag);
                 int firstNl = indexOf(text, (byte) '\n');
                 if (firstNl < 0) {
+                    // 还在读同一行：超长就只留行首那一段，行再长、读的块再多，内存也不涨。
+                    // text 的开头一侧正是行首一侧（raw 是更旧的那块），截掉的都记在
+                    // 这一行头上，等它收尾时一并写明
+                    if (text.length > MAX_LINE_BYTES) {
+                        byte[] head = clipHead(text);
+                        fragDropped += text.length - head.length;
+                        text = head;
+                    }
                     frag = text;
                     continue;
                 }
                 frag = Arrays.copyOfRange(text, 0, firstNl);
-                segments.feedNewestFirst(text, firstNl + 1);
+                segments.feedNewestFirst(text, firstNl + 1, fragDropped);
+                fragDropped = 0;
 
                 if (segments.filled()) {
                     break;
@@ -473,7 +536,11 @@ public class EngineeringLogService {
         // 扫到文件开头时，手里那半截不是半行：它就是这份日志的第一行，得算进来。
         // 只有撞了回扫上限才丢它——那时更旧的半截在上限之外，压根没读过
         if (pos <= 0 && frag.length > 0) {
-            segments.add(decodeLine(frag, 0, frag.length));
+            String first = decodeLine(frag, 0, frag.length);
+            if (fragDropped > 0) {
+                first = first + "（已截去 " + fragDropped + " 字节）";
+            }
+            segments.add(first);
         }
 
         List<List<String>> found = segments.segments();
@@ -485,7 +552,7 @@ public class EngineeringLogService {
         List<List<String>> shown = found.size() > want ? found.subList(0, want) : found;
         for (int i = shown.size() - 1; i >= 0; i--) {
             for (String line : shown.get(i)) {
-                out.add(mask(line));
+                out.add(maskSafely(line));
             }
         }
 
@@ -515,11 +582,20 @@ public class EngineeringLogService {
      * 一整天没出过错时每一段都不对档，这个数照旧要报得出来。因此每来一行都顺手认一次时刻，
      * 新的在前喂，最后一个认出来的也就是最旧那个。
      */
+    /** 续行里的根因链：整串的最底下那行「Caused by: …」 */
+    private static final Pattern CAUSED_BY = Pattern.compile("^\\s*Caused by:");
+
     private static final class Segmenter {
         private final Set<String> levels;
         private final int want;
         private final List<List<String>> newestFirst = new ArrayList<>();
-        private final List<String> cont = new ArrayList<>();
+        // 续行攒两截：lead 收最近喂进来的（文件里紧跟头一行的那几帧），trail 收最先
+        // 喂进来的（文件里最靠下的那几帧，「Caused by」印在那里）。两截合计的上界
+        // 是 MAX_CONT_LINES 的两倍——段再长也只攒这么多行
+        private final ArrayDeque<String> lead = new ArrayDeque<>();
+        private final List<String> trail = new ArrayList<>();
+        private int fedCount;
+        private int causedByFeed = -1;
         private String oldest;
 
         Segmenter(Set<String> levels, int want) {
@@ -532,8 +608,10 @@ public class EngineeringLogService {
          * <p>
          * 从 {@code from} 起按换行切，行末那个回车跟着换行一起吃掉。末尾那一段哪怕不是
          * 换行结尾也算完整：它缺的那半截已经按字节接回在它前头了，只留最靠左那半行到下一块去接。
+         * {@code dropped} 是拼回这一行时已经截掉的字节数，写在它尾巴上——读块翻过几轮之后，
+         * 这个数不再含在窗口里，靠它自己带出来。
          */
-        void feedNewestFirst(byte[] text, int from) {
+        void feedNewestFirst(byte[] text, int from, int dropped) {
             List<String> block = new ArrayList<>();
             int lineStart = from;
             for (int i = from; i < text.length; i++) {
@@ -543,7 +621,17 @@ public class EngineeringLogService {
                 }
             }
             if (lineStart < text.length) {
-                block.add(decodeLine(text, lineStart, text.length));
+                // 末尾这一段接在上一块留下的半行后面才是完整的一行；拼出来仍超长时
+                // 只留行首那一段，截断点退回到字边界上
+                byte[] tail = Arrays.copyOfRange(text, lineStart, text.length);
+                long cut = dropped;
+                if (tail.length > MAX_LINE_BYTES) {
+                    byte[] head = clipHead(tail);
+                    cut += tail.length - head.length;
+                    tail = head;
+                }
+                String line = decodeLine(tail, 0, tail.length);
+                block.add(cut > 0 ? line + "（已截去 " + cut + " 字节）" : line);
             }
             for (int i = block.size() - 1; i >= 0; i--) {
                 add(block.get(i));
@@ -559,15 +647,50 @@ public class EngineeringLogService {
             if (head.find()) {
                 List<String> segment = new ArrayList<>();
                 segment.add(line);
-                for (int i = cont.size() - 1; i >= 0; i--) {
-                    segment.add(cont.get(i));
+                if (fedCount > MAX_CONT_LINES) {
+                    // 超上限：保住两头。结尾那截至少 KEPT_TRAIL_LINES 行，最先喂进来的
+                    // 「Caused by」落在结尾段里时扩到把它包住；开头那截吃掉剩下的名额。
+                    // 省略说明写在两段中间——省掉的正是中间那一段
+                    int trailing = causedByFeed > 0 && causedByFeed <= MAX_CONT_LINES
+                            ? Math.max(KEPT_TRAIL_LINES, causedByFeed)
+                            : KEPT_TRAIL_LINES;
+                    int leading = Math.min(KEPT_LEAD_LINES, MAX_CONT_LINES - trailing);
+                    while (lead.size() > leading) {
+                        lead.pollFirst();
+                    }
+                    for (Iterator<String> it = lead.descendingIterator(); it.hasNext(); ) {
+                        segment.add(it.next());
+                    }
+                    segment.add("（续行超长，已省略 " + (fedCount - trailing - leading) + " 行）");
+                    for (int i = trailing - 1; i >= 0; i--) {
+                        segment.add(trail.get(i));
+                    }
+                } else {
+                    for (Iterator<String> it = lead.descendingIterator(); it.hasNext(); ) {
+                        segment.add(it.next());
+                    }
                 }
-                cont.clear();
+                lead.clear();
+                trail.clear();
+                fedCount = 0;
+                causedByFeed = -1;
                 if (levels.contains(levelName(head.group(1)))) {
                     newestFirst.add(segment);
                 }
             } else {
-                cont.add(line);
+                // 新的在前喂：先喂到的是文件里靠下的行，「Caused by」正印在那里，
+                // 最后一行喂到的才是紧跟头一行的那几帧
+                fedCount++;
+                if (causedByFeed < 0 && CAUSED_BY.matcher(line).find()) {
+                    causedByFeed = fedCount;
+                }
+                lead.addLast(line);
+                if (lead.size() > MAX_CONT_LINES) {
+                    lead.pollFirst();
+                }
+                if (trail.size() < MAX_CONT_LINES) {
+                    trail.add(line);
+                }
             }
         }
 
@@ -611,6 +734,67 @@ public class EngineeringLogService {
         byte[] both = Arrays.copyOf(older, older.length + newer.length);
         System.arraycopy(newer, 0, both, older.length, newer.length);
         return both;
+    }
+
+    /**
+     * 只留这串字节里行首那一段：截点退回到字边界——落在多字节字中间时，那个字整个让出去，
+     * 不让它解出替代字符。跨读块不截断的拼回与这里的截断是两回事：前者拼得回原文，
+     * 这里是行本身超了上限，截掉的部分本来就不打算带
+     */
+    private static byte[] clipHead(byte[] text) {
+        int end = MAX_LINE_BYTES;
+        while (end > 0 && (text[end] & 0xC0) == 0x80) {
+            end--;
+        }
+        return Arrays.copyOf(text, end);
+    }
+
+    /**
+     * 一行字符串只留开头一段：尾读、跟随与定位带回来的行走这条路，截完才交给打码。
+     * <p>
+     * 先截再打：截掉的那半截本来就不送出去，留下的前半截里键与值的开头都还在，照样
+     * 遮得住；反过来先打码则打码要嚼整行——最长到尾读窗 1 MiB，一层套一层的形状
+     * 就不是一眨眼的事了。
+     */
+    private static String capLine(String line) {
+        if (line.length() <= MAX_LINE_BYTES) {
+            return line;
+        }
+        return line.substring(0, MAX_LINE_BYTES) + "（已截去 " + (line.length() - MAX_LINE_BYTES) + " 字）";
+    }
+
+    /**
+     * 从这个读取器里读一行，行长超限时只留开头一段并写明截掉了多少字
+     * <p>
+     * 不用 {@link BufferedReader#readLine()}：它把整行攒成一个字符串，一行几十 MB 时
+     * （整段图片编码就是这种形状）内存当场吃光——而这一页此刻只是想把定位点前后
+     * 几十行端给浏览器。CRLF 的回车跟着换行一起当行尾看，与 {@code readLine()} 同一口径。
+     */
+    private static String readLineCapped(Reader in) throws IOException {
+        StringBuilder line = new StringBuilder();
+        long dropped = 0;
+        int c = in.read();
+        if (c < 0) {
+            return null;
+        }
+        while (c >= 0 && c != '\n' && c != '\r') {
+            if (line.length() < MAX_LINE_BYTES) {
+                line.append((char) c);
+            } else {
+                dropped++;
+            }
+            c = in.read();
+        }
+        if (c == '\r') {
+            in.mark(1);
+            int next = in.read();
+            if (next >= 0 && next != '\n') {
+                in.reset();
+            }
+        }
+        return dropped > 0
+                ? line.append("（已截去 ").append(dropped).append(" 字）").toString()
+                : line.toString();
     }
 
     private static int indexOf(byte[] bytes, byte needle) {
@@ -692,7 +876,7 @@ public class EngineeringLogService {
         List<String> lines = new ArrayList<>(Arrays.asList(text.split("\r?\n", -1)));
         lines.remove(lines.size() - 1);
 
-        return new Appended(lines.stream().map(EngineeringLogService::mask).toList(), end, false);
+        return new Appended(lines.stream().map(line -> maskSafely(capLine(line))).toList(), end, false);
     }
 
     /**
@@ -727,9 +911,10 @@ public class EngineeringLogService {
         List<String> lines = new ArrayList<>();
         int index = 0;
         try (BufferedReader reader = reader(file)) {
-            for (String line = reader.readLine(); line != null && index <= to; line = reader.readLine()) {
+            for (String line = readLineCapped(reader); line != null && index <= to;
+                    line = readLineCapped(reader)) {
                 if (index >= from) {
-                    lines.add(mask(line));
+                    lines.add(maskSafely(line));
                 }
                 index++;
             }
@@ -751,7 +936,7 @@ public class EngineeringLogService {
         LocalTime bestAt = null;
 
         try (BufferedReader reader = reader(file)) {
-            for (String line = reader.readLine(); line != null; line = reader.readLine()) {
+            for (String line = readLineCapped(reader); line != null; line = readLineCapped(reader)) {
                 LocalTime at = timeOf(line);
                 if (at != null) {
                     if (at.truncatedTo(ChronoUnit.MINUTES).equals(minute)) {
@@ -836,10 +1021,99 @@ public class EngineeringLogService {
         String masked = HEADER.matcher(line).replaceAll(match -> Matcher.quoteReplacement(
                 match.group(1) + match.group(2) + MASK));
 
-        return PAIR.matcher(masked).replaceAll(match -> Matcher.quoteReplacement(
-                secret(match.group(1))
-                        ? match.group(1) + match.group(2) + MASK
-                        : match.group()));
+        return maskPairs(masked);
+    }
+
+    /**
+     * 打一行进页；打码自己出了错时，那一行整行换成掩码
+     * <p>
+     * 判法认不出的形状永远会比名单多，而「看日志」这件事不能跟着判法一起停摆——恰恰是
+     * 出了事的时候最需要打开这一页。一行打不出来，把那一行整行换掉就好，别的行照常给
+     * 出去。换掉的那一行里可能藏着排障线索，所以只在打码抛了异常时才发生。
+     */
+    String maskSafely(String line) {
+        // 行尾带着截断说明时先摘下来，打完再接回去——打码只做在日志原文上
+        String body = line;
+        String note = "";
+        if (line != null) {
+            Matcher truncation = TRUNCATION_NOTE.matcher(line);
+            if (truncation.find()) {
+                body = line.substring(0, truncation.start());
+                note = truncation.group();
+            }
+        }
+        try {
+            String masked = maskForPage(body);
+            return masked == null ? null : masked + note;
+        } catch (RuntimeException e) {
+            return MASK;
+        }
+    }
+
+    /**
+     * 把一行交给打码；包内可见、单独一层，为的是测试能换一个对某一行必抛错的实现，
+     * 好量「打码出错时那一行整行换掩码、页面不倒」这件事
+     */
+    String maskForPage(String line) {
+        return mask(line);
+    }
+
+    /**
+     * 键值对那一档的打码
+     * <p>
+     * 不能整行一次替换完：值那段是「到下一个收尾字符为止」的整段，一段普通文本的值里
+     * 完全可能再套一个「键=值」（「x : _token=…」正是这个形状）。整段被当成 x 的值
+     * 吞掉之后，里头那个键就永远轮不到按自己的名字被查——而恰恰它才是凭据。
+     * <p>
+     * 因此从头到尾只往前走一趟：认出一对键值，就顺着值的收尾字符量出值——键是凭据的
+     * 把这段值换成掩码，不是凭据的留着不动；两种键之后搜寻都落回值的开头，值里若还
+     * 套着键值对，轮得到它自己被查。已扫过的段一概不回头，于是每个字符只过常数次：
+     * 一层套一层的长串（「a=a=a=…」「password=token=token=…」）也是一趟走完，
+     * 不再一层比一层慢。
+     * <p>
+     * 凭据的值遮完，搜寻也落回值里：值里被连键带人吞掉的那个键（「x=token":secret = …」
+     * 正是这个形状——分隔把引号吃进去，secret 成了 token 的值），要落回去才轮得到按
+     * 自己的名字再被查一遍，它名下的值才遮得住。落回去认出的这一对若值起在已遮过的
+     * 段里，当它已经遮过：里层值与外层值同用一张收尾表，必收在同一处，外层那一道掩码
+     * 已经盖住了它。真正要另遮的只有值起在已遮段之外的那一对，拼接起点自然在已输出
+     * 位置之后，不会把遮过的值重抄出去，也不会越界。
+     */
+    private static String maskPairs(String line) {
+        Matcher pair = KEY_SEP.matcher(line);
+        StringBuilder out = new StringBuilder();
+        int kept = 0;
+        int search = 0;
+        while (search < line.length() && pair.find(search)) {
+            int valueFrom = pair.end();
+            if (valueFrom < line.length() && !endsValue(line.charAt(valueFrom))) {
+                // 值的起点落在已遮过的段里：里层值与外层值同用一张收尾表，必定同收在
+                // 同一处——外层那一道掩码已经盖住了它。不必再量（层层各量一遍，一层套
+                // 一层的长行就一层比一层慢），也不必再补一道（掩码的道数会把嵌套层数
+                // 透出去）
+                // 值的起点落在已遮过的段里：里层值与外层值同用一张收尾表，必定同收在
+                // 同一处——外层那一道掩码已经盖住了它。不必再量（层层各量一遍，一层套
+                // 一层的长行就一层比一层慢），也不必再补一道（掩码的道数会把嵌套层数
+                // 透出去）
+                if (valueFrom >= kept && secret(pair.group(1))) {
+                    int valueTo = valueFrom;
+                    while (valueTo < line.length() && !endsValue(line.charAt(valueTo))) {
+                        valueTo++;
+                    }
+                    if (kept < valueFrom) {
+                        out.append(line, kept, valueFrom);
+                    }
+                    out.append(MASK);
+                    kept = Math.max(kept, valueTo);
+                }
+                // 搜寻落回值的开头：凭据的值已换成掩码，但被它吞掉的那个键还在原文里，
+                // 不落回去，它名下的值就漏在掩码外头
+                search = valueFrom;
+            } else {
+                search = pair.start() + 1;
+            }
+        }
+        out.append(line, kept, line.length());
+        return out.toString();
     }
 
     /**

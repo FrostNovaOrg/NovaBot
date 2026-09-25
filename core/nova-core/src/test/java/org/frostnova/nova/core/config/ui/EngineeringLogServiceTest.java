@@ -13,6 +13,7 @@ import java.nio.file.StandardOpenOption;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -279,6 +280,162 @@ class EngineeringLogServiceTest {
         assertMasked(lines.get(2), "xxxyyy");
         assertMasked(lines.get(2), "zzz");
         assertTrue(elapsedMs < 2000, "读尾部本该一眨眼的事，实测 " + elapsedMs + " 毫秒");
+    }
+
+    @Test
+    @DisplayName("值里再套一层键值对时, 里头那个键照样轮到自己被查")
+    void masksPairsNestedInsideAValue() {
+        // 阳性：外层的键不是凭据，值里又写了一个「键=值」。整段被吞作外层的值时，
+        // 里头那个键永远轮不到按自己的名字被查——而恰恰它才是凭据
+        assertMasked("x : _token=abc123", "abc123");
+        assertMasked("note=token=abc123", "abc123");
+        // 阴性：里外都不是凭据的照原样。多遮与漏遮一样，都是在骗看日志的人
+        assertEquals("x : y=z", EngineeringLogService.mask("x : y=z"));
+        assertEquals("note=level=3 done", EngineeringLogService.mask("note=level=3 done"));
+    }
+
+    @Test
+    @DisplayName("一层套一层的长串, 打码不许一层比一层慢")
+    void masksLayeredPairsInLinearTime() {
+        // 「a=a=a=…」这种层层套的串：里层的键值对照样轮到自己被查，
+        // 但不许为每一层把剩下的整段值再吃一遍——那样几万字一行就要等上十几秒
+        List<String> shapes = List.of(
+                "a=".repeat(80_000) + "a",
+                "x:".repeat(80_000) + "x",
+                hexRun(40_000));
+        for (String shape : shapes) {
+            long start = System.nanoTime();
+            String masked = EngineeringLogService.mask(shape);
+            long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+            System.out.println("一层套一层 " + shape.length() + " 字（开头 "
+                    + shape.substring(0, 8) + "…），打码实测 " + elapsedMs + " 毫秒");
+            assertEquals(shape, masked, "键名不是凭据的照原样；得到开头：" + masked.substring(0, 40));
+            assertTrue(elapsedMs < 500, "几万字一行本该一眨眼，实测 " + elapsedMs + " 毫秒");
+        }
+    }
+
+    /**
+     * 冒号分隔的十六进制字节串，凑到指定位数
+     */
+    private String hexRun(int width) {
+        StringBuilder run = new StringBuilder("payload=");
+        while (run.length() < width) {
+            run.append("0a:1b:");
+        }
+        return run.toString();
+    }
+
+    @Test
+    @DisplayName("一行长得离谱时只留开头一段, 尾读与跟随同一种给法")
+    void truncatesAHugeLineInTheTail() throws IOException {
+        // 整个响应体被打印出来那种一行：比尾读窗口小、比行上限大——
+        // 尾读必须给出这一行，而不许原样整行端出去
+        String huge = "2026-09-04 20:07:03.221 ERROR 1 --- [main] x : 响应体 "
+                + "#".repeat(900_000);
+        write(line(1), huge);
+
+        List<String> lines = service.tail(file, 10).lines();
+
+        assertEquals(2, lines.size());
+        String clipped = lines.get(1);
+        assertTrue(clipped.startsWith("2026-09-04 20:07:03.221"),
+                "截的是尾巴，行首的时刻要留住");
+        assertTrue(clipped.length() <= EngineeringLogService.MAX_LINE_BYTES + 40,
+                "只留开头一段；得到 " + clipped.length() + " 字");
+        assertTrue(clipped.contains("已截去"), "截掉了多少要写明");
+
+        // 跟随最新那一路同样：写进来一行超长的，一样截着给
+        List<String> appended = service.since(file, 0L).lines();
+        assertTrue(appended.get(1).length() <= EngineeringLogService.MAX_LINE_BYTES + 40,
+                "跟随最新也不许整行装进内存；得到 " + appended.get(1).length() + " 字");
+        assertTrue(appended.get(1).contains("已截去"), "截掉了多少要写明");
+    }
+
+    @Test
+    @DisplayName("定位那一刻前后, 超长的一行也截着给")
+    void truncatesAHugeLineWhenLocating() throws IOException {
+        String huge = "2026-09-04 20:07:03.221 ERROR 1 --- [main] x : 响应体 "
+                + "#".repeat(900_000);
+        write("2026-09-04 20:05:01.100  INFO 1 --- [main] x : 前一行",
+                huge,
+                "2026-09-04 20:09:01.100  INFO 1 --- [main] x : 后一行");
+
+        EngineeringLogService.Window window = service.around(file, LocalTime.of(20, 7), 2);
+
+        assertEquals("20:07", window.nearest(), "行首没被截，时刻照样认得出");
+        String clipped = window.lines().get(window.highlight());
+        assertTrue(clipped.contains("响应体"), "开头那一段要留住");
+        assertTrue(clipped.length() <= EngineeringLogService.MAX_LINE_BYTES + 40,
+                "只留开头一段；得到 " + clipped.length() + " 字");
+        assertTrue(clipped.contains("已截去"), "截掉了多少要写明");
+    }
+
+    @Test
+    @DisplayName("超长行先截再打: 截断的说明整句给出来, 凭据值照遮")
+    void keepsTheTruncationNoteWhenACredentialValueRunsToTheCap() throws IOException {
+        // 凭据的值一路吃到单行上限：截断说明接在原文后面，会被当成值的一部分嚼掉，
+        // 页面上只剩「多少字）」，读的人看不出这一行截过、截掉了多少
+        String huge = "2026-09-04 20:07:03.221 ERROR 1 --- [main] x : 响应体 password=token=a:"
+                + "#".repeat(900_000);
+        write("2026-09-04 20:05:01.100  INFO 1 --- [main] x : 前一行",
+                huge,
+                "2026-09-04 20:09:01.100  INFO 1 --- [main] x : 后一行");
+
+        String tailed = service.tail(file, 10).lines().get(1);
+        assertTrue(tailed.contains("（已截去 "), "截断说明要整句留着（读尾部）；得到行尾：" + endOf(tailed));
+        assertTrue(tailed.contains("password=" + EngineeringLogService.MASK), "凭据值照遮（读尾部）");
+        assertFalse(tailed.contains("token=a:"), "值不许原样露出（读尾部）");
+
+        String appended = service.since(file, 0L).lines().get(1);
+        assertTrue(appended.contains("（已截去 "), "截断说明要整句留着（跟随）；得到行尾：" + endOf(appended));
+        assertFalse(appended.contains("token=a:"), "值不许原样露出（跟随）");
+
+        EngineeringLogService.Window window = service.around(file, LocalTime.of(20, 7), 1);
+        String located = window.lines().get(window.highlight());
+        assertTrue(located.contains("（已截去 "), "截断说明要整句留着（定位）；得到行尾：" + endOf(located));
+        assertFalse(located.contains("token=a:"), "值不许原样露出（定位）");
+
+        String scanned = service.scan(file, 10, Set.of("error")).lines().get(0);
+        assertTrue(scanned.contains("（已截去 "), "截断说明要整句留着（整天回扫）；得到行尾：" + endOf(scanned));
+        assertFalse(scanned.contains("token=a:"), "值不许原样露出（整天回扫）");
+    }
+
+    /** 一行的末尾一小截，给断言消息用——整行几十万字，印出来读不了 */
+    private static String endOf(String line) {
+        return line.length() <= 120 ? line : "…" + line.substring(line.length() - 100);
+    }
+
+    @Test
+    @DisplayName("一行 90 万字层层套的串, 尾读跟随定位都一眨眼过")
+    void readsPastALayeredHugeLineQuickly() throws IOException {
+        // 尾读窗口最长吃到 1 MiB：打码必须先截到单行上限再动，
+        // 否则整行都在打码嘴里，一层套一层的形状嚼不动
+        String huge = "2026-09-04 20:07:03.221 ERROR 1 --- [main] x : 响应体 "
+                + "a=".repeat(450_000);
+        write("2026-09-04 20:05:01.100  INFO 1 --- [main] x : 前一行",
+                huge,
+                "2026-09-04 20:09:01.100  INFO 1 --- [main] x : 后一行");
+
+        long start = System.nanoTime();
+        List<String> lines = service.tail(file, 10).lines();
+        long tailMs = (System.nanoTime() - start) / 1_000_000;
+        assertTrue(lines.get(1).contains("已截去"), "截掉了多少要写明");
+        assertTrue(tailMs < 2000, "读尾部本该一眨眼的事，实测 " + tailMs + " 毫秒");
+
+        start = System.nanoTime();
+        List<String> appended = service.since(file, 0L).lines();
+        long sinceMs = (System.nanoTime() - start) / 1_000_000;
+        assertTrue(appended.get(1).contains("已截去"), "跟随同样先截再打");
+        assertTrue(sinceMs < 2000, "跟随本该一眨眼的事，实测 " + sinceMs + " 毫秒");
+
+        start = System.nanoTime();
+        EngineeringLogService.Window window = service.around(file, LocalTime.of(20, 7), 2);
+        long aroundMs = (System.nanoTime() - start) / 1_000_000;
+        assertTrue(window.lines().get(window.highlight()).contains("已截去"), "定位同样先截再打");
+        assertTrue(aroundMs < 2000, "定位本该一眨眼的事，实测 " + aroundMs + " 毫秒");
+
+        System.out.println("一行 90 万字层层套的串：尾读 " + tailMs + " 毫秒，跟随 "
+                + sinceMs + " 毫秒，定位 " + aroundMs + " 毫秒");
     }
 
     /**
