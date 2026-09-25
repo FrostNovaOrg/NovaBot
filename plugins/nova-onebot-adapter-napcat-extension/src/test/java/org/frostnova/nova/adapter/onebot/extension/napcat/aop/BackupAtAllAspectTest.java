@@ -32,6 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -306,6 +307,81 @@ class BackupAtAllAspectTest {
             assertNull(aspect.aroundSendMethod(joinPoint));
 
             verify(joinPoint, never()).proceed();
+        }
+    }
+
+    @Nested
+    @DisplayName("前一条还没发出")
+    class PreviousNotSentYet {
+        @Test
+        @DisplayName("等前一条发出、拿到编号再挂；挂的时候出错只记一行警告，推送照常结束")
+        void waitsForTheIdAndAFailureIsOnlyAWarning() throws Throwable {
+            canAtAll(false);
+            Message previous = message(PLATFORM, PushTargetType.GROUP, "开播啦");
+            Message message = message(PLATFORM, PushTargetType.GROUP, "{at=all}");
+            message.setPrevious(previous);
+            ProceedingJoinPoint joinPoint = sending(message);
+
+            assertNull(aspect.aroundSendMethod(joinPoint));
+            verify(joinPoint, never()).proceed();
+            verify(http, never()).setGroupTodo(any(), any());
+
+            doThrow(new IllegalStateException("连不上")).when(http).setGroupTodo(any(), any());
+            previous.setId("4411");
+
+            Logger logger = (Logger) LoggerFactory.getLogger(BackupAtAllAspect.class);
+            ListAppender<ILoggingEvent> appender = new ListAppender<>();
+            appender.start();
+            logger.addAppender(appender);
+            try {
+                assertDoesNotThrow(() -> runCallbacks(previous.getOnSuccessCallbacks()));
+            } finally {
+                logger.detachAppender(appender);
+            }
+
+            ArgumentCaptor<JSONObject> todo = ArgumentCaptor.forClass(JSONObject.class);
+            verify(http).setGroupTodo(any(), todo.capture());
+            assertEquals("4411", todo.getValue().getString("message_id"),
+                    "应等前一条发出后，带着它的编号去挂");
+
+            List<ILoggingEvent> warns = appender.list.stream()
+                    .filter(event -> "WARN".equals(event.getLevel().toString()))
+                    .toList();
+            assertEquals(1, warns.size(), "挂不上只该多一行警告: " + appender.list);
+            assertNull(warns.get(0).getThrowableProxy(), "警告不带堆栈");
+            assertTrue(warns.get(0).getFormattedMessage().contains("连不上"),
+                    "警告应带上失败原因: " + warns.get(0).getFormattedMessage());
+        }
+
+        @Test
+        @DisplayName("前一条最终没发出去时不挂群待办，只记一行警告")
+        void givesUpWhenPreviousNeverGoesOut() throws Throwable {
+            canAtAll(false);
+            Message previous = message(PLATFORM, PushTargetType.GROUP, "开播啦");
+            Message message = message(PLATFORM, PushTargetType.GROUP, "{at=all}");
+            message.setPrevious(previous);
+
+            Logger logger = (Logger) LoggerFactory.getLogger(BackupAtAllAspect.class);
+            ListAppender<ILoggingEvent> appender = new ListAppender<>();
+            appender.start();
+            logger.addAppender(appender);
+            try {
+                assertNull(aspect.aroundSendMethod(sending(message)));
+                verify(http, never()).setGroupTodo(any(), any());
+
+                runCallbacks(previous.getOnFailureCallbacks());
+
+                verify(http, never()).setGroupTodo(any(), any());
+                List<ILoggingEvent> warns = appender.list.stream()
+                        .filter(event -> "WARN".equals(event.getLevel().toString()))
+                        .toList();
+                assertEquals(1, warns.size(), "没挂上只该记一行警告: " + appender.list);
+                assertNull(warns.get(0).getThrowableProxy(), "警告不带堆栈");
+                assertTrue(warns.get(0).getFormattedMessage().contains("没有发出去"),
+                        warns.get(0).getFormattedMessage());
+            } finally {
+                logger.detachAppender(appender);
+            }
         }
     }
 
