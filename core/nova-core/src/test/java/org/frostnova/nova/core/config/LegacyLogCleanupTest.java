@@ -20,7 +20,9 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.PosixFilePermission;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -48,6 +50,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 删掉的就是不该删的东西。位置也要完整：只认「树/年-月/旧名」这一层。
  * 备份目录、更深一层、直接放在树下的同名件都不碰。软链不跟随：链接与它指向的文件都留着。
  * 有一个月目录读不了就跳过，记一条警告，别的过期件照删。
+ * 读不了、删不掉的按月份目录汇成一行告警（几件、什么因由，不带堆栈），
+ * 进不去的月份目录也落在这一行里、不静默——告警条数按目录走，不随件数涨。
  * <p>
  * 保留天数<b>不另抄一份</b>，从正在写的滚动策略上读；这把尺有一条专门掰这一点。
  */
@@ -122,6 +126,12 @@ class LegacyLogCleanupTest {
         return appender.list.stream()
                 .filter(e -> e.getLevel() == Level.WARN)
                 .map(ILoggingEvent::getFormattedMessage)
+                .toList();
+    }
+
+    private List<ILoggingEvent> warnEvents() {
+        return appender.list.stream()
+                .filter(e -> e.getLevel() == Level.WARN)
                 .toList();
     }
 
@@ -279,6 +289,98 @@ class LegacyLogCleanupTest {
                     PosixFilePermission.OWNER_EXECUTE));
         }
         assertTrue(Files.exists(hidden), "读不了的月份目录里的旧名件不该被删掉");
+    }
+
+    /**
+     * 只读的月份目录里，过期的旧名件一件都删不掉。一件一条告警、还带堆栈的话，
+     * 几百件就是几百条——清理本来是为了少占盘、少刷屏，反倒天天刷屏。
+     * 一个目录汇成一行：几件没删成、什么因由，不带堆栈。别处能删的照删。
+     */
+    @Test
+    @DisplayName("只读月份目录里删不掉的件汇成一行告警：几件、什么因由，不带堆栈")
+    void undeletableFilesAreSummarizedInOneWarningLine(@TempDir Path logHome) throws IOException {
+        Path blocked = logHome.resolve("logs/2026-08");
+        Files.createDirectories(blocked);
+        for (int i = 0; i < 200; i++) {
+            LocalDate written = LocalDate.of(2020, 1, 1).plusDays(i);
+            emptyFile(logHome, "logs/2026-08/starbot-" + written + ".log");
+        }
+        Path elsewhere = emptyFile(logHome, "logs/2026-07/starbot-2020-02-01.log");
+        Path probe = blocked.resolve("probe.txt");
+        Files.writeString(probe, "not-a-log");
+
+        Files.setPosixFilePermissions(blocked, EnumSet.of(
+                PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_EXECUTE));
+        try {
+            boolean deletableDespiteMode = true;
+            try {
+                Files.delete(probe);
+            } catch (IOException e) {
+                deletableDespiteMode = false;
+            }
+            Assumptions.assumeFalse(deletableDespiteMode, "当前用户删得动只读目录里的文件，本格跳过");
+
+            sweep(logHome, Map.of("logs", 30));
+
+            List<ILoggingEvent> warns = warnEvents();
+            long stacked = warns.stream().filter(e -> e.getThrowableProxy() != null).count();
+            assertEquals(1, warns.size(),
+                    "几百件没删成要汇成一行告警: 实际 " + warns.size() + " 条、其中带堆栈 " + stacked + " 条: " + warnLines());
+            assertEquals(0, stacked, "汇总那行不带堆栈: " + warnLines());
+            assertEquals("logs/2026-08：200 件没删成（没权限）", warns.get(0).getFormattedMessage());
+            assertFalse(Files.exists(elsewhere), "别处能删的过期件照删");
+        } finally {
+            Files.setPosixFilePermissions(blocked, EnumSet.of(
+                    PosixFilePermission.OWNER_READ,
+                    PosixFilePermission.OWNER_WRITE,
+                    PosixFilePermission.OWNER_EXECUTE));
+        }
+        assertTrue(Files.exists(blocked.resolve("starbot-2020-01-01.log")), "删不掉的件还在原处");
+    }
+
+    /**
+     * 少了执行位的月份目录：列得出名字，进不去取属性。每件都判成「不是普通文件」
+     * 而一件件静默跳过的话，旧日志留着，日志里却看不出被跳过了。
+     * 同样落进那一行汇总：进不去、几件没看。别处能删的照删。
+     */
+    @Test
+    @DisplayName("进不去的月份目录不静默：一行告警写明进不去、几件没看")
+    void inaccessibleMonthDirectoryIsReportedNotSilent(@TempDir Path logHome) throws IOException {
+        Path blocked = logHome.resolve("logs/2026-08");
+        Files.createDirectories(blocked);
+        for (int day = 1; day <= 3; day++) {
+            emptyFile(logHome, "logs/2026-08/starbot-2020-01-0" + day + ".log");
+        }
+        Path elsewhere = emptyFile(logHome, "logs/2026-07/starbot-2020-02-01.log");
+
+        Files.setPosixFilePermissions(blocked, EnumSet.of(PosixFilePermission.OWNER_READ));
+        try {
+            boolean enterableDespiteMode = true;
+            try {
+                Files.readAttributes(blocked.resolve("starbot-2020-01-01.log"),
+                        BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+            } catch (IOException e) {
+                enterableDespiteMode = false;
+            }
+            Assumptions.assumeFalse(enterableDespiteMode, "当前用户进得去只留读位的目录，本格跳过");
+
+            sweep(logHome, Map.of("logs", 30));
+
+            List<ILoggingEvent> warns = warnEvents();
+            long stacked = warns.stream().filter(e -> e.getThrowableProxy() != null).count();
+            assertEquals(1, warns.size(),
+                    "进不去要记一行告警: 实际 " + warns.size() + " 条、其中带堆栈 " + stacked + " 条: " + warnLines());
+            assertEquals(0, stacked, "这行不带堆栈: " + warnLines());
+            assertEquals("logs/2026-08：进不去，3 件没看成（没权限）", warns.get(0).getFormattedMessage());
+            assertFalse(Files.exists(elsewhere), "别处能删的过期件照删");
+        } finally {
+            Files.setPosixFilePermissions(blocked, EnumSet.of(
+                    PosixFilePermission.OWNER_READ,
+                    PosixFilePermission.OWNER_WRITE,
+                    PosixFilePermission.OWNER_EXECUTE));
+        }
+        // 权限还原后再看：只留读位的目录里，取属性这一步本身就看不见东西
+        assertTrue(Files.exists(blocked.resolve("starbot-2020-01-01.log")), "进不去的目录里的件不该被删掉");
     }
 
     @Test

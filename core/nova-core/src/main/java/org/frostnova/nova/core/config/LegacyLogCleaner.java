@@ -14,10 +14,13 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.file.AccessDeniedException;
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.format.DateTimeParseException;
@@ -25,9 +28,11 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -47,7 +52,8 @@ import java.util.stream.Stream;
  * 别的子目录里的同名件一律不碰。旧件删空后的月份目录一并去掉，里面还有东西的目录不删。
  * <b>不跟符号链接</b>：链接与它指向的文件都留着，那多半不是本机的日志。
  * 也<b>不离开日志根目录</b>：删之前再核一遍整条路径还在根下面。
- * 读不了的目录、删不掉的件记一条警告后跳过，接着清别的；清理出错也不让启动失败。
+ * 读不了、删不掉的按月份目录汇成一行警告（几件、什么因由，不带堆栈）后跳过，
+ * 接着清别的；进不去的月份目录也落进这一行，不静默。清理出错也不让启动失败。
  */
 @Slf4j
 @Component
@@ -171,23 +177,34 @@ public class LegacyLogCleaner {
             try {
                 months = listChildren(treeDir);
             } catch (UncheckedIOException e) {
-                log.warn("读不到 {}，已跳过", entry.getKey(), e);
+                log.warn("读不到 {}，已跳过（{}）", entry.getKey(), causeKind(e.getCause()));
                 continue;
             }
             for (Path month : months) {
                 if (!isLegacyMonthDir(month, treeDir)) {
                     continue;
                 }
+                MonthTrouble trouble = new MonthTrouble();
                 List<Path> files;
                 try {
                     files = listChildren(month);
                 } catch (UncheckedIOException e) {
-                    log.warn("读不到 {}/{}，已跳过", entry.getKey(), month.getFileName(), e);
+                    log.warn("读不到 {}/{}，已跳过（{}）", entry.getKey(), month.getFileName(),
+                            causeKind(e.getCause()));
                     continue;
                 }
                 int removedHere = 0;
                 for (Path path : files) {
-                    if (!isPlainFile(path)) {
+                    BasicFileAttributes attrs;
+                    try {
+                        attrs = Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+                    } catch (IOException e) {
+                        trouble.missEntry(e);
+                        continue;
+                    }
+                    trouble.sawEntry();
+                    // 只有普通的真文件才删：软链与目录都不是旧日志，名字再像也不碰
+                    if (!attrs.isRegularFile()) {
                         continue;
                     }
                     LocalDate written = legacyWrittenOn(path.getFileName().toString(), legacyName);
@@ -200,17 +217,20 @@ public class LegacyLogCleaner {
                         continue;
                     }
                     try {
-                        long size = Files.size(path);
                         Files.delete(path);
                         deleted++;
-                        bytes += size;
+                        bytes += attrs.size();
                         removedHere++;
                     } catch (IOException e) {
-                        log.warn("删不掉 {}，已跳过", path.getFileName(), e);
+                        trouble.failDelete(e);
                     }
                 }
                 if (removedHere > 0) {
-                    removeMonthDirIfEmpty(month);
+                    removeMonthDirIfEmpty(month, trouble);
+                }
+                String detail = trouble.detail();
+                if (detail != null) {
+                    log.warn("{}/{}：{}", entry.getKey(), month.getFileName(), detail);
                 }
             }
         }
@@ -251,9 +271,9 @@ public class LegacyLogCleaner {
     }
 
     /**
-     * 旧件已经删光、目录里什么都不剩时，去掉这个空的月份目录。删不掉就跳过。
+     * 旧件已经删光、目录里什么都不剩时，去掉这个空的月份目录。去不掉就攒进这一目录的汇总行。
      */
-    private static void removeMonthDirIfEmpty(Path month) {
+    private static void removeMonthDirIfEmpty(Path month, MonthTrouble trouble) {
         if (Files.isSymbolicLink(month) || !Files.isDirectory(month, LinkOption.NOFOLLOW_LINKS)) {
             return;
         }
@@ -262,21 +282,102 @@ public class LegacyLogCleaner {
                 return;
             }
         } catch (IOException e) {
-            log.warn("读不到 {}，已跳过", month.getFileName(), e);
+            trouble.failDirLeft(e);
             return;
         }
         try {
             Files.deleteIfExists(month);
         } catch (IOException e) {
-            log.warn("删不掉 {}，已跳过", month.getFileName(), e);
+            trouble.failDirLeft(e);
         }
     }
 
     /**
-     * 只有普通的真文件才删：软链与目录都不是旧日志，名字再像也不碰
+     * 一个月份目录这一趟里没办成的事，攒到这个目录过完再汇成一行。
+     * 一件一条就成了刷屏：只读的月份目录里躺着几百件旧日志时，每天就是几百条带栈的告警，
+     * 跟清理的本意正相反。告警条数按目录走，不随件数涨。
      */
-    private static boolean isPlainFile(Path path) {
-        return Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS);
+    private static final class MonthTrouble {
+
+        /** 这一目录里取到属性的件数。一件都没有还攒下了没看成的，就是整个目录进不去 */
+        private int seen;
+
+        private final Map<String, Integer> notSeen = new LinkedHashMap<>();
+
+        private final Map<String, Integer> notDeleted = new LinkedHashMap<>();
+
+        private final Map<String, Integer> dirLeft = new LinkedHashMap<>();
+
+        void sawEntry() {
+            seen++;
+        }
+
+        void missEntry(IOException e) {
+            notSeen.merge(causeKind(e), 1, Integer::sum);
+        }
+
+        void failDelete(IOException e) {
+            notDeleted.merge(causeKind(e), 1, Integer::sum);
+        }
+
+        void failDirLeft(IOException e) {
+            dirLeft.merge(causeKind(e), 1, Integer::sum);
+        }
+
+        /**
+         * 攒下的事写成一行里的话；什么都没攒下时为 null（＝不占日志的行）
+         */
+        String detail() {
+            List<String> parts = new ArrayList<>();
+            int missed = sum(notSeen);
+            if (missed > 0) {
+                parts.add((seen == 0 ? "进不去，" : "") + missed + " 件没看成（" + kinds(notSeen) + "）");
+            }
+            int undeleted = sum(notDeleted);
+            if (undeleted > 0) {
+                parts.add(undeleted + " 件没删成（" + kinds(notDeleted) + "）");
+            }
+            int left = sum(dirLeft);
+            if (left > 0) {
+                parts.add("月份目录没去掉（" + kinds(dirLeft) + "）");
+            }
+            return parts.isEmpty() ? null : String.join("；", parts);
+        }
+
+        private static int sum(Map<String, Integer> counts) {
+            return counts.values().stream().mapToInt(Integer::intValue).sum();
+        }
+
+        /** 因由只有一种时不写件数，好几种时各自带件数 */
+        private static String kinds(Map<String, Integer> counts) {
+            if (counts.size() == 1) {
+                return counts.keySet().iterator().next();
+            }
+            return counts.entrySet().stream()
+                    .map(count -> count.getKey() + " " + count.getValue())
+                    .collect(Collectors.joining("、"));
+        }
+    }
+
+    /**
+     * 因由归成三类写进汇总行：没权限／被占用／别的。
+     * 写类别不写堆栈——一天一趟的事，同一个目录里几百件多半是同一个因由，
+     * 堆栈跟着每一件出来，只是又把日志页变回刷屏的那一个。
+     */
+    private static String causeKind(IOException e) {
+        if (e instanceof AccessDeniedException) {
+            return "没权限";
+        }
+        String text = String.valueOf(e.getMessage());
+        if (e instanceof FileSystemException fileSystemException) {
+            text = text + " " + String.valueOf(fileSystemException.getReason());
+        }
+        String lower = text.toLowerCase(Locale.ROOT);
+        if (lower.contains("in use") || lower.contains("being used") || lower.contains("sharing violation")
+                || lower.contains("busy") || lower.contains("locked")) {
+            return "被占用";
+        }
+        return "别的";
     }
 
     /**
