@@ -568,6 +568,38 @@ class CommandSurfaceTest {
         assertTrue(menu.contains("\n动态@我 "), "动态那一行没被关掉，该照列：" + menu);
     }
 
+    @Test
+    @DisplayName("本机没开累计数据、只关了本场：菜单不再列「直播间数据」；开了累计时只关本场仍列")
+    void menuDropsRoomDataWhenTheOnlyUsableCellIsOff() {
+        registry.supportsTotalData(false);
+        registry.settings.disable(PLATFORM, GROUP, "直播间数据");
+
+        String hidden = registry.feed(true, "菜单");
+        String refused = registry.feed(true, "直播间数据");
+
+        // 累计那一格本机用不上，本场又关了：这一行已经没有能用的问法，照着发只收到拒绝
+        assertFalse(hidden.contains("\n直播间数据 "), "能用的那一格已关，这一行不该再列：" + hidden);
+        assertTrue(refused.contains("已关闭"), "照着发只该收到拒绝：" + refused);
+
+        // 阴性对照：累计开着时只关本场，累计那一格还答得了，这一行照列
+        registry.supportsTotalData(true);
+        String kept = registry.feed(true, "菜单");
+        assertTrue(kept.contains("\n直播间数据 "), "开了累计数据时只关本场，这一行该照列：" + kept);
+    }
+
+    @Test
+    @DisplayName("群里把「@名单」两格都关，菜单撤掉这一行；只关一格时照列")
+    void menuDropsAtListOnlyWhenEveryCellIsOff() {
+        registry.settings.disable(PLATFORM, GROUP, "开播@名单");
+
+        String oneOff = registry.feed(true, "菜单");
+        assertTrue(oneOff.contains("\n@名单 "), "只关一格，这一行该照列：" + oneOff);
+
+        registry.settings.disable(PLATFORM, GROUP, "动态@名单");
+        String bothOff = registry.feed(true, "菜单");
+        assertFalse(bothOff.contains("\n@名单 "), "两格都关，这一行该撤：" + bothOff);
+    }
+
     /**
      * 菜单列得出的命令名。每条命令占一行，行首就是命令名
      */

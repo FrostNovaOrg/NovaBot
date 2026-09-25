@@ -96,6 +96,22 @@ class BilibiliAtListCommandTest {
         assertFalse(reply.content().contains("" + STREAMER), "名字取不到也不是把账号写出去的理由：" + reply.content());
     }
 
+    @Test
+    @DisplayName("认领平台那一步出错时，名单照出，名字写「（昵称未知）」")
+    void listStillPrintsWhenClaimingThePlatformThrows() {
+        AbstractDataSource dataSource = dataSource();
+        AtSubscriptionService subscriptions = subscriptions();
+        SessionMemberNames broken = mock(SessionMemberNames.class, invocation -> {
+            throw new IllegalStateException("取昵称这一步出错");
+        });
+
+        CommandReply reply = command(dataSource, subscriptions, broken)
+                .execute(context("@名单"));
+
+        assertTrue(reply.content().contains("（昵称未知）"), reply.content());
+        assertFalse(reply.content().contains("" + STREAMER), "名字取不到也不是把账号写出去的理由：" + reply.content());
+    }
+
     // ── 夹具 ────────────────────────────────────────────────────────────
 
     /**
