@@ -14,7 +14,7 @@ import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {
   MASK, dangerOf, isDangerous, defaultText, defaultValue, isChanged, haystack,
-  isVisible, effectOf, canonicalValue,
+  isVisible, effectOf, canonicalValue, currentGroupId,
 } from '../../../main/resources/config-ui/settings-model.js';
 
 const failures = [];
@@ -142,6 +142,75 @@ eq(effectOf('RESTART'), {immediate: false, text: '重启生效'}, '标了重启�
 // 没标过的往安全的方向倒：多提示一次重启的代价是白重启，说成已生效却没生效则没人会纠正
 eq(effectOf(null), {immediate: false, text: '重启生效'}, '没标过的按需重启显示');
 eq(effectOf(undefined), {immediate: false, text: '重启生效'}, '拿不到生效时机时按需重启显示');
+
+// ---------- 六、目录当前组：看得见的最上面那一组 ----------
+// 各组给的是文档坐标。视口高度 800。第一组只有 48 高，正中那条带子会落在下一组上。
+const shortTop = [
+  {id: 'ui', top: 0, bottom: 48},
+  {id: 'push', top: 48, bottom: 1600},
+];
+eq(currentGroupId(shortTop, 0, 800), 'ui', '停在页顶时亮第一组');
+eq(currentGroupId(shortTop, 8, 800), 'ui',
+  '顶上是很短的一组、稍微往下滚一点时，亮的应是这一组而不是下一组');
+
+const three = [
+  {id: 'ui', top: 0, bottom: 48},
+  {id: 'push', top: 48, bottom: 700},
+  {id: 'alert', top: 700, bottom: 2200},
+];
+eq(currentGroupId(three, 660, 800), 'push', '一组只剩一截露在顶上时仍亮它，不亮下面那组');
+eq(currentGroupId(three, 900, 800), 'alert', '滚到中段时亮正在看的那组');
+eq(currentGroupId([], 0, 800), '', '一组都没有时不亮任何条');
+eq(currentGroupId(three, 3000, 800), '', '各组都滚出视口时不亮任何条');
+
+// ---------- 七、点左侧菜单：点中的组被送到顶栏下沿，亮的就是它 ----------
+// 顶栏高度和各组位置由本格给定。滚动位置按「组的顶贴在顶栏下沿」来算，与页面上点菜单后的落点相同。
+const head = 54;
+const viewH = 800;
+const clicked = [
+  {id: 'ui', top: 0, bottom: 400},
+  {id: 'push', top: 412, bottom: 900},
+  {id: 'alert', top: 912, bottom: 2000},
+];
+for (const group of clicked) {
+  const scroll = Math.max(0, group.top - head);
+  eq(currentGroupId(clicked, scroll, viewH, head), group.id,
+    '点「' + group.id + '」后它被送到顶栏下沿，应亮它');
+}
+
+// ---------- 八、页底：最后一组比视口矮，滚到最底仍亮它 ----------
+const reachedEnd = [
+  {id: 'ui', top: 0, bottom: 400},
+  {id: 'push', top: 412, bottom: 900},
+  {id: 'tail', top: 912, bottom: 1100},
+];
+const tail = reachedEnd[reachedEnd.length - 1];
+eq(tail.bottom - tail.top < viewH, true, '最后一组比视口矮');
+eq(currentGroupId(reachedEnd, tail.bottom - viewH, viewH, head), tail.id,
+  '滚到页底时亮最后一组');
+
+// ---------- 九、一屏放得下：页面滚不动，亮最上面那组 ----------
+// 各组加起来比视口矮。停在页顶时，最后一组整段都在视口里，仍应亮第一组。
+const fits = [
+  {id: 'a', top: 0, bottom: 200},
+  {id: 'b', top: 212, bottom: 362},
+  {id: 'c', top: 374, bottom: 494},
+];
+eq(fits[fits.length - 1].bottom < viewH, true, '各组加起来比视口矮');
+eq(currentGroupId(fits, 0, viewH, head, fits[fits.length - 1].bottom), 'a',
+  '一屏放得下、停在页顶时亮第一组');
+
+// 最后一组整段都在视口里，文档下面还有内容，这一位置还没到底。
+const stillMore = [
+  {id: 'a', top: 0, bottom: 400},
+  {id: 'b', top: 400, bottom: 900},
+  {id: 'c', top: 900, bottom: 1100},
+];
+const moreBottom = 1600;
+const notYet = stillMore[stillMore.length - 1].bottom - viewH;
+eq(notYet + viewH < moreBottom - 1, true, '这一位置还没滚到文档底');
+eq(currentGroupId(stillMore, notYet, viewH, head, moreBottom), 'a',
+  '最后一组已经整段露出、页面还能往下滚时，亮最上面那组');
 
 // ---------- 报数 ----------
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

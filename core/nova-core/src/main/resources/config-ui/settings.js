@@ -13,7 +13,7 @@ import {load} from './main.js';
 import {bindPasswordReveal} from './password-reveal.js';
 import {alertCards, cardFields, filterCards} from './settings-alert.js';
 import {authCards, AUTH_CARD_FIELDS, filterAuthCards} from './settings-auth.js';
-import {canonicalValue, defaultText, defaultValue, effectOf, isChanged, isDangerous, dangerOf, isVisible}
+import {canonicalValue, currentGroupId, defaultText, defaultValue, effectOf, isChanged, isDangerous, dangerOf, isVisible}
   from './settings-model.js';
 import {store} from './store.js';
 import {applyTheme, readTheme, THEME_AUTO, THEME_DARK, THEME_LIGHT} from './theme.js';
@@ -27,10 +27,14 @@ const AUTH_GROUP = 'auth';
 /**
  * 滚动观察器：标出目录里当前这一组。重绘时拆掉再建，免得旧节点还挂着。
  * 离开设置页也要拆：那一页已经 display:none，观察器留着会空转。
- * 高亮刷新并进下一帧：观察器一响就量布局的话，平滑滚动会被拖住。
+ * 每次判断都重新量各组现在的位置，不用上一次进出视口时记下的坐标。
+ * 组展开、变高或窗口改了大小，下一帧就按新位置亮。
  */
 let groupWatcher = null;
+let groupSizer = null;
 let groupMarkFrame = 0;
+let groupScroll = null;
+let groupResize = null;
 
 /**
  * 拆掉组目录的滚动观察器
@@ -39,6 +43,18 @@ export function stopWatchingGroups() {
   if (groupWatcher) {
     groupWatcher.disconnect();
     groupWatcher = null;
+  }
+  if (groupSizer) {
+    groupSizer.disconnect();
+    groupSizer = null;
+  }
+  if (groupScroll) {
+    window.removeEventListener('scroll', groupScroll);
+    groupScroll = null;
+  }
+  if (groupResize) {
+    window.removeEventListener('resize', groupResize);
+    groupResize = null;
   }
   if (groupMarkFrame) {
     cancelAnimationFrame(groupMarkFrame);
@@ -465,11 +481,37 @@ export function renderGeneral() {
 }
 
 /**
+ * 顶栏此刻有多高。先量页头元素本身，量不到再读页面上的高度令牌。
+ * @return {number} 像素；页面上没有顶栏时为 0
+ */
+function headerHeight() {
+  const bar = document.querySelector('header');
+  if (bar) {
+    const height = bar.getBoundingClientRect().height;
+    if (height > 0) return height;
+  }
+  const token = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--head-h'));
+  return token > 0 ? token : 0;
+}
+
+/**
+ * 文档此刻有多高。用来判断页面还能不能往下滚、有没有真滚到最底。
+ * @return {number} 像素
+ */
+function pageHeight() {
+  const root = document.documentElement;
+  const body = document.body;
+  const rootHeight = root ? root.scrollHeight : 0;
+  const bodyHeight = body ? body.scrollHeight : 0;
+  return rootHeight > bodyHeight ? rootHeight : bodyHeight;
+}
+
+/**
  * 观察各组在视口里的位置，把目录里对应那条标成当前
  *
- * 顶偏约四成：滚过一组的上沿之后才换高亮，避免刚露出标题就把下一条点亮。
- * 搜索／筛选会改哪些组可见，所以每次先 disconnect 再挂新的。
- * 高亮只看观察器交来的条目：回调里再去量每一组的盒子，平滑滚动会被拖住。
+ * 哪一组算当前交给 currentGroupId。每次判断都重新量各组的盒子，
+ * 不沿用组进出视口时记下的旧坐标：折页展开、某一组变高、窗口改了大小，位置都会变。
+ * 搜索／筛选会改哪些组可见，所以每次先拆掉再挂新的。
  */
 function watchCurrentGroup() {
   stopWatchingGroups();
@@ -479,23 +521,19 @@ function watchCurrentGroup() {
   }
   if (!sections.length) return;
 
-  const visible = new Set();
-  let lastCurrent = '';
   const mark = () => {
     groupMarkFrame = 0;
-    let current = '';
+    const scroll = window.scrollY;
+    const groups = [];
     for (const section of sections) {
-      if (visible.has(section)) {
-        current = section.dataset.grp;
-        break;
-      }
+      if (!section.isConnected || section.classList.contains('hide')) continue;
+      const rect = section.getBoundingClientRect();
+      if (!(rect.height > 0)) continue;
+      const top = scroll + rect.top;
+      groups.push({id: section.dataset.grp, top: top, bottom: top + rect.height});
     }
-    // 页顶／页尾中间 20% 带里可能一组都没有。顶上取第一组，其余沿用上次，不再逐组量盒子。
-    if (!current) {
-      if (window.scrollY <= 1) current = sections[0] ? sections[0].dataset.grp : '';
-      else current = lastCurrent || (sections[sections.length - 1] ? sections[sections.length - 1].dataset.grp : '');
-    }
-    lastCurrent = current;
+    if (!groups.length) return;
+    const current = currentGroupId(groups, scroll, window.innerHeight, headerHeight(), pageHeight());
     for (const link of document.querySelectorAll('#grp-nav [data-grp-link]')) {
       link.classList.toggle('cur', link.getAttribute('data-grp-link') === current);
     }
@@ -504,16 +542,22 @@ function watchCurrentGroup() {
     if (!groupMarkFrame) groupMarkFrame = requestAnimationFrame(mark);
   };
 
-  groupWatcher = new IntersectionObserver((entries) => {
-    for (const entry of entries) {
-      if (entry.isIntersecting) visible.add(entry.target);
-      else visible.delete(entry.target);
-    }
+  groupWatcher = new IntersectionObserver(() => {
     schedule();
-  }, {rootMargin: '-40% 0px -40% 0px', threshold: 0});
-
+  }, {root: null, rootMargin: '0px', threshold: 0});
   for (const section of sections) groupWatcher.observe(section);
-  mark();
+
+  const host = document.getElementById('groups');
+  if (host && typeof ResizeObserver === 'function') {
+    groupSizer = new ResizeObserver(() => schedule());
+    groupSizer.observe(host);
+  }
+
+  groupScroll = schedule;
+  window.addEventListener('scroll', groupScroll, {passive: true});
+  groupResize = schedule;
+  window.addEventListener('resize', groupResize);
+  schedule();
 }
 
 /**

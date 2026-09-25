@@ -31,12 +31,9 @@ public class OneBotAdapterPluginProperties {
     private String baseUrl = "/onebot";
 
     /**
-     * OneBot 推送平台列表
-     * <p>
-     * 标成即时生效，是因为它<b>确实</b>即时生效：控制台「机器人」页与初始设置第 2 步
-     * 存下连接信息之后，适配器当场按新值断旧连新（见 OneBotConnectionManager），
-     * 不必重启。落地动作不在设置页那条通用保存通道上——列表元素按设计不在设置页上展示，
-     * 因此这一项另在 RuntimeConfigurationApplier 的「另有专门入口落地」表里挂了号。
+     * OneBot 推送平台列表。
+     * 在控制台「连接」页或初始设置第 2 步保存连接之后，会立刻断开旧连接、连上新的，不必重启。
+     * 连接不在设置页上逐条改，在「连接」页和初始设置里保存。
      */
     @Getter
     @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
@@ -257,13 +254,12 @@ public class OneBotAdapterPluginProperties {
         private String platform = "";
 
         /**
-         * 接收告警的目标类型，1 为群聊，0 为私聊
-         * <p>
-         * 取值必须与 {@link org.frostnova.nova.core.enums.PushTargetType} 的 code 一致：
-         * {@code GROUP(1)}、{@code FRIEND(0)}。此处曾误写为「2 为私聊」，而 2 会被解析为
-         * {@code UNKNOWN}，告警在发送阶段被直接丢弃，且不留任何痕迹——与 datasource.json 中
-         * 推送目标的 type 是同一套编码，不要凭直觉另立一套。改完立即生效，不必重启。
+         * 接收告警的目标类型：填 1 发到群，填 0 发给好友。
+         * 不要填 2。填了告警会被直接丢掉，而且不留痕迹。
+         * 这和推送页里推送目标的「群／好友」是同一套数字：1 是群，0 是好友。
+         * 改完立即生效，不必重启。
          */
+        // 取值与 PushTargetType 的 code 对应：GROUP 是 1，FRIEND 是 0。
         // 与平台名、号码同进退：三项合起来才是一个收件地址，只让其中一项立刻生效，
         // 群改私聊之后那条告警会发到上一个地址去
         @ConfigLevel(ConfigLevel.Level.COMMON)

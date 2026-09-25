@@ -36,6 +36,29 @@
             <version>1.0.0</version>
             <scope>test</scope>
         </dependency>
+        <!--
+            只在测试里用：设置项说明要读这些模块编译出来的说明。
+            不声明的话，单独构建本模块时那些说明还没生成。
+            只作测试依赖，不进插件产物。
+        -->
+        <dependency>
+            <groupId>org.frostnova.nova</groupId>
+            <artifactId>nova-bilibili</artifactId>
+            <version>1.0.0</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.frostnova.nova</groupId>
+            <artifactId>nova-onebot-adapter</artifactId>
+            <version>1.0.0</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.frostnova.nova</groupId>
+            <artifactId>nova-onebot-adapter-napcat-extension</artifactId>
+            <version>1.0.0</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

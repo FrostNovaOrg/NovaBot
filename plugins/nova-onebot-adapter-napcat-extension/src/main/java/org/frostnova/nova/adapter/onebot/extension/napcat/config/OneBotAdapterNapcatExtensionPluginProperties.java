@@ -27,10 +27,9 @@ public class OneBotAdapterNapcatExtensionPluginProperties {
      * 默认开着：这一项只在「@全体成员 本来就发不出去」那一刻才起作用，
      * 不开的结果是那条开播通知照常淹在聊天记录里，开着没有额外代价。
      * <p>
-     * 关掉要重启才生效，因为这个开关决定的是那个切面上不上线（见 {@code BackupAtAllAspect}
-     * 上的 {@code @ConditionalOnProperty}），而切面只在容器启动时织入一次。
-     * <b>改这里的键名要连它一起改</b>：只改一处的话开关看着还在，拨过去却没有任何反应。
+     * 关掉要重启才生效：程序只在启动时决定做不做这件事，运行中改了要到下次启动才起作用。
      */
+    // 键名要与 BackupAtAllAspect 上的 @ConditionalOnProperty 一起改。只改一处的话，开关看着还在，拨过去却没有任何反应。
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("@全体成员 · 用完改发待办")
     private boolean enableBackupAtAll = true;
