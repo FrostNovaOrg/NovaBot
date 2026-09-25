@@ -59,6 +59,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.DoubleFunction;
 
 /**
@@ -396,6 +397,11 @@ public class BilibiliLiveReportPainter {
      * 没有原文、已经提示过的场次。同一场只提示一次，只留最近若干场。
      */
     private final Map<String, Boolean> wordCloudFallbackNoted = new KeptSessions<>();
+
+    /**
+     * 正在按原文重算的场次。只在这一次重算期间留着，算完就去掉。
+     */
+    private final ConcurrentHashMap<String, Object> wordCloudGates = new ConcurrentHashMap<>();
 
     /**
      * 没有原文可重算时记的那一行。不带观众编号和昵称。
@@ -2135,6 +2141,7 @@ public class BilibiliLiveReportPainter {
      * 退回去的那一份不留下，下一次仍读当前已保存的表。
      * 同一场、同一份名单、原文大小没变，几个推送目标共用这一次重算成功的结果。
      * 留下的场次有上限。
+     * 不同的场各算各的，一场在读原文时，别的场不用跟着等。
      */
     Map<String, Integer> frequenciesForWordCloud(String platform, Long uid) {
         Map<String, Integer> stored = liveDataService.getLiveWordFrequencies(platform, uid);
@@ -2145,33 +2152,44 @@ public class BilibiliLiveReportPainter {
         Optional<Long> start = liveStart(platform, uid);
         long startValue = start.orElse(-1L);
         String key = platform + "\0" + uid + "\0" + startValue + "\0" + exclude;
-        synchronized (wordCloudRecounts) {
-            long stamp = -1L;
-            if (start.isPresent()) {
-                stamp = wordCloudDanmuSize(platform, uid, start.get()).orElse(-1L);
-            }
-            WordCloudRecount cached = wordCloudRecounts.get(key);
-            if (cached != null && cached.stamp() == stamp) {
-                return cached.words();
-            }
-            Map<String, Integer> words = stored;
-            boolean recounted = false;
-            if (start.isPresent() && stamp >= 0) {
-                Optional<List<DanmuRecord>> danmu = wordCloudDanmu(platform, uid, start.get());
-                if (danmu.isPresent()) {
-                    words = DanmuWordCloudFrequencies.recount(platform, uid, danmu.get(), exclude);
-                    recounted = true;
+        // 先拿这场的门，再碰留下的表。反过来两头会互等。
+        // 读原文和重算放在表锁外面，别的场不用跟着等。
+        Object gate = wordCloudGates.computeIfAbsent(key, ignored -> new Object());
+        try {
+            synchronized (gate) {
+                long stamp = -1L;
+                if (start.isPresent()) {
+                    stamp = wordCloudDanmuSize(platform, uid, start.get()).orElse(-1L);
                 }
-            }
-            if (recounted) {
-                wordCloudRecounts.put(key, new WordCloudRecount(stamp, words));
-            } else {
-                String noted = platform + "\0" + uid + "\0" + startValue;
-                if (wordCloudFallbackNoted.put(noted, Boolean.TRUE) == null) {
-                    log.warn(WORD_CLOUD_FALLBACK);
+                synchronized (wordCloudRecounts) {
+                    WordCloudRecount cached = wordCloudRecounts.get(key);
+                    if (cached != null && cached.stamp() == stamp) {
+                        return cached.words();
+                    }
                 }
+                Map<String, Integer> words = stored;
+                boolean recounted = false;
+                if (start.isPresent() && stamp >= 0) {
+                    Optional<List<DanmuRecord>> danmu = wordCloudDanmu(platform, uid, start.get());
+                    if (danmu.isPresent()) {
+                        words = recountWordCloud(platform, uid, danmu.get(), exclude);
+                        recounted = true;
+                    }
+                }
+                synchronized (wordCloudRecounts) {
+                    if (recounted) {
+                        wordCloudRecounts.put(key, new WordCloudRecount(stamp, words));
+                    } else {
+                        String noted = platform + "\0" + uid + "\0" + startValue;
+                        if (wordCloudFallbackNoted.put(noted, Boolean.TRUE) == null) {
+                            log.warn(WORD_CLOUD_FALLBACK);
+                        }
+                    }
+                }
+                return words;
             }
-            return words;
+        } finally {
+            wordCloudGates.remove(key, gate);
         }
     }
 
@@ -2182,11 +2200,25 @@ public class BilibiliLiveReportPainter {
         return DanmuWordCloudFrequencies.parseUids(properties.getLive().getWordCloudExcludeUids());
     }
 
-    private Optional<Long> wordCloudDanmuSize(String platform, long uid, long start) {
+    /**
+     * 按弹幕原文重算这一场的词频。
+     */
+    Map<String, Integer> recountWordCloud(String platform, Long uid, List<DanmuRecord> danmu,
+                                          Set<Long> exclude) {
+        return DanmuWordCloudFrequencies.recount(platform, uid, danmu, exclude);
+    }
+
+    /**
+     * 这一场弹幕原文有多少字节。没有这份文件时为空。
+     */
+    Optional<Long> wordCloudDanmuSize(String platform, long uid, long start) {
         return rosterArchive().flatMap(archive -> archive.danmuFileSize(platform, uid, start));
     }
 
-    private Optional<List<DanmuRecord>> wordCloudDanmu(String platform, long uid, long start) {
+    /**
+     * 读这一场的弹幕原文。没有这份文件或读失败时为空。
+     */
+    Optional<List<DanmuRecord>> wordCloudDanmu(String platform, long uid, long start) {
         return rosterArchive().flatMap(archive -> archive.readDanmuPresent(platform, uid, start));
     }
 
