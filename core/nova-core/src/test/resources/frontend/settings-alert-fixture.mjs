@@ -10,6 +10,9 @@
  * 不靠「源码里有没有那个函数」——函数在而接线断掉时，只切函数本身的格是绿的。
  * ⑤/status 取不到时药丸写「运行值未取到」，不退回草稿判；⑥status 在途时敲键，
  * 草稿回评先行接管，后到的运行值不覆盖那次回评。
+ * 发件账号与发件授权码两框按卡片里的调用真建出来：授权码不承接浏览器已存的登录口令，
+ * 账号不承接登录名，两框各有自己的 name。设置页口令型机密框同样不承接已存口令。
+ * 自己敲进授权码的字仍记成一笔改动。
  *
  * 由 SettingsAlertViewTest 拉起。量的是源码树里那一份，不是构建产物里的副本。
  */
@@ -305,6 +308,105 @@ try {
   q6 = 'error:' + e.message;
 }
 eq(q6, true, '⑥ status 在途敲键：草稿回评接管，后到的运行值不覆盖它');
+
+/**
+ * 最小元素桩：记下属性、子节点与 input/change 监听，供卡片建框后直接读
+ */
+function node(tag, cls) {
+  return {
+    tag, className: cls || '',
+    textContent: '', type: '', value: '', placeholder: '',
+    autocomplete: '', name: '',
+    attrs: {}, kids: [], listeners: {}, style: {},
+    classList: {toggle() {}, add() {}},
+    setAttribute(key, value) {
+      this.attrs[key] = String(value);
+      if (key === 'autocomplete') this.autocomplete = String(value);
+      if (key === 'name') this.name = String(value);
+    },
+    appendChild(child) { this.kids.push(child); return child; },
+    append(...children) { this.kids.push(...children); },
+    addEventListener(type, fn) {
+      (this.listeners[type] = this.listeners[type] || []).push(fn);
+    },
+  };
+}
+
+function collectInputs(root, acc) {
+  const out = acc || [];
+  if (root && root.tag === 'input') out.push(root);
+  for (const child of (root && root.kids) || []) collectInputs(child, out);
+  return out;
+}
+
+function loadFn(text, marker, params, args) {
+  const body = bracedFrom(text, marker);
+  if (!body) throw new Error('no ' + marker);
+  return new Function(...params, body + '\nreturn ' + marker.slice(marker.indexOf(' ') + 1).replace(/\(.*/, '') + ';')(...args);
+}
+
+const settingsSrc = readFileSync(join(ui, 'settings.js'), 'utf8');
+
+/** 有自己的 name，且不叫浏览器用来认登录框的那两个名字 */
+function ownName(name) {
+  return typeof name === 'string' && name.length > 0 && name !== 'username' && name !== 'password';
+}
+
+let accountAc = 'missing';
+let codeAc = 'missing';
+let codeType = 'missing';
+let accountNamed = 'missing';
+let codeNamed = 'missing';
+let namesDiffer = 'missing';
+let typedCode = 'missing';
+try {
+  const store = {values: {}, dirty: {}};
+  const setValue = loadFn(src, 'function setValue(', ['store', 'markDirty'], [store, () => {}]);
+  const field = loadFn(src, 'function field(', ['el', 'valueOf', 'setValue'], [node, () => '', setValue]);
+  const start = src.indexOf("field(mail.body, '发件账号'");
+  const end = start < 0 ? -1 : src.indexOf('mail.body.appendChild(mailCustom)', start);
+  const calls = start >= 0 && end > start ? src.slice(start, end) : '';
+  if (!calls) throw new Error('no mail sender fields');
+  const mail = {body: node('div')};
+  new Function('field', 'mail', calls)(field, mail);
+  const inputs = collectInputs(mail.body);
+  const account = inputs.find(i => i.attrs['aria-label'] === '发件账号');
+  const code = inputs.find(i => i.attrs['aria-label'] === '发件授权码');
+  if (!account || !code) throw new Error('sender inputs missing');
+  accountAc = account.autocomplete;
+  codeAc = code.autocomplete;
+  codeType = code.type;
+  accountNamed = ownName(account.name);
+  codeNamed = ownName(code.name);
+  namesDiffer = account.name !== code.name;
+  code.value = 'typed-by-hand';
+  for (const fn of code.listeners.input || []) fn();
+  typedCode = store.dirty['spring.mail.password'] === 'typed-by-hand';
+} catch (e) {
+  const err = 'error:' + e.message;
+  accountAc = codeAc = codeType = accountNamed = codeNamed = namesDiffer = typedCode = err;
+}
+eq(codeAc, 'new-password', '发件授权码 autocomplete');
+eq(accountAc, 'off', '发件账号 autocomplete');
+eq(codeType, 'password', '发件授权码是口令框');
+eq(accountNamed, true, '发件账号的 name 不叫 username 或 password');
+eq(codeNamed, true, '发件授权码的 name 不叫 username 或 password');
+eq(namesDiffer, true, '发件账号与发件授权码的 name 各不相同');
+eq(typedCode, true, '自己敲进发件授权码仍记成改动');
+
+let secretType = 'missing';
+let secretAc = 'missing';
+try {
+  const buildControl = loadFn(settingsSrc, 'function buildControl(', ['el', 'bindPasswordReveal'], [node, () => {}]);
+  const input = buildControl({sensitive: true, label: '机密'}, '***', node('div'));
+  if (!input) throw new Error('no secret input');
+  secretType = input.type;
+  secretAc = input.autocomplete;
+} catch (e) {
+  secretType = secretAc = 'error:' + e.message;
+}
+eq(secretType, 'password', '设置页机密框 type');
+eq(secretAc, 'new-password', '设置页 type=password 的机密框 autocomplete');
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);

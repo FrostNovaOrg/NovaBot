@@ -140,7 +140,7 @@ function buildControl(field, value, cell) {
     const input = el('input');
     input.type = 'password';
     input.value = value;
-    input.autocomplete = 'off';
+    input.autocomplete = 'new-password';
     const eye = el('button');
     eye.type = 'button';
     wrap.append(input, eye);
