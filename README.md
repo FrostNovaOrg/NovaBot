@@ -69,8 +69,8 @@ sudo systemctl start novabot && sudo journalctl -u novabot -af
 
 ```bash
 ./build.sh
-docker build -f dist/templates/Dockerfile -t novabot:5.6.0 dist/build
-docker run -d --name novabot --restart unless-stopped -v novabot-data:/app -p 127.0.0.1:7827:7827 novabot:5.6.0
+docker build -f dist/templates/Dockerfile -t novabot:5.7.0 dist/build
+docker run -d --name novabot --restart unless-stopped -v novabot-data:/app -p 127.0.0.1:7827:7827 novabot:5.7.0
 ```
 
 > 默认的 systemd 内存上限按 2 GB 及以上的机器发，1 GB 的机器要连同堆上限一起调低，启动自检会告诉你差多少、改哪里；详见[性能与资源占用](docs/performance.md#该准备多少内存)。
