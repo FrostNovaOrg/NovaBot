@@ -410,6 +410,16 @@ public class BilibiliEventParser {
     private final BilibiliRiskMetrics riskMetrics;
 
     /**
+     * 原始报文调试日志要跳过的类型。
+     * <p>
+     * 只放「与本机关注的房间无关、却每个直播间各来一份」的类型：全站下播名单是平台下发的
+     * 全站房间名单，随后在见过表里直接丢掉。开着原始报文调试日志排障时它能占掉当天六成的行，
+     * 要看的那几条反而被淹了。<b>只掐这一类</b>——把整张表放开去静音，等于把调试日志一起关掉。
+     */
+    private static final Set<String> RAW_LOG_SILENT_CMDS = Set.of(
+            "STOP_LIVE_ROOM_LIST");
+
+    /**
      * 见过、不处理的直播间消息类型。
      * <p>
      * 已知＝取用 ∪ 见过 ∪ 派生不计收入：取用是 {@link #parsers} 里会解析成事件的 cmd；见过是 2026-09-16
@@ -607,7 +617,8 @@ public class BilibiliEventParser {
             type = type.substring(0, colon);
         }
 
-        if (properties.getDebug().isLiveRoomRawMessageLog()) {
+        // 只掐全站下播名单这一类，其余原文照记
+        if (properties.getDebug().isLiveRoomRawMessageLog() && !RAW_LOG_SILENT_CMDS.contains(type)) {
             log.debug("{}: {} -> {}", type, source.getRoomId(), data.toJSONString());
         }
 
