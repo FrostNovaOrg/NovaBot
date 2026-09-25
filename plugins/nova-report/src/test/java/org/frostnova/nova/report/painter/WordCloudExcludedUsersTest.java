@@ -10,6 +10,7 @@ import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.model.BilibiliLiveReportOptions;
 import org.frostnova.nova.bilibili.model.Room;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
+import org.frostnova.nova.bilibili.util.DanmuWordCloudFrequencies;
 import org.frostnova.nova.core.analytics.LiveDetail;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.model.DanmuRecord;
@@ -40,10 +41,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -157,6 +166,79 @@ class WordCloudExcludedUsersTest {
                 "一场三个推送目标把弹幕原文重算了三次");
         assertFalse(painter.seen.get(0).containsKey("欢迎"),
                 "重算结果仍含名单里的人刷的词: " + painter.seen.get(0));
+    }
+
+    @Test
+    @DisplayName("两位主播同时下播，各自的词云重算不用互相等")
+    void twoStreamersRecountWithoutWaiting() throws Exception {
+        long other = STREAMER + 1;
+        LiveDataService data = sessionData();
+        data.setLiveStartTime(PLATFORM, other, START);
+        data.setLiveEndTime(PLATFORM, other, START + 3_600_000L);
+        SlowDanmu painter = new SlowDanmu(data, 500L, false);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            CountDownLatch ready = new CountDownLatch(2);
+            CountDownLatch go = new CountDownLatch(1);
+            Future<Map<String, Integer>> first = pool.submit(() -> {
+                ready.countDown();
+                assertTrue(go.await(5, TimeUnit.SECONDS), "没有等到同时开始");
+                return painter.frequenciesForWordCloud(PLATFORM, STREAMER);
+            });
+            Future<Map<String, Integer>> second = pool.submit(() -> {
+                ready.countDown();
+                assertTrue(go.await(5, TimeUnit.SECONDS), "没有等到同时开始");
+                return painter.frequenciesForWordCloud(PLATFORM, other);
+            });
+            assertTrue(ready.await(5, TimeUnit.SECONDS), "两个词云没有都开始");
+            warmSegmenter();
+            long began = System.nanoTime();
+            go.countDown();
+            Map<String, Integer> left = first.get(5, TimeUnit.SECONDS);
+            Map<String, Integer> right = second.get(5, TimeUnit.SECONDS);
+            long elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - began);
+            assertEquals(2, painter.reads.get(), "两场没有各读一次弹幕原文");
+            assertTrue(elapsed < 800,
+                    "两位主播同时下播，词云重算排成一队，用了 " + elapsed + " 毫秒");
+            assertEquals(Integer.valueOf(1), left.get("唱歌"), "第一场没有按原文重算: " + left);
+            assertEquals(Integer.valueOf(1), right.get("唱歌"), "第二场没有按原文重算: " + right);
+        } finally {
+            pool.shutdownNow();
+            pool.awaitTermination(5, TimeUnit.SECONDS);
+        }
+    }
+
+    @Test
+    @DisplayName("同一场三个推送目标同时要词云，只重算一次，拿到同一份")
+    void threeTargetsAtOnceShareOneRecount() throws Exception {
+        LiveDataService data = sessionData();
+        SlowDanmu painter = new SlowDanmu(data, 300L, true);
+        ExecutorService pool = Executors.newFixedThreadPool(3);
+        try {
+            CountDownLatch ready = new CountDownLatch(3);
+            CountDownLatch go = new CountDownLatch(1);
+            List<Future<Map<String, Integer>>> futures = new ArrayList<>();
+            for (int i = 0; i < 3; i++) {
+                futures.add(pool.submit(() -> {
+                    ready.countDown();
+                    assertTrue(go.await(5, TimeUnit.SECONDS), "没有等到同时开始");
+                    return painter.frequenciesForWordCloud(PLATFORM, STREAMER);
+                }));
+            }
+            assertTrue(ready.await(5, TimeUnit.SECONDS), "三个推送目标没有都开始");
+            go.countDown();
+            Map<String, Integer> first = futures.get(0).get(5, TimeUnit.SECONDS);
+            Map<String, Integer> second = futures.get(1).get(5, TimeUnit.SECONDS);
+            Map<String, Integer> third = futures.get(2).get(5, TimeUnit.SECONDS);
+            assertEquals(1, painter.recounts.get(),
+                    "同一场三个推送目标把词云重算了 " + painter.recounts.get() + " 次");
+            assertSame(first, second, "三个推送目标没有拿到同一份词频");
+            assertSame(first, third, "三个推送目标没有拿到同一份词频");
+            assertEquals(Integer.valueOf(1), first.get("唱歌"), "重算结果不对: " + first);
+        } finally {
+            pool.shutdownNow();
+            pool.awaitTermination(5, TimeUnit.SECONDS);
+        }
     }
 
     @Test
@@ -434,6 +516,64 @@ class WordCloudExcludedUsersTest {
         BufferedImage paintWordCloud(String platform, Long uid, Map<String, Integer> frequencies) {
             seen.add(frequencies);
             return super.paintWordCloud(platform, uid, frequencies);
+        }
+    }
+
+    private final class SlowDanmu extends BilibiliLiveReportPainter {
+        private final AtomicInteger reads = new AtomicInteger();
+
+        private final AtomicInteger recounts = new AtomicInteger();
+
+        private final long pauseMillis;
+
+        private final boolean pauseWhileRecounting;
+
+        private SlowDanmu(LiveDataService data, long pauseMillis, boolean pauseWhileRecounting) {
+            super(factory, quietApi(), data, fontUtil, properties(List.of(Long.toString(BOT))),
+                    new LiveRoomInfoHistory(new NovaStateStore(new NovaCoreProperties())),
+                    new ReportImageDiskCache(temp.resolve("slow-danmu")));
+            this.pauseMillis = pauseMillis;
+            this.pauseWhileRecounting = pauseWhileRecounting;
+        }
+
+        @Override
+        Optional<Long> wordCloudDanmuSize(String platform, long uid, long start) {
+            return Optional.of(64L);
+        }
+
+        @Override
+        Optional<List<DanmuRecord>> wordCloudDanmu(String platform, long uid, long start) {
+            reads.incrementAndGet();
+            if (!pauseWhileRecounting) {
+                pauseQuiet(pauseMillis);
+            }
+            return Optional.of(List.of(
+                    new DanmuRecord(START, HUMAN, "观众甲", "唱歌", DanmuRecord.Type.DANMU)));
+        }
+
+        @Override
+        Map<String, Integer> recountWordCloud(String platform, Long uid, List<DanmuRecord> danmu,
+                                              Set<Long> exclude) {
+            recounts.incrementAndGet();
+            if (pauseWhileRecounting) {
+                pauseQuiet(pauseMillis);
+            }
+            return super.recountWordCloud(platform, uid, danmu, exclude);
+        }
+    }
+
+    private static void warmSegmenter() {
+        DanmuWordCloudFrequencies.recount(PLATFORM, STREAMER,
+                List.of(new DanmuRecord(START, HUMAN, "观众甲", "唱歌", DanmuRecord.Type.DANMU)),
+                Set.of(BOT));
+    }
+
+    private static void pauseQuiet(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("等待被打断");
         }
     }
 
