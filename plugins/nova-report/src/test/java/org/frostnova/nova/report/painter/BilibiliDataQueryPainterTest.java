@@ -69,6 +69,7 @@ class BilibiliDataQueryPainterTest {
 
         BilibiliApiUtil api = mock(BilibiliApiUtil.class);
         when(api.getBilibiliImage(anyString())).thenReturn(Optional.of(placeholder));
+        when(api.fetchBilibiliImage(anyString())).thenReturn(Optional.of(placeholder));
 
         painter = new BilibiliDataQueryPainter(factory, api);
     }
@@ -104,7 +105,7 @@ class BilibiliDataQueryPainterTest {
     }
 
     @Test
-    @DisplayName("排行榜首页应能绘制")
+    @DisplayName("排行榜应能绘制")
     void paintsRankingFirstPage() {
         Optional<String> base64 = painter.paintRanking(
                 new BilibiliDataQueryPainter.Header("礼物排行榜", "本场数据 · 测试主播的直播间", "https://pic.example/face.jpg"),
@@ -115,7 +116,7 @@ class BilibiliDataQueryPainterTest {
     }
 
     @Test
-    @DisplayName("翻页后的名次应从本页起始名次开始")
+    @DisplayName("名次应从给定的起始名次排起")
     void paintsRankingSecondPage() {
         Optional<String> base64 = painter.paintRanking(
                 new BilibiliDataQueryPainter.Header("弹幕排行榜", "累计数据 · 测试主播的直播间", null),

@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.command.BilibiliAtListCommand;
 import org.frostnova.nova.bilibili.command.BilibiliStreamerChoice;
+import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.core.command.CommandDispatcher;
 import org.frostnova.nova.core.command.CommandFollowUp;
 import org.frostnova.nova.core.command.CommandSettingsService;
@@ -121,6 +122,7 @@ class ConsoleCommandSwitchTest {
         parts.put(BilibiliDataQueryPainter.class, mock(BilibiliDataQueryPainter.class));
         parts.put(TimelineWriter.class, TimelineWriter.NONE);
         parts.put(NovaCoreProperties.class, new NovaCoreProperties());
+        parts.put(NovaBilibiliProperties.class, new NovaBilibiliProperties());
 
         commands = List.of(
                 build(BilibiliAtListCommand.class),

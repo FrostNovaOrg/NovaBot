@@ -648,6 +648,42 @@ public class BilibiliApiUtil {
     }
 
     /**
+     * 获取图片，把「源站明说没这张图」与「这次没取成」分开
+     * <p>
+     * 源站明说没这张图＝HTTP 404／410，回空——再问多少次也是没有，调用方可以放心记住它没图。
+     * 连接超时、读超时、断线、5xx、响应不是能解码的图片，都是「这次没取成」，原样抛回：
+     * 那种当成「没图」记下来的话，源站卡的那几分钟会变成接下来几小时都画不出头像
+     * @param url 图片地址
+     * @return 图片；源站明说没有这张图时为空
+     */
+    public Optional<BufferedImage> fetchBilibiliImage(String url) {
+        return fetchBilibiliImage(url, getBilibiliHeaders());
+    }
+
+    /**
+     * 获取图片，把「源站明说没这张图」与「这次没取成」分开
+     * @param url 图片地址
+     * @param headers 请求头
+     * @return 图片；源站明说没有这张图时为空
+     * @see #fetchBilibiliImage(String)
+     */
+    public Optional<BufferedImage> fetchBilibiliImage(String url, Map<String, String> headers) {
+        if (StringUtil.isBlank(url)) {
+            return Optional.empty();
+        }
+
+        try {
+            return Optional.of(http.fetchBufferedImage(url, headers));
+        } catch (HttpStatusCodeException e) {
+            int status = e.getStatusCode().value();
+            if (status == 404 || status == 410) {
+                return Optional.empty();
+            }
+            throw e;
+        }
+    }
+
+    /**
      * 异步获取图片
      * @param url 图片地址
      * @return 图片

@@ -184,7 +184,7 @@ class BilibiliStreamerFollowUpCorpusTest {
     }
 
     @Test
-    @DisplayName("重跑时把选中那位接在原参数末尾 —— 榜单与页码都还在")
+    @DisplayName("重跑时把选中那位接在原参数末尾 —— 原有参数一字不动")
     void rerunCarriesTheChoiceAsTheLastArgument() {
         // 上面那张表走的都是不带参数的命令，量不到这一条：选择既然不再存在任何地方，
         // 它只能跟着这一次重跑走，而带参数的命令（「数据排行榜 礼物 2」）里，
@@ -210,7 +210,7 @@ class BilibiliStreamerFollowUpCorpusTest {
                 GROUP, ASKER, "3", List.of(), "3"));
 
         assertEquals("数据排行榜", claimed.command());
-        // 「数据排行榜」按「三位以内的纯数字算页码、更长的算 uid」认参数，
+        // 「数据排行榜」认参数时丢掉三位以内的数字（原来是页码）、把更长的当 uid，
         // 因此接在末尾的这一串走的与他自己打 uid 那一次是同一条路（见该命令自己的那把尺）
         assertEquals(List.of("礼物", "2", "10003"), claimed.args());
     }
