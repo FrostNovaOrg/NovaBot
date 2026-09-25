@@ -19,6 +19,8 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -149,8 +151,17 @@ class OneBotReconnectLogNoiseTest {
         assertTrue(condition.getAsBoolean(), what + "：等了 " + PATIENCE.toSeconds() + " 秒仍不成立");
     }
 
+    /**
+     * 重连线程还在往这份日志里追加。追加用的是收集器这把锁，先抄一份再逐条看。
+     */
+    private List<ILoggingEvent> loggedLines() {
+        synchronized (appender) {
+            return new ArrayList<>(appender.list);
+        }
+    }
+
     private long count(String fragment, Level level) {
-        return appender.list.stream()
+        return loggedLines().stream()
                 .filter(e -> level == null || e.getLevel() == level)
                 .map(ILoggingEvent::getFormattedMessage)
                 .filter(m -> m.contains(fragment))
@@ -169,7 +180,7 @@ class OneBotReconnectLogNoiseTest {
      * 失败行：超时 WARN 与不可用 ERROR 两类都是「这一轮没连上」
      */
     private long failureLines() {
-        return appender.list.stream()
+        return loggedLines().stream()
                 .filter(e -> e.getLevel() == Level.WARN || e.getLevel() == Level.ERROR)
                 .map(ILoggingEvent::getFormattedMessage)
                 .filter(m -> m.contains("重试"))
@@ -177,7 +188,7 @@ class OneBotReconnectLogNoiseTest {
     }
 
     private long errorLinesWithStack() {
-        return appender.list.stream()
+        return loggedLines().stream()
                 .filter(e -> e.getLevel() == Level.ERROR)
                 .filter(e -> e.getFormattedMessage().contains("不可用"))
                 .filter(e -> e.getThrowableProxy() != null)
@@ -226,7 +237,7 @@ class OneBotReconnectLogNoiseTest {
 
             assertTrue(server.accepted() >= 1, "服务端这边要真的接过连接，否则「恢复」是凭空说的");
 
-            String recovery = appender.list.stream()
+            String recovery = loggedLines().stream()
                     .filter(e -> e.getLevel() == Level.INFO)
                     .map(ILoggingEvent::getFormattedMessage)
                     .filter(m -> m.contains("恢复"))
