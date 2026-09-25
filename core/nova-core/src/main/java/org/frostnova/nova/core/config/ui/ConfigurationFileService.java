@@ -232,8 +232,8 @@ public class ConfigurationFileService {
                 continue;
             }
 
-            if (!line.items.isEmpty()) {
-                // 字符串列表以换行连接，与界面中的多行输入框一一对应
+            if (line.isList()) {
+                // 字符串列表以换行连接，与界面中的多行输入框一一对应；空列表读成空串
                 values.put(line.path, String.join("\n", line.items));
             } else if (line.value != null && !line.value.isEmpty()) {
                 if (isAddressKey(line.path)) {
@@ -1109,6 +1109,16 @@ public class ConfigurationFileService {
         lines.subList(line.index + 1, line.listEnd + 1).clear();
         lines.addAll(line.index + 1, replacement);
 
+        if (items.isEmpty()) {
+            // 清空写成 [] 而不是裸键：键这一行保住列表身份，下一次想填回多项时
+            // 才不会被当成标量拦下；对象列表清空走的也是这个写法
+            lines.set(line.index, withEmptyListMarker(lines.get(line.index)));
+        } else if (line.listEnd == line.index) {
+            // 行内序列：旧内容原本全在键这一行上，要让位给块序列——
+            // 方括号与「- 项」并存的那份文件整个解析不了
+            lines.set(line.index, replaceValue(lines.get(line.index), "").stripTrailing());
+        }
+
         return true;
     }
 
@@ -1130,6 +1140,71 @@ public class ConfigurationFileService {
             }
         }
 
+        return items;
+    }
+
+    /**
+     * 行内序列写法（{@code key: []}、{@code key: [a, b]}）的各项
+     * <p>
+     * 首次安装写出的配置与对象列表清空后都会留下 {@code []}，那是空列表的合法写法，
+     * 得按列表读写：当普通文字读回的话，每行一项的名单框会显示字面「[]」、一次填不进多行。
+     * 引号包着的 {@code "[]"} 是逐字的文字值，不在其列；元素自身是对象或嵌套列表的
+     * （界面上不编辑的那类）也不收，维持普通文字。
+     *
+     * @param raw 冒号后去掉行尾注释的原文，未去引号
+     * @return 列表各项；不是行内序列时返回 null，按普通文字值处理
+     */
+    private List<String> flowSequenceItems(String raw) {
+        if (raw.length() < 2 || raw.charAt(0) != '[' || raw.charAt(raw.length() - 1) != ']') {
+            return null;
+        }
+
+        String inner = raw.substring(1, raw.length() - 1);
+        if (inner.isBlank()) {
+            return new ArrayList<>();
+        }
+
+        List<String> items = new ArrayList<>();
+        for (String item : splitFlowItems(inner)) {
+            String bare = unquote(item.strip());
+            if (bare.startsWith("{") || bare.startsWith("[")) {
+                return null;
+            }
+            items.add(bare);
+        }
+        return items;
+    }
+
+    /**
+     * 拆行内序列的各项：引号里的逗号是字面字符，不是分隔符
+     * @param inner 方括号内的原文
+     * @return 按分隔符切开的各项，未去引号
+     */
+    private List<String> splitFlowItems(String inner) {
+        List<String> items = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        char quote = 0;
+
+        for (int i = 0; i < inner.length(); i++) {
+            char c = inner.charAt(i);
+            if (quote > 0) {
+                current.append(c);
+                if (quote == '"' && c == '\\' && i + 1 < inner.length()) {
+                    current.append(inner.charAt(++i));
+                } else if (c == quote) {
+                    quote = 0;
+                }
+            } else if (c == '\'' || c == '"') {
+                quote = c;
+                current.append(c);
+            } else if (c == ',') {
+                items.add(current.toString());
+                current.setLength(0);
+            } else {
+                current.append(c);
+            }
+        }
+        items.add(current.toString());
         return items;
     }
 
@@ -1207,6 +1282,13 @@ public class ConfigurationFileService {
             line.indent = indent;
             line.path = String.join(".", stack);
             line.value = unquote(value);
+
+            // 行内序列（key: []、key: [a, b]）：列表整个写在键这一行上，也按字符串列表收下
+            List<String> flowItems = flowSequenceItems(value);
+            if (flowItems != null) {
+                line.items.addAll(flowItems);
+                line.listEnd = i;
+            }
             result.add(line);
         }
 
