@@ -477,6 +477,20 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
                 <path fill="#fff" fill-opacity=".85" d="M45 29.5C45 34.05 46.5 36 50 36 46.5 36 45 37.95 45 42.5 45 37.95 43.5 36 40 36 43.5 36 45 34.05 45 29.5Z"/>
                 </svg>
                 <h1>无法访问配置界面</h1><p>__MESSAGE__</p></div></body></html>
-                """.replace("__MESSAGE__", message));
+                """.replace("__MESSAGE__", escapeHtml(message)));
+    }
+
+    /**
+     * 转义后写进 HTML 的文字
+     * <p>
+     * 现有调用点传的都是写死常量，看着没这个必要；可这条路上的每一句话最终都会嵌进一段 HTML，
+     * 而「日后有人把请求里的东西传进来」这件事没有任何一处会拦。
+     * JSON 那一支不走这里：它是给脚本读的，转了义反而是错的。
+     */
+    private static String escapeHtml(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
     }
 }

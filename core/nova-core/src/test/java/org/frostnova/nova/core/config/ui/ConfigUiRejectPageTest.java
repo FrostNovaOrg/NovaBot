@@ -13,6 +13,10 @@ import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+
+import java.lang.reflect.Method;
 import java.time.Duration;
 import java.util.List;
 
@@ -97,5 +101,42 @@ class ConfigUiRejectPageTest {
         assertTrue(body.contains("访问令牌不正确") || body.contains("message"),
                 "JSON 里带着原因");
         assertFalse(body.contains("<html"), "接口回的不能是 HTML");
+    }
+
+    /**
+     * 直接叫那条出拒绝页的方法
+     * <p>
+     * 现在每一处调用传的都是写死的常量，走不到「消息里带标记」那一形态——这一格问的正是
+     * <b>日后</b>有人把请求里的东西传进来时会怎样，所以不从调用点进去。
+     */
+    private String reject(String path, String message) throws Exception {
+        ConfigUiSecurityFilter filter = tokenFormFilter();
+        MockHttpServletRequest request = request("GET", path, null);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        Method reject = ConfigUiSecurityFilter.class.getDeclaredMethod("reject",
+                HttpServletRequest.class, HttpServletResponse.class, HttpStatus.class, String.class);
+        reject.setAccessible(true);
+        reject.invoke(filter, request, response, HttpStatus.FORBIDDEN, message);
+
+        return response.getContentAsString();
+    }
+
+    @Test
+    @DisplayName("拒绝页把消息嵌进 HTML 之前先转义")
+    void escapesMessageBeforeWritingHtml() throws Exception {
+        String html = reject(ConfigUiController.BASE_PATH + "/", "有人把请求里的 <script>alert(1)</script> 传进来了");
+
+        assertFalse(html.contains("<script>alert(1)</script>"),
+                "原样带出的话，这一段会在看的人浏览器里跑起来；得到：" + html);
+        assertTrue(html.contains("&lt;script&gt;"), "该转义成实体；得到：" + html);
+    }
+
+    @Test
+    @DisplayName("接口回的 JSON 里消息仍是原文")
+    void jsonMessageStaysVerbatim() throws Exception {
+        String body = reject(ConfigUiController.BASE_PATH + "/api/timeline", "有人把 <script> 传进来了");
+
+        assertTrue(body.contains("<script>"), "JSON 交给前端自己处理，不该替它转义；得到：" + body);
     }
 }

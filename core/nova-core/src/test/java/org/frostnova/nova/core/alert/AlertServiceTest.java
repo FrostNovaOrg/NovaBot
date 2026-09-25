@@ -1,6 +1,8 @@
 package org.frostnova.nova.core.alert;
 
 import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.timeline.TimelineEvent;
+import org.frostnova.nova.core.timeline.TimelineEventType;
 import org.frostnova.nova.core.timeline.TimelineWriter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -273,6 +275,53 @@ class AlertServiceTest {
             service.resolve("key");
             service.alert("key", "标题", "内容");
             assertEquals(2, channel.received.size(), "故障恢复后再次出现必须能再告警");
+        }
+    }
+
+    /**
+     * 一个通道都没配时，出的事得在时间线上看得出来
+     * <p>
+     * 这一支比「发出去」更要紧：发不出去的那一刻往往正是机器掉线、最需要叫人的那一刻，
+     * 而只往日志写一行的话，看时间线的人会读成「这天没出过事」。
+     */
+    @Nested
+    @DisplayName("没有配好的通道时也要看得出来")
+    class NoChannelRecorded {
+
+        private final List<TimelineEvent> recorded = new ArrayList<>();
+
+        private AlertService capturing() {
+            @SuppressWarnings("unchecked")
+            ObjectProvider<AlertChannel> provider = mock(ObjectProvider.class);
+            when(provider.orderedStream()).thenAnswer(invocation -> channels.stream());
+            return new AlertService(properties, provider, recorded::add);
+        }
+
+        @Test
+        @DisplayName("写着没发出去, 并带上完整的告警标题")
+        void recordsWhyNothingWasSent() {
+            // 标题刻意长过 24 个字：只留前 24 个字的话，看的人分不出是哪一条告警
+            String subject = "机器人与 OneBot 的连接已断开，正在重试，连续 3 次都失败了";
+
+            capturing().alert("link.lost", subject, "内容");
+
+            assertEquals(1, recorded.size(), "该记一条；得到：" + recorded);
+            TimelineEvent event = recorded.get(0);
+            assertEquals(TimelineEventType.ALERT_FAILED, event.type());
+            assertTrue(event.text().contains("没有配置告警通道，没发出去"),
+                    "要说清是没发出去；得到：" + event.text());
+            assertTrue(event.text().contains(subject), "标题不许截断；得到：" + event.text());
+        }
+
+        @Test
+        @DisplayName("同一告警在收敛期内只记一条")
+        void recordsOnceWithinConvergence() {
+            AlertService capturing = capturing();
+
+            capturing.alert("link.lost", "标题", "内容");
+            capturing.alert("link.lost", "标题", "内容");
+
+            assertEquals(1, recorded.size(), "收敛期内只该记一条；得到：" + recorded);
         }
     }
 }

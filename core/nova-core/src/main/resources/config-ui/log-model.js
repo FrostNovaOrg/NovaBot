@@ -217,15 +217,20 @@ export function liveChannelHint(state) {
  * 空态该怎么说：一句打底、点名挡住的那几项、有时再附一句空因
  * @param state 筛选状态
  * @param dayCount 这一天一共有几条（不看筛选）
+ * @param alertEnabled 告警开着没有；接口没说时留空
  * @return {lead, chips, hint}，chips 同 blockingFilters，hint 同 liveChannelHint
  */
-export function emptyStateView(state, dayCount) {
+export function emptyStateView(state, dayCount, alertEnabled) {
   // 这一天一条都没有时，筛着的那几项不是「挡住的」——清掉它们也长不出记录来
   const blocking = dayCount ? blockingFilters(state) : [];
+  // 告警关着时，告警栏空着的原因不是筛没了，而是关着就一条都不会记。
+  // 只说「清掉筛选试试」的话，看的人清了一遍又一遍还是空的——
+  // 那一页永远答不出「这天到底有没有告警」
+  const alertOff = alertEnabled === false && state.cat === 'ALERT';
   return {
     lead: emptyText(state, dayCount),
     chips: blocking,
-    hint: dayCount ? liveChannelHint(state) : '',
+    hint: alertOff ? '告警已关，这里不会有记录。' : (dayCount ? liveChannelHint(state) : ''),
   };
 }
 
@@ -347,17 +352,85 @@ export function engSegments(lines, highlight, levelsOn, q) {
  *
  * 定住某一刻时<b>不带 since</b>：跟随会把定住的那一刻一点点推出视野，
  * 而使用者刚刚才点了「看这一刻」。
+ *
+ * 只剩问题档时多带一句 {@code levels=}，请服务端从这一天整份日志里找：
+ * 只读尾巴的话，散在一天里的那几条错误不在屏幕上看得到的那一小段里，
+ * 页面会说「没有」，而这一天其实出过好几十条。开着信息或调试时不带——
+ * 那两种情形下要的就是最新那一段，去把整天翻一遍是白翻。
  * @param state 筛选状态
  * @param limit 读多少行
  * @param since 上一次读到哪个字节，小于 0 表示不接着读
+ * @param levelsOn 四档各自开着没有；不给即照旧读尾巴
  * @return 查询串，以 ? 开头
  */
-export function engQuery(state, limit, since) {
+export function engQuery(state, limit, since, levelsOn) {
   const query = ['limit=' + (limit || 0)];
   if (state.date) query.push('d=' + encodeURIComponent(state.date));
   if (state.at) query.push('at=' + encodeURIComponent(state.at));
   else if (since >= 0) query.push('since=' + since);
+  else {
+    const levels = levelsParam(levelsOn);
+    if (levels) query.push('levels=' + levels);
+  }
   return '?' + query.join('&');
+}
+
+/**
+ * 只看问题档时，请服务端找哪几档
+ *
+ * 开着信息或调试就什么都不给——那时照旧读尾巴。四档全关同样不给：
+ * 整天找也是一条都没有，白白翻一遍。档名按级别顺序写。
+ * @param levelsOn 四档各自开着没有
+ * @return {@code error,warn} 这样的串；不该带时为空串
+ */
+function levelsParam(levelsOn) {
+  if (!levelsOn || levelsOn.info || levelsOn.debug) return '';
+  const on = ENG_LEVELS.map(item => item[0]).filter(name => levelsOn[name]);
+  return on.join(',');
+}
+
+/**
+ * 工程日志页脚那一句
+ *
+ * 说清「屏幕上几段、一共读到几段」，以及只扫到几点几分。只写「显示 N 条」的话，
+ * 那句话在只看错误时会静默变成谎言：它说的 N 只是扫到上限为止那几段，
+ * 而页面看着像这一天的全部。
+ * @param state 筛选状态
+ * @param shown 屏幕上几段
+ * @param all 一共读到几段（不跟着筛缩水）
+ * @param more 还有没有更早的没读进来
+ * @param scannedTo 整天找撞到上限时扫到几点几分，没撞时空串
+ * @return 那句话
+ */
+export function engFootText(state, shown, all, more, scannedTo) {
+  const head = '显示 ' + shown + ' 段，共读到 ' + all + ' 段';
+  if (state.at) return head + '（这一刻前后那一段）';
+  // 扫到哪儿那句优先于「更早的没读进来」：它是「为什么没找全」的那句回答
+  if (scannedTo) return head + '（只扫到 ' + scannedTo + '，更早的没有扫）';
+  if (more) return head + '（更早的没有读进来，只有 NovaBot 自己这一份）';
+  return head + '（这一份的全部）';
+}
+
+/**
+ * 大类药丸那一排带上这一天的条数
+ *
+ * 0 条的置灰但仍点得动：那枚药丸点下去仍是正当动作——看看这一天别的类里有什么。
+ * count 缺失时不硬凑一个 0：那会把「接口没说」画成「今天没有」。
+ * @param categories 接口给的大类清单，每项 {name, text, count?}
+ * @return [{name, text, label, count, dim}]，count 缺失时为 null
+ */
+export function catBarItems(categories) {
+  return (categories || []).map(item => {
+    const has = item.count != null;
+    const count = has ? item.count : null;
+    return {
+      name: item.name,
+      text: item.text,
+      label: has ? item.text + ' ' + count : item.text,
+      count,
+      dim: has && count === 0,
+    };
+  });
 }
 
 /**

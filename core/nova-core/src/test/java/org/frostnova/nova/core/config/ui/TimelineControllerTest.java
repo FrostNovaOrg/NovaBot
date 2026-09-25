@@ -40,9 +40,11 @@ class TimelineControllerTest {
 
     private TimelineController controller;
 
+    private NovaCoreProperties properties;
+
     @BeforeEach
     void setUp() {
-        NovaCoreProperties properties = new NovaCoreProperties();
+        properties = new NovaCoreProperties();
         properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
         store = new TimelineStore(properties);
         store.load();
@@ -269,6 +271,56 @@ class TimelineControllerTest {
         assertFalse(result.getBooleanValue("success"));
         assertTrue(result.getString("message").contains("第二页"));
         assertTrue(result.getJSONArray("events") == null, "失败时不该顺手返回全部记录");
+    }
+
+    @Test
+    @DisplayName("时间线接口说清告警开着没有, 空态才答得出「告警已关」")
+    void tellsWhetherAlertsAreOn() {
+        assertEquals(Boolean.TRUE, query(null, false, null, null).getBoolean("alertEnabled"),
+                "开着时要说开着；不说的话，告警栏空着只能读成「筛没了」。键 "
+                        + query(null, false, null, null).keySet());
+
+        properties.getAlert().setEnabled(false);
+        assertEquals(Boolean.FALSE, query(null, false, null, null).getBoolean("alertEnabled"),
+                "关着时要说关着");
+    }
+
+    @Test
+    @DisplayName("大类药丸带当天条数, 一条没有的那几类也要给得出来")
+    void categoriesCarryTheDaysCounts() {
+        store.record(TimelineEvent.of(TimelineEventType.PUSH_SENT, TimelineEvent.Level.INFO).text("推了一条").build());
+        store.record(TimelineEvent.of(TimelineEventType.PUSH_SENT, TimelineEvent.Level.INFO).text("推了两条").build());
+        store.record(TimelineEvent.of(TimelineEventType.ALERT_FAILED, TimelineEvent.Level.WARN).text("告警没发出去").build());
+
+        String today = LocalDate.now().toString();
+        JSONObject result = query(today, false, null, null);
+        assertEquals(2, dayCount(result, "PUSH"), "推送今天两条");
+        assertEquals(1, dayCount(result, "ALERT"), "告警今天一条");
+
+        JSONArray categories = result.getJSONArray("categories");
+        for (int i = 0; i < categories.size(); i++) {
+            JSONObject item = categories.getJSONObject(i);
+            assertNotNull(item.get("count"),
+                    "一条没有的那几类也要给条数，否则界面分不出「0 条」与「没给」：" + item);
+        }
+
+        // 条数是这一天该类的总数，不跟别的筛选缩水：跟着缩水的话，药丸上那个数每点一次变一次
+        JSONObject filtered = query(today, false, "ALERT_FAILED", null);
+        assertEquals(2, dayCount(filtered, "PUSH"), "筛过之后推送仍是两条");
+        assertEquals(1, dayCount(filtered, "ALERT"), "筛过之后告警仍是一条");
+    }
+
+    /** 这一类当天几条；没给条数与给了 0 是两回事，这里分得开 */
+    private static int dayCount(JSONObject result, String name) {
+        JSONArray categories = result.getJSONArray("categories");
+        for (int i = 0; i < categories.size(); i++) {
+            JSONObject item = categories.getJSONObject(i);
+            if (name.equals(item.getString("name"))) {
+                assertNotNull(item.get("count"), name + "那一类没给条数：" + item);
+                return item.getIntValue("count");
+            }
+        }
+        throw new AssertionError("大类清单里没有 " + name + "：" + categories);
     }
 
     private JSONObject query(String date, boolean problems, String type, String keyword) {

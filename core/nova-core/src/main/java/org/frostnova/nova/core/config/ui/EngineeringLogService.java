@@ -106,6 +106,38 @@ public class EngineeringLogService {
     private static final int MAX_BYTES = 1024 * 1024;
 
     /**
+     * 只看问题档时往回扫，最多翻这么多字节
+     * <p>
+     * 与 {@link #MAX_BYTES} 是两道各自的闸：那道管「尾读读多少」，这道管「往回翻翻多远」。
+     * <b>这道闸要盖得住一整天</b>：开着调试开关写一整天，一天的日志可以到两百 MB，
+     * 盖不住时散在上午的错误照旧会被当成「这一天没出过错」。定这个数之前回扫是每读一块
+     * 就把已收的行从头重排一遍，翻得多就等多久；做成一趟线性扫之后，翻一整天与翻一角
+     * 是同一笔开销的量级，这才放得开。撞到上限还没凑够条数时，
+     * 由 {@link Scan#scannedTo()} 说清扫到几点几分。
+     * <p>
+     * 取 256 MiB 而不是刚好两百：上限等于那一天的大小时余量是零，日子跑热一点，
+     * 早上那一段就又落回窗口外去了。实测翻满 256 MiB 一次一秒出头，多留这一截不心疼。
+     */
+    public static final int MAX_SCAN_BYTES = 256 * 1024 * 1024;
+
+    /**
+     * 往回扫时一次读多少
+     * <p>
+     * 定成 2 的幂，而日志行宽是个会变的东西：两者互不整除时读块边界永远落在某一行中间，
+     * 「半行被读块切开」这条路在每一次读块上都走一遍。
+     */
+    private static final int SCAN_BLOCK = 256 * 1024;
+
+    /**
+     * 一行日志的行首级别，与 {@code logback.xml} 里那个 pattern 对应
+     * <p>
+     * 与界面那一侧的行首判定同形（{@code log-model.js} 的 {@code HEAD}）：两头各自认的话，
+     * 同一份日志在服务端与浏览器上会被切成两种段，而两边都报绿。
+     */
+    private static final Pattern LEVEL_HEAD = Pattern.compile(
+            "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3}\\s+(TRACE|DEBUG|INFO|WARN|ERROR)\\b");
+
+    /**
      * 值属于凭据、整条打掉的请求头
      * <p>
      * 这几个头的值<b>整条都是凭据</b>，而它落进日志的形态无法预先知道
@@ -135,9 +167,19 @@ public class EngineeringLogService {
      * <p>
      * 值不吃 {@code ? & /}：吃了的话，一整条地址会被当成 {@code https} 这一个键的值整段吞掉，
      * 而藏在它查询串里的 {@code csrf=…} 就再也轮不到自己被查一遍。
+     * <p>
+     * 键名那段写成「最多这么多字符」，再配一句「前一个字符不是字母」，两条合起来才不回溯。
+     * 一长串字母数字中间没有分隔符时（调试日志里的图片编码就是这种形状），每个起头都想当一回
+     * 键名：接在字母后头的起头看一眼前一个字符就走开；拦不住的那些（数字后头那个起头）各自
+     * 最多赔上这么长一段才发现找不到分隔符，于是整行是线性的，几万字一行一眨眼就过。
+     * {@code _token=} 这类以非字母开头的键不受影响：要遮的本来就是它后半截那个键，
+     * 前头那一个下划线不是字母，那个键照样起得来。
+     * <p>
+     * 键名比 255 个字符还长的形状不在这份日志里出现。真出现的话它那一对连分隔符都够不着，
+     * 于是整对当它不是键值对、不遮——这一档宁可放着，也不为它把整行重新做成平方级。
      */
     private static final Pattern PAIR = Pattern.compile(
-            "([A-Za-z][A-Za-z0-9_.\\-]*)(\"?\\s*[:=]\\s*\"?)([^\\s,;\"'&?]+)");
+            "(?<![A-Za-z])([A-Za-z][A-Za-z0-9_.\\-]{0,255}+)(\"?\\s*[:=]\\s*\"?)([^\\s,;\"'&?]+)");
 
     /**
      * 名字判不出、但值确实是凭据的那几个
@@ -346,6 +388,255 @@ public class EngineeringLogService {
             }
         }
         return from;
+    }
+
+    /**
+     * 只看问题档时，从这一天整份日志里往回找
+     * <p>
+     * 尾读只吃最后 {@link #MAX_BYTES}，而一天的日志可以有一两百 MB：散在一天里的错误
+     * 落在那一段之外时，页面会说「没有」——看的人读成这天没出过错，那天其实有几十条。
+     * <p>
+     * <b>一条日志连同它下面的堆栈算一条</b>：凑条数时按段算，不按行算。
+     * <p>
+     * 行横跨读块时把上一块开头那半行接到下一块末尾重装：读块宽与行宽互不整除时，
+     * 边界永远落在某一行中间，不重装的话少回来的正好是那几条被切开的。
+     * <b>重装按字节做，接好之后才解码</b>：先各块各解一遍再拼字符串的话，被切开那个
+     * 多字节字符两半各自解成替代字符，中文、表情跨了读块拼回去也好不了，一屏乱码。
+     * 只对最终返回的那几段打码，不对扫过的每一行打码——扫过就丢的那几行
+     * 从来不会送到浏览器上。
+     *
+     * @param file 日志文件
+     * @param limit 最多几段
+     * @param levels 只要哪几档，取 {@code error}/{@code warn}/{@code info}/{@code debug}
+     * @return 找到的段，最旧的在前；文件不在时是空表
+     * @throws IOException 读不了时抛出，由调用方明说；<b>不许当成「没有日志」</b>
+     */
+    public Scan scan(Path file, int limit, Set<String> levels) throws IOException {
+        int want = effectiveLimit(limit);
+        if (file == null || !Files.isRegularFile(file) || levels == null || levels.isEmpty()) {
+            return new Scan(List.of(), false, 0L, 0L, null);
+        }
+
+        long size = Files.size(file);
+        long floor = Math.max(0L, size - (long) MAX_SCAN_BYTES);
+
+        // 从文件尾一块块往回读；边读边组段，最新的在前喂进去。
+        // 不再每读一块就把已收的行从头重排一遍——那样一趟要按行数×块数走，
+        // 一天的错误凑不满一页时每趟都要扫满整个窗，行数越多越等不起
+        Segmenter segments = new Segmenter(levels, want);
+        byte[] frag = new byte[0];
+        boolean firstBlock = true;
+        long pos = size;
+        byte[] tailBytes = new byte[0];
+        long tailFrom = size;
+
+        try (SeekableByteChannel channel = Files.newByteChannel(file, StandardOpenOption.READ)) {
+            while (pos > floor) {
+                long start = Math.max(floor, pos - SCAN_BLOCK);
+                byte[] raw = readBlock(channel, start, (int) (pos - start));
+                if (firstBlock) {
+                    tailBytes = raw;
+                    tailFrom = start;
+                }
+                pos = start;
+
+                if (firstBlock) {
+                    // 文件末那一段是写了一半的行，与 tail() 同形地整段丢掉：
+                    // 半行不给出去，「跟随最新」随后会把整行再送来一次
+                    int lastNl = lastIndexOf(raw, (byte) '\n');
+                    if (lastNl < 0) {
+                        // 整块都落在那半行里，还没撞到它的换行，整块丢掉继续往回找
+                        continue;
+                    }
+                    raw = Arrays.copyOf(raw, lastNl + 1);
+                    firstBlock = false;
+                }
+
+                // 接上：raw 的末尾是被读块切开那行的前半截，frag 是它落在新一块里的后半截，
+                // 按 raw 在前拼起来才是一整行。拼的是字节不是字符串——被切开那个多字节字符
+                // 的两半只有回到同一段字节里才认得出它是什么字
+                byte[] text = join(raw, frag);
+                int firstNl = indexOf(text, (byte) '\n');
+                if (firstNl < 0) {
+                    frag = text;
+                    continue;
+                }
+                frag = Arrays.copyOfRange(text, 0, firstNl);
+                segments.feedNewestFirst(text, firstNl + 1);
+
+                if (segments.filled()) {
+                    break;
+                }
+            }
+        }
+
+        // 扫到文件开头时，手里那半截不是半行：它就是这份日志的第一行，得算进来。
+        // 只有撞了回扫上限才丢它——那时更旧的半截在上限之外，压根没读过
+        if (pos <= 0 && frag.length > 0) {
+            segments.add(decodeLine(frag, 0, frag.length));
+        }
+
+        List<List<String>> found = segments.segments();
+        boolean hitCap = floor > 0;
+        boolean filled = found.size() >= want;
+        boolean exhausted = pos <= floor;
+
+        List<String> out = new ArrayList<>();
+        List<List<String>> shown = found.size() > want ? found.subList(0, want) : found;
+        for (int i = shown.size() - 1; i >= 0; i--) {
+            for (String line : shown.get(i)) {
+                out.add(mask(line));
+            }
+        }
+
+        // 「更早还有」有三种来路：回扫窗外还有、这一趟没读到底、读到底了但比要的多
+        boolean more = hitCap || !exhausted || found.size() > want;
+        String scannedTo = hitCap && !filled ? segments.oldest() : null;
+        return new Scan(out, more, size, lastLineEnd(tailBytes, tailBytes.length, tailFrom), scannedTo);
+    }
+
+    private static byte[] readBlock(SeekableByteChannel channel, long start, int count) throws IOException {
+        byte[] bytes = new byte[count];
+        channel.position(start);
+        ByteBuffer buffer = ByteBuffer.wrap(bytes);
+        while (buffer.hasRemaining() && channel.read(buffer) > 0) {
+            // 读满为止
+        }
+        return bytes;
+    }
+
+    /**
+     * 边读边组段：每来一行就认一次，不再每读一块把已收的行从头重排一遍
+     * <p>
+     * 喂的顺序是<b>最新的在前</b>，与读块的顺序同向。段的级别取头一行的，堆栈跟着它那一行走。
+     * 开头那段没有头一行（从文件中间读进来时常见）不认：认不出它属于哪一档，留着就躲得过级别筛。
+     * <p>
+     * 「扫到几点几分」要的是<b>这一窗里最旧那条认得出时刻的行</b>，而它未必落在命中的段里：
+     * 一整天没出过错时每一段都不对档，这个数照旧要报得出来。因此每来一行都顺手认一次时刻，
+     * 新的在前喂，最后一个认出来的也就是最旧那个。
+     */
+    private static final class Segmenter {
+        private final Set<String> levels;
+        private final int want;
+        private final List<List<String>> newestFirst = new ArrayList<>();
+        private final List<String> cont = new ArrayList<>();
+        private String oldest;
+
+        Segmenter(Set<String> levels, int want) {
+            this.levels = levels;
+            this.want = want;
+        }
+
+        /**
+         * 把这一段字节里的完整行按最新的在前喂进来
+         * <p>
+         * 从 {@code from} 起按换行切，行末那个回车跟着换行一起吃掉。末尾那一段哪怕不是
+         * 换行结尾也算完整：它缺的那半截已经按字节接回在它前头了，只留最靠左那半行到下一块去接。
+         */
+        void feedNewestFirst(byte[] text, int from) {
+            List<String> block = new ArrayList<>();
+            int lineStart = from;
+            for (int i = from; i < text.length; i++) {
+                if (text[i] == '\n') {
+                    block.add(decodeLine(text, lineStart, i));
+                    lineStart = i + 1;
+                }
+            }
+            if (lineStart < text.length) {
+                block.add(decodeLine(text, lineStart, text.length));
+            }
+            for (int i = block.size() - 1; i >= 0; i--) {
+                add(block.get(i));
+            }
+        }
+
+        void add(String line) {
+            LocalTime at = timeOf(line);
+            if (at != null) {
+                oldest = format(at);
+            }
+            Matcher head = LEVEL_HEAD.matcher(line);
+            if (head.find()) {
+                List<String> segment = new ArrayList<>();
+                segment.add(line);
+                for (int i = cont.size() - 1; i >= 0; i--) {
+                    segment.add(cont.get(i));
+                }
+                cont.clear();
+                if (levels.contains(levelName(head.group(1)))) {
+                    newestFirst.add(segment);
+                }
+            } else {
+                cont.add(line);
+            }
+        }
+
+        /** 凑够要的条数了，更旧的不必再读 */
+        boolean filled() {
+            return newestFirst.size() >= want;
+        }
+
+        /** 命中的段，最新的在前；每段内部是文件顺序 */
+        List<List<String>> segments() {
+            return newestFirst;
+        }
+
+        /** 这一窗里最旧那条认得出时刻的行的时刻；一行都认不出时为 {@code null} */
+        String oldest() {
+            return oldest;
+        }
+    }
+
+    /**
+     * 这几字节是一行日志的原文；行末那个回车去掉——换行是 CRLF 时它跟着换行一起当换行看
+     */
+    private static String decodeLine(byte[] text, int from, int to) {
+        int end = to;
+        if (end > from && text[end - 1] == '\r') {
+            end--;
+        }
+        return new String(text, from, end - from, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * 两截字节按序拼起来：被读块切开的那个多字节字符就落在这条缝上，只有回到同一段字节里才认得出
+     */
+    private static byte[] join(byte[] older, byte[] newer) {
+        if (older.length == 0) {
+            return newer;
+        }
+        if (newer.length == 0) {
+            return older;
+        }
+        byte[] both = Arrays.copyOf(older, older.length + newer.length);
+        System.arraycopy(newer, 0, both, older.length, newer.length);
+        return both;
+    }
+
+    private static int indexOf(byte[] bytes, byte needle) {
+        for (int i = 0; i < bytes.length; i++) {
+            if (bytes[i] == needle) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static int lastIndexOf(byte[] bytes, byte needle) {
+        for (int i = bytes.length - 1; i >= 0; i--) {
+            if (bytes[i] == needle) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * 行首级别归到药丸那四档里：{@code TRACE} 并进调试——药丸只有四个，
+     * 多出来的一档没有开关管得着它
+     */
+    private static String levelName(String level) {
+        return "TRACE".equals(level) ? "debug" : level.toLowerCase(Locale.ROOT);
     }
 
     /**
@@ -568,6 +859,19 @@ public class EngineeringLogService {
      * @param offset 最后一个完整行的末尾落在哪个字节上，「跟随最新」下一次从这里接着读
      */
     public record Tail(List<String> lines, boolean more, long size, long offset) {
+    }
+
+    /**
+     * 只看问题档时整天里找出来的那几段
+     *
+     * @param lines 已打码的行，最旧的在前，段与段按时间正序
+     * @param more 更早还有没给出来的段。<b>不说的话，「找全了」与「只扫了一截」在屏幕上长得一样</b>
+     * @param size 文件字节数
+     * @param offset 最后一个完整行的末尾落在哪个字节上
+     * @param scannedTo 扫到几点几分（{@code HH:mm}）。只在撞了回扫上限还没凑够条数时给；
+     *                 为空表示这一天找全了
+     */
+    public record Scan(List<String> lines, boolean more, long size, long offset, String scannedTo) {
     }
 
     /**
