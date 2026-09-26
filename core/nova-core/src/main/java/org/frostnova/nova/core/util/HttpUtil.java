@@ -2,6 +2,7 @@ package org.frostnova.nova.core.util;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.core.config.RestTemplateConfig;
 import org.frostnova.nova.core.properties.LogProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.Logger;
@@ -21,8 +22,10 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * HTTP 请求工具类
@@ -48,11 +51,28 @@ public class HttpUtil {
      */
     private final NetworkLogThrottle networkLogThrottle = new NetworkLogThrottle();
 
+    /**
+     * 限时取图用的模板，按限时各一张（见 {@link #timedTemplate}）
+     */
+    private final Map<Duration, RestTemplate> timedTemplates = new ConcurrentHashMap<>();
+
     @Autowired
     public HttpUtil(@Qualifier("networkThreadPool") ThreadPoolTaskExecutor executor, RestTemplate restTemplate, LogProperties logConfig) {
         this.executor = executor;
         this.restTemplate = restTemplate;
         this.logConfig = logConfig;
+    }
+
+    /**
+     * 取一张「这一趟按自己的限时取」用的模板，按限时复用
+     * <p>
+     * 全局模板的读超时是整机共用的那一个（配置里的 network.read-timeout），取头像这种装饰性
+     * 小图不该跟着它走：源站挂住时一趟就占住取图线程到全局超时，队里的新图全跟着排不上。
+     * 限时是逐请求生效的，但连接超时是建客户端时定死的，所以每个限时各建一张模板、各一张连接池
+     */
+    private RestTemplate timedTemplate(Duration fetchTimeout) {
+        return timedTemplates.computeIfAbsent(fetchTimeout,
+                timeout -> RestTemplateConfig.buildTemplate(timeout, timeout));
     }
 
     // 这里原先有一个 getRandomUserAgent() 和一串 2007 年的浏览器 UA
@@ -72,7 +92,14 @@ public class HttpUtil {
      * @param <T> 返回值类型
      */
     private <T> T request(String url, HttpMethod method, HttpEntity<?> httpEntity, Class<T> responseType) {
-        return requestForEntity(url, method, httpEntity, responseType).getBody();
+        return request(url, method, httpEntity, responseType, restTemplate);
+    }
+
+    /**
+     * 发起 HTTP 请求，用指定的模板（限时取图那一路换模板，见 {@link #timedTemplate}）
+     */
+    private <T> T request(String url, HttpMethod method, HttpEntity<?> httpEntity, Class<T> responseType, RestTemplate template) {
+        return requestForEntity(url, method, httpEntity, responseType, template).getBody();
     }
 
     /**
@@ -111,6 +138,10 @@ public class HttpUtil {
     }
 
     private <T> ResponseEntity<T> requestForEntity(String url, HttpMethod method, HttpEntity<?> httpEntity, Class<T> responseType) {
+        return requestForEntity(url, method, httpEntity, responseType, restTemplate);
+    }
+
+    private <T> ResponseEntity<T> requestForEntity(String url, HttpMethod method, HttpEntity<?> httpEntity, Class<T> responseType, RestTemplate template) {
         long startTime = System.currentTimeMillis();
         String safe = UrlMasker.mask(url);
         NetworkLogThrottle.Decision decision = decideNetworkLog(method, url, startTime);
@@ -120,7 +151,7 @@ public class HttpUtil {
 
         ResponseEntity<T> response = null;
         try {
-            response = restTemplate.exchange(url, method, httpEntity, responseType);
+            response = template.exchange(url, method, httpEntity, responseType);
             return response;
         } catch (Exception e) {
             // 失败一律放行，不看抑制决定
@@ -313,6 +344,25 @@ public class HttpUtil {
     }
 
     /**
+     * 自定义请求头读取字节的同步 HTTP GET 请求，这一趟按自己的限时取
+     * <p>
+     * 限时覆盖连接与读响应的整趟（模板的两个超时都定成它）：到点就是「这次没取成」，
+     * 抛回交调用方。用于不该占住线程到全局读超时的取用，比如出图取头像
+     * @param url URL
+     * @param headers HTTP 请求头
+     * @param fetchTimeout 这一趟的限时
+     * @return 请求结果
+     */
+    public byte[] getBytes(String url, Map<String, String> headers, Duration fetchTimeout) {
+        HttpHeaders httpHeaders = new HttpHeaders();
+        headers.forEach(httpHeaders::add);
+
+        HttpEntity<Void> httpEntity = new HttpEntity<>(httpHeaders);
+
+        return request(url, HttpMethod.GET, httpEntity, byte[].class, timedTemplate(fetchTimeout));
+    }
+
+    /**
      * 自定义请求头读取字节的异步 HTTP GET 请求
      * @param url URL
      * @param headers HTTP 请求头
@@ -373,7 +423,25 @@ public class HttpUtil {
      * @return 图片
      */
     public BufferedImage fetchBufferedImage(String url, Map<String, String> headers) {
-        byte[] bytes = getBytes(url, headers);
+        return imageOf(getBytes(url, headers));
+    }
+
+    /**
+     * 自定义请求头读取图片的同步 HTTP GET 请求，这一趟按自己的限时取，出错原样交回调用方
+     * <p>
+     * 与 {@link #fetchBufferedImage(String, Map)} 的分别只在限时：这一趟连的是自己的连接池、
+     * 用自己的限时（见 {@link #getBytes(String, Map, Duration)}），源站挂住也占不了多久线程。
+     * 出错那一半的规矩照旧：原样抛回，调用方才分得出「源站明说没这张图」与「这次没取成」
+     * @param url 图片地址
+     * @param headers 请求头
+     * @param fetchTimeout 这一趟的限时
+     * @return 图片
+     */
+    public BufferedImage fetchBufferedImage(String url, Map<String, String> headers, Duration fetchTimeout) {
+        return imageOf(getBytes(url, headers, fetchTimeout));
+    }
+
+    private static BufferedImage imageOf(byte[] bytes) {
         try {
             BufferedImage image = bytes == null ? null : ImageIO.read(new ByteArrayInputStream(bytes));
             if (image == null) {

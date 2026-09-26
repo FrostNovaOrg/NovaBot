@@ -22,15 +22,19 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.function.DoubleFunction;
 import java.util.stream.Collectors;
@@ -129,13 +133,20 @@ public class BilibiliDataQueryPainter {
      */
     private static final BufferedImage FAILED_AVATAR = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
 
+    /**
+     * 取回来的原图，按「真正要下的地址」存
+     * <p>
+     * 画的时候各按各的尺寸缩（见 {@link #avatar}）：地址自带尺寸后缀时，表头与名次行下的是同一个
+     * 地址，只下一次、两处各缩各的；不带后缀的两种尺寸是两条地址（{@code @88w.webp} 与
+     * {@code @30w.webp}），照旧各下各的
+     */
     private final Cache<String, BufferedImage> avatarCache = Caffeine.newBuilder()
             .maximumSize(500)
             .expireAfterWrite(Duration.ofHours(6))
             .build();
 
     /**
-     * 同一张头像同一时间只排一趟下载，别的请求跟着那只排队的结果走
+     * 同一个下载地址同一时间只排一趟下载，别的请求跟着那只排队的结果走
      */
     private final ConcurrentHashMap<String, CompletableFuture<BufferedImage>> avatarInFlight = new ConcurrentHashMap<>();
 
@@ -425,31 +436,40 @@ public class BilibiliDataQueryPainter {
     private void prefetchAvatars(List<AvatarRequest> requests) {
         long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(AVATAR_WAIT_MILLIS);
 
-        Map<String, CompletableFuture<BufferedImage>> pending = new LinkedHashMap<>();
+        Map<String, Attempt> pending = new LinkedHashMap<>();
         Map<String, AvatarRequest> queued = new LinkedHashMap<>();
         for (AvatarRequest request : requests) {
             if (StringUtil.isBlank(request.url())) {
                 continue;
             }
             String key = cacheKey(request);
-            if (queued.containsKey(key) || avatarCache.getIfPresent(key) != null) {
+            if (queued.containsKey(key) || avatarCache.getIfPresent(downloadKey(request)) != null) {
                 continue;
             }
             queued.put(key, request);
             pending.put(key, startAvatarFetch(request));
         }
-        if (pending.isEmpty()) {
+        if (queued.isEmpty()) {
             return;
         }
         if (awaitAvatars(pending, deadline)) {
             return;
         }
 
-        // 等到点还有没落定的：死掉的那只重排一趟，仍在飞的跟着原任务走不重复排队。
-        // 被放弃的连接是一次没成，不是「这地址没图」，不重排的话它就永远空着
-        Map<String, CompletableFuture<BufferedImage>> secondTry = new LinkedHashMap<>();
-        for (Map.Entry<String, CompletableFuture<BufferedImage>> entry : pending.entrySet()) {
-            if (entry.getValue().isCompletedExceptionally() && avatarCache.getIfPresent(entry.getKey()) == null) {
+        // 等到点还没开始的撤掉：这张图已经画完，排着只会把队堵给下一张图的新头像
+        abandonNotStarted(pending);
+
+        // 死掉的那只重排一趟，仍在飞的跟着原任务走不重复排队。
+        // 被放弃的连接是一次没成，不是「这地址没图」，不重排的话它就永远空着。
+        // 撤掉的不重排：那是这张图用不上的排队件，重排回去又占队，把新头像挡在后面
+        Map<String, Attempt> secondTry = new LinkedHashMap<>();
+        for (Map.Entry<String, Attempt> entry : pending.entrySet()) {
+            Attempt attempt = entry.getValue();
+            if (attempt == null || avatarCache.getIfPresent(downloadKey(queued.get(entry.getKey()))) != null) {
+                continue;
+            }
+            Throwable failure = attempt.result().handle((image, error) -> error).getNow(null);
+            if (attempt.result().isCompletedExceptionally() && !(failure instanceof CancellationException)) {
                 secondTry.put(entry.getKey(), startAvatarFetch(queued.get(entry.getKey())));
             }
         }
@@ -467,14 +487,14 @@ public class BilibiliDataQueryPainter {
      * 原因不带异常原文：原文里裹着完整地址
      */
     private void warnAvatarsNotFetched(Map<String, AvatarRequest> queued,
-                                       Map<String, CompletableFuture<BufferedImage>> pending,
-                                       Map<String, CompletableFuture<BufferedImage>> secondTry) {
+                                       Map<String, Attempt> pending,
+                                       Map<String, Attempt> secondTry) {
         Map<String, Integer> reasons = new LinkedHashMap<>();
-        for (String key : queued.keySet()) {
-            if (avatarCache.getIfPresent(key) != null) {
+        for (Map.Entry<String, AvatarRequest> entry : queued.entrySet()) {
+            if (avatarCache.getIfPresent(downloadKey(entry.getValue())) != null) {
                 continue;
             }
-            CompletableFuture<BufferedImage> attempt = secondTry.getOrDefault(key, pending.get(key));
+            Attempt attempt = secondTry.getOrDefault(entry.getKey(), pending.get(entry.getKey()));
             reasons.merge(missReason(attempt), 1, Integer::sum);
         }
         if (reasons.isEmpty()) {
@@ -489,30 +509,38 @@ public class BilibiliDataQueryPainter {
 
     /**
      * 这次没取到的原因，写进一行汇总
+     * <p>
+     * 没排上队与到点被撤掉的都写「排不进队」：这两种都是这一趟压根没跑，写异常类名用的人看不懂
      */
-    private static String missReason(CompletableFuture<BufferedImage> attempt) {
+    private static String missReason(Attempt attempt) {
         if (attempt == null) {
             return "排不进队";
         }
-        if (!attempt.isDone()) {
+        if (!attempt.result().isDone()) {
             return "到点还没回";
         }
-        Throwable failure = attempt.handle((image, error) -> error).getNow(null);
+        Throwable failure = attempt.result().handle((image, error) -> error).getNow(null);
         if (failure instanceof HttpStatusCodeException status) {
             return "HTTP " + status.getStatusCode().value();
+        }
+        if (failure instanceof RejectedExecutionException || failure instanceof CancellationException) {
+            return "排不进队";
         }
         return failure == null ? "没拿到图" : failure.getClass().getSimpleName();
     }
 
     /**
-     * 等到齐回 true；等到点、或有哪只死了，回 false
+     * 等到齐回 true；等到点、或有哪只没排上队，回 false
      */
-    private static boolean awaitAvatars(Map<String, CompletableFuture<BufferedImage>> pending, long deadlineNanos) {
+    private static boolean awaitAvatars(Map<String, Attempt> pending, long deadlineNanos) {
+        boolean allQueued = pending.values().stream().allMatch(Objects::nonNull);
+        List<CompletableFuture<BufferedImage>> waiting = pending.values().stream()
+                .filter(Objects::nonNull).map(Attempt::result).toList();
         long remainMillis = Math.max(0, TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime()));
         try {
-            CompletableFuture.allOf(pending.values().toArray(new CompletableFuture[0]))
+            CompletableFuture.allOf(waiting.toArray(new CompletableFuture[0]))
                     .get(remainMillis, TimeUnit.MILLISECONDS);
-            return true;
+            return allQueued;
         } catch (TimeoutException | ExecutionException e) {
             return false;
         } catch (InterruptedException e) {
@@ -522,20 +550,32 @@ public class BilibiliDataQueryPainter {
     }
 
     /**
-     * 排一趟头像下载；同一张头像在飞时跟着那只走，死掉的那只当场让位
+     * 排一趟头像下载；同一个下载地址在飞时跟着那只走，死掉的那只当场让位
      * <p>
-     * 排不进队的那条<b>当场从在飞表拿掉</b>：留着它，源站一直挂时这张表跟着每个新地址一直涨、
-     * 没有上界——表里只留排上队与正在取的，条数至多是线程数＋队列长
+     * 回的是这一趟的记账：等结果的那只、线程池里那笔、以及「开没开工」的认领牌——
+     * 到点撤「还没开始的」全靠这张牌：线程池说得出「取消成功」，可它对已经在跑的那笔也这么说。
+     * 跟着别人那趟走时后两样是空的，撤不着它。
+     * <p>
+     * 排不进队的回空：留着它，源站一直挂时在飞表跟着每个新地址一直涨、没有上界——
+     * 表里只留排上队与正在取的，条数至多是线程数＋队列长
      */
-    private CompletableFuture<BufferedImage> startAvatarFetch(AvatarRequest request) {
-        String key = cacheKey(request);
+    private Attempt startAvatarFetch(AvatarRequest request) {
+        String key = downloadKey(request);
+        Future<?>[] submitted = new Future<?>[1];
+        AtomicBoolean[] claim = new AtomicBoolean[1];
         CompletableFuture<BufferedImage> future = avatarInFlight.compute(key, (ignored, existing) -> {
             if (existing != null && !existing.isCompletedExceptionally()) {
                 return existing;
             }
             CompletableFuture<BufferedImage> fresh = new CompletableFuture<>();
+            AtomicBoolean begun = new AtomicBoolean();
+            claim[0] = begun;
             try {
-                AVATAR_FETCHERS.execute(() -> downloadAvatar(request, fresh));
+                submitted[0] = AVATAR_FETCHERS.submit(() -> {
+                    if (begun.compareAndSet(false, true)) {
+                        downloadAvatar(key, fresh);
+                    }
+                });
             } catch (RejectedExecutionException e) {
                 // 排不进去就当没取到，出图不受影响；不落失败缓存，下一趟能排上就照常取
                 fresh.completeExceptionally(e);
@@ -544,27 +584,47 @@ public class BilibiliDataQueryPainter {
         });
         if (future.isCompletedExceptionally()) {
             avatarInFlight.remove(key, future);
+            return null;
         }
-        return future;
+        return new Attempt(key, future, submitted[0], claim[0]);
     }
 
     /**
-     * 下载一张头像并裁圆，结果写进缓存后交差
+     * 到点还没开始的取图撤掉，按「排不进队」记
+     * <p>
+     * 只撤「还没开始的」：已经在取的那趟照旧取完、照旧写缓存（晚到的下一张图用得上）。
+     * 撤的是这张图用不上的排队件——它们留着，源站挂住时队里堆的全是画完的图的旧请求，
+     * 新来的头像排在后面干等
+     */
+    private void abandonNotStarted(Map<String, Attempt> pending) {
+        for (Attempt attempt : pending.values()) {
+            if (attempt == null || attempt.claim() == null || attempt.result().isDone()) {
+                continue;
+            }
+            if (attempt.claim().compareAndSet(false, true)) {
+                attempt.task().cancel(false);
+                avatarInFlight.remove(attempt.key(), attempt.result());
+                attempt.result().completeExceptionally(new CancellationException());
+            }
+        }
+        // 撤掉的那些还占着队里的位子：线程池的队列不认「已取消」，得扫一遍拿出来，
+        // 不拿出来，位子空不出来，新来的头像照样被挡在门外
+        AVATAR_FETCHERS.purge();
+    }
+
+    /**
+     * 下载一张头像的原图，结果写进缓存后交差
      * <p>
      * 取到就缓存；源站明说没有这张图也缓存成哨兵值——这两种都是「问过了」。
      * <b>取图抛出来的那次不写任何缓存</b>：连接被放弃、超时、断线都是「这次没取成」，
      * 记 6 小时会把源站刚好不好的那几分钟记成接下来几小时都没头像。
      * 分界在 {@link BilibiliApiUtil#fetchBilibiliImage(String)}：回空＝源站明说没图，抛回＝这次没取成
      */
-    private void downloadAvatar(AvatarRequest request, CompletableFuture<BufferedImage> future) {
-        String key = cacheKey(request);
+    private void downloadAvatar(String key, CompletableFuture<BufferedImage> future) {
         try {
-            BufferedImage ready = api.fetchBilibiliImage(atSize(request.url(), request.size()))
-                    .map(image -> ImageUtil.maskToCircle(
-                            ImageUtil.resize(image, request.size(), request.size())))
-                    .orElse(null);
-            avatarCache.put(key, ready == null ? FAILED_AVATAR : ready);
-            future.complete(ready);
+            BufferedImage raw = api.fetchBilibiliImage(key).orElse(null);
+            avatarCache.put(key, raw == null ? FAILED_AVATAR : raw);
+            future.complete(raw);
         } catch (RuntimeException e) {
             future.completeExceptionally(e);
         } finally {
@@ -576,15 +636,19 @@ public class BilibiliDataQueryPainter {
      * 取要用的圆形头像，只读缓存
      * <p>
      * 下载在 {@link #prefetchAvatars} 里排队做，这里只认缓存里已经有的：
-     * 出图这一路上不许再出现一次同步下载，否则源站一慢整张图就跟着慢
+     * 出图这一路上不许再出现一次同步下载，否则源站一慢整张图就跟着慢。
+     * 拿到的是原图，按这一处的尺寸缩了再裁圆——同一地址两种画法各缩各的，不会一处放大糊、一处缩小虚
      */
     private BufferedImage avatar(String url, int size) {
         if (StringUtil.isBlank(url)) {
             return null;
         }
-        BufferedImage cached = avatarCache.getIfPresent(cacheKey(url, size));
+        BufferedImage raw = avatarCache.getIfPresent(downloadKey(url, size));
         // 哨兵值是「源站明说没有」，画成空位；没缓存过（等到点没等到）也是空位
-        return cached == null || cached == FAILED_AVATAR ? null : cached;
+        if (raw == null || raw == FAILED_AVATAR) {
+            return null;
+        }
+        return ImageUtil.maskToCircle(ImageUtil.resize(raw, size, size));
     }
 
     /**
@@ -610,11 +674,10 @@ public class BilibiliDataQueryPainter {
     }
 
     /**
-     * 缓存条目与在飞条目的键：地址加出图尺寸
+     * 一处画头像的地方：地址加出图尺寸
      * <p>
      * 表头要 {@link #AVATAR_SIZE}、名次行要 {@link #RANKING_AVATAR_SIZE}，同一张地址两种
-     * 尺寸各是各的条目：共用一个键的话，先落库的那份会被另一处直接画上，一处放大会糊、
-     * 一处缩小会虚。缓存仍是这一张表、同一套过期与「源站明说没图」的记法
+     * 尺寸是版面上两处，各算各的——没取到时记几处空着就按这个数
      */
     private static String cacheKey(String url, int size) {
         return url + "@" + size;
@@ -622,6 +685,19 @@ public class BilibiliDataQueryPainter {
 
     private static String cacheKey(AvatarRequest request) {
         return cacheKey(request.url(), request.size());
+    }
+
+    /**
+     * 下载与缓存的键：真正要下的那个地址
+     * <p>
+     * 地址自带尺寸后缀时，两种画法下的是同一个地址——共用一趟下载，两处各缩各的尺寸
+     */
+    private static String downloadKey(String url, int size) {
+        return atSize(url, size);
+    }
+
+    private static String downloadKey(AvatarRequest request) {
+        return downloadKey(request.url(), request.size());
     }
 
     /**
@@ -656,9 +732,22 @@ public class BilibiliDataQueryPainter {
 
     /**
      * 为图片地址附加指定宽度的缩放参数，避免下载原图。榜单头像只有 30px，下原图既慢又浪费
+     * <p>
+     * 地址自带尺寸后缀时原样返回：那已经是一个定好尺寸的地址，再加一段没有意义，
+     * 也让两种画法下的是同一个地址、共用一趟下载
      */
-    private String atSize(String url, int size) {
+    private static String atSize(String url, int size) {
         return url.contains("@") ? url : url + "@" + size + "w.webp";
+    }
+
+    /**
+     * 一趟头像下载的记账
+     * @param key 下载地址（{@link #downloadKey}），在飞表按它共用
+     * @param result 等结果的那只，交的是原图；源站明说没图时是 null
+     * @param task 线程池里那笔
+     * @param claim 开没开工的认领牌：开工的与撤掉的各抢一次，抢到才算数
+     */
+    private record Attempt(String key, CompletableFuture<BufferedImage> result, Future<?> task, AtomicBoolean claim) {
     }
 
     /**
