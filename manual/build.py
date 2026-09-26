@@ -23,6 +23,8 @@ INLINE = re.compile(r"\*\*.+?\*\*|`[^`]+`|!\[[^\]]*\]\([^)]+\)|\[[^\]]+\]\([^)]+
 HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
 UL = re.compile(r"^\s*[-*]\s+")
 OL = re.compile(r"^\s*\d+\.\s+")
+CONT = re.compile(r"^ {2,}\S")
+LATIN = re.compile(r"[A-Za-z0-9]")
 TABLE_SEP = re.compile(r"^\s*\|?[\s:|-]+\|[\s:|-]*$")
 
 
@@ -75,6 +77,24 @@ def is_marker(line):
                 or line.startswith(">") or UL.match(line) or OL.match(line))
 
 
+def is_continuation(lines, i):
+    """列表项折行：紧跟在项后、行首至少两个空格，且不是新的一项、也不起别的块。"""
+    line = lines[i]
+    if not CONT.match(line) or UL.match(line) or OL.match(line):
+        return False
+    if is_marker(line.lstrip()):
+        return False
+    return not ("|" in line and i + 1 < len(lines) and TABLE_SEP.match(lines[i + 1]))
+
+
+def join_continuation(text, cont):
+    """按中文排版接上续行：接缝一侧（隔着 ` 与 ** 看）是拉丁字母或数字才留空格。"""
+    text = text.rstrip()
+    left, right = text.rstrip("`*")[-1:], cont.lstrip("`*")[:1]
+    sep = " " if LATIN.match(left) or LATIN.match(right) else ""
+    return text + sep + cont
+
+
 def parse_blocks(lines):
     blocks, i, n = [], 0, len(lines)
     while i < n:
@@ -109,8 +129,11 @@ def parse_blocks(lines):
             while i < n and (UL.match(lines[i]) or OL.match(lines[i])):
                 ordered = bool(OL.match(lines[i]))
                 text = re.sub(r"^\s*(?:[-*]|\d+\.)\s+", "", lines[i])
-                items.append((ordered, text))
                 i += 1
+                while i < n and is_continuation(lines, i):
+                    text = join_continuation(text, lines[i].strip())
+                    i += 1
+                items.append((ordered, text))
             blocks.append(("list", items))
             continue
         if "|" in line and i + 1 < n and TABLE_SEP.match(lines[i + 1]):
