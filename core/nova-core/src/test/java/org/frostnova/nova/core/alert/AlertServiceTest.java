@@ -56,6 +56,7 @@ class AlertServiceTest {
         private final String name;
         boolean available = true;
         boolean failing;
+        boolean blockedByMasterSwitch;
         final List<String> received = new ArrayList<>();
 
         FakeChannel(String name) {
@@ -84,6 +85,9 @@ class AlertServiceTest {
 
         @Override
         public void send(String subject, String content) {
+            if (blockedByMasterSwitch) {
+                throw new AlertBlockedException("全局推送开关已关闭，这条告警没有发出");
+            }
             if (failing) {
                 throw new IllegalStateException("模拟出网中断");
             }
@@ -215,6 +219,55 @@ class AlertServiceTest {
 
             assertTrue(channel.received.isEmpty());
             assertEquals(0, service.pendingCount());
+        }
+
+        @Test
+        @DisplayName("被全局推送开关拦下时不入队：算这一次的最终失败")
+        void noRetryWhenBlockedByMasterSwitch() {
+            FakeChannel channel = new FakeChannel("假通道");
+            channel.blockedByMasterSwitch = true;
+            channels.add(channel);
+
+            service.alert("key", "标题", "内容");
+
+            assertEquals(0, service.pendingCount(), "开关打开后也不补发——被拦下的这一条不进重投");
+            assertTrue(channel.received.isEmpty());
+        }
+
+        @Test
+        @DisplayName("别的通道只是暂时坏、而有一路被开关拦下时，同样不入队")
+        void noRetryWhenAnyChannelBlocked() {
+            FakeChannel flaky = new FakeChannel("暂时坏的");
+            flaky.failing = true;
+            FakeChannel blocked = new FakeChannel("被拦的");
+            blocked.blockedByMasterSwitch = true;
+            channels.add(flaky);
+            channels.add(blocked);
+
+            service.alert("key", "标题", "内容");
+
+            // 重投按整条告警重投，分不出「只补没被拦的那一路」；留在队里的话，
+            // 开关一打开，被拦的那一路就会跟着【补发】涌出去
+            assertEquals(0, service.pendingCount(), "被拦下的一路不许因重投而补发");
+        }
+
+        @Test
+        @DisplayName("重投撞上全局推送开关关闭：从队列拿掉，不再放回去")
+        void dropsPendingWhenRetryHitsMasterSwitchOff() {
+            FakeChannel channel = new FakeChannel("假通道");
+            channel.failing = true;
+            channels.add(channel);
+
+            service.alert("key", "标题", "内容");
+            assertEquals(1, service.pendingCount(), "前置：出网中断时照旧入队");
+
+            // 修网途中使用者把总开关关了
+            channel.failing = false;
+            channel.blockedByMasterSwitch = true;
+            service.retryPending();
+
+            assertEquals(0, service.pendingCount(), "开关打开后也不许收到攒下的这一批");
+            assertTrue(channel.received.isEmpty());
         }
     }
 

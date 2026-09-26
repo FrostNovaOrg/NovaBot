@@ -80,13 +80,16 @@ public class QqAlertChannel implements AlertChannel {
     public void send(String subject, String content) {
         OneBotAdapterPluginProperties.Alert alert = properties.getAlert();
 
-        // 走队列而非同步发送：告警不应阻塞探测线程，也不该与正常推送抢占顺序
+        // 走队列而非同步发送：告警不应阻塞探测线程，也不该与正常推送抢占顺序。
+        // 入队走 sendAlert：静音时段照发——静音挡的是打扰，告警正是要叫人的那一条；
+        // 全局开关关着时那边会抛出，让告警服务如实说「没发出去、为什么」并算作
+        // 这一次的最终失败——不进重投队列，开关打开后也不补发
         List<Message> messages = Message.create(
                 alert.getPlatform(),
                 PushTargetType.of(alert.getType()),
                 alert.getNum(),
                 subject + "\n" + content);
 
-        messages.forEach(messageSender::send);
+        messages.forEach(messageSender::sendAlert);
     }
 }

@@ -51,6 +51,18 @@ public class PushGate {
     }
 
     /**
+     * 当前是否允许发告警
+     * <p>
+     * 告警不问静音时段：静音挡的是「不想被机器人吵」的打扰，而告警恰恰是
+     * 出了事要叫人的那一条，半夜也得发。全局开关照旧拦它——那道开关的说明是
+     * 「关闭后<b>所有</b>推送都会被丢弃」，不含例外。
+     * @return 允许发告警时返回 true
+     */
+    public boolean alertsAllowed() {
+        return properties.getPush().isEnabled();
+    }
+
+    /**
      * 当前被拦截的原因，供日志说明
      * @return 拦截原因
      */

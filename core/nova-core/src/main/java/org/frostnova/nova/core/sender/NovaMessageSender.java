@@ -2,6 +2,7 @@ package org.frostnova.nova.core.sender;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.core.alert.AlertBlockedException;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.health.PushActivityRecorder;
 import org.frostnova.nova.core.model.Message;
@@ -49,7 +50,9 @@ public class NovaMessageSender {
     /**
      * 推送闸门
      * <p>
-     * 只作用于 {@link #send(Message)}：{@link #sendNow(Message)} 是使用者主动发起的测试消息，
+     * 作用于 {@link #send(Message)} 与 {@link #sendAlert(Message)}：前者两道都拦，
+     * 后者只拦全局开关——静音挡的是打扰，告警正是要叫人的那一条。
+     * {@link #sendNow(Message)} 不受它管：那是使用者主动发起的测试消息，
      * 若也被静音拦下，只会让人以为「配置又出问题了」，与验证配置的初衷相悖。
      */
     private final PushGate pushGate;
@@ -120,6 +123,8 @@ public class NovaMessageSender {
 
     /**
      * 将消息加入至消息队列
+     * <p>
+     * 静音时段与全局开关关着时丢弃并记时间线，普通推送、命令回复、首推提示都走这一口。
      * @param message 消息
      */
     public void send(Message message) {
@@ -133,7 +138,7 @@ public class NovaMessageSender {
             //
             // 走事件分发那条路的推送在更早一层就被拦下了（{@link NovaHandlerListener}），
             // 那一层记的是一整场的聚合条目（谁的通知、几个会话）。到得了这里的是
-            // <b>不经过事件分发的那些</b>：命令回复、告警、首推提示——它们没有「一场」可归，
+            // <b>不经过事件分发的那些</b>：命令回复、首推提示——它们没有「一场」可归，
             // 因此逐条记；两层各记各的，不会为同一条消息记两遍
             timeline.record(TimelineEvent.of(block.timelineType(), TimelineEvent.Level.WARN)
                     .channel(describeTarget(message))
@@ -144,6 +149,40 @@ public class NovaMessageSender {
             return;
         }
 
+        enqueue(message);
+    }
+
+    /**
+     * 将告警消息加入发送队列
+     * <p>
+     * 与 {@link #send(Message)} 只差在闸门：告警不受静音时段拦——静音挡的是打扰，
+     * 而告警恰恰是出了事要叫人的那一条，半夜也得发。全局开关照旧拦：
+     * 「关闭后所有推送都会被丢弃」说的就是全部，不含告警这个例外。
+     * <p>
+     * 被拦下时<b>抛出</b>，而不是像 {@link #send(Message)} 那样丢弃加记时间线：
+     * 告警的调用方（{@link org.frostnova.nova.core.alert.AlertService}）要向使用者
+     * 如实报告「没发出去、为什么」，静默返回只会让界面与时间线都写着已报出——
+     * 两头各记各的，不会为同一条告警记两遍。
+     * <p>
+     * 抛的是 {@link AlertBlockedException}：告警服务认这个类型，把「被开关拦下」
+     * 当作这一次的最终失败——记一条没发出去及原因，不进重投队列，开关打开后也不补发。
+     * @param message 告警消息
+     */
+    public void sendAlert(Message message) {
+        if (!pushGate.alertsAllowed()) {
+            throw new AlertBlockedException(pushGate.blockReason() + "，这条告警没有发出");
+        }
+
+        // 标成告警：告警送达后不跟首推用法提示——提示教的是「推送怎么用」，
+        // 而此刻收件人要处理的是出了的事，两件事不该挨在一起
+        message.setAlert(true);
+        enqueue(message);
+    }
+
+    /**
+     * 把过闸的消息排进平台队列：找不到平台配置的丢弃，队列满了丢最旧的
+     */
+    private void enqueue(Message message) {
         Optional<Sender> optionalSender = senderService.getSender(message.getPlatform());
         if (optionalSender.isEmpty()) {
             log.warn("未找到 {} 推送平台配置, 请检查配置文件是否正确配置, 已丢弃消息: [{}] {}: {}", message.getPlatform(), message.getType().getStr(), message.getNum(), message.getDisplay());
@@ -524,8 +563,9 @@ public class NovaMessageSender {
             releaseOnce(message, chargedOn);
         }
 
-        // 文字到了才算「这个会话听见过机器人说话」，图片降级那一路同样算
-        if (push && delivered) {
+        // 文字到了才算「这个会话听见过机器人说话」，图片降级那一路同样算；
+        // 告警不算——它不是推送，跟着出事的通报教人怎么用机器人，说的是另一件事
+        if (push && delivered && !message.isAlert()) {
             tipAfterFirstPush(sender, message);
         }
 

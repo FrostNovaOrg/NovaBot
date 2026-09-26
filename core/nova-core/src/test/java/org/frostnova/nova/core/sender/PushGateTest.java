@@ -71,6 +71,18 @@ class PushGateTest {
         assertTrue(gate(quiet("09:00", "09:00")).allowedAt(LocalTime.of(9, 0)));
     }
 
+    @Test
+    @DisplayName("告警不问静音时段, 但全局开关照拦")
+    void alertsAllowedIgnoresQuietHoursButNotMasterSwitch() {
+        // 静音挡的是「不想被机器人吵」的打扰，而告警恰恰是出了事要叫人的那一条；
+        // 全局开关的说明是「关闭后所有推送都会被丢弃」，不含例外
+        assertTrue(gate(quiet("23:00", "08:00")).alertsAllowed(), "静音时段配着也不拦告警——它压根不问时刻");
+
+        NovaCoreProperties off = new NovaCoreProperties();
+        off.getPush().setEnabled(false);
+        assertFalse(gate(off).alertsAllowed(), "全局开关关着时告警照拦");
+    }
+
     private NovaCoreProperties quiet(String start, String end) {
         NovaCoreProperties properties = new NovaCoreProperties();
         properties.getPush().setQuietStart(start);

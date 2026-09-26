@@ -235,8 +235,8 @@ function renderTestResult(res, targetText) {
     + (res.advice ? '<p class="tr-advice">' + esc(res.advice) + '</p>' : '')
     + '<ul>'
     + '<li>机器人此刻在不在线：看本页上面那张卡，账号掉线时接口照样通，消息却没人收得到。</li>'
-    + '<li>推送是不是被停着：首页那个「暂停全部推送」按下去之后，这一条也会被丢掉；'
-    + '静音时段里同理。</li>'
+    + '<li>不用查首页那个「暂停全部推送」和静音时段：这一条当场直发、不进队列，'
+    + '两处都拦不到它；它发不出去，就是链路本身的问题。</li>'
     + '<li>' + esc(term('bot.family', '机器人程序')) + ' 那侧的日志：填对了地址与 Token 却仍不通时，答案通常只在它自己的日志里。</li>'
     + '</ul>'
     + (res.raw ? '<p class="tr-advice">接口原始响应：' + esc(JSON.stringify(res.raw)) + '</p>' : '');

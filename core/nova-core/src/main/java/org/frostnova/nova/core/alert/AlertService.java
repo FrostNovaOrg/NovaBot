@@ -43,6 +43,11 @@ import java.util.concurrent.TimeUnit;
  *
  * <ul>
  *     <li><b>有通道可用但全都抛了异常</b> → 入队重投</li>
+ *     <li><b>有一路被全局推送开关拦下</b>（抛的是 {@link AlertBlockedException}）→ <b>不重投</b>。
+ *         开关是使用者自己关的，那是「先别发」，不是「等会儿再发」：攒到开关打开的
+ *         那一刻集中补发，正是 {@link org.frostnova.nova.core.sender.PushGate} 注释里
+ *         说不许的那种轰炸。它算<b>这一次的最终失败</b>——记一条没发出去及原因，
+ *         工程日志一行、不打栈</li>
  *     <li><b>一个通道成功、另一个失败</b> → <b>不重投</b>。人已经收到了这条告警，
  *         重投只会让他收到第二条一样的</li>
  *     <li><b>压根没有配置任何通道</b> → 不入队。没有出口，重投一万次也是失败，
@@ -166,6 +171,14 @@ public class AlertService {
         Delivery delivery = deliver(subject, content);
 
         if (delivery.delivered()) {
+            return;
+        }
+
+        if (delivery.blocked()) {
+            // 被总开关拦下的告警在 deliver 里已记过一条（一行日志＋一条时间线），
+            // 这里只剩一件事可做：别放进队列。队列是给「通道坏了、等它自己好」的，
+            // 开关却是使用者自己关的——攒着，等开关打开的那一刻集中补出去，
+            // 正是闸门注释里不许的那种轰炸，只是把静音换成了开关
             return;
         }
 
@@ -331,6 +344,14 @@ public class AlertService {
                 continue;
             }
 
+            if (delivery.blocked()) {
+                // 重投撞上开关关闭：这一条从队列里拿掉，不再放回去。
+                // 留在队里的话，开关一打开它就会带着【补发】标记涌出去
+                log.warn("告警 [{}] {} 重投被全局推送开关拦下, 不再重投（发生于 {}）",
+                        alert.key(), alert.subject(), alert.occurredAtText());
+                continue;
+            }
+
             PendingAlert retried = alert.retried();
             if (retried.attempts() > properties.getAlert().getRetryMaxAttempts()) {
                 log.error("告警 [{}] {} 重投 {} 次仍失败, 放弃。它发生于 {}, 始终没能送出去",
@@ -356,6 +377,7 @@ public class AlertService {
     private Delivery deliver(String subject, String content) {
         boolean attempted = false;
         boolean delivered = false;
+        boolean blocked = false;
 
         for (AlertChannel channel : channels.orderedStream().toList()) {
             if (!channel.isAvailable()) {
@@ -370,6 +392,18 @@ public class AlertService {
                         .channel(channel.name())
                         .text(channel.name() + "已报出：" + shorten(subject))
                         .detail("subject", subject)
+                        .build());
+            } catch (AlertBlockedException e) {
+                // 被总开关拦下是预期内的情形，不是故障：工程日志一行、不打栈。
+                // 仍要记——「没收到告警」在使用者眼里与「没出事」长得一样
+                blocked = true;
+                log.warn("{} 告警被全局推送开关拦下, 这一次算没发出去, 不再重投: {}",
+                        channel.name(), e.getMessage());
+                timeline.record(TimelineEvent.of(TimelineEventType.ALERT_FAILED, TimelineEvent.Level.WARN)
+                        .channel(channel.name())
+                        .text(channel.name() + "发不出去（" + e.getMessage() + "）：" + shorten(subject))
+                        .detail("subject", subject)
+                        .detail("reason", e.getMessage())
                         .build());
             } catch (Exception e) {
                 // 单个通道失败不应影响其他通道
@@ -392,7 +426,7 @@ public class AlertService {
                     .build());
         }
 
-        return new Delivery(attempted, delivered);
+        return new Delivery(attempted, delivered, blocked);
     }
 
     /**
@@ -448,7 +482,8 @@ public class AlertService {
      * 一次投递的结果
      * @param attempted 是否至少有一个通道可用、被试过
      * @param delivered 是否至少有一个通道成功
+     * @param blocked 是否有一路被全局推送开关拦下——被拦下的告警算最终失败，不入队也不重投
      */
-    private record Delivery(boolean attempted, boolean delivered) {
+    private record Delivery(boolean attempted, boolean delivered, boolean blocked) {
     }
 }
