@@ -18,12 +18,11 @@ import java.awt.Font;
 import java.awt.Point;
 import java.awt.image.BufferedImage;
 import java.time.Duration;
-import java.util.HashSet;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
@@ -113,7 +112,8 @@ public class BilibiliDataQueryPainter {
      * 整张图等头像的总时间：到点没取回的空着位置照出图
      * <p>
      * 一张图五十行，逐张同步下，源站慢时就是五十倍的等待；整图只等这么久，
-     * 之后画手只认缓存里已经有的那几张
+     * 之后画手只认缓存里已经有的那几张。表头那一张也算在这里面：表头只有
+     * 一张头像，但它自己就是一整段同步等待，单给它一段预算的话，源站慢时整图要等两段
      */
     private static final long AVATAR_WAIT_MILLIS = 3000;
 
@@ -135,7 +135,7 @@ public class BilibiliDataQueryPainter {
             .build();
 
     /**
-     * 同一张地址同一时间只排一趟下载，别的请求跟着那只排队的结果走
+     * 同一张头像同一时间只排一趟下载，别的请求跟着那只排队的结果走
      */
     private final ConcurrentHashMap<String, CompletableFuture<BufferedImage>> avatarInFlight = new ConcurrentHashMap<>();
 
@@ -169,6 +169,7 @@ public class BilibiliDataQueryPainter {
      * @return 图片的 Base64 编码，绘制失败时为空
      */
     public Optional<String> paintCards(Header header, List<DataCard> cards, String footnote) {
+        prefetchAvatars(List.of(headerFace(header)));
         return render(header, footnote, painter -> drawCards(painter, cards));
     }
 
@@ -183,8 +184,8 @@ public class BilibiliDataQueryPainter {
      */
     public Optional<String> paintRanking(Header header, List<UserScore> rows, int startRank,
                                          DoubleFunction<String> scoreText, String footnote) {
-        // 先把头像并发取回来，整图最多等 {@link #AVATAR_WAIT_MILLIS}；到点没取到的画空位
-        prefetchAvatars(rows);
+        // 先把表头与名次行的头像一起并发取回来，整图最多等 {@link #AVATAR_WAIT_MILLIS}；到点没取到的画空位
+        prefetchAvatars(avatarRequests(header, rows));
         return render(header, footnote, painter -> drawRanking(painter, rows, startRank, scoreText));
     }
 
@@ -274,13 +275,15 @@ public class BilibiliDataQueryPainter {
 
     /**
      * 绘制头部：圆形头像、标题与副标题。头像不可得时退化为纯文字头部
+     * <p>
+     * 头像只读缓存：下载在 {@link #prefetchAvatars} 里限时做完，与名次行同一份头像缓存，
+     * 出图这一路上不许再出现一次同步下载
      */
     private void drawHeader(CommonPainter painter, Header header) {
         int top = painter.getY();
         BufferedImage face = Optional.ofNullable(header.faceUrl())
                 .filter(StringUtil::isNotBlank)
-                .flatMap(url -> api.getBilibiliImage(atSize(url)))
-                .map(image -> ImageUtil.maskToCircle(ImageUtil.resize(image, AVATAR_SIZE, AVATAR_SIZE)))
+                .map(url -> avatar(url, AVATAR_SIZE))
                 .orElse(null);
 
         int textX = MARGIN;
@@ -369,6 +372,12 @@ public class BilibiliDataQueryPainter {
     }
 
     /**
+     * 一次头像取用：地址加出图尺寸
+     */
+    private record AvatarRequest(String url, int size) {
+    }
+
+    /**
      * 绘制排行榜的一行：名次、昵称、比例条与得分
      */
     private void drawRankingRow(CommonPainter painter, int rank, UserScore user, double topScore,
@@ -379,7 +388,7 @@ public class BilibiliDataQueryPainter {
                 new Point(MARGIN + RANK_TEXT_X, y + 6));
 
         // 头像取不到就空着位置，让各行昵称仍然左端对齐
-        BufferedImage avatar = avatar(user.userFace());
+        BufferedImage avatar = avatar(user.userFace(), RANKING_AVATAR_SIZE);
         if (avatar != null) {
             painter.drawImage(avatar,
                     new Point(MARGIN + layout.avatarX(), y + (RANKING_ROW_HEIGHT - RANKING_AVATAR_SIZE) / 2));
@@ -413,16 +422,21 @@ public class BilibiliDataQueryPainter {
      * 等到点就往下画：没取回的空着位置，别让整张图跟着一张头像等下去。
      * 只等「已经排上队的」那一批，画这一路不再下载（见 {@link #avatar}）
      */
-    private void prefetchAvatars(List<UserScore> rows) {
+    private void prefetchAvatars(List<AvatarRequest> requests) {
         long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(AVATAR_WAIT_MILLIS);
 
         Map<String, CompletableFuture<BufferedImage>> pending = new LinkedHashMap<>();
-        for (UserScore row : rows) {
-            String url = row.userFace();
-            if (StringUtil.isBlank(url) || avatarCache.getIfPresent(url) != null) {
+        Map<String, AvatarRequest> queued = new LinkedHashMap<>();
+        for (AvatarRequest request : requests) {
+            if (StringUtil.isBlank(request.url())) {
                 continue;
             }
-            pending.put(url, startAvatarFetch(url));
+            String key = cacheKey(request);
+            if (queued.containsKey(key) || avatarCache.getIfPresent(key) != null) {
+                continue;
+            }
+            queued.put(key, request);
+            pending.put(key, startAvatarFetch(request));
         }
         if (pending.isEmpty()) {
             return;
@@ -436,13 +450,13 @@ public class BilibiliDataQueryPainter {
         Map<String, CompletableFuture<BufferedImage>> secondTry = new LinkedHashMap<>();
         for (Map.Entry<String, CompletableFuture<BufferedImage>> entry : pending.entrySet()) {
             if (entry.getValue().isCompletedExceptionally() && avatarCache.getIfPresent(entry.getKey()) == null) {
-                secondTry.put(entry.getKey(), startAvatarFetch(entry.getKey()));
+                secondTry.put(entry.getKey(), startAvatarFetch(queued.get(entry.getKey())));
             }
         }
         if (!secondTry.isEmpty()) {
             awaitAvatars(secondTry, deadline);
         }
-        warnAvatarsNotFetched(rows, pending, secondTry);
+        warnAvatarsNotFetched(queued, pending, secondTry);
     }
 
     /**
@@ -452,17 +466,15 @@ public class BilibiliDataQueryPainter {
      * 这里合成一行。「源站明说没这张图」不算没取到——那是问出答案了的，另有失败缓存记着。
      * 原因不带异常原文：原文里裹着完整地址
      */
-    private void warnAvatarsNotFetched(List<UserScore> rows,
+    private void warnAvatarsNotFetched(Map<String, AvatarRequest> queued,
                                        Map<String, CompletableFuture<BufferedImage>> pending,
                                        Map<String, CompletableFuture<BufferedImage>> secondTry) {
         Map<String, Integer> reasons = new LinkedHashMap<>();
-        Set<String> counted = new HashSet<>();
-        for (UserScore row : rows) {
-            String url = row.userFace();
-            if (StringUtil.isBlank(url) || !counted.add(url) || avatarCache.getIfPresent(url) != null) {
+        for (String key : queued.keySet()) {
+            if (avatarCache.getIfPresent(key) != null) {
                 continue;
             }
-            CompletableFuture<BufferedImage> attempt = secondTry.getOrDefault(url, pending.get(url));
+            CompletableFuture<BufferedImage> attempt = secondTry.getOrDefault(key, pending.get(key));
             reasons.merge(missReason(attempt), 1, Integer::sum);
         }
         if (reasons.isEmpty()) {
@@ -472,7 +484,7 @@ public class BilibiliDataQueryPainter {
                 .map(entry -> entry.getKey() + "×" + entry.getValue())
                 .collect(Collectors.joining("、"));
         int missed = reasons.values().stream().mapToInt(Integer::intValue).sum();
-        log.warn("名次行有 {} 张头像这次没取到（{}），位置留空、不记失败，源站好了下一张图照常再取", missed, breakdown);
+        log.warn("整张图有 {} 张头像这次没取到（{}），位置留空、不记失败，源站好了下一张图照常再取", missed, breakdown);
     }
 
     /**
@@ -510,19 +522,20 @@ public class BilibiliDataQueryPainter {
     }
 
     /**
-     * 排一趟头像下载；同一张地址在飞时跟着那只走，死掉的那只当场让位
+     * 排一趟头像下载；同一张头像在飞时跟着那只走，死掉的那只当场让位
      * <p>
      * 排不进队的那条<b>当场从在飞表拿掉</b>：留着它，源站一直挂时这张表跟着每个新地址一直涨、
      * 没有上界——表里只留排上队与正在取的，条数至多是线程数＋队列长
      */
-    private CompletableFuture<BufferedImage> startAvatarFetch(String url) {
-        CompletableFuture<BufferedImage> future = avatarInFlight.compute(url, (key, existing) -> {
+    private CompletableFuture<BufferedImage> startAvatarFetch(AvatarRequest request) {
+        String key = cacheKey(request);
+        CompletableFuture<BufferedImage> future = avatarInFlight.compute(key, (ignored, existing) -> {
             if (existing != null && !existing.isCompletedExceptionally()) {
                 return existing;
             }
             CompletableFuture<BufferedImage> fresh = new CompletableFuture<>();
             try {
-                AVATAR_FETCHERS.execute(() -> downloadAvatar(key, fresh));
+                AVATAR_FETCHERS.execute(() -> downloadAvatar(request, fresh));
             } catch (RejectedExecutionException e) {
                 // 排不进去就当没取到，出图不受影响；不落失败缓存，下一趟能排上就照常取
                 fresh.completeExceptionally(e);
@@ -530,7 +543,7 @@ public class BilibiliDataQueryPainter {
             return fresh;
         });
         if (future.isCompletedExceptionally()) {
-            avatarInFlight.remove(url, future);
+            avatarInFlight.remove(key, future);
         }
         return future;
     }
@@ -543,34 +556,72 @@ public class BilibiliDataQueryPainter {
      * 记 6 小时会把源站刚好不好的那几分钟记成接下来几小时都没头像。
      * 分界在 {@link BilibiliApiUtil#fetchBilibiliImage(String)}：回空＝源站明说没图，抛回＝这次没取成
      */
-    private void downloadAvatar(String url, CompletableFuture<BufferedImage> future) {
+    private void downloadAvatar(AvatarRequest request, CompletableFuture<BufferedImage> future) {
+        String key = cacheKey(request);
         try {
-            BufferedImage ready = api.fetchBilibiliImage(atSize(url, RANKING_AVATAR_SIZE))
+            BufferedImage ready = api.fetchBilibiliImage(atSize(request.url(), request.size()))
                     .map(image -> ImageUtil.maskToCircle(
-                            ImageUtil.resize(image, RANKING_AVATAR_SIZE, RANKING_AVATAR_SIZE)))
+                            ImageUtil.resize(image, request.size(), request.size())))
                     .orElse(null);
-            avatarCache.put(url, ready == null ? FAILED_AVATAR : ready);
+            avatarCache.put(key, ready == null ? FAILED_AVATAR : ready);
             future.complete(ready);
         } catch (RuntimeException e) {
             future.completeExceptionally(e);
         } finally {
-            avatarInFlight.remove(url, future);
+            avatarInFlight.remove(key, future);
         }
     }
 
     /**
-     * 取排行榜用的圆形头像，只读缓存
+     * 取要用的圆形头像，只读缓存
      * <p>
      * 下载在 {@link #prefetchAvatars} 里排队做，这里只认缓存里已经有的：
      * 出图这一路上不许再出现一次同步下载，否则源站一慢整张图就跟着慢
      */
-    private BufferedImage avatar(String url) {
+    private BufferedImage avatar(String url, int size) {
         if (StringUtil.isBlank(url)) {
             return null;
         }
-        BufferedImage cached = avatarCache.getIfPresent(url);
+        BufferedImage cached = avatarCache.getIfPresent(cacheKey(url, size));
         // 哨兵值是「源站明说没有」，画成空位；没缓存过（等到点没等到）也是空位
         return cached == null || cached == FAILED_AVATAR ? null : cached;
+    }
+
+    /**
+     * 表头那张头像的取用：表头画 {@link #AVATAR_SIZE} 大
+     */
+    private static AvatarRequest headerFace(Header header) {
+        return new AvatarRequest(header.faceUrl(), AVATAR_SIZE);
+    }
+
+    /**
+     * 一张图要取的头像：表头那张排在最前，跟着是各行的
+     * <p>
+     * 排序有实义：线程一批一批地开取，源站慢时表头排在最前先拿到线程，
+     * 不会排在几十行后面干等到点
+     */
+    private static List<AvatarRequest> avatarRequests(Header header, List<UserScore> rows) {
+        List<AvatarRequest> requests = new ArrayList<>();
+        requests.add(headerFace(header));
+        for (UserScore row : rows) {
+            requests.add(new AvatarRequest(row.userFace(), RANKING_AVATAR_SIZE));
+        }
+        return requests;
+    }
+
+    /**
+     * 缓存条目与在飞条目的键：地址加出图尺寸
+     * <p>
+     * 表头要 {@link #AVATAR_SIZE}、名次行要 {@link #RANKING_AVATAR_SIZE}，同一张地址两种
+     * 尺寸各是各的条目：共用一个键的话，先落库的那份会被另一处直接画上，一处放大会糊、
+     * 一处缩小会虚。缓存仍是这一张表、同一套过期与「源站明说没图」的记法
+     */
+    private static String cacheKey(String url, int size) {
+        return url + "@" + size;
+    }
+
+    private static String cacheKey(AvatarRequest request) {
+        return cacheKey(request.url(), request.size());
     }
 
     /**
@@ -604,14 +655,7 @@ public class BilibiliDataQueryPainter {
     }
 
     /**
-     * 为图片地址附加缩放参数，避免下载原图
-     */
-    private String atSize(String url) {
-        return atSize(url, AVATAR_SIZE);
-    }
-
-    /**
-     * 为图片地址附加指定宽度的缩放参数。榜单头像只有 30px，下原图既慢又浪费
+     * 为图片地址附加指定宽度的缩放参数，避免下载原图。榜单头像只有 30px，下原图既慢又浪费
      */
     private String atSize(String url, int size) {
         return url.contains("@") ? url : url + "@" + size + "w.webp";
