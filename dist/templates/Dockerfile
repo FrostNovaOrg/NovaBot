@@ -1,28 +1,29 @@
 # NovaBot 运行镜像
 #
-# 构建：
+# 构建（镜像名自定，与 README 一样用 novabot）：
 #   ./build.sh
-#   docker build -f dist/templates/Dockerfile -t novabot:4.1.0 dist/build
+#   docker build -f dist/templates/Dockerfile -t novabot dist/build
 #
 # 运行：
-#   docker run -d --name starbot \
+#   docker run -d --name novabot \
 #     --restart unless-stopped \
 #     -v novabot-data:/app \
 #     -p 127.0.0.1:7827:7827 \
-#     novabot:4.1.0
+#     novabot
 #
 # 卷必须挂在 /app。程序把配置、登录凭据、推送规则、插件依赖全部写在工作目录下，
 # 挂到 /app/data 之类的子目录等于什么都没持久化，容器一重建就要重新扫码。
 #
-# 程序文件在镜像的 /opt/starbot，每次启动由入口脚本同步到 /app，
-# 所以换用新镜像即完成升级，卷里的配置与登录态原样保留。
+# 程序文件在镜像的 /opt/starbot，每次启动由入口脚本同步到 /app。
+# 换镜像会换掉卷上的程序与 lib/，配置与登录态留在卷里。
+# plugins-lib/ 只建目录，不从镜像铺到卷上，这一目录要自己换。
 #
 # 建议用具名卷（如上）。用绑定挂载时宿主目录属主须为容器内的 starbot（uid 10001），
 # 否则程序无权写入：sudo chown -R 10001:10001 ./data
 #
 # 调整 JVM 参数用 -e JAVA_OPTS="-Xmx1g"，会追加在 start.sh 的默认值之后生效。
 #
-# 首次启动需扫码登录：docker logs -f starbot
+# 首次启动需扫码登录：docker logs -f novabot
 
 FROM eclipse-temurin:17-jre-noble
 
