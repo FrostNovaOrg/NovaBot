@@ -454,10 +454,18 @@ public final class DemoAssets {
         data.setLiveMetric(platform, STREAMER_UID, BilibiliLiveMetric.FANS_MEDAL_AT_START, 2_180);
         data.setLiveMetric(platform, STREAMER_UID, BilibiliLiveMetric.GUARD_AT_START, 22);
 
+        // 礼物四档都有，每档种数 1／2／3／5，个数有多有少：888／66、45／6、5、1／0.5、0.3、0.2、0.1、0
         data.recordLiveGift(platform, STREAMER_UID, 900_001L, "示例甲", 888, 3, "");
         data.recordLiveGift(platform, STREAMER_UID, 900_002L, "示例乙", 66, 9, "");
         data.recordLiveGift(platform, STREAMER_UID, 900_003L, "示例丙", 6, 18, "");
         data.recordLiveGift(platform, STREAMER_UID, 900_004L, "示例丁", 0, 99, "");
+        data.recordLiveGift(platform, STREAMER_UID, 900_005L, "示例戊", 45, 21, "");
+        data.recordLiveGift(platform, STREAMER_UID, 900_006L, "示例己", 5, 47, "");
+        data.recordLiveGift(platform, STREAMER_UID, 900_007L, "示例庚", 1, 26, "");
+        data.recordLiveGift(platform, STREAMER_UID, 900_008L, "示例辛", 0.5, 12, "");
+        data.recordLiveGift(platform, STREAMER_UID, 900_009L, "示例壬", 0.3, 58, "");
+        data.recordLiveGift(platform, STREAMER_UID, 900_010L, "示例癸", 0.2, 25, "");
+        data.recordLiveGift(platform, STREAMER_UID, 900_011L, "示例子", 0.1, 7, "");
 
         double[] danmu = {164, 121, 88, 57, 36};
         double[] gift = {72.4, 48.0, 31.2, 16.8, 8.6};
