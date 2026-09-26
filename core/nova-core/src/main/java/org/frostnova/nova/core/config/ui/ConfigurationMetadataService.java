@@ -22,6 +22,8 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 配置项元数据服务
@@ -239,10 +241,18 @@ public class ConfigurationMetadataService {
     }
 
     /**
+     * 段界。Javadoc 的第一句常常不带句号，后面用这个标签另起一段；
+     * 标签若直接删掉，两段就只剩一个空格，读起来像一句。
+     */
+    private static final Pattern FIRST_PARAGRAPH = Pattern.compile("<p\\b[^>]*>", Pattern.CASE_INSENSITIVE);
+
+    /**
      * 清理配置项说明
      * <p>
      * 元数据中的说明直接取自 Javadoc，含有 &lt;p&gt; 等 HTML 标签与 {@code @link}、
      * {@code @code} 等内联标记，直接展示在界面上会出现标签文本与全限定类名。
+     * 第一段末尾没有句号时先补上，再接后文，读出来是两句。
+     * 成对星号和反引号是写说明时的记号，界面按纯文本摆，记号去掉、字留下。
      * @param description 原始说明
      * @return 清理后的说明
      */
@@ -252,8 +262,29 @@ public class ConfigurationMetadataService {
         if (description == null) {
             return null;
         }
+        Matcher paragraph = FIRST_PARAGRAPH.matcher(description);
+        if (!paragraph.find()) {
+            return plain(description);
+        }
+        String head = plain(description.substring(0, paragraph.start()));
+        String body = plain(description.substring(paragraph.end()));
+        if (head.isEmpty()) {
+            return body;
+        }
+        if (body.isEmpty()) {
+            return head;
+        }
+        if (!endsWithSentencePunctuation(head)) {
+            head = head + "。";
+        }
+        return head + body;
+    }
 
-        return description
+    /**
+     * 去掉标签与内联标记，收成一行可读的纯文本
+     */
+    private static String plain(String description) {
+        return dropMarkup(description
                 .replaceAll("<[^>]+>", "")
                 // {@code X} / {@literal X} 取其内容
                 .replaceAll("\\{@(?:code|literal)\\s+([^}]*)}", "$1")
@@ -263,9 +294,22 @@ public class ConfigurationMetadataService {
                 .replaceAll("\\{@(?:link|linkplain|value)\\s+([^}]*)}", "$1")
                 // 全限定类名只保留简单名：使用者不关心包路径
                 .replaceAll("(?<![\\w.])(?:[a-z][\\w]*\\.)+([A-Z][\\w]*)", "$1")
-                .replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+                .replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&"))
                 .replaceAll("[ \\t]+", " ")
                 .strip();
+    }
+
+    /**
+     * 成对星号与反引号是记号，不是要给使用者看的字。
+     * 三个星号连写（昵称掩码，形如 b***）中间没有字，配不成对，留着。
+     */
+    private static String dropMarkup(String text) {
+        return text.replaceAll("\\*\\*([^*]+)\\*\\*", "$1").replace("`", "");
+    }
+
+    private static boolean endsWithSentencePunctuation(String text) {
+        char last = text.charAt(text.length() - 1);
+        return "。！？.!?…".indexOf(last) >= 0;
     }
 
     /**
