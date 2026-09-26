@@ -4,6 +4,7 @@ import org.frostnova.nova.bilibili.BilibiliPlatform;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.event.dynamic.BilibiliDynamicUpdateEvent;
 import org.frostnova.nova.bilibili.exception.ResponseCodeException;
+import org.frostnova.nova.bilibili.exception.RiskCooldownException;
 import org.frostnova.nova.bilibili.model.Dynamic;
 import org.frostnova.nova.bilibili.model.Up;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
@@ -142,6 +143,9 @@ public class BilibiliDynamicService {
             } else {
                 log.warn("获取动态列表失败, 接口返回错误代码 {}: {}", e.getCode(), e.getMessage());
             }
+            return;
+        } catch (RiskCooldownException e) {
+            log.debug("获取动态列表被风控拦下, 正在冷却: {}", e.getMessage());
             return;
         } catch (Exception e) {
             log.debug("获取动态列表失败, 疑为网络故障: {}", e.getMessage());

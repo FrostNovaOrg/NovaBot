@@ -8,7 +8,9 @@ import org.frostnova.nova.bilibili.enums.DanmuType;
 import org.frostnova.nova.bilibili.exception.NetworkException;
 import org.frostnova.nova.bilibili.exception.RequestFailedException;
 import org.frostnova.nova.bilibili.exception.ResponseCodeException;
+import org.frostnova.nova.bilibili.exception.RiskCooldownException;
 import org.frostnova.nova.bilibili.health.BilibiliRiskMetrics;
+import org.frostnova.nova.bilibili.service.BilibiliStagedBackoff;
 import org.frostnova.nova.bilibili.model.*;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.util.HttpUtil;
@@ -17,6 +19,7 @@ import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -28,13 +31,19 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 /**
@@ -326,6 +335,29 @@ public class BilibiliApiUtil {
     private static final int CODE_ALREADY_FOLLOWING = 22014;
 
     /**
+     * 只读接口当次重试的暂时性业务码。写接口遇到这些码不重发。
+     */
+    private static final Set<Integer> TRANSIENT_RETRY_CODES = Set.of(-503, 4101130, 4101131, 4101132, 1024);
+
+    /**
+     * 被风控或限频拦下的业务码。不当次连试，改按接口冷却。
+     */
+    private static final Set<Integer> BLOCKED_CODES = Set.of(-412, -509, -799, 22015);
+
+    /**
+     * 冷却起步。仍被拦则翻倍，见 {@link #RISK_COOLDOWN_CAP}
+     */
+    private static final Duration RISK_COOLDOWN_BASE = Duration.ofMinutes(1);
+
+    /**
+     * 冷却最长一档。再往上翻只会在平台已经恢复之后还空等
+     */
+    private static final Duration RISK_COOLDOWN_CAP = Duration.ofMinutes(30);
+
+    private static final DateTimeFormatter COOLDOWN_CLOCK = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+            .withZone(ZoneId.of("Asia/Shanghai"));
+
+    /**
      * 收到 -352 后允许重算签名的最小密钥年龄，单位：秒
      * <p>
      * 比这更新的密钥重算出来多半还是同一份，重试没有意义，只是白白多打一次请求。
@@ -379,6 +411,54 @@ public class BilibiliApiUtil {
      * 是否已有线程正在因风控重算签名。同一时刻只放一个，避免 -352 一来就人人都去重算
      */
     private final AtomicBoolean signRefreshing = new AtomicBoolean();
+
+    /**
+     * 按接口路径（不含查询参数）分开的冷却
+     */
+    private final ConcurrentHashMap<String, BilibiliStagedBackoff> cooldowns = new ConcurrentHashMap<>();
+
+    /**
+     * 冷却到点后只放一个试探。试探这一次回来之前，其余请求直接失败
+     */
+    private final ConcurrentHashMap<String, AtomicBoolean> probeInFlight = new ConcurrentHashMap<>();
+
+    /**
+     * 最近一次把该接口拦下的码，解除冷却时写进日志
+     */
+    private final ConcurrentHashMap<String, String> lastBlockCodes = new ConcurrentHashMap<>();
+
+    /**
+     * 只调一次的调用。冷却结束后各补发一次，键在同一接口路径内去重
+     */
+    private final ConcurrentHashMap<String, ConcurrentHashMap<String, Runnable>> replays = new ConcurrentHashMap<>();
+
+    /**
+     * 非 0 业务码按「接口路径 + 码」计数，用来决定哪一次该换样本。按自然日清掉，见 {@link #nextBusinessCodeCount}
+     */
+    private final ConcurrentHashMap<String, AtomicLong> businessCodeCounts = new ConcurrentHashMap<>();
+
+    /**
+     * {@link #businessCodeCounts} 目前计的是哪一天。过了这一天就整表清掉
+     */
+    private LocalDate businessCodeDay;
+
+    private final Object businessCodeDayLock = new Object();
+
+    private static final ZoneId BUSINESS_CODE_ZONE = ZoneId.of("Asia/Shanghai");
+
+    private final AtomicBoolean replayTickerStarted = new AtomicBoolean();
+
+    private volatile ScheduledExecutorService replayTicker;
+
+    /**
+     * 测试注入时刻。生产用当前时间
+     */
+    private volatile Supplier<Instant> clock = Instant::now;
+
+    /**
+     * 测试自己推进时刻并调用 {@link #replayDue(Instant)}，不再另起线程
+     */
+    private volatile boolean clockOverridden;
 
     @Autowired
     public BilibiliApiUtil(HttpUtil http, NovaBilibiliProperties properties, BilibiliRiskMetrics riskMetrics) {
@@ -546,30 +626,247 @@ public class BilibiliApiUtil {
     }
 
     /**
-     * 按配置的次数重试执行请求
+     * 按配置的次数重试执行请求。
+     * <p>
+     * 只读接口的暂时性业务码沿用次数与间隔当次再试。被风控或限频拦下的不在这一轮里连打，
+     * 改按接口冷却；冷却期内直接失败，到点的下一次才是试探。
      */
     private JSONObject requestWithRetry(String url, String method, Map<String, String> headers, Map<String, Object> params) {
-        int maxTimes = Math.max(1, properties.getNetwork().getApiRetryMaxTimes());
-        RuntimeException last = null;
+        String path = shortUrl(url);
+        boolean probing = false;
+        try {
+            probing = acquireSendPermit(path, clock.get());
 
-        for (int attempt = 1; attempt <= maxTimes; attempt++) {
-            try {
-                JSONObject response = doRequest(url, method, headers, params);
-                return extractData(response, url);
-            } catch (ResponseCodeException e) {
-                // 业务错误代码通常重试也不会变化，直接抛出交由调用方判断
-                throw e;
-            } catch (RuntimeException e) {
-                last = e;
-                log.debug("请求 {} 第 {} 次失败: {}", shortUrl(url), attempt, e.getMessage());
+            int maxTimes = Math.max(1, properties.getNetwork().getApiRetryMaxTimes());
+            boolean read = isGet(method);
+            RuntimeException last = null;
 
-                if (attempt < maxTimes) {
-                    sleep(properties.getNetwork().getApiRetryInterval());
+            for (int attempt = 1; attempt <= maxTimes; attempt++) {
+                if (attempt > 1) {
+                    rejectIfStillCooling(path, clock.get());
+                }
+                try {
+                    JSONObject response = doRequest(url, method, headers, params);
+                    JSONObject data = extractData(response, url);
+                    noteProbeSuccess(path, clock.get());
+                    return data;
+                } catch (ResponseCodeException e) {
+                    if (BLOCKED_CODES.contains(e.getCode())) {
+                        block(path, Integer.toString(e.getCode()), clock.get());
+                        throw coolingException(path, clock.get());
+                    }
+                    if (read && TRANSIENT_RETRY_CODES.contains(e.getCode()) && attempt < maxTimes) {
+                        last = e;
+                        log.debug("请求 {} 第 {} 次返回暂时性业务码 {}: {}", path, attempt, e.getCode(), e.getMessage());
+                        sleep(properties.getNetwork().getApiRetryInterval());
+                        continue;
+                    }
+                    // 业务错误代码通常重试也不会变化，直接抛出交由调用方判断
+                    throw e;
+                } catch (HttpBlockedException e) {
+                    block(path, "HTTP " + e.status, clock.get());
+                    throw coolingException(path, clock.get());
+                } catch (RiskCooldownException e) {
+                    throw e;
+                } catch (RuntimeException e) {
+                    last = e;
+                    log.debug("请求 {} 第 {} 次失败: {}", path, attempt, e.getMessage());
+
+                    if (attempt < maxTimes) {
+                        sleep(properties.getNetwork().getApiRetryInterval());
+                    }
+                }
+            }
+
+            throw new RequestFailedException("请求 " + path + " 失败, 已重试 " + maxTimes + " 次", last);
+        } finally {
+            if (probing) {
+                releaseProbe(path);
+            }
+        }
+    }
+
+    /**
+     * 测试注入时刻。注入之后补发由测试调用 {@link #replayDue(Instant)}，不另起线程
+     */
+    void setClock(Supplier<Instant> clock) {
+        this.clockOverridden = true;
+        this.clock = clock == null ? Instant::now : clock;
+    }
+
+    /**
+     * 只调一次的调用被拦下时登记。同一接口、同一键只留最后一次，冷却到点后补发
+     */
+    public void scheduleReplay(String endpoint, String key, Runnable action) {
+        if (endpoint == null || endpoint.isBlank() || key == null || key.isBlank() || action == null) {
+            return;
+        }
+        replays.computeIfAbsent(shortUrl(endpoint), ignored -> new ConcurrentHashMap<>()).put(key, action);
+        ensureReplayTicker();
+    }
+
+    /**
+     * 把已经到点的补发各跑一次。时刻由调用方传入，测试不必睡眠
+     * @return 本轮实际跑了几条
+     */
+    int replayDue(Instant now) {
+        Instant when = now == null ? clock.get() : now;
+        int ran = 0;
+        for (String path : List.copyOf(replays.keySet())) {
+            BilibiliStagedBackoff backoff = cooldowns.get(path);
+            if (backoff != null) {
+                synchronized (backoff) {
+                    if (!backoff.due(when)) {
+                        continue;
+                    }
+                }
+            }
+            Map<String, Runnable> jobs = replays.remove(path);
+            if (jobs == null || jobs.isEmpty()) {
+                continue;
+            }
+            for (Runnable job : jobs.values()) {
+                ran++;
+                try {
+                    job.run();
+                } catch (RuntimeException e) {
+                    log.debug("冷却结束后补发 {} 失败: {}", path, e.getMessage());
                 }
             }
         }
+        return ran;
+    }
 
-        throw new RequestFailedException("请求 " + shortUrl(url) + " 失败, 已重试 " + maxTimes + " 次", last);
+    @PreDestroy
+    void stopReplayTicker() {
+        ScheduledExecutorService executor = replayTicker;
+        if (executor != null) {
+            executor.shutdownNow();
+        }
+    }
+
+    private void ensureReplayTicker() {
+        if (clockOverridden || !replayTickerStarted.compareAndSet(false, true)) {
+            return;
+        }
+        ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "bilibili-api-cooldown-replay");
+            thread.setDaemon(true);
+            return thread;
+        });
+        replayTicker = executor;
+        executor.scheduleWithFixedDelay(() -> {
+            try {
+                replayDue(clock.get());
+            } catch (RuntimeException e) {
+                log.warn("冷却后补发出错: {}", e.getMessage());
+            }
+        }, 15, 15, TimeUnit.SECONDS);
+    }
+
+    private static boolean isGet(String method) {
+        return method != null && method.equalsIgnoreCase("GET");
+    }
+
+    /**
+     * 冷却没到就直接失败。到点且还停在某一级上时，只放一个试探出去
+     * @return 这一次是否占住了试探名额
+     */
+    private boolean acquireSendPermit(String path, Instant now) {
+        BilibiliStagedBackoff backoff = cooldowns.get(path);
+        if (backoff == null) {
+            return false;
+        }
+        synchronized (backoff) {
+            if (!backoff.due(now)) {
+                throw coolingException(path, now);
+            }
+            if (backoff.getConsecutiveFailures() <= 0) {
+                return false;
+            }
+            AtomicBoolean gate = probeInFlight.computeIfAbsent(path, ignored -> new AtomicBoolean());
+            if (!gate.compareAndSet(false, true)) {
+                throw coolingException(path, now);
+            }
+            return true;
+        }
+    }
+
+    /**
+     * 同一次调用接着重发之前再看一眼。别的请求可能已经把这个接口拦进冷却
+     */
+    private void rejectIfStillCooling(String path, Instant now) {
+        BilibiliStagedBackoff backoff = cooldowns.get(path);
+        if (backoff == null) {
+            return;
+        }
+        synchronized (backoff) {
+            if (!backoff.due(now)) {
+                throw coolingException(path, now);
+            }
+        }
+    }
+
+    private void releaseProbe(String path) {
+        AtomicBoolean gate = probeInFlight.get(path);
+        if (gate != null) {
+            gate.set(false);
+        }
+    }
+
+    private void block(String path, String code, Instant now) {
+        BilibiliStagedBackoff backoff = cooldowns.computeIfAbsent(path,
+                ignored -> new BilibiliStagedBackoff(RISK_COOLDOWN_BASE, RISK_COOLDOWN_CAP));
+        synchronized (backoff) {
+            lastBlockCodes.put(path, code);
+            if (!backoff.due(now)) {
+                return;
+            }
+            int before = backoff.getConsecutiveFailures();
+            Duration delay = backoff.failed(now);
+            Instant next = now.plus(delay);
+            if (before == 0) {
+                log.info("接口 {} 被风控拦下（{}），进入冷却，{} 后再试", path, code, COOLDOWN_CLOCK.format(next));
+            } else {
+                log.info("接口 {} 仍被拦下（{}），冷却升到下一级，{} 后再试", path, code, COOLDOWN_CLOCK.format(next));
+            }
+        }
+    }
+
+    private void noteProbeSuccess(String path, Instant now) {
+        BilibiliStagedBackoff backoff = cooldowns.get(path);
+        if (backoff == null) {
+            return;
+        }
+        synchronized (backoff) {
+            if (backoff.getConsecutiveFailures() <= 0) {
+                return;
+            }
+            backoff.reset();
+            log.info("接口 {} 已恢复（此前 {}），冷却解除，{} 起照常请求",
+                    path, lastBlockCodes.getOrDefault(path, "未知"), COOLDOWN_CLOCK.format(now));
+        }
+    }
+
+    private RiskCooldownException coolingException(String path, Instant now) {
+        BilibiliStagedBackoff backoff = cooldowns.get(path);
+        long seconds = 60;
+        if (backoff != null) {
+            seconds = Math.max(0, backoff.remaining(now).getSeconds());
+        }
+        long minutes = Math.max(1, (seconds + 59) / 60);
+        return new RiskCooldownException(path, "请求 " + path + " 被风控拦下，约 " + minutes + " 分钟后再试");
+    }
+
+    /**
+     * HTTP 412。不当成普通网络异常，否则会按重试间隔连打
+     */
+    private static final class HttpBlockedException extends RuntimeException {
+        private final int status;
+
+        private HttpBlockedException(int status) {
+            this.status = status;
+        }
     }
 
     /**
@@ -595,6 +892,9 @@ public class BilibiliApiUtil {
             return http.getJson(target, headers);
         } catch (Exception e) {
             recordHttpStatus(url, e);
+            if (httpStatus(e) == 412) {
+                throw new HttpBlockedException(412);
+            }
             throw new NetworkException("请求 " + shortUrl(url) + " 时发生网络异常", e);
         }
     }
@@ -614,7 +914,7 @@ public class BilibiliApiUtil {
 
         Integer code = response.getInteger("code");
         if (code != null && code != 0) {
-            recordBusinessCode(code, response.getString("message"));
+            recordBusinessCode(url, code, response.getString("message"));
             throw new ResponseCodeException(code, Optional.ofNullable(response.getString("message")).orElse("未知错误"));
         }
 
@@ -1674,21 +1974,28 @@ public class BilibiliApiUtil {
      * <b>按响应状态码判定，不要按日志文本 grep</b>——日志时间戳里的 {@code .412} 会大量误匹配。
      */
     private void recordHttpStatus(String url, Throwable e) {
-        for (Throwable t = e; t != null; t = t.getCause()) {
-            if (t instanceof HttpStatusCodeException status) {
-                int code = status.getStatusCode().value();
-                if (code == 412) {
-                    riskMetrics.record(BilibiliRiskMetrics.Kind.HTTP_412, shortUrl(url));
-                }
-                return;
-            }
+        int code = httpStatus(e);
+        if (code == 412) {
+            riskMetrics.record(BilibiliRiskMetrics.Kind.HTTP_412, shortUrl(url));
         }
     }
 
+    private static int httpStatus(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof HttpStatusCodeException status) {
+                return status.getStatusCode().value();
+            }
+        }
+        return -1;
+    }
+
     /**
-     * 记录风控相关的业务错误代码
+     * 非 0 业务码都留下接口路径、码和原文。
+     * <p>
+     * 同一接口、同一码每次都计数，按上海的自然日清零。日志和样本只在当天第 1、10、100… 次换一版，避免刷屏。
+     * -352／-401／-509 原有的风控计数照旧，每次都记。
      */
-    private void recordBusinessCode(int code, String message) {
+    private void recordBusinessCode(String url, int code, String message) {
         BilibiliRiskMetrics.Kind kind = switch (code) {
             case -352 -> BilibiliRiskMetrics.Kind.CODE_352;
             case -401 -> BilibiliRiskMetrics.Kind.CODE_401;
@@ -1697,6 +2004,30 @@ public class BilibiliApiUtil {
         };
         if (kind != null) {
             riskMetrics.record(kind, message);
+        }
+        String path = shortUrl(url);
+        long count = nextBusinessCodeCount(path + " " + code, clock.get());
+        boolean sample = isMagnitude(count);
+        String text = message == null || message.isBlank() ? "（无说明）" : message;
+        riskMetrics.record(BilibiliRiskMetrics.Kind.BUSINESS_CODE, sample
+                ? path + " code=" + code + " message=" + text + " count=" + count
+                : null);
+        if (sample) {
+            log.info("接口 {} 返回业务码 {}：{}（第 {} 次）", path, code, text, count);
+        }
+    }
+
+    /**
+     * 当天这个接口这个码是第几次。过了上海时间的零点，计数从头来
+     */
+    private long nextBusinessCodeCount(String key, Instant now) {
+        LocalDate today = LocalDate.ofInstant(now, BUSINESS_CODE_ZONE);
+        synchronized (businessCodeDayLock) {
+            if (!today.equals(businessCodeDay)) {
+                businessCodeCounts.clear();
+                businessCodeDay = today;
+            }
+            return businessCodeCounts.computeIfAbsent(key, ignored -> new AtomicLong()).incrementAndGet();
         }
     }
 

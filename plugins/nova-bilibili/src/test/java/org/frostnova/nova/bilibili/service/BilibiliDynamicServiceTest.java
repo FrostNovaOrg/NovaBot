@@ -1,11 +1,17 @@
 package org.frostnova.nova.bilibili.service;
 
 import com.alibaba.fastjson2.JSONObject;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import org.frostnova.nova.bilibili.BilibiliPlatform;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.event.dynamic.BilibiliDynamicUpdateEvent;
+import org.frostnova.nova.bilibili.exception.RiskCooldownException;
 import org.frostnova.nova.bilibili.model.Dynamic;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
+import org.slf4j.LoggerFactory;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.model.PushUser;
 import org.junit.jupiter.api.BeforeEach;
@@ -123,6 +129,31 @@ class BilibiliDynamicServiceTest {
 
         assertEquals(1, published.size(), "转发是 UP 主自己的动作, 不该被开播动态的规则连坐");
         assertEquals("转发了动态", published.get(0).getAction());
+    }
+
+    @Test
+    @DisplayName("冷却期内轮询要写明被风控拦下、正在冷却")
+    void pollDuringCooldownSaysBlocked() {
+        when(api.getDynamicUpdateList()).thenThrow(new RiskCooldownException(
+                "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all",
+                "请求该接口被风控拦下，约 1 分钟后再试"));
+        Logger logger = (Logger) LoggerFactory.getLogger(BilibiliDynamicService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        Level previous = logger.getLevel();
+        logger.setLevel(Level.DEBUG);
+        logger.addAppender(appender);
+        try {
+            poll.run();
+        } finally {
+            logger.detachAppender(appender);
+            logger.setLevel(previous);
+        }
+        String text = appender.list.stream()
+                .map(ILoggingEvent::getFormattedMessage)
+                .reduce("", (left, right) -> left + "\n" + right);
+        assertTrue(text.contains("正在冷却"),
+                "冷却期内取动态失败，日志说成了别的故障: " + text);
     }
 
     /**
