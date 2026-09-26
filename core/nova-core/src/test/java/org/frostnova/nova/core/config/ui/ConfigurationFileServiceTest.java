@@ -668,6 +668,233 @@ class ConfigurationFileServiceTest {
         assertTrue(bad.isEmpty(), () -> "行内名单 " + bad.size() + " 问未销: " + String.join("; ", bad));
     }
 
+    /**
+     * 手写配置会把行内名单折成几行（{@code admins: [111,} 换行 {@code 222]}）。
+     * 行内序列里的换行只是空白，得跨行拼起来按名单读；保存时它占的所有行整体让位给
+     * 每行一项的块序列——只改键那一行会给文件留下半截方括号，整份配置从此读不了，
+     * 而保存接口照样回报成功。
+     */
+    @Test
+    @DisplayName("跨行写的行内名单按名单读写：保存后整块换成每行一项, 文件仍能整份读")
+    void multilineInlineListBehavesAsList() throws IOException {
+        Files.writeString(config, """
+                novabot:
+                  core:
+                    command:
+                      admins: [111,          # 超级管理员
+                        222]
+                      prefix: '!'            # 命令前缀
+                """, StandardCharsets.UTF_8);
+        String key = "novabot.core.command.admins";
+        List<String> bad = new ArrayList<>();
+
+        try {
+            assertEquals("111\n222", service.read().get(key), "跨行的行内名单应拼起来按名单读回");
+        } catch (AssertionError e) {
+            bad.add("① 跨行读值: " + e.getMessage());
+        }
+
+        try {
+            service.write(Map.of(key, "333"));
+            String text = content();
+            assertTrue(text.contains("- 333"), "存过一次应落成每行一项:\n" + text);
+            assertFalse(text.lines().anyMatch(l -> l.strip().equals("222]")),
+                    "续行必须整块让位, 留下来就是孤行:\n" + text);
+            String adminsLine = text.lines().filter(l -> l.contains("admins")).findFirst().orElseThrow();
+            assertFalse(adminsLine.contains("["), "键这一行上的半截方括号必须让位:\n" + adminsLine);
+        } catch (AssertionError | IOException e) {
+            bad.add("② 跨行存: " + e.getMessage());
+        }
+
+        try {
+            Map<String, Object> whole = new Yaml().load(Files.readString(config, StandardCharsets.UTF_8));
+            @SuppressWarnings("unchecked")
+            Map<String, Object> command = (Map<String, Object>) ((Map<String, Object>) ((Map<String, Object>) whole.get("novabot")).get("core")).get("command");
+            assertEquals("[333]", String.valueOf(command.get("admins")), "保存后的文件须还能整份读回同样的名单");
+        } catch (AssertionError | RuntimeException e) {
+            bad.add("③ 整份可读: " + e.getMessage());
+        }
+
+        try {
+            assertEquals("!", service.read().get("novabot.core.command.prefix"), "相邻键不该被写坏");
+        } catch (AssertionError e) {
+            bad.add("④ 相邻键: " + e.getMessage());
+        }
+
+        try {
+            Files.writeString(config, """
+                    novabot:
+                      core:
+                        command:
+                          admins: [111,
+                            222]
+                    """, StandardCharsets.UTF_8);
+            service.write(Map.of(key, "111\n222"));
+            assertEquals("111\n222", service.read().get(key), "一次存多行也不该被当成标量拦下");
+            Map<String, Object> whole = new Yaml().load(Files.readString(config, StandardCharsets.UTF_8));
+            @SuppressWarnings("unchecked")
+            Map<String, Object> command = (Map<String, Object>) ((Map<String, Object>) ((Map<String, Object>) whole.get("novabot")).get("core")).get("command");
+            assertEquals("[111, 222]", String.valueOf(command.get("admins")), "存多行后文件仍能整份读回同样的名单");
+        } catch (AssertionError | IOException | RuntimeException e) {
+            bad.add("⑤ 存多行: " + e.getMessage());
+        }
+
+        try {
+            // 认不全的写法（跨行且元素是对象）宁可拒存并说清原因，也不许写坏文件
+            Files.writeString(config, """
+                    novabot:
+                      core:
+                        command:
+                          admins: [111,
+                            {a: 1}]
+                    """, StandardCharsets.UTF_8);
+            String before = content();
+            int filesBefore;
+            try (var files = Files.list(dir)) {
+                filesBefore = (int) files.count();
+            }
+            IOException refused = assertThrows(IOException.class,
+                    () -> service.write(Map.of(key, "x")),
+                    "认不全的跨行写法应拒存, 而不是只改键那一行留下孤行");
+            assertTrue(refused.getMessage().contains(key), "拒存的原因里要说是哪一项: " + refused.getMessage());
+            assertEquals(before, content(), "拒存时文件一个字节都不能动");
+            try (var files = Files.list(dir)) {
+                assertEquals(filesBefore, files.count(), "拒存不是保存, 不该多出备份");
+            }
+        } catch (AssertionError | IOException e) {
+            bad.add("⑥ 认不全拒存: " + e.getMessage());
+        }
+
+        try {
+            // 对象列表的键这一行同理：跨行/内嵌的行内写法就地改字段会留下半截, 一样拒存
+            Files.writeString(config, """
+                    novabot:
+                      adapter:
+                        onebot:
+                          senders: [{name: a},
+                            {name: b}]
+                    """, StandardCharsets.UTF_8);
+            String before = content();
+            IOException refused = assertThrows(IOException.class,
+                    () -> service.writeListItemFields("novabot.adapter.onebot.senders", 0, Map.of("name", "qq-new")),
+                    "对象列表的跨行行内写法应拒存, 而不是建元素留下孤行");
+            assertTrue(refused.getMessage().contains("senders"), "拒存的原因里要说是哪一项: " + refused.getMessage());
+            assertEquals(before, content(), "拒存时文件一个字节都不能动");
+        } catch (AssertionError | IOException e) {
+            bad.add("⑦ 对象列表拒存: " + e.getMessage());
+        }
+
+        assertTrue(bad.isEmpty(), () -> "跨行行内名单 " + bad.size() + " 问未销: " + String.join("; ", bad));
+    }
+
+    /**
+     * 名单元素里带转义引号时按 YAML 引号规则还原：双引号里的 {@code \"} 与 {@code \\}、
+     * 单引号里的 {@code ''}。写回时 render 按同样规则转义，存一次再读回还是原来的值。
+     */
+    @Test
+    @DisplayName("名单元素里的转义引号按 YAML 规则还原：双引号 \\\" 与 \\\\、单引号 ''")
+    void quotedListItemsUnescape() throws IOException {
+        Files.writeString(config, "novabot:\n"
+                + "  core:\n"
+                + "    command:\n"
+                + "      admins: [\"a\\\"b\", 'it''s', \"c\\\\d\"]\n", StandardCharsets.UTF_8);
+        String key = "novabot.core.command.admins";
+        List<String> bad = new ArrayList<>();
+
+        try {
+            assertEquals("a\"b\nit's\nc\\d", service.read().get(key), "引号里的转义应还原成它包住的字符");
+        } catch (AssertionError e) {
+            bad.add("① 转义读值: " + e.getMessage());
+        }
+
+        try {
+            service.write(Map.of(key, "a\"b\nit's\nc\\d"));
+            assertEquals("a\"b\nit's\nc\\d", service.read().get(key), "存一次再读回应是同样的值");
+            Map<String, Object> whole = new Yaml().load(Files.readString(config, StandardCharsets.UTF_8));
+            @SuppressWarnings("unchecked")
+            Map<String, Object> command = (Map<String, Object>) ((Map<String, Object>) ((Map<String, Object>) whole.get("novabot")).get("core")).get("command");
+            assertEquals("[a\"b, it's, c\\d]", String.valueOf(command.get("admins")), "写出的块序列本身也是合法的名单");
+        } catch (AssertionError | IOException | RuntimeException e) {
+            bad.add("② 转义存: " + e.getMessage());
+        }
+
+        assertTrue(bad.isEmpty(), () -> "转义引号 " + bad.size() + " 问未销: " + String.join("; ", bad));
+    }
+
+    /**
+     * 行内名单行尾多写的逗号只是分隔符的痕迹，不是一项：读回不该多出一个空行，
+     * 与读到的内容原样再存一次也不该被当成改过。
+     */
+    @Test
+    @DisplayName("行内名单的尾逗号不读出空项")
+    void trailingCommaYieldsNoEmptyItem() throws IOException {
+        Files.writeString(config, """
+                novabot:
+                  core:
+                    command:
+                      admins: [111, 222, ]
+                """, StandardCharsets.UTF_8);
+        String key = "novabot.core.command.admins";
+        List<String> bad = new ArrayList<>();
+
+        try {
+            assertEquals("111\n222", service.read().get(key), "尾逗号不是一项, 不该多出空行");
+        } catch (AssertionError e) {
+            bad.add("① 尾逗号读值: " + e.getMessage());
+        }
+
+        try {
+            List<String> changed = service.write(Map.of(key, "111\n222"));
+            assertTrue(changed.isEmpty(), "读到的与要存的一致, 不该被当成改过: " + changed);
+            assertEquals("111\n222", service.read().get(key), "原样再存一次后仍是两项");
+        } catch (AssertionError | IOException e) {
+            bad.add("② 尾逗号再存: " + e.getMessage());
+        }
+
+        assertTrue(bad.isEmpty(), () -> "尾逗号 " + bad.size() + " 问未销: " + String.join("; ", bad));
+    }
+
+    /**
+     * 手写配置里空对象列表可以写成 {@code senders: [ ]}——方括号里只有空白，仍是合法的空表。
+     * 建第一个元素走的路与 {@code []} 同一条：方括号让位给块序列，存后文件整份仍可读。
+     */
+    @Test
+    @DisplayName("手写 senders: [ ] 是合法空表：建第一项不拒存, 存后文件整份可读")
+    void spacedEmptyListCreatesFirstItem() throws IOException {
+        Files.writeString(config, """
+                novabot:
+                  adapter:
+                    onebot:
+                      senders: [ ]
+                """, StandardCharsets.UTF_8);
+        List<String> bad = new ArrayList<>();
+
+        try {
+            Map<String, String> fields = new LinkedHashMap<>();
+            fields.put("name", "qq-onebot");
+            fields.put("api", "/send");
+            int changed = service.writeListItemFields("novabot.adapter.onebot.senders", 0, fields);
+            assertEquals(2, changed, "两个非空字段都应写下");
+            String text = content();
+            assertTrue(text.contains("- name: qq-onebot"), "第一项应落成每行一项的块序列:\n" + text);
+            assertFalse(text.contains("["), "空表记号应让位给块序列, 两者并存整份文件解析不了:\n" + text);
+        } catch (AssertionError | IOException e) {
+            bad.add("① 建第一项: " + e.getMessage());
+        }
+
+        try {
+            Map<String, Object> whole = new Yaml().load(Files.readString(config, StandardCharsets.UTF_8));
+            @SuppressWarnings("unchecked")
+            Map<String, Object> onebot = (Map<String, Object>) ((Map<String, Object>) ((Map<String, Object>) whole.get("novabot")).get("adapter")).get("onebot");
+            assertEquals("[{name=qq-onebot, api=/send}]", String.valueOf(onebot.get("senders")),
+                    "存后的文件须还能整份读回第一个元素");
+        } catch (AssertionError | RuntimeException e) {
+            bad.add("② 整份可读: " + e.getMessage());
+        }
+
+        assertTrue(bad.isEmpty(), () -> "带空白空表 " + bad.size() + " 问未销: " + String.join("; ", bad));
+    }
+
     // ============ 清空即移除（否则程序起不来） ============
 
     /**
