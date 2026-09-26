@@ -242,10 +242,38 @@ done
 # INSTALL_DIR 由命令行指定，误传 /usr 之类的路径会让清理毁掉系统。
 # 只在目标目录确实是既有安装时才清理，认不出来就停下来问，不硬着头皮删
 if [ -f "$INSTALL_DIR/NovaBot.jar" ] || [ -f "$INSTALL_DIR/StarBotCore.jar" ]; then
-    # 这两个目录完全由新版本重新生成
-    $SUDO rm -rf "$INSTALL_DIR/lib" "$INSTALL_DIR/plugins-lib"
+    # lib 完全由新版本重新生成。plugins-lib 不能整个删：里面可能有使用者自己放的
+    # 第三方依赖，删掉等于卸掉那些插件。只按构件名换掉本版自带的依赖；
+    # 版本号剥不出来时宁可留下也不误删。
+    # 匹配式里版本位限定为数字开头，否则 demo-lib-* 会连带匹配 demo-lib-extra-*，
+    # 第三方依赖若以自带依赖名为前缀也会被误删
+    $SUDO rm -rf "$INSTALL_DIR/lib"
     # 上一发行版副本：本版不再附带 StarBotCore.jar；升级时旧副本随旧 lib 一并删除
     $SUDO rm -f "$INSTALL_DIR/StarBotCore.jar"
+    $SUDO mkdir -p "$INSTALL_DIR/plugins-lib"
+    for jar in "$SOURCE_DIR"/plugins-lib/*.jar; do
+        [ -f "$jar" ] || continue
+        artifact="$(basename "$jar" | sed -E 's/-[0-9][^-]*\.jar$//')"
+        case "$artifact" in
+            *.jar) continue ;;
+        esac
+        $SUDO find "$INSTALL_DIR/plugins-lib" -maxdepth 1 -type f -name "$artifact-[0-9]*.jar" -delete
+    done
+    kept_n=0
+    kept_list=""
+    for jar in "$INSTALL_DIR"/plugins-lib/*.jar; do
+        [ -f "$jar" ] || continue
+        name="$(basename "$jar")"
+        if [ "$kept_n" -eq 0 ]; then
+            kept_list="$name"
+        else
+            kept_list="$kept_list $name"
+        fi
+        kept_n=$((kept_n + 1))
+    done
+    if [ "$kept_n" -gt 0 ]; then
+        info "plugins-lib 里保留了 ${kept_n} 个新包里没有的 jar：${kept_list}"
+    fi
 
     # plugins 不能整个删：里面可能有使用者自己放的第三方插件，删掉等于静默卸载。
     # 但内置插件带版本号，旧版留着会与新版同时被加载，故按构件名精确清理；

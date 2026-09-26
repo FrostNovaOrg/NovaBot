@@ -125,11 +125,11 @@ docker run -d --name novabot --restart unless-stopped -v novabot-data:/app -p 12
 
 ## 插件开发
 
-复制 [templates/nova-example-plugin](templates/nova-example-plugin) 作为起点，构建前先把本仓构件装进本地 Maven 仓（见[模板 README](templates/nova-example-plugin/README.md#依赖来源)）。用 `@NovaComponent` 注册组件、`@EventListener` 监听事件，实现 `NovaEventHandler` 即可作为推送处理器。插件 jar 放进 `plugins/`。第三方依赖不会在运行期下载，要自己放进 `plugins-lib/`。用安装脚本升级会清空 `plugins-lib/`，自己放的第三方 jar 升级后要重新放。[可监听的事件类型](docs/architecture.md#可监听的事件类型)列出了全部事件。
+复制 [templates/nova-example-plugin](templates/nova-example-plugin) 作为起点，构建前先把本仓构件装进本地 Maven 仓（见[模板 README](templates/nova-example-plugin/README.md#依赖来源)）。用 `@NovaComponent` 注册组件、`@EventListener` 监听事件，实现 `NovaEventHandler` 即可作为推送处理器。插件 jar 放进 `plugins/`。第三方依赖不会在运行期下载，要自己放进 `plugins-lib/`。用安装脚本升级时，自带的依赖按名字换成新版，自己放的 jar 留在原地，脚本会列出留了哪些。[可监听的事件类型](docs/architecture.md#可监听的事件类型)列出了全部事件。
 
 ## 升级与反馈
 
-- 升级见[用户手册 §8](docs/user-guide.md#8-升级)，配置与登录态保留。安装脚本会换掉 `lib/` 与 `plugins-lib/`；容器换镜像不会换掉卷里的 `plugins-lib/`，这一目录要自己换。从 5.3 及更早升级，根键 `starbot:` 要手改成 `novabot:`
+- 升级见[用户手册 §8](docs/user-guide.md#8-升级)，配置与登录态保留。安装脚本会整份换掉 `lib/`；`plugins-lib/` 里自带的依赖按名字换成新版，其余留下。容器换镜像不会换掉卷里的 `plugins-lib/`，这一目录要自己换。从 5.3 及更早升级，根键 `starbot:` 要手改成 `novabot:`
 - 问题与建议：请开 [Issue](../../issues)，附上控制台「日志」页或 `journalctl -u novabot` 的相关片段
 
 ## 许可证与上游
