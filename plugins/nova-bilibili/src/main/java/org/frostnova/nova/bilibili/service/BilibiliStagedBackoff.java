@@ -70,6 +70,17 @@ public class BilibiliStagedBackoff {
     }
 
     /**
+     * 回到「现在就可以」
+     * <p>
+     * 接口冷却的试探一旦通过，后面的请求应当照常发出，而不是再空等一个基准周期。
+     * 按周期复检的调用方仍用 {@link #succeeded(Instant)}，成功后回到基准间隔。
+     */
+    public void reset() {
+        consecutiveFailures = 0;
+        nextAttemptAt = null;
+    }
+
+    /**
      * 记一次失败：间隔升一级
      * @param now 当前时刻
      * @return 本次采用的间隔，便于日志如实写出「下次多久后再试」

@@ -1,6 +1,7 @@
 package org.frostnova.nova.bilibili.service;
 
 import org.frostnova.nova.bilibili.BilibiliPlatform;
+import org.frostnova.nova.bilibili.exception.RiskCooldownException;
 import org.frostnova.nova.bilibili.model.Up;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.model.PushUser;
@@ -8,10 +9,13 @@ import org.frostnova.nova.core.model.StreamerReference;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.datasource.DataSourceService;
 import org.frostnova.nova.core.datasource.DataSourceServiceConfig;
+import org.frostnova.nova.core.event.datasource.base.NovaDataSourceChangeEvent;
 import org.frostnova.nova.core.lang.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.regex.Matcher;
@@ -43,9 +47,19 @@ public class BilibiliDataSourceService implements DataSourceService {
 
     private final BilibiliApiUtil api;
 
-    @Autowired
+    /**
+     * 房间号晚到时用来通知直播间连接重新同步。测试不关心这一路时为空
+     */
+    private final ApplicationEventPublisher eventPublisher;
+
     public BilibiliDataSourceService(BilibiliApiUtil api) {
+        this(api, null);
+    }
+
+    @Autowired
+    public BilibiliDataSourceService(BilibiliApiUtil api, ApplicationEventPublisher eventPublisher) {
         this.api = api;
+        this.eventPublisher = eventPublisher;
     }
 
     @Override
@@ -66,6 +80,7 @@ public class BilibiliDataSourceService implements DataSourceService {
             return new StreamerWithFans(user, null);
         }
 
+        Long roomBefore = user.getRoomId();
         try {
             Up up = api.getUpInfoByUid(user.getUid());
 
@@ -78,12 +93,31 @@ public class BilibiliDataSourceService implements DataSourceService {
             if (StringUtil.isBlank(user.getFace())) {
                 user.setFace(up.getFace());
             }
+            if (roomBefore == null && user.getRoomId() != null) {
+                publishRoomReady(user);
+            }
             return new StreamerWithFans(user, up.getFans());
+        } catch (RiskCooldownException e) {
+            // 添加或启动时只走这一趟。冷却结束前没有下一轮，到点要自己再补一次
+            api.scheduleReplay(e.getEndpoint(), "complete-user:" + user.getUid(), () -> completePushUser(user));
+            log.error("补全 uid {} 的信息被风控拦下, 冷却结束后再补一次: {}", user.getUid(), e.getMessage());
+            return new StreamerWithFans(user, null);
         } catch (Exception e) {
             // 补全失败不应导致该主播被整体丢弃：直播间号缺失只影响直播推送，动态推送仍可正常工作
             log.error("补全 uid {} 的信息失败, 该主播的直播推送可能不可用: {}", user.getUid(), e.getMessage());
             return new StreamerWithFans(user, null);
         }
+    }
+
+    /**
+     * 房间号从没有变成有。直播间连接只在启动时同步一次，晚到的房间号再发一次数据源变更，
+     * 已有的监听会按当前配置重新同步；已经连上的房间由那次同步自己跳过。
+     */
+    private void publishRoomReady(PushUser user) {
+        if (eventPublisher == null) {
+            return;
+        }
+        eventPublisher.publishEvent(new NovaDataSourceChangeEvent(user, Instant.now()));
     }
 
     /**

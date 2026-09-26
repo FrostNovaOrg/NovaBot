@@ -1,6 +1,7 @@
 package org.frostnova.nova.bilibili.account;
 
 import org.frostnova.nova.bilibili.BilibiliPlatform;
+import org.frostnova.nova.bilibili.exception.RiskCooldownException;
 import org.frostnova.nova.bilibili.model.Up;
 import org.frostnova.nova.bilibili.service.BilibiliAccountService;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
@@ -13,6 +14,7 @@ import org.springframework.scheduling.TaskScheduler;
 
 import java.time.Instant;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 哔哩哔哩账号登录能力
@@ -29,9 +31,13 @@ public class BilibiliAccountLoginProvider implements AccountLoginProvider {
     private final BilibiliApiUtil api;
 
     /**
-     * 昵称只问平台一次。失败也算问过：界面退回只显示 uid，不在每次刷新登录态时再打一遍。
+     * 昵称只问平台一次。普通失败也算问过，避免每次刷新登录态都再打一遍。
+     * 被风控拦下的不算：冷却结束后再问一次，否则这一次被拦就一直只显示 uid。
+     * 问的过程中再刷新不再另发，等这一次回来。
      */
     private volatile boolean nameTried;
+
+    private final AtomicBoolean nameInFlight = new AtomicBoolean();
 
     private volatile String name;
 
@@ -70,15 +76,23 @@ public class BilibiliAccountLoginProvider implements AccountLoginProvider {
         if (uid == null || !accountService.isLoggedIn()) {
             return Optional.empty();
         }
-        if (!nameTried) {
-            nameTried = true;
+        if (!nameTried && nameInFlight.compareAndSet(false, true)) {
             try {
                 Up up = api.getUpInfoByUid(uid);
+                nameTried = true;
                 if (up != null && StringUtil.isNotBlank(up.getUname())) {
                     name = up.getUname();
                 }
+            } catch (RiskCooldownException e) {
+                api.scheduleReplay(e.getEndpoint(), "login-account-name", () -> {
+                    nameTried = false;
+                    accountName();
+                });
             } catch (Exception ignored) {
                 // 失败静默：卡上只显 uid。这里打错误日志的话，首页每次刷新都会刷屏
+                nameTried = true;
+            } finally {
+                nameInFlight.set(false);
             }
         }
         return Optional.ofNullable(name);

@@ -2,6 +2,7 @@ package org.frostnova.nova.bilibili.service;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import org.frostnova.nova.bilibili.exception.RiskCooldownException;
 import org.frostnova.nova.bilibili.model.Up;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
@@ -88,14 +89,28 @@ public class BilibiliApiSupport {
             return Optional.empty();
         }
 
-        return cache.get(uid, key -> {
-            try {
-                return Optional.of(api.getUpInfoByUid(key));
-            } catch (Exception e) {
-                log.debug("补全直播间 {} 中 uid {} 的信息失败: {}",
-                        source == null ? "未知" : source.getRoomId(), key, e.getMessage());
+        try {
+            return cache.get(uid, key -> loadUp(key, source));
+        } catch (RiskCooldownException e) {
+            // 冷却中的失败不进 6 小时缓存，否则下一条弹幕要等缓存过期才再问
+            return Optional.empty();
+        } catch (RuntimeException e) {
+            if (e.getCause() instanceof RiskCooldownException) {
                 return Optional.empty();
             }
-        });
+            throw e;
+        }
+    }
+
+    private Optional<Up> loadUp(Long uid, LiveStreamerInfo source) {
+        try {
+            return Optional.of(api.getUpInfoByUid(uid));
+        } catch (RiskCooldownException e) {
+            throw e;
+        } catch (Exception e) {
+            log.debug("补全直播间 {} 中 uid {} 的信息失败: {}",
+                    source == null ? "未知" : source.getRoomId(), uid, e.getMessage());
+            return Optional.empty();
+        }
     }
 }

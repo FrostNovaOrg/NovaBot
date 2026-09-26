@@ -119,14 +119,14 @@ public class NovaBilibiliProperties {
         private String userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36";
 
         /**
-         * 接口请求失败后的最大重试次数。
+         * 网络出错或只读接口暂时失败时，这一轮最多试几次。被拦下改等冷却，不看这项。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("B站接口 · 最多重试次数")
         private int apiRetryMaxTimes = 3;
 
         /**
-         * 接口请求失败后的重试间隔，单位：毫秒。
+         * 上一项那种当次重试，两次请求之间等的毫秒数。被拦下后的等待不看这项。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("B站接口 · 重试间隔")

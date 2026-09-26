@@ -158,7 +158,14 @@ public class BilibiliRiskMetrics {
          * 具体是哪一种写在 detail 的第一段（{@code decompress-failed}／
          * {@code budget-blown}／{@code bad-length}／{@code nesting-too-deep}）。
          */
-        PACKET_CORRUPT("数据包异常");
+        PACKET_CORRUPT("数据包异常"),
+
+        /**
+         * 非 0 业务码。每次都计数；同一接口、同一码只在第 1、10、100… 次换一份样本，避免刷屏。
+         * <p>
+         * detail 形：端点 code=码 message=原文 count=次数。查询参数不进样本。
+         */
+        BUSINESS_CODE("业务码");
 
         private final String label;
 
