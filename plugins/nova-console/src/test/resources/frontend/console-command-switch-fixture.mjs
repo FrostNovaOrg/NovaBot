@@ -237,6 +237,18 @@ const mock = {
         name: '直播报告', description: '下播后看一场的报告', category: '报告',
         requiresAdmin: false, disableable: true, available: true,
       },
+      {
+        name: '菜单', description: '列出可用命令', category: '命令管理',
+        requiresAdmin: false, disableable: false, available: true,
+      },
+      {
+        name: '启用命令', description: '把关掉的命令开回来', category: '命令管理',
+        requiresAdmin: false, disableable: false, available: true,
+      },
+      {
+        name: '禁用命令', description: '让本群不再应答一条命令', category: '命令管理',
+        requiresAdmin: false, disableable: false, available: true,
+      },
     ],
     sessions: [{
       platform: 'q', num: 12345, type: 1,
@@ -337,6 +349,16 @@ function inputByLabel(scope, label) {
     node.tagName === 'input' && node.getAttribute('aria-label') === label) || null;
 }
 
+/** 一组的标题行。组名写在标题的 innerHTML 里，假 DOM 不把那段拆成文本节点 */
+function groupHead(scope, category) {
+  const box = allNodes(scope).find(node =>
+    String(node.className || '').split(/\s+/).includes('cgroup')
+    && allNodes(node).some(child =>
+      String(child.className || '').split(/\s+/).includes('swtxt')
+      && String(child.innerHTML || '').includes('>' + category + ' ')));
+  return box ? (box.children[0] || null) : null;
+}
+
 await ask('① 群里关掉的那两种用法，页面上都显示成关着，主开关也没有亮着', async () => {
   if (!sessions || !model) throw new Error('产品码没载入，无从量起');
   paintWith(['开播@名单', '动态@名单']);
@@ -419,6 +441,29 @@ await ask('④ 只有一种用法的命令，开关还是它自己那一个（�
     '开关亮着': true,
     '开关锁着': false,
   }, '单用法命令');
+});
+
+await ask('⑦ 一组里的命令全都不可关闭时，组上不画开关，写明不可关闭', async () => {
+  if (!sessions || !model) throw new Error('产品码没载入，无从量起');
+  paintWith([]);
+
+  const head = groupHead(host, '命令管理');
+  if (!head) throw new Error('命令管理这一组没有画出来');
+  const sw = inputByLabel(head, '命令管理');
+  const locks = allNodes(head).filter(node =>
+    String(node.className || '').split(/\s+/).includes('cmdlock'));
+  const openHead = groupHead(host, '提醒');
+  if (!openHead) throw new Error('提醒这一组没有画出来');
+
+  same({
+    '组开关画出来了': !!sw,
+    '组上的字': locks.map(node => node.textContent),
+    '还能关的那组仍有开关': !!inputByLabel(openHead, '提醒'),
+  }, {
+    '组开关画出来了': false,
+    '组上的字': ['不可关闭'],
+    '还能关的那组仍有开关': true,
+  }, '整组不可关闭');
 });
 
 await ask('⑤ 摘要把群里关掉的那两格算成「被群管理员关了」，不算残留记录', async () => {

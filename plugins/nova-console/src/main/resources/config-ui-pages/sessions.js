@@ -176,19 +176,28 @@ function effectiveUsageOff(ctx, usage) {
 
 function commandGroup(ctx, group) {
   const box = el('div', 'cgroup');
-
-  // 组开关按格起算：一格关着、另一格还开的半开组不算全开
-  const cells = group.cells || [];
-  const allOn = cells.length > 0 && cells.every(usage => !effectiveUsageOff(ctx, usage));
+  const commands = group.commands || [];
+  // 这一组每一条都不可关闭时，没有开关可画。画一个关着且拨不动的，
+  // 看起来像整组被关掉了。与单条命令同一写法，写明「不可关闭」。
+  const noneClosable = commands.length > 0 && commands.every(command => !command.disableable);
 
   const head = el('div', 'swrow');
-  const label = el('label', 'switch');
-  label.innerHTML = '<input type="checkbox"' + (allOn ? ' checked' : '') + '>';
-  const input = label.querySelector('input');
-  input.setAttribute('aria-label', group.category);
-  input.disabled = !group.switchable.length;
-  input.addEventListener('change', () => batchCommands(ctx, group.switchable, !input.checked));
-  head.appendChild(label);
+  if (noneClosable) {
+    const lock = el('span', 'cmdlock');
+    lock.textContent = '不可关闭';
+    head.appendChild(lock);
+  } else {
+    // 组开关按格起算：一格关着、另一格还开的半开组不算全开
+    const cells = group.cells || [];
+    const allOn = cells.length > 0 && cells.every(usage => !effectiveUsageOff(ctx, usage));
+    const label = el('label', 'switch');
+    label.innerHTML = '<input type="checkbox"' + (allOn ? ' checked' : '') + '>';
+    const input = label.querySelector('input');
+    input.setAttribute('aria-label', group.category);
+    input.disabled = !group.switchable.length;
+    input.addEventListener('change', () => batchCommands(ctx, group.switchable, !input.checked));
+    head.appendChild(label);
+  }
 
   const text = el('div', 'swtxt');
   text.innerHTML = '<b>' + esc(group.category) + ' <span class="dim">'

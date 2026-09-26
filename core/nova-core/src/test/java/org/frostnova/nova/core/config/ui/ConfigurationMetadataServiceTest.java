@@ -26,8 +26,21 @@ class ConfigurationMetadataServiceTest {
     @Test
     @DisplayName("应移除 HTML 标签")
     void stripsHtmlTags() {
-        assertEquals("是否启用告警 关闭后只写日志",
+        assertEquals("是否启用告警。关闭后只写日志",
                 service.cleanDescription("是否启用告警 <p>关闭后只写日志"));
+    }
+
+    @Test
+    @DisplayName("首句没写句号时补上再接后文，成对星号与反引号不留在说明里")
+    void separatesSentenceAndDropsMarkers() {
+        assertEquals("上限 0 表示不限制。平台会静默忽略，默认堆 -Xmx512m。",
+                service.cleanDescription(
+                        "上限 0 表示不限制 <p> **平台会静默忽略**，默认堆 `-Xmx512m`。"));
+        assertEquals("已经有句号。后面接着写",
+                service.cleanDescription("已经有句号。 <p> 后面接着写"));
+        // 三个星号是昵称掩码，不是成对的加粗记号，去掉记号时不能把它拆短
+        assertEquals("昵称形如 b***。后面说明",
+                service.cleanDescription("昵称形如 {@code b***} <p> 后面说明"));
     }
 
     @Test
