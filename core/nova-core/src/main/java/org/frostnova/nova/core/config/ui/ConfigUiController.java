@@ -1100,7 +1100,8 @@ public class ConfigUiController {
         if (!outOfRange.isEmpty()) {
             result.put("success", false);
             result.put("issues", outOfRange);
-            result.put("message", String.join("；", outOfRange));
+            // 「本批未保存」说的是这一整批的下场，各条只说各条自己的毛病，整批只说一次
+            result.put("message", String.join("；", outOfRange) + "；本批未保存");
             return ResponseEntity.badRequest().body(result);
         }
 

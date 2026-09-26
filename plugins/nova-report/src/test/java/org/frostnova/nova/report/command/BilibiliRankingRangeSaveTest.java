@@ -172,6 +172,29 @@ class BilibiliRankingRangeSaveTest {
                         "范围里的值该真写进配置文件, 实际只写过 " + written));
     }
 
+    @Test
+    @DisplayName("两项同时出界：两条提示各说各的毛病，「本批未保存」整批只说一次")
+    void twoOutOfRangeItemsSayBatchNotSavedOnlyOnce() {
+        ResponseEntity<JSONObject> raw = controller.save(Map.of(
+                TOP_N_KEY, "0",
+                HEIGHT_LIMIT_KEY, "100"));
+        JSONObject result = raw.getBody();
+        String message = result.getString("message");
+
+        assertAll(
+                () -> assertEquals(400, raw.getStatusCode().value(),
+                        "出界的值整批该拒, 实际 body=" + result.toJSONString()),
+                () -> assertTrue(message != null && message.contains("最多列出名次")
+                                && message.contains("整图高度上限"),
+                        "两条提示都要在, 实际 message=" + message),
+                () -> assertEquals(1, message.split("本批未保存", -1).length - 1,
+                        "「本批未保存」整批只说一次, 实际 message=" + message),
+                () -> assertTrue(result.getJSONArray("issues").stream()
+                                .map(Object::toString)
+                                .noneMatch(issue -> issue.contains("本批未保存")),
+                        "页顶逐条列表里每条不再各带「本批未保存」, 实际 issues=" + result.getJSONArray("issues")));
+    }
+
     /**
      * 出界的值：整批拒、说清该填多少，一个字都不写进配置文件
      */
