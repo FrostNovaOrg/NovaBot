@@ -763,7 +763,7 @@ novabot:
 
 ### 从本项目的旧版本升级
 
-用 `install.sh` 升级时，脚本会删掉安装目录里的 `lib/` 与 `plugins-lib/`，再把新产物整份拷进去，所以 `NovaBot.jar`、`lib/`、`plugins-lib/` 都换成新的。容器入口每次启动会用镜像里的 `NovaBot.jar` 与 `lib/` 盖掉卷 `/app` 上的同名文件，并按新文件名换内置插件；`plugins-lib/` 只建目录，不从镜像里的 `/opt/starbot/plugins-lib` 铺到卷上，换镜像后卷里的那份不是新的，这一目录要自己按第 3 步换。五个旧名插件，安装脚本和容器都不会删，要自己删；`StarBotCore.jar` 只有 `install.sh` 会删。手工升级则整段照做：
+用 `install.sh` 升级时，脚本会删掉安装目录里的 `lib/` 与 `plugins-lib/`，再把新产物整份拷进去，所以 `NovaBot.jar`、`lib/`、`plugins-lib/` 都换成新的。用安装脚本升级会清空 `plugins-lib/`，自己放的第三方 jar 升级后要重新放。容器入口每次启动会用镜像里的 `NovaBot.jar` 与 `lib/` 盖掉卷 `/app` 上的同名文件，并按新文件名换内置插件；`plugins-lib/` 只建目录，不从镜像里的 `/opt/starbot/plugins-lib` 铺到卷上，换镜像后卷里的那份不是新的，这一目录要自己按第 3 步换。五个旧名插件，安装脚本和容器都不会删，要自己删；`StarBotCore.jar` 只有 `install.sh` 会删。手工升级则整段照做：
 
 1. 停止服务
 2. **备份 `application.yml`、`datasource.json`、`cookies.json`、`cookies.key`**。登录凭据默认加密后仍写在 `cookies.json`，密钥在 `cookies.key`，没有另存一份密文文件。若旁边还有明文迁成加密时留下的 `cookies.json.plain.bak`，一并备份。

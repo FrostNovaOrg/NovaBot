@@ -5,6 +5,7 @@ import org.frostnova.nova.bilibili.BilibiliPlatform;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.model.BilibiliLiveMetric;
 import org.frostnova.nova.bilibili.model.BilibiliLiveReportOptions;
+import org.frostnova.nova.bilibili.model.GuardMedal;
 import org.frostnova.nova.bilibili.model.GuardMember;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.config.NovaCoreProperties;
@@ -183,8 +184,9 @@ public final class DemoAssets {
 
         NovaCoreProperties coreProperties = new NovaCoreProperties();
         coreProperties.getPaint().getFonts().add("内置");
+        String version = projectVersion(repoRoot());
         Properties buildInfo = new Properties();
-        buildInfo.setProperty("version", "5.4.0");
+        buildInfo.setProperty("version", version);
         buildInfo.setProperty("group", "org.frostnova.nova");
         buildInfo.setProperty("artifact", "nova-core");
         buildInfo.setProperty("name", "NovaBot");
@@ -231,6 +233,7 @@ public final class DemoAssets {
             throw new IOException("report top PNG " + topBytes + " bytes exceeds " + REPORT_TOP_MAX_BYTES);
         }
         System.out.println("rendered-by " + RENDER_VIA);
+        System.out.println("footer-version " + version);
         return new Rendered(reportPng, topPng, compact.getWidth(), compact.getHeight(), bytes, RENDER_VIA,
                 painter, topSlice.getWidth(), topSlice.getHeight(), topBytes);
     }
@@ -268,6 +271,29 @@ public final class DemoAssets {
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException(e);
         }
+    }
+
+    /**
+     * 页脚跟工程根 pom 里的产品版本走，不写死。
+     * 父工程的 version 写在产品构件名之前，从产品构件名往后取。
+     */
+    static String projectVersion(Path root) throws IOException {
+        String xml = Files.readString(root.resolve("pom.xml"), StandardCharsets.UTF_8);
+        String marker = "<artifactId>nova-parent</artifactId>";
+        int at = xml.indexOf(marker);
+        if (at < 0) {
+            throw new IOException("pom.xml has no nova-parent");
+        }
+        int open = xml.indexOf("<version>", at);
+        int close = open < 0 ? -1 : xml.indexOf("</version>", open);
+        if (open < 0 || close < 0) {
+            throw new IOException("pom.xml has no version after nova-parent");
+        }
+        String version = xml.substring(open + "<version>".length(), close).trim();
+        if (version.isEmpty() || version.indexOf('<') >= 0 || version.indexOf('$') >= 0) {
+            throw new IOException("pom.xml version is not a literal");
+        }
+        return version;
     }
 
     static Path repoRoot() {
@@ -428,6 +454,11 @@ public final class DemoAssets {
         data.setLiveMetric(platform, STREAMER_UID, BilibiliLiveMetric.FANS_MEDAL_AT_START, 2_180);
         data.setLiveMetric(platform, STREAMER_UID, BilibiliLiveMetric.GUARD_AT_START, 22);
 
+        data.recordLiveGift(platform, STREAMER_UID, 900_001L, "示例甲", 888, 3, "");
+        data.recordLiveGift(platform, STREAMER_UID, 900_002L, "示例乙", 66, 9, "");
+        data.recordLiveGift(platform, STREAMER_UID, 900_003L, "示例丙", 6, 18, "");
+        data.recordLiveGift(platform, STREAMER_UID, 900_004L, "示例丁", 0, 99, "");
+
         double[] danmu = {164, 121, 88, 57, 36};
         double[] gift = {72.4, 48.0, 31.2, 16.8, 8.6};
         double[] superChat = {80, 50, 30, 20, 10};
@@ -558,11 +589,20 @@ public final class DemoAssets {
         @Override
         protected Optional<List<GuardMember>> guardList(Long roomId, Long uid) {
             return Optional.of(List.of(
-                    new GuardMember(VIEWER_UIDS[0], VIEWER_NAMES[0], 1, 2800),
-                    new GuardMember(VIEWER_UIDS[1], VIEWER_NAMES[1], 2, 1900),
-                    new GuardMember(VIEWER_UIDS[2], VIEWER_NAMES[2], 3, 1100),
-                    new GuardMember(VIEWER_UIDS[3], VIEWER_NAMES[3], 3, 800),
-                    new GuardMember(VIEWER_UIDS[4], VIEWER_NAMES[4], 3, 500)));
+                    new GuardMember(VIEWER_UIDS[0], VIEWER_NAMES[0], 1, 2800,
+                            demoMedal("示例甲", 30, new Color(255, 196, 64), new Color(255, 140, 40), new Color(180, 90, 0))),
+                    new GuardMember(VIEWER_UIDS[1], VIEWER_NAMES[1], 2, 1900,
+                            demoMedal("示例乙", 20, new Color(168, 112, 255), new Color(96, 48, 200), new Color(64, 24, 140))),
+                    new GuardMember(VIEWER_UIDS[2], VIEWER_NAMES[2], 3, 1100,
+                            demoMedal("示例丙", 10, new Color(96, 176, 255), new Color(32, 96, 210), new Color(16, 48, 140))),
+                    new GuardMember(VIEWER_UIDS[3], VIEWER_NAMES[3], 3, 800,
+                            demoMedal("示例丁", 5, new Color(255, 128, 176), new Color(220, 64, 128), new Color(150, 24, 80))),
+                    new GuardMember(VIEWER_UIDS[4], VIEWER_NAMES[4], 3, 500,
+                            demoMedal("示例戊", 1, new Color(120, 210, 160), new Color(32, 150, 96), new Color(16, 90, 56)))));
+        }
+
+        private static GuardMedal demoMedal(String name, int level, Color start, Color end, Color border) {
+            return new GuardMedal(name, level, true, start, end, border, Color.WHITE, null);
         }
     }
 }
