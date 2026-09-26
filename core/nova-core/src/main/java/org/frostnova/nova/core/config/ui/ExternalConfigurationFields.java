@@ -31,47 +31,45 @@ public final class ExternalConfigurationFields {
 
     static {
         // ---- 累计数据存储 ----
-        // 这四项即时生效：认这几个值的是 TotalDataStorage，它按新参数就地换一个后端
+        // 这四项即时生效：认这几个值的是 TotalDataStorage，它按新参数就地换一个后端。
+        // 带「总」的数据随时间无限增长，放在文件里迟早撑不住；Redis 中途挂了会自动
+        // 降级为只有本场数据，连回来自己恢复
         put("spring.data.redis.host", "java.lang.String", ConfigLevel.Level.COMMON, ConfigEffect.Effect.IMMEDIATE,
                 "累计数据 Redis · 地址",
-                "累计数据存储的 Redis 地址，填了才有跨场次的累计数据。"
-                        + "留空时本场数据完整可用，带「总」的查法"
-                        + "会明确提示不可用——那类数据随时间无限增长，放在文件里迟早撑不住。"
-                        + "只需本机可达，切勿暴露到公网。填完即时生效，不用重启；"
-                        + "Redis 中途挂了会自动降级为只有本场数据，连回来自己恢复");
+                "累计数据存储用的 Redis 地址，填了才有跨场次数据，留空则带「总」的查法提示不可用；只需本机可达，别暴露到公网，填完即时生效。");
         put("spring.data.redis.port", "java.lang.Integer", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.IMMEDIATE,
-                6379, "累计数据 Redis · 端口", "Redis 端口，默认 6379");
+                6379, "累计数据 Redis · 端口", "Redis 端口，默认 6379。");
         put("spring.data.redis.password", "java.lang.String", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.IMMEDIATE,
                 "累计数据 Redis · 密码",
-                "Redis 密码，未设密码时留空");
+                "Redis 密码，未设密码时留空。");
         put("spring.data.redis.database", "java.lang.Integer", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.IMMEDIATE,
-                0, "累计数据 Redis · 库号", "Redis 库号，默认 0。与其他程序共用同一实例时可换一个库避免键冲突。改完即时生效，不用重启");
+                0, "累计数据 Redis · 库号", "Redis 库号，默认 0；与其他程序共用同一实例时可换个库避免键冲突。改完即时生效，不用重启。");
 
         // ---- 邮件告警的发件服务 ----
         // 收件人是 novabot.core.mail.default-to，在界面上找得到；
         // 但没有下面这几项，那一项配了也发不出去
         put("spring.mail.host", "java.lang.String", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.RESTART,
                 "邮件告警 · SMTP 服务器",
-                "邮件告警的 SMTP 服务器地址，如 smtp.qq.com。不用邮件告警时留空");
+                "邮件告警的 SMTP 服务器地址，如 smtp.qq.com；不用邮件告警时留空。");
         put("spring.mail.port", "java.lang.Integer", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.RESTART,
                 "邮件告警 · SMTP 端口",
-                "SMTP 端口，如 465（SSL）或 587（STARTTLS）");
+                "SMTP 端口，如 465（SSL）或 587（STARTTLS）。");
         put("spring.mail.username", "java.lang.String", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.RESTART,
                 "邮件告警 · SMTP 账号",
-                "SMTP 登录账号，通常就是发件邮箱地址");
+                "SMTP 登录账号，通常就是发件邮箱地址。");
         put("spring.mail.password", "java.lang.String", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.RESTART,
                 "邮件告警 · SMTP 密码／授权码",
-                "SMTP 密码或授权码。多数邮箱服务要求的是「授权码」而非登录密码");
+                "SMTP 密码或授权码；多数邮箱要的是「授权码」而不是登录密码。");
 
         // ---- 控制台自己怎么被端出来 ----
         // 监听地址是四个危险项之一，界面上得有它才谈得上围栏；此前它压根不在界面上，
         // 于是「把接口暴露到网络」这件事只能在服务器上改文件完成，控制台连提醒的机会都没有
         put("server.port", "java.lang.Integer", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.RESTART,
-                7827, "服务端口", "控制台与事件流共用的服务端口，默认 7827");
+                7827, "服务端口", "控制台与事件流共用的服务端口，默认 7827。");
         put("server.address", "java.lang.String", ConfigLevel.Level.ADVANCED, ConfigEffect.Effect.RESTART,
                 "127.0.0.1", "监听地址", "只监听哪个地址。默认 127.0.0.1 表示只有本机连得上；"
                         + "改成 0.0.0.0 会把控制台与推送接口暴露到网络，"
-                        + "此时务必配好反向代理、来源 IP 白名单与登录密码");
+                        + "此时务必配好反向代理、来源 IP 白名单与登录密码。");
     }
 
     /**

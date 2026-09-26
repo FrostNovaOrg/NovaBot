@@ -31,16 +31,25 @@ class ConfigurationMetadataServiceTest {
     }
 
     @Test
-    @DisplayName("首句没写句号时补上再接后文，成对星号与反引号不留在说明里")
-    void separatesSentenceAndDropsMarkers() {
-        assertEquals("上限 0 表示不限制。平台会静默忽略，默认堆 -Xmx512m。",
+    @DisplayName("首句没写句号时补上再接后文，星号与反引号照原样保留")
+    void separatesSentenceAndKeepsMarkers() {
+        assertEquals("上限 0 表示不限制。**平台会静默忽略**，默认堆 `-Xmx512m`。",
                 service.cleanDescription(
                         "上限 0 表示不限制 <p> **平台会静默忽略**，默认堆 `-Xmx512m`。"));
         assertEquals("已经有句号。后面接着写",
                 service.cleanDescription("已经有句号。 <p> 后面接着写"));
-        // 三个星号是昵称掩码，不是成对的加粗记号，去掉记号时不能把它拆短
+        // 三个星号是昵称掩码，不是成对的加粗记号，原样保留不拆短
         assertEquals("昵称形如 b***。后面说明",
                 service.cleanDescription("昵称形如 {@code b***} <p> 后面说明"));
+    }
+
+    @Test
+    @DisplayName("首段以冒号或分号结尾时不再补成「：。」")
+    void colonEndingIsNotFollowedByPeriod() {
+        assertEquals("要点有三：第一点。第二点",
+                service.cleanDescription("要点有三： <p> 第一点。第二点"));
+        assertEquals("先说结论；后面是展开",
+                service.cleanDescription("先说结论； <p> 后面是展开"));
     }
 
     @Test

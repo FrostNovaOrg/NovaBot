@@ -117,12 +117,9 @@ public class NovaCoreProperties {
     @Setter
     public static class Timeline {
         /**
-         * 事件时间线的保留天数，含当天；设为 0 或负数表示不自动清理
-         * <p>
-         * 时间线是排障线索而不是业务数据：两周之前「某条推送失败过」这件事，
-         * 已经没有人会再去查，留着只是让日志页越翻越长、磁盘越占越多。
-         * 要长期保存的场次数据在 {@code sessions.jsonl} 里，那一份不会被删。
+         * 事件时间线的保留天数，含当天，设为 0 或负数不自动清理。时间线是排障线索，要长期保存的场次数据在 sessions.jsonl 里，不会被删。
          */
+        // 两周之前「某条推送失败过」已经没有人会再去查，留着只是让日志页越翻越长、磁盘越占越多。
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("事件时间线保留天数")
         private int retentionDays = 14;
@@ -141,7 +138,7 @@ public class NovaCoreProperties {
     @Setter
     public static class Exec {
         /**
-         * 是否启用事件触发外部命令
+         * 是否启用事件触发外部命令。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigDanger(value = "true", title = "开启外部程序触发？",
@@ -151,23 +148,21 @@ public class NovaCoreProperties {
         private boolean enabled = false;
 
         /**
-         * 单条命令的最长执行时间，单位：秒，超时后强制结束
+         * 单条命令的最长执行时间，单位：秒，超时后强制结束。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("外部程序触发 · 超时")
         private int timeout = 30;
 
         /**
-         * 同时执行的命令数上限，超出的直接丢弃
-         * <p>
-         * 弹幕这类事件一秒能来几十条。没有上限的话，一次刷屏就等于一次 fork 炸弹。
+         * 同时执行的命令数上限，超出的直接丢弃；弹幕一秒能来几十条，没有上限一次刷屏就能拖垮机器。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("外部程序触发 · 并发上限")
         private int maxConcurrent = 4;
 
         /**
-         * 规则列表
+         * 事件触发外部命令的规则列表。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("外部程序触发规则")
@@ -212,12 +207,9 @@ public class NovaCoreProperties {
     @Setter
     public static class Command {
         /**
-         * 超级管理员账号，跨会话生效
-         * <p>
-         * 「禁用命令」这类操作会改变全群的可用功能，只对管理员开放。
-         * <b>群主与群管理员自动拥有权限</b>，此处填的是不依赖群角色的额外名单——
-         * 机器人的主人未必是每个群的管理员。
+         * 超级管理员账号，跨群生效。「禁用命令」这类操作只对管理员开放；群主与群管理员天生有权限，这里填的是额外名单。
          */
+        // 机器人的主人未必是每个群的管理员，因此有不依赖群角色的这一份名单。
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("超级管理员")
@@ -231,9 +223,7 @@ public class NovaCoreProperties {
     @Setter
     public static class Push {
         /**
-         * 全局推送开关
-         * <p>
-         * 关闭后所有推送都会被丢弃，用于调试或临时静音，无需逐条改推送配置。改完立即生效，不必重启。
+         * 全局推送开关。关闭后所有推送都会被丢弃，用于调试或临时静音。改完立即生效，不必重启。
          */
         // 之所以能即时生效：PushGate 每次判断都重新读它。「临时静音」这个诉求本身就要求立刻管用——
         // 为了让它生效而重启一次，会把正在采集的场次打断
@@ -243,10 +233,9 @@ public class NovaCoreProperties {
         private boolean enabled = true;
 
         /**
-         * 机器人第一次推送到一个群或好友后，附一句怎么用它的提示（只发一次）
-         * <p>
-         * 关掉之后不再附这句，也不把这次算作已经提示过——下次打开时的第一条还会带上。改完立即生效，不必重启。
+         * 第一次推送到一个群或好友时附一句用法提示，只发一次。改完立即生效，不必重启。
          */
+        // 关掉之后不把这次算作已经提示过，下次打开时的第一条还会带上。
         // 之所以能即时生效：每次跟提示前都现读。关掉必须立刻停，否则关了还会再发一句
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
@@ -254,38 +243,29 @@ public class NovaCoreProperties {
         private boolean firstPushTip = true;
 
         /**
-         * 机器人账号每日最多 @全体成员 的次数，0 或负数表示不限制
-         * <p>
-         * 平台本身有每日上限，用超之后**平台会静默忽略**——消息照发但 @ 不生效，
-         * 配置的人往往过很久才发现「怎么没人被 @ 到」。因此在自己这一侧先记账，
-         * 超额时主动退化为普通消息并记日志，而不是把额度花在注定无效的调用上。
-         * <p>
-         * <b>这份额度由该账号推送的全部会话共享</b>（实测：往一个群发一次，
-         * 其他群看到的账号剩余次数同步减一）。默认 10 与平台实测值一致，
-         * <b>它才是真正会先卡住的那一道</b>。
+         * 机器人账号每日最多 @全体成员 的次数，0 或负数不限制。超额时平台会静默忽略——消息照发但 @ 不生效，所以这里先记账，超额改发普通消息。
          */
+        // 这份额度由该账号推送的全部会话共享（实测：往一个群发一次，其他群看到的
+        // 剩余次数同步减一）。默认 10 与平台实测值一致，它才是真正会先卡住的那一道。
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("@全体成员 每日上限 · 账号")
         private int atAllDailyLimit = 10;
 
         /**
-         * 单个会话每日最多 @全体成员 的次数，0 或负数表示不限制
-         * <p>
-         * 与账号额度是两个维度：群的额度由群里所有有权限的人共用，机器人只是其中之一。
-         * 默认 20 与平台实测值一致。通常先撞到的是账号额度，本项是第二道保险。
+         * 单个群每日最多 @全体成员 的次数，0 或负数不限制；与账号那份额度是两个维度，通常先撞到的是账号额度。
          */
+        // 群的额度由群里所有有权限的人共用，机器人只是其中之一。默认 20 与平台实测值一致，
+        // 本项是第二道保险。
         @ConfigLevel(ConfigLevel.Level.ADVANCED)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("@全体成员 每日上限 · 单群")
         private int atAllSessionDailyLimit = 20;
 
         /**
-         * 静音时段开始时间，格式 HH:mm，与结束时间任一为空即视为不启用
-         * <p>
-         * 半夜被机器人吵醒是这类通知产品被投诉最多的点，因此内置该能力而不是让使用者自行想办法。
-         * 改完立即生效，不必重启。
+         * 静音时段的开始时间，格式 HH:mm；与结束时间任一为空即不启用。改完立即生效，不必重启。
          */
+        // 半夜被机器人吵醒是这类通知产品被投诉最多的点，因此内置该能力。
         // 之所以能即时生效：PushGate 每条推送都现读一次起止时刻
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
@@ -293,9 +273,7 @@ public class NovaCoreProperties {
         private String quietStart = "";
 
         /**
-         * 静音时段结束时间，格式 HH:mm
-         * <p>
-         * 允许跨零点：开始 23:00、结束 08:00 表示当晚 23 点至次日 8 点。改完立即生效，不必重启。
+         * 静音时段的结束时间，格式 HH:mm，可跨零点：开始 23:00、结束 08:00 即当晚 23 点至次日 8 点。改完立即生效，不必重启。
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
@@ -310,9 +288,7 @@ public class NovaCoreProperties {
     @Setter
     public static class Alert {
         /**
-         * 是否启用告警
-         * <p>
-         * 关闭后登录失效、连接中断、队列积压等问题只会写进日志，不会主动通知。
+         * 是否启用告警。关闭后登录失效、连接中断这类问题只写日志，不会主动通知。
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
@@ -320,21 +296,14 @@ public class NovaCoreProperties {
         private boolean enabled = true;
 
         /**
-         * 同一问题的最短告警间隔，单位：秒
-         * <p>
-         * 故障往往持续存在，不做收敛就会反复推送同一条消息，最终使人对告警彻底脱敏。
+         * 同一问题的最短告警间隔，单位：秒。故障往往持续存在，不收敛会反复推同一条，让人对告警脱敏。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("同一问题最短间隔")
         private int convergenceInterval = 3600;
 
         /**
-         * Webhook 告警地址，留空则不启用
-         * <p>
-         * <b>机器人推送与邮件之外唯一不依赖机器人自身链路的通道。</b>机器人告警走的是机器人的推送链路，
-         * 一旦机器人程序掉线或掉登录，需要告警的正是这种时候，而告警本身也一并失效了。
-         * Webhook 只需一个地址，适配 Bark、Server 酱、钉钉、飞书、Telegram 等常见服务。
-         * 改完立即生效，不必重启。
+         * Webhook 告警地址，留空不启用。它不依赖机器人链路——机器人掉线时恰恰需要它；适配 Bark、Server 酱、钉钉、飞书、Telegram。改完立即生效，不必重启。
          */
         // 请求方式与字段名那几项不在此列：它们是「怎么发」，改动通常伴随一次对接调试，
         // 等一次重启是可以接受的
@@ -344,61 +313,53 @@ public class NovaCoreProperties {
         private String webhookUrl = "";
 
         /**
-         * Webhook 请求方式：POST 或 GET
-         * <p>
-         * POST 提交 JSON（字段名见 webhook-title-field 与 webhook-content-field）；
-         * GET 把标题与内容拼进查询串，适配 Bark 这类以路径或查询参数接收的服务。
+         * Webhook 请求方式：POST 或 GET。POST 提交 JSON，GET 把标题与内容拼进查询串，适配 Bark 这类服务。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("Webhook · 请求方式")
         private String webhookMethod = "POST";
 
         /**
-         * Webhook JSON 中承载标题的字段名
-         * <p>
-         * 各服务字段名不统一：Server 酱用 title/desp，钉钉与飞书用嵌套结构，
-         * 自建接口则各有各的约定，因此做成可配置而非写死。
+         * Webhook JSON 里承载标题的字段名；各服务不统一（Server 酱用 title/desp），所以可配。
          */
+        // 钉钉与飞书用嵌套结构，自建接口各有各的约定，因此做成可配置而非写死。
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("Webhook · 标题字段名")
         private String webhookTitleField = "title";
 
         /**
-         * Webhook JSON 中承载内容的字段名
+         * Webhook JSON 里承载内容的字段名。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("Webhook · 内容字段名")
         private String webhookContentField = "content";
 
         /**
-         * Webhook 附加请求头，用于需要鉴权的服务，如 {@code Authorization: Bearer xxx}
+         * Webhook 附加请求头，用于需要鉴权的服务，形如 Authorization: Bearer xxx。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("Webhook · 附加请求头")
         private final java.util.Map<String, String> webhookHeaders = new java.util.LinkedHashMap<>();
 
         /**
-         * 发送失败的告警的重投间隔，单位：秒，设为 0 关闭重投
-         * <p>
-         * <b>需要告警的时候往往正是发不出去的时候</b>：出网劣化、机器人掉登录、Webhook 服务抖动，
-         * 三者都会让告警本身失败，而失败之后此前没有下文——「没收到告警」于是被读成「没出事」。
+         * 发送失败的告警的重投间隔，单位：秒，设为 0 关闭重投。需要告警时往往正是发不出去的时候，所以失败后要自动重投。
          */
+        // 出网劣化、机器人掉登录、Webhook 服务抖动都会让告警本身失败，而失败之后
+        // 此前没有下文——「没收到告警」于是被读成「没出事」。
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("失败重投 · 间隔")
         private int retryInterval = 60;
 
         /**
-         * 待重投队列的容量上限
-         * <p>
-         * 满了之后丢最旧的，并在日志里说明丢了哪一条。<b>不静默截断</b>：
-         * 悄悄丢掉的告警比没有重投更糟，它会让人以为队列在正常工作。
+         * 待重投队列的容量上限。满了丢最旧的并在日志里说明，不静默截断。
          */
+        // 悄悄丢掉的告警比没有重投更糟，它会让人以为队列在正常工作。
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("失败重投 · 队列容量")
         private int retryQueueSize = 50;
 
         /**
-         * 单条告警的最大重投次数，超过后放弃并写日志
+         * 单条告警的最大重投次数，超过后放弃并写日志。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("失败重投 · 最多次数")
@@ -406,7 +367,7 @@ public class NovaCoreProperties {
     }
 
     /**
-     * 非插件实现的推送平台配置
+     * 非插件实现的推送平台配置。
      */
     @Getter
     @ConfigEffect(ConfigEffect.Effect.RESTART)
@@ -421,7 +382,7 @@ public class NovaCoreProperties {
     @Setter
     public static class ConfigUi {
         /**
-         * 是否启用配置界面
+         * 是否启用配置界面。
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.RESTART)
@@ -429,29 +390,23 @@ public class NovaCoreProperties {
         private boolean enabled = true;
 
         /**
-         * 配置界面访问令牌
-         * <p>
-         * 留空时每次启动自动生成一个随机令牌并输出到日志。配合默认仅监听回环地址的设置，
-         * 单机部署无需任何配置即可安全使用；需要从其他机器访问时在此显式设置一个随机串。
+         * 配置界面访问令牌。留空时每次启动自动生成一个随机令牌并打进日志；需要从其他机器访问时在这里填一个随机串。
          */
+        // 配合默认仅监听回环地址，单机部署无需任何配置即可安全使用。
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("控制台访问令牌")
         private String token = "";
 
         /**
-         * 允许访问配置界面的来源 IP 白名单，支持精确 IP 与 CIDR 网段
-         * <p>
-         * 配置界面可修改推送目标并读取运行状态，权限高于推送接口，默认仅放行本机回环地址。
+         * 允许访问配置界面的来源 IP 白名单，支持精确 IP 与 CIDR 网段；默认仅放行本机回环地址。
          */
+        // 配置界面可修改推送目标并读取运行状态，权限高于推送接口。
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("允许访问的来源 IP")
         private List<String> allowIps = new ArrayList<>(List.of("127.0.0.1/32", "::1/128"));
 
         /**
-         * 配置文件备份保留份数
-         * <p>
-         * 每次保存 application.yml 或主播推送配置时都会另留一份带时间的备份。
-         * 超出这个数目的旧备份会被删掉。默认 10 份，可在 1 到 100 之间改。改完立即生效，不必重启。
+         * 配置文件备份保留份数，默认 10，可填 1 到 100；保存配置时自动另留带时间的备份，超出份数删最旧的。改完立即生效。
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
@@ -505,24 +460,17 @@ public class NovaCoreProperties {
         @Setter
         public static class Update {
             /**
-             * 是否检查新版
-             * <p>
-             * 关掉之后侧栏药丸与首页那条软待办都不会再出现。程序不会自己更新，
-             * 这一检查是使用者得知「该去换 jar 了」的唯一入口，默认开着。
+             * 是否检查新版。关掉后侧栏与首页的新版提醒都不再出现；程序不会自己更新，这是得知该换新版了的唯一入口。
              */
-            @ConfigLevel(ConfigLevel.Level.COMMON)
             @ConfigEffect(ConfigEffect.Effect.RESTART)
             @ConfigLabel("检查新版")
             private boolean enabled = true;
 
             /**
-             * 新版信息的来源地址
-             * <p>
-             * 默认指向发布仓的 latest release 接口，取回的 JSON 里要有
-             * {@code tag_name}（版本）、{@code body}（更新说明）与 {@code html_url}（链接）。
-             * 自建镜像或换发布渠道时改这里。取不到或取回的东西认不出来时静默跳过——
-             * 「查不到新版」不该变成控制台上的一条故障。
+             * 新版信息的来源地址，默认指向发布仓的 latest release 接口；自建镜像时改这里。取不到时静默跳过，不变成控制台故障。
              */
+            // 取回的 JSON 里要有 tag_name（版本）、body（更新说明）与 html_url（链接）；
+            // 取回的东西认不出来时也静默跳过——「查不到新版」不该变成控制台上的一条故障。
             @ConfigEffect(ConfigEffect.Effect.RESTART)
             @ConfigLabel("检查新版 · 来源地址")
             private String source = "https://api.github.com/repos/FrostNovaOrg/NovaBot/releases/latest";
@@ -541,34 +489,26 @@ public class NovaCoreProperties {
         @Setter
         public static class Agreement {
             /**
-             * 已同意的协议版本号
-             * <p>
-             * 0 表示尚未同意过。协议文案改版时版本号会加一，届时此处记着的旧版本即刻失效，
-             * 使用者会被要求重新确认一次——<b>否则改了文案等于没改</b>，没有人会再看到它。
+             * 已同意的协议版本号，0 表示尚未同意；协议改版后旧记录失效，会要求重新确认。
              */
+            // 协议文案改版时版本号加一，此处记着的旧版本即刻失效——否则改了文案等于没改，没有人会再看到它。
             @ConfigEffect(ConfigEffect.Effect.RESTART)
             @ConfigLabel("协议同意 · 版本号")
             private int acceptedVersion = 0;
 
             /**
-             * 同意的时间
-             * <p>
-             * ISO 格式，留空表示尚未同意过。它不参与任何判断，只是留个凭据：
-             * 日后要回答「这台机器上是什么时候同意的」时，答案得在盘上，而不是靠人回忆。
+             * 同意协议的时间，ISO 格式，留空表示尚未同意；只作凭据，不参与任何判断。
              */
+            // 日后要回答「这台机器上是什么时候同意的」时，答案得在盘上，而不是靠人回忆。
             @ConfigEffect(ConfigEffect.Effect.RESTART)
             @ConfigLabel("协议同意 · 时间")
             private String acceptedAt = "";
 
             /**
-             * 同意是从哪条通道点下的
-             * <p>
-             * {@code password}＝输过登录密码之后同意，{@code operator-token}＝凭启动令牌进来之后同意。
-             * <p>
-             * <b>留空表示这行记录说不出是谁点的</b>，此时会在下次登录之后再请使用者确认一次。
-             * 4.4.0 及更早的版本在登录之前就让人点同意，写下的正是这种记录——
-             * 那时任何能连上控制台端口的程序都写得下它，因此它证明不了使用者本人确实看过。
+             * 同意是从哪条通道点下的：password 是输过密码后同意，operator-token 是凭启动令牌进来后同意。留空表示说不出是谁点的，下次登录会再确认一次。
              */
+            // 4.4.0 及更早的版本在登录之前就让人点同意，写下的正是空记录——那时任何
+            // 能连上控制台端口的程序都写得下它，因此它证明不了使用者本人确实看过。
             @ConfigEffect(ConfigEffect.Effect.RESTART)
             @ConfigLabel("协议同意 · 通道")
             private String acceptedBy = "";
@@ -583,65 +523,44 @@ public class NovaCoreProperties {
         @Setter
         public static class Auth {
             /**
-             * 登录密码
-             * <p>
-             * 留空表示不启用密码登录。可以直接填明文，启动时会哈希后使用，
-             * 同时在日志里输出可替换过去的哈希串——<b>填了明文就意味着看得到配置文件的人也就有了密码</b>。
-             * 改完立即生效，不必重启：这台机器的第一把密码一定是在运行期设下的，
-             * 而「设了密码但要等重启才认」的那段时间里，界面说已上锁而门还开着。
+             * 登录密码，留空表示不启用密码登录。可直接填明文，启动时自动换成哈希——看得到配置文件的人也就有了密码。改完立即生效，不必重启。
              */
+            // 换算后日志里会输出可替换过去的哈希串。之所以要即时生效：这台机器的第一把
+            // 密码一定是在运行期设下的，「设了密码但要等重启才认」的那段时间里，
+            // 界面说已上锁而门还开着。
             @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
             @ConfigLabel("控制台密码")
             private String password = "";
 
             /**
-             * 是否要求二次验证
-             * <p>
-             * 默认要求。设了密码却没绑定验证器时，界面会持续提示绑定——<b>只有密码的面板
-             * 一旦开到公网，其安全性就完全押在这一个密码上</b>，而密码是会被撞库、被键盘记录、
-             * 被肩窥的。真的不想要二次验证时把这一项改成 false，那是一个需要写下来的决定。
-             * 改完立即生效，不必重启：界面上那个开关本来就是当场生效的，
-             * 这一行此前标着「需重启」，于是同一件事在界面上有两种说法。
+             * 是否要求二次验证。默认要求；只有密码的面板开到公网时，安全完全押在一个密码上。改完立即生效。
              */
+            // 密码是会被撞库、被键盘记录、被肩窥的；设了密码却没绑定验证器时界面会持续
+            // 提示绑定。不想要二次验证时把这一项改成 false，那是一个需要写下来的决定。
+            // 界面上那个开关本来就当场生效，此前这一行标着「需重启」，同一件事在界面上
+            // 有两种说法。
             @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
             @ConfigLabel("二次验证")
             private boolean totp = true;
 
             /**
-             * 二次验证密钥（TOTP，Base32）
-             * <p>
-             * 留空表示尚未绑定验证器，登录时只校验密码。通过界面上的绑定引导扫码后，
-             * 密钥会自动写回本配置项。
-             * <p>
-             * 密钥必须以明文保存，因此配置文件的权限要收紧到仅属主可读。
+             * 二次验证密钥（TOTP，Base32），扫码绑定后自动写回，留空表示尚未绑定；必须明文保存，配置文件权限要收紧到仅属主可读。
              */
             @ConfigEffect(ConfigEffect.Effect.RESTART)
             @ConfigLabel("二次验证密钥")
             private String totpSecret = "";
 
             /**
-             * 是否保留「忘记密码」的启动令牌通道
-             * <p>
-             * 打开之后，启用密码登录的实例在启动日志里仍会打印一个带令牌的地址，
-             * 用它可以<b>绕过密码与二次验证</b>直接进入。
-             * <p>
-             * ⚠️ <b>默认关闭</b>，理由有三：
-             * <ul>
-             *   <li>它<b>绕过二次验证</b>——开着它，TOTP 的保护上限就是这个令牌的保密程度</li>
-             *   <li>令牌走地址栏，<b>会进反向代理的访问日志</b>。2026-08-13 在生产的
-             *       nginx 归档里实测到 82 行含 {@code token=}</li>
-             *   <li>若日后把别的服务挂在这套会话之后（如经 {@code auth_request} 代理
-             *       机器人程序的 WebUI），<b>这个后门会同时成为那些服务的后门</b></li>
-             * </ul>
-             * 反过来的默认值曾经也有它的道理——忘记密码时这是唯一不必改配置重启就能进去的路，
-             * 默认关掉像是把人锁在门外。<b>但那道门本来就开得着</b>：把这一项改成
-             * {@code true} 重启即可，启动日志随即打印那个地址，进去改完密码再改回来。
-             * 权衡因此是<b>「忘记密码的那一次多重启一遍」对「每一台设了密码的实例长年带着一个
-             * 等同于密码的后门」</b>，而后者是常态、且开着这件事没有任何现象。
-             * <p>
-             * 关闭时启动日志不打印那个地址——<b>打印一个不管用的地址比不打印更让人困惑</b>，
-             * 但会打印一行说明，写清怎么把它临时打开。
+             * 保留「忘记密码」的启动令牌通道。打开后启动日志会打印一个带令牌的地址，凭它绕过密码与二次验证进控制台，且会进反向代理的访问日志；忘记密码时临时打开，用完关掉。
              */
+            // 默认关闭的理由：它绕过二次验证——开着它，TOTP 的保护上限就是令牌的保密
+            // 程度；令牌走地址栏，2026-08-13 在生产的 nginx 归档里实测到 82 行含 token=；
+            // 若日后把别的服务挂在这套会话之后（如经 auth_request 代理机器人程序的
+            // WebUI），这个后门会同时成为那些服务的后门。反过来，忘记密码时把这一项
+            // 改成 true 重启即可，启动日志随即打印那个地址，进去改完密码再改回来——
+            // 权衡是「那一次多重启一遍」对「每台设了密码的实例长年带着一个等同于密码
+            // 的后门」。关闭时不打印那个地址（打印一个不管用的地址比不打印更让人困惑），
+            // 但会打印一行说明，写清怎么临时打开。
             @ConfigEffect(ConfigEffect.Effect.RESTART)
             @ConfigDanger(value = "true", title = "开启「忘记密码」启动令牌通道？",
                     consequence = "开着等于留一道能绕过密码与二次验证的后门。它是给「忘了密码进不来」"
@@ -650,33 +569,30 @@ public class NovaCoreProperties {
             private boolean operatorToken = false;
 
             /**
-             * 登录会话的有效期，单位：小时
-             * <p>
-             * 从登录起算的绝对上限，到点必须重新登录。它约束的是「会话 Cookie 一旦泄漏还能被用多久」，
-             * 因此不随使用而顺延。
+             * 登录会话的有效期，单位：小时，从登录起算、到点必须重新登录，不随使用顺延。
              */
+            // 它约束的是「会话 Cookie 一旦泄漏还能被用多久」。
             @ConfigEffect(ConfigEffect.Effect.RESTART)
             @ConfigLabel("会话有效期")
             private int sessionHours = 168;
 
             /**
-             * 登录会话的闲置超时，单位：小时
-             * <p>
-             * 多久没有操作即自动退出。管的是在别人的设备上登录后忘记退出这类情形。
+             * 登录会话的闲置超时，单位：小时，多久没操作自动退出。
              */
+            // 管的是在别人的设备上登录后忘记退出这类情形。
             @ConfigEffect(ConfigEffect.Effect.RESTART)
             @ConfigLabel("闲置多久自动退出")
             private int idleHours = 12;
 
             /**
-             * 连续登录失败多少次后锁定该来源 IP
+             * 连续登录失败多少次后锁定该来源 IP。
              */
             @ConfigEffect(ConfigEffect.Effect.RESTART)
             @ConfigLabel("连续失败多少次锁定")
             private int maxFailures = 5;
 
             /**
-             * 首次锁定的时长，单位：分钟。反复触发时逐次翻倍
+             * 首次锁定的时长，单位：分钟，反复触发逐次翻倍。
              */
             @ConfigEffect(ConfigEffect.Effect.RESTART)
             @ConfigLabel("首次锁定时长")
@@ -691,21 +607,21 @@ public class NovaCoreProperties {
     @Setter
     public static class Paint {
         /**
-         * 绘图器字体列表，支持配置为字体名称或字体文件路径
+         * 绘图字体列表，可填字体名称或字体文件路径。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("成图字体")
         private List<String> fonts = new ArrayList<>();
 
         /**
-         * 绘图器自动扩展高度时扩展像素数，设置过大会导致占用较大内存，设置过小会频繁自动扩展导致效率降低
+         * 画布不够用时一次扩展的高度（像素）；设得过大占内存，设得过小会频繁扩展拖慢速度。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("画布扩展步长")
         private int autoExpandHeight = 5000;
 
         /**
-         * 自定义绘图器底部额外版权信息
+         * 绘图底部附加的自定义版权信息。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("成图底部附加版权")
@@ -719,7 +635,7 @@ public class NovaCoreProperties {
     @Setter
     public static class Mail {
         /**
-         * 默认收件邮箱，改完立即生效，不必重启
+         * 默认收件邮箱，改完立即生效，不必重启。
          */
         // 发件服务那几项（spring.mail.*）不是：它们撑着一个启动时装配好的 bean，
         // 改了配置对象也换不掉它

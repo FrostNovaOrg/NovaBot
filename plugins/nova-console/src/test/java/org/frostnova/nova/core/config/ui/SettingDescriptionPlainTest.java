@@ -57,6 +57,10 @@ class SettingDescriptionPlainTest {
     private static final Pattern PACKAGE = Pattern.compile(
             "\\b(?:org|com|net|java|javax)\\.(?:[a-zA-Z_]\\w*\\.)+[A-Za-z_]\\w*");
 
+    private static final Pattern HTML_TAG = Pattern.compile("<[a-zA-Z/][^>]*>");
+
+    private static final Pattern PAIRED_ASTERISKS = Pattern.compile("\\*\\*[^*]+\\*\\*");
+
     @Test
     @DisplayName("下发的说明里没有类名、注解名、花括号写法和包名")
     void deliveredDescriptionsStayPlain() throws IOException {
@@ -89,10 +93,83 @@ class SettingDescriptionPlainTest {
         assertTrue(hits.isEmpty(), "设置项说明里还有开发术语:\n" + String.join("\n", hits));
     }
 
+    @Test
+    @DisplayName("说明源文是纯文本：没有标签、花括号写法、反引号和成对星号")
+    void rawDescriptionsCarryNoMarkup() throws IOException {
+        ConfigurationMetadataService service = new ConfigurationMetadataService();
+        List<String> hits = new ArrayList<>();
+        for (Map.Entry<String, String> entry : raw(service).entrySet()) {
+            String text = entry.getValue();
+            if (text == null || text.isBlank()) {
+                continue;
+            }
+            List<String> found = markup(text);
+            if (!found.isEmpty()) {
+                hits.add(entry.getKey() + " " + String.join(" ", found));
+            }
+        }
+        assertTrue(hits.isEmpty(), "说明里还有格式记号（设置页按纯文本显示，记号会原样露出来）:\n"
+                + String.join("\n", hits));
+    }
+
+    @Test
+    @DisplayName("说明显示出来以句号结尾")
+    void rawDescriptionsEndWithFullStop() throws IOException {
+        ConfigurationMetadataService service = new ConfigurationMetadataService();
+        List<String> hits = new ArrayList<>();
+        for (Map.Entry<String, String> entry : raw(service).entrySet()) {
+            String text = entry.getValue();
+            if (text == null || text.isBlank()) {
+                continue;
+            }
+            if (!text.endsWith("。")) {
+                hits.add(entry.getKey());
+            }
+        }
+        assertTrue(hits.isEmpty(), "这些说明不以句号结尾，接后文会粘成一句:\n" + String.join("\n", hits));
+    }
+
+    @Test
+    @DisplayName("说明不超过 90 字")
+    void rawDescriptionsStayShort() throws IOException {
+        ConfigurationMetadataService service = new ConfigurationMetadataService();
+        List<String> hits = new ArrayList<>();
+        for (Map.Entry<String, String> entry : raw(service).entrySet()) {
+            String text = entry.getValue();
+            if (text == null || text.isBlank()) {
+                continue;
+            }
+            if (text.length() > 90) {
+                hits.add(entry.getKey() + " " + text.length() + " 字");
+            }
+        }
+        assertTrue(hits.isEmpty(), "这些说明超过 90 字，一条说明要占满半屏:\n" + String.join("\n", hits));
+    }
+
     /**
-     * 按设置页下发前的同一套清理，收集字段说明和组说明
+     * 一条源文说明里的格式记号。设置页把说明按纯文本摆，这些记号会原样露在使用者眼前；
+     * 列表项粘成一串也是这一格要抓的：源里没有标签，就没有「删掉标签后首尾相连」这回事。
      */
-    private static Map<String, String> delivered(ConfigurationMetadataService service) throws IOException {
+    private static List<String> markup(String text) {
+        List<String> found = new ArrayList<>();
+        collect(found, "标签", HTML_TAG, text);
+        if (text.contains("{@")) {
+            found.add("花括号");
+        }
+        if (text.contains("`")) {
+            found.add("反引号");
+        }
+        collect(found, "成对星号", PAIRED_ASTERISKS, text);
+        return found;
+    }
+
+    /**
+     * 源文说明：A 类取元数据里清理前的原文，B、C 取源里的字面量
+     * <p>
+     * 扫原文而不是清理后的文本：清理会把标签删掉、把 {@code @code} 展开，
+     * 扫清理后的读数说明不了源文怎么写的——钉的是「本仓自己的说明不再用到清理」这件事。
+     */
+    private static Map<String, String> raw(ConfigurationMetadataService service) throws IOException {
         Path root = repoRoot();
         List<String> modules = modulesFromPom(root);
         assertFalse(modules.isEmpty(), "聚合构建没有列出模块，说明没扫到");
@@ -122,7 +199,7 @@ class SettingDescriptionPlainTest {
                 if (property.containsKey("deprecated") || property.containsKey("deprecation")) {
                     continue;
                 }
-                descriptions.put(name, service.cleanDescription(property.getString("description")));
+                descriptions.put(name, property.getString("description"));
             }
         }
         assertTrue(missing.isEmpty(), "这些模块的说明没读到:\n" + String.join("\n", missing));
@@ -141,6 +218,21 @@ class SettingDescriptionPlainTest {
             descriptions.put("组 " + group.id(), group.description());
         }
         return descriptions;
+    }
+
+    /**
+     * 按设置页下发前的同一套清理，收集字段说明和组说明
+     * <p>
+     * A 类（novabot. 前缀）走 {@link ConfigurationMetadataService#cleanDescription(String)}，
+     * B、C 是源里的字面量，下发路径本来就不清理。
+     */
+    private static Map<String, String> delivered(ConfigurationMetadataService service) throws IOException {
+        Map<String, String> cleaned = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : raw(service).entrySet()) {
+            cleaned.put(entry.getKey(), entry.getKey().startsWith("novabot.")
+                    ? service.cleanDescription(entry.getValue()) : entry.getValue());
+        }
+        return cleaned;
     }
 
     /**

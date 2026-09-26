@@ -22,13 +22,10 @@ import org.springframework.context.annotation.Configuration;
 @ConfigurationProperties(prefix = "novabot.adapter.onebot.extension.napcat")
 public class OneBotAdapterNapcatExtensionPluginProperties {
     /**
-     * 是否启用发送 @全体成员 次数不足时替换为群待办
-     * <p>
-     * 默认开着：这一项只在「@全体成员 本来就发不出去」那一刻才起作用，
-     * 不开的结果是那条开播通知照常淹在聊天记录里，开着没有额外代价。
-     * <p>
-     * 关掉要重启才生效：程序只在启动时决定做不做这件事，运行中改了要到下次启动才起作用。
+     * @全体成员 次数用完时改发群待办。默认开着——只在 @ 本来就发不出去时才起作用；关掉要重启才生效。
      */
+    // 不开的结果是那条开播通知照常淹在聊天记录里，开着没有额外代价。程序只在启动时
+    // 决定做不做这件事，运行中改了要到下次启动才起作用。
     // 键名要与 BackupAtAllAspect 上的 @ConditionalOnProperty 一起改。只改一处的话，开关看着还在，拨过去却没有任何反应。
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("@全体成员 · 用完改发待办")
