@@ -167,6 +167,18 @@ public final class BilibiliLiveMetric {
     /** 进入过直播间的独立用户数 */
     public static final String ENTER_USERS = "enter_users";
 
+    /**
+     * 进入直播间人次
+     * <p>
+     * 与 {@link #ENTER_USERS} 的差别是「进了几次」对「有几位不同的人」：
+     * 同一个人一场里进三次，这里记 3，那边记 1。匿名进房（uid 抹成 0 或缺失，
+     * 认不出是谁）也是真实的一次进房，照计；人数那边照旧不计匿名。
+     * <p>
+     * 按分钟记时序，事后答得出「什么时候来人多」。报告图暂不画这条曲线，
+     * 先记下来留给以后的数据分析。
+     */
+    public static final String ENTER_COUNT = "enter_count";
+
     /** 点赞总数（服务端下发的单调累计值） */
     public static final String LIKE_TOTAL = "like_total";
 
