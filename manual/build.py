@@ -20,6 +20,8 @@ EXTERNAL = ("http://", "https://", "mailto:")
 # ---------- Markdown 子集渲染（支持的写法见 manual/README.md） ----------
 
 INLINE = re.compile(r"\*\*.+?\*\*|`[^`]+`|!\[[^\]]*\]\([^)]+\)|\[[^\]]+\]\([^)]+\)")
+# 粗体里面再认一层：行内代码与链接；图片不必支持，照旧当文字
+INLINE_STRONG = re.compile(r"`[^`]+`|!\[[^\]]*\]\([^)]+\)|\[[^\]]+\]\([^)]+\)")
 HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
 UL = re.compile(r"^\s*[-*]\s+")
 OL = re.compile(r"^\s*\d+\.\s+")
@@ -39,15 +41,18 @@ def link_html(label, target, links, kind):
     return '<a href="%s">%s</a>' % (esc(target), esc(label))
 
 
-def inline_html(text, links):
+def inline_html(text, links, in_strong=False):
+    """转行内写法。in_strong=True 是在粗体里面：认行内代码与链接，图片当文字。"""
     out, pos = [], 0
-    for m in INLINE.finditer(text):
+    for m in (INLINE_STRONG if in_strong else INLINE).finditer(text):
         out.append(esc(text[pos:m.start()]))
         tok = m.group(0)
         if tok.startswith("**"):
-            out.append("<strong>%s</strong>" % esc(tok[2:-2]))
+            out.append("<strong>%s</strong>" % inline_html(tok[2:-2], links, True))
         elif tok.startswith("`"):
             out.append("<code>%s</code>" % esc(tok[1:-1]))
+        elif in_strong and tok.startswith("!"):
+            out.append(esc(tok))
         else:
             mm = re.match(r"(!?)\[([^\]]*)\]\(([^)]+)\)", tok)
             img, label, target = mm.groups()
