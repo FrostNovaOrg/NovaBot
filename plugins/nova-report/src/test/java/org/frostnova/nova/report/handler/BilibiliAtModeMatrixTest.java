@@ -1,6 +1,7 @@
 package org.frostnova.nova.report.handler;
 
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.event.dynamic.BilibiliDynamicUpdateEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliLiveOnEvent;
 import org.frostnova.nova.bilibili.handler.BilibiliLiveOnPushHandler;
@@ -276,7 +277,8 @@ class BilibiliAtModeMatrixTest {
                         mock(AtSubscriptionService.class), mock(LiveDataService.class)).getDefaultParams()
                 : new BilibiliDynamicPushHandler(mock(BilibiliApiUtil.class), mock(BilibiliDynamicPainter.class),
                         mock(NovaMessageSender.class), mock(AtSubscriptionService.class),
-                        mock(LiveDataService.class)).getDefaultParams();
+                        mock(LiveDataService.class), new NovaBilibiliProperties(), TimelineWriter.NONE)
+                        .getDefaultParams();
     }
 
     /**
@@ -335,7 +337,8 @@ class BilibiliAtModeMatrixTest {
 
             BilibiliDynamicPainter painter = mock(BilibiliDynamicPainter.class);
             when(painter.paint(any())).thenReturn(Optional.empty());
-            new BilibiliDynamicPushHandler(api, painter, collector, subscriptions, mock(LiveDataService.class))
+            new BilibiliDynamicPushHandler(api, painter, collector, subscriptions, mock(LiveDataService.class),
+                    new NovaBilibiliProperties(), TimelineWriter.NONE)
                     .handle(new BilibiliDynamicUpdateEvent(source, mock(Dynamic.class), "发布了动态",
                             "https://t.bilibili.com/1"), pushMessage(params));
         }

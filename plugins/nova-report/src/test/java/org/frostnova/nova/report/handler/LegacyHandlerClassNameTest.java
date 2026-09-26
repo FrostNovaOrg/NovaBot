@@ -6,6 +6,7 @@ import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.command.BilibiliAtNoticeKind;
 import org.frostnova.nova.bilibili.command.BilibiliDynamicAtMeCommand;
 import org.frostnova.nova.bilibili.command.BilibiliStreamerChoice;
+import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.handler.BilibiliLiveOnPushHandler;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.command.CommandContext;
@@ -24,6 +25,7 @@ import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.PushTemplateDefaults;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
 import org.frostnova.nova.core.service.NovaEventHandlerService;
+import org.frostnova.nova.core.timeline.TimelineWriter;
 import org.frostnova.nova.report.painter.BilibiliDynamicPainter;
 import org.frostnova.nova.report.painter.BilibiliLiveReportPainter;
 import org.junit.jupiter.api.BeforeEach;
@@ -85,7 +87,8 @@ class LegacyHandlerClassNameTest {
     @BeforeEach
     void setUp() {
         dynamic = new BilibiliDynamicPushHandler(mock(BilibiliApiUtil.class), mock(BilibiliDynamicPainter.class),
-                mock(NovaMessageSender.class), mock(AtSubscriptionService.class), mock(LiveDataService.class));
+                mock(NovaMessageSender.class), mock(AtSubscriptionService.class), mock(LiveDataService.class),
+                new NovaBilibiliProperties(), TimelineWriter.NONE);
         report = new BilibiliLiveReportPushHandler(mock(BilibiliApiUtil.class), mock(NovaMessageSender.class),
                 mock(BilibiliLiveReportPainter.class), mock(RevenueVisibilityService.class));
     }

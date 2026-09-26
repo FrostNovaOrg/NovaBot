@@ -1,6 +1,7 @@
 package org.frostnova.nova.report.handler;
 
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.handler.BilibiliLiveOnPushHandler;
 import org.frostnova.nova.report.painter.BilibiliDynamicPainter;
 import org.frostnova.nova.report.painter.BilibiliLiveReportPainter;
@@ -16,6 +17,7 @@ import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.NovaEventHandlerService;
 import org.frostnova.nova.core.service.PushTemplateDefaults;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
+import org.frostnova.nova.core.timeline.TimelineWriter;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -81,7 +83,7 @@ class HandlerHistoryTablesAppendOnlyTest {
         BilibiliDynamicPushHandler dynamic = new BilibiliDynamicPushHandler(
                 mock(BilibiliApiUtil.class), mock(BilibiliDynamicPainter.class),
                 mock(NovaMessageSender.class), mock(AtSubscriptionService.class),
-                mock(LiveDataService.class));
+                mock(LiveDataService.class), new NovaBilibiliProperties(), TimelineWriter.NONE);
         BilibiliLiveReportPushHandler report = new BilibiliLiveReportPushHandler(
                 mock(BilibiliApiUtil.class), mock(NovaMessageSender.class),
                 mock(BilibiliLiveReportPainter.class), mock(RevenueVisibilityService.class));

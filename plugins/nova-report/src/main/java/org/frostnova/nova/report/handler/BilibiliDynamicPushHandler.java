@@ -3,9 +3,11 @@ package org.frostnova.nova.report.handler;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.BilibiliPlatform;
+import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.handler.PushHandlerSupport;
 import org.frostnova.nova.bilibili.event.dynamic.BilibiliDynamicUpdateEvent;
 import org.frostnova.nova.bilibili.model.BilibiliLiveMetric;
+import org.frostnova.nova.bilibili.model.Dynamic;
 import org.frostnova.nova.report.painter.BilibiliDynamicPainter;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.event.NovaExternalBaseEvent;
@@ -18,10 +20,16 @@ import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.frostnova.nova.core.service.AtSubscriptionService;
 import org.frostnova.nova.core.service.HandlerPackageNames;
 import org.frostnova.nova.core.service.LiveDataService;
+import org.frostnova.nova.core.timeline.TimelineEvent;
+import org.frostnova.nova.core.timeline.TimelineEventType;
+import org.frostnova.nova.core.timeline.TimelineWriter;
+import org.frostnova.nova.core.util.FixedSizeSetQueue;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
@@ -41,14 +49,30 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
 
     private final LiveDataService liveDataService;
 
+    private final NovaBilibiliProperties properties;
+
+    private final TimelineWriter timeline;
+
+    /**
+     * 已经为它们记过「屏蔽词挡下」的动态
+     * <p>
+     * 一条动态会展开成每个推送会话一次的调用，而时间线记的是「那条动态没推」——
+     * 按动态说的事，不该按会话刷几行。窗口记最近若干条动态，装不下就把最老的忘掉：
+     * 要比的只是眼下这几条同时间进来的。
+     */
+    private final FixedSizeSetQueue<String> blockedRecorded = new FixedSizeSetQueue<>(256);
+
     @Autowired
     public BilibiliDynamicPushHandler(BilibiliApiUtil api, BilibiliDynamicPainter painter, NovaMessageSender sender,
-                                      AtSubscriptionService subscriptions, LiveDataService liveDataService) {
+                                      AtSubscriptionService subscriptions, LiveDataService liveDataService,
+                                      NovaBilibiliProperties properties, TimelineWriter timeline) {
         this.api = api;
         this.painter = painter;
         this.sender = sender;
         this.subscriptions = subscriptions;
         this.liveDataService = liveDataService;
+        this.properties = properties;
+        this.timeline = timeline;
     }
 
     @Override
@@ -94,12 +118,24 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
     }
 
     /**
-     * 依据黑白名单与转发过滤判断是否需要推送
+     * 依据屏蔽词、黑白名单与转发过滤判断是否需要推送
+     * <p>
+     * 屏蔽词挡下时在这里顺手记一行日志与一条时间线：判定与记录同处，
+     * 「为什么没推」的答案才不会散到别处去。
      * @param event 动态更新事件
      * @param params 推送参数
      * @return 是否需要推送
      */
     private boolean shouldPush(BilibiliDynamicUpdateEvent event, JSONObject params) {
+        // 屏蔽词先判：它按内容全局定，与哪个推送会话无关。放在类型名单之后的话，
+        // 同一条动态会不会留下「屏蔽词挡下」那一行，就要看各会话的类型名单怎么写的
+        String blocked = hitBlockedWord(event.getDynamic());
+        if (blocked != null) {
+            log.info("{} 的动态命中屏蔽词 {}, 跳过推送", event.getSource().getUname(), blocked);
+            recordBlockedWord(event, blocked);
+            return false;
+        }
+
         String type = event.getDynamic().getType();
 
         JSONArray whiteList = params.getJSONArray("white_list");
@@ -129,6 +165,74 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
         }
 
         return true;
+    }
+
+    /**
+     * 命中屏蔽词时返回那个词；没配、没命中时返回 {@code null}
+     * <p>
+     * 比的文字取三处：这条动态的正文与标题，再加转发动态原文里的同样两处——
+     * 转发动态自己那几行是转发评语，内容在原文里。
+     * 英文不分大小写；名单里的空行不算词，{@code ""} 在 {@code contains} 里是「处处命中」，
+     * 一行空行就能把所有动态都挡掉。
+     * @param dynamic 动态
+     * @return 命中的词
+     */
+    private String hitBlockedWord(Dynamic dynamic) {
+        List<String> words = properties.getDynamic().getBlockWords();
+        if (words == null || words.isEmpty()) {
+            return null;
+        }
+
+        List<String> texts = new ArrayList<>(dynamic.texts());
+        Dynamic origin = dynamic.getOrigin();
+        if (origin != null) {
+            texts.addAll(origin.texts());
+        }
+
+        for (String word : words) {
+            if (word == null || word.isBlank()) {
+                continue;
+            }
+            String needle = word.strip().toLowerCase(Locale.ROOT);
+            for (String text : texts) {
+                if (text.toLowerCase(Locale.ROOT).contains(needle)) {
+                    return word.strip();
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 时间线上记一条「屏蔽词挡下」：主播、命中的词、动态链接
+     * <p>
+     * 同一条动态推给几个会话也只记一条——有没有推出去是按动态说的，
+     * 按会话记的话一次没推能在时间线上刷出十几行。
+     * @param event 动态更新事件
+     * @param word 命中的词
+     */
+    private void recordBlockedWord(BilibiliDynamicUpdateEvent event, String word) {
+        Dynamic dynamic = event.getDynamic();
+        String id = dynamic.getId();
+        synchronized (blockedRecorded) {
+            if (id != null) {
+                if (blockedRecorded.contains(id)) {
+                    return;
+                }
+                blockedRecorded.add(id);
+            }
+        }
+
+        String uname = event.getSource().getUname();
+        String streamer = uname == null || uname.isBlank() ? String.valueOf(event.getSource().getUid()) : uname;
+        String url = event.getUrl() == null || event.getUrl().isBlank() ? dynamic.getUrl() : event.getUrl();
+
+        timeline.record(TimelineEvent.of(TimelineEventType.PUSH_BLOCKED_WORD, TimelineEvent.Level.WARN)
+                .streamer(streamer)
+                .text("命中屏蔽词「" + word + "」，没有推送" + streamer + "的这条动态")
+                .detail("word", word)
+                .detail("url", url)
+                .build());
     }
 
     @Override

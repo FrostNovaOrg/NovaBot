@@ -28,6 +28,15 @@ public enum TimelineEventType {
     PUSH_PAUSED("暂停丢弃", TimelineCategory.PUSH),
 
     /**
+     * 动态里命中了屏蔽词，这条没有推
+     * <p>
+     * 与静音、暂停分开记：那两类是「时候不对」，这一类是「内容不该推」。
+     * 使用者配了屏蔽词之后想确认的正是「它挡住了什么」，混进前两类里就翻不出来。
+     * 同一条动态推给几个会话也只记一条（推没推是按动态说的，不是按会话说的）。
+     */
+    PUSH_BLOCKED_WORD("屏蔽词挡下", TimelineCategory.PUSH),
+
+    /**
      * 推送成功
      */
     PUSH_SENT("推送成功", TimelineCategory.PUSH),
