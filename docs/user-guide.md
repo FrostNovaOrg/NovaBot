@@ -763,11 +763,11 @@ novabot:
 
 ### 从本项目的旧版本升级
 
-用 `install.sh` 升级时，脚本会删掉安装目录里的 `lib/`，再把新产物拷进去，所以 `NovaBot.jar` 与 `lib/` 换成新的。`plugins-lib/` 不整目录删除：新包里自带的每个 jar，按构件名删掉旧版再放入新版；文件名里认不出版本号的（版本段不以数字开头，例如带 -jre、-SNAPSHOT 后缀）不删，会和新版并存。其余 jar 原样保留，屏幕上列出留了哪些。列出来的 jar 启动时都会装上，确认不用的可以自己删。容器入口每次启动会用镜像里的 `NovaBot.jar` 与 `lib/` 盖掉卷 `/app` 上的同名文件，并按新文件名换内置插件；`plugins-lib/` 只建目录，不从镜像里的 `/opt/starbot/plugins-lib` 铺到卷上，换镜像后卷里的那份不是新的，这一目录要自己按第 3 步换。五个旧名插件，安装脚本和容器都不会删，要自己删；`StarBotCore.jar` 只有 `install.sh` 会删。手工升级则整段照做：
+用 `install.sh` 升级时，脚本会删掉安装目录里的 `lib/`，再把新产物拷进去，所以 `NovaBot.jar` 与 `lib/` 换成新的。`plugins-lib/` 不整目录删除：新包里自带的每个 jar，按构件名删掉旧版再放入新版；文件名里认不出版本号的（版本段不以数字开头，例如带 -jre、-SNAPSHOT 后缀）不删，其中与新包里文件同名的会被新版盖掉、不列入保留名单；新包里没有的 jar（包括自己放的）原样保留，屏幕上列出留了哪些。列出来的 jar 启动时都会装上，确认不用的可以自己删。容器入口每次启动会用镜像里的 `NovaBot.jar` 与 `lib/` 盖掉卷 `/app` 上的同名文件，并按新文件名换内置插件；`plugins-lib/` 只建目录，不从镜像里的 `/opt/starbot/plugins-lib` 铺到卷上，换镜像后卷里的那份不是新的，这一目录要自己按第 3 步换。五个旧名插件，安装脚本和容器都不会删，要自己删；`StarBotCore.jar` 只有 `install.sh` 会删。手工升级则整段照做：
 
 1. 停止服务
 2. **备份 `application.yml`、`datasource.json`、`cookies.json`、`cookies.key`**。登录凭据默认加密后仍写在 `cookies.json`，密钥在 `cookies.key`，没有另存一份密文文件。若旁边还有明文迁成加密时留下的 `cookies.json.plain.bak`，一并备份。
-3. 用新版本的产物整个换掉 `NovaBot.jar` 与 `lib/`。`plugins-lib/` 里新包自带的 jar 按名字删旧放新，自己放的留下；文件名里认不出版本号的（版本段不以数字开头，例如带 -jre、-SNAPSHOT 后缀）不删，会和新版并存。
+3. 用新版本的产物整个换掉 `NovaBot.jar` 与 `lib/`。`plugins-lib/` 里新包自带的 jar 按名字删旧放新，自己放的留下；文件名里认不出版本号的（版本段不以数字开头，例如带 -jre、-SNAPSHOT 后缀）不删，新包里有同名文件的、放入新版时会盖掉它，其余的和新版并存。
 4. `plugins/` **不要整个替换**——里面可能有你自己放的第三方插件。只按名字换下面五个内置插件，并删掉同名插件的旧版本文件（启动时 `plugins/` 里每个 jar 都会加载，留下两个版本会一起装上）。第三方插件不动。
    - `nova-onebot-adapter-<版本>.jar`
    - `nova-onebot-adapter-napcat-extension-<版本>.jar`

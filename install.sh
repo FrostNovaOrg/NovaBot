@@ -264,6 +264,8 @@ if [ -f "$INSTALL_DIR/NovaBot.jar" ] || [ -f "$INSTALL_DIR/StarBotCore.jar" ]; t
     for jar in "$INSTALL_DIR"/plugins-lib/*.jar; do
         [ -f "$jar" ] || continue
         name="$(basename "$jar")"
+        # 新包里有同名文件的，随后整包拷入时会被新版盖掉，不能列成「新包里没有」
+        [ -f "$SOURCE_DIR/plugins-lib/$name" ] && continue
         if [ "$kept_n" -eq 0 ]; then
             kept_list="$name"
         else
