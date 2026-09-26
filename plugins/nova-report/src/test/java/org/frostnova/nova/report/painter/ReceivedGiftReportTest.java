@@ -32,6 +32,7 @@ import org.springframework.core.io.DefaultResourceLoader;
 import javax.imageio.ImageIO;
 import java.awt.Color;
 import java.awt.Graphics2D;
+import java.awt.Point;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
@@ -43,6 +44,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Properties;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -53,6 +55,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @DisplayName("收到的礼物")
 class ReceivedGiftReportTest {
     private static final String PLATFORM = "bilibili";
+
+    /**
+     * 与 {@code BilibiliLiveReportPainter} 里的同名常量对齐
+     */
+    private static final int MARGIN = 35;
+
+    /**
+     * 礼物图标只有这四档边长；别的画图都不长这个样
+     */
+    private static final int[] GIFT_ICON_SIZES = {96, 72, 60, 48};
 
     private static final LiveStreamerInfo STREAMER = new LiveStreamerInfo(10001L, "主播甲", 20002L);
 
@@ -327,6 +339,116 @@ class ReceivedGiftReportTest {
         assertTrue(hidden < shown, "隐藏金额时礼物列表不出，图应更矮：" + hidden + " vs " + shown);
         assertTrue(empty < shown, "没收到礼物时整段不画：" + empty + " vs " + shown);
         assertEquals(empty, hidden, "隐藏金额与没有礼物都应少掉同一段");
+    }
+
+    /**
+     * 某档不满一行时，这一排要在版心里整体居中
+     * <p>
+     * 改之前这排从左边距起逐格往右摆；各档格宽不同，头一个图标的中线一档比一档往左移，
+     * 排成逐行缩小的台阶。这一格量最左图标左侧的留白与最右图标右侧的留白（相对版心）。
+     * 两个情形：一档只有一种；六列那档只有两种。
+     */
+    @Test
+    @DisplayName("某档不满一行时这一排整体居中，左右留白相差不超过 1 像素")
+    void centersShortGiftRowInsideContent() throws Exception {
+        NovaCoreProperties coreProperties = new NovaCoreProperties();
+        coreProperties.getPaint().getFonts().add("内置");
+        coreProperties.getLive().setSaveLiveData(false);
+        FontUtil fontUtil = new FontUtil(new DefaultResourceLoader(), coreProperties);
+        fontUtil.init();
+
+        Properties buildInfo = new Properties();
+        buildInfo.setProperty("version", "4.0.0");
+        buildInfo.setProperty("group", "org.frostnova.nova");
+        buildInfo.setProperty("artifact", "nova-core");
+        buildInfo.setProperty("name", "NovaBot");
+        BuildProperties buildProperties = new BuildProperties(buildInfo);
+
+        // 记下每次画方图的落点：这四档边长只有礼物图标用
+        List<int[]> icons = new ArrayList<>();
+        NovaCommonPainterFactory factory = new NovaCommonPainterFactory(buildProperties, coreProperties, fontUtil) {
+            @Override
+            public CommonPainter create(int width, int height, boolean autoExpand) {
+                return new CommonPainter(buildProperties, coreProperties, fontUtil, width, height, autoExpand) {
+                    @Override
+                    public CommonPainter drawImage(BufferedImage image, Point drawLocation) {
+                        int size = image.getWidth();
+                        if (drawLocation != null && image.getHeight() == size && isGiftIconSize(size)) {
+                            icons.add(new int[]{size, drawLocation.x});
+                        }
+                        return super.drawImage(image, drawLocation);
+                    }
+                };
+            }
+        };
+
+        BilibiliApiUtil api = org.mockito.Mockito.mock(BilibiliApiUtil.class);
+        Room room = new Room();
+        org.mockito.Mockito.when(api.getLiveInfoByRoomId(org.mockito.ArgumentMatchers.anyLong())).thenReturn(room);
+        org.mockito.Mockito.when(api.getGuardList(org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.anyLong())).thenReturn(Optional.of(List.of()));
+
+        DefaultLiveDataService data = new DefaultLiveDataService(coreProperties);
+        // 一档一种（888 ≥ 100），六列那档两种（0.5、0.2 < 1）
+        data.recordLiveGift(PLATFORM, STREAMER.getUid(), 11L, "示例甲", 888, 2, "");
+        data.recordLiveGift(PLATFORM, STREAMER.getUid(), 22L, "示例乙", 0.5, 7, "");
+        data.recordLiveGift(PLATFORM, STREAMER.getUid(), 23L, "示例丙", 0.2, 11, "");
+
+        BilibiliLiveReportPainter painter = new BilibiliLiveReportPainter(
+                factory, api, data, fontUtil, new NovaBilibiliProperties(),
+                new LiveRoomInfoHistory(new NovaStateStore(coreProperties)));
+        assertTrue(painter.paint(PLATFORM, STREAMER, BilibiliLiveReportOptions.of(quietParams(), true)).isPresent(),
+                "报告没画出来，这把尺无从谈起");
+
+        List<Integer> top = iconXs(icons, 96);
+        List<Integer> low = iconXs(icons, 48);
+        assertEquals(1, top.size(), "一档只有一种，只该画一个 96 的图标，实际全排是 " + describe(icons));
+        assertEquals(2, low.size(), "六列那档只有两种，只该画两个 48 的图标，实际全排是 " + describe(icons));
+        assertAll("两种情形的不满行都要居中",
+                () -> assertRowCentered(top, 96),
+                () -> assertRowCentered(low, 48));
+    }
+
+    private static boolean isGiftIconSize(int size) {
+        for (int gift : GIFT_ICON_SIZES) {
+            if (size == gift) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static List<Integer> iconXs(List<int[]> icons, int size) {
+        List<Integer> xs = new ArrayList<>();
+        for (int[] icon : icons) {
+            if (icon[0] == size) {
+                xs.add(icon[1]);
+            }
+        }
+        return xs;
+    }
+
+    private static String describe(List<int[]> icons) {
+        StringBuilder text = new StringBuilder();
+        for (int[] icon : icons) {
+            text.append(icon[0]).append('@').append(icon[1]).append(' ');
+        }
+        return text.toString().strip();
+    }
+
+    private static void assertRowCentered(List<Integer> iconXs, int iconSize) {
+        int left = Integer.MAX_VALUE;
+        int right = Integer.MIN_VALUE;
+        for (int x : iconXs) {
+            left = Math.min(left, x);
+            right = Math.max(right, x + iconSize);
+        }
+        int leftGap = left - MARGIN;
+        int rightGap = MARGIN + BilibiliLiveReportPainter.CONTENT_WIDTH - right;
+        assertTrue(Math.abs(leftGap - rightGap) <= 1,
+                "这一排歪在一边：最左图标左侧留白 " + leftGap + " 像素、最右图标右侧留白 " + rightGap
+                        + " 像素（版心 " + MARGIN + ".." + (MARGIN + BilibiliLiveReportPainter.CONTENT_WIDTH)
+                        + "，图标落点 " + iconXs + "，边长 " + iconSize + "）");
     }
 
     private NovaCoreProperties properties() {

@@ -1568,6 +1568,9 @@ public class BilibiliLiveReportPainter {
 
     /**
      * 画一排礼物，返回下一排的起始 y
+     * <p>
+     * 满行照旧从左边距起逐格往右摆。不满一行时整排在版心里居中：各档格宽不同，
+     * 靠左排会让头一个图标的中线一档比一档往左移，排成逐行缩小的台阶。
      */
     private int drawGiftRow(CommonPainter painter, ReceivedGiftLayout.GiftRow row, int y) {
         int iconSize = row.iconSize();
@@ -1576,7 +1579,11 @@ public class BilibiliLiveReportPainter {
                 new TextWithStyle("礼物", GIFT_NAME_SIZE, COLOR_TEXT, Font.PLAIN)).getSecond();
         int countHeight = painter.getStringWidthAndHeight(
                 new TextWithStyle("×1", GIFT_COUNT_SIZE, COLOR_TIP, Font.PLAIN)).getSecond();
+        int shown = row.gifts().size();
         int x = MARGIN;
+        if (shown > 0 && shown < row.columns()) {
+            x += (CONTENT_WIDTH - cellWidth * shown - GIFT_CELL_GAP * (shown - 1)) / 2;
+        }
         for (LiveGiftTotal gift : row.gifts()) {
             BufferedImage icon = giftPicture(gift, iconSize);
             painter.drawImage(icon, new Point(x + Math.max(0, (cellWidth - iconSize) / 2), y));
