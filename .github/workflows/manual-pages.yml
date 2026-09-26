@@ -7,10 +7,10 @@ name: Manual site (Pages)
 on:
   workflow_dispatch:
 
+# 只有发布那一个 job 需要写 Pages 与换发令牌；生成那一个 job 只读仓库。
+# 权限放在 job 级而不是顶层，生成步骤拿不到这两样。
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 # 同一时间只跑一次发布，排队而不互相取消
 concurrency:
@@ -43,6 +43,9 @@ jobs:
     name: 发布到 Pages
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
