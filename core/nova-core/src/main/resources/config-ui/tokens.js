@@ -57,13 +57,21 @@ function issueFormHtml() {
     + '借走一台没锁屏的电脑也签得出来，而签出来的口令长期有效。签发是低频动作，多这一步买断这条路。</p>'
 
     + '<div class="row"><label for="tk-label">签给谁</label>'
-    + '<input id="tk-label" maxlength="40" placeholder="例如：客厅那台电脑" autocomplete="off"></div>'
+    + '<input id="tk-label" name="label" maxlength="40" placeholder="例如：客厅那台电脑" autocomplete="off"></div>'
     + '<div class="row"><label></label><span class="hint" style="margin:0;flex:1;min-width:220px">'
     + '这个名字会原样出现在下面的清单里，日后单独吊销就靠它。'
     + '<b>别填带真名的机器名</b>——「某某的 MacBook」会把一个人名留在这台服务器上。</span></div>'
 
+    // 浏览器把紧挨着密码框的文本框当成登录名。「签给谁」里的名字会原样留在清单里，
+    // 而这一页正叮嘱别填带真名的机器名。密码框前面放一个隐藏的用户名框，登录名只进这一框。
+    // 这一页的样式表没有登录页那条 .hidden，所以再收成 1 像素：display:none 时有的浏览器直接跳过这一框，
+    // 登录名仍会填进上面那个看得见的格子。
+    + '<input type="text" name="username" value="novabot" autocomplete="username" class="hidden" readonly'
+    + ' tabindex="-1" aria-hidden="true"'
+    + ' style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0">'
+
     + '<div class="row"><label for="tk-pass">密码</label>'
-    + '<input type="password" id="tk-pass" autocomplete="off"></div>'
+    + '<input type="password" id="tk-pass" name="password" autocomplete="current-password"></div>'
 
     // 验证器没绑就不显示这一格。上一次事故正出在这里：说明文字写的是「没开两步验证就直接回车」，
     // 而那台机器的二次验证是开着的，照做必然失败，且使用者没有任何办法自己发现说明写错了
