@@ -36,8 +36,24 @@ public class RestTemplateConfig {
 
     @Bean
     public RestTemplate restTemplate() {
+        return buildTemplate(
+                Duration.of(network.getConnectTimeout(), ChronoUnit.SECONDS),
+                Duration.of(network.getReadTimeout(), ChronoUnit.SECONDS));
+    }
+
+    /**
+     * 搭一个「连接限时＋读限时」的 RestTemplate，连接池归它自己
+     * <p>
+     * 每个限时各开一个客户端：JDK 客户端的连接超时是建客户端时定死的，读超时是逐请求的，
+     * 一套池子只能给一个连接超时。取图那种要短限时的（见 HttpUtil 的限时取图）另开一张池，
+     * 也不跟轮询这张混。
+     * @param connectTimeout 连接超时
+     * @param readTimeout 读超时（逐请求生效）
+     * @return 模板
+     */
+    public static RestTemplate buildTemplate(Duration connectTimeout, Duration readTimeout) {
         HttpClient client = HttpClient.newBuilder()
-                .connectTimeout(Duration.of(network.getConnectTimeout(), ChronoUnit.SECONDS))
+                .connectTimeout(connectTimeout)
                 // 跟随重定向：哔哩哔哩的部分接口会在鉴权后跳转
                 .followRedirects(HttpClient.Redirect.NORMAL)
                 // 固定 HTTP/1.1。JDK 默认是 HTTP_2，对明文 http:// 会先发一个带
@@ -50,7 +66,7 @@ public class RestTemplateConfig {
                 .build();
 
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(client);
-        factory.setReadTimeout(Duration.of(network.getReadTimeout(), ChronoUnit.SECONDS));
+        factory.setReadTimeout(readTimeout);
 
         return new RestTemplate(factory);
     }

@@ -30,6 +30,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -196,6 +197,11 @@ class BilibiliRankingAvatarRetryTest {
 
         @Override
         public byte[] getBytes(String url, Map<String, String> headers) {
+            return getBytes(url, headers, Duration.ofSeconds(1));
+        }
+
+        @Override
+        public byte[] getBytes(String url, Map<String, String> headers, Duration fetchTimeout) {
             fetches.incrementAndGet();
             if (hanging.get()) {
                 while (released.getCount() > 0 && !abandoned.get()) {

@@ -124,6 +124,16 @@ public class BilibiliApiUtil {
      */
     private static final int GUARD_LIST_MAX_PAGES = 50;
 
+    /**
+     * 取一张图这一趟自己的限时
+     * <p>
+     * 一张小头像画不画得出来只是装饰，源站挂住时不值得占住取图线程到全局读超时
+     * （network.read-timeout）：那一趟占线程多久，队里排着的新图就得等多久。
+     * 比出图等头像的那 3 秒宽一档——这一趟能赶得上就画，赶不上就空着位置照出图，
+     * 只要它在限时内回来了就照旧写缓存，下一张图画得上
+     */
+    private static final Duration FETCH_IMAGE_TIMEOUT = Duration.ofSeconds(5);
+
     private static final String ROOM_STATUS_API = "https://api.live.bilibili.com/room/v1/Room/get_status_info_by_uids";
 
     private static final String DANMU_INFO_API = "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo";
@@ -673,7 +683,7 @@ public class BilibiliApiUtil {
         }
 
         try {
-            return Optional.of(http.fetchBufferedImage(url, headers));
+            return Optional.of(http.fetchBufferedImage(url, headers, FETCH_IMAGE_TIMEOUT));
         } catch (HttpStatusCodeException e) {
             int status = e.getStatusCode().value();
             if (status == 404 || status == 410) {
