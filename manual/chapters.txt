@@ -1,0 +1,19 @@
+# 手册章节清单：一行一个源文件，从上到下就是目录顺序。文件名只用 ASCII。
+01-what-novabot-does.md
+02-what-to-prepare.md
+03-install.md
+04-first-open.md
+05-console-tour.md
+06-add-streamer-and-push.md
+07-manage-groups.md
+08-commands-in-group.md
+09-stream-reports.md
+10-quiet-and-alerts.md
+11-where-to-see-what-happened.md
+12-settings.md
+13-upgrade-and-backup.md
+14-troubleshooting.md
+appendix-a-measurements.md
+appendix-b-advanced.md
+appendix-c-security-and-resources.md
+appendix-d-migrate-from-starbot.md
