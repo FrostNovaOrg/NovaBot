@@ -2,12 +2,16 @@ package org.frostnova.nova.bilibili.service;
 
 import org.frostnova.nova.bilibili.model.Up;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
+import org.frostnova.nova.core.event.datasource.base.NovaDataSourceChangeEvent;
 import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.datasource.DataSourceService.StreamerWithFans;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -84,5 +88,29 @@ class BilibiliDataSourceServiceTest {
         assertEquals(243L, found.fans(), "粉丝数随同一趟响应带回");
         assertEquals(1, roomInfoTrips.get(), "按直播间号查只该打房间信息这一趟");
         assertEquals(0, fansCountTrips.get(), "粉丝数已在主播信息那份响应里，不得再打 getFansCount");
+    }
+
+    @Test
+    @DisplayName("控制台查主播补上房间号，不发数据源变更")
+    void lookupCompletionDoesNotPublishRoomReady() {
+        Up up = new Up(UID, "主播甲", 20002L, "https://example.invalid/face.jpg", 243L);
+        when(api.getUpInfoByUid(UID)).thenReturn(up);
+        List<NovaDataSourceChangeEvent> events = new ArrayList<>();
+        ApplicationEventPublisher publisher = event -> {
+            if (event instanceof NovaDataSourceChangeEvent change) {
+                events.add(change);
+            }
+        };
+
+        PushUser user = new PushUser();
+        user.setUid(UID);
+        user.setPlatform("bilibili");
+        StreamerWithFans found = new BilibiliDataSourceService(api, publisher).completeStreamerWithFans(user);
+
+        assertEquals("主播甲", found.user().getUname(), "查到的昵称照旧带回");
+        assertEquals(20002L, found.user().getRoomId(), "原来没有的房间号照旧补上");
+        assertEquals(243L, found.fans(), "粉丝数照旧随这一趟带回");
+        assertEquals(0, events.size(),
+                "在控制台查一个还没有房间号的主播，补上房间号之后不该发数据源变更；发出去工程日志会多一行「推送配置已变更」，并白跑一次重新同步");
     }
 }
