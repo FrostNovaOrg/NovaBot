@@ -494,3 +494,72 @@ export function engEmptyText(state, today, total) {
   if (total) return '没有符合条件的行。';
   return state.date && state.date !== today ? '这一天没有记录。' : '这一份日志此刻还没有内容。';
 }
+
+/**
+ * 还开着的那几档，写成芯片上的那半句
+ *
+ * 四档全开不当挡住：那是进页时的样子，点名它等于说「没筛」。
+ * 一档都没留也要点名——否则空态看不出是级别把行挡没的。
+ * @param levelsOn 四档各自开着没有
+ * @return 人话；没挡住时为空串
+ */
+function levelsLeft(levelsOn) {
+  if (!levelsOn) return '';
+  const on = [];
+  let off = false;
+  for (const [name, label] of ENG_LEVELS) {
+    if (levelsOn[name] === false) off = true;
+    else on.push(label);
+  }
+  if (!off) return '';
+  return on.length ? on.join('、') : '一档都没留';
+}
+
+/**
+ * 工程日志筛到一行都不剩时，点名挡住的那几项
+ *
+ * 级别、页内搜索、定位这三样没有随手够得着的关法。只说「没有符合条件的行」的话，
+ * 看的人不知道该把哪一档点回来、该清掉哪个词。日期不算：翻日子的格子就在同一屏。
+ * 这一份一行都没有时不点名：清掉它们也长不出行来。屏幕上还有行时也不点名。
+ * @param state 筛选状态（用到 at）
+ * @param levelsOn 四档各自开着没有
+ * @param q 搜索词
+ * @param total 读到几段（不看筛选）
+ * @param shown 屏幕上几段
+ * @return [{key, label}]，key 是 levels / q / at，按它清得掉的正是那一项
+ */
+export function engEmptyChips(state, levelsOn, q, total, shown) {
+  if (!total || shown) return [];
+  const items = [];
+  const left = levelsLeft(levelsOn);
+  if (left) items.push({key: 'levels', label: '级别：' + left});
+  const needle = String(q || '').trim();
+  if (needle) items.push({key: 'q', label: '搜索：' + needle});
+  if (state && state.at) items.push({key: 'at', label: '定位：' + state.at});
+  return items;
+}
+
+/**
+ * 清掉挡住的一项，或一次全部清掉
+ *
+ * 级别清掉就是四档都开回来。搜索清掉是空串。定位清掉是把那一分钟抹掉。
+ * 日期不动：翻日子不是这里要清的那一项。不改入参那一份开关。
+ * @param key levels / q / at；全部清掉时传空串
+ * @param levelsOn 四档各自开着没有
+ * @param q 搜索词
+ * @param at 定位到的那一分钟
+ * @return {{levels, q, at}} 清完之后的那三样
+ */
+export function clearEngBlock(key, levelsOn, q, at) {
+  const all = key == null || key === '';
+  const keepLevels = !all && key !== 'levels';
+  const levels = {};
+  for (const [name] of ENG_LEVELS) {
+    levels[name] = keepLevels ? levelsOn[name] !== false : true;
+  }
+  return {
+    levels,
+    q: (all || key === 'q') ? '' : (q == null ? '' : String(q)),
+    at: (all || key === 'at') ? '' : (at == null ? '' : String(at)),
+  };
+}

@@ -12,9 +12,9 @@
 
 import {$, api, clock, el, esc, phrase, say, today, term} from './core.js';
 import {
-  ENG_LEVELS, catBarItems, emptyStateView, engAtBottom, engCopyText, engEmptyText, engFootText,
-  engFollowing, engQuery, engSegments, hasFilter, logHash, newerDay, olderDay, parseLogHash,
-  timelineQuery,
+  ENG_LEVELS, catBarItems, clearEngBlock, emptyStateView, engAtBottom, engCopyText, engEmptyChips,
+  engEmptyText, engFootText, engFollowing, engQuery, engSegments, hasFilter, logHash, newerDay,
+  olderDay, parseLogHash, timelineQuery,
 } from './log-model.js';
 
 /** 当前筛选状态，真源是地址栏，见 syncFromHash */
@@ -486,15 +486,89 @@ function renderEngJump(found) {
   bar.appendChild(back);
 }
 
+/** 级别药丸的按下态跟上 engLevels。清掉「级别」那一枚芯片时，药丸要一起亮回来 */
+function syncEngLevelPills() {
+  const pills = $('#eng-levels');
+  if (!pills) return;
+  const buttons = pills.querySelectorAll('button');
+  ENG_LEVELS.forEach(([name], index) => {
+    const pill = buttons[index];
+    if (pill) pill.setAttribute('aria-pressed', engLevels[name] ? 'true' : 'false');
+  });
+}
+
+/**
+ * 清掉挡住的一项，或一次全部清掉
+ *
+ * 搜索只在已经读进来的这几段里筛，清掉就地重画。级别与定位会改要向服务端要的那一份，
+ * 清掉就重读。定位写在地址栏上，抹掉它走地址栏那一条路，贴出去的地址不再带着那一分钟。
+ * @param key levels / q / at；全部清掉时传空串
+ */
+function applyEngClear(key) {
+  const next = clearEngBlock(key, engLevels, engSearch, filters.at);
+  const levelsChanged = ENG_LEVELS.some(([name]) => engLevels[name] !== next.levels[name]);
+  for (const [name] of ENG_LEVELS) engLevels[name] = next.levels[name];
+  engSearch = next.q;
+  const search = $('#eng-q');
+  if (search) search.value = next.q;
+  syncEngLevelPills();
+  if ((next.at || '') !== (filters.at || '')) {
+    try {
+      location.hash = logHash(Object.assign({}, filters, {at: next.at}), today());
+    } catch (e) {
+      filters.at = next.at;
+      loadEng();
+    }
+    return;
+  }
+  if (levelsChanged) loadEng();
+  else renderEngList();
+}
+
+/** 一枚芯片。点下去只清它自己那一项 */
+function engChip(label, onClick) {
+  const chip = el('button', 'pill lgpill');
+  chip.type = 'button';
+  chip.textContent = label;
+  chip.addEventListener('click', onClick);
+  return chip;
+}
+
+/**
+ * 一行都没显示时：那句话，再加上挡住的那几项
+ * @param total 读到几段
+ * @param shown 屏幕上几段
+ * @return 空态那一块
+ */
+function engEmptyView(total, shown) {
+  const wrap = el('div', 'empty');
+  const lead = el('div');
+  lead.textContent = engEmptyText(filters, today(), total);
+  wrap.appendChild(lead);
+  // 筛没了才点名。每枚芯片只清它自己那一项，「全部清掉」一次清掉这三样，日子不动
+  const chips = engEmptyChips(filters, engLevels, engSearch, total, shown);
+  if (!chips.length) return wrap;
+  const row = el('div', 'empty-chips');
+  for (const item of chips) {
+    row.appendChild(engChip(item.label + ' ✕', () => applyEngClear(item.key)));
+  }
+  row.appendChild(engChip('全部清掉', () => applyEngClear('')));
+  wrap.appendChild(row);
+  return wrap;
+}
+
 function renderEngList() {
   const box = $('#eng-body');
   // 与「复制这一段」问的是同一个口子：各筛各的话，剪贴板里会是一份没在屏幕上出现过的日志
   const {all, shown} = engSegments(engLines, engHighlight, engLevels, engSearch);
 
-  box.innerHTML = shown.length
-    ? shown.map(entry => '<div class="er' + (entry.level ? ' ' + entry.level : '')
-      + (entry.hl ? ' hl' : '') + '">' + esc(entry.text) + '</div>').join('')
-    : '<div class="empty">' + esc(engEmptyText(filters, today(), all.length)) + '</div>';
+  if (shown.length) {
+    box.innerHTML = shown.map(entry => '<div class="er' + (entry.level ? ' ' + entry.level : '')
+      + (entry.hl ? ' hl' : '') + '">' + esc(entry.text) + '</div>').join('');
+  } else {
+    box.innerHTML = '';
+    box.appendChild(engEmptyView(all.length, shown.length));
+  }
 
   // 定位过来时停在高亮那一行上，否则停在最下面——排障要看的几乎总是刚发生的那几行
   const target = box.querySelector('.er.hl');

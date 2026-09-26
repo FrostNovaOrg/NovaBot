@@ -366,6 +366,75 @@ eq(model.catBarItems ? model.catBarItems([{name: 'PUSH', text: '推送'}]) : '(�
   '接口没给条数时不硬凑 0');
 eq(model.catBarItems ? model.catBarItems([]) : '(缺)', [], '一类都没有时一排是空的');
 
+// ---------- 十四、工程日志筛空时点名挡住的那几项，并可单项清掉 ----------
+// 级别药丸、页内搜索、定位到某一分钟，这三样关掉之后空态只剩一句「没有符合条件的行」。
+// 看的人不知道该把哪一档点回来、该清掉哪个词。日期不算：翻日子的格子就在同一屏。
+// 这一份一行都没有时也不点名：清掉它们也长不出行来。屏幕上还有行时同样不点名。
+const LEVELS_ALL = {error: true, warn: true, info: true, debug: true};
+const LEVELS_ERR = {error: true, warn: false, info: false, debug: false};
+
+function engChips(levels, q, at, total, shown, date) {
+  if (!model.engEmptyChips) return '(缺)';
+  return model.engEmptyChips(
+    state({view: 'eng', at: at || '', date: date || TODAY}), levels, q, total, shown);
+}
+
+function engClear(key, levels, q, at) {
+  if (!model.clearEngBlock) return '(缺)';
+  return model.clearEngBlock(key, levels, q, at);
+}
+
+eq(engChips(LEVELS_ERR, '', '', 12, 0),
+  [{key: 'levels', label: '级别：错误'}],
+  '只留错误这一档：点名它');
+eq(engChips({error: true, warn: true, info: false, debug: false}, '开播', '20:07', 12, 0),
+  [{key: 'levels', label: '级别：错误、警告'},
+    {key: 'q', label: '搜索：开播'},
+    {key: 'at', label: '定位：20:07'}],
+  '级别、搜索、定位同时在时逐项点名，顺序稳定');
+eq(engChips({error: false, warn: true, info: false, debug: true}, '', '', 4, 0),
+  [{key: 'levels', label: '级别：警告、调试'}],
+  '留着的档按错误、警告、信息、调试的顺序写');
+eq(engChips({error: false, warn: false, info: false, debug: false}, '', '', 4, 0),
+  [{key: 'levels', label: '级别：一档都没留'}],
+  '四档都关掉也点名，不然看不出是级别挡住的');
+eq(engChips(LEVELS_ALL, '', '', 12, 0), [],
+  '四档都开、没搜、没定位：没有要点名的项');
+eq(engChips(LEVELS_ALL, '   ', '', 12, 0), [],
+  '搜索词只有空白时当没搜');
+eq(engChips(LEVELS_ERR, '开播', '20:07', 0, 0), [],
+  '这一份一行都没有时不点名——清掉它们也长不出行来');
+eq(engChips(LEVELS_ERR, '开播', '20:07', 12, 2), [],
+  '屏幕上还有行时不点名');
+eq(engChips(LEVELS_ERR, '', '', 12, 0, '2026-09-01'),
+  [{key: 'levels', label: '级别：错误'}],
+  '翻到别的日子不另点名日期——日子那一格就在同一屏');
+
+const kept = {error: true, warn: false, info: false, debug: false};
+const beforeLevels = JSON.stringify(kept);
+const clearedLevels = engClear('levels', kept, '开播', '20:07');
+eq(JSON.stringify(kept), beforeLevels, '清级别不改原来那一份开关');
+eq(clearedLevels === '(缺)' ? '(缺)' : clearedLevels,
+  {levels: LEVELS_ALL, q: '开播', at: '20:07'},
+  '只清级别：四档开回来，搜索和定位还在');
+eq(engClear('q', LEVELS_ERR, '开播', '20:07'),
+  {levels: LEVELS_ERR, q: '', at: '20:07'},
+  '只清搜索：那一词没了，级别和定位还在');
+eq(engClear('at', LEVELS_ERR, '开播', '20:07'),
+  {levels: LEVELS_ERR, q: '开播', at: ''},
+  '只清定位：那一分钟没了，级别和搜索还在');
+eq(engClear('', LEVELS_ERR, '开播', '20:07'),
+  {levels: LEVELS_ALL, q: '', at: ''},
+  '全部清掉：级别开回来，搜索和定位一起抹掉');
+
+const afterQ = engClear('q', LEVELS_ERR, '开播', '20:07');
+eq(afterQ === '(缺)' ? '(缺)' : engChips(afterQ.levels, afterQ.q, afterQ.at, 12, 0).map(item => item.key),
+  ['levels', 'at'],
+  '只清搜索这一项之后不再点名它');
+const named = engChips(LEVELS_ERR, '开播', '20:07', 12, 0);
+eq(named === '(缺)' ? '(缺)' : named.every(item => ['levels', 'q', 'at'].includes(item.key)),
+  true, '每枚芯片的键都是清得掉的那一项');
+
 // ---------- 报数 ----------
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);

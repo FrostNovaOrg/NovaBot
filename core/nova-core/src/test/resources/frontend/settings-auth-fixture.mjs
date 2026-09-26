@@ -127,6 +127,46 @@ try {
 }
 eq(qFormOff, true, 'store.totpRequired===false 签发表单不含验证码栏');
 
+/**
+ * 从拼出来的表单里取出含 marker 的那一个 input 标签
+ * @param html 签发表单
+ * @param marker 标签里能认得出它的那一段
+ * @return 整个标签；没有时为空串
+ */
+function inputTag(html, marker) {
+  const re = /<input\b[^>]*>/g;
+  let found;
+  while ((found = re.exec(html))) {
+    if (found[0].includes(marker)) return found[0];
+  }
+  return '';
+}
+
+/** 取标签上的属性；没写这个属性时为空串 */
+function attr(tag, name) {
+  const found = tag.match(new RegExp('\\b' + name + '="([^"]*)"'));
+  return found ? found[1] : '';
+}
+
+let issueHtml = '';
+try {
+  issueHtml = runIssueForm(false);
+} catch (e) {
+  issueHtml = '';
+}
+const passTag = inputTag(issueHtml, 'id="tk-pass"');
+const whoTag = inputTag(issueHtml, 'id="tk-label"');
+const userTag = inputTag(issueHtml, 'autocomplete="username"');
+eq(attr(passTag, 'autocomplete'), 'current-password',
+  '签发页密码框 autocomplete 是 current-password');
+eq(userTag.length > 0 && attr(userTag, 'name') === 'username'
+  && /\bhidden\b/.test(attr(userTag, 'class'))
+  && !userTag.includes('id="tk-label"')
+  && issueHtml.indexOf(userTag) < issueHtml.indexOf(passTag),
+  true, '密码框前面有一个隐藏的用户名框');
+eq(attr(whoTag, 'name') !== 'username' && attr(whoTag, 'autocomplete') !== 'username',
+  true, '「签给谁」不会被当成登录名');
+
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);
 process.exit(failures.length ? 1 : 0);
