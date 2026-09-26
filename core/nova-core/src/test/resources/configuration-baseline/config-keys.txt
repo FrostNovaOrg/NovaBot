@@ -31,7 +31,7 @@ novabot.core.datasource.json-path|java.lang.String|datasource.json|JSON 文件�
 novabot.core.event-stream.buffer-size|java.lang.Integer|2000|断线回补的缓冲条数，全部房间共用。房间多或热闹就调大，否则重连时会补不上；每条约数 KB，调大前先掂量内存。
 novabot.core.event-stream.enabled|java.lang.Boolean|false|是否启用事件输出。默认关闭；启用后只接受本机连接，流里有观众的昵称与消费金额，别暴露到公网。
 novabot.core.event-stream.path|java.lang.String|/nova/events|事件输出的路径，与配置界面共用服务端口。
-novabot.core.event-stream.require-token|java.lang.Boolean|false|是否要求出示只读口令。默认关闭；装了反向代理就必须打开——经反代来的连接在程序看来都像本机， 不开等于没有鉴权。口令由控制台签发，只能读事件流。
+novabot.core.event-stream.require-token|java.lang.Boolean|false|是否要求出示只读口令。默认关闭；装了反向代理就必须打开——经反代来的连接在程序看来都像本机，不开等于没有鉴权。口令由控制台签发，只能读事件流。
 novabot.core.exec.enabled|java.lang.Boolean|false|是否启用事件触发外部命令。
 novabot.core.exec.max-concurrent|java.lang.Integer|4|同时执行的命令数上限，超出的直接丢弃；弹幕一秒能来几十条，没有上限一次刷屏就能拖垮机器。
 novabot.core.exec.rules|java.util.List<org.frostnova.nova.core.config.NovaCoreProperties$ExecRule>|<null>|事件触发外部命令的规则列表。
@@ -56,7 +56,7 @@ novabot.core.network.read-timeout|java.lang.Integer|60|网络请求读取超时�
 novabot.core.paint.auto-expand-height|java.lang.Integer|5000|画布不够用时一次扩展的高度（像素）；设得过大占内存，设得过小会频繁扩展拖慢速度。
 novabot.core.paint.extra-copyrights|java.util.List<org.frostnova.nova.core.model.TextWithStyle>|<null>|绘图底部附加的自定义版权信息。
 novabot.core.paint.fonts|java.util.List<java.lang.String>|<null>|绘图字体列表，可填字体名称或字体文件路径。
-novabot.core.push.at-all-daily-limit|java.lang.Integer|10|机器人账号每日最多 @全体成员 的次数，0 或负数不限制。超额时平台会静默忽略——消息照发但 @ 不生效，所以这里先记账，超额改发普通消息。
+novabot.core.push.at-all-daily-limit|java.lang.Integer|10|机器人账号每日最多 @全体成员 的次数，0 或负数不限制，额度由该账号推送的全部会话共享。超额时平台会静默忽略——消息照发但 @ 不生效，所以这里先记账，超额改发普通消息。
 novabot.core.push.at-all-session-daily-limit|java.lang.Integer|20|单个群每日最多 @全体成员 的次数，0 或负数不限制；与账号那份额度是两个维度，通常先撞到的是账号额度。
 novabot.core.push.enabled|java.lang.Boolean|true|全局推送开关。关闭后所有推送都会被丢弃，用于调试或临时静音。改完立即生效，不必重启。
 novabot.core.push.first-push-tip|java.lang.Boolean|true|第一次推送到一个群或好友时附一句用法提示，只发一次。改完立即生效，不必重启。
