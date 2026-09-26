@@ -61,7 +61,7 @@ novabot.core.push.at-all-session-daily-limit|java.lang.Integer|20|单个群每�
 novabot.core.push.enabled|java.lang.Boolean|true|全局推送开关。关闭后所有推送都会被丢弃，用于调试或临时静音。改完立即生效，不必重启。
 novabot.core.push.first-push-tip|java.lang.Boolean|true|第一次推送到一个群或好友时附一句用法提示，只发一次。改完立即生效，不必重启。
 novabot.core.push.quiet-end|java.lang.String||静音时段的结束时间，格式 HH:mm，可跨零点：开始 23:00、结束 08:00 即当晚 23 点至次日 8 点。改完立即生效，不必重启。
-novabot.core.push.quiet-start|java.lang.String||静音时段的开始时间，格式 HH:mm；与结束时间任一为空即不启用。改完立即生效，不必重启。
+novabot.core.push.quiet-start|java.lang.String||静音时段的开始时间，格式 HH:mm；与结束时间任一为空即不启用。改完立即生效，不必重启。静音只拦普通推送，告警照发——出了问题要叫人的那条，不该被静音。
 novabot.core.sender|java.util.List<org.frostnova.nova.core.model.Sender>|<null>|非插件实现的推送平台配置。
 novabot.core.timeline.retention-days|java.lang.Integer|14|事件时间线的保留天数，含当天，设为 0 或负数不自动清理。时间线是排障线索，要长期保存的场次数据在 sessions.jsonl 里，不会被删。
 server.address|java.lang.String|127.0.0.1|只监听哪个地址。默认 127.0.0.1 表示只有本机连得上；改成 0.0.0.0 会把控制台与推送接口暴露到网络，此时务必配好反向代理、来源 IP 白名单与登录密码。

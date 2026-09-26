@@ -15,6 +15,8 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.ObjectProvider;
 
 import java.time.Instant;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -92,6 +94,89 @@ class NovaMessageSenderTest {
         // 测试消息用于验证配置，被静音拦下只会让人误以为配置又出了问题
         assertDoesNotThrow(() -> messageSender.sendNow(message()));
         verify(http, atLeastOnce()).postJson(anyString(), anyMap(), anyMap());
+    }
+
+    @Test
+    @DisplayName("静音时段里普通消息照旧被丢弃")
+    void quietHoursStillDropNormalMessages() {
+        HttpUtil http = okHttp();
+        NovaMessageSender sender = sender(http, quietHoursAroundNow());
+
+        sender.send(message());
+        assertEquals(0, sender.getPendingCount(), "静音时段里普通消息不该入队");
+
+        // 留出平台线程投递的时间再数一次：若被错误地放行，它会在这段时间里发出去
+        try {
+            Thread.sleep(300);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        verify(http, never()).postJson(anyString(), anyMap(), anyMap());
+    }
+
+    @Test
+    @DisplayName("静音时段里告警消息照进队列并投递")
+    void sendAlertBypassesQuietHours() {
+        HttpUtil http = okHttp();
+        NovaMessageSender sender = sender(http, quietHoursAroundNow());
+
+        sender.sendAlert(message());
+
+        verify(http, timeout(2000).atLeastOnce()).postJson(anyString(), anyMap(), anyMap());
+    }
+
+    @Test
+    @DisplayName("总开关关着时告警消息不进队列, 抛出说明原因的异常")
+    void sendAlertThrowsWhenMasterSwitchOff() {
+        NovaCoreProperties properties = new NovaCoreProperties();
+        properties.getPush().setEnabled(false);
+        NovaMessageSender sender = sender(okHttp(), properties);
+
+        IllegalStateException rejected = assertThrows(IllegalStateException.class,
+                () -> sender.sendAlert(message()));
+        assertTrue(rejected.getMessage().contains("全局推送开关"),
+                "异常要说清原因: " + rejected.getMessage());
+        assertEquals(0, sender.getPendingCount(), "总开关关着时告警不该入队");
+    }
+
+    @Test
+    @DisplayName("告警送达后不跟首推用法提示——提示教的是推送怎么用，跟在出事的通报后面是另一件事")
+    void alertDoesNotCarryFirstPushTip() {
+        HttpUtil http = okHttp();
+        NovaMessageSender sender = sender(http, new NovaCoreProperties());
+
+        sender.sendAlert(message());
+
+        // 恰好一条：告警本体。用法提示若跟了来，会是紧跟其后的第二条
+        verify(http, timeout(2000).times(1)).postJson(anyString(), any(), any());
+
+        // 留出「紧跟其后」的那条提示的时间再数总数，一条也不许多
+        try {
+            Thread.sleep(500);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        verify(http, times(1)).postJson(anyString(), any(), any());
+
+        // 告警也没有把这个会话的一次性提示用掉：随后的第一条普通推送仍要带上它
+        sender.send(message());
+        verify(http, timeout(2000).times(3)).postJson(anyString(), any(), any());
+    }
+
+    /**
+     * 造一段必然盖住此刻的静音时段（前后各一小时，跨零点也成立）
+     * <p>
+     * 写死「23:00 ~ 08:00」会在白天的某几分钟假绿；闸门读的是墙钟，测试只好跟着现配。
+     */
+    private NovaCoreProperties quietHoursAroundNow() {
+        NovaCoreProperties properties = new NovaCoreProperties();
+        DateTimeFormatter hhmm = DateTimeFormatter.ofPattern("HH:mm");
+        LocalTime now = LocalTime.now();
+        properties.getPush().setQuietStart(now.minusHours(1).format(hhmm));
+        properties.getPush().setQuietEnd(now.plusHours(1).format(hhmm));
+
+        assertFalse(new PushGate(properties).allowed(), "前置条件: 此刻确在静音时段内");
+        return properties;
     }
 
     private Message message() {
