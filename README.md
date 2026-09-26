@@ -1,8 +1,23 @@
+# NovaBot
+
+[![CI](https://github.com/FrostNovaOrg/NovaBot/actions/workflows/ci.yml/badge.svg)](https://github.com/FrostNovaOrg/NovaBot/actions/workflows/ci.yml)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/FrostNovaOrg/NovaBot)](https://github.com/FrostNovaOrg/NovaBot/releases)
+
+给**中小型公会、个人势主播及其运营人员**用，照看**自有或已获授权**的直播间。
+
+先装好 [NapCat](https://github.com/NapNeko/NapCatQQ) 并登录 QQ。Linux 上克隆后执行安装脚本，启动与看日志在下方「快速开始」。
+
+```bash
+git clone https://github.com/FrostNovaOrg/NovaBot
+cd NovaBot && ./install.sh
+```
+
 <img src="docs/assets/logo.svg" alt="NovaBot" height="56">
 
 **哔哩哔哩直播与动态推送机器人。** 盯住你关心的 UP 主，开播、下播、发动态时把消息推到 QQ 群或好友；下播后自动生成一张数据报告图；所有配置都在浏览器里完成。
 
-> **NovaBot** watches Bilibili streamers you care about and pushes live-start, live-end and feed updates to QQ groups or friends through an [OneBot](https://onebot.dev/) implementation (e.g. NapCat). It ships with a web console for all configuration and renders a post-stream report image (cover banner, stat cards, interaction curve, leaderboards, danmaku word cloud). Chinese-only UI and docs for now.
+> **NovaBot** watches Bilibili streamers you care about and pushes live-start, live-end and feed updates to QQ groups or friends through an [OneBot](https://onebot.dev/) implementation (e.g. NapCat). It ships with a web console for all configuration and renders a post-stream report image (cover banner, stat cards, interaction curve, leaderboards, danmaku word cloud, gifts received, and a guard roster with fan medals). Chinese-only UI and docs for now.
 
 ```
 哔哩哔哩  ──拉取──▶  NovaBot  ──HTTP──▶  OneBot 实现  ──▶  QQ 群 / 好友
@@ -21,16 +36,21 @@
 **控制台**
 - 加主播只要 uid、直播间号或空间链接；勾事件、改模板、发测试消息，每一步当场验证
 - 首页看「今日」推送情况，主播页、连接页、日志页、事件时间线各司其职，出问题有健康自检与修复建议
+- 可以选深色、浅色或跟随系统，选择记在当前这只浏览器里
+- 日志页按事情的分类筛，分类旁有当天条数；工程日志页按级别筛
 - 配置项由代码生成：新增配置界面自动出现，说明直接取自源码注释，不会「界面和代码对不上」
 
 **报告与数据**
-- 下播自动出报告图：封面横幅、数据卡片、互动曲线、五类排行榜、弹幕词云；版式按推送目标分别配置
+- 下播自动出报告图：封面横幅、数据卡片、互动曲线、五类排行榜、弹幕词云，另有收到的礼物（隐藏金额时不出）和带粉丝牌的大航海名单；版式按推送目标分别配置
+- 词云可以不计指定用户的弹幕，弹幕原文和词频仍保存
+- 数据排行榜一次回一张长图；带「总」查的是历次累计
+- 报告图随附中文、表情和符号字体
 - 收益是否展示是每个会话自己的属性：默认私聊显示、群聊隐藏，关掉后报告照出、只是不出账本
 - 运营趋势按周或月看场次、时长与互动；每一场直播的原始数据整份留存
 
 **群里直接问**
-- 11 条聊天命令：查直播间数据、拉排行榜、订阅 `开播@我`、直播中随时拉一份实时报告图
-- 命令可按群开关，只有群主、管理员或你配置的超管能动
+- 群里 @ 机器人即可查直播间数据、拉排行榜、订阅开播或动态提醒、直播中随时要一张实时报告图；发「菜单」能看到这个会话列出来的命令
+- 命令按群开关；同一条命令有几种用法时，按用法分别开关。只有群主、管理员或你配置的超管能改
 
 **安全**
 - 控制台与推送接口默认只监听回环并要求访问令牌；外网访问可开密码登录、二次验证与通行密钥
@@ -60,17 +80,17 @@ Linux 上从源码安装（自动装 JDK 17 与中文字体、构建、创建 sy
 git clone https://github.com/FrostNovaOrg/NovaBot
 cd NovaBot
 ./install.sh
-sudo systemctl start novabot && sudo journalctl -u novabot -af
+sudo systemctl start novabot && sudo journalctl -u novabot -f
 ```
 
 日志里有**控制台地址**（含访问令牌）和**登录二维码**。打开控制台，首页的向导会带你完成机器人连接、扫码登录、添加主播、发测试消息。装在远程服务器上时先建隧道：`ssh -L 7827:127.0.0.1:7827 用户名@服务器地址`。
 
-容器部署：
+容器部署（镜像名自定，下面用 `novabot`）：
 
 ```bash
 ./build.sh
-docker build -f dist/templates/Dockerfile -t novabot:5.7.1 dist/build
-docker run -d --name novabot --restart unless-stopped -v novabot-data:/app -p 127.0.0.1:7827:7827 novabot:5.7.1
+docker build -f dist/templates/Dockerfile -t novabot dist/build
+docker run -d --name novabot --restart unless-stopped -v novabot-data:/app -p 127.0.0.1:7827:7827 novabot
 ```
 
 > 默认的 systemd 内存上限按 2 GB 及以上的机器发，1 GB 的机器要连同堆上限一起调低，启动自检会告诉你差多少、改哪里；详见[性能与资源占用](docs/performance.md#该准备多少内存)。
@@ -105,11 +125,11 @@ docker run -d --name novabot --restart unless-stopped -v novabot-data:/app -p 12
 
 ## 插件开发
 
-复制 [templates/nova-example-plugin](templates/nova-example-plugin) 作为起点，构建前先把本仓构件装进本地 Maven 仓（见[模板 README](templates/nova-example-plugin/README.md#依赖来源)）。用 `@NovaComponent` 注册组件、`@EventListener` 监听事件，实现 `NovaEventHandler` 即可作为推送处理器。插件 jar 放进 `plugins/`，第三方依赖随构建放进 `plugins-lib/`，运行期不联网下载。[可监听的事件类型](docs/architecture.md#可监听的事件类型)列出了全部事件。
+复制 [templates/nova-example-plugin](templates/nova-example-plugin) 作为起点，构建前先把本仓构件装进本地 Maven 仓（见[模板 README](templates/nova-example-plugin/README.md#依赖来源)）。用 `@NovaComponent` 注册组件、`@EventListener` 监听事件，实现 `NovaEventHandler` 即可作为推送处理器。插件 jar 放进 `plugins/`。第三方依赖不会在运行期下载，要自己放进 `plugins-lib/`。[可监听的事件类型](docs/architecture.md#可监听的事件类型)列出了全部事件。
 
 ## 升级与反馈
 
-- 升级：`install.sh` 或换容器镜像即可，配置与登录态保留；手工升级步骤见[用户手册 §8](docs/user-guide.md#8-升级)
+- 升级见[用户手册 §8](docs/user-guide.md#8-升级)，配置与登录态保留。安装脚本会换掉 `lib/` 与 `plugins-lib/`；容器换镜像不会换掉卷里的 `plugins-lib/`，这一目录要自己换。从 5.3 及更早升级，根键 `starbot:` 要手改成 `novabot:`
 - 问题与建议：请开 [Issue](../../issues)，附上控制台「日志」页或 `journalctl -u novabot` 的相关片段
 
 ## 许可证与上游

@@ -94,13 +94,13 @@ nova-example-plugin/
 
 除了监听事件，插件还可以实现下列接口来接入核心的能力。实现类同样用 `@NovaComponent` 注册，
 核心用 `ObjectProvider` 取——**没有实现时是空流而不是启动失败**，所以插件装不装都不影响核心启动。
-本版起旧名 `@StarBotComponent`、`StarBotEventHandler`、`StarBotCommand` 已删除，须改用上表新名并改 import 重新编译。
+自 5.4.0 起旧名 `@StarBotComponent`、`StarBotEventHandler`、`StarBotCommand` 已删除，须改用下表新名并改 import 重新编译。
 
 | 接口 | 用途 |
 |---|---|
 | `NovaEventHandler` | 推送处理器，可被配置在 `datasource.json` 里 |
 | `NovaCommand` | 群内聊天命令，自动出现在 `菜单` 里 |
-| `HealthProbe` | 往总览页的健康自检里加一项 |
+| `HealthProbe` | 往首页的健康自检里加一项 |
 | `AlertChannel` | 新的告警投递通道 |
 | `AccountLoginProvider` | 在配置界面里完成某个平台的登录 |
 | `BotConnectionTester` | 推送平台的连通性测试 |
@@ -162,3 +162,5 @@ mvn clean package
 1. 找到 NovaBot 的插件目录（`plugins` 文件夹）
 2. 将插件 JAR 文件复制到该目录
 3. 启动 NovaBot
+
+构建只把依赖清单写进插件里的 `dependency.json`，不会把第三方 jar 放进 `plugins-lib/`。运行期要用的 jar 请自己放进 NovaBot 的 `plugins-lib/`。

@@ -106,9 +106,9 @@ sudo systemctl start novabot && sudo journalctl -u novabot -f
 
 ```bash
 ./build.sh
-docker build -f dist/templates/Dockerfile -t novabot:5.7.1 dist/build
+docker build -f dist/templates/Dockerfile -t novabot dist/build
 docker run -d --name novabot --restart unless-stopped \
-  -v novabot-data:/app -p 127.0.0.1:7827:7827 novabot:5.7.1
+  -v novabot-data:/app -p 127.0.0.1:7827:7827 novabot
 ```
 
 **卷必须挂在 `/app`。** 配置、登录凭据、推送规则、插件依赖全都写在工作目录下，
@@ -119,8 +119,8 @@ docker run -d --name novabot --restart unless-stopped \
 第一次保存设置时，程序会往卷里的配置文件写 `address: 0.0.0.0`；这份配置若要搬到容器外用，
 先把这一行改掉或删掉，否则在外面会听所有网卡。
 
-升级换新镜像即可，卷里的配置与登录态会保留。其余说明见
-[dist/templates/Dockerfile](../dist/templates/Dockerfile) 顶部的注释。
+换镜像会换掉卷上的程序和 `lib/`，配置与登录态留在卷里。卷里的 `plugins-lib/` 要自己换，见[升级](#8-升级)。其余说明见
+[dist/templates/Dockerfile](../dist/templates/Dockerfile) 顶部的注释。镜像名自定，上面用的是 `novabot`。
 
 ## 3. 首次配置
 
