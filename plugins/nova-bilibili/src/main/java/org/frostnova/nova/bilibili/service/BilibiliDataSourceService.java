@@ -64,8 +64,9 @@ public class BilibiliDataSourceService implements DataSourceService {
 
     @Override
     public void completePushUser(PushUser user) {
-        // 粉丝数与昵称、房间号出自同一份响应，那一趟已顺路把它带回来，此处只是用不上
-        completeStreamerWithFans(user);
+        // 粉丝数与昵称、房间号出自同一份响应，那一趟已顺路把它带回来，此处只是用不上。
+        // 这一路是推送配置里的主播。房间号晚到时通知重新同步，把直播间连上。
+        fillStreamer(user, true);
     }
 
     /**
@@ -73,9 +74,20 @@ public class BilibiliDataSourceService implements DataSourceService {
      * <p>
      * 与 {@link #completePushUser} 是同一趟接口调用：粉丝数就躺在补全那份响应里
      * （{@code follower_num}），不为它另打一趟——控制台「找一下」要的正是这一趟。
+     * 查到的是临时对象，不在推送配置里，补上房间号不发数据源变更，也不让直播间连接重新同步。
      */
     @Override
     public StreamerWithFans completeStreamerWithFans(PushUser user) {
+        return fillStreamer(user, false);
+    }
+
+    /**
+     * 向接口补全一位主播
+     * @param user 待补全的推送用户
+     * @param notifyWhenRoomAppears 房间号从无到有时是否发数据源变更。推送配置里的主播为真，控制台查询为假
+     * @return 补全后的主播与粉丝数
+     */
+    private StreamerWithFans fillStreamer(PushUser user, boolean notifyWhenRoomAppears) {
         if (user == null || user.getUid() == null) {
             return new StreamerWithFans(user, null);
         }
@@ -93,7 +105,7 @@ public class BilibiliDataSourceService implements DataSourceService {
             if (StringUtil.isBlank(user.getFace())) {
                 user.setFace(up.getFace());
             }
-            if (roomBefore == null && user.getRoomId() != null) {
+            if (notifyWhenRoomAppears && roomBefore == null && user.getRoomId() != null) {
                 publishRoomReady(user);
             }
             return new StreamerWithFans(user, up.getFans());
@@ -110,8 +122,9 @@ public class BilibiliDataSourceService implements DataSourceService {
     }
 
     /**
-     * 房间号从没有变成有。直播间连接只在启动时同步一次，晚到的房间号再发一次数据源变更，
-     * 已有的监听会按当前配置重新同步；已经连上的房间由那次同步自己跳过。
+     * 推送配置里的主播，房间号从没有变成有。直播间连接只在启动时同步一次，
+     * 晚到的房间号再发一次数据源变更，已有的监听会按当前配置重新同步；
+     * 已经连上的房间由那次同步自己跳过。控制台查询不走这里。
      */
     private void publishRoomReady(PushUser user) {
         if (eventPublisher == null) {
