@@ -434,8 +434,13 @@ public class BilibiliDataQueryPainter {
      * 只等「已经排上队的」那一批，画这一路不再下载（见 {@link #avatar}）
      */
     private void prefetchAvatars(List<AvatarRequest> requests) {
-        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(AVATAR_WAIT_MILLIS);
+        prefetchAvatars(requests, System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(AVATAR_WAIT_MILLIS));
+    }
 
+    /**
+     * 同上，截止时刻由调用方给（{@link System#nanoTime} 口径）
+     */
+    private void prefetchAvatars(List<AvatarRequest> requests, long deadline) {
         Map<String, Attempt> pending = new LinkedHashMap<>();
         Map<String, AvatarRequest> queued = new LinkedHashMap<>();
         for (AvatarRequest request : requests) {
@@ -461,7 +466,9 @@ public class BilibiliDataQueryPainter {
 
         // 死掉的那只重排一趟，仍在飞的跟着原任务走不重复排队。
         // 被放弃的连接是一次没成，不是「这地址没图」，不重排的话它就永远空着。
-        // 撤掉的不重排：那是这张图用不上的排队件，重排回去又占队，把新头像挡在后面
+        // 自己撤掉的不重排：那是这张图用不上的排队件，重排回去又占队，把新头像挡在后面。
+        // 别的图撤掉的要重排：跟着别人那趟走的手里没有认领牌（claim 为空），那趟是别人到点撤的，
+        // 这张图自己的时间还没用完，不重排的话它就跟着别人一起空着
         Map<String, Attempt> secondTry = new LinkedHashMap<>();
         for (Map.Entry<String, Attempt> entry : pending.entrySet()) {
             Attempt attempt = entry.getValue();
@@ -469,12 +476,16 @@ public class BilibiliDataQueryPainter {
                 continue;
             }
             Throwable failure = attempt.result().handle((image, error) -> error).getNow(null);
-            if (attempt.result().isCompletedExceptionally() && !(failure instanceof CancellationException)) {
+            boolean cancelledByOther = failure instanceof CancellationException && attempt.claim() == null
+                    && System.nanoTime() < deadline;
+            if (attempt.result().isCompletedExceptionally()
+                    && (!(failure instanceof CancellationException) || cancelledByOther)) {
                 secondTry.put(entry.getKey(), startAvatarFetch(queued.get(entry.getKey())));
             }
         }
-        if (!secondTry.isEmpty()) {
-            awaitAvatars(secondTry, deadline);
+        if (!secondTry.isEmpty() && !awaitAvatars(secondTry, deadline)) {
+            // 重排的那趟到点还没开工的照样撤掉，理由同上：不留在队里堵下一张图
+            abandonNotStarted(secondTry);
         }
         warnAvatarsNotFetched(queued, pending, secondTry);
     }
@@ -554,7 +565,7 @@ public class BilibiliDataQueryPainter {
      * <p>
      * 回的是这一趟的记账：等结果的那只、线程池里那笔、以及「开没开工」的认领牌——
      * 到点撤「还没开始的」全靠这张牌：线程池说得出「取消成功」，可它对已经在跑的那笔也这么说。
-     * 跟着别人那趟走时后两样是空的，撤不着它。
+     * 跟着别人那趟走时后两样是空的，撤不着它；那趟被别人撤了，由 {@link #prefetchAvatars} 自己再排一趟。
      * <p>
      * 排不进队的回空：留着它，源站一直挂时在飞表跟着每个新地址一直涨、没有上界——
      * 表里只留排上队与正在取的，条数至多是线程数＋队列长
