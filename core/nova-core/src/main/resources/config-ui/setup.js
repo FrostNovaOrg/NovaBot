@@ -407,7 +407,7 @@ async function refreshFacts() {
  * 上锁之后把登录态从服务端再取一遍
  *
  * 载入时那一份还是「没口令」。不回灌的话，设置页「登录与安全」仍画「还没设口令」，
- * 顶栏「退出登录」也不出，整页刷新才正。
+ * 侧栏「退出登录」也不出，整页刷新才正。
  */
 async function refreshAuthState() {
   try {
@@ -420,7 +420,7 @@ async function refreshAuthState() {
     $('#op-banner').style.display = state.operatorSession ? '' : 'none';
     renderGeneral();
   } catch (e) {
-    // 口令已经落下。这一趟取不到的话，设置页与顶栏仍是上锁前的画面，刷新即正
+    // 口令已经落下。这一趟取不到的话，设置页与侧栏仍是上锁前的画面，刷新即正
   }
 }
 

@@ -348,8 +348,6 @@ export async function load() {
     refreshHome();
     fillBotForms();
 
-    const count = store.schema.reduce((n, g) => n + g.fields.length, 0);
-    $('#head-sub').textContent = count + ' 个配置项 · ' + store.schema.length + ' 个分组';
     if (quiet) say('');
   } catch (e) {
     say('载入失败：' + e.message, 'err');
@@ -537,7 +535,7 @@ function applyRoute(withData = true) {
   document.querySelectorAll('.pgpage').forEach(x => x.classList.toggle('on', !!plugin && x.id === plugin.meta.id));
   document.querySelectorAll('#page-tabs button').forEach(
     x => x.classList.toggle('on', !!plugin && x.dataset.tab === plugin.meta.id));
-  // 初始设置页是独立版式：这台机器可能还没上锁，页头上的「退出登录」无从谈起
+  // 初始设置页是独立版式：这台机器可能还没上锁，「退出登录」无从谈起
   document.documentElement.classList.toggle('chromeless', name === 'setup');
   // 日志页有两半（时间线与工程日志），哪一半该显示由地址栏定，与取不取数据无关——
   // 合进下面那一趟的话，直接打开 #/log/eng 会先闪一下时间线那一半

@@ -68,7 +68,7 @@ export function stopWatchingGroups() {
  * 组目录与首页那条「告警有死角」待办走的是同一条路。
  * 点了条目却因为筛选而看不见那一组，比什么都不发生更费解，因此先把 hide 揭掉。
  * 目标若在高级折页里，先打开折页再滚——折着的时候滚到位也看不见。
- * 落点让出顶栏：scrollIntoView 的 start 会把标题送到视口顶，正好被顶栏盖住。
+ * 落点让出页头偏移：scrollIntoView 的 start 会把标题送到视口顶，若上方有粘性元素会被盖住。
  * @param id 组标识，与 schema 里的 group 一致；高级折页本身传 adv
  */
 export function focusGroup(id) {
@@ -79,8 +79,7 @@ export function focusGroup(id) {
   if (target) {
     if (adv && adv.contains(target)) adv.open = true;
     target.classList.remove('hide');
-    const head = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--head-h')) || 0;
-    const top = window.scrollY + target.getBoundingClientRect().top - head;
+    const top = window.scrollY + target.getBoundingClientRect().top;
     window.scrollTo(0, Math.max(0, top));
   }
 }
@@ -481,17 +480,11 @@ export function renderGeneral() {
 }
 
 /**
- * 顶栏此刻有多高。先量页头元素本身，量不到再读页面上的高度令牌。
- * @return {number} 像素；页面上没有顶栏时为 0
+ * 页头偏移。顶栏已去，固定返回 0。
+ * @return {number} 像素
  */
 function headerHeight() {
-  const bar = document.querySelector('header');
-  if (bar) {
-    const height = bar.getBoundingClientRect().height;
-    if (height > 0) return height;
-  }
-  const token = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--head-h'));
-  return token > 0 ? token : 0;
+  return 0;
 }
 
 /**
