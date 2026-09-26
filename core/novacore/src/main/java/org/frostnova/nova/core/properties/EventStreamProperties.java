@@ -41,8 +41,7 @@ public class EventStreamProperties {
     private String path = "/nova/events";
 
     /**
-     * 是否要求出示只读口令。默认关闭；装了反向代理就必须打开——经反代来的连接在程序看来都像本机，
-     * 不开等于没有鉴权。口令由控制台签发，只能读事件流。
+     * 是否要求出示只读口令。默认关闭；装了反向代理就必须打开——经反代来的连接在程序看来都像本机，不开等于没有鉴权。口令由控制台签发，只能读事件流。
      */
     // 反代与本程序同机、未送 X-Forwarded-* 时，转发来的连接源地址就是回环；反过来，
     // 反代送了 X-Forwarded-* 而程序开着 server.forward-headers-strategy 时，回环判据
