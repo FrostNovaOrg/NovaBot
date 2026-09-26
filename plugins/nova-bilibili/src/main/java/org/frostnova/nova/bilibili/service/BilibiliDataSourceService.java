@@ -7,17 +7,20 @@ import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.model.StreamerReference;
 import org.frostnova.nova.core.plugin.NovaComponent;
+import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.datasource.DataSourceService;
 import org.frostnova.nova.core.datasource.DataSourceServiceConfig;
 import org.frostnova.nova.core.event.datasource.base.NovaDataSourceChangeEvent;
 import org.frostnova.nova.core.lang.StringUtil;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -52,14 +55,33 @@ public class BilibiliDataSourceService implements DataSourceService {
      */
     private final ApplicationEventPublisher eventPublisher;
 
+    /**
+     * 到点补发时用来按平台和 uid 取当前推送配置里的那位。没有挂上数据源时为空
+     */
+    private final Supplier<AbstractDataSource> dataSource;
+
     public BilibiliDataSourceService(BilibiliApiUtil api) {
         this(api, null);
     }
 
-    @Autowired
     public BilibiliDataSourceService(BilibiliApiUtil api, ApplicationEventPublisher eventPublisher) {
+        this(api, eventPublisher, () -> null);
+    }
+
+    /**
+     * 运行时用这个。数据源用 {@link ObjectProvider} 取，避免和数据源互相等着对方先造出来
+     */
+    @Autowired
+    public BilibiliDataSourceService(BilibiliApiUtil api, ApplicationEventPublisher eventPublisher,
+                                      ObjectProvider<AbstractDataSource> dataSources) {
+        this(api, eventPublisher, dataSources::getIfAvailable);
+    }
+
+    public BilibiliDataSourceService(BilibiliApiUtil api, ApplicationEventPublisher eventPublisher,
+                                      Supplier<AbstractDataSource> dataSource) {
         this.api = api;
         this.eventPublisher = eventPublisher;
+        this.dataSource = dataSource == null ? () -> null : dataSource;
     }
 
     @Override
@@ -110,15 +132,44 @@ public class BilibiliDataSourceService implements DataSourceService {
             }
             return new StreamerWithFans(user, up.getFans());
         } catch (RiskCooldownException e) {
-            // 添加或启动时只走这一趟。冷却结束前没有下一轮，到点要自己再补一次
-            api.scheduleReplay(e.getEndpoint(), "complete-user:" + user.getUid(), () -> completePushUser(user));
-            log.error("补全 uid {} 的信息被风控拦下, 冷却结束后再补一次: {}", user.getUid(), e.getMessage());
+            if (notifyWhenRoomAppears) {
+                // 添加或启动时只走这一趟。冷却结束前没有下一轮，到点要自己再补一次
+                api.scheduleReplay(e.getEndpoint(), "complete-user:" + user.getUid(), () -> replayConfiguredUser(user));
+                log.error("补全 uid {} 的信息被风控拦下, 冷却结束后再补一次: {}", user.getUid(), e.getMessage());
+            } else {
+                // 控制台查询这一次没补上就返回，不登记到点补发
+                log.error("补全 uid {} 的信息被风控拦下: {}", user.getUid(), e.getMessage());
+            }
             return new StreamerWithFans(user, null);
         } catch (Exception e) {
             // 补全失败不应导致该主播被整体丢弃：直播间号缺失只影响直播推送，动态推送仍可正常工作
             log.error("补全 uid {} 的信息失败, 该主播的直播推送可能不可用: {}", user.getUid(), e.getMessage());
             return new StreamerWithFans(user, null);
         }
+    }
+
+    /**
+     * 冷却到点后补推送配置里的主播。
+     * <p>
+     * 冷却期间保存配置会另解析出一个对象，并用同一个键盖掉这次补发。资料还空、推送目标没改时，
+     * 新对象不进入配置。到点按平台和 uid 取配置里当时的那位来补，不补当初记下的那个对象；
+     * 配置里已经没有这位（冷却期间被删掉）就不再补。没有挂上数据源时无从查找，仍补传入的这位。
+     */
+    private void replayConfiguredUser(PushUser captured) {
+        AbstractDataSource source = dataSource.get();
+        if (source == null) {
+            completePushUser(captured);
+            return;
+        }
+        if (captured.getUid() == null || captured.getPlatform() == null) {
+            return;
+        }
+        Optional<PushUser> current = source.getUser(captured.getPlatform(), captured.getUid());
+        if (current.isEmpty()) {
+            log.info("uid {} 已不在推送配置里, 冷却结束后不再补", captured.getUid());
+            return;
+        }
+        completePushUser(current.get());
     }
 
     /**

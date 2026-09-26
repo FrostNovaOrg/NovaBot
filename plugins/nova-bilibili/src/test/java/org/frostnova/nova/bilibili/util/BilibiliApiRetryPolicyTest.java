@@ -7,6 +7,9 @@ import org.frostnova.nova.bilibili.exception.ResponseCodeException;
 import org.frostnova.nova.bilibili.health.BilibiliRiskMetrics;
 import org.frostnova.nova.bilibili.service.BilibiliAccountService;
 import org.frostnova.nova.bilibili.service.BilibiliDataSourceService;
+import org.frostnova.nova.core.datasource.AbstractDataSource;
+import org.frostnova.nova.core.datasource.DataSourceService.StreamerWithFans;
+import org.frostnova.nova.core.datasource.DataSourceServiceRegistry;
 import org.frostnova.nova.core.event.datasource.base.NovaDataSourceChangeEvent;
 import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.util.HttpUtil;
@@ -31,6 +34,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -376,6 +380,124 @@ class BilibiliApiRetryPolicyTest {
     }
 
     @Test
+    @DisplayName("配置主播被拦后，冷却中查了同一个人，到点仍补上配置里的房间号")
+    void configReplaySurvivesLookupDuringCooldown() {
+        AtomicReference<Instant> now = new AtomicReference<>(T0);
+        AtomicInteger hits = new AtomicInteger();
+        HttpUtil http = mock(HttpUtil.class);
+        when(http.getJson(anyString(), any())).thenAnswer(invocation -> {
+            if (hits.incrementAndGet() == 1) {
+                throw http412();
+            }
+            return master("星见");
+        });
+        BilibiliApiUtil api = clocked(http, now);
+        PushUser configured = new PushUser();
+        configured.setUid(42L);
+        List<NovaDataSourceChangeEvent> events = new ArrayList<>();
+        ApplicationEventPublisher publisher = event -> {
+            if (event instanceof NovaDataSourceChangeEvent change) {
+                events.add(change);
+            }
+        };
+        BilibiliDataSourceService service = new BilibiliDataSourceService(api, publisher);
+
+        service.completePushUser(configured);
+        assertNull(configured.getRoomId(), "被拦下的这一次不该假装已经有房间号");
+        assertEquals(0, events.size(), "被拦下时不该去同步直播间");
+
+        PushUser lookedUp = new PushUser();
+        lookedUp.setUid(42L);
+        StreamerWithFans found = service.completeStreamerWithFans(lookedUp);
+        assertNull(found.fans(), "查询撞上冷却时粉丝数为空，由人自己再查");
+        assertNull(lookedUp.getRoomId(), "查询这一次没补上房间号");
+
+        now.set(T0.plusSeconds(60));
+        assertEquals(1, api.replayDue(now.get()));
+        assertEquals(9L, configured.getRoomId(),
+                "配置里的主播被拦下后，冷却中又查了同一个人，到点这位主播的房间号仍是空的，直播间连不上");
+        assertEquals(1, events.size(), "到点补上房间号之后应当通知一次重新同步");
+        assertEquals(configured, events.get(0).getUser());
+    }
+
+    @Test
+    @DisplayName("控制台查询撞上冷却，到点不再发变更")
+    void lookupDuringCooldownDoesNotPublishChange() {
+        AtomicReference<Instant> now = new AtomicReference<>(T0);
+        AtomicInteger hits = new AtomicInteger();
+        HttpUtil http = mock(HttpUtil.class);
+        when(http.getJson(anyString(), any())).thenAnswer(invocation -> {
+            if (hits.incrementAndGet() == 1) {
+                throw http412();
+            }
+            return master("星见");
+        });
+        BilibiliApiUtil api = clocked(http, now);
+        List<NovaDataSourceChangeEvent> events = new ArrayList<>();
+        ApplicationEventPublisher publisher = event -> {
+            if (event instanceof NovaDataSourceChangeEvent change) {
+                events.add(change);
+            }
+        };
+        PushUser lookedUp = new PushUser();
+        lookedUp.setUid(42L);
+
+        StreamerWithFans found = new BilibiliDataSourceService(api, publisher).completeStreamerWithFans(lookedUp);
+
+        assertNull(found.fans(), "查询撞上冷却时粉丝数为空");
+        assertEquals(0, events.size(), "被拦下的这一次不该发变更");
+        now.set(T0.plusSeconds(60));
+        api.replayDue(now.get());
+        assertEquals(0, events.size(),
+                "控制台查主播撞上冷却，到点后仍多了一行「推送配置已变更」");
+    }
+
+    @Test
+    @DisplayName("冷却中又保存一次推送配置，到点补的是配置里那位的房间号")
+    void reloadDuringCooldownFillsUserStillInConfig() {
+        AtomicReference<Instant> now = new AtomicReference<>(T0);
+        AtomicInteger hits = new AtomicInteger();
+        HttpUtil http = mock(HttpUtil.class);
+        when(http.getJson(anyString(), any())).thenAnswer(invocation -> {
+            if (hits.incrementAndGet() == 1) {
+                throw http412();
+            }
+            return master("星见");
+        });
+        BilibiliApiUtil api = clocked(http, now);
+        List<NovaDataSourceChangeEvent> events = new ArrayList<>();
+        ApplicationEventPublisher publisher = event -> {
+            if (event instanceof NovaDataSourceChangeEvent change
+                    && change.getClass() == NovaDataSourceChangeEvent.class) {
+                events.add(change);
+            }
+        };
+        AtomicReference<AbstractDataSource> table = new AtomicReference<>();
+        BilibiliDataSourceService service = new BilibiliDataSourceService(api, publisher, table::get);
+        DataSourceServiceRegistry registry = new DataSourceServiceRegistry(List.of(service));
+        HoldingDataSource source = new HoldingDataSource(publisher, registry);
+        table.set(source);
+
+        PushUser configured = bareUser(42L);
+        source.add(configured);
+        assertNull(configured.getRoomId(), "启动被拦下时不该假装已经有房间号");
+        assertSame(configured, source.getUser("bilibili", 42L).orElseThrow());
+
+        PushUser reloaded = bareUser(42L);
+        source.update(reloaded);
+        assertSame(configured, source.getUser("bilibili", 42L).orElseThrow(),
+                "资料还空、推送目标没改，重新加载不该换掉配置里的这位");
+
+        now.set(T0.plusSeconds(60));
+        assertEquals(1, api.replayDue(now.get()));
+        PushUser inConfig = source.getUser("bilibili", 42L).orElseThrow();
+        assertEquals(9L, inConfig.getRoomId(),
+                "冷却中又保存了一次推送配置，到点配置里这位主播的房间号仍是空的，直播间连不上");
+        assertEquals(1, events.size(), "到点应当通知一次重新同步");
+        assertSame(inConfig, events.get(0).getUser());
+    }
+
+    @Test
     @DisplayName("同一接口三个已经发出的请求一起被拦，第一段冷却仍是 1 分钟")
     void concurrentBlocksStayAtOneMinute() throws Exception {
         AtomicReference<Instant> now = new AtomicReference<>(T0);
@@ -643,6 +765,27 @@ class BilibiliApiRetryPolicyTest {
         body.put("code", 0);
         body.put("data", data);
         return body;
+    }
+
+    private static PushUser bareUser(long uid) {
+        PushUser user = new PushUser();
+        user.setUid(uid);
+        user.setPlatform("bilibili");
+        user.setEnabled(true);
+        return user;
+    }
+
+    /**
+     * 只把主播放进表里。补全仍交给注册上的哔哩哔哩数据源服务
+     */
+    private static final class HoldingDataSource extends AbstractDataSource {
+        HoldingDataSource(ApplicationEventPublisher publisher, DataSourceServiceRegistry registry) {
+            super(publisher, registry, null);
+        }
+
+        @Override
+        public void load() {
+        }
     }
 
     private static JSONObject master(String uname) {
