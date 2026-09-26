@@ -4,6 +4,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.event.dynamic.BilibiliDynamicUpdateEvent;
@@ -223,6 +224,87 @@ class DynamicBlockWordsTest {
     }
 
     @Test
+    @DisplayName("🔴 屏蔽词写在图文正文里，动态照样推出去")
+    void summaryWordStillPushed() {
+        BilibiliDynamicPushHandler handler = handlerUsing(propertiesBoundWith(KEY, WORD));
+
+        handler.handle(event(opusDynamic(null, "今晚发" + WORD, null)), messageTo(GROUP));
+
+        assertTrue(sentMessages().isEmpty(),
+                "图文动态 desc 为 null，屏蔽词「" + WORD + "」写在 summary 正文里，这条照样推出去了");
+    }
+
+    @Test
+    @DisplayName("🔴 外层 desc 没有这个词，词在 summary 正文里，照样推出去")
+    void summaryWordIgnoredBesideDesc() {
+        BilibiliDynamicPushHandler handler = handlerUsing(propertiesBoundWith(KEY, WORD));
+
+        handler.handle(event(opusDynamic("今晚八点见", "正文里有" + WORD, null)), messageTo(GROUP));
+
+        assertTrue(sentMessages().isEmpty(),
+                "desc 里没有屏蔽词，summary 正文里有「" + WORD + "」，两处都该比，这条照样推出去了");
+    }
+
+    @Test
+    @DisplayName("🔴 屏蔽词写在直播推荐标题里，动态照样推出去")
+    void liveTitleWordStillPushed() {
+        BilibiliDynamicPushHandler handler = handlerUsing(propertiesBoundWith(KEY, WORD));
+
+        handler.handle(event(liveDynamic(WORD + " 今晚场")), messageTo(GROUP));
+
+        assertTrue(sentMessages().isEmpty(),
+                "直播推荐的标题在 content 里，屏蔽词「" + WORD + "」挡不住，这条照样推出去了");
+    }
+
+    @Test
+    @DisplayName("🔴 类型不在白名单里的动态，仍记了屏蔽词挡下")
+    void whitelistSkipStillRecordsBlockedWord() {
+        BilibiliDynamicPushHandler handler = handlerUsing(propertiesBoundWith(KEY, WORD));
+        PushMessage message = messageTo(GROUP);
+        JSONArray whiteList = new JSONArray();
+        whiteList.add("DYNAMIC_TYPE_AV");
+        message.getParamsJsonObject().put("white_list", whiteList);
+
+        handler.handle(event(dynamicWithText("今晚发" + WORD)), message);
+
+        assertTrue(sentMessages().isEmpty(), "类型不在白名单里，这条本来就不会推");
+        assertEquals(0, timeline.size(),
+                "这条动态的类型不在白名单里，本来就不会推，时间线上却记了「屏蔽词挡下」。实际: " + timelineTexts());
+        assertTrue(logMessages().stream().noneMatch(line -> line.contains("命中屏蔽词")),
+                "类型名单已经跳过的动态，不该再记屏蔽词挡下。实际: " + logMessages());
+    }
+
+    @Test
+    @DisplayName("🔴 类型在黑名单里的动态，仍记了屏蔽词挡下")
+    void blacklistSkipStillRecordsBlockedWord() {
+        BilibiliDynamicPushHandler handler = handlerUsing(propertiesBoundWith(KEY, WORD));
+        PushMessage message = messageTo(GROUP);
+        JSONArray blackList = new JSONArray();
+        blackList.add("DYNAMIC_TYPE_DRAW");
+        message.getParamsJsonObject().put("black_list", blackList);
+
+        handler.handle(event(dynamicWithText("今晚发" + WORD)), message);
+
+        assertTrue(sentMessages().isEmpty(), "类型在黑名单里，这条本来就不会推");
+        assertEquals(0, timeline.size(),
+                "这条动态的类型在黑名单里，本来就不会推，时间线上却记了「屏蔽词挡下」。实际: " + timelineTexts());
+    }
+
+    @Test
+    @DisplayName("🔴 只推转发自己的，转发别人时仍记了屏蔽词挡下")
+    void notSelfOriginStillRecordsBlockedWord() {
+        BilibiliDynamicPushHandler handler = handlerUsing(propertiesBoundWith(KEY, WORD));
+        PushMessage message = messageTo(GROUP);
+        message.getParamsJsonObject().put("only_self_origin", true);
+
+        handler.handle(event(forwardOf(dynamicWithText("别人的" + WORD))), message);
+
+        assertTrue(sentMessages().isEmpty(), "转发的不是自己的动态，这条本来就不会推");
+        assertEquals(0, timeline.size(),
+                "这条是转发别人的动态，会话只要自己的转发，本来就不会推，时间线上却记了「屏蔽词挡下」。实际: " + timelineTexts());
+    }
+
+    @Test
     @DisplayName("不含词的动态照推（护栏）")
     void plainDynamicStillGoes() {
         BilibiliDynamicPushHandler handler = handlerUsing(propertiesBoundWith(KEY, WORD));
@@ -370,6 +452,46 @@ class DynamicBlockWordsTest {
         return dynamic;
     }
 
+    /**
+     * 图文动态：desc 可为 null，正文在 major.opus.summary.text，标题在 opus.title（可为 null）。
+     */
+    private static Dynamic opusDynamic(String descText, String summaryText, String title) {
+        JSONObject opus = new JSONObject();
+        JSONObject summary = new JSONObject();
+        summary.put("text", summaryText);
+        opus.put("summary", summary);
+        opus.put("title", title);
+        opus.put("pics", new JSONArray());
+        JSONObject major = new JSONObject();
+        major.put("type", "MAJOR_TYPE_OPUS");
+        major.put("opus", opus);
+
+        JSONObject desc = null;
+        if (descText != null) {
+            desc = new JSONObject();
+            desc.put("text", descText);
+        }
+        return dynamicOf("DYNAMIC_TYPE_DRAW", desc, major);
+    }
+
+    /**
+     * 直播推荐：标题在 live_rcmd.content 解析后的 live_play_info.title。
+     */
+    private static Dynamic liveDynamic(String title) {
+        JSONObject info = new JSONObject();
+        info.put("title", title);
+        info.put("cover", "https://cover.example/live.jpg");
+        JSONObject wrapped = new JSONObject();
+        wrapped.put("live_play_info", info);
+        JSONObject live = new JSONObject();
+        live.put("content", wrapped.toJSONString());
+        live.put("reserve_type", 0);
+        JSONObject major = new JSONObject();
+        major.put("type", "MAJOR_TYPE_LIVE_RCMD");
+        major.put("live_rcmd", live);
+        return dynamicOf("DYNAMIC_TYPE_LIVE_RCMD", null, major);
+    }
+
     private static Dynamic dynamicOf(String type, JSONObject desc, JSONObject major) {
         JSONObject moduleDynamic = new JSONObject();
         if (desc != null) {
@@ -414,6 +536,14 @@ class DynamicBlockWordsTest {
         // 而那正是挡住之后该有的样子
         verify(sender, atMost(Integer.MAX_VALUE)).send(captor.capture());
         return captor.getAllValues();
+    }
+
+    private List<String> timelineTexts() {
+        List<String> texts = new ArrayList<>();
+        for (TimelineEvent event : timeline) {
+            texts.add(event.type().getDescription() + " " + event.text());
+        }
+        return texts;
     }
 
     private List<String> logMessages() {

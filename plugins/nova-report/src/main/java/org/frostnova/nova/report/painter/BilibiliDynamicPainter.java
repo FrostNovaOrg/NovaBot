@@ -174,54 +174,18 @@ public class BilibiliDynamicPainter {
         // drawTextMultiLine 的最后一个参数是距画布右边缘的留白，由内容宽度换算
         int marginRight = painter.getImage().getWidth() - painter.getX() - contentWidth;
 
-        String text = extractText(modules);
-        if (StringUtil.isNotBlank(text)) {
-            painter.drawTextMultiLine(text, COLOR_TEXT, Math.max(0, marginRight));
+        for (String line : dynamic.linesToPaint()) {
+            painter.drawTextMultiLine(line, COLOR_TEXT, Math.max(0, marginRight));
             painter.movePos(0, 10);
         }
 
-        drawMajor(painter, modules.getJSONObject("module_dynamic"), contentWidth);
-    }
-
-    /**
-     * 提取动态的文字内容
-     */
-    private String extractText(JSONObject modules) {
-        JSONObject moduleDynamic = modules.getJSONObject("module_dynamic");
-        if (moduleDynamic == null) {
-            return "";
-        }
-
-        JSONObject desc = moduleDynamic.getJSONObject("desc");
-        if (desc != null && StringUtil.isNotBlank(desc.getString("text"))) {
-            return desc.getString("text");
-        }
-
-        // 视频、专栏等类型的文字位于 major 内部
-        JSONObject major = moduleDynamic.getJSONObject("major");
-        if (major == null) {
-            return "";
-        }
-
-        for (String key : new String[]{"archive", "article", "opus", "live_rcmd"}) {
-            JSONObject node = major.getJSONObject(key);
-            if (node == null) {
-                continue;
-            }
-
-            String title = node.getString("title");
-            if (StringUtil.isNotBlank(title)) {
-                return title;
-            }
-        }
-
-        return "";
+        drawMajor(painter, dynamic, modules.getJSONObject("module_dynamic"), contentWidth);
     }
 
     /**
      * 绘制动态的主体内容：图片、视频封面或专栏封面
      */
-    private void drawMajor(CommonPainter painter, JSONObject moduleDynamic, int contentWidth) {
+    private void drawMajor(CommonPainter painter, Dynamic dynamic, JSONObject moduleDynamic, int contentWidth) {
         if (moduleDynamic == null) {
             return;
         }
@@ -240,7 +204,7 @@ public class BilibiliDynamicPainter {
             case "MAJOR_TYPE_DRAW" -> drawPictures(painter, major.getJSONObject("draw"), contentWidth);
             case "MAJOR_TYPE_ARCHIVE" -> drawCover(painter, major.getJSONObject("archive"), "cover", contentWidth);
             case "MAJOR_TYPE_ARTICLE" -> drawArticleCover(painter, major.getJSONObject("article"), contentWidth);
-            case "MAJOR_TYPE_LIVE_RCMD" -> drawCover(painter, major.getJSONObject("live_rcmd"), "cover", contentWidth);
+            case "MAJOR_TYPE_LIVE_RCMD" -> drawCoverUrl(painter, dynamic.liveCover().orElse(null), contentWidth);
             case "MAJOR_TYPE_OPUS" -> drawOpus(painter, major.getJSONObject("opus"), contentWidth);
             default -> log.debug("未处理的动态主体类型: {}", type);
         }
@@ -309,7 +273,13 @@ public class BilibiliDynamicPainter {
             return;
         }
 
-        String cover = node.getString(key);
+        drawCoverUrl(painter, node.getString(key), contentWidth);
+    }
+
+    /**
+     * 按地址画一张封面。地址是空的就跳过，不中断整张图。
+     */
+    private void drawCoverUrl(CommonPainter painter, String cover, int contentWidth) {
         if (StringUtil.isBlank(cover)) {
             return;
         }
