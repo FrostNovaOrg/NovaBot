@@ -118,24 +118,17 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
     }
 
     /**
-     * 依据屏蔽词、黑白名单与转发过滤判断是否需要推送
+     * 依据黑白名单、转发过滤与屏蔽词判断是否需要推送
      * <p>
-     * 屏蔽词挡下时在这里顺手记一行日志与一条时间线：判定与记录同处，
-     * 「为什么没推」的答案才不会散到别处去。
+     * 屏蔽词放在最后。类型名单或「只推转发自己动态的转发」已经跳过的动态，
+     * 本来就不会推，不再记成屏蔽词挡下。挡下时在这里顺手记一行日志与一条时间线：
+     * 判定与记录同处，「为什么没推」的答案才不会散到别处去。
+     * 只有屏蔽词真把一条本来要推的动态挡住，才记这一行。
      * @param event 动态更新事件
      * @param params 推送参数
      * @return 是否需要推送
      */
     private boolean shouldPush(BilibiliDynamicUpdateEvent event, JSONObject params) {
-        // 屏蔽词先判：它按内容全局定，与哪个推送会话无关。放在类型名单之后的话，
-        // 同一条动态会不会留下「屏蔽词挡下」那一行，就要看各会话的类型名单怎么写的
-        String blocked = hitBlockedWord(event.getDynamic());
-        if (blocked != null) {
-            log.info("{} 的动态命中屏蔽词 {}, 跳过推送", event.getSource().getUname(), blocked);
-            recordBlockedWord(event, blocked);
-            return false;
-        }
-
         String type = event.getDynamic().getType();
 
         JSONArray whiteList = params.getJSONArray("white_list");
@@ -164,13 +157,24 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
             }
         }
 
+        // 屏蔽词放在类型白名单、黑名单和「只推转发自己动态」之后。
+        // 前面几道已经跳过的动态，各会话名单不同，记不记这一行也就不同——
+        // 要的就是这样：只有这个词真把推送挡住了，才记「屏蔽词挡下」。
+        String blocked = hitBlockedWord(event.getDynamic());
+        if (blocked != null) {
+            log.info("{} 的动态命中屏蔽词 {}, 跳过推送", event.getSource().getUname(), blocked);
+            recordBlockedWord(event, blocked);
+            return false;
+        }
+
         return true;
     }
 
     /**
      * 命中屏蔽词时返回那个词；没配、没命中时返回 {@code null}
      * <p>
-     * 比的文字取三处：这条动态的正文与标题，再加转发动态原文里的同样两处——
+     * 比的文字与画图取自同一处：这条动态的正文（desc 与图文 summary 两处都比）和标题
+     * （含直播推荐解析出的标题），再加转发动态原文里的同样几处。
      * 转发动态自己那几行是转发评语，内容在原文里。
      * 英文不分大小写；名单里的空行不算词，{@code ""} 在 {@code contains} 里是「处处命中」，
      * 一行空行就能把所有动态都挡掉。
