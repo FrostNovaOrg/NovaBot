@@ -222,7 +222,7 @@ novabot:
 4. 添加推送目标：选机器人、选群聊还是私聊、填群号或 QQ 号
 5. 点右下角保存
 
-想改推送文案，勾选事件后点「编辑模板」，占位符做成了可点击的标签，右侧实时预览。
+想改推送文案，在「推送」页点开要改的通道，到「消息长什么样」一段点「改为自定义」（要让所有用默认的通道一起变，就改左边的「默认模板」）；可用的块点一下插到光标处，也可以拖进卡里，右边实时显示群里会长什么样。
 
 不想推某类动态（比如「直播回放」）时，在设置页填「动态屏蔽词」，每行一个词，正文、标题或转发原文里含任一词的就不推，保存后立刻生效，挡下的记在日志页的时间线上。
 
@@ -363,7 +363,7 @@ PK 的票数只是这场的拉票结果，**不算收入**，所以它叫 `mv`�
 下播报告（`BilibiliLiveReportPushHandler`）**按推送目标分别配置**：同一场直播推给不同群时，
 可以各自决定展示哪些区块。
 
-**在界面上配最省事**：推送规则页勾上「下播报告」后，下面会出现「下播报告长什么样」一段，
+**在界面上配最省事**：「推送」页勾上「下播报告」后，下面会出现「下播报告长什么样」一段，
 点「改为自定义」，左边就是这些开关与数字框，右边是发到群里的那张图；点「恢复默认」退回默认版式。只有你改动过的项会写进配置文件，
 没碰过的继续跟随默认值。
 
@@ -862,7 +862,7 @@ novabot:
 > **注意**：这样会把整个安装目录一起备走，连同 `application.yml`、登录凭据这些含口令的文件。
 > 目标必须是你信得过、别人读不到的地方。
 
-每日凌晨 4 点自动跑：把安装目录下的 `novabot-backup.service` 与 `novabot-backup.timer` 拷到 `/etc/systemd/system/`；改 service 里的目标路径（安装目录若不是 `/opt/starbot`，脚本路径和数据目录一并改）；然后 `sudo systemctl daemon-reload && sudo systemctl enable --now novabot-backup.timer`。恢复：把备份目录整份拷回数据目录即可。
+每日凌晨 4 点自动跑：把安装目录下的 `novabot-backup.service` 与 `novabot-backup.timer` 拷到 `/etc/systemd/system/`；改 service 里的目标路径（安装目录若不是 `/opt/starbot`，脚本路径和数据目录一并改）；然后 `sudo systemctl daemon-reload && sudo systemctl enable --now novabot-backup.timer`。恢复：只从备份目录拷回数据与配置，不拷程序件。数据是 `data.json`、`state.json`、`sessions.jsonl`、`snapshots.jsonl`、`event-stream-tokens.jsonl` 与 `details/`、`timeline/` 两个目录；配置是 `application.yml`、`datasource.json`、`template-defaults.json`、`cookies.json`、`cookies.key`。`NovaBot.jar`、`lib/`、`plugins/`、`plugins-lib/` 是程序件，备份里的是备份那天的旧版，升级后整份拷回会把旧 jar 混进新版；自己往 `plugins-lib/` 放过的 jar 单独拷回。
 
 ## 10. 安全须知
 
