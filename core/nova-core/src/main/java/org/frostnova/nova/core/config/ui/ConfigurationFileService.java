@@ -504,6 +504,13 @@ public class ConfigurationFileService {
                 continue;
             }
 
+            if (line.flowUnreadable) {
+                // 跨行行内名单读不了的写法：就地替换只动键那一行，续行留成孤行会写坏整份文件，
+                // 宁可拒存并说清原因（见本类 parse 里的同名标注）
+                throw new IOException("配置项 " + change.getKey()
+                        + " 的行内名单跨了行且含本界面读不了的写法, 为不写坏配置文件本批全部未保存, 请先在配置文件里把它改成每行一项");
+            }
+
             String updated = replaceValue(lines.get(line.index), change.getValue());
             if (!updated.equals(lines.get(line.index))) {
                 lines.set(line.index, updated);
@@ -575,6 +582,8 @@ public class ConfigurationFileService {
         if (location == null) {
             throw new IOException("未在配置文件中找到 " + listPath);
         }
+
+        rejectUnreadableInlineList(lines, location.keyLine(), listPath);
 
         if (location.start() < 0) {
             if (index != 0) {
@@ -690,6 +699,23 @@ public class ConfigurationFileService {
      * @param end 指定元素的结束行（不含）
      */
     private record ListLocation(int keyLine, int keyIndent, int start, int end) {}
+
+    /**
+     * 对象列表的键这一行若是读不了的行内写法（跨行的 {@code [...]} 或内嵌元素），
+     * 就地改字段只会动键那一行，半截行内序列留在文件里会让整份配置读不了。
+     * 一律拒存并说清原因；空表 {@code []} 与方括号里只有空白的 {@code [ ]} 不在其列——
+     * 那是建出第一个元素的正常起点。
+     */
+    private void rejectUnreadableInlineList(List<String> lines, int keyLine, String listPath) throws IOException {
+        String raw = lines.get(keyLine);
+        String rest = raw.substring(raw.indexOf(':') + 1);
+        int comment = commentIndex(rest);
+        String onLine = (comment < 0 ? rest : rest.substring(0, comment)).strip();
+        if (onLine.startsWith("[") && !onLine.replaceAll("\\s", "").equals("[]")) {
+            throw new IOException(listPath + " 在文件里是跨行或内嵌的行内写法, 本界面读不了"
+                    + ", 为不写坏配置文件本批全部未保存, 请先在配置文件里把它改成每行一项");
+        }
+    }
 
     /**
      * 定位列表中某一元素所占的行范围
@@ -1113,9 +1139,9 @@ public class ConfigurationFileService {
             // 清空写成 [] 而不是裸键：键这一行保住列表身份，下一次想填回多项时
             // 才不会被当成标量拦下；对象列表清空走的也是这个写法
             lines.set(line.index, withEmptyListMarker(lines.get(line.index)));
-        } else if (line.listEnd == line.index) {
-            // 行内序列：旧内容原本全在键这一行上，要让位给块序列——
-            // 方括号与「- 项」并存的那份文件整个解析不了
+        } else if (line.flowInline) {
+            // 行内序列（单行写就或跨行收口）：键这一行上的方括号要让位给块序列——
+            // 方括号与「- 项」并存的那份文件整个解析不了；跨行时续行已在上面整块删去
             lines.set(line.index, replaceValue(lines.get(line.index), "").stripTrailing());
         }
 
@@ -1149,9 +1175,10 @@ public class ConfigurationFileService {
      * 首次安装写出的配置与对象列表清空后都会留下 {@code []}，那是空列表的合法写法，
      * 得按列表读写：当普通文字读回的话，每行一项的名单框会显示字面「[]」、一次填不进多行。
      * 引号包着的 {@code "[]"} 是逐字的文字值，不在其列；元素自身是对象或嵌套列表的
-     * （界面上不编辑的那类）也不收，维持普通文字。
+     * （界面上不编辑的那类）也不收，维持普通文字；不带引号的 {@code 键: 值} 是流式键值对
+     * （嵌套映射的写法），同样不收。尾逗号与连续逗号只是分隔符的痕迹，不产生空项。
      *
-     * @param raw 冒号后去掉行尾注释的原文，未去引号
+     * @param raw 冒号后去掉行尾注释的原文，未去引号（跨行写法须先把续行并入）
      * @return 列表各项；不是行内序列时返回 null，按普通文字值处理
      */
     private List<String> flowSequenceItems(String raw) {
@@ -1166,13 +1193,125 @@ public class ConfigurationFileService {
 
         List<String> items = new ArrayList<>();
         for (String item : splitFlowItems(inner)) {
-            String bare = unquote(item.strip());
+            String strippedItem = item.strip();
+            if (strippedItem.isEmpty()) {
+                // 尾逗号、连续逗号是分隔符的痕迹，不是空项：名单框不该因此多出空行
+                continue;
+            }
+            boolean quoted = strippedItem.charAt(0) == '"' || strippedItem.charAt(0) == '\'';
+            String bare = unquoteItem(strippedItem);
             if (bare.startsWith("{") || bare.startsWith("[")) {
+                return null;
+            }
+            if (!quoted && (bare.contains(": ") || bare.endsWith(":"))) {
                 return null;
             }
             items.add(bare);
         }
         return items;
+    }
+
+    /**
+     * 行内序列跨行时的续行扫描结果
+     *
+     * @param joined 键行的值与续行以空格接起来的整段原文
+     * @param end    收口那一行的下标
+     */
+    private record FlowTail(String joined, int end) {}
+
+    /**
+     * 行内序列跨了行（{@code key: [a,} 换行 {@code b]}）时把续行并入：行内序列里的
+     * 换行只是空白，跨行写法与写在键那一行等价。并入后按同一把尺
+     * {@link #flowSequenceItems} 判，读不了的写法由调用方标成不可存。
+     * <p>
+     * 扫到空行、注释行，或缩进退到键这一层及更浅的键/列表项仍未收口即停：
+     * 那种文件按收不了口处理，保存时整批拒绝，绝不留下只有半截的行内序列。
+     *
+     * @param lines     文件行
+     * @param keyIndex  键所在行的下标
+     * @param keyIndent 键的缩进宽度
+     * @param firstValue 键这一行冒号后的值（未收口的行内序列开头）
+     * @return 收口后的整段原文与末行下标；收不了口时为 null
+     */
+    private FlowTail joinFlowTail(List<String> lines, int keyIndex, int keyIndent, String firstValue) {
+        StringBuilder joined = new StringBuilder(firstValue);
+        int depth = flowDepth(firstValue);
+        for (int i = keyIndex + 1; i < lines.size(); i++) {
+            String raw = lines.get(i);
+            String stripped = raw.strip();
+            if (stripped.isEmpty() || stripped.startsWith("#")) {
+                return null;
+            }
+            if (indentOf(raw) <= keyIndent
+                    && (stripped.startsWith("-") || stripped.contains(": ") || stripped.endsWith(":"))) {
+                return null;
+            }
+            int comment = commentIndex(stripped);
+            String value = (comment < 0 ? stripped : stripped.substring(0, comment)).strip();
+            joined.append(' ').append(value);
+            depth += flowDepth(value);
+            if (depth <= 0) {
+                return new FlowTail(joined.toString(), i);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 数一段行内原文里未收口的方括号层数，引号内的不算
+     */
+    private static int flowDepth(String text) {
+        int depth = 0;
+        char quote = 0;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (quote > 0) {
+                if (quote == '"' && c == '\\') {
+                    i++;
+                } else if (c == quote) {
+                    quote = 0;
+                }
+            } else if (c == '\'' || c == '"') {
+                quote = c;
+            } else if (c == '[') {
+                depth++;
+            } else if (c == ']') {
+                depth--;
+            }
+        }
+        return depth;
+    }
+
+    /**
+     * 去掉列表项两侧的引号，并按 YAML 引号规则还原内容：
+     * 双引号里的 {@code \"} 与 {@code \\}、单引号里的 {@code ''}。
+     * <p>
+     * 还原与写出（{@link #render}）用同一套规则，存一次再读回还是原来的值。
+     * 不加引号的项原样返回；其余转义序列不在还原之列——名单框按行拆项，
+     * 元素里本就不该有换行这类控制字符。
+     *
+     * @param value 未去引号的列表项
+     * @return 还原后的内容
+     */
+    private String unquoteItem(String value) {
+        if (value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")) {
+            String body = value.substring(1, value.length() - 1);
+            StringBuilder out = new StringBuilder(body.length());
+            for (int i = 0; i < body.length(); i++) {
+                char c = body.charAt(i);
+                if (c == '\\' && i + 1 < body.length()
+                        && (body.charAt(i + 1) == '\\' || body.charAt(i + 1) == '"')) {
+                    out.append(body.charAt(++i));
+                } else {
+                    out.append(c);
+                }
+            }
+            return out.toString();
+        }
+        if (value.length() >= 2 && value.startsWith("'") && value.endsWith("'")) {
+            return value.substring(1, value.length() - 1).replace("''", "'");
+        }
+        return value;
     }
 
     /**
@@ -1255,7 +1394,7 @@ public class ConfigurationFileService {
                     Line owner = result.get(result.size() - 1);
                     String item = stripped.substring(1).strip();
                     if (!OBJECT_ITEM.matcher(item).find() && owner.index == i - 1 - owner.items.size()) {
-                        owner.items.add(unquote(item));
+                        owner.items.add(unquoteItem(item));
                         owner.listEnd = i;
                     }
                 }
@@ -1288,6 +1427,25 @@ public class ConfigurationFileService {
             if (flowItems != null) {
                 line.items.addAll(flowItems);
                 line.listEnd = i;
+                line.flowInline = true;
+            } else if (value.startsWith("[") && flowDepth(value) > 0) {
+                // 行内序列跨了行（key: [a, 换行 b]）：续行并入后按同一把尺判；
+                // 收不了口或并入后读不了的（嵌套对象/列表、流式键值对），标成不可存，
+                // 保存时整批拒绝——只改键那一行会给文件留下半截方括号，整份配置从此读不了
+                FlowTail tail = joinFlowTail(lines, i, indent, value);
+                if (tail == null) {
+                    line.flowUnreadable = true;
+                } else {
+                    List<String> across = flowSequenceItems(tail.joined());
+                    if (across == null) {
+                        line.flowUnreadable = true;
+                    } else {
+                        line.items.addAll(across);
+                        line.listEnd = tail.end();
+                        line.flowInline = true;
+                    }
+                    i = tail.end();
+                }
             }
             result.add(line);
         }
@@ -1351,6 +1509,18 @@ public class ConfigurationFileService {
          * 列表块的最后一行下标，用于整块替换
          */
         private int listEnd = -1;
+
+        /**
+         * 键这一行的值是行内序列（单行写就或跨行收口）时为 true：
+         * 整块替换成每行一项的块序列时，键这一行上的方括号必须一并让位
+         */
+        private boolean flowInline;
+
+        /**
+         * 行内序列跨了行但收不了口、或收口后含本界面读不了的写法（嵌套对象/列表、流式键值对）时
+         * 为 true：保存这一项会被整批拒绝，绝不留下孤行写坏文件
+         */
+        private boolean flowUnreadable;
 
         /**
          * 判断该键是否为列表
