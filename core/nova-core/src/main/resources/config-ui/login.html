@@ -55,7 +55,7 @@
     body {
       margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
       background: var(--ground); color: var(--text); font-family: var(--font);
-      font-size: 15px; line-height: 1.6;
+      font-size:16px; line-height: 1.6;
     }
     .card, section {
       width: 340px; max-width: calc(100vw - 32px); padding: 26px 24px;
@@ -69,11 +69,11 @@
       width: 26px; height: 26px; border-radius: var(--r-ctl); overflow: hidden; flex: none;
     }
     .brand-mark svg { width: 100%; height: 100%; display: block }
-    h1 { margin: 0; font-size: 16px; font-weight: 700 }
-    p.sub { margin: 0 0 20px; font-size: 12.5px; color: var(--dim) }
-    label { display: block; margin-bottom: 6px; font-size: 12.5px; color: var(--dim) }
+    h1 { margin: 0; font-size:17px; font-weight: 700; position: relative; top: -3px }
+    p.sub { margin: 0 0 20px; font-size:13.5px; color: var(--dim) }
+    label { display: block; margin-bottom: 6px; font-size:13.5px; color: var(--dim) }
     input {
-      width: 100%; padding: 8px 11px; font-size: 14px; font-family: inherit;
+      width: 100%; padding: 8px 11px; font-size:15px; font-family: inherit;
       border: 1px solid var(--line); border-radius: var(--r-ctl);
       background: var(--surface); color: var(--text);
     }
@@ -83,35 +83,35 @@
     .secret input { flex: 1; min-width: 0 }
     .secret button {
       background: var(--surface); color: var(--dim); border: 1px solid var(--line);
-      border-radius: var(--r-ctl); padding: 6px 10px; font-size: 12px; cursor: pointer;
+      border-radius: var(--r-ctl); padding: 6px 10px; font-size:13px; cursor: pointer;
       font-family: inherit; flex: none; width: auto;
     }
     .secret button:hover { border-color: var(--dim); color: var(--text) }
     button {
-      width: 100%; padding: 9px; font-size: 14px; font-family: inherit; font-weight: 600;
+      width: 100%; padding: 9px; font-size:15px; font-family: inherit; font-weight: 600;
       color: var(--on-accent); cursor: pointer; background: var(--accent);
       border: none; border-radius: var(--r-ctl);
     }
     button:disabled { opacity: .45; cursor: not-allowed }
-    .lead { margin: 8px 0 0; font-size: 12px; color: var(--dim) }
-    .note { margin: 6px 0 0; font-size: 12px; color: var(--dim) }
-    .msg { margin-top: 14px; font-size: 12.5px; color: var(--err); min-height: 18px; text-align: center }
+    .lead { margin: 8px 0 0; font-size:13px; color: var(--dim) }
+    .note { margin: 6px 0 0; font-size:13px; color: var(--dim) }
+    .msg { margin-top: 14px; font-size:13.5px; color: var(--err); min-height: 18px; text-align: center }
     .hidden { display: none }
     /* 锁定横条。用警示色而不是错误色：这不是「你错了」，是「现在不受理」 */
     .banner {
-      margin-bottom: 16px; padding: 10px 12px; font-size: 12.5px; line-height: 1.7;
+      margin-bottom: 16px; padding: 10px 12px; font-size:13.5px; line-height: 1.7;
       background: var(--warnsoft); border: 1px solid var(--warn); border-radius: var(--r-ctl);
     }
     /* 通行密钥与口令是两条路，中间给一条分隔 */
     p.or {
-      margin: 16px 0; font-size: 12px; color: var(--dim); text-align: center;
+      margin: 16px 0; font-size:13px; color: var(--dim); text-align: center;
       display: flex; align-items: center; gap: 10px;
     }
     p.or::before, p.or::after { content: ""; flex: 1; height: 1px; background: var(--line) }
     /* 口令那条路折起来时才有摘要行；摊开时（没登记过通行密钥）摘要整行不出。
        折着时它是这条路的入口，做成与主按钮同宽的次级按钮形，而不是一行小字 */
     details > summary {
-      display: block; text-align: center; padding: 9px; font-size: 14px; font-weight: 600;
+      display: block; text-align: center; padding: 9px; font-size:15px; font-weight: 600;
       color: var(--text); background: var(--surface); cursor: pointer; list-style: none;
       border: 1px solid var(--line); border-radius: var(--r-ctl); margin-bottom: 8px;
     }
@@ -119,21 +119,21 @@
     details > summary::-webkit-details-marker { display: none }
     /* 摊开之后头部收成小字：按钮形只在它还是「另一条路」的入口时才有意义 */
     details[open] > summary {
-      border: none; background: none; padding: 0; font-size: 12.5px; font-weight: 400;
+      border: none; background: none; padding: 0; font-size:13.5px; font-weight: 400;
       color: var(--accent); text-align: center;
     }
     details.bare > summary { display: none }
     .links { margin-top: 16px; display: flex; gap: 14px; justify-content: center }
     .lnk {
       width: auto; padding: 0; background: none; border: none; font-weight: 400;
-      color: var(--accent); font-size: 12.5px; cursor: pointer;
+      color: var(--accent); font-size:13.5px; cursor: pointer;
     }
-    ol { margin: 4px 0 16px; padding-left: 20px; font-size: 12.5px; color: var(--dim); line-height: 1.9 }
+    ol { margin: 4px 0 16px; padding-left: 20px; font-size:13.5px; color: var(--dim); line-height: 1.9 }
     /* 正文照原样显示：换行与空行是文案的一部分，挤成一坨就没人读了。
        长文案给一个滚动区，按钮始终留在卡片里看得见的位置 */
     #agreement-text {
       margin: 4px 0 20px; padding: 14px 16px; max-height: 46vh; overflow-y: auto;
-      white-space: pre-wrap; font-size: 13px; line-height: 1.8; color: var(--dim);
+      white-space: pre-wrap; font-size:14px; line-height: 1.8; color: var(--dim);
       background: var(--ground); border: 1px solid var(--line); border-radius: var(--r-ctl);
     }
     #token { font-family: var(--mono) }

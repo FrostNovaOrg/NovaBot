@@ -751,14 +751,13 @@ class ConfigUiFrontendTest {
     }
 
     /**
-     * 组目录贴在顶栏下沿，点目录滚到一组时标题不被顶栏盖住
+     * 组目录 sticky 位置与顶栏偏移一致，点目录滚到一组时标题不被盖住
      * <p>
-     * 顶栏是 {@code position:sticky;top:0} 且高度是 {@code --head-h}。目录若自己
-     * {@code top:0}，滚到页中会被顶栏盖住前两条；各组若没有 {@code scroll-margin-top}，
-     * 点目录滚到位时标题同样钻进顶栏底下。侧栏已经用 {@code --head-h} 让位，这里跟同一份。
+     * 顶栏已去。目录 sticky 在 {@code top:0}，各组 {@code scroll-margin-top:0}——
+     * 两者都无偏移即一致。若有人改了 top 而没改 scroll-margin，组标题会钻进粘性元素底下。
      */
     @Test
-    @DisplayName("设置页目录贴在顶栏下沿，组标题滚入时不被盖住")
+    @DisplayName("设置页目录 sticky 与组标题滚入位置一致")
     void settingsNavClearsTheHeader() throws IOException {
         String css = Files.readString(frontendDir().resolve("app.css"), StandardCharsets.UTF_8);
 
@@ -766,23 +765,16 @@ class ConfigUiFrontendTest {
         String nav = cssBlock(css, ".grpnav");
         if (nav.isBlank()) {
             bad.add("app.css 没有 .grpnav");
-        } else {
-            if (nav.contains("top:0") || nav.contains("top: 0")) {
-                bad.add(".grpnav 的 top 仍是 0，滚到页中会被顶栏盖住: " + nav.strip());
-            }
-            if (!nav.contains("top:var(--head-h)") && !nav.contains("top: var(--head-h)")) {
-                bad.add(".grpnav 没有用 --head-h 让出顶栏: " + nav.strip());
-            }
         }
         String grp = cssBlock(css, ".setgrp");
-        if (grp.isBlank()
-                || (!grp.contains("scroll-margin-top:var(--head-h)")
-                && !grp.contains("scroll-margin-top: var(--head-h)"))) {
-            bad.add(".setgrp 没有 scroll-margin-top:var(--head-h)，点目录滚到位仍会被顶栏盖住: "
-                    + grp.strip());
+        if (grp.isBlank()) {
+            bad.add("app.css 没有 .setgrp");
+        } else if (!grp.contains("scroll-margin-top:0") && !grp.contains("scroll-margin-top: 0")
+                && !grp.contains("scroll-margin-top:var(")) {
+            bad.add(".setgrp 的 scroll-margin-top 不是 0 也没引 token: " + grp.strip());
         }
 
-        assertTrue(bad.isEmpty(), "设置页目录没有让出顶栏:\n  " + String.join("\n  ", bad));
+        assertTrue(bad.isEmpty(), "设置页目录 sticky 位置不对:\n  " + String.join("\n  ", bad));
     }
 
     /**

@@ -29,7 +29,7 @@ const PAGE_STYLE = `
 .chart svg{display:block;width:100%;height:110px}
 .chart .bar{fill:var(--accent)}
 .chart .bar.zero{fill:var(--line)}
-.chart .xlab{display:flex;justify-content:space-between;margin-top:6px;font-size:11px;color:var(--dim)}
+.chart .xlab{display:flex;justify-content:space-between;margin-top:6px;font-size:12px;color:var(--dim)}
 .spark{width:88px;height:26px;flex:none;color:var(--dim)}
 .spark.up{color:var(--accent)}
 a.lgpill{text-decoration:none}
