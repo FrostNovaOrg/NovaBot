@@ -94,10 +94,10 @@ public class BilibiliRankingApplier implements RuntimeConfigurationApplierContri
     private static String inRange(String value, String label, int min, int max) {
         Integer parsed = integer(value);
         if (parsed == null) {
-            return label + " 要填整数，当前填的是「" + value + "」；本批未保存";
+            return label + " 要填整数，当前填的是「" + value + "」";
         }
         if (parsed < min || parsed > max) {
-            return label + " 的取值要在 " + min + " 到 " + max + " 之间，当前填的是 " + parsed + "；本批未保存";
+            return label + " 的取值要在 " + min + " 到 " + max + " 之间，当前填的是 " + parsed;
         }
         return null;
     }

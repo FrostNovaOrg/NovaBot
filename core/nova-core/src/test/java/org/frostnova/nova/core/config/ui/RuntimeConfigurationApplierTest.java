@@ -114,6 +114,26 @@ class RuntimeConfigurationApplierTest {
     }
 
     @Test
+    @DisplayName("改回启动时配置文件里的原样再存：那次重启当场不欠了；改成别的值仍欠着")
+    void revertingToStartupValueClearsPendingRestart() {
+        RuntimeConfigurationApplier tracker = RuntimeConfigurationApplier.bench(properties)
+                .startupValues(Map.of("novabot.core.alert.convergence-interval", "300"))
+                .build();
+
+        tracker.applyAndTrack(Map.of("novabot.core.alert.convergence-interval", "7200"));
+        assertTrue(tracker.getPendingRestart().contains("novabot.core.alert.convergence-interval"),
+                "改成 7200 后应记入待重启");
+
+        tracker.applyAndTrack(Map.of("novabot.core.alert.convergence-interval", "300"));
+        assertEquals(List.of(), tracker.getPendingRestart(),
+                "改回启动时的原样，重启再读一遍读到的与现在分毫不差，不该再挂着");
+
+        tracker.applyAndTrack(Map.of("novabot.core.alert.convergence-interval", "3600"));
+        assertEquals(List.of("novabot.core.alert.convergence-interval"), tracker.getPendingRestart(),
+                "改成第三个值仍要欠一次重启");
+    }
+
+    @Test
     @DisplayName("⚠️ 阴性：不在名单里的配置项只写文件，运行中的值一动不动")
     void doesNotTouchRestartOnlyProperties() {
         int before = properties.getAlert().getConvergenceInterval();
