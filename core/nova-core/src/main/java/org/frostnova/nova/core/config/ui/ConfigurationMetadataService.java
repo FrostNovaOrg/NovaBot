@@ -252,7 +252,8 @@ public class ConfigurationMetadataService {
      * 元数据中的说明直接取自 Javadoc，含有 &lt;p&gt; 等 HTML 标签与 {@code @link}、
      * {@code @code} 等内联标记，直接展示在界面上会出现标签文本与全限定类名。
      * 第一段末尾没有句号时先补上，再接后文，读出来是两句。
-     * 成对星号和反引号是写说明时的记号，界面按纯文本摆，记号去掉、字留下。
+     * 本仓自己的说明写成纯文本，不依赖这里的清理；这段转换留着给外部插件的说明兜底。
+     * 星号和反引号照原样保留——界面按纯文本显示，写说明的人写什么，使用者看到的就是什么。
      * @param description 原始说明
      * @return 清理后的说明
      */
@@ -282,9 +283,11 @@ public class ConfigurationMetadataService {
 
     /**
      * 去掉标签与内联标记，收成一行可读的纯文本
+     * <p>
+     * 星号与反引号不做处理：界面按纯文本显示，说明里写了它们，使用者就该看到它们。
      */
     private static String plain(String description) {
-        return dropMarkup(description
+        return description
                 .replaceAll("<[^>]+>", "")
                 // {@code X} / {@literal X} 取其内容
                 .replaceAll("\\{@(?:code|literal)\\s+([^}]*)}", "$1")
@@ -294,22 +297,15 @@ public class ConfigurationMetadataService {
                 .replaceAll("\\{@(?:link|linkplain|value)\\s+([^}]*)}", "$1")
                 // 全限定类名只保留简单名：使用者不关心包路径
                 .replaceAll("(?<![\\w.])(?:[a-z][\\w]*\\.)+([A-Z][\\w]*)", "$1")
-                .replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&"))
+                .replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
                 .replaceAll("[ \\t]+", " ")
                 .strip();
     }
 
-    /**
-     * 成对星号与反引号是记号，不是要给使用者看的字。
-     * 三个星号连写（昵称掩码，形如 b***）中间没有字，配不成对，留着。
-     */
-    private static String dropMarkup(String text) {
-        return text.replaceAll("\\*\\*([^*]+)\\*\\*", "$1").replace("`", "");
-    }
-
     private static boolean endsWithSentencePunctuation(String text) {
         char last = text.charAt(text.length() - 1);
-        return "。！？.!?…".indexOf(last) >= 0;
+        // 冒号分号也算段界：以它们结尾的首段接后文本来就读得通，补「。」会读成「：。」
+        return "。！？.!?…：；:;".indexOf(last) >= 0;
     }
 
     /**

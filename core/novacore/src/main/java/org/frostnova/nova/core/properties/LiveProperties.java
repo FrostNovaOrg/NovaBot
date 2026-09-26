@@ -19,35 +19,35 @@ import lombok.Setter;
 @Setter
 public class LiveProperties {
     /**
-     * 是否持久化直播数据至文件，仅使用默认直播数据服务时生效
+     * 是否把直播数据保存到文件，仅使用默认直播数据服务时生效。
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("直播数据 · 保存到文件")
     private boolean saveLiveData = true;
 
     /**
-     * 直播数据文件路径，仅使用默认直播数据服务时生效
+     * 直播数据文件路径，仅使用默认直播数据服务时生效。
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("直播数据 · 文件路径")
     private String liveDataPath = "data.json";
 
     /**
-     * 自动保存直播数据间隔，单位：秒，仅使用默认直播数据服务时生效
+     * 自动保存直播数据的间隔，单位：秒，仅使用默认直播数据服务时生效。
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("直播数据 · 存盘间隔")
     private int autoSaveLiveDataInterval = 300;
 
     /**
-     * 判定主播断线重连（下播后短时间内重新开播）的时间间隔，断线重连不会重置直播数据，单位：秒
+     * 多长时间内的下播又开播算同一场直播，单位：秒；这样的重连不会重置直播数据。
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("短暂下播视为同场")
     private int reconnectInterval = 300;
 
     /**
-     * 每场直播明细数据（曲线、排行、词频、弹幕原文）的保留天数，0 表示永久保留
+     * 每场直播明细数据（曲线、排行、词频、弹幕原文）的保留天数，0 表示永久保留。
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("直播数据 · 明细保留")

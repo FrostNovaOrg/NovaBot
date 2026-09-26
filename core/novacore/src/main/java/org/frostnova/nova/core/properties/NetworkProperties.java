@@ -17,14 +17,14 @@ import lombok.Setter;
 @Setter
 public class NetworkProperties {
     /**
-     * 网络请求连接超时时间，单位：秒
+     * 网络请求连接超时时间，单位：秒。
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("网络请求 · 连接超时")
     private int connectTimeout = 10;
 
     /**
-     * 网络请求读取超时时间，单位：秒
+     * 网络请求读取超时时间，单位：秒。
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("网络请求 · 读取超时")

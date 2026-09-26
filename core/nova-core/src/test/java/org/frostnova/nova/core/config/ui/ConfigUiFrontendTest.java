@@ -115,10 +115,11 @@ class ConfigUiFrontendTest {
     private static final Set<String> ALLOWED_LOCALS = Set.of();
 
     /**
-     * 邮件服务商示例，不是推送平台名，扫描时放行
+     * 邮件服务商示例，不是推送平台名，扫描时放行。
+     * 与 ExternalConfigurationFields 里 spring.mail.host 的说明句逐字相同，说明句改了这里要跟着改。
      */
     private static final String MAIL_SMTP_EXAMPLE =
-            "邮件告警的 SMTP 服务器地址，如 smtp.qq.com。不用邮件告警时留空";
+            "邮件告警的 SMTP 服务器地址，如 smtp.qq.com；不用邮件告警时留空。";
 
     private static final Pattern JAVA_STRING_LITERAL =
             Pattern.compile("\"(?:[^\"\\\\]|\\\\.)*\"");

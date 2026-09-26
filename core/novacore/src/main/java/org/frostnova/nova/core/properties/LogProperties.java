@@ -20,44 +20,38 @@ import lombok.Setter;
 @Setter
 public class LogProperties {
     /**
-     * 控制台日志级别
+     * 控制台日志级别。
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("控制台日志级别")
     private Level console;
 
     /**
-     * 文件日志级别
+     * 文件日志级别。
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("日志文件级别")
     private Level file;
 
     /**
-     * 是否记录事件日志
+     * 是否记录事件日志。
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("事件日志")
     private boolean eventLog = false;
 
     /**
-     * 是否记录网络请求日志
+     * 是否记录网络请求日志。
      */
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("网络日志")
     private boolean networkLog = false;
 
     /**
-     * 网络日志的同类去重抑制窗口，单位：秒，设为 0 关闭抑制
-     * <p>
-     * 打开 {@code network-log} 之后每个请求写一行，而本程序的请求绝大多数是轮询：
-     * 三个房间十秒一轮，一小时上千行几乎一样的记录，**要查的那一条异常正好淹在里面**。
-     * 排障日志的用处取决于它读不读得下去。
-     * <p>
-     * 同类按「请求方法 + 去掉查询串的地址」判定；被抑制的条数攒着，
-     * 随下一条同类日志一起报出来。<b>失败一律放行，不参与抑制</b>——
-     * 抑制的目的就是让异常显出来。
+     * 网络日志的同类去重窗口，单位：秒，设为 0 关闭。打开网络日志后轮询请求一小时上千行，不去重要查的异常就淹在里面；失败的请求不参与抑制。
      */
+    // 同类按「请求方法 + 去掉查询串的地址」判定；被抑制的条数攒着，随下一条同类
+    // 日志一起报出来。失败一律放行——抑制的目的就是让异常显出来。
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("网络日志 · 去重窗口")
     private int networkLogSuppressWindow = 60;
