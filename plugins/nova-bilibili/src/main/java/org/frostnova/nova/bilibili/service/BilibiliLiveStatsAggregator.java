@@ -18,6 +18,7 @@ import org.frostnova.nova.bilibili.event.live.BilibiliPkBattleEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliRandomGiftEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliShareEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliSuperChatEvent;
+import org.frostnova.nova.bilibili.enums.GuardOperateType;
 import org.frostnova.nova.bilibili.model.BilibiliLiveMetric;
 import org.frostnova.nova.bilibili.util.DanmuWordUtil;
 import org.frostnova.nova.core.event.live.NovaBaseLiveEvent;
@@ -216,7 +217,7 @@ public class BilibiliLiveStatsAggregator {
         increment(event, BilibiliLiveMetric.CAPTAIN_COUNT, 1);
         increment(event, BilibiliLiveMetric.GUARD_VALUE, Optional.ofNullable(event.getValue()).orElse(0.0));
         scoreUser(event, BilibiliLiveMetric.GUARD_USERS, event.getSender(), 1);
-        recordGuard(event, 3);
+        recordGuard(event, 3, event.getOperateType());
     }
 
     /**
@@ -227,7 +228,7 @@ public class BilibiliLiveStatsAggregator {
         increment(event, BilibiliLiveMetric.COMMANDER_COUNT, 1);
         increment(event, BilibiliLiveMetric.GUARD_VALUE, Optional.ofNullable(event.getValue()).orElse(0.0));
         scoreUser(event, BilibiliLiveMetric.GUARD_USERS, event.getSender(), 1);
-        recordGuard(event, 2);
+        recordGuard(event, 2, event.getOperateType());
     }
 
     /**
@@ -238,7 +239,7 @@ public class BilibiliLiveStatsAggregator {
         increment(event, BilibiliLiveMetric.GOVERNOR_COUNT, 1);
         increment(event, BilibiliLiveMetric.GUARD_VALUE, Optional.ofNullable(event.getValue()).orElse(0.0));
         scoreUser(event, BilibiliLiveMetric.GUARD_USERS, event.getSender(), 1);
-        recordGuard(event, 1);
+        recordGuard(event, 1, event.getOperateType());
     }
 
     /**
@@ -252,9 +253,13 @@ public class BilibiliLiveStatsAggregator {
 
     /**
      * 进入直播间
+     * <p>
+     * 次数不挑人：匿名进房（认不出是谁）也是真实的一次进房，照计。
+     * 人数那半边照旧不计匿名，见 {@link #isIdentified}。
      */
     @EventListener(BilibiliEnterRoomEvent.class)
     public void onEnterRoom(BilibiliEnterRoomEvent event) {
+        increment(event, BilibiliLiveMetric.ENTER_COUNT, 1);
         recordUser(event, BilibiliLiveMetric.ENTER_USERS, event.getSender());
     }
 
@@ -430,18 +435,21 @@ public class BilibiliLiveStatsAggregator {
     }
 
     /**
-     * 需要画成曲线的指标
+     * 按分钟记时序的指标
      * <p>
-     * 只挑「能看出直播节奏」的那几项：弹幕看热度，礼物与醒目留言看收益，
-     * 盲盒与大航海看爆发点。进场、点赞、分享之类画出来只是一条噪声带，不值得占版面。
+     * 这个集合只管「哪些指标记时序」，不管「报告画哪几条」——画哪几条由报告那边
+     * （{@code BilibiliLiveReportPainter} 的曲线清单）自己列，两边各改各的，互不牵连。
+     * 进房这类高频事件画出来只是一条噪声带、不画，但时序照记：
+     * 事后要答「什么时候来人多」，靠的正是它。
      */
-    private static final Set<String> SERIES_METRICS = Set.of(
+    private static final Set<String> TIMED_METRICS = Set.of(
             BilibiliLiveMetric.DANMU_COUNT,
             BilibiliLiveMetric.GIFT_VALUE,
             BilibiliLiveMetric.SUPER_CHAT_VALUE,
             BilibiliLiveMetric.BOX_COUNT,
             BilibiliLiveMetric.BOX_PROFIT,
-            BilibiliLiveMetric.GUARD_VALUE);
+            BilibiliLiveMetric.GUARD_VALUE,
+            BilibiliLiveMetric.ENTER_COUNT);
 
     private void increment(NovaBaseLiveEvent event, String metric, double delta) {
         if (event.getSource() == null || event.getSource().getUid() == null) {
@@ -449,9 +457,9 @@ public class BilibiliLiveStatsAggregator {
         }
         liveDataService.incrementLiveMetric(event.getPlatform(), event.getSource().getUid(), metric, delta);
 
-        // 曲线与总量共用指标名，且由同一次调用写入：两者天然对得上，
+        // 时序与总量共用指标名，且由同一次调用写入：两者天然对得上，
         // 不会出现「卡片说 100 条弹幕、曲线加起来只有 80」这种自相矛盾
-        if (SERIES_METRICS.contains(metric)) {
+        if (TIMED_METRICS.contains(metric)) {
             liveDataService.incrementLiveSeries(event.getPlatform(), event.getSource().getUid(),
                     metric, event.getTimestamp(), delta);
         }
@@ -553,9 +561,15 @@ public class BilibiliLiveStatsAggregator {
                 details.appendEvent(event.getPlatform(), uid, start, event.getTimestamp(), type, fields));
     }
 
-    private void recordGuard(MembershipEvent event, int level) {
+    /**
+     * @param operateType 开通／续费／未知，落稳定码（与上游 {@code op_type} 同源的 1／2，解析不出为 -1）：
+     *                    不写中文显示字——日后读档按码判，显示字改了不影响旧档；
+     *                    旧档里没有这一字段的行，读的时候当「未知」
+     */
+    private void recordGuard(MembershipEvent event, int level, GuardOperateType operateType) {
+        int op = operateType == null ? GuardOperateType.UNKNOWN.getCode() : operateType.getCode();
         recordEvent(event, "guard", eventFields(event.getSender(),
-                "lv", level, "n", event.getCount(), "u", event.getUnit(),
+                "lv", level, "ot", op, "n", event.getCount(), "u", event.getUnit(),
                 "days", event.getCompanionDays(), "val", event.getValue(),
                 "pay", Optional.ofNullable(event.getCharged()).orElse(event.getValue())));
     }

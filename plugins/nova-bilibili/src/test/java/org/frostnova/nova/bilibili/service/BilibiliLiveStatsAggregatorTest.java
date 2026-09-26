@@ -14,6 +14,7 @@ import org.frostnova.nova.bilibili.event.live.BilibiliOnlineRankCountUpdateEvent
 import org.frostnova.nova.bilibili.event.live.BilibiliRandomGiftEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliWatchedUpdateEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliSuperChatEvent;
+import org.frostnova.nova.bilibili.enums.GuardOperateType;
 import org.frostnova.nova.bilibili.model.BilibiliLiveMetric;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.model.GiftInfo;
@@ -30,6 +31,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -401,6 +403,94 @@ class BilibiliLiveStatsAggregatorTest {
     }
 
     @Test
+    @DisplayName("⚠️ 进房每次计数并按分钟记时序：匿名进房也算一次，人数照旧不计匿名")
+    void enterCountsEveryVisitWithPerMinuteSeries() {
+        List<String> red = new ArrayList<>();
+        // 分钟对齐的开播时刻，时序那两问的格键才是 start 与 start+60s
+        long start = 1_700_000_040_000L;
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+
+        aggregator.onEnterRoom(new BilibiliEnterRoomEvent(STREAMER, user(1L), Instant.ofEpochMilli(start)));
+        aggregator.onEnterRoom(new BilibiliEnterRoomEvent(STREAMER, user(1L), Instant.ofEpochMilli(start + 30_000L)));
+        aggregator.onEnterRoom(new BilibiliEnterRoomEvent(STREAMER,
+                new UserInfo(0L, "匿***", null), Instant.ofEpochMilli(start + 90_000L)));
+
+        try {
+            assertEquals(3.0, metric(BilibiliLiveMetric.ENTER_COUNT), 0.0001,
+                    "① 一场进 3 次记 3：匿名也是真实的一次进房，只是认不出是谁。"
+                            + "答不出总数，以后的分析连这一场的规模都说不清");
+        } catch (Throwable t) {
+            red.add("① " + t.getMessage());
+        }
+        try {
+            Map<Long, Double> series = liveDataService.getLiveSeries(PLATFORM, STREAMER.getUid(),
+                    BilibiliLiveMetric.ENTER_COUNT);
+            assertEquals(2, series.size(), "② 按分钟分格");
+            assertEquals(2.0, series.get(start), 0.0001, "② 第 1 分钟 2 次（同一人两次）");
+            assertEquals(1.0, series.get(start + 60_000L), 0.0001, "② 第 2 分钟 1 次（含匿名那次）。"
+                    + "没有时序，以后答不出「什么时候来人多」");
+        } catch (Throwable t) {
+            red.add("② " + t.getMessage());
+        }
+        try {
+            assertEquals(1, users(BilibiliLiveMetric.ENTER_USERS), "③ 人数照旧只算认得出的那一位");
+        } catch (Throwable t) {
+            red.add("③ " + t.getMessage());
+        }
+        try {
+            // 下播归档按 getLiveSeriesMetrics 逐条取全部时序（NovaDefaultLiveOffEventListener），
+            // 新时序进了这份名单，归档才收得下、读得回来
+            assertTrue(liveDataService.getLiveSeriesMetrics(PLATFORM, STREAMER.getUid())
+                            .contains(BilibiliLiveMetric.ENTER_COUNT),
+                    "④ 新时序要在归档遍历的那份名单里");
+        } catch (Throwable t) {
+            red.add("④ " + t.getMessage());
+        }
+        if (!red.isEmpty()) {
+            fail(red.size() + " 问红：" + String.join("；", red));
+        }
+    }
+
+    @Test
+    @DisplayName("⚠️ 大航海关行记下是开通还是续费：稳定码落盘，不含中文显示字")
+    void guardRowsRecordOpenOrRenewByCode() {
+        List<String> red = new ArrayList<>();
+        long start = 1_700_000_040_000L;
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+
+        BilibiliCaptainEvent renewal = new BilibiliCaptainEvent(STREAMER, user(11L), 138.0, 1, "月", Instant.ofEpochMilli(start));
+        renewal.setOperateType(GuardOperateType.RENEWAL);
+        aggregator.onCaptain(renewal);
+
+        BilibiliCaptainEvent activation = new BilibiliCaptainEvent(STREAMER, user(12L), 138.0, 1, "月", Instant.ofEpochMilli(start));
+        activation.setOperateType(GuardOperateType.ACTIVATION);
+        aggregator.onCaptain(activation);
+
+        // 解析不出 op_type 的播报：事件默认未知，照落一行
+        aggregator.onCaptain(new BilibiliCaptainEvent(STREAMER, user(13L), 138.0, 1, "月", Instant.ofEpochMilli(start)));
+
+        try {
+            assertEquals(2, guardField(start, 11L, "ot"), "① 续费按码落盘。档里读不出是续费，"
+                    + "以后就答不出「新上舰几个、续费几个」");
+        } catch (Throwable t) {
+            red.add("① " + t.getMessage());
+        }
+        try {
+            assertEquals(1, guardField(start, 12L, "ot"), "② 开通按码落盘，与续费分得开");
+        } catch (Throwable t) {
+            red.add("② " + t.getMessage());
+        }
+        try {
+            assertEquals(-1, guardField(start, 13L, "ot"), "③ 解析不出时记未知码，与旧档没有这一字段的行同一个读法");
+        } catch (Throwable t) {
+            red.add("③ " + t.getMessage());
+        }
+        if (!red.isEmpty()) {
+            fail(red.size() + " 问红：" + String.join("；", red));
+        }
+    }
+
+    @Test
     @DisplayName("发送者缺失时应跳过独立人数统计而不抛异常")
     void toleratesMissingSender() {
         aggregator.onDanmu(new BilibiliDanmuEvent(STREAMER, null, "路人弹幕", "路人弹幕"));
@@ -744,6 +834,17 @@ class BilibiliLiveStatsAggregatorTest {
 
     private UserInfo user(Long uid) {
         return new UserInfo(uid, "用户" + uid, null);
+    }
+
+    /**
+     * 某位观众那条 guard 行里的一个数值字段；这一行或这个字段不存在时为 null
+     */
+    private Integer guardField(long startTime, long uid, String key) {
+        return details.readEvents(PLATFORM, STREAMER.getUid(), startTime).stream()
+                .filter(e -> "guard".equals(e.get("t")) && ((Number) e.get("uid")).longValue() == uid)
+                .findFirst()
+                .map(e -> e.get(key) == null ? null : ((Number) e.get(key)).intValue())
+                .orElse(null);
     }
 
     private GiftInfo gift(double price, int count) {
