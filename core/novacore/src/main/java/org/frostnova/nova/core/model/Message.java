@@ -2,6 +2,7 @@ package org.frostnova.nova.core.model;
 
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.lang.StringUtil;
+import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -69,13 +70,18 @@ public class Message {
 
     /**
      * 消息 ID，消息发送成功后自动设置，无需手动设置
+     * <p>
+     * 写成 volatile：发送线程写上编号之后，别的线程马上读得到。
+     * 漏了这一笔，另一边会一直看见空编号，把已经发出的当成还没发。
      */
-    private String id;
+    private volatile String id;
 
     /**
      * 发送完毕时间戳，不论发送是否成功，消息发送后自动设置，无需手动设置
+     * <p>
+     * 与编号一样写成 volatile，写下去的时刻对别的线程立刻可见。
      */
-    private Instant completeTime;
+    private volatile Instant completeTime;
 
     /**
      * 这一条是否为对使用者命令的回复
@@ -122,6 +128,27 @@ public class Message {
      * 发送失败回调列表，请勿调用阻塞操作
      */
     private List<Runnable> onFailureCallbacks = new ArrayList<>();
+
+    /**
+     * 发送结果。和下面两份回调名单共用一把锁。
+     * <p>
+     * 结果定下来的那一下就把当时的名单抄走；这之后才登记的，当场执行，不再排进名单。
+     * 两件事要是拆开，就会出现「已经看过名单、回调还没放进去」的空当——这次回调谁也不跑。
+     * 一边遍历名单一边往里登记，还会把这次发送冲掉。
+     */
+    private enum Delivery {
+        PENDING, DELIVERED, FAILED
+    }
+
+    @ToString.Exclude
+    @Getter(AccessLevel.NONE)
+    @Setter(AccessLevel.NONE)
+    private final Object deliveryLock = new Object();
+
+    @ToString.Exclude
+    @Getter(AccessLevel.NONE)
+    @Setter(AccessLevel.NONE)
+    private Delivery delivery = Delivery.PENDING;
 
     /**
      * 图片降级回调列表，请勿调用阻塞操作
@@ -219,19 +246,90 @@ public class Message {
     }
 
     /**
-     * 添加发送成功回调
+     * 添加发送成功回调。这条消息的发送结果如果已经是送达，回调当场执行，不再排队。
      * @param callback 发送成功回调
      */
     public void addOnSuccessCallback(Runnable callback) {
-        this.onSuccessCallbacks.add(callback);
+        boolean runNow = false;
+        synchronized (deliveryLock) {
+            if (delivery == Delivery.DELIVERED || (delivery == Delivery.PENDING && StringUtil.isNotBlank(id))) {
+                delivery = Delivery.DELIVERED;
+                runNow = true;
+            } else if (delivery == Delivery.PENDING) {
+                onSuccessCallbacks.add(callback);
+            }
+        }
+        if (runNow) {
+            callback.run();
+        }
     }
 
     /**
-     * 添加发送失败回调
+     * 添加发送失败回调。这条消息的发送结果如果已经是没送达，回调当场执行，不再排队。
      * @param callback 发送失败回调
      */
     public void addOnFailureCallback(Runnable callback) {
-        this.onFailureCallbacks.add(callback);
+        boolean runNow = false;
+        synchronized (deliveryLock) {
+            if (delivery == Delivery.FAILED) {
+                runNow = true;
+            } else if (delivery == Delivery.PENDING && StringUtil.isBlank(id)) {
+                onFailureCallbacks.add(callback);
+            }
+        }
+        if (runNow) {
+            callback.run();
+        }
+    }
+
+    /**
+     * 发送结果定为送达，并写下编号。返回登记时已经在名单里的成功回调，由调用方执行。
+     * <p>
+     * 编号在这把锁里写上，随后才把名单交出去。锁外读编号的线程因此看得到它。
+     * @param messageId 送达那一条的编号，没有则为空
+     * @return 应当现在执行的成功回调
+     */
+    public List<Runnable> markDelivered(String messageId) {
+        synchronized (deliveryLock) {
+            if (delivery != Delivery.PENDING) {
+                return List.of();
+            }
+            this.id = messageId;
+            delivery = Delivery.DELIVERED;
+            return List.copyOf(onSuccessCallbacks);
+        }
+    }
+
+    /**
+     * 发送结果定为没送达。返回登记时已经在名单里的失败回调，由调用方执行。
+     * @return 应当现在执行的失败回调
+     */
+    public List<Runnable> markFailed() {
+        synchronized (deliveryLock) {
+            if (delivery != Delivery.PENDING) {
+                return List.of();
+            }
+            delivery = Delivery.FAILED;
+            return List.copyOf(onFailureCallbacks);
+        }
+    }
+
+    /**
+     * 成功回调的一份快照。遍历这一份时，别人再登记也不会把名单改乱。
+     */
+    public List<Runnable> getOnSuccessCallbacks() {
+        synchronized (deliveryLock) {
+            return List.copyOf(onSuccessCallbacks);
+        }
+    }
+
+    /**
+     * 失败回调的一份快照。遍历这一份时，别人再登记也不会把名单改乱。
+     */
+    public List<Runnable> getOnFailureCallbacks() {
+        synchronized (deliveryLock) {
+            return List.copyOf(onFailureCallbacks);
+        }
     }
 
     /**

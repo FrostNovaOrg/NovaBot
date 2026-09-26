@@ -8,24 +8,42 @@ import org.frostnova.nova.adapter.onebot.exception.OneBotApiException;
 import org.frostnova.nova.adapter.onebot.extension.napcat.http.NapcatHttpAdapter;
 import org.frostnova.nova.adapter.onebot.extension.napcat.util.NapcatServiceHolder;
 import org.frostnova.nova.adapter.onebot.model.OneBotSender;
+import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.enums.PushTargetType;
+import org.frostnova.nova.core.health.PushActivityRecorder;
 import org.frostnova.nova.core.model.Message;
+import org.frostnova.nova.core.model.Sender;
+import org.frostnova.nova.core.sender.AtAllPermissionResolver;
+import org.frostnova.nova.core.sender.FirstPushTipService;
 import org.frostnova.nova.core.sender.NovaMessageSender;
+import org.frostnova.nova.core.sender.PushGate;
+import org.frostnova.nova.core.service.AtAllQuotaService;
+import org.frostnova.nova.core.service.NovaSenderService;
+import org.frostnova.nova.core.service.NovaStateStore;
+import org.frostnova.nova.core.timeline.TimelineWriter;
+import org.frostnova.nova.core.util.HttpUtil;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Pointcut;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.mockito.ArgumentCaptor;
 import org.slf4j.LoggerFactory;
 import org.springframework.aop.aspectj.annotation.AspectJProxyFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.client.ResourceAccessException;
 
 import java.net.ConnectException;
+import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicReference;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -386,6 +404,193 @@ class BackupAtAllAspectTest {
     }
 
     /**
+     * 前一条真的走发送器发出去。
+     * <p>
+     * 待办认的是发出去之后才有的编号。编号写下之前去挂、或者发送回调已经跑完才登记，
+     * 都不能把一次已经送达说成没发出去，也不能把待办漏掉。
+     * 图片没发出、去掉图片后的文字送到了，同样算送达，待办挂在这条文字上。
+     */
+    @Nested
+    @Timeout(15)
+    @DisplayName("前一条正在发送")
+    class PreviousStillSending {
+        @Test
+        @DisplayName("完成时刻已记下、编号还没有时，待办挂到前一条的编号上，不说没发出去")
+        void hangsOnTheIdOnceThePreviousMessageIsOut() throws Throwable {
+            canAtAll(false);
+            Message previous = sentLater("开播啦");
+            Message empty = message(PLATFORM, PushTargetType.GROUP, "{at=all}");
+            empty.setPrevious(previous);
+            ProceedingJoinPoint joinPoint = sending(empty);
+            previous.addOnCompleteCallback(() -> {
+                try {
+                    assertNull(aspect.aroundSendMethod(joinPoint));
+                } catch (Throwable thrown) {
+                    throw new IllegalStateException(thrown);
+                }
+            });
+
+            NovaMessageSender real = realSender((headers, params) ->
+                    new JSONObject().fluentPut("code", 0).fluentPut("id", "8841"));
+            List<String> notSent = notSentWarnings(() -> real.sendNow(previous));
+
+            ArgumentCaptor<JSONObject> todo = ArgumentCaptor.forClass(JSONObject.class);
+            assertAll(
+                    () -> assertEquals(List.of(), notSent, "不该说上一条没发出去"),
+                    () -> {
+                        verify(http).setGroupTodo(any(), todo.capture());
+                        assertEquals("8841", todo.getValue().getString("message_id"));
+                    });
+        }
+
+        /**
+         * 登记被按住，直到前一条的发送已经走完。
+         * 用来量「看过之后、还没登记，前一条的回调已经跑完」时，待办还会不会挂上。
+         */
+        @Test
+        @DisplayName("前一条已经发完才登记的，待办仍然挂上")
+        void hangsEvenIfRegisteredAfterThePreviousSendFinished() throws Throwable {
+            canAtAll(false);
+            CountDownLatch deliveryEntered = new CountDownLatch(1);
+            CountDownLatch releaseDelivery = new CountDownLatch(1);
+            CountDownLatch aboutToRegister = new CountDownLatch(1);
+            CountDownLatch previousFinished = new CountDownLatch(1);
+
+            Message previous = new Message() {
+                @Override
+                public void addOnSuccessCallback(Runnable callback) {
+                    aboutToRegister.countDown();
+                    try {
+                        previousFinished.await();
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        throw new IllegalStateException(interrupted);
+                    }
+                    super.addOnSuccessCallback(callback);
+                }
+            };
+            previous.setPlatform(PLATFORM);
+            previous.setType(PushTargetType.GROUP);
+            previous.setNum(GROUP);
+            previous.setContent("开播啦");
+            previous.setSequence(1L);
+            previous.setCreateTime(Instant.now());
+
+            Message empty = message(PLATFORM, PushTargetType.GROUP, "{at=all}");
+            empty.setPrevious(previous);
+            ProceedingJoinPoint joinPoint = sending(empty);
+
+            NovaMessageSender real = realSender((headers, params) -> {
+                deliveryEntered.countDown();
+                try {
+                    releaseDelivery.await();
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    return new JSONObject().fluentPut("code", -1).fluentPut("message", "中断");
+                }
+                return new JSONObject().fluentPut("code", 0).fluentPut("id", "prev-9");
+            });
+
+            AtomicReference<Throwable> sendError = new AtomicReference<>();
+            AtomicReference<Throwable> hangError = new AtomicReference<>();
+            Thread sendingThread = new Thread(() -> {
+                try {
+                    real.sendNow(previous);
+                } catch (Throwable thrown) {
+                    sendError.set(thrown);
+                }
+            });
+            Thread hangingThread = new Thread(() -> {
+                try {
+                    aspect.aroundSendMethod(joinPoint);
+                } catch (Throwable thrown) {
+                    hangError.set(thrown);
+                }
+            });
+
+            List<String> notSent = notSentWarnings(() -> {
+                sendingThread.start();
+                try {
+                    deliveryEntered.await();
+                    hangingThread.start();
+                    aboutToRegister.await();
+                    releaseDelivery.countDown();
+                    sendingThread.join();
+                    previousFinished.countDown();
+                    hangingThread.join();
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(interrupted);
+                } finally {
+                    releaseDelivery.countDown();
+                    previousFinished.countDown();
+                }
+            });
+
+            assertNull(sendError.get(), "发送不该抛: " + sendError.get());
+            assertNull(hangError.get(), "挂待办不该抛: " + hangError.get());
+            ArgumentCaptor<JSONObject> todo = ArgumentCaptor.forClass(JSONObject.class);
+            assertAll(
+                    () -> assertEquals(List.of(), notSent, "不该说上一条没发出去"),
+                    () -> {
+                        verify(http).setGroupTodo(any(), todo.capture());
+                        assertEquals("prev-9", todo.getValue().getString("message_id"));
+                    });
+        }
+
+        @Test
+        @DisplayName("图片没发出去、去掉图片后的文字送到了，待办挂在这条文字上，不说没发出去")
+        void hangsOnTheTextThatReplacedTheImage() throws Throwable {
+            canAtAll(false);
+            Message previous = sentLater("开播啦 {image_url=https://example.com/cover.jpg}");
+            Message empty = message(PLATFORM, PushTargetType.GROUP, "{at=all}");
+            empty.setPrevious(previous);
+            assertNull(aspect.aroundSendMethod(sending(empty)));
+
+            NovaMessageSender real = realSender((headers, params) -> {
+                String content = String.valueOf(params.get("content"));
+                if (content.contains("{image_")) {
+                    return new JSONObject().fluentPut("code", 2).fluentPut("message", "下载文件失败: Not Found");
+                }
+                return new JSONObject().fluentPut("code", 0).fluentPut("id", "text-77");
+            });
+            List<String> notSent = notSentWarnings(() -> real.sendNow(previous));
+
+            ArgumentCaptor<JSONObject> todo = ArgumentCaptor.forClass(JSONObject.class);
+            assertAll(
+                    () -> assertEquals(List.of(), notSent, "不该说上一条没发出去"),
+                    () -> {
+                        verify(http).setGroupTodo(any(), todo.capture());
+                        assertEquals("text-77", todo.getValue().getString("message_id"));
+                    });
+        }
+
+        @Test
+        @DisplayName("去掉图片再发也没送到时，仍记一行没发出去，不挂待办")
+        void warnsWhenTheTextResendAlsoFails() throws Throwable {
+            canAtAll(false);
+            Message previous = sentLater("开播啦 {image_url=https://example.com/cover.jpg}");
+            Message empty = message(PLATFORM, PushTargetType.GROUP, "{at=all}");
+            empty.setPrevious(previous);
+            assertNull(aspect.aroundSendMethod(sending(empty)));
+
+            NovaMessageSender real = realSender((headers, params) ->
+                    new JSONObject().fluentPut("code", 2).fluentPut("message", "机器人不在该群"));
+            List<String> notSent = notSentWarnings(() -> real.sendNow(previous));
+
+            assertEquals(1, notSent.size(), "没送到只该记一行: " + notSent);
+            assertTrue(notSent.get(0).contains("没有发出去"), notSent.get(0));
+            verify(http, never()).setGroupTodo(any(), any());
+        }
+
+        private Message sentLater(String content) {
+            Message message = message(PLATFORM, PushTargetType.GROUP, content);
+            message.setCreateTime(Instant.now());
+            return message;
+        }
+    }
+
+    /**
      * 问次数这一趟本身失败：连不上，或对面回了错误码
      * <p>
      * 切面织在发送器的 send 上，跑在推送处理器的线程里、排在入队之前。这一问的异常若顺着 send
@@ -528,5 +733,49 @@ class BackupAtAllAspectTest {
 
     private static void runCallbacks(List<Runnable> callbacks) {
         callbacks.forEach(Runnable::run);
+    }
+
+    /**
+     * 只留下切面那句「上一条没有发出去」。发送器自己的警告不在这个记录器里。
+     */
+    private static List<String> notSentWarnings(Runnable body) {
+        Logger logger = (Logger) LoggerFactory.getLogger(BackupAtAllAspect.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            body.run();
+        } finally {
+            logger.detachAppender(appender);
+        }
+        return appender.list.stream()
+                .filter(event -> "WARN".equals(event.getLevel().toString()))
+                .map(ILoggingEvent::getFormattedMessage)
+                .filter(text -> text.contains("没有发出去"))
+                .toList();
+    }
+
+    /**
+     * 真的发送器，投递走进程内这一路，好让测试按住某一次投递。
+     */
+    private NovaMessageSender realSender(Sender.LocalDelivery delivery) {
+        Sender target = new Sender();
+        target.setName(PLATFORM);
+        target.setUrl("http://127.0.0.1:7827/onebot/send");
+        target.setDelay(0);
+        target.setLocalDelivery(delivery);
+
+        NovaSenderService senderService = mock(NovaSenderService.class);
+        when(senderService.getSender(PLATFORM)).thenReturn(Optional.of(target));
+
+        @SuppressWarnings("unchecked")
+        ObjectProvider<AtAllPermissionResolver> resolvers = mock(ObjectProvider.class);
+        when(resolvers.iterator()).thenAnswer(invocation -> List.<AtAllPermissionResolver>of().iterator());
+
+        NovaCoreProperties properties = new NovaCoreProperties();
+        return new NovaMessageSender(mock(HttpUtil.class), senderService,
+                new PushActivityRecorder(TimelineWriter.NONE), new PushGate(properties),
+                TimelineWriter.NONE, new AtAllQuotaService(properties), resolvers,
+                new FirstPushTipService(new NovaStateStore(properties)));
     }
 }

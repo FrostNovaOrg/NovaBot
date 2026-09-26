@@ -33,7 +33,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
  * 模板写成「{@code {at=all}}{@code {next}}正文」时，占位符独占一条消息，摘完是空的。
  * 空消息不能发，于是这一条整条不发（<b>不调用 proceed</b>），
  * 待办改挂到相邻的那一条上——后一条还没发，登记回调等它发出；
- * 前一条已经有编号的当场挂，还没有的等它发出再挂，最终没发出去的不挂。
+ * 前一条已经送达的当场挂，还在发的等它送达再挂，最终没送达的不挂。
  */
 @Slf4j
 @Aspect
@@ -123,7 +123,7 @@ public class BackupAtAllAspect {
      * 本条摘完是空的、发不出去，把待办挂到相邻的那一条上
      * <p>
      * 先看后一条：它与本条同属一次推送、内容更相关。没有后一条才用前一条：
-     * 已经发出、有编号的当场挂；还在队列里的等它发出再挂；最终没发出去的不挂。
+     * 已经送达的当场挂；还在发的等它送达再挂；最终没送达的不挂。
      */
     private void hangTodoOnNeighbour(Message message, OneBotSender sender, JSONObject todoParams) {
         Message next = message.getNext();
@@ -142,17 +142,14 @@ public class BackupAtAllAspect {
     }
 
     /**
-     * 把待办挂到前一条上：有编号就现在挂，没有就等它的发送结果
+     * 把待办挂到前一条上。
+     * <p>
+     * 不先看编号和完成时刻再登记。那两下中间前一条可能刚刚发完，
+     * 登记上去的回调就没人跑，待办会漏掉；完成时刻已经有了、编号还没有时，
+     * 又会把正在送达的一条说成没发出去。
+     * 只登记：已经送达的回调当场执行，还在发的等送达再执行，最终没送达的走失败回调。
      */
     private void hangWhenPreviousIsOut(Message previous, OneBotSender sender, JSONObject todoParams) {
-        if (StringUtil.isNotBlank(previous.getId())) {
-            attachTodo(sender, todoParams, previous.getId());
-            return;
-        }
-        if (previous.getCompleteTime() != null) {
-            log.warn("群 {} 的上一条消息没有发出去，这次不挂群待办", previous.getNum());
-            return;
-        }
         previous.addOnSuccessCallback(() -> {
             if (StringUtil.isBlank(previous.getId())) {
                 log.warn("群 {} 的上一条消息没有发出去，这次不挂群待办", previous.getNum());

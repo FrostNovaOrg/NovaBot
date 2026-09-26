@@ -26,6 +26,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.*;
@@ -497,32 +498,23 @@ public class NovaMessageSender {
         // 表现为消息静默丢失而日志指向别处
         boolean delivered = Integer.valueOf(0).equals(result.getInteger("code"));
         if (delivered) {
-            // 已经送达，后面的记账或提示再出错也不能把这次额度退掉
+            // 已经送达，后面的记账或提示再出错也不能把这次额度退掉。
+            // 编号与「送达」在消息里一起定下来，这之后才登记的成功回调会当场执行
             chargedOn.set(null);
-            message.setId(result.getString("id"));
+            List<Runnable> succeeded = message.markDelivered(result.getString("id"));
             activityRecorder.recordSuccess(sender.getName(), describeTarget(message), message.getDisplay(), elapsedMillis);
             log.info("NovaBot -> {} ([{}] {}) [{}]: {}", sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(), message.getDisplay());
-
-            for (Runnable callback : message.getOnSuccessCallbacks()) {
-                try {
-                    callback.run();
-                } catch (Exception e) {
-                    log.error("执行消息发送成功回调异常: [{}]{}", message.getSequence(), message.getDisplay(), e);
-                }
-            }
+            runEach(succeeded, message, "发送成功");
         } else {
             activityRecorder.recordFailure(sender.getName(), describeTarget(message), message.getDisplay(), result.getString("message"), elapsedMillis);
             log.error("消息发送失败 ({}): NovaBot -> {} ([{}] {}) [{}]: {}", result.getString("message"), sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(), message.getDisplay());
 
-            for (Runnable callback : message.getOnFailureCallbacks()) {
-                try {
-                    callback.run();
-                } catch (Exception e) {
-                    log.error("执行消息发送失败回调异常: [{}]{}", message.getSequence(), message.getDisplay(), e);
-                }
-            }
-
+            // 先试去掉图片再发一次文字。文字送到了就按送达算：写下那条文字的编号，跑成功回调。
+            // 失败回调只在文字也没送到时才跑，避免群里已经有这条文字，却被记成没发出去
             delivered = fallbackWithoutImages(sender, headers, params, message, result);
+            if (!delivered) {
+                runEach(message.markFailed(), message, "发送失败");
+            }
         }
 
         // 文字到了才算数，图片降级那一路同样算；没送到的把这次扣的退回扣减当天
@@ -615,6 +607,8 @@ public class NovaMessageSender {
                     sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(),
                     textOnly, failure.getString("message"));
 
+            runEach(message.markDelivered(result.getString("id")), message, "发送成功");
+
             for (Runnable callback : message.getOnImageDegradedCallbacks()) {
                 try {
                     callback.run();
@@ -629,6 +623,19 @@ public class NovaMessageSender {
                     textOnly, failure.getString("message"), reason);
         }
         return textDelivered;
+    }
+
+    /**
+     * 跑一批回调。其中一个抛了，记下来，剩下的照样跑，免得一次记账出错把后面的发送收尾冲掉
+     */
+    private void runEach(List<Runnable> callbacks, Message message, String name) {
+        for (Runnable callback : callbacks) {
+            try {
+                callback.run();
+            } catch (Exception e) {
+                log.error("执行消息{}回调异常: [{}]{}", name, message.getSequence(), message.getDisplay(), e);
+            }
+        }
     }
 
     /**
