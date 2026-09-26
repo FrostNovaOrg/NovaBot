@@ -3,6 +3,9 @@
 # 启用前改两处：
 #   1. ExecStart 末尾的目标路径（本机目录或 user@host:/path）
 #   2. 若安装目录不是 /opt/starbot，同步改脚本路径与数据目录
+# 默认布局下直播数据（sessions.jsonl、details/）就在安装目录里，所以数据目录填安装目录本身。
+# 这样会把整个安装目录一起备走（只跳过 reports/ 与 *.tmp），连同 application.yml、
+# 登录凭据等含口令的文件；目标必须是你信得过、别人读不到的地方。
 #
 # 装上：把本文件与 novabot-backup.timer 拷到 /etc/systemd/system/，改完占位后
 #   sudo systemctl daemon-reload && sudo systemctl enable --now novabot-backup.timer
@@ -17,4 +20,4 @@ Type=oneshot
 User=starbot
 Group=starbot
 WorkingDirectory=/opt/starbot
-ExecStart=/opt/starbot/tools/data-backup.sh /opt/starbot/data <目标占位>
+ExecStart=/opt/starbot/tools/data-backup.sh /opt/starbot <目标占位>

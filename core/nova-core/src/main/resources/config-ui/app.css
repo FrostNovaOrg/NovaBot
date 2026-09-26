@@ -113,7 +113,7 @@ body{margin:0;background:var(--ground);color:var(--text);
 .verline{margin-top:16px;padding:10px 10px 0;border-top:1px solid var(--line);
   display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--dim);
   position:relative}
-/* 退出按钮在侧栏最底。宽屏竖排两行，窄屏塞进横条右端 */
+/* 退出按钮在侧栏最底。宽屏竖排两行，窄屏在横条下方单独一行、靠右 */
 #auth-actions{margin-top:10px;display:flex;flex-direction:column;gap:6px}
 #auth-actions button{background:none;border:1px solid var(--line);border-radius:var(--r-ctl);
   padding:5px 12px;cursor:pointer;color:var(--dim);font-size:13px;font-family:inherit;text-align:left}
