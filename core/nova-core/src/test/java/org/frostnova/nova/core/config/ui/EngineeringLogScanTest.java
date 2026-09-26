@@ -13,6 +13,8 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadMXBean;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -181,17 +183,26 @@ class EngineeringLogScanTest {
     void scansSparseErrorsQuickly() throws Exception {
         writeSparseDay();
 
-        long start = System.nanoTime();
+        // 量本线程的 CPU 时间而不是墙钟：回扫在请求的线程里同步跑完（走 MockMvc，
+        // 服务里也不换线程），墙钟里却掺着排队等 CPU 的时间——机器被别的进程占满时，
+        // 同样的回扫被拖出门槛误红过（负载 5 以上实测 2977 毫秒），而它自己没变慢。
+        // 本线程 CPU 时间只计真在跑的那部分：排队、等盘都不进，机器忙不再误红；
+        // 回扫真退化成秒级时（历史上那次是每读一块就把已收的行从头重排一遍），
+        // CPU 时间照样涨上去，这一格照红。
+        ThreadMXBean threads = ManagementFactory.getThreadMXBean();
+        assertTrue(threads.isCurrentThreadCpuTimeSupported() && threads.isThreadCpuTimeEnabled(),
+                "本线程 CPU 时间量不出来时这一格会恒绿，先卫住量具");
+        long start = threads.getCurrentThreadCpuTime();
         JSONObject found = call("?limit=300&d=2026-09-25&levels=error");
-        long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+        long elapsedMs = (threads.getCurrentThreadCpuTime() - start) / 1_000_000;
 
         String text = joined(found);
         assertTrue(text.contains("sparse-err-0") && text.contains("sparse-err-2"),
                 "这一天只有 3 条错误，都该找得到；得到 " + levelHeads(text) + " 条");
         assertEquals(3, levelHeads(text), "就这 3 条，不多不少");
-        System.out.println("整天回扫：几十万条短行里只夹 3 条错误，一次请求实测 " + elapsedMs + " 毫秒");
-        // 门槛从宽：这一格盯的是「等上好几秒」，机器慢一截也不该误红
-        assertTrue(elapsedMs < 2500, "整天翻一遍不该等上好几秒，实测 " + elapsedMs + " 毫秒");
+        System.out.println("整天回扫：几十万条短行里只夹 3 条错误，这一趟本线程 CPU 时间实测 " + elapsedMs + " 毫秒");
+        // 门槛从宽：这一格盯的是退化成秒级的回扫，机器的 CPU 本身慢一截也不该误红
+        assertTrue(elapsedMs < 2500, "整天翻一遍不该费这么多功夫，本线程 CPU 时间实测 " + elapsedMs + " 毫秒");
     }
 
     @Test
