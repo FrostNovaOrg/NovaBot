@@ -1,5 +1,11 @@
 # NovaBot
 
+<img src="docs/assets/logo.svg" alt="NovaBot" height="56">
+
+**哔哩哔哩直播与动态推送机器人。** 盯住你关心的 UP 主，开播、下播、发动态时把消息推到 QQ 群或好友；下播后自动生成一张数据报告图；所有配置都在浏览器里完成。
+
+> **NovaBot** watches Bilibili streamers you care about and pushes live-start, live-end and feed updates to QQ groups or friends through an [OneBot](https://onebot.dev/) implementation (e.g. NapCat). It ships with a web console for all configuration and renders a post-stream report image (cover banner, stat cards, interaction curve, leaderboards, danmaku word cloud, gifts received, and a guard roster with fan medals). Chinese-only UI and docs for now.
+
 [![CI](https://github.com/FrostNovaOrg/NovaBot/actions/workflows/ci.yml/badge.svg)](https://github.com/FrostNovaOrg/NovaBot/actions/workflows/ci.yml)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/FrostNovaOrg/NovaBot)](https://github.com/FrostNovaOrg/NovaBot/releases)
@@ -12,12 +18,6 @@
 git clone https://github.com/FrostNovaOrg/NovaBot
 cd NovaBot && ./install.sh
 ```
-
-<img src="docs/assets/logo.svg" alt="NovaBot" height="56">
-
-**哔哩哔哩直播与动态推送机器人。** 盯住你关心的 UP 主，开播、下播、发动态时把消息推到 QQ 群或好友；下播后自动生成一张数据报告图；所有配置都在浏览器里完成。
-
-> **NovaBot** watches Bilibili streamers you care about and pushes live-start, live-end and feed updates to QQ groups or friends through an [OneBot](https://onebot.dev/) implementation (e.g. NapCat). It ships with a web console for all configuration and renders a post-stream report image (cover banner, stat cards, interaction curve, leaderboards, danmaku word cloud, gifts received, and a guard roster with fan medals). Chinese-only UI and docs for now.
 
 ```
 哔哩哔哩  ──拉取──▶  NovaBot  ──HTTP──▶  OneBot 实现  ──▶  QQ 群 / 好友
@@ -70,7 +70,7 @@ cd NovaBot && ./install.sh
 | 一个 OneBot 实现 | 推荐 [NapCat](https://github.com/NapNeko/NapCatQQ)，由它登录 QQ 并收发消息 |
 | 一个哔哩哔哩账号 | **建议用小号**，用于读取动态与完整的直播间事件；原因见[安全说明](SECURITY.md) |
 
-NovaBot 自己不登录 QQ，只把消息交给 OneBot 实现去发。先把 NapCat 跑起来并登录好 QQ，再装 NovaBot。
+NovaBot 自己不登录 QQ，只把消息交给 OneBot 实现去发。
 
 ## 快速开始
 
@@ -103,7 +103,7 @@ docker run -d --name novabot --restart unless-stopped -v novabot-data:/app -p 12
 
 ## 适用范围与边界
 
-面向**中小型公会、个人势主播及其运营人员**，用于**自有或已获授权**的直播间数据采集、通知与运营分析，典型规模是一到十几个直播间。
+典型规模是一到十几个直播间，做数据采集、通知与运营分析。
 
 **不做风控对抗**：不伪造浏览器指纹、不伪造观看行为、不实现针对平台反自动化机制的对抗手段。大规模采集场景下不保证账号安全与数据完整性，触发平台限流或风控的后果由使用者承担。连接行为按「礼貌客户端」设计：指数退避、全局连接节流、不高频轮询、遵守平台的限流反馈，这是产品的一部分。强烈不建议用于非法或未经授权的大规模数据监控与爬取，完整表述见 [SECURITY.md](SECURITY.md)。
 
@@ -125,7 +125,7 @@ docker run -d --name novabot --restart unless-stopped -v novabot-data:/app -p 12
 
 ## 插件开发
 
-复制 [templates/nova-example-plugin](templates/nova-example-plugin) 作为起点，构建前先把本仓构件装进本地 Maven 仓（见[模板 README](templates/nova-example-plugin/README.md#依赖来源)）。用 `@NovaComponent` 注册组件、`@EventListener` 监听事件，实现 `NovaEventHandler` 即可作为推送处理器。插件 jar 放进 `plugins/`。第三方依赖不会在运行期下载，要自己放进 `plugins-lib/`。[可监听的事件类型](docs/architecture.md#可监听的事件类型)列出了全部事件。
+复制 [templates/nova-example-plugin](templates/nova-example-plugin) 作为起点，构建前先把本仓构件装进本地 Maven 仓（见[模板 README](templates/nova-example-plugin/README.md#依赖来源)）。用 `@NovaComponent` 注册组件、`@EventListener` 监听事件，实现 `NovaEventHandler` 即可作为推送处理器。插件 jar 放进 `plugins/`。第三方依赖不会在运行期下载，要自己放进 `plugins-lib/`。用安装脚本升级会清空 `plugins-lib/`，自己放的第三方 jar 升级后要重新放。[可监听的事件类型](docs/architecture.md#可监听的事件类型)列出了全部事件。
 
 ## 升级与反馈
 
