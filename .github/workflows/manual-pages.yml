@@ -1,0 +1,51 @@
+# 手册站发布到 GitHub Pages。
+# 目前手册尚未公开发布、Pages 也未开启，因此只允许手动触发（workflow_dispatch），
+# 不挂任何推送触发——挂着的话会在仓库页面留一个一直红着的失败工作流。
+# 上线时再改触发方式（届时把 on 里的 push 分支加上即可）。
+name: Manual site (Pages)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同一时间只跑一次发布，排队而不互相取消
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: 生成手册站
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 生成脚本零依赖（只用 python3 标准库），这里固定版本只为可复现
+      - name: 配置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      # 生成本身带全站断链检查：有断链这一步就红，不会把缺页的站发出去
+      - name: 生成
+        run: python3 manual/build.py
+
+      - name: 上传站点产物
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: manual/dist
+
+  deploy:
+    name: 发布到 Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -87,3 +87,8 @@ NetworkDebug/
 
 # 本地草稿目录，不入库（锚到仓根：别处的同名子目录不跟着被忽略）
 /scratch/
+
+# 手册站生成产物（manual/build.py 现生成，不入仓；锚到 manual/ 之下，
+# 不带路径的 dist/ 会误伤别处同名目录）
+/manual/dist/
+
