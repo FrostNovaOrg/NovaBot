@@ -1,6 +1,7 @@
 package org.frostnova.nova.report.handler;
 
 import org.frostnova.nova.bilibili.event.dynamic.BilibiliDynamicUpdateEvent;
+import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.model.BilibiliLiveMetric;
 import org.frostnova.nova.bilibili.model.Dynamic;
 import org.frostnova.nova.report.painter.BilibiliDynamicPainter;
@@ -13,6 +14,7 @@ import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.frostnova.nova.core.service.AtSubscriptionService;
 import org.frostnova.nova.core.service.LiveDataService;
+import org.frostnova.nova.core.timeline.TimelineWriter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -75,7 +77,8 @@ class BilibiliDynamicPushHandlerTest {
         sender = mock(NovaMessageSender.class);
         subscriptions = mock(AtSubscriptionService.class);
         liveDataService = mock(LiveDataService.class);
-        handler = new BilibiliDynamicPushHandler(api, painter, sender, subscriptions, liveDataService);
+        handler = new BilibiliDynamicPushHandler(api, painter, sender, subscriptions, liveDataService,
+                new NovaBilibiliProperties(), TimelineWriter.NONE);
 
         // 昵称接口不可用时回退到事件携带的昵称，本组不关心接口路径
         when(api.getUpInfoByUid(anyLong())).thenThrow(new RuntimeException("接口不可用"));

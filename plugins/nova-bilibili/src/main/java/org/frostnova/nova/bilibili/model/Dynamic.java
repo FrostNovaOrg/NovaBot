@@ -6,6 +6,8 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -96,6 +98,43 @@ public class Dynamic {
      */
     public String getUrl() {
         return "https://t.bilibili.com/" + id;
+    }
+
+    /**
+     * 取出这条动态身上给人看的文字：正文与标题
+     * <p>
+     * 两段都要：正文是自己写的那几行，标题在视频、专栏等的主体里，
+     * 一条动态两样都有是常事（转发评语加投稿标题）。画图那边只取一段来画，
+     * 这里不跟着它取——比对漏掉的那一段，就成了漏挡的那条动态。
+     * <p>
+     * 转发动态的原文不在本方法里：原文是 {@link #getOrigin()} 指着的另一条动态，
+     * 要不要连它一起看由调用方定。
+     * @return 正文与标题，没有文字时为空表
+     */
+    public List<String> texts() {
+        List<String> texts = new ArrayList<>();
+        JSONObject moduleDynamic = modules == null ? null : modules.getJSONObject("module_dynamic");
+        if (moduleDynamic == null) {
+            return texts;
+        }
+
+        JSONObject desc = moduleDynamic.getJSONObject("desc");
+        addText(texts, desc == null ? null : desc.getString("text"));
+
+        JSONObject major = moduleDynamic.getJSONObject("major");
+        if (major != null) {
+            for (String key : new String[]{"archive", "article", "opus", "live_rcmd"}) {
+                JSONObject node = major.getJSONObject(key);
+                addText(texts, node == null ? null : node.getString("title"));
+            }
+        }
+        return texts;
+    }
+
+    private static void addText(List<String> texts, String text) {
+        if (text != null && !text.isBlank()) {
+            texts.add(text);
+        }
     }
 
     /**

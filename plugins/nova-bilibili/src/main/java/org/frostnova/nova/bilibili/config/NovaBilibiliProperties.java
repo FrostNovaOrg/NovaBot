@@ -424,6 +424,15 @@ public class NovaBilibiliProperties {
         private int pushMinutes = 1440;
 
         /**
+         * 动态屏蔽词，每行一个；正文、标题或转发原文里含任一词的动态不推送。保存后立刻生效。
+         */
+        // 挡下的动态在日志与时间线各留一条，写明命中哪个词——不然「刚才那条为什么没推」无从查起。
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
+        @ConfigLabel("动态屏蔽词")
+        private List<String> blockWords = new ArrayList<>();
+
+        /**
          * 是否推送开播动态（B 站在主播开播后自动生成的那条）。默认关；与开播推送同时开着时，两边都配了的群会收到两遍。只配了动态推送、没配开播推送的主播，关掉本开关就收不到他的开播消息。
          */
         // 开播推送在每个维度上都更好：早得多（实测开播动态比开播晚整 600 秒、出现在

@@ -2,6 +2,7 @@ package org.frostnova.nova.report.handler;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.event.live.BilibiliLiveOnEvent;
 import org.frostnova.nova.bilibili.handler.BilibiliLiveOnPushHandler;
 import org.frostnova.nova.bilibili.model.BilibiliLiveMetric;
@@ -102,7 +103,8 @@ class MergedNoticeTemplateTest {
 
     private NovaEventHandler dynamic() {
         return new BilibiliDynamicPushHandler(mock(BilibiliApiUtil.class), mock(BilibiliDynamicPainter.class),
-                mock(NovaMessageSender.class), mock(AtSubscriptionService.class), mock(LiveDataService.class));
+                mock(NovaMessageSender.class), mock(AtSubscriptionService.class), mock(LiveDataService.class),
+                new NovaBilibiliProperties(), TimelineWriter.NONE);
     }
 
     /**
