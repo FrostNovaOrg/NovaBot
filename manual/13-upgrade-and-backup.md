@@ -9,7 +9,8 @@
 - 停止服务：systemd 是 `sudo systemctl stop novabot`，容器是 `docker stop`
 - 备份 `application.yml` 与 `datasource.json`，它们是你的全部配置
 - 备份 `cookies.json` 与 `cookies.key`，它们等同于哔哩哔哩账号的完整控制权
-- 旁边还有 `cookies.json.plain.bak` 的话一并带走，那是明文转加密时留下的原件
+- 旁边若还有 `cookies.json.plain.bak`，那是明文迁成加密时留下的明文原件，程序不读它：
+  不用备、升级后也不用拷回，确认能正常登录后就把它删掉
 
 登录凭据默认加密后仍写在 `cookies.json` 里，密钥在 `cookies.key`，没有另存一份密文文件，
 所以这两个都要备。直播数据不用特意搬：升级只换程序文件，数据不动。
@@ -135,7 +136,17 @@ sudo systemctl enable --now novabot-backup.timer
 ```
 
 默认凌晨 4 点跑，改 `novabot-backup.timer` 里的 `OnCalendar` 可以换时间点。
-**恢复**：把备份目录整份拷回数据目录即可。
+**恢复**：先停服务，再从备份目录拷回数据与配置，不拷程序件；拷完再启动。
+
+- 数据：`data.json`、`state.json`、`sessions.jsonl`、`snapshots.jsonl`、`event-stream-tokens.jsonl`
+  与 `details/`、`timeline/` 两个目录
+- 配置：`application.yml`、`datasource.json`、`template-defaults.json`、`cookies.json`、`cookies.key`
+- 备份里若有明文迁成加密时留下的 `cookies.json.plain.bak`，不用拷回，程序不读它。它是明文凭据，
+  备份只增不删，安装目录里删掉了备份里也还留着——恢复后确认能正常登录，就把备份里那份也删掉
+- `NovaBot.jar`、`lib/`、`plugins/`、`plugins-lib/` 是程序件，备份里的是备份那天的旧版，
+  整份拷回会把旧 jar 混进新版。但 `plugins/` 里除了上面[用安装脚本升级](#用安装脚本升级)列的
+  五个内置插件（以及 5.2 及更早的 `starbot-` 开头旧名插件），别的 jar 都是你自己装的第三方插件，
+  要从备份里单独拷回；自己往 `plugins-lib/` 放过的 jar 也单独拷回
 
 订阅名单、命令开关、绑定关系都存在 `state.json` 里，它与数据文件在同一目录，
 按上面备数据时会一起带上。换机器时少备了它，群里那些订阅就得重新订一遍。
@@ -143,7 +154,7 @@ sudo systemctl enable --now novabot-backup.timer
 ## 登录凭据会不会掉
 
 **一般不会。** 扫码登录走的是电视端接口，拿到的令牌有效期 180 天，到期前 30 天
-程序会自动续期（`novabot.bilibili.account.auto-refresh-cookie`，默认开启）。
+程序会自动续期（设置项「登录凭据 · 自动续期」，默认开启）。
 启动日志会明说拿到的是哪一种凭据，出问题先看这一行：
 
 - 「已取得可自动续期的登录令牌, 有效期至 X」——正常，不用管
@@ -153,7 +164,9 @@ sudo systemctl enable --now novabot-backup.timer
 所以改走了电视端接口。拿不到口令时续期直接跳过，不会有副作用，只是没法自动续。
 
 掉登录的表现是动态推送静默停止（直播推送不受影响），首页健康自检会明确告警，
-重新扫码即可。频繁掉登录的其它成因见[第 14 章](14-troubleshooting.md)。
+重新扫码即可。健康自检写着「未取得刷新口令，无法自动续期」的，说明这份凭据是旧版本或
+设置项「扫码登录方式」改成 `web` 时扫出来的，到连接页「哔哩哔哩」卡点「退出登录并重新扫码」
+即可换成可续期的。频繁掉登录的其它成因见[第 14 章](14-troubleshooting.md#账号相关)。
 
 > [!TIP] 截图位（待补）：连接页「哔哩哔哩」卡的登录状态。
 > 露出「已取得可自动续期的登录令牌」那行与有效期；地址栏与 cookie 相关字样要打码。
