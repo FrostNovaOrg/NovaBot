@@ -19,8 +19,11 @@ import java.net.URLEncoder;
 import java.net.UnknownHostException;
 import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeoutException;
 
 /**
@@ -152,20 +155,24 @@ public class WebhookAlertChannel implements AlertChannel {
                 || findCause(e, NoRouteToHostException.class) != null) {
             return "连不上";
         }
+        // 起因链可能成环（A 的起因是 B、B 的起因又是 A）：走过的每一层按对象身份记下，
+        // 最深一层停在环上最后一个没走过的那一层
         Throwable deepest = e;
-        while (deepest.getCause() != null && deepest.getCause() != deepest) {
+        Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+        seen.add(deepest);
+        while (deepest.getCause() != null && seen.add(deepest.getCause())) {
             deepest = deepest.getCause();
         }
         return "发送失败（" + deepest.getClass().getSimpleName() + "）";
     }
 
     private static <T extends Throwable> T findCause(Throwable e, Class<T> type) {
-        for (Throwable current = e; current != null; current = current.getCause()) {
+        // 起因链可能成环（A 的起因是 B、B 的起因又是 A）：走过的每一层按对象身份记下，
+        // 走到走过的就停——原来只挡「自己指自己」，两层以上互为起因时就绕着环出不来
+        Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (Throwable current = e; current != null && seen.add(current); current = current.getCause()) {
             if (type.isInstance(current)) {
                 return type.cast(current);
-            }
-            if (current.getCause() == current) {
-                break;
             }
         }
         return null;

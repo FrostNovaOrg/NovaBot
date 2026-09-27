@@ -11,6 +11,9 @@ import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 import java.nio.file.Path;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.Set;
 
 @EnableAsync
 @EnableRetry
@@ -47,7 +50,10 @@ public class NovaCoreApplication {
      * @return 是否为配置问题
      */
     private static boolean isConfigurationFailure(Throwable failure) {
-        for (Throwable current = failure; current != null; current = current.getCause()) {
+        // 起因链可能成环（A 的起因是 B、B 的起因又是 A）：走过的每一层按对象身份记下，
+        // 走到走过的就停，不绕着环找第二遍
+        Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (Throwable current = failure; current != null && seen.add(current); current = current.getCause()) {
             if (current instanceof BindException
                     || current.getClass().getName().startsWith("org.yaml.snakeyaml.")
                     || current.getClass().getName().endsWith("ConfigDataResourceNotFoundException")
@@ -68,7 +74,11 @@ public class NovaCoreApplication {
      */
     private static String describe(Throwable failure) {
         Throwable root = failure;
-        while (root.getCause() != null) {
+        // 起因链可能成环（A 的起因是 B、B 的起因又是 A）：走过的每一层按对象身份记下，
+        // 最深一层停在环上最后一个没走过的那一层
+        Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+        seen.add(root);
+        while (root.getCause() != null && seen.add(root.getCause())) {
             root = root.getCause();
         }
 
