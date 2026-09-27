@@ -21,6 +21,7 @@ import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 
@@ -181,6 +182,10 @@ public final class DurableFiles {
      * 退回的直接写：先截断再写，写到一半出错目标就只剩半截，所以写之前把原件整份
      * 读进内存，写失败时尽力写回原字节。
      * <p>
+     * 写失败后先读回目标跟原字节比：一样就是一个字节没写进去（如原件只读、直接写在
+     * 打开那一步就被拒），如实说原件未动、不去写回——写回多半也在打开时被拒，
+     * 再报「可能已不完整」会让人以为好好的配置文件坏了。不一样或读不回来才写回。
+     * <p>
      * 原件不在就没有可退的，照旧写。原件在但读不出（如只写不读的权限）时也照旧写——
      * 为了能写回而拒写，会把本来存得上的保存变成存不上；这时写失败就说不出原样了，
      * 日志照「可能已不完整」报。无论写回成没成，原来那个写失败的错都照抛给调用方。
@@ -198,7 +203,9 @@ public final class DurableFiles {
         try {
             Files.writeString(target, content, StandardCharsets.UTF_8);
         } catch (IOException writeFailed) {
-            if (original != null) {
+            if (original != null && stillHolds(target, original)) {
+                log.warn("直接写 {} 失败, 原件未动: {}", target, writeFailed.toString());
+            } else if (original != null) {
                 try {
                     Files.write(target, original);
                     log.warn("直接写 {} 失败, 已写回原样: {}", target, writeFailed.toString());
@@ -212,6 +219,17 @@ public final class DurableFiles {
                         target, writeFailed.toString(), unreadable.toString());
             }
             throw writeFailed;
+        }
+    }
+
+    /**
+     * 目标现在是否仍逐字节等于写之前读到的原件；读不回来按「说不准」算，返回 {@code false}
+     */
+    private static boolean stillHolds(Path target, byte[] original) {
+        try {
+            return Arrays.equals(original, Files.readAllBytes(target));
+        } catch (IOException unreadable) {
+            return false;
         }
     }
 
