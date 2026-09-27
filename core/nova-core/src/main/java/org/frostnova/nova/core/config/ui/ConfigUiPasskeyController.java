@@ -92,7 +92,8 @@ public class ConfigUiPasskeyController {
      */
     @PostMapping("/passkey/login/options")
     public JSONObject loginOptions(HttpServletRequest request) {
-        return passkeyService.loginOptions(PasskeyRelyingParty.of(request));
+        // 来源地址与过滤器认白名单的是同一个，不另起一套
+        return passkeyService.loginOptions(PasskeyRelyingParty.of(request), request.getRemoteAddr());
     }
 
     /**

@@ -174,7 +174,8 @@ public class PasskeyService {
         selection.put("userVerification", "preferred");
 
         result.put("success", true);
-        result.put("challenge", challenges.issue(PasskeyChallenges.Purpose.REGISTER, clock.get()));
+        // 登记挑战不分来源：拿得到它的只有已登录、核过密码的人
+        result.put("challenge", challenges.issue(PasskeyChallenges.Purpose.REGISTER, null, clock.get()));
         result.put("rp", rp);
         result.put("user", user);
         result.put("pubKeyCredParams", params);
@@ -268,9 +269,10 @@ public class PasskeyService {
      * 里面只有一个刚发的随机挑战，以及已登记的凭据 ID。凭据 ID 不是秘密——
      * 它本来就存在使用者的设备上，浏览器每次登录都会把它发出来。
      * @param relyingParty 本站此刻的 rpId 与 origin
+     * @param clientAddress 索取者的来源地址，挑战按它分额度，一个地址反复要挤不掉别人的
      * @return 交给 {@code navigator.credentials.get} 的那份参数
      */
-    public JSONObject loginOptions(PasskeyRelyingParty relyingParty) {
+    public JSONObject loginOptions(PasskeyRelyingParty relyingParty, String clientAddress) {
         JSONObject result = new JSONObject();
 
         if (!relyingParty.usable()) {
@@ -289,7 +291,7 @@ public class PasskeyService {
         }
 
         result.put("success", true);
-        result.put("challenge", challenges.issue(PasskeyChallenges.Purpose.LOGIN, clock.get()));
+        result.put("challenge", challenges.issue(PasskeyChallenges.Purpose.LOGIN, clientAddress, clock.get()));
         result.put("rpId", relyingParty.rpId());
         result.put("timeout", CLIENT_TIMEOUT_MILLIS);
         // 二次验证开着时浏览器也得去要 UV；只改这一项不够，真正拒在 loginVerify
