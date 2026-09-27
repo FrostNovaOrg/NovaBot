@@ -250,7 +250,14 @@ public class AlertService {
             return new TestResult(TestResult.Status.DELIVERED, id, channel.name(),
                     "已经往 " + channel.name() + " 发了一条测试告警，去看看收到没有。");
         } catch (Exception e) {
-            log.error("测试 {} 告警通道失败", channel.name(), e);
+            if (e instanceof AlertBlockedException) {
+                // 被总开关拦下是使用者自己按下的「先别发」，不是故障：工程日志一行、不打栈。
+                // 界面回话与别的失败同一句——点的人要听到的正是「没发出去」及原因
+                log.warn("测试 {} 告警通道被全局推送开关拦下, 这一次没发出去: {}", channel.name(), e.getMessage());
+            } else {
+                // 真出错时排查要用栈
+                log.error("测试 {} 告警通道失败", channel.name(), e);
+            }
             return new TestResult(TestResult.Status.FAILED, id, channel.name(),
                     channel.name() + " 这一路发不出去：" + e.getMessage());
         }

@@ -1,5 +1,9 @@
 package org.frostnova.nova.core.alert;
 
+import ch.qos.logback.classic.LoggerContext;
+import ch.qos.logback.classic.encoder.PatternLayoutEncoder;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.OutputStreamAppender;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.core.timeline.TimelineEventType;
@@ -8,10 +12,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -375,6 +383,93 @@ class AlertServiceTest {
             capturing.alert("link.lost", "标题", "内容");
 
             assertEquals(1, recorded.size(), "收敛期内只该记一条；得到：" + recorded);
+        }
+    }
+
+    /**
+     * 点「发一条测试」往工程日志里写了什么
+     * <p>
+     * 量的是<b>落盘的那一份文本</b>：按生产 logback.xml 里工程日志那个 appender 的模式
+     * 渲染出来再看，不是只看日志调用传了什么参数——异常作为末参交给日志框架时会附上栈迹，
+     * 而翻工程日志的人每点一次就看到一大段堆栈，读到的是「出大错了」。
+     */
+    @Nested
+    @DisplayName("测试发送的工程日志")
+    class TestLog {
+
+        /**
+         * 照 logback.xml 里 RollingFile（工程日志）那个 appender 的模式，只略去 PID 一栏
+         */
+        private static final String PATTERN =
+                "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p --- [%20.20t] %-40.40logger{39} : %msg%n";
+
+        private final Pattern stackFrame = Pattern.compile("(?m)^\\s+at\\s");
+
+        @Test
+        @DisplayName("被总开关拦下时只记一行 WARN、写明原因，不打栈")
+        void blockedByMasterSwitchLogsOneWarnLineWithoutStack() {
+            FakeChannel channel = new FakeChannel("假通道");
+            channel.blockedByMasterSwitch = true;
+            channels.add(channel);
+
+            String rendered = captureRendered(() -> service.test("fake"));
+
+            assertFalse(stackFrame.matcher(rendered).find(),
+                    "被拦下是使用者自己关的开关，不是故障，不该打出堆栈:\n" + rendered);
+            String[] lines = rendered.strip().split("\n");
+            assertEquals(1, lines.length, "只该记一行，落盘长这样:\n" + rendered);
+            assertTrue(lines[0].contains("WARN"), "这一行该是 WARN 不是 ERROR: " + lines[0]);
+            assertTrue(lines[0].contains("全局推送开关已关闭，这条告警没有发出"),
+                    "那一行要写明没发出去的原因: " + lines[0]);
+        }
+
+        @Test
+        @DisplayName("阳：别的异常仍带栈，真出错时排查看得见")
+        void otherFailuresStillLogStack() {
+            FakeChannel channel = new FakeChannel("假通道");
+            channel.failing = true;
+            channels.add(channel);
+
+            String rendered = captureRendered(() -> service.test("fake"));
+
+            // 这一条看得见栈，上一条的「没有栈」才是真的没有，不是渲染器压根不画栈
+            assertTrue(stackFrame.matcher(rendered).find(), "别的异常必须带栈:\n" + rendered);
+            assertTrue(rendered.contains("ERROR"), "别的异常照旧记 ERROR: " + rendered);
+            assertTrue(rendered.contains("模拟出网中断"), "原因要在: " + rendered);
+        }
+
+        /**
+         * 把这一趟工程日志按生产的模式渲染出来，返回落盘会长的样子
+         */
+        private String captureRendered(Runnable action) {
+            LoggerContext context = (LoggerContext) LoggerFactory.getILoggerFactory();
+
+            PatternLayoutEncoder encoder = new PatternLayoutEncoder();
+            encoder.setContext(context);
+            encoder.setPattern(PATTERN);
+            encoder.setCharset(StandardCharsets.UTF_8);
+            encoder.start();
+
+            ByteArrayOutputStream sink = new ByteArrayOutputStream();
+            OutputStreamAppender<ILoggingEvent> appender = new OutputStreamAppender<>();
+            appender.setContext(context);
+            appender.setEncoder(encoder);
+            appender.setOutputStream(sink);
+            appender.start();
+
+            ch.qos.logback.classic.Logger logger =
+                    (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(AlertService.class);
+            boolean additive = logger.isAdditive();
+            logger.setAdditive(false);
+            logger.addAppender(appender);
+            try {
+                action.run();
+            } finally {
+                logger.detachAppender(appender);
+                logger.setAdditive(additive);
+                appender.stop();
+            }
+            return sink.toString(StandardCharsets.UTF_8);
         }
     }
 }
