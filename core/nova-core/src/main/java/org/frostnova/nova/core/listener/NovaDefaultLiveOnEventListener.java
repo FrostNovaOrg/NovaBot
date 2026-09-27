@@ -34,13 +34,24 @@ public class NovaDefaultLiveOnEventListener {
     }
 
     /**
-     * 断线重连检测
+     * 断线重连检测。
+     * <p>
+     * 读上一场下播时间出错时按新开播继续，不打断广播：本监听排在所有开播监听最前，
+     * 同步广播里它一抛，后面的开播记事、开播数据写入与推送全都收不到这场开播
      * @param event 事件
      */
     @Order(Ordered.HIGHEST_PRECEDENCE)
     @EventListener
     public void onLiveOnEventCheckReconnect(LiveOnEvent event) {
-        Optional<Long> optionalLastLiveEndTime = liveDataService.getLiveEndTime(event.getPlatform(), event.getSource().getUid());
+        Optional<Long> optionalLastLiveEndTime;
+        try {
+            optionalLastLiveEndTime = liveDataService.getLiveEndTime(event.getPlatform(), event.getSource().getUid());
+        } catch (RuntimeException e) {
+            // 读不出上一场就当没有上一场（与 Optional.empty() 同一条路），不标断线重连，广播照常往下走
+            log.warn("[{}] [断线重连检测] 读上一场下播时间出错，按新开播处理（UID: {}）",
+                    event.getPlatform(), event.getSource().getUid());
+            return;
+        }
         if (optionalLastLiveEndTime.isPresent()) {
             long lastLiveEndTime = optionalLastLiveEndTime.get();
             long currentLiveStartTime = event.getTimestamp();

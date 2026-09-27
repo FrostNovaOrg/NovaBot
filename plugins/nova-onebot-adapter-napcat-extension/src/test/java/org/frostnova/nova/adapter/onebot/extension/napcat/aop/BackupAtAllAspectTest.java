@@ -289,7 +289,9 @@ class BackupAtAllAspectTest {
         void todoRidesOnThePreviousMessage() throws Throwable {
             canAtAll(false);
             Message previous = message(PLATFORM, PushTargetType.GROUP, "开播啦");
-            previous.setId("9529");
+            // 「已经发出去的前一条」按生产来路模拟：编号由发送器经 markDelivered 写下。
+            // 手写 setId 模拟不出「结果已定」，编号本身不再决定发送结果（兼容分支已收掉）
+            previous.markDelivered("9529").forEach(Runnable::run);
             Message message = message(PLATFORM, PushTargetType.GROUP, "{at=all}");
             message.setPrevious(previous);
             ProceedingJoinPoint joinPoint = sending(message);

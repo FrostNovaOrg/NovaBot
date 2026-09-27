@@ -248,6 +248,54 @@ class WebhookFailureLeakTest {
                 "没有空格也报空格，说明空格分支放错了地方:\n" + result.message());
     }
 
+    /**
+     * 地址里混进 URI 不收的字符（引号、尖括号常来自把地址粘进富文本再复制出来的那一种）：
+     * 空白挡不住它们，URI.create 的报错原文带着整条地址，而剥地址的正则同样在这几个字符上停——
+     * 字符后面那段（正是密钥待的地方）原样留在工程日志里。
+     */
+    private static String badCharSecretUrl(int port, char bad) {
+        return "http://" + HOST + ":" + port + "/" + bad + "/" + PUSH_KEY + "/" + EXTRA_PATH + "?" + QUERY;
+    }
+
+    /**
+     * 抓的故障③：告警地址里混进引号或尖括号时，推送密钥留在工程日志里。
+     * 要求：按失败交出去、不发；往外那句写「地址写法不对」、只带主机名；
+     * 往外那句、起因链与工程日志文本里都找不到密钥串。
+     */
+    private void badCharFailsWithoutLeaking(char bad) throws IOException {
+        Fixture fixture = new Fixture(badCharSecretUrl(closedPort(), bad));
+        fixture.properties.getAlert().setWebhookMethod("GET");
+
+        AlertService.TestResult[] holder = new AlertService.TestResult[1];
+        String rendered = captureRendered(() -> holder[0] = fixture.service.test("webhook"));
+
+        assertTrue(holder[0].message().contains("地址写法不对"),
+                "往外那句没说清是地址写法不对:\n" + holder[0].message());
+        assertFalse(holder[0].message().contains("地址里有空格"),
+                "混进的不是空白，别报成空格那一支:\n" + holder[0].message());
+        assertKeepsHostAndReasonOnly("GET 坏字符(" + bad + ")测试回话", holder[0].message(), HOST);
+        // 工程日志打出整条异常（含起因链与栈迹），那一整份里也不许有密钥
+        assertKeepsHostAndReasonOnly("GET 坏字符(" + bad + ")工程日志", rendered, HOST);
+    }
+
+    @Test
+    @DisplayName("GET 地址里混进双引号：报「地址写法不对」，回话与工程日志都不漏密钥")
+    void getWithQuoteInUrlFailsAsBadAddress() throws IOException {
+        badCharFailsWithoutLeaking('"');
+    }
+
+    @Test
+    @DisplayName("GET 地址里混进小于号：报「地址写法不对」，回话与工程日志都不漏密钥")
+    void getWithLessThanInUrlFailsAsBadAddress() throws IOException {
+        badCharFailsWithoutLeaking('<');
+    }
+
+    @Test
+    @DisplayName("GET 地址里混进大于号：报「地址写法不对」，回话与工程日志都不漏密钥")
+    void getWithGreaterThanInUrlFailsAsBadAddress() throws IOException {
+        badCharFailsWithoutLeaking('>');
+    }
+
     @Test
     @DisplayName("对方回了状态码时报错带主机与状态码——状态码本身就是失败原因")
     void statusFailureKeepsHostAndCode() throws IOException {
