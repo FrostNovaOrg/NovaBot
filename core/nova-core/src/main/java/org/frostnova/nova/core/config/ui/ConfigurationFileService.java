@@ -269,10 +269,10 @@ public class ConfigurationFileService {
     /**
      * 按程序启动时读配置的那一路，读出每一项实际得到的值
      * <p>
-     * 与 {@link #read()} 不是一回事：那边给界面看的是文件里的字面（只去掉两侧引号），
+     * 与 {@link #read()} 不是一回事：那边给界面看的是去掉引号、还原了转义的文字，
      * 这边是 Spring Boot 的 YAML 属性加载器读出来的值——不带引号的 {@code 23:00} 在这里是
-     * 六十进制整数 1380，双引号里的 {@code \"} 在这里已经还原成引号。
-     * 「重启之后读到的变没变」只能拿这一份比，字面一样不算数。
+     * 六十进制整数 1380，而界面上是文字 {@code 23:00}。
+     * 「重启之后读到的变没变」只能拿这一份比，文字一样不算数。
      * <p>
      * 字符串名单按下标收成一个 {@link List}，与界面上整份名单对应。
      * 文件分成了几段（{@code ---}）时各段怎么叠要看激活的配置档，这里比不准，读成空的。
@@ -534,13 +534,14 @@ public class ConfigurationFileService {
      * <p>
      * 明文换哈希那条路自己不留备份，但更早的保存可能已经把明文抄进过备份，
      * 那些照约定不动。说「没有」之前先看盘：这次没写备份，不等于目录里就没有含明文的副本。
+     * @param key 那段明文所在的配置项，完整路径
      * @param plaintext 刚从主配置文件换掉的那段明文
      * @return 同目录的实况
      */
-    public String backupSituation(String plaintext) {
+    public String backupSituation(String key, String plaintext) {
         List<String> left;
         try {
-            left = siblingFilesHolding(plaintext);
+            left = siblingFilesHolding(key, plaintext);
         } catch (IOException e) {
             return "同目录的备份没查成: " + e.getMessage();
         }
@@ -551,26 +552,33 @@ public class ConfigurationFileService {
     }
 
     /**
-     * 主配置文件之外，同一目录里还含着这段字的文件名，一份没有时为空表
-     * @param text 要找的字
+     * 主配置文件之外，同一目录里还有一行写着「这个键: 这段明文」的文件名，一份没有时为空表
+     * <p>
+     * 按整行认，不按裸子串找：口令是 admin 这类常见词时，按子串找会把正文里、别的键上
+     * 碰巧有这个词的件都报成「还留着明文」。键只比最后一段——备份是主配置文件的旧版，
+     * 那一行在里面长得和主配置文件里一样；值可带引号，行尾可带注释。
+     * @param key 配置项完整路径
+     * @param plaintext 明文
      * @return 命中的文件名，按名排序
      * @throws IOException 读目录失败时抛出
      */
-    private List<String> siblingFilesHolding(String text) throws IOException {
+    private List<String> siblingFilesHolding(String key, String plaintext) throws IOException {
         List<String> left = new ArrayList<>();
         Path self = configPath.toAbsolutePath().normalize();
         Path dir = self.getParent();
-        if (dir == null) {
+        if (dir == null || plaintext.isEmpty()) {
             return left;
         }
-        byte[] needle = text.getBytes(StandardCharsets.UTF_8);
+        String leaf = key.substring(key.lastIndexOf('.') + 1);
         try (Stream<Path> files = Files.list(dir)) {
             for (Path file : files.sorted().toList()) {
                 if (!Files.isRegularFile(file) || file.toAbsolutePath().normalize().equals(self)) {
                     continue;
                 }
-                // 按字节找而不是读成字符串：目录里可能有不是文本的件，读成串会半路炸掉这次查询
-                if (contains(Files.readAllBytes(file), needle)) {
+                // 按字节读再解码而不是 readString：目录里可能有不是文本的件，
+                // readString 遇到坏字节会抛异常、半路炸掉这次查询，new String 只把坏字节换成替代符
+                String text = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
+                if (text.lines().anyMatch(line -> holdsValue(line, leaf, plaintext))) {
                     left.add(file.getFileName().toString());
                 }
             }
@@ -578,20 +586,24 @@ public class ConfigurationFileService {
         return left;
     }
 
-    private static boolean contains(byte[] haystack, byte[] needle) {
-        if (needle.length == 0 || needle.length > haystack.length) {
+    /**
+     * 这一行是不是「键: 值」且值（去引号、去行尾注释后）正是这段明文
+     */
+    private static boolean holdsValue(String line, String leaf, String plaintext) {
+        String stripped = line.strip();
+        if (stripped.startsWith("- ")) {
+            stripped = stripped.substring(2).stripLeading();
+        }
+        if (!stripped.startsWith(leaf + ":")) {
             return false;
         }
-        outer:
-        for (int i = 0; i <= haystack.length - needle.length; i++) {
-            for (int j = 0; j < needle.length; j++) {
-                if (haystack[i + j] != needle[j]) {
-                    continue outer;
-                }
-            }
-            return true;
+        String rest = stripped.substring(leaf.length() + 1);
+        if (!rest.isEmpty() && !Character.isWhitespace(rest.charAt(0))) {
+            return false;
         }
-        return false;
+        int comment = commentIndex(rest);
+        String value = (comment < 0 ? rest : rest.substring(0, comment)).strip();
+        return unquote(value).equals(plaintext);
     }
 
     private synchronized List<String> write(Map<String, String> changes, boolean keepBackup) throws IOException {
@@ -628,22 +640,22 @@ public class ConfigurationFileService {
         for (Map.Entry<String, String> change : ordered) {
             Line line = index.get(change.getKey());
 
-            // 显式清除（值为 null）：把这一行删掉。清一个本来就没有的键是无操作——
+            // 显式清除（值为 null）：把这一项删掉，连同它的续行（见 blockEnd）。清一个本来就没有的键是无操作——
             // 「没这一项」与「删掉之后没有」在读回来时是同一件事，都不该往文件里添一行空值
             if (change.getValue() == null) {
                 if (line != null) {
-                    lines.remove(line.index);
+                    lines.subList(line.index, blockEnd(lines, line) + 1).clear();
                     changed.add(change.getKey());
                 }
                 continue;
             }
 
-            // 这类配置项清空等于「不配置」，要把整行删掉而不是留一个空值——
+            // 这类配置项清空等于「不配置」，要把整项删掉而不是留一个空值——
             // 留空会让程序下次启动直接失败。自下而上处理，删行不会让后续行号失效
             if (blankMeansAbsent.contains(change.getKey())
                     && (change.getValue() == null || change.getValue().isBlank())) {
                 if (line != null) {
-                    lines.remove(line.index);
+                    lines.subList(line.index, blockEnd(lines, line) + 1).clear();
                     changed.add(change.getKey());
                 }
                 continue;
@@ -666,6 +678,12 @@ public class ConfigurationFileService {
                 // 宁可拒存并说清原因（见本类 parse 里的同名标注）
                 throw new IOException("配置项 " + change.getKey()
                         + " 的行内名单跨了行且含本界面读不了的写法, 为不写坏配置文件本批全部未保存, 请先在配置文件里把它改成每行一项");
+            }
+
+            // 引号包着的值启动时读到的就是界面上那个值，原样送回来就是没改：不动那一行，
+            // 免得重新渲染换一种引号写法、把手写的原样冲掉还记成一次改动
+            if (line.quoted && change.getValue().equals(line.value)) {
+                continue;
             }
 
             String updated = replaceValue(lines.get(line.index), change.getValue());
@@ -1115,40 +1133,128 @@ public class ConfigurationFileService {
         // 按 YAML 的实际规则判断是否必须加引号，而不是见到冒号就加：
         // 冒号只有后接空格时才构成映射，因此 https://example 这类值无需引号。
         // 时:分这类「数字:数字」例外：冒号后无空格,但 SnakeYAML 按 YAML 1.1 六十进制把它读成整数。
+        // 制表符、控制字符这类裸写不稳或读不了的字，只能在双引号里转义着写
         boolean needQuote = !value.strip().equals(value)
                 || value.contains(": ") || value.endsWith(":")
                 || value.contains(" #")
                 || CLOCK_TIME.matcher(value).matches()
-                || INDICATOR_START.indexOf(value.charAt(0)) >= 0;
+                || INDICATOR_START.indexOf(value.charAt(0)) >= 0
+                || value.codePoints().anyMatch(cp -> escapeOf(cp) != null);
 
-        return needQuote ? "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"" : value;
+        if (!needQuote) {
+            return value;
+        }
+
+        // 转义与读侧 unescapeDoubleQuoted 互逆：写出去按启动那一路读，读到的就是界面上的值
+        StringBuilder out = new StringBuilder(value.length() + 2).append('"');
+        value.codePoints().forEach(cp -> {
+            String escaped = cp == '\\' ? "\\\\" : cp == '"' ? "\\\"" : escapeOf(cp);
+            if (escaped == null) {
+                out.appendCodePoint(cp);
+            } else {
+                out.append(escaped);
+            }
+        });
+        return out.append('"').toString();
+    }
+
+    /**
+     * 一个字要不要在双引号里转义着写，要的话怎么写
+     * <p>
+     * 可以原样写的是 SnakeYAML 认作可打印的字，去掉制表符、换行、回车与 U+0085：
+     * 这几样裸写在值里要么被当成空白折掉，要么断行。其余一律转义，启动那一路读得回原字。
+     * @return 转义写法；原样写即可时为 null
+     */
+    private static String escapeOf(int cp) {
+        if ((cp >= 0x20 && cp <= 0x7E) || (cp >= 0xA0 && cp <= 0xD7FF)
+                || (cp >= 0xE000 && cp <= 0xFFFD) || (cp >= 0x10000 && cp <= 0x10FFFF)) {
+            return null;
+        }
+        return switch (cp) {
+            case 0 -> "\\0";
+            case '\t' -> "\\t";
+            case '\n' -> "\\n";
+            case '\r' -> "\\r";
+            default -> cp <= 0xFF ? String.format("\\x%02X", cp) : String.format("\\u%04X", cp);
+        };
     }
 
     /**
      * 找出一行中注释的起始位置
      * <p>
-     * 引号只在值本身以引号开头时才是定界符，且只配对到闭引号（双引号内的 \" 不是闭引号）：
-     * 否则 It's 里的撇号只是个只开不闭的普通字符，会把后面的行尾注释整段关进「引号内」。
-     * # 也按 YAML 的规矩来：前面有空白才算注释，a#b 里的 # 是值的一部分。
+     * 规矩见 {@link #scan}：It's 里的撇号不开引号，{@code ["a #b",} 里方括号后的引号才开。
      * @param text 冒号之后的内容
      * @return 注释起始下标，无注释时返回 -1
      */
-    private int commentIndex(String text) {
-        String value = text.stripLeading();
-        char quote = !value.isEmpty() && (value.charAt(0) == '\'' || value.charAt(0) == '"') ? value.charAt(0) : 0;
+    private static int commentIndex(String text) {
+        return scan(text, false).comment();
+    }
 
-        for (int i = quote > 0 ? 1 : 0; i < value.length(); i++) {
-            char c = value.charAt(i);
-            if (quote == '"' && c == '\\') {
-                i++;
-            } else if (quote > 0 && c == quote) {
-                quote = 0;
-            } else if (c == '#' && quote == 0 && (i == 0 || Character.isWhitespace(value.charAt(i - 1)))) {
-                return i + (text.length() - value.length());
+    /**
+     * 一段值原文的扫描结果
+     *
+     * @param outside 各字是否在引号外（引号本身、注释及其后都不算）
+     * @param comment 注释起始下标，无注释时为 -1
+     */
+    private record ValueScan(boolean[] outside, int comment) {}
+
+    /**
+     * 扫一段值原文：哪些字在引号外，行尾注释从哪起
+     * <p>
+     * {@link #commentIndex}、{@link #flowDepth}、{@link #splitFlowItems} 三处共用这一把尺，
+     * 规矩只此一份（各写一份的话，哪天一处改了，界面读出的项会与文件悄悄对不上）：
+     * <ul>
+     *   <li>引号只在<b>一项的开头</b>才是开引号——值的首位，或行内序列里 {@code [ { ,} 之后
+     *       跳过空白的第一个字。词中间的撇号、双引号是普通字：{@code [don't, x]} 是两项。</li>
+     *   <li>双引号里 {@code \} 连同下一个字一起算，单引号里 {@code ''} 是一个撇号，都不闭引号。</li>
+     *   <li>{@code #} 只在引号外、且在首位或前面是空白时才起注释：{@code a#b} 整个是值。</li>
+     * </ul>
+     * @param text 值原文
+     * @param inFlow 这段原文已在行内序列里（续行、方括号里面那段）时为 true；
+     *               为 false 时首个字是 {@code [} 或 {@code {} 也就进了行内序列
+     * @return 扫描结果
+     */
+    private static ValueScan scan(String text, boolean inFlow) {
+        boolean[] outside = new boolean[text.length()];
+        boolean flow = inFlow;
+        char quote = 0;
+        // 引号外上一个非空白字；0 表示还没有，那时遇到的引号就在一项的开头
+        char last = 0;
+
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (quote > 0) {
+                if (quote == '"' && c == '\\') {
+                    i++;
+                } else if (c == quote) {
+                    if (quote == '\'' && i + 1 < text.length() && text.charAt(i + 1) == '\'') {
+                        i++;
+                    } else {
+                        quote = 0;
+                        last = c;
+                    }
+                }
+                continue;
             }
+            if (Character.isWhitespace(c)) {
+                outside[i] = true;
+                continue;
+            }
+            if (c == '#' && (i == 0 || Character.isWhitespace(text.charAt(i - 1)))) {
+                return new ValueScan(outside, i);
+            }
+            if ((c == '\'' || c == '"') && (last == 0 || (flow && "[{,".indexOf(last) >= 0))) {
+                quote = c;
+                continue;
+            }
+            if (last == 0 && (c == '[' || c == '{')) {
+                flow = true;
+            }
+            outside[i] = true;
+            last = c;
         }
 
-        return -1;
+        return new ValueScan(outside, -1);
     }
 
     /**
@@ -1265,6 +1371,31 @@ public class ConfigurationFileService {
     }
 
     /**
+     * 一个键在文件里占到哪一行为止（含）
+     * <p>
+     * 键行之后比它缩进更深的行都是它的续行——跨行名单、跨行的普通值、名单各项——
+     * 直到下一个缩进不深于键行的非空、非注释行；夹在当中的空行与注释随块走，
+     * 块尾之后的留给下一项（那多半是下一项的说明）。名单另记着收口行，续行可以不比键深，两者取靠后的。
+     * <p>
+     * 删一项、整块换名单都按这里删：只删键那一行的话，续行留在原处，
+     * 要么整份文件读不了，要么续行并进上一个键、悄悄改了它的值。
+     */
+    private int blockEnd(List<String> lines, Line line) {
+        int end = Math.max(line.index, line.listEnd);
+        for (int i = end + 1; i < lines.size(); i++) {
+            String raw = lines.get(i);
+            if (raw.isBlank() || raw.strip().startsWith("#")) {
+                continue;
+            }
+            if (indentOf(raw) <= line.indent) {
+                break;
+            }
+            end = i;
+        }
+        return end;
+    }
+
+    /**
      * 整块替换一个字符串列表
      * @param lines 文件行
      * @param line 列表所属的键
@@ -1291,7 +1422,7 @@ public class ConfigurationFileService {
         }
 
         // 先删除原有的列表项，再插入新的
-        lines.subList(line.index + 1, line.listEnd + 1).clear();
+        lines.subList(line.index + 1, blockEnd(lines, line) + 1).clear();
         lines.addAll(line.index + 1, replacement);
 
         if (items.isEmpty()) {
@@ -1358,7 +1489,7 @@ public class ConfigurationFileService {
                 continue;
             }
             boolean quoted = strippedItem.charAt(0) == '"' || strippedItem.charAt(0) == '\'';
-            String bare = unquoteItem(strippedItem);
+            String bare = unquote(strippedItem);
             if (bare.startsWith("{") || bare.startsWith("[")) {
                 return null;
             }
@@ -1405,7 +1536,8 @@ public class ConfigurationFileService {
                     && (stripped.startsWith("-") || stripped.contains(": ") || stripped.endsWith(":"))) {
                 return null;
             }
-            int comment = commentIndex(stripped);
+            // 续行开头也是一项的开头：上一行停在逗号或方括号上
+            int comment = scan(stripped, true).comment();
             String value = (comment < 0 ? stripped : stripped.substring(0, comment)).strip();
             joined.append(' ').append(value);
             depth += flowDepth(value);
@@ -1417,22 +1549,17 @@ public class ConfigurationFileService {
     }
 
     /**
-     * 数一段行内原文里未收口的方括号层数，引号内的不算
+     * 数一段行内原文里未收口的方括号层数，引号内的不算（引号怎么认见 {@link #scan}）
      */
     private static int flowDepth(String text) {
+        boolean[] outside = scan(text, true).outside();
         int depth = 0;
-        char quote = 0;
         for (int i = 0; i < text.length(); i++) {
+            if (!outside[i]) {
+                continue;
+            }
             char c = text.charAt(i);
-            if (quote > 0) {
-                if (quote == '"' && c == '\\') {
-                    i++;
-                } else if (c == quote) {
-                    quote = 0;
-                }
-            } else if (c == '\'' || c == '"') {
-                quote = c;
-            } else if (c == '[') {
+            if (c == '[') {
                 depth++;
             } else if (c == ']') {
                 depth--;
@@ -1442,30 +1569,20 @@ public class ConfigurationFileService {
     }
 
     /**
-     * 去掉列表项两侧的引号，并按 YAML 引号规则还原内容：
-     * 双引号里的 {@code \"} 与 {@code \\}、单引号里的 {@code ''}。
+     * 去掉值（标量或列表项）两侧的引号，并按 YAML 引号规则还原内容：
+     * 双引号里的转义见 {@link #unescapeDoubleQuoted}，单引号里的 {@code ''} 是一个撇号。
      * <p>
-     * 还原与写出（{@link #render}）用同一套规则，存一次再读回还是原来的值。
-     * 不加引号的项原样返回；其余转义序列不在还原之列——名单框按行拆项，
-     * 元素里本就不该有换行这类控制字符。
+     * 界面上看到的得是程序启动时读到的那个值：只去引号不还原的话，
+     * {@code "say \"hi\""} 在界面上是 {@code say \"hi\"}，照它存回去重启读到的就多了反斜杠。
+     * 写出（{@link #render}）按同一套规则转义，存一次再读回还是原来的值。
+     * 不加引号的值原样返回。
      *
-     * @param value 未去引号的列表项
+     * @param value 未去引号的值
      * @return 还原后的内容
      */
-    private String unquoteItem(String value) {
+    private static String unquote(String value) {
         if (value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")) {
-            String body = value.substring(1, value.length() - 1);
-            StringBuilder out = new StringBuilder(body.length());
-            for (int i = 0; i < body.length(); i++) {
-                char c = body.charAt(i);
-                if (c == '\\' && i + 1 < body.length()
-                        && (body.charAt(i + 1) == '\\' || body.charAt(i + 1) == '"')) {
-                    out.append(body.charAt(++i));
-                } else {
-                    out.append(c);
-                }
-            }
-            return out.toString();
+            return unescapeDoubleQuoted(value.substring(1, value.length() - 1));
         }
         if (value.length() >= 2 && value.startsWith("'") && value.endsWith("'")) {
             return value.substring(1, value.length() - 1).replace("''", "'");
@@ -1474,35 +1591,80 @@ public class ConfigurationFileService {
     }
 
     /**
-     * 拆行内序列的各项：引号里的逗号是字面字符，不是分隔符
+     * 还原双引号里的转义：YAML 的单字转义（{@code \0 \a \b \t \n \v \f \r \e \" \/ \\}、
+     * 转义空格与制表符、{@code \N \_ \L \P}）与 {@code \xNN}、<code>&#92;uNNNN</code>、{@code \UNNNNNNNN}。
+     * （javadoc 里那个 u 转义写成实体：源码里反斜杠直接跟 u 会被编译器当成 Unicode 转义）
+     * 认不出的转义连反斜杠原样留着，不猜它想写什么。
+     * <p>
+     * {@code \/} 是 YAML 1.2 的写法，启动那一路（SnakeYAML，YAML 1.1）不认、整份文件读不了；
+     * 这里照样还原，界面至少显示得对。
+     */
+    private static String unescapeDoubleQuoted(String body) {
+        StringBuilder out = new StringBuilder(body.length());
+        for (int i = 0; i < body.length(); i++) {
+            char c = body.charAt(i);
+            if (c != '\\' || i + 1 >= body.length()) {
+                out.append(c);
+                continue;
+            }
+            char e = body.charAt(i + 1);
+            String single = switch (e) {
+                case '0' -> "\0";
+                case 'a' -> "\u0007";
+                case 'b' -> "\b";
+                case 't', '\t' -> "\t";
+                case 'n' -> "\n";
+                case 'v' -> "\u000B";
+                case 'f' -> "\f";
+                case 'r' -> "\r";
+                case 'e' -> "\u001B";
+                case ' ' -> " ";
+                case '"' -> "\"";
+                case '/' -> "/";
+                case '\\' -> "\\";
+                case 'N' -> "\u0085";
+                case '_' -> " ";
+                case 'L' -> " ";
+                case 'P' -> " ";
+                default -> null;
+            };
+            if (single != null) {
+                out.append(single);
+                i++;
+                continue;
+            }
+            int digits = e == 'x' ? 2 : e == 'u' ? 4 : e == 'U' ? 8 : 0;
+            int from = i + 2;
+            if (digits > 0 && from + digits <= body.length()
+                    && body.substring(from, from + digits).matches("[0-9A-Fa-f]+")) {
+                long code = Long.parseLong(body.substring(from, from + digits), 16);
+                if (code <= Character.MAX_CODE_POINT) {
+                    out.appendCodePoint((int) code);
+                    i = from + digits - 1;
+                    continue;
+                }
+            }
+            out.append(c);
+        }
+        return out.toString();
+    }
+
+    /**
+     * 拆行内序列的各项：引号里的逗号是字面字符，不是分隔符（引号怎么认见 {@link #scan}）
      * @param inner 方括号内的原文
      * @return 按分隔符切开的各项，未去引号
      */
     private List<String> splitFlowItems(String inner) {
+        boolean[] outside = scan(inner, true).outside();
         List<String> items = new ArrayList<>();
-        StringBuilder current = new StringBuilder();
-        char quote = 0;
-
+        int start = 0;
         for (int i = 0; i < inner.length(); i++) {
-            char c = inner.charAt(i);
-            if (quote > 0) {
-                current.append(c);
-                if (quote == '"' && c == '\\' && i + 1 < inner.length()) {
-                    current.append(inner.charAt(++i));
-                } else if (c == quote) {
-                    quote = 0;
-                }
-            } else if (c == '\'' || c == '"') {
-                quote = c;
-                current.append(c);
-            } else if (c == ',') {
-                items.add(current.toString());
-                current.setLength(0);
-            } else {
-                current.append(c);
+            if (outside[i] && inner.charAt(i) == ',') {
+                items.add(inner.substring(start, i));
+                start = i + 1;
             }
         }
-        items.add(current.toString());
+        items.add(inner.substring(start));
         return items;
     }
 
@@ -1553,7 +1715,7 @@ public class ConfigurationFileService {
                     Line owner = result.get(result.size() - 1);
                     String item = stripped.substring(1).strip();
                     if (!OBJECT_ITEM.matcher(item).find() && owner.index == i - 1 - owner.items.size()) {
-                        owner.items.add(unquoteItem(item));
+                        owner.items.add(unquote(item));
                         owner.listEnd = i;
                     }
                 }
@@ -1580,6 +1742,8 @@ public class ConfigurationFileService {
             line.indent = indent;
             line.path = String.join(".", stack);
             line.value = unquote(value);
+            line.quoted = value.length() >= 2 && (value.charAt(0) == '"' || value.charAt(0) == '\'')
+                    && value.charAt(value.length() - 1) == value.charAt(0);
 
             // 行内序列（key: []、key: [a, b]）：列表整个写在键这一行上，也按字符串列表收下
             List<String> flowItems = flowSequenceItems(value);
@@ -1610,20 +1774,6 @@ public class ConfigurationFileService {
         }
 
         return result;
-    }
-
-    /**
-     * 去除值两侧的引号
-     * @param value 值
-     * @return 去引号后的值
-     */
-    private String unquote(String value) {
-        if (value.length() >= 2
-                && ((value.startsWith("\"") && value.endsWith("\"")) || (value.startsWith("'") && value.endsWith("'")))) {
-            return value.substring(1, value.length() - 1);
-        }
-
-        return value;
     }
 
     /**
@@ -1658,6 +1808,11 @@ public class ConfigurationFileService {
          * 值，不含行尾注释
          */
         private String value;
+
+        /**
+         * 值在文件里是引号包着写的：这种值启动时读成什么就是 {@link #value} 本身，不再按类型认
+         */
+        private boolean quoted;
 
         /**
          * 字符串列表的各项，仅当该键为字符串列表时非空
