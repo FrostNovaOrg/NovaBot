@@ -126,7 +126,7 @@ class LiveMetricCatalogGuardTest {
     /**
      * 按真起动那条路把守卫装进容器
      * <p>
-     * 假目录摆成手工单例、守卫按 bean 定义登记，{@code refresh()} 走到
+     * 假目录摆成手动单例、守卫按 bean 定义登记，{@code refresh()} 走到
      * 「全部单例造完」那一步时容器会回调守卫。撞键时抛出的异常就这么原样穿出来。
      */
     private static void start(LiveMetricCatalog... catalogs) {
