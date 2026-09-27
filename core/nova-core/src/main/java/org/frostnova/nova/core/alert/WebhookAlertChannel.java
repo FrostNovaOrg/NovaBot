@@ -66,6 +66,16 @@ public class WebhookAlertChannel implements AlertChannel {
         String url = alert.getWebhookUrl();
         String host = UrlRedactor.hostOf(url);
 
+        // GET 一支在解析地址之前先看有没有空白：URI.create 抛出的原文带着整条地址，而剥地址
+        // 的正则碰到空白就停，空格后面那段原样留在工程日志里——空格要是落在推送密钥前面，
+        // 密钥就从那里漏。不去解析，直接按失败交出去，异常从外到内都不写这条地址。
+        // 这一步必须在 try 之外抛：进了 try 会被出口收口换成「发送失败（异常名）」，
+        // 「地址里有空格」这一句就到不了使用者眼前
+        if ("GET".equalsIgnoreCase(alert.getWebhookMethod()) && hasWhitespace(url)) {
+            throw new IllegalStateException(report(reportedHost(url), "地址里有空格"),
+                    new IllegalArgumentException("Webhook GET 地址里混进了空白字符"));
+        }
+
         Map<String, String> headers = new LinkedHashMap<>(alert.getWebhookHeaders());
 
         int status;
@@ -185,5 +195,32 @@ public class WebhookAlertChannel implements AlertChannel {
 
     private String encode(String value) {
         return URLEncoder.encode(value == null ? "" : value, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * 地址里有没有空白字符。URI 对空白一律拒收，而 URI.create 的报错原文会把整条地址带出来
+     */
+    private static boolean hasWhitespace(String url) {
+        for (int i = 0; i < url.length(); i++) {
+            if (Character.isWhitespace(url.charAt(i))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 混进空白的地址往外只报主机名，且主机名自身再按空白截短一道：
+     * {@link UrlRedactor#hostOf} 只切 {@code /?#} 与 {@code @}，地址没写到路径就先撞上空白时
+     * （如 {@code https://主机 密钥}），空格后面那段会整段被当主机名带回——那正是密钥可能待的地方
+     */
+    private static String reportedHost(String url) {
+        String host = UrlRedactor.hostOf(url);
+        for (int i = 0; i < host.length(); i++) {
+            if (Character.isWhitespace(host.charAt(i))) {
+                return host.substring(0, i);
+            }
+        }
+        return host;
     }
 }

@@ -62,8 +62,9 @@ class PasskeyChallenges {
      * 主人按完指纹，得到一句挑战失效。一个正常人同时开着的登录框不会超过几个，取 8 留足余地。
      * <p>
      * 来源地址与 {@code ConfigUiSecurityFilter} 认白名单用的是同一个（{@code getRemoteAddr()}）。
-     * 放在反向代理后面、所有人看起来都是代理那一个地址时，这些人共用这 8 条，
-     * 彼此仍挤得掉——那时分人要靠代理传来的真实地址，而这一侧至今不信转发头。
+     * 按来源分人就分在它上：放在反向代理后面时，按文档要开 {@code server.forward-headers-strategy}
+     * （SECURITY.md），开了以后 {@code getRemoteAddr()} 取到的就是代理传来的真实地址，各人分得开；
+     * 没开时所有人看起来都是代理那一个地址，这些人共用这 8 条、彼此仍挤得掉。
      * IPv6 地址按 /64 前缀算一个来源，见 {@link #sourceKey}。
      */
     private static final int MAX_LOGIN_PER_SOURCE = 8;
