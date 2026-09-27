@@ -142,6 +142,15 @@ class OneBotHttpAdapterProxyUrlTest {
     }
 
     @Test
+    @DisplayName("IPv6 方括号地址 [::1]：实际请求打到方括号主机，不报「带了端口」")
+    void bracketedIpv6AddressIsNotMistakenForAPort() {
+        assertEquals("http://[::1]:3000/get_version_info",
+                urlLastCalledBy(senderTo("IPv6-请求面", "[::1]")));
+
+        assertEquals(0, warnLines().size(), "写对的方括号地址不该报「带了端口」: " + warnLines());
+    }
+
+    @Test
     @DisplayName("同一个机器人的同一个怪写法，提醒只占一句")
     void unrecognizedFormIsWarnedOnlyOnce() {
         OneBotSender sender = senderTo("反复保存", "example.internal:3000");
