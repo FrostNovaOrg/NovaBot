@@ -618,7 +618,7 @@ public class HttpUtil {
     /**
      * 只关心「送到没送到」的同步 HTTP GET 请求，响应体一概不解析
      * <p>
-     * 理由同 {@link #postForStatus(String, Map, Object)}——Bark 这类以查询串接收的服务
+     * 理由同 {@link #postForStatus(String, Map, Object, AddressIsCredential)}——Bark 这类以查询串接收的服务
      * 同样可能返回一个我们解析不了的响应体。
      * @param uri URI，必须以 URI 传入以免被当作模板二次编码
      * @param headers HTTP 请求头

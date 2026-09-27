@@ -210,6 +210,44 @@ class WebhookFailureLeakTest {
         assertFalse(result.message().contains("content="), "查询串里的内容字段露出来了:\n" + result.message());
     }
 
+    /**
+     * 地址里混进空格的那一种（粘贴换行、手滑都常见）：空格落在推送密钥前面。
+     * 现码里 URI.create 会抛，原文带着整条地址；剥地址的正则碰到空白就停，
+     * 空格后面那段原样留在工程日志里——正是密钥待的地方。
+     */
+    private static String spaceySecretUrl(int port) {
+        return "http://" + HOST + ":" + port + "/ " + PUSH_KEY + "/" + EXTRA_PATH + "?" + QUERY;
+    }
+
+    @Test
+    @DisplayName("GET 地址里混进空格：往外那句只带主机名与「地址里有空格」，整条异常文本里找不到密钥")
+    void getWithSpaceInUrlFailsWithoutLeaking() throws IOException {
+        Fixture fixture = new Fixture(spaceySecretUrl(closedPort()));
+        fixture.properties.getAlert().setWebhookMethod("GET");
+
+        AlertService.TestResult[] holder = new AlertService.TestResult[1];
+        String rendered = captureRendered(() -> holder[0] = fixture.service.test("webhook"));
+
+        assertTrue(holder[0].message().contains("地址里有空格"),
+                "往外那句没说清是地址里有空格:\n" + holder[0].message());
+        assertKeepsHostAndReasonOnly("GET 空格测试回话", holder[0].message(), HOST);
+        // 工程日志打出整条异常（含起因链与栈迹），那一整份里也不许有密钥
+        assertKeepsHostAndReasonOnly("GET 空格工程日志", rendered, HOST);
+    }
+
+    @Test
+    @DisplayName("地址里没有空格时 GET 照旧走网络那一路，不会被空格分支误伤")
+    void getWithoutSpaceStillDialsOut() throws IOException {
+        Fixture fixture = new Fixture(secretUrl(closedPort()));
+        fixture.properties.getAlert().setWebhookMethod("GET");
+
+        AlertService.TestResult result = fixture.service.test("webhook");
+
+        assertKeepsHostAndReasonOnly("GET 无空格", result.message(), HOST, "连不上");
+        assertFalse(result.message().contains("地址里有空格"),
+                "没有空格也报空格，说明空格分支放错了地方:\n" + result.message());
+    }
+
     @Test
     @DisplayName("对方回了状态码时报错带主机与状态码——状态码本身就是失败原因")
     void statusFailureKeepsHostAndCode() throws IOException {
