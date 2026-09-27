@@ -3,6 +3,7 @@ package org.frostnova.nova.core.alert;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.util.HttpUtil;
+import org.frostnova.nova.core.util.UrlRedactor;
 import org.frostnova.nova.core.lang.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,8 +22,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.TimeoutException;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * Webhook 告警通道
@@ -65,7 +64,7 @@ public class WebhookAlertChannel implements AlertChannel {
     public void send(String subject, String content) {
         NovaCoreProperties.Alert alert = properties.getAlert();
         String url = alert.getWebhookUrl();
-        String host = hostOf(url);
+        String host = UrlRedactor.hostOf(url);
 
         Map<String, String> headers = new LinkedHashMap<>(alert.getWebhookHeaders());
 
@@ -74,15 +73,18 @@ public class WebhookAlertChannel implements AlertChannel {
             if ("GET".equalsIgnoreCase(alert.getWebhookMethod())) {
                 // 必须以 URI 传入：传字符串会被 RestTemplate 当作模板再编码一次，
                 // 接收方收到的就是一串字面的百分号转义而非中文
+                //
+                // 两处都报「这条地址本身是凭据」：推送密钥拼在路径里，网络日志
+                // （默认关、排障时才开）只记主机名，不把密钥随日志落盘
                 status = http.getForStatus(URI.create(appendQuery(url, alert.getWebhookTitleField(), subject,
-                        alert.getWebhookContentField(), content)), headers);
+                        alert.getWebhookContentField(), content)), headers, HttpUtil.AddressIsCredential.YES);
             } else {
                 JSONObject body = new JSONObject();
                 body.put(alert.getWebhookTitleField(), subject);
                 body.put(alert.getWebhookContentField(), content);
 
                 // HttpUtil#postForStatus 自身已设置 JSON 的 Content-Type，此处不再重复指定
-                status = http.postForStatus(url, headers, body);
+                status = http.postForStatus(url, headers, body, HttpUtil.AddressIsCredential.YES);
             }
         } catch (AlertBlockedException e) {
             // 被总开关拦下是预期内的情形，类型与原文一并原样交回：
@@ -93,7 +95,7 @@ public class WebhookAlertChannel implements AlertChannel {
             // 地址路径里，异常原文带着整条地址——测试回话、时间线详情、工程日志三处
             // 都会照原样交出去，密钥就从那里露。起因链也逐层换过：工程日志会打出整条链，
             // 起因里带地址也算漏。
-            throw new IllegalStateException(report(host, reasonOf(e)), stripChain(e));
+            throw new IllegalStateException(report(host, reasonOf(e)), UrlRedactor.redact(e));
         }
         check(status, host);
     }
@@ -167,100 +169,6 @@ public class WebhookAlertChannel implements AlertChannel {
             }
         }
         return null;
-    }
-
-    /**
-     * 地址里允许出现的字符——拿它收边界，免得把中文叙述跟着吃进地址
-     */
-    private static final Pattern URL = Pattern.compile(
-            "https?://[^\\s\"'()<>，。；、）】》]+", Pattern.CASE_INSENSITIVE);
-
-    private static final Pattern SCHEME = Pattern.compile("^https?://", Pattern.CASE_INSENSITIVE);
-
-    /**
-     * 把文本里每个地址剥成主机名：路径与查询串一概不外带
-     * <p>
-     * 不猜哪一段路径是密钥——路径与查询串整段拿掉，主机名留下（哪台主机是排障要看的）。
-     */
-    private static String stripUrls(String text) {
-        if (text == null) {
-            return null;
-        }
-        Matcher matcher = URL.matcher(text);
-        StringBuilder out = new StringBuilder(text.length());
-        while (matcher.find()) {
-            matcher.appendReplacement(out, Matcher.quoteReplacement(hostOf(matcher.group())));
-        }
-        matcher.appendTail(out);
-        return out.toString();
-    }
-
-    /**
-     * 从地址里取主机名：用户信息、端口、路径、查询串一概去掉
-     * <p>
-     * 用户信息（{@code https://用户:口令@主机}）同样是凭据，一并去掉。
-     */
-    private static String hostOf(String url) {
-        String rest = SCHEME.matcher(url).replaceFirst("");
-        int cut = firstIndexOf(rest, "/?#");
-        if (cut >= 0) {
-            rest = rest.substring(0, cut);
-        }
-        int at = rest.lastIndexOf('@');
-        if (at >= 0) {
-            rest = rest.substring(at + 1);
-        }
-        if (rest.startsWith("[")) {
-            // IPv6 字面量，冒号是地址本身的一部分，不能当端口切
-            int end = rest.indexOf(']');
-            return end >= 0 ? rest.substring(0, end + 1) : rest;
-        }
-        int colon = rest.indexOf(':');
-        return colon >= 0 ? rest.substring(0, colon) : rest;
-    }
-
-    private static int firstIndexOf(String text, String chars) {
-        for (int i = 0; i < text.length(); i++) {
-            if (chars.indexOf(text.charAt(i)) >= 0) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    /**
-     * 起因链逐层拷贝一份，每层印文都剥掉地址，供落日志与往上抛时代替原异常
-     * <p>
-     * 只处理最外层不够：工程日志会打出整条起因链（{@code Caused by:} 那几行），
-     * 起因里带地址也算漏。栈帧原样保留——出错定位全在那里。
-     */
-    private static Throwable stripChain(Throwable e) {
-        if (e == null) {
-            return null;
-        }
-        Stripped copy = new Stripped(stripUrls(e.toString()), stripChain(e.getCause()));
-        copy.setStackTrace(e.getStackTrace());
-        return copy;
-    }
-
-    /**
-     * 印文换过、栈帧留着的异常副本
-     * <p>
-     * {@code toString()} 直接回换过的那一句：日志里这一行读起来与原来同一条线，
-     * 只是地址没了——不能让它印成本类的类名，那会让读日志的人以为异常类型变了。
-     */
-    private static final class Stripped extends Throwable {
-        private final String rendered;
-
-        private Stripped(String rendered, Throwable cause) {
-            super(rendered, cause, false, true);
-            this.rendered = rendered;
-        }
-
-        @Override
-        public String toString() {
-            return rendered;
-        }
     }
 
     /**

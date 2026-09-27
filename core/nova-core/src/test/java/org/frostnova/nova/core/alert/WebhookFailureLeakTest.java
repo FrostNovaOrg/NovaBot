@@ -131,7 +131,8 @@ class WebhookFailureLeakTest {
      */
     private static String rawFailureOf(Fixture fixture) {
         try {
-            fixture.http.postForStatus(fixture.properties.getAlert().getWebhookUrl(), new LinkedHashMap<>(), "{}");
+            fixture.http.postForStatus(fixture.properties.getAlert().getWebhookUrl(), new LinkedHashMap<>(), "{}",
+                    HttpUtil.AddressIsCredential.YES);
             return "（没有失败，这一趟居然发出去了）";
         } catch (Exception e) {
             return e.toString();
@@ -241,7 +242,7 @@ class WebhookFailureLeakTest {
         assertTrue(outerText.contains(PUSH_KEY) && outerText.contains("group=bot") && causeText.contains(PUSH_KEY),
                 "注入没注入到密钥与查询串，说明这把尺子量错了地方");
         HttpUtil http = mock(HttpUtil.class);
-        when(http.postForStatus(anyString(), anyMap(), any())).thenThrow(outer);
+        when(http.postForStatus(anyString(), anyMap(), any(), any())).thenThrow(outer);
         Fixture fixture = new Fixture(http, "https://api.day.app/" + PUSH_KEY + "/" + EXTRA_PATH + "?" + QUERY);
 
         String rendered = captureRendered(() -> fixture.service.alert("link.lost", "机器人掉线", "请重新扫码"));
