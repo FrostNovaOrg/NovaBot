@@ -632,6 +632,10 @@ function watchCurrentGroup() {
   if (host && typeof ResizeObserver === 'function') {
     groupSizer = new ResizeObserver(() => schedule());
     groupSizer.observe(host);
+    // #groups 以外的内容（页面上方的提示条、页底那块）变高变矮时整页高度跟着变，而
+    // 「滚到最底就亮最后一组」读的正是整页高度——不看着它就不重判。看 body 这一层：
+    // 页面内容都长在它里面，它的盒子高度跟着内容变；整页高度的读数仍由 pageHeight() 取。
+    groupSizer.observe(document.body);
   }
 
   groupScroll = schedule;

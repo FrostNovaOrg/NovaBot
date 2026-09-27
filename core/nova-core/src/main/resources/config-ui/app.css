@@ -313,6 +313,8 @@ html.showkeys .keyname{display:block}
 .cell.has-unit input{width:auto;min-width:0}
 .cell.has-unit .unit{margin-left:0}
 .cell.has-unit .badge{grid-column:1/-1;justify-self:start}
+/* 机密项将来带单位时，清除钮与生效标记同跨一行、宽度只到文字（预防：现在没有这样的项） */
+.cell.has-unit .lnkbtn{grid-column:1/-1;justify-self:start}
 /* 布尔行：开关与生效标记同一行垂直居中。非布尔行的标记仍在输入框下方，走上面的 margin-top */
 .boolcell{display:inline-flex;align-items:center;gap:10px}
 .boolcell .badge{margin-top:0}
