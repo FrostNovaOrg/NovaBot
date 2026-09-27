@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -77,5 +78,51 @@ class UrlMaskerTest {
     @DisplayName("键名大小写不影响判定")
     void caseInsensitiveKeys() {
         assertFalse(UrlMasker.mask("https://x.com/a?CSRF=" + JCT).contains(JCT));
+    }
+
+    /**
+     * 起因链成环（A 的起因是 B、B 的起因又是 A）时不再无限递归：修这之前
+     * 一进日志就 StackOverflowError，原本的错误被吞掉。链照常逐层打码，
+     * 只在成环的那条边上截断。
+     */
+    @Test
+    @DisplayName("起因链成环时打码不栈溢出，两层印文都打了码")
+    void stopsWhenCauseChainFormsACycle() {
+        Exception a = new Exception("A https://x.com/a?csrf=" + JCT);
+        Exception b = new Exception("B https://y.com/b?csrf=" + JCT);
+        a.initCause(b);
+        b.initCause(a);
+
+        Throwable sanitized = UrlMasker.sanitize(a);
+
+        // 能走到断言本身就是判据的一半：没有栈溢出
+        assertFalse(sanitized.toString().contains(JCT), "A 层仍带凭据:\n" + sanitized);
+        assertTrue(sanitized.toString().contains("csrf=***"),
+                "应当看得出这里原本有过一个 csrf 参数:\n" + sanitized);
+        Throwable second = sanitized.getCause();
+        assertNotNull(second, "B 这一层丢了:\n" + sanitized);
+        assertFalse(second.toString().contains(JCT), "B 层仍带凭据:\n" + second);
+        assertNull(second.getCause(), "B 的起因绕回 A，环上那条边要截断:\n" + second);
+    }
+
+    @Test
+    @DisplayName("正常的三层起因链照旧三层都在")
+    void keepsThreeLevelCauseChain() {
+        Exception third = new Exception("L3 https://x.com/c?csrf=" + JCT);
+        Exception second = new Exception("L2", third);
+        Exception first = new Exception("L1", second);
+
+        Throwable sanitized = UrlMasker.sanitize(first);
+
+        assertTrue(sanitized.toString().contains("L1"), "第一层丢了:\n" + sanitized);
+        Throwable level2 = sanitized.getCause();
+        assertNotNull(level2, "第二层丢了:\n" + sanitized);
+        assertTrue(level2.toString().contains("L2"), "第二层印文不对:\n" + level2);
+        Throwable level3 = level2.getCause();
+        assertNotNull(level3, "第三层丢了:\n" + level2);
+        assertFalse(level3.toString().contains(JCT), "第三层仍带凭据:\n" + level3);
+        assertTrue(level3.toString().contains("csrf=***"),
+                "应当看得出这里原本有过一个 csrf 参数:\n" + level3);
+        assertNull(level3.getCause(), "三层之外不该再有:\n" + level3);
     }
 }
