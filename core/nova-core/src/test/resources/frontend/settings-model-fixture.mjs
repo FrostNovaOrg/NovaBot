@@ -13,7 +13,7 @@ import {readFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {
-  MASK, dangerOf, isDangerous, defaultText, defaultValue, isChanged, haystack,
+  CLEAR, MASK, secretDraft, dangerOf, isDangerous, defaultText, defaultValue, isChanged, haystack,
   isVisible, effectOf, canonicalValue, currentGroupId,
 } from '../../../main/resources/config-ui/settings-model.js';
 
@@ -213,6 +213,17 @@ eq(currentGroupId(stillMore, notYet, viewH, head, moreBottom), 'a',
   '最后一组已经整段露出、页面还能往下滚时，亮最上面那组');
 
 // ---------- 报数 ----------
+
+// ---------- 机密项草稿态：留空＝没动，清除显式说 ----------
+eq(secretDraft(undefined, MASK), {text: MASK, cleared: false, keep: true}, '没记过改动：显示遮点，算没动');
+eq(secretDraft('', MASK), {text: '', cleared: false, keep: true}, '删光遮点＝留空＝没动，不该进改动账');
+eq(secretDraft('   ', MASK), {text: '   ', cleared: false, keep: true}, '只剩空白同样是留空＝没动');
+eq(secretDraft(MASK, MASK), {text: MASK, cleared: false, keep: true}, '遮点原样送回照旧算没动');
+eq(secretDraft(CLEAR, MASK), {text: '', cleared: true, keep: false}, '清除标记＝保存后清除，要进改动账');
+eq(secretDraft('another-secret', MASK), {text: 'another-secret', cleared: false, keep: false}, '换一个新值照常记账');
+eq(secretDraft('', ''), {text: '', cleared: false, keep: true}, '本来没值的留空还是没动');
+eq(secretDraft('x', ''), {text: 'x', cleared: false, keep: false}, '本来没值的填上要记账');
+eq(isChanged({sensitive: true}, CLEAR), true, '清除态算「改过」，改动条要看见它');
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);
 process.exit(failures.length ? 1 : 0);

@@ -13,7 +13,8 @@ import {load} from './main.js';
 import {bindPasswordReveal} from './password-reveal.js';
 import {alertCards, cardFields, filterCards} from './settings-alert.js';
 import {authCards, AUTH_CARD_FIELDS, filterAuthCards} from './settings-auth.js';
-import {canonicalValue, currentGroupId, defaultText, defaultValue, effectOf, isChanged, isDangerous, dangerOf, isVisible}
+import {CLEAR, canonicalValue, currentGroupId, defaultText, defaultValue, effectOf, isChanged, isDangerous,
+  dangerOf, isVisible, secretDraft}
   from './settings-model.js';
 import {store} from './store.js';
 import {applyTheme, readTheme, THEME_AUTO, THEME_DARK, THEME_LIGHT} from './theme.js';
@@ -90,15 +91,19 @@ export function focusGroup(id) {
  * 顺序不能反。切换搜索或筛选会整体重绘，此时未保存的改动要接着显示出来，
  * 否则看起来像被悄悄还原了。
  * @param field 字段表里的一项
- * @return {{saved: string, current: string}} 已保存的值与此刻显示的值
+ * @return {{saved: string, current: string, text: string, cleared: boolean}}
+ *   已保存的值、筛选「只看改过」用的当前值、框里显示的字，以及是不是挂着清除
  */
 function valuesOf(field) {
   const stored = store.values[field.name];
   const saved = canonicalValue(field, stored !== undefined && stored !== null ? String(stored)
     : (field.defaultValue !== null && field.defaultValue !== undefined ? defaultValue(field) : ''));
-  const current = store.dirty[field.name] !== undefined
-    ? canonicalValue(field, store.dirty[field.name]) : saved;
-  return {saved, current};
+  const draft = store.dirty[field.name];
+  const current = draft !== undefined ? canonicalValue(field, draft) : saved;
+  // 挂着清除时，显示与「改没改」是两回事：框里要直接进清除态（空、禁用、保存后清除），
+  // 而筛选那一问仍按原始草稿答——清除态算改过，不能因为显示成了空就把它筛掉
+  const shown = field.sensitive ? secretDraft(draft, saved) : {text: current, cleared: false};
+  return {saved, current, text: shown.text, cleared: shown.cleared};
 }
 
 /**
@@ -211,8 +216,9 @@ function buildRow(field, groupAllRestart) {
   row.appendChild(meta);
 
   const cell = el('div', field.widget === 'boolean' ? 'boolcell' : '');
-  const {saved, current} = valuesOf(field);
-  const input = buildControl(field, current, cell);
+  // 显示值不叫 text：上面「默认：…」那个 span 已经占了这个名字，同作用域撞车
+  const {saved, text: shown, cleared} = valuesOf(field);
+  const input = buildControl(field, shown, cell);
   if (field.unit) {
     const unit = el('span', 'unit');
     unit.textContent = field.unit;
@@ -265,17 +271,67 @@ function buildRow(field, groupAllRestart) {
     line.appendChild(reset);
   }
 
+  // 机密项另给一个明确的「清除」：留空＝没动（照提示留空保存不删已存的值），
+  // 真要清掉得按这个钮说一声，保存时才删键。只有已存了值（框里是遮点）才有得清。
+  // 清除态自己记账：输入框已经禁用，record 里的字面比较分不出「空＝没动」与「清掉」。
+  // 初次渲染就得认出「这一项挂着清除」：重画只把清除标记当普通值塞回框里的话，
+  // 界面看着没动、一保存已存的值照样被删，要撤回还得连点两下
+  let clearing = cleared;
+  // 控制台访问令牌不给清除钮：留空即每次启动换一个随机令牌、只打进启动日志
+  // （ConfigUiRegistrar 解析令牌那一处），清掉之后远程访问的人当场进不来，
+  // 要有人到机器上翻日志才拿得到新地址。别的机密项照常给清除钮
+  const noClear = field.name === 'novabot.core.config-ui.token';
+  if (field.sensitive && saved && !noClear) {
+    const clear = el('button', 'lnkbtn');
+    clear.type = 'button';
+    clear.textContent = clearing ? '撤回清除' : '清除';
+    clear.title = '保存后这一项就删掉了，要再用得重新填';
+    // 挂着清除的重画直接进清除态；没挂的照旧显示草稿，不在这儿动框里的值
+    if (clearing) {
+      input.value = '';
+      input.disabled = true;
+      input.placeholder = '保存后清除';
+    }
+    clear.addEventListener('click', () => {
+      clearing = !clearing;
+      if (clearing) {
+        input.value = '';
+        input.disabled = true;
+        input.placeholder = '保存后清除';
+        clear.textContent = '撤回清除';
+        store.dirty[field.name] = CLEAR;
+      } else {
+        input.disabled = false;
+        input.value = saved;
+        input.placeholder = '';
+        clear.textContent = '清除';
+        delete store.dirty[field.name];
+      }
+      paint();
+      markDirty();
+    });
+    cell.appendChild(clear);
+  }
+
   // 危险项自己记账：改到危险那一档要先问一句，取消就退回原样、不计入改动
   let previous = read();
   const record = () => {
+    if (clearing) return;
     const now = canonicalValue(field, read());
-    if (now === saved) delete store.dirty[field.name];
-    else store.dirty[field.name] = now;
+    if (field.sensitive) {
+      // 机密项的空框是「留空＝没动」，不是「改成空」——照提示留空保存不再误删
+      const draft = secretDraft(now, saved);
+      if (draft.keep) delete store.dirty[field.name];
+      else store.dirty[field.name] = now;
+    } else if (now === saved) {
+      delete store.dirty[field.name];
+    } else {
+      store.dirty[field.name] = now;
+    }
     previous = now;
     paint();
     markDirty();
   };
-
   const onChange = async () => {
     const now = read();
     const danger = dangerOf(field, now);

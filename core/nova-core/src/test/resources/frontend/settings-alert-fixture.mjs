@@ -15,6 +15,7 @@
  * 自己敲进授权码的字仍记成一笔改动。
  * 告警地址框同法：Bark、Server 酱把推送密钥拼在地址里，地址照口令框处理，
  * 不明文摆在画面上；自己敲进新地址仍记成改动，保存照常能落盘。
+ * 清除态重画不丢：挂着清除还没保存时一重画仍是清除态，点一次即撤回。
  *
  * 由 SettingsAlertViewTest 拉起。量的是源码树里那一份，不是构建产物里的副本。
  */
@@ -22,6 +23,8 @@
 import {readFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
+
+import {CLEAR, MASK, secretDraft} from '../../../main/resources/config-ui/settings-model.js';
 
 const ui = join(dirname(fileURLToPath(import.meta.url)), '../../../main/resources/config-ui');
 const src = readFileSync(join(ui, 'settings-alert.js'), 'utf8');
@@ -363,8 +366,10 @@ let namesDiffer = 'missing';
 let typedCode = 'missing';
 try {
   const store = {values: {}, dirty: {}};
-  const setValue = loadFn(src, 'function setValue(', ['store', 'markDirty'], [store, () => {}]);
-  const field = loadFn(src, 'function field(', ['el', 'valueOf', 'setValue'], [node, () => '', setValue]);
+  const setValue = loadFn(src, 'function setValue(', ['store', 'markDirty', 'MASK', 'CLEAR', 'secretDraft'],
+    [store, () => {}, MASK, CLEAR, secretDraft]);
+  const field = loadFn(src, 'function field(', ['el', 'valueOf', 'setValue', 'markDirty', 'store', 'CLEAR'],
+    [node, () => '', setValue, () => {}, store, CLEAR]);
   const start = src.indexOf("field(mail.body, '发件账号'");
   const end = start < 0 ? -1 : src.indexOf('mail.body.appendChild(mailCustom)', start);
   const calls = start >= 0 && end > start ? src.slice(start, end) : '';
@@ -402,8 +407,10 @@ let urlNamed = 'missing';
 let typedUrl = 'missing';
 try {
   const store = {values: {}, dirty: {}};
-  const setValue = loadFn(src, 'function setValue(', ['store', 'markDirty'], [store, () => {}]);
-  const field = loadFn(src, 'function field(', ['el', 'valueOf', 'setValue'], [node, () => '', setValue]);
+  const setValue = loadFn(src, 'function setValue(', ['store', 'markDirty', 'MASK', 'CLEAR', 'secretDraft'],
+    [store, () => {}, MASK, CLEAR, secretDraft]);
+  const field = loadFn(src, 'function field(', ['el', 'valueOf', 'setValue', 'markDirty', 'store', 'CLEAR'],
+    [node, () => '', setValue, () => {}, store, CLEAR]);
   const start = src.indexOf("const url = field(hook.body, '地址'");
   const end = start < 0 ? -1 : src.indexOf('hook.body.appendChild(hookCustom)', start);
   const calls = start >= 0 && end > start ? src.slice(start, end) : '';
@@ -441,6 +448,128 @@ try {
 eq(secretType, 'password', '设置页机密框 type');
 eq(secretAc, 'new-password', '设置页 type=password 的机密框 autocomplete');
 
+// ---------- 机密项留空＝没动、清除显式说 ----------
+// 病：告警卡「发件授权码」框写着「留空＝保持原值」，可删光遮点保存会把已存的授权码删掉。
+// 于是留空改成没动，清掉改走「清除」钮送清除标记。
+
+function loadSetValue(storeStub, markDirty) {
+  return loadFn(src, 'function setValue(', ['store', 'markDirty', 'MASK', 'CLEAR', 'secretDraft'],
+    [storeStub, markDirty, MASK, CLEAR, secretDraft]);
+}
+
+let blankKeeps = 'missing';
+try {
+  const storeStub = {values: {'spring.mail.password': MASK}, dirty: {}};
+  loadSetValue(storeStub, () => {})('spring.mail.password', '');
+  blankKeeps = storeStub.dirty['spring.mail.password'] === undefined;
+} catch (e) {
+  blankKeeps = 'error:' + e.message;
+}
+eq(blankKeeps, true, '⑦ 授权码删光遮点＝留空＝没动：改动账里不该出现这一项');
+
+let blankSpaces = 'missing';
+try {
+  const storeStub = {values: {'spring.mail.password': MASK}, dirty: {}};
+  loadSetValue(storeStub, () => {})('spring.mail.password', '   ');
+  blankSpaces = storeStub.dirty['spring.mail.password'] === undefined;
+} catch (e) {
+  blankSpaces = 'error:' + e.message;
+}
+eq(blankSpaces, true, '⑧ 只剩空白同样是留空＝没动');
+
+let ordinaryBlank = 'missing';
+try {
+  const storeStub = {values: {'novabot.core.mail.default-to': 'a@example.invalid'}, dirty: {}};
+  loadSetValue(storeStub, () => {})('novabot.core.mail.default-to', '');
+  ordinaryBlank = storeStub.dirty['novabot.core.mail.default-to'] === '';
+} catch (e) {
+  ordinaryBlank = 'error:' + e.message;
+}
+eq(ordinaryBlank, true, '⑨ 非机密项清空照旧记账，规矩没被顺手改掉');
+
+let typedSecret = 'missing';
+try {
+  const storeStub = {values: {'spring.mail.password': MASK}, dirty: {}};
+  loadSetValue(storeStub, () => {})('spring.mail.password', 'another-secret');
+  typedSecret = storeStub.dirty['spring.mail.password'] === 'another-secret';
+} catch (e) {
+  typedSecret = 'error:' + e.message;
+}
+eq(typedSecret, true, '⑩ 自己敲进新授权码照常记成一笔改动');
+
+let clearBtnExists = 'missing';
+let clearBtnFirst = 'missing';
+let clearBtnUndo = 'missing';
+let clearInput, clearStore, clearBtn;
+try {
+  clearStore = {values: {'spring.mail.password': MASK}, dirty: {}};
+  const setValue = loadSetValue(clearStore, () => {});
+  const valueOf = name => clearStore.dirty[name] !== undefined
+    ? clearStore.dirty[name] : (clearStore.values[name] || '');
+  const field = loadFn(src, 'function field(', ['el', 'valueOf', 'setValue', 'markDirty', 'store', 'CLEAR'],
+    [node, valueOf, setValue, () => {}, clearStore, CLEAR]);
+  const box = node('div');
+  clearInput = field(box, '发件授权码', 'spring.mail.password', {type: 'password', ph: '留空＝保持原值'});
+  const wrap = box.kids[0];
+  clearBtn = wrap.kids.find(k => k.tag === 'button');
+  clearBtnExists = clearBtn ? clearBtn.textContent : 'no button';
+} catch (e) {
+  clearBtnExists = 'error:' + e.message;
+}
+eq(clearBtnExists, '清除', '⑪a 已存值的机密项旁有「清除」钮');
+if (clearBtn && clearInput) {
+  for (const fn of clearBtn.listeners.click || []) fn();
+  clearBtnFirst = [clearStore.dirty['spring.mail.password'], clearInput.disabled, clearInput.placeholder, clearBtn.textContent].join('|');
+}
+eq(clearBtnFirst, [CLEAR, true, '保存后清除', '撤回清除'].join('|'), '⑪b 点一下：记清除标记、框显示「保存后清除」');
+if (clearBtn && clearInput) {
+  for (const fn of clearBtn.listeners.click || []) fn();
+  clearBtnUndo = [clearStore.dirty['spring.mail.password'] === undefined, clearInput.disabled, clearBtn.textContent].join('|');
+}
+eq(clearBtnUndo, [true, false, '清除'].join('|'), '⑪c 再点：撤回清除，回到没改');
+let noClearWhenEmpty = 'missing';
+try {
+  const storeStub = {values: {'spring.mail.password': ''}, dirty: {}};
+  const setValue = loadSetValue(storeStub, () => {});
+  const valueOf = name => storeStub.dirty[name] !== undefined
+    ? storeStub.dirty[name] : (storeStub.values[name] || '');
+  const field = loadFn(src, 'function field(', ['el', 'valueOf', 'setValue', 'markDirty', 'store', 'CLEAR'],
+    [node, valueOf, setValue, () => {}, storeStub, CLEAR]);
+  const box = node('div');
+  field(box, '发件授权码', 'spring.mail.password', {type: 'password', ph: '留空＝保持原值'});
+  const wrap = box.kids[0];
+  noClearWhenEmpty = !wrap.kids.some(k => k.tag === 'button');
+} catch (e) {
+  noClearWhenEmpty = 'error:' + e.message;
+}
+eq(noClearWhenEmpty, true, '⑫ 本来没值的机密项不画「清除」钮：没得清');
+
+// ⑬ 重画后仍是清除态，点一次即撤回
+// 病：挂着清除还没保存时一重画（切走再回来），框里又显示那串清除标记、钮变回「清除」，
+// 「保存后清除」不见了——看着像没动，一保存照样删键；要撤回还得连点两下
+let repaintClear = 'missing';
+try {
+  const storeStub = {values: {'spring.mail.password': MASK}, dirty: {'spring.mail.password': CLEAR}};
+  const setValue = loadSetValue(storeStub, () => {});
+  const valueOf = name => storeStub.dirty[name] !== undefined
+    ? storeStub.dirty[name] : (storeStub.values[name] || '');
+  const field = loadFn(src, 'function field(', ['el', 'valueOf', 'setValue', 'markDirty', 'store', 'CLEAR'],
+    [node, valueOf, setValue, () => {}, storeStub, CLEAR]);
+  const box = node('div');
+  const input = field(box, '发件授权码', 'spring.mail.password', {type: 'password', ph: '留空＝保持原值'});
+  const wrap = box.kids[0];
+  const btn = wrap.kids.find(k => k.tag === 'button');
+  const painted = [input.value, input.disabled, input.placeholder, btn ? btn.textContent : 'no button'].join('|');
+  for (const fn of (btn && btn.listeners.click) || []) fn();
+  const undone = [input.value, input.disabled, input.placeholder, btn.textContent,
+    storeStub.dirty['spring.mail.password'] === undefined].join('|');
+  repaintClear = painted + ' || ' + undone;
+} catch (e) {
+  repaintClear = 'error:' + e.message;
+}
+eq(repaintClear, ['', true, '保存后清除', '撤回清除'].join('|') + ' || '
+  + [MASK, false, '留空＝保持原值', '清除', true].join('|'),
+  '⑬ 重画后仍是清除态（框空且禁用、写着「保存后清除」、钮是「撤回清除」），点一次即撤回');
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);
 process.exit(failures.length ? 1 : 0);

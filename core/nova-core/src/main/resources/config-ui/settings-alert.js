@@ -14,6 +14,7 @@ import {$, api, el, markDirty, term} from './core.js';
 import {store} from './store.js';
 import {mailAlertConfigured} from './alert-model.js';
 
+import {CLEAR, MASK} from './settings-model.js';
 /**
  * 三张卡各自吃掉哪几个配置键
  *
@@ -85,8 +86,17 @@ function valueOf(name) {
 function setValue(name, value) {
   const saved = store.values[name];
   const original = saved === undefined || saved === null ? '' : String(saved);
-  if (String(value) === original) delete store.dirty[name];
-  else store.dirty[name] = String(value);
+  const text = String(value);
+  // 机密项的空框是「留空＝没动」（已存的值只以遮点下发）：照提示留空保存，
+  // 不再把已存的授权码删掉。真要清掉走 field 里的「清除」钮，记清除标记。
+  // 非机密项照旧——清空它就是一个值
+  if (original === MASK && text.trim() === '') {
+    delete store.dirty[name];
+    markDirty();
+    return;
+  }
+  if (text === original) delete store.dirty[name];
+  else store.dirty[name] = text;
   markDirty();
 }
 
@@ -121,7 +131,10 @@ function field(box, label, name, opt) {
     input.type = o.type === 'password' ? 'password' : (o.type === 'number' ? 'number' : 'text');
     if (o.ph) input.placeholder = o.ph;
   }
-  input.value = valueOf(name);
+  // 挂着清除时直接进清除态：重画把清除标记当普通值塞回框里的话，看着像没动、
+  // 一保存照样删键，要撤回还得连点两下
+  let clearing = o.type === 'password' && store.dirty[name] === CLEAR;
+  input.value = clearing ? '' : valueOf(name);
   input.setAttribute('aria-label', label);
   // 口令框不认 autocomplete=off，浏览器仍会填入已存的登录口令
   if (o.autocomplete) input.autocomplete = o.autocomplete;
@@ -137,6 +150,37 @@ function field(box, label, name, opt) {
   key.textContent = name;
   wrap.appendChild(key);
 
+  // 机密项另给一个明确的「清除」：留空＝没动，真要清掉得按这个钮说一声，
+  // 保存时才删键。只有已存了值（框里是遮点）才有得清。
+  if (o.type === 'password' && store.values[name]) {
+    const clear = el('button', 'lnkbtn');
+    clear.type = 'button';
+    clear.textContent = clearing ? '撤回清除' : '清除';
+    clear.title = '保存后这一项就删掉了，要再用得重新填';
+    if (clearing) {
+      input.disabled = true;
+      input.placeholder = '保存后清除';
+    }
+    clear.addEventListener('click', () => {
+      clearing = !clearing;
+      if (clearing) {
+        input.value = '';
+        input.disabled = true;
+        input.placeholder = '保存后清除';
+        clear.textContent = '撤回清除';
+        store.dirty[name] = CLEAR;
+      } else {
+        input.disabled = false;
+        // 先撤账再取值：valueOf 眼里还挂着清除标记时，取回来的就是那一串而不是遮点
+        delete store.dirty[name];
+        input.value = valueOf(name);
+        input.placeholder = o.ph || '';
+        clear.textContent = '清除';
+      }
+      markDirty();
+    });
+    wrap.appendChild(clear);
+  }
   const on = () => { setValue(name, input.value); if (o.onchange) o.onchange(input.value); };
   input.addEventListener('input', on);
   input.addEventListener('change', on);

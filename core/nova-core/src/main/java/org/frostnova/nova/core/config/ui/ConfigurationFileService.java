@@ -570,6 +570,16 @@ public class ConfigurationFileService {
         for (Map.Entry<String, String> change : ordered) {
             Line line = index.get(change.getKey());
 
+            // 显式清除（值为 null）：把这一行删掉。清一个本来就没有的键是无操作——
+            // 「没这一项」与「删掉之后没有」在读回来时是同一件事，都不该往文件里添一行空值
+            if (change.getValue() == null) {
+                if (line != null) {
+                    lines.remove(line.index);
+                    changed.add(change.getKey());
+                }
+                continue;
+            }
+
             // 这类配置项清空等于「不配置」，要把整行删掉而不是留一个空值——
             // 留空会让程序下次启动直接失败。自下而上处理，删行不会让后续行号失效
             if (blankMeansAbsent.contains(change.getKey())

@@ -12,6 +12,7 @@
 import {readFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {CLEAR, MASK, secretDraft} from '../../../main/resources/config-ui/settings-model.js';
 
 const ui = join(dirname(fileURLToPath(import.meta.url)), '../../../main/resources/config-ui');
 const src = readFileSync(join(ui, 'settings-alert.js'), 'utf8');
@@ -146,9 +147,9 @@ function loadUi(store, api) {
   const acStart = src.indexOf(marker);
   if (start < 0 || acStart < 0 || !block) throw new Error('no slice');
   const body = src.slice(start, acStart + block.length).replace(/^export /gm, '');
-  return new Function('store', 'api', 'el', 'term', 'markDirty', 'mailAlertConfigured',
+  return new Function('store', 'api', 'el', 'term', 'markDirty', 'mailAlertConfigured', 'MASK', 'CLEAR', 'secretDraft',
     body + '\nreturn {cardFields, alertCards};')(
-    store, api, makeEl, (_k, fallback) => fallback, () => {}, loadMailConfigured());
+    store, api, makeEl, (_k, fallback) => fallback, () => {}, loadMailConfigured(), MASK, CLEAR, secretDraft);
 }
 
 const CORE_NINE = [

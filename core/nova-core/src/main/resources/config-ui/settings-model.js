@@ -15,6 +15,31 @@
 export const MASK = '********';
 
 /**
+ * 显式清除标记，与后端的 SensitiveFields.CLEAR 同一串
+ *
+ * 界面拿不到机密项的真值，框里不是遮点就是空。于是空有两种含义：照提示留空＝没动，
+ * 与清掉。给「清掉」一个显式标记，空一律当没动——照提示留空保存就不会把已存的
+ * 授权码删掉。头尾两个 NUL 使键盘打不出这一串，任何真实口令都与它对不上。
+ */
+export const CLEAR = '\0CLEAR\0';
+
+/**
+ * 机密项的草稿态：框里显示什么、改动账里记什么
+ *
+ * @param draft 改动账里这一项的值，没记过时传 undefined
+ * @param saved 已保存的值（遮点或空）
+ * @return {{text: string, cleared: boolean, keep: boolean}} text 是框里显示的字；
+ *   cleared 是不是「保存后清除」；keep 为 true 表示与没动一样，不该进改动账
+ */
+export function secretDraft(draft, saved) {
+  const base = saved === undefined || saved === null ? '' : String(saved);
+  if (draft === undefined || draft === null) return {text: base, cleared: false, keep: true};
+  const text = String(draft);
+  if (text === CLEAR) return {text: '', cleared: true, keep: false};
+  return {text, cleared: false, keep: text === base || text.trim() === ''};
+}
+
+/**
  * 这一项改到这个值，要不要先问一句
  *
  * 「哪几项危险、危险在哪、改到哪一档才危险」三件事全由服务端随字段表一起下发

@@ -68,10 +68,13 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -1074,30 +1077,49 @@ public class ConfigUiController {
         JSONObject result = new JSONObject();
 
         // 界面拿到的机密项是占位值，原样送回来的就是没改过的。不剔除的话，
-        // 改了别的字段一起保存就会把占位值写进配置，口令、令牌与密钥当场全部失效
+        // 改了别的字段一起保存就会把占位值写进配置，口令、令牌与密钥当场全部失效。
+        // 留空同样剔除：界面拿不到真值，框里不是遮点就是空，而空的含义是「这一项没动」——
+        // 照提示留空保存反倒把已存的授权码删掉，正是本处要治的病
         Map<String, String> changes = new LinkedHashMap<>(body);
         Map<String, String> types = metadataService.getKnownTypes();
+        // 显式清除先挑出来再剔「没动」：清除标记不是值，两样得分开，后挑会把它当没动剔掉
+        Set<String> cleared = SensitiveFields.takeClears(changes, name -> typeOf(types, name));
+        // 清除标记只认机密项：非机密项送上来这一串多半是手工构造的请求，整批拒绝并点名——
+        // 放过去这一串（头尾还带着 NUL）就会当普通取值原样写进配置
+        Set<String> misplaced = SensitiveFields.misplacedClears(changes, name -> typeOf(types, name));
+        if (!misplaced.isEmpty()) {
+            result.put("success", false);
+            result.put("message", "清除标记只认机密项：" + misplaced.iterator().next() + " 不是机密项，本批未保存");
+            return ResponseEntity.badRequest().body(result);
+        }
         SensitiveFields.dropUnchanged(changes, name -> typeOf(types, name));
 
         // 认证项这一道要看见送上来原样：先改写成登记名再比，宽松写法就当场变回精确名，
-        // 「按规范名拦」和「精确比较」会分不出来
-        if (ConfigUiAuthService.containsDedicatedAuthKey(changes.keySet(), aliases())) {
+        // 「按规范名拦」和「精确比较」会分不出来。删一个口令同样是换门，清除名单一起过闸
+        Set<String> asked = new LinkedHashSet<>(changes.keySet());
+        asked.addAll(cleared);
+        if (ConfigUiAuthService.containsDedicatedAuthKey(asked, aliases())) {
             result.put("success", false);
             result.put("message", "登录密码和二次验证请到「登录与安全」里改；「忘记密码」的启动令牌通道这里也改不了——那个页面关得了、开不了，要开须改配置文件再重启");
             return ResponseEntity.ok(result);
         }
 
-        Map<String, String> normalized = normalizeToRegisteredKeys(changes, types);
+        // 清除的键以 null 进写口：null 表示删键，与空串（写空值）不是一回事
+        Map<String, String> changesToWrite = new LinkedHashMap<>(changes);
+        cleared.forEach(key -> changesToWrite.put(key, null));
+        Map<String, String> normalized = normalizeToRegisteredKeys(changesToWrite, types);
         if (normalized == null) {
-            String unknown = findUnknownKey(changes.keySet(), types);
+            String unknown = findUnknownKey(changesToWrite.keySet(), types);
             result.put("success", false);
             result.put("message", "设置页没有这一项：" + unknown + "，本批未保存");
             return ResponseEntity.badRequest().body(result);
         }
 
         // 取值范围在写之前问插件：出界的值写进配置文件就等于门已经开了，
-        // 再由出图那侧兜底，翻配置的人看不见这里出过界
-        List<String> outOfRange = runtimeApplier.validateValues(normalized);
+        // 再由出图那侧兜底，翻配置的人看不见这里出过界。删除不问取值范围——没有新值要验
+        Map<String, String> toValidate = new LinkedHashMap<>(normalized);
+        toValidate.values().removeIf(Objects::isNull);
+        List<String> outOfRange = runtimeApplier.validateValues(toValidate);
         if (!outOfRange.isEmpty()) {
             result.put("success", false);
             result.put("issues", outOfRange);
@@ -1109,9 +1131,10 @@ public class ConfigUiController {
         try {
             List<String> changedKeys = fileService.write(normalized);
 
-            // 只对真正落盘的那几个键动运行中的配置：送上来但值没变的项不该触发任何副作用
+            // 只对真正落盘的那几个键动运行中的配置：送上来但值没变的项不该触发任何副作用。
+            // 删掉的那几项对运行时按「没有值」落地（空串）——写口里的 null 是删键，两处含义不同
             Map<String, String> applied = new LinkedHashMap<>();
-            changedKeys.forEach(key -> applied.put(key, normalized.get(key)));
+            changedKeys.forEach(key -> applied.put(key, normalized.get(key) == null ? "" : normalized.get(key)));
             List<String> restartRequired = runtimeApplier.applyAndTrack(applied);
 
             int changed = changedKeys.size();
