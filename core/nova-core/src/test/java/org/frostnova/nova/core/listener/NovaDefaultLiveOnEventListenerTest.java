@@ -187,4 +187,23 @@ class NovaDefaultLiveOnEventListenerTest {
         Method onLiveOn = DownstreamProbe.class.getDeclaredMethod("onLiveOn", LiveOnEvent.class);
         assertTrue(onLiveOn.isAnnotationPresent(EventListener.class));
     }
+
+    /**
+     * 抓的用户故障：开播时读上一场下播时间出错，日志只说「出错」，看不出是什么错。
+     * 要求：带异常类名（简名），不带异常原文——原文可能带着连接串，栈更不往这句里放。
+     */
+    @Test
+    @DisplayName("读上一场出错那句 WARN 带异常类名、不带异常原文")
+    void warnCarriesExceptionClassNameNotItsMessage() {
+        when(liveDataService.getLiveEndTime(PLATFORM, UID))
+                .thenThrow(new IllegalStateException("jdbc:mysql://db.example:3306/nova?password=hunter2 炸了"));
+
+        List<String> warns = captureWarns(() -> listener.onLiveOnEventCheckReconnect(liveOnAt(START)));
+
+        assertEquals(1, warns.size(), "应恰记一句 WARN，实际: " + warns);
+        assertTrue(warns.get(0).contains("IllegalStateException"),
+                "那句 WARN 要带异常类名，实际: " + warns.get(0));
+        assertFalse(warns.get(0).contains("hunter2"), "异常原文漏进日志了: " + warns.get(0));
+        assertFalse(warns.get(0).contains("jdbc:"), "异常原文漏进日志了: " + warns.get(0));
+    }
 }

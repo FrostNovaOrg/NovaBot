@@ -3,6 +3,7 @@ package org.frostnova.nova.core.util;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -65,5 +66,58 @@ class UrlRedactorTest {
         assertFalse(level3.toString().contains("https"), "第三层连 scheme 一起剥:\n" + level3);
         assertFalse(level3.toString().contains("/x"), "第三层路径没剥掉:\n" + level3);
         assertNull(level3.getCause(), "三层之外不该再有:\n" + level3);
+    }
+
+    /**
+     * 抓的故障：地址里密钥前面带 {@code '} 这类正则收边界要停的字符时，
+     * 只靠正则会把字符后面那段（正是密钥）留在印文里。
+     * 带上已知地址后先按字面换主机名，拦得住。
+     */
+    @Test
+    @DisplayName("带已知地址时先按字面换主机名，正则停住的字符后面那段也不留")
+    void knownAddressIsStrippedEvenWhereTheRegexStops() {
+        String text = "I/O error on GET request for \"http://api.example.com/'/secret1/barkgroup\": null";
+
+        // 对照：不带已知地址时正则在 ' 上停，密钥还留着（正则与 hostOf 不改，这条钉住的就是这个事实）
+        assertTrue(UrlRedactor.redact(text).contains("secret1"),
+                "正则若连这里都收得住，下面的「不漏」证明不了是已知地址那一手在起作用:\n" + UrlRedactor.redact(text));
+
+        String withKnown = UrlRedactor.redact(text, "http://api.example.com/'/secret1/barkgroup?group=x");
+
+        assertFalse(withKnown.contains("secret1"), "已知地址没换成主机名，密钥还留着:\n" + withKnown);
+        assertFalse(withKnown.contains("barkgroup"), "路径跟着留下来了:\n" + withKnown);
+        assertFalse(withKnown.contains("group=x"), "查询串跟着留下来了:\n" + withKnown);
+        assertTrue(withKnown.contains("api.example.com"), "主机名要留下排障:\n" + withKnown);
+    }
+
+    @Test
+    @DisplayName("已知地址为空或 null 时与不带已知地址完全一样")
+    void emptyOrNullKnownAddressesBehaveExactlyAsBefore() {
+        String text = "A https://api.example.com/p/secret1?q=1 B http://x.test/'/secret2 C";
+
+        assertEquals(UrlRedactor.redact(text), UrlRedactor.redact(text, (String[]) null),
+                "null 应与不带已知地址完全一样");
+        assertEquals(UrlRedactor.redact(text), UrlRedactor.redact(text, new String[0]),
+                "空表应与不带已知地址完全一样");
+        assertEquals(UrlRedactor.redact(text), UrlRedactor.redact(text, new String[]{null, ""}),
+                "全是空项应与不带已知地址完全一样");
+    }
+
+    @Test
+    @DisplayName("起因链每一层的印文都按已知地址换过，不只是最外层")
+    void everyCauseLayerGetsTheKnownAddressStripped() {
+        String address = "https://api.example.com/'/secret1/barkgroup?group=x";
+        Exception cause = new Exception("read " + address + " timed out");
+        Exception outer = new Exception("I/O error on GET request for \"" + address + "\": boom", cause);
+        assertTrue(outer.getMessage().contains("secret1") && cause.getMessage().contains("secret1"),
+                "注入没注入到密钥，说明这把尺子量错了地方");
+
+        Throwable stripped = UrlRedactor.redact(outer, address);
+
+        assertFalse(stripped.toString().contains("secret1"), "最外层还漏着:\n" + stripped);
+        Throwable second = stripped.getCause();
+        assertNotNull(second, "起因这一层丢了:\n" + stripped);
+        assertFalse(second.toString().contains("secret1"), "起因那一层还漏着:\n" + second);
+        assertTrue(second.toString().contains("api.example.com"), "主机名要留下排障:\n" + second);
     }
 }

@@ -91,6 +91,12 @@ public class WebhookAlertChannel implements AlertChannel {
                 : null;
 
         int status;
+        // 这一次真正用到的地址：失败原文里出现的就是它。剥起因链时按字面换成主机名，
+        // 免得剥地址的正则在 ' ( 全角， 这类字符上停住、把密钥留在字符后面那段里。
+        // GET 另带 getRequestUri 的两形：地址里的非 ASCII 字符进 URI 后有两种写法
+        String[] knownAddresses = getRequestUri == null
+                ? new String[]{url}
+                : new String[]{url, getRequestUri.toString(), getRequestUri.toASCIIString()};
         try {
             if (getRequestUri != null) {
                 // 必须以 URI 传入：传字符串会被 RestTemplate 当作模板再编码一次，
@@ -115,8 +121,9 @@ public class WebhookAlertChannel implements AlertChannel {
             // 出口收口：往外交的报错只留主机与失败原因。Bark、Server 酱把推送密钥拼在
             // 地址路径里，异常原文带着整条地址——测试回话、时间线详情、工程日志三处
             // 都会照原样交出去，密钥就从那里露。起因链也逐层换过：工程日志会打出整条链，
-            // 起因里带地址也算漏。
-            throw new IllegalStateException(report(host, reasonOf(e)), UrlRedactor.redact(e));
+            // 起因里带地址也算漏。带上这一次用到的地址：正则在 ' ( 全角， 这类字符上会停，
+            // 停下那段里的密钥只能靠按字面换掉整条地址拿掉。
+            throw new IllegalStateException(report(host, reasonOf(e)), UrlRedactor.redact(e, knownAddresses));
         }
         check(status, host);
     }
