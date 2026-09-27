@@ -1,5 +1,8 @@
 package org.frostnova.nova.core.config.ui.auth.passkey;
 
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
@@ -8,6 +11,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Predicate;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -60,6 +64,7 @@ class PasskeyChallenges {
      * 来源地址与 {@code ConfigUiSecurityFilter} 认白名单用的是同一个（{@code getRemoteAddr()}）。
      * 放在反向代理后面、所有人看起来都是代理那一个地址时，这些人共用这 8 条，
      * 彼此仍挤得掉——那时分人要靠代理传来的真实地址，而这一侧至今不信转发头。
+     * IPv6 地址按 /64 前缀算一个来源，见 {@link #sourceKey}。
      */
     private static final int MAX_LOGIN_PER_SOURCE = 8;
 
@@ -80,6 +85,17 @@ class PasskeyChallenges {
     private final Map<String, Pending> pending = new HashMap<>();
 
     /**
+     * 发放序号：并列要淘汰时认「最新发出的」靠它，不靠到期时刻——同一毫秒里发出的几条到期时刻相同
+     */
+    private long issued;
+
+    /**
+     * 地址串里只许出现这些字符才拿去解析：{@link InetAddress#getByName} 碰上不像地址字面的串会去查 DNS，
+     * 首字符是十六进制数字或冒号、又带冒号时它只按 IPv6 字面解析，解析不了直接抛异常，不查
+     */
+    private static final Pattern IPV6_LITERAL = Pattern.compile("[0-9A-Fa-f:][0-9A-Fa-f:.]*");
+
+    /**
      * 发一个新挑战
      * @param purpose 这一个是给哪条路用的
      * @param source 索取者的来源地址；登录挑战按它分额度，登记挑战不看它
@@ -87,7 +103,7 @@ class PasskeyChallenges {
      * @return base64url 编码的挑战串
      */
     synchronized String issue(Purpose purpose, String source, Instant now) {
-        String key = source == null ? "" : source;
+        String key = sourceKey(source);
 
         sweep(now);
         makeRoom(purpose, key);
@@ -96,7 +112,7 @@ class PasskeyChallenges {
         RANDOM.nextBytes(bytes);
 
         String challenge = PasskeyBytes.encode(bytes);
-        pending.put(challenge, new Pending(purpose, key, now.plus(TTL)));
+        pending.put(challenge, new Pending(purpose, key, now.plus(TTL), ++issued));
 
         return challenge;
     }
@@ -127,9 +143,14 @@ class PasskeyChallenges {
     /**
      * 发新挑战前腾位置
      * <p>
-     * 登记：满了淘汰最早的登记挑战。登录：先看这个地址自己满没满，满了只淘汰它自己最早的；
-     * 总数也满了（要凑够这么多得有至少 {@code MAX_LOGIN / MAX_LOGIN_PER_SOURCE} 个地址），
-     * 从占得最多的那个地址里淘汰最早的——只占一两条的正常使用者排在最后。
+     * 登记：满了淘汰最早的登记挑战。登录：先看这个来源自己满没满，满了只淘汰它自己最早的；
+     * 总数也满了，从占得最多的来源里淘汰：只有一个占得最多的，淘汰它最早的那条；
+     * 几个来源并列最多（比如人人都只占一条），淘汰它们当中<b>最新发出</b>的那条——
+     * 先要到手的挑战因此活到自然过期，后来换着地址刷的人挤的是自己。
+     * <p>
+     * 挡不住的：主人同时开着的框比别人多（占 2 条而别人各 1 条）时，主人就是占得最多的，
+     * 仍先被淘汰；对手握着许多段前缀、在主人要挑战之前就一直在刷，表满后主人新要的那条就是最新的，
+     * 仍会被挤掉。后一种不改成「满了拒发」：那样对手占满表就能让主人一条都要不到。
      */
     private void makeRoom(Purpose purpose, String source) {
         if (purpose == Purpose.REGISTER) {
@@ -147,9 +168,57 @@ class PasskeyChallenges {
             Map<String, Long> perSource = pending.values().stream()
                     .filter(entry -> entry.purpose == Purpose.LOGIN)
                     .collect(Collectors.groupingBy(Pending::source, Collectors.counting()));
-            String heaviest = Collections.max(perSource.entrySet(), Map.Entry.comparingByValue()).getKey();
-            evictOldest(entry -> entry.purpose == Purpose.LOGIN && entry.source.equals(heaviest));
+            long most = Collections.max(perSource.values());
+            Predicate<Pending> heaviest = entry -> entry.purpose == Purpose.LOGIN && perSource.get(entry.source) == most;
+
+            if (perSource.values().stream().filter(n -> n == most).count() == 1) {
+                evictOldest(heaviest);
+            } else {
+                evictNewest(heaviest);
+            }
         }
+    }
+
+    /**
+     * 按来源计额度时认的那个「来源」
+     * <p>
+     * IPv6 一台机器通常分到整个 /64 前缀，地址可以随手换，所以按前 64 位归成一个；
+     * IPv4 映射的 IPv6 地址（{@code ::ffff:a.b.c.d}）就是那个 IPv4 地址；IPv4 照单个地址算。
+     * <p>
+     * 解析不了的串原样当一个来源，与改前同：归成同一个的话，所有怪串会共用 8 条互相挤；
+     * 这串来自 {@code getRemoteAddr()}，正常不会解析不了。
+     */
+    static String sourceKey(String source) {
+        if (source == null) {
+            return "";
+        }
+
+        int zone = source.indexOf('%');
+        String literal = zone < 0 ? source : source.substring(0, zone);
+        if (literal.startsWith("[") && literal.endsWith("]")) {
+            literal = literal.substring(1, literal.length() - 1);
+        }
+        if (literal.indexOf(':') < 0 || !IPV6_LITERAL.matcher(literal).matches()) {
+            return source;
+        }
+
+        InetAddress address;
+        try {
+            address = InetAddress.getByName(literal);
+        } catch (UnknownHostException e) {
+            return source;
+        }
+
+        if (address instanceof Inet4Address) {
+            return address.getHostAddress();
+        }
+
+        byte[] bytes = address.getAddress();
+        StringBuilder prefix = new StringBuilder();
+        for (int i = 0; i < 8; i += 2) {
+            prefix.append(Integer.toHexString(((bytes[i] & 0xff) << 8) | (bytes[i + 1] & 0xff))).append(':');
+        }
+        return prefix.append(":/64").toString();
     }
 
     private long count(Predicate<Pending> filter) {
@@ -160,6 +229,14 @@ class PasskeyChallenges {
         pending.entrySet().stream()
                 .filter(entry -> filter.test(entry.getValue()))
                 .min(Comparator.comparing(entry -> entry.getValue().expiresAt))
+                .map(Map.Entry::getKey)
+                .ifPresent(pending::remove);
+    }
+
+    private void evictNewest(Predicate<Pending> filter) {
+        pending.entrySet().stream()
+                .filter(entry -> filter.test(entry.getValue()))
+                .max(Comparator.comparingLong(entry -> entry.getValue().order))
                 .map(Map.Entry::getKey)
                 .ifPresent(pending::remove);
     }
@@ -186,6 +263,6 @@ class PasskeyChallenges {
         LOGIN
     }
 
-    private record Pending(Purpose purpose, String source, Instant expiresAt) {
+    private record Pending(Purpose purpose, String source, Instant expiresAt, long order) {
     }
 }

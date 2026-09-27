@@ -58,6 +58,55 @@ class PasskeyChallengeCrowdingTest extends PasskeyTestSupport {
                 "别人要了 " + FLOOD + " 次登录挑战之后, 主人的登记挑战该还能用: " + result.getString("message"));
     }
 
+    /**
+     * 抓的故障：公网实例上有人握着一整段 IPv6（一台机器通常分到整个 /64），每要一次换一个地址，
+     * 每个地址都只占一条。主人开着两个登录框（占 2 条）时，不按前缀归并的话主人就是占得最多的那个，
+     * 表一满先挤主人最早那条，主人在先开的框里按完指纹报挑战失效
+     */
+    @Test
+    @DisplayName("同一 /64 前缀下换着地址反复要登录挑战，开着两个框的主人先开的那条照样能用")
+    void loginChallengeSurvivesRotatingAddressesInOnePrefix() {
+        TestAuthenticator authenticator = new TestAuthenticator(TestAuthenticator.ES256);
+        register(authenticator, "我的手机", 7);
+
+        String mine = loginChallenge();
+        loginChallenge();
+        for (int i = 1; i <= 1000; i++) {
+            askAsStranger("2001:db8:1:2::" + Integer.toHexString(i));
+        }
+
+        assertEquals(200, controller.loginVerify(
+                        authenticator.assertion(mine, ORIGIN, RP_ID, 8), request()).getStatusCode().value(),
+                "同一 /64 下换了 1000 个地址之后, 主人先拿到的那条该还能登进来");
+    }
+
+    /**
+     * 抓的故障同上，换成手里有许多段前缀的人：主人先要到挑战，之后几百段前缀各要一次，
+     * 大家都只占一条，表满时该淘汰的是后来的，不是主人先到手的那条
+     */
+    @Test
+    @DisplayName("主人先要到登录挑战，之后几百个不同 /64 前缀各要一次，主人那条照样能用")
+    void loginChallengeSurvivesManyPrefixesAskingOnceEach() {
+        TestAuthenticator authenticator = new TestAuthenticator(TestAuthenticator.ES256);
+        register(authenticator, "我的手机", 7);
+
+        String mine = loginChallenge();
+        for (int i = 1; i <= 500; i++) {
+            askAsStranger("2001:db8:" + Integer.toHexString(i) + ":1::1");
+        }
+
+        assertEquals(200, controller.loginVerify(
+                        authenticator.assertion(mine, ORIGIN, RP_ID, 8), request()).getStatusCode().value(),
+                "500 段前缀各要一次之后, 主人先拿到的那条该还能登进来");
+    }
+
+    private void askAsStranger(String address) {
+        MockHttpServletRequest stranger = new MockHttpServletRequest("POST", "/config/api/auth/passkey/login/options");
+        stranger.addHeader("Host", HOST);
+        stranger.setRemoteAddr(address);
+        assertTrue(controller.loginOptions(stranger).getBooleanValue("success"), "台面：陌生地址该要得到登录挑战");
+    }
+
     private void flood() {
         for (int i = 0; i < FLOOD; i++) {
             MockHttpServletRequest stranger = new MockHttpServletRequest("POST", "/config/api/auth/passkey/login/options");
