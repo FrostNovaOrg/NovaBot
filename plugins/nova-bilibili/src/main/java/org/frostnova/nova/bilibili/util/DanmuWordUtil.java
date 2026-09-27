@@ -8,6 +8,8 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 弹幕分词工具
@@ -31,6 +33,12 @@ public final class DanmuWordUtil {
     private static final int MIN_WORD_LENGTH = 2;
 
     private static final int MAX_WORD_LENGTH = 8;
+
+    /**
+     * 一个字形簇（用户看到的一个字）：带变体选择符的表情、两枚区域指示符拼成的国旗、
+     * 一串 ZWJ 拼成的表情，各是一簇
+     */
+    private static final Pattern GRAPHEME = Pattern.compile("\\X");
 
     /**
      * 停用词：高频但无信息量的功能词，进词云只会淹没真正的内容词
@@ -75,7 +83,8 @@ public final class DanmuWordUtil {
      * 屏蔽词、整个留下，两边的文字各自再切。整词照样记进词频，画图时按当下的表挑掉；
      * 以后从表里删了这个词，它就以整词出现，而不是永远丢了。认的时候英文不分大小写。
      * 只有一个字的屏蔽词不参与整词挑出：它没有会被切散的问题，提前挑出去只会把原文
-     * 切断、切出本不成词的碎片；含它的词画图时按「含即屏蔽」照样挑掉
+     * 切断、切出本不成词的碎片；含它的词画图时按「含即屏蔽」照样挑掉。一个字按用户看到的
+     * 字符（字形簇）数：❤️、国旗、ZWJ 拼成的表情这类多码点的单个表情也是一个字
      * @param text 弹幕文本
      * @param keepWhole 词云屏蔽词，可为空
      * @return 过滤后的词语列表
@@ -138,14 +147,32 @@ public final class DanmuWordUtil {
         for (String item : raw) {
             if (item != null && !item.isBlank()) {
                 String stripped = foldAsciiLetters(item.strip());
-                // 只有一个字（按码点数，一个表情也算一个字）的屏蔽词不进这张表：
+                // 只有一个字（按字形簇数，多码点的单个表情也算一个字）的屏蔽词不进这张表：
                 // 含它的词画图时按「含即屏蔽」照样挡得住，提前挑出去只会把原文切断
-                if (stripped.codePointCount(0, stripped.length()) > 1) {
+                if (graphemeCount(stripped) > 1) {
                     folded.add(stripped);
                 }
             }
         }
         return folded;
+    }
+
+    /**
+     * 这串字按用户看到的字符（字形簇）算几个字
+     * <p>
+     * 🔴 不按码点数：码点数会把 ❤️（两个码点）、国旗（两枚区域指示符）、ZWJ 拼成的
+     * 家庭表情（五个码点）算成好多个字，「只有一个字的屏蔽词不参与整词挑出」这条就对
+     * 它们不成立。也不用 {@link java.text.BreakIterator#getCharacterInstance}：本项目
+     * 跑的 JDK 17 上实测它把一面国旗算成两个字、家庭表情算成五个（带变体选择符的 ❤️
+     * 能认成一个），只有正则 {@code \X} 把三类都认成一个字
+     */
+    private static int graphemeCount(String text) {
+        Matcher matcher = GRAPHEME.matcher(text);
+        int count = 0;
+        while (matcher.find()) {
+            count++;
+        }
+        return count;
     }
 
     /**
