@@ -1,5 +1,6 @@
 package org.frostnova.nova.core.config.ui;
 
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -51,6 +52,16 @@ public final class SensitiveFields {
      * 界面拿不到真值，保存时把它原样送回来即表示「这一项没动」。
      */
     public static final String MASK = "********";
+
+    /**
+     * 显式清除标记：界面把这一项的值送成这一串，即表示「把这一项删掉」
+     * <p>
+     * 与空串分开是有意的：空串的含义是<b>照提示留空＝这一项没动</b>（见
+     * {@link #dropUnchanged}），而真要清掉必须显式说一声。清除是一个按钮动作，
+     * 送上来的是这一段固定标记，使用者的键盘打不出它——头尾两个 NUL 就是防这个：
+     * 任何真实口令都不可能是这一串，撞上即误删。
+     */
+    public static final String CLEAR = "\0CLEAR\0";
 
     /**
      * 命中即视为机密的名称片段
@@ -130,18 +141,66 @@ public final class SensitiveFields {
                 isSensitive(name, typeOf(types, name)) && value != null && !value.isBlank() ? MASK : value);
         return values;
     }
-
     /**
-     * 剔除界面原样送回的占位值
+     * 剔除界面原样送回的占位值，以及留空的机密项
      * <p>
-     * 不剔除的话，用户改了别的字段一起保存，就会把 {@code ********} 写进配置文件，
+     * 不剔除占位值的话，用户改了别的字段一起保存，就会把 {@code ********} 写进配置文件，
      * <b>口令、令牌与密钥当场全部失效</b>。
+     * <p>
+     * 留空同样剔除：界面拿不到真值，框里不是遮点就是空，而空的含义是
+     * <b>照提示留空＝这一项没动</b>。照旧往下走的话，使用者删光遮点、照着
+     * 「留空＝保持原值」的提示保存，已存的授权码反倒被删掉——提示成了骗人的话。
+     * 真要清掉走 {@link #takeClears} 的显式清除。
      * @param changes 待保存的键值
      * @param types 配置项名到 Java 类型的查表，查不到时返回 {@code null}；整个查表可为 {@code null}
      */
     public static void dropUnchanged(Map<String, String> changes, UnaryOperator<String> types) {
-        changes.entrySet().removeIf(entry ->
-                isSensitive(entry.getKey(), typeOf(types, entry.getKey())) && MASK.equals(entry.getValue()));
+        changes.entrySet().removeIf(entry -> isSensitive(entry.getKey(), typeOf(types, entry.getKey()))
+                && (MASK.equals(entry.getValue()) || entry.getValue() == null || entry.getValue().isBlank()));
+    }
+
+    /**
+     * 挑出显式清除的机密项：值是清除标记，从改动里拿掉，交调用方删键
+     * <p>
+     * 清除必须与「留空」分开表达：空串已经另有含义（没动）。这一串是清除按钮
+     * 送上来的固定标记，与任何真实口令都对不上（见 {@link #CLEAR}）。
+     * 清除标记<b>只认机密项</b>：非机密项送上来这一串不当清除，也不当取值，
+     * 由 {@link #misplacedClears} 认出来整批拒收。
+     * @param changes 待保存的键值，命中的项会从中移除
+     * @param types 配置项名到 Java 类型的查表，查不到时返回 {@code null}；整个查表可为 {@code null}
+     * @return 要从配置文件里删掉的键名，按在改动里的先后
+     */
+    public static Set<String> takeClears(Map<String, String> changes, UnaryOperator<String> types) {
+        Set<String> cleared = new LinkedHashSet<>();
+        changes.entrySet().removeIf(entry -> {
+            if (isSensitive(entry.getKey(), typeOf(types, entry.getKey())) && CLEAR.equals(entry.getValue())) {
+                cleared.add(entry.getKey());
+                return true;
+            }
+            return false;
+        });
+        return cleared;
+    }
+
+    /**
+     * 找出送了清除标记、却不是机密项的键
+     * <p>
+     * 清除标记只对机密项有意义（见 {@link #takeClears}）。非机密项收到它多半是
+     * 手工构造的请求或程序缺陷：放过去的话这一串——头尾还带着 NUL——会当普通取值
+     * 原样写进配置文件，读回来就成了一个谁也没见过的值。
+     * @param changes 待保存的键值
+     * @param types 配置项名到 Java 类型的查表，查不到时返回 {@code null}；整个查表可为 {@code null}
+     * @return 误送清除标记的非机密键名，按在改动里的先后；没有时为空集
+     */
+    public static Set<String> misplacedClears(Map<String, String> changes, UnaryOperator<String> types) {
+        Set<String> misplaced = new LinkedHashSet<>();
+        for (Map.Entry<String, String> entry : changes.entrySet()) {
+            if (CLEAR.equals(entry.getValue())
+                    && !isSensitive(entry.getKey(), typeOf(types, entry.getKey()))) {
+                misplaced.add(entry.getKey());
+            }
+        }
+        return misplaced;
     }
 
     /**
