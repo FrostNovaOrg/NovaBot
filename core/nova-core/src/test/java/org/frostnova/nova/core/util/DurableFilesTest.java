@@ -360,6 +360,123 @@ class DurableFilesTest {
         return new FileSystemException(file.toString(), null, "No space left on device");
     }
 
+    /**
+     * 退回直接写是先截断再写：写到一半出错，配置文件只剩半截，程序下次起不来，
+     * 而明文换哈希那次不留备份，也没有件可退。写失败时要把原字节写回去，原来的错照抛。
+     * <p>
+     * 注入法：换名被拒那格的办法把路引到退回直写（残留临时文件＋目录只读），
+     * 再把 java.nio.file.Files 桩住、其余照真实行为走，只让直接写那一步先截断、
+     * 写进前半截、再抛 IO 错——真盘上做不出「写到一半坏」。
+     */
+    @Test
+    @DisplayName("退回直接写写到一半出错时写回原文：目标逐字节同写之前，原来的错照抛")
+    void directWriteFailingHalfwayRestoresOriginal() throws IOException {
+        byte[] original = "server:\n  port: 7827\n".getBytes(StandardCharsets.UTF_8);
+        Files.write(dir.resolve("application.yml"), original);
+        Path target = dir.resolve("application.yml").toRealPath();
+        Files.createFile(DurableFiles.temporary(target));
+        Set<PosixFilePermission> originalDirPermissions = Files.getPosixFilePermissions(dir);
+        IOException halfway = new IOException("Input/output error");
+
+        List<String> logged;
+        IOException thrown;
+        try (LogCapture capture = new LogCapture();
+             MockedStatic<Files> files = mockStatic(Files.class, CALLS_REAL_METHODS)) {
+            files.when(() -> Files.writeString(eq(target), eq("server:\n  port: 7828\n"), eq(StandardCharsets.UTF_8)))
+                    .thenAnswer(direct -> writeHalfThenFail(target, halfway));
+            Files.setPosixFilePermissions(dir, PosixFilePermissions.fromString("r-xr-xr-x"));
+            try {
+                thrown = assertThrows(IOException.class,
+                        () -> DurableFiles.replace(target, "server:\n  port: 7828\n"),
+                        "直接写失败了就该抛给调用方");
+            } finally {
+                Files.setPosixFilePermissions(dir, originalDirPermissions);
+            }
+            logged = capture.messages();
+        }
+        assertEquals(new String(original, StandardCharsets.UTF_8), Files.readString(target, StandardCharsets.UTF_8),
+                "写到一半出错后目标该写回原样，现在是半截");
+        assertTrue(thrown == halfway, "抛出的该是直接写那一步原来的错: " + thrown);
+        assertTrue(logged.stream().anyMatch(message -> message.contains("已写回原样")),
+                "日志该说已写回原样: " + logged);
+    }
+
+    /**
+     * 写回原文也失败时没有别的路可走：原来的错照抛（写回的错挂在 suppressed 上），
+     * 日志点出路径、说原件可能已不完整，让人知道去看哪一份。
+     */
+    @Test
+    @DisplayName("退回直接写失败、写回原文也失败时原来的错照抛，日志说原件可能已不完整")
+    void directWriteAndRestoreBothFailingReportsIncompleteOriginal() throws IOException {
+        Files.writeString(dir.resolve("application.yml"), "server:\n  port: 7827\n", StandardCharsets.UTF_8);
+        Path target = dir.resolve("application.yml").toRealPath();
+        Files.createFile(DurableFiles.temporary(target));
+        Set<PosixFilePermission> originalDirPermissions = Files.getPosixFilePermissions(dir);
+        IOException halfway = new IOException("Input/output error");
+        IOException restoreFailed = new IOException("restore refused");
+
+        List<String> logged;
+        IOException thrown;
+        try (LogCapture capture = new LogCapture();
+             MockedStatic<Files> files = mockStatic(Files.class, CALLS_REAL_METHODS)) {
+            files.when(() -> Files.writeString(eq(target), eq("server:\n  port: 7828\n"), eq(StandardCharsets.UTF_8)))
+                    .thenAnswer(direct -> writeHalfThenFail(target, halfway));
+            files.when(() -> Files.write(eq(target), any(byte[].class))).thenThrow(restoreFailed);
+            Files.setPosixFilePermissions(dir, PosixFilePermissions.fromString("r-xr-xr-x"));
+            try {
+                thrown = assertThrows(IOException.class,
+                        () -> DurableFiles.replace(target, "server:\n  port: 7828\n"),
+                        "直接写失败了就该抛给调用方");
+            } finally {
+                Files.setPosixFilePermissions(dir, originalDirPermissions);
+            }
+            logged = capture.messages();
+        }
+        assertTrue(thrown == halfway, "抛出的该是直接写那一步原来的错，不是写回的错: " + thrown);
+        assertTrue(List.of(thrown.getSuppressed()).contains(restoreFailed),
+                "写回的错该挂在原来那个错的 suppressed 上: " + List.of(thrown.getSuppressed()));
+        assertTrue(logged.stream().anyMatch(message -> message.contains("可能已不完整")
+                        && message.contains(target.toString())),
+                "日志该点出路径并说原件可能已不完整: " + logged);
+    }
+
+    /**
+     * 照真实「写到一半出错」的样子：先截断、写进前半截，再抛
+     */
+    private static Object writeHalfThenFail(Path target, IOException failure) throws IOException {
+        try (FileChannel channel = FileChannel.open(target,
+                StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)) {
+            channel.write(java.nio.ByteBuffer.wrap("serv".getBytes(StandardCharsets.UTF_8)));
+        }
+        throw failure;
+    }
+
+    /**
+     * 收 DurableFiles 的日志（各级都收），关掉时摘下
+     */
+    private static final class LogCapture implements AutoCloseable {
+        private final ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(DurableFiles.class);
+        private final ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+
+        LogCapture() {
+            appender.start();
+            logger.addAppender(appender);
+        }
+
+        List<String> messages() {
+            return appender.list.stream()
+                    .map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage)
+                    .toList();
+        }
+
+        @Override
+        public void close() {
+            logger.detachAppender(appender);
+        }
+    }
+
     private static String groupOf(Path file) throws IOException {
         return Files.readAttributes(file, PosixFileAttributes.class).group().getName();
     }

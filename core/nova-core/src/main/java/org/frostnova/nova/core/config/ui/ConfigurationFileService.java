@@ -325,6 +325,9 @@ public class ConfigurationFileService {
      * 文件里的监听地址若是 {@code InetAddress.toString()} 那种斜杠形态，按既有写口改回裸地址。
      * 同一进程只改一次：启动期后处理器已经让绑定成功，这里只负责把落盘那一行扶正。
      * 一次写盘带上全部待改的地址键，免得两处斜杠只改到第一处。
+     * <p>
+     * 这次写不留备份：它只改地址的写法、用不着退回，而它早于口令哈希化——同一文件里
+     * 还手写着明文口令时，留下的备份就是一份抄着明文的副本，要再存够十次才挤掉。
      */
     private void healSlashAddress(Map<String, String> fixes, Map<String, String> rawByPath) {
         if (slashAddressHealed || fixes.isEmpty()) {
@@ -332,7 +335,7 @@ public class ConfigurationFileService {
         }
         slashAddressHealed = true;
         try {
-            List<String> changed = write(fixes);
+            List<String> changed = writeWithoutBackup(fixes);
             if (!changed.isEmpty()) {
                 for (String path : changed) {
                     log.info("配置文件里的监听地址是斜杠形态 {}, 已改回 {}",
@@ -522,8 +525,10 @@ public class ConfigurationFileService {
      * 备份照原样复制旧文件，等于把刚换掉的明文又抄一份放进同一个目录，
      * 而备份按份数轮换，那一份要等之后再存够十次才被挤掉。
      * <p>
-     * 不留备份也安全：换件失败时原件一个字节不动（见 {@link DurableFiles#replace}），
-     * 而这条路的上一版本来就是那份明文，留在盘上与这次写回的目的正好相反。
+     * 不留备份也安全：换名那条路失败时原件一个字节不动；退回直接写写到一半出错时，
+     * 按写之前留在内存里的原文尽力写回（见 {@link DurableFiles#replace}），写回也失败
+     * 才可能留下半截，那时日志点名。这条路的上一版本来就是那份明文，留在盘上与这次
+     * 写回的目的正好相反。
      * 普通保存照旧走 {@link #write(Map)}：那才是使用者要能反悔的改动。
      * @param changes 待写入的配置项名到取值
      * @return 实际发生改动的配置项名

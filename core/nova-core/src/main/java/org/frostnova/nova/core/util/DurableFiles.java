@@ -73,7 +73,8 @@ public final class DurableFiles {
      * 等价于 {@code replace(target, content, null)}。
      * @param target 要换上的文件
      * @param content 完整内容
-     * @throws IOException 临时文件写不进去（如磁盘写满）或最终没写成时抛出，此时目标文件保持原样
+     * @throws IOException 临时文件写不进去（如磁盘写满）或最终没写成时抛出；换名那条路失败时目标文件保持原样，
+     *                     退回直接写失败时已尽力写回原样（见 {@link #replace(Path, String, Set)}）
      */
     public static void replace(Path target, String content) throws IOException {
         replace(target, content, null);
@@ -84,7 +85,8 @@ public final class DurableFiles {
      * 每行后面跟平台换行符，空列表写出空文件。新建件跟系统默认权限走。
      * @param target 要换上的文件
      * @param lines 完整的行
-     * @throws IOException 临时文件写不进去（如磁盘写满）或最终没写成时抛出，此时目标文件保持原样
+     * @throws IOException 临时文件写不进去（如磁盘写满）或最终没写成时抛出；换名那条路失败时目标文件保持原样，
+     *                     退回直接写失败时已尽力写回原样（见 {@link #replace(Path, String, Set)}）
      */
     public static void replace(Path target, List<String> lines) throws IOException {
         replace(target, lines, null);
@@ -95,7 +97,8 @@ public final class DurableFiles {
      * @param target 要换上的文件
      * @param lines 完整的行
      * @param newFilePermissions 新建件的默认权限，{@code null} 表示跟系统默认（umask）走
-     * @throws IOException 临时文件写不进去（如磁盘写满）或最终没写成时抛出，此时目标文件保持原样
+     * @throws IOException 临时文件写不进去（如磁盘写满）或最终没写成时抛出；换名那条路失败时目标文件保持原样，
+     *                     退回直接写失败时已尽力写回原样（见 {@link #replace(Path, String, Set)}）
      */
     public static void replace(Path target, List<String> lines, Set<PosixFilePermission> newFilePermissions)
             throws IOException {
@@ -112,12 +115,18 @@ public final class DurableFiles {
      * 换名尽量是原子的。文件系统不支持原子改名时，退回普通替换；建临时文件被拒
      * （目录只读、权限不够）、换名被拒（如目标被单独挂载）或换名保不住原件的属主
      * 属组时，退回直接写并各记一条 WARN；建件失败里磁盘满这一类直接写同样写不进，
-     * 照常抛出；退回也写不成时照常抛出。
+     * 照常抛出。
+     * <p>
+     * 直接写是先截断再写，写到一半出错目标就只剩半截。所以直接写之前先把原件整份读进
+     * 内存，写失败时尽力写回原字节；原来那个写失败的错照常抛出，写回也失败时写回的错
+     * 挂在它的 suppressed 上、日志点名那份文件可能已不完整。不另建副本：副本会把
+     * 旧内容（可能含明文）多留一份，而走到直接写这一支，常常正是因为同目录建不了件。
      * @param target 要换上的文件
      * @param content 完整内容
      * @param newFilePermissions 新建件的默认权限，{@code null} 表示跟系统默认（umask）走；
      *                           原件已在时本参数不用，权限照原件
-     * @throws IOException 临时文件写不进去（如磁盘写满）或最终没写成时抛出，此时目标文件保持原样
+     * @throws IOException 临时文件写不进去（如磁盘写满）或最终没写成时抛出。换名那条路失败时目标文件
+     *                     保持原样；退回直接写失败时已尽力写回原样，写回也失败时目标可能不完整
      */
     public static void replace(Path target, String content, Set<PosixFilePermission> newFilePermissions)
             throws IOException {
@@ -135,7 +144,7 @@ public final class DurableFiles {
             }
             // 到这里说明只是建不出临时文件（权限、只读文件系统），直接写还在行
             log.warn("建临时文件失败, 退回直接写 {}: {}", target, createFailed.toString());
-            Files.writeString(target, content, StandardCharsets.UTF_8);
+            writeInPlace(target, content);
             return;
         }
         String ownershipChange = ownershipChangeByMove(target, temp);
@@ -143,7 +152,7 @@ public final class DurableFiles {
             // 换名会换 inode，属主属组跟着临时文件的那一份走；原件的安排
             // （如「管理员组可编辑」的 0660 配置文件）会丢时退回直接写，原地写不动 inode
             log.warn("换名会丢掉原件的属主或属组, 退回直接写 {}: {}", target, ownershipChange);
-            Files.writeString(target, content, StandardCharsets.UTF_8);
+            writeInPlace(target, content);
             deleteTempQuietly(temp);
             return;
         }
@@ -163,8 +172,46 @@ public final class DurableFiles {
             }
         } catch (IOException moveFailed) {
             log.warn("换名失败, 退回直接写 {}: {}", target, moveFailed.toString());
-            Files.writeString(target, content, StandardCharsets.UTF_8);
+            writeInPlace(target, content);
             deleteTempQuietly(temp);
+        }
+    }
+
+    /**
+     * 退回的直接写：先截断再写，写到一半出错目标就只剩半截，所以写之前把原件整份
+     * 读进内存，写失败时尽力写回原字节。
+     * <p>
+     * 原件不在就没有可退的，照旧写。原件在但读不出（如只写不读的权限）时也照旧写——
+     * 为了能写回而拒写，会把本来存得上的保存变成存不上；这时写失败就说不出原样了，
+     * 日志照「可能已不完整」报。无论写回成没成，原来那个写失败的错都照抛给调用方。
+     */
+    private static void writeInPlace(Path target, String content) throws IOException {
+        byte[] original = null;
+        IOException unreadable = null;
+        try {
+            original = Files.readAllBytes(target);
+        } catch (NoSuchFileException absent) {
+            // 原件还没有：写失败也没有要写回的
+        } catch (IOException readFailed) {
+            unreadable = readFailed;
+        }
+        try {
+            Files.writeString(target, content, StandardCharsets.UTF_8);
+        } catch (IOException writeFailed) {
+            if (original != null) {
+                try {
+                    Files.write(target, original);
+                    log.warn("直接写 {} 失败, 已写回原样: {}", target, writeFailed.toString());
+                } catch (IOException restoreFailed) {
+                    writeFailed.addSuppressed(restoreFailed);
+                    log.error("直接写 {} 失败, 写回原文也失败, 原件可能已不完整: {}; 写回: {}",
+                            target, writeFailed.toString(), restoreFailed.toString());
+                }
+            } else if (unreadable != null) {
+                log.error("直接写 {} 失败, 写之前原件没读出来、无从写回, 原件可能已不完整: {}; 读原件: {}",
+                        target, writeFailed.toString(), unreadable.toString());
+            }
+            throw writeFailed;
         }
     }
 
