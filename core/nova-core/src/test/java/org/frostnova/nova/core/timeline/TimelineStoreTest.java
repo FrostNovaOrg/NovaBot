@@ -356,6 +356,21 @@ class TimelineStoreTest {
         assertEquals(List.of("好的那条"), texts(query(null)));
     }
 
+    @Test
+    @DisplayName("时间线上一条是半截时, 下一条仍查得出来, 只丢坏的那条")
+    void truncatedTailDoesNotSwallowTheNextEvent() throws IOException {
+        // 磁盘满或断电卡在写一行的中间, 盘上会留下不带换行的半行。
+        // 不先隔开的话, 下一条事件接在半行后面连成一行, 这条和下一条都从日志页消失
+        Files.createDirectories(dir.resolve("timeline"));
+        Files.writeString(file(LocalDate.now()), "{\"at\":1,\"type\":\"PUSH_SENT\",\"level\":\"inf",
+                StandardCharsets.UTF_8);
+
+        store.record(event(LocalDate.now(), "今天这条"));
+
+        assertEquals(List.of("今天这条"), texts(query(null)),
+                "半截的上一行把下一条事件一起弄丢了——那条正是排障要看的线索");
+    }
+
     // —— 以下为夹具 ——
 
     private TimelineStore.Result query(LocalDate date) {

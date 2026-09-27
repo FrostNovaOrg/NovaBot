@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.properties.LiveProperties;
 import org.frostnova.nova.core.model.EventStreamToken;
+import org.frostnova.nova.core.lang.JsonlFiles;
 import org.frostnova.nova.core.lang.SecureToken;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -284,6 +285,9 @@ public class EventStreamTokenService {
         try {
             Files.createDirectories(file.getParent());
             if (append) {
+                // 上一行没写完时先补一个换行，把坏的半行隔开——
+                // 半行不该连累下一把口令：那把刚签给使用者，失效了无从补发
+                JsonlFiles.separateTruncatedTail(file);
                 Files.writeString(file, content, StandardCharsets.UTF_8,
                         StandardOpenOption.CREATE, StandardOpenOption.APPEND);
                 return;

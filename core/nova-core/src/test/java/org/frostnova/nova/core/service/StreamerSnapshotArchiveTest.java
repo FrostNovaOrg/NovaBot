@@ -140,4 +140,19 @@ class StreamerSnapshotArchiveTest {
 
         assertEquals(2, archive.find(0, Long.MAX_VALUE).size());
     }
+
+    @Test
+    @DisplayName("留档最后一行是半截时, 下一次采样仍能读出, 只丢坏的那条")
+    void truncatedTailDoesNotSwallowTheNextSnapshot() throws Exception {
+        // 磁盘满或断电卡在写一行的中间, 盘上会留下不带换行的半行。
+        // 不先隔开的话, 下一次采样接在半行后面连成一行, 两次一起读不出来
+        Files.writeString(dir.resolve("snapshots.jsonl"),
+                "{\"platform\":\"bilibili\",\"uid\":1,\"uname\":\"坏掉的那次\"", StandardCharsets.UTF_8);
+
+        archive.append(snapshot(10 * DAY, 243));
+
+        List<StreamerSnapshot> found = archive.find(0, Long.MAX_VALUE);
+        assertEquals(1, found.size(), "半截的上一行把下一次采样一起弄丢了——那次的粉丝数真的采到过");
+        assertEquals(243.0, found.get(0).metric("fans"));
+    }
 }

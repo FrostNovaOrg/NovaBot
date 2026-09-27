@@ -6,12 +6,14 @@ import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.analytics.LiveDetail;
 import org.frostnova.nova.core.analytics.LiveHighlightFinder;
 import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.lang.JsonlFiles;
 import org.frostnova.nova.core.model.DanmuRecord;
 import org.frostnova.nova.core.model.LiveGap;
 import org.frostnova.nova.core.analytics.LiveGiftTotal;
 import org.frostnova.nova.core.model.RoomInfoSnapshot;
 import org.frostnova.nova.core.model.SeriesPeak;
 import org.frostnova.nova.core.model.UserScore;
+import org.frostnova.nova.core.util.DurableFiles;
 import jakarta.annotation.PostConstruct;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -184,6 +186,8 @@ public class LiveDetailArchive {
 
             try {
                 Files.createDirectories(dir.get());
+                // 上一行没写完时先补一个换行，把坏的半行隔开——半行不该连累下一句弹幕
+                JsonlFiles.separateTruncatedTail(path);
                 Files.writeString(path, toJson(record).toJSONString() + System.lineSeparator(),
                         StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
                 lineCounts.get(path.toString()).incrementAndGet();
@@ -223,6 +227,8 @@ public class LiveDetailArchive {
                 json.put("t", type);
                 fields.forEach(json::put);
                 Files.createDirectories(dir.get());
+                // 同上：半行不该连累下一条事件
+                JsonlFiles.separateTruncatedTail(path);
                 Files.writeString(path, json.toJSONString() + System.lineSeparator(),
                         StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
                 lineCounts.get(path.toString()).incrementAndGet();
@@ -237,7 +243,8 @@ public class LiveDetailArchive {
      * <p>
      * <b>失败只记日志，绝不向上抛</b>，理由同场次归档：调用点在下播事件里。
      * <p>
-     * 先写临时文件再原子改名：直接往目标文件上写的话，写到一半被读到的是半份 JSON，
+     * 走 {@link DurableFiles#replace}：先写同目录临时文件、刷盘，再换名落到目标上。
+     * 直接往目标文件上写的话，写到一半被读到的是半份 JSON，
      * 而<b>一份解析失败的明细与「这一场没有明细」在读取方眼里长得一样</b>。
      * @param detail 本场明细
      */
@@ -251,10 +258,7 @@ public class LiveDetailArchive {
         synchronized (writeLock) {
             try {
                 Files.createDirectories(dir.get());
-                Path temp = Files.createTempFile(dir.get(), "detail-", ".part");
-                Files.writeString(temp, toJson(detail).toJSONString(), StandardCharsets.UTF_8);
-                Files.move(temp, dir.get().resolve(DETAIL_FILE),
-                        StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                DurableFiles.replace(dir.get().resolve(DETAIL_FILE), toJson(detail).toJSONString());
                 log.info("已留档 {} 的一场直播明细: {} 条序列, {} 张排行", detail.uname(),
                         detail.series() == null ? 0 : detail.series().size(),
                         detail.rankings() == null ? 0 : detail.rankings().size());
