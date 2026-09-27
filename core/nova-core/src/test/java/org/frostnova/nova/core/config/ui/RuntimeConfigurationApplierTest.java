@@ -6,8 +6,12 @@ import org.frostnova.nova.core.sender.PushGate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -115,22 +119,108 @@ class RuntimeConfigurationApplierTest {
 
     @Test
     @DisplayName("改回启动时配置文件里的原样再存：那次重启当场不欠了；改成别的值仍欠着")
-    void revertingToStartupValueClearsPendingRestart() {
-        RuntimeConfigurationApplier tracker = RuntimeConfigurationApplier.bench(properties)
-                .startupValues(Map.of("novabot.core.alert.convergence-interval", "300"))
-                .build();
+    void revertingToStartupValueClearsPendingRestart(@TempDir Path dir) throws Exception {
+        ConfigurationFileService file = handWritten(dir,
+                "novabot:\n  core:\n    alert:\n      convergence-interval: 300\n");
+        RuntimeConfigurationApplier tracker = trackerStartedOn(file);
 
-        tracker.applyAndTrack(Map.of("novabot.core.alert.convergence-interval", "7200"));
+        save(file, tracker, "novabot.core.alert.convergence-interval", "7200");
         assertTrue(tracker.getPendingRestart().contains("novabot.core.alert.convergence-interval"),
                 "改成 7200 后应记入待重启");
 
-        tracker.applyAndTrack(Map.of("novabot.core.alert.convergence-interval", "300"));
+        save(file, tracker, "novabot.core.alert.convergence-interval", "300");
         assertEquals(List.of(), tracker.getPendingRestart(),
                 "改回启动时的原样，重启再读一遍读到的与现在分毫不差，不该再挂着");
 
-        tracker.applyAndTrack(Map.of("novabot.core.alert.convergence-interval", "3600"));
+        save(file, tracker, "novabot.core.alert.convergence-interval", "3600");
         assertEquals(List.of("novabot.core.alert.convergence-interval"), tracker.getPendingRestart(),
                 "改成第三个值仍要欠一次重启");
+    }
+
+    /**
+     * 手写的配置行改走再改回
+     * <p>
+     * 抓的故障：配置文件里手写了 {@code 23:00} 这类不带引号的时分值（或双引号里带转义的值），
+     * 在控制台改走再改回，「需重启」提醒消失了，重启后程序读到的值却和改之前不一样。
+     * 写回时时分值要加引号，带转义的值界面上拿到的是没还原的字面、照字面写回去，
+     * 字面一样不等于重启后读到的一样。
+     * 这里的键都不在即时生效名单里，走的正是「等重启」那一支。
+     */
+    @Test
+    @DisplayName("🔴 手写不带引号的时分值改走再改回：重启后读到的值变了，提醒得留着")
+    void handWrittenClockTimeKeepsPendingRestartAfterRevert(@TempDir Path dir) throws Exception {
+        ConfigurationFileService file = handWritten(dir, "novabot:\n  demo:\n    report-at: 23:00\n");
+        RuntimeConfigurationApplier tracker = trackerStartedOn(file);
+
+        save(file, tracker, "novabot.demo.report-at", "22:00");
+        save(file, tracker, "novabot.demo.report-at", "23:00");
+
+        assertEquals(List.of("novabot.demo.report-at"), tracker.getPendingRestart(),
+                "启动时 23:00 按六十进制读成整数，写回后带了引号读成字符串，重启后值变了");
+    }
+
+    @Test
+    @DisplayName("🔴 手写双引号里带转义的值改走再改回：重启后读到的值变了，提醒得留着")
+    void handWrittenEscapedValueKeepsPendingRestartAfterRevert(@TempDir Path dir) throws Exception {
+        ConfigurationFileService file = handWritten(dir, "novabot:\n  demo:\n    signature: \"say \\\"hi\\\"\"\n");
+        RuntimeConfigurationApplier tracker = trackerStartedOn(file);
+        String shown = file.read().get("novabot.demo.signature");
+
+        save(file, tracker, "novabot.demo.signature", "bye");
+        save(file, tracker, "novabot.demo.signature", shown);
+
+        assertEquals(List.of("novabot.demo.signature"), tracker.getPendingRestart(),
+                "界面照原样送回的是没还原转义的字面，写下去后重启读到的带着反斜杠，不是启动时那一个值");
+    }
+
+    @Test
+    @DisplayName("普通带引号的值与名单改回原样：重启后读到的一样，照旧销提醒")
+    void quotedValueAndListRevertClearPendingRestart(@TempDir Path dir) throws Exception {
+        ConfigurationFileService file = handWritten(dir,
+                "novabot:\n  demo:\n    report-at: \"23:00\"\n    words:\n      - 早安\n      - 晚安\n");
+        RuntimeConfigurationApplier tracker = trackerStartedOn(file);
+
+        save(file, tracker, "novabot.demo.report-at", "22:00");
+        save(file, tracker, "novabot.demo.words", "早安");
+        assertEquals(List.of("novabot.demo.report-at", "novabot.demo.words"), tracker.getPendingRestart());
+
+        save(file, tracker, "novabot.demo.report-at", "23:00");
+        save(file, tracker, "novabot.demo.words", "早安\n晚安");
+        assertEquals(List.of(), tracker.getPendingRestart(), "改回原样，重启后读到的与启动时一样，不该再挂着");
+    }
+
+    @Test
+    @DisplayName("⚠️ 阴性：键在启动时不在文件里，存进去就欠一次重启")
+    void keyAbsentAtStartupKeepsPendingRestart(@TempDir Path dir) throws Exception {
+        ConfigurationFileService file = handWritten(dir, "novabot:\n  demo:\n    other: 1\n");
+        RuntimeConfigurationApplier tracker = trackerStartedOn(file);
+
+        save(file, tracker, "novabot.demo.report-at", "23:00");
+
+        assertEquals(List.of("novabot.demo.report-at"), tracker.getPendingRestart());
+    }
+
+    private ConfigurationFileService handWritten(Path dir, String text) throws Exception {
+        Path config = dir.resolve("application.yml");
+        Files.writeString(config, text, StandardCharsets.UTF_8);
+        return new ConfigurationFileService(config);
+    }
+
+    /**
+     * 照生产装配那样，在程序启动那一刻对着这份文件拍下账本
+     */
+    private RuntimeConfigurationApplier trackerStartedOn(ConfigurationFileService file) throws Exception {
+        return RuntimeConfigurationApplier.bench(properties).configFile(file).build();
+    }
+
+    /**
+     * 照设置页保存那样：先落盘，再把落了盘的那几项交给即时生效通道
+     */
+    private void save(ConfigurationFileService file, RuntimeConfigurationApplier tracker, String key, String value)
+            throws Exception {
+        Map<String, String> applied = new LinkedHashMap<>();
+        file.write(Map.of(key, value)).forEach(changed -> applied.put(changed, value));
+        tracker.applyAndTrack(applied);
     }
 
     @Test

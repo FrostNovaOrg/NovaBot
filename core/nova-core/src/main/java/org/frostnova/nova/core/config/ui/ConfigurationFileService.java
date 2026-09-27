@@ -13,7 +13,11 @@ import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.env.YamlPropertySourceLoader;
 import org.springframework.context.ApplicationContext;
+import org.springframework.core.env.EnumerablePropertySource;
+import org.springframework.core.env.PropertySource;
+import org.springframework.core.io.FileSystemResource;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -27,9 +31,11 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.function.IntSupplier;
 import java.util.stream.Stream;
 import java.util.function.Supplier;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.time.Clock;
 
@@ -62,6 +68,11 @@ public class ConfigurationFileService {
 
     private static final Pattern OBJECT_ITEM = Pattern.compile("^[A-Za-z_][A-Za-z0-9_.-]*\\s*:(\\s|$)");
     private static final Pattern CLOCK_TIME = Pattern.compile("^[+-]?\\d+(:[0-5]?\\d)+$");
+
+    /**
+     * 属性加载器把字符串名单摊成的逐项键，形如 {@code a.b[0]}
+     */
+    private static final Pattern LIST_ITEM = Pattern.compile("^(.+)\\[(\\d+)]$");
 
     /**
      * 键名段允许的字符
@@ -252,6 +263,53 @@ public class ConfigurationFileService {
         }
 
         healSlashAddress(fixes, rawByPath);
+        return values;
+    }
+
+    /**
+     * 按程序启动时读配置的那一路，读出每一项实际得到的值
+     * <p>
+     * 与 {@link #read()} 不是一回事：那边给界面看的是文件里的字面（只去掉两侧引号），
+     * 这边是 Spring Boot 的 YAML 属性加载器读出来的值——不带引号的 {@code 23:00} 在这里是
+     * 六十进制整数 1380，双引号里的 {@code \"} 在这里已经还原成引号。
+     * 「重启之后读到的变没变」只能拿这一份比，字面一样不算数。
+     * <p>
+     * 字符串名单按下标收成一个 {@link List}，与界面上整份名单对应。
+     * 文件分成了几段（{@code ---}）时各段怎么叠要看激活的配置档，这里比不准，读成空的。
+     * @return 键到值；文件不在时为空
+     * @throws IOException 读不下来或加载器解析不了时抛出
+     */
+    public synchronized Map<String, Object> readAsLoaded() throws IOException {
+        if (!exists()) {
+            return Map.of();
+        }
+
+        List<PropertySource<?>> documents;
+        try {
+            documents = new YamlPropertySourceLoader().load(configPath.toString(), new FileSystemResource(configPath));
+        } catch (RuntimeException e) {
+            throw new IOException("按启动时那一路读不下配置文件: " + e.getMessage(), e);
+        }
+        if (documents.size() != 1 || !(documents.get(0) instanceof EnumerablePropertySource<?> document)) {
+            return Map.of();
+        }
+
+        Map<String, Object> values = new LinkedHashMap<>();
+        Map<String, TreeMap<Integer, Object>> lists = new LinkedHashMap<>();
+        for (String name : document.getPropertyNames()) {
+            Object value = document.getProperty(name);
+            if (value == null) {
+                continue;
+            }
+            Matcher item = LIST_ITEM.matcher(name);
+            if (item.matches()) {
+                lists.computeIfAbsent(item.group(1), key -> new TreeMap<>())
+                        .put(Integer.parseInt(item.group(2)), value);
+            } else {
+                values.put(name, value);
+            }
+        }
+        lists.forEach((path, items) -> values.put(path, List.copyOf(items.values())));
         return values;
     }
 

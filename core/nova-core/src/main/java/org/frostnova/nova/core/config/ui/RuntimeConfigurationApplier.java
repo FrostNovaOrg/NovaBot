@@ -19,7 +19,6 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -128,15 +127,24 @@ public class RuntimeConfigurationApplier {
     private final Set<String> pendingRestart = Collections.synchronizedSet(new LinkedHashSet<>());
 
     /**
-     * 启动那一刻配置文件里的原样（键到值）
+     * 启动那一刻配置文件按启动时那一路读出来的值（键到值）
      * <p>
      * 「改回启动时的原样就不再欠重启」要有一份可比的原样：重启读的就是这份文件，
-     * 存回当时的值，重启再读一遍读到的与现在分毫不差，那次重启就可以不欠。
+     * 存回之后重启再读一遍读到的与启动时分毫不差，那次重启就可以不欠。
+     * 🔴 比的是<b>读出来的值</b>，不是界面送回的字面：手写不带引号的 {@code 23:00}
+     * 启动时读成整数，写回时加了引号就读成字符串；双引号里带转义的值写回时再转义一次。
+     * 这两种字面都一模一样，重启后的值却变了。
+     * <p>
      * 快照只在构造时拍一次，运行中手改配置文件不进这份：改回手改的值重启仍会生效，
      * 提醒该留着，改回启动时的值才销账。头一回运行还没有配置文件时快照为空，
      * 销不了账也不挡保存，重启一次后快照就有了。
      */
-    private final Map<String, String> startupValues;
+    private final Map<String, Object> startupValues;
+
+    /**
+     * 保存之后再按启动时那一路读一遍文件用；没有时销不了账
+     */
+    private final ConfigurationFileService fileService;
 
     private final NovaCoreProperties properties;
 
@@ -174,8 +182,7 @@ public class RuntimeConfigurationApplier {
     public RuntimeConfigurationApplier(NovaCoreProperties properties, TotalDataStorage totalDataStorage,
                                        ObjectProvider<RuntimeConfigurationApplierContributor> contributors,
                                        ConfigurationFileService fileService, TimelineWriter timeline) {
-        this(properties, totalDataStorage, contributors.orderedStream().toList(), startupSnapshot(fileService),
-                timeline);
+        this(properties, totalDataStorage, contributors.orderedStream().toList(), fileService, timeline);
     }
 
     /**
@@ -189,9 +196,10 @@ public class RuntimeConfigurationApplier {
 
     RuntimeConfigurationApplier(NovaCoreProperties properties, TotalDataStorage totalDataStorage,
                                 Collection<RuntimeConfigurationApplierContributor> contributors,
-                                Map<String, String> startupValues, TimelineWriter timeline) {
+                                ConfigurationFileService fileService, TimelineWriter timeline) {
         this.properties = properties;
-        this.startupValues = startupValues == null ? Map.of() : Map.copyOf(startupValues);
+        this.fileService = fileService;
+        this.startupValues = loaded(fileService, "启动时没能读下配置文件，改回原样的那笔待重启账销不掉");
         this.totalDataStorage = totalDataStorage;
         Contributed contributed = mergeContributions(contributors);
         this.contributedAppliers = contributed.appliers();
@@ -205,19 +213,21 @@ public class RuntimeConfigurationApplier {
     }
 
     /**
-     * 启动那一刻把配置文件里的键值拍成一份不可变快照
+     * 按启动时那一路把配置文件读成一份不可变的键值
      * <p>
-     * 文件还不在（装好后一次也没保存过）或读不下来时拍成空的：这份只是销账的依据，
-     * 拍不到就不销，不挡保存本身。
+     * 文件还不在（装好后一次也没保存过）或读不下来时读成空的：这份只是销账的依据，
+     * 读不到就不销，不挡保存本身。
+     * @param fileService 配置文件，没有时读成空的
+     * @param failure 读不下来时日志里那句话
      */
-    private static Map<String, String> startupSnapshot(ConfigurationFileService fileService) {
-        if (fileService == null || !fileService.exists()) {
+    private static Map<String, Object> loaded(ConfigurationFileService fileService, String failure) {
+        if (fileService == null) {
             return Map.of();
         }
         try {
-            return Map.copyOf(fileService.read());
+            return Map.copyOf(fileService.readAsLoaded());
         } catch (IOException e) {
-            log.warn("启动时没能读下配置文件，改回原样的那笔待重启账销不掉: {}", e.toString());
+            log.warn("{}: {}", failure, e.toString());
             return Map.of();
         }
     }
@@ -332,7 +342,7 @@ public class RuntimeConfigurationApplier {
         private final NovaCoreProperties properties;
         private TotalDataStorage totalDataStorage;
         private Collection<RuntimeConfigurationApplierContributor> contributors = List.of();
-        private Map<String, String> startupValues = Map.of();
+        private ConfigurationFileService fileService;
         private TimelineWriter timeline = TimelineWriter.NONE;
 
         private Bench(NovaCoreProperties properties) {
@@ -360,12 +370,12 @@ public class RuntimeConfigurationApplier {
         }
 
         /**
-         * 带上启动快照：改回原样销待重启账要用的那份账本
-         * @param startupValues 启动时配置文件里的键值
+         * 带上配置文件：{@link #build()} 那一刻拍启动快照，改回原样销待重启账时再读一遍比
+         * @param fileService 配置文件
          * @return 本构造器
          */
-        Bench startupValues(Map<String, String> startupValues) {
-            this.startupValues = startupValues == null ? Map.of() : Map.copyOf(startupValues);
+        Bench configFile(ConfigurationFileService fileService) {
+            this.fileService = fileService;
             return this;
         }
 
@@ -386,7 +396,7 @@ public class RuntimeConfigurationApplier {
          * @return 按给出的侧件装配好的实例
          */
         RuntimeConfigurationApplier build() {
-            return new RuntimeConfigurationApplier(properties, totalDataStorage, contributors, startupValues,
+            return new RuntimeConfigurationApplier(properties, totalDataStorage, contributors, fileService,
                     timeline);
         }
     }
@@ -400,8 +410,8 @@ public class RuntimeConfigurationApplier {
      */
     public static Set<String> supportedKeys(Collection<RuntimeConfigurationApplierContributor> contributors) {
         // 这一支只把几张表的键名并起来，一个字也不往运行中的程序上落，因此没有可记的
-        return new RuntimeConfigurationApplier(new NovaCoreProperties(), null, contributors, Map.of(),
-                TimelineWriter.NONE).supportedKeys();
+        return new RuntimeConfigurationApplier(new NovaCoreProperties(), null, contributors,
+                (ConfigurationFileService) null, TimelineWriter.NONE).supportedKeys();
     }
 
     /**
@@ -454,12 +464,19 @@ public class RuntimeConfigurationApplier {
     public List<String> applyAndTrack(Map<String, String> changes) {
         List<String> restartRequired = new ArrayList<>();
         List<String> applied = new ArrayList<>();
+        Map<String, Object> savedValues = null;
 
         for (Map.Entry<String, String> change : changes.entrySet()) {
             Runnable applier = resolve(change.getKey(), change.getValue());
             if (applier == null) {
-                if (Objects.equals(change.getValue(), startupValues.get(change.getKey()))) {
-                    // 改回了启动时配置文件里的原样：重启再读一遍读到的与现在分毫不差，那次重启可以不欠
+                if (savedValues == null) {
+                    savedValues = startupValues.isEmpty() ? Map.of()
+                            : loaded(fileService, "保存后没能再读一遍配置文件，改回原样的那笔待重启账先不销");
+                }
+                Object atStartup = startupValues.get(change.getKey());
+                if (atStartup != null && atStartup.equals(savedValues.get(change.getKey()))) {
+                    // 存下去的与启动时按同一路读出来的值分毫不差（类型也一样）：重启再读一遍什么也不变，那次重启可以不欠。
+                    // 比不准的——启动时没这个键、读不下来、一边整数一边字符串——一律留着提醒
                     pendingRestart.remove(change.getKey());
                 } else {
                     restartRequired.add(change.getKey());
