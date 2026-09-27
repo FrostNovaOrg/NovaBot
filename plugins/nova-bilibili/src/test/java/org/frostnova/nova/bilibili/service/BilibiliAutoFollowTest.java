@@ -145,6 +145,23 @@ class BilibiliAutoFollowTest {
     }
 
     @Test
+    @DisplayName("关注列表第 2 页少了 list 字段：按取不全处理，本轮一个都不补关注")
+    void secondPageMissingListFollowsNobody() {
+        // 抓的用户故障：接口某一页少了 list 字段时当成了「翻到底了」，残表交给自动关注去比，
+        // 排在没取到那几页里的已关注主播被当成没关注，又关注一遍
+        api.listlessPages.add(2);
+
+        followTask.run();
+
+        assertEquals(List.of(), api.followRequests,
+                "缺 list 那一页就是取不全，不该拿残表去比再发关注请求，实际发了 "
+                        + api.followRequests.size() + " 次: " + api.followRequests
+                        + "，其中平台回「已经关注」" + api.alreadyFollowingReplies + " 次");
+        assertTrue(warnContaining("本轮不补关注") != null,
+                "缺 list 要走「未能取得完整的关注列表, 本轮不补关注」那条路，实际日志: " + messages());
+    }
+
+    @Test
     @DisplayName("关注列表第 1 页就取失败：不当作一个都没关注，本轮不补关注")
     void firstPageFailureFollowsNobody() {
         api.failingPages.add(1);
@@ -394,6 +411,11 @@ class BilibiliAutoFollowTest {
         final Set<Integer> failingPages = new HashSet<>();
 
         /**
+         * 取这些页时应答里不带 list 字段
+         */
+        final Set<Integer> listlessPages = new HashSet<>();
+
+        /**
          * 打出去的翻页请求，记页码
          */
         final List<Integer> pageRequests = new ArrayList<>();
@@ -448,6 +470,10 @@ class BilibiliAutoFollowTest {
                 list.add(item);
             }
             JSONObject data = new JSONObject();
+            if (listlessPages.contains(page)) {
+                // 应答里整个 list 字段都不给，与 list 是空数组是两回事
+                return data;
+            }
             data.put("list", list);
             return data;
         }
