@@ -67,6 +67,10 @@ public class ConfigurationFileService {
     private static final String INDICATOR_START = "-?:,[]{}#&*!|>'\"%@`";
 
     private static final Pattern OBJECT_ITEM = Pattern.compile("^[A-Za-z_][A-Za-z0-9_.-]*\\s*:(\\s|$)");
+    /**
+     * 形如「键:」「"键": 值」的一行：冒号后是空白或行尾。{@code http://x} 这种冒号后紧跟别的字的不算
+     */
+    private static final Pattern CHILD_KEY = Pattern.compile("^(\"[^\"]*\"|'[^']*'|[^\\s#'\"][^#]*?)\\s*:(\\s|$)");
     private static final Pattern CLOCK_TIME = Pattern.compile("^[+-]?\\d+(:[0-5]?\\d)+$");
 
     /**
@@ -686,8 +690,16 @@ public class ConfigurationFileService {
                 continue;
             }
 
+            // 键行带着续行的（跨行的值、块标量）连续行一起换掉：只换键那一行的话，续行并进新值。
+            // 键行上没有值、底下是子项或名单项的是上级块，那些不是续行：给它填值只会删掉子项
+            // 或写坏文件，整批拒存
             String updated = replaceValue(lines.get(line.index), change.getValue());
             if (!updated.equals(lines.get(line.index))) {
+                if (hasNoValue(line.rawValue) && holdsChildren(lines, line)) {
+                    throw new IOException("配置项 " + change.getKey()
+                            + " 在配置文件里是一个块、底下还有子项, 填值会删掉它们, 本批全部未保存, 请先在配置文件里改写这一块");
+                }
+                lines.subList(line.index + 1, blockEnd(lines, line) + 1).clear();
                 lines.set(line.index, updated);
                 changed.add(change.getKey());
             }
@@ -1161,13 +1173,15 @@ public class ConfigurationFileService {
     /**
      * 一个字要不要在双引号里转义着写，要的话怎么写
      * <p>
-     * 可以原样写的是 SnakeYAML 认作可打印的字，去掉制表符、换行、回车与 U+0085：
-     * 这几样裸写在值里要么被当成空白折掉，要么断行。其余一律转义，启动那一路读得回原字。
+     * 可以原样写的是 SnakeYAML 认作可打印的字，去掉制表符、换行、回车、U+0085 与 U+2028、U+2029：
+     * 这几样 SnakeYAML 都当换行，裸写在值里要么被当成空白折掉，要么断行、整份文件读不了。
+     * 其余一律转义，启动那一路读得回原字。
      * @return 转义写法；原样写即可时为 null
      */
     private static String escapeOf(int cp) {
-        if ((cp >= 0x20 && cp <= 0x7E) || (cp >= 0xA0 && cp <= 0xD7FF)
-                || (cp >= 0xE000 && cp <= 0xFFFD) || (cp >= 0x10000 && cp <= 0x10FFFF)) {
+        if (((cp >= 0x20 && cp <= 0x7E) || (cp >= 0xA0 && cp <= 0xD7FF)
+                || (cp >= 0xE000 && cp <= 0xFFFD) || (cp >= 0x10000 && cp <= 0x10FFFF))
+                && cp != 0x2028 && cp != 0x2029) {
             return null;
         }
         return switch (cp) {
@@ -1377,7 +1391,7 @@ public class ConfigurationFileService {
      * 直到下一个缩进不深于键行的非空、非注释行；夹在当中的空行与注释随块走，
      * 块尾之后的留给下一项（那多半是下一项的说明）。名单另记着收口行，续行可以不比键深，两者取靠后的。
      * <p>
-     * 删一项、整块换名单都按这里删：只删键那一行的话，续行留在原处，
+     * 删一项、改一个跨行的值、整块换名单都按这里删：只动键那一行的话，续行留在原处，
      * 要么整份文件读不了，要么续行并进上一个键、悄悄改了它的值。
      */
     private int blockEnd(List<String> lines, Line line) {
@@ -1396,6 +1410,42 @@ public class ConfigurationFileService {
     }
 
     /**
+     * 键行上有没有值：去掉行尾注释后为空，或只剩锚点、标签（{@code &名}、{@code !标签}、{@code !!类型}，
+     * 可叠写、次序不拘）都算没有——值在底下几行，是块名单、子项，或写在下一行的文字
+     * <p>
+     * 开收块名单（{@link #parse}）与改值时认上级块（{@link #write}）共用这一个判定：
+     * 两处各判一份的话，锚点名单会界面读成「&w」而改值那头照名单处理，或者反过来。
+     * @param value 键行冒号后的原文，已去行尾注释
+     */
+    private static boolean hasNoValue(String value) {
+        for (String token : value.strip().split("\\s+")) {
+            if (!token.isEmpty() && token.charAt(0) != '&' && token.charAt(0) != '!') {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * 键行底下第一行实义行（跳过空行、注释）是不是子项：更深缩进的「键:」，或名单项「- 」
+     * （块名单的项可以与键同缩进）。不是的话底下是续行文字，或者什么也没有
+     */
+    private boolean holdsChildren(List<String> lines, Line line) {
+        for (int i = line.index + 1; i < lines.size(); i++) {
+            String raw = lines.get(i);
+            String stripped = raw.strip();
+            if (raw.isBlank() || stripped.startsWith("#")) {
+                continue;
+            }
+            if (stripped.equals("-") || stripped.startsWith("- ")) {
+                return indentOf(raw) >= line.indent;
+            }
+            return indentOf(raw) > line.indent && CHILD_KEY.matcher(stripped).find();
+        }
+        return false;
+    }
+
+    /**
      * 整块替换一个字符串列表
      * @param lines 文件行
      * @param line 列表所属的键
@@ -1403,6 +1453,15 @@ public class ConfigurationFileService {
      * @return 是否发生变更
      */
     private boolean replaceList(List<String> lines, Line line, String value) {
+        // 界面读出的原样送回（名单里有空项时带空行）就是没改：不动文件。真改了才按下面去掉空行、整块重写
+        List<String> asShown = new ArrayList<>();
+        for (String item : value.split("\n", -1)) {
+            asShown.add(item.strip());
+        }
+        if (asShown.equals(line.items)) {
+            return false;
+        }
+
         List<String> items = new ArrayList<>();
         for (String item : value.split("\n")) {
             if (!item.isBlank()) {
@@ -1688,6 +1747,9 @@ public class ConfigurationFileService {
         List<Line> result = new ArrayList<>();
         List<String> stack = new ArrayList<>();
         int listIndent = -1;
+        // 正在收块名单项的键：键行上没有值，其后的「- 项」都归它。夹在当中的注释、空行不打断——
+        // 启动那一路照样把它们后面的项收进同一份名单；遇上不是名单项的行才收口
+        Line collecting = null;
 
         for (int i = 0; i < lines.size(); i++) {
             String raw = lines.get(i);
@@ -1711,17 +1773,21 @@ public class ConfigurationFileService {
 
                 // 形如 "- 值" 的标量项归属于上一个键；形如 "- 键: 值" 的是对象列表，不予收集。
                 // 不能简单地以「是否含冒号」区分：IPv6 地址本身就带冒号。
-                if (!result.isEmpty()) {
-                    Line owner = result.get(result.size() - 1);
-                    String item = stripped.substring(1).strip();
-                    if (!OBJECT_ITEM.matcher(item).find() && owner.index == i - 1 - owner.items.size()) {
-                        owner.items.add(unquote(item));
-                        owner.listEnd = i;
-                    }
+                // 项后的行尾注释按 scan 那把尺去掉（引号里的 # 不算），再去引号还原；
+                // 只有短横的空项（「-」「- # 注释」）启动那一路读成空串、照样占一项，这里也收成空串
+                String item = stripped.substring(1).strip();
+                if (collecting != null && indent >= collecting.indent && !OBJECT_ITEM.matcher(item).find()) {
+                    int comment = commentIndex(item);
+                    String bare = (comment < 0 ? item : item.substring(0, comment)).strip();
+                    collecting.items.add(unquote(bare));
+                    collecting.listEnd = i;
+                } else {
+                    collecting = null;
                 }
                 continue;
             }
 
+            collecting = null;
             if (colon < 0) {
                 continue;
             }
@@ -1742,6 +1808,10 @@ public class ConfigurationFileService {
             line.indent = indent;
             line.path = String.join(".", stack);
             line.value = unquote(value);
+            line.rawValue = value;
+            if (hasNoValue(value)) {
+                collecting = line;
+            }
             line.quoted = value.length() >= 2 && (value.charAt(0) == '"' || value.charAt(0) == '\'')
                     && value.charAt(value.length() - 1) == value.charAt(0);
 
@@ -1808,6 +1878,12 @@ public class ConfigurationFileService {
          * 值，不含行尾注释
          */
         private String value;
+
+        /**
+         * 键这一行冒号后的原文，去掉行尾注释、未去引号；为空或只有锚点、标签（见 {@link #hasNoValue}）
+         * 说明值在底下几行：上级块、块名单，或写在下一行的文字
+         */
+        private String rawValue;
 
         /**
          * 值在文件里是引号包着写的：这种值启动时读成什么就是 {@link #value} 本身，不再按类型认

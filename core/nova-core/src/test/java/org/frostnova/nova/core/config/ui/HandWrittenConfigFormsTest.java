@@ -26,6 +26,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -239,6 +240,346 @@ class HandWrittenConfigFormsTest {
         }
 
         assertTrue(bad.isEmpty(), () -> "清空续行 " + bad.size() + " 问未销: " + String.join("; ", bad));
+    }
+
+    /**
+     * 抓的用户故障：手写名单中间夹着注释或空行，界面上看不见后面那几项；在界面改一项再存，那几项就没了。
+     */
+    @Test
+    @DisplayName("🔴 块名单中间夹注释、空行：界面读出的各项与启动读到的一致, 界面改一项后启动读到的就是界面那份")
+    void blockListWithCommentsBetweenItems() throws IOException {
+        String key = "novabot.demo.words";
+        List<String> bad = new ArrayList<>();
+
+        String[][] cases = {
+                {"注释在项之间", "      - a\n      # 说明\n      - b\n      - c\n"},
+                {"空行在项之间", "      - a\n\n      - b\n\n      - c\n"},
+                {"注释在最后一项之后", "      - a\n      - b\n      # 末项之后的说明\n"},
+                {"注释在键与首项之间", "      # 首项之前的说明\n      - a\n      - b\n"},
+        };
+        for (String[] c : cases) {
+            try {
+                write("novabot:\n  demo:\n    words:\n" + c[1] + "    tail: 1\n");
+                String shown = service.read().get(key);
+                assertEquals(joined(loaded(key)), shown, "界面读出的名单与文件不符");
+
+                String edited = "z" + shown.substring(shown.indexOf('\n'));
+                service.write(Map.of(key, edited));
+                assertEquals(edited, joined(service.readAsLoaded().get(key)), "界面改一项后启动读到的应是界面那份:\n" + content());
+                assertEquals(1, loaded("novabot.demo.tail"), "下一个键不该被动:\n" + content());
+            } catch (AssertionError | IOException | RuntimeException e) {
+                bad.add(c[0] + ": " + e.getMessage());
+            }
+        }
+
+        assertTrue(bad.isEmpty(), () -> "名单夹注释 " + bad.size() + " 问未销: " + String.join("; ", bad));
+    }
+
+    /**
+     * 抓的用户故障：名单项后面写了行尾注释，界面把注释也显示成项的一部分，存回去注释就进了值里。
+     */
+    @Test
+    @DisplayName("🔴 块名单项带行尾注释：界面读出的各项与启动读到的一致, 引号里的 # 不算注释, 存回后启动读到的不变")
+    void blockListItemsWithTrailingComments() throws IOException {
+        String key = "novabot.demo.words";
+        write("novabot:\n  demo:\n    words:\n"
+                + "      - a # 不带引号\n"
+                + "      - \"b c\"   # 双引号\n"
+                + "      - 'it''s' # 单引号\n"
+                + "      - \"x # y\"\n"
+                + "      - don't # 词中撇号\n"
+                + "      - p#q\n"
+                + "    tail: 1\n");
+        List<String> bad = new ArrayList<>();
+        Object before = service.readAsLoaded().get(key);
+        String shown = service.read().get(key);
+
+        try {
+            assertEquals(joined(before), shown, "界面读出的名单项应不带行尾注释");
+        } catch (AssertionError e) {
+            bad.add("① 读: " + e.getMessage());
+        }
+
+        try {
+            service.write(Map.of(key, "z"));
+            service.write(Map.of(key, shown));
+            assertEquals(before, service.readAsLoaded().get(key), "改走再改回后启动读到的名单应不变:\n" + content());
+        } catch (AssertionError | IOException | RuntimeException e) {
+            bad.add("② 存回: " + e.getMessage());
+        }
+
+        assertTrue(bad.isEmpty(), () -> "名单项行尾注释 " + bad.size() + " 问未销: " + String.join("; ", bad));
+    }
+
+    /**
+     * 抓的用户故障：跨行写的值在界面改掉，重启后新值后面拖着旧的续行。
+     */
+    @Test
+    @DisplayName("🔴 跨行的普通值改值时续行一起换掉：启动读到的就是新值, 只有键行的照旧只换那一行")
+    void changingValueReplacesContinuationLines() throws IOException {
+        List<String> bad = new ArrayList<>();
+
+        String[][] cases = {
+                {"不带引号", "    signature: first\n      second line\n"},
+                {"双引号跨行", "    signature: \"first\n      second line\"\n"},
+                {"块标量", "    signature: |\n      first\n\n      second line\n"},
+        };
+        for (String[] c : cases) {
+            try {
+                write("novabot:\n  demo:\n    greeting: hello\n" + c[1] + "    # 下一项的说明\n    tail: 1\n");
+                service.write(Map.of("novabot.demo.signature", "z"));
+                assertEquals("z", service.readAsLoaded().get("novabot.demo.signature"), "启动读到的应是新值:\n" + content());
+                assertEquals("hello", loaded("novabot.demo.greeting"), "上一个键不该被动:\n" + content());
+                assertEquals(1, loaded("novabot.demo.tail"), "下一个键不该被动:\n" + content());
+                assertTrue(content().contains("# 下一项的说明"), "下一项的说明不属于被换的值:\n" + content());
+            } catch (AssertionError | IOException | RuntimeException e) {
+                bad.add(c[0] + ": " + e.getMessage());
+            }
+        }
+
+        try {
+            write("novabot:\n  demo:\n    signature: first   # 签名\n    motto: keep\n");
+            service.write(Map.of("novabot.demo.signature", "z"));
+            assertEquals("novabot:\n  demo:\n    signature: z       # 签名\n    motto: keep\n", content(), "只有键行的值只换那一行");
+        } catch (AssertionError | IOException | RuntimeException e) {
+            bad.add("只有键行: " + e.getMessage());
+        }
+
+        try {
+            write("novabot:\n  demo:\n    signature: first\n      second line\n    tail: 1\n");
+            String text = content();
+            service.write(Map.of("novabot.demo.signature", service.read().get("novabot.demo.signature")));
+            assertEquals(text, content(), "界面值没变时续行不动");
+        } catch (AssertionError | IOException | RuntimeException e) {
+            bad.add("原样再存: " + e.getMessage());
+        }
+
+        assertTrue(bad.isEmpty(), () -> "改值续行 " + bad.size() + " 问未销: " + String.join("; ", bad));
+    }
+
+    /**
+     * 抓的用户故障：值里带 U+2028 或 U+2029，存完配置文件读不了，程序起不来。
+     */
+    @Test
+    @DisplayName("🔴 值里带 U+2028、U+2029：存后整份文件读得了, 读回的值与界面一致")
+    void lineAndParagraphSeparatorsAreEscaped() throws IOException {
+        List<String> bad = new ArrayList<>();
+
+        String[][] cases = {
+                {"U+2028", "one two"},
+                {"U+2029", "one two"},
+        };
+        for (String[] c : cases) {
+            try {
+                write("novabot:\n  demo:\n    signature: first\n    tail: 1\n");
+                service.write(Map.of("novabot.demo.signature", c[1], "novabot.demo.added", c[1]));
+                assertEquals(c[1], loaded("novabot.demo.signature"), "改值: 启动读到的应是原字:\n" + content());
+                assertEquals(c[1], loaded("novabot.demo.added"), "新增: 启动读到的应是原字:\n" + content());
+                assertEquals(c[1], service.read().get("novabot.demo.signature"), "界面读回的应与写入的一致");
+                assertEquals(1, loaded("novabot.demo.tail"), "下一个键不该被动:\n" + content());
+            } catch (AssertionError | IOException | RuntimeException e) {
+                bad.add(c[0] + ": " + e.getMessage());
+            }
+        }
+
+        assertTrue(bad.isEmpty(), () -> "换行类字 " + bad.size() + " 问未销: " + String.join("; ", bad));
+    }
+
+    /**
+     * 原样写出的字是不是都真能原样读回：可打印段里的每一个 BMP 字与补充平面的抽样，
+     * 不带引号写一次（除去 U+2028、U+2029，它们必须转义）、带引号写一次（值里夹了必须加引号的字），
+     * 启动那一路读回的都是原值。
+     */
+    @Test
+    @DisplayName("可打印段里的字原样写出, 启动那一路逐字读回")
+    void everyPrintableCharacterRoundTrips() throws IOException {
+        StringBuilder plain = new StringBuilder("a");
+        for (int cp = 0xA0; cp <= 0xFFFD; cp++) {
+            if ((cp < 0xD800 || cp > 0xDFFF) && cp != 0x2028 && cp != 0x2029) {
+                plain.appendCodePoint(cp);
+            }
+        }
+        for (int cp = 0x10000; cp <= 0x10FFFF; cp += 97) {
+            plain.appendCodePoint(cp);
+        }
+        plain.appendCodePoint(0x10FFFF);
+        StringBuilder quoted = new StringBuilder("x: \"y\" \\ #");
+        for (int cp = 0x20; cp <= 0x7E; cp++) {
+            quoted.appendCodePoint(cp);
+        }
+        quoted.append(plain).append("  ");
+
+        write("novabot:\n  demo:\n    plain: a\n    quoted: b\n");
+        service.write(Map.of("novabot.demo.plain", plain.toString(), "novabot.demo.quoted", quoted.toString()));
+
+        assertEquals(plain.toString(), loaded("novabot.demo.plain"), "不带引号写出的应逐字读回");
+        assertEquals(quoted.toString(), loaded("novabot.demo.quoted"), "带引号写出的应逐字读回");
+        assertEquals(plain.toString(), service.read().get("novabot.demo.plain"), "界面读回的应与写入的一致");
+        assertEquals(quoted.toString(), service.read().get("novabot.demo.quoted"), "界面读回的应与写入的一致");
+    }
+
+    /**
+     * 抓的用户故障：名单里有只写了短横的空项，界面上少了这一项；只点了保存名单，整份名单就被改写。
+     */
+    @Test
+    @DisplayName("🔴 名单里只有短横的空项：界面读出与启动一致（收成空串）, 原样送回不动文件")
+    void emptyListItemsReadAsEmptyStrings() throws IOException {
+        String key = "novabot.demo.words";
+        write("novabot:\n  demo:\n    words:\n"
+                + "      -\n"
+                + "      - e2\n"
+                + "      - # 空项带注释\n"
+                + "      - e4\n"
+                + "    tail: 1\n");
+        String text = content();
+        List<String> bad = new ArrayList<>();
+        String shown = service.read().get(key);
+
+        try {
+            assertEquals(joined(service.readAsLoaded().get(key)), shown, "界面读出的名单与启动读到的不符");
+        } catch (AssertionError e) {
+            bad.add("① 读: " + e.getMessage());
+        }
+
+        try {
+            assertEquals(List.of(), service.write(Map.of(key, shown)), "原样送回不算改动");
+            assertEquals(text, content(), "原样送回文件一个字节不动");
+        } catch (AssertionError | IOException | RuntimeException e) {
+            bad.add("② 原样送回: " + e.getMessage());
+        }
+
+        assertTrue(bad.isEmpty(), () -> "名单空项 " + bad.size() + " 问未销: " + String.join("; ", bad));
+    }
+
+    /**
+     * 抓的用户故障：名单的键行上带着锚点，界面上这一项显示成「&w」；在界面改一项，整份名单变成一个字。
+     */
+    @Test
+    @DisplayName("🔴 键行只有锚点或标签的块名单：界面读出与启动一致, 改一项后启动读到界面那份、键行上的锚点还在")
+    void anchoredBlockListReadsAsList() throws IOException {
+        String key = "novabot.demo.words";
+        List<String> bad = new ArrayList<>();
+
+        String[] heads = {"words: &w", "words: &w   # 说明", "words: !!seq &w"};
+        for (String head : heads) {
+            try {
+                write("novabot:\n  demo:\n    " + head + "\n      - a\n      - b\n    tail: 1\n");
+                String shown = service.read().get(key);
+                assertEquals(joined(service.readAsLoaded().get(key)), shown, "界面读出的名单与启动读到的不符");
+
+                service.write(Map.of(key, "z\nb"));
+                assertEquals("z\nb", joined(service.readAsLoaded().get(key)), "界面改一项后启动读到的应是界面那份:\n" + content());
+                assertTrue(content().contains("    " + head + "\n"), "键行上的锚点、标签应原样留着:\n" + content());
+                assertEquals(1, loaded("novabot.demo.tail"), "下一个键不该被动:\n" + content());
+            } catch (AssertionError | IOException | RuntimeException e) {
+                bad.add(head + ": " + e.getMessage());
+            }
+        }
+
+        assertTrue(bad.isEmpty(), () -> "锚点名单 " + bad.size() + " 问未销: " + String.join("; ", bad));
+    }
+
+    /**
+     * 抓的用户故障：上级块的键行带着锚点或标签，在界面给它填个值，底下别的设置悄悄没了。
+     * <p>
+     * 这种键底下是子项而不是续行：写口整批拒存、文件一个字节不动。
+     */
+    @Test
+    @DisplayName("🔴 键行只有锚点或标签的上级块改值：整批拒存, 子项还在、文件不动")
+    void anchoredOrTaggedParentKeepsChildren() throws IOException {
+        List<String> bad = new ArrayList<>();
+
+        String[] heads = {"base: &b", "base: !!map", "base: &b !!map   # 说明"};
+        for (String head : heads) {
+            try {
+                write("novabot:\n  demo:\n    " + head + "\n      child: c\n    tail: 1\n");
+                String text = content();
+                assertThrows(IOException.class, () -> service.write(Map.of("novabot.demo.base", "z")),
+                        "上级块改值应整批拒存");
+                assertEquals(text, content(), "拒存时文件一个字节不动");
+                assertEquals("c", loaded("novabot.demo.base.child"), "子项不该被删");
+            } catch (AssertionError | IOException | RuntimeException e) {
+                bad.add(head + ": " + e.getMessage());
+            }
+        }
+
+        assertTrue(bad.isEmpty(), () -> "锚点上级块 " + bad.size() + " 问未销: " + String.join("; ", bad));
+    }
+
+    /**
+     * 抓的用户故障：值写在下一行、键行上只有锚点或标签的项，在界面改值后旧文字并进新值。
+     * <p>
+     * 护栏格：键行只有锚点、标签也算「键行上没有值」之后，底下是续行文字的照旧整段换掉。
+     */
+    @Test
+    @DisplayName("键行只有锚点或标签、值写在下一行的标量改值：启动读到新值, 不带旧文字")
+    void anchoredScalarOnNextLineIsReplaced() throws IOException {
+        List<String> bad = new ArrayList<>();
+
+        String[] heads = {"signature: &a", "signature: !!str", "signature: &a !!str   # 说明"};
+        for (String head : heads) {
+            try {
+                write("novabot:\n  demo:\n    " + head + "\n      old text\n    tail: 1\n");
+                service.write(Map.of("novabot.demo.signature", "z"));
+                assertEquals("z", service.readAsLoaded().get("novabot.demo.signature"), "启动读到的应是新值:\n" + content());
+                assertEquals(1, loaded("novabot.demo.tail"), "下一个键不该被动:\n" + content());
+            } catch (AssertionError | IOException | RuntimeException e) {
+                bad.add(head + ": " + e.getMessage());
+            }
+        }
+
+        assertTrue(bad.isEmpty(), () -> "锚点标量续行 " + bad.size() + " 问未销: " + String.join("; ", bad));
+    }
+
+    /**
+     * 随包模板拿来就是第一份配置：界面读出的每一项都得是启动那一路读到的，原样整存一个字节不动。
+     */
+    @Test
+    @DisplayName("随包模板：界面读出的各键与启动读到的逐键一致, 原样整存逐字节不变")
+    void bundledTemplateReadsAsLoaded() throws IOException {
+        Path root = Path.of("").toAbsolutePath();
+        while (!Files.exists(root.resolve("build.sh")) || !Files.exists(root.resolve("pom.xml"))) {
+            root = root.getParent();
+        }
+        Files.copy(root.resolve("dist/templates/application.example.yml"), config);
+        String text = content();
+
+        Map<String, String> shown = service.read();
+        Map<String, Object> loaded = service.readAsLoaded();
+        List<String> bad = new ArrayList<>();
+        int compared = 0;
+        for (Map.Entry<String, Object> entry : loaded.entrySet()) {
+            // 对象名单的元素字段不走 read()，界面另有接口
+            if (entry.getKey().matches(".*\\[\\d+]\\..*")) {
+                continue;
+            }
+            compared++;
+            Object value = entry.getValue();
+            String expected = value instanceof List<?> ? joined(value) : String.valueOf(value);
+            String actual = shown.getOrDefault(entry.getKey(), "");
+            if (!expected.equals(actual)) {
+                bad.add(entry.getKey() + " 界面[" + actual + "] 启动[" + expected + "]");
+            }
+        }
+        for (Map.Entry<String, String> entry : shown.entrySet()) {
+            // 只放过 webhook-headers 这一键，是这之前就有的老样子：模板写成 {}，启动那一路不产出属性，
+            // 界面照字面显示；它是机密项，界面上遮着、原样送回时剔掉。别的键这样对不上照报
+            boolean oldWebhookHeaders = entry.getKey().equals("novabot.core.alert.webhook-headers")
+                    && entry.getValue().equals("{}");
+            if (!loaded.containsKey(entry.getKey()) && !oldWebhookHeaders) {
+                bad.add(entry.getKey() + " 界面有、启动那一路没有");
+            }
+        }
+
+        int total = compared;
+        assertTrue(total > 50, "模板比到的键太少, 比法可能空转: " + total);
+        assertTrue(bad.isEmpty(), () -> "模板 " + total + " 键里 " + bad.size() + " 键对不上: " + String.join("; ", bad));
+        // 机密项界面上遮着、原样送回时被 SensitiveFields.dropUnchanged 剔掉，整存那一路碰不到它们
+        Map<String, String> resaved = new HashMap<>(shown);
+        resaved.keySet().removeIf(key -> SensitiveFields.isSensitive(key, null));
+        assertTrue(resaved.size() > 50, "整存的键太少, 比法可能空转: " + resaved.size());
+        assertEquals(List.of(), service.write(resaved), "原样整存不算改动");
+        assertEquals(text, content(), "原样整存文件一个字节不动");
     }
 
     /**
