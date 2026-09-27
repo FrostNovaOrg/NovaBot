@@ -169,16 +169,27 @@ public class BilibiliBackupLivePushService {
             return;
         }
 
+        // 发布逐位兜错：事件处理在各位监听器手里，谁抛错都说不准。抛出来的不往外冒——
+        // 冒出去本轮 forEach 就断在这里，排在后面的主播全被连累、要等下一轮；调度器那边
+        // 虽还会排下一轮（异常被 Spring 的 LoggingErrorHandler 记一条后吞掉），但晚的就是一轮
         if (living) {
             Instant startTime = room.getLiveStartTime() == null
                     ? Instant.now()
                     : Instant.ofEpochSecond(room.getLiveStartTime());
 
             log.info("备用直播推送检测到 {} 开播", up.getUname());
-            publisher.publishEvent(new BilibiliLiveOnEvent(up, startTime));
+            try {
+                publisher.publishEvent(new BilibiliLiveOnEvent(up, startTime));
+            } catch (Exception e) {
+                log.error("备用直播推送发布 {} 的开播事件出错, 本次跳过", up.getUname(), e);
+            }
         } else {
             log.info("备用直播推送检测到 {} 下播", up.getUname());
-            publisher.publishEvent(new BilibiliLiveOffEvent(up));
+            try {
+                publisher.publishEvent(new BilibiliLiveOffEvent(up));
+            } catch (Exception e) {
+                log.error("备用直播推送发布 {} 的下播事件出错, 本次跳过", up.getUname(), e);
+            }
         }
     }
 
