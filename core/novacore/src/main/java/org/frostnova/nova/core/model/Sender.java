@@ -85,6 +85,16 @@ public class Sender {
     @FunctionalInterface
     public interface LocalDelivery {
         /**
+         * 投递结果里的「送达不明」标记，值为 {@code true}
+         * <p>
+         * 请求已经交给下游、等回包超时：下游可能已经把消息发出去了。结果码照旧是非 0，
+         * 标记让核心分得出这一种与一般失败——一般失败下含图消息会剥图重发纯文字，
+         * 这一种若也重发，群里就多一条。用字段而不用新结果码：结果码是各适配器自己编的号，
+         * 核心只认 0，另编一个号要么与别的适配器撞号，要么核心得认某一家的编号。
+         */
+        String DELIVERY_UNKNOWN = "delivery_unknown";
+
+        /**
          * 投递一条消息
          * @param headers 若走 HTTP 会带上的请求头，进程内投递通常用不到，保留以便实现方按需鉴权
          * @param params 消息参数，与 HTTP 请求体的字段完全一致

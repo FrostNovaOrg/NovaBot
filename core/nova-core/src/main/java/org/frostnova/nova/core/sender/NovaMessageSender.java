@@ -544,6 +544,14 @@ public class NovaMessageSender {
             activityRecorder.recordSuccess(sender.getName(), describeTarget(message), message.getDisplay(), elapsedMillis);
             log.info("NovaBot -> {} ([{}] {}) [{}]: {}", sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(), message.getDisplay());
             runEach(succeeded, message, "发送成功");
+        } else if (Boolean.TRUE.equals(result.getBoolean(Sender.LocalDelivery.DELIVERY_UNKNOWN))) {
+            // 请求已经交出去、没等到回包：对端可能已经发进群。剥图重发纯文字会让群里多一条，
+            // 带 @全体成员 的连 @ 一起再发一遍，所以不重发。也不当没发出去：额度不退（那次可能已经 @ 过），
+            // 不记进失败次数。失败回调照跑——手里没有编号，靠编号的后续（挂群待办）本来就做不成
+            chargedOn.set(null);
+            activityRecorder.recordUncertain(sender.getName(), describeTarget(message), message.getDisplay(), result.getString("message"), elapsedMillis);
+            log.warn("消息送达不明 ({}), 不重发: NovaBot -> {} ([{}] {}) [{}]: {}", result.getString("message"), sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(), message.getDisplay());
+            runEach(message.markFailed(), message, "发送失败");
         } else {
             activityRecorder.recordFailure(sender.getName(), describeTarget(message), message.getDisplay(), result.getString("message"), elapsedMillis);
             log.error("消息发送失败 ({}): NovaBot -> {} ([{}] {}) [{}]: {}", result.getString("message"), sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(), message.getDisplay());

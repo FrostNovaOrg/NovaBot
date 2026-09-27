@@ -167,6 +167,23 @@ class TimelineHookTest {
     }
 
     @Test
+    @DisplayName("③ 送达不明应记成「送达不明」, 成功与失败两个计数都不动")
+    void recordsPushUncertain() {
+        Capture capture = new Capture();
+        PushActivityRecorder recorder = new PushActivityRecorder(capture);
+        recorder.recordUncertain(PLATFORM, "群 12345", "开播了", "送达不明: 请求已送出, 等回包超时", 5000);
+
+        TimelineEvent event = capture.only();
+        assertEquals(TimelineEventType.PUSH_UNCERTAIN, event.type(),
+                "记成失败会让今日失败数与健康探针报推送坏了, 而这一条可能已经在群里");
+        assertEquals(TimelineEvent.Level.WARN, event.level());
+        assertEquals("5000", event.detail().get("elapsed_ms"));
+        assertEquals(0, recorder.getSuccessCount());
+        assertEquals(0, recorder.getFailureCount());
+        assertTrue(recorder.getHistory().get(0).uncertain(), "推送记录要分得出这一种");
+    }
+
+    @Test
     @DisplayName("⑥ 静音时段拦下的推送, 在分发那一层只记一条, 含成因、主播与目标数")
     void recordsOneAggregatedDropPerEvent() {
         LocalTime now = LocalTime.now();

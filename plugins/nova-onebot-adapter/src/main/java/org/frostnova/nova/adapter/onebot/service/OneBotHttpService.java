@@ -11,6 +11,7 @@ import org.frostnova.nova.adapter.onebot.http.OneBotHttpAdapter;
 import org.frostnova.nova.adapter.onebot.dto.MessageDTO;
 import org.frostnova.nova.adapter.onebot.model.OneBotSender;
 import org.frostnova.nova.core.enums.PushTargetType;
+import org.frostnova.nova.core.model.Sender;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -203,11 +204,13 @@ public class OneBotHttpService {
                 throw new IllegalStateException(e);
             }
             // 请求已经写出去、等回包超时：NapCat 可能已经发进群，再发一次就是两条。
+            // 标上送达不明，核心才分得出它与下面的一般异常，不剥图重发纯文字
             if (responseNotReceived(e)) {
                 log.error("OneBot HTTP 送达不明: 请求已送出, 等回包超时, 不重发", e);
                 return new JSONObject().fluentPut("code", ResultCode.UNKNOWN.getCode())
                         .fluentPut("message", "送达不明: 请求已送出, 等回包超时")
-                        .fluentPut("id", null);
+                        .fluentPut("id", null)
+                        .fluentPut(Sender.LocalDelivery.DELIVERY_UNKNOWN, true);
             }
             log.error("OneBot HTTP 发送消息异常", e);
             return new JSONObject().fluentPut("code", ResultCode.UNKNOWN.getCode()).fluentPut("message", "OneBot HTTP 发送消息异常, 请检查插件日志错误信息").fluentPut("id", null);

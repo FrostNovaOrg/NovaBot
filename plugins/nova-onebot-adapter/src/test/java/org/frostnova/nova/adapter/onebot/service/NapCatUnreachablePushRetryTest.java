@@ -59,6 +59,7 @@ import com.sun.net.httpserver.HttpServer;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -140,6 +141,35 @@ class NapCatUnreachablePushRetryTest {
         } finally {
             detachLog(appender);
         }
+    }
+
+    @Test
+    @DisplayName("读超时的回包带送达不明标记；一般异常的不带")
+    void onlyReadTimeoutIsMarkedDeliveryUnknown() throws Exception {
+        JSONObject broken = open(Mode.BOOM).sender.sendNow(notice());
+        tearDown();
+        JSONObject timedOut = open(Mode.HANG).sender.sendNow(notice());
+
+        assertAll(
+                () -> assertTrue(timedOut.getBooleanValue("delivery_unknown"),
+                        "等回包超时应标上送达不明: " + timedOut),
+                () -> assertNotEquals(0, broken.getIntValue("code"), broken.toJSONString()),
+                () -> assertFalse(broken.getBooleanValue("delivery_unknown"),
+                        "一般异常不是送达不明，核心照旧剥图重发: " + broken)
+        );
+    }
+
+    @Test
+    @DisplayName("带封面和 @全体成员 的开播通知读超时：群里不多出一条带 @全体成员 的纯文字")
+    void readTimeoutWithCoverAndAtAllIsNotResentAsText() throws Exception {
+        Rig rig = open(Mode.HANG);
+
+        rig.sender.sendNow(Message.create(PLATFORM, PushTargetType.GROUP, FakeOneBotHttpServer.GROUP_NUM,
+                "{at=all} " + NOTICE + " {image_url=https://example.com/cover.jpg}").get(0));
+
+        assertEquals(1, rig.gate.sends.get(),
+                "第一条已经送出、只是没等到回包，不该再剥图补发纯文字；实际 " + rig.gate.sends.get()
+                        + " 次；异常 " + rig.gate.chain());
     }
 
     @Test
@@ -313,7 +343,8 @@ class NapCatUnreachablePushRetryTest {
     private enum Mode {
         REFUSE_TWICE,
         HANG,
-        BUSINESS
+        BUSINESS,
+        BOOM
     }
 
     private record Rig(NovaMessageSender sender, Gate gate) {
@@ -354,6 +385,8 @@ class NapCatUnreachablePushRetryTest {
                     miss(hangUrl, args[1]);
                 } else if (mode == Mode.REFUSE_TWICE && n <= 2) {
                     miss("http://127.0.0.1:" + closedPort + "/send_group_msg", args[1]);
+                } else if (mode == Mode.BOOM) {
+                    throw new IllegalStateException("回包读不懂");
                 }
             }
             return real.invoke(proxy, method, args);

@@ -118,6 +118,31 @@ public class PushActivityRecorder {
     }
 
     /**
+     * 记录一次送达不明的推送：请求已经交出去，没等到回包
+     * <p>
+     * 既不算成功也不算失败，两个计数与「最近一次」都不动：记成成功会让没收到的那条看着到了，
+     * 记成失败会让健康探针报「推送坏了」，而这一条可能已经在群里。
+     * @param platform 推送平台
+     * @param target 推送目标描述
+     * @param summary 消息摘要
+     * @param reason 适配器给的说法
+     * @param elapsedMillis 投递耗时，单位毫秒
+     */
+    public void recordUncertain(String platform, String target, String summary, String reason, long elapsedMillis) {
+        Instant at = Instant.now();
+        append(new PushRecord(at, platform, target, summary, false, reason, true));
+
+        timeline.record(TimelineEvent.of(TimelineEventType.PUSH_UNCERTAIN, TimelineEvent.Level.WARN)
+                .at(at)
+                .channel(target)
+                .text("送达不明（可能已发出，未重发）：" + summary)
+                .detail("platform", platform)
+                .detail("reason", reason == null || reason.isBlank() ? "未给出原因" : reason)
+                .detail("elapsed_ms", String.valueOf(elapsedMillis))
+                .build());
+    }
+
+    /**
      * 获取最近的推送记录，按时间倒序
      * @return 推送记录列表
      */
@@ -147,8 +172,13 @@ public class PushActivityRecorder {
      * @param summary 消息摘要
      * @param success 是否成功
      * @param reason 失败原因，成功时为空
+     * @param uncertain 送达不明：请求已交出去、没等到回包，此时 success 为 false
      */
-    public record PushRecord(Instant at, String platform, String target, String summary, boolean success, String reason) {
+    public record PushRecord(Instant at, String platform, String target, String summary, boolean success, String reason,
+                             boolean uncertain) {
+        public PushRecord(Instant at, String platform, String target, String summary, boolean success, String reason) {
+            this(at, platform, target, summary, success, reason, false);
+        }
     }
 
     /**
