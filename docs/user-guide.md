@@ -226,6 +226,8 @@ novabot:
 
 不想推某类动态（比如「直播回放」）时，在设置页填「动态屏蔽词」，每行一个词，正文、标题或转发原文里含任一词的就不推，保存后立刻生效，挡下的记在日志页的时间线上。
 
+「下播打赏播报」只管下播时段：有人上舰（开通、续费都算，舰长、提督、总督都算），或者一个人送的礼物合计够 100 元，就够格说一声。程序不当场喊，先攒一小阵——这一阵里再有礼物或上舰就把等待再续一分钟，最多攒十分钟——然后把够格的人合成一条感谢发出来；一个够格的都没有就不发。在播时收到的礼物和上舰一律不算这一类，背包里的礼物和醒目留言也不算。写不写金额跟「本群设置」里的「金额可见」走：关着的群只写谁送了什么礼物、几个，上舰写舰长／提督／总督；开着的群写金额。
+
 > 需要用自定义插件提供的处理器时，用工具栏右侧的「高级：编辑原始 JSON」。
 
 ### 只采集不推送的房间
@@ -314,10 +316,11 @@ PK 的票数只是这场的拉票结果，**不算收入**，所以它叫 `mv`�
 | `{uname}` | 全部 | UP 主昵称 |
 | `{title}` | 开播 | 直播间标题 |
 | `{cover}` | 开播 | 直播间封面图 |
-| `{url}` | 开播、下播、动态 | 跳转链接 |
+| `{url}` | 开播、下播、动态、下播打赏播报 | 跳转链接 |
 | `{time}` | 下播 | 本场直播时长 |
 | `{action}` | 动态 | 动态动作，如「投稿了视频」 |
 | `{picture}` | 动态 | 渲染出的动态图片 |
+| `{list}` | 下播打赏播报 | 这一阵够格的人，一人一段 |
 | `{next}` | 全部 | 消息分条，见下 |
 | `{at=all}` | 全部 | @全体成员，仅群聊有效 |
 
@@ -348,6 +351,7 @@ PK 的票数只是这场的拉票结果，**不算收入**，所以它叫 `mv`�
 | `org.frostnova.nova.bilibili.handler.BilibiliLiveOffPushHandler` | 下播 | `{uname}` `{time}` `{url}` |
 | `org.frostnova.nova.report.handler.BilibiliDynamicPushHandler` | 动态更新 | `{uname}` `{action}` `{url}` `{picture}` |
 | `org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler` | 下播报告 | `{uname}` `{report}` `{url}` |
+| `org.frostnova.nova.bilibili.handler.BilibiliOfflineRewardDigestPushHandler` | 下播时段上舰与礼物 | `{uname}` `{list}` `{url}` |
 
 在 `datasource.json` 里它们要写全限定名，照上表抄。**前缀不止一种**：动态通知与下播报告
 住在报告插件里，前缀是 `org.frostnova.nova.report.handler.`，其余在哔哩哔哩插件里。
