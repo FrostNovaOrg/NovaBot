@@ -268,8 +268,9 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
      * 选择不落在任何地方，就地跟着这一次重跑走：存起来的那一版里，这个序号会一直影响
      * 他后面每一次省掉参数的命令，而他无从知道机器人正替他记着什么。
      * <p>
-     * 接在末尾而不是放到第一位：这几条命令的主播都是<b>最后那个可选位置参数</b>
-     * （「数据排行榜 礼物 〈主播〉」）。
+     * 接在末尾而不是放到第一位：<b>第一位要留给类别词</b>。「{@code @名单 开播 〈主播〉}」
+     * 的第一个参数认「开播／动态」（{@link BilibiliAtListCommand} 拿第一个参数认类别），
+     * 选中的主播放到第一位会把它挤走，重跑出来的那一句就从点名的一类变成两类都问。
      */
     private static List<String> chosenArgs(Pending pending, Long chosen) {
         List<String> args = new ArrayList<>(pending.args());
