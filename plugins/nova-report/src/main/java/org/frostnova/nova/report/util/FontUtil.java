@@ -50,6 +50,17 @@ public class FontUtil {
      */
     private static final int DEFAULT_FONT_SIZE = 30;
 
+    /**
+     * 不论表里怎么排，都先交给「内置符号」画的字
+     * <p>
+     * 中文字体把间隔号「·」（U+00B7）画成一个汉字宽：Noto Sans SC 里它与「中」同为 1 em，
+     * 字母 a 只有 0.56 em。报告里「弹幕 · 128 人参与」这类写法两侧本就各有空格，
+     * 分隔处于是空出一大截。「内置符号」（DejaVu Sans）里它约 0.32 em。
+     */
+    private static final Set<Integer> WESTERN_WIDTH_CHARACTERS = Set.of(0x00B7);
+
+    private static final String BUNDLED_SYMBOL_FONT = "内置符号";
+
     private final ResourceLoader resourceLoader;
 
     private final NovaCoreProperties properties;
@@ -57,6 +68,11 @@ public class FontUtil {
     private Set<String> systemFonts = new HashSet<>();
 
     private final List<Font> fonts = new ArrayList<>();
+
+    /**
+     * 画 {@link #WESTERN_WIDTH_CHARACTERS} 用的字体；Windows、macOS 的默认表里没有「内置符号」，照样单独装上
+     */
+    private Font westernWidthFont;
 
     @Autowired
     public FontUtil(ResourceLoader resourceLoader, NovaCoreProperties properties) {
@@ -71,12 +87,19 @@ public class FontUtil {
                 .map(String::toLowerCase)
                 .collect(Collectors.toSet());
 
-        List<String> configured = properties.getPaint().getFonts();
+        List<String> configured = properties.getPaint().fontChain();
         log.info("已指定使用字体列表: {}, 可使用配置项 novabot.core.paint.fonts 自定义字体列表", configured);
 
         // 装不上的那一项直接跳过，不占位置：留个空位在表里，挑字体时会挑到一个 null
         for (String fontDefinition : configured) {
-            parseFont(fontDefinition).ifPresent(fonts::add);
+            Optional<Font> font = parseFont(fontDefinition);
+            font.ifPresent(fonts::add);
+            if (BUNDLED_SYMBOL_FONT.equals(fontDefinition)) {
+                westernWidthFont = font.orElse(null);
+            }
+        }
+        if (westernWidthFont == null && !configured.contains(BUNDLED_SYMBOL_FONT)) {
+            westernWidthFont = parseFont(BUNDLED_SYMBOL_FONT).orElse(null);
         }
     }
 
@@ -135,6 +158,10 @@ public class FontUtil {
      * @return 可以显示该字符的字体
      */
     public Font findFontForCharacter(int charCodePoint) {
+        if (westernWidthFont != null && WESTERN_WIDTH_CHARACTERS.contains(charCodePoint)
+                && westernWidthFont.canDisplay(charCodePoint)) {
+            return westernWidthFont;
+        }
         return fonts.stream()
                 .filter(font -> font.canDisplay(charCodePoint))
                 .findFirst()

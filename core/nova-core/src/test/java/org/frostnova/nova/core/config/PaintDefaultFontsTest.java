@@ -61,6 +61,7 @@ class PaintDefaultFontsTest {
         List<String> expected = new ArrayList<>();
         expected.add("使用者写的字体");
         expected.addAll(NovaCoreProperties.defaultFonts(System.getProperty("os.name")));
-        assertEquals(expected, properties.getPaint().getFonts(), "使用者写的排最前, 默认表整张接在后面");
+        // 接好的表不再写回配置项本身（那一项会原样写进配置文件），挑字读的是 fontChain()
+        assertEquals(expected, properties.getPaint().fontChain(), "使用者写的排最前, 默认表整张接在后面");
     }
 }
