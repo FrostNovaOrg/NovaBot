@@ -299,7 +299,7 @@ META-INF/spring-configuration-metadata.json
 
 安全模式**刻意不是 Spring 应用**，用的是 JDK 自带的 `HttpServer`：一份坏掉的 `application.yml`
 会让第二个 Spring 上下文以同样的方式失败，那就毫无意义。它只绑回环、带随机令牌、
-只提供「看/改/回滚 application.yml」。
+只提供「看/改 application.yml」，同样没有回滚入口。
 
 ## 7. 插件机制
 
