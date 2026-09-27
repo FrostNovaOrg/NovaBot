@@ -57,6 +57,16 @@ class PasskeyChallengesTest {
     }
 
     @Test
+    @DisplayName("IPv4 映射的 IPv6 地址与原 IPv4 地址算同一个来源")
+    void mappedIpv4CountsAsTheSameSource() {
+        for (int i = 0; i < 100; i++) {
+            String source = i % 2 == 0 ? "203.0.113.9" : "::ffff:203.0.113.9";
+            challenges.issue(PasskeyChallenges.Purpose.LOGIN, source, NOW.plusMillis(i));
+        }
+        assertTrue(challenges.size() <= 8, "两种写法轮着要, 也只占得住一个地址那几条, 实有 " + challenges.size());
+    }
+
+    @Test
     @DisplayName("过了五分钟就不认")
     void expiresAfterTtl() {
         String alive = challenges.issue(PasskeyChallenges.Purpose.LOGIN, "127.0.0.1", NOW);
