@@ -14,9 +14,10 @@
 | `org.frostnova.nova.bilibili.handler.BilibiliLiveOffPushHandler` | 下播通知 | 下播 | `{uname}` `{time}` `{url}` `{next}` `{at=all}` |
 | `org.frostnova.nova.report.handler.BilibiliDynamicPushHandler` | 动态通知 | 动态更新 | `{uname}` `{action}` `{url}` `{picture}` `{at}` `{next}` `{at=all}` |
 | `org.frostnova.nova.report.handler.BilibiliLiveReportPushHandler` | 下播报告 | 下播 | `{uname}` `{report}` `{url}` `{next}` `{at=all}` |
+| `org.frostnova.nova.bilibili.handler.BilibiliOfflineRewardDigestPushHandler` | 下播打赏播报 | 不在播时有人上舰或送礼够格，攒完一阵（见[第 6 章](06-add-streamer-and-push.md#下播打赏播报)） | `{uname}` `{list}` `{url}` `{next}` `{at=all}` |
 
 **前缀不止一种**：动态通知与下播报告住在报告插件里（`org.frostnova.nova.report.handler.`），
-另两个在哔哩哔哩插件里。`{next}` 的意思是「从这里分成两条消息」——在界面的模板
+其余三个在哔哩哔哩插件里。`{next}` 的意思是「从这里分成两条消息」——在界面的模板
 编辑器里不用写它，多建一张卡就是多一条（见第 6 章）。
 
 > [!NOTE] 从 starbot 时代升上来的老配置不用急着改：旧全名（`com.starlwr.bot.`
