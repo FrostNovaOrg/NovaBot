@@ -73,7 +73,9 @@ public final class DanmuWordUtil {
      * 🔴 分词器不认识的多字屏蔽词会被切成几段（「原神启动」切成「原神」「启动」），
      * 每段单看都不含屏蔽词，画图时按「含屏蔽词」挑词就挡不住它们。所以先在原文里认出
      * 屏蔽词、整个留下，两边的文字各自再切。整词照样记进词频，画图时按当下的表挑掉；
-     * 以后从表里删了这个词，它就以整词出现，而不是永远丢了。认的时候英文不分大小写
+     * 以后从表里删了这个词，它就以整词出现，而不是永远丢了。认的时候英文不分大小写。
+     * 只有一个字的屏蔽词不参与整词挑出：它没有会被切散的问题，提前挑出去只会把原文
+     * 切断、切出本不成词的碎片；含它的词画图时按「含即屏蔽」照样挑掉
      * @param text 弹幕文本
      * @param keepWhole 词云屏蔽词，可为空
      * @return 过滤后的词语列表
@@ -135,7 +137,12 @@ public final class DanmuWordUtil {
         List<String> folded = new ArrayList<>();
         for (String item : raw) {
             if (item != null && !item.isBlank()) {
-                folded.add(foldAsciiLetters(item.strip()));
+                String stripped = foldAsciiLetters(item.strip());
+                // 只有一个字（按码点数，一个表情也算一个字）的屏蔽词不进这张表：
+                // 含它的词画图时按「含即屏蔽」照样挡得住，提前挑出去只会把原文切断
+                if (stripped.codePointCount(0, stripped.length()) > 1) {
+                    folded.add(stripped);
+                }
             }
         }
         return folded;

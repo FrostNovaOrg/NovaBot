@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -91,6 +92,28 @@ class DanmuWordBlockSegmentTest {
                 () -> assertTrue(stored.containsKey(PHRASE), "屏蔽词没有整个记下: " + stored),
                 () -> assertFalse(plain.stream().anyMatch(stored::containsKey),
                         "记下了屏蔽词的碎片 " + plain + ": " + stored));
+    }
+
+    /**
+     * 抓的故障：主播把「手」这一个字填进屏蔽表以后，弹幕被按这个字切断、两边各自再切，
+     * 冒出原句里本不成词的两字碎片「机原」上了词云。单字屏蔽词只在画图时过滤。
+     */
+    @Test
+    @DisplayName("单字屏蔽词不把原文切断，不冒出原句里本不成词的两字碎片")
+    void singleCharBlockWordDoesNotChopText() {
+        String text = "苹果手机原神启动真好用";
+        List<String> plain = DanmuWordUtil.extractWords(text);
+        assertAll(
+                () -> assertFalse(plain.contains("机原"), "前提不成立：原句本来就会切出「机原」，换一句测: " + plain),
+                () -> assertFalse(plain.contains("原神启动"), "前提不成立：分词器本来就不切「原神启动」，换一个词测: " + plain));
+
+        List<String> words = DanmuWordUtil.extractWords(text, List.of("手"));
+        assertAll(
+                () -> assertEquals(plain, words, "单字屏蔽词不该参与切词，带它切出来的词应与不带表时一模一样: " + words),
+                () -> assertFalse(words.contains("机原"), "单字屏蔽词把原文切断，切出了碎片「机原」: " + words));
+
+        List<String> whole = DanmuWordUtil.extractWords(text, List.of("原神启动"));
+        assertTrue(whole.contains("原神启动"), "两个字以上的屏蔽词照旧整个留下: " + whole);
     }
 
     private static UserInfo viewer() {
