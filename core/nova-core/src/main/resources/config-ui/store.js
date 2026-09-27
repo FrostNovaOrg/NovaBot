@@ -31,6 +31,13 @@ export const store = {
    * 使用者会以为界面在乱显示，或是改了另一处却不生效
    */
   legacy: {},
+  /**
+   * 成图字体表那一项的附注：配置键 → {pastDefault, defaults}，来自 /values
+   *
+   * pastDefault 答文件里存的是不是旧版写下的默认表（启动时已按未设处理），
+   * defaults 是本系统默认表。设置页据此在框下说明，不然旧表原样摆着，改一项再存就成了使用者的表
+   */
+  fontTables: {},
   /** 设置页尚未保存的改动 */
   dirty: {},
   /**

@@ -237,6 +237,23 @@ function buildRow(field, groupAllRestart) {
     cell.appendChild(badge);
   }
 
+  // 成图字体表：老实例的文件里存着旧版写下的默认表，启动时已按未设处理，而框里原样显示它。
+  // 不说一声，使用者改一项再存就成了自己的表，表情空白又回来。按已保存的值说，不跟草稿走
+  const fonts = store.fontTables && store.fontTables[field.name];
+  if (fonts) {
+    if (fonts.pastDefault) {
+      const note = el('div', 'dflt fontnote');
+      note.textContent = '这是旧版自动写进配置的默认字体表，启动时已按未设处理。'
+        + '点「恢复默认」清空它，以后跟着程序自带的默认表走。';
+      cell.appendChild(note);
+    }
+    if (fonts.pastDefault || saved === '') {
+      const note = el('div', 'dflt fontnote');
+      note.textContent = '现在用的是本系统的默认表：' + (fonts.defaults || []).join('、');
+      cell.appendChild(note);
+    }
+  }
+
   if (!input) return row;
 
   input.setAttribute('aria-label', field.label);

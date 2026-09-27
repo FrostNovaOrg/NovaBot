@@ -771,6 +771,19 @@ public class NovaCoreProperties {
     }
 
     /**
+     * 配置里这张字体表是不是本系统某一代默认表，即启动时按未设处理的那种
+     * <p>
+     * 设置页据此说明「这是旧版写下的默认表」，判法与 {@link #fontChain} 同一个，不另抄历代表。
+     *
+     * @param configured 配置里的字体表
+     * @param osName     操作系统名，取自 {@code os.name}
+     * @return 与某一代默认表逐项相同时为 true；空表为 false
+     */
+    public static boolean isPastDefaultFonts(List<String> configured, String osName) {
+        return pastDefaultFonts(osName).contains(configured);
+    }
+
+    /**
      * 排出挑字用的字体表：使用者的表在前，本系统默认表接后，重复的只留第一次出现的
      * <p>
      * 使用者那张若与本系统某一代默认表逐项相同，那是旧版程序自己写下的，当作没设：
