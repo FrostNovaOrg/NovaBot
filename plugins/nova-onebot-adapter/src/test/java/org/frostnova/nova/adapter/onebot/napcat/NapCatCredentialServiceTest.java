@@ -89,7 +89,7 @@ class NapCatCredentialServiceTest {
             doAnswer(call -> {
                 written.putAll(call.getArgument(0));
                 return 2;
-            }).when(files).write(any());
+            }).when(files).writeWithoutBackup(any());
 
             NapCatCredentialService service = new NapCatCredentialService(
                     props("test", "", ""), files, mock(RestTemplate.class));
@@ -109,7 +109,7 @@ class NapCatCredentialServiceTest {
             doAnswer(call -> {
                 written.putAll(call.getArgument(0));
                 return 2;
-            }).when(files).write(any());
+            }).when(files).writeWithoutBackup(any());
 
             new NapCatCredentialService(props("test", "", ""), files, mock(RestTemplate.class));
 
@@ -140,7 +140,9 @@ class NapCatCredentialServiceTest {
                     props("", HASH_OF_TEST, ""), files, mock(RestTemplate.class));
 
             assertTrue(service.isConfigured());
+            // 两个写口都要钉住：只钉 write 的话，换成不带备份那个口照样绿，这格就空了
             org.mockito.Mockito.verify(files, org.mockito.Mockito.never()).write(any());
+            org.mockito.Mockito.verify(files, org.mockito.Mockito.never()).writeWithoutBackup(any());
         }
 
         @Test

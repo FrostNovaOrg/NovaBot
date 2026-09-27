@@ -401,12 +401,14 @@ public class NapCatCredentialService {
         }
 
         try {
-            // 两项一起写：只写哈希不清明文，等于配置里同时躺着两份等价凭据
+            // 两项一起写：只写哈希不清明文，等于配置里同时躺着两份等价凭据。
+            // 这次写回不留备份：旧值正是刚换掉的明文，备份会把它又抄一份放进同一个目录
             Map<String, String> changes = new LinkedHashMap<>();
             changes.put(TOKEN_HASH_PROPERTY, hashed);
             changes.put(TOKEN_PROPERTY, "");
-            fileService.write(changes);
-            log.info("NapCat 的 token 已换算为登录哈希保存, 配置文件中不再有明文");
+            fileService.writeWithoutBackup(changes);
+            log.info("NapCat 的 token 已换算为登录哈希保存, 主配置文件中不再有明文; {}",
+                    fileService.backupSituation(plain));
         } catch (Exception e) {
             log.warn("NapCat 的 token 未能换算保存, 文件中仍是明文: {}", e.getMessage());
         }

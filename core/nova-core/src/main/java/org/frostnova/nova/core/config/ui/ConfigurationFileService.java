@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.IntSupplier;
+import java.util.stream.Stream;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import java.time.Clock;
@@ -449,6 +450,93 @@ public class ConfigurationFileService {
      * @throws IOException 读写失败、存在含换行的标量值或有配置项在文件里找不到上级块时抛出
      */
     public synchronized List<String> write(Map<String, String> changes) throws IOException {
+        return write(changes, true);
+    }
+
+    /**
+     * 把一批配置项写进配置文件，这次写入<b>不留备份</b>
+     * <p>
+     * 给「换掉的旧值正是要清掉的明文」的写入用：明文口令、明文 token 换成哈希写回时，
+     * 备份照原样复制旧文件，等于把刚换掉的明文又抄一份放进同一个目录，
+     * 而备份按份数轮换，那一份要等之后再存够十次才被挤掉。
+     * <p>
+     * 不留备份也安全：换件失败时原件一个字节不动（见 {@link DurableFiles#replace}），
+     * 而这条路的上一版本来就是那份明文，留在盘上与这次写回的目的正好相反。
+     * 普通保存照旧走 {@link #write(Map)}：那才是使用者要能反悔的改动。
+     * @param changes 待写入的配置项名到取值
+     * @return 实际发生改动的配置项名
+     * @throws IOException 读写失败、存在含换行的标量值或有配置项在文件里找不到上级块时抛出
+     */
+    public synchronized List<String> writeWithoutBackup(Map<String, String> changes) throws IOException {
+        return write(changes, false);
+    }
+
+    /**
+     * 备份那句实话，供日志原样引：同目录没有含明文的副本时说没有，有就点名，查不出也照说
+     * <p>
+     * 明文换哈希那条路自己不留备份，但更早的保存可能已经把明文抄进过备份，
+     * 那些照约定不动。说「没有」之前先看盘：这次没写备份，不等于目录里就没有含明文的副本。
+     * @param plaintext 刚从主配置文件换掉的那段明文
+     * @return 同目录的实况
+     */
+    public String backupSituation(String plaintext) {
+        List<String> left;
+        try {
+            left = siblingFilesHolding(plaintext);
+        } catch (IOException e) {
+            return "同目录的备份没查成: " + e.getMessage();
+        }
+        if (left.isEmpty()) {
+            return "同目录未留含明文的备份";
+        }
+        return "同目录的 " + left + " 里还留着明文, 那几份本次不动";
+    }
+
+    /**
+     * 主配置文件之外，同一目录里还含着这段字的文件名，一份没有时为空表
+     * @param text 要找的字
+     * @return 命中的文件名，按名排序
+     * @throws IOException 读目录失败时抛出
+     */
+    private List<String> siblingFilesHolding(String text) throws IOException {
+        List<String> left = new ArrayList<>();
+        Path self = configPath.toAbsolutePath().normalize();
+        Path dir = self.getParent();
+        if (dir == null) {
+            return left;
+        }
+        byte[] needle = text.getBytes(StandardCharsets.UTF_8);
+        try (Stream<Path> files = Files.list(dir)) {
+            for (Path file : files.sorted().toList()) {
+                if (!Files.isRegularFile(file) || file.toAbsolutePath().normalize().equals(self)) {
+                    continue;
+                }
+                // 按字节找而不是读成字符串：目录里可能有不是文本的件，读成串会半路炸掉这次查询
+                if (contains(Files.readAllBytes(file), needle)) {
+                    left.add(file.getFileName().toString());
+                }
+            }
+        }
+        return left;
+    }
+
+    private static boolean contains(byte[] haystack, byte[] needle) {
+        if (needle.length == 0 || needle.length > haystack.length) {
+            return false;
+        }
+        outer:
+        for (int i = 0; i <= haystack.length - needle.length; i++) {
+            for (int j = 0; j < needle.length; j++) {
+                if (haystack[i + j] != needle[j]) {
+                    continue outer;
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+
+    private synchronized List<String> write(Map<String, String> changes, boolean keepBackup) throws IOException {
         if (changes.isEmpty()) {
             return List.of();
         }
@@ -535,7 +623,9 @@ public class ConfigurationFileService {
         }
 
         if (!changed.isEmpty()) {
-            backup();
+            if (keepBackup) {
+                backup();
+            }
             DurableFiles.replace(configPath, lines, DurableFiles.OWNER_ONLY);
             log.info("配置界面已更新 {} 个配置项: {}", changed.size(), String.join(", ", changed));
         }
