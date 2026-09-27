@@ -1,5 +1,8 @@
 package org.frostnova.nova.core.util;
 
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -52,12 +55,25 @@ public final class UrlRedactor {
      * <p>
      * 只处理最外层不够：工程日志会打出整条起因链（{@code Caused by:} 那几行），
      * 起因里带地址也算漏。栈帧原样保留——出错定位全在那里。
+     * <p>
+     * 起因链成环时（A 的起因是 B、B 的起因又是 A）在环上那条边截断：不截的话，
+     * 这一步自己会无限递归成 StackOverflowError，把要看的错误整个吞掉。
      */
     public static Throwable redact(Throwable throwable) {
+        return redact(throwable, Collections.newSetFromMap(new IdentityHashMap<>()));
+    }
+
+    /**
+     * 记着这条链上已经走过的异常（按对象身份认），走到见过的对象就截断
+     */
+    private static Throwable redact(Throwable throwable, Set<Throwable> seen) {
         if (throwable == null) {
             return null;
         }
-        Stripped copy = new Stripped(redact(throwable.toString()), redact(throwable.getCause()));
+        if (!seen.add(throwable)) {
+            return null;
+        }
+        Stripped copy = new Stripped(redact(throwable.toString()), redact(throwable.getCause(), seen));
         copy.setStackTrace(throwable.getStackTrace());
         return copy;
     }

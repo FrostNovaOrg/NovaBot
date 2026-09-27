@@ -1,5 +1,7 @@
 package org.frostnova.nova.core.util;
 
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -78,15 +80,28 @@ public final class UrlMasker {
      * <p>
      * 副本保留原始栈帧（诊断价值全在那里），只换掉会被打印成文本的部分，
      * 并<b>沿 cause 链逐层做</b>——只处理最外层的话，凭据会从 {@code Caused by:} 那几行漏出去。
+     * <p>
+     * 起因链成环时（A 的起因是 B、B 的起因又是 A）在环上那条边截断：不截的话，
+     * 这一步自己会无限递归成 StackOverflowError，把要看的错误整个吞掉。
      * @param throwable 原异常，可为 null
      * @return 打码后的副本；null 原样返回
      */
     public static Throwable sanitize(Throwable throwable) {
+        return sanitize(throwable, Collections.newSetFromMap(new IdentityHashMap<>()));
+    }
+
+    /**
+     * 记着这条链上已经走过的异常（按对象身份认），走到见过的对象就截断
+     */
+    private static Throwable sanitize(Throwable throwable, Set<Throwable> seen) {
         if (throwable == null) {
             return null;
         }
+        if (!seen.add(throwable)) {
+            return null;
+        }
 
-        Sanitized copy = new Sanitized(mask(throwable.toString()), sanitize(throwable.getCause()));
+        Sanitized copy = new Sanitized(mask(throwable.toString()), sanitize(throwable.getCause(), seen));
         copy.setStackTrace(throwable.getStackTrace());
         return copy;
     }
