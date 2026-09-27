@@ -81,16 +81,24 @@ public class WebhookAlertChannel implements AlertChannel {
 
         Map<String, String> headers = new LinkedHashMap<>(alert.getWebhookHeaders());
 
+        // GET 的地址先单独拼好、单独解析：地址里混进 "、<> 这类 URI 不收的字符时 URI.create 会抛，
+        // 报错原文带着整条地址，而剥地址的正则（UrlRedactor）同样在这几个字符上停——
+        // 字符后面那段（正是推送密钥待的地方）会原样留在工程日志里。
+        // 解析抛了就不发，按失败交出去；与空白那条同理放在网络 try 之外抛，
+        // 别被出口收口换成「发送失败（异常名）」，「地址写法不对」这一句就到不了使用者眼前
+        URI getRequestUri = "GET".equalsIgnoreCase(alert.getWebhookMethod())
+                ? parseGetUri(url, alert, subject, content)
+                : null;
+
         int status;
         try {
-            if ("GET".equalsIgnoreCase(alert.getWebhookMethod())) {
+            if (getRequestUri != null) {
                 // 必须以 URI 传入：传字符串会被 RestTemplate 当作模板再编码一次，
                 // 接收方收到的就是一串字面的百分号转义而非中文
                 //
                 // 两处都报「这条地址本身是凭据」：推送密钥拼在路径里，网络日志
                 // （默认关、排障时才开）只记主机名，不把密钥随日志落盘
-                status = http.getForStatus(URI.create(appendQuery(url, alert.getWebhookTitleField(), subject,
-                        alert.getWebhookContentField(), content)), headers, HttpUtil.AddressIsCredential.YES);
+                status = http.getForStatus(getRequestUri, headers, HttpUtil.AddressIsCredential.YES);
             } else {
                 JSONObject body = new JSONObject();
                 body.put(alert.getWebhookTitleField(), subject);
@@ -198,6 +206,21 @@ public class WebhookAlertChannel implements AlertChannel {
                 + (url.contains("?") ? "&" : "?")
                 + encode(titleField) + "=" + encode(subject)
                 + "&" + encode(contentField) + "=" + encode(content);
+    }
+
+    /**
+     * 把 GET 的完整地址拼好并解析成 URI。解析不过就不发，按失败交出去：
+     * 往外那句只带主机名、写「地址写法不对」，起因不带地址原文——
+     * URI.create 的报错原文带着整条地址，路径里可能正是推送密钥。
+     */
+    private URI parseGetUri(String url, NovaCoreProperties.Alert alert, String subject, String content) {
+        String full = appendQuery(url, alert.getWebhookTitleField(), subject, alert.getWebhookContentField(), content);
+        try {
+            return URI.create(full);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException(report(reportedHost(url), "地址写法不对"),
+                    new IllegalArgumentException("Webhook GET 地址含 URI 不收的字符，解析没过"));
+        }
     }
 
     private String encode(String value) {

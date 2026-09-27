@@ -71,6 +71,9 @@ public class Message {
     /**
      * 消息 ID，消息发送成功后自动设置，无需手动设置
      * <p>
+     * 编号本身不决定发送结果：结果只由发送器经 {@code markDelivered}／{@code markFailed} 定，
+     * 已有编号不再被当成已送达（那条兼容分支已收掉）。
+     * <p>
      * 写成 volatile：发送线程写上编号之后，别的线程马上读得到。
      * 漏了这一笔，另一边会一直看见空编号，把已经发出的当成还没发。
      */
@@ -262,13 +265,15 @@ public class Message {
 
     /**
      * 添加发送成功回调。这条消息的发送结果如果已经是送达，回调当场执行，不再排队。
+     * <p>
+     * 只看发送结果（{@code markDelivered}／{@code markFailed}），编号有没有不影响：
+     * {@code setId} 是公开可写的，插件手写过的编号不代表发送器已把结果定为送达。
      * @param callback 发送成功回调
      */
     public void addOnSuccessCallback(Runnable callback) {
         boolean runNow = false;
         synchronized (deliveryLock) {
-            if (delivery == Delivery.DELIVERED || (delivery == Delivery.PENDING && StringUtil.isNotBlank(id))) {
-                delivery = Delivery.DELIVERED;
+            if (delivery == Delivery.DELIVERED) {
                 runNow = true;
             } else if (delivery == Delivery.PENDING) {
                 onSuccessCallbacks.add(callback);
@@ -281,6 +286,8 @@ public class Message {
 
     /**
      * 添加发送失败回调。这条消息的发送结果如果已经是没送达，回调当场执行，不再排队。
+     * <p>
+     * 结果还没定（PENDING）时失败回调照常排队——哪怕编号已经被写上：编号不决定发送结果。
      * @param callback 发送失败回调
      */
     public void addOnFailureCallback(Runnable callback) {
@@ -288,7 +295,7 @@ public class Message {
         synchronized (deliveryLock) {
             if (delivery == Delivery.FAILED) {
                 runNow = true;
-            } else if (delivery == Delivery.PENDING && StringUtil.isBlank(id)) {
+            } else if (delivery == Delivery.PENDING) {
                 onFailureCallbacks.add(callback);
             }
         }
