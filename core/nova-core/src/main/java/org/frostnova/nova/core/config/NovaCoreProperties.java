@@ -11,9 +11,11 @@ import org.frostnova.nova.core.properties.LogProperties;
 import org.frostnova.nova.core.properties.NetworkProperties;
 import org.frostnova.nova.core.properties.NetworkThreadProperties;
 import jakarta.annotation.PostConstruct;
+import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -626,6 +628,27 @@ public class NovaCoreProperties {
         @ConfigEffect(ConfigEffect.Effect.RESTART)
         @ConfigLabel("成图底部附加版权")
         private List<TextWithStyle> extraCopyrights = new ArrayList<>();
+
+        /**
+         * 挑字真正用的字体表：使用者那张，后接本系统默认表，由 {@link #init()} 排好
+         * <p>
+         * 不写回 {@link #fonts}：配置文件第一次写出时取的是配置对象此刻的值，
+         * 默认表一旦混进 {@code fonts}，就跟着写进文件、在那里定格，以后默认表改了也用不上。
+         * 不给 getter／setter：有 getter 的表会被编译期元数据当成一个配置项，出现在设置页上。
+         */
+        @Getter(AccessLevel.NONE)
+        @Setter(AccessLevel.NONE)
+        private List<String> fontChain;
+
+        /**
+         * 挑字用的字体表，顺序即优先级
+         * <p>
+         * 没走过启动装配（单测里直接 new 出来）时就是使用者那张表本身。
+         * @return 字体表
+         */
+        public List<String> fontChain() {
+            return fontChain != null ? fontChain : fonts;
+        }
     }
 
     /**
@@ -723,9 +746,60 @@ public class NovaCoreProperties {
         return fonts;
     }
 
+    /**
+     * 历代默认字体表，按操作系统挑，旧的在前，最后一代即 {@link #defaultFonts}
+     * <p>
+     * 以前程序第一次写出配置文件时，把运行中的整张字体表——即当时的默认表——一并写进了
+     * {@code fonts}。这里列的就是可能这样落进配置文件的每一张，供启动时认出来。
+     * <b>默认表以后再改，要把改之前那张加进来</b>：漏了那一代，照它存着的实例就认不出。
+     *
+     * @param osName 操作系统名，取自 {@code os.name}
+     * @return 历代默认表
+     */
+    static List<List<String>> pastDefaultFonts(String osName) {
+        String os = osName.toLowerCase();
+        List<String> first;
+        if (os.contains("win")) {
+            first = List.of("内置", "微软雅黑", "宋体", "Segoe UI Emoji", "Segoe UI Symbol", "Arial", "SansSerif");
+        } else if (os.contains("mac")) {
+            first = List.of("内置", "PingFang SC", "Apple Color Emoji", "SansSerif");
+        } else {
+            // 2026-09-17 以前（5.5.1 之前的各版）
+            first = List.of("内置", "Noto Sans CJK SC", "WenQuanYi Zen Hei", "Noto Color Emoji", "DejaVu Sans", "FreeSans", "SansSerif");
+        }
+        return List.of(first, defaultFonts(osName));
+    }
+
+    /**
+     * 排出挑字用的字体表：使用者的表在前，本系统默认表接后，重复的只留第一次出现的
+     * <p>
+     * 使用者那张若与本系统某一代默认表逐项相同，那是旧版程序自己写下的，当作没设：
+     * 否则它会一直压在新默认表前面——2026-09-17 以前装在 Linux 上的实例，
+     * 旧表里的彩色表情字体排在「内置表情」前面，表情就一直画成空白。
+     * 改过哪怕一项的表是使用者自己的，照旧排前。
+     *
+     * @param configured 配置里的字体表
+     * @param osName     操作系统名，取自 {@code os.name}
+     * @return 字体表，顺序即优先级
+     */
+    public static List<String> fontChain(List<String> configured, String osName) {
+        Set<String> chain = new LinkedHashSet<>();
+        if (!pastDefaultFonts(osName).contains(configured)) {
+            chain.addAll(configured);
+        }
+        chain.addAll(defaultFonts(osName));
+        return new ArrayList<>(chain);
+    }
+
     @PostConstruct
     public void init() {
-        paint.getFonts().addAll(defaultFonts(System.getProperty("os.name")));
+        String os = System.getProperty("os.name");
+        if (!paint.getFonts().isEmpty() && pastDefaultFonts(os).contains(paint.getFonts())) {
+            // 本类的 log 是「日志」那一节配置，这里现取一个
+            LoggerFactory.getLogger(NovaCoreProperties.class)
+                    .info("配置项 novabot.core.paint.fonts 是旧版程序写下的默认字体表, 按未设处理, 使用本版默认表");
+        }
+        paint.fontChain = fontChain(paint.getFonts(), os);
 
         for (TextWithStyle extra : paint.getExtraCopyrights()) {
             if (extra.getFont() != null) {
