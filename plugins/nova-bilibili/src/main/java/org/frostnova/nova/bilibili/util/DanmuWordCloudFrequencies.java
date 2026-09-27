@@ -56,6 +56,17 @@ public final class DanmuWordCloudFrequencies {
      */
     public static Map<String, Integer> recount(String platform, long streamerUid,
                                                 List<DanmuRecord> records, Set<Long> exclude) {
+        return recount(platform, streamerUid, records, exclude, List.of());
+    }
+
+    /**
+     * 从这一场的弹幕原文重算词频，词云屏蔽词整个留成一个词，不切出碎片
+     * @param blockWords 词云屏蔽词，可为空
+     * @see DanmuWordUtil#extractWords(String, java.util.Collection)
+     */
+    public static Map<String, Integer> recount(String platform, long streamerUid,
+                                                List<DanmuRecord> records, Set<Long> exclude,
+                                                List<String> blockWords) {
         NovaCoreProperties properties = new NovaCoreProperties();
         properties.getLive().setSaveLiveData(false);
         DefaultLiveDataService data = new DefaultLiveDataService(properties);
@@ -68,12 +79,51 @@ public final class DanmuWordCloudFrequencies {
                 if (record.uid() != null && skip.contains(record.uid())) {
                     continue;
                 }
-                for (String word : DanmuWordUtil.extractWords(record.text())) {
+                for (String word : DanmuWordUtil.extractWords(record.text(), blockWords)) {
                     data.incrementLiveWordFrequency(platform, streamerUid, word);
                 }
             }
         }
         return data.getLiveWordFrequencies(platform, streamerUid);
+    }
+
+    /**
+     * 把配置里的词云屏蔽词收成比对用的样子：去首尾空白、丢空行、英文折成小写、去重
+     * <p>
+     * 🔴 空行必须丢：空串是任何词的一部分，留着它整张词云就空了
+     * @param raw 每行一个词，可为 null
+     * @return 折好的屏蔽词，没有时为空表
+     */
+    public static List<String> parseBlockWords(List<String> raw) {
+        if (raw == null || raw.isEmpty()) {
+            return List.of();
+        }
+        Set<String> words = new LinkedHashSet<>();
+        for (String item : raw) {
+            if (item == null || item.isBlank()) {
+                continue;
+            }
+            words.add(DanmuWordUtil.foldAsciiLetters(item.strip()));
+        }
+        return List.copyOf(words);
+    }
+
+    /**
+     * 这个词含不含任一屏蔽词，英文不分大小写
+     * @param word 词云里的词
+     * @param blockWords {@link #parseBlockWords} 收好的屏蔽词
+     */
+    public static boolean blocked(String word, List<String> blockWords) {
+        if (word == null || blockWords == null || blockWords.isEmpty()) {
+            return false;
+        }
+        String folded = DanmuWordUtil.foldAsciiLetters(word);
+        for (String block : blockWords) {
+            if (folded.contains(block)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean digits(String text) {

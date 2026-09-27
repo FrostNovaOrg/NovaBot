@@ -4,6 +4,7 @@ import com.huaban.analysis.jieba.JiebaSegmenter;
 import org.frostnova.nova.core.lang.StringUtil;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -63,12 +64,98 @@ public final class DanmuWordUtil {
      * @return 过滤后的词语列表
      */
     public static List<String> extractWords(String text) {
+        return extractWords(text, List.of());
+    }
+
+    /**
+     * 把弹幕文本切分为可入词云的词语，词云屏蔽词在原文里出现时整个留成一个词
+     * <p>
+     * 🔴 分词器不认识的多字屏蔽词会被切成几段（「原神启动」切成「原神」「启动」），
+     * 每段单看都不含屏蔽词，画图时按「含屏蔽词」挑词就挡不住它们。所以先在原文里认出
+     * 屏蔽词、整个留下，两边的文字各自再切。整词照样记进词频，画图时按当下的表挑掉；
+     * 以后从表里删了这个词，它就以整词出现，而不是永远丢了。认的时候英文不分大小写
+     * @param text 弹幕文本
+     * @param keepWhole 词云屏蔽词，可为空
+     * @return 过滤后的词语列表
+     */
+    public static List<String> extractWords(String text, Collection<String> keepWhole) {
         if (StringUtil.isBlank(text)) {
             return List.of();
         }
 
         List<String> words = new ArrayList<>();
-        for (String word : SEGMENTER.sentenceProcess(text)) {
+        List<String> whole = foldedNonBlank(keepWhole);
+        if (whole.isEmpty()) {
+            collect(SEGMENTER.sentenceProcess(text), words);
+            return words;
+        }
+
+        String folded = foldAsciiLetters(text);
+        int pending = 0;
+        int i = 0;
+        while (i < text.length() && words.size() < MAX_WORDS_PER_DANMU) {
+            String hit = longestAt(folded, i, whole);
+            if (hit == null) {
+                i++;
+                continue;
+            }
+            if (i > pending) {
+                collect(SEGMENTER.sentenceProcess(text.substring(pending, i)), words);
+            }
+            collect(List.of(text.substring(i, i + hit.length())), words);
+            i += hit.length();
+            pending = i;
+        }
+        if (pending < text.length()) {
+            collect(SEGMENTER.sentenceProcess(text.substring(pending)), words);
+        }
+        return words;
+    }
+
+    /**
+     * 只把 ASCII 大写字母折成小写，长度不变，折完的下标与原文一一对应
+     * <p>
+     * 词云屏蔽词不分大小写就靠它：词频里纯 ASCII 的词已折成小写，带汉字的词（如「Yyds好」）
+     * 照原样存着，两边都折一遍再比才不漏
+     */
+    public static String foldAsciiLetters(String text) {
+        char[] chars = text.toCharArray();
+        for (int i = 0; i < chars.length; i++) {
+            if (chars[i] >= 'A' && chars[i] <= 'Z') {
+                chars[i] = (char) (chars[i] + ('a' - 'A'));
+            }
+        }
+        return new String(chars);
+    }
+
+    private static List<String> foldedNonBlank(Collection<String> raw) {
+        if (raw == null || raw.isEmpty()) {
+            return List.of();
+        }
+        List<String> folded = new ArrayList<>();
+        for (String item : raw) {
+            if (item != null && !item.isBlank()) {
+                folded.add(foldAsciiLetters(item.strip()));
+            }
+        }
+        return folded;
+    }
+
+    /**
+     * 原文这一位上起头的最长那个屏蔽词。一个都不是时为 {@code null}
+     */
+    private static String longestAt(String folded, int at, List<String> whole) {
+        String hit = null;
+        for (String word : whole) {
+            if (folded.startsWith(word, at) && (hit == null || word.length() > hit.length())) {
+                hit = word;
+            }
+        }
+        return hit;
+    }
+
+    private static void collect(List<String> segments, List<String> words) {
+        for (String word : segments) {
             if (words.size() >= MAX_WORDS_PER_DANMU) {
                 break;
             }
@@ -87,8 +174,6 @@ public final class DanmuWordUtil {
 
             words.add(trimmed);
         }
-
-        return words;
     }
 
     /**

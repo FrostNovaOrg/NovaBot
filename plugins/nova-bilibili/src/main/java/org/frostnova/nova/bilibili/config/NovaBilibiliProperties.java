@@ -364,6 +364,15 @@ public class NovaBilibiliProperties {
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("词云不计这些用户")
         private List<String> wordCloudExcludeUids = new ArrayList<>();
+
+        /**
+         * 词云不显示这些词，每行一个；凡是包含这个词的词都不出现（填「哈哈」，「哈哈哈」也不出现），英文不分大小写。弹幕原文照常保存。保存后立刻生效。
+         */
+        // 画图时按当下这份表过滤，已经结束的场次重新画报告也跟着变。
+        @ConfigLevel(ConfigLevel.Level.COMMON)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
+        @ConfigLabel("词云不显示这些词")
+        private List<String> wordCloudBlockWords = new ArrayList<>();
     }
 
     /**

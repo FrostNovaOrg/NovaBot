@@ -6,6 +6,7 @@ import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.config.BilibiliConfigurationGroups;
 import org.frostnova.nova.bilibili.config.BilibiliDynamicBlockWordsApplier;
 import org.frostnova.nova.bilibili.config.BilibiliRankingApplier;
+import org.frostnova.nova.bilibili.config.BilibiliWordCloudBlockWordsApplier;
 import org.frostnova.nova.bilibili.config.BilibiliWordCloudExcludeApplier;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.protocol.NovaEventMapper;
@@ -463,6 +464,7 @@ class ConfigurationConsistencyTest {
     private List<RuntimeConfigurationApplierContributor> applierContributors() {
         List<RuntimeConfigurationApplierContributor> contributors = new ArrayList<>();
         contributors.add(new BilibiliWordCloudExcludeApplier());
+        contributors.add(new BilibiliWordCloudBlockWordsApplier());
         contributors.add(new BilibiliDynamicBlockWordsApplier());
         contributors.add(new BilibiliRankingApplier());
         contributors.addAll(loadOptionalContributor(RuntimeConfigurationApplierContributor.class,

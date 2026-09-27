@@ -1,5 +1,6 @@
 package org.frostnova.nova.bilibili.service;
 
+import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.event.live.BilibiliCaptainEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliCommanderEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliDanmuEvent;
@@ -73,10 +74,21 @@ public class BilibiliLiveStatsAggregator {
 
     private final Set<String> pkSeen = new LinkedHashSet<>();
 
-    @Autowired
+    /**
+     * 读词云屏蔽词用，切词时把屏蔽词整个留下。不带它构造时照常切词
+     */
+    private final NovaBilibiliProperties properties;
+
     public BilibiliLiveStatsAggregator(LiveDataService liveDataService, LiveDetailArchive details) {
+        this(liveDataService, details, null);
+    }
+
+    @Autowired
+    public BilibiliLiveStatsAggregator(LiveDataService liveDataService, LiveDetailArchive details,
+                                       NovaBilibiliProperties properties) {
         this.liveDataService = liveDataService;
         this.details = details;
+        this.properties = properties;
 
         // jieba 词典首次加载约一秒，事件在直播间消息线程上同步分发，
         // 放到后台线程预热，避免首条弹幕把消息处理卡住
@@ -604,7 +616,9 @@ public class BilibiliLiveStatsAggregator {
         if (event.getSource() == null || event.getSource().getUid() == null) {
             return;
         }
-        for (String word : DanmuWordUtil.extractWords(text)) {
+        List<String> blockWords = properties == null || properties.getLive() == null
+                ? List.of() : properties.getLive().getWordCloudBlockWords();
+        for (String word : DanmuWordUtil.extractWords(text, blockWords)) {
             liveDataService.incrementLiveWordFrequency(event.getPlatform(), event.getSource().getUid(), word);
         }
     }
