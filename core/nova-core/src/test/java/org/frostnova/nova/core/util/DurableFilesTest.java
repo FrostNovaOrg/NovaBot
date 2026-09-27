@@ -441,6 +441,48 @@ class DurableFilesTest {
     }
 
     /**
+     * 配置文件只读（或放在只读挂载上）时，直接写在打开那一步就被拒，原件一个字节没动。
+     * 这时日志若说「原件可能已不完整」，看日志的人会以为配置文件坏了。
+     * 真件：原件与所在目录都改成只读，建临时文件被拒、退回直接写，直接写与写回都在打开时被拒。
+     */
+    @Test
+    @DisplayName("原件只读、直接写在打开时就被拒：原来的错照抛，原件逐字节不变，日志说原件未动")
+    void directWriteRefusedAtOpenReportsOriginalUntouched() throws IOException {
+        byte[] original = "server:\n  port: 7827\n".getBytes(StandardCharsets.UTF_8);
+        Files.write(dir.resolve("application.yml"), original);
+        Path target = dir.resolve("application.yml").toRealPath();
+        Set<PosixFilePermission> originalDirPermissions = Files.getPosixFilePermissions(dir);
+
+        List<String> logged;
+        IOException thrown;
+        try (LogCapture capture = new LogCapture()) {
+            Files.setPosixFilePermissions(target, PosixFilePermissions.fromString("r--r--r--"));
+            Files.setPosixFilePermissions(dir, PosixFilePermissions.fromString("r-xr-xr-x"));
+            try {
+                org.junit.jupiter.api.Assumptions.assumeFalse(Files.isWritable(target),
+                        "当前用户无视文件权限（如 root），只读原件设不出来");
+                thrown = assertThrows(IOException.class,
+                        () -> DurableFiles.replace(target, "server:\n  port: 7828\n"),
+                        "直接写失败了就该抛给调用方");
+            } finally {
+                Files.setPosixFilePermissions(dir, originalDirPermissions);
+                Files.setPosixFilePermissions(target, PosixFilePermissions.fromString("rw-------"));
+            }
+            logged = capture.messages();
+        }
+        assertTrue(java.util.Arrays.equals(original, Files.readAllBytes(target)), "原件该逐字节不变");
+        assertTrue(thrown instanceof java.nio.file.AccessDeniedException,
+                "抛出的该是直接写被拒的原错: " + thrown);
+        assertEquals(0, thrown.getSuppressed().length,
+                "原件未动就不该去写回，不该挂写回的错: " + List.of(thrown.getSuppressed()));
+        assertTrue(logged.stream().anyMatch(message -> message.contains("原件未动")
+                        && message.contains(target.toString())),
+                "日志该点出路径并说原件未动: " + logged);
+        assertFalse(logged.stream().anyMatch(message -> message.contains("可能已不完整")),
+                "原件好好的，日志不该说可能已不完整: " + logged);
+    }
+
+    /**
      * 照真实「写到一半出错」的样子：先截断、写进前半截，再抛
      */
     private static Object writeHalfThenFail(Path target, IOException failure) throws IOException {
