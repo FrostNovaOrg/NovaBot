@@ -5,6 +5,7 @@ import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.properties.ConfigEffect;
 import org.frostnova.nova.core.config.ConfigLevel;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
+import org.frostnova.nova.core.util.DurableFiles;
 import org.frostnova.nova.core.config.ui.page.ConsolePageProvider;
 import org.frostnova.nova.core.config.ui.page.ConsolePages;
 import org.frostnova.nova.core.config.ui.vocab.ConsoleVocabularies;
@@ -1725,7 +1726,7 @@ public class ConfigUiController {
                 recordPrunedBackups(new TimestampedFileBackup(path, backupClock)
                         .backup(properties.getConfigUi().getBackupKeep()));
             }
-            Files.writeString(path, content, StandardCharsets.UTF_8);
+            DurableFiles.replace(path, content);
 
             result.put("success", true);
             result.put("message", properties.getDatasource().isJsonAutoReload()

@@ -277,6 +277,29 @@ class NovaStateStoreTest {
         }
     }
 
+    /**
+     * 状态文件不含秘密，新建时跟系统默认权限走：收得比直接写还紧的话，
+     * 按别的用户跑的数据备份读不到它，整趟备份就停在这一个件上
+     */
+    @Test
+    @DisplayName("新建的状态文件跟着系统默认权限走")
+    void newStateFileFollowsSystemDefault(@TempDir Path dir) throws Exception {
+        NovaStateStore opened = storeAt(dir);
+        opened.onApplicationReadyEvent();
+        try {
+            opened.write(MARKER, data -> data.put("seen", true));
+            opened.save();
+
+            Path probe = dir.resolve("probe.txt");
+            Files.writeString(probe, "p\n", StandardCharsets.UTF_8);
+            assertEquals(Files.getPosixFilePermissions(probe),
+                    Files.getPosixFilePermissions(dir.resolve("state.json")),
+                    "不含秘密的件新建时该跟直接写一样宽");
+        } finally {
+            opened.onContextClosedEvent();
+        }
+    }
+
     @Test
     @DisplayName("状态文件已是半截时仍能启动，坏件改名留底且不被之后的保存盖掉")
     void corruptStateIsParkedAndNotOverwritten(@TempDir Path dir) throws Exception {

@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -161,6 +162,35 @@ class DatasourceBackupTest {
         assertEquals("legacy-copy", Files.readString(legacy, StandardCharsets.UTF_8),
                 "旧的单份 datasource.json.bak 不应被覆盖");
         assertEquals(1, stampedBackupNames().size(), "这一趟应另写一份带时间戳的备份");
+    }
+
+    @Test
+    @DisplayName("写盘半途失败时推送配置原样、界面回报失败")
+    void failedSaveLeavesDatasourceIntact() throws IOException {
+        Files.createDirectory(dir.resolve("datasource.json.tmp"));
+
+        ResponseEntity<JSONObject> response = save(users(1));
+
+        assertFalse(response.getBody().getBooleanValue("success"), "写失败时不许回报成功");
+        assertEquals("[]", Files.readString(datasource, StandardCharsets.UTF_8),
+                "写到一半失败时盘上的推送配置被改掉了");
+    }
+
+    /**
+     * 推送配置不含秘密，新建时跟系统默认权限走：收得比直接写还紧的话，
+     * 同机别的账号或按别的用户跑的脚本（如数据备份）就读不了它
+     */
+    @Test
+    @DisplayName("新建的推送配置文件跟着系统默认权限走")
+    void newDatasourceFileFollowsSystemDefault() throws IOException {
+        Files.delete(datasource);
+        Path probe = dir.resolve("probe.txt");
+        Files.writeString(probe, "p\n", StandardCharsets.UTF_8);
+
+        assertTrue(save(users(1)).getBody().getBooleanValue("success"));
+
+        assertEquals(Files.getPosixFilePermissions(probe), Files.getPosixFilePermissions(datasource),
+                "不含秘密的件新建时该跟直接写一样宽");
     }
 
     /**

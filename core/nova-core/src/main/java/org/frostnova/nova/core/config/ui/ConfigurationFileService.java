@@ -7,6 +7,7 @@ import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.core.timeline.TimelineEventType;
 import org.frostnova.nova.core.timeline.TimelineWriter;
+import org.frostnova.nova.core.util.DurableFiles;
 import lombok.extern.slf4j.Slf4j;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.ObjectProvider;
@@ -400,7 +401,7 @@ public class ConfigurationFileService {
             Files.createDirectories(parent);
         }
 
-        Files.writeString(configPath, initialContent.get(), StandardCharsets.UTF_8);
+        DurableFiles.replace(configPath, initialContent.get(), DurableFiles.OWNER_ONLY);
         log.info("配置文件不存在, 已按当前配置面写出一份完整的 {}", describeConfigPath());
         return true;
     }
@@ -535,7 +536,7 @@ public class ConfigurationFileService {
 
         if (!changed.isEmpty()) {
             backup();
-            Files.write(configPath, lines, StandardCharsets.UTF_8);
+            DurableFiles.replace(configPath, lines, DurableFiles.OWNER_ONLY);
             log.info("配置界面已更新 {} 个配置项: {}", changed.size(), String.join(", ", changed));
         }
 
@@ -592,7 +593,7 @@ public class ConfigurationFileService {
 
             int created = createFirstItem(lines, location, fields);
             backup();
-            Files.write(configPath, lines, StandardCharsets.UTF_8);
+            DurableFiles.replace(configPath, lines, DurableFiles.OWNER_ONLY);
             log.info("配置界面已在 {} 下建出第 1 个元素, 共 {} 个字段", listPath, created);
             return created;
         }
@@ -683,7 +684,7 @@ public class ConfigurationFileService {
 
         if (changed > 0) {
             backup();
-            Files.write(configPath, lines, StandardCharsets.UTF_8);
+            DurableFiles.replace(configPath, lines, DurableFiles.OWNER_ONLY);
             log.info("配置界面已更新 {} 第 {} 个元素的 {} 个字段, 重启后生效", listPath, index + 1, changed);
         }
 

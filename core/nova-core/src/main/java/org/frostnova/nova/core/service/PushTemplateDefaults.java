@@ -5,6 +5,7 @@ import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.handler.NovaEventHandler;
 import org.frostnova.nova.core.model.HandlerOption;
 import org.frostnova.nova.core.sender.AtMode;
+import org.frostnova.nova.core.util.DurableFiles;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -204,7 +205,7 @@ public class PushTemplateDefaults {
                 if (parent != null) {
                     Files.createDirectories(parent);
                 }
-                Files.writeString(path, data.toJSONString(), StandardCharsets.UTF_8);
+                DurableFiles.replace(path, data.toJSONString());
                 cache = data;
                 log.info("默认模板已更新: {}", className);
             } catch (IOException e) {

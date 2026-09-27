@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.model.Cookies;
+import org.frostnova.nova.core.util.DurableFiles;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 
@@ -231,24 +232,17 @@ public class BilibiliCredentialStore {
     }
 
     /**
-     * 以仅属主可读写的权限写入文件
+     * 以仅属主可读写的权限写入文件，写一半失败时原有内容分毫不动
      * <p>
-     * 先按目标权限创建文件再写入，避免文件在创建与改权限之间存在一个可被其他用户读取的时间窗口。
+     * 先写同目录的临时文件再换名、临时文件按原件权限创建、新建时按仅属主可读写建、
+     * 建临时文件或换名走不通时退回直接写，这些都由 {@link DurableFiles} 兜着；
+     * 这里只再把换上之后的权限钉回仅属主可读写。
      * @param path 文件路径
      * @param content 内容
      * @throws IOException 写入失败时抛出
      */
     private void writeSecurely(Path path, String content) throws IOException {
-        if (!Files.exists(path)) {
-            try {
-                Files.createFile(path, PosixFilePermissions.asFileAttribute(OWNER_ONLY));
-            } catch (UnsupportedOperationException e) {
-                // 非 POSIX 文件系统（如 Windows）不支持此属性，退化为普通创建
-                Files.createFile(path);
-            }
-        }
-
-        Files.writeString(path, content, StandardCharsets.UTF_8);
+        DurableFiles.replace(path, content, OWNER_ONLY);
         restrictPermissions(path);
     }
 

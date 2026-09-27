@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -57,6 +58,34 @@ class PushTemplateDefaultsTest {
     }
 
     // ---------- 阳 ----------
+
+    @Test
+    @DisplayName("写盘半途失败时返回问题清单，盘上的默认模板原样")
+    void failedSaveLeavesTemplateFileIntact() throws IOException {
+        assertEquals(List.of(), defaults.save(handler, new JSONObject().fluentPut("message", "第一次改")));
+        String original = Files.readString(file(), StandardCharsets.UTF_8);
+        Files.createDirectory(dir.resolve(PushTemplateDefaults.FILE_NAME + ".tmp"));
+
+        List<String> issues = defaults.save(handler, new JSONObject().fluentPut("message", "第二次改"));
+
+        assertFalse(issues.isEmpty(), "写失败应返回问题清单，而不是装作已经改好");
+        assertEquals(original, Files.readString(file(), StandardCharsets.UTF_8),
+                "写到一半失败时盘上的默认模板被改掉了");
+    }
+
+    /**
+     * 默认模板不含秘密，新建时跟系统默认权限走，不必收得比直接写还紧
+     */
+    @Test
+    @DisplayName("新建的默认模板文件跟着系统默认权限走")
+    void newTemplateFileFollowsSystemDefault() throws IOException {
+        assertEquals(List.of(), defaults.save(handler, new JSONObject().fluentPut("message", "{uname} 开播了")));
+        Path probe = dir.resolve("probe.txt");
+        Files.writeString(probe, "p\n", StandardCharsets.UTF_8);
+
+        assertEquals(Files.getPosixFilePermissions(probe), Files.getPosixFilePermissions(file()),
+                "不含秘密的件新建时该跟直接写一样宽");
+    }
 
     @Test
     @DisplayName("没改过时就是出厂默认，文件也不必存在")
