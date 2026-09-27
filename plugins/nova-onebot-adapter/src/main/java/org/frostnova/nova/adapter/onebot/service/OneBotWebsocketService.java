@@ -3,6 +3,7 @@ package org.frostnova.nova.adapter.onebot.service;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.adapter.onebot.config.OneBotAdapterPluginProperties;
+import org.frostnova.nova.adapter.onebot.config.OneBotEndpointAddresses;
 import org.frostnova.nova.adapter.onebot.converter.OneBotIncomingMessage;
 import org.frostnova.nova.adapter.onebot.model.OneBotSender;
 import org.frostnova.nova.core.plugin.NovaComponent;
@@ -188,17 +189,17 @@ public class OneBotWebsocketService {
             boolean addressLogged = false;
             // 不可用那条的堆栈只在第一次带；后面每轮都带整段栈，是刷屏的另一半
             boolean failureStackLogged = false;
+            // 退避里每趟都是同一个地址，拼一次，日志行与 URI 共用
+            String url = OneBotEndpointAddresses.websocketUrl(sender.getName(), sender.getOneBotAddress(), sender.getOneBotWebsocketPort());
             while (!connection.retired) {
                 log.debug("准备连接 {} 的 OneBot Websocket 服务", sender.getName());
                 if (!addressLogged) {
-                    log.info("{} 的 OneBot Websocket 连接地址: ws://{}:{}/", sender.getName(), sender.getOneBotAddress(), sender.getOneBotWebsocketPort());
+                    log.info("{} 的 OneBot Websocket 连接地址: {}/", sender.getName(), url);
                     addressLogged = true;
                 }
 
                 CompletableFuture<WebSocketSession> sessionFuture = null;
                 try {
-                    String url = String.format("ws://%s:%d", sender.getOneBotAddress(), sender.getOneBotWebsocketPort());
-
                     WebSocketHttpHeaders headers = new WebSocketHttpHeaders();
                     headers.add("Authorization", "Bearer " + sender.getOneBotWebsocketToken());
 
@@ -422,9 +423,11 @@ public class OneBotWebsocketService {
         private final StringBuilder messageBuffer = new StringBuilder();
 
         /**
-         * 这条连接已因一条消息过长而断开，此后到的分片一概不收
+         * 这条连接已因一条消息过长而断开，超限那条消息剩余的分片一概不收
          * <p>
          * 断开要等对端回话才真断，这期间还会有分片进来，接着拼只会拼出半条来路不明的消息。
+         * 断开那一下要是抛了异常，连接会一直挂着：等到这条消息的最后一片（isLast）到了，
+         * 就把这一位复位，下一条消息照常收——不复位的话，此后的消息会永远丢下去。
          */
         private boolean oversized = false;
 
@@ -510,6 +513,12 @@ public class OneBotWebsocketService {
             try {
                 if (webSocketRawMessage instanceof TextMessage webSocketMessage) {
                     if (oversized) {
+                        // 超限那条消息剩下的分片照旧一概不收。它的最后一片（isLast）到了就把
+                        // oversized 复位：断开那一下要是抛了异常，连接其实还挂着，不复位的话
+                        // 这条连接此后只会永远丢消息——看着活着，实际已经聋了
+                        if (webSocketMessage.isLast()) {
+                            oversized = false;
+                        }
                         return;
                     }
 

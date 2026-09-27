@@ -91,7 +91,7 @@ novabot:
           api-token:                        # 推送接口访问 Token。留空则启动时自动生成随机 Token，
                                             # 本机部署无需配置；需外部程序调用时在此填入随机串
           websocket: true                   # 是否启用 Websocket
-          one-bot-address: 127.0.0.1        # OneBot 实现的地址
+          one-bot-address: 127.0.0.1        # OneBot 实现的地址；要加密连就写 https://主机（或 wss://主机，HTTP 与 Websocket 一起加密），端口照旧填在下面两个端口项
           one-bot-http-port: 3000           # OneBot HTTP 端口
           one-bot-websocket-port: 3001      # OneBot Websocket 端口
           one-bot-http-token:               # OneBot HTTP Token，必填，与 OneBot 实现中配置的一致

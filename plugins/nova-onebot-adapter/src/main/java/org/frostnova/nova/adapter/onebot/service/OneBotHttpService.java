@@ -3,6 +3,7 @@ package org.frostnova.nova.adapter.onebot.service;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.adapter.onebot.config.OneBotAdapterPluginProperties;
+import org.frostnova.nova.adapter.onebot.config.OneBotEndpointAddresses;
 import org.frostnova.nova.adapter.onebot.converter.OneBotMessageConverter;
 import org.frostnova.nova.adapter.onebot.enums.ResultCode;
 import org.frostnova.nova.adapter.onebot.exception.OneBotApiException;
@@ -113,7 +114,8 @@ public class OneBotHttpService {
         String senderName = sender.getName();
 
         log.info("开始检测 {} 的 OneBot HTTP 服务可用性", senderName);
-        log.info("{} 的 OneBot HTTP 连接地址: http://{}:{}", senderName, sender.getOneBotAddress(), sender.getOneBotHttpPort());
+        log.info("{} 的 OneBot HTTP 连接地址: {}", senderName,
+                OneBotEndpointAddresses.httpBaseUrl(senderName, sender.getOneBotAddress(), sender.getOneBotHttpPort()));
         try {
             JSONObject versionInfo = http.getVersionInfo(sender, new JSONObject());
             log.info("{} 的 OneBot HTTP 连接正常, 版本 v{}", senderName, versionInfo.getString("app_version"));
