@@ -2158,7 +2158,8 @@ public class BilibiliLiveReportPainter {
         }
         Optional<Long> start = liveStart(platform, uid);
         long startValue = start.orElse(-1L);
-        String key = platform + "\0" + uid + "\0" + startValue + "\0" + exclude;
+        // 重算时切词要把屏蔽词整个留下，切法随屏蔽表变，所以表也进键：改了表不拿旧的那一份
+        String key = platform + "\0" + uid + "\0" + startValue + "\0" + exclude + "\0" + wordCloudBlockWords();
         // 先拿这场的门，再碰留下的表。反过来两头会互等。
         // 读原文和重算放在表锁外面，别的场不用跟着等。
         Object gate = wordCloudGates.computeIfAbsent(key, ignored -> new Object());
@@ -2208,11 +2209,21 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
-     * 按弹幕原文重算这一场的词频。
+     * 当下这张词云屏蔽词表，已折好大小写。每次画都现读，保存后下一张就按新表
+     */
+    private List<String> wordCloudBlockWords() {
+        if (properties == null || properties.getLive() == null) {
+            return List.of();
+        }
+        return DanmuWordCloudFrequencies.parseBlockWords(properties.getLive().getWordCloudBlockWords());
+    }
+
+    /**
+     * 按弹幕原文重算这一场的词频。屏蔽词在切词时整个留下，不切出碎片
      */
     Map<String, Integer> recountWordCloud(String platform, Long uid, List<DanmuRecord> danmu,
                                           Set<Long> exclude) {
-        return DanmuWordCloudFrequencies.recount(platform, uid, danmu, exclude);
+        return DanmuWordCloudFrequencies.recount(platform, uid, danmu, exclude, wordCloudBlockWords());
     }
 
     /**
@@ -2294,10 +2305,14 @@ public class BilibiliLiveReportPainter {
      */
     private WordCloud composeWordCloud(String platform, Long uid, Map<String, Integer> frequencies) {
         // 🔴 词频相同时按词本身排，且排序要落在 limit 之前：只按词频排的话，
-        // 尾部同频的那一批里究竟哪几个进得了前 72 名，由 Map 的遍历顺序决定
+        // 尾部同频的那一批里究竟哪几个进得了前 72 名，由 Map 的遍历顺序决定。
+        // 屏蔽词也在 limit 之前挑掉，让出的位子由后面的词补上。
+        // 旧场重画拿的是当年存下的词频、不再切词，这里只能按存下的词挑
+        List<String> blockWords = wordCloudBlockWords();
         List<WordCloudLayout.Word> words = frequencies.entrySet().stream()
                 .filter(entry -> entry.getKey() != null && !entry.getKey().isBlank()
                         && entry.getValue() != null && entry.getValue() > 0)
+                .filter(entry -> !DanmuWordCloudFrequencies.blocked(entry.getKey(), blockWords))
                 .sorted(Map.Entry.<String, Integer>comparingByValue(Comparator.reverseOrder())
                         .thenComparing(Map.Entry.comparingByKey()))
                 .limit(CLOUD_MAX_WORDS)
