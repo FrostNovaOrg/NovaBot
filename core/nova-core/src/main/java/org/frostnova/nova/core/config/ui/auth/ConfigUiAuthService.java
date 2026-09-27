@@ -337,15 +337,20 @@ public class ConfigUiAuthService {
      * <p>
      * 认中哪一把就回哪一把：用户可能扫的是先前那张码，绑上的必须是他扫的那把，
      * 否则界面说绑好了，验证器里那条却对不上号。
+     * <p>
+     * <b>认中时把命中的时间步一并交出</b>（与登录那条路共用 {@link TotpGenerator#matchingStep}
+     * 这一份时间步算法），记成用过由办成绑定的那一步去办：这一步自己不记，
+     * 码不对、存盘失败之后用户才在同一格里重试得了。
      * @param session 当前会话
      * @param code 用户输入的验证码
-     * @return 校验通过时返回认中的那把待启用密钥
+     * @return 校验通过时返回认中的那把待启用密钥与它那一格的时间步
      */
-    public Optional<String> verifyPending(ConfigUiSession session, String code) {
+    public Optional<PendingEnroll> verifyPending(ConfigUiSession session, String code) {
         Instant now = clock.get();
         for (String secret : session.pendingSecrets()) {
-            if (TotpGenerator.verify(secret, code, now)) {
-                return Optional.of(secret);
+            Long step = TotpGenerator.matchingStep(secret, code, now);
+            if (step != null) {
+                return Optional.of(new PendingEnroll(secret, step));
             }
         }
         return Optional.empty();
@@ -358,17 +363,24 @@ public class ConfigUiAuthService {
      * 而两者分开落的话，会出现「绑好了却还是不问码」——那是最难被发现的一种失效，
      * 因为它看起来一切正常。
      * <p>
+     * <b>核中的那一格记成用过</b>：先作废旧密钥的已用格，再记下这一格。只作废不记的话，
+     * 绑定时核过的那枚码在它那一格里还能拿去登录一次，而这枚码正躺在截图、
+     * 验证器的输入框与自动填充里。记格只在办成绑定时做——码不对、存盘失败那两趟
+     * 不烧码，用户才在同一格里重试得了。
+     * <p>
      * 本会话的待绑密钥一并清掉：绑完了它们就都成了没人要的旧码。
      * @param session 当前会话，可为 null（不经绑定那条路直接落密钥时）
      * @param secret Base32 密钥
+     * @param verifiedStep 核中那枚码所在的时间步，由 {@link #verifyPending} 交出
      */
-    public void activateTotp(ConfigUiSession session, String secret) {
+    public void activateTotp(ConfigUiSession session, String secret, long verifiedStep) {
         this.totpSecret = secret;
         if (session != null) {
             session.clearPendingSecrets();
         }
         this.totpEnabled = true;
         resetTotpConsume();
+        consumeTotpStep(verifiedStep);
         log.info("配置界面已绑定验证器, 之后登录需要额外输入动态验证码");
     }
 
@@ -852,6 +864,14 @@ public class ConfigUiAuthService {
      * @param revoked 注销的别处会话数，不算换下来的那一把
      */
     public record SessionRotation(ConfigUiSession session, int revoked) {
+    }
+
+    /**
+     * 绑定引导里认中的一趟：哪把密钥、哪一格
+     * @param secret 认中的那把待启用密钥
+     * @param step 核中那枚码所在的时间步（RFC 6238 的 counter）
+     */
+    public record PendingEnroll(String secret, long step) {
     }
 
     /**
