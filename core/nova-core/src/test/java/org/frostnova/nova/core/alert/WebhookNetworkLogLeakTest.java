@@ -18,9 +18,16 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
+
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -233,6 +240,71 @@ class WebhookNetworkLogLeakTest {
         assertTrue(rendered.contains("POST <- ["), "失败那一行没写出来，下面的不漏断言就是空的:\n" + rendered);
         assertKeepsHostOnly("POST 失败行", rendered);
         assertTrue(stackFrame.matcher(rendered).find(), "栈帧丢了，出错就没法定位了:\n" + rendered);
+    }
+
+    /**
+     * 带拦不住的字符的地址：那个字符落在推送密钥前面，URI 照收、请求照发
+     */
+    private static String badCharSecretUrl(int port, char bad) {
+        return "http://" + HOST + ":" + port + "/" + bad + "/" + PUSH_KEY + "/" + EXTRA_PATH + "?" + QUERY;
+    }
+
+    /**
+     * 同一次真失败的原文（绕过剥法拿到的那一条）：长什么样由网络栈与 spring-web 说了算
+     */
+    private static String rawFailureOf(String url, String method) {
+        LogProperties logConfig = new LogProperties();
+        HttpUtil http = new HttpUtil(new ThreadPoolTaskExecutor(),
+                RestTemplateConfig.buildTemplate(Duration.ofSeconds(3), Duration.ofSeconds(3)), logConfig);
+        try {
+            if ("GET".equalsIgnoreCase(method)) {
+                http.getForStatus(URI.create(url + (url.contains("?") ? "&" : "?") + "title=t&content=c"),
+                        new LinkedHashMap<>(), HttpUtil.AddressIsCredential.YES);
+            } else {
+                http.postForStatus(url, new LinkedHashMap<>(), "{}", HttpUtil.AddressIsCredential.YES);
+            }
+            return "（没有失败，这一趟居然发出去了）";
+        } catch (Exception e) {
+            return e.toString();
+        }
+    }
+
+    /**
+     * 密钥前面带 {@code '} {@code (} 全角{@code ，} 时：剥地址的正则在这几个字符上收边界，
+     * 失败行括号里的异常原文与末参栈迹首行都会把字符后面那段（正是密钥）带下来。
+     * 开着网络日志排障时正是常失败的时刻，日志整份发出去密钥就跟着走。
+     */
+    private void stopCharFailureLineKeepsHostOnly(String method, char bad) throws IOException {
+        String url = badCharSecretUrl(closedPort(), bad);
+
+        // 阳性对照：这一形的真失败原文确实带着密钥——少了这一条，下面的不漏在请求根本没发出去时同样是绿的
+        String raw = rawFailureOf(url, method);
+        assertTrue(raw.contains(PUSH_KEY), "注入没注入到密钥，说明这把尺子量错了地方:\n" + raw);
+
+        WebhookAlertChannel channel = channelWith(url, method);
+        String rendered = captureNetworkLog(
+                () -> assertThrows(IllegalStateException.class, () -> channel.send("标题", "内容")));
+
+        assertTrue(rendered.contains(method + " <- ["), "失败那一行没写出来，下面的不漏断言就是空的:\n" + rendered);
+        assertKeepsHostOnly(method + " 停字符(" + bad + ")失败行", rendered);
+        assertTrue(stackFrame.matcher(rendered).find(), "栈帧丢了，出错就没法定位了:\n" + rendered);
+    }
+
+    static Stream<Arguments> stopCharForms() {
+        return Stream.of(
+                Arguments.of("GET", '\''),
+                Arguments.of("GET", '('),
+                Arguments.of("GET", '，'),
+                Arguments.of("POST", '\''),
+                Arguments.of("POST", '('),
+                Arguments.of("POST", '，'));
+    }
+
+    @ParameterizedTest(name = "{0} 方式，密钥前带 [{1}]")
+    @MethodSource("stopCharForms")
+    @DisplayName("密钥前带拦不住的字符时，失败行连异常原文与栈迹也不带密钥")
+    void stopCharFailureLineLeaksNothing(String method, char bad) throws IOException {
+        stopCharFailureLineKeepsHostOnly(method, bad);
     }
 
     /**

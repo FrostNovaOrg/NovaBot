@@ -47,9 +47,10 @@ public class NovaDefaultLiveOnEventListener {
         try {
             optionalLastLiveEndTime = liveDataService.getLiveEndTime(event.getPlatform(), event.getSource().getUid());
         } catch (RuntimeException e) {
-            // 读不出上一场就当没有上一场（与 Optional.empty() 同一条路），不标断线重连，广播照常往下走
-            log.warn("[{}] [断线重连检测] 读上一场下播时间出错，按新开播处理（UID: {}）",
-                    event.getPlatform(), event.getSource().getUid());
+            // 读不出上一场就当没有上一场（与 Optional.empty() 同一条路），不标断线重连，广播照常往下走。
+            // 那句日志带异常类名（简名），不带异常原文也不带栈：原文可能带着连接串
+            log.warn("[{}] [断线重连检测] 读上一场下播时间出错，按新开播处理（UID: {}，异常类名: {}）",
+                    event.getPlatform(), event.getSource().getUid(), e.getClass().getSimpleName());
             return;
         }
         if (optionalLastLiveEndTime.isPresent()) {

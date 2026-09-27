@@ -1,7 +1,11 @@
 package org.frostnova.nova.core.util;
 
+import java.net.URI;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -38,11 +42,36 @@ public final class UrlRedactor {
      * 把文本里每个地址剥成主机名：路径与查询串一概不外带
      */
     public static String redact(String text) {
+        return redact(text, (String[]) null);
+    }
+
+    /**
+     * 先按「这一次请求用到的地址」原字面把地址整条换成主机名，再走原剥法
+     * <p>
+     * 原剥法靠正则收边界（免得把中文叙述吃进地址），在 {@code '} {@code (} {@code )}
+     * 全角{@code ，} 这类字符上停。这类字符混在推送密钥前面时 URI 照收、请求照发，
+     * 而网络出错的异常原文里，停下那个字符后面那段（正是密钥待的地方）原样留下。
+     * 调用方手上有这一次真正用到的地址，按字面换掉它就不用猜哪一段像密钥。
+     * <p>
+     * 印文里的地址未必是原形：失败原文长什么样由网络栈与 spring-web 说了算，实测这一版
+     * 只带 {@code scheme://主机/路径}、<b>不带查询串</b>。所以每条已知地址连它导出的
+     * 「去查询串那一形」「URI 的 toASCIIString 形」一并按字面换，长的先换
+     * （短的先换会把长的截断，剩下的尾巴照样漏）。都是从这条地址自身导出的写法，
+     * 不是从形里猜密钥。
+     * <p>
+     * 已知地址为 null 或空时与 {@link #redact(String)} 完全一样。
+     *
+     * @param text 印文
+     * @param knownAddresses 这一次请求真正用到的地址（可空、可含 null 项）
+     * @return 剥掉地址后的印文
+     */
+    public static String redact(String text, String... knownAddresses) {
         if (text == null) {
             return null;
         }
-        Matcher matcher = URL.matcher(text);
-        StringBuilder out = new StringBuilder(text.length());
+        String stripped = replaceKnownAddresses(text, knownAddresses);
+        Matcher matcher = URL.matcher(stripped);
+        StringBuilder out = new StringBuilder(stripped.length());
         while (matcher.find()) {
             matcher.appendReplacement(out, Matcher.quoteReplacement(hostOf(matcher.group())));
         }
@@ -60,22 +89,91 @@ public final class UrlRedactor {
      * 这一步自己会无限递归成 StackOverflowError，把要看的错误整个吞掉。
      */
     public static Throwable redact(Throwable throwable) {
-        return redact(throwable, Collections.newSetFromMap(new IdentityHashMap<>()));
+        return redact(throwable, (String[]) null);
+    }
+
+    /**
+     * 同 {@link #redact(Throwable)}，另带这一次请求真正用到的地址：
+     * 每层印文先按字面把它换成主机名，再走原剥法
+     */
+    public static Throwable redact(Throwable throwable, String... knownAddresses) {
+        return redact(throwable, Collections.newSetFromMap(new IdentityHashMap<>()), knownAddresses);
     }
 
     /**
      * 记着这条链上已经走过的异常（按对象身份认），走到见过的对象就截断
      */
-    private static Throwable redact(Throwable throwable, Set<Throwable> seen) {
+    private static Throwable redact(Throwable throwable, Set<Throwable> seen, String[] knownAddresses) {
         if (throwable == null) {
             return null;
         }
         if (!seen.add(throwable)) {
             return null;
         }
-        Stripped copy = new Stripped(redact(throwable.toString()), redact(throwable.getCause(), seen));
+        Stripped copy = new Stripped(redact(throwable.toString(), knownAddresses),
+                redact(throwable.getCause(), seen, knownAddresses));
         copy.setStackTrace(throwable.getStackTrace());
         return copy;
+    }
+
+    /**
+     * 已知地址按字面换成主机名：换完才轮到正则
+     * <p>
+     * 每条地址的几种写法一并算上、长的先换；单条或整组为空时原样交回
+     */
+    private static String replaceKnownAddresses(String text, String[] knownAddresses) {
+        if (knownAddresses == null || knownAddresses.length == 0) {
+            return text;
+        }
+        List<String[]> forms = new ArrayList<>();
+        for (String address : knownAddresses) {
+            if (address == null || address.isEmpty()) {
+                continue;
+            }
+            String host = hostOf(address);
+            if (host.isEmpty()) {
+                continue;
+            }
+            for (String form : renderingsOf(address)) {
+                forms.add(new String[]{form, host});
+            }
+        }
+        forms.sort((a, b) -> b[0].length() - a[0].length());
+        String out = text;
+        for (String[] form : forms) {
+            out = out.replace(form[0], form[1]);
+        }
+        return out;
+    }
+
+    /**
+     * 一条地址在印文里可能长成的样子：整条、去查询串、{@code toASCIIString} 形、它去查询串那一形
+     * <p>
+     * 都是从这条地址自身导出的写法：失败原文可能截掉查询串，也可能把非 ASCII 换成百分号转义
+     * （POST 那一路 RestTemplate 就这么拼）。
+     */
+    private static List<String> renderingsOf(String address) {
+        String ascii;
+        try {
+            ascii = URI.create(address).toASCIIString();
+        } catch (RuntimeException e) {
+            // 地址写法 URI 不收（有空白之类）时没有 ASCII 形，拿原形接着换
+            ascii = address;
+        }
+        Set<String> renderings = new LinkedHashSet<>();
+        renderings.add(address);
+        renderings.add(withoutQuery(address));
+        renderings.add(ascii);
+        renderings.add(withoutQuery(ascii));
+        return new ArrayList<>(renderings);
+    }
+
+    /**
+     * 去掉查询串那一段
+     */
+    private static String withoutQuery(String address) {
+        int cut = address.indexOf('?');
+        return cut >= 0 ? address.substring(0, cut) : address;
     }
 
     /**

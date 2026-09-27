@@ -22,12 +22,18 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.SocketTimeoutException;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
+
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -294,6 +300,88 @@ class WebhookFailureLeakTest {
     @DisplayName("GET 地址里混进大于号：报「地址写法不对」，回话与工程日志都不漏密钥")
     void getWithGreaterThanInUrlFailsAsBadAddress() throws IOException {
         badCharFailsWithoutLeaking('>');
+    }
+
+    /**
+     * 密钥前面带 {@code '} {@code (} {@code )} 全角{@code ，} 这一类字符时：URI 照收、请求照发，
+     * 而剥地址的正则为免得把中文叙述吃进地址，在这几个字符上收边界——
+     * 字符后面那段（正是推送密钥待的地方）原样留在起因链里。回话那一句本来就干净，
+     * 漏的是整条起因链：排障时工程日志整份发出去，密钥跟着走。
+     */
+    private void stopCharFailsWithoutLeaking(String method, char bad) throws IOException {
+        Fixture fixture = new Fixture(badCharSecretUrl(closedPort(), bad));
+        fixture.properties.getAlert().setWebhookMethod(method);
+
+        // 阳性对照：真失败原文里确实带着密钥——少了这一条，下面的不漏在请求根本没发出去时同样是绿的
+        String raw = rawFailureOf(fixture, method);
+        assertTrue(raw.contains(PUSH_KEY), "注入没注入到密钥，说明这把尺子量错了地方:\n" + raw);
+
+        AlertService.TestResult[] holder = new AlertService.TestResult[1];
+        String rendered = captureRendered(() -> holder[0] = fixture.service.test("webhook"));
+
+        assertKeepsHostAndReasonOnly(method + " 停字符(" + bad + ")测试回话", holder[0].message(), HOST, "连不上");
+        // 工程日志打出整条异常（含起因链与栈迹），那一整份里也不许有密钥
+        assertKeepsHostAndReasonOnly(method + " 停字符(" + bad + ")工程日志", rendered, HOST);
+        assertTrue(stackFrame.matcher(rendered).find(), "栈帧丢了，出错就没法定位了:\n" + rendered);
+    }
+
+    static Stream<Arguments> stopCharForms() {
+        return Stream.of(
+                Arguments.of("GET", '\''),
+                Arguments.of("GET", '('),
+                Arguments.of("GET", '，'),
+                Arguments.of("POST", '\''),
+                Arguments.of("POST", '('),
+                Arguments.of("POST", '，'));
+    }
+
+    @ParameterizedTest(name = "{0} 方式，密钥前带 [{1}]")
+    @MethodSource("stopCharForms")
+    @DisplayName("密钥前带拦不住的字符时，回话与整条起因链都不漏密钥、主机名还在")
+    void stopCharFailureLeaksNothingInReplyOrCauseChain(String method, char bad) throws IOException {
+        stopCharFailsWithoutLeaking(method, bad);
+    }
+
+    /**
+     * 同一次真失败的原文（绕过剥法拿到的那一条）：长什么样由网络栈与 spring-web 说了算
+     */
+    private static String rawFailureOf(Fixture fixture, String method) {
+        String url = fixture.properties.getAlert().getWebhookUrl();
+        try {
+            if ("GET".equalsIgnoreCase(method)) {
+                fixture.http.getForStatus(URI.create(url + (url.contains("?") ? "&" : "?") + "title=t&content=c"),
+                        new LinkedHashMap<>(), HttpUtil.AddressIsCredential.YES);
+            } else {
+                fixture.http.postForStatus(url, new LinkedHashMap<>(), "{}", HttpUtil.AddressIsCredential.YES);
+            }
+            return "（没有失败，这一趟居然发出去了）";
+        } catch (Exception e) {
+            return e.toString();
+        }
+    }
+
+    /**
+     * 起因里带的是整条地址原文（连查询串、带拦不住的字符）那一形：同样整条换成主机名
+     * <p>
+     * 真栈的失败原文只带 {@code scheme://主机/路径}、不带查询串，这一格用测试替身把
+     * 「整条地址原文」那一形也钉住：两种形都得换掉，漏哪一种都漏密钥。
+     */
+    @Test
+    @DisplayName("起因里带整条地址原文（连查询串、密钥前带撇号）也不漏——那一形同样整条换成主机名")
+    void causeChainCarriesNoSecretEvenWithTheFullAddressText() {
+        String full = "https://api.day.app/'/" + PUSH_KEY + "/" + EXTRA_PATH + "?" + QUERY;
+        String outerText = "I/O error on POST request for \"" + full + "\": boom";
+        ResourceAccessException outer = new ResourceAccessException(outerText, new IOException(outerText));
+        assertTrue(outerText.contains(PUSH_KEY) && outerText.contains("group=bot"),
+                "注入没注入到密钥与查询串，说明这把尺子量错了地方");
+        HttpUtil http = mock(HttpUtil.class);
+        when(http.postForStatus(anyString(), anyMap(), any(), any())).thenThrow(outer);
+        Fixture fixture = new Fixture(http, full);
+
+        String rendered = captureRendered(() -> fixture.service.alert("link.lost", "机器人掉线", "请重新扫码"));
+
+        assertKeepsHostAndReasonOnly("整条地址原文的起因链", rendered, "api.day.app");
+        assertTrue(rendered.contains("Caused by"), "起因链被整个丢掉了, 排障要看的层就没了:\n" + rendered);
     }
 
     @Test

@@ -144,8 +144,10 @@ public class HttpUtil {
                 long cost = System.currentTimeMillis() - startTime;
                 // 末参必须是打码副本：交原异常进去，logback 会附栈迹，
                 // 而栈迹首行是 e.toString()，里面是未打码的原始 message
+                // 已知地址带 URI 两形：地址里的非 ASCII 字符进 URI 后有两种写法
                 networkLogger.error("{} <- [{}]({} ms): {}", method.name(),
-                        failureMessage(e, addressIsCredential), cost, safe, failureThrowable(e, addressIsCredential));
+                        failureMessage(e, addressIsCredential, uri.toString(), uri.toASCIIString()),
+                        cost, safe, failureThrowable(e, addressIsCredential, uri.toString(), uri.toASCIIString()));
             }
             throw e;
         }
@@ -174,8 +176,10 @@ public class HttpUtil {
                 // 异常本身也要打码：它的 message 里常带着触发失败的完整地址
                 // 末参必须是打码副本：交原异常进去，logback 会附栈迹，
                 // 而栈迹首行是 e.toString()，里面是未打码的原始 message
+                // 已知地址就是这一趟用的那条（调用处手上有的形）
                 networkLogger.error("{} <- [{}]({} ms): {}", method.name(),
-                        failureMessage(e, addressIsCredential), cost, safe, failureThrowable(e, addressIsCredential));
+                        failureMessage(e, addressIsCredential, url),
+                        cost, safe, failureThrowable(e, addressIsCredential, url));
             }
             throw e;
         } finally {
@@ -216,18 +220,22 @@ public class HttpUtil {
 
     /**
      * 失败行括号里的那一句：异常 message 里裹着触发失败的完整地址，按同一层记法处理
+     * <p>
+     * {@code knownAddresses} 是这一次请求真正用到的地址：地址本身是凭据时，
+     * 剥法除正则外还按字面把它换成主机名——正则在 {@code '} {@code (} 全角{@code ，}
+     * 这类字符上停，停下那段里的密钥只能靠字面换掉整条地址拿掉
      */
-    private static String failureMessage(Exception e, AddressIsCredential addressIsCredential) {
+    private static String failureMessage(Exception e, AddressIsCredential addressIsCredential, String... knownAddresses) {
         return addressIsCredential == AddressIsCredential.YES
-                ? UrlRedactor.redact(e.getMessage()) : UrlMasker.mask(e.getMessage());
+                ? UrlRedactor.redact(e.getMessage(), knownAddresses) : UrlMasker.mask(e.getMessage());
     }
 
     /**
      * 失败行末参的异常副本：栈迹首行是 {@code toString()}，message 里的地址同样按同一层记法处理
      */
-    private static Throwable failureThrowable(Exception e, AddressIsCredential addressIsCredential) {
+    private static Throwable failureThrowable(Exception e, AddressIsCredential addressIsCredential, String... knownAddresses) {
         return addressIsCredential == AddressIsCredential.YES
-                ? UrlRedactor.redact(e) : UrlMasker.sanitize(e);
+                ? UrlRedactor.redact(e, knownAddresses) : UrlMasker.sanitize(e);
     }
 
     /**
