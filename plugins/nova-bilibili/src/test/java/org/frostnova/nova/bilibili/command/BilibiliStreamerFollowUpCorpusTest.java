@@ -56,6 +56,11 @@ import static org.mockito.Mockito.when;
  * 期望以 {@code !} 开头表示这一段必须不出现——把序号认错人，出来的是另一位主播的数据，
  * <b>而那张图看起来完全正常</b>，这一半只有反向的期望写得出来。
  * <p>
+ * 表里另有一半钉的是两种真发生过的别扭：群里问完「是哪一位」，直接回个序号没反应、
+ * 非得 @ 了机器人才算数；以及别人随口一个数字被当成回答。没 @ 的那几行因此各有两种读法：
+ * 该出声的（本人回序号、回「全部」）出声，不该出声的（闲聊词、多词、别人的序号）
+ * 连菜单都不回、也不吃掉冷却与那次追问。
+ * <p>
  * 时间由夹具里的时钟说了算：那两分钟的窗口若靠真等，这张表没人会跑第二遍，
  * 而不跑的表与跑过且通过的表在报告里长得一样。<b>命令冷却读的也是这一把钟</b>——
  * 两把钟的那一版里，凡是「等一会儿再说一句」的语料都会被冷却挡在门外，
@@ -82,22 +87,35 @@ class BilibiliStreamerFollowUpCorpusTest {
      *
      * @param sender 谁说的
      * @param after 说这句话之前先过多久
-     * @param text @ 机器人之后的正文
+     * @param text 机器人的正文（@ 过的为去掉 @ 段后的内容）
+     * @param mentionsBot 是否 @ 了机器人
      * @param says 回复里该出现的片段；以 {@code !} 开头表示必须不出现
      */
-    private record Say(long sender, Duration after, String text, List<String> says) {
+    private record Say(long sender, Duration after, String text, boolean mentionsBot, List<String> says) {
     }
 
     private static Say at(String text, String... says) {
-        return new Say(ASKER, Duration.ZERO, text, List.of(says));
+        return new Say(ASKER, Duration.ZERO, text, true, List.of(says));
     }
 
     private static Say atAfter(Duration after, String text, String... says) {
-        return new Say(ASKER, after, text, List.of(says));
+        return new Say(ASKER, after, text, true, List.of(says));
     }
 
     private static Say atBy(long sender, String text, String... says) {
-        return new Say(sender, Duration.ZERO, text, List.of(says));
+        return new Say(sender, Duration.ZERO, text, true, List.of(says));
+    }
+
+    private static Say plain(String text, String... says) {
+        return new Say(ASKER, Duration.ZERO, text, false, List.of(says));
+    }
+
+    private static Say plainAfter(Duration after, String text, String... says) {
+        return new Say(ASKER, after, text, false, List.of(says));
+    }
+
+    private static Say plainByAfter(long sender, Duration after, String text, String... says) {
+        return new Say(sender, after, text, false, List.of(says));
     }
 
     private record Corpus(String name, List<Say> dialogue) {
@@ -160,7 +178,41 @@ class BilibiliStreamerFollowUpCorpusTest {
                 corpus("过期之后重新问 —— 清单照样问得出来",
                         at("直播间数据", "回序号选一位"),
                         atAfter(Duration.ofSeconds(121), "2", "!已出图"),
-                        atAfter(Duration.ofSeconds(5), "直播间数据", "回序号选一位")));
+                        atAfter(Duration.ofSeconds(5), "直播间数据", "回序号选一位")),
+
+                // 以下几行钉「问完之后不 @ 也答得上」：机器人刚在群里问过「是哪一位」，
+                // 这句话就是对它说的，不该还要求使用者先 @ 一遍
+                corpus("问完没 @ 回一个序号 —— 照常执行，用的是选中的那位",
+                        at("直播间数据", "回序号选一位"),
+                        plain("2", "已出图：主播乙")),
+
+                corpus("问完没 @ 回「全部」—— 展开完整清单",
+                        at("直播间数据", "回序号选一位"),
+                        plain("全部", "8. 主播辛（10008）", "!还有 3 位")),
+
+                corpus("别人没 @ 回同一个序号 —— 不出声，追问还在，问的人自己回才算",
+                        at("直播间数据", "回序号选一位"),
+                        // 隔 5 秒再说下一句：挤在冷却窗里的沉默分不出是「没接话」还是「被冷却挡了」
+                        plainByAfter(OTHER, Duration.ofSeconds(5), "2", "!已出图", "!用法："),
+                        plainAfter(Duration.ofSeconds(5), "2", "已出图：主播乙")),
+
+                corpus("没 @ 的普通单词 —— 不出声、不回菜单、不吃冷却，紧接着的命令照常问得出来",
+                        plain("今天天气不错", "!已出图", "!用法："),
+                        at("直播间数据", "回序号选一位")),
+
+                corpus("没 @ 的多词消息（首词是数字）—— 不出声、不回菜单，也不吃掉那次追问",
+                        at("直播间数据", "回序号选一位"),
+                        plainAfter(Duration.ofSeconds(5), "2 3", "!已出图", "!用法："),
+                        plainAfter(Duration.ofSeconds(5), "2", "已出图：主播乙")),
+
+                corpus("没 @ 回数字但没人问过 —— 不出声、不回菜单",
+                        plain("2", "!已出图", "!用法：")),
+
+                // 单词才走「不 @ 也认」这一条：@ 之后的原路径一个字不动，
+                // 多词仍按第一个词认领
+                corpus("已 @ 的原路径照旧 —— @ 后多词仍按第一个词认领",
+                        at("直播间数据", "回序号选一位"),
+                        at("2 你猜", "已出图：主播乙")));
     }
 
     @ParameterizedTest(name = "{0}")
@@ -169,7 +221,7 @@ class BilibiliStreamerFollowUpCorpusTest {
         Fixture fixture = new Fixture();
 
         for (Say line : corpus.dialogue()) {
-            String said = fixture.feed(line.sender(), line.after(), line.text());
+            String said = fixture.feed(line.sender(), line.after(), line.text(), line.mentionsBot());
 
             for (String expected : line.says()) {
                 if (expected.startsWith("!")) {
@@ -276,13 +328,13 @@ class BilibiliStreamerFollowUpCorpusTest {
         }
 
         /**
-         * 群里 @ 机器人说一句，返回机器人说了什么
+         * 群里说一句，返回机器人说了什么
          */
-        String feed(long sender, Duration after, String text) {
+        String feed(long sender, Duration after, String text, boolean mentionsBot) {
             clock.advance(after);
             replies.clear();
             dispatcher.onRemoteMessage(new NovaRemoteMessageEvent(PLATFORM, "group", GROUP, sender,
-                    text, "member", true));
+                    text, "member", mentionsBot));
             return String.join("\n", replies);
         }
 

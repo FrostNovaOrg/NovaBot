@@ -45,6 +45,9 @@ import static org.mockito.Mockito.when;
  * <p>
  * 重点在参数解析与长图的取舍：命令的参数顺序灵活（榜单、主播可混排），
  * 而「一次列全还是只列前 N 名」算错一格就会漏人。
+ * 参数顺序那几格钉的是一次真发生过的别扭：主播名写在榜单名前面就查不了榜——
+ * 只认第一个位置的那版里，「云山 礼物 2」落进「请指明要看哪张榜」，
+ * 而那句话里明明说了礼物榜。
  */
 @DisplayName("数据排行榜命令")
 class BilibiliRankingCommandTest {
@@ -335,6 +338,88 @@ class BilibiliRankingCommandTest {
                     assertTrue(label.startsWith("-¥"), label);
                 }
         );
+    }
+
+    @Test
+    @DisplayName("榜单名写在主播名后面也认 —— 「云山 礼物 2」查云山的礼物榜")
+    void boardNameAfterStreamerNameStillMatches() {
+        // 主播名写在前面时被追问「请指明要看哪张榜」，可那句话里明明说了礼物榜——
+        // 榜单名不该只认第一个位置。三位以内的「2」照旧丢掉（原来是页码），不当主播
+        when(dataSource.getUsers("bilibili")).thenReturn(List.of(streamer(STREAMER, "云山")));
+        withRanking(3);
+
+        command.execute(context("云山", "礼物", "2"));
+
+        verify(liveDataService).getLiveUserRanking(anyString(), eq(STREAMER),
+                eq(BilibiliLiveMetric.GIFT_USERS), anyInt());
+        assertGiftBoardOfYunshan();
+    }
+
+    @Test
+    @DisplayName("「礼物 云山」照旧 —— 榜单名在前、主播名在后也查云山的礼物榜")
+    void boardNameBeforeStreamerNameStillMatches() {
+        when(dataSource.getUsers("bilibili")).thenReturn(List.of(streamer(STREAMER, "云山")));
+        withRanking(3);
+
+        command.execute(context("礼物", "云山"));
+
+        verify(liveDataService).getLiveUserRanking(anyString(), eq(STREAMER),
+                eq(BilibiliLiveMetric.GIFT_USERS), anyInt());
+        assertGiftBoardOfYunshan();
+    }
+
+    @Test
+    @DisplayName("「总 云山 礼物」—— 总摘掉后认出礼物榜，查云山的累计榜")
+    void boardNameAfterStreamerNameStillMatchesWhenTotal() {
+        when(dataSource.getUsers("bilibili")).thenReturn(List.of(streamer(STREAMER, "云山")));
+        when(liveDataService.supportsTotalData()).thenReturn(true);
+        withTotalRanking(3);
+
+        command.execute(context("总", "云山", "礼物"));
+
+        verify(liveDataService).getTotalUserRanking(anyString(), eq(STREAMER),
+                eq(BilibiliLiveMetric.GIFT_USERS), anyInt());
+        assertGiftBoardOfYunshan();
+    }
+
+    @Test
+    @DisplayName("只有主播名没有榜单名 —— 照旧追问要看哪张榜")
+    void stillAsksWhichBoardWhenOnlyStreamerNamed() {
+        when(dataSource.getUsers("bilibili")).thenReturn(List.of(streamer(STREAMER, "云山")));
+
+        CommandReply reply = command.execute(context("云山"));
+
+        assertTrue(reply.content().contains("请指明要看哪张榜"), reply.content());
+        verify(painter, never()).paintRanking(any(), any(), anyInt(), any(), any());
+    }
+
+    /**
+     * 断言出的是礼物榜、说的是云山：图头两行就是使用者看见的「哪张榜、哪位主播」
+     */
+    private void assertGiftBoardOfYunshan() {
+        ArgumentCaptor<BilibiliDataQueryPainter.Header> header =
+                ArgumentCaptor.forClass(BilibiliDataQueryPainter.Header.class);
+        verify(painter).paintRanking(header.capture(), any(), eq(1), any(), any());
+        assertAll(
+                () -> assertEquals("礼物排行榜", header.getValue().title()),
+                () -> assertTrue(header.getValue().subtitle().contains("云山"), header.getValue().subtitle())
+        );
+    }
+
+    /**
+     * 让累计排行榜接口按请求的名次数返回连号用户，得分随名次递减
+     */
+    private void withTotalRanking(int total) {
+        when(liveDataService.getTotalMetricUserCount(anyString(), anyLong(), anyString())).thenReturn(total);
+        when(liveDataService.getTotalUserRanking(anyString(), anyLong(), anyString(), anyInt()))
+                .thenAnswer(invocation -> {
+                    int limit = invocation.getArgument(3);
+                    List<UserScore> scores = new ArrayList<>();
+                    for (int i = 1; i <= Math.min(limit, total); i++) {
+                        scores.add(new UserScore((long) i, "用户" + i, total - i + 1));
+                    }
+                    return scores;
+                });
     }
 
     /**

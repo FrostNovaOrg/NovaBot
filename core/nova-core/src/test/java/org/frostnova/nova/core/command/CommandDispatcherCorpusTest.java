@@ -149,6 +149,12 @@ class CommandDispatcherCorpusTest {
                 one("群里 @ 机器人加别名 —— 执行", Msg.at("别名"), Outcome.EXECUTED),
                 one("群里没 @ 机器人，正文恰好是命令名 —— 沉默", Msg.plain("测试命令"), Outcome.SILENT),
                 one("群里没 @ 机器人，随口聊天 —— 沉默", Msg.plain("今天天气不错"), Outcome.SILENT),
+                // 没 @ 的单词只有「有人等着这个答案」时才会被认领方收下；没人收下就一声不出，
+                // 不回菜单、也不吃冷却——闲聊不该让紧接着打的命令没反应
+                new Corpus("群里没 @ 机器人，单个词没人认领 —— 沉默且不吃冷却", null,
+                        List.of(Msg.plain("哈哈"), Msg.at("测试命令")),
+                        List.of(Outcome.SILENT, Outcome.EXECUTED)),
+                one("群里没 @ 机器人，多词且首词是数字 —— 沉默", Msg.plain("2 3"), Outcome.SILENT),
                 one("群里 @ 机器人但不是命令 —— 回菜单", Msg.at("今天天气不错"), Outcome.MENU),
                 one("群里 @ 机器人且正文为空 —— 回菜单", Msg.at(""), Outcome.MENU),
                 one("群里 @ 机器人且正文只有空白 —— 回菜单", Msg.at("   "), Outcome.MENU),
