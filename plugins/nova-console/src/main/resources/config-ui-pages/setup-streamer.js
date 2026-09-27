@@ -264,7 +264,7 @@ function targetPicker() {
   });
   box.appendChild(list);
 
-  box.appendChild(note('', '开播、下播、下播报告、动态这几种通知默认全开、用默认模板，'
+  box.appendChild(note('', '开播、下播、下播报告、动态、下播打赏播报这几种通知默认全开、用默认模板，'
     + '之后在「推送」页里细调。'));
   return box;
 }
