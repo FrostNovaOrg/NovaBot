@@ -1273,6 +1273,51 @@ class ConfigurationFileServiceTest {
         assertEquals("127.0.0.1", started.read().get("server.address"));
     }
 
+    /**
+     * 启动时把斜杠地址改回来的那一次早于口令哈希化：同一文件里还手写着明文口令时，
+     * 这次写要是留备份，同目录就多出一份抄着明文的副本，要再存够十次才挤掉。
+     * 自愈只改地址写法、用不着退回，不留备份；普通保存照旧留。
+     */
+    @Test
+    @DisplayName("启动时改回斜杠地址不留备份：同目录不多出抄着明文口令的副本，普通保存照旧留备份")
+    void healsSlashAddressOnStartWithoutBackup() throws IOException {
+        List<String> bad = new ArrayList<>();
+        Files.writeString(config, """
+                server:
+                  address: /127.0.0.1
+                  port: 7827
+                novabot:
+                  core:
+                    config-ui:
+                      auth:
+                        password: plain-text-secret-900
+                """, StandardCharsets.UTF_8);
+        long backupsBefore = backupCount();
+        ConfigurationFileService started = new ConfigurationFileService(config);
+        started.healSlashAddressOnStart();
+        try {
+            assertFalse(content().contains("address: /127.0.0.1"), "斜杠形态应已消失, 实有:\n" + content());
+        } catch (AssertionError e) {
+            bad.add("① 自愈: " + e.getMessage());
+        }
+        try {
+            assertEquals(backupsBefore, backupCount(), "自愈那一次不该留备份");
+            assertEquals("同目录未留含明文的备份",
+                    started.backupSituation("novabot.core.config-ui.auth.password", "plain-text-secret-900"),
+                    "同目录多出了抄着明文口令的副本");
+        } catch (AssertionError e) {
+            bad.add("② 不留备份: " + e.getMessage());
+        }
+        try {
+            long beforeSave = backupCount();
+            started.write(Map.of("server.port", "7828"));
+            assertEquals(beforeSave + 1, backupCount(), "普通保存照旧该留一份备份");
+        } catch (AssertionError e) {
+            bad.add("③ 普通保存留备份: " + e.getMessage());
+        }
+        assertTrue(bad.isEmpty(), "自愈不留备份格未销 " + bad.size() + " 问: " + String.join("; ", bad));
+    }
+
     @Test
     @DisplayName("管理端口监听地址斜杠形态也归一")
     void healsManagementServerAddressSlash() throws IOException {
