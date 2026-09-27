@@ -15,7 +15,7 @@ ssh -L 7827:127.0.0.1:7827 用户名@服务器地址
 ```
 
 **推送接口有口令鉴权与来源 IP 白名单，默认只放行本机。** 若确需从其他机器调用，
-同时做到三点：配强随机的 `api-token`、把来源地址加进 `novabot.adapter.onebot.security.allow-ips`、在防火墙上限制来源。
+同时做到三点：给 `novabot.adapter.onebot.senders` 下的每个推送平台配强随机的 `api-token`、把来源地址加进 `novabot.adapter.onebot.security.allow-ips`、在防火墙上限制来源。
 
 **`cookies.json` 等同于哔哩哔哩账号的完整控制权**，默认加密存储，密钥在 `cookies.key`。
 两个文件都要妥善保管，也都不要提交到任何仓库；权限定期核对仍是 `600`。
