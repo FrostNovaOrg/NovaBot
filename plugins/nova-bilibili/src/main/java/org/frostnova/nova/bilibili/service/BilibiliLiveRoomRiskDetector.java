@@ -114,6 +114,13 @@ public class BilibiliLiveRoomRiskDetector {
     public record Judgment(String observation, boolean parseDegraded) {
     }
 
+    /**
+     * 观察窗队列
+     * <p>
+     * {@link #accept} 与 {@link #reset} 来自两个线程：按间隔跑的断流检测与断线重连的回调。
+     * 两个入口用同一把锁（{@code synchronized}）互斥——不加锁时两边撞上，
+     * 逐项求和可能抛在半路（这一轮断流检测整个没跑），队列也可能被改乱、多判一次。
+     */
     private final Deque<Window> recent = new ArrayDeque<>();
 
     private final int requiredWindows;
@@ -130,7 +137,7 @@ public class BilibiliLiveRoomRiskDetector {
      * @param window 本窗口计数
      * @return 判定为异常时返回<b>只陈述观测的</b>判定（含解析降级标志），否则为空
      */
-    public Optional<Judgment> accept(Window window) {
+    public synchronized Optional<Judgment> accept(Window window) {
         // 未开播的直播间必然满足「业务消息为零」：没有直播就没人发弹幕。
         // 2026-08-10 生产实测：两个未开播/轮播的房间，三个窗口共 10 条消息、
         // 业务 0 条、进房 0 条，被判成「已被数据风控」并触发告警——纯误报。
@@ -190,7 +197,7 @@ public class BilibiliLiveRoomRiskDetector {
      * <p>
      * 断线重连后必须调用：跨连接累计会让重连前的窗口与重连后的混在一起。
      */
-    public void reset() {
+    public synchronized void reset() {
         recent.clear();
     }
 }

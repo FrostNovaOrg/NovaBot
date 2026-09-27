@@ -5,8 +5,12 @@ import org.frostnova.nova.bilibili.service.BilibiliLiveRoomRiskDetector.Window;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -335,5 +339,92 @@ class BilibiliLiveRoomRiskDetectorTest {
     @DisplayName("四参数的 Window 视为无解析失败，保持旧调用方语义不变")
     void fourArgWindowMeansNoParseFailures() {
         assertTrue(new Window(1, 0, 0, true).parseFailed() == 0);
+    }
+
+    /**
+     * 并发锤的轮数：正常一轮是微秒级，几万轮足够撞上，又不至于把格拖长
+     */
+    private static final int ROUNDS = 50_000;
+
+    /**
+     * 两条线程的时限：正常跑完远用不到这个数。到点判红后放手
+     */
+    private static final long STOP_MILLIS = 20_000L;
+
+    @Test
+    @DisplayName("accept 与 reset 两个线程同时跑：不抛，每次的结果都与单线程一致")
+    void acceptAndResetRunConcurrentlyWithoutThrowing() throws InterruptedException {
+        // 抓的用户故障：断线重连（reset）与按间隔跑的断流检测（accept）撞在一起时，
+        // 这一轮断流检测在逐项求和那里断掉、整轮没跑完；观察窗也可能被改乱，
+        // 多判一次、多触发一次「先重连验证」。
+        // 两条线程反复同时打同一台判定器：若干轮内一个异常都不许冒出来，
+        // 报出来的判定要与单线程喂同样窗口的那份逐字一致——队列被改乱时加错的数一眼看得出。
+        Window w = new Window(20, 0, 15);
+
+        // 一扇窗的那台：每一轮 accept 都该报出同一份判定，与单线程逐字一致。
+        // 报空（求和那一瞬只看见被 reset 清掉的空队列）或数字对不上都算被改乱
+        BilibiliLiveRoomRiskDetector strict = new BilibiliLiveRoomRiskDetector(1);
+        String strictReference = strict.accept(w).map(Judgment::observation).orElseThrow();
+
+        // 三扇窗的那台：跑的是修剪与逐项求和那条多元素的路，报出来的同样逐字比
+        BilibiliLiveRoomRiskDetector rolling = detector();
+        String rollingReference = feed(new BilibiliLiveRoomRiskDetector(WINDOWS), w, w, w)
+                .map(Judgment::observation).orElseThrow();
+
+        List<Throwable> thrown = Collections.synchronizedList(new ArrayList<>());
+        List<Optional<Judgment>> strictResults = Collections.synchronizedList(new ArrayList<>());
+        List<Optional<Judgment>> rollingResults = Collections.synchronizedList(new ArrayList<>());
+
+        Thread acceptThread = new Thread(() -> {
+            try {
+                for (int i = 0; i < ROUNDS; i++) {
+                    strictResults.add(strict.accept(w));
+                    rollingResults.add(rolling.accept(w));
+                }
+            } catch (Throwable t) {
+                thrown.add(t);
+            }
+        }, "断流检测-accept");
+        Thread resetThread = new Thread(() -> {
+            try {
+                for (int i = 0; i < ROUNDS; i++) {
+                    strict.reset();
+                    rolling.reset();
+                }
+            } catch (Throwable t) {
+                thrown.add(t);
+            }
+        }, "断线重连-reset");
+        // 被改乱的队列可能让修剪循环原地打转，中断拦不住——守护线程＋限时 join，
+        // 到点判红后放手，不许把整盘挂住
+        acceptThread.setDaemon(true);
+        resetThread.setDaemon(true);
+
+        acceptThread.start();
+        resetThread.start();
+        acceptThread.join(STOP_MILLIS);
+        resetThread.join(STOP_MILLIS);
+
+        assertTrue(thrown.isEmpty(), "两个线程同时 accept 与 reset 不许抛，实际抛了 "
+                + thrown.size() + " 个: " + thrown);
+        assertFalse(acceptThread.isAlive(), "accept 线程 " + STOP_MILLIS + " 毫秒还没停");
+        assertFalse(resetThread.isAlive(), "reset 线程 " + STOP_MILLIS + " 毫秒还没停");
+
+        assertEquals(ROUNDS, strictResults.size(), "每一轮 accept 都该有个结果");
+        assertEquals(ROUNDS, rollingResults.size(), "每一轮 accept 都该有个结果");
+        List<String> wrong = new ArrayList<>();
+        strictResults.forEach(result -> {
+            if (result.isEmpty() || !strictReference.equals(result.orElseThrow().observation())
+                    || result.orElseThrow().parseDegraded()) {
+                wrong.add("一扇窗: " + result.map(Judgment::observation).orElse("<报空>"));
+            }
+        });
+        rollingResults.forEach(result -> result.ifPresent(judgment -> {
+            if (!rollingReference.equals(judgment.observation()) || judgment.parseDegraded()) {
+                wrong.add("三扇窗: " + judgment.observation());
+            }
+        }));
+        assertTrue(wrong.isEmpty(), "结果要与单线程同输入逐字一致，实际 " + wrong.size() + " 份对不上: "
+                + wrong.subList(0, Math.min(wrong.size(), 5)));
     }
 }

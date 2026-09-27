@@ -2441,9 +2441,13 @@ public class BilibiliApiUtil {
      * <p>
      * 有一页没取到就整体抛出，不返回已取到的那几页：调用方拿残表去比，
      * 会把排在没取到那几页里的已关注账号当成没关注。
+     * 「没取到」含两种：那一页请求失败，或那一页的应答里整个少了 list 字段。
+     * <p>
+     * list 是<b>空数组</b>不算没取到，那是「翻到底了」的正常形状，照旧收尾。
+     * 应答里的 total 不作核对（含义没核过）。
      * @param selfUid 账号 uid
      * @return 关注的 UP 主列表
-     * @throws RequestFailedException 账号 uid 为空，或某一页请求失败
+     * @throws RequestFailedException 账号 uid 为空，某一页请求失败，或某一页的应答缺 list 字段
      */
     public List<Up> getFollowingUps(Long selfUid) {
         if (selfUid == null) {
@@ -2460,7 +2464,12 @@ public class BilibiliApiUtil {
             }
 
             JSONArray list = data.getJSONArray("list");
-            if (list == null || list.isEmpty()) {
+            if (list == null) {
+                // 缺字段＝这一轮取不全。当成「翻到底了」会把残表交出去，
+                // 排在后面几页里的已关注账号会被当成没关注、再关注一遍
+                throw new RequestFailedException("关注列表第 " + page + " 页缺少 list 字段, 取不全");
+            }
+            if (list.isEmpty()) {
                 break;
             }
 
