@@ -47,6 +47,11 @@ public enum TimelineEventType {
     PUSH_FAILED("推送失败", TimelineCategory.PUSH),
 
     /**
+     * 送达不明：请求已交出去、没等到回包，可能已经发出，没有重发
+     */
+    PUSH_UNCERTAIN("送达不明", TimelineCategory.PUSH),
+
+    /**
      * @全体成员 没能发出（没有权限，或当天额度用尽）
      */
     AT_ALL_SKIPPED("未 @ 全体", TimelineCategory.PUSH),

@@ -1102,6 +1102,7 @@ function sectionNotices(host, user, target, session) {
       + rows.map(row => '<tr><td>' + esc(row.at) + '</td>'
         + '<td title="' + esc(row.summary) + '">' + esc(row.summary) + '</td>'
         + '<td>' + (row.success ? '<span class="good">成功</span>'
+          : row.uncertain ? '<span>送达不明，可能已发出、没有重发：' + esc(row.reason || '未知原因') + '</span>'
           : '<span class="bad">失败：' + esc(row.reason || '未知原因') + '</span>') + '</td></tr>').join('')
       + '</tbody>';
     box.appendChild(table);

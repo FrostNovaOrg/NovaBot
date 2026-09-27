@@ -348,6 +348,11 @@ class NovaMessageSenderTest {
      * 造一个带指定权限判定的发送器；resolver 为 null 表示没有任何适配器认领该平台
      */
     private NovaMessageSender sender(HttpUtil http, NovaCoreProperties properties, Boolean canAtAll) {
+        return sender(http, properties, canAtAll, new PushActivityRecorder(TimelineWriter.NONE));
+    }
+
+    private NovaMessageSender sender(HttpUtil http, NovaCoreProperties properties, Boolean canAtAll,
+                                     PushActivityRecorder recorder) {
         Sender target = new Sender();
         target.setName(PLATFORM);
         target.setUrl("http://127.0.0.1:7827/onebot/send");
@@ -371,7 +376,7 @@ class NovaMessageSenderTest {
         });
         when(resolvers.iterator()).thenAnswer(invocation -> list.iterator());
 
-        return new NovaMessageSender(http, senderService, new PushActivityRecorder(TimelineWriter.NONE), new PushGate(properties),
+        return new NovaMessageSender(http, senderService, recorder, new PushGate(properties),
                 TimelineWriter.NONE, new org.frostnova.nova.core.service.AtAllQuotaService(properties), resolvers,
                 new FirstPushTipService(new org.frostnova.nova.core.service.NovaStateStore(properties)));
     }
@@ -719,6 +724,113 @@ class NovaMessageSenderTest {
             sender(http).sendNow(message);
 
             assertEquals(0, degraded.get(), "零送达不是降级");
+        }
+    }
+
+    /**
+     * 抓的故障：带封面的开播通知等回包超时，NapCat 其实已经发进了群，核心却剥掉图片再发一条纯文字，
+     * 群里多出一条；带 @全体成员 的那条，补发的纯文字连 @全体成员 一起再发一遍。
+     * <p>
+     * 适配器在「请求已送出、等回包超时」时在回包里标上 {@code delivery_unknown}。
+     * 核心见到它：不剥图重发，不记成送达，也不当没发出去（不退 @全体成员 额度）。
+     * 回包带着消息 id 的那一种照旧不重发，见 {@link ImageFallback#doesNotResendWhenResponseCarriesId}。
+     */
+    @org.junit.jupiter.api.Nested
+    @DisplayName("含图推送送达不明")
+    class DeliveryUnknown {
+        private static final String COVER = " {image_url=https://example.com/cover.jpg}";
+
+        /** 适配器等回包超时时的回包：码与一般异常相同，多一个标记 */
+        private JSONObject deliveryUnknown() {
+            return new JSONObject()
+                    .fluentPut("code", 1)
+                    .fluentPut("message", "送达不明: 请求已送出, 等回包超时")
+                    .fluentPut("id", null)
+                    .fluentPut("delivery_unknown", true);
+        }
+
+        /** 适配器一般异常时的回包：没有标记 */
+        private JSONObject generalError() {
+            return new JSONObject()
+                    .fluentPut("code", 1)
+                    .fluentPut("message", "OneBot HTTP 发送消息异常, 请检查插件日志错误信息")
+                    .fluentPut("id", null);
+        }
+
+        private Message atAllWithCover() {
+            return Message.create(PLATFORM, PushTargetType.GROUP, 10000003L, "{at=all} 开播啦" + COVER).get(0);
+        }
+
+        @Test
+        @DisplayName("送达不明：不发纯文字、不重试，带 @全体成员 的也只出去一次")
+        void deliveryUnknownDoesNotResendText() {
+            HttpUtil http = mock(HttpUtil.class);
+            when(http.postJson(anyString(), any(), any())).thenReturn(deliveryUnknown());
+
+            sender(http).sendNow(atAllWithCover());
+
+            ArgumentCaptor<Map<String, Object>> captor = paramsCaptor();
+            verify(http, times(1)).postJson(anyString(), any(), captor.capture());
+            assertTrue(String.valueOf(captor.getValue().get("content")).contains("{image_url="),
+                    "唯一那次应是原内容: " + captor.getAllValues());
+        }
+
+        @Test
+        @DisplayName("送达不明：不记成送达、不跑成功回调，也不计进失败次数，记录写明送达不明")
+        void deliveryUnknownIsNeitherDeliveredNorFailed() {
+            HttpUtil http = mock(HttpUtil.class);
+            when(http.postJson(anyString(), any(), any())).thenReturn(deliveryUnknown());
+            PushActivityRecorder recorder = new PushActivityRecorder(TimelineWriter.NONE);
+
+            AtomicInteger succeeded = new AtomicInteger();
+            Message message = atAllWithCover();
+            message.addOnSuccessCallback(succeeded::incrementAndGet);
+
+            sender(http, new NovaCoreProperties(), null, recorder).sendNow(message);
+
+            assertEquals(0, succeeded.get(), "没收到回包，不能当送达");
+            assertEquals(0, recorder.getSuccessCount(), "不记成送达");
+            assertEquals(0, recorder.getFailureCount(), "也不按没发出去算");
+            assertEquals(1, recorder.getHistory().size(), "推送记录里应有这一条: " + recorder.getHistory());
+            assertTrue(String.valueOf(recorder.getHistory().get(0).reason()).contains("送达不明"),
+                    "记录要写明送达不明: " + recorder.getHistory().get(0));
+        }
+
+        @Test
+        @DisplayName("送达不明：@全体成员 额度不退——那条可能已经 @ 过了")
+        void deliveryUnknownKeepsAtAllQuota() {
+            NovaCoreProperties properties = new NovaCoreProperties();
+            properties.getPush().setAtAllDailyLimit(1);
+
+            HttpUtil http = mock(HttpUtil.class);
+            when(http.postJson(anyString(), any(), any()))
+                    .thenReturn(deliveryUnknown())
+                    .thenReturn(new JSONObject().fluentPut("code", 0).fluentPut("id", "2"));
+
+            NovaMessageSender sender = sender(http, properties);
+            sender.sendNow(atAllWithCover());
+            sender.sendNow(inlineAtAll());
+
+            ArgumentCaptor<Map<String, Object>> captor = paramsCaptor();
+            verify(http, times(2)).postJson(anyString(), any(), captor.capture());
+            assertFalse(String.valueOf(captor.getAllValues().get(1).get("content")).contains("{at=all}"),
+                    "第一条可能已经用掉了今天那一次，第二条不该再 @: " + captor.getAllValues());
+        }
+
+        @Test
+        @DisplayName("一般异常（无标记）：照旧剥图重发纯文字")
+        void generalErrorStillFallsBack() {
+            HttpUtil http = mock(HttpUtil.class);
+            when(http.postJson(anyString(), any(), any()))
+                    .thenReturn(generalError())
+                    .thenReturn(new JSONObject().fluentPut("code", 0).fluentPut("id", "m2"));
+
+            sender(http).sendNow(atAllWithCover());
+
+            ArgumentCaptor<Map<String, Object>> captor = paramsCaptor();
+            verify(http, times(2)).postJson(anyString(), any(), captor.capture());
+            assertFalse(String.valueOf(captor.getAllValues().get(1).get("content")).contains("{image_url="),
+                    "重发那条不该再带图片段");
         }
     }
 }

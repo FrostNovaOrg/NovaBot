@@ -138,6 +138,9 @@ public class Message {
 
     /**
      * 发送失败回调列表，请勿调用阻塞操作
+     * <p>
+     * 没确认送达就跑：没送到，或送达不明（请求已交出去、没等到回包，可能已经在群里）。
+     * 两种都没有消息编号。回调里别把内容再发一次，送达不明时那就是两条。
      */
     private List<Runnable> onFailureCallbacks = new ArrayList<>();
 
