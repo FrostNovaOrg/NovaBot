@@ -59,7 +59,7 @@ public class BilibiliRankingCommand extends BilibiliScopedDataCommand {
 
     @Override
     public String usage() {
-        return "<榜单> [总] [主播 uid 或昵称]";
+        return "<榜单> [总] [主播 uid 或昵称]（三者顺序不限）";
     }
 
     @Override
@@ -82,12 +82,22 @@ public class BilibiliRankingCommand extends BilibiliScopedDataCommand {
         boolean revenue = revenueVisible(context);
         String example = revenue ? "礼物" : "弹幕";
 
-        // 「总」是范围开关，位置随人写：先整字摘掉，剩下的按「榜单、主播」老规矩认。
-        // 不摘的话它会被当成主播名，或把榜单名挤到第二位认不出来
+        // 「总」是范围开关，位置随人写：先整字摘掉，剩下的再认榜单与主播。
+        // 不摘的话它会被当成主播名——「数据排行榜 总 礼物」会去查一位叫「总」的主播
         List<String> args = new ArrayList<>(context.getArgs());
         args.remove(TOTAL_FLAG);
 
-        Board board = Board.match(args.isEmpty() ? null : args.get(0));
+        // 榜单名放在哪一位都认：在剩下的参数里找第一个认得出的榜单名。
+        // 主播名写在前面时不该落进「请指明要看哪张榜」——那句话里已经说了是哪张榜
+        Board board = null;
+        int boardAt = -1;
+        for (int i = 0; i < args.size(); i++) {
+            board = Board.match(args.get(i));
+            if (board != null) {
+                boardAt = i;
+                break;
+            }
+        }
         if (board == null) {
             // 示例是给人照着发的，照着发要真查得到问的那一半：问累计时若写成
             // 「数据排行榜 …」，照着发查到的是本场，答非所问
@@ -104,7 +114,10 @@ public class BilibiliRankingCommand extends BilibiliScopedDataCommand {
         }
 
         String streamerKeyword = null;
-        for (int i = 1; i < args.size(); i++) {
+        for (int i = 0; i < args.size(); i++) {
+            if (i == boardAt) {
+                continue;
+            }
             String arg = args.get(i);
             // 三位以内的纯数字照旧收下但不用它：它原来是页码，一次一张长图后没有页了。
             // 认出来就丢掉，既不当页码也不拿去当主播名查；更长的当 uid（uid 都是八位以上）

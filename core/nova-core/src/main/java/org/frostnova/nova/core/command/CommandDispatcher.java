@@ -37,7 +37,10 @@ import java.util.concurrent.ConcurrentHashMap;
  * <h2>什么算一条命令</h2>
  * <ul>
  *     <li><b>群聊只认 @</b>：消息里 @ 了机器人本身才当命令看，@ 之后的正文就是命令与参数。
- *         没 @ 的消息一概不理——群里正常聊天时随口说到某个命令名，不该被机器人接话。</li>
+ *         没 @ 的消息一概不理——群里正常聊天时随口说到某个命令名，不该被机器人接话。
+ *         <b>唯一的例外是答追问那一个词</b>：机器人刚在群里问完「是哪一位」，回一个「2」
+ *         不该还得 @ 它。整条只有一个词、且不是认得出的命令名时才拿去问一圈认领方；
+ *         没人认领照旧一声不出，不回菜单、不吃冷却。</li>
  *     <li><b>私聊直呼命令名</b>：私聊没有旁人，不必先 @。</li>
  * </ul>
  *
@@ -51,7 +54,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *     <li><b>被本会话关掉的命令回一句</b>——沉默会让人以为机器人坏了，反复重试。</li>
  *     <li><b>同会话冷却</b>——防止刷屏。回菜单、回「已关闭」、回「没权限」与执行命令
  *         共用同一份冷却；分开算的话，连发无效消息就能绕过它。
- *         <b>唯一的例外是被认领的追问应答</b>，理由见 {@link CommandFollowUp}。</li>
+ *         <b>冷却上唯一的例外是被认领的追问应答</b>，理由见 {@link CommandFollowUp}。</li>
  * </ul>
  */
 @Slf4j
@@ -149,8 +152,17 @@ public class CommandDispatcher {
         boolean group = "group".equals(event.getMessageType());
         PushTargetType type = group ? PushTargetType.GROUP : PushTargetType.FRIEND;
 
-        // 群聊里没 @ 机器人的，一个字都不是说给它听的
-        if (group && !event.isMentionsBot()) {
+        List<String> parts = new ArrayList<>(Arrays.asList(
+                StringUtil.isBlank(event.getText()) ? new String[0] : event.getText().trim().split("\\s+")));
+        String name = parts.isEmpty() ? "" : parts.remove(0);
+        NovaCommand command = name.isEmpty() ? null : find(name);
+
+        // 群聊里没 @ 机器人的消息照旧一个字都不理，唯一的例外是「答追问」那一个词：
+        // 机器人刚在群里问完「是哪一位」，回一个「2」不该还得 @ 它。
+        // 整条只有一个词、且这个词不是认得出的命令名，才拿去问一圈认领方——
+        // 多词消息、直呼命令名照旧不理（群里随口说到命令名，不该被接话）
+        boolean bare = group && !event.isMentionsBot();
+        if (bare && (name.isEmpty() || !parts.isEmpty() || command != null)) {
             return;
         }
 
@@ -159,11 +171,6 @@ public class CommandDispatcher {
         if (!isConfiguredTarget(event.getPlatform(), type, event.getNum())) {
             return;
         }
-
-        List<String> parts = new ArrayList<>(Arrays.asList(
-                StringUtil.isBlank(event.getText()) ? new String[0] : event.getText().trim().split("\\s+")));
-        String name = parts.isEmpty() ? "" : parts.remove(0);
-        NovaCommand command = name.isEmpty() ? null : find(name);
 
         // 私聊里撞上仅限群聊的命令：按认不出处理，回菜单。
         // 菜单此时已按会话过滤，不会把这条用不了的命令再推荐一遍
@@ -185,6 +192,9 @@ public class CommandDispatcher {
             // 追问认领回来的那一句按打出来的名字进上下文：别名与正名指向同一个用法，
             // 「总」用不用带、开关式还是只取消，认的就是这一格
             typedName = claimed.command();
+        } else if (bare) {
+            // 群里没 @ 又没人认领：照旧一声不出——不回菜单、不吃冷却、不记时间线
+            return;
         }
 
         // 以下四条出声的路径共用这一份冷却；被认领的应答已在上面走掉
