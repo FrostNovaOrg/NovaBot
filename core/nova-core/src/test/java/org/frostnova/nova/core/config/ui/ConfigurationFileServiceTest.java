@@ -21,6 +21,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
@@ -267,6 +268,35 @@ class ConfigurationFileServiceTest {
     @DisplayName("值未变化时不计入改动")
     void noChangeWhenValueIdentical() throws IOException {
         assertEquals(List.of(), service.write(Map.of("novabot.bilibili.dynamic.push-minutes", "1440")));
+    }
+
+    @Test
+    @DisplayName("保存到一半失败时配置文件保持原样")
+    void failedSaveLeavesConfigFileIntact() throws IOException {
+        String original = content();
+        Files.createDirectory(dir.resolve("application.yml.tmp"));
+
+        assertThrows(IOException.class,
+                () -> service.write(Map.of("novabot.bilibili.dynamic.push-minutes", "720")));
+
+        assertEquals(original, content(),
+                "写到一半失败时盘上的配置文件被改掉了，下次启动会掉进安全模式");
+    }
+
+    /**
+     * 配置文件里有口令与令牌，第一次写出的那一份就该只有属主能读写：
+     * 从宽权限起步再收紧的窗口里，同机别的账号能整份读走
+     */
+    @Test
+    @DisplayName("首次写出的配置文件是仅属主可读写")
+    void firstWrittenConfigIsOwnerOnly(@TempDir Path fresh) throws IOException {
+        Path newConfig = fresh.resolve("application.yml");
+        ConfigurationFileService first = new ConfigurationFileService(newConfig, () -> "server: 7827\n");
+
+        assertTrue(first.createIfAbsent());
+
+        assertEquals(Set.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE),
+                Files.getPosixFilePermissions(newConfig), "配置文件里有口令与令牌，新建时就得仅属主可读写");
     }
 
     @Test

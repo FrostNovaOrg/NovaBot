@@ -2,6 +2,7 @@ package org.frostnova.nova.core.safemode;
 
 import org.frostnova.nova.core.config.ui.TimestampedFileBackup;
 import org.frostnova.nova.core.lang.SecureToken;
+import org.frostnova.nova.core.util.DurableFiles;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import lombok.extern.slf4j.Slf4j;
@@ -178,7 +179,7 @@ public class SafeModeServer {
         }
 
         backupBeforeSave();
-        Files.writeString(configPath, yaml, StandardCharsets.UTF_8);
+        DurableFiles.replace(configPath, yaml, DurableFiles.OWNER_ONLY);
         return null;
     }
 

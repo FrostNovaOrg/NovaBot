@@ -423,6 +423,30 @@ class DefaultLiveDataServiceTest {
     }
 
     /**
+     * 直播数据不含秘密，新建时跟系统默认权限走，不必收得比直接写还紧
+     */
+    @Test
+    @DisplayName("新建的直播数据文件跟着系统默认权限走")
+    void newLiveDataFileFollowsSystemDefault(@TempDir Path dir) throws Exception {
+        NovaCoreProperties properties = new NovaCoreProperties();
+        properties.getLive().setLiveDataPath(dir.resolve("data.json").toString());
+        DefaultLiveDataService opened = new DefaultLiveDataService(properties);
+        opened.onApplicationReadyEvent();
+        try {
+            opened.incrementLiveMetric(PLATFORM, UID, "danmu_count", 1);
+            opened.saveNow(false);
+
+            Path probe = dir.resolve("probe.txt");
+            Files.writeString(probe, "p\n", StandardCharsets.UTF_8);
+            assertEquals(Files.getPosixFilePermissions(probe),
+                    Files.getPosixFilePermissions(dir.resolve("data.json")),
+                    "不含秘密的件新建时该跟直接写一样宽");
+        } finally {
+            opened.onContextClosedEvent();
+        }
+    }
+
+    /**
      * 注入：直播数据停在多字节字「名」的中间。
      * 字节读到了，解不成文本。这不是权限问题，应按解析不了改名留底，随后的保存照常写盘。
      */

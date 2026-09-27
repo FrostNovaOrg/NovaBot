@@ -8,11 +8,14 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -59,6 +62,36 @@ class SafeModeServerSaveBodyTest {
         assertEquals("seed: 1\n", Files.readString(config, StandardCharsets.UTF_8),
                 "被拒的正文不许写进本体");
         assertEquals(0, backupCount(config), "被拒时不应产生备份");
+    }
+
+    @Test
+    @DisplayName("保存半途失败时不说已保存，盘上的配置分毫不动")
+    void saveBodyFailureLeavesConfigIntact() throws IOException {
+        Path config = dir.resolve("application.yml");
+        Files.writeString(config, "seed: 1\n", StandardCharsets.UTF_8);
+        Files.createDirectory(dir.resolve("application.yml.tmp"));
+        SafeModeServer server = new SafeModeServer(config, "测试用的启动失败原因");
+
+        assertThrows(IOException.class, () -> server.handleSaveBody("ok: true\n"));
+
+        assertEquals("seed: 1\n", Files.readString(config, StandardCharsets.UTF_8),
+                "写到一半失败时盘上的配置被改掉了");
+    }
+
+    /**
+     * 发行包不再带 application.yml，安全模式常是这台机器上第一个写它的。
+     * 新建出的这份里有口令与令牌，一建出来就该只有属主能读写
+     */
+    @Test
+    @DisplayName("配置文件不在时保存建出的新文件仅属主可读写")
+    void saveCreatesOwnerOnlyConfigWhenAbsent() throws IOException {
+        Path config = dir.resolve("application.yml");
+        SafeModeServer server = new SafeModeServer(config, "测试用的启动失败原因");
+
+        server.handleSaveBody("ok: true\n");
+
+        assertEquals(Set.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE),
+                Files.getPosixFilePermissions(config), "新建的配置文件不该比仅属主可读写更宽");
     }
 
     /**

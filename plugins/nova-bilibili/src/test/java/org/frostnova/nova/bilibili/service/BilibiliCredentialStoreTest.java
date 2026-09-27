@@ -121,6 +121,19 @@ class BilibiliCredentialStoreTest {
     }
 
     @Test
+    @DisplayName("保存半途失败时原有凭据分毫不动")
+    void failedSaveLeavesPreviousCredentials() throws Exception {
+        store().save(sample());
+        String original = Files.readString(cookiePath, StandardCharsets.UTF_8);
+        Files.createDirectory(dir.resolve("cookies.json.tmp"));
+
+        store().save(sample());
+
+        assertEquals(original, Files.readString(cookiePath, StandardCharsets.UTF_8),
+                "写到一半失败时盘上的凭据被改掉了，重启后要重新扫码");
+    }
+
+    @Test
     @DisplayName("凭据文件与密钥文件均为仅属主可读写")
     void filePermissionsAreRestricted() throws Exception {
         store().save(sample());
