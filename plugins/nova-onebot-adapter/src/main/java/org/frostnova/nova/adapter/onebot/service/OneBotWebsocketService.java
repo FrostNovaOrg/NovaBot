@@ -43,6 +43,15 @@ public class OneBotWebsocketService {
      */
     private static final Duration CHECK_INTERVAL = Duration.ofSeconds(30);
 
+    /**
+     * 一条消息的全部分片拼起来最多多少个字符
+     * <p>
+     * 与给容器设的文本缓冲同一个数、同一个单位：容器那一份按字符计，只管单片；这一份管整条。
+     * 按字符而不按字节，是因为拼接缓冲本身就是字符串，数它的长度不必每片再编码一遍。
+     * 不设的话，对端一直发不收尾的分片，内存会一直涨到整个程序退出。
+     */
+    static final int MAX_MESSAGE_CHARS = 8 * 1024 * 1024;
+
     private final TaskScheduler taskScheduler;
 
     private final ThreadPoolTaskExecutor executor;
@@ -194,7 +203,7 @@ public class OneBotWebsocketService {
                     headers.add("Authorization", "Bearer " + sender.getOneBotWebsocketToken());
 
                     WebSocketContainer container = ContainerProvider.getWebSocketContainer();
-                    container.setDefaultMaxTextMessageBufferSize(8 * 1024 * 1024);
+                    container.setDefaultMaxTextMessageBufferSize(MAX_MESSAGE_CHARS);
                     StandardWebSocketClient webSocketClient = new StandardWebSocketClient(container);
                     OneBotWebSocketHandler handler = new OneBotWebSocketHandler(this, connection);
                     sessionFuture = webSocketClient.execute(handler, headers, URI.create(url));
@@ -404,7 +413,20 @@ public class OneBotWebsocketService {
 
         private final CountDownLatch latch = new CountDownLatch(1);
 
+        /**
+         * 正在拼的那一条消息
+         * <p>
+         * 🔴 只在 I/O 线程上动。线程池那边拿到的是拼好之后的一份拷贝，
+         * 到它跑的时候这里多半已经在拼下一条了。
+         */
         private final StringBuilder messageBuffer = new StringBuilder();
+
+        /**
+         * 这条连接已因一条消息过长而断开，此后到的分片一概不收
+         * <p>
+         * 断开要等对端回话才真断，这期间还会有分片进来，接着拼只会拼出半条来路不明的消息。
+         */
+        private boolean oversized = false;
 
         private boolean connectTimeout = false;
 
@@ -487,7 +509,17 @@ public class OneBotWebsocketService {
 
             try {
                 if (webSocketRawMessage instanceof TextMessage webSocketMessage) {
-                    messageBuffer.append(webSocketMessage.getPayload());
+                    if (oversized) {
+                        return;
+                    }
+
+                    String payload = webSocketMessage.getPayload();
+                    long total = (long) messageBuffer.length() + payload.length();
+                    if (total > MAX_MESSAGE_CHARS) {
+                        dropOversizedMessage(session, total);
+                        return;
+                    }
+                    messageBuffer.append(payload);
 
                     if (webSocketMessage.isLast()) {
                         String fullMessage = messageBuffer.toString();
@@ -542,8 +574,9 @@ public class OneBotWebsocketService {
                                             senderRole, incoming.mentionsBot()));
                                 }
                             } catch (Exception e) {
+                                // 不在这里清拼接缓冲：这条自己的那份早在 I/O 线程上取走了，
+                                // 此刻缓冲里是下一条的前半截，清掉它下一条就只剩后半截
                                 log.error("处理 {} 的 OneBot Websocket 消息时发生异常", sender.getName(), e);
-                                messageBuffer.setLength(0);
                             }
                         });
                     }
@@ -551,6 +584,28 @@ public class OneBotWebsocketService {
             } catch (Exception e) {
                 log.error("处理 {} 的 OneBot Websocket 分片消息发生异常", sender.getName(), e);
                 messageBuffer.setLength(0);
+            }
+        }
+
+        /**
+         * 一条消息拼到超过上限：丢掉已拼的部分，断开这条连接
+         * <p>
+         * 断开之后照连接断开的老路重连（{@link #afterConnectionClosed}），这里不另起重连。
+         * 日志只写累计多长，不写内容：内容来自对端，可能是任何东西。
+         * @param session WebSocket 会话
+         * @param total 算上刚到的这一片，累计多少个字符
+         */
+        private void dropOversizedMessage(WebSocketSession session, long total) {
+            oversized = true;
+            messageBuffer.setLength(0);
+            // 不清的话这一大块要等这个处理器被回收才还
+            messageBuffer.trimToSize();
+            log.warn("{} 的 OneBot Websocket 一条消息的分片累计已达 {} 个字符, 超过上限 {}, 已丢弃并断开连接, 随后将重新连接",
+                    sender.getName(), total, MAX_MESSAGE_CHARS);
+            try {
+                session.close(CloseStatus.TOO_BIG_TO_PROCESS);
+            } catch (Exception e) {
+                log.warn("断开 {} 的 OneBot Websocket 连接异常", sender.getName(), e);
             }
         }
 
