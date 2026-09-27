@@ -3,6 +3,7 @@ package org.frostnova.nova.core.service;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.lang.JsonlFiles;
 import org.frostnova.nova.core.model.StreamerSnapshot;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -69,6 +70,8 @@ public class StreamerSnapshotArchive {
         String line = JSON.toJSONString(snapshot) + System.lineSeparator();
         synchronized (writeLock) {
             try {
+                // 上一行没写完时先补一个换行，把坏的半行隔开——半行不该连累下一次采样
+                JsonlFiles.separateTruncatedTail(path());
                 Files.writeString(path(), line, StandardCharsets.UTF_8,
                         StandardOpenOption.CREATE, StandardOpenOption.APPEND);
             } catch (IOException e) {

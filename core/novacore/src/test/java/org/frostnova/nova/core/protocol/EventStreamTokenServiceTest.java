@@ -7,6 +7,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
@@ -159,5 +161,19 @@ class EventStreamTokenServiceTest {
 
         assertTrue(service.verify(token), "阳性对照：有效口令必须通，否则上面的「拒」说明不了问题");
         assertFalse(service.verify(token + "x"));
+    }
+
+    @Test
+    @DisplayName("口令表最后一行是半截时, 下一把口令仍能用, 只丢坏的那把")
+    void truncatedTailDoesNotSwallowTheNextToken() throws Exception {
+        // 磁盘满或断电卡在写一行的中间, 盘上会留下不带换行的半行。
+        // 不先隔开的话, 下一把口令接在半行后面连成一行, 两把一起读不出来——
+        // 而刚签出去的那把, 使用者已经拿在手里了
+        Files.writeString(dir.resolve("event-stream-tokens.jsonl"),
+                "{\"hash\":\"写坏的半行\",\"label\":\"面板", StandardCharsets.UTF_8);
+
+        String token = service.issue("面板-甲");
+
+        assertTrue(service.verify(token), "半截的上一行把下一把口令一起弄丢了——那把口令刚签给了使用者");
     }
 }

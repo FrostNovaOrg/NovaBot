@@ -3,6 +3,7 @@ package org.frostnova.nova.core.timeline;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.lang.JsonlFiles;
 import jakarta.annotation.PostConstruct;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -124,6 +125,8 @@ public class TimelineStore implements TimelineWriter {
             try {
                 Path file = dayFile(day);
                 Files.createDirectories(file.getParent());
+                // 上一行没写完时先补一个换行，把坏的半行隔开——半行不该连累下一条事件
+                JsonlFiles.separateTruncatedTail(file);
                 Files.writeString(file, line, StandardCharsets.UTF_8,
                         StandardOpenOption.CREATE, StandardOpenOption.APPEND);
             } catch (IOException e) {

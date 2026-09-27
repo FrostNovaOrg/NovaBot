@@ -271,6 +271,26 @@ class LiveDetailArchiveTest {
     }
 
     @Test
+    @DisplayName("弹幕与事件的上一行是半截时, 下一条仍能读出, 只丢坏的那条")
+    void truncatedTailDoesNotSwallowTheNextDanmuOrEvent() throws IOException {
+        // 磁盘满或断电卡在写一行的中间, 盘上会留下不带换行的半行。
+        // 不先隔开的话, 下一条弹幕/事件接在半行后面连成一行, 两条一起读不出来
+        Path base = dir.resolve("details").resolve(PLATFORM + "-" + UID + "-" + START);
+        Files.createDirectories(base);
+        Files.writeString(base.resolve("danmu.jsonl"), "{\"at\":1,\"text\":\"写坏的半句\"", StandardCharsets.UTF_8);
+        Files.writeString(base.resolve("events.jsonl"), "{\"at\":1,\"t\":\"gi\"", StandardCharsets.UTF_8);
+
+        archive.appendDanmu(PLATFORM, UID, START, danmu(START, "下一句"));
+        archive.appendEvent(PLATFORM, UID, START, START + MINUTE, "gift", Map.of("n", 1));
+
+        assertEquals(List.of("下一句"), archive.readDanmu(PLATFORM, UID, START).stream()
+                        .map(DanmuRecord::text).toList(),
+                "半截的上一行把下一句弹幕一起弄丢了——那一句观众真的发过");
+        assertEquals(1, archive.readEvents(PLATFORM, UID, START).size(),
+                "半截的上一行把下一条事件一起弄丢了");
+    }
+
+    @Test
     @DisplayName("保留期默认为 0：明细永久留着，清理跑过也一场不删")
     void retentionDefaultsToForever() {
         archive.store(detail(1, 1, 1));
