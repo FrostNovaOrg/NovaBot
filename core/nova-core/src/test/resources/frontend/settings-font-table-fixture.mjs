@@ -6,8 +6,9 @@
  * 自己的表，表情空白又回来了。框下要说清「这是旧默认表、已按未设处理，点恢复默认清空」，
  * 存的是旧表或空表时再写出现在用的是哪张默认表；使用者自己的表不加字。
  *
- * 五格：①旧表出说明句与默认表那一行；②空表只出默认表那一行；③使用者的表两行都不出；
- * ④别的列表项不出；⑤旧表点「恢复默认」后框为空、记进改动（保存即写空表）。
+ * 各格：①旧表出说明句与默认表那一行；②空表只出默认表那一行；③使用者的表两行都不出；
+ * ④别的列表项不出；⑤旧表点「恢复默认」后框为空、记进改动（保存即写空表）；
+ * ⑥⑦两行说明跟框里的草稿走，不等保存重载：点了恢复默认不再说是旧表，改成别的表不出字。
  *
  * 由 SettingsFontTableViewTest 拉起。量的是源码树里那一份，不是构建产物里的副本。
  */
@@ -244,6 +245,47 @@ const tables = pastDefault => ({[FONTS]: {pastDefault, defaults: DEFAULTS}});
     seen = 'error:' + e.message;
   }
   eq(seen, ['reset', '', ''], '⑤ 旧表点「恢复默认」：框为空，改动记成空表');
+}
+
+// ---------- ⑥ 说明跟框里的草稿走 ----------
+// 病：点了「恢复默认」还没保存，框已经空了，框下还说「这是旧版自动写进配置的默认字体表」，
+// 保存重载后才变；改成别的表、或把自己的表清空，框下的字也还是按已存的值说
+{
+  let seen = 'missing';
+  try {
+    const {row} = build(listField(), {[FONTS]: OLD_MAC}, tables(true));
+    const reset = collect(row, n => n.tag === 'button' && n.textContent === '恢复默认')[0];
+    for (const fn of (reset && reset.listeners.click) || []) fn();
+    seen = notes(row);
+  } catch (e) {
+    seen = 'error:' + e.message;
+  }
+  eq(seen, [DEFAULTS_NOTE], '⑥ 旧表点「恢复默认」未保存：不再说是旧表，只写出现在用的默认表');
+}
+
+/** 往框里敲字：写值再拨一次 input */
+function type(row, text) {
+  const box = collect(row, n => n.tag === 'textarea')[0];
+  box.value = text;
+  for (const fn of box.listeners.input || []) fn();
+}
+
+{
+  let seen = 'missing';
+  try {
+    const old = build(listField(), {[FONTS]: OLD_MAC}, tables(true)).row;
+    type(old, '我的字体\n内置');
+    const edited = notes(old);
+    type(old, OLD_MAC);
+    const back = notes(old);
+    const mine = build(listField(), {[FONTS]: '我的字体\n内置'}, tables(false)).row;
+    type(mine, '');
+    seen = {edited, back, emptied: notes(mine)};
+  } catch (e) {
+    seen = 'error:' + e.message;
+  }
+  eq(seen, {edited: [], back: [PAST_NOTE, DEFAULTS_NOTE], emptied: [DEFAULTS_NOTE]},
+    '⑦ 旧表改成别的表不出字、改回旧表两行又出；自己的表清空了写出现在用的默认表');
 }
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

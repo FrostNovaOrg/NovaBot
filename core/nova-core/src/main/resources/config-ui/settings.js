@@ -238,20 +238,26 @@ function buildRow(field, groupAllRestart) {
   }
 
   // 成图字体表：老实例的文件里存着旧版写下的默认表，启动时已按未设处理，而框里原样显示它。
-  // 不说一声，使用者改一项再存就成了自己的表，表情空白又回来。按已保存的值说，不跟草稿走
+  // 不说一声，使用者改一项再存就成了自己的表，表情空白又回来。两句都跟框里的草稿走：
+  // 点了「恢复默认」还没保存，框已经空了，还说「这是旧表」就对不上眼前的框
   const fonts = store.fontTables && store.fontTables[field.name];
+  let fontNotes = () => {};
   if (fonts) {
-    if (fonts.pastDefault) {
-      const note = el('div', 'dflt fontnote');
-      note.textContent = '这是旧版自动写进配置的默认字体表，启动时已按未设处理。'
-        + '点「恢复默认」清空它，以后跟着程序自带的默认表走。';
-      cell.appendChild(note);
-    }
-    if (fonts.pastDefault || saved === '') {
-      const note = el('div', 'dflt fontnote');
-      note.textContent = '现在用的是本系统的默认表：' + (fonts.defaults || []).join('、');
-      cell.appendChild(note);
-    }
+    const pastNote = el('div', 'dflt fontnote');
+    const defaultsNote = el('div', 'dflt fontnote');
+    cell.append(pastNote, defaultsNote);
+    fontNotes = value => {
+      const draft = canonicalValue(field, value);
+      const past = fonts.pastDefault && draft === saved;
+      const empty = draft.trim() === '';
+      pastNote.textContent = past ? '这是旧版自动写进配置的默认字体表，启动时已按未设处理。'
+        + '点「恢复默认」清空它，以后跟着程序自带的默认表走。' : '';
+      pastNote.classList.toggle('hide', !past);
+      defaultsNote.textContent = past || empty
+        ? '现在用的是本系统的默认表：' + (fonts.defaults || []).join('、') : '';
+      defaultsNote.classList.toggle('hide', !(past || empty));
+    };
+    fontNotes(shown);
   }
 
   if (!input) return row;
@@ -276,6 +282,7 @@ function buildRow(field, groupAllRestart) {
     line.classList.toggle('hide', !changed || field.sensitive);
     row.dataset.changed = changed ? '1' : '0';
     row.classList.toggle('changed', store.dirty[field.name] !== undefined);
+    fontNotes(read());
   };
 
   // 机密项不给「恢复默认」：它的默认值多半是空，而按下去等于把口令清掉——
@@ -303,6 +310,13 @@ function buildRow(field, groupAllRestart) {
     clear.type = 'button';
     clear.textContent = clearing ? '撤回清除' : '清除';
     clear.title = '保存后这一项就删掉了，要再用得重新填';
+    // 同一句话挂着清除时摆在框下：悬停提示在触屏上看不到，点了清除却不知道保存后会删
+    const clearNote = el('div', 'dflt clearnote');
+    const showClearNote = () => {
+      clearNote.textContent = clearing ? clear.title : '';
+      clearNote.classList.toggle('hide', !clearing);
+    };
+    showClearNote();
     // 挂着清除的重画直接进清除态；没挂的照旧显示草稿，不在这儿动框里的值
     if (clearing) {
       input.value = '';
@@ -311,6 +325,7 @@ function buildRow(field, groupAllRestart) {
     }
     clear.addEventListener('click', () => {
       clearing = !clearing;
+      showClearNote();
       if (clearing) {
         input.value = '';
         input.disabled = true;
@@ -327,7 +342,7 @@ function buildRow(field, groupAllRestart) {
       paint();
       markDirty();
     });
-    cell.appendChild(clear);
+    cell.append(clear, clearNote);
   }
 
   // 危险项自己记账：改到危险那一档要先问一句，取消就退回原样、不计入改动

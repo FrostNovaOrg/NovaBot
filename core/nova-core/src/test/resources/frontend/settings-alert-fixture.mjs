@@ -16,6 +16,7 @@
  * 告警地址框同法：Bark、Server 酱把推送密钥拼在地址里，地址照口令框处理，
  * 不明文摆在画面上；自己敲进新地址仍记成改动，保存照常能落盘。
  * 清除态重画不丢：挂着清除还没保存时一重画仍是清除态，点一次即撤回。
+ * ⑭清除钮那句话挂着清除时是看得见的字；⑮Webhook 药丸按保存后会怎样说（留空＝保持原值）。
  *
  * 由 SettingsAlertViewTest 拉起。量的是源码树里那一份，不是构建产物里的副本。
  */
@@ -416,7 +417,7 @@ try {
   const calls = start >= 0 && end > start ? src.slice(start, end) : '';
   if (!calls) throw new Error('no webhook address field');
   const hook = {body: node('div'), pill: node('div')};
-  new Function('field', 'hook', 'pillState', calls)(field, hook, () => {});
+  new Function('field', 'hook', 'pillState', 'hookPillState', calls)(field, hook, () => {}, () => {});
   const input = collectInputs(hook.body).find(i => i.attrs['aria-label'] === '地址');
   if (!input) throw new Error('address input missing');
   urlType = input.type;
@@ -570,6 +571,133 @@ try {
 eq(repaintClear, ['', true, '保存后清除', '撤回清除'].join('|') + ' || '
   + [MASK, false, '留空＝保持原值', '清除', true].join('|'),
   '⑬ 重画后仍是清除态（框空且禁用、写着「保存后清除」、钮是「撤回清除」），点一次即撤回');
+
+/** 带真 classList 的元素桩：看得见＝有字且没挂 hide */
+function liveNode(tag, cls) {
+  const n = node(tag, cls);
+  const set = new Set(String(cls || '').split(/\s+/).filter(Boolean));
+  n.classList = {
+    toggle(name, force) {
+      const on = force === undefined ? !set.has(name) : !!force;
+      if (on) set.add(name); else set.delete(name);
+    },
+    add(...names) { for (const name of names) set.add(name); },
+    contains(name) { return set.has(name); },
+  };
+  return n;
+}
+
+/** 看得见的字（不含悬停提示 title） */
+function visible(root, out) {
+  const acc = out || [];
+  if (!root || root.classList.contains && root.classList.contains('hide')) return acc;
+  if (root.textContent && !(root.kids && root.kids.length)) acc.push(root.textContent);
+  for (const child of root.kids || []) visible(child, acc);
+  return acc;
+}
+
+// ⑭ 清除钮那句话看得见
+// 病：「保存后这一项就删掉了，要再用得重新填」只挂在悬停提示里，触屏上点了清除看不到，
+// 不知道保存后会删。挂着清除时这句要作为字摆在这一栏里，撤回后收起
+const CLEAR_NOTE = '保存后这一项就删掉了，要再用得重新填';
+let alertNote = 'missing';
+try {
+  const storeStub = {values: {'spring.mail.password': MASK}, dirty: {}};
+  const setValue = loadSetValue(storeStub, () => {});
+  const valueOf = name => storeStub.dirty[name] !== undefined
+    ? storeStub.dirty[name] : (storeStub.values[name] || '');
+  const field = loadFn(src, 'function field(', ['el', 'valueOf', 'setValue', 'markDirty', 'store', 'CLEAR'],
+    [liveNode, valueOf, setValue, () => {}, storeStub, CLEAR]);
+  const says = box => visible(box).includes(CLEAR_NOTE) ? 'note' : 'no note';
+  const box = liveNode('div');
+  field(box, '发件授权码', 'spring.mail.password', {type: 'password', ph: '留空＝保持原值'});
+  const btn = box.kids[0].kids.find(k => k.tag === 'button');
+  const before = says(box);
+  for (const fn of (btn && btn.listeners.click) || []) fn();
+  const clearing = says(box);
+  const again = liveNode('div');
+  field(again, '发件授权码', 'spring.mail.password', {type: 'password', ph: '留空＝保持原值'});
+  const repainted = says(again);
+  for (const fn of (btn && btn.listeners.click) || []) fn();
+  alertNote = [before, clearing, repainted, says(box)].join('|');
+} catch (e) {
+  alertNote = 'error:' + e.message;
+}
+eq(alertNote, ['no note', 'note', 'note', 'no note'].join('|'),
+  '⑭ 告警卡点清除后那句话是看得见的字，重画仍在，撤回即收起');
+
+// ⑮ Webhook 药丸按「保存后会怎样」说
+// 病：药丸只看框里有没有字。地址是机密项，留空＝保持原值，删光遮点时药丸跳「未配置」，
+// 保存后地址却照旧留着；点清除时药丸又不动，看不出保存后就没了。
+// 切的是地址框建起到卡片入列那一段（含初值那行）真跑，读的是药丸
+const HOOK = 'novabot.core.alert.webhook-url';
+
+function hookCard(values, dirty) {
+  const storeStub = {values: Object.assign({}, values), dirty: Object.assign({}, dirty)};
+  const setValue = loadSetValue(storeStub, () => {});
+  const valueOf = name => storeStub.dirty[name] !== undefined
+    ? storeStub.dirty[name] : (storeStub.values[name] || '');
+  const field = loadFn(src, 'function field(', ['el', 'valueOf', 'setValue', 'markDirty', 'store', 'CLEAR'],
+    [liveNode, valueOf, setValue, () => {}, storeStub, CLEAR]);
+  const pillState = loadPillState();
+  const hookBody = bracedFrom(src, 'function hookPillState(');
+  const hookPillState = hookBody
+    ? new Function('store', 'CLEAR', 'pillState', hookBody + '\nreturn hookPillState;')(storeStub, CLEAR, pillState)
+    : () => { throw new Error('no hookPillState'); };
+  const presets = new Function(bracedFrom(src, 'const WEBHOOK_PRESETS = ') + '\nreturn WEBHOOK_PRESETS;')();
+  const start = src.indexOf("const url = field(hook.body, '地址'");
+  const end = start < 0 ? -1 : src.indexOf('wrap.appendChild(hook.card)', start);
+  if (start < 0 || end < start) throw new Error('no webhook wiring');
+  const hook = {body: liveNode('div'), pill: {className: 'pill', textContent: '未配置'}};
+  new Function('field', 'hook', 'pillState', 'hookPillState', 'hookCustom', 'preset', 'WEBHOOK_PRESETS',
+    'CUSTOM', 'valueOf', 'setValue', src.slice(start, end))(
+    field, hook, pillState, hookPillState, liveNode('div'), liveNode('select'), presets,
+    '自定义', valueOf, setValue);
+  const input = collectInputs(hook.body).find(i => i.attrs['aria-label'] === '地址');
+  const btn = collect(hook.body, 'button').find(b => b.textContent === '清除' || b.textContent === '撤回清除');
+  const read = () => hook.pill.textContent + (String(hook.pill.className).includes('ok') ? '+ok'
+    : String(hook.pill.className).includes('warn') ? '+warn' : '');
+  const type = text => {
+    input.value = text;
+    for (const fn of input.listeners.input || []) fn();
+  };
+  const click = () => { for (const fn of (btn && btn.listeners.click) || []) fn(); };
+  return {read, type, click};
+}
+
+function collect(root, tag, out) {
+  const acc = out || [];
+  if (root && root.tag === tag) acc.push(root);
+  for (const child of (root && root.kids) || []) collect(child, tag, acc);
+  return acc;
+}
+
+let hookPill = 'missing';
+try {
+  const seen = [];
+  const card = hookCard({[HOOK]: MASK}, {});
+  seen.push('存着:' + card.read());
+  card.type('');
+  seen.push('删光遮点:' + card.read());
+  card.type('https://api.day.app/another-key/');
+  seen.push('填新地址:' + card.read());
+  card.type('');
+  card.click();
+  seen.push('点清除:' + card.read());
+  card.click();
+  seen.push('撤回清除:' + card.read());
+  seen.push('重画挂着清除:' + hookCard({[HOOK]: MASK}, {[HOOK]: CLEAR}).read());
+  const none = hookCard({}, {});
+  seen.push('没存过:' + none.read());
+  none.type('https://api.day.app/new-key/');
+  seen.push('没存过填了:' + none.read());
+  hookPill = seen.join('|');
+} catch (e) {
+  hookPill = 'error:' + e.message;
+}
+eq(hookPill, ['存着:已配置+ok', '删光遮点:已配置+ok', '填新地址:已配置+ok', '点清除:保存后清除+warn',
+  '撤回清除:已配置+ok', '重画挂着清除:保存后清除+warn', '没存过:未配置', '没存过填了:已配置+ok'].join('|'),
+  '⑮ Webhook 药丸说保存后会怎样：删光遮点仍已配置，挂着清除写「保存后清除」，没存过才是未配置');
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);
 process.exit(failures.length ? 1 : 0);

@@ -157,12 +157,20 @@ function field(box, label, name, opt) {
     clear.type = 'button';
     clear.textContent = clearing ? '撤回清除' : '清除';
     clear.title = '保存后这一项就删掉了，要再用得重新填';
+    // 同一句话挂着清除时摆在框下：悬停提示在触屏上看不到，点了清除却不知道保存后会删
+    const clearNote = el('div', 'al-note clearnote');
+    const showClearNote = () => {
+      clearNote.textContent = clearing ? clear.title : '';
+      clearNote.classList.toggle('hide', !clearing);
+    };
+    showClearNote();
     if (clearing) {
       input.disabled = true;
       input.placeholder = '保存后清除';
     }
     clear.addEventListener('click', () => {
       clearing = !clearing;
+      showClearNote();
       if (clearing) {
         input.value = '';
         input.disabled = true;
@@ -177,9 +185,11 @@ function field(box, label, name, opt) {
         input.placeholder = o.ph || '';
         clear.textContent = '清除';
       }
+      // 挂上与撤回清除都改了「保存后会怎样」，跟着这一栏说话的（Webhook 药丸）得再评一次
+      if (o.onchange) o.onchange(input.value);
       markDirty();
     });
-    wrap.appendChild(clear);
+    wrap.append(clear, clearNote);
   }
   const on = () => { setValue(name, input.value); if (o.onchange) o.onchange(input.value); };
   input.addEventListener('input', on);
@@ -301,6 +311,25 @@ async function sendTest(channel, button) {
 function pillState(pill, configured) {
   pill.className = 'pill' + (configured ? ' ok' : '');
   pill.textContent = configured ? '已配置' : '未配置';
+}
+
+/**
+ * Webhook 药丸答的是「保存后会怎样」，不只看框里有没有字
+ *
+ * 地址是机密项，留空＝保持原值：删光遮点保存，已存的地址照旧留着，
+ * 这时药丸说「未配置」就和保存后的实际对不上。挂着清除才是真要删，
+ * 那一态单独写出来，与「本来就没存」分开。
+ * @param pill 药丸元素
+ * @param name 地址那一项的配置键
+ * @param draft 框里此刻的字
+ */
+function hookPillState(pill, name, draft) {
+  if (store.dirty[name] === CLEAR) {
+    pill.className = 'pill warn';
+    pill.textContent = '保存后清除';
+    return;
+  }
+  pillState(pill, !!String(draft).trim() || !!store.values[name]);
 }
 
 /**
@@ -463,7 +492,7 @@ export function alertCards() {
   // 后端回的是遮罩串，原样保存即「这一项没动」；要换就整个填新的。
   const url = field(hook.body, '地址', 'novabot.core.alert.webhook-url',
     {type: 'password', ph: 'https://……', autocomplete: 'new-password', inputName: 'webhook-address',
-      onchange: v => pillState(hook.pill, !!String(v).trim())});
+      onchange: v => hookPillState(hook.pill, 'novabot.core.alert.webhook-url', v)});
   hook.body.appendChild(hookCustom);
   const method = field(hookCustom, '提交方式', 'novabot.core.alert.webhook-method',
     {type: 'select', opts: ['POST', 'GET']});
@@ -492,7 +521,7 @@ export function alertCards() {
       && s.content === valueOf('novabot.core.alert.webhook-content-field');
   }) || CUSTOM;
   hookCustom.classList.toggle('hide', !!WEBHOOK_PRESETS[preset.value]);
-  pillState(hook.pill, !!url.value.trim());
+  hookPillState(hook.pill, 'novabot.core.alert.webhook-url', url.value);
   wrap.appendChild(hook.card);
 
   // ---- 邮件 ----

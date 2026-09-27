@@ -6,8 +6,9 @@
  * 要撤回得连点两下。重画时要认出「这一项挂着清除」，直接进清除态：显示「保存后清除」、
  * 点一次即撤回。删键的下场由后端那格（显式清除删键）钉着，这里量到请求体里送的是清除标记。
  *
- * 三格各盯一段：①重画后仍是清除态；②从重画出来的清除态撤回一次即恢复（看的是当场那一行）；
- * ③重画后保存：删之前界面一直写着「保存后清除」、送上去的是清除标记，保存后没值也没清除钮。
+ * 四格各盯一段：①重画后仍是清除态；②从重画出来的清除态撤回一次即恢复（看的是当场那一行）；
+ * ③重画后保存：删之前界面一直写着「保存后清除」、送上去的是清除标记，保存后没值也没清除钮；
+ * ④「保存后这一项就删掉了」那句话挂着清除时是看得见的字，不只在悬停提示里（触屏上看不到）。
  *
  * 由 SettingsClearViewTest 拉起。量的是源码树里那一份，不是构建产物里的副本。
  */
@@ -258,6 +259,64 @@ try {
 }
 eq(saveDeletes, true,
   '③ 点清除→重画→保存后键被删：删之前界面写着「保存后清除」，送上去的是清除标记，保存后没值也没清除钮');
+
+// ---------- ④ 那句话看得见 ----------
+// 病：「保存后这一项就删掉了，要再用得重新填」只挂在悬停提示里，触屏上点了清除
+// 看不到，不知道保存后会删。挂着清除时这句要作为字摆在这一项里，撤回后收起
+const CLEAR_NOTE = '保存后这一项就删掉了，要再用得重新填';
+
+/** 带真 classList 的元素桩：看得见＝有字且没挂 hide */
+function liveNode(tag, cls) {
+  const n = node(tag, cls);
+  const set = new Set(String(cls || '').split(/\s+/).filter(Boolean));
+  n.classList = {
+    toggle(name, force) {
+      const on = force === undefined ? !set.has(name) : !!force;
+      if (on) set.add(name); else set.delete(name);
+    },
+    add(...names) { for (const name of names) set.add(name); },
+    contains(name) { return set.has(name); },
+  };
+  return n;
+}
+
+/** 行里看得见的字（不含悬停提示 title） */
+function visible(root, out) {
+  const acc = out || [];
+  if (!root || root.classList.contains && root.classList.contains('hide')) return acc;
+  if (root.textContent && !(root.kids && root.kids.length)) acc.push(root.textContent);
+  for (const child of root.kids || []) visible(child, acc);
+  return acc;
+}
+
+let noteShown = 'missing';
+try {
+  const field = secretField();
+  const store = {values: {'spring.mail.password': MASK}, dirty: {}, legacy: {}};
+  const valuesOf = loadFn(src, 'function valuesOf(',
+    ['store', 'canonicalValue', 'defaultValue', 'secretDraft', 'CLEAR'],
+    [store, canonicalValue, defaultValue, secretDraft, CLEAR]);
+  const buildControl = loadFn(src, 'function buildControl(',
+    ['el', 'bindPasswordReveal', 'switchControl'], [liveNode, () => {}, () => {}]);
+  const buildRow = loadFn(src, 'function buildRow(',
+    ['el', 'isDangerous', 'store', 'defaultText', 'valuesOf', 'buildControl', 'effectOf',
+      'isChanged', 'defaultValue', 'markDirty', 'ask', 'dangerOf', 'secretDraft', 'CLEAR'],
+    [liveNode, isDangerous, store, defaultText, valuesOf, buildControl, effectOf,
+      isChanged, defaultValue, () => {}, () => true, dangerOf, secretDraft, CLEAR]);
+  const says = row => visible(row).includes(CLEAR_NOTE) ? 'note' : 'no note';
+  const row = buildRow(field, false);
+  const before = says(row);
+  const clear = reading(store, row, field).clear;
+  click(clear);
+  const clearing = says(row);
+  const repainted = says(buildRow(field, false));
+  click(clear);
+  noteShown = [before, clearing, repainted, says(row)].join('|');
+} catch (e) {
+  noteShown = 'error:' + e.message;
+}
+eq(noteShown, ['no note', 'note', 'note', 'no note'].join('|'),
+  '④ 点清除后那句话作为看得见的字摆在这一项里，重画仍在，撤回即收起');
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
 for (const line of failures) console.log('  红：' + line);
