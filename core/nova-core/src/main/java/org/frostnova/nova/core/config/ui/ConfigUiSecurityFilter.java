@@ -269,6 +269,21 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
     }
 
     /**
+     * 清掉旧版本写下的那份令牌 Cookie
+     * <p>
+     * 旧版写它时路径是「/」，而路径不同的两份同名 Cookie 在浏览器里是并存的，新的那份顶不掉它。
+     * 清它得按它自己那副样子来：同名、空值、路径「/」、{@code Max-Age=0}，浏览器收到即弃；
+     * 路径要是写成 {@code BASE_PATH}，清掉的反而是刚写下的那份，人下一趟连门都进不来。
+     * <p>
+     * {@code HttpOnly}、{@code SameSite}、{@code Secure} 照写新的一份那一副样子带上，
+     * 其中 Secure 同样只在 https 下带：跟着连接走，明文与加密两条路才都清得掉。
+     */
+    private String staleTokenCookie(HttpServletRequest request) {
+        return "%s=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict%s".formatted(
+                TOKEN_COOKIE, request.isSecure() ? "; Secure" : "");
+    }
+
+    /**
      * 访问令牌形态下的校验
      */
     private void filterWithToken(HttpServletRequest request, HttpServletResponse response, FilterChain chain, String clientIp)
@@ -286,11 +301,19 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
         if (request.getParameter("token") != null) {
             Cookie cookie = new Cookie(TOKEN_COOKIE, token);
             cookie.setHttpOnly(true);
-            cookie.setPath("/");
+            // 路径缩到 /config：令牌只在配置界面里用得着，写「/」的话同一台机器上别的路径也收得到它
+            cookie.setPath(ConfigUiController.BASE_PATH);
+            // 走 https 时带上 Secure，跟着 request.isSecure()，与会话 Cookie 同一个判法：
+            // 不带 Secure 的话，同域名下只要有一次明文请求，浏览器就会把令牌随它送出去
+            cookie.setSecure(request.isSecure());
             // 令牌存在 Cookie 里，浏览器就会把它自动附到跨站请求上。这一形态没有 CSRF 令牌可查，
             // 只能靠 SameSite 把跨站请求整个挡掉——现代浏览器的默认值已是 Lax，这里显式写死不指望默认
             cookie.setAttribute("SameSite", "Strict");
             response.addCookie(cookie);
+
+            // 旧版本写下的同名 Cookie 路径是「/」。路径不同的两份在浏览器里是并存的，上面这份顶不掉它，
+            // 而它照样会被送到别的路径上，所以写新的一份时顺手把它清掉（清法见 staleTokenCookie）
+            response.addHeader(HttpHeaders.SET_COOKIE, staleTokenCookie(request));
         }
 
         // 这一形态里没有口令，令牌本身就是凭据：验过令牌就等于认出了人，
