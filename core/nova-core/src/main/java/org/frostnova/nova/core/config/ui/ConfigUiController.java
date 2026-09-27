@@ -1013,6 +1013,7 @@ public class ConfigUiController {
             }
             // 先补旧位置再遮机密：补进来的项同样可能是机密，顺序反了就会漏出去
             result.put("legacy", aliases().resolve(values));
+            result.put("fontTables", fontTables(values.get(PAINT_FONTS), System.getProperty("os.name")));
             // 口令、令牌与密钥不出这道门：面板可能在直播画面里被打开。
             // 带上类型表，开关才不会因为名字里有 token 被遮成占位值——遮了它界面上就恒显「已关闭」
             Map<String, String> types = metadataService.getKnownTypes();
@@ -1024,6 +1025,29 @@ public class ConfigUiController {
         }
 
         return result;
+    }
+
+    /** 成图字体表的配置键 */
+    private static final String PAINT_FONTS = "novabot.core.paint.fonts";
+
+    /**
+     * 成图字体表那一项的附注：存的是不是旧默认表，本系统默认表是哪张
+     * <p>
+     * 老实例的配置文件里存着旧版自动写进去的默认表，启动时已按未设处理，
+     * 设置页却原样显示它。不说一声的话，使用者改一项再存，它就成了使用者自己的表，
+     * 表情空白又回来了。按文件里的值判，与框里显示的是同一份；默认表取表为空时启动接上的那张。
+     * @param stored 文件里的值，按行拼好的；没写这一项为 null
+     * @param osName 操作系统名，取自 {@code os.name}
+     * @return 键 → {pastDefault, defaults}
+     */
+    static JSONObject fontTables(String stored, String osName) {
+        List<String> configured = stored == null || stored.isEmpty() ? List.of() : List.of(stored.split("\n"));
+        JSONObject table = new JSONObject();
+        table.put("pastDefault", NovaCoreProperties.isPastDefaultFonts(configured, osName));
+        table.put("defaults", NovaCoreProperties.fontChain(List.of(), osName));
+        JSONObject tables = new JSONObject();
+        tables.put(PAINT_FONTS, table);
+        return tables;
     }
 
     /**
