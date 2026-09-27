@@ -3,9 +3,12 @@ package org.frostnova.nova.core.config.ui.auth.passkey;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 /**
  * 发出去还没用掉的那些挑战串
@@ -40,32 +43,60 @@ class PasskeyChallenges {
     private static final Duration TTL = Duration.ofMinutes(5);
 
     /**
-     * 同时存在的挑战数上限
+     * 同时存在的登录挑战数上限
      * <p>
-     * 挑战由未登录者也能索取（登录那一条路本来就得如此），因此必须有上限，
-     * 否则反复索取就能把内存撑大。超出时淘汰最早发出的那些。
+     * 登录挑战由未登录者也能索取（这条路本来就得如此），因此必须有上限，
+     * 否则反复索取就能把内存撑大。
      */
-    private static final int MAX_PENDING = 64;
+    private static final int MAX_LOGIN = 64;
+
+    /**
+     * 一个来源地址同时能占的登录挑战数
+     * <p>
+     * 🔴 这一条才是防挤的那道：满了只淘汰<b>这个地址自己</b>最早的那条。
+     * 只有总上限的话，一个地址连要几十次就能把别人手上那条当成「最早的」挤掉——
+     * 主人按完指纹，得到一句挑战失效。一个正常人同时开着的登录框不会超过几个，取 8 留足余地。
+     * <p>
+     * 来源地址与 {@code ConfigUiSecurityFilter} 认白名单用的是同一个（{@code getRemoteAddr()}）。
+     * 放在反向代理后面、所有人看起来都是代理那一个地址时，这些人共用这 8 条，
+     * 彼此仍挤得掉——那时分人要靠代理传来的真实地址，而这一侧至今不信转发头。
+     */
+    private static final int MAX_LOGIN_PER_SOURCE = 8;
+
+    /**
+     * 同时存在的登记挑战数上限
+     * <p>
+     * 🔴 登记挑战<b>单独计数</b>，不和登录挑战抢位置：拿登记挑战要先登录、再核一次现在的密码，
+     * 未登录的人再怎么要登录挑战也碰不到这一份。
+     */
+    private static final int MAX_REGISTER = 16;
 
     private static final SecureRandom RANDOM = new SecureRandom();
 
-    private final Map<String, Pending> pending = new ConcurrentHashMap<>();
+    /**
+     * 所有读写都在本对象的锁里：表最多几十条，一把锁换来「数了再删」之间不会被别的线程插队——
+     * 不加锁的话，被持续灌入时「腾到不满为止」可能永远腾不完
+     */
+    private final Map<String, Pending> pending = new HashMap<>();
 
     /**
      * 发一个新挑战
      * @param purpose 这一个是给哪条路用的
+     * @param source 索取者的来源地址；登录挑战按它分额度，登记挑战不看它
      * @param now 当前时刻
      * @return base64url 编码的挑战串
      */
-    String issue(Purpose purpose, Instant now) {
+    synchronized String issue(Purpose purpose, String source, Instant now) {
+        String key = source == null ? "" : source;
+
         sweep(now);
-        evictOldestIfFull();
+        makeRoom(purpose, key);
 
         byte[] bytes = new byte[CHALLENGE_BYTES];
         RANDOM.nextBytes(bytes);
 
         String challenge = PasskeyBytes.encode(bytes);
-        pending.put(challenge, new Pending(purpose, now.plus(TTL)));
+        pending.put(challenge, new Pending(purpose, key, now.plus(TTL)));
 
         return challenge;
     }
@@ -80,7 +111,7 @@ class PasskeyChallenges {
      * @param now 当前时刻
      * @return 是否是一个有效且用途相符的挑战
      */
-    boolean consume(String challenge, Purpose purpose, Instant now) {
+    synchronized boolean consume(String challenge, Purpose purpose, Instant now) {
         if (challenge == null || challenge.isBlank()) {
             return false;
         }
@@ -94,18 +125,50 @@ class PasskeyChallenges {
     }
 
     /**
-     * 腾位置
+     * 发新挑战前腾位置
      * <p>
-     * 循环次数写死上限而不是「一直腾到不满为止」：这张表另有线程在写，
-     * 「不满为止」在被持续灌入时就是一个不会结束的循环——而那正是它本要防的那种情形。
+     * 登记：满了淘汰最早的登记挑战。登录：先看这个地址自己满没满，满了只淘汰它自己最早的；
+     * 总数也满了（要凑够这么多得有至少 {@code MAX_LOGIN / MAX_LOGIN_PER_SOURCE} 个地址），
+     * 从占得最多的那个地址里淘汰最早的——只占一两条的正常使用者排在最后。
      */
-    private void evictOldestIfFull() {
-        for (int i = 0; i < MAX_PENDING && pending.size() >= MAX_PENDING; i++) {
-            pending.entrySet().stream()
-                    .min(Comparator.comparing(entry -> entry.getValue().expiresAt))
-                    .map(Map.Entry::getKey)
-                    .ifPresent(pending::remove);
+    private void makeRoom(Purpose purpose, String source) {
+        if (purpose == Purpose.REGISTER) {
+            while (count(entry -> entry.purpose == Purpose.REGISTER) >= MAX_REGISTER) {
+                evictOldest(entry -> entry.purpose == Purpose.REGISTER);
+            }
+            return;
         }
+
+        while (count(entry -> entry.purpose == Purpose.LOGIN && entry.source.equals(source)) >= MAX_LOGIN_PER_SOURCE) {
+            evictOldest(entry -> entry.purpose == Purpose.LOGIN && entry.source.equals(source));
+        }
+
+        while (count(entry -> entry.purpose == Purpose.LOGIN) >= MAX_LOGIN) {
+            Map<String, Long> perSource = pending.values().stream()
+                    .filter(entry -> entry.purpose == Purpose.LOGIN)
+                    .collect(Collectors.groupingBy(Pending::source, Collectors.counting()));
+            String heaviest = Collections.max(perSource.entrySet(), Map.Entry.comparingByValue()).getKey();
+            evictOldest(entry -> entry.purpose == Purpose.LOGIN && entry.source.equals(heaviest));
+        }
+    }
+
+    private long count(Predicate<Pending> filter) {
+        return pending.values().stream().filter(filter).count();
+    }
+
+    private void evictOldest(Predicate<Pending> filter) {
+        pending.entrySet().stream()
+                .filter(entry -> filter.test(entry.getValue()))
+                .min(Comparator.comparing(entry -> entry.getValue().expiresAt))
+                .map(Map.Entry::getKey)
+                .ifPresent(pending::remove);
+    }
+
+    /**
+     * 表里此刻还有几条（含已过期、还没被下一次发放清掉的）
+     */
+    synchronized int size() {
+        return pending.size();
     }
 
     /**
@@ -123,6 +186,6 @@ class PasskeyChallenges {
         LOGIN
     }
 
-    private record Pending(Purpose purpose, Instant expiresAt) {
+    private record Pending(Purpose purpose, String source, Instant expiresAt) {
     }
 }
