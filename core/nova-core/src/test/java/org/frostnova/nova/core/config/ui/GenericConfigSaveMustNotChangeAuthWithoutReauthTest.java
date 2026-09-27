@@ -131,12 +131,18 @@ class GenericConfigSaveMustNotChangeAuthWithoutReauthTest {
                 mock(UpdateCheckService.class));
     }
 
-    private String totpNow() {
-        return TotpGenerator.currentCode(SECRET, Instant.now());
+    /**
+     * 一枚没用过的码，取的是下一格
+     * <p>
+     * 服务构造时就把当格标成用过了（重启前用过的码不能再用），当格的码根本走不到认中那步；
+     * 校验窗口前后各容一格，往后取一格的码此刻照样认得出。
+     */
+    private String nextTotp() {
+        return TotpGenerator.currentCode(SECRET, Instant.now().plusSeconds(30));
     }
 
     private ConfigUiSession login() {
-        ConfigUiAuthService.LoginResult result = authService.login(OLD_PASSWORD.toCharArray(), totpNow(), "127.0.0.1");
+        ConfigUiAuthService.LoginResult result = authService.login(OLD_PASSWORD.toCharArray(), nextTotp(), "127.0.0.1");
         assertTrue(result.success(), "台面：旧口令加动态码应能登入, " + result.message());
         return result.session();
     }

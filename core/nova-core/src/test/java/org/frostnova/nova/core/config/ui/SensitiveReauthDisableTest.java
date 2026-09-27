@@ -76,8 +76,14 @@ class SensitiveReauthDisableTest {
         controller = new ConfigUiAuthController(authService, fileService, properties);
     }
 
-    private String totpNow() {
-        return TotpGenerator.currentCode(SECRET, Instant.now());
+    /**
+     * 一枚没用过的码，取的是下一格
+     * <p>
+     * 服务构造时就把当格标成用过了（重启前用过的码不能再用），当格的码根本走不到认中那步；
+     * 校验窗口前后各容一格，往后取一格的码此刻照样认得出。
+     */
+    private String nextTotp() {
+        return TotpGenerator.currentCode(SECRET, Instant.now().plusSeconds(30));
     }
 
     private JSONObject body(String current, String totpCode) {
@@ -110,7 +116,7 @@ class SensitiveReauthDisableTest {
     @DisplayName("🔴 偷到会话、又看到主人登录刚用的那个码：拿这个码关二次验证应被拒，二次验证仍开着，配置文件不变")
     void usedCodeCannotDisable() throws IOException {
         String before = Files.readString(config, StandardCharsets.UTF_8);
-        String used = totpNow();
+        String used = nextTotp();
         // 登录这一趟把码烧掉；带上对的密码让下一趟走到验码那步——钉的是码能不能重用，不是密码闸
         ConfigUiAuthService.LoginResult login = authService.login(PASSWORD.toCharArray(), used, "127.0.0.1");
         assertTrue(login.success(), "台面没搭起来: " + login.message());
@@ -128,7 +134,7 @@ class SensitiveReauthDisableTest {
     void withoutPasswordCannotDisable() throws IOException {
         String before = Files.readString(config, StandardCharsets.UTF_8);
 
-        ResponseEntity<JSONObject> denied = controller.totpDisable(body(null, totpNow()), stolenSession());
+        ResponseEntity<JSONObject> denied = controller.totpDisable(body(null, nextTotp()), stolenSession());
 
         assertEquals(400, denied.getStatusCode().value(), denied.getBody().toJSONString());
         assertFalse(denied.getBody().getBooleanValue("success"), denied.getBody().toJSONString());
@@ -142,7 +148,7 @@ class SensitiveReauthDisableTest {
     @DisplayName("🔴 主人输错一次密码后，用同一个码配对的密码再试：能关掉（密码错的那一趟不得把码烧了）")
     void wrongPasswordDoesNotBurnCode() {
         MockHttpServletRequest stolen = stolenSession();
-        String code = totpNow();
+        String code = nextTotp();
 
         ResponseEntity<JSONObject> denied = controller.totpDisable(body("这不是我的密码", code), stolen);
         assertFalse(denied.getBody().getBooleanValue("success"),
@@ -158,7 +164,7 @@ class SensitiveReauthDisableTest {
     @Test
     @DisplayName("先过阳性对照：主人密码对、码是新的：关成")
     void correctPasswordAndFreshCodeSucceeds() {
-        ResponseEntity<JSONObject> disabled = controller.totpDisable(body(PASSWORD, totpNow()), stolenSession());
+        ResponseEntity<JSONObject> disabled = controller.totpDisable(body(PASSWORD, nextTotp()), stolenSession());
 
         assertEquals(200, disabled.getStatusCode().value(), disabled.getBody().toJSONString());
         assertTrue(disabled.getBody().getBooleanValue("success"), disabled.getBody().toJSONString());

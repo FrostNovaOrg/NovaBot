@@ -122,7 +122,9 @@ class ConfigUiAuthServiceTest {
         String secret = TotpGenerator.generateSecret();
         ConfigUiAuthService service = service(PASSWORD, secret);
         Instant now = Instant.now();
-        String code = TotpGenerator.generate(TotpGenerator.base32Decode(secret), now.getEpochSecond() / 30);
+        // 用下一格的码：服务构造时就把当格标成用过了（重启前用过的码不能再用），
+        // 当格的码根本走不到认中那步；校验窗口前后各容一格，下一格的码此刻照样认得出
+        String code = TotpGenerator.generate(TotpGenerator.base32Decode(secret), now.getEpochSecond() / 30 + 1);
 
         assertTrue(service.login(PASSWORD.toCharArray(), code, IP).success());
     }
@@ -133,7 +135,8 @@ class ConfigUiAuthServiceTest {
         String secret = TotpGenerator.generateSecret();
         ConfigUiAuthService service = service(PASSWORD, secret);
         Instant now = Instant.now();
-        String code = TotpGenerator.generate(TotpGenerator.base32Decode(secret), now.getEpochSecond() / 30);
+        // 同上：取下一格，让这一枚是「口令对就登得进」的码，量的才是口令错那一半
+        String code = TotpGenerator.generate(TotpGenerator.base32Decode(secret), now.getEpochSecond() / 30 + 1);
 
         String wrongPassword = service.login("猜的".toCharArray(), code, IP).message();
         String wrongCode = service.login(PASSWORD.toCharArray(), "000000", "5.6.7.8").message();

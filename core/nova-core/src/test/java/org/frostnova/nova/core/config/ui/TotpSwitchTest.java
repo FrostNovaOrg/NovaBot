@@ -88,8 +88,14 @@ class TotpSwitchTest {
         controller = new ConfigUiAuthController(authService, fileService, properties);
     }
 
-    private String totpNow() {
-        return TotpGenerator.currentCode(SECRET, Instant.now());
+    /**
+     * 一枚没用过的码，取的是下一格
+     * <p>
+     * 服务构造时就把当格标成用过了（重启前用过的码不能再用），当格的码根本走不到认中那步；
+     * 校验窗口前后各容一格，往后取一格的码此刻照样认得出。
+     */
+    private String nextTotp() {
+        return TotpGenerator.currentCode(SECRET, Instant.now().plusSeconds(30));
     }
 
     private JSONObject code(String value) {
@@ -118,7 +124,7 @@ class TotpSwitchTest {
         assertTrue(authService.totpRequired(), "阳性对照：这一条不成立，下面几条都说明不了任何事");
         assertFalse(authService.login(PASSWORD.toCharArray(), "000000", "1.2.3.4").success(),
                 "错码本来就该登不上");
-        assertTrue(authService.login(PASSWORD.toCharArray(), totpNow(), "1.2.3.5").success(),
+        assertTrue(authService.login(PASSWORD.toCharArray(), nextTotp(), "1.2.3.5").success(),
                 "对码本来就该登得上");
     }
 
@@ -154,7 +160,7 @@ class TotpSwitchTest {
     @DisplayName("填对现在的码才关得掉，密钥一并清干净")
     void correctCodeDisablesAndClearsSecret() throws IOException {
         ResponseEntity<JSONObject> response =
-                controller.totpDisable(disableBody(totpNow()), withCookie(authService.issueForOperator("127.0.0.1")));
+                controller.totpDisable(disableBody(nextTotp()), withCookie(authService.issueForOperator("127.0.0.1")));
 
         assertEquals(200, response.getStatusCode().value(), response.getBody().toJSONString());
         assertFalse(authService.totpRequired(), "关掉之后登录不该再要码");
@@ -172,7 +178,7 @@ class TotpSwitchTest {
     @Test
     @DisplayName("已经关着的时候再关一次，说清「本来就没开」而不是假装办成了")
     void disablingTwiceIsHonest() {
-        controller.totpDisable(disableBody(totpNow()), withCookie(authService.issueForOperator("127.0.0.1")));
+        controller.totpDisable(disableBody(nextTotp()), withCookie(authService.issueForOperator("127.0.0.1")));
 
         ResponseEntity<JSONObject> again = controller.totpDisable(disableBody("000000"), new MockHttpServletRequest());
         assertEquals(400, again.getStatusCode().value());
@@ -182,7 +188,7 @@ class TotpSwitchTest {
     @Test
     @DisplayName("关掉之后还能重新绑一把：绑定这条路不看开关那一位")
     void canEnrollAgainAfterDisabling() {
-        controller.totpDisable(disableBody(totpNow()), withCookie(authService.issueForOperator("127.0.0.1")));
+        controller.totpDisable(disableBody(nextTotp()), withCookie(authService.issueForOperator("127.0.0.1")));
 
         // 关掉之后开关是 false，若绑定这条路以它为前提，人得先重启一次才绑得了，
         // 而重启会断开全部直播间长连接
@@ -209,7 +215,7 @@ class TotpSwitchTest {
         ConfigUiSession mine = authService.issueForOperator("127.0.0.1");
         ConfigUiSession elsewhere = authService.issueForOperator("10.0.0.9");
 
-        ResponseEntity<JSONObject> response = controller.totpDisable(disableBody(totpNow()), withCookie(mine));
+        ResponseEntity<JSONObject> response = controller.totpDisable(disableBody(nextTotp()), withCookie(mine));
 
         assertEquals(200, response.getStatusCode().value(), response.getBody().toJSONString());
         assertTrue(authService.validate(elsewhere.getId()).isEmpty(),
@@ -222,7 +228,7 @@ class TotpSwitchTest {
     @Test
     @DisplayName("🔴 绑上验证器之后，别处的会话一并注销；当前这一把换成新的，旧标识当场作废")
     void enrollRevokesOtherSessionsAndRenewsTheCurrentOne() {
-        controller.totpDisable(disableBody(totpNow()), withCookie(authService.issueForOperator("127.0.0.1")));
+        controller.totpDisable(disableBody(nextTotp()), withCookie(authService.issueForOperator("127.0.0.1")));
         ConfigUiSession mine = authService.login(PASSWORD.toCharArray(), null, "127.0.0.1").session();
         ConfigUiSession elsewhere = authService.issueForOperator("10.0.0.9");
         String pending = controller.totpSetup(withCookie(mine)).getString("secret");
@@ -243,7 +249,7 @@ class TotpSwitchTest {
     void withoutCookieNothingIsRenewedOrRevoked() {
         ConfigUiSession elsewhere = authService.issueForOperator("10.0.0.9");
 
-        ResponseEntity<JSONObject> response = controller.totpDisable(disableBody(totpNow()), new MockHttpServletRequest());
+        ResponseEntity<JSONObject> response = controller.totpDisable(disableBody(nextTotp()), new MockHttpServletRequest());
 
         // 先核密码拦在前面：认不出会话就连密码都没处核，更谈不上关
         assertEquals(401, response.getStatusCode().value(), response.getBody().toJSONString());
@@ -298,7 +304,7 @@ class TotpSwitchTest {
                     "第 " + (i + 1) + " 次错码应仍按验证码不对拒");
         }
 
-        ResponseEntity<JSONObject> locked = controller.totpDisable(disableBody(totpNow()), request);
+        ResponseEntity<JSONObject> locked = controller.totpDisable(disableBody(nextTotp()), request);
 
         // 锁住了也回 400：回 401 的话整页重载，「尝试次数过多」与还要等多久都来不及显示
         assertEquals(400, locked.getStatusCode().value(), locked.getBody().toJSONString());
@@ -308,14 +314,14 @@ class TotpSwitchTest {
         assertTrue(locked.getBody().getLongValue("lockedSeconds") > 0,
                 "锁定期内应带剩余秒数, 实际 " + locked.getBody().toJSONString());
         assertTrue(authService.totpRequired(), "锁定期内不该把二次验证关掉");
-        assertFalse(authService.login(PASSWORD.toCharArray(), totpNow(), "203.0.113.9").success(),
+        assertFalse(authService.login(PASSWORD.toCharArray(), nextTotp(), "203.0.113.9").success(),
                 "限流与登录必须共用同一把桶，否则换条路就能接着猜");
     }
 
     @Test
     @DisplayName("🔴 绑定确认猜码达到登录阈值后锁定，对码也绑不上")
     void wrongEnrollCodesShareTheLoginLockout() {
-        controller.totpDisable(disableBody(totpNow()), withCookie(authService.issueForOperator("127.0.0.1")));
+        controller.totpDisable(disableBody(nextTotp()), withCookie(authService.issueForOperator("127.0.0.1")));
         ConfigUiSession mine = authService.login(PASSWORD.toCharArray(), null, "127.0.0.1").session();
         JSONObject setup = controller.totpSetup(withCookie(mine));
         String pending = setup.getString("secret");
@@ -357,7 +363,7 @@ class TotpSwitchTest {
                 new ConfigUiAuthController(capturingAuth, capturing, properties);
 
         ResponseEntity<JSONObject> disabled =
-                capturingController.totpDisable(disableBody(totpNow()),
+                capturingController.totpDisable(disableBody(nextTotp()),
                         withCookie(capturingAuth.issueForOperator("127.0.0.1")));
         assertEquals(200, disabled.getStatusCode().value(), disabled.getBody().toJSONString());
 
