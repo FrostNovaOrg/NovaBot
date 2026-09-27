@@ -13,7 +13,10 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 一个只会握手的假 OneBot Websocket 服务端
@@ -51,6 +54,8 @@ final class FakeOneBotWebsocketServer implements AutoCloseable {
     private final AtomicInteger open = new AtomicInteger();
 
     private volatile boolean closed;
+
+    private volatile Script script;
 
     FakeOneBotWebsocketServer() throws IOException {
         this(0);
@@ -92,6 +97,76 @@ final class FakeOneBotWebsocketServer implements AutoCloseable {
         return List.copyOf(authorizations);
     }
 
+    /**
+     * 连上之后，按接入序号往这条连接推些什么
+     * <p>
+     * 推的活跑在自己的线程上，读关闭帧的那一路照常在跑：对方中途断开时，
+     * 推的这一路下一次写就会失败退出，不会把对方的关闭帧晾着。
+     */
+    @FunctionalInterface
+    interface Script {
+        /**
+         * @param index 第几条连接，从 1 数起
+         * @param frames 往这条连接写帧
+         */
+        void play(int index, Frames frames) throws IOException;
+    }
+
+    void onConnect(Script script) {
+        this.script = script;
+    }
+
+    /**
+     * 往一条连接写帧，并答得出它断没断
+     */
+    static final class Frames {
+        private final OutputStream out;
+
+        private final CountDownLatch closed = new CountDownLatch(1);
+
+        private final AtomicLong sentChars = new AtomicLong();
+
+        private Frames(OutputStream out) {
+            this.out = out;
+        }
+
+        /**
+         * 发一条完整的文本消息
+         */
+        void text(String text) throws IOException {
+            fragment(text, true, true);
+        }
+
+        /**
+         * 发一片文本分片：第一片是文本帧，其后是续帧，最后一片带结束位
+         */
+        void fragment(String text, boolean first, boolean last) throws IOException {
+            writeFrame(out, (last ? 0x80 : 0x00) | (first ? 0x1 : 0x0), text.getBytes(StandardCharsets.UTF_8));
+            sentChars.addAndGet(text.length());
+        }
+
+        /**
+         * 这条连接断没断
+         */
+        boolean isClosed() {
+            return closed.getCount() == 0;
+        }
+
+        /**
+         * 等这条连接断开
+         */
+        boolean awaitClosed(long timeout, TimeUnit unit) throws InterruptedException {
+            return closed.await(timeout, unit);
+        }
+
+        /**
+         * 一共推出去多少个字符
+         */
+        long sentChars() {
+            return sentChars.get();
+        }
+    }
+
     private void acceptLoop() {
         while (!closed) {
             try {
@@ -108,6 +183,7 @@ final class FakeOneBotWebsocketServer implements AutoCloseable {
 
     private void serve(Socket socket) {
         boolean counted = false;
+        Frames frames = null;
         try {
             InputStream in = socket.getInputStream();
             OutputStream out = socket.getOutputStream();
@@ -125,11 +201,27 @@ final class FakeOneBotWebsocketServer implements AutoCloseable {
             out.flush();
 
             authorizations.add(handshake.authorization);
-            accepted.incrementAndGet();
+            int index = accepted.incrementAndGet();
             open.incrementAndGet();
             counted = true;
 
             sendText(out, LIFECYCLE_CONNECT);
+
+            Script current = script;
+            if (current != null) {
+                Frames playing = new Frames(out);
+                frames = playing;
+                Thread player = new Thread(() -> {
+                    try {
+                        current.play(index, playing);
+                    } catch (IOException e) {
+                        // 对方已经断了，推不下去就停
+                    }
+                }, "fake-onebot-ws-play");
+                player.setDaemon(true);
+                player.start();
+            }
+
             readUntilClosed(in, out);
         } catch (IOException e) {
             // 断开就是这条连接的正常收场
@@ -138,6 +230,9 @@ final class FakeOneBotWebsocketServer implements AutoCloseable {
                 open.decrementAndGet();
             }
             closeQuietly(socket);
+            if (frames != null) {
+                frames.closed.countDown();
+            }
         }
     }
 
@@ -181,8 +276,11 @@ final class FakeOneBotWebsocketServer implements AutoCloseable {
             }
 
             if ((first & 0x0f) == 0x8) {
-                out.write(new byte[]{(byte) 0x88, 0x00});
-                out.flush();
+                // 推帧的那一路可能正写到一半，关闭帧不能插进它一帧的中间
+                synchronized (out) {
+                    out.write(new byte[]{(byte) 0x88, 0x00});
+                    out.flush();
+                }
                 return;
             }
         }
@@ -256,17 +354,30 @@ final class FakeOneBotWebsocketServer implements AutoCloseable {
      * 发一条不分片、不掩码的文本帧（服务端发出的帧按 RFC 6455 本就不该掩码）
      */
     private void sendText(OutputStream out, String text) throws IOException {
-        byte[] payload = text.getBytes(StandardCharsets.UTF_8);
-        out.write(0x81);
-        if (payload.length < 126) {
-            out.write(payload.length);
-        } else {
-            out.write(126);
-            out.write((payload.length >> 8) & 0xff);
-            out.write(payload.length & 0xff);
+        writeFrame(out, 0x81, text.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * 写一帧，首字节（结束位与操作码）由调用方给
+     */
+    private static void writeFrame(OutputStream out, int head, byte[] payload) throws IOException {
+        synchronized (out) {
+            out.write(head);
+            if (payload.length < 126) {
+                out.write(payload.length);
+            } else if (payload.length <= 0xffff) {
+                out.write(126);
+                out.write((payload.length >> 8) & 0xff);
+                out.write(payload.length & 0xff);
+            } else {
+                out.write(127);
+                for (int shift = 56; shift >= 0; shift -= 8) {
+                    out.write((int) (((long) payload.length >> shift) & 0xff));
+                }
+            }
+            out.write(payload);
+            out.flush();
         }
-        out.write(payload);
-        out.flush();
     }
 
     private void closeQuietly(Socket socket) {
