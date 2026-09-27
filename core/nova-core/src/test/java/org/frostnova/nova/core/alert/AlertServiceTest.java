@@ -424,7 +424,7 @@ class AlertServiceTest {
         }
 
         @Test
-        @DisplayName("阳：别的异常仍带栈，真出错时排查看得见")
+        @DisplayName("对照：别的异常仍带栈，真出错时排查看得见")
         void otherFailuresStillLogStack() {
             FakeChannel channel = new FakeChannel("假通道");
             channel.failing = true;
