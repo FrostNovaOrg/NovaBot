@@ -425,9 +425,9 @@ public class ConfigUiAuthController {
         }
 
         ConfigUiSession session = authService.validate(sessionId(request)).orElse(null);
-        String secret = session == null ? null
+        ConfigUiAuthService.PendingEnroll match = session == null ? null
                 : authService.verifyPending(session, body.getString("code")).orElse(null);
-        if (secret == null) {
+        if (match == null) {
             authService.failSensitiveTotp(request.getRemoteAddr());
             result.put("success", false);
             result.put("message", "验证码不正确，请确认手机时间是否准确后重试");
@@ -437,10 +437,11 @@ public class ConfigUiAuthController {
 
         // 先落盘再启用：反过来的话，写文件失败会让界面说「绑好了」而重启后又要重新绑，
         // 中间这段时间登录要输的还是一个没人记得的密钥。
-        // 开关那一位与密钥一起写：只写密钥的话，从设置页拨开的那一次重启后又变回关着
+        // 开关那一位与密钥一起写：只写密钥的话，从设置页拨开的那一次重启后又变回关着。
+        // 核过的那枚码记成用过也在启用那一步：这两趟失败都不烧码，用户同一格里还重试得了
         try {
             fileService.write(new LinkedHashMap<>(Map.of(
-                    ConfigUiAuthService.TOTP_SECRET_PROPERTY, secret,
+                    ConfigUiAuthService.TOTP_SECRET_PROPERTY, match.secret(),
                     ConfigUiAuthService.TOTP_PROPERTY, "true")));
         } catch (IOException e) {
             log.error("写入二次验证密钥失败", e);
@@ -450,7 +451,7 @@ public class ConfigUiAuthController {
             return ResponseEntity.internalServerError().body(result);
         }
 
-        authService.activateTotp(session, secret);
+        authService.activateTotp(session, match.secret(), match.step());
         authService.succeedSensitiveTotp(request.getRemoteAddr());
         result.put("success", true);
         result.put("message", "已绑定，下次登录需要输入动态验证码");

@@ -166,9 +166,11 @@ class ConfigUiAuthServiceTest {
         assertTrue(service.verifyPending(session, "000000").isEmpty(), "验证码不对不能算绑定成功");
 
         String code = TotpGenerator.generate(TotpGenerator.base32Decode(secret), Instant.now().getEpochSecond() / 30);
-        assertEquals(secret, service.verifyPending(session, code).orElse(null));
+        ConfigUiAuthService.PendingEnroll match = service.verifyPending(session, code).orElse(null);
+        assertNotNull(match);
+        assertEquals(secret, match.secret());
 
-        service.activateTotp(session, secret);
+        service.activateTotp(session, match.secret(), match.step());
         assertTrue(service.totpRequired());
         assertFalse(service.totpPending(), "绑好了就不该再提示");
         assertFalse(service.login(PASSWORD.toCharArray(), null, "9.9.9.9").success(), "从此登录必须带验证码");
@@ -201,12 +203,17 @@ class ConfigUiAuthServiceTest {
         service.issuePendingSecret(session); // 刷新页面又签了一把
 
         String firstCode = TotpGenerator.currentCode(first, Instant.now());
-        assertEquals(first, service.verifyPending(session, firstCode).orElse(null),
+        ConfigUiAuthService.PendingEnroll match = service.verifyPending(session, firstCode).orElse(null);
+        assertNotNull(match);
+        assertEquals(first, match.secret(),
                 "只认最新一把的话，先前那张码当场作废，而用户并不知道要重新扫");
 
-        service.activateTotp(session, first);
+        service.activateTotp(session, match.secret(), match.step());
         assertTrue(service.totpRequired(), "绑上的就该是先前那把");
-        assertTrue(service.login(PASSWORD.toCharArray(), TotpGenerator.currentCode(first, Instant.now()), "9.9.9.8").success(),
+        // 这里登的取下一格：绑定核过的那一格已经记成用过（那枚码可能正被截图拿着），
+        // 拿同一枚码来登正是被堵住的那件事；本格要证的是绑上的那把之后登得进
+        String later = TotpGenerator.generate(TotpGenerator.base32Decode(first), Instant.now().getEpochSecond() / 30 + 1);
+        assertTrue(service.login(PASSWORD.toCharArray(), later, "9.9.9.8").success(),
                 "绑上的那把之后要能登录，否则等于没绑");
     }
 
