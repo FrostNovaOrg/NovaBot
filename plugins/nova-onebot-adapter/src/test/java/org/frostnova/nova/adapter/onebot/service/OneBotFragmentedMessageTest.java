@@ -231,6 +231,67 @@ class OneBotFragmentedMessageTest {
     }
 
     @Test
+    @DisplayName("⚠️ 超限的那一片恰是最后一片、断开抛异常：下一条消息照常处理")
+    void oversizedLastFragmentResetsOnTheSpotWhenDisconnectFails() throws Exception {
+        Deque<Runnable> pending = new ArrayDeque<>();
+        ThreadPoolTaskExecutor manual = manualExecutorCapturingInto(pending);
+
+        ApplicationEventPublisher publisher = mock(ApplicationEventPublisher.class);
+
+        OneBotSender sender = sender(0);
+        WebSocketHandler handler = new OneBotWebsocketService(mock(ThreadPoolTaskScheduler.class), manual,
+                quietProperties(), mock(OneBotHttpService.class), new OneBotConnectionState(), publisher)
+                .handlerFor(sender);
+
+        WebSocketSession session = mock(WebSocketSession.class);
+        // 断开那一下没断成：连接还挂着，此后还会有帧进来
+        doThrow(new RuntimeException("断不开")).when(session).close(any(CloseStatus.class));
+
+        // 一条两片的消息，第二片把它推过上限、且恰是最后一片——这条消息已经收完
+        handler.handleMessage(session, new TextMessage("x".repeat(OneBotWebsocketService.MAX_MESSAGE_CHARS - 100), false));
+        handler.handleMessage(session, new TextMessage("y".repeat(200), true));
+        verify(session).close(CloseStatus.TOO_BIG_TO_PROCESS);
+
+        // 下一条消息照常收——超限那条已经收完，这条不该被当成它的剩余分片整条吞掉
+        handler.handleMessage(session, new TextMessage(groupMessage("菜单", ""), true));
+        assertEquals(1, pending.size(), "超限那片就是最后一片时，下一条该照常进线程池，不该整条被吞");
+        pending.poll().run();
+
+        ArgumentCaptor<NovaRemoteMessageEvent> events = ArgumentCaptor.forClass(NovaRemoteMessageEvent.class);
+        verify(publisher, times(1)).publishEvent(events.capture());
+        assertEquals("菜单", events.getValue().getText(), "下一条该完整收到，里面的命令照常生效");
+    }
+
+    @Test
+    @DisplayName("⚠️ 一片就是整条又超限、断开抛异常：下一条消息也照常处理")
+    void singleOversizedLastFragmentResetsOnTheSpotWhenDisconnectFails() throws Exception {
+        Deque<Runnable> pending = new ArrayDeque<>();
+        ThreadPoolTaskExecutor manual = manualExecutorCapturingInto(pending);
+
+        ApplicationEventPublisher publisher = mock(ApplicationEventPublisher.class);
+
+        OneBotSender sender = sender(0);
+        WebSocketHandler handler = new OneBotWebsocketService(mock(ThreadPoolTaskScheduler.class), manual,
+                quietProperties(), mock(OneBotHttpService.class), new OneBotConnectionState(), publisher)
+                .handlerFor(sender);
+
+        WebSocketSession session = mock(WebSocketSession.class);
+        doThrow(new RuntimeException("断不开")).when(session).close(any(CloseStatus.class));
+
+        // 只有一片、这一片就是整条，且一上来就超了上限
+        handler.handleMessage(session, new TextMessage("x".repeat(OneBotWebsocketService.MAX_MESSAGE_CHARS + 1), true));
+        verify(session).close(CloseStatus.TOO_BIG_TO_PROCESS);
+
+        handler.handleMessage(session, new TextMessage(groupMessage("菜单", ""), true));
+        assertEquals(1, pending.size(), "单片整条超限后，下一条该照常进线程池，不该整条被吞");
+        pending.poll().run();
+
+        ArgumentCaptor<NovaRemoteMessageEvent> events = ArgumentCaptor.forClass(NovaRemoteMessageEvent.class);
+        verify(publisher, times(1)).publishEvent(events.capture());
+        assertEquals("菜单", events.getValue().getText(), "下一条该完整收到，里面的命令照常生效");
+    }
+
+    @Test
     @DisplayName("断开那一下不抛时照旧：丢弃、断开，超限消息自己的分片一个不收")
     void oversizedDropStillClosesTheConnectionWhenCloseSucceeds() throws Exception {
         Deque<Runnable> pending = new ArrayDeque<>();

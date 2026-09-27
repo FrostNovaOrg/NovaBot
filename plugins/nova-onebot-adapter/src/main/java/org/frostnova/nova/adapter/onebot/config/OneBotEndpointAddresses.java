@@ -18,6 +18,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * </ul>
  * 端口不写在地址里，照旧填在 one-bot-http-port 与 one-bot-websocket-port 两个端口项。
  * <p>
+ * IPv6 字面量照浏览器的写法整个用方括号括起来（{@code [::1]}）：方括号里的冒号是地址
+ * 自己的，不算端口；方括号后面紧跟的 {@code :端口} 才照旧按带端口处理。
+ * <p>
  * 地址里带了路径、端口或别的协议头时<b>不去猜</b>：说一声该怎么写，然后按老写法照原样拼。
  * 拼出来的地址连不上时，会走原有的连不上提示——那才是排障的熟路。
  * <p>
@@ -88,7 +91,7 @@ public final class OneBotEndpointAddresses {
         if (problem == null && host.contains("/")) {
             problem = "地址里带了路径";
         }
-        if (problem == null && host.contains(":")) {
+        if (problem == null && hostWithoutIpv6Literal(host).contains(":")) {
             problem = "地址里带了端口";
         }
         if (problem != null) {
@@ -100,6 +103,19 @@ public final class OneBotEndpointAddresses {
     }
 
     /**
+     * 把开头的 IPv6 字面量（如 {@code [::1]}）那段拿掉，剩下的部分里的冒号才是端口：
+     * 方括号里那些是地址自己的。没写方括号的 IPv6（{@code ::1}）不在此列——
+     * 那样拼不出能用的地址，仍按带端口的老路提醒一句，提醒里教了怎么写
+     */
+    private static String hostWithoutIpv6Literal(String host) {
+        if (!host.startsWith("[")) {
+            return host;
+        }
+        int closeBracket = host.indexOf(']');
+        return closeBracket < 0 ? host : host.substring(closeBracket + 1);
+    }
+
+    /**
      * 说一声这个写法不认识、该怎么写。同一个平台名＋写法只说一次
      */
     private static void warnUnrecognized(String senderName, String address, String problem) {
@@ -107,7 +123,7 @@ public final class OneBotEndpointAddresses {
             return;
         }
         log.warn("推送平台 {} 的 one-bot-address 写的是「{}」: {}。已按老写法照原样拼成明文地址, 连不上时会走原有的连不上提示。"
-                        + "地址里只写主机名; 要加密连接就写成 https://主机 或 wss://主机（HTTP 与 Websocket 一起走加密）; "
+                        + "地址里只写主机名; IPv6 地址要加方括号, 如 [::1]; 要加密连接就写成 https://主机 或 wss://主机（HTTP 与 Websocket 一起走加密）; "
                         + "端口照旧填在 one-bot-http-port 与 one-bot-websocket-port 两个端口项里",
                 senderName, address, problem);
     }

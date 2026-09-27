@@ -515,7 +515,8 @@ public class OneBotWebsocketService {
                     if (oversized) {
                         // 超限那条消息剩下的分片照旧一概不收。它的最后一片（isLast）到了就把
                         // oversized 复位：断开那一下要是抛了异常，连接其实还挂着，不复位的话
-                        // 这条连接此后只会永远丢消息——看着活着，实际已经聋了
+                        // 这条连接此后只会永远丢消息——看着活着，实际已经聋了。超限的那一片
+                        // 本身就是最后一片时，丢弃那一下已经当场复位过了（见 dropOversizedMessage）
                         if (webSocketMessage.isLast()) {
                             oversized = false;
                         }
@@ -525,7 +526,7 @@ public class OneBotWebsocketService {
                     String payload = webSocketMessage.getPayload();
                     long total = (long) messageBuffer.length() + payload.length();
                     if (total > MAX_MESSAGE_CHARS) {
-                        dropOversizedMessage(session, total);
+                        dropOversizedMessage(session, total, webSocketMessage.isLast());
                         return;
                     }
                     messageBuffer.append(payload);
@@ -603,8 +604,9 @@ public class OneBotWebsocketService {
          * 日志只写累计多长，不写内容：内容来自对端，可能是任何东西。
          * @param session WebSocket 会话
          * @param total 算上刚到的这一片，累计多少个字符
+         * @param lastFragment 这一片是不是那条消息的最后一片
          */
-        private void dropOversizedMessage(WebSocketSession session, long total) {
+        private void dropOversizedMessage(WebSocketSession session, long total, boolean lastFragment) {
             oversized = true;
             messageBuffer.setLength(0);
             // 不清的话这一大块要等这个处理器被回收才还
@@ -615,6 +617,11 @@ public class OneBotWebsocketService {
                 session.close(CloseStatus.TOO_BIG_TO_PROCESS);
             } catch (Exception e) {
                 log.warn("断开 {} 的 OneBot Websocket 连接异常", sender.getName(), e);
+            }
+            if (lastFragment) {
+                // 超限的这一片就是那条消息的最后一片：消息已经收完，之后再来的都是新消息。
+                // 断开没断成时连接还挂着，不复位的话下一条整条会被当成这条的剩余分片丢掉
+                oversized = false;
             }
         }
 
