@@ -371,8 +371,8 @@ class ConfigValueMaskingTest {
         controller.save(Map.of("novabot.core.alert.webhook-url", SensitiveFields.MASK));
 
         HttpUtil http = mock(HttpUtil.class);
-        when(http.getForStatus(any(URI.class), anyMap())).thenReturn(200);
-        when(http.postForStatus(anyString(), anyMap(), any())).thenReturn(200);
+        when(http.getForStatus(any(URI.class), anyMap(), any())).thenReturn(200);
+        when(http.postForStatus(anyString(), anyMap(), any(), any())).thenReturn(200);
         @SuppressWarnings("unchecked")
         ObjectProvider<AlertChannel> provider = mock(ObjectProvider.class);
         when(provider.orderedStream()).thenAnswer(invocation -> java.util.stream.Stream.of(
@@ -385,7 +385,7 @@ class ConfigValueMaskingTest {
         ArgumentCaptor<URI> uri = ArgumentCaptor.forClass(URI.class);
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, String>> headers = ArgumentCaptor.forClass((Class) Map.class);
-        verify(http).getForStatus(uri.capture(), headers.capture());
+        verify(http).getForStatus(uri.capture(), headers.capture(), any());
         assertTrue(uri.getValue().toString().startsWith(BARK_URL),
                 "发出去的地址必须还是盘上那个, 实际: " + uri.getValue());
         assertEquals("Bearer header-secret-value", headers.getValue().get("Authorization"),

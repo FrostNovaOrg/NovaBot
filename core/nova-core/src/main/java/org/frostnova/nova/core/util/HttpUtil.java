@@ -64,6 +64,20 @@ public class HttpUtil {
     }
 
     /**
+     * 这条地址本身是不是凭据——由调用方说，网络日志按它决定把地址记到哪一层
+     * <p>
+     * Bark、Server 酱把推送密钥拼在<b>路径</b>里，而打码只遮点名的查询参数、路径一律原样。
+     * Webhook 这一路的投递地址整条就是凭据，进网络日志只记主机名；
+     * 别的请求照旧记完整的打码地址——路径是排障要看的，不能为这一路连它一起遮掉。
+     */
+    public enum AddressIsCredential {
+        /** 普通请求：整条地址都记（打码后） */
+        NO,
+        /** 地址本身承载着凭据：只记主机名，路径与查询串一概不记 */
+        YES
+    }
+
+    /**
      * 取一张「这一趟按自己的限时取」用的模板，按限时复用
      * <p>
      * 全局模板的读超时是整机共用的那一个（配置里的 network.read-timeout），取头像这种装饰性
@@ -99,7 +113,7 @@ public class HttpUtil {
      * 发起 HTTP 请求，用指定的模板（限时取图那一路换模板，见 {@link #timedTemplate}）
      */
     private <T> T request(String url, HttpMethod method, HttpEntity<?> httpEntity, Class<T> responseType, RestTemplate template) {
-        return requestForEntity(url, method, httpEntity, responseType, template).getBody();
+        return requestForEntity(url, method, httpEntity, responseType, template, AddressIsCredential.NO).getBody();
     }
 
     /**
@@ -114,9 +128,9 @@ public class HttpUtil {
      * @return 完整响应
      * @param <T> 返回值类型
      */
-    private <T> ResponseEntity<T> requestForEntity(URI uri, HttpMethod method, HttpEntity<?> httpEntity, Class<T> responseType) {
+    private <T> ResponseEntity<T> requestForEntity(URI uri, HttpMethod method, HttpEntity<?> httpEntity, Class<T> responseType, AddressIsCredential addressIsCredential) {
         long startTime = System.currentTimeMillis();
-        String safe = UrlMasker.mask(uri.toString());
+        String safe = addressInLog(uri.toString(), addressIsCredential);
         NetworkLogThrottle.Decision decision = decideNetworkLog(method, uri.toString(), startTime);
         if (decision.log()) {
             networkLogger.info("{} -> {}{}", method.name(), safe, decision.suffix());
@@ -131,19 +145,19 @@ public class HttpUtil {
                 // 末参必须是打码副本：交原异常进去，logback 会附栈迹，
                 // 而栈迹首行是 e.toString()，里面是未打码的原始 message
                 networkLogger.error("{} <- [{}]({} ms): {}", method.name(),
-                        UrlMasker.mask(e.getMessage()), cost, safe, UrlMasker.sanitize(e));
+                        failureMessage(e, addressIsCredential), cost, safe, failureThrowable(e, addressIsCredential));
             }
             throw e;
         }
     }
 
-    private <T> ResponseEntity<T> requestForEntity(String url, HttpMethod method, HttpEntity<?> httpEntity, Class<T> responseType) {
-        return requestForEntity(url, method, httpEntity, responseType, restTemplate);
+    private <T> ResponseEntity<T> requestForEntity(String url, HttpMethod method, HttpEntity<?> httpEntity, Class<T> responseType, AddressIsCredential addressIsCredential) {
+        return requestForEntity(url, method, httpEntity, responseType, restTemplate, addressIsCredential);
     }
 
-    private <T> ResponseEntity<T> requestForEntity(String url, HttpMethod method, HttpEntity<?> httpEntity, Class<T> responseType, RestTemplate template) {
+    private <T> ResponseEntity<T> requestForEntity(String url, HttpMethod method, HttpEntity<?> httpEntity, Class<T> responseType, RestTemplate template, AddressIsCredential addressIsCredential) {
         long startTime = System.currentTimeMillis();
-        String safe = UrlMasker.mask(url);
+        String safe = addressInLog(url, addressIsCredential);
         NetworkLogThrottle.Decision decision = decideNetworkLog(method, url, startTime);
         if (decision.log()) {
             networkLogger.info("{} -> {}{}", method.name(), safe, decision.suffix());
@@ -161,7 +175,7 @@ public class HttpUtil {
                 // 末参必须是打码副本：交原异常进去，logback 会附栈迹，
                 // 而栈迹首行是 e.toString()，里面是未打码的原始 message
                 networkLogger.error("{} <- [{}]({} ms): {}", method.name(),
-                        UrlMasker.mask(e.getMessage()), cost, safe, UrlMasker.sanitize(e));
+                        failureMessage(e, addressIsCredential), cost, safe, failureThrowable(e, addressIsCredential));
             }
             throw e;
         } finally {
@@ -188,6 +202,32 @@ public class HttpUtil {
         }
         return networkLogThrottle.decide(method.name(), url,
                 logConfig.getNetworkLogSuppressWindow(), nowMillis);
+    }
+
+    /**
+     * 这条请求在网络日志里把地址记成什么样
+     * <p>
+     * 地址本身是凭据时只记主机名（路径里的推送密钥一概不落盘），
+     * 否则记整条打码地址——路径是排障要看的。
+     */
+    private static String addressInLog(String url, AddressIsCredential addressIsCredential) {
+        return addressIsCredential == AddressIsCredential.YES ? UrlRedactor.hostOf(url) : UrlMasker.mask(url);
+    }
+
+    /**
+     * 失败行括号里的那一句：异常 message 里裹着触发失败的完整地址，按同一层记法处理
+     */
+    private static String failureMessage(Exception e, AddressIsCredential addressIsCredential) {
+        return addressIsCredential == AddressIsCredential.YES
+                ? UrlRedactor.redact(e.getMessage()) : UrlMasker.mask(e.getMessage());
+    }
+
+    /**
+     * 失败行末参的异常副本：栈迹首行是 {@code toString()}，message 里的地址同样按同一层记法处理
+     */
+    private static Throwable failureThrowable(Exception e, AddressIsCredential addressIsCredential) {
+        return addressIsCredential == AddressIsCredential.YES
+                ? UrlRedactor.redact(e) : UrlMasker.sanitize(e);
     }
 
     /**
@@ -245,7 +285,7 @@ public class HttpUtil {
         HttpHeaders httpHeaders = new HttpHeaders();
         headers.forEach(httpHeaders::add);
 
-        return requestForEntity(uri, HttpMethod.GET, new HttpEntity<>(httpHeaders), String.class).getBody();
+        return requestForEntity(uri, HttpMethod.GET, new HttpEntity<>(httpHeaders), String.class, AddressIsCredential.NO).getBody();
     }
 
     public ResponseEntity<String> getForEntity(String url, Map<String, String> headers) {
@@ -254,7 +294,7 @@ public class HttpUtil {
 
         HttpEntity<Void> httpEntity = new HttpEntity<>(httpHeaders);
 
-        return requestForEntity(url, HttpMethod.GET, httpEntity, String.class);
+        return requestForEntity(url, HttpMethod.GET, httpEntity, String.class, AddressIsCredential.NO);
     }
 
     /**
@@ -562,16 +602,17 @@ public class HttpUtil {
      * @param url URL
      * @param headers HTTP 请求头
      * @param params HTTP 请求参数
+     * @param addressIsCredential 这条地址本身是不是凭据（网络日志里记到哪一层，见 {@link AddressIsCredential}）
      * @return HTTP 状态码
      */
-    public int postForStatus(String url, Map<String, String> headers, Object params) {
+    public int postForStatus(String url, Map<String, String> headers, Object params, AddressIsCredential addressIsCredential) {
         HttpHeaders httpHeaders = new HttpHeaders();
         headers.forEach(httpHeaders::add);
         httpHeaders.setContentType(MediaType.APPLICATION_JSON);
 
         HttpEntity<Object> httpEntity = new HttpEntity<>(params, httpHeaders);
 
-        return requestForEntity(url, HttpMethod.POST, httpEntity, Void.class).getStatusCode().value();
+        return requestForEntity(url, HttpMethod.POST, httpEntity, Void.class, addressIsCredential).getStatusCode().value();
     }
 
     /**
@@ -581,13 +622,14 @@ public class HttpUtil {
      * 同样可能返回一个我们解析不了的响应体。
      * @param uri URI，必须以 URI 传入以免被当作模板二次编码
      * @param headers HTTP 请求头
+     * @param addressIsCredential 这条地址本身是不是凭据（网络日志里记到哪一层，见 {@link AddressIsCredential}）
      * @return HTTP 状态码
      */
-    public int getForStatus(URI uri, Map<String, String> headers) {
+    public int getForStatus(URI uri, Map<String, String> headers, AddressIsCredential addressIsCredential) {
         HttpHeaders httpHeaders = new HttpHeaders();
         headers.forEach(httpHeaders::add);
 
-        return requestForEntity(uri, HttpMethod.GET, new HttpEntity<>(httpHeaders), Void.class).getStatusCode().value();
+        return requestForEntity(uri, HttpMethod.GET, new HttpEntity<>(httpHeaders), Void.class, addressIsCredential).getStatusCode().value();
     }
 
     /**
@@ -786,7 +828,7 @@ public class HttpUtil {
         params.forEach((key, value) -> formData.add(key, value.toString()));
         HttpEntity<MultiValueMap<String, String>> httpEntity = new HttpEntity<>(formData, httpHeaders);
 
-        return requestForEntity(url, HttpMethod.POST, httpEntity, String.class);
+        return requestForEntity(url, HttpMethod.POST, httpEntity, String.class, AddressIsCredential.NO);
     }
 
     /**
