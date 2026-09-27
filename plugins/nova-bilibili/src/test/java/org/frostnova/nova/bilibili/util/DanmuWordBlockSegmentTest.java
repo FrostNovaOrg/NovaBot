@@ -116,6 +116,71 @@ class DanmuWordBlockSegmentTest {
         assertTrue(whole.contains("原神启动"), "两个字以上的屏蔽词照旧整个留下: " + whole);
     }
 
+    /**
+     * 抓的故障：主播把 ❤️ 填进屏蔽表以后，弹幕「すごい❤️ねね」被按这个表情切成两半，
+     * 「すごい」「ねね」两块碎片上了词云。带变体选择符的表情由两个码点拼成，得按一个字
+     * 处理、不参与整词挑出。夹具用假名连写是故意的：假名与表情会被分词器焊成一个词，
+     * 这正是切碎显形的地方；纯汉字弹幕里表情自成一段，切了在词表上也看不出
+     */
+    @Test
+    @DisplayName("带变体选择符的表情屏蔽词按一个字处理，不把原文切成两半")
+    void heartEmojiBlockWordDoesNotChopText() {
+        String text = "すごい❤️ねね";
+        List<String> plain = DanmuWordUtil.extractWords(text);
+        assertAll(
+                () -> assertFalse(plain.contains("すごい"), "前提不成立：原句本来就会切出「すごい」，换一句测: " + plain),
+                () -> assertFalse(plain.contains("ねね"), "前提不成立：原句本来就会切出「ねね」，换一句测: " + plain));
+
+        List<String> words = DanmuWordUtil.extractWords(text, List.of("❤️"));
+        assertAll(
+                () -> assertEquals(plain, words, "表情屏蔽词不该参与切词，带它切出来的词应与不带表时一模一样: " + words),
+                () -> assertFalse(words.contains("すごい"), "表情屏蔽词把原文切成两半，碎片上了词云: " + words),
+                () -> assertFalse(words.contains("ねね"), "表情屏蔽词把原文切成两半，碎片上了词云: " + words));
+    }
+
+    /**
+     * 抓的故障：主播把 🇨🇳 填进屏蔽表以后，弹幕被按这两枚区域指示符切成两半，
+     * 两块碎片上了词云。两个区域指示符拼成的一面旗是一个字
+     */
+    @Test
+    @DisplayName("国旗这样的两枚区域指示符屏蔽词按一个字处理，不把原文切成两半")
+    void flagEmojiBlockWordDoesNotChopText() {
+        String text = "すごい🇨🇳ねね";
+        List<String> plain = DanmuWordUtil.extractWords(text);
+        assertAll(
+                () -> assertFalse(plain.contains("すごい"), "前提不成立：原句本来就会切出「すごい」，换一句测: " + plain),
+                () -> assertFalse(plain.contains("ねね"), "前提不成立：原句本来就会切出「ねね」，换一句测: " + plain));
+
+        List<String> words = DanmuWordUtil.extractWords(text, List.of("🇨🇳"));
+        assertAll(
+                () -> assertEquals(plain, words, "表情屏蔽词不该参与切词，带它切出来的词应与不带表时一模一样: " + words),
+                () -> assertFalse(words.contains("すごい"), "表情屏蔽词把原文切成两半，碎片上了词云: " + words),
+                () -> assertFalse(words.contains("ねね"), "表情屏蔽词把原文切成两半，碎片上了词云: " + words));
+    }
+
+    /**
+     * 抓的故障：主播把 👨‍👩‍👧 填进屏蔽表以后，弹幕被按这个 ZWJ 拼成的表情切成两半，
+     * 原本不上词云的整句冒出「すごい」「ねね」两块碎片。一串 ZWJ 拼成的表情是一个字
+     */
+    @Test
+    @DisplayName("家庭表情这样的 ZWJ 组合屏蔽词按一个字处理，不把原文切成两半")
+    void zwjFamilyEmojiBlockWordDoesNotChopText() {
+        String text = "すごい👨‍👩‍👧ねね";
+        List<String> plain = DanmuWordUtil.extractWords(text);
+        assertAll(
+                () -> assertFalse(plain.contains("すごい"), "前提不成立：原句本来就会切出「すごい」，换一句测: " + plain),
+                () -> assertFalse(plain.contains("ねね"), "前提不成立：原句本来就会切出「ねね」，换一句测: " + plain));
+
+        List<String> words = DanmuWordUtil.extractWords(text, List.of("👨‍👩‍👧"));
+        assertAll(
+                () -> assertEquals(plain, words, "表情屏蔽词不该参与切词，带它切出来的词应与不带表时一模一样: " + words),
+                () -> assertFalse(words.contains("すごい"), "表情屏蔽词把原文切成两半，碎片上了词云: " + words),
+                () -> assertFalse(words.contains("ねね"), "表情屏蔽词把原文切成两半，碎片上了词云: " + words));
+
+        List<String> whole = DanmuWordUtil.extractWords("すごい原神启动ねね", List.of("原神启动"));
+        assertTrue(whole.contains("原神启动"), "普通两个字的词照旧整词挑出: " + whole);
+    }
+
     private static UserInfo viewer() {
         return new UserInfo(19_000_000_000_202L, "观众甲", null);
     }
