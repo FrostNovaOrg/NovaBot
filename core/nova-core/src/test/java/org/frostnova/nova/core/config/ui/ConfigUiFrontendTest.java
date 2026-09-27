@@ -1024,6 +1024,47 @@ class ConfigUiFrontendTest {
     }
 
     /**
+     * 带单位那一行的生效标记要换到框的下一行，但宽度只包住自己的文字，
+     * 跟无单位行的短标签一个样。
+     * <p>
+     * 用户故障：带单位的数字项，「立即生效／重启生效」标签被拉满整列宽，
+     * 看着是一整条长标签，跟别项不一样。根因是单位行曾用整列宽的弹性基准
+     * （{@code flex:1 1 100%}）把标记挤到下一行，副作用是标记自身也被拉满。
+     * 现在单位行是两轨网格：框占余宽、单位贴框右同在第一轨行，标记跨两轨
+     * 独占下一行、起点对齐，宽度只到文字为止。
+     */
+    @Test
+    @DisplayName("单位行生效标记换到框下方，宽度只到文字为止，不拉满整列")
+    void unitRowBadgeWrapsBelowTheInputAtTextWidth() throws IOException {
+        String css = Files.readString(frontendDir().resolve("app.css"), StandardCharsets.UTF_8);
+
+        List<String> bad = new ArrayList<>();
+        String row = cssBlock(css, ".cell.has-unit");
+        if (row.isBlank()) {
+            bad.add("app.css 没有 .cell.has-unit，单位行布局整套丢了");
+        } else if (!row.contains("grid-template-columns:1fr auto")
+                && !row.contains("grid-template-columns: 1fr auto")) {
+            bad.add(".cell.has-unit 不是「1fr auto」两轨网格，框与单位的排法不对: " + row.strip());
+        }
+        String badge = cssBlock(css, ".cell.has-unit .badge");
+        if (badge.isBlank()) {
+            bad.add("app.css 没有 .cell.has-unit .badge，单位行的标记会跟单位挤同一行");
+        } else {
+            if (badge.contains("1 1 100%")) {
+                bad.add("单位行的标记仍吃整列宽的弹性基准，自身被拉满整列: " + badge.strip());
+            }
+            if (!badge.contains("grid-column:1/-1") && !badge.contains("grid-column: 1 / -1")) {
+                bad.add("单位行的标记没有跨满两轨，换不到框的下一行: " + badge.strip());
+            }
+            if (!badge.contains("justify-self:start") && !badge.contains("justify-self: start")) {
+                bad.add("单位行的标记没有起点对齐，宽度不止文字: " + badge.strip());
+            }
+        }
+
+        assertTrue(bad.isEmpty(), "单位行生效标记排布不对:\n  " + String.join("\n  ", bad));
+    }
+
+    /**
      * 二次验证开关必须和设置页布尔行同一套构造，且不能套进 {@code .al-fld}。
      * <p>
      * {@code .al-fld label} 是 {@code display:block}，{@code .al-fld input} 带输入框的
