@@ -78,6 +78,42 @@ class EmptyListenAddressFallbackTest {
     }
 
     @Test
+    @DisplayName("外部配置 address 引号里只写空格、只写制表符的实例，也只剩本机"
+            + "——否则只写了空白的实例对外网卡开着")
+    void blankFormsFallBackToLoopback() throws Exception {
+        String[][] blankForms = {
+                {"quoted-space", "server:\n  address: \" \"\n"},
+                {"quoted-tab", "server:\n  address: \"\\t\"\n"},
+                {"quoted-mixed-blank", "server:\n  address: \" \\t \"\n"},
+        };
+        List<String> bad = new ArrayList<>();
+        for (String[] form : blankForms) {
+            String name = form[0];
+            String yaml = form[1];
+            try {
+                InetAddress bound = bind(yaml, null);
+                assertEquals("127.0.0.1", host(bound),
+                        "外部配置 " + name + " 形的 " + KEY + " 只写空白，绑定成了 "
+                                + describe(bound) + " —— 只有空白的值应当作没写、回落本机；"
+                                + "听所有网卡时推送接口等 /config 以外的接口对外开着");
+            } catch (AssertionError e) {
+                bad.add(name + ": " + e.getMessage());
+            }
+        }
+        assertTrue(bad.isEmpty(),
+                "空白值回落未生效 " + bad.size() + " 形: " + String.join(" | ", bad));
+    }
+
+    @Test
+    @DisplayName("外部件写正常地址的照旧按写的值绑（阳性对照）——只把空白当没写，不碰有内容的值")
+    void normalAddressBindsAsWritten() throws Exception {
+        InetAddress bound = bind("server:\n  address: 10.20.30.40\n", null);
+        assertEquals("10.20.30.40", host(bound),
+                "正常地址没有按写的值绑 —— 回落只能补「没人写」的那一档，"
+                        + "有内容的值被动了，写具体地址的人会绑到别的地址上");
+    }
+
+    @Test
     @DisplayName("外部件空值但 SERVER_ADDRESS=0.0.0.0 时照旧听所有网卡（阳性对照）"
             + "——容器的 ENV 不能被回落盖掉")
     void envVarBeatsEmptyFileValue() throws Exception {

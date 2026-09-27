@@ -21,7 +21,8 @@ import java.util.Map;
  * 三种形都加载成空串）时，外部件优先级高于内置默认，空串会把 {@code 127.0.0.1} 盖掉，
  * 绑定 {@code InetAddress} 得 null，Tomcat 就监听所有网卡。5.3.0 到 5.5.1 第一次保存设置
  * 写进文件的正是这个空值，于是存过一次设置的已装实例占大多数，升级后照旧对外开着。
- * 空值当作没写，回落本机。
+ * 空值当作没写，回落本机。引号里只写空白（{@code address: " "}、{@code address: "\t"}）
+ * 的串不是空串，同样把默认盖掉、同样绑定得 null，与空值同一待遇。
  * <p>
  * 只补「没人写」的那一档：环境变量 {@code SERVER_ADDRESS} 与命令行 {@code --server.address}
  * 非空时 {@link ConfigurableEnvironment#getProperty(String)} 拿到的就是那条非空值，
@@ -54,7 +55,7 @@ public class ServerAddressEnvironmentPostProcessor implements EnvironmentPostPro
             if (raw == null) {
                 continue;
             }
-            if (raw.isEmpty()) {
+            if (raw.isBlank()) {
                 fixes.put(key, FALLBACK_ADDRESS);
                 log.info("监听地址 " + key + " 是空值，当作没写，启动期已回落成 " + FALLBACK_ADDRESS);
                 continue;
