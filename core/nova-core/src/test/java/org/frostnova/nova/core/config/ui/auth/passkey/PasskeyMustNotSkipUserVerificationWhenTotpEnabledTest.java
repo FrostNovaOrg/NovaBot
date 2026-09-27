@@ -72,11 +72,21 @@ class PasskeyMustNotSkipUserVerificationWhenTotpEnabledTest {
         controller = new ConfigUiPasskeyController(new PasskeyService(store, authService), properties, authService);
     }
 
+    /**
+     * 一枚没用过的码，取的是下一格
+     * <p>
+     * 服务构造时就把当格标成用过了（重启前用过的码不能再用），当格的码根本走不到认中那步；
+     * 校验窗口前后各容一格，往后取一格的码此刻照样认得出。
+     */
+    private String unusedCode() {
+        return TotpGenerator.currentCode(SECRET, Instant.now().plusSeconds(30));
+    }
+
     private MockHttpServletRequest request() {
-        // 懒登入：setUp 里登会吃掉那一窗的动态码，台面里那条「口令加动态码应仍能登入」再登就撞上
+        // 懒登入：setUp 里登会吃掉那一枚没用过的码，台面里那条「口令加动态码应仍能登入」再登就撞上
         if (sessionId == null) {
             sessionId = authService.login(PASSWORD.toCharArray(),
-                    TotpGenerator.currentCode(SECRET, Instant.now()), CLIENT_IP).session().getId();
+                    unusedCode(), CLIENT_IP).session().getId();
         }
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/config/api/auth/passkey");
         request.addHeader("Host", HOST);
@@ -109,7 +119,7 @@ class PasskeyMustNotSkipUserVerificationWhenTotpEnabledTest {
         assertFalse(authService.login(PASSWORD.toCharArray(), null, "203.0.113.8").success(),
                 "口令路径在二次验证开着时应要动态码");
         assertTrue(authService.login(PASSWORD.toCharArray(),
-                TotpGenerator.currentCode(SECRET, Instant.now()), "203.0.113.9").success(),
+                unusedCode(), "203.0.113.9").success(),
                 "口令加动态码应仍能登入");
     }
 

@@ -25,6 +25,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -76,6 +77,8 @@ class PasswordChangeTest {
     private ConfigurationFileService fileService;
     private ConfigUiAuthService authService;
     private ConfigUiAuthController controller;
+    // 提成字段：存盘失败那格要拿一份写不进文件的文件服务另起一个控制器，得递同一份配置进去
+    private NovaCoreProperties properties;
 
     @BeforeEach
     void setUp() throws IOException {
@@ -83,7 +86,7 @@ class PasswordChangeTest {
         Files.writeString(config, TEMPLATE, StandardCharsets.UTF_8);
         fileService = new ConfigurationFileService(config);
 
-        NovaCoreProperties properties = new NovaCoreProperties();
+        properties = new NovaCoreProperties();
         NovaCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
         auth.setPassword(OLD);
         auth.setTotp(false);
@@ -406,26 +409,27 @@ class PasswordChangeTest {
     }
 
     @Test
-    @DisplayName("连错 4 次后输对一次，计数从头算：再错 4 次这把会话仍在")
+    @DisplayName("连错 4 次后输对一次，计数从头算：再错 4 次那把会话仍在")
     void correctCurrentPasswordStartsTheCountOver() {
         MockHttpServletRequest mine = request(ConfigUiSession.Channel.PASSWORD);
-        String id = mine.getCookies()[0].getValue();
 
         for (int i = 1; i <= 4; i++) {
             controller.changePassword(body("手滑第 " + i + " 次", NEW), mine);
         }
 
-        // 旧口令对、新口令太短：旧口令这一关过了，口令本身没换
-        ResponseEntity<JSONObject> tooShort = controller.changePassword(body(OLD, "1234"), mine);
-        assertFalse(tooShort.getBody().getBooleanValue("success"), tooShort.getBody().toJSONString());
-        assertTrue(String.valueOf(tooShort.getBody().getString("message")).contains("至少"),
-                "阳性对照：这一趟得是过了旧口令、卡在新口令长度上: " + tooShort.getBody().toJSONString());
+        // 输对一次把计数清零。这一趟走完整的改口令：新口令太短那趟现在根本到不了旧口令那一关
+        //（见 tooShortNewPasswordIsRejectedBeforeTheCurrentPassword 那一格），兼不了这个差。
+        // 改成之后换一把会话，计数跟着新的一把走
+        ResponseEntity<JSONObject> changed = controller.changePassword(body(OLD, NEW), mine);
+        assertTrue(changed.getBody().getBooleanValue("success"), changed.getBody().toJSONString());
+        String renewed = sessionIdOf(changed);
+        assertNotNull(renewed, "改完要交回新会话，不然下一段没处记次数");
 
         for (int i = 1; i <= 4; i++) {
-            controller.changePassword(body("又手滑第 " + i + " 次", NEW), mine);
+            controller.changePassword(body("又手滑第 " + i + " 次", NEW), withCookie(renewed));
         }
 
-        assertTrue(authService.validate(id).isPresent(), "输对过一次，前面那几次就不该还算数");
+        assertTrue(authService.validate(renewed).isPresent(), "输对过一次，前面那几次就不该还算数");
     }
 
     @Test
@@ -471,5 +475,70 @@ class PasswordChangeTest {
 
         assertEquals(200, allowed.getStatusCode().value(), allowed.getBody().toJSONString());
         assertTrue(authService.login(NEW.toCharArray(), null, "1.2.3.6").success());
+    }
+
+    @Test
+    @DisplayName("🔴 新口令太短：回 400 只说太短，旧口令连比都不比——口令错着也不记一次输错")
+    void tooShortNewPasswordIsRejectedBeforeTheCurrentPassword() {
+        MockHttpServletRequest mine = request(ConfigUiSession.Channel.PASSWORD);
+        String id = mine.getCookies()[0].getValue();
+
+        ResponseEntity<JSONObject> shortAndWrong = controller.changePassword(body("这不是我的口令", "1234"), mine);
+        assertEquals(400, shortAndWrong.getStatusCode().value(), shortAndWrong.getBody().toJSONString());
+        assertTrue(String.valueOf(shortAndWrong.getBody().getString("message")).contains("至少"),
+                "旧口令错着也只说新口令太短，不提旧口令: " + shortAndWrong.getBody().toJSONString());
+
+        // 太短那几趟一次都不记：连提 5 趟（注销门槛正是 5），这把会话仍在
+        for (int i = 1; i <= ConfigUiAuthService.CURRENT_PASSWORD_MISSES_BEFORE_SIGN_OUT; i++) {
+            ResponseEntity<JSONObject> again = controller.changePassword(body("猜的第 " + i + " 次", "1234"), mine);
+            assertEquals(400, again.getStatusCode().value(), again.getBody().toJSONString());
+        }
+        assertTrue(authService.validate(id).isPresent(),
+                "太短那几趟被记成输错的话，手滑连提几次就被退出登录");
+    }
+
+    @Test
+    @DisplayName("🔴 新口令太短、旧口令是对的：也不核旧口令，错次计数不清零")
+    void tooShortNewPasswordDoesNotClearTheMissCount() {
+        MockHttpServletRequest mine = request(ConfigUiSession.Channel.PASSWORD);
+        String id = mine.getCookies()[0].getValue();
+
+        for (int i = 1; i <= ConfigUiAuthService.CURRENT_PASSWORD_MISSES_BEFORE_SIGN_OUT - 1; i++) {
+            controller.changePassword(body("猜的第 " + i + " 次", NEW), mine);
+        }
+
+        // 旧口令对、新口令太短：这一趟若核了旧口令，计数会被清零，等于白送一次「输对」
+        ResponseEntity<JSONObject> rightCurrent = controller.changePassword(body(OLD, "1234"), mine);
+        assertEquals(400, rightCurrent.getStatusCode().value(), rightCurrent.getBody().toJSONString());
+        assertTrue(String.valueOf(rightCurrent.getBody().getString("message")).contains("至少"),
+                "只说新口令太短: " + rightCurrent.getBody().toJSONString());
+
+        ResponseEntity<JSONObject> fifth = controller.changePassword(body("猜的第 5 次", NEW), mine);
+        assertEquals(401, fifth.getStatusCode().value(),
+                "计数被上面那一趟清零了：连错 5 次本该退出登录，现在这把会话还在猜的人手上: "
+                        + fifth.getBody().toJSONString());
+        assertTrue(authService.validate(id).isEmpty(), "连错 5 次该注销这把会话");
+    }
+
+    @Test
+    @DisplayName("🔴 新口令写不进文件：回 500 说保存失败，口令一个字没改")
+    void saveFailureIsReportedAsServerError() throws IOException {
+        ConfigurationFileService broken = new ConfigurationFileService(config) {
+            @Override
+            public synchronized List<String> write(Map<String, String> changes) throws IOException {
+                throw new IOException("磁盘满了");
+            }
+        };
+        ConfigUiAuthController brokenController = new ConfigUiAuthController(authService, broken, properties);
+        MockHttpServletRequest mine = request(ConfigUiSession.Channel.PASSWORD);
+
+        ResponseEntity<JSONObject> failed = brokenController.changePassword(body(OLD, NEW), mine);
+
+        // 回 200 的话界面说「已改」，而门上认的还是旧那把、文件里也没存下新的
+        assertEquals(500, failed.getStatusCode().value(), failed.getBody().toJSONString());
+        assertFalse(failed.getBody().getBooleanValue("success"), failed.getBody().toJSONString());
+        assertTrue(String.valueOf(failed.getBody().getString("message")).contains("保存失败"),
+                "得说清是保存失败: " + failed.getBody().toJSONString());
+        assertTrue(authService.login(OLD.toCharArray(), null, "1.2.3.4").success(), "没存下就不该改口令");
     }
 }

@@ -392,6 +392,11 @@ public class ConfigUiAuthController {
      * 必须先输一次验证码才算绑定成功。少了这一步，用户以为扫上了、实际没扫上，
      * 下次登录就被自己的二次验证挡在门外。
      * <p>
+     * 失败的回码与关掉那一路（{@link #totpDisable}）同一个口径：无需绑定、被锁、码不对回 400，
+     * 存盘失败回 500。码不对、被锁回 400 而不是 401 的理由写在 {@link #totpDisable} 上——
+     * 界面上凡 401 一律整页重载，提示句来不及显示。两路回码不一致的话，
+     * 照回码写的限流、告警与前端分支只会照到一半。
+     * <p>
      * 绑成之后换掉当前这一把会话、注销别处的会话，见 {@link ConfigUiAuthService#rotateSession}。
      * @param body 请求体，code 字段为验证器给出的六位数字
      * @return 绑定结果
@@ -403,7 +408,7 @@ public class ConfigUiAuthController {
         if (!authService.canEnrollTotp()) {
             result.put("success", false);
             result.put("message", "无需绑定验证器");
-            return ResponseEntity.ok(result);
+            return ResponseEntity.badRequest().body(result);
         }
 
         // 先核密码、再走来源限速与验证码：绑定等于替主人开一道他自己都未必认得的防线，
@@ -416,7 +421,7 @@ public class ConfigUiAuthController {
 
         ConfigUiAuthService.CredentialCheck gate = authService.beginSensitiveTotp(request.getRemoteAddr());
         if (!gate.ok()) {
-            return ResponseEntity.ok(refuseSensitiveTotp(gate, request));
+            return ResponseEntity.badRequest().body(refuseSensitiveTotp(gate, request));
         }
 
         ConfigUiSession session = authService.validate(sessionId(request)).orElse(null);
@@ -427,7 +432,7 @@ public class ConfigUiAuthController {
             result.put("success", false);
             result.put("message", "验证码不正确，请确认手机时间是否准确后重试");
             result.put("lockedSeconds", remainingLockSeconds(request));
-            return ResponseEntity.ok(result);
+            return ResponseEntity.badRequest().body(result);
         }
 
         // 先落盘再启用：反过来的话，写文件失败会让界面说「绑好了」而重启后又要重新绑，
@@ -442,7 +447,7 @@ public class ConfigUiAuthController {
             authService.succeedSensitiveTotp(request.getRemoteAddr());
             result.put("success", false);
             result.put("message", "保存失败: " + e.getMessage());
-            return ResponseEntity.ok(result);
+            return ResponseEntity.internalServerError().body(result);
         }
 
         authService.activateTotp(session, secret);
@@ -571,6 +576,10 @@ public class ConfigUiAuthController {
      * 要旧口令：一枚被偷走的会话 Cookie 若能直接换掉口令，真正的主人就被锁在了门外，
      * 而他手上那把口令看起来只是「突然不对了」。
      * <p>
+     * <b>新口令的长度在核旧口令之前判。</b>太短的这一趟连旧口令都不去比：
+     * 比了就要记一次错（而这一趟错的其实是新口令），旧口令碰巧对时还会把这把会话的
+     * 错次计数清零，等于白送一次「输对」。
+     * <p>
      * 旧口令连错到次数，这把会话当场注销，见 {@link ConfigUiAuthService#checkCurrentPassword}。
      * 没到次数时回 400 而不是 401：界面上凡 401 一律整页重载，提示句来不及显示，
      * 人只看到页面闪了一下，不知道是旧口令输错了，更不知道再错几次会被退出。注销了才回 401，
@@ -588,6 +597,11 @@ public class ConfigUiAuthController {
             result.put("success", false);
             result.put("message", "这台机器还没设过密码，请到初始设置里上锁");
             return ResponseEntity.badRequest().body(result);
+        }
+
+        Optional<ResponseEntity<JSONObject>> tooShort = rejectTooShort(body == null ? null : body.getString("next"));
+        if (tooShort.isPresent()) {
+            return tooShort.get();
         }
 
         Optional<ResponseEntity<JSONObject>> denied =
@@ -630,6 +644,27 @@ public class ConfigUiAuthController {
     }
 
     /**
+     * 新口令不够长时的回包，够长时为空
+     * <p>
+     * 最短长度与那句提示只此一份：改口令那条路要在核旧口令<b>之前</b>就问它，
+     * 上第一把锁与令牌重设那两条路在 {@link #replacePassword} 开头再问一遍。
+     * 抄两份的话，最短长度迟早会有两个数。
+     * @param next 新口令明文
+     * @return 太短时是回包；够长时为空
+     */
+    private Optional<ResponseEntity<JSONObject>> rejectTooShort(String next) {
+        String plain = next == null ? "" : next.strip();
+        if (plain.length() >= MIN_PASSWORD_LENGTH) {
+            return Optional.empty();
+        }
+
+        JSONObject result = new JSONObject();
+        result.put("success", false);
+        result.put("message", "新密码至少 " + MIN_PASSWORD_LENGTH + " 个字符");
+        return Optional.of(ResponseEntity.badRequest().body(result));
+    }
+
+    /**
      * 换上新口令：校验、落盘、当场生效、换掉当前这一把会话并收回别处的会话
      * <p>
      * 三条路（上第一把锁、改口令、令牌重设）走到这里就没有区别了，因此只此一份——
@@ -639,14 +674,13 @@ public class ConfigUiAuthController {
      * @return 结果；换到新会话时带着新 Cookie 与新 CSRF 令牌
      */
     private ResponseEntity<JSONObject> replacePassword(String next, HttpServletRequest request) {
-        JSONObject result = new JSONObject();
-
-        String plain = next == null ? "" : next.strip();
-        if (plain.length() < MIN_PASSWORD_LENGTH) {
-            result.put("success", false);
-            result.put("message", "新密码至少 " + MIN_PASSWORD_LENGTH + " 个字符");
-            return ResponseEntity.ok(result);
+        Optional<ResponseEntity<JSONObject>> tooShort = rejectTooShort(next);
+        if (tooShort.isPresent()) {
+            return tooShort.get();
         }
+
+        JSONObject result = new JSONObject();
+        String plain = next.strip();
 
         char[] chars = plain.toCharArray();
         String hashed;
@@ -665,7 +699,7 @@ public class ConfigUiAuthController {
             log.error("写入新的登录口令失败", e);
             result.put("success", false);
             result.put("message", "保存失败，密码没有改动: " + e.getMessage());
-            return ResponseEntity.ok(result);
+            return ResponseEntity.internalServerError().body(result);
         }
 
         authService.applyPasswordHash(hashed);

@@ -210,6 +210,8 @@ public class ConfigUiAuthService {
      * 已用过的动态码时间步。单用户面板只有一个账号，登录与代签发共用这一格。
      * <p>
      * {@code null} 表示还没用过。消费时按单调递增拦：同一格或更早的格一律拒。
+     * <b>启动时按自己那把钟把当格标成用过</b>，见构造器——只记在内存里，
+     * 重启后若从 null 起，重启前 60～90 秒内刚用过的码还能再登一次。
      */
     private Long lastUsedTotpStep;
 
@@ -245,6 +247,13 @@ public class ConfigUiAuthService {
         this.passwordHash = resolvePasswordHash(properties.getPassword());
         this.totpEnabled = properties.isTotp();
         this.totpSecret = blankToNull(properties.getTotpSecret());
+
+        // 🔴 启动时就把当格标成用过的：这一格只活在内存里，重启后从「没用过」起的话，
+        // 重启前 60～90 秒内刚用过的码还能再登一次——而那枚码正躺在截图、自动填充里。
+        // 不落盘：落盘要把这格写在凭据旁边，写坏了没人看得出来，而漏掉它的代价只是要等下一格。
+        // 当格被挡下的码照旧报「密码或验证码不正确」、照旧记一次失败（见 checkCredentials）：
+        // 另说「码已用过」等于告诉对方口令是对的。密钥换了、二次验证关了照旧清空这一格。
+        this.lastUsedTotpStep = TotpGenerator.currentStep(clock.get());
 
         if (isEnabled() && this.totpEnabled && this.totpSecret == null) {
             log.warn("配置界面已启用口令登录但尚未绑定验证器, 请在界面上完成绑定");

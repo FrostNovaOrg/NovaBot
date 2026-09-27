@@ -106,6 +106,18 @@ class SensitiveReauthTest {
         return body;
     }
 
+    /**
+     * 改口令那条路要带一个够长的新口令
+     * <p>
+     * 新口令太短的那趟在核旧口令<b>之前</b>就被拒了，走不到计次那一步；
+     * 这一格钉的是三路共用计次，所以这一趟得真的走到核旧口令那一步。
+     */
+    private JSONObject changeBody(String current) {
+        JSONObject body = body(current);
+        body.put("next", "another horse another staple");
+        return body;
+    }
+
     private String sessionId(MockHttpServletRequest request) {
         for (Cookie cookie : request.getCookies()) {
             if (ConfigUiSecurityFilter.SESSION_COOKIE.equals(cookie.getName())) {
@@ -177,13 +189,13 @@ class SensitiveReauthTest {
         String id = sessionId(mine);
         assertNotNull(id, "台面没搭起来");
 
-        // 两趟改密码、一趟登记、一趟绑定，各错一次
-        ResponseEntity<JSONObject> miss1 = authController.changePassword(body("错一"), mine);
+        // 两趟改密码、一趟登记、一趟绑定，各错一次。改密码那两趟带上够长的新口令（见 changeBody）
+        ResponseEntity<JSONObject> miss1 = authController.changePassword(changeBody("错一"), mine);
         assertEquals(400, miss1.getStatusCode().value(), String.valueOf(miss1.getBody()));
         assertTrue(String.valueOf(miss1.getBody().getString("message")).contains("再输错 4 次"),
                 "第一趟错要说还剩 4 次: " + miss1.getBody().toJSONString());
 
-        ResponseEntity<JSONObject> miss2 = authController.changePassword(body("错二"), mine);
+        ResponseEntity<JSONObject> miss2 = authController.changePassword(changeBody("错二"), mine);
         assertEquals(400, miss2.getStatusCode().value(), String.valueOf(miss2.getBody()));
         assertTrue(String.valueOf(miss2.getBody().getString("message")).contains("再输错 3 次"),
                 "第二趟错要说还剩 3 次: " + miss2.getBody().toJSONString());

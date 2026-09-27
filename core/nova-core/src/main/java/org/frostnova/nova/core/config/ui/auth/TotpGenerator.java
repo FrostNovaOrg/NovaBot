@@ -81,7 +81,19 @@ public final class TotpGenerator {
             throw new IllegalArgumentException("密钥为空");
         }
 
-        return generate(base32Decode(secret), now.getEpochSecond() / STEP_SECONDS);
+        return generate(base32Decode(secret), currentStep(now));
+    }
+
+    /**
+     * 此刻落在哪一格
+     * <p>
+     * 「一格」的算法只此一份：登录消费已用过的格、启动时把当格标成用过，都认它。
+     * 抄一份到别处的话，步长改了而那边没改，认出来的格会整体偏一格。
+     * @param now 当前时刻
+     * @return RFC 6238 的 counter
+     */
+    static long currentStep(Instant now) {
+        return now.getEpochSecond() / STEP_SECONDS;
     }
 
     /**
@@ -121,7 +133,7 @@ public final class TotpGenerator {
             return null;
         }
 
-        long counter = now.getEpochSecond() / STEP_SECONDS;
+        long counter = currentStep(now);
         for (int offset = -WINDOW; offset <= WINDOW; offset++) {
             long step = counter + offset;
             if (constantTimeEquals(generate(key, step), normalized)) {
