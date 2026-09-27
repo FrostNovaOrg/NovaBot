@@ -902,7 +902,7 @@ public class ConfigUiAuthService {
         try {
             fileService.writeWithoutBackup(Map.of(PASSWORD_PROPERTY, hashed));
             log.info("配置界面的登录口令已改为哈希保存, 主配置文件中不再有明文; {}",
-                    fileService.backupSituation(plaintext));
+                    fileService.backupSituation(PASSWORD_PROPERTY, plaintext));
         } catch (Exception e) {
             log.warn("配置界面的登录口令未能改为哈希保存, 文件中仍是明文: {}", e.getMessage());
         }

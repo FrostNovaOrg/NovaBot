@@ -140,10 +140,10 @@ class RuntimeConfigurationApplierTest {
     /**
      * 手写的配置行改走再改回
      * <p>
-     * 抓的故障：配置文件里手写了 {@code 23:00} 这类不带引号的时分值（或双引号里带转义的值），
+     * 抓的故障：配置文件里手写了 {@code 23:00} 这类不带引号的时分值，
      * 在控制台改走再改回，「需重启」提醒消失了，重启后程序读到的值却和改之前不一样。
-     * 写回时时分值要加引号，带转义的值界面上拿到的是没还原的字面、照字面写回去，
-     * 字面一样不等于重启后读到的一样。
+     * 写回时时分值要加引号，字面一样不等于重启后读到的一样。
+     * 双引号里带转义的值界面上已还原，改回原样后重启读到的就是原值，提醒该销。
      * 这里的键都不在即时生效名单里，走的正是「等重启」那一支。
      */
     @Test
@@ -160,17 +160,19 @@ class RuntimeConfigurationApplierTest {
     }
 
     @Test
-    @DisplayName("🔴 手写双引号里带转义的值改走再改回：重启后读到的值变了，提醒得留着")
-    void handWrittenEscapedValueKeepsPendingRestartAfterRevert(@TempDir Path dir) throws Exception {
+    @DisplayName("手写双引号里带转义的值改走再改回：界面拿到的已还原，重启读到的是原值，提醒销掉")
+    void handWrittenEscapedValueClearsPendingRestartAfterRevert(@TempDir Path dir) throws Exception {
         ConfigurationFileService file = handWritten(dir, "novabot:\n  demo:\n    signature: \"say \\\"hi\\\"\"\n");
         RuntimeConfigurationApplier tracker = trackerStartedOn(file);
         String shown = file.read().get("novabot.demo.signature");
+        assertEquals("say \"hi\"", shown, "界面拿到的应是还原了转义的值");
 
         save(file, tracker, "novabot.demo.signature", "bye");
+        assertEquals(List.of("novabot.demo.signature"), tracker.getPendingRestart(), "改走后应欠一次重启");
         save(file, tracker, "novabot.demo.signature", shown);
 
-        assertEquals(List.of("novabot.demo.signature"), tracker.getPendingRestart(),
-                "界面照原样送回的是没还原转义的字面，写下去后重启读到的带着反斜杠，不是启动时那一个值");
+        assertEquals(List.of(), tracker.getPendingRestart(),
+                "界面照原样送回，写下去后重启读到的与启动时是同一个值，不该再挂着");
     }
 
     @Test

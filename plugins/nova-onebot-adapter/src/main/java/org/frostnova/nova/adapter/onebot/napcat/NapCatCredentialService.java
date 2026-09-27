@@ -408,7 +408,7 @@ public class NapCatCredentialService {
             changes.put(TOKEN_PROPERTY, "");
             fileService.writeWithoutBackup(changes);
             log.info("NapCat 的 token 已换算为登录哈希保存, 主配置文件中不再有明文; {}",
-                    fileService.backupSituation(plain));
+                    fileService.backupSituation(TOKEN_PROPERTY, plain));
         } catch (Exception e) {
             log.warn("NapCat 的 token 未能换算保存, 文件中仍是明文: {}", e.getMessage());
         }
