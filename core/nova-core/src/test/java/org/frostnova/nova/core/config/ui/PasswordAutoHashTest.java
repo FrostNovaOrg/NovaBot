@@ -15,9 +15,13 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * 明文口令自动哈希落盘的测试
@@ -64,6 +68,53 @@ class PasswordAutoHashTest {
                 new LoginThrottle(5, Duration.ofMinutes(15)), fileService);
     }
 
+    /**
+     * 配置目录里还留着这段明文的文件名，一份没有时为空表
+     */
+    private List<String> filesHolding(String plaintext) throws IOException {
+        List<String> left = new ArrayList<>();
+        try (Stream<Path> files = Files.list(dir)) {
+            for (Path file : files.sorted().toList()) {
+                if (Files.isRegularFile(file)
+                        && Files.readString(file, StandardCharsets.UTF_8).contains(plaintext)) {
+                    left.add(file.getFileName().toString());
+                }
+            }
+        }
+        return left;
+    }
+
+    @Test
+    @DisplayName("写回哈希那一次，同目录不留下含明文的备份")
+    void hashWriteBackLeavesNoPlaintextBehind() throws IOException {
+        // 抓的用户故障：手写明文口令启动一次以后，配置目录里的备份文件还留着明文口令。
+        // 手写的那一份原样躺在盘上，谁拿到配置目录就拿到了登录口令。
+        List<String> red = new ArrayList<>();
+
+        List<String> before = filesHolding("我的口令");
+        try {
+            // 对照：还没写回时这把扫描要看得见手写那一份明文。看不见就等于它只会报空表，
+            // 后面那句「一份都没有」在它瞎掉的时候同样是绿的
+            assertFalse(before.isEmpty(), "对照：写回前要在配置目录里找得到明文，得到：" + before);
+        } catch (AssertionError e) {
+            red.add("①" + e.getMessage());
+        }
+
+        service("我的口令");
+
+        try {
+            List<String> left = filesHolding("我的口令");
+            assertTrue(left.isEmpty(),
+                    "手写明文口令启动一次以后，配置目录里的备份文件还留着明文口令，留下的是：" + left);
+        } catch (AssertionError e) {
+            red.add("②" + e.getMessage());
+        }
+
+        if (!red.isEmpty()) {
+            fail("写回不留明文备份两问中 " + red.size() + " 问未销：" + String.join("；", red));
+        }
+    }
+
     @Test
     @DisplayName("启动时把配置里的明文换成哈希写回，文件里不再有明文")
     void hashesPlainTextOnStartup() throws IOException {
@@ -81,7 +132,7 @@ class PasswordAutoHashTest {
         service("我的口令");
         String first = stored();
 
-        // 第二次启动读到的已经是哈希，不该再动它——每次重写都会多留一份备份文件
+        // 第二次启动读到的已经是哈希，不该再动它——白重写一遍配置文件毫无必要
         service(first);
         assertTrue(first.equals(stored()), "已是哈希时不应重写");
         assertTrue(service(first).login("我的口令".toCharArray(), null, "1.2.3.4").success());

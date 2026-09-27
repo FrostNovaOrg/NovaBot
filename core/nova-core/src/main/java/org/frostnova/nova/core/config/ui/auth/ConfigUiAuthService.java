@@ -877,7 +877,7 @@ public class ConfigUiAuthService {
         }
 
         String hashed = PasswordHash.hash(password.toCharArray());
-        persistHash(hashed);
+        persistHash(password, hashed);
 
         return hashed;
     }
@@ -887,16 +887,22 @@ public class ConfigUiAuthService {
      * <p>
      * 写不进去也要继续跑：口令本身是有效的，登录不受影响，
      * 只是文件里还留着明文——那是要提醒使用者的事，不是要拦住启动的事。
+     * <p>
+     * 这次写回<b>不留备份</b>：旧值正是刚换掉的明文，备份会把它又抄一份放进同一个目录，
+     * 而备份按份数轮换，那一份要等之后再存够十次才被挤掉。
+     * @param plaintext 换掉的那段明文，只用来核对同目录还有没有副本
+     * @param hashed 要写回的哈希
      */
-    private void persistHash(String hashed) {
+    private void persistHash(String plaintext, String hashed) {
         if (fileService == null) {
             log.warn("配置界面的登录口令仍以明文保存在配置文件中");
             return;
         }
 
         try {
-            fileService.write(Map.of(PASSWORD_PROPERTY, hashed));
-            log.info("配置界面的登录口令已改为哈希保存, 配置文件中不再有明文");
+            fileService.writeWithoutBackup(Map.of(PASSWORD_PROPERTY, hashed));
+            log.info("配置界面的登录口令已改为哈希保存, 主配置文件中不再有明文; {}",
+                    fileService.backupSituation(plaintext));
         } catch (Exception e) {
             log.warn("配置界面的登录口令未能改为哈希保存, 文件中仍是明文: {}", e.getMessage());
         }
