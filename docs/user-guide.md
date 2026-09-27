@@ -784,7 +784,7 @@ novabot:
 用 `install.sh` 升级时，脚本会删掉安装目录里的 `lib/`，再把新产物拷进去，所以 `NovaBot.jar` 与 `lib/` 换成新的。`plugins-lib/` 不整目录删除：新包里自带的每个 jar，按构件名删掉旧版再放入新版；文件名里认不出版本号的（版本段不以数字开头，例如带 -jre、-SNAPSHOT 后缀）不删，其中与新包里文件同名的会被新版盖掉、不列入保留名单；新包里没有的 jar（包括自己放的）原样保留，屏幕上列出留了哪些。列出来的 jar 启动时都会装上，确认不用的可以自己删。容器入口每次启动会用镜像里的 `NovaBot.jar` 与 `lib/` 盖掉卷 `/app` 上的同名文件，并按新文件名换内置插件；`plugins-lib/` 只建目录，不从镜像里的 `/opt/starbot/plugins-lib` 铺到卷上，换镜像后卷里的那份不是新的，这一目录要自己按第 3 步换。五个旧名插件，安装脚本和容器都不会删，要自己删；`StarBotCore.jar` 只有 `install.sh` 会删。手工升级则整段照做：
 
 1. 停止服务
-2. **备份 `application.yml`、`datasource.json`、`cookies.json`、`cookies.key`**。登录凭据默认加密后仍写在 `cookies.json`，密钥在 `cookies.key`，没有另存一份密文文件。若旁边还有明文迁成加密时留下的 `cookies.json.plain.bak`，一并备份。
+2. **备份 `application.yml`、`datasource.json`、`cookies.json`、`cookies.key`**。登录凭据默认加密后仍写在 `cookies.json`，密钥在 `cookies.key`，没有另存一份密文文件。旁边若还有明文迁成加密时留下的 `cookies.json.plain.bak`，那是明文原件，程序不读它：不用备、升级后也不用拷回，确认能正常登录后就把它删掉（明文副本越少越好）。
 3. 用新版本的产物整个换掉 `NovaBot.jar` 与 `lib/`。`plugins-lib/` 里新包自带的 jar 按名字删旧放新，自己放的留下；文件名里认不出版本号的（版本段不以数字开头，例如带 -jre、-SNAPSHOT 后缀）不删，新包里有同名文件的、放入新版时会盖掉它，其余的和新版并存。
 4. `plugins/` **不要整个替换**——里面可能有你自己放的第三方插件。只按名字换下面五个内置插件，并删掉同名插件的旧版本文件（启动时 `plugins/` 里每个 jar 都会加载，留下两个版本会一起装上）。第三方插件不动。
    - `nova-onebot-adapter-<版本>.jar`
@@ -866,7 +866,7 @@ novabot:
 > **注意**：这样会把整个安装目录一起备走，连同 `application.yml`、登录凭据这些含口令的文件。
 > 目标必须是你信得过、别人读不到的地方。
 
-每日凌晨 4 点自动跑：把安装目录下的 `novabot-backup.service` 与 `novabot-backup.timer` 拷到 `/etc/systemd/system/`；改 service 里的目标路径（安装目录若不是 `/opt/starbot`，脚本路径和数据目录一并改）；然后 `sudo systemctl daemon-reload && sudo systemctl enable --now novabot-backup.timer`。恢复：先停服务，再从备份目录拷回数据与配置，不拷程序件。数据是 `data.json`、`state.json`、`sessions.jsonl`、`snapshots.jsonl`、`event-stream-tokens.jsonl` 与 `details/`、`timeline/` 两个目录；配置是 `application.yml`、`datasource.json`、`template-defaults.json`、`cookies.json`、`cookies.key`。备份里若有明文迁成加密时留下的 `cookies.json.plain.bak`，不用拷回，程序不读它；它是明文凭据，备份只增不删，安装目录里删掉了备份里也还留着，恢复后确认能正常登录，就把备份里那份也删掉。`NovaBot.jar`、`lib/`、`plugins/`、`plugins-lib/` 是程序件，备份里的是备份那天的旧版，升级后整份拷回会把旧 jar 混进新版。但 `plugins/` 里除了第 8 节第 4 步列的五个内置插件（以及 5.2 及更早的 `starbot-` 开头旧名插件），别的 jar 都是你自己装的第三方插件，要从备份里单独拷回；自己往 `plugins-lib/` 放过的 jar 也单独拷回。
+每日凌晨 4 点自动跑：把安装目录下的 `novabot-backup.service` 与 `novabot-backup.timer` 拷到 `/etc/systemd/system/`；改 service 里的目标路径（安装目录若不是 `/opt/starbot`，脚本路径和数据目录一并改）；然后 `sudo systemctl daemon-reload && sudo systemctl enable --now novabot-backup.timer`。恢复：先停服务，再从备份目录拷回数据与配置，不拷程序件。数据是 `data.json`、`state.json`、`sessions.jsonl`、`snapshots.jsonl`、`event-stream-tokens.jsonl` 与 `details/`、`timeline/` 两个目录；配置是 `application.yml`、`datasource.json`、`template-defaults.json`、`cookies.json`、`cookies.key`。备份里若有明文迁成加密时留下的 `cookies.json.plain.bak`，不用拷回，程序不读它；它是明文凭据，备份只增不删，安装目录里删掉了备份里也还留着，恢复后确认能正常登录，就把备份里那份也删掉。`NovaBot.jar`、`lib/`、`plugins/`、`plugins-lib/` 是程序件，备份里的是备份那天的旧版，升级后整份拷回会把旧 jar 混进新版。但 `plugins/` 里除了第 8 节第 4 步列的五个内置插件（以及 5.2 及更早的 `starbot-` 开头旧名插件），别的 jar 都是你自己装的第三方插件，要从备份里单独拷回；自己往 `plugins-lib/` 放过的 jar，以及插件自己落在 `plugins/` 下的其他文件（配置、数据之类），也一样要从备份里拷回。
 
 ## 10. 安全须知
 
