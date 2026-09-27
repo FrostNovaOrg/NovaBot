@@ -414,8 +414,12 @@ export function alertCards() {
   const hook = shell('webhook', 'Webhook', '推到手机上的通知类应用。机器人掉线时只有这一路还活着。');
   const hookCustom = el('div', 'al-cus');
   const preset = presetField(hook.body, Object.keys(WEBHOOK_PRESETS).concat(CUSTOM));
+  // Bark、Server 酱把推送密钥拼在地址里，地址本身就是凭据：照口令框处理，
+  // 不明文摆在画面上（面板可能正开在直播画面里），也别让浏览器往里填已存的登录口令。
+  // 后端回的是遮罩串，原样保存即「这一项没动」；要换就整个填新的。
   const url = field(hook.body, '地址', 'novabot.core.alert.webhook-url',
-    {ph: 'https://……', onchange: v => pillState(hook.pill, !!String(v).trim())});
+    {type: 'password', ph: 'https://……', autocomplete: 'new-password', inputName: 'webhook-address',
+      onchange: v => pillState(hook.pill, !!String(v).trim())});
   hook.body.appendChild(hookCustom);
   const method = field(hookCustom, '提交方式', 'novabot.core.alert.webhook-method',
     {type: 'select', opts: ['POST', 'GET']});

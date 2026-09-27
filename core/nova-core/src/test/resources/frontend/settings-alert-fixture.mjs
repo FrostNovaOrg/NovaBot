@@ -13,6 +13,8 @@
  * 发件账号与发件授权码两框按卡片里的调用真建出来：授权码不承接浏览器已存的登录口令，
  * 账号不承接登录名，两框各有自己的 name。设置页口令型机密框同样不承接已存口令。
  * 自己敲进授权码的字仍记成一笔改动。
+ * 告警地址框同法：Bark、Server 酱把推送密钥拼在地址里，地址照口令框处理，
+ * 不明文摆在画面上；自己敲进新地址仍记成改动，保存照常能落盘。
  *
  * 由 SettingsAlertViewTest 拉起。量的是源码树里那一份，不是构建产物里的副本。
  */
@@ -393,6 +395,37 @@ eq(accountNamed, true, '发件账号的 name 不叫 username 或 password');
 eq(codeNamed, true, '发件授权码的 name 不叫 username 或 password');
 eq(namesDiffer, true, '发件账号与发件授权码的 name 各不相同');
 eq(typedCode, true, '自己敲进发件授权码仍记成改动');
+
+let urlType = 'missing';
+let urlAc = 'missing';
+let urlNamed = 'missing';
+let typedUrl = 'missing';
+try {
+  const store = {values: {}, dirty: {}};
+  const setValue = loadFn(src, 'function setValue(', ['store', 'markDirty'], [store, () => {}]);
+  const field = loadFn(src, 'function field(', ['el', 'valueOf', 'setValue'], [node, () => '', setValue]);
+  const start = src.indexOf("const url = field(hook.body, '地址'");
+  const end = start < 0 ? -1 : src.indexOf('hook.body.appendChild(hookCustom)', start);
+  const calls = start >= 0 && end > start ? src.slice(start, end) : '';
+  if (!calls) throw new Error('no webhook address field');
+  const hook = {body: node('div'), pill: node('div')};
+  new Function('field', 'hook', 'pillState', calls)(field, hook, () => {});
+  const input = collectInputs(hook.body).find(i => i.attrs['aria-label'] === '地址');
+  if (!input) throw new Error('address input missing');
+  urlType = input.type;
+  urlAc = input.autocomplete;
+  urlNamed = ownName(input.name);
+  input.value = 'https://api.day.app/another-key/';
+  for (const fn of input.listeners.input || []) fn();
+  typedUrl = store.dirty['novabot.core.alert.webhook-url'] === 'https://api.day.app/another-key/';
+} catch (e) {
+  const err = 'error:' + e.message;
+  urlType = urlAc = urlNamed = typedUrl = err;
+}
+eq(urlType, 'password', '告警地址是口令框');
+eq(urlAc, 'new-password', '告警地址 autocomplete');
+eq(urlNamed, true, '告警地址的 name 不叫 username 或 password');
+eq(typedUrl, true, '自己敲进新地址仍记成改动');
 
 let secretType = 'missing';
 let secretAc = 'missing';

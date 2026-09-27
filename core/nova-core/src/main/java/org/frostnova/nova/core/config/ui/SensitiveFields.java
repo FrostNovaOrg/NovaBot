@@ -1,5 +1,6 @@
 package org.frostnova.nova.core.config.ui;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.UnaryOperator;
@@ -56,6 +57,26 @@ public final class SensitiveFields {
      */
     private static final Set<String> MARKERS = Set.of("password", "token", "secret", "credential");
 
+    /**
+     * 显式点名的机密键：名字里一片敏感词都不含，值却是凭据
+     * <p>
+     * 告警 Webhook 的地址就是一例——Bark 与 Server 酱把推送密钥拼在地址里，
+     * <b>地址本身就是凭据</b>；它的附加请求头存的是 {@code Authorization: Bearer …} 这类鉴权串。
+     * 这两类按名字猜永远猜不中，只能点名。
+     * <p>
+     * 一条管它<b>自己与它底下的全部条目</b>：{@code webhook-headers} 是一张映射，
+     * 条目名由使用者自己起，而整张表存的就是鉴权头，与条目叫什么无关。
+     * <p>
+     * <b>只点名，不往 {@link #MARKERS} 里加片段</b>：加「url」会把更新源、封面图这类
+     * 普通地址一起遮住，加「header」同样——放宽片段匹配是拿一片误伤换一个漏网。
+     * <p>
+     * <b>点名前先确认它不是布尔开关</b>：开关遮不住秘密，只会让界面上的开关显错
+     * （见上方那一段）。这几条都是字符串或字符串映射。
+     */
+    private static final List<String> EXPLICIT = List.of(
+            "novabot.core.alert.webhook-url",
+            "novabot.core.alert.webhook-headers");
+
     private SensitiveFields() {
     }
 
@@ -77,6 +98,13 @@ public final class SensitiveFields {
         // 开关一律不遮：值只有两种取值，遮不住任何东西，却会让界面上的开关显示错误
         if (ConfigurationMetadataService.ConfigurationField.isBoolean(type)) {
             return false;
+        }
+
+        // 显式点名的整条或整棵子树：这几位名字里没有那些字眼，值却是凭据（见 EXPLICIT）
+        for (String explicit : EXPLICIT) {
+            if (name.equals(explicit) || name.startsWith(explicit + ".")) {
+                return true;
+            }
         }
 
         String leaf = name.substring(name.lastIndexOf('.') + 1).toLowerCase();
