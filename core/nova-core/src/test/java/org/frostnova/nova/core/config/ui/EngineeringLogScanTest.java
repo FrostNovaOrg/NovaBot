@@ -191,7 +191,7 @@ class EngineeringLogScanTest {
         // CPU 时间照样涨上去，这一格照红。
         ThreadMXBean threads = ManagementFactory.getThreadMXBean();
         assertTrue(threads.isCurrentThreadCpuTimeSupported() && threads.isThreadCpuTimeEnabled(),
-                "本线程 CPU 时间量不出来时这一格会恒绿，先卫住量具");
+                "本线程 CPU 时间量不出来时这一格会恒绿，先确认这一前提");
         long start = threads.getCurrentThreadCpuTime();
         JSONObject found = call("?limit=300&d=2026-09-25&levels=error");
         long elapsedMs = (threads.getCurrentThreadCpuTime() - start) / 1_000_000;

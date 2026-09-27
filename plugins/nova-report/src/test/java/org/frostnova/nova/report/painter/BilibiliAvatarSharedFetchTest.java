@@ -279,7 +279,7 @@ class BilibiliAvatarSharedFetchTest {
     }
 
     /**
-     * 静态线程池是全进程一份：开跑前等别的格留下的排空，收尾也等这一格的排空
+     * 静态线程池是全进程一份：测试开始前等别的格留下的排空，收尾也等这一格的排空
      */
     private static void awaitFetchersDrained() throws Exception {
         ThreadPoolExecutor fetchers = fetchers();
