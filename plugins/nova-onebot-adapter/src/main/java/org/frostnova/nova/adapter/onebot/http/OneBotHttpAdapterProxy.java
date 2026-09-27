@@ -3,6 +3,7 @@ package org.frostnova.nova.adapter.onebot.http;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.adapter.onebot.annotation.OneBotApi;
+import org.frostnova.nova.adapter.onebot.config.OneBotEndpointAddresses;
 import org.frostnova.nova.adapter.onebot.exception.OneBotApiException;
 import org.frostnova.nova.adapter.onebot.health.OneBotConnectionState;
 import org.frostnova.nova.adapter.onebot.model.OneBotSender;
@@ -50,7 +51,7 @@ public class OneBotHttpAdapterProxy implements InvocationHandler {
 
                 Map<String, String> headers = new HashMap<>();
                 headers.put("Authorization", "Bearer " + sender.getOneBotHttpToken());
-                String apiBaseUrl = "http://" + sender.getOneBotAddress() + ":" + sender.getOneBotHttpPort();
+                String apiBaseUrl = OneBotEndpointAddresses.httpBaseUrl(sender.getName(), sender.getOneBotAddress(), sender.getOneBotHttpPort());
 
                 log.debug("OneBotApi <- : {} {}", api.url(), StringUtil.getOmitString(params.toJSONString(), sender.getDebugLogMaxLength()));
                 String url = apiBaseUrl + api.url();

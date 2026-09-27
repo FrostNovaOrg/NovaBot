@@ -1,6 +1,7 @@
 package org.frostnova.nova.adapter.onebot.extension.napcat.http;
 
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.adapter.onebot.config.OneBotEndpointAddresses;
 import org.frostnova.nova.adapter.onebot.exception.OneBotApiException;
 import org.frostnova.nova.adapter.onebot.extension.napcat.annotation.NapcatApi;
 import org.frostnova.nova.adapter.onebot.model.OneBotSender;
@@ -60,7 +61,7 @@ public class NapcatHttpAdapterProxy implements InvocationHandler {
      * @return 应答里的 {@code data} 段，对面没给时为 {@code null}
      */
     private JSONObject call(NapcatApi api, OneBotSender sender, JSONObject params) {
-        String url = "http://" + sender.getOneBotAddress() + ":" + sender.getOneBotHttpPort() + api.url();
+        String url = OneBotEndpointAddresses.httpBaseUrl(sender.getName(), sender.getOneBotAddress(), sender.getOneBotHttpPort()) + api.url();
 
         // 请求参数按平台配的长度截断再进日志：推送正文可以很长，整段抄进 debug 日志会把它冲掉
         log.debug("NapcatApi <- : {} {}", api.url(), StringUtil.getOmitString(params.toJSONString(), sender.getDebugLogMaxLength()));
