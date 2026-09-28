@@ -324,6 +324,26 @@ class HandWrittenValuesAsLoadedTest {
     }
 
     /**
+     * 抓的用户故障：一项写成引用别处一整块的别名（{@code item: *b}），在设置页给它填值被拒存，
+     * 说明里没写出 {@code *b}，使用者在配置文件里对不上是哪个别名。
+     */
+    @Test
+    @DisplayName("🔴 整块别名拒存：说明里点出配置文件里写的别名名")
+    void wholeBlockAliasRejectionNamesTheAlias() throws IOException {
+        write("novabot:\n  demo:\n    base: &b\n      color: red\n      size: 2\n"
+                + "    item: *b\n");
+        String text = content();
+        try {
+            service.write(Map.of("novabot.demo.item", "blue"));
+            throw new AssertionError("给整块别名填值应拒存, 文件不该被改");
+        } catch (IOException rejected) {
+            assertEquals(text, content(), "拒存时文件一个字节不动");
+            assertTrue(rejected.getMessage().contains("*b"),
+                    "拒存说明要点出配置文件里写的别名 *b: " + rejected.getMessage());
+        }
+    }
+
+    /**
      * 抓的用户故障：界面不能改的项，读数里没有那一栏，设置页照常摆一个能打字的框。
      */
     @Test
