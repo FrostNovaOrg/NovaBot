@@ -315,7 +315,7 @@ public class ConfigurationFileService {
             + "为不写错不在界面改；要改请到配置文件里改。";
 
     /** 启动那一路也读不出来 */
-    private static final String LOCK_UNREADABLE = "这一项的写法界面读不准，而配置文件按启动那一路也没读出来，"
+    private static final String LOCK_UNREADABLE = "这一项的写法界面读不准，而程序启动时读这份配置文件也没读出这一项，"
             + "为不写错不在界面改；要改请到配置文件里改。";
 
     /**
@@ -456,6 +456,27 @@ public class ConfigurationFileService {
     }
 
     /**
+     * 键行上写的别名记号（{@code *名字}）；没有时为空串
+     */
+    private static String aliasToken(String rawValue) {
+        if (rawValue == null) {
+            return "";
+        }
+        String body = bodyOf(rawValue);
+        for (String token : body.split("\\s+")) {
+            if (token.length() > 1 && token.charAt(0) == '*') {
+                int end = token.length();
+                while (end > 1 && (token.charAt(end - 1) == ',' || token.charAt(end - 1) == ']'
+                        || token.charAt(end - 1) == '}')) {
+                    end--;
+                }
+                return token.substring(0, end);
+            }
+        }
+        return "";
+    }
+
+    /**
      * 键行冒号后的原文去掉打头的锚点、标签（{@code &名}、{@code !标签}）之后剩下的那段
      */
     private static String bodyOf(String value) {
@@ -492,7 +513,7 @@ public class ConfigurationFileService {
         try {
             documents = new YamlPropertySourceLoader().load(configPath.toString(), new FileSystemResource(configPath));
         } catch (RuntimeException e) {
-            throw new IOException("按启动时那一路读不下配置文件: " + e.getMessage(), e);
+            throw new IOException("程序启动时读这份配置文件读不通: " + e.getMessage(), e);
         }
         Map<String, Object> values = flatten(documents);
         return values == null ? Map.of() : values;
@@ -512,7 +533,7 @@ public class ConfigurationFileService {
             documents = new YamlPropertySourceLoader().load("application.yml",
                     new ByteArrayResource(text.getBytes(StandardCharsets.UTF_8)));
         } catch (RuntimeException e) {
-            throw new IOException("按启动时那一路读不下配置文件: " + e.getMessage(), e);
+            throw new IOException("程序启动时读这份配置文件读不通: " + e.getMessage(), e);
         }
         return flatten(documents);
     }
@@ -938,8 +959,10 @@ public class ConfigurationFileService {
 
             // 别名引到的是一整块：值在引来的子键上，填值会把它们一起去掉
             if (line.hidden) {
+                String alias = aliasToken(line.rawValue);
                 throw new IOException("配置项 " + change.getKey()
-                        + " 在配置文件里是引用别处一整块的别名, 填值会去掉引来的子项, 本批全部未保存, 请先在配置文件里改写这一项");
+                        + " 在配置文件里是引用别处一整块的别名" + (alias.isEmpty() ? "" : " " + alias)
+                        + ", 填值会去掉引来的子项, 本批全部未保存, 请先在配置文件里改写这一项");
             }
 
             // 键行带着续行的（跨行的值、块标量）连续行一起换掉：只换键那一行的话，续行并进新值。
@@ -1021,7 +1044,7 @@ public class ConfigurationFileService {
             after = load(String.join("\n", lines) + "\n");
         } catch (IOException e) {
             String anchors = referencedAnchors(original, changed, index);
-            throw new IOException("配置项 " + String.join(", ", changed) + " 改完后配置文件按启动那一路读不通"
+            throw new IOException("配置项 " + String.join(", ", changed) + " 改完后程序启动时读这份配置文件读不通"
                     + (anchors.isEmpty() ? "（多半是改到了别名、合并键这类手写写法）" : "（" + anchors + "）")
                     + ", 本批全部未保存, 请到配置文件里改");
         }
