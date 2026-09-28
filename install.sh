@@ -45,17 +45,17 @@ done
 case "$INSTALL_DIR" in
     /)     die "--dir 不能是根目录" ;;
     /?*)   ;;
-    *)     die "--dir 需为绝对路径，当前为「$INSTALL_DIR」" ;;
+    *)     die "--dir 需为绝对路径，当前为「${INSTALL_DIR}」" ;;
 esac
 case "$INSTALL_DIR" in
     *'#'*) die "--dir 不能包含 # 号（生成 systemd 单元时以 # 作 sed 分隔符）" ;;
 esac
 case "$PORT" in
-    ''|*[!0-9]*) die "--port 需为数字，当前为「$PORT」" ;;
+    ''|*[!0-9]*) die "--port 需为数字，当前为「${PORT}」" ;;
 esac
 [ "$PORT" -ge 1 ] && [ "$PORT" -le 65535 ] || die "--port 取值需在 1-65535 之间，当前为 $PORT"
 case "$SERVICE_USER" in
-    ''|*[!a-zA-Z0-9_-]*) die "--user 只能包含字母、数字、下划线与连字符，当前为「$SERVICE_USER」" ;;
+    ''|*[!a-zA-Z0-9_-]*) die "--user 只能包含字母、数字、下划线与连字符，当前为「${SERVICE_USER}」" ;;
 esac
 
 [ "$(uname -s)" = "Linux" ] || die "本脚本仅适用于 Linux。macOS 与 Windows 请参考 README 手动部署"
@@ -97,7 +97,7 @@ install_java() {
     [ -n "$pm" ] || die "未识别的包管理器，请手动安装 $kind 17 后重新运行"
     pkg="$(java_package "$kind" "$pm")"
 
-    info "正在安装 $kind 17（$pm：$pkg）"
+    info "正在安装 $kind 17（${pm}：${pkg}）"
     case "$pm" in
         apt-get)        $SUDO apt-get update -qq && $SUDO apt-get install -y "$pkg" ;;
         dnf|yum|zypper) $SUDO "$pm" install -y "$pkg" ;;
@@ -117,6 +117,32 @@ java_major() {
     echo "${version:-0}"
 }
 
+# 找一把主版本恰为 17 的 JDK 安装目录，构建要指名用它。
+# 各包管理器装完的落点不一样，写死一个路径必然在别的发行版上扑空：
+#   apt-get（Debian、Ubuntu）：/usr/lib/jvm/java-17-openjdk-<架构>
+#   dnf、yum（Fedora、RHEL）：/usr/lib/jvm/java-17-openjdk（软链，实体目录带完整版本号）
+#   zypper（openSUSE）：/usr/lib64/jvm/java-17-openjdk
+#   pacman（Arch）：/usr/lib/jvm/java-17-openjdk
+#   apk（Alpine）：/usr/lib/jvm/java-17-openjdk
+# 所以逐个目录问 bin/java 报的主版本号，不看目录名：同一台机器上 17 与 21 并存时，
+# 照名字找会把两把一起端上来。构建要用 javac，只认带 bin/javac 的目录。
+# 装在别处的自己指：NOVABOT_JVM_ROOTS="<它的上层目录> [<它的上层目录>…]"
+find_jdk17() {
+    local root dir major
+    for root in ${NOVABOT_JVM_ROOTS:-/usr/lib/jvm /usr/lib64/jvm}; do
+        [ -d "$root" ] || continue
+        for dir in "$root"/*; do
+            [ -x "$dir/bin/java" ] || continue
+            [ -x "$dir/bin/javac" ] || continue
+            major="$("$dir/bin/java" -version 2>&1 | sed -nE '1s/.*version "([0-9]+).*/\1/p')"
+            [ "$major" = "17" ] || continue
+            echo "$dir"
+            return 0
+        done
+    done
+    return 1
+}
+
 # 从源码构建要用 javac，只跑现成产物则 JRE 足够（JDK 多占约 150 MB）
 NEED_JAVA="JRE"
 if [ -f "$ROOT/build.sh" ]; then
@@ -124,16 +150,35 @@ if [ -f "$ROOT/build.sh" ]; then
 fi
 
 info "检查运行环境"
-if [ "$(java_major)" -lt 17 ]; then
+BUILD_JAVA_HOME=""
+# 从源码构建只在 Java 17 上验过本工程，比它高的版本构建会当场停下（见 build.sh「上界」那一段）。
+# 所以现有 java 不是 17 时另找一把 17 专供这次构建：只让构建那一趟用它，
+# 机器上默认的 java 不动，服务运行用哪把 java 也不归这里管
+if [ "$NEED_JAVA" = "JDK" ] && [ "$(java_major)" -gt 17 ]; then
+    info "构建要另用 Java 17：这台机器现在的 Java 主版本是 $(java_major)"
+    info "原因：本工程只在 Java 17 上验过，版本高过 17 时构建会停下（见 build.sh「上界」那一段）"
+    if ! BUILD_JAVA_HOME="$(find_jdk17)"; then
+        info "机器上没有现成的 Java 17，现在装一把（只给这次构建用）"
+        install_java JDK
+        BUILD_JAVA_HOME="$(find_jdk17)" || die "装好 JDK 17 后仍没找到它（在 /usr/lib/jvm、/usr/lib64/jvm 下没找到主版本为 17 的目录）。
+     请装好 JDK 17 再跑一次本脚本；装在别处的，用 NOVABOT_JVM_ROOTS=<它的上层目录> 指给我。
+     不会改用现在的 Java $(java_major) 继续构建——那样构建会在中途停下"
+    fi
+    info "构建将使用 Java 17：${BUILD_JAVA_HOME}（只作用于这一次构建）"
+elif [ "$(java_major)" -lt 17 ]; then
     install_java "$NEED_JAVA"
     [ "$(java_major)" -ge 17 ] || die "$NEED_JAVA 17 安装后仍不可用，请手动检查"
 fi
 # 机器上可能已有 JRE 17 但没有 javac，此时版本检查会通过，构建却会失败
-if [ "$NEED_JAVA" = "JDK" ] && ! command -v javac > /dev/null 2>&1; then
+if [ "$NEED_JAVA" = "JDK" ] && [ -z "$BUILD_JAVA_HOME" ] && ! command -v javac > /dev/null 2>&1; then
     install_java JDK
     command -v javac > /dev/null 2>&1 || die "从源码构建需要 javac，安装 JDK 后仍未找到"
 fi
-info "Java 版本：$(java -version 2>&1 | sed -n 1p)"
+if [ -n "$BUILD_JAVA_HOME" ]; then
+    info "构建用的 Java 版本：$("$BUILD_JAVA_HOME/bin/java" -version 2>&1 | sed -n 1p)"
+else
+    info "Java 版本：$(java -version 2>&1 | sed -n 1p)"
+fi
 
 # 用 grep -c 而非 grep -q：本脚本开了 pipefail，而 grep -q 一匹配到就退出并关闭管道，
 # 上游的 fc-list 随即收到 SIGPIPE 以 141 结束，pipefail 便把整条管道判为失败——
@@ -204,7 +249,12 @@ if [ -f "$ROOT/build.sh" ]; then
     command -v mvn > /dev/null 2>&1 || die "未找到 Maven，请先安装 Maven 3.9 或更高版本"
 
     info "从源码构建"
-    "$ROOT/build.sh" --skip-tests
+    if [ -n "$BUILD_JAVA_HOME" ]; then
+        # 17 只给这一趟构建用：JAVA_HOME 与 PATH 都指向它，构建一结束就不再有效
+        JAVA_HOME="$BUILD_JAVA_HOME" PATH="$BUILD_JAVA_HOME/bin:$PATH" "$ROOT/build.sh" --skip-tests
+    else
+        "$ROOT/build.sh" --skip-tests
+    fi
     SOURCE_DIR="$ROOT/dist/build"
 else
     SOURCE_DIR="$ROOT"
@@ -318,8 +368,8 @@ if [ -f "$INSTALL_DIR/application.yml" ]; then
     EFFECTIVE_PORT="$($SUDO awk 'match($0, /^  port: [0-9]+/) { gsub(/[^0-9]/, "", $0); print; exit }' "$INSTALL_DIR/application.yml")"
     EFFECTIVE_PORT="${EFFECTIVE_PORT:-$PORT}"
     if [ "$EFFECTIVE_PORT" != "$PORT" ]; then
-        warn "application.yml 中的端口是 $EFFECTIVE_PORT，与 --port $PORT 不一致（升级时保留了原有配置）。
-     如需改用 $PORT，请手动编辑 $INSTALL_DIR/application.yml"
+        warn "application.yml 中的端口是 ${EFFECTIVE_PORT}，与 --port $PORT 不一致（升级时保留了原有配置）。
+     如需改用 ${PORT}，请手动编辑 $INSTALL_DIR/application.yml"
     fi
 else
     # 全新安装：还没有配置文件可改，端口就是程序自己的默认值。
