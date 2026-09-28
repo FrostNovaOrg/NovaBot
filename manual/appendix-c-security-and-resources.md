@@ -52,7 +52,7 @@ ss -tlnp | grep -E ':(3000|3001|6099)\b'
 **配置界面若要开到公网，必须启用密码登录。** 放开 `novabot.core.config-ui.allow-ips` 而不设密码，
 等于把「改推送目标、看运行数据」的权限对全网敞开。
 设了密码之后：二次验证默认要求，密钥必须明文存放在配置里（所以 `application.yml`
-的权限要收紧到 `600`）；必须走 https；忘记密码或验证器丢了，把 `auth.operator-token`
+的权限要收紧到 `600`）；必须走 https；忘记密码或验证器丢了，把 `novabot.core.config-ui.auth.operator-token`
 改成 `true` 重启，用启动日志里的地址进去改完再改回 `false`。
 这个启动令牌**等同于密码加验证器**，而且走地址栏、会进反向代理的访问日志，平日里不要开着。
 
