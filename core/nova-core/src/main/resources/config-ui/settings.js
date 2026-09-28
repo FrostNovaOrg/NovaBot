@@ -208,6 +208,15 @@ function buildRow(field, groupAllRestart) {
     meta.appendChild(note);
   }
 
+  // 配置文件里手写成界面改不了的写法（带换行的块标量、引到名单的别名……）：只读摆出程序读到的值，
+  // 说清为什么、去哪儿改。照常摆个框的话，一改一存就把那种写法压扁了
+  const locked = store.locked && store.locked[field.name];
+  if (locked) {
+    const note = el('div', 'dflt');
+    note.textContent = locked;
+    meta.appendChild(note);
+  }
+
   const line = el('div', 'defline hide');
   const text = el('span');
   text.textContent = '默认：' + defaultText(field) + ' · ';
@@ -218,7 +227,14 @@ function buildRow(field, groupAllRestart) {
   const cell = el('div', field.widget === 'boolean' ? 'boolcell' : '');
   // 显示值不叫 text：上面「默认：…」那个 span 已经占了这个名字，同作用域撞车
   const {saved, text: shown, cleared} = valuesOf(field);
-  const input = buildControl(field, shown, cell);
+  let input = null;
+  if (locked) {
+    const box = el('div', 'readonly lockedval');
+    box.textContent = shown;
+    cell.appendChild(box);
+  } else {
+    input = buildControl(field, shown, cell);
+  }
   if (field.unit) {
     const unit = el('span', 'unit');
     unit.textContent = field.unit;

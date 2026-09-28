@@ -1014,6 +1014,9 @@ public class ConfigUiController {
             // 先补旧位置再遮机密：补进来的项同样可能是机密，顺序反了就会漏出去
             result.put("legacy", aliases().resolve(values));
             result.put("fontTables", fontTables(values.get(PAINT_FONTS), System.getProperty("os.name")));
+            // 手写成界面改不了的项（带换行的块标量、引到名单的别名……）：值照给，另附为什么不能改，
+            // 设置页据此只读显示，不摆一个一改一存就把那种写法压扁的框
+            result.put("locked", fileService.uiLocked());
             // 口令、令牌与密钥不出这道门：面板可能在直播画面里被打开。
             // 带上类型表，开关才不会因为名字里有 token 被遮成占位值——遮了它界面上就恒显「已关闭」
             Map<String, String> types = metadataService.getKnownTypes();
