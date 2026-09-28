@@ -152,7 +152,7 @@ fi
 info "检查运行环境"
 BUILD_JAVA_HOME=""
 # 从源码构建只在 Java 17 上验过本工程，比它高的版本构建会当场停下（见 build.sh「上界」那一段）。
-# 所以现有 java 不是 17 时另找一把 17 专供这次构建：只让构建那一趟用它，
+# 所以现有 java 高于 17 时另找一把 17 专供这次构建：只让构建那一趟用它，
 # 机器上默认的 java 不动，服务运行用哪把 java 也不归这里管
 if [ "$NEED_JAVA" = "JDK" ] && [ "$(java_major)" -gt 17 ]; then
     info "构建要另用 Java 17：这台机器现在的 Java 主版本是 $(java_major)"
@@ -160,7 +160,7 @@ if [ "$NEED_JAVA" = "JDK" ] && [ "$(java_major)" -gt 17 ]; then
     if ! BUILD_JAVA_HOME="$(find_jdk17)"; then
         info "机器上没有现成的 Java 17，现在装一把（只给这次构建用）"
         install_java JDK
-        BUILD_JAVA_HOME="$(find_jdk17)" || die "装好 JDK 17 后仍没找到它（在 /usr/lib/jvm、/usr/lib64/jvm 下没找到主版本为 17 的目录）。
+        BUILD_JAVA_HOME="$(find_jdk17)" || die "装好 JDK 17 后仍没找到它（在 ${NOVABOT_JVM_ROOTS:-/usr/lib/jvm、/usr/lib64/jvm} 下没找到主版本为 17 的目录）。
      请装好 JDK 17 再跑一次本脚本；装在别处的，用 NOVABOT_JVM_ROOTS=<它的上层目录> 指给我。
      不会改用现在的 Java $(java_major) 继续构建——那样构建会在中途停下"
     fi
