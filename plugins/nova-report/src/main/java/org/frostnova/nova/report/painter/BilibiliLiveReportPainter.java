@@ -2,7 +2,6 @@ package org.frostnova.nova.report.painter;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
-import javax.imageio.ImageIO;
 import org.frostnova.nova.bilibili.BilibiliPlatform;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.enums.GuardType;
@@ -46,7 +45,6 @@ import java.awt.Point;
 import java.awt.RenderingHints;
 import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -91,9 +89,10 @@ import java.util.function.DoubleFunction;
 @NovaComponent
 public class BilibiliLiveReportPainter {
     /**
-     * 图片总宽度，与动态图片一致
+     * 图片总宽度，与动态图片一致。版面常量自 {@link ReportSharedStyle} 起，
+     * 与打赏播报图共用一份，这里只是引过来
      */
-    private static final int WIDTH = 900;
+    private static final int WIDTH = ReportSharedStyle.WIDTH;
 
     /**
      * 初始画布高度，绘制过程中按需自动扩展
@@ -103,17 +102,17 @@ public class BilibiliLiveReportPainter {
     /**
      * 画布圆角半径
      */
-    protected static final int CANVAS_RADIUS = 25;
+    protected static final int CANVAS_RADIUS = ReportSharedStyle.CANVAS_RADIUS;
 
     /**
      * 内容区左右留白
      */
-    private static final int MARGIN = 35;
+    private static final int MARGIN = ReportSharedStyle.MARGIN;
 
     /**
      * 内容区宽度
      */
-    protected static final int CONTENT_WIDTH = WIDTH - MARGIN * 2;
+    protected static final int CONTENT_WIDTH = ReportSharedStyle.CONTENT_WIDTH;
 
     /**
      * 封面横幅高度
@@ -123,7 +122,7 @@ public class BilibiliLiveReportPainter {
     /**
      * 头像尺寸与白色描边宽度
      */
-    protected static final int AVATAR_SIZE = 100;
+    protected static final int AVATAR_SIZE = ReportSharedStyle.AVATAR_SIZE;
 
     private static final int AVATAR_RING = 5;
 
@@ -230,11 +229,14 @@ public class BilibiliLiveReportPainter {
      */
     private static final int CLOUD_MAX_WORDS = 72;
 
-    private static final Color COLOR_NAME = new Color(251, 114, 153);
+    /**
+     * 配色自 {@link ReportSharedStyle} 起，与打赏播报图共用一份，这里只是引过来
+     */
+    private static final Color COLOR_NAME = ReportSharedStyle.COLOR_NAME;
 
-    private static final Color COLOR_TIP = new Color(153, 162, 170);
+    private static final Color COLOR_TIP = ReportSharedStyle.COLOR_TIP;
 
-    private static final Color COLOR_TEXT = new Color(51, 51, 51);
+    private static final Color COLOR_TEXT = ReportSharedStyle.COLOR_TEXT;
 
     /**
      * 卡片底色。包内可见：版式判据要靠它认出「哪几行落在卡片带里」，
@@ -269,11 +271,6 @@ public class BilibiliLiveReportPainter {
     private static final int CURVE_GAP_HATCH_PERIOD = 10;
 
     private static final int CURVE_GAP_HATCH_WIDTH = 3;
-
-    /**
-     * 底部标识的绘制高度，与动态图片保持一致
-     */
-    private static final int LOGO_HEIGHT = 45;
 
     /**
      * 各条曲线的配色，礼物沿用主题粉（{@link #COLOR_NAME}）
@@ -427,11 +424,9 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
-     * 底部标识只读一次盘，读过就不再重试——无论成败
+     * 底部标识图片只读一次盘，读过的结论本场与下一场共用，实现见 {@link ReportSharedStyle.Logo}
      */
-    private volatile boolean logoLoaded;
-
-    private BufferedImage logo;
+    private final ReportSharedStyle.Logo logoDrawer = new ReportSharedStyle.Logo();
 
     /**
      * 不落盘的构造，给测试和版式预览。预览覆写了取图口，本来也不写这份缓存
@@ -590,7 +585,7 @@ public class BilibiliLiveReportPainter {
             }
 
             painter.movePos(0, 20);
-            drawLogo(painter);
+            logoDrawer.draw(painter, properties);
             painter.drawCopyright(MARGIN);
             painter.movePos(0, 10);
 
@@ -606,7 +601,8 @@ public class BilibiliLiveReportPainter {
 
     /**
      * 绘制头部：封面横幅、压在横幅下沿的圆形头像、昵称与直播起止时间。
-     * 封面不可得时退化为「头像 + 昵称」的简单头部
+     * 封面不可得时退化为「头像 + 昵称」的简单头部——那一版式与打赏播报图共用，
+     * 见 {@link ReportSharedStyle#drawSimpleHeader}
      */
     private void drawHeader(CommonPainter painter, String platform, LiveStreamerInfo source, BilibiliLiveReportOptions options) {
         int top = painter.getY();
@@ -632,28 +628,15 @@ public class BilibiliLiveReportPainter {
             return;
         }
 
-        int textX = MARGIN + AVATAR_SIZE + 25;
-        if (face != null) {
-            painter.drawImage(face, new Point(MARGIN, top));
-        }
-        painter.drawSection(unameWithin(painter, source, textX), COLOR_NAME, new Point(textX, top + 8));
-        painter.drawTip("直播报告 · " + timeRange(platform, source.getUid()), COLOR_TIP, new Point(textX, top + 58));
-        painter.setPos(MARGIN, top + AVATAR_SIZE + 30);
+        ReportSharedStyle.drawSimpleHeader(painter, source, face,
+                "直播报告 · " + timeRange(platform, source.getUid()));
     }
 
     /**
-     * 取主播名，并按版心剩下的宽度截断
-     * <p>
-     * B 站昵称<b>没有长度上限</b>，而这一行原先一个字都不截。现在没出事只是因为
-     * 常见昵称都短——<b>没撞上不等于没有</b>：实测 30 个字的昵称会顶出画布 338 像素。
-     * @param textX 这一行的起始 x，可用宽度是从这里到版心右边界
+     * 取主播名并按版心剩下的宽度截断，实现见 {@link ReportSharedStyle#unameWithin}
      */
     private String unameWithin(CommonPainter painter, LiveStreamerInfo source, int textX) {
-        String uname = Optional.ofNullable(source.getUname()).orElse("未知主播");
-
-        return painter.truncateToWidth(
-                new TextWithStyle(uname, CommonPainter.SECTION_FONT_SIZE, COLOR_NAME, Font.BOLD),
-                WIDTH - MARGIN - textX);
+        return ReportSharedStyle.unameWithin(painter, source, textX);
     }
 
     /**
@@ -2397,54 +2380,6 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
-     * 绘制底部标识，未配置或读取失败时跳过
-     */
-    private void drawLogo(CommonPainter painter) {
-        BufferedImage image = logo();
-        if (image == null) {
-            return;
-        }
-
-        int top = painter.getY();
-        painter.drawImage(image, new Point(MARGIN, top));
-        painter.setPos(MARGIN, top + image.getHeight() + 10);
-    }
-
-    /**
-     * 读取并缓存底部标识图片
-     * <p>
-     * 只在首次绘制时读取一次；读取失败也标记为已加载，
-     * 以免路径写错导致每份报告都重复尝试读盘并刷一条警告。
-     * @return 标识图片，未配置或读取失败时为 null
-     */
-    private BufferedImage logo() {
-        if (logoLoaded) {
-            return logo;
-        }
-
-        synchronized (this) {
-            if (!logoLoaded) {
-                String path = properties.getLive().getReportLogoPath();
-                if (StringUtil.isNotBlank(path)) {
-                    try {
-                        Path file = Path.of(path);
-                        if (Files.isReadable(file)) {
-                            logo = ImageUtil.resizeByHeight(ImageIO.read(file.toFile()), LOGO_HEIGHT);
-                        } else {
-                            log.warn("下播报告的标识图片 {} 不存在或不可读, 已跳过绘制", path);
-                        }
-                    } catch (Exception e) {
-                        log.warn("读取下播报告的标识图片 {} 失败, 已跳过绘制: {}", path, e.getMessage());
-                    }
-                }
-                logoLoaded = true;
-            }
-        }
-
-        return logo;
-    }
-
-    /**
      * 读取计数类指标并取整
      */
     private long count(String platform, Long uid, String metric) {
@@ -2616,21 +2551,6 @@ public class BilibiliLiveReportPainter {
         return String.valueOf(rounded / 10.0);
     }
 
-    /**
-     * 主播头像地址：事件中缺失时通过接口取
-     */
-    private String resolveFace(LiveStreamerInfo source) {
-        if (StringUtil.isNotBlank(source.getFace())) {
-            return source.getFace();
-        }
-        try {
-            return api.getUpInfoByUid(source.getUid()).getFace();
-        } catch (Exception e) {
-            log.debug("获取 uid {} 的头像失败: {}", source.getUid(), e.getMessage());
-            return null;
-        }
-    }
-
     // ================ 向外部要资料的口子 ================
     // 画一张报告要的东西有两类：一类在本场数据里（走 liveDataService，构造时给什么就是什么），
     // 另一类要向 B 站或状态存储现取——**那一类全部收在这一段**，各是一个可覆写的方法。
@@ -2643,13 +2563,10 @@ public class BilibiliLiveReportPainter {
     // 漏覆写的那一个口子会在那里当场红。
 
     /**
-     * 主播头像：取地址、下图、裁成圆形
+     * 主播头像：取地址、下图、裁成圆形，实现见 {@link ReportSharedStyle#faceImage}
      */
     protected BufferedImage faceImage(LiveStreamerInfo source) {
-        return Optional.ofNullable(resolveFace(source))
-                .flatMap(url -> api.getBilibiliImage(atSize(url)))
-                .map(image -> ImageUtil.maskToCircle(ImageUtil.resize(image, AVATAR_SIZE, AVATAR_SIZE)))
-                .orElse(null);
+        return ReportSharedStyle.faceImage(api, source);
     }
 
     /**
@@ -2818,22 +2735,12 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
-     * 为图片地址附加缩放参数，避免下载原图
-     */
-    private String atSize(String url) {
-        return atSize(url, AVATAR_SIZE);
-    }
-
-    /**
-     * 为图片地址附加指定宽度的缩放参数
+     * 为图片地址附加指定宽度的缩放参数，实现见 {@link ReportSharedStyle#atSize}
      * <p>
      * 排行榜头像只有 32px，下原图既慢又浪费——一场直播的榜单动辄数十人
      */
     private String atSize(String url, int size) {
-        if (StringUtil.isBlank(url) || url.contains("@")) {
-            return url;
-        }
-        return url + "@" + size + "w.webp";
+        return ReportSharedStyle.atSize(url, size);
     }
 
     /**
