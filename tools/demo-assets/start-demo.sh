@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Start NovaBot from dist/build in a throwaway directory, anonymous, 127.0.0.1:7827.
 # Prints the one-shot console token, probes HTTP, then stops the process it started.
+# If the token line does not show up within DEMO_TIMEOUT it says so and exits 1.
 # Set DEMO_HOLD=<seconds> (default 0) to leave the instance answering for that many
 # seconds after the probe before the usual stop, e.g. to screenshot the console.
 # Ctrl-C or TERM during the hold stops it early and cleans up as usual.
@@ -153,7 +154,10 @@ finally:
 PY
 )"
     # Console lives at /config. Bare / has no handler (404) on this build.
-    if [ "$CODE_CONFIG" = "200" ] || [ "$CODE_CONFIG" = "302" ] || [ "$CODE_CONFIG" = "401" ]; then
+    # /config answers as soon as the web server is up; the token line is logged later,
+    # once startup finishes. Wait for both, or the token read above can come back empty.
+    if { [ "$CODE_CONFIG" = "200" ] || [ "$CODE_CONFIG" = "302" ] || [ "$CODE_CONFIG" = "401" ]; } \
+        && [ -n "$TOKEN" ]; then
         break
     fi
     sleep 1
@@ -190,7 +194,15 @@ PY
     echo "streamers API:"
     echo "$STREAMERS"
 else
-    echo "console token not found in startup log; setup page may still be open at http://127.0.0.1:${PORT}/"
+    # Without the token the console at /config only answers 401, so there is nothing to
+    # look at: say so and stop here instead of holding an instance nobody can enter.
+    echo "console token line did not appear in the startup log within ${TIMEOUT}s;" \
+        "the console at http://127.0.0.1:${PORT}/config cannot be entered without it" >&2
+    if [ "$HOLD" -gt 0 ]; then
+        echo "not holding: the instance would not be reachable" >&2
+    fi
+    tail -n 40 "$LOG" >&2
+    exit 1
 fi
 
 echo "limit: no synthetic streamer source; adding a streamer looks up the live platform and needs the network."
@@ -198,7 +210,7 @@ echo "reachable without a streamer: setup, templates, connection pages."
 
 # optional hold: leave the instance answering for DEMO_HOLD seconds, then stop as usual
 if [ "$HOLD" -gt 0 ]; then
-    echo "holding for ${HOLD}s at http://127.0.0.1:${PORT}/ (Ctrl-C stops early)"
+    echo "holding for ${HOLD}s at http://127.0.0.1:${PORT}/config?token=$TOKEN (Ctrl-C stops early)"
     trap 'exit 130' INT
     trap 'exit 143' TERM
     HOLD_DEADLINE=$((SECONDS + HOLD))
