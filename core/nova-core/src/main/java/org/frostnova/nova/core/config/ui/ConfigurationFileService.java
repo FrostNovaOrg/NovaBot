@@ -17,6 +17,7 @@ import org.springframework.boot.env.YamlPropertySourceLoader;
 import org.springframework.context.ApplicationContext;
 import org.springframework.core.env.EnumerablePropertySource;
 import org.springframework.core.env.PropertySource;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.stereotype.Service;
 
@@ -244,14 +245,24 @@ public class ConfigurationFileService {
         Map<String, String> fixes = new LinkedHashMap<>();
         Map<String, String> rawByPath = new LinkedHashMap<>();
 
-        for (Line line : parse()) {
-            if (line.path == null) {
+        List<String> lines = Files.readAllLines(configPath, StandardCharsets.UTF_8);
+        List<Line> parsed = parse(lines);
+        Settled settled = settle(lines, parsed);
+
+        for (Line line : parsed) {
+            if (line.path == null || line.merge || line.hidden) {
                 continue;
             }
 
             if (line.isList()) {
                 // 字符串列表以换行连接，与界面中的多行输入框一一对应；空列表读成空串
                 values.put(line.path, String.join("\n", line.items));
+            } else if (line.fromLoader) {
+                // 手写的跨行、锚点、别名写法：值已换成启动那一路读到的（见 settle），空串也照收——
+                // 不收的话界面退回显示默认值，而程序读到的是空
+                if (line.value != null) {
+                    values.put(line.path, line.value);
+                }
             } else if (line.value != null && !line.value.isEmpty()) {
                 if (isAddressKey(line.path)) {
                     String canonical = InetAddressText.fromFile(line.value);
@@ -266,8 +277,197 @@ public class ConfigurationFileService {
             }
         }
 
+        settled.inherited().forEach(values::putIfAbsent);
         healSlashAddress(fixes, rawByPath);
         return values;
+    }
+
+    /**
+     * 界面不能改的项：键到一句说明（为什么不能改、该去哪儿改）
+     * <p>
+     * 值照样由 {@link #read()} 给，是程序启动读到的那个；这里只答「那一格装不装得下」。
+     * 带换行的值塞不进单行框、别名引到的名单拆不开，摆个能打字的框，一改一存就把手写的写法压扁了。
+     * @return 键到说明；没有这类项时为空
+     * @throws IOException 读取失败时抛出
+     */
+    public synchronized Map<String, String> uiLocked() throws IOException {
+        if (!exists()) {
+            return Map.of();
+        }
+        List<String> lines = Files.readAllLines(configPath, StandardCharsets.UTF_8);
+        return settle(lines, parse(lines)).locked();
+    }
+
+    /** 值里带换行，单行框装不下 */
+    private static final String LOCK_MULTILINE = "这一项在配置文件里写成了多行文字（块标量「|」「>」或跨了行的值），"
+            + "值里带换行，这一格只装得下一行；这里显示的是程序实际读到的值，要改请到配置文件里改。";
+
+    /** 名单里有一项带换行，每行一项的框表达不了 */
+    private static final String LOCK_LIST_ITEM_MULTILINE = "这份名单里有一项在配置文件里写成了多行文字，"
+            + "值里带换行，每行一项的框表达不了；这里显示的是程序实际读到的值，要改请到配置文件里改。";
+
+    /** 别名引到名单或一整块 */
+    private static final String LOCK_ALIAS = "这一项在配置文件里写成了别名（*名字），引到的是一份名单或一整块设置，"
+            + "在界面改会拆掉这层引用；这里显示的是程序实际读到的值，要改请到配置文件里改。";
+
+    /** 名单项与启动读到的对不上号 */
+    private static final String LOCK_LIST_UNREADABLE = "这份名单在配置文件里的写法界面读不准（项里套着子项或别的手写写法），"
+            + "为不写错不在界面改；要改请到配置文件里改。";
+
+    /** 启动那一路也读不出来 */
+    private static final String LOCK_UNREADABLE = "这一项的写法界面读不准，而配置文件按启动那一路也没读出来，"
+            + "为不写错不在界面改；要改请到配置文件里改。";
+
+    /**
+     * {@link #settle} 的结果
+     *
+     * @param inherited 经合并键或整块别名继承、文件里没有自己那一行的子键，值为启动读到的
+     * @param locked    界面不能改的项及说明
+     */
+    private record Settled(Map<String, String> inherited, Map<String, String> locked) {}
+
+    /**
+     * 把手写的跨行、锚点、别名与合并写法换成启动那一路读到的值
+     * <p>
+     * 逐行解析只看得见键那一行：块标量只看到「|」，跨行的值只看到半截，别名只看到「*w」，
+     * 合并进来的子键根本不在文件里。这几种由 {@link #parse} 标出来（{@link Line#fromLoader}、
+     * {@link Line#loaderItems}、{@link Line#merge}），这里按启动那一路读一遍，把界面值换成它读到的——
+     * 就地改 {@link Line#value} 与 {@link Line#items}，写口据此认「原样送回＝没改」，
+     * 改同一名单里别的项时把跨行那一项按读到的整段写回，启动值不变。
+     * 别的写法不经这里，界面照旧显示文件里的文字（不带引号的 {@code 23:00} 仍是 23:00，不是 1380）。
+     */
+    private Settled settle(List<String> lines, List<Line> parsed) {
+        boolean needed = false;
+        for (Line line : parsed) {
+            if (line.fromLoader || !line.loaderItems.isEmpty() || line.merge) {
+                needed = true;
+                break;
+            }
+        }
+        if (!needed) {
+            return new Settled(Map.of(), Map.of());
+        }
+
+        Map<String, Object> loaded;
+        try {
+            loaded = load(String.join("\n", lines) + "\n");
+        } catch (IOException e) {
+            loaded = null;
+        }
+
+        Map<String, String> locked = new LinkedHashMap<>();
+        Set<String> paths = new LinkedHashSet<>();
+        Set<String> inheriting = new LinkedHashSet<>();
+        for (Line line : parsed) {
+            if (line.path == null) {
+                continue;
+            }
+            paths.add(line.path);
+            if (line.merge) {
+                int dot = line.path.lastIndexOf('.');
+                if (dot > 0) {
+                    inheriting.add(line.path.substring(0, dot));
+                }
+                continue;
+            }
+            if (line.fromLoader) {
+                if (bodyOf(line.rawValue).startsWith("*")) {
+                    inheriting.add(line.path);
+                }
+                if (loaded == null) {
+                    locked.put(line.path, LOCK_UNREADABLE);
+                    continue;
+                }
+                Object value = loaded.get(line.path);
+                if (value == null) {
+                    // 引到的是一整块：值在子键上，这一项自己没有值可显示
+                    line.hidden = true;
+                    line.value = null;
+                    locked.put(line.path, LOCK_ALIAS);
+                } else if (value instanceof List<?> list) {
+                    line.value = joinLoaded(list);
+                    locked.put(line.path, LOCK_ALIAS);
+                } else {
+                    line.value = String.valueOf(value);
+                    if (hasLineBreak(line.value)) {
+                        locked.put(line.path, LOCK_MULTILINE);
+                    }
+                }
+            }
+            if (!line.loaderItems.isEmpty() && line.isList()) {
+                Object value = loaded == null ? null : loaded.get(line.path);
+                if (!(value instanceof List<?> list) || list.size() != line.items.size()) {
+                    locked.put(line.path, loaded == null ? LOCK_UNREADABLE : LOCK_LIST_UNREADABLE);
+                    continue;
+                }
+                for (int index : line.loaderItems) {
+                    String item = String.valueOf(list.get(index));
+                    line.items.set(index, item);
+                    if (hasLineBreak(item)) {
+                        locked.put(line.path, LOCK_LIST_ITEM_MULTILINE);
+                    }
+                }
+            }
+        }
+
+        Map<String, String> inherited = new LinkedHashMap<>();
+        if (loaded != null) {
+            for (Map.Entry<String, Object> entry : loaded.entrySet()) {
+                String key = entry.getKey();
+                if (key.contains("[") || paths.contains(key) || !underAny(key, inheriting)) {
+                    continue;
+                }
+                Object value = entry.getValue();
+                if (value instanceof List<?> list) {
+                    inherited.put(key, joinLoaded(list));
+                    if (list.stream().anyMatch(item -> hasLineBreak(String.valueOf(item)))) {
+                        locked.put(key, LOCK_LIST_ITEM_MULTILINE);
+                    }
+                } else {
+                    inherited.put(key, String.valueOf(value));
+                    if (hasLineBreak(String.valueOf(value))) {
+                        locked.put(key, LOCK_MULTILINE);
+                    }
+                }
+            }
+        }
+        return new Settled(inherited, locked);
+    }
+
+    private static boolean underAny(String key, Set<String> prefixes) {
+        for (String prefix : prefixes) {
+            if (key.startsWith(prefix + ".")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String joinLoaded(List<?> list) {
+        List<String> items = new ArrayList<>();
+        for (Object item : list) {
+            items.add(String.valueOf(item));
+        }
+        return String.join("\n", items);
+    }
+
+    private static boolean hasLineBreak(String value) {
+        return value.indexOf('\n') >= 0 || value.indexOf('\r') >= 0;
+    }
+
+    /**
+     * 键行冒号后的原文去掉打头的锚点、标签（{@code &名}、{@code !标签}）之后剩下的那段
+     */
+    private static String bodyOf(String value) {
+        String rest = value.strip();
+        while (!rest.isEmpty() && (rest.charAt(0) == '&' || rest.charAt(0) == '!')) {
+            int end = 0;
+            while (end < rest.length() && !Character.isWhitespace(rest.charAt(end))) {
+                end++;
+            }
+            rest = rest.substring(end).strip();
+        }
+        return rest;
     }
 
     /**
@@ -294,8 +494,35 @@ public class ConfigurationFileService {
         } catch (RuntimeException e) {
             throw new IOException("按启动时那一路读不下配置文件: " + e.getMessage(), e);
         }
+        Map<String, Object> values = flatten(documents);
+        return values == null ? Map.of() : values;
+    }
+
+    /**
+     * 按 {@link #readAsLoaded()} 那一路读一段还没落盘的文字
+     * <p>
+     * 写口落盘前拿它比「改前、改后启动各读到什么」，设置页拿它把手写写法换成读到的值。
+     * @param text 整份配置文字
+     * @return 键到值；文件分了几段时为 null（各段怎么叠比不准）
+     * @throws IOException 加载器解析不了时抛出
+     */
+    private static Map<String, Object> load(String text) throws IOException {
+        List<PropertySource<?>> documents;
+        try {
+            documents = new YamlPropertySourceLoader().load("application.yml",
+                    new ByteArrayResource(text.getBytes(StandardCharsets.UTF_8)));
+        } catch (RuntimeException e) {
+            throw new IOException("按启动时那一路读不下配置文件: " + e.getMessage(), e);
+        }
+        return flatten(documents);
+    }
+
+    /**
+     * 字符串名单按下标收成一个 {@link List}；不是恰好一段时为 null
+     */
+    private static Map<String, Object> flatten(List<PropertySource<?>> documents) {
         if (documents.size() != 1 || !(documents.get(0) instanceof EnumerablePropertySource<?> document)) {
-            return Map.of();
+            return null;
         }
 
         Map<String, Object> values = new LinkedHashMap<>();
@@ -623,7 +850,10 @@ public class ConfigurationFileService {
         createIfAbsent();
 
         List<String> lines = Files.readAllLines(configPath, StandardCharsets.UTF_8);
-        List<Line> parsed = parse();
+        List<String> original = List.copyOf(lines);
+        List<Line> parsed = parse(lines);
+        // 手写写法换成启动读到的值：原样送回才认得出是没改，改名单里别的项时跨行那一项按读到的整段写回
+        Map<String, String> locked = settle(lines, parsed).locked();
 
         Map<String, Line> index = new LinkedHashMap<>();
         for (Line line : parsed) {
@@ -676,6 +906,12 @@ public class ConfigurationFileService {
             }
 
             if (line.isList()) {
+                // 名单项与启动读到的对不上号（项里套着子项、有一项带换行）：整块重写会把那几项写成别的，
+                // 原样送回照旧不动，真改了整批拒存
+                String reason = locked.get(change.getKey());
+                if (reason != null && !change.getValue().equals(String.join("\n", line.items))) {
+                    throw new IOException("配置项 " + change.getKey() + " " + unsavedReason(reason));
+                }
                 if (replaceList(lines, line, change.getValue())) {
                     changed.add(change.getKey());
                 }
@@ -693,6 +929,17 @@ public class ConfigurationFileService {
             // 免得重新渲染换一种引号写法、把手写的原样冲掉还记成一次改动
             if (line.quoted && change.getValue().equals(line.value)) {
                 continue;
+            }
+
+            // 手写的跨行、锚点、别名写法：界面上是启动读到的值，原样送回就是没改，锚点、续行一个字不动
+            if (line.fromLoader && change.getValue().equals(line.value)) {
+                continue;
+            }
+
+            // 别名引到的是一整块：值在引来的子键上，填值会把它们一起去掉
+            if (line.hidden) {
+                throw new IOException("配置项 " + change.getKey()
+                        + " 在配置文件里是引用别处一整块的别名, 填值会去掉引来的子项, 本批全部未保存, 请先在配置文件里改写这一项");
             }
 
             // 键行带着续行的（跨行的值、块标量）连续行一起换掉：只换键那一行的话，续行并进新值。
@@ -726,6 +973,7 @@ public class ConfigurationFileService {
         }
 
         if (!changed.isEmpty()) {
+            checkAsLoaded(original, lines, changed, changes, index);
             if (keepBackup) {
                 backup();
             }
@@ -734,6 +982,132 @@ public class ConfigurationFileService {
         }
 
         return List.copyOf(changed);
+    }
+
+    private static String unsavedReason(String reason) {
+        return "界面改不了, 本批全部未保存: " + reason;
+    }
+
+    /**
+     * 落盘前按启动那一路比一遍改前、改后：文件读得通、没改的项启动值一个不变、改的项读到的就是界面那个值
+     * <p>
+     * 逐行改写认不全手写写法：锚点被别处的别名引用着，改值去掉锚点、别名悬空，整份文件读不了；
+     * 经合并键继承的一整块，插一个子键进去就把同块别的继承项顶掉了；整块别名底下插不进子键。
+     * 这些逐条去认总有漏的，而漏掉的表现是下次启动进安全模式，或者一项设置悄悄变了。
+     * 比的是结果，不是写法：三条有一条不成立就整批拒存。
+     * <p>
+     * 改前本就读不通、或文件分了几段的，比不了，照旧写——那种文件本就得靠界面之外修，挡住写口只会更糟。
+     * @param original 改前的文件行
+     * @param lines    改后的文件行
+     * @param changed  真动了的键
+     * @param changes  送上来的键值
+     * @param index    改前各键所在行，报锚点用
+     * @throws IOException 三条有一条不成立时抛出，文件未动
+     */
+    private void checkAsLoaded(List<String> original, List<String> lines, Set<String> changed,
+                               Map<String, String> changes, Map<String, Line> index) throws IOException {
+        Map<String, Object> before;
+        try {
+            before = load(String.join("\n", original) + "\n");
+        } catch (IOException e) {
+            return;
+        }
+        if (before == null) {
+            return;
+        }
+
+        Map<String, Object> after;
+        try {
+            after = load(String.join("\n", lines) + "\n");
+        } catch (IOException e) {
+            String anchors = referencedAnchors(original, changed, index);
+            throw new IOException("配置项 " + String.join(", ", changed) + " 改完后配置文件按启动那一路读不通"
+                    + (anchors.isEmpty() ? "（多半是改到了别名、合并键这类手写写法）" : "（" + anchors + "）")
+                    + ", 本批全部未保存, 请到配置文件里改");
+        }
+        if (after == null) {
+            return;
+        }
+
+        Set<String> keys = new LinkedHashSet<>(before.keySet());
+        keys.addAll(after.keySet());
+        List<String> dragged = new ArrayList<>();
+        for (String key : keys) {
+            if (!relatedToAny(key, changed) && !java.util.Objects.deepEquals(before.get(key), after.get(key))) {
+                dragged.add(key);
+            }
+        }
+        if (!dragged.isEmpty()) {
+            throw new IOException("保存配置项 " + String.join(", ", changed) + " 会连带改掉 " + String.join(", ", dragged)
+                    + " 启动时读到的值（它们在配置文件里是跨行、锚点、别名或合并键这类手写写法）, 本批全部未保存, 请到配置文件里改");
+        }
+
+        List<String> off = new ArrayList<>();
+        for (String key : changed) {
+            String value = changes.get(key);
+            if (value == null || (blankMeansAbsent.contains(key) && value.isBlank())) {
+                continue;
+            }
+            Object actual = after.get(key);
+            if (!java.util.Objects.deepEquals(expectedAsLoaded(value, actual instanceof List<?>), actual)) {
+                off.add(key);
+            }
+        }
+        if (!off.isEmpty()) {
+            throw new IOException("配置项 " + String.join(", ", off)
+                    + " 按界面的值写回后程序启动读到的不是这个值（多半是经合并键继承或别名引用的写法）, 本批全部未保存, 请到配置文件里改");
+        }
+    }
+
+    /**
+     * 一个键与这批改动有没有牵连：就是它、在它底下（子键、名单项），或是它的上级块
+     */
+    private static boolean relatedToAny(String key, Set<String> changed) {
+        for (String path : changed) {
+            if (key.equals(path) || key.startsWith(path + ".") || key.startsWith(path + "[")
+                    || path.startsWith(key + ".")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 一个值照写口的写法（{@link #render}，名单每项一行）写出去，启动那一路读成什么
+     */
+    private Object expectedAsLoaded(String value, boolean asList) throws IOException {
+        StringBuilder text = new StringBuilder("x:");
+        if (asList) {
+            for (String item : splitItems(value)) {
+                text.append("\n  - ").append(render(item));
+            }
+        } else {
+            text.append(' ').append(render(value));
+        }
+        Map<String, Object> loaded = load(text.append('\n').toString());
+        return loaded == null ? null : loaded.get("x");
+    }
+
+    /**
+     * 这批改动的键行上有哪些锚点被文件别处的别名引用着，写成一句话；没有时为空串
+     */
+    private static String referencedAnchors(List<String> original, Set<String> changed, Map<String, Line> index) {
+        String text = String.join("\n", original);
+        List<String> found = new ArrayList<>();
+        for (String key : changed) {
+            Line line = index.get(key);
+            if (line == null || line.rawValue == null) {
+                continue;
+            }
+            for (String token : line.rawValue.strip().split("\\s+")) {
+                if (token.length() > 1 && token.charAt(0) == '&'
+                        && Pattern.compile("\\*" + Pattern.quote(token.substring(1)) + "(?![^\\s,\\]}])").matcher(text).find()) {
+                    found.add("配置项 " + key + " 上的锚点 " + token + " 被文件别处的 *" + token.substring(1)
+                            + " 引用着, 在界面改值会去掉这个锚点");
+                }
+            }
+        }
+        return String.join("；", found);
     }
 
     /**
@@ -1755,6 +2129,8 @@ public class ConfigurationFileService {
         // 正在收块名单项的键：键行上没有值，其后的「- 项」都归它。夹在当中的注释、空行不打断——
         // 启动那一路照样把它们后面的项收进同一份名单；遇上不是名单项的行才收口
         Line collecting = null;
+        // 上一个收进名单的项：底下更深的行是它的续行，这一项的值要按启动那一路读（见 settle）
+        Line itemOwner = null;
 
         for (int i = 0; i < lines.size(); i++) {
             String raw = lines.get(i);
@@ -1768,10 +2144,14 @@ public class ConfigurationFileService {
 
             if (listIndent >= 0) {
                 if (indent > listIndent) {
+                    if (itemOwner != null) {
+                        itemOwner.loaderItems.add(itemOwner.items.size() - 1);
+                    }
                     continue;
                 }
                 listIndent = -1;
             }
+            itemOwner = null;
 
             if (stripped.startsWith("-")) {
                 listIndent = indent;
@@ -1786,6 +2166,10 @@ public class ConfigurationFileService {
                     String bare = (comment < 0 ? item : item.substring(0, comment)).strip();
                     collecting.items.add(unquote(bare));
                     collecting.listEnd = i;
+                    itemOwner = collecting;
+                    if (needsLoader(bare)) {
+                        collecting.loaderItems.add(collecting.items.size() - 1);
+                    }
                 } else {
                     collecting = null;
                 }
@@ -1814,11 +2198,28 @@ public class ConfigurationFileService {
             line.path = String.join(".", stack);
             line.value = unquote(value);
             line.rawValue = value;
-            if (hasNoValue(value)) {
-                collecting = line;
-            }
+            line.merge = key.equals("<<");
             line.quoted = value.length() >= 2 && (value.charAt(0) == '"' || value.charAt(0) == '\'')
                     && value.charAt(value.length() - 1) == value.charAt(0);
+            if (hasNoValue(value)) {
+                if (holdsChildren(lines, line)) {
+                    collecting = line;
+                } else {
+                    // 值写在下一行（键行空着或只有锚点、标签）：底下是续行文字，不是子项
+                    int end = continuationEnd(lines, i, indent);
+                    line.fromLoader = end > i || !value.isEmpty();
+                    i = end;
+                    if (!line.fromLoader) {
+                        collecting = line;
+                    }
+                }
+            } else if (!value.startsWith("[") && !value.startsWith("{")) {
+                // 键行上有值的标量：底下更深的行都是它的续行（跨行的值、块标量内容），
+                // 里面像「词: 」「- 项」的不是键、不是名单项，整段跳过
+                int end = continuationEnd(lines, i, indent);
+                line.fromLoader = end > i || needsLoader(value);
+                i = end;
+            }
 
             // 行内序列（key: []、key: [a, b]）：列表整个写在键这一行上，也按字符串列表收下
             List<String> flowItems = flowSequenceItems(value);
@@ -1849,6 +2250,46 @@ public class ConfigurationFileService {
         }
 
         return result;
+    }
+
+    /**
+     * 键行（或名单项）之后更深缩进的连续行到哪一行为止（含）；一行也没有时就是键行自己
+     * <p>
+     * 夹在当中的空行随块走，块尾的空行不算；更深的 {@code #} 行在块标量里是内容，一样算进来。
+     * @param lines 文件行
+     * @param keyIndex 键行下标
+     * @param keyIndent 键行缩进
+     * @return 最后一行续行的下标
+     */
+    private int continuationEnd(List<String> lines, int keyIndex, int keyIndent) {
+        int end = keyIndex;
+        for (int k = keyIndex + 1; k < lines.size(); k++) {
+            String raw = lines.get(k);
+            if (raw.isBlank()) {
+                continue;
+            }
+            if (indentOf(raw) <= keyIndent) {
+                break;
+            }
+            end = k;
+        }
+        return end;
+    }
+
+    /**
+     * 一段值原文（键行冒号后、或名单项短横后，已去行尾注释）逐行读不准、得按启动那一路读：
+     * 带锚点或标签、是别名、是块标量，或引号在这一行上没闭合（跨了行）
+     */
+    private static boolean needsLoader(String value) {
+        String stripped = value.strip();
+        String body = bodyOf(stripped);
+        if (!body.equals(stripped) || body.startsWith("*") || body.startsWith("|") || body.startsWith(">")) {
+            return true;
+        }
+        if (!body.isEmpty() && (body.charAt(0) == '"' || body.charAt(0) == '\'')) {
+            return body.length() < 2 || body.charAt(body.length() - 1) != body.charAt(0);
+        }
+        return false;
     }
 
     /**
@@ -1916,6 +2357,27 @@ public class ConfigurationFileService {
          * 为 true：保存这一项会被整批拒绝，绝不留下孤行写坏文件
          */
         private boolean flowUnreadable;
+
+        /**
+         * 键这一行看不全这一项的值（跨行、块标量、锚点、标签、别名）：界面值按启动那一路读，
+         * 由 {@link #settle} 换进 {@link #value}
+         */
+        private boolean fromLoader;
+
+        /**
+         * 名单里逐行读不准的那几项的下标（跨了行、带锚点或标签、是别名、块标量），由 {@link #settle} 换成启动读到的
+         */
+        private final Set<Integer> loaderItems = new java.util.TreeSet<>();
+
+        /**
+         * 这一项是别名、引到的是一整块：它自己没有值，界面不显示、写口不给填值
+         */
+        private boolean hidden;
+
+        /**
+         * 这一行是合并键 {@code <<}：不是配置项，它的上级块从别处继承子键
+         */
+        private boolean merge;
 
         /**
          * 判断该键是否为列表

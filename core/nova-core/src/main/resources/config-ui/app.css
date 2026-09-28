@@ -263,6 +263,8 @@ html.nobar #main{padding-bottom:20px}
 .field input:focus,.field textarea:focus{outline:none;border-color:var(--accent)}
 .field.changed{background:var(--soft)}
 .readonly{color:var(--dim);font-size:13.5px;padding:6px 0;font-style:italic}
+/* 手写成界面改不了的项：值原样摆出，换行照留、长串折行 */
+.readonly.lockedval{color:var(--text);font-style:normal;font-family:var(--mono);white-space:pre-wrap;overflow-wrap:anywhere}
 
 /* ---------- 设置页：搜索条、组目录、行内记号 ---------- */
 .hide{display:none !important}
