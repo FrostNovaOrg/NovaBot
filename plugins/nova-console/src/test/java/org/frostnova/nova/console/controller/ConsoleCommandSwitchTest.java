@@ -29,12 +29,14 @@ import org.frostnova.nova.report.painter.BilibiliDataQueryPainter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.ObjectProvider;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Parameter;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -87,9 +89,15 @@ class ConsoleCommandSwitchTest {
 
     private List<NovaCommand> commands = new ArrayList<>();
 
+    /** 命令开关落盘的 state.json 放这里，不落在工作目录 */
+    @TempDir
+    Path dataDir;
+
     @BeforeEach
     void setUp() {
-        NovaStateStore store = new NovaStateStore(new NovaCoreProperties());
+        NovaCoreProperties storeProperties = new NovaCoreProperties();
+        storeProperties.getLive().setLiveDataPath(dataDir.resolve("data.json").toString());
+        NovaStateStore store = new NovaStateStore(storeProperties);
         settings = new CommandSettingsService(store);
 
         liveDataService = mock(LiveDataService.class);

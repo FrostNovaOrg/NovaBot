@@ -21,6 +21,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 import org.springframework.boot.info.BuildProperties;
 import org.springframework.core.io.DefaultResourceLoader;
@@ -32,6 +33,7 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
@@ -74,9 +76,10 @@ class BilibiliRankingLongImageTest {
     private static final int WIDTH = 760;
 
     /**
-     * 样张落盘处：产品树根下的 scratch/，不进仓
+     * 样张落盘处，每个测试一份临时目录
      */
-    private static final File OUT_DIR = new File("../../scratch");
+    @TempDir
+    Path outDir;
 
     private NovaCommonPainterFactory factory;
 
@@ -257,8 +260,7 @@ class BilibiliRankingLongImageTest {
      */
     private void dump(String name, BufferedImage image) {
         try {
-            OUT_DIR.mkdirs();
-            File file = new File(OUT_DIR, name + ".png");
+            File file = outDir.resolve(name + ".png").toFile();
             ImageIO.write(image, "png", file);
             System.out.println("样张 " + file.getAbsolutePath()
                     + " 宽" + image.getWidth() + " 高" + image.getHeight() + " 字节" + file.length());
