@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Start NovaBot from dist/build in a throwaway directory, anonymous, 127.0.0.1:7827.
 # Prints the one-shot console token, probes HTTP, then stops the process it started.
+# Set DEMO_HOLD=<seconds> (default 0) to leave the instance answering for that many
+# seconds after the probe before the usual stop, e.g. to screenshot the console.
+# Ctrl-C or TERM during the hold stops it early and cleans up as usual.
 #
 # Adding a streamer goes through the live platform lookup, which needs the network.
 # This script does not add a synthetic streamer source; the setup / template / connection
@@ -12,6 +15,7 @@ OUT="${1:-$ROOT/dist/build}"
 PORT="${DEMO_PORT:-7827}"
 TIMEOUT="${DEMO_TIMEOUT:-90}"
 KEEP="${DEMO_KEEP:-0}"
+HOLD="${DEMO_HOLD:-0}"
 
 pick_java() {
     local brew_java="/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home"
@@ -191,6 +195,21 @@ fi
 
 echo "limit: no synthetic streamer source; adding a streamer looks up the live platform and needs the network."
 echo "reachable without a streamer: setup, templates, connection pages."
+
+# optional hold: leave the instance answering for DEMO_HOLD seconds, then stop as usual
+if [ "$HOLD" -gt 0 ]; then
+    echo "holding for ${HOLD}s at http://127.0.0.1:${PORT}/ (Ctrl-C stops early)"
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    HOLD_DEADLINE=$((SECONDS + HOLD))
+    while [ "$SECONDS" -lt "$HOLD_DEADLINE" ]; do
+        if ! kill -0 "$PID" 2>/dev/null; then
+            echo "process exited on its own during the hold" >&2
+            break
+        fi
+        sleep 1
+    done
+fi
 
 # stop the process we started; trap also runs cleanup
 if [ -n "$PID" ]; then
