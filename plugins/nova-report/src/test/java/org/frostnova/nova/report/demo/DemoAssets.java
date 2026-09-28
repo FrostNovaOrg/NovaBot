@@ -9,6 +9,7 @@ import org.frostnova.nova.bilibili.model.GuardMedal;
 import org.frostnova.nova.bilibili.model.GuardMember;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.model.LiveGap;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
 import org.frostnova.nova.core.model.TextWithStyle;
 import org.frostnova.nova.core.service.DefaultLiveDataService;
@@ -154,6 +155,8 @@ public final class DemoAssets {
     static FontUtil bundledFonts() {
         NovaCoreProperties properties = new NovaCoreProperties();
         properties.getPaint().getFonts().add("内置");
+        // 表情字体「内置表情」也进表：缺了它，昵称与弹幕里的表情画成豆腐块
+        properties.getPaint().getFonts().add("内置表情");
         FontUtil fonts = new FontUtil(new DefaultResourceLoader(), properties);
         fonts.init();
         return fonts;
@@ -184,6 +187,8 @@ public final class DemoAssets {
 
         NovaCoreProperties coreProperties = new NovaCoreProperties();
         coreProperties.getPaint().getFonts().add("内置");
+        // 同 bundledFonts()：表情字体进表，表情才画得出来
+        coreProperties.getPaint().getFonts().add("内置表情");
         String version = projectVersion(repoRoot());
         Properties buildInfo = new Properties();
         buildInfo.setProperty("version", version);
@@ -432,6 +437,13 @@ public final class DemoAssets {
         long end = START_MILLIS + DURATION_MILLIS;
         data.setLiveStartTime(platform, STREAMER_UID, START_MILLIS);
         data.setLiveEndTime(platform, STREAMER_UID, end);
+
+        // 采集缺口两个成因各留一段：停机（维护）与本房断线（断流）是两格账，各记各的。
+        // 一格里不记第二段——每记新的一段都会先清掉 30 天前的旧段，而演示场次在 2024 年，
+        // 再记也留不下来。这样报告上「采集缺口」那句话两个成因的分栏都看得到
+        data.recordDowntime(START_MILLIS + 30 * 60_000L, START_MILLIS + 32 * 60_000L, LiveGap.Reason.MAINTENANCE);
+        data.recordRoomOutage(platform, STREAMER_UID, START_MILLIS + 70 * 60_000L,
+                START_MILLIS + 71 * 60_000L + 20_000L);
 
         data.incrementLiveMetric(platform, STREAMER_UID, BilibiliLiveMetric.DANMU_COUNT, 1_086);
         data.incrementLiveMetric(platform, STREAMER_UID, BilibiliLiveMetric.GIFT_VALUE, 214.6);
