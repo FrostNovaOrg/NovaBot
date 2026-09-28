@@ -8,22 +8,12 @@ import org.frostnova.nova.bilibili.event.live.BilibiliPaidGiftEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliRandomGiftEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliSuperChatEvent;
 import org.frostnova.nova.bilibili.enums.GuardOperateType;
-import org.frostnova.nova.bilibili.handler.BilibiliOfflineRewardDigestPushHandler;
-import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
-import org.frostnova.nova.core.enums.PushTargetType;
-import org.frostnova.nova.core.event.NovaExternalBaseEvent;
 import org.frostnova.nova.core.model.GiftInfo;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
-import org.frostnova.nova.core.model.Message;
-import org.frostnova.nova.core.model.PushMessage;
-import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.model.UserInfo;
-import org.frostnova.nova.core.sender.NovaMessageSender;
-import org.frostnova.nova.core.service.RevenueVisibilityService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.springframework.context.ApplicationEvent;
 import org.springframework.context.ApplicationEventPublisher;
 
@@ -37,10 +27,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -92,10 +79,12 @@ class BilibiliOfflineRewardDigestCollectorTest {
         clock.advance(Duration.ofSeconds(2));
         collector.sweep();
 
+        // 播报处理器已搬进报告插件，本模块够不着它；这里验发布的事件把人与等级带全，
+        // 「图与文字里逐人写清」由报告插件那一侧的处理器与画图测试盯着
         assertEquals(1, digests().size(), "一阵只播一条");
-        String content = render(digests().get(0));
-        assertTrue(content.contains("张三"), "要说清是谁: " + content);
-        assertTrue(content.contains("舰长"), "要说清上了什么: " + content);
+        BilibiliOfflineRewardDigestEvent.Contribution person = onlyPerson();
+        assertEquals("张三", person.getUname(), "要说清是谁");
+        assertEquals(3, person.getGuardLevel(), "要说清上了什么: 舰长");
     }
 
     @Test
@@ -374,36 +363,5 @@ class BilibiliOfflineRewardDigestCollectorTest {
         BilibiliOfflineRewardDigestEvent digest = digests().get(0);
         assertEquals(1, digest.getContributions().size(), "该是一位够格的人");
         return digest.getContributions().get(0);
-    }
-
-    /**
-     * 把汇总事件交给人的播报处理器，取出实际发出的消息
-     */
-    private String render(BilibiliOfflineRewardDigestEvent digest) {
-        BilibiliApiUtil api = mock(BilibiliApiUtil.class);
-        when(api.getUpInfoByUid(anyLong())).thenThrow(new RuntimeException("接口不可用"));
-        NovaMessageSender sender = mock(NovaMessageSender.class);
-        RevenueVisibilityService revenueVisibility = mock(RevenueVisibilityService.class);
-        when(revenueVisibility.isVisible(anyString(), org.mockito.ArgumentMatchers.any(), anyLong())).thenReturn(true);
-
-        BilibiliOfflineRewardDigestPushHandler handler =
-                new BilibiliOfflineRewardDigestPushHandler(api, sender, revenueVisibility);
-        handler.handle((NovaExternalBaseEvent) digest, pushMessage(handler));
-
-        ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
-        verify(sender).send(captor.capture());
-        return captor.getValue().getContent();
-    }
-
-    private PushMessage pushMessage(BilibiliOfflineRewardDigestPushHandler handler) {
-        PushTarget target = new PushTarget();
-        target.setPlatform("qq-onebot");
-        target.setType(PushTargetType.GROUP);
-        target.setNum(30003L);
-
-        PushMessage message = new PushMessage();
-        message.setTarget(target);
-        message.setParamsJsonObject(handler.getDefaultParams());
-        return message;
     }
 }

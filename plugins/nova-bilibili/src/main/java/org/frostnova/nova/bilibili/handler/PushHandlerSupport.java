@@ -48,12 +48,15 @@ public final class PushHandlerSupport {
      * 会渲染出「……，本场直播时长 」这样的悬空半句。此处以中英文标点与换行为界
      * 定位占位符所在分句，随分句一并移除其前导分隔符（分句位于句首时移除其后继分隔符）。
      * {next} 是分条边界，分句不会跨越它；移除后变为空白的分条会被整条去掉。
+     * <p>
+     * 包内可见改公共：打赏播报处理器搬进报告插件后仍要走这一替换，
+     * 跨模块够不着包内的它；替换规则只有这一份，不另抄
      * @param template 消息模板
      * @param placeholder 占位符
      * @param value 占位符取值
      * @return 处理后的消息内容
      */
-    static String replaceOrDropClause(String template, String placeholder, String value) {
+    public static String replaceOrDropClause(String template, String placeholder, String value) {
         if (StringUtil.isNotBlank(value)) {
             return template.replace(placeholder, value);
         }
