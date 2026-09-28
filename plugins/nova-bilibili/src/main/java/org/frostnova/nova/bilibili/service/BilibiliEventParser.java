@@ -423,7 +423,8 @@ public class BilibiliEventParser {
      * 见过、不处理的直播间消息类型。
      * <p>
      * 已知＝取用 ∪ 见过 ∪ 派生不计收入：取用是 {@link #parsers} 里会解析成事件的 cmd；见过是 2026-09-16
-     * 真连接取表里出现过、本产品不取用的 cmd，含对战、榜单、连麦、抽奖、互动聚合、购物引导、界面提示等类；
+     * 真连接取表与 2026-09-28 连接日志里出现过、本产品不取用的 cmd，含对战、榜单、连麦、抽奖、
+     * 互动聚合、购物引导、界面提示等类；
      * 派生不计收入见 {@link #DERIVED_NOT_REVENUE_CMDS}。
      * 命中本表的消息不进 {@link BilibiliRiskMetrics.Kind#UNKNOWN_CMD}、不标解析降级，返回空事件。
      * <p>
@@ -502,10 +503,22 @@ public class BilibiliEventParser {
             "VOICE_JOIN_SWITCH",
             "VOICE_JOIN_SWITCH_V2",
             "WIDGET_WISH_INFO",
-            "WIDGET_WISH_INFO_V2");
+            "WIDGET_WISH_INFO_V2",
+            // 2026-09-28 取表：两台 09-21～09-28 连接日志里出现过的新名
+            "CONFIRM_AUTO_FOLLOW",
+            "DANMU_ACTIVITY_CONFIG",
+            "FULL_SCREEN_SPECIAL_EFFECT",
+            "MESSAGEBOX_USER_GAIN_MEDAL",
+            "PLAY_TICKETS_NOTIFY",
+            "SHOPPING_EXPLAIN_CARD",
+            "TIP_CARD",
+            "USER_INFO_UPDATE",
+            "USER_PANEL_RED_ALARM",
+            "VOICE_CHAT_UPDATE");
 
     /**
-     * 与已计事件重复的收入类消息，登记为已知、不计收入、不记未知；新增须带一句可对账的证据。
+     * 收入口径名里不计收入的消息，登记为已知、不计收入、不记未知：与已计事件重复的副本、界面横幅、
+     * 挂件与进度条一类的展示、全站或账号级推送都在此列。新增须带一句可对账的证据。
      */
     static final Map<String, String> DERIVED_NOT_REVENUE_CMDS = derivedNotRevenueCmds();
 
@@ -523,6 +536,22 @@ public class BilibiliEventParser {
                 "上舰的展示特效：同房同人 0.2 秒内有同价的 GUARD_BUY，send_id 与 USER_TOAST_MSG 的 payflow_id 相同（2026-09 真连接 10/10）。");
         table.put("POPULARITY_RED_POCKET_V2_NEW",
                 "送出红包的预告：与同 lot_id 的 POPULARITY_RED_POCKET_START 同一送出人，price 为 total_price/100（2026-09 真连接 3/3）；这笔钱已由 START 记为送出者支出，不是主播收入。");
+        table.put("SUPER_CHAT_MESSAGE_JPN",
+                "醒目留言的日文翻译副本：17 条全部在同房对上同 id 的 SUPER_CHAT_MESSAGE，金额、送出人与 start_time 全同，晚到不超过 2 秒（2026-09 真连接 17/17）；金额已由正本计入，再计即重复。");
+        table.put("POPULARITY_RED_POCKET_NEW",
+                "送出红包的预告：与同 lot_id 的 POPULARITY_RED_POCKET_START 同一送出人，price 为 total_price/100（2026-09 真连接 23/23），礼物消息里也没有红包（gift_id 13000 的礼物消息 0/23）；这笔钱已由 START 记为送出者支出，不是主播收入。");
+        table.put("GUARD_ACHIEVEMENT_ROOM",
+                "舰队规模到线的庆祝横幅：不带开通人、价格、数量与时长；event_type 1 的 5 条都在一整组 GUARD_BUY／USER_TOAST_MSG 之后 5 秒内到（那笔上舰已计入），event_type 2 的 5 条不跟上舰（2026-09 真连接 10 条）；不是一笔收入。");
+        table.put("GIFT_PANEL_PLAN",
+                "礼物面板页签上架、下架的配置：只有礼物目录价（千分之一元），没有送礼人、数量与实扣，也不绑房间（bind_roomid、bind_ruid 全 0）；与礼物没有对应（2026-09 真连接 194 条里前后 2 分钟内有礼物的 30 条，是巧合量级）；不是一笔收入。");
+        table.put("WIDGET_GIFT_STAR_PROCESS_V2",
+                "礼物星球的点亮进度（共 9 格）：只有 cur_num／total_num 与版本时刻，不带送礼人和金额；每条前后 2 秒内同房都有已计的金瓜子礼物（2026-09 真连接 343/343，把时刻平移 ±60／±300 秒的对照只有 5%～18%）；礼物已由 SEND_GIFT／SEND_GIFT_V2 计入。");
+        table.put("SUPER_CHAT_ENTRANCE",
+                "醒目留言入口的显示开关：只有 status、broadcast_type 与图标跳转，没有金额；同房前后 2 分钟内有醒目留言 0/13（2026-09 真连接）；不是一笔收入。");
+        table.put("GUARD_HONOR_THOUSAND",
+                "全站千舰主播名单的增删推送，每个房间各来一份：只有名单整数，不带开通人和金额；含本产品监听的房间或主播 0/658，多个房间同一分钟收到的内容全同 84/84（2026-09 真连接）；与本房收入无关。");
+        table.put("GIFT_POPUP",
+                "推给登录账号的弹卡：room_id 不是本房，同一分钟多个房间各收一份、内容全同（2026-09 真连接 10/10），不带送礼人和金额；不是本房收入。");
         return Collections.unmodifiableMap(table);
     }
 
