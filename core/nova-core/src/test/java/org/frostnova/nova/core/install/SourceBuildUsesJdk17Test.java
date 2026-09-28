@@ -49,6 +49,9 @@ class SourceBuildUsesJdk17Test {
      */
     private static final String JDK21_DIR = "graalvm-21";
 
+    /** 只装了 JRE 的那个 17 的目录名 */
+    private static final String JRE17_DIR = "java-17-jre-amd64";
+
     /** PATH 上那个 java：按环境变量报主版本，好把这台机器扮成装着 21 或装着 17 */
     private static final String STUB_JAVA = """
             #!/bin/sh
@@ -242,6 +245,59 @@ class SourceBuildUsesJdk17Test {
     }
 
     /**
+     * 抓的用户故障：用户照提示用 NOVABOT_JVM_ROOTS 指了 17 的上层目录，还是没找到时，
+     * 屏上若仍说「在 /usr/lib/jvm 下没找到」，用户会以为设置没生效，跑去错的地方查。
+     */
+    @Test
+    @DisplayName("指定了查找目录仍找不到 17：停下句说出指定的目录")
+    void jdk17MissingAfterInstallNamesTheRootsGiven(@TempDir Path sandbox) throws Exception {
+        writeSandbox(sandbox);
+        writeExecutable(sandbox.resolve("bin").resolve("apt-get"), STUB_APT_GET_NOOP);
+        int exit = runInstall(sandbox, true, "21");
+
+        String output = readLog(sandbox, "out.txt");
+        String roots = sandbox.resolve("jvmroot").toString();
+        String stopLine = null;
+        for (String line : output.split("\n")) {
+            if (line.contains("装好 JDK 17 后仍没找到它")) {
+                stopLine = line;
+            }
+        }
+
+        assertTrue(exit != 0, "装完仍找不到 17 应当停下（退码非 0），实际退码 " + exit + "，输出:\n" + output);
+        assertTrue(stopLine != null, "屏幕上没说出装完仍找不到 17，输出:\n" + output);
+        assertTrue(stopLine.contains(roots),
+                "停下句没说出指定的查找目录 " + roots + "，那一行是:\n" + stopLine);
+        assertFalse(stopLine.contains("/usr/lib/jvm"),
+                "指定了查找目录，停下句却说的是默认目录，那一行是:\n" + stopLine);
+    }
+
+    /**
+     * 抓的用户故障：查找目录里只有一个 JRE 17（没有 javac），若把它当成构建用的 17，
+     * 既不会去装 JDK，构建又会在编译那一步失败。该跳过它、装一把带 javac 的 17。
+     */
+    @Test
+    @DisplayName("查找目录里只有 JRE 17：不拿它构建，另装 JDK 17")
+    void jre17WithoutJavacIsNotUsedForBuilding(@TempDir Path sandbox) throws Exception {
+        writeSandbox(sandbox);
+        Path jre17 = plantJre17(sandbox);
+        int exit = runInstall(sandbox, true, "21");
+
+        String output = readLog(sandbox, "out.txt");
+        String pkg = readLog(sandbox, "pkg.log");
+        String buildEnv = readLog(sandbox, "build-env.txt");
+        Path jdk17 = sandbox.resolve("jvmroot").resolve(JDK17_DIR);
+
+        assertEquals(42, exit, "应一路跑到构建那一步（构建桩在那儿停下），输出:\n" + output);
+        assertTrue(pkg.contains("openjdk-17-jdk-headless"),
+                "只有 JRE 17 时该装一把 JDK 17，包管理器记下的是:\n" + pkg);
+        assertFalse(jre17.toString().equals(value(buildEnv, "java_home")),
+                "构建拿了没有 javac 的 JRE 17，构建记录:\n" + buildEnv);
+        assertEquals(jdk17.toString(), value(buildEnv, "java_home"),
+                "构建该用新装的 JDK 17，构建记录:\n" + buildEnv);
+    }
+
+    /**
      * 抓的用户故障：机器上 17 与 21 并存，查找时不看主版本就会把 21 的目录交给构建。
      * 两把都带 javac，只有问过主版本才分得出。
      */
@@ -305,6 +361,16 @@ class SourceBuildUsesJdk17Test {
         Path bin = Files.createDirectories(sandbox.resolve("jvmroot").resolve(JDK17_DIR).resolve("bin"));
         writeExecutable(bin.resolve("java"), STUB_JAVA17);
         writeExecutable(bin.resolve("javac"), STUB_JAVAC);
+        return bin.getParent();
+    }
+
+    /**
+     * 事先在查找目录里放一个只有 java、没有 javac 的 17，扮成「只装过 JRE 17」。
+     * 目录名排在 JDK17_DIR 前面（jre 的 j 比 openjdk 的 o 小）：javac 检查一旦被删，查找就先撞上它
+     */
+    private static Path plantJre17(Path sandbox) throws IOException {
+        Path bin = Files.createDirectories(sandbox.resolve("jvmroot").resolve(JRE17_DIR).resolve("bin"));
+        writeExecutable(bin.resolve("java"), STUB_JAVA17);
         return bin.getParent();
     }
 
