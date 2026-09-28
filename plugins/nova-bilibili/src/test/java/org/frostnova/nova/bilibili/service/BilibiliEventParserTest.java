@@ -262,7 +262,17 @@ class BilibiliEventParserTest {
                     "VOICE_JOIN_SWITCH",
                     "VOICE_JOIN_SWITCH_V2",
                     "WIDGET_WISH_INFO",
-                    "WIDGET_WISH_INFO_V2");
+                    "WIDGET_WISH_INFO_V2",
+                    "CONFIRM_AUTO_FOLLOW",
+                    "DANMU_ACTIVITY_CONFIG",
+                    "FULL_SCREEN_SPECIAL_EFFECT",
+                    "MESSAGEBOX_USER_GAIN_MEDAL",
+                    "PLAY_TICKETS_NOTIFY",
+                    "SHOPPING_EXPLAIN_CARD",
+                    "TIP_CARD",
+                    "USER_INFO_UPDATE",
+                    "USER_PANEL_RED_ALARM",
+                    "VOICE_CHAT_UPDATE");
 
             try {
                 for (String cmd : seen) {
@@ -436,7 +446,7 @@ class BilibiliEventParserTest {
         }
 
         @Test
-        @DisplayName("派生不计收入：六名不计 UNKNOWN_CMD、空事件不降级；名单与表同、恰六名、键序与名单逐位同")
+        @DisplayName("派生不计收入：十四名不计 UNKNOWN_CMD、空事件不降级；名单与表同、恰十四名、键序与名单逐位同")
         void derivedNotRevenueCmdsSilentAndExact() {
             List<String> reds = new ArrayList<>();
             List<String> ran = new ArrayList<>();
@@ -446,7 +456,15 @@ class BilibiliEventParserTest {
                     "UNIVERSAL_EVENT_GIFT",
                     "UNIVERSAL_EVENT_GIFT_V2",
                     "REVENUE_DISPLAY_EFFECT",
-                    "POPULARITY_RED_POCKET_V2_NEW");
+                    "POPULARITY_RED_POCKET_V2_NEW",
+                    "SUPER_CHAT_MESSAGE_JPN",
+                    "POPULARITY_RED_POCKET_NEW",
+                    "GUARD_ACHIEVEMENT_ROOM",
+                    "GIFT_PANEL_PLAN",
+                    "WIDGET_GIFT_STAR_PROCESS_V2",
+                    "SUPER_CHAT_ENTRANCE",
+                    "GUARD_HONOR_THOUSAND",
+                    "GIFT_POPUP");
 
             try {
                 for (String cmd : derived) {
@@ -490,7 +508,7 @@ class BilibiliEventParserTest {
 
             try {
                 int n = BilibiliEventParser.DERIVED_NOT_REVENUE_CMDS.size();
-                assertEquals(6, n, "派生表须恰 6 名，实际 " + n);
+                assertEquals(14, n, "派生表须恰 14 名，实际 " + n);
             } catch (AssertionError e) {
                 reds.add("④ " + e.getMessage());
             }
