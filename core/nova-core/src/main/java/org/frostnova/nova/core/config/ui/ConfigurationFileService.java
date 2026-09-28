@@ -306,9 +306,15 @@ public class ConfigurationFileService {
     private static final String LOCK_LIST_ITEM_MULTILINE = "这份名单里有一项在配置文件里写成了多行文字，"
             + "值里带换行，每行一项的框表达不了；这里显示的是程序实际读到的值，要改请到配置文件里改。";
 
-    /** 别名引到名单或一整块 */
-    private static final String LOCK_ALIAS = "这一项在配置文件里写成了别名（*名字），引到的是一份名单或一整块设置，"
-            + "在界面改会拆掉这层引用；这里显示的是程序实际读到的值，要改请到配置文件里改。";
+    /**
+     * 别名引到名单或一整块时，界面上的只读说明。
+     * 括号里是配置文件里写的别名；取不到名字时不留括号。
+     */
+    private static String lockAlias(String alias) {
+        String named = alias.isEmpty() ? "别名" : "别名（" + alias + "）";
+        return "这一项在配置文件里写成了" + named + "，引到的是一份名单或一整块设置，"
+                + "在界面改会拆掉这层引用；这里显示的是程序实际读到的值，要改请到配置文件里改。";
+    }
 
     /** 名单项与启动读到的对不上号 */
     private static final String LOCK_LIST_UNREADABLE = "这份名单在配置文件里的写法界面读不准（项里套着子项或别的手写写法），"
@@ -383,10 +389,10 @@ public class ConfigurationFileService {
                     // 引到的是一整块：值在子键上，这一项自己没有值可显示
                     line.hidden = true;
                     line.value = null;
-                    locked.put(line.path, LOCK_ALIAS);
+                    locked.put(line.path, lockAlias(aliasWritten(lines, line)));
                 } else if (value instanceof List<?> list) {
                     line.value = joinLoaded(list);
-                    locked.put(line.path, LOCK_ALIAS);
+                    locked.put(line.path, lockAlias(aliasWritten(lines, line)));
                 } else {
                     line.value = String.valueOf(value);
                     if (hasLineBreak(line.value)) {
@@ -456,7 +462,8 @@ public class ConfigurationFileService {
     }
 
     /**
-     * 键行上写的别名记号（{@code *名字}）；没有时为空串
+     * 一段值原文里的别名记号（{@code *名字}）；没有时为空串。
+     * 键行与写在下一行的值都经这里取，不在这一处决定读哪一行。
      */
     private static String aliasToken(String rawValue) {
         if (rawValue == null) {
@@ -472,6 +479,38 @@ public class ConfigurationFileService {
                 }
                 return token.substring(0, end);
             }
+        }
+        return "";
+    }
+
+    /**
+     * 这一项在配置文件里写的别名记号。键行上有就用键行上的；
+     * 键行没有值、别名写在下一行的，从那一行取。
+     * 哪一行算值，与解析时认「值在下一行」相同：键行空着或只有锚点、标签，
+     * 且底下不是子项（见 {@link #hasNoValue}、{@link #holdsChildren}、{@link #continuationEnd}）。
+     * 取不到时为空串。
+     */
+    private String aliasWritten(List<String> lines, Line line) {
+        String onKey = aliasToken(line.rawValue);
+        if (!onKey.isEmpty()) {
+            return onKey;
+        }
+        if (line.rawValue != null && !hasNoValue(line.rawValue)) {
+            return "";
+        }
+        if (holdsChildren(lines, line)) {
+            return "";
+        }
+        int end = continuationEnd(lines, line.index, line.indent);
+        for (int i = line.index + 1; i <= end; i++) {
+            String raw = lines.get(i);
+            if (raw.isBlank() || raw.strip().startsWith("#")) {
+                continue;
+            }
+            String stripped = raw.strip();
+            int comment = commentIndex(stripped);
+            String value = (comment < 0 ? stripped : stripped.substring(0, comment)).strip();
+            return aliasToken(value);
         }
         return "";
     }
@@ -959,7 +998,7 @@ public class ConfigurationFileService {
 
             // 别名引到的是一整块：值在引来的子键上，填值会把它们一起去掉
             if (line.hidden) {
-                String alias = aliasToken(line.rawValue);
+                String alias = aliasWritten(lines, line);
                 throw new IOException("配置项 " + change.getKey()
                         + " 在配置文件里是引用别处一整块的别名" + (alias.isEmpty() ? "" : " " + alias)
                         + ", 填值会去掉引来的子项, 本批全部未保存, 请先在配置文件里改写这一项");
