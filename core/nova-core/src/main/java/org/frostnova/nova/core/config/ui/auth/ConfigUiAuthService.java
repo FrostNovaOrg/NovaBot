@@ -252,7 +252,8 @@ public class ConfigUiAuthService {
         // 重启前 60～90 秒内刚用过的码还能再登一次——而那枚码正躺在截图、自动填充里。
         // 不落盘：落盘要把这格写在凭据旁边，写坏了没人看得出来，而漏掉它的代价只是要等下一格。
         // 当格被挡下的码照旧报「密码或验证码不正确」、照旧记一次失败（见 checkCredentials）：
-        // 另说「码已用过」等于告诉对方口令是对的。密钥换了、二次验证关了照旧清空这一格。
+        // 另说「码已用过」等于告诉对方口令是对的。二次验证关了照旧清空这一格；
+        // 绑定换了密钥则把它记成核中那一格（见 activateTotp）。
         this.lastUsedTotpStep = TotpGenerator.currentStep(clock.get());
 
         if (isEnabled() && this.totpEnabled && this.totpSecret == null) {
@@ -363,24 +364,33 @@ public class ConfigUiAuthService {
      * 而两者分开落的话，会出现「绑好了却还是不问码」——那是最难被发现的一种失效，
      * 因为它看起来一切正常。
      * <p>
-     * <b>核中的那一格记成用过</b>：先作废旧密钥的已用格，再记下这一格。只作废不记的话，
-     * 绑定时核过的那枚码在它那一格里还能拿去登录一次，而这枚码正躺在截图、
-     * 验证器的输入框与自动填充里。记格只在办成绑定时做——码不对、存盘失败那两趟
-     * 不烧码，用户才在同一格里重试得了。
+     * <b>核中的那一格记成用过，且记在换上新密钥之前。</b>作废旧格与记下这一格合成一步、
+     * 同一把锁里做完，然后才换密钥、拨开关：次序反了就会留一道缝——换上新密钥之后，
+     * 登录那条路一读就用上它（{@code totpSecret} 是 volatile），从换密钥到记格之间
+     * 看得到新密钥的登录还看不到这一格被用过，绑定核过的那枚码就能登进一次，
+     * 而这枚码正躺在截图、验证器的输入框与自动填充里。合成一步是为了不露出中间态：
+     * 拆成「作废旧格」「记下这一格」两次拿锁的话，并发的登录能插在两锁之间
+     * 把这一格自己消费掉、同样拿核过的那枚码登进一次。
+     * <p>
+     * 记格只在办成绑定时做——码不对、存盘失败那两趟不烧码，用户才在同一格里重试得了。
      * <p>
      * 本会话的待绑密钥一并清掉：绑完了它们就都成了没人要的旧码。
-     * @param session 当前会话，可为 null（不经绑定那条路直接落密钥时）
+     * @param session 当前会话。现在只有绑定那条路（{@code ConfigUiAuthController}）调这里，
+     *                传的就是当前会话；不经绑定直接落密钥时可传 null——那种调用没有会话，
+     *                也就没有要清的待绑密钥，密钥照落
      * @param secret Base32 密钥
      * @param verifiedStep 核中那枚码所在的时间步，由 {@link #verifyPending} 交出
      */
     public void activateTotp(ConfigUiSession session, String secret, long verifiedStep) {
+        // 作废旧格、记下核中那一格：合成一步、同一把锁里做完，放在换密钥与拨开关之前
+        synchronized (totpConsumeLock) {
+            lastUsedTotpStep = verifiedStep;
+        }
         this.totpSecret = secret;
         if (session != null) {
             session.clearPendingSecrets();
         }
         this.totpEnabled = true;
-        resetTotpConsume();
-        consumeTotpStep(verifiedStep);
         log.info("配置界面已绑定验证器, 之后登录需要额外输入动态验证码");
     }
 
@@ -953,7 +963,10 @@ public class ConfigUiAuthService {
     }
 
     /**
-     * 密钥换了或二次验证关了，已用过的格作废
+     * 二次验证关了，已用过的格作废
+     * <p>
+     * 绑定换密钥那一步不走这里：它要把已用格记成核中那一格，两件事在一把锁里一步做完
+     * （见 {@link #activateTotp}），拆开拿锁会把中间态露给并发的登录。
      */
     private void resetTotpConsume() {
         synchronized (totpConsumeLock) {
