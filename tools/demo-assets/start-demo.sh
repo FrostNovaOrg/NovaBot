@@ -210,7 +210,7 @@ echo "reachable without a streamer: setup, templates, connection pages."
 
 # optional hold: leave the instance answering for DEMO_HOLD seconds, then stop as usual
 if [ "$HOLD" -gt 0 ]; then
-    echo "holding for ${HOLD}s at http://127.0.0.1:${PORT}/config?token=$TOKEN (Ctrl-C stops early)"
+    echo "holding for ${HOLD}s at http://127.0.0.1:${PORT}/config (Ctrl-C stops early)"
     trap 'exit 130' INT
     trap 'exit 143' TERM
     HOLD_DEADLINE=$((SECONDS + HOLD))
