@@ -338,9 +338,49 @@ class HandWrittenValuesAsLoadedTest {
             throw new AssertionError("给整块别名填值应拒存, 文件不该被改");
         } catch (IOException rejected) {
             assertEquals(text, content(), "拒存时文件一个字节不动");
-            assertTrue(rejected.getMessage().contains("*b"),
+            assertTrue(rejected.getMessage().contains("别名 *b,"),
                     "拒存说明要点出配置文件里写的别名 *b: " + rejected.getMessage());
         }
+    }
+
+    /**
+     * 抓的用户故障：别名写在键的下一行（{@code item:} 换行 {@code *b}），在设置页给它填值被拒存，
+     * 说明里没写出 {@code *b}，使用者在配置文件里对不上是哪个别名。
+     */
+    @Test
+    @DisplayName("🔴 值在下一行的整块别名拒存：说明里点出别名名")
+    void wholeBlockAliasOnNextLineRejectionNamesTheAlias() throws IOException {
+        write("novabot:\n  demo:\n    base: &b\n      color: red\n      size: 2\n"
+                + "    item:\n      *b\n");
+        String text = content();
+        try {
+            service.write(Map.of("novabot.demo.item", "blue"));
+            throw new AssertionError("给整块别名填值应拒存, 文件不该被改");
+        } catch (IOException rejected) {
+            assertEquals(text, content(), "拒存时文件一个字节不动");
+            assertTrue(rejected.getMessage().contains("别名 *b,"),
+                    "拒存说明要点出配置文件里写的别名 *b: " + rejected.getMessage());
+        }
+    }
+
+    /**
+     * 抓的用户故障：设置页上这一项的说明写着「别名（*名字）」，三个字是占位，没换成配置文件里写的别名。
+     */
+    @Test
+    @DisplayName("🔴 只读说明点出配置文件里的别名, 不出现占位")
+    void lockReasonNamesTheAlias() throws IOException {
+        write("novabot:\n  demo:\n    base: &b\n      color: red\n      size: 2\n"
+                + "    item:\n      *b\n");
+        String block = service.uiLocked().get("novabot.demo.item");
+        assertNotNull(block, "整块别名应标成界面不能改");
+        assertTrue(block.contains("（*b）"), "只读说明要点出别名 *b: " + block);
+        assertFalse(block.contains("*名字"), "只读说明不该留下占位: " + block);
+
+        write("novabot:\n  demo:\n    words: &l\n      - a\n      - b\n    copy: *l\n");
+        String list = service.uiLocked().get("novabot.demo.copy");
+        assertNotNull(list, "别名引到的名单应标成界面不能改");
+        assertTrue(list.contains("（*l）"), "只读说明要点出别名 *l: " + list);
+        assertFalse(list.contains("*名字"), "只读说明不该留下占位: " + list);
     }
 
     /**
