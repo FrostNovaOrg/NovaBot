@@ -4,6 +4,8 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.properties.LiveProperties;
 import org.frostnova.nova.core.model.EventStreamToken;
+import org.frostnova.nova.core.lang.BadLineNotice;
+import org.frostnova.nova.core.lang.BadLineNotice.FileState;
 import org.frostnova.nova.core.lang.JsonlFiles;
 import org.frostnova.nova.core.lang.SecureToken;
 import lombok.NonNull;
@@ -62,6 +64,11 @@ public class EventStreamTokenService {
     private final AtomicInteger consecutiveFailures = new AtomicInteger();
 
     private final Path file;
+
+    /**
+     * 坏行的提示：每连一次面板、每核验一次都要读一遍口令表，同一份文件只报第一次，变了再报
+     */
+    private final BadLineNotice badLine = new BadLineNotice(log, "跳过口令表中无法解析的一行");
 
     @Autowired
     public EventStreamTokenService(LiveProperties live) {
@@ -236,6 +243,7 @@ public class EventStreamTokenService {
         }
 
         List<EventStreamToken> result = new ArrayList<>();
+        FileState state = BadLineNotice.stateOf(file);
         try (Stream<String> lines = JsonlFiles.lines(file)) {
             for (String line : (Iterable<String>) lines::iterator) {
                 if (line.isBlank()) {
@@ -249,8 +257,9 @@ public class EventStreamTokenService {
                             json.getLongValue("issuedAt"),
                             json.getLongValue("revokedAt")));
                 } catch (Exception e) {
-                    // 一行坏掉不该让整份口令表读不出来——那会让所有面板一起连不上
-                    log.warn("跳过口令表中无法解析的一行: {}", e.getMessage());
+                    // 一行坏掉不该让整份口令表读不出来——那会让所有面板一起连不上。
+                    // 只记原因不记内容：一行里有口令哈希与签给谁
+                    badLine.skipped(state, e);
                 }
             }
         } catch (IOException | UncheckedIOException e) {
