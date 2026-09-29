@@ -482,7 +482,9 @@ details.adv>summary::-webkit-details-marker{display:none}
 details.adv>summary::before{content:"▸";color:var(--dim);margin-right:8px;display:inline-block}
 details.adv[open]>summary::before{transform:rotate(90deg)}
 details.adv .inner{padding:0 16px 16px}
-.warn{background:var(--warnsoft);border:1px solid var(--warn);border-radius:var(--r-ctl);
+/* 块级提示条。类名不裸叫 warn：warn 在本文件里到处是色调修饰（灯、圆点、行、标），
+   写成一条裸规则会把这些元素也套上提示条的底色与框 */
+.notice{background:var(--warnsoft);border:1px solid var(--warn);border-radius:var(--r-ctl);
   padding:10px 12px;font-size:13.5px;margin-bottom:12px}
 .cat-title{font-size:15px;font-weight:600;margin:26px 0 8px}
 .cat-title:first-of-type{margin-top:8px}
@@ -559,8 +561,8 @@ td.act button:hover{color:var(--err)}
 }
 
 /* ---------- 顶部横条 ---------- */
-/* 修饰名用 b- 前缀：本文件里另有一个块级的 .warn 提示条，
-   两者同名会在同一元素上叠出一半一半的样式，而那种冲突只在改了顺序的那天才显形 */
+/* 修饰名用 b- 前缀：warn、err 这类色调词别处也在当修饰用（灯、圆点、工程日志行），
+   同名会在同一元素上叠出一半一半的样式，而那种冲突只在改了顺序的那天才显形 */
 .banner{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--r-ctl);
   border:1px solid var(--line);font-size:14px;margin-bottom:14px;flex-wrap:wrap}
 .banner.b-warn{border-color:var(--warn);background:var(--warnsoft);color:var(--text)}
