@@ -16,6 +16,7 @@ import org.frostnova.nova.core.service.AtSubscriptionService;
 import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
 import org.frostnova.nova.core.service.NovaStateStore;
+import org.frostnova.nova.core.service.StreamerNames;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -83,11 +84,14 @@ public class RuntimeStateController {
 
     private final LiveDataService liveDataService;
 
+    private final StreamerNames streamerNames;
+
     @Autowired
     public RuntimeStateController(CommandDispatcher dispatcher, CommandSettingsService settings,
                                   AtSubscriptionService subscriptions,
                                   NovaStateStore store, AbstractDataSource dataSource,
-                                  RevenueVisibilityService revenueVisibility, LiveDataService liveDataService) {
+                                  RevenueVisibilityService revenueVisibility, LiveDataService liveDataService,
+                                  StreamerNames streamerNames) {
         this.dispatcher = dispatcher;
         this.settings = settings;
         this.subscriptions = subscriptions;
@@ -95,6 +99,7 @@ public class RuntimeStateController {
         this.dataSource = dataSource;
         this.revenueVisibility = revenueVisibility;
         this.liveDataService = liveDataService;
+        this.streamerNames = streamerNames;
     }
 
     /**
@@ -664,7 +669,7 @@ public class RuntimeStateController {
     private String streamerName(long uid) {
         return dataSource.getAllUsers().stream()
                 .filter(user -> user.getUid() != null && user.getUid() == uid)
-                .map(RuntimeStateController::displayName)
+                .map(this::displayName)
                 .findFirst()
                 .orElse(null);
     }
@@ -674,10 +679,11 @@ public class RuntimeStateController {
      * <p>
      * <b>昵称为空串而非 null。</b>推送配置里只写 uid，昵称要等程序去直播平台查回来；
      * 查回来之前（尤其是刚启动、或直播平台未登录时）它是空串。只判空指针会让界面显示成
-     * 「推送：」后面什么都没有，多位主播还会因为空串相同而合并成一个——退回 uid 至少认得出是谁。
+     * 「推送：」后面什么都没有，多位主播还会因为空串相同而合并成一个。
+     * 查不回来时先退回最近一场归档里的昵称（与主播页一致），连那也没有才退回 uid。
      */
-    private static String displayName(PushUser user) {
-        String uname = user.getUname();
+    private String displayName(PushUser user) {
+        String uname = streamerNames.uname(user);
         return uname == null || uname.isBlank() ? String.valueOf(user.getUid()) : uname;
     }
 
