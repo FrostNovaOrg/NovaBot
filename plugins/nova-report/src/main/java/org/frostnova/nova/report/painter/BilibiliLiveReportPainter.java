@@ -1930,6 +1930,11 @@ public class BilibiliLiveReportPainter {
         FontMetrics baseline = graphics.getFontMetrics();
         int baselineY = barY + (MEDAL_BAR_HEIGHT + baseline.getAscent() - baseline.getDescent()) / 2;
         for (int codePoint : text.codePoints().toArray()) {
+            // 变体选择符不占位也不出墨
+            if (FontUtil.isVariantSelector(codePoint)) {
+                continue;
+            }
+
             String character = new String(Character.toChars(codePoint));
             Font font = fontUtil.findFontForCharacter(codePoint).deriveFont(style, (float) MEDAL_FONT_SIZE);
             graphics.setFont(font);

@@ -112,6 +112,11 @@ final class WordCloudRenderer implements WordCloudLayout.Measurer {
 
         int pen = 0;
         for (int codePoint : codePoints) {
+            // 变体选择符不占位也不出墨：不落笔、不推进笔
+            if (FontUtil.isVariantSelector(codePoint)) {
+                continue;
+            }
+
             Font font = fontFor(codePoint, fontSize);
             String glyph = new String(Character.toChars(codePoint));
 
