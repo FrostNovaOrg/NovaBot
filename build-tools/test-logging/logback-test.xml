@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-    测试专用日志配置：logger 与级别照 core/nova-core/src/main/resources/logback.xml，只是不写文件，全打控制台。
+    测试专用日志配置：logger 与级别照正式的那份 logback.xml，只是不写文件，全打控制台。
 
     🔴 测试不能吃正式配置：从工作树里跑时 LogHomeDefiner 把日志根改写到 ~/.novabot/，
     测试造出来的告警、报错就混进使用者本机那份日志，排障时读到的是假告警。
