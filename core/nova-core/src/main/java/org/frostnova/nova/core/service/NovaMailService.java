@@ -24,6 +24,8 @@ import java.net.UnknownHostException;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * NovaBot 邮件服务
@@ -42,6 +44,18 @@ import java.util.Set;
 @Slf4j
 @Service
 public class NovaMailService {
+    /**
+     * 回话里带的服务器原话最多留这么多字，再长就截掉后面
+     * <p>
+     * 这句会显示在设置页的提示和日志页那一条里，几百字的一整段会把前面那句「拒收了」挤得找不见；
+     * 全文跟着起因链进工程日志，截掉的不会丢。
+     */
+    private static final int SERVER_WORDS_LIMIT = 200;
+
+    /** 服务器回话的一行：三位回码、「-」（后面还有行）或空格，可带「5.7.1」这类扩展状态码 */
+    private static final Pattern REPLY_LINE =
+            Pattern.compile("(\\d{3})[ -](?:(\\d\\.\\d{1,3}\\.\\d{1,3})(?:\\s+|$))?(.*)");
+
     @Value("${spring.mail.username:}")
     private String from;
 
@@ -215,14 +229,18 @@ public class NovaMailService {
                     || cause instanceof MailAuthenticationException) {
                 return "邮箱账号或授权码不对，服务器拒绝了登录";
             }
-            // 发信被顶回：只有顶在收件地址上的才说收件地址；其余（判垃圾信、配额满、
-            // 发件被拒这类）说服务器拒收了这封信并带上服务器原话，让人照原话去查——
+            // 发信被顶回：只有顶在收件地址上的才说收件地址；收件那一步暂时拒收（灰名单、
+            // 对方收件箱暂时满了、对方邮箱满了）说暂时拒收；其余（判垃圾信、配额满、发件被拒这类）
+            // 说服务器拒收了这封信。后两种都带上服务器原话，让人照原话去查——
             // 一律说成收件地址，会把人引去改一个没有错的收件地址，改了也没用
             if (cause instanceof SendFailedException sendFailed) {
                 if (recipientRejected(sendFailed)) {
                     return "收件邮箱地址被服务器拒收";
                 }
-                return serverRefusalInPlainWords(sendFailed);
+                if (recipientDeferred(sendFailed)) {
+                    return serverRefusalInPlainWords("服务器暂时拒收了这封信", sendFailed);
+                }
+                return serverRefusalInPlainWords("服务器拒收了这封信", sendFailed);
             }
             if (cause instanceof MessagingException
                     || cause instanceof ConnectException
@@ -231,10 +249,6 @@ public class NovaMailService {
             }
             if (cause instanceof MailSendException) {
                 for (Exception perMessage : ((MailSendException) cause).getMessageExceptions()) {
-                    if (perMessage == null) {
-                        // 表里混着 null 就跳过这一封：null 不是任何一封的失败原因
-                        continue;
-                    }
                     String perRecognized = recognizeAlongCauseChain(perMessage, seen);
                     if (perRecognized != null) {
                         return perRecognized;
@@ -248,15 +262,20 @@ public class NovaMailService {
     /**
      * 这一次顶回是不是顶在收件地址上
      * <p>
-     * 服务器顶回单个收件人时，逐封表里那封的异常是 SendFailedException「Invalid Addresses」，
-     * 服务器那句话挂在它的 next 上（SMTPAddressFailedException）——那张无效地址名单反而是空的，
-     * 只认名单或只认表值本身都认不出它。所以沿 next 链逐层认：哪一层是收件那一步的
-     * SMTPAddressFailedException，或哪一层带着非空的无效地址名单，都算顶在收件地址上。
+     * 服务器在收件那一步顶回时，逐封表里那封的异常是 SendFailedException「Invalid Addresses」，
+     * 服务器那句话挂在它的 next 上（SMTPAddressFailedException，带着回码）。发信库按回码分：
+     * 4xx 与 552 记在「有效但没发出」名单里，无效地址名单是空的——那是暂时拒收，
+     * 地址本身没有错，不算在这里（收件那一步回 552 多半是对方邮箱满或一封信收件人太多；
+     * 收件人太多那种，SMTP 规范说应按暂时失败处理；邮箱满也归暂时，与发信库的分法一致）；
+     * 其余 5xx 记在无效地址名单里。
+     * 所以沿 next 链逐层认：哪一层是收件那一步回的、不算暂时的 SMTPAddressFailedException，
+     * 或哪一层带着非空的无效地址名单，都算顶在收件地址上。
      */
     private static boolean recipientRejected(SendFailedException failure) {
         Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
         for (Throwable link = failure; link != null && seen.add(link); link = nextExceptionOf(link)) {
-            if (link instanceof SMTPAddressFailedException) {
+            if (link instanceof SMTPAddressFailedException addressFailed
+                    && !deferredAtRecipient(addressFailed.getReturnCode())) {
                 return true;
             }
             if (link instanceof SendFailedException sendFailed) {
@@ -270,14 +289,35 @@ public class NovaMailService {
     }
 
     /**
-     * 收件地址以外的一切顶回，都说服务器拒收了这封信，并带上服务器原话（回码与那一句）
+     * 收件那一步是不是暂时拒收（回 4xx 的灰名单、对方收件箱暂时满了，或回 552 的对方邮箱满）
+     */
+    private static boolean recipientDeferred(SendFailedException failure) {
+        Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (Throwable link = failure; link != null && seen.add(link); link = nextExceptionOf(link)) {
+            if (link instanceof SMTPAddressFailedException addressFailed
+                    && deferredAtRecipient(addressFailed.getReturnCode())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 收件那一步回的这个码算不算暂时拒收：与发信库记进「有效但没发出」名单的回码一致
+     */
+    private static boolean deferredAtRecipient(int returnCode) {
+        return (returnCode >= 400 && returnCode <= 499) || returnCode == 552;
+    }
+
+    /**
+     * 顶回不在收件地址上时，说服务器拒收了这封信，并带上服务器原话（回码与那一句）
      * <p>
-     * 判垃圾信（收完信 DATA 末回 554）、配额满（发件那步回 550 5.4.5）、发件被拒，
-     * 原话都在异常自己的话里，next 链上更深那几层往往是同一句——取最深一句非空的话，
-     * 那是离服务器顶回那一步最近的一句。哪一层都没话时也照实说服务器拒收了这封信：
+     * 判垃圾信（收完信 DATA 末回 554）、配额满（发件那步回 550 5.4.5）、发件被拒、
+     * 收件那步暂时拒收，原话都在异常自己的话里，next 链上更深那几层往往是同一句——
+     * 取最深一句非空的话，那是离服务器顶回那一步最近的一句。哪一层都没话时也照实说拒收了：
      * 这是认得出的事，落到英文兜底或说成连不上都比它差。
      */
-    private static String serverRefusalInPlainWords(SendFailedException refusal) {
+    private static String serverRefusalInPlainWords(String refused, SendFailedException refusal) {
         Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
         String deepestSaid = "";
         for (Throwable link = refusal; link != null && seen.add(link); link = nextExceptionOf(link)) {
@@ -286,9 +326,50 @@ public class NovaMailService {
                 deepestSaid = said;
             }
         }
-        return deepestSaid.isEmpty()
-                ? "服务器拒收了这封信"
-                : "服务器拒收了这封信（服务器原话：" + deepestSaid + "）";
+        String words = serverWordsOnOneLine(deepestSaid);
+        return words.isEmpty() ? refused : refused + "（服务器原话：" + words + "）";
+    }
+
+    /**
+     * 把服务器原话理成一行
+     * <p>
+     * 发信库读回话时每行后面都补一个换行，服务器分几行回的（「550-…」「550-…」「550 …」）
+     * 就用换行连成一串交出来。换行照搬进界面会折成空格，几行挤成一长串、回码重复出现。
+     * 所以：回码和扩展状态码只留第一行的那一份，后面各行与它相同的去掉，各行的话用空格接起来；
+     * 连着的空白并成一个；过长就截短并注明。
+     */
+    private static String serverWordsOnOneLine(String said) {
+        StringBuilder merged = new StringBuilder();
+        String firstStatus = null;
+        boolean first = true;
+        for (String line : said.strip().split("\\R")) {
+            String words = line.strip();
+            Matcher reply = REPLY_LINE.matcher(words);
+            if (reply.matches()) {
+                String status = reply.group(2);
+                words = reply.group(3).strip();
+                if (first) {
+                    firstStatus = status;
+                    words = reply.group(1) + (status == null ? "" : " " + status)
+                            + (words.isEmpty() ? "" : " " + words);
+                } else if (status != null && !status.equals(firstStatus)) {
+                    words = status + (words.isEmpty() ? "" : " " + words);
+                }
+            }
+            first = false;
+            if (!words.isEmpty()) {
+                if (!merged.isEmpty()) {
+                    merged.append(' ');
+                }
+                merged.append(words);
+            }
+        }
+        String oneLine = merged.toString().replaceAll("\\s+", " ");
+        if (oneLine.codePointCount(0, oneLine.length()) <= SERVER_WORDS_LIMIT) {
+            return oneLine;
+        }
+        return oneLine.substring(0, oneLine.offsetByCodePoints(0, SERVER_WORDS_LIMIT)).strip()
+                + "……（原话过长，后面略去）";
     }
 
     /**

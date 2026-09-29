@@ -225,17 +225,18 @@ class MailAlertFailureTest {
          * 这一格钉的是：它要说收件地址，而不是把人引去查网络的「连不上」。
          * 夹具照真发信链：逐封发信被 550 顶回时，逐封异常表里的值不是
          * SMTPAddressFailedException 本身，而是 SendFailedException「Invalid Addresses」，
-         * 服务器那句话挂在它的 next 上——服务器顶回单个收件人时那张
-         * 无效地址名单还是空的，只认名单或只认表值都认不出它。
+         * 服务器那句话挂在它的 next 上，那个收件地址记在它的无效地址名单里。
+         * 服务器原话照真形以换行结尾（发信库读回话时每行都补一个换行）。
          */
         @Test
         @DisplayName("收件地址被拒收：说收件地址，不说连不上")
         void rejectedRecipientInPlainWords() throws Exception {
+            InternetAddress receiver = new InternetAddress(DEFAULT_TO);
             Map<Object, Exception> failedMessages = new LinkedHashMap<>();
             failedMessages.put(new SimpleMailMessage(), new SendFailedException("Invalid Addresses",
-                    new SMTPAddressFailedException(new InternetAddress(DEFAULT_TO),
-                            "RCPT TO", 550,
-                            "550 5.1.1 <owner@example.invalid>: Recipient address rejected")));
+                    new SMTPAddressFailedException(receiver, "RCPT TO:<" + DEFAULT_TO + ">", 550,
+                            "550 5.1.1 <owner@example.invalid>: Recipient address rejected\n"),
+                    new Address[0], new Address[0], new Address[]{receiver}));
             channels.add(mailChannel(new ThrowingMailSender(new MailSendException(failedMessages))));
 
             AlertService.TestResult result = service().test("mail");
@@ -249,14 +250,16 @@ class MailAlertFailureTest {
          * 信被判成垃圾信时，服务器收完信才把整封信顶回来（DATA 末回 554）。
          * 抓的用户故障：这一形与收件地址没有任何关系，说成「收件地址被拒」
          * 会把人引去改一个没有错的收件地址，改了也没用——要带着服务器原话去查发信那头。
-         * 夹具照真发信链：表值就是 SMTPSendFailedException，回码与那一句在它自己身上。
+         * 夹具照真发信链：表值就是 SMTPSendFailedException，回码与那一句在它自己身上，
+         * 那一句以换行结尾。
+         * 抓的另一个用户故障：原话尾巴上的换行照搬进回话，界面上右括号前多出一个空格。
          */
         @Test
         @DisplayName("判垃圾信：说服务器拒收并带原话，不说收件地址")
         void spamRejectionCarriesServerWords() throws Exception {
             Map<Object, Exception> failedMessages = new LinkedHashMap<>();
             failedMessages.put(new SimpleMailMessage(), new SMTPSendFailedException(
-                    "DATA", 554, "554 5.7.1 Message rejected as spam", null,
+                    "DATA", 554, "554 5.7.1 Message rejected as spam\n", null,
                     new Address[0], new Address[]{new InternetAddress(DEFAULT_TO)}, new Address[0]));
             channels.add(mailChannel(new ThrowingMailSender(new MailSendException(failedMessages))));
 
@@ -281,9 +284,9 @@ class MailAlertFailureTest {
         void quotaExhaustionCarriesServerWords() throws Exception {
             Map<Object, Exception> failedMessages = new LinkedHashMap<>();
             failedMessages.put(new SimpleMailMessage(), new SMTPSendFailedException(
-                    "MAIL FROM", 550, "550 5.4.5 Daily sending quota exceeded",
+                    "MAIL FROM", 550, "550 5.4.5 Daily sending quota exceeded\n",
                     new SMTPSenderFailedException(new InternetAddress(FROM),
-                            "MAIL FROM", 550, "550 5.4.5 Daily sending quota exceeded"),
+                            "MAIL FROM", 550, "550 5.4.5 Daily sending quota exceeded\n"),
                     new Address[0], new Address[]{new InternetAddress(DEFAULT_TO)}, new Address[0]));
             channels.add(mailChannel(new ThrowingMailSender(new MailSendException(failedMessages))));
 
@@ -293,6 +296,111 @@ class MailAlertFailureTest {
                     "服务器拒收也是发不出去，回话不许说发了");
             assertEquals("邮件 这一路发不出去：服务器拒收了这封信"
                             + "（服务器原话：550 5.4.5 Daily sending quota exceeded）",
+                    result.message());
+        }
+
+        /**
+         * 服务器常把一句长话分几行回（前几行是「550-」开头，末行是「550 」开头），
+         * 发信库把这几行用换行连成一串交出来。
+         * 抓的用户故障：几行原样带进回话，界面上挤成一长串，每行开头的回码重复出现，
+         * 读起来像几句不相干的话。要并成一句：回码只留一次，各行的话接着说下去。
+         */
+        @Test
+        @DisplayName("服务器分三行回话：并成一句，回码只留一次")
+        void multiLineRefusalOnOneLine() throws Exception {
+            String said = "550-5.4.5 Daily user sending limit exceeded. For more information on\n"
+                    + "550-5.4.5 sending limits go to\n"
+                    + "550 5.4.5  https://help.example.invalid/sending-limits\n";
+            Map<Object, Exception> failedMessages = new LinkedHashMap<>();
+            failedMessages.put(new SimpleMailMessage(), new SMTPSendFailedException(
+                    "MAIL FROM", 550, said,
+                    new SMTPSenderFailedException(new InternetAddress(FROM), "MAIL FROM", 550, said),
+                    new Address[0], new Address[]{new InternetAddress(DEFAULT_TO)}, new Address[0]));
+            channels.add(mailChannel(new ThrowingMailSender(new MailSendException(failedMessages))));
+
+            AlertService.TestResult result = service().test("mail");
+
+            assertEquals("邮件 这一路发不出去：服务器拒收了这封信（服务器原话：550 5.4.5 Daily user sending"
+                            + " limit exceeded. For more information on sending limits go to"
+                            + " https://help.example.invalid/sending-limits）",
+                    result.message());
+        }
+
+        /**
+         * 有的服务器把整段说明塞进一句回话里，几百个字。
+         * 抓的用户故障：整句原样带进回话，设置页的提示和日志页那一条被撑满一屏，
+         * 前面那句「服务器拒收了这封信」反倒找不见了。要截短，并说明截过。
+         */
+        @Test
+        @DisplayName("服务器原话过长：截短并说明截过")
+        void overlongRefusalIsCut() throws Exception {
+            String said = "554 5.7.1 "
+                    + "The message was rejected because it matched a local content policy rule. ".repeat(7);
+            Map<Object, Exception> failedMessages = new LinkedHashMap<>();
+            failedMessages.put(new SimpleMailMessage(), new SMTPSendFailedException(
+                    "DATA", 554, said + "\n", null,
+                    new Address[0], new Address[]{new InternetAddress(DEFAULT_TO)}, new Address[0]));
+            channels.add(mailChannel(new ThrowingMailSender(new MailSendException(failedMessages))));
+
+            AlertService.TestResult result = service().test("mail");
+
+            assertTrue(said.length() > 480, "前置：原话要足够长: " + said.length());
+            assertEquals("邮件 这一路发不出去：服务器拒收了这封信（服务器原话："
+                            + said.substring(0, 200).strip() + "……（原话过长，后面略去））",
+                    result.message());
+        }
+
+        /**
+         * 收件那一步回 4xx（灰名单、对方收件箱暂时满了）是暂时的，地址本身没有错。
+         * 抓的用户故障：说成「收件邮箱地址被服务器拒收」，使用者会去改一个没有错的收件地址。
+         * 要说服务器暂时拒收，并带上原话。
+         * 夹具照真发信链：4xx 时那个收件地址记在「有效但没发出」名单里，无效地址名单是空的，
+         * 服务器那句话挂在 next 上的 SMTPAddressFailedException 里，回码 451。
+         * 灰名单的原话里常带「Recipient address rejected」，照实带出，前半句仍说暂时拒收。
+         */
+        @Test
+        @DisplayName("收件那一步暂时拒收：说暂时拒收并带原话，不说收件地址被拒")
+        void temporaryRecipientRefusalIsNotAddressRejection() throws Exception {
+            InternetAddress receiver = new InternetAddress(DEFAULT_TO);
+            Map<Object, Exception> failedMessages = new LinkedHashMap<>();
+            failedMessages.put(new SimpleMailMessage(), new SendFailedException("Invalid Addresses",
+                    new SMTPAddressFailedException(receiver, "RCPT TO:<" + DEFAULT_TO + ">", 451,
+                            "451 4.7.1 <owner@example.invalid>: Recipient address rejected:"
+                                    + " Greylisted, please try again later\n"),
+                    new Address[0], new Address[]{receiver}, new Address[0]));
+            channels.add(mailChannel(new ThrowingMailSender(new MailSendException(failedMessages))));
+
+            AlertService.TestResult result = service().test("mail");
+
+            assertEquals(AlertService.TestResult.Status.FAILED, result.status());
+            assertEquals("邮件 这一路发不出去：服务器暂时拒收了这封信（服务器原话：451 4.7.1 <owner@example.invalid>:"
+                            + " Recipient address rejected: Greylisted, please try again later）",
+                    result.message());
+        }
+
+        /**
+         * 对方邮箱满了时，服务器在收件那一步回 552（「552 5.2.2 …: Mailbox full」）。
+         * 抓的用户故障：界面说「收件邮箱地址被服务器拒收」，使用者去改一个没有错的收件地址，
+         * 改了也没用。地址本身没有错，要说服务器暂时拒收，并带上原话，让人看出是对方邮箱满了。
+         * 收件那一步回的 552 按暂时失败对待（发信库把这个地址记在「有效但没发出」名单里，
+         * 无效地址名单是空的），夹具照这条真链。
+         */
+        @Test
+        @DisplayName("收件那一步回552对方邮箱满：说暂时拒收并带原话，不说收件地址被拒")
+        void mailboxFullAtRecipientIsNotAddressRejection() throws Exception {
+            InternetAddress receiver = new InternetAddress(DEFAULT_TO);
+            Map<Object, Exception> failedMessages = new LinkedHashMap<>();
+            failedMessages.put(new SimpleMailMessage(), new SendFailedException("Invalid Addresses",
+                    new SMTPAddressFailedException(receiver, "RCPT TO:<" + DEFAULT_TO + ">", 552,
+                            "552 5.2.2 <owner@example.invalid>: Mailbox full\n"),
+                    new Address[0], new Address[]{receiver}, new Address[0]));
+            channels.add(mailChannel(new ThrowingMailSender(new MailSendException(failedMessages))));
+
+            AlertService.TestResult result = service().test("mail");
+
+            assertEquals(AlertService.TestResult.Status.FAILED, result.status());
+            assertEquals("邮件 这一路发不出去：服务器暂时拒收了这封信"
+                            + "（服务器原话：552 5.2.2 <owner@example.invalid>: Mailbox full）",
                     result.message());
         }
 
