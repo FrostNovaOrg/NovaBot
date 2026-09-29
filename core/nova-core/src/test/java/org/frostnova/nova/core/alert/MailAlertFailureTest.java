@@ -2,10 +2,14 @@ package org.frostnova.nova.core.alert;
 
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.service.NovaMailService;
+import jakarta.mail.Address;
 import jakarta.mail.AuthenticationFailedException;
 import jakarta.mail.MessagingException;
+import jakarta.mail.SendFailedException;
 import jakarta.mail.internet.InternetAddress;
 import org.eclipse.angus.mail.smtp.SMTPAddressFailedException;
+import org.eclipse.angus.mail.smtp.SMTPSendFailedException;
+import org.eclipse.angus.mail.smtp.SMTPSenderFailedException;
 import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.core.timeline.TimelineEventType;
 import org.junit.jupiter.api.BeforeEach;
@@ -219,17 +223,19 @@ class MailAlertFailureTest {
         /**
          * 收件邮箱填错或被对方服务器拒收时，服务器在收件那一步就把信顶回来。
          * 这一格钉的是：它要说收件地址，而不是把人引去查网络的「连不上」。
-         * 夹具照真调用链：doSend 逐封发送被 550 顶回时，这封的异常收进逐封异常表，
-         * 末尾以 MailSendException(Map) 抛出——不带起因，只带表。
+         * 夹具照真发信链：逐封发信被 550 顶回时，逐封异常表里的值不是
+         * SMTPAddressFailedException 本身，而是 SendFailedException「Invalid Addresses」，
+         * 服务器那句话挂在它的 next 上——服务器顶回单个收件人时那张
+         * 无效地址名单还是空的，只认名单或只认表值都认不出它。
          */
         @Test
         @DisplayName("收件地址被拒收：说收件地址，不说连不上")
         void rejectedRecipientInPlainWords() throws Exception {
             Map<Object, Exception> failedMessages = new LinkedHashMap<>();
-            failedMessages.put(new SimpleMailMessage(),
+            failedMessages.put(new SimpleMailMessage(), new SendFailedException("Invalid Addresses",
                     new SMTPAddressFailedException(new InternetAddress(DEFAULT_TO),
                             "RCPT TO", 550,
-                            "550 5.1.1 <owner@example.invalid>: Recipient address rejected"));
+                            "550 5.1.1 <owner@example.invalid>: Recipient address rejected")));
             channels.add(mailChannel(new ThrowingMailSender(new MailSendException(failedMessages))));
 
             AlertService.TestResult result = service().test("mail");
@@ -237,6 +243,57 @@ class MailAlertFailureTest {
             assertEquals(AlertService.TestResult.Status.FAILED, result.status(),
                     "服务器拒收也是发不出去，回话不许说发了");
             assertEquals("邮件 这一路发不出去：收件邮箱地址被服务器拒收", result.message());
+        }
+
+        /**
+         * 信被判成垃圾信时，服务器收完信才把整封信顶回来（DATA 末回 554）。
+         * 抓的用户故障：这一形与收件地址没有任何关系，说成「收件地址被拒」
+         * 会把人引去改一个没有错的收件地址，改了也没用——要带着服务器原话去查发信那头。
+         * 夹具照真发信链：表值就是 SMTPSendFailedException，回码与那一句在它自己身上。
+         */
+        @Test
+        @DisplayName("判垃圾信：说服务器拒收并带原话，不说收件地址")
+        void spamRejectionCarriesServerWords() throws Exception {
+            Map<Object, Exception> failedMessages = new LinkedHashMap<>();
+            failedMessages.put(new SimpleMailMessage(), new SMTPSendFailedException(
+                    "DATA", 554, "554 5.7.1 Message rejected as spam", null,
+                    new Address[0], new Address[]{new InternetAddress(DEFAULT_TO)}, new Address[0]));
+            channels.add(mailChannel(new ThrowingMailSender(new MailSendException(failedMessages))));
+
+            AlertService.TestResult result = service().test("mail");
+
+            assertEquals(AlertService.TestResult.Status.FAILED, result.status(),
+                    "服务器拒收也是发不出去，回话不许说发了");
+            assertEquals("邮件 这一路发不出去：服务器拒收了这封信"
+                            + "（服务器原话：554 5.7.1 Message rejected as spam）",
+                    result.message());
+        }
+
+        /**
+         * 发件邮箱当天发信数到了上限时，发件那一步就被顶回来（MAIL FROM 回 550 5.4.5）。
+         * 抓的用户故障：这也不是收件地址的错，等第二天配额回来或换发件邮箱才有用——
+         * 回话同样要带服务器原话，而不是「收件地址被拒」。
+         * 夹具照真发信链：表值是 SMTPSendFailedException，next 上挂发件那一步的
+         * SMTPSenderFailedException，两层是同一句服务器原话。
+         */
+        @Test
+        @DisplayName("发信配额满：说服务器拒收并带原话，不说收件地址")
+        void quotaExhaustionCarriesServerWords() throws Exception {
+            Map<Object, Exception> failedMessages = new LinkedHashMap<>();
+            failedMessages.put(new SimpleMailMessage(), new SMTPSendFailedException(
+                    "MAIL FROM", 550, "550 5.4.5 Daily sending quota exceeded",
+                    new SMTPSenderFailedException(new InternetAddress(FROM),
+                            "MAIL FROM", 550, "550 5.4.5 Daily sending quota exceeded"),
+                    new Address[0], new Address[]{new InternetAddress(DEFAULT_TO)}, new Address[0]));
+            channels.add(mailChannel(new ThrowingMailSender(new MailSendException(failedMessages))));
+
+            AlertService.TestResult result = service().test("mail");
+
+            assertEquals(AlertService.TestResult.Status.FAILED, result.status(),
+                    "服务器拒收也是发不出去，回话不许说发了");
+            assertEquals("邮件 这一路发不出去：服务器拒收了这封信"
+                            + "（服务器原话：550 5.4.5 Daily sending quota exceeded）",
+                    result.message());
         }
 
         @Test
