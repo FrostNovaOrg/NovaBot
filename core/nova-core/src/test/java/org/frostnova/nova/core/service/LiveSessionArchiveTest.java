@@ -1,5 +1,9 @@
 package org.frostnova.nova.core.service;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.NovaCoreProperties;
@@ -10,6 +14,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -501,6 +506,35 @@ class LiveSessionArchiveTest {
 
             assertEquals(java.util.Optional.of("改名以后"), archive.latestUname("bilibili", STREAMER_UID),
                     "取名退路抛了异常，要靠归档取昵称的那次推送发不出去");
+        }
+
+        @Test
+        @DisplayName("坏行一直留在文件里，同一份文件只警告一次，文件变了再警告")
+        void badLineWarnsOncePerFileState() throws Exception {
+            archiveAroundHalfCharacter();
+            Logger logger = (Logger) LoggerFactory.getLogger(LiveSessionArchive.class);
+            ListAppender<ILoggingEvent> appender = new ListAppender<>();
+            appender.start();
+            logger.addAppender(appender);
+            try {
+                archive.find(0, Long.MAX_VALUE);
+                archive.find(0, Long.MAX_VALUE);
+                archive.find(0, Long.MAX_VALUE);
+                assertEquals(1L, skipWarnings(appender), "主播页每开一次就记一行，日志被同一句刷屏");
+
+                archive.append(session(3_000_000L, 300));
+                archive.find(0, Long.MAX_VALUE);
+                assertEquals(2L, skipWarnings(appender), "文件变了之后不再提示，坏行还在也没人知道");
+            } finally {
+                logger.detachAppender(appender);
+            }
+        }
+
+        private long skipWarnings(ListAppender<ILoggingEvent> appender) {
+            return appender.list.stream()
+                    .filter(event -> event.getLevel() == Level.WARN)
+                    .filter(event -> event.getFormattedMessage().startsWith("跳过归档中无法解析的一行"))
+                    .count();
         }
 
         @Test

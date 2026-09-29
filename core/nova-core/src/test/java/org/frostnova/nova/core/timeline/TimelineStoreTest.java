@@ -400,6 +400,25 @@ class TimelineStoreTest {
         assertEquals(List.of("后一条", "前一条"), restarted.recent().stream().map(TimelineEvent::text).toList());
     }
 
+    @Test
+    @DisplayName("时间线文件尾留着半个中文字、还没被下一条隔开时, 重启照旧建得起索引")
+    void halfCharacterAtTailDoesNotBreakStartup() throws IOException {
+        // 断电后重启、第一次读时就是这一形: 半个字在文件尾, 还没有下一次写入替它补换行
+        LocalDate today = LocalDate.now();
+        store.record(event(today.minusDays(1), "昨天那条"));
+        store.record(event(today, "前一条"));
+        store.record(event(today, "后一条"));
+        appendHalfCharacterLine(file(today));
+
+        TimelineStore restarted = new TimelineStore(properties);
+        restarted.load();
+
+        assertEquals(List.of(new TimelineStore.Day(today, 2), new TimelineStore.Day(today.minusDays(1), 1)),
+                restarted.days(), "断电后重启, 整个程序起不来");
+        assertEquals(List.of("后一条", "前一条", "昨天那条"),
+                restarted.recent().stream().map(TimelineEvent::text).toList());
+    }
+
     // —— 以下为夹具 ——
 
     /** 「截」是 E6 88 AA，只写进前两个字节，也没有换行 */
