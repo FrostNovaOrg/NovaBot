@@ -606,7 +606,8 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
 
         // 计数在解析之后：解析失败的条目按降级类目记账，不再混进业务或进房
         countForRiskDetection(data, parsed.degraded());
-        parsed.event().ifPresent(this::publish);
+        // 一条礼物消息可以带几个礼物块，每块一个事件、各是一笔账，都要发出去
+        parsed.events().forEach(this::publish);
     }
 
     /**

@@ -2615,7 +2615,7 @@ class BilibiliEventParserTest {
      * {@code BilibiliProtobufReader} 只做 wire 层不认 schema，写入器同样只做 wire 层，
      * 字段号由夹具自己指定
      */
-    private static final class PbWriter {
+    static final class PbWriter {
         private final ByteArrayOutputStream out = new ByteArrayOutputStream();
 
         PbWriter varint(int field, long value) {

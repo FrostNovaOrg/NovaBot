@@ -14,6 +14,7 @@ import org.frostnova.nova.bilibili.protocol.BilibiliPacketCodec;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
 import org.mockito.stubbing.Answer;
+import org.springframework.context.ApplicationEvent;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.web.socket.BinaryMessage;
@@ -84,9 +85,12 @@ class BilibiliConnectorHarness {
 
     private final BilibiliApiUtil api = mock(BilibiliApiUtil.class);
 
-    private final BilibiliEventParser parser = mock(BilibiliEventParser.class);
+    private final BilibiliEventParser parser;
 
     private final ApplicationEventPublisher publisher = mock(ApplicationEventPublisher.class);
+
+    /** 连接器发布出去的事件，按顺序 */
+    private final List<Object> published = new ArrayList<>();
 
     private final TaskScheduler scheduler = mock(TaskScheduler.class);
 
@@ -158,6 +162,14 @@ class BilibiliConnectorHarness {
     private final BilibiliLiveRoomConnector connector;
 
     BilibiliConnectorHarness() {
+        this(null);
+    }
+
+    /**
+     * @param realParser 真解析器，给了就走真实的解析与发布路径；为 null 时用默认桩
+     */
+    BilibiliConnectorHarness(BilibiliEventParser realParser) {
+        this.parser = realParser == null ? mock(BilibiliEventParser.class) : realParser;
         LiveStreamerInfo source = new LiveStreamerInfo(STREAMER_UID, "测试主播", ROOM_ID);
 
         // 真实对象外面套一层 spy 只为把归因抄下来，逻辑仍走真实实现——
@@ -171,7 +183,10 @@ class BilibiliConnectorHarness {
 
         stubSession();
         stubApi();
-        stubParser();
+        if (realParser == null) {
+            stubParser();
+        }
+        stubPublisher();
         stubScheduler();
         stubClient();
         stubConnectGate();
@@ -267,6 +282,24 @@ class BilibiliConnectorHarness {
             // 收消息这条路上抛异常本身就是缺陷，别让调用方每处都写 throws 把它藏进签名里
             throw new IllegalStateException("喂消息时连接器抛了异常: " + cmd, e);
         }
+    }
+
+    /**
+     * 让连接器收到一条完整报文（整段 JSON），走真实的解码、解析与发布路径
+     * @param body 消息正文
+     */
+    void receiveBody(String body) {
+        byte[] encoded = BilibiliPacketCodec.encode(DataPackType.NOTICE, body);
+        try {
+            connector.handleMessage(session, new BinaryMessage(encoded));
+        } catch (Exception e) {
+            throw new IllegalStateException("喂消息时连接器抛了异常", e);
+        }
+    }
+
+    /** 连接器发布出去的事件，按顺序 */
+    List<Object> publishedEvents() {
+        return List.copyOf(published);
     }
 
     /**
@@ -486,6 +519,13 @@ class BilibiliConnectorHarness {
     private void stubParser() {
         when(parser.parseMessage(any(), any())).thenAnswer(invocation ->
                 new BilibiliEventParser.ParsedMessage(Optional.empty(), false));
+    }
+
+    private void stubPublisher() {
+        doAnswer(invocation -> published.add(invocation.getArgument(0)))
+                .when(publisher).publishEvent(any(Object.class));
+        doAnswer(invocation -> published.add(invocation.getArgument(0)))
+                .when(publisher).publishEvent(any(ApplicationEvent.class));
     }
 
     private void stubScheduler() {
