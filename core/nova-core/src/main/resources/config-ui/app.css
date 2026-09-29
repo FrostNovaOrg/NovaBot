@@ -344,14 +344,18 @@ html.showkeys .keyname{display:block}
   font-family:inherit;font-size:14px}
 .al-fld input:focus,.al-fld select:focus{outline:none;border-color:var(--accent)}
 .al-note{font-size:12.5px;color:var(--dim);margin-top:4px;line-height:1.5}
-.al-f{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px}
+.al-f{display:flex;flex-direction:column;align-items:flex-start;gap:10px;margin-top:6px}
 .al-f button{padding:5px 12px;font-size:13.5px}
+.al-f .al-r{align-self:stretch}
+.al-f .al-r:empty{display:none}
 .al-r{font-size:12.5px;color:var(--dim);line-height:1.5}
 .al-r.ok{color:var(--ok)}
 .al-r.err{color:var(--err)}
 .al-r.warn{color:var(--warn)}
 /* ---------- 登录与安全：与其他设置同一套横行 ---------- */
 #auth-cards .tblwrap,#auth-cards .totp-flow,#auth-cards .al-r{grid-column:1/-1}
+/* 平时空着的整行不占行距：格子的行距会把空块也算进去 */
+#auth-cards .totp-flow:empty,#auth-cards .al-r:empty{display:none}
 /* 未上锁提示与 .field 同缩进，不贴卡片左边 */
 #auth-unlocked{padding:0 16px}
 #auth-cards table{font-size:13.5px}

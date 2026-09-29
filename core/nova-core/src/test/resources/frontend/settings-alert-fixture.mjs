@@ -351,6 +351,9 @@ function loadFn(text, marker, params, args) {
   return new Function(...params, body + '\nreturn ' + marker.slice(marker.indexOf(' ') + 1).replace(/\(.*/, '') + ';')(...args);
 }
 
+const SHOWN_WHEN_UNSET = new Function(
+  bracedFrom(src, 'const SHOWN_WHEN_UNSET = ') + '\nreturn SHOWN_WHEN_UNSET;')();
+
 const settingsSrc = readFileSync(join(ui, 'settings.js'), 'utf8');
 
 /** 有自己的 name，且不叫浏览器用来认登录框的那两个名字 */
@@ -367,8 +370,8 @@ let namesDiffer = 'missing';
 let typedCode = 'missing';
 try {
   const store = {values: {}, dirty: {}};
-  const setValue = loadFn(src, 'function setValue(', ['store', 'markDirty', 'MASK', 'CLEAR', 'secretDraft'],
-    [store, () => {}, MASK, CLEAR, secretDraft]);
+  const setValue = loadFn(src, 'function setValue(', ['store', 'markDirty', 'MASK', 'CLEAR', 'secretDraft', 'SHOWN_WHEN_UNSET'],
+    [store, () => {}, MASK, CLEAR, secretDraft, SHOWN_WHEN_UNSET]);
   const field = loadFn(src, 'function field(', ['el', 'valueOf', 'setValue', 'markDirty', 'store', 'CLEAR'],
     [node, () => '', setValue, () => {}, store, CLEAR]);
   const start = src.indexOf("field(mail.body, '发件账号'");
@@ -408,8 +411,8 @@ let urlNamed = 'missing';
 let typedUrl = 'missing';
 try {
   const store = {values: {}, dirty: {}};
-  const setValue = loadFn(src, 'function setValue(', ['store', 'markDirty', 'MASK', 'CLEAR', 'secretDraft'],
-    [store, () => {}, MASK, CLEAR, secretDraft]);
+  const setValue = loadFn(src, 'function setValue(', ['store', 'markDirty', 'MASK', 'CLEAR', 'secretDraft', 'SHOWN_WHEN_UNSET'],
+    [store, () => {}, MASK, CLEAR, secretDraft, SHOWN_WHEN_UNSET]);
   const field = loadFn(src, 'function field(', ['el', 'valueOf', 'setValue', 'markDirty', 'store', 'CLEAR'],
     [node, () => '', setValue, () => {}, store, CLEAR]);
   const start = src.indexOf("const url = field(hook.body, '地址'");
@@ -454,8 +457,8 @@ eq(secretAc, 'new-password', '设置页 type=password 的机密框 autocomplete'
 // 于是留空改成没动，清掉改走「清除」钮送清除标记。
 
 function loadSetValue(storeStub, markDirty) {
-  return loadFn(src, 'function setValue(', ['store', 'markDirty', 'MASK', 'CLEAR', 'secretDraft'],
-    [storeStub, markDirty, MASK, CLEAR, secretDraft]);
+  return loadFn(src, 'function setValue(', ['store', 'markDirty', 'MASK', 'CLEAR', 'secretDraft', 'SHOWN_WHEN_UNSET'],
+    [storeStub, markDirty, MASK, CLEAR, secretDraft, SHOWN_WHEN_UNSET]);
 }
 
 let blankKeeps = 'missing';

@@ -98,7 +98,12 @@ function valueOf(name) {
  */
 function setValue(name, value) {
   const saved = store.values[name];
-  const original = saved === undefined || saved === null ? '' : String(saved);
+  // 文件里没写这一项时，基线用屏上显示的那一位。把已经看见的值原样写回去不算改动，
+  // 否则预设来回切回原样，底部仍挂着一处改动，保存还会多写出一行。
+  // 文件里写过的，仍按文件里那一位比。
+  const original = saved === undefined || saved === null
+    ? (SHOWN_WHEN_UNSET[name] !== undefined ? SHOWN_WHEN_UNSET[name] : '')
+    : String(saved);
   const text = String(value);
   // 机密项的空框是「留空＝没动」（已存的值只以遮点下发）：照提示留空保存，
   // 不再把已存的授权码删掉。真要清掉走 field 里的「清除」钮，记清除标记。
@@ -268,12 +273,13 @@ function shell(id, title, desc) {
   card.appendChild(body);
 
   const foot = el('div', 'al-f');
+  // 结果在按钮上方：字一长若折到按钮下面，这一张卡的按钮会被顶上去，三张卡不再齐平
+  const result = el('span', 'al-r');
   const test = el('button', 'ghost');
   test.type = 'button';
   test.textContent = '发一条测试';
   test.addEventListener('click', () => sendTest(id, test));
-  const result = el('span', 'al-r');
-  foot.append(test, result);
+  foot.append(result, test);
   card.appendChild(foot);
 
   return {card, head, body, pill, result};
@@ -286,8 +292,9 @@ function testOutcomeText(base, note) {
 /**
  * 真的发一条出去
  *
- * 结果写在按钮旁边而不是顶部的状态栏：使用者的视线此刻在这张卡上，
+ * 结果写在按钮上方而不是顶部的状态栏：使用者的视线此刻在这张卡上，
  * 而三张卡各有各的结论，顶部只有一行位置放不下第二条。
+ * 字一长也留在按钮上方，不折到按钮下面把这一张的按钮顶上去。
  * @param channel 通道标识
  * @param button 那个按钮，发送期间禁用
  */
