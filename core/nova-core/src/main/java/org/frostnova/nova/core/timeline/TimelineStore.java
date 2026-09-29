@@ -329,7 +329,7 @@ public class TimelineStore implements TimelineWriter {
     private List<TimelineEvent> readDay(LocalDate day) {
         List<TimelineEvent> result = new ArrayList<>();
 
-        try (Stream<String> lines = Files.lines(dayFile(day), StandardCharsets.UTF_8)) {
+        try (Stream<String> lines = JsonlFiles.lines(dayFile(day))) {
             lines.forEach(line -> {
                 TimelineEvent event = parse(line);
                 if (event != null) {
@@ -363,7 +363,7 @@ public class TimelineStore implements TimelineWriter {
 
         for (LocalDate day : days) {
             int count = 0;
-            try (Stream<String> lines = Files.lines(dayFile(day), StandardCharsets.UTF_8)) {
+            try (Stream<String> lines = JsonlFiles.lines(dayFile(day))) {
                 for (String line : (Iterable<String>) lines::iterator) {
                     TimelineEvent event = parse(line);
                     if (event == null) {

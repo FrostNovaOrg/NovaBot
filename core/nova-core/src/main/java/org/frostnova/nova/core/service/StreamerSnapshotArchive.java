@@ -89,7 +89,7 @@ public class StreamerSnapshotArchive {
     public List<StreamerSnapshot> find(long from, long to) {
         List<StreamerSnapshot> result = new ArrayList<>();
 
-        try (Stream<String> lines = Files.lines(path(), StandardCharsets.UTF_8)) {
+        try (Stream<String> lines = JsonlFiles.lines(path())) {
             lines.forEach(line -> {
                 StreamerSnapshot snapshot = parse(line);
                 if (snapshot != null && snapshot.at() >= from && snapshot.at() < to) {
@@ -122,7 +122,7 @@ public class StreamerSnapshotArchive {
     public Optional<StreamerSnapshot> latestBefore(@NonNull String platform, @NonNull Long uid, long at) {
         StreamerSnapshot latest = null;
 
-        try (Stream<String> lines = Files.lines(path(), StandardCharsets.UTF_8)) {
+        try (Stream<String> lines = JsonlFiles.lines(path())) {
             for (String line : (Iterable<String>) lines::iterator) {
                 StreamerSnapshot snapshot = parse(line);
                 if (snapshot == null || snapshot.at() > at) {

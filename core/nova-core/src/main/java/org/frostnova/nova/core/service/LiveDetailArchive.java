@@ -408,7 +408,7 @@ public class LiveDetailArchive {
         }
 
         List<DanmuRecord> result = new ArrayList<>();
-        try (Stream<String> lines = Files.lines(dir.get().resolve(DANMU_FILE), StandardCharsets.UTF_8)) {
+        try (Stream<String> lines = JsonlFiles.lines(dir.get().resolve(DANMU_FILE))) {
             lines.forEach(line -> {
                 DanmuRecord record = parseDanmu(line);
                 if (record != null) {
@@ -458,7 +458,7 @@ public class LiveDetailArchive {
             return Optional.empty();
         }
         List<DanmuRecord> result = new ArrayList<>();
-        try (Stream<String> lines = Files.lines(file.get(), StandardCharsets.UTF_8)) {
+        try (Stream<String> lines = JsonlFiles.lines(file.get())) {
             lines.forEach(line -> {
                 DanmuRecord record = parseDanmu(line);
                 if (record != null) {
@@ -490,7 +490,7 @@ public class LiveDetailArchive {
             return List.of();
         }
         List<Map<String, Object>> result = new ArrayList<>();
-        try (Stream<String> lines = Files.lines(dir.get().resolve(EVENT_FILE), StandardCharsets.UTF_8)) {
+        try (Stream<String> lines = JsonlFiles.lines(dir.get().resolve(EVENT_FILE))) {
             lines.forEach(line -> {
                 try {
                     JSONObject json = JSON.parseObject(line);
@@ -605,7 +605,7 @@ public class LiveDetailArchive {
         if (!Files.isRegularFile(path)) {
             return 0;
         }
-        try (Stream<String> lines = Files.lines(path, StandardCharsets.UTF_8)) {
+        try (Stream<String> lines = JsonlFiles.lines(path)) {
             return lines.count();
         } catch (IOException e) {
             log.debug("数弹幕原文行数失败: {}", e.getMessage());

@@ -111,7 +111,9 @@ public class LiveSessionArchive {
         } catch (NoSuchFileException e) {
             // 还没有任何一场被归档，空表即可
             return List.of();
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
+            // 读的途中出错（按行读把它包成 UncheckedIOException）同样按读不了处置：
+            // 抛上去的话，主播页场次与趋势整页打不开
             log.error("读取直播场次归档失败", e);
             return List.of();
         }
@@ -123,7 +125,7 @@ public class LiveSessionArchive {
     private List<LiveSession> read(long from, long to) throws IOException {
         List<LiveSession> result = new ArrayList<>();
 
-        try (Stream<String> lines = Files.lines(path(), StandardCharsets.UTF_8)) {
+        try (Stream<String> lines = JsonlFiles.lines(path())) {
             lines.forEach(line -> {
                 LiveSession session = parse(line);
                 if (session != null && session.startTime() >= from && session.startTime() < to) {
@@ -145,7 +147,7 @@ public class LiveSessionArchive {
         long earliest = Long.MAX_VALUE;
         long latest = Long.MIN_VALUE;
 
-        try (Stream<String> lines = Files.lines(path(), StandardCharsets.UTF_8)) {
+        try (Stream<String> lines = JsonlFiles.lines(path())) {
             for (String line : (Iterable<String>) lines::iterator) {
                 LiveSession session = parse(line);
                 if (session == null) {
@@ -157,7 +159,7 @@ public class LiveSessionArchive {
             }
         } catch (NoSuchFileException e) {
             return new Summary(0, 0, 0);
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
             log.error("统计直播场次归档失败", e);
             return new Summary(0, 0, 0);
         }
@@ -203,7 +205,7 @@ public class LiveSessionArchive {
             sessions = read(0, Long.MAX_VALUE);
         } catch (NoSuchFileException e) {
             return Map.of();
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
             log.error("读取直播场次归档失败", e);
             return Map.of();
         }
@@ -269,7 +271,8 @@ public class LiveSessionArchive {
                     // 分析侧必须用 LiveSession.hasPeaks() 把两者分开
                     parsePeaks(json.getJSONObject("peaks")));
         } catch (Exception e) {
-            log.debug("跳过归档中无法解析的一行: {}", e.getMessage());
+            // 只记原因不记内容：一行里有观众 uid 名单
+            log.warn("跳过归档中无法解析的一行: {}", e.getClass().getSimpleName());
             return null;
         }
     }
