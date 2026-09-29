@@ -77,9 +77,28 @@ class StreamerNameFallbackCommandTest {
     }
 
     @Test
-    @DisplayName("照清单上的名字点名：点得中")
+    @DisplayName("照清单上的名字点名：点得中，回复前说清按最近一场的昵称认的")
     void matchesArchivedName() {
-        assertEquals("已出图：昵称乙", feed(Set.of(), "昵称乙"));
+        assertEquals("本次用的是：昵称乙（TA 的昵称没查回来，按最近一场的昵称认的）\n已出图：昵称乙",
+                feed(Set.of(), "昵称乙"));
+    }
+
+    @Test
+    @DisplayName("一位的现名没查回来、最近一场的昵称恰是另一位现在的名字：点这个名认现在叫这个名字的那位")
+    void archivedNameClashingWithAnotherCurrentName() throws IOException {
+        archive(10001L, "小月", 1_700_010_000_000L);
+
+        assertEquals("已出图：10002",
+                feedUid(Set.of(), List.of(user(10001L, ""), user(10002L, "小月")), "小月"));
+    }
+
+    @Test
+    @DisplayName("只有最近一场的昵称对得上：认那一位，回复前面说清是按它认的")
+    void onlyArchivedNameMatchesSaysSo() throws IOException {
+        archive(10001L, "小月", 1_700_010_000_000L);
+
+        assertEquals("本次用的是：小月（TA 的昵称没查回来，按最近一场的昵称认的）\n已出图：10001",
+                feedUid(Set.of(), List.of(user(10001L, ""), user(10002L, "阿光")), "小月"));
     }
 
     @Test
@@ -92,32 +111,55 @@ class StreamerNameFallbackCommandTest {
     }
 
     private String feed(Set<Long> living, String... args) {
-        AbstractDataSource dataSource = mock(AbstractDataSource.class);
-        when(dataSource.getUsers("bilibili")).thenReturn(List.of(user(10001L), user(10002L)));
+        return said(new ProbeCommand(dataSource(List.of(user(10001L), user(10002L))),
+                new BilibiliStreamerChoice(liveDataService(living), archive)), args);
+    }
 
-        LiveDataService liveDataService = mock(LiveDataService.class);
-        when(liveDataService.getLiveStatus(anyString(), anyLong())).thenAnswer(invocation ->
-                Optional.of(living.contains((Long) invocation.getArgument(1))));
-        when(liveDataService.getLiveEndTime(anyString(), anyLong())).thenReturn(Optional.empty());
+    private String feedUid(Set<Long> living, List<PushUser> users, String... args) {
+        return said(new UidProbeCommand(dataSource(users),
+                new BilibiliStreamerChoice(liveDataService(living), archive)), args);
+    }
 
-        ProbeCommand command = new ProbeCommand(dataSource, new BilibiliStreamerChoice(liveDataService, archive));
+    private String said(BilibiliStreamerCommand command, String... args) {
         CommandReply reply = command.execute(new CommandContext(PLATFORM, PushTargetType.GROUP, GROUP, 40001L,
                 command.name(), List.of(args), command.name()));
         return reply.content();
     }
 
+    private static AbstractDataSource dataSource(List<PushUser> users) {
+        AbstractDataSource dataSource = mock(AbstractDataSource.class);
+        when(dataSource.getUsers("bilibili")).thenReturn(users);
+        return dataSource;
+    }
+
+    private static LiveDataService liveDataService(Set<Long> living) {
+        LiveDataService liveDataService = mock(LiveDataService.class);
+        when(liveDataService.getLiveStatus(anyString(), anyLong())).thenAnswer(invocation ->
+                Optional.of(living.contains((Long) invocation.getArgument(1))));
+        when(liveDataService.getLiveEndTime(anyString(), anyLong())).thenReturn(Optional.empty());
+        return liveDataService;
+    }
+
     private void archive(long uid, String uname) throws IOException {
+        archive(uid, uname, 1_700_000_000_000L);
+    }
+
+    private void archive(long uid, String uname, long startTime) throws IOException {
         JSONObject line = new JSONObject();
         line.put("platform", "bilibili");
         line.put("uid", uid);
         line.put("uname", uname);
-        line.put("startTime", 1_700_000_000_000L);
-        line.put("endTime", 1_700_003_600_000L);
+        line.put("startTime", startTime);
+        line.put("endTime", startTime + 3_600_000L);
         Files.writeString(dir.resolve("sessions.jsonl"), line.toJSONString() + System.lineSeparator(),
                 StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
     }
 
     private static PushUser user(long uid) {
+        return user(uid, "");
+    }
+
+    private static PushUser user(long uid, String uname) {
         PushTarget target = new PushTarget();
         target.setPlatform(PLATFORM);
         target.setType(PushTargetType.GROUP);
@@ -126,7 +168,7 @@ class StreamerNameFallbackCommandTest {
 
         PushUser user = new PushUser();
         user.setUid(uid);
-        user.setUname("");
+        user.setUname(uname);
         user.setPlatform("bilibili");
         user.setTargets(List.of(target));
         return user;
@@ -161,6 +203,38 @@ class StreamerNameFallbackCommandTest {
             return resolved.failed()
                     ? resolved.error()
                     : withNotice(resolved, CommandReply.of("已出图：" + nameOf(resolved.streamer())));
+        }
+    }
+
+    /**
+     * 同上，但回的是 uid：两位撞成同一个名字时，名字分不出认的是谁
+     */
+    private static class UidProbeCommand extends BilibiliStreamerCommand {
+        UidProbeCommand(AbstractDataSource dataSource, BilibiliStreamerChoice choice) {
+            super(dataSource, choice);
+        }
+
+        @Override
+        public String name() {
+            return "直播间数据";
+        }
+
+        @Override
+        public String description() {
+            return "只报用了哪位主播";
+        }
+
+        @Override
+        public boolean groupOnly() {
+            return false;
+        }
+
+        @Override
+        public CommandReply execute(CommandContext context) {
+            Resolved resolved = resolve(context, context.arg(0));
+            return resolved.failed()
+                    ? resolved.error()
+                    : withNotice(resolved, CommandReply.of("已出图：" + resolved.streamer().getUid()));
         }
     }
 }
