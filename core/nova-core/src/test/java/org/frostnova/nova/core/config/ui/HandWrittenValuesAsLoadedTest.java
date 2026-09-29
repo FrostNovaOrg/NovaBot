@@ -429,4 +429,148 @@ class HandWrittenValuesAsLoadedTest {
         assertTrue(locked instanceof Map<?, ?>, "读数里没有「界面不能改」那一栏: " + result.keySet());
         assertNotNull(((Map<String, Object>) locked).get("novabot.demo.signature"), "带换行的块标量应在那一栏里: " + locked);
     }
+
+    /**
+     * 抓的用户故障：键和写在下一行的别名之间夹了一行注释，设置页当这项没有值，
+     * 填上字保存后，配置文件里原来引用的那一整块设置没了。
+     */
+    @Test
+    @DisplayName("🔴 键与下一行别名之间夹一行注释：认得出别名、锁住，填值被拒，文件不动")
+    void aliasOnNextLineWithCommentBetweenIsLockedAndRejected() throws IOException {
+        String[] texts = {
+                "novabot:\n  demo:\n    base: &b\n      color: red\n      size: 2\n"
+                        + "    item:\n    # 说明\n      *b\n",
+                "novabot:\n  demo:\n    base: &b\n      color: red\n      size: 2\n"
+                        + "    item:\n# 说明\n      *b\n",
+        };
+        for (String text : texts) {
+            write(text);
+            String before = content();
+            String block = service.uiLocked().get("novabot.demo.item");
+            assertNotNull(block, "夹着注释也应认出是别名、标成界面不能改:\n" + before);
+            assertTrue(block.contains("（*b）"), "只读说明要点出别名 *b: " + block);
+            try {
+                service.write(Map.of("novabot.demo.item", "blue"));
+                throw new AssertionError("给这一项填值应拒存, 文件不该被改:\n" + content());
+            } catch (IOException rejected) {
+                assertEquals(before, content(), "拒存时文件一个字节不动");
+                assertTrue(rejected.getMessage().contains("别名 *b,"),
+                        "拒存说明要点出别名 *b: " + rejected.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 抓的用户故障：下一行是一行名单、其中一项是别名，设置页的说明却写这项本身写成了别名，
+     * 按说明去配置文件里对不上。
+     */
+    @Test
+    @DisplayName("🔴 行内名单含别名项：说明照实说名单里有一项是别名")
+    void flowListAliasItemIsDescribedAsSuch() throws IOException {
+        write("novabot:\n  demo:\n    one: &s hello\n    copy:\n      [*s, x]\n");
+        String reason = service.uiLocked().get("novabot.demo.copy");
+        assertNotNull(reason, "名单里有别名项应标成界面不能改");
+        assertTrue(reason.contains("名单里有一项是别名"), "说明应照实说: " + reason);
+        assertTrue(reason.contains("（*s）"), "能点出名字就点出: " + reason);
+        assertFalse(reason.contains("写成了别名"), "不要说成这一项本身写成了别名: " + reason);
+    }
+
+    /**
+     * 抓的用户故障：块标量后面跟了一行与键对齐的注释，在界面改了块标量的值，
+     * 这行注释被一起删掉，或者挪到别的地方。
+     */
+    @Test
+    @DisplayName("🔴 块标量后跟一行与键对齐的注释：改值时这行注释留在原地")
+    void blockScalarKeepsFollowingAlignedComment() throws IOException {
+        write("novabot:\n  demo:\n    signature: |\n      first\n      second\n    # 说明\n    tail: 1\n");
+        service.write(Map.of("novabot.demo.signature", "z"));
+        String text = content();
+        assertEquals("novabot:\n  demo:\n    signature: z\n    # 说明\n    tail: 1\n", text,
+                "注释应留在这项和下一项之间, 不该被吞或挪走");
+        assertEquals("z", String.valueOf(service.readAsLoaded().get("novabot.demo.signature")));
+        assertEquals(1, ((Number) service.readAsLoaded().get("novabot.demo.tail")).intValue());
+    }
+
+    /**
+     * 抓的用户故障：名单里有一项是加了引号、以星号开头的文字，设置页把整份名单锁住，
+     * 说明还让人去配置文件里找一个并不存在的别名。
+     */
+    @Test
+    @DisplayName("🔴 行内名单里带引号的星号开头文字：不锁、不说成别名，改了照常保存")
+    void quotedStarInFlowListIsPlainText() throws IOException {
+        String key = "novabot.demo.copy";
+        String[] texts = {
+                "novabot:\n  demo:\n    one: &s hello\n    copy:\n      [\"*s\", x]\n",
+                "novabot:\n  demo:\n    one: &s hello\n    copy:\n      ['*s', x]\n",
+                "novabot:\n  demo:\n    one: &s hello\n    copy: [\"*s\", x]\n",
+                "novabot:\n  demo:\n    one: &s hello\n    copy: ['*s', x]\n",
+        };
+        for (String text : texts) {
+            write(text);
+            String reason = service.uiLocked().get(key);
+            assertFalse(service.uiLocked().containsKey(key),
+                    "加了引号的是普通文字, 不该锁、不该说成别名: " + reason);
+            assertEquals(List.of("*s", "x"), service.readAsLoaded().get(key),
+                    "读回应是引号里的文字, 不是别名指到的 hello:\n" + content());
+            assertEquals("*s\nx", service.read().get(key), "界面显示应与启动读到的一致");
+
+            service.write(Map.of(key, "*s\nz"));
+            assertEquals(List.of("*s", "z"), service.readAsLoaded().get(key),
+                    "改了这份名单应照常保存, 读回与文件一致:\n" + content());
+            assertEquals("*s\nz", service.read().get(key), "保存后再读应与启动读到的一致:\n" + content());
+            assertEquals("hello", service.readAsLoaded().get("novabot.demo.one"),
+                    "旁边那项不该被牵连:\n" + content());
+        }
+    }
+
+    /**
+     * 抓的用户故障：名单里有一项是加了引号、以星号开头的文字，旁边还有嵌套名单、项上的锚点或标签，
+     * 或是程序会另读成别的值的写法。设置页应照旧锁住，存一个字不改文件；
+     * 锁住时这一格显示的是程序实际读到的值。
+     */
+    @Test
+    @DisplayName("🔴 带引号的星号项旁有嵌套名单、项上锚点或标签：照旧锁住，界面显示程序读到的值，存值不改文件")
+    void quotedStarBesideNestedAnchorOrTagStaysLocked() throws IOException {
+        String key = "novabot.demo.copy";
+        String[][] cases = {
+                {"嵌套名单", "novabot:\n  demo:\n    copy:\n      [\"*s\", [a, b]]\n    tail: 1\n", ""},
+                {"项上锚点", "novabot:\n  demo:\n    copy:\n      [\"*s\", &x y]\n    tail: 1\n", "*s\ny"},
+                {"项上标签", "novabot:\n  demo:\n    copy:\n      [\"*s\", !!str 1]\n    tail: 1\n", "*s\n1"},
+                {"yes", "novabot:\n  demo:\n    copy:\n      [\"*s\", yes]\n    tail: 1\n", "*s\ntrue"},
+        };
+        List<String> bad = new ArrayList<>();
+        for (String[] c : cases) {
+            try {
+                write(c[1]);
+                String before = content();
+                String reason = service.uiLocked().get(key);
+                if (reason == null || !reason.contains("写成了别名") || reason.contains("名单里有一项是别名")) {
+                    bad.add(c[0] + ": 应照别名整项锁住, 实际: " + reason + " 界面=" + service.read().get(key));
+                    continue;
+                }
+                if (!c[2].isEmpty()) {
+                    String shown = service.read().get(key);
+                    if (!c[2].equals(shown)) {
+                        bad.add(c[0] + ": 锁住时界面应显示程序读到的值 "
+                                + c[2].replace("\n", "/") + ", 实际: "
+                                + String.valueOf(shown).replace("\n", "/"));
+                    }
+                }
+                try {
+                    service.write(Map.of(key, "z"));
+                    bad.add(c[0] + ": 存一个字应拒存, 文件不该被改:\n" + content());
+                } catch (IOException rejected) {
+                    if (!before.equals(content())) {
+                        bad.add(c[0] + ": 拒存时文件被改了:\n" + content());
+                    }
+                }
+                if (!before.equals(content())) {
+                    bad.add(c[0] + ": 存值后文件变了:\n" + content());
+                }
+            } catch (AssertionError | IOException | RuntimeException e) {
+                bad.add(c[0] + ": " + e.getMessage());
+            }
+        }
+        assertTrue(bad.isEmpty(), () -> String.join("\n", bad));
+    }
 }
