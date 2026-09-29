@@ -1,0 +1,17 @@
+{
+  "DisabledCommands": {
+    "qq-onebot:910000001": {
+      "数据排行榜": 1
+    }
+  },
+  "AtSubscriptions": {
+    "qq-onebot:910000001:9200000001:live": {
+      "9300000001": 1,
+      "9300000002": 1,
+      "9300000003": 1
+    }
+  },
+  "RevenueVisibility": {
+    "qq-onebot:910000001": false
+  }
+}
