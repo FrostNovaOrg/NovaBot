@@ -529,14 +529,14 @@ class HandWrittenValuesAsLoadedTest {
      * 锁住时这一格显示的是程序实际读到的值。
      */
     @Test
-    @DisplayName("🔴 带引号的星号项旁有嵌套名单、项上锚点或标签：照旧锁住，界面显示程序读到的值，存值不改文件")
+    @DisplayName("🔴 带引号的星号项旁有嵌套名单、项上锚点或标签：照旧锁住、说明照实不说成别名，界面显示程序读到的值，存值不改文件")
     void quotedStarBesideNestedAnchorOrTagStaysLocked() throws IOException {
         String key = "novabot.demo.copy";
         String[][] cases = {
-                {"嵌套名单", "novabot:\n  demo:\n    copy:\n      [\"*s\", [a, b]]\n    tail: 1\n", ""},
-                {"项上锚点", "novabot:\n  demo:\n    copy:\n      [\"*s\", &x y]\n    tail: 1\n", "*s\ny"},
-                {"项上标签", "novabot:\n  demo:\n    copy:\n      [\"*s\", !!str 1]\n    tail: 1\n", "*s\n1"},
-                {"yes", "novabot:\n  demo:\n    copy:\n      [\"*s\", yes]\n    tail: 1\n", "*s\ntrue"},
+                {"嵌套名单", "novabot:\n  demo:\n    copy:\n      [\"*s\", [a, b]]\n    tail: 1\n", "*s\n[a, b]", "套着"},
+                {"项上锚点", "novabot:\n  demo:\n    copy:\n      [\"*s\", &x y]\n    tail: 1\n", "*s\ny", "锚点（&x）"},
+                {"项上标签", "novabot:\n  demo:\n    copy:\n      [\"*s\", !!str 1]\n    tail: 1\n", "*s\n1", "标签（!!str）"},
+                {"yes", "novabot:\n  demo:\n    copy:\n      [\"*s\", yes]\n    tail: 1\n", "*s\ntrue", "yes"},
         };
         List<String> bad = new ArrayList<>();
         for (String[] c : cases) {
@@ -544,8 +544,9 @@ class HandWrittenValuesAsLoadedTest {
                 write(c[1]);
                 String before = content();
                 String reason = service.uiLocked().get(key);
-                if (reason == null || !reason.contains("写成了别名") || reason.contains("名单里有一项是别名")) {
-                    bad.add(c[0] + ": 应照别名整项锁住, 实际: " + reason + " 界面=" + service.read().get(key));
+                // 文件里没有别名：锁住时说明照实点出是哪种写法，不说成别名
+                if (reason == null || reason.contains("别名") || !reason.contains(c[3])) {
+                    bad.add(c[0] + ": 应锁住并点出 " + c[3] + ", 不提别名, 实际: " + reason + " 界面=" + service.read().get(key));
                     continue;
                 }
                 if (!c[2].isEmpty()) {
@@ -566,6 +567,149 @@ class HandWrittenValuesAsLoadedTest {
                 }
                 if (!before.equals(content())) {
                     bad.add(c[0] + ": 存值后文件变了:\n" + content());
+                }
+            } catch (AssertionError | IOException | RuntimeException e) {
+                bad.add(c[0] + ": " + e.getMessage());
+            }
+        }
+        assertTrue(bad.isEmpty(), () -> String.join("\n", bad));
+    }
+
+    /**
+     * 抓的用户故障：键那一行写着 {@code copy: [*s, x]}，程序读到的是 hello、x，设置页却显示「*s」「x」；
+     * 改了第二项照常保存，重启后第一项悄悄变成字面文字 *s，存的时候什么提示都没有。
+     * 项上带锚点、标签的同样会变成字面文字。
+     */
+    @Test
+    @DisplayName("🔴 键行上的行内名单有一项是别名、带锚点或标签：界面显示程序读到的值并锁住，改另一项存了也不丢")
+    void keyRowFlowListWithAliasAnchorOrTagShowsLoadedAndStaysLocked() {
+        String key = "novabot.demo.copy";
+        String[][] cases = {
+                {"别名项", "novabot:\n  demo:\n    one: &s hello\n    copy: [*s, x]\n    tail: 1\n", "（*s）"},
+                {"别名项跨行", "novabot:\n  demo:\n    one: &s hello\n    copy: [*s,\n      x]\n    tail: 1\n", "（*s）"},
+                {"项上锚点", "novabot:\n  demo:\n    copy: [&x y, x]\n    tail: 1\n", "锚点（&x）"},
+                {"项上标签", "novabot:\n  demo:\n    copy: [!!str 1, x]\n    tail: 1\n", "标签（!!str）"},
+        };
+        List<String> bad = new ArrayList<>();
+        for (String[] c : cases) {
+            try {
+                write(c[1]);
+                String loaded = loadedText(key);
+                String firstLoaded = loaded.split("\n")[0];
+                String shown = service.read().get(key);
+                String reason = service.uiLocked().get(key);
+                if (!loaded.equals(shown)) {
+                    bad.add(c[0] + ": 界面应显示程序读到的 " + loaded.replace("\n", "/")
+                            + ", 实际: " + String.valueOf(shown).replace("\n", "/"));
+                }
+                if (reason == null || !reason.contains(c[2])) {
+                    bad.add(c[0] + ": 应锁住并点出 " + c[2] + ", 实际说明: " + reason);
+                }
+                // 照界面显示的原样留着第一项、只改第二项再存
+                try {
+                    service.write(Map.of(key, String.valueOf(shown).split("\n")[0] + "\nz"));
+                } catch (IOException rejected) {
+                    // 拒存也算：文件没动，重启读到的照旧
+                }
+                Object after = service.readAsLoaded().get(key);
+                if (!(after instanceof List<?> list) || list.isEmpty() || !firstLoaded.equals(String.valueOf(list.get(0)))) {
+                    bad.add(c[0] + ": 改另一项再存后, 重启读到的第一项应仍是 " + firstLoaded + ", 实际: " + after
+                            + "\n" + content());
+                }
+            } catch (AssertionError | IOException | RuntimeException e) {
+                bad.add(c[0] + ": " + e.getMessage());
+            }
+        }
+        assertTrue(bad.isEmpty(), () -> String.join("\n", bad));
+    }
+
+    /**
+     * 抓的用户故障：配置文件里写了 {@code copy:} 换行 {@code [x, y]}，文件里根本没有别名，
+     * 设置页却锁住这一格、说「写成了别名」，这份普通名单在界面改不了。
+     */
+    @Test
+    @DisplayName("🔴 写在下一行的普通行内名单：不锁、不说成别名，改了照常保存、读回对得上")
+    void plainFlowListOnNextLineIsEditable() throws IOException {
+        String key = "novabot.demo.copy";
+        write("novabot:\n  demo:\n    copy:\n      [x, y]\n    tail: 1\n");
+        String reason = service.uiLocked().get(key);
+        assertFalse(service.uiLocked().containsKey(key), "普通名单不该锁住: " + reason);
+        assertEquals("x\ny", service.read().get(key), "界面应显示名单各项");
+
+        service.write(Map.of(key, "x\nz"));
+        assertEquals(List.of("x", "z"), service.readAsLoaded().get(key), "改后存, 重启读到的应是改的值:\n" + content());
+        assertEquals("x\nz", service.read().get(key), "保存后再读应与启动读到的一致:\n" + content());
+        assertEquals(1, ((Number) service.readAsLoaded().get("novabot.demo.tail")).intValue(), "旁边那项不该被牵连");
+    }
+
+    /**
+     * 抓的用户故障：下一行是 {@code ["*s", {k: v}]}，设置页这一格空着，
+     * 存的时候报「是一个块、底下还有子项」，文件里并没有子项。
+     */
+    @Test
+    @DisplayName("🔴 下一行的名单里有一项是「键: 值」：显示程序读到的、锁住，说明和拒存都不说成「块、底下还有子项」")
+    void flowListWithMapItemIsNotCalledABlock() throws IOException {
+        String key = "novabot.demo.copy";
+        write("novabot:\n  demo:\n    copy:\n      [\"*s\", {k: v}]\n    tail: 1\n");
+        String before = content();
+        String reason = service.uiLocked().get(key);
+        assertNotNull(reason, "名单里有一项是一组键值, 界面改不了, 应锁住");
+        assertFalse(reason.contains("子项") || reason.contains("别名"), "说明不对题: " + reason);
+        String shown = service.read().get(key);
+        assertEquals("*s\n{k: v}", shown, "界面应列出名单各项, 不该空着");
+
+        IOException rejected = null;
+        try {
+            service.write(Map.of(key, "z"));
+        } catch (IOException e) {
+            rejected = e;
+        }
+        assertNotNull(rejected, "锁住的名单存成一个字应拒存:\n" + content());
+        assertFalse(rejected.getMessage().contains("底下还有子项"), "拒存说法不对题: " + rejected.getMessage());
+        assertEquals(before, content(), "拒存时文件一个字节不动");
+    }
+
+    /**
+     * 抓的用户故障：键那一行写着 {@code copy: [x, [a, b]]}，设置页把整段当成一行普通文字、能改，
+     * 存一个字进去整份名单就换成了那个字。
+     */
+    @Test
+    @DisplayName("🔴 键行上的名单里套着名单：界面列出各项并锁住，不当成一行普通文字")
+    void keyRowNestedFlowListIsShownAndLocked() throws IOException {
+        String key = "novabot.demo.copy";
+        write("novabot:\n  demo:\n    copy: [x, [a, b]]\n    tail: 1\n");
+        String shown = service.read().get(key);
+        String reason = service.uiLocked().get(key);
+        assertTrue(reason != null && reason.contains("名单"),
+                "套着名单的应锁住, 实际说明: " + reason + " 界面=" + String.valueOf(shown).replace("\n", "/"));
+        assertFalse(reason.contains("别名"), "文件里没有别名, 不该说成别名: " + reason);
+        assertEquals("x\n[a, b]", shown, "界面应逐项列出");
+    }
+
+    /**
+     * 抓的用户故障：名单里没有别名，只是带着锚点或有的项程序读成了别的值，设置页锁住时说「写成了别名」，
+     * 去配置文件里找不到那个别名。
+     */
+    @Test
+    @DisplayName("🔴 没有别名的名单锁住时，说明照实写，不说成别名")
+    void lockedFlowListWithoutAliasIsNotCalledAlias() {
+        String key = "novabot.demo.copy";
+        String[][] cases = {
+                {"键行名单带锚点", "novabot:\n  demo:\n    copy: &a [x, y]\n    tail: 1\n", "锚点（&a）"},
+                {"下一行名单带锚点", "novabot:\n  demo:\n    copy:\n      &a [x, y]\n    tail: 1\n", "锚点（&a）"},
+                {"下一行名单读成别的值", "novabot:\n  demo:\n    copy:\n      [x, yes]\n    tail: 1\n", "yes"},
+        };
+        List<String> bad = new ArrayList<>();
+        for (String[] c : cases) {
+            try {
+                write(c[1]);
+                String reason = service.uiLocked().get(key);
+                if (reason == null || reason.contains("别名") || !reason.contains(c[2])) {
+                    bad.add(c[0] + ": 应锁住、说明点出 " + c[2] + " 且不提别名, 实际: " + reason);
+                }
+                String loaded = loadedText(key);
+                if (!loaded.equals(service.read().get(key))) {
+                    bad.add(c[0] + ": 界面应显示程序读到的 " + loaded.replace("\n", "/"));
                 }
             } catch (AssertionError | IOException | RuntimeException e) {
                 bad.add(c[0] + ": " + e.getMessage());

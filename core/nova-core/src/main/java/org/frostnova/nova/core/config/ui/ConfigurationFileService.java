@@ -325,6 +325,34 @@ public class ConfigurationFileService {
                 + "这里显示的是程序实际读到的值，要改请到配置文件里改。";
     }
 
+    /**
+     * 行内名单里有一项带着锚点或标签时的只读说明。括号里是那一项写的记号。
+     */
+    private static String lockMarkedItem(String mark) {
+        return "这份名单里有一项带着" + markKind(mark) + "（" + mark + "），在界面改会把它丢掉；"
+                + "这里显示的是程序实际读到的值，要改请到配置文件里改。";
+    }
+
+    /**
+     * 行内名单整份带着锚点或标签时的只读说明。括号里是写在名单前的记号。
+     */
+    private static String lockMarkedList(String mark) {
+        return "这份名单在配置文件里带着" + markKind(mark) + "（" + mark + "），在界面改会把它丢掉；"
+                + "这里显示的是程序实际读到的值，要改请到配置文件里改。";
+    }
+
+    private static String markKind(String mark) {
+        return mark.startsWith("&") ? "锚点" : "标签";
+    }
+
+    /** 行内名单里有一项本身又是名单或一组键值 */
+    private static final String LOCK_LIST_NESTED = "这份名单里有一项本身又套着一份名单或一组「键: 值」，"
+            + "每行一项的框表达不了；这里把那一项照配置文件里的写法列出，要改请到配置文件里改。";
+
+    /** 行内名单写的字与程序读到的不一样 */
+    private static final String LOCK_LIST_READ_DIFFERENTLY = "这份名单里有的项程序读到的和配置文件里写的字不一样"
+            + "（比如不带引号的 yes 读成 true），在界面改会换掉原来的写法；这里显示的是程序实际读到的值，要改请到配置文件里改。";
+
     /** 名单项与启动读到的对不上号 */
     private static final String LOCK_LIST_UNREADABLE = "这份名单在配置文件里的写法界面读不准（项里套着子项或别的手写写法），"
             + "为不写错不在界面改；要改请到配置文件里改。";
@@ -394,27 +422,28 @@ public class ConfigurationFileService {
                     continue;
                 }
                 Object value = loaded.get(line.path);
+                // 名单里只有套着的名单、键值时，启动那一路只摊出带下标的子键，这一项自己没有值
+                boolean nested = hasNestedItems(loaded, line.path);
+                if (value == null && nested) {
+                    value = List.of();
+                }
                 if (value == null) {
                     // 引到的是一整块：值在子键上，这一项自己没有值可显示
                     line.hidden = true;
                     line.value = null;
                     locked.put(line.path, lockAlias(aliasWritten(lines, line)));
                 } else if (value instanceof List<?> list) {
-                    line.value = joinLoaded(list);
-                    String itemAlias = aliasItemInFlowList(lines, line);
-                    // 引号里的星号开头文字是普通文字，不因此把这份名单标成不能改。
-                    // 但这行得已经按名单收下，且收下的各项与启动读到的逐项相同；对不上就照旧锁住
-                    if (itemAlias != null) {
-                        locked.put(line.path, lockAliasItem(itemAlias));
-                    } else if (!starOnlyInsideQuotes(lines, line) || !flowListMatchesLoaded(line, list)) {
-                        // 对不上号就锁住。按名单收下的是文件里的字面文字，和启动读到的不是同一套：
+                    line.value = nested ? shownWithNested(lines, line, list) : joinLoaded(list);
+                    String reason = flowListLock(lines, line, list, nested);
+                    if (reason != null) {
+                        // 按名单收下的是文件里的字面文字，和启动读到的不是同一套：
                         // 退回这套名单，界面改显示启动读到的值
-                        if (line.flowInline && starOnlyInsideQuotes(lines, line)) {
+                        if (line.flowInline) {
                             line.items.clear();
                             line.listEnd = -1;
                             line.flowInline = false;
                         }
-                        locked.put(line.path, lockAlias(aliasWritten(lines, line)));
+                        locked.put(line.path, reason);
                     }
                 } else {
                     line.value = String.valueOf(value);
@@ -1921,6 +1950,8 @@ public class ConfigurationFileService {
     /**
      * 键行底下第一行实义行（跳过空行、注释）是不是子项：更深缩进的「键:」，或名单项「- 」
      * （块名单的项可以与键同缩进）。不是的话底下是续行文字，或者什么也没有
+     * <p>
+     * 方括号打头的是写在下一行的行内名单，里面的 {@code {k: v}} 像「键: 」也不是子键。
      */
     private boolean holdsChildren(List<String> lines, Line line) {
         for (int i = line.index + 1; i < lines.size(); i++) {
@@ -1931,6 +1962,9 @@ public class ConfigurationFileService {
             }
             if (stripped.equals("-") || stripped.startsWith("- ")) {
                 return indentOf(raw) >= line.indent;
+            }
+            if (stripped.startsWith("[")) {
+                return false;
             }
             return indentOf(raw) > line.indent && CHILD_KEY.matcher(stripped).find();
         }
@@ -2335,12 +2369,16 @@ public class ConfigurationFileService {
                 i = end;
             }
 
-            // 行内序列（key: []、key: [a, b]）：列表整个写在键这一行上，也按字符串列表收下
+            // 行内序列（key: []、key: [a, b]）：列表整个写在键这一行上，也按字符串列表收下。
+            // 有一项是别名、带锚点或标签的，收下的是字面文字、不是程序读到的值；套着名单或键值的收不下。
+            // 这两种都按启动那一路读（见 settle）
             List<String> flowItems = flowSequenceItems(value);
-            if (flowItems != null) {
+            if (flowItems != null && flowItemMark(value).isEmpty()) {
                 line.items.addAll(flowItems);
                 line.listEnd = i;
                 line.flowInline = true;
+            } else if (flowItems != null || (value.startsWith("[") && flowDepth(value) == 0 && hasPlainFlowItem(value))) {
+                line.fromLoader = true;
             } else if (value.startsWith("[") && flowDepth(value) > 0) {
                 // 行内序列跨了行（key: [a, 换行 b]）：续行并入后按同一把尺判；
                 // 收不了口或并入后读不了的（嵌套对象/列表、流式键值对），标成不可存，
@@ -2350,8 +2388,9 @@ public class ConfigurationFileService {
                     line.flowUnreadable = true;
                 } else {
                     List<String> across = flowSequenceItems(tail.joined());
-                    if (across == null) {
+                    if (across == null || !flowItemMark(tail.joined()).isEmpty()) {
                         line.flowUnreadable = true;
+                        line.fromLoader = across != null || hasPlainFlowItem(tail.joined());
                     } else {
                         line.items.addAll(across);
                         line.listEnd = tail.end();
@@ -2360,11 +2399,14 @@ public class ConfigurationFileService {
                     i = tail.end();
                 }
             }
-            // 写在下一行、以星号开头的项都加了引号的行内名单：那是普通文字，按名单收下才改得了
-            if (!line.flowInline && starOnlyInsideQuotes(lines, line)) {
-                List<String> quotedFlow = flowSequenceItems(flowListText(lines, line));
-                if (quotedFlow != null) {
-                    line.items.addAll(quotedFlow);
+            // 写在下一行的行内名单，没有一项是别名、带锚点或标签（引号里的星号是普通文字）：按名单收下才改得了。
+            // 收下的各项与启动读到的对不上时，settle 退回这套名单并锁住
+            if (!line.flowInline && line.fromLoader && hasNoValue(value)) {
+                String nextLine = flowListText(lines, line);
+                List<String> nextLineItems = nextLine.startsWith("[") && flowItemMark(nextLine).isEmpty()
+                        && aliasItemInFlowList(lines, line) == null ? flowSequenceItems(nextLine) : null;
+                if (nextLineItems != null) {
+                    line.items.addAll(nextLineItems);
                     line.listEnd = valueOnNextLineEnd(lines, line.index, line.indent);
                     line.flowInline = true;
                 }
@@ -2484,6 +2526,166 @@ public class ConfigurationFileService {
             }
         }
         return true;
+    }
+
+    /**
+     * 启动读到的是名单的一项，界面为什么改不了；改得了时返回 null。
+     * 说明照文件里实际的写法说：项是别名、项带锚点或标签、项套着名单或键值、名单整份带锚点或标签、
+     * 写的字和读到的不一样。文件里没有别名就不说别名；整项写成别名（引到一份名单）才说「写成了别名」。
+     */
+    private String flowListLock(List<String> lines, Line line, List<?> loaded, boolean nested) {
+        String written = flowWritten(lines, line);
+        if (!bodyOf(written).startsWith("[")) {
+            return lockAlias(aliasWritten(lines, line));
+        }
+        String itemAlias = aliasItemInFlowList(lines, line);
+        String itemMark = itemAlias != null ? itemAlias : flowItemMark(written);
+        if (!itemMark.isEmpty()) {
+            return itemMark.startsWith("*") ? lockAliasItem(itemMark) : lockMarkedItem(itemMark);
+        }
+        if (nested) {
+            return LOCK_LIST_NESTED;
+        }
+        if (!bodyOf(written).equals(written.strip())) {
+            return lockMarkedList(markToken(written.strip()));
+        }
+        return flowListMatchesLoaded(line, loaded) ? null : LOCK_LIST_READ_DIFFERENTLY;
+    }
+
+    /**
+     * 行内名单的整段原文：键行上的（跨了行的把续行并进来），或写在下一行的那一段
+     */
+    private String flowWritten(List<String> lines, Line line) {
+        if (line.rawValue != null && !hasNoValue(line.rawValue) && flowDepth(line.rawValue) > 0) {
+            FlowTail tail = joinFlowTail(lines, line.index, line.indent, line.rawValue);
+            if (tail != null) {
+                return tail.joined();
+            }
+        }
+        return flowListText(lines, line);
+    }
+
+    /**
+     * 行内名单里第一处不在引号里、以别名、锚点或标签记号（{@code *}、{@code &}、{@code !}）打头的项，
+     * 返回那个记号；没有时为空串。引号里的是普通文字，不算；写在整份名单前的记号不在此列。
+     */
+    private String flowItemMark(String text) {
+        String body = bodyOf(text);
+        if (!body.startsWith("[")) {
+            return "";
+        }
+        String inner = body.endsWith("]") ? body.substring(1, body.length() - 1) : body.substring(1);
+        for (String item : splitFlowItems(inner)) {
+            String stripped = item.strip();
+            if (!stripped.isEmpty() && "*&!".indexOf(stripped.charAt(0)) >= 0) {
+                return markToken(stripped);
+            }
+        }
+        return "";
+    }
+
+    /**
+     * 打头的记号（到第一个空白为止），去掉粘在后面的逗号、括号
+     */
+    private static String markToken(String text) {
+        int end = 0;
+        while (end < text.length() && !Character.isWhitespace(text.charAt(end))) {
+            end++;
+        }
+        while (end > 1 && "],}".indexOf(text.charAt(end - 1)) >= 0) {
+            end--;
+        }
+        return text.substring(0, end);
+    }
+
+    /**
+     * 行内名单按顶层逗号切开的各项：套着的方括号、花括号里的逗号不切（引号怎么认见 {@link #scan}）
+     */
+    private static List<String> topLevelFlowItems(String inner) {
+        boolean[] outside = scan(inner, true).outside();
+        List<String> items = new ArrayList<>();
+        int depth = 0;
+        int start = 0;
+        for (int i = 0; i < inner.length(); i++) {
+            if (!outside[i]) {
+                continue;
+            }
+            char c = inner.charAt(i);
+            if (c == '[' || c == '{') {
+                depth++;
+            } else if (c == ']' || c == '}') {
+                depth--;
+            } else if (c == ',' && depth == 0) {
+                items.add(inner.substring(start, i).strip());
+                start = i + 1;
+            }
+        }
+        items.add(inner.substring(start).strip());
+        items.removeIf(String::isEmpty);
+        return items;
+    }
+
+    /**
+     * 行内名单的一项本身套着名单或键值（{@code [a, b]}、{@code {k: v}}、{@code k: v}），启动那一路读成带下标的子键
+     */
+    private static boolean isNestedFlowItem(String item) {
+        if (item.charAt(0) == '"' || item.charAt(0) == '\'') {
+            return false;
+        }
+        String body = bodyOf(item);
+        return body.startsWith("[") || body.startsWith("{") || body.contains(": ") || body.endsWith(":");
+    }
+
+    /**
+     * 收了口的行内名单里至少有一项不套名单或键值。全是 {@code {k: v}} 的是对象列表，另有自己的读写，不在此列
+     */
+    private static boolean hasPlainFlowItem(String text) {
+        String body = text.strip();
+        if (!body.startsWith("[") || !body.endsWith("]")) {
+            return false;
+        }
+        for (String item : topLevelFlowItems(body.substring(1, body.length() - 1))) {
+            if (!isNestedFlowItem(item)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 启动那一路把这一项底下的名单项又摊成了带下标的子键（{@code a[1][0]}、{@code a[1].k}）：名单里套着名单或键值
+     */
+    private static boolean hasNestedItems(Map<String, Object> loaded, String path) {
+        String prefix = path + "[";
+        for (String key : loaded.keySet()) {
+            if (key.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 套着名单或键值的行内名单在界面上怎么列：普通项用启动读到的值，套着的那几项照文件里的写法。
+     * 普通项与启动读到的数不上时，退回只列启动读到的那几项
+     */
+    private String shownWithNested(List<String> lines, Line line, List<?> loaded) {
+        String body = bodyOf(flowWritten(lines, line));
+        if (!body.startsWith("[") || !body.endsWith("]")) {
+            return joinLoaded(loaded);
+        }
+        List<String> shown = new ArrayList<>();
+        int next = 0;
+        for (String item : topLevelFlowItems(body.substring(1, body.length() - 1))) {
+            if (isNestedFlowItem(item)) {
+                shown.add(item);
+            } else if (next < loaded.size()) {
+                shown.add(String.valueOf(loaded.get(next++)));
+            } else {
+                return joinLoaded(loaded);
+            }
+        }
+        return next == loaded.size() ? String.join("\n", shown) : joinLoaded(loaded);
     }
 
     /**
