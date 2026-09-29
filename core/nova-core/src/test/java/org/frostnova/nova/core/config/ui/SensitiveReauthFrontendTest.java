@@ -184,7 +184,7 @@ class SensitiveReauthFrontendTest {
     @Test
     @DisplayName("🔴 初始设置引导卡片绑定确认框带密码格，请求体带 current")
     void totpSetupCardAsksPassword() throws IOException {
-        String setup = functionBody(read("main.js"), "renderTotpSetup");
+        String setup = functionBody(read("settings-auth.js"), "renderTotpSetup");
         assertFalse(setup.isBlank(), "找不到 renderTotpSetup");
 
         assertTrue(setup.contains("type=\"password\"") || setup.contains("type='password'"),
