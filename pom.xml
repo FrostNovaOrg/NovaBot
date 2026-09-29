@@ -218,6 +218,22 @@
                     </execution>
                 </executions>
             </plugin>
+
+            <!--
+                测试专用日志配置只放一份，挂到每个模块的测试类路径上：不配它，测试就吃 nova-core 的正式 logback.xml，
+                从工作树里跑时测试日志写进使用者家目录下的 ~/.novabot/logs/。
+                🔴 挂在 surefire 上而不是 testResources 里：各插件模块把 maven-resources-plugin 的 resources
+                配在插件层，testResources 目标也读到它，写在 testResources 里的目录到不了插件模块的测试类路径。
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <additionalClasspathElements>
+                        <additionalClasspathElement>${maven.multiModuleProjectDirectory}/build-tools/test-logging</additionalClasspathElement>
+                    </additionalClasspathElements>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
 </project>
