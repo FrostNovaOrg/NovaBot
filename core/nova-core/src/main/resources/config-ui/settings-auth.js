@@ -491,6 +491,17 @@ function rerunCard() {
   return box.row;
 }
 
+/**
+ * 同意时间只显示到分钟，和同一屏通行密钥表同一种写法
+ *
+ * 配置里那一行带 T、带秒，还可能带时区尾。读不懂的原值照原样留在句子里，不报错。
+ */
+function agreementTime(value) {
+  const at = new Date(value);
+  if (isNaN(at)) return String(value);
+  return at.toLocaleString('zh-CN', {hour12: false}).replace(/:\d\d$/, '');
+}
+
 /** 同意记录里那个通道名的人话版。认不出来的原样显示，不猜 */
 function channelText(wire) {
   if (wire === 'password') return '输密码登录之后';
@@ -511,7 +522,7 @@ function acceptedLine() {
   const by = store.values[AGREEMENT_BY_KEY];
 
   if (!version || !at || !by) return '这台机器上还没有完整的同意记录。';
-  return '已同意第 ' + version + ' 版，时间 ' + at + '，' + channelText(by) + '点的。';
+  return '已同意第 ' + version + ' 版，时间 ' + agreementTime(at) + '，' + channelText(by) + '点的。';
 }
 
 /**
