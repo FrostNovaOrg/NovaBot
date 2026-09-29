@@ -112,6 +112,14 @@ public enum TimelineEventType {
     ALERT_FAILED("告警发不出", TimelineCategory.ALERT),
 
     /**
+     * 告警送达不明：请求已交出去、没等到回包，可能已经发出
+     * <p>
+     * 不算发出也不算发不出去：对端可能已经把消息发进去了，重发就是两条；
+     * 但也没拿到送达的凭据，不能记成「已报出」。原因进补充键值。
+     */
+    ALERT_UNCERTAIN("告警送达不明", TimelineCategory.ALERT),
+
+    /**
      * 保存下来的配置改动当场落到了运行中的程序上
      */
     SETTINGS_APPLIED("设置即时生效", TimelineCategory.SETTINGS),

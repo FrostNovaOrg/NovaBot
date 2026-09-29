@@ -28,13 +28,16 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.ObjectProvider;
 
+import java.lang.reflect.Field;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -524,6 +527,259 @@ class QqAlertChannelTest {
                 Thread.currentThread().interrupt();
             }
             assertTrue(deliveries.isEmpty(), message + "，实际投递: " + deliveries);
+        }
+    }
+
+    /**
+     * 入队后才发不出去
+     * <p>
+     * 入队前就发不出去的几类已经如实拦下了，但入队之后才失败的仍记「已报出」、
+     * 不重投。真实故障：告警的 QQ 号不是机器人好友（或机器人被踢出群）——
+     * OneBot 回业务失败，这一类体检永远抓不到。日志页却记着「QQ已报出」，也不重投；
+     * 点「发一条测试」，界面说发了。
+     */
+    @Nested
+    @DisplayName("入队后才发不出去")
+    class PostEnqueueFailure {
+
+        /**
+         * 用户故障：告警的 QQ 号不是机器人好友。
+         * 修复前：测试说发了，真告警记已报出且不重投——人什么也没收到，日志页却说发了。
+         * 夹具走真链：真 NovaMessageSender，发送端回 OneBotHttpService.send:193 的 API_ERROR 形。
+         */
+        @Test
+        @DisplayName("⚠️ 告警的 QQ 号不是好友时，测试不许说已发出；真告警记发不出去并入重投")
+        void apiBusinessFailureReportsHonestly() {
+            NovaCoreProperties core = new NovaCoreProperties();
+            List<TimelineEvent> recorded = new ArrayList<>();
+            CountDownLatch alertResultArrived = new CountDownLatch(1);
+
+            Rig rig = rig(core, (headers, params) ->
+                    new JSONObject().fluentPut("code", 2)
+                            .fluentPut("message", "OneBot API 返回错误代码: 好友不存在")
+                            .fluentPut("id", null), true);
+            markOnline(rig.connections);
+            QqAlertChannel channel = qq(rig);
+
+            @SuppressWarnings("unchecked")
+            ObjectProvider<AlertChannel> provider = mock(ObjectProvider.class);
+            when(provider.orderedStream()).thenAnswer(invocation -> List.of((AlertChannel) channel).stream());
+            AlertService service = new AlertService(core, provider, event -> {
+                recorded.add(event);
+                alertResultArrived.countDown();
+            });
+
+            // 真告警：入队后发送端回业务失败
+            service.alert("qq.not.friend", "告警的 QQ 号不是好友", "内容");
+            try {
+                assertTrue(alertResultArrived.await(3, TimeUnit.SECONDS),
+                        "要等到真结果再断言");
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                fail("等待被中断");
+            }
+
+            assertTrue(recorded.stream().anyMatch(e -> e.type() == TimelineEventType.ALERT_FAILED
+                            && e.text().contains("发不出去")),
+                    "日志页要记发不出去: " + recorded);
+            assertTrue(recorded.stream().noneMatch(e -> e.type() == TimelineEventType.ALERT_SENT),
+                    "没发出去就不许记已报出: " + recorded);
+
+            // 等重投入队（时间线先记、再入队，中间有极短窗口）
+            long deadline = System.currentTimeMillis() + 2000;
+            while (System.currentTimeMillis() < deadline && service.pendingCount() == 0) {
+                try {
+                    Thread.sleep(20);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+            assertEquals(1, service.pendingCount(), "没发出去要入重投");
+
+            // 发一条测试：等到真结果再回话
+            AlertService.TestResult result = service.test("qq");
+            assertNotEquals(AlertService.TestResult.Status.DELIVERED, result.status(),
+                    "发不出去就不许说已发出: " + result.message());
+            assertTrue(result.message().contains("发不出去"),
+                    "要说清发不出去: " + result.message());
+        }
+
+        /**
+         * 用户故障：告警的 QQ 号不是机器人好友（或被踢出群），OneBot 回业务失败。
+         * 抓的是「排障时时间线详情和测试回话里都没有 NapCat 那句原话」——
+         * 人只知道「发不出去」，不知道为什么，还得去翻工程日志。
+         */
+        @Test
+        @DisplayName("⚠️ 业务失败时 NapCat 原话进时间线详情，也进测试回话")
+        void businessFailureReasonInTimelineDetailAndTestReply() {
+            NovaCoreProperties core = new NovaCoreProperties();
+            List<TimelineEvent> recorded = new ArrayList<>();
+            CountDownLatch alertResultArrived = new CountDownLatch(1);
+
+            Rig rig = rig(core, (headers, params) ->
+                    new JSONObject().fluentPut("code", 2)
+                            .fluentPut("message", "OneBot API 返回错误代码: 好友不存在")
+                            .fluentPut("id", null), true);
+            markOnline(rig.connections);
+            QqAlertChannel channel = qq(rig);
+
+            @SuppressWarnings("unchecked")
+            ObjectProvider<AlertChannel> provider = mock(ObjectProvider.class);
+            when(provider.orderedStream()).thenAnswer(invocation -> List.of((AlertChannel) channel).stream());
+            AlertService service = new AlertService(core, provider, event -> {
+                recorded.add(event);
+                alertResultArrived.countDown();
+            });
+
+            service.alert("qq.not.friend2", "告警的 QQ 号不是好友", "内容");
+            try {
+                assertTrue(alertResultArrived.await(3, TimeUnit.SECONDS), "要等到真结果再断言");
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                fail("等待被中断");
+            }
+
+            assertTrue(recorded.stream().anyMatch(e -> e.type() == TimelineEventType.ALERT_FAILED
+                            && e.detail().getOrDefault("reason", "").contains("好友不存在")),
+                    "NapCat 原话要进时间线详情: " + recorded);
+
+            AlertService.TestResult result = service.test("qq");
+            assertNotEquals(AlertService.TestResult.Status.DELIVERED, result.status(), result.message());
+            assertTrue(result.message().contains("好友不存在"),
+                    "NapCat 原话要进测试回话: " + result.message());
+        }
+
+        /**
+         * 用户故障：OneBot 掉线很久，队列堆满，新告警把最旧的挤掉。
+         * 抓的是「被挤掉的那条在日志页查无此事、也不重投」——
+         * 人看到的是「最该知道的那条旧告警消失了」。
+         */
+        @Test
+        @DisplayName("⚠️ 队列挤掉走告警链 → 记发不出去，入重投")
+        void queueSqueezeRecordsFailureAndEntersRetry() throws Exception {
+            NovaCoreProperties core = new NovaCoreProperties();
+            List<TimelineEvent> recorded = new ArrayList<>();
+
+            Rig rig = rig(core, (headers, params) ->
+                    new JSONObject().fluentPut("code", 0).fluentPut("id", "m1"), true);
+            markOnline(rig.connections);
+            QqAlertChannel channel = qq(rig);
+
+            // 把队列换成容量 2 的，免得真填 500 条
+            Field queueMapField = NovaMessageSender.class.getDeclaredField("queueMap");
+            queueMapField.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            Map<String, BlockingQueue<Message>> queueMap =
+                    (Map<String, BlockingQueue<Message>>) queueMapField.get(rig.messages);
+            queueMap.put("qq-onebot", new LinkedBlockingQueue<>(2));
+
+            @SuppressWarnings("unchecked")
+            ObjectProvider<AlertChannel> provider = mock(ObjectProvider.class);
+            when(provider.orderedStream()).thenAnswer(invocation -> List.of((AlertChannel) channel).stream());
+            AlertService service = new AlertService(core, provider, recorded::add);
+
+            service.alert("key1", "第一条", "内容");
+            service.alert("key2", "第二条", "内容");
+            service.alert("key3", "第三条", "内容");
+
+            assertTrue(recorded.stream().anyMatch(e -> e.text().contains("发不出去")),
+                    "被挤掉的那条要记发不出去: " + recorded);
+            assertEquals(1, service.pendingCount(), "被挤掉的那条要入重投");
+        }
+
+        /**
+         * 用户故障：QQ 那边回得慢（请求到了、回话没回来），同一条告警 QQ 上收到两条。
+         * 抓的是「送达不明被记成发不出去并重投」——群里多一条一样的。
+         */
+        @Test
+        @DisplayName("⚠️ 送达不明 → 记送达不明，不入重投")
+        void deliveryUnknownRecordsUncertainAndDoesNotRetry() {
+            NovaCoreProperties core = new NovaCoreProperties();
+            List<TimelineEvent> recorded = new ArrayList<>();
+            CountDownLatch alertResultArrived = new CountDownLatch(1);
+
+            Rig rig = rig(core, (headers, params) ->
+                    new JSONObject()
+                            .fluentPut(Sender.LocalDelivery.DELIVERY_UNKNOWN, true)
+                            .fluentPut("message", "没等到回包"), true);
+            markOnline(rig.connections);
+            QqAlertChannel channel = qq(rig);
+
+            @SuppressWarnings("unchecked")
+            ObjectProvider<AlertChannel> provider = mock(ObjectProvider.class);
+            when(provider.orderedStream()).thenAnswer(invocation -> List.of((AlertChannel) channel).stream());
+            AlertService service = new AlertService(core, provider, event -> {
+                recorded.add(event);
+                alertResultArrived.countDown();
+            });
+
+            service.alert("qq.uncertain", "送达不明的告警", "内容");
+            try {
+                assertTrue(alertResultArrived.await(3, TimeUnit.SECONDS), "要等到真结果再断言");
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                fail("等待被中断");
+            }
+
+            assertTrue(recorded.stream().anyMatch(e -> e.text().contains("送达不明")),
+                    "要记送达不明: " + recorded);
+            assertTrue(recorded.stream().noneMatch(e -> e.text().contains("发不出去")),
+                    "不许记发不出去: " + recorded);
+            assertEquals(0, service.pendingCount(), "送达不明不入重投");
+
+            AlertService.TestResult result = service.test("qq");
+            assertTrue(result.message().contains("送没送到说不准") || result.message().contains("送达不明"),
+                    "测试回话要说清送达不明: " + result.message());
+        }
+
+        /**
+         * 用户故障：机器人配置刚被删掉的那一刻来了告警。
+         * 抓的是「日志页、重投里都查不到它」——
+         * 点「发一条测试」还干等满 10 秒才说没等到结果。
+         */
+        @Test
+        @DisplayName("⚠️ 找不到平台 → 失败回调跑到，告警记发不出去")
+        void platformNotFoundRunsFailureCallbackAndRecordsFailure() {
+            NovaCoreProperties core = new NovaCoreProperties();
+            List<TimelineEvent> recorded = new ArrayList<>();
+
+            // 第一次查得到平台（过 validateCanSend），第二次查不到（enqueue 里丢）
+            Sender target = new Sender();
+            target.setName("qq-onebot");
+            target.setUrl("http://127.0.0.1:7827/onebot/send");
+            target.setDelay(0);
+            target.setLocalDelivery((headers, params) ->
+                    new JSONObject().fluentPut("code", 0).fluentPut("id", "m1"));
+
+            NovaSenderService senders = mock(NovaSenderService.class);
+            when(senders.getSender("qq-onebot"))
+                    .thenReturn(Optional.of(target))
+                    .thenReturn(Optional.empty());
+
+            @SuppressWarnings("unchecked")
+            ObjectProvider<AtAllPermissionResolver> resolvers = mock(ObjectProvider.class);
+            when(resolvers.iterator()).thenAnswer(invocation -> List.<AtAllPermissionResolver>of().iterator());
+
+            NovaMessageSender messages = new NovaMessageSender(mock(HttpUtil.class), senders,
+                    new PushActivityRecorder(TimelineWriter.NONE), new PushGate(core), TimelineWriter.NONE,
+                    new AtAllQuotaService(core), resolvers,
+                    new FirstPushTipService(new NovaStateStore(core)));
+
+            OneBotConnectionState connections = new OneBotConnectionState();
+            markOnline(connections);
+            QqAlertChannel channel = new QqAlertChannel(
+                    properties(PushTargetType.FRIEND.getCode(), 10000L), messages, senders, connections);
+
+            @SuppressWarnings("unchecked")
+            ObjectProvider<AlertChannel> provider = mock(ObjectProvider.class);
+            when(provider.orderedStream()).thenAnswer(invocation -> List.of((AlertChannel) channel).stream());
+            AlertService service = new AlertService(core, provider, recorded::add);
+
+            service.alert("platform.gone", "找不到平台", "内容");
+
+            assertTrue(recorded.stream().anyMatch(e -> e.text().contains("发不出去")),
+                    "找不到平台要记发不出去: " + recorded);
         }
     }
 

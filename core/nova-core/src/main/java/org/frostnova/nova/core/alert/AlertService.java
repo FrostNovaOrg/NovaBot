@@ -19,10 +19,15 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * 告警服务
@@ -52,6 +57,8 @@ import java.util.concurrent.TimeUnit;
  *         重投只会让他收到第二条一样的</li>
  *     <li><b>压根没有配置任何通道</b> → 不入队。没有出口，重投一万次也是失败，
  *         队列只会被填满然后开始丢东西</li>
+ *     <li><b>送达不明</b>（请求已交出去、没等到回包）→ <b>不重投</b>。
+ *         对端可能已经发进去了，重发就是两条</li>
  * </ul>
  *
  * <h2>队列只在进程内</h2>
@@ -96,18 +103,41 @@ public class AlertService {
      */
     private final Deque<PendingAlert> pending = new ArrayDeque<>();
 
+    /**
+     * 「发一条测试」等真结果的时长上限
+     * <p>
+     * QQ 那一路走推送队列，入队后要等发送线程跑完才知道结果。等是值得的——
+     * 「发一条测试」的意义就是当场知道通不通。但等待必须有上限：
+     * 队列里排着几百条时，让使用者对着一个转圈的按钮等十分钟同样是坏事。
+     */
+    private final Duration testWaitTimeout;
+
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
         Thread thread = new Thread(runnable, "alert-retry");
         thread.setDaemon(true);
         return thread;
     });
 
+    /**
+     * 已进入退出流程
+     * <p>
+     * 退出开始后失败回调不再往重投队列塞——那时已经没人报了，塞进去的只会凭空消失。
+     * 改为在工程日志里逐条写「随本次退出丢失」。
+     */
+    private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
+
     @Autowired
     public AlertService(NovaCoreProperties properties, ObjectProvider<AlertChannel> channels,
                         TimelineWriter timeline) {
+        this(properties, channels, timeline, Duration.ofSeconds(10));
+    }
+
+    AlertService(NovaCoreProperties properties, ObjectProvider<AlertChannel> channels,
+                 TimelineWriter timeline, Duration testWaitTimeout) {
         this.properties = properties;
         this.channels = channels;
         this.timeline = timeline;
+        this.testWaitTimeout = testWaitTimeout;
     }
 
     /**
@@ -133,6 +163,7 @@ public class AlertService {
      */
     @EventListener(ContextClosedEvent.class)
     public void onContextClosedEvent() {
+        shuttingDown.set(true);
         scheduler.shutdownNow();
 
         List<PendingAlert> lost;
@@ -168,26 +199,11 @@ public class AlertService {
         }
 
         Instant now = Instant.now();
-        Delivery delivery = deliver(subject, content);
-
-        if (delivery.delivered()) {
-            return;
-        }
-
-        if (delivery.blocked()) {
-            // 被总开关拦下的告警在 deliver 里已记过一条（一行日志＋一条时间线），
-            // 这里只剩一件事可做：别放进队列。队列是给「通道坏了、等它自己好」的，
-            // 开关却是使用者自己关的——攒着，等开关打开的那一刻集中补出去，
-            // 正是闸门注释里不许的那种轰炸，只是把静音换成了开关
-            return;
-        }
+        Delivery delivery = deliver(new PendingAlert(key, subject, content, now, 0), content);
 
         if (!delivery.attempted()) {
             log.warn("未配置任何可用的告警通道, 以下问题仅记录在日志中: {} - {}", subject, content);
-            return;
         }
-
-        enqueue(new PendingAlert(key, subject, content, now, 1));
     }
 
     /**
@@ -245,30 +261,59 @@ public class AlertService {
                     channel.name() + " 这一路还没配好，先把上面几栏填完并保存。");
         }
 
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicReference<AlertChannel.SendResult> result = new AtomicReference<>();
         try {
-            channel.send(TEST_SUBJECT, TEST_CONTENT);
-            return new TestResult(TestResult.Status.DELIVERED, id, channel.name(),
-                    "已经往 " + channel.name() + " 发了一条测试告警，去看看收到没有。");
+            channel.sendReporting(TEST_SUBJECT, TEST_CONTENT, r -> {
+                result.set(r);
+                latch.countDown();
+            });
         } catch (Exception e) {
-            if (e instanceof AlertBlockedException) {
-                // 被总开关拦下是使用者自己按下的「先别发」，不是故障：工程日志一行、不打栈。
-                // 界面回话与别的失败同一句——点的人要听到的正是「没发出去」及原因
-                log.warn("测试 {} 告警通道被全局推送开关拦下, 这一次没发出去: {}", channel.name(), e.getMessage());
-            } else {
-                // 真出错时排查要用栈
-                log.error("测试 {} 告警通道失败", channel.name(), e);
-            }
+            log.error("测试 {} 告警通道失败", channel.name(), e);
             return new TestResult(TestResult.Status.FAILED, id, channel.name(),
                     channel.name() + " 这一路发不出去：" + e.getMessage());
         }
+
+        try {
+            if (!latch.await(testWaitTimeout.toMillis(), TimeUnit.MILLISECONDS)) {
+                return new TestResult(TestResult.Status.UNCERTAIN, id, channel.name(),
+                        channel.name() + " 这一路还没等到结果。请到 " + channel.name()
+                                + " 上看一眼，或到日志页「推送」里查看。");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return new TestResult(TestResult.Status.UNCERTAIN, id, channel.name(),
+                    channel.name() + " 这一路的等待被打断了，还没等到结果。");
+        }
+
+        AlertChannel.SendResult r = result.get();
+        return switch (r.status()) {
+            case SENT -> new TestResult(TestResult.Status.DELIVERED, id, channel.name(),
+                    "已经往 " + channel.name() + " 发了一条测试告警，去看看收到没有。");
+            case BLOCKED -> {
+                // 被总开关拦下是使用者自己按下的「先别发」，不是故障：工程日志一行、不打栈。
+                // 界面回话与别的失败同一句——点的人要听到的正是「没发出去」及原因
+                log.warn("测试 {} 告警通道被全局推送开关拦下, 这一次没发出去: {}", channel.name(), r.reason());
+                yield new TestResult(TestResult.Status.FAILED, id, channel.name(),
+                        channel.name() + " 这一路发不出去：" + r.reason());
+            }
+            case FAILED -> {
+                log.error("测试 {} 告警通道失败: {}", channel.name(), r.reason(), r.cause());
+                yield new TestResult(TestResult.Status.FAILED, id, channel.name(),
+                        channel.name() + " 这一路发不出去：" + r.reason());
+            }
+            case UNCERTAIN -> new TestResult(TestResult.Status.UNCERTAIN, id, channel.name(),
+                    "请求已经发出去了，没等到 " + channel.name() + " 回话，送没送到说不准，请到 "
+                            + channel.name() + " 上看一眼。");
+        };
     }
 
     /**
      * 一次测试的结果
      * <p>
-     * 四个态分开而不是一个 {@code boolean}：「没这一路」「还没配」「发不出去」「发出去了」
-     * 的下一步各不相同——分别是查参数、去把栏填完、看错误信息、去手机上看。
-     * 压成一个「失败」的话，界面只能给出一句对三种情况都不痛不痒的话。
+     * 五个态分开而不是一个 {@code boolean}：「没这一路」「还没配」「发不出去」「发出去了」「送达不明」
+     * 的下一步各不相同——分别是查参数、去把栏填完、看错误信息、去手机上看、去那一路上看一眼。
+     * 压成一个「失败」的话，界面只能给出一句对四种情况都不痛不痒的话。
      *
      * @param status 结果
      * @param id 通道标识
@@ -292,7 +337,11 @@ public class AlertService {
             /**
              * 发出去了
              */
-            DELIVERED
+            DELIVERED,
+            /**
+             * 送达不明：请求发出去了、没等到回话，或还没等到结果，送没送到说不准
+             */
+            UNCERTAIN
         }
 
         /**
@@ -343,97 +392,145 @@ public class AlertService {
         }
 
         Instant now = Instant.now();
-        int sent = 0;
         for (PendingAlert alert : batch) {
-            Delivery delivery = deliver(alert.subject(), alert.contentForRedelivery(now));
-            if (delivery.delivered()) {
-                sent++;
-                continue;
-            }
-
-            if (delivery.blocked()) {
-                // 重投撞上开关关闭：这一条从队列里拿掉，不再放回去。
-                // 留在队里的话，开关一打开它就会带着【补发】标记涌出去
-                log.warn("告警 [{}] {} 重投被全局推送开关拦下, 不再重投（发生于 {}）",
-                        alert.key(), alert.subject(), alert.occurredAtText());
-                continue;
-            }
-
-            PendingAlert retried = alert.retried();
-            if (retried.attempts() > properties.getAlert().getRetryMaxAttempts()) {
-                log.error("告警 [{}] {} 重投 {} 次仍失败, 放弃。它发生于 {}, 始终没能送出去",
-                        alert.key(), alert.subject(), alert.attempts(), alert.occurredAtText());
-                continue;
-            }
-            enqueue(retried);
-        }
-
-        if (sent > 0) {
-            log.info("告警通道已恢复, 补发成功 {} 条, 队列剩余 {} 条", sent, pendingCount());
+            deliver(alert, alert.contentForRedelivery(now));
         }
     }
 
     /**
-     * 投一次，返回「有没有通道可试」与「有没有成功」
+     * 投一次，结果可能当场定下、也可能稍后由回调补上
      * <p>
      * 时间线<b>一路一条</b>，不是一次投递一条：邮件通了而 Webhook 挂了这种情形，
      * 汇总成一条「发出去了」会把挂掉的那一路藏起来——而它挂了多久没人知道。
      * 一条通道都没配好时另记一条，那一种同样是「没人会收到」，
      * 却不属于任何一路通道，按通道记的话它一行都不会出现。
+     * <p>
+     * <b>「已报出」等真发出才记。</b>QQ 那一路入队后还要等发送线程跑完才知道结果；
+     * 入队时就记「已报出」，失败后时间线上会同时留下「已报出」和「发不出去」两条
+     * 互相打架的记录——而时间线只能追加、改不了已经写下的那条。
+     * <p>
+     * 重投也在这里定：全部路都没发成、也没被开关拦下时入队。
+     * 这一步可能发生在回调里（异步路的结果回来之后），此时本方法已经返回。
      */
-    private Delivery deliver(String subject, String content) {
-        boolean attempted = false;
-        boolean delivered = false;
-        boolean blocked = false;
+    private Delivery deliver(PendingAlert alert, String sendContent) {
+        List<AlertChannel> available = channels.orderedStream().filter(AlertChannel::isAvailable).toList();
 
-        for (AlertChannel channel : channels.orderedStream().toList()) {
-            if (!channel.isAvailable()) {
-                continue;
-            }
-
-            attempted = true;
-            try {
-                channel.send(subject, content);
-                delivered = true;
-                timeline.record(TimelineEvent.of(TimelineEventType.ALERT_SENT, TimelineEvent.Level.INFO)
-                        .channel(channel.name())
-                        .text(channel.name() + "已报出：" + shorten(subject))
-                        .detail("subject", subject)
-                        .build());
-            } catch (AlertBlockedException e) {
-                // 被总开关拦下是预期内的情形，不是故障：工程日志一行、不打栈。
-                // 仍要记——「没收到告警」在使用者眼里与「没出事」长得一样
-                blocked = true;
-                log.warn("{} 告警被全局推送开关拦下, 这一次算没发出去, 不再重投: {}",
-                        channel.name(), e.getMessage());
-                timeline.record(TimelineEvent.of(TimelineEventType.ALERT_FAILED, TimelineEvent.Level.WARN)
-                        .channel(channel.name())
-                        .text(channel.name() + "发不出去（" + e.getMessage() + "）：" + shorten(subject))
-                        .detail("subject", subject)
-                        .detail("reason", e.getMessage())
-                        .build());
-            } catch (Exception e) {
-                // 单个通道失败不应影响其他通道
-                log.error("通过 {} 通道发送告警失败", channel.name(), e);
-                timeline.record(TimelineEvent.of(TimelineEventType.ALERT_FAILED, TimelineEvent.Level.ERROR)
-                        .channel(channel.name())
-                        .text(channel.name() + "发不出去：" + shorten(subject))
-                        .detail("subject", subject)
-                        .detail("reason", e.toString())
-                        .build());
-            }
-        }
-
-        if (!attempted) {
+        if (available.isEmpty()) {
             // 标题不截断：这一条是「压根没发出去」，看的人要照着它去查那条告警说的是哪件事；
             // 截成前二十几个字的话，几条不同的告警在时间线里长得一模一样
             timeline.record(TimelineEvent.of(TimelineEventType.ALERT_FAILED, TimelineEvent.Level.WARN)
-                    .text("没有配置告警通道，没发出去：" + subject)
-                    .detail("subject", subject)
+                    .text("没有配置告警通道，没发出去：" + alert.subject())
+                    .detail("subject", alert.subject())
                     .build());
+            // 重投撞上「一条通道都没了」：通道可能稍后回来，仍在上限内就留在队里。
+            // 先记上这一次再比上限，到了就放弃，不再入队。
+            if (alert.attempts() > 0) {
+                PendingAlert retried = alert.retried();
+                if (retried.attempts() > properties.getAlert().getRetryMaxAttempts()) {
+                    log.error("告警 [{}] {} 重投 {} 次仍失败, 放弃。它发生于 {}, 始终没能送出去",
+                            alert.key(), alert.subject(), alert.attempts(), alert.occurredAtText());
+                } else {
+                    enqueueOrLose(retried);
+                }
+            }
+            return new Delivery(false, false, false, false);
         }
 
-        return new Delivery(attempted, delivered, blocked);
+        AtomicInteger remaining = new AtomicInteger(available.size());
+        AtomicBoolean anySuccess = new AtomicBoolean(false);
+        AtomicBoolean anyBlocked = new AtomicBoolean(false);
+        AtomicBoolean anyUncertain = new AtomicBoolean(false);
+
+        for (AlertChannel channel : available) {
+            String channelName = channel.name();
+            // 这一路的结果只收一次：自己抛错时按失败记，已经报过的不再记第二笔
+            AtomicBoolean counted = new AtomicBoolean(false);
+            Consumer<AlertChannel.SendResult> onResult = result -> {
+                if (!counted.compareAndSet(false, true)) {
+                    return;
+                }
+                switch (result.status()) {
+                    case SENT -> {
+                        anySuccess.set(true);
+                        if (alert.attempts() > 0) {
+                            log.info("告警通道已恢复, 补发成功: [{}] {} （发生于 {}, 已尝试 {} 次）",
+                                    alert.key(), alert.subject(), alert.occurredAtText(), alert.attempts());
+                        }
+                        timeline.record(TimelineEvent.of(TimelineEventType.ALERT_SENT, TimelineEvent.Level.INFO)
+                                .channel(channelName)
+                                .text(channelName + "已报出：" + shorten(alert.subject()))
+                                .detail("subject", alert.subject())
+                                .build());
+                    }
+                    case BLOCKED -> {
+                        // 被总开关拦下是预期内的情形，不是故障：工程日志一行、不打栈。
+                        // 仍要记——「没收到告警」在使用者眼里与「没出事」长得一样
+                        anyBlocked.set(true);
+                        log.warn("{} 告警被全局推送开关拦下, 这一次算没发出去, 不再重投: {}",
+                                channelName, result.reason());
+                        timeline.record(TimelineEvent.of(TimelineEventType.ALERT_FAILED, TimelineEvent.Level.WARN)
+                                .channel(channelName)
+                                .text(channelName + "发不出去（" + result.reason() + "）：" + shorten(alert.subject()))
+                                .detail("subject", alert.subject())
+                                .detail("reason", result.reason())
+                                .build());
+                    }
+                    case FAILED -> {
+                        log.error("通过 {} 通道发送告警失败: {}", channelName, result.reason(), result.cause());
+                        timeline.record(TimelineEvent.of(TimelineEventType.ALERT_FAILED, TimelineEvent.Level.ERROR)
+                                .channel(channelName)
+                                .text(channelName + "发不出去：" + shorten(alert.subject()))
+                                .detail("subject", alert.subject())
+                                .detail("reason", result.reason())
+                                .build());
+                    }
+                    case UNCERTAIN -> {
+                        anyUncertain.set(true);
+                        log.warn("通过 {} 通道发送告警送达不明: {}", channelName, result.reason());
+                        timeline.record(TimelineEvent.of(TimelineEventType.ALERT_UNCERTAIN, TimelineEvent.Level.WARN)
+                                .channel(channelName)
+                                .text(channelName + "送达不明：" + shorten(alert.subject()))
+                                .detail("subject", alert.subject())
+                                .detail("reason", result.reason())
+                                .build());
+                    }
+                }
+
+                if (remaining.decrementAndGet() > 0) {
+                    return;
+                }
+                if (anySuccess.get()) {
+                    return;
+                }
+                if (anyBlocked.get()) {
+                    // 重投撞上开关关闭：这一条从队列里拿掉，不再放回去。
+                    // 留在队里的话，开关一打开它就会带着【补发】标记涌出去
+                    if (alert.attempts() > 0) {
+                        log.warn("告警 [{}] {} 重投被全局推送开关拦下, 不再重投（发生于 {}）",
+                                alert.key(), alert.subject(), alert.occurredAtText());
+                    }
+                    return;
+                }
+                if (anyUncertain.get()) {
+                    // 送达不明不算发不出去：对端可能已经发进去了，重发就是两条
+                    return;
+                }
+                if (alert.attempts() > 0 && alert.attempts() + 1 > properties.getAlert().getRetryMaxAttempts()) {
+                    log.error("告警 [{}] {} 重投 {} 次仍失败, 放弃。它发生于 {}, 始终没能送出去",
+                            alert.key(), alert.subject(), alert.attempts(), alert.occurredAtText());
+                    return;
+                }
+                enqueueOrLose(alert.retried());
+            };
+            try {
+                channel.sendReporting(alert.subject(), sendContent, onResult);
+            } catch (Exception e) {
+                String reason = e.getMessage() != null ? e.getMessage() : e.toString();
+                onResult.accept(AlertChannel.SendResult.failed(reason, e));
+            }
+        }
+
+        return new Delivery(true, anySuccess.get(), anyBlocked.get(), remaining.get() > 0);
     }
 
     /**
@@ -446,6 +543,18 @@ public class AlertService {
 
     private static String shorten(String subject) {
         return subject.length() <= SUBJECT_IN_RECORD ? subject : subject.substring(0, SUBJECT_IN_RECORD) + "…";
+    }
+
+    /**
+     * 入队重投；已进入退出流程时不再入队，改为在工程日志里逐条写「随本次退出丢失」
+     */
+    private void enqueueOrLose(PendingAlert alert) {
+        if (shuttingDown.get()) {
+            log.error("  随本次退出丢失: [{}] {} （发生于 {}, 已尝试 {} 次）",
+                    alert.key(), alert.subject(), alert.occurredAtText(), alert.attempts());
+            return;
+        }
+        enqueue(alert);
     }
 
     /**
@@ -488,9 +597,10 @@ public class AlertService {
     /**
      * 一次投递的结果
      * @param attempted 是否至少有一个通道可用、被试过
-     * @param delivered 是否至少有一个通道成功
+     * @param delivered 是否至少有一个通道<b>已确认</b>成功（异步路的结果可能还没回来）
      * @param blocked 是否有一路被全局推送开关拦下——被拦下的告警算最终失败，不入队也不重投
+     * @param pending 是否还有异步路的结果没回来——回来之前不入重投，免得把还没定的事判成失败
      */
-    private record Delivery(boolean attempted, boolean delivered, boolean blocked) {
+    private record Delivery(boolean attempted, boolean delivered, boolean blocked, boolean pending) {
     }
 }

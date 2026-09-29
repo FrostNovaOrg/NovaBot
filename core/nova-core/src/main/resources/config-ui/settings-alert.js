@@ -295,7 +295,7 @@ async function sendTest(channel, button) {
   try {
     const res = await api('/alert/test?channel=' + encodeURIComponent(channel), {method: 'POST'});
     box.textContent = testOutcomeText(res.message || (res.success ? '已发出' : '没发出去'), note);
-    box.className = 'al-r ' + (res.success ? 'ok' : 'err');
+    box.className = 'al-r ' + (res.status === 'UNCERTAIN' ? 'warn' : (res.success ? 'ok' : 'err'));
   } catch (e) {
     box.textContent = testOutcomeText('发不出去：' + e.message, note);
     box.className = 'al-r err';

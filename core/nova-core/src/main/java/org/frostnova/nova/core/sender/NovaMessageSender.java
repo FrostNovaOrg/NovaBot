@@ -186,6 +186,8 @@ public class NovaMessageSender {
         Optional<Sender> optionalSender = senderService.getSender(message.getPlatform());
         if (optionalSender.isEmpty()) {
             log.warn("未找到 {} 推送平台配置, 请检查配置文件是否正确配置, 已丢弃消息: [{}] {}: {}", message.getPlatform(), message.getType().getStr(), message.getNum(), message.getDisplay());
+            message.setFailureReason("未找到推送平台「" + message.getPlatform() + "」配置");
+            runEach(message.markFailed(), message, "发送失败");
             return;
         }
 
@@ -204,6 +206,8 @@ public class NovaMessageSender {
             }
 
             long total = droppedCount.incrementAndGet();
+            dropped.setFailureReason("队列已满, 被挤掉");
+            runEach(dropped.markFailed(), dropped, "发送失败");
             log.warn("{} 平台的发送队列已满({} 条), 丢弃最旧的一条消息: [{}] {}: {}（累计丢弃 {} 条）",
                     message.getPlatform(), QUEUE_CAPACITY, dropped.getType().getStr(),
                     dropped.getNum(), dropped.getDisplay(), total);
@@ -423,7 +427,13 @@ public class NovaMessageSender {
             while (!Thread.currentThread().isInterrupted()) {
                 try {
                     Message message = queue.take();
-                    doSend(sender, message, true);
+                    try {
+                        doSend(sender, message, true);
+                    } catch (Exception e) {
+                        log.error("{} 平台消息发送异常", sender.getName(), e);
+                        message.setFailureReason("发送异常: " + e.getMessage());
+                        runEach(message.markFailed(), message, "发送失败");
+                    }
                     Thread.sleep(delay);
                 } catch (InterruptedException e) {
                     // 中断即视为停机：恢复标志后由循环条件退出，此处不必记为错误
@@ -462,6 +472,13 @@ public class NovaMessageSender {
             int remaining = getPendingCount();
             if (remaining > 0) {
                 log.warn("仍有 {} 条消息未能发出, 已放弃等待", remaining);
+                for (BlockingQueue<Message> queue : queueMap.values()) {
+                    Message left;
+                    while ((left = queue.poll()) != null) {
+                        left.setFailureReason("停机时未能发出");
+                        runEach(left.markFailed(), left, "发送失败");
+                    }
+                }
             }
         }
 
@@ -482,6 +499,8 @@ public class NovaMessageSender {
         // 只有在这里拦才拦得全
         AtAllDecision quota = applyAtAllQuota(message);
         if (!quota.send()) {
+            message.setFailureReason("摘掉 @全体成员 后没有内容");
+            runEach(message.markFailed(), message, "发送失败");
             return null;
         }
         AtomicReference<LocalDate> chargedOn = new AtomicReference<>(quota.chargedOn());
@@ -514,6 +533,8 @@ public class NovaMessageSender {
             if (!interceptor.test(message)) {
                 log.info("已取消发送消息: NovaBot -> {} ([{}] {}) [{}]: {}", sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(), message.getDisplay());
                 releaseOnce(message, chargedOn);
+                message.setFailureReason("发送被拦截");
+                runEach(message.markFailed(), message, "发送失败");
                 return null;
             }
         }
@@ -547,11 +568,13 @@ public class NovaMessageSender {
         } else if (Boolean.TRUE.equals(result.getBoolean(Sender.LocalDelivery.DELIVERY_UNKNOWN))) {
             // 请求已经交出去、没等到回包：对端可能已经发进群。剥图重发纯文字会让群里多一条，
             // 带 @全体成员 的连 @ 一起再发一遍，所以不重发。也不当没发出去：额度不退（那次可能已经 @ 过），
-            // 不记进失败次数。失败回调照跑——手里没有编号，靠编号的后续（挂群待办）本来就做不成
+            // 不记进失败次数。跑送达不明回调而不是失败回调——失败回调会让上层按「发不出去」入重投，
+            // 群里就多一条一样的。手里没有编号，靠编号的后续（挂群待办）本来就做不成
             chargedOn.set(null);
             activityRecorder.recordUncertain(sender.getName(), describeTarget(message), message.getDisplay(), result.getString("message"), elapsedMillis);
             log.warn("消息送达不明 ({}), 不重发: NovaBot -> {} ([{}] {}) [{}]: {}", result.getString("message"), sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(), message.getDisplay());
-            runEach(message.markFailed(), message, "发送失败");
+            message.setFailureReason(result.getString("message"));
+            runEach(message.markUncertain(), message, "送达不明");
         } else {
             activityRecorder.recordFailure(sender.getName(), describeTarget(message), message.getDisplay(), result.getString("message"), elapsedMillis);
             log.error("消息发送失败 ({}): NovaBot -> {} ([{}] {}) [{}]: {}", result.getString("message"), sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(), message.getDisplay());
@@ -560,6 +583,7 @@ public class NovaMessageSender {
             // 失败回调只在文字也没送到时才跑，避免群里已经有这条文字，却被记成没发出去
             delivered = fallbackWithoutImages(sender, headers, params, message, result);
             if (!delivered) {
+                message.setFailureReason(result.getString("message"));
                 runEach(message.markFailed(), message, "发送失败");
             }
         }
