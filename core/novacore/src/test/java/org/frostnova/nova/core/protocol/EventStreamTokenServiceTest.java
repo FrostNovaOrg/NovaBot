@@ -176,4 +176,28 @@ class EventStreamTokenServiceTest {
 
         assertTrue(service.verify(token), "半截的上一行把下一把口令一起弄丢了——那把口令刚签给了使用者");
     }
+
+    @Test
+    @DisplayName("口令表里夹着半个中文字的一行时, 其余口令照旧验得过, 吊销也照旧定向")
+    void halfCharacterLineDoesNotLockOutEveryPanel() throws Exception {
+        // 断电卡在签发时写一个中文字的中间, 盘上留下半个字; 写入那头隔开了半行, 半个字仍在文件里
+        String before = service.issue("面板-甲");
+        byte[] head = "{\"hash\":\"写坏的半行\",\"label\":\"面板-半".getBytes(StandardCharsets.UTF_8);
+        // 「截」是 E6 88 AA，只写进前两个字节，也没有换行
+        byte[] line = java.util.Arrays.copyOf(head, head.length + 2);
+        line[head.length] = (byte) 0xE6;
+        line[head.length + 1] = (byte) 0x88;
+        Files.write(dir.resolve("event-stream-tokens.jsonl"), line, java.nio.file.StandardOpenOption.APPEND);
+        String after = service.issue("面板-乙");
+
+        assertTrue(service.verify(before), "半个字让整张口令表读不出来, 所有面板一起连不上");
+        assertTrue(service.verify(after), "坏行之后新签的口令也验不过, 签了等于没签");
+
+        EventStreamToken first = service.list().stream()
+                .filter(t -> "面板-甲".equals(t.label())).findFirst().orElseThrow();
+        assertTrue(service.revoke(service.fingerprintOf(first)), "找不到要吊销的那把");
+
+        assertFalse(service.verify(before), "被撤的那把该拒");
+        assertTrue(service.verify(after), "吊销一把之后另一把必须照旧能用");
+    }
 }

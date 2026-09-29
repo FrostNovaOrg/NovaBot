@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
 
 /**
  * 事件流只读口令的签发、吊销与校验
@@ -235,8 +236,8 @@ public class EventStreamTokenService {
         }
 
         List<EventStreamToken> result = new ArrayList<>();
-        try {
-            for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+        try (Stream<String> lines = JsonlFiles.lines(file)) {
+            for (String line : (Iterable<String>) lines::iterator) {
                 if (line.isBlank()) {
                     continue;
                 }
@@ -252,8 +253,10 @@ public class EventStreamTokenService {
                     log.warn("跳过口令表中无法解析的一行: {}", e.getMessage());
                 }
             }
-        } catch (IOException e) {
+        } catch (IOException | UncheckedIOException e) {
+            // 读到一半出错时不交出前半张表：吊销会拿它整表重写，没读到的那些口令就被抹掉了
             log.error("读取事件流口令表失败", e);
+            return List.of();
         }
         return result;
     }
