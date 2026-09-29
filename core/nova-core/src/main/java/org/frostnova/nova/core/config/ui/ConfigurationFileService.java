@@ -316,6 +316,15 @@ public class ConfigurationFileService {
                 + "在界面改会拆掉这层引用；这里显示的是程序实际读到的值，要改请到配置文件里改。";
     }
 
+    /**
+     * 行内名单里有一项是别名时的只读说明。括号里是那一项写的别名。
+     */
+    private static String lockAliasItem(String alias) {
+        String named = alias.isEmpty() ? "别名" : "别名（" + alias + "）";
+        return "这份名单里有一项是" + named + "，在界面改会拆掉这层引用；"
+                + "这里显示的是程序实际读到的值，要改请到配置文件里改。";
+    }
+
     /** 名单项与启动读到的对不上号 */
     private static final String LOCK_LIST_UNREADABLE = "这份名单在配置文件里的写法界面读不准（项里套着子项或别的手写写法），"
             + "为不写错不在界面改；要改请到配置文件里改。";
@@ -392,7 +401,21 @@ public class ConfigurationFileService {
                     locked.put(line.path, lockAlias(aliasWritten(lines, line)));
                 } else if (value instanceof List<?> list) {
                     line.value = joinLoaded(list);
-                    locked.put(line.path, lockAlias(aliasWritten(lines, line)));
+                    String itemAlias = aliasItemInFlowList(lines, line);
+                    // 引号里的星号开头文字是普通文字，不因此把这份名单标成不能改。
+                    // 但这行得已经按名单收下，且收下的各项与启动读到的逐项相同；对不上就照旧锁住
+                    if (itemAlias != null) {
+                        locked.put(line.path, lockAliasItem(itemAlias));
+                    } else if (!starOnlyInsideQuotes(lines, line) || !flowListMatchesLoaded(line, list)) {
+                        // 对不上号就锁住。按名单收下的是文件里的字面文字，和启动读到的不是同一套：
+                        // 退回这套名单，界面改显示启动读到的值
+                        if (line.flowInline && starOnlyInsideQuotes(lines, line)) {
+                            line.items.clear();
+                            line.listEnd = -1;
+                            line.flowInline = false;
+                        }
+                        locked.put(line.path, lockAlias(aliasWritten(lines, line)));
+                    }
                 } else {
                     line.value = String.valueOf(value);
                     if (hasLineBreak(line.value)) {
@@ -487,7 +510,7 @@ public class ConfigurationFileService {
      * 这一项在配置文件里写的别名记号。键行上有就用键行上的；
      * 键行没有值、别名写在下一行的，从那一行取。
      * 哪一行算值，与解析时认「值在下一行」相同：键行空着或只有锚点、标签，
-     * 且底下不是子项（见 {@link #hasNoValue}、{@link #holdsChildren}、{@link #continuationEnd}）。
+     * 且底下不是子项（见 {@link #hasNoValue}、{@link #holdsChildren}、{@link #valueOnNextLineEnd}）。
      * 取不到时为空串。
      */
     private String aliasWritten(List<String> lines, Line line) {
@@ -501,7 +524,7 @@ public class ConfigurationFileService {
         if (holdsChildren(lines, line)) {
             return "";
         }
-        int end = continuationEnd(lines, line.index, line.indent);
+        int end = valueOnNextLineEnd(lines, line.index, line.indent);
         for (int i = line.index + 1; i <= end; i++) {
             String raw = lines.get(i);
             if (raw.isBlank() || raw.strip().startsWith("#")) {
@@ -983,6 +1006,15 @@ public class ConfigurationFileService {
                 // 宁可拒存并说清原因（见本类 parse 里的同名标注）
                 throw new IOException("配置项 " + change.getKey()
                         + " 的行内名单跨了行且含本界面读不了的写法, 为不写坏配置文件本批全部未保存, 请先在配置文件里把它改成每行一项");
+            }
+
+            // 带引号的星号项旁边是嵌套名单，这一行没按名单收下：界面上锁着，
+            // 存成别的值会把整份名单换成一个字
+            if (line.fromLoader && starOnlyInsideQuotes(lines, line)) {
+                String reason = locked.get(change.getKey());
+                if (reason != null && (line.value == null || !change.getValue().equals(line.value))) {
+                    throw new IOException("配置项 " + change.getKey() + " " + unsavedReason(reason));
+                }
             }
 
             // 引号包着的值启动时读到的就是界面上那个值，原样送回来就是没改：不动那一行，
@@ -2267,8 +2299,9 @@ public class ConfigurationFileService {
                 if (holdsChildren(lines, line)) {
                     collecting = line;
                 } else {
-                    // 值写在下一行（键行空着或只有锚点、标签）：底下是续行文字，不是子项
-                    int end = continuationEnd(lines, i, indent);
+                    // 值写在下一行（键行空着或只有锚点、标签）：底下是续行文字，不是子项。
+                    // 注释行不论缩进都跳过，跟读取配置文件那一路一样
+                    int end = valueOnNextLineEnd(lines, i, indent);
                     line.fromLoader = end > i || !value.isEmpty();
                     i = end;
                     if (!line.fromLoader) {
@@ -2308,6 +2341,15 @@ public class ConfigurationFileService {
                     i = tail.end();
                 }
             }
+            // 写在下一行、以星号开头的项都加了引号的行内名单：那是普通文字，按名单收下才改得了
+            if (!line.flowInline && starOnlyInsideQuotes(lines, line)) {
+                List<String> quotedFlow = flowSequenceItems(flowListText(lines, line));
+                if (quotedFlow != null) {
+                    line.items.addAll(quotedFlow);
+                    line.listEnd = valueOnNextLineEnd(lines, line.index, line.indent);
+                    line.flowInline = true;
+                }
+            }
             result.add(line);
         }
 
@@ -2318,16 +2360,37 @@ public class ConfigurationFileService {
      * 键行（或名单项）之后更深缩进的连续行到哪一行为止（含）；一行也没有时就是键行自己
      * <p>
      * 夹在当中的空行随块走，块尾的空行不算；更深的 {@code #} 行在块标量里是内容，一样算进来。
+     * 缩进不深于键的注释行在这里是块的尽头：块标量、键行上已有值的跨行值用这把尺。
+     * 「值在下一行」另用 {@link #valueOnNextLineEnd}，注释行不论缩进都跳过。
      * @param lines 文件行
      * @param keyIndex 键行下标
      * @param keyIndent 键行缩进
      * @return 最后一行续行的下标
      */
     private int continuationEnd(List<String> lines, int keyIndex, int keyIndent) {
+        return scanContinuation(lines, keyIndex, keyIndent, false);
+    }
+
+    /**
+     * 「值在下一行」的续行到哪一行为止（含）。注释行不论缩进多深都跳过，
+     * 跟读取配置文件时注释不算数一样；缩进不深于键的非注释行才是尽头。
+     * @param lines 文件行
+     * @param keyIndex 键行下标
+     * @param keyIndent 键行缩进
+     * @return 最后一行续行的下标；底下没有值时就是键行自己
+     */
+    private int valueOnNextLineEnd(List<String> lines, int keyIndex, int keyIndent) {
+        return scanContinuation(lines, keyIndex, keyIndent, true);
+    }
+
+    private int scanContinuation(List<String> lines, int keyIndex, int keyIndent, boolean skipComments) {
         int end = keyIndex;
         for (int k = keyIndex + 1; k < lines.size(); k++) {
             String raw = lines.get(k);
             if (raw.isBlank()) {
+                continue;
+            }
+            if (skipComments && raw.strip().startsWith("#")) {
                 continue;
             }
             if (indentOf(raw) <= keyIndent) {
@@ -2336,6 +2399,117 @@ public class ConfigurationFileService {
             end = k;
         }
         return end;
+    }
+
+    /**
+     * 这一项若是行内名单、且其中一项是没加引号的别名，返回那个别名记号；否则返回 null
+     * （整项写成别名，或名单里没有别名项，仍用整项那句说明）。
+     * 加了引号的 {@code "*s"}、{@code '*s'} 是普通文字，不是别名。键行上与写在下一行的行内名单同一把尺。
+     */
+    private String aliasItemInFlowList(List<String> lines, Line line) {
+        List<String> items = rawFlowItems(lines, line);
+        if (items == null) {
+            return null;
+        }
+        for (String item : items) {
+            if (item.charAt(0) == '"' || item.charAt(0) == '\'') {
+                continue;
+            }
+            String token = aliasToken(item);
+            if (!token.isEmpty()) {
+                return token;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 行内名单里，能认成别名记号的片段全都加了引号：星号可以在项的开头，
+     * 也可以在引号里、空格的后面。那是普通文字，不是别名。
+     * 没有这种项时返回 false，名单原有的说明不动。
+     */
+    private boolean starOnlyInsideQuotes(List<String> lines, Line line) {
+        List<String> items = rawFlowItems(lines, line);
+        if (items == null) {
+            return false;
+        }
+        boolean sawQuotedStar = false;
+        for (String item : items) {
+            boolean quoted = item.charAt(0) == '"' || item.charAt(0) == '\'';
+            if (aliasToken(quoted ? unquote(item) : item).isEmpty()) {
+                continue;
+            }
+            if (!quoted) {
+                return false;
+            }
+            sawQuotedStar = true;
+        }
+        return sawQuotedStar;
+    }
+
+    /**
+     * 这一行已按名单收下，且收下的各项与启动读到的名单逐项相同。
+     * 嵌套名单、项上的锚点或标签收下来的文字和程序读到的对不上，不能当普通名单放开。
+     */
+    private static boolean flowListMatchesLoaded(Line line, List<?> loaded) {
+        if (!line.flowInline || line.items.size() != loaded.size()) {
+            return false;
+        }
+        for (int i = 0; i < loaded.size(); i++) {
+            Object item = loaded.get(i);
+            if (item == null || item instanceof List || item instanceof Map) {
+                return false;
+            }
+            if (!line.items.get(i).equals(String.valueOf(item))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * 行内名单的各项原文，未去引号。不是行内名单时返回 null。
+     * 收了口与没收口的都按方括号里的原文切，别名要在去引号之前认。
+     */
+    private List<String> rawFlowItems(List<String> lines, Line line) {
+        String raw = flowListText(lines, line);
+        if (!raw.startsWith("[")) {
+            return null;
+        }
+        String inner = raw.endsWith("]") ? raw.substring(1, raw.length() - 1) : raw.substring(1);
+        List<String> items = new ArrayList<>();
+        for (String item : splitFlowItems(inner)) {
+            String stripped = item.strip();
+            if (!stripped.isEmpty()) {
+                items.add(stripped);
+            }
+        }
+        return items;
+    }
+
+    /**
+     * 键行上的值；键行空着时，把「值在下一行」那一段里的非注释行接起来
+     */
+    private String flowListText(List<String> lines, Line line) {
+        if (line.rawValue != null && !hasNoValue(line.rawValue)) {
+            return line.rawValue.strip();
+        }
+        int end = valueOnNextLineEnd(lines, line.index, line.indent);
+        StringBuilder joined = new StringBuilder();
+        for (int i = line.index + 1; i <= end; i++) {
+            String raw = lines.get(i);
+            if (raw.isBlank() || raw.strip().startsWith("#")) {
+                continue;
+            }
+            String stripped = raw.strip();
+            int comment = commentIndex(stripped);
+            String value = (comment < 0 ? stripped : stripped.substring(0, comment)).strip();
+            if (joined.length() > 0) {
+                joined.append(' ');
+            }
+            joined.append(value);
+        }
+        return joined.toString();
     }
 
     /**
