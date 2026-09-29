@@ -171,6 +171,9 @@ function renderStrip(model) {
   }
 
   box.innerHTML = model.events.map(item => {
+    if (item.href) {
+      return '<a class="tl-more" href="' + esc(item.href) + '">' + esc(item.text) + '</a>';
+    }
     const level = item.level === 'error' ? 'error' : (item.level === 'warn' ? 'warn' : 'info');
     const tone = level === 'error' ? ' r-err' : (level === 'warn' ? ' r-warn' : '');
     const where = item.channel || item.streamer || '';

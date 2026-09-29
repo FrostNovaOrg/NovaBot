@@ -495,7 +495,7 @@ class AlertServiceTest {
      * 重投时通道没了，以及某一路自己出错
      * <p>
      * 重投撞上一条通道都没配：仍要有次数上限，到了就停。不停的话，
-     * 日志页会一轮接一轮多出「没有配置告警通道，没发出去」。
+     * 这条告警会一直占着队列。
      * 某一路出了意外，不能让后面几路一起不发。
      */
     @Nested
@@ -578,8 +578,12 @@ class AlertServiceTest {
             long noChannel = recorded.stream()
                     .filter(event -> event.text() != null && event.text().contains("没有配置告警通道，没发出去"))
                     .count();
-            assertTrue(noChannel >= 1 && noChannel <= 3,
-                    "没通道的那几轮要记在日志页，到上限就停；得到 " + noChannel + " 条");
+            assertEquals(0, noChannel,
+                    "重投时没通道不逐趟进日志页；得到 " + noChannel + " 条");
+            long abandoned = recorded.stream()
+                    .filter(event -> event.text() != null && event.text().contains("不再重投"))
+                    .count();
+            assertEquals(1, abandoned, "到上限按告警记一条放弃；得到：" + recorded);
         }
 
         @Test
@@ -689,8 +693,8 @@ class AlertServiceTest {
     /**
      * 日志页上重投和首投长得一样
      * <p>
-     * 通道坏着的时候，第一次重投往往只比首投晚几秒到一分钟。两句都是「发不出去」，
-     * 看着像同一条告警报了两遍。重投要写明第几次，第一次投递不写。
+     * 发不出去的重投不进时间线，否则几秒一条，日志页被刷满。
+     * 重投发出去、被拦下、送达不明仍要写明第几次，第一次投递不写。
      */
     @Nested
     @DisplayName("日志页上重投和首投长得一样")
@@ -722,7 +726,7 @@ class AlertServiceTest {
         }
 
         @Test
-        @DisplayName("同一条告警几秒内「发不出去」两遍，看不出第二遍是重投：重投要标明第几次，首投不标")
+        @DisplayName("同一条告警几秒内「发不出去」两遍，看不出第二遍是重投：重投失败不进日志页，首投不标，放弃记一条")
         void failedRetrySaysWhichAttempt() {
             FakeChannel channel = new FakeChannel("qq", "QQ");
             channel.failing = true;
@@ -733,12 +737,9 @@ class AlertServiceTest {
             capturing.retryPending();
             capturing.retryPending();
 
-            assertEquals("QQ发不出去：登录已失效", recorded.get(0).text(),
-                    "首投不标；得到：" + recorded.get(0).text());
-            assertEquals("QQ发不出去（重投第 1 次）：登录已失效", recorded.get(1).text(),
-                    "第一次重投要标明次数；得到：" + recorded.get(1).text());
-            assertEquals("QQ发不出去（重投第 2 次）：登录已失效", recorded.get(2).text(),
-                    "再重投一次，次数要往上走；得到：" + recorded.get(2).text());
+            assertEquals(List.of("QQ发不出去：登录已失效"),
+                    recorded.stream().map(TimelineEvent::text).toList(),
+                    "重投发不出去不进时间线，首投不标；得到：" + recorded);
 
             properties.getAlert().setRetryMaxAttempts(1);
             channels.clear();
@@ -754,7 +755,9 @@ class AlertServiceTest {
             } finally {
                 detachLog(appender);
             }
-            assertEquals("QQ发不出去（重投第 1 次）：登录已失效", recorded.get(1).text());
+            assertEquals("QQ发不出去：登录已失效", recorded.get(0).text());
+            assertEquals("重投 1 次仍没发出去，不再重投：登录已失效", recorded.get(1).text(),
+                    "放弃那条要和工程日志同一个次数；得到：" + recorded.get(1).text());
             assertTrue(appender.list.stream().anyMatch(event ->
                             event.getFormattedMessage().contains("重投 1 次仍失败")),
                     "放弃那句的次数要和日志页同一个数；得到：" + appender.list);
@@ -884,10 +887,98 @@ class AlertServiceTest {
                     "告警 [login-expired] 登录已失效 没有通道, 已入队等待重投, 队列 1 条"),
                     queued,
                     "两种入队要分成两句；得到：" + queued);
-            assertEquals("QQ发不出去：登录已失效", recorded.get(0).text(),
-                    "首投不标；得到：" + recorded.get(0).text());
-            assertEquals("没有配置告警通道，没发出去（重投第 1 次）：登录已失效", recorded.get(1).text(),
-                    "没通道的重投也要标明第几次；得到：" + recorded.get(1).text());
+            assertEquals(List.of("QQ发不出去：登录已失效"),
+                    recorded.stream().map(TimelineEvent::text).toList(),
+                    "首投不标，没通道的重投不进时间线；得到：" + recorded);
+        }
+    }
+
+    /**
+     * 告警通道全发不出去时，重投每一趟、每一路都在日志页留一行。
+     * 十分钟首页和日志页就被「发不出去」占满，看不出这条告警最后放弃了没有。
+     */
+    @Nested
+    @DisplayName("告警重投把日志页刷满")
+    class RetryFloodsTheLog {
+
+        private final List<TimelineEvent> recorded = new ArrayList<>();
+
+        private AlertService capturing() {
+            @SuppressWarnings("unchecked")
+            ObjectProvider<AlertChannel> provider = mock(ObjectProvider.class);
+            when(provider.orderedStream()).thenAnswer(invocation -> channels.stream());
+            return new AlertService(properties, provider, recorded::add);
+        }
+
+        @Test
+        @DisplayName("三路都发不出去、重投走到上限：时间线里这条告警只有首投几条加放弃一条，不是每趟每路一条")
+        void threeChannelsFailUntilGiveUpLeavesOneGiveUpLine() {
+            properties.getAlert().setRetryMaxAttempts(3);
+            channels.add(new FakeChannel("qq", "QQ"));
+            channels.add(new FakeChannel("webhook", "Webhook"));
+            channels.add(new FakeChannel("mail", "邮件"));
+            for (AlertChannel channel : channels) {
+                ((FakeChannel) channel).failing = true;
+            }
+
+            AlertService capturing = capturing();
+            ListAppender<ILoggingEvent> appender = new ListAppender<>();
+            appender.start();
+            ch.qos.logback.classic.Logger logger =
+                    (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(AlertService.class);
+            logger.addAppender(appender);
+            try {
+                capturing.alert("login-expired", "登录已失效", "凭据复检未通过");
+                capturing.retryPending();
+                capturing.retryPending();
+                capturing.retryPending();
+            } finally {
+                logger.detachAppender(appender);
+                appender.stop();
+            }
+
+            List<String> texts = recorded.stream().map(TimelineEvent::text).toList();
+            String giveUp = texts.isEmpty() ? "" : texts.get(texts.size() - 1);
+            System.out.println("放弃那条：" + giveUp);
+            assertEquals(List.of(
+                    "QQ发不出去：登录已失效",
+                    "Webhook发不出去：登录已失效",
+                    "邮件发不出去：登录已失效",
+                    "重投 3 次仍没发出去，不再重投：登录已失效"),
+                    texts,
+                    "首投一路一条，放弃按告警一条，重投失败不进时间线；得到：" + texts);
+            assertEquals(null, recorded.get(3).channel(), "放弃按告警记，不挂在某一路上");
+            assertEquals(0, capturing.pendingCount(), "到上限应放弃，不再占着队列");
+            assertEquals(1, appender.list.stream()
+                            .filter(event -> event.getFormattedMessage().contains("重投 3 次仍失败, 放弃"))
+                            .count(),
+                    "放弃那句工程日志仍只写一次；得到：" + appender.list);
+        }
+
+        @Test
+        @DisplayName("重投中途有一路送到：那一条「已报出（重投第 N 次）」照记")
+        void recoveredChannelOnRetryStillSaysWhichAttempt() {
+            channels.add(new FakeChannel("qq", "QQ"));
+            channels.add(new FakeChannel("webhook", "Webhook"));
+            channels.add(new FakeChannel("mail", "邮件"));
+            for (AlertChannel channel : channels) {
+                ((FakeChannel) channel).failing = true;
+            }
+
+            AlertService capturing = capturing();
+            capturing.alert("login-expired", "登录已失效", "凭据复检未通过");
+            ((FakeChannel) channels.get(0)).failing = false;
+            capturing.retryPending();
+
+            List<String> texts = recorded.stream().map(TimelineEvent::text).toList();
+            assertEquals(List.of(
+                    "QQ发不出去：登录已失效",
+                    "Webhook发不出去：登录已失效",
+                    "邮件发不出去：登录已失效",
+                    "QQ已报出（重投第 1 次）：登录已失效"),
+                    texts,
+                    "送到的那一路标明重投第几次；没送到的重投不进时间线；得到：" + texts);
+            assertEquals(0, capturing.pendingCount(), "有一路送到了，不再重投");
         }
     }
 }

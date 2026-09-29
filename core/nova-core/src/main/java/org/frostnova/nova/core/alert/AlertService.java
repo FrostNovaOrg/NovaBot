@@ -411,17 +411,25 @@ public class AlertService {
      * <p>
      * 重投也在这里定：全部路都没发成、也没被开关拦下时入队。
      * 这一步可能发生在回调里（异步路的结果回来之后），此时本方法已经返回。
+     * <p>
+     * 重投时发不出去、没有通道，只写工程日志，不进时间线。每一趟每一路都记的话，
+     * 日志页几分钟就被「发不出去」刷满，看不出最后送到了还是放弃了。
+     * 首投照旧记。重投到上限放弃时，按告警记一条，不按通道。
+     * 重投途中已报出、被拦下、送达不明照旧记，并标明第几次。
      */
     private Delivery deliver(PendingAlert alert, String sendContent) {
         List<AlertChannel> available = channels.orderedStream().filter(AlertChannel::isAvailable).toList();
 
         if (available.isEmpty()) {
             // 标题不截断：这一条是「压根没发出去」，看的人要照着它去查那条告警说的是哪件事；
-            // 截成前二十几个字的话，几条不同的告警在时间线里长得一模一样
-            timeline.record(TimelineEvent.of(TimelineEventType.ALERT_FAILED, TimelineEvent.Level.WARN)
-                    .text(timelineText("没有配置告警通道，没发出去", alert.attempts(), alert.subject()))
-                    .detail("subject", alert.subject())
-                    .build());
+            // 截成前二十几个字的话，几条不同的告警在时间线里长得一模一样。
+            // 只有首投进时间线。重投再撞上没通道只写工程日志，放弃时另记一条。
+            if (alert.attempts() == 0) {
+                timeline.record(TimelineEvent.of(TimelineEventType.ALERT_FAILED, TimelineEvent.Level.WARN)
+                        .text(timelineText("没有配置告警通道，没发出去", alert.attempts(), alert.subject()))
+                        .detail("subject", alert.subject())
+                        .build());
+            }
             // 重投撞上「一条通道都没了」：通道可能稍后回来，仍在上限内就留在队里。
             // 先记上这一次再比上限，到了就放弃，不再入队。
             if (alert.attempts() > 0) {
@@ -429,6 +437,7 @@ public class AlertService {
                 if (retried.attempts() > properties.getAlert().getRetryMaxAttempts()) {
                     log.error("告警 [{}] {} 重投 {} 次仍失败, 放弃。它发生于 {}, 始终没能送出去",
                             alert.key(), alert.subject(), alert.attempts(), alert.occurredAtText());
+                    recordAbandoned(alert);
                 } else {
                     enqueueOrLose(retried, true);
                 }
@@ -478,12 +487,15 @@ public class AlertService {
                     }
                     case FAILED -> {
                         log.error("通过 {} 通道发送告警失败: {}", channelName, result.reason(), result.cause());
-                        timeline.record(TimelineEvent.of(TimelineEventType.ALERT_FAILED, TimelineEvent.Level.ERROR)
-                                .channel(channelName)
-                                .text(timelineText(channelName + "发不出去", alert.attempts(), shorten(alert.subject())))
-                                .detail("subject", alert.subject())
-                                .detail("reason", result.reason())
-                                .build());
+                        // 重投发不出去只留工程日志。首投仍进时间线，否则看日志页的人读成没出过事。
+                        if (alert.attempts() == 0) {
+                            timeline.record(TimelineEvent.of(TimelineEventType.ALERT_FAILED, TimelineEvent.Level.ERROR)
+                                    .channel(channelName)
+                                    .text(timelineText(channelName + "发不出去", alert.attempts(), shorten(alert.subject())))
+                                    .detail("subject", alert.subject())
+                                    .detail("reason", result.reason())
+                                    .build());
+                        }
                     }
                     case UNCERTAIN -> {
                         anyUncertain.set(true);
@@ -519,6 +531,7 @@ public class AlertService {
                 if (alert.attempts() > 0 && alert.attempts() + 1 > properties.getAlert().getRetryMaxAttempts()) {
                     log.error("告警 [{}] {} 重投 {} 次仍失败, 放弃。它发生于 {}, 始终没能送出去",
                             alert.key(), alert.subject(), alert.attempts(), alert.occurredAtText());
+                    recordAbandoned(alert);
                     return;
                 }
                 enqueueOrLose(alert.retried(), false);
@@ -556,6 +569,18 @@ public class AlertService {
             return head + "（重投第 " + attempts + " 次）：" + subject;
         }
         return head + "：" + subject;
+    }
+
+    /**
+     * 重投到上限仍没发出去：时间线按这条告警记一条，不按通道。
+     * 次数与工程日志里「重投多少次仍失败」是同一个数。标题不截断，
+     * 截短了几条不同的告警在日志页上长得一样，看不出放弃的是哪一件。
+     */
+    private void recordAbandoned(PendingAlert alert) {
+        timeline.record(TimelineEvent.of(TimelineEventType.ALERT_FAILED, TimelineEvent.Level.ERROR)
+                .text("重投 " + alert.attempts() + " 次仍没发出去，不再重投：" + alert.subject())
+                .detail("subject", alert.subject())
+                .build());
     }
 
     /**

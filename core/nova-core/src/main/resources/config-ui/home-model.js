@@ -478,16 +478,23 @@ function now(status, chain, fresh) {
 /**
  * 「今天发生了什么」短条
  *
- * 失败与告警一条不落地置顶，其余按时间补到八条为止。首页只留这一段，
- * 筛选、搜索、翻天都在日志页——两处各摆一套筛选，改了一处另一处就开始骗人。
+ * 失败与告警置顶，整段不超过八条。多出来的失败与告警收成一行，
+ * 写还有几条失败或告警，点了去日志页。普通记录不计入这一行。
+ * 失败没把八条占满时，其余按时间补进去，普通记录最多六条。
+ * 首页只留这一段，筛选、搜索、翻天都在日志页——两处各摆一套筛选，改了一处另一处就开始骗人。
  * @param timeline /api/timeline 回包
- * @return 要显示的事件
+ * @return 要显示的事件；溢出时末行带 href，点了去日志页
  */
 function shortStrip(timeline) {
   const events = (timeline && timeline.events) || [];
   const bad = events.filter(item => item.level && item.level !== 'info');
   const rest = events.filter(item => !item.level || item.level === 'info');
-  return bad.concat(rest.slice(0, Math.max(0, Math.min(6, 8 - bad.length))));
+  const limit = 8;
+  if (bad.length > limit) {
+    const shown = bad.slice(0, limit - 1);
+    return shown.concat([{text: '还有 ' + (bad.length - shown.length) + ' 条失败或告警', href: '#/log'}]);
+  }
+  return bad.concat(rest.slice(0, Math.max(0, Math.min(6, limit - bad.length))));
 }
 
 /**

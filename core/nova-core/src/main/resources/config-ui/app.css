@@ -664,6 +664,8 @@ td.act button:hover{color:var(--err)}
 .tl-foot{margin-top:12px}
 .tl-foot a{font-size:13.5px;color:var(--accent);text-decoration:none}
 .tl-foot a:hover{text-decoration:underline}
+.tl-more{display:block;margin-top:8px;font-size:13.5px;color:var(--accent);text-decoration:none}
+.tl-more:hover{text-decoration:underline}
 
 /* ==================== 连接页：三张卡 ====================
    卡的色调跟着灯走，与首页同一条规则：同一个事实在两页上判成两种颜色，
