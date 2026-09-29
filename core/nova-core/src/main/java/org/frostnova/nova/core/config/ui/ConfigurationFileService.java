@@ -794,12 +794,15 @@ public class ConfigurationFileService {
      * 界面上标量走单行输入框，正常操作打不出换行，能走到这里的都是直接调接口的。
      * 与其把值悄悄改掉，不如当场拒绝并说清是哪一项。
      * <p>
-     * 字符串列表不在此列：那里换行本就是各项之间的分隔符。
+     * 字符串列表不在此列：那里换行本就是各项之间的分隔符。界面改不了的项也不在此列：
+     * 它们先过锁检查（见 {@link #rejectLockedChanges}），原样送回的多行值是「没改」，不当换行拒。
      * @param changes 待写入的配置项
      * @param index 配置文件中已有的行
+     * @param locked 界面改不了的项（键到说明），它们的换行由锁那边说话
      * @throws IOException 存在含换行的标量值时抛出
      */
-    private void rejectMultilineScalars(Map<String, String> changes, Map<String, Line> index) throws IOException {
+    private void rejectMultilineScalars(Map<String, String> changes, Map<String, Line> index,
+                                        Map<String, String> locked) throws IOException {
         for (Map.Entry<String, String> change : changes.entrySet()) {
             String value = change.getValue();
             if (value == null || (value.indexOf('\n') < 0 && value.indexOf('\r') < 0)) {
@@ -808,7 +811,7 @@ public class ConfigurationFileService {
 
             Line line = index.get(change.getKey());
             // 文件里还没有这一项时，含换行的值会被当成字符串列表写入，那是合法的
-            if (line != null && !line.isList()) {
+            if (line != null && !line.isList() && !locked.containsKey(change.getKey())) {
                 throw new IOException("配置项 " + change.getKey() + " 的值不能包含换行");
             }
         }
@@ -822,7 +825,7 @@ public class ConfigurationFileService {
      * 而事后再算一遍得到的是「现在有哪些项与默认值不同」，答的已经是另一个问题了。
      * @param changes 待写入的配置项名到取值
      * @return 实际发生改动的配置项名
-     * @throws IOException 读写失败、存在含换行的标量值或有配置项在文件里找不到上级块时抛出
+     * @throws IOException 读写失败、改了界面改不了的项、存在含换行的标量值或有配置项在文件里找不到上级块时抛出
      */
     public synchronized List<String> write(Map<String, String> changes) throws IOException {
         return write(changes, true);
@@ -842,7 +845,7 @@ public class ConfigurationFileService {
      * 普通保存照旧走 {@link #write(Map)}：那才是使用者要能反悔的改动。
      * @param changes 待写入的配置项名到取值
      * @return 实际发生改动的配置项名
-     * @throws IOException 读写失败、存在含换行的标量值或有配置项在文件里找不到上级块时抛出
+     * @throws IOException 读写失败、改了界面改不了的项、存在含换行的标量值或有配置项在文件里找不到上级块时抛出
      */
     public synchronized List<String> writeWithoutBackup(Map<String, String> changes) throws IOException {
         return write(changes, false);
@@ -936,7 +939,7 @@ public class ConfigurationFileService {
         List<String> original = List.copyOf(lines);
         List<Line> parsed = parse(lines);
         // 手写写法换成启动读到的值：原样送回才认得出是没改，改名单里别的项时跨行那一项按读到的整段写回
-        Map<String, String> locked = settle(lines, parsed).locked();
+        Settled settled = settle(lines, parsed);
 
         Map<String, Line> index = new LinkedHashMap<>();
         for (Line line : parsed) {
@@ -945,7 +948,8 @@ public class ConfigurationFileService {
             }
         }
 
-        rejectMultilineScalars(changes, index);
+        rejectLockedChanges(changes, settled.locked(), index, settled.inherited());
+        rejectMultilineScalars(changes, index, settled.locked());
 
         // 用有序集而不是计数器：同一个键在一次调用里只会处理一次，但名字要按处理顺序留下来
         Set<String> changed = new LinkedHashSet<>();
@@ -989,12 +993,6 @@ public class ConfigurationFileService {
             }
 
             if (line.isList()) {
-                // 名单项与启动读到的对不上号（项里套着子项、有一项带换行）：整块重写会把那几项写成别的，
-                // 原样送回照旧不动，真改了整批拒存
-                String reason = locked.get(change.getKey());
-                if (reason != null && !change.getValue().equals(String.join("\n", line.items))) {
-                    throw new IOException("配置项 " + change.getKey() + " " + unsavedReason(reason));
-                }
                 if (replaceList(lines, line, change.getValue())) {
                     changed.add(change.getKey());
                 }
@@ -1006,15 +1004,6 @@ public class ConfigurationFileService {
                 // 宁可拒存并说清原因（见本类 parse 里的同名标注）
                 throw new IOException("配置项 " + change.getKey()
                         + " 的行内名单跨了行且含本界面读不了的写法, 为不写坏配置文件本批全部未保存, 请先在配置文件里把它改成每行一项");
-            }
-
-            // 带引号的星号项旁边是嵌套名单，这一行没按名单收下：界面上锁着，
-            // 存成别的值会把整份名单换成一个字
-            if (line.fromLoader && starOnlyInsideQuotes(lines, line)) {
-                String reason = locked.get(change.getKey());
-                if (reason != null && (line.value == null || !change.getValue().equals(line.value))) {
-                    throw new IOException("配置项 " + change.getKey() + " " + unsavedReason(reason));
-                }
             }
 
             // 引号包着的值启动时读到的就是界面上那个值，原样送回来就是没改：不动那一行，
@@ -1080,6 +1069,42 @@ public class ConfigurationFileService {
 
     private static String unsavedReason(String reason) {
         return "界面改不了, 本批全部未保存: " + reason;
+    }
+
+    /**
+     * 界面改不了的项照锁拒存：值与界面显示的不同就整批拒存，拒语用这把锁自己的说明
+     * <p>
+     * 锁着的格只在界面上画成只读，直接调保存接口可以绕开：锁住的名单格送一个值进来，
+     * 标量那一路会把整份名单换成一个字，而读回核对期望的正是送来的值，比得上、拦不住。
+     * 这里在动文件之前按同一份锁整体查一遍：原样送回＝没改，照旧放行；真改了就拒。
+     * 查在「值不能包含换行」之前——锁住的项送来带换行的值时，拒语说的是锁的原因，
+     * 不是那个照着改也存不进去的换行。
+     * <p>
+     * 引到一整块的别名不在其列：那一格界面上没有值，写口里另有一句点出别名名的拒语。
+     * @param changes 待写入的配置项
+     * @param locked  界面改不了的项（键到说明），与 GET 给设置页的那一份同源
+     * @param index   配置文件中已有的行
+     * @param inherited 经合并键或整块别名继承、文件里没有自己那一行的子键，值为界面显示的
+     * @throws IOException 有锁住的项被改时抛出
+     */
+    private void rejectLockedChanges(Map<String, String> changes, Map<String, String> locked,
+                                     Map<String, Line> index, Map<String, String> inherited) throws IOException {
+        for (Map.Entry<String, String> change : changes.entrySet()) {
+            String reason = locked.get(change.getKey());
+            if (reason == null) {
+                continue;
+            }
+            Line line = index.get(change.getKey());
+            if (line != null && line.hidden) {
+                continue;
+            }
+            // 界面显示的那个值：名单是各项一行，别的按启动读到的；不在文件里的项看继承来的
+            String shown = line == null ? inherited.get(change.getKey())
+                    : line.isList() ? String.join("\n", line.items) : line.value;
+            if (change.getValue() == null || !change.getValue().equals(shown)) {
+                throw new IOException("配置项 " + change.getKey() + " " + unsavedReason(reason));
+            }
+        }
     }
 
     /**
