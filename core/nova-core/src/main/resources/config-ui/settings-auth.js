@@ -39,20 +39,54 @@ const AGREEMENT_TIME_KEY = 'novabot.core.config-ui.agreement.accepted-at';
 
 const AGREEMENT_BY_KEY = 'novabot.core.config-ui.agreement.accepted-by';
 
-/** 登录状态里与这张卡有关的那几位，由 main.js 在取到 /auth/state 之后交进来 */
-const authState = {enabled: false, totpEnabled: false, operatorSession: false};
+/**
+ * 登录状态里与这张卡有关的那几位，由 main.js 在取到 /auth/state 之后交进来
+ *
+ * {@code needCode} 答的是「这次登录要不要输动态验证码」——也就是「开着<b>且</b>已绑」，
+ * 与配置里 auth.totp 那一位是两件事，别当成同一位。
+ */
+const authState = {enabled: false, totpEnabled: false, needCode: false, operatorSession: false};
+
+/**
+ * 设置页那颗开关的当场重画
+ *
+ * 「建议绑定」卡里绑成之后要让屏幕上那颗开关立刻跟上——它跟开关不在同一段代码里，
+ * 由画开关那一段把这一手登记上来。没画过开关（设置页还没进过）就没有这一手：
+ * 状态照样写对，下次画出来就是新那一档。
+ */
+let repaintTotpSwitch = null;
 
 /**
  * 记下登录状态
  *
  * 行按这几位决定弹窗里摆哪一版：令牌会话不要求现在的密码（他拿不出旧的），
  * 其余要填现在的密码。
+ *
+ * 「建议绑定」那张卡跟着这一趟一起出：上锁那一步也会重取登录状态，只在页面载入时
+ * 判一次的话，设完口令要整页重载才看得见它。
  * @param state /auth/state 的响应
  */
 export function setAuthState(state) {
   authState.enabled = !!state.enabled;
   authState.totpEnabled = !!state.totpEnabled;
+  authState.needCode = !!state.totpRequired;
   authState.operatorSession = !!state.operatorSession;
+  if (state.totpSetupNeeded) renderTotpSetup();
+}
+
+/**
+ * 开关这一档怎么说
+ *
+ * 说的是「登录要不要输动态验证码」，不是配置里 auth.totp 那一位：配置要开、还没绑上
+ * 验证器时，登录照样只要口令，写成「已启用」会让人以为已经要输码了。
+ * 关着分两种：还没绑过（配置仍要开，写「未绑定」）与真关掉了（密钥已清，写「已关闭」）。
+ * @param state 登录状态里那几位
+ * @return 开关画在哪一档、旁注写哪几个字
+ */
+export function totpSwitchView(state) {
+  if (state.needCode) return {on: true, label: '已启用'};
+  if (state.totpEnabled) return {on: false, label: '未绑定'};
+  return {on: false, label: '已关闭'};
 }
 
 /**
@@ -187,17 +221,28 @@ function passwordCard() {
  * 开与关各有一道门：开要先扫码绑定并输一次码（少了这一步，扫码没扫上的人会以为绑好了，
  * 下次登录被自己的二次验证挡在门外）；关要输一次现在的码（少了这一步，
  * 一枚被偷走的会话 Cookie 就能把这道防线卸掉）。
+ *
+ * 没绑验证器时开关是<b>关着</b>的，旁边写「未绑定」：那一档登录只要口令，写成「已启用」
+ * 会让人以为已经要输码了。这一档也就没有「拨关」可按——拨开直接进绑定流程。
  */
 function totpCard() {
-  const on = authState.totpEnabled;
   const box = authRow('auth-totp', '二次验证',
     '只管密码登录这条路。用通行密钥登录不经过这一步——私钥一直在你自己的设备上，'
-    + '而设备在签名之前已经问过一次指纹或面容了。');
+    + '而设备在签名之前已经问过一次指纹或面容了。'
+    + '绑上验证器这一档才算开着；还没绑的时候，拨开这个开关就是去绑。');
   box.cell.className = 'boolcell';
-  const {label, input, text} = switchControl('totp-switch', on, '二次验证');
+  const first = totpSwitchView(authState);
+  const {label, input, text} = switchControl('totp-switch', first.on, '二次验证');
   box.cell.appendChild(label);
   keyLine(box.meta, 'novabot.core.config-ui.auth.totp');
   keyLine(box.meta, 'novabot.core.config-ui.auth.totp-secret');
+  text.textContent = first.label;
+  // 每次重画都换一份：旧那份牵着已经拆掉的节点，再调它画的是屏幕上没有的东西
+  repaintTotpSwitch = () => {
+    const view = totpSwitchView(authState);
+    input.checked = view.on;
+    text.textContent = view.label;
+  };
 
   // 开与关各自要问的那一段，另起整行摆在开关下面，不套进输入栏容器
   const flow = el('div', 'totp-flow');
@@ -208,9 +253,15 @@ function totpCard() {
   box.row.appendChild(result);
 
   const settle = state => {
+    // 关着那一档收下来有两种：没绑上（配置仍要开，旁注写「未绑定」）与真关掉了
+    // （密钥已清，写「已关闭」）。分得清的是收下来之前那一档——从开着收下来的是真关掉了，
+    // 从关着退回来的（绑定没办成、取消）什么也没发生，配置里那一位仍按原样
+    const wasOn = authState.needCode;
+    authState.needCode = state;
+    if (state) authState.totpEnabled = true;
+    else if (wasOn) authState.totpEnabled = false;
     input.checked = state;
-    text.textContent = state ? '已启用' : '已关闭';
-    authState.totpEnabled = state;
+    text.textContent = state ? '已启用' : (authState.totpEnabled ? '未绑定' : '已关闭');
     store.totpRequired = state;
     flow.innerHTML = '';
   };
@@ -219,7 +270,10 @@ function totpCard() {
     flow.innerHTML = '';
     result.textContent = '';
     if (input.checked) enrollFlow(flow, result, settle);
-    else disableFlow(flow, result, settle);
+    // 没绑的时候没有「关掉」这一档：要么不给拨，要么干净退回原样。
+    // 走进关断流程的话，那一段问的是密码加验证器上的码，走到底是「二次验证本来就没开着」
+    else if (authState.needCode) disableFlow(flow, result, settle);
+    else settle(false);
   });
 
   return box.row;
@@ -295,6 +349,68 @@ function disableFlow(flow, result, settle) {
       report(result, res);
       settle(!res.success);
     } catch (e) { recoverToggle(result, settle, true, e); }
+  });
+}
+
+/**
+ * 未绑定验证器时的引导卡片
+ *
+ * 必须让用户先输一次验证码才算绑定成功——少了这一步，扫码没扫上的人会以为绑好了，
+ * 下次登录被自己的二次验证挡在门外，而那时已经没有界面可以撤销了。
+ *
+ * 摆在首页那一块里（#totp-setup），但它跟着登录状态出，不跟着页面载入出：
+ * 上锁那一步也会重取登录状态，只在载入时判一次的话，设完口令要整页重载才看得见它。
+ * 这一页一直都在文档里，只是先前没往里画东西。
+ */
+async function renderTotpSetup() {
+  const box = $('#totp-setup');
+  const setup = await api('/auth/totp/setup');
+  if (!setup.success) return;
+
+  box.style.display = '';
+  box.innerHTML =
+    '<h3>建议绑定验证器</h3>'
+    + '<p>面板开到公网后，只有密码这一道防线。用任意验证器应用扫码，再输一次它给出的数字即可。</p>'
+    + '<div class="totp-body">'
+    + (setup.qrCode ? '<img src="data:image/png;base64,' + esc(setup.qrCode) + '" alt="二维码">' : '')
+    + '<div class="totp-side">'
+    + '<label>不方便扫码时手动输入这串密钥</label>'
+    + '<code>' + esc(setup.secret) + '</code>'
+    + '<div class="totp-confirm">'
+    + '<input id="totp-pwd" type="password" placeholder="现在的密码" autocomplete="current-password">'
+    + '<input id="totp-code" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="6 位数字">'
+    + '<button type="button" id="totp-enroll">确认绑定</button>'
+    + '<button type="button" id="totp-skip">暂不绑定</button>'
+    + '</div><span class="status" id="totp-msg"></span>'
+    + '</div></div>';
+
+  $('#totp-enroll').addEventListener('click', async () => {
+    const r = await api('/auth/totp/enroll', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({current: $('#totp-pwd').value, code: $('#totp-code').value})
+    });
+    if (r.success) {
+      // 绑成了，开关那几位当场跟上。这张卡摆在所有页之上，设置页那颗开关多半已经画好
+      // 摆在下面——只藏卡不写这几位的话，进设置页那次画出来的还是「未绑定」，
+      // 而登录已经要输码了；这时去拨它还会被回「无需绑定验证器」，看起来像没绑上
+      authState.needCode = true;
+      authState.totpEnabled = true;
+      store.totpRequired = true;
+      if (repaintTotpSwitch) repaintTotpSwitch();
+      box.style.display = 'none';
+      say(r.message, 'ok');
+      return;
+    }
+    $('#totp-msg').textContent = r.message;
+    $('#totp-msg').className = 'status err';
+  });
+
+  $('#totp-skip').addEventListener('click', async () => {
+    await api('/auth/totp/skip', {method: 'POST'});
+    box.style.display = 'none';
+    // 只跳过这一次登录。要永久关掉得去改 novabot.core.config-ui.auth.totp，
+    // 那是个该显式做出的决定，不该由一次「等会儿再说」代劳
+    say('本次登录不再提示。要永久关闭请改配置项 auth.totp');
   });
 }
 

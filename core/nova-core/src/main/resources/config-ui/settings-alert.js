@@ -65,14 +65,27 @@ const MAIL_PRESETS = {
 const CUSTOM = '自定义';
 
 /**
- * 取一项的当前值：草稿优先，其次已保存的值
+ * 没写进配置文件时，这一栏显示成程序实际会用的那一位
+ *
+ * 只有「提交方式」有这一条退路：发送时不是 GET 就一律按 POST 发，空着也是 POST，
+ * 屏上写空白的话使用者看不出实际用的是什么。两个字段名不跟着退——
+ * 一并退回缺省值，这三格就当场凑成「自建接口（JSON）」那个预设，格子收进预设里，
+ * 提交方式反倒又看不见了。
+ */
+const SHOWN_WHEN_UNSET = {
+  'novabot.core.alert.webhook-method': 'POST',
+};
+
+/**
+ * 取一项的当前值：草稿优先，其次已保存的值，最后才是程序实际会用的那一位
  * @param name 配置项名
  * @return {string} 当前值
  */
 function valueOf(name) {
   if (store.dirty[name] !== undefined) return store.dirty[name];
   const saved = store.values[name];
-  return saved === undefined || saved === null ? '' : String(saved);
+  if (saved !== undefined && saved !== null) return String(saved);
+  return SHOWN_WHEN_UNSET[name] !== undefined ? SHOWN_WHEN_UNSET[name] : '';
 }
 
 /**

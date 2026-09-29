@@ -251,7 +251,7 @@ function commandLine(ctx, command) {
     line.appendChild(label);
   } else {
     const lock = el('span', 'cmdlock');
-    lock.textContent = command.off ? '不可关闭 · 文件里有残留记录，当前不生效' : '不可关闭';
+    lock.textContent = '不可关闭';
     line.appendChild(lock);
   }
 
@@ -263,6 +263,9 @@ function commandLine(ctx, command) {
   if (live.length > 0 && live.every(usage => effectiveUsageOff(ctx, usage))) {
     marks.push('已被群管理员禁用');
   }
+  // 残留记录那句摆在文字这一列：挤进左边那个 38px 的开关位会被压成一竖排字，
+  // 而这一列本来就是放这些旁注的地方
+  if (command.off) marks.push('文件里有残留记录，当前不生效');
   if (command.hiddenReason) marks.push(command.hiddenReason);
   if (command.note) marks.push(command.note);
   text.innerHTML = '<b>' + esc(command.name) + '</b>'

@@ -167,7 +167,7 @@ body{margin:0;background:var(--ground);color:var(--text);
 #page-tabs button.on{border-color:var(--accent);color:var(--accent);background:var(--soft)}
 /* 初始设置页是独立版式：不显示侧栏与底部保存栏。
    还没上锁的机器走的就是这条路，此时「退出登录」无从谈起 */
-html.chromeless #side,html.chromeless .bar{display:none}
+html.chromeless #side,html.chromeless #changebar{display:none}
 html.chromeless #main{max-width:760px;margin:0 auto;padding-top:60px}
 /* 底部那条没话说的时候整条不出现：一处没改、没有等重启的项、状态栏也空着。
    页底那截留白跟着一起收——#main 的下内边距本来是空给条的高度，
