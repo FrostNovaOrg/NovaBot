@@ -457,4 +457,67 @@ class LiveSessionArchiveTest {
                     "没有名单的年代不该被当成落盘缺陷");
         }
     }
+
+    /**
+     * 断电或被强杀恰好卡在写一个中文字的中间，盘上留下半个字。
+     * 写入那头会把这半行隔开，可半个字本身留在文件里——每次按行读都会撞上它。
+     */
+    @org.junit.jupiter.api.Nested
+    @DisplayName("归档里夹着半个中文字的一行")
+    class HalfCharacterLine {
+        private void archiveAroundHalfCharacter() throws Exception {
+            archive.append(session(1_000_000L, 100));
+            // 「截」是 E6 88 AA，只写进前两个字节，也没有换行
+            Files.write(dir.resolve("sessions.jsonl"),
+                    concat("{\"platform\":\"bilibili\",\"uid\":1,\"uname\":\"半".getBytes(StandardCharsets.UTF_8),
+                            new byte[]{(byte) 0xE6, (byte) 0x88}),
+                    java.nio.file.StandardOpenOption.APPEND);
+            archive.append(new LiveSession("bilibili", STREAMER_UID, "改名以后", ROOM_ID,
+                    2_000_000L, 2_200_000L, 200, Map.of(), Map.of()));
+        }
+
+        @Test
+        @DisplayName("主播页场次照旧列得出坏行前后的场次，只少坏的那一行")
+        void sessionsStillListed() throws Exception {
+            archiveAroundHalfCharacter();
+
+            assertEquals(List.of(1_000_000L, 2_000_000L),
+                    archive.find(0, Long.MAX_VALUE).stream().map(LiveSession::startTime).toList(),
+                    "半个字让整份归档读不出来，主播页场次与趋势一场都不剩");
+        }
+
+        @Test
+        @DisplayName("归档概况照旧数得出条数")
+        void summaryStillCounts() throws Exception {
+            archiveAroundHalfCharacter();
+
+            assertEquals(2, archive.summary().count());
+        }
+
+        @Test
+        @DisplayName("推送取名的退路照旧取得到坏行之后那一场的昵称")
+        void latestNameStillFound() throws Exception {
+            archiveAroundHalfCharacter();
+
+            assertEquals(java.util.Optional.of("改名以后"), archive.latestUname("bilibili", STREAMER_UID),
+                    "取名退路抛了异常，要靠归档取昵称的那次推送发不出去");
+        }
+
+        @Test
+        @DisplayName("归档读不了时三处都按读不了处置，不往外抛")
+        void unreadableArchiveIsNotThrown() throws Exception {
+            // 同名的是个目录：属性取得到，读内容时才出错
+            Files.createDirectories(dir.resolve("sessions.jsonl"));
+
+            assertTrue(archive.find(0, Long.MAX_VALUE).isEmpty());
+            assertEquals(0, archive.summary().count());
+            assertTrue(archive.latestUname("bilibili", STREAMER_UID).isEmpty());
+        }
+    }
+
+    private static byte[] concat(byte[] head, byte[] tail) {
+        byte[] all = java.util.Arrays.copyOf(head, head.length + tail.length);
+        System.arraycopy(tail, 0, all, head.length, tail.length);
+        return all;
+    }
 }

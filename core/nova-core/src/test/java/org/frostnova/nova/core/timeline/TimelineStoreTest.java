@@ -371,7 +371,45 @@ class TimelineStoreTest {
                 "半截的上一行把下一条事件一起弄丢了——那条正是排障要看的线索");
     }
 
+    @Test
+    @DisplayName("时间线里夹着半个中文字的一行时, 日志页照旧查得出其余各条")
+    void halfCharacterLineDoesNotHideTheDay() throws IOException {
+        // 断电卡在写一个中文字的中间, 盘上留下半个字; 写入那头隔开了半行, 半个字仍在文件里
+        LocalDate today = LocalDate.now();
+        store.record(event(today, "前一条"));
+        appendHalfCharacterLine(file(today));
+        store.record(event(today, "后一条"));
+
+        assertEquals(List.of("后一条", "前一条"), texts(query(null)),
+                "半个字让这一天整份读不出来, 日志页上这天一条都不剩");
+        assertEquals(Map.of(TimelineEventType.PUSH_SENT, 2), store.countsOn(today), "首页今日计数");
+    }
+
+    @Test
+    @DisplayName("时间线里夹着半个中文字的一行时, 重启照旧建得起索引")
+    void halfCharacterLineDoesNotBreakStartup() throws IOException {
+        LocalDate today = LocalDate.now();
+        store.record(event(today, "前一条"));
+        appendHalfCharacterLine(file(today));
+        store.record(event(today, "后一条"));
+
+        TimelineStore restarted = new TimelineStore(properties);
+        restarted.load();
+
+        assertEquals(List.of(new TimelineStore.Day(today, 2)), restarted.days());
+        assertEquals(List.of("后一条", "前一条"), restarted.recent().stream().map(TimelineEvent::text).toList());
+    }
+
     // —— 以下为夹具 ——
+
+    /** 「截」是 E6 88 AA，只写进前两个字节，也没有换行 */
+    private static void appendHalfCharacterLine(Path file) throws IOException {
+        byte[] head = "{\"at\":1,\"type\":\"PUSH_SENT\",\"level\":\"INFO\",\"text\":\"半".getBytes(StandardCharsets.UTF_8);
+        byte[] line = java.util.Arrays.copyOf(head, head.length + 2);
+        line[head.length] = (byte) 0xE6;
+        line[head.length + 1] = (byte) 0x88;
+        Files.write(file, line, java.nio.file.StandardOpenOption.APPEND);
+    }
 
     private TimelineStore.Result query(LocalDate date) {
         return store.query(new TimelineStore.Filter(date, false, null, null, null, null, null, 0), null);

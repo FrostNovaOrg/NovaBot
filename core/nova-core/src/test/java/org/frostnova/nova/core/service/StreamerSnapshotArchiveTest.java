@@ -155,4 +155,22 @@ class StreamerSnapshotArchiveTest {
         assertEquals(1, found.size(), "半截的上一行把下一次采样一起弄丢了——那次的粉丝数真的采到过");
         assertEquals(243.0, found.get(0).metric("fans"));
     }
+
+    @Test
+    @DisplayName("留档里夹着半个中文字的一行时, 其余采样照读, 涨幅基准照取")
+    void halfCharacterLineDoesNotHideTheRest() throws Exception {
+        // 断电卡在写一个中文字的中间, 盘上留下半个字; 「截」是 E6 88 AA, 只写进前两个字节
+        archive.append(snapshot(5 * DAY, 100));
+        byte[] head = "{\"platform\":\"bilibili\",\"uid\":1,\"uname\":\"半".getBytes(StandardCharsets.UTF_8);
+        byte[] line = java.util.Arrays.copyOf(head, head.length + 2);
+        line[head.length] = (byte) 0xE6;
+        line[head.length + 1] = (byte) 0x88;
+        Files.write(dir.resolve("snapshots.jsonl"), line, java.nio.file.StandardOpenOption.APPEND);
+        archive.append(snapshot(10 * DAY, 243));
+
+        assertEquals(List.of(100.0, 243.0),
+                archive.find(0, Long.MAX_VALUE).stream().map(s -> s.metric("fans")).toList(),
+                "半个字让整份留档读不出来, 粉丝趋势一个点都不剩");
+        assertEquals(100.0, archive.latestBefore(PLATFORM, UID, 6 * DAY).orElseThrow().metric("fans"));
+    }
 }

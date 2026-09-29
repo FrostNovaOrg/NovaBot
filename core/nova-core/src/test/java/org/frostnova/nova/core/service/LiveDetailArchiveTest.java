@@ -291,6 +291,31 @@ class LiveDetailArchiveTest {
     }
 
     @Test
+    @DisplayName("弹幕与事件里夹着半个中文字的一行时, 其余各条照读, 只少坏的那条")
+    void halfCharacterLineDoesNotKillTheRest() throws IOException {
+        // 断电卡在写一个中文字的中间, 盘上留下半个字; 「截」是 E6 88 AA, 只写进前两个字节
+        archive.appendDanmu(PLATFORM, UID, START, danmu(START, "前一句"));
+        archive.appendEvent(PLATFORM, UID, START, START, "gift", Map.of("n", 1));
+        Path base = dir.resolve("details").resolve(PLATFORM + "-" + UID + "-" + START);
+        for (String name : List.of("danmu.jsonl", "events.jsonl")) {
+            byte[] head = "{\"at\":1,\"text\":\"半".getBytes(StandardCharsets.UTF_8);
+            byte[] line = java.util.Arrays.copyOf(head, head.length + 2);
+            line[head.length] = (byte) 0xE6;
+            line[head.length + 1] = (byte) 0x88;
+            Files.write(base.resolve(name), line, java.nio.file.StandardOpenOption.APPEND);
+        }
+        archive.appendDanmu(PLATFORM, UID, START, danmu(START + 1000, "后一句"));
+        archive.appendEvent(PLATFORM, UID, START, START + MINUTE, "gift", Map.of("n", 2));
+
+        assertAll(
+                () -> assertEquals(List.of("前一句", "后一句"), archive.readDanmu(PLATFORM, UID, START).stream()
+                        .map(DanmuRecord::text).toList(), "弹幕原文"),
+                () -> assertEquals(List.of("前一句", "后一句"), archive.readDanmuPresent(PLATFORM, UID, START)
+                        .orElseThrow().stream().map(DanmuRecord::text).toList(), "导出用的弹幕原文"),
+                () -> assertEquals(2, archive.readEvents(PLATFORM, UID, START).size(), "事件流水"));
+    }
+
+    @Test
     @DisplayName("保留期默认为 0：明细永久留着，清理跑过也一场不删")
     void retentionDefaultsToForever() {
         archive.store(detail(1, 1, 1));
