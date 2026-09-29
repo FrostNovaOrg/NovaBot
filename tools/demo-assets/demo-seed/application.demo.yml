@@ -1,0 +1,42 @@
+# 演示实例的预置配置（DEMO_SEED=1 时由 make-demo-seed.py 渲染后放进临时目录）。
+# 静音时段的起止与使用协议的同意时间在起动那一刻按当前时刻写进；本文件里它们
+# 写成带引号的占位串，渲染时整串替换。只写演示需要偏离默认值的键，其余走程序默认。
+spring:
+  mail:                     # 邮件告警填的是假值：指向本机无人监听的端口，只为让「已配置」药丸亮起
+    host: 127.0.0.1
+    port: 2525
+    username: demo
+    password: demo-not-a-real-account
+
+novabot:
+  adapter:
+    onebot:
+      alert:                # 机器人告警同样填假值：平台名与群号都是演示占位
+        platform: qq-onebot
+        type: 1
+        num: 910000001
+
+  bilibili:
+    live:
+      enable-connect-live-room: false   # 演示时不去连直播间的长连接
+      backup-live-push: false           # 也不跑轮询接口的备用开播检测
+      snapshot-interval: 0              # 主播基础数据留档（会打平台接口）一并关掉
+
+  core:
+    mail:
+      default-to: demo@example.com   # 收件邮箱；这一项在 core 之下、与告警节平级，两栏齐了邮件告警才算已配置
+
+    config-ui:
+      update:
+        enabled: false       # 演示期间不检查新版（那次请求要出网）
+      agreement:
+        accepted-version: 1
+        accepted-at: "__ACCEPTED_AT__"
+        accepted-by: operator-token   # 演示实例凭起动令牌进控制台，同意记录按同一通道写
+
+    alert:
+      webhook-url: http://127.0.0.1:9/demo-hook   # 假地址：本机 9 端口无人监听
+
+    push:
+      quiet-start: "__QUIET_START__"
+      quiet-end: "__QUIET_END__"

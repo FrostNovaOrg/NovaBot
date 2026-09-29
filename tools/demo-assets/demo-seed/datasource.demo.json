@@ -1,0 +1,31 @@
+[
+  {
+    "uid": 9200000001,
+    "uname": "演示主播小星",
+    "roomId": 9210000001,
+    "platform": "bilibili",
+    "enabled": true,
+    "targets": [
+      {
+        "platform": "qq-onebot",
+        "type": 1,
+        "num": 910000001,
+        "enabled": true,
+        "messages": [
+          {
+            "handler": "org.frostnova.nova.bilibili.handler.BilibiliLiveOnPushHandler",
+            "enabled": true
+          },
+          {
+            "handler": "org.frostnova.nova.bilibili.handler.BilibiliLiveOffPushHandler",
+            "enabled": true
+          },
+          {
+            "handler": "org.frostnova.nova.report.handler.BilibiliDynamicPushHandler",
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  }
+]

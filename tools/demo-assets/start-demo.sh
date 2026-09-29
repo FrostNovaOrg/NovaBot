@@ -6,6 +6,16 @@
 # seconds after the probe before the usual stop, e.g. to screenshot the console.
 # Ctrl-C or TERM during the hold stops it early and cleans up as usual.
 #
+# Set DEMO_SEED=1 to preset sample data before the start: one demo streamer and
+# group, a few months of past sessions, today's push records and an engineering
+# log, plus a config that keeps the instance from reaching the live platform
+# (no live-room connection, no polling, no update check). Platform calls that
+# no switch can turn off (the startup streamer lookup and the credential init)
+# are routed to a local port nothing listens on, so they fail on this machine
+# instead of reaching the network. Dates are computed from the start moment.
+# All sample names and numbers are made up; nothing in them comes from a real
+# account. Without the switch nothing changes.
+#
 # Adding a streamer goes through the live platform lookup, which needs the network.
 # This script does not add a synthetic streamer source; the setup / template / connection
 # pages are reachable. The streamers API is expected to return an empty list.
@@ -17,6 +27,7 @@ PORT="${DEMO_PORT:-7827}"
 TIMEOUT="${DEMO_TIMEOUT:-90}"
 KEEP="${DEMO_KEEP:-0}"
 HOLD="${DEMO_HOLD:-0}"
+SEED="${DEMO_SEED:-0}"
 
 pick_java() {
     local brew_java="/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home"
@@ -96,12 +107,26 @@ trap cleanup EXIT
 cp -R "$OUT/." "$WORK/"
 rm -f "$WORK/application.yml" "$WORK/datasource.json"
 
+if [ "$SEED" = "1" ]; then
+    # preset sample data (see the header comment); refuses to overwrite, the work
+    # directory is fresh from mktemp so anything already there is unexpected
+    python3 "$ROOT/tools/demo-assets/demo-seed/make-demo-seed.py" "$WORK"
+fi
+
+PROXY_ARGS=""
+if [ "$SEED" = "1" ]; then
+    # sample-data runs must not open any outbound connection: outbound HTTP is
+    # routed to a local port nothing listens on, so every platform call fails on
+    # this machine at once (loopback targets keep going direct and are unaffected)
+    PROXY_ARGS="-Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort=9 -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=9"
+fi
+
 echo "==> work dir $WORK"
 echo "==> anonymous console on 127.0.0.1:$PORT"
 (
     cd "$WORK" || exit 1
     exec "$JAVA_BIN" -Djava.awt.headless=true -Dfile.encoding=UTF-8 \
-        -Dloader.path=lib,plugins,plugins-lib \
+        -Dloader.path=lib,plugins,plugins-lib $PROXY_ARGS \
         -jar NovaBot.jar \
         --server.port="$PORT" \
         --server.address=127.0.0.1 \
@@ -205,8 +230,12 @@ else
     exit 1
 fi
 
-echo "limit: no synthetic streamer source; adding a streamer looks up the live platform and needs the network."
-echo "reachable without a streamer: setup, templates, connection pages."
+if [ "$SEED" = "1" ]; then
+    echo "seeded: sample data is preset (one demo streamer and group, past sessions, today's records and engineering log); outbound platform calls are switched off or fail on this machine."
+else
+    echo "limit: no synthetic streamer source; adding a streamer looks up the live platform and needs the network."
+    echo "reachable without a streamer: setup, templates, connection pages."
+fi
 
 # optional hold: leave the instance answering for DEMO_HOLD seconds, then stop as usual
 if [ "$HOLD" -gt 0 ]; then
