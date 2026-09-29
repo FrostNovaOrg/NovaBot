@@ -171,6 +171,21 @@ public class FontUtil {
     }
 
     /**
+     * 变体选择符：U+FE00–U+FE0F 与补充平面的 U+E0100–U+E01EF
+     * <p>
+     * 它只指定紧跟在前面那个字用哪种字形，自己不占位置、也不出墨。
+     * 逐码位量宽、落笔的地方都要跳过它：跳不过去时，认得它的字体把它画成一个满宽的空字形
+     * （心形表情后面空出一个表情宽），谁都不认时它落回表里第一个字体，画成一个豆腐块。
+     *
+     * @param charCodePoint 字符编码
+     * @return 是否是变体选择符
+     */
+    public static boolean isVariantSelector(int charCodePoint) {
+        return (charCodePoint >= 0xFE00 && charCodePoint <= 0xFE0F)
+                || (charCodePoint >= 0xE0100 && charCodePoint <= 0xE01EF);
+    }
+
+    /**
      * 计算指定字符串在 Graphics2D 中绘制时的像素宽度和高度
      *
      * @param draw 用于绘制文本的 Graphics2D 对象
@@ -197,6 +212,11 @@ public class FontUtil {
         // 按码位而不是按 char 走：一个增补平面的字占两个 char，
         // 拆开量得到的是两个孤立代理项的宽度，表情符号那一路的版面就全错了
         for (int codePoint : text.getText().codePoints().toArray()) {
+            // 变体选择符不占宽度也不出墨：宽窄和高矮都按没有它来量
+            if (isVariantSelector(codePoint)) {
+                continue;
+            }
+
             if (perCharacter) {
                 draw.setFont(sized(findFontForCharacter(codePoint), text));
             }

@@ -718,6 +718,11 @@ public class CommonPainter {
 
                     i += Character.charCount(codePoint);
 
+                    // 变体选择符不占位也不出墨：量宽与落笔都跳过它
+                    if (FontUtil.isVariantSelector(codePoint)) {
+                        continue;
+                    }
+
                     Font font = text.getFont() != null ? text.getFont() : fontUtil.findFontForCharacter(codePoint).deriveFont(text.getStyle(), text.getSize());
                     this.draw.setFont(font);
 
@@ -1040,6 +1045,11 @@ public class CommonPainter {
             return true;
         }
 
+        // 变体选择符不占宽度：它自己不该让版面换行
+        if (FontUtil.isVariantSelector(codePoint)) {
+            return false;
+        }
+
         Font originalFont = this.draw.getFont();
 
         if (font != null) {
@@ -1100,6 +1110,11 @@ public class CommonPainter {
 
         int sum = 0;
         for (int codePoint : codePoints) {
+            // 变体选择符不占宽度：累宽时跳过它
+            if (FontUtil.isVariantSelector(codePoint)) {
+                continue;
+            }
+
             String charStr = new String(Character.toChars(codePoint));
 
             if ("\n".equals(charStr)) {
@@ -1203,6 +1218,11 @@ public class CommonPainter {
         String charStr = new String(Character.toChars(codePoint));
 
         if ("\n".equals(charStr)) {
+            return this;
+        }
+
+        // 变体选择符不占位也不出墨
+        if (FontUtil.isVariantSelector(codePoint)) {
             return this;
         }
 
