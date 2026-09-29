@@ -20,10 +20,13 @@ import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Stream;
 
 /**
@@ -55,6 +58,14 @@ public class LiveSessionArchive {
      * 写锁。多个直播间可能同时下播，追加写虽是原子的，但仍要避免两行交错
      */
     private final Object writeLock = new Object();
+
+    /**
+     * 各主播最近一场的昵称，连同读它时归档文件的样子
+     * <p>
+     * 首页与状态接口常轮询，都要问这一项；每问一次读一遍整份归档不值得。
+     * 文件的路径、修改时刻与大小都没变时直接用上次的结果，变了才重读。
+     */
+    private volatile LatestNames latestNames;
 
     @Autowired
     public LiveSessionArchive(NovaCoreProperties properties) {
@@ -144,6 +155,49 @@ public class LiveSessionArchive {
         }
 
         return count == 0 ? new Summary(0, 0, 0) : new Summary(count, earliest, latest);
+    }
+
+    /**
+     * 这位主播最近一场归档里记下的昵称
+     * <p>
+     * 「最近」按开播时刻算，与 {@link #find(long, long)} 的顺序一致。
+     * 归档文件没变时不重读，只看一眼文件的修改时刻与大小。
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @return 最近一场的昵称；没有归档场次，或那一场没记下昵称时为空
+     */
+    public Optional<String> latestUname(String platform, Long uid) {
+        String uname = latestNames().get(nameKey(platform, uid));
+        return uname == null || uname.isBlank() ? Optional.empty() : Optional.of(uname);
+    }
+
+    private Map<String, String> latestNames() {
+        Path path = path();
+        BasicFileAttributes attributes;
+        try {
+            attributes = Files.readAttributes(path, BasicFileAttributes.class);
+        } catch (NoSuchFileException e) {
+            return Map.of();
+        } catch (IOException e) {
+            log.error("读取直播场次归档失败", e);
+            return Map.of();
+        }
+
+        LatestNames cached = latestNames;
+        if (cached != null && cached.matches(path, attributes)) {
+            return cached.names();
+        }
+
+        Map<String, String> names = new HashMap<>();
+        for (LiveSession session : find(0, Long.MAX_VALUE)) {
+            names.put(nameKey(session.platform(), session.uid()), session.uname());
+        }
+        latestNames = new LatestNames(path, attributes.lastModifiedTime(), attributes.size(), names);
+        return names;
+    }
+
+    private static String nameKey(String platform, Long uid) {
+        return platform + ":" + uid;
     }
 
     /**
@@ -310,5 +364,13 @@ public class LiveSessionArchive {
      * @param latestStart 最晚一场的开播时刻，无数据时为 0
      */
     public record Summary(long count, long earliestStart, long latestStart) {
+    }
+
+    private record LatestNames(Path path, FileTime modified, long size, Map<String, String> names) {
+        boolean matches(Path current, BasicFileAttributes attributes) {
+            return path.equals(current)
+                    && modified.equals(attributes.lastModifiedTime())
+                    && size == attributes.size();
+        }
     }
 }

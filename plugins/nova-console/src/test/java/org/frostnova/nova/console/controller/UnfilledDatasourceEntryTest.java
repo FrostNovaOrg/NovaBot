@@ -13,7 +13,9 @@ import org.frostnova.nova.core.service.AtSubscriptionService;
 import org.frostnova.nova.core.datasource.DataSourceService;
 import org.frostnova.nova.core.datasource.DataSourceServiceConfig;
 import org.frostnova.nova.core.service.LiveDataService;
+import org.frostnova.nova.core.service.LiveSessionArchive;
 import org.frostnova.nova.core.service.PushTemplateDefaults;
+import org.frostnova.nova.core.service.StreamerNames;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
 import org.frostnova.nova.core.service.NovaEventHandlerService;
 import org.frostnova.nova.core.service.NovaStateStore;
@@ -184,7 +186,8 @@ class UnfilledDatasourceEntryTest {
                 store,
                 dataSource,
                 new RevenueVisibilityService(store),
-                mock(LiveDataService.class));
+                mock(LiveDataService.class),
+                new StreamerNames(new LiveSessionArchive(properties)));
     }
 
     /**

@@ -28,9 +28,11 @@ import org.frostnova.nova.core.model.Message;
 import org.frostnova.nova.core.sender.PushGate;
 import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.frostnova.nova.core.service.LiveDataService;
+import org.frostnova.nova.core.service.LiveSessionArchive;
 import org.frostnova.nova.core.service.PushTemplateDefaults;
 import org.frostnova.nova.core.service.NovaEventHandlerService;
 import org.frostnova.nova.core.service.NovaSenderService;
+import org.frostnova.nova.core.service.StreamerNames;
 import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.core.timeline.TimelineEventType;
 import org.frostnova.nova.core.timeline.TimelineStore;
@@ -261,6 +263,11 @@ public class ConfigUiController {
     private final PushTemplateDefaults templateDefaults;
 
     /**
+     * 首页与状态接口上的主播名。补全没查到昵称时退回最近一场的，与主播页一致
+     */
+    private final StreamerNames streamerNames;
+
+    /**
      * 推送配置备份用的钟。测试换成固定钟，免得同一秒内连存两份撞名覆盖。
      */
     private final Clock backupClock;
@@ -411,7 +418,6 @@ public class ConfigUiController {
                 noBotConnectionContributors(), backupClock);
     }
 
-    @Autowired
     public ConfigUiController(ConfigurationMetadataService metadataService,
                               ConfigurationFileService fileService,
                               NovaCoreProperties properties,
@@ -453,6 +459,49 @@ public class ConfigUiController {
                 Clock.systemDefaultZone());
     }
 
+    @Autowired
+    public ConfigUiController(ConfigurationMetadataService metadataService,
+                              ConfigurationFileService fileService,
+                              NovaCoreProperties properties,
+                              AbstractDataSource dataSource,
+                              ObjectProvider<HealthProbe> healthProbes,
+                              ConfigurationValidator validator,
+                              NovaSenderService senderService,
+                              NovaMessageSender messageSender,
+                              ObjectProvider<AccountLoginProvider> loginProviders,
+                              PushActivityRecorder activityRecorder,
+                              NovaEventHandlerService handlerService,
+                              DataSourceServiceRegistry dataSourceServiceRegistry,
+                              ConfigurationLevelResolver levelResolver,
+                              ConfigurationLabelResolver labelResolver,
+                              ConfigurationEffectResolver effectResolver,
+                              ConfigurationDangerResolver dangerResolver,
+                              RuntimeConfigurationApplier runtimeApplier,
+                              ObjectProvider<BotConnectionTester> connectionTesters,
+                              ObjectProvider<ConsolePageProvider> pageProviders,
+                              EventStreamTokenService eventStreamTokens,
+                              ObjectProvider<BuildProperties> buildProperties,
+                              PushGate pushGate,
+                              LiveDataService liveDataService,
+                              TimelineStore timeline,
+                              ConfigUiAuthService authService,
+                              PushTemplateDefaults templateDefaults,
+                              UpdateCheckService updateCheck,
+                              ObjectProvider<ConfigurationGroupContributor> groupContributors,
+                              ObjectProvider<ConsoleVocabulary> vocabProviders,
+                              ObjectProvider<ConfigurationKeyAliasContributor> aliasContributors,
+                              AlertService alertService,
+                              ObjectProvider<BotConnectionContributor> botConnections,
+                              StreamerNames streamerNames) {
+        this(metadataService, fileService, properties, dataSource, healthProbes, validator,
+                senderService, messageSender, loginProviders, activityRecorder, handlerService,
+                dataSourceServiceRegistry, levelResolver, labelResolver, effectResolver, dangerResolver, runtimeApplier,
+                connectionTesters, pageProviders, eventStreamTokens, buildProperties, pushGate,
+                liveDataService, timeline, authService, templateDefaults, updateCheck,
+                groupContributors, vocabProviders, aliasContributors, alertService, botConnections,
+                Clock.systemDefaultZone(), streamerNames);
+    }
+
     ConfigUiController(ConfigurationMetadataService metadataService,
                        ConfigurationFileService fileService,
                        NovaCoreProperties properties,
@@ -486,6 +535,50 @@ public class ConfigUiController {
                        AlertService alertService,
                        ObjectProvider<BotConnectionContributor> botConnections,
                        Clock backupClock) {
+        this(metadataService, fileService, properties, dataSource, healthProbes, validator,
+                senderService, messageSender, loginProviders, activityRecorder, handlerService,
+                dataSourceServiceRegistry, levelResolver, labelResolver, effectResolver, dangerResolver, runtimeApplier,
+                connectionTesters, pageProviders, eventStreamTokens, buildProperties, pushGate,
+                liveDataService, timeline, authService, templateDefaults, updateCheck,
+                groupContributors, vocabProviders, aliasContributors, alertService, botConnections,
+                backupClock, new StreamerNames(new LiveSessionArchive(properties)));
+    }
+
+    ConfigUiController(ConfigurationMetadataService metadataService,
+                       ConfigurationFileService fileService,
+                       NovaCoreProperties properties,
+                       AbstractDataSource dataSource,
+                       ObjectProvider<HealthProbe> healthProbes,
+                       ConfigurationValidator validator,
+                       NovaSenderService senderService,
+                       NovaMessageSender messageSender,
+                       ObjectProvider<AccountLoginProvider> loginProviders,
+                       PushActivityRecorder activityRecorder,
+                       NovaEventHandlerService handlerService,
+                       DataSourceServiceRegistry dataSourceServiceRegistry,
+                       ConfigurationLevelResolver levelResolver,
+                       ConfigurationLabelResolver labelResolver,
+                       ConfigurationEffectResolver effectResolver,
+                       ConfigurationDangerResolver dangerResolver,
+                       RuntimeConfigurationApplier runtimeApplier,
+                       ObjectProvider<BotConnectionTester> connectionTesters,
+                       ObjectProvider<ConsolePageProvider> pageProviders,
+                       EventStreamTokenService eventStreamTokens,
+                       ObjectProvider<BuildProperties> buildProperties,
+                       PushGate pushGate,
+                       LiveDataService liveDataService,
+                       TimelineStore timeline,
+                       ConfigUiAuthService authService,
+                       PushTemplateDefaults templateDefaults,
+                       UpdateCheckService updateCheck,
+                       ObjectProvider<ConfigurationGroupContributor> groupContributors,
+                       ObjectProvider<ConsoleVocabulary> vocabProviders,
+                       ObjectProvider<ConfigurationKeyAliasContributor> aliasContributors,
+                       AlertService alertService,
+                       ObjectProvider<BotConnectionContributor> botConnections,
+                       Clock backupClock,
+                       StreamerNames streamerNames) {
+        this.streamerNames = streamerNames;
         this.templateDefaults = templateDefaults;
         this.pushGate = pushGate;
         this.liveDataService = liveDataService;
@@ -1865,7 +1958,7 @@ public class ConfigUiController {
         dataSource.getAllUsers().forEach(user -> {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("uid", user.getUid());
-            item.put("uname", user.getUname());
+            item.put("uname", streamerNames.uname(user));
             item.put("roomId", user.getRoomId());
             item.put("platform", user.getPlatform());
             item.put("enabled", user.getEnabled());
@@ -2039,7 +2132,7 @@ public class ConfigUiController {
 
             JSONObject item = new JSONObject();
             item.put("uid", user.getUid());
-            item.put("uname", user.getUname());
+            item.put("uname", streamerNames.uname(user));
             item.put("roomId", user.getRoomId());
             item.put("platform", user.getPlatform());
             // 开播时刻可能没记上（例如程序在别人已经开播之后才起来），此时给 null，
