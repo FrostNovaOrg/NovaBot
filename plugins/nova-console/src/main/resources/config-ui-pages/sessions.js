@@ -39,7 +39,7 @@ export function renderIncomplete(entries) {
     return;
   }
 
-  box.innerHTML = '<div class="warn"><b>推送配置尚未填写完整</b>，以下条目暂未生效，'
+  box.innerHTML = '<div class="notice"><b>推送配置尚未填写完整</b>，以下条目暂未生效，'
     + '因此下面的树上看不到它们：<ul>'
     + entries.map(e => '<li>' + esc(e.message) + '</li>').join('')
     + '</ul></div>';

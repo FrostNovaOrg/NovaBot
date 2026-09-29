@@ -27,8 +27,10 @@ const PAGE_STYLE = `
 .chart{margin-bottom:2px}
 .chart .plot{position:relative;padding-top:6px}
 .chart svg{display:block;width:100%;height:110px}
-.chart .bar{fill:var(--accent)}
-.chart .bar.zero{fill:var(--line)}
+/* 柱子的类名带 c- 前缀：核心样式里另有一条 .bar 管页底那条横条，
+   共用类名的话，收起横条时柱子会被那条规则一起藏掉 */
+.chart .c-bar{fill:var(--accent)}
+.chart .c-bar.zero{fill:var(--line)}
 .chart .xlab{display:flex;justify-content:space-between;margin-top:6px;font-size:12px;color:var(--dim)}
 .spark{width:88px;height:26px;flex:none;color:var(--dim)}
 .spark.up{color:var(--accent)}
@@ -785,7 +787,7 @@ function chartCard(title, buckets, pick, format) {
 
   const points = buckets.map(pick);
   const geometry = barGeometry(points, 1000, 100);
-  const bars = geometry.map((one, i) => '<rect class="bar' + (one.zero ? ' zero' : '')
+  const bars = geometry.map((one, i) => '<rect class="c-bar' + (one.zero ? ' zero' : '')
     + '" x="' + one.x + '" y="' + one.y + '" width="' + one.w + '" height="' + one.h
     + '"><title>' + esc(buckets[i].label + '：' + format(points[i])) + '</title></rect>').join('');
 
