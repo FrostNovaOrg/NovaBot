@@ -128,7 +128,10 @@ public abstract class BilibiliAtCommand extends BilibiliStreamerCommand {
         }
 
         Resolved resolved = resolve(context, streamerKeyword(context));
-        return resolved.failed() ? resolved.error() : act(context, resolved.streamer());
+        // 认的是最近一场归档里的昵称、或没点名而只有 TA 在播时，订阅订上的是谁回复里得说清，
+        // 与数据查询命令同一句
+        return resolved.failed() ? resolved.error()
+                : withNotice(resolved, act(context, resolved.streamer()));
     }
 
     /**
