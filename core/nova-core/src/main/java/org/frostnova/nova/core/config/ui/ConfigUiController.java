@@ -1268,7 +1268,7 @@ public class ConfigUiController {
         } catch (IOException e) {
             log.error("保存配置文件失败", e);
             result.put("success", false);
-            result.put("message", "保存失败: " + e.getMessage());
+            result.put("message", "保存失败: " + fileService.describeSaveFailure(e));
         }
 
         return ResponseEntity.ok(result);
@@ -1586,7 +1586,7 @@ public class ConfigUiController {
         } catch (IOException e) {
             log.error("建立配置文件失败", e);
             result.put("success", false);
-            result.put("message", "保存失败: " + e.getMessage());
+            result.put("message", "保存失败: " + fileService.describeSaveFailure(e));
             return result;
         }
 
@@ -1613,8 +1613,8 @@ public class ConfigUiController {
             log.error("保存机器人连接信息失败", e);
             result.put("success", applied.live());
             result.put("message", applied.live()
-                    ? "连接已经接上，但没能写进配置文件，重启后将恢复原状: " + e.getMessage()
-                    : "保存失败: " + e.getMessage());
+                    ? "连接已经接上，但没能写进配置文件，重启后将恢复原状: " + fileService.describeSaveFailure(e)
+                    : "保存失败: " + fileService.describeSaveFailure(e));
         }
 
         return result;
@@ -1863,11 +1863,11 @@ public class ConfigUiController {
             return ResponseEntity.badRequest().body(result);
         }
 
+        Path path = Path.of(properties.getDatasource().getJsonPath());
         try {
-            Path path = Path.of(properties.getDatasource().getJsonPath());
             if (Files.exists(path)) {
-                recordPrunedBackups(new TimestampedFileBackup(path, backupClock)
-                        .backup(properties.getConfigUi().getBackupKeep()));
+                recordBackupOutcome(new TimestampedFileBackup(path, backupClock)
+                        .backupForSave(properties.getConfigUi().getBackupKeep()));
             }
             DurableFiles.replace(path, content);
 
@@ -1879,21 +1879,25 @@ public class ConfigUiController {
         } catch (IOException e) {
             log.error("保存推送配置失败", e);
             result.put("success", false);
-            result.put("message", "保存失败: " + e.getMessage());
+            result.put("message", "保存失败: " + SaveFailureText.explain(e, path));
         }
 
         return ResponseEntity.ok(result);
     }
 
     /**
-     * 备份被裁掉了旧份时往日志页记一条
+     * 备份这一步的结果落到日志页：跳过时记「没留备份」，留成时只有真裁掉了旧份才记一条
      * <p>
      * 与 {@link ConfigurationFileService} 里配置文件那一路同一套字段：同一件事在日志页上
      * 时有时无，比两边都不记更难查——使用者会以为「这一次没删」。
-     * @param pruned 本次删掉的备份文件名
+     * @param outcome 保存前的备份这一步的结果
      */
-    private void recordPrunedBackups(List<String> pruned) {
-        if (pruned.isEmpty()) {
+    private void recordBackupOutcome(TimestampedFileBackup.BackupOutcome outcome) {
+        if (outcome.skipped()) {
+            timeline.record(outcome.skippedEvent("推送配置"));
+            return;
+        }
+        if (outcome.pruned().isEmpty()) {
             return;
         }
 
@@ -1901,9 +1905,9 @@ public class ConfigUiController {
         // 会让日志页上真正删掉东西的那几条淹在里面
         int keep = properties.getConfigUi().getBackupKeep();
         timeline.record(TimelineEvent.of(TimelineEventType.BACKUP_PRUNED, TimelineEvent.Level.INFO)
-                .text("推送配置备份留 " + keep + " 份，清掉最旧的 " + pruned.size() + " 份")
+                .text("推送配置备份留 " + keep + " 份，清掉最旧的 " + outcome.pruned().size() + " 份")
                 .detail("keep", String.valueOf(keep))
-                .detail("pruned", String.join(",", pruned))
+                .detail("pruned", String.join(",", outcome.pruned()))
                 .build());
     }
 

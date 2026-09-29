@@ -144,7 +144,12 @@ public enum TimelineEventType {
     /**
      * 超出保留份数的旧配置备份被删掉
      */
-    BACKUP_PRUNED("清理旧备份", TimelineCategory.SYSTEM);
+    BACKUP_PRUNED("清理旧备份", TimelineCategory.SYSTEM),
+
+    /**
+     * 保存前没留成备份：所在目录建不出新文件（没有权限或文件系统只读）
+     */
+    BACKUP_SKIPPED("没留备份", TimelineCategory.SYSTEM);
 
     private final String description;
 

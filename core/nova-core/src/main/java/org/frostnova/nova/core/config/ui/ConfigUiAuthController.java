@@ -447,7 +447,7 @@ public class ConfigUiAuthController {
             log.error("写入二次验证密钥失败", e);
             authService.succeedSensitiveTotp(request.getRemoteAddr());
             result.put("success", false);
-            result.put("message", "保存失败: " + e.getMessage());
+            result.put("message", "保存失败: " + fileService.describeSaveFailure(e));
             return ResponseEntity.internalServerError().body(result);
         }
 
@@ -517,7 +517,7 @@ public class ConfigUiAuthController {
             log.error("关闭二次验证时写入配置失败", e);
             authService.succeedSensitiveTotp(request.getRemoteAddr());
             result.put("success", false);
-            result.put("message", "保存失败: " + e.getMessage());
+            result.put("message", "保存失败: " + fileService.describeSaveFailure(e));
             return ResponseEntity.internalServerError().body(result);
         }
 
@@ -699,7 +699,7 @@ public class ConfigUiAuthController {
         } catch (Exception e) {
             log.error("写入新的登录口令失败", e);
             result.put("success", false);
-            result.put("message", "保存失败，密码没有改动: " + e.getMessage());
+            result.put("message", "保存失败，密码没有改动: " + fileService.describeSaveFailure(e));
             return ResponseEntity.internalServerError().body(result);
         }
 

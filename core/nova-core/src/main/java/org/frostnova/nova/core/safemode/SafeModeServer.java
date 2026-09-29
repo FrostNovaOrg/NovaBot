@@ -1,5 +1,6 @@
 package org.frostnova.nova.core.safemode;
 
+import org.frostnova.nova.core.config.ui.SaveFailureText;
 import org.frostnova.nova.core.config.ui.TimestampedFileBackup;
 import org.frostnova.nova.core.lang.SecureToken;
 import org.frostnova.nova.core.util.DurableFiles;
@@ -115,7 +116,7 @@ public class SafeModeServer {
             }
         } catch (Exception e) {
             log.error("安全模式处理请求失败", e);
-            respond(exchange, 500, "text/plain; charset=utf-8", "处理失败: " + e.getMessage());
+            respond(exchange, 500, "text/plain; charset=utf-8", "处理失败: " + SaveFailureText.explain(e, configPath));
         } finally {
             exchange.close();
         }
@@ -189,9 +190,17 @@ public class SafeModeServer {
      * 与主程序里的 {@code TimestampedFileBackup} 同一套命名与裁剪，而不是在这里再写一份
      * 形状相同的备份逻辑——两份实现迟早一份改了另一份没跟上。此刻主程序起不来，
      * 保留份数尽力照 yml 里配的走，读不到时才按组件默认值；文件不在时组件自己会跳过。
+     * 目录建不出新文件时（没有权限或文件系统只读）同样跳过备份、不挡保存：这里本就是
+     * 配置坏了才进来的，配置文件本身写得进而备份挡住保存，等于把人锁在门外。
+     * 安全模式没有日志页，跳过时往工程日志记一条 WARN。
      */
     void backupBeforeSave() throws IOException {
-        new TimestampedFileBackup(configPath).backup(resolveBackupKeep());
+        TimestampedFileBackup.BackupOutcome outcome =
+                new TimestampedFileBackup(configPath).backupForSave(resolveBackupKeep());
+        if (outcome.skipped()) {
+            log.warn("目录建不出备份文件, 这次保存没留备份 {}: {}",
+                    configPath.toAbsolutePath(), outcome.skippedFor().toString());
+        }
     }
 
     /**
