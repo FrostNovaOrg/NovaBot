@@ -72,6 +72,16 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-mail</artifactId>
         </dependency>
+        <!--
+          发信库 jakarta.mail 的实现（angus）。发不出去的原因要分得清「收件地址被拒」与
+          「判垃圾信、配额满」这些别的顶回，认的是实现抛的那几种异常类，主码引用了它就得在这里申报。
+          starter 把实现放在 runtime：主码看不见它，认法就只能退到字符串比对。显式声明后
+          作用域升为 compile，发出去的产物不变（angus 本来就随 starter 交付），变的是编译期看得见。
+        -->
+        <dependency>
+            <groupId>org.eclipse.angus</groupId>
+            <artifactId>angus-mail</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>

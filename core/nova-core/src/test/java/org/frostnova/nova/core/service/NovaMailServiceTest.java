@@ -316,6 +316,47 @@ class NovaMailServiceTest {
             assertEquals("连不上邮件服务器", failure.getMessage());
         }
 
+        /**
+         * 逐封异常表里混着 null 时，认不出原因也不能炸：发信库拼「Failed messages」
+         * 那句时会对表里的 null 调 toString，取话那一步自己就先炸了——
+         * 兜底取不到话就按没有话交代，不许把空指针抛给「发一条测试」的调用方。
+         */
+        @Test
+        @DisplayName("逐封异常表里混着空值：跳过它，照常交代一句")
+        void nullTableEntryIsSkipped() {
+            Map<Object, Exception> failedMessages = new LinkedHashMap<>();
+            failedMessages.put(new SimpleMailMessage(), null);
+            NovaMailService service = service(DEFAULT_TO,
+                    new ThrowingMailSender(new MailSendException(failedMessages)));
+
+            IllegalStateException failure = assertThrows(IllegalStateException.class,
+                    () -> service.sendAlertMail(SUBJECT, CONTENT));
+
+            assertEquals("发送失败（MailSendException）", failure.getMessage());
+        }
+
+        /**
+         * 表内异常的起因指回外层那封的异常时，起因链成环。防环集要跟着递归一路传下去，
+         * 每层各建一个新的，跨层的环就防不住——认不出时也不许栈溢出，照常落回兜底那句。
+         * 表值用 RuntimeException 造环：jakarta 的 MessagingException(String) 在构造里就把
+         * 起因定成「没有」，initCause 想指回外层都指不了。
+         */
+        @Test
+        @DisplayName("表内异常的起因指回外层：不成环栈溢出，照常交代一句")
+        void cycleThroughTableDoesNotOverflow() {
+            RuntimeException odd = new RuntimeException("odd");
+            Map<Object, Exception> failedMessages = new LinkedHashMap<>();
+            failedMessages.put(new SimpleMailMessage(), odd);
+            MailSendException outer = new MailSendException(failedMessages);
+            odd.initCause(outer);
+            NovaMailService service = service(DEFAULT_TO, new ThrowingMailSender(outer));
+
+            IllegalStateException failure = assertThrows(IllegalStateException.class,
+                    () -> service.sendAlertMail(SUBJECT, CONTENT));
+
+            assertEquals("Failed messages: java.lang.RuntimeException: odd", failure.getMessage());
+        }
+
         @Test
         @DisplayName("没配发信服务：抛，不装作发过")
         void missingSenderThrows() {
