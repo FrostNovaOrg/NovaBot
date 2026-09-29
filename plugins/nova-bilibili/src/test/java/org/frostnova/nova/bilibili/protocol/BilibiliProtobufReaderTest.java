@@ -427,6 +427,39 @@ class BilibiliProtobufReaderTest {
             assertEquals(3L, BilibiliProtobufReader.parse(data).number(1));
         }
 
+        /**
+         * 抓的故障：一条礼物消息里礼物块出现三次（一次开出三种礼物），读取器只给得出最后一块，
+         * 前两种礼物整个不入账
+         */
+        @Test
+        @DisplayName("同一嵌套字段出现几次，messages 按报文顺序给出每一次；单值读法照旧取最后一个")
+        void messagesReturnsEveryOccurrenceInOrder() {
+            byte[] data = writer()
+                    .bytes(10, writer().varint(1, 101L).build())
+                    .varint(9, 7L)
+                    .bytes(10, writer().varint(1, 102L).build())
+                    .bytes(10, writer().varint(1, 103L).build())
+                    .build();
+
+            BilibiliProtobufReader message = BilibiliProtobufReader.parse(data);
+            List<Long> ids = message.messages(10).stream().map(block -> block.number(1)).toList();
+            assertEquals(List.of(101L, 102L, 103L), ids, "三块都在、按报文顺序");
+            assertEquals(103L, message.message(10).number(1), "单值读法仍取最后一个");
+            assertEquals(2, message.size(), "字段号个数不因重复而变");
+        }
+
+        @Test
+        @DisplayName("只出现一次或没出现时，messages 给一条或空表")
+        void messagesOnSingleOrMissingField() {
+            byte[] data = writer().bytes(10, writer().varint(1, 101L).build()).varint(3, 3L).build();
+
+            BilibiliProtobufReader message = BilibiliProtobufReader.parse(data);
+            assertEquals(1, message.messages(10).size());
+            assertEquals(101L, message.messages(10).get(0).number(1));
+            assertTrue(message.messages(99).isEmpty(), "没出现的字段");
+            assertTrue(message.messages(3).isEmpty(), "整数字段不是嵌套消息");
+        }
+
         @Test
         @DisplayName("非法 UTF-8 字节被替换而不是让整条消息作废")
         void invalidUtf8IsReplaced() {

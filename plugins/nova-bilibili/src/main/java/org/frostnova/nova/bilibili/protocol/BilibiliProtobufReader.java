@@ -61,14 +61,21 @@ public final class BilibiliProtobufReader {
      * 或 {@code byte[]}（length-delimited）
      * <p>
      * 同一字段重复出现时<b>只保留最后一个</b>，与 proto3 对单值字段的规定一致。
-     * 需要读 repeated 字段时再扩展，目前反推出的字段里没有重复出现的。
+     * 每一次出现都要的字段（repeated）走 {@link #messages}，见 {@link #repeats}。
      */
     private final Map<Integer, Object> fields;
 
+    /**
+     * 出现过不止一次的字段，按报文顺序记下每一次的值；只出现一次的字段不进这张表。
+     * 绝大多数报文没有重复字段，此时为 {@code null}，不多分配
+     */
+    private final Map<Integer, List<Object>> repeats;
+
     private final boolean truncated;
 
-    private BilibiliProtobufReader(Map<Integer, Object> fields, boolean truncated) {
+    private BilibiliProtobufReader(Map<Integer, Object> fields, Map<Integer, List<Object>> repeats, boolean truncated) {
         this.fields = fields;
+        this.repeats = repeats;
         this.truncated = truncated;
     }
 
@@ -80,9 +87,10 @@ public final class BilibiliProtobufReader {
     public static BilibiliProtobufReader parse(byte[] data) {
         Map<Integer, Object> fields = new HashMap<>();
         if (data == null || data.length == 0) {
-            return new BilibiliProtobufReader(fields, false);
+            return new BilibiliProtobufReader(fields, null, false);
         }
 
+        Map<Integer, List<Object>> repeats = null;
         Cursor cursor = new Cursor(data);
         try {
             while (cursor.hasRemaining()) {
@@ -97,21 +105,35 @@ public final class BilibiliProtobufReader {
                 }
                 int field = (int) fieldNumber;
 
-                switch (wire) {
-                    case WIRE_VARINT -> fields.put(field, cursor.readVarint());
-                    case WIRE_FIXED64 -> fields.put(field, cursor.readFixed(8));
-                    case WIRE_LENGTH_DELIMITED -> fields.put(field, cursor.readLengthDelimited());
-                    case WIRE_FIXED32 -> fields.put(field, cursor.readFixed(4));
+                Object value = switch (wire) {
+                    case WIRE_VARINT -> cursor.readVarint();
+                    case WIRE_FIXED64 -> cursor.readFixed(8);
+                    case WIRE_LENGTH_DELIMITED -> cursor.readLengthDelimited();
+                    case WIRE_FIXED32 -> cursor.readFixed(4);
                     // 3 与 4 是已废弃的 group，6 与 7 从未定义。
                     // 它们都没有长度信息，无法跳过，只能就此停下
                     default -> throw MALFORMED;
+                };
+
+                Object previous = fields.put(field, value);
+                if (previous != null) {
+                    if (repeats == null) {
+                        repeats = new HashMap<>();
+                    }
+                    List<Object> all = repeats.get(field);
+                    if (all == null) {
+                        all = new ArrayList<>(4);
+                        all.add(previous);
+                        repeats.put(field, all);
+                    }
+                    all.add(value);
                 }
             }
         } catch (Malformed e) {
-            return new BilibiliProtobufReader(fields, true);
+            return new BilibiliProtobufReader(fields, repeats, true);
         }
 
-        return new BilibiliProtobufReader(fields, false);
+        return new BilibiliProtobufReader(fields, repeats, false);
     }
 
     /**
@@ -167,6 +189,29 @@ public final class BilibiliProtobufReader {
     public BilibiliProtobufReader message(int field) {
         byte[] value = bytes(field);
         return value == null ? null : parse(value);
+    }
+
+    /**
+     * 取嵌套消息字段的<b>每一次出现</b>，按报文顺序
+     * <p>
+     * 同一字段号在一条报文里出现几次就给几条；只出现一次时即 {@link #message} 那一条。
+     * 与 {@link #message} 一样只应对已确认是嵌套消息的字段调用；其中不是字节串的那几次跳过。
+     * @return 嵌套消息，字段不存在时为空表
+     */
+    public List<BilibiliProtobufReader> messages(int field) {
+        List<Object> all = repeats == null ? null : repeats.get(field);
+        if (all == null) {
+            BilibiliProtobufReader only = message(field);
+            return only == null ? List.of() : List.of(only);
+        }
+
+        List<BilibiliProtobufReader> parsed = new ArrayList<>(all.size());
+        for (Object value : all) {
+            if (value instanceof byte[] bytes) {
+                parsed.add(parse(bytes));
+            }
+        }
+        return parsed;
     }
 
     /**

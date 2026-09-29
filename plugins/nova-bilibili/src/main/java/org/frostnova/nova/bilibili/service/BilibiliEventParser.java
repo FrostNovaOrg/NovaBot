@@ -29,6 +29,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -422,7 +423,7 @@ public class BilibiliEventParser {
     /**
      * 见过、不处理的直播间消息类型。
      * <p>
-     * 已知＝取用 ∪ 见过 ∪ 派生不计收入：取用是 {@link #parsers} 里会解析成事件的 cmd；见过是 2026-09-16
+     * 已知＝取用 ∪ 见过 ∪ 派生不计收入：取用是 {@link #parsers} 与 {@link #multiParsers} 里会解析成事件的 cmd；见过是 2026-09-16
      * 真连接取表与 2026-09-28 连接日志里出现过、本产品不取用的 cmd，含对战、榜单、连麦、抽奖、
      * 互动聚合、购物引导、界面提示等类；
      * 派生不计收入见 {@link #DERIVED_NOT_REVENUE_CMDS}。
@@ -560,6 +561,14 @@ public class BilibiliEventParser {
      */
     private final Map<String, BiFunction<JSONObject, LiveStreamerInfo, NovaBaseLiveEvent>> parsers = new HashMap<>();
 
+    /**
+     * 一条消息可能解析出不止一个事件的消息类型（取用集的另一半）
+     * <p>
+     * {@code SEND_GIFT_V2} 一条里可以带几个礼物块（一次开多个盲盒、开出几种礼物），
+     * 每块各是一笔账，不能只留一块
+     */
+    private final Map<String, BiFunction<JSONObject, LiveStreamerInfo, List<NovaBaseLiveEvent>>> multiParsers = new HashMap<>();
+
     public BilibiliEventParser(NovaBilibiliProperties properties, BilibiliGiftService giftService,
                                BilibiliApiSupport apiSupport, BilibiliGuardReconciler guardReconciler) {
         this(properties, giftService, apiSupport, guardReconciler, new BilibiliRiskMetrics());
@@ -585,7 +594,7 @@ public class BilibiliEventParser {
         // 礼物同样两种格式并存：2026-09-01 起平台按房间灰度改发 V2（正文在 data.pb），
         // 只认老格式的房间礼物会整类消失，直播报告随之缺收入。V1 保留，平台随时可能回滚
         parsers.put("SEND_GIFT", this::parseGift);
-        parsers.put("SEND_GIFT_V2", this::parseGiftV2);
+        multiParsers.put("SEND_GIFT_V2", this::parseGiftV2);
         parsers.put("SUPER_CHAT_MESSAGE", this::parseSuperChat);
         parsers.put("USER_TOAST_MSG", this::parseGuard);
         parsers.put("USER_TOAST_MSG_V2", this::parseGuardV2);
@@ -609,19 +618,36 @@ public class BilibiliEventParser {
      * 分派表里的 cmd 名（取用集），供断言与见过表、派生表互斥
      */
     Set<String> dispatchedCmds() {
-        return Set.copyOf(parsers.keySet());
+        Set<String> cmds = new HashSet<>(parsers.keySet());
+        cmds.addAll(multiParsers.keySet());
+        return Set.copyOf(cmds);
     }
 
     /**
      * 一条消息的解析产出
      *
-     * @param event 解析出的事件，消息类型不受支持或解析失败时为空
+     * @param events 解析出的事件，按报文顺序；消息类型不受支持或解析失败时为空表。
+     *               多数消息至多一个，{@code SEND_GIFT_V2} 一条带几个礼物块时每块一个
      * @param degraded 是否<b>解析降级</b>：未知 cmd 或已知 cmd 解析抛异常。
      *                 注意「合法的空返回」（如开播消息不带开播时间）不是降级——
      *                 那是「没这一条」，不是「解析不出来」，算进去的话
      *                 解析失败计数永远对不上
      */
-    public record ParsedMessage(Optional<NovaBaseLiveEvent> event, boolean degraded) {
+    public record ParsedMessage(List<NovaBaseLiveEvent> events, boolean degraded) {
+        public ParsedMessage {
+            events = events == null ? List.of() : List.copyOf(events);
+        }
+
+        public ParsedMessage(Optional<NovaBaseLiveEvent> event, boolean degraded) {
+            this(event.map(List::of).orElse(List.of()), degraded);
+        }
+
+        /**
+         * 第一个事件。<b>入账要走 {@link #events}</b>：一条消息出几个事件时，这里只看得见头一个
+         */
+        public Optional<NovaBaseLiveEvent> event() {
+            return events.stream().findFirst();
+        }
     }
 
     /**
@@ -652,7 +678,8 @@ public class BilibiliEventParser {
         }
 
         BiFunction<JSONObject, LiveStreamerInfo, NovaBaseLiveEvent> parser = parsers.get(type);
-        if (parser == null) {
+        BiFunction<JSONObject, LiveStreamerInfo, List<NovaBaseLiveEvent>> multiParser = multiParsers.get(type);
+        if (parser == null && multiParser == null) {
             if (SEEN_CMDS.contains(type) || DERIVED_NOT_REVENUE_CMDS.containsKey(type)) {
                 return new ParsedMessage(Optional.empty(), false);
             }
@@ -661,14 +688,26 @@ public class BilibiliEventParser {
         }
 
         try {
-            NovaBaseLiveEvent event = parser.apply(data, source);
-            if (event != null) {
-                // 原始报文随事件一起走：事件输出协议要把它透传给下游，排障时也要对着它看
-                // 「解析出来的字段」与「平台实际下发的内容」是不是一回事。存引用不做序列化，
-                // 详见 NovaBaseLiveEvent.rawMessage
+            List<NovaBaseLiveEvent> events = new ArrayList<>(1);
+            if (parser != null) {
+                NovaBaseLiveEvent event = parser.apply(data, source);
+                if (event != null) {
+                    events.add(event);
+                }
+            } else {
+                for (NovaBaseLiveEvent event : multiParser.apply(data, source)) {
+                    if (event != null) {
+                        events.add(event);
+                    }
+                }
+            }
+            // 原始报文随事件一起走：事件输出协议要把它透传给下游，排障时也要对着它看
+            // 「解析出来的字段」与「平台实际下发的内容」是不是一回事。存引用不做序列化，
+            // 详见 NovaBaseLiveEvent.rawMessage。同一条消息出的几个事件带同一份原文
+            for (NovaBaseLiveEvent event : events) {
                 event.setRawMessage(data);
             }
-            return new ParsedMessage(Optional.ofNullable(event), false);
+            return new ParsedMessage(events, false);
         } catch (Exception e) {
             log.error("解析直播间 {} 的 {} 类型消息异常, 内容: {}", source.getRoomId(), type, data.toJSONString(), e);
             // 异常被吞掉等于这条消息没来过。逐条记一笔，同 cmd 只在量级处换一份文本样本
@@ -679,6 +718,8 @@ public class BilibiliEventParser {
 
     /**
      * 解析一条直播间消息
+     * <p>
+     * 只给第一个事件；一条消息可能出几个事件（见 {@link ParsedMessage#events}），入账走 {@link #parseMessage}
      * @param data 消息内容
      * @param source 直播间信息
      * @return 解析出的事件，消息类型不受支持或解析失败时返回空
@@ -1345,18 +1386,23 @@ public class BilibiliEventParser {
      * 的 original_gift_*），礼物块（10 号）仍是开出物。没有 9 号时按普通礼物入账。
      * 34 号是表情特效，不是开出物名，见字段表。
      * <p>
+     * <b>一条可带几个礼物块：</b>一次开多个盲盒、开出几种礼物时，10 号按开出物的种类出现几次
+     * （每块各有自己的 id、名、单价、数量、实扣、时间戳），每块出一个事件；送礼人与盒子在顶层，
+     * 几块共用。只有一块时与原先的单个事件逐字段一样。
+     * <p>
      * <b>背包礼物：</b>V2 里 {@code bag_gift} 的对应字段未知（样本里没出现过），V2 的背包
      * 礼物暂时认不出来，实扣只能按 {@code total_coin} 照记。等样本。
+     * @return 每个礼物块一个事件，按报文顺序；取不到礼物块时为空表
      */
-    private NovaBaseLiveEvent parseGiftV2(JSONObject data, LiveStreamerInfo source) {
+    private List<NovaBaseLiveEvent> parseGiftV2(JSONObject data, LiveStreamerInfo source) {
         JSONObject meta = requireData(data, "SEND_GIFT_V2");
         if (meta == null) {
-            return null;
+            return List.of();
         }
 
         byte[] payload = decodePayload(meta.getString("pb"), source, "SEND_GIFT_V2");
         if (payload == null) {
-            return null;
+            return List.of();
         }
 
         BilibiliProtobufReader message = BilibiliProtobufReader.parse(payload);
@@ -1371,22 +1417,12 @@ public class BilibiliEventParser {
         // 同 INTERACT_WORD_V2：排在取值之前，礼物块都取不到的那条路上更需要这一笔
         noteUnknownFields("SEND_GIFT_V2", message, GIFT_V2_KNOWN_FIELDS);
 
-        BilibiliProtobufReader gift = message.message(GIFT_V2_INFO);
-        if (gift == null) {
+        List<BilibiliProtobufReader> gifts = message.messages(GIFT_V2_INFO);
+        if (gifts.isEmpty()) {
             // 礼物块是这条消息的正主，连它都取不到就没有可入账的内容了
             noteNamed(BilibiliRiskMetrics.Kind.FIELD_MISSING, "SEND_GIFT_V2:gift");
             log.debug("直播间 {} 的 SEND_GIFT_V2 消息取不到礼物块, 已忽略", source.getRoomId());
-            return null;
-        }
-
-        // 34 号是表情特效子消息 {1:id, 2:type}（见字段表），与入账无关。记录只到 TRACE
-        // 且只打取到的两个数：字段语义尚未被平台文档证实，打整块字节只会得到乱码
-        BilibiliProtobufReader faceEffect = gift.message(GIFT_V2_FACE_EFFECT);
-        Long faceEffectId = faceEffect == null ? null : faceEffect.number(GIFT_V2_FACE_EFFECT_ID);
-        Long faceEffectType = faceEffect == null ? null : faceEffect.number(GIFT_V2_FACE_EFFECT_TYPE);
-        if (log.isTraceEnabled() && (faceEffectId != null || faceEffectType != null)) {
-            log.trace("直播间 {} 的 SEND_GIFT_V2 礼物带表情特效: id={}, type={}",
-                    source.getRoomId(), faceEffectId, faceEffectType);
+            return List.of();
         }
 
         BilibiliProtobufReader uinfo = message.message(GIFT_V2_UINFO);
@@ -1409,6 +1445,33 @@ public class BilibiliEventParser {
             sender.setUname(message.string(GIFT_V2_UNAME));
         }
 
+        BlindBox blind = parseBlindV2(message);
+        List<NovaBaseLiveEvent> events = new ArrayList<>(gifts.size());
+        for (BilibiliProtobufReader gift : gifts) {
+            NovaBaseLiveEvent event = buildGiftBlockV2(gift, source, sender, blind);
+            if (event != null) {
+                events.add(event);
+            }
+        }
+        return events;
+    }
+
+    /**
+     * SEND_GIFT_V2 的一个礼物块入账：块内字段按本块取，送礼人与盒子由整条消息共用
+     * @return 礼物事件，币种不认识时为 null
+     */
+    private NovaBaseLiveEvent buildGiftBlockV2(BilibiliProtobufReader gift, LiveStreamerInfo source,
+                                               BilibiliUserInfo sender, BlindBox blind) {
+        // 34 号是表情特效子消息 {1:id, 2:type}（见字段表），与入账无关。记录只到 TRACE
+        // 且只打取到的两个数：字段语义尚未被平台文档证实，打整块字节只会得到乱码
+        BilibiliProtobufReader faceEffect = gift.message(GIFT_V2_FACE_EFFECT);
+        Long faceEffectId = faceEffect == null ? null : faceEffect.number(GIFT_V2_FACE_EFFECT_ID);
+        Long faceEffectType = faceEffect == null ? null : faceEffect.number(GIFT_V2_FACE_EFFECT_TYPE);
+        if (log.isTraceEnabled() && (faceEffectId != null || faceEffectType != null)) {
+            log.trace("直播间 {} 的 SEND_GIFT_V2 礼物带表情特效: id={}, type={}",
+                    source.getRoomId(), faceEffectId, faceEffectType);
+        }
+
         Instant timestamp = Optional.ofNullable(epochSecond(gift.number(GIFT_V2_TIMESTAMP))).orElseGet(Instant::now);
 
         GiftInfo giftInfo = new GiftInfo(
@@ -1421,7 +1484,7 @@ public class BilibiliEventParser {
 
         return buildGiftEvent("SEND_GIFT_V2", source, sender, giftInfo, timestamp,
                 gift.string(GIFT_V2_COIN_TYPE), () -> intValue(gift.number(GIFT_V2_TOTAL_COIN)),
-                false, parseBlindV2(message));
+                false, blind);
     }
 
     /**
