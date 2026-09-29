@@ -13,6 +13,7 @@ import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.sender.AtMode;
 import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.frostnova.nova.core.service.LiveDataService;
+import org.frostnova.nova.core.service.StreamerNames;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -32,11 +33,22 @@ public class BilibiliLiveOffPushHandler implements NovaEventHandler {
 
     private final LiveDataService liveDataService;
 
-    @Autowired
+    private final StreamerNames names;
+
     public BilibiliLiveOffPushHandler(BilibiliApiUtil api, NovaMessageSender sender, LiveDataService liveDataService) {
+        this(api, sender, liveDataService, StreamerNames.none());
+    }
+
+    /**
+     * @param names 起动时没查到昵称时，从最近一场归档里取主播名
+     */
+    @Autowired
+    public BilibiliLiveOffPushHandler(BilibiliApiUtil api, NovaMessageSender sender, LiveDataService liveDataService,
+                                      StreamerNames names) {
         this.api = api;
         this.sender = sender;
         this.liveDataService = liveDataService;
+        this.names = names;
     }
 
     @Override
@@ -49,7 +61,7 @@ public class BilibiliLiveOffPushHandler implements NovaEventHandler {
         // 避免渲染出「……，本场直播时长 」这样的悬空半句
         String template = params.getString("message");
         String content = PushHandlerSupport.replaceOrDropClause(template, "{time}", formatDuration(event))
-                .replace("{uname}", PushHandlerSupport.resolveUname(api, event.getSource()))
+                .replace("{uname}", PushHandlerSupport.resolveUname(api, names, event.getPlatform(), event.getSource()))
                 .replace("{url}", "https://live.bilibili.com/" + event.getSource().getRoomId());
 
         // 下播通知没有「@ 订阅的人」这回事（订阅只分开播与动态两类），因此订阅串给空串：

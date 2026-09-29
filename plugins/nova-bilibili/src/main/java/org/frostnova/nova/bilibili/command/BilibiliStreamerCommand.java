@@ -123,7 +123,8 @@ public abstract class BilibiliStreamerCommand implements NovaCommand {
             }
         }
         for (PushUser user : candidates) {
-            if (StringUtil.isNotBlank(user.getUname()) && user.getUname().contains(keyword)) {
+            String uname = unameOf(user);
+            if (StringUtil.isNotBlank(uname) && uname.contains(keyword)) {
                 return user;
             }
         }
@@ -139,7 +140,8 @@ public abstract class BilibiliStreamerCommand implements NovaCommand {
     private String describe(List<PushUser> candidates) {
         StringBuilder text = new StringBuilder();
         for (PushUser user : candidates) {
-            text.append("· ").append(StringUtil.isBlank(user.getUname()) ? "未知主播" : user.getUname())
+            String uname = unameOf(user);
+            text.append("· ").append(StringUtil.isBlank(uname) ? "未知主播" : uname)
                     .append("（").append(user.getUid()).append("）\n");
         }
         return text.toString().trim();
@@ -149,7 +151,20 @@ public abstract class BilibiliStreamerCommand implements NovaCommand {
      * 主播的展示名
      */
     protected String nameOf(PushUser streamer) {
-        return StringUtil.isBlank(streamer.getUname()) ? String.valueOf(streamer.getUid()) : streamer.getUname();
+        String uname = unameOf(streamer);
+        return StringUtil.isBlank(uname) ? String.valueOf(streamer.getUid()) : uname;
+    }
+
+    /**
+     * 主播的昵称：内存里没有时退回最近一场归档里的，与控制台、追问清单一致
+     * <p>
+     * 点名认的也是这一个：清单上写着的名字，照着打回来就该点得中。
+     * @param streamer 推送用户
+     * @return 昵称，都没有时为内存里那一份（null 或空串）
+     */
+    protected String unameOf(PushUser streamer) {
+        String uname = choice.uname(streamer);
+        return StringUtil.isBlank(uname) ? streamer.getUname() : uname;
     }
 
     /**

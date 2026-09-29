@@ -17,6 +17,7 @@ import org.frostnova.nova.core.sender.AtMode;
 import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.frostnova.nova.core.service.AtSubscriptionService;
 import org.frostnova.nova.core.service.LiveDataService;
+import org.frostnova.nova.core.service.StreamerNames;
 import org.frostnova.nova.core.lang.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,13 +39,25 @@ public class BilibiliLiveOnPushHandler implements NovaEventHandler {
 
     private final LiveDataService liveDataService;
 
-    @Autowired
+    private final StreamerNames names;
+
     public BilibiliLiveOnPushHandler(BilibiliApiUtil api, NovaMessageSender sender,
                                      AtSubscriptionService subscriptions, LiveDataService liveDataService) {
+        this(api, sender, subscriptions, liveDataService, StreamerNames.none());
+    }
+
+    /**
+     * @param names 起动时没查到昵称时，从最近一场归档里取主播名
+     */
+    @Autowired
+    public BilibiliLiveOnPushHandler(BilibiliApiUtil api, NovaMessageSender sender,
+                                     AtSubscriptionService subscriptions, LiveDataService liveDataService,
+                                     StreamerNames names) {
         this.api = api;
         this.sender = sender;
         this.subscriptions = subscriptions;
         this.liveDataService = liveDataService;
+        this.names = names;
     }
 
     @Override
@@ -59,7 +72,7 @@ public class BilibiliLiveOnPushHandler implements NovaEventHandler {
             return;
         }
 
-        String uname = PushHandlerSupport.resolveUname(api, event.getSource());
+        String uname = PushHandlerSupport.resolveUname(api, names, event.getPlatform(), event.getSource());
 
         String title = "";
         String cover = "";

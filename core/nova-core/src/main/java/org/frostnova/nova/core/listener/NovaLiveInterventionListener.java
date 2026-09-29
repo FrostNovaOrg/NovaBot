@@ -6,6 +6,7 @@ import org.frostnova.nova.core.event.live.common.LiveCutOffEvent;
 import org.frostnova.nova.core.event.live.common.LiveWarningEvent;
 import org.frostnova.nova.core.event.live.common.RoomLockEvent;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
+import org.frostnova.nova.core.service.StreamerNames;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
@@ -30,9 +31,15 @@ public class NovaLiveInterventionListener {
 
     private final AlertService alertService;
 
+    private final StreamerNames names;
+
+    /**
+     * @param names 起动时没查到昵称时，从最近一场归档里取主播名
+     */
     @Autowired
-    public NovaLiveInterventionListener(AlertService alertService) {
+    public NovaLiveInterventionListener(AlertService alertService, StreamerNames names) {
         this.alertService = alertService;
+        this.names = names;
     }
 
     /**
@@ -84,7 +91,9 @@ public class NovaLiveInterventionListener {
         if (source == null) {
             return "未知主播";
         }
-        return source.getUname() + "（直播间 " + source.getRoomIdString() + "）";
+        String uname = names.uname(event.getPlatform(), source.getUid(), source.getUname());
+        String name = uname == null || uname.isBlank() ? String.valueOf(source.getUid()) : uname;
+        return name + "（直播间 " + source.getRoomIdString() + "）";
     }
 
     /**

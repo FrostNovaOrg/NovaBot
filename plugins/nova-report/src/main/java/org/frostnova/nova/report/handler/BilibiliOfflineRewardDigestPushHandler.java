@@ -14,6 +14,7 @@ import org.frostnova.nova.core.sender.AtMode;
 import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.frostnova.nova.core.service.HandlerPackageNames;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
+import org.frostnova.nova.core.service.StreamerNames;
 import org.frostnova.nova.report.painter.BilibiliOfflineRewardDigestPainter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,14 +47,27 @@ public class BilibiliOfflineRewardDigestPushHandler implements NovaEventHandler 
 
     private final BilibiliOfflineRewardDigestPainter painter;
 
-    @Autowired
+    private final StreamerNames names;
+
     public BilibiliOfflineRewardDigestPushHandler(BilibiliApiUtil api, NovaMessageSender sender,
                                                   RevenueVisibilityService revenueVisibility,
                                                   BilibiliOfflineRewardDigestPainter painter) {
+        this(api, sender, revenueVisibility, painter, StreamerNames.none());
+    }
+
+    /**
+     * @param names 起动时没查到昵称时，从最近一场归档里取主播名
+     */
+    @Autowired
+    public BilibiliOfflineRewardDigestPushHandler(BilibiliApiUtil api, NovaMessageSender sender,
+                                                  RevenueVisibilityService revenueVisibility,
+                                                  BilibiliOfflineRewardDigestPainter painter,
+                                                  StreamerNames names) {
         this.api = api;
         this.sender = sender;
         this.revenueVisibility = revenueVisibility;
         this.painter = painter;
+        this.names = names;
     }
 
     @Override
@@ -79,7 +93,7 @@ public class BilibiliOfflineRewardDigestPushHandler implements NovaEventHandler 
         String template = params.getString("message");
         String content = PushHandlerSupport.replaceOrDropClause(template, "{list}",
                         painter.renderList(event, showRevenue))
-                .replace("{uname}", PushHandlerSupport.resolveUname(api, event.getSource()))
+                .replace("{uname}", PushHandlerSupport.resolveUname(api, names, event.getPlatform(), event.getSource()))
                 .replace("{url}", "https://live.bilibili.com/" + event.getSource().getRoomId())
                 .replace("{picture}", picture);
 

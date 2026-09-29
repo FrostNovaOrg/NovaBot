@@ -9,6 +9,7 @@ import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.LiveSessionArchive;
+import org.frostnova.nova.core.service.StreamerNames;
 import org.frostnova.nova.core.lang.StringUtil;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -81,6 +82,8 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
 
     private final LiveSessionArchive archive;
 
+    private final StreamerNames names;
+
     /**
      * 时钟。追问那两分钟的窗口只有靠它才量得到——真等两分钟的测试没人会跑第二遍
      */
@@ -101,7 +104,17 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
     BilibiliStreamerChoice(LiveDataService liveDataService, LiveSessionArchive archive, Clock clock) {
         this.liveDataService = liveDataService;
         this.archive = archive;
+        this.names = new StreamerNames(archive);
         this.clock = clock;
+    }
+
+    /**
+     * 主播的昵称：内存里没有时退回最近一场归档里的，与控制台一致
+     * @param user 推送用户
+     * @return 昵称，都没有时为内存里那一份（null 或空串）
+     */
+    public String uname(@NonNull PushUser user) {
+        return names.uname(user);
     }
 
     /**
@@ -311,8 +324,9 @@ public class BilibiliStreamerChoice implements CommandFollowUp {
                 + context.getNum() + ":" + context.getSenderUid();
     }
 
-    private static String display(PushUser user) {
-        return StringUtil.isBlank(user.getUname()) ? String.valueOf(user.getUid()) : user.getUname();
+    private String display(PushUser user) {
+        String uname = uname(user);
+        return StringUtil.isBlank(uname) ? String.valueOf(user.getUid()) : uname;
     }
 
     /**

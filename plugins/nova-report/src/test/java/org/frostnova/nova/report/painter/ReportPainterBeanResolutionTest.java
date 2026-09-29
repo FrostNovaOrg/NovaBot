@@ -12,6 +12,7 @@ import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.LiveRoomInfoHistory;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
+import org.frostnova.nova.core.service.StreamerNames;
 import org.frostnova.nova.report.factory.NovaCommonPainterFactory;
 import org.frostnova.nova.report.util.FontUtil;
 import org.junit.jupiter.api.AfterEach;
@@ -97,6 +98,7 @@ class ReportPainterBeanResolutionTest {
         beans.registerSingleton("revenueVisibilityService", mock(RevenueVisibilityService.class));
         beans.registerSingleton("abstractDataSource", mock(AbstractDataSource.class));
         beans.registerSingleton("bilibiliStreamerChoice", mock(BilibiliStreamerChoice.class));
+        beans.registerSingleton("streamerNames", StreamerNames.none());
 
         registerAsComponentScanDoes(BilibiliLiveReportPainter.class);
         registerAsComponentScanDoes(BilibiliLiveReportPreviewPainter.class);

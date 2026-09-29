@@ -7,6 +7,7 @@ import org.frostnova.nova.core.model.Message;
 import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.sender.AtMode;
 import org.frostnova.nova.core.sender.NovaMessageSender;
+import org.frostnova.nova.core.service.StreamerNames;
 import org.frostnova.nova.core.lang.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 
@@ -231,12 +232,15 @@ public final class PushHandlerSupport {
     /**
      * 获取主播的最新昵称
      * <p>
-     * 事件中携带的昵称来自推送配置，可能已过时，因此优先请求接口获取最新昵称，失败时回退到事件中的值。
+     * 事件中携带的昵称来自推送配置，可能已过时，因此优先请求接口获取最新昵称，失败时回退到事件中的值；
+     * 事件里也是空的（起动时就没查到）时，再退回最近一场归档里的昵称，都没有才写 uid。
      * @param api 接口工具
+     * @param names 主播名的归档退路
+     * @param platform 直播平台
      * @param source 主播信息
      * @return 昵称
      */
-    public static String resolveUname(BilibiliApiUtil api, LiveStreamerInfo source) {
+    public static String resolveUname(BilibiliApiUtil api, StreamerNames names, String platform, LiveStreamerInfo source) {
         try {
             String uname = api.getUpInfoByUid(source.getUid()).getUname();
             if (StringUtil.isNotBlank(uname)) {
@@ -246,6 +250,7 @@ public final class PushHandlerSupport {
             log.debug("获取 uid {} 的最新昵称失败: {}", source.getUid(), e.getMessage());
         }
 
-        return StringUtil.isBlank(source.getUname()) ? String.valueOf(source.getUid()) : source.getUname();
+        String uname = names.uname(platform, source.getUid(), source.getUname());
+        return StringUtil.isBlank(uname) ? String.valueOf(source.getUid()) : uname;
     }
 }

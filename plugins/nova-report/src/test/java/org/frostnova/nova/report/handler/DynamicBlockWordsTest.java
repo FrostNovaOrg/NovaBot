@@ -21,6 +21,7 @@ import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.frostnova.nova.core.service.AtSubscriptionService;
 import org.frostnova.nova.core.service.LiveDataService;
+import org.frostnova.nova.core.service.StreamerNames;
 import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.core.timeline.TimelineWriter;
 import org.frostnova.nova.report.painter.BilibiliDynamicPainter;
@@ -357,6 +358,7 @@ class DynamicBlockWordsTest {
         context.registerBean(LiveDataService.class, () -> liveDataService);
         context.registerBean(NovaBilibiliProperties.class, () -> properties);
         context.registerBean(TimelineWriter.class, () -> timeline::add);
+        context.registerBean(StreamerNames.class, StreamerNames::none);
         context.register(BilibiliDynamicPushHandler.class);
         context.refresh();
         return context.getBean(BilibiliDynamicPushHandler.class);
