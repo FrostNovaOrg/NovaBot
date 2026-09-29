@@ -276,33 +276,48 @@ public final class DurableFiles {
 
     /**
      * 建临时文件失败里，哪些只说明「换名这条路走不通，直接写还在行」：
-     * 权限不够与只读文件系统两类。
+     * 认法见 {@link #onlyMeansDirectoryRefusesNewFiles}——临时件与保存前的备份建在
+     * 同一个目录里，两处问的是同一件事。
+     * <p>
+     * 其余失败（磁盘满 ENOSPC、目录项用尽、IO 错误等）不在其列：那时候直接写
+     * 同样写不进，退回只会先把原件截断掉。取挂载标志这一步自己出错时也按退不了回
+     * 处理：照常抛原来那个异常——认不出宁可多抛一次，不冒退回错一次把原件截空的险。
+     */
+    private static boolean directWriteStillPossible(IOException createFailed, Path temp) {
+        return onlyMeansDirectoryRefusesNewFiles(createFailed, temp.getParent());
+    }
+
+    /**
+     * 一趟建新文件的失败，是否只说明「这个目录里建不出新文件」：权限不够，或目录所在的
+     * 文件系统只读——除此之外的失败（磁盘满、目录项用尽、IO 错误等）都不在其列。
+     * <p>
+     * 换名写盘建不出临时件时要不要退回直接写，与保存前建不出备份时要不要跳过备份接着存，
+     * 问的是同一件事，所以共用这一道认法，不各写一份：两道认法迟早一道改了另一道没跟上。
      * <p>
      * 权限不够看异常类型：EACCES／EPERM 在 Linux、macOS 上都映射成
      * {@link AccessDeniedException}，Windows 拒绝建件也是它，各平台一致。
-     * 只读文件系统看挂载标志：临时件所在目录的
-     * {@link Files#getFileStore(Path)} 读 {@code isReadOnly()}（Linux 上来自
-     * statvfs 的 ST_RDONLY，Windows 上来自卷的只读属性），跟系统语言环境和
-     * 目录路径里的字样都无关。不看报错文字，因为文字两头都靠不住：一是
-     * {@link FileSystemException} 的 {@code getMessage()} 把「文件路径: 原因」
-     * 连成一串，目录路径里带 read-only 一类字样时，磁盘满也会被认成只读、
-     * 退回直接写把原件截成空；二是原因串随系统语言环境变（装了译文包的
+     * 只读文件系统看挂载标志：目录的 {@link Files#getFileStore(Path)} 读
+     * {@code isReadOnly()}（Linux 上来自 statvfs 的 ST_RDONLY，Windows 上来自卷的
+     * 只读属性），跟系统语言环境和目录路径里的字样都无关。不看报错文字，因为文字两头
+     * 都靠不住：一是 {@link FileSystemException} 的 {@code getMessage()} 把
+     * 「文件路径: 原因」连成一串，目录路径里带 read-only 一类字样时，磁盘满也会被认成
+     * 只读、放行了不该放行的退回或跳过；二是原因串随系统语言环境变（装了译文包的
      * 中文 Linux 上 EROFS 的文字是「只读文件系统」），认不出。也不按
      * {@code getReason()} 留文字兜底：EROFS 的文字与挂载标志说的是同一件事，
      * 同一条件摆两道认法会互相遮住失效，留可靠的这道就够了。API 里另有
      * {@link java.nio.file.ReadOnlyFileSystemException}，但它是运行期异常、只读的
-     * zip 一类文件系统在用，默认文件系统建件不会抛它，到不了这里。
-     * 取挂载标志这一步自己出错时，按退不了回处理：照常抛原来那个异常——
-     * 认不出宁可多抛一次，不冒退回错一次把原件截空的险。
-     * 其余失败（磁盘满 ENOSPC、目录项用尽、IO 错误等）不在其列：那时候直接写
-     * 同样写不进，退回只会先把原件截断掉。
+     * zip 一类文件系统在用，默认文件系统建件不会抛它，到不了这里。取挂载标志这一步
+     * 自己出错时按否处理：认不出就当认不得，宁可照旧拦下，不放行没把握的跳过。
+     * @param failure 建文件抛出的异常
+     * @param directory 打算建文件的那个目录
+     * @return 只说明这个目录里建不出新文件时为 {@code true}
      */
-    private static boolean directWriteStillPossible(IOException createFailed, Path temp) {
-        if (createFailed instanceof AccessDeniedException) {
+    public static boolean onlyMeansDirectoryRefusesNewFiles(IOException failure, Path directory) {
+        if (failure instanceof AccessDeniedException) {
             return true;
         }
         try {
-            return Files.getFileStore(temp.getParent()).isReadOnly();
+            return Files.getFileStore(directory).isReadOnly();
         } catch (IOException | RuntimeException mountFlagUnavailable) {
             return false;
         }

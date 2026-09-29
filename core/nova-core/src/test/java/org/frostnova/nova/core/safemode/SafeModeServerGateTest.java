@@ -151,6 +151,51 @@ class SafeModeServerGateTest {
                 () -> "端口越界六问中 " + unresolved.size() + " 问未销: " + String.join("; ", unresolved));
     }
 
+    /**
+     * 使用者故障：配置文件只读或没有写权限时，安全模式的回话是「处理失败: 」直接接
+     * 异常自己的消息，Windows 上那只是一个路径，看不出是没权限还是只读，也不知道
+     * 该去改哪个文件。目录同时不让建件，是为了让失败落在直接写那一步上
+     * （目录还能建件时换名会先成，POSIX 上换名不受原件自身权限拦）。
+     */
+    @Test
+    @DisplayName("文件只读且目录不让建件：保存回 500，回话说清权限或只读并点出文件，盘上分毫不动")
+    void saveRefusedByPermissionsExplainsItself() throws IOException {
+        Path config = dir.resolve("application.yml");
+        Files.writeString(config, "seed: 1\n", StandardCharsets.UTF_8);
+        SafeModeServer server = new SafeModeServer(config, "测试用的启动失败原因");
+
+        java.util.Set<java.nio.file.attribute.PosixFilePermission> originalDir =
+                Files.getPosixFilePermissions(dir);
+        java.util.Set<java.nio.file.attribute.PosixFilePermission> originalFile =
+                Files.getPosixFilePermissions(config);
+
+        String body;
+        try {
+            Files.setPosixFilePermissions(dir,
+                    java.nio.file.attribute.PosixFilePermissions.fromString("r-xr-xr-x"));
+            Files.setPosixFilePermissions(config,
+                    java.nio.file.attribute.PosixFilePermissions.fromString("r--r--r--"));
+            org.junit.jupiter.api.Assumptions.assumeFalse(Files.isWritable(config),
+                    "当前用户无视文件权限（如 root），只读文件设不出来");
+            org.junit.jupiter.api.Assumptions.assumeFalse(Files.isWritable(dir),
+                    "当前用户无视目录权限（如 root），不让建新文件的目录设不出来");
+            StubExchange exchange =
+                    new StubExchange("POST", URI.create("/save?token=" + server.token()), "ok: true\n");
+            server.handle(exchange);
+            assertEquals(500, exchange.status(), "写不进的保存应回 500");
+            body = exchange.body();
+        } finally {
+            Files.setPosixFilePermissions(dir, originalDir);
+            Files.setPosixFilePermissions(config, originalFile);
+        }
+
+        // 整句钉死：说清是没有写权限还是只读，点出是哪个文件；句中用中文标点
+        assertEquals("处理失败: 没有写权限或文件被设成了只读，写不进 " + config.toAbsolutePath()
+                + "，请检查运行程序的用户对这个文件和它所在目录的写权限（Windows 上还有文件属性里的只读）", body);
+        assertEquals("seed: 1\n", Files.readString(config, StandardCharsets.UTF_8),
+                "被拒的保存不许改动配置本体");
+    }
+
     private SafeModeServer newServer() {
         return new SafeModeServer(dir.resolve("application.yml"), "测试用的启动失败原因");
     }

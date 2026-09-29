@@ -214,6 +214,45 @@ class SafeModeServerBackupTest {
         }
     }
 
+    /**
+     * 使用者故障：目录不让建新文件、配置文件本身可写（只读的容器根上单独挂一个可写的
+     * 配置文件就是这种部署）时，此前安全模式的每次保存都在「同目录建带时间戳的备份」
+     * 这一步先被拒，配置改不了——而安全模式本就是配置坏了才进来的，改不了等于把人锁在门外。
+     * 改后该照常存上，目录里不添备份件与临时件；安全模式没有日志页，这一条得进工程日志。
+     */
+    @Test
+    @DisplayName("目录不让建文件、文件可写：保存照样成，不留备份与临时件，工程日志记「没留备份」")
+    void applySaveSkipsBackupWhenDirectoryRefusesNewFiles() throws IOException {
+        Path config = dir.resolve("application.yml");
+        Files.writeString(config, "seed: 1\n", StandardCharsets.UTF_8);
+        SafeModeServer server = new SafeModeServer(config, "测试用的启动失败原因");
+
+        java.util.Set<java.nio.file.attribute.PosixFilePermission> original = Files.getPosixFilePermissions(dir);
+        List<String> logged;
+        try (LogCapture capture = new LogCapture()) {
+            try {
+                Files.setPosixFilePermissions(dir,
+                        java.nio.file.attribute.PosixFilePermissions.fromString("r-xr-xr-x"));
+                org.junit.jupiter.api.Assumptions.assumeFalse(Files.isWritable(dir),
+                        "当前用户无视目录权限（如 root），不让建新文件的目录设不出来");
+                assertEquals(null, server.applySave("ok: true\n"), "目录不让建新文件不该挡住保存");
+            } finally {
+                Files.setPosixFilePermissions(dir, original);
+            }
+            logged = capture.messages();
+        }
+
+        assertEquals("ok: true\n", Files.readString(config, StandardCharsets.UTF_8),
+                "本体应是这次保存的内容");
+        try (Stream<Path> files = Files.list(dir)) {
+            assertEquals(List.of("application.yml"),
+                    files.map(path -> path.getFileName().toString()).sorted().toList(),
+                    "目录里只该有配置文件本身：跳过的备份建不出、退回直接写也建不出临时件");
+        }
+        assertTrue(logged.stream().anyMatch(message -> message.contains("没留备份")),
+                "安全模式没有日志页, 工程日志该记一条没留备份: " + logged);
+    }
+
     private static List<String> stampedBackupNames(Path config) throws IOException {
         String prefix = config.getFileName() + ".";
         try (Stream<Path> files = Files.list(config.getParent())) {
@@ -224,6 +263,32 @@ class SafeModeServerBackupTest {
                             .matches("\\d{8}-\\d{6}(-\\d+)?"))
                     .sorted()
                     .toList();
+        }
+    }
+
+    /**
+     * 收安全模式这一处的工程日志（各级都收），关掉时摘下
+     */
+    private static final class LogCapture implements AutoCloseable {
+        private final ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(SafeModeServer.class);
+        private final ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+
+        LogCapture() {
+            appender.start();
+            logger.addAppender(appender);
+        }
+
+        List<String> messages() {
+            return appender.list.stream()
+                    .map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage)
+                    .toList();
+        }
+
+        @Override
+        public void close() {
+            logger.detachAppender(appender);
         }
     }
 }

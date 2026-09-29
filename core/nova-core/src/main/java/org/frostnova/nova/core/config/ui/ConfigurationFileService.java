@@ -1557,21 +1557,40 @@ public class ConfigurationFileService {
      * <p>
      * 每次保存生成一份带时间戳的独立备份并保留最近若干份。此前只有单个 .bak 文件且每次覆盖，
      * 一旦连续保存两次，第一次保存前的内容就再也找不回来了。
-     * @throws IOException 备份失败时抛出
+     * 目录建不出新文件时（没有权限或文件系统只读）不备份也不挡保存：配置文件本身写得进的
+     * 部署（只读的容器根上单独挂一个可写的配置文件）正是这样，备份先挡住保存会让配置改不了；
+     * 这时往日志页记一条「没留备份」，见 {@link TimestampedFileBackup#backupForSave(int)}。
+     * @throws IOException 目录建不出新文件之外的备份失败时抛出
      */
     private void backup() throws IOException {
-        List<String> pruned = backups.backup(backupKeep.getAsInt());
-        if (pruned.isEmpty()) {
+        TimestampedFileBackup.BackupOutcome outcome = backups.backupForSave(backupKeep.getAsInt());
+        if (outcome.skipped()) {
+            timeline.record(outcome.skippedEvent("配置"));
+            return;
+        }
+        if (outcome.pruned().isEmpty()) {
             return;
         }
 
         // 一份没删的时候什么也不记：每次保存都记一条「清理了 0 份」，
         // 会让日志页上真正删掉东西的那几条淹在里面
         timeline.record(TimelineEvent.of(TimelineEventType.BACKUP_PRUNED, TimelineEvent.Level.INFO)
-                .text("配置备份留 " + backupKeep.getAsInt() + " 份，清掉最旧的 " + pruned.size() + " 份")
+                .text("配置备份留 " + backupKeep.getAsInt() + " 份，清掉最旧的 " + outcome.pruned().size() + " 份")
                 .detail("keep", String.valueOf(backupKeep.getAsInt()))
-                .detail("pruned", String.join(",", pruned))
+                .detail("pruned", String.join(",", outcome.pruned()))
                 .build());
+    }
+
+    /**
+     * 保存失败时回给界面的那半句
+     * <p>
+     * 没权限或文件只读这一类翻成人话并点出配置文件本身（见 {@link SaveFailureText}），
+     * 其余异常照旧回它自己的消息。各保存口子共用这一份，不各写各的。
+     * @param failure 保存时抛出的异常
+     * @return 给使用者看的一句话
+     */
+    public String describeSaveFailure(Exception failure) {
+        return SaveFailureText.explain(failure, configPath);
     }
 
     /**

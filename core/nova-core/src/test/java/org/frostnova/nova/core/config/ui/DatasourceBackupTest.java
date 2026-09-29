@@ -24,9 +24,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -223,6 +225,49 @@ class DatasourceBackupTest {
         assertEquals("2", event.detail().get("keep"));
         assertEquals(1, event.detail().get("pruned").split(",").length, event.detail().get("pruned"));
         assertEquals(2, stampedBackupNames().size(), "记下来的那一条得与盘上真剩几份对得上");
+    }
+
+    /**
+     * 使用者故障：目录不让建新文件、推送配置文件本身可写（只读的容器根上单独挂一个
+     * 可写的配置文件就是这种部署）时，此前每次保存都在「同目录建带时间戳的备份」这一步
+     * 先被拒，页面只回「保存失败」，配置改不了。改后该照常存上，目录里不添备份件与临时件，
+     * 日志页记一条「没留备份」。
+     */
+    @Test
+    @DisplayName("目录不让建文件、文件可写：保存照样成，目录里不添备份与临时件，日志页记「没留备份」")
+    void savingSucceedsWithoutBackupWhenDirectoryRefusesNewFiles() throws IOException {
+        Set<PosixFilePermission> original = Files.getPosixFilePermissions(dir);
+        ResponseEntity<JSONObject> response;
+        try {
+            Files.setPosixFilePermissions(dir, PosixFilePermissions.fromString("r-xr-xr-x"));
+            org.junit.jupiter.api.Assumptions.assumeFalse(Files.isWritable(dir),
+                    "当前用户无视目录权限（如 root），不让建新文件的目录设不出来");
+            response = save(users(1));
+        } finally {
+            Files.setPosixFilePermissions(dir, original);
+        }
+
+        assertTrue(response.getBody().getBooleanValue("success"),
+                "目录不让建新文件不该挡住保存: " + response.getBody().getString("message"));
+        assertEquals(users(1), Files.readString(datasource, StandardCharsets.UTF_8),
+                "存上的该正是提交的那份内容");
+        try (Stream<Path> files = Files.list(dir)) {
+            assertEquals(List.of("datasource.json"),
+                    files.map(path -> path.getFileName().toString()).sorted().toList(),
+                    "目录里只该有推送配置本身：跳过的备份建不出、退回直接写也建不出临时件");
+        }
+
+        ArgumentCaptor<TimelineEvent> captor = ArgumentCaptor.forClass(TimelineEvent.class);
+        verify(timeline).record(captor.capture());
+        TimelineEvent event = captor.getValue();
+        // 整句钉死：只说这次没留备份和为什么，不说保存成没成——那由回话说；
+        // detail 点出建不出的是哪一份备份件，不带 Java 类名
+        assertEquals("推送配置没留备份：所在目录建不出新文件（没有权限或文件系统只读）", event.text());
+        assertEquals("建不出备份文件 " + datasource.resolveSibling("datasource.json."
+                        + DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").withZone(ZoneOffset.UTC).format(START) + ".bak"),
+                event.detail().get("reason"), "detail 该说人话并点出是哪一份: " + event.detail());
+        assertEquals(TimelineEvent.Level.WARN, event.level());
+        assertEquals("没留备份", event.type().getDescription());
     }
 
     private void tick() {
