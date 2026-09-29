@@ -19,8 +19,8 @@ import java.util.List;
  * 这套解析规则收在这里，各命令只管拿到主播之后做自己的事。
  * <p>
  * 没带参数那一路交给 {@link BilibiliStreamerChoice} 去问；
- * 替他定下来的那一次带回一句 {@link Resolved#notice()}，命令用 {@link #withNotice}
- * 把它加在回复前面。
+ * 替他定下来的那一次、与点了名但认的是最近一场归档里的昵称的那一次，都带回一句
+ * {@link Resolved#notice()}，命令用 {@link #withNotice} 把它加在回复前面。
  */
 public abstract class BilibiliStreamerCommand implements NovaCommand {
     protected final AbstractDataSource dataSource;
@@ -38,7 +38,8 @@ public abstract class BilibiliStreamerCommand implements NovaCommand {
     /**
      * 解析出本命令要操作的主播
      * <p>
-     * 规则只有三条：点了名（uid 或昵称片段）一次到位；没点名而本会话<b>恰好一位</b>能定下来
+     * 规则只有三条：点了名（uid 或昵称）按现名一次到位，现名没查回来那几位再按最近一场
+     * 归档里的昵称认——归档昵称可能已换给别人，认中了得说清是谁；没点名而本会话<b>恰好一位</b>能定下来
      * ——只配了一位，或多位里只有一位在播——就径直办，并在回复里说清用的是谁；
      * 其余一律回一份带序号的清单让他自己挑。
      * <p>
@@ -121,16 +122,32 @@ public abstract class BilibiliStreamerCommand implements NovaCommand {
     }
 
     /**
-     * 按 uid 或昵称关键字匹配主播：uid 优先，现名其次，最后才比现名为空那几位的归档昵称
+     * 按 uid 或昵称关键字匹配主播：uid 只比全等、排在最前；昵称比两轮，先全等后片段，
+     * 每一轮里现名在前、现名为空那几位的归档昵称在后
      * <p>
-     * 归档昵称押后一趟，是因为它可能已经换给了别人：排在前面的那位现名没查回来时，
+     * 归档昵称押后，是因为它可能已经换给了别人：排在前面的那位现名没查回来时，
      * 拿来比的是 TA 的旧昵称，旧昵称恰好等于另一位现在的名字，就认错了人。
+     * 全等排在片段前，是因为点的是全名时，不该认成名字里含这几个字的另一位。
      * 同一趟里多位对上时，取配置里靠前的那位。
      */
     private Matched match(List<PushUser> candidates, String keyword) {
         for (PushUser user : candidates) {
             if (String.valueOf(user.getUid()).equals(keyword)) {
                 return new Matched(user, false);
+            }
+        }
+        for (PushUser user : candidates) {
+            if (StringUtil.isNotBlank(user.getUname()) && user.getUname().equals(keyword)) {
+                return new Matched(user, false);
+            }
+        }
+        for (PushUser user : candidates) {
+            if (StringUtil.isNotBlank(user.getUname())) {
+                continue;
+            }
+            String uname = unameOf(user);
+            if (StringUtil.isNotBlank(uname) && uname.equals(keyword)) {
+                return new Matched(user, true);
             }
         }
         for (PushUser user : candidates) {
@@ -154,7 +171,7 @@ public abstract class BilibiliStreamerCommand implements NovaCommand {
      * 点名匹配的结果
      *
      * @param streamer 认中的主播
-     * @param byArchivedName 是否按最近一场归档里的昵称认中：只有现名没查回来那几位才走这一趟
+     * @param byArchivedName 是否按最近一场归档里的昵称认中：只有现名没查回来那几位才按它比
      */
     private record Matched(PushUser streamer, boolean byArchivedName) {
     }

@@ -102,6 +102,22 @@ class StreamerNameFallbackCommandTest {
     }
 
     @Test
+    @DisplayName("点的是全名，配置里更靠前那位的现名含这几个字：认全名那位，不认成名字长的那位")
+    void fullNameBeatsFragmentAheadOfItInConfig() {
+        assertEquals("已出图：10002",
+                feedUid(Set.of(), List.of(user(10001L, "小月亮"), user(10002L, "小月")), "小月"));
+    }
+
+    @Test
+    @DisplayName("一位现名没查回来、归档昵称正是点的全名，另一位现名含这几个字：认归档那位并说清")
+    void archivedFullNameBeatsCurrentFragment() throws IOException {
+        archive(10001L, "小月", 1_700_010_000_000L);
+
+        assertEquals("本次用的是：小月（TA 的昵称没查回来，按最近一场的昵称认的）\n已出图：10001",
+                feedUid(Set.of(), List.of(user(10001L, ""), user(10002L, "小月亮")), "小月"));
+    }
+
+    @Test
     @DisplayName("点了没配过的名：可选名单里写最近一场的昵称，不写「未知主播」")
     void unknownNameListsArchivedNames() {
         String said = feed(Set.of(), "别人");
