@@ -6,6 +6,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import jakarta.mail.BodyPart;
+import jakarta.mail.MessagingException;
 import jakarta.mail.Multipart;
 import jakarta.mail.internet.MimeMessage;
 import org.junit.jupiter.api.DisplayName;
@@ -20,13 +21,18 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.JavaMailSenderImpl;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.net.SocketException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -67,16 +73,43 @@ class NovaMailServiceTest {
         }
     }
 
-    /** 发什么都当场炸的发信器，用来量「发不出去时会不会把调用方一起拖下水」 */
+    /**
+     * 发什么都当场炸的发信器，用来量「发不出去时会不会把调用方一起拖下水」。
+     * 炸的形照真调用链：doSend 连不上时抛的是带起因与逐封异常表的
+     * MailSendException(String, Throwable, Map)，起因和表里都是连不上的那个 MessagingException
+     */
     private static class FailingMailSender extends JavaMailSenderImpl {
         @Override
         public void send(SimpleMailMessage... messages) {
-            throw new MailSendException("连不上邮件服务器");
+            throwConnectRefused();
         }
 
         @Override
         public void send(MimeMessage... messages) {
-            throw new MailSendException("连不上邮件服务器");
+            throwConnectRefused();
+        }
+
+        private static void throwConnectRefused() {
+            MessagingException couldNotConnect = new MessagingException(
+                    "Couldn't connect to SMTP host: smtp.example.invalid, port: 465",
+                    new SocketException("Connection refused"));
+            Map<Object, Exception> failedMessages = new LinkedHashMap<>();
+            failedMessages.put(new SimpleMailMessage(), couldNotConnect);
+            throw new MailSendException("Mail server connection failed", couldNotConnect, failedMessages);
+        }
+    }
+
+    /** 抛指定异常的发信器，用来量「往外交的那一句失败原因怎么说」 */
+    private static class ThrowingMailSender extends JavaMailSenderImpl {
+        private final RuntimeException toThrow;
+
+        ThrowingMailSender(RuntimeException toThrow) {
+            this.toThrow = toThrow;
+        }
+
+        @Override
+        public void send(SimpleMailMessage... messages) {
+            throw toThrow;
         }
     }
 
@@ -225,6 +258,96 @@ class NovaMailServiceTest {
 
             assertEquals(1, errors.size(), "发不出去要留一笔: " + errors);
             assertTrue(errors.get(0).contains(SUBJECT), "留的这一笔要说清是哪封信: " + errors.get(0));
+        }
+    }
+
+    /**
+     * 告警那一条发信路：发不出去要抛，调用方才能如实说「没发出去、为什么」——
+     * 吞掉的话，连不上邮件服务器也会被报成「告警已送出」。
+     */
+    @Nested
+    @DisplayName("告警邮件")
+    class AlertMail {
+
+        @Test
+        @DisplayName("发出去的信四样齐全")
+        void sendsACompleteMessage() {
+            CapturingMailSender sender = new CapturingMailSender();
+            service(DEFAULT_TO, sender).sendAlertMail(SUBJECT, CONTENT);
+
+            assertEquals(1, sender.plain.size(), "应当正好发一封");
+            SimpleMailMessage message = sender.plain.get(0);
+            assertEquals(FROM, message.getFrom(), "发件人取自配置项 spring.mail.username");
+            assertEquals(List.of(DEFAULT_TO), List.of(message.getTo()));
+            assertEquals(SUBJECT, message.getSubject());
+            assertEquals(CONTENT, message.getText());
+        }
+
+        @Test
+        @DisplayName("发信失败时把原因抛给调用方，原文留在起因链里")
+        void throwsOnSendFailure() {
+            NovaMailService service = service(DEFAULT_TO, new FailingMailSender());
+
+            IllegalStateException failure = assertThrows(IllegalStateException.class,
+                    () -> service.sendAlertMail(SUBJECT, CONTENT));
+
+            assertEquals("连不上邮件服务器", failure.getMessage(),
+                    "抛出去的只说原因，「发不出去」那句由告警服务拼");
+            assertNotNull(failure.getCause(), "原文要跟着异常走，工程日志里才查得到全文");
+        }
+
+        @Test
+        @DisplayName("连不上那种失败收口成一句人话")
+        void connectionRefusalInPlainWords() {
+            // 夹具照真调用链：doSend 连不上时抛 MailSendException(String, Throwable, Map)，
+            // 起因和逐封异常表里都是连不上的那个 MessagingException
+            MessagingException couldNotConnect = new MessagingException(
+                    "Couldn't connect to SMTP host: smtp.example.invalid, port: 465",
+                    new SocketException("Connection refused"));
+            Map<Object, Exception> failedMessages = new LinkedHashMap<>();
+            failedMessages.put(new SimpleMailMessage(), couldNotConnect);
+            MailSendException wrapped = new MailSendException("Mail server connection failed",
+                    couldNotConnect, failedMessages);
+            NovaMailService service = service(DEFAULT_TO, new ThrowingMailSender(wrapped));
+
+            IllegalStateException failure = assertThrows(IllegalStateException.class,
+                    () -> service.sendAlertMail(SUBJECT, CONTENT));
+
+            assertEquals("连不上邮件服务器", failure.getMessage());
+        }
+
+        @Test
+        @DisplayName("没配发信服务：抛，不装作发过")
+        void missingSenderThrows() {
+            NovaMailService service = service(DEFAULT_TO);
+
+            IllegalStateException failure = assertThrows(IllegalStateException.class,
+                    () -> service.sendAlertMail(SUBJECT, CONTENT));
+
+            assertEquals("发信服务没有配置好", failure.getMessage());
+        }
+
+        @Test
+        @DisplayName("装了两个发信器：抛，不装作发过")
+        void ambiguousSenderThrows() {
+            NovaMailService service = service(DEFAULT_TO,
+                    new CapturingMailSender(), new CapturingMailSender());
+
+            IllegalStateException failure = assertThrows(IllegalStateException.class,
+                    () -> service.sendAlertMail(SUBJECT, CONTENT));
+
+            assertEquals("装了多个发信服务，认不出该用哪一个", failure.getMessage());
+        }
+
+        @Test
+        @DisplayName("没有收件邮箱：抛，不装作发过")
+        void missingReceiverThrows() {
+            NovaMailService service = service(null, new CapturingMailSender());
+
+            IllegalStateException failure = assertThrows(IllegalStateException.class,
+                    () -> service.sendAlertMail(SUBJECT, CONTENT));
+
+            assertEquals("没有收件邮箱，这封信不知道该发给谁", failure.getMessage());
         }
     }
 

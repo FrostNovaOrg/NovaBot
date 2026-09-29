@@ -9,6 +9,9 @@ import org.springframework.stereotype.Component;
 
 /**
  * 邮件告警通道
+ * <p>
+ * 走的是发不出去就抛的那条发信路：告警与「发一条测试」都必须如实知道发出去了没有，
+ * 吞掉失败的话，邮件服务器连不上也会被报成「已报出」。
  */
 @Component
 public class MailAlertChannel implements AlertChannel {
@@ -43,6 +46,6 @@ public class MailAlertChannel implements AlertChannel {
 
     @Override
     public void send(String subject, String content) {
-        mailService.sendMail(subject, content);
+        mailService.sendAlertMail(subject, content);
     }
 }
