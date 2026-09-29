@@ -1228,13 +1228,52 @@ HARDCODED_MODULE_PATH_CAP=58
 G12_RE='core/nova-core/|core/novacore/|plugins/nova-bilibili/|plugins/nova-console/|plugins/nova-onebot-adapter|plugins/nova-report/'
 G12_LIST="$WORK/g12"
 : > "$G12_LIST"
+
+# 逐件起 grep：$1 清单件（一行一件）、$2 报错件，其余参数原样交给 grep，命中印到标准输出。
+# 不经 xargs：有的沙箱里 xargs 起不来，报错一吞，清单安静落空，这一格就绿在空集上。
+# 退码 1（没命中）照常；大于 1 记进 g12_each_err，报错原文留在 $2。
+# 读到的非空行数记进 g12_each_read，调用处拿它对清单行数。
+g12_each_read=0
+g12_each_err=0
+g12_grep_each() {
+    local ge_list=$1 ge_err=$2 ge_f ge_rc
+    shift 2
+    g12_each_read=0
+    g12_each_err=0
+    : > "$ge_err"
+    while IFS= read -r ge_f; do
+        [ -n "$ge_f" ] || continue
+        g12_each_read=$((g12_each_read + 1))
+        [ -f "$ge_f" ] || continue
+        ge_rc=0
+        grep "$@" -- "$ge_f" 2>> "$ge_err" || ge_rc=$?
+        [ "$ge_rc" -gt 1 ] && g12_each_err=$((g12_each_err + 1))
+    done < "$ge_list"
+    return 0
+}
+
+# 读没读满：读入件数对上清单、且没有 grep 出错，才算这一路读成了。
+# $1 这一路的名字 $2 清单件 $3 报错件；读数写进 g12_each_msg，读不成印红行、返回 1。
+g12_each_check() {
+    local gc_n
+    gc_n=$(count_lines "$2")
+    g12_each_msg="${1}读入 ${g12_each_read}/${gc_n}"
+    if [ "$g12_each_read" -ne "$gc_n" ] || [ "$g12_each_err" -ne 0 ]; then
+        echo "格12 红 ${1}没读成: 读入 ${g12_each_read}/${gc_n} grep 出错 ${g12_each_err} 件"
+        head -n 5 "$3"
+        return 1
+    fi
+    return 0
+}
+
 # 件清单走 tree_files 再自己 grep，不走 git grep：git grep 只搜在册件，
 # 于是这一格看不见「新写的一件」——而新写一件正是它要拦的那件事（上限只减不增）。
 tree_files -- ':!*.md' > "$WORK/g12files"
-if [ -s "$WORK/g12files" ]; then
-    tr '\n' '\0' < "$WORK/g12files" \
-        | xargs -0 grep -l -E "$G12_RE" 2>/dev/null | sort -u > "$G12_LIST"
-fi
+g12_whole_fail=0
+g12_grep_each "$WORK/g12files" "$WORK/g12whole.err" -l -E "$G12_RE" > "$WORK/g12whole.out"
+sort -u "$WORK/g12whole.out" > "$G12_LIST"
+g12_each_check "整串" "$WORK/g12files" "$WORK/g12whole.err" || g12_whole_fail=1
+g12_whole_msg=$g12_each_msg
 
 # 拆段形：引号、模块名、拼接符；四臂＝父段紧挨、斜杠串在前、子段紧挨、斜杠串在后。
 G12_Q="['\"\`]"
@@ -1368,18 +1407,18 @@ G12_BARE_RE='(^|[^/A-Za-z0-9_])(novacore|nova-core|nova-bilibili|nova-onebot-ada
 G12_BARE_LIST="$WORK/g12bare"
 : > "$G12_BARE_LIST"
 tree_files -- ':!*.log' ':!CHANGELOG.md' > "$WORK/g12barefiles"
-if [ -s "$WORK/g12barefiles" ]; then
-    tr '\n' '\0' < "$WORK/g12barefiles" \
-        | xargs -0 grep -nH -I -E "$G12_BARE_RE" 2>/dev/null \
-        | awk -F: '
-            $1 == ".gitignore" {
-                rest = $0
-                sub(/^[^:]+:[0-9]+:/, "", rest)
-                if (rest ~ /^[[:space:]]*#/) next
-            }
-            { print }
-          ' > "$G12_BARE_LIST" || true
-fi
+g12_bare_fail=0
+g12_grep_each "$WORK/g12barefiles" "$WORK/g12bare.err" -nH -I -E "$G12_BARE_RE" > "$WORK/g12bare.out"
+g12_each_check "裸旧路径" "$WORK/g12barefiles" "$WORK/g12bare.err" || g12_bare_fail=1
+g12_bare_msg=$g12_each_msg
+awk -F: '
+    $1 == ".gitignore" {
+        rest = $0
+        sub(/^[^:]+:[0-9]+:/, "", rest)
+        if (rest ~ /^[[:space:]]*#/) next
+    }
+    { print }
+  ' "$WORK/g12bare.out" > "$G12_BARE_LIST"
 g12_bare_n=$(count_lines "$G12_BARE_LIST")
 
 g12_fail=0
@@ -1399,11 +1438,12 @@ if [ "$g12_bare_n" -gt 0 ]; then
     cat "$G12_BARE_LIST"
     g12_fail=1
 fi
-if [ "$g12_prove_fail" -ne 0 ] || [ "$g12_scan_fail" -ne 0 ]; then
+if [ "$g12_prove_fail" -ne 0 ] || [ "$g12_scan_fail" -ne 0 ] \
+    || [ "$g12_whole_fail" -ne 0 ] || [ "$g12_bare_fail" -ne 0 ]; then
     g12_fail=1
 fi
 if [ "$g12_fail" -eq 0 ]; then
-    echo "格12 绿 写死模块目录名的在册件${g12_n} ≤ 上限${HARDCODED_MODULE_PATH_CAP} 裸旧路径 0 ${g12_split_msg} ${g12_prove_msg} ${g12_scan_msg}"
+    echo "格12 绿 写死模块目录名的在册件${g12_n} ≤ 上限${HARDCODED_MODULE_PATH_CAP} 裸旧路径 0 ${g12_split_msg} ${g12_prove_msg} ${g12_scan_msg} ${g12_whole_msg} ${g12_bare_msg}"
 else
     RED=1
 fi
