@@ -124,6 +124,33 @@ try {
 }
 eq(q2err, true, '② sendTest 异常且有改动：发不出去与未保存提醒都在 box');
 
+// 送达不明：文字照旧，样式用已有的 warn，不是红色失败，也不是绿色成功
+let qUncertain = 'missing';
+try {
+  const {box, button} = fakeAlertButton();
+  const fn = loadSend({dirty: {}}, async () => ({
+    success: false,
+    status: 'UNCERTAIN',
+    message: '送没送到说不准'
+  }));
+  await fn('qq', button);
+  qUncertain = box.textContent === '送没送到说不准' && box.className === 'al-r warn';
+} catch (e) {
+  qUncertain = 'error:' + e.message;
+}
+eq(qUncertain, true, '送达不明：文字照旧，样式不是红也不是绿');
+
+let qFailTone = 'missing';
+try {
+  const {box, button} = fakeAlertButton();
+  const fn = loadSend({dirty: {}}, async () => ({success: false, status: 'FAILED', message: '没发出去'}));
+  await fn('qq', button);
+  qFailTone = box.textContent === '没发出去' && box.className === 'al-r err';
+} catch (e) {
+  qFailTone = 'error:' + e.message;
+}
+eq(qFailTone, true, '发不出去仍是红色失败');
+
 // ③ 阳性对照：切段真执行 testOutcomeText('x','')==='x'
 let q3 = 'missing';
 try {

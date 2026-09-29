@@ -1,6 +1,7 @@
 package org.frostnova.nova.core.alert;
 
 import java.util.List;
+import java.util.function.Consumer;
 
 /**
  * 告警通道
@@ -41,6 +42,29 @@ public interface AlertChannel {
     void send(String subject, String content);
 
     /**
+     * 发送并回报结果
+     * <p>
+     * 同步通道在返回前就定下结果；异步通道（如 QQ 走推送队列）入队后立即返回，
+     * 真结果由 {@code callback} 在之后回报——可能在别的线程上。
+     * 覆写本方法的通道要保证 {@code callback} <b>恰好调一次</b>。
+     * @param subject 标题
+     * @param content 内容
+     * @param callback 结果回报；请勿在其中做阻塞操作
+     */
+    default void sendReporting(String subject, String content, Consumer<SendResult> callback) {
+        SendResult result;
+        try {
+            send(subject, content);
+            result = SendResult.sent();
+        } catch (AlertBlockedException e) {
+            result = SendResult.blocked(e.getMessage());
+        } catch (Exception e) {
+            result = SendResult.failed(e.getMessage() != null ? e.getMessage() : e.toString(), e);
+        }
+        callback.accept(result);
+    }
+
+    /**
      * 这一路在设置页要画的收件人栏
      * <p>
      * 默认空表：这一路没有要核心代填的收件人键（邮件、Webhook 走核心自有键，不经这里）。
@@ -49,5 +73,52 @@ public interface AlertChannel {
      */
     default List<AlertRecipientField> recipientFields() {
         return List.of();
+    }
+
+    /**
+     * 一次发送的结果
+     * @param status 结局
+     * @param reason 没发出去时的原因；发出去了则为空
+     * @param cause 没发出去时的异常，供工程日志打栈；不是异常造成时为空
+     */
+    record SendResult(Status status, String reason, Throwable cause) {
+        public enum Status {
+            /**
+             * 发出去了
+             */
+            SENT,
+            /**
+             * 被全局推送开关拦下——这一次的最终失败，不重投
+             */
+            BLOCKED,
+            /**
+             * 发不出去
+             */
+            FAILED,
+            /**
+             * 送达不明：请求已交出去、没等到回包，可能已经发出
+             */
+            UNCERTAIN
+        }
+
+        public static SendResult sent() {
+            return new SendResult(Status.SENT, null, null);
+        }
+
+        public static SendResult blocked(String reason) {
+            return new SendResult(Status.BLOCKED, reason, null);
+        }
+
+        public static SendResult failed(String reason) {
+            return new SendResult(Status.FAILED, reason, null);
+        }
+
+        public static SendResult failed(String reason, Throwable cause) {
+            return new SendResult(Status.FAILED, reason, cause);
+        }
+
+        public static SendResult uncertain(String reason) {
+            return new SendResult(Status.UNCERTAIN, reason, null);
+        }
     }
 }

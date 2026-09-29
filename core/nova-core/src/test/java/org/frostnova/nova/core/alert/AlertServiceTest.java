@@ -4,6 +4,7 @@ import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.encoder.PatternLayoutEncoder;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.OutputStreamAppender;
+import ch.qos.logback.core.read.ListAppender;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.core.timeline.TimelineEventType;
@@ -17,12 +18,14 @@ import org.springframework.beans.factory.ObjectProvider;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -470,6 +473,201 @@ class AlertServiceTest {
                 appender.stop();
             }
             return sink.toString(StandardCharsets.UTF_8);
+        }
+    }
+
+    /**
+     * 重投时通道没了，以及某一路自己出错
+     * <p>
+     * 重投撞上一条通道都没配：仍要有次数上限，到了就停。不停的话，
+     * 日志页会一轮接一轮多出「没有配置告警通道，没发出去」。
+     * 某一路出了意外，不能让后面几路一起不发。
+     */
+    @Nested
+    @DisplayName("通道中途没了，或某一路自己出错")
+    class ChannelGoneOrThrows {
+
+        private final List<TimelineEvent> recorded = new ArrayList<>();
+
+        private AlertService capturing() {
+            @SuppressWarnings("unchecked")
+            ObjectProvider<AlertChannel> provider = mock(ObjectProvider.class);
+            when(provider.orderedStream()).thenAnswer(invocation -> channels.stream());
+            return new AlertService(properties, provider, recorded::add);
+        }
+
+        private static AlertChannel throwing(String name) {
+            return new AlertChannel() {
+                @Override
+                public String id() {
+                    return "boom";
+                }
+
+                @Override
+                public String name() {
+                    return name;
+                }
+
+                @Override
+                public boolean isAvailable() {
+                    return true;
+                }
+
+                @Override
+                public void send(String subject, String content) {
+                }
+
+                @Override
+                public void sendReporting(String subject, String content,
+                                           java.util.function.Consumer<SendResult> callback) {
+                    throw new IllegalStateException("这一路自己出错");
+                }
+            };
+        }
+
+        @Test
+        @DisplayName("重投时一条通道都没了：到上限放弃，之后日志页不再每轮多一条")
+        void givesUpWhenRetryFindsNoChannel() {
+            properties.getAlert().setRetryMaxAttempts(3);
+            FakeChannel channel = new FakeChannel("假通道");
+            channel.failing = true;
+            channels.add(channel);
+
+            AlertService capturing = capturing();
+            capturing.alert("key", "标题", "内容");
+            assertEquals(1, capturing.pendingCount(), "前置：发不出去时应留在队列里");
+
+            channel.available = false;
+
+            ch.qos.logback.classic.Logger logger =
+                    (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(AlertService.class);
+            ListAppender<ILoggingEvent> appender = new ListAppender<>();
+            appender.start();
+            logger.addAppender(appender);
+            try {
+                for (int i = 0; i < 3; i++) {
+                    capturing.retryPending();
+                }
+                assertEquals(0, capturing.pendingCount(), "到上限应放弃，不再占着队列");
+                int stopped = recorded.size();
+                capturing.retryPending();
+                assertEquals(stopped, recorded.size(), "放弃之后，日志页不该再多一条没发出去");
+            } finally {
+                logger.detachAppender(appender);
+                appender.stop();
+            }
+
+            assertTrue(appender.list.stream().anyMatch(event ->
+                            event.getFormattedMessage().contains("重投 3 次仍失败, 放弃")),
+                    "到上限要写明放弃；得到：" + appender.list);
+            long noChannel = recorded.stream()
+                    .filter(event -> event.text() != null && event.text().contains("没有配置告警通道，没发出去"))
+                    .count();
+            assertTrue(noChannel >= 1 && noChannel <= 3,
+                    "没通道的那几轮要记在日志页，到上限就停；得到 " + noChannel + " 条");
+        }
+
+        @Test
+        @DisplayName("某一路抛错时后面几路照样试，抛错的那一路只记一次")
+        void laterChannelsStillRunWhenOneThrows() {
+            channels.add(throwing("会炸的"));
+            FakeChannel later = new FakeChannel("后面的");
+            channels.add(later);
+
+            AlertService capturing = capturing();
+            capturing.alert("key", "标题", "内容");
+
+            assertEquals(1, later.received.size(), "前面一路出错，后面一路仍要送到");
+            assertEquals(0, capturing.pendingCount(), "有一路送到了，不该整批再试");
+            assertEquals(List.of("这一路自己出错"), reasons(recorded, "会炸的"),
+                    "抛错的那一路只记一次，原因进详情");
+
+            channels.clear();
+            recorded.clear();
+            channels.add(throwing("会炸的"));
+            AlertService alone = capturing();
+            alone.alert("only", "标题", "内容");
+
+            assertEquals(1, alone.pendingCount(), "只有这一路且它抛错时，按发不出去入队一次");
+            assertEquals(List.of("这一路自己出错"), reasons(recorded, "会炸的"),
+                    "只记一次发不出去，不多记");
+        }
+
+        private static List<String> reasons(List<TimelineEvent> events, String channelName) {
+            return events.stream()
+                    .filter(event -> event.type() == TimelineEventType.ALERT_FAILED
+                            && channelName.equals(event.channel()))
+                    .map(event -> event.detail().get("reason"))
+                    .toList();
+        }
+    }
+
+    /**
+     * 发一条测试过了时限还没等到回话
+     * <p>
+     * 这一路标成发不出去时设置页是红的。人会去改配置，其实信可能已经到了，
+     * 该去那一路上看一眼。
+     */
+    @Nested
+    @DisplayName("发一条测试过了时限还没等到结果")
+    class TestStillWaiting {
+
+        @Test
+        @DisplayName("QQ 过了时限还没回话却被当成发不出去：人会去改配置，其实信可能已经到了")
+        void timeoutIsNotShownAsSendFailure() {
+            channels.add(new NeverReplies("qq", "QQ"));
+
+            @SuppressWarnings("unchecked")
+            ObjectProvider<AlertChannel> provider = mock(ObjectProvider.class);
+            when(provider.orderedStream()).thenAnswer(invocation -> channels.stream());
+
+            AlertService waiting = new AlertService(properties, provider, TimelineWriter.NONE, Duration.ZERO);
+            AlertService.TestResult result = waiting.test("qq");
+
+            assertEquals(AlertService.TestResult.Status.UNCERTAIN, result.status(),
+                    "还没等到结果该和送达不明一样，设置页才显示成警告");
+            assertNotEquals(AlertService.TestResult.Status.FAILED, result.status(),
+                    "不该标成发不出去");
+            assertFalse(result.delivered(), "还没等到结果不算已经发出去");
+            assertEquals("QQ 这一路还没等到结果。请到 QQ 上看一眼，或到日志页「推送」里查看。",
+                    result.message());
+        }
+
+        /**
+         * 可用，但发送后不回报。调用方只能等到时限。
+         */
+        private static final class NeverReplies implements AlertChannel {
+            private final String id;
+            private final String name;
+
+            NeverReplies(String id, String name) {
+                this.id = id;
+                this.name = name;
+            }
+
+            @Override
+            public String id() {
+                return id;
+            }
+
+            @Override
+            public String name() {
+                return name;
+            }
+
+            @Override
+            public boolean isAvailable() {
+                return true;
+            }
+
+            @Override
+            public void send(String subject, String content) {
+            }
+
+            @Override
+            public void sendReporting(String subject, String content,
+                                       java.util.function.Consumer<AlertChannel.SendResult> callback) {
+            }
         }
     }
 }

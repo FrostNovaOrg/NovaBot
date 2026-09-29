@@ -142,10 +142,27 @@ public class Message {
     /**
      * 发送失败回调列表，请勿调用阻塞操作
      * <p>
-     * 没确认送达就跑：没送到，或送达不明（请求已交出去、没等到回包，可能已经在群里）。
-     * 两种都没有消息编号。回调里别把内容再发一次，送达不明时那就是两条。
+     * 没送到时跑。送达不明不跑这一份：请求已交出去、没等到回包时走送达不明回调。
+     * 失败时没有消息编号。
      */
     private List<Runnable> onFailureCallbacks = new ArrayList<>();
+
+    /**
+     * 送达不明回调列表，请勿调用阻塞操作
+     * <p>
+     * 请求已交出去、没等到回包时跑：对端可能已经发进群。不是成功也不是失败——
+     * 回调里别把内容再发一次，那会在群里多一条。手里也没有消息编号，
+     * 靠编号的后续（挂群待办）本来就做不成。
+     */
+    private List<Runnable> onUncertainCallbacks = new ArrayList<>();
+
+    /**
+     * 没送出去的原因，由发送器在定下失败结果前写上
+     * <p>
+     * 失败回调只拿到「跑了」这个事实，拿不到原因——回调签名是 {@link Runnable}。
+     * 要向使用者说清「为什么没发出去」的一方（告警通道），从这里取原因。
+     */
+    private volatile String failureReason;
 
     /**
      * 发送结果。和下面两份回调名单共用一把锁。
@@ -155,7 +172,7 @@ public class Message {
      * 一边遍历名单一边往里登记，还会把这次发送冲掉。
      */
     private enum Delivery {
-        PENDING, DELIVERED, FAILED
+        PENDING, DELIVERED, FAILED, UNCERTAIN
     }
 
     @ToString.Exclude
@@ -305,6 +322,24 @@ public class Message {
     }
 
     /**
+     * 添加送达不明回调。这条消息的发送结果如果已经是送达不明，回调当场执行，不再排队。
+     * @param callback 送达不明回调
+     */
+    public void addOnUncertainCallback(Runnable callback) {
+        boolean runNow = false;
+        synchronized (deliveryLock) {
+            if (delivery == Delivery.UNCERTAIN) {
+                runNow = true;
+            } else if (delivery == Delivery.PENDING) {
+                onUncertainCallbacks.add(callback);
+            }
+        }
+        if (runNow) {
+            callback.run();
+        }
+    }
+
+    /**
      * 发送结果定为送达，并写下编号。返回登记时已经在名单里的成功回调，由调用方执行。
      * <p>
      * 编号在这把锁里写上，随后才把名单交出去。锁外读编号的线程因此看得到它。
@@ -337,6 +372,20 @@ public class Message {
     }
 
     /**
+     * 发送结果定为送达不明。返回登记时已经在名单里的送达不明回调，由调用方执行。
+     * @return 应当现在执行的送达不明回调
+     */
+    public List<Runnable> markUncertain() {
+        synchronized (deliveryLock) {
+            if (delivery != Delivery.PENDING) {
+                return List.of();
+            }
+            delivery = Delivery.UNCERTAIN;
+            return List.copyOf(onUncertainCallbacks);
+        }
+    }
+
+    /**
      * 成功回调的一份快照。遍历这一份时，别人再登记也不会把名单改乱。
      */
     public List<Runnable> getOnSuccessCallbacks() {
@@ -351,6 +400,15 @@ public class Message {
     public List<Runnable> getOnFailureCallbacks() {
         synchronized (deliveryLock) {
             return List.copyOf(onFailureCallbacks);
+        }
+    }
+
+    /**
+     * 送达不明回调的一份快照。
+     */
+    public List<Runnable> getOnUncertainCallbacks() {
+        synchronized (deliveryLock) {
+            return List.copyOf(onUncertainCallbacks);
         }
     }
 
