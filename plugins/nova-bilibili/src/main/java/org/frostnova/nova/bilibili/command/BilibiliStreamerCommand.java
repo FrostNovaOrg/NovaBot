@@ -56,11 +56,16 @@ public abstract class BilibiliStreamerCommand implements NovaCommand {
         }
 
         if (StringUtil.isNotBlank(keyword)) {
-            PushUser matched = match(candidates, keyword);
+            Matched matched = match(candidates, keyword);
             if (matched == null) {
                 return Resolved.failed(here + "没有配置「" + keyword + "」的推送，当前可选：\n" + describe(candidates));
             }
-            return Resolved.of(matched);
+            if (matched.byArchivedName()) {
+                PushUser streamer = matched.streamer();
+                return Resolved.of(streamer, "本次用的是：" + nameOf(streamer)
+                        + "（TA 的昵称没查回来，按最近一场的昵称认的）");
+            }
+            return Resolved.of(matched.streamer());
         }
 
         if (candidates.size() == 1) {
@@ -79,7 +84,9 @@ public abstract class BilibiliStreamerCommand implements NovaCommand {
     /**
      * 把「这次用的是谁」那一行加在回复前面
      * <p>
-     * 只在<b>没点名</b>时才有这一行：点了名的那一次，用的是谁本就是他自己说的。
+     * 两种时候有这一行：没点名而替他定下来的那一次；点了名、但认的是最近一场归档里的
+     * 昵称的那一次——TA 的现名没查回来，那个昵称可能已经换给了别人，认中的是谁得说清。
+     * 其余点了名的那一次不加：用的是谁本就是他自己说的。
      * @param resolved 解析结果
      * @param reply 命令自己的回复
      * @return 加过说明的回复
@@ -114,21 +121,42 @@ public abstract class BilibiliStreamerCommand implements NovaCommand {
     }
 
     /**
-     * 按 uid 或昵称关键字匹配主播，uid 优先
+     * 按 uid 或昵称关键字匹配主播：uid 优先，现名其次，最后才比现名为空那几位的归档昵称
+     * <p>
+     * 归档昵称押后一趟，是因为它可能已经换给了别人：排在前面的那位现名没查回来时，
+     * 拿来比的是 TA 的旧昵称，旧昵称恰好等于另一位现在的名字，就认错了人。
+     * 同一趟里多位对上时，取配置里靠前的那位。
      */
-    private PushUser match(List<PushUser> candidates, String keyword) {
+    private Matched match(List<PushUser> candidates, String keyword) {
         for (PushUser user : candidates) {
             if (String.valueOf(user.getUid()).equals(keyword)) {
-                return user;
+                return new Matched(user, false);
             }
         }
         for (PushUser user : candidates) {
+            if (StringUtil.isNotBlank(user.getUname()) && user.getUname().contains(keyword)) {
+                return new Matched(user, false);
+            }
+        }
+        for (PushUser user : candidates) {
+            if (StringUtil.isNotBlank(user.getUname())) {
+                continue;
+            }
             String uname = unameOf(user);
             if (StringUtil.isNotBlank(uname) && uname.contains(keyword)) {
-                return user;
+                return new Matched(user, true);
             }
         }
         return null;
+    }
+
+    /**
+     * 点名匹配的结果
+     *
+     * @param streamer 认中的主播
+     * @param byArchivedName 是否按最近一场归档里的昵称认中：只有现名没查回来那几位才走这一趟
+     */
+    private record Matched(PushUser streamer, boolean byArchivedName) {
     }
 
     /**
@@ -171,7 +199,8 @@ public abstract class BilibiliStreamerCommand implements NovaCommand {
      * 主播解析结果
      * @param streamer 解析出的主播，失败时为 null
      * @param error 失败时给使用者的说明
-     * @param notice 替他定下来的那一次要说清用的是谁，点了名时为空
+     * @param notice 加在回复前说清用的是谁的那一行；没点名而替他定下来、
+     *               与点名后按最近一场归档昵称认中时有，其余为空
      */
     protected record Resolved(PushUser streamer, CommandReply error, String notice) {
         static Resolved of(PushUser streamer) {
