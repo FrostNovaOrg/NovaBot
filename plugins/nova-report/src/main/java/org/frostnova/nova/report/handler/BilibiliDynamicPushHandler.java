@@ -20,6 +20,7 @@ import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.frostnova.nova.core.service.AtSubscriptionService;
 import org.frostnova.nova.core.service.HandlerPackageNames;
 import org.frostnova.nova.core.service.LiveDataService;
+import org.frostnova.nova.core.service.StreamerNames;
 import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.core.timeline.TimelineEventType;
 import org.frostnova.nova.core.timeline.TimelineWriter;
@@ -62,10 +63,22 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
      */
     private final FixedSizeSetQueue<String> blockedRecorded = new FixedSizeSetQueue<>(256);
 
-    @Autowired
+    private final StreamerNames names;
+
     public BilibiliDynamicPushHandler(BilibiliApiUtil api, BilibiliDynamicPainter painter, NovaMessageSender sender,
                                       AtSubscriptionService subscriptions, LiveDataService liveDataService,
                                       NovaBilibiliProperties properties, TimelineWriter timeline) {
+        this(api, painter, sender, subscriptions, liveDataService, properties, timeline, StreamerNames.none());
+    }
+
+    /**
+     * @param names 起动时没查到昵称时，从最近一场归档里取主播名
+     */
+    @Autowired
+    public BilibiliDynamicPushHandler(BilibiliApiUtil api, BilibiliDynamicPainter painter, NovaMessageSender sender,
+                                      AtSubscriptionService subscriptions, LiveDataService liveDataService,
+                                      NovaBilibiliProperties properties, TimelineWriter timeline,
+                                      StreamerNames names) {
         this.api = api;
         this.painter = painter;
         this.sender = sender;
@@ -73,6 +86,7 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
         this.liveDataService = liveDataService;
         this.properties = properties;
         this.timeline = timeline;
+        this.names = names;
     }
 
     @Override
@@ -95,7 +109,7 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
                 target.getPlatform(), target.getNum(), event.getSource().getUid(), "dynamic"));
 
         String content = template
-                .replace("{uname}", PushHandlerSupport.resolveUname(api, event.getSource()))
+                .replace("{uname}", PushHandlerSupport.resolveUname(api, names, event.getPlatform(), event.getSource()))
                 .replace("{action}", Optional.ofNullable(event.getAction()).orElse("发布了动态"))
                 .replace("{url}", Optional.ofNullable(event.getUrl()).orElse(""))
                 .replace("{picture}", picture)
@@ -227,7 +241,7 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
             }
         }
 
-        String uname = event.getSource().getUname();
+        String uname = names.uname(event.getPlatform(), event.getSource().getUid(), event.getSource().getUname());
         String streamer = uname == null || uname.isBlank() ? String.valueOf(event.getSource().getUid()) : uname;
         String url = event.getUrl() == null || event.getUrl().isBlank() ? dynamic.getUrl() : event.getUrl();
 

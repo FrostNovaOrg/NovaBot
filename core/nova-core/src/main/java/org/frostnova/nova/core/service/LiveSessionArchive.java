@@ -106,22 +106,30 @@ public class LiveSessionArchive {
      * @return 按开播时间升序的场次
      */
     public List<LiveSession> find(long from, long to) {
-        Path path = path();
-        List<LiveSession> result = new ArrayList<>();
-
-        try (Stream<String> lines = Files.lines(path, StandardCharsets.UTF_8)) {
-            lines.forEach(line -> {
-                LiveSession session = parse(line);
-                if (session != null && session.startTime() >= from && session.startTime() < to) {
-                    result.add(session);
-                }
-            });
+        try {
+            return read(from, to);
         } catch (NoSuchFileException e) {
             // 还没有任何一场被归档，空表即可
             return List.of();
         } catch (IOException e) {
             log.error("读取直播场次归档失败", e);
             return List.of();
+        }
+    }
+
+    /**
+     * 读取指定时间区间内的场次，读不了时向上抛
+     */
+    private List<LiveSession> read(long from, long to) throws IOException {
+        List<LiveSession> result = new ArrayList<>();
+
+        try (Stream<String> lines = Files.lines(path(), StandardCharsets.UTF_8)) {
+            lines.forEach(line -> {
+                LiveSession session = parse(line);
+                if (session != null && session.startTime() >= from && session.startTime() < to) {
+                    result.add(session);
+                }
+            });
         }
 
         result.sort((a, b) -> Long.compare(a.startTime(), b.startTime()));
@@ -188,8 +196,20 @@ public class LiveSessionArchive {
             return cached.names();
         }
 
+        // 读失败的这一次不记下来：文件的修改时刻与大小都没变，记下空结果的话，
+        // 直到下一场归档写进来之前都答不上来
+        List<LiveSession> sessions;
+        try {
+            sessions = read(0, Long.MAX_VALUE);
+        } catch (NoSuchFileException e) {
+            return Map.of();
+        } catch (IOException e) {
+            log.error("读取直播场次归档失败", e);
+            return Map.of();
+        }
+
         Map<String, String> names = new HashMap<>();
-        for (LiveSession session : find(0, Long.MAX_VALUE)) {
+        for (LiveSession session : sessions) {
             names.put(nameKey(session.platform(), session.uid()), session.uname());
         }
         latestNames = new LatestNames(path, attributes.lastModifiedTime(), attributes.size(), names);

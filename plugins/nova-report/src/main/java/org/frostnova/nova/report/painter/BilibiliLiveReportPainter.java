@@ -25,6 +25,7 @@ import org.frostnova.nova.core.model.UserScore;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.LiveRoomInfoHistory;
+import org.frostnova.nova.core.service.StreamerNames;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.lang.StringUtil;
 import org.frostnova.nova.core.service.LiveDetailArchive;
@@ -428,6 +429,8 @@ public class BilibiliLiveReportPainter {
      */
     private final ReportSharedStyle.Logo logoDrawer = new ReportSharedStyle.Logo();
 
+    private final StreamerNames names;
+
     /**
      * 不落盘的构造，给测试和版式预览。预览覆写了取图口，本来也不写这份缓存
      */
@@ -440,11 +443,23 @@ public class BilibiliLiveReportPainter {
     /**
      * @param imageDisk 礼物图标与大航海标志的本机缓存
      */
-    @Autowired
     public BilibiliLiveReportPainter(NovaCommonPainterFactory factory, BilibiliApiUtil api,
                                      LiveDataService liveDataService, FontUtil fontUtil,
                                      NovaBilibiliProperties properties, LiveRoomInfoHistory roomInfoHistory,
                                      ReportImageDiskCache imageDisk) {
+        this(factory, api, liveDataService, fontUtil, properties, roomInfoHistory, imageDisk, StreamerNames.none());
+    }
+
+    /**
+     * @param imageDisk 礼物图标与大航海标志的本机缓存
+     * @param names 起动时没查到昵称时，从最近一场归档里取主播名
+     */
+    @Autowired
+    public BilibiliLiveReportPainter(NovaCommonPainterFactory factory, BilibiliApiUtil api,
+                                     LiveDataService liveDataService, FontUtil fontUtil,
+                                     NovaBilibiliProperties properties, LiveRoomInfoHistory roomInfoHistory,
+                                     ReportImageDiskCache imageDisk, StreamerNames names) {
+        this.names = names;
         this.factory = factory;
         this.api = api;
         this.liveDataService = liveDataService;
@@ -483,7 +498,7 @@ public class BilibiliLiveReportPainter {
         Long uid = source.getUid();
         StringBuilder text = new StringBuilder();
 
-        text.append(source.getUname()).append(" 本场直播数据");
+        text.append(unameOf(platform, source)).append(" 本场直播数据");
 
         String duration = durationText(platform, uid);
         text.append("\n直播时长 ").append(StringUtil.isNotBlank(duration) ? duration : "未知");
@@ -621,22 +636,30 @@ public class BilibiliLiveReportPainter {
             }
 
             int textX = avatarX + AVATAR_SIZE + 22;
-            painter.drawSection(unameWithin(painter, source, textX), COLOR_NAME, new Point(textX, top + COVER_HEIGHT + 4));
+            painter.drawSection(unameWithin(painter, unameOf(platform, source), textX), COLOR_NAME,
+                    new Point(textX, top + COVER_HEIGHT + 4));
             painter.drawTip("直播报告 · " + timeRange(platform, source.getUid()), COLOR_TIP, new Point(textX, top + COVER_HEIGHT + 52));
 
             painter.setPos(MARGIN, top + COVER_HEIGHT + AVATAR_SIZE + 16);
             return;
         }
 
-        ReportSharedStyle.drawSimpleHeader(painter, source, face,
+        ReportSharedStyle.drawSimpleHeader(painter, unameOf(platform, source), face,
                 "直播报告 · " + timeRange(platform, source.getUid()));
     }
 
     /**
      * 取主播名并按版心剩下的宽度截断，实现见 {@link ReportSharedStyle#unameWithin}
      */
-    private String unameWithin(CommonPainter painter, LiveStreamerInfo source, int textX) {
-        return ReportSharedStyle.unameWithin(painter, source, textX);
+    private String unameWithin(CommonPainter painter, String uname, int textX) {
+        return ReportSharedStyle.unameWithin(painter, uname, textX);
+    }
+
+    /**
+     * 主播名：事件里没有时退回最近一场归档里的昵称，与控制台一致
+     */
+    private String unameOf(String platform, LiveStreamerInfo source) {
+        return names.uname(platform, source.getUid(), source.getUname());
     }
 
     /**

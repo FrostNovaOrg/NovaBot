@@ -8,6 +8,7 @@ import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.lang.StringUtil;
 import org.frostnova.nova.core.model.TextWithStyle;
 import org.frostnova.nova.core.plugin.NovaComponent;
+import org.frostnova.nova.core.service.StreamerNames;
 import org.frostnova.nova.report.factory.NovaCommonPainterFactory;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -63,12 +64,23 @@ public class BilibiliOfflineRewardDigestPainter {
      */
     private final ReportSharedStyle.Logo logoDrawer = new ReportSharedStyle.Logo();
 
-    @Autowired
+    private final StreamerNames names;
+
     public BilibiliOfflineRewardDigestPainter(NovaCommonPainterFactory factory, BilibiliApiUtil api,
                                               NovaBilibiliProperties properties) {
+        this(factory, api, properties, StreamerNames.none());
+    }
+
+    /**
+     * @param names 起动时没查到昵称时，从最近一场归档里取主播名
+     */
+    @Autowired
+    public BilibiliOfflineRewardDigestPainter(NovaCommonPainterFactory factory, BilibiliApiUtil api,
+                                              NovaBilibiliProperties properties, StreamerNames names) {
         this.factory = factory;
         this.api = api;
         this.properties = properties;
+        this.names = names;
     }
 
     /**
@@ -84,7 +96,8 @@ public class BilibiliOfflineRewardDigestPainter {
             painter.setPos(ReportSharedStyle.MARGIN, ReportSharedStyle.MARGIN);
 
             BufferedImage face = ReportSharedStyle.faceImage(api, event.getSource());
-            ReportSharedStyle.drawSimpleHeader(painter, event.getSource(), face,
+            ReportSharedStyle.drawSimpleHeader(painter,
+                    names.uname(event.getPlatform(), event.getSource().getUid(), event.getSource().getUname()), face,
                     "打赏播报 · " + TIME_FORMATTER.format(Instant.ofEpochMilli(event.getTimestamp())));
 
             for (BilibiliOfflineRewardDigestEvent.Contribution person : event.getContributions()) {
@@ -120,7 +133,7 @@ public class BilibiliOfflineRewardDigestPainter {
      */
     public String textDigest(BilibiliOfflineRewardDigestEvent event, boolean showRevenue) {
         return "感谢 " + renderList(event, showRevenue) + "，"
-                + PushHandlerSupport.resolveUname(api, event.getSource()) + " 都收到啦"
+                + PushHandlerSupport.resolveUname(api, names, event.getPlatform(), event.getSource()) + " 都收到啦"
                 + "\n\n（播报图片绘制失败，本条为文字版）";
     }
 

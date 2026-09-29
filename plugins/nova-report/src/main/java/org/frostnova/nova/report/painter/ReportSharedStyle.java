@@ -84,18 +84,18 @@ public final class ReportSharedStyle {
      * 「直播报告 · 起止时间」，打赏播报是「打赏播报 · 时刻」，说的都是自己那件事。
      *
      * @param painter 绘制器
-     * @param source 主播信息
+     * @param uname 主播名，已由调用方退过最近一场的昵称
      * @param face 已取好的圆形头像，取不到时传 {@code null}（页头只剩名字）
      * @param subtitle 名字下面那一行
      */
-    public static void drawSimpleHeader(CommonPainter painter, LiveStreamerInfo source,
+    public static void drawSimpleHeader(CommonPainter painter, String uname,
                                         BufferedImage face, String subtitle) {
         int top = painter.getY();
         int textX = MARGIN + AVATAR_SIZE + 25;
         if (face != null) {
             painter.drawImage(face, new Point(MARGIN, top));
         }
-        painter.drawSection(unameWithin(painter, source, textX), COLOR_NAME, new Point(textX, top + 8));
+        painter.drawSection(unameWithin(painter, uname, textX), COLOR_NAME, new Point(textX, top + 8));
         painter.drawTip(subtitle, COLOR_TIP, new Point(textX, top + 58));
         painter.setPos(MARGIN, top + AVATAR_SIZE + 30);
     }
@@ -106,13 +106,13 @@ public final class ReportSharedStyle {
      * B 站昵称<b>没有长度上限</b>，而页头这一行原先一个字都不截。常见昵称都短，
      * 没撞上不等于没有：实测 30 个字的昵称会顶出画布 338 像素。
      *
+     * @param uname 主播名，为 {@code null} 时写「未知主播」
      * @param textX 这一行的起始 x，可用宽度是从这里到版心右边界
      */
-    public static String unameWithin(CommonPainter painter, LiveStreamerInfo source, int textX) {
-        String uname = Optional.ofNullable(source.getUname()).orElse("未知主播");
-
+    public static String unameWithin(CommonPainter painter, String uname, int textX) {
         return painter.truncateToWidth(
-                new TextWithStyle(uname, CommonPainter.SECTION_FONT_SIZE, COLOR_NAME, Font.BOLD),
+                new TextWithStyle(Optional.ofNullable(uname).orElse("未知主播"),
+                        CommonPainter.SECTION_FONT_SIZE, COLOR_NAME, Font.BOLD),
                 WIDTH - MARGIN - textX);
     }
 

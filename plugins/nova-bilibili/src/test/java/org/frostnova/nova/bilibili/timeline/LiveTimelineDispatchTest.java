@@ -6,6 +6,8 @@ import org.frostnova.nova.core.config.EventConfig;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.TimelineController;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
+import org.frostnova.nova.core.service.LiveSessionArchive;
+import org.frostnova.nova.core.service.StreamerNames;
 import org.frostnova.nova.core.timeline.TimelineCategory;
 import org.frostnova.nova.core.timeline.TimelineEventType;
 import org.frostnova.nova.core.timeline.TimelineStore;
@@ -99,6 +101,7 @@ class LiveTimelineDispatchTest {
         context = new AnnotationConfigApplicationContext();
         DefaultListableBeanFactory beans = context.getDefaultListableBeanFactory();
         beans.registerSingleton("timelineStore", store);
+        beans.registerSingleton("streamerNames", new StreamerNames(new LiveSessionArchive(properties)));
         context.register(EventConfig.class);
         registerAsComponentScanDoes(beans, BilibiliLiveTimelineRecorder.class);
         if (withSibling) {

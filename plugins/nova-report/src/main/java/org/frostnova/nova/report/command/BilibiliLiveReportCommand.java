@@ -80,7 +80,7 @@ public class BilibiliLiveReportCommand extends BilibiliStreamerCommand {
         BilibiliLiveReportOptions options = BilibiliLiveReportOptions.of(reportParams(context, streamer), visible);
 
         return withNotice(resolved, painter.paint(BilibiliPlatform.BILIBILI.id(),
-                        new LiveStreamerInfo(streamer.getUid(), streamer.getUname(), streamer.getRoomId(), streamer.getFace()),
+                        new LiveStreamerInfo(streamer.getUid(), unameOf(streamer), streamer.getRoomId(), streamer.getFace()),
                         options)
                 .map(CommandReply::image)
                 .orElseGet(() -> CommandReply.of("报告绘制失败, 请查看日志")));

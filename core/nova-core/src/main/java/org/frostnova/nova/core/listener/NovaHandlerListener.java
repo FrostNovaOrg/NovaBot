@@ -7,6 +7,7 @@ import org.frostnova.nova.core.model.PushMessage;
 import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.sender.PushGate;
+import org.frostnova.nova.core.service.StreamerNames;
 import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.core.timeline.TimelineWriter;
 import org.frostnova.nova.core.lang.StringUtil;
@@ -44,11 +45,22 @@ public class NovaHandlerListener {
 
     private final TimelineWriter timeline;
 
-    @Autowired
+    private final StreamerNames names;
+
     public NovaHandlerListener(AbstractDataSource dataSource, PushGate pushGate, TimelineWriter timeline) {
+        this(dataSource, pushGate, timeline, StreamerNames.none());
+    }
+
+    /**
+     * @param names 起动时没查到昵称时，从最近一场归档里取主播名
+     */
+    @Autowired
+    public NovaHandlerListener(AbstractDataSource dataSource, PushGate pushGate, TimelineWriter timeline,
+                               StreamerNames names) {
         this.dataSource = dataSource;
         this.pushGate = pushGate;
         this.timeline = timeline;
+        this.names = names;
     }
 
     /**
@@ -119,9 +131,8 @@ public class NovaHandlerListener {
         }
 
         PushGate.Block block = pushGate.blockedBy();
-        String streamer = StringUtil.isBlank(event.getSource().getUname())
-                ? String.valueOf(event.getSource().getUid())
-                : event.getSource().getUname();
+        String uname = names.uname(event.getPlatform(), event.getSource().getUid(), event.getSource().getUname());
+        String streamer = StringUtil.isBlank(uname) ? String.valueOf(event.getSource().getUid()) : uname;
 
         log.info("{}, 已丢弃 {} 的一次推送（{} 个会话）", block.getDescription(), streamer, targets);
 

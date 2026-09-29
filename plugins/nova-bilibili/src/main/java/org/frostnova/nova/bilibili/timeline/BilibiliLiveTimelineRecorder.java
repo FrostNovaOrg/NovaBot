@@ -4,6 +4,7 @@ import org.frostnova.nova.bilibili.event.live.BilibiliLiveOffEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliLiveOnEvent;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
 import org.frostnova.nova.core.plugin.NovaComponent;
+import org.frostnova.nova.core.service.StreamerNames;
 import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.core.timeline.TimelineEventType;
 import org.frostnova.nova.core.timeline.TimelineWriter;
@@ -38,9 +39,19 @@ public class BilibiliLiveTimelineRecorder {
 
     private final TimelineWriter timeline;
 
-    @Autowired
+    private final StreamerNames names;
+
     public BilibiliLiveTimelineRecorder(TimelineWriter timeline) {
+        this(timeline, StreamerNames.none());
+    }
+
+    /**
+     * @param names 起动时没查到昵称时，从最近一场归档里取主播名
+     */
+    @Autowired
+    public BilibiliLiveTimelineRecorder(TimelineWriter timeline, StreamerNames names) {
         this.timeline = timeline;
+        this.names = names;
     }
 
     /**
@@ -50,7 +61,7 @@ public class BilibiliLiveTimelineRecorder {
     @Order(BEFORE_THE_REST)
     @EventListener
     public void onLiveOn(BilibiliLiveOnEvent event) {
-        record(TimelineEventType.LIVE_ON, "开播了", event.getSource());
+        record(TimelineEventType.LIVE_ON, "开播了", event.getPlatform(), event.getSource());
     }
 
     /**
@@ -60,25 +71,27 @@ public class BilibiliLiveTimelineRecorder {
     @Order(BEFORE_THE_REST)
     @EventListener
     public void onLiveOff(BilibiliLiveOffEvent event) {
-        record(TimelineEventType.LIVE_OFF, "下播了", event.getSource());
+        record(TimelineEventType.LIVE_OFF, "下播了", event.getPlatform(), event.getSource());
     }
 
     /**
      * 记一条开播或下播
      * <p>
-     * 主播一栏写主播名——日志页上「谁开播了」是按主播筛的；名字不在事件里时写房间号，
-     * 不为一条流水去打接口补（见类注释）。uid 另记进 detail：主播会改名，
+     * 主播一栏写主播名——日志页上「谁开播了」是按主播筛的；名字不在事件里时退回最近一场归档里的昵称，
+     * 那也没有才写房间号，不为一条流水去打接口补（见类注释）。uid 另记进 detail：主播会改名，
      * 「昨晚那个号今天叫什么」得靠不变的 uid 才答得出来。
      * 自己出错只写日志，不往外抛，免得把后面的推送也拦住。
      * @param type 开播或下播
      * @param verb 一句人话的后半截
+     * @param platform 直播平台
      * @param source 事件里的主播信息
      */
-    private void record(TimelineEventType type, String verb, LiveStreamerInfo source) {
+    private void record(TimelineEventType type, String verb, String platform, LiveStreamerInfo source) {
         try {
-            String name = source.getUname() == null || source.getUname().isBlank()
+            String uname = names.uname(platform, source.getUid(), source.getUname());
+            String name = uname == null || uname.isBlank()
                     ? "房间 " + source.getRoomIdString()
-                    : source.getUname();
+                    : uname;
 
             timeline.record(TimelineEvent.of(type, TimelineEvent.Level.INFO)
                     .streamer(name)

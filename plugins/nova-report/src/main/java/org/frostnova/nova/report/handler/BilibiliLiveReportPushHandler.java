@@ -17,6 +17,7 @@ import org.frostnova.nova.core.sender.AtMode;
 import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.frostnova.nova.core.service.HandlerPackageNames;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
+import org.frostnova.nova.core.service.StreamerNames;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -40,13 +41,25 @@ public class BilibiliLiveReportPushHandler implements NovaEventHandler {
 
     private final RevenueVisibilityService revenueVisibility;
 
-    @Autowired
+    private final StreamerNames names;
+
     public BilibiliLiveReportPushHandler(BilibiliApiUtil api, NovaMessageSender sender,
                                          BilibiliLiveReportPainter painter, RevenueVisibilityService revenueVisibility) {
+        this(api, sender, painter, revenueVisibility, StreamerNames.none());
+    }
+
+    /**
+     * @param names 起动时没查到昵称时，从最近一场归档里取主播名
+     */
+    @Autowired
+    public BilibiliLiveReportPushHandler(BilibiliApiUtil api, NovaMessageSender sender,
+                                         BilibiliLiveReportPainter painter, RevenueVisibilityService revenueVisibility,
+                                         StreamerNames names) {
         this.api = api;
         this.sender = sender;
         this.painter = painter;
         this.revenueVisibility = revenueVisibility;
+        this.names = names;
     }
 
     @Override
@@ -74,7 +87,7 @@ public class BilibiliLiveReportPushHandler implements NovaEventHandler {
 
         String template = params.getString("message");
         String content = template
-                .replace("{uname}", PushHandlerSupport.resolveUname(api, event.getSource()))
+                .replace("{uname}", PushHandlerSupport.resolveUname(api, names, event.getPlatform(), event.getSource()))
                 .replace("{url}", "https://live.bilibili.com/" + event.getSource().getRoomId())
                 .replace("{report}", report);
 
