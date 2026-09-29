@@ -476,13 +476,16 @@ class HandWrittenValuesAsLoadedTest {
     }
 
     /**
-     * 抓的用户故障：块标量后面跟了一行与键对齐的注释，在界面改了块标量的值，
+     * 抓的用户故障：跨行的值后面跟了一行与键对齐的注释，在界面改了这项的值，
      * 这行注释被一起删掉，或者挪到别的地方。
+     * <p>
+     * 值里带换行的块标量是界面改不了的项，写口照锁拒存、改不了值；这一格用折成一行的
+     * 跨行值当夹具，守的还是同一条：改值时对齐的注释留原地。
      */
     @Test
-    @DisplayName("🔴 块标量后跟一行与键对齐的注释：改值时这行注释留在原地")
+    @DisplayName("🔴 跨行的值后跟一行与键对齐的注释：改值时这行注释留在原地")
     void blockScalarKeepsFollowingAlignedComment() throws IOException {
-        write("novabot:\n  demo:\n    signature: |\n      first\n      second\n    # 说明\n    tail: 1\n");
+        write("novabot:\n  demo:\n    signature: first\n      second\n    # 说明\n    tail: 1\n");
         service.write(Map.of("novabot.demo.signature", "z"));
         String text = content();
         assertEquals("novabot:\n  demo:\n    signature: z\n    # 说明\n    tail: 1\n", text,

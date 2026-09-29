@@ -322,7 +322,6 @@ class HandWrittenConfigFormsTest {
         String[][] cases = {
                 {"不带引号", "    signature: first\n      second line\n"},
                 {"双引号跨行", "    signature: \"first\n      second line\"\n"},
-                {"块标量", "    signature: |\n      first\n\n      second line\n"},
         };
         for (String[] c : cases) {
             try {
@@ -335,6 +334,18 @@ class HandWrittenConfigFormsTest {
             } catch (AssertionError | IOException | RuntimeException e) {
                 bad.add(c[0] + ": " + e.getMessage());
             }
+        }
+
+        try {
+            // 块标量值里带换行，是界面改不了的项：不走「续行一起换掉」，照锁整批拒存
+            write("novabot:\n  demo:\n    greeting: hello\n    signature: |\n      first\n\n      second line\n"
+                    + "    # 下一项的说明\n    tail: 1\n");
+            String text = content();
+            assertThrows(IOException.class, () -> service.write(Map.of("novabot.demo.signature", "z")),
+                    "块标量界面改不了, 改值应整批拒存");
+            assertEquals(text, content(), "拒存时文件一个字节不动");
+        } catch (AssertionError | IOException | RuntimeException e) {
+            bad.add("块标量锁住: " + e.getMessage());
         }
 
         try {
