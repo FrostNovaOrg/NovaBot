@@ -419,7 +419,7 @@ public class AlertService {
             // 标题不截断：这一条是「压根没发出去」，看的人要照着它去查那条告警说的是哪件事；
             // 截成前二十几个字的话，几条不同的告警在时间线里长得一模一样
             timeline.record(TimelineEvent.of(TimelineEventType.ALERT_FAILED, TimelineEvent.Level.WARN)
-                    .text("没有配置告警通道，没发出去：" + alert.subject())
+                    .text(timelineText("没有配置告警通道，没发出去", alert.attempts(), alert.subject()))
                     .detail("subject", alert.subject())
                     .build());
             // 重投撞上「一条通道都没了」：通道可能稍后回来，仍在上限内就留在队里。
@@ -430,7 +430,7 @@ public class AlertService {
                     log.error("告警 [{}] {} 重投 {} 次仍失败, 放弃。它发生于 {}, 始终没能送出去",
                             alert.key(), alert.subject(), alert.attempts(), alert.occurredAtText());
                 } else {
-                    enqueueOrLose(retried);
+                    enqueueOrLose(retried, true);
                 }
             }
             return new Delivery(false, false, false, false);
@@ -458,7 +458,7 @@ public class AlertService {
                         }
                         timeline.record(TimelineEvent.of(TimelineEventType.ALERT_SENT, TimelineEvent.Level.INFO)
                                 .channel(channelName)
-                                .text(channelName + "已报出：" + shorten(alert.subject()))
+                                .text(timelineText(channelName + "已报出", alert.attempts(), shorten(alert.subject())))
                                 .detail("subject", alert.subject())
                                 .build());
                     }
@@ -470,7 +470,8 @@ public class AlertService {
                                 channelName, result.reason());
                         timeline.record(TimelineEvent.of(TimelineEventType.ALERT_FAILED, TimelineEvent.Level.WARN)
                                 .channel(channelName)
-                                .text(channelName + "发不出去（" + result.reason() + "）：" + shorten(alert.subject()))
+                                .text(timelineText(channelName + "发不出去（" + result.reason() + "）",
+                                        alert.attempts(), shorten(alert.subject())))
                                 .detail("subject", alert.subject())
                                 .detail("reason", result.reason())
                                 .build());
@@ -479,7 +480,7 @@ public class AlertService {
                         log.error("通过 {} 通道发送告警失败: {}", channelName, result.reason(), result.cause());
                         timeline.record(TimelineEvent.of(TimelineEventType.ALERT_FAILED, TimelineEvent.Level.ERROR)
                                 .channel(channelName)
-                                .text(channelName + "发不出去：" + shorten(alert.subject()))
+                                .text(timelineText(channelName + "发不出去", alert.attempts(), shorten(alert.subject())))
                                 .detail("subject", alert.subject())
                                 .detail("reason", result.reason())
                                 .build());
@@ -489,7 +490,7 @@ public class AlertService {
                         log.warn("通过 {} 通道发送告警送达不明: {}", channelName, result.reason());
                         timeline.record(TimelineEvent.of(TimelineEventType.ALERT_UNCERTAIN, TimelineEvent.Level.WARN)
                                 .channel(channelName)
-                                .text(channelName + "送达不明：" + shorten(alert.subject()))
+                                .text(timelineText(channelName + "送达不明", alert.attempts(), shorten(alert.subject())))
                                 .detail("subject", alert.subject())
                                 .detail("reason", result.reason())
                                 .build());
@@ -520,7 +521,7 @@ public class AlertService {
                             alert.key(), alert.subject(), alert.attempts(), alert.occurredAtText());
                     return;
                 }
-                enqueueOrLose(alert.retried());
+                enqueueOrLose(alert.retried(), false);
             };
             try {
                 channel.sendReporting(alert.subject(), sendContent, onResult);
@@ -546,21 +547,35 @@ public class AlertService {
     }
 
     /**
-     * 入队重投；已进入退出流程时不再入队，改为在工程日志里逐条写「随本次退出丢失」
+     * 日志页上的一句。第一次投递不额外标注。重投在冒号前写明这是第几次，
+     * 免得隔几秒又是同样一句，看着像同一条告警报了两遍。
+     * 这个次数与工程日志里「已尝试多少次」「重投多少次仍失败」是同一个数。
      */
-    private void enqueueOrLose(PendingAlert alert) {
+    private static String timelineText(String head, int attempts, String subject) {
+        if (attempts > 0) {
+            return head + "（重投第 " + attempts + " 次）：" + subject;
+        }
+        return head + "：" + subject;
+    }
+
+    /**
+     * 入队重投；已进入退出流程时不再入队，改为在工程日志里逐条写「随本次退出丢失」
+     * @param noChannel 这一次是一条可用通道都没有；否则是有通道、但都没发出去
+     */
+    private void enqueueOrLose(PendingAlert alert, boolean noChannel) {
         if (shuttingDown.get()) {
             log.error("  随本次退出丢失: [{}] {} （发生于 {}, 已尝试 {} 次）",
                     alert.key(), alert.subject(), alert.occurredAtText(), alert.attempts());
             return;
         }
-        enqueue(alert);
+        enqueue(alert, noChannel);
     }
 
     /**
      * 入队，满了丢最旧的并说明丢了哪一条
+     * @param noChannel 这一次是一条可用通道都没有；否则是有通道、但都没发出去
      */
-    private void enqueue(PendingAlert alert) {
+    private void enqueue(PendingAlert alert, boolean noChannel) {
         PendingAlert dropped = null;
         int size;
 
@@ -576,7 +591,11 @@ public class AlertService {
             log.error("待重投队列已满, 丢弃最旧的一条: [{}] {} （发生于 {}）",
                     dropped.key(), dropped.subject(), dropped.occurredAtText());
         }
-        log.warn("告警 [{}] {} 发送失败, 已入队等待重投, 队列 {} 条", alert.key(), alert.subject(), size);
+        if (noChannel) {
+            log.warn("告警 [{}] {} 没有通道, 已入队等待重投, 队列 {} 条", alert.key(), alert.subject(), size);
+        } else {
+            log.warn("告警 [{}] {} 通道都没发出去, 已入队等待重投, 队列 {} 条", alert.key(), alert.subject(), size);
+        }
     }
 
     /**
