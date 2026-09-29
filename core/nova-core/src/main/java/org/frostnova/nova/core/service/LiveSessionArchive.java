@@ -4,6 +4,8 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.lang.BadLineNotice;
+import org.frostnova.nova.core.lang.BadLineNotice.FileState;
 import org.frostnova.nova.core.lang.JsonlFiles;
 import org.frostnova.nova.core.enums.LiveEndReason;
 import org.frostnova.nova.core.model.LiveSession;
@@ -68,12 +70,9 @@ public class LiveSessionArchive {
     private volatile LatestNames latestNames;
 
     /**
-     * 上次警告过坏行时归档文件的样子
-     * <p>
-     * 坏行一直留在文件里，每读一次都会再撞上；主播页一开就读好几遍，照撞照报会把日志刷满。
-     * 文件没变时只报第一次，变了再报。
+     * 坏行的提示：主播页一开就读好几遍，同一份文件只报第一次，变了再报
      */
-    private volatile FileState warnedBadLine;
+    private final BadLineNotice badLine = new BadLineNotice(log, "跳过归档中无法解析的一行");
 
     @Autowired
     public LiveSessionArchive(NovaCoreProperties properties) {
@@ -132,7 +131,7 @@ public class LiveSessionArchive {
      */
     private List<LiveSession> read(long from, long to) throws IOException {
         List<LiveSession> result = new ArrayList<>();
-        FileState state = stateOf(path());
+        FileState state = BadLineNotice.stateOf(path());
 
         try (Stream<String> lines = JsonlFiles.lines(path())) {
             lines.forEach(line -> {
@@ -155,7 +154,7 @@ public class LiveSessionArchive {
         long count = 0;
         long earliest = Long.MAX_VALUE;
         long latest = Long.MIN_VALUE;
-        FileState state = stateOf(path());
+        FileState state = BadLineNotice.stateOf(path());
 
         try (Stream<String> lines = JsonlFiles.lines(path())) {
             for (String line : (Iterable<String>) lines::iterator) {
@@ -283,21 +282,7 @@ public class LiveSessionArchive {
                     parsePeaks(json.getJSONObject("peaks")));
         } catch (Exception e) {
             // 只记原因不记内容：一行里有观众 uid 名单
-            if (state != null && state.equals(warnedBadLine)) {
-                log.debug("跳过归档中无法解析的一行: {}", e.getClass().getSimpleName());
-            } else {
-                warnedBadLine = state;
-                log.warn("跳过归档中无法解析的一行: {}（文件有变动之前不再重复提示）", e.getClass().getSimpleName());
-            }
-            return null;
-        }
-    }
-
-    private static FileState stateOf(Path path) {
-        try {
-            BasicFileAttributes attributes = Files.readAttributes(path, BasicFileAttributes.class);
-            return new FileState(path, attributes.lastModifiedTime(), attributes.size());
-        } catch (IOException e) {
+            badLine.skipped(state, e);
             return null;
         }
     }
@@ -412,9 +397,6 @@ public class LiveSessionArchive {
      * @param latestStart 最晚一场的开播时刻，无数据时为 0
      */
     public record Summary(long count, long earliestStart, long latestStart) {
-    }
-
-    private record FileState(Path path, FileTime modified, long size) {
     }
 
     private record LatestNames(Path path, FileTime modified, long size, Map<String, String> names) {

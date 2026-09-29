@@ -1,17 +1,23 @@
 package org.frostnova.nova.core.protocol;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import org.frostnova.nova.core.properties.LiveProperties;
 import org.frostnova.nova.core.model.EventStreamToken;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -199,5 +205,51 @@ class EventStreamTokenServiceTest {
 
         assertFalse(service.verify(before), "被撤的那把该拒");
         assertTrue(service.verify(after), "吊销一把之后另一把必须照旧能用");
+    }
+
+    @Test
+    @DisplayName("口令表坏了一行时, 连几次面板都只提示一次, 提示里不带那行的哈希与签给谁")
+    void badLineWarnsOnceWithoutItsContent() throws Exception {
+        // 使用者把日志贴给别人求助时, 行里的哈希与签给谁会跟着贴出去;
+        // 每连一次面板就多一行的话, 日志很快被同一句刷满
+        String hash = "Qm9ndXNIYXNoRm9yQmFkTGluZVRlc3RPbmx5MDEyMzQ";
+        String label = "楼下直播间备用面板";
+        String token = service.issue("面板-甲");
+        Files.writeString(dir.resolve("event-stream-tokens.jsonl"),
+                "{\"hash\":\"" + hash + "\",\"label\":\"" + label + "\",\"issuedAt\":1727600000000,\"revokedAt\":0"
+                        + System.lineSeparator(),
+                StandardCharsets.UTF_8, java.nio.file.StandardOpenOption.APPEND);
+
+        Logger logger = (Logger) LoggerFactory.getLogger(EventStreamTokenService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            assertTrue(service.verify(token));
+            assertTrue(service.verify(token));
+            assertTrue(service.verify(token));
+            List<ILoggingEvent> first = skipWarnings(appender);
+
+            service.issue("面板-乙");
+            service.verify(token);
+            List<ILoggingEvent> afterChange = skipWarnings(appender);
+
+            assertAll(
+                    () -> assertEquals(1, first.size(), "每连一次面板就记一行, 日志被同一句刷屏"),
+                    () -> assertTrue(first.stream().map(ILoggingEvent::getFormattedMessage)
+                                    .noneMatch(m -> m.contains(hash) || m.contains(label)),
+                            "提示里带出了坏行的哈希或签给谁: " + first.stream()
+                                    .map(ILoggingEvent::getFormattedMessage).toList()),
+                    () -> assertEquals(2, afterChange.size(), "口令表变了之后不再提示, 坏行还在也没人知道"));
+        } finally {
+            logger.detachAppender(appender);
+        }
+    }
+
+    private static List<ILoggingEvent> skipWarnings(ListAppender<ILoggingEvent> appender) {
+        return appender.list.stream()
+                .filter(event -> event.getLevel() == Level.WARN)
+                .filter(event -> event.getFormattedMessage().startsWith("跳过口令表中无法解析的一行"))
+                .toList();
     }
 }
