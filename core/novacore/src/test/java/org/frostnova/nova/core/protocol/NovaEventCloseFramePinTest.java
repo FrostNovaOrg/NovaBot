@@ -7,6 +7,7 @@ import org.frostnova.nova.core.protocol.NovaEventSlowConsumerHarness.AdvanceRead
 import org.frostnova.nova.core.protocol.NovaEventSlowConsumerHarness.PinGate;
 import org.frostnova.nova.core.protocol.NovaEventSlowConsumerHarness.BlockReading;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -91,6 +92,11 @@ class NovaEventCloseFramePinTest {
 
     /** 判据 4 的两簇：排在被清理那条前面／后面的健康连接 */
     private OrderReading order;
+
+    @BeforeEach
+    void assumeLoopbackPortAllowed() {
+        LoopbackPort.assumeAllowed();
+    }
 
     @AfterEach
     void tearDown() {
