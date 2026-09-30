@@ -353,6 +353,10 @@ public class ConfigurationFileService {
     private static final String LOCK_LIST_READ_DIFFERENTLY = "这份名单里有的项程序读到的和配置文件里写的字不一样"
             + "（比如不带引号的 yes 读成 true），在界面改会换掉原来的写法；这里显示的是程序实际读到的值，要改请到配置文件里改。";
 
+    /** 名单里有空的一项，每行一项的框里是一行空，存回时被当成没有 */
+    private static final String LOCK_LIST_EMPTY_ITEM = "这份名单里有空的一项，界面上显示不出来，"
+            + "在界面改会把它丢掉；要改请到配置文件里改。";
+
     /** 名单项与启动读到的对不上号 */
     private static final String LOCK_LIST_UNREADABLE = "这份名单在配置文件里的写法界面读不准（有的项折到了好几行、"
             + "或以「|」「*名字」「&名字」这样的记号开头），为不写错不在界面改；要改请到配置文件里改。";
@@ -382,13 +386,13 @@ public class ConfigurationFileService {
     private Settled settle(List<String> lines, List<Line> parsed) {
         boolean needed = false;
         for (Line line : parsed) {
-            if (line.fromLoader || !line.loaderItems.isEmpty() || line.merge) {
+            if (line.fromLoader || !line.loaderItems.isEmpty() || line.merge || line.flowInterrupted) {
                 needed = true;
                 break;
             }
         }
         if (!needed) {
-            return new Settled(Map.of(), Map.of());
+            return new Settled(Map.of(), lockEmptyItems(parsed, new LinkedHashMap<>()));
         }
 
         Map<String, Object> loaded;
@@ -411,6 +415,13 @@ public class ConfigurationFileService {
                 if (dot > 0) {
                     inheriting.add(line.path.substring(0, dot));
                 }
+                continue;
+            }
+            if (line.flowInterrupted) {
+                // 跨行夹了空行、注释行的名单照旧拒存，只把显示换成启动读到的各项；读不出时列原文整段
+                Object value = loaded == null ? null : loaded.get(line.path);
+                line.value = value instanceof List<?> list && !hasNestedItems(loaded, line.path)
+                        ? joinLoaded(list) : flowSpan(lines, line);
                 continue;
             }
             if (line.fromLoader) {
@@ -493,7 +504,20 @@ public class ConfigurationFileService {
                 }
             }
         }
-        return new Settled(inherited, locked);
+        return new Settled(inherited, lockEmptyItems(parsed, locked));
+    }
+
+    /**
+     * 名单里有空的一项（{@code ""}、只有短横的一项）的锁上：界面上那是一行空，
+     * 存回时空行被当成没有，那一项就丢了。已因别的缘故锁着的不换说明
+     */
+    private static Map<String, String> lockEmptyItems(List<Line> parsed, Map<String, String> locked) {
+        for (Line line : parsed) {
+            if (line.path != null && line.isList() && line.items.contains("")) {
+                locked.putIfAbsent(line.path, LOCK_LIST_EMPTY_ITEM);
+            }
+        }
+        return locked;
     }
 
     private static boolean underAny(String key, Set<String> prefixes) {
@@ -843,8 +867,9 @@ public class ConfigurationFileService {
             }
 
             Line line = index.get(change.getKey());
-            // 文件里还没有这一项时，含换行的值会被当成字符串列表写入，那是合法的
-            if (line != null && !line.isList() && !locked.containsKey(change.getKey())) {
+            // 文件里还没有这一项时，含换行的值会被当成字符串列表写入，那是合法的。
+            // 跨行读不了的名单界面上一行一项，拒存由写口那句说实际情形
+            if (line != null && !line.isList() && !line.flowUnreadable && !locked.containsKey(change.getKey())) {
                 throw new IOException("配置项 " + change.getKey() + " 的值不能包含换行");
             }
         }
@@ -1036,8 +1061,14 @@ public class ConfigurationFileService {
 
             if (line.flowUnreadable) {
                 // 跨行行内名单读不了的写法：就地替换只动键那一行，续行留成孤行会写坏整份文件，
-                // 宁可拒存并说清原因（见本类 parse 里的同名标注）。收不了口有两种，各说各的实际情形：
-                // 中间夹了空行或注释行的，里面并没有套着什么；收了口才看得见套着的写法
+                // 宁可拒存并说清原因（见本类 parse 里的同名标注）。各说各的实际情形：
+                // 中间夹了空行或注释行的，里面并没有套着什么；方括号到下一个键都没收口的，也没有；
+                // 收了口才看得见套着的写法
+                if (line.flowUnclosed) {
+                    throw new IOException("配置项 " + change.getKey() + " 的名单写在一对方括号里还跨了行, "
+                            + "方括号一直没有收口, 界面读不了, 为不写坏配置文件本批全部未保存, "
+                            + "请先在配置文件里补上收口的「]」或把它改成每行一项");
+                }
                 throw new IOException("配置项 " + change.getKey() + " 的名单写在一对方括号里还跨了行, "
                         + (line.flowInterrupted
                         ? "中间夹着空行或注释行, 界面读不了"
@@ -1318,12 +1349,16 @@ public class ConfigurationFileService {
         }
 
         rejectUnreadableInlineList(lines, location.keyLine(), listPath);
+        List<Integer> emptyMarker = nextLineFlowList(lines, location, listPath);
 
         if (location.start() < 0) {
             if (index != 0) {
                 throw new IOException("未在配置文件中找到 " + listPath + " 的第 " + (index + 1) + " 个元素");
             }
 
+            for (int i = emptyMarker.size() - 1; i >= 0; i--) {
+                lines.remove((int) emptyMarker.get(i));
+            }
             int created = createFirstItem(lines, location, fields);
             backup();
             DurableFiles.replace(configPath, lines, DurableFiles.OWNER_ONLY);
@@ -1449,6 +1484,46 @@ public class ConfigurationFileService {
             throw new IOException(listPath + " 在文件里把各元素写在同一对方括号里, 本界面读不了"
                     + ", 为不写坏配置文件本批全部未保存, 请先在配置文件里把它改成每行一项");
         }
+    }
+
+    /**
+     * 对象列表的键行空着、元素写在下一行的方括号里（{@code rules:} 换行 {@code [{name: a}]}）
+     * <p>
+     * 按「- 」逐行找元素的那一路看不见方括号里的元素，会当成空表在键下插一行新元素，
+     * 旧的方括号留着，整份配置读不了。方括号里有东西的一律拒存，拒语用界面上这一格那把锁的说明；
+     * 只有 {@code []} 的是空表，交回那几行由建第一个元素时换掉。
+     * @return 空表 {@code []} 所占的行（不含注释行、空行）；不是这种写法时为空表
+     * @throws IOException 方括号里有元素时抛出，文件未动
+     */
+    private List<Integer> nextLineFlowList(List<String> lines, ListLocation location, String listPath) throws IOException {
+        String keyRaw = lines.get(location.keyLine());
+        String rest = keyRaw.substring(keyRaw.indexOf(':') + 1);
+        int comment = commentIndex(rest);
+        if (!hasNoValue(comment < 0 ? rest : rest.substring(0, comment))) {
+            return List.of();
+        }
+
+        int end = valueOnNextLineEnd(lines, location.keyLine(), location.keyIndent());
+        List<Integer> valueLines = new ArrayList<>();
+        StringBuilder text = new StringBuilder();
+        for (int i = location.keyLine() + 1; i <= end; i++) {
+            String stripped = lines.get(i).strip();
+            if (stripped.isEmpty() || stripped.startsWith("#")) {
+                continue;
+            }
+            int at = commentIndex(stripped);
+            text.append((at < 0 ? stripped : stripped.substring(0, at)).strip());
+            valueLines.add(i);
+        }
+        if (!text.toString().startsWith("[")) {
+            return List.of();
+        }
+        if (text.toString().replaceAll("\\s", "").equals("[]")) {
+            return valueLines;
+        }
+
+        String reason = settle(lines, parse(lines)).locked().get(listPath);
+        throw new IOException("配置项 " + listPath + " " + unsavedReason(reason != null ? reason : LOCK_LIST_NESTED));
     }
 
     /**
@@ -1715,7 +1790,8 @@ public class ConfigurationFileService {
                 || value.contains(" #")
                 || CLOCK_TIME.matcher(value).matches()
                 || INDICATOR_START.indexOf(value.charAt(0)) >= 0
-                || value.codePoints().anyMatch(cp -> escapeOf(cp) != null);
+                || value.codePoints().anyMatch(cp -> escapeOf(cp) != null)
+                || !readsBareAsWritten(value);
 
         if (!needQuote) {
             return value;
@@ -1732,6 +1808,23 @@ public class ConfigurationFileService {
             }
         });
         return out.append('"').toString();
+    }
+
+    /**
+     * 这个值裸写出去，启动那一路读回的还是不是这几个字
+     * <p>
+     * yes、on、~、012、1_000、0x1F、1.50 这类字裸写会读成真假、空或另一个数，得加引号；
+     * true、123 读回的字与写的一样，照旧裸写。哪些字会被读成别的样子不在这里列表，
+     * 按启动那一路实际读一遍来定（它不认日期，{@code 2020-01-01} 读回的还是原字）。
+     */
+    private static boolean readsBareAsWritten(String value) {
+        try {
+            Map<String, Object> loaded = load("x: " + value + "\n");
+            Object read = loaded == null ? null : loaded.get("x");
+            return read != null && value.equals(String.valueOf(read));
+        } catch (IOException e) {
+            return false;
+        }
     }
 
     /**
@@ -2182,6 +2275,31 @@ public class ConfigurationFileService {
     }
 
     /**
+     * 跨行夹了空行、注释行的行内名单的原文整段：跳过夹着的那几行，续行以空格接起来，
+     * 到收口或扫到下一个键、名单项为止。启动那一路读不出这份名单时拿它显示，不只显示键那一行的半截
+     */
+    private String flowSpan(List<String> lines, Line line) {
+        StringBuilder joined = new StringBuilder(line.rawValue);
+        int depth = flowDepth(line.rawValue);
+        for (int i = line.index + 1; i < lines.size() && depth > 0; i++) {
+            String raw = lines.get(i);
+            String stripped = raw.strip();
+            if (stripped.isEmpty() || stripped.startsWith("#")) {
+                continue;
+            }
+            if (indentOf(raw) <= line.indent
+                    && (stripped.startsWith("-") || stripped.contains(": ") || stripped.endsWith(":"))) {
+                break;
+            }
+            int comment = scan(stripped, true).comment();
+            String value = (comment < 0 ? stripped : stripped.substring(0, comment)).strip();
+            joined.append(' ').append(value);
+            depth += flowDepth(value);
+        }
+        return joined.toString();
+    }
+
+    /**
      * 数一段行内原文里未收口的方括号层数，引号内的不算（引号怎么认见 {@link #scan}）
      */
     private static int flowDepth(String text) {
@@ -2436,7 +2554,9 @@ public class ConfigurationFileService {
                 // 保存时整批拒绝——只改键那一行会给文件留下半截方括号，整份配置从此读不了
                 FlowTail tail = joinFlowTail(lines, i, indent, value);
                 if (tail == null) {
+                    // 扫到下一个键、名单项或文件尾都没收口
                     line.flowUnreadable = true;
+                    line.flowUnclosed = true;
                 } else if (tail.interrupted()) {
                     // 中间夹了空行或注释行而收不了口：里面并没有套着的写法，保存的拒语照这一情形说
                     line.flowUnreadable = true;
@@ -2876,6 +2996,12 @@ public class ConfigurationFileService {
          * 方括号、花括号或「词: 值」，保存的拒语照实际的情形说
          */
         private boolean flowInterrupted;
+
+        /**
+         * flowUnreadable 里专指「方括号到下一个键、名单项或文件尾都没收口」的那一种：
+         * 里面同样没有套着的写法，保存的拒语说没收口
+         */
+        private boolean flowUnclosed;
 
         /**
          * 键这一行看不全这一项的值（跨行、块标量、锚点、标签、别名）：界面值按启动那一路读，
