@@ -366,6 +366,25 @@ public class ConfigurationFileService {
             + "为不写错不在界面改；要改请到配置文件里改。";
 
     /**
+     * 跨行名单读不了的三种写法各各的锁说明，与保存时那句拒语同一层意思（见写口 flowUnreadable 那段）：
+     * 没收口、夹空行、套着，各说各的实际情形
+     */
+    /** 方括号到下一个键、名单项或文件尾都没收口 */
+    private static final String LOCK_FLOW_UNCLOSED = "这份名单写在一对方括号里还跨了行，方括号一直没有收口，界面读不了，"
+            + "为不写坏配置文件不在界面改；这里显示的是这段名单的原文整段，"
+            + "要改请到配置文件里补上收口的「]」或把它改成每行一项。";
+
+    /** 中间夹了空行或注释行而收不了口：里面并没有套着的写法 */
+    private static final String LOCK_FLOW_INTERRUPTED = "这份名单写在一对方括号里还跨了行，中间夹着空行或注释行，界面读不了，"
+            + "为不写坏配置文件不在界面改；这里显示的是程序实际读到的值（读不出时是整段原文），"
+            + "要改请到配置文件里把它改成每行一项。";
+
+    /** 收了口，里面却套着方括号、花括号或「词: 值」 */
+    private static final String LOCK_FLOW_NESTED = "这份名单写在一对方括号里还跨了行，里面套着的方括号、花括号或「词: 值」界面读不了，"
+            + "为不写坏配置文件不在界面改；这里显示的是这段名单的原文整段，"
+            + "要改请到配置文件里把它改成每行一项。";
+
+    /**
      * {@link #settle} 的结果
      *
      * @param inherited 经合并键或整块别名继承、文件里没有自己那一行的子键，值为启动读到的
@@ -386,7 +405,7 @@ public class ConfigurationFileService {
     private Settled settle(List<String> lines, List<Line> parsed) {
         boolean needed = false;
         for (Line line : parsed) {
-            if (line.fromLoader || !line.loaderItems.isEmpty() || line.merge || line.flowInterrupted) {
+            if (line.fromLoader || !line.loaderItems.isEmpty() || line.merge || line.flowUnreadable) {
                 needed = true;
                 break;
             }
@@ -417,12 +436,26 @@ public class ConfigurationFileService {
                 }
                 continue;
             }
-            if (line.flowInterrupted) {
-                // 跨行夹了空行、注释行的名单照旧拒存，只把显示换成启动读到的各项；读不出时列原文整段
-                Object value = loaded == null ? null : loaded.get(line.path);
-                line.value = value instanceof List<?> list && !hasNestedItems(loaded, line.path)
-                        ? joinLoaded(list) : flowSpan(lines, line);
-                continue;
+            if (line.flowUnreadable) {
+                // 跨行行内名单读不了的三种写法（见 parse 同名标注）照锁住办：说明与保存时那句拒语
+                // 同一层意思，各对各。项上带别名、锚点或标签记号的除外——那几样另有自己的说明
+                // （见 flowListLock），照旧走下面启动读值那一路
+                boolean marked = line.fromLoader && (aliasItemInFlowList(lines, line) != null
+                        || !flowItemMark(flowWritten(lines, line)).isEmpty());
+                if (!marked) {
+                    locked.put(line.path, line.flowUnclosed ? LOCK_FLOW_UNCLOSED
+                            : line.flowInterrupted ? LOCK_FLOW_INTERRUPTED : LOCK_FLOW_NESTED);
+                    if (line.flowInterrupted) {
+                        // 夹空行、注释行的显示照旧：启动读得出的换成读到的各项，读不出时列原文整段
+                        Object value = loaded == null ? null : loaded.get(line.path);
+                        line.value = value instanceof List<?> list && !hasNestedItems(loaded, line.path)
+                                ? joinLoaded(list) : flowSpan(lines, line);
+                    } else {
+                        // 没收口、套着的显示原文整段（照 flowSpan 的办法），不显示键那一行的半截
+                        line.value = flowSpan(lines, line);
+                    }
+                    continue;
+                }
             }
             if (line.fromLoader) {
                 if (bodyOf(line.rawValue).startsWith("*")) {
@@ -1063,7 +1096,12 @@ public class ConfigurationFileService {
                 // 跨行行内名单读不了的写法：就地替换只动键那一行，续行留成孤行会写坏整份文件，
                 // 宁可拒存并说清原因（见本类 parse 里的同名标注）。各说各的实际情形：
                 // 中间夹了空行或注释行的，里面并没有套着什么；方括号到下一个键都没收口的，也没有；
-                // 收了口才看得见套着的写法
+                // 收了口才看得见套着的写法。
+                // 锁住的那一格原样送回＝没改：界面显示的正是 settle 换上的那个值（读到的各项或整段原文），
+                // 照别的锁住项的规矩放行、不写；真改了的才轮到下面各对各的拒语
+                if (change.getValue().equals(line.value)) {
+                    continue;
+                }
                 if (line.flowUnclosed) {
                     throw new IOException("配置项 " + change.getKey() + " 的名单写在一对方括号里还跨了行, "
                             + "方括号一直没有收口, 界面读不了, 为不写坏配置文件本批全部未保存, "
