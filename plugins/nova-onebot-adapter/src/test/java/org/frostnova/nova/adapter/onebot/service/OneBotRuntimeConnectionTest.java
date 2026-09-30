@@ -92,6 +92,7 @@ class OneBotRuntimeConnectionTest {
 
     @BeforeEach
     void setUp() throws IOException {
+        LoopbackPort.assumeAllowed();
         http = new FakeOneBotHttpServer();
         websocket = new FakeOneBotWebsocketServer();
 
@@ -139,11 +140,21 @@ class OneBotRuntimeConnectionTest {
 
     @AfterEach
     void tearDown() {
-        properties.getSenders().forEach(sender -> websocketService.stop(sender.getName()));
-        websocket.close();
-        http.close();
-        scheduler.shutdown();
-        executor.shutdown();
+        if (properties != null && websocketService != null) {
+            properties.getSenders().forEach(sender -> websocketService.stop(sender.getName()));
+        }
+        if (websocket != null) {
+            websocket.close();
+        }
+        if (http != null) {
+            http.close();
+        }
+        if (scheduler != null) {
+            scheduler.shutdown();
+        }
+        if (executor != null) {
+            executor.shutdown();
+        }
     }
 
     /**

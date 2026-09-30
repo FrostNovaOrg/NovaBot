@@ -228,6 +228,7 @@ class OneBotReconnectLogNoiseTest {
     @Test
     @DisplayName("恢复时要说得出中断了多久、重试了几次")
     void recoverySaysHowLongItWasDown() throws IOException {
+        LoopbackPort.assumeAllowed();
         int port = sparePort();
         websocketService.start(senderTo("127.0.0.1", port));
         awaitUntil("等第一次连不上", () -> failureLines() >= 1);

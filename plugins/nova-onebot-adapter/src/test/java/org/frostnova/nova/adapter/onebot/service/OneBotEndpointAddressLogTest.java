@@ -110,6 +110,7 @@ class OneBotEndpointAddressLogTest {
     @Test
     @DisplayName("Websocket 连接地址行：各写法拼出的地址，带路径／端口／别的协议头时还有那句错")
     void websocketAddressLineFollowsTheScheme() throws Exception {
+        LoopbackPort.assumeAllowed();
         int port = sparePort();
         websocketAddressLineSays("只写主机", "127.0.0.1", "ws://127.0.0.1:" + port + "/", false, port);
         websocketAddressLineSays("http头", "http://127.0.0.1", "ws://127.0.0.1:" + port + "/", false, port);

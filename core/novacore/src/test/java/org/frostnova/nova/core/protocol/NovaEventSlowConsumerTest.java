@@ -2,6 +2,7 @@ package org.frostnova.nova.core.protocol;
 
 import org.frostnova.nova.core.protocol.NovaEventSlowConsumerHarness.Reading;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -55,6 +56,11 @@ class NovaEventSlowConsumerTest {
     Path dir;
 
     private NovaEventSlowConsumerHarness harness;
+
+    @BeforeEach
+    void assumeLoopbackPortAllowed() {
+        LoopbackPort.assumeAllowed();
+    }
 
     private NovaEventSlowConsumerHarness bringUpHarness(boolean slowClientReads) throws IOException {
         harness = new NovaEventSlowConsumerHarness(dir, slowClientReads, STANDARD_TIMINGS);

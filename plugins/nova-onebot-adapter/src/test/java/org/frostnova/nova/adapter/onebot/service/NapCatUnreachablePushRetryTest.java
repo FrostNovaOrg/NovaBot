@@ -27,6 +27,7 @@ import org.frostnova.nova.core.service.NovaStateStore;
 import org.frostnova.nova.core.timeline.TimelineWriter;
 import org.frostnova.nova.core.util.HttpUtil;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -88,6 +89,11 @@ class NapCatUnreachablePushRetryTest {
     private ThreadPoolTaskExecutor executor;
 
     private int closedPort;
+
+    @BeforeEach
+    void assumeLoopbackPortAllowed() {
+        LoopbackPort.assumeAllowed();
+    }
 
     @AfterEach
     void tearDown() {

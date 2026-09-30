@@ -116,6 +116,7 @@ class WebhookFailureLeakTest {
      * 一个关着的端口：连接当场被拒，失败是真栈真文
      */
     private static int closedPort() throws IOException {
+        LoopbackPort.assumeAllowed();
         try (ServerSocket socket = new ServerSocket(0)) {
             return socket.getLocalPort();
         }
@@ -387,6 +388,7 @@ class WebhookFailureLeakTest {
     @Test
     @DisplayName("对方回了状态码时报错带主机与状态码——状态码本身就是失败原因")
     void statusFailureKeepsHostAndCode() throws IOException {
+        LoopbackPort.assumeAllowed();
         HttpServer server = HttpServer.create(new InetSocketAddress(HOST, 0), 0);
         server.createContext("/", exchange -> {
             exchange.sendResponseHeaders(502, -1);
