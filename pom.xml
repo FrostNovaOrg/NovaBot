@@ -6,7 +6,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.0.0</version>
+        <version>4.0.8</version>
         <relativePath/>
     </parent>
 
@@ -63,6 +63,9 @@
         <imageio-webp.version>3.12.0</imageio-webp.version>
         <zxing.version>3.5.3</zxing.version>
         <spring-retry.version>2.0.12</spring-retry.version>
+        <!-- tomcat-embed 单钉：Spring Boot 4.0.8 自带的 11.0.24 仍在若干已知高危漏洞的受影响范围内，
+             修复从 11.0.25 起，这里钉到 11.0.26；Boot 自带版本升到 11.0.25 及以上后可删这行 -->
+        <tomcat.version>11.0.26</tomcat.version>
         <!-- org.brotli:dec 在 Maven Central 上仅发布过 0.1.2 这一个版本 -->
         <brotli.version>0.1.2</brotli.version>
         <caffeine.version>3.2.0</caffeine.version>
