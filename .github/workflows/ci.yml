@@ -96,8 +96,15 @@ jobs:
         id: today
         run: echo "date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
 
-      - name: 缓存漏洞库
-        uses: actions/cache@v4
+      # 取与存拆成两步（cache/restore 与 cache/save）：一体的 actions/cache 在 job
+      # 收尾无条件保存，而扫描步带 continue-on-error——缺密钥、NVD 超时、下载到一半
+      # 断掉时 job 仍算成功，后置保存照样把当天那份空的或半截的库存进缓存。
+      # 缓存键存下就不能覆盖：当天重跑都还原这份坏库，次日 restore-keys 又可能
+      # 取回它，报告缺数据或接连失败，运行页却只见黄、看不出根子在缓存。
+      # 这一步只取（键与前缀与原先相同），存挪到扫描之后、看扫描结果才做
+      - name: 取回漏洞库存档
+        id: dc-cache
+        uses: actions/cache/restore@v4
         with:
           path: ${{ env.DC_DATA_DIR }}
           key: dependency-check-data-${{ steps.today.outputs.date }}
@@ -127,6 +134,17 @@ jobs:
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: mvn -B -Pinstall org.owasp:dependency-check-maven:13.0.0:check -Dformat=JSON -DskipTests -DnvdApiKeyEnvironmentVariable=NVD_API_KEY -DdataDirectory="$DC_DATA_DIR"
+
+      # 扫成才存：库没建全就存，存下的半截库比没有缓存更糟（缘由见上面取那步的
+      # 注释）。两个条件缺一不可——扫描没扫成（outcome 不是 success）不存；
+      # 取那步已精确命中当天键也不存：缓存不可变，同键再存是无用功。
+      # 键引用取那步给出的主键，不在第二处再写一遍日期表达式，免得两处各自漂移
+      - name: 存回漏洞库存档
+        if: steps.scan.outcome == 'success' && steps.dc-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.DC_DATA_DIR }}
+          key: ${{ steps.dc-cache.outputs.cache-primary-key }}
 
       # 不阻断，但不能让高危悄悄溜过去：结果显式贴到 job summary。
       # 「不阻断」省下的阻塞成本，必须用可见性补回来，否则等于没扫。
