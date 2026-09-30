@@ -56,6 +56,7 @@ class OneBotAtAllImageSplitTest {
 
     @BeforeEach
     void setUp() throws IOException {
+        LoopbackPort.assumeAllowed();
         http = new FakeOneBotHttpServer();
 
         executor = new ThreadPoolTaskExecutor();
@@ -85,8 +86,12 @@ class OneBotAtAllImageSplitTest {
 
     @AfterEach
     void tearDown() {
-        http.close();
-        executor.shutdown();
+        if (http != null) {
+            http.close();
+        }
+        if (executor != null) {
+            executor.shutdown();
+        }
     }
 
     @Test

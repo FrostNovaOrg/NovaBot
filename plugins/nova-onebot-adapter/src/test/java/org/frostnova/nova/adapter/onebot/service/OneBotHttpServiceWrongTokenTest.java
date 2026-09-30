@@ -51,6 +51,7 @@ class OneBotHttpServiceWrongTokenTest {
 
     @BeforeEach
     void setUp() throws IOException {
+        LoopbackPort.assumeAllowed();
         http = new FakeOneBotHttpServer();
         http.forbidSends();
 
@@ -81,8 +82,12 @@ class OneBotHttpServiceWrongTokenTest {
 
     @AfterEach
     void tearDown() {
-        http.close();
-        executor.shutdown();
+        if (http != null) {
+            http.close();
+        }
+        if (executor != null) {
+            executor.shutdown();
+        }
     }
 
     @Test

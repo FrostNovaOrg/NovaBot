@@ -97,6 +97,7 @@ class OneBotFragmentedMessageTest {
     @Test
     @DisplayName("⚠️ 对端一直发不收尾的分片：这条连接被断开，随后照常重连、照常收消息")
     void endlessFragmentsDropTheConnectionAndReconnect() throws Exception {
+        LoopbackPort.assumeAllowed();
         websocket = new FakeOneBotWebsocketServer();
 
         AtomicReference<FakeOneBotWebsocketServer.Frames> first = new AtomicReference<>();

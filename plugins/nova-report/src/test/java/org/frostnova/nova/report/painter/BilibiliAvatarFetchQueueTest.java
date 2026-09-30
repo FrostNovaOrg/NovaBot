@@ -85,6 +85,7 @@ class BilibiliAvatarFetchQueueTest {
 
     @BeforeEach
     void setUp() throws Exception {
+        LoopbackPort.assumeAllowed();
         source = new FakeSource();
 
         NovaCoreProperties coreProperties = new NovaCoreProperties();
@@ -109,7 +110,9 @@ class BilibiliAvatarFetchQueueTest {
 
     @AfterEach
     void tearDown() throws Exception {
-        source.close();
+        if (source != null) {
+            source.close();
+        }
         awaitFetchersDrained();
     }
 

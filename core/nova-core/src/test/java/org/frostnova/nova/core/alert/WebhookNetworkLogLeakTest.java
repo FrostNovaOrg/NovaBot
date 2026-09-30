@@ -99,6 +99,7 @@ class WebhookNetworkLogLeakTest {
      * 一个关着的端口：连接当场被拒，失败是真栈真文
      */
     private static int closedPort() throws IOException {
+        LoopbackPort.assumeAllowed();
         try (ServerSocket socket = new ServerSocket(0)) {
             return socket.getLocalPort();
         }
@@ -108,6 +109,7 @@ class WebhookNetworkLogLeakTest {
      * 一个照单全收的本机接收端：成功那两行得有个真 200 才写得出来
      */
     private static HttpServer okServer() throws IOException {
+        LoopbackPort.assumeAllowed();
         HttpServer server = HttpServer.create(new InetSocketAddress(HOST, 0), 0);
         server.createContext("/", exchange -> {
             exchange.sendResponseHeaders(200, -1);
