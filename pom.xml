@@ -68,6 +68,12 @@
         <caffeine.version>3.2.0</caffeine.version>
         <!-- 弹幕词云的分词，jieba 的 Java 移植；排版与绘制在仓内自己实现 -->
         <jieba-analysis.version>1.0.2</jieba-analysis.version>
+
+        <!--
+            测试进程的附加参数。命令行 -DargLine 会接到测试进程上；
+            不传时这一项是空串，进程不会看到没替换掉的占位符。
+        -->
+        <argLine></argLine>
     </properties>
 
     <dependencyManagement>
@@ -225,10 +231,31 @@
                 🔴 挂在 surefire 上而不是 testResources 里：各插件模块把 maven-resources-plugin 的 resources
                 配在插件层，testResources 目标也读到它，写在 testResources 里的目录到不了插件模块的测试类路径。
             -->
+            <!--
+                把每个依赖的 jar 路径记成属性，供下面的测试进程按坐标取 Mockito 那一枚，
+                不写死版本和目录。
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>test-dependency-paths</id>
+                        <goals>
+                            <goal>properties</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <!--
+                测试进程一起动就挂上 Mockito 代理，mock 不必再等进程起来后连回本进程。
+                命令行 -DargLine 里的参数仍会带上；没传时不把占位符原样交给进程。
+            -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
+                    <argLine>${argLine} @{argLine} -javaagent:${org.mockito:mockito-core:jar}</argLine>
                     <additionalClasspathElements>
                         <additionalClasspathElement>${maven.multiModuleProjectDirectory}/build-tools/test-logging</additionalClasspathElement>
                     </additionalClasspathElements>
