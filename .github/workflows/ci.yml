@@ -69,6 +69,13 @@ jobs:
   dependency-check:
     name: 依赖漏洞扫描
     runs-on: ubuntu-latest
+    # 漏洞库是一套随 NVD 数据增长的 SQL 库，放在 runner 的用户主目录下、仓库之外。
+    # 插件说明里查不到 dataDirectory 的默认值：不显式指定，库就落在插件的隐式位置，
+    # 没法给它配专用缓存——setup-java 那条 maven 缓存的键跟着 pom 摘要走，pom 一改
+    # 就换键，混在里面的漏洞库跟着重置；放进 checkout 出来的树里则会混进汇总步
+    # find . 的报告搜索。路径只在这一处定义，下面的缓存步与扫描命令都引用它
+    env:
+      DC_DATA_DIR: /home/runner/dependency-check-data
     steps:
       - uses: actions/checkout@v4
 
@@ -82,7 +89,25 @@ jobs:
       - name: 安装构建插件
         run: mvn -B -f build-tools/nova-plugin-processor/pom.xml install -DskipTests
 
+      # 缓存键按 UTC 日期逐日换新：同一天的重跑共享同一份存档，跨天自动开新的；
+      # restore-keys 前缀兜底＝哪怕隔了些天，也先取回最近一份，扫描时只补增量。
+      # 从零建库要把整个 NVD 数据集拉下来，是这一 job 里最耗时、最容易超时的一段
+      - name: 记下当天日期做缓存键
+        id: today
+        run: echo "date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+
+      - name: 缓存漏洞库
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.DC_DATA_DIR }}
+          key: dependency-check-data-${{ steps.today.outputs.date }}
+          restore-keys: |
+            dependency-check-data-
+
       - name: 扫描已知漏洞
+        # 给汇总步留个把手：本步骤带 continue-on-error，失败会被吞掉，job 照样绿；
+        # 汇总步要靠 steps.scan.outcome 才知道这次到底扫没扫成
+        id: scan
         # 本步骤**只出报告，永不阻断构建**：上游依赖的修复节奏不受本仓库控制。
         #
         # ⚠️ 这里原本还带着 -DfailBuildOnCVSS=8。那个参数在 continue-on-error: true
@@ -91,7 +116,17 @@ jobs:
         continue-on-error: true
         # 出 JSON 不出 CSV：CSV 的描述字段含逗号，任何按分隔符切列的读法都会错位，
         # 而错位的表现是「没找到高危」——与真的没有高危一模一样
-        run: mvn -B -Pinstall org.owasp:dependency-check-maven:check -Dformat=JSON -DskipTests
+        # 插件版本钉死在 13.0.0：坐标不带版本时 Maven 每次解析成 13.x 的最新版，
+        # 参数名、报告格式、漏洞库的存放格式都可能随上游小版本变——扫描器的行为
+        # 不该跟着别人家的发版漂
+        #
+        # 密钥只经环境变量进扫描步：插件说明点名直接用 -DnvdApiKey 递值会让 Maven
+        # 调试日志把密钥打出来（GHSA-qqhq-8r2c-c3f5），并写明 CI 场景的推荐传法是
+        # nvdApiKeyEnvironmentVariable。命令行里这个 -D 带的只是环境变量的名字、
+        # 不是值——命令行会原样进日志，值由 Actions 从仓库密钥库注入 env
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        run: mvn -B -Pinstall org.owasp:dependency-check-maven:13.0.0:check -Dformat=JSON -DskipTests -DnvdApiKeyEnvironmentVariable=NVD_API_KEY -DdataDirectory="$DC_DATA_DIR"
 
       # 不阻断，但不能让高危悄悄溜过去：结果显式贴到 job summary。
       # 「不阻断」省下的阻塞成本，必须用可见性补回来，否则等于没扫。
@@ -102,6 +137,13 @@ jobs:
       # **解析坏掉的表现与真的没有漏洞完全一样**，所以必须有阳性对照。
       - name: 高危漏洞进 job summary
         if: always()
+        env:
+          # 扫描步骤的 continue-on-error 让 job 永远绿着；outcome 是它被豁免前的
+          # 真实结果，「这次扫没扫成」要靠它判断，不能靠 job 结论
+          SCAN_OUTCOME: ${{ steps.scan.outcome }}
+          # 只用来判空、绝不回显：密钥缺失是「没扫成」最常见的成因，
+          # 值得在运行页上单独点名，但值本身一个字节都不能落到日志里
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: |
           set -euo pipefail
           chmod +x .github/scripts/high-cvss.sh .github/scripts/no-cvssv3.sh
@@ -118,6 +160,19 @@ jobs:
           # ② 所有模块的报告都要看。上一版 `find | head -1` 只取第一份，
           #    其余模块的结果整个不看，而那同样表现为「没发现」
           mapfile -t REPORTS < <(find . -name 'dependency-check-report.json' | sort)
+
+          # 「没扫成」要亮在运行页上（::warning:: 注解），不能只沉在 job summary 里：
+          # summary 要点开才看得见，而没扫成的运行页和全绿的运行页长得一样。
+          # 两种情形都算没扫成：扫描步骤自己退非零（outcome），或跑完了却一份报告
+          # 都没落下来。只亮黄、不让 job 失败：这个 job 的职责是出报告，
+          # 「没扫成要不要拦推送」是另一个决定，不该在这里悄悄换掉
+          if [ "$SCAN_OUTCOME" = "failure" ] || [ "${#REPORTS[@]}" -eq 0 ]; then
+            echo "::warning::依赖漏洞扫描这次没扫成（扫描步骤 outcome=$SCAN_OUTCOME，报告 ${#REPORTS[@]} 份）——别把结果栏的空白当成没有漏洞"
+            # 密钥是空的最常见也最好查，单独点名，省得去几千行日志里翻 NvdApiException
+            if [ -z "$NVD_API_KEY" ]; then
+              echo "::warning::Actions 密钥 NVD_API_KEY 是空的——扫描拿不到密钥会直接中止，请先在仓库设置里把它配好"
+            fi
+          fi
 
           {
             echo "## 依赖漏洞扫描"
