@@ -1857,6 +1857,9 @@ export async function save() {
 
 /**
  * 配置文件里只有 uid，昵称要另行补全才显示得出来
+ *
+ * 先现场去平台查；查不回（断网、被风控）时退回程序手上已有的昵称——内存里的，
+ * 或最近一场归档里的，与运行状态页、主播页同一种取法。都没有才照 uid 显示。
  */
 export async function decoratePushData() {
   await Promise.all((pushData || []).map(async user => {
@@ -1871,7 +1874,15 @@ export async function decoratePushData() {
         user._uname = res.uname;
         user._roomId = res.roomId;
         user._face = res.face;
+        return;
       }
+    } catch (e) {
+      // 现场查失败，往下退回手上已有的昵称
+    }
+    try {
+      const known = await api('/streamer/name?platform=' + encodeURIComponent(user.platform)
+        + '&uid=' + encodeURIComponent(String(user.uid)));
+      if (known.success) user._uname = known.uname;
     } catch (e) {
       // 补全失败不影响配置本身，仍以 uid 展示
     }
