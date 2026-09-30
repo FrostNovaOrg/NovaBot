@@ -257,8 +257,9 @@ class GenericConfigSaveOnlyAcceptsRegisteredKeysTest {
                 "键名段含换行时整批该拒写");
 
         assertAll(
-                () -> assertTrue(error.getMessage() != null && error.getMessage().contains("键名"),
-                        "报错要说清是键名的问题, 实际=" + error.getMessage()),
+                () -> assertTrue(error.getMessage() != null && error.getMessage().contains("名字")
+                                && error.getMessage().contains("只能用"),
+                        "报错要说清是名字的问题、给出允许的字, 实际=" + error.getMessage()),
                 () -> assertEquals(before, fileText(),
                         "拒写时配置文件一个字都不该动, 实际=\\n" + fileText()));
     }
