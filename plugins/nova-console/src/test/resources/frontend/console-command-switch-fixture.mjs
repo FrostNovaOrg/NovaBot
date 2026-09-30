@@ -12,6 +12,10 @@
  *
  * 各问各自 try/catch，末尾汇总红格数，不靠 assert 短路。
  * 由 ConsoleCommandSwitchFixtureTest 拉起。量的是源码树里那一份，不是构建产物里的副本。
+ *
+ * 「不可关闭」那两问守的是摆位归属：四个字摆在左边开关位上时，字尾正好顶着右边组名，
+ * 读起来像「不可关闭命令管理」连成一串。该写进右边文字列的标记里（与「仅管理员」同一写法），
+ * 开关那一列留同宽空位，各行文字列照旧对齐。只查节点归属，不量像素。
  */
 
 import {register} from 'node:module';
@@ -359,6 +363,31 @@ function groupHead(scope, category) {
   return box ? (box.children[0] || null) : null;
 }
 
+/** 行里右边那一列：组名、命令名与旁注都摆在这一列 */
+function swtxtOf(row) {
+  return (row.children || []).find(node =>
+    String(node.className || '').split(/\s+/).includes('swtxt')) || null;
+}
+
+/** 开关那一列的位子：不可关闭的行没有开关可画，留同宽空位让各行文字列照旧对齐 */
+function slotOf(row) {
+  return (row.children || []).find(node =>
+    String(node.className || '').split(/\s+/).includes('cmdslot')) || null;
+}
+
+/** 右边文字列里那个标记写着什么（「不可关闭」「仅管理员」这些旁注） */
+function markTextOf(row) {
+  const match = /class="cmdmark">([^<]*)</.exec(String((swtxtOf(row) || {}).innerHTML || ''));
+  return match ? match[1] : null;
+}
+
+/** 一条命令的行：文字列里写着命令正名 */
+function commandLineOf(scope, name) {
+  return allNodes(scope).find(node =>
+    String(node.className || '').split(/\s+/).includes('swrow')
+    && String((swtxtOf(node) || {}).innerHTML || '').includes('<b>' + name + '</b>')) || null;
+}
+
 await ask('① 群里关掉的那两种用法，页面上都显示成关着，主开关也没有亮着', async () => {
   if (!sessions || !model) throw new Error('产品码没载入，无从量起');
   paintWith(['开播@名单', '动态@名单']);
@@ -443,25 +472,29 @@ await ask('④ 只有一种用法的命令，开关还是它自己那一个（�
   }, '单用法命令');
 });
 
-await ask('⑦ 一组里的命令全都不可关闭时，组上不画开关，写明不可关闭', async () => {
+await ask('⑦ 一组全都不可关闭：不画开关、开关位留空位，「不可关闭」写进文字列的标记里', async () => {
   if (!sessions || !model) throw new Error('产品码没载入，无从量起');
   paintWith([]);
 
   const head = groupHead(host, '命令管理');
   if (!head) throw new Error('命令管理这一组没有画出来');
   const sw = inputByLabel(head, '命令管理');
-  const locks = allNodes(head).filter(node =>
-    String(node.className || '').split(/\s+/).includes('cmdlock'));
+  const slot = slotOf(head);
+  const html = String((swtxtOf(head) || {}).innerHTML || '');
   const openHead = groupHead(host, '提醒');
   if (!openHead) throw new Error('提醒这一组没有画出来');
 
   same({
     '组开关画出来了': !!sw,
-    '组上的字': locks.map(node => node.textContent),
+    '开关位留着空位': !!slot && slot.textContent === '',
+    '文字列标记里的字': markTextOf(head),
+    '标记排在组名后面': html.indexOf('命令管理') >= 0 && html.indexOf('不可关闭') > html.indexOf('命令管理'),
     '还能关的那组仍有开关': !!inputByLabel(openHead, '提醒'),
   }, {
     '组开关画出来了': false,
-    '组上的字': ['不可关闭'],
+    '开关位留着空位': true,
+    '文字列标记里的字': '不可关闭',
+    '标记排在组名后面': true,
     '还能关的那组仍有开关': true,
   }, '整组不可关闭');
 });
@@ -493,6 +526,31 @@ await ask('⑥ 状态文件里留着的旧命令正名，算残留记录（阴�
     '被关的那几格': [],
     '残留记录': ['@名单'],
   }, '旧正名算残留');
+});
+
+await ask('⑧ 单条命令不可关闭时，「不可关闭」同样写在文字列标记里；关得掉的那条不带这个标记', async () => {
+  if (!sessions || !model) throw new Error('产品码没载入，无从量起');
+  paintWith([]);
+
+  const lockLine = commandLineOf(host, '菜单');
+  const plainLine = commandLineOf(host, '直播报告');
+  if (!lockLine) throw new Error('菜单那一行没有画出来');
+  if (!plainLine) throw new Error('直播报告那一行没有画出来');
+  const slot = slotOf(lockLine);
+
+  same({
+    '不可关闭那条有开关': !!inputByLabel(lockLine, '菜单'),
+    '不可关闭那条开关位留着空位': !!slot && slot.textContent === '',
+    '不可关闭那条标记里的字': markTextOf(lockLine),
+    '关得掉那条有开关': !!inputByLabel(plainLine, '直播报告'),
+    '关得掉那条标记里的字': markTextOf(plainLine),
+  }, {
+    '不可关闭那条有开关': false,
+    '不可关闭那条开关位留着空位': true,
+    '不可关闭那条标记里的字': '不可关闭',
+    '关得掉那条有开关': true,
+    '关得掉那条标记里的字': null,
+  }, '单条不可关闭');
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

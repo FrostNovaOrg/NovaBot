@@ -178,14 +178,12 @@ function commandGroup(ctx, group) {
   const box = el('div', 'cgroup');
   const commands = group.commands || [];
   // 这一组每一条都不可关闭时，没有开关可画。画一个关着且拨不动的，
-  // 看起来像整组被关掉了。与单条命令同一写法，写明「不可关闭」。
+  // 看起来像整组被关掉了。与单条命令同一写法：开关位留空位，「不可关闭」写进文字列的标记里。
   const noneClosable = commands.length > 0 && commands.every(command => !command.disableable);
 
   const head = el('div', 'swrow');
   if (noneClosable) {
-    const lock = el('span', 'cmdlock');
-    lock.textContent = '不可关闭';
-    head.appendChild(lock);
+    head.appendChild(el('span', 'cmdslot'));
   } else {
     // 组开关按格起算：一格关着、另一格还开的半开组不算全开
     const cells = group.cells || [];
@@ -200,8 +198,11 @@ function commandGroup(ctx, group) {
   }
 
   const text = el('div', 'swtxt');
+  const marks = [];
+  if (noneClosable) marks.push('不可关闭');
   text.innerHTML = '<b>' + esc(group.category) + ' <span class="dim">'
-    + group.total + ' 条</span></b>';
+    + group.total + ' 条</span></b>'
+    + (marks.length ? '<span class="cmdmark">' + esc(marks.join(' · ')) + '</span>' : '');
   head.appendChild(text);
 
   const fine = el('button', 'ghost');
@@ -250,13 +251,13 @@ function commandLine(ctx, command) {
     });
     line.appendChild(label);
   } else {
-    const lock = el('span', 'cmdlock');
-    lock.textContent = '不可关闭';
-    line.appendChild(lock);
+    // 开关位留同宽空位，「不可关闭」写进文字列的标记里
+    line.appendChild(el('span', 'cmdslot'));
   }
 
   const text = el('div', 'swtxt');
   const marks = [];
+  if (!command.disableable) marks.push('不可关闭');
   if (command.requiresAdmin) marks.push('仅管理员');
   // 整条写「已被群管理员禁用」的条件是每一格都关着：一格关着、另一格还答的话，
   // 这条命令仍然答得出话，写上去就成了谎报

@@ -1,5 +1,7 @@
 package org.frostnova.nova.report.painter;
 
+import org.frostnova.nova.report.util.FontUtil;
+
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Rectangle;
@@ -82,10 +84,22 @@ final class WordCloudLayout {
         }
         return best;
     }
-    /** 过长整句缩略展示，原始文字和词频仍保留在输入数据中。 */
+    /** 过长整句缩略展示，原始文字和词频仍保留在输入数据中。
+     * 名额只数看得见的字：变体选择符不占。末一个字连着跟在它后面的变体选择符一起留，不拆开。 */
     private static String displayLabel(String text) {
         int[] cp=text.codePoints().toArray();
-        return cp.length<=12?text:new String(cp,0,11)+"…";
+        int visible=0;
+        for(int c:cp) if(!FontUtil.isVariantSelector(c)) visible++;
+        if(visible<=12) return text;
+        int kept=0,end=0;
+        for(;end<cp.length;end++) {
+            if(FontUtil.isVariantSelector(cp[end])) continue;
+            if(++kept<11) continue;
+            end++;
+            while(end<cp.length && FontUtil.isVariantSelector(cp[end])) end++;
+            break;
+        }
+        return new String(cp,0,end)+"…";
     }
     /** 同样不丢词时取外接框更宽的那份；丢词更少的优先于更宽。 */
     private static Result wider(Result best,Result r) {
