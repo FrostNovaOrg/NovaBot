@@ -228,22 +228,26 @@ function renderHome(status, login, timeline, pages, pluginDone) {
 }
 
 /**
- * 取三份数据再一次性画完
+ * 取数据再一次性画完
  *
- * 三个请求并发发出、一起等：分几次画的话，链路已经按新的一份数据变红，
+ * 请求并发发出、一起等：分几次画的话，链路已经按新的一份数据变红，
  * 而待办还是上一份算出来的——两块说的是同一件事，屏幕上却互相矛盾。
+ * 失败与告警另取一份：时间线最近一页装不下时，更早的失败不在这一页里，
+ * 只从这一页里数就会像没出过事。这一趟单独接住错误：取不到时按没有这份数据，
+ * 短条退回从这一页里数，首页其余照常画。原来三趟出错仍让整页载入失败。
  * 插件带来的首页卡各自取自己那一份，由随后的 refreshPages 通知它们。
  * @return 这一趟取到的运行状态，取不到时为 null
  */
 export async function refreshHome() {
   try {
-    const [status, login, timeline] = await Promise.all([
+    const [status, login, timeline, problems] = await Promise.all([
       api('/status'), api('/login'), api('/timeline?date=' + today()),
+      api('/timeline?date=' + today() + '&problems=true').catch(() => null),
     ]);
     const extra = await pluginFacts(status, login);
     if (considerSetupRedirect(status, login)) return status;
     renderStatus(status);
-    renderHome(status, login, timeline, extra.pages, extra.pluginDone);
+    renderHome(status, login, Object.assign({}, timeline, {problems}), extra.pages, extra.pluginDone);
     refreshPages();
     return status;
   } catch (e) {

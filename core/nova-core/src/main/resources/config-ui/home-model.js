@@ -481,18 +481,24 @@ function now(status, chain, fresh) {
  * 失败与告警置顶，整段不超过八条。多出来的失败与告警收成一行，
  * 写还有几条失败或告警，点了去日志页。普通记录不计入这一行。
  * 失败没把八条占满时，其余按时间补进去，普通记录最多六条。
+ * 条数按当天全部失败与告警来数。时间线最近一页装不下的那些也要算上，
+ * 否则开播下播多的那一天，首页会像没出过事。显示的仍是最新的几条。
  * 首页只留这一段，筛选、搜索、翻天都在日志页——两处各摆一套筛选，改了一处另一处就开始骗人。
- * @param timeline /api/timeline 回包
+ * @param timeline /api/timeline 回包；problems 为当天失败与告警（另取的那一份）
  * @return 要显示的事件；溢出时末行带 href，点了去日志页
  */
 function shortStrip(timeline) {
   const events = (timeline && timeline.events) || [];
-  const bad = events.filter(item => item.level && item.level !== 'info');
+  const problems = timeline && timeline.problems;
+  const bad = (problems && Array.isArray(problems.events))
+    ? problems.events
+    : events.filter(item => item.level && item.level !== 'info');
+  const total = (problems && typeof problems.matched === 'number') ? problems.matched : bad.length;
   const rest = events.filter(item => !item.level || item.level === 'info');
   const limit = 8;
-  if (bad.length > limit) {
+  if (total > limit) {
     const shown = bad.slice(0, limit - 1);
-    return shown.concat([{text: '还有 ' + (bad.length - shown.length) + ' 条失败或告警', href: '#/log'}]);
+    return shown.concat([{text: '还有 ' + (total - shown.length) + ' 条失败或告警', href: '#/log'}]);
   }
   return bad.concat(rest.slice(0, Math.max(0, Math.min(6, limit - bad.length))));
 }

@@ -260,6 +260,21 @@ try {
 }
 same(q4, {'走的是哪条路': '不给拨'}, '④ 没绑时拨关走的是哪条路');
 
+// ⑥ 已绑验证器时把开关拨到关，要走进关断那一段：问现在的密码，再问验证器上的码。
+// 这一分派断了的话，开关当场弹回，已绑的人在设置页关不掉二次验证。
+let q6 = 'missing';
+try {
+  const {row} = paint({...LOCKED, totpEnabled: true, totpRequired: true});
+  const flowNode = findById(row, 'totp-flow');
+  const input = findById(row, 'totp-switch');
+  input.checked = false;
+  fireChange(input);
+  q6 = {'走的是哪条路': roadOf(flowNode)};
+} catch (e) {
+  q6 = 'error:' + e.message;
+}
+same(q6, {'走的是哪条路': '关断'}, '⑥ 已绑验证器时拨关，走的是关断那一段');
+
 // ⑤ 阴性对照：这张卡只画在上过锁的机器上，没锁时不该冒出一个开关来
 let q5 = 'missing';
 try {

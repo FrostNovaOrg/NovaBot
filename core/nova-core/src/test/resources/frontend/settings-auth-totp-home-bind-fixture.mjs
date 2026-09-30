@@ -221,8 +221,17 @@ try {
   enroll.click();
   await flush();
 
-  // 三、屏幕上那颗当场跟上；再画一次（进设置页那条路）也要是同一档
+  // 三、屏幕上那颗当场跟上；再画一次（进设置页那条路）也要是同一档。
+  // 重画时旁注与开关本身要一致：旁注写「已启用」、开关仍画成关着的话，
+  // 再拨一下会走进绑定，而不是关掉已经绑上的二次验证。
   const live = readSwitch();
+  same({
+    '旁注': live.label,
+    '开关开着': !!(live.input && live.input.checked),
+  }, {
+    '旁注': '已启用',
+    '开关开着': true,
+  }, '首页卡里绑好后，设置页开关重画成开着，与旁注一致');
   clearCards();
   const again = repaint();
 

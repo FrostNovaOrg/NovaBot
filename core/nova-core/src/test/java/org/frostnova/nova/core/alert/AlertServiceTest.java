@@ -782,9 +782,16 @@ class AlertServiceTest {
             assertEquals("QQ发不出去：登录已失效", recorded.get(0).text());
             assertEquals("QQ已报出（重投第 1 次）：登录已失效", recorded.get(1).text(),
                     "补发成功也要标明第几次；得到：" + recorded.get(1).text());
-            assertTrue(appender.list.stream().anyMatch(event ->
-                            event.getFormattedMessage().contains("已尝试 1 次）")),
-                    "「已尝试」的次数要和日志页同一个数；得到：" + appender.list);
+            String recoveredLine = appender.list.stream()
+                    .map(ILoggingEvent::getFormattedMessage)
+                    .filter(message -> message.contains("补发成功"))
+                    .findFirst()
+                    .orElse("");
+            System.out.println("补发成功那句：" + recoveredLine);
+            assertTrue(recoveredLine.contains("重投第 1 次补发成功"),
+                    "补发成功要写明第几次重投；得到：" + recoveredLine);
+            assertFalse(recoveredLine.contains("已尝试"),
+                    "补发成功不再写已尝试几次；得到：" + recoveredLine);
 
             channels.clear();
             recorded.clear();
@@ -806,7 +813,8 @@ class AlertServiceTest {
             blockedRetry.failing = false;
             blockedRetry.blockedByMasterSwitch = true;
             blocked.retryPending();
-            assertEquals("QQ发不出去（全局推送开关已关闭，这条告警没有发出）（重投第 1 次）：登录已失效",
+            System.out.println("被拦下那句：" + recorded.get(1).text());
+            assertEquals("QQ发不出去（全局推送开关已关闭，这条告警没有发出；重投第 1 次）：登录已失效",
                     recorded.get(1).text(),
                     "重投被拦下也要标明第几次；得到：" + recorded.get(1).text());
 
