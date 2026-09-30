@@ -253,4 +253,104 @@ class ListSaveKeepsWrittenFormTest {
         assertFalse(refused.getMessage().contains("套着"), "里面没有套着的写法, 拒语不该提: " + refused.getMessage());
         System.out.println("没收口被拒: " + refused.getMessage());
     }
+
+    /**
+     * 抓的用户故障：名单跨了行、中间夹了空行或注释行，界面上这一格却是能改的框，
+     * 改完点保存整批被拒，同批别的改动也没存上。
+     */
+    @Test
+    @DisplayName("🔴 跨行夹空行、注释行的名单：界面锁住, 说明与拒语同说夹了行; 显示仍是读到的各项; 原样送回不写, 改了才拒")
+    void interruptedCrossLineListIsLockedOnUi() throws IOException {
+        String key = "novabot.demo.copy";
+        String[][] cases = {
+                {"夹空行", "novabot:\n  demo:\n    copy: [a,\n\n      b]\n    tail: 1\n"},
+                {"夹注释行", "novabot:\n  demo:\n    copy: [a,\n      # 注\n      b]\n    tail: 1\n"},
+        };
+        List<String> bad = new ArrayList<>();
+        for (String[] c : cases) {
+            try {
+                write(c[1]);
+                String text = content();
+                String lock = service.uiLocked().get(key);
+                assertNotNull(lock, "夹空行的跨行名单, 界面上这一格应锁住");
+                assertTrue(lock.contains("跨了行") && lock.contains("夹着空行") && lock.contains("注释行"),
+                        "锁的说明该说名单跨了行、中间夹着空行或注释行: " + lock);
+                assertFalse(lock.contains("套着"), "里面没有套着的写法, 说明不该提: " + lock);
+                assertEquals("a\nb", service.read().get(key), "锁住后显示的仍是启动读到的各项, 一行一项");
+                assertEquals(List.of(), service.write(Map.of(key, "a\nb")), "原样送回＝没改, 应放行且不算改动");
+                assertEquals(text, content(), "原样送回不该写文件");
+                IOException refused = assertThrows(IOException.class,
+                        () -> service.write(Map.of(key, "z")), "改了应整批拒存");
+                assertTrue(refused.getMessage().contains(lock), "拒语应与界面那把锁同一说法: " + refused.getMessage());
+                assertEquals(text, content(), "拒存时文件一个字节不动");
+                System.out.println(c[0] + "锁说明: " + lock);
+            } catch (AssertionError | IOException | RuntimeException e) {
+                bad.add(c[0] + ": " + e.getMessage());
+            }
+        }
+        assertTrue(bad.isEmpty(), () -> String.join("\n", bad));
+    }
+
+    /**
+     * 抓的用户故障：名单的方括号忘了收口，界面上这一格是能改的框，改完点保存整批被拒；
+     * 框里还只显示键那一行的半截「[a,」，看不出名单里到底写了什么。
+     */
+    @Test
+    @DisplayName("🔴 方括号没收口就到了下一个键：界面锁住, 说明与拒语同说没收口; 显示原文整段不显示半截; 原样送回不写, 改了才拒")
+    void unclosedCrossLineListIsLockedAndShowsWholeSpan() throws IOException {
+        String key = "novabot.demo.copy";
+        write("novabot:\n  demo:\n    copy: [a,\n      b\n    tail: 1\n");
+        String text = content();
+        String lock = service.uiLocked().get(key);
+        assertNotNull(lock, "没收口的跨行名单, 界面上这一格应锁住");
+        assertTrue(lock.contains("跨了行") && lock.contains("没有收口"), "锁的说明该说名单跨了行、方括号没有收口: " + lock);
+        assertFalse(lock.contains("套着"), "里面没有套着的写法, 说明不该提: " + lock);
+        String shown = service.read().get(key);
+        assertEquals("[a, b", shown, "该显示整段原文, 不是键那一行的半截");
+        System.out.println("没收口锁说明: " + lock);
+        System.out.println("没收口显示: " + shown);
+        assertEquals(List.of(), service.write(Map.of(key, shown)), "原样送回＝没改, 应放行且不算改动");
+        assertEquals(text, content(), "原样送回不该写文件");
+        IOException refused = assertThrows(IOException.class,
+                () -> service.write(Map.of(key, "z")), "改了应整批拒存");
+        assertTrue(refused.getMessage().contains(lock), "拒语应与界面那把锁同一说法: " + refused.getMessage());
+        assertEquals(text, content(), "拒存时文件一个字节不动");
+    }
+
+    /**
+     * 抓的用户故障：跨行名单收了口、里面套着花括号或「词: 值」，界面上这一格是能改的框，
+     * 改完点保存整批被拒；框里还只显示键那一行的半截「[{a: 1},」，看不出名单里到底写了什么。
+     */
+    @Test
+    @DisplayName("🔴 收了口但里面套着的跨行名单：界面锁住, 说明与拒语同说套着; 显示原文整段不显示半截; 原样送回不写, 改了才拒")
+    void nestedCrossLineListIsLockedAndShowsWholeSpan() throws IOException {
+        String key = "novabot.demo.copy";
+        String[][] cases = {
+                {"全是套着的项", "novabot:\n  demo:\n    copy: [{a: 1},\n      {b: 2}]\n    tail: 1\n", "[{a: 1}, {b: 2}]"},
+                {"普通项与套着的混写", "novabot:\n  demo:\n    copy: [a,\n      {b: 2}]\n    tail: 1\n", "[a, {b: 2}]"},
+        };
+        List<String> bad = new ArrayList<>();
+        for (String[] c : cases) {
+            try {
+                write(c[1]);
+                String text = content();
+                String lock = service.uiLocked().get(key);
+                assertNotNull(lock, "套着的跨行名单, 界面上这一格应锁住");
+                assertTrue(lock.contains("跨了行") && lock.contains("套着"), "锁的说明该说名单跨了行、里面套着: " + lock);
+                assertFalse(lock.contains("空行"), "没夹空行的说明不该提空行: " + lock);
+                assertEquals(c[2], service.read().get(key), "该显示整段原文, 不是键那一行的半截");
+                assertEquals(List.of(), service.write(Map.of(key, c[2])), "原样送回＝没改, 应放行且不算改动");
+                assertEquals(text, content(), "原样送回不该写文件");
+                IOException refused = assertThrows(IOException.class,
+                        () -> service.write(Map.of(key, "z")), "改了应整批拒存");
+                assertTrue(refused.getMessage().contains(lock), "拒语应与界面那把锁同一说法: " + refused.getMessage());
+                assertEquals(text, content(), "拒存时文件一个字节不动");
+                System.out.println(c[0] + "锁说明: " + lock);
+                System.out.println(c[0] + "显示: " + c[2]);
+            } catch (AssertionError | IOException | RuntimeException e) {
+                bad.add(c[0] + ": " + e.getMessage());
+            }
+        }
+        assertTrue(bad.isEmpty(), () -> String.join("\n", bad));
+    }
 }
