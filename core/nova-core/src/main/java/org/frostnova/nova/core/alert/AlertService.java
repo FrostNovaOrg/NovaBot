@@ -462,8 +462,8 @@ public class AlertService {
                     case SENT -> {
                         anySuccess.set(true);
                         if (alert.attempts() > 0) {
-                            log.info("告警通道已恢复, 补发成功: [{}] {} （发生于 {}, 已尝试 {} 次）",
-                                    alert.key(), alert.subject(), alert.occurredAtText(), alert.attempts());
+                            log.info("告警通道已恢复, 重投第 {} 次补发成功: [{}] {} （发生于 {}）",
+                                    alert.attempts(), alert.key(), alert.subject(), alert.occurredAtText());
                         }
                         timeline.record(TimelineEvent.of(TimelineEventType.ALERT_SENT, TimelineEvent.Level.INFO)
                                 .channel(channelName)
@@ -562,10 +562,14 @@ public class AlertService {
     /**
      * 日志页上的一句。第一次投递不额外标注。重投在冒号前写明这是第几次，
      * 免得隔几秒又是同样一句，看着像同一条告警报了两遍。
+     * 头上已经有一对括号时，重投序号并进同一对，用分号隔开，免得两对括号挨在一起。
      * 这个次数与工程日志里「已尝试多少次」「重投多少次仍失败」是同一个数。
      */
     private static String timelineText(String head, int attempts, String subject) {
         if (attempts > 0) {
+            if (head.endsWith("）")) {
+                return head.substring(0, head.length() - 1) + "；重投第 " + attempts + " 次）：" + subject;
+            }
             return head + "（重投第 " + attempts + " 次）：" + subject;
         }
         return head + "：" + subject;
