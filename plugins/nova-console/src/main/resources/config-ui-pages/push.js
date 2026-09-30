@@ -119,9 +119,9 @@ button.danger:hover{border-color:var(--err);color:var(--err)}
    使用者会以为这条命令不存在，而它只是在这个会话里不列 */
 .swrow.dimmed{opacity:.6}
 .cmdmark{margin-left:8px;font-size:12.5px;color:var(--dim);font-weight:400}
-/* 「不可关闭」四个字塞不进开关那 38px，让它单行撑出去：字尾正好落在右边文字列起点上，
-   文字列的对齐照旧。长句另摆在右边那一列，不挤进这 38px */
-.cmdlock{flex:none;width:38px;font-size:12px;color:var(--dim);line-height:22px;white-space:nowrap}
+/* 不可关闭的那几行没有开关可画，开关那 38px 留同宽空位：各行文字列照旧对齐。
+   「不可关闭」写进右边文字列的标记里，与「仅管理员」同一写法 */
+.cmdslot{flex:none;width:38px}
 /* 模板那一行的读态 */
 .tplstate{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--soft);
   border:1px solid var(--softline);border-radius:var(--r-ctl);padding:9px 12px;
