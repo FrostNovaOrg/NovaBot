@@ -299,7 +299,7 @@ public class ConfigurationFileService {
     }
 
     /** 值里带换行，单行框装不下 */
-    private static final String LOCK_MULTILINE = "这一项在配置文件里写成了多行文字（块标量「|」「>」或跨了行的值），"
+    private static final String LOCK_MULTILINE = "这一项在配置文件里占了好几行（值写在「|」或「>」号下面，或折到了下一行），"
             + "值里带换行，这一格只装得下一行；这里显示的是程序实际读到的值，要改请到配置文件里改。";
 
     /** 名单里有一项带换行，每行一项的框表达不了 */
@@ -354,8 +354,8 @@ public class ConfigurationFileService {
             + "（比如不带引号的 yes 读成 true），在界面改会换掉原来的写法；这里显示的是程序实际读到的值，要改请到配置文件里改。";
 
     /** 名单项与启动读到的对不上号 */
-    private static final String LOCK_LIST_UNREADABLE = "这份名单在配置文件里的写法界面读不准（项里套着子项或别的手写写法），"
-            + "为不写错不在界面改；要改请到配置文件里改。";
+    private static final String LOCK_LIST_UNREADABLE = "这份名单在配置文件里的写法界面读不准（有的项折到了好几行、"
+            + "或以「|」「*名字」「&名字」这样的记号开头），为不写错不在界面改；要改请到配置文件里改。";
 
     /** 启动那一路也读不出来 */
     private static final String LOCK_UNREADABLE = "这一项的写法界面读不准，而程序启动时读这份配置文件也没读出这一项，"
@@ -418,7 +418,11 @@ public class ConfigurationFileService {
                     inheriting.add(line.path);
                 }
                 if (loaded == null) {
-                    locked.put(line.path, LOCK_UNREADABLE);
+                    // 整份读不通、或文件分了几段，比不了（checkAsLoaded 对这种文件也是照旧写）：
+                    // 键行上没有记号、已按名单收下的照改前办——不锁、照旧可改；其余写法读不准，照旧锁
+                    if (!line.flowInline || hasNoValue(line.rawValue)) {
+                        locked.put(line.path, LOCK_UNREADABLE);
+                    }
                     continue;
                 }
                 Object value = loaded.get(line.path);
@@ -961,6 +965,8 @@ public class ConfigurationFileService {
         if (changes.isEmpty()) {
             return List.of();
         }
+        // 调用方送来的可以是不许改的表：rejectLockedChanges 要从本批剔除原样送回的继承项，先备一份可动的
+        changes = new LinkedHashMap<>(changes);
 
         createIfAbsent();
 
@@ -1030,9 +1036,13 @@ public class ConfigurationFileService {
 
             if (line.flowUnreadable) {
                 // 跨行行内名单读不了的写法：就地替换只动键那一行，续行留成孤行会写坏整份文件，
-                // 宁可拒存并说清原因（见本类 parse 里的同名标注）
-                throw new IOException("配置项 " + change.getKey()
-                        + " 的行内名单跨了行且含本界面读不了的写法, 为不写坏配置文件本批全部未保存, 请先在配置文件里把它改成每行一项");
+                // 宁可拒存并说清原因（见本类 parse 里的同名标注）。收不了口有两种，各说各的实际情形：
+                // 中间夹了空行或注释行的，里面并没有套着什么；收了口才看得见套着的写法
+                throw new IOException("配置项 " + change.getKey() + " 的名单写在一对方括号里还跨了行, "
+                        + (line.flowInterrupted
+                        ? "中间夹着空行或注释行, 界面读不了"
+                        : "里面套着的方括号、花括号或「词: 值」界面读不了")
+                        + ", 为不写坏配置文件本批全部未保存, 请先在配置文件里把它改成每行一项");
             }
 
             // 引号包着的值启动时读到的就是界面上那个值，原样送回来就是没改：不动那一行，
@@ -1061,7 +1071,7 @@ public class ConfigurationFileService {
             if (!updated.equals(lines.get(line.index))) {
                 if (hasNoValue(line.rawValue) && holdsChildren(lines, line)) {
                     throw new IOException("配置项 " + change.getKey()
-                            + " 在配置文件里是一个块、底下还有子项, 填值会删掉它们, 本批全部未保存, 请先在配置文件里改写这一块");
+                            + " 在配置文件里底下还挂着别的设置（往右缩进的那几行）, 填一个值会删掉它们, 本批全部未保存, 请先在配置文件里改写这一段");
                 }
                 lines.subList(line.index + 1, blockEnd(lines, line) + 1).clear();
                 lines.set(line.index, updated);
@@ -1109,8 +1119,12 @@ public class ConfigurationFileService {
      * 查在「值不能包含换行」之前——锁住的项送来带换行的值时，拒语说的是锁的原因，
      * 不是那个照着改也存不进去的换行。
      * <p>
+     * 文件里有这一行的原样送回就是没改，放行后写口自己认得；文件里没有这一行的
+     * （经合并键或整块别名继承来的）不同——放行会让写口把它按新增写进文件，落成实有的
+     * 一行，继承就断了。这种从本批剔除、不写。
+     * <p>
      * 引到一整块的别名不在其列：那一格界面上没有值，写口里另有一句点出别名名的拒语。
-     * @param changes 待写入的配置项
+     * @param changes 待写入的配置项，可变：原样送回的继承项从这里剔除
      * @param locked  界面改不了的项（键到说明），与 GET 给设置页的那一份同源
      * @param index   配置文件中已有的行
      * @param inherited 经合并键或整块别名继承、文件里没有自己那一行的子键，值为界面显示的
@@ -1118,7 +1132,7 @@ public class ConfigurationFileService {
      */
     private void rejectLockedChanges(Map<String, String> changes, Map<String, String> locked,
                                      Map<String, Line> index, Map<String, String> inherited) throws IOException {
-        for (Map.Entry<String, String> change : changes.entrySet()) {
+        for (Map.Entry<String, String> change : new ArrayList<>(changes.entrySet())) {
             String reason = locked.get(change.getKey());
             if (reason == null) {
                 continue;
@@ -1132,6 +1146,10 @@ public class ConfigurationFileService {
                     : line.isList() ? String.join("\n", line.items) : line.value;
             if (change.getValue() == null || !change.getValue().equals(shown)) {
                 throw new IOException("配置项 " + change.getKey() + " " + unsavedReason(reason));
+            }
+            if (line == null) {
+                // 原样送回的继承项：文件里没有这一行，放行会被写口当新增写进去，从本批剔除
+                changes.remove(change.getKey());
             }
         }
     }
@@ -1170,7 +1188,7 @@ public class ConfigurationFileService {
         } catch (IOException e) {
             String anchors = referencedAnchors(original, changed, index);
             throw new IOException("配置项 " + String.join(", ", changed) + " 改完后程序启动时读这份配置文件读不通"
-                    + (anchors.isEmpty() ? "（多半是改到了别名、合并键这类手写写法）" : "（" + anchors + "）")
+                    + (anchors.isEmpty() ? "（多半是改到了带「*名字」「&名字」「<<:」这些引用别处的行）" : "（" + anchors + "）")
                     + ", 本批全部未保存, 请到配置文件里改");
         }
         if (after == null) {
@@ -1187,7 +1205,7 @@ public class ConfigurationFileService {
         }
         if (!dragged.isEmpty()) {
             throw new IOException("保存配置项 " + String.join(", ", changed) + " 会连带改掉 " + String.join(", ", dragged)
-                    + " 启动时读到的值（它们在配置文件里是跨行、锚点、别名或合并键这类手写写法）, 本批全部未保存, 请到配置文件里改");
+                    + " 启动时读到的值（它们在配置文件里折成了好几行、或带着「*名字」「&名字」「<<:」这类引用别处的记号）, 本批全部未保存, 请到配置文件里改");
         }
 
         List<String> off = new ArrayList<>();
@@ -1203,7 +1221,7 @@ public class ConfigurationFileService {
         }
         if (!off.isEmpty()) {
             throw new IOException("配置项 " + String.join(", ", off)
-                    + " 按界面的值写回后程序启动读到的不是这个值（多半是经合并键继承或别名引用的写法）, 本批全部未保存, 请到配置文件里改");
+                    + " 按界面的值写回后程序启动读到的不是这个值（多半是这一项的值经「<<:」或「*名字」从别处引来）, 本批全部未保存, 请到配置文件里改");
         }
     }
 
@@ -1417,8 +1435,8 @@ public class ConfigurationFileService {
     private record ListLocation(int keyLine, int keyIndent, int start, int end) {}
 
     /**
-     * 对象列表的键这一行若是读不了的行内写法（跨行的 {@code [...]} 或内嵌元素），
-     * 就地改字段只会动键那一行，半截行内序列留在文件里会让整份配置读不了。
+     * 对象列表的键这一行若是读不了的行内写法（各元素挤在同一对方括号里、或跨了行的），
+     * 就地改字段只会动键那一行，半截方括号留在文件里会让整份配置读不了。
      * 一律拒存并说清原因；空表 {@code []} 与方括号里只有空白的 {@code [ ]} 不在其列——
      * 那是建出第一个元素的正常起点。
      */
@@ -1428,7 +1446,7 @@ public class ConfigurationFileService {
         int comment = commentIndex(rest);
         String onLine = (comment < 0 ? rest : rest.substring(0, comment)).strip();
         if (onLine.startsWith("[") && !onLine.replaceAll("\\s", "").equals("[]")) {
-            throw new IOException(listPath + " 在文件里是跨行或内嵌的行内写法, 本界面读不了"
+            throw new IOException(listPath + " 在文件里把各元素写在同一对方括号里, 本界面读不了"
                     + ", 为不写坏配置文件本批全部未保存, 请先在配置文件里把它改成每行一项");
         }
     }
@@ -1925,7 +1943,7 @@ public class ConfigurationFileService {
         String[] segments = path.split("\\.", -1);
         for (String segment : segments) {
             if (!SAFE_KEY_SEGMENT.matcher(segment).matches()) {
-                throw new IOException("配置项 " + path + " 的键名段含不允许的字符, 本批全部未保存");
+                throw new IOException("配置项 " + path + " 的名字只能用字母、数字、短横和下划线, 别的字符不允许, 本批全部未保存");
             }
         }
     }
@@ -2075,8 +2093,10 @@ public class ConfigurationFileService {
      * 首次安装写出的配置与对象列表清空后都会留下 {@code []}，那是空列表的合法写法，
      * 得按列表读写：当普通文字读回的话，每行一项的名单框会显示字面「[]」、一次填不进多行。
      * 引号包着的 {@code "[]"} 是逐字的文字值，不在其列；元素自身是对象或嵌套列表的
-     * （界面上不编辑的那类）也不收，维持普通文字；不带引号的 {@code 键: 值} 是流式键值对
-     * （嵌套映射的写法），同样不收。尾逗号与连续逗号只是分隔符的痕迹，不产生空项。
+     * （界面上不编辑的那类）也不收，维持普通文字——但那要看它有没有带引号：引号里的
+     * {@code "{name} 开播了"} 只是文字，照收；不带引号、真套着对象的才不收。
+     * 不带引号的 {@code 键: 值} 是流式键值对（嵌套映射的写法），同样不收。
+     * 尾逗号与连续逗号只是分隔符的痕迹，不产生空项。
      *
      * @param raw 冒号后去掉行尾注释的原文，未去引号（跨行写法须先把续行并入）
      * @return 列表各项；不是行内序列时返回 null，按普通文字值处理
@@ -2100,7 +2120,7 @@ public class ConfigurationFileService {
             }
             boolean quoted = strippedItem.charAt(0) == '"' || strippedItem.charAt(0) == '\'';
             String bare = unquote(strippedItem);
-            if (bare.startsWith("{") || bare.startsWith("[")) {
+            if (!quoted && (bare.startsWith("{") || bare.startsWith("["))) {
                 return null;
             }
             if (!quoted && (bare.contains(": ") || bare.endsWith(":"))) {
@@ -2114,10 +2134,11 @@ public class ConfigurationFileService {
     /**
      * 行内序列跨行时的续行扫描结果
      *
-     * @param joined 键行的值与续行以空格接起来的整段原文
-     * @param end    收口那一行的下标
+     * @param joined      键行的值与续行以空格接起来的整段原文
+     * @param end         收口那一行的下标
+     * @param interrupted 中间夹了空行或注释行、收不了口：joined 与 end 不用，只报这一种情形
      */
-    private record FlowTail(String joined, int end) {}
+    private record FlowTail(String joined, int end, boolean interrupted) {}
 
     /**
      * 行内序列跨了行（{@code key: [a,} 换行 {@code b]}）时把续行并入：行内序列里的
@@ -2126,12 +2147,13 @@ public class ConfigurationFileService {
      * <p>
      * 扫到空行、注释行，或缩进退到键这一层及更浅的键/列表项仍未收口即停：
      * 那种文件按收不了口处理，保存时整批拒绝，绝不留下只有半截的行内序列。
+     * 空行、注释行是夹在当中把名单截断的，与其余收不了口分开报，拒语才说得准。
      *
      * @param lines     文件行
      * @param keyIndex  键所在行的下标
      * @param keyIndent 键的缩进宽度
      * @param firstValue 键这一行冒号后的值（未收口的行内序列开头）
-     * @return 收口后的整段原文与末行下标；收不了口时为 null
+     * @return 收口后的整段原文与末行下标；中间夹了空行或注释行时带着这一情形返回；别的收不了口为 null
      */
     private FlowTail joinFlowTail(List<String> lines, int keyIndex, int keyIndent, String firstValue) {
         StringBuilder joined = new StringBuilder(firstValue);
@@ -2140,7 +2162,8 @@ public class ConfigurationFileService {
             String raw = lines.get(i);
             String stripped = raw.strip();
             if (stripped.isEmpty() || stripped.startsWith("#")) {
-                return null;
+                // 夹在当中的空行、注释行：joined 与 end 不用，只带这一情形回去
+                return new FlowTail("", -1, true);
             }
             if (indentOf(raw) <= keyIndent
                     && (stripped.startsWith("-") || stripped.contains(": ") || stripped.endsWith(":"))) {
@@ -2152,7 +2175,7 @@ public class ConfigurationFileService {
             joined.append(' ').append(value);
             depth += flowDepth(value);
             if (depth <= 0) {
-                return new FlowTail(joined.toString(), i);
+                return new FlowTail(joined.toString(), i, false);
             }
         }
         return null;
@@ -2395,6 +2418,8 @@ public class ConfigurationFileService {
             }
 
             // 行内序列（key: []、key: [a, b]）：列表整个写在键这一行上，也按字符串列表收下。
+            // 收下的各项也照启动那一路比一遍（见 settle）：键行上与写在下一行的同一把尺，
+            // 写的字程序读成别的值的（如 yes 读成 true），锁住、显示读到的，不随写的位置变。
             // 有一项是别名、带锚点或标签的，收下的是字面文字、不是程序读到的值；套着名单或键值的收不下。
             // 这两种都按启动那一路读（见 settle）
             List<String> flowItems = flowSequenceItems(value);
@@ -2402,6 +2427,7 @@ public class ConfigurationFileService {
                 line.items.addAll(flowItems);
                 line.listEnd = i;
                 line.flowInline = true;
+                line.fromLoader = true;
             } else if (flowItems != null || (value.startsWith("[") && flowDepth(value) == 0 && hasPlainFlowItem(value))) {
                 line.fromLoader = true;
             } else if (value.startsWith("[") && flowDepth(value) > 0) {
@@ -2411,6 +2437,10 @@ public class ConfigurationFileService {
                 FlowTail tail = joinFlowTail(lines, i, indent, value);
                 if (tail == null) {
                     line.flowUnreadable = true;
+                } else if (tail.interrupted()) {
+                    // 中间夹了空行或注释行而收不了口：里面并没有套着的写法，保存的拒语照这一情形说
+                    line.flowUnreadable = true;
+                    line.flowInterrupted = true;
                 } else {
                     List<String> across = flowSequenceItems(tail.joined());
                     if (across == null || !flowItemMark(tail.joined()).isEmpty()) {
@@ -2420,6 +2450,7 @@ public class ConfigurationFileService {
                         line.items.addAll(across);
                         line.listEnd = tail.end();
                         line.flowInline = true;
+                        line.fromLoader = true;
                     }
                     i = tail.end();
                 }
@@ -2583,7 +2614,7 @@ public class ConfigurationFileService {
     private String flowWritten(List<String> lines, Line line) {
         if (line.rawValue != null && !hasNoValue(line.rawValue) && flowDepth(line.rawValue) > 0) {
             FlowTail tail = joinFlowTail(lines, line.index, line.indent, line.rawValue);
-            if (tail != null) {
+            if (tail != null && !tail.interrupted()) {
                 return tail.joined();
             }
         }
@@ -2839,6 +2870,12 @@ public class ConfigurationFileService {
          * 为 true：保存这一项会被整批拒绝，绝不留下孤行写坏文件
          */
         private boolean flowUnreadable;
+
+        /**
+         * flowUnreadable 里专指「中间夹了空行或注释行而收不了口」的那一种：里面并没有套着
+         * 方括号、花括号或「词: 值」，保存的拒语照实际的情形说
+         */
+        private boolean flowInterrupted;
 
         /**
          * 键这一行看不全这一项的值（跨行、块标量、锚点、标签、别名）：界面值按启动那一路读，

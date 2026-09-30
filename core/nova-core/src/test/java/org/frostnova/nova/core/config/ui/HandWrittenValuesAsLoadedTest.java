@@ -690,6 +690,88 @@ class HandWrittenValuesAsLoadedTest {
     }
 
     /**
+     * 抓的用户故障：名单里有带引号、以「{」「[」开头的文字（如推送模板的占位「{name} 开播了」），
+     * 整份名单被当成套着的写法锁住，说明还说「读到的和写的字不一样」——其实一字不差，
+     * 这份名单在设置页改不了。
+     */
+    @Test
+    @DisplayName("🔴 带引号的「{」「[」开头项是普通文字：不锁、逐项列出，改了照常保存、读回对得上")
+    void quotedBraceOrBracketItemIsPlainText() throws IOException {
+        String key = "novabot.demo.copy";
+        String[][] cases = {
+                {"下一行双引号", "{name} 开播了", "novabot:\n  demo:\n    copy:\n      [\"{name} 开播了\", x]\n    tail: 1\n"},
+                {"键行双引号", "{name} 开播了", "novabot:\n  demo:\n    copy: [\"{name} 开播了\", x]\n    tail: 1\n"},
+                {"下一行单引号方括号", "[tip]", "novabot:\n  demo:\n    copy:\n      ['[tip]', x]\n    tail: 1\n"},
+        };
+        List<String> bad = new ArrayList<>();
+        for (String[] c : cases) {
+            try {
+                write(c[2]);
+                String reason = service.uiLocked().get(key);
+                assertFalse(service.uiLocked().containsKey(key),
+                        "引号包着的是普通文字, 不该锁: " + reason);
+                String first = c[1];
+                assertEquals(first + "\nx", service.read().get(key),
+                        "界面应逐项列出引号里的文字:\n" + content());
+
+                service.write(Map.of(key, first + "\nz"));
+                assertEquals(List.of(first, "z"), service.readAsLoaded().get(key),
+                        "改后存, 重启读到的应是改的值:\n" + content());
+                assertEquals(first + "\nz", service.read().get(key), "保存后再读应与启动读到的一致:\n" + content());
+                assertEquals(1, ((Number) service.readAsLoaded().get("novabot.demo.tail")).intValue(),
+                        "旁边那项不该被牵连:\n" + content());
+            } catch (AssertionError | IOException | RuntimeException e) {
+                bad.add(c[0] + ": " + e.getMessage());
+            }
+        }
+        assertTrue(bad.isEmpty(), () -> String.join("\n", bad));
+    }
+
+    /**
+     * 抓的用户故障：同一份名单〔x, yes〕写在下一行时界面显示程序读到的 true 并锁住，
+     * 写在键行上却显示 yes、能改——存回去程序用的还是 true，界面的说法随写的位置变。
+     */
+    @Test
+    @DisplayName("🔴 读成别的值的键行名单也锁：显示程序读到的值，与写在下一行同一说法；读得回来的照旧不锁")
+    void keyRowFlowListReadDifferentlyLocksLikeNextLine() throws IOException {
+        String key = "novabot.demo.copy";
+        String[][] cases = {
+                {"键行", "novabot:\n  demo:\n    copy: [x, yes]\n    tail: 1\n"},
+                {"下一行", "novabot:\n  demo:\n    copy:\n      [x, yes]\n    tail: 1\n"},
+        };
+        List<String> bad = new ArrayList<>();
+        for (String[] c : cases) {
+            try {
+                write(c[1]);
+                String before = content();
+                String reason = service.uiLocked().get(key);
+                if (reason == null || reason.contains("别名") || !reason.contains("yes")) {
+                    bad.add(c[0] + ": 应锁住、说明点出 yes 且不提别名, 实际: " + reason);
+                }
+                assertEquals("x\ntrue", service.read().get(key),
+                        c[0] + " 锁住时界面应显示程序读到的值:\n" + content());
+                assertEquals(List.of(), service.write(Map.of(key, "x\ntrue")),
+                        c[0] + " 原样送回不算改动");
+                assertEquals(before, content(), c[0] + " 原样送回文件一个字节不动");
+            } catch (AssertionError | IOException | RuntimeException e) {
+                bad.add(c[0] + ": " + e.getMessage());
+            }
+        }
+
+        try {
+            write("novabot:\n  demo:\n    copy: [x, y]\n    tail: 1\n");
+            assertFalse(service.uiLocked().containsKey(key), "读得回来的键行名单不该锁");
+            assertEquals("x\ny", service.read().get(key), "界面应显示名单各项");
+            service.write(Map.of(key, "x\nz"));
+            assertEquals(List.of("x", "z"), service.readAsLoaded().get(key),
+                    "读得回来的照旧可改:\n" + content());
+        } catch (AssertionError | IOException | RuntimeException e) {
+            bad.add("对照: " + e.getMessage());
+        }
+        assertTrue(bad.isEmpty(), () -> String.join("\n", bad));
+    }
+
+    /**
      * 抓的用户故障：名单里没有别名，只是带着锚点或有的项程序读成了别的值，设置页锁住时说「写成了别名」，
      * 去配置文件里找不到那个别名。
      */
