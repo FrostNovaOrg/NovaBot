@@ -291,6 +291,9 @@ function presetField(box, options) {
     select.appendChild(option);
   }
   wrap.appendChild(select);
+  // 切预设被拦住时，说明写在这一行：哪一栏锁着、要到配置文件里改
+  const note = el('div', 'al-note al-preset-note hide');
+  wrap.appendChild(note);
   box.appendChild(wrap);
   return select;
 }
@@ -597,14 +600,46 @@ export function alertCards() {
   const contentField = field(hookCustom, '内容字段名', 'novabot.core.alert.webhook-content-field',
     {ph: 'content', note: '各家不一样：Bark 用 body，Server 酱用 desp。'});
 
-  // 预设本身不是配置项，不进 store.dirty；它改的是下面那三栏，改完照常记账
+  const rowLocked = el => !!(el && el.dataset && el.dataset.locked);
+  // 预设本身不是配置项，不进 store.dirty；它改的是下面那三栏，改完照常记账。
+  // 要改的那一栏锁着、而且和预设要的不一样：这次整个不换，下拉回到原来那一档，别的栏也不动。
+  // 锁着的值本来就是预设要的，照常换，只跳过那一栏。
   const applyWebhook = () => {
-    const shape = WEBHOOK_PRESETS[preset.value];
+    const picked = preset.value;
+    const shape = WEBHOOK_PRESETS[picked];
     const held = el => !!(el && el.dataset && el.dataset.locked);
+    const blocked = [];
+    if (shape) {
+      if (held(method) && String(method.value) !== String(shape.method)) blocked.push('提交方式');
+      if (held(titleField) && String(titleField.value) !== String(shape.title)) blocked.push('标题字段名');
+      if (held(contentField) && String(contentField.value) !== String(shape.content)) blocked.push('内容字段名');
+    }
+    const noteOf = () => {
+      const parent = preset.parentElement;
+      if (!parent || typeof parent.querySelector !== 'function') return null;
+      return parent.querySelector('.al-preset-note');
+    };
+    const showNote = (text) => {
+      const noteEl = noteOf();
+      if (!noteEl) return;
+      noteEl.textContent = text;
+      if (noteEl.classList) noteEl.classList.toggle('hide', !text);
+    };
+    if (blocked.length) {
+      const back = preset.dataset && preset.dataset.accepted;
+      if (back) preset.value = back;
+      showNote(blocked.join('、') + (blocked.length > 1 ? '这几栏' : '这一栏')
+        + '锁着，改不了，所以没有换成「' + picked + '」。要换的话，得到配置文件里改。');
+      return;
+    }
+    showNote('');
     const keepOpen = held(method) || held(titleField) || held(contentField);
-    // 锁住的栏若收进预设里，说明跟着被藏掉。有锁就摊开，并且不改那一栏
+    // 锁住的栏若收进预设里，说明跟着被藏掉。有锁就摊开
     hookCustom.classList.toggle('hide', !!shape && !keepOpen);
-    if (!shape) return;
+    if (!shape) {
+      if (preset.dataset) preset.dataset.accepted = picked;
+      return;
+    }
     if (!held(method)) {
       method.value = shape.method;
       setValue('novabot.core.alert.webhook-method', shape.method);
@@ -617,16 +652,20 @@ export function alertCards() {
       contentField.value = shape.content;
       setValue('novabot.core.alert.webhook-content-field', shape.content);
     }
+    if (preset.dataset) preset.dataset.accepted = picked;
   };
   preset.addEventListener('change', applyWebhook);
-  // 现有配置匹配哪个预设，就显示哪个；对不上就是「自定义」，那几栏摊开
+  // 现有配置匹配哪个预设，就显示哪个；对不上就是「自定义」，那几栏摊开。
+  // 这一组里有锁着的栏，即使对上了预设也摊开，锁和说明才看得见
   preset.value = Object.keys(WEBHOOK_PRESETS).find(k => {
     const s = WEBHOOK_PRESETS[k];
     return s.method === valueOf('novabot.core.alert.webhook-method')
       && s.title === valueOf('novabot.core.alert.webhook-title-field')
       && s.content === valueOf('novabot.core.alert.webhook-content-field');
   }) || CUSTOM;
-  hookCustom.classList.toggle('hide', !!WEBHOOK_PRESETS[preset.value]);
+  hookCustom.classList.toggle('hide', !!WEBHOOK_PRESETS[preset.value]
+    && !(rowLocked(method) || rowLocked(titleField) || rowLocked(contentField)));
+  if (preset.dataset) preset.dataset.accepted = preset.value;
   hookPillState(hook.pill, 'novabot.core.alert.webhook-url', url.value);
   wrap.appendChild(hook.card);
 
@@ -652,11 +691,39 @@ export function alertCards() {
   const port = field(mailCustom, '端口', 'spring.mail.port', {type: 'number', ph: '465'});
 
   const applyMail = () => {
-    const shape = MAIL_PRESETS[mailPreset.value];
+    const picked = mailPreset.value;
+    const shape = MAIL_PRESETS[picked];
     const held = el => !!(el && el.dataset && el.dataset.locked);
+    const blocked = [];
+    if (shape) {
+      if (held(host) && String(host.value) !== String(shape.host)) blocked.push('服务器');
+      if (held(port) && String(port.value) !== String(shape.port)) blocked.push('端口');
+    }
+    const noteOf = () => {
+      const parent = mailPreset.parentElement;
+      if (!parent || typeof parent.querySelector !== 'function') return null;
+      return parent.querySelector('.al-preset-note');
+    };
+    const showNote = (text) => {
+      const noteEl = noteOf();
+      if (!noteEl) return;
+      noteEl.textContent = text;
+      if (noteEl.classList) noteEl.classList.toggle('hide', !text);
+    };
+    if (blocked.length) {
+      const back = mailPreset.dataset && mailPreset.dataset.accepted;
+      if (back) mailPreset.value = back;
+      showNote(blocked.join('、') + (blocked.length > 1 ? '这几栏' : '这一栏')
+        + '锁着，改不了，所以没有换成「' + picked + '」。要换的话，得到配置文件里改。');
+      return;
+    }
+    showNote('');
     const keepOpen = held(host) || held(port);
     mailCustom.classList.toggle('hide', !!shape && !keepOpen);
-    if (!shape) return;
+    if (!shape) {
+      if (mailPreset.dataset) mailPreset.dataset.accepted = picked;
+      return;
+    }
     if (!held(host)) {
       host.value = shape.host;
       setValue('spring.mail.host', shape.host);
@@ -665,13 +732,16 @@ export function alertCards() {
       port.value = shape.port;
       setValue('spring.mail.port', shape.port);
     }
+    if (mailPreset.dataset) mailPreset.dataset.accepted = picked;
     mailReady();
   };
   mailPreset.addEventListener('change', applyMail);
   mailPreset.value = Object.keys(MAIL_PRESETS).find(k => MAIL_PRESETS[k].host === valueOf('spring.mail.host')
     && (!valueOf('spring.mail.port') || String(MAIL_PRESETS[k].port) === String(valueOf('spring.mail.port'))))
     || CUSTOM;
-  mailCustom.classList.toggle('hide', !!MAIL_PRESETS[mailPreset.value]);
+  mailCustom.classList.toggle('hide', !!MAIL_PRESETS[mailPreset.value]
+    && !(rowLocked(host) || rowLocked(port)));
+  if (mailPreset.dataset) mailPreset.dataset.accepted = mailPreset.value;
 
   // status 落定前敲过键（或切过预设），草稿回评即接管药丸：后到的运行值不再回头覆盖
   let draftTookOver = false;

@@ -60,12 +60,19 @@ final class FrontendFixture {
      * 跑一份夹具，退码非 0 即判红
      * @param fixture 夹具在仓库里的相对路径
      * @param what 这一组判定叫什么，进红时那句话与构建日志
+     * @param args 交给夹具的附加参数，同一份夹具按参数分成几格时用
      */
-    static void run(String fixture, String what) throws IOException, InterruptedException {
+    static void run(String fixture, String what, String... args) throws IOException, InterruptedException {
         Path path = repoRoot().resolve(fixture);
         assertTrue(Files.exists(path), "夹具不见了，这一格此刻什么也没量: " + path);
 
-        ProcessBuilder builder = new ProcessBuilder("node", path.toString());
+        String[] command = new String[2 + (args == null ? 0 : args.length)];
+        command[0] = "node";
+        command[1] = path.toString();
+        if (args != null && args.length > 0) {
+            System.arraycopy(args, 0, command, 2, args.length);
+        }
+        ProcessBuilder builder = new ProcessBuilder(command);
         builder.directory(repoRoot().toFile());
         builder.redirectErrorStream(true);
 
