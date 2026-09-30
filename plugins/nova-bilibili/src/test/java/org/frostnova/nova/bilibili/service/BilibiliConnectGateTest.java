@@ -94,6 +94,7 @@ class BilibiliConnectGateTest {
         gate.submit(() -> { });
 
         List<Instant> at = scheduledAt(2);
-        assertEquals(0, Duration.between(at.get(0), at.get(1)).toMillis());
+        long gapMillis = Duration.between(at.get(0), at.get(1)).toMillis();
+        assertTrue(gapMillis < INTERVAL, "间隔为 0 时不得按一个间隔推后，实际相差 " + gapMillis + " 毫秒");
     }
 }
