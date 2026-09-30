@@ -187,8 +187,8 @@ class EngineeringLogScanTest {
         // 服务里也不换线程），墙钟里却掺着排队等 CPU 的时间——机器被别的进程占满时，
         // 同样的回扫被拖出门槛误红过（负载 5 以上实测 2977 毫秒），而它自己没变慢。
         // 本线程 CPU 时间只计真在跑的那部分：排队、等盘都不进，机器忙不再误红；
-        // 回扫真退化成秒级时（历史上那次是每读一块就把已收的行从头重排一遍），
-        // CPU 时间照样涨上去，这一格照红。
+        // 回扫真退化成秒级时（历史上那次是每读一块就把已收的行从头重排一遍，
+        // 本机这一格本线程 CPU 时间 74084、79977 毫秒），CPU 时间照样涨上去，这一格照红。
         ThreadMXBean threads = ManagementFactory.getThreadMXBean();
         assertTrue(threads.isCurrentThreadCpuTimeSupported() && threads.isThreadCpuTimeEnabled(),
                 "本线程 CPU 时间量不出来时这一格会恒绿，先确认这一前提");
@@ -201,8 +201,11 @@ class EngineeringLogScanTest {
                 "这一天只有 3 条错误，都该找得到；得到 " + levelHeads(text) + " 条");
         assertEquals(3, levelHeads(text), "就这 3 条，不多不少");
         System.out.println("整天回扫：几十万条短行里只夹 3 条错误，这一趟本线程 CPU 时间实测 " + elapsedMs + " 毫秒");
-        // 门槛从宽：这一格盯的是退化成秒级的回扫，机器的 CPU 本身慢一截也不该误红
-        assertTrue(elapsedMs < 2500, "整天翻一遍不该费这么多功夫，本线程 CPU 时间实测 " + elapsedMs + " 毫秒");
+        // 门槛 8000 毫秒。本机健康时这一格 1154、1194、1278 毫秒，最慢一趟门槛是它的 6 倍以上。
+        // 公开构建那台机器同格见过 2197、2287、2441、2560 毫秒，最慢一趟门槛是它的 3 倍以上：
+        // 那台已经比本机慢一倍上下，再慢到本机的三倍（约 3800 毫秒）门槛仍有一倍以上余量。
+        // 每读一块把已收的行从头重排的那种退化本机 74084、79977 毫秒，是门槛的 9 倍以上，照红。
+        assertTrue(elapsedMs < 8000, "整天翻一遍不该费这么多功夫，本线程 CPU 时间实测 " + elapsedMs + " 毫秒");
     }
 
     @Test
