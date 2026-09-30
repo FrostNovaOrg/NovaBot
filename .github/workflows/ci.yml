@@ -127,13 +127,38 @@ jobs:
         # 参数名、报告格式、漏洞库的存放格式都可能随上游小版本变——扫描器的行为
         # 不该跟着别人家的发版漂
         #
+        # 命令里的 package 是生命周期阶段，与 -Pinstall 开的那个 profile 是两回事：
+        # 只起插件 goal 不带阶段时，这一趟构建不出任何本仓构件，goal 逐模块解析依赖
+        # 只能去中央库找 novacore／nova-core——它们从没发布过，于是从第三个模块起
+        # 解析失败、报告 SKIPPED。阶段写在 goal 前面，同一趟先把八个模块构建出来，
+        # 下游模块在同一趟 reactor 里从兄弟模块的构建产物拿到本仓件，不去中央库找。
+        # 阶段到 package 为止：构件已构建出来就够 goal 用了，多走的 install 还会把
+        # 本仓构件写进运行器的本机仓库——上面 setup-java 开着 maven 缓存，写进去的
+        # 件会混进缓存跟着走。
+        # 测试照旧跳过，本 job 也不需要配 Node：各模块 pom 没有任何生命周期阶段
+        # 绑着 node／npm（控制台前端是不经构建的 ES module），唯一会拉起 node 的
+        # 是 JUnit 夹具，-DskipTests 之下走不到
+        #
         # 密钥只经环境变量进扫描步：插件说明点名直接用 -DnvdApiKey 递值会让 Maven
         # 调试日志把密钥打出来（GHSA-qqhq-8r2c-c3f5），并写明 CI 场景的推荐传法是
         # nvdApiKeyEnvironmentVariable。命令行里这个 -D 带的只是环境变量的名字、
         # 不是值——命令行会原样进日志，值由 Actions 从仓库密钥库注入 env
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
-        run: mvn -B -Pinstall org.owasp:dependency-check-maven:13.0.0:check -Dformat=JSON -DskipTests -DnvdApiKeyEnvironmentVariable=NVD_API_KEY -DdataDirectory="$DC_DATA_DIR"
+        run: mvn -B -Pinstall package org.owasp:dependency-check-maven:13.0.0:check -Dformat=JSON -DskipTests -DnvdApiKeyEnvironmentVariable=NVD_API_KEY -DdataDirectory="$DC_DATA_DIR"
+
+      # 报告不落附件就留不住：job summary 只贴高危摘录，整份 JSON（含未过阈值的
+      # 条目与依赖明细）只在运行器磁盘上，job 一结束就没了，事后想逐条核对已无处
+      # 可取。扫描没扫成也要传：扫描步 continue-on-error，失败被吞，这里 if: always()
+      # 照样执行，有几份传几份；一份都没有也不算错（if-no-files-found: ignore）——
+      # 空附件与汇总步的黄字一样，是「这次没扫成」的证据，不是要绕过的错
+      - name: 上传漏洞扫描报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-check-reports
+          path: '**/dependency-check-report.json'
+          if-no-files-found: ignore
 
       # 扫成才存：库没建全就存，存下的半截库比没有缓存更糟（缘由见上面取那步的
       # 注释）。两个条件缺一不可——扫描没扫成（outcome 不是 success）不存；
