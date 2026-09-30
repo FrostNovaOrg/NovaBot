@@ -97,6 +97,8 @@ function valueOf(name) {
  * @param value 新值
  */
 function setValue(name, value) {
+  // 锁住的项不进改动账。预设把值写过来也当没改，免得一点保存整批被拒
+  if (store.locked && store.locked[name]) return;
   const saved = store.values[name];
   // 文件里没写这一项时，基线用屏上显示的那一位。把已经看见的值原样写回去不算改动，
   // 否则预设来回切回原样，底部仍挂着一处改动，保存还会多写出一行。
@@ -119,6 +121,51 @@ function setValue(name, value) {
 }
 
 /**
+ * 锁住的一栏：不给输入框，只读摆出读到的值，并写上读数里那句说明
+ *
+ * 说明与设置页同一句，来自 store.locked。照常给框的话，改完一点保存整批被拒，
+ * 同批别的改动也一起没存上。返回的格子仍带 value，预设读得到，但写进去不算数。
+ * @param box 容器
+ * @param label 人话名
+ * @param name 配置项名
+ * @param reason 读数给的、为什么不能改
+ * @return {HTMLElement} 只读格子
+ */
+function readOnlyField(box, label, name, reason) {
+  const wrap = el('div', 'al-fld');
+  const head = el('div', 'al-lb');
+  const title = el('label');
+  title.textContent = label;
+  head.appendChild(title);
+  wrap.appendChild(head);
+
+  const shown = valueOf(name);
+  const view = el('div', 'readonly lockedval');
+  view.textContent = shown;
+  if (view.dataset) view.dataset.locked = '1';
+  try {
+    Object.defineProperty(view, 'value', {
+      configurable: true,
+      enumerable: true,
+      get() { return shown; },
+      set() {},
+    });
+  } catch (e) {
+    view.value = shown;
+  }
+  wrap.appendChild(view);
+
+  const note = el('div', 'al-note');
+  note.textContent = reason;
+  wrap.appendChild(note);
+  const key = el('div', 'keyname');
+  key.textContent = name;
+  wrap.appendChild(key);
+  box.appendChild(wrap);
+  return view;
+}
+
+/**
  * 卡片里的一栏
  * @param box 容器
  * @param label 人话名
@@ -128,6 +175,8 @@ function setValue(name, value) {
  */
 function field(box, label, name, opt) {
   const o = opt || {};
+  const locked = store.locked && store.locked[name];
+  if (locked) return readOnlyField(box, label, name, locked);
   const wrap = el('div', 'al-fld');
   const head = el('div', 'al-lb');
   const title = el('label');
@@ -416,6 +465,34 @@ async function recipientPicker(box, pill, fields) {
     }
   }
 
+  // 这一栏是一个下拉，一次改三个键。其中有锁住的，就不给下拉：
+  // 改一个会把锁住的那一个一起写掉，一点保存整批被拒
+  const whyLocked = key => (store.locked && store.locked[key]) || '';
+  if (whyLocked(senderField.key) || whyLocked(kindField.key) || whyLocked(numField.key)) {
+    for (const item of [senderField, kindField]) {
+      const reason = whyLocked(item.key);
+      if (reason) readOnlyField(box, item.label || '', item.key, reason);
+    }
+    const numReason = whyLocked(numField.key);
+    if (numReason) {
+      readOnlyField(box, numField.label || '发给谁', numField.key, numReason);
+    } else {
+      const row = el('div', 'al-fld');
+      const lab = el('label');
+      lab.textContent = numField.label || '发给谁';
+      row.appendChild(lab);
+      const view = el('div', 'readonly lockedval');
+      view.textContent = valueOf(numField.key);
+      row.appendChild(view);
+      const keyEl = el('div', 'keyname');
+      keyEl.textContent = numField.key;
+      row.appendChild(keyEl);
+      box.appendChild(row);
+    }
+    pillState(pill, numOk(valueOf(numField.key)));
+    return;
+  }
+
   const wrap = el('div', 'al-fld');
   const label = el('label');
   label.textContent = numField.label || '发给谁';
@@ -523,14 +600,23 @@ export function alertCards() {
   // 预设本身不是配置项，不进 store.dirty；它改的是下面那三栏，改完照常记账
   const applyWebhook = () => {
     const shape = WEBHOOK_PRESETS[preset.value];
-    hookCustom.classList.toggle('hide', !!shape);
+    const held = el => !!(el && el.dataset && el.dataset.locked);
+    const keepOpen = held(method) || held(titleField) || held(contentField);
+    // 锁住的栏若收进预设里，说明跟着被藏掉。有锁就摊开，并且不改那一栏
+    hookCustom.classList.toggle('hide', !!shape && !keepOpen);
     if (!shape) return;
-    method.value = shape.method;
-    titleField.value = shape.title;
-    contentField.value = shape.content;
-    setValue('novabot.core.alert.webhook-method', shape.method);
-    setValue('novabot.core.alert.webhook-title-field', shape.title);
-    setValue('novabot.core.alert.webhook-content-field', shape.content);
+    if (!held(method)) {
+      method.value = shape.method;
+      setValue('novabot.core.alert.webhook-method', shape.method);
+    }
+    if (!held(titleField)) {
+      titleField.value = shape.title;
+      setValue('novabot.core.alert.webhook-title-field', shape.title);
+    }
+    if (!held(contentField)) {
+      contentField.value = shape.content;
+      setValue('novabot.core.alert.webhook-content-field', shape.content);
+    }
   };
   preset.addEventListener('change', applyWebhook);
   // 现有配置匹配哪个预设，就显示哪个；对不上就是「自定义」，那几栏摊开
@@ -567,12 +653,18 @@ export function alertCards() {
 
   const applyMail = () => {
     const shape = MAIL_PRESETS[mailPreset.value];
-    mailCustom.classList.toggle('hide', !!shape);
+    const held = el => !!(el && el.dataset && el.dataset.locked);
+    const keepOpen = held(host) || held(port);
+    mailCustom.classList.toggle('hide', !!shape && !keepOpen);
     if (!shape) return;
-    host.value = shape.host;
-    port.value = shape.port;
-    setValue('spring.mail.host', shape.host);
-    setValue('spring.mail.port', shape.port);
+    if (!held(host)) {
+      host.value = shape.host;
+      setValue('spring.mail.host', shape.host);
+    }
+    if (!held(port)) {
+      port.value = shape.port;
+      setValue('spring.mail.port', shape.port);
+    }
     mailReady();
   };
   mailPreset.addEventListener('change', applyMail);
