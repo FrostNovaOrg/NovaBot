@@ -13,6 +13,7 @@ import org.frostnova.nova.bilibili.model.FansMedal;
 import org.frostnova.nova.bilibili.model.Guard;
 import org.frostnova.nova.bilibili.protocol.BilibiliProtobufReader;
 import org.frostnova.nova.core.event.live.NovaBaseLiveEvent;
+import org.frostnova.nova.core.event.live.common.MembershipEvent;
 import org.frostnova.nova.core.event.live.common.PkBattleEvent;
 import org.frostnova.nova.core.model.GiftInfo;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
@@ -1760,8 +1761,9 @@ public class BilibiliEventParser {
     /**
      * 解析大航海消息（{@code USER_TOAST_MSG}）
      * <p>
-     * 这条带的 {@code price} 是<b>实际成交价</b>，与 {@code GUARD_BUY} 的挂牌价不是一回事，
-     * 取舍见 {@link BilibiliGuardReconciler}。
+     * 这条带的 {@code price} 是<b>实际成交价的总价</b>（实测多月开通样本：3 个月 504 元、
+     * 12 个月 2016 元，都是 168 元/月×月数），与 {@code GUARD_BUY} 的挂牌单价不是一回事，
+     * 取舍见 {@link BilibiliGuardReconciler}。金额就是它本身，<b>不再乘数量</b>。
      */
     private NovaBaseLiveEvent parseGuard(JSONObject data, LiveStreamerInfo source) {
         JSONObject meta = requireData(data, "USER_TOAST_MSG");
@@ -1785,7 +1787,7 @@ public class BilibiliEventParser {
         return buildGuardEvent("USER_TOAST_MSG", source, senderUid, meta.getString("username"), meta.getString("role_name"),
                 guardLevel, toYuan(meta.getInteger("price")), meta.getInteger("num"), meta.getString("unit"),
                 GuardOperateType.of(Optional.ofNullable(meta.getInteger("op_type")).orElse(-1)),
-                companionDaysOf(meta.getString("toast_msg")), timestamp);
+                companionDaysOf(meta.getString("toast_msg")), timestamp, MembershipEvent.PriceBasis.ORDER_TOTAL);
     }
 
     /**
@@ -1793,6 +1795,9 @@ public class BilibiliEventParser {
      * <p>
      * 与 {@code USER_TOAST_MSG} 是同一件事的两种格式，字段位置不同：开通者在 {@code sender_uinfo}，
      * 等级与操作类型在 {@code guard_info}，金额在 {@code pay_info}。
+     * <p>
+     * 价的口径与老格式一致：{@code pay_info.price} 是<b>成交总价</b>，金额就是它、<b>不再乘数量</b>
+     * （实测多月开通样本，见 {@link #parseGuard}）。
      * <p>
      * <b>两种格式都要收。</b>2026-08-06 抓的 49 笔上舰里有 7 笔只以 V2 形式下发、
      * 且没有 {@code GUARD_BUY} 兜底——只认老格式就会让这 14% 完全消失，而且不会有任何报错。
@@ -1833,15 +1838,17 @@ public class BilibiliEventParser {
                 guardInfo.getString("role_name"), guardLevel, toYuan(payInfo.getInteger("price")),
                 payInfo.getInteger("num"), payInfo.getString("unit"),
                 GuardOperateType.of(Optional.ofNullable(guardInfo.getInteger("op_type")).orElse(-1)),
-                companionDaysOf(meta.getString("toast_msg")), timestamp);
+                companionDaysOf(meta.getString("toast_msg")), timestamp, MembershipEvent.PriceBasis.ORDER_TOTAL);
     }
 
     /**
      * 解析大航海开通消息（{@code GUARD_BUY}）
      * <p>
      * <b>解析出的事件不在这里返回，而是交给 {@link BilibiliGuardReconciler} 压住等 toast。</b>
-     * 这条的 {@code price} 是挂牌价（35 个样本里舰长恒为 198000），toast 的才是实际成交价；
-     * 而这条又恒定先到，不压住就必然取到挂牌价，实测高估 15.4%。
+     * 这条的 {@code price} 是<b>挂牌单价</b>（实测多月开通样本：{@code price=198000 num=12}
+     * 按单价算得 2376 元、{@code price=198000 num=3} 算得 594 元），金额＝单价×数量；
+     * 而 toast 的价才是成交总价、金额就是它本身不再乘。两种口径别混。
+     * 这条又恒定先到，不压住就必然取到挂牌价，实测高估 15.4%。
      * <p>
      * 字段也更少：实测 35 条<b>全都没有 {@code unit}</b>，且 {@code start_time == end_time}，
      * 所以 {@link #unitOf} 的两条路都走不通，单位只能是空——这也是宁可等 toast 的理由之一。
@@ -1864,16 +1871,17 @@ public class BilibiliEventParser {
         Instant timestamp = Optional.ofNullable(meta.getLong("start_time"))
                 .map(Instant::ofEpochSecond).orElseGet(Instant::now);
 
-        // 单价还是总价？至今 35 个样本全是 num=1，区分不出来。多买时把三个数一起记下来，
-        // 首次出现就能人工核对——按单价处理而实际是总价的话，多月开通会被乘重
+        // 价是挂牌单价（实测多月开通样本），金额＝单价×数量。成交价报文的价才是总价，
+        // 那边不再乘——两种口径别混
         if (count != null && count > 1) {
-            log.info("大航海开通数量大于 1, 请核对价格口径: price={} num={} 按单价算得 {} 元",
+            log.info("大航海开通数量大于 1, 按挂牌单价算: price={} num={} 单价×数量得 {} 元",
                     meta.getInteger("price"), count, price == null ? null : price * count);
         }
 
         guardReconciler.holdGuardBuy(senderUid, guardLevel, timestamp,
                 buildGuardEvent("GUARD_BUY", source, senderUid, meta.getString("username"), meta.getString("gift_name"),
-                        guardLevel, price, count, unitOf(meta), GuardOperateType.UNKNOWN, null, timestamp));
+                        guardLevel, price, count, unitOf(meta), GuardOperateType.UNKNOWN, null, timestamp,
+                        MembershipEvent.PriceBasis.UNIT_PRICE));
         return null;
     }
 
@@ -1912,7 +1920,14 @@ public class BilibiliEventParser {
      * <p>
      * 三条播报消息（{@code GUARD_BUY}、{@code USER_TOAST_MSG}、{@code USER_TOAST_MSG_V2}）
      * 字段位置各不相同，取值的差异留在各自的解析方法里，这里只负责组装。
+     * <p>
+     * <b>价的口径按来源分开</b>（实测多月开通样本）：成交价报文（toast 两种格式）的价
+     * 是<b>总价</b>，金额就是它、不再乘数量；{@code GUARD_BUY} 的价是<b>挂牌单价</b>，
+     * 金额＝单价×数量。由 {@code basis} 带进构造，见 {@link MembershipEvent.PriceBasis}。
      * @param cmd 这条大航海消息的 cmd（{@code USER_TOAST_MSG}／{@code USER_TOAST_MSG_V2}／{@code GUARD_BUY}），记账用，不归并
+     * @param price 价（元），是单价还是总价看 {@code basis}
+     * @param basis 价的口径：toast 传 {@link MembershipEvent.PriceBasis#ORDER_TOTAL}，
+     *              {@code GUARD_BUY} 传 {@link MembershipEvent.PriceBasis#UNIT_PRICE}
      * @param iconName 用于查图标的名称，各消息取自不同字段
      * @param companionDays 陪伴天数，{@code GUARD_BUY} 没有文案可解析，传空
      * @return 等级不认识时返回 null
@@ -1920,7 +1935,7 @@ public class BilibiliEventParser {
     private NovaBaseLiveEvent buildGuardEvent(String cmd, LiveStreamerInfo source, Long senderUid, String username,
                                                  String iconName, Integer guardLevel, Double price, Integer count,
                                                  String unit, GuardOperateType operateType, Integer companionDays,
-                                                 Instant timestamp) {
+                                                 Instant timestamp, MembershipEvent.PriceBasis basis) {
         boolean complete = properties.getLive().isCompleteEvent();
         BilibiliUserInfo sender = new BilibiliUserInfo(
                 senderUid,
@@ -1931,19 +1946,19 @@ public class BilibiliEventParser {
 
         return switch (guardLevel) {
             case 1 -> {
-                BilibiliGovernorEvent event = new BilibiliGovernorEvent(source, sender, price, count, unit, timestamp);
+                BilibiliGovernorEvent event = new BilibiliGovernorEvent(source, sender, price, count, unit, timestamp, basis);
                 event.setOperateType(operateType);
                 event.setCompanionDays(companionDays);
                 yield event;
             }
             case 2 -> {
-                BilibiliCommanderEvent event = new BilibiliCommanderEvent(source, sender, price, count, unit, timestamp);
+                BilibiliCommanderEvent event = new BilibiliCommanderEvent(source, sender, price, count, unit, timestamp, basis);
                 event.setOperateType(operateType);
                 event.setCompanionDays(companionDays);
                 yield event;
             }
             case 3 -> {
-                BilibiliCaptainEvent event = new BilibiliCaptainEvent(source, sender, price, count, unit, timestamp);
+                BilibiliCaptainEvent event = new BilibiliCaptainEvent(source, sender, price, count, unit, timestamp, basis);
                 event.setOperateType(operateType);
                 event.setCompanionDays(companionDays);
                 yield event;
