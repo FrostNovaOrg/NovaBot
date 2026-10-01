@@ -13,6 +13,9 @@ jobs:
   build:
     name: 构建与测试
     runs-on: ubuntu-latest
+    # 平台默认上限 360 分钟：卡住的运行要挂满它才死。近几回构建＋测试 11–13 分钟，
+    # 40 分钟＝约 3 倍余量，盖住冷缓存重下依赖与运行器快慢浮动；再慢多半是真卡了
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
@@ -69,6 +72,10 @@ jobs:
   dependency-check:
     name: 依赖漏洞扫描
     runs-on: ubuntu-latest
+    # 温库带增量更新的整 job 近几回不到 3 分钟，但从零建库要把整个 NVD 数据集
+    # 拉下来（见下面「取回漏洞库存档」那步的注释），是几十分钟量级的事；
+    # 60 分钟日常绰绰有余、从零建库也装得下，真卡住的早死早省
+    timeout-minutes: 60
     # 漏洞库是一套随 NVD 数据增长的 SQL 库，放在 runner 的用户主目录下、仓库之外。
     # 插件说明里查不到 dataDirectory 的默认值：不显式指定，库就落在插件的隐式位置，
     # 没法给它配专用缓存——setup-java 那条 maven 缓存的键跟着 pom 摘要走，pom 一改
@@ -84,7 +91,33 @@ jobs:
         with:
           java-version: '17'
           distribution: temurin
-          cache: maven
+          # 这里不开 cache: maven：它取完总要在 job 收尾存一份，而本 job 与
+          # 构建 job 同用一个键——缓存键存下就不可覆盖，先收尾的把键占死，
+          # 另一份的新增内容永远存不进去。本 job 只取不存，见下面单独的取回步
+      # Maven 依赖缓存只取不存：两个 job 此前都开 setup-java 的 cache: maven
+      # （同键取＋存），谁后收尾谁存不进（日志报 Unable to reserve cache）。
+      # 先收尾的常是本 job——它 -DskipTests，件集是构建 job 的子集，缓存里
+      # 从此少了测试期才用的件，构建 job 只能每回重下。改成只有构建 job 存：
+      # 本 job 用 cache/restore 只取。取回要与存方逐字对上，三处都照 setup-java
+      # v6 的存法写（源码 src/cache.ts）：
+      # https://raw.githubusercontent.com/actions/setup-java/v6/src/cache.ts
+      # 路径：setup-java 存的是 join(os.homedir(), '.m2', 'repository') 在
+      #   GitHub 托管 Ubuntu 运行器上的展开值。路径字串原样参与缓存版本的
+      #   计算（@actions/cache 的 getCacheVersion），写成 ~/ 或别的拼法就算
+      #   另一个版本，主键与前缀键都取不回，所以这里写死绝对路径
+      # arch 段：setup-java 取的是 Node 的 process.arch，小写 x64；GitHub
+      #   表达式 runner.arch 给大写 X64，不是同一串。照存方写死 x64
+      # 摘要段：与 setup-java 对 maven 的口径同为全部 pom.xml 的散列
+      # 两级 restore-keys 前缀留着兜底：精确键没命中（比如 pom 刚改过）时先
+      # 取最近一份；兜底前缀同样带上 arch 段，免得兜底也差一截取空
+      - name: 取回 Maven 依赖缓存
+        uses: actions/cache/restore@v4
+        with:
+          path: /home/runner/.m2/repository
+          key: setup-java-${{ runner.os }}-x64-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            setup-java-${{ runner.os }}-x64-maven-
+            setup-java-
 
       - name: 安装构建插件
         run: mvn -B -f build-tools/nova-plugin-processor/pom.xml install -DskipTests
@@ -127,14 +160,24 @@ jobs:
         # 参数名、报告格式、漏洞库的存放格式都可能随上游小版本变——扫描器的行为
         # 不该跟着别人家的发版漂
         #
+        # OSS Index 分析器显式关掉：本仓没配它的凭据，无凭据时它本来也会被插件
+        # 自动禁用（日志一行 disabled due to missing credentials）——但「自动禁用」
+        # 只发生在运行时，配置面看不出这轮到底用了哪些来源。显式写 false，
+        # 配置即答案；汇总步的 SCAN_SOURCES 也以此为准。参数名以 13.0.0 源码为
+        # 准（BaseDependencyCheckMojo.java:742 的 @Parameter）：property 是
+        # ossIndexAnalyzerEnabled（Index 的 I 大写），命令行 -D 认的是它；全小写
+        # 的 ossindexAnalyzerEnabled 只是 pom <configuration> 里按元素名认的
+        # alias，写在命令行上插件不认：
+        # https://raw.githubusercontent.com/dependency-check/DependencyCheck/v13.0.0/maven/src/main/java/org/owasp/dependencycheck/maven/BaseDependencyCheckMojo.java
+        #
         # 命令里的 package 是生命周期阶段，与 -Pinstall 开的那个 profile 是两回事：
         # 只起插件 goal 不带阶段时，这一趟构建不出任何本仓构件，goal 逐模块解析依赖
         # 只能去中央库找 novacore／nova-core——它们从没发布过，于是从第三个模块起
         # 解析失败、报告 SKIPPED。阶段写在 goal 前面，同一趟先把八个模块构建出来，
         # 下游模块在同一趟 reactor 里从兄弟模块的构建产物拿到本仓件，不去中央库找。
         # 阶段到 package 为止：构件已构建出来就够 goal 用了，多走的 install 还会把
-        # 本仓构件写进运行器的本机仓库——上面 setup-java 开着 maven 缓存，写进去的
-        # 件会混进缓存跟着走。
+        # 本仓构件写进运行器的本机仓库——这里取回的 Maven 缓存是只取不存的共享
+        # 底子，往里塞一趟性的本仓构件没有收益，只会把这趟动过的东西变浑。
         # 测试照旧跳过，本 job 也不需要配 Node：各模块 pom 没有任何生命周期阶段
         # 绑着 node／npm（控制台前端是不经构建的 ES module），唯一会拉起 node 的
         # 是 JUnit 夹具，-DskipTests 之下走不到
@@ -145,7 +188,7 @@ jobs:
         # 不是值——命令行会原样进日志，值由 Actions 从仓库密钥库注入 env
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
-        run: mvn -B -Pinstall package org.owasp:dependency-check-maven:13.0.0:check -Dformat=JSON -DskipTests -DnvdApiKeyEnvironmentVariable=NVD_API_KEY -DdataDirectory="$DC_DATA_DIR"
+        run: mvn -B -Pinstall package org.owasp:dependency-check-maven:13.0.0:check -Dformat=JSON -DskipTests -DossIndexAnalyzerEnabled=false -DnvdApiKeyEnvironmentVariable=NVD_API_KEY -DdataDirectory="$DC_DATA_DIR"
 
       # 报告不落附件就留不住：job summary 只贴高危摘录，整份 JSON（含未过阈值的
       # 条目与依赖明细）只在运行器磁盘上，job 一结束就没了，事后想逐条核对已无处
@@ -173,11 +216,12 @@ jobs:
 
       # 不阻断，但不能让高危悄悄溜过去：结果显式贴到 job summary。
       # 「不阻断」省下的阻塞成本，必须用可见性补回来，否则等于没扫。
-      #
-      # 🔴 这一步先确认检查脚本本身是好的，再看它报什么。上一版就是脚本坏了却一直绿着：
-      # 用 CSV 最后一列当分数，而最后一列是 Notes（空串），于是
-      # 「CVSS ≥ 7」恒不成立，summary 每次都打印「✅ 未发现」。
-      # **解析坏掉的表现与真的没有漏洞完全一样**，所以必须有阳性对照。
+      # 汇总与验单的逻辑在 .github/scripts/summarize-dependency-check.sh：
+      # 报告要先过结构检查、份数要与根 pom 推得的应出数对账，坏了缺了逐份
+      # 点名并亮 ::warning::，绝不把「判不动」说成「未发现」。
+      # 这一步先确认检查脚本本身是好的（阳性对照），再看它报什么——检查脚本
+      # 失灵时，解析坏掉的表现与真的没有漏洞完全一样；整套做法与理由写在
+      # 脚本开头的注释里
       - name: 高危漏洞进 job summary
         if: always()
         env:
@@ -187,68 +231,10 @@ jobs:
           # 只用来判空、绝不回显：密钥缺失是「没扫成」最常见的成因，
           # 值得在运行页上单独点名，但值本身一个字节都不能落到日志里
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+          # 本次配置的数据来源一句话，与上面扫描命令里的分析器开关同源；
+          # 汇总脚本原样贴进 job summary，读的人才知道这轮看了哪些库
+          SCAN_SOURCES: '漏洞数据取自 NVD；Sonatype OSS Index 分析器已显式关闭（未配其凭据）'
         run: |
           set -euo pipefail
-          chmod +x .github/scripts/high-cvss.sh .github/scripts/no-cvssv3.sh
-
-          # ① 先确认脚本本身能用：对照报告里有一条写死的 9.8，抓不到它就说明解析坏了。
-          #    这一条**允许失败整个步骤**——尺子坏掉时给出的「未发现」比不给更危险，
-          #    它不是漏洞不阻断的那个议题，它是工具本身坏了
-          CONTROL=$(.github/scripts/high-cvss.sh .github/fixtures/dependency-check-control.json 7 | wc -l | tr -d ' ')
-          if [ "$CONTROL" != "1" ]; then
-            echo "::error::漏洞统计的阳性对照失败（期望 1 条，实得 $CONTROL）——本次扫描结果不可信"
-            exit 1
-          fi
-
-          # ② 所有模块的报告都要看。上一版 `find | head -1` 只取第一份，
-          #    其余模块的结果整个不看，而那同样表现为「没发现」
-          mapfile -t REPORTS < <(find . -name 'dependency-check-report.json' | sort)
-
-          # 「没扫成」要亮在运行页上（::warning:: 注解），不能只沉在 job summary 里：
-          # summary 要点开才看得见，而没扫成的运行页和全绿的运行页长得一样。
-          # 两种情形都算没扫成：扫描步骤自己退非零（outcome），或跑完了却一份报告
-          # 都没落下来。只亮黄、不让 job 失败：这个 job 的职责是出报告，
-          # 「没扫成要不要拦推送」是另一个决定，不该在这里悄悄换掉
-          if [ "$SCAN_OUTCOME" = "failure" ] || [ "${#REPORTS[@]}" -eq 0 ]; then
-            echo "::warning::依赖漏洞扫描这次没扫成（扫描步骤 outcome=$SCAN_OUTCOME，报告 ${#REPORTS[@]} 份）——别把结果栏的空白当成没有漏洞"
-            # 密钥是空的最常见也最好查，单独点名，省得去几千行日志里翻 NvdApiException
-            if [ -z "$NVD_API_KEY" ]; then
-              echo "::warning::Actions 密钥 NVD_API_KEY 是空的——扫描拿不到密钥会直接中止，请先在仓库设置里把它配好"
-            fi
-          fi
-
-          {
-            echo "## 依赖漏洞扫描"
-            echo "（阳性对照已通过：解析器能在对照报告里抓出那条 9.8）"
-            if [ "${#REPORTS[@]}" -eq 0 ]; then
-              # ⚠️ 报告缺失和「没有漏洞」长得一样，必须分开说，否则这块永远是绿的
-              echo "⚠️ **未找到报告文件**——扫描步骤可能根本没跑成。"
-              echo "别把这一栏的空白当成「没有漏洞」。"
-            else
-              echo "报告 ${#REPORTS[@]} 份：$(printf '`%s` ' "${REPORTS[@]}")"
-              HIGH=$(for r in "${REPORTS[@]}"; do .github/scripts/high-cvss.sh "$r" 7; done | sort -u)
-              COUNT=$(printf '%s' "$HIGH" | grep -c . || true)
-              if [ "$COUNT" = "0" ]; then
-                echo "✅ 本次未发现 CVSSv3 ≥ 7 的条目。"
-              else
-                echo "🔴 **发现 $COUNT 条 CVSSv3 ≥ 7 的依赖漏洞**（不阻断构建，但请处理）："
-                echo '```'
-                printf '%s\n' "$HIGH" | head -40
-                echo '```'
-                [ "$COUNT" -gt 40 ] && echo "（上面只列了前 40 条，共 $COUNT 条）"
-              fi
-
-              # 只有 CVSSv2 的旧条目不参与上面的阈值判定。不报出来就等于
-              # 把「没判到它」说成「它不高危」——同一个病的小号版本
-              NOV3=$(for r in "${REPORTS[@]}"; do .github/scripts/no-cvssv3.sh "$r"; done | sort -u)
-              NOV3_COUNT=$(printf '%s' "$NOV3" | grep -c . || true)
-              if [ "$NOV3_COUNT" != "0" ]; then
-                echo ""
-                echo "ℹ️ 另有 **$NOV3_COUNT 条没有 CVSSv3 分数**（多为只有 CVSSv2 的旧条目），"
-                echo "未参与上面的阈值判定，需要人工过目："
-                echo '```'
-                printf '%s\n' "$NOV3" | head -20
-                echo '```'
-              fi
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+          chmod +x .github/scripts/high-cvss.sh .github/scripts/no-cvssv3.sh .github/scripts/summarize-dependency-check.sh
+          .github/scripts/summarize-dependency-check.sh
