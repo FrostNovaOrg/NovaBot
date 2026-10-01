@@ -1,6 +1,6 @@
 # 在本机把真源跑起来
 
-给要对接[事件输出](user-guide.md#事件输出)的下游用：**零凭据**，不用扫码、不用配 QQ 机器人，
+给要对接[事件输出](../manual/appendix-b-advanced.md)的下游用：**零凭据**，不用扫码、不用配 QQ 机器人，
 十分钟内在自己的 Mac 或 Linux 上跑出一条真实的直播事件流。
 
 全程只读，不会推送任何消息，也不会碰你的哔哩哔哩账号——匿名模式压根不读凭据。
@@ -53,7 +53,7 @@ novabot:
 [{"uid": <主播uid>, "platform": "bilibili", "targets": []}]
 ```
 
-`targets` 留空就是[纯监听房间](user-guide.md#只采集不推送的房间)：照常连接、照常出事件、
+`targets` 留空就是[纯监听房间](../manual/06-add-streamer-and-push.md)：照常连接、照常出事件、
 **一条 QQ 消息都不发**。这正是你要的形态。
 
 > 房间号 → uid 的换算：
@@ -175,7 +175,7 @@ asyncio.run(main())
 - **别把口令放进握手**：`Sec-WebSocket-Protocol`、`Authorization` 一律拒收（HTTP 400），
   `?token=` 也不接受。
 
-口令怎么签见[使用说明](user-guide.md#开了口令时客户端怎么认证)。
+口令怎么签见[用户手册附录 B](../manual/appendix-b-advanced.md)。
 
 ## 5. 匿名源的数据长什么样
 

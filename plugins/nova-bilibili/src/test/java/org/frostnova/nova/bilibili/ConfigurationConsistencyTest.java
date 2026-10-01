@@ -842,16 +842,18 @@ class ConfigurationConsistencyTest {
             }
             assertTrue(listed.contains("docs/runbook-protocol-corpus.md"),
                     "列件缺 docs/runbook-protocol-corpus.md，现有 " + listed);
-            assertTrue(listed.contains("docs/user-guide.md"),
-                    "列件缺 docs/user-guide.md，现有 " + listed);
+            assertTrue(listed.contains("manual/appendix-a-measurements.md"),
+                    "列件缺 manual/appendix-a-measurements.md，现有 " + listed);
+            assertTrue(listed.contains("manual/appendix-b-advanced.md"),
+                    "列件缺 manual/appendix-b-advanced.md，现有 " + listed);
+            assertTrue(listed.contains("manual/appendix-c-security-and-resources.md"),
+                    "列件缺 manual/appendix-c-security-and-resources.md，现有 " + listed);
+            assertTrue(listed.contains("manual/13-upgrade-and-backup.md"),
+                    "列件缺 manual/13-upgrade-and-backup.md，现有 " + listed);
             assertTrue(listed.contains("dist/templates/application.example.yml"),
                     "列件缺 dist/templates/application.example.yml，现有 " + listed);
             assertTrue(names.contains("novabot.core.mail.default-to"),
                     "已知键集缺 novabot.core.mail.default-to");
-            Path exempt = root.resolve("docs/redesign.md");
-            assertTrue(Files.exists(exempt), "找不到豁免件 docs/redesign.md");
-            assertTrue(Files.readString(exempt, StandardCharsets.UTF_8).contains("不随实现回填"),
-                    "豁免件不含「不随实现回填」");
         } catch (Throwable t) {
             red.add("④ " + t.getMessage());
         }
@@ -938,8 +940,8 @@ class ConfigurationConsistencyTest {
         return "docs";
     }
 
-    private boolean isExemptDocument(String relative) {
-        return "docs/redesign.md".equals(relative);
+    private String manualDirectoryName() {
+        return "manual";
     }
 
     private Pattern dottedDocumentedKeyPattern() {
@@ -975,14 +977,12 @@ class ConfigurationConsistencyTest {
                     .forEach(files::add);
         }
         addDocumentedFiles(files, root, root.resolve(docsDirectoryName()), true);
+        addDocumentedFiles(files, root, root.resolve(manualDirectoryName()), true);
         addDocumentedFiles(files, root, root.resolve("templates"), true);
         addDocumentedFiles(files, root, root.resolve("dist").resolve("templates"), false);
         List<GitIgnoreLine> ignoreLines = readRootGitIgnore(root);
         files.removeIf(path -> {
             String relative = root.relativize(path).toString().replace('\\', '/');
-            if (isExemptDocument(relative)) {
-                return true;
-            }
             for (GitIgnoreLine line : ignoreLines) {
                 if (line.matches(relative)) {
                     return true;
@@ -1557,25 +1557,41 @@ class ConfigurationConsistencyTest {
     @Test
     @DisplayName("⚠️ 文档与模板里写的协议版本号与代码里的常量一致")
     void protocolVersionIsStatedConsistently() throws IOException {
-        // 升 v2 时我按「散在 11 处」逐处改，漏了配置模板——它一直写着 v1。
+        // 升 v2 时按「散在多处」逐处改，漏了配置模板——它一直写着 v1。
         // 靠数出来的清单去改，改完没法证明改全了；这条测试改成让机器去找那些地方。
+        // 「事件输出协议 vN」这句现在在手册附录 B（眼下该章不写版本号，写上错的号仍要红）。
+        // 协议正文顶部的「版本 N」是版本号现在落笔的地方，一并盯住。
         Pattern mention = Pattern.compile("事件输出协议 v(\\d+)");
+        Pattern protocolHeading = Pattern.compile("\\*\\*版本 (\\d+)");
         List<String> stale = new ArrayList<>();
         Path root = repositoryRoot();
 
-        for (String relative : List.of("dist/templates/application.example.yml", "docs/user-guide.md", "CHANGELOG.md")) {
+        for (String relative : List.of(
+                "dist/templates/application.example.yml",
+                "manual/appendix-b-advanced.md",
+                "docs/protocol.md",
+                "CHANGELOG.md")) {
             Path file = root.resolve(relative);
-            // 三份都在册，缺一份就是有人改了名而没改这里——跳过它等于把这一格量成空集
+            // 这几份都在册，缺一份就是有人改了名而没改这里——跳过它等于把这一格量成空集
             assertTrue(Files.exists(file), "找不到 " + relative + " —— 改过名就把这里一起改");
             List<String> lines = Files.readAllLines(file);
             for (int i = 0; i < lines.size(); i++) {
                 Matcher matcher = mention.matcher(lines.get(i));
                 while (matcher.find()) {
                     int stated = Integer.parseInt(matcher.group(1));
-                    // 更新日志会提到历史版本，那是沿革不是现状；只有「未发布」之前的正文才必须是当前版本。
-                    // 这里的判据从简：写着比当前版本号更小的，一律当漏改
+                    // 更新日志会提到历史版本，那是沿革不是现状。
+                    // 这里从简：写着与当前版本号不同的，一律当漏改
                     if (stated != NovaEventMapper.PROTOCOL_VERSION) {
                         stale.add(relative + ":" + (i + 1) + " 写的是 v" + stated);
+                    }
+                }
+                if ("docs/protocol.md".equals(relative)) {
+                    Matcher heading = protocolHeading.matcher(lines.get(i));
+                    while (heading.find()) {
+                        int stated = Integer.parseInt(heading.group(1));
+                        if (stated != NovaEventMapper.PROTOCOL_VERSION) {
+                            stale.add(relative + ":" + (i + 1) + " 写的是版本 " + stated);
+                        }
                     }
                 }
             }
