@@ -236,7 +236,8 @@ class BilibiliLiveReportPainterTest {
         data.incrementLiveMetric(PLATFORM, STREAMER.getUid(), BilibiliLiveMetric.BOX_PROFIT, boxProfit);
         BilibiliLiveReportPainter reportPainter = new BilibiliLiveReportPainter(
                 factory, api, data, fontUtil, new NovaBilibiliProperties(), roomInfoHistory);
-        return reportPainter.buildCards(PLATFORM, STREAMER.getUid(), BilibiliLiveReportOptions.of(null, true))
+        return reportPainter.buildCards(factory.create(ReportSharedStyle.WIDTH, 1600, true),
+                        PLATFORM, STREAMER.getUid(), BilibiliLiveReportOptions.of(null, true))
                 .stream()
                 .map(BilibiliLiveReportPainter.Card::label)
                 .filter(label -> label.startsWith("盲盒"))
@@ -592,8 +593,9 @@ class BilibiliLiveReportPainterTest {
         assertTrue(text.contains("直播时长 2 时"), text);
         assertTrue(text.contains("采集缺口 共 12 分 34 秒·维护"), text);
         assertTrue(text.contains("弹幕 106 条 · 1 人参与"), text);
-        // 金额格式与图片版共用 yuan()，整数不补两位小数——两版说的必须是同一个数
-        assertTrue(text.contains("本场收益 ¥52"), text);
+        // 金额格式与图片版共用 yuan()，整数不补两位小数——两版说的必须是同一个数。
+        // 流水行与图片版流水卡同一个式子：礼物＋醒目留言＋大航海
+        assertTrue(text.contains("流水 ¥52 · 1 人"), text);
         assertTrue(text.contains("绘制失败"), "要说清这是降级来的，别让人以为报告一直长这样");
         assertFalse(text.contains("图片未送达"), "本场没有图片降级时不该占版面");
     }
@@ -632,7 +634,7 @@ class BilibiliLiveReportPainterTest {
 
         assertFalse(text.contains("¥"), "降级不是放宽口径的理由: " + text);
         assertFalse(text.contains("52"), text);
-        assertTrue(text.contains("礼物 1 人送出"), "热闹程度照样看得见: " + text);
+        assertTrue(text.contains("付费互动 1 人"), "热闹程度照样看得见: " + text);
     }
 
     @Test
@@ -679,7 +681,8 @@ class BilibiliLiveReportPainterTest {
         }
         BilibiliLiveReportPainter reportPainter = new BilibiliLiveReportPainter(
                 factory, api, data, fontUtil, new NovaBilibiliProperties(), roomInfoHistory);
-        return reportPainter.buildCards(PLATFORM, STREAMER.getUid(), BilibiliLiveReportOptions.of(null, true))
+        return reportPainter.buildCards(factory.create(ReportSharedStyle.WIDTH, 1600, true),
+                        PLATFORM, STREAMER.getUid(), BilibiliLiveReportOptions.of(null, true))
                 .stream()
                 .map(BilibiliLiveReportPainter.Card::label)
                 .filter(label -> label.startsWith("弹幕"))

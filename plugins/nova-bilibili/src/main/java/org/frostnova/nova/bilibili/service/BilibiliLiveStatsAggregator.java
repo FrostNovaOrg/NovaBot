@@ -137,6 +137,8 @@ public class BilibiliLiveStatsAggregator {
         // 记到手价值而不是实扣——与 GIFT_VALUE 同口径，卡片与榜单必须能相加对上，
         // 理由与背包礼物那个反例见 BilibiliLiveMetric.GIFT_USERS
         scoreUser(event, BilibiliLiveMetric.GIFT_USERS, event.getSender(), value);
+        // 分人流水与礼物分表同一次调用一并写入，金额同源（见 REVENUE_USERS 的注释）
+        scoreUser(event, BilibiliLiveMetric.REVENUE_USERS, event.getSender(), value);
         var gift = event.getGiftInfo();
         recordEvent(event, "gift", eventFields(event.getSender(),
                 "gid", gift == null ? null : gift.getId(),
@@ -197,6 +199,8 @@ public class BilibiliLiveStatsAggregator {
         scoreUser(event, BilibiliLiveMetric.GIFT_USERS, event.getSender(), value);
         scoreUser(event, BilibiliLiveMetric.BOX_USERS, event.getSender(), count);
         scoreUser(event, BilibiliLiveMetric.BOX_PROFIT_USERS, event.getSender(), value - price);
+        // 盲盒的流水按开出物价值计（与 GIFT_VALUE 同口径），与上面礼物分表同一次调用一并写入
+        scoreUser(event, BilibiliLiveMetric.REVENUE_USERS, event.getSender(), value);
         var box = event.getRandomGiftInfo();
         var gift = event.getGiftInfo();
         recordEvent(event, "box", eventFields(event.getSender(),
@@ -217,6 +221,9 @@ public class BilibiliLiveStatsAggregator {
         increment(event, BilibiliLiveMetric.SUPER_CHAT_COUNT, 1);
         increment(event, BilibiliLiveMetric.SUPER_CHAT_VALUE, value);
         scoreUser(event, BilibiliLiveMetric.SUPER_CHAT_USERS, event.getSender(), value);
+        // 名单要「几条」：金额表答不出条数，条数也不拿金额去除以单价去猜
+        scoreUser(event, BilibiliLiveMetric.SUPER_CHAT_USERS_COUNT, event.getSender(), 1);
+        scoreUser(event, BilibiliLiveMetric.REVENUE_USERS, event.getSender(), value);
         // 付费留言也是一句话，同样留原文；类型分开标，密度统计据此把它排除在外
         recordDanmu(event, event.getSender(), event.getContent(), DanmuRecord.Type.SUPER_CHAT);
     }
@@ -229,6 +236,9 @@ public class BilibiliLiveStatsAggregator {
         increment(event, BilibiliLiveMetric.CAPTAIN_COUNT, 1);
         increment(event, BilibiliLiveMetric.GUARD_VALUE, Optional.ofNullable(event.getValue()).orElse(0.0));
         scoreUser(event, BilibiliLiveMetric.GUARD_USERS, event.getSender(), 1);
+        scoreUser(event, BilibiliLiveMetric.REVENUE_USERS, event.getSender(),
+                Optional.ofNullable(event.getValue()).orElse(0.0));
+        countGuardOperate(event, event.getOperateType());
         recordGuard(event, 3, event.getOperateType());
     }
 
@@ -240,6 +250,9 @@ public class BilibiliLiveStatsAggregator {
         increment(event, BilibiliLiveMetric.COMMANDER_COUNT, 1);
         increment(event, BilibiliLiveMetric.GUARD_VALUE, Optional.ofNullable(event.getValue()).orElse(0.0));
         scoreUser(event, BilibiliLiveMetric.GUARD_USERS, event.getSender(), 1);
+        scoreUser(event, BilibiliLiveMetric.REVENUE_USERS, event.getSender(),
+                Optional.ofNullable(event.getValue()).orElse(0.0));
+        countGuardOperate(event, event.getOperateType());
         recordGuard(event, 2, event.getOperateType());
     }
 
@@ -251,7 +264,22 @@ public class BilibiliLiveStatsAggregator {
         increment(event, BilibiliLiveMetric.GOVERNOR_COUNT, 1);
         increment(event, BilibiliLiveMetric.GUARD_VALUE, Optional.ofNullable(event.getValue()).orElse(0.0));
         scoreUser(event, BilibiliLiveMetric.GUARD_USERS, event.getSender(), 1);
+        scoreUser(event, BilibiliLiveMetric.REVENUE_USERS, event.getSender(),
+                Optional.ofNullable(event.getValue()).orElse(0.0));
+        countGuardOperate(event, event.getOperateType());
         recordGuard(event, 1, event.getOperateType());
+    }
+
+    /**
+     * 把开通／续费各记各的人次。认不出操作类型时两边都不计——硬归一边是把「不知道」说成知道，
+     * 人次总量（舰长＋提督＋总督三个人次之和）不含糊，报告上分不清的那部分不写就是
+     */
+    private void countGuardOperate(NovaBaseLiveEvent event, GuardOperateType operateType) {
+        if (operateType == GuardOperateType.ACTIVATION) {
+            increment(event, BilibiliLiveMetric.GUARD_OPEN_COUNT, 1);
+        } else if (operateType == GuardOperateType.RENEWAL) {
+            increment(event, BilibiliLiveMetric.GUARD_RENEW_COUNT, 1);
+        }
     }
 
     /**

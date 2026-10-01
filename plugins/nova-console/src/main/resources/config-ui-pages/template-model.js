@@ -569,7 +569,12 @@ export function editableKeys(handler) {
 export function isDefault(params, handler) {
   const now = params || {};
   const base = ((handler || {}).defaultParams) || {};
-  return !Object.keys(now).some(key => String(now[key]) !== String(base[key]));
+  // 只有处理器哪都不认得的键不算差异（被删掉的版式项留在老通道参数里的死键）；
+  // 「@ 谁」那一档与自报的可配置项可能不在默认参数里，但它们是活键，照旧参与判定。
+  // 与 push-model 的 templateState 同一条口径，两处判法分叉的话两页会各说各话
+  const known = new Set([...Object.keys(base),
+    ...(((handler || {}).options) || []).map(option => option.key), AT_MODE_KEY]);
+  return !Object.keys(now).some(key => known.has(key) && String(now[key]) !== String(base[key]));
 }
 
 /**

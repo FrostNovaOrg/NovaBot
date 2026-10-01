@@ -94,8 +94,66 @@ public final class BilibiliLiveMetric {
     public static final String GIFT_RANKING_SCOPE_CHANGE_NOTE =
             "累计榜含两段口径：升级到 4.3.0 之前按观众实扣累计，之后按主播到手价值累计，历史数据未回算";
 
+    /**
+     * 流水用户计分表，得分为该用户本场贡献的流水（元）＝礼物＋醒目留言＋上舰金额
+     * <p>
+     * 礼物与醒目留言的分人金额此前各有表（{@link #GIFT_USERS}、{@link #SUPER_CHAT_USERS}），
+     * 上舰的分人金额没有记，而「按人合计三种钱」在既有接口上算不出来（排行榜按单表取数）。
+     * 这张表在四类付费事件发生时与各分表<b>同一次调用一并写入</b>，口径如下：
+     * <ul>
+     *     <li>礼物按 {@link #GIFT_VALUE} 同口径（主播到手价值，含背包礼物与盲盒开出物）</li>
+     *     <li>醒目留言按 {@link #SUPER_CHAT_VALUE} 同口径</li>
+     *     <li>上舰按 {@link #GUARD_VALUE} 同口径（与总额共用同一来源的金额）</li>
+     * </ul>
+     * 🔴 <b>总额不另记一份</b>：流水总额永远是三张总量指标相加，若在这里再攒一个总量，
+     * 两本账没有任何东西互相钉住，迟早对不上。分人之和是否等于总额，判据在
+     * {@code BilibiliRevenueUsersMetricTest}。
+     * <p>
+     * 🔴 升级到记这张表的版本之前的场次没有它：报告与命令读不到时按旧表回落
+     * （礼物＋醒目留言的分人数据），并把口径说清楚，不许静默出错。
+     */
+    public static final String REVENUE_USERS = "revenue_users";
+
+    /**
+     * 流水排行的口径说明，展示在榜单下方
+     * <p>
+     * 与 {@link #GIFT_RANKING_NOTE} 同一条理由：报告图与排行榜命令读的是同一份文本。
+     * 「不是观众实付」那句沿礼物榜的话——背包礼物与盲盒开出物按主播收到的价值计。
+     */
+    public static final String REVENUE_RANKING_NOTE =
+            "流水按礼物、醒目留言与大航海的金额合计，礼物为主播到手价值，不是观众实付";
+
+    /**
+     * 流水榜的累计口径变更说明，只在<b>跨场累计</b>范围下展示
+     * <p>
+     * 分人流水表是这一版才有的：累计榜里升级之前的场次一概不在其中。
+     * 照 {@link #GIFT_RANKING_SCOPE_CHANGE_NOTE} 的写法标注出来，不回算、不归零。
+     * <p>
+     * ⚠️ 版本号跟着发布走，终审改了发布号这里要一起改。
+     */
+    public static final String REVENUE_RANKING_SCOPE_CHANGE_NOTE =
+            "累计榜自升级到 5.7.8 起才开始按人记流水，之前的场次不在其中，历史数据未回算";
+
+    /**
+     * 流水排行落到旧数据时的口径说明，展示在榜单下方
+     * <p>
+     * 记分表（{@link #REVENUE_USERS}）没有记到的那一场，报告图与排行榜命令都按
+     * 礼物＋醒目留言的分人金额回落。这句话两处<b>共用同一个字面</b>：同一个群友在
+     * 两个入口看到的口径必须一致，各写一份迟早说出两个说法。
+     */
+    public static final String REVENUE_RANKING_FALLBACK_NOTE =
+            "旧场次没有分人流水记录，按礼物与醒目留言的分人金额排，上舰部分未计入";
+
     /** 醒目留言用户计分表，得分为该用户的醒目留言总额（元） */
     public static final String SUPER_CHAT_USERS = "super_chat_users";
+
+    /**
+     * 醒目留言条数用户计分表，得分为该用户发出的醒目留言条数
+     * <p>
+     * 醒目留言名单要「每人一行，写合计金额、几条」——金额表答不出条数，
+     * 条数也不能拿金额除以单价去猜（一条 SC 的金额随赠予人自选）。
+     */
+    public static final String SUPER_CHAT_USERS_COUNT = "super_chat_users_count";
 
     /** 盲盒用户计分表，得分为该用户开出的盲盒个数 */
     public static final String BOX_USERS = "box_users";
@@ -132,6 +190,18 @@ public final class BilibiliLiveMetric {
 
     /** 大航海价值，单位：元 */
     public static final String GUARD_VALUE = "guard_value";
+
+    /**
+     * 本场开通（新开）大航海的人次，与 {@link #CAPTAIN_COUNT} 等三个人次总量同源，
+     * 按事件自带的操作类型分出来的那一半。认不出是开通还是续费的不计入，也不硬归一边
+     */
+    public static final String GUARD_OPEN_COUNT = "guard_open_count";
+
+    /**
+     * 本场续费大航海的人次。口径见 {@link #GUARD_OPEN_COUNT}；两个之和可以小于人次总量，
+     * 差的就是认不出的那部分
+     */
+    public static final String GUARD_RENEW_COUNT = "guard_renew_count";
 
     /**
      * 新增关注人次

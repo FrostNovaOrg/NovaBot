@@ -7,6 +7,7 @@ import org.frostnova.nova.bilibili.model.BilibiliLiveReportOptions;
 import org.frostnova.nova.bilibili.model.GuardMember;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.model.DanmuRecord;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.service.DefaultLiveDataService;
@@ -133,8 +134,27 @@ public class BilibiliLiveReportPreviewPainter extends BilibiliLiveReportPainter 
     }
 
     @Override
+    protected BufferedImage guardIcon(String url, int size) {
+        return guardMark;
+    }
+
+    @Override
     protected BufferedImage giftIcon(String url) {
         return null;
+    }
+
+    /**
+     * 夹具原文。不读、不写任何一场的明细——预览那一屏没有真场次
+     */
+    @Override
+    protected List<DanmuRecord> superChatRecords(String platform, Long uid) {
+        return List.of(
+                new DanmuRecord(PREVIEW_START + 18 * 60_000L, PREVIEW_VIEWERS[0], PREVIEW_VIEWER_NAMES[0],
+                        "这条是第一条醒目留言的原文", DanmuRecord.Type.SUPER_CHAT),
+                new DanmuRecord(PREVIEW_START + 47 * 60_000L, PREVIEW_VIEWERS[1], PREVIEW_VIEWER_NAMES[1],
+                        "第二条在开播四十多分钟的时候", DanmuRecord.Type.SUPER_CHAT),
+                new DanmuRecord(PREVIEW_START + 66 * 60_000L, PREVIEW_VIEWERS[0], PREVIEW_VIEWER_NAMES[0],
+                        "同一个人可以发不止一条", DanmuRecord.Type.SUPER_CHAT));
     }
 
     @Override
@@ -196,7 +216,10 @@ public class BilibiliLiveReportPreviewPainter extends BilibiliLiveReportPainter 
         data.incrementLiveMetric(platform, PREVIEW_UID, BilibiliLiveMetric.BOX_PROFIT, -37.5);
         data.incrementLiveMetric(platform, PREVIEW_UID, BilibiliLiveMetric.CAPTAIN_COUNT, 3);
         data.incrementLiveMetric(platform, PREVIEW_UID, BilibiliLiveMetric.COMMANDER_COUNT, 1);
-        data.incrementLiveMetric(platform, PREVIEW_UID, BilibiliLiveMetric.GUARD_VALUE, 1_386);
+        data.incrementLiveMetric(platform, PREVIEW_UID, BilibiliLiveMetric.GOVERNOR_COUNT, 1);
+        data.incrementLiveMetric(platform, PREVIEW_UID, BilibiliLiveMetric.GUARD_VALUE, 3_384);
+        data.incrementLiveMetric(platform, PREVIEW_UID, BilibiliLiveMetric.GUARD_OPEN_COUNT, 2);
+        data.incrementLiveMetric(platform, PREVIEW_UID, BilibiliLiveMetric.GUARD_RENEW_COUNT, 3);
         data.incrementLiveMetric(platform, PREVIEW_UID, BilibiliLiveMetric.FOLLOW_COUNT, 96);
         data.incrementLiveMetric(platform, PREVIEW_UID, BilibiliLiveMetric.SHARE_COUNT, 24);
         data.maxLiveMetric(platform, PREVIEW_UID, BilibiliLiveMetric.LIKE_TOTAL, 2_573);
@@ -223,8 +246,10 @@ public class BilibiliLiveReportPreviewPainter extends BilibiliLiveReportPainter 
         double[] danmu = {186, 142, 97, 63, 41};
         double[] gift = {88.8, 52.4, 30.0, 18.6, 9.9};
         double[] superChat = {100, 66, 30};
+        double[] superChatCount = {2, 1, 1};
         double[] box = {18, 12, 9};
         double[] boxProfit = {24.5, -6.2, -18.4};
+        double[] revenue = {188.8, 118.4, 138, 18.6, 9.9};
 
         for (int i = 0; i < PREVIEW_VIEWERS.length; i++) {
             long viewer = PREVIEW_VIEWERS[i];
@@ -236,10 +261,13 @@ public class BilibiliLiveReportPreviewPainter extends BilibiliLiveReportPainter 
             data.incrementLiveUserMetric(platform, PREVIEW_UID, BilibiliLiveMetric.GIFT_USERS, viewer, gift[i]);
             data.recordLiveMetricUser(platform, PREVIEW_UID, BilibiliLiveMetric.ENTER_USERS, viewer);
             data.recordLiveMetricUser(platform, PREVIEW_UID, BilibiliLiveMetric.LIKE_USERS, viewer);
+            data.incrementLiveUserMetric(platform, PREVIEW_UID, BilibiliLiveMetric.REVENUE_USERS, viewer, revenue[i]);
 
             if (i < superChat.length) {
                 data.incrementLiveUserMetric(platform, PREVIEW_UID,
                         BilibiliLiveMetric.SUPER_CHAT_USERS, viewer, superChat[i]);
+                data.incrementLiveUserMetric(platform, PREVIEW_UID,
+                        BilibiliLiveMetric.SUPER_CHAT_USERS_COUNT, viewer, superChatCount[i]);
                 data.incrementLiveUserMetric(platform, PREVIEW_UID,
                         BilibiliLiveMetric.BOX_USERS, viewer, box[i]);
                 data.incrementLiveUserMetric(platform, PREVIEW_UID,

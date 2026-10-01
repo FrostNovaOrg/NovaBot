@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -188,6 +189,40 @@ class DemoAssetsTest {
             }
         } catch (Throwable t) {
             red.add("② " + t.getMessage());
+        }
+        if (!red.isEmpty()) {
+            fail(red.size() + " 问红：" + String.join("；", red));
+        }
+    }
+
+    @Test
+    @DisplayName("隐藏金额那一版：同一份演示数据出图不超体积，文字版无金额符号、显示金额那版有")
+    void hiddenSessionRenderStaysUnderCapAndTextsMatchVisibility(@TempDir Path dir) throws Exception {
+        Path demo = dir.resolve("demo");
+        DemoAssets.generate(demo, fonts);
+        // 产物落在 target/demo-assets：这一版是判据与人工对照用的，不随发布进 docs/assets
+        Path out = DemoAssets.repoRoot().resolve("target").resolve("demo-assets");
+        DemoAssets.HiddenRendered hidden = DemoAssets.renderHidden(demo, out, fonts);
+        List<String> red = new ArrayList<>();
+        try {
+            assertTrue(hidden.bytes() > 0 && hidden.bytes() <= DemoAssets.REPORT_MAX_BYTES,
+                    "bytes " + hidden.bytes());
+            BufferedImage image = ImageIO.read(hidden.path().toFile());
+            assertEquals(1200, image.getWidth(), "IHDR width");
+        } catch (Throwable t) {
+            red.add("① " + t.getMessage());
+        }
+        try {
+            assertTrue(hidden.shownText().contains("¥"), "显示金额的文字版该带金额：" + hidden.shownText());
+            assertFalse(hidden.hiddenText().contains("¥"), "隐藏金额的文字版一个金额符号都不许有：" + hidden.hiddenText());
+        } catch (Throwable t) {
+            red.add("② " + t.getMessage());
+        }
+        try {
+            assertTrue(hidden.shownText().contains("醒目留言"), hidden.shownText());
+            assertTrue(hidden.hiddenText().contains("醒目留言"), "热闹程度照旧看得见：" + hidden.hiddenText());
+        } catch (Throwable t) {
+            red.add("③ " + t.getMessage());
         }
         if (!red.isEmpty()) {
             fail(red.size() + " 问红：" + String.join("；", red));

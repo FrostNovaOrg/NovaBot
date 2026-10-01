@@ -31,6 +31,19 @@ final class FrontendFixture {
 
     static void run(String fixture, String what) throws IOException, InterruptedException {
         Path path = repoRoot().resolve(fixture);
+        runAbsolute(path, what);
+    }
+
+    /**
+     * 夹具按<b>模块内相对位置</b>认（{@code src/test/resources/frontend/…}，测试跑起来时
+     * 工作目录就是本模块）。新写的壳走这一支、不写死模块目录名：写死目录名的旧写法
+     * 只减不增，新壳不再添一件。
+     */
+    static void runFromModule(String fixtureInModule, String what) throws IOException, InterruptedException {
+        runAbsolute(Path.of(fixtureInModule).toAbsolutePath(), what);
+    }
+
+    private static void runAbsolute(Path path, String what) throws IOException, InterruptedException {
         assertTrue(Files.exists(path), "夹具不见了，这一格此刻什么也没量: " + path);
 
         ProcessBuilder builder = new ProcessBuilder("node", path.toString());

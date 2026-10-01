@@ -16,11 +16,13 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * 改过的默认模板：读、写与拒收
@@ -237,6 +239,53 @@ class PushTemplateDefaultsTest {
         Files.writeString(file(), "{ 这不是 JSON", StandardCharsets.UTF_8);
 
         assertEquals(FACTORY_MESSAGE, new PushTemplateDefaults(properties).paramsOf(handler).getString("message"));
+    }
+
+    /**
+     * 版式项删掉之后，老机器上 {@code template-defaults.json} 里存着的那个键就成了死键。
+     * 读的一侧必须当它不存在：留着它的话，控制台按「默认与出厂的差集」算出来的覆盖
+     * 会带着这个死键发回来，保存那一步被校验拒收——升级前改过的默认模板，升级后反而存不进去。
+     */
+    @Test
+    @DisplayName("已删版式键的旧覆盖：读时忽略，后续保存不再被死键拖垮")
+    void overrideOnRemovedOptionKeyIsIgnoredAtRead() throws IOException {
+        Files.writeString(file(), new JSONObject()
+                .fluentPut(FakeHandler.class.getName(), new JSONObject()
+                        .fluentPut("message", "{uname} 改过的")
+                        .fluentPut("danmu_top", 8)
+                        .fluentPut("removed_layout_key", 5))
+                .toJSONString(), StandardCharsets.UTF_8);
+
+        JSONObject params = defaults.paramsOf(handler);
+        List<String> red = new ArrayList<>();
+        try {
+            assertEquals("{uname} 改过的", params.getString("message"), "活着的覆盖照旧生效");
+        } catch (Throwable t) {
+            red.add("① " + t.getMessage());
+        }
+        try {
+            assertEquals(8, params.getIntValue("danmu_top"), "处理器仍自报的可配置项照旧生效");
+        } catch (Throwable t) {
+            red.add("② " + t.getMessage());
+        }
+        try {
+            assertFalse(params.containsKey("removed_layout_key"),
+                    "处理器已不认的键不该再出现在默认参数里——它正是把保存拖垮的那个键");
+        } catch (Throwable t) {
+            red.add("③ " + t.getMessage());
+        }
+        try {
+            // 控制台按这份默认与出厂的差集发回的保存（不含死键）要能存进
+            assertEquals(List.of(), defaults.save(handler, new JSONObject()
+                    .fluentPut("message", "{uname} 又改的")
+                    .fluentPut("danmu_top", 8)));
+            assertEquals("{uname} 又改的", defaults.paramsOf(handler).getString("message"));
+        } catch (Throwable t) {
+            red.add("④ " + t.getMessage());
+        }
+        if (!red.isEmpty()) {
+            fail(red.size() + " 问红：" + String.join("；", red));
+        }
     }
 
     /**

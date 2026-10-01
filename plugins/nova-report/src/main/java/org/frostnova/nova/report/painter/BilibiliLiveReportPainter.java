@@ -299,12 +299,6 @@ public class BilibiliLiveReportPainter {
 
     static final Color COLOR_CURVE_GAP_EDGE = new Color(168, 178, 188);
 
-    private static final Color COLOR_CURVE_SUPER_CHAT = new Color(255, 168, 61);
-
-    private static final Color COLOR_CURVE_BOX = new Color(110, 199, 122);
-
-    private static final Color COLOR_CURVE_GUARD = new Color(151, 129, 224);
-
     private static final DateTimeFormatter TIME_FORMATTER =
             DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(ZoneId.of("Asia/Shanghai"));
 
@@ -521,36 +515,38 @@ public class BilibiliLiveReportPainter {
 
         long boxes = count(platform, uid, BilibiliLiveMetric.BOX_COUNT);
         long superChats = count(platform, uid, BilibiliLiveMetric.SUPER_CHAT_COUNT);
-        long guards = count(platform, uid, BilibiliLiveMetric.CAPTAIN_COUNT)
-                + count(platform, uid, BilibiliLiveMetric.COMMANDER_COUNT)
-                + count(platform, uid, BilibiliLiveMetric.GOVERNOR_COUNT);
+        long guards = guardPurchaseCount(platform, uid);
 
+        // 流水行与图片版流水卡同一个数、同一句话式（文字版只保证数字送到，措辞跟着图片走）
+        double revenueTotal = revenueTotal(platform, uid);
+        int revenueUsers = revenueUserCount(platform, uid);
         if (options.isShowRevenue()) {
-            double revenue = liveDataService.getLiveMetric(platform, uid, BilibiliLiveMetric.GIFT_VALUE)
-                    + liveDataService.getLiveMetric(platform, uid, BilibiliLiveMetric.SUPER_CHAT_VALUE)
-                    + liveDataService.getLiveMetric(platform, uid, BilibiliLiveMetric.GUARD_VALUE);
-            if (revenue > 0) {
-                text.append("\n本场收益 ¥").append(yuan(revenue));
+            if (revenueTotal > 0) {
+                text.append("\n流水 ¥").append(yuan(revenueTotal)).append(" · ").append(revenueUsers).append(" 人");
             }
-        } else {
+        } else if (revenueUsers > 0) {
             // 不展示金额时换一种说法，热闹程度照样看得见——与图片版同一个立场
-            int giftUsers = liveDataService.getLiveMetricUserCount(platform, uid, BilibiliLiveMetric.GIFT_USERS);
-            if (giftUsers > 0) {
-                text.append("\n礼物 ").append(giftUsers).append(" 人送出");
-            }
+            text.append("\n付费互动 ").append(revenueUsers).append(" 人");
         }
 
         if (superChats > 0) {
             text.append("\n醒目留言 ").append(superChats).append(" 条");
         }
         if (guards > 0) {
-            text.append("\n新开通大航海 ").append(guards).append(" 人");
+            // 与图片版大航海卡同一句式：只写「大航海」不写「开通」（数的是人次，续费也算），
+            // 新开与续费对得上人次时拆开写，对不上就只写次数
+            long opens = count(platform, uid, BilibiliLiveMetric.GUARD_OPEN_COUNT);
+            long renews = count(platform, uid, BilibiliLiveMetric.GUARD_RENEW_COUNT);
+            text.append("\n大航海 ").append(guards).append(" 次");
+            if (opens + renews == guards) {
+                text.append(" · 新开 ").append(opens).append(" · 续费 ").append(renews);
+            }
         }
         if (boxes > 0) {
             text.append("\n盲盒 ").append(boxes).append(" 个");
         }
 
-        appendGuardRoster(text, source, options);
+        appendGuardRoster(text, platform, source, options);
 
         long follow = count(platform, uid, BilibiliLiveMetric.FOLLOW_COUNT);
         int enterUsers = liveDataService.getLiveMetricUserCount(platform, uid, BilibiliLiveMetric.ENTER_USERS);
@@ -575,7 +571,7 @@ public class BilibiliLiveReportPainter {
             painter.setPos(MARGIN, MARGIN);
 
             drawHeader(painter, platform, source, options);
-            drawOverview(painter, platform, source.getUid(), options);
+            drawOverview(painter, platform, source.getUid());
             if (options.isCards()) {
                 drawCards(painter, platform, source.getUid(), options);
             }
@@ -593,7 +589,7 @@ public class BilibiliLiveReportPainter {
             }
             drawRankings(painter, platform, source.getUid(), options);
             if (options.isGuardListAll()) {
-                drawGuardRoster(painter, source, options);
+                drawGuardRoster(painter, platform, source, options);
             }
             if (options.isDanmuCloud()) {
                 drawWordCloud(painter, platform, source.getUid());
@@ -663,12 +659,12 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
-     * 绘制概览行：直播时长与本场收益
+     * 绘制概览行：直播时长与采集缺口
      * <p>
-     * 收益此前是<b>无条件</b>绘制的：即使把其余区块全部关掉，只留一张卡片，
-     * 这一行照样把整场收入写在报告最显眼的位置。
+     * 收益那一截已挪进「流水」卡片：概览行写「本场赚了多少」与卡片写「流水」是同一件事的两个说法，
+     * 同一张报告里出现两遍，读的人只会以为它们数的是两样东西。
      */
-    private void drawOverview(CommonPainter painter, String platform, Long uid, BilibiliLiveReportOptions options) {
+    private void drawOverview(CommonPainter painter, String platform, Long uid) {
         String duration = Optional.of(durationText(platform, uid)).filter(StringUtil::isNotBlank).orElse("未知");
 
         List<TextWithStyle> line = new ArrayList<>();
@@ -688,16 +684,6 @@ public class BilibiliLiveReportPainter {
         if (imageDegraded > 0) {
             line.add(new TextWithStyle("    ⚠ 有 " + imageDegraded + " 条推送的图片未送达",
                     CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN));
-        }
-
-        if (options.isShowRevenue()) {
-            double revenue = liveDataService.getLiveMetric(platform, uid, BilibiliLiveMetric.GIFT_VALUE)
-                    + liveDataService.getLiveMetric(platform, uid, BilibiliLiveMetric.SUPER_CHAT_VALUE)
-                    + liveDataService.getLiveMetric(platform, uid, BilibiliLiveMetric.GUARD_VALUE);
-            if (revenue > 0) {
-                line.add(new TextWithStyle("    本场收益 ", CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN));
-                line.add(new TextWithStyle("¥" + yuan(revenue), CommonPainter.TEXT_FONT_SIZE, COLOR_NAME, Font.BOLD));
-            }
         }
 
         painter.drawTextWithStyle(wrapAtSegments(painter, line, MARGIN), null, true, MARGIN);
@@ -759,12 +745,12 @@ public class BilibiliLiveReportPainter {
     /**
      * 绘制数据卡片栅格，为零的卡片自动省略
      * <p>
-     * 不展示金额时这些卡片不是消失，而是换一种说法：礼物讲「多少人送出」、
+     * 不展示金额时这些卡片不是消失，而是换一种说法：流水讲「多少人付费互动」、
      * 醒目留言讲「多少条」、盲盒讲「开了多少个」。互动的热闹程度照样看得见，
      * 只是不带走具体数额——那正是想给大群看的部分。
      */
     private void drawCards(CommonPainter painter, String platform, Long uid, BilibiliLiveReportOptions options) {
-        List<Card> cards = buildCards(platform, uid, options);
+        List<Card> cards = buildCards(painter, platform, uid, options);
 
         int startY = painter.getY();
         for (int i = 0; i < cards.size(); i++) {
@@ -781,21 +767,20 @@ public class BilibiliLiveReportPainter {
 
     /**
      * 本场数据卡片列表。为零的条目不入列。
+     * <p>
+     * 要画坊进来是因为大航海卡副行要量宽度决定舍不舍金额（见 {@link #guardPurchaseCard}）。
      */
-    List<Card> buildCards(String platform, Long uid, BilibiliLiveReportOptions options) {
+    List<Card> buildCards(CommonPainter painter, String platform, Long uid, BilibiliLiveReportOptions options) {
         long danmu = count(platform, uid, BilibiliLiveMetric.DANMU_COUNT);
         int danmuUsers = liveDataService.getLiveMetricUserCount(platform, uid, BilibiliLiveMetric.DANMU_USERS);
-        double giftValue = liveDataService.getLiveMetric(platform, uid, BilibiliLiveMetric.GIFT_VALUE);
-        int giftUsers = liveDataService.getLiveMetricUserCount(platform, uid, BilibiliLiveMetric.GIFT_USERS);
+        double revenueTotal = revenueTotal(platform, uid);
+        int revenueUsers = revenueUserCount(platform, uid);
         long freeGift = count(platform, uid, BilibiliLiveMetric.FREE_GIFT_COUNT);
         long box = count(platform, uid, BilibiliLiveMetric.BOX_COUNT);
         double boxProfit = liveDataService.getLiveMetric(platform, uid, BilibiliLiveMetric.BOX_PROFIT);
         long superChat = count(platform, uid, BilibiliLiveMetric.SUPER_CHAT_COUNT);
         double superChatValue = liveDataService.getLiveMetric(platform, uid, BilibiliLiveMetric.SUPER_CHAT_VALUE);
-        long captain = count(platform, uid, BilibiliLiveMetric.CAPTAIN_COUNT);
-        long commander = count(platform, uid, BilibiliLiveMetric.COMMANDER_COUNT);
-        long governor = count(platform, uid, BilibiliLiveMetric.GOVERNOR_COUNT);
-        double guardValue = liveDataService.getLiveMetric(platform, uid, BilibiliLiveMetric.GUARD_VALUE);
+        long guardPurchases = guardPurchaseCount(platform, uid);
         long follow = count(platform, uid, BilibiliLiveMetric.FOLLOW_COUNT);
         int enterUsers = liveDataService.getLiveMetricUserCount(platform, uid, BilibiliLiveMetric.ENTER_USERS);
         long likeTotal = count(platform, uid, BilibiliLiveMetric.LIKE_TOTAL);
@@ -804,12 +789,14 @@ public class BilibiliLiveReportPainter {
         boolean revenue = options.isShowRevenue();
 
         List<Card> cards = new ArrayList<>();
-        cards.add(new Card(String.valueOf(danmu), "弹幕" + danmuUsersSuffix(danmu, danmuUsers)));
-        if (giftValue > 0 || giftUsers > 0) {
+        // 流水放第一格：整场报告最要紧的一个数，第一眼要落在它上；隐藏金额的
+        // 「付费互动」那形也是同一个位置——想给人看的热闹不因为不露金额而挪后
+        if (revenueTotal > 0 || revenueUsers > 0) {
             cards.add(revenue
-                    ? new Card("¥" + yuan(giftValue), "礼物 · " + giftUsers + " 人送出")
-                    : new Card(giftUsers + " 人", "送出礼物"));
+                    ? new Card("¥" + yuan(revenueTotal), "流水 · " + revenueUsers + " 人")
+                    : new Card(revenueUsers + " 人", "付费互动"));
         }
+        cards.add(new Card(String.valueOf(danmu), "弹幕" + danmuUsersSuffix(danmu, danmuUsers)));
         if (likeTotal > 0) {
             cards.add(new Card(String.valueOf(likeTotal), "点赞"));
         }
@@ -822,9 +809,8 @@ public class BilibiliLiveReportPainter {
         if (superChat > 0) {
             cards.add(new Card(superChat + " 条", revenue ? "醒目留言 · ¥" + yuan(superChatValue) : "醒目留言"));
         }
-        if (captain > 0 || commander > 0 || governor > 0) {
-            cards.add(new Card("+" + (captain + commander + governor),
-                    revenue ? "大航海 · ¥" + yuan(guardValue) : "大航海"));
+        if (guardPurchases > 0) {
+            cards.add(guardPurchaseCard(painter, platform, uid, guardPurchases, revenue));
         }
         if (box > 0) {
             cards.add(new Card(box + " 个",
@@ -837,6 +823,85 @@ public class BilibiliLiveReportPainter {
             cards.add(new Card(share + " 次", "分享"));
         }
         return cards;
+    }
+
+    /**
+     * 流水总额：礼物（主播到手价值，含背包礼物与盲盒开出物）＋醒目留言＋大航海。
+     * <p>
+     * 只做三张总量相加，<b>不另记一份总额</b>——两本账没有互相钉住的东西，迟早对不上。
+     */
+    double revenueTotal(String platform, Long uid) {
+        return liveDataService.getLiveMetric(platform, uid, BilibiliLiveMetric.GIFT_VALUE)
+                + liveDataService.getLiveMetric(platform, uid, BilibiliLiveMetric.SUPER_CHAT_VALUE)
+                + liveDataService.getLiveMetric(platform, uid, BilibiliLiveMetric.GUARD_VALUE);
+    }
+
+    /**
+     * 本场付费互动的去重人数：送过付费礼物、开过盲盒、发过醒目留言或上过舰的人
+     * <p>
+     * 新表（分人流水）记到就是它；升级前的场次没有这张表，回落到三张旧分表的参与者并集——
+     * 人数问的是「有几个人」，并集天然去重，匿名的不在分表里，自然不计。
+     */
+    int revenueUserCount(String platform, Long uid) {
+        int counted = liveDataService.getLiveMetricUserCount(platform, uid, BilibiliLiveMetric.REVENUE_USERS);
+        if (counted > 0) {
+            return counted;
+        }
+        Set<Long> union = new java.util.HashSet<>();
+        Map<String, List<Long>> sets = liveDataService.getLiveMetricUserSets(platform, uid);
+        for (String metric : List.of(BilibiliLiveMetric.GIFT_USERS,
+                BilibiliLiveMetric.SUPER_CHAT_USERS, BilibiliLiveMetric.GUARD_USERS)) {
+            List<Long> users = sets.get(metric);
+            if (users != null) {
+                union.addAll(users);
+            }
+        }
+        return union.size();
+    }
+
+    /**
+     * 上舰人次（舰长＋提督＋总督，含续费）。卡片、收到的礼物与大航海卡用的是同一个数
+     */
+    long guardPurchaseCount(String platform, Long uid) {
+        return count(platform, uid, BilibiliLiveMetric.CAPTAIN_COUNT)
+                + count(platform, uid, BilibiliLiveMetric.COMMANDER_COUNT)
+                + count(platform, uid, BilibiliLiveMetric.GOVERNOR_COUNT);
+    }
+
+    /**
+     * 大航海卡：写人次，分得清时随行写新开与续费。
+     * <p>
+     * 「三处的说法」之一：这里数的是<b>人次</b>（新开与续费都算一次），
+     * 「本场变化」那张数的是<b>在舰人数</b>，全名单是<b>此刻在舰的人</b>——各说各的，互不冒充。
+     * <p>
+     * 副行标签只写「大航海」不写「开通」：数的是人次，写「开通」读者会把续费也读成新开。
+     * 新开与续费比金额要紧——金额已在流水卡里，副行放不下时先舍金额，不许反过来把
+     * 新开／续费截掉；真到拆分本身都放不下的地步，才轮到 {@code drawCard} 的兜底截断。
+     * <p>
+     * 量宽度要画坊，所以这一张建卡时就把取舍做完，而不是画的时候截。
+     */
+    Card guardPurchaseCard(CommonPainter painter, String platform, Long uid, long purchases, boolean showRevenue) {
+        long opens = count(platform, uid, BilibiliLiveMetric.GUARD_OPEN_COUNT);
+        long renews = count(platform, uid, BilibiliLiveMetric.GUARD_RENEW_COUNT);
+        // 新开＋续费对不上人次的那一场分不清，只写次数：拆开写就是把「不知道」说成了知道
+        String breakdown = opens + renews == purchases
+                ? " · 新开 " + opens + " · 续费 " + renews : "";
+        if (showRevenue) {
+            double guardValue = liveDataService.getLiveMetric(platform, uid, BilibiliLiveMetric.GUARD_VALUE);
+            String withAmount = "大航海 · ¥" + yuan(guardValue);
+            if (breakdown.isEmpty() || cardLabelFits(painter, withAmount + breakdown)) {
+                return new Card("+" + purchases + " 次", withAmount + breakdown);
+            }
+        }
+        return new Card("+" + purchases + " 次", "大航海" + breakdown);
+    }
+
+    /**
+     * 一句卡片副行文案放不放得下：按副行同款字号量，宽度是卡片内宽减两侧留白
+     */
+    private boolean cardLabelFits(CommonPainter painter, String label) {
+        int usable = CARD_WIDTH - CARD_TEXT_INSET * 2;
+        return painter.getStringWidthAndHeight(new TextWithStyle(label, 22, COLOR_TIP, Font.PLAIN)).getFirst() <= usable;
     }
 
     /**
@@ -872,7 +937,7 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
-     * 绘制粉丝、粉丝团与大航海的本场变化
+     * 绘制粉丝、粉丝团与大航海人数的本场变化
      * <p>
      * 这三项都不在弹幕流里，只能问接口。开播时的快照由
      * {@code BilibiliRoomStatsSnapshotter} 记下，这里取一次实时值相减即得涨幅——
@@ -880,20 +945,10 @@ public class BilibiliLiveReportPainter {
      * <p>
      * 三项各自独立降级：接口挂了或没有开播快照，就只跳过那一项。
      * <p>
-     * ⚠️ <b>已登记待处理：这里的「大航海」与数据卡片里的「大航海」不同口径，而名字一样。</b>
-     * 卡片上那个是<b>上舰人次</b>（{@code CAPTAIN/COMMANDER/GOVERNOR_COUNT} 之和，
-     * <b>含续费</b>），这里这个是<b>大航海人数的净变化</b>（续费不改变人数，到期会减少）。
-     * 于是同一张报告里可以出现「大航海 +5」与「大航海 · 本场 +2」，读的人无法对上。
-     * 曲线区还有第三个「大航海」，画的是金额（{@code GUARD_VALUE}）。
-     * <p>
-     * 按「同一张报告里同名指标必须同口径，不同就改名或标注」这条规矩，这里要么改名
-     * （如「上舰人次」/「大航海人数」）要么标注。改动涉及报告版面与既有截图的认知，
-     * 不与礼物口径那批一起做，已记账。
-     * <p>
-     * <b>届时以改名为主，不是标注。</b>礼物那次能靠标注解决，是因为变更后只剩一个口径，
-     * 那句话说的是「这个数是什么」；而这里是<b>三个不同的量共用一个名字</b>，
-     * 标注得写成「这个大航海是人次，那个大航海是人数，曲线那个是金额」——
-     * 读的人仍然要在三个同名的东西之间自己对号。
+     * 同一张报告里有三处带「大航海」字样，各数各的、说法已分开：
+     * 数据卡与收到的礼物数<b>人次</b>（写「N 次」「×N」），这里数<b>此刻在舰人数</b>
+     * （写「在舰 X 人 · 较开播 ±Y」），全名单列的是<b>此刻在舰的人</b>——
+     * 名字撞在一起时，读的人靠说法就知道各数的是什么。
      */
     private void drawFansChange(CommonPainter painter, String platform, LiveStreamerInfo source) {
         List<Card> cards = new ArrayList<>();
@@ -904,7 +959,7 @@ public class BilibiliLiveReportPainter {
                 cards.add(changeCard(platform, source.getUid(), medal, BilibiliLiveMetric.FANS_MEDAL_AT_START, "粉丝团")));
         if (source.getRoomId() != null) {
             guardCount(source.getRoomId(), source.getUid()).ifPresent(guard ->
-                    cards.add(changeCard(platform, source.getUid(), guard, BilibiliLiveMetric.GUARD_AT_START, "大航海")));
+                    cards.add(guardChangeCard(platform, source.getUid(), guard)));
         }
 
         if (cards.isEmpty()) {
@@ -939,6 +994,23 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
+     * 大航海那张变化卡片：写「在舰 X 人」，涨幅写作「较开播 ±Y」
+     * <p>
+     * 与另两张变化卡（粉丝、粉丝团）分开写：那两个数的是<b>存量</b>，「本场 +N」是自然说法；
+     * 这里数的是<b>此刻在舰的人数</b>，「在舰」两个字把存量说出来，涨幅对着「开播那一刻」，
+     * 与数据卡那个<b>人次</b>（「+N 次」）从说法上就分得开。
+     */
+    Card guardChangeCard(String platform, Long uid, long current) {
+        double start = liveDataService.getLiveMetric(platform, uid, BilibiliLiveMetric.GUARD_AT_START);
+        if (start <= 0) {
+            return new Card("在舰 " + current + " 人", "大航海");
+        }
+
+        long delta = current - Math.round(start);
+        return new Card("在舰 " + current + " 人", "大航海 · 较开播 " + deltaLabel(delta));
+    }
+
+    /**
      * 本场净变化：正数带加号、负数自带减号、零写持平。
      */
     static String deltaLabel(long delta) {
@@ -955,7 +1027,7 @@ public class BilibiliLiveReportPainter {
      * 绘制互动曲线
      * <p>
      * 每项指标一条独立的图，各自按自身峰值缩放。在线人数走折线，其余走面积。
-     * <b>刻意不把它们叠在同一张图上</b>：弹幕以「条」计、礼物以「元」计，量级动辄差两个数量级，
+     * <b>刻意不把它们叠在同一张图上</b>：弹幕以「条」计、流水以「元」计，量级动辄差两个数量级，
      * 共用纵轴的结果是除了最大的那条以外全部压成一条直线。
      */
     private void drawCurves(CommonPainter painter, String platform, Long uid, BilibiliLiveReportOptions options) {
@@ -965,32 +1037,17 @@ public class BilibiliLiveReportPainter {
             return;
         }
 
-        // 不展示金额时，礼物、醒目留言、大航海三条曲线保留形状但不标峰值。
-        // 面积图按自身峰值归一化，画出来的是「什么时候热闹」，本身不含任何绝对数值——
-        // 这恰好是最适合给大群看的东西，整条删掉反而丢了氛围
-        DoubleFunction<String> money = options.isShowRevenue() ? peak -> "¥" + yuan(peak) + "/分" : null;
-
-        List<Curve> curves = new ArrayList<>();
-        curves.add(new Curve("弹幕", BilibiliLiveMetric.DANMU_COUNT, COLOR_CURVE_DANMU,
-                peak -> Math.round(peak) + " 条/分"));
-        curves.add(new Curve("礼物", BilibiliLiveMetric.GIFT_VALUE, COLOR_NAME, money));
-        curves.add(new Curve("醒目留言", BilibiliLiveMetric.SUPER_CHAT_VALUE, COLOR_CURVE_SUPER_CHAT, money));
-        curves.add(new Curve("盲盒", BilibiliLiveMetric.BOX_COUNT, COLOR_CURVE_BOX,
-                peak -> Math.round(peak) + " 个/分"));
-        curves.add(new Curve("大航海", BilibiliLiveMetric.GUARD_VALUE, COLOR_CURVE_GUARD, money));
-        // 看过人数是累计值，画出来是一条只升不降的线——它的**斜率**才是「什么时候在涨人」。
-        // 峰值标的是本场最终看过多少人，因此文案是「人看过」而不是「人/分」
-        curves.add(new Curve("看过人数", BilibiliLiveMetric.WATCHED_COUNT, COLOR_CURVE_WATCHED,
-                peak -> Math.round(peak) + " 人看过"));
-        curves.add(new Curve("在线人数", BilibiliLiveMetric.ONLINE_COUNT, COLOR_CURVE_ONLINE,
-                peak -> Math.round(peak) + " 人", true, "登录观众数，哔哩哔哩高能榜口径"));
+        List<Curve> curves = buildCurves(platform, uid, options);
 
         // 缺口表整段算一次：各条曲线共用同一条时间轴，缺口落在哪几列对它们是同一个答案
         List<LiveGap> gaps = collectionGaps(platform, uid, start.get(), end.get());
 
         boolean first = true;
         for (Curve curve : curves) {
-            Map<Long, Double> series = liveDataService.getLiveSeries(platform, uid, curve.metric);
+            // 流水那条的时序是合成出来的（三张金额时序逐分钟相加），buildCurves 已连曲线一起给
+            Map<Long, Double> series = curve.series != null
+                    ? curve.series
+                    : liveDataService.getLiveSeries(platform, uid, curve.metric);
             if (series.isEmpty()) {
                 continue;
             }
@@ -1007,6 +1064,51 @@ public class BilibiliLiveReportPainter {
         if (!first) {
             painter.movePos(0, 8);
         }
+    }
+
+    /**
+     * 曲线清单：弹幕、流水、看过、在线四条
+     * <p>
+     * 原先的礼物、醒目留言、盲盒、大航海四条金额曲线并成一条「流水」——每分钟三张金额时序相加，
+     * 单色、不分成分、不另打标记；盲盒的钱记在礼物那张时序里（按开出物价值），不必另加。
+     * 弹幕、看过、在线三条不动。
+     * <p>
+     * 包内可见：曲线的构成（几条、各叫什么、峰值怎么标）是版式判据要量的东西，
+     * 从成品图上反推不出「峰值文案里有没有金额」。
+     */
+    List<Curve> buildCurves(String platform, Long uid, BilibiliLiveReportOptions options) {
+        // 不展示金额时，流水曲线保留形状但不标峰值。
+        // 面积图按自身峰值归一化，画出来的是「什么时候热闹」，本身不含任何绝对数值——
+        // 这恰好是最适合给大群看的东西，整条删掉反而丢了氛围
+        DoubleFunction<String> money = options.isShowRevenue() ? peak -> "¥" + yuan(peak) + "/分" : null;
+
+        List<Curve> curves = new ArrayList<>();
+        curves.add(new Curve("弹幕", BilibiliLiveMetric.DANMU_COUNT, COLOR_CURVE_DANMU,
+                peak -> Math.round(peak) + " 条/分"));
+        curves.add(new Curve("流水", null, COLOR_NAME, money, revenueSeries(platform, uid)));
+        // 看过人数是累计值，画出来是一条只升不降的线——它的**斜率**才是「什么时候在涨人」。
+        // 峰值标的是本场最终看过多少人，因此文案是「人看过」而不是「人/分」
+        curves.add(new Curve("看过人数", BilibiliLiveMetric.WATCHED_COUNT, COLOR_CURVE_WATCHED,
+                peak -> Math.round(peak) + " 人看过"));
+        curves.add(new Curve("在线人数", BilibiliLiveMetric.ONLINE_COUNT, COLOR_CURVE_ONLINE,
+                peak -> Math.round(peak) + " 人", true, "登录观众数，哔哩哔哩高能榜口径"));
+        return curves;
+    }
+
+    /**
+     * 流水的逐分钟时序：礼物＋醒目留言＋大航海三张金额时序按同一分钟相加
+     * <p>
+     * 包内可见：每分钟之和等于三张总量相加的那件事，判据要直接量这张合成表，
+     * 从画出来的面积图上量不出「这一格是几块钱」。
+     */
+    Map<Long, Double> revenueSeries(String platform, Long uid) {
+        Map<Long, Double> merged = new LinkedHashMap<>();
+        for (String metric : List.of(BilibiliLiveMetric.GIFT_VALUE,
+                BilibiliLiveMetric.SUPER_CHAT_VALUE, BilibiliLiveMetric.GUARD_VALUE)) {
+            liveDataService.getLiveSeries(platform, uid, metric)
+                    .forEach((at, value) -> merged.merge(at, value, Double::sum));
+        }
+        return merged;
     }
 
     /**
@@ -1545,11 +1647,15 @@ public class BilibiliLiveReportPainter {
     private static final int GIFT_ICON_FETCH = 96;
 
     /**
-     * 绘制「收到的礼物」。没有礼物时整段不画。
+     * 绘制「收到的礼物」。没有礼物也没有大航海时整段不画。
+     * <p>
+     * 最上面单独放大航海（总督、提督、舰长，只放本场有人开的那几档）：
+     * 不论单价，一律排在所有礼物前面——这不是「谁送得贵」的排序，是「身份在礼物之上」的排序。
      */
     private void drawReceivedGifts(CommonPainter painter, String platform, Long uid) {
+        List<GuardTierCell> tiers = guardTierCells(platform, uid);
         List<ReceivedGiftLayout.Line> lines = ReceivedGiftLayout.layout(liveDataService.getLiveGifts(platform, uid));
-        if (lines.isEmpty()) {
+        if (tiers.isEmpty() && lines.isEmpty()) {
             return;
         }
 
@@ -1559,6 +1665,9 @@ public class BilibiliLiveReportPainter {
         painter.movePos(0, 8);
 
         int y = painter.getY();
+        if (!tiers.isEmpty()) {
+            y = drawGuardTierRow(painter, tiers, y);
+        }
         for (ReceivedGiftLayout.Line line : lines) {
             if (line instanceof ReceivedGiftLayout.OverflowLine overflow) {
                 painter.setPos(MARGIN, y);
@@ -1570,6 +1679,91 @@ public class BilibiliLiveReportPainter {
             y = drawGiftRow(painter, (ReceivedGiftLayout.GiftRow) line, y);
         }
         painter.setPos(MARGIN, y + 8);
+    }
+
+    /**
+     * 本场有人开的那几档大航海，按总督、提督、舰长的次序
+     * <p>
+     * 次数与大航海卡、本场开通名单是同一个数（舰长／提督／总督三个人次之和按档拆开）。
+     */
+    private List<GuardTierCell> guardTierCells(String platform, Long uid) {
+        List<GuardTierCell> cells = new ArrayList<>();
+        long governor = count(platform, uid, BilibiliLiveMetric.GOVERNOR_COUNT);
+        long commander = count(platform, uid, BilibiliLiveMetric.COMMANDER_COUNT);
+        long captain = count(platform, uid, BilibiliLiveMetric.CAPTAIN_COUNT);
+        if (governor > 0) {
+            cells.add(new GuardTierCell(1, "总督", governor));
+        }
+        if (commander > 0) {
+            cells.add(new GuardTierCell(2, "提督", commander));
+        }
+        if (captain > 0) {
+            cells.add(new GuardTierCell(3, "舰长", captain));
+        }
+        return cells;
+    }
+
+    /**
+     * 画一排大航海格，返回下一排的起始 y。不满一行时整排在版心里居中（与礼物不满行同一条规矩）
+     */
+    private int drawGuardTierRow(CommonPainter painter, List<GuardTierCell> tiers, int y) {
+        int columns = Math.max(tiers.size(), 1);
+        int cellWidth = (CONTENT_WIDTH - GIFT_CELL_GAP * (columns - 1)) / columns;
+        int nameHeight = painter.getStringWidthAndHeight(
+                new TextWithStyle("礼物", GIFT_NAME_SIZE, COLOR_TEXT, Font.PLAIN)).getSecond();
+        int countHeight = painter.getStringWidthAndHeight(
+                new TextWithStyle("×1", GIFT_COUNT_SIZE, COLOR_TIP, Font.PLAIN)).getSecond();
+        int x = MARGIN;
+        if (tiers.size() < columns) {
+            x += (CONTENT_WIDTH - cellWidth * tiers.size() - GIFT_CELL_GAP * (tiers.size() - 1)) / 2;
+        }
+        for (GuardTierCell tier : tiers) {
+            String url = defaultGuardIconUrl(tier.level());
+            BufferedImage icon = url == null ? null : guardIcon(url, GUARD_GIFT_ICON_SIZE);
+            if (icon == null) {
+                icon = solidCircle(guardColor(tier.level()), GUARD_GIFT_ICON_SIZE);
+            }
+            drawIconCell(painter, x, y, cellWidth, GUARD_GIFT_ICON_SIZE, icon,
+                    tier.name(), "×" + tier.count(), nameHeight, countHeight);
+            x += cellWidth + GIFT_CELL_GAP;
+        }
+        return y + GUARD_GIFT_ICON_SIZE + 6 + nameHeight + 2 + countHeight + 16;
+    }
+
+    /**
+     * 画一格：图标居中在上，名字与「×个数」居中在下。礼物格与大航海格共用，
+     * 两者的差别只在图标从哪来、长什么形状
+     */
+    private void drawIconCell(CommonPainter painter, int x, int y, int cellWidth, int iconSize,
+                              BufferedImage icon, String rawName, String countText,
+                              int nameHeight, int countHeight) {
+        painter.drawImage(icon, new Point(x + Math.max(0, (cellWidth - iconSize) / 2), y));
+
+        String name = painter.truncateToWidth(
+                new TextWithStyle(rawName == null ? "" : rawName, GIFT_NAME_SIZE, COLOR_TEXT, Font.PLAIN),
+                Math.max(1, cellWidth - 4));
+        int nameWidth = painter.getStringWidthAndHeight(
+                new TextWithStyle(name, GIFT_NAME_SIZE, COLOR_TEXT, Font.PLAIN)).getFirst();
+        int nameY = y + iconSize + 6;
+        painter.drawTextWithStyle(List.of(new TextWithStyle(name, GIFT_NAME_SIZE, COLOR_TEXT, Font.PLAIN)),
+                new Point(x + Math.max(0, (cellWidth - nameWidth) / 2), nameY));
+
+        int countWidth = painter.getStringWidthAndHeight(
+                new TextWithStyle(countText, GIFT_COUNT_SIZE, COLOR_TIP, Font.PLAIN)).getFirst();
+        painter.drawTextWithStyle(List.of(new TextWithStyle(countText, GIFT_COUNT_SIZE, COLOR_TIP, Font.PLAIN)),
+                new Point(x + Math.max(0, (cellWidth - countWidth) / 2), nameY + nameHeight + 2));
+    }
+
+    /**
+     * 收到的礼物里大航海格的图标边长。与礼物最高档同档（96px）：
+     * 名单用的 32px 源图放大到这个尺寸会糊，按这个宽度另取一张清楚的
+     */
+    private static final int GUARD_GIFT_ICON_SIZE = 96;
+
+    /**
+     * 一档大航海格：档位、名字与本次数
+     */
+    private record GuardTierCell(int level, String name, long count) {
     }
 
     /**
@@ -1592,22 +1786,8 @@ public class BilibiliLiveReportPainter {
         }
         for (LiveGiftTotal gift : row.gifts()) {
             BufferedImage icon = giftPicture(gift, iconSize);
-            painter.drawImage(icon, new Point(x + Math.max(0, (cellWidth - iconSize) / 2), y));
-
-            String rawName = gift.name() == null ? "" : gift.name();
-            String name = painter.truncateToWidth(
-                    new TextWithStyle(rawName, GIFT_NAME_SIZE, COLOR_TEXT, Font.PLAIN), Math.max(1, cellWidth - 4));
-            int nameWidth = painter.getStringWidthAndHeight(
-                    new TextWithStyle(name, GIFT_NAME_SIZE, COLOR_TEXT, Font.PLAIN)).getFirst();
-            int nameY = y + iconSize + 6;
-            painter.drawTextWithStyle(List.of(new TextWithStyle(name, GIFT_NAME_SIZE, COLOR_TEXT, Font.PLAIN)),
-                    new Point(x + Math.max(0, (cellWidth - nameWidth) / 2), nameY));
-
-            String countText = "×" + gift.count();
-            int countWidth = painter.getStringWidthAndHeight(
-                    new TextWithStyle(countText, GIFT_COUNT_SIZE, COLOR_TIP, Font.PLAIN)).getFirst();
-            painter.drawTextWithStyle(List.of(new TextWithStyle(countText, GIFT_COUNT_SIZE, COLOR_TIP, Font.PLAIN)),
-                    new Point(x + Math.max(0, (cellWidth - countWidth) / 2), nameY + nameHeight + 2));
+            drawIconCell(painter, x, y, cellWidth, iconSize, icon,
+                    gift.name(), "×" + gift.count(), nameHeight, countHeight);
             x += cellWidth + GIFT_CELL_GAP;
         }
         return y + iconSize + 6 + nameHeight + 2 + countHeight + 16;
@@ -1650,7 +1830,14 @@ public class BilibiliLiveReportPainter {
      * 大航海标志实际请求的地址，含缩放后缀
      */
     protected String guardFetchUrl(String url) {
-        return atSize(url, GUARD_ICON_SIZE);
+        return guardFetchUrl(url, GUARD_ICON_SIZE);
+    }
+
+    /**
+     * 大航海标志按指定宽度请求的地址。不同宽度是不同地址，本机缓存也各存各的
+     */
+    protected String guardFetchUrl(String url, int size) {
+        return atSize(url, size);
     }
 
     /**
@@ -1716,39 +1903,237 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
-     * 绘制各类排行榜与大航海名单，无数据的榜自动跳过
+     * 绘制各类排行榜和名单，无数据的榜自动跳过
      */
     private void drawRankings(CommonPainter painter, String platform, Long uid, BilibiliLiveReportOptions options) {
-        // 金额榜整榜跳过而非只抹掉数字：这三张榜的每一行本质都是「某人花了多少钱」，
-        // 留下名次仍然是在公开排消费
-        int giftRanking = options.isShowRevenue() ? options.getGiftRanking() : 0;
-        int superChatRanking = options.isShowRevenue() ? options.getSuperChatRanking() : 0;
-        int boxProfitRanking = options.isShowRevenue() ? options.getBoxProfitRanking() : 0;
+        // 金额榜整榜跳过而非只抹掉数字：这几张榜的每一行本质都是「某人花了多少钱」，
+        // 留下名次仍然是在公开排消费。盲盒榜例外：隐藏金额时只写个数——个数不是消费额，
+        // 而它是隐藏金额的会话里仅剩的几张榜之一
+        int revenueRankingLimit = options.isShowRevenue() ? options.getGiftRanking() : 0;
+        int superChatListLimit = options.isShowRevenue() ? options.getSuperChatRanking() : 0;
 
         drawRanking(painter, platform, uid, "弹幕排行", BilibiliLiveMetric.DANMU_USERS,
                 options.getDanmuRanking(), score -> Math.round(score) + " 条", null);
-        // 礼物榜与上面礼物卡片同口径（都是主播到手价值），标题下把口径写明：
-        // 观众最容易把这张榜读成「谁花了多少钱」，而背包礼物与盲盒上那不是同一个数
-        drawRanking(painter, platform, uid, "礼物排行", BilibiliLiveMetric.GIFT_USERS,
-                giftRanking, score -> "¥" + yuan(score), BilibiliLiveMetric.GIFT_RANKING_NOTE);
-        drawRanking(painter, platform, uid, "醒目留言排行", BilibiliLiveMetric.SUPER_CHAT_USERS,
-                superChatRanking, score -> "¥" + yuan(score), null);
-        drawRanking(painter, platform, uid, "盲盒排行", BilibiliLiveMetric.BOX_USERS,
-                options.getBoxRanking(), score -> Math.round(score) + " 个", null);
-        // 盲盒盈亏可正可负，正数补加号、负数补减号；零没有方向，不带号
-        drawRanking(painter, platform, uid, "盲盒盈亏排行", BilibiliLiveMetric.BOX_PROFIT_USERS,
-                boxProfitRanking, BilibiliLiveReportPainter::profitLabel, null);
+        drawRevenueRanking(painter, platform, uid, revenueRankingLimit);
+        drawSuperChatList(painter, platform, uid, superChatListLimit);
+        drawBoxBoard(painter, platform, uid, options.getBoxRanking(), options.isShowRevenue());
 
-        if (options.isGuardList()) {
+        // 本场开通大航海：只有隐藏金额的会话还画这张名单——那里没有金额可露，
+        // 名单正是氛围；显示金额的会话里不画，全名单上的「本场」小标承担同一件事
+        if (options.isGuardList() && !options.isShowRevenue()) {
             drawRanking(painter, platform, uid, "本场开通大航海", BilibiliLiveMetric.GUARD_USERS,
                     GUARD_LIST_LIMIT, score -> Math.round(score) + " 次", null);
         }
     }
 
     /**
-     * 绘制当前全部大航海。拉不到时写一行说明，不让整张报告失败
+     * 流水排行。有分人流水表按它排；没有的旧场次（回放、补出报告）按礼物＋醒目留言的
+     * 分人数据排，并把口径写明——上舰那一截旧数据里没有，硬编一个数进来才是出错。
+     * 合成那份在 {@link RevenueRankings}，与排行榜命令共用
      */
-    private void drawGuardRoster(CommonPainter painter, LiveStreamerInfo source, BilibiliLiveReportOptions options) {
+    private void drawRevenueRanking(CommonPainter painter, String platform, Long uid, int limit) {
+        if (limit <= 0) {
+            return;
+        }
+        List<UserScore> ranking = revenueRanking(platform, uid, limit);
+        String note = hasRevenueUserData(platform, uid)
+                ? BilibiliLiveMetric.REVENUE_RANKING_NOTE
+                : BilibiliLiveMetric.REVENUE_RANKING_FALLBACK_NOTE;
+        drawRankingRows(painter, "流水排行", ranking, score -> "¥" + yuan(score), note);
+    }
+
+    /**
+     * 流水排行的取数：新表优先，旧表回落
+     * <p>
+     * 包内可见：回落那一支「按已有的数算」算得对不对，判据要直接量这份名单
+     */
+    List<UserScore> revenueRanking(String platform, Long uid, int limit) {
+        List<UserScore> primary = liveDataService.getLiveUserRanking(platform, uid,
+                BilibiliLiveMetric.REVENUE_USERS, limit);
+        if (!primary.isEmpty()) {
+            return primary;
+        }
+        return RevenueRankings.legacyFallback(liveDataService, platform, uid, limit);
+    }
+
+    /**
+     * 这一场有没有分人流水表的数据。没有＝旧场次，各处回落按它认
+     */
+    boolean hasRevenueUserData(String platform, Long uid) {
+        return liveDataService.getLiveMetricUserCount(platform, uid, BilibiliLiveMetric.REVENUE_USERS) > 0;
+    }
+
+    /**
+     * 绘制一张排行榜（按指标取数的那一支）
+     */
+    private void drawRanking(CommonPainter painter, String platform, Long uid, String title,
+                             String metric, int limit, DoubleFunction<String> scoreText, String note) {
+        if (limit <= 0) {
+            return;
+        }
+        drawRankingRows(painter, title,
+                liveDataService.getLiveUserRanking(platform, uid, metric, limit), scoreText, note);
+    }
+
+    /**
+     * 绘制一张排行榜（行已取好的那一支）
+     */
+    private void drawRankingRows(CommonPainter painter, String title, List<UserScore> ranking,
+                                 DoubleFunction<String> scoreText, String note) {
+        if (ranking.isEmpty()) {
+            return;
+        }
+
+        painter.movePos(0, 10);
+        painter.drawTextWithStyle(List.of(new TextWithStyle(title, CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN)));
+        if (note != null) {
+            // 开自动折行：这句话一行放不下，而不折行的写法会把它画到画布外面，且不报错
+            painter.drawTextWithStyle(
+                    List.of(new TextWithStyle(note, CommonPainter.TIP_FONT_SIZE, COLOR_TIP, Font.PLAIN)),
+                    null, true, MARGIN);
+        }
+        painter.movePos(0, 6);
+
+        // 条形长度按榜首归一化：榜首满格，其余按比例，一眼能看出差距
+        double top = ranking.get(0).score();
+        for (int i = 0; i < ranking.size(); i++) {
+            drawRankingRow(painter, i + 1, ranking.get(i), top, scoreText.apply(ranking.get(i).score()));
+        }
+        painter.movePos(0, 8);
+    }
+
+    /**
+     * 盲盒榜：开了几个与盈亏多少合在一榜，每人一行。按个数排序——个数是活动量，
+     * 盈亏是运气，条形按个数走，盈亏跟着各人行显示（正负号照 profitLabel）。
+     * 隐藏金额时盈亏那一截不写，榜照出、只写个数：个数不是消费额
+     */
+    private void drawBoxBoard(CommonPainter painter, String platform, Long uid, int limit, boolean showRevenue) {
+        if (limit <= 0) {
+            return;
+        }
+        List<UserScore> ranking = liveDataService.getLiveUserRanking(platform, uid, BilibiliLiveMetric.BOX_USERS, limit);
+        if (ranking.isEmpty()) {
+            return;
+        }
+
+        painter.movePos(0, 10);
+        painter.drawTextWithStyle(List.of(new TextWithStyle("盲盒榜", CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN)));
+        painter.movePos(0, 6);
+
+        double top = ranking.get(0).score();
+        for (int i = 0; i < ranking.size(); i++) {
+            UserScore user = ranking.get(i);
+            String label = Math.round(user.score()) + " 个";
+            if (showRevenue) {
+                double profit = liveDataService.getLiveUserMetric(platform, uid,
+                        BilibiliLiveMetric.BOX_PROFIT_USERS, user.userUid());
+                label += " · " + profitLabel(profit);
+            }
+            drawRankingRow(painter, i + 1, user, top, label);
+        }
+        painter.movePos(0, 8);
+    }
+
+    /**
+     * 醒目留言名单：发过的每人一行，写昵称、合计金额、几条；有原文的下面带原文。
+     * <p>
+     * 与榜的区别：不画名次与比例条——它交代的是「谁说了什么」，不是「谁花得多」，
+     * 比例条会把名单又变回一张消费榜。
+     */
+    private void drawSuperChatList(CommonPainter painter, String platform, Long uid, int limit) {
+        List<SuperChatEntry> entries = superChatList(platform, uid, limit);
+        if (entries.isEmpty()) {
+            return;
+        }
+
+        painter.movePos(0, 10);
+        painter.drawTextWithStyle(List.of(new TextWithStyle("醒目留言名单", CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN)));
+        painter.movePos(0, 6);
+
+        for (SuperChatEntry entry : entries) {
+            int y = painter.getY();
+
+            painter.drawTextWithStyle(List.of(
+                            new TextWithStyle(truncate(painter, entry.uname()), 24, COLOR_TEXT, Font.PLAIN)),
+                    new Point(MARGIN, y + 6));
+
+            String label = "¥" + yuan(entry.total()) + " · " + entry.count() + " 条";
+            int labelWidth = painter.getStringWidthAndHeight(
+                    new TextWithStyle(label, 24, COLOR_TEXT, Font.PLAIN)).getFirst();
+            painter.drawTextWithStyle(List.of(new TextWithStyle(label, 24, COLOR_TEXT, Font.PLAIN)),
+                    new Point(Math.max(MARGIN, WIDTH - MARGIN - labelWidth), y + 6));
+
+            int height = RANKING_ROW_HEIGHT;
+            if (!entry.joinedText().isBlank()) {
+                // 一行放不下就截断：原文是氛围不是证据，截断比换行成小作文更像一张名单
+                TextWithStyle text = new TextWithStyle(entry.joinedText(), 20, COLOR_TIP, Font.PLAIN);
+                text.setText(painter.truncateToWidth(text, CONTENT_WIDTH));
+                painter.drawTextWithStyle(List.of(text), new Point(MARGIN, y + RANKING_ROW_HEIGHT - 8));
+                height = RANKING_ROW_HEIGHT + 30;
+            }
+            painter.setPos(MARGIN, y + height);
+        }
+        painter.movePos(0, 8);
+    }
+
+    /**
+     * 醒目留言名单的一行：谁、合计多少、几条、原文接成的一句
+     * <p>
+     * 包内可见：名单的构成（金额、条数、按时间接起来的原文）是判据要量的东西
+     */
+    record SuperChatEntry(Long uid, String uname, double total, long count, String joinedText) {
+    }
+
+    /**
+     * 醒目留言名单的取数
+     * <p>
+     * 条数优先用计数表；旧场次没有计数表时用原文记录数出来的个数——
+     * 原文从记档那天起就在记，两个来源数的是同一件事
+     */
+    List<SuperChatEntry> superChatList(String platform, Long uid, int limit) {
+        if (limit <= 0) {
+            return List.of();
+        }
+        List<UserScore> ranking = liveDataService.getLiveUserRanking(platform, uid,
+                BilibiliLiveMetric.SUPER_CHAT_USERS, limit);
+        if (ranking.isEmpty()) {
+            return List.of();
+        }
+
+        Map<Long, List<DanmuRecord>> byUser = new LinkedHashMap<>();
+        for (DanmuRecord record : superChatRecords(platform, uid)) {
+            // 取用处再滤一道类型：口子给的应当只是醒目留言，混进来的普通弹幕不许上名单
+            if (record.uid() != null && record.type() == DanmuRecord.Type.SUPER_CHAT) {
+                byUser.computeIfAbsent(record.uid(), key -> new ArrayList<>()).add(record);
+            }
+        }
+
+        List<SuperChatEntry> entries = new ArrayList<>();
+        for (UserScore user : ranking) {
+            List<DanmuRecord> own = byUser.getOrDefault(user.userUid(), List.of());
+            long count = Math.round(liveDataService.getLiveUserMetric(platform, uid,
+                    BilibiliLiveMetric.SUPER_CHAT_USERS_COUNT, user.userUid()));
+            if (count == 0) {
+                count = own.size();
+            }
+            // 多条按时间接起来（原文记录本身就是按时间追加的），句与句之间用「／」隔开
+            String joined = own.stream()
+                    .map(DanmuRecord::text)
+                    .filter(text -> text != null && !text.isBlank())
+                    .reduce((left, right) -> left + "／" + right)
+                    .orElse("");
+            entries.add(new SuperChatEntry(user.userUid(), user.displayName(), user.score(), count, joined));
+        }
+        return entries;
+    }
+
+    /**
+     * 绘制当前全部大航海。拉不到时写一行说明，不让整张报告失败
+     * <p>
+     * 本场开通或续费过的人名字旁带一个「本场」小标：全名单是「此刻在舰的人」，
+     * 哪些是这一场新来的，正是读名单的人最想马上知道的那件事。
+     */
+    private void drawGuardRoster(CommonPainter painter, String platform, LiveStreamerInfo source, BilibiliLiveReportOptions options) {
         Optional<List<GuardMember>> fetched = guardList(source.getRoomId(), source.getUid());
         if (fetched.isPresent() && fetched.get().isEmpty()) {
             return;
@@ -1766,13 +2151,15 @@ public class BilibiliLiveReportPainter {
         }
 
         painter.movePos(0, 6);
+        Set<Long> thisSession = thisSessionGuardBuyers(platform, source.getUid());
         List<GuardMember> members = sortAndLimit(fetched.get(), options.getGuardListLimit());
         int columnWidth = (CONTENT_WIDTH - ROSTER_COLUMN_GAP) / 2;
         int y = painter.getY();
         int column = 0;
         for (GuardMember member : members) {
-            int natural = rosterEntryWidth(painter, member);
-            // 半栏放得下「牌子 + 完整昵称」才并进这一列；放不下就独占整行
+            boolean marked = member.uid() > 0 && thisSession.contains(member.uid());
+            int natural = rosterEntryWidth(painter, member, marked);
+            // 半栏放得下「牌子 + 完整昵称（带小标）」才并进这一列；放不下就独占整行
             boolean ownRow = natural > columnWidth;
             if (ownRow && column == 1) {
                 y += ROSTER_ROW_HEIGHT;
@@ -1780,7 +2167,7 @@ public class BilibiliLiveReportPainter {
             }
             int slot = ownRow ? CONTENT_WIDTH : columnWidth;
             int x = MARGIN + (ownRow ? 0 : column * (columnWidth + ROSTER_COLUMN_GAP));
-            drawRosterEntry(painter, member, x, y, slot);
+            drawRosterEntry(painter, member, x, y, slot, marked);
             if (ownRow || column == 1) {
                 y += ROSTER_ROW_HEIGHT;
                 column = 0;
@@ -1795,10 +2182,21 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
-     * 「牌子（或只有标志）+ 完整昵称」占多宽。用来决定这位要不要独占一行
+     * 本场开通或续费过的观众：分人大航海表里有分的人。图上的小标与文字版的标记都按它认
      */
-    private int rosterEntryWidth(CommonPainter painter, GuardMember member) {
-        return badgeWidth(painter, member) + ROSTER_NAME_GAP + nicknameWidth(painter, member.name());
+    private Set<Long> thisSessionGuardBuyers(String platform, Long uid) {
+        List<Long> buyers = liveDataService.getLiveMetricUserSets(platform, uid)
+                .get(BilibiliLiveMetric.GUARD_USERS);
+        return buyers == null ? Set.of() : new java.util.HashSet<>(buyers);
+    }
+
+    /**
+     * 「牌子（或只有标志）+ 完整昵称」占多宽；带「本场」小标的那位再让出小标的位置。
+     * 用来决定这位要不要独占一行
+     */
+    private int rosterEntryWidth(CommonPainter painter, GuardMember member, boolean marked) {
+        return badgeWidth(painter, member) + ROSTER_NAME_GAP
+                + nicknameWidth(painter, member.name()) + (marked ? ROSTER_TAG_GAP + ROSTER_TAG_WIDTH : 0);
     }
 
     private int nicknameWidth(CommonPainter painter, String name) {
@@ -1825,19 +2223,51 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
-     * 画一位：左侧粉丝牌（没有牌子就只画标志），右侧昵称。整行放不下才截断昵称
+     * 画一位：左侧粉丝牌（没有牌子就只画标志），右侧昵称，本场的带小标。整行放不下才截断昵称
      */
-    private void drawRosterEntry(CommonPainter painter, GuardMember member, int x, int y, int slotWidth) {
+    private void drawRosterEntry(CommonPainter painter, GuardMember member, int x, int y, int slotWidth, boolean marked) {
         BufferedImage badge = rosterBadge(painter, member);
         int badgeY = y + Math.max(0, (ROSTER_ROW_HEIGHT - badge.getHeight()) / 2);
         painter.drawImage(badge, new Point(x, badgeY));
 
-        int nameMax = slotWidth - badge.getWidth() - ROSTER_NAME_GAP;
+        int nameMax = slotWidth - badge.getWidth() - ROSTER_NAME_GAP
+                - (marked ? ROSTER_TAG_GAP + ROSTER_TAG_WIDTH : 0);
         TextWithStyle name = new TextWithStyle(
                 member.name() == null ? "" : member.name(), ROSTER_NAME_SIZE, COLOR_TEXT, Font.PLAIN);
         name.setText(painter.truncateToWidth(name, Math.max(0, nameMax)));
         painter.drawTextWithStyle(List.of(name), new Point(x + badge.getWidth() + ROSTER_NAME_GAP, y + 6));
+
+        if (marked) {
+            int nameWidth = painter.getStringWidthAndHeight(name).getFirst();
+            drawRosterTag(painter,
+                    x + badge.getWidth() + ROSTER_NAME_GAP + nameWidth + ROSTER_TAG_GAP,
+                    y + (ROSTER_ROW_HEIGHT - ROSTER_TAG_HEIGHT) / 2);
+        }
     }
+
+    /**
+     * 「本场」小标：一小枚圆角牌子。宽度按「本场」两个字的实测字宽留边，
+     * 不写死像素——换了字体它也还包得住
+     */
+    private void drawRosterTag(CommonPainter painter, int x, int y) {
+        TextWithStyle text = new TextWithStyle("本场", ROSTER_TAG_FONT_SIZE, COLOR_NAME, Font.PLAIN);
+        int textWidth = painter.getStringWidthAndHeight(text).getFirst();
+        int padding = 8;
+        int width = textWidth + padding * 2;
+        painter.drawRoundedRectangle(x, y, width, ROSTER_TAG_HEIGHT,
+                ROSTER_TAG_HEIGHT / 2, new Color(255, 236, 242));
+        painter.drawTextWithStyle(List.of(text), new Point(x + padding, y + 2));
+    }
+
+    /** 小标「本场」的字号与高，宽度按字宽现算（见 drawRosterTag） */
+    private static final int ROSTER_TAG_FONT_SIZE = 16;
+
+    private static final int ROSTER_TAG_HEIGHT = 24;
+
+    /** 按「本场」16 号字两侧各留 8 算出的占位宽，排版量行宽时用同一份 */
+    private static final int ROSTER_TAG_WIDTH = 16 * 2 + 8 * 2;
+
+    private static final int ROSTER_TAG_GAP = 6;
 
     private BufferedImage rosterBadge(CommonPainter painter, GuardMember member) {
         BufferedImage icon = guardIconImage(member);
@@ -1984,7 +2414,7 @@ public class BilibiliLiveReportPainter {
         return gray;
     }
 
-    private void appendGuardRoster(StringBuilder text, LiveStreamerInfo source, BilibiliLiveReportOptions options) {
+    private void appendGuardRoster(StringBuilder text, String platform, LiveStreamerInfo source, BilibiliLiveReportOptions options) {
         if (!options.isGuardListAll()) {
             return;
         }
@@ -1997,8 +2427,12 @@ public class BilibiliLiveReportPainter {
             text.append("\n名单暂时拉不到");
             return;
         }
+        Set<Long> thisSession = thisSessionGuardBuyers(platform, source.getUid());
         for (GuardMember member : sortAndLimit(fetched.get(), options.getGuardListLimit())) {
             text.append('\n').append(guardRankName(member.level())).append("  ").append(member.name());
+            if (member.uid() > 0 && thisSession.contains(member.uid())) {
+                text.append(" · 本场");
+            }
         }
     }
 
@@ -2018,46 +2452,11 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
-     * 绘制一张排行榜
-     * @param title 榜单标题
-     * @param metric 用户计分表指标名
-     * @param limit 展示前多少名，0 为不展示
-     * @param scoreText 得分的展示文案
-     * @param note 标题下的口径说明，无歧义的榜传 null
-     */
-    private void drawRanking(CommonPainter painter, String platform, Long uid, String title,
-                             String metric, int limit, DoubleFunction<String> scoreText, String note) {
-        if (limit <= 0) {
-            return;
-        }
-
-        List<UserScore> ranking = liveDataService.getLiveUserRanking(platform, uid, metric, limit);
-        if (ranking.isEmpty()) {
-            return;
-        }
-
-        painter.movePos(0, 10);
-        painter.drawTextWithStyle(List.of(new TextWithStyle(title, CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN)));
-        if (note != null) {
-            // 开自动折行：这句话一行放不下，而不折行的写法会把它画到画布外面，且不报错
-            painter.drawTextWithStyle(
-                    List.of(new TextWithStyle(note, CommonPainter.TIP_FONT_SIZE, COLOR_TIP, Font.PLAIN)),
-                    null, true, MARGIN);
-        }
-        painter.movePos(0, 6);
-
-        // 条形长度按榜首归一化：榜首满格，其余按比例，一眼能看出差距
-        double top = ranking.get(0).score();
-        for (int i = 0; i < ranking.size(); i++) {
-            drawRankingRow(painter, i + 1, ranking.get(i), top, scoreText);
-        }
-        painter.movePos(0, 8);
-    }
-
-    /**
      * 绘制排行榜的一行：名次、昵称、比例条与得分
+     * <p>
+     * 得分文案由调用方按行算好传入：盲盒榜那种「一行两个数」的榜拿不到一行一个函数的口子
      */
-    private void drawRankingRow(CommonPainter painter, int rank, UserScore user, double topScore, DoubleFunction<String> scoreText) {
+    private void drawRankingRow(CommonPainter painter, int rank, UserScore user, double topScore, String scoreLabel) {
         int y = painter.getY();
 
         painter.drawTextWithStyle(List.of(new TextWithStyle(String.valueOf(rank), 24, rankColor(rank), Font.BOLD)),
@@ -2087,8 +2486,12 @@ public class BilibiliLiveReportPainter {
                     RANKING_BAR_HEIGHT, RANKING_BAR_HEIGHT / 2, rankColor(rank));
         }
 
-        painter.drawTextWithStyle(List.of(new TextWithStyle(scoreText.apply(user.score()), 24, COLOR_TEXT, Font.PLAIN)),
-                new Point(barX + barWidth + 16, y + 6));
+        // 得分文字量宽度后靠右边距放，而不是从条形右端固定起点：盲盒榜那种「一行两个数」
+        // 的长文案会画出右边距外（数再长一两位就被画布截掉）。与醒目留言名单的合计文案同一写法
+        int scoreWidth = painter.getStringWidthAndHeight(
+                new TextWithStyle(scoreLabel, 24, COLOR_TEXT, Font.PLAIN)).getFirst();
+        painter.drawTextWithStyle(List.of(new TextWithStyle(scoreLabel, 24, COLOR_TEXT, Font.PLAIN)),
+                new Point(WIDTH - MARGIN - scoreWidth, y + 6));
 
         painter.setPos(MARGIN, y + RANKING_ROW_HEIGHT);
     }
@@ -2115,17 +2518,29 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
-     * 取大航海标志。先查内存，再查本机，都没有才按实际请求的地址去取。
+     * 取大航海标志（名单里那一档的尺寸）。先查内存，再查本机，都没有才按实际请求的地址去取。
      * 地址空、或这一次没取到，返回 null，调用方改画色块。
      * <p>
      * 与 {@link #giftIcon} 同一路：取不到就记住这次失败，失败不写本机。
      * 预览与历史重画覆写这一口，不向外取图。
      */
     protected BufferedImage guardIcon(String url) {
+        return guardIcon(url, GUARD_ICON_SIZE);
+    }
+
+    /**
+     * 取大航海标志，按绘制尺寸另取一张。
+     * <p>
+     * 「收到的礼物」那一格要 96px：把名单用的 32px 源图放大到 96 会糊，
+     * 而地址本身支持按宽度取图（与礼物图标同一条机制），按目标尺寸另取就是清楚的。
+     * 预览与历史重画覆写这一口，不向外取图。
+     */
+    protected BufferedImage guardIcon(String url, int size) {
         if (StringUtil.isBlank(url)) {
             return null;
         }
-        BufferedImage cached = guardIconCache.get(url, key -> loadIcon(guardFetchUrl(key), GUARD_ICON_SIZE, true));
+        BufferedImage cached = guardIconCache.get(url + "@" + size,
+                key -> loadIcon(guardFetchUrl(url, size), size, true));
         return cached == FAILED_AVATAR ? null : cached;
     }
 
@@ -2242,6 +2657,21 @@ public class BilibiliLiveReportPainter {
      */
     Optional<Long> wordCloudDanmuSize(String platform, long uid, long start) {
         return rosterArchive().flatMap(archive -> archive.danmuFileSize(platform, uid, start));
+    }
+
+    /**
+     * 这一场的醒目留言原文，按发生先后。只读本机明细档，不联网。
+     * <p>
+     * 属「向外部要资料的口子」：预览与演示覆写这一口喂夹具原文，
+     * 否则预览那一屏拿不到任何一条原文（夹具不落明细档），名单的下半行永远空着。
+     */
+    protected List<DanmuRecord> superChatRecords(String platform, Long uid) {
+        return liveStart(platform, uid)
+                .flatMap(start -> wordCloudDanmu(platform, uid, start))
+                .map(records -> records.stream()
+                        .filter(record -> record.type() == DanmuRecord.Type.SUPER_CHAT)
+                        .toList())
+                .orElse(List.of());
     }
 
     /**
@@ -2781,16 +3211,27 @@ public class BilibiliLiveReportPainter {
      * 一条互动曲线
      *
      * @param title 曲线标题
-     * @param metric 指标名
+     * @param metric 指标名；合成曲线（流水）不落在哪张指标时序上，为 null
      * @param color 面积或折线配色
      * @param peakText 峰值文案，为 null 时不标峰值（金额曲线在不展示金额的会话里即为此情形）
      * @param polyline true 时画折线（不填充），false 时画面积
      * @param caption 标题下一行小字，null 则不画
+     * @param series 合成曲线自带的时序；按指标取数的那几条为 null
      */
-    private record Curve(String title, String metric, Color color, DoubleFunction<String> peakText,
-                         boolean polyline, String caption) {
+    record Curve(String title, String metric, Color color, DoubleFunction<String> peakText,
+                 boolean polyline, String caption, Map<Long, Double> series) {
         private Curve(String title, String metric, Color color, DoubleFunction<String> peakText) {
-            this(title, metric, color, peakText, false, null);
+            this(title, metric, color, peakText, false, null, null);
+        }
+
+        private Curve(String title, String metric, Color color, DoubleFunction<String> peakText,
+                      boolean polyline, String caption) {
+            this(title, metric, color, peakText, polyline, caption, null);
+        }
+
+        private Curve(String title, String metric, Color color, DoubleFunction<String> peakText,
+                      Map<Long, Double> series) {
+            this(title, metric, color, peakText, false, null, series);
         }
     }
 }

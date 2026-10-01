@@ -9,6 +9,7 @@ import org.frostnova.nova.bilibili.model.GuardMedal;
 import org.frostnova.nova.bilibili.model.GuardMember;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.model.DanmuRecord;
 import org.frostnova.nova.core.model.LiveGap;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
 import org.frostnova.nova.core.model.TextWithStyle;
@@ -150,6 +151,17 @@ public final class DemoAssets {
             System.out.println("top " + rendered.topWidth() + "x" + rendered.topHeight()
                     + " bytes=" + rendered.topBytes() + " " + rendered.topPath());
         }
+        // 隐藏金额的那一张只按需单独出：发布流程（render/all）不带走它，docs/assets 不收多余的图
+        if ("hidden".equals(mode)) {
+            if (!Files.isRegularFile(demo.resolve(COVER_FILE))) {
+                generate(demo, fonts);
+            }
+            HiddenRendered hidden = renderHidden(demo, report.getParent(), fonts);
+            System.out.println("hidden-png " + hidden.width() + "x" + hidden.height()
+                    + " bytes=" + hidden.bytes() + " " + hidden.path());
+            System.out.println("hidden-text-bytes " + hidden.hiddenText().length()
+                    + " shown-text-bytes " + hidden.shownText().length());
+        }
     }
 
     static FontUtil bundledFonts() {
@@ -176,36 +188,11 @@ public final class DemoAssets {
 
     static Rendered render(Path demoDir, Path reportPng, FontUtil fonts) throws IOException {
         Files.createDirectories(reportPng.getParent());
-        BufferedImage[] avatars = new BufferedImage[AVATAR_FILES.length];
-        for (int i = 0; i < AVATAR_FILES.length; i++) {
-            String name = AVATAR_FILES[i];
-            avatars[i] = ImageUtil.readImageFromPath(demoDir.resolve(name).toString())
-                    .orElseThrow(() -> new IOException("missing " + name));
-        }
-        BufferedImage coverRaw = ImageUtil.readImageFromPath(demoDir.resolve(COVER_FILE).toString())
-                .orElseThrow(() -> new IOException("missing " + COVER_FILE));
-
-        NovaCoreProperties coreProperties = new NovaCoreProperties();
-        coreProperties.getPaint().getFonts().add("内置");
-        // 同 bundledFonts()：表情字体进表，表情才画得出来
-        coreProperties.getPaint().getFonts().add("内置表情");
+        DemoReportPainter painter = demoPainter(demoDir, fonts);
         String version = projectVersion(repoRoot());
-        Properties buildInfo = new Properties();
-        buildInfo.setProperty("version", version);
-        buildInfo.setProperty("group", "org.frostnova.nova");
-        buildInfo.setProperty("artifact", "nova-core");
-        buildInfo.setProperty("name", "NovaBot");
-        NovaCommonPainterFactory factory =
-                new NovaCommonPainterFactory(new BuildProperties(buildInfo), coreProperties, fonts);
-
-        DemoReportPainter painter = new DemoReportPainter(
-                factory, mock(BilibiliApiUtil.class), fixtureData(), fonts,
-                new NovaBilibiliProperties(), mock(LiveRoomInfoHistory.class),
-                coverRaw, avatars);
 
         JSONObject params = new JSONObject();
         params.put("box_ranking", 5);
-        params.put("box_profit_ranking", 5);
         Optional<String> base64 = painter.paint(
                 BilibiliPlatform.BILIBILI.id(),
                 new LiveStreamerInfo(STREAMER_UID, STREAMER_A, ROOM_ID, "demo-face-0"),
@@ -241,6 +228,81 @@ public final class DemoAssets {
         System.out.println("footer-version " + version);
         return new Rendered(reportPng, topPng, compact.getWidth(), compact.getHeight(), bytes, RENDER_VIA,
                 painter, topSlice.getWidth(), topSlice.getHeight(), topBytes);
+    }
+
+    /**
+     * 隐藏金额的那一张与两版文字报告。同一份演示数据、同一个画手，只是金额不可见——
+     * 出图给人对照「露出的东西不增不减」这句话用的，不进 docs/assets
+     */
+    static HiddenRendered renderHidden(Path demoDir, Path dir, FontUtil fonts) throws IOException {
+        Files.createDirectories(dir);
+        DemoReportPainter painter = demoPainter(demoDir, fonts);
+        LiveStreamerInfo streamer = new LiveStreamerInfo(STREAMER_UID, STREAMER_A, ROOM_ID, "demo-face-0");
+        JSONObject params = new JSONObject();
+        params.put("box_ranking", 5);
+        BilibiliLiveReportOptions shownOptions = BilibiliLiveReportOptions.of(params, true);
+        BilibiliLiveReportOptions hiddenOptions = BilibiliLiveReportOptions.of(params, false);
+
+        Optional<String> base64 = painter.paint(BilibiliPlatform.BILIBILI.id(), streamer, hiddenOptions);
+        if (base64.isEmpty()) {
+            throw new IOException("BilibiliLiveReportPainter.paint returned empty for hidden session");
+        }
+        BufferedImage nativeImage = ImageIO.read(new ByteArrayInputStream(Base64.getDecoder().decode(base64.get())));
+        if (nativeImage == null) {
+            throw new IOException("paint bytes were not a PNG");
+        }
+        Path hiddenPng = dir.resolve("report-demo-hidden.png");
+        BufferedImage compact = indexed(ImageUtil.resizeByWidth(nativeImage, REPORT_WIDTH));
+        writePng(compact, hiddenPng);
+        long bytes = Files.size(hiddenPng);
+        if (bytes > REPORT_MAX_BYTES) {
+            throw new IOException("hidden report PNG " + bytes + " bytes exceeds " + REPORT_MAX_BYTES);
+        }
+
+        String shownText = painter.textReport(BilibiliPlatform.BILIBILI.id(), streamer, shownOptions);
+        String hiddenText = painter.textReport(BilibiliPlatform.BILIBILI.id(), streamer, hiddenOptions);
+        Files.writeString(dir.resolve("report-demo-text-shown.txt"), shownText, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("report-demo-text-hidden.txt"), hiddenText, StandardCharsets.UTF_8);
+        return new HiddenRendered(hiddenPng, compact.getWidth(), compact.getHeight(), bytes, shownText, hiddenText);
+    }
+
+    /**
+     * 组出演示画手：合成头像、封面与夹具数据各就各位，两版出图共用一份
+     */
+    static DemoReportPainter demoPainter(Path demoDir, FontUtil fonts) throws IOException {
+        return demoPainter(demoDir, fonts, null);
+    }
+
+    /**
+     * 带画坊的那一支：传 null 自建；判据要挂钧子收画上去的字时，把覆写过画字方法的
+     * 画坊从这里递进来，出图照常、字被旁路收一份
+     */
+    static DemoReportPainter demoPainter(Path demoDir, FontUtil fonts, NovaCommonPainterFactory factory) throws IOException {
+        BufferedImage[] avatars = new BufferedImage[AVATAR_FILES.length];
+        for (int i = 0; i < AVATAR_FILES.length; i++) {
+            String name = AVATAR_FILES[i];
+            avatars[i] = ImageUtil.readImageFromPath(demoDir.resolve(name).toString())
+                    .orElseThrow(() -> new IOException("missing " + name));
+        }
+        BufferedImage coverRaw = ImageUtil.readImageFromPath(demoDir.resolve(COVER_FILE).toString())
+                .orElseThrow(() -> new IOException("missing " + COVER_FILE));
+
+        NovaCoreProperties coreProperties = new NovaCoreProperties();
+        coreProperties.getPaint().getFonts().add("内置");
+        // 同 bundledFonts()：表情字体进表，表情才画得出来
+        coreProperties.getPaint().getFonts().add("内置表情");
+        Properties buildInfo = new Properties();
+        buildInfo.setProperty("version", projectVersion(repoRoot()));
+        buildInfo.setProperty("group", "org.frostnova.nova");
+        buildInfo.setProperty("artifact", "nova-core");
+        buildInfo.setProperty("name", "NovaBot");
+        NovaCommonPainterFactory effective = factory != null ? factory
+                : new NovaCommonPainterFactory(new BuildProperties(buildInfo), coreProperties, fonts);
+
+        return new DemoReportPainter(
+                effective, mock(BilibiliApiUtil.class), fixtureData(), fonts,
+                new NovaBilibiliProperties(), mock(LiveRoomInfoHistory.class),
+                coverRaw, avatars);
     }
 
     static String rosterText() {
@@ -455,7 +517,10 @@ public final class DemoAssets {
         data.incrementLiveMetric(platform, STREAMER_UID, BilibiliLiveMetric.BOX_PROFIT, -18.4);
         data.incrementLiveMetric(platform, STREAMER_UID, BilibiliLiveMetric.CAPTAIN_COUNT, 2);
         data.incrementLiveMetric(platform, STREAMER_UID, BilibiliLiveMetric.COMMANDER_COUNT, 1);
-        data.incrementLiveMetric(platform, STREAMER_UID, BilibiliLiveMetric.GUARD_VALUE, 996);
+        data.incrementLiveMetric(platform, STREAMER_UID, BilibiliLiveMetric.GOVERNOR_COUNT, 1);
+        data.incrementLiveMetric(platform, STREAMER_UID, BilibiliLiveMetric.GUARD_VALUE, 3_272);
+        data.incrementLiveMetric(platform, STREAMER_UID, BilibiliLiveMetric.GUARD_OPEN_COUNT, 3);
+        data.incrementLiveMetric(platform, STREAMER_UID, BilibiliLiveMetric.GUARD_RENEW_COUNT, 1);
         data.incrementLiveMetric(platform, STREAMER_UID, BilibiliLiveMetric.FOLLOW_COUNT, 47);
         data.incrementLiveMetric(platform, STREAMER_UID, BilibiliLiveMetric.SHARE_COUNT, 11);
         data.maxLiveMetric(platform, STREAMER_UID, BilibiliLiveMetric.LIKE_TOTAL, 1_864);
@@ -482,8 +547,12 @@ public final class DemoAssets {
         double[] danmu = {164, 121, 88, 57, 36};
         double[] gift = {72.4, 48.0, 31.2, 16.8, 8.6};
         double[] superChat = {80, 50, 30, 20, 10};
+        int[] superChatCount = {2, 1, 1, 1, 1};
         double[] box = {11, 8, 6, 4, 2};
         double[] boxProfit = {18.6, 4.2, -3.5, -9.8, -16.4};
+        // 流水＝礼物＋醒目留言＋上舰金额：观众甲 72.4＋80＋1998（总督）、乙 48＋50＋998（提督）、
+        // 丙 31.2＋30＋138（舰长）、丁 16.8＋138（舰长续费）、戊只有礼物
+        double[] revenue = {2150.4, 1096.0, 199.2, 154.8, 8.6};
         for (int i = 0; i < VIEWER_UIDS.length; i++) {
             long viewer = VIEWER_UIDS[i];
             data.recordLiveUserName(platform, STREAMER_UID, viewer, VIEWER_NAMES[i]);
@@ -491,9 +560,13 @@ public final class DemoAssets {
             data.incrementLiveUserMetric(platform, STREAMER_UID, BilibiliLiveMetric.DANMU_USERS, viewer, danmu[i]);
             data.incrementLiveUserMetric(platform, STREAMER_UID, BilibiliLiveMetric.GIFT_USERS, viewer, gift[i]);
             data.incrementLiveUserMetric(platform, STREAMER_UID, BilibiliLiveMetric.SUPER_CHAT_USERS, viewer, superChat[i]);
+            data.incrementLiveUserMetric(platform, STREAMER_UID, BilibiliLiveMetric.SUPER_CHAT_USERS_COUNT, viewer, superChatCount[i]);
             data.incrementLiveUserMetric(platform, STREAMER_UID, BilibiliLiveMetric.BOX_USERS, viewer, box[i]);
             data.incrementLiveUserMetric(platform, STREAMER_UID, BilibiliLiveMetric.BOX_PROFIT_USERS, viewer, boxProfit[i]);
-            data.incrementLiveUserMetric(platform, STREAMER_UID, BilibiliLiveMetric.GUARD_USERS, viewer, 1);
+            data.incrementLiveUserMetric(platform, STREAMER_UID, BilibiliLiveMetric.REVENUE_USERS, viewer, revenue[i]);
+            if (i < 4) {
+                data.incrementLiveUserMetric(platform, STREAMER_UID, BilibiliLiveMetric.GUARD_USERS, viewer, 1);
+            }
             data.recordLiveMetricUser(platform, STREAMER_UID, BilibiliLiveMetric.ENTER_USERS, viewer);
             data.recordLiveMetricUser(platform, STREAMER_UID, BilibiliLiveMetric.LIKE_USERS, viewer);
         }
@@ -539,6 +612,12 @@ public final class DemoAssets {
 
     record Rendered(Path path, Path topPath, int width, int height, long bytes, String via,
                     BilibiliLiveReportPainter painter, int topWidth, int topHeight, long topBytes) {
+    }
+
+    /**
+     * 隐藏金额那一版出图与两版文字报告
+     */
+    record HiddenRendered(Path path, int width, int height, long bytes, String shownText, String hiddenText) {
     }
 
     /**
@@ -619,6 +698,20 @@ public final class DemoAssets {
                             demoMedal("示例丁", 5, new Color(255, 128, 176), new Color(220, 64, 128), new Color(150, 24, 80))),
                     new GuardMember(VIEWER_UIDS[4], VIEWER_NAMES[4], 3, 500,
                             demoMedal("示例戊", 1, new Color(120, 210, 160), new Color(32, 150, 96), new Color(16, 90, 56)))));
+        }
+
+        /**
+         * 夹具的醒目留言原文：演示画手不落明细档，名单下半行从这里来
+         */
+        @Override
+        protected List<DanmuRecord> superChatRecords(String platform, Long uid) {
+            return List.of(
+                    new DanmuRecord(START_MILLIS + 21 * 60_000L,
+                            VIEWER_UIDS[0], VIEWER_NAMES[0], "开场那首点得值，祝开播顺利", DanmuRecord.Type.SUPER_CHAT),
+                    new DanmuRecord(START_MILLIS + 43 * 60_000L,
+                            VIEWER_UIDS[1], VIEWER_NAMES[1], "这段solo太稳了，收下", DanmuRecord.Type.SUPER_CHAT),
+                    new DanmuRecord(START_MILLIS + 67 * 60_000L,
+                            VIEWER_UIDS[0], VIEWER_NAMES[0], "再来一遍刚才那段", DanmuRecord.Type.SUPER_CHAT));
         }
 
         private static GuardMedal demoMedal(String name, int level, Color start, Color end, Color border) {
