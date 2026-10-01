@@ -75,7 +75,7 @@ GC 元数据与直接内存。按默认参数即 `512 + 192 + 150 ≈ 854M`，
 > 而那种场景**没有测过**——这里不拿一个没测过的数去冒充上界。
 >
 > 默认的 `1.2G` / `1.5G` 因此是「**实测峰值 + 说得出理由的余量**」，不是算尽的容量：
-> 这组值在生产上自 2026-08-10 起连续运行，`memory.events` 的 `high` / `max` / `oom`
+> 这组值在一台长期开机的机器上自 2026-08-10 起一直这样用，`memory.events` 的 `high` / `max` / `oom`
 > 三个计数一直是 0。主播数明显更多时请自己往上调，启动自检也会在装不下时明说。
 
 两条上限被突破后的后果完全不同，别按同一个直觉配：
@@ -86,7 +86,7 @@ GC 元数据与直接内存。按默认参数即 `512 + 192 + 150 ≈ 854M`，
 | `MemoryHigh`（软） | 不杀进程，而是**对每一次内存分配施加睡眠惩罚并强制同步回收** |
 
 > ⚠️ **此前这里写着「`MemoryHigh` 被突破不会静默劣化，顶到上限是看得见的」——那是错的，已删。**
-> 它恰恰是完全静默的。2026-08-10 生产上 `MemoryHigh` 被设成 768M（低于 896M 的实测峰值），
+> 它恰恰是完全静默的。2026-08-10 有一台正在跑的机器把 `MemoryHigh` 设成 768M（低于上面那次 896 MB 的稳态峰值），
 > 服务被持续节流约 10 小时：本机回环的 HTTP 调用要 2~11 秒（`curl` 打同一地址只要 1.3 毫秒），
 > 而 **CPU 几乎不动、堆完全健康、六项健康探针全绿、应用日志里一个字都没有**。
 > 唯一看得见它的地方是 cgroup 自己的计数器：
@@ -206,7 +206,7 @@ JAVA_OPTS="-Xms96m -Xmx320m" ./start.sh
 
 | 配置项 | 效果 |
 |---|---|
-| `novabot.bilibili.live.only-connect-necessary-rooms: true` | 只连接订阅了直播事件的直播间。⚠️ 会跳过[纯监听房间](user-guide.md#只采集不推送的房间)，开之前先确认没在用 |
+| `novabot.bilibili.live.only-connect-necessary-rooms: true` | 只连接订阅了直播事件的直播间。⚠️ 会跳过[纯监听房间](../manual/06-add-streamer-and-push.md)，开之前先确认没在用 |
 | `novabot.bilibili.live.enable-connect-live-room: false` | 完全不连长连接，仅靠轮询判断开播下播；代价是收不到弹幕、礼物等事件 |
 | `novabot.bilibili.live.complete-event: false`（默认） | 不为事件补全昵称头像，显著减少接口请求 |
 | `novabot.core.config-ui.enabled: false` | 配置完成后可关闭配置界面；关掉后 `/config` 下的接口一并关闭（一律 404） |

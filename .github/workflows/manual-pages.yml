@@ -24,11 +24,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 生成脚本零依赖（只用 python3 标准库），这里固定版本只为可复现
+      # 生成脚本零依赖（只用 python3 标准库）。次版本固定成 3.12：
+      # 写成 3.x 时，托管环境换默认解释器，同一次工作流定义两次跑到的 Python 可以不是同一条次版本。
       - name: 配置 Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
+          python-version: '3.12'
 
       # 生成本身带全站断链检查：有断链这一步就红，不会把缺页的站发出去
       - name: 生成
