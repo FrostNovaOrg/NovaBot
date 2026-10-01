@@ -32,4 +32,9 @@ public class BilibiliCaptainEvent extends MembershipEvent {
     public BilibiliCaptainEvent(LiveStreamerInfo source, UserInfo sender, Double price, Integer count, String unit, Instant instant) {
         super(BilibiliPlatform.BILIBILI, source, sender, price, count, unit, instant);
     }
+
+    public BilibiliCaptainEvent(LiveStreamerInfo source, UserInfo sender, Double price, Integer count,
+                                String unit, Instant instant, PriceBasis basis) {
+        super(BilibiliPlatform.BILIBILI, source, sender, price, count, unit, instant, basis);
+    }
 }

@@ -2494,6 +2494,54 @@ class BilibiliEventParserTest {
     }
 
     @Test
+    @DisplayName("多月开通的 toast 金额是总价，不再乘月数")
+    void guardToastMultiMonthAmountIsOrderTotal() {
+        // 成交价报文的 price 是这一单的总价（实测多月开通样本）：
+        // 3 个月 504 元、6 个月 1008 元、12 个月 2016 元，都等于 168 元/月×月数。
+        // 再乘月数就重了——12 个月那单实付 2016 元会被记成 24192 元
+        String json = "{\"cmd\":\"USER_TOAST_MSG\",\"send_time\":1700000004000,\"data\":{\"uid\":701,"
+                + "\"username\":\"多月舰长\",\"guard_level\":3,\"op_type\":1,\"price\":504000,\"num\":3,"
+                + "\"unit\":\"月\",\"role_name\":\"舰长\"}}";
+
+        BilibiliCaptainEvent event = assertInstanceOf(BilibiliCaptainEvent.class, parse(json).orElseThrow());
+
+        assertEquals(504.0, event.getValue(), 0.0001, "总价 504 就是金额，乘月数会记成 1512");
+        assertEquals(168.0, event.getPrice(), 0.0001, "price 记单价（504÷3），不是总价");
+        assertEquals(3, event.getCount());
+    }
+
+    @Test
+    @DisplayName("多月开通的 V2 toast 金额同样是总价")
+    void guardToastV2MultiMonthAmountIsOrderTotal() {
+        // 与老格式是同一件事的两种格式，价口径相同：pay_info.price 是总价
+        String json = "{\"cmd\":\"USER_TOAST_MSG_V2\",\"data\":{"
+                + "\"sender_uinfo\":{\"uid\":702,\"base\":{\"name\":\"多月舰长\",\"face\":\"\"}},"
+                + "\"guard_info\":{\"guard_level\":3,\"role_name\":\"舰长\",\"op_type\":1},"
+                + "\"pay_info\":{\"payflow_id\":\"flow-multi-v2\",\"price\":504000,\"num\":3,\"unit\":\"月\"},"
+                + "\"gift_info\":{\"gift_id\":10003}}}";
+
+        BilibiliCaptainEvent event = assertInstanceOf(BilibiliCaptainEvent.class, parse(json).orElseThrow());
+
+        assertEquals(504.0, event.getValue(), 0.0001, "与老格式同一口径：价是总价，不再乘月数");
+        assertEquals(3, event.getCount());
+    }
+
+    @Test
+    @DisplayName("GUARD_BUY 兜底的价是挂牌单价，金额照单价乘月数")
+    void guardBuyMultiMonthAmountIsUnitPriceTimesCount() {
+        // 这条是对照：GUARD_BUY 的 price 是挂牌单价（实测 35 条舰长恒为 198000），
+        // 金额＝单价×数量，照旧。成交价报文的价才是总价，那边不再乘——两种口径别混
+        BilibiliCaptainEvent event = assertInstanceOf(BilibiliCaptainEvent.class,
+                parseGuardBuy("{\"cmd\":\"GUARD_BUY\",\"data\":{\"uid\":703,\"username\":\"兜底\",\"guard_level\":3,"
+                        + "\"num\":3,\"price\":198000,\"gift_id\":10003,\"gift_name\":\"舰长\","
+                        + "\"start_time\":1786025566,\"end_time\":1786025566}}").orElseThrow());
+
+        assertEquals(594.0, event.getValue(), 0.0001, "198 元/月 × 3 个月");
+        assertEquals(198.0, event.getPrice(), 0.0001);
+        assertEquals(3, event.getCount());
+    }
+
+    @Test
     @DisplayName("平台切流消息应解析出切断原因")
     void parsesCutOff() {
         BilibiliCutOffEvent event = assertInstanceOf(BilibiliCutOffEvent.class,

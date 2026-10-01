@@ -32,4 +32,9 @@ public class BilibiliGovernorEvent extends MembershipEvent {
     public BilibiliGovernorEvent(LiveStreamerInfo source, UserInfo sender, Double price, Integer count, String unit, Instant instant) {
         super(BilibiliPlatform.BILIBILI, source, sender, price, count, unit, instant);
     }
+
+    public BilibiliGovernorEvent(LiveStreamerInfo source, UserInfo sender, Double price, Integer count,
+                                 String unit, Instant instant, PriceBasis basis) {
+        super(BilibiliPlatform.BILIBILI, source, sender, price, count, unit, instant, basis);
+    }
 }
