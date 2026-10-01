@@ -137,6 +137,21 @@ public class BilibiliLiveReportReplayPainter extends BilibiliLiveReportPainter {
     }
 
     /**
+     * 只读本机，与上面那一口同一个规矩：收到的礼物那格要的大图，本机留了就用，
+     * 没有则画占位，不向外取
+     */
+    @Override
+    protected BufferedImage guardIcon(String url, int size) {
+        if (StringUtil.isNotBlank(url)) {
+            BufferedImage cached = readDiskImage(guardFetchUrl(url, size));
+            if (cached != null) {
+                return cached;
+            }
+        }
+        return guardMark;
+    }
+
+    /**
      * 只读本机。命中就用留着的那张，没有返回 null，调用方画占位。不向外取
      */
     @Override

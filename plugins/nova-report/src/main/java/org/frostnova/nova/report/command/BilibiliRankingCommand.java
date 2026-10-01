@@ -6,6 +6,7 @@ import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.model.BilibiliDataScope;
 import org.frostnova.nova.bilibili.model.BilibiliLiveMetric;
 import org.frostnova.nova.report.painter.BilibiliDataQueryPainter;
+import org.frostnova.nova.report.painter.RevenueRankings;
 import org.frostnova.nova.core.command.CommandContext;
 import org.frostnova.nova.core.command.CommandReply;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
@@ -137,6 +138,13 @@ public class BilibiliRankingCommand extends BilibiliScopedDataCommand {
         BilibiliDataScope scope = scope(context);
 
         int total = scope.userCount(liveDataService, platform, streamer.getUid(), board.metric);
+        // 升级前就在播的那一场没有分人流水表：照下播报告的办法按礼物＋醒目留言回落
+        // （合成与口径说明都共用报告那一份），否则升级当场那一场在群里查流水是空的
+        List<UserScore> legacyRevenue = null;
+        if (total == 0 && board == Board.REVENUE && !scope.isTotal()) {
+            legacyRevenue = RevenueRankings.legacyFallback(liveDataService, platform, streamer.getUid());
+            total = legacyRevenue.size();
+        }
         if (total == 0) {
             // 匿名模式下弹幕发送者 uid 全是 0、不计人数：有条数却认不出人时说清缘由，
             // 别让人以为本场没有弹幕。别的榜不走这一句
@@ -152,8 +160,13 @@ public class BilibiliRankingCommand extends BilibiliScopedDataCommand {
         // 一次出一张长图：先按可配的「最多列出名次」取，再按整图高度上限截到装得下的那几名。
         // 取到要列的名次就停——JSON 实现本就要全量排序，Redis 的 zset 取前 N 名也很廉价
         int topN = Math.max(1, properties.getRanking().getTopN());
-        List<UserScore> ranking = scope.ranking(liveDataService, platform, streamer.getUid(),
-                board.metric, Math.min(total, topN));
+        List<UserScore> ranking = legacyRevenue != null
+                ? legacyRevenue.subList(0, Math.min(legacyRevenue.size(), topN))
+                : scope.ranking(liveDataService, platform, streamer.getUid(),
+                        board.metric, Math.min(total, topN));
+        // 回落的那一场，口径说明换成回落的那句（与下播报告同一个字面）
+        String note = legacyRevenue != null
+                ? BilibiliLiveMetric.REVENUE_RANKING_FALLBACK_NOTE : board.note;
 
         BilibiliDataQueryPainter.Header header = new BilibiliDataQueryPainter.Header(
                 board.title + "排行榜",
@@ -163,7 +176,7 @@ public class BilibiliRankingCommand extends BilibiliScopedDataCommand {
         int heightLimit = properties.getRanking().getHeightLimit();
         // 生效的上限是「配置值」与「一张最小的图（表头 + 一行名次 + 脚注 + 署名）」里高的那个：
         // 比最小可出图高度还矮的上限等于要求出一张空图，宁可抬高它、并写明抬高了多少
-        int minimum = painter.measureRankingHeight(header, 1, footnote(1, total, board, scope));
+        int minimum = painter.measureRankingHeight(header, 1, footnote(1, total, board, scope, note));
         int effectiveLimit = Math.max(heightLimit, minimum);
         if (heightLimit < minimum) {
             log.warn("整图高度上限填的是 {}，比一张最小的图（{} 像素）还矮，按最小高度 {} 出图",
@@ -171,33 +184,35 @@ public class BilibiliRankingCommand extends BilibiliScopedDataCommand {
         }
         int shown = ranking.size();
         while (shown > 1
-                && painter.measureRankingHeight(header, shown, footnote(shown, total, board, scope)) > effectiveLimit) {
+                && painter.measureRankingHeight(header, shown, footnote(shown, total, board, scope, note)) > effectiveLimit) {
             shown--;
         }
         List<UserScore> rows = ranking.subList(0, shown);
 
         // 理由同「直播间数据」：没点名而由机器人猜出来的那一次，图前面要有一行写清用的是谁
         return withNotice(resolved, painter.paintRanking(header, rows, 1, board.scoreText,
-                        footnote(shown, total, board, scope))
+                        footnote(shown, total, board, scope, note))
                 .map(CommandReply::image)
                 .orElseGet(this::paintFailed));
     }
 
     /**
      * 脚注：第一行写「前 N 名 · 共 n 人」，没列全的再补一行「其余 N 名未列出」，口径说明单独成行
+     * <p>
+     * 口径说明由调用方传进来而不是读 {@code board.note}：回落的那一场要换成回落的那句
      */
-    private String footnote(int shown, int total, Board board, BilibiliDataScope scope) {
+    private String footnote(int shown, int total, Board board, BilibiliDataScope scope, String note) {
         StringBuilder text = new StringBuilder("前 " + shown + " 名 · 共 " + total + " 人");
         if (shown < total) {
             text.append("\n其余 ").append(total - shown).append(" 名未列出");
         }
-        if (board.note != null) {
+        if (note != null) {
             // 口径说明单独一行，别和名次数挤在一起：挤在一起的那行会长到折行，读起来像名次数的一部分
-            text.append("\n").append(board.note);
-            // 累计榜还要多说一句：这个数里含口径变更前后两段
-            if (scope.isTotal()) {
-                text.append("\n").append(BilibiliLiveMetric.GIFT_RANKING_SCOPE_CHANGE_NOTE);
-            }
+            text.append("\n").append(note);
+        }
+        // 累计榜还要多说一句口径从哪时起算：各榜的那句不一样，跟着榜走而不是写死一句
+        if (scope.isTotal() && board.scopeNote != null) {
+            text.append("\n").append(board.scopeNote);
         }
         return text.toString();
     }
@@ -212,15 +227,17 @@ public class BilibiliRankingCommand extends BilibiliScopedDataCommand {
      * 可查的榜单
      */
     private enum Board {
-        DANMU("弹幕", BilibiliLiveMetric.DANMU_USERS, false, score -> Math.round(score) + " 条", null),
+        DANMU("弹幕", BilibiliLiveMetric.DANMU_USERS, false, score -> Math.round(score) + " 条", null, null),
         GIFT("礼物", BilibiliLiveMetric.GIFT_USERS, true, score -> "¥" + yuan(score),
-                BilibiliLiveMetric.GIFT_RANKING_NOTE),
+                BilibiliLiveMetric.GIFT_RANKING_NOTE, BilibiliLiveMetric.GIFT_RANKING_SCOPE_CHANGE_NOTE),
+        REVENUE("流水", BilibiliLiveMetric.REVENUE_USERS, true, score -> "¥" + yuan(score),
+                BilibiliLiveMetric.REVENUE_RANKING_NOTE, BilibiliLiveMetric.REVENUE_RANKING_SCOPE_CHANGE_NOTE),
         SUPER_CHAT("醒目留言", BilibiliLiveMetric.SUPER_CHAT_USERS, true, score -> "¥" + yuan(score),
-                null, "SC", "sc"),
-        BOX("盲盒", BilibiliLiveMetric.BOX_USERS, false, score -> Math.round(score) + " 个", null),
+                null, null, "SC", "sc"),
+        BOX("盲盒", BilibiliLiveMetric.BOX_USERS, false, score -> Math.round(score) + " 个", null, null),
         BOX_PROFIT("盲盒盈亏", BilibiliLiveMetric.BOX_PROFIT_USERS, true,
-                BilibiliRankingCommand::profitLabel, null, "盈亏"),
-        GUARD("大航海", BilibiliLiveMetric.GUARD_USERS, false, score -> Math.round(score) + " 次", null, "舰长");
+                BilibiliRankingCommand::profitLabel, null, null, "盈亏"),
+        GUARD("大航海", BilibiliLiveMetric.GUARD_USERS, false, score -> Math.round(score) + " 次", null, null, "舰长");
 
         private final String title;
 
@@ -229,15 +246,21 @@ public class BilibiliRankingCommand extends BilibiliScopedDataCommand {
         /**
          * 榜单的口径说明，没有歧义的榜为 null
          * <p>
-         * 只有礼物榜需要：它的得分是「主播到手价值」而不是「观众花了多少」，
-         * 而这张榜的读者最容易把两者当成一回事。
+         * 只有以金额排名的榜需要：它们的得分是「主播到手价值」而不是「观众花了多少」，
+         * 而这类榜的读者最容易把两者当成一回事。
          */
         private final String note;
 
         /**
+         * 只在累计范围下展示的口径说明：这个数从哪一版起才按现在的口径记，
+         * 没有跨口径问题的榜为 null
+         */
+        private final String scopeNote;
+
+        /**
          * 榜单是否以金额排名
          * <p>
-         * 这三张榜的每一行都是「某人花了多少钱」，不展示金额时整张不出——
+         * 这几张榜的每一行都是「某人花了多少钱」，不展示金额时整张不出——
          * 只抹掉右侧的数字仍然是在公开排消费。
          */
         private final boolean money;
@@ -251,12 +274,13 @@ public class BilibiliRankingCommand extends BilibiliScopedDataCommand {
          * 与别名共用可变参数时，「礼物」那条的说明会被当成一个别名收下，而编译器不会有意见
          */
         Board(String title, String metric, boolean money, DoubleFunction<String> scoreText,
-              String note, String... aliases) {
+              String note, String scopeNote, String... aliases) {
             this.title = title;
             this.metric = metric;
             this.money = money;
             this.scoreText = scoreText;
             this.note = note;
+            this.scopeNote = scopeNote;
             this.aliases = List.of(aliases);
         }
 

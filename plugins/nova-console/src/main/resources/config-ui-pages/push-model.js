@@ -16,6 +16,8 @@
  * 那条规则在后端只有一份实现，抄一份到这里的话，改了那一份的那天，控制台仍按旧规矩画。
  */
 
+import {AT_MODE_KEY} from './template-model.js';
+
 /**
  * 认一个会话用的键
  *
@@ -237,7 +239,7 @@ export function templateState(target, handlers) {
   for (const handler of handlers || []) {
     const message = messageOf(target, handler);
     if (!message || message.enabled === false) continue;
-    if (paramsDiffer(message.params, handler.defaultParams)) changed.push(handler.className);
+    if (paramsDiffer(message.params, handler)) changed.push(handler.className);
   }
   return {custom: changed.length > 0, changed};
 }
@@ -268,18 +270,33 @@ export function layoutState(target, handlers) {
 }
 
 /**
- * 一份推送参数与默认参数比，有没有不一样的地方
+ * 一份推送参数与默认比，有没有不一样的地方
+ *
+ * 🔴 只有处理器<b>哪都不认得</b>的键不算差异：版式项删掉之后，老通道参数里那个键还躺着，
+ * 而运行那一侧早已静默忽略它——把死键算成自定义，界面说的与机器人做的就不是同一件事。
+ * 反过来，「@ 谁」那一档与自报的可配置项可能不在默认参数里，但它们是活键，照旧参与判定。
  * @param params 配置里存着的参数，可为 null
- * @param defaults 处理器自报的默认参数，可为 null
+ * @param handler /api/handlers 的一项（要它的默认参数与可配置项清单）
  * @return {boolean} 有不同则为 true
  */
-function paramsDiffer(params, defaults) {
+function paramsDiffer(params, handler) {
   const now = params || {};
-  const base = defaults || {};
+  const base = (((handler || {}).defaultParams)) || {};
+  const known = knownKeys(handler);
   for (const key of Object.keys(now)) {
+    if (!known.has(key)) continue;
     if (String(now[key]) !== String(base[key])) return true;
   }
   return false;
+}
+
+/**
+ * 这个处理器此刻还认得的键：默认参数里的、自报可配置项里的，加上「@ 谁」那一档。
+ * 与 template-model 的 isDefault 同一张口径，两处分叉的话两页会各说各话
+ */
+function knownKeys(handler) {
+  const optionKeys = (((handler || {}).options) || []).map(option => option.key);
+  return new Set([...Object.keys((((handler || {}).defaultParams)) || {}), ...optionKeys, AT_MODE_KEY]);
 }
 
 /**

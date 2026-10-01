@@ -142,11 +142,15 @@ class BilibiliLiveReportReplayPainterTest {
     }
 
     @Test
-    @DisplayName("③ 故意破坏（反向验证）：明细里少一条曲线，两张图的高度当场不同")
+    @DisplayName("③ 故意破坏（反向验证）：明细里少掉流水曲线的整份时序，两张图的高度当场不同")
     void missingSeriesChangesTheHeight() throws IOException {
         LiveDetail complete = detail();
+        // 礼物、醒目留言、大航海四条曲线已并成一条流水：少它的唯一方法是三张金额时序一起去掉，
+        // 只去一张（如醒目留言）另外两张仍把流水曲线撑在图上，高度不会变
         Map<String, Map<Long, Double>> fewer = new LinkedHashMap<>(complete.series());
+        fewer.remove(BilibiliLiveMetric.GIFT_VALUE);
         fewer.remove(BilibiliLiveMetric.SUPER_CHAT_VALUE);
+        fewer.remove(BilibiliLiveMetric.GUARD_VALUE);
         LiveDetail crippled = new LiveDetail(complete.version(), complete.platform(), complete.uid(),
                 complete.uname(), complete.roomId(), complete.startTime(), complete.endTime(),
                 complete.durationSeconds(), complete.metrics(), complete.userCounts(), fewer,

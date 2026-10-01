@@ -91,6 +91,11 @@ public class PushTemplateDefaults {
      * <b>每次调用都返回新实例</b>，与 {@link NovaEventHandler#getDefaultParams()} 同一条约定：
      * 推送消息会把使用者的参数直接写进这个返回值，共用一份的话，一个推送目标的自定义参数
      * 会串到其他目标上。
+     * <p>
+     * 🔴 <b>处理器已不认识的键在这里滤掉</b>。版式项删掉之后，老机器这份文件里存着的那个键
+     * 就成了死键：盖回默认参数的话，控制台按「默认与出厂的差集」算出的覆盖会带着它发回来，
+     * 保存那一步被校验拒收——升级前改过的默认模板，升级后反而存不进去。运行那一侧
+     * 本来就静默忽略这种键，滤掉不改变任何发出的消息。
      * @param handler 处理器
      * @return 默认参数
      */
@@ -100,8 +105,12 @@ public class PushTemplateDefaults {
             params = new JSONObject();
         }
 
+        Set<String> writable = writableKeys(handler);
         JSONObject stored = overridesOf(handler);
         for (Map.Entry<String, Object> entry : stored.entrySet()) {
+            if (!writable.contains(entry.getKey())) {
+                continue;
+            }
             params.put(entry.getKey(), entry.getValue());
         }
         return params;

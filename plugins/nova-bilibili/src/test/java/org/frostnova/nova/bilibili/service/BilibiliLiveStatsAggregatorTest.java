@@ -56,10 +56,11 @@ class BilibiliLiveStatsAggregatorTest {
     private static final LiveStreamerInfo STREAMER = new LiveStreamerInfo(10001L, "主播甲", 20002L);
 
     /**
-     * 按人计分的八张表，对着聚合器里每一处计分逐一列出
+     * 按人计分的十张表，对着聚合器里每一处计分逐一列出
      * <p>
-     * 弹幕表（弹幕、表情）、礼物表（付费礼物、盲盒）、盲盒表与盲盒盈亏表（盲盒）、醒目留言表、
-     * 大航海表（舰长、提督、总督）、进房表、点赞表
+     * 弹幕表（弹幕、表情）、礼物表（付费礼物、盲盒）、盲盒表与盲盒盈亏表（盲盒）、醒目留言表
+     * 与醒目留言条数表、流水表（礼物、盲盒、醒目留言、大航海）、大航海表（舰长、提督、总督）、
+     * 进房表、点赞表
      */
     private static final List<String> USER_TABLES = List.of(
             BilibiliLiveMetric.DANMU_USERS,
@@ -67,6 +68,8 @@ class BilibiliLiveStatsAggregatorTest {
             BilibiliLiveMetric.BOX_USERS,
             BilibiliLiveMetric.BOX_PROFIT_USERS,
             BilibiliLiveMetric.SUPER_CHAT_USERS,
+            BilibiliLiveMetric.SUPER_CHAT_USERS_COUNT,
+            BilibiliLiveMetric.REVENUE_USERS,
             BilibiliLiveMetric.GUARD_USERS,
             BilibiliLiveMetric.ENTER_USERS,
             BilibiliLiveMetric.LIKE_USERS);
@@ -573,7 +576,7 @@ class BilibiliLiveStatsAggregatorTest {
     }
 
     @Test
-    @DisplayName("⚠️ uid 为 0 的发送者走遍十路计分事件：条数金额照记，但八张表都不算人数、不上榜，昵称头像哪一路都不记")
+    @DisplayName("⚠️ uid 为 0 的发送者走遍十路计分事件：条数金额照记，但十张表都不算人数、不上榜，昵称头像哪一路都不记")
     void maskedZeroUidIsNotScoredOnAnyUserTable() {
         List<String> red = new ArrayList<>();
         // 有开播时刻，原文与事件留档那几段也一并走到
@@ -588,7 +591,7 @@ class BilibiliLiveStatsAggregatorTest {
             red.add("① " + t.getMessage());
         }
         try {
-            assertEquals(Map.of(), tablesWithViewers(), "② 八张表都不算人数");
+            assertEquals(Map.of(), tablesWithViewers(), "② 十张表都不算人数");
         } catch (Throwable t) {
             red.add("② " + t.getMessage());
         }
@@ -618,11 +621,11 @@ class BilibiliLiveStatsAggregatorTest {
             red.add("⑤ " + t.getMessage());
         }
         try {
-            // 同样十路换成认得出的观众，八张表都要计上——否则上面几问的绿，可能只是某一路根本没走到表
+            // 同样十路换成认得出的观众，十张表都要计上——否则上面几问的绿，可能只是某一路根本没走到表
             assertEquals(List.of(), feedEveryScoredEvent(key -> user(1L)), "⑥ 认得出的观众十路都不抛异常");
             Map<String, Integer> counted = tablesWithViewers();
             assertEquals(List.of(), USER_TABLES.stream().filter(table -> !counted.containsKey(table)).toList(),
-                    "⑥ 认得出的观众八张表都照常计，这里列的是没计上的表");
+                    "⑥ 认得出的观众十张表都照常计，这里列的是没计上的表");
         } catch (Throwable t) {
             red.add("⑥ " + t.getMessage());
         }
@@ -632,7 +635,7 @@ class BilibiliLiveStatsAggregatorTest {
     }
 
     @Test
-    @DisplayName("⚠️ 发送者在、uid 却是空的（protobuf 格式的消息不带零值）：十路计分事件都不抛异常，八张表都不算人数、不上榜")
+    @DisplayName("⚠️ 发送者在、uid 却是空的（protobuf 格式的消息不带零值）：十路计分事件都不抛异常，十张表都不算人数、不上榜")
     void senderWithNullUidIsSkippedWithoutThrowing() {
         List<String> red = new ArrayList<>();
         // 有开播时刻，原文与事件留档那几段也一并走到
@@ -647,7 +650,7 @@ class BilibiliLiveStatsAggregatorTest {
             red.add("① " + t.getMessage());
         }
         try {
-            assertEquals(Map.of(), tablesWithViewers(), "② 八张表都不算人数");
+            assertEquals(Map.of(), tablesWithViewers(), "② 十张表都不算人数");
             assertEquals(Map.of(), tablesWithRanking(), "② 八张榜上都没有人");
         } catch (Throwable t) {
             red.add("② " + t.getMessage());
@@ -852,7 +855,7 @@ class BilibiliLiveStatsAggregatorTest {
     }
 
     /**
-     * 把要计分的十路事件各喂一遍，八张按人计分的表都走到
+     * 把要计分的十路事件各喂一遍，十张按人计分的表都走到
      * <p>
      * 发送者由 {@code sender} 按这一路的英文名造。某一路抛了异常不拦着后面几路，
      * 记下「哪一路：异常类名」交回，由调用方断言

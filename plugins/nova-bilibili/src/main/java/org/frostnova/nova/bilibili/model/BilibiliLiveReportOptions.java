@@ -32,6 +32,15 @@ public class BilibiliLiveReportOptions {
     private static final int DEFAULT_RANKING_COUNT = 5;
 
     /**
+     * 醒目留言名单默认展示的人数
+     * <p>
+     * 名单不是名次：它要把「谁说了什么」交代全，默认 5 人一场中型直播就截住了；
+     * 而名单一行带原文，比榜行高一倍，也不宜照搬榜的上限。取 10：多数场次的醒目留言
+     * 人数在个位数，10 能整份放下，放不下时这个数与榜一样可配。
+     */
+    private static final int DEFAULT_SUPER_CHAT_LIST = 10;
+
+    /**
      * 单张榜最多展示的名次数，防止一场大直播把报告拉成长图
      */
     private static final int MAX_RANKING_COUNT = 20;
@@ -62,27 +71,27 @@ public class BilibiliLiveReportOptions {
     private int danmuRanking = DEFAULT_RANKING_COUNT;
 
     /**
-     * 礼物排行榜展示前多少名，0 为不展示
+     * 流水排行榜展示前多少名，0 为不展示
+     * <p>
+     * 键名沿用 {@code gift_ranking}：这张榜由礼物榜改口径而来，老配置里写的键照旧生效。
      */
     private int giftRanking = DEFAULT_RANKING_COUNT;
 
     /**
-     * 醒目留言排行榜展示前多少名，0 为不展示
+     * 醒目留言名单展示前多少人，0 为不展示
      */
-    private int superChatRanking = DEFAULT_RANKING_COUNT;
+    private int superChatRanking = DEFAULT_SUPER_CHAT_LIST;
 
     /**
-     * 盲盒数量排行榜展示前多少名，0 为不展示
+     * 盲盒榜展示前多少名，0 为不展示。开了几个与盈亏多少合在一榜，每人一行
      */
     private int boxRanking;
 
     /**
-     * 盲盒盈亏排行榜展示前多少名，0 为不展示
-     */
-    private int boxProfitRanking;
-
-    /**
      * 是否展示本场开通大航海的观众名单
+     * <p>
+     * 显示金额的会话里不画这张名单（全名单上「本场」小标承担了同一件事）；
+     * 只有隐藏金额的会话还画它——那里没有金额可露，名单正是氛围的一部分。
      */
     private boolean guardList = true;
 
@@ -134,9 +143,11 @@ public class BilibiliLiveReportOptions {
      * 与「报告要长什么样」不是一个问题。同一套版式推给主播私聊和推给大群，
      * 该显示的区块完全相同，该不该带金额则完全相反。
      * <p>
-     * 关闭后并非简单地少画几块：概览行的收益整段省略，卡片改用人数、条数等非金额表述，
-     * 曲线保留形状但不标峰值，礼物列表整段不画，而礼物、醒目留言、盲盒盈亏三张榜整榜不画——
-     * 那三张榜的每一行都是「某人花了多少钱」，去掉数字也仍然在排消费。
+     * 关闭后并非简单地少画几块：卡片改用人数、条数等非金额表述，流水曲线保留形状但不标峰值，
+     * 收到的礼物整段不画，而流水排行与醒目留言名单整榜不出——
+     * 那两张榜的每一行都是「某人花了多少钱」，去掉数字也仍然在排消费。
+     * 盲盒榜照出、只写个数（个数不是消费额）；本场开通大航海名单也照旧画：
+     * 它不带金额，正是隐藏金额的会话里仅剩的那份名单。
      */
     private boolean showRevenue = true;
 
@@ -160,10 +171,12 @@ public class BilibiliLiveReportOptions {
      */
     private static final List<HandlerOption> LAYOUT_OPTIONS = List.of(
             HandlerOption.bool("cover", "直播间封面", "报告顶部的封面横幅", DEFAULTS.cover),
-            HandlerOption.bool("cards", "数据卡片", "弹幕、礼物、点赞等概览卡片", DEFAULTS.cards),
-            HandlerOption.bool("fans_change", "本场变化", "粉丝、粉丝团、大航海的涨幅，每次出报告要多打三个接口", DEFAULTS.fansChange),
-            HandlerOption.bool("interaction_curve", "互动曲线", "弹幕、礼物等随时间的变化曲线", DEFAULTS.interactionCurve),
-            HandlerOption.bool("guard_list", "大航海名单", "本场新开通大航海的观众", DEFAULTS.guardList),
+            HandlerOption.bool("cards", "数据卡片", "弹幕、流水、点赞等概览卡片", DEFAULTS.cards),
+            HandlerOption.bool("fans_change", "本场变化", "粉丝、粉丝团与大航海人数的涨幅，每次出报告要多打三个接口", DEFAULTS.fansChange),
+            HandlerOption.bool("interaction_curve", "互动曲线", "弹幕、流水等随时间的变化曲线", DEFAULTS.interactionCurve),
+            HandlerOption.bool("guard_list", "本场开通大航海名单",
+                    "本场开通大航海的观众。只在隐藏金额的会话里画出——显示金额的会话里这份名单不画，大航海全名单上的「本场」小标承担同一件事",
+                    DEFAULTS.guardList),
             HandlerOption.bool("guard_list_all", "大航海全名单",
                     "这位主播当前全部大航海，不只本场新开通。拉不到时这一段会写明，不会让整张报告失败",
                     DEFAULTS.guardListAll),
@@ -171,18 +184,16 @@ public class BilibiliLiveReportOptions {
                     DEFAULTS.guardListLimit, 0, MAX_GUARD_LIST_ALL),
             HandlerOption.bool("danmu_cloud", "弹幕词云", "本场弹幕的词云图", DEFAULTS.danmuCloud),
             HandlerOption.bool("highlights", "高能时刻", "弹幕最密集的几个时段，对应可剪切片的时间点", DEFAULTS.highlights),
-            HandlerOption.bool("gift_list", "礼物列表", "本场收到的礼物，按种类列出个数", DEFAULTS.giftList),
+            HandlerOption.bool("gift_list", "礼物列表", "本场收到的礼物与大航海，按种类列出个数", DEFAULTS.giftList),
             HandlerOption.integer("danmu_ranking", "弹幕排行", "展示前几名，0 为不展示",
                     DEFAULTS.danmuRanking, 0, MAX_RANKING_COUNT),
-            HandlerOption.integer("gift_ranking", "礼物排行", "展示前几名，0 为不展示",
+            HandlerOption.integer("gift_ranking", "流水排行", "每人本场礼物、醒目留言与上舰的金额合计，展示前几名，0 为不展示",
                     DEFAULTS.giftRanking, 0, MAX_RANKING_COUNT),
-            HandlerOption.integer("super_chat_ranking", "醒目留言排行", "展示前几名，0 为不展示",
+            HandlerOption.integer("super_chat_ranking", "醒目留言名单", "发过醒目留言的观众，每人一行带原文，展示前几人，0 为不展示",
                     DEFAULTS.superChatRanking, 0, MAX_RANKING_COUNT),
-            // 盲盒两榜默认关闭：多数直播间没有盲盒数据，开着只会让报告多两块空白
-            HandlerOption.integer("box_ranking", "盲盒排行", "展示前几名，0 为不展示",
-                    DEFAULTS.boxRanking, 0, MAX_RANKING_COUNT),
-            HandlerOption.integer("box_profit_ranking", "盲盒盈亏排行", "展示前几名，0 为不展示",
-                    DEFAULTS.boxProfitRanking, 0, MAX_RANKING_COUNT));
+            // 盲盒榜默认关闭：多数直播间没有盲盒数据，开着只会让报告多一块空白
+            HandlerOption.integer("box_ranking", "盲盒榜", "每人开了几个、盈亏多少，展示前几名，0 为不展示",
+                    DEFAULTS.boxRanking, 0, MAX_RANKING_COUNT));
 
     /**
      * 这份报告有哪些版式项
@@ -215,7 +226,8 @@ public class BilibiliLiveReportOptions {
         options.giftRanking = ranking(params, "gift_ranking", options.giftRanking);
         options.superChatRanking = ranking(params, "super_chat_ranking", options.superChatRanking);
         options.boxRanking = ranking(params, "box_ranking", options.boxRanking);
-        options.boxProfitRanking = ranking(params, "box_profit_ranking", options.boxProfitRanking);
+        // box_profit_ranking 已并入 box_ranking：旧配置里这个键照旧被忽略（不认识的键静默跳过），
+        // 控制台那一侧对死键另有判据（push-removed-option-key 夹具），不在这里处理
         options.guardList = bool(params, "guard_list", options.guardList);
         options.guardListAll = bool(params, "guard_list_all", options.guardListAll);
         options.guardListLimit = bounded(params, "guard_list_limit", options.guardListLimit, 0, MAX_GUARD_LIST_ALL);
