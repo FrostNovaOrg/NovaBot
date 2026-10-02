@@ -15,6 +15,34 @@ set -euo pipefail
 SRC=/opt/starbot
 DST=/app
 
+# 先占容器自己的锁，再铺程序文件。同一个卷上第二个容器在这里退出，一个文件都不改。
+# 锁件是 novabot-container.lock，不碰程序的 novabot.lock。网络盘上 flock 会被当成
+# 整件的字节区锁，和程序那把锁互相挡；锁同一件的话，容器里的程序会以为已经有一份在跑。
+# 只有这把锁被别人占着才退出。取不到——文件系统不支持、没有 flock、锁件打不开——
+# 说明一句后照常启动。
+# 描述符 9 一直开着，exec 之后交给 start.sh，再交给 java；两边都退出，锁才松开。
+if [ ! -d "$DST" ]; then
+    mkdir -p "$DST"
+fi
+case "$DST" in
+    /*) lock_path="$DST/novabot-container.lock" ;;
+    *) lock_path="$(cd "$DST" && pwd)/novabot-container.lock" ;;
+esac
+# 73 只表示锁被占。别的退码都不是「已有一份在跑」。
+if ! exec 9<>"$lock_path"; then
+    echo "没法确认这个卷是不是已有一份在跑，照常启动。" >&2
+else
+    lock_status=0
+    flock -n -E 73 9 || lock_status=$?
+    if [ "$lock_status" -eq 73 ]; then
+        echo "这个目录已有一份 NovaBot 在运行（${lock_path}）。要换版本请先停掉它。" >&2
+        exit 1
+    fi
+    if [ "$lock_status" -ne 0 ]; then
+        echo "没法确认这个卷是不是已有一份在跑，照常启动。" >&2
+    fi
+fi
+
 mkdir -p "$DST/plugins" "$DST/plugins-lib"
 
 # 程序文件每次启动都覆盖，这样升级镜像就等于升级程序
