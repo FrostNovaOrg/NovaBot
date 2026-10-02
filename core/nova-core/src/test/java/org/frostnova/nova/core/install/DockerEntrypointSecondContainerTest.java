@@ -28,7 +28,7 @@ import static org.junit.jupiter.api.Assertions.fail;
  * 同一个数据卷上再起一个容器时，入口不该先换掉第一份正在用的程序文件。
  * <p>
  * 抓的是第二个容器换掉第一份正在用的程序件：卷上这把锁还被另一个进程占着，
- * 再跑一遍入口，NovaBot.jar、start.sh、lib、plugins 已经被盖掉。
+ * 再跑一遍入口，NovaBot.jar、start.sh、lib、plugins、plugins-lib 已经被盖掉。
  * 换掉发生在程序自己拿锁之前，正在跑的那一份会加载不到类，或者新旧文件混在一起。
  * <p>
  * 锁空的那一格是对照：没有人占着时，入口照旧把程序文件铺好，再交给 start.sh。
@@ -192,6 +192,7 @@ class DockerEntrypointSecondContainerTest {
         layout.script = dir.resolve("docker-entrypoint.sh");
         Files.createDirectories(layout.src.resolve("lib"));
         Files.createDirectories(layout.src.resolve("plugins"));
+        Files.createDirectories(layout.src.resolve("plugins-lib"));
         Files.createDirectories(layout.dst.resolve("lib"));
         Files.createDirectories(layout.dst.resolve("plugins"));
         Files.createDirectories(layout.dst.resolve("plugins-lib"));
@@ -200,6 +201,7 @@ class DockerEntrypointSecondContainerTest {
         write(layout.src.resolve("NovaBot.jar"), "new-jar");
         write(layout.src.resolve("lib/core.jar"), "new-lib");
         write(layout.src.resolve("plugins/nova-demo-2.0.0.jar"), "new-plugin");
+        write(layout.src.resolve("plugins-lib/caffeine-9.9.9.jar"), "new-caffeine");
         write(layout.src.resolve("application.example.yml"), "example");
         writeExecutable(layout.src.resolve("start.sh"), ""
                 + "#!/usr/bin/env bash\n"
@@ -212,6 +214,8 @@ class DockerEntrypointSecondContainerTest {
         write(layout.dst.resolve("lib/keep.txt"), "keep");
         write(layout.dst.resolve("plugins/nova-demo-1.0.0.jar"), "old-plugin");
         write(layout.dst.resolve("plugins/user-extra.jar"), "user");
+        write(layout.dst.resolve("plugins-lib/caffeine-3.2.0.jar"), "old-caffeine");
+        write(layout.dst.resolve("plugins-lib/user-dep-1.0.jar"), "user-dep");
 
         writeExecutable(layout.bin.resolve("java"), ""
                 + "#!/usr/bin/env bash\n"
@@ -411,6 +415,13 @@ class DockerEntrypointSecondContainerTest {
         assertEquals("new-plugin", read(layout.dst.resolve("plugins/nova-demo-2.0.0.jar")));
         assertEquals("user", read(layout.dst.resolve("plugins/user-extra.jar")),
                 "卷上自带的插件应留着");
+        assertTrue(Files.exists(layout.dst.resolve("plugins-lib/caffeine-9.9.9.jar")),
+                "镜像里的插件依赖应铺到卷上的 plugins-lib");
+        assertEquals("new-caffeine", read(layout.dst.resolve("plugins-lib/caffeine-9.9.9.jar")));
+        assertFalse(Files.exists(layout.dst.resolve("plugins-lib/caffeine-3.2.0.jar")),
+                "镜像自带依赖的旧版应清掉");
+        assertEquals("user-dep", read(layout.dst.resolve("plugins-lib/user-dep-1.0.jar")),
+                "卷上自放的依赖应留着");
         assertEquals("example", read(layout.dst.resolve("application.example.yml")));
     }
 

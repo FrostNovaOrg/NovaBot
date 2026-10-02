@@ -75,8 +75,8 @@ docker run -d --name novabot --restart unless-stopped \
   改成直接发布到公网。设置页里改监听地址对容器不起作用。
 - **同一个数据卷同时只能有一个容器在跑。** 再起一个会说明一句后退出，不会改动这个卷上的文件。
 
-换镜像会换掉卷上的程序，`plugins-lib/` 目录不跟着换——用到时看
-[第 13 章　升级与备份](13-upgrade-and-backup.md)。
+换镜像会换掉卷上的程序；`plugins-lib/` 里镜像自带的依赖每次启动按构件名换新，
+自己放的留下——细节看[第 13 章　升级与备份](13-upgrade-and-backup.md)。
 
 ## 装完之后
 
