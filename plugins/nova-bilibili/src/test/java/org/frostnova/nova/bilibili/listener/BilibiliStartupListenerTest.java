@@ -1,12 +1,20 @@
 package org.frostnova.nova.bilibili.listener;
 
+import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
+import org.frostnova.nova.bilibili.exception.NetworkException;
+import org.frostnova.nova.bilibili.exception.ResponseCodeException;
+import org.frostnova.nova.bilibili.health.BilibiliRiskMetrics;
+import org.frostnova.nova.bilibili.model.Cookies;
 import org.frostnova.nova.bilibili.service.BilibiliAccountService;
 import org.frostnova.nova.bilibili.service.BilibiliBackupLivePushService;
+import org.frostnova.nova.bilibili.service.BilibiliCredentialStore;
 import org.frostnova.nova.bilibili.service.BilibiliDynamicService;
 import org.frostnova.nova.bilibili.service.BilibiliLiveRoomService;
 import org.frostnova.nova.bilibili.service.BilibiliStreamerSnapshotService;
+import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
+import org.frostnova.nova.core.util.HttpUtil;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -16,10 +24,16 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -39,6 +53,8 @@ class BilibiliStartupListenerTest {
 
         BilibiliAccountService accountService = mock(BilibiliAccountService.class);
         when(accountService.login()).thenReturn(true);
+        // 桩出 uid 已知的正常登录：login 成了而 uid 不说明的桩会被当成「凭据暂未确认」，误排补问
+        when(accountService.getLoginUid()).thenReturn(90001L);
 
         TaskScheduler scheduler = inlineScheduler();
         listener(accountService, scheduler, properties).onApplicationReadyEvent();
@@ -54,6 +70,7 @@ class BilibiliStartupListenerTest {
 
         BilibiliAccountService accountService = mock(BilibiliAccountService.class);
         when(accountService.login()).thenReturn(true);
+        when(accountService.getLoginUid()).thenReturn(90001L);
 
         TaskScheduler scheduler = inlineScheduler();
         listener(accountService, scheduler, properties).onApplicationReadyEvent();
@@ -82,6 +99,7 @@ class BilibiliStartupListenerTest {
 
         BilibiliAccountService accountService = mock(BilibiliAccountService.class);
         when(accountService.login()).thenReturn(true);
+        when(accountService.getLoginUid()).thenReturn(90001L);
 
         TaskScheduler scheduler = inlineScheduler();
         listener(accountService, scheduler, properties).onApplicationReadyEvent();
@@ -99,6 +117,7 @@ class BilibiliStartupListenerTest {
     void changeEventAfterStartupShouldResync() {
         BilibiliAccountService accountService = mock(BilibiliAccountService.class);
         when(accountService.login()).thenReturn(true);
+        when(accountService.getLoginUid()).thenReturn(90001L);
         BilibiliLiveRoomService liveRoomService = mock(BilibiliLiveRoomService.class);
         AbstractDataSource dataSource = mock(AbstractDataSource.class);
 
@@ -115,6 +134,7 @@ class BilibiliStartupListenerTest {
     void burstOfChangeEventsShouldCoalesce() {
         BilibiliAccountService accountService = mock(BilibiliAccountService.class);
         when(accountService.login()).thenReturn(true);
+        when(accountService.getLoginUid()).thenReturn(90001L);
         BilibiliLiveRoomService liveRoomService = mock(BilibiliLiveRoomService.class);
         AbstractDataSource dataSource = mock(AbstractDataSource.class);
 
@@ -278,6 +298,124 @@ class BilibiliStartupListenerTest {
         verify(scheduler, never()).scheduleAtFixedRate(any(Runnable.class), any(Instant.class), any(Duration.class));
     }
 
+    // ============ 凭据暂未确认时的补问 ============
+    // 启动验证没拿到答复（网络不通等）会保留凭据按已登录启动，uid 留空。这里钉住：
+    // 一分钟后先问一次，没答复逐次加倍再等，封顶为复检间隔；复检关闭时也要问；
+    // 拿到 uid 走复检同一条路补上，问出明确未登录走既有失效告警，有明确答复就停。
+
+    @Test
+    @DisplayName("凭据暂未确认且复检关闭：一分钟后补问，没答复加倍再等，拿到 uid 当场补上并停")
+    void unverifiedCredentialsReaskEvenWhenRecheckDisabled() {
+        NovaBilibiliProperties properties = new NovaBilibiliProperties();
+        properties.getAccount().setVerifyInterval(0);
+
+        // 真账号服务＋只在查账号这一路上失败的假接口：补问要落到真实补 uid 的那条路上
+        BilibiliRiskMetrics metrics = new BilibiliRiskMetrics();
+        UnstableMyInfoApi api = new UnstableMyInfoApi(metrics);
+        api.failure = new NetworkException("连接超时");
+
+        BilibiliCredentialStore store = mock(BilibiliCredentialStore.class);
+        when(store.load()).thenReturn(Optional.of(new Cookies("sess", "jct", "buvid")));
+        BilibiliAccountService accountService = new BilibiliAccountService(api, store, properties);
+
+        ReaskRecorder reasks = new ReaskRecorder();
+        listener(accountService, reasks.scheduler, properties).onApplicationReadyEvent();
+
+        assertTrue(accountService.isLoggedIn(), "前提: 网络故障应保留凭据按已登录启动");
+        assertNull(accountService.getLoginUid(), "前提: uid 尚未确认");
+
+        assertEquals(1, reasks.tasks.size(), "复检关闭时也要登记补问, 否则 uid 永远补不上");
+        long firstDelay = Duration.between(Instant.now(), reasks.at.get(0)).toSeconds();
+        assertTrue(firstDelay >= 55 && firstDelay <= 60,
+                "第一次补问应在一分钟左右, 实际 " + firstDelay + " 秒后");
+
+        // 到点补问，仍未得到答复：加倍再等
+        reasks.tasks.get(0).run();
+        assertEquals(2, reasks.tasks.size(), "没答复应再排一次");
+        long secondDelay = Duration.between(Instant.now(), reasks.at.get(1)).toSeconds();
+        assertTrue(secondDelay >= 110 && secondDelay <= 120,
+                "没答复应加倍再等, 实际 " + secondDelay + " 秒后");
+
+        // 网络恢复，这次补问拿到账号身份：uid 当场补上，不再排
+        api.failure = null;
+        api.uid = 90001L;
+        reasks.tasks.get(1).run();
+        assertEquals(90001L, accountService.getLoginUid(), "补问拿到 uid 应走复检同一条路补上");
+        assertEquals(2, reasks.tasks.size(), "拿到明确答复就停, 不再排补问");
+    }
+
+    @Test
+    @DisplayName("补问问出「明确未登录」：置回未登录并停，失效告警走复检那条路")
+    void reaskStopsWhenServerClearlySaysLoggedOut() {
+        NovaBilibiliProperties properties = new NovaBilibiliProperties();
+        properties.getAccount().setVerifyInterval(0);
+
+        BilibiliRiskMetrics metrics = new BilibiliRiskMetrics();
+        UnstableMyInfoApi api = new UnstableMyInfoApi(metrics);
+        api.failure = new NetworkException("连接超时");
+
+        BilibiliCredentialStore store = mock(BilibiliCredentialStore.class);
+        when(store.load()).thenReturn(Optional.of(new Cookies("sess", "jct", "buvid")));
+        BilibiliAccountService accountService = new BilibiliAccountService(api, store, properties);
+
+        ReaskRecorder reasks = new ReaskRecorder();
+        listener(accountService, reasks.scheduler, properties).onApplicationReadyEvent();
+        assertEquals(1, reasks.tasks.size());
+
+        // 这次补问得到服务端明确答复：凭据确已失效，置回未登录（既有失效告警那条路），不再排
+        api.failure = new ResponseCodeException(BilibiliApiUtil.CODE_NOT_LOGGED_IN, "账号未登录");
+        reasks.tasks.get(0).run();
+
+        assertFalse(accountService.isLoggedIn(), "明确未登录应置回未登录");
+        assertEquals(1, reasks.tasks.size(), "有明确答复就停");
+    }
+
+    @Test
+    @DisplayName("补问没答复逐次加倍，封顶为复检间隔")
+    void reaskBackoffCappedAtVerifyInterval() {
+        NovaBilibiliProperties properties = new NovaBilibiliProperties();
+        properties.getAccount().setVerifyInterval(90);
+
+        BilibiliAccountService accountService = mock(BilibiliAccountService.class);
+        when(accountService.login()).thenReturn(true);
+        when(accountService.isLoggedIn()).thenReturn(true);
+        // 一直问不到账号身份
+        when(accountService.getLoginUid()).thenReturn(null);
+
+        ReaskRecorder reasks = new ReaskRecorder();
+        listener(accountService, reasks.scheduler, properties).onApplicationReadyEvent();
+
+        assertEquals(1, reasks.tasks.size());
+        reasks.tasks.get(0).run();
+
+        // 加倍本该等到 120 秒，但封顶为复检间隔 90 秒
+        assertEquals(2, reasks.tasks.size(), "没答复应再排一次");
+        long delay = Duration.between(Instant.now(), reasks.at.get(1)).toSeconds();
+        assertTrue(delay >= 80 && delay <= 90, "等待应封顶在复检间隔, 实际 " + delay + " 秒后");
+        verify(accountService).verify();
+    }
+
+    @Test
+    @DisplayName("uid 已知时不排补问")
+    void noReaskWhenUidAlreadyKnown() {
+        BilibiliAccountService accountService = mock(BilibiliAccountService.class);
+        when(accountService.login()).thenReturn(true);
+        when(accountService.getLoginUid()).thenReturn(90001L);
+
+        // 全部就地执行：若误排了补问，它会当场跑起来，调度笔数会超过一笔
+        AtomicInteger dispatched = new AtomicInteger();
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        when(scheduler.schedule(any(Runnable.class), any(Instant.class))).thenAnswer(invocation -> {
+            dispatched.incrementAndGet();
+            invocation.getArgument(0, Runnable.class).run();
+            return null;
+        });
+
+        listener(accountService, scheduler, new NovaBilibiliProperties()).onApplicationReadyEvent();
+
+        assertEquals(1, dispatched.get(), "正常登录（uid 已知）不该再排补问");
+    }
+
     /**
      * 构造被测监听器
      */
@@ -315,5 +453,57 @@ class BilibiliStartupListenerTest {
             return null;
         });
         return scheduler;
+    }
+
+    /**
+     * 补问观测台：第一笔调度就地执行（那是启动流程本身，跑完才能观察到后续登记），
+     * 之后的每一笔连同到点时刻收起来，由测试手动到点执行
+     */
+    private static final class ReaskRecorder {
+        final List<Runnable> tasks = new ArrayList<>();
+
+        final List<Instant> at = new ArrayList<>();
+
+        final TaskScheduler scheduler = mock(TaskScheduler.class);
+
+        ReaskRecorder() {
+            AtomicInteger dispatched = new AtomicInteger();
+            when(scheduler.schedule(any(Runnable.class), any(Instant.class))).thenAnswer(invocation -> {
+                if (dispatched.incrementAndGet() == 1) {
+                    invocation.getArgument(0, Runnable.class).run();
+                } else {
+                    tasks.add(invocation.getArgument(0, Runnable.class));
+                    at.add(invocation.getArgument(1, Instant.class));
+                }
+                return null;
+            });
+        }
+    }
+
+    /**
+     * 只应答「查登录账号」一路的假接口：应答可切换，先模拟网络故障，再模拟拿到账号身份。
+     * 其余网络行为不模拟，登录态的解析与记账走真实路径
+     */
+    private static final class UnstableMyInfoApi extends BilibiliApiUtil {
+        private RuntimeException failure;
+
+        private Long uid;
+
+        UnstableMyInfoApi(BilibiliRiskMetrics riskMetrics) {
+            super(mock(HttpUtil.class), new NovaBilibiliProperties(), riskMetrics);
+        }
+
+        @Override
+        public JSONObject requestBilibiliApi(String url, String method, Map<String, String> headers,
+                                             Map<String, Object> params) {
+            if (failure != null) {
+                throw failure;
+            }
+            if (uid == null) {
+                // 接口通了但没给出账号身份
+                return new JSONObject();
+            }
+            return JSONObject.of("profile", JSONObject.of("mid", uid));
+        }
     }
 }

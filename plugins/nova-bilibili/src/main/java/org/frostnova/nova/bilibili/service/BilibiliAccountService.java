@@ -210,10 +210,15 @@ public class BilibiliAccountService {
                 return MaintenanceOutcome.OK;
             }
 
+            Long previousUid = this.loginUid;
             this.loginUid = uid;
             if (!loggedIn) {
                 this.loggedIn = true;
                 log.info("哔哩哔哩登录态已恢复, uid: {}", uid);
+            } else if (previousUid == null) {
+                // 凭据暂未确认的那条路上 loggedIn 已是 true，补上 uid 这一刻若无日志，
+                // 「已确认」在工程日志里就无声无息
+                log.info("登录凭据已确认, uid: {}", uid);
             }
             return MaintenanceOutcome.OK;
         } catch (ResponseCodeException e) {
@@ -594,14 +599,17 @@ public class BilibiliAccountService {
      * 「无法验证」包括网络故障、接口异常与未预期的业务错误代码——它们都只说明这次没问到
      * 答案，不说明凭据失效。凭据文件是扫码登录的唯一成果，删掉它就得重新扫码，而无人值守的
      * 机器上没人扫，动态推送会一直停到有人来。所以凭据的去留只听服务端的明确答复：没有答复
-     * 就先留着，按已登录启动。定期复检会在网络恢复后给出真实结论，届时若确已失效，自会按
-     * 既有告警提示重新扫码。uid 此时未知，首次复检成功后补上。
+     * 就先留着，按已登录启动。网络恢复后由补问或定期复检给出真实结论，届时若确已失效，自会按
+     * 既有告警提示重新扫码。uid 此时未知，首次确认成功后补上。
      * @param reason 验证未成的原因，写进日志
      * @return 恒为 true——按已登录继续
      */
     private boolean proceedWithUnverifiedCredentials(String reason) {
         this.loggedIn = true;
-        log.warn("暂时无法验证保存的登录凭据（{}）, 已保留凭据并按已登录启动, 网络恢复后由定期复检确认", reason);
+        log.warn("暂时无法验证保存的登录凭据（{}）, 已保留凭据并按已登录启动, 网络恢复后会自动确认", reason);
+        // 这次验证同样没问到答案，照旧在「获取登录账号失败」计一笔，口径与 getLoginUid 相同：
+        // 只有明确未登录不记，而那一档走的是转扫码那条路，到不了这里
+        api.recordLoginUidFailure("MY_INFO_API:unverified:" + reason);
         logCredentialCapability(api.getCookies());
         return true;
     }

@@ -23,6 +23,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 /**
@@ -91,6 +92,13 @@ public class BilibiliDynamicService {
      * 下一次复核关注列表的时刻，为空表示还没完整核对过
      */
     private volatile Instant nextFollowingCheckAt;
+
+    /**
+     * 是否已就「登录凭据暂未确认」记过说明行
+     * <p>
+     * uid 未知会持续很多轮，说明只需一行；uid 补上后复位，下次再进这个状态还能再记一行
+     */
+    private final AtomicBoolean followPausedForUnconfirmedLogin = new AtomicBoolean(false);
 
     @Autowired
     public BilibiliDynamicService(BilibiliApiUtil api,
@@ -255,6 +263,16 @@ public class BilibiliDynamicService {
         }
 
         Long loginUid = accountService.getLoginUid();
+        if (loginUid == null) {
+            // 保留凭据按已登录启动、uid 尚未确认：这一轮拿不出账号身份，取关注列表只会
+            // 逐轮失败。安静跳过，只在刚进这个状态时说明一次；uid 补上后下一轮照常
+            if (followPausedForUnconfirmedLogin.compareAndSet(false, true)) {
+                log.info("登录凭据暂未确认, 自动关注暂停, 待确认后自动恢复");
+            }
+            return;
+        }
+        followPausedForUnconfirmedLogin.set(false);
+
         Instant nextCheckAt = this.nextFollowingCheckAt;
         boolean due = nextCheckAt == null
                 || !now.isBefore(nextCheckAt)
