@@ -645,6 +645,9 @@ function pill(text, kind) {
 function paintRight() {
   const host = $('#push-right');
   host.innerHTML = '';
+  // 旧的那屏连着版式编辑器一起作废。金额草稿的重画监听是单槽位，不在这里摘掉的话，
+  // 切走（含切到没有版式区的通道）后拨金额开关，已离开的编辑器还会按旧通道白发一次预览
+  onRevenueDraftChange(null);
 
   if (picked.uid === 'default') {
     renderDefaultTemplates(host);
@@ -1327,43 +1330,49 @@ function sectionLayout(host, target, session) {
       markDirty();
       syncState();
     },
-    render: params => renderLayoutPreview(params, target, draftVisible()),
+    render: layoutPreviewRenderer(target, draftVisible),
   });
 
   // 金额开关在段 4 的草稿里，版式区在段 3：草稿变了从那边叫一声，这边整段重画。
-  // 单槽位，最后一次进来的通道算数——屏幕上同一时刻只有一个通道的版式区在听
+  // 单槽位，只有当前显示的那个通道的编辑器挂着——换屏时 paintRight 先把旧的摘掉，
+  // 切到没有版式区的通道时不挂新的，已离开页面的编辑器就不再听草稿了
   onRevenueDraftChange(() => editor.repaint());
 }
 
 /**
- * 按当前这套版式画一张
+ * 给一个版式编辑器配一支「按当前这套版式画一张」（buildLayoutEditor 的 render 用）
  *
  * 图由服务端画，与真出报告读的是同一段解析码：各画各的话，预览会在
  * 「越界值怎么夹」「缺项取什么默认」这些地方悄悄给出与实际不同的图。
  * 请求体带上当前通道，服务端按这个群的「金额可见」画；带上草稿值时
  * 只这一张按草稿画，存着的设定不动。
- * @param params 版式参数
+ *
+ * 撤销哪张地址，各编辑器只记自己的一份，不放在模块级共用：切通道后旧编辑器
+ * 晚到的回应只作废它自己那张——共用一份的话，这一下撤销的就是当前通道正显示
+ * 的图地址，新图还没载完时预览那一块就白了。
  * @param target 当前通道
- * @param revenueVisible 草稿里拨的金额可见性，可为空
- * @return 图片地址，画不出来时为空
+ * @param revenueVisible 算金额可见性的那一支（含草稿），画的时候现取
+ * @return {Function} 收版式参数，回图片地址；画不出来时为空
  */
-let previewUrl = null;
-async function renderLayoutPreview(params, target, revenueVisible) {
-  try {
-    const res = await fetch('/config/api/report/preview', {
-      method: 'POST',
-      headers: Object.assign({'Content-Type': 'application/json'},
-        store.csrfToken ? {'X-CSRF-Token': store.csrfToken} : {}),
-      body: JSON.stringify(previewRequestBody(params, target, revenueVisible)),
-    });
-    if (!res.ok) return '';
-    // 上一张画完就没用了。不撤销的话，来回调开关几十次会把几十张图一直挂在内存里
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    previewUrl = URL.createObjectURL(await res.blob());
-    return previewUrl;
-  } catch (e) {
-    return '';
-  }
+function layoutPreviewRenderer(target, revenueVisible) {
+  let url = null;
+  return async params => {
+    try {
+      const res = await fetch('/config/api/report/preview', {
+        method: 'POST',
+        headers: Object.assign({'Content-Type': 'application/json'},
+          store.csrfToken ? {'X-CSRF-Token': store.csrfToken} : {}),
+        body: JSON.stringify(previewRequestBody(params, target, revenueVisible())),
+      });
+      if (!res.ok) return '';
+      // 上一张画完就没用了。不撤销的话，来回调开关几十次会把几十张图一直挂在内存里
+      if (url) URL.revokeObjectURL(url);
+      url = URL.createObjectURL(await res.blob());
+      return url;
+    } catch (e) {
+      return '';
+    }
+  };
 }
 
 /** 段 4：本群设置 */
