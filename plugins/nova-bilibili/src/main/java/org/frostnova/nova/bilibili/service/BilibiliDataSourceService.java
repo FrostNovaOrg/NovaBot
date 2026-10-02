@@ -1,5 +1,7 @@
 package org.frostnova.nova.bilibili.service;
 
+import com.alibaba.fastjson2.JSONObject;
+import jakarta.annotation.PreDestroy;
 import org.frostnova.nova.bilibili.BilibiliPlatform;
 import org.frostnova.nova.bilibili.exception.RiskCooldownException;
 import org.frostnova.nova.bilibili.model.Up;
@@ -12,14 +14,21 @@ import org.frostnova.nova.core.datasource.DataSourceService;
 import org.frostnova.nova.core.datasource.DataSourceServiceConfig;
 import org.frostnova.nova.core.event.datasource.base.NovaDataSourceChangeEvent;
 import org.frostnova.nova.core.lang.StringUtil;
+import org.frostnova.nova.core.service.LiveDataService;
+import org.frostnova.nova.core.service.NovaStateStore;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -48,6 +57,14 @@ public class BilibiliDataSourceService implements DataSourceService {
      */
     private static final Pattern LIVE_URL_ROOM = Pattern.compile("live\\.bilibili\\.com/(\\d{1,19})");
 
+    /**
+     * 主播资料缓存在状态存储里的命名空间
+     * <p>
+     * 推送配置不存昵称、房间号与头像（写盘前剥掉），启动时人人缺三项。
+     * 缓存让启动先填上这三项，登录与连房不等向平台查资料。
+     */
+    private static final String PROFILE_CACHE_NAMESPACE = "StreamerProfile";
+
     private final BilibiliApiUtil api;
 
     /**
@@ -60,6 +77,24 @@ public class BilibiliDataSourceService implements DataSourceService {
      */
     private final Supplier<AbstractDataSource> dataSource;
 
+    /**
+     * 主播资料缓存。丢了、坏了照今天的样子走——补全时再向平台查
+     */
+    private final NovaStateStore stateStore;
+
+    /**
+     * 后台补全时用来排先后：账上在播的先补。测试不关心这一路时为空
+     */
+    private final LiveDataService liveDataService;
+
+    /**
+     * 后台补全用的自管单线程守护执行器
+     * <p>
+     * 线程名看得出是补全。不挪进 bilibiliTaskScheduler（登录与防抖同步在它上面）。
+     * 配置热重载再起的刷新在它上面排队，不并发。停机即关，余下几位不再打接口。
+     */
+    private final ExecutorService completionExecutor;
+
     public BilibiliDataSourceService(BilibiliApiUtil api) {
         this(api, null);
     }
@@ -68,27 +103,230 @@ public class BilibiliDataSourceService implements DataSourceService {
         this(api, eventPublisher, () -> null);
     }
 
+    public BilibiliDataSourceService(BilibiliApiUtil api, ApplicationEventPublisher eventPublisher,
+                                      NovaStateStore stateStore) {
+        this(api, eventPublisher, () -> null, stateStore, null);
+    }
+
+    public BilibiliDataSourceService(BilibiliApiUtil api, ApplicationEventPublisher eventPublisher,
+                                      NovaStateStore stateStore, LiveDataService liveDataService) {
+        this(api, eventPublisher, () -> null, stateStore, liveDataService);
+    }
+
     /**
      * 运行时用这个。数据源用 {@link ObjectProvider} 取，避免和数据源互相等着对方先造出来
      */
     @Autowired
     public BilibiliDataSourceService(BilibiliApiUtil api, ApplicationEventPublisher eventPublisher,
-                                      ObjectProvider<AbstractDataSource> dataSources) {
-        this(api, eventPublisher, dataSources::getIfAvailable);
+                                      ObjectProvider<AbstractDataSource> dataSources,
+                                      NovaStateStore stateStore, LiveDataService liveDataService) {
+        this(api, eventPublisher, dataSources::getIfAvailable, stateStore, liveDataService);
     }
 
     public BilibiliDataSourceService(BilibiliApiUtil api, ApplicationEventPublisher eventPublisher,
                                       Supplier<AbstractDataSource> dataSource) {
+        this(api, eventPublisher, dataSource, null, null);
+    }
+
+    public BilibiliDataSourceService(BilibiliApiUtil api, ApplicationEventPublisher eventPublisher,
+                                      Supplier<AbstractDataSource> dataSource,
+                                      NovaStateStore stateStore, LiveDataService liveDataService) {
         this.api = api;
         this.eventPublisher = eventPublisher;
         this.dataSource = dataSource == null ? () -> null : dataSource;
+        this.stateStore = stateStore;
+        this.liveDataService = liveDataService;
+        this.completionExecutor = Executors.newSingleThreadExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "bilibili-profile-complete");
+            thread.setDaemon(true);
+            return thread;
+        });
+    }
+
+    /**
+     * 停机时关掉补全执行器，余下几位不再打接口
+     * <p>
+     * 后台补全逐位打接口，网络故障时每位最多三次重试，N 位串行可拖数分钟。
+     * 不关的话停机后还会逐位打、逐位记 ERROR，非守护线程拖住退出。
+     */
+    @PreDestroy
+    void stopCompletion() {
+        completionExecutor.shutdownNow();
     }
 
     @Override
     public void completePushUser(PushUser user) {
+        // 昵称、房间号与头像都已齐时不再打这一趟：fillStreamer 只补空着的项，齐了的那一趟
+        // 什么也不改；房间号也不是从无到有，没有要发的变更。缺任何一项的照旧打——
+        // 被风控拦下时的冷却登记也在那一趟里。
+        // 启动那趟刷新不走这里（见 completePushUsers）：缓存填上后仍要照打接口刷新。
+        if (allFilled(user)) {
+            return;
+        }
         // 粉丝数与昵称、房间号出自同一份响应，那一趟已顺路把它带回来，此处只是用不上。
-        // 这一路是推送配置里的主播。房间号晚到时通知重新同步，把直播间连上。
+        // 这一路是推送配置里的主播。房间号晚到时通知重新同步，把直播间连接上。
         fillStreamer(user, true);
+    }
+
+    /**
+     * 昵称、房间号与头像是否都已填好
+     * <p>
+     * 三项出自主播信息接口的同一份响应。都齐时那一趟取回来也只会落进这三个已非空的项，
+     * 什么也改不了；粉丝数那一项走这趟路时本来就用不上，另有一路 {@link #getFansCount}。
+     * @param user 推送用户
+     * @return 是否三项都已填好
+     */
+    private static boolean allFilled(PushUser user) {
+        return user != null
+                && user.getUid() != null
+                && !StringUtil.isBlank(user.getUname())
+                && user.getRoomId() != null
+                && !StringUtil.isBlank(user.getFace());
+    }
+
+    /**
+     * 用缓存把昵称、房间号与头像填上，不打接口
+     * <p>
+     * 推送配置不存这三项，启动时人人缺。缓存让启动先填上，登录与连房不等向平台查资料。
+     * 缓存里没有的那几项仍空着，由后台补全照旧填；缓存丢了、坏了照今天的样子走。
+     * @param user 推送用户
+     */
+    private void fillFromCache(PushUser user) {
+        if (stateStore == null || user == null || user.getUid() == null || user.getPlatform() == null) {
+            return;
+        }
+
+        String key = user.getPlatform() + ":" + user.getUid();
+        stateStore.read(PROFILE_CACHE_NAMESPACE, key, data -> {
+            JSONObject profile = data.getJSONObject(key);
+            if (profile == null) {
+                return null;
+            }
+            if (!StringUtil.isBlank(profile.getString("uname"))) {
+                user.setUname(profile.getString("uname"));
+            }
+            Long roomId = profile.getLong("roomId");
+            if (roomId != null) {
+                user.setRoomId(roomId);
+            }
+            if (!StringUtil.isBlank(profile.getString("face"))) {
+                user.setFace(profile.getString("face"));
+            }
+            return null;
+        });
+    }
+
+    /**
+     * 把主播资料写进缓存
+     * <p>
+     * 每次补全拿到接口结果就更新。它只是缓存：丢了、坏了照今天的样子走。
+     * @param user 推送用户
+     */
+    private void updateCache(PushUser user) {
+        if (stateStore == null || user == null || user.getUid() == null || user.getPlatform() == null) {
+            return;
+        }
+
+        String key = user.getPlatform() + ":" + user.getUid();
+        stateStore.write(PROFILE_CACHE_NAMESPACE, data -> {
+            JSONObject profile = new JSONObject();
+            profile.put("roomId", user.getRoomId());
+            profile.put("uname", user.getUname());
+            profile.put("face", user.getFace());
+            data.put(key, profile);
+        });
+    }
+
+    /**
+     * 后台向接口刷新一位主播的资料
+     * <p>
+     * 启动那趟刷新走这里：照打接口，接口给空不算数——昵称、头像为空时不覆盖（与
+     * {@link #fillStreamer} 只填空同口径）。房间号为空（缺、为 0）时分两种：原值本就为空
+     * （没有直播间的主播）是正常答复，只记 debug 一行；原值非空是接口抽风，记警告。
+     * 两种都沿用原值、把昵称头像（非空的）写进缓存。房间号与现值不同才改，并照
+     * 「房间号晚到发变更」那条路发数据源变更。缓存里没有的主播（新加的）同走那条路，房间号到了再连。
+     * @param user 推送用户
+     */
+    private void refreshFromApi(PushUser user) {
+        if (user == null || user.getUid() == null) {
+            return;
+        }
+
+        try {
+            Up up = api.getUpInfoByUid(user.getUid());
+
+            if (!StringUtil.isBlank(up.getUname())) {
+                user.setUname(up.getUname());
+            }
+            if (!StringUtil.isBlank(up.getFace())) {
+                user.setFace(up.getFace());
+            }
+
+            Long roomBefore = user.getRoomId();
+            Long roomFromApi = up.getRoomId();
+            if (roomFromApi == null || roomFromApi == 0L) {
+                if (roomBefore == null) {
+                    // 没有直播间的主播（只订动态），接口给 0 是正常答复，不值得刷警告
+                    log.debug("uid {} 没有直播间, 接口给的房间号为空", user.getUid());
+                } else {
+                    log.warn("接口没给 uid {} 的房间号, 沿用原值 {}", user.getUid(), roomBefore);
+                }
+                // 昵称头像（非空的）照常进缓存，房间号仍记原值
+                updateCache(user);
+                return;
+            }
+            if (!Objects.equals(roomBefore, roomFromApi)) {
+                user.setRoomId(roomFromApi);
+                publishRoomReady(user);
+            }
+
+            updateCache(user);
+        } catch (RiskCooldownException e) {
+            api.scheduleReplay(e.getEndpoint(), "complete-user:" + user.getUid(), () -> replayConfiguredUser(user));
+            log.error("补全 uid {} 的信息被风控拦下, 冷却结束后再补一次: {}", user.getUid(), e.getMessage());
+        } catch (Exception e) {
+            if (Thread.currentThread().isInterrupted() || completionExecutor.isShutdown()) {
+                log.info("补全 uid {} 被停机打断", user.getUid());
+                return;
+            }
+            log.error("补全 uid {} 的信息失败, 该主播的直播推送可能不可用: {}", user.getUid(), e.getMessage());
+        }
+    }
+
+    /**
+     * 账上在播的排在前，其余照配置顺序
+     * <p>
+     * 问的是上个进程存下来的直播状态，不是现查平台：补全发生在启动时刻，
+     * 该先补的是「账上以为还在播」的那几位。取不到状态的按不在播处理。
+     * @param users 推送用户列表
+     * @return 排好序的推送用户列表
+     */
+    private List<PushUser> liveFirst(List<PushUser> users) {
+        if (liveDataService == null) {
+            return users;
+        }
+
+        List<PushUser> live = new ArrayList<>(users.size());
+        List<PushUser> rest = new ArrayList<>(users.size());
+        for (PushUser user : users) {
+            if (isLiveOnAccount(user)) {
+                live.add(user);
+            } else {
+                rest.add(user);
+            }
+        }
+        live.addAll(rest);
+        return live;
+    }
+
+    /**
+     * 账上是否记着这位在播
+     * @param user 推送用户
+     * @return 账上在播返回 true
+     */
+    private boolean isLiveOnAccount(PushUser user) {
+        return liveDataService.getLiveStatus(user.getPlatform(), user.getUid())
+                .orElse(false);
     }
 
     /**
@@ -130,6 +368,7 @@ public class BilibiliDataSourceService implements DataSourceService {
             if (notifyWhenRoomAppears && roomBefore == null && user.getRoomId() != null) {
                 publishRoomReady(user);
             }
+            updateCache(user);
             return new StreamerWithFans(user, up.getFans());
         } catch (RiskCooldownException e) {
             if (notifyWhenRoomAppears) {
@@ -215,9 +454,31 @@ public class BilibiliDataSourceService implements DataSourceService {
             return;
         }
 
-        log.info("开始补全 {} 个哔哩哔哩主播的信息", users.size());
-        users.forEach(this::completePushUser);
-        log.info("哔哩哔哩主播信息补全完毕");
+        // 先用缓存把三项填上（不打接口），登录与连房不等补全。
+        // 缓存里没有的那几项仍空着，由后台补全照旧填。
+        for (PushUser user : users) {
+            fillFromCache(user);
+        }
+
+        // 后台补全的先后：账上在播的先补（与首连同一口径），其余照配置顺序。
+        List<PushUser> ordered = liveFirst(users);
+
+        int apiCalls = (int) ordered.stream().filter(u -> u.getUid() != null).count();
+        log.info("开始补全 {} 个哔哩哔哩主播的信息", apiCalls);
+        try {
+            completionExecutor.execute(() -> {
+                for (PushUser user : ordered) {
+                    if (Thread.currentThread().isInterrupted() || completionExecutor.isShutdown()) {
+                        log.info("补全已随停机停下, 余下几位不再打接口");
+                        return;
+                    }
+                    refreshFromApi(user);
+                }
+                log.info("哔哩哔哩主播信息补全完毕");
+            });
+        } catch (RejectedExecutionException e) {
+            log.info("补全执行器已随停机关闭, 本次补全不再排队");
+        }
     }
 
     @Override
