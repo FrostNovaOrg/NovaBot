@@ -30,7 +30,7 @@ import {
 } from './session-draft.js';
 import {store} from './store.js';
 import {buildLayoutEditor, buildTemplateEditor} from './template.js';
-import {isDefault, restoreDefaults, templateAdoption} from './template-model.js';
+import {restoreDefaults, templateAdoption} from './template-model.js';
 
 const PAGE_STYLE = `
 /* ==================== QQ 推送 ====================
@@ -127,6 +127,8 @@ button.danger:hover{border-color:var(--err);color:var(--err)}
   border:1px solid var(--softline);border-radius:var(--r-ctl);padding:9px 12px;
   margin-bottom:10px;font-size:14px}
 .tplstate>span:first-child{flex:1 1 auto}
+/* 未改动时状态行旁那句小字：改过它就收起、换「恢复默认」出场 */
+.tplstate .tplfree{color:var(--dim);font-size:12.5px}
 .tplrow{padding:10px 0;border-top:1px solid var(--line)}
 .tplrow:first-of-type{border-top:none}
 .tplbody{margin:0 0 8px;padding:9px 11px;background:var(--ground);border:1px solid var(--line);
@@ -763,7 +765,7 @@ function renderStranded(host) {
  */
 function renderDefaultTemplates(host) {
   const box = card(host, '默认模板',
-    '用默认模板的通道跟着这里一起变。某个通道想不一样，到那个通道里点「改为自定义」。');
+    '用默认模板的通道跟着这里一起变。某个通道想不一样，到那个通道里直接改，改过它就不跟着这里变了。');
 
   const handlers = (store.handlerList || []).filter(item => (item.placeholders || []).length);
   if (!handlers.length) {
@@ -1156,16 +1158,6 @@ function toggleNotice(target, className, on) {
   renderStreamers();
 }
 
-/**
- * 这个通道此刻解锁了没有
- *
- * 「改为自定义」不写任何东西进配置，它只是<b>把编辑器解锁</b>：真正的分叉发生在
- * 第一次改动落到参数上那一刻。点一下就先写一份与默认一模一样的副本的话，
- * 此后默认再改这个通道会独自停在原地，而使用者只是点了一下「我想改」。
- * 解锁状态因此只活在这一次会话里，不进配置、也不进地址栏。
- */
-const unlocked = new Set();
-
 /** 段 2：消息长什么样 */
 function sectionTemplate(host, user, target, session) {
   const box = sectionHead(host, 2, '消息长什么样', '一张卡＝一条消息，花括号是可以拖的块');
@@ -1175,25 +1167,22 @@ function sectionTemplate(host, user, target, session) {
     .filter(item => item.hasTemplate && item.on)
     .map(item => item.className);
   const handlers = (store.handlerList || []).filter(item => on.includes(item.className));
-  const key = channelKeyOf(user, target);
   const state = templateState(target, store.handlerList);
-  const editable = state.custom || unlocked.has(key);
 
   const line = el('div', 'tplstate');
   const label = el('span');
-  label.innerHTML = '本通道用的是：<b>' + (state.custom ? '自定义' : '默认模板') + '</b>'
-    + (state.custom ? ' · 与默认不同' : ' ✓');
-  line.appendChild(label);
 
-  const act = el('button', state.custom ? 'ghost' : 'primary');
+  // 未改动时状态行旁的小字：这一段默认就能改，先把「改过就不再跟着默认走」说在改之前——
+  // 等到改完才发现回不去默认，与改不了是一样地堵人
+  const free = el('span', 'tplfree');
+  free.textContent = '直接改就行；改过的通道不再跟着默认变，随时可以恢复默认';
+
+  // 「恢复默认」只在与默认不同时出现。改了第一下就得出场、改回相同就得收起，
+  // 而这只能靠改状态行自己这几个节点：整段重画会把正在打字的输入框焦点弄丢
+  const act = el('button', 'ghost');
   act.type = 'button';
-  act.textContent = state.custom ? '恢复默认' : '改为自定义';
+  act.textContent = '恢复默认';
   act.addEventListener('click', async () => {
-    if (!state.custom) {
-      unlocked.add(key);
-      renderStreamers();
-      return;
-    }
     // 「恢复默认」丢得掉使用者写了很久的东西，因此先问一句，并说清丢的是什么
     if (!await ask({title: '恢复默认？',
       body: '这个通道的消息模板会改回默认，自己写的内容会丢掉。'
@@ -1205,10 +1194,21 @@ function sectionTemplate(host, user, target, session) {
       if (!handler || !(handler.placeholders || []).length) continue;
       message.params = restoreDefaults(message.params, handler);
     }
-    unlocked.delete(key);
     markDirty();
     renderStreamers();
   });
+
+  /** 状态行那一排跟着判法走：默认／自定义、小字、「恢复默认」出现还是收起 */
+  const syncState = () => {
+    const now = templateState(target, store.handlerList);
+    label.innerHTML = '本通道用的是：<b>' + (now.custom ? '自定义' : '默认模板') + '</b>'
+      + (now.custom ? ' · 与默认不同' : ' ✓');
+    free.hidden = now.custom;
+    act.hidden = !now.custom;
+  };
+  syncState();
+  line.appendChild(label);
+  line.appendChild(free);
   line.appendChild(act);
 
   const toDefault = el('a', 'lnkbtn');
@@ -1218,7 +1218,7 @@ function sectionTemplate(host, user, target, session) {
   box.appendChild(line);
 
   box.appendChild(el('p', 'hint')).textContent =
-    '默认模板改一次，所有用默认的通道一起变。某个通道想不一样，就在这里改成自定义。';
+    '默认模板改一次，所有用默认的通道一起变；在这个通道里改过的，不跟着默认变。';
 
   if (state.custom) {
     const which = (store.handlerList || [])
@@ -1229,7 +1229,8 @@ function sectionTemplate(host, user, target, session) {
 
   buildTemplateEditor(box, {
     handlers,
-    editable,
+    // 这一段默认就能改，不传锁态；编辑器本身仍支持锁态（template.js 那一套），留给要用它的地方
+    editable: true,
     emptyNote: '这个通道带文字模板的通知一条都没开着。关着的那一类改了模板也不会有人收到，'
       + '因此这里不列——到上面「推什么」里先开一条。',
     paramsOf: handler => (messageOf(target, handler) || {}).params || {},
@@ -1239,14 +1240,12 @@ function sectionTemplate(host, user, target, session) {
       terms: store.vocab,
     },
     channelLabel: channelName(session, target, directory),
-    lockedNote: '这是默认模板的样子。要单独给这个通道改，先点上面的「改为自定义」。',
     onChange: (handler, params) => {
       const message = messageOf(target, handler);
       if (!message) return;
       message.params = params;
       markDirty();
-      label.innerHTML = '本通道用的是：<b>'
-        + (isDefault(params, handler) ? '默认模板' : '自定义') + '</b>';
+      syncState();
     },
   });
 }
@@ -1255,11 +1254,6 @@ function sectionTemplate(host, user, target, session) {
 function adminOf(target) {
   const known = directory[target.platform + '|' + Number(target.type) + '|' + target.num];
   return known ? known.admin : null;
-}
-
-/** 认一个通道用的键，与 push-model 的 channelKey 同一把 */
-function channelKeyOf(user, target) {
-  return user.platform + '/' + user.uid + '/' + target.platform + ':' + target.num;
 }
 
 /** 段 3：报告长什么样。只有开着带版式的那类通知时才出现 */
@@ -1272,24 +1266,18 @@ function sectionLayout(host, target, session) {
   const handler = state.handler || {};
   const box = sectionHead(host, 3, (handler.displayName || '报告') + '长什么样',
     '这一类通知没有文字模板，只有版式：左边调，右边就是发到群里的那张图');
-  const key = 'layout:' + target.platform + ':' + target.num + ':' + state.className;
-  const editable = state.custom || unlocked.has(key);
 
   const line = el('div', 'tplstate');
   const label = el('span');
-  label.innerHTML = '本通道用的是：<b>' + (state.custom ? '自定义版式' : '默认版式') + '</b>'
-    + (state.custom ? ' · 与默认不同' : ' ✓');
-  line.appendChild(label);
 
-  const act = el('button', state.custom ? 'ghost' : 'primary');
+  const free = el('span', 'tplfree');
+  free.textContent = '直接改就行；改过的通道不再跟着默认版式变，随时可以恢复默认';
+
+  // 与段 2 同一条规矩：改了第一下当场出现、改回相同当场收起，只动状态行这几个节点
+  const act = el('button', 'ghost');
   act.type = 'button';
-  act.textContent = state.custom ? '恢复默认' : '改为自定义';
+  act.textContent = '恢复默认';
   act.addEventListener('click', async () => {
-    if (!state.custom) {
-      unlocked.add(key);
-      renderStreamers();
-      return;
-    }
     if (!await ask({title: '恢复默认？',
       body: '这个通道的报告版式会改回默认。此后默认版式再改，这个通道跟着一起变。'})) return;
     const message = messageOf(target, handler);
@@ -1298,16 +1286,26 @@ function sectionLayout(host, target, session) {
       for (const option of handler.options || []) delete params[option.key];
       message.params = params;
     }
-    unlocked.delete(key);
     markDirty();
     renderStreamers();
   });
+
+  const syncState = () => {
+    const now = layoutState(target, store.handlerList);
+    label.innerHTML = '本通道用的是：<b>' + (now.custom ? '自定义版式' : '默认版式') + '</b>'
+      + (now.custom ? ' · 与默认不同' : ' ✓');
+    free.hidden = now.custom;
+    act.hidden = !now.custom;
+  };
+  syncState();
+  line.appendChild(label);
+  line.appendChild(free);
   line.appendChild(act);
   box.appendChild(line);
 
   buildLayoutEditor(box, {
-    editable,
-    lockedNote: '这是默认版式的样子。要单独给这个通道改，先点上面的「改为自定义」。',
+    // 与段 2 同理：这一段默认就能改，不传锁态
+    editable: true,
     items: handler.options || [],
     paramsOf: () => (messageOf(target, handler) || {}).params || {},
     caption: previewRevenueCaption(session, target),
@@ -1316,8 +1314,7 @@ function sectionLayout(host, target, session) {
       if (!message) return;
       message.params = params;
       markDirty();
-      label.innerHTML = '本通道用的是：<b>'
-        + (layoutState(target, store.handlerList).custom ? '自定义版式' : '默认版式') + '</b>';
+      syncState();
     },
     render: params => renderLayoutPreview(params, target),
   });
