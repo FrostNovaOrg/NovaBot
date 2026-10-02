@@ -3,7 +3,19 @@
 # NovaBot 启动脚本
 #
 set -euo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")"
+
+# 程序在 releases/<版本>/、数据在再上一级时，工作目录留在安装目录。
+# 锁、配置、凭据和日志都落在工作目录；进了版本目录，两版就会各拿一把锁一起跑。
+# 其余布局脚本就在程序旁边，仍进入脚本自己的目录。
+script_dir=$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+app_dir=$script_dir
+data_dir=$script_dir
+if [ "$(basename "$(dirname "$script_dir")")" = "releases" ]; then
+    data_dir=$(dirname "$(dirname "$script_dir")")
+    cd "$data_dir"
+else
+    cd "$(dirname "${BASH_SOURCE[0]}")"
+fi
 
 # JVM 参数按 1G 内存的 VPS 调校，说明见 docs/performance.md。
 # 这里是全部部署方式（手动、systemd、容器）共用的唯一一份 JVM 参数，
@@ -42,7 +54,11 @@ trap forward_signal TERM INT
 # 不在程序内部自行派生子进程重启：那样父进程要一直驻留等子进程结束，白占一份内存，
 # systemd 下的进程树也不正确
 set +e
+if [ "$(basename "$(dirname "$script_dir")")" = "releases" ]; then
+    java $JVM_OPTS "-Dloader.path=$app_dir/lib,$app_dir/plugins,$app_dir/plugins-lib,$data_dir/plugins,$data_dir/plugins-lib" -jar "$app_dir/NovaBot.jar" "$@" &
+else
 java $JVM_OPTS -Dloader.path=lib,plugins,plugins-lib -jar NovaBot.jar "$@" &
+fi
 child=$!
 
 # wait 被信号打断时会立刻返回 128+信号号，而此时 java 才刚开始停机。

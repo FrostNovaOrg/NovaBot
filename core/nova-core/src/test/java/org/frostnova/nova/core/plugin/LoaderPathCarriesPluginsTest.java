@@ -13,7 +13,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -48,10 +47,12 @@ class LoaderPathCarriesPluginsTest {
 
     /**
      * 取值的字符集刻意不含 {@code }} 与反引号：这个参数在 javadoc 与 Markdown 里也出现，
-     * 用 {@code \S+} 的话会把 {@code {@code ...}} 的右花括号一起吃进取值里
+     * 用 {@code \S+} 的话会把 {@code {@code ...}} 的右花括号一起吃进取值里。
+     * {@code $} 要算进去：分目录那支用 {@code $目录/plugins} 拼绝对路径，不算的话这一支会从分母里消失。
+     * 段不必整段等于 {@code plugins}；最后一段路径等于 {@code plugins} 也算。{@code plugins-lib} 仍不算。
      */
     private static final Pattern WRITE_POINT =
-            Pattern.compile("-Dloader\\.path=([A-Za-z0-9,._/\\-]+)");
+            Pattern.compile("-Dloader\\.path=([A-Za-z0-9,._/\\-$]+)");
 
     /** 构建产物与本地草稿：里面的启动脚本是上一次构建留下的旧字节，不是本仓的写点 */
     private static final Set<String> SKIPPED_DIRECTORIES =
@@ -71,6 +72,11 @@ class LoaderPathCarriesPluginsTest {
             scan(hits, missing);
         } catch (Throwable t) {
             red.add("① " + t.getMessage());
+        }
+
+        System.out.println("loader.path 写点 " + hits.size() + " 处");
+        for (String hit : hits) {
+            System.out.println("写点 " + hit);
         }
 
         try {
@@ -124,7 +130,7 @@ class LoaderPathCarriesPluginsTest {
                     String value = matcher.group(1);
                     String where = root.relativize(file) + " → " + value;
                     hits.add(where);
-                    if (!Arrays.asList(value.split(",")).contains(PLUGINS_SEGMENT)) {
+                    if (!carriesPluginsSegment(value)) {
                         missing.add(where);
                     }
                 }
@@ -141,6 +147,22 @@ class LoaderPathCarriesPluginsTest {
                 return FileVisitResult.CONTINUE;
             }
         });
+    }
+
+    /**
+     * {@code plugins} 整段，或路径的最后一段是 {@code plugins}。{@code plugins-lib} 对不上。
+     */
+    private static boolean carriesPluginsSegment(String value) {
+        for (String segment : value.split(",")) {
+            if (PLUGINS_SEGMENT.equals(segment)) {
+                return true;
+            }
+            int slash = segment.lastIndexOf('/');
+            if (slash >= 0 && PLUGINS_SEGMENT.equals(segment.substring(slash + 1))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
