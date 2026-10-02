@@ -51,6 +51,12 @@
       <div class="rb-r"><span>监听主播</span><b id="run-streamers">—</b></div>
     </div>
     <!--
+      使用说明不进上面那条导航：它不是一页，点了去手册网站。
+      放进导航的话，切页时会被当成又一条路由去点亮，而它没有页可亮。
+      地址按当前页由脚本改；脚本还没跑时这不是一个能点的链接。
+    -->
+    <a id="side-manual" class="side-manual" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">使用说明</a>
+    <!--
       版本位与新版药丸。版本值由 /api/status 的 version 下发，真源是构建期生成的 build-info；
       从源码直接跑（未经打包）时那个字段是空串，此处只显示产品名。
       在界面里写死一个版本号是更坏的选择——它与产物脱节的那一天不会有任何提示。

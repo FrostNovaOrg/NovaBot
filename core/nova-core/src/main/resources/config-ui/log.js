@@ -679,7 +679,7 @@ async function renderBotLogEntry() {
   }
   box.insertAdjacentHTML('beforeend',
     '<div style="margin-top:8px"><a class="daystep" id="eng-bot-open" '
-    + 'href="' + esc(state.href) + '" target="_blank" rel="noopener">'
+    + 'href="' + esc(state.href) + '" target="_blank" rel="noopener noreferrer">'
     + phrase('bot.impl', v => '打开 ' + v + ' 界面 ↗', '打开机器人界面 ↗')
     + '</a>'
     + '<span class="dim"> NovaBot 自己知道它在哪，不用另填。</span></div>');
