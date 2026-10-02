@@ -6,6 +6,7 @@ import java.nio.channels.FileLock;
 import java.nio.channels.OverlappingFileLockException;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.function.Consumer;
 
 /**
  * 工作目录里的一把锁，让同一个目录同时只跑一份。
@@ -23,6 +24,11 @@ final class SingleInstanceLock {
     private static FileChannel heldChannel;
 
     private static FileLock heldLock;
+
+    /**
+     * 怎么退出。生产环境结束进程；测试换成记下退码的替身，免得测试进程跟着停。
+     */
+    static Consumer<Integer> exit = status -> System.exit(status);
 
     private SingleInstanceLock() {
     }
@@ -79,7 +85,7 @@ final class SingleInstanceLock {
      */
     static boolean whenHeld(Path lockFile) {
         System.err.println("这个目录已有一份 NovaBot 在运行（" + lockFile + "）。要换版本请先停掉它。");
-        System.exit(1);
+        exit.accept(1);
         return false;
     }
 

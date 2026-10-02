@@ -15,9 +15,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.security.Permission;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -44,18 +44,6 @@ class NovaCoreApplicationSecondCopyTest {
     private static final String LOCK_FILE_NAME = "novabot.lock";
 
     /**
-     * 退出被拦住时带出的退码。入口若真去退出，测试进程不能跟着停
-     */
-    private static final class ExitIntercepted extends SecurityException {
-        final int code;
-
-        private ExitIntercepted(int code) {
-            super(Integer.toString(code));
-            this.code = code;
-        }
-    }
-
-    /**
      * 走一遍入口之后看到的三件事：退了没有、退码、有没有进到启动
      */
     private static final class Launch {
@@ -74,7 +62,7 @@ class NovaCoreApplicationSecondCopyTest {
             FileLock held = channel.tryLock();
             assertNotNull(held, "本进程应先占住锁件");
 
-            Launch launch = launch(dir, true);
+            Launch launch = launch(dir);
 
             assertFalse(launch.started, "锁已被占，不应走到 SpringApplication.run。标准错误：\n" + launch.stderr);
             assertTrue(launch.exited, "锁已被占应退出。标准错误：\n" + launch.stderr);
@@ -93,7 +81,7 @@ class NovaCoreApplicationSecondCopyTest {
     void emptyLockStillStarts(@TempDir Path dir) throws Exception {
         assertEquals(LOCK_FILE_NAME, SingleInstanceLock.FILE_NAME);
 
-        Launch launch = launch(dir, false);
+        Launch launch = launch(dir);
 
         assertTrue(launch.started, "没有人占锁时应照常走到启动。标准错误：\n" + launch.stderr);
         assertFalse(launch.exited, "没有人占锁时不应退出");
@@ -145,7 +133,7 @@ class NovaCoreApplicationSecondCopyTest {
     @DisplayName("锁取不到：说明一句后照常走到启动")
     void unavailableLockStillStarts(@TempDir Path dir) throws Exception {
         Path missing = dir.resolve("missing-parent");
-        Launch launch = launch(missing, false);
+        Launch launch = launch(missing);
         Path lockFile = missing.toAbsolutePath().resolve(LOCK_FILE_NAME);
 
         assertTrue(launch.started, "锁取不到时应照常走到启动。标准错误：\n" + launch.stderr);
@@ -157,29 +145,21 @@ class NovaCoreApplicationSecondCopyTest {
     }
 
     /**
-     * 把工作目录换到临时目录再走入口。要看退码时拦住退出，避免测试进程停掉
+     * 把工作目录换到临时目录再走入口。退出动作换成记下退码的替身，测试进程不跟着停
      */
-    private static Launch launch(Path workDir, boolean trapExit) throws Exception {
+    private static Launch launch(Path workDir) throws Exception {
         Launch launch = new Launch();
         AtomicBoolean started = new AtomicBoolean(false);
         String previousDir = System.getProperty("user.dir");
         PrintStream previousErr = System.err;
-        SecurityManager previousManager = System.getSecurityManager();
+        Consumer<Integer> previousExit = SingleInstanceLock.exit;
         ByteArrayOutputStream err = new ByteArrayOutputStream();
         System.setProperty("user.dir", workDir.toAbsolutePath().toString());
         System.setErr(new PrintStream(err, true, StandardCharsets.UTF_8));
-        if (trapExit) {
-            System.setSecurityManager(new SecurityManager() {
-                @Override
-                public void checkPermission(Permission perm) {
-                }
-
-                @Override
-                public void checkExit(int status) {
-                    throw new ExitIntercepted(status);
-                }
-            });
-        }
+        SingleInstanceLock.exit = code -> {
+            launch.exited = true;
+            launch.code = code;
+        };
         try (MockedStatic<SpringApplication> ignored = Mockito.mockStatic(SpringApplication.class,
                 invocation -> {
                     if ("run".equals(invocation.getMethod().getName())) {
@@ -187,15 +167,10 @@ class NovaCoreApplicationSecondCopyTest {
                     }
                     return Mockito.RETURNS_DEFAULTS.answer(invocation);
                 })) {
-            try {
-                NovaCoreApplication.main(new String[0]);
-            } catch (ExitIntercepted intercepted) {
-                launch.exited = true;
-                launch.code = intercepted.code;
-            }
+            NovaCoreApplication.main(new String[0]);
         } finally {
             System.setErr(previousErr);
-            System.setSecurityManager(previousManager);
+            SingleInstanceLock.exit = previousExit;
             System.setProperty("user.dir", previousDir);
             launch.started = started.get();
             launch.stderr = err.toString(StandardCharsets.UTF_8);
