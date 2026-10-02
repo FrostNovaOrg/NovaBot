@@ -28,9 +28,8 @@ import java.util.concurrent.TimeUnit;
  * 而且这个错误在数据上完全说得通——没有任何地方会报错。
  *
  * <h2>为什么要压一会儿再发</h2>
- * {@code GUARD_BUY} 的 {@code price} 是<b>挂牌价</b>，35 个样本里 32 个舰长全是 198000，
- * 一次都没变过；toast 的 {@code price} 才是<b>实际成交价</b>（实测 138000/168000/198000 都有）。
- * 25 笔配对样本按挂牌价记会高估 15.4%。
+ * {@code GUARD_BUY} 的 {@code price} 是<b>挂牌价</b>；toast 的 {@code price} 才是<b>实际成交价</b>。
+ * 按挂牌价记会把实际成交高估。
  * <p>
  * 偏偏 {@code GUARD_BUY} <b>恒定先到</b>（25/25，且只差一条消息），所以「先到先得」必然选中
  * 挂牌价。要拿到实际成交价，只能把 {@code GUARD_BUY} 压住等一等 toast——实测两者相差不超过
