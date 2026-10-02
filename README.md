@@ -8,7 +8,7 @@
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/FrostNovaOrg/NovaBot)](https://github.com/FrostNovaOrg/NovaBot/releases)
 
-给中小型公会、个人势主播及其运营人员用，照看自有或已获授权的直播间。它不做风控对抗，也不适合未经授权的大规模采集。适不适合你，先看[第 1 章](manual/01-what-novabot-does.md)。
+给中小型公会、个人势主播及其运营人员用，照看自有或已获授权的直播间。它不做风控对抗，也不适合未经授权的大规模采集。适不适合你，先看[第 1 章](https://frostnovaorg.github.io/NovaBot/01-what-novabot-does.html)。手册全文见[用户手册](https://frostnovaorg.github.io/NovaBot/index.html)。
 
 <p align="center"><img src="docs/assets/screenshot-console.png" alt="控制台首页（本机匿名演示实例）" width="92%"></p>
 <p align="center"><a href="docs/assets/report-demo.png"><img src="docs/assets/report-demo-top.png" alt="下播报告图节选（示意数据，点开看整张）" width="60%"></a></p>
@@ -29,11 +29,11 @@ git clone https://github.com/FrostNovaOrg/NovaBot
 cd NovaBot && ./install.sh
 ```
 
-手动安装、容器和第一次打开控制台见[第 3 章　安装](manual/03-install.md)、[第 4 章　第一次打开控制台](manual/04-first-open.md)。升级与备份见[第 13 章　升级与备份](manual/13-upgrade-and-backup.md)。机器要准备什么、内存怎么估，见[第 2 章　开始之前要准备什么](manual/02-what-to-prepare.md)。
+手动安装、容器和第一次打开控制台见[第 3 章　安装](https://frostnovaorg.github.io/NovaBot/03-install.html)、[第 4 章　第一次打开控制台](https://frostnovaorg.github.io/NovaBot/04-first-open.html)。升级与备份见[第 13 章　升级与备份](https://frostnovaorg.github.io/NovaBot/13-upgrade-and-backup.html)。机器要准备什么、内存怎么估，见[第 2 章　开始之前要准备什么](https://frostnovaorg.github.io/NovaBot/02-what-to-prepare.html)。
 
 ## 详细说明
 
-从[第 1 章　NovaBot 能帮你做什么](manual/01-what-novabot-does.md)看起。[各章目录](docs/user-guide.md)列出其余章节。遇到问题看[第 14 章　遇到问题怎么办](manual/14-troubleshooting.md)。
+从[第 1 章　NovaBot 能帮你做什么](https://frostnovaorg.github.io/NovaBot/01-what-novabot-does.html)看起。[用户手册](https://frostnovaorg.github.io/NovaBot/index.html)列出其余章节。遇到问题看[第 14 章　遇到问题怎么办](https://frostnovaorg.github.io/NovaBot/14-troubleshooting.html)。
 
 问题与建议：请开 [Issue](../../issues)，附上控制台「日志」页或 `journalctl -u novabot` 的相关片段。
 
