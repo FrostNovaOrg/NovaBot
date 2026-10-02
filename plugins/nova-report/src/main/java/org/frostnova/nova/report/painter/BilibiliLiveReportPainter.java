@@ -217,6 +217,20 @@ public class BilibiliLiveReportPainter {
     private static final int NAME_MAX_WIDTH = 300 - (40 + RANKING_AVATAR_SIZE + 10) - 12;
 
     /**
+     * 得分文字默认占的宽度。不超过它的榜，比例条右端不动，短得分的榜看起来和以前一样。
+     * 再宽就会压上条子：条子右端原先停在右边距往左这个距离处
+     */
+    private static final int RANKING_SCORE_SLOT = 150;
+
+    /**
+     * 得分比默认槽更宽时，条子右端与文字之间留出的空隙，与昵称和条子之间的 12px 同一档
+     */
+    private static final int RANKING_SCORE_GAP = 12;
+
+    /** 排行得分的字号，量宽和绘制必须用同一个，否则预留会和真正画上去的对不齐 */
+    private static final int RANKING_SCORE_FONT = 24;
+
+    /**
      * 词云绘制的<b>最大</b>高度。实际高度按本场词数向下取档，见
      * {@link WordCloudLayout#recommendedHeight}
      * <p>
@@ -1994,10 +2008,16 @@ public class BilibiliLiveReportPainter {
         }
         painter.movePos(0, 6);
 
-        // 条形长度按榜首归一化：榜首满格，其余按比例，一眼能看出差距
+        // 条形长度按榜首归一化：榜首满格，其余按比例，一眼能看出差距。
+        // 条子多宽按这一榜最宽的得分算，整榜共用，各行才比得了
+        List<String> labels = new ArrayList<>(ranking.size());
+        for (UserScore user : ranking) {
+            labels.add(scoreText.apply(user.score()));
+        }
+        int scoreSlot = rankingScoreSlot(painter, labels);
         double top = ranking.get(0).score();
         for (int i = 0; i < ranking.size(); i++) {
-            drawRankingRow(painter, i + 1, ranking.get(i), top, scoreText.apply(ranking.get(i).score()));
+            drawRankingRow(painter, i + 1, ranking.get(i), top, labels.get(i), scoreSlot);
         }
         painter.movePos(0, 8);
     }
@@ -2020,16 +2040,20 @@ public class BilibiliLiveReportPainter {
         painter.drawTextWithStyle(List.of(new TextWithStyle("盲盒榜", CommonPainter.TEXT_FONT_SIZE, COLOR_TIP, Font.PLAIN)));
         painter.movePos(0, 6);
 
-        double top = ranking.get(0).score();
-        for (int i = 0; i < ranking.size(); i++) {
-            UserScore user = ranking.get(i);
+        List<String> labels = new ArrayList<>(ranking.size());
+        for (UserScore user : ranking) {
             String label = Math.round(user.score()) + " 个";
             if (showRevenue) {
                 double profit = liveDataService.getLiveUserMetric(platform, uid,
                         BilibiliLiveMetric.BOX_PROFIT_USERS, user.userUid());
                 label += " · " + profitLabel(profit);
             }
-            drawRankingRow(painter, i + 1, user, top, label);
+            labels.add(label);
+        }
+        int scoreSlot = rankingScoreSlot(painter, labels);
+        double top = ranking.get(0).score();
+        for (int i = 0; i < ranking.size(); i++) {
+            drawRankingRow(painter, i + 1, ranking.get(i), top, labels.get(i), scoreSlot);
         }
         painter.movePos(0, 8);
     }
@@ -2452,11 +2476,30 @@ public class BilibiliLiveReportPainter {
     }
 
     /**
+     * 这一榜的得分要占多宽。按最宽的一行算，整榜共用，各行条子才一样长。
+     * 最宽的不超过默认槽时原样返回，短得分的榜不收窄。
+     */
+    private static int rankingScoreSlot(CommonPainter painter, List<String> labels) {
+        int widest = 0;
+        for (String label : labels) {
+            int width = painter.getStringWidthAndHeight(
+                    new TextWithStyle(label, RANKING_SCORE_FONT, COLOR_TEXT, Font.PLAIN)).getFirst();
+            widest = Math.max(widest, width);
+        }
+        if (widest <= RANKING_SCORE_SLOT) {
+            return RANKING_SCORE_SLOT;
+        }
+        return widest + RANKING_SCORE_GAP;
+    }
+
+    /**
      * 绘制排行榜的一行：名次、昵称、比例条与得分
      * <p>
-     * 得分文案由调用方按行算好传入：盲盒榜那种「一行两个数」的榜拿不到一行一个函数的口子
+     * 得分文案由调用方按行算好传入：盲盒榜那种「一行两个数」的榜拿不到一行一个函数的口子。
+     * {@code scoreSlot} 是这一榜共用的得分占位，各行条子因此一样宽。
      */
-    private void drawRankingRow(CommonPainter painter, int rank, UserScore user, double topScore, String scoreLabel) {
+    private void drawRankingRow(CommonPainter painter, int rank, UserScore user, double topScore,
+                                 String scoreLabel, int scoreSlot) {
         int y = painter.getY();
 
         painter.drawTextWithStyle(List.of(new TextWithStyle(String.valueOf(rank), 24, rankColor(rank), Font.BOLD)),
@@ -2473,9 +2516,10 @@ public class BilibiliLiveReportPainter {
         painter.drawTextWithStyle(List.of(new TextWithStyle(truncate(painter, user.displayName()), 24, COLOR_TEXT, Font.PLAIN)),
                 new Point(nameX, y + 6));
 
-        // 比例条画在昵称右侧的固定区域，与得分文字对齐
+        // 比例条从昵称右侧的固定起点画到得分左边。槽宽由这一榜最宽的得分决定，各行相同。
+        // 不超过默认槽时不收窄；再宽就按字宽留出空隙，长文案才不会压在条子右端上
         int barX = MARGIN + 300;
-        int barWidth = CONTENT_WIDTH - 300 - 150;
+        int barWidth = Math.max(RANKING_BAR_HEIGHT, CONTENT_WIDTH - 300 - scoreSlot);
         painter.drawRoundedRectangle(barX, y + 12, barWidth, RANKING_BAR_HEIGHT, RANKING_BAR_HEIGHT / 2, COLOR_CARD);
 
         // 盈亏榜可能出现负分或榜首为 0 的情况，按绝对值取比例并留一段最小可见长度
@@ -2489,8 +2533,8 @@ public class BilibiliLiveReportPainter {
         // 得分文字量宽度后靠右边距放，而不是从条形右端固定起点：盲盒榜那种「一行两个数」
         // 的长文案会画出右边距外（数再长一两位就被画布截掉）。与醒目留言名单的合计文案同一写法
         int scoreWidth = painter.getStringWidthAndHeight(
-                new TextWithStyle(scoreLabel, 24, COLOR_TEXT, Font.PLAIN)).getFirst();
-        painter.drawTextWithStyle(List.of(new TextWithStyle(scoreLabel, 24, COLOR_TEXT, Font.PLAIN)),
+                new TextWithStyle(scoreLabel, RANKING_SCORE_FONT, COLOR_TEXT, Font.PLAIN)).getFirst();
+        painter.drawTextWithStyle(List.of(new TextWithStyle(scoreLabel, RANKING_SCORE_FONT, COLOR_TEXT, Font.PLAIN)),
                 new Point(WIDTH - MARGIN - scoreWidth, y + 6));
 
         painter.setPos(MARGIN, y + RANKING_ROW_HEIGHT);
