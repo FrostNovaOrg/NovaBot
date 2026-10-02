@@ -15,9 +15,13 @@ import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.service.LiveDataService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.event.ContextClosedEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.core.annotation.Order;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.web.socket.client.WebSocketClient;
 import org.springframework.web.socket.client.standard.StandardWebSocketClient;
@@ -267,10 +271,81 @@ public class BilibiliLiveRoomService {
     }
 
     /**
+     * 停机时先断开全部直播间，再让核心把本场数据存盘。
+     * <p>
+     * 顺序依据：直播数据的收尾保存是 {@code @Order(0)}
+     * （{@code DefaultLiveDataService#onContextClosedEvent}）。
+     * Spring 对同一个关闭事件按 {@code @Order} 从小到大调用，所以这里取 {@code -1}，
+     * 断开并等手头那条消息处理完之后，存盘才开始。
+     * 时间线上「正在退出」那条是 {@code Integer.MIN_VALUE}，比这里更早，只记一条日志。
+     * <p>
+     * 等待从本方法第一行量起。全部直播间，加上备用直播推送里已经开始发布的那一趟，
+     * 共用 {@link BilibiliLiveRoomConnector#INTAKE_DRAIN_BUDGET}。到点没等完就记一条警告，照常往下存盘。
+     * 同一刻起，备用直播推送不再发布新的开播、下播。
+     * <p>
+     * 若先存盘，存盘之后才到的下播仍会归档并入累计，盘上却还记着在播，
+     * 下次开播再按未闭合归档一次，同一场就被记两次。
+     */
+    @Order(-1)
+    @EventListener(ContextClosedEvent.class)
+    public void onContextClosed() {
+        long deadlineNanos = System.nanoTime() + BilibiliLiveRoomConnector.INTAKE_DRAIN_BUDGET.toNanos();
+        BilibiliBackupLivePushService backup = currentBackupPush();
+        if (backup != null) {
+            backup.ceasePublishing();
+        }
+        int unfinished = disconnectAllUntil(deadlineNanos);
+        boolean backupSettled = backup == null || backup.awaitPublishFinished(deadlineNanos);
+        if (unfinished > 0) {
+            log.warn("退出时有 {} 间直播间手头的消息没能在时限内办完，已继续保存本场数据", unfinished);
+        }
+        if (!backupSettled) {
+            log.warn("退出时备用直播推送还有一条正在发布，已继续保存本场数据");
+        }
+    }
+
+    /**
      * 断开全部连接
+     * <p>
+     * 各间共用一个截止时刻，合计不超过 {@link BilibiliLiveRoomConnector#INTAKE_DRAIN_BUDGET}。
+     * 到点没等完的记一条警告，连接照关。
      */
     public void disconnectAll() {
-        connectors.keySet().stream().toList().forEach(this::disconnect);
+        long deadlineNanos = System.nanoTime() + BilibiliLiveRoomConnector.INTAKE_DRAIN_BUDGET.toNanos();
+        int unfinished = disconnectAllUntil(deadlineNanos);
+        if (unfinished > 0) {
+            log.warn("退出时有 {} 间直播间手头的消息没能在时限内办完，已继续保存本场数据", unfinished);
+        }
+    }
+
+    /**
+     * 断开全部连接，各间共用调用方给的截止时刻。
+     * @param deadlineNanos 截止时刻，按 {@link System#nanoTime()} 计
+     * @return 截止时手头消息还没办完的直播间数
+     */
+    private int disconnectAllUntil(long deadlineNanos) {
+        int unfinished = 0;
+        for (Long roomId : connectors.keySet().stream().toList()) {
+            BilibiliLiveRoomConnector connector = connectors.remove(roomId);
+            if (connector == null) {
+                continue;
+            }
+            if (!connector.closeUntil(deadlineNanos)) {
+                unfinished++;
+            }
+            log.info("已断开直播间 {} 的连接", roomId);
+        }
+        return unfinished;
+    }
+
+    /**
+     * 取出容器里的备用直播推送。测试里没登记这个组件时返回空。
+     */
+    private BilibiliBackupLivePushService currentBackupPush() {
+        if (publisher instanceof ListableBeanFactory beans) {
+            return beans.getBeanProvider(BilibiliBackupLivePushService.class).getIfAvailable();
+        }
+        return null;
     }
 
     /**
