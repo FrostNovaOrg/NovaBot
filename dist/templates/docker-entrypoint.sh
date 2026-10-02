@@ -3,8 +3,10 @@
 # 容器入口：把镜像里的程序文件铺到工作目录，再交给 start.sh
 #
 # 为什么要铺这一道：程序读写的文件——application.yml、cookies.json、cookies.key、
-# datasource.json、备份、plugins-lib——全部使用相对工作目录的路径，
+# datasource.json、备份——全部使用相对工作目录的路径，
 # 状态与程序天然混在同一个目录里，没法只把状态挂出来。
+# plugins-lib 也是相对工作目录的路径：镜像自带的插件依赖每次启动按构件名换新，
+# 自己放的留下。
 #
 # 所以程序文件放在镜像内的 /opt/starbot，每次启动同步到 /app，/app 整个挂成卷：
 #   - 配置与登录态跟着卷走，容器重建不丢
@@ -63,6 +65,20 @@ for jar in "$SRC"/plugins/*.jar; do
     find "$DST/plugins" -maxdepth 1 -type f -name "$artifact-[0-9]*.jar" -delete
 done
 cp -f "$SRC"/plugins/*.jar "$DST/plugins/"
+
+# plugins-lib 是内置插件的运行期依赖（caffeine、jieba-analysis 等）。此前只建空目录，
+# 新装容器上这些依赖不在类路径里，程序起不来（NoClassDefFoundError）。里面也可能有
+# 使用者自己放的第三方依赖，不能整个替换，照上面 plugins 的同一套规则、与 install.sh
+# 处理 plugins-lib 的规则一致：按构件名删旧拷新，构件名对不上的原样留下。
+for jar in "$SRC"/plugins-lib/*.jar; do
+    [ -f "$jar" ] || continue
+    artifact="$(basename "$jar" | sed -E 's/-[0-9][^-]*\.jar$//')"
+    case "$artifact" in
+        *.jar) continue ;;
+    esac
+    find "$DST/plugins-lib" -maxdepth 1 -type f -name "$artifact-[0-9]*.jar" -delete
+done
+cp -f "$SRC"/plugins-lib/*.jar "$DST/plugins-lib/"
 
 # 🔴 5.1 起，镜像里不再带 application.yml 与 datasource.json：程序自己会在第一次保存设置、
 #    第一次加主播时把它们写出来，写到数据卷上（$DST），也就是<b>本来就该在的地方</b>。
