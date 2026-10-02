@@ -192,7 +192,8 @@ class BilibiliConnectorHarness {
         stubConnectGate();
 
         this.connector = new BilibiliLiveRoomConnector(source, api, parser, properties, publisher,
-                scheduler, client, stateGate, connectGate, riskMetrics, disconnectDigest, liveDataService);
+                scheduler, client, stateGate, connectGate, riskMetrics, disconnectDigest, liveDataService,
+                new java.util.concurrent.atomic.AtomicBoolean(true));
     }
 
     // ================ 配置 ================

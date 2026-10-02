@@ -266,7 +266,8 @@ class BilibiliRiskCountFidelityTest {
                 mock(BilibiliConnectGate.class),
                 riskMetrics,
                 mock(BilibiliDisconnectDigest.class),
-                mock(LiveDataService.class));
+                mock(LiveDataService.class),
+                new java.util.concurrent.atomic.AtomicBoolean(true));
     }
 
     private static void receive(BilibiliLiveRoomConnector connector, byte[] payload) {

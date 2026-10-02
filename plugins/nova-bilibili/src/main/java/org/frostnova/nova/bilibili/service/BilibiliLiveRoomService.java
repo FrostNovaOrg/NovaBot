@@ -90,6 +90,11 @@ public class BilibiliLiveRoomService {
     private final AtomicBoolean riskDetectionStarted = new AtomicBoolean(false);
 
     /**
+     * 停机开始后不再新建连接器。建连任务与 {@code computeIfAbsent} 都看这一面。
+     */
+    private final AtomicBoolean acceptingConnectors = new AtomicBoolean(true);
+
+    /**
      * 全部直播间共享的长连接客户端
      * <p>
      * 每个 StandardWebSocketClient 实例都会持有独立的 WebSocket 容器与线程池，
@@ -240,6 +245,10 @@ public class BilibiliLiveRoomService {
      * @param up UP 主信息
      */
     private void connect(Up up) {
+        if (!acceptingConnectors.get()) {
+            log.debug("退出中, 放弃连接直播间 {} (UID: {})", up.getRoomId(), up.getUid());
+            return;
+        }
         // 兜底。正常路径上 sync 已经截过一道，这里挡的是它拦不住的那一种：
         // 热重载换了一批主播，而上一批的建连任务还压在闸门里没放行，
         // 两批各自都不超限，凑到一起执行时才撞上名额。
@@ -250,12 +259,31 @@ public class BilibiliLiveRoomService {
             return;
         }
 
+        // 建连放在写入之后。写在写入里面时，取连接信息会占着表里这一格，
+        // 退出要摘走同一格里另一间，就得一直等到这次建连返回。
+        // 记下这次新建的那一个：房间已经在表里时映射函数不会跑，这里保持空，不再对它建连。
+        BilibiliLiveRoomConnector[] created = new BilibiliLiveRoomConnector[1];
         connectors.computeIfAbsent(up.getRoomId(), roomId -> {
-            BilibiliLiveRoomConnector connector =
-                    new BilibiliLiveRoomConnector(up, api, parser, properties, publisher, scheduler, webSocketClient, stateGate, connectGate, riskMetrics, disconnectDigest, liveDataService);
-            connector.connect();
+            if (!acceptingConnectors.get()) {
+                log.debug("退出中, 放弃连接直播间 {} (UID: {})", up.getRoomId(), up.getUid());
+                return null;
+            }
+            BilibiliLiveRoomConnector connector = new BilibiliLiveRoomConnector(
+                    up, api, parser, properties, publisher, scheduler, webSocketClient,
+                    stateGate, connectGate, riskMetrics, disconnectDigest, liveDataService,
+                    acceptingConnectors);
+            created[0] = connector;
             return connector;
         });
+        if (created[0] == null) {
+            return;
+        }
+        created[0].connect();
+        if (!acceptingConnectors.get()) {
+            connectors.remove(up.getRoomId(), created[0]);
+            created[0].close();
+            log.debug("退出中, 放弃连接直播间 {} (UID: {})", up.getRoomId(), up.getUid());
+        }
     }
 
     /**
@@ -279,8 +307,10 @@ public class BilibiliLiveRoomService {
      * 断开并等手头那条消息处理完之后，存盘才开始。
      * 时间线上「正在退出」那条是 {@code Integer.MIN_VALUE}，比这里更早，只记一条日志。
      * <p>
-     * 等待从本方法第一行量起。全部直播间，加上备用直播推送里已经开始发布的那一趟，
-     * 共用 {@link BilibiliLiveRoomConnector#INTAKE_DRAIN_BUDGET}。到点没等完就记一条警告，照常往下存盘。
+     * 本方法第一行起不再新建连接器：排队中的首连、重连到点即放弃。
+     * 等待从这一行量起。全部直播间，加上备用直播推送里已经开始发布的那一趟，
+     * 共用 {@link BilibiliLiveRoomConnector#INTAKE_DRAIN_BUDGET}。正在建连的那一间也算在这段里，
+     * 到点没等完就记一条警告，照常往下存盘。
      * 同一刻起，备用直播推送不再发布新的开播、下播。
      * <p>
      * 若先存盘，存盘之后才到的下播仍会归档并入累计，盘上却还记着在播，
@@ -289,6 +319,8 @@ public class BilibiliLiveRoomService {
     @Order(-1)
     @EventListener(ContextClosedEvent.class)
     public void onContextClosed() {
+        acceptingConnectors.set(false);
+        connectGate.refuseFurtherConnects();
         long deadlineNanos = System.nanoTime() + BilibiliLiveRoomConnector.INTAKE_DRAIN_BUDGET.toNanos();
         BilibiliBackupLivePushService backup = currentBackupPush();
         if (backup != null) {

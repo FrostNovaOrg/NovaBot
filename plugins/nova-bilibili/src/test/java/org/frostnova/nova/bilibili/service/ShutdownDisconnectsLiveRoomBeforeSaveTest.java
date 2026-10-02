@@ -461,7 +461,8 @@ class ShutdownDisconnectsLiveRoomBeforeSaveTest {
                 mock(BilibiliConnectGate.class),
                 new BilibiliRiskMetrics(),
                 new BilibiliDisconnectDigest(bilibili, scheduler),
-                data);
+                data,
+                new java.util.concurrent.atomic.AtomicBoolean(true));
     }
 
     private BilibiliLiveRoomService rooms(AnnotationConfigApplicationContext publisher, TaskScheduler scheduler,

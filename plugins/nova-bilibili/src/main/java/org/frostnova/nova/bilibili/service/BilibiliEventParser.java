@@ -425,7 +425,7 @@ public class BilibiliEventParser {
      * 见过、不处理的直播间消息类型。
      * <p>
      * 已知＝取用 ∪ 见过 ∪ 派生不计收入：取用是 {@link #parsers} 与 {@link #multiParsers} 里会解析成事件的 cmd；见过是 2026-09-16
-     * 真连接取表与 2026-09-28 连接日志里出现过、本产品不取用的 cmd，含对战、榜单、连麦、抽奖、
+     * 真连接取表、2026-09-28 与 2026-10-03 连接日志里出现过、本产品不取用的 cmd，含对战、榜单、连麦、抽奖、
      * 互动聚合、购物引导、界面提示等类；
      * 派生不计收入见 {@link #DERIVED_NOT_REVENUE_CMDS}。
      * 命中本表的消息不进 {@link BilibiliRiskMetrics.Kind#UNKNOWN_CMD}、不标解析降级，返回空事件。
@@ -516,7 +516,14 @@ public class BilibiliEventParser {
             "TIP_CARD",
             "USER_INFO_UPDATE",
             "USER_PANEL_RED_ALARM",
-            "VOICE_CHAT_UPDATE");
+            "VOICE_CHAT_UPDATE",
+            // 2026-10-03 取表：两台 09-28～10-03 连接日志里出现过的新名
+            "COLLABORATION_LIVE_INFO",
+            "COLLABORATION_LIVE_ONLINE",
+            "COLLABORATION_LIVE_POPULARITY",
+            "COLLABORATION_LIVE_WATCHED",
+            "DANMU_MSG_MIRROR",
+            "PK_BATTLE_ENTRANCE");
 
     /**
      * 收入口径名里不计收入的消息，登记为已知、不计收入、不记未知：与已计事件重复的副本、界面横幅、
@@ -554,6 +561,8 @@ public class BilibiliEventParser {
                 "全站千舰主播名单的增删推送，每个房间各来一份：只有名单整数，不带开通人和金额；含本产品监听的房间或主播 0/658，多个房间同一分钟收到的内容全同 84/84（2026-09 真连接）；与本房收入无关。");
         table.put("GIFT_POPUP",
                 "推给登录账号的弹卡：room_id 不是本房，同一分钟多个房间各收一份、内容全同（2026-09 真连接 10/10），不带送礼人和金额；不是本房收入。");
+        table.put("GUARD_NOTICE_PUSH",
+                "账号级推送：只有 delay_second、red_alarm、ruid、url，不带开通人、价格、数量与等级；同一时刻每个房间各来一份、ruid 全同，且不是本产品监听的房间或主播（2026-09-30 真连接 5 房×2 批，10/10）；前后 60 秒内全机没有 GUARD_BUY／USER_TOAST_MSG／USER_TOAST_MSG_V2（0 条）；不是本房收入。");
         return Collections.unmodifiableMap(table);
     }
 
@@ -1848,9 +1857,9 @@ public class BilibiliEventParser {
      * 这条的 {@code price} 是<b>挂牌单价</b>（实测多月开通样本：{@code price=198000 num=12}
      * 按单价算得 2376 元、{@code price=198000 num=3} 算得 594 元），金额＝单价×数量；
      * 而 toast 的价才是成交总价、金额就是它本身不再乘。两种口径别混。
-     * 这条又恒定先到，不压住就必然取到挂牌价，实测高估 15.4%。
+     * 这条又恒定先到，不压住就必然取到挂牌价，会把成交价高估。
      * <p>
-     * 字段也更少：实测 35 条<b>全都没有 {@code unit}</b>，且 {@code start_time == end_time}，
+     * 字段也更少：<b>不带 {@code unit}</b>，且 {@code start_time == end_time}，
      * 所以 {@link #unitOf} 的两条路都走不通，单位只能是空——这也是宁可等 toast 的理由之一。
      */
     private NovaBaseLiveEvent parseGuardBuy(JSONObject data, LiveStreamerInfo source) {

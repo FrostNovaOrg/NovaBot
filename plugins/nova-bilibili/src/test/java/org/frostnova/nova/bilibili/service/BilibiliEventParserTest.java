@@ -272,7 +272,14 @@ class BilibiliEventParserTest {
                     "TIP_CARD",
                     "USER_INFO_UPDATE",
                     "USER_PANEL_RED_ALARM",
-                    "VOICE_CHAT_UPDATE");
+                    "VOICE_CHAT_UPDATE",
+                    // 2026-10-03 取表：两台 09-28～10-03 连接日志里出现过的新名
+                    "COLLABORATION_LIVE_INFO",
+                    "COLLABORATION_LIVE_ONLINE",
+                    "COLLABORATION_LIVE_POPULARITY",
+                    "COLLABORATION_LIVE_WATCHED",
+                    "DANMU_MSG_MIRROR",
+                    "PK_BATTLE_ENTRANCE");
 
             try {
                 for (String cmd : seen) {
@@ -446,7 +453,7 @@ class BilibiliEventParserTest {
         }
 
         @Test
-        @DisplayName("派生不计收入：十四名不计 UNKNOWN_CMD、空事件不降级；名单与表同、恰十四名、键序与名单逐位同")
+        @DisplayName("派生不计收入：十五名不计 UNKNOWN_CMD、空事件不降级；名单与表同、恰十五名、键序与名单逐位同")
         void derivedNotRevenueCmdsSilentAndExact() {
             List<String> reds = new ArrayList<>();
             List<String> ran = new ArrayList<>();
@@ -464,7 +471,8 @@ class BilibiliEventParserTest {
                     "WIDGET_GIFT_STAR_PROCESS_V2",
                     "SUPER_CHAT_ENTRANCE",
                     "GUARD_HONOR_THOUSAND",
-                    "GIFT_POPUP");
+                    "GIFT_POPUP",
+                    "GUARD_NOTICE_PUSH");
 
             try {
                 for (String cmd : derived) {
@@ -508,7 +516,7 @@ class BilibiliEventParserTest {
 
             try {
                 int n = BilibiliEventParser.DERIVED_NOT_REVENUE_CMDS.size();
-                assertEquals(14, n, "派生表须恰 14 名，实际 " + n);
+                assertEquals(15, n, "派生表须恰 15 名，实际 " + n);
             } catch (AssertionError e) {
                 reds.add("④ " + e.getMessage());
             }
@@ -525,6 +533,58 @@ class BilibiliEventParserTest {
             assertTrue(reds.isEmpty(),
                     () -> reds.size() + " 问红: " + String.join("; ", reds)
                             + "；已跑: " + String.join(",", ran));
+        }
+
+        @Test
+        @DisplayName("2026-10-03 取表七名各喂一条假值报文：不记未知类型、空事件不降级")
+        void cmdsFrom20261003NotUnknown() {
+            List<String> reds = new ArrayList<>();
+            List<String> cmds = List.of(
+                    "COLLABORATION_LIVE_INFO",
+                    "COLLABORATION_LIVE_ONLINE",
+                    "COLLABORATION_LIVE_POPULARITY",
+                    "COLLABORATION_LIVE_WATCHED",
+                    "DANMU_MSG_MIRROR",
+                    "PK_BATTLE_ENTRANCE",
+                    "GUARD_NOTICE_PUSH");
+            List<String> bodies = List.of(
+                    """
+                    {"cmd":"COLLABORATION_LIVE_INFO","data":{"if_collaboration_room":1,"show_multi_view":1,"team_id":1,"member_entry_text":"假","member_entry_url":"https://example.invalid/entry","multi_view":{"room_id":1,"view_type":0,"view_pattern":0,"activity_name":"假","bg_image":"","copy_writing":"","expand_guide_icon":"","expand_guide_text":"","sub_bg_color":"","sub_slt_color":"","sub_text_color":"","relation_view":[{"view_id":1,"view_name":"假","view_type":0,"order_id":1,"live_status":1,"anchor_face":"https://example.invalid/face.png","cover":"","jump_url":""}]}}}
+                    """,
+                    """
+                    {"cmd":"COLLABORATION_LIVE_ONLINE","data":{"num":9,"text":"9"}}
+                    """,
+                    """
+                    {"cmd":"COLLABORATION_LIVE_POPULARITY","data":{"num":9,"text":"9","text_large":"9万人气"}}
+                    """,
+                    """
+                    {"cmd":"COLLABORATION_LIVE_WATCHED","data":{"num":9,"text_small":"9人看过","text_large":"9万人看过"}}
+                    """,
+                    """
+                    {"cmd":"DANMU_MSG_MIRROR","dm_v2":"fake-dm-v2","info":[[0,1,25,16777215,1700000000000,0,0,"",0,0,0,"",0,"0","",{"user":{"base":{"face":"https://example.invalid/face.png"}},"extra":{"is_mirror":true,"is_collaboration_member":false},"mode":0,"show_player_type":0},0,0],"假弹幕",[12345,"假观众",0,0,0,10000,1,"",1000000000000002,"https://example.invalid/face.png","假主播",10001],[21,"假勋章","假主播",10001,0,0,0,0,0,0,0,0,0],[0,0,0,0,0],[],0,0,0,{"ct":"0","ts":1700000000},0,0,0,0,0,0,{},null]}
+                    """,
+                    """
+                    {"cmd":"PK_BATTLE_ENTRANCE","timestamp":1700000000,"data":{"is_open":false}}
+                    """,
+                    """
+                    {"cmd":"GUARD_NOTICE_PUSH","data":{"delay_second":0,"red_alarm":1,"ruid":1000000000000001,"url":"https://example.invalid/guard"}}
+                    """);
+            for (int i = 0; i < cmds.size(); i++) {
+                String cmd = cmds.get(i);
+                try {
+                    long before = riskMetrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_CMD, Duration.ofMinutes(1));
+                    BilibiliEventParser.ParsedMessage parsed = parser.parseMessage(
+                            JSON.parseObject(bodies.get(i)), SOURCE);
+                    long after = riskMetrics.count(BilibiliRiskMetrics.Kind.UNKNOWN_CMD, Duration.ofMinutes(1));
+                    assertEquals(before, after,
+                            cmd + " 不得记未知类型，实际多记 " + (after - before));
+                    assertTrue(parsed.event().isEmpty(), cmd + " 应返回空事件");
+                    assertFalse(parsed.degraded(), cmd + " 不得标降级");
+                } catch (AssertionError e) {
+                    reds.add(cmd + " " + e.getMessage());
+                }
+            }
+            assertTrue(reds.isEmpty(), () -> String.join("\n", reds));
         }
     }
 

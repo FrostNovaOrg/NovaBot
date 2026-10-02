@@ -48,6 +48,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * 直播间长连接连接器
@@ -137,6 +138,16 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
      * 记录单房断线缺口用。只写不读——读在下播归档那一刻
      */
     private final LiveDataService liveDataService;
+
+    /**
+     * 停机开始后置为 false。建连回来时看见它，就关掉新建的会话，不再往下收。
+     */
+    private final AtomicBoolean acceptingConnectors;
+
+    /**
+     * 建连与关掉套接字共用这把锁。停机只在截止时刻之内等它让出，等不到就先去存盘。
+     */
+    private final ReentrantLock connectLock = new ReentrantLock();
 
     /**
      * 本条连接认证成功的时刻，未认证时为 null
@@ -368,7 +379,8 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
                                      @NonNull BilibiliConnectGate connectGate,
                                      @NonNull BilibiliRiskMetrics riskMetrics,
                                      @NonNull BilibiliDisconnectDigest disconnectDigest,
-                                     @NonNull LiveDataService liveDataService) {
+                                     @NonNull LiveDataService liveDataService,
+                                     @NonNull AtomicBoolean acceptingConnectors) {
         this.source = source;
         this.api = api;
         this.parser = parser;
@@ -381,47 +393,89 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
         this.riskMetrics = riskMetrics;
         this.disconnectDigest = disconnectDigest;
         this.liveDataService = liveDataService;
+        this.acceptingConnectors = acceptingConnectors;
         this.riskWindows = properties.getLive().getAutoDetectLiveRoomRiskWindows();
         this.riskDetector = new BilibiliLiveRoomRiskDetector(riskWindows);
     }
 
     /**
      * 建立连接
+     * <p>
+     * 取连接信息与握手都在这把锁里。这里不再另加时限：底层客户端是 tomcat-embed-websocket，
+     * 每一步 IO 自带限时，常量 {@code org.apache.tomcat.websocket.Constants.IO_TIMEOUT_MS_DEFAULT}。
+     * 停机若已经开始，或这一间已经标记关闭，回来后立刻关掉新建的会话，不再收消息，也不再重连。
      */
-    public synchronized void connect() {
-        if (closed.get() || status == ConnectStatus.CONNECTING || status == ConnectStatus.CONNECTED) {
-            return;
-        }
-
-        status = ConnectStatus.CONNECTING;
-
+    public void connect() {
+        connectLock.lock();
         try {
-            ConnectInfo info = api.getLiveRoomConnectInfo(source.getRoomId());
-            if (!info.isAvailable()) {
-                throw new IllegalStateException("未取得可用的弹幕服务器地址");
+            if (closed.get() || !acceptingConnectors.get()
+                    || status == ConnectStatus.CONNECTING || status == ConnectStatus.CONNECTED) {
+                return;
             }
 
-            // 服务器地址列表按优先级排列，重连时轮换以避开单点故障
-            List<ConnectAddress> addresses = info.getAddresses();
-            ConnectAddress address = addresses.get(reconnectAttempts.get() % addresses.size());
+            status = ConnectStatus.CONNECTING;
 
-            WebSocketHttpHeaders headers = new WebSocketHttpHeaders();
-            headers.add("User-Agent", properties.getNetwork().getUserAgent());
-            headers.add("Origin", "https://live.bilibili.com");
+            try {
+                ConnectInfo info = api.getLiveRoomConnectInfo(source.getRoomId());
+                if (stopIfClosing()) {
+                    return;
+                }
+                if (!info.isAvailable()) {
+                    throw new IllegalStateException("未取得可用的弹幕服务器地址");
+                }
 
-            // 正常情况下 afterConnectionEstablished 已经把它赋好了，这里是兜底：
-            // 万一某个客户端实现不在握手期回调，也不能让 session 空着。
-            // 两次赋的是同一个对象，重复赋值无害
-            this.session = client.execute(this, headers, URI.create(address.toWebSocketUrl())).get();
-            sendVerify(info);
+                // 服务器地址列表按优先级排列，重连时轮换以避开单点故障
+                List<ConnectAddress> addresses = info.getAddresses();
+                ConnectAddress address = addresses.get(reconnectAttempts.get() % addresses.size());
 
-            // 认证包发出之后才开始心跳，保证它一定是这条连接上的第一个包
-            startHeartbeat();
-        } catch (Exception e) {
-            log.error("连接直播间 {} 失败: {}", source.getRoomId(), e.getMessage());
-            status = ConnectStatus.ERROR;
-            scheduleReconnect();
+                WebSocketHttpHeaders headers = new WebSocketHttpHeaders();
+                headers.add("User-Agent", properties.getNetwork().getUserAgent());
+                headers.add("Origin", "https://live.bilibili.com");
+
+                // 正常情况下 afterConnectionEstablished 已经把它赋好了，这里是兜底：
+                // 万一某个客户端实现不在握手期回调，也不能让 session 空着。
+                // 两次赋的是同一个对象，重复赋值无害。
+                // 这里不再另加时限。底层客户端是 tomcat-embed-websocket，
+                // 每一步 IO 自带限时，常量 org.apache.tomcat.websocket.Constants.IO_TIMEOUT_MS_DEFAULT。
+                this.session = client.execute(this, headers, URI.create(address.toWebSocketUrl())).get();
+                if (stopIfClosing()) {
+                    return;
+                }
+                sendVerify(info);
+                if (stopIfClosing()) {
+                    return;
+                }
+
+                // 认证包发出之后才开始心跳，保证它一定是这条连接上的第一个包
+                startHeartbeat();
+            } catch (Exception e) {
+                if (stopIfClosing()) {
+                    return;
+                }
+                log.error("连接直播间 {} 失败: {}", source.getRoomId(), e.getMessage());
+                status = ConnectStatus.ERROR;
+                scheduleReconnect();
+            }
+        } finally {
+            connectLock.unlock();
         }
+    }
+
+    /**
+     * 已经停收，或停机后不再接受新连接。有会话就关掉。
+     * @return 这次建连是否应当就此停下
+     */
+    private boolean stopIfClosing() {
+        if (!closed.get() && acceptingConnectors.get()) {
+            return false;
+        }
+        if (!closed.get()) {
+            sealIntake();
+        }
+        cancelHeartbeat();
+        closeSession();
+        status = ConnectStatus.CLOSED;
+        return true;
     }
 
     /**
@@ -440,22 +494,48 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
     }
 
     /**
-     * 停收，等到截止时刻，再关套接字。
+     * 先停收（不必拿建连锁），再等到截止时刻。
+     * 建连若还占着锁，只在剩余时间里等它让出；等不到就返回，调用方照常往下存盘。
+     * 那次建连回来时会看见已经停收，自己关掉新建的会话。
      * @param deadlineNanos 截止时刻，按 {@link System#nanoTime()} 计。退出时各间共用同一个截止时刻
-     * @return 手头那条是否在截止前办完。已经关过的连接算办完
+     * @return 手头那条是否在截止前办完，且建连已经让出。已经关过的连接算办完
      */
     boolean closeUntil(long deadlineNanos) {
         if (!sealIntake()) {
             return true;
         }
         boolean drained = awaitIntakeDrained(deadlineNanos);
-        synchronized (this) {
+        if (!awaitConnectYield(deadlineNanos)) {
+            return false;
+        }
+        try {
             status = ConnectStatus.CLOSING;
             cancelHeartbeat();
             closeSession();
             status = ConnectStatus.CLOSED;
+        } finally {
+            connectLock.unlock();
         }
         return drained;
+    }
+
+    /**
+     * 在截止时刻之前等建连放下锁。到点还没放下就返回，不再干等。
+     * @param deadlineNanos 截止时刻，按 {@link System#nanoTime()} 计
+     * @return 是否已经拿到锁。拿到时由调用方负责放开
+     */
+    private boolean awaitConnectYield(long deadlineNanos) {
+        long waitMs = TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime());
+        try {
+            if (waitMs <= 0) {
+                return connectLock.tryLock();
+            }
+            return connectLock.tryLock(waitMs, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("等待直播间 {} 建连让出时被打断", source.getRoomId());
+            return false;
+        }
     }
 
     /**
@@ -499,7 +579,7 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
      */
     private boolean beginIntake() {
         synchronized (intake) {
-            if (closed.get()) {
+            if (closed.get() || !acceptingConnectors.get()) {
                 return false;
             }
             inFlight++;
@@ -588,15 +668,25 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
 
     @Override
     public void afterConnectionEstablished(@NonNull WebSocketSession session) {
-        log.info("已连接到直播间 {}", source.getRoomId());
-
         // 必须在这里就把会话记下来，不能等 connect() 里 client.execute().get() 返回。
+        // 停机已经开始时，记下来是为了马上关掉，不能让这条新会话继续收消息。
         // 本回调发生在那个 future 完成之前，而它下面就要启动心跳，
         // 而 scheduleAtFixedRate 是「尽快开始」——第一次心跳完全可能跑在赋值之前。
         // 那时 send() 看到 null 会抛 IOException，被当成发送失败走进 reconnect()：
         // 轻则给一条刚建好的连接白排一次重连，重则 closeSession() 正好赶上赋值完成，
         // 把这条好连接直接掐掉。回调参数里的 session 就是权威的那一个，用它没有窗口。
         this.session = session;
+        if (closed.get() || !acceptingConnectors.get()) {
+            if (!closed.get()) {
+                sealIntake();
+            }
+            closeSession();
+            this.status = ConnectStatus.CLOSED;
+            return;
+        }
+
+        log.info("已连接到直播间 {}", source.getRoomId());
+
         this.status = ConnectStatus.CONNECTED;
         this.lastMessageTime = Instant.now();
         // 新会话不背旧账：上一条会话若关了却没等到回调，那笔记录到此作废
