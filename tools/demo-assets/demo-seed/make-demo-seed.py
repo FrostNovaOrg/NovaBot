@@ -127,7 +127,9 @@ def session_lines(now):
 
 
 def timeline_lines(now):
-    sent_minutes = (12, 9, 7)
+    # 已推送的时刻要落在静音时段之外：静音段是起动前 30 分钟到起动后 90 分钟，
+    # 这里把三条 PUSH_SENT 挪到起动前 45–50 分钟，图上「已推送」和「静音」不再同屏打架。
+    sent_minutes = (50, 47, 45)
     muted_minute = 5
     failed_minute = 3
     summaries = ("开播通知（演示主播小星）", "下播报告（演示主播小星）", "动态推送（演示主播小星）")
@@ -182,11 +184,11 @@ def log_lines(now, muted_minute, failed_minute):
     bilibili = "o.f.nova.bilibili.LiveRoomService"
 
     return [
-        line(at(12, 4, 215), "INFO", "nova-core-4", sender,
+        line(at(50, 4, 215), "INFO", "nova-core-4", sender,
              "已推送 1 条消息到 " + CHANNEL + "，耗时 263 ms"),
-        line(at(12, 4, 640), "INFO", "bilibili-scheduler-1", bilibili,
+        line(at(50, 4, 640), "INFO", "bilibili-scheduler-1", bilibili,
              "检测到开播: " + DEMO_UNAME + "（uid " + str(DEMO_UID) + "）"),
-        line(at(7, 51, 82), "INFO", "nova-core-2", sender,
+        line(at(45, 51, 82), "INFO", "nova-core-2", sender,
              "已推送 1 条消息到 " + CHANNEL + "，耗时 201 ms"),
         # 与时间线里 PUSH_MUTED 那条同一分钟
         line(at(muted_minute, 30, 114), "WARN", "nova-core-3", sender,
