@@ -24,6 +24,7 @@ import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -171,7 +172,22 @@ public class BilibiliLiveRoomService {
                 .toList()
                 .forEach(this::disconnect);
 
+        // 账上在播的排在最前建连，其余照配置顺序跟上。升级或重启正赶上有人直播时，
+        // 在播的那间若排在后面连，就要多漏那十几秒的弹幕、礼物与醒目留言。
+        // 先收在播再收其余，两拨各自保持 targets 的先后，接起来就是稳定排序；
+        // 取不到在播状态的按不在播处理
+        List<Up> liveFirst = new ArrayList<>(targets.size());
+        List<Up> rest = new ArrayList<>(targets.size());
         for (Up up : targets) {
+            if (isLiveOnAccount(up)) {
+                liveFirst.add(up);
+            } else {
+                rest.add(up);
+            }
+        }
+        liveFirst.addAll(rest);
+
+        for (Up up : liveFirst) {
             if (connectors.containsKey(up.getRoomId())) {
                 continue;
             }
@@ -200,6 +216,19 @@ public class BilibiliLiveRoomService {
                 .map(PushMessage::getEventClass)
                 .filter(Objects::nonNull)
                 .anyMatch(eventClass -> eventClass.getName().startsWith(LIVE_EVENT_PACKAGE));
+    }
+
+    /**
+     * 账上是否记着这位在播
+     * <p>
+     * 问的是上个进程存下来的直播状态，不是现查平台：首连发生在启动时刻，
+     * 该先连的是「账上以为还在播」的那几间。取不到状态的按不在播处理
+     * @param up UP 主信息
+     * @return 账上在播返回 true
+     */
+    private boolean isLiveOnAccount(Up up) {
+        return liveDataService.getLiveStatus(BilibiliPlatform.BILIBILI.id(), up.getUid())
+                .orElse(false);
     }
 
     /**
