@@ -1714,12 +1714,15 @@ class ConfigUiFrontendTest {
 
     /**
      * 渲染那一层必须问过判法的那几件事，闭集
+     * <p>
+     * 通道详情两段的状态行经 {@code templateState(}／{@code layoutState(} 问；模板那一份的
+     * 逐参数比（isDefault）只在判法自己的那一层用，渲染层不再单独问它。
      */
     private static final List<String> PUSH_MODEL_CALLS = List.of(
             "pushTree(", "channelIndex(", "templateState(", "layoutState(", "noticeSwitches(",
             "commandGroups(", "commandSummary(", "recentPushes(", "pushChannelOf(", "atAllStatus(",
             "subscriptionSummary(", "revenueSummary(", "strandedSessions(", "channelName(",
-            "templateAdoption(", "restoreDefaults(", "isDefault(",
+            "templateAdoption(", "restoreDefaults(",
             "previewRequestBody(", "previewRevenueCaption(");
 
     /**
