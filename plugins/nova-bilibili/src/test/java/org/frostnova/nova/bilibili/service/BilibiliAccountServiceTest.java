@@ -89,7 +89,7 @@ class BilibiliAccountServiceTest {
         BilibiliCredentialStore store = mock(BilibiliCredentialStore.class);
 
         when(store.load()).thenReturn(Optional.of(new Cookies("sess", "jct", "buvid")));
-        when(api.getLoginUid()).thenReturn(19805387116684L);
+        when(api.fetchLoginUid()).thenReturn(19805387116684L);
 
         BilibiliAccountService service = newService(api, store);
 
@@ -106,8 +106,8 @@ class BilibiliAccountServiceTest {
         BilibiliCredentialStore store = mock(BilibiliCredentialStore.class);
 
         when(store.load()).thenReturn(Optional.of(new Cookies("sess", "jct", "buvid")));
-        // uid 为空代表凭据已失效
-        when(api.getLoginUid()).thenReturn(null);
+        // 服务端明确答复「未登录」，凭据确已失效
+        when(api.fetchLoginUid()).thenThrow(new ResponseCodeException(BilibiliApiUtil.CODE_NOT_LOGGED_IN, "账号未登录"));
 
         BilibiliAccountService service = newService(api, store);
         // 先置为停机，使其在清除凭据后立即退出扫码循环，避免测试阻塞
@@ -115,6 +115,79 @@ class BilibiliAccountServiceTest {
 
         assertFalse(service.login());
         verify(store).clear();
+    }
+
+    @Test
+    @DisplayName("登录验证遇网络故障时应保留凭据并按已登录继续")
+    void shouldKeepSavedCredentialOnNetworkFailureAtLogin() {
+        BilibiliApiUtil api = mock(BilibiliApiUtil.class);
+        BilibiliCredentialStore store = mock(BilibiliCredentialStore.class);
+
+        when(store.load()).thenReturn(Optional.of(new Cookies("sess", "jct", "buvid")));
+        // getLoginUid 是改前的验证入口：不置空桩的话 mock 对它返回 0，改前会误走「凭据有效」
+        // 而碰不到病灶。改后的登录只认 fetchLoginUid，这行桩随之失效，保留它只为本格在改前如实跑红
+        when(api.getLoginUid()).thenReturn(null);
+        when(api.fetchLoginUid()).thenThrow(new NetworkException("连接超时"));
+
+        BilibiliAccountService service = newService(api, store);
+        // 同「凭据失效」用例：先置停机，让改前行为（清凭据转扫码）立即返回而不进入轮询
+        service.onContextClosed();
+
+        boolean loggedIn = service.login();
+
+        // 网络故障只说明这次没问到答案，不说明凭据失效。此刻清掉凭据，
+        // 无人值守的机器就得等人来扫码，动态推送一停几个小时
+        verify(store, never()).clear();
+        assertTrue(loggedIn, "凭据真假未明时应按已登录继续, 由定期复检给出答案");
+        assertTrue(service.isLoggedIn(), "一次网络抖动不应把存着凭据的账号挡在登录之外");
+        verify(api, never()).getTvQrCodeLoginInfo();
+        verify(api, never()).getLoginUid();
+    }
+
+    @Test
+    @DisplayName("登录验证遇未预期的业务码时应同样保留凭据")
+    void shouldKeepSavedCredentialOnUnexpectedCodeAtLogin() {
+        BilibiliApiUtil api = mock(BilibiliApiUtil.class);
+        BilibiliCredentialStore store = mock(BilibiliCredentialStore.class);
+
+        when(store.load()).thenReturn(Optional.of(new Cookies("sess", "jct", "buvid")));
+        // 风控等业务码既没说「未登录」，也没说凭据可用，同样属于真假未明。
+        // getLoginUid 置空桩的理由见网络故障一例
+        when(api.getLoginUid()).thenReturn(null);
+        when(api.fetchLoginUid()).thenThrow(new ResponseCodeException(-352, "风控校验失败"));
+
+        BilibiliAccountService service = newService(api, store);
+        service.onContextClosed();
+
+        boolean loggedIn = service.login();
+
+        verify(store, never()).clear();
+        assertTrue(loggedIn, "未预期业务码不应被当作凭据失效");
+        assertTrue(service.isLoggedIn());
+        verify(api, never()).getTvQrCodeLoginInfo();
+    }
+
+    @Test
+    @DisplayName("登录验证未拿到账号身份时应同样保留凭据")
+    void shouldKeepSavedCredentialWhenUidUnknown() {
+        BilibiliApiUtil api = mock(BilibiliApiUtil.class);
+        BilibiliCredentialStore store = mock(BilibiliCredentialStore.class);
+
+        when(store.load()).thenReturn(Optional.of(new Cookies("sess", "jct", "buvid")));
+        // getLoginUid 置空桩的理由见网络故障一例
+        when(api.getLoginUid()).thenReturn(null);
+        when(api.fetchLoginUid()).thenReturn(null);
+
+        BilibiliAccountService service = newService(api, store);
+        service.onContextClosed();
+
+        boolean loggedIn = service.login();
+
+        verify(store, never()).clear();
+        assertTrue(loggedIn, "没拿到账号身份不等于凭据失效");
+        assertTrue(service.isLoggedIn());
+        assertNull(service.getLoginUid(), "uid 未知时留空, 待复检补上");
+        verify(api, never()).getTvQrCodeLoginInfo();
     }
 
     @Test
@@ -202,6 +275,8 @@ class BilibiliAccountServiceTest {
         BilibiliApiUtil api = mock(BilibiliApiUtil.class);
         BilibiliAccountService service = loggedInService(api);
         service.onContextClosed();
+        // 前置 login() 本就要查一次账号信息，先清掉那笔记录，never 针对的才是停机后的复检
+        clearInvocations(api);
 
         service.verify();
 
@@ -261,7 +336,7 @@ class BilibiliAccountServiceTest {
         BilibiliApiUtil api = mock(BilibiliApiUtil.class);
         BilibiliCredentialStore store = mock(BilibiliCredentialStore.class);
         when(store.load()).thenReturn(Optional.of(new Cookies("sess", "jct", "buvid")));
-        when(api.getLoginUid()).thenReturn(19805387116684L);
+        when(api.fetchLoginUid()).thenReturn(19805387116684L);
 
         BilibiliAccountService service = newService(api, store);
         assertTrue(service.login(), "前置条件: 应先处于已登录状态");
@@ -284,7 +359,7 @@ class BilibiliAccountServiceTest {
         BilibiliApiUtil api = mock(BilibiliApiUtil.class);
         BilibiliCredentialStore store = mock(BilibiliCredentialStore.class);
         when(store.load()).thenReturn(Optional.of(new Cookies("sess", "jct", "buvid")));
-        when(api.getLoginUid()).thenReturn(19805387116684L);
+        when(api.fetchLoginUid()).thenReturn(19805387116684L);
 
         BilibiliAccountService service = newService(api, store);
         assertTrue(service.login(), "前置条件: 应先处于已登录状态");
@@ -307,7 +382,7 @@ class BilibiliAccountServiceTest {
         BilibiliApiUtil api = mock(BilibiliApiUtil.class);
         BilibiliCredentialStore store = mock(BilibiliCredentialStore.class);
         when(store.load()).thenReturn(Optional.of(new Cookies("sess", "jct", "buvid")));
-        when(api.getLoginUid()).thenReturn(19805387116684L);
+        when(api.fetchLoginUid()).thenReturn(19805387116684L);
 
         BilibiliAccountService service = newService(api, store);
         assertTrue(service.login(), "前置条件: 应先处于已登录状态");
@@ -343,7 +418,7 @@ class BilibiliAccountServiceTest {
         BilibiliApiUtil api = mock(BilibiliApiUtil.class);
         BilibiliCredentialStore store = mock(BilibiliCredentialStore.class);
         when(store.load()).thenReturn(Optional.of(refreshableCookies()));
-        when(api.getLoginUid()).thenReturn(19805387116684L);
+        when(api.fetchLoginUid()).thenReturn(19805387116684L);
 
         BilibiliAccountService service = newService(api, store);
         assertTrue(service.login());
@@ -373,7 +448,7 @@ class BilibiliAccountServiceTest {
         BilibiliCredentialStore store = mock(BilibiliCredentialStore.class);
         Cookies current = refreshableCookies();
         when(store.load()).thenReturn(Optional.of(current));
-        when(api.getLoginUid()).thenReturn(19805387116684L);
+        when(api.fetchLoginUid()).thenReturn(19805387116684L);
 
         BilibiliAccountService service = newService(api, store);
         assertTrue(service.login());
@@ -499,7 +574,7 @@ class BilibiliAccountServiceTest {
     private BilibiliAccountService loggedInService(BilibiliApiUtil api) {
         BilibiliCredentialStore store = mock(BilibiliCredentialStore.class);
         when(store.load()).thenReturn(Optional.of(new Cookies("sess", "jct", "buvid")));
-        when(api.getLoginUid()).thenReturn(19805387116684L);
+        when(api.fetchLoginUid()).thenReturn(19805387116684L);
 
         BilibiliAccountService service = newService(api, store);
         assertTrue(service.login(), "前置条件: 应先处于已登录状态");
