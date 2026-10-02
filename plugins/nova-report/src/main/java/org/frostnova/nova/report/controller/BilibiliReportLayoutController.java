@@ -104,8 +104,11 @@ public class BilibiliReportLayoutController {
      * <p>
      * 金额按当前通道的「金额可见」画：预览与真发到这个群里的是同一张。
      * 没带通道（platform／num）时仍按可见画，与改之前同一条路。
-     * 金额藏不藏只在本群设置改，这里不另给勾。
-     * @param params 版式参数，可带当前通道的 platform、type、num；可为空
+     * 金额藏不藏只在本群设置改，这里不另给勾；但<b>草稿里拨了还没保存的那一刻</b>，
+     * 界面会把草稿的值随请求带上（revenueVisible）——预览要跟草稿当场变，否则图上
+     * 还是存的设定、开关旁却说按草稿画，两头各说各话。这个值只管这一张图，
+     * 存着的设定一概不动，保存与否仍是「本群设置」那条保存纪律的事。
+     * @param params 版式参数，可带当前通道的 platform、type、num 与草稿的 revenueVisible；可为空
      * @return PNG 图片
      */
     @PostMapping(value = PREVIEW_PATH, produces = MediaType.IMAGE_PNG_VALUE)
@@ -129,7 +132,8 @@ public class BilibiliReportLayoutController {
     /**
      * 这份预览该不该带金额
      * <p>
-     * 带了通道就问会话级设置，与真出报告同一条路；没带通道沿用旧行为（可见）。
+     * 草稿值（revenueVisible）最先：它只管这一张图。带了通道就问会话级设置，
+     * 与真出报告同一条路；没带通道沿用旧行为（可见）。
      * type 缺省时按群聊处理——不确定就按更保守的那一边。
      * @param body 请求体
      * @return 是否画金额
@@ -137,6 +141,11 @@ public class BilibiliReportLayoutController {
     private boolean showRevenueFor(JSONObject body) {
         if (body == null) {
             return true;
+        }
+
+        Boolean draft = body.getBoolean("revenueVisible");
+        if (draft != null) {
+            return draft;
         }
 
         String platform = body.getString("platform");

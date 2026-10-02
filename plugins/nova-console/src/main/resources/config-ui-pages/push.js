@@ -21,12 +21,12 @@ import {resolveTarget, targetOptions} from './links-model.js';
 import {
   atAllStatus, buildDirectory, channelIndex, channelName, commandGroups, commandSummary,
   handlerNames, handlerOf, layoutState, messageOf, noticeSwitches, previewRequestBody,
-  previewRevenueCaption, pushChannelOf, pushTree, recentPushes, revenueSummary, sessionOf,
-  streamerName, strandedSessions, subscriptionSummary, templateState, typeName,
+  previewRevenueCaption, pushChannelOf, pushTree, recentPushes, revenueSummary, savedRevenueVisible,
+  sessionOf, streamerName, strandedSessions, subscriptionSummary, templateState, typeName,
 } from './push-model.js';
 import {renderIncomplete, sessionSettings} from './sessions.js';
 import {
-  clearSessionDrafts, sessionDraftCount, sessionWrites,
+  clearSessionDrafts, onRevenueDraftChange, revenueDraft, sessionDraftCount, sessionWrites,
 } from './session-draft.js';
 import {store} from './store.js';
 import {buildLayoutEditor, buildTemplateEditor} from './template.js';
@@ -291,6 +291,9 @@ button.danger:hover{border-color:var(--err);color:var(--err)}
 .rep-txt{min-width:0}
 .rep-txt>b{font-size:14px;font-weight:500}
 .rep-txt>p{margin:2px 0 0;font-size:13px;color:var(--dim)}
+/* 当前金额设定下不出图的那几行：整行淡下去，原因那一行照旧读得清 */
+.rep-row.rev-off{opacity:.6}
+.rep-txt>.rep-why{font-size:12.5px}
 .rep-n{width:78px;flex:none;border:1px solid var(--line);border-radius:var(--r-ctl);
   padding:4px 8px;font-size:14px;font-family:inherit;background:var(--surface);color:var(--text)}
 .rep-img{padding:10px;background:var(--ground);border:1px solid var(--line);
@@ -1303,12 +1306,20 @@ function sectionLayout(host, target, session) {
   line.appendChild(act);
   box.appendChild(line);
 
-  buildLayoutEditor(box, {
+  // 金额可见按「会话存的＋草稿」现算：草稿里拨了（还没保存），灰不灰、预览图与
+  // 图下说明都当场跟着变——不然开关旁说按草稿画、图上还是存的设定，两头各说各话
+  const draftVisible = () => {
+    const wanted = revenueDraft(target);
+    return wanted === undefined ? savedRevenueVisible(session, target) : wanted;
+  };
+
+  const editor = buildLayoutEditor(box, {
     // 与段 2 同理：这一段默认就能改，不传锁态
     editable: true,
     items: handler.options || [],
     paramsOf: () => (messageOf(target, handler) || {}).params || {},
-    caption: previewRevenueCaption(session, target),
+    caption: () => previewRevenueCaption(session, target, draftVisible()),
+    revenueVisible: draftVisible,
     onChange: params => {
       const message = messageOf(target, handler);
       if (!message) return;
@@ -1316,8 +1327,12 @@ function sectionLayout(host, target, session) {
       markDirty();
       syncState();
     },
-    render: params => renderLayoutPreview(params, target),
+    render: params => renderLayoutPreview(params, target, draftVisible()),
   });
+
+  // 金额开关在段 4 的草稿里，版式区在段 3：草稿变了从那边叫一声，这边整段重画。
+  // 单槽位，最后一次进来的通道算数——屏幕上同一时刻只有一个通道的版式区在听
+  onRevenueDraftChange(() => editor.repaint());
 }
 
 /**
@@ -1325,19 +1340,21 @@ function sectionLayout(host, target, session) {
  *
  * 图由服务端画，与真出报告读的是同一段解析码：各画各的话，预览会在
  * 「越界值怎么夹」「缺项取什么默认」这些地方悄悄给出与实际不同的图。
- * 请求体带上当前通道，服务端按这个群的「金额可见」画。
+ * 请求体带上当前通道，服务端按这个群的「金额可见」画；带上草稿值时
+ * 只这一张按草稿画，存着的设定不动。
  * @param params 版式参数
  * @param target 当前通道
+ * @param revenueVisible 草稿里拨的金额可见性，可为空
  * @return 图片地址，画不出来时为空
  */
 let previewUrl = null;
-async function renderLayoutPreview(params, target) {
+async function renderLayoutPreview(params, target, revenueVisible) {
   try {
     const res = await fetch('/config/api/report/preview', {
       method: 'POST',
       headers: Object.assign({'Content-Type': 'application/json'},
         store.csrfToken ? {'X-CSRF-Token': store.csrfToken} : {}),
-      body: JSON.stringify(previewRequestBody(params, target)),
+      body: JSON.stringify(previewRequestBody(params, target, revenueVisible)),
     });
     if (!res.ok) return '';
     // 上一张画完就没用了。不撤销的话，来回调开关几十次会把几十张图一直挂在内存里
@@ -1362,7 +1379,11 @@ function sectionSession(host, user, target, session) {
       : '本群设置对推给它的所有主播共用。';
   }
 
-  sessionSettings(box, {
+  // 四行摆进自己的容器：草稿变了那一段要重画（换掉，不是再摆一份），
+  // 容器一清就是四行——连着上面的说明一起清的话，说明得在这里再摆一遍
+  const settings = el('div');
+  box.appendChild(settings);
+  sessionSettings(settings, {
     session, target,
     commands: runtime.commands || [],
     subscriptions: runtime.subscriptions || [],

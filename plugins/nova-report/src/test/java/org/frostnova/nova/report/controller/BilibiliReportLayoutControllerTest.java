@@ -213,4 +213,47 @@ class BilibiliReportLayoutControllerTest {
         assertEquals(500, response.getStatusCode().value());
         assertNull(response.getBody(), "画不出来却回了内容，界面上会显示成一块白");
     }
+
+    @Test
+    @DisplayName("🔴 预览带草稿的金额设定：只管这一张，不改存着的设定")
+    void previewHonorsDraftRevenueVisible() {
+        // 会话存的是隐藏；草稿里拨成了显示——这一张按显示画
+        revenueVisibility.set("qq-onebot", 10000003L, false);
+        JSONObject body = new JSONObject();
+        body.put("platform", "qq-onebot");
+        body.put("type", 1);
+        body.put("num", 10000003L);
+        body.put("revenueVisible", true);
+
+        controller.preview(body);
+
+        verify(preview).render(org.mockito.ArgumentMatchers.argThat(
+                BilibiliLiveReportOptions::isShowRevenue));
+
+        // 存着的设定没被这一张动过：不带草稿值的下一张仍按存的隐藏画
+        JSONObject plain = new JSONObject();
+        plain.put("platform", "qq-onebot");
+        plain.put("type", 1);
+        plain.put("num", 10000003L);
+        controller.preview(plain);
+
+        verify(preview).render(org.mockito.ArgumentMatchers.argThat(options ->
+                !options.isShowRevenue()));
+    }
+
+    @Test
+    @DisplayName("🔴 草稿拨成隐藏也一样：会话存的是显示，这一张按隐藏画")
+    void previewHonorsDraftRevenueHidden() {
+        revenueVisibility.set("qq-onebot", 10000003L, true);
+        JSONObject body = new JSONObject();
+        body.put("platform", "qq-onebot");
+        body.put("type", 1);
+        body.put("num", 10000003L);
+        body.put("revenueVisible", false);
+
+        controller.preview(body);
+
+        verify(preview).render(org.mockito.ArgumentMatchers.argThat(options ->
+                !options.isShowRevenue()));
+    }
 }

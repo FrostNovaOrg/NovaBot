@@ -648,10 +648,15 @@ export function revenueSummary(session) {
  * type 为 0（私聊）也必须带上：写成 if (target.type) 会把私聊当成没通道。
  * @param params 版式参数
  * @param target 当前通道，可为空
+ * @param revenueVisible 草稿里拨的金额可见性，可为空：带上时这一张按草稿画，
+ *   存着的设定不动——预览跟草稿当场变，不然图上是存的设定、灰掉的开关却说按草稿
  * @return 请求体
  */
-export function previewRequestBody(params, target) {
+export function previewRequestBody(params, target, revenueVisible) {
   const body = Object.assign({}, params || {});
+  if (typeof revenueVisible === 'boolean') {
+    body.revenueVisible = revenueVisible;
+  }
   if (!target || target.platform == null || target.platform === ''
       || target.num == null || target.num === '') {
     return body;
@@ -665,20 +670,35 @@ export function previewRequestBody(params, target) {
 }
 
 /**
+ * 本群此刻存着的金额可见（不含草稿）
+ *
+ * 有会话跟会话；没有会话按类型默认（群聊隐藏、私聊显示）。预览图旁那一行说明
+ * 与版式区灰不灰都以它为底，草稿另由调用处盖上来——两处各算一份底数的话，
+ * 改了默认哪天就分叉了。
+ * @param session 当前会话，可为空
+ * @param target 当前通道，可为空
+ * @return 是否可见
+ */
+export function savedRevenueVisible(session, target) {
+  if (session && Object.prototype.hasOwnProperty.call(session, 'revenueVisible')) {
+    return !!session.revenueVisible;
+  }
+  return Number((target || {}).type) !== 1;
+}
+
+/**
  * 预览图旁那一行：按本群金额可见画：隐藏／显示
  *
  * 有会话时跟本群设置走；没有会话时按类型默认（群聊隐藏、私聊显示）。
+ * 带上草稿值时按草稿说——图按草稿画，话也按草稿讲，两头一齐。
  * @param session 当前会话，可为空
  * @param target 当前通道，可为空
+ * @param revenueVisible 草稿里拨的金额可见性，可为空
  * @return 那一行字
  */
-export function previewRevenueCaption(session, target) {
-  let visible;
-  if (session && Object.prototype.hasOwnProperty.call(session, 'revenueVisible')) {
-    visible = !!session.revenueVisible;
-  } else {
-    visible = Number((target || {}).type) !== 1;
-  }
+export function previewRevenueCaption(session, target, revenueVisible) {
+  const visible = revenueVisible === undefined
+    ? savedRevenueVisible(session, target) : !!revenueVisible;
   return '按本群金额可见画：' + (visible ? '显示' : '隐藏');
 }
 

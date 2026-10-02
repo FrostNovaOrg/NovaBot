@@ -15,7 +15,7 @@
 import {
   atAllStatus, buildDirectory, channelIndex, channelName, commandGroups, commandSummary,
   layoutState, menuKnown, noticeSwitches, previewRequestBody, previewRevenueCaption,
-  pushTree, recentPushes, revenueSummary,
+  pushTree, recentPushes, revenueSummary, savedRevenueVisible,
   sessionOf, strandedSessions, subscriptionSummary, templateState,
 } from '../plugins/nova-console/src/main/resources/config-ui-pages/push-model.js';
 import {targetOptions} from '../core/nova-core/src/main/resources/config-ui/links-model.js';
@@ -452,6 +452,38 @@ const CASES = [
       '群隐藏': '按本群金额可见画：隐藏',
       '群显示': '按本群金额可见画：显示',
       '私聊无会话': '按本群金额可见画：显示',
+    },
+  },
+  {
+    name: '预览与说明跟草稿、底数不含草稿',
+    run: () => {
+      const draftOn = previewRequestBody({cover: true}, {platform: 'qq-onebot', type: 1, num: 12345}, true);
+      const draftOff = previewRequestBody({}, null, false);
+      const noDraft = previewRequestBody({}, {platform: 'qq-onebot', type: 1, num: 1});
+      return {
+        '草稿显示': draftOn.revenueVisible,
+        '草稿隐藏没通道也带': draftOff.revenueVisible,
+        '没草稿不带': noDraft.revenueVisible === undefined ? '无' : noDraft.revenueVisible,
+        '通道字段照带': draftOn.platform + ':' + draftOn.num,
+        '会话存的隐藏': savedRevenueVisible({revenueVisible: false}, {type: 1}),
+        '会话存的显示': savedRevenueVisible({revenueVisible: true}, {type: 1}),
+        '无会话群聊按隐藏': savedRevenueVisible(null, {type: 1}),
+        '无会话私聊按显示': savedRevenueVisible(null, {type: 0}),
+        '说明按草稿显示': previewRevenueCaption({revenueVisible: false}, {type: 1}, true),
+        '说明按草稿隐藏': previewRevenueCaption({revenueVisible: true}, {type: 1}, false),
+      };
+    },
+    expect: {
+      '草稿显示': true,
+      '草稿隐藏没通道也带': false,
+      '没草稿不带': '无',
+      '通道字段照带': 'qq-onebot:12345',
+      '会话存的隐藏': false,
+      '会话存的显示': true,
+      '无会话群聊按隐藏': false,
+      '无会话私聊按显示': true,
+      '说明按草稿显示': '按本群金额可见画：显示',
+      '说明按草稿隐藏': '按本群金额可见画：隐藏',
     },
   },
 ];

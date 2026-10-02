@@ -88,6 +88,34 @@ class BilibiliLiveReportLayoutOptionsTest {
     }
 
     @Test
+    @DisplayName("🔴 每一项都带着随金额一栏，标了的都带原因句")
+    void everyOptionCarriesRevenueVisibility() {
+        List<com.alibaba.fastjson2.JSONObject> table = com.alibaba.fastjson2.JSON.parseArray(
+                com.alibaba.fastjson2.JSON.toJSONString(BilibiliLiveReportOptions.layoutOptions()),
+                com.alibaba.fastjson2.JSONObject.class);
+        assertFalse(table.isEmpty(), "版式表是空的，这一格什么都没量到");
+
+        List<String> missing = new java.util.ArrayList<>();
+        List<String> noNote = new java.util.ArrayList<>();
+        for (com.alibaba.fastjson2.JSONObject item : table) {
+            String visibility = item.getString("revenueVisibility");
+            if (visibility == null || visibility.isBlank()) {
+                missing.add(item.getString("key"));
+            } else if (!"UNRELATED".equals(visibility)) {
+                String note = item.getString("revenueNote");
+                if (note == null || note.isBlank()) {
+                    noNote.add(item.getString("key"));
+                }
+            }
+        }
+
+        assertEquals(List.of(), missing, "没带随金额栏的版式项——控制台灰不掉它们，用户会以为配了没用");
+        assertEquals(List.of(), noNote, "标了随金额却没带原因句的版式项");
+
+        System.out.println("随金额栏：全部 " + table.size() + " 项都带着");
+    }
+
+    @Test
     @DisplayName("🔴 表 → 生效：表里每一项喂非默认值都真的改得动对应字段")
     void everyListedOptionIsActuallyRead() {
         for (HandlerOption option : BilibiliLiveReportOptions.layoutOptions()) {
