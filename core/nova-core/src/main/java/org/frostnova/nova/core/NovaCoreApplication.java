@@ -4,6 +4,8 @@ import org.frostnova.nova.core.safemode.SafeModeServer;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.bind.BindException;
+import org.springframework.boot.context.properties.source.ConfigurationProperty;
+import org.springframework.boot.origin.OriginProvider;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.EnableAspectJAutoProxy;
 import org.springframework.retry.annotation.EnableRetry;
@@ -28,13 +30,22 @@ public class NovaCoreApplication {
     private static final Path CONFIG_PATH = Path.of("application.yml");
 
     public static void main(String[] args) {
-        // 第一件事占锁，比日志、配置、安全模式都早。锁被占着就在这里退出，下面一概不走。
+        // 第一件事占锁，比日志、配置、安全模式都早。候命关着时，锁被占着就在这里退出，下面一概不走。
+        SingleInstanceLock.markStart();
+        SingleInstanceLock.armStopHook();
         if (!SingleInstanceLock.acquire(Path.of(System.getProperty("user.dir")))) {
             return;
         }
         try {
             SpringApplication.run(NovaCoreApplication.class, args);
         } catch (Exception e) {
+            // 候命开着、还没过门：不进安全模式，免得去绑旧的那一份正在用的端口。
+            if (SingleInstanceLock.standbyEnabled() && !SingleInstanceLock.hasPassed()) {
+                System.err.println("还没接手就起不来：");
+                System.err.println(explainFailure(e));
+                System.err.flush();
+                Runtime.getRuntime().halt(SingleInstanceLock.EXIT_BEFORE_GATE);
+            }
             if (!isConfigurationFailure(e)) {
                 throw e;
             }
@@ -88,5 +99,33 @@ public class NovaCoreApplication {
 
         String message = root.getMessage();
         return root.getClass().getSimpleName() + (message == null ? "" : ": " + message);
+    }
+
+    /**
+     * 把整条起因写出来，带上配置出错的位置（有的话）。
+     */
+    private static String explainFailure(Throwable failure) {
+        StringBuilder text = new StringBuilder();
+        Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (Throwable current = failure; current != null && seen.add(current); current = current.getCause()) {
+            text.append(current.getClass().getSimpleName());
+            String message = current.getMessage();
+            if (message != null) {
+                text.append(": ").append(message);
+            }
+            if (current instanceof OriginProvider) {
+                if (((OriginProvider) current).getOrigin() != null) {
+                    text.append("（位置 ").append(((OriginProvider) current).getOrigin()).append('）');
+                }
+            }
+            if (current instanceof BindException) {
+                ConfigurationProperty property = ((BindException) current).getProperty();
+                if (property != null && property.getOrigin() != null) {
+                    text.append("（位置 ").append(property.getOrigin()).append('）');
+                }
+            }
+            text.append('\n');
+        }
+        return text.toString();
     }
 }
