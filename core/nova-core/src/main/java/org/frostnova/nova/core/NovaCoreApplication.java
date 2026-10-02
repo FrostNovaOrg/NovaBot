@@ -28,6 +28,10 @@ public class NovaCoreApplication {
     private static final Path CONFIG_PATH = Path.of("application.yml");
 
     public static void main(String[] args) {
+        // 第一件事占锁，比日志、配置、安全模式都早。锁被占着就在这里退出，下面一概不走。
+        if (!SingleInstanceLock.acquire(Path.of(System.getProperty("user.dir")))) {
+            return;
+        }
         try {
             SpringApplication.run(NovaCoreApplication.class, args);
         } catch (Exception e) {
