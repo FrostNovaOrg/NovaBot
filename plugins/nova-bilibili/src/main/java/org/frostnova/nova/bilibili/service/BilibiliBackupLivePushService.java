@@ -19,6 +19,7 @@ import org.springframework.scheduling.TaskScheduler;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashSet;
+import java.util.concurrent.TimeUnit;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -66,6 +67,22 @@ public class BilibiliBackupLivePushService {
     private volatile boolean initialized;
 
     private volatile AbstractDataSource dataSource;
+
+    /**
+     * 退出之后不再发布开播、下播。和「是不是已经在发布」共用这一把锁，
+     * 避免刚查完还没停、发布却发生在存盘之后。
+     */
+    private final Object publishGate = new Object();
+
+    /**
+     * 已经进入发布、尚未离开的条数
+     */
+    private int publishing;
+
+    /**
+     * 为真后，新的开播、下播不再发布
+     */
+    private boolean publishingCeased;
 
     @Autowired
     public BilibiliBackupLivePushService(BilibiliApiUtil api,
@@ -172,23 +189,84 @@ public class BilibiliBackupLivePushService {
         // 发布逐位兜错：事件处理在各位监听器手里，谁抛错都说不准。抛出来的不往外冒——
         // 冒出去本轮 forEach 就断在这里，排在后面的主播全被连累、要等下一轮；调度器那边
         // 虽还会排下一轮（异常被 Spring 的 LoggingErrorHandler 记一条后吞掉），但晚的就是一轮
-        if (living) {
-            Instant startTime = room.getLiveStartTime() == null
-                    ? Instant.now()
-                    : Instant.ofEpochSecond(room.getLiveStartTime());
+        String change = living ? "开播" : "下播";
+        if (!beginPublish()) {
+            log.info("备用直播推送检测到 {} {}，程序正在退出，不再发布", up.getUname(), change);
+            return;
+        }
+        try {
+            if (living) {
+                Instant startTime = room.getLiveStartTime() == null
+                        ? Instant.now()
+                        : Instant.ofEpochSecond(room.getLiveStartTime());
 
-            log.info("备用直播推送检测到 {} 开播", up.getUname());
-            try {
+                log.info("备用直播推送检测到 {} 开播", up.getUname());
                 publisher.publishEvent(new BilibiliLiveOnEvent(up, startTime));
-            } catch (Exception e) {
-                log.error("备用直播推送发布 {} 的开播事件出错, 本次跳过", up.getUname(), e);
-            }
-        } else {
-            log.info("备用直播推送检测到 {} 下播", up.getUname());
-            try {
+            } else {
+                log.info("备用直播推送检测到 {} 下播", up.getUname());
                 publisher.publishEvent(new BilibiliLiveOffEvent(up));
-            } catch (Exception e) {
-                log.error("备用直播推送发布 {} 的下播事件出错, 本次跳过", up.getUname(), e);
+            }
+        } catch (Exception e) {
+            log.error("备用直播推送发布 {} 的{}事件出错, 本次跳过", up.getUname(), change, e);
+        } finally {
+            endPublish();
+        }
+    }
+
+    /**
+     * 从现在起不再发布开播、下播。已经在发布中的那一趟由 {@link #awaitPublishFinished} 等。
+     */
+    void ceasePublishing() {
+        synchronized (publishGate) {
+            publishingCeased = true;
+        }
+    }
+
+    /**
+     * 等已经在发布中的那一趟离开。
+     * @param deadlineNanos 截止时刻，按 {@link System#nanoTime()} 计
+     * @return 截止前是否已经没有正在发布的事件
+     */
+    boolean awaitPublishFinished(long deadlineNanos) {
+        synchronized (publishGate) {
+            while (publishing > 0) {
+                long waitMs = TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime());
+                if (waitMs <= 0) {
+                    return false;
+                }
+                try {
+                    publishGate.wait(waitMs);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return false;
+                }
+            }
+            return true;
+        }
+    }
+
+    /**
+     * 占住发布名额。已经停止发布时返回 false，调用方不得再发布。
+     */
+    private boolean beginPublish() {
+        synchronized (publishGate) {
+            if (publishingCeased) {
+                return false;
+            }
+            publishing++;
+            return true;
+        }
+    }
+
+    /**
+     * 一次发布结束。没有正在发布的时候叫醒正在等的退出。
+     */
+    private void endPublish() {
+        synchronized (publishGate) {
+            publishing--;
+            if (publishing <= 0) {
+                publishing = 0;
+                publishGate.notifyAll();
             }
         }
     }

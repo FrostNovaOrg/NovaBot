@@ -44,6 +44,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -56,6 +57,12 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 @Slf4j
 public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
+    /**
+     * 等手头那条消息的上限。
+     * 退出时全部直播间，加上备用直播推送里已经开始发布的那一趟，共用从关闭监听开头量起的这一段。
+     */
+    static final Duration INTAKE_DRAIN_BUDGET = Duration.ofSeconds(3);
+
     /**
      * 心跳发送间隔
      */
@@ -173,6 +180,26 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
      * 是否已被主动关闭，关闭后不再触发重连
      */
     private final AtomicBoolean closed = new AtomicBoolean();
+
+    /**
+     * 停收与「这条消息算不算已经在处理」共用这一把锁。
+     * <p>
+     * 两步若不在同一把锁里，会出现这样的空窗：消息看过「还没收」，
+     * 断开已经把在途条数看成 0 并返回，下播就落在存盘之后。
+     */
+    private final Object intake = new Object();
+
+    /**
+     * 已经进入消息处理、尚未离开的条数
+     */
+    private int inFlight;
+
+    /**
+     * 当前线程正处理着的条数。
+     * <p>
+     * 断开若由这条消息自己触发，不能等自己，否则永远等不到。
+     */
+    private final ThreadLocal<Integer> intakeDepth = ThreadLocal.withInitial(() -> 0);
 
     /**
      * 是否已有一次重连排在闸门里等着执行
@@ -399,16 +426,101 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
 
     /**
      * 关闭连接，关闭后不再自动重连
+     * <p>
+     * 先停收新消息，再等已经在处理的那一条走完，最后才关套接字。
+     * 这一等有上限，到点就继续关，不一直占着退出。
+     * 停机时这一步必须在存盘之前返回：手头那条若是下播，归档和累计要赶在写盘前落定；
+     * 停收之后才到的消息不再处理。重连、退避与放行闸门不在这里改。
      */
-    public synchronized void close() {
-        if (!closed.compareAndSet(false, true)) {
-            return;
+    public void close() {
+        long deadlineNanos = System.nanoTime() + INTAKE_DRAIN_BUDGET.toNanos();
+        if (!closeUntil(deadlineNanos)) {
+            log.warn("直播间 {} 手头的消息没能在时限内办完", source.getRoomId());
         }
+    }
 
-        status = ConnectStatus.CLOSING;
-        cancelHeartbeat();
-        closeSession();
-        status = ConnectStatus.CLOSED;
+    /**
+     * 停收，等到截止时刻，再关套接字。
+     * @param deadlineNanos 截止时刻，按 {@link System#nanoTime()} 计。退出时各间共用同一个截止时刻
+     * @return 手头那条是否在截止前办完。已经关过的连接算办完
+     */
+    boolean closeUntil(long deadlineNanos) {
+        if (!sealIntake()) {
+            return true;
+        }
+        boolean drained = awaitIntakeDrained(deadlineNanos);
+        synchronized (this) {
+            status = ConnectStatus.CLOSING;
+            cancelHeartbeat();
+            closeSession();
+            status = ConnectStatus.CLOSED;
+        }
+        return drained;
+    }
+
+    /**
+     * 停收新消息
+     * @return 这一次是不是由本调用停的收。已经停过则返回 false
+     */
+    private boolean sealIntake() {
+        synchronized (intake) {
+            return closed.compareAndSet(false, true);
+        }
+    }
+
+    /**
+     * 等已经在处理的消息离开。当前线程自己正在处理的那几条不算，避免自己等自己。
+     * 到了截止时刻还没离开就返回，调用方照常往下关连接。
+     * @param deadlineNanos 截止时刻，按 {@link System#nanoTime()} 计
+     * @return 截止前是否已经没有别人的消息在处理
+     */
+    private boolean awaitIntakeDrained(long deadlineNanos) {
+        int mine = intakeDepth.get();
+        synchronized (intake) {
+            while (inFlight > mine) {
+                long waitMs = TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime());
+                if (waitMs <= 0) {
+                    return false;
+                }
+                try {
+                    intake.wait(waitMs);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    log.warn("等待直播间 {} 手头的消息处理完时被打断", source.getRoomId());
+                    return false;
+                }
+            }
+            return true;
+        }
+    }
+
+    /**
+     * 收下一条消息。已经停收时返回 false，调用方不得再处理这条。
+     */
+    private boolean beginIntake() {
+        synchronized (intake) {
+            if (closed.get()) {
+                return false;
+            }
+            inFlight++;
+        }
+        intakeDepth.set(intakeDepth.get() + 1);
+        return true;
+    }
+
+    /**
+     * 一条消息处理完，在途条数归零时叫醒正在等的断开
+     */
+    private void endIntake() {
+        int depth = intakeDepth.get() - 1;
+        intakeDepth.set(Math.max(depth, 0));
+        synchronized (intake) {
+            inFlight--;
+            if (inFlight <= 0) {
+                inFlight = 0;
+                intake.notifyAll();
+            }
+        }
     }
 
     /**
@@ -500,6 +612,21 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
 
     @Override
     protected void handleBinaryMessage(@NonNull WebSocketSession session, BinaryMessage message) {
+        // 断开之后到达的一律不再处理。已经在处理的那一条由 close() 等它走完再返回
+        if (!beginIntake()) {
+            return;
+        }
+        try {
+            acceptBinaryMessage(session, message);
+        } finally {
+            endIntake();
+        }
+    }
+
+    /**
+     * 处理一条已经收下的二进制消息
+     */
+    private void acceptBinaryMessage(@NonNull WebSocketSession session, BinaryMessage message) {
         lastMessageTime = Instant.now();
         // 退避计数在此清零而非握手完成时。握手成功不代表连接可用：认证被拒时服务端会
         // 握手后立刻切断，若在握手处清零，每次重连都从最短间隔重来，指数退避形同虚设——
