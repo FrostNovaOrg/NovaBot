@@ -3,6 +3,7 @@ package org.frostnova.nova.bilibili.service;
 import org.frostnova.nova.bilibili.BilibiliPlatform;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.health.BilibiliRiskMetrics;
+import org.frostnova.nova.bilibili.model.ConnectInfo;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.service.LiveDataService;
@@ -17,11 +18,13 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.mock;
@@ -138,6 +141,43 @@ class BilibiliLiveRoomServiceTest {
         assertEquals(10, service.getManagedRoomCount(), "重连不应改变管理中的直播间数");
     }
 
+    @Test
+    @DisplayName("正赶上有人直播时, 账上在播的排在最前建连, 其余保持配置顺序")
+    void syncShouldConnectLiveOnAccountFirst() {
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        List<Long> connectOrder = new ArrayList<>();
+        // 甲乙丙按配置顺序; 房号 1001/1002/1003 对应 uid 1/2/3, 只有丙(uid 3)账上在播
+        BilibiliLiveRoomService service = service(scheduler, new NovaBilibiliProperties(),
+                recordingApi(connectOrder), liveOnAccount(3L));
+
+        AbstractDataSource dataSource = mock(AbstractDataSource.class);
+        when(dataSource.getUsers(anyString())).thenReturn(users(1, 3));
+
+        service.sync(dataSource);
+        runQueued(scheduler);
+
+        // 升级重启那一下最要紧的就是在播的那间先连上: 排在后面连, 就多漏它一段弹幕、礼物与醒目留言
+        assertEquals(List.of(1003L, 1001L, 1002L), connectOrder,
+                "账上在播的丙要排最前建连, 其后的甲乙保持配置顺序");
+    }
+
+    @Test
+    @DisplayName("没人账上在播时建连顺序与配置顺序一致")
+    void syncShouldKeepConfigOrderWhenNobodyLive() {
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        List<Long> connectOrder = new ArrayList<>();
+        BilibiliLiveRoomService service = service(scheduler, new NovaBilibiliProperties(),
+                recordingApi(connectOrder), nobodyLiveOnAccount());
+
+        AbstractDataSource dataSource = mock(AbstractDataSource.class);
+        when(dataSource.getUsers(anyString())).thenReturn(users(1, 3));
+
+        service.sync(dataSource);
+        runQueued(scheduler);
+
+        assertEquals(List.of(1001L, 1002L, 1003L), connectOrder, "没人在播时应照配置顺序建连");
+    }
+
     /**
      * 取出排进闸门等待放行的建连任务
      * <p>
@@ -203,8 +243,16 @@ class BilibiliLiveRoomServiceTest {
      * 构造被测服务
      */
     private BilibiliLiveRoomService service(TaskScheduler scheduler, NovaBilibiliProperties properties) {
+        return service(scheduler, properties, mock(BilibiliApiUtil.class), nobodyLiveOnAccount());
+    }
+
+    /**
+     * 构造被测服务
+     */
+    private BilibiliLiveRoomService service(TaskScheduler scheduler, NovaBilibiliProperties properties,
+                                            BilibiliApiUtil api, LiveDataService liveDataService) {
         return new BilibiliLiveRoomService(
-                mock(BilibiliApiUtil.class),
+                api,
                 mock(BilibiliEventParser.class),
                 properties,
                 mock(ApplicationEventPublisher.class),
@@ -215,8 +263,56 @@ class BilibiliLiveRoomServiceTest {
                 new BilibiliConnectGate(properties, scheduler),
                 new BilibiliRiskMetrics(),
                 new org.frostnova.nova.bilibili.health.BilibiliDisconnectDigest(properties, scheduler),
-                mock(LiveDataService.class)
+                liveDataService
         );
+    }
+
+    /**
+     * 构造账上谁都不在播的在播状态替身
+     * <p>
+     * 默认答「取不到状态」——生产码把取不到状态的按不在播处理，替身照同一口径答
+     */
+    private LiveDataService nobodyLiveOnAccount() {
+        LiveDataService liveDataService = mock(LiveDataService.class);
+        when(liveDataService.getLiveStatus(anyString(), anyLong())).thenReturn(Optional.empty());
+        return liveDataService;
+    }
+
+    /**
+     * 构造只有 uid 一位账上在播的在播状态替身，其余取不到状态
+     */
+    private LiveDataService liveOnAccount(Long uid) {
+        LiveDataService liveDataService = nobodyLiveOnAccount();
+        when(liveDataService.getLiveStatus(BilibiliPlatform.BILIBILI.id(), uid)).thenReturn(Optional.of(true));
+        return liveDataService;
+    }
+
+    /**
+     * 构造记录建连先后的接口替身，谁来问连接信息就把谁的房间号记下
+     * <p>
+     * 建连任务是不透明的闭包，只有它向接口要连接信息时才知道排进闸门的这一个是谁。
+     * 答一份取不到地址的连接信息：这里量的是「先连谁」，不是真把连接建起来
+     * @param connectOrder 建连房间号的记录处，按下闸门的先后追加
+     */
+    private BilibiliApiUtil recordingApi(List<Long> connectOrder) {
+        BilibiliApiUtil api = mock(BilibiliApiUtil.class);
+        when(api.getLiveRoomConnectInfo(anyLong())).thenAnswer(invocation -> {
+            connectOrder.add(invocation.getArgument(0));
+            return new ConnectInfo();
+        });
+        return api;
+    }
+
+    /**
+     * 放行排进闸门等待的建连任务
+     * <p>
+     * 调度器是桩，任务不会自己跑，由用例决定何时执行。快照成普通列表再逐个放行：
+     * 建连失败排出的重连会再回到桩里，不该跟着这一批放行
+     * @param scheduler 调度器桩
+     */
+    private void runQueued(TaskScheduler scheduler) {
+        List<Runnable> queued = new ArrayList<>(queuedConnects(scheduler));
+        queued.forEach(Runnable::run);
     }
 
     /**
