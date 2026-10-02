@@ -27,12 +27,12 @@ jobs:
     name: 生成手册站
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # 生成脚本零依赖（只用 python3 标准库）。次版本固定成 3.12：
       # 写成 3.x 时，托管环境换默认解释器，同一次工作流定义两次跑到的 Python 可以不是同一条次版本。
       - name: 配置 Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -41,7 +41,7 @@ jobs:
         run: python3 manual/build.py
 
       - name: 上传站点产物
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: manual/dist
 
@@ -57,4 +57,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
