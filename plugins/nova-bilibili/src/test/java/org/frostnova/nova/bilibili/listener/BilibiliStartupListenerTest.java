@@ -17,6 +17,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.*;
@@ -160,6 +161,56 @@ class BilibiliStartupListenerTest {
         listener.onDataSourceChangeEvent();
 
         verify(liveRoomService, never()).sync(any());
+    }
+
+    @Test
+    @DisplayName("平常启动: 启动载入的新增事件不该再补一轮同步")
+    void loadTimeAddEventsShouldNotTriggerExtraSync() {
+        BilibiliAccountService accountService = mock(BilibiliAccountService.class);
+        when(accountService.login()).thenReturn(true);
+        BilibiliLiveRoomService liveRoomService = mock(BilibiliLiveRoomService.class);
+        AbstractDataSource dataSource = mock(AbstractDataSource.class);
+
+        BilibiliStartupListener listener = listener(accountService, inlineScheduler(), new NovaBilibiliProperties(), liveRoomService, dataSource);
+
+        // 启动载入时每位主播各发一个新增事件(AbstractDataSource.load 的做法), 首次同步本来看得到
+        listener.onDataSourceChangeEvent();
+        listener.onDataSourceChangeEvent();
+        listener.onDataSourceChangeEvent();
+
+        // 启动完成
+        listener.onApplicationReadyEvent();
+
+        // 只有启动同步那一次。以前次次记下「有过变更」, 每次启动都多补一轮同步、多打一行「推送配置已变更」,
+        // 还没放行的房间被重复排进建连闸门
+        verify(liveRoomService, times(1)).sync(dataSource);
+    }
+
+    @Test
+    @DisplayName("首次同步读过名单之后到的变更不丢, 启动完成后补一次同步")
+    void changeAfterFirstSyncStillSyncesAfter() {
+        BilibiliAccountService accountService = mock(BilibiliAccountService.class);
+        when(accountService.login()).thenReturn(true);
+        BilibiliLiveRoomService liveRoomService = mock(BilibiliLiveRoomService.class);
+        AbstractDataSource dataSource = mock(AbstractDataSource.class);
+
+        // 房间号在启动窗口里晚到(后台补全拿到的), 落在首次同步读过名单之后
+        AtomicBoolean eventFired = new AtomicBoolean(false);
+        AtomicReference<BilibiliStartupListener> listenerRef = new AtomicReference<>();
+        doAnswer(invocation -> {
+            if (eventFired.compareAndSet(false, true)) {
+                listenerRef.get().onDataSourceChangeEvent();
+            }
+            return null;
+        }).when(liveRoomService).sync(any());
+
+        BilibiliStartupListener listener = listener(accountService, inlineScheduler(), new NovaBilibiliProperties(), liveRoomService, dataSource);
+        listenerRef.set(listener);
+        // 启动完成(内含首次同步)
+        listener.onApplicationReadyEvent();
+
+        // 启动同步一次 + 补一次同步, 否则那位主播一直连不上
+        verify(liveRoomService, times(2)).sync(dataSource);
     }
 
     @Test

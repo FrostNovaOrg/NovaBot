@@ -47,9 +47,20 @@ public class BilibiliStartupListener {
     private final NovaBilibiliProperties properties;
 
     /**
-     * 各项服务是否已完成启动。启动完成前收到的数据源变更事件来自初始化加载本身，无需响应
+     * 各项服务是否已完成启动。启动完成前收到的数据源变更先记下「有过」，置真后补一次同步
      */
     private final AtomicBoolean servicesStarted = new AtomicBoolean(false);
+
+    /**
+     * 首次同步已开始。只有这之后到的变更才记下「有过变更」——启动载入时每位主播各一个的
+     * 新增事件在首次同步之前到，同步本来看得到，不记；记了就每次启动多补一轮
+     */
+    private final AtomicBoolean firstSyncStarted = new AtomicBoolean(false);
+
+    /**
+     * 首次同步之后、启动完成之前是否收到过数据源变更。有的话置真之后补一次同步，不然那次变更就丢了
+     */
+    private final AtomicBoolean changeSeenBeforeStartup = new AtomicBoolean(false);
 
     /**
      * 是否已有待执行的重新同步任务。一次热重载会对每个用户各发一个变更事件，
@@ -110,6 +121,10 @@ public class BilibiliStartupListener {
         startDynamicChannel(loggedIn);
 
         servicesStarted.set(true);
+        if (changeSeenBeforeStartup.get()) {
+            // 启动完成之前到过的变更（后台补全拿到的房间号）在置真后补一次同步，走防抖那条路
+            scheduleResync();
+        }
         log.info("NovaBilibili 已就绪{}", accountService.isAnonymous() ? "（匿名模式）" : "");
     }
 
@@ -146,6 +161,7 @@ public class BilibiliStartupListener {
      * 这三项都不依赖登录态，登录成不成功都照常启动。
      */
     private void startLiveChannel() {
+        firstSyncStarted.set(true);
         try {
             liveRoomService.sync(dataSource);
         } catch (Exception e) {
@@ -194,15 +210,30 @@ public class BilibiliStartupListener {
      * <p>
      * 推送配置支持热重载，但直播间长连接不会自己跟着变：为既有用户补配直播事件后，
      * 新房间要到下次重启才会建立连接。此处监听数据源变更事件补上这一环。
-     * 启动完成前的变更事件一律忽略——彼时登录尚未完成，提前建连会以匿名身份取令牌，
-     * 与登录态身份不符，认证会被服务端拒绝。
+     * 首次同步开始之后、启动完成之前到的变更先记下「有过」，置真之后补一次同步——
+     * 不然后台补全拿到的房间号落在启动窗口里就丢了，那位主播一直连不上。
+     * 首次同步之前的变更（含启动载入时每位主播各一个的新增事件）同步本来看得到，不记。
      */
     @EventListener(NovaDataSourceChangeEvent.class)
     public void onDataSourceChangeEvent() {
-        if (!servicesStarted.get() || accountService.isStopping()) {
+        if (accountService.isStopping()) {
             return;
         }
 
+        if (!servicesStarted.get()) {
+            if (firstSyncStarted.get()) {
+                changeSeenBeforeStartup.set(true);
+            }
+            return;
+        }
+
+        scheduleResync();
+    }
+
+    /**
+     * 挂一轮防抖后的重新同步。短时间内的连发事件合并为一次
+     */
+    private void scheduleResync() {
         if (!resyncPending.compareAndSet(false, true)) {
             return;
         }
