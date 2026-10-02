@@ -1,10 +1,13 @@
 package org.frostnova.nova.bilibili.service;
 
+import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.exception.NetworkException;
 import org.frostnova.nova.bilibili.exception.ResponseCodeException;
+import org.frostnova.nova.bilibili.health.BilibiliRiskMetrics;
 import org.frostnova.nova.bilibili.model.Cookies;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
+import org.frostnova.nova.core.util.HttpUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.DisplayName;
@@ -13,6 +16,7 @@ import org.mockito.InOrder;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -188,6 +192,41 @@ class BilibiliAccountServiceTest {
         assertTrue(service.isLoggedIn());
         assertNull(service.getLoginUid(), "uid 未知时留空, 待复检补上");
         verify(api, never()).getTvQrCodeLoginInfo();
+    }
+
+    @Test
+    @DisplayName("⚠️ 启动验证没拿到答复要照旧计入「获取登录账号失败」；明确未登录不记")
+    void unverifiedStartupShouldCountLoginUidFailure() {
+        // 抓的用户故障：改走「保留凭据按已登录启动」那条路后，启动时问不到账号这件事
+        // 在健康页的「获取登录账号失败」读数里消失了——问题还在，账没了
+        BilibiliRiskMetrics metrics = new BilibiliRiskMetrics();
+        UnstableMyInfoApi api = new UnstableMyInfoApi(metrics);
+        api.failure = new NetworkException("连接超时");
+
+        BilibiliCredentialStore store = mock(BilibiliCredentialStore.class);
+        when(store.load()).thenReturn(Optional.of(new Cookies("sess", "jct", "buvid")));
+        BilibiliAccountService service = new BilibiliAccountService(api, store, new NovaBilibiliProperties());
+        // 明确未登录那一档会转扫码流程；先置停机让两条路都直接返回，不发别的请求
+        service.onContextClosed();
+
+        assertTrue(service.login(), "网络故障应保留凭据按已登录继续");
+
+        assertEquals(1, metrics.count(BilibiliRiskMetrics.Kind.LOGIN_UID_FAILURE, Duration.ofHours(1)),
+                "启动验证没拿到答复, 「获取登录账号失败」要含这一笔");
+
+        // 对照：服务端明确答复未登录（凭据确已失效），这不是「没拿到答复」，不记
+        BilibiliRiskMetrics loggedOutMetrics = new BilibiliRiskMetrics();
+        UnstableMyInfoApi loggedOutApi = new UnstableMyInfoApi(loggedOutMetrics);
+        loggedOutApi.failure = new ResponseCodeException(BilibiliApiUtil.CODE_NOT_LOGGED_IN, "账号未登录");
+        BilibiliCredentialStore loggedOutStore = mock(BilibiliCredentialStore.class);
+        when(loggedOutStore.load()).thenReturn(Optional.of(new Cookies("sess", "jct", "buvid")));
+        BilibiliAccountService loggedOutService =
+                new BilibiliAccountService(loggedOutApi, loggedOutStore, new NovaBilibiliProperties());
+        loggedOutService.onContextClosed();
+
+        assertFalse(loggedOutService.login());
+        assertEquals(0, loggedOutMetrics.count(BilibiliRiskMetrics.Kind.LOGIN_UID_FAILURE, Duration.ofHours(1)),
+                "明确未登录有服务端答复, 不在「获取登录账号失败」的口径里");
     }
 
     @Test
@@ -492,6 +531,28 @@ class BilibiliAccountServiceTest {
      */
     private Cookies refreshableCookies() {
         return new Cookies("sess", "jct", "buvid", "old-token");
+    }
+
+    /**
+     * 只在「查登录账号」一路上按设定方式失败的假接口
+     * <p>
+     * 计数要看真实的记账路径，风险指标用真对象，不打桩
+     */
+    private static final class UnstableMyInfoApi extends BilibiliApiUtil {
+        private RuntimeException failure;
+
+        UnstableMyInfoApi(BilibiliRiskMetrics riskMetrics) {
+            super(mock(HttpUtil.class), new NovaBilibiliProperties(), riskMetrics);
+        }
+
+        @Override
+        public JSONObject requestBilibiliApi(String url, String method, Map<String, String> headers,
+                                             Map<String, Object> params) {
+            if (failure == null) {
+                throw new IllegalStateException("测试忘了设定这一路的失败方式");
+            }
+            throw failure;
+        }
     }
 
     /**

@@ -48,6 +48,27 @@ class BilibiliLoginHealthProbeTest {
     }
 
     @Test
+    @DisplayName("⚠️ 已登录但凭据暂未确认：如实标注降级，不许拼出「正常（uid null）」")
+    void shouldReportDegradedWhileLoginUnconfirmed() {
+        BilibiliAccountService account = mock(BilibiliAccountService.class);
+        when(account.isLoggedIn()).thenReturn(true);
+        // 保留凭据按已登录启动（启动验证没拿到答复）、uid 尚未确认时的真实状态
+        when(account.getLoginUid()).thenReturn(null);
+
+        HealthStatus status = probe(account, new NovaBilibiliProperties()).check();
+
+        // 抓的用户故障：重启时网络抖了一下，状态页写着「正常（uid null）」，级别还是正常
+        // ——凭据真假未明不是「正常」，null 也不是说给使用者的话
+        assertEquals(HealthStatus.Level.DEGRADED, status.level(), "凭据真假未明不能记成正常");
+        assertTrue(status.summary().contains("暂未确认"), "实际: " + status.summary());
+        assertFalse(status.summary().contains("null"), "uid 未知不该把 null 拼给使用者");
+        assertTrue(status.advice().contains("网络"), "要讲清多半是网络不通, 实际: " + status.advice());
+        assertTrue(status.advice().contains("照常运行"), "要讲清已保留凭据照常运行, 实际: " + status.advice());
+        assertTrue(status.advice().contains("自动关注"), "要讲清确认之前自动关注暂停, 实际: " + status.advice());
+        assertTrue(status.advice().contains("自动确认"), "要讲清网络恢复后会自动确认, 实际: " + status.advice());
+    }
+
+    @Test
     @DisplayName("已登录且可自动续期时应判定为正常且不额外提示")
     void shouldReportPlainOkWhenRefreshable() {
         BilibiliAccountService account = loggedIn();

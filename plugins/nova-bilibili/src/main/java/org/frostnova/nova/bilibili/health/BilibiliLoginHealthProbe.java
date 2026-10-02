@@ -85,7 +85,16 @@ public class BilibiliLoginHealthProbe implements HealthProbe {
             );
         }
 
-        String summary = "正常（uid " + accountService.getLoginUid() + "）";
+        Long uid = accountService.getLoginUid();
+        if (uid == null) {
+            // 保留凭据按已登录启动、还没拿到账号身份：凭据真假未明，不能记成正常，
+            // 更不能把 null 拼给使用者。自动关注在确认前是停着的，也一并说清
+            return HealthStatus.degraded("登录凭据暂未确认",
+                    "启动时没能向哔哩哔哩确认登录态，多半是网络不通。已保留凭据照常运行，"
+                            + "确认之前自动关注暂停，网络恢复后会自动确认");
+        }
+
+        String summary = "正常（uid " + uid + "）";
 
         if (isStale()) {
             return HealthStatus.degraded(

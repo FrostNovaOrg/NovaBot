@@ -73,6 +73,16 @@ public class BilibiliStartupListener {
      */
     private static final Duration RESYNC_DEBOUNCE = Duration.ofSeconds(2);
 
+    /**
+     * 凭据暂未确认时第一次补问的等待
+     */
+    private static final Duration UNVERIFIED_LOGIN_REASK_FIRST_DELAY = Duration.ofSeconds(60);
+
+    /**
+     * 复检关闭时补问等待的封顶值，取复检间隔的默认值（见 NovaBilibiliProperties.Account 的 verifyInterval）
+     */
+    private static final int DEFAULT_VERIFY_INTERVAL_SECONDS = 600;
+
     @Autowired
     public BilibiliStartupListener(BilibiliAccountService accountService,
                                    BilibiliLiveRoomService liveRoomService,
@@ -119,6 +129,7 @@ public class BilibiliStartupListener {
 
         startLiveChannel();
         startDynamicChannel(loggedIn);
+        startUnverifiedLoginReask(loggedIn);
 
         servicesStarted.set(true);
         if (changeSeenBeforeStartup.get()) {
@@ -269,5 +280,46 @@ public class BilibiliStartupListener {
 
         log.info("登录态复检已启动, 每 {} 秒检查一次; 凭据自动续期{}",
                 interval, properties.getAccount().isAutoRefreshCookie() ? "已启用" : "已关闭");
+    }
+
+    /**
+     * 凭据暂未确认时的补问
+     * <p>
+     * 保留凭据按已登录启动后，uid 要等第一次成功复检才补上，而首次复检在一个复检间隔之后
+     * 才跑（默认十分钟）；复检间隔配成 0 时定期复检压根不登记，uid 永远补不上，自动关注
+     * 也就一直停着。这里独立登记一串补问：一分钟后问第一次，没答复逐次加倍再等，封顶为
+     * 复检间隔（复检关闭时按默认间隔封顶）。答复的处理与定期复检同一条路，拿到明确答复就停。
+     */
+    private void startUnverifiedLoginReask(boolean loggedIn) {
+        if (!loggedIn || accountService.getLoginUid() != null || accountService.isStopping()) {
+            return;
+        }
+
+        int configured = properties.getAccount().getVerifyInterval();
+        Duration cap = Duration.ofSeconds(configured > 0 ? configured : DEFAULT_VERIFY_INTERVAL_SECONDS);
+        log.info("登录凭据暂未确认, {} 秒后先试着确认一次", UNVERIFIED_LOGIN_REASK_FIRST_DELAY.toSeconds());
+        scheduleReask(UNVERIFIED_LOGIN_REASK_FIRST_DELAY, cap);
+    }
+
+    /**
+     * 排一次补问；到点仍没拿到答复时，按加倍的间隔（封顶为复检间隔）再排下一次
+     * @param delay 距这次补问的等待
+     * @param cap 等待的封顶
+     */
+    private void scheduleReask(Duration delay, Duration cap) {
+        scheduler.schedule(() -> {
+            // 定期复检可能已先给出答案；已掉登录或正在停机时也不用再问
+            if (accountService.isStopping() || !accountService.isLoggedIn() || accountService.getLoginUid() != null) {
+                return;
+            }
+
+            // 与定期复检同一条路：拿到 uid 补上，明确未登录走既有失效告警
+            accountService.verify();
+
+            if (accountService.isLoggedIn() && accountService.getLoginUid() == null) {
+                Duration next = delay.multipliedBy(2);
+                scheduleReask(next.compareTo(cap) > 0 ? cap : next, cap);
+            }
+        }, Instant.now().plus(delay));
     }
 }

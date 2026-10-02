@@ -1562,6 +1562,20 @@ public class BilibiliApiUtil {
     }
 
     /**
+     * 记一笔「获取登录账号失败」
+     * <p>
+     * 口径与 {@link #getLoginUid()} 一致：只有「这次没问到答案」才记，明确未登录不记。
+     * 启动时验证保存的凭据走的是不吞异常的 {@link #fetchLoginUid()}，网络或接口异常时
+     * 凭据按「暂未确认」保留——那条路上同样没问到答案，这笔账不该因为换了条路就漏记。
+     * @param detail 记账明细，以端点名开头，与 {@link #getLoginUid()} 里的写法一致
+     */
+    public void recordLoginUidFailure(String detail) {
+        if (riskMetrics != null) {
+            riskMetrics.record(BilibiliRiskMetrics.Kind.LOGIN_UID_FAILURE, detail);
+        }
+    }
+
+    /**
      * 查询当前登录账号的 uid，不吞异常
      * <p>
      * 未登录时服务端返回业务错误代码 {@link #CODE_NOT_LOGGED_IN}，据此抛出

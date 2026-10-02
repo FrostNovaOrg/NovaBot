@@ -186,6 +186,34 @@ class BilibiliAutoFollowTest {
     }
 
     @Test
+    @DisplayName("登录凭据暂未确认：安静跳过且只记一行说明；uid 补上后下一轮照常取关注列表")
+    void unconfirmedLoginPausesFollowQuietly() {
+        // 抓的用户故障：重启撞上网络抖动、凭据按已登录保留时，自动关注每 30 秒记一条
+        // 「未能取得完整的关注列表」，新配的主播也不关注——它只是还没拿到账号身份，
+        // 该安静等确认，而不是逐轮报一遍取不到
+        when(account.getLoginUid()).thenReturn(null);
+        followTask.run();
+        followTask.run();
+        followTask.run();
+
+        assertEquals(List.of(), api.pageRequests, "uid 未知时不该翻关注列表, 实际翻了: " + api.pageRequests);
+        assertEquals(List.of(), api.followRequests, "uid 未知时不该发关注请求, 实际发了: " + api.followRequests);
+        assertTrue(warnContaining("未能取得完整的关注列表") == null,
+                "uid 未知不该逐轮记警告, 实际日志: " + messages());
+
+        List<String> notices = messages().stream()
+                .filter(message -> message.contains("暂未确认"))
+                .toList();
+        assertEquals(1, notices.size(), "只在进这个状态时记一行说明, 实际: " + messages());
+
+        // uid 补上后（补问或复检拿到账号身份），下一轮照常取关注列表、照常补关注
+        when(account.getLoginUid()).thenReturn(LOGIN_UID);
+        followTask.run();
+
+        assertEquals(List.of(1, 2), api.pageRequests, "uid 补上后下一轮应照常翻关注列表, 实际: " + api.pageRequests);
+    }
+
+    @Test
     @DisplayName("推送名单没变：下一轮不再拉关注列表")
     void unchangedRosterDoesNotRefetch() {
         followTask.run();
