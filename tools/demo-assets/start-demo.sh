@@ -74,11 +74,9 @@ if [ -n "$LSOF" ] && [ -n "$("$LSOF" -nP -iTCP:"$PORT" -sTCP:LISTEN 2>/dev/null)
     exit 1
 fi
 
-if pgrep -f 'NovaBot\.jar' >/dev/null 2>&1; then
-    echo "NovaBot.jar is already running; not starting a second copy" >&2
-    pgrep -f 'NovaBot\.jar' >&2
-    exit 1
-fi
+# 已在跑的判断只认本脚本自己起的那个：按名搜 pgrep 会误中同机别处的 NovaBot（别的
+# 工作树、正式实例），演示起不来。本脚本此时尚未起过进程，自己的实例数恒为 0；
+# 端口占用那道 lsof 闸已在上面拦住真冲突。
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/novabot-demo-XXXXXX")"
 LOG="$WORK/boot.log"
@@ -140,6 +138,8 @@ TOKEN=""
 CODE_ROOT=""
 CODE_CONFIG=""
 DEADLINE=$((SECONDS + TIMEOUT))
+# 先等令牌那行出来、取到令牌，再带令牌探。不带令牌敲 /config 会被记进工程日志的
+# 「令牌校验失败」，截日志图时那几行会被当成真故障——探活本身不该制造故障。
 while [ "$SECONDS" -lt "$DEADLINE" ]; do
     if ! kill -0 "$PID" 2>/dev/null; then
         wait "$PID" || true
@@ -147,46 +147,48 @@ while [ "$SECONDS" -lt "$DEADLINE" ]; do
         tail -n 40 "$LOG" >&2
         exit 1
     fi
-    if [ -z "$TOKEN" ]; then
-        TOKEN="$(grep -oE 'config[?]token=[A-Za-z0-9_.-]+' "$LOG" 2>/dev/null | tail -n 1 | cut -d= -f2 || true)"
-    fi
-    CODE_ROOT="$(python3 - "$PORT" / <<'PY'
-import http.client, sys
-port, path = int(sys.argv[1]), sys.argv[2]
-conn = http.client.HTTPConnection("127.0.0.1", port, timeout=3)
-try:
-    conn.request("GET", path)
-    resp = conn.getresponse()
-    print(resp.status)
-except Exception:
-    print("0")
-finally:
-    conn.close()
-PY
-)"
-    CODE_CONFIG="$(python3 - "$PORT" /config <<'PY'
-import http.client, sys
-port, path = int(sys.argv[1]), sys.argv[2]
-conn = http.client.HTTPConnection("127.0.0.1", port, timeout=3)
-try:
-    conn.request("GET", path)
-    resp = conn.getresponse()
-    print(resp.status)
-except Exception:
-    print("0")
-finally:
-    conn.close()
-PY
-)"
-    # Console lives at /config. Bare / has no handler (404) on this build.
-    # /config answers as soon as the web server is up; the token line is logged later,
-    # once startup finishes. Wait for both, or the token read above can come back empty.
-    if { [ "$CODE_CONFIG" = "200" ] || [ "$CODE_CONFIG" = "302" ] || [ "$CODE_CONFIG" = "401" ]; } \
-        && [ -n "$TOKEN" ]; then
+    TOKEN="$(grep -oE 'config[?]token=[A-Za-z0-9_.-]+' "$LOG" 2>/dev/null | tail -n 1 | cut -d= -f2 || true)"
+    if [ -n "$TOKEN" ]; then
         break
     fi
     sleep 1
 done
+
+if [ -z "$TOKEN" ]; then
+    echo "console token line did not appear in the startup log within ${TIMEOUT}s" >&2
+    tail -n 40 "$LOG" >&2
+    exit 1
+fi
+
+# 令牌到手后再探；/config?token=… 才是带凭证的探法，不再产生「令牌校验失败」。
+CODE_ROOT="$(python3 - "$PORT" / <<'PY'
+import http.client, sys
+port, path = int(sys.argv[1]), sys.argv[2]
+conn = http.client.HTTPConnection("127.0.0.1", port, timeout=3)
+try:
+    conn.request("GET", path)
+    resp = conn.getresponse()
+    print(resp.status)
+except Exception:
+    print("0")
+finally:
+    conn.close()
+PY
+)"
+CODE_CONFIG="$(python3 - "$PORT" "$TOKEN" <<'PY'
+import http.client, sys
+port, token = int(sys.argv[1]), sys.argv[2]
+conn = http.client.HTTPConnection("127.0.0.1", port, timeout=3)
+try:
+    conn.request("GET", "/config?token=" + token)
+    resp = conn.getresponse()
+    print(resp.status)
+except Exception:
+    print("0")
+finally:
+    conn.close()
+PY
+)"
 
 if [ "$CODE_CONFIG" != "200" ] && [ "$CODE_CONFIG" != "302" ] && [ "$CODE_CONFIG" != "401" ]; then
     echo "HTTP /config did not answer (root=$CODE_ROOT config=$CODE_CONFIG) within ${TIMEOUT}s" >&2
@@ -266,9 +268,10 @@ if [ -n "$PID" ]; then
     PID=""
 fi
 
-if pgrep -f 'NovaBot\.jar' >/dev/null 2>&1; then
-    echo "NovaBot.jar still running after stop" >&2
-    pgrep -f 'NovaBot\.jar' >&2
+# 停机后的存活判断只看自己记下的 pid；按名搜 pgrep 会把同机别处的 NovaBot 算进来，
+# 正式实例一直在跑时演示脚本会在这一步报错退出。
+if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+    echo "demo process $PID still running after stop" >&2
     exit 1
 fi
-echo "pgrep NovaBot.jar: empty"
+echo "demo process stopped"

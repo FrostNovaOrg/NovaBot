@@ -16,6 +16,16 @@ novabot:
         type: 1
         num: 910000001
 
+      senders:              # 机器人连接列表：示例值，地址指本机无人监听的端口，只为让首页自检不写「未配置任何机器人」
+        - name: qq-onebot
+          api: /send
+          websocket: false
+          one-bot-address: 127.0.0.1
+          one-bot-http-port: 39000
+          one-bot-websocket-port: 39001
+          one-bot-http-token: demo-token-not-real
+          one-bot-websocket-token: demo-token-not-real
+
   bilibili:
     live:
       enable-connect-live-room: false   # 演示时不去连直播间的长连接
