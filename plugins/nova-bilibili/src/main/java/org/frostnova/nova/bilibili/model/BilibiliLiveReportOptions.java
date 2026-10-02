@@ -159,7 +159,7 @@ public class BilibiliLiveReportOptions {
     private static final BilibiliLiveReportOptions DEFAULTS = new BilibiliLiveReportOptions();
 
     /**
-     * 版式项一览：key、人话名、一句话说明、类型、默认值、取值范围
+     * 版式项一览：key、人话名、一句话说明、类型、默认值、取值范围、随金额
      * <p>
      * 顺序即界面上的顺序：先是整块的开关，后是几张排行榜——按使用者读报告时
      * 从上往下的次序排，而不是按字段在类里的先后。
@@ -168,15 +168,27 @@ public class BilibiliLiveReportOptions {
      * {@code BilibiliLiveReportLayoutOptionsTest} 两个方向现算：表里有的键 {@link #of} 都真的读，
      * {@link #of} 读的键表里都有。🔴 <b>一个漏在表外的版式项，和一个不存在的版式项，
      * 在界面上长得一样</b>——它照样生效，只是没人配得到它。
+     * <p>
+     * 🔴 <b>随金额那一栏说的是画图真的会做的事</b>：区块出不出由
+     * {@code BilibiliLiveReportPainter} 按会话的金额可见性决定，这里只是把它声明给界面，
+     * 好让控制台在当前设定下不出图的项上灰掉并写原因。改画图的取舍时这一栏要跟着动，
+     * 两个方向的一致由 {@code BilibiliLiveReportOptionRevenueLinkTest} 对着量——
+     * 声明错一项，界面就灰错一项，而两头都不会报错。
      */
     private static final List<HandlerOption> LAYOUT_OPTIONS = List.of(
             HandlerOption.bool("cover", "直播间封面", "报告顶部的封面横幅", DEFAULTS.cover),
-            HandlerOption.bool("cards", "数据卡片", "弹幕、流水、点赞等概览卡片", DEFAULTS.cards),
+            revenue(HandlerOption.bool("cards", "数据卡片", "弹幕、流水、点赞等概览卡片", DEFAULTS.cards),
+                    HandlerOption.RevenueVisibility.RESTYLED_WHEN_HIDDEN,
+                    "隐藏金额的会话里流水卡改写付费人数，不带金额"),
             HandlerOption.bool("fans_change", "本场变化", "粉丝、粉丝团与大航海人数的涨幅，每次出报告要多打三个接口", DEFAULTS.fansChange),
-            HandlerOption.bool("interaction_curve", "互动曲线", "弹幕、流水等随时间的变化曲线", DEFAULTS.interactionCurve),
-            HandlerOption.bool("guard_list", "本场开通大航海名单",
+            revenue(HandlerOption.bool("interaction_curve", "互动曲线", "弹幕、流水等随时间的变化曲线", DEFAULTS.interactionCurve),
+                    HandlerOption.RevenueVisibility.RESTYLED_WHEN_HIDDEN,
+                    "隐藏金额的会话里曲线照画、不标金额峰值"),
+            revenue(HandlerOption.bool("guard_list", "本场开通大航海名单",
                     "本场开通大航海的观众。只在隐藏金额的会话里画出——显示金额的会话里这份名单不画，大航海全名单上的「本场」小标承担同一件事",
                     DEFAULTS.guardList),
+                    HandlerOption.RevenueVisibility.ONLY_WHEN_HIDDEN,
+                    "显示金额的会话里不画这张名单：大航海全名单上的「本场」小标承担了同一件事"),
             HandlerOption.bool("guard_list_all", "大航海全名单",
                     "这位主播当前全部大航海，不只本场新开通。拉不到时这一段会写明，不会让整张报告失败",
                     DEFAULTS.guardListAll),
@@ -184,16 +196,33 @@ public class BilibiliLiveReportOptions {
                     DEFAULTS.guardListLimit, 0, MAX_GUARD_LIST_ALL),
             HandlerOption.bool("danmu_cloud", "弹幕词云", "本场弹幕的词云图", DEFAULTS.danmuCloud),
             HandlerOption.bool("highlights", "高能时刻", "弹幕最密集的几个时段，对应可剪切片的时间点", DEFAULTS.highlights),
-            HandlerOption.bool("gift_list", "礼物列表", "本场收到的礼物与大航海，按种类列出个数", DEFAULTS.giftList),
+            revenue(HandlerOption.bool("gift_list", "礼物列表", "本场收到的礼物与大航海，按种类列出个数", DEFAULTS.giftList),
+                    HandlerOption.RevenueVisibility.ONLY_WHEN_SHOWN,
+                    "隐藏金额的会话里不画这一段：收到的礼物清单也是消费明细，与流水排行同一个判断"),
             HandlerOption.integer("danmu_ranking", "弹幕排行", "展示前几名，0 为不展示",
                     DEFAULTS.danmuRanking, 0, MAX_RANKING_COUNT),
-            HandlerOption.integer("gift_ranking", "流水排行", "每人本场礼物、醒目留言与上舰的金额合计，展示前几名，0 为不展示",
+            revenue(HandlerOption.integer("gift_ranking", "流水排行", "每人本场礼物、醒目留言与上舰的金额合计，展示前几名，0 为不展示",
                     DEFAULTS.giftRanking, 0, MAX_RANKING_COUNT),
-            HandlerOption.integer("super_chat_ranking", "醒目留言名单", "发过醒目留言的观众，每人一行带原文，展示前几人，0 为不展示",
+                    HandlerOption.RevenueVisibility.ONLY_WHEN_SHOWN,
+                    "隐藏金额的会话里整榜不出：每一行都是某人的消费合计，去掉数字也仍然在排消费"),
+            revenue(HandlerOption.integer("super_chat_ranking", "醒目留言名单", "发过醒目留言的观众，每人一行带原文，展示前几人，0 为不展示",
                     DEFAULTS.superChatRanking, 0, MAX_RANKING_COUNT),
+                    HandlerOption.RevenueVisibility.ONLY_WHEN_SHOWN,
+                    "隐藏金额的会话里整榜不出：每一行都是某人的消费合计，去掉数字也仍然在排消费"),
             // 盲盒榜默认关闭：多数直播间没有盲盒数据，开着只会让报告多一块空白
-            HandlerOption.integer("box_ranking", "盲盒榜", "每人开了几个、盈亏多少，展示前几名，0 为不展示",
-                    DEFAULTS.boxRanking, 0, MAX_RANKING_COUNT));
+            revenue(HandlerOption.integer("box_ranking", "盲盒榜", "每人开了几个、盈亏多少，展示前几名，0 为不展示",
+                    DEFAULTS.boxRanking, 0, MAX_RANKING_COUNT),
+                    HandlerOption.RevenueVisibility.RESTYLED_WHEN_HIDDEN,
+                    "隐藏金额的会话里只写个数，不写盈亏"));
+
+    /**
+     * 给一项标上随金额：只在上面那张表里用，复制其余七栏、换掉随金额两栏
+     */
+    private static HandlerOption revenue(HandlerOption option,
+                                         HandlerOption.RevenueVisibility visibility, String note) {
+        return new HandlerOption(option.key(), option.label(), option.description(), option.type(),
+                option.defaultValue(), option.min(), option.max(), visibility, note);
+    }
 
     /**
      * 这份报告有哪些版式项

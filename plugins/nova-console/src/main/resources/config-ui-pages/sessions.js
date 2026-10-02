@@ -54,7 +54,12 @@ export function renderIncomplete(entries) {
  * @param ctx 这个会话的全部事实与算好的摘要，见 push.js 的 sectionSession
  */
 export function sessionSettings(host, ctx) {
-  repaintSession = () => sessionSettings(host, ctx);
+  // 重画是「换掉」，不是「再摆一份」：host 收的是自己的容器（见 push.js 段 4），
+  // 先清再画。不清的话，草稿每拨一下这一段就长出一倍，而摘要行的字还是旧的
+  repaintSession = () => {
+    host.innerHTML = '';
+    sessionSettings(host, ctx);
+  };
   revenueRow(host, ctx);
   commandRow(host, ctx);
   subscriptionRow(host, ctx);

@@ -13,6 +13,23 @@
 
 const drafts = new Map();
 
+/**
+ * 金额草稿变了要跟着重画的那一份
+ *
+ * 版式区灰不灰按「服务端＋草稿」现算，预览与图下说明也按草稿画——它们住在
+ * 通道页的另外几段里，不归这个文件画。草稿是这里管的，重画的通知就从这里发：
+ * 单槽位，最后一次注册的算数（同一时刻屏幕上只有一个通道的版式区在听）。
+ */
+let revenueDraftListener = () => {};
+
+/**
+ * 登记金额草稿变了之后的重画；传空即注销
+ * @param fn 重画那一支，无参
+ */
+export function onRevenueDraftChange(fn) {
+  revenueDraftListener = typeof fn === 'function' ? fn : () => {};
+}
+
 function keyOf(target) {
   return target.platform + ':' + target.type + ':' + target.num;
 }
@@ -64,6 +81,7 @@ export function setRevenueDraft(target, to, from) {
   const s = slotOf(target);
   s.revenue = (to === from) ? null : {from: !!from, to: !!to};
   trim(s);
+  revenueDraftListener();
 }
 
 /** 想要的金额可见性；没改过则为 undefined */

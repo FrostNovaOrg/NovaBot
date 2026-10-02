@@ -667,6 +667,12 @@ export function buildTemplateEditor(host, options) {
  * 前端不写死一份：写死的那一份迟早与真正生效的对不上，而对不上时不会有任何报错，
  * 只会让人以为「配了没用」。
  * <p>
+ * 版式项还带着「随金额」一栏（revenueVisibility／revenueNote，处理器自报）：
+ * 当前会话的金额设定下不出图的项灰掉、写一句原因并指向「本群设置」的金额开关，
+ * 只变样的项不灰、加一句说明——不然使用者把「流水排行」调成前 10 名，
+ * 图上永远没有这一榜，还以为是坏了。灰不灰读 opts.revenueVisible 现算的值
+ * （会话存的设定＋草稿），草稿里拨了当场跟着变；存着的值不清不改。
+ * <p>
  * ℹ️ 服务端另有一支 {@code /api/report/layout-options} 给同一张表。<b>这里不调它</b>——
  * 同一张表从两个口进来，两个口的字段名还不一样（那边是 {@code default}，
  * 这边是 {@code defaultValue}），而「这一项改过没有」在别处是按后者判的。
@@ -676,7 +682,10 @@ export function buildTemplateEditor(host, options) {
  * 这些地方会悄悄给出不同的结果，而那正是所见即所得要防的事。
  * @param host 挂在哪
  * @param options paramsOf/editable/onChange 三项与 buildTemplateEditor 同形，另加
- *        items（版式项清单）与 render（按当前这套版式画一张的那一支）
+ *        items（版式项清单）、render（按当前这套版式画一张的那一支）、
+ *        caption（图下那行说明，可为函数：按草稿现说，每次重画时重取）、
+ *        revenueVisible（算当前金额可见性的函数，含草稿；不传则不灰任何项）
+ * @return {{repaint: Function}} repaint：金额草稿变了之类的外部变化进来时，整段重画一遍
  */
 export function buildLayoutEditor(host, options) {
   const opts = options || {};
@@ -688,11 +697,9 @@ export function buildLayoutEditor(host, options) {
   const image = el('div', 'rep-img');
   image.id = 'rep-preview';
   view.appendChild(image);
-  if (opts.caption) {
-    const cap = el('p', 'hint');
-    cap.textContent = opts.caption;
-    view.appendChild(cap);
-  }
+  const cap = el('p', 'hint');
+  cap.id = 'rep-caption';
+  view.appendChild(cap);
   box.appendChild(view);
   host.appendChild(box);
 
@@ -704,6 +711,29 @@ export function buildLayoutEditor(host, options) {
     return stored === undefined || stored === null ? option.defaultValue : stored;
   }
 
+  /**
+   * 这一项在当前的金额设定下怎么走
+   *
+   * @return {string|null} 'off'＝不出图，灰掉并写原因；'styled'＝照出但变样，加一句说明；
+   *   null＝照常，什么都不加
+   */
+  function revenueState(option, visible) {
+    if (typeof opts.revenueVisible !== 'function') return null;
+    if (option.revenueVisibility === 'ONLY_WHEN_SHOWN') return visible === false ? 'off' : null;
+    if (option.revenueVisibility === 'ONLY_WHEN_HIDDEN') return visible === true ? 'off' : null;
+    if (option.revenueVisibility === 'RESTYLED_WHEN_HIDDEN') return 'styled';
+    return null;
+  }
+
+  /** 灰掉的原因那句：处理器给的为什么，加上去哪儿改这一段 */
+  function whyText(option) {
+    const note = option.revenueNote || '这一项在当前的金额设定下不出图';
+    const how = option.revenueVisibility === 'ONLY_WHEN_HIDDEN'
+      ? '在下方「本群设置」的「金额可见」里关掉金额后才会画出'
+      : '在下方「本群设置」的「金额可见」里打开金额后才会画出';
+    return note + '。' + how + '。';
+  }
+
   function change(option, value) {
     const params = Object.assign({}, (opts.paramsOf ? opts.paramsOf() : null) || {});
     params[option.key] = value;
@@ -712,15 +742,19 @@ export function buildLayoutEditor(host, options) {
   }
 
   function paint() {
+    const visible = typeof opts.revenueVisible === 'function' ? opts.revenueVisible() : undefined;
     controls.innerHTML = '';
     for (const option of items) {
-      const row = el('div', 'rep-row');
+      const state = revenueState(option, visible);
+      const off = state === 'off';
+      const row = el('div', 'rep-row' + (off ? ' rev-off' : ''));
       if (String(option.type).toUpperCase() === 'BOOLEAN') {
         const label = el('label', 'switch');
         label.innerHTML = '<input type="checkbox"' + (valueOf(option) ? ' checked' : '')
-          + (opts.editable ? '' : ' disabled') + '>';
-        label.querySelector('input').addEventListener('change',
-          event => change(option, event.target.checked));
+          + (!opts.editable || off ? ' disabled' : '') + '>';
+        const input = label.querySelector('input');
+        input.setAttribute('aria-label', option.label || option.key);
+        input.addEventListener('change', event => change(option, event.target.checked));
         row.appendChild(label);
       } else {
         const input = el('input', 'rep-n');
@@ -728,7 +762,10 @@ export function buildLayoutEditor(host, options) {
         input.value = String(valueOf(option));
         if (option.min !== null && option.min !== undefined) input.min = String(option.min);
         if (option.max !== null && option.max !== undefined) input.max = String(option.max);
-        input.disabled = !opts.editable;
+        input.setAttribute('aria-label', option.label || option.key);
+        // 灰掉时锁的不只是样式：能拨却不起作用的开关，比锁着的更费解。
+        // 存着的值不清不改，亮回来还是原来那个数
+        input.disabled = !opts.editable || !!off;
         input.addEventListener('change', event => change(option, Number(event.target.value)));
         row.appendChild(input);
       }
@@ -736,12 +773,21 @@ export function buildLayoutEditor(host, options) {
       const text = el('div', 'rep-txt');
       text.innerHTML = '<b>' + esc(option.label || option.key) + '</b>'
         + '<p>' + esc(option.description || '') + '</p>';
+      if (off) {
+        // 原因与去哪儿改写在灰掉的那行里：不写的话，「配了不出图」与「坏了」长得一样
+        text.appendChild(el('p', 'rep-why')).textContent = whyText(option);
+      } else if (state === 'styled') {
+        // 变样的那三项不灰：它们照出，只是换了不带钱的说法——灰掉反而让人以为配不了
+        text.appendChild(el('p', 'rep-why')).textContent = option.revenueNote || '';
+      }
       row.appendChild(text);
       controls.appendChild(row);
     }
     if (!opts.editable && opts.lockedNote) {
       controls.appendChild(el('p', 'hint')).textContent = opts.lockedNote;
     }
+    cap.textContent = typeof opts.caption === 'function' ? opts.caption() : (opts.caption || '');
+    cap.hidden = !cap.textContent;
     redraw();
   }
 
@@ -769,4 +815,5 @@ export function buildLayoutEditor(host, options) {
       '这一类通知没有可调的版式项，或对应插件没加载。';
   }
   paint();
+  return {repaint: paint};
 }
