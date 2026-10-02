@@ -9,6 +9,7 @@ import {$, api, currentChangeSource, el, esc, markDirty, phrase, registerChangeS
 import {PROBE_ANCHOR, shouldOpenSetup} from './home-model.js';
 import {focusStation, loadTargets, mountLinkCard, refreshLinks, sendTestMessage} from './links.js';
 import {loadLog, stopFollow, syncLogView} from './log.js';
+import {manualHref} from './manual-link.js';
 import {refreshHome, renderStatus, runSelfTest} from './overview.js';
 import {setAuthState} from './settings-auth.js';
 import {copyConfigPath, discard, filterSettings, focusGroup, renderConfigPath, renderGeneral, save, stopWatchingGroups, toggleKeyNames}
@@ -483,6 +484,11 @@ export function considerSetupRedirect(status, login) {
  * @param withData 是否顺带重取本页的数据。首屏那一次只摆版式，数据由随后的整体载入取
  */
 function applyRoute(withData = true) {
+  // 认地址栏原文，不认解析后落到哪一页：认不出的地址会被画成首页，
+  // 说明若跟着去首页那一章，点进去就不是这一页的章
+  const manual = $('#side-manual');
+  if (manual) manual.href = manualHref(location.hash);
+
   const {name, sub, tail, card, redirect} = parseHash();
 
   // 旧地址转到它现在所在的页。改地址会再触发一次 hashchange，这一趟到此为止

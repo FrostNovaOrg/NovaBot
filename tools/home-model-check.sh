@@ -8,7 +8,7 @@
 #
 # 顺带把首页与装配底座的前端模块过一遍语法（node --input-type=module --check < 文件）：
 # 它们是 ES module，没有构建步骤，语法错要等页面加载时才炸，而那时报的是一句与出错文件无关的「载入失败」。
-# main/core/store 三件跨页底座没有同名尺，就近归这把量；config-ui 下每份 js 恰由一把尺过语法，
+# main/core/store 与手册链接这些跨页底座没有同名尺，就近归这把量；config-ui 下每份 js 恰由一把尺过语法，
 # 别在两把尺里重量同一份——重复不添判力，只添两边清单不同步的空当。
 # 走 stdin 加 --input-type=module 之后坏语法会红（Node 22 实测）；直接 `node --check 文件`
 # 对含 import 的 .js 仍一律返 0，那种写法本尺不用。
@@ -48,7 +48,7 @@ fi
 # 撞上 import/export 会静默放过，整把尺对这些模块文件恒绿——实测 Node 22，
 # 同一段坏语法 .mjs 红、.js 绿。stdin 形态强制按模块解析，尺才作数
 for f in "$UI"/home-model.js "$UI"/overview.js "$UI"/main.js "$UI"/core.js \
-         "$UI"/store.js; do
+         "$UI"/store.js "$UI"/manual-link.js; do
     if node --input-type=module --check < "$f"; then
         echo "语法 绿 $f"
     else

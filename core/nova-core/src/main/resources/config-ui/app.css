@@ -110,6 +110,10 @@ body{margin:0;background:var(--ground);color:var(--text);
    六条的文字会彼此错开三像素，看上去像抖了一下 */
 .nav a[aria-current="page"]::before{content:"";position:absolute;left:-8px;top:6px;bottom:6px;
   width:3px;border-radius:2px;background:var(--nav-ind)}
+/* 使用说明不是导航里的一页，所以不走 .nav a 那套当前页指示条 */
+.side-manual{display:flex;align-items:center;margin-top:12px;padding:6px 10px;
+  color:var(--dim);text-decoration:none;font-size:13px;border-radius:var(--r-ctl)}
+.side-manual:hover{color:var(--accent);background:var(--soft)}
 .verline{margin-top:16px;padding:10px 10px 0;border-top:1px solid var(--line);
   display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--dim);
   position:relative}
@@ -153,6 +157,7 @@ body{margin:0;background:var(--ground);color:var(--text);
   .nav a{white-space:nowrap;padding:6px 10px}
   .nav a svg{display:none}
   .nav a[aria-current="page"]::before{left:8px;right:8px;top:auto;bottom:-8px;width:auto;height:2px}
+  .side-manual{margin-top:0;padding:4px 8px;white-space:nowrap}
   .verline{display:none}
   #auth-actions{margin-top:0;flex-direction:row;flex:0 0 100%;justify-content:flex-end;gap:6px}
   #auth-actions button{padding:4px 8px;font-size:13px;white-space:nowrap}

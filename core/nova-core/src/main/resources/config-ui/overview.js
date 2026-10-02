@@ -6,6 +6,7 @@
  */
 
 import {$, api, clock, el, esc, markDirty, say, today} from './core.js';
+import {extAttrs} from './manual-link.js';
 import {homeModel, stationHref} from './home-model.js';
 import {considerSetupRedirect, pageStatus, refreshPages} from './main.js';
 import {store} from './store.js';
@@ -287,7 +288,7 @@ const SOURCE_URL = 'https://github.com/FrostNovaOrg/NovaBot';
  */
 function renderAbout(version) {
   $('#about-line').innerHTML = esc(version ? 'NovaBot v' + version : 'NovaBot')
-    + ' · AGPL-3.0 · 源码 <a href="' + SOURCE_URL + '" target="_blank" rel="noopener">'
+    + ' · AGPL-3.0 · 源码 <a href="' + SOURCE_URL + '"' + extAttrs(SOURCE_URL) + '>'
     + esc(SOURCE_URL) + '</a>';
 }
 
