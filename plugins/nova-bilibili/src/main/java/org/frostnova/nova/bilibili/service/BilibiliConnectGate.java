@@ -9,6 +9,7 @@ import org.springframework.scheduling.TaskScheduler;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 全局连接放行闸门
@@ -35,6 +36,11 @@ public class BilibiliConnectGate {
      * 下一次允许放行的时刻。所有房间共用这一个游标，这就是"同一条时间轴"的全部含义
      */
     private Instant nextAllowedAt = Instant.EPOCH;
+
+    /**
+     * 停机开始后置上。已经排上的建连到点就放弃，不再执行。
+     */
+    private final AtomicBoolean refusing = new AtomicBoolean();
 
     @Autowired
     public BilibiliConnectGate(NovaBilibiliProperties properties,
@@ -66,8 +72,21 @@ public class BilibiliConnectGate {
         if (wait > 0) {
             log.debug("建连请求排队 {} 毫秒后放行", wait);
         }
-        scheduler.schedule(task, at);
+        scheduler.schedule(() -> {
+            if (refusing.get()) {
+                log.debug("退出中, 放弃这次建连");
+                return;
+            }
+            task.run();
+        }, at);
         return at;
+    }
+
+    /**
+     * 停机开始后调用。此后到点的首连、重连不再执行。
+     */
+    public void refuseFurtherConnects() {
+        refusing.set(true);
     }
 
     /**
