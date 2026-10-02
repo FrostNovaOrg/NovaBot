@@ -532,7 +532,8 @@ public class BilibiliAccountService {
     /**
      * 登录
      * <p>
-     * 优先使用已保存的凭据，凭据缺失或已失效时转为扫码登录。
+     * 优先使用已保存的凭据：凭据缺失、或服务端明确答复未登录时转为扫码登录；凭据只是暂时
+     * 无法验证（如网络故障）时保留凭据按已登录继续，真假交由定期复检确认。
      * <p>
      * 匿名模式下直接返回：<b>连已保存的凭据都不读</b>。读了就不叫匿名了——
      * 开着这个开关跑出来的数据必须与「这台机器上根本没有凭据」完全一致，
@@ -551,26 +552,58 @@ public class BilibiliAccountService {
         if (saved.isPresent() && saved.get().isComplete()) {
             api.setCookies(saved.get());
 
-            Long uid = api.getLoginUid();
-            if (uid != null) {
-                this.loginUid = uid;
-                this.loggedIn = true;
-                log.info("已使用保存的登录凭据登录, uid: {}", uid);
-                logCredentialCapability(api.getCookies());
-                return true;
-            }
+            try {
+                Long uid = api.fetchLoginUid();
 
-            log.warn("保存的登录凭据已失效, 需要重新扫码登录");
-            store.clear();
-        } else {
-            // 扫码之前直播采集是不会启动的，而这一等可以是无限久。只想要直播数据的人
-            // 不该被卡在这里却猜不到有别的路——把那条路当场说出来
-            log.info("尚无登录凭据。若只需要直播弹幕、礼物等数据而不需要动态推送, "
-                    + "可以把 novabot.bilibili.account.anonymous 设为 true 免登录启动, "
-                    + "代价见该配置项的说明");
+                if (uid != null) {
+                    this.loginUid = uid;
+                    this.loggedIn = true;
+                    log.info("已使用保存的登录凭据登录, uid: {}", uid);
+                    logCredentialCapability(api.getCookies());
+                    return true;
+                }
+
+                // 接口通了却没给出账号身份，与网络故障一样属于「这次没问到答案」
+                return proceedWithUnverifiedCredentials("接口未返回账号身份");
+            } catch (ResponseCodeException e) {
+                if (e.getCode() != BilibiliApiUtil.CODE_NOT_LOGGED_IN) {
+                    return proceedWithUnverifiedCredentials("接口返回未预期的错误代码 " + e.getCode());
+                }
+
+                log.warn("保存的登录凭据已失效, 需要重新扫码登录");
+                store.clear();
+                return loginByQrCode();
+            } catch (Exception e) {
+                return proceedWithUnverifiedCredentials(
+                        "接口调用失败(" + e.getClass().getSimpleName() + "): " + e.getMessage());
+            }
         }
 
+        // 扫码之前直播采集是不会启动的，而这一等可以是无限久。只想要直播数据的人
+        // 不该被卡在这里却猜不到有别的路——把那条路当场说出来
+        log.info("尚无登录凭据。若只需要直播弹幕、礼物等数据而不需要动态推送, "
+                + "可以把 novabot.bilibili.account.anonymous 设为 true 免登录启动, "
+                + "代价见该配置项的说明");
+
         return loginByQrCode();
+    }
+
+    /**
+     * 保存的凭据暂时无法验证时的处理：保留凭据，按已登录继续启动
+     * <p>
+     * 「无法验证」包括网络故障、接口异常与未预期的业务错误代码——它们都只说明这次没问到
+     * 答案，不说明凭据失效。凭据文件是扫码登录的唯一成果，删掉它就得重新扫码，而无人值守的
+     * 机器上没人扫，动态推送会一直停到有人来。所以凭据的去留只听服务端的明确答复：没有答复
+     * 就先留着，按已登录启动。定期复检会在网络恢复后给出真实结论，届时若确已失效，自会按
+     * 既有告警提示重新扫码。uid 此时未知，首次复检成功后补上。
+     * @param reason 验证未成的原因，写进日志
+     * @return 恒为 true——按已登录继续
+     */
+    private boolean proceedWithUnverifiedCredentials(String reason) {
+        this.loggedIn = true;
+        log.warn("暂时无法验证保存的登录凭据（{}）, 已保留凭据并按已登录启动, 网络恢复后由定期复检确认", reason);
+        logCredentialCapability(api.getCookies());
+        return true;
     }
 
     /**
