@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.fail;
  * 用的都是产品码。只看源码里有没有那句注销是不行的——注销写了、挂错时机，照样绿。
  * <p>
  * 「由 JUnit 拉起 node、找不到 node 时红而不是跳过」这两条规矩见 {@link FrontendFixture}；
- * 这里没直接用它的 run，是因为要多透传一个参数：掰断时以
+ * 这里没直接用它的 run，是因为要多透传一个参数：量一份改过的拷贝时以
  * {@code -Dnova.push.pages=<一份 config-ui-pages 拷贝>} 把量程指向拷贝，
  * 平常不设该属性，即量源码树里那一份。
  */
