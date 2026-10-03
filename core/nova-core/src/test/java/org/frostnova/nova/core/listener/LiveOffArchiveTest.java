@@ -14,6 +14,7 @@ import org.frostnova.nova.core.service.LiveDetailArchive;
 import org.frostnova.nova.core.service.LiveInterventionTracker;
 import org.frostnova.nova.core.service.LiveRoomInfoHistory;
 import org.frostnova.nova.core.service.LiveSessionArchive;
+import org.frostnova.nova.core.service.LiveSessionDetailArchiver;
 import org.frostnova.nova.core.service.NovaStateStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -73,8 +74,10 @@ class LiveOffArchiveTest {
         liveData = new DefaultLiveDataService(properties);
         sessions = new LiveSessionArchive(properties);
         details = new LiveDetailArchive(properties);
+        LiveRoomInfoHistory history = new LiveRoomInfoHistory(new NovaStateStore(properties));
         listener = new NovaDefaultLiveOffEventListener(liveData, sessions,
-                new LiveInterventionTracker(), new LiveRoomInfoHistory(new NovaStateStore(properties)), details);
+                new LiveInterventionTracker(), history,
+                new LiveSessionDetailArchiver(liveData, history, details));
     }
 
     @Test

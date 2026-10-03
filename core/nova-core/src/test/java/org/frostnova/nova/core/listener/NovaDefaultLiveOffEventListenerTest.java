@@ -15,6 +15,7 @@ import org.frostnova.nova.core.service.LiveDetailArchive;
 import org.frostnova.nova.core.service.LiveInterventionTracker;
 import org.frostnova.nova.core.service.LiveRoomInfoHistory;
 import org.frostnova.nova.core.service.LiveSessionArchive;
+import org.frostnova.nova.core.service.LiveSessionDetailArchiver;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -69,8 +70,11 @@ class NovaDefaultLiveOffEventListenerTest {
         interventionTracker = mock(LiveInterventionTracker.class);
         roomInfoHistory = mock(LiveRoomInfoHistory.class);
         details = mock(LiveDetailArchive.class);
+        // 明细那套走真的共用归档器：监听器的编排经它落到下面那个假的 LiveDetailArchive 上，
+        // 断言的出口不变，量的是「监听器→归档器→明细存储」整条路
         listener = new NovaDefaultLiveOffEventListener(
-                liveDataService, archive, interventionTracker, roomInfoHistory, details);
+                liveDataService, archive, interventionTracker, roomInfoHistory,
+                new LiveSessionDetailArchiver(liveDataService, roomInfoHistory, details));
     }
 
     private static LiveOffEvent liveOffAt(long at) {

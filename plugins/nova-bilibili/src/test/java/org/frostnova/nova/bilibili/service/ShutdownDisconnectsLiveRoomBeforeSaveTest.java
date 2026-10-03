@@ -26,6 +26,7 @@ import org.frostnova.nova.core.service.LiveDetailArchive;
 import org.frostnova.nova.core.service.LiveInterventionTracker;
 import org.frostnova.nova.core.service.LiveRoomInfoHistory;
 import org.frostnova.nova.core.service.LiveSessionArchive;
+import org.frostnova.nova.core.service.LiveSessionDetailArchiver;
 import org.frostnova.nova.core.service.LiveSessionRecovery;
 import org.frostnova.nova.core.service.NovaStateStore;
 import org.junit.jupiter.api.AfterEach;
@@ -431,17 +432,21 @@ class ShutdownDisconnectsLiveRoomBeforeSaveTest {
 
     private NovaDefaultLiveOffEventListener offListener(DefaultLiveDataService data, LiveSessionArchive archive,
                                                         NovaCoreProperties properties) {
+        LiveRoomInfoHistory history = new LiveRoomInfoHistory(new NovaStateStore(properties));
         return new NovaDefaultLiveOffEventListener(
-                data, archive, new LiveInterventionTracker(),
-                new LiveRoomInfoHistory(new NovaStateStore(properties)),
-                new LiveDetailArchive(properties));
+                data, archive, new LiveInterventionTracker(), history,
+                new LiveSessionDetailArchiver(data, history, new LiveDetailArchive(properties)));
     }
 
     private void recover(NovaCoreProperties properties, LiveSessionArchive archive) {
         DefaultLiveDataService restarted = new DefaultLiveDataService(properties);
         restarted.onApplicationReadyEvent();
         try {
-            new LiveSessionRecovery(restarted, archive)
+            new LiveSessionRecovery(restarted, archive,
+                    new LiveRoomInfoHistory(new NovaStateStore(properties)),
+                    new LiveSessionDetailArchiver(restarted,
+                            new LiveRoomInfoHistory(new NovaStateStore(properties)),
+                            new LiveDetailArchive(properties)))
                     .archiveUnclosedIfAny(PLATFORM, STREAMER, System.currentTimeMillis());
         } finally {
             restarted.onContextClosedEvent();
