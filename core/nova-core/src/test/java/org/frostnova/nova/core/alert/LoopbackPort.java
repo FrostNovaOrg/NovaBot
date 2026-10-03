@@ -3,6 +3,7 @@ package org.frostnova.nova.core.alert;
 import org.junit.jupiter.api.Assumptions;
 
 import java.io.IOException;
+import java.net.ConnectException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
@@ -21,6 +22,9 @@ public final class LoopbackPort {
 
     private static volatile Outcome outcome;
 
+    /** 空串表示已经探过、连 1 号端口是当场被拒；非空是跳过原因。 */
+    private static volatile String portOneSkip;
+
     private LoopbackPort() {
     }
 
@@ -30,6 +34,17 @@ public final class LoopbackPort {
             sneakyThrow(current.error);
         }
         Assumptions.assumeTrue(current.allowed, SKIPPED);
+    }
+
+    /**
+     * 连 127.0.0.1 的 1 号端口。当场被拒才继续；有人在听，或出了别的失败，就跳过并写明原因。
+     * 一次运行只探一次。
+     */
+    public static void assumePortOneRefused() {
+        String skip = portOneSkipReason();
+        if (skip != null) {
+            Assumptions.assumeTrue(false, skip);
+        }
     }
 
     private static Outcome outcome() {
@@ -71,6 +86,40 @@ public final class LoopbackPort {
                 }
             }
         }
+    }
+
+    private static String portOneSkipReason() {
+        String current = portOneSkip;
+        if (current != null) {
+            return current.isEmpty() ? null : current;
+        }
+        synchronized (LoopbackPort.class) {
+            current = portOneSkip;
+            if (current == null) {
+                String found = probePortOne();
+                portOneSkip = found == null ? "" : found;
+                current = portOneSkip;
+            }
+            return current.isEmpty() ? null : current;
+        }
+    }
+
+    /**
+     * @return 被拒时为空；否则是跳过原因
+     */
+    private static String probePortOne() {
+        try (Socket client = new Socket()) {
+            client.connect(new InetSocketAddress("127.0.0.1", 1), 1_000);
+        } catch (ConnectException e) {
+            String message = e.getMessage() == null ? "" : e.getMessage().toLowerCase(Locale.ROOT);
+            if (message.contains("connection refused")) {
+                return null;
+            }
+            return "连 127.0.0.1:1 不是连接被拒（" + e.getClass().getName() + "：" + e.getMessage() + "），跳过";
+        } catch (Exception e) {
+            return "连 127.0.0.1:1 失败（" + e.getClass().getName() + "：" + e.getMessage() + "），跳过";
+        }
+        return "127.0.0.1 的 1 号端口有人在听，跳过";
     }
 
     private static boolean permissionDenied(Throwable error) {

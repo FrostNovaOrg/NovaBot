@@ -44,7 +44,6 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.net.ServerSocket;
 import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.List;
@@ -252,13 +251,13 @@ class NapCatUnreachablePushRetryTest {
         return new RestTemplate(factory);
     }
 
-    private static int closedPort() throws IOException {
-        ServerSocket socket = new ServerSocket();
-        socket.setReuseAddress(true);
-        socket.bind(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0));
-        int port = socket.getLocalPort();
-        socket.close();
-        return port;
+    /**
+     * 本机 1 号端口：系统划给临时口的那段够不着它。
+     * 用前确认连过去是当场被拒；有人在听或别的失败则跳过。
+     */
+    private static int closedPort() {
+        LoopbackPort.assumePortOneRefused();
+        return 1;
     }
 
     private void startHang() throws IOException {
