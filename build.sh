@@ -396,6 +396,8 @@ fi
     fi
     echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "version=$VERSION"
+    # handover=1：这个版本取单实例锁、认候命开关、会写状态件，换版工具见这一行才走热交接。
+    echo "handover=1"
 } > "$OUT/BUILD-INFO"
 
 # ── [6/9] 产物守卫 ──────────────────────────────────────────────────────

@@ -52,6 +52,7 @@ public class NovaCoreApplication {
 
             // 配置有误时不能就这么退出：配置界面随主程序一同挂掉后，远程部署的使用者就被挡在门外，
             // 只能 SSH 进去手工改文件。此处退化为安全模式，至少让人能把配置改回来。
+            StateFile.write("safe-mode");
             new SafeModeServer(CONFIG_PATH, describe(e)).start();
         }
     }
