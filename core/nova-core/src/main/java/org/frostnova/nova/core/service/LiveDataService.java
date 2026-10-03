@@ -125,6 +125,18 @@ public interface LiveDataService {
     }
 
     /**
+     * 本进程这次启动记下来的那段停机
+     * <p>
+     * 起点、终点、成因都在这一段上。头一回起、读不到上次落盘时刻、或时钟回拨因而没记过时为空。
+     * 问的是<b>这一次进程</b>写下的那一段，不是数据文件里历史上的全部停机——
+     * 那些是以前几次启动留下的，不能拿来给这一次的房间补尾巴。
+     * @return 本进程记的那段停机；没记过为空
+     */
+    default Optional<LiveGap> startupDowntime() {
+        return Optional.empty();
+    }
+
+    /**
      * 记一段<b>单个直播间</b>的断线区间
      * <p>
      * ⚠️ <b>与 {@link #recordDowntime} 是两回事，别合并。</b>

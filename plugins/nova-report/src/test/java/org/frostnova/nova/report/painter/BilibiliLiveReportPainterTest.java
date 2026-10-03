@@ -1034,4 +1034,24 @@ class BilibiliLiveReportPainterTest {
         assertEquals(754_000, liveDataService.downtimeWithin(start, end));
         assertEquals(123_000, liveDataService.roomOutageWithin(PLATFORM, STREAMER.getUid(), start, end));
     }
+
+    @Test
+    @DisplayName("按房补上的重启尾巴落在重启栏，不说成断流")
+    void startupTailLandsInRestartColumn() {
+        long start = System.currentTimeMillis() - 2 * 3600_000;
+        long end = start + 2 * 3600_000;
+        liveDataService.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+        liveDataService.setLiveEndTime(PLATFORM, STREAMER.getUid(), end);
+
+        // 全局停机 12 秒，就绪之后这条房间又空了 8 秒才认证成功，另有 5 秒断流
+        liveDataService.recordDowntime(start + 60_000, start + 72_000, LiveGap.Reason.RESTART);
+        liveDataService.recordRoomOutage(PLATFORM, STREAMER.getUid(),
+                start + 72_000, start + 80_000, LiveGap.Reason.RESTART);
+        liveDataService.recordRoomOutage(PLATFORM, STREAMER.getUid(),
+                start + 90_000, start + 95_000, LiveGap.Reason.STREAM_LOSS);
+
+        assertEquals("采集缺口 共 25 秒：重启 20 秒／断流 5 秒",
+                painter.collectionGapText(PLATFORM, STREAMER.getUid()),
+                "尾巴的成因是重启，应并进重启那一栏；曲线斜纹读的是同一份缺口表");
+    }
 }

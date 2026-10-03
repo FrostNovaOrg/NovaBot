@@ -70,6 +70,15 @@ public record LiveGap(long from, long to, Reason reason) {
         UNKNOWN("原因未定");
 
         private final String description;
+
+        /**
+         * 这段算程序没在采（维护、重启、原因未定），还是这个房间自己的连接问题（断流、解析降级）
+         * <p>
+         * 停机秒把前一类并进全局停机；断线秒只数后一类。
+         */
+        public boolean countsAsProcessDowntime() {
+            return this == MAINTENANCE || this == RESTART || this == UNKNOWN;
+        }
     }
 
     /**
@@ -159,6 +168,21 @@ public record LiveGap(long from, long to, Reason reason) {
         long total = 0;
         for (LiveGap gap : gaps) {
             total += gap.durationMillis();
+        }
+        return total;
+    }
+
+    /**
+     * 一份区间表里，某一类成因的总时长（毫秒）
+     * @param gaps 区间表，一般已经互不重叠
+     * @param processDowntime true 只加维护／重启／原因未定，false 只加断流与解析降级
+     */
+    public static long totalMillisWhere(List<LiveGap> gaps, boolean processDowntime) {
+        long total = 0;
+        for (LiveGap gap : gaps) {
+            if (gap.reason().countsAsProcessDowntime() == processDowntime) {
+                total += gap.durationMillis();
+            }
         }
         return total;
     }

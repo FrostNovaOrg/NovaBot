@@ -308,6 +308,12 @@ public class DefaultLiveDataService implements LiveDataService {
     private static final String KEY_DOWNTIMES = "Downtimes";
 
     /**
+     * 本进程第一次记下的那段停机。只留内存：下一次进程会自己再记一段，
+     * 盘上更早的记录是历史，问「这次启动记了哪段」时不算。
+     */
+    private volatile LiveGap startupDowntimeSegment;
+
+    /**
      * 停机记录的保留时长。留 30 天：月度统计要算得出「这个月有多少时间没在采」，
      * 再往前的场次早已归档，归档里带着当时算好的缺口
      */
@@ -339,6 +345,12 @@ public class DefaultLiveDataService implements LiveDataService {
         }
 
         synchronized (metricLock) {
+            // 启动善后在任何房间连上之前写下这一段，它是本进程的第一笔。
+            // 其后若再记，不盖掉这一笔——问的是这次启动，不是最后一次写入。
+            if (startupDowntimeSegment == null) {
+                startupDowntimeSegment = new LiveGap(from, to, reason);
+            }
+
             JSONArray downtimes = cache.getJSONArray(KEY_DOWNTIMES);
             if (downtimes == null) {
                 downtimes = new JSONArray();
@@ -387,6 +399,11 @@ public class DefaultLiveDataService implements LiveDataService {
         // 进程要么在跑要么没在跑，全局停机区间天然不重叠；仍走一遍合并是为了排序，
         // 顺带兜住数据文件被外部改坏、真出现两段重叠的那一天
         return LiveGap.merge(List.of(clipped));
+    }
+
+    @Override
+    public Optional<LiveGap> startupDowntime() {
+        return Optional.ofNullable(startupDowntimeSegment);
     }
 
     /**

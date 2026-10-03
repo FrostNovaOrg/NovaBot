@@ -95,6 +95,16 @@ public class BilibiliLiveRoomService {
     private final AtomicBoolean acceptingConnectors = new AtomicBoolean(true);
 
     /**
+     * 本进程的 sync 还没跑过。第一次跑时排进闸门的房间才算启动那一波。
+     */
+    private final AtomicBoolean firstSync = new AtomicBoolean(true);
+
+    /**
+     * 启动那一波的房间号。建连时交给连接器，用过即摘。
+     */
+    private final Set<Long> startupWaveRooms = ConcurrentHashMap.newKeySet();
+
+    /**
      * 全部直播间共享的长连接客户端
      * <p>
      * 每个 StandardWebSocketClient 实例都会持有独立的 WebSocket 容器与线程池，
@@ -130,6 +140,7 @@ public class BilibiliLiveRoomService {
      * @param dataSource 数据源
      */
     public void sync(AbstractDataSource dataSource) {
+        boolean startupWave = firstSync.compareAndSet(true, false);
         if (!properties.getLive().isEnableConnectLiveRoom()) {
             log.info("直播间连接已关闭, 将仅使用备用直播推送");
             return;
@@ -202,7 +213,11 @@ public class BilibiliLiveRoomService {
             }
 
             // 交给全局闸门排队。这里不再自己累加延迟：首连若走自己的时间轴，
-            // 就会和正在退避重连的房间撞在一起，多房间同时断线时叠成请求洪峰
+            // 就会和正在退避重连的房间撞在一起，多房间同时断线时叠成请求洪峰。
+            // 只有本进程第一次 sync 排进去的才算启动那一波；热重载再进来的不算。
+            if (startupWave) {
+                startupWaveRooms.add(up.getRoomId());
+            }
             connectGate.submit(() -> connect(up));
         }
 
@@ -246,6 +261,7 @@ public class BilibiliLiveRoomService {
      */
     private void connect(Up up) {
         if (!acceptingConnectors.get()) {
+            startupWaveRooms.remove(up.getRoomId());
             log.debug("退出中, 放弃连接直播间 {} (UID: {})", up.getRoomId(), up.getUid());
             return;
         }
@@ -254,6 +270,7 @@ public class BilibiliLiveRoomService {
         // 两批各自都不超限，凑到一起执行时才撞上名额。
         // 已在管理中的房间要放行——重连走的正是这条路，挡下它等于满员时断线就再也连不回来
         if (!connectors.containsKey(up.getRoomId()) && connectors.size() >= MonitorLimit.MAX_STREAMERS) {
+            startupWaveRooms.remove(up.getRoomId());
             log.warn("同时监控的主播数已达上限 {} 位, 不再连接直播间 {} (UID: {})",
                     MonitorLimit.MAX_STREAMERS, up.getRoomId(), up.getUid());
             return;
@@ -268,14 +285,16 @@ public class BilibiliLiveRoomService {
                 log.debug("退出中, 放弃连接直播间 {} (UID: {})", up.getRoomId(), up.getUid());
                 return null;
             }
+            boolean wave = startupWaveRooms.remove(up.getRoomId());
             BilibiliLiveRoomConnector connector = new BilibiliLiveRoomConnector(
                     up, api, parser, properties, publisher, scheduler, webSocketClient,
                     stateGate, connectGate, riskMetrics, disconnectDigest, liveDataService,
-                    acceptingConnectors);
+                    acceptingConnectors, wave);
             created[0] = connector;
             return connector;
         });
         if (created[0] == null) {
+            startupWaveRooms.remove(up.getRoomId());
             return;
         }
         created[0].connect();

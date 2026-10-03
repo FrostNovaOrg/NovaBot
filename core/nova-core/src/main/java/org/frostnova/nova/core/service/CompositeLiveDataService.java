@@ -146,6 +146,11 @@ public class CompositeLiveDataService implements LiveDataService {
     }
 
     @Override
+    public Optional<LiveGap> startupDowntime() {
+        return delegate.startupDowntime();
+    }
+
+    @Override
     public Optional<Long> getLiveEndTime(@NonNull String platform, @NonNull Long uid) {
         return delegate.getLiveEndTime(platform, uid);
     }

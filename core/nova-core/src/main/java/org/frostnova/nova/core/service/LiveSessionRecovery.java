@@ -125,7 +125,11 @@ public class LiveSessionRecovery {
 
         long endTime = endTimeOf(platform, source, start);
         long duration = Math.max(0, (endTime - start) / 1000);
-        long gap = liveDataService.downtimeWithin(start, endTime) / 1000;
+        // 与正常下播同一口径：停机秒含按房补上的维护／重启／原因未定，断线秒只数断流与解析降级
+        List<LiveGap> roomGaps = liveDataService.roomOutageIntervals(platform, source.getUid(), start, endTime);
+        long gap = (liveDataService.downtimeWithin(start, endTime)
+                + LiveGap.totalMillisWhere(roomGaps, true)) / 1000;
+        long outage = LiveGap.totalMillisWhere(roomGaps, false) / 1000;
 
         archive.append(new LiveSession(
                 platform,
@@ -146,7 +150,7 @@ public class LiveSessionRecovery {
                 // 而漏在这里的后果是「崩溃过的那一场永远没有名单」，事后补不回来。
                 // 与标题轨迹不同——标题在崩溃时真的没了，名单是从磁盘上的计分表读的，还在
                 liveDataService.getLiveMetricUserSets(platform, source.getUid()),
-                liveDataService.roomOutageWithin(platform, source.getUid(), start, endTime) / 1000));
+                outage));
 
         log.warn("{} 上一场直播未闭合（程序在直播中途停过），已按未闭合归档: 时长下界 {} 秒, 其中 {} 秒未采集",
                 source.getUname(), duration, gap);

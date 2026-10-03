@@ -102,15 +102,18 @@ public class NovaDefaultLiveOffEventListener {
             log.warn("{} 本场直播{}, 时长 {} 秒不代表正常水平", source.getUname(), endReason.getDescription(), duration);
         }
 
-        // 本场之内程序停过的时段，只算与本场重叠的部分
-        long gap = liveDataService.downtimeWithin(start.get(), endTime) / 1000;
+        // 停机秒＝全局停机，加上按房记下的、成因为维护／重启／原因未定的那几段
+        // （进程就绪之后、这间认证成功之前的尾巴走这一类）。
+        // 断线秒只数断流与解析降级。两数仍分开存：断流可以落在停机里，加总会把同一秒数两遍。
+        List<LiveGap> roomGaps = liveDataService.roomOutageIntervals(
+                event.getPlatform(), source.getUid(), start.get(), endTime);
+        long gap = (liveDataService.downtimeWithin(start.get(), endTime)
+                + LiveGap.totalMillisWhere(roomGaps, true)) / 1000;
         if (gap > 0) {
             log.warn("{} 本场有 {} 秒因程序停机未采集, 各项计数只是下界", source.getUname(), gap);
         }
 
-        // 本场之内**这个直播间自己**断线的时段。与上面的程序停机分开算、分开存：
-        // 停机期间所有房间都在断，两段必然重叠，加起来就是重复计数
-        long outage = liveDataService.roomOutageWithin(event.getPlatform(), source.getUid(), start.get(), endTime) / 1000;
+        long outage = LiveGap.totalMillisWhere(roomGaps, false) / 1000;
         if (outage > 0) {
             log.warn("{} 本场有 {} 秒因直播间断线未采集, 各项计数只是下界", source.getUname(), outage);
         }

@@ -162,13 +162,21 @@ class BilibiliConnectorHarness {
     private final BilibiliLiveRoomConnector connector;
 
     BilibiliConnectorHarness() {
-        this(null);
+        this(null, false);
     }
 
     /**
      * @param realParser 真解析器，给了就走真实的解析与发布路径；为 null 时用默认桩
      */
     BilibiliConnectorHarness(BilibiliEventParser realParser) {
+        this(realParser, false);
+    }
+
+    /**
+     * @param realParser 真解析器，给了就走真实的解析与发布路径；为 null 时用默认桩
+     * @param startupWave 本进程第一次同步时排进闸门的那一批
+     */
+    BilibiliConnectorHarness(BilibiliEventParser realParser, boolean startupWave) {
         this.parser = realParser == null ? mock(BilibiliEventParser.class) : realParser;
         LiveStreamerInfo source = new LiveStreamerInfo(STREAMER_UID, "测试主播", ROOM_ID);
 
@@ -193,7 +201,7 @@ class BilibiliConnectorHarness {
 
         this.connector = new BilibiliLiveRoomConnector(source, api, parser, properties, publisher,
                 scheduler, client, stateGate, connectGate, riskMetrics, disconnectDigest, liveDataService,
-                new java.util.concurrent.atomic.AtomicBoolean(true));
+                new java.util.concurrent.atomic.AtomicBoolean(true), startupWave);
     }
 
     // ================ 配置 ================
