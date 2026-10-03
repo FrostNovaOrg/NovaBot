@@ -1,4 +1,4 @@
-package org.frostnova.nova.core.alert;
+package org.frostnova.nova.core;
 
 import org.junit.jupiter.api.Assumptions;
 
@@ -12,10 +12,10 @@ import java.util.Locale;
 /**
  * 当前环境能不能在本机回环地址上绑一个端口再连上去。
  * <p>
- * 各模块的测试源码互相看不见，同一份探法各放一份；本模块里跨包共用 alert 包这一份。探一次，结果留到这次运行结束。
+ * 各模块的测试源码互相看不见，同一份探法各放一份。探一次，结果留到这次运行结束。
  * 只有绑或连报了权限类错误，才当作环境不许；别的异常原样抛出。
  */
-public final class LoopbackPort {
+final class LoopbackPort {
     private static final String SKIPPED =
             "当前环境不许用本机回环端口，跳过；不受限的环境里照常跑";
 
@@ -24,7 +24,7 @@ public final class LoopbackPort {
     private LoopbackPort() {
     }
 
-    public static void assumeAllowed() {
+    static void assumeAllowed() {
         Outcome current = outcome();
         if (current.error != null) {
             sneakyThrow(current.error);

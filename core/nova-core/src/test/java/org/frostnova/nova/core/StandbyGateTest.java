@@ -1,5 +1,6 @@
 package org.frostnova.nova.core;
 
+import org.frostnova.nova.core.alert.LoopbackPort;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -370,6 +371,7 @@ class StandbyGateTest {
     }
 
     private static int freePort() throws IOException {
+        LoopbackPort.assumeAllowed();
         try (ServerSocket socket = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
             return socket.getLocalPort();
         }
