@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -18,6 +19,8 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.TimeUnit;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -36,7 +39,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @DisplayName("安装脚本按版本分目录装程序")
 class VersionedReleaseInstallTest {
 
-    static final String FLAT_REFUSAL = "这一版的安装脚本还不能从旧布局升级";
+    static final String VERSION_UNKNOWN = "取不到旧版本号";
 
     static final String RUNNING_REFUSAL = "正在运行，这一次没有改安装目录里的文件";
 
@@ -127,8 +130,14 @@ class VersionedReleaseInstallTest {
                     return ""
                 return unit.split("@", 1)[1].removesuffix(".service")
 
+            def bare(unit):
+                if unit.endswith(".service"):
+                    return unit[: -len(".service")]
+                return unit
+
             if "is-active" in args:
-                if version_of(args[-1]) in listed("NOVABOT_STUB_ACTIVE"):
+                target = args[-1]
+                if version_of(target) in listed("NOVABOT_STUB_ACTIVE") or bare(target) in listed("NOVABOT_STUB_ACTIVE"):
                     sys.exit(0)
                 sys.exit(3)
             if "is-enabled" in args:
@@ -171,10 +180,116 @@ class VersionedReleaseInstallTest {
     }
 
     @Test
-    @DisplayName("扁平布局：一个文件都不改，退非 0，说明在标准错误")
-    void flatLayoutRefusesWithoutTouchingFiles(@TempDir Path dir) throws Exception {
-        assertFlat(dir.resolve("by-nova"), "NovaBot.jar");
-        assertFlat(dir.resolve("by-star"), "StarBotCore.jar");
+    @DisplayName("扁平布局：旧程序搬进版本目录后再装，使用者插件与配置留下")
+    void flatLayoutMovesProgramThenInstalls(@TempDir Path dir) throws Exception {
+        World world = world(dir, "5.8.0");
+        Files.writeString(world.install.resolve("NovaBot.jar"), "old-flat", StandardCharsets.UTF_8);
+        Files.writeString(world.install.resolve("StarBotCore.jar"), "old-star", StandardCharsets.UTF_8);
+        write(world.install.resolve("lib/novacore-5.7.8.jar"), "old-core");
+        write(world.install.resolve("lib/other.jar"), "old-other");
+        write(world.install.resolve("plugins/nova-demo-5.7.8.jar"), "old-builtin");
+        write(world.install.resolve("plugins/my-extra.jar"), "user-plugin");
+        write(world.install.resolve("plugins/nova-demo-extra-1.2.jar"), "prefix-user");
+        write(world.install.resolve("plugins-lib/demo-lib-1.0.jar"), "old-builtin-lib");
+        write(world.install.resolve("plugins-lib/my-dep.jar"), "user-lib");
+        write(world.install.resolve("start.sh"), "old-start");
+        write(world.install.resolve("tools/data-backup.sh"), "old-backup");
+        write(world.install.resolve("LICENSE"), "old-license");
+        writeKept(world.install, "user-yml", "user-ds", "user-cookie", "user-key", "user-data");
+        write(world.install.resolve("state.json"), "state-body");
+        write(world.install.resolve("sessions.jsonl"), "session-line\n");
+        write(world.install.resolve("details/room.txt"), "detail-body");
+        write(world.install.resolve("reports/r.txt"), "report-body");
+        Map<String, byte[]> kept = readKept(world.install);
+        byte[] state = Files.readAllBytes(world.install.resolve("state.json"));
+        byte[] sessions = Files.readAllBytes(world.install.resolve("sessions.jsonl"));
+        byte[] detail = Files.readAllBytes(world.install.resolve("details/room.txt"));
+        byte[] report = Files.readAllBytes(world.install.resolve("reports/r.txt"));
+        Run run = run(world, "", "");
+
+        assertEquals(0, run.code, "扁平布局应先搬再装。标准错误:\n" + run.stderr + "\n标准输出:\n" + run.stdout);
+        Path oldRelease = world.install.resolve("releases/5.7.8");
+        assertEquals("old-flat", read(oldRelease.resolve("NovaBot.jar")));
+        assertEquals("old-star", read(oldRelease.resolve("StarBotCore.jar")));
+        assertEquals("old-core", read(oldRelease.resolve("lib/novacore-5.7.8.jar")));
+        assertEquals("old-other", read(oldRelease.resolve("lib/other.jar")));
+        assertEquals("old-builtin", read(oldRelease.resolve("plugins/nova-demo-5.7.8.jar")));
+        assertEquals("old-builtin-lib", read(oldRelease.resolve("plugins-lib/demo-lib-1.0.jar")));
+        assertEquals("old-backup", read(oldRelease.resolve("tools/data-backup.sh")));
+        assertEquals("old-license", read(oldRelease.resolve("LICENSE")));
+        assertEquals(read(world.pkg.resolve("start.sh")), read(oldRelease.resolve("start.sh")));
+        assertEquals("new-jar", read(world.install.resolve("releases/5.8.0/NovaBot.jar")));
+        assertFalse(Files.exists(world.install.resolve("NovaBot.jar")));
+        assertFalse(Files.exists(world.install.resolve("StarBotCore.jar")));
+        assertFalse(Files.exists(world.install.resolve("lib")));
+        assertFalse(Files.exists(world.install.resolve("plugins/nova-demo-5.7.8.jar")));
+        assertFalse(Files.exists(world.install.resolve("plugins-lib/demo-lib-1.0.jar")));
+        assertEquals("user-plugin", read(world.install.resolve("plugins/my-extra.jar")));
+        assertEquals("prefix-user", read(world.install.resolve("plugins/nova-demo-extra-1.2.jar")));
+        assertEquals("user-lib", read(world.install.resolve("plugins-lib/my-dep.jar")));
+        assertKept(world.install, kept);
+        assertArrayEquals(state, Files.readAllBytes(world.install.resolve("state.json")));
+        assertArrayEquals(sessions, Files.readAllBytes(world.install.resolve("sessions.jsonl")));
+        assertArrayEquals(detail, Files.readAllBytes(world.install.resolve("details/room.txt")));
+        assertArrayEquals(report, Files.readAllBytes(world.install.resolve("reports/r.txt")));
+        assertEquals("backup-sh", read(world.install.resolve("tools/data-backup.sh")));
+        assertTrue(run.stdout.contains("my-extra.jar"), run.stdout);
+        assertTrue(run.stdout.contains("nova-demo-extra-1.2.jar"), run.stdout);
+        assertTrue(run.stdout.contains("my-dep.jar"), run.stdout);
+        assertTrue(run.stdout.contains("旧版本还在跑的话先停掉，再起新版本"), run.stdout);
+        assertFalse(run.stdout.contains("systemctl stop novabot@"), run.stdout);
+        assertTrue(run.stdout.contains("systemctl start novabot@5.8.0"), run.stdout);
+    }
+
+    @Test
+    @DisplayName("扁平布局：jar 里的 build.version 优先于 lib 文件名")
+    void flatLayoutPrefersBuildVersionInsideJar(@TempDir Path dir) throws Exception {
+        World world = world(dir, "5.8.0");
+        writeJarWithBuildVersion(world.install.resolve("NovaBot.jar"), "5.7.6");
+        write(world.install.resolve("lib/novacore-5.7.8.jar"), "old-core");
+        Run run = run(world, "", "");
+
+        assertEquals(0, run.code, "应认 jar 里的版本。标准错误:\n" + run.stderr + "\n标准输出:\n" + run.stdout);
+        assertEquals("old-core", read(world.install.resolve("releases/5.7.6/lib/novacore-5.7.8.jar")));
+        assertTrue(Files.isRegularFile(world.install.resolve("releases/5.7.6/NovaBot.jar")));
+        assertFalse(Files.exists(world.install.resolve("releases/5.7.8")));
+        assertFalse(Files.exists(world.install.resolve("NovaBot.jar")));
+        assertFalse(Files.exists(world.install.resolve("lib")));
+        assertEquals("new-jar", read(world.install.resolve("releases/5.8.0/NovaBot.jar")));
+    }
+
+    @Test
+    @DisplayName("扁平布局只有 StarBotCore.jar 时，按 lib 里的版本搬走")
+    void flatLayoutMovesStarBotCoreJar(@TempDir Path dir) throws Exception {
+        World world = world(dir, "5.8.0");
+        Files.writeString(world.install.resolve("StarBotCore.jar"), "old-star", StandardCharsets.UTF_8);
+        write(world.install.resolve("lib/novacore-5.7.8.jar"), "old-core");
+        Run run = run(world, "", "");
+
+        assertEquals(0, run.code, "应搬走。标准错误:\n" + run.stderr + "\n标准输出:\n" + run.stdout);
+        assertEquals("old-star", read(world.install.resolve("releases/5.7.8/StarBotCore.jar")));
+        assertFalse(Files.exists(world.install.resolve("StarBotCore.jar")));
+        assertFalse(Files.exists(world.install.resolve("lib")));
+        assertEquals("new-jar", read(world.install.resolve("releases/5.8.0/NovaBot.jar")));
+    }
+
+    @Test
+    @DisplayName("旧版本号与要装的相同：搬完不另留，版本目录是新程序")
+    void flatLayoutSameVersionIsReplacedNotKept(@TempDir Path dir) throws Exception {
+        World world = world(dir, "5.7.8");
+        Files.writeString(world.install.resolve("NovaBot.jar"), "old-flat", StandardCharsets.UTF_8);
+        write(world.install.resolve("lib/novacore-5.7.8.jar"), "old-core");
+        writeKept(world.install, "user-yml", "user-ds", "user-cookie", "user-key", "user-data");
+        Map<String, byte[]> kept = readKept(world.install);
+        Run run = run(world, "", "");
+
+        assertEquals(0, run.code, "同版本应装完。标准错误:\n" + run.stderr + "\n标准输出:\n" + run.stdout);
+        assertEquals("new-jar", read(world.install.resolve("releases/5.7.8/NovaBot.jar")));
+        assertEquals("new-lib", read(world.install.resolve("releases/5.7.8/lib/core.jar")));
+        assertFalse(Files.exists(world.install.resolve("releases/5.7.8/lib/novacore-5.7.8.jar")));
+        assertFalse(Files.exists(world.install.resolve("NovaBot.jar")));
+        assertFalse(Files.exists(world.install.resolve("lib")));
+        assertKept(world.install, kept);
     }
 
     @Test
@@ -326,7 +441,7 @@ class VersionedReleaseInstallTest {
     }
 
     @Test
-    @DisplayName("扁平布局在装 Java 和字体之前停下")
+    @DisplayName("取不到旧版本号时，在装 Java 之前停下且不改文件")
     void flatLayoutStopsBeforeInstallingRuntime(@TempDir Path dir) throws Exception {
         World world = world(dir, "5.8.0");
         writeExecutable(world.bin.resolve("java"), """
@@ -359,12 +474,133 @@ class VersionedReleaseInstallTest {
         Map<String, byte[]> after = snapshot(world.install);
 
         assertEquals("", aptLog,
-                "扁平布局应在装 Java 和字体之前停下，实际已经调用包管理器:\n" + aptLog);
+                "取不到旧版本号应在装 Java 和字体之前停下，实际已经调用包管理器:\n" + aptLog);
         assertTrue(diff(before, after).isEmpty(),
-                "扁平布局应一个文件都不改，实际:\n" + diff(before, after));
-        assertNotEquals(0, run.code, "扁平布局应停下。标准输出:\n" + run.stdout);
-        assertTrue(run.stderr.contains(FLAT_REFUSAL),
+                "取不到旧版本号应一个文件都不改，实际:\n" + diff(before, after));
+        assertNotEquals(0, run.code, "取不到旧版本号应停下。标准输出:\n" + run.stdout);
+        assertTrue(run.stderr.contains(VERSION_UNKNOWN),
                 "说明应写在标准错误。标准错误:\n" + run.stderr);
+    }
+
+    @Test
+    @DisplayName("扁平布局：旧服务单元只关自启，在跑的留着，不在跑的删掉")
+    void flatLayoutLegacyUnitDisableWithoutStopping(@TempDir Path dir) throws Exception {
+        assertLegacyUnit(dir.resolve("running"), "novabot", true);
+        assertLegacyUnit(dir.resolve("stopped"), "starbot", false);
+    }
+
+    @Test
+    @DisplayName("扁平布局搬到一半再跑，接着搬完")
+    void flatLayoutResumesPartialMove(@TempDir Path dir) throws Exception {
+        World world = world(dir, "5.8.0");
+        write(world.install.resolve("releases/5.7.8/LICENSE"), "kept-license");
+        write(world.install.resolve("releases/5.7.8/BUILD-INFO"), "kept-info");
+        Files.writeString(world.install.resolve("NovaBot.jar"), "old-flat", StandardCharsets.UTF_8);
+        write(world.install.resolve("lib/novacore-5.7.8.jar"), "old-core");
+        write(world.install.resolve("start.sh"), "old-start");
+        write(world.install.resolve("NOTICE"), "old-notice");
+        writeKept(world.install, "user-yml", "user-ds", "user-cookie", "user-key", "user-data");
+        Run run = run(world, "", "");
+
+        assertEquals(0, run.code, "接着搬应成功。标准错误:\n" + run.stderr + "\n标准输出:\n" + run.stdout);
+        assertEquals("kept-license", read(world.install.resolve("releases/5.7.8/LICENSE")));
+        assertEquals("kept-info", read(world.install.resolve("releases/5.7.8/BUILD-INFO")));
+        assertEquals("old-flat", read(world.install.resolve("releases/5.7.8/NovaBot.jar")));
+        assertEquals("old-core", read(world.install.resolve("releases/5.7.8/lib/novacore-5.7.8.jar")));
+        assertEquals("old-notice", read(world.install.resolve("releases/5.7.8/NOTICE")));
+        assertEquals(read(world.pkg.resolve("start.sh")), read(world.install.resolve("releases/5.7.8/start.sh")));
+        assertFalse(Files.exists(world.install.resolve("NovaBot.jar")));
+        assertFalse(Files.exists(world.install.resolve("lib")));
+        assertFalse(Files.exists(world.install.resolve("NOTICE")));
+        assertEquals("user-yml", read(world.install.resolve("application.yml")));
+        assertEquals("new-jar", read(world.install.resolve("releases/5.8.0/NovaBot.jar")));
+    }
+
+    @Test
+    @DisplayName("旧版本的 start.sh 换新时不原地覆写")
+    void flatLayoutReplacesStartScriptWithoutSameInode(@TempDir Path dir) throws Exception {
+        World world = world(dir, "5.8.0");
+        Files.writeString(world.install.resolve("NovaBot.jar"), "old-flat", StandardCharsets.UTF_8);
+        write(world.install.resolve("lib/novacore-5.7.8.jar"), "old-core");
+        Path oldStart = world.install.resolve("start.sh");
+        Files.writeString(oldStart, "old-start-body\n", StandardCharsets.UTF_8);
+        String before = inode(oldStart);
+        Run run = run(world, "", "");
+
+        assertEquals(0, run.code, "应装完。标准错误:\n" + run.stderr + "\n标准输出:\n" + run.stdout);
+        Path replaced = world.install.resolve("releases/5.7.8/start.sh");
+        assertEquals(read(world.pkg.resolve("start.sh")), read(replaced));
+        assertNotEquals(before, inode(replaced), "换 start.sh 应先写临时名再改名，不能原地覆写");
+    }
+
+    @Test
+    @DisplayName("续搬：根上没有 lib、PATH 上没有 unzip，从版本目录里恰好一个 novacore 认出版本并搬完")
+    void flatLayoutResumesFromReleaseNovacoreJar(@TempDir Path dir) throws Exception {
+        World world = world(dir, "5.8.0");
+        write(world.install.resolve("releases/5.7.8/lib/novacore-5.7.8.jar"), "old-core");
+        Files.writeString(world.install.resolve("NovaBot.jar"), "old-flat", StandardCharsets.UTF_8);
+        write(world.install.resolve("start.sh"), "old-start");
+        writeKept(world.install, "user-yml", "user-ds", "user-cookie", "user-key", "user-data");
+        Path filtered = directoryWithoutUnzip(dir);
+        String path = world.bin + ":" + filtered;
+        ProcessBuilder probe = new ProcessBuilder("bash", "-c", "command -v unzip");
+        probe.environment().put("PATH", path);
+        probe.redirectErrorStream(true);
+        Process looked = probe.start();
+        assertTrue(looked.waitFor(10, TimeUnit.SECONDS), "查找 unzip 超时");
+        assertNotEquals(0, looked.exitValue(), "这一格的 PATH 上不该找得到 unzip");
+        Run run = run(world, "", "", Map.of("PATH", path));
+
+        assertEquals(0, run.code, "lib 已在版本目录、读不出 jar 里的版本时，应接着搬完。标准错误:\n"
+                + run.stderr + "\n标准输出:\n" + run.stdout);
+        assertEquals("old-flat", read(world.install.resolve("releases/5.7.8/NovaBot.jar")));
+        assertEquals("old-core", read(world.install.resolve("releases/5.7.8/lib/novacore-5.7.8.jar")));
+        assertEquals(read(world.pkg.resolve("start.sh")), read(world.install.resolve("releases/5.7.8/start.sh")));
+        assertFalse(Files.exists(world.install.resolve("NovaBot.jar")));
+        assertFalse(Files.exists(world.install.resolve("start.sh")));
+        assertFalse(Files.exists(world.install.resolve("lib")));
+        assertEquals("new-jar", read(world.install.resolve("releases/5.8.0/NovaBot.jar")));
+        assertEquals("user-yml", read(world.install.resolve("application.yml")));
+    }
+
+    @Test
+    @DisplayName("已经分目录再装：旧服务还在跑时，提示先停旧服务再起新版本")
+    void rerunWhileLegacyUnitRunningStopsOldBeforeStart(@TempDir Path dir) throws Exception {
+        World world = world(dir, "5.8.0");
+        writeRelease(world.install, "5.7.8", "old-578");
+        writeKept(world.install, "user-yml", "user-ds", "user-cookie", "user-key", "user-data");
+        Path unitDir = world.etc.resolve("systemd/system");
+        Files.createDirectories(unitDir);
+        Files.writeString(unitDir.resolve("novabot.service"),
+                "[Service]\nExecStart=/opt/starbot/start.sh\n", StandardCharsets.UTF_8);
+        Run run = run(world, "novabot", "", Map.of(
+                "NOVABOT_SYSTEMD_SYSTEM_DIR", unitDir.toString()));
+
+        assertEquals(0, run.code, "再装应成功。标准错误:\n" + run.stderr + "\n标准输出:\n" + run.stdout);
+        int stopAt = run.stdout.indexOf("sudo systemctl stop novabot\n");
+        int startAt = run.stdout.indexOf("sudo systemctl start novabot@5.8.0");
+        assertTrue(stopAt >= 0 && startAt > stopAt, "应先停 novabot 再起新版。标准输出:\n" + run.stdout);
+        assertTrue(run.stdout.contains("断一小会儿"), run.stdout);
+        assertFalse(run.stdout.contains("确认新版本起来之后再停掉"), run.stdout);
+        assertFalse(run.stdout.contains("systemctl stop novabot@5.7.8"), run.stdout);
+    }
+
+    @Test
+    @DisplayName("换启动脚本时临时名已在：删掉再拷，安装完成")
+    void flatLayoutRemovesLeftoverStartTempThenCopies(@TempDir Path dir) throws Exception {
+        World world = world(dir, "5.8.0");
+        Files.writeString(world.install.resolve("NovaBot.jar"), "old-flat", StandardCharsets.UTF_8);
+        write(world.install.resolve("lib/novacore-5.7.8.jar"), "old-core");
+        write(world.install.resolve("releases/5.7.8/start.sh.novabot-new"), "leftover-temp");
+        writeKept(world.install, "user-yml", "user-ds", "user-cookie", "user-key", "user-data");
+        Run run = run(world, "", "");
+
+        assertEquals(0, run.code, "临时名已在应删掉再拷，不应停下。标准错误:\n"
+                + run.stderr + "\n标准输出:\n" + run.stdout);
+        assertEquals(read(world.pkg.resolve("start.sh")), read(world.install.resolve("releases/5.7.8/start.sh")));
+        assertFalse(Files.exists(world.install.resolve("releases/5.7.8/start.sh.novabot-new")));
+        assertEquals("old-flat", read(world.install.resolve("releases/5.7.8/NovaBot.jar")));
+        assertEquals("new-jar", read(world.install.resolve("releases/5.8.0/NovaBot.jar")));
     }
 
     private static void assertFresh(World world, Run run, Map<String, byte[]> kept) throws IOException {
@@ -457,25 +693,44 @@ class VersionedReleaseInstallTest {
                 "版本号「" + version + "」应停下。标准输出:\n" + run.stdout + "\n标准错误:\n" + run.stderr);
     }
 
-    private static void assertFlat(Path root, String jarName) throws Exception {
-        assertFlat(world(root, "5.8.0"), jarName);
-    }
+    private static void assertLegacyUnit(Path root, String unit, boolean running) throws Exception {
+        World world = world(root, "5.8.0");
+        Files.writeString(world.install.resolve("NovaBot.jar"), "old-flat", StandardCharsets.UTF_8);
+        write(world.install.resolve("lib/novacore-5.7.8.jar"), "old-core");
+        Path unitDir = world.etc.resolve("systemd/system");
+        Files.createDirectories(unitDir);
+        Path unitFile = unitDir.resolve(unit + ".service");
+        Files.writeString(unitFile, "[Service]\nExecStart=/opt/starbot/start.sh\n", StandardCharsets.UTF_8);
+        Path drop = unitDir.resolve(unit + ".service.d");
+        Files.createDirectories(drop);
+        Files.writeString(drop.resolve("override.conf"), "[Service]\nMemoryMax=2G\n", StandardCharsets.UTF_8);
+        Path control = world.etc.resolve("systemd/system.control").resolve(unit + ".service.d");
+        Files.createDirectories(control);
+        Files.writeString(control.resolve("override.conf"), "[Service]\nMemoryHigh=2G\n", StandardCharsets.UTF_8);
+        Run run = run(world, running ? unit : "", "", Map.of(
+                "NOVABOT_SYSTEMD_SYSTEM_DIR", unitDir.toString(),
+                "NOVABOT_SYSTEMD_CONTROL_DIR", world.etc.resolve("systemd/system.control").toString()));
 
-    private static void assertFlat(World world, String jarName) throws Exception {
-        Files.writeString(world.install.resolve(jarName), "old-flat", StandardCharsets.UTF_8);
-        write(world.install.resolve("lib/old.jar"), "old-lib");
-        write(world.install.resolve("plugins/old.jar"), "old-plugin");
-        writeKept(world.install, "user-yml", "user-ds", "user-cookie", "user-key", "user-data");
-        Files.writeString(world.install.resolve("keep.txt"), "do-not-touch", StandardCharsets.UTF_8);
-        Map<String, byte[]> before = snapshot(world.install);
-        Run run = run(world, "", "");
-        Map<String, byte[]> after = snapshot(world.install);
-        String diff = diff(before, after);
-
-        assertTrue(diff.isEmpty(), jarName + " 这种扁平布局应一个文件都不改，实际:\n" + diff);
-        assertNotEquals(0, run.code, jarName + " 这种扁平布局应退非 0。标准输出:\n" + run.stdout);
-        assertTrue(run.stderr.contains(FLAT_REFUSAL),
-                "说明应写在标准错误。标准错误:\n" + run.stderr);
+        assertEquals(0, run.code, unit + " 应装完。标准错误:\n" + run.stderr + "\n标准输出:\n" + run.stdout);
+        String calls = read(world.logs.resolve("systemctl.log"));
+        assertTrue(calls.contains("disable " + unit), "应关掉旧单元的开机自启。systemctl:\n" + calls);
+        assertFalse(calls.contains("--now"), "disable 不该带 --now。systemctl:\n" + calls);
+        assertFalse(calls.contains("stop"), "安装不该停止正在跑的旧单元。systemctl:\n" + calls);
+        if (running) {
+            assertTrue(Files.isRegularFile(unitFile), "在跑的单元文件应留下");
+        } else {
+            assertFalse(Files.exists(unitFile), "不在跑的单元文件应删掉");
+        }
+        assertTrue(Files.isDirectory(drop), "覆盖设置目录不该删");
+        assertTrue(Files.isDirectory(control), "另一处覆盖设置目录不该删");
+        assertTrue(run.stdout.contains("不沿用"), run.stdout);
+        assertTrue(run.stdout.contains(drop.toString()), "应列出不沿用的覆盖设置。标准输出:\n" + run.stdout);
+        assertTrue(run.stdout.contains(control.toString()), "应列出不沿用的覆盖设置。标准输出:\n" + run.stdout);
+        int stopAt = run.stdout.indexOf("systemctl stop " + unit);
+        int startAt = run.stdout.indexOf("systemctl start novabot@5.8.0");
+        assertTrue(stopAt >= 0 && startAt > stopAt, "应先停旧再起新。标准输出:\n" + run.stdout);
+        assertFalse(run.stdout.contains("systemctl stop novabot@"), run.stdout);
+        assertTrue(run.stdout.contains("断一小会儿"), run.stdout);
     }
 
     private static void assertRunningUntouched(World world, Run run, Map<String, byte[]> before) throws IOException {
@@ -556,6 +811,11 @@ class VersionedReleaseInstallTest {
     }
 
     private static Run run(World world, String active, String enabled) throws IOException, InterruptedException {
+        return run(world, active, enabled, Map.of());
+    }
+
+    private static Run run(World world, String active, String enabled, Map<String, String> extra)
+            throws IOException, InterruptedException {
         ProcessBuilder builder = new ProcessBuilder(
                 "bash", world.pkg.resolve("install.sh").toString(),
                 "--dir", world.install.toString(),
@@ -565,6 +825,7 @@ class VersionedReleaseInstallTest {
         builder.environment().put("NOVABOT_STUB_LOG", world.logs.toString());
         builder.environment().put("NOVABOT_STUB_ACTIVE", active);
         builder.environment().put("NOVABOT_STUB_ENABLED", enabled);
+        extra.forEach(builder.environment()::put);
         builder.redirectOutput(world.logs.resolve("stdout.txt").toFile());
         builder.redirectError(world.logs.resolve("stderr.txt").toFile());
         Process process = builder.start();
@@ -609,6 +870,20 @@ class VersionedReleaseInstallTest {
         return text.toString();
     }
 
+    private static void writeJarWithBuildVersion(Path jar, String version) throws IOException {
+        Files.createDirectories(jar.getParent());
+        try (OutputStream raw = Files.newOutputStream(jar);
+             ZipOutputStream zip = new ZipOutputStream(raw)) {
+            zip.putNextEntry(new ZipEntry("META-INF/build-info.properties"));
+            zip.write(("build.version=" + version + "\nbuild.name=NovaBot\n").getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+        }
+    }
+
+    private static String inode(Path path) throws IOException {
+        return String.valueOf(Files.getAttribute(path, "unix:ino"));
+    }
+
     private static void write(Path file, String text) throws IOException {
         Files.createDirectories(file.getParent());
         Files.writeString(file, text, StandardCharsets.UTF_8);
@@ -616,6 +891,27 @@ class VersionedReleaseInstallTest {
 
     private static String read(Path file) throws IOException {
         return Files.readString(file, StandardCharsets.UTF_8);
+    }
+
+    private static Path directoryWithoutUnzip(Path dir) throws IOException {
+        Path filtered = Files.createDirectories(dir.resolve("no-unzip"));
+        for (String name : List.of(
+                "bash", "sed", "basename", "dirname", "mkdir", "mv", "cp", "chmod",
+                "rm", "mktemp", "awk", "grep", "cat", "ln", "touch", "python3")) {
+            Path source = null;
+            for (String root : List.of("/bin", "/usr/bin")) {
+                Path candidate = Path.of(root, name);
+                if (Files.isExecutable(candidate) && !Files.isDirectory(candidate)) {
+                    source = candidate;
+                    break;
+                }
+            }
+            if (source == null) {
+                throw new IOException("找不到 " + name);
+            }
+            Files.createSymbolicLink(filtered.resolve(name), source);
+        }
+        return filtered;
     }
 
     private static void writeExecutable(Path file, String content) throws IOException {
