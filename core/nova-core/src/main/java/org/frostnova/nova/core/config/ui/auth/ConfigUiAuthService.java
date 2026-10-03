@@ -946,6 +946,14 @@ public class ConfigUiAuthService implements SmartLifecycle {
     /**
      * 把哈希写回配置文件，替换掉那份明文
      * <p>
+     * 写回挂在过门之后，中间隔着整个候命期：那会儿旧版还在跑，使用者若在旧版的设置页
+     * 改了口令，文件里已是新值——照写会把新口令盖回起动时那份明文的哈希，
+     * 过门核配置记下的「待重启」落空，重启后新口令不认。所以写之前先核一眼
+     * 文件里还是不是起动时那份明文，不是就不写，留给下次启动读到新值再换。
+     * 核对按起动时同样的规整（去首尾空白）比——手写的值常带着引号和首尾空白，
+     * 逐字比永远对不上，明文就一直留在文件里。按标准写法在文件里找不到这一项时
+     * 也不写回，记一句 warn：这种写法下明文换不成哈希，得让使用者看出来。
+     * <p>
      * 写不进去也要继续跑：口令本身是有效的，登录不受影响，
      * 只是文件里还留着明文——那是要提醒使用者的事，不是要拦住启动的事。
      * <p>
@@ -961,6 +969,16 @@ public class ConfigUiAuthService implements SmartLifecycle {
         }
 
         try {
+            String current = fileService.read().get(PASSWORD_PROPERTY);
+            if (current == null) {
+                log.warn("配置界面的登录口令在文件里按标准写法找不到这一项（候命期间删了，或用了别的写法），"
+                        + "这次没换成哈希，明文若还在请改成标准写法");
+                return;
+            }
+            if (!plaintext.equals(blankToNull(current))) {
+                log.info("配置界面的登录口令在候命期间被改过, 本次不写回哈希, 文件里保持现在的值");
+                return;
+            }
             fileService.writeWithoutBackup(Map.of(PASSWORD_PROPERTY, hashed));
             log.info("配置界面的登录口令已改为哈希保存, 主配置文件中不再有明文; {}",
                     fileService.backupSituation(PASSWORD_PROPERTY, plaintext));
