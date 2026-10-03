@@ -9,6 +9,7 @@
 #   ./install.sh --user starbot         指定运行服务的系统用户
 #   ./install.sh --no-service           跳过 systemd 服务创建
 #   ./install.sh --no-switch            只装、不换（有别的实例在跑时不自动换到本版）
+#   ./install.sh --no-packages          不经包管理器装任何东西（缺 Java 17 就停下，缺字体只提醒）
 #
 # 安装目录若还是旧的扁平布局（程序在根上），先把旧程序搬进 releases/旧版本号/ 再装。
 #
@@ -22,6 +23,7 @@ SERVICE_USER="starbot"
 PORT="7827"
 CREATE_SERVICE="yes"
 NO_SWITCH="no"
+NO_PACKAGES="no"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -40,6 +42,7 @@ while [ $# -gt 0 ]; do
         --user)       SERVICE_USER="$2"; shift 2 ;;
         --no-service) CREATE_SERVICE="no"; shift ;;
         --no-switch)  NO_SWITCH="yes"; shift ;;
+        --no-packages) NO_PACKAGES="yes"; shift ;;
         -h|--help)    usage; exit 0 ;;
         *)            die "未知参数: $1（可用 --help 查看用法）" ;;
     esac
@@ -242,6 +245,11 @@ find_jdk17() {
     return 1
 }
 
+# 给了 --no-packages 时，缺运行环境就在动机器之前停下。
+stop_without_packages() {
+    die "$1这一次什么都没改。"
+}
+
 # 从源码构建要用 javac，只跑现成产物则 JRE 足够（JDK 多占约 150 MB）
 NEED_JAVA="JRE"
 if [ -f "$ROOT/build.sh" ]; then
@@ -257,6 +265,9 @@ if [ "$NEED_JAVA" = "JDK" ] && [ "$(java_major)" -gt 17 ]; then
     info "构建要另用 Java 17：这台机器现在的 Java 主版本是 $(java_major)"
     info "原因：本工程只在 Java 17 上验过，版本高过 17 时构建会停下（见 build.sh「上界」那一段）"
     if ! BUILD_JAVA_HOME="$(find_jdk17)"; then
+        if [ "$NO_PACKAGES" = yes ]; then
+            stop_without_packages "缺 Java 17。从源码构建需要 JDK 17，请先装好 JDK 17 后再运行。"
+        fi
         info "机器上没有现成的 Java 17，现在装一把（只给这次构建用）"
         install_java JDK
         BUILD_JAVA_HOME="$(find_jdk17)" || die "装好 JDK 17 后仍没找到它（在 ${NOVABOT_JVM_ROOTS:-/usr/lib/jvm、/usr/lib64/jvm} 下没找到主版本为 17 的目录）。
@@ -265,11 +276,20 @@ if [ "$NEED_JAVA" = "JDK" ] && [ "$(java_major)" -gt 17 ]; then
     fi
     info "构建将使用 Java 17：${BUILD_JAVA_HOME}（只作用于这一次构建）"
 elif [ "$(java_major)" -lt 17 ]; then
+    if [ "$NO_PACKAGES" = yes ]; then
+        if [ "$NEED_JAVA" = "JDK" ]; then
+            stop_without_packages "缺 Java 17。从源码构建请先装好 JDK 17 后再运行。"
+        fi
+        stop_without_packages "缺 Java 17。请先装好 Java 17 后再运行。"
+    fi
     install_java "$NEED_JAVA"
     [ "$(java_major)" -ge 17 ] || die "$NEED_JAVA 17 安装后仍不可用，请手动检查"
 fi
 # 机器上可能已有 JRE 17 但没有 javac，此时版本检查会通过，构建却会失败
 if [ "$NEED_JAVA" = "JDK" ] && [ -z "$BUILD_JAVA_HOME" ] && ! command -v javac > /dev/null 2>&1; then
+    if [ "$NO_PACKAGES" = yes ]; then
+        stop_without_packages "缺 Java 17。从源码构建需要 javac，请先装好 JDK 17 后再运行。"
+    fi
     install_java JDK
     command -v javac > /dev/null 2>&1 || die "从源码构建需要 javac，安装 JDK 后仍未找到"
 fi
@@ -338,8 +358,17 @@ install_font() {
 
 # 程序自带中文字体；系统中文字体补内置没有的字（如韩文），没装也不影响中文显示
 if ! has_cjk_font; then
-    warn "未检测到中文字体"
-    install_font
+    if [ "$NO_PACKAGES" = yes ]; then
+        pm="$(detect_pkg_manager)"
+        if [ -n "$pm" ]; then
+            warn "未检测到系统中文字体。程序自带中文字体，中文照常显示；系统字体只补内置没有的字（如韩文）。需要时请手动安装，本发行版的候选包名：$(font_packages "$pm")"
+        else
+            warn "未检测到系统中文字体。程序自带中文字体，中文照常显示；系统字体只补内置没有的字（如韩文）。需要时请手动安装 Noto Sans CJK 或文泉驿字体。"
+        fi
+    else
+        warn "未检测到中文字体"
+        install_font
+    fi
 fi
 
 # ---------------------------------------------------------------- 构建

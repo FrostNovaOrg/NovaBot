@@ -240,8 +240,18 @@ class SwitchVersionToolTest {
                     names.append(unit)
                 save_enabled(names)
 
+            def pause_if_slow(name):
+                want = os.environ.get("NOVABOT_STUB_SLOW_QUERY", "")
+                if not want or name != want:
+                    return
+                flag = os.path.join(state_dir, "query-entered")
+                with open(flag, "w", encoding="utf-8") as fh:
+                    fh.write("1\\n")
+                time.sleep(3)
+
             scene = os.environ.get("NOVABOT_STUB_SCENE", "ordinary")
             verb = verb_of(args)
+            pause_if_slow(verb)
             if verb == "daemon-reload":
                 if os.environ.get("NOVABOT_STUB_FAIL", "") == "daemon-reload":
                     sys.exit(1)
@@ -711,6 +721,165 @@ class SwitchVersionToolTest {
                 "y 最后一行应说没有版本设了开机自启，实际：" + last);
     }
 
+    @Test
+    @DisplayName("预演：三样都成立时只看，末行是热交接")
+    void planHotHandoverLooksOnly(@TempDir Path dir) throws Exception {
+        // 故障：只看这次怎么走，却把服务起停了，或状态目录、覆盖设置被写出来。
+        World world = lay(dir, true, true, true, "hot-ok", OLD);
+        Run run = runPlan(world);
+
+        assertEquals(0, run.code, "预演应退 0，实际输出：" + run.stdout + run.stderr);
+        assertEquals("只看不动：把正在跑的实例换成 " + NEW + " 会怎么走。", firstLine(run.stdout),
+                "首行应是只看不动，实际：" + run.stdout);
+        assertTrue(run.stdout.contains("目标版本带 handover=1：是"), run.stdout);
+        assertTrue(run.stdout.contains("旧版拿着单实例锁：是"), run.stdout);
+        assertTrue(run.stdout.contains("可用内存不少于目标的内存上限（可用 7.6G，上限 1.2G）：是"),
+                run.stdout);
+        assertEquals("这次会走热交接：先起 " + NEW + "，等它到门口再停 " + OLD + "。", lastLine(run.stdout),
+                "末行应是热交接，实际：" + lastLine(run.stdout));
+        assertLookOnly(world);
+    }
+
+    @Test
+    @DisplayName("预演：没有 handover=1 就普通重启")
+    void planOrdinaryBecauseNoHandover(@TempDir Path dir) throws Exception {
+        World world = lay(dir, false, true, true, "ordinary", OLD);
+        Run run = runPlan(world);
+
+        assertEquals(0, run.code, "预演应退 0，实际输出：" + run.stdout + run.stderr);
+        assertTrue(run.stdout.contains("目标版本带 handover=1：否"), run.stdout);
+        assertEquals("这次会走普通重启：没有 handover=1。先停 " + OLD + "，再起 " + NEW + "。",
+                lastLine(run.stdout), "末行应带上没有 handover=1，实际：" + lastLine(run.stdout));
+        assertLookOnly(world);
+    }
+
+    @Test
+    @DisplayName("预演：旧版没拿着锁就普通重启")
+    void planOrdinaryBecauseLockMissing(@TempDir Path dir) throws Exception {
+        World world = lay(dir, true, true, false, "ordinary", OLD);
+        Run run = runPlan(world);
+
+        assertEquals(0, run.code, "预演应退 0，实际输出：" + run.stdout + run.stderr);
+        assertTrue(run.stdout.contains("旧版拿着单实例锁：否"), run.stdout);
+        assertEquals("这次会走普通重启：旧版没拿着锁。先停 " + OLD + "，再起 " + NEW + "。",
+                lastLine(run.stdout), "末行应带上旧版没拿着锁，实际：" + lastLine(run.stdout));
+        assertLookOnly(world);
+    }
+
+    @Test
+    @DisplayName("预演：内存不够就普通重启")
+    void planOrdinaryBecauseMemoryShort(@TempDir Path dir) throws Exception {
+        World world = lay(dir, true, false, true, "ordinary", OLD);
+        Run run = runPlan(world);
+
+        assertEquals(0, run.code, "预演应退 0，实际输出：" + run.stdout + run.stderr);
+        assertTrue(run.stdout.contains("可用内存不少于目标的内存上限（可用 98M，上限 1.2G）：否"),
+                run.stdout);
+        assertEquals("这次会走普通重启：内存不够。先停 " + OLD + "，再起 " + NEW + "。",
+                lastLine(run.stdout), "末行应带上内存不够，实际：" + lastLine(run.stdout));
+        assertLookOnly(world);
+    }
+
+    @Test
+    @DisplayName("预演：没有分目录实例在跑")
+    void planWhenNothingRunning(@TempDir Path dir) throws Exception {
+        World world = lay(dir, true, true, true, "ordinary", "");
+        Run run = runPlan(world);
+
+        assertEquals(0, run.code, "预演应退 0，实际输出：" + run.stdout + run.stderr);
+        assertEquals("只看不动：把正在跑的实例换成 " + NEW + " 会怎么走。", firstLine(run.stdout),
+                "首行应是只看不动，实际：" + run.stdout);
+        assertEquals("现在没有分目录实例在跑，这次会普通启动 " + NEW + "。", lastLine(run.stdout),
+                "末行应是普通启动，实际：" + lastLine(run.stdout));
+        assertLookOnly(world);
+    }
+
+    @Test
+    @DisplayName("预演：旧服务在跑时与真换同一句并退 1")
+    void planLegacyServiceRefusesLikeRealSwitch(@TempDir Path dir) throws Exception {
+        World world = lay(dir, true, true, true, "ordinary", "starbot");
+        Run run = runPlan(world);
+
+        assertEquals(1, run.code, "旧服务在跑应退 1，实际输出：" + run.stdout + run.stderr);
+        assertTrue(run.stdout.contains(
+                        "旧服务 starbot.service 正在运行。老用户第一次换到分目录，请先手动停掉旧服务，再起新版本。"),
+                "应与真换同一句，实际：" + run.stdout);
+        assertEquals("机器上跑的是旧服务 starbot。", lastLine(run.stdout),
+                "最后一行应与真换相同，实际：" + lastLine(run.stdout));
+        assertLookOnly(world);
+    }
+
+    @Test
+    @DisplayName("预演：旧服务在跑时第一行是只看不动")
+    void planLegacyRefusalLeadsWithLookOnly(@TempDir Path dir) throws Exception {
+        // 故障：预演被拒绝时，第一行和真换一样，看不出这次只是看看。
+        World world = lay(dir, true, true, true, "ordinary", "starbot");
+        Run run = runPlan(world);
+
+        assertEquals(1, run.code, "旧服务在跑应退 1，实际输出：" + run.stdout + run.stderr);
+        assertEquals("只看不动：把正在跑的实例换成 " + NEW + " 会怎么走。", firstLine(run.stdout),
+                "首行应是只看不动，实际：" + run.stdout);
+        assertTrue(run.stdout.contains(
+                        "旧服务 starbot.service 正在运行。老用户第一次换到分目录，请先手动停掉旧服务，再起新版本。"),
+                "拒绝那句应还在，实际：" + run.stdout);
+    }
+
+    @Test
+    @DisplayName("预演：多份在跑时第一行是只看不动")
+    void planManyCopiesLeadWithLookOnly(@TempDir Path dir) throws Exception {
+        // 故障：有不止一份在跑时，预演的第一行和真换一样，看不出这次只是看看。
+        String other = "5.7.7";
+        World world = lay(dir, true, true, true, "ordinary", other + "," + OLD);
+        Run run = runPlan(world);
+
+        assertEquals(1, run.code, "多份在跑应退 1，实际输出：" + run.stdout + run.stderr);
+        assertEquals("只看不动：把正在跑的实例换成 " + NEW + " 会怎么走。", firstLine(run.stdout),
+                "首行应是只看不动，实际：" + run.stdout);
+        assertTrue(run.stdout.contains("有不止一份 novabot@ 在跑，这次什么都没改。"),
+                "拒绝那句应还在，实际：" + run.stdout);
+    }
+
+    @Test
+    @DisplayName("预演被 TERM 打断时不收拾")
+    void planInterruptedByTerm(@TempDir Path dir) throws Exception {
+        planInterruptLeavesDropin(dir, "TERM");
+    }
+
+    @Test
+    @DisplayName("预演被 HUP 打断时不收拾")
+    void planInterruptedByHup(@TempDir Path dir) throws Exception {
+        planInterruptLeavesDropin(dir, "HUP");
+    }
+
+    @Test
+    @DisplayName("预演被 INT 打断时不收拾")
+    void planInterruptedByInt(@TempDir Path dir) throws Exception {
+        planInterruptLeavesDropin(dir, "INT");
+    }
+
+    private static void planInterruptLeavesDropin(Path dir, String signal) throws Exception {
+        // 故障：预演只是看看，中途断线却删掉目标版本预先放好的覆盖设置，并重新加载服务配置。
+        World world = lay(dir, true, true, true, "hot-ok", OLD);
+        Path conf = placeTargetDropin(world);
+        String kept = read(conf);
+        Run run = runPlanSignal(world, signal);
+
+        assertNotEquals(0, run.code, signal + " 预演被打断应退非 0，实际输出：" + run.stdout + run.stderr);
+        assertFalse(calledPrefix(world, "daemon-reload"),
+                signal + " 不该 daemon-reload，实际：" + calls(world));
+        assertFalse(calledPrefix(world, "start "), signal + " 不该 start，实际：" + calls(world));
+        assertFalse(calledPrefix(world, "stop "), signal + " 不该 stop，实际：" + calls(world));
+        assertFalse(calledPrefix(world, "enable "), signal + " 不该 enable，实际：" + calls(world));
+        assertFalse(calledPrefix(world, "disable "), signal + " 不该 disable，实际：" + calls(world));
+        assertEquals(kept, read(conf), signal + " 预先放好的覆盖应原样在");
+    }
+
+    private static Path placeTargetDropin(World world) throws IOException {
+        Path conf = world.runDir.resolve("novabot@" + NEW + ".service.d").resolve("novabot-switch.conf");
+        write(conf, "[Service]\nEnvironment=\"NOVABOT_STANDBY=true\"\n");
+        return conf;
+    }
+
     private static World lay(Path dir, boolean handover, boolean memoryEnough, boolean lockHeld,
                              String scene, String active) throws Exception {
         return lay(dir, handover, memoryEnough, lockHeld, scene, active, NEW);
@@ -756,15 +925,24 @@ class SwitchVersionToolTest {
         world.target = target;
         world.slowStop = "";
         world.fail = "";
+        world.slowQuery = "";
         return world;
     }
 
     private static Run run(World world) throws Exception {
-        return run(world, world.target);
+        return run(world, world.target, false);
     }
 
     private static Run run(World world, String target) throws Exception {
-        Process process = command(world, target).start();
+        return run(world, target, false);
+    }
+
+    private static Run runPlan(World world) throws Exception {
+        return run(world, world.target, true);
+    }
+
+    private static Run run(World world, String target, boolean plan) throws Exception {
+        Process process = command(world, target, plan).start();
         return finish(world, process);
     }
 
@@ -784,9 +962,37 @@ class SwitchVersionToolTest {
         return finish(world, process);
     }
 
+    private static Run runPlanSignal(World world, String signal) throws Exception {
+        world.slowQuery = "list-units";
+        Process process = command(world, world.target, true).start();
+        Path flag = world.stubState.resolve("query-entered");
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(40);
+        while (!Files.isRegularFile(flag)) {
+            if (!process.isAlive() || System.nanoTime() > deadline) {
+                process.destroyForcibly();
+                Run early = finish(world, process);
+                fail("只读查询没有开始。输出：" + early.stdout + early.stderr);
+            }
+            Thread.sleep(50);
+        }
+        Process killer = new ProcessBuilder("kill", "-" + signal, Long.toString(process.pid())).start();
+        assertEquals(0, killer.waitFor(), "送出 " + signal + " 失败");
+        return finish(world, process);
+    }
+
     private static ProcessBuilder command(World world, String target) {
+        return command(world, target, false);
+    }
+
+    private static ProcessBuilder command(World world, String target, boolean plan) {
         Path tool = world.bin.resolve("switch-version.sh");
-        ProcessBuilder builder = new ProcessBuilder(tool.toString(), target);
+        List<String> argv = new ArrayList<>();
+        argv.add(tool.toString());
+        if (plan) {
+            argv.add("--plan");
+        }
+        argv.add(target);
+        ProcessBuilder builder = new ProcessBuilder(argv);
         builder.environment().put("PATH", world.bin + ":/usr/bin:/bin");
         builder.environment().put("NOVABOT_INSTALL_DIR", world.install.toString());
         builder.environment().put("NOVABOT_PROC_LOCKS", world.locks.toString());
@@ -802,6 +1008,7 @@ class SwitchVersionToolTest {
         builder.environment().put("NOVABOT_STUB_USER", "starbot");
         builder.environment().put("NOVABOT_STUB_SLOW_STOP", world.slowStop);
         builder.environment().put("NOVABOT_STUB_FAIL", world.fail);
+        builder.environment().put("NOVABOT_STUB_SLOW_QUERY", world.slowQuery);
         builder.redirectOutput(world.logs.resolve("stdout.txt").toFile());
         builder.redirectError(world.logs.resolve("stderr.txt").toFile());
         return builder;
@@ -891,6 +1098,24 @@ class SwitchVersionToolTest {
         return false;
     }
 
+    private static String firstLine(String text) {
+        String trimmed = text.strip();
+        int nl = trimmed.indexOf('\n');
+        return nl < 0 ? trimmed : trimmed.substring(0, nl);
+    }
+
+    private static void assertLookOnly(World world) throws IOException {
+        assertFalse(calledPrefix(world, "start "), "只看不动不该 start，实际：" + calls(world));
+        assertFalse(calledPrefix(world, "stop "), "只看不动不该 stop，实际：" + calls(world));
+        assertFalse(calledPrefix(world, "enable "), "只看不动不该 enable，实际：" + calls(world));
+        assertFalse(calledPrefix(world, "disable "), "只看不动不该 disable，实际：" + calls(world));
+        assertFalse(calledPrefix(world, "daemon-reload"), "只看不动不该 daemon-reload，实际：" + calls(world));
+        assertFalse(Files.exists(world.stateDir), "只看不动不该建状态目录: " + world.stateDir);
+        assertFalse(Files.exists(world.runDir), "只看不动不该写覆盖设置: " + world.runDir);
+        assertFalse(read(world.logs.resolve("chown.log")).contains(world.stateDir.toString()),
+                "只看不动不该改状态目录的属主，实际：" + read(world.logs.resolve("chown.log")));
+    }
+
     private static String lastLine(String text) {
         String trimmed = text.strip();
         if (trimmed.isEmpty()) {
@@ -953,6 +1178,7 @@ class SwitchVersionToolTest {
         String target;
         String slowStop;
         String fail;
+        String slowQuery;
     }
 
     private static final class Run {
