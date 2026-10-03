@@ -34,6 +34,23 @@ def esc(s):
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+# 行内代码在这些符号后面允许折行。整段放得进容器一行时不拆，由样式表决定。
+_CODE_BREAK = re.compile(r"([/._=?&-])")
+
+
+def inline_code_html(raw):
+    parts = _CODE_BREAK.split(raw)
+    bits = []
+    for i, part in enumerate(parts):
+        if part == "":
+            continue
+        piece = esc(part)
+        if i % 2 == 1:
+            piece += "<wbr>"
+        bits.append(piece)
+    return "<code>%s</code>" % "".join(bits)
+
+
 def link_html(label, target, links, kind):
     links.append((kind, target))
     if kind == "img":
@@ -50,7 +67,7 @@ def inline_html(text, links, in_strong=False):
         if tok.startswith("**"):
             out.append("<strong>%s</strong>" % inline_html(tok[2:-2], links, True))
         elif tok.startswith("`"):
-            out.append("<code>%s</code>" % esc(tok[1:-1]))
+            out.append(inline_code_html(tok[1:-1]))
         elif in_strong and tok.startswith("!"):
             out.append(esc(tok))
         else:
@@ -218,8 +235,8 @@ def render_page(blocks, links):
                 text.extend(row)
                 trs.append("<tr>%s</tr>"
                            % "".join("<td>%s</td>" % inline_html(c, links) for c in row))
-            html.append("<table><thead><tr>%s</tr></thead><tbody>%s</tbody></table>"
-                        % (th, "".join(trs)))
+            html.append('<div class="table-wrap"><table><thead><tr>%s</tr></thead>'
+                        "<tbody>%s</tbody></table></div>" % (th, "".join(trs)))
         else:
             para = " ".join(block[1])
             text.append(para)
@@ -229,20 +246,157 @@ def render_page(blocks, links):
 
 # ---------- 站点构建 ----------
 
+# 顶栏仓库标志。打开页面前先把深浅色写到 html 上，样式表才不会先闪一下另一种颜色。
+_GH_ICON = (
+    '<svg class="gh-ico" viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">'
+    '<path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59'
+    '.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23'
+    '-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87'
+    ' 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15'
+    '-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2'
+    ' .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07'
+    '-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38'
+    'A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>'
+)
+_THEME_BOOT = (
+    "<script>\n"
+    "(function () {\n"
+    "  var mode = \"system\";\n"
+    "  try {\n"
+    "    var saved = localStorage.getItem(\"novabot-manual-theme\");\n"
+    "    if (saved === \"dark\" || saved === \"light\" || saved === \"system\") mode = saved;\n"
+    "  } catch (e) {}\n"
+    "  var dark = mode === \"dark\";\n"
+    "  if (mode === \"system\" && window.matchMedia) {\n"
+    "    dark = window.matchMedia(\"(prefers-color-scheme: dark)\").matches;\n"
+    "  }\n"
+    "  document.documentElement.setAttribute(\"data-theme\", dark ? \"dark\" : \"light\");\n"
+    "  document.documentElement.setAttribute(\"data-mode\", mode);\n"
+    "})();\n"
+    "</script>"
+)
+_SVG_SUN = (
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2" '
+    'fill="none" stroke="currentColor" stroke-width="1.8"/>'
+    '<path d="M12 3.2v2.2M12 18.6v2.2M3.2 12h2.2M18.6 12h2.2M6 6l1.6 1.6M16.4 16.4L18 18'
+    'M18 6l-1.6 1.6M7.6 16.4L6 18" fill="none" stroke="currentColor" '
+    'stroke-width="1.8" stroke-linecap="round"/></svg>'
+)
+_SVG_MOON = (
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.6 3.8A7.4 7.4 0 1 0 19 15.8'
+    ' 5.8 5.8 0 0 1 15.6 3.8z" fill="none" stroke="currentColor" stroke-width="1.8" '
+    'stroke-linejoin="round"/></svg>'
+)
+_SVG_SYSTEM = (
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="11" '
+    'rx="1.6" fill="none" stroke="currentColor" stroke-width="1.8"/>'
+    '<path d="M8 19.5h8M12 15.5v4" fill="none" stroke="currentColor" stroke-width="1.8" '
+    'stroke-linecap="round"/></svg>'
+)
+
+# 首页章节入口的小图标，按章节顺序取。
+_ICON_PATHS = (
+    "M12 3.2l1.9 4.7 5 .6-3.8 3.4 1.1 5-4.2-2.5-4.2 2.5 1.1-5L5.1 8.5l5-.6z",
+    "M5 7h14M5 12h14M5 17h8",
+    "M12 4v9.5M8.5 10.5L12 14l3.5-3.5M6 19h12",
+    "M5 5h14v14H5zM5 9h14",
+    "M12 4.5a7.5 7.5 0 1 0 .01 0zM12 8v4.2l2.8 1.8",
+    "M12 11.2a3.1 3.1 0 1 0 0-6.2 3.1 3.1 0 0 0 0 6.2zM6.2 19.2c.8-2.8 2.8-4.2 5.8-4.2s5 1.4 5.8 4.2",
+    "M8 11a2.4 2.4 0 1 0 0-4.8A2.4 2.4 0 0 0 8 11zM16 11a2.4 2.4 0 1 0-.01 0zM4.5 18.5c.6-2.2 2-3.3 3.5-3.3s2.9 1.1 3.5 3.3M12.5 18.5c.6-2.2 2-3.3 3.5-3.3s2.9 1.1 3.5 3.3",
+    "M6 16.5V8.2A2.2 2.2 0 0 1 8.2 6h7.6A2.2 2.2 0 0 1 18 8.2V14a2.2 2.2 0 0 1-2.2 2.2H9.2L6 18.5z",
+    "M5 16V9M10 16V6M15 16v-4M20 16V8",
+    "M15.5 4.8A6.4 6.4 0 1 0 16 15.2 5.2 5.2 0 0 1 15.5 4.8z",
+    "M12 7v5l3 2M12 4.5a7.5 7.5 0 1 0 .01 0z",
+    "M5 8h14M5 12h14M5 16h14",
+    "M12 19V6M8 10l4-4 4 4M6 19h12",
+    "M12 5.5l6.5 3v5.2c0 3.4-2.6 5.6-6.5 6.8-3.9-1.2-6.5-3.4-6.5-6.8V8.5z",
+    "M6 18l4-12h4l4 12M8.2 14h7.6",
+    "M7 7h4v4H7zM13 13h4v4h-4zM13 9h4M7 15h4",
+    "M12 4.5l6 2.2v5.2c0 3.6-2.5 6-6 7.6-3.5-1.6-6-4-6-7.6V6.7z",
+    "M8 8h5a3 3 0 0 1 0 6H8zM16 16H11a3 3 0 0 1 0-6",
+)
+
+
+def _icon(i):
+    d = _ICON_PATHS[i] if i < len(_ICON_PATHS) else _ICON_PATHS[-1]
+    return ('<svg class="ci" viewBox="0 0 24 24" aria-hidden="true">'
+            '<path d="%s" fill="none" stroke="currentColor" stroke-width="1.8" '
+            'stroke-linecap="round" stroke-linejoin="round"/></svg>' % d)
+
+
+_THEME_HINTS = {
+    "dark": "当前：深色，点一下换成浅色",
+    "light": "当前：浅色，点一下换成跟随系统",
+    "system": "当前：跟随系统，点一下换成深色",
+}
+
+
+def _theme_button():
+    def opt(mode, label, svg):
+        return ('<span class="theme-opt opt-%s" data-hint="%s">%s<span>%s</span></span>'
+                % (mode, _THEME_HINTS[mode], svg, label))
+    hint = _THEME_HINTS["system"]
+    return ('<button type="button" class="theme" aria-live="polite" '
+            'title="%s" aria-label="%s">' % (hint, hint)
+            + opt("dark", "深色", _SVG_MOON)
+            + opt("light", "浅色", _SVG_SUN)
+            + opt("system", "跟随系统", _SVG_SYSTEM)
+            + "</button>")
+
+
+def home_html(toc):
+    """首页：抬头卡片、从哪开始、分组卡片。分组按现有章节顺序切，不改文件名。"""
+    bands = (
+        ("认识与安装", 0, 4),
+        ("日常使用", 4, 12),
+        ("升级与排障", 12, 14),
+        ("附录", 14, len(toc)),
+    )
+    chunks = []
+    for label, a, b in bands:
+        cards = []
+        for i, (stem, title) in enumerate(toc[a:b], start=a):
+            cards.append(
+                '<a class="card" href="%s.html"><span class="ci-wrap">%s</span>'
+                '<span class="ct">%s</span></a>'
+                % (esc(stem), _icon(i), esc(title)))
+        if cards:
+            chunks.append('<p class="band">%s</p><div class="cards">%s</div>'
+                          % (esc(label), "".join(cards)))
+    start = toc[0][0] if toc else "index"
+    lead = ("NovaBot 是一个哔哩哔哩直播与动态推送机器人：盯住你关心的 UP 主，"
+            "开播、下播、发动态时把消息推到 QQ 群或好友，下播后自动生成数据报告图。")
+    return ('<article class="home"><div class="hero"><h1>%s</h1>'
+            '<p class="lead">%s</p>'
+            '<a class="start" href="%s.html">从哪开始</a></div>%s</article>'
+            % (esc(SITE_NAME), esc(lead), esc(start), "".join(chunks)))
+
+
 def page_shell(title, toc, content, pager, cur):
     toc_html = toc_html_for(toc, cur)
     head_title = title if title == SITE_NAME else "%s · %s" % (title, SITE_NAME)
     search = ('<div class="search"><input type="search" class="q" '
               'placeholder="搜索手册…" autocomplete="off"><div class="hits"></div></div>')
+    topbar = (
+        '<header class="topbar">'
+        '<a class="top-brand" href="index.html">'
+        '<span class="dot" aria-hidden="true"></span>NovaBot</a>'
+        '<div class="top-actions">'
+        '<a class="gh" href="https://github.com/FrostNovaOrg/NovaBot" '
+        'target="_blank" rel="noopener noreferrer">%s<span>GitHub</span></a>'
+        '%s</div></header>'
+    ) % (_GH_ICON, _theme_button())
     return """<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>%s</title>
+%s
 <link rel="stylesheet" href="manual.css">
 </head>
 <body>
+%s
 <details class="nav-toggle"><summary>目录</summary>
 <nav class="toc toc-in-toggle">
 <div class="brand"><a href="index.html">%s</a></div>
@@ -261,10 +415,12 @@ def page_shell(title, toc, content, pager, cur):
 %s
 </main>
 </div>
+<script src="theme.js"></script>
 <script src="search-data.js"></script>
 <script src="search.js"></script>
 </body>
-</html>""" % (esc(head_title), SITE_NAME, search, toc_html,
+</html>""" % (esc(head_title), _THEME_BOOT, topbar,
+              SITE_NAME, search, toc_html,
               SITE_NAME, search, toc_html, content, pager)
 
 
@@ -377,8 +533,8 @@ def main():
     if OUT.exists():
         shutil.rmtree(OUT)
     OUT.mkdir(parents=True)
-    for src in (ASSETS / "manual.css", ASSETS / "search.js"):
-        shutil.copy(src, OUT / src.name)
+    for name in ("manual.css", "search.js", "theme.js"):
+        shutil.copy(ASSETS / name, OUT / name)
 
     entries = []
     for i, (stem, title, blocks) in enumerate(pages):
@@ -410,14 +566,8 @@ def main():
                        "".join(pager), stem), encoding="utf-8")
         entries.append({"u": stem + ".html", "t": title, "c": title + "\n" + text})
 
-    # 目录页（首页）
-    items = "".join('<li><a href="%s.html">%s</a></li>' % (esc(s), esc(t)) for s, t in toc)
-    home = """<article><h1>%s</h1>
-<p>NovaBot 是一个哔哩哔哩直播与动态推送机器人：盯住你关心的 UP 主，
-开播、下播、发动态时把消息推到 QQ 群或好友，下播后自动生成数据报告图。
-这本手册讲怎么把它装起来、配好、用顺手。</p>
-<p>不知道从哪看起就按顺序读；要找具体的东西，用左侧的搜索框。</p>
-<nav class="sect"><span>全书目录</span><ul>%s</ul></nav></article>""" % (SITE_NAME, items)
+    # 目录页（首页）：抬头、从哪开始、分组卡片。分组不改各章文件名。
+    home = home_html(toc)
     (OUT / "index.html").write_text(
         page_shell(SITE_NAME, toc, home, '<div class="pager"></div>', "index"),
         encoding="utf-8")
