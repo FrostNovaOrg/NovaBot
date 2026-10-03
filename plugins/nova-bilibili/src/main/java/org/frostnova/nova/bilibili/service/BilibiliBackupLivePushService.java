@@ -8,6 +8,7 @@ import org.frostnova.nova.bilibili.model.Room;
 import org.frostnova.nova.bilibili.model.Up;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
+import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.LiveSessionRecovery;
@@ -20,6 +21,7 @@ import org.springframework.scheduling.TaskScheduler;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashSet;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.Map;
 import java.util.Optional;
@@ -84,6 +86,20 @@ public class BilibiliBackupLivePushService {
      */
     private volatile boolean initialized;
 
+    /**
+     * 进程起来那一刻数据源里配着的主播 uid
+     * <p>
+     * 第一次真正跑起来的那轮轮询记下（数据源已就绪之后、「没有主播就返回」之前；空也照记，
+     * 接口查询成不成都算）。只按 uid 记、不要求房间号：推送配置不存房间号，起来时房间号
+     * 未必已到（资料缓存缺、后台补全未赶上），要求了，房间号晚到的就会掉出名单。
+     * 用来分「停机空当里结束的那场」与「运行中加回」：前者是起来时
+     * 就配着的主播，场在停机空当里结束，照 {@link #RECENT_LIVE_OFF_WINDOW} 窗分两路收；
+     * 后者账上的在播是上一进程里在播时被移出配置留下的，加回来时多半早已下播，没有
+     * 「刚下播」可言，不该再发下播通知。不能拿 {@link #initialized} 判：首轮接口查询
+     * 没回到的主播要到第二轮才被看见，那时 initialized 已真，而人仍是起来时就配着的。
+     */
+    private volatile Set<Long> upsAtStartup;
+
     private volatile AbstractDataSource dataSource;
 
     /**
@@ -146,7 +162,23 @@ public class BilibiliBackupLivePushService {
             return;
         }
 
-        Map<Long, Up> ups = source.getUsers(BilibiliPlatform.BILIBILI.id()).stream()
+        List<PushUser> users = source.getUsers(BilibiliPlatform.BILIBILI.id());
+
+        // 首次真正跑起来的这轮把数据源里的主播记全（空也照记）：分「停机空当里结束的场」与
+        // 「运行中加回」靠的是这份名单，必须赶在「没有主播就返回」之前——首轮空名单同样是名单。
+        // 只按 uid 记、赶在下面房间号过滤之前：推送配置不存房间号，起来时人人都缺，房间号要等
+        // 资料缓存同步或后台补全才有——照 ups 的口径滤，房间号晚到的起来时就配着的主播会掉出
+        // 名单、被当成运行中加回，停得短也丢掉「刚下播」的通知与报告图
+        if (upsAtStartup == null) {
+            upsAtStartup = Set.copyOf(users.stream()
+                    .filter(user -> !Boolean.FALSE.equals(user.getEnabled()))
+                    .map(Up::new)
+                    .filter(up -> up.getUid() != null)
+                    .map(Up::getUid)
+                    .collect(Collectors.toList()));
+        }
+
+        Map<Long, Up> ups = users.stream()
                 .filter(user -> !Boolean.FALSE.equals(user.getEnabled()))
                 .map(Up::new)
                 .filter(up -> up.getUid() != null && up.getRoomId() != null)
@@ -194,13 +226,14 @@ public class BilibiliBackupLivePushService {
             return;
         }
 
-        // 首轮见「账上在播、实际不在播」：这场是在停机空当里结束的——起来时账上还挂着在播，
-        // 实际上主播早已下播。不处理的话账上那个在播永远翻不过来（下一轮起 previous 不再是
-        // null，状态再也不会被当成变化），控制台一直显示在播，下播通知、报告图与下播时段的
-        // 打赏汇总都没了。怎么收看 {@link #closeStreamEndedWhileDown}
+        // 此前没观测过而「账上在播、实际不在播」：要么是停机空当里结束的那场（起来时账上
+        // 还挂着在播，实际主播早已下播），要么是运行中加回、账上挂的是上一进程留下的旧场。
+        // 不处理的话账上那个在播永远翻不过来（下一轮起 previous 不再是 null，状态再也不会
+        // 被当成变化），控制台一直显示在播，下播通知、报告图与下播时段的打赏汇总都没了。
+        // 两种各怎么收看 {@link #closeStreamEndedWhileDown}
         if (previous == null && !living
                 && liveDataService.getLiveStatus(BilibiliPlatform.BILIBILI.id(), up.getUid()).orElse(false)) {
-            closeStreamEndedWhileDown(up);
+            closeStreamEndedWhileDown(up, upsAtStartup.contains(up.getUid()));
             return;
         }
 
@@ -244,24 +277,35 @@ public class BilibiliBackupLivePushService {
     }
 
     /**
-     * 把停机空当里结束的那场收掉
+     * 把「此前没观测过、账上在播、实际不在播」的那笔收掉
      * <p>
-     * 首轮见「账上在播、实际不在播」时走这里，按离上次落盘多久分两路：
+     * 按这位是不是进程起来时就配着的分两种：
      * <ul>
-     *     <li>停得短（{@link #RECENT_LIVE_OFF_WINDOW} 内）：主播多半就是刚下播，照正常下播走——
-     *         过状态闸门、发一次下播事件，通知与报告图由原来的监听照发。下播时刻取上次落盘时刻：
-     *         那是我们能证明的、账上还记着在播的最后一刻</li>
-     *     <li>停得久、或取不到上次落盘时刻：下播时刻无从得知，当场按未闭合补档（不发下播事件、
-     *         不补发通知），再把账上改成不在播——这样下次开播不会再补一遍，控制台也不再挂着在播</li>
+     *     <li>起来时就配着：场是在停机空当里结束的，按离上次落盘多久分两路：
+     *         <ul>
+     *             <li>停得短（{@link #RECENT_LIVE_OFF_WINDOW} 内）：主播多半就是刚下播，照正常下播走——
+     *                 过状态闸门、发一次下播事件，通知与报告图由原来的监听照发。下播时刻取上次落盘时刻：
+     *                 那是我们能证明的、账上还记着在播的最后一刻</li>
+     *             <li>停得久、或取不到上次落盘时刻：下播时刻无从得知，当场按未闭合补档（不发下播事件、
+     *                 不补发通知），再把账上改成不在播——这样下次开播不会再补一遍，控制台也不再挂着在播</li>
+     *         </ul>
+     *     </li>
+     *     <li>运行中加回：账上那个在播是上一进程里在播时被移出配置留下的，加回来时没有停机空当
+     *         可谈，停得短也不代表刚下播——一律当场按未闭合补档，不发过时的下播通知</li>
      * </ul>
      * @param up UP 主信息
+     * @param configuredAtStartup 是否进程起来时就配着（{@link #upsAtStartup} 记于首轮轮询）
      */
-    private void closeStreamEndedWhileDown(Up up) {
+    private void closeStreamEndedWhileDown(Up up, boolean configuredAtStartup) {
         String platform = BilibiliPlatform.BILIBILI.id();
         Optional<Long> lastSave = liveDataService.getLastSaveTime();
         long now = System.currentTimeMillis();
-        if (lastSave.isEmpty() || now - lastSave.get() > RECENT_LIVE_OFF_WINDOW.toMillis()) {
-            log.warn("备用直播推送: {} 账上在播、实际已下播, 下播时刻无从得知, 当场按未闭合补档", up.getUname());
+        if (!configuredAtStartup || lastSave.isEmpty() || now - lastSave.get() > RECENT_LIVE_OFF_WINDOW.toMillis()) {
+            if (!configuredAtStartup) {
+                log.warn("备用直播推送: {} 运行中加回, 账上在播、实际已下播, 当场按未闭合补档, 不发过时的下播通知", up.getUname());
+            } else {
+                log.warn("备用直播推送: {} 账上在播、实际已下播, 下播时刻无从得知, 当场按未闭合补档", up.getUname());
+            }
             sessionRecovery.archiveUnclosedIfAny(platform, up, now);
             liveDataService.setLiveStatus(platform, up.getUid(), false);
             return;
