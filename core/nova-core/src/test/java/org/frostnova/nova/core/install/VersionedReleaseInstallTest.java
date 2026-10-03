@@ -82,7 +82,31 @@ class VersionedReleaseInstallTest {
 
     private static final String STUB_CHOWN = """
             #!/bin/sh
+            printf '%s\\n' "$*" >> "${NOVABOT_STUB_LOG}/chown.log"
             exit 0
+            """;
+
+    /**
+     * 换版工具替身：只记账，不换版。
+     * <p>
+     * 件里留一行含 /opt/starbot 的 INSTALL_DIR，安装脚本照单元模板那样把缺省目录换成本次安装目录。
+     * 运行时把这一行、自己被哪一份叫到、收到的参数记进替身日志，并把调用那一刻的 systemctl
+     * 日志另存一份——「调工具之前装时有没有动过开机自启」只在那一刻看，事后补看会被工具自己的动作盖掉。
+     */
+    private static final String STUB_SWITCH_VERSION = """
+            #!/bin/sh
+            INSTALL_DIR="${NOVABOT_INSTALL_DIR:-/opt/starbot}"
+            LOG="${NOVABOT_STUB_LOG}/switch-version.log"
+            {
+              echo "argv0=$0"
+              grep '^INSTALL_DIR=' "$0"
+              echo "args=$*"
+            } >> "$LOG"
+            if [ -f "${NOVABOT_STUB_LOG}/systemctl.log" ]; then
+              cat "${NOVABOT_STUB_LOG}/systemctl.log" > "${NOVABOT_STUB_LOG}/systemctl-at-switch.log"
+            fi
+            echo "换版工具替身：目标 $*"
+            exit "${NOVABOT_STUB_SWITCH_RC:-0}"
             """;
 
     private static final String STUB_USERADD = """
@@ -162,7 +186,7 @@ class VersionedReleaseInstallTest {
     }
 
     @Test
-    @DisplayName("分目录上再装一版：留下上一版和正在跑的，更旧的删掉，自启换到新版本")
+    @DisplayName("分目录上再装一版：留下上一版和正在跑的，更旧的删掉，装完交给换版工具换过去")
     void upgradeKeepsPreviousAndSwitchesAutostart(@TempDir Path dir) throws Exception {
         World world = world(dir, "5.8.0");
         writeRelease(world.install, "5.7.7", "old-577");
@@ -236,7 +260,7 @@ class VersionedReleaseInstallTest {
         assertTrue(run.stdout.contains("my-extra.jar"), run.stdout);
         assertTrue(run.stdout.contains("nova-demo-extra-1.2.jar"), run.stdout);
         assertTrue(run.stdout.contains("my-dep.jar"), run.stdout);
-        assertTrue(run.stdout.contains("旧版本还在跑的话先停掉，再起新版本"), run.stdout);
+        assertTrue(run.stdout.contains("旧程序若还在跑，先照你原来起它的办法停掉"), run.stdout);
         assertFalse(run.stdout.contains("systemctl stop novabot@"), run.stdout);
         assertTrue(run.stdout.contains("systemctl start novabot@5.8.0"), run.stdout);
     }
@@ -376,7 +400,9 @@ class VersionedReleaseInstallTest {
         writeRelease(world.install, "5.7.8", "old-578");
         writeRelease(world.install, "5.7.9", "old-579");
         writeKept(world.install, "user-yml", "user-ds", "user-cookie", "user-key", "user-data");
-        Run run = run(world, "5.7.7", "5.7.9");
+        // 这一格要看的是「逐个问实例」那一段，而 B 支（有别的实例在跑）把整段跳过交给换版工具，
+        // 所以这里取没有实例在跑那一种：自启仍由装的时候切，逐个问的那段照走
+        Run run = run(world, "", "5.7.9");
 
         assertEquals(0, run.code, "分目录上再装一版应成功。标准错误:\n" + run.stderr + "\n标准输出:\n" + run.stdout);
         String calls = read(world.logs.resolve("systemctl.log"));
@@ -437,8 +463,10 @@ class VersionedReleaseInstallTest {
                 "使用者放在 releases 下的目录应原样留下");
         assertFalse(run.stdout.contains("systemctl stop novabot@6.0-backup"),
                 "收尾不该提示停掉不像版本号的目录。标准输出:\n" + run.stdout);
-        assertTrue(run.stdout.contains("systemctl stop novabot@5.7.9"),
-                "收尾仍应提示停上一版。标准输出:\n" + run.stdout);
+        assertFalse(run.stdout.contains("systemctl stop novabot@5.7.9"),
+                "没在跑的旧版本不该提示去停。标准输出:\n" + run.stdout);
+        assertTrue(run.stdout.contains("1. 启动新版本"),
+                "没有在跑的实例，收尾就是「1. 启动新版本」。标准输出:\n" + run.stdout);
         assertFalse(Files.exists(world.install.resolve("releases/5.7.8")),
                 "更旧的版本目录仍应删掉");
     }
@@ -616,6 +644,8 @@ class VersionedReleaseInstallTest {
         assertTrue(run.stdout.contains("断一小会儿"), run.stdout);
         assertFalse(run.stdout.contains("确认新版本起来之后再停掉"), run.stdout);
         assertFalse(run.stdout.contains("systemctl stop novabot@5.7.8"), run.stdout);
+        assertFalse(Files.exists(world.logs.resolve("switch-version.log")),
+                "老用户首升要手动先停后起，不该自动换版");
     }
 
     @Test
@@ -634,6 +664,294 @@ class VersionedReleaseInstallTest {
         assertFalse(Files.exists(world.install.resolve("releases/5.7.8/start.sh.novabot-new")));
         assertEquals("old-flat", read(world.install.resolve("releases/5.7.8/NovaBot.jar")));
         assertEquals("new-jar", read(world.install.resolve("releases/5.8.0/NovaBot.jar")));
+    }
+
+    @Test
+    @DisplayName("install.sh 语法过、--help 里有 --no-switch")
+    void installScriptParsesAndHelpListsNoSwitch() throws Exception {
+        Path script = repoRoot().resolve("install.sh");
+        ProcessBuilder parse = new ProcessBuilder("bash", "-n", script.toString());
+        parse.redirectErrorStream(true);
+        Process parsed = parse.start();
+        String parseOut = new String(parsed.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        assertTrue(parsed.waitFor(30, TimeUnit.SECONDS), "bash -n 超时:\n" + parseOut);
+        assertEquals(0, parsed.exitValue(), "install.sh 语法应过。输出:\n" + parseOut);
+
+        ProcessBuilder help = new ProcessBuilder("bash", script.toString(), "--help");
+        help.redirectErrorStream(true);
+        Process helped = help.start();
+        String helpOut = new String(helped.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        assertTrue(helped.waitFor(30, TimeUnit.SECONDS), "--help 超时:\n" + helpOut);
+        assertTrue(helpOut.contains("--no-switch"), "用法里应有 --no-switch:\n" + helpOut);
+    }
+
+    @Test
+    @DisplayName("装工具：装成 root 所有的系统命令，INSTALL_DIR 已换成本次安装目录")
+    void switchToolInstalledAsRootOwnedSystemCommand(@TempDir Path dir) throws Exception {
+        // 故障：root 跑的是服务用户改得动的脚本；或装出来的那份指着别的目录
+        World world = world(dir, "5.8.0");
+        writeKept(world.install, "user-yml", "user-ds", "user-cookie", "user-key", "user-data");
+        Run run = run(world, "", "");
+
+        assertEquals(0, run.code, "应装完。标准错误:\n" + run.stderr + "\n标准输出:\n" + run.stdout);
+        Path tool = world.sbin.resolve("novabot-switch-version");
+        assertTrue(Files.isRegularFile(tool), "换版工具应装到系统目录: " + tool);
+        assertTrue(Files.isExecutable(tool), "换版工具应可执行: " + tool);
+        assertEquals(Set.of(
+                        PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE, PosixFilePermission.OWNER_EXECUTE,
+                        PosixFilePermission.GROUP_READ, PosixFilePermission.GROUP_EXECUTE,
+                        PosixFilePermission.OTHERS_READ, PosixFilePermission.OTHERS_EXECUTE),
+                Files.getPosixFilePermissions(tool), "权限位应恰 rwxr-xr-x");
+        String body = read(tool);
+        assertTrue(body.contains(world.install.toString()),
+                "INSTALL_DIR 缺省值应换成本次安装目录，实际:\n" + body);
+        assertFalse(body.contains("/opt/starbot"),
+                "件里不该还留着缺省的 /opt/starbot，实际:\n" + body);
+        String chownLog = readIfExists(world.logs.resolve("chown.log"));
+        assertTrue(chownLog.contains("root:root " + world.sbin),
+                "chown 应把工具记成 root 所有，实际:\n" + chownLog);
+    }
+
+    @Test
+    @DisplayName("B 退 0：调的是系统目录那一份、一次、参数是本版，收尾没有停旧起新两步")
+    void autoSwitchCallsSystemToolOnceWithThisVersion(@TempDir Path dir) throws Exception {
+        // 故障：装完还要手敲停起，或装时就把自启切到还没起来的新版本
+        World world = world(dir, "5.8.0");
+        writeRelease(world.install, "5.7.7", "old-577");
+        writeKept(world.install, "user-yml", "user-ds", "user-cookie", "user-key", "user-data");
+        Run run = run(world, "5.7.7", "");
+
+        assertEquals(0, run.code, "换版做成时 install 应退 0。标准错误:\n" + run.stderr + "\n标准输出:\n" + run.stdout);
+        Path tool = world.sbin.resolve("novabot-switch-version");
+        String toolLog = readIfExists(world.logs.resolve("switch-version.log"));
+        assertTrue(toolLog.contains("argv0=" + tool),
+                "应调系统目录那一份，不是 releases 里那份:\n" + toolLog);
+        assertEquals(1, countOccurrences(toolLog, "args="),
+                "应只调一次:\n" + toolLog);
+        assertTrue(toolLog.contains("args=5.8.0"),
+                "参数应是本版:\n" + toolLog);
+        String atSwitch = readIfExists(world.logs.resolve("systemctl-at-switch.log"));
+        assertFalse(atSwitch.contains("enable novabot@"),
+                "调工具之前装时不该动开机自启:\n" + atSwitch);
+        assertFalse(atSwitch.contains("disable novabot@"),
+                "调工具之前装时不该动开机自启:\n" + atSwitch);
+        assertFalse(run.stdout.contains("先停旧版本"), run.stdout);
+        assertFalse(run.stdout.contains("再启动新版本"), run.stdout);
+        assertFalse(run.stdout.contains("systemctl stop"), run.stdout);
+        assertFalse(run.stdout.contains("systemctl start"), run.stdout);
+        assertTrue(run.stdout.contains("1. 查看启动日志"),
+                "收尾应从「查看启动日志」起编号:\n" + run.stdout);
+    }
+
+    @Test
+    @DisplayName("B 退非 0：install 退非 0，收尾写清没全做成并给重试命令")
+    void autoSwitchFailureReportsStateAndRetry(@TempDir Path dir) throws Exception {
+        // 故障：没换成却显示成功
+        World world = world(dir, "5.8.0");
+        writeRelease(world.install, "5.7.7", "old-577");
+        writeKept(world.install, "user-yml", "user-ds", "user-cookie", "user-key", "user-data");
+        Run run = run(world, "5.7.7", "", Map.of("NOVABOT_STUB_SWITCH_RC", "3"));
+
+        assertNotEquals(0, run.code, "换版没全做成时 install 应退非 0。标准输出:\n" + run.stdout);
+        assertTrue(run.stdout.contains("换版没有全部做成"),
+                "收尾应写清换版没全做成:\n" + run.stdout);
+        Path tool = world.sbin.resolve("novabot-switch-version");
+        assertTrue(run.stdout.contains(tool + " 5.8.0"),
+                "收尾应给重试命令:\n" + run.stdout);
+        assertTrue(run.stdout.contains("journalctl"),
+                "收尾应给看日志的命令:\n" + run.stdout);
+        String calls = readIfExists(world.logs.resolve("systemctl.log"));
+        assertFalse(calls.contains("enable novabot@"),
+                "安装脚本自己不该动开机自启:\n" + calls);
+        assertFalse(calls.contains("disable novabot@"),
+                "安装脚本自己不该动开机自启:\n" + calls);
+    }
+
+    @Test
+    @DisplayName("C：--no-switch 只装不换，没调工具、没动开机自启")
+    void noSwitchOnlyInstallsWithoutCallingTool(@TempDir Path dir) throws Exception {
+        // 故障：说了只装却被换了
+        World world = world(dir, "5.8.0");
+        writeRelease(world.install, "5.7.7", "old-577");
+        writeKept(world.install, "user-yml", "user-ds", "user-cookie", "user-key", "user-data");
+        Run run = run(world, "5.7.7", "", Map.of(), "--no-switch");
+
+        assertEquals(0, run.code, "只装应成功。标准错误:\n" + run.stderr + "\n标准输出:\n" + run.stdout);
+        assertFalse(Files.exists(world.logs.resolve("switch-version.log")),
+                "--no-switch 不该调换版工具");
+        String calls = readIfExists(world.logs.resolve("systemctl.log"));
+        assertFalse(calls.contains("enable novabot@"),
+                "--no-switch 不该动开机自启:\n" + calls);
+        assertFalse(calls.contains("disable novabot@"),
+                "--no-switch 不该动开机自启:\n" + calls);
+        Path tool = world.sbin.resolve("novabot-switch-version");
+        assertTrue(run.stdout.contains(tool + " 5.8.0"),
+                "收尾应给那条换版命令:\n" + run.stdout);
+        assertFalse(run.stdout.contains("先停旧版本"), run.stdout);
+        assertFalse(run.stdout.contains("再启动新版本"), run.stdout);
+    }
+
+    @Test
+    @DisplayName("D：旧版目录在、但没有在跑的，收尾「1. 启动新版本」、没有 stop 行")
+    void oldReleaseDirPresentButNotRunningSkipsStopHint(@TempDir Path dir) throws Exception {
+        // 故障：照提示去停一个根本没在跑的旧版本
+        World world = world(dir, "5.8.0");
+        writeRelease(world.install, "5.7.9", "old-579");
+        writeKept(world.install, "user-yml", "user-ds", "user-cookie", "user-key", "user-data");
+        Run run = run(world, "", "");
+
+        assertEquals(0, run.code, "应装完。标准错误:\n" + run.stderr + "\n标准输出:\n" + run.stdout);
+        String calls = readIfExists(world.logs.resolve("systemctl.log"));
+        assertTrue(calls.contains("enable novabot@5.8.0"),
+                "自启应装时切到本版:\n" + calls);
+        assertTrue(run.stdout.contains("1. 启动新版本"), run.stdout);
+        assertFalse(run.stdout.contains("systemctl stop"),
+                "没在跑就不该提示停:\n" + run.stdout);
+        assertFalse(Files.exists(world.logs.resolve("switch-version.log")),
+                "没有在跑的实例，不该调换版工具");
+    }
+
+    @Test
+    @DisplayName("E：--no-service 不装工具，收尾没有 systemctl 字样、有 start.sh 那一行")
+    void noServiceGivesNonSystemdStart(@TempDir Path dir) throws Exception {
+        // 故障：照提示敲了不存在的服务
+        World world = world(dir, "5.8.0");
+        writeKept(world.install, "user-yml", "user-ds", "user-cookie", "user-key", "user-data");
+        Run run = run(world, "", "", Map.of(), "--no-service");
+
+        assertEquals(0, run.code, "应装完。标准错误:\n" + run.stderr + "\n标准输出:\n" + run.stdout);
+        assertFalse(Files.exists(world.sbin.resolve("novabot-switch-version")),
+                "--no-service 不该装换版工具");
+        assertFalse(Files.exists(world.logs.resolve("switch-version.log")),
+                "--no-service 不该调换版工具");
+        assertFalse(run.stdout.contains("systemctl"),
+                "收尾不该出 systemctl 字样:\n" + run.stdout);
+        assertTrue(run.stdout.contains(world.install + "/releases/5.8.0/start.sh"),
+                "收尾应给 start.sh 那一行:\n" + run.stdout);
+    }
+
+    @Test
+    @DisplayName("E 支那条起法：版本目录里的 start.sh 自己 cd 回安装目录，java 拿到的是版本目录里的 jar")
+    void startScriptInVersionDirLaunchesFromInstallDir(@TempDir Path dir) throws Exception {
+        // 工作目录要落在安装目录（锁、配置、日志才不会各拿一份），-jar 要指着版本目录里的那份。
+        Path install = Files.createDirectories(dir.resolve("install"));
+        Path release = Files.createDirectories(install.resolve("releases/5.8.0"));
+        Files.copy(repoRoot().resolve("dist/templates/start.sh"), release.resolve("start.sh"),
+                StandardCopyOption.REPLACE_EXISTING);
+        Files.writeString(release.resolve("NovaBot.jar"), "jar", StandardCharsets.UTF_8);
+        Path bin = Files.createDirectories(dir.resolve("bin"));
+        Path javaLog = dir.resolve("java.log");
+        writeExecutable(bin.resolve("java"), "#!/bin/sh\n"
+                + "{\n"
+                + "  echo \"CWD=$(pwd)\"\n"
+                + "  i=1\n"
+                + "  for a in \"$@\"; do\n"
+                + "    echo \"ARG$i=$a\"\n"
+                + "    i=$((i + 1))\n"
+                + "  done\n"
+                + "} > " + javaLog + "\n"
+                + "exit 0\n");
+
+        // macOS 上 pwd 给的是 /private/... 实体路径，@TempDir 给的是 /var/... 符号路径，比之前先落到实体
+        Path installReal = install.toRealPath();
+        Path releaseReal = release.toRealPath();
+
+        ProcessBuilder builder = new ProcessBuilder("bash", release.resolve("start.sh").toString());
+        builder.environment().put("PATH", bin + ":/usr/bin:/bin");
+        builder.redirectErrorStream(true);
+        Process process = builder.start();
+        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        assertTrue(process.waitFor(30, TimeUnit.SECONDS), "start.sh 超时:\n" + output);
+        assertEquals(0, process.exitValue(), "start.sh 应跑完。输出:\n" + output);
+
+        String javaSaw = read(javaLog);
+        assertTrue(javaSaw.contains("CWD=" + installReal),
+                "start.sh 在分目录下应自己 cd 回安装目录，实际:\n" + javaSaw);
+        assertTrue(javaSaw.contains("-jar"),
+                "应调 java -jar，实际:\n" + javaSaw);
+        assertTrue(javaSaw.contains(releaseReal.resolve("NovaBot.jar").toString()),
+                "-jar 应指着版本目录里的 jar，实际:\n" + javaSaw);
+    }
+
+    @Test
+    @DisplayName("安装目录带会坏替换的字符：当场拦下，没建目录、没碰机器")
+    void installDirWithReplaceBreakingCharsStopsEarly(@TempDir Path dir) throws Exception {
+        // 故障：安装目录里的特殊字符被替换进 root 每次换版都执行的系统命令
+        List<String> badChars = List.of("&", "\\", "\"", "'", "$", "`", "}", "%", "\n");
+        List<String> badSays = List.of(
+                "不能包含 & 号", "不能包含反斜杠", "不能包含双引号", "不能包含单引号",
+                "不能包含 $ 号", "不能包含反引号", "不能包含 } 号", "不能包含 % 号", "不能包含换行");
+        for (int i = 0; i < badChars.size(); i++) {
+            String bad = badChars.get(i);
+            String say = badSays.get(i);
+            World world = world(dir.resolve("w" + i), "5.8.0");
+            Path target = dir.resolve("target" + i + bad);
+            Run run = runDir(world, target, "", "");
+
+            assertNotEquals(0, run.code, "带「" + bad + "」时 install 应退非 0。标准输出:\n" + run.stdout);
+            assertTrue(run.stderr.contains(say),
+                    "带「" + bad + "」时标准错误应有那句，实际:\n" + run.stderr);
+            assertFalse(Files.exists(target),
+                    "带「" + bad + "」时不该建安装目录: " + target);
+            String calls = readIfExists(world.logs.resolve("systemctl.log"));
+            assertTrue(calls.isEmpty(),
+                    "带「" + bad + "」时不该碰 systemctl，实际:\n" + calls);
+            assertFalse(Files.exists(world.sbin.resolve("novabot-switch-version")),
+                    "带「" + bad + "」时不该装换版工具");
+        }
+    }
+
+    @Test
+    @DisplayName("包里工具的 INSTALL_DIR 那一行改了写法：不装新件、不动原来那份、没调工具")
+    void switchToolWithoutExpectedInstallDirLineKeepsExisting(@TempDir Path dir) throws Exception {
+        // 故障：包里那一行改了写法，安装照旧装出一份指着 /opt/starbot 的系统命令
+        World world = world(dir, "5.8.0");
+        writeRelease(world.install, "5.7.7", "old-577");
+        writeKept(world.install, "user-yml", "user-ds", "user-cookie", "user-key", "user-data");
+        Path tool = world.sbin.resolve("novabot-switch-version");
+        writeExecutable(tool, "#!/bin/sh\necho old-tool\n");
+        byte[] oldBytes = Files.readAllBytes(tool);
+        writeExecutable(world.pkg.resolve("tools/switch-version.sh"),
+                "#!/bin/sh\nINSTALL_DIR=${NOVABOT_INSTALL_DIR:-/opt/starbot}\nexit 0\n");
+        Run run = run(world, "5.7.7", "");
+
+        assertNotEquals(0, run.code,
+                "INSTALL_DIR 那一行不对时应退非 0。标准输出:\n" + run.stdout + "\n标准错误:\n" + run.stderr);
+        assertArrayEquals(oldBytes, Files.readAllBytes(tool),
+                "原来那份应一字不动: " + tool);
+        assertFalse(Files.exists(world.logs.resolve("switch-version.log")),
+                "不该调换版工具");
+    }
+
+    @Test
+    @DisplayName("E 支收尾那条起法：路径带引号，安装目录带空格也照抄得动")
+    void noServiceStartPathIsQuotedForInstallDirWithSpaces(@TempDir Path dir) throws Exception {
+        // 故障：照收尾抄的命令在带空格的目录下跑不起来
+        World world = world(dir, "5.8.0");
+        Path spaced = Files.createDirectories(dir.resolve("nova bot"));
+        writeKept(spaced, "user-yml", "user-ds", "user-cookie", "user-key", "user-data");
+        Run run = runDir(world, spaced, "", "", Map.of(), "--no-service");
+
+        assertEquals(0, run.code, "安装目录带空格应装完。标准错误:\n" + run.stderr + "\n标准输出:\n" + run.stdout);
+        assertTrue(run.stdout.contains("\"" + spaced + "/releases/5.8.0/start.sh\""),
+                "收尾那条起法的路径应带引号，实际:\n" + run.stdout);
+    }
+
+    @Test
+    @DisplayName("B 退非 0 收尾：只给重试换版与看日志，不给配置与扫码两步")
+    void switchFailureClosingGivesRetryAndLogOnly(@TempDir Path dir) throws Exception {
+        // 故障：新版没换上却被引去配置与扫码
+        World world = world(dir, "5.8.0");
+        writeRelease(world.install, "5.7.7", "old-577");
+        writeKept(world.install, "user-yml", "user-ds", "user-cookie", "user-key", "user-data");
+        Run run = run(world, "5.7.7", "", Map.of("NOVABOT_STUB_SWITCH_RC", "3"));
+
+        assertNotEquals(0, run.code, "换版没全做成时 install 应退非 0。标准输出:\n" + run.stdout);
+        assertTrue(run.stdout.contains("重试换版"), "收尾应有重试换版:\n" + run.stdout);
+        assertTrue(run.stdout.contains("journalctl"), "收尾应有看日志:\n" + run.stdout);
+        assertTrue(run.stdout.contains("novabot@5.8.0"), "看日志应看新版本那个单元:\n" + run.stdout);
+        assertFalse(run.stdout.contains("在浏览器中打开"), "新版没换上，不该给打开配置界面:\n" + run.stdout);
+        assertFalse(run.stdout.contains("完成登录"), "新版没换上，不该给扫码登录:\n" + run.stdout);
     }
 
     private static void assertFresh(World world, Run run, Map<String, byte[]> kept) throws IOException {
@@ -677,6 +995,8 @@ class VersionedReleaseInstallTest {
                 "收尾应提示怎么起新版本。标准输出:\n" + run.stdout);
         assertFalse(run.stdout.contains("systemctl stop"),
                 "新装没有旧版本可停。标准输出:\n" + run.stdout);
+        assertFalse(Files.exists(world.logs.resolve("switch-version.log")),
+                "新装没有在跑的实例，不该调换版工具");
     }
 
     private static void assertUpgrade(World world, Run run, Map<String, byte[]> kept) throws IOException {
@@ -702,17 +1022,21 @@ class VersionedReleaseInstallTest {
                 "内置插件不该写进根上的 plugins");
         assertKept(install, kept);
         String calls = read(world.logs.resolve("systemctl.log"));
-        assertTrue(calls.contains("disable novabot@5.7.9"),
-                "已有别的版本开着自启，应换成新版本。systemctl:\n" + calls);
-        assertTrue(calls.contains("enable novabot@5.8.0"), "自启应换到新版本。systemctl:\n" + calls);
+        assertFalse(calls.contains("enable novabot@"),
+                "B 交给换版工具，装时不动开机自启。systemctl:\n" + calls);
+        assertFalse(calls.contains("disable novabot@"),
+                "B 交给换版工具，装时不动开机自启。systemctl:\n" + calls);
         assertFalse(calls.contains("--now"), "换自启不该带 --now，那会把旧版本停掉。systemctl:\n" + calls);
         assertFalse(calls.contains("stop"), "安装不该停止正在跑的实例。systemctl:\n" + calls);
         assertFalse(calls.contains("start"), "安装不该启动新版本。systemctl:\n" + calls);
-        assertTrue(run.stdout.contains("systemctl start novabot@5.8.0"), run.stdout);
-        assertTrue(run.stdout.contains("systemctl stop novabot@5.7.9"), run.stdout);
-        assertTrue(run.stdout.contains("systemctl stop novabot@5.7.7"), run.stdout);
-        assertTrue(run.stdout.indexOf("systemctl stop novabot@5.7.9") < run.stdout.indexOf("systemctl start novabot@5.8.0"),
-                "收尾要先停旧再起新：先起新版本会被单实例锁拦下、起不来。标准输出:\n" + run.stdout);
+        String toolLog = readIfExists(world.logs.resolve("switch-version.log"));
+        assertTrue(toolLog.contains("args=5.8.0"),
+                "装完应调换版工具换到本版。工具日志:\n" + toolLog);
+        assertFalse(run.stdout.contains("systemctl start novabot@5.8.0"), run.stdout);
+        assertFalse(run.stdout.contains("systemctl stop novabot@5.7.9"), run.stdout);
+        assertFalse(run.stdout.contains("systemctl stop novabot@5.7.7"), run.stdout);
+        assertTrue(run.stdout.contains("1. 查看启动日志"),
+                "B 退 0 时收尾应从「查看启动日志」起编号。标准输出:\n" + run.stdout);
     }
 
     private static void assertIllegalVersion(Path root, String version) throws Exception {
@@ -761,11 +1085,19 @@ class VersionedReleaseInstallTest {
         assertTrue(run.stdout.contains("不沿用"), run.stdout);
         assertTrue(run.stdout.contains(drop.toString()), "应列出不沿用的覆盖设置。标准输出:\n" + run.stdout);
         assertTrue(run.stdout.contains(control.toString()), "应列出不沿用的覆盖设置。标准输出:\n" + run.stdout);
-        int stopAt = run.stdout.indexOf("systemctl stop " + unit);
         int startAt = run.stdout.indexOf("systemctl start novabot@5.8.0");
-        assertTrue(stopAt >= 0 && startAt > stopAt, "应先停旧再起新。标准输出:\n" + run.stdout);
+        if (running) {
+            int stopAt = run.stdout.indexOf("systemctl stop " + unit);
+            assertTrue(stopAt >= 0 && startAt > stopAt, "应先停旧再起新。标准输出:\n" + run.stdout);
+            assertTrue(run.stdout.contains("断一小会儿"), run.stdout);
+        } else {
+            // 认出了旧单元但没在跑：单元文件已在装的时候删掉，收尾再叫人 stop 它只会报未加载
+            assertFalse(run.stdout.contains("systemctl stop " + unit),
+                    "没在跑的旧单元不该再提示停它。标准输出:\n" + run.stdout);
+            assertTrue(startAt >= 0, "收尾仍应提示起新版本。标准输出:\n" + run.stdout);
+            assertTrue(run.stdout.contains("1. 启动新版本"), run.stdout);
+        }
         assertFalse(run.stdout.contains("systemctl stop novabot@"), run.stdout);
-        assertTrue(run.stdout.contains("断一小会儿"), run.stdout);
     }
 
     private static void assertRunningUntouched(World world, Run run, Map<String, byte[]> before) throws IOException {
@@ -792,6 +1124,7 @@ class VersionedReleaseInstallTest {
         world.bin = Files.createDirectories(dir.resolve("bin"));
         world.etc = Files.createDirectories(dir.resolve("etc"));
         world.logs = Files.createDirectories(dir.resolve("logs"));
+        world.sbin = Files.createDirectories(dir.resolve("sbin"));
         Files.copy(repoRoot().resolve("install.sh"), world.pkg.resolve("install.sh"),
                 StandardCopyOption.REPLACE_EXISTING);
         write(world.pkg.resolve("NovaBot.jar"), "new-jar");
@@ -803,6 +1136,9 @@ class VersionedReleaseInstallTest {
         write(world.pkg.resolve("docker-entrypoint.sh"), "entry");
         write(world.pkg.resolve("Dockerfile"), "FROM scratch\n");
         write(world.pkg.resolve("tools/data-backup.sh"), "backup-sh");
+        // 发行包里那份带执行位（打包时 dist/templates/ 照目录整拷），替身也照写：不然「调了 releases 里
+        // 那份」会先撞上没执行位，红在退码上，与「调错了那一份」这个成因分不开
+        writeExecutable(world.pkg.resolve("tools/switch-version.sh"), STUB_SWITCH_VERSION);
         write(world.pkg.resolve("BUILD-INFO"), "commit=abc\nversion=" + version + "\nbuilt_at=2026-10-03T00:00:00Z\n");
         write(world.pkg.resolve("LICENSE"), "license");
         write(world.pkg.resolve("NOTICE"), "notice");
@@ -849,17 +1185,33 @@ class VersionedReleaseInstallTest {
         return run(world, active, enabled, Map.of());
     }
 
-    private static Run run(World world, String active, String enabled, Map<String, String> extra)
+    private static Run runDir(World world, Path installDir, String active, String enabled)
             throws IOException, InterruptedException {
-        ProcessBuilder builder = new ProcessBuilder(
-                "bash", world.pkg.resolve("install.sh").toString(),
-                "--dir", world.install.toString(),
-                "--user", "starbot");
+        return runDir(world, installDir, active, enabled, Map.of());
+    }
+
+    private static Run run(World world, String active, String enabled, Map<String, String> extra, String... moreArgs)
+            throws IOException, InterruptedException {
+        return runDir(world, world.install, active, enabled, extra, moreArgs);
+    }
+
+    private static Run runDir(World world, Path installDir, String active, String enabled, Map<String, String> extra,
+            String... moreArgs) throws IOException, InterruptedException {
+        List<String> command = new java.util.ArrayList<>();
+        command.add("bash");
+        command.add(world.pkg.resolve("install.sh").toString());
+        command.add("--dir");
+        command.add(installDir.toString());
+        command.add("--user");
+        command.add("starbot");
+        command.addAll(Arrays.asList(moreArgs));
+        ProcessBuilder builder = new ProcessBuilder(command);
         builder.environment().put("PATH", world.bin + ":/usr/bin:/bin");
         builder.environment().put("NOVABOT_STUB_ETC", world.etc.toString());
         builder.environment().put("NOVABOT_STUB_LOG", world.logs.toString());
         builder.environment().put("NOVABOT_STUB_ACTIVE", active);
         builder.environment().put("NOVABOT_STUB_ENABLED", enabled);
+        builder.environment().put("NOVABOT_SYSTEM_SBIN_DIR", world.sbin.toString());
         extra.forEach(builder.environment()::put);
         builder.redirectOutput(world.logs.resolve("stdout.txt").toFile());
         builder.redirectError(world.logs.resolve("stderr.txt").toFile());
@@ -928,6 +1280,20 @@ class VersionedReleaseInstallTest {
         return Files.readString(file, StandardCharsets.UTF_8);
     }
 
+    private static String readIfExists(Path file) throws IOException {
+        return Files.isRegularFile(file) ? read(file) : "";
+    }
+
+    private static int countOccurrences(String text, String needle) {
+        int count = 0;
+        int at = 0;
+        while ((at = text.indexOf(needle, at)) >= 0) {
+            count++;
+            at += needle.length();
+        }
+        return count;
+    }
+
     private static Path directoryWithoutUnzip(Path dir) throws IOException {
         Path filtered = Files.createDirectories(dir.resolve("no-unzip"));
         for (String name : List.of(
@@ -975,6 +1341,7 @@ class VersionedReleaseInstallTest {
         Path bin;
         Path etc;
         Path logs;
+        Path sbin;
     }
 
     private static final class Run {

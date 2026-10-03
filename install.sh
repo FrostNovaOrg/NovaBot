@@ -8,6 +8,7 @@
 #   ./install.sh --port 7827            指定服务端口
 #   ./install.sh --user starbot         指定运行服务的系统用户
 #   ./install.sh --no-service           跳过 systemd 服务创建
+#   ./install.sh --no-switch            只装、不换（有别的实例在跑时不自动换到本版）
 #
 # 安装目录若还是旧的扁平布局（程序在根上），先把旧程序搬进 releases/旧版本号/ 再装。
 #
@@ -20,6 +21,7 @@ INSTALL_DIR="/opt/starbot"
 SERVICE_USER="starbot"
 PORT="7827"
 CREATE_SERVICE="yes"
+NO_SWITCH="no"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -37,6 +39,7 @@ while [ $# -gt 0 ]; do
         --port)       PORT="$2"; shift 2 ;;
         --user)       SERVICE_USER="$2"; shift 2 ;;
         --no-service) CREATE_SERVICE="no"; shift ;;
+        --no-switch)  NO_SWITCH="yes"; shift ;;
         -h|--help)    usage; exit 0 ;;
         *)            die "未知参数: $1（可用 --help 查看用法）" ;;
     esac
@@ -51,6 +54,16 @@ case "$INSTALL_DIR" in
 esac
 case "$INSTALL_DIR" in
     *'#'*) die "--dir 不能包含 # 号（生成 systemd 单元时以 # 作 sed 分隔符）" ;;
+    *'&'*) die '--dir 不能包含 & 号（生成文件时替换串里的 & 代表匹配到的原文，目录会指错）' ;;
+    *'\'*) die '--dir 不能包含反斜杠（生成文件时替换串里的反斜杠会吞掉后面的字符）' ;;
+    *'"'*) die '--dir 不能包含双引号（生成的文件里这一段包在双引号中，引号会提前收尾）' ;;
+    *"'"*) die "--dir 不能包含单引号（生成的文件里这一段落在单引号中，引号会提前收尾）" ;;
+    *'$'*) die '--dir 不能包含 $ 号（装出的系统命令每次换版都会把它当变量或命令替换）' ;;
+    *'`'*) die '--dir 不能包含反引号（装出的系统命令每次换版都会把它当命令替换）' ;;
+    *'}'*) die '--dir 不能包含 } 号（生成的文件里这一段落在 ${…} 中，花括号会提前收尾）' ;;
+    *'%'*) die '--dir 不能包含 % 号（systemd 单元里 % 是占位符，路径会被换掉）' ;;
+    *'
+'*) die '--dir 不能包含换行（生成的文件会被拆成两半）' ;;
 esac
 case "$PORT" in
     ''|*[!0-9]*) die "--port 需为数字，当前为「${PORT}」" ;;
@@ -677,6 +690,17 @@ SERVICE_UNIT="novabot@${VERSION}"
 SYSTEMD_SYSTEM_DIR="${NOVABOT_SYSTEMD_SYSTEM_DIR:-/etc/systemd/system}"
 SYSTEMD_CONTROL_DIR="${NOVABOT_SYSTEMD_CONTROL_DIR:-/etc/systemd/system.control}"
 
+# 换版工具装成 root 所有的系统命令（缺省 /usr/local/sbin，测试替身用 NOVABOT_SYSTEM_SBIN_DIR 改位置）：
+# 安装目录整个归服务用户，root 不能去跑放在里面的脚本——服务用户改了它，就能借下一次换版拿 root。
+# 装时调的、收尾提示里给的都是这一份，不是 releases 里那份。
+SYSTEM_SBIN_DIR="${NOVABOT_SYSTEM_SBIN_DIR:-/usr/local/sbin}"
+SWITCH_TOOL="$SYSTEM_SBIN_DIR/novabot-switch-version"
+# 装完怎么走：start 没有人在跑，装时就把开机自启切到本版；legacy 旧单元在跑，照现在手动先停后起；
+# switch 有别的分目录实例在跑，装完交给换版工具；hold 同上但给了 --no-switch，只装不换；
+# no-service 没建服务（--no-service 或机器上没有 systemctl），不装工具也不调它
+SWITCH_PLAN="no-service"
+SWITCH_RC=0
+
 # 5.x 的 novabot.service、更早的 starbot.service。只关开机自启，不停正在跑的。
 # 不在跑的删单元文件；在跑的留着，等用户自己停，下次再跑、它已不在跑时再删。
 # 覆盖设置目录不删，新单元不沿用。
@@ -718,63 +742,110 @@ if [ "$CREATE_SERVICE" = "yes" ] && command -v systemctl > /dev/null 2>&1; then
     $SUDO sed -e "s#/opt/starbot#$INSTALL_DIR#g" -e "s/^User=.*/User=$SERVICE_USER/" -e "s/^Group=.*/Group=$SERVICE_USER/" \
         "$SOURCE_DIR/novabot@.service" | $SUDO tee /etc/systemd/system/novabot@.service > /dev/null
     $SUDO systemctl daemon-reload
-    # list-unit-files 只列得出模板文件，列不出 novabot@版本 这种实例，所以逐个问。
-    SEEN_AUTOSTART=" "
-    if [ -d "$INSTALL_DIR/releases" ]; then
-        for dir in "$INSTALL_DIR"/releases/*; do
-            [ -d "$dir" ] || continue
-            disable_if_other_enabled "$(basename "$dir")"
-        done
+
+    [ -f "$SOURCE_DIR/tools/switch-version.sh" ] || die "缺少 $SOURCE_DIR/tools/switch-version.sh"
+    $SUDO mkdir -p "$SYSTEM_SBIN_DIR"
+    # 先落临时件、核过再到位：替换没换上就装出去，是一份每次换版都还指着 /opt/starbot 的系统命令
+    SWITCH_TMP="$($SUDO mktemp "$SYSTEM_SBIN_DIR/.novabot-switch-version.XXXXXX")"
+    $SUDO sed -e "s#/opt/starbot#$INSTALL_DIR#g" "$SOURCE_DIR/tools/switch-version.sh" \
+        | $SUDO tee "$SWITCH_TMP" > /dev/null
+    EXPECTED_INSTALL_DIR="INSTALL_DIR=\"\${NOVABOT_INSTALL_DIR:-$INSTALL_DIR}\""
+    FOUND_INSTALL_DIR="$($SUDO grep -cFx "$EXPECTED_INSTALL_DIR" "$SWITCH_TMP" || true)"
+    if [ "$FOUND_INSTALL_DIR" != "1" ]; then
+        $SUDO rm -f "$SWITCH_TMP"
+        die "包里 tools/switch-version.sh 的 INSTALL_DIR 那一行换不成本次安装目录，这一次没有装换版工具"
     fi
-    for link in /etc/systemd/system/*.wants/novabot@*.service; do
-        [ -e "$link" ] || continue
-        unit="$(basename "$link")"
-        inst="${unit#novabot@}"
-        inst="${inst%.service}"
-        disable_if_other_enabled "$inst"
+    if ! $SUDO bash -n "$SWITCH_TMP"; then
+        $SUDO rm -f "$SWITCH_TMP"
+        die "装出的换版工具有语法错误，这一次没有装换版工具"
+    fi
+    $SUDO chown root:root "$SWITCH_TMP"
+    $SUDO chmod 0755 "$SWITCH_TMP"
+    $SUDO mv "$SWITCH_TMP" "$SWITCH_TOOL"
+
+    # 「别的分目录实例在跑」＝releases/ 下本版以外、正在跑的那个
+    OTHER_INSTANCES=""
+    for dir in "$INSTALL_DIR"/releases/*; do
+        [ -d "$dir" ] || continue
+        name="$(basename "$dir")"
+        release_name_is_version "$name" || continue
+        [ "$name" = "$VERSION" ] && continue
+        if instance_running "$name"; then
+            if [ -z "$OTHER_INSTANCES" ]; then
+                OTHER_INSTANCES="$name"
+            else
+                OTHER_INSTANCES="$OTHER_INSTANCES $name"
+            fi
+        fi
     done
-    $SUDO systemctl enable "$SERVICE_UNIT" > /dev/null 2>&1
-    info "服务已创建并设为开机自启"
+
+    SWITCH_PLAN="start"
+    if [ -n "$LEGACY_UNITS_RUNNING" ]; then
+        SWITCH_PLAN="legacy"
+    elif [ -n "$OTHER_INSTANCES" ]; then
+        if [ "$NO_SWITCH" = "yes" ]; then
+            SWITCH_PLAN="hold"
+        else
+            SWITCH_PLAN="switch"
+        fi
+    fi
+
+    if [ "$SWITCH_PLAN" = "switch" ] || [ "$SWITCH_PLAN" = "hold" ]; then
+        # 开机自启等换过版再切：装时就切，机器在「装完、还没换」之间重启会起来还没人看过的新版本
+        info "服务已创建，开机自启等换过版再切"
+    else
+        # list-unit-files 只列得出模板文件，列不出 novabot@版本 这种实例，所以逐个问。
+        SEEN_AUTOSTART=" "
+        if [ -d "$INSTALL_DIR/releases" ]; then
+            for dir in "$INSTALL_DIR"/releases/*; do
+                [ -d "$dir" ] || continue
+                disable_if_other_enabled "$(basename "$dir")"
+            done
+        fi
+        for link in /etc/systemd/system/*.wants/novabot@*.service; do
+            [ -e "$link" ] || continue
+            unit="$(basename "$link")"
+            inst="${unit#novabot@}"
+            inst="${inst%.service}"
+            disable_if_other_enabled "$inst"
+        done
+        $SUDO systemctl enable "$SERVICE_UNIT" > /dev/null 2>&1
+        info "服务已创建并设为开机自启"
+    fi
+fi
+
+# 有别的分目录实例在跑、又没给 --no-switch：装完直接换过去。工具的输出原样透出，退码原样带走。
+if [ "$SWITCH_PLAN" = "switch" ]; then
+    $SUDO "$SWITCH_TOOL" "$VERSION" || SWITCH_RC=$?
 fi
 
 # ---------------------------------------------------------------- 完成
 
 LOG_STEP=2
-if [ -n "$LEGACY_UNITS_RUNNING" ]; then
-    cat <<EOF
+case "$SWITCH_PLAN" in
+    no-service)
+        # --no-service，或机器上没有 systemctl：不装工具、不调工具，收尾也不出 systemctl 行
+        cat <<EOF
+
+安装完成，接下来：
+
+  1. 启动新版本
+       sudo -u $SERVICE_USER "$INSTALL_DIR/releases/$VERSION/start.sh"
+EOF
+        ;;
+    legacy)
+        cat <<EOF
 
 安装完成，接下来：
 
 EOF
-    cat <<EOF
-  这一次会先停旧版本，再起新版本，中间会断一小会儿。
-  现在的发行版还没有单实例锁，新版本起来时不会等旧版本放开，两份会同时连直播间、抢端口。
-
-  1. 先停旧版本
-EOF
-    for name in $LEGACY_UNITS_RUNNING; do
-        printf '       sudo systemctl stop %s\n' "$name"
-    done
-    cat <<EOF
-
-  2. 再启动新版本
-       sudo systemctl start $SERVICE_UNIT
-EOF
-    LOG_STEP=3
-elif [ "$MIGRATED" = yes ]; then
-    cat <<EOF
-
-安装完成，接下来：
-
-EOF
-    if [ -n "$LEGACY_UNITS_FOUND" ]; then
         cat <<EOF
   这一次会先停旧版本，再起新版本，中间会断一小会儿。
   现在的发行版还没有单实例锁，新版本起来时不会等旧版本放开，两份会同时连直播间、抢端口。
 
   1. 先停旧版本
 EOF
-        for name in $LEGACY_UNITS_FOUND; do
+        for name in $LEGACY_UNITS_RUNNING; do
             printf '       sudo systemctl stop %s\n' "$name"
         done
         cat <<EOF
@@ -783,48 +854,58 @@ EOF
        sudo systemctl start $SERVICE_UNIT
 EOF
         LOG_STEP=3
-    else
-        cat <<EOF
-  1. 旧版本还在跑的话先停掉，再起新版本
-       sudo systemctl start $SERVICE_UNIT
+        ;;
+    switch)
+        if [ "$SWITCH_RC" -eq 0 ]; then
+            # 换版工具已把新版换上，收尾不再出「先停旧、再起新」两步
+            cat <<EOF
+
+安装完成，接下来：
 EOF
-    fi
-else
-    STOP_HINT=""
-    for dir in "$INSTALL_DIR"/releases/*; do
-        [ -d "$dir" ] || continue
-        name="$(basename "$dir")"
-        release_name_is_version "$name" || continue
-        if [ "$name" = "$VERSION" ]; then
-            continue
+            LOG_STEP=1
+        else
+            cat <<EOF
+
+安装完成，接下来：
+
+  新版本已装好，换版没有全部做成，机器上现在跑的是哪一版（和开机自启在哪一版）看上面最后一行。
+
+  1. 重试换版
+       sudo $SWITCH_TOOL $VERSION
+EOF
+            LOG_STEP=2
         fi
-        STOP_HINT="${STOP_HINT}       sudo systemctl stop novabot@${name}
-"
-    done
-    cat <<EOF
+        ;;
+    hold)
+        cat <<EOF
+
+安装完成，接下来：
+
+  1. 换到新版本，换成之后才切开机自启
+       sudo $SWITCH_TOOL $VERSION
+EOF
+        LOG_STEP=2
+        ;;
+    start)
+        cat <<EOF
 
 安装完成，接下来：
 
 EOF
-    if [ -n "$STOP_HINT" ]; then
-        cat <<EOF
-  这一次会先停旧版本，再起新版本，中间会断一小会儿。
+        if [ "$MIGRATED" = yes ] && [ -z "$LEGACY_UNITS_FOUND" ]; then
+            # 扁平布局搬过来又没认出旧单元：旧程序是不是还在跑无从确认，只能照它原来起的办法停
+            cat <<EOF
+  旧程序若还在跑，先照你原来起它的办法停掉。
 
-  1. 旧版本还在跑的话先停掉
 EOF
-        printf '%s' "$STOP_HINT"
-        cat <<EOF
-  2. 再启动新版本
-       sudo systemctl start $SERVICE_UNIT
-EOF
-        LOG_STEP=3
-    else
+        fi
         cat <<EOF
   1. 启动新版本
        sudo systemctl start $SERVICE_UNIT
 EOF
-    fi
-fi
+        LOG_STEP=2
+        ;;
+esac
 if [ -n "$KEPT_USER_JARS" ]; then
     cat <<EOF
 
@@ -835,9 +916,32 @@ fi
 if [ -n "$LEGACY_DROPINS" ]; then
     printf '\n  新单元不沿用这些覆盖设置：\n%s' "$LEGACY_DROPINS"
 fi
-BROWSER_STEP=$((LOG_STEP + 1))
-LOGIN_STEP=$((LOG_STEP + 2))
-cat <<EOF
+if [ "$SWITCH_PLAN" = "no-service" ]; then
+    # 没有 systemd，启动输出就是日志
+    BROWSER_STEP=2
+    LOGIN_STEP=3
+    cat <<EOF
+
+  ${BROWSER_STEP}. 在浏览器中打开启动输出里的配置界面地址完成配置
+       该地址形如 http://127.0.0.1:$EFFECTIVE_PORT/config?token=xxxxx
+
+     若 NovaBot 装在远程服务器上，先在本机建立隧道再访问：
+       ssh -L $EFFECTIVE_PORT:127.0.0.1:$EFFECTIVE_PORT 用户名@服务器地址
+
+  ${LOGIN_STEP}. 使用哔哩哔哩客户端扫描输出中的二维码完成登录
+EOF
+else
+    if [ "$SWITCH_PLAN" = "switch" ] && [ "$SWITCH_RC" -ne 0 ]; then
+        # 换版没全做成：新版没起来，配置界面与二维码都没有，只给看新版本那一份日志
+        cat <<EOF
+
+  ${LOG_STEP}. 查看启动日志，看换版卡在哪一步
+       sudo journalctl -u $SERVICE_UNIT -f
+EOF
+    else
+        BROWSER_STEP=$((LOG_STEP + 1))
+        LOGIN_STEP=$((LOG_STEP + 2))
+        cat <<EOF
 
   ${LOG_STEP}. 查看启动日志，其中包含配置界面地址与首次登录的二维码
        sudo journalctl -u $SERVICE_UNIT -f
@@ -849,9 +953,19 @@ cat <<EOF
        ssh -L $EFFECTIVE_PORT:127.0.0.1:$EFFECTIVE_PORT 用户名@服务器地址
 
   ${LOGIN_STEP}. 使用哔哩哔哩客户端扫描日志中的二维码完成登录
+EOF
+    fi
+fi
+
+cat <<EOF
 
 配置界面默认仅监听本机回环地址。如需从其他机器直接访问，请先阅读 SECURITY.md，
 并在配置中同时设置访问令牌与来源 IP 白名单。
 
 安装目录：$INSTALL_DIR
 EOF
+
+# 换版没全做成时把工具的退码原样带走：「装好了」和「换过去了」是两件事，退码只答后者
+if [ "$SWITCH_RC" -ne 0 ]; then
+    exit "$SWITCH_RC"
+fi
