@@ -4,6 +4,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import org.frostnova.nova.core.config.ui.auth.PasswordHash;
+
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
@@ -20,6 +22,7 @@ import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.FileTime;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -53,6 +56,15 @@ class StandbyAfterGateTest {
     private static final String RESTART_KEY = "server.tomcat.threads.max";
 
     private static final String PASSWORD_KEY = "novabot.core.config-ui.auth.password";
+
+    /**
+     * 假口令、假令牌。失败输出里换成占位，不把这两段带出去。
+     */
+    private static final String PLAIN_PASSWORD = "gate-plain-pw";
+
+    private static final String PLAIN_TOKEN = "gate-plain-tk";
+
+    private static final Pattern SHA256_HEX = Pattern.compile("[0-9a-f]{64}");
 
     private static final Pattern TOKEN = Pattern.compile("token=([^\\s&]+)");
 
@@ -234,6 +246,201 @@ class StandbyAfterGateTest {
         }
     }
 
+    @Test
+    @DisplayName("开关开、锁被占着、配置里是明文登录口令：候命期间配置文件逐字节不变")
+    void plainPasswordUnchangedWhileWaiting(@TempDir Path root) throws Exception {
+        // 抓的用户故障：升级时新版先起到门前候命，旧版还在跑。门前就把明文口令换成哈希写回，
+        // 旧版这时若在设置页保存，两边互相盖掉，丢的那份没有备份可找。
+        Path dir = root.resolve("work");
+        Files.createDirectories(dir);
+        int port = freePort();
+        writeConfig(dir, port);
+        plantPlainPassword(dir);
+        byte[] before = Files.readAllBytes(dir.resolve("application.yml"));
+        try (FileChannel channel = FileChannel.open(dir.resolve("novabot.lock"),
+                StandardOpenOption.CREATE, StandardOpenOption.WRITE)) {
+            FileLock held = channel.tryLock();
+            assertTrue(held != null, "本进程应先占住锁");
+            Running app = start(dir, port, true, false);
+            try {
+                waitFor(app, 90_000, "应走到等锁、且进程还在",
+                        running -> running.out().contains(WAITING) && running.alive());
+                assertFalse(app.out().contains(PASSED), "等锁时不该过门");
+                assertTrue(Arrays.equals(before, Files.readAllBytes(dir.resolve("application.yml"))),
+                        "候命期间 application.yml 应逐字节不变");
+            } finally {
+                app.close();
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("开关开、锁被占着、配置里是明文 NapCat 令牌：候命期间配置文件逐字节不变")
+    void plainTokenUnchangedWhileWaiting(@TempDir Path root) throws Exception {
+        // 抓的用户故障与登录口令那格相同：门前把明文令牌换成哈希写回，和还在跑的旧版互相盖文件。
+        Path dir = root.resolve("work");
+        Files.createDirectories(dir);
+        int port = freePort();
+        writeConfig(dir, port);
+        plantPlainToken(dir);
+        byte[] before = Files.readAllBytes(dir.resolve("application.yml"));
+        try (FileChannel channel = FileChannel.open(dir.resolve("novabot.lock"),
+                StandardOpenOption.CREATE, StandardOpenOption.WRITE)) {
+            FileLock held = channel.tryLock();
+            assertTrue(held != null, "本进程应先占住锁");
+            Running app = start(dir, port, true, false);
+            try {
+                waitFor(app, 90_000, "应走到等锁、且进程还在",
+                        running -> running.out().contains(WAITING) && running.alive());
+                assertFalse(app.out().contains(PASSED), "等锁时不该过门");
+                assertTrue(Arrays.equals(before, Files.readAllBytes(dir.resolve("application.yml"))),
+                        "候命期间 application.yml 应逐字节不变");
+            } finally {
+                app.close();
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("开关开、真等过锁、配置里是明文登录口令：过门后不把这一项说成候命期间改过，待重启为空")
+    void plainPasswordNotPendingAfterGate(@TempDir Path root) throws Exception {
+        // 抓的用户故障：门前自己把明文换成哈希写回，过门核配置把这次写回当成候命期间别人改的，
+        // 控制台叫用户重启，可谁也没改过。
+        Path dir = root.resolve("work");
+        Files.createDirectories(dir);
+        int port = freePort();
+        writeConfig(dir, port);
+        plantPlainPassword(dir);
+        try (FileChannel channel = FileChannel.open(dir.resolve("novabot.lock"),
+                StandardOpenOption.CREATE, StandardOpenOption.WRITE)) {
+            FileLock held = channel.tryLock();
+            assertTrue(held != null, "本进程应先占住锁");
+            Running app = start(dir, port, true, false);
+            try {
+                waitFor(app, 90_000, "应走到等锁",
+                        running -> running.out().contains(WAITING) && running.alive());
+                held.release();
+                waitFor(app, 90_000, "放锁后应就绪且令牌行出来",
+                        running -> running.out().contains(READY) && TOKEN.matcher(running.out()).find());
+                String pending = restartPending(status(port, tokenOf(app.out())));
+                assertAll(
+                        () -> assertFalse(changedLineMentions(app.out(), PASSWORD_KEY),
+                                "过门后不该把登录口令说成候命期间改过"),
+                        () -> assertFalse(pending.contains(PASSWORD_KEY),
+                                "登录口令不该进待重启。状态片段：" + pending),
+                        () -> assertTrue(pending.contains("[]"),
+                                "待重启应为空。状态片段：" + pending)
+                );
+            } finally {
+                app.close();
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("开关关着、配置里是明文登录口令：起来后文件里是哈希、明文已不在")
+    void switchOffPlainPasswordIsHashed(@TempDir Path root) throws Exception {
+        Path dir = root.resolve("work");
+        Files.createDirectories(dir);
+        int port = freePort();
+        writeConfig(dir, port);
+        plantPlainPassword(dir);
+        Running app = start(dir, port, false, false);
+        try {
+            waitFor(app, 90_000, "开关关着时应就绪",
+                    running -> running.out().contains(READY));
+            String text = Files.readString(dir.resolve("application.yml"));
+            assertAll(
+                    () -> assertFalse(text.contains(PLAIN_PASSWORD), "起来后文件里不该还有明文口令"),
+                    () -> assertTrue(PasswordHash.isHashed(yamlScalar(text, "password:")),
+                            "起来后登录口令应已是哈希")
+            );
+        } finally {
+            app.close();
+        }
+    }
+
+    @Test
+    @DisplayName("开关关着、配置里是明文 NapCat 令牌：起来后文件里是哈希、明文已不在")
+    void switchOffPlainTokenIsHashed(@TempDir Path root) throws Exception {
+        Path dir = root.resolve("work");
+        Files.createDirectories(dir);
+        int port = freePort();
+        writeConfig(dir, port);
+        plantPlainToken(dir);
+        Running app = start(dir, port, false, false);
+        try {
+            waitFor(app, 90_000, "开关关着时应就绪",
+                    running -> running.out().contains(READY));
+            String text = Files.readString(dir.resolve("application.yml"));
+            assertAll(
+                    () -> assertFalse(text.contains(PLAIN_TOKEN), "起来后文件里不该还有明文令牌"),
+                    () -> assertTrue(SHA256_HEX.matcher(text).find(), "起来后应写有令牌哈希")
+            );
+        } finally {
+            app.close();
+        }
+    }
+
+    private static void plantPlainPassword(Path dir) throws IOException {
+        Path yml = dir.resolve("application.yml");
+        String text = Files.readString(yml);
+        String needle = "    config-ui:\n";
+        if (!text.contains(needle)) {
+            throw new IOException("出发配置里没有控制台一节");
+        }
+        Files.writeString(yml, text.replace(needle, needle
+                + "      auth:\n"
+                + "        password: \"" + PLAIN_PASSWORD + "\"\n"
+                + "        totp: false\n"
+                + "        operator-token: true\n"));
+    }
+
+    private static void plantPlainToken(Path dir) throws IOException {
+        Path yml = dir.resolve("application.yml");
+        Files.writeString(yml, Files.readString(yml)
+                + "  adapter:\n"
+                + "    onebot:\n"
+                + "      napcat:\n"
+                + "        address: http://127.0.0.1:6099\n"
+                + "        token: \"" + PLAIN_TOKEN + "\"\n"
+                + "        token-hash: \"\"\n");
+    }
+
+    private static boolean changedLineMentions(String out, String key) {
+        int at = 0;
+        while (at >= 0) {
+            at = out.indexOf(CHANGED, at);
+            if (at < 0) {
+                return false;
+            }
+            int end = out.indexOf('\n', at);
+            String line = end < 0 ? out.substring(at) : out.substring(at, end);
+            if (line.contains(key)) {
+                return true;
+            }
+            at += CHANGED.length();
+        }
+        return false;
+    }
+
+    private static String yamlScalar(String yaml, String keyPrefix) {
+        for (String line : yaml.split("\n", -1)) {
+            String trimmed = line.trim();
+            if (!trimmed.startsWith(keyPrefix)) {
+                continue;
+            }
+            String value = trimmed.substring(keyPrefix.length()).trim();
+            if (value.length() >= 2
+                    && ((value.charAt(0) == '"' && value.charAt(value.length() - 1) == '"')
+                    || (value.charAt(0) == '\'' && value.charAt(value.length() - 1) == '\''))) {
+                return value.substring(1, value.length() - 1);
+            }
+            return value;
+        }
+        return "";
+    }
+
     private static void writeConfig(Path dir, int port) throws IOException {
         Files.writeString(dir.resolve("application.yml"), ""
                 + "server:\n"
@@ -406,7 +613,9 @@ class StandbyAfterGateTest {
     }
 
     private static String redact(String text) {
-        return TOKEN.matcher(text).replaceAll("token=(已隐去)");
+        return TOKEN.matcher(text).replaceAll("token=(已隐去)")
+                .replace(PLAIN_PASSWORD, "(口令已隐去)")
+                .replace(PLAIN_TOKEN, "(令牌已隐去)");
     }
 
     @FunctionalInterface

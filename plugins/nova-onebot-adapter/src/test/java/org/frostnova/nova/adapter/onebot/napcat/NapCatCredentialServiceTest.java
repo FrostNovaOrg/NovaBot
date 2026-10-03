@@ -93,6 +93,7 @@ class NapCatCredentialServiceTest {
 
             NapCatCredentialService service = new NapCatCredentialService(
                     props("test", "", ""), files, mock(RestTemplate.class));
+            service.start();
 
             assertTrue(service.isConfigured());
             assertEquals(HASH_OF_TEST, written.get(NapCatCredentialService.TOKEN_HASH_PROPERTY));
@@ -111,7 +112,9 @@ class NapCatCredentialServiceTest {
                 return 2;
             }).when(files).writeWithoutBackup(any());
 
-            new NapCatCredentialService(props("test", "", ""), files, mock(RestTemplate.class));
+            NapCatCredentialService service = new NapCatCredentialService(
+                    props("test", "", ""), files, mock(RestTemplate.class));
+            service.start();
 
             try {
                 assertEquals(HASH_OF_TEST, written.get(NapCatCredentialService.TOKEN_HASH_PROPERTY),
@@ -138,6 +141,7 @@ class NapCatCredentialServiceTest {
             ConfigurationFileService files = mock(ConfigurationFileService.class);
             NapCatCredentialService service = new NapCatCredentialService(
                     props("", HASH_OF_TEST, ""), files, mock(RestTemplate.class));
+            service.start();
 
             assertTrue(service.isConfigured());
             // 两个写口都要钉住：只钉 write 的话，换成不带备份那个口照样绿，这格就空了

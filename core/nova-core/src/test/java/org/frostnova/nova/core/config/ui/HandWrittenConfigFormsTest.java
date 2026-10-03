@@ -639,9 +639,10 @@ class HandWrittenConfigFormsTest {
             NovaCoreProperties.ConfigUi.Auth properties = new NovaCoreProperties.ConfigUi.Auth();
             properties.setPassword(password);
             properties.setTotp(false);
-            new ConfigUiAuthService(properties,
+            ConfigUiAuthService auth = new ConfigUiAuthService(properties,
                     new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(2)),
                     new LoginThrottle(5, Duration.ofMinutes(15)), service);
+            auth.start();
             return appender.list.stream()
                     .map(ILoggingEvent::getFormattedMessage)
                     .filter(message -> message.contains("改为哈希保存"))

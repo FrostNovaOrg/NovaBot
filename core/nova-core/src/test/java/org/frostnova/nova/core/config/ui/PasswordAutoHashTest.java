@@ -63,9 +63,11 @@ class PasswordAutoHashTest {
         properties.setPassword(password);
         properties.setTotp(false);
 
-        return new ConfigUiAuthService(properties,
+        ConfigUiAuthService service = new ConfigUiAuthService(properties,
                 new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(2)),
                 new LoginThrottle(5, Duration.ofMinutes(15)), fileService);
+        service.start();
+        return service;
     }
 
     /**
@@ -151,6 +153,7 @@ class PasswordAutoHashTest {
         ConfigUiAuthService service = new ConfigUiAuthService(properties,
                 new ConfigUiSessionStore(Duration.ofHours(24), Duration.ofHours(2)),
                 new LoginThrottle(5, Duration.ofMinutes(15)), fileService);
+        service.start();
 
         assertTrue(service.login("我的口令".toCharArray(), null, "1.2.3.4").success());
     }

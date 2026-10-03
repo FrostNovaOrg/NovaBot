@@ -4,7 +4,9 @@ import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.adapter.onebot.config.OneBotAdapterPluginProperties;
 import org.frostnova.nova.core.config.ui.ConfigurationFileService;
 import org.frostnova.nova.core.config.ui.auth.TotpGenerator;
+import org.frostnova.nova.core.protocol.StandbyPhases;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.SmartLifecycle;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -47,7 +49,7 @@ import java.util.function.Supplier;
  * NovaBot 不必再造第二份副本。<b>一个从未持有过的值是最干净的状态。</b>
  */
 @Slf4j
-public class NapCatCredentialService {
+public class NapCatCredentialService implements SmartLifecycle {
     /**
      * 换算登录哈希时拼在 token 后面的那一段
      * <p>
@@ -116,12 +118,27 @@ public class NapCatCredentialService {
 
     private final RestTemplate restTemplate;
 
+    private final ConfigurationFileService fileService;
+
     private final String baseUrl;
 
     /**
      * 登录哈希，未配置时为 null
      */
     private final String tokenHash;
+
+    /**
+     * 构造时换算出的明文。非 null 时，过门核配置之后把哈希写回、并把明文清空。
+     * 没配明文时为 null。
+     */
+    private final String plaintextToReplace;
+
+    /**
+     * 写回只尝试一次
+     */
+    private boolean hashWriteAttempted;
+
+    private volatile boolean running;
 
     /**
      * NapCat 侧的 2FA 密钥，它没开 2FA 时为 null
@@ -170,8 +187,11 @@ public class NapCatCredentialService {
                             ConfigurationFileService fileService, RestTemplate restTemplate,
                             Supplier<Instant> clock, NapCatRouteWitness witness) {
         this.restTemplate = restTemplate;
+        this.fileService = fileService;
         this.baseUrl = trimTrailingSlash(properties.getAddress());
-        this.tokenHash = resolveHash(properties, fileService);
+        StartupToken resolved = resolveHash(properties);
+        this.tokenHash = resolved.hash();
+        this.plaintextToReplace = resolved.plaintextToReplace();
         this.totpSecret = blankToNull(properties.getTotpSecret());
         this.clock = clock;
         this.routeWitness = witness != null ? witness : new NapCatRouteWitness(this.baseUrl, restTemplate);
@@ -383,26 +403,40 @@ public class NapCatCredentialService {
     }
 
     /**
-     * 拿到登录哈希：配置里填了明文 token 就当场换算并写回，明文不留在盘上
+     * 拿到登录哈希：配置里填了明文就在构造时换算，内存里用这份哈希。
+     * 写回文件排在过门核配置之后，明文不留在盘上。
      */
-    private static String resolveHash(OneBotAdapterPluginProperties.NapCat properties,
-                                      ConfigurationFileService fileService) {
+    private static StartupToken resolveHash(OneBotAdapterPluginProperties.NapCat properties) {
         String plain = blankToNull(properties.getToken());
         String existing = blankToNull(properties.getTokenHash());
-
         if (plain == null) {
-            return existing;
+            return new StartupToken(existing, null);
         }
+        return new StartupToken(hash(plain), plain);
+    }
 
-        String hashed = hash(plain);
+    /**
+     * 构造时算出的令牌哈希，和要不要把明文换掉
+     * @param hash 内存里用的哈希，未配置时为 null
+     * @param plaintextToReplace 要写回时换掉的明文，不必写回时为 null
+     */
+    private record StartupToken(String hash, String plaintextToReplace) {
+    }
+
+    /**
+     * 把哈希写回、清空明文。写不进去也继续跑：登录哈希已经在内存里，连 NapCat 不受影响，
+     * 只是文件里还留着明文。
+     * <p>
+     * 两项一起写：只写哈希不清明文，等于配置里同时躺着两份等价凭据。
+     * 这次写回不留备份：旧值正是刚换掉的明文，备份会把它又抄一份放进同一个目录。
+     */
+    private void persistPlaintext(String plain, String hashed) {
         if (fileService == null) {
             log.warn("NapCat 的 token 仍以明文保存在配置文件中");
-            return hashed;
+            return;
         }
 
         try {
-            // 两项一起写：只写哈希不清明文，等于配置里同时躺着两份等价凭据。
-            // 这次写回不留备份：旧值正是刚换掉的明文，备份会把它又抄一份放进同一个目录
             Map<String, String> changes = new LinkedHashMap<>();
             changes.put(TOKEN_HASH_PROPERTY, hashed);
             changes.put(TOKEN_PROPERTY, "");
@@ -412,7 +446,42 @@ public class NapCatCredentialService {
         } catch (Exception e) {
             log.warn("NapCat 的 token 未能换算保存, 文件中仍是明文: {}", e.getMessage());
         }
-        return hashed;
+    }
+
+    /**
+     * 明文换哈希的写回。挂在 {@link StandbyPhases#AFTER_GATE}，比
+     * {@link StandbyPhases#RECHECK} 晚一档：过门核配置先读完文件，这次写回才落盘。
+     * 开关关着时同一次启动里照样走到。
+     */
+    @Override
+    public void start() {
+        if (!hashWriteAttempted) {
+            hashWriteAttempted = true;
+            if (plaintextToReplace != null) {
+                persistPlaintext(plaintextToReplace, tokenHash);
+            }
+        }
+        running = true;
+    }
+
+    @Override
+    public void stop() {
+        running = false;
+    }
+
+    @Override
+    public boolean isRunning() {
+        return running;
+    }
+
+    @Override
+    public int getPhase() {
+        return StandbyPhases.AFTER_GATE;
+    }
+
+    @Override
+    public boolean isAutoStartup() {
+        return true;
     }
 
     /**
