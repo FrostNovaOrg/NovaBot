@@ -94,7 +94,9 @@ class NapCatTokenBackupTest {
         properties.setTokenHash("");
         properties.setTotpSecret("");
         properties.setAddress("http://127.0.0.1:6099");
-        new NapCatCredentialService(properties, fileService, mock(RestTemplate.class));
+        NapCatCredentialService service = new NapCatCredentialService(
+                properties, fileService, mock(RestTemplate.class));
+        service.start();
 
         try {
             List<String> left = filesHolding(PLAIN);

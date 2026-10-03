@@ -3,7 +3,9 @@ package org.frostnova.nova.core.config.ui.auth;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.ConfigurationFileService;
 import org.frostnova.nova.core.config.ui.ConfigurationKeyAliases;
+import org.frostnova.nova.core.protocol.StandbyPhases;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.SmartLifecycle;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -23,7 +25,7 @@ import java.util.function.Supplier;
  * 而会话有期限、可注销、可因改口令而全部失效，令牌这三样都做不到。
  */
 @Slf4j
-public class ConfigUiAuthService {
+public class ConfigUiAuthService implements SmartLifecycle {
     /**
      * 失败提示一律用这一句
      * <p>
@@ -33,7 +35,7 @@ public class ConfigUiAuthService {
     private static final String INVALID = "密码或验证码不正确";
 
     /**
-     * 登录口令所在的配置项，明文会在启动时哈希后写回此处
+     * 登录口令所在的配置项。填明文时构造里换成哈希，写回排在过门核配置之后
      */
     public static final String PASSWORD_PROPERTY = "novabot.core.config-ui.auth.password";
 
@@ -192,6 +194,19 @@ public class ConfigUiAuthService {
     private volatile String passwordHash;
 
     /**
+     * 构造时换算出的明文。非 null 时，过门核配置之后把哈希写回，换掉这一份。
+     * 没配口令、或配置里已经是哈希时为 null。
+     */
+    private final String plaintextToReplace;
+
+    /**
+     * 写回只尝试一次
+     */
+    private boolean hashWriteAttempted;
+
+    private volatile boolean running;
+
+    /**
      * 是否要求二次验证
      * <p>
      * 可变的：在设置页开关它要当场生效，理由同上。开与关都得先过一次验证器
@@ -244,7 +259,9 @@ public class ConfigUiAuthService {
         this.throttle = throttle;
         this.fileService = fileService;
         this.clock = clock;
-        this.passwordHash = resolvePasswordHash(properties.getPassword());
+        StartupPassword resolved = resolvePasswordHash(properties.getPassword());
+        this.passwordHash = resolved.hash();
+        this.plaintextToReplace = resolved.plaintextToReplace();
         this.totpEnabled = properties.isTotp();
         this.totpSecret = blankToNull(properties.getTotpSecret());
 
@@ -888,18 +905,18 @@ public class ConfigUiAuthService {
      * 解析配置中的口令
      * <p>
      * 配置文件里既接受哈希串也接受明文。填明文是为了让人直接写个密码进去就能用起来——
-     * 启动时会当场哈希掉<b>并写回配置文件</b>，明文不会留在盘上。
+     * 构造时当场哈希，内存里用这份哈希；写回配置文件排在过门核配置之后，明文不会留在盘上。
      * <p>
      * <b>不能只打一行日志让使用者自己去抄。</b>那串东西有 80 个字符，
      * 手工复制少一位就再也登不进去，而登录时的报错与「口令输错了」一模一样——
      * 人只会以为是自己记错了密码。这个坑真踩过，掉的就是最后一位。
      * @param configured 配置值
-     * @return 口令哈希，未配置时为 null
+     * @return 内存里用的哈希，以及要不要等过门核配置之后再写回
      */
-    private String resolvePasswordHash(String configured) {
+    private StartupPassword resolvePasswordHash(String configured) {
         String password = blankToNull(configured);
         if (password == null) {
-            return null;
+            return new StartupPassword(null, null);
         }
 
         if (PasswordHash.isHashed(password)) {
@@ -912,13 +929,18 @@ public class ConfigUiAuthService {
                 log.error("请在配置界面重新设置一次登录口令；");
                 log.error("此时仍可凭启动令牌进入面板，地址见下方日志");
             }
-            return password;
+            return new StartupPassword(password, null);
         }
 
-        String hashed = PasswordHash.hash(password.toCharArray());
-        persistHash(password, hashed);
+        return new StartupPassword(PasswordHash.hash(password.toCharArray()), password);
+    }
 
-        return hashed;
+    /**
+     * 构造时算出的口令，和要不要把明文换掉
+     * @param hash 内存里用的哈希，未配置时为 null
+     * @param plaintextToReplace 要写回时换掉的明文，不必写回时为 null
+     */
+    private record StartupPassword(String hash, String plaintextToReplace) {
     }
 
     /**
@@ -976,6 +998,42 @@ public class ConfigUiAuthService {
 
     private static String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value.strip();
+    }
+
+    /**
+     * 明文换哈希的写回。挂在 {@link StandbyPhases#AFTER_GATE}，比
+     * {@link StandbyPhases#RECHECK} 晚一档：过门核配置先读完文件，这次写回才落盘。
+     * 开关关着时同一次启动里照样走到。
+     */
+    @Override
+    public void start() {
+        if (!hashWriteAttempted) {
+            hashWriteAttempted = true;
+            if (plaintextToReplace != null) {
+                persistHash(plaintextToReplace, passwordHash);
+            }
+        }
+        running = true;
+    }
+
+    @Override
+    public void stop() {
+        running = false;
+    }
+
+    @Override
+    public boolean isRunning() {
+        return running;
+    }
+
+    @Override
+    public int getPhase() {
+        return StandbyPhases.AFTER_GATE;
+    }
+
+    @Override
+    public boolean isAutoStartup() {
+        return true;
     }
 
     /**
