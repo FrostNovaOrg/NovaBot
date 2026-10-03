@@ -33,6 +33,7 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 import java.io.IOException;
 import java.io.Reader;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -1175,14 +1176,14 @@ class ConfigurationConsistencyTest {
      * 而插件键（{@code novabot.bilibili.*}、{@code novabot.adapter.onebot.*}）不在那条
      * 类路径上——<b>那几格量不到它们，生成件真缺了插件键也照样绿</b>。本类站在反应堆里
      * 最后构建的模块，读得到全部模块的编译期元数据，正好把分母补全。生产码本身不缺：
-     * {@link ConfigurationMetadataService} 在运行时既扫类路径、也读 plugins/ 目录下的插件 jar。
+     * {@link ConfigurationMetadataService} 在运行时从这一条类路径读核心与插件的元数据。
      *
      * <h2>两侧各走什么路</h2>
      * 期望一侧用本类现成的多模块聚合（{@link #displayedProperties()}），不另抄清单；
-     * 实际一侧把插件 jar 摆进 plugins/ 目录，让生产加载器把「类路径＋插件」两条来路走齐，
+     * 实际一侧把同一批插件 jar 交给生产加载器读的那个类加载器，
      * 再走生产渲染器写出（{@code ConfigurationTemplate} 是 config.ui 包的包私有件，
      * 不为这一格把它放宽成 public，从外头借一口）。比对只量「期望的每一键都有它的一行」，
-     * 不量「一行不多」：期望侧读各模块的源码元数据、实际侧读类路径与 jar，来路不同，
+     * 不量「一行不多」：期望侧读各模块的源码元数据、实际侧读那条类路径，来路不同，
      * 实际侧带出旧构建残留的键不构成使用者的损失——判红只该发生在「设置页上有、文件里没有」。
      */
     @Test
@@ -1194,8 +1195,8 @@ class ConfigurationConsistencyTest {
         assertTrue(expected.stream().anyMatch(name -> name.startsWith("novabot.adapter.onebot.")),
                 "分母自证：适配器插件键一个都不在期望集里，这一格量不到插件来路");
 
-        List<String> missing = withPluginJars(() ->
-                missingKeys(expected, new ConfigurationMetadataService().getFields()));
+        List<String> missing = withPluginJars((service, jarNames) ->
+                missingKeys(expected, service.getFields()));
         assertTrue(missing.isEmpty(),
                 "首次保存写出的文件缺了以下配置项（期望 " + expected.size() + " 项，缺 "
                         + missing.size() + " 项）。设置页上有、文件里没有，使用者照着文件改不到那一项，"
@@ -1206,9 +1207,9 @@ class ConfigurationConsistencyTest {
     @DisplayName("⚠️ 生成件键集阴性 —— 抽掉一枚插件键后缺的恰是那一键")
     void omittingOnePluginKeyIsReportedMissing() throws Exception {
         Set<String> expected = displayedProperties();
-        withPluginJars(() -> {
+        withPluginJars((service, jarNames) -> {
             List<ConfigurationMetadataService.ConfigurationField> fields =
-                    new ArrayList<>(new ConfigurationMetadataService().getFields());
+                    new ArrayList<>(service.getFields());
             ConfigurationMetadataService.ConfigurationField dropped = fields.stream()
                     .filter(field -> field.name().startsWith("novabot.bilibili."))
                     .findFirst()
@@ -1237,8 +1238,8 @@ class ConfigurationConsistencyTest {
         assertTrue(expected.stream().anyMatch(name -> name.startsWith("novabot.adapter.onebot.")),
                 "分母自证：适配器插件键一个都不在期望集里，这一格量不到插件来路");
 
-        List<String> extra = withPluginJars(() -> {
-            missingKeys(expected, new ConfigurationMetadataService().getFields());
+        List<String> extra = withPluginJars((service, jarNames) -> {
+            missingKeys(expected, service.getFields());
             Path file = dir.resolve("application.yml");
             Set<String> actual = new TreeSet<>(load(file).keySet());
             assertFalse(actual.isEmpty(),
@@ -1272,14 +1273,7 @@ class ConfigurationConsistencyTest {
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("pluginModules 里没有 napcat 模块"));
 
-        List<String> names = withPluginJars(() -> {
-            try (Stream<Path> files = Files.list(Path.of("plugins"))) {
-                return files
-                        .map(path -> path.getFileName().toString())
-                        .filter(name -> name.endsWith(".jar"))
-                        .toList();
-            }
-        });
+        List<String> names = withPluginJars((service, jarNames) -> jarNames);
 
         List<String> red = new ArrayList<>();
         try {
@@ -1332,7 +1326,7 @@ class ConfigurationConsistencyTest {
     }
 
     /**
-     * 会作为插件装进 plugins/ 目录的模块
+     * 会把 jar 交给类加载器的插件模块
      * <p>
      * 按 {@code target/plugin.json} 认定：插件处理器只给插件模块生成它，与部署形态同源，
      * 不手写名单。手写名单的失败形态是「新插件不在名单里，它的键悄悄免检」；
@@ -1487,53 +1481,56 @@ class ConfigurationConsistencyTest {
 
     @FunctionalInterface
     private interface PluginWork<T> {
-        T run() throws Exception;
+        T run(ConfigurationMetadataService service, List<String> jarNames) throws Exception;
     }
 
     /**
-     * 把插件 jar 摆进 plugins/ 再跑，跑完只删本格自己拷进去的那些。
+     * 拿除本模块以外的插件 jar 建一个类加载器再跑，跑完关掉。
      * <p>
-     * 摆除本模块以外的插件模块 jar。本模块键走类路径，摆不摆自己的 jar 都不影响期望侧。
-     * console／report 没有 novabot 元数据条目，照旧摆进去。
+     * 父加载器是本测试类自己的。本模块的键走那条类路径，不把本模块的 jar 再交进去。
+     * console／report 没有 novabot 元数据条目，照旧交进去。
      */
     private <T> T withPluginJars(PluginWork<T> work) throws Exception {
-        Path plugins = Path.of("plugins");
-        boolean owned = Files.notExists(plugins);
-        if (owned) {
-            Files.createDirectory(plugins);
+        List<Path> jars = new ArrayList<>();
+        String self = thisPluginModule();
+        Path root = repositoryRoot();
+        for (String module : pluginModules()) {
+            if (module.equals(self)) {
+                continue;
+            }
+            Path target = root.resolve(module).resolve("target");
+            if (!Files.isDirectory(target)) {
+                continue;
+            }
+            try (Stream<Path> listed = Files.list(target)) {
+                for (Path jar : listed.filter(path -> path.getFileName().toString().endsWith(".jar")).toList()) {
+                    jars.add(jar);
+                }
+            }
+        }
+        assertFalse(jars.isEmpty(),
+                "一个插件 jar 都没交给类加载器 —— 单模块跑这一格前先整盘构建一次");
+
+        List<URL> urls = new ArrayList<>();
+        List<String> names = new ArrayList<>();
+        for (Path jar : jars) {
+            urls.add(jar.toUri().toURL());
+            names.add(jar.getFileName().toString());
         }
 
-        List<Path> installed = new ArrayList<>();
-        String self = thisPluginModule();
-        try {
-            Path root = repositoryRoot();
-            for (String module : pluginModules()) {
-                if (module.equals(self)) {
-                    continue;
-                }
-                Path target = root.resolve(module).resolve("target");
-                if (!Files.isDirectory(target)) {
-                    continue;
-                }
-                try (Stream<Path> jars = Files.list(target)) {
-                    for (Path jar : jars.filter(path -> path.getFileName().toString().endsWith(".jar")).toList()) {
-                        Path copy = plugins.resolve(jar.getFileName());
-                        Files.copy(jar, copy);
-                        installed.add(copy);
-                    }
-                }
-            }
-            assertFalse(installed.isEmpty(),
-                    "一个插件 jar 都没摆进 plugins/ —— 单模块跑这一格前先整盘构建一次");
-            return work.run();
-        } finally {
-            for (Path copy : installed) {
-                Files.deleteIfExists(copy);
-            }
-            if (owned) {
-                Files.deleteIfExists(plugins);
-            }
+        try (URLClassLoader loader = new URLClassLoader(urls.toArray(new URL[0]), getClass().getClassLoader())) {
+            return work.run(metadataService(loader), names);
         }
+    }
+
+    /**
+     * 包内构造器跨包够不着，从外头借一口，不把它放宽成 public。
+     */
+    private ConfigurationMetadataService metadataService(ClassLoader loader) throws Exception {
+        Constructor<?> constructor = Class.forName("org.frostnova.nova.core.config.ui.ConfigurationMetadataService")
+                .getDeclaredConstructor(ClassLoader.class);
+        constructor.setAccessible(true);
+        return (ConfigurationMetadataService) constructor.newInstance(loader);
     }
 
     private List<String> missingKeys(Set<String> expected,
