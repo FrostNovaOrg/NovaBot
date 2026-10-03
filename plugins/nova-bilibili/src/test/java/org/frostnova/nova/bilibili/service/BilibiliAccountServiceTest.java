@@ -289,8 +289,8 @@ class BilibiliAccountServiceTest {
             String loginLine = loginLines.get(0);
             assertFalse(loginLine.contains("null"),
                     "账号身份没拿到时不该把 null 印给使用者, 实为 " + loginLine);
-            assertTrue(loginLine.contains("账号身份暂未确认"),
-                    "该说账号身份暂未确认、稍后自动确认, 实为 " + loginLine);
+            assertEquals("登录成功, 登录凭据暂未确认", loginLine,
+                    "新句只说登录成功与登录凭据暂未确认, 不加别的, 实为 " + loginLine);
         } finally {
             logger.detachAppender(appender);
         }

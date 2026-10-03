@@ -146,7 +146,7 @@ public class BilibiliBackupLivePushService {
         this.dataSource = dataSource;
 
         if (!properties.getLive().isBackupLivePush()) {
-            log.info("备用直播推送已关闭, 起来后只查一轮当前状态收「账上在播、实际已下播」, 之后不再查");
+            log.info("备用直播推送已关闭, 本次启动查一次各主播当前状态, 把停机期间已下播的场次收尾, 之后不再定时检查");
             closeStreamsEndedWhileDownOnce();
             return;
         }
