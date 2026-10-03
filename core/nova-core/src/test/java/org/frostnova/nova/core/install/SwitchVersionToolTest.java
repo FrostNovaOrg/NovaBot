@@ -857,6 +857,52 @@ class SwitchVersionToolTest {
         planInterruptLeavesDropin(dir, "INT");
     }
 
+    @Test
+    @DisplayName("普通重启切开机自启中途被打断")
+    void ordinaryRestartInterruptedWhileSwitchingBoot(@TempDir Path dir) throws Exception {
+        // 故障：新版已经起来，开机自启切到一半终端就断了。应把开机自启切完再退，不能停掉新版、把旧版起回来。
+        World world = lay(dir, true, false, true, "ordinary", OLD);
+        world.slowQuery = "enable";
+        Run run = runSignalWhenQuery(world, "TERM");
+        String last = lastLine(run.stdout);
+
+        assertEquals(0, run.code, "应退 0，实际：" + run.code + " 输出：" + run.stdout + run.stderr
+                + " 调用：" + calls(world));
+        assertEquals("已换到 " + NEW + "。", last, "末行应是已换到，实际：" + last);
+        assertTrue(called(world, "enable novabot@" + NEW), "应开新版开机自启，实际：" + calls(world));
+        assertFalse(called(world, "stop novabot@" + NEW), "不应停新版，实际：" + calls(world));
+        assertFalse(called(world, "start novabot@" + OLD), "不应再起旧版，实际：" + calls(world));
+    }
+
+    @Test
+    @DisplayName("没有版本在跑时开新版开机自启中途被打断")
+    void nothingRunningInterruptedWhileEnabling(@TempDir Path dir) throws Exception {
+        // 故障：本来没有版本在跑，新版已经起来，开开机自启中途断了。应切完再退，不能把新版停掉。
+        World world = lay(dir, true, true, true, "ordinary", "");
+        world.slowQuery = "enable";
+        Run run = runSignalWhenQuery(world, "TERM");
+        String last = lastLine(run.stdout);
+
+        assertEquals(0, run.code, "应退 0，实际：" + run.code + " 输出：" + run.stdout + run.stderr
+                + " 调用：" + calls(world));
+        assertEquals("已换到 " + NEW + "。", last, "末行应是已换到，实际：" + last);
+        assertFalse(called(world, "stop novabot@" + NEW), "新版不应被停，实际：" + calls(world));
+    }
+
+    @Test
+    @DisplayName("普通重启新版还没起好时被打断")
+    void ordinaryRestartInterruptedBeforeReady(@TempDir Path dir) throws Exception {
+        // 故障：新版还没起好就断了。这时应停掉新版、把旧版起回来。
+        World world = lay(dir, true, false, true, "ordinary", OLD);
+        world.slowQuery = "start";
+        Run run = runSignalWhenQuery(world, "TERM");
+
+        assertEquals(130, run.code, "应退 130，实际：" + run.code + " 输出：" + run.stdout + run.stderr
+                + " 调用：" + calls(world));
+        assertTrue(called(world, "stop novabot@" + NEW), "应停新版，实际：" + calls(world));
+        assertTrue(called(world, "start novabot@" + OLD), "应把旧版起回来，实际：" + calls(world));
+    }
+
     private static void planInterruptLeavesDropin(Path dir, String signal) throws Exception {
         // 故障：预演只是看看，中途断线却删掉目标版本预先放好的覆盖设置，并重新加载服务配置。
         World world = lay(dir, true, true, true, "hot-ok", OLD);
@@ -972,6 +1018,23 @@ class SwitchVersionToolTest {
                 process.destroyForcibly();
                 Run early = finish(world, process);
                 fail("只读查询没有开始。输出：" + early.stdout + early.stderr);
+            }
+            Thread.sleep(50);
+        }
+        Process killer = new ProcessBuilder("kill", "-" + signal, Long.toString(process.pid())).start();
+        assertEquals(0, killer.waitFor(), "送出 " + signal + " 失败");
+        return finish(world, process);
+    }
+
+    private static Run runSignalWhenQuery(World world, String signal) throws Exception {
+        Process process = command(world, world.target).start();
+        Path flag = world.stubState.resolve("query-entered");
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(40);
+        while (!Files.isRegularFile(flag)) {
+            if (!process.isAlive() || System.nanoTime() > deadline) {
+                process.destroyForcibly();
+                Run early = finish(world, process);
+                fail("这一步没有开始。输出：" + early.stdout + early.stderr);
             }
             Thread.sleep(50);
         }

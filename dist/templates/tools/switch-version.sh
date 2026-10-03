@@ -737,6 +737,7 @@ do_ordinary() {
         exit 1
     fi
     if ordinary_start "$TARGET"; then
+        TARGET_READY=1
         if ! switch_autostart; then
             exit 1
         fi
@@ -876,6 +877,7 @@ fi
 if [ "$count" -eq 0 ]; then
     say "现在没有分目录实例在跑，普通启动 ${TARGET}。"
     if ordinary_start "$TARGET"; then
+        TARGET_READY=1
         if ! switch_autostart; then
             exit 1
         fi
