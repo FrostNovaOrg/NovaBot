@@ -12,7 +12,11 @@
 # (no live-room connection, no polling, no update check). Platform calls that
 # no switch can turn off (the startup streamer lookup and the credential init)
 # are routed to a local port nothing listens on, so they fail on this machine
-# instead of reaching the network. Dates are computed from the start moment.
+# instead of reaching the network. A stand-in OneBot endpoint (fake-onebot.py)
+# is started first on the address the seed configures and left answering, so
+# the home page's bot-connection check says up instead of unreachable, and no
+# reachability error ends up in the engineering log. Dates are computed from
+# the start moment.
 # All sample names and numbers are made up; nothing in them comes from a real
 # account. Without the switch nothing changes.
 #
@@ -24,6 +28,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OUT="${1:-$ROOT/dist/build}"
 PORT="${DEMO_PORT:-7827}"
+# 带种子时假机器人端点听的端口，须与 demo-seed/application.demo.yml 里的
+# one-bot-address / one-bot-http-port 对上；种子是按它渲染的，改一处就要改两处
+FAKE_ONEBOT_PORT=39000
 TIMEOUT="${DEMO_TIMEOUT:-90}"
 KEEP="${DEMO_KEEP:-0}"
 HOLD="${DEMO_HOLD:-0}"
@@ -74,6 +81,14 @@ if [ -n "$LSOF" ] && [ -n "$("$LSOF" -nP -iTCP:"$PORT" -sTCP:LISTEN 2>/dev/null)
     exit 1
 fi
 
+# 带种子时假机器人端点要占种子配的那个端口；已被占就照上面的写法报错退出，
+# 不去抢别人正用着的端口——抢了首页自检看着是绿的，绿的是别人的程序
+if [ "$SEED" = "1" ] && [ -n "$LSOF" ] && [ -n "$("$LSOF" -nP -iTCP:"$FAKE_ONEBOT_PORT" -sTCP:LISTEN 2>/dev/null)" ]; then
+    echo "port $FAKE_ONEBOT_PORT is already in use (the stand-in OneBot endpoint needs it)" >&2
+    "$LSOF" -nP -iTCP:"$FAKE_ONEBOT_PORT" -sTCP:LISTEN >&2
+    exit 1
+fi
+
 # 已在跑的判断只认本脚本自己起的那个：按名搜 pgrep 会误中同机别处的 NovaBot（别的
 # 工作树、正式实例），演示起不来。本脚本此时尚未起过进程，自己的实例数恒为 0；
 # 端口占用那道 lsof 闸已在上面拦住真冲突。
@@ -81,6 +96,7 @@ fi
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/novabot-demo-XXXXXX")"
 LOG="$WORK/boot.log"
 PID=""
+FAKE_PID=""
 
 cleanup() {
     if [ -n "${PID:-}" ] && kill -0 "$PID" 2>/dev/null; then
@@ -92,6 +108,15 @@ cleanup() {
         if kill -0 "$PID" 2>/dev/null; then
             kill -KILL "$PID" 2>/dev/null || true
             sleep 1
+        fi
+    fi
+    # 假机器人端点同样只认自己记下的 pid，比 NovaBot 后停：停机那一趟它还在答话，
+    # 不会多出几行连不上的错误来
+    if [ -n "${FAKE_PID:-}" ] && kill -0 "$FAKE_PID" 2>/dev/null; then
+        kill -TERM "$FAKE_PID" 2>/dev/null || true
+        sleep 1
+        if kill -0 "$FAKE_PID" 2>/dev/null; then
+            kill -KILL "$FAKE_PID" 2>/dev/null || true
         fi
     fi
     if [ "$KEEP" != "1" ]; then
@@ -109,6 +134,33 @@ if [ "$SEED" = "1" ]; then
     # preset sample data (see the header comment); refuses to overwrite, the work
     # directory is fresh from mktemp so anything already there is unexpected
     python3 "$ROOT/tools/demo-assets/demo-seed/make-demo-seed.py" "$WORK"
+fi
+
+# 带种子时先把假机器人端点起在种子配的那个端口上，等它连得上再起 NovaBot：启动那次
+# 体检只在程序起好时跑一次，错过了要等 300 秒才有下一次。同样只认自己记下的 pid。
+if [ "$SEED" = "1" ]; then
+    python3 "$ROOT/tools/demo-assets/fake-onebot.py" --host 127.0.0.1 --port "$FAKE_ONEBOT_PORT" >>"$WORK/fake-onebot.log" 2>&1 &
+    FAKE_PID=$!
+    FAKE_UP="$(python3 - "$FAKE_ONEBOT_PORT" <<'PY'
+import socket, sys, time
+port = int(sys.argv[1])
+for _ in range(100):
+    try:
+        s = socket.create_connection(("127.0.0.1", port), timeout=1)
+        s.close()
+        print("1")
+        raise SystemExit(0)
+    except OSError:
+        time.sleep(0.1)
+print("0")
+PY
+)"
+    if [ "$FAKE_UP" != "1" ]; then
+        echo "stand-in OneBot endpoint did not come up on 127.0.0.1:$FAKE_ONEBOT_PORT" >&2
+        tail -n 20 "$WORK/fake-onebot.log" >&2
+        exit 1
+    fi
+    echo "==> stand-in OneBot endpoint on 127.0.0.1:$FAKE_ONEBOT_PORT (pid=$FAKE_PID)"
 fi
 
 PROXY_ARGS=""
@@ -265,13 +317,14 @@ if [ -n "$PID" ]; then
         kill -KILL "$PID" 2>/dev/null || true
         sleep 1
     fi
-    PID=""
-fi
 
-# 停机后的存活判断只看自己记下的 pid；按名搜 pgrep 会把同机别处的 NovaBot 算进来，
-# 正式实例一直在跑时演示脚本会在这一步报错退出。
-if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
-    echo "demo process $PID still running after stop" >&2
-    exit 1
+    # 停机后的存活判断只看自己记下的 pid，先判「停了没有」再清空；按名搜 pgrep 会把
+    # 同机别处的 NovaBot 算进来，正式实例一直在跑时演示脚本会在这一步报错退出。
+    # 清空写在判之后：判之前写，这里就只剩一个空变量，检查永远不触发。
+    if kill -0 "$PID" 2>/dev/null; then
+        echo "demo process $PID still running after stop" >&2
+        exit 1
+    fi
+    PID=""
 fi
 echo "demo process stopped"

@@ -2,7 +2,8 @@
 """Preset sample data into a demo instance's working directory.
 
 Used by start-demo.sh when DEMO_SEED=1. Takes the throwaway working directory
-as its only argument and writes:
+as its only argument (--now YYYY-MM-DDTHH:MM:SS pretends that is the start
+moment; it is for checking this script, the demo run never passes it) and writes:
 
   datasource.json   one demo streamer (nickname says it is a demo) pushing to
                     one demo group            (copied from datasource.demo.json)
@@ -25,6 +26,10 @@ as its only argument and writes:
 Dates are computed from the start moment; nothing date-like is hardcoded. All
 names and numbers are made up for the demo and use ranges the platforms do not
 hand out, so no real account or group can be hit by accident.
+
+Samples are dated as "start minus a few tens of minutes", so starting before
+01:00 would put some of them on the previous day while the files are named for
+the start day. Nothing is written between 00:00 and 00:59; start after 01:00.
 """
 
 import json
@@ -127,11 +132,14 @@ def session_lines(now):
 
 
 def timeline_lines(now):
-    # 已推送的时刻要落在静音时段之外：静音段是起动前 30 分钟到起动后 90 分钟，
-    # 这里把三条 PUSH_SENT 挪到起动前 45–50 分钟，图上「已推送」和「静音」不再同屏打架。
+    # 已推送与推送失败的时刻都要落在静音时段之外：静音段是起动前 30 分钟到起动后 90 分钟，
+    # 静音期间的推送是被丢弃、根本不去发的（PushGate），段里再摆一条「发送失败」就自相矛盾。
+    # 这里把三条 PUSH_SENT 挪到起动前 45–50 分钟、PUSH_FAILED 挪到起动前 40 分钟（落在三条
+    # 已推送与静音段起点之间），图上「已推送」「静音丢弃」「发送失败」三种不再同屏打架。
+    # 静音丢弃那条留在段内：它本来就是静音时段里发生的那件事。
     sent_minutes = (50, 47, 45)
+    failed_minute = 40
     muted_minute = 5
-    failed_minute = 3
     summaries = ("开播通知（演示主播小星）", "下播报告（演示主播小星）", "动态推送（演示主播小星）")
 
     def event(minutes_ago, type_name, type_text, category, category_text, level,
@@ -156,13 +164,14 @@ def timeline_lines(now):
         lines.append(event(offset, "PUSH_SENT", "推送成功", "PUSH", "推送", "info",
                            CHANNEL, "已推送：" + summary,
                            {"platform": PUSH_PLATFORM, "elapsed_ms": str(180 + offset * 7)}))
-    lines.append(event(muted_minute, "PUSH_MUTED", "静音丢弃", "PUSH", "推送", "warn",
-                       CHANNEL, "处于静音时段，丢弃了发往" + CHANNEL + "的一条消息",
-                       {"summary": "动态推送（演示主播小星）", "platform": PUSH_PLATFORM}))
+    # 落盘顺序按时刻排：时间线与日志都是按行读的，倒着摆出来列表里的时刻会来回跳
     lines.append(event(failed_minute, "PUSH_FAILED", "推送失败", "PUSH", "推送", "error",
                        CHANNEL, "推送失败：连接超时",
                        {"platform": PUSH_PLATFORM, "summary": "下播报告（演示主播小星）",
                         "elapsed_ms": "10024"}))
+    lines.append(event(muted_minute, "PUSH_MUTED", "静音丢弃", "PUSH", "推送", "warn",
+                       CHANNEL, "处于静音时段，丢弃了发往" + CHANNEL + "的一条消息",
+                       {"summary": "动态推送（演示主播小星）", "platform": PUSH_PLATFORM}))
     return lines, muted_minute, failed_minute
 
 
@@ -190,29 +199,60 @@ def log_lines(now, muted_minute, failed_minute):
              "检测到开播: " + DEMO_UNAME + "（uid " + str(DEMO_UID) + "）"),
         line(at(45, 51, 82), "INFO", "nova-core-2", sender,
              "已推送 1 条消息到 " + CHANNEL + "，耗时 201 ms"),
-        # 与时间线里 PUSH_MUTED 那条同一分钟
-        line(at(muted_minute, 30, 114), "WARN", "nova-core-3", sender,
-             "处于静音时段, 已丢弃消息: [群] " + str(DEMO_GROUP) + ": 动态推送（演示主播小星）"),
         # 与时间线里 PUSH_FAILED 那条同一分钟：日志页点「看这一刻」要落在这里
         line(at(failed_minute, 9, 317), "ERROR", "nova-core-1", sender,
              "推送消息发送失败: 连接超时, 目标: " + CHANNEL + ", 已重试 3 次"),
         line(at(failed_minute, 9, 318), "ERROR", "nova-core-1", sender,
              "java.net.SocketTimeoutException: connect timed out"),
+        # 与时间线里 PUSH_MUTED 那条同一分钟
+        line(at(muted_minute, 30, 114), "WARN", "nova-core-3", sender,
+             "处于静音时段, 已丢弃消息: [群] " + str(DEMO_GROUP) + ": 动态推送（演示主播小星）"),
     ]
 
 
+def parse_moment(text):
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M",
+                "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    return None
+
+
 def main():
-    if len(sys.argv) != 2:
-        print("usage: make-demo-seed.py <work-dir>", file=sys.stderr)
+    usage = "usage: make-demo-seed.py [--now YYYY-MM-DDTHH:MM:SS] <work-dir>"
+    args = sys.argv[1:]
+    moment_text = None
+    if args and args[0] == "--now":
+        if len(args) < 2:
+            print(usage, file=sys.stderr)
+            return 2
+        moment_text = args[1]
+        args = args[2:]
+
+    if len(args) != 1:
+        print(usage, file=sys.stderr)
         return 2
 
-    work = Path(sys.argv[1]).resolve()
+    work = Path(args[0]).resolve()
     if not work.is_dir():
         print(f"not a directory: {work}", file=sys.stderr)
         return 2
 
     here = Path(__file__).resolve().parent
-    now = datetime.now()
+    now = parse_moment(moment_text) if moment_text is not None else datetime.now()
+    if now is None:
+        print(f"bad --now value: {moment_text}", file=sys.stderr)
+        return 2
+
+    # 样例按「起动前几十分钟」排，起动在 00:59 之前就有一截落在前一天、却被写进当天的文件，
+    # 列表里的时刻和日期对不上。因此零点到一点不排种子；过了 01:00 起动，样例才都落在当天。
+    if now.hour == 0:
+        print(f"拒绝在 {now:%H:%M} 排种子：样例按起动前几十分钟排，00:00–00:59 起动会有样例"
+              f"落在前一天、却写进当天的文件；过了 01:00 再起", file=sys.stderr)
+        return 2
+
     today = now.date()
 
     def fresh_write(path, content):
