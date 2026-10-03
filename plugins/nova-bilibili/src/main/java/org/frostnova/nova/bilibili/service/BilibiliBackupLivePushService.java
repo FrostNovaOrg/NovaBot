@@ -137,20 +137,62 @@ public class BilibiliBackupLivePushService {
 
     /**
      * 启动轮询
+     * <p>
+     * 备用推送关着时不登记定时轮询，但起来要补查一轮当前状态——见
+     * {@link #closeStreamsEndedWhileDownOnce}。
      * @param dataSource 数据源
      */
     public void start(AbstractDataSource dataSource) {
+        this.dataSource = dataSource;
+
         if (!properties.getLive().isBackupLivePush()) {
-            log.info("备用直播推送已关闭");
+            log.info("备用直播推送已关闭, 起来后只查一轮当前状态收「账上在播、实际已下播」, 之后不再查");
+            closeStreamsEndedWhileDownOnce();
             return;
         }
-
-        this.dataSource = dataSource;
 
         Duration interval = Duration.ofSeconds(Math.max(5, properties.getLive().getBackupLivePushInterval()));
         scheduler.scheduleAtFixedRate(this::poll, interval);
 
         log.info("备用直播推送已启动, 检测间隔 {} 秒", interval.toSeconds());
+    }
+
+    /**
+     * 备用推送关着时，起来只查的这一轮
+     * <p>
+     * 关着就没有轮询，而长连接只认平台当下推来的下播消息——连上一个早已下播的房间不会查一次
+     * 状态。机器停着期间下播的主播，账上会一直挂着在播：控制台显示在播，下播通知、报告图与下播
+     * 时段的打赏汇总都没了，要等这位主播下次开播才按没播完补档。所以起来时查一轮当前状态，把
+     * 「账上在播、实际不在播」的照 {@link #closeStreamEndedWhileDown} 收掉（停得短照正常下播走，
+     * 停得久当场补档）。
+     * <p>
+     * 只此一轮，且只收这一种：不补推开播、不往账上写在播、不登记定时轮询、之后也不再查——
+     * 关着就是不想要一个轮询器，只是这一个来回不能省。发布照旧过 {@link #beginPublish} 那把锁，
+     * 退出开始后不再发布。人全是起来时就配着的：这一轮就在起来这一刻，没有「运行中加回」可谈，
+     * 收的时候一律按起来时就配着那一档走。
+     */
+    private void closeStreamsEndedWhileDownOnce() {
+        AbstractDataSource source = this.dataSource;
+        if (source == null) {
+            return;
+        }
+
+        Map<Long, Up> ups = buildUps(source.getUsers(BilibiliPlatform.BILIBILI.id()));
+        if (ups.isEmpty()) {
+            return;
+        }
+
+        Map<Long, Room> rooms = queryRooms(ups);
+        String platform = BilibiliPlatform.BILIBILI.id();
+        rooms.forEach((uid, room) -> {
+            Up up = ups.get(uid);
+            if (up == null || room == null || room.getLiveStatus() == null) {
+                return;
+            }
+            if (!room.isLiving() && liveDataService.getLiveStatus(platform, uid).orElse(false)) {
+                closeStreamEndedWhileDown(up, true);
+            }
+        });
     }
 
     /**
@@ -178,16 +220,41 @@ public class BilibiliBackupLivePushService {
                     .collect(Collectors.toList()));
         }
 
-        Map<Long, Up> ups = users.stream()
-                .filter(user -> !Boolean.FALSE.equals(user.getEnabled()))
-                .map(Up::new)
-                .filter(up -> up.getUid() != null && up.getRoomId() != null)
-                .collect(Collectors.toMap(Up::getUid, up -> up, (first, second) -> first));
+        Map<Long, Up> ups = buildUps(users);
 
         if (ups.isEmpty()) {
             return;
         }
 
+        Map<Long, Room> rooms = queryRooms(ups);
+
+        rooms.forEach((uid, room) -> handleStateChange(ups.get(uid), room));
+
+        initialized = true;
+    }
+
+    /**
+     * 数据源里当前配着的哔哩哔哩主播，按 uid 归并
+     * <p>
+     * 只要 uid 与房间号都齐的：下播事件的消费者拿房间号拼直播间链接，缺房间号的人宁可这一轮
+     * 不收，也不能把「…/null」这样的链接发出去。
+     * @param users 数据源里的人
+     * @return uid 到 UP 主的映射（同 uid 取先见的那个）
+     */
+    private Map<Long, Up> buildUps(List<PushUser> users) {
+        return users.stream()
+                .filter(user -> !Boolean.FALSE.equals(user.getEnabled()))
+                .map(Up::new)
+                .filter(up -> up.getUid() != null && up.getRoomId() != null)
+                .collect(Collectors.toMap(Up::getUid, up -> up, (first, second) -> first));
+    }
+
+    /**
+     * 查一批主播的直播间当前状态。单批失败跳过，不连累其余的批
+     * @param ups 本批的主播
+     * @return uid 到直播间信息的映射
+     */
+    private Map<Long, Room> queryRooms(Map<Long, Up> ups) {
         Map<Long, Room> rooms = new java.util.HashMap<>();
         for (Set<Long> batch : partition(ups.keySet())) {
             try {
@@ -196,10 +263,7 @@ public class BilibiliBackupLivePushService {
                 log.debug("备用直播推送查询直播间状态失败: {}", e.getMessage());
             }
         }
-
-        rooms.forEach((uid, room) -> handleStateChange(ups.get(uid), room));
-
-        initialized = true;
+        return rooms;
     }
 
     /**

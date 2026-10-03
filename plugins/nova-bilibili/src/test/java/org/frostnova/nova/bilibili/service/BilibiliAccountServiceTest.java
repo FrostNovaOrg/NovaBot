@@ -1,5 +1,8 @@
 package org.frostnova.nova.bilibili.service;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.exception.NetworkException;
@@ -13,13 +16,16 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
+import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -251,6 +257,43 @@ class BilibiliAccountServiceTest {
 
         service.onContextClosed();
         first.get(ABORT_LIMIT.toMillis(), TimeUnit.MILLISECONDS);
+    }
+
+    @Test
+    @DisplayName("扫码登录成功而当场没拿到账号身份: 日志那句不含 null")
+    void shouldNotLogNullUidWhenQrLoginSeesNoUid() {
+        // 扫码成功那一刻接口没给出账号身份, 把 null 印给使用者, 看的人只会以为登录坏了
+        BilibiliApiUtil api = mock(BilibiliApiUtil.class);
+        BilibiliCredentialStore store = mock(BilibiliCredentialStore.class);
+
+        when(store.load()).thenReturn(Optional.empty());
+        when(api.getTvQrCodeLoginInfo()).thenReturn(new BilibiliApiUtil.QrCodeLogin("https://example.invalid/qr", "test-key"));
+        when(api.getTvQrCodeLoginStatus(anyString())).thenReturn(true);
+        when(api.getCookies()).thenReturn(new Cookies("sess", "jct", "buvid"));
+        when(api.getLoginUid()).thenReturn(null);
+
+        BilibiliAccountService service = newService(api, store);
+
+        Logger logger = (Logger) LoggerFactory.getLogger(BilibiliAccountService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            assertTrue(service.loginByQrCode(), "前置条件: 这次扫码应登录成功");
+
+            List<String> loginLines = appender.list.stream()
+                    .map(ILoggingEvent::getFormattedMessage)
+                    .filter(message -> message.startsWith("登录成功"))
+                    .collect(Collectors.toList());
+            assertEquals(1, loginLines.size(), "应有一句登录成功, 实为 " + loginLines);
+            String loginLine = loginLines.get(0);
+            assertFalse(loginLine.contains("null"),
+                    "账号身份没拿到时不该把 null 印给使用者, 实为 " + loginLine);
+            assertTrue(loginLine.contains("账号身份暂未确认"),
+                    "该说账号身份暂未确认、稍后自动确认, 实为 " + loginLine);
+        } finally {
+            logger.detachAppender(appender);
+        }
     }
 
     @Test

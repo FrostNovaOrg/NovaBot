@@ -388,4 +388,97 @@ class BilibiliBackupLivePushServiceTest {
                 "下播时刻应取上次落盘时刻, 实为 " + captor.getValue().getTimestamp());
         verifyNoInteractions(sessionRecovery);
     }
+
+    /**
+     * 备用直播推送关着时起来的那一轮：start() 当场只查一轮，之后不登记任何定时任务
+     * @param ups 这一轮数据源里的主播
+     * @param rooms 接口对这批 uid 的回答
+     * @return 起服务时递给它的调度器——关着时应当一次都没碰
+     */
+    private TaskScheduler runDisabledStartup(List<PushUser> ups, Map<Long, Room> rooms) {
+        when(dataSource.getUsers(BilibiliPlatform.BILIBILI.id())).thenReturn(ups);
+        when(api.getLiveInfoByUids(anySet())).thenReturn(rooms);
+
+        NovaBilibiliProperties properties = new NovaBilibiliProperties();
+        properties.getLive().setBackupLivePush(false);
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        new BilibiliBackupLivePushService(api, properties, publisher, scheduler,
+                stateGate, liveDataService, sessionRecovery).start(dataSource);
+        return scheduler;
+    }
+
+    @Test
+    @DisplayName("备用轮询关着·停机空当里结束·短停: 照正常下播发一次事件, 时刻取上次落盘")
+    void shouldPushLiveOffWhenDisabledAndDownBriefly() {
+        // 备用轮询关着, 停机空当里下了播: 账上一直挂着在播, 控制台显示在播, 下播通知与
+        // 报告图全没有。起来只查的这一轮要照正常下播收掉他
+        long lastSave = System.currentTimeMillis() - 60_000L;
+        when(liveDataService.getLastSaveTime()).thenReturn(Optional.of(lastSave));
+        statusStore.put(UID, true);
+        startTimeStore.put(UID, 111111111000L);
+
+        runDisabledStartup(List.of(streamer()), Map.of(UID, offlineRoom()));
+
+        ArgumentCaptor<BilibiliLiveOffEvent> captor = ArgumentCaptor.forClass(BilibiliLiveOffEvent.class);
+        verify(publisher, times(1)).publishEvent(captor.capture());
+        verify(publisher, never()).publishEvent(any(BilibiliLiveOnEvent.class));
+        assertEquals(lastSave, captor.getValue().getTimestamp(),
+                "下播时刻应取上次落盘时刻, 实为 " + captor.getValue().getTimestamp());
+        verifyNoInteractions(sessionRecovery);
+    }
+
+    @Test
+    @DisplayName("备用轮询关着·停机空当里结束·停得久: 不发下播事件, 当场按未闭合归档一场并改账")
+    void shouldArchiveUnclosedWhenDisabledAndDownTooLong() {
+        // 同上但停了一夜: 「刚下播」说不通, 发下播通知是误报; 当场按未闭合补档, 账要翻成不在播
+        long lastSave = System.currentTimeMillis() - 2 * 3_600_000L;
+        when(liveDataService.getLastSaveTime()).thenReturn(Optional.of(lastSave));
+        statusStore.put(UID, true);
+        startTimeStore.put(UID, 111111111000L);
+
+        long before = System.currentTimeMillis();
+        runDisabledStartup(List.of(streamer()), Map.of(UID, offlineRoom()));
+        long after = System.currentTimeMillis();
+
+        verifyNoInteractions(publisher);
+        verify(sessionRecovery, times(1)).archiveUnclosedIfAny(
+                eq(BilibiliPlatform.BILIBILI.id()),
+                argThat(source -> source != null && source.getUid() != null && source.getUid() == UID),
+                longThat(t -> t >= before && t <= after));
+        assertEquals(Optional.of(false), liveDataService.getLiveStatus(BilibiliPlatform.BILIBILI.id(), UID),
+                "账上应改成不在播, 否则控制台一直挂着在播、下次开播还会再补一遍");
+    }
+
+    @Test
+    @DisplayName("备用轮询关着·账上在播实际也在播: 什么都不发, 账不动")
+    void shouldTouchNothingWhenDisabledAndStillLiving() {
+        // 起来只查的这一轮见他还在播, 可这一轮不是来管在播的人的: 补推开播会把正在播的当成
+        // 新开播报一遍, 动账会把正在播的这一场搅了。前提「这一轮真的看了他」不能省——
+        // 省了的话「什么都不发」在「压根没查」上同样成立, 两件事分不出来
+        statusStore.put(UID, true);
+        startTimeStore.put(UID, 111111111000L);
+
+        runDisabledStartup(List.of(streamer()), Map.of(UID, livingRoom(LIVE_START_SECONDS)));
+
+        verify(api, times(1)).getLiveInfoByUids(anySet());
+        verifyNoInteractions(publisher);
+        verifyNoInteractions(sessionRecovery);
+        assertEquals(Optional.of(true), liveDataService.getLiveStatus(BilibiliPlatform.BILIBILI.id(), UID),
+                "正在播的场不该被翻成不在播");
+        assertEquals(Optional.of(111111111000L), liveDataService.getLiveStartTime(BilibiliPlatform.BILIBILI.id(), UID),
+                "正在播的本场起始不该被动");
+        verify(liveDataService, never()).setLiveStatus(anyString(), anyLong(), anyBoolean());
+        verify(liveDataService, never()).setLiveStartTime(anyString(), anyLong(), anyLong());
+    }
+
+    @Test
+    @DisplayName("备用轮询关着: 起来只查一轮, 不登记定时轮询")
+    void shouldQueryOnlyOnceWithoutSchedulingWhenDisabled() {
+        // 关着还挂定时器就是没关; 查完这一轮还接着查就是没做到「只查一轮」
+        TaskScheduler scheduler = runDisabledStartup(List.of(streamer()), Map.of(UID, offlineRoom()));
+
+        verifyNoInteractions(scheduler);
+        verify(dataSource, times(1)).getUsers(BilibiliPlatform.BILIBILI.id());
+        verify(api, times(1)).getLiveInfoByUids(anySet());
+    }
 }

@@ -715,7 +715,12 @@ public class BilibiliAccountService {
             this.loginUid = api.getLoginUid();
             this.loggedIn = true;
 
-            log.info("登录成功, uid: {}", loginUid);
+            // 当场没拿到账号身份是常有的事，别把 null 印给使用者——那看着就像登录坏了
+            if (loginUid == null) {
+                log.info("登录成功, 账号身份暂未确认, 稍后自动确认");
+            } else {
+                log.info("登录成功, uid: {}", loginUid);
+            }
             logCredentialCapability(logged);
             return true;
         }
