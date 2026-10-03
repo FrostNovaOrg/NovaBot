@@ -678,6 +678,8 @@ class VersionedReleaseInstallTest {
         assertTrue(run.stdout.contains("systemctl start novabot@5.8.0"), run.stdout);
         assertTrue(run.stdout.contains("systemctl stop novabot@5.7.9"), run.stdout);
         assertTrue(run.stdout.contains("systemctl stop novabot@5.7.7"), run.stdout);
+        assertTrue(run.stdout.indexOf("systemctl stop novabot@5.7.9") < run.stdout.indexOf("systemctl start novabot@5.8.0"),
+                "收尾要先停旧再起新：先起新版本会被单实例锁拦下、起不来。标准输出:\n" + run.stdout);
     }
 
     private static void assertIllegalVersion(Path root, String version) throws Exception {

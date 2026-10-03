@@ -55,7 +55,7 @@
 按你装它的方式重启程序即可，比如用 Linux 一键安装的，在服务器上执行：
 
 ```bash
-sudo systemctl restart novabot
+sudo systemctl restart novabot@<版本>
 ```
 
 改完又后悔了、把值改回程序启动时的原样再保存，这一项的「需重启」提醒就消失——
@@ -67,7 +67,8 @@ sudo systemctl restart novabot
 
 ### 改动存到了哪
 
-存进程序目录下的配置文件 `application.yml`。**只改动过的那几行**，
+存进安装目录根上的配置文件 `application.yml`（一键安装的机器程序在
+`releases/<版本>/` 下，配置不在那里）。**只改动过的那几行**，
 你在文件里手写的注释、空行和顺序都会留着。
 
 每次保存前自动备份一份原文件，文件名后面带上保存时刻，默认留最近 10 份
