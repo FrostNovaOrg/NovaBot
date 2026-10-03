@@ -16,7 +16,9 @@ novabot:
         type: 1
         num: 910000001
 
-      senders:              # 机器人连接列表：示例值，地址指本机无人监听的端口，只为让首页自检不写「未配置任何机器人」
+      senders:              # 机器人连接列表：示例值，地址端口指向 start-demo.sh 起的假 OneBot 端点
+                            # （tools/demo-assets/fake-onebot.py），它答得上话：首页自检是「已连接」，
+                            # 工程日志里也不留连不上的错误行。端口与 start-demo.sh 里的 FAKE_ONEBOT_PORT 同一个
         - name: qq-onebot
           api: /send
           websocket: false
