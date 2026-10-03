@@ -6,6 +6,7 @@
 #
 # 用法：
 #   sudo /usr/local/sbin/novabot-switch-version <目标版本>
+#   sudo /usr/local/sbin/novabot-switch-version --plan <目标版本>  只看这次走热交接还是普通重启，不改机器
 #
 # 安装目录不按脚本自己的位置推。缺省写在下面那一行，装到系统目录时替换它。
 #
@@ -22,8 +23,13 @@ say() {
     printf '%s\n' "$*"
 }
 
+PLAN=no
+if [ "${1:-}" = "--plan" ]; then
+    PLAN=yes
+    shift
+fi
 if [ "$#" -ne 1 ]; then
-    say "用法：sudo /usr/local/sbin/novabot-switch-version <目标版本>"
+    say "用法：sudo /usr/local/sbin/novabot-switch-version [--plan] <目标版本>"
     exit 1
 fi
 
@@ -38,6 +44,10 @@ case "$TARGET" in
         exit 1
         ;;
 esac
+
+if [ "$PLAN" = yes ]; then
+    say "只看不动：把正在跑的实例换成 ${TARGET} 会怎么走。"
+fi
 
 script_dir=$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SCRIPT_PATH="$script_dir/$(basename "${BASH_SOURCE[0]}")"
@@ -121,9 +131,16 @@ lookup_user() {
     SERVICE_USER=$user
 }
 
-prepare_state_dir() {
+state_dir_ok() {
     if [ -L "$STATE_DIR" ] || { [ -e "$STATE_DIR" ] && [ ! -d "$STATE_DIR" ]; }; then
         say "状态目录已在，但是符号链接或不是目录，这次什么都没改。"
+        return 1
+    fi
+    return 0
+}
+
+prepare_state_dir() {
+    if ! state_dir_ok; then
         return 1
     fi
     mkdir -p "$STATE_DIR"
@@ -432,7 +449,16 @@ on_interrupt() {
     exit 130
 }
 
-trap on_interrupt INT TERM HUP
+on_plan_interrupt() {
+    trap '' INT TERM HUP
+    exit 130
+}
+
+if [ "$PLAN" = yes ]; then
+    trap on_plan_interrupt INT TERM HUP
+else
+    trap on_interrupt INT TERM HUP
+fi
 
 # /proc/locks 第 6 栏（主设备:次设备:inode）的最后一段对上 novabot.lock 的 inode。不用 flock。
 lock_state() {
@@ -464,15 +490,65 @@ lock_state() {
     return 0
 }
 
+# 内存上限已是 1.2G、900M 这样时照原样印；否则按字节折成同样的形。
+format_high() {
+    LC_ALL=C awk -v high="$1" 'BEGIN {
+        if (high ~ /^[0-9]+(\.[0-9]+)?[KMGT]$/) {
+            printf "%s", high
+            exit
+        }
+        n = high + 0
+        u = high
+        gsub(/[0-9.]/, "", u)
+        if (u == "G" || u == "g") bytes = n * 1024 * 1024 * 1024
+        else if (u == "M" || u == "m") bytes = n * 1024 * 1024
+        else if (u == "K" || u == "k") bytes = n * 1024
+        else if (u == "T" || u == "t") bytes = n * 1024 * 1024 * 1024 * 1024
+        else bytes = n + 0
+        gb = 1024 * 1024 * 1024
+        mb = 1024 * 1024
+        if (bytes >= gb) {
+            s = sprintf("%.1f", bytes / gb)
+            sub(/\.0$/, "", s)
+            printf "%sG", s
+        } else if (bytes >= mb) {
+            printf "%dM", int(bytes / mb + 0.5)
+        } else {
+            printf "%dK", int(bytes / 1024 + 0.5)
+        }
+    }'
+}
+
+# MemAvailable 的单位是 KiB。
+format_kib() {
+    LC_ALL=C awk -v kb="$1" 'BEGIN {
+        bytes = (kb + 0) * 1024
+        gb = 1024 * 1024 * 1024
+        mb = 1024 * 1024
+        if (bytes >= gb) {
+            s = sprintf("%.1f", bytes / gb)
+            sub(/\.0$/, "", s)
+            printf "%sG", s
+        } else if (bytes >= mb) {
+            printf "%dM", int(bytes / mb + 0.5)
+        } else {
+            printf "%dK", int(bytes / 1024 + 0.5)
+        }
+    }'
+}
+
 # MemAvailable 不少于目标的 MemoryHigh。infinity 或取不到按 1.2G。
 memory_state() {
     local high avail
     MEM_KIND=unread
+    AVAIL_TEXT=读不到
+    HIGH_TEXT=1.2G
     high=$(systemctl show -p MemoryHigh --value "$(unit_of "$TARGET")" 2>/dev/null || true)
     high=$(printf '%s' "$high" | tr -d '[:space:]')
     if [ -z "$high" ] || [ "$high" = "infinity" ]; then
         high=1.2G
     fi
+    HIGH_TEXT=$(format_high "$high")
     if [ ! -r "$PROC_MEMINFO" ]; then
         MEM_KIND=unread
         return 0
@@ -482,6 +558,7 @@ memory_state() {
         MEM_KIND=unread
         return 0
     fi
+    AVAIL_TEXT=$(format_kib "$avail")
     if awk -v kb="$avail" -v high="$high" 'BEGIN {
         if (high == "" || high == "infinity") need = 1.2 * 1024 * 1024 * 1024
         else {
@@ -684,7 +761,60 @@ do_ordinary() {
     exit 1
 }
 
-say "把正在跑的实例换成 ${TARGET}。"
+collect_handover_reasons() {
+    local reasons=""
+    if ! has_handover "$TARGET"; then
+        reasons="${reasons}没有 handover=1。"
+    fi
+    lock_state
+    case "$LOCK_KIND" in
+        held) ;;
+        unread) reasons="${reasons}读不到锁。" ;;
+        *) reasons="${reasons}旧版没拿着锁。" ;;
+    esac
+    memory_state
+    case "$MEM_KIND" in
+        enough) ;;
+        short) reasons="${reasons}内存不够。" ;;
+        *) reasons="${reasons}读不到可用内存。" ;;
+    esac
+    HANDOVER_REASONS=$reasons
+}
+
+show_plan() {
+    local verdict
+    if [ "$count" -eq 0 ]; then
+        say "现在没有分目录实例在跑，这次会普通启动 ${TARGET}。"
+        return 0
+    fi
+    OLD=$ONLY
+    collect_handover_reasons
+    if has_handover "$TARGET"; then
+        say "目标版本带 handover=1：是"
+    else
+        say "目标版本带 handover=1：否"
+    fi
+    case "$LOCK_KIND" in
+        held) say "旧版拿着单实例锁：是" ;;
+        unread) say "旧版拿着单实例锁：读不到" ;;
+        *) say "旧版拿着单实例锁：否" ;;
+    esac
+    case "$MEM_KIND" in
+        enough) verdict="是" ;;
+        short) verdict="否" ;;
+        *) verdict="读不到" ;;
+    esac
+    say "可用内存不少于目标的内存上限（可用 ${AVAIL_TEXT}，上限 ${HIGH_TEXT}）：${verdict}"
+    if [ -z "$HANDOVER_REASONS" ]; then
+        say "这次会走热交接：先起 ${TARGET}，等它到门口再停 ${OLD}。"
+    else
+        say "这次会走普通重启：${HANDOVER_REASONS}先停 ${OLD}，再起 ${TARGET}。"
+    fi
+}
+
+if [ "$PLAN" != yes ]; then
+    say "把正在跑的实例换成 ${TARGET}。"
+fi
 
 collect_active
 count=0
@@ -727,10 +857,20 @@ if [ "$count" -eq 1 ]; then
 fi
 
 if has_handover "$TARGET" || { [ "$count" -eq 1 ] && has_handover "$ONLY"; }; then
-    if ! prepare_state_dir; then
+    if [ "$PLAN" = yes ]; then
+        if ! state_dir_ok; then
+            report_running
+            exit 1
+        fi
+    elif ! prepare_state_dir; then
         report_running
         exit 1
     fi
+fi
+
+if [ "$PLAN" = yes ]; then
+    show_plan
+    exit 0
 fi
 
 if [ "$count" -eq 0 ]; then
@@ -752,24 +892,8 @@ if [ "$count" -eq 0 ]; then
 fi
 
 OLD=$ONLY
-reasons=""
-if ! has_handover "$TARGET"; then
-    reasons="${reasons}没有 handover=1。"
-fi
-lock_state
-case "$LOCK_KIND" in
-    held) ;;
-    unread) reasons="${reasons}读不到锁。" ;;
-    *) reasons="${reasons}旧版没拿着锁。" ;;
-esac
-memory_state
-case "$MEM_KIND" in
-    enough) ;;
-    short) reasons="${reasons}内存不够。" ;;
-    *) reasons="${reasons}读不到可用内存。" ;;
-esac
-
-if [ -n "$reasons" ]; then
-    do_ordinary "$reasons"
+collect_handover_reasons
+if [ -n "$HANDOVER_REASONS" ]; then
+    do_ordinary "$HANDOVER_REASONS"
 fi
 do_hot

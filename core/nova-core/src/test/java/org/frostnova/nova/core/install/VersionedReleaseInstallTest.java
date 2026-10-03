@@ -667,7 +667,7 @@ class VersionedReleaseInstallTest {
     }
 
     @Test
-    @DisplayName("install.sh 语法过、--help 里有 --no-switch")
+    @DisplayName("install.sh 语法过、--help 里有 --no-switch 与 --no-packages")
     void installScriptParsesAndHelpListsNoSwitch() throws Exception {
         Path script = repoRoot().resolve("install.sh");
         ProcessBuilder parse = new ProcessBuilder("bash", "-n", script.toString());
@@ -683,6 +683,7 @@ class VersionedReleaseInstallTest {
         String helpOut = new String(helped.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         assertTrue(helped.waitFor(30, TimeUnit.SECONDS), "--help 超时:\n" + helpOut);
         assertTrue(helpOut.contains("--no-switch"), "用法里应有 --no-switch:\n" + helpOut);
+        assertTrue(helpOut.contains("--no-packages"), "用法里应有 --no-packages:\n" + helpOut);
     }
 
     @Test
@@ -1007,6 +1008,89 @@ class VersionedReleaseInstallTest {
         assertTrue(run.stdout.contains("novabot@5.8.0"), "看日志应看新版本那个单元:\n" + run.stdout);
         assertFalse(run.stdout.contains("在浏览器中打开"), "新版没换上，不该给打开配置界面:\n" + run.stdout);
         assertFalse(run.stdout.contains("完成登录"), "新版没换上，不该给扫码登录:\n" + run.stdout);
+    }
+
+    @Test
+    @DisplayName("带 --no-packages 而 Java 是 11：停下，不调包管理器，不建安装目录")
+    void noPackagesStopsWhenJavaIs11(@TempDir Path dir) throws Exception {
+        // 故障：说了不经包管理器，Java 仍是 11 时却去装包，或已经改了机器才停下。
+        World world = world(dir, "5.8.0");
+        writeExecutable(world.bin.resolve("java"), """
+                #!/bin/sh
+                echo 'openjdk version "11.0.0" 2026-01-01' >&2
+                exit 0
+                """);
+        writeExecutable(world.bin.resolve("apt-get"), """
+                #!/bin/sh
+                printf '%s\\n' "$*" >> "${NOVABOT_STUB_LOG}/apt.log"
+                exit 0
+                """);
+        Path target = dir.resolve("not-created");
+        Run run = runDir(world, target, "", "", Map.of(), "--no-packages");
+
+        assertNotEquals(0, run.code, "缺 Java 17 应停下。标准输出:\n" + run.stdout + "\n标准错误:\n" + run.stderr);
+        assertTrue(run.stderr.contains("缺 Java 17"),
+                "应说明缺 Java 17。标准错误:\n" + run.stderr);
+        assertTrue(run.stderr.contains("这一次什么都没改"),
+                "应说明这一次什么都没改。标准错误:\n" + run.stderr);
+        assertFalse(Files.isRegularFile(world.logs.resolve("apt.log")),
+                "不该调用包管理器，实际:\n" + readIfExists(world.logs.resolve("apt.log")));
+        assertFalse(Files.exists(target), "不该建安装目录: " + target);
+    }
+
+    @Test
+    @DisplayName("带 --no-packages 而没有系统中文字体：提醒一句，不调包管理器，照常装完")
+    void noPackagesWarnsWhenFontMissingAndStillInstalls(@TempDir Path dir) throws Exception {
+        // 故障：说了不经包管理器，没有系统中文字体时却去装包，或提醒之后没把程序装上。
+        World world = world(dir, "5.8.0");
+        writeExecutable(world.bin.resolve("fc-list"), """
+                #!/bin/sh
+                exit 0
+                """);
+        writeExecutable(world.bin.resolve("apt-get"), """
+                #!/bin/sh
+                printf '%s\\n' "$*" >> "${NOVABOT_STUB_LOG}/apt.log"
+                exit 0
+                """);
+        writeKept(world.install, "user-yml", "user-ds", "user-cookie", "user-key", "user-data");
+        Run run = run(world, "", "", Map.of(), "--no-packages");
+
+        assertEquals(0, run.code, "缺字体只提醒，安装应完成。标准错误:\n" + run.stderr + "\n标准输出:\n" + run.stdout);
+        assertTrue(run.stdout.contains("程序自带中文字体，中文照常显示"),
+                "应提醒程序自带中文字体。标准输出:\n" + run.stdout);
+        assertTrue(run.stdout.contains("系统字体只补内置没有的字（如韩文）"),
+                "应说明系统字体只补内置没有的字。标准输出:\n" + run.stdout);
+        assertTrue(run.stdout.contains("fonts-noto-cjk"),
+                "应报本发行版的候选包名。标准输出:\n" + run.stdout);
+        assertFalse(Files.isRegularFile(world.logs.resolve("apt.log")),
+                "不该调用包管理器，实际:\n" + readIfExists(world.logs.resolve("apt.log")));
+        assertEquals("new-jar", read(world.install.resolve("releases/5.8.0/NovaBot.jar")),
+                "程序应照常装进版本目录");
+    }
+
+    @Test
+    @DisplayName("不带 --no-packages 时，缺系统中文字体仍用包管理器去装")
+    void missingFontStillUsesPackageManager(@TempDir Path dir) throws Exception {
+        // 故障：没给开关时，缺系统中文字体却不再去装。
+        World world = world(dir, "5.8.0");
+        writeExecutable(world.bin.resolve("fc-list"), """
+                #!/bin/sh
+                exit 0
+                """);
+        writeExecutable(world.bin.resolve("apt-get"), """
+                #!/bin/sh
+                printf '%s\\n' "$*" >> "${NOVABOT_STUB_LOG}/apt.log"
+                exit 0
+                """);
+        writeKept(world.install, "user-yml", "user-ds", "user-cookie", "user-key", "user-data");
+        Run run = run(world, "", "");
+
+        assertEquals(0, run.code, "缺字体去装之后安装应完成。标准错误:\n" + run.stderr + "\n标准输出:\n" + run.stdout);
+        String apt = read(world.logs.resolve("apt.log"));
+        assertTrue(apt.contains("fonts-noto-cjk"),
+                "不带开关时应去装候选包，实际:\n" + apt);
+        assertEquals("new-jar", read(world.install.resolve("releases/5.8.0/NovaBot.jar")),
+                "程序应装进版本目录");
     }
 
     private static void assertFresh(World world, Run run, Map<String, byte[]> kept) throws IOException {
