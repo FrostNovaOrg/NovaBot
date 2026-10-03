@@ -218,7 +218,8 @@ class ShutdownDisconnectsLiveRoomBeforeSaveTest {
         BilibiliApiUtil api = mock(BilibiliApiUtil.class);
         AbstractDataSource dataSource = mock(AbstractDataSource.class);
         BilibiliBackupLivePushService backup = new BilibiliBackupLivePushService(
-                api, bilibili, context, scheduler, new BilibiliLiveStateGate(live), live);
+                api, bilibili, context, scheduler, new BilibiliLiveStateGate(live), live,
+                mock(LiveSessionRecovery.class));
         BilibiliLiveRoomService rooms = rooms(context, scheduler, bilibili, live);
         managedConnectors(rooms).put(STREAMER.getRoomId(), connector(STREAMER, context, scheduler, bilibili, live));
 
@@ -307,7 +308,8 @@ class ShutdownDisconnectsLiveRoomBeforeSaveTest {
         BilibiliApiUtil api = mock(BilibiliApiUtil.class);
         AbstractDataSource dataSource = mock(AbstractDataSource.class);
         BilibiliBackupLivePushService backup = new BilibiliBackupLivePushService(
-                api, bilibili, context, scheduler, new BilibiliLiveStateGate(saving), saving);
+                api, bilibili, context, scheduler, new BilibiliLiveStateGate(saving), saving,
+                mock(LiveSessionRecovery.class));
         BilibiliLiveRoomService rooms = rooms(context, scheduler, bilibili, saving);
         StallOnLiveOff stall = new StallOnLiveOff(1);
         stall.finished = finished;
@@ -356,7 +358,8 @@ class ShutdownDisconnectsLiveRoomBeforeSaveTest {
         BilibiliApiUtil api = mock(BilibiliApiUtil.class);
         AbstractDataSource dataSource = mock(AbstractDataSource.class);
         BilibiliBackupLivePushService backup = new BilibiliBackupLivePushService(
-                api, bilibili, context, scheduler, new BilibiliLiveStateGate(live), live);
+                api, bilibili, context, scheduler, new BilibiliLiveStateGate(live), live,
+                mock(LiveSessionRecovery.class));
         BilibiliLiveRoomService rooms = rooms(context, scheduler, bilibili, live);
         BilibiliLiveRoomConnector connector = connector(STREAMER, context, scheduler, bilibili, live);
         managedConnectors(rooms).put(STREAMER.getRoomId(), connector);

@@ -10,6 +10,7 @@ import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.service.LiveDataService;
+import org.frostnova.nova.core.service.LiveSessionRecovery;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -21,6 +22,7 @@ import java.time.Instant;
 import java.util.HashSet;
 import java.util.concurrent.TimeUnit;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -39,6 +41,20 @@ public class BilibiliBackupLivePushService {
      */
     private static final int BATCH_SIZE = 100;
 
+    /**
+     * 停机空当里结束的场次，按「刚下播」处理的窗口
+     * <p>
+     * 起来后首轮见「账上在播、实际不在播」，说明这场是在停机空当里结束的，但接口不报
+     * 下播时刻，只能拿「上次落盘时刻」当近似。落在窗口里就当主播刚下播——热升级交接
+     * （旧版退出落盘、新版几秒内接上）与崩溃后被拉起都在这个量级里，照正常下播发通知、
+     * 出报告图，下播时刻取上次落盘时刻。停得比这更久（比如关机一夜），「刚下播」就说不通了：
+     * 那一时辰拿不出证据，当场按未闭合补档。
+     * <p>
+     * 窗口取 10 分钟，照自动落盘间隔（默认 300 秒）再放宽一档：正常空当里「上次落盘」与
+     * 实际下播最多差一个落盘间隔加交接耗时，远小于 10 分钟。
+     */
+    private static final Duration RECENT_LIVE_OFF_WINDOW = Duration.ofMinutes(10);
+
     private final BilibiliApiUtil api;
 
     private final NovaBilibiliProperties properties;
@@ -50,6 +66,8 @@ public class BilibiliBackupLivePushService {
     private final BilibiliLiveStateGate stateGate;
 
     private final LiveDataService liveDataService;
+
+    private final LiveSessionRecovery sessionRecovery;
 
     /**
      * uid 到上次已知开播状态的映射
@@ -90,13 +108,15 @@ public class BilibiliBackupLivePushService {
                                          ApplicationEventPublisher publisher,
                                          @Qualifier("bilibiliTaskScheduler") TaskScheduler scheduler,
                                          BilibiliLiveStateGate stateGate,
-                                         LiveDataService liveDataService) {
+                                         LiveDataService liveDataService,
+                                         LiveSessionRecovery sessionRecovery) {
         this.api = api;
         this.properties = properties;
         this.publisher = publisher;
         this.scheduler = scheduler;
         this.stateGate = stateGate;
         this.liveDataService = liveDataService;
+        this.sessionRecovery = sessionRecovery;
     }
 
     /**
@@ -174,6 +194,16 @@ public class BilibiliBackupLivePushService {
             return;
         }
 
+        // 首轮见「账上在播、实际不在播」：这场是在停机空当里结束的——起来时账上还挂着在播，
+        // 实际上主播早已下播。不处理的话账上那个在播永远翻不过来（下一轮起 previous 不再是
+        // null，状态再也不会被当成变化），控制台一直显示在播，下播通知、报告图与下播时段的
+        // 打赏汇总都没了。怎么收看 {@link #closeStreamEndedWhileDown}
+        if (previous == null && !living
+                && liveDataService.getLiveStatus(BilibiliPlatform.BILIBILI.id(), up.getUid()).orElse(false)) {
+            closeStreamEndedWhileDown(up);
+            return;
+        }
+
         // 首轮或状态未变化时不推送
         if (!initialized || previous == null || previous == living) {
             return;
@@ -208,6 +238,50 @@ public class BilibiliBackupLivePushService {
             }
         } catch (Exception e) {
             log.error("备用直播推送发布 {} 的{}事件出错, 本次跳过", up.getUname(), change, e);
+        } finally {
+            endPublish();
+        }
+    }
+
+    /**
+     * 把停机空当里结束的那场收掉
+     * <p>
+     * 首轮见「账上在播、实际不在播」时走这里，按离上次落盘多久分两路：
+     * <ul>
+     *     <li>停得短（{@link #RECENT_LIVE_OFF_WINDOW} 内）：主播多半就是刚下播，照正常下播走——
+     *         过状态闸门、发一次下播事件，通知与报告图由原来的监听照发。下播时刻取上次落盘时刻：
+     *         那是我们能证明的、账上还记着在播的最后一刻</li>
+     *     <li>停得久、或取不到上次落盘时刻：下播时刻无从得知，当场按未闭合补档（不发下播事件、
+     *         不补发通知），再把账上改成不在播——这样下次开播不会再补一遍，控制台也不再挂着在播</li>
+     * </ul>
+     * @param up UP 主信息
+     */
+    private void closeStreamEndedWhileDown(Up up) {
+        String platform = BilibiliPlatform.BILIBILI.id();
+        Optional<Long> lastSave = liveDataService.getLastSaveTime();
+        long now = System.currentTimeMillis();
+        if (lastSave.isEmpty() || now - lastSave.get() > RECENT_LIVE_OFF_WINDOW.toMillis()) {
+            log.warn("备用直播推送: {} 账上在播、实际已下播, 下播时刻无从得知, 当场按未闭合补档", up.getUname());
+            sessionRecovery.archiveUnclosedIfAny(platform, up, now);
+            liveDataService.setLiveStatus(platform, up.getUid(), false);
+            return;
+        }
+
+        // 同一次变化长连接可能已经推过，跨路径的去重照样过共享闸门；发布也照旧逐位兜错
+        if (!stateGate.admit(up.getUid(), false)) {
+            log.debug("备用直播推送检测到 {} 状态变化, 但长连接已推送, 跳过", up.getUname());
+            return;
+        }
+        if (!beginPublish()) {
+            log.info("备用直播推送检测到 {} 下播，程序正在退出，不再发布", up.getUname());
+            return;
+        }
+        try {
+            Instant offAt = Instant.ofEpochMilli(lastSave.get());
+            log.info("备用直播推送检测到 {} 下播（停机空当里结束, 下播时刻取上次落盘时刻）", up.getUname());
+            publisher.publishEvent(new BilibiliLiveOffEvent(up, offAt));
+        } catch (Exception e) {
+            log.error("备用直播推送发布 {} 的下播事件出错, 本次跳过", up.getUname(), e);
         } finally {
             endPublish();
         }
