@@ -34,8 +34,10 @@ JDK 17 并把它排在 PATH 最前，再重新运行脚本。**只改 JAVA_HOME�
 | `--user starbot` | 指定运行服务的系统用户 |
 | `--port 7827` | 指定服务端口 |
 | `--no-service` | 跳过 systemd 服务创建 |
+| `--no-switch` | 只装、不换（有别的实例在跑时不自动换到本版） |
 
-装完启动并看日志（实例名就是版本号）：
+新装完启动并看日志（实例名就是版本号）。这一步是新装的做法；机器上已有版本
+在跑时，升级就是重跑一遍安装脚本，装完怎么走见[第 13 章](13-upgrade-and-backup.md)：
 
 ```bash
 sudo systemctl start novabot@<版本> && sudo journalctl -u novabot@<版本> -f
