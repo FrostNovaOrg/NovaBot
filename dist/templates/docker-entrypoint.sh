@@ -64,7 +64,11 @@ for jar in "$SRC"/plugins/*.jar; do
     esac
     find "$DST/plugins" -maxdepth 1 -type f -name "$artifact-[0-9]*.jar" -delete
 done
-cp -f "$SRC"/plugins/*.jar "$DST/plugins/"
+# 目录里一个 jar 都没有时通配符原样留下，cp 会当场退出；照上面的样子逐个铺，没有就跳过
+for jar in "$SRC"/plugins/*.jar; do
+    [ -f "$jar" ] || continue
+    cp -f "$jar" "$DST/plugins/"
+done
 
 # plugins-lib 是内置插件的运行期依赖（caffeine、jieba-analysis 等）。此前只建空目录，
 # 新装容器上这些依赖不在类路径里，程序起不来（NoClassDefFoundError）。里面也可能有
@@ -78,7 +82,10 @@ for jar in "$SRC"/plugins-lib/*.jar; do
     esac
     find "$DST/plugins-lib" -maxdepth 1 -type f -name "$artifact-[0-9]*.jar" -delete
 done
-cp -f "$SRC"/plugins-lib/*.jar "$DST/plugins-lib/"
+for jar in "$SRC"/plugins-lib/*.jar; do
+    [ -f "$jar" ] || continue
+    cp -f "$jar" "$DST/plugins-lib/"
+done
 
 # 🔴 5.1 起，镜像里不再带 application.yml 与 datasource.json：程序自己会在第一次保存设置、
 #    第一次加主播时把它们写出来，写到数据卷上（$DST），也就是<b>本来就该在的地方</b>。
