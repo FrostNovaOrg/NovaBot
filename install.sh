@@ -9,6 +9,8 @@
 #   ./install.sh --user starbot         指定运行服务的系统用户
 #   ./install.sh --no-service           跳过 systemd 服务创建
 #
+# 安装目录若还是旧的扁平布局（程序在根上），先把旧程序搬进 releases/旧版本号/ 再装。
+#
 # 脚本会依次完成：检查并安装 Java 17、构建、安装到目标目录、生成配置、
 # 创建 systemd 服务、输出配置界面地址。
 #
@@ -66,10 +68,84 @@ if [ "$(id -u)" -ne 0 ]; then
     SUDO="sudo"
 fi
 
-# 程序和数据还堆在安装目录根上。这一版先不搬，一个文件都不改。
-# 先看布局，再装 Java、字体和从源码构建：这里停下时这些都还没做。
+# 目录名要像 5.7.9：至少两段数字，中间用点连。别的名字留在 releases/ 里。
+release_name_is_version() {
+    case "$1" in
+        *[!0-9.]*|.*|*.|*..*) return 1 ;;
+        *.*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# 根上 NovaBot.jar 里的 build.version。没有 unzip、不是 jar、或读不到时打印空。
+flat_jar_build_version() {
+    local jar="$1" line
+    command -v unzip > /dev/null 2>&1 || return 0
+    [ -f "$jar" ] || return 0
+    line="$(unzip -p "$jar" META-INF/build-info.properties 2>/dev/null | sed -n 's/^build\.version=//p' | sed -n '1p' || true)"
+    line="${line//$'\r'/}"
+    printf '%s' "$line"
+}
+
+# 根上 lib/novacore-<版本>.jar，恰好一个、且版本号能当目录名，才打印它。
+# 根上一个都没有时，再认 releases/<版本>/lib/novacore-<同一个版本>.jar，仍是恰好一个才算。
+flat_novacore_version() {
+    local f base ver found="" count=0 dir
+    for f in "$INSTALL_DIR"/lib/novacore-*.jar; do
+        [ -f "$f" ] || continue
+        base="$(basename "$f")"
+        ver="${base#novacore-}"
+        ver="${ver%.jar}"
+        release_name_is_version "$ver" || continue
+        count=$((count + 1))
+        found="$ver"
+    done
+    if [ "$count" -eq 1 ]; then
+        printf '%s' "$found"
+        return 0
+    fi
+    # 根上已经有不止一个，分不清是哪一版，不再到版本目录里认。
+    [ "$count" -eq 0 ] || return 0
+    found=""
+    count=0
+    for dir in "$INSTALL_DIR"/releases/*; do
+        [ -d "$dir" ] || continue
+        ver="$(basename "$dir")"
+        release_name_is_version "$ver" || continue
+        f="$dir/lib/novacore-${ver}.jar"
+        [ -f "$f" ] || continue
+        count=$((count + 1))
+        found="$ver"
+    done
+    if [ "$count" -eq 1 ]; then
+        printf '%s' "$found"
+    fi
+}
+
+# 程序和数据还堆在安装目录根上时，先定旧版本号，再往下装 Java。
+# 定不出版本号就在这里停下，一个文件都不改。
+FLAT_LAYOUT=no
+OLD_FLAT_VERSION=""
+MIGRATED=no
+LEGACY_UNITS_FOUND=""
+LEGACY_UNITS_RUNNING=""
+LEGACY_DROPINS=""
+KEPT_USER_JARS=""
 if [ -f "$INSTALL_DIR/NovaBot.jar" ] || [ -f "$INSTALL_DIR/StarBotCore.jar" ]; then
-    die "这一版的安装脚本还不能从旧布局升级"
+    FLAT_LAYOUT=yes
+    if [ -f "$INSTALL_DIR/NovaBot.jar" ]; then
+        OLD_FLAT_VERSION="$(flat_jar_build_version "$INSTALL_DIR/NovaBot.jar")"
+    fi
+    if ! release_name_is_version "${OLD_FLAT_VERSION:-}"; then
+        OLD_FLAT_VERSION="$(flat_novacore_version)"
+    fi
+    if ! release_name_is_version "${OLD_FLAT_VERSION:-}"; then
+        die "取不到旧版本号，这一次没有改安装目录里的文件。
+     根上是旧的扁平布局。本脚本要先把旧程序搬进 releases/旧版本号/ 再装，
+     但没能从 NovaBot.jar 里的 build.version（需要 unzip），
+     也没能从恰好一个 lib/novacore-版本.jar 读出能当目录名的版本号。
+     请确认这是 NovaBot 的安装目录；若程序包不完整，请自行把旧程序放进 releases/旧版本号/ 后再运行。"
+    fi
 fi
 
 # ---------------------------------------------------------------- 依赖检查
@@ -312,15 +388,6 @@ instance_running() {
     systemctl is-active --quiet "novabot@$1"
 }
 
-# 目录名要像 5.7.9：至少两段数字，中间用点连。别的名字留在 releases/ 里。
-release_name_is_version() {
-    case "$1" in
-        *[!0-9.]*|.*|*.|*..*) return 1 ;;
-        *.*) return 0 ;;
-        *) return 1 ;;
-    esac
-}
-
 # 这个实例开着开机自启、又不是要装的这一版，就关掉。同一个名字只处理一次。
 disable_if_other_enabled() {
     local name="$1"
@@ -352,6 +419,112 @@ esac
 # 要装的这一版已经在，并且正在跑。换掉它等于换掉正在用的程序。
 if [ -d "$INSTALL_DIR/releases/$VERSION" ] && instance_running "$VERSION"; then
     die "要装的 ${VERSION} 正在运行，这一次没有改安装目录里的文件"
+fi
+
+# 同一路径两边都有就停下，列出两边，不覆盖。
+refuse_if_both() {
+    local src="$1" dest="$2"
+    if [ -e "$dest" ] || [ -L "$dest" ]; then
+        die "同一件两边都有，不覆盖：
+     ${src}
+     ${dest}
+     请处理后再运行。这一次没有继续搬。"
+    fi
+}
+
+move_flat_entry() {
+    local name="$1"
+    local src="$INSTALL_DIR/$name"
+    local dest="$INSTALL_DIR/releases/$OLD_FLAT_VERSION/$name"
+    if [ ! -e "$src" ] && [ ! -L "$src" ]; then
+        return 0
+    fi
+    refuse_if_both "$src" "$dest"
+    $SUDO mkdir -p "$(dirname "$dest")"
+    $SUDO mv "$src" "$dest"
+}
+
+# 构件名比法：去掉末尾、数字开头的版本号再比，免得前缀相同的第三方插件被连带。
+move_flat_builtin_jars() {
+    local kind="$1" jar artifact old base dest_dir dest
+    [ -d "$SOURCE_DIR/$kind" ] || return 0
+    [ -d "$INSTALL_DIR/$kind" ] || return 0
+    for jar in "$SOURCE_DIR/$kind"/*.jar; do
+        [ -f "$jar" ] || continue
+        artifact="$(basename "$jar" | sed -E 's/-[0-9][^-]*\.jar$//')"
+        case "$artifact" in
+            *.jar) continue ;;
+        esac
+        for old in "$INSTALL_DIR/$kind/$artifact"-[0-9]*.jar; do
+            [ -f "$old" ] || continue
+            base="$(basename "$old")"
+            dest_dir="$INSTALL_DIR/releases/$OLD_FLAT_VERSION/$kind"
+            dest="$dest_dir/$base"
+            $SUDO mkdir -p "$dest_dir"
+            refuse_if_both "$old" "$dest"
+            $SUDO mv "$old" "$dest"
+        done
+    done
+}
+
+list_kept_user_jars() {
+    local kind jar
+    KEPT_USER_JARS=""
+    for kind in plugins plugins-lib; do
+        [ -d "$INSTALL_DIR/$kind" ] || continue
+        for jar in "$INSTALL_DIR/$kind"/*.jar; do
+            [ -f "$jar" ] || continue
+            if [ -z "$KEPT_USER_JARS" ]; then
+                KEPT_USER_JARS="$(basename "$jar")"
+            else
+                KEPT_USER_JARS="$KEPT_USER_JARS $(basename "$jar")"
+            fi
+        done
+    done
+}
+
+# 旧的 start.sh 只会扁平地起。先拷到临时名再改名盖上，不原地覆写：
+# 旧版本若还在跑，起它的那个 shell 还在读旧那份。
+replace_flat_start() {
+    local dest_dir="$INSTALL_DIR/releases/$OLD_FLAT_VERSION"
+    local tmp="$dest_dir/start.sh.novabot-new"
+    [ -f "$SOURCE_DIR/start.sh" ] || return 0
+    $SUDO mkdir -p "$dest_dir"
+    # 这个临时名只有这里用。上次拷到一半留下的，删掉再拷。
+    if [ -e "$tmp" ] || [ -L "$tmp" ]; then
+        $SUDO rm -f "$tmp"
+    fi
+    $SUDO cp "$SOURCE_DIR/start.sh" "$tmp"
+    $SUDO mv "$tmp" "$dest_dir/start.sh"
+    $SUDO chmod +x "$dest_dir/start.sh"
+}
+
+migrate_flat_layout() {
+    local name
+    info "检测到旧的扁平布局，先把旧程序搬进 releases/${OLD_FLAT_VERSION}/"
+    $SUDO mkdir -p "$INSTALL_DIR/releases/$OLD_FLAT_VERSION"
+    move_flat_builtin_jars plugins
+    move_flat_builtin_jars plugins-lib
+    for name in lib start.sh start.bat docker-entrypoint.sh Dockerfile tools BUILD-INFO LICENSE NOTICE; do
+        move_flat_entry "$name"
+    done
+    # 根上的 NovaBot.jar（或只有 StarBotCore.jar 时是它）最后挪：它还在就表示没搬完，再跑一次接着搬。
+    if [ -f "$INSTALL_DIR/NovaBot.jar" ]; then
+        if [ -e "$INSTALL_DIR/StarBotCore.jar" ] || [ -L "$INSTALL_DIR/StarBotCore.jar" ]; then
+            move_flat_entry StarBotCore.jar
+        fi
+        replace_flat_start
+        move_flat_entry NovaBot.jar
+    else
+        replace_flat_start
+        move_flat_entry StarBotCore.jar
+    fi
+    list_kept_user_jars
+    MIGRATED=yes
+}
+
+if [ "$FLAT_LAYOUT" = yes ]; then
+    migrate_flat_layout
 fi
 
 # 分目录的根上本来就有 plugins（使用者自己放的），所以先认 releases/，再做这条判断。
@@ -499,14 +672,45 @@ $SUDO chmod 600 "$INSTALL_DIR"/cookies.* 2>/dev/null || true
 
 # 模板单元 novabot@.service，实例名是版本号。只改开机自启，不启动、也不停止正在跑的。
 SERVICE_UNIT="novabot@${VERSION}"
-OLD_SERVICE_UNIT_FILE="/etc/systemd/system/starbot"
+SYSTEMD_SYSTEM_DIR="${NOVABOT_SYSTEMD_SYSTEM_DIR:-/etc/systemd/system}"
+SYSTEMD_CONTROL_DIR="${NOVABOT_SYSTEMD_CONTROL_DIR:-/etc/systemd/system.control}"
+
+# 5.x 的 novabot.service、更早的 starbot.service。只关开机自启，不停正在跑的。
+# 不在跑的删单元文件；在跑的留着，等用户自己停，下次再跑、它已不在跑时再删。
+# 覆盖设置目录不删，新单元不沿用。
+retire_legacy_unit() {
+    local name="$1"
+    local unit_file="$SYSTEMD_SYSTEM_DIR/${name}.service"
+    local drop
+    [ -f "$unit_file" ] || return 0
+    if [ -z "$LEGACY_UNITS_FOUND" ]; then
+        LEGACY_UNITS_FOUND="$name"
+    else
+        LEGACY_UNITS_FOUND="$LEGACY_UNITS_FOUND $name"
+    fi
+    $SUDO systemctl disable "$name" > /dev/null 2>&1 || true
+    if $SUDO systemctl is-active --quiet "$name"; then
+        info "旧服务 ${name} 正在运行，只关掉开机自启，单元文件留着，等你自己停"
+        if [ -z "$LEGACY_UNITS_RUNNING" ]; then
+            LEGACY_UNITS_RUNNING="$name"
+        else
+            LEGACY_UNITS_RUNNING="$LEGACY_UNITS_RUNNING $name"
+        fi
+    else
+        $SUDO rm -f "$unit_file"
+        info "旧服务 ${name} 没在运行，已关掉开机自启并删除单元文件"
+    fi
+    for drop in "$SYSTEMD_SYSTEM_DIR/${name}.service.d" "$SYSTEMD_CONTROL_DIR/${name}.service.d"; do
+        if [ -d "$drop" ]; then
+            LEGACY_DROPINS="${LEGACY_DROPINS}       ${drop}
+"
+        fi
+    done
+}
 
 if [ "$CREATE_SERVICE" = "yes" ] && command -v systemctl > /dev/null 2>&1; then
-    if [ -f "$OLD_SERVICE_UNIT_FILE.service" ]; then
-        info "检测到旧服务 starbot，停用并删除其 unit 文件"
-        $SUDO systemctl disable --now starbot
-        $SUDO rm -f "$OLD_SERVICE_UNIT_FILE.service"
-    fi
+    retire_legacy_unit novabot
+    retire_legacy_unit starbot
     info "创建 systemd 服务"
     [ -f "$SOURCE_DIR/novabot@.service" ] || die "缺少 $SOURCE_DIR/novabot@.service"
     $SUDO sed -e "s#/opt/starbot#$INSTALL_DIR#g" -e "s/^User=.*/User=$SERVICE_USER/" -e "s/^Group=.*/Group=$SERVICE_USER/" \
@@ -533,44 +737,109 @@ fi
 
 # ---------------------------------------------------------------- 完成
 
-STOP_HINT=""
-for dir in "$INSTALL_DIR"/releases/*; do
-    [ -d "$dir" ] || continue
-    name="$(basename "$dir")"
-    release_name_is_version "$name" || continue
-    if [ "$name" = "$VERSION" ]; then
-        continue
-    fi
-    STOP_HINT="${STOP_HINT}       sudo systemctl stop novabot@${name}
-"
-done
+LOG_STEP=2
+if [ -n "$LEGACY_UNITS_RUNNING" ]; then
+    cat <<EOF
 
-cat <<EOF
+安装完成，接下来：
+
+EOF
+    cat <<EOF
+  这一次会先停旧版本，再起新版本，中间会断一小会儿。
+  现在的发行版还没有单实例锁，新版本起来时不会等旧版本放开，两份会同时连直播间、抢端口。
+  以后分目录之间的升级才是先起新、再停旧。
+
+  1. 先停旧版本
+EOF
+    for name in $LEGACY_UNITS_RUNNING; do
+        printf '       sudo systemctl stop %s\n' "$name"
+    done
+    cat <<EOF
+
+  2. 再启动新版本
+       sudo systemctl start $SERVICE_UNIT
+EOF
+    LOG_STEP=3
+elif [ "$MIGRATED" = yes ]; then
+    cat <<EOF
+
+安装完成，接下来：
+
+EOF
+    if [ -n "$LEGACY_UNITS_FOUND" ]; then
+        cat <<EOF
+  这一次会先停旧版本，再起新版本，中间会断一小会儿。
+  现在的发行版还没有单实例锁，新版本起来时不会等旧版本放开，两份会同时连直播间、抢端口。
+  以后分目录之间的升级才是先起新、再停旧。
+
+  1. 先停旧版本
+EOF
+        for name in $LEGACY_UNITS_FOUND; do
+            printf '       sudo systemctl stop %s\n' "$name"
+        done
+        cat <<EOF
+
+  2. 再启动新版本
+       sudo systemctl start $SERVICE_UNIT
+EOF
+        LOG_STEP=3
+    else
+        cat <<EOF
+  1. 旧版本还在跑的话先停掉，再起新版本
+       sudo systemctl start $SERVICE_UNIT
+EOF
+    fi
+else
+    STOP_HINT=""
+    for dir in "$INSTALL_DIR"/releases/*; do
+        [ -d "$dir" ] || continue
+        name="$(basename "$dir")"
+        release_name_is_version "$name" || continue
+        if [ "$name" = "$VERSION" ]; then
+            continue
+        fi
+        STOP_HINT="${STOP_HINT}       sudo systemctl stop novabot@${name}
+"
+    done
+    cat <<EOF
 
 安装完成，接下来：
 
   1. 启动新版本
        sudo systemctl start $SERVICE_UNIT
 EOF
-if [ -n "$STOP_HINT" ]; then
-    cat <<EOF
+    if [ -n "$STOP_HINT" ]; then
+        cat <<EOF
 
   旧版本还在跑的话，确认新版本起来之后再停掉：
 $STOP_HINT
 EOF
+    fi
 fi
+if [ -n "$KEPT_USER_JARS" ]; then
+    cat <<EOF
+
+  根上留下的使用者插件：
+       $KEPT_USER_JARS
+EOF
+fi
+if [ -n "$LEGACY_DROPINS" ]; then
+    printf '\n  新单元不沿用这些覆盖设置：\n%s' "$LEGACY_DROPINS"
+fi
+BROWSER_STEP=$((LOG_STEP + 1))
+LOGIN_STEP=$((LOG_STEP + 2))
 cat <<EOF
 
-  2. 查看启动日志，其中包含配置界面地址与首次登录的二维码
+  ${LOG_STEP}. 查看启动日志，其中包含配置界面地址与首次登录的二维码
        sudo journalctl -u $SERVICE_UNIT -f
 
-  3. 在浏览器中打开日志里输出的配置界面地址完成配置
+  ${BROWSER_STEP}. 在浏览器中打开日志里输出的配置界面地址完成配置
        该地址形如 http://127.0.0.1:$EFFECTIVE_PORT/config?token=xxxxx
 
      若 NovaBot 装在远程服务器上，先在本机建立隧道再访问：
        ssh -L $EFFECTIVE_PORT:127.0.0.1:$EFFECTIVE_PORT 用户名@服务器地址
 
-  4. 使用哔哩哔哩客户端扫描日志中的二维码完成登录
+  ${LOGIN_STEP}. 使用哔哩哔哩客户端扫描日志中的二维码完成登录
 
 配置界面默认仅监听本机回环地址。如需从其他机器直接访问，请先阅读 SECURITY.md，
 并在配置中同时设置访问令牌与来源 IP 白名单。
