@@ -1,12 +1,18 @@
 package org.frostnova.nova.core.service;
 
+import org.frostnova.nova.core.analytics.LiveDetail;
+import org.frostnova.nova.core.analytics.LiveHighlightFinder;
+import org.frostnova.nova.core.config.EventConfig;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.enums.LiveEndReason;
 import org.frostnova.nova.core.event.live.common.LiveOnEvent;
 import org.frostnova.nova.core.listener.NovaDefaultLiveOnEventListener;
+import org.frostnova.nova.core.model.DanmuRecord;
 import org.frostnova.nova.core.model.LiveGap;
 import org.frostnova.nova.core.model.LiveSession;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
+import org.frostnova.nova.core.model.RoomInfoSnapshot;
+import org.frostnova.nova.core.model.SeriesPeak;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -19,6 +25,9 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.NoSuchElementException;
+
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -63,6 +72,21 @@ class LiveSessionRecoveryTest {
         return service;
     }
 
+    /**
+     * 起一个接线齐全的补档：标题轨迹与明细那两件依赖一并接上
+     */
+    private LiveSessionRecovery recovery(DefaultLiveDataService service) {
+        return recovery(service, new LiveRoomInfoHistory(new NovaStateStore(properties)));
+    }
+
+    /**
+     * 起一个接线齐全的补档，标题轨迹用指定那一份（读过盘的）
+     */
+    private LiveSessionRecovery recovery(DefaultLiveDataService service, LiveRoomInfoHistory history) {
+        return new LiveSessionRecovery(service, archive, history,
+                new LiveSessionDetailArchiver(service, history, new LiveDetailArchive(properties)));
+    }
+
     private List<LiveSession> archived() {
         return archive.find(0, Long.MAX_VALUE);
     }
@@ -84,7 +108,7 @@ class LiveSessionRecoveryTest {
             long watermark = watermark();
 
             DefaultLiveDataService after = boot();
-            LiveSessionRecovery recovery = new LiveSessionRecovery(after, archive);
+            LiveSessionRecovery recovery = recovery(after);
 
             assertTrue(recovery.archiveUnclosedIfAny(PLATFORM, STREAMER, Instant.now().toEpochMilli()));
 
@@ -109,7 +133,7 @@ class LiveSessionRecoveryTest {
             before.setLiveStatus(PLATFORM, STREAMER.getUid(), false);
             before.saveNow(false);
 
-            LiveSessionRecovery recovery = new LiveSessionRecovery(boot(), archive);
+            LiveSessionRecovery recovery = recovery(boot());
 
             assertFalse(recovery.archiveUnclosedIfAny(PLATFORM, STREAMER, Instant.now().toEpochMilli()));
             assertTrue(archived().isEmpty());
@@ -122,7 +146,7 @@ class LiveSessionRecoveryTest {
             before.setLiveStatus(PLATFORM, STREAMER.getUid(), true);
             before.saveNow(false);
 
-            LiveSessionRecovery recovery = new LiveSessionRecovery(boot(), archive);
+            LiveSessionRecovery recovery = recovery(boot());
 
             assertFalse(recovery.archiveUnclosedIfAny(PLATFORM, STREAMER, Instant.now().toEpochMilli()));
             assertTrue(archived().isEmpty(), "没有起点的记录归不进任何统计周期，留着只会污染分析");
@@ -141,7 +165,7 @@ class LiveSessionRecoveryTest {
             // 把水位线按到开播之前：停机期间主播开了一场又下了，我们一次都没落到这一场的盘
             writeWatermark(start - 60_000);
 
-            LiveSessionRecovery recovery = new LiveSessionRecovery(boot(), archive);
+            LiveSessionRecovery recovery = recovery(boot());
             // 🔴 必须等时钟真的走过 start：归档判的是 start < newStartTime，
             // 两次取时钟落在同一毫秒时会被判成「同一场」而跳过——本用例曾因此偶发红
             awaitClockPast(start);
@@ -163,7 +187,7 @@ class LiveSessionRecoveryTest {
             before.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
             before.saveNow(false);
 
-            LiveSessionRecovery recovery = new LiveSessionRecovery(boot(), archive);
+            LiveSessionRecovery recovery = recovery(boot());
 
             assertFalse(recovery.archiveUnclosedIfAny(PLATFORM, STREAMER, start));
             assertTrue(archived().isEmpty());
@@ -190,7 +214,7 @@ class LiveSessionRecoveryTest {
             awaitClockPast(watermark);
 
             DefaultLiveDataService after = boot();
-            new LiveSessionRecovery(after, archive).onApplicationReadyEvent();
+            recovery(after).onApplicationReadyEvent();
 
             long now = System.currentTimeMillis();
             assertTrue(after.downtimeWithin(watermark, now) > 0, "停机区间必须落在数据里");
@@ -212,7 +236,7 @@ class LiveSessionRecoveryTest {
             long watermark = watermark();
             awaitClockPast(watermark);
             DefaultLiveDataService after = boot();
-            new LiveSessionRecovery(after, archive).onApplicationReadyEvent();
+            recovery(after).onApplicationReadyEvent();
 
             LiveGap segment = after.startupDowntime().orElseThrow();
             assertEquals(watermark, segment.from(), "起点是上次落盘时刻");
@@ -273,7 +297,7 @@ class LiveSessionRecoveryTest {
             writeWatermark(System.currentTimeMillis() + 3600_000);
 
             DefaultLiveDataService service = boot();
-            new LiveSessionRecovery(service, archive).onApplicationReadyEvent();
+            recovery(service).onApplicationReadyEvent();
 
             assertEquals(0, service.downtimeWithin(0, Long.MAX_VALUE / 2));
         }
@@ -294,7 +318,7 @@ class LiveSessionRecoveryTest {
             before.saveNow(false);
 
             DefaultLiveDataService after = boot();
-            assertTrue(new LiveSessionRecovery(after, archive)
+            assertTrue(recovery(after)
                     .archiveUnclosedIfAny(PLATFORM, STREAMER, System.currentTimeMillis()));
 
             LiveSession session = archived().get(0);
@@ -367,7 +391,7 @@ class LiveSessionRecoveryTest {
             DefaultLiveDataService after = boot();
             assertEquals(clean, after.wasCleanShutdown().orElseThrow(),
                     "启动那一刻读到的必须是上次退出情况, 不是本次");
-            new LiveSessionRecovery(after, archive).onApplicationReadyEvent();
+            recovery(after).onApplicationReadyEvent();
 
             List<LiveGap> gaps = after.downtimeIntervals(watermark, System.currentTimeMillis());
             assertEquals(1, gaps.size(), "启动只该记一段停机");
@@ -395,7 +419,7 @@ class LiveSessionRecoveryTest {
                     StandardCharsets.UTF_8);
 
             DefaultLiveDataService service = boot();
-            LiveSessionRecovery recovery = new LiveSessionRecovery(service, archive);
+            LiveSessionRecovery recovery = recovery(service);
             recovery.onApplicationReadyEvent();
 
             assertTrue(service.getLastSaveTime().isEmpty());
@@ -486,7 +510,7 @@ class LiveSessionRecoveryTest {
 
             DefaultLiveDataService after = boot();
             NovaDefaultLiveOnEventListener listener = new NovaDefaultLiveOnEventListener(
-                    properties, after, new LiveSessionRecovery(after, archive));
+                    properties, after, recovery(after));
 
             LiveOnEvent event = new LiveOnEvent(PLATFORM, STREAMER, Instant.now());
             listener.onLiveOnEventCheckReconnect(event);
@@ -513,7 +537,7 @@ class LiveSessionRecoveryTest {
 
             DefaultLiveDataService after = boot();
             NovaDefaultLiveOnEventListener listener = new NovaDefaultLiveOnEventListener(
-                    properties, after, new LiveSessionRecovery(after, archive));
+                    properties, after, recovery(after));
 
             LiveOnEvent event = new LiveOnEvent(PLATFORM, STREAMER, Instant.ofEpochMilli(now));
             listener.onLiveOnEventCheckReconnect(event);
@@ -523,6 +547,236 @@ class LiveSessionRecoveryTest {
             assertTrue(archived().isEmpty());
             assertEquals(99.0, after.getLiveMetric(PLATFORM, STREAMER.getUid(), "danmu_count"),
                     "重连不该把本场统计清掉");
+        }
+    }
+
+    @Nested
+    @DisplayName("补档明细与标题轨迹")
+    class RecoveryDetail {
+        /**
+         * 某个时刻落在哪一分钟格
+         */
+        private long bucket(long at) {
+            return at / 60_000L * 60_000L;
+        }
+
+        @Test
+        @DisplayName("a 补档把明细整份存下：读得回来、曲线与排行不空（故障：停机里结束的那场以后没法重画）")
+        void storesDetailOnRecovery() {
+            long start = Instant.now().toEpochMilli() - 7200_000;
+
+            DefaultLiveDataService before = boot();
+            before.setLiveStatus(PLATFORM, STREAMER.getUid(), true);
+            before.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+            for (int minute = 0; minute < 15; minute++) {
+                before.incrementLiveSeries(PLATFORM, STREAMER.getUid(), "danmu_count",
+                        start + minute * 60_000L, minute % 5);
+            }
+            for (int i = 0; i < 10; i++) {
+                before.incrementLiveUserMetric(PLATFORM, STREAMER.getUid(), "danmu_users",
+                        19_000_000_000_000L + i, 10 - i);
+                before.recordLiveUserName(PLATFORM, STREAMER.getUid(), 19_000_000_000_000L + i, "观众" + i);
+            }
+            // 崩溃前最后一次自动保存，之后进程被强杀
+            before.saveNow(false);
+
+            LiveDetailArchive details = new LiveDetailArchive(properties);
+            LiveSessionRecovery recovery = recovery(boot());
+
+            assertTrue(recovery.archiveUnclosedIfAny(PLATFORM, STREAMER, Instant.now().toEpochMilli()));
+
+            LiveDetail detail = details.read(PLATFORM, STREAMER.getUid(), start)
+                    .orElseThrow(() -> new NoSuchElementException("补档没存明细，这一场以后重画不出来"));
+            assertFalse(detail.series("danmu_count").isEmpty(), "曲线要整条留下");
+            assertEquals(15, detail.series("danmu_count").size(), "曲线整条留，一格不少");
+            assertEquals(10, detail.ranking("danmu_users").size(), "排行留全量而不是空");
+        }
+
+        @Test
+        @DisplayName("b 补档的标题轨迹读状态存储里那份，结束时刻以后改的标题不进旧场（故障：报告里标题轨迹是空的，或混进两场之间改的标题）")
+        void titlesComeFromStateStoreTruncatedToEndTime() {
+            long start = Instant.now().toEpochMilli() - 7200_000;
+
+            DefaultLiveDataService before = boot();
+            before.setLiveStatus(PLATFORM, STREAMER.getUid(), true);
+            before.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+            before.saveNow(false);
+            long endTime = watermark();
+
+            // 崩溃前的进程记了两条标题变更：一条在本场之内，一条在结束时刻之后（两场之间改的）
+            NovaStateStore seed = new NovaStateStore(properties);
+            LiveRoomInfoHistory seeded = new LiveRoomInfoHistory(seed);
+            seeded.record(PLATFORM, STREAMER.getUid(), start + 60_000, "本场之内改的标题", "");
+            seeded.record(PLATFORM, STREAMER.getUid(), endTime + 60_000, "结束之后改的标题", "");
+            seed.save();
+
+            NovaStateStore loaded = new NovaStateStore(properties);
+            loaded.onApplicationReadyEvent();
+            try {
+                LiveRoomInfoHistory history = new LiveRoomInfoHistory(loaded);
+                LiveSessionRecovery recovery = recovery(boot(), history);
+
+                assertTrue(recovery.archiveUnclosedIfAny(PLATFORM, STREAMER, Instant.now().toEpochMilli()));
+
+                List<RoomInfoSnapshot> titles = archived().get(0).titles();
+                assertEquals(1, titles.size(),
+                        "轨迹要来自状态存储：一场之内一条在，结束之后那条（两场之间改的）不算: " + titles);
+                assertEquals("本场之内改的标题", titles.get(0).title());
+            } finally {
+                loaded.onContextClosedEvent();
+            }
+        }
+
+        @Test
+        @DisplayName("c 补档存下明细即封住旧场弹幕：之后再来的弹幕不进旧场原文（故障：旧场弹幕里混进下播后的弹幕）")
+        void sealsOldSessionDanmuAfterRecovery() {
+            long start = Instant.now().toEpochMilli() - 7200_000;
+
+            DefaultLiveDataService before = boot();
+            before.setLiveStatus(PLATFORM, STREAMER.getUid(), true);
+            before.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+            before.saveNow(false);
+
+            LiveDetailArchive details = new LiveDetailArchive(properties);
+            details.appendDanmu(PLATFORM, STREAMER.getUid(), start, new DanmuRecord(
+                    start + 60_000, 19338207415562L, "观众甲", "场内的弹幕", DanmuRecord.Type.DANMU));
+
+            LiveSessionRecovery recovery = recovery(boot());
+            assertTrue(recovery.archiveUnclosedIfAny(PLATFORM, STREAMER, Instant.now().toEpochMilli()));
+
+            // 补档之后（这一场已结束之后）才到的弹幕
+            details.appendDanmu(PLATFORM, STREAMER.getUid(), start, new DanmuRecord(
+                    Instant.now().toEpochMilli(), 19338207415562L, "观众甲", "下播之后的弹幕", DanmuRecord.Type.DANMU));
+
+            List<DanmuRecord> danmu = details.readDanmu(PLATFORM, STREAMER.getUid(), start);
+            assertEquals(1, danmu.size(), "补档之后这一场已封存，下播后的弹幕不该再追加进旧场: " + danmu);
+            assertEquals("场内的弹幕", danmu.get(0).text());
+        }
+
+        @Test
+        @DisplayName("d 开播那一路补档先读轨迹、清空后跑（故障：开播补档时轨迹已被清空，停机里结束的那场带着空标题归档）")
+        void recoveryReadsTitlesBeforeHistoryClearsOnLiveOn() {
+            long start = Instant.now().toEpochMilli() - 7200_000;
+
+            DefaultLiveDataService before = boot();
+            before.setLiveStatus(PLATFORM, STREAMER.getUid(), true);
+            before.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+            before.saveNow(false);
+
+            // 崩溃前的进程把标题变更落进了 state.json
+            NovaStateStore seed = new NovaStateStore(properties);
+            new LiveRoomInfoHistory(seed).record(PLATFORM, STREAMER.getUid(), start + 60_000, "崩溃前的标题", "");
+            seed.save();
+
+            // 起新实例（＝进程重启），两个监听都进容器，先后只由 @Order 决定
+            DefaultLiveDataService after = boot();
+            NovaStateStore state = new NovaStateStore(properties);
+            state.onApplicationReadyEvent();
+            AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
+            try {
+                LiveRoomInfoHistory history = new LiveRoomInfoHistory(state);
+                LiveSessionRecovery recovery = recovery(after, history);
+                NovaDefaultLiveOnEventListener listener =
+                        new NovaDefaultLiveOnEventListener(properties, after, recovery);
+
+                context.register(EventConfig.class);
+                context.registerBean(NovaDefaultLiveOnEventListener.class, () -> listener);
+                context.registerBean(LiveRoomInfoHistory.class, () -> history);
+                context.refresh();
+
+                context.publishEvent(new LiveOnEvent(PLATFORM, STREAMER, Instant.now()));
+
+                List<LiveSession> sessions = archived();
+                assertEquals(1, sessions.size(), "开播要先补档上一场");
+                assertEquals(1, sessions.get(0).titles().size(), "补档要抢在轨迹清空之前读到它");
+                assertEquals("崩溃前的标题", sessions.get(0).titles().get(0).title());
+            } finally {
+                context.close();
+                state.onContextClosedEvent();
+            }
+        }
+
+        @Test
+        @DisplayName("e 补档的场次记录峰值不空（故障：曲线没有峰值，事后无从问「这一场最高多少人在看」）")
+        void recoverySessionCarriesPeaks() {
+            long start = Instant.now().toEpochMilli() - 7200_000;
+
+            DefaultLiveDataService before = boot();
+            before.setLiveStatus(PLATFORM, STREAMER.getUid(), true);
+            before.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+            for (int minute = 0; minute < 30; minute++) {
+                before.incrementLiveSeries(PLATFORM, STREAMER.getUid(), "danmu_count",
+                        start + minute * 60_000L, minute);
+            }
+            before.saveNow(false);
+
+            LiveSessionRecovery recovery = recovery(boot());
+            assertTrue(recovery.archiveUnclosedIfAny(PLATFORM, STREAMER, Instant.now().toEpochMilli()));
+
+            LiveSession session = archived().get(0);
+            assertTrue(session.hasPeaks(), "补档的场次要带峰值");
+            assertEquals(new SeriesPeak(bucket(start + 29 * 60_000L), 29.0),
+                    session.peak("danmu_count").orElseThrow());
+        }
+
+        @Test
+        @DisplayName("f 补档的高能只数结束时刻及以前的弹幕，结束之后进的不算（故障：重启后旧场还挂着在播时进来的弹幕被算进那场高能）")
+        void highlightsCountDanmuOnlyUpToEndTime() {
+            // 开播与结束都定在整分钟上：结束之后的弹幕要落在这一场最后一分钟格里，
+            // 截止一旦失效它会真的进高能——落在更往后的格里会被分桶默默丢掉，红了也看不见
+            long start = Instant.now().toEpochMilli() / 60_000L * 60_000L - 7200_000;
+
+            DefaultLiveDataService before = boot();
+            before.setLiveStatus(PLATFORM, STREAMER.getUid(), true);
+            before.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+            before.saveNow(false);
+            long endTime = start + 60 * 60_000L;
+            writeWatermark(endTime);
+
+            LiveDetailArchive details = new LiveDetailArchive(properties);
+            for (int i = 0; i < 20; i++) {
+                details.appendDanmu(PLATFORM, STREAMER.getUid(), start, new DanmuRecord(
+                        start + 30 * 60_000L + i, 19338207415562L, "观众甲", "场内的第" + i + "条", DanmuRecord.Type.DANMU));
+            }
+            // 这批弹幕在「这一场结束之后、旧场封存之前」进来（重启后旧场还挂着在播时的样子），
+            // 比场内任何一分钟都热闹——若没有截止，它会顶成那场的第一高能
+            for (int i = 0; i < 100; i++) {
+                details.appendDanmu(PLATFORM, STREAMER.getUid(), start, new DanmuRecord(
+                        endTime + 5_000L + i, 19338207415562L, "观众甲", "结束之后的第" + i + "条", DanmuRecord.Type.DANMU));
+            }
+
+            LiveSessionRecovery recovery = recovery(boot());
+            assertTrue(recovery.archiveUnclosedIfAny(PLATFORM, STREAMER, Instant.now().toEpochMilli()));
+
+            LiveDetail detail = details.read(PLATFORM, STREAMER.getUid(), start)
+                    .orElseThrow(() -> new NoSuchElementException("补档没存明细，这一场以后重画不出来"));
+            List<LiveHighlightFinder.Highlight> highlights = detail.highlights();
+            assertEquals(1, highlights.size(), "结束之后的弹幕不该算出高能: " + highlights);
+            assertEquals(bucket(start + 30 * 60_000L), highlights.get(0).at(), "唯一的高能是场内那一分钟");
+        }
+
+        @Test
+        @DisplayName("g 补档那场的停机秒算上按房记的重启尾巴，断线秒不算它（故障：补档少报重启后那几秒的采集缺口）")
+        void recoveryDowntimeCountsRoomTailButNotDisconnect() {
+            long start = Instant.now().toEpochMilli() - 7200_000;
+
+            DefaultLiveDataService before = boot();
+            before.setLiveStatus(PLATFORM, STREAMER.getUid(), true);
+            before.setLiveStartTime(PLATFORM, STREAMER.getUid(), start);
+            // 重启尾巴：进程就绪之后、这间认证成功之前的那几秒，按房记、成因是重启
+            before.recordRoomOutage(PLATFORM, STREAMER.getUid(),
+                    start + 10 * 60_000L, start + 10 * 60_000L + 8_000, LiveGap.Reason.RESTART);
+            // 同场另有一段这间自己的断流
+            before.recordRoomOutage(PLATFORM, STREAMER.getUid(),
+                    start + 40 * 60_000L, start + 40 * 60_000L + 30_000);
+            before.saveNow(false);
+
+            LiveSessionRecovery recovery = recovery(boot());
+            assertTrue(recovery.archiveUnclosedIfAny(PLATFORM, STREAMER, Instant.now().toEpochMilli()));
+
+            LiveSession session = archived().get(0);
+            assertEquals(8, session.maintenanceGapSeconds(), "按房记的重启尾巴要算进停机秒");
+            assertEquals(30, session.roomOutageSeconds(), "断线秒只数断流，重启尾巴不并进来");
         }
     }
 

@@ -68,10 +68,16 @@ public class LiveRoomInfoHistory {
     /**
      * 开播时清空该主播的记录
      * <p>
-     * 与核心重置本场数据同为 {@code -10000}，都要抢在各平台补写开播快照之前完成，
-     * 否则刚记下的初始标题会被随后的清空抹掉。
+     * 先后两头都有约定，定在 {@code -9999}：
+     * <ul>
+     *     <li><b>必须晚于核心重置本场数据</b>（{@code -10000}）。未闭合场次的补档在那一步里，
+     *         靠的就是这份还没清的轨迹——清空若抢到补档前面，停机里结束的那一场
+     *         就带着空标题轨迹归了档</li>
+     *     <li><b>必须抢在各平台补写开播快照之前完成</b>（快照是 {@code 0} 一档），
+     *         否则刚记下的初始标题会被随后的清空抹掉</li>
+     * </ul>
      */
-    @Order(-10000)
+    @Order(-9999)
     @EventListener
     public void onLiveOn(LiveOnEvent event) {
         LiveStreamerInfo source = event.getSource();
@@ -128,6 +134,21 @@ public class LiveRoomInfoHistory {
      * @return 按记录顺序排列的变更，没有记录时为空表
      */
     public List<RoomInfoSnapshot> history(@NonNull String platform, @NonNull Long uid) {
+        return history(platform, uid, Long.MAX_VALUE);
+    }
+
+    /**
+     * 读取截至某时刻的变更记录
+     * <p>
+     * 补档那一路用：未闭合场次的结束时刻之后，主播可能又改过标题——
+     * {@link #onRoomInfoChange} 记变更不看在不在播，两场之间改的那条会挂在旧场名下。
+     * 按时刻截掉，改在结束之后的标题才不会记进已结束的那一场。
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @param upTo 截止时刻（毫秒），只取 {@code at} 不晚于它的条目
+     * @return 按记录顺序排列的变更，没有记录时为空表
+     */
+    public List<RoomInfoSnapshot> history(@NonNull String platform, @NonNull Long uid, long upTo) {
         JSONArray entries = store.namespace(NAMESPACE).getJSONArray(key(platform, uid));
         if (entries == null || entries.isEmpty()) {
             return List.of();
@@ -136,7 +157,7 @@ public class LiveRoomInfoHistory {
         List<RoomInfoSnapshot> result = new ArrayList<>(entries.size());
         for (int i = 0; i < entries.size(); i++) {
             JSONObject entry = entries.getJSONObject(i);
-            if (entry == null) {
+            if (entry == null || entry.getLongValue("at") > upTo) {
                 continue;
             }
             result.add(new RoomInfoSnapshot(

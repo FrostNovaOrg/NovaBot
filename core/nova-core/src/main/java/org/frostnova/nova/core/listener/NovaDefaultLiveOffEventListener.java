@@ -1,20 +1,16 @@
 package org.frostnova.nova.core.listener;
 
-import org.frostnova.nova.core.analytics.LiveDetail;
-import org.frostnova.nova.core.analytics.LiveHighlightFinder;
 import org.frostnova.nova.core.enums.LiveEndReason;
 import org.frostnova.nova.core.event.live.common.LiveOffEvent;
-import org.frostnova.nova.core.model.DanmuRecord;
 import org.frostnova.nova.core.model.LiveGap;
 import org.frostnova.nova.core.model.LiveSession;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
 import org.frostnova.nova.core.model.SeriesPeak;
-import org.frostnova.nova.core.model.UserScore;
 import org.frostnova.nova.core.service.LiveDataService;
-import org.frostnova.nova.core.service.LiveDetailArchive;
 import org.frostnova.nova.core.service.LiveInterventionTracker;
 import org.frostnova.nova.core.service.LiveRoomInfoHistory;
 import org.frostnova.nova.core.service.LiveSessionArchive;
+import org.frostnova.nova.core.service.LiveSessionDetailArchiver;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
@@ -22,7 +18,6 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -42,19 +37,19 @@ public class NovaDefaultLiveOffEventListener {
     private final LiveRoomInfoHistory roomInfoHistory;
 
     /**
-     * 本场明细留档。场次归档留「这一场发生过」，它留「这一场的原始数据」
+     * 本场明细留档（与未闭合补档共用的一套）。场次归档留「这一场发生过」，它留「这一场的原始数据」
      */
-    private final LiveDetailArchive details;
+    private final LiveSessionDetailArchiver detailArchiver;
 
     @Autowired
     public NovaDefaultLiveOffEventListener(LiveDataService liveDataService, LiveSessionArchive archive,
                                               LiveInterventionTracker interventionTracker, LiveRoomInfoHistory roomInfoHistory,
-                                              LiveDetailArchive details) {
+                                              LiveSessionDetailArchiver detailArchiver) {
         this.liveDataService = liveDataService;
         this.archive = archive;
         this.interventionTracker = interventionTracker;
         this.roomInfoHistory = roomInfoHistory;
-        this.details = details;
+        this.detailArchiver = detailArchiver;
     }
 
     /**
@@ -121,8 +116,8 @@ public class NovaDefaultLiveOffEventListener {
         // 各条序列的峰值。**必须在这一刻算**：序列活在本场数据里，下一次开播即清零，
         // 事后无论如何也算不出「这一场最高多少人在看」
         Map<String, List<Long>> userSets = liveDataService.getLiveMetricUserSets(event.getPlatform(), source.getUid());
-        Map<String, Map<Long, Double>> series = allSeries(event.getPlatform(), source.getUid());
-        Map<String, SeriesPeak> peaks = peaks(series);
+        Map<String, Map<Long, Double>> series = detailArchiver.allSeries(event.getPlatform(), source.getUid());
+        Map<String, SeriesPeak> peaks = detailArchiver.peaks(series);
 
         archive.append(new LiveSession(
                 event.getPlatform(),
@@ -146,122 +141,14 @@ public class NovaDefaultLiveOffEventListener {
                 outage,
                 peaks));
 
+        // 明细那一份与未闭合补档走同一套（见 LiveSessionDetailArchiver），仍排在场次归档之后：
+        // 先把小的那份落定再写大的那份，程序若在这中间被杀，丢的是明细不是场次。
+        // 截止时刻传 Long.MAX_VALUE——下播事件时刻就是这一场的终点，照旧全量
         try {
-            archiveDetail(event, source, start.get(), endTime, duration, series, peaks);
+            detailArchiver.store(event.getPlatform(), source, start.get(), endTime, duration,
+                    series, peaks, Long.MAX_VALUE);
         } catch (RuntimeException e) {
             log.error("留档直播明细失败, 该场的报告将无法重新绘制", e);
         }
-    }
-
-    /**
-     * 把本场明细整份留下来
-     * <p>
-     * <b>排在场次归档之后</b>：两者读的是同一份尚未清零的数据，先后本不影响读数，
-     * 但场次归档是运营统计的命根子，明细写盘慢得多（几十上百 KB）——
-     * <b>先把小的那份落定，再去写大的那份</b>，程序若在这中间被杀，丢的是明细不是场次。
-     * <p>
-     * 明细失败不连累场次：{@link LiveDetailArchive} 自己吞掉异常，此处不加 try。
-     */
-    private void archiveDetail(LiveOffEvent event, LiveStreamerInfo source, long start, long endTime,
-                               long duration, Map<String, Map<Long, Double>> series, Map<String, SeriesPeak> peaks) {
-        String platform = event.getPlatform();
-        Long uid = source.getUid();
-
-        // 排行榜留**全量**：报告图上只画前几名是版面所限，留档只留前几名
-        // 就等于把第 30 名往后的人永久丢掉，而回流率、沉睡预警要的恰恰是长尾那一段。
-        // 每张榜取多少条，问它自己的参与人数——那正是这张榜的全长
-        Map<String, Integer> userCounts = liveDataService.getLiveMetricUserCounts(platform, uid);
-        Map<String, List<UserScore>> rankings = new LinkedHashMap<>();
-        userCounts.forEach((metric, count) -> {
-            if (count > 0) {
-                rankings.put(metric, liveDataService.getLiveUserRanking(platform, uid, metric, count));
-            }
-        });
-
-        // 缺口两份合并到互不重叠：程序停机期间这个房间当然也是断的，两段必然重叠，
-        // 留档里各留一份的话，读的人把它们相加就会算出比整场还长的缺口
-        List<LiveGap> gaps = LiveGap.merge(List.of(
-                liveDataService.downtimeIntervals(start, endTime),
-                liveDataService.roomOutageIntervals(platform, uid, start, endTime)));
-
-        // 高能时刻按**弹幕原文**的分钟密度算，而不是问某个指标名要序列：
-        // 核心并不知道哪个指标是弹幕（指标名由各平台自行定义），
-        // 而弹幕原文本身就是弹幕，这条路平台无关且与原文同源
-        List<LiveHighlightFinder.Highlight> highlights = LiveHighlightFinder.find(
-                danmuSeries(platform, uid, start), LiveDataService.SERIES_BUCKET_MILLIS, start, endTime);
-
-        details.store(new LiveDetail(
-                LiveDetail.VERSION,
-                platform,
-                uid,
-                source.getUname(),
-                source.getRoomId(),
-                start,
-                endTime,
-                duration,
-                liveDataService.getLiveMetrics(platform, uid),
-                userCounts,
-                series,
-                rankings,
-                liveDataService.getLiveWordFrequencies(platform, uid),
-                highlights,
-                roomInfoHistory.history(platform, uid),
-                gaps,
-                peaks,
-                liveDataService.getLiveGifts(platform, uid)));
-    }
-
-    /**
-     * 本场全部时间序列
-     * <p>
-     * 逐条问而不是按一张写死的指标名单取：核心不知道有哪些指标，
-     * <b>按名单取的话，插件新加一条曲线，明细里就会安静地少一条</b>，
-     * 而那一场的序列下次开播就没了。
-     */
-    private Map<String, Map<Long, Double>> allSeries(String platform, Long uid) {
-        Map<String, Map<Long, Double>> series = new LinkedHashMap<>();
-        for (String metric : liveDataService.getLiveSeriesMetrics(platform, uid)) {
-            Map<Long, Double> one = liveDataService.getLiveSeries(platform, uid, metric);
-            if (!one.isEmpty()) {
-                series.put(metric, one);
-            }
-        }
-        return series;
-    }
-
-    /**
-     * 各条序列的峰值
-     * <p>
-     * <b>时刻与取值同源</b>：取最大值的那一格，它的键就是时刻。
-     * 分两趟各求一次的话，会算出「峰值 137，出现在第 42 分钟」而第 42 分钟其实是 96 的情形。
-     * <p>
-     * 空序列不产生峰值项——「这条曲线一个点都没有」与「峰值为 0」是两回事。
-     */
-    private Map<String, SeriesPeak> peaks(Map<String, Map<Long, Double>> series) {
-        Map<String, SeriesPeak> peaks = new LinkedHashMap<>();
-        series.forEach((metric, buckets) -> buckets.entrySet().stream()
-                .max(Map.Entry.comparingByValue())
-                .ifPresent(top -> peaks.put(metric, new SeriesPeak(top.getKey(), top.getValue()))));
-        return peaks;
-    }
-
-    /**
-     * 从本场弹幕原文数出按分钟的密度序列
-     * <p>
-     * 只数计入弹幕条数的那几类（见 {@link org.frostnova.nova.core.model.DanmuRecord#countsAsDanmu}）：
-     * 把一条 30 元的付费留言算进弹幕密度，它在曲线上就等价于一句「哈哈」。
-     * <p>
-     * 没留下原文时是空表，高能时刻随之为空——那是真话：<b>没有原文就挑不出高能片段</b>。
-     */
-    private Map<Long, Double> danmuSeries(String platform, Long uid, long start) {
-        Map<Long, Double> series = new java.util.TreeMap<>();
-        for (DanmuRecord record : details.readDanmu(platform, uid, start)) {
-            if (!record.countsAsDanmu()) {
-                continue;
-            }
-            long bucket = record.at() / LiveDataService.SERIES_BUCKET_MILLIS * LiveDataService.SERIES_BUCKET_MILLIS;
-            series.merge(bucket, 1.0, Double::sum);
-        }
-        return series;
     }
 }

@@ -4,6 +4,7 @@ import org.frostnova.nova.core.enums.LiveEndReason;
 import org.frostnova.nova.core.model.LiveGap;
 import org.frostnova.nova.core.model.LiveSession;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
+import org.frostnova.nova.core.model.SeriesPeak;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,6 +14,7 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -49,10 +51,20 @@ public class LiveSessionRecovery {
 
     private final LiveSessionArchive archive;
 
+    private final LiveRoomInfoHistory roomInfoHistory;
+
+    /**
+     * 明细与峰值那一份，与正常下播共用同一套：补出来的这一场也要能重画
+     */
+    private final LiveSessionDetailArchiver detailArchiver;
+
     @Autowired
-    public LiveSessionRecovery(LiveDataService liveDataService, LiveSessionArchive archive) {
+    public LiveSessionRecovery(LiveDataService liveDataService, LiveSessionArchive archive,
+                               LiveRoomInfoHistory roomInfoHistory, LiveSessionDetailArchiver detailArchiver) {
         this.liveDataService = liveDataService;
         this.archive = archive;
+        this.roomInfoHistory = roomInfoHistory;
+        this.detailArchiver = detailArchiver;
     }
 
     /**
@@ -131,6 +143,9 @@ public class LiveSessionRecovery {
                 + LiveGap.totalMillisWhere(roomGaps, true)) / 1000;
         long outage = LiveGap.totalMillisWhere(roomGaps, false) / 1000;
 
+        Map<String, Map<Long, Double>> series = detailArchiver.allSeries(platform, source.getUid());
+        Map<String, SeriesPeak> peaks = detailArchiver.peaks(series);
+
         archive.append(new LiveSession(
                 platform,
                 source.getUid(),
@@ -142,15 +157,25 @@ public class LiveSessionRecovery {
                 liveDataService.getLiveMetrics(platform, source.getUid()),
                 liveDataService.getLiveMetricUserCounts(platform, source.getUid()),
                 LiveEndReason.UNCLOSED,
-                // 崩溃后标题轨迹只存在内存里，已经没了。这里<b>不能</b>拿当前标题顶上，
-                // 那会把这一场的标题记到上一场头上
-                List.of(),
+                // 标题轨迹存在状态存储里（LiveRoomInfoHistory 落的是盘不是内存），停机也丢不了。
+                // 只取不晚于本场结束时刻的条目：变更记录不看在不在播，
+                // 两场之间改的标题不属于已经结束的这一场
+                roomInfoHistory.history(platform, source.getUid(), endTime),
                 gap,
                 // ⚠️ 名单这一条**必须和正常下播走同一套**：异常路径最容易漏，
-                // 而漏在这里的后果是「崩溃过的那一场永远没有名单」，事后补不回来。
-                // 与标题轨迹不同——标题在崩溃时真的没了，名单是从磁盘上的计分表读的，还在
+                // 而漏在这里的后果是「崩溃过的那一场永远没有名单」，事后补不回来
                 liveDataService.getLiveMetricUserSets(platform, source.getUid()),
-                outage));
+                outage,
+                peaks));
+
+        // 明细那一份与正常下播走同一套（LiveSessionDetailArchiver）：曲线全量、排行、词频、
+        // 高能、缺口区间、打赏。存下 detail.json 同时把旧场的弹幕原文封了口——
+        // 此后进来的弹幕不再追加进这一场。失败只记日志，不连累上面已经落定的场次
+        try {
+            detailArchiver.store(platform, source, start, endTime, duration, series, peaks, endTime);
+        } catch (RuntimeException e) {
+            log.error("补档留档直播明细失败, 该场的报告将无法重新绘制", e);
+        }
 
         log.warn("{} 上一场直播未闭合（程序在直播中途停过），已按未闭合归档: 时长下界 {} 秒, 其中 {} 秒未采集",
                 source.getUname(), duration, gap);
