@@ -521,6 +521,7 @@ final class NovaEventSlowConsumerHarness implements AutoCloseable {
         this.stream = new NovaEventStream(64);
         this.endpoint = new NovaEventEndpoint(stream, tokens, timings);
         this.heartbeatThread = registerHeartbeatThread(this.endpoint);
+        this.endpoint.startHeartbeats();
         this.slowClient = new NovaEventSlowConsumerTest.SocketSession(
                 slowId, 1024, 1024, slowClientReads, reallyWriteOnClose);
         realSession.add(this.slowClient);

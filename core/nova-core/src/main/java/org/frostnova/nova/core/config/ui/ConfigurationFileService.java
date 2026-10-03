@@ -3,18 +3,19 @@ package org.frostnova.nova.core.config.ui;
 import org.frostnova.nova.core.properties.DatasourceProperties;
 import org.frostnova.nova.core.properties.EventStreamProperties;
 import org.frostnova.nova.core.properties.NovaBotPrefixes;
+import org.frostnova.nova.core.protocol.StandbyPhases;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.core.timeline.TimelineEventType;
 import org.frostnova.nova.core.timeline.TimelineWriter;
 import org.frostnova.nova.core.util.DurableFiles;
 import lombok.extern.slf4j.Slf4j;
-import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.env.YamlPropertySourceLoader;
 import org.springframework.context.ApplicationContext;
+import org.springframework.context.SmartLifecycle;
 import org.springframework.core.env.EnumerablePropertySource;
 import org.springframework.core.env.PropertySource;
 import org.springframework.core.io.ByteArrayResource;
@@ -51,7 +52,7 @@ import java.time.Clock;
  */
 @Slf4j
 @Service
-public class ConfigurationFileService {
+public class ConfigurationFileService implements SmartLifecycle {
     /**
      * 缩进单位，与配置模板保持一致
      */
@@ -127,6 +128,8 @@ public class ConfigurationFileService {
      * 本进程是否已经把文件里的斜杠形态监听地址改回过。同一份文件在一次运行里只动一次。
      */
     private boolean slashAddressHealed;
+
+    private volatile boolean running;
 
     @Autowired
     public ConfigurationFileService(ConfigurationMetadataService metadata, ApplicationContext context,
@@ -657,13 +660,22 @@ public class ConfigurationFileService {
      * @throws IOException 读不下来或加载器解析不了时抛出
      */
     public synchronized Map<String, Object> readAsLoaded() throws IOException {
-        if (!exists()) {
+        return loadFile(configPath);
+    }
+
+    /**
+     * 按启动那一路读一份配置文件。文件不在时为空；分成几段时比不准，也读成空的。
+     * @param path 配置文件
+     * @return 键到值
+     * @throws IOException 读不下来或加载器解析不了时抛出
+     */
+    public static Map<String, Object> loadFile(Path path) throws IOException {
+        if (path == null || !Files.isRegularFile(path)) {
             return Map.of();
         }
-
         List<PropertySource<?>> documents;
         try {
-            documents = new YamlPropertySourceLoader().load(configPath.toString(), new FileSystemResource(configPath));
+            documents = new YamlPropertySourceLoader().load(path.toString(), new FileSystemResource(path));
         } catch (RuntimeException e) {
             throw new IOException("程序启动时读这份配置文件读不通: " + e.getMessage(), e);
         }
@@ -750,8 +762,8 @@ public class ConfigurationFileService {
 
     /**
      * 启动时若文件已经在，读一次以触发斜杠形态自愈。读失败不挡启动——绑定已经由后处理器救过。
+     * 挂在过门之后：等锁的那段时间里不改这份文件。
      */
-    @PostConstruct
     void healSlashAddressOnStart() {
         if (!exists()) {
             return;
@@ -761,6 +773,32 @@ public class ConfigurationFileService {
         } catch (IOException e) {
             log.warn("启动时读取配置文件失败, 监听地址斜杠形态可能尚未改回: {}", e.toString());
         }
+    }
+
+    @Override
+    public void start() {
+        healSlashAddressOnStart();
+        running = true;
+    }
+
+    @Override
+    public void stop() {
+        running = false;
+    }
+
+    @Override
+    public boolean isRunning() {
+        return running;
+    }
+
+    @Override
+    public int getPhase() {
+        return StandbyPhases.AFTER_GATE;
+    }
+
+    @Override
+    public boolean isAutoStartup() {
+        return true;
     }
 
     /**

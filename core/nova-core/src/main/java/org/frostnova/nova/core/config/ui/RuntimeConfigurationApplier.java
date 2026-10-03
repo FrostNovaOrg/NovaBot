@@ -1,6 +1,7 @@
 package org.frostnova.nova.core.config.ui;
 
 import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.config.StandbyBoundConfig;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.service.TotalDataStorage;
 import org.frostnova.nova.core.timeline.TimelineEvent;
@@ -181,8 +182,10 @@ public class RuntimeConfigurationApplier {
     @Autowired
     public RuntimeConfigurationApplier(NovaCoreProperties properties, TotalDataStorage totalDataStorage,
                                        ObjectProvider<RuntimeConfigurationApplierContributor> contributors,
-                                       ConfigurationFileService fileService, TimelineWriter timeline) {
-        this(properties, totalDataStorage, contributors.orderedStream().toList(), fileService, timeline);
+                                       ConfigurationFileService fileService, TimelineWriter timeline,
+                                       ObjectProvider<StandbyBoundConfig> bound) {
+        this(properties, totalDataStorage, contributors.orderedStream().toList(), fileService, timeline,
+                bound.getIfAvailable());
     }
 
     /**
@@ -191,15 +194,26 @@ public class RuntimeConfigurationApplier {
     public RuntimeConfigurationApplier(NovaCoreProperties properties, TotalDataStorage totalDataStorage,
                                        ObjectProvider<RuntimeConfigurationApplierContributor> contributors,
                                        TimelineWriter timeline) {
-        this(properties, totalDataStorage, contributors, (ConfigurationFileService) null, timeline);
+        this(properties, totalDataStorage, contributors.orderedStream().toList(),
+                (ConfigurationFileService) null, timeline, null);
     }
 
     RuntimeConfigurationApplier(NovaCoreProperties properties, TotalDataStorage totalDataStorage,
                                 Collection<RuntimeConfigurationApplierContributor> contributors,
                                 ConfigurationFileService fileService, TimelineWriter timeline) {
+        this(properties, totalDataStorage, contributors, fileService, timeline, null);
+    }
+
+    RuntimeConfigurationApplier(NovaCoreProperties properties, TotalDataStorage totalDataStorage,
+                                Collection<RuntimeConfigurationApplierContributor> contributors,
+                                ConfigurationFileService fileService, TimelineWriter timeline,
+                                StandbyBoundConfig bound) {
         this.properties = properties;
         this.fileService = fileService;
-        this.startupValues = loaded(fileService, "启动时没能读下配置文件，改回原样的那笔待重启账销不掉");
+        Map<String, Object> snapshot = bound == null ? null : bound.values();
+        this.startupValues = snapshot != null
+                ? Map.copyOf(snapshot)
+                : loaded(fileService, "启动时没能读下配置文件，改回原样的那笔待重启账销不掉");
         this.totalDataStorage = totalDataStorage;
         Contributed contributed = mergeContributions(contributors);
         this.contributedAppliers = contributed.appliers();
@@ -220,6 +234,14 @@ public class RuntimeConfigurationApplier {
      * @param fileService 配置文件，没有时读成空的
      * @param failure 读不下来时日志里那句话
      */
+    /**
+     * 绑定那一刻记下的键值。没经过环境准备时，是构造时读到的那一份。
+     * @return 键到值
+     */
+    Map<String, Object> boundAtStartup() {
+        return startupValues;
+    }
+
     private static Map<String, Object> loaded(ConfigurationFileService fileService, String failure) {
         if (fileService == null) {
             return Map.of();

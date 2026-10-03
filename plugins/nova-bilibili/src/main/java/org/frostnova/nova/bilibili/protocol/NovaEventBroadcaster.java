@@ -2,6 +2,7 @@ package org.frostnova.nova.bilibili.protocol;
 
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.BilibiliPlatform;
+import org.frostnova.nova.core.protocol.StandbyPhases;
 import org.frostnova.nova.core.properties.EventStreamProperties;
 import org.frostnova.nova.core.event.datasource.change.NovaDataSourceRemoveEvent;
 import org.frostnova.nova.core.event.live.NovaBaseLiveEvent;
@@ -20,6 +21,7 @@ import org.frostnova.nova.core.protocol.NovaEventStream;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.SmartLifecycle;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.TaskScheduler;
 
@@ -44,7 +46,7 @@ import java.util.function.Consumer;
  */
 @Slf4j
 @NovaComponent
-public class NovaEventBroadcaster {
+public class NovaEventBroadcaster implements SmartLifecycle {
     /**
      * {@code room_stat} 的最快推送间隔。与协议的 ROOM_STAT_MIN_INTERVAL_MS 对齐
      */
@@ -52,7 +54,13 @@ public class NovaEventBroadcaster {
 
     private final NovaEventStream stream;
 
+    private final TaskScheduler scheduler;
+
     private final boolean enabled;
+
+    private volatile boolean statsScheduled;
+
+    private volatile boolean running;
 
     /**
      * 每个房间的状态。房间数是个位数，用 ConcurrentHashMap 足够
@@ -85,11 +93,41 @@ public class NovaEventBroadcaster {
     public NovaEventBroadcaster(EventStreamProperties properties, NovaEventStream stream,
                                 @Qualifier("bilibiliTaskScheduler") TaskScheduler scheduler) {
         this.stream = stream;
+        this.scheduler = scheduler;
         this.enabled = properties.isEnabled();
+    }
 
-        if (enabled) {
+    /**
+     * 过门之后才排房间统计。开关关着时同一次启动里照样排上，只是比建对象晚。
+     */
+    @Override
+    public void start() {
+        if (enabled && !statsScheduled) {
             scheduler.scheduleAtFixedRate(this::flushRoomStats, ROOM_STAT_INTERVAL);
+            statsScheduled = true;
+            log.info("事件输出房间统计已排上");
         }
+        running = true;
+    }
+
+    @Override
+    public void stop() {
+        running = false;
+    }
+
+    @Override
+    public boolean isRunning() {
+        return running;
+    }
+
+    @Override
+    public int getPhase() {
+        return StandbyPhases.AFTER_GATE;
+    }
+
+    @Override
+    public boolean isAutoStartup() {
+        return true;
     }
 
     /**

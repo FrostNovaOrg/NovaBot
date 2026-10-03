@@ -239,8 +239,8 @@ class StandbyGateTest {
         Files.createDirectory(dir.resolve("novabot.lock"));
         Running app = start(dir, port, false, null);
         try {
-            waitFor(app, 90_000, "开关关着、锁取不到应照常把端口绑上",
-                    running -> runningPort(port));
+            waitFor(app, 90_000, "开关关着、锁取不到应照常把端口绑上，并记下已就绪",
+                    running -> runningPort(port) && running.out().contains(READY));
             assertTrue(app.err().contains(USUAL_START),
                     "应说明照常启动。\n" + dump(app));
             assertTrue(app.out().contains(PASSED), "开关关着也应记下过门。\n" + dump(app));

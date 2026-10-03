@@ -4,8 +4,10 @@ import io.lettuce.core.ClientOptions;
 import io.lettuce.core.SocketOptions;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.frostnova.nova.core.protocol.StandbyPhases;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.SmartLifecycle;
 import org.springframework.core.env.Environment;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.connection.RedisPassword;
@@ -49,7 +51,7 @@ import java.util.function.LongSupplier;
  */
 @Slf4j
 @Service
-public class TotalDataStorage implements DisposableBean {
+public class TotalDataStorage implements DisposableBean, SmartLifecycle {
     /**
      * 探活结果的缓存时长（毫秒）
      */
@@ -162,9 +164,13 @@ public class TotalDataStorage implements DisposableBean {
 
     private volatile long probedAt;
 
+    private volatile boolean begun;
+
+    private volatile boolean running;
+
     @Autowired
     public TotalDataStorage(Environment environment) {
-        this(readFrom(environment), TotalDataStorage::lettuce, System::currentTimeMillis, daemonProbeThread());
+        this(readFrom(environment), TotalDataStorage::lettuce, System::currentTimeMillis, daemonProbeThread(), false);
     }
 
     /**
@@ -183,7 +189,7 @@ public class TotalDataStorage implements DisposableBean {
      */
     public TotalDataStorage(@NonNull Settings initial, @NonNull ConnectionFactories factories,
                             @NonNull LongSupplier clock) {
-        this(initial, factories, clock, Runnable::run);
+        this(initial, factories, clock, Runnable::run, true);
     }
 
     /**
@@ -198,17 +204,67 @@ public class TotalDataStorage implements DisposableBean {
      */
     TotalDataStorage(@NonNull Settings initial, @NonNull ConnectionFactories factories,
                      @NonNull LongSupplier clock, @NonNull Executor probeExecutor) {
+        this(initial, factories, clock, probeExecutor, true);
+    }
+
+    /**
+     * @param startNow 测试用的那两支当场建好并排上刷新；生产那一支等过门之后再排
+     */
+    private TotalDataStorage(@NonNull Settings initial, @NonNull ConnectionFactories factories,
+                             @NonNull LongSupplier clock, @NonNull Executor probeExecutor, boolean startNow) {
         this.settings = initial;
         this.factories = factories;
         this.clock = clock;
         this.probeExecutor = probeExecutor;
         this.ownedProbe = probeExecutor instanceof ScheduledExecutorService scheduler ? scheduler : null;
+        if (startNow) {
+            begin();
+        }
+    }
+
+    /**
+     * 生产那一支过门之后才排上定时刷新并建后端。运行期换地址仍走 {@link #replace}，不经过这里。
+     * 测试用的构造器已经在构造时走过一次，再进来是空操作。
+     */
+    private void begin() {
+        synchronized (lock) {
+            if (begun) {
+                return;
+            }
+            begun = true;
+        }
         if (ownedProbe != null) {
             // 生产那一支：传进来的执行器就是自己的后台线程，定时刷新也挂它身上。
             // 被派的探活与定时那一趟共用一条线程，排队而不并发，去重那边正好挡住重活
             ownedProbe.scheduleWithFixedDelay(this::refresh, PROBE_CACHE_MILLIS, PROBE_CACHE_MILLIS, TimeUnit.MILLISECONDS);
         }
         rebuild();
+    }
+
+    @Override
+    public void start() {
+        begin();
+        running = true;
+    }
+
+    @Override
+    public void stop() {
+        running = false;
+    }
+
+    @Override
+    public boolean isRunning() {
+        return running;
+    }
+
+    @Override
+    public int getPhase() {
+        return StandbyPhases.AFTER_GATE;
+    }
+
+    @Override
+    public boolean isAutoStartup() {
+        return true;
     }
 
     /**

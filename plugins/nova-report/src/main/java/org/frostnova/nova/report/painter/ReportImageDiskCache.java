@@ -1,10 +1,11 @@
 package org.frostnova.nova.report.painter;
 
+import org.frostnova.nova.core.protocol.StandbyPhases;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.plugin.NovaComponent;
-import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.SmartLifecycle;
 import org.springframework.scheduling.annotation.Scheduled;
 
 import javax.imageio.ImageIO;
@@ -44,7 +45,7 @@ import java.util.stream.Stream;
  */
 @Slf4j
 @NovaComponent
-public class ReportImageDiskCache {
+public class ReportImageDiskCache implements SmartLifecycle {
     static final Duration RETENTION = Duration.ofDays(30);
 
     private static final String DIRECTORY_NAME = "image-cache";
@@ -55,6 +56,8 @@ public class ReportImageDiskCache {
     private static final long SWEEP_INTERVAL_MILLIS = 86_400_000L;
 
     private final Path directory;
+
+    private volatile boolean running;
 
     /**
      * 按直播数据文件的位置决定缓存目录
@@ -186,11 +189,37 @@ public class ReportImageDiskCache {
     }
 
     /**
-     * 删掉超过 {@link #RETENTION} 没再被读到的缓存文件，以及同样放久了的半成品
+     * 删掉超过 {@link #RETENTION} 没再被读到的缓存文件，以及同样放久了的半成品。
+     * 挂在过门之后：等锁的那段时间里不删这份缓存。
      */
-    @PostConstruct
     public void sweepOnStartup() {
         sweep();
+    }
+
+    @Override
+    public void start() {
+        sweepOnStartup();
+        running = true;
+    }
+
+    @Override
+    public void stop() {
+        running = false;
+    }
+
+    @Override
+    public boolean isRunning() {
+        return running;
+    }
+
+    @Override
+    public int getPhase() {
+        return StandbyPhases.AFTER_GATE;
+    }
+
+    @Override
+    public boolean isAutoStartup() {
+        return true;
     }
 
     /**

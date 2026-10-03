@@ -19,6 +19,7 @@ import org.springframework.context.annotation.AnnotationConfigUtils;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
+import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -27,16 +28,19 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 /**
  * 事件输出的房间统计定时任务，最后落在哪一台调度器上
  *
  * <h2>这一格补的是什么洞</h2>
- * 哔哩哔哩这一侧有九处按名字要 {@code bilibiliTaskScheduler}，其中八处把它存成字段，
- * 真起一次照字段逐个读就能核对。<b>{@link NovaEventBroadcaster} 是第九处，
- * 它在构造器里就地用掉、不留字段</b>——扫字段的测量器在它这里读不到任何东西，
- * 而「读不到」与「读到的是对的」在报表上长得一模一样。所以这一处一直是没被量过，
- * 不是查过了。
+ * 哔哩哔哩这一侧有九处按名字要 {@code bilibiliTaskScheduler}，其中房间统计这一处
+ * 要等组件启动才排上任务——构造完还没有定时任务，扫字段也读不出「它在跑」。
+ * 所以这一格等任务真的推出一条房间统计，再看线程名。
  *
  * <h2>为什么这台挑错了要紧</h2>
  * 独立调度器的用处是隔离：直播间心跳、重连、动态轮询都在哔哩哔哩这台上跑，
@@ -135,6 +139,19 @@ class NovaEventBroadcasterSchedulerTargetTest {
                 "容器里不再是两台候选，上一格挑不挑得对就没有读数了");
         assertFalse(bilibiliScheduler.getThreadNamePrefix().equals(defaultScheduler.getThreadNamePrefix()),
                 "两台的线程名前缀一样，按前缀断言的那一格从此恒真");
+    }
+
+    @Test
+    @DisplayName("构造时不排房间统计，启动后才排到传入的那台调度器")
+    void roomStatsNotScheduledUntilStarted() {
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        EventStreamProperties properties = new EventStreamProperties();
+        properties.setEnabled(true);
+        NovaEventBroadcaster broadcaster =
+                new NovaEventBroadcaster(properties, new NovaEventStream(8), scheduler);
+        verify(scheduler, never()).scheduleAtFixedRate(any(Runnable.class), any(Duration.class));
+        broadcaster.start();
+        verify(scheduler).scheduleAtFixedRate(any(Runnable.class), eq(Duration.ofSeconds(5)));
     }
 
     /**
