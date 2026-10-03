@@ -319,4 +319,73 @@ class BilibiliBackupLivePushServiceTest {
         assertEquals(Optional.of(false), liveDataService.getLiveStatus(BilibiliPlatform.BILIBILI.id(), UID),
                 "账上应改成不在播");
     }
+
+    @Test
+    @DisplayName("运行中加回·账上在播实际已下播: 不发过时的下播通知, 当场按未闭合补档并改账")
+    void shouldArchiveWithoutPushWhenReaddedWhileRunning() {
+        // 上一进程里在播时被移出配置, 账上一直记着在播; 本进程首轮数据源里没有他, 第二轮才加回,
+        // 那时他早已下播——照「停机空当」给他发下播, 就是一条过时的通知外加一张报告图
+        long lastSave = System.currentTimeMillis() - 60_000L;
+        when(liveDataService.getLastSaveTime()).thenReturn(Optional.of(lastSave));
+        statusStore.put(UID, true);
+        startTimeStore.put(UID, 111111111000L);
+
+        runRound(List.of(), Map.of());
+        long before = System.currentTimeMillis();
+        runRound(List.of(streamer()), Map.of(UID, offlineRoom()));
+        long after = System.currentTimeMillis();
+
+        verifyNoInteractions(publisher);
+        verify(sessionRecovery, times(1)).archiveUnclosedIfAny(
+                eq(BilibiliPlatform.BILIBILI.id()),
+                argThat(source -> source != null && source.getUid() != null && source.getUid() == UID),
+                longThat(t -> t >= before && t <= after));
+        assertEquals(Optional.of(false), liveDataService.getLiveStatus(BilibiliPlatform.BILIBILI.id(), UID),
+                "账上应改成不在播, 否则控制台一直挂着在播、下次开播还会再补一遍");
+    }
+
+    @Test
+    @DisplayName("起来时就配着·首轮接口没回他: 第二轮照短停发下播, 时刻取上次落盘")
+    void shouldPushLiveOffWhenFirstRoundQueryMissedStartupStreamer() {
+        // 首轮数据源里有他、接口那一轮没回这个 uid——他是起来时就配着的, 不得按运行中加回丢掉
+        // 「刚下播」的通知与报告图; 也不能拿 initialized 判: 首轮跑完它就真了
+        long lastSave = System.currentTimeMillis() - 60_000L;
+        when(liveDataService.getLastSaveTime()).thenReturn(Optional.of(lastSave));
+        statusStore.put(UID, true);
+        startTimeStore.put(UID, 111111111000L);
+
+        runRound(List.of(streamer()), Map.of());
+        runRound(List.of(streamer()), Map.of(UID, offlineRoom()));
+
+        ArgumentCaptor<BilibiliLiveOffEvent> captor = ArgumentCaptor.forClass(BilibiliLiveOffEvent.class);
+        verify(publisher, times(1)).publishEvent(captor.capture());
+        verify(publisher, never()).publishEvent(any(BilibiliLiveOnEvent.class));
+        assertEquals(lastSave, captor.getValue().getTimestamp(),
+                "下播时刻应取上次落盘时刻, 实为 " + captor.getValue().getTimestamp());
+        verifyNoInteractions(sessionRecovery);
+    }
+
+    @Test
+    @DisplayName("起来时就配着·房间号晚到: 第二轮照短停发下播, 时刻取上次落盘, 不补档")
+    void shouldPushLiveOffWhenRoomIdArrivesLate() {
+        // 资料缓存缺了这位、后台补全又没赶上首轮: 第一轮数据源里有他但房间号还空着,
+        // 第二轮房间号才到。他是起来时就配着的——名单只按 uid 记才不会把他当成运行中
+        // 加回, 停得短那半的「刚下播」通知与报告图才不会丢
+        long lastSave = System.currentTimeMillis() - 60_000L;
+        when(liveDataService.getLastSaveTime()).thenReturn(Optional.of(lastSave));
+        statusStore.put(UID, true);
+        startTimeStore.put(UID, 111111111000L);
+
+        PushUser roomIdPending = streamer();
+        roomIdPending.setRoomId(null);
+        runRound(List.of(roomIdPending), Map.of());
+        runRound(List.of(streamer()), Map.of(UID, offlineRoom()));
+
+        ArgumentCaptor<BilibiliLiveOffEvent> captor = ArgumentCaptor.forClass(BilibiliLiveOffEvent.class);
+        verify(publisher, times(1)).publishEvent(captor.capture());
+        verify(publisher, never()).publishEvent(any(BilibiliLiveOnEvent.class));
+        assertEquals(lastSave, captor.getValue().getTimestamp(),
+                "下播时刻应取上次落盘时刻, 实为 " + captor.getValue().getTimestamp());
+        verifyNoInteractions(sessionRecovery);
+    }
 }
