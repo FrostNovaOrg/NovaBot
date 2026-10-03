@@ -16,8 +16,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 /**
- * 5.4 起日志文件名改用 novabot- 前缀、安装脚本恒装 novabot.service：
- * 双名期「沿用 starbot.service」分支删除，检测到旧 unit 时停用并换装。
+ * 5.4 起日志文件名改用 novabot- 前缀。安装脚本装的是模板单元 novabot@.service，
+ * 实例名是版本号；检测到旧的 starbot 单元时仍停用并换掉。
  * 原 starbot-*.log 旧文件不再自动清理，可手动删除（CHANGELOG 有说明）。
  */
 @DisplayName("日志名与服务名已去旧名")
@@ -91,7 +91,7 @@ class LegacyLogNameAndServiceUnitRemovedTest {
             if (files.size() < 3) {
                 fail("列到的件 " + files.size() + "，应 ≥ 3");
             }
-            for (String required : List.of("application.example.yml", "Caddyfile", "novabot.service")) {
+            for (String required : List.of("application.example.yml", "Caddyfile", "novabot@.service")) {
                 boolean found = false;
                 for (Path file : files) {
                     if (file.getFileName().toString().equals(required)) {

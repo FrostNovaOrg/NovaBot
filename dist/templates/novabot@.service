@@ -1,14 +1,18 @@
-# NovaBot systemd 单元文件
+# NovaBot systemd 模板单元
 #
-# 新安装与升级均装本单元。检测到旧单元则停用并换装为本单元。
+# 实例名是版本号，例如 novabot@5.7.9。%i 就是这个版本号。
+# 工作目录是安装目录：配置、数据和锁都在这里。
+# 程序在安装目录的 releases/%i/ 里，每个版本用自己那份启动脚本。
 #
-# 安装：
-#   sudo useradd --system --home-dir /opt/starbot --shell /usr/sbin/nologin starbot
-#   sudo cp -r dist/build /opt/starbot && sudo chown -R starbot:starbot /opt/starbot
-#   sudo cp dist/templates/novabot.service /etc/systemd/system/
-#   sudo systemctl daemon-reload && sudo systemctl enable --now novabot
+# 安装脚本会把本文件装到 /etc/systemd/system/novabot@.service，
+# 并 enable novabot@<版本>。脚本不启动，也不停止正在跑的实例。
 #
-# 首次启动需要扫码登录，先用 journalctl -u novabot -f 查看二维码。
+# 手工安装时把本文件拷到 /etc/systemd/system/，改掉下面的 /opt/starbot 后：
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable novabot@<版本>
+#   sudo systemctl start novabot@<版本>
+#
+# 首次启动需要扫码登录，先用 journalctl -u novabot@<版本> -f 查看二维码。
 
 [Unit]
 Description=NovaBot - 哔哩哔哩直播与动态推送机器人
@@ -21,7 +25,7 @@ Type=simple
 User=starbot
 Group=starbot
 WorkingDirectory=/opt/starbot
-ExecStart=/opt/starbot/start.sh
+ExecStart=/opt/starbot/releases/%i/start.sh
 Restart=on-failure
 RestartSec=10s
 

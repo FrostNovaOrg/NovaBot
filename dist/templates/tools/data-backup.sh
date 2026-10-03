@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # 把直播数据目录同步到另一处。目标可以是本机目录，或 user@host:/path。
 # 用法：data-backup.sh <数据目录> <目标>
-# 只增不删：目标上已有的文件不会被去掉。不传输 reports/ 与 *.tmp。
+# 只增不删：目标上已有的文件不会被去掉。不传输 reports/、releases/ 与 *.tmp。
+# releases/ 里是各版本的程序，不是直播数据。
 set -euo pipefail
 
 if [ "$#" -ne 2 ]; then
@@ -17,7 +18,7 @@ if [ ! -d "$src" ] || { [ ! -f "$src/sessions.jsonl" ] && [ ! -d "$src/details" 
     exit 2
 fi
 
-args=(-a --partial --human-readable --stats --exclude=reports --exclude='*.tmp')
+args=(-a --partial --human-readable --stats --exclude=reports --exclude=releases --exclude='*.tmp')
 case "$dst" in
     *:*) args+=(-e "ssh -o BatchMode=yes -o ConnectTimeout=15") ;;
 esac
