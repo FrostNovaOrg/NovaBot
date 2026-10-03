@@ -665,6 +665,52 @@ class SwitchVersionToolTest {
         assertFalse(calledPrefix(world, "stop "), "v 不应 stop，实际：" + calls(world));
     }
 
+    @Test
+    @DisplayName("w 旧服务 starbot 在跑")
+    void earlierUnitStarbotInLastLine(@TempDir Path dir) throws Exception {
+        // 故障：更早的 starbot 服务还在跑，最后一行不写它，使用者以为端口空着。
+        World world = lay(dir, true, true, true, "ordinary", "starbot");
+        Run run = run(world);
+        String last = lastLine(run.stdout);
+
+        assertNotEquals(0, run.code, "w 应退非 0，实际输出：" + run.stdout);
+        assertEquals("机器上跑的是旧服务 starbot。", last,
+                "w 最后一行应写出旧服务 starbot，实际：" + last);
+        assertFalse(calledPrefix(world, "start "), "w 不应 start，实际：" + calls(world));
+        assertFalse(calledPrefix(world, "stop "), "w 不应 stop，实际：" + calls(world));
+    }
+
+    @Test
+    @DisplayName("x 首项是旧版时「是」后不留空格")
+    void oldVersionFirstHasNoSpace(@TempDir Path dir) throws Exception {
+        // 故障：最后一行写成「机器上跑的是 旧版 …」，是字后面多一个空格。
+        World world = lay(dir, true, true, true, "hot-ok", OLD);
+        Path real = dir.resolve("real-state");
+        Files.createDirectories(real);
+        Files.writeString(real.resolve("secret"), "keep", StandardCharsets.UTF_8);
+        Files.createSymbolicLink(world.stateDir, real);
+        Run run = run(world);
+        String last = lastLine(run.stdout);
+
+        assertNotEquals(0, run.code, "x 应退非 0，实际输出：" + run.stdout);
+        assertEquals("机器上跑的是旧版 " + OLD + "。", last,
+                "x 最后一行「是」后应紧跟旧版，实际：" + last);
+    }
+
+    @Test
+    @DisplayName("y 开机自启一个都没有")
+    void noVersionEnabledForBoot(@TempDir Path dir) throws Exception {
+        // 故障：开机自启一个都没有时，最后一行写成「开机自启在 没有」，读不成一句。
+        World world = lay(dir, true, true, true, "hot-ok", OLD);
+        world.fail = "enable";
+        Run run = run(world);
+        String last = lastLine(run.stdout);
+
+        assertNotEquals(0, run.code, "y 应退非 0，实际输出：" + run.stdout);
+        assertEquals("机器上跑的是 " + NEW + "，没有版本设了开机自启。", last,
+                "y 最后一行应说没有版本设了开机自启，实际：" + last);
+    }
+
     private static World lay(Path dir, boolean handover, boolean memoryEnough, boolean lockHeld,
                              String scene, String active) throws Exception {
         return lay(dir, handover, memoryEnough, lockHeld, scene, active, NEW);

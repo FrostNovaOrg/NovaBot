@@ -364,11 +364,16 @@ EOF
 
 say_running() {
     local boot="$1"
+    local lead
     collect_running_labels
+    lead=" "
+    case "$NORMAL_LIST" in
+        旧*) lead="" ;;
+    esac
     if [ -n "$NORMAL_LIST" ] && [ -n "$RESTART_LIST" ]; then
-        say "机器上跑的是 ${NORMAL_LIST}${boot}；${RESTART_LIST} 正在反复重启。"
+        say "机器上跑的是${lead}${NORMAL_LIST}${boot}；${RESTART_LIST} 正在反复重启。"
     elif [ -n "$NORMAL_LIST" ]; then
-        say "机器上跑的是 ${NORMAL_LIST}${boot}。"
+        say "机器上跑的是${lead}${NORMAL_LIST}${boot}。"
     elif [ -n "$RESTART_LIST" ]; then
         say "机器上没有版本在正常跑${boot}；${RESTART_LIST} 正在反复重启。"
     else
@@ -548,9 +553,10 @@ report_running_and_boot() {
         fi
     fi
     if [ -z "$boot" ]; then
-        boot="没有"
+        say_running "，没有版本设了开机自启"
+    else
+        say_running "，开机自启在 ${boot}"
     fi
-    say_running "，开机自启在 ${boot}"
 }
 
 switch_autostart() {
