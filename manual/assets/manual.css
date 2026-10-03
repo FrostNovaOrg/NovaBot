@@ -361,6 +361,17 @@ article h2 {
 
 article h3 { font-size: 1.08em; margin: 1.35em 0 0.4em; }
 
+/* 跳到锚点时标题整行落在吸顶顶栏下面。
+   顶栏 height 就是 var(--top)，按 border-box，底边算在这截里（浅色 60px、深色 52px）。
+   窄屏还要加上目录条，见下方媒体查询。 */
+article h2[id],
+article h3[id],
+article h4[id],
+article h5[id],
+article h6[id] {
+  scroll-margin-top: var(--top);
+}
+
 article a { color: var(--accent); font-weight: 700; }
 article a:hover { color: var(--accent-2); }
 
@@ -768,6 +779,15 @@ html[data-theme="dark"] .ci-wrap {
   .hero { padding: 22px 18px; border-radius: 22px; }
   html[data-theme="dark"] .hero { border-radius: var(--r-hero); }
   .cards { grid-template-columns: 1fr; }
+  /* 目录条与顶栏叠着吸顶。条高 = summary 上 10px + 下 10px
+     + 正文 16px × 行高 1.75 + 这条的底边 1px。 */
+  article h2[id],
+  article h3[id],
+  article h4[id],
+  article h5[id],
+  article h6[id] {
+    scroll-margin-top: calc(var(--top) + 10px + 16px * 1.75 + 10px + 1px);
+  }
 }
 
 @media (max-width: 520px) {
