@@ -14,13 +14,16 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.TaskScheduler;
 
+import java.lang.reflect.Field;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -179,6 +182,36 @@ class BilibiliLiveRoomServiceTest {
     }
 
     /**
+     * 抓的故障：热重载新加的房也被当成启动那一波。
+     * 那位主播第一次连上会被记成从重启到现在的重启缺口。
+     * <p>
+     * 算不算，看建连时交给连接器的那个标志。第一次同步排进闸门的房间号记在表里，
+     * 建连时摘下来传给构造器；热重载再进来的不进这张表。
+     * 建连任务跑完后，从管理表里读连接器收下的那个值。
+     */
+    @Test
+    @DisplayName("⚠️ 第一次同步排进闸门的房算启动那一波，热重载新加的房不算")
+    void hotReloadAddedRoomIsNotStartupWave() throws Exception {
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        BilibiliLiveRoomService service = service(scheduler);
+
+        AbstractDataSource first = mock(AbstractDataSource.class);
+        when(first.getUsers(anyString())).thenReturn(users(1, 1));
+        service.sync(first);
+        runQueued(scheduler);
+
+        AbstractDataSource later = mock(AbstractDataSource.class);
+        when(later.getUsers(anyString())).thenReturn(users(1, 2));
+        service.sync(later);
+        runQueued(scheduler);
+
+        assertTrue(startupWaveOf(service, 1001L),
+                "第一次同步排进闸门的房，建出来的连接器应算启动那一波");
+        assertFalse(startupWaveOf(service, 1002L),
+                "热重载新加的房不算启动那一波，否则第一次连上会被记成从重启到现在的重启缺口");
+    }
+
+    /**
      * 取出排进闸门等待放行的建连任务
      * <p>
      * 调度器是桩，任务不会自己跑，因此先收下来再由用例决定何时执行。
@@ -313,6 +346,25 @@ class BilibiliLiveRoomServiceTest {
     private void runQueued(TaskScheduler scheduler) {
         List<Runnable> queued = new ArrayList<>(queuedConnects(scheduler));
         queued.forEach(Runnable::run);
+    }
+
+    /**
+     * 读连接器在构造时收下的启动那一波标志
+     * @param service 被测服务
+     * @param roomId 直播间号
+     * @return 该房的连接器是否算启动那一波
+     */
+    @SuppressWarnings("unchecked")
+    private static boolean startupWaveOf(BilibiliLiveRoomService service, long roomId) throws Exception {
+        Field connectorsField = BilibiliLiveRoomService.class.getDeclaredField("connectors");
+        connectorsField.setAccessible(true);
+        Map<Long, BilibiliLiveRoomConnector> connectors =
+                (Map<Long, BilibiliLiveRoomConnector>) connectorsField.get(service);
+        BilibiliLiveRoomConnector connector = connectors.get(roomId);
+        assertNotNull(connector, "房间 " + roomId + " 应已建出连接器");
+        Field wave = BilibiliLiveRoomConnector.class.getDeclaredField("startupWave");
+        wave.setAccessible(true);
+        return wave.getBoolean(connector);
     }
 
     /**

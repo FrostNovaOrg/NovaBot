@@ -723,6 +723,40 @@ class BilibiliLiveRoomConnectorTest {
 
             assertFiveArgNeverRecorded(data);
         }
+
+        /**
+         * 抓的故障：每次认证成功都补尾巴。
+         * 断线重连再认证成功时会再记一段从停机终点起的重启缺口，
+         * 主播会以为从重启到现在都没收到数据。
+         */
+        @Test
+        @DisplayName("⚠️ 补过一次尾巴后，断线重连再认证成功不再补从停机终点起的重启缺口")
+        void reconnectAfterFirstAuthDoesNotRecordAnotherStartupTail() {
+            BilibiliConnectorHarness harness = new BilibiliConnectorHarness(null, true);
+            LiveDataService data = harness.getLiveDataService();
+            stubRestartDowntime(data);
+
+            harness.connect();
+            harness.fireVerifySuccess();
+
+            harness.fireConnectionClosed(1006);
+            harness.runQueuedReconnects();
+            harness.fireVerifySuccess();
+
+            assertEquals(2, harness.handshakes(), "断线之后应真的重连一次，再认证才算第二次");
+
+            verify(data, times(1)).recordRoomOutage(
+                    eq(BilibiliPlatform.BILIBILI.id()),
+                    eq(STREAMER_UID),
+                    anyLong(),
+                    anyLong(),
+                    any(LiveGap.Reason.class));
+            verify(data, times(1)).recordRoomOutage(
+                    eq(BilibiliPlatform.BILIBILI.id()),
+                    eq(STREAMER_UID),
+                    anyLong(),
+                    anyLong());
+        }
     }
 
     @Nested
