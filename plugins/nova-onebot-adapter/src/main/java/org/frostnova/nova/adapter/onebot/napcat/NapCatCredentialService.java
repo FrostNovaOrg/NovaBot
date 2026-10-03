@@ -427,6 +427,14 @@ public class NapCatCredentialService implements SmartLifecycle {
      * 把哈希写回、清空明文。写不进去也继续跑：登录哈希已经在内存里，连 NapCat 不受影响，
      * 只是文件里还留着明文。
      * <p>
+     * 写回挂在过门之后，中间隔着整个候命期：那会儿旧版还在跑，使用者若在旧版的设置页
+     * 换了 token，文件里已是新值——照写会把新 token 盖回起动时那份明文的哈希，
+     * 过门核配置记下的「待重启」落空，重启后新 token 不认。所以写之前先核一眼
+     * 文件里还是不是起动时那份明文，不是就不写，留给下次启动读到新值再换。
+     * 核对按起动时同样的规整（去首尾空白）比——手写的值常带着引号和首尾空白，
+     * 逐字比永远对不上，明文就一直留在文件里。按标准写法在文件里找不到这一项时
+     * 也不写回，记一句 warn：这种写法下明文换不成哈希，得让使用者看出来。
+     * <p>
      * 两项一起写：只写哈希不清明文，等于配置里同时躺着两份等价凭据。
      * 这次写回不留备份：旧值正是刚换掉的明文，备份会把它又抄一份放进同一个目录。
      */
@@ -437,6 +445,16 @@ public class NapCatCredentialService implements SmartLifecycle {
         }
 
         try {
+            String current = fileService.read().get(TOKEN_PROPERTY);
+            if (current == null) {
+                log.warn("NapCat 的 token 在文件里按标准写法找不到这一项（候命期间删了，或用了别的写法），"
+                        + "这次没换成哈希，明文若还在请改成标准写法");
+                return;
+            }
+            if (!plain.equals(blankToNull(current))) {
+                log.info("NapCat 的 token 在候命期间被改过, 本次不写回哈希, 文件里保持现在的值");
+                return;
+            }
             Map<String, String> changes = new LinkedHashMap<>();
             changes.put(TOKEN_HASH_PROPERTY, hashed);
             changes.put(TOKEN_PROPERTY, "");

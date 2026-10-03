@@ -85,6 +85,8 @@ class NapCatCredentialServiceTest {
         @DisplayName("配置里填了明文就换算并写回，明文一起清空")
         void plainTokenIsHashedAndCleared() throws Exception {
             ConfigurationFileService files = mock(ConfigurationFileService.class);
+            // 写回前要核文件里仍是起动时那份明文：mock 默认给的空表会被当成候命期间改过
+            when(files.read()).thenReturn(Map.of(NapCatCredentialService.TOKEN_PROPERTY, "test"));
             Map<String, String> written = new HashMap<>();
             doAnswer(call -> {
                 written.putAll(call.getArgument(0));
@@ -106,6 +108,8 @@ class NapCatCredentialServiceTest {
         void writeBackLandsOnNewKeysAndClearsLegacyPlaintext() throws Exception {
             List<String> red = new ArrayList<>();
             ConfigurationFileService files = mock(ConfigurationFileService.class);
+            // 写回前要核文件里仍是起动时那份明文：mock 默认给的空表会被当成候命期间改过
+            when(files.read()).thenReturn(Map.of(NapCatCredentialService.TOKEN_PROPERTY, "test"));
             Map<String, String> written = new HashMap<>();
             doAnswer(call -> {
                 written.putAll(call.getArgument(0));
