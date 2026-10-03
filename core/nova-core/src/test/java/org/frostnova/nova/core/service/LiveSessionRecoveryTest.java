@@ -199,6 +199,35 @@ class LiveSessionRecoveryTest {
         }
 
         @Test
+        @DisplayName("本进程这次启动记的那段停机问得回来，盘上的旧段不算")
+        void startupDowntimeIsOnlyTheSegmentThisProcessRecorded() {
+            long base = System.currentTimeMillis() - 3_600_000;
+            DefaultLiveDataService previous = boot();
+            previous.recordDowntime(base, base + 10_000, LiveGap.Reason.MAINTENANCE);
+            previous.saveNow(false);
+
+            DefaultLiveDataService loaded = boot();
+            assertTrue(loaded.startupDowntime().isEmpty(), "从盘上读回来的旧停机不是本进程记的");
+
+            long watermark = watermark();
+            awaitClockPast(watermark);
+            DefaultLiveDataService after = boot();
+            new LiveSessionRecovery(after, archive).onApplicationReadyEvent();
+
+            LiveGap segment = after.startupDowntime().orElseThrow();
+            assertEquals(watermark, segment.from(), "起点是上次落盘时刻");
+            assertTrue(segment.to() > watermark, "终点是这次进程就绪的时刻");
+            assertEquals(LiveGap.Reason.RESTART, segment.reason(), "上次不是正常退出，成因是重启");
+
+            long laterFrom = segment.to() + 5_000;
+            after.recordDowntime(laterFrom, laterFrom + 1_000, LiveGap.Reason.MAINTENANCE);
+            assertEquals(segment, after.startupDowntime().orElseThrow(), "后来再记的停机不盖掉启动这一段");
+
+            assertEquals(segment, new CompositeLiveDataService(after, null).startupDowntime().orElseThrow(),
+                    "组合实现要把这一问交回本场那一份");
+        }
+
+        @Test
         @DisplayName("只算与场次重叠的部分，开播之前那一截不算")
         void countsOverlapOnly() {
             // 时刻必须取真实的近期时间：停机记录有保留期，1970 年的区间会被当成过期直接裁掉

@@ -198,7 +198,8 @@ class NovaDefaultLiveOffEventListenerTest {
         when(liveDataService.getLiveStartTime(PLATFORM, UID)).thenReturn(Optional.of(START));
         when(interventionTracker.endReason(eq(PLATFORM), eq(UID), any(Instant.class))).thenReturn(LiveEndReason.NORMAL);
         when(liveDataService.downtimeWithin(START, END)).thenReturn(30_000L);
-        when(liveDataService.roomOutageWithin(PLATFORM, UID, START, END)).thenReturn(45_000L);
+        when(liveDataService.roomOutageIntervals(PLATFORM, UID, START, END)).thenReturn(List.of(
+                new LiveGap(START, START + 45_000, LiveGap.Reason.STREAM_LOSS)));
 
         List<String> warns = captureWarns(() -> listener.onLiveOffEvent(liveOffAt(END)));
 
@@ -212,6 +213,32 @@ class NovaDefaultLiveOffEventListenerTest {
                 "停机那句带着秒数，实际: " + warns);
         assertTrue(warns.stream().anyMatch(w -> w.contains("因直播间断线未采集") && w.contains("45")),
                 "断线那句带着秒数，实际: " + warns);
+    }
+
+    /**
+     * 按房补上的重启尾巴算进停机秒，断流仍算断线秒
+     * <p>
+     * 全局停机 12 秒、本房尾巴 8 秒（重启）、断流 5 秒。
+     * 尾巴若落进断线秒，一次重启就会被说成「这个直播间断线」。
+     */
+    @Test
+    @DisplayName("⚠️ 停机秒含按房重启尾巴，断线秒只数断流")
+    void processTailCountsAsDowntimeAndStreamLossStaysDisconnect() {
+        when(liveDataService.getLiveStartTime(PLATFORM, UID)).thenReturn(Optional.of(START));
+        when(interventionTracker.endReason(eq(PLATFORM), eq(UID), any(Instant.class))).thenReturn(LiveEndReason.NORMAL);
+        when(liveDataService.downtimeWithin(START, END)).thenReturn(12_000L);
+        when(liveDataService.roomOutageIntervals(PLATFORM, UID, START, END)).thenReturn(List.of(
+                new LiveGap(START + 12_000, START + 20_000, LiveGap.Reason.RESTART),
+                new LiveGap(START + 30_000, START + 35_000, LiveGap.Reason.STREAM_LOSS)));
+
+        listener.onLiveOffEvent(liveOffAt(END));
+
+        ArgumentCaptor<LiveSession> sessions = ArgumentCaptor.forClass(LiveSession.class);
+        verify(archive).append(sessions.capture());
+        assertEquals(20, sessions.getValue().maintenanceGapSeconds(),
+                "全局停机 12 秒 + 本房重启尾巴 8 秒");
+        assertEquals(5, sessions.getValue().roomOutageSeconds(),
+                "断线秒只数断流，重启尾巴不进这一栏");
     }
 
     /**

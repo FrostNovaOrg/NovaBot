@@ -41,6 +41,7 @@ import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
@@ -135,7 +136,7 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
     private final BilibiliDisconnectDigest disconnectDigest;
 
     /**
-     * 记录单房断线缺口用。只写不读——读在下播归档那一刻
+     * 记录单房断线缺口，并在启动那一波首次认证成功时读本次停机段。
      */
     private final LiveDataService liveDataService;
 
@@ -143,6 +144,12 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
      * 停机开始后置为 false。建连回来时看见它，就关掉新建的会话，不再往下收。
      */
     private final AtomicBoolean acceptingConnectors;
+
+    /**
+     * 本进程第一次同步直播间时排进闸门的那一批。
+     * 热重载之后新加的房间为 false，首次认证成功时不补停机尾巴。
+     */
+    private final boolean startupWave;
 
     /**
      * 建连与关掉套接字共用这把锁。停机只在截止时刻之内等它让出，等不到就先去存盘。
@@ -161,6 +168,12 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
      * 本段断线的起点。非空表示「正在断」，认证成功时清空并记一段采集缺口
      */
     private volatile Instant disconnectedAt;
+
+    /**
+     * 这条连接器是否认证成功过。断线之后 {@link #authenticatedAt} 会清空，
+     * 不能靠它分辨「是不是头一次」。
+     */
+    private boolean authenticatedOnce;
 
     /**
      * 当前连接状态
@@ -381,6 +394,27 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
                                      @NonNull BilibiliDisconnectDigest disconnectDigest,
                                      @NonNull LiveDataService liveDataService,
                                      @NonNull AtomicBoolean acceptingConnectors) {
+        this(source, api, parser, properties, publisher, scheduler, client, stateGate, connectGate,
+                riskMetrics, disconnectDigest, liveDataService, acceptingConnectors, false);
+    }
+
+    /**
+     * @param startupWave 本进程第一次同步时排进闸门的那一批为 true；热重载新加的为 false
+     */
+    public BilibiliLiveRoomConnector(@NonNull LiveStreamerInfo source,
+                                     @NonNull BilibiliApiUtil api,
+                                     @NonNull BilibiliEventParser parser,
+                                     @NonNull NovaBilibiliProperties properties,
+                                     @NonNull ApplicationEventPublisher publisher,
+                                     @NonNull TaskScheduler scheduler,
+                                     @NonNull WebSocketClient client,
+                                     @NonNull BilibiliLiveStateGate stateGate,
+                                     @NonNull BilibiliConnectGate connectGate,
+                                     @NonNull BilibiliRiskMetrics riskMetrics,
+                                     @NonNull BilibiliDisconnectDigest disconnectDigest,
+                                     @NonNull LiveDataService liveDataService,
+                                     @NonNull AtomicBoolean acceptingConnectors,
+                                     boolean startupWave) {
         this.source = source;
         this.api = api;
         this.parser = parser;
@@ -394,6 +428,7 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
         this.disconnectDigest = disconnectDigest;
         this.liveDataService = liveDataService;
         this.acceptingConnectors = acceptingConnectors;
+        this.startupWave = startupWave;
         this.riskWindows = properties.getLive().getAutoDetectLiveRoomRiskWindows();
         this.riskDetector = new BilibiliLiveRoomRiskDetector(riskWindows);
     }
@@ -777,13 +812,43 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
     }
 
     /**
+     * 启动那一波的房间，头一次认证成功时，把「进程就绪到真开始收数据」补成一段按房缺口。
+     * <p>
+     * 区间是 {@code [停机段终点, 认证成功)}，成因跟这次停机走（维护、重启或原因未定），
+     * 不落成断流。运行中新加的房间、这次启动没记过停机的，都不补。
+     * 首连重试很久才认证成功的，仍按停机成因整段记，不再拆开。
+     */
+    private void recordStartupTail(Instant authenticatedAt) {
+        if (!startupWave) {
+            return;
+        }
+        Optional<LiveGap> downtime = liveDataService.startupDowntime();
+        if (downtime.isEmpty()) {
+            return;
+        }
+        long from = downtime.get().to();
+        long to = authenticatedAt.toEpochMilli();
+        if (to <= from) {
+            return;
+        }
+        liveDataService.recordRoomOutage(BilibiliPlatform.BILIBILI.id(), source.getUid(),
+                from, to, downtime.get().reason());
+    }
+
+    /**
      * 处理单个数据包
      * @param packet 数据包
      */
     private void handlePacket(BilibiliPacket packet) {
         if (packet.getOperation() == DataPackType.VERIFY_SUCCESS_RESPONSE.getCode()) {
             log.debug("直播间 {} 认证成功", source.getRoomId());
-            authenticatedAt = Instant.now();
+            Instant now = Instant.now();
+            boolean firstSuccess = !authenticatedOnce;
+            authenticatedOnce = true;
+            authenticatedAt = now;
+            if (firstSuccess) {
+                recordStartupTail(now);
+            }
             closeOutageGap();
             return;
         }

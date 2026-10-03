@@ -7,19 +7,24 @@ import org.frostnova.nova.bilibili.enums.ConnectStatus;
 import org.frostnova.nova.bilibili.health.BilibiliDisconnectCause;
 import org.frostnova.nova.bilibili.health.BilibiliRiskMetrics;
 import org.frostnova.nova.core.model.LiveGap;
+import org.frostnova.nova.core.service.LiveDataService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import static org.frostnova.nova.bilibili.service.BilibiliConnectorHarness.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 /**
@@ -640,6 +645,83 @@ class BilibiliLiveRoomConnectorTest {
                     org.mockito.ArgumentMatchers.anyLong(),
                     org.mockito.ArgumentMatchers.anyLong(),
                     org.mockito.ArgumentMatchers.anyLong());
+        }
+    }
+
+    /**
+     * 启动那一波把「进程就绪到首次认证成功」补成按房缺口
+     * <p>
+     * 全局停机只记到进程就绪。在播的房间还要排队建连，认证成功才真开始收数据，
+     * 这段尾巴此前没人记，报告上的缺口比实漏短。
+     * 运行中新加的房间、这次启动没记过停机的，都不补——否则几小时后新加一间
+     * 会被记成几小时的重启缺口。
+     */
+    @Nested
+    @DisplayName("启动那一波补停机尾巴")
+    class StartupTail {
+        private static final long T0 = 1_700_000_012_000L;
+
+        private static void stubRestartDowntime(LiveDataService data) {
+            org.mockito.Mockito.when(data.startupDowntime()).thenReturn(
+                    Optional.of(new LiveGap(T0 - 12_000, T0, LiveGap.Reason.RESTART)));
+        }
+
+        private static void assertFiveArgNeverRecorded(LiveDataService data) {
+            verify(data, never()).recordRoomOutage(
+                    anyString(), any(), anyLong(), anyLong(), any(LiveGap.Reason.class));
+        }
+
+        @Test
+        @DisplayName("⚠️ 启动那一波且本次有停机段：首次认证成功记 [终点, 认证成功)、成因重启")
+        void startupWaveRecordsTailUntilFirstAuth() {
+            BilibiliConnectorHarness harness = new BilibiliConnectorHarness(null, true);
+            LiveDataService data = harness.getLiveDataService();
+            stubRestartDowntime(data);
+
+            long before = System.currentTimeMillis();
+            harness.connect();
+            harness.fireVerifySuccess();
+            long after = System.currentTimeMillis();
+
+            ArgumentCaptor<Long> from = ArgumentCaptor.forClass(Long.class);
+            ArgumentCaptor<Long> to = ArgumentCaptor.forClass(Long.class);
+            ArgumentCaptor<LiveGap.Reason> reason = ArgumentCaptor.forClass(LiveGap.Reason.class);
+            verify(data, times(1)).recordRoomOutage(
+                    eq(BilibiliPlatform.BILIBILI.id()),
+                    eq(STREAMER_UID),
+                    from.capture(),
+                    to.capture(),
+                    reason.capture());
+            assertEquals(T0, from.getValue(), "尾巴从停机段终点起，不从上次落盘起");
+            assertTrue(to.getValue() >= before && to.getValue() <= after,
+                    "尾巴收到首次认证成功这一刻，实际 " + to.getValue());
+            assertEquals(LiveGap.Reason.RESTART, reason.getValue(), "成因跟停机段，不落成断流");
+        }
+
+        @Test
+        @DisplayName("运行中新加的房首次认证成功不补尾巴")
+        void roomAddedWhileRunningDoesNotRecordTail() {
+            BilibiliConnectorHarness harness = new BilibiliConnectorHarness(null, false);
+            LiveDataService data = harness.getLiveDataService();
+            stubRestartDowntime(data);
+
+            harness.connect();
+            harness.fireVerifySuccess();
+
+            assertFiveArgNeverRecorded(data);
+        }
+
+        @Test
+        @DisplayName("启动那一波但本次没有停机段，不补尾巴")
+        void startupWaveWithoutDowntimeDoesNotRecordTail() {
+            BilibiliConnectorHarness harness = new BilibiliConnectorHarness(null, true);
+            LiveDataService data = harness.getLiveDataService();
+            org.mockito.Mockito.when(data.startupDowntime()).thenReturn(Optional.empty());
+
+            harness.connect();
+            harness.fireVerifySuccess();
+
+            assertFiveArgNeverRecorded(data);
         }
     }
 
