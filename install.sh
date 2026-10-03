@@ -114,6 +114,8 @@ flat_novacore_version() {
         release_name_is_version "$ver" || continue
         f="$dir/lib/novacore-${ver}.jar"
         [ -f "$f" ] || continue
+        # 目录里已经有程序，这一版已经在，不是搬到一半。
+        [ -f "$dir/NovaBot.jar" ] && continue
         count=$((count + 1))
         found="$ver"
     done

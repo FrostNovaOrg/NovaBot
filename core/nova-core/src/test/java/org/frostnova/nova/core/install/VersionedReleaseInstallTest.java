@@ -564,6 +564,36 @@ class VersionedReleaseInstallTest {
     }
 
     @Test
+    @DisplayName("已分目录、版本目录里已有程序时，根上读不出版本的包不算搬到一半")
+    void versionedReleaseWithRootJarIsNotHalfMoved(@TempDir Path dir) throws Exception {
+        World world = world(dir, "5.9.0");
+        write(world.install.resolve("releases/5.8.0/NovaBot.jar"), "old-580");
+        write(world.install.resolve("releases/5.8.0/lib/novacore-5.8.0.jar"), "old-core");
+        write(world.install.resolve("releases/5.8.0/start.sh"), "start-580");
+        Files.writeString(world.install.resolve("NovaBot.jar"), "not-a-zip", StandardCharsets.UTF_8);
+        Path filtered = directoryWithoutUnzip(dir);
+        String path = world.bin + ":" + filtered;
+        ProcessBuilder probe = new ProcessBuilder("bash", "-c", "command -v unzip");
+        probe.environment().put("PATH", path);
+        probe.redirectErrorStream(true);
+        Process looked = probe.start();
+        assertTrue(looked.waitFor(10, TimeUnit.SECONDS), "查找 unzip 超时");
+        assertNotEquals(0, looked.exitValue(), "这一格的 PATH 上不该找得到 unzip");
+        Run run = run(world, "", "", Map.of("PATH", path));
+
+        assertNotEquals(0, run.code, "应停下。标准输出:\n" + run.stdout + "\n标准错误:\n" + run.stderr);
+        assertTrue(run.stdout.contains(VERSION_UNKNOWN) || run.stderr.contains(VERSION_UNKNOWN),
+                "应说明取不到旧版本号。标准输出:\n" + run.stdout + "\n标准错误:\n" + run.stderr);
+        assertEquals("start-580", read(world.install.resolve("releases/5.8.0/start.sh")));
+        try (var listed = Files.list(world.install.resolve("releases"))) {
+            List<String> names = listed.map(child -> child.getFileName().toString()).sorted().toList();
+            assertEquals(List.of("5.8.0"), names, "releases 下应仍只有 5.8.0，实际 " + names);
+        }
+        assertTrue(Files.isRegularFile(world.install.resolve("NovaBot.jar")), "根上的 NovaBot.jar 应还在");
+        assertEquals("not-a-zip", read(world.install.resolve("NovaBot.jar")));
+    }
+
+    @Test
     @DisplayName("已经分目录再装：旧服务还在跑时，提示先停旧服务再起新版本")
     void rerunWhileLegacyUnitRunningStopsOldBeforeStart(@TempDir Path dir) throws Exception {
         World world = world(dir, "5.8.0");
