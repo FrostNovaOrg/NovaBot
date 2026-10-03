@@ -57,13 +57,15 @@ case "$INSTALL_DIR" in
     *'&'*) die '--dir 不能包含 & 号（生成文件时替换串里的 & 代表匹配到的原文，目录会指错）' ;;
     *'\'*) die '--dir 不能包含反斜杠（生成文件时替换串里的反斜杠会吞掉后面的字符）' ;;
     *'"'*) die '--dir 不能包含双引号（生成的文件里这一段包在双引号中，引号会提前收尾）' ;;
-    *"'"*) die "--dir 不能包含单引号（生成的文件里这一段落在单引号中，引号会提前收尾）" ;;
+    *"'"*) die '--dir 不能包含单引号（生成的文件里引号会配不上对）' ;;
     *'$'*) die '--dir 不能包含 $ 号（装出的系统命令每次换版都会把它当变量或命令替换）' ;;
     *'`'*) die '--dir 不能包含反引号（装出的系统命令每次换版都会把它当命令替换）' ;;
     *'}'*) die '--dir 不能包含 } 号（生成的文件里这一段落在 ${…} 中，花括号会提前收尾）' ;;
     *'%'*) die '--dir 不能包含 % 号（systemd 单元里 % 是占位符，路径会被换掉）' ;;
     *'
 '*) die '--dir 不能包含换行（生成的文件会被拆成两半）' ;;
+    *' '*) die '--dir 不能包含空格（生成的服务单元会按空白把路径拆开，服务起不来）' ;;
+    *'	'*) die '--dir 不能包含制表符（生成的服务单元会按空白把路径拆开，服务起不来）' ;;
 esac
 case "$PORT" in
     ''|*[!0-9]*) die "--port 需为数字，当前为「${PORT}」" ;;
@@ -690,6 +692,14 @@ SERVICE_UNIT="novabot@${VERSION}"
 SYSTEMD_SYSTEM_DIR="${NOVABOT_SYSTEMD_SYSTEM_DIR:-/etc/systemd/system}"
 SYSTEMD_CONTROL_DIR="${NOVABOT_SYSTEMD_CONTROL_DIR:-/etc/systemd/system.control}"
 
+# 两处核不过时调用。调用前新版已在 releases/，单元模板已写成并重新加载，
+# 旧单元若存在则开机自启已关掉；正在跑的实例和原来的换版工具都还没动。
+switch_tool_not_installed() {
+    die "$*
+     机器现在是这样：新版本已经写在 ${INSTALL_DIR}/releases/${VERSION}；服务单元模板 /etc/systemd/system/novabot@.service 已经换成指向这次安装目录的，并已重新加载。novabot 与 starbot 这两个旧单元若原先存在，开机自启已经关掉（正在跑的单元文件还留着，没在跑的已经删掉）。正在跑的实例没有停，也没有启动新版本。原来的换版工具没有换掉；原先没有的，现在也还没有装上。
+     下一步：修好包里的 tools/switch-version.sh 后再安装一次。在这之前不要用原来那份换版工具去换到 ${VERSION}。"
+}
+
 # 换版工具装成 root 所有的系统命令（缺省 /usr/local/sbin，测试替身用 NOVABOT_SYSTEM_SBIN_DIR 改位置）：
 # 安装目录整个归服务用户，root 不能去跑放在里面的脚本——服务用户改了它，就能借下一次换版拿 root。
 # 装时调的、收尾提示里给的都是这一份，不是 releases 里那份。
@@ -753,11 +763,11 @@ if [ "$CREATE_SERVICE" = "yes" ] && command -v systemctl > /dev/null 2>&1; then
     FOUND_INSTALL_DIR="$($SUDO grep -cFx "$EXPECTED_INSTALL_DIR" "$SWITCH_TMP" || true)"
     if [ "$FOUND_INSTALL_DIR" != "1" ]; then
         $SUDO rm -f "$SWITCH_TMP"
-        die "包里 tools/switch-version.sh 的 INSTALL_DIR 那一行换不成本次安装目录，这一次没有装换版工具"
+        switch_tool_not_installed "包里 tools/switch-version.sh 的 INSTALL_DIR 那一行换不成本次安装目录，这一次没有装换版工具。"
     fi
     if ! $SUDO bash -n "$SWITCH_TMP"; then
         $SUDO rm -f "$SWITCH_TMP"
-        die "装出的换版工具有语法错误，这一次没有装换版工具"
+        switch_tool_not_installed "装出的换版工具有语法错误，这一次没有装换版工具。"
     fi
     $SUDO chown root:root "$SWITCH_TMP"
     $SUDO chmod 0755 "$SWITCH_TMP"
@@ -841,7 +851,7 @@ EOF
 EOF
         cat <<EOF
   这一次会先停旧版本，再起新版本，中间会断一小会儿。
-  现在的发行版还没有单实例锁，新版本起来时不会等旧版本放开，两份会同时连直播间、抢端口。
+  正在跑的旧版本没有单实例锁，新版本起来时不会等旧版本放开，两份会同时连直播间、抢端口。
 
   1. 先停旧版本
 EOF

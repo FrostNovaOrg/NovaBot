@@ -879,7 +879,8 @@ class VersionedReleaseInstallTest {
         // 故障：安装目录里的特殊字符被替换进 root 每次换版都执行的系统命令
         List<String> badChars = List.of("&", "\\", "\"", "'", "$", "`", "}", "%", "\n");
         List<String> badSays = List.of(
-                "不能包含 & 号", "不能包含反斜杠", "不能包含双引号", "不能包含单引号",
+                "不能包含 & 号", "不能包含反斜杠", "不能包含双引号",
+                "不能包含单引号（生成的文件里引号会配不上对）",
                 "不能包含 $ 号", "不能包含反引号", "不能包含 } 号", "不能包含 % 号", "不能包含换行");
         for (int i = 0; i < badChars.size(); i++) {
             String bad = badChars.get(i);
@@ -910,6 +911,8 @@ class VersionedReleaseInstallTest {
         writeKept(world.install, "user-yml", "user-ds", "user-cookie", "user-key", "user-data");
         Path tool = world.sbin.resolve("novabot-switch-version");
         writeExecutable(tool, "#!/bin/sh\necho old-tool\n");
+        Set<PosixFilePermission> keptPerms = ownerGroupExecPerms();
+        Files.setPosixFilePermissions(tool, keptPerms);
         byte[] oldBytes = Files.readAllBytes(tool);
         writeExecutable(world.pkg.resolve("tools/switch-version.sh"),
                 "#!/bin/sh\nINSTALL_DIR=${NOVABOT_INSTALL_DIR:-/opt/starbot}\nexit 0\n");
@@ -919,22 +922,74 @@ class VersionedReleaseInstallTest {
                 "INSTALL_DIR 那一行不对时应退非 0。标准输出:\n" + run.stdout + "\n标准错误:\n" + run.stderr);
         assertArrayEquals(oldBytes, Files.readAllBytes(tool),
                 "原来那份应一字不动: " + tool);
+        assertEquals(keptPerms, Files.getPosixFilePermissions(tool),
+                "原来那份的权限应不变");
+        assertEquals(List.of("novabot-switch-version"), fileNames(world.sbin),
+                "临时件应删净，sbin 实际 " + fileNames(world.sbin));
         assertFalse(Files.exists(world.logs.resolve("switch-version.log")),
                 "不该调换版工具");
+        assertMachineLeftWithoutSwitchTool(run);
     }
 
     @Test
-    @DisplayName("E 支收尾那条起法：路径带引号，安装目录带空格也照抄得动")
-    void noServiceStartPathIsQuotedForInstallDirWithSpaces(@TempDir Path dir) throws Exception {
-        // 故障：照收尾抄的命令在带空格的目录下跑不起来
+    @DisplayName("包里换版工具有语法错误：原来那份与权限不动，临时件删净")
+    void switchToolSyntaxErrorLeavesOldToolAndDeletesTemp(@TempDir Path dir) throws Exception {
+        // 故障：包里的换版工具语法坏了，系统目录里留下半截临时件，或把原来那份换坏、权限改掉
         World world = world(dir, "5.8.0");
-        Path spaced = Files.createDirectories(dir.resolve("nova bot"));
-        writeKept(spaced, "user-yml", "user-ds", "user-cookie", "user-key", "user-data");
-        Run run = runDir(world, spaced, "", "", Map.of(), "--no-service");
+        writeRelease(world.install, "5.7.7", "old-577");
+        writeKept(world.install, "user-yml", "user-ds", "user-cookie", "user-key", "user-data");
+        Path tool = world.sbin.resolve("novabot-switch-version");
+        writeExecutable(tool, "#!/bin/sh\necho old-tool\n");
+        Set<PosixFilePermission> keptPerms = ownerGroupExecPerms();
+        Files.setPosixFilePermissions(tool, keptPerms);
+        byte[] oldBytes = Files.readAllBytes(tool);
+        writeExecutable(world.pkg.resolve("tools/switch-version.sh"), """
+                #!/bin/sh
+                INSTALL_DIR="${NOVABOT_INSTALL_DIR:-/opt/starbot}"
+                if then
+                fi
+                """);
+        Run run = run(world, "5.7.7", "");
 
-        assertEquals(0, run.code, "安装目录带空格应装完。标准错误:\n" + run.stderr + "\n标准输出:\n" + run.stdout);
-        assertTrue(run.stdout.contains("\"" + spaced + "/releases/5.8.0/start.sh\""),
-                "收尾那条起法的路径应带引号，实际:\n" + run.stdout);
+        assertNotEquals(0, run.code,
+                "语法错误时应退非 0。标准输出:\n" + run.stdout + "\n标准错误:\n" + run.stderr);
+        assertTrue(run.stderr.contains("装出的换版工具有语法错误"),
+                "应说明是语法错误。标准错误:\n" + run.stderr);
+        assertArrayEquals(oldBytes, Files.readAllBytes(tool),
+                "原来那份应一字不动: " + tool);
+        assertEquals(keptPerms, Files.getPosixFilePermissions(tool),
+                "原来那份的权限应不变");
+        assertEquals(List.of("novabot-switch-version"), fileNames(world.sbin),
+                "临时件应删净，sbin 实际 " + fileNames(world.sbin));
+        assertFalse(Files.exists(world.logs.resolve("switch-version.log")),
+                "不该调换版工具");
+        assertMachineLeftWithoutSwitchTool(run);
+    }
+
+    @Test
+    @DisplayName("安装目录带空格或制表符：当场拦下，没建目录、没碰机器")
+    void installDirWithWhitespaceStopsEarly(@TempDir Path dir) throws Exception {
+        // 故障：安装目录带空格或制表符时，服务单元按空白把路径拆开，服务起不来，安装却退 0
+        List<String> badChars = List.of(" ", "\t");
+        List<String> badSays = List.of("不能包含空格", "不能包含制表符");
+        for (int i = 0; i < badChars.size(); i++) {
+            String bad = badChars.get(i);
+            String say = badSays.get(i);
+            World world = world(dir.resolve("w" + i), "5.8.0");
+            Path target = dir.resolve("place" + i + bad + "x");
+            Run run = runDir(world, target, "", "");
+
+            assertNotEquals(0, run.code, "带「" + bad + "」时 install 应退非 0。标准输出:\n" + run.stdout);
+            assertTrue(run.stderr.contains(say),
+                    "带「" + bad + "」时标准错误应有那句，实际:\n" + run.stderr);
+            assertFalse(Files.exists(target),
+                    "带「" + bad + "」时不该建安装目录: " + target);
+            String calls = readIfExists(world.logs.resolve("systemctl.log"));
+            assertTrue(calls.isEmpty(),
+                    "带「" + bad + "」时不该碰 systemctl，实际:\n" + calls);
+            assertFalse(Files.exists(world.sbin.resolve("novabot-switch-version")),
+                    "带「" + bad + "」时不该装换版工具");
+        }
     }
 
     @Test
@@ -1090,6 +1145,8 @@ class VersionedReleaseInstallTest {
             int stopAt = run.stdout.indexOf("systemctl stop " + unit);
             assertTrue(stopAt >= 0 && startAt > stopAt, "应先停旧再起新。标准输出:\n" + run.stdout);
             assertTrue(run.stdout.contains("断一小会儿"), run.stdout);
+            assertTrue(run.stdout.contains("正在跑的旧版本没有单实例锁"),
+                    "应说明正在跑的旧版本没有单实例锁。标准输出:\n" + run.stdout);
         } else {
             // 认出了旧单元但没在跑：单元文件已在装的时候删掉，收尾再叫人 stop 它只会报未加载
             assertFalse(run.stdout.contains("systemctl stop " + unit),
@@ -1282,6 +1339,32 @@ class VersionedReleaseInstallTest {
 
     private static String readIfExists(Path file) throws IOException {
         return Files.isRegularFile(file) ? read(file) : "";
+    }
+
+    private static List<String> fileNames(Path dir) throws IOException {
+        try (var listed = Files.list(dir)) {
+            return listed.map(path -> path.getFileName().toString()).sorted().toList();
+        }
+    }
+
+    /** 0750：属主读写执行，同组读和执行。与装成的 0755 差在其他人那几位。 */
+    private static Set<PosixFilePermission> ownerGroupExecPerms() {
+        return Set.of(
+                PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE, PosixFilePermission.OWNER_EXECUTE,
+                PosixFilePermission.GROUP_READ, PosixFilePermission.GROUP_EXECUTE);
+    }
+
+    private static void assertMachineLeftWithoutSwitchTool(Run run) {
+        assertTrue(run.stderr.contains("新版本已经写在"),
+                "应说新版本已经写上。标准错误:\n" + run.stderr);
+        assertTrue(run.stderr.contains("开机自启已经关掉"),
+                "应说旧单元开机自启已经关掉。标准错误:\n" + run.stderr);
+        assertTrue(run.stderr.contains("正在跑的实例没有停"),
+                "应说正在跑的实例没有停。标准错误:\n" + run.stderr);
+        assertTrue(run.stderr.contains("原来的换版工具没有换掉"),
+                "应说清原来的换版工具没有换掉。标准错误:\n" + run.stderr);
+        assertTrue(run.stderr.contains("下一步：修好包里的 tools/switch-version.sh"),
+                "应给出下一步。标准错误:\n" + run.stderr);
     }
 
     private static int countOccurrences(String text, String needle) {
