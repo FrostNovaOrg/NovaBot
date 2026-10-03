@@ -66,6 +66,12 @@ if [ "$(id -u)" -ne 0 ]; then
     SUDO="sudo"
 fi
 
+# 程序和数据还堆在安装目录根上。这一版先不搬，一个文件都不改。
+# 先看布局，再装 Java、字体和从源码构建：这里停下时这些都还没做。
+if [ -f "$INSTALL_DIR/NovaBot.jar" ] || [ -f "$INSTALL_DIR/StarBotCore.jar" ]; then
+    die "这一版的安装脚本还不能从旧布局升级"
+fi
+
 # ---------------------------------------------------------------- 依赖检查
 
 detect_pkg_manager() {
@@ -264,7 +270,97 @@ if [ ! -f "$SOURCE_DIR/NovaBot.jar" ]; then
     die "未找到构建产物 NovaBot.jar"
 fi
 
+# $1 比 $2 新才返回 0。按点切开比数字：5.7.10 比 5.7.9 新，不能按字母序。
+version_newer() {
+    local IFS=.
+    local -a left right
+    local i n x y
+    read -r -a left <<< "$1"
+    read -r -a right <<< "$2"
+    n=${#left[@]}
+    if [ "${#right[@]}" -gt "$n" ]; then
+        n=${#right[@]}
+    fi
+    i=0
+    while [ "$i" -lt "$n" ]; do
+        x=0
+        y=0
+        if [ "${left[$i]+set}" = set ]; then
+            x=${left[$i]}
+        fi
+        if [ "${right[$i]+set}" = set ]; then
+            y=${right[$i]}
+        fi
+        x=${x%%[!0-9]*}
+        y=${y%%[!0-9]*}
+        x=${x:-0}
+        y=${y:-0}
+        if [ "$x" -gt "$y" ]; then
+            return 0
+        fi
+        if [ "$x" -lt "$y" ]; then
+            return 1
+        fi
+        i=$((i + 1))
+    done
+    return 1
+}
+
+# 这一版的实例是不是正在跑。没有 systemctl 时无从确认，不当作正在跑。
+instance_running() {
+    command -v systemctl > /dev/null 2>&1 || return 1
+    systemctl is-active --quiet "novabot@$1"
+}
+
+# 目录名要像 5.7.9：至少两段数字，中间用点连。别的名字留在 releases/ 里。
+release_name_is_version() {
+    case "$1" in
+        *[!0-9.]*|.*|*.|*..*) return 1 ;;
+        *.*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# 这个实例开着开机自启、又不是要装的这一版，就关掉。同一个名字只处理一次。
+disable_if_other_enabled() {
+    local name="$1"
+    [ -n "$name" ] || return 0
+    [ "$name" = "$VERSION" ] && return 0
+    case "$SEEN_AUTOSTART" in
+        *" $name "*) return 0 ;;
+    esac
+    SEEN_AUTOSTART="$SEEN_AUTOSTART$name "
+    if $SUDO systemctl is-enabled --quiet "novabot@${name}"; then
+        $SUDO systemctl disable "novabot@${name}" > /dev/null 2>&1 || true
+    fi
+}
+
 # ---------------------------------------------------------------- 安装
+
+if [ ! -f "$SOURCE_DIR/BUILD-INFO" ]; then
+    die "包里没有 BUILD-INFO，不能确定要装的版本"
+fi
+VERSION="$(sed -n 's/^version=//p' "$SOURCE_DIR/BUILD-INFO" | sed -n '1p')"
+VERSION="${VERSION//$'\r'/}"
+if [ -z "$VERSION" ]; then
+    die "包里的 BUILD-INFO 没有版本号，不能安装"
+fi
+case "$VERSION" in
+    .*|-*|*[!A-Za-z0-9._-]*) die "版本号「${VERSION}」不能当作目录名" ;;
+esac
+
+# 要装的这一版已经在，并且正在跑。换掉它等于换掉正在用的程序。
+if [ -d "$INSTALL_DIR/releases/$VERSION" ] && instance_running "$VERSION"; then
+    die "要装的 ${VERSION} 正在运行，这一次没有改安装目录里的文件"
+fi
+
+# 分目录的根上本来就有 plugins（使用者自己放的），所以先认 releases/，再做这条判断。
+if [ ! -d "$INSTALL_DIR/releases" ]; then
+    if [ -e "$INSTALL_DIR/lib" ] || [ -e "$INSTALL_DIR/plugins" ]; then
+        die "$INSTALL_DIR 下已有 lib/ 或 plugins/，但没有 NovaBot.jar（亦无 StarBotCore.jar），不像 NovaBot 的安装目录。
+     为免误删，请换一个目录，或先自行确认该目录内容"
+    fi
+fi
 
 info "安装至 $INSTALL_DIR"
 
@@ -289,63 +385,74 @@ for keep in application.yml datasource.json; do
     fi
 done
 
-# INSTALL_DIR 由命令行指定，误传 /usr 之类的路径会让清理毁掉系统。
-# 只在目标目录确实是既有安装时才清理，认不出来就停下来问，不硬着头皮删
-if [ -f "$INSTALL_DIR/NovaBot.jar" ] || [ -f "$INSTALL_DIR/StarBotCore.jar" ]; then
-    # lib 完全由新版本重新生成。plugins-lib 不能整个删：里面可能有使用者自己放的
-    # 第三方依赖，删掉等于卸掉那些插件。只按构件名换掉本版自带的依赖；
-    # 版本号剥不出来时宁可留下也不误删。
-    # 匹配式里版本位限定为数字开头，否则 demo-lib-* 会连带匹配 demo-lib-extra-*，
-    # 第三方依赖若以自带依赖名为前缀也会被误删
-    $SUDO rm -rf "$INSTALL_DIR/lib"
-    # 上一发行版副本：本版不再附带 StarBotCore.jar；升级时旧副本随旧 lib 一并删除
-    $SUDO rm -f "$INSTALL_DIR/StarBotCore.jar"
-    $SUDO mkdir -p "$INSTALL_DIR/plugins-lib"
-    for jar in "$SOURCE_DIR"/plugins-lib/*.jar; do
-        [ -f "$jar" ] || continue
-        artifact="$(basename "$jar" | sed -E 's/-[0-9][^-]*\.jar$//')"
-        case "$artifact" in
-            *.jar) continue ;;
-        esac
-        $SUDO find "$INSTALL_DIR/plugins-lib" -maxdepth 1 -type f -name "$artifact-[0-9]*.jar" -delete
-    done
-    kept_n=0
-    kept_list=""
-    for jar in "$INSTALL_DIR"/plugins-lib/*.jar; do
-        [ -f "$jar" ] || continue
-        name="$(basename "$jar")"
-        # 新包里有同名文件的，随后整包拷入时会被新版盖掉，不能列成「新包里没有」
-        [ -f "$SOURCE_DIR/plugins-lib/$name" ] && continue
-        if [ "$kept_n" -eq 0 ]; then
-            kept_list="$name"
-        else
-            kept_list="$kept_list $name"
+# 装之前先记下上一版，以及正在跑的那些版。装完只留：这一版、上一版、正在跑的。
+# 更旧的删掉。正在跑的那一版不在「上一版」里也留着，不然正在用的程序会被卸掉。
+FRESH=yes
+previous=""
+running_marks=" "
+if [ -d "$INSTALL_DIR/releases" ]; then
+    FRESH=no
+    for dir in "$INSTALL_DIR"/releases/*; do
+        [ -d "$dir" ] || continue
+        name="$(basename "$dir")"
+        release_name_is_version "$name" || continue
+        if [ "$name" = "$VERSION" ]; then
+            continue
         fi
-        kept_n=$((kept_n + 1))
+        if [ -z "$previous" ] || version_newer "$name" "$previous"; then
+            previous="$name"
+        fi
+        if instance_running "$name"; then
+            running_marks="$running_marks$name "
+        fi
     done
-    if [ "$kept_n" -gt 0 ]; then
-        info "plugins-lib 里保留了 ${kept_n} 个新包里没有的 jar：${kept_list}"
-    fi
-
-    # plugins 不能整个删：里面可能有使用者自己放的第三方插件，删掉等于静默卸载。
-    # 但内置插件带版本号，旧版留着会与新版同时被加载，故按构件名精确清理；
-    # 版本号剥不出来时宁可留下也不误删。
-    # 匹配式里版本位限定为数字开头，否则 nova-onebot-adapter-* 会连带匹配
-    # nova-onebot-adapter-napcat-extension-*，第三方插件若以内置插件名为前缀也会被误删
-    for jar in "$SOURCE_DIR"/plugins/*.jar; do
-        [ -f "$jar" ] || continue
-        artifact="$(basename "$jar" | sed -E 's/-[0-9][^-]*\.jar$//')"
-        case "$artifact" in
-            *.jar) continue ;;
-        esac
-        $SUDO find "$INSTALL_DIR/plugins" -maxdepth 1 -type f -name "$artifact-[0-9]*.jar" -delete
-    done
-elif [ -e "$INSTALL_DIR/lib" ] || [ -e "$INSTALL_DIR/plugins" ]; then
-    die "$INSTALL_DIR 下已有 lib/ 或 plugins/，但没有 NovaBot.jar（亦无 StarBotCore.jar），不像 NovaBot 的安装目录。
-     为免误删，请换一个目录，或先自行确认该目录内容"
 fi
 
-$SUDO cp -r "$SOURCE_DIR"/. "$INSTALL_DIR/"
+release_dir="$INSTALL_DIR/releases/$VERSION"
+if [ -d "$release_dir" ]; then
+    $SUDO rm -rf "$release_dir"
+fi
+$SUDO mkdir -p "$release_dir"
+for name in NovaBot.jar lib plugins plugins-lib start.sh start.bat docker-entrypoint.sh Dockerfile tools BUILD-INFO LICENSE NOTICE; do
+    if [ -e "$SOURCE_DIR/$name" ]; then
+        $SUDO cp -R "$SOURCE_DIR/$name" "$release_dir/"
+    fi
+done
+
+# 新装才在根上建空的 plugins、plugins-lib，留给使用者自己加。
+# 再升级不动这两处：里面可能已经有使用者自己放的件。
+if [ "$FRESH" = yes ]; then
+    $SUDO mkdir -p "$INSTALL_DIR/plugins" "$INSTALL_DIR/plugins-lib"
+fi
+
+for name in application.example.yml datasource.example.json Caddyfile novabot-backup.service novabot-backup.timer; do
+    if [ -f "$SOURCE_DIR/$name" ]; then
+        $SUDO cp "$SOURCE_DIR/$name" "$INSTALL_DIR/$name"
+    fi
+done
+# 已有的备份单元写死了安装目录下的 tools/data-backup.sh。程序目录里那份跟着版本走，
+# 根上这一份每次装都换新，旧单元不用改路径。
+if [ -f "$SOURCE_DIR/tools/data-backup.sh" ]; then
+    $SUDO mkdir -p "$INSTALL_DIR/tools"
+    $SUDO cp "$SOURCE_DIR/tools/data-backup.sh" "$INSTALL_DIR/tools/data-backup.sh"
+    $SUDO chmod +x "$INSTALL_DIR/tools/data-backup.sh"
+fi
+
+for dir in "$INSTALL_DIR"/releases/*; do
+    [ -d "$dir" ] || continue
+    name="$(basename "$dir")"
+    release_name_is_version "$name" || continue
+    if [ "$name" = "$VERSION" ]; then
+        continue
+    fi
+    if [ "$name" = "$previous" ]; then
+        continue
+    fi
+    case "$running_marks" in
+        *" $name "*) continue ;;
+    esac
+    $SUDO rm -rf "$dir"
+done
 
 for keep in application.yml datasource.json; do
     if [ -f "$KEEP_DIR/$keep" ]; then
@@ -384,14 +491,14 @@ else
 fi
 
 $SUDO chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
-$SUDO chmod +x "$INSTALL_DIR/start.sh"
+$SUDO chmod +x "$release_dir/start.sh"
 # 凭据文件等同于账号密码，仅属主可读写
 $SUDO chmod 600 "$INSTALL_DIR"/cookies.* 2>/dev/null || true
 
 # ---------------------------------------------------------------- 服务
 
-# 恒装 novabot；检测到旧服务则停用并删除其 unit 文件
-SERVICE_UNIT="novabot"
+# 模板单元 novabot@.service，实例名是版本号。只改开机自启，不启动、也不停止正在跑的。
+SERVICE_UNIT="novabot@${VERSION}"
 OLD_SERVICE_UNIT_FILE="/etc/systemd/system/starbot"
 
 if [ "$CREATE_SERVICE" = "yes" ] && command -v systemctl > /dev/null 2>&1; then
@@ -401,22 +508,58 @@ if [ "$CREATE_SERVICE" = "yes" ] && command -v systemctl > /dev/null 2>&1; then
         $SUDO rm -f "$OLD_SERVICE_UNIT_FILE.service"
     fi
     info "创建 systemd 服务"
-    [ -f "$INSTALL_DIR/novabot.service" ] || die "缺少 $INSTALL_DIR/novabot.service"
+    [ -f "$SOURCE_DIR/novabot@.service" ] || die "缺少 $SOURCE_DIR/novabot@.service"
     $SUDO sed -e "s#/opt/starbot#$INSTALL_DIR#g" -e "s/^User=.*/User=$SERVICE_USER/" -e "s/^Group=.*/Group=$SERVICE_USER/" \
-        "$INSTALL_DIR/novabot.service" | $SUDO tee /etc/systemd/system/novabot.service > /dev/null
+        "$SOURCE_DIR/novabot@.service" | $SUDO tee /etc/systemd/system/novabot@.service > /dev/null
     $SUDO systemctl daemon-reload
-    $SUDO systemctl enable novabot > /dev/null 2>&1
+    # list-unit-files 只列得出模板文件，列不出 novabot@版本 这种实例，所以逐个问。
+    SEEN_AUTOSTART=" "
+    if [ -d "$INSTALL_DIR/releases" ]; then
+        for dir in "$INSTALL_DIR"/releases/*; do
+            [ -d "$dir" ] || continue
+            disable_if_other_enabled "$(basename "$dir")"
+        done
+    fi
+    for link in /etc/systemd/system/*.wants/novabot@*.service; do
+        [ -e "$link" ] || continue
+        unit="$(basename "$link")"
+        inst="${unit#novabot@}"
+        inst="${inst%.service}"
+        disable_if_other_enabled "$inst"
+    done
+    $SUDO systemctl enable "$SERVICE_UNIT" > /dev/null 2>&1
     info "服务已创建并设为开机自启"
 fi
 
 # ---------------------------------------------------------------- 完成
 
+STOP_HINT=""
+for dir in "$INSTALL_DIR"/releases/*; do
+    [ -d "$dir" ] || continue
+    name="$(basename "$dir")"
+    release_name_is_version "$name" || continue
+    if [ "$name" = "$VERSION" ]; then
+        continue
+    fi
+    STOP_HINT="${STOP_HINT}       sudo systemctl stop novabot@${name}
+"
+done
+
 cat <<EOF
 
 安装完成，接下来：
 
-  1. 启动服务
+  1. 启动新版本
        sudo systemctl start $SERVICE_UNIT
+EOF
+if [ -n "$STOP_HINT" ]; then
+    cat <<EOF
+
+  旧版本还在跑的话，确认新版本起来之后再停掉：
+$STOP_HINT
+EOF
+fi
+cat <<EOF
 
   2. 查看启动日志，其中包含配置界面地址与首次登录的二维码
        sudo journalctl -u $SERVICE_UNIT -f

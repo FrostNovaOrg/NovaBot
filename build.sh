@@ -368,6 +368,14 @@ rm -f "$OUT/datasource.json"
 # 里若躺着一份本机改过的覆盖，`cp -R` 已经把它拷进来了。
 rm -f "$OUT/template-defaults.json"
 
+# 版本号跟这次构建的其它来源记在一起。取不到就停下，不写空的 version=。
+# 打包那一步用的是同一个 VERSION，不再另取一次。
+VERSION="$(mvn -B -q -DforceStdout help:evaluate -Dexpression=project.version 2>/dev/null | tail -1)"
+if [ -z "$VERSION" ]; then
+    echo "取不到版本号，未打包。" >&2
+    exit 1
+fi
+
 # BUILD-INFO 只进产物，不进仓库
 # source= 这一行是给拿到包的人看的：worktree 表示打包源是某人的工作目录
 # （那么包里可能有仓库里没有的文件），archive:<40 位 commit> 表示打包源是从那一次提交
@@ -387,6 +395,7 @@ rm -f "$OUT/template-defaults.json"
         echo "outer_worktree_dirty=$NOVABOT_ARCHIVE_OUTER_DIRTY"
     fi
     echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "version=$VERSION"
 } > "$OUT/BUILD-INFO"
 
 # ── [6/9] 产物守卫 ──────────────────────────────────────────────────────
@@ -461,11 +470,6 @@ else
 fi
 
 if [ -n "$PACKAGE" ]; then
-    VERSION="$(mvn -B -q -DforceStdout help:evaluate -Dexpression=project.version 2>/dev/null | tail -1)"
-    if [ -z "$VERSION" ]; then
-        echo "取不到版本号，未打包。" >&2
-        exit 1
-    fi
     TARBALL="$ROOT/dist/NovaBot-${VERSION}.tar.gz"
     # COPYFILE_DISABLE=1：macOS 的 tar 默认会为带扩展属性的文件另塞一个 ._ 边车条目，
     # 而 tar tzvf 不显示它——列一遍看不出来，它却真的在包里，跟着一起发出去。
