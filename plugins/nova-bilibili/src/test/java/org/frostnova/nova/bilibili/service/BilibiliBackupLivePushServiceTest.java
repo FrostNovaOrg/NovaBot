@@ -9,6 +9,7 @@ import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.service.LiveDataService;
+import org.frostnova.nova.core.service.LiveSessionRecovery;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -29,9 +30,14 @@ import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.longThat;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -44,8 +50,12 @@ import static org.mockito.Mockito.when;
  * 轮询这边又对「没观测过的 uid」一律不置状态——这场直播会全程被当成没在播
  * （直播报告、实时数据、控制台在播态都读这本账）。用例钉住同步记账的行为与边界。
  * <p>
+ * 另一组格钉「停机空当里结束的那场」：起来后首轮见「账上在播、实际不在播」，
+ * 停得短照正常下播发通知出报告图（下播时刻取上次落盘时刻），停得久当场按未闭合补档。
+ * <p>
  * LiveDataService 用自洽 mock（真 Map 后备）而不是纯桩：闸门放行下播时
  * 回落读的正是这本账，「同步写账 → 闸门读到 → 放行下播」这条链要真跑通。
+ * 闸门包一层 spy：下播那路必须真走到闸门，光看「发没发」分不出走没走到。
  */
 @DisplayName("备用直播推送·加入监听时已在播")
 class BilibiliBackupLivePushServiceTest {
@@ -57,6 +67,8 @@ class BilibiliBackupLivePushServiceTest {
     private AbstractDataSource dataSource;
     private ApplicationEventPublisher publisher;
     private LiveDataService liveDataService;
+    private LiveSessionRecovery sessionRecovery;
+    private BilibiliLiveStateGate stateGate;
     private Map<Long, Boolean> statusStore;
     private Map<Long, Long> startTimeStore;
     private Runnable poll;
@@ -67,6 +79,7 @@ class BilibiliBackupLivePushServiceTest {
         dataSource = mock(AbstractDataSource.class);
         publisher = mock(ApplicationEventPublisher.class);
         TaskScheduler scheduler = mock(TaskScheduler.class);
+        sessionRecovery = mock(LiveSessionRecovery.class);
 
         statusStore = new HashMap<>();
         startTimeStore = new HashMap<>();
@@ -84,9 +97,10 @@ class BilibiliBackupLivePushServiceTest {
             return null;
         }).when(liveDataService).setLiveStartTime(anyString(), anyLong(), anyLong());
 
+        stateGate = spy(new BilibiliLiveStateGate(liveDataService));
         BilibiliBackupLivePushService service = new BilibiliBackupLivePushService(
                 api, new NovaBilibiliProperties(), publisher, scheduler,
-                new BilibiliLiveStateGate(liveDataService), liveDataService);
+                stateGate, liveDataService, sessionRecovery);
         service.start(dataSource);
 
         ArgumentCaptor<Runnable> captor = ArgumentCaptor.forClass(Runnable.class);
@@ -224,5 +238,85 @@ class BilibiliBackupLivePushServiceTest {
         assertTrue(startTime.isPresent(), "接口没给开播时间也要起一场, 否则本场没有起始");
         startTime.ifPresent(value -> assertTrue(value >= before && value <= after,
                 "应落在轮询前后之间, 实为 " + value));
+    }
+
+    @Test
+    @DisplayName("停机空当里结束·短停: 照正常下播发一次事件, 下播时刻取上次落盘时刻")
+    void shouldPushLiveOffWithLastSaveTimeWhenDownBriefly() {
+        // 账上在播、首轮不在播、上次落盘在 1 分钟前——人是刚下播, 通知与报告图照出
+        long lastSave = System.currentTimeMillis() - 60_000L;
+        when(liveDataService.getLastSaveTime()).thenReturn(Optional.of(lastSave));
+        statusStore.put(UID, true);
+        startTimeStore.put(UID, 111111111000L);
+
+        runRound(List.of(streamer()), Map.of(UID, offlineRoom()));
+
+        ArgumentCaptor<BilibiliLiveOffEvent> captor = ArgumentCaptor.forClass(BilibiliLiveOffEvent.class);
+        verify(publisher, times(1)).publishEvent(captor.capture());
+        verify(publisher, never()).publishEvent(any(BilibiliLiveOnEvent.class));
+        assertEquals(lastSave, captor.getValue().getTimestamp(),
+                "下播时刻应取上次落盘时刻, 实为 " + captor.getValue().getTimestamp());
+        verifyNoInteractions(sessionRecovery);
+    }
+
+    @Test
+    @DisplayName("停机空当里结束·停得久: 不发下播事件, 当场按未闭合归档一场并改账")
+    void shouldArchiveUnclosedWithoutPushWhenDownTooLong() {
+        // 同上, 但上次落盘在 2 小时前——下播时刻无从得知, 不能按下播发通知
+        long lastSave = System.currentTimeMillis() - 2 * 3_600_000L;
+        when(liveDataService.getLastSaveTime()).thenReturn(Optional.of(lastSave));
+        statusStore.put(UID, true);
+        startTimeStore.put(UID, 111111111000L);
+
+        long before = System.currentTimeMillis();
+        runRound(List.of(streamer()), Map.of(UID, offlineRoom()));
+        long after = System.currentTimeMillis();
+
+        verifyNoInteractions(publisher);
+        verify(sessionRecovery, times(1)).archiveUnclosedIfAny(
+                eq(BilibiliPlatform.BILIBILI.id()),
+                argThat(source -> source != null && source.getUid() != null && source.getUid() == UID),
+                longThat(t -> t >= before && t <= after));
+        assertEquals(Optional.of(false), liveDataService.getLiveStatus(BilibiliPlatform.BILIBILI.id(), UID),
+                "账上应改成不在播, 否则控制台一直挂着在播、下次开播还会再补一遍");
+    }
+
+    @Test
+    @DisplayName("停机空当里结束·短停但下播已被长连接占过: 闸门拦下, 不发")
+    void shouldNotPushWhenGateAlreadyTaken() {
+        long lastSave = System.currentTimeMillis() - 60_000L;
+        when(liveDataService.getLastSaveTime()).thenReturn(Optional.of(lastSave));
+        // 长连接发布前先过闸门: 这一下把本次下播的放行占走; 此刻监听器还没把账写成不在播
+        assertTrue(stateGate.admit(UID, false), "占位那一下应放行并记下");
+        clearInvocations(stateGate);
+        statusStore.put(UID, true);
+
+        runRound(List.of(streamer()), Map.of(UID, offlineRoom()));
+
+        // 「不发」在改前也成立(首轮本来就跳过)。这一格真正钉的是「走到了闸门、被它拦下」——
+        // 只断言不发的话, 改前改后同绿, 连走没走这道去重都分不出来
+        verify(stateGate, times(1)).admit(UID, false);
+        verifyNoInteractions(publisher);
+        verifyNoInteractions(sessionRecovery);
+    }
+
+    @Test
+    @DisplayName("停机空当里结束·取不到上次落盘时刻: 走未闭合补档那路")
+    void shouldArchiveUnclosedWhenLastSaveTimeMissing() {
+        when(liveDataService.getLastSaveTime()).thenReturn(Optional.empty());
+        statusStore.put(UID, true);
+        startTimeStore.put(UID, 111111111000L);
+
+        long before = System.currentTimeMillis();
+        runRound(List.of(streamer()), Map.of(UID, offlineRoom()));
+        long after = System.currentTimeMillis();
+
+        verifyNoInteractions(publisher);
+        verify(sessionRecovery, times(1)).archiveUnclosedIfAny(
+                eq(BilibiliPlatform.BILIBILI.id()),
+                argThat(source -> source != null && source.getUid() != null && source.getUid() == UID),
+                longThat(t -> t >= before && t <= after));
+        assertEquals(Optional.of(false), liveDataService.getLiveStatus(BilibiliPlatform.BILIBILI.id(), UID),
+                "账上应改成不在播");
     }
 }

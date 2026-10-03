@@ -12,6 +12,7 @@ import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.event.live.base.NovaLiveStatusChangeEvent;
 import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.service.LiveDataService;
+import org.frostnova.nova.core.service.LiveSessionRecovery;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -120,7 +121,8 @@ class BilibiliBackupLivePushFaultIsolationTest {
 
         BilibiliBackupLivePushService service = new BilibiliBackupLivePushService(
                 api, new NovaBilibiliProperties(), publisher, scheduler,
-                new BilibiliLiveStateGate(liveDataService), liveDataService);
+                new BilibiliLiveStateGate(liveDataService), liveDataService,
+                mock(LiveSessionRecovery.class));
         service.start(dataSource);
 
         ArgumentCaptor<Runnable> captor = ArgumentCaptor.forClass(Runnable.class);
