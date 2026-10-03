@@ -8,23 +8,14 @@ import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.stereotype.Service;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.InvalidPathException;
-import java.nio.file.Path;
-import java.util.jar.JarEntry;
-import java.util.jar.JarFile;
-import java.util.stream.Stream;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -37,8 +28,8 @@ import java.util.regex.Pattern;
  * 与代码中的配置项在结构上不可能不一致：代码里加了配置项，界面自动出现；
  * 删了配置项，界面自动消失。
  * <p>
- * 插件跟核心走同一条应用类路径，由启动参数 loader.path 放上来，没有单独的类加载器。
- * 这些 jar 就位之后元数据才齐，因此第一次用到时才读。
+ * 核心与插件的元数据都来自同一条应用类路径，插件由启动参数 loader.path 放上来，
+ * 没有单独的类加载器。这些 jar 就位之后元数据才齐，因此第一次用到时才读。
  */
 @Slf4j
 @Service
@@ -47,16 +38,6 @@ public class ConfigurationMetadataService {
      * 元数据文件在类路径中的位置
      */
     private static final String METADATA_LOCATION = "classpath*:META-INF/spring-configuration-metadata.json";
-
-    /**
-     * 元数据文件在 jar 内的路径
-     */
-    private static final String METADATA_ENTRY = "META-INF/spring-configuration-metadata.json";
-
-    /**
-     * 插件目录，与启动参数 loader.path 里的那一段同名
-     */
-    private static final String PLUGIN_DIRECTORY = "plugins";
 
     /**
      * 界面中展示的配置项前缀，其余框架自身的配置不予展示
@@ -78,9 +59,23 @@ public class ConfigurationMetadataService {
     private volatile Map<String, String> knownTypes;
 
     /**
-     * 这次加载实际打开过的插件 jar，按真实路径去重
+     * 读元数据用的类加载器。核心与插件都从它的类路径来。
      */
-    private final List<Path> pluginJarsRead = new ArrayList<>();
+    private final ClassLoader metadataClassLoader;
+
+    /**
+     * 用本类自己的类加载器读元数据。
+     */
+    public ConfigurationMetadataService() {
+        this(ConfigurationMetadataService.class.getClassLoader());
+    }
+
+    /**
+     * @param metadataClassLoader 要读元数据的类加载器
+     */
+    ConfigurationMetadataService(ClassLoader metadataClassLoader) {
+        this.metadataClassLoader = metadataClassLoader;
+    }
 
     /**
      * 获取界面中展示的可配置项
@@ -127,15 +122,6 @@ public class ConfigurationMetadataService {
     }
 
     /**
-     * 这次加载读过的插件 jar。同一个文件只出现一次。
-     * @return 插件 jar 的真实路径
-     */
-    List<Path> pluginJarsRead() {
-        getFields();
-        return List.copyOf(pluginJarsRead);
-    }
-
-    /**
      * 从类路径加载并合并全部模块的配置元数据
      * @return 配置项列表
      */
@@ -143,9 +129,9 @@ public class ConfigurationMetadataService {
         Map<String, ConfigurationField> merged = new LinkedHashMap<>();
         Map<String, String> types = new HashMap<>();
 
-        // 核心自身的元数据来自当前类路径
+        // 核心与插件的元数据都来自这一条类路径
         try {
-            Resource[] resources = new PathMatchingResourcePatternResolver(getClass().getClassLoader())
+            Resource[] resources = new PathMatchingResourcePatternResolver(metadataClassLoader)
                     .getResources(METADATA_LOCATION);
 
             for (Resource resource : resources) {
@@ -159,9 +145,6 @@ public class ConfigurationMetadataService {
             log.error("加载核心配置元数据失败", e);
         }
 
-        // 类路径扫得到已经装上来的元数据。分目录时内置插件不在工作目录，
-        // 再按 loader.path 里名叫 plugins 的各段把程序目录和数据目录都读进来；同一个 jar 只读一次。
-        loadFromPluginJars(merged, types);
         mergeExternalFields(merged);
 
         List<ConfigurationField> result = new ArrayList<>(merged.values());
@@ -172,94 +155,6 @@ public class ConfigurationMetadataService {
         log.info("配置界面已加载 {} 个可配置项, 另有 {} 个配置项可参与保存前校验", result.size(), types.size());
 
         return result;
-    }
-
-    /**
-     * 从插件目录下的 jar 中读取配置元数据
-     * @param merged 合并结果
-     * @param types 类型表
-     */
-    private void loadFromPluginJars(Map<String, ConfigurationField> merged, Map<String, String> types) {
-        pluginJarsRead.clear();
-        Set<Path> seen = new HashSet<>();
-
-        for (Path directory : pluginDirectories()) {
-            try (Stream<Path> jars = Files.list(directory)) {
-                jars.filter(path -> path.getFileName().toString().endsWith(".jar")).forEach(path -> {
-                    Path identity = identity(path);
-                    if (!seen.add(identity)) {
-                        return;
-                    }
-                    pluginJarsRead.add(identity);
-
-                    try (JarFile jar = new JarFile(path.toFile())) {
-                        JarEntry entry = jar.getJarEntry(METADATA_ENTRY);
-                        if (entry == null) {
-                            return;
-                        }
-
-                        try (InputStream stream = jar.getInputStream(entry)) {
-                            parse(new String(stream.readAllBytes(), StandardCharsets.UTF_8), merged, types);
-                        }
-                    } catch (Exception e) {
-                        log.debug("读取插件 {} 的配置元数据失败: {}", path.getFileName(), e.getMessage());
-                    }
-                });
-            } catch (IOException e) {
-                log.debug("遍历插件目录 {} 失败: {}", directory, e.getMessage());
-            }
-        }
-    }
-
-    /**
-     * 工作目录下的 plugins，加上 loader.path 里最后一段恰好叫 plugins 的目录。
-     * 扁平布局里这两处是同一个目录，只留一份。
-     */
-    private static List<Path> pluginDirectories() {
-        Map<Path, Boolean> ordered = new LinkedHashMap<>();
-        rememberPluginDirectory(ordered, Path.of(PLUGIN_DIRECTORY));
-
-        String loaderPath = System.getProperty("loader.path");
-        if (loaderPath == null) {
-            return List.copyOf(ordered.keySet());
-        }
-
-        for (String raw : loaderPath.split(",")) {
-            String segment = raw.trim();
-            if (segment.isEmpty()) {
-                continue;
-            }
-            try {
-                Path path = Path.of(segment);
-                Path name = path.getFileName();
-                if (name != null && PLUGIN_DIRECTORY.equals(name.toString())) {
-                    rememberPluginDirectory(ordered, path);
-                }
-            } catch (InvalidPathException e) {
-                log.debug("跳过无法识别的插件路径 {}: {}", segment, e.getMessage());
-            }
-        }
-
-        return List.copyOf(ordered.keySet());
-    }
-
-    private static void rememberPluginDirectory(Map<Path, Boolean> ordered, Path path) {
-        if (!Files.isDirectory(path)) {
-            return;
-        }
-        try {
-            ordered.putIfAbsent(path.toRealPath(), Boolean.TRUE);
-        } catch (IOException e) {
-            ordered.putIfAbsent(path.toAbsolutePath().normalize(), Boolean.TRUE);
-        }
-    }
-
-    private static Path identity(Path path) {
-        try {
-            return path.toRealPath();
-        } catch (IOException e) {
-            return path.toAbsolutePath().normalize();
-        }
     }
 
     /**
