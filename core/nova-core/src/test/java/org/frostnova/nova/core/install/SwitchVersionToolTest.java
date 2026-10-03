@@ -566,7 +566,7 @@ class SwitchVersionToolTest {
     @Test
     @DisplayName("q 目标正在自动重启")
     void activatingTargetRefused(@TempDir Path dir) throws Exception {
-        // 故障：崩溃循环被报成已换好。看日志那一行之后，最后一行应写此刻在跑的是这一版。
+        // 故障：目标在崩溃循环，最后一行却说它在跑。应写出正在反复重启，不说它在跑。
         World world = lay(dir, true, true, true, "ordinary", NEW + "=activating");
         Run run = run(world);
         String last = lastLine(run.stdout);
@@ -577,8 +577,8 @@ class SwitchVersionToolTest {
         assertTrue(run.stdout.contains("反复重启"), "q 应说明在反复重启，实际：" + run.stdout);
         assertTrue(run.stdout.contains("journalctl -u novabot@" + NEW),
                 "q 应给出看日志的命令，实际：" + run.stdout);
-        assertTrue(last.contains("机器上跑的是") && last.contains(NEW),
-                "q 最后一行应说机器上跑的是这一版，实际：" + last);
+        assertEquals("机器上没有版本在正常跑；" + NEW + " 正在反复重启。", last,
+                "q 最后一行应写出目标正在反复重启、不说它在跑，实际：" + last);
     }
 
     @Test
@@ -613,6 +613,56 @@ class SwitchVersionToolTest {
         assertFalse(calledPrefix(world, "stop "), "s 不应 stop，实际：" + calls(world));
         assertFalse(calledPrefix(world, "enable "), "s 不应 enable，实际：" + calls(world));
         assertFalse(calledPrefix(world, "disable "), "s 不应 disable，实际：" + calls(world));
+    }
+
+    @Test
+    @DisplayName("t 状态目录是符号链接且旧版正在自动重启")
+    void stateDirSymlinkWhileActivating(@TempDir Path dir) throws Exception {
+        // 故障：状态目录被拒，又碰上旧版正在自动重启。最后一行若写成没有版本在跑，使用者会以为服务全停了。
+        World world = lay(dir, true, true, true, "hot-ok", OLD + "=activating");
+        Path real = dir.resolve("real-state");
+        Files.createDirectories(real);
+        Files.writeString(real.resolve("secret"), "keep", StandardCharsets.UTF_8);
+        Files.createSymbolicLink(world.stateDir, real);
+        Run run = run(world);
+        String chownLog = read(world.logs.resolve("chown.log"));
+        String last = lastLine(run.stdout);
+
+        assertFalse(chownLog.contains("FOLLOWED"), "t 链接所指那个件的属主不应被改，实际：" + chownLog);
+        assertNotEquals(0, run.code, "t 应退非 0，实际输出：" + run.stdout);
+        assertEquals("机器上没有版本在正常跑；旧版 " + OLD + " 正在反复重启。", last,
+                "t 最后一行应写旧版正在反复重启，不写成没有版本在跑，实际：" + last);
+    }
+
+    @Test
+    @DisplayName("u 旧服务与分目录同时在跑")
+    void legacyBesideCopy(@TempDir Path dir) throws Exception {
+        // 故障：旧服务 novabot 与分目录旧版同时在跑，最后一行只报旧服务。停掉一个，另一个还占着端口。
+        World world = lay(dir, true, true, true, "ordinary", "novabot," + OLD);
+        Run run = run(world);
+        String last = lastLine(run.stdout);
+
+        assertNotEquals(0, run.code, "u 应退非 0，实际输出：" + run.stdout);
+        assertEquals("机器上跑的是 " + OLD + "、旧服务 novabot。", last,
+                "u 最后一行应把旧服务和分目录都写出来，实际：" + last);
+        assertFalse(calledPrefix(world, "start "), "u 不应 start，实际：" + calls(world));
+        assertFalse(calledPrefix(world, "stop "), "u 不应 stop，实际：" + calls(world));
+    }
+
+    @Test
+    @DisplayName("v 一份在跑一份正在重启")
+    void oneActiveOneActivating(@TempDir Path dir) throws Exception {
+        // 故障：一份正常在跑、一份正在自动重启，最后一行把正在重启的也写成在跑。
+        String other = "5.7.7";
+        World world = lay(dir, true, true, true, "ordinary", other + "," + OLD + "=activating");
+        Run run = run(world);
+        String last = lastLine(run.stdout);
+
+        assertNotEquals(0, run.code, "v 应退非 0，实际输出：" + run.stdout);
+        assertEquals("机器上跑的是 " + other + "；" + OLD + " 正在反复重启。", last,
+                "v 最后一行应写成有的在跑、有的正在反复重启，实际：" + last);
+        assertFalse(calledPrefix(world, "start "), "v 不应 start，实际：" + calls(world));
+        assertFalse(calledPrefix(world, "stop "), "v 不应 stop，实际：" + calls(world));
     }
 
     private static World lay(Path dir, boolean handover, boolean memoryEnough, boolean lockHeld,

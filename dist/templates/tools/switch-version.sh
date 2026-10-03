@@ -64,6 +64,8 @@ PHASE_NOW=""
 LOCK_KIND=missing
 MEM_KIND=unread
 ACTIVE_VERSIONS=""
+NORMAL_LIST=""
+RESTART_LIST=""
 GAP_START=0
 GAP_END=0
 
@@ -294,24 +296,88 @@ ordinary_start() {
     return 0
 }
 
+display_name() {
+    local name="$1"
+    case "$name" in
+        novabot|starbot)
+            printf '旧服务 %s' "$name"
+            ;;
+        *)
+            if [ -n "$OLD" ] && [ "$name" = "$OLD" ]; then
+                printf '旧版 %s' "$name"
+            else
+                printf '%s' "$name"
+            fi
+            ;;
+    esac
+}
+
+add_running() {
+    local kind="$1"
+    local label="$2"
+    if [ "$kind" = "active" ]; then
+        if [ -n "$NORMAL_LIST" ]; then
+            NORMAL_LIST="${NORMAL_LIST}、${label}"
+        else
+            NORMAL_LIST=$label
+        fi
+    elif [ "$kind" = "activating" ]; then
+        if [ -n "$RESTART_LIST" ]; then
+            RESTART_LIST="${RESTART_LIST}、${label}"
+        else
+            RESTART_LIST=$label
+        fi
+    fi
+}
+
+collect_running_labels() {
+    local line unit ver kind label st
+    NORMAL_LIST=""
+    RESTART_LIST=""
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            *" loaded activating "*) kind=activating ;;
+            *" loaded active "*) kind=active ;;
+            *) continue ;;
+        esac
+        unit=$(printf '%s\n' "$line" | awk '{
+            for (i = 1; i <= NF; i++) if ($i ~ /^novabot@/) { print $i; exit }
+        }')
+        unit=${unit%.service}
+        case "$unit" in
+            novabot@*)
+                ver=${unit#novabot@}
+                label=$(display_name "$ver")
+                add_running "$kind" "$label"
+                ;;
+        esac
+    done <<EOF
+$(systemctl list-units 'novabot@*.service' --state=active,activating --no-legend --no-pager --plain 2>/dev/null || true)
+EOF
+    for ver in novabot "$EARLIER_UNIT"; do
+        st=$(systemctl is-active "${ver}.service" 2>/dev/null || true)
+        st=$(printf '%s' "$st" | tr -d '[:space:]')
+        label=$(display_name "$ver")
+        add_running "$st" "$label"
+    done
+}
+
+say_running() {
+    local boot="$1"
+    collect_running_labels
+    if [ -n "$NORMAL_LIST" ] && [ -n "$RESTART_LIST" ]; then
+        say "机器上跑的是 ${NORMAL_LIST}${boot}；${RESTART_LIST} 正在反复重启。"
+    elif [ -n "$NORMAL_LIST" ]; then
+        say "机器上跑的是 ${NORMAL_LIST}${boot}。"
+    elif [ -n "$RESTART_LIST" ]; then
+        say "机器上没有版本在正常跑${boot}；${RESTART_LIST} 正在反复重启。"
+    else
+        say "机器上没有版本在跑${boot}。"
+    fi
+}
+
 report_running() {
-    if [ -n "$OLD" ] && systemctl is-active --quiet "$(unit_of "$OLD")"; then
-        say "机器上跑的是旧版 ${OLD}。"
-        return 0
-    fi
-    if systemctl is-active --quiet "$(unit_of "$TARGET")"; then
-        say "机器上跑的是 ${TARGET}。"
-        return 0
-    fi
-    if systemctl is-active --quiet novabot.service; then
-        say "机器上跑的是旧服务 novabot。"
-        return 0
-    fi
-    if systemctl is-active --quiet "${EARLIER_UNIT}.service"; then
-        say "机器上跑的是旧服务 ${EARLIER_UNIT}。"
-        return 0
-    fi
-    say "机器上没有版本在跑。"
+    say_running ""
 }
 
 fail_out() {
@@ -469,20 +535,8 @@ legacy_name() {
 }
 
 report_running_and_boot() {
-    local running boot
-    running=""
+    local boot
     boot=""
-    if [ -n "$OLD" ] && systemctl is-active --quiet "$(unit_of "$OLD")"; then
-        running="旧版 ${OLD}"
-    elif systemctl is-active --quiet "$(unit_of "$TARGET")"; then
-        running="${TARGET}"
-    elif systemctl is-active --quiet novabot.service; then
-        running="旧服务 novabot"
-    elif systemctl is-active --quiet "${EARLIER_UNIT}.service"; then
-        running="旧服务 ${EARLIER_UNIT}"
-    else
-        running="没有版本"
-    fi
     if [ -n "$OLD" ] && systemctl is-enabled --quiet "$(unit_of "$OLD")"; then
         boot="${OLD}"
     fi
@@ -496,7 +550,7 @@ report_running_and_boot() {
     if [ -z "$boot" ]; then
         boot="没有"
     fi
-    say "机器上跑的是 ${running}，开机自启在 ${boot}。"
+    say_running "，开机自启在 ${boot}"
 }
 
 switch_autostart() {
@@ -636,15 +690,7 @@ done
 
 if [ "$count" -gt 1 ]; then
     say "有不止一份 novabot@ 在跑，这次什么都没改。"
-    running_list=""
-    for ver in $ACTIVE_VERSIONS; do
-        if [ -n "$running_list" ]; then
-            running_list="${running_list}、${ver}"
-        else
-            running_list=$ver
-        fi
-    done
-    say "机器上跑的是 ${running_list}。"
+    report_running
     exit 1
 fi
 
@@ -654,7 +700,7 @@ if [ "$count" -eq 1 ] && [ "$ONLY" = "$TARGET" ]; then
     if [ "$running_state" = "activating" ]; then
         say "${TARGET} 正在反复重启，这次什么都没改。"
         say "看日志：journalctl -u $(unit_of "$TARGET") -n 200 --no-pager"
-        say "机器上跑的是 ${TARGET}。"
+        report_running
         exit 1
     fi
     say "$TARGET 已经在跑，不用换。"
