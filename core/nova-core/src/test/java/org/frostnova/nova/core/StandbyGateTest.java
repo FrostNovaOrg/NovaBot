@@ -16,6 +16,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -79,6 +81,8 @@ class StandbyGateTest {
 
     private static final String USUAL_START = "照常启动";
 
+    private static final String STATE_WRITE_WARN = "状态件写不进";
+
     @Test
     @DisplayName("锁被另一进程占着：不退出、端口不绑、就绪不发；放锁后 1 秒内过门，随后端口绑上、就绪；再起一份开关关着的以 1 退出")
     void heldLockWaitsThenTakesOver(@TempDir Path root) throws Exception {
@@ -90,17 +94,22 @@ class StandbyGateTest {
                 StandardOpenOption.CREATE, StandardOpenOption.WRITE)) {
             FileLock held = channel.tryLock();
             assertTrue(held != null, "本进程应先占住锁");
-            Running app = start(dir, port, true, null);
+            Path stateFile = dir.resolve("state.txt");
+            Running app = start(dir, port, true, null, stateFile);
             PortWatch watch = PortWatch.start(port);
             try {
                 waitFor(app, 90_000, "应走到等锁、且进程还在",
                         running -> running.out().contains(WAITING) && running.alive());
+                assertEquals("waiting", readPhase(stateFile), "等锁期间状态件应是 waiting。\n" + dump(app));
+                assertEquals(app.process.pid(), readPid(stateFile), "状态件里的 pid 应是被测进程的。\n" + dump(app));
                 assertFalse(runningPort(port), "等锁时端口不该绑上。\n" + dump(app));
                 assertFalse(app.out().contains(READY), "等锁时不该就绪。\n" + dump(app));
                 assertFalse(app.out().contains(PASSED), "等锁时不该过门。\n" + dump(app));
                 assertTrue(app.err().contains(STANDBY_HINT), "应说明先准备好、等它退出再接手。\n" + dump(app));
                 assertFalse(watch.opened.get(), "等锁期间端口曾被绑上");
 
+                // 从等锁到就绪，每次读状态件都把读到的阶段记进一串，相邻重复只记一次
+                PhaseRecorder recorder = PhaseRecorder.start(stateFile);
                 long releasedAt = System.currentTimeMillis();
                 held.release();
                 waitFor(app, 1_000, "放锁后 1 秒内应过门",
@@ -111,6 +120,8 @@ class StandbyGateTest {
                 long portAt = System.currentTimeMillis();
                 waitFor(app, 1_000 - (portAt - releasedAt), "放锁后 1 秒内应就绪",
                         running -> running.out().contains(READY));
+                assertEquals("ready", readPhase(stateFile), "就绪后状态件应是 ready。\n" + dump(app));
+                assertPhaseSequence(recorder.finish());
                 long readyAt = System.currentTimeMillis();
                 System.out.println("开关开，放锁到过门 " + (passedAt - releasedAt)
                         + " 毫秒，到端口 " + (portAt - releasedAt)
@@ -194,13 +205,34 @@ class StandbyGateTest {
         Files.createDirectories(dir);
         int port = freePort();
         writeBrokenConfig(dir, port);
+        Path stateFile = dir.resolve("state.txt");
         PortWatch watch = PortWatch.start(port);
-        Running app = start(dir, port, false, null);
+        Running app = start(dir, port, false, null, stateFile);
         try {
             waitFor(app, 90_000, "开关关着时配置写坏应进安全模式并把端口绑上",
                     running -> runningPort(port) && running.both().contains(SAFE_MODE));
+            assertEquals("safe-mode", readPhase(stateFile), "进安全模式后状态件应是 safe-mode。\n" + dump(app));
         } finally {
             watch.close();
+            app.close();
+        }
+    }
+
+    @Test
+    @DisplayName("状态件路径指到不存在的目录：照常起到就绪，输出里有警告")
+    void stateFileInMissingDirectoryStillStarts(@TempDir Path root) throws Exception {
+        Path dir = root.resolve("work");
+        Files.createDirectories(dir);
+        int port = freePort();
+        writePlainConfig(dir, port);
+        Path stateFile = root.resolve("no-such-dir/state.txt");
+        Running app = start(dir, port, false, null, stateFile);
+        try {
+            waitFor(app, 90_000, "状态件写不进也应照常起到就绪",
+                    running -> runningPort(port) && running.out().contains(READY));
+            assertTrue(app.both().contains(STATE_WRITE_WARN),
+                    "输出里应有状态件写不进的警告。\n" + dump(app));
+        } finally {
             app.close();
         }
     }
@@ -387,6 +419,10 @@ class StandbyGateTest {
     }
 
     private static Running start(Path dir, int port, boolean standby, String waitSeconds) throws IOException {
+        return start(dir, port, standby, waitSeconds, null);
+    }
+
+    private static Running start(Path dir, int port, boolean standby, String waitSeconds, Path stateFile) throws IOException {
         Path out = dir.resolve("stdout.txt");
         Path err = dir.resolve("stderr.txt");
         Path args = dir.resolve("java-args.txt");
@@ -395,6 +431,9 @@ class StandbyGateTest {
         text.append("-Dnovabot.standby=").append(standby).append('\n');
         if (waitSeconds != null) {
             text.append("-Dnovabot.standby.wait-seconds=").append(waitSeconds).append('\n');
+        }
+        if (stateFile != null) {
+            text.append("-Dnovabot.state-file=").append(stateFile).append('\n');
         }
         text.append("-cp\n");
         text.append(System.getProperty("java.class.path")).append('\n');
@@ -535,5 +574,106 @@ class StandbyGateTest {
             return "";
         }
         return Files.readString(path);
+    }
+
+    /**
+     * 阶段序列：以 waiting 开头、以 ready 收尾、只出现 waiting／passed／ready、顺序不倒退。
+     * 过门到就绪只隔几十毫秒，passed 可见可不见，所以不断言「过门那一刻读到 passed」。
+     */
+    private static void assertPhaseSequence(List<String> phases) {
+        List<String> order = List.of("waiting", "passed", "ready");
+        assertFalse(phases.isEmpty(), "阶段序列不该是空的");
+        assertEquals("waiting", phases.get(0), "阶段序列应以 waiting 开头：" + phases);
+        assertEquals("ready", phases.get(phases.size() - 1), "阶段序列应以 ready 收尾：" + phases);
+        for (int i = 0; i < phases.size(); i++) {
+            assertTrue(order.contains(phases.get(i)), "只该出现 waiting／passed／ready：" + phases);
+            if (i > 0) {
+                assertTrue(order.indexOf(phases.get(i - 1)) <= order.indexOf(phases.get(i)),
+                        "阶段顺序不该倒退：" + phases);
+            }
+        }
+    }
+
+    private static String readPhase(Path stateFile) throws IOException {
+        if (!Files.exists(stateFile)) {
+            return "";
+        }
+        for (String line : Files.readAllLines(stateFile, StandardCharsets.UTF_8)) {
+            if (line.startsWith("phase=")) {
+                return line.substring("phase=".length());
+            }
+        }
+        return "";
+    }
+
+    private static long readPid(Path stateFile) throws IOException {
+        if (!Files.exists(stateFile)) {
+            return -1;
+        }
+        for (String line : Files.readAllLines(stateFile, StandardCharsets.UTF_8)) {
+            if (line.startsWith("pid=")) {
+                return Long.parseLong(line.substring("pid=".length()));
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * 状态件阶段的旁观者：按固定间隔读一次，把读到的阶段记进一串，相邻重复只记一次。
+     */
+    private static final class PhaseRecorder {
+
+        private final Path stateFile;
+
+        private final List<String> seen = new ArrayList<>();
+
+        private final AtomicBoolean stopping = new AtomicBoolean(false);
+
+        private final Thread thread;
+
+        private PhaseRecorder(Path stateFile) {
+            this.stateFile = stateFile;
+            thread = new Thread(this::run, "phase-record");
+            thread.setDaemon(true);
+            thread.start();
+        }
+
+        static PhaseRecorder start(Path stateFile) {
+            return new PhaseRecorder(stateFile);
+        }
+
+        private void run() {
+            while (!stopping.get()) {
+                recordQuietly();
+                try {
+                    Thread.sleep(10);
+                } catch (InterruptedException e) {
+                    break;
+                }
+            }
+        }
+
+        List<String> finish() {
+            stopping.set(true);
+            thread.interrupt();
+            try {
+                thread.join(1_000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            recordQuietly();
+            return List.copyOf(seen);
+        }
+
+        private synchronized void recordQuietly() {
+            try {
+                String phase = readPhase(stateFile);
+                if (!phase.isEmpty() && (seen.isEmpty() || !phase.equals(seen.get(seen.size() - 1)))) {
+                    seen.add(phase);
+                }
+            } catch (IOException e) {
+                // 读不到就跳过这一趟
+            }
+        }
     }
 }

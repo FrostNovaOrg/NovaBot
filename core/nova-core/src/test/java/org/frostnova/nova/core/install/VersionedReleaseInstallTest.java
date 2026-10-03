@@ -340,6 +340,7 @@ class VersionedReleaseInstallTest {
         String build = Files.readString(repoRoot().resolve("build.sh"), StandardCharsets.UTF_8);
         int infoAt = build.indexOf("> \"$OUT/BUILD-INFO\"");
         int versionAt = build.indexOf("echo \"version=$VERSION\"");
+        int handoverAt = build.indexOf("echo \"handover=1\"");
         int fetchAt = build.indexOf("help:evaluate -Dexpression=project.version");
         int fetches = build.split("help:evaluate -Dexpression=project.version", -1).length - 1;
 
@@ -349,6 +350,8 @@ class VersionedReleaseInstallTest {
         assertEquals(1, fetches, "取版本应只留一处，打包步共用同一个变量，实际 " + fetches + " 处");
         assertTrue(versionAt >= 0 && versionAt < infoAt,
                 "BUILD-INFO 应写出 version=$VERSION，空版本不该写进去");
+        assertTrue(handoverAt > versionAt && handoverAt < infoAt,
+                "BUILD-INFO 应在 version 之后写出 handover=1");
     }
 
     @Test

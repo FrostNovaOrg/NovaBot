@@ -40,10 +40,12 @@ class StandbyGate implements SmartLifecycle, BeanPostProcessor {
         if (SingleInstanceLock.standbyEnabled() && !SingleInstanceLock.holding()) {
             // 先置上「正在等」，停机钩子这之后只做标记；下面这一句之后才开始轮询。
             SingleInstanceLock.beginWait();
+            StateFile.write("waiting");
             log.info("正在等这个目录里正在运行的那一份退出，再接手。");
             waited = SingleInstanceLock.awaitLock();
         }
         SingleInstanceLock.markPassed();
+        StateFile.write("passed");
         long before = reached - SingleInstanceLock.startedAt();
         log.info("候命门已过：门前用了 {} 秒，等锁等了 {} 秒",
                 SingleInstanceLock.seconds(before), SingleInstanceLock.seconds(waited));
@@ -54,6 +56,7 @@ class StandbyGate implements SmartLifecycle, BeanPostProcessor {
     public void onReady() {
         long passed = SingleInstanceLock.passedAt();
         long delta = passed == 0 ? 0 : System.nanoTime() - passed;
+        StateFile.write("ready");
         log.info("已就绪：过门到就绪用了 {} 秒", SingleInstanceLock.seconds(delta));
     }
 
