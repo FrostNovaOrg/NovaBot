@@ -274,6 +274,7 @@ class StandbyAfterGateTest {
     }
 
     private static int freePort() throws IOException {
+        LoopbackPort.assumeAllowed();
         try (ServerSocket socket = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
             return socket.getLocalPort();
         }
