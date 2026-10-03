@@ -20,7 +20,6 @@ import org.springframework.web.client.ResourceAccessException;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.net.ServerSocket;
 import java.net.SocketTimeoutException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -113,13 +112,12 @@ class WebhookFailureLeakTest {
     }
 
     /**
-     * 一个关着的端口：连接当场被拒，失败是真栈真文
+     * 本机 1 号端口：系统划给临时口的那段够不着它。
+     * 用前确认连过去是当场被拒；有人在听或别的失败则跳过。
      */
-    private static int closedPort() throws IOException {
-        LoopbackPort.assumeAllowed();
-        try (ServerSocket socket = new ServerSocket(0)) {
-            return socket.getLocalPort();
-        }
+    private static int closedPort() {
+        LoopbackPort.assumePortOneRefused();
+        return 1;
     }
 
     /**
