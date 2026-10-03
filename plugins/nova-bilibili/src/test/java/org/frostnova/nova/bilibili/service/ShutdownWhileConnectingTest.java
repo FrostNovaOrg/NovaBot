@@ -83,20 +83,19 @@ class ShutdownWhileConnectingTest {
     private static final long SHUTDOWN_BUDGET_SLACK_MILLIS = 4_500L;
 
     /**
-     * 无参 {@code ConcurrentHashMap} 的默认表长。文档写明是 16。
-     * 元素不到 12 个（默认负载因子 0.75）时不会扩容，表长保持 16。
-     */
-    private static final int DEFAULT_TABLE_LENGTH = 16;
-
-    /**
-     * 已在管的那一间。与 {@link #SAME_BIN_ROOM} 落在表长 16 的同一格，与 {@link #OTHER_BIN_ROOM} 不是。
+     * 已在管的那一间。与 {@link #SAME_BIN_ROOM} 哈希值必须完全相同——哈希相同的两间
+     * 在连接表任何表长下都落同一格；与 {@link #OTHER_BIN_ROOM} 哈希值最低位不同，
+     * 表长不小于 2 时都不在同一格。前提只核哈希值，不读连接表的表长。
      */
     private static final long MANAGED_ROOM = 10016L;
 
-    /** 与 {@link #MANAGED_ROOM} 同一格的首连房号 */
-    private static final long SAME_BIN_ROOM = 10032L;
+    /**
+     * 与 {@link #MANAGED_ROOM} 哈希值相同的首连房号：{@code Long.hashCode} 都是 10016。
+     * 4294977313＝(1L&lt;&lt;32)+10017，高 32 位 1 与低 32 位 10017 异或得 10016。
+     */
+    private static final long SAME_BIN_ROOM = 4294977313L;
 
-    /** 与 {@link #MANAGED_ROOM} 不同格的首连房号，用作对照 */
+    /** 与 {@link #MANAGED_ROOM} 哈希值最低位不同的首连房号，用作对照 */
     private static final long OTHER_BIN_ROOM = 10017L;
 
     private static final String PLATFORM = BilibiliPlatform.BILIBILI.id();
@@ -243,13 +242,13 @@ class ShutdownWhileConnectingTest {
      */
     private void shutdownDuringFirstConnect(boolean sameBin) throws Exception {
         long firstRoom = sameBin ? SAME_BIN_ROOM : OTHER_BIN_ROOM;
-        String fact = bucketFact(MANAGED_ROOM, firstRoom, DEFAULT_TABLE_LENGTH);
+        String fact = hashFact(MANAGED_ROOM, firstRoom);
         if (sameBin) {
-            assertEquals(binOf(MANAGED_ROOM, DEFAULT_TABLE_LENGTH), binOf(firstRoom, DEFAULT_TABLE_LENGTH),
-                    "同桶两间的桶号必须相同。" + fact);
+            assertEquals(Long.hashCode(MANAGED_ROOM), Long.hashCode(firstRoom),
+                    "同桶两间的哈希值必须相同。" + fact);
         } else {
-            assertNotEquals(binOf(MANAGED_ROOM, DEFAULT_TABLE_LENGTH), binOf(firstRoom, DEFAULT_TABLE_LENGTH),
-                    "不同桶对照的桶号必须不同。" + fact);
+            assertNotEquals(Long.hashCode(MANAGED_ROOM), Long.hashCode(firstRoom),
+                    "不同桶对照的哈希值必须不同。" + fact);
         }
 
         NovaCoreProperties properties = liveProperties();
@@ -272,7 +271,7 @@ class ShutdownWhileConnectingTest {
                 mock(WebSocketClient.class),
                 live));
         assertEquals(1, rooms.getManagedRoomCount(),
-                "停机前应只有已在管的那一间，表长才保持默认值。" + fact);
+                "停机前应只有已在管的那一间。" + fact);
 
         context.register(EventConfig.class);
         context.registerBean(DefaultLiveDataService.class, () -> live);
@@ -464,23 +463,15 @@ class ShutdownWhileConnectingTest {
     }
 
     /**
-     * 与 {@code ConcurrentHashMap} 相同的散布。表长是 2 的幂时，桶号是散布结果的低几位。
+     * 两间房号的哈希值。桶号是 {@code ConcurrentHashMap} 对键哈希做散布后取低几位，
+     * 哈希相同的两间在任何表长下都落同一格，所以前提不看连接表的表长。
      */
-    private static int spread(int hash) {
-        return (hash ^ (hash >>> 16)) & 0x7fffffff;
-    }
-
-    private static int binOf(long roomId, int tableLength) {
-        return (tableLength - 1) & spread(Long.hashCode(roomId));
-    }
-
-    private static String bucketFact(long managedRoom, long firstRoom, int tableLength) {
+    private static String hashFact(long managedRoom, long firstRoom) {
         return " 房号 已在管=" + managedRoom + " 首连=" + firstRoom
-                + " 表长=" + tableLength
-                + " 桶 已在管=" + binOf(managedRoom, tableLength)
-                + " 首连=" + binOf(firstRoom, tableLength)
-                + " 算法=(表长-1)&spread(Long.hashCode) spread=(h^(h>>>16))&0x7fffffff"
-                + " 表长取无参 ConcurrentHashMap 的默认值 16，停机前只有 1 个元素，低于扩容线 12";
+                + " 哈希 已在管=" + Long.hashCode(managedRoom)
+                + " 首连=" + Long.hashCode(firstRoom)
+                + "（Long.hashCode=(int)(v^(v>>>32))）"
+                + " 哈希相同则表长怎么变都在同一格；哈希最低位不同则表长不小于 2 都不同格";
     }
 
     private static LiveDataService nobodyLive() {
