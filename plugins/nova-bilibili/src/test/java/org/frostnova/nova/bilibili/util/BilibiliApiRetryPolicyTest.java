@@ -39,9 +39,11 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -454,7 +456,7 @@ class BilibiliApiRetryPolicyTest {
 
     @Test
     @DisplayName("冷却中又保存一次推送配置，到点补的是配置里那位的房间号")
-    void reloadDuringCooldownFillsUserStillInConfig() {
+    void reloadDuringCooldownFillsUserStillInConfig() throws Exception {
         AtomicReference<Instant> now = new AtomicReference<>(T0);
         AtomicInteger hits = new AtomicInteger();
         HttpUtil http = mock(HttpUtil.class);
@@ -464,7 +466,15 @@ class BilibiliApiRetryPolicyTest {
             }
             return master("星见");
         });
-        BilibiliApiUtil api = clocked(http, now);
+        // add 与 update 都把补全排进后台单线程（completePushUsers），测试线程看不见它们跑没跑完。
+        // 冷却中被拦的那一趟不进接口桩，桩上数不到它；补发登记（scheduleReplay）是每趟补全
+        // 最后一步有形动作，在替身上数它：等满两回（启动一趟、保存配置一趟）才拨时钟，先后就不再赌运气
+        CountDownLatch replaysRegistered = new CountDownLatch(2);
+        BilibiliApiUtil api = spy(clocked(http, now));
+        doAnswer(invocation -> {
+            replaysRegistered.countDown();
+            return invocation.callRealMethod();
+        }).when(api).scheduleReplay(anyString(), anyString(), any());
         List<NovaDataSourceChangeEvent> events = new ArrayList<>();
         ApplicationEventPublisher publisher = event -> {
             if (event instanceof NovaDataSourceChangeEvent change
@@ -488,6 +498,8 @@ class BilibiliApiRetryPolicyTest {
         assertSame(configured, source.getUser("bilibili", 42L).orElseThrow(),
                 "资料还空、推送目标没改，重新加载不该换掉配置里的这位");
 
+        assertTrue(replaysRegistered.await(5, TimeUnit.SECONDS),
+                "拨时钟前该等到两趟后台补全都把补发登记好：启动一趟、保存配置一趟");
         now.set(T0.plusSeconds(60));
         assertEquals(1, api.replayDue(now.get()));
         PushUser inConfig = source.getUser("bilibili", 42L).orElseThrow();
