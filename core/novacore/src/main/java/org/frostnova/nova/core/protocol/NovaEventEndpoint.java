@@ -215,8 +215,21 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
         this.tokens = tokens;
         this.timings = timings;
         this.outboxCapacity = stream.getCapacity() + OUTBOX_HEADROOM;
+    }
+
+    private volatile boolean heartbeatsStarted;
+
+    /**
+     * 排上周期性心跳。生产在过门之后才调；测试里需要 ping 的夹具在造好端点后自己调。
+     */
+    void startHeartbeats() {
+        if (heartbeatsStarted) {
+            return;
+        }
+        heartbeatsStarted = true;
         heartbeats.scheduleAtFixedRate(this::heartbeat,
                 timings.pingInterval(), timings.pingInterval(), TimeUnit.MILLISECONDS);
+        log.info("事件输出心跳已排上");
     }
 
     private static ThreadFactory daemon(String name) {

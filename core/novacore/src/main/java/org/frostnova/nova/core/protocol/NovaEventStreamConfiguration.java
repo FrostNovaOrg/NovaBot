@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.context.SmartLifecycle;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
@@ -36,13 +37,15 @@ import java.util.Map;
  */
 @Slf4j
 @Configuration
-public class NovaEventStreamConfiguration implements DisposableBean {
+public class NovaEventStreamConfiguration implements DisposableBean, SmartLifecycle {
     /**
      * 映射优先级。取一个比默认映射靠前的值，避免路径被通配的静态资源处理器抢走
      */
     private static final int ORDER = 1;
 
     private NovaEventEndpoint endpoint;
+
+    private volatile boolean running;
 
     /**
      * 解析事件输出配置，按现行键 {@code novabot.core.event-stream} 绑出。
@@ -114,6 +117,34 @@ public class NovaEventStreamConfiguration implements DisposableBean {
         if (endpoint != null) {
             endpoint.shutdown();
         }
+    }
+
+    @Override
+    public void start() {
+        if (endpoint != null) {
+            endpoint.startHeartbeats();
+        }
+        running = true;
+    }
+
+    @Override
+    public void stop() {
+        running = false;
+    }
+
+    @Override
+    public boolean isRunning() {
+        return running;
+    }
+
+    @Override
+    public int getPhase() {
+        return StandbyPhases.AFTER_GATE;
+    }
+
+    @Override
+    public boolean isAutoStartup() {
+        return true;
     }
 
     /**

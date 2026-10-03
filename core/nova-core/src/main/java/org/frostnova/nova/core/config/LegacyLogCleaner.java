@@ -1,14 +1,15 @@
 package org.frostnova.nova.core.config;
 
+import org.frostnova.nova.core.protocol.StandbyPhases;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.core.Appender;
 import ch.qos.logback.core.spi.AppenderAttachable;
 import ch.qos.logback.core.rolling.RollingFileAppender;
 import ch.qos.logback.core.rolling.TimeBasedRollingPolicy;
-import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.SmartLifecycle;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -57,7 +58,9 @@ import java.util.stream.Stream;
  */
 @Slf4j
 @Component
-public class LegacyLogCleaner {
+public class LegacyLogCleaner implements SmartLifecycle {
+
+    private volatile boolean running;
 
     /**
      * 一天的毫秒数。注解要编译期常量，不能写 {@code Duration.ofDays(1)}
@@ -83,11 +86,37 @@ public class LegacyLogCleaner {
             "NetworkDebug", Pattern.compile("starbot-network-(\\d{4}-\\d{2}-\\d{2})\\.log"));
 
     /**
-     * 启动时清一次，之后每天清一次
+     * 清一次改名前的旧日志。挂在过门之后：等锁的那段时间里不删盘上的旧日志。
+     * 之后每天再清一次。
      */
-    @PostConstruct
     public void cleanAtStartup() {
         cleanNow();
+    }
+
+    @Override
+    public void start() {
+        cleanAtStartup();
+        running = true;
+    }
+
+    @Override
+    public void stop() {
+        running = false;
+    }
+
+    @Override
+    public boolean isRunning() {
+        return running;
+    }
+
+    @Override
+    public int getPhase() {
+        return StandbyPhases.AFTER_GATE;
+    }
+
+    @Override
+    public boolean isAutoStartup() {
+        return true;
     }
 
     @Scheduled(fixedDelay = DAY_MILLIS, initialDelay = DAY_MILLIS)

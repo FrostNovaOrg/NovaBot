@@ -92,6 +92,11 @@ final class SingleInstanceLock {
      */
     private static volatile boolean inGateWait;
 
+    /**
+     * 这次启动曾经进过门里等锁。过门后核配置只看这一位。
+     */
+    private static volatile boolean waitedForLock;
+
     private static volatile boolean stopRequested;
 
     /**
@@ -159,6 +164,14 @@ final class SingleInstanceLock {
      */
     static void beginWait() {
         inGateWait = true;
+        waitedForLock = true;
+    }
+
+    /**
+     * @return 这次启动曾经在门里等过锁
+     */
+    static boolean actuallyWaited() {
+        return waitedForLock;
     }
 
     /**

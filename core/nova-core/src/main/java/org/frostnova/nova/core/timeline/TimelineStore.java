@@ -2,12 +2,13 @@ package org.frostnova.nova.core.timeline;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.core.protocol.StandbyPhases;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.lang.JsonlFiles;
-import jakarta.annotation.PostConstruct;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.SmartLifecycle;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -56,7 +57,7 @@ import java.util.stream.Stream;
  */
 @Slf4j
 @Service
-public class TimelineStore implements TimelineWriter {
+public class TimelineStore implements TimelineWriter, SmartLifecycle {
     /**
      * 时间线目录名，与场次归档同目录
      */
@@ -99,21 +100,47 @@ public class TimelineStore implements TimelineWriter {
      */
     private final Deque<TimelineEvent> recent = new ArrayDeque<>();
 
+    private volatile boolean running;
+
     @Autowired
     public TimelineStore(NovaCoreProperties properties) {
         this.properties = properties;
     }
 
     /**
-     * 启动时建索引并清一次过期
-     * <p>
-     * 清理放在这里而不是只靠每日定时：一台每天重启的机器永远等不到那个定时点，
+     * 建索引并清一次过期。挂在过门之后：等锁的那段时间里不删盘上的旧时间线。
+     * 清理放在启动而不是只靠每日定时：一台每天重启的机器永远等不到那个定时点，
      * 于是「留 14 天」在它身上就是一句空话。
      */
-    @PostConstruct
     public void load() {
         rebuildIndex();
         purgeExpired();
+    }
+
+    @Override
+    public void start() {
+        load();
+        running = true;
+    }
+
+    @Override
+    public void stop() {
+        running = false;
+    }
+
+    @Override
+    public boolean isRunning() {
+        return running;
+    }
+
+    @Override
+    public int getPhase() {
+        return StandbyPhases.AFTER_GATE;
+    }
+
+    @Override
+    public boolean isAutoStartup() {
+        return true;
     }
 
     @Override

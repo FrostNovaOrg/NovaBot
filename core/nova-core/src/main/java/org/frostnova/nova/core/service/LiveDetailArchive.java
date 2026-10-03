@@ -3,6 +3,7 @@ package org.frostnova.nova.core.service;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.core.protocol.StandbyPhases;
 import org.frostnova.nova.core.analytics.LiveDetail;
 import org.frostnova.nova.core.analytics.LiveHighlightFinder;
 import org.frostnova.nova.core.config.NovaCoreProperties;
@@ -14,10 +15,10 @@ import org.frostnova.nova.core.model.RoomInfoSnapshot;
 import org.frostnova.nova.core.model.SeriesPeak;
 import org.frostnova.nova.core.model.UserScore;
 import org.frostnova.nova.core.util.DurableFiles;
-import jakarta.annotation.PostConstruct;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.SmartLifecycle;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -76,7 +77,7 @@ import java.util.stream.Stream;
  */
 @Slf4j
 @Service
-public class LiveDetailArchive {
+public class LiveDetailArchive implements SmartLifecycle {
     /**
      * 留档根目录名，与场次归档同目录下的一个子目录
      */
@@ -119,6 +120,8 @@ public class LiveDetailArchive {
     private static final int LINE_LIMIT = 500_000;
 
     private final NovaCoreProperties properties;
+
+    private volatile boolean running;
 
     /**
      * 写锁。多个直播间可能同时下播，各写各的目录，但建目录与过期清理这两步会撞
@@ -527,15 +530,38 @@ public class LiveDetailArchive {
     }
 
     /**
-     * 启动时清一次过期明细
-     * <p>
-     * 清理<b>只挂在启动上</b>：
-     * 挂到落盘上的话，一场开播时刻已在保留窗口外的直播会把自己刚写的明细当场删掉。
+     * 清一次过期明细。挂在过门之后：等锁的那段时间里不删盘上的旧明细。
+     * 清理只挂在启动上：挂到落盘上的话，一场开播时刻已在保留窗口外的直播会把自己刚写的明细当场删掉。
      * 默认永久保留，因此这一趟默认什么都不做。
      */
-    @PostConstruct
     public void purgeOnStartup() {
         purgeExpired();
+    }
+
+    @Override
+    public void start() {
+        purgeOnStartup();
+        running = true;
+    }
+
+    @Override
+    public void stop() {
+        running = false;
+    }
+
+    @Override
+    public boolean isRunning() {
+        return running;
+    }
+
+    @Override
+    public int getPhase() {
+        return StandbyPhases.AFTER_GATE;
+    }
+
+    @Override
+    public boolean isAutoStartup() {
+        return true;
     }
 
     /**
