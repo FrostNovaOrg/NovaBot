@@ -35,7 +35,7 @@ cd NovaBot && ./install.sh
 
 从[第 1 章　NovaBot 能帮你做什么](https://frostnovaorg.github.io/NovaBot/01-what-novabot-does.html)看起。[用户手册](https://frostnovaorg.github.io/NovaBot/index.html)列出其余章节。遇到问题看[第 14 章　遇到问题怎么办](https://frostnovaorg.github.io/NovaBot/14-troubleshooting.html)。
 
-问题与建议：请开 [Issue](../../issues)，附上控制台「日志」页或 `journalctl -u novabot` 的相关片段。
+问题与建议：请开 [Issue](../../issues)，附上控制台「日志」页或 `journalctl -u novabot@<版本>` 的相关片段。
 
 ## 给开发者
 

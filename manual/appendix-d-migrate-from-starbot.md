@@ -39,7 +39,8 @@ NovaBot 是上游 StarBot 的整理版本，配置与数据的格式有几处变
 - 包名已是 `org.frostnova.nova.*`，构件坐标已是 `org.frostnova.nova:nova-*`
 - **上游 StarBot 的插件不能直接装上就用**，要按新坐标重新构建
 - 旧处理器全名（`com.starlwr.bot.` 开头的）仍被认，日志里会提醒改成现名字，改之前推送照常
-- 旧名字的内置插件文件（`starbot-*.jar`）与 `StarBotCore.jar` 要自己删，见[第 13 章](13-upgrade-and-backup.md)
+- 旧名字的内置插件文件（`starbot-*.jar`）要自己删；`StarBotCore.jar` 第一次跑安装脚本
+  升级时会被挪进旧版本目录，见[第 13 章](13-upgrade-and-backup.md)
 
 直播数据不用转格式，`application.yml` 与 `datasource.json` 按上面改完就接着用。
 归档（`sessions.jsonl`、`details/`）从 4.1.0 起才有，beta8 时代没有留过，不会追溯。

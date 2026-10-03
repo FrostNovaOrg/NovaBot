@@ -2,6 +2,7 @@
 
 三种装法挑一种：大多数人是第一种（Linux 一键安装）；用 macOS、Windows
 或不想让脚本碰系统的用第二种；用 Docker 的看第三种。
+只有装法一按版本分目录存放程序（升级时旧版本留着）；装法二与装法三的目录不分版本。
 
 ## 源码从哪来
 
@@ -17,8 +18,9 @@ cd NovaBot
 ./install.sh
 ```
 
-脚本一口气做完：检查并安装 Java 17 与中文字体、构建、安装到 `/opt/starbot`、
-生成初始配置、创建 systemd 服务。坐等跑完就行。
+脚本一口气做完：检查并安装 Java 17 与中文字体、构建、把程序装进
+`/opt/starbot/releases/<版本>/`（配置与数据留在 `/opt/starbot`）、生成初始配置、
+创建 systemd 服务。坐等跑完就行。
 
 机器上已经装有更高版本 JDK 时，一键安装会停在构建那一步。处理办法：装一个
 JDK 17 并把它排在 PATH 最前，再重新运行脚本。**只改 JAVA_HOME、不改 PATH
@@ -29,13 +31,14 @@ JDK 17 并把它排在 PATH 最前，再重新运行脚本。**只改 JAVA_HOME�
 | 参数 | 作用 |
 |---|---|
 | `--dir /srv/novabot` | 指定安装目录（默认 `/opt/starbot`） |
+| `--user starbot` | 指定运行服务的系统用户 |
 | `--port 7827` | 指定服务端口 |
 | `--no-service` | 跳过 systemd 服务创建 |
 
-装完启动并看日志：
+装完启动并看日志（实例名就是版本号）：
 
 ```bash
-sudo systemctl start novabot && sudo journalctl -u novabot -f
+sudo systemctl start novabot@<版本> && sudo journalctl -u novabot@<版本> -f
 ```
 
 ## 装法二：手动安装
@@ -48,7 +51,8 @@ sudo systemctl start novabot && sudo journalctl -u novabot -f
 
 不带参数会跑全部测试，这需要 Node 22。只出包、不跑测试：`./build.sh --skip-tests`。
 
-产物在 `dist/build/` 目录，把它整个拷到目标机器，在里面运行：
+产物在 `dist/build/` 目录，把它整个拷到目标机器，在里面运行（这种装法的目录不分版本，
+程序、配置与数据都在同一个目录里）：
 
 ```bash
 ./start.sh
@@ -75,8 +79,8 @@ docker run -d --name novabot --restart unless-stopped \
   改成直接发布到公网。设置页里改监听地址对容器不起作用。
 - **同一个数据卷同时只能有一个容器在跑。** 再起一个会说明一句后退出，不会改动这个卷上的文件。
 
-换镜像会换掉卷上的程序；`plugins-lib/` 里镜像自带的依赖每次启动按构件名换新，
-自己放的留下——细节看[第 13 章　升级与备份](13-upgrade-and-backup.md)。
+容器里的目录也不分版本。换镜像会换掉卷上的程序；`plugins-lib/` 里镜像自带的依赖
+每次启动按构件名换新，自己放的留下——细节看[第 13 章　升级与备份](13-upgrade-and-backup.md)。
 
 ## 装完之后
 

@@ -97,6 +97,7 @@ novabot:
 `MemoryMax=1.5G`、启动脚本 `-Xmx512m`；按 384m 堆 + 128m 元空间算，一组参考值是
 `MemoryHigh=700M`、`MemoryMax=850M`（按公式算的，未在 1 GB 机器上实测，改完自己验）。
 配错了不用自己算：启动自检会读机器的实际限制，装不下时在日志里明说差多少、往哪改。
+这两个值别直接改单元文件——每次升级都会被模板重写，要用覆盖设置放（见下一节的放法）。
 
 影响占用主要是**主播数**（每位一条直播间长连接及收包缓冲）和**是否启用 Redis**。
 量级随条件变化明显，照抄任何一个数字去规划容量都不可靠，上线后自己测一次才算数。
@@ -112,9 +113,35 @@ novabot:
 JAVA_OPTS="-Xmx256m" ./start.sh
 ```
 
+`./start.sh` 是脚本所在目录那份：手动安装在产物目录里，一键安装的机器是
+`/opt/starbot/releases/<版本>/start.sh`（工作目录脚本自己会落回安装目录）。
+命令行上这样带的 `JAVA_OPTS` 只管手动运行；systemd 起的实例不吃命令行环境变量，
+要照下文把它放进覆盖设置。
+
 注意 `-Xms` 会被提前提交，调大反而抬高常驻内存。
-若同时用 systemd 部署，调低 `-Xmx` 后记得一并调低单元文件里的 `MemoryHigh` / `MemoryMax`
+若同时用 systemd 部署，调低 `-Xmx` 后记得一并调低 `MemoryHigh` / `MemoryMax`
 （算法见上一节）——反过来，只压 cgroup 上限而不动 `-Xmx`，会让进程在堆涨起来时被内核直接杀掉。
+这两个值不要直接改 `/etc/systemd/system/novabot@.service`：每次安装（升级）都会用
+模板重写它，手改的值会悄悄丢。用覆盖设置放在模板单元上——落在
+`/etc/systemd/system/novabot@.service.d/` 里，安装脚本不碰这个目录，
+所有版本的实例都吃：
+
+```bash
+sudo systemctl edit novabot@.service
+```
+
+在编辑器里写（数值用你按上一节公式算出来的，下面接着那组 1 GB 参考值写）。
+两条 `Memory` 上限要和同一组的堆、元空间一起用：启动脚本默认 `-Xmx512m`、
+`-XX:MaxMetaspaceSize=192m`，两项加起来比这组上限还高，只抄两条 `Memory` 行等于
+配错。`Environment=` 传进去的 `JAVA_OPTS` 排在启动脚本的默认参数后面，同类参数
+后出现的生效，正好盖掉默认值：
+
+```ini
+[Service]
+Environment="JAVA_OPTS=-Xmx384m -XX:MaxMetaspaceSize=128m"
+MemoryHigh=700M
+MemoryMax=850M
+```
 
 ## 容器里写死的监听地址
 

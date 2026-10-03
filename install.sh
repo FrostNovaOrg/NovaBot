@@ -749,7 +749,6 @@ EOF
     cat <<EOF
   这一次会先停旧版本，再起新版本，中间会断一小会儿。
   现在的发行版还没有单实例锁，新版本起来时不会等旧版本放开，两份会同时连直播间、抢端口。
-  以后分目录之间的升级才是先起新、再停旧。
 
   1. 先停旧版本
 EOF
@@ -772,7 +771,6 @@ EOF
         cat <<EOF
   这一次会先停旧版本，再起新版本，中间会断一小会儿。
   现在的发行版还没有单实例锁，新版本起来时不会等旧版本放开，两份会同时连直播间、抢端口。
-  以后分目录之间的升级才是先起新、再停旧。
 
   1. 先停旧版本
 EOF
@@ -807,14 +805,23 @@ else
 
 安装完成，接下来：
 
-  1. 启动新版本
-       sudo systemctl start $SERVICE_UNIT
 EOF
     if [ -n "$STOP_HINT" ]; then
         cat <<EOF
+  这一次会先停旧版本，再起新版本，中间会断一小会儿。
 
-  旧版本还在跑的话，确认新版本起来之后再停掉：
-$STOP_HINT
+  1. 旧版本还在跑的话先停掉
+EOF
+        printf '%s' "$STOP_HINT"
+        cat <<EOF
+  2. 再启动新版本
+       sudo systemctl start $SERVICE_UNIT
+EOF
+        LOG_STEP=3
+    else
+        cat <<EOF
+  1. 启动新版本
+       sudo systemctl start $SERVICE_UNIT
 EOF
     fi
 fi
