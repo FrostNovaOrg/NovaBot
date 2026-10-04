@@ -5,16 +5,23 @@ import org.frostnova.nova.bilibili.BilibiliPlatform;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.enums.ConnectStatus;
 import org.frostnova.nova.bilibili.health.BilibiliDisconnectCause;
+import org.frostnova.nova.bilibili.health.BilibiliDisconnectDigest;
+import org.frostnova.nova.bilibili.health.BilibiliLiveRoomHealthProbe;
 import org.frostnova.nova.bilibili.health.BilibiliRiskMetrics;
+import org.frostnova.nova.core.health.HealthStatus;
 import org.frostnova.nova.core.model.LiveGap;
 import org.frostnova.nova.core.service.LiveDataService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.scheduling.TaskScheduler;
 
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.frostnova.nova.bilibili.service.BilibiliConnectorHarness.*;
@@ -22,7 +29,9 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -429,6 +438,90 @@ class BilibiliLiveRoomConnectorTest {
                 assertEquals(ConnectStatus.RISK, normal.connector().getStatus());
                 verify(normal.getLiveDataService(), never()).recordRoomOutage(
                         any(), any(), anyLong(), anyLong(), eq(LiveGap.Reason.PARSE_DEGRADED));
+            } catch (AssertionError e) {
+                reds.add("② " + e.getMessage());
+            }
+
+            assertTrue(reds.isEmpty(), () -> "两问中 " + reds.size() + " 问红: " + String.join("; ", reds));
+        }
+
+        /**
+         * 抓的故障：连续多分钟没收到弹幕之后，弹幕已经回来了，直播间状态和自检却一直停在异常上，恢复告警发不出来。
+         */
+        @Test
+        @DisplayName("判成这种状态后来一条弹幕：状态回到已连接，探针回到正常")
+        void businessMessageAfterJudgmentRestoresConnectedAndProbe() throws Exception {
+            BilibiliConnectorHarness harness = new BilibiliConnectorHarness().living();
+            harness.connect();
+
+            assertFalse(stall(harness, WINDOWS), "第一段只重连");
+            harness.fireConnectionClosed(1000);
+            harness.runQueuedReconnects();
+            assertTrue(stall(harness, WINDOWS), "重连后仍然没有弹幕礼物，这次要进入该状态");
+            assertEquals(ConnectStatus.RISK, harness.connector().getStatus());
+
+            harness.receive("DANMU_MSG");
+            harness.connector().detectRisk();
+
+            assertEquals(ConnectStatus.CONNECTED, harness.connector().getStatus(),
+                    "后续窗口里弹幕一回来就该回到已连接");
+
+            NovaBilibiliProperties properties = new NovaBilibiliProperties();
+            TaskScheduler scheduler = mock(TaskScheduler.class);
+            BilibiliLiveRoomService service = new BilibiliLiveRoomService(
+                    mock(org.frostnova.nova.bilibili.util.BilibiliApiUtil.class),
+                    mock(BilibiliEventParser.class),
+                    properties,
+                    mock(ApplicationEventPublisher.class),
+                    scheduler,
+                    mock(BilibiliLiveStateGate.class),
+                    new BilibiliConnectGate(properties, scheduler),
+                    new BilibiliRiskMetrics(),
+                    new BilibiliDisconnectDigest(properties, scheduler),
+                    mock(LiveDataService.class));
+            putConnector(service, harness.connector());
+
+            HealthStatus health = new BilibiliLiveRoomHealthProbe(service, properties).check();
+            assertEquals(HealthStatus.Level.OK, health.level(),
+                    "回到已连接之后自检应正常，恢复告警才发得出去，实际 " + health.summary());
+        }
+
+        /**
+         * 抓的故障：为了看看弹幕还会不会下来而主动重连的那一秒，报告上被写成这个直播间自己断了流。
+         */
+        @Test
+        @DisplayName("为核实而主动重连的缺口不是断流；对端关闭仍是断流")
+        void verifyReconnectGapIsNotStreamLossButPeerCloseIs() {
+            List<String> reds = new ArrayList<>();
+
+            try {
+                BilibiliConnectorHarness harness = new BilibiliConnectorHarness().living();
+                harness.connect();
+                harness.fireVerifySuccess();
+                assertFalse(stall(harness, WINDOWS), "第一段只重连");
+                harness.fireConnectionClosed(1000);
+                harness.runQueuedReconnects();
+                harness.fireVerifySuccess();
+
+                verify(harness.getLiveDataService()).recordRoomOutage(
+                        eq(BilibiliPlatform.BILIBILI.id()), eq(STREAMER_UID), anyLong(), anyLong(),
+                        eq(LiveGap.Reason.VERIFY_RECONNECT));
+            } catch (AssertionError e) {
+                reds.add("① " + e.getMessage());
+            }
+
+            try {
+                BilibiliConnectorHarness peer = new BilibiliConnectorHarness();
+                peer.connect();
+                peer.fireVerifySuccess();
+                peer.fireConnectionClosed(1006);
+                peer.fireVerifySuccess();
+
+                verify(peer.getLiveDataService()).recordRoomOutage(
+                        eq(BilibiliPlatform.BILIBILI.id()), eq(STREAMER_UID), anyLong(), anyLong());
+                verify(peer.getLiveDataService(), never()).recordRoomOutage(
+                        anyString(), any(), anyLong(), anyLong(),
+                        argThat(reason -> reason != LiveGap.Reason.STREAM_LOSS));
             } catch (AssertionError e) {
                 reds.add("② " + e.getMessage());
             }
@@ -858,5 +951,15 @@ class BilibiliLiveRoomConnectorTest {
 
             assertTrue(reds.isEmpty(), () -> "三问中 " + reds.size() + " 问红: " + String.join("; ", reds));
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void putConnector(BilibiliLiveRoomService service, BilibiliLiveRoomConnector connector)
+            throws Exception {
+        Field field = BilibiliLiveRoomService.class.getDeclaredField("connectors");
+        field.setAccessible(true);
+        Map<Long, BilibiliLiveRoomConnector> connectors =
+                (Map<Long, BilibiliLiveRoomConnector>) field.get(service);
+        connectors.put(connector.getSource().getRoomId(), connector);
     }
 }

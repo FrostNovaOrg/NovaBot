@@ -297,28 +297,28 @@ public class NovaBilibiliProperties {
         private boolean completeEvent = false;
 
         /**
-         * 是否启用直播间数据风控检测。
+         * 是否在连续多个窗口只见到进房、见不到弹幕礼物时提醒。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
-        @ConfigLabel("直播间风控检测")
+        @ConfigLabel("长时间无弹幕礼物")
         private boolean autoDetectLiveRoomRisk = true;
 
         /**
-         * 风控检测的周期，单位：秒。
+         * 检查有没有收到弹幕礼物的周期，单位：秒。
          */
         @ConfigEffect(ConfigEffect.Effect.RESTART)
-        @ConfigLabel("直播间风控检测 · 周期")
+        @ConfigLabel("长时间无弹幕礼物 · 周期")
         private int autoDetectLiveRoomRiskInterval = 60;
 
         /**
-         * 连续多少个检测窗口收不到直播间的业务消息判为疑似断流；与检测周期相乘是判定时长（默认 3 分钟），调小会把偶发的安静误判成断流。
+         * 连续多少个检查窗口没收到弹幕礼物才提醒；与检查周期相乘是持续时长（默认 3 分钟），调小会把短暂安静误当成异常。
          */
         // 本项取代了原先的 auto-detect-live-room-risk-ratio（进房消息占比阈值）。
         // 那个判据 2026-08-07 被实测证伪：热门房间人来人往、进房消息天然刷屏，
         // 一个 41 万人气的房间进房占比 53% 被判风控，而它同时段每分钟收 71 条弹幕、
         // 对独立基准的到达率 93.3%。「进房占比高」与「收不到业务消息」是两回事。
         @ConfigEffect(ConfigEffect.Effect.RESTART)
-        @ConfigLabel("直播间风控检测 · 判定窗口数")
+        @ConfigLabel("长时间无弹幕礼物 · 判定窗口数")
         private int autoDetectLiveRoomRiskWindows = 3;
 
         /**

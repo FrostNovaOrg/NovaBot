@@ -176,11 +176,11 @@ novabot:
       max-decode-nesting-depth: 3         # 压缩包最大嵌套层数，正常数据不超过一层
       gift-cache-expire: 3600             # 礼物配置缓存时长，单位：秒
       complete-event: false               # 是否请求接口补全事件中缺失的昵称、头像等信息
-      auto-detect-live-room-risk: true    # 是否检测直播间数据风控
-      auto-detect-live-room-risk-interval: 60   # 风控检测周期，单位：秒
-      auto-detect-live-room-risk-windows: 3     # 连续多少个检测窗口业务消息为零才判定为疑似断流。
+      auto-detect-live-room-risk: true    # 是否在连续多个窗口没收到弹幕礼物、进房照常时提醒
+      auto-detect-live-room-risk-interval: 60   # 检查周期，单位：秒
+      auto-detect-live-room-risk-windows: 3     # 连续多少个检查窗口没收到弹幕、礼物才提醒。
                                                 # 与上面的间隔相乘即持续时长，默认 3 × 60 秒 = 3 分钟。
-                                                # 判据是业务消息（弹幕/礼物/上舰/醒目留言）断流，
+                                                # 看的是弹幕、礼物、上舰、醒目留言有没有到，
                                                 # 不是进房消息占比——热门房间进房天然刷屏，按占比判会误报
       backup-live-push: true              # 是否启用备用直播推送（轮询接口兜底开播下播）
       backup-live-push-interval: 10       # 备用推送检测间隔，单位：秒

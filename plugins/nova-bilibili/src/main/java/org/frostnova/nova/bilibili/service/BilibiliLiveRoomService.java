@@ -9,6 +9,7 @@ import org.frostnova.nova.bilibili.model.Up;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.datasource.MonitorLimit;
+import org.frostnova.nova.core.model.LiveStreamerInfo;
 import org.frostnova.nova.core.model.PushMessage;
 import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.model.PushUser;
@@ -29,6 +30,7 @@ import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -411,10 +413,17 @@ public class BilibiliLiveRoomService {
     private void detectRisk() {
         connectors.values().stream()
                 .filter(BilibiliLiveRoomConnector::detectRisk)
-                .forEach(connector -> log.warn(
-                        "直播间 {} 业务消息断流, 原因未定（可能是平台限制下发、解析不出、连接半死或确实无人发言）, "
-                                + "开播下播推送仍可通过备用直播推送保障",
-                        connector.getSource().getRoomId()));
+                .forEach(connector -> {
+                    LiveStreamerInfo source = connector.getSource();
+                    String name = source.getUname();
+                    if (name == null || name.isBlank()) {
+                        name = "未命名";
+                    }
+                    log.warn("{}（{}）连续多个窗口没收到弹幕礼物、进房照常, "
+                                    + "可能是房间里没人说话、主播画面卡住，或是平台没下发, "
+                                    + "开播下播推送仍可通过备用直播推送保障",
+                            name, source.getRoomId());
+                });
     }
 
     /**
@@ -445,6 +454,19 @@ public class BilibiliLiveRoomService {
     public Map<ConnectStatus, Long> countByStatus() {
         return connectors.values().stream()
                 .collect(Collectors.groupingBy(BilibiliLiveRoomConnector::getStatus, Collectors.counting()));
+    }
+
+    /**
+     * 处于某一连接状态的直播间，按房间号升序
+     * @param wanted 要列出的状态
+     * @return 主播信息，没有时为空表
+     */
+    public List<LiveStreamerInfo> sourcesWithStatus(ConnectStatus wanted) {
+        return connectors.values().stream()
+                .filter(connector -> connector.getStatus() == wanted)
+                .map(BilibiliLiveRoomConnector::getSource)
+                .sorted(Comparator.comparing(LiveStreamerInfo::getRoomId, Comparator.nullsLast(Long::compareTo)))
+                .toList();
     }
 
     /**
