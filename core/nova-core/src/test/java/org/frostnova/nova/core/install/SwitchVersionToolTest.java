@@ -722,6 +722,75 @@ class SwitchVersionToolTest {
     }
 
     @Test
+    @DisplayName("没有版本在跑时关掉别的开机自启")
+    void nothingRunningDisablesOtherBoot(@TempDir Path dir) throws Exception {
+        // 故障：机器上没有版本在跑时只开目标，以前开着开机自启的版本还留着。重启后两版一起起。
+        World world = lay(dir, true, true, true, "ordinary", "");
+        Run run = run(world);
+
+        assertEquals(0, run.code, "应换成，实际输出：" + run.stdout);
+        assertTrue(called(world, "disable novabot@" + OLD),
+                "应关掉另一版开机自启，实际：" + calls(world));
+        assertEquals(List.of("novabot@" + NEW), enabledUnits(world),
+                "换成后应只剩目标开着开机自启，实际：" + enabledUnits(world));
+    }
+
+    @Test
+    @DisplayName("普通重启时关掉第三版开机自启")
+    void ordinaryRestartDisablesThirdBoot(@TempDir Path dir) throws Exception {
+        // 故障：普通重启只关正在换下来的那一版，另一版开着开机自启还留着。
+        String other = "5.7.7";
+        World world = lay(dir, false, true, true, "ordinary", OLD);
+        layOtherRelease(world, other);
+        world.enabled = other + "," + OLD;
+        Run run = run(world);
+
+        assertEquals(0, run.code, "普通重启应换成，实际输出：" + run.stdout);
+        assertTrue(called(world, "disable novabot@" + other),
+                "应关掉第三版开机自启，实际：" + calls(world));
+        assertEquals(List.of("novabot@" + NEW), enabledUnits(world),
+                "换成后应只剩目标开着开机自启，实际：" + enabledUnits(world));
+    }
+
+    @Test
+    @DisplayName("热交接时关掉第三版开机自启")
+    void hotHandoverDisablesThirdBoot(@TempDir Path dir) throws Exception {
+        // 故障：热交接只关正在换下来的那一版，另一版开着开机自启还留着。
+        String other = "5.7.7";
+        World world = lay(dir, true, true, true, "hot-ok", OLD);
+        layOtherRelease(world, other);
+        world.enabled = other + "," + OLD;
+        Run run = run(world);
+
+        assertEquals(0, run.code, "热交接应换成，实际输出：" + run.stdout);
+        assertTrue(called(world, "disable novabot@" + other),
+                "应关掉第三版开机自启，实际：" + calls(world));
+        assertEquals(List.of("novabot@" + NEW), enabledUnits(world),
+                "换成后应只剩目标开着开机自启，实际：" + enabledUnits(world));
+    }
+
+    @Test
+    @DisplayName("别的开机自启关不掉")
+    void otherBootDisableFails(@TempDir Path dir) throws Exception {
+        // 故障：别的版本开着开机自启、又关不掉，当时不说，重启后它还会起来。
+        String other = "5.7.7";
+        World world = lay(dir, true, true, true, "ordinary", "");
+        layOtherRelease(world, other);
+        world.enabled = other + "," + OLD;
+        world.fail = "disable";
+        Run run = run(world);
+        String last = lastLine(run.stdout);
+
+        assertEquals(1, run.code, "关不掉应退 1，实际输出：" + run.stdout);
+        assertTrue(run.stdout.contains("请手动执行：systemctl disable novabot@" + other),
+                "应印出要手敲的命令，实际：" + run.stdout);
+        assertTrue(run.stdout.contains("请手动执行：systemctl disable novabot@" + OLD),
+                "旧版关不掉也应各印一句，实际：" + run.stdout);
+        assertEquals("机器上跑的是 " + NEW + "，开机自启在 " + other + "、" + OLD + " 和 " + NEW + "。", last,
+                "最后一行应列出仍开着开机自启的版本，实际：" + last);
+    }
+
+    @Test
     @DisplayName("预演：三样都成立时只看，末行是热交接")
     void planHotHandoverLooksOnly(@TempDir Path dir) throws Exception {
         // 故障：只看这次怎么走，却把服务起停了，或状态目录、覆盖设置被写出来。
@@ -972,7 +1041,12 @@ class SwitchVersionToolTest {
         world.slowStop = "";
         world.fail = "";
         world.slowQuery = "";
+        world.enabled = null;
         return world;
+    }
+
+    private static void layOtherRelease(World world, String version) throws IOException {
+        Files.createDirectories(world.install.resolve("releases/" + version));
     }
 
     private static Run run(World world) throws Exception {
@@ -1065,7 +1139,8 @@ class SwitchVersionToolTest {
         builder.environment().put("NOVABOT_STUB_LOG", world.logs.toString());
         builder.environment().put("NOVABOT_STUB_STATE", world.stubState.toString());
         builder.environment().put("NOVABOT_STUB_ACTIVE", world.active);
-        builder.environment().put("NOVABOT_STUB_ENABLED", OLD);
+        String enabled = world.enabled == null ? OLD : world.enabled;
+        builder.environment().put("NOVABOT_STUB_ENABLED", enabled);
         builder.environment().put("NOVABOT_STUB_SCENE", world.scene);
         builder.environment().put("NOVABOT_STUB_MEMORY_HIGH", "1.2G");
         builder.environment().put("NOVABOT_STUB_USER", "starbot");
@@ -1126,6 +1201,21 @@ class SwitchVersionToolTest {
 
     private static boolean called(World world, String exact) throws IOException {
         return calls(world).contains(exact);
+    }
+
+    private static List<String> enabledUnits(World world) throws IOException {
+        Path file = world.stubState.resolve("enabled");
+        if (!Files.isRegularFile(file)) {
+            return List.of();
+        }
+        List<String> names = new ArrayList<>();
+        for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+            if (!line.isBlank()) {
+                names.add(line.trim());
+            }
+        }
+        names.sort(String::compareTo);
+        return names;
     }
 
     private static boolean calledPrefix(World world, String prefix) throws IOException {
@@ -1242,6 +1332,7 @@ class SwitchVersionToolTest {
         String slowStop;
         String fail;
         String slowQuery;
+        String enabled;
     }
 
     private static final class Run {

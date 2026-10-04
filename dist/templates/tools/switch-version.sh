@@ -74,6 +74,7 @@ PHASE_NOW=""
 LOCK_KIND=missing
 MEM_KIND=unread
 ACTIVE_VERSIONS=""
+ENABLED_VERSIONS=""
 NORMAL_LIST=""
 RESTART_LIST=""
 GAP_START=0
@@ -616,38 +617,95 @@ legacy_name() {
     return 1
 }
 
+# list-unit-files 列不出 novabot@版本 这种实例，所以逐个问。版本目录里每个名字问一次，
+# 再看开机自启链接里挂着的实例。同一个名字只算一次。
+collect_enabled() {
+    local dir name unit inst
+    ENABLED_VERSIONS=""
+    if [ -d "$INSTALL_DIR/releases" ]; then
+        for dir in "$INSTALL_DIR"/releases/*; do
+            [ -d "$dir" ] || continue
+            name=$(basename "$dir")
+            note_enabled "$name"
+        done
+    fi
+    for link in /etc/systemd/system/*.wants/novabot@*.service; do
+        [ -e "$link" ] || continue
+        unit=$(basename "$link")
+        inst=${unit#novabot@}
+        inst=${inst%.service}
+        note_enabled "$inst"
+    done
+}
+
+note_enabled() {
+    local name="$1"
+    [ -n "$name" ] || return 0
+    case " $ENABLED_VERSIONS " in
+        *" $name "*) return 0 ;;
+    esac
+    if systemctl is-enabled --quiet "$(unit_of "$name")"; then
+        ENABLED_VERSIONS="${ENABLED_VERSIONS} ${name}"
+    fi
+}
+
+# 一个就照写。两个用「和」连。三个以上，前面用顿号，最后一个前面用「和」。
+join_enabled() {
+    local n=0 name i text last
+    local names=()
+    for name in $ENABLED_VERSIONS; do
+        names+=("$name")
+        n=$((n + 1))
+    done
+    if [ "$n" -eq 0 ]; then
+        return 0
+    fi
+    if [ "$n" -eq 1 ]; then
+        printf '%s' "${names[0]}"
+        return 0
+    fi
+    if [ "$n" -eq 2 ]; then
+        printf '%s 和 %s' "${names[0]}" "${names[1]}"
+        return 0
+    fi
+    text=${names[0]}
+    i=1
+    last=$((n - 1))
+    while [ "$i" -lt "$last" ]; do
+        text="${text}、${names[$i]}"
+        i=$((i + 1))
+    done
+    printf '%s 和 %s' "$text" "${names[$last]}"
+}
+
 report_running_and_boot() {
-    local boot
-    boot=""
-    if [ -n "$OLD" ] && systemctl is-enabled --quiet "$(unit_of "$OLD")"; then
-        boot="${OLD}"
-    fi
-    if systemctl is-enabled --quiet "$(unit_of "$TARGET")"; then
-        if [ -n "$boot" ]; then
-            boot="${boot} 和 ${TARGET}"
-        else
-            boot="${TARGET}"
-        fi
-    fi
-    if [ -z "$boot" ]; then
+    local listed
+    collect_enabled
+    listed=$(join_enabled)
+    if [ -z "$listed" ]; then
         say_running "，没有版本设了开机自启"
     else
-        say_running "，开机自启在 ${boot}"
+        say_running "，开机自启在 ${listed}"
     fi
 }
 
 switch_autostart() {
-    local failed=0
+    local failed=0 name listed
     if ! systemctl daemon-reload; then
         failed=1
         say "重新加载服务配置没有成功。"
     fi
-    if [ -n "$OLD" ]; then
-        if ! systemctl disable "$(unit_of "$OLD")"; then
-            failed=1
-            say "请手动执行：systemctl disable $(unit_of "$OLD")"
+    collect_enabled
+    listed=$ENABLED_VERSIONS
+    for name in $listed; do
+        if [ "$name" = "$TARGET" ]; then
+            continue
         fi
-    fi
+        if ! systemctl disable "$(unit_of "$name")"; then
+            failed=1
+            say "请手动执行：systemctl disable $(unit_of "$name")"
+        fi
+    done
     if ! systemctl enable "$(unit_of "$TARGET")"; then
         failed=1
         say "请手动执行：systemctl enable $(unit_of "$TARGET")"
