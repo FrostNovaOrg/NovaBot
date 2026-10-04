@@ -70,6 +70,9 @@ import java.util.stream.Stream;
  * 会继续追加进已归档的那一场——那些弹幕在统计里本就该被丢弃（开播清零时一并丢），
  * 而留档这一侧不丢，结果是<b>原文条数比场次里的弹幕数多出一截，且看不出多在哪</b>。
  * <p>
+ * 例外是断线重连：下播后在重连间隔内再开播，算同一场接着播，见 {@link #reopen}。
+ * 续上之后这道闸让开，真下播再落一次明细时重新关上。
+ * <p>
  * ⚠️ <b>保留期默认永久</b>（{@code novabot.core.live.detail-retention-days} 为 0）：
  * 明细是唯一一份原始数据，删掉之后<b>连报告图都重画不出来</b>。
  * 要设上限得先想清楚「过期的那一场在界面上怎么表示」——
@@ -93,6 +96,12 @@ public class LiveDetailArchive implements SmartLifecycle {
      */
     private static final String DANMU_FILE = "danmu.jsonl";
     private static final String EVENT_FILE = "events.jsonl";
+
+    /**
+     * 续场标记。断线重连续上的那一场，在它之前落下的 {@code detail.json} 不算封存，
+     * 直到真下播再落一次明细时删掉
+     */
+    private static final String RESUMED_FILE = "resumed";
 
     /**
      * 旁路文件名。只许一层文件名，避免写成目录或跑到这场外面
@@ -170,7 +179,7 @@ public class LiveDetailArchive implements SmartLifecycle {
 
         Path path = dir.get().resolve(DANMU_FILE);
         synchronized (writeLock) {
-            if (Files.exists(dir.get().resolve(DETAIL_FILE))) {
+            if (sealed(dir.get())) {
                 log.debug("{} 的这一场已封存, 不再收录弹幕原文", uid);
                 return;
             }
@@ -212,7 +221,7 @@ public class LiveDetailArchive implements SmartLifecycle {
         }
         Path path = dir.get().resolve(EVENT_FILE);
         synchronized (writeLock) {
-            if (Files.exists(dir.get().resolve(DETAIL_FILE))) {
+            if (sealed(dir.get())) {
                 log.debug("{} 的这一场已封存, 不再收录事件流水", uid);
                 return;
             }
@@ -262,6 +271,8 @@ public class LiveDetailArchive implements SmartLifecycle {
             try {
                 Files.createDirectories(dir.get());
                 DurableFiles.replace(dir.get().resolve(DETAIL_FILE), toJson(detail).toJSONString());
+                // 明细先落定再摘标记：摘在前面而写失败的话，续场就成了一场封住却没有整场明细的
+                unmarkResumed(dir.get());
                 log.info("已留档 {} 的一场直播明细: {} 条序列, {} 张排行", detail.uname(),
                         detail.series() == null ? 0 : detail.series().size(),
                         detail.rankings() == null ? 0 : detail.rankings().size());
@@ -269,6 +280,55 @@ public class LiveDetailArchive implements SmartLifecycle {
                 log.error("留档直播明细失败, 该场的报告将无法重新绘制", e);
             }
         }
+    }
+
+    /**
+     * 断线重连续上了这一场：此后的弹幕原文与事件流水照常收进来
+     * <p>
+     * 下播那一刻已经把明细落了盘，按类注释那道闸这一场就封住了；可重连间隔内再开播
+     * 算的是同一场，后半场的原文要接着写进同一个目录。这里留一个标记让闸让开，
+     * 真下播（或补档）再落一次明细时由 {@link #store} 摘掉。
+     * 这一场还没落过明细时什么都不做：本就没封。下播之后、续上之前来的零星弹幕照旧不收。
+     * <p>
+     * 失败只记日志：调用点在开播事件里。
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @param startTime 本场开播时刻（毫秒）
+     */
+    public void reopen(@NonNull String platform, @NonNull Long uid, long startTime) {
+        Optional<Path> dir = directory(platform, uid, startTime);
+        if (dir.isEmpty()) {
+            return;
+        }
+        synchronized (writeLock) {
+            if (!Files.exists(dir.get().resolve(DETAIL_FILE))) {
+                return;
+            }
+            try {
+                Files.writeString(dir.get().resolve(RESUMED_FILE), "", StandardCharsets.UTF_8);
+                log.info("{} 断线重连续上了开播于 {} 的那一场, 弹幕原文与事件流水接着收", uid, startTime);
+            } catch (IOException e) {
+                log.warn("续场标记写不进去, 这一场后半段的弹幕原文与事件流水不会留档: {}", e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 摘续场标记。摘不掉只记日志：明细已经落定，只是这一场还没封口
+     */
+    private void unmarkResumed(Path dir) {
+        try {
+            Files.deleteIfExists(dir.resolve(RESUMED_FILE));
+        } catch (IOException e) {
+            log.warn("明细已留档, 但续场标记摘不掉, 这一场此后的弹幕原文与事件流水仍会收: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 这一场是否已封存：明细已落盘、且不是续上的那一场
+     */
+    private boolean sealed(Path dir) {
+        return Files.exists(dir.resolve(DETAIL_FILE)) && !Files.exists(dir.resolve(RESUMED_FILE));
     }
 
     /**

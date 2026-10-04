@@ -127,8 +127,9 @@ public class RedisTotalDataStore {
      * @param platform 直播平台
      * @param uid 主播 UID
      * @param snapshot 本场数据快照
+     * @return 是否并完；中途出错时为假
      */
-    public void merge(@NonNull String platform, @NonNull Long uid, @NonNull LiveSnapshot snapshot) {
+    public boolean merge(@NonNull String platform, @NonNull Long uid, @NonNull LiveSnapshot snapshot) {
         try {
             for (Map.Entry<String, Double> entry : snapshot.metrics().entrySet()) {
                 redis.opsForHash().increment(totalKey(platform, uid), entry.getKey(), entry.getValue());
@@ -156,9 +157,11 @@ public class RedisTotalDataStore {
             }
 
             log.info("主播 {} 的本场数据已并入累计", uid);
+            return true;
         } catch (Exception e) {
             // 并入失败只影响累计统计，不该波及下播推送本身
             log.error("把主播 {} 的本场数据并入累计时异常", uid, e);
+            return false;
         }
     }
 

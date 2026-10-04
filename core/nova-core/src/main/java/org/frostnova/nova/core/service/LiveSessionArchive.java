@@ -11,6 +11,7 @@ import org.frostnova.nova.core.enums.LiveEndReason;
 import org.frostnova.nova.core.model.LiveSession;
 import org.frostnova.nova.core.model.RoomInfoSnapshot;
 import org.frostnova.nova.core.model.SeriesPeak;
+import org.frostnova.nova.core.util.DurableFiles;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,6 +29,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Stream;
 
@@ -84,22 +86,88 @@ public class LiveSessionArchive {
      * <p>
      * <b>失败只记日志，绝不向上抛。</b>调用点在下播事件里，归档写不进去
      * 不该连累下播推送本身。
+     * <p>
+     * 同一主播、同一开播时刻已有一条时，<b>新的这条取代旧的</b>：断线重连续上的那一场
+     * 中途下播时已归档过一次，真下播（或补档）这条才是整场。只在撞上时整份重写，
+     * 平常仍是追加。重写时认不出的行照留，但按文本写回：行里解不开的字节会变成替换符。
      * @param session 场次记录
      */
     public void append(@NonNull LiveSession session) {
-        String line = JSON.toJSONString(session) + System.lineSeparator();
+        String json = JSON.toJSONString(session);
 
         synchronized (writeLock) {
             try {
+                if (replaceSameSession(session, json)) {
+                    log.info("已归档 {} 的一场直播: {} 秒（续场, 取代中途下播那条）",
+                            session.uname(), session.durationSeconds());
+                    return;
+                }
                 // 上一行没写完时先补一个换行，把坏的半行隔开。
                 // 否则下一场接在半行后面，两场一起解析失败，从运营统计里一起消失。
                 JsonlFiles.separateTruncatedTail(path());
-                Files.writeString(path(), line, StandardCharsets.UTF_8,
+                Files.writeString(path(), json + System.lineSeparator(), StandardCharsets.UTF_8,
                         StandardOpenOption.CREATE, StandardOpenOption.APPEND);
                 log.info("已归档 {} 的一场直播: {} 秒", session.uname(), session.durationSeconds());
             } catch (IOException e) {
                 log.error("归档直播场次失败, 该场将不会出现在运营统计中", e);
             }
+        }
+    }
+
+    /**
+     * 归档里已有同一场（平台、主播、开播时刻都相同）时，整份重写、用这条换掉它
+     * <p>
+     * 读不了或换不上时退回追加：多一条重复的场次，好过这一场整条没归档。
+     * @return 是否换掉了；没有同一场、或没换成时不动文件
+     */
+    private boolean replaceSameSession(LiveSession session, String json) {
+        List<String> lines;
+        try (Stream<String> stream = JsonlFiles.lines(path())) {
+            lines = stream.toList();
+        } catch (NoSuchFileException e) {
+            return false;
+        } catch (IOException | RuntimeException e) {
+            log.warn("读场次归档找同一场失败, 这一条照常追加: {}", e.toString());
+            return false;
+        }
+
+        List<String> kept = new ArrayList<>(lines.size() + 1);
+        boolean replaced = false;
+        for (String line : lines) {
+            if (sameSession(line, session)) {
+                replaced = true;
+            } else {
+                kept.add(line);
+            }
+        }
+        if (!replaced) {
+            return false;
+        }
+        kept.add(json);
+        try {
+            DurableFiles.replace(path(), kept);
+            return true;
+        } catch (IOException e) {
+            log.warn("重写场次归档失败, 这一条照常追加（同一场会有两条）: {}", e.toString());
+            return false;
+        }
+    }
+
+    /**
+     * 这一行是不是同一场。解析不了的行一律不算，留在原处
+     */
+    private static boolean sameSession(String line, LiveSession session) {
+        if (line == null || line.isBlank()) {
+            return false;
+        }
+        try {
+            JSONObject json = JSON.parseObject(line);
+            return json != null
+                    && session.startTime() == json.getLongValue("startTime")
+                    && Objects.equals(session.uid(), json.getLong("uid"))
+                    && Objects.equals(session.platform(), json.getString("platform"));
+        } catch (Exception e) {
+            return false;
         }
     }
 

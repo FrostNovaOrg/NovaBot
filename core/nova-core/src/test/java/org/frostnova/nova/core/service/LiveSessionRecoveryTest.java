@@ -5,7 +5,9 @@ import org.frostnova.nova.core.analytics.LiveHighlightFinder;
 import org.frostnova.nova.core.config.EventConfig;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.enums.LiveEndReason;
+import org.frostnova.nova.core.event.live.common.LiveOffEvent;
 import org.frostnova.nova.core.event.live.common.LiveOnEvent;
+import org.frostnova.nova.core.listener.NovaDefaultLiveOffEventListener;
 import org.frostnova.nova.core.listener.NovaDefaultLiveOnEventListener;
 import org.frostnova.nova.core.model.DanmuRecord;
 import org.frostnova.nova.core.model.LiveGap;
@@ -32,6 +34,10 @@ import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * 停机与崩溃善后测试
@@ -547,6 +553,61 @@ class LiveSessionRecoveryTest {
             assertTrue(archived().isEmpty());
             assertEquals(99.0, after.getLiveMetric(PLATFORM, STREAMER.getUid(), "danmu_count"),
                     "重连不该把本场统计清掉");
+        }
+
+        @Test
+        @DisplayName("续场中途崩溃、下次开播补档：场次仍只一条，累计只算一次（故障：断过又崩的那一场统计里出现两遍、前半场累计算两遍）")
+        void unclosedResumedSessionIsArchivedAndMergedOnce() {
+            long start = System.currentTimeMillis() - 5 * 3600_000L;
+            long offAt = start + 3600_000L;
+            double[] merged = new double[1];
+            RedisTotalDataStore store = mock(RedisTotalDataStore.class);
+            doAnswer(invocation -> {
+                RedisTotalDataStore.LiveSnapshot snapshot = invocation.getArgument(2);
+                merged[0] += snapshot.metrics().getOrDefault("danmu_count", 0.0);
+                return true;
+            }).when(store).merge(any(), any(), any());
+            TotalDataStorage total = mock(TotalDataStorage.class);
+            when(total.active()).thenReturn(store);
+
+            DefaultLiveDataService before = boot();
+            CompositeLiveDataService beforeComposite = new CompositeLiveDataService(before, total);
+            LiveRoomInfoHistory history = new LiveRoomInfoHistory(new NovaStateStore(properties));
+            LiveSessionDetailArchiver detailArchiver =
+                    new LiveSessionDetailArchiver(beforeComposite, history, new LiveDetailArchive(properties));
+            NovaDefaultLiveOnEventListener onListener = new NovaDefaultLiveOnEventListener(properties, beforeComposite,
+                    new LiveSessionRecovery(beforeComposite, archive, history, detailArchiver));
+            NovaDefaultLiveOffEventListener offListener = new NovaDefaultLiveOffEventListener(beforeComposite,
+                    archive, new LiveInterventionTracker(), history, detailArchiver);
+
+            liveOn(onListener, start);
+            before.incrementLiveMetric(PLATFORM, STREAMER.getUid(), "danmu_count", 10);
+            offListener.onLiveOffEvent(new LiveOffEvent(PLATFORM, STREAMER, Instant.ofEpochMilli(offAt)));
+            assertTrue(liveOn(onListener, offAt + 60_000L).isReconnect(), "前提：一分钟后再开播必须被判为断线重连");
+            before.incrementLiveMetric(PLATFORM, STREAMER.getUid(), "danmu_count", 5);
+            // 续场中途最后一次自动保存，之后进程被强杀
+            before.saveNow(false);
+
+            DefaultLiveDataService after = boot();
+            CompositeLiveDataService afterComposite = new CompositeLiveDataService(after, total);
+            LiveSessionRecovery recovery = new LiveSessionRecovery(afterComposite, archive, history,
+                    new LiveSessionDetailArchiver(afterComposite, history, new LiveDetailArchive(properties)));
+            LiveOnEvent next = liveOn(new NovaDefaultLiveOnEventListener(properties, afterComposite, recovery),
+                    System.currentTimeMillis());
+
+            List<LiveSession> sessions = archived();
+            assertFalse(next.isReconnect(), "前提：几小时后的开播是新的一场");
+            assertEquals(1, sessions.size(), "同一开播时刻只该有一条，实际: " + sessions.size());
+            assertEquals(LiveEndReason.UNCLOSED, sessions.get(0).endReason());
+            assertEquals(15.0, sessions.get(0).metric("danmu_count"));
+            assertEquals(15.0, merged[0], "整场 15 条；前半场重复并入时是 25");
+        }
+
+        private LiveOnEvent liveOn(NovaDefaultLiveOnEventListener listener, long at) {
+            LiveOnEvent event = new LiveOnEvent(PLATFORM, STREAMER, Instant.ofEpochMilli(at));
+            listener.onLiveOnEventCheckReconnect(event);
+            listener.onLiveOnEventSetLiveData(event);
+            return event;
         }
     }
 
