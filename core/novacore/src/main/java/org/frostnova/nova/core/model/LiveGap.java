@@ -62,6 +62,13 @@ public record LiveGap(long from, long to, Reason reason) {
         PARSE_DEGRADED("解析降级"),
 
         /**
+         * 本端为核实弹幕礼物是否还会下来而主动重连，不是对端把连接掐断，也不是心跳超时。
+         * <p>
+         * 报告分栏用这段说明。场次表里「因这个直播间断线」只数对端断开和解析失败，不含这一项。
+         */
+        VERIFY_RECONNECT("本端核实重连"),
+
+        /**
          * 原因未定：区间是真的，成因推不出来
          * <p>
          * <b>不许拿它当默认的「维护」用。</b>「我们不知道为什么没采到」与
@@ -75,9 +82,17 @@ public record LiveGap(long from, long to, Reason reason) {
          * 这段算程序没在采（维护、重启、原因未定），还是这个房间自己的连接问题（断流、解析降级）
          * <p>
          * 停机秒把前一类并进全局停机；断线秒只数后一类。
+         * 本端核实重连两边都不算：它不是程序停机，也不是这个直播间断线。
          */
         public boolean countsAsProcessDowntime() {
             return this == MAINTENANCE || this == RESTART || this == UNKNOWN;
+        }
+
+        /**
+         * 断线秒只数对端断开和解析失败。本端核实重连不算。
+         */
+        public boolean countsAsRoomDisconnect() {
+            return this == STREAM_LOSS || this == PARSE_DEGRADED;
         }
     }
 
@@ -175,12 +190,16 @@ public record LiveGap(long from, long to, Reason reason) {
     /**
      * 一份区间表里，某一类成因的总时长（毫秒）
      * @param gaps 区间表，一般已经互不重叠
-     * @param processDowntime true 只加维护／重启／原因未定，false 只加断流与解析降级
+     * @param processDowntime true 只加维护／重启／原因未定，false 只加断流与解析降级。
+     *                        本端核实重连两边都不进
      */
     public static long totalMillisWhere(List<LiveGap> gaps, boolean processDowntime) {
         long total = 0;
         for (LiveGap gap : gaps) {
-            if (gap.reason().countsAsProcessDowntime() == processDowntime) {
+            boolean match = processDowntime
+                    ? gap.reason().countsAsProcessDowntime()
+                    : gap.reason().countsAsRoomDisconnect();
+            if (match) {
                 total += gap.durationMillis();
             }
         }

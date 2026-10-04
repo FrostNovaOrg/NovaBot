@@ -273,6 +273,8 @@ public class BilibiliLiveReportReplayPainter extends BilibiliLiveReportPainter {
             for (LiveGap gap : detail.gaps()) {
                 if (gap.reason() == LiveGap.Reason.STREAM_LOSS) {
                     data.recordRoomOutage(platform, uid, gap.from(), gap.to());
+                } else if (gap.reason() == LiveGap.Reason.VERIFY_RECONNECT) {
+                    data.recordRoomOutage(platform, uid, gap.from(), gap.to(), gap.reason());
                 } else {
                     data.recordDowntime(gap.from(), gap.to(),
                             gap.reason() == null ? LiveGap.Reason.UNKNOWN : gap.reason());

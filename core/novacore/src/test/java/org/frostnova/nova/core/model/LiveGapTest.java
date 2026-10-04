@@ -94,6 +94,21 @@ class LiveGapTest {
         assertEquals(150, LiveGap.totalMillis(merged), "相加会得 200, 中间那 50 毫秒被数了两遍");
     }
 
+    /**
+     * 抓的故障：为了看看弹幕还会不会下来而主动重连的那一秒，场次表把它说成这个直播间断了线。
+     */
+    @Test
+    @DisplayName("本端核实重连不进断线秒，对端断开仍进")
+    void verifyReconnectIsNotCountedAsRoomDisconnect() {
+        assertEquals(0, LiveGap.totalMillisWhere(
+                List.of(gap(0, 1000, LiveGap.Reason.VERIFY_RECONNECT)), true));
+        assertEquals(0, LiveGap.totalMillisWhere(
+                List.of(gap(0, 1000, LiveGap.Reason.VERIFY_RECONNECT)), false));
+        assertEquals(3000, LiveGap.totalMillisWhere(List.of(
+                gap(0, 1000, LiveGap.Reason.VERIFY_RECONNECT),
+                gap(2000, 5000, LiveGap.Reason.STREAM_LOSS)), false));
+    }
+
     @Test
     @DisplayName("起止倒置的区间不占位、不入表")
     void dropsInvertedIntervals() {

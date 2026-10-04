@@ -170,6 +170,17 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
     private volatile Instant disconnectedAt;
 
     /**
+     * 下一次关闭若是本端为核实弹幕礼物是否还会下来而主动重连，缺口用这个成因。
+     * 对端关闭、心跳超时不设它，仍记断流。
+     */
+    private volatile LiveGap.Reason pendingGapReason;
+
+    /**
+     * 当前这段缺口的成因，在关闭回调里从 {@link #pendingGapReason} 抄下来
+     */
+    private volatile LiveGap.Reason gapReason;
+
+    /**
      * 这条连接器是否认证成功过。断线之后 {@link #authenticatedAt} 会清空，
      * 不能靠它分辨「是不是头一次」。
      */
@@ -802,13 +813,21 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
 
         Instant now = Instant.now();
         if (!now.isAfter(from)) {
+            gapReason = null;
             return;
         }
 
-        liveDataService.recordRoomOutage(BilibiliPlatform.BILIBILI.id(), source.getUid(),
-                from.toEpochMilli(), now.toEpochMilli());
-        log.debug("直播间 {} 断线 {} 秒后恢复, 已记入采集缺口",
-                source.getRoomId(), Duration.between(from, now).toSeconds());
+        LiveGap.Reason reason = gapReason == null ? LiveGap.Reason.STREAM_LOSS : gapReason;
+        gapReason = null;
+        if (reason == LiveGap.Reason.STREAM_LOSS) {
+            liveDataService.recordRoomOutage(BilibiliPlatform.BILIBILI.id(), source.getUid(),
+                    from.toEpochMilli(), now.toEpochMilli());
+        } else {
+            liveDataService.recordRoomOutage(BilibiliPlatform.BILIBILI.id(), source.getUid(),
+                    from.toEpochMilli(), now.toEpochMilli(), reason);
+        }
+        log.debug("直播间 {} 空了 {} 秒后恢复, 已记入采集缺口（{}）",
+                source.getRoomId(), Duration.between(from, now).toSeconds(), reason.getDescription());
     }
 
     /**
@@ -947,7 +966,8 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
      * @return 是否判定为风控
      */
     public boolean detectRisk() {
-        if (!properties.getLive().isAutoDetectLiveRoomRisk() || status != ConnectStatus.CONNECTED) {
+        if (!properties.getLive().isAutoDetectLiveRoomRisk()
+                || (status != ConnectStatus.CONNECTED && status != ConnectStatus.RISK)) {
             return false;
         }
 
@@ -957,8 +977,19 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
                 totalMessages.getAndSet(0), businessMessages.getAndSet(0), interactMessages.getAndSet(0),
                 parseFailedMessages.getAndSet(0), stateGate.isLiving(source.getUid()));
 
+        if (status == ConnectStatus.RISK) {
+            if (window.business() > 0) {
+                reconnectedForStall = false;
+                riskDetector.reset();
+                status = ConnectStatus.CONNECTED;
+            } else {
+                riskDetector.accept(window);
+            }
+            return false;
+        }
+
         if (window.business() > 0) {
-            // 业务消息回来了，这一段断流结束，下一段可以重新用掉那次重连机会
+            // 业务消息回来了，这一段结束，下一段可以重新用掉那次重连机会
             reconnectedForStall = false;
         }
 
@@ -969,16 +1000,19 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
             // 少了这一步，一个重连就能自愈的故障会被报成平台问题，人也就白查一趟
             if (!reconnectedForStall) {
                 reconnectedForStall = true;
-                log.warn("直播间 {} 业务消息疑似断流, 先重连一次验证: {}", source.getRoomId(), judgment.observation());
+                log.warn("{}（{}）连续多个窗口没收到弹幕礼物, 先重连一次看看还会不会下来: {}",
+                        sourceLabel(), source.getRoomId(), judgment.observation());
                 // 判定历史由 afterConnectionClosed 清空，重连后从零重新攒窗口
+                pendingGapReason = LiveGap.Reason.VERIFY_RECONNECT;
                 reconnect();
                 return false;
             }
 
-            // 重连之后仍然断流，才升级为判定。只陈述观测到了什么，不断言原因——
-            // 从这里分不清是平台限制了下发、协议变更导致业务消息解析不出来、
+            // 重连之后仍然没有弹幕礼物，才记成这一状态。只陈述观测到了什么，不断言原因——
+            // 从这里分不清是平台没下发、协议变更导致业务消息解析不出来、
             // 还是主播那边确实没人说话但有人进出
-            log.warn("直播间 {} 重连后业务消息仍然断流: {}", source.getRoomId(), judgment.observation());
+            log.warn("{}（{}）重连后仍然没收到弹幕礼物: {}",
+                    sourceLabel(), source.getRoomId(), judgment.observation());
             status = ConnectStatus.RISK;
 
             // 业务为零且确有解析失败：这一段采集缺口的成因是解析降级，与断流分开记。
@@ -1036,7 +1070,9 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
         // 覆盖会把缺口越记越短
         if (authAt != null && disconnectedAt == null) {
             disconnectedAt = Instant.now();
+            gapReason = pendingGapReason != null ? pendingGapReason : LiveGap.Reason.STREAM_LOSS;
         }
+        pendingGapReason = null;
 
         if (closed.get()) {
             return;
@@ -1204,5 +1240,16 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
      */
     public LiveStreamerInfo getSource() {
         return source;
+    }
+
+    /**
+     * 日志里用的主播名。房间号由调用处另写。
+     */
+    private String sourceLabel() {
+        String name = source.getUname();
+        if (name == null || name.isBlank()) {
+            name = "未命名";
+        }
+        return name;
     }
 }

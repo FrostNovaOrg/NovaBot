@@ -310,6 +310,7 @@ export function gapCells(item) {
   const outage = Number(one.roomOutageSeconds) || 0;
   const parts = [];
   if (maintenance) parts.push('其中 ' + fmtGap(maintenance) + '因程序停机未采集');
+  // 这个数只含对端断开和解析失败。本端为核实而主动重连的秒数不在这里，所以不说「因这个直播间断线」。
   if (outage) parts.push('其中 ' + fmtGap(outage) + '因这个直播间断线未采集');
   return {
     maintenance, outage, any: maintenance > 0 || outage > 0,
