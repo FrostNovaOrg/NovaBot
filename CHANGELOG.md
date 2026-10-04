@@ -4,7 +4,7 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
-## [5.8.1] - 2026-10-04
+## [5.8.1] - 2026-10-05
 
 ### 变更
 
