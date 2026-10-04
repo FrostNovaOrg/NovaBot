@@ -186,6 +186,19 @@ public class LiveSessionRecovery {
     }
 
     /**
+     * 断线重连续上了上一场：下播那一刻落下的明细不算封存，后半场接着收进同一场
+     * <p>
+     * 场次归档与累计不在这里处理：真下播时场次那条取代中途那条，
+     * 累计只并中途下播以来新增的那一份，两件都在下播与补档的路上做。
+     * @param platform 直播平台
+     * @param source 主播信息
+     */
+    public void resumeAfterReconnect(@NonNull String platform, @NonNull LiveStreamerInfo source) {
+        liveDataService.getLiveStartTime(platform, source.getUid())
+                .ifPresent(start -> detailArchiver.reopen(platform, source.getUid(), start));
+    }
+
+    /**
      * 未闭合场次的结束时刻
      * <p>
      * 首选最后一次落盘时刻——那是我们能证明的最后一刻。它可能早于开播（进程停了很久、

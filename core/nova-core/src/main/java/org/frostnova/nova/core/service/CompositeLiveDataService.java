@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -63,11 +64,48 @@ public class CompositeLiveDataService implements LiveDataService {
             return;
         }
 
-        store.merge(platform, uid, new RedisTotalDataStore.LiveSnapshot(
-                delegate.liveMetrics(platform, uid),
-                delegate.liveUserMetrics(platform, uid),
+        // 只并这一场里还没并过的那一份。断线重连续上的一场会下播两次（中途一次、真下播一次），
+        // 本场数据在续场时不清零，整份再并一次就把前半场算了两遍。
+        // 并过多少记在本场数据里、随它落盘：程序在两次下播之间重启也认得出来
+        Map<String, Double> metrics = delegate.liveMetrics(platform, uid);
+        Map<String, Map<Long, Double>> userMetrics = delegate.liveUserMetrics(platform, uid);
+        boolean merged = store.merge(platform, uid, new RedisTotalDataStore.LiveSnapshot(
+                minus(metrics, delegate.mergedMetrics(platform, uid)),
+                minusByMetric(userMetrics, delegate.mergedUserMetrics(platform, uid)),
                 delegate.liveUserNames(platform, uid),
                 delegate.liveUserFaces(platform, uid)));
+        if (merged) {
+            delegate.recordMerged(platform, uid, metrics, userMetrics);
+        }
+    }
+
+    /**
+     * 逐项减去已并入的量。并过且差为 0 的项不带；没并过的项照带，哪怕是 0——
+     * 累计参与人数数的是有序集合里有几个人，得 0 分的人也算参与过
+     */
+    private static <K> Map<K, Double> minus(Map<K, Double> current, Map<K, Double> merged) {
+        Map<K, Double> result = new HashMap<>();
+        current.forEach((key, value) -> {
+            Double before = merged.get(key);
+            if (before == null) {
+                result.put(key, value);
+            } else if (value - before != 0) {
+                result.put(key, value - before);
+            }
+        });
+        return result;
+    }
+
+    private static Map<String, Map<Long, Double>> minusByMetric(Map<String, Map<Long, Double>> current,
+                                                               Map<String, Map<Long, Double>> merged) {
+        Map<String, Map<Long, Double>> result = new HashMap<>();
+        current.forEach((metric, users) -> {
+            Map<Long, Double> delta = minus(users, merged.getOrDefault(metric, Map.of()));
+            if (!delta.isEmpty()) {
+                result.put(metric, delta);
+            }
+        });
+        return result;
     }
 
     @Override

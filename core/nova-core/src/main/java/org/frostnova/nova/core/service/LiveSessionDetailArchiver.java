@@ -48,6 +48,16 @@ public class LiveSessionDetailArchiver {
     }
 
     /**
+     * 断线重连续上了这一场，让它的明细留档接着收弹幕原文与事件流水（见 {@link LiveDetailArchive#reopen}）
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @param start 本场开播时刻（毫秒）
+     */
+    public void reopen(@NonNull String platform, @NonNull Long uid, long start) {
+        details.reopen(platform, uid, start);
+    }
+
+    /**
      * 把本场明细整份留下来
      * <p>
      * 调用方应把它<b>排在场次归档之后</b>：两者读的是同一份尚未清零的数据，先后本不影响读数，

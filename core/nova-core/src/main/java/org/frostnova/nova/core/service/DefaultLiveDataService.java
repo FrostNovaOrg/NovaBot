@@ -1406,6 +1406,97 @@ public class DefaultLiveDataService implements LiveDataService {
         }
     }
 
+    // ================ 本场已并入累计的量 ================
+
+    /**
+     * 本场已经并进累计的那一份，与本场数据同一份文件落盘、同一次开播清零
+     * <p>
+     * 断线重连续上的一场会下播两次，第二次只该并第一次之后新增的那部分。
+     * 记在这里而不是内存里：两次下播之间程序可能重启，丢了这份记录就会把前半场再并一遍。
+     */
+    private static final String KEY_MERGED = "LiveMergedTotal:";
+
+    /**
+     * 本场已并入累计的各项指标，没并过时为空表
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @return 指标名到已并入量的映射
+     */
+    public Map<String, Double> mergedMetrics(@NonNull String platform, @NonNull Long uid) {
+        synchronized (metricLock) {
+            JSONObject metrics = merged(platform, uid).map(data -> data.getJSONObject("metrics")).orElse(null);
+            if (metrics == null) {
+                return Map.of();
+            }
+            Map<String, Double> result = new HashMap<>();
+            for (String metric : metrics.keySet()) {
+                result.put(metric, metrics.getDoubleValue(metric));
+            }
+            return result;
+        }
+    }
+
+    /**
+     * 本场已并入累计的各计分表，没并过时为空表
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @return 指标名到「用户 UID → 已并入得分」的映射
+     */
+    public Map<String, Map<Long, Double>> mergedUserMetrics(@NonNull String platform, @NonNull Long uid) {
+        synchronized (metricLock) {
+            JSONObject byMetric = merged(platform, uid).map(data -> data.getJSONObject("users")).orElse(null);
+            if (byMetric == null) {
+                return Map.of();
+            }
+            Map<String, Map<Long, Double>> result = new HashMap<>();
+            for (String metric : byMetric.keySet()) {
+                JSONObject users = byMetric.getJSONObject(metric);
+                if (users == null) {
+                    continue;
+                }
+                Map<Long, Double> scores = new HashMap<>();
+                for (String userKey : users.keySet()) {
+                    try {
+                        scores.put(Long.parseLong(userKey), users.getDoubleValue(userKey));
+                    } catch (NumberFormatException ignored) {
+                        // 同 liveUserMetrics
+                    }
+                }
+                result.put(metric, scores);
+            }
+            return result;
+        }
+    }
+
+    /**
+     * 记下本场到此为止已并入累计的量（整份覆盖上一次记的）
+     * @param platform 直播平台
+     * @param uid 主播 UID
+     * @param metrics 本场各项指标，即这次并入时读到的那一份
+     * @param userMetrics 本场各计分表，即这次并入时读到的那一份
+     */
+    public void recordMerged(@NonNull String platform, @NonNull Long uid, @NonNull Map<String, Double> metrics,
+                             @NonNull Map<String, Map<Long, Double>> userMetrics) {
+        JSONObject users = new JSONObject();
+        userMetrics.forEach((metric, scores) -> {
+            JSONObject one = new JSONObject();
+            scores.forEach((userUid, score) -> one.put(String.valueOf(userUid), score));
+            users.put(metric, one);
+        });
+        JSONObject record = new JSONObject();
+        record.put("metrics", new JSONObject(metrics));
+        record.put("users", users);
+        synchronized (metricLock) {
+            cache.putIfAbsent(KEY_MERGED + platform, new JSONObject());
+            cache.getJSONObject(KEY_MERGED + platform).put(String.valueOf(uid), record);
+        }
+    }
+
+    private Optional<JSONObject> merged(String platform, Long uid) {
+        return Optional.ofNullable(cache.getJSONObject(KEY_MERGED + platform))
+                .map(data -> data.getJSONObject(String.valueOf(uid)));
+    }
+
     // ================ 其他操作 ================
 
     /**
@@ -1432,6 +1523,8 @@ public class DefaultLiveDataService implements LiveDataService {
             Optional.ofNullable(cache.getJSONObject("LiveUserFace:" + platform))
                     .ifPresent(data -> data.remove(String.valueOf(uid)));
             Optional.ofNullable(cache.getJSONObject("LiveSeries:" + platform))
+                    .ifPresent(data -> data.remove(String.valueOf(uid)));
+            Optional.ofNullable(cache.getJSONObject(KEY_MERGED + platform))
                     .ifPresent(data -> data.remove(String.valueOf(uid)));
         }
     }

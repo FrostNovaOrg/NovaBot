@@ -80,6 +80,9 @@ public class NovaDefaultLiveOnEventListener {
             // 必须赶在 setLiveStatus 与 resetLiveData 之前：前者会抹掉「上一场还挂着」这个判据，
             // 后者会把上一场的统计清光。程序在上一场进行中崩过的话，这是它唯一的归档机会
             sessionRecovery.archiveUnclosedIfAny(event.getPlatform(), event.getSource(), event.getTimestamp());
+        } else {
+            // 续上的是同一场：下播时落下的明细不算封存，后半场的弹幕原文与事件流水接着收
+            sessionRecovery.resumeAfterReconnect(event.getPlatform(), event.getSource());
         }
 
         liveDataService.setLiveStatus(event.getPlatform(), event.getSource().getUid(), true);
