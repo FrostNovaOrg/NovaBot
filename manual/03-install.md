@@ -22,9 +22,13 @@ cd NovaBot
 `/opt/starbot/releases/<版本>/`（配置与数据留在 `/opt/starbot`）、生成初始配置、
 创建 systemd 服务。缺了 Java 17 或中文字体，默认经包管理器装上。坐等跑完就行。
 
-机器上已经装有更高版本 JDK 时，一键安装会停在构建那一步。处理办法：装一个
-JDK 17 并把它排在 PATH 最前，再重新运行脚本。**只改 JAVA_HOME、不改 PATH
-不算数**——构建脚本查的是 PATH 上的 `java`。
+Maven 要先装好（3.9 或更高版本），脚本不替你装；没有就在构建前停下，印
+「错误: 未找到 Maven，请先安装 Maven 3.9 或更高版本」。
+
+机器上已经装有更高版本 JDK 时，一键安装不停：它会另找一份 JDK 17，专供
+这一次构建（找不到就经包管理器装一份，带 `--no-packages` 时才停下），机器
+默认的 Java 不动。JDK 17 装在别处时，用 `NOVABOT_JVM_ROOTS=<它的上层目录>`
+指给脚本。
 
 可选参数（写在 `./install.sh` 后面）：
 
@@ -62,6 +66,11 @@ sudo systemctl start novabot@<版本> && sudo journalctl -u novabot@<版本> -f
 ```bash
 ./build.sh
 ```
+
+`build.sh` 同样要 Maven 3.9 或更高版本，没有就停下，印「未找到 mvn，请先安装
+Maven 3.9 或更高版本」。机器上装着的 Java 高于 17 时，构建也会停下，要把
+JDK 17 排在 PATH 最前再跑。**只改 JAVA_HOME、不改 PATH 不算数**——构建脚本
+查的是 PATH 上的 `java`。
 
 不带参数会跑全部测试，这需要 Node 22。只出包、不跑测试：`./build.sh --skip-tests`。
 
