@@ -71,6 +71,8 @@ nova-bilibili 模块上游仅以二进制形式分发。本仓库中的实现依
   docs/assets/screenshot-console.png
   docs/assets/report-demo.png
   docs/assets/report-demo-top.png
+  docs/assets/report-showcase.png
+  docs/assets/console-showcase.png
   docs/assets/demo/avatar-a.png
   docs/assets/demo/avatar-b.png
   docs/assets/demo/avatar-c.png
@@ -78,6 +80,9 @@ nova-bilibili 模块上游仅以二进制形式分发。本仓库中的实现依
   docs/assets/demo/roster.txt
     演示与说明用图。social-preview 为本项目原创；报告图、demo/ 下头像、封面与名册
     为固定种子合成的虚构素材；screenshot-console 为本机匿名演示实例的控制台首页截图。
+    report-showcase 由 report-demo.png 切栏拼成，同为固定种子合成的虚构数据；
+    console-showcase 由用户手册截图 manual/images/06-template-editor.png 与
+    09-trend-month.png 拼成，二者为本机匿名演示实例载入示例数据后的控制台截图。
     可在介绍、引用或链接本项目时原样使用；
     不得修改，不得用于标识其他产品或暗示关联与背书。
     仅随源码仓库分发，不进入构建产物。
