@@ -15,6 +15,8 @@ import org.frostnova.nova.core.service.LiveSessionArchive;
 import org.frostnova.nova.core.service.NovaStateStore;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
 import org.frostnova.nova.core.service.StreamerNames;
+import org.frostnova.nova.core.service.SessionQuietHoursService;
+import org.frostnova.nova.core.sender.PushGate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -71,7 +73,9 @@ class RuntimeStateStreamerNameTest {
                 dataSource,
                 new RevenueVisibilityService(store),
                 mock(LiveDataService.class),
-                new StreamerNames(new LiveSessionArchive(properties)));
+                new StreamerNames(new LiveSessionArchive(properties)),
+                new SessionQuietHoursService(store),
+                new PushGate(properties, new SessionQuietHoursService(store)));
     }
 
     private static PushUser user(String uname) {

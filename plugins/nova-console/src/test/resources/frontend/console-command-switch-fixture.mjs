@@ -315,6 +315,7 @@ function buildCtx(state) {
     totalDataAvailable: state.totalDataAvailable,
     summary: {
       revenue: model.revenueSummary(session),
+      quiet: model.quietSummary(session, state.quietGlobal),
       command: model.commandSummary(state.commands, session, state.totalDataAvailable),
       subscription: model.subscriptionSummary(state.subscriptions, session),
       atAll: model.atAllStatus({bots: [], sessions: []}, session, TARGET, {}),

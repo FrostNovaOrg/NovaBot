@@ -16,6 +16,8 @@ import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.LiveSessionArchive;
 import org.frostnova.nova.core.service.PushTemplateDefaults;
 import org.frostnova.nova.core.service.StreamerNames;
+import org.frostnova.nova.core.service.SessionQuietHoursService;
+import org.frostnova.nova.core.sender.PushGate;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
 import org.frostnova.nova.core.service.NovaEventHandlerService;
 import org.frostnova.nova.core.service.NovaStateStore;
@@ -109,12 +111,17 @@ class UnfilledDatasourceEntryTest {
         JSONObject rest = JSONObject.parseObject(state.toJSONString());
         rest.remove("incomplete");
         rest.remove("totalDataAvailable");
+        rest.remove("quietGlobal");
 
         // 会话里后添的两栏（本会话的菜单里不列哪几条、以及各自的说明）同样只摘名
         JSONArray sessions = rest.getJSONArray("sessions");
         for (int i = 0; i < sessions.size(); i++) {
             sessions.getJSONObject(i).remove("menuHidden");
             sessions.getJSONObject(i).remove("menuNotes");
+            // 静音时段那一行的四栏，同样只摘名
+            for (String key : List.of("quietMode", "quietStart", "quietEnd", "quietActive")) {
+                sessions.getJSONObject(i).remove(key);
+            }
         }
 
         assertEquals(FILLED_STATE_BEFORE, rest.toJSONString(),
@@ -187,7 +194,9 @@ class UnfilledDatasourceEntryTest {
                 dataSource,
                 new RevenueVisibilityService(store),
                 mock(LiveDataService.class),
-                new StreamerNames(new LiveSessionArchive(properties)));
+                new StreamerNames(new LiveSessionArchive(properties)),
+                new SessionQuietHoursService(store),
+                new PushGate(properties, new SessionQuietHoursService(store)));
     }
 
     /**

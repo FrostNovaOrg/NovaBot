@@ -384,6 +384,7 @@ export function strandedSessions(users, sessions) {
       platform: item.platform, num: item.num,
       disabled: item.disabled || [],
       revenueExplicit: !!item.revenueExplicit,
+      quietExplicit: !!item.quietMode && item.quietMode !== 'follow',
     }));
 }
 
@@ -638,6 +639,36 @@ export function revenueSummary(session) {
     visible, explicit,
     text: (visible ? '显示金额' : '隐藏金额') + (explicit ? '' : '（默认：群聊隐藏、私聊显示）'),
   };
+}
+
+/**
+ * 「本群设置」静音时段那一行的摘要
+ *
+ * 三档：跟全局（默认，没设过的会话都是这一档）、本会话自己的时段、本会话不静音。
+ * 「静音中」认的是服务端给的 quietActive，不拿起止在这里自己算：判定只留闸门那一份，
+ * 两边各算一份的话，屏幕上写着「静音中」、推送却照发（或反过来）。
+ * @param session 会话
+ * @param global /api/state 的 quietGlobal：设置页那一项全局静音时段
+ * @return 摘要：mode、自己的起止、此刻在不在静音里与那一行字
+ */
+export function quietSummary(session, global) {
+  const s = session || {};
+  const g = global || {};
+  const mode = s.quietMode === 'custom' || s.quietMode === 'off' ? s.quietMode : 'follow';
+  const start = mode === 'custom' ? (s.quietStart || '') : '';
+  const end = mode === 'custom' ? (s.quietEnd || '') : '';
+  const active = !!s.quietActive;
+
+  let text;
+  if (mode === 'off') {
+    text = '本会话不静音';
+  } else if (mode === 'custom') {
+    text = '本会话 ' + start + '–' + end;
+  } else {
+    text = '跟全局' + (g.start && g.end ? '（' + g.start + '–' + g.end + '）' : '（设置页没设静音时段）');
+  }
+  if (active) text += ' · 静音中';
+  return {mode, start, end, active, text};
 }
 
 /**

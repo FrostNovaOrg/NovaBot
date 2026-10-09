@@ -21,7 +21,8 @@ import {resolveTarget, targetOptions} from './links-model.js';
 import {
   atAllStatus, buildDirectory, channelIndex, channelName, commandGroups, commandSummary,
   handlerNames, handlerOf, layoutState, messageOf, noticeSwitches, previewRequestBody,
-  previewRevenueCaption, pushChannelOf, pushTree, recentPushes, revenueSummary, savedRevenueVisible,
+  previewRevenueCaption, pushChannelOf, pushTree, quietSummary, recentPushes, revenueSummary,
+  savedRevenueVisible,
   sessionOf, streamerName, strandedSessions, subscriptionSummary, templateState, typeName,
 } from './push-model.js';
 import {renderIncomplete, sessionSettings} from './sessions.js';
@@ -744,7 +745,8 @@ function renderStranded(host) {
     text.textContent = row.platform + ' · ' + row.num
       + (row.disabled.length ? ' · 关着 ' + row.disabled.length + ' 条命令（'
         + row.disabled.join('、') + '）' : ' · 命令没有被关过')
-      + (row.revenueExplicit ? ' · 金额可见性配过' : '');
+      + (row.revenueExplicit ? ' · 金额可见性配过' : '')
+      + (row.quietExplicit ? ' · 静音时段配过' : '');
     line.appendChild(text);
 
     if (row.disabled.length) {
@@ -1397,8 +1399,10 @@ function sectionSession(host, user, target, session) {
     commands: runtime.commands || [],
     subscriptions: runtime.subscriptions || [],
     totalDataAvailable: runtime.totalDataAvailable,
+    quietGlobal: runtime.quietGlobal,
     summary: {
       revenue: revenueSummary(session),
+      quiet: quietSummary(session, runtime.quietGlobal),
       command: commandSummary(runtime.commands || [], session, runtime.totalDataAvailable),
       subscription: subscriptionSummary(runtime.subscriptions || [], session),
       atAll: atAllStatus(quota, session, target, directory),

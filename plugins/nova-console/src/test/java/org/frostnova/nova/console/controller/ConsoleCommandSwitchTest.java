@@ -24,6 +24,8 @@ import org.frostnova.nova.core.service.NovaStateStore;
 import org.frostnova.nova.core.service.RevenueVisibilityService;
 import org.frostnova.nova.core.service.SessionMemberNames;
 import org.frostnova.nova.core.service.StreamerNames;
+import org.frostnova.nova.core.service.SessionQuietHoursService;
+import org.frostnova.nova.core.sender.PushGate;
 import org.frostnova.nova.core.timeline.TimelineWriter;
 import org.frostnova.nova.report.command.BilibiliRankingCommand;
 import org.frostnova.nova.report.command.BilibiliRoomDataCommand;
@@ -127,6 +129,8 @@ class ConsoleCommandSwitchTest {
         parts.put(NovaMessageSender.class, sender);
         parts.put(NovaStateStore.class, store);
         parts.put(RevenueVisibilityService.class, revenueVisibility);
+        parts.put(SessionQuietHoursService.class, new SessionQuietHoursService(store));
+        parts.put(PushGate.class, new PushGate(storeProperties, new SessionQuietHoursService(store)));
         parts.put(StreamerNames.class, new StreamerNames(new LiveSessionArchive(storeProperties)));
         parts.put(SessionMemberNames.class, mock(SessionMemberNames.class));
         parts.put(BilibiliStreamerChoice.class, mock(BilibiliStreamerChoice.class));

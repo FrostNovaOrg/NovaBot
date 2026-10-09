@@ -231,8 +231,13 @@ const mock = {
       menuNotes: {},
       revenueVisible: false,
       revenueExplicit: true,
+      quietMode: 'follow',
+      quietStart: null,
+      quietEnd: null,
+      quietActive: false,
       streamers: ['甲'],
     }],
+    quietGlobal: {start: '23:00', end: '08:00'},
     subscriptions: [{
       platform: 'q', num: 12345,
       streamerUid: 1, streamerName: '甲', type: 'live', typeName: '开播',
@@ -259,6 +264,10 @@ function applyStateWrite(path, body) {
   if (path.endsWith('/state/revenue')) {
     session.revenueVisible = !!data.visible;
     session.revenueExplicit = true;
+  } else if (path.endsWith('/state/quiet')) {
+    session.quietMode = data.mode || 'follow';
+    session.quietStart = data.mode === 'custom' ? data.start : null;
+    session.quietEnd = data.mode === 'custom' ? data.end : null;
   } else if (path.endsWith('/state/command')) {
     const set = new Set(session.disabled);
     if (data.disabled) set.add(data.command);
@@ -348,8 +357,10 @@ function buildCtx(state) {
     commands: state.commands,
     subscriptions: state.subscriptions,
     totalDataAvailable: state.totalDataAvailable,
+    quietGlobal: state.quietGlobal,
     summary: {
       revenue: model.revenueSummary(session),
+      quiet: model.quietSummary(session, state.quietGlobal),
       command: model.commandSummary(state.commands, session, state.totalDataAvailable),
       subscription: model.subscriptionSummary(state.subscriptions, session),
       atAll: model.atAllStatus(quota, session, TARGET, {}),
@@ -542,6 +553,116 @@ await ask('⑥ 没改本群设置就点「保存」：不该碰状态文件（�
   }, {
     '保存时写状态的请求条数': 0,
   }, '没改本群就保存');
+});
+
+function quietPosts() {
+  return statePosts().filter(item => item.path.endsWith('/state/quiet'));
+}
+
+/** 摘要行里标题为 title 的那一行写的字 */
+function summaryText(scope, title) {
+  const heads = allNodes(scope).filter(node => node.tagName === 'summary');
+  const head = heads.find(node => node.innerHTML.includes('<span class="cr-t">' + title + '</span>'));
+  if (!head) return null;
+  const match = /<span class="cr-sum">([^<]*)<\/span>/.exec(head.innerHTML);
+  return match ? match[1] : null;
+}
+
+function choose(input) {
+  input.checked = true;
+  input.dispatchEvent({type: 'change', target: input});
+}
+
+await ask('⑦ 静音时段摘要：三档各写明是哪一档、几点到几点，此刻在静音里带「静音中」', async () => {
+  if (!model || !sessions) throw new Error('产品码没载入，无从量起');
+  const global = {start: '23:00', end: '08:00'};
+  await fresh();
+  same({
+    '跟全局': model.quietSummary({quietMode: 'follow'}, global).text,
+    '跟全局、全局没设': model.quietSummary({quietMode: 'follow'}, {start: '', end: ''}).text,
+    '没这一栏的旧会话': model.quietSummary({}, global).text,
+    '自己的时段、此刻在里面': model.quietSummary(
+      {quietMode: 'custom', quietStart: '22:00', quietEnd: '07:00', quietActive: true}, global).text,
+    '不静音': model.quietSummary({quietMode: 'off'}, global).text,
+    '页面上那一行': summaryText(host, '静音时段'),
+  }, {
+    '跟全局': '跟全局（23:00–08:00）',
+    '跟全局、全局没设': '跟全局（设置页没设静音时段）',
+    '没这一栏的旧会话': '跟全局（23:00–08:00）',
+    '自己的时段、此刻在里面': '本会话 22:00–07:00 · 静音中',
+    '不静音': '本会话不静音',
+    '页面上那一行': '跟全局（23:00–08:00）',
+  }, '静音摘要');
+});
+
+await ask('⑧ 静音选「本会话不静音」：没保存不写、放弃还原、保存才写一笔', async () => {
+  if (!push || !sessions) throw new Error('产品码没载入，无从量起');
+  await fresh();
+  const before = clone(mock.state);
+  const off = inputByLabel(host, '本会话不静音');
+  if (!off) throw new Error('没找到「本会话不静音」那一档');
+  choose(off);
+  await settle();
+  const unsaved = {
+    '没保存就写了状态': JSON.stringify(mock.state) !== JSON.stringify(before),
+    '改动条算不算它': push.changeCount(),
+  };
+
+  await discardAsHostDoes();
+  await settle();
+  const follow = inputByLabel(host, '跟全局');
+  const discarded = {
+    '放弃后改动数': push.changeCount(),
+    '放弃后回到跟全局': !!(follow && follow.checked),
+  };
+
+  choose(inputByLabel(host, '本会话不静音'));
+  await settle();
+  mock.requests.length = 0;
+  await push.save();
+  await settle();
+  const posts = quietPosts();
+  same({
+    unsaved, discarded,
+    '保存时写的笔数': posts.length,
+    '写的档位': posts.length ? JSON.parse(posts[0].body).mode : null,
+    '保存后改动数': push.changeCount(),
+    '存下的档位': sessionOf(mock.state).quietMode,
+  }, {
+    unsaved: {'没保存就写了状态': false, '改动条算不算它': 1},
+    discarded: {'放弃后改动数': 0, '放弃后回到跟全局': true},
+    '保存时写的笔数': 1,
+    '写的档位': 'off',
+    '保存后改动数': 0,
+    '存下的档位': 'off',
+  }, '不静音');
+});
+
+await ask('⑨ 静音选「本会话自己的时段」并改开始时刻：保存时带上起止', async () => {
+  if (!push || !sessions) throw new Error('产品码没载入，无从量起');
+  // 上一格存成了不静音，这里先拨回跟全局再量
+  sessionOf(mock.state).quietMode = 'follow';
+  await fresh();
+  const custom = inputByLabel(host, '本会话自己的时段');
+  if (!custom) throw new Error('没找到「本会话自己的时段」那一档');
+  choose(custom);
+  await settle();
+  const start = inputByLabel(host, '静音开始');
+  if (!start) throw new Error('没找到「静音开始」');
+  start.value = '21:30';
+  start.dispatchEvent({type: 'change', target: start});
+  await settle();
+  mock.requests.length = 0;
+  await push.save();
+  await settle();
+  const posts = quietPosts();
+  same({
+    '保存时写的笔数': posts.length,
+    '写的内容': posts.length ? (({mode, start, end}) => ({mode, start, end}))(JSON.parse(posts[0].body)) : null,
+  }, {
+    '保存时写的笔数': 1,
+    '写的内容': {mode: 'custom', start: '21:30', end: '08:00'},
+  }, '自己的时段');
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

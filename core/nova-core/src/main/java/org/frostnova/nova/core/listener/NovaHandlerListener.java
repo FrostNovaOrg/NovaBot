@@ -22,8 +22,9 @@ import java.util.Optional;
 /**
  * NovaBot 监听外部事件触发事件处理
  * <p>
- * 静音时段与「已暂停推送」在这里就把整个事件挡下来，而不是让它一路展开成 N 条消息
- * 再逐条被发送器丢掉。两件事因此才做得到：
+ * 静音时段与「已暂停推送」在这里就按会话挡下来，而不是让它一路展开成 N 条消息
+ * 再逐条被发送器丢掉。逐个会话判：会话可以设自己的静音时段或不静音，
+ * 同一件事件推往的几个会话里只丢被静音的那几个，其余照发。两件事因此才做得到：
  * <ul>
  *   <li><b>时间线上只记一条</b>，且这一条说得出<b>是谁的通知、丢给了几个会话</b>——
  *       这两样只有在展开之前才知道。逐条记的话，一次开播会在时间线上刷出十几行，
@@ -78,12 +79,18 @@ public class NovaHandlerListener {
         String eventClass = event.getClass().getName();
 
         PushUser user = optionalUser.get();
-        if (!pushGate.allowed()) {
-            recordDrop(event, user);
-            return;
-        }
+        int blocked = 0;
 
         for (PushTarget target : user.getTargets()) {
+            // 逐个会话判：会话可以有自己的静音时段或不静音，同一件事件推往的几个会话
+            // 此刻可能一个在静音、一个不在。只认领这个事件的会话才数进被拦的那几个
+            if (!pushGate.allowedFor(target.getPlatform(), target.getNum())) {
+                if (target.getMessages().stream().anyMatch(message -> handles(event, message))) {
+                    blocked++;
+                }
+                continue;
+            }
+
             for (PushMessage message : target.getMessages()) {
                 if (handles(event, message) && message.getHandlerInstance() instanceof NovaEventHandler handler) {
                     try {
@@ -94,6 +101,8 @@ public class NovaHandlerListener {
                 }
             }
         }
+
+        recordDrop(event, blocked);
     }
 
     /**
@@ -113,19 +122,11 @@ public class NovaHandlerListener {
      * <p>
      * <b>没有目标认领这个事件时什么也不记。</b>那种事件本来就不会推，为它记一条「丢弃」
      * 等于凭空造一条坏消息——而直播间里每分钟都有事件，那一条会把时间线淹掉。
-     * 🔴 <b>「什么都没丢」与「丢了一堆」在一条不带数的记录上长得一样</b>，所以目标数要现算。
+     * 🔴 <b>「什么都没丢」与「丢了一堆」在一条不带数的记录上长得一样</b>，所以目标数要现算，
+     * 且只算真被拦下的那几个会话：其余照发的不算「丢了」。
+     * @param targets 这一次被拦下的会话数
      */
-    private void recordDrop(NovaExternalBaseEvent event, PushUser user) {
-        int targets = 0;
-        for (PushTarget target : user.getTargets()) {
-            for (PushMessage message : target.getMessages()) {
-                if (handles(event, message)) {
-                    targets++;
-                    break;
-                }
-            }
-        }
-
+    private void recordDrop(NovaExternalBaseEvent event, int targets) {
         if (targets == 0) {
             return;
         }

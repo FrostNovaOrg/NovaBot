@@ -434,7 +434,7 @@ await ask('④ 灰掉的那些格：存着的值不动，「自定义」的判�
 await ask('⑤ 金额开关拨过两回，「本群设置」那一段不该越画越长', async () => {
   if (!push) throw new Error('产品码没载入，无从量起');
   const rows = findAll(page(), '.crow').length;
-  same(rows, 3, '本群设置的行数（金额可见、命令、提醒订阅三行折叠项）');
+  same(rows, 4, '本群设置的行数（金额可见、静音时段、命令、提醒订阅四行折叠项）');
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
