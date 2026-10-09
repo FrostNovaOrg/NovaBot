@@ -1,5 +1,6 @@
 package org.frostnova.nova.core;
 
+import org.frostnova.nova.core.process.ParentBoundMain;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -100,7 +101,7 @@ class NovaCoreApplicationSecondCopyTest {
 
             Path argsFile = dir.resolve("java-args.txt");
             Files.writeString(argsFile, "-cp\n" + System.getProperty("java.class.path") + "\n"
-                    + NovaCoreApplication.class.getName() + "\n");
+                    + ParentBoundMain.mainLines(NovaCoreApplication.class));
             Process process = new ProcessBuilder(
                     Path.of(System.getProperty("java.home"), "bin", "java").toString(),
                     "@" + argsFile.toAbsolutePath())
